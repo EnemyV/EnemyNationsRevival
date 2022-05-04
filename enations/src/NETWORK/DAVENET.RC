@@ -1,0 +1,98 @@
+//Microsoft Visual C++ generated resource script.
+//
+#include "resource.h"
+
+#define APSTUDIO_READONLY_SYMBOLS
+/////////////////////////////////////////////////////////////////////////////
+//
+// Generated from the TEXTINCLUDE 2 resource.
+//
+#include "afxres.h"
+
+/////////////////////////////////////////////////////////////////////////////
+#undef APSTUDIO_READONLY_SYMBOLS
+
+
+#ifdef APSTUDIO_INVOKED
+/////////////////////////////////////////////////////////////////////////////
+//
+// TEXTINCLUDE
+//
+
+1 TEXTINCLUDE DISCARDABLE 
+BEGIN
+    "resource.h\0"
+END
+
+2 TEXTINCLUDE DISCARDABLE 
+BEGIN
+    "#include ""afxres.h""\r\n"
+    "\0"
+END
+
+3 TEXTINCLUDE DISCARDABLE 
+BEGIN
+    "#include ""res\\version.rc""\0"
+END
+
+/////////////////////////////////////////////////////////////////////////////
+#endif    // APSTUDIO_INVOKED
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Dialog
+//
+
+IDD_NETBIOS_CLOSE DIALOG DISCARDABLE  40, 40, 168, 25
+STYLE DS_SYSMODAL | DS_MODALFRAME | DS_NOIDLEMSG | WS_POPUP | WS_VISIBLE | 
+    WS_CAPTION
+CAPTION "DaveNET - Closing NETBIOS"
+FONT 8, "MS Sans Serif"
+BEGIN
+    CTEXT           "Waiting for all NETBIOS calls to complete.",IDC_STATIC,
+                    7,8,153,14
+END
+
+IDD_NETBIOS_LANA DIALOG DISCARDABLE  0, 0, 104, 71
+STYLE DS_MODALFRAME | WS_POPUP | WS_VISIBLE | WS_CAPTION | WS_SYSMENU
+CAPTION "Select LANA"
+FONT 8, "MS Sans Serif"
+BEGIN
+    LISTBOX         IDC_NB_LANA,6,4,30,60,LBS_NOINTEGRALHEIGHT | WS_VSCROLL | 
+                    WS_TABSTOP
+    DEFPUSHBUTTON   "&Save",IDOK,46,4,50,14
+    PUSHBUTTON      "Cancel",IDCANCEL,46,27,50,14
+    PUSHBUTTON      "&Use",IDC_TEMP,46,50,49,14
+END
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// String Table
+//
+
+STRINGTABLE DISCARDABLE 
+BEGIN
+    IDS_NETBIOS_INIT_ERROR  "Could not initialize network.\nNot enough DOS memory available."
+    IDS_NETBIOS_ADD_GROUP_ERROR "Could not add group name %1"
+    IDS_NETBIOS_ERR_TABLE_FULL 
+                            "The NETBIOS name table is full.\nYou need to close down some\napplications that are using NETBIOS\nor increase the size of the name table."
+    IDS_NETBIOS_ADD_DUP     "Name %1 is already in use on the network.\nPick another name."
+    IDS_TITLE               "Dave-NET"
+    IDS_NETBIOS_NO_NCBS     "There are no available NCBs, data will be lost.\nThis is probably due to the network being overloaded."
+    IDS_NETBIOS_ERROR       "NETBIOS returned error %d"
+    IDS_NETBIOS_BAD_VER_ERROR 
+                            "DaveNET requires NETBIOS 1.0 or later.\nLana %d is version %d.%d.\nStatus returns 0x%x."
+END
+
+
+#ifndef APSTUDIO_INVOKED
+/////////////////////////////////////////////////////////////////////////////
+//
+// Generated from the TEXTINCLUDE 3 resource.
+//
+#include "res\version.rc"
+/////////////////////////////////////////////////////////////////////////////
+#endif    // not APSTUDIO_INVOKED
+

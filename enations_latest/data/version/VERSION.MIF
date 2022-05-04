@@ -1,0 +1,76 @@
+#include "..\data.inc"
+
+RIFF VERN
+	{
+	LIST FVER
+		{
+
+		CHUNK DATA {short				// version ALWAYS FIRST
+#include ..\rif_ver.inc"
+			}
+		}
+
+	LIST VERN
+		{
+
+		CHUNK DATA {short				// version ALWAYS FIRST
+#include ..\rif_ver.inc"
+
+#ifdef ALL_ZOOMS
+		short 0, 4 		// first zoom, num zooms
+#else
+		short 1, 3 
+#endif
+
+#ifdef INC24
+		short 1 						// have 24-bit art
+#else
+		short 0
+#endif
+
+#ifdef SHAREWARE
+		short 1 						// is shareware version
+#else
+		short 0
+#endif
+
+#ifdef SECOND_DISK
+		short 1 						// is second disk
+#else
+		short 0
+#endif
+
+#ifdef INC_WAV
+		short 1 						// have digital audio
+#else
+		short 0
+#endif
+
+#ifdef SHAREWARE
+		short	0						// doesn't require CD
+#else
+//		short	0						// require CD
+		short	1						// require CD
+#endif
+
+#ifdef TWO_VOICES
+		short 	1						// has multiple voices
+#else
+		short 	0						// one voice
+#endif
+
+#ifdef HAS_INTRO
+		short	1						// has intro
+#else
+		short 	0						// no intro
+#endif
+
+// intl stuff
+		short	1, 9
+			}
+
+		CHUNK NAME { string "Enemy Nations" }
+
+		}
+	}
+

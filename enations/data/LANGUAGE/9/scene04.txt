@@ -1,0 +1,5 @@
+Ok, you've got a picture of what's going on around you. Now you need to start developing your scientific infrastructure.
+
+We will provide you with the most complete library ever packed into computers, however, the challenge is not to discover new technology but rather to determine how to build existing technology with the tools, resources and infrastructure you will have available to you.  In some cases you may find that you just cannot build devices that are trivial to produce in the complex economy we have here on Earth.
+
+Your mission is to build the Research Institute and then research Fire Control.

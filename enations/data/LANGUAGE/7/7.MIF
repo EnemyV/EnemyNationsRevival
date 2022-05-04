@@ -1,0 +1,685 @@
+#include "..\..\data.inc"
+
+RIFF LANG
+	{
+	LIST LEGL
+		{
+		CHUNK LIC1 { file anal1.txt }
+		CHUNK LIC2 { file anal2.txt }
+		CHUNK LIC3 { file anal3.txt }
+		CHUNK LIC4 { file anal4.txt }
+		CHUNK LIC5 { file anal5.txt }
+		}
+
+	LIST RSRH
+		{
+		CHUNK DATA { string "Ballons" }
+		CHUNK DESC { string "Wir können wahrscheinlich ein leichtes Material für einen Heißluftballon und Propangaskanister zum Erwärmen der Luft entwickeln." }
+		CHUNK RSLT { string "Es gelang uns, Ballons zu entwickeln. Allerdings sind die Luftströme auf diesem Planeten zu gefährlich. Alle Ballonfahrten scheiterten. Wir haben jedoch genug gelernt, um ein Segelflugzeug zu bauen." }
+		CHUNK DATA { string "Segelflugzeuge" }
+		CHUNK DESC { string "Wir können wahrscheinlich leichte Bauteile entwickeln, aus denen wir dann Rahmen für Segelflugzeuge zusammensetzen können. Eigentlich müßten wir die als Rumpfmaterial gedachte Ballonhülle benutzen können." }
+		CHUNK RSLT { string "Die gefährlichen Luftströme haben uns schon wieder Probleme bereitet. Alle leichten Flugkörper wurden zerstört. Mit einem Motor können wir aber ein Flugzeug bauen, das stabil genug sein müßte, den Luftströmen standzuhalten." }
+		CHUNK DATA { string "Propellerflugzeuge" }
+		CHUNK DESC { string "Wir haben einen Segelflieger entwickelt, der zum Fliegen zu schwer war. Wir könnten aber einen Motor entwickeln, der den Flugkörper in der Luft halten kann. " }
+		CHUNK RSLT { string "Die Luft ist zu dünn hier. Wir können wohl kaum einen leistungsstarken Motor entwickeln, der gleichzeitig leicht genug  ist. Wir haben aber technologische Fortschritte erzielt, die bei der Radarentwicklung nützlich sein können. " }
+		CHUNK DATA { string "Düsenflugzeuge" }
+		CHUNK DESC { string "Ein Düsenmotor müßte stark genug sein, eine stabilere Flugzeugzelle in der Luft zu halten. Eigentlich können wir einen aus den Materialien  bauen, die wir hier gefunden haben." }
+		CHUNK RSLT { string "Mit dem Material, das uns auf der Erde zur Verfügung steht, hätten wir es geschafft. Mit dem, was wir hier haben, können wir in der dünnen Luft nicht fliegen. Wir haben aber ein paar nützliche Materialien entwickelt, mit denen wir unsere Bewaffnung und Panzerung verbessern können." }
+		CHUNK DATA { string "Raketen" }
+		CHUNK DESC { string "Mit einer Rakete können wir in eine niedrige Umlaufbahn oberhalb dieser Atmosphäre aufsteigen. Alle nötigen Materialien dafür haben wir hier. "}
+		CHUNK RSLT { string "Jede von uns in die Umlaufbahn gefeuerte Rakete ist im Weltraum zerstört worden. Das Embargo dieses Planeten gilt wohl auch für uns. Wir können die Raketen jedoch als enorm wirksame Kurzstreckenwaffen verwenden." }
+
+		CHUNK DATA { string "Segelboote" }
+		CHUNK DESC { string "Obwohl Wind und Wellen ein Problem sein werden, können wir ein Segelboot entwickeln." }
+		CHUNK RSLT { string "Die Luftströme sind zu unberechenbar. Jedes Boot wurde hin- und hergeschleudert, bis es schließlich an den Felsen zerschellte. Mit einem Motor könnten wir dieses Problem umgehen. "}
+		CHUNK DATA { string "Motorboote" }
+		CHUNK DESC { string "Wir müßten eigentlich einen Schiffsmotor für unser bestes Segelboot entwickeln können."}
+		CHUNK RSLT { string "Wir haben die Meere erobert. Jetzt können wir um die ganze Welt reisen. Bauen Sie eine Werft, damit wir Schiffe konstruieren können."}
+		CHUNK DATA { string "Frachtabwicklung" }
+		CHUNK DESC { string "Wir können wahrscheinlich Kräne, Gabelstapler und alles andere bauen, was wir zum Bewegen von schwerer Fracht benötigen."}
+		CHUNK RSLT { string "Jetzt können wir Fracht für große Gütertransporte und Frachter umschlagen."}
+		CHUNK DATA { string "Feuersystem" }
+		CHUNK DESC { string "All unsere Waffen werden mit Augenmaß gesteuert und gezielt. Wir können mit Hilfe dieser Materialien bessere Kontrollsysteme konstruieren."}
+		CHUNK RSLT { string "Wir verfügen über einfache Feuersysteme für unsere Waffen. Diese Systeme können in weiter entwickelten Fahrzeugen und als Grundlage für die Entwicklung von besseren Radar- und Zielsystemen eingesetzt werden."}
+		CHUNK DATA { string "Landefahrzeug" }
+		CHUNK DESC { string "Unser Wissen über Schiffe könnte uns bei der Entwicklung eines Landefahrzeugs dienen, dessen Rampe auch im Wasser stabil bleibt."}
+		CHUNK RSLT { string "Wir haben eine einsatzfähige Frontrampe entwickelt. In unseren Werften können deshalb jetzt Landefahrzeuge entwickelt werden, die bei amphibischen Angriffen eingesetzt werden können."}
+		CHUNK DATA { string "Schiffsbau" }
+		CHUNK DESC { string "Wir müßten eigentlich so große Schiffe bauen können wie nie zuvor."}
+		CHUNK RSLT { string "Wir können nun große Schiffsrümpfe konstruieren. Mit unseren Fregatten können wir die Meere erobern. Außerdem haben wir einiges Nützliches für unsere Radarforschung gelernt. "}
+
+		CHUNK DATA { string "Große Fahrzeuge" }
+		CHUNK DESC { string "Die entdeckten Materialien und der produzierte Stahl ermöglichen uns die Konstruktion größerer Schiffe."}
+		CHUNK RSLT { string "Wir haben eine Menge gelernt. Wir können jetzt nicht nur größere Fahrzeuge bauen, sondern sie auch mit zielsicheren und wirkungsvolleren Waffen und Panzerungen ausrüsten."}
+		CHUNK DATA { string "Schwere Fahrzeuge" }
+		CHUNK DESC { string "Eigentlich müßten wir Motoren und Karosserien für schwere Fahrzeuge entwickeln können."}
+		CHUNK RSLT { string "Jetzt können wir die schwersten Fahrzeuge konstruieren, die es je gab. Wir wissen jetzt auch, wie wir größere befestigte Geschützstellungen bauen können. Außerdem verfügen wir über Informationen, die uns bei der Vergrößerung der Reichweite und der Verbesserung der Genauigkeit unserer Einheiten nützen könnten."}
+		CHUNK DATA { string "Panzerfahrzeuge" }
+		CHUNK DESC { string "Aus dem von uns hergestellten Stahl und den Legierungen aus örtlichen Mineralien gefertigten Teilen müßten wir eigentlich eine stärkere Panzerung konstruieren können."}
+		CHUNK RSLT { string "Wir haben eine überwältigend starke Panzerung entwickelt. Wenn man einige der örtlichen Mineralien mit Stahl vermischt, kann man überraschende Ergebnisse erzielen. Jetzt können wir Panzereinheiten entwickeln."}
+		CHUNK DATA { string "Artillerie" }
+		CHUNK DESC { string "Mit unseren Kenntnissen müßte es uns möglich sein, alles für eine Artillerie nötige zu konstruieren. Das ist schließlich fast wie ein Panzergeschütz. "}
+		CHUNK RSLT { string "Tja, war nicht gerade einfach, aber wir haben es geschafft. Jetzt können wir Einheiten entwickeln, die indirekt feuern können. Durch das Lösen der Probleme, auf die wir gestoßen sind, haben wir genug gelernt, um bessere Waffen zu bauen."}
+		CHUNK DATA { string "Panzer" }
+		CHUNK DESC { string "Das Entwickeln leistungsfähiger Kugellager und leichterer Panzerungen ermöglicht uns das Bauen von Panzern. Bei bewaffneten Auseinandersetzungen ist ein schwenkbarer Geschützturm eine wirksame Waffe." }
+		CHUNK RSLT { string "Wir können jetzt Fahrzeuge mit Geschütztürmen bauen. Außerdem mußten wir bessere Geschütze entwickeln."}
+
+		CHUNK DATA { string "Mittelgroße Gebäude" }
+		CHUNK DESC { string "Wenn wir mehr Zeit auf die Experimente mit den hier existierenden Arten von Beton und Stahl verwenden, müßten wir eigentlich größere Strukturen errichten können."}
+		CHUNK RSLT { string "Wir können nun mittelgroße Gebäude errichten. Und wenn wir uns noch ein bißchen anstrengen, können wir bald viel größere Gebäude konstruieren."}
+		CHUNK DATA { string "Große Gebäude" }
+		CHUNK DESC { string "Mit einigen der neuen Teile können wir Stahl produzieren, der stark genug ist, um große Anlagen zu errichten. "}
+		CHUNK RSLT { string "Jetzt können wir große Gebäude errichten. Außerdem wissen wir jetzt, wie man die Stabilität von Gebäuden erhöhen kann."}
+		CHUNK DATA { string "Fortschrittliche Militäranlagen" }
+		CHUNK DESC { string "Die geplanten umfassenden Militärstrukturen erfordern fortgeschrittene Konstruktionsverfahren. Wir sind aber wahrscheinlich in der Lage, diese zu entwickeln."}
+		CHUNK RSLT { string "Jetzt können wir jede nur denkbare Struktur errichten, was uns beim Bau von Fabriken und Festungen nützlich ist."}
+		CHUNK DATA { string "Befestigungen" }
+		CHUNK DESC { string "Wir müssen erforschen, welche Verbindung von Beton und Stahl die beste für wirksame Befestigungen ist."}
+		CHUNK RSLT { string "Wir können nun Wände von Befestigungen bauen, die selbst starkem Beschuß standhalten."}
+
+		CHUNK DATA { string "Funk" }
+		CHUNK DESC { string "Wir haben bei der Entwicklung von elektronischen Bauteilen aus örtlichen Materialien so große Fortschritte gemacht, daß wir nun Funkverbindungen einrichten können, über die unsere Einheiten mit der Einsatzzentrale Kontakt aufnehmen können."}
+		CHUNK RSLT { string "Sie können jetzt mit jeder Einheit Funkkontakt (mehrere einzelne Kartenfenster) aufnehmen. Klicken Sie einfach bei gedrückter Umschalttaste die Einheit an, die Sie in die Mitte ihres Fensters bewegen wollen (Oder klicken Sie sie auf der Einheitenliste zweimal an)."}
+		CHUNK DATA { string "Post" }
+		CHUNK DESC { string "Wir haben zusammen mit den anderen Kolonien beschlossen, in unserer Kolonie die Infrastruktur zu schaffen, die uns den Anschluß an ihr Postsystem und damit das Aufnehmen von Verbindungen mit anderen Kolonien ermöglicht."}
+		CHUNK RSLT { string "Sie können jetzt Post abschicken und von anderen Kolonien, die über ein Postnetz verfügen, erhalten. Wenn Sie "}
+		CHUNK DATA { string "E-Mail" }
+		CHUNK DESC { string "Wir haben mit den anderen Kolonien gesprochen. Wenn wir ein elektronisches Kommunikationssystem einrichten, können wir uns in ihr Netz einloggen und über E-Mail Kontakt aufnehmen."}
+		CHUNK RSLT { string "Wir haben die Infrastruktur ausgebaut. Jetzt können wir E-Mail abschicken, die sofort beim Empfänger ankommt. Gespräche sind allerdings wegen der geringen Bandbreite nicht möglich, sondern nur E-Mail."}
+		CHUNK DATA { string "Telefon" }
+		CHUNK DESC { string "Wenn wir unser elektronisches Kommunikationssystem durch Mirkowellenverbindungen verbessern, haben wir genügend Bandbreite, um mit anderen Kolonien in Echtzeit Gespräche zu führen."}
+		CHUNK RSLT { string "Das Mikrowellennetz funktioniert. Nun sind Gespräche mit anderen Kolonien, die über ein verbessertes Mikrowellennetz verfügen, möglich."}
+
+		CHUNK DATA { string "Treibstoffturbinen" }
+		CHUNK DESC { string "Wir müßten jetzt eigentlich Elektrogeneratoren konstruieren können, die mit Treibstoff anstelle von Kohle betrieben werden. Treibstoff ist umweltfreundlicher und sparsamer im Verbrauch - wenn wir es aus den Materialien vor Ort herstellen können "}
+		CHUNK RSLT { string "Wir können jetzt Kraftwerke bauen, die zur Stromerzeugung Treibstoff verwenden."}
+		CHUNK DATA { string "Atomkraft" }
+		CHUNK DESC { string "Nachdem wir Uran entdeckt haben, müßten wir ein Atomkraftwerk bauen können. Dazu müssen wir zwar einiges lernen, aber es sollte trotzdem realisierbar sein. "}
+		CHUNK RSLT { string "Wir können jetzt ein Atomkraftwerk bauen. Dadurch sind wir zur Stromerzeugung nicht mehr auf Kohle und Treibstoff angewiesen. "}
+		CHUNK DATA { string "Brückenbau" }
+		CHUNK DESC { string "Wenn wir uns nur ein bißchen anstrengen, müßten wir herausfinden können, wie man Brücken baut."}
+		CHUNK RSLT { string "Jetzt sind wir in der Lage, Brücken zu bauen. Dadurch stellen Flüsse für unsere Expansionspläne kein Hindernis mehr dar."}
+
+		CHUNK DATA { string "Neue Bautechniken" }
+		CHUNK DESC { string "Wenn wir neue Baumethoden erforschen, anstelle immer nur härter zu arbeiten, könnten wir die Produktivität steigern."}
+		CHUNK RSLT { string "Mit unserem Wissen können wir Gebäude schneller errichten. Es gibt aber immer noch einiges zu lernen."}
+		CHUNK DATA { string "Verbesserte Bautechniken" }
+		CHUNK DESC { string "Wenn wir neue Baumethoden erforschen, anstelle immer nur härter zu arbeiten, könnten wir die Produktivität steigern."}
+		CHUNK RSLT { string "Mit unserem Wissen können wir Gebäude viel schneller errichten. Wir müssen aber immer noch einiges lernen."}
+		CHUNK DATA { string "Verbesserte Bautechniken" }
+		CHUNK DESC { string "Wenn wir neue Baumethoden erforschen, anstelle immer nur härter zu arbeiten, könnten wir die Produktivität steigern."}
+		CHUNK RSLT { string "Mit unserem Wissen können wir Gebäude viel schneller errichten. Wir wissen jetzt tatsächlich alles, was es über das Bauwesen zu wissen gibt."}
+		CHUNK DATA { string "Neue Produktionsverfahren" }
+		CHUNK DESC { string "Wenn wir die Fahrzeugkonstruktion verbessern können, anstelle immer nur mehr zu arbeiten, können wir die Produktivität steigern."}
+		CHUNK RSLT { string "Mit unserem Wissen können wir Fahrzeuge schneller bauen. Allerdings gibt es noch einiges zu lernen."}
+		CHUNK DATA { string "Verbesserte Produktionsverfahren" }
+		CHUNK DESC { string "Wenn wir den Fahrzeugbau verbessern, anstelle nur mehr zu arbeiten, können wir die Produktivität steigern."}
+		CHUNK RSLT { string "Mit unserem Wissen können wir Fahrzeuge viel schneller bauen. Allerdings gibt es immer noch einiges zu lernen."}
+		CHUNK DATA { string "Verbesserte Produktionsverfahren" }
+		CHUNK DESC { string "Wenn wir den Fahrzeugbau verbessern, anstelle nur härter zu arbeiten, können wir die Produktivität steigern."}
+		CHUNK RSLT { string "Mit unserem Wissen können wir Fahrzeuge schneller bauen. Wir sind jetzt tatsächlich im Bereich Produktion weltweit die Experten."}
+		CHUNK DATA { string "Neue Bergbautechnologie" }
+		CHUNK DESC { string "Wenn wir herausfinden, wie wir Mineralien effizienter abbauen können, anstelle nur mehr zu arbeiten, können wir die Produktivität steigern."}
+		CHUNK RSLT { string "Mit unserem Wissen können wir Mineralien schneller abbauen. Allerdings gibt es immer noch eine Menge zu lernen."}
+		CHUNK DATA { string "Verbesserte Bergbautechnologie" }
+		CHUNK DESC { string "Wenn wir herausfinden, wie wir Mineralien effizienter abbauen können, anstelle nur mehr zu arbeiten, können wir die Produktivität steigern."}
+		CHUNK RSLT { string "Mit unserem Wissen können wir Mineralien schneller abbauen. Allerdings gibt es immer noch eine Menge zu lernen."}
+		CHUNK DATA { string "Verbesserte Anbaumethoden" }
+		CHUNK DESC { string "Wenn wir unsere Anbaumethoden verbessern, anstelle nur mehr zu arbeiten, können wir die Produktivität steigern."}
+		CHUNK RSLT { string "Mit unserem Wissen können wir den Anbau verbessern. Wir lassen uns kein einziges Saatkorn mehr entgehen."}
+
+		CHUNK DATA { string "Radar" }
+		CHUNK DESC { string "Mit Hilfe unserer Elektronikindustrie müßten wir eine Radareinheit bauen können."}
+		CHUNK RSLT { string "Wir haben im Bereich Radar eine Massenproduktion gestartet. Von nun an wird in allen Einheiten Radar eingebaut, wodurch ihr Sichtbereich erweitert wird."}
+		CHUNK DATA { string "Verbessertes Radar" }
+		CHUNK DESC { string "Mit den neuen Entwicklungen im Bereich Emissionstechnologie müßten wir eine neue Radarantenne entwickeln können, durch die die Radarreichweite vergrößert werden kann."}
+		CHUNK RSLT { string "Wir haben die Reichweite unserer Radareinheiten erheblich vergrößert. Von nun an werden alle Einheiten mit diesen Radarantennen ausgestattet."}
+		CHUNK DATA { string "Horizont-Radar" }
+		CHUNK DESC { string "Wir können wahrscheinlich ein besseres Radarsystem entwickeln, das wir mit den hier vorhandenen Materialien bauen können."}
+		CHUNK RSLT { string "Wir haben die beschränkten Ressourcen und Produktionskapazität unserer Kolonie voll ausgeschöpft. Mit diesem neuen Gerät können wir von jetzt an alle unsere Einheiten ausstatten."}
+		CHUNK DATA { string "Größere Läufe" }
+		CHUNK DESC { string "Mit den neuen Stahlteilen können die Läufe unserer Geschütze vergrößern und damit die Reichweite erhöhen."}
+		CHUNK RSLT { string "Wir haben die Größe aller Geschützläufe für alle neuen Einheiten erhöht."}
+		CHUNK DATA { string "Besseres Schießpulver" }
+		CHUNK DESC { string "Mit den neu entdeckten Mineralien können wir die Explosivität unserer Sprengkörper verstärken und so die Reichweite erhöhen."}
+		CHUNK RSLT { string "Die Reichweite unserer Granaten wurde durch das neue Schießpulver erheblich verbessert. Alle neuen Einheiten werden mit den verbesserten Granaten ausgestattet."}
+		CHUNK DATA { string "Turbo-Zünder" }
+		CHUNK DESC { string "Wir gehen davon aus, daß mehr Schießpulver auf einmal gezündet werden kann. Dadurch erhalten wir eine schnellere Granate mit größerer Reichweite."}
+		CHUNK RSLT { string "Die neuen Turbo-Zünder erhöhen die Reichweite unserer Granaten. Sie werden in allen Granaten der neuen Fahrzeuge verwendet."}
+		CHUNK DATA { string "Sprenggranaten" }
+		CHUNK DESC { string "Mit den neu entdeckten Mineralien können wir die Explosivität der Sprengköpfe in unseren Granaten erhöhen."}
+		CHUNK RSLT { string "Das neue Schießpulver hat die Explosivität der Granaten erhöht. Alle neuen Einheiten werden mit diesen Granaten ausgestattet."}
+		CHUNK DATA { string "Angereicherte Granaten" }
+		CHUNK DESC { string "Wenn wir Anlagen zur Uranverarbeitung entwickeln, können wir mit Urangeschossen die Feuerkraft unserer Granaten erhöhen."}
+		CHUNK RSLT { string "Die mit Uran angereicherten Granaten erhöhen die Feuerkraft unserer Einheiten um einiges. Alle neuen Einheiten werden mit den Granaten bewaffnet."}
+		CHUNK DATA { string "Luft-Treibstoffgemisch" }
+		CHUNK DESC { string "Wir können wahrscheinlich ein Luft-Treibstoffgemisch entwickeln, das unseren Kampfeinheiten im Gefecht mehr durchschlagende Wirkung verleiht."}
+		CHUNK RSLT { string "Die Luft-Treibstoffgranaten geben unseren Einheiten eine unglaubliche Angriffsstärke. Alle neuen Einheiten werden mit diesen Granaten ausgestattet."}
+		CHUNK DATA { string "Geschichtete Stahlpanzerung" }
+		CHUNK DESC { string "Wenn wir verschiedene Stahlverbindungen produzieren und kombinieren, können wir die Stärke unserer Panzerung verbessern."}
+		CHUNK RSLT { string "Wir haben die Verteidigungsstärke unserer Einheiten durch verbesserte Panzerungen erhöht. Diese neue Panzerung wird von allen neuen Einheiten verwendet."}
+		CHUNK DATA { string "Titanpanzerung" }
+		CHUNK DESC { string "Mit den neu entdeckten Mineralien können wir Titanpanzerungen herstellen."}
+		CHUNK RSLT { string "Es ist uns gelungen, Titanpanzerungen herzustellen, durch die die Verteidigungskapazität unserer Einheiten um einiges erhöht wird. Wir statten alle neuen Einheiten mit dieser Panzerung aus."}
+		CHUNK DATA { string "Durallium-Panzerung" }
+		CHUNK DESC { string "Wir können wahrscheinlich eine neue Super-Panzerung entwickeln, die unsere Einheiten praktisch unverwundbar macht."}
+		CHUNK RSLT { string "Die neue Durallium-Panzerung erhöht die Verteidigungskapazität unserer Einheiten um einiges. Wir verwenden diese Panzerung für alle neuen Einheiten."}
+		CHUNK DATA { string "Xilitium" }
+		CHUNK DESC { string "Wir haben ein neues, uns völlig unbekanntes Mineral entdeckt. Unserer Ansicht nach verfügt es über einige nützliche Eigenschaften."}
+		CHUNK RSLT { string "Mit dem Xilitium können wir sehr starke Kampfeinheiten entwickeln, die allen anderen bisherigen Kampfeinheiten weit voraus sind."}
+		CHUNK DATA { string "Präzisionszielsucher" }
+		CHUNK DESC { string "Unsere Zielsucher sind ziemlich ungenau, daher schießen wir oft daneben. Wenn wir ein bißchen Arbeit investieren, können wir bessere Visiere entwickeln."}
+		CHUNK RSLT { string "Durch die neuen Zielsucher konnte die Zielgenauigkeit ein bißchen verbessert werden. Sie sind Standardausrüstung für alle neuen Einheiten."}
+		CHUNK DATA { string "Laserzielsucher" }
+		CHUNK DESC { string "Unsere neuen Laserentwicklungen müßten auf unsere Zielsucher anwendbar sein. Dadurch können wir unsere Trefferquote erhöhen."}
+		CHUNK RSLT { string "Wir haben ein Laservisier entwickelt, mit dem die Treffergenauigkeit unserer Einheiten bedeutend erhöht werden kann. Alle neuen Einheiten werden damit ausgerüstet."}
+		CHUNK DATA { string "Radarzielsucher" }
+		CHUNK DESC { string "Wir müßten eigentlich das Radar zur Ausrichtung unserer Geschütze benützen können. Dadurch kann die Zielgenauigkeit um einiges erhöht werden."}
+		CHUNK RSLT { string "Wir haben ein Radar-Zielverfolgungsgerät entwickelt, durch das die Zielgenauigkeit unserer Geschütze erheblich verbessert wird. Es wird jetzt in alle neuen Einheiten eingebaut."}
+		}
+
+	LIST MTRL
+		{
+		CHUNK DATA
+			{ string "Holz" }
+		CHUNK DATA
+			{ string "Stahl" }
+		CHUNK DATA
+			{ string "Xilitium" }
+		CHUNK DATA
+			{ string "Moly" }
+		CHUNK DATA
+			{ string "Güter" }
+		CHUNK DATA
+			{ string "Nahrung" }
+		CHUNK DATA
+			{ string "Öl" }
+		CHUNK DATA
+			{ string "Treibstoff" }
+		CHUNK DATA
+			{ string "Kohle" }
+		CHUNK DATA
+			{ string "Eisen" }
+		}
+
+	LIST RACE
+		{
+		CHUNK DESC
+			{ string	"Mensch"
+			  string	"Menschen verfügen weder über besondere Stärken noch über besondere Schwächen. Sie sind eine rundum fähige Lebensform."}
+		CHUNK DESC
+			{ string	"Kintaro"
+			  string	"Die Kintaro zeichnen sich durch eine unglaublich hohe Geburtenrate aus. Ihre Landwirtschaft ist sehr produktiv. Auch die Wissenschaftler der Kintaro sind überdurchschnittlich begabt." }
+		CHUNK DESC
+			{ string	"Trisekan"
+			  string	"Die Trisekan sind eine sehr produktive Lebensform, die in den Bereichen Konstruktion, Produktion und anderen Wirtschaftssektoren herausragendes leisten." }
+		CHUNK DESC
+			{ string	"Crimtona"
+			  string	"Die Crimtona sind die aggressivsten Kämpfer im ganzen Universum. Allerdings haben sie sich voll auf Angriff spezialisiert und dabei alle anderen Fähigkeiten vernachlässigt." }
+		CHUNK DESC
+			{ string	"Blaukupa"
+			  string	"Da die Blaukupa auf einem Planeten entstanden sind, auf dem es unzählige natürliche Gegner gibt, haben sie ihre Verteidigungsfähigkeiten vervollkommnet. Darüber hinaus sind sie im Bereich Landwirtschaft überragend." }
+		CHUNK DESC
+			{ string	"Diolian"
+			  string	"Die Diolian haben sich voll und ganz der Forschung verschrieben. Sie sind aber auch gute Industriearbeiter." }
+		CHUNK DESC
+			{ string	"Roveldan"
+			  string	"Diese Lebensform ist in Angriff und Verteidigung äußerst begabt. Im Herstellen von Waffen sind sie außerdem schneller als alle anderen." }
+		CHUNK DESC
+			{ string	"Mendari"
+			  string	"Über die Mendari ist nichts bekannt." }
+		CHUNK DESC
+			{ string	"Kartugan"
+			  string	"Sie sind im Bereich Forschung und Industrie überragend. Allerdings haben sie kaum Fähigkeiten, was natürliche Ressourcen angeht." }
+		CHUNK DESC
+			{ string	"Botanes"
+			  string	"Diese introspektive Lebensform verfügt über die besten Kämpfer des ganzen Universums. Ihre Geburtenrate ist unglaublich niedrig." }
+		CHUNK DESC
+			{ string	"Ekoda"
+			  string	"Die Ekoda sind ein sehr schwaches Volk und verfügen über keine bemerkenswerten Fähigkeiten." }
+		CHUNK DESC
+			{ string	"Byarian"
+			  string	"Dieses Volk ist in allen Bereichen der Zivilwirtschaft sehr gut. Leider sind die Byarian sehr schlechte Kämpfer." }
+		}
+
+	LIST TERN
+		{
+CHUNK LINE { string "Stadt" }
+CHUNK DESC { string "Gebäude oder andere Struktur" }
+CHUNK LINE { string "Wüste" }
+CHUNK DESC { string "heiß und trocken, überwiegend sandig" }
+CHUNK LINE { string "Wald" }
+CHUNK DESC { string "bewaldete Hügel" }
+CHUNK LINE { string "See" }
+CHUNK DESC { string "schiffbares Binnengewässer" }
+CHUNK LINE { string "Hügel" }
+CHUNK DESC { string "steil und zerklüftet" }
+CHUNK LINE { string "Berg" }
+CHUNK DESC { string "sehr steil und fast unbezwingbar" }
+CHUNK LINE { string "Meer" }
+CHUNK DESC { string "großes schiffbares Gewässer" }
+CHUNK LINE { string "Ebene" }
+CHUNK DESC { string "flach und fruchtbar" }
+CHUNK LINE { string "Fluß" }
+CHUNK DESC { string "schnelles, nur schwer passierbares Gewässer" }
+CHUNK LINE { string "Straße" }
+CHUNK DESC { string "schnellste Reisegeschwindigkeit" }
+CHUNK LINE { string "Rauh" }
+CHUNK DESC { string "ziemlich steil und rauh" }
+CHUNK LINE { string "Sumpf" }
+CHUNK DESC { string "seichte Teiche und kleine fruchtbare Inseln" }
+CHUNK LINE { string "Küste" }
+CHUNK DESC { string "teils Wasser, teils Land" }
+CHUNK LINE { string "Feld" }
+CHUNK DESC { string "Weizenfeld für Farm" }
+CHUNK LINE { string "Ressource" }
+CHUNK DESC { string "Ressourcenübersicht" }
+		}
+
+	LIST TYPE
+		{
+		CHUNK DATA
+			{ string "Wohn- und Bürogebäude" }
+		CHUNK DATA
+			{ string "Militär" }
+		CHUNK DATA
+			{ string "Aufgerüstetes Militär" }
+		CHUNK DATA
+			{ string "Natürliche Ressourcen" }
+		CHUNK DATA
+			{ string "Produktion" }
+		CHUNK DATA
+			{ string "Dienstleistungen" }
+		}
+
+	LIST BLDG
+		{
+CHUNK LINE { string "Zerstörte Stadt" }
+CHUNK DESC { string "Die Ruinen eines zerstörten Gebäudes" }
+CHUNK LINE { string "Raketenschiff" }
+CHUNK DESC { string "Das Kolonieschiff, in dem Sie gelandet sind. Da es ein Raumfahrzeug ist, wird es als stark gepanzertes Objekt eingestuft." }
+CHUNK LINE { string "Wohnung" }
+CHUNK DESC { string "Wohnraum für Ihre Bevölkerung" }
+CHUNK LINE { string "Wohnung" }
+CHUNK DESC { string "Wohnraum für Ihre Bevölkerung" }
+CHUNK LINE { string "Wohnung" }
+CHUNK DESC { string "Wohnraum für Ihre Bevölkerung" }
+CHUNK LINE { string "Wohnung" }
+CHUNK DESC { string "Wohnraum für Ihre Bevölkerung" }
+CHUNK LINE { string "Wohnung" }
+CHUNK DESC { string "Wohnraum für Ihre Bevölkerung" }
+CHUNK LINE { string "Wohnung" }
+CHUNK DESC { string "Wohnraum für Ihre Bevölkerung" }
+CHUNK LINE { string "Wohnung" }
+CHUNK DESC { string "Wohnraum für Ihre Bevölkerung" }
+CHUNK LINE { string "Wohnung" }
+CHUNK DESC { string "Wohnraum für Ihre Bevölkerung" }
+CHUNK LINE { string "Bürogebäude" }
+CHUNK DESC { string "Büros für die zivilen Erwerbstätigen" }
+CHUNK LINE { string "Bürogebäude" }
+CHUNK DESC { string "Büros für die zivilen Erwerbstätigen" }
+CHUNK LINE { string "Bürogebäude" }
+CHUNK DESC { string "Büros für die zivilen Erwerbstätigen" }
+CHUNK LINE { string "Bürogebäude" }
+CHUNK DESC { string "Büros für die zivilen Erwerbstätigen" }
+CHUNK LINE { string "Bürogebäude" }
+CHUNK DESC { string "Büros für die zivilen Erwerbstätigen" }
+CHUNK LINE { string "Bürogebäude" }
+CHUNK DESC { string "Büros für die zivilen Erwerbstätigen" }
+CHUNK LINE { string "Lager" }
+CHUNK DESC { string "Hier werden Zivillisten militärisch ausgebildet. Aus diesem Gebäude gehen alle Arten von Soldaten aber keine Fahrzeuge hervor. Von diesem leicht gepanzerten Gebäude aus kann auf gegnerische Einheiten gefeuert werden." }
+CHUNK LINE { string "Kaserne" }
+CHUNK DESC { string "Hier werden Zivillisten militärisch ausgebildet. Aus diesem Gebäude gehen alle Arten von Soldaten aber keine Fahrzeuge hervor. Von diesem leicht gepanzerten Gebäude aus kann auf gegnerische Einheiten gefeuert werden." }
+CHUNK LINE { string "Einsatzzentrale" }
+CHUNK DESC { string "Hier befindet sich das Oberkommando all Ihrer Einheiten. Von diesem Gebäude aus wird die Aufrüstung von Einheiten überwacht und Forschung und Entwicklung verwaltet. Zivilisten errichten ihre Wohnungen und Büros in der Nähe dieses Gebäudes. " }
+CHUNK LINE { string "Botschaft" }
+CHUNK DESC { string "Sie errichten dieses Gebäude für einen der anderen Spieler (keine Computergegner), damit Sie mit ihm kommunizieren können." }
+CHUNK LINE { string "Farm" }
+CHUNK DESC { string "Hier werden Nahrungsmittel produziert und die Tiere gezüchtet, die zum Überleben benötigt werden." }
+CHUNK LINE { string "Unterstand" }
+CHUNK DESC { string "Leichte befestigte Geschützstellung, die auf kurze Entfernungen starke Feuerkraft haben." }
+CHUNK LINE { string "Bunker" }
+CHUNK DESC { string "Befestigtes Geschütz mit mittelschwerer direkter und indirekter Feuerkraft. Dieses Gebäude ist nur schwer zerstörbar." }
+CHUNK LINE { string "Festung" }
+CHUNK DESC { string "Schweres befestigtes Geschütz von starker direkter und indirekter Feuerkraft. Dieses Gebäude ist extrem schwer zu zerstören." }
+CHUNK LINE { string "Fabrik des Grauens" }
+CHUNK DESC { string "Große Produktionsanlage, in der die stärksten militärischen Fahrzeuge hergestellt werden. Es handelt sich hierbei um die produktivste Anlage. Dieses Gebäude ist gepanzert." }
+CHUNK LINE { string "Waffenfabrik" }
+CHUNK DESC { string "Produktionsanlage für die einfachsten Militärfahrzeuge. Diese Fabrik ist nicht sehr produktiv." }
+CHUNK LINE { string "Angriffsfabrik" }
+CHUNK DESC { string "Mittelgroße Anlage, in der die meisten unserer Militärfahrzeuge hergestellt werden. Die Produktivität ist durchschnittlich hoch." }
+CHUNK LINE { string "Sägewerk" }
+CHUNK DESC { string "Hier werden Bäume zu Bauholz verarbeitet. Zum Sägewerk gehört auch ein Lagerplatz für die gefällten Bäume. Aus diesem Grund sollte ein Sägewerk immer in der Nähe von Wäldern errichtet werden. "}
+CHUNK LINE { string "Ölbohranlage" }
+CHUNK DESC { string "Hier wird Öl gefördert, das dann zur Raffinerie transportiert wird." }
+CHUNK LINE { string "Raffinerie" }
+CHUNK DESC { string "In dieser Anlage wird das Öl zu Treibstoff für Fahrzeuge und Asphalt für den Straßenbau verarbeitet. Auch Treibstoff für die Kraftwerke wird hier hergestellt. Das Öl muß von der Bohranlage zur Raffinerie transportiert werden."}
+CHUNK LINE { string "Kohlebergwerk" }
+CHUNK DESC { string "Die hier geförderte Kohle wird verhüttet oder zur Befeuerung von Kraftwerken verwendet." }
+CHUNK LINE { string "Eisenmine" }
+CHUNK DESC { string "Das hier geförderte Eisen wird verhüttet." }
+CHUNK LINE { string "Xilitium-Mine" }
+CHUNK DESC { string "Das hier geförderte Xilitium wird zu Fabriken transportiert." }
+CHUNK LINE { string "Kohlekraftwerk" }
+CHUNK DESC { string "Durch Verbrennen von Kohle wird Strom erzeugt. Die Kohle kommt von den Kohlebergwerken." }
+CHUNK LINE { string "Ölkraftwerk" }
+CHUNK DESC { string "Durch Verbrennen von Treibstoff wird Strom erzeugt. Der Treibstoff wird von den Raffinerien zum Kraftwerk gebracht." }
+CHUNK LINE { string "Atomkraftwerk" }
+CHUNK DESC { string "Durch Kernspaltung wird Energie erzeugt. Zum Betrieb wird kein bestimmtes Material benötigt." }
+CHUNK LINE { string "Forschungseinrichtung" }
+CHUNK DESC { string "Hier versucht man herauszufinden, wie die auf dem Planeten verfügbaren Ressourcen für Technologie genutzt werden können." }
+CHUNK LINE { string "Reparaturanlage" }
+CHUNK DESC { string "Hier werden alle Landfahrzeuge repariert." }
+CHUNK LINE { string "Hafen" }
+CHUNK DESC { string "Hier legen Schiffe an, um Fracht aufzunehmen oder zu entladen. Dies ist die einzige Anlage, wo dies möglich ist. Von diesem Gebäude aus können auch Gegner angegriffen werden." }
+CHUNK LINE { string "Werft" }
+CHUNK DESC { string "Eine Fabrik, in der einfache Schiffe gebaut und repariert werden. Die Produktivität dieser Anlage ist gering." }
+CHUNK LINE { string "Kriegsschiff-Fabrik" }
+CHUNK DESC { string "Die Anlage, in der unsere wichtigsten Schiffe gebaut und repariert werden. Sie ist sehr produktiv." }
+CHUNK LINE { string "Hütte" }
+CHUNK DESC { string "Hier werden Kohle und Eisen zu Stahl verarbeitet. Eisen und Kohle werden von den Minen zur Hütte transportiert. Der Stahl wird dann zur Weiterverarbeitung zu den Fabriken gebracht." }
+CHUNK LINE { string "Lagerhaus" }
+CHUNK DESC { string "Hier werden Güter gelagert." }
+CHUNK LINE { string "Fahrzeugfabrik" }
+CHUNK DESC { string "Fabrik, in der unsere Militärfahrzeuge hergestellt werden. Die Produktivität dieser Anlage ist gering." }
+		}
+
+	LIST VEHL
+		{
+CHUNK LINE { string "Kran" }
+CHUNK DESC { string "Er wird zum Bauen von Gebäuden und Straßen verwendet. Eignet sich nicht zum Einsatz im Kampf, gilt aber wegen seiner Konstruktion als gepanzert." }
+CHUNK LINE { string "Lastwagen" }
+CHUNK DESC { string "Mit ihm werden Güter zwischen den Gebäuden hin und her transportiert. Eignet sich nicht zum Einsatz im Kampf und ist nicht gepanzert." }
+CHUNK LINE { string "Sattelschlepper" }
+CHUNK DESC { string "Mit ihm werden Güter zwischen den Gebäuden hin und her transportiert. Eignet sich nicht zum Einsatz im Kampf und ist nicht gepanzert." }
+CHUNK LINE { string "Outrider" }
+CHUNK DESC { string "Ein leichtes Aufklärungsfahrzeug. Es ist sehr schnell und wendig, allerdings auch ein leichtes Ziel für den Gegner, da es sich nicht für den Einsatz im Kampf eignet und nicht gepanzert ist." }
+CHUNK LINE { string "Spotter" }
+CHUNK DESC { string "Ein mittelschweres Aufklärungsfahrzeug. Es kann bei großen Entfernungen eingesetzt werden, ist schnell und wenig. Allerdings eignet es sich nicht zum Einsatz im Kampf und ist nicht gepanzert." }
+CHUNK LINE { string "Rover" }
+CHUNK DESC { string "Ein schweres Aufklärungsfahrzeug. Es kann auf große Entfernungen eingesetzt werden und ist schnell. Es eignet sich zum Einsatz im Kampf und ist gepanzert." }
+CHUNK LINE { string "Infanterie-Transporter" }
+CHUNK DESC { string "Ein Truppentransporter mit leichten Geschützen und starker Panzerung. Mit ihm können 5 Infanterie-Einheiten befördert werden." }
+CHUNK LINE { string "Zerstörer" }
+CHUNK DESC { string "Ein leichter Panzer, der schnell und ziemlich wendig ist. Er verfügt über leichtes Geschütz und leichte Panzerung." }
+CHUNK LINE { string "Boss8800" }
+CHUNK DESC { string "Ein mittelgroßer Panzer mit mäßiger Geschwindigkeit und Wendigkeit. Er hat starke Geschütze und Panzerung." }
+CHUNK LINE { string "Atomisierer" }
+CHUNK DESC { string "Ein schwerer Panzer. Es ist langsam und schwer zu manövrieren, ist dafür aber mit einem besonders schweren Geschütz und einer extrem starken Panzerung ausgestattet." }
+CHUNK LINE { string "Minenwerfer" }
+CHUNK DESC { string "Leichte Artillerie (kann indirekt feuern) Der Minenwerfer ist schnell  und relativ wendig und ist ein leichtes Ziel für den Gegner. Er verfügt über sehr schweres Geschütz und keine Panzerung." }
+CHUNK LINE { string "Kanone" }
+CHUNK DESC { string "Mittelschwere Artillerie (kann indirekt feuern). Bei nur mäßiger Geschwindigkeit ist sie ein leichtes Ziel für den Gegner. Die Kanone verfügt über sehr schweres Geschütz und keine Panzerung." }
+CHUNK LINE { string "Raketenwerfer" }
+CHUNK DESC { string "Schwere Artillerie (kann indirekt feuern). Der Raketenwerfer ist sehr langsam und nicht gepanzert. Er feuert Raketen und ist die stärkste Angriffswaffe jeder Bodeneinheit." }
+CHUNK LINE { string "Frachtschiff" }
+CHUNK DESC { string "Transportiert Güter und Fahrzeuge zwischen den Häfen. Kann nicht im Kampf eingesetzt werden, gilt aber als leicht gepanzert." }
+CHUNK LINE { string "Kanonenboot" }
+CHUNK DESC { string "Ein leichtes Kriegssschiff. Es ist schnell und ziemlich wendig. Es verfügt über starkes Geschütz und Panzerung." }
+CHUNK LINE { string "Zerstörer" }
+CHUNK DESC { string "Ein mittelgroßes Kriegsschiff, das schnell und ziemlich wendig ist. Es verfügt über starkes Geschütz und Panzerung." }
+CHUNK LINE { string "Fregatte" }
+CHUNK DESC { string "Ein schweres Kriegsschiff, das indirekt feuern kann. Es ist langsam, verfügt aber über die größte Angriffskraft und stärkste Panzerung überhaupt." }
+CHUNK LINE { string "Landefahrzeug" }
+CHUNK DESC { string "Ein Truppen- und Fahrzeugtransporter, der über leichtes Geschütz und gute Panzerung verfügt. Er kann 5 Infanterie-Einheiten und 1 Fahrzeug befördern." }
+CHUNK LINE { string "Infanterie" }
+CHUNK DESC { string "Ein Zug Infanteriesoldaten, die mit leichten Geschützen bewaffnet und nicht gepanzert sind." }
+CHUNK LINE { string "Spezialeinheiten" }
+CHUNK DESC { string "Eine Spezialeinheit, die mit mittelschweren Geschützen bewaffnet ist und keine Panzerung hat." }
+CHUNK LINE { string "Eliteeinheit" }
+CHUNK DESC { string "Eine Spezialeinheit, die mit mittelschweren Geschützen bewaffnet ist und keine Panzerung hat." }
+		}
+
+	LIST SCEN
+		{
+		CHUNK TXTA { file scene01.txt }
+		CHUNK TXTB { file scene02.txt }
+		CHUNK TXTC { file scene03.txt }
+		CHUNK TXTD { file scene04.txt }
+		CHUNK TXTE { file scene05.txt }
+		CHUNK TXTF { file scene06.txt }
+		CHUNK TXTG { file scene07.txt }
+		CHUNK TXTH { file scene08.txt }
+		CHUNK TXTI { file scene09.txt }
+		CHUNK TXTJ { file scene10.txt }
+		CHUNK TXTK { file scene11.txt }
+		CHUNK TXTL { file scene12.txt }
+		CHUNK TXTM { file scene13.txt }
+		}
+
+	// 11K 8-bit mono
+	LIST SFX1
+		{
+#ifdef TWO_VOICES
+		CHUNK NUMS { int 86 }
+#else
+		CHUNK NUMS { int 57 }
+#endif
+
+		// group, {preload/cache/buffer}, comp, backupID (-1 => play when read), type, file
+		//      type: mono_11_8, mono_22_16, stereo_22_16
+
+		// voices
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\sys01.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\sys02.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\sys03.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\sys04.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\sys05.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\sys06.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\sys07.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\sys08.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\sys09.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\sys10.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\sys11.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\sys12.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\sys13.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\sys14.cmp }
+
+		CHUNK DATA { short 3, 0, 8, 0, 0 file 11\rct01.cmp }
+
+		CHUNK DATA { short 3, 0, 8, 0, 0 file 11\com01.cmp }
+		CHUNK DATA { short 3, 0, 8, 0, 0 file 11\com02.cmp }
+		CHUNK DATA { short 3, 0, 8, 0, 0 file 11\com03.cmp }
+		CHUNK DATA { short 3, 0, 8, 0, 0 file 11\com04.cmp }
+		CHUNK DATA { short 3, 0, 8, 0, 0 file 11\com05.cmp }
+		CHUNK DATA { short 3, 0, 8, 0, 0 file 11\com06.cmp }
+		CHUNK DATA { short 3, 0, 8, 0, 0 file 11\com07.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\com08.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\com09.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\com10.cmp }
+
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\bld01.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\bld02.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\bld03.cmp }
+
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\sci01.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\sci02.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\rec01.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\rec02.cmp }
+
+		CHUNK DATA { short 3, 0, 8, 0, 0 file 11\tem01.cmp }
+		CHUNK DATA { short 3, 0, 8, 0, 0 file 11\tem02.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\tem03.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\tem04.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\tem05.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\tem06.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\tem07.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\tem08.cmp }
+		CHUNK DATA { short 3, 0, 8, 0, 0 file 11\tem09.cmp }
+
+		CHUNK DATA { short 3, 0, 8, 0, 0 file 11\fac01.cmp }
+		CHUNK DATA { short 3, 0, 8, 0, 0 file 11\fac02.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\fac03.cmp }
+
+		// cut scenes
+		CHUNK DATA { short 5, 0, 8, -1, 0 file 11\cut01.cmp }
+		CHUNK DATA { short 5, 0, 8, -1, 0 file 11\cut02.cmp }
+		CHUNK DATA { short 5, 0, 8, -1, 0 file 11\cut03.cmp }
+		CHUNK DATA { short 5, 0, 8, -1, 0 file 11\cut04.cmp }
+		CHUNK DATA { short 5, 0, 8, -1, 0 file 11\cut05.cmp }
+		CHUNK DATA { short 5, 0, 8, -1, 0 file 11\cut06.cmp }
+		CHUNK DATA { short 5, 0, 8, -1, 0 file 11\cut07.cmp }
+		CHUNK DATA { short 5, 0, 8, -1, 0 file 11\cut08.cmp }
+		CHUNK DATA { short 5, 0, 8, -1, 0 file 11\cut09.cmp }
+		CHUNK DATA { short 5, 0, 8, -1, 0 file 11\cut10.cmp }
+		CHUNK DATA { short 5, 0, 8, -1, 0 file 11\cut11.cmp }
+		CHUNK DATA { short 5, 0, 8, -1, 0 file 11\cut12.cmp }
+		CHUNK DATA { short 5, 0, 8, -1, 0 file 11\cut13.cmp }
+
+#ifdef TWO_VOICES
+		// second voice
+		CHUNK DATA { short 3, 0, 8, 0, 0 file 11\com11.cmp }
+		CHUNK DATA { short 3, 0, 8, 0, 0 file 11\com12.cmp }
+		CHUNK DATA { short 3, 0, 8, 0, 0 file 11\com13.cmp }
+		CHUNK DATA { short 3, 0, 8, 0, 0 file 11\com14.cmp }
+		CHUNK DATA { short 3, 0, 8, 0, 0 file 11\com15.cmp }
+		CHUNK DATA { short 3, 0, 8, 0, 0 file 11\com16.cmp }
+		CHUNK DATA { short 3, 0, 8, 0, 0 file 11\com17.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\com18.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\com19.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\com20.cmp }
+
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\bld04.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\bld05.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\bld06.cmp }
+
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\sci03.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\sci04.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\rec03.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\rec04.cmp }
+
+		CHUNK DATA { short 3, 0, 8, 0, 0 file 11\tem10.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\tem11.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\tem12.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\tem13.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\tem14.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\tem15.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\tem16.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\tem17.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\tem18.cmp }
+
+		CHUNK DATA { short 3, 0, 8, 0, 0 file 11\fac04.cmp }
+		CHUNK DATA { short 3, 0, 8, 0, 0 file 11\fac05.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\fac06.cmp }
+#endif
+		}
+
+#ifdef INC_WAV
+	// 22K 16-bit mono
+	LIST SFX2
+		{
+#ifdef TWO_VOICES
+		CHUNK NUMS { int 86 }
+#else
+		CHUNK NUMS { int 57 }
+#endif
+
+		// group, {preload/cache/buffer}, backupID (-1 => play when read), type, file
+		//      type: mono_11_8, mono_22_16, stereo_22_16
+
+		// voices
+		CHUNK DATA { short 3, 0, -1, -1, 0 file 22\sys01.raw }
+		CHUNK DATA { short 3, 0, -1, -1, 0 file 22\sys02.raw }
+		CHUNK DATA { short 3, 0, -1, -1, 0 file 22\sys03.raw }
+		CHUNK DATA { short 3, 0, -1, -1, 0 file 22\sys04.raw }
+		CHUNK DATA { short 3, 0, -1, -1, 0 file 22\sys05.raw }
+		CHUNK DATA { short 3, 0, -1, -1, 0 file 22\sys06.raw }
+		CHUNK DATA { short 3, 0, -1, -1, 0 file 22\sys07.raw }
+		CHUNK DATA { short 3, 0, -1, -1, 0 file 22\sys08.raw }
+		CHUNK DATA { short 3, 0, -1, -1, 0 file 22\sys09.raw }
+		CHUNK DATA { short 3, 0, -1, -1, 0 file 22\sys10.raw }
+		CHUNK DATA { short 3, 0, -1, -1, 0 file 22\sys11.raw }
+		CHUNK DATA { short 3, 0, -1, -1, 0 file 22\sys12.raw }
+		CHUNK DATA { short 3, 0, -1, -1, 0 file 22\sys13.raw }
+		CHUNK DATA { short 3, 0, -1, -1, 0 file 22\sys14.raw }
+
+		CHUNK DATA { short 3, 0, -1, 0, 0 file 22\rct01.raw }
+
+		CHUNK DATA { short 3, 0, -1, 0, 0 file 22\com01.raw }
+		CHUNK DATA { short 3, 0, -1, 0, 0 file 22\com02.raw }
+		CHUNK DATA { short 3, 0, -1, 0, 0 file 22\com03.raw }
+		CHUNK DATA { short 3, 0, -1, 0, 0 file 22\com04.raw }
+		CHUNK DATA { short 3, 0, -1, 0, 0 file 22\com05.raw }
+		CHUNK DATA { short 3, 0, -1, 0, 0 file 22\com06.raw }
+		CHUNK DATA { short 3, 0, -1, 0, 0 file 22\com07.raw }
+		CHUNK DATA { short 3, 0, -1, -1, 0 file 22\com08.raw }
+		CHUNK DATA { short 3, 0, -1, -1, 0 file 22\com09.raw }
+		CHUNK DATA { short 3, 0, -1, -1, 0 file 22\com10.raw }
+
+		CHUNK DATA { short 3, 0, -1, -1, 0 file 22\bld01.raw }
+		CHUNK DATA { short 3, 0, -1, -1, 0 file 22\bld02.raw }
+		CHUNK DATA { short 3, 0, -1, -1, 0 file 22\bld03.raw }
+
+		CHUNK DATA { short 3, 0, -1, -1, 0 file 22\sci01.raw }
+		CHUNK DATA { short 3, 0, -1, -1, 0 file 22\sci02.raw }
+		CHUNK DATA { short 3, 0, -1, -1, 0 file 22\rec01.raw }
+		CHUNK DATA { short 3, 0, -1, -1, 0 file 22\rec02.raw }
+
+		CHUNK DATA { short 3, 0, -1, 0, 0 file 22\tem01.raw }
+		CHUNK DATA { short 3, 0, -1, 0, 0 file 22\tem02.raw }
+		CHUNK DATA { short 3, 0, -1, -1, 0 file 22\tem03.raw }
+		CHUNK DATA { short 3, 0, -1, -1, 0 file 22\tem04.raw }
+		CHUNK DATA { short 3, 0, -1, -1, 0 file 22\tem05.raw }
+		CHUNK DATA { short 3, 0, -1, -1, 0 file 22\tem06.raw }
+		CHUNK DATA { short 3, 0, -1, -1, 0 file 22\tem07.raw }
+		CHUNK DATA { short 3, 0, -1, -1, 0 file 22\tem08.raw }
+		CHUNK DATA { short 3, 0, -1, 0, 0 file 22\tem09.raw }
+
+		CHUNK DATA { short 3, 0, -1, 0, 0 file 22\fac01.raw }
+		CHUNK DATA { short 3, 0, -1, 0, 0 file 22\fac02.raw }
+		CHUNK DATA { short 3, 0, -1, -1, 0 file 22\fac03.raw }
+
+		// cut scenes
+		CHUNK DATA { short 5, 0, -1, -1, 0 file 22\cut01.raw }
+		CHUNK DATA { short 5, 0, -1, -1, 0 file 22\cut02.raw }
+		CHUNK DATA { short 5, 0, -1, -1, 0 file 22\cut03.raw }
+		CHUNK DATA { short 5, 0, -1, -1, 0 file 22\cut04.raw }
+		CHUNK DATA { short 5, 0, -1, -1, 0 file 22\cut05.raw }
+		CHUNK DATA { short 5, 0, -1, -1, 0 file 22\cut06.raw }
+		CHUNK DATA { short 5, 0, -1, -1, 0 file 22\cut07.raw }
+		CHUNK DATA { short 5, 0, -1, -1, 0 file 22\cut08.raw }
+		CHUNK DATA { short 5, 0, -1, -1, 0 file 22\cut09.raw }
+		CHUNK DATA { short 5, 0, -1, -1, 0 file 22\cut10.raw }
+		CHUNK DATA { short 5, 0, -1, -1, 0 file 22\cut11.raw }
+		CHUNK DATA { short 5, 0, -1, -1, 0 file 22\cut12.raw }
+		CHUNK DATA { short 5, 0, -1, -1, 0 file 22\cut13.raw }
+
+#ifdef TWO_VOICES
+		// second voice
+		CHUNK DATA { short 3, 0, -1, 0, 0 file 22\com11.raw }
+		CHUNK DATA { short 3, 0, -1, 0, 0 file 22\com12.raw }
+		CHUNK DATA { short 3, 0, -1, 0, 0 file 22\com13.raw }
+		CHUNK DATA { short 3, 0, -1, 0, 0 file 22\com14.raw }
+		CHUNK DATA { short 3, 0, -1, 0, 0 file 22\com15.raw }
+		CHUNK DATA { short 3, 0, -1, 0, 0 file 22\com16.raw }
+		CHUNK DATA { short 3, 0, -1, 0, 0 file 22\com17.raw }
+		CHUNK DATA { short 3, 0, -1, -1, 0 file 22\com18.raw }
+		CHUNK DATA { short 3, 0, -1, -1, 0 file 22\com19.raw }
+		CHUNK DATA { short 3, 0, -1, -1, 0 file 22\com20.raw }
+
+		CHUNK DATA { short 3, 0, -1, -1, 0 file 22\bld04.raw }
+		CHUNK DATA { short 3, 0, -1, -1, 0 file 22\bld05.raw }
+		CHUNK DATA { short 3, 0, -1, -1, 0 file 22\bld06.raw }
+
+		CHUNK DATA { short 3, 0, -1, -1, 0 file 22\sci03.raw }
+		CHUNK DATA { short 3, 0, -1, -1, 0 file 22\sci04.raw }
+		CHUNK DATA { short 3, 0, -1, -1, 0 file 22\rec03.raw }
+		CHUNK DATA { short 3, 0, -1, -1, 0 file 22\rec04.raw }
+
+		CHUNK DATA { short 3, 0, -1, 0, 0 file 22\tem10.raw }
+		CHUNK DATA { short 3, 0, -1, -1, 0 file 22\tem11.raw }
+		CHUNK DATA { short 3, 0, -1, -1, 0 file 22\tem12.raw }
+		CHUNK DATA { short 3, 0, -1, -1, 0 file 22\tem13.raw }
+		CHUNK DATA { short 3, 0, -1, -1, 0 file 22\tem14.raw }
+		CHUNK DATA { short 3, 0, -1, -1, 0 file 22\tem15.raw }
+		CHUNK DATA { short 3, 0, -1, -1, 0 file 22\tem16.raw }
+		CHUNK DATA { short 3, 0, -1, -1, 0 file 22\tem17.raw }
+		CHUNK DATA { short 3, 0, -1, -1, 0 file 22\tem18.raw }
+
+		CHUNK DATA { short 3, 0, -1, 0, 0 file 22\fac04.raw }
+		CHUNK DATA { short 3, 0, -1, 0, 0 file 22\fac05.raw }
+		CHUNK DATA { short 3, 0, -1, -1, 0 file 22\fac06.raw }
+#endif
+		}
+#endif
+	}

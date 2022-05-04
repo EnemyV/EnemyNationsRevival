@@ -1,0 +1,330 @@
+//Microsoft Developer Studio generated resource script.
+//
+#include "resource.h"
+
+#define APSTUDIO_READONLY_SYMBOLS
+/////////////////////////////////////////////////////////////////////////////
+//
+// Generated from the TEXTINCLUDE 2 resource.
+//
+#include "afxres.h"
+
+/////////////////////////////////////////////////////////////////////////////
+#undef APSTUDIO_READONLY_SYMBOLS
+
+/////////////////////////////////////////////////////////////////////////////
+// English (U.S.) resources
+
+#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_ENU)
+#ifdef _WIN32
+LANGUAGE LANG_ENGLISH, SUBLANG_ENGLISH_US
+#pragma code_page(1252)
+#endif //_WIN32
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Dialog
+//
+
+IDD_ABOUTBOX DIALOG DISCARDABLE  34, 22, 217, 55
+STYLE DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "About vpdemo"
+FONT 8, "MS Sans Serif"
+BEGIN
+    ICON            IDR_MAINFRAME,IDC_STATIC,11,17,20,20
+    LTEXT           "vpdemo Version 1.0",IDC_STATIC,40,10,119,8
+    LTEXT           "Copyright © 1995",IDC_STATIC,40,25,119,8
+    DEFPUSHBUTTON   "OK",IDOK,176,6,32,14,WS_GROUP
+END
+
+IDD_VPDEMO_DIALOG DIALOG DISCARDABLE  0, 0, 329, 251
+STYLE DS_MODALFRAME | WS_POPUP | WS_VISIBLE | WS_CAPTION | WS_SYSMENU
+CAPTION "vpdemo"
+MENU IDR_MAIN_MENU
+FONT 8, "MS Sans Serif"
+BEGIN
+    DEFPUSHBUTTON   "Close",IDOK,268,190,50,14
+    LISTBOX         IDC_SESSIONLIST,10,60,74,84,LBS_SORT | 
+                    LBS_NOINTEGRALHEIGHT | WS_VSCROLL | WS_TABSTOP
+    LISTBOX         IDC_PLAYERLIST,99,60,74,85,LBS_SORT | 
+                    LBS_NOINTEGRALHEIGHT | WS_VSCROLL | WS_TABSTOP
+    PUSHBUTTON      "CreateSession",IDC_CREATESESSION,202,74,50,14
+    EDITTEXT        IDC_PLAYERNAME,8,27,114,15,ES_AUTOHSCROLL
+    PUSHBUTTON      "Join Session",IDC_JOIN,130,27,50,15
+    EDITTEXT        IDC_TEXT,194,27,131,15,ES_AUTOHSCROLL
+    PUSHBUTTON      "SendMessage",IDC_SENDMSG,258,74,50,14
+    LISTBOX         IDC_EVENTLOG,10,156,230,83,LBS_NOINTEGRALHEIGHT | 
+                    WS_VSCROLL | WS_HSCROLL | WS_TABSTOP
+    LTEXT           "Player Name",IDC_STATICP,7,15,67,11
+    LTEXT           "SessionName",IDC_STATICS,196,14,85,11
+    PUSHBUTTON      "Rescan",IDC_RESCAN,266,163,50,14
+    LTEXT           "Sessions",IDC_STATIC,9,47,30,8
+    LTEXT           "Players",IDC_STATIC,99,47,30,8
+    CONTROL         "Garanteed delivery",IDC_MUSTDELIVER,"Button",
+                    BS_AUTOCHECKBOX | WS_TABSTOP,193,53,74,10
+    CONTROL         "Broadcast",IDC_BROADCAST,"Button",BS_AUTOCHECKBOX | 
+                    WS_TABSTOP,275,53,49,10
+    PUSHBUTTON      "Send BIIIG Message",IDC_SENDBIG,199,102,117,14
+    PUSHBUTTON      "Traffic  simulator",IDC_LOADTEST,201,129,118,14
+END
+
+IDD_TCPIPX DIALOG DISCARDABLE  0, 0, 187, 95
+STYLE DS_MODALFRAME | WS_POPUP | WS_VISIBLE | WS_CAPTION | WS_SYSMENU
+CAPTION "Dialog"
+FONT 8, "MS Sans Serif"
+BEGIN
+    DEFPUSHBUTTON   "OK",IDOK,131,6,50,14
+    PUSHBUTTON      "Cancel",IDCANCEL,131,23,50,14
+    LTEXT           "Port",IDC_STATIC,5,12,19,15
+    EDITTEXT        IDC_PORT,37,12,44,17,ES_AUTOHSCROLL
+    LTEXT           "Server Address",IDC_STATIC,8,45,42,16
+    EDITTEXT        IDC_SERVER_ADDRESS,69,43,116,21,ES_AUTOHSCROLL
+END
+
+IDD_NETBIOS DIALOG DISCARDABLE  0, 0, 187, 95
+STYLE DS_MODALFRAME | WS_POPUP | WS_VISIBLE | WS_CAPTION | WS_SYSMENU
+CAPTION "Dialog"
+FONT 8, "MS Sans Serif"
+BEGIN
+    DEFPUSHBUTTON   "OK",IDOK,131,6,50,14
+    PUSHBUTTON      "Cancel",IDCANCEL,131,23,50,14
+    LTEXT           "Port",IDC_STATIC,5,12,19,15
+    EDITTEXT        IDC_LANA,37,12,44,17,ES_AUTOHSCROLL
+    LTEXT           "Station Name",IDC_STATIC,8,45,42,16
+    EDITTEXT        IDC_STATION_NAME,69,43,116,21,ES_AUTOHSCROLL
+END
+
+IDD_TRAFFIC DIALOG DISCARDABLE  0, 0, 280, 192
+STYLE DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Traffic Sim  Configuration"
+FONT 8, "MS Sans Serif"
+BEGIN
+    DEFPUSHBUTTON   "OK",IDOK,72,159,50,14
+    PUSHBUTTON      "Cancel",IDCANCEL,164,160,50,14
+    EDITTEXT        IDC_ACKDELAY,76,20,40,14,ES_AUTOHSCROLL
+    EDITTEXT        IDC_TICKDIVISOR,76,55,40,14,ES_AUTOHSCROLL
+    EDITTEXT        IDC_SENDSPERTICK,75,72,40,14,ES_AUTOHSCROLL
+    EDITTEXT        IDC_SENDSPERBURST,76,89,40,14,ES_AUTOHSCROLL
+    EDITTEXT        IDC_PACKETSIZE,76,106,40,14,ES_AUTOHSCROLL
+    LTEXT           "AckDelay (ms)",IDC_STATIC,7,21,53,8
+    LTEXT           "Tick Divisor",IDC_STATIC,7,56,37,8
+    LTEXT           "SendsPerTick",IDC_STATIC,7,73,44,8
+    LTEXT           "SendsPerBurst",IDC_STATIC,7,90,46,8
+    LTEXT           "PacketSize",IDC_STATIC,7,107,35,8
+    LTEXT           "NCBQueueSize",IDC_STATIC,134,19,48,8
+    LTEXT           "COMWinSize",IDC_STATIC,134,37,41,8
+    EDITTEXT        IDC_NCBQUESIZE,188,18,40,14,ES_AUTOHSCROLL
+    EDITTEXT        IDC_COMWINSIZE,187,33,40,14,ES_AUTOHSCROLL
+    EDITTEXT        IDC_TCPIBUFSIZE,188,50,40,14,ES_AUTOHSCROLL
+    LTEXT           "TcpIBufSize (K)",IDC_STATIC,133,54,47,8
+    LTEXT           "TcpOBufSize (K)",IDC_STATIC,133,70,50,8
+    EDITTEXT        IDC_TCPOBUFSIZE,187,67,40,14,ES_AUTOHSCROLL
+    LTEXT           "IpxIBufSize (K)",IDC_STATIC,133,85,43,8
+    EDITTEXT        IDC_IPXIBUFSIZE,186,82,40,14,ES_AUTOHSCROLL
+    LTEXT           "IpxOBufSize (K)",IDC_STATIC,134,102,47,8
+    EDITTEXT        IDC_IPXOBUFSIZE,186,98,40,14,ES_AUTOHSCROLL
+    CONTROL         "Tcp Fragment simulator",IDC_TCPFRAG,"Button",
+                    BS_AUTOCHECKBOX | WS_TABSTOP,146,117,87,10
+    LTEXT           "Tixk Freq. (ms)",IDC_STATIC,7,39,45,8
+    EDITTEXT        IDC_TICKFREQ,76,37,40,14,ES_AUTOHSCROLL
+    CONTROL         "Tcp Flow Simulator",IDC_TCPFLOW,"Button",
+                    BS_AUTOCHECKBOX | WS_TABSTOP,147,130,73,10
+END
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// DESIGNINFO
+//
+
+#ifdef APSTUDIO_INVOKED
+GUIDELINES DESIGNINFO DISCARDABLE 
+BEGIN
+    IDD_TRAFFIC, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 273
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 185
+        HORZGUIDE, 7
+    END
+END
+#endif    // APSTUDIO_INVOKED
+
+#endif    // English (U.S.) resources
+/////////////////////////////////////////////////////////////////////////////
+
+
+/////////////////////////////////////////////////////////////////////////////
+// French (France) resources
+
+#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_FRA)
+#ifdef _WIN32
+LANGUAGE LANG_FRENCH, SUBLANG_FRENCH
+#pragma code_page(1252)
+#endif //_WIN32
+
+#ifdef APSTUDIO_INVOKED
+/////////////////////////////////////////////////////////////////////////////
+//
+// TEXTINCLUDE
+//
+
+1 TEXTINCLUDE DISCARDABLE 
+BEGIN
+    "resource.h\0"
+END
+
+2 TEXTINCLUDE DISCARDABLE 
+BEGIN
+    "#include ""afxres.h""\r\n"
+    "\0"
+END
+
+3 TEXTINCLUDE DISCARDABLE 
+BEGIN
+    "#include ""res\\vpdemo.rc2""  // non-Microsoft Visual C++ edited resources\r\n"
+    "\r\n"
+    "#define _AFX_NO_SPLITTER_RESOURCES\r\n"
+    "#define _AFX_NO_OLE_RESOURCES\r\n"
+    "#define _AFX_NO_TRACKER_RESOURCES\r\n"
+    "#define _AFX_NO_PROPERTY_RESOURCES\r\n"
+    "#include ""afxres.rc""  // Standard components\r\n"
+    "\0"
+END
+
+#endif    // APSTUDIO_INVOKED
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Icon
+//
+
+// Icon with lowest ID value placed first to ensure application icon
+// remains consistent on all systems.
+IDR_MAINFRAME           ICON    DISCARDABLE     "res\\vpdemo.ico"
+
+#ifndef _MAC
+/////////////////////////////////////////////////////////////////////////////
+//
+// Version
+//
+
+VS_VERSION_INFO VERSIONINFO
+ FILEVERSION 1,0,0,1
+ PRODUCTVERSION 1,0,0,1
+ FILEFLAGSMASK 0x3fL
+#ifdef _DEBUG
+ FILEFLAGS 0x1L
+#else
+ FILEFLAGS 0x0L
+#endif
+ FILEOS 0x4L
+ FILETYPE 0x1L
+ FILESUBTYPE 0x0L
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904B0"
+        BEGIN
+            VALUE "CompanyName", "\0"
+            VALUE "FileDescription", "VPDEMO MFC Application\0"
+            VALUE "FileVersion", "1, 0, 0, 1\0"
+            VALUE "InternalName", "VPDEMO\0"
+            VALUE "LegalCopyright", "Copyright © 1995\0"
+            VALUE "LegalTrademarks", "\0"
+            VALUE "OriginalFilename", "VPDEMO.EXE\0"
+            VALUE "ProductName", "VPDEMO Application\0"
+            VALUE "ProductVersion", "1, 0, 0, 1\0"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 1200
+    END
+END
+
+#endif    // !_MAC
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// String Table
+//
+
+STRINGTABLE DISCARDABLE 
+BEGIN
+    ID_INDICATOR_EXT        "EXT"
+    ID_INDICATOR_CAPS       "CAP"
+    ID_INDICATOR_NUM        "NUM"
+    ID_INDICATOR_SCRL       "SCRL"
+    ID_INDICATOR_OVR        "OVR"
+    ID_INDICATOR_REC        "REC"
+END
+
+STRINGTABLE DISCARDABLE 
+BEGIN
+    IDS_ABOUTBOX            "&About vpdemo..."
+END
+
+#endif    // French (France) resources
+/////////////////////////////////////////////////////////////////////////////
+
+
+/////////////////////////////////////////////////////////////////////////////
+// English (U.K.) resources
+
+#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_ENG)
+#ifdef _WIN32
+LANGUAGE LANG_ENGLISH, SUBLANG_ENGLISH_UK
+#pragma code_page(1252)
+#endif //_WIN32
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Menu
+//
+
+IDR_MAIN_MENU MENU DISCARDABLE 
+BEGIN
+    POPUP "Protocol"
+    BEGIN
+        MENUITEM "TCP",                         IDM_PROTOCOL_TCP
+        MENUITEM "IPX",                         IDM_PROTOCOL_IPX
+        MENUITEM "Netbios",                     IDM_PROTOCOL_NETBIOS
+        MENUITEM "COMM",                        ID_PROTOCOL_COMM
+        MENUITEM "MODEM",                       ID_PROTOCOL_MODEM
+        MENUITEM "TAPI",                        ID_PROTOCOL_TAPI
+        MENUITEM "DP",                          ID_PROTOCOL_DP
+        MENUITEM SEPARATOR
+        MENUITEM "Advanced Client",             ID_PROTOCOL_ADVANCED_CL
+        MENUITEM "Advanced Server",             ID_PROTOCOL_ADVANCED_SRV
+        MENUITEM "vpStartup",                   ID_PROTOCOL_VPSTARTUP
+        MENUITEM "vpEnumSes",                   ID_PROTOCOL_VPENUMSES
+    END
+    MENUITEM "Config Simulator!",           ID_CFGSIM
+    MENUITEM "GetServerAddr!",              IDM_GETSERVERADDR
+END
+
+#endif    // English (U.K.) resources
+/////////////////////////////////////////////////////////////////////////////
+
+
+
+#ifndef APSTUDIO_INVOKED
+/////////////////////////////////////////////////////////////////////////////
+//
+// Generated from the TEXTINCLUDE 3 resource.
+//
+#include "res\vpdemo.rc2"  // non-Microsoft Visual C++ edited resources
+
+#define _AFX_NO_SPLITTER_RESOURCES
+#define _AFX_NO_OLE_RESOURCES
+#define _AFX_NO_TRACKER_RESOURCES
+#define _AFX_NO_PROPERTY_RESOURCES
+#include "afxres.rc"  // Standard components
+
+/////////////////////////////////////////////////////////////////////////////
+#endif    // not APSTUDIO_INVOKED
+

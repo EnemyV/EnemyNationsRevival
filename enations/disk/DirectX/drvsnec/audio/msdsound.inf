@@ -1,0 +1,1422 @@
+; INF file for DirectSound driver.
+; Copyright 1995-1996, NEC Corporation
+; - Includes sound drivers for detected & PnP devices
+; - This is DirectSound inf file for ( 960807 )
+
+[Version]
+Class=MEDIA
+Signature="$CHICAGO$"
+Provider=%NECMfgName%
+verinfo=4.04.00.0068
+
+[DriverSelect]
+|*nEC1808|
+"98CanBe PCM/Mixer Driver"=isnewcb.dll
+"98CanBe Sound"
+
+[DestinationDirs]
+DefaultDestDir=11	; LDID_SYS
+
+[SourceDisksNames]
+222="DirectSound Drivers","",1
+
+[SourceDisksFiles]
+nec73pcm.drv=222
+necopn.drv=222
+vn73pcmd.vxd=222
+vnopnd.vxd=222
+neccspcm.drv=222
+vncspcmd.vxd=222
+oncb118.drv=222
+mxcb118.drv=222
+vpcb118.vxd=222
+voncb118.vxd=222
+vnecmixd.vxd=222
+necpcm.drv=222
+necmix2.drv=222
+vnecpcm.vxd=222
+vnecmix2.vxd=222
+necopl.drv=222
+vnecopl.vxd=222
+necmidi.drv=222
+vnecmidi.vxd=222
+vopl3sa.vxd=222
+opl3sa.drv=222
+vjoyd.new=222
+necjstk.drv=222
+vjoyd.118=222
+midi118.drv=222
+vmidi118.vxd=222
+vopl118.vxd=222
+opl118.drv=222
+volcb118.vxd=222
+olcb118.drv=222
+neccs118.drv=222
+vncs118d.vxd=222
+
+[ClassInstall]
+AddReg=Class.AddReg
+
+[Class.AddReg]
+HKR,,,,%MediaClassName%
+HKR,,Icon,,"-1"
+HKR,,Installer,,mmci.dll
+
+[Manufacturer]
+"%NECMfgName%"=NEC
+
+[NEC]
+;; Old Wave.inf
+%*nEC1802.DeviceDesc%=nEC1802.Device, *nEC1802
+%*nEC1803.DeviceDesc%=nEC1803.Device, *nEC1803
+%*nEC1804.DeviceDesc%=nEC1804.Device, *nEC1804
+%*nEC1805.DeviceDesc%=nEC1805.Device, *nEC1805
+%*nEC1806.DeviceDesc%=nEC1806.Device, *nEC1806
+%*nEC1807.DeviceDesc%=nEC1807.Device, *nEC1807
+%*nEC1808.DeviceDesc%=nEC1808.Device, *nEC1808, *nEC180A
+%*nEC180E.DeviceDesc%=nEC180E.Device, PCMCIA\NEC--0954
+;; CanBe2
+%*nEC1809.DeviceDesc%=nEC1809.Device, *nEC1809
+%*nEC1818.DeviceDesc%=OPL3_Dev,       *nEC1818
+%*nEC1881.DeviceDesc%=MPU401,         *nEC1881
+;; CanBe3
+%*nEC1819.DeviceDesc%=OPL3SA_SndSys,  *nEC1819
+%*nEC1882.DeviceDesc%=OPL3SA_MPU401,  *nEC1882
+;; CanBe JoyStick
+%*nEC18C1.DeviceDesc%=NECJSTK,        *nEC18C1
+;; 118 non PnP Mode
+%*nEC0B81.DeviceDesc%=NonPNP1,  *nEC0B81	;Non PnP Mode Machine1
+%*nEC0B82.DeviceDesc%=NonPNP1M, *nEC0B82	;Non PnP Mode Machine1 w/ MIDI
+%*nEC0B83.DeviceDesc%=NonPNP2,  *nEC0B83	;Non PnP Mode Machine2
+%*nEC0B84.DeviceDesc%=NonPNP2M, *nEC0B84	;Non PnP Mode Machine2 w/ MIDI
+%*nEC0B87.DeviceDesc%=NonPNP3,  *nEC0B87	;Non PnP Mode Machine3
+%*nEC0B88.DeviceDesc%=NonPNP3M, *nEC0B88	;Non PnP Mode Machine3 w/ MIDI
+;; 118 PnP Mode
+%NEC118PnP1.DeviceDesc%=Machine1,     *nEC8161  ;PnP Mode 1
+%NEC118PnP2.DeviceDesc%=Machine1M,    *nEC8162  ;PnP Mode 2
+%NEC118PnP3.DeviceDesc%=Machine2,     *nEC8163  ;PnP Mode 3
+%NEC118PnP4.DeviceDesc%=Machine2M,    *nEC8164  ;PnP Mode 4
+%NEC118PnP7.DeviceDesc%=Machine3,     *nEC8165  ;PnP Mode 5 same as PnP mode 7
+%NEC118PnP8.DeviceDesc%=Machine3M,    *nEC8166  ;PnP Mode 6 same as PnP mode 8
+%NEC118PnP7.DeviceDesc%=Machine3,     *nEC8167  ;PnP Mode 7
+%NEC118PnP8.DeviceDesc%=Machine3M,    *nEC8168  ;PnP Mode 8
+;; 118 + CanBe
+;;%*nEC180A.DeviceDesc%=nEC180A.Device, *nEC180A, *nEC1808
+
+[PreCopySection]
+HKR,,NoSetupUI,,1
+
+;---------------------------------------------------------------;
+
+[nEC1802.Device]
+LogConfig=*NEC73.LogConfig1,*NEC73.LogConfig2,*NEC73.LogConfig3,*NEC73.LogConfig4
+DelFiles=NEC73.DelList
+CopyFiles=NEC73.CopyList
+AddReg=WAVE.AddReg, MIXER.AddReg, nEC1802.AddReg, NEC73.AddReg
+UpdateInis=NEC73.UpdateInis
+Restart
+
+[nEC1803.Device]
+LogConfig=*NEC73.LogConfig1,*NEC73.LogConfig2,*NEC73.LogConfig3,*NEC73.LogConfig4
+DelFiles=NEC73.DelList
+CopyFiles=NEC73.CopyList
+AddReg=WAVE.AddReg, MIXER.AddReg, nEC1803.AddReg, NEC73.AddReg
+UpdateInis=NEC73.UpdateInis
+Restart
+
+[nEC1804.Device]
+LogConfig=*NEC73.LogConfig1,*NEC73.LogConfig2,*NEC73.LogConfig3,*NEC73.LogConfig4
+DelFiles=NEC73.DelList
+CopyFiles=NEC73.CopyList
+AddReg=WAVE.AddReg, MIXER.AddReg, nEC1804.AddReg, NEC73.AddReg
+UpdateInis=NEC73.UpdateInis
+Restart
+
+[nEC1805.Device]
+LogConfig=*NEC73.LogConfig1,*NEC73.LogConfig2,*NEC73.LogConfig3,*NEC73.LogConfig4
+DelFiles=NEC73.DelList
+CopyFiles=NEC73.CopyList
+AddReg=WAVE.AddReg, MIXER.AddReg, nEC1805.AddReg, NEC73.AddReg
+UpdateInis=NEC73.UpdateInis
+Restart
+
+[nEC1806.Device]
+LogConfig=*Np.LogConfig
+DelFiles=MATEX.DelList
+CopyFiles=MATEX.CopyList
+AddReg=WAVE.AddReg, MIXER.AddReg, nEC1806.AddReg, MATEX.AddReg
+UpdateInis=MATEX.UpdateInis
+Restart
+
+[nEC1807.Device]
+LogConfig=*MATEX.LogConfig
+DelFiles=MATEX.DelList
+CopyFiles=MATEX.CopyList
+AddReg=WAVE.AddReg, MIXER.AddReg, nEC1807.AddReg, MATEX.AddReg
+UpdateInis=MATEX.UpdateInis
+Restart
+
+[nEC1808.Device]
+LogConfig=*Cb.LogConfig1,*Cb.LogConfig2
+DelFiles=Cb.DelList
+CopyFiles=Cb.CopyList
+AddReg=WAVE.AddReg, MIXER.AddReg, nEC1808.AddReg, Cb.AddReg
+UpdateInis=Cb.UpdateInis
+Restart
+
+[nEC180E.Device]
+LogConfig=*J04.LogConfig
+DelFiles=J04.DelList
+CopyFiles=J04.CopyList
+AddReg=WAVE.AddReg, MIXER.AddReg, nEC180E.AddReg, J04.AddReg
+UpdateInis=J04.UpdateInis
+
+[nEC1809.Device]
+LogConfig=*Cb2.LogConfig1,*Cb2.LogConfig2
+DelFiles=Cb2.DelList
+CopyFiles=Cb2.CopyList
+AddReg=WAVE.AddReg, MIXER.AddReg, nEC1809.AddReg, Cb2.AddReg
+UpdateInis=Cb2.UpdateInis
+Restart
+
+[OPL3_Dev]
+LogConfig=OPL3_Dev.LogConfig
+DelFiles=OPL.DelList
+CopyFiles=OPL.CopyFiles
+AddReg=MIDI.AddReg, OPL.AddReg, OPL3_Dev.AddReg
+UpdateInis=OPL.UpdateInis
+Restart
+
+[MPU401]
+LogConfig = *nEC1881.LogConfig
+DelFiles=MPU401.DelList
+CopyFiles=MPU401.Copy.Sys
+AddReg=MIDI.AddReg, MPU401.AddReg,MPU401.AddRegDeviceDesc
+UpdateInis=MPU401.UpdateInis
+Restart
+
+[OPL3SA_SndSys]
+LogConfig = SASndSys.LC0,SASndSys.LC1,SASndSys.LC2,SASndSys.LC3,SASndSys.LC4,SASndSys.LC5,SASndSys.LC6,SASndSys.LC7,SASndSys.LC8
+DelFiles = OPL3SA.DelList
+CopyFiles = OPL3SA.CopyList
+AddReg = OPL3SA.AddReg,SASndSys.AddReg
+UpdateInis = SASndSys.UpdateInis
+
+[OPL3SA_MPU401]
+LogConfig = *nEC1882.LogConfig
+DelFiles = OPL3SA.DelList
+CopyFiles = OPL3SA.CopyList
+AddReg = MIDI.AddReg, OPL3SA_MPU401.AddReg
+
+[NECJSTK]
+LogConfig=BasicJoyStick.LC0
+DelFiles=JOYSTICK.DelList
+CopyFiles=NECJSTKCb.CopyList
+AddReg=JOYSTICK.AddReg, NECJSTK.AddReg
+UpdateInis=NECJSTK.UpdateInis
+
+[NonPNP1]
+LogConfig=NonPnP1.LogConfig
+DelFiles=JOYSTICK.DelList, OPL118.DelList
+CopyFiles=NECJSTK.CopyList, OPLCb118.CopyList
+AddReg=JOYSTICK.AddReg, JSTK118.AddReg, OPL118.AddReg, MIDI.AddReg, Machine1.AddReg
+DelReg=CanBe118.DelReg
+UpdateInis=NECJSTK.UpdateInis, OPL.UpdateInis
+Restart
+
+[NonPNP1M]
+LogConfig=NonPnP1M.LogConfig
+DelFiles=JOYSTICK.DelList, OPL118.DelList, MPU401.DelList
+CopyFiles=NECJSTK.CopyList, OPLCb118.CopyList, MIDI118.CopyList
+AddReg=JOYSTICK.AddReg, JSTK118.AddReg, OPL118.AddReg, MIDI.AddReg, MIDI118.AddReg, Machine1M.AddReg
+DelReg=CanBe118.DelReg
+UpdateInis=NECJSTK.UpdateInis, OPL.UpdateInis, MPU401.UpdateInis
+Restart
+
+[NonPNP2]
+LogConfig=NonPnP2.LogConfig
+DelFiles=JOYSTICK.DelList, OPL118.DelList, OPN3.DelList
+CopyFiles=NECJSTK.CopyList, OPL118.CopyList
+AddReg=JOYSTICK.AddReg, JSTK118.AddReg, OPL118.AddReg, MIDI.AddReg, Machine1.AddReg
+UpdateInis=NECJSTK.UpdateInis, OPL.UpdateInis
+Restart
+
+[NonPNP2M]
+LogConfig=NonPnP2M.LogConfig
+DelFiles=JOYSTICK.DelList, OPL118.DelList, MPU401.DelList, OPN3.DelList
+CopyFiles=NECJSTK.CopyList, OPL118.CopyList, MIDI118.CopyList
+AddReg=JOYSTICK.AddReg, JSTK118.AddReg, OPL118.AddReg, MIDI.AddReg, MIDI118.AddReg, Machine1M.AddReg
+UpdateInis=NECJSTK.UpdateInis, OPL.UpdateInis, MPU401.UpdateInis
+Restart
+
+[NonPNP3]
+LogConfig=NonPnP3.LogConfig1
+DelFiles=JOYSTICK.DelList, OPL118.DelList, OPN3.DelList, WSS.DelList
+CopyFiles=NECJSTK.CopyList, OPL118.CopyList, PCM118.CopyList
+AddReg=JOYSTICK.AddReg, JSTK118.AddReg, OPL118.AddReg, MIDI.AddReg, WAVE.AddReg, MIXER.AddReg, Machine3.AddReg
+UpdateInis=NECJSTK.UpdateInis, OPL.UpdateInis, WSS.UpdateInis
+Restart
+
+[NonPNP3M]
+LogConfig=NonPnP3M.LogConfig1
+DelFiles=JOYSTICK.DelList, OPL118.DelList, MPU401.DelList, OPN3.DelList, WSS.DelList
+CopyFiles=NECJSTK.CopyList, OPL118.CopyList, MIDI118.CopyList, PCM118.CopyList
+AddReg=JOYSTICK.AddReg, JSTK118.AddReg, OPL118.AddReg, MIDI.AddReg, MIDI118.AddReg,WAVE.AddReg, MIXER.AddReg, Machine3M.AddReg
+UpdateInis=NECJSTK.UpdateInis, OPL.UpdateInis, MPU401.UpdateInis, WSS.UpdateInis
+Restart
+
+[Machine1]
+DelFiles=JOYSTICK.DelList, OPL118.DelList
+CopyFiles=NECJSTK.CopyList, OPLCb118.CopyList
+AddReg=JOYSTICK.AddReg, JSTK118.AddReg, OPL118.AddReg, MIDI.AddReg, Machine1.AddReg
+UpdateInis=NECJSTK.UpdateInis, OPL.UpdateInis
+Restart
+
+[Machine1M]
+DelFiles=JOYSTICK.DelList, OPL118.DelList, MPU401.DelList
+CopyFiles=NECJSTK.CopyList, OPLCb118.CopyList, MIDI118.CopyList
+AddReg=JOYSTICK.AddReg, JSTK118.AddReg, OPL118.AddReg, MIDI.AddReg, MIDI118.AddReg, Machine1M.AddReg
+UpdateInis=NECJSTK.UpdateInis, OPL.UpdateInis, MPU401.UpdateInis
+Restart
+
+[Machine2]
+DelFiles=JOYSTICK.DelList, OPL118.DelList, OPN3.DelList
+CopyFiles=NECJSTK.CopyList, OPL118.CopyList
+AddReg=JOYSTICK.AddReg, JSTK118.AddReg, OPL118.AddReg, MIDI.AddReg, Machine1.AddReg
+UpdateInis=NECJSTK.UpdateInis, OPL.UpdateInis
+Restart
+
+[Machine2M]
+DelFiles=JOYSTICK.DelList, OPL118.DelList, MPU401.DelList, OPN3.DelList
+CopyFiles=NECJSTK.CopyList, OPL118.CopyList, MIDI118.CopyList
+AddReg=JOYSTICK.AddReg, JSTK118.AddReg, OPL118.AddReg, MIDI.AddReg, MIDI118.AddReg, Machine1M.AddReg
+UpdateInis=NECJSTK.UpdateInis, OPL.UpdateInis, MPU401.UpdateInis
+Restart
+
+[Machine3]
+DelFiles=JOYSTICK.DelList, OPL118.DelList, OPN3.DelList, WSS.DelList
+CopyFiles=NECJSTK.CopyList, OPL118.CopyList, PCM118.CopyList
+AddReg=JOYSTICK.AddReg, JSTK118.AddReg, OPL118.AddReg, MIDI.AddReg, WAVE.AddReg, MIXER.AddReg, Machine3.AddReg
+UpdateInis=NECJSTK.UpdateInis, OPL.UpdateInis, WSS.UpdateInis
+Restart
+
+[Machine3M]
+DelFiles=JOYSTICK.DelList, OPL118.DelList, MPU401.DelList, OPN3.DelList, WSS.DelList
+CopyFiles=NECJSTK.CopyList, OPL118.CopyList, MIDI118.CopyList, PCM118.CopyList
+AddReg=JOYSTICK.AddReg, JSTK118.AddReg, OPL118.AddReg, MIDI.AddReg, MIDI118.AddReg,WAVE.AddReg, MIXER.AddReg, Machine3M.AddReg
+UpdateInis=NECJSTK.UpdateInis, OPL.UpdateInis, MPU401.UpdateInis, WSS.UpdateInis
+Restart
+
+[nEC180A.Device]
+LogConfig=*Cb.LogConfig1,*Cb.LogConfig2
+DelFiles=Cb118.DelList
+CopyFiles=Cb118.CopyList
+AddReg=WAVE.AddReg, MIXER.AddReg, nEC180A.AddReg, Cb118.AddReg
+UpdateInis=Cb.UpdateInis
+Restart
+
+;----Copy List----------------------;
+
+[NEC73.CopyList]
+nec73pcm.drv,,
+necopn.drv,,
+vn73pcmd.vxd,,
+vnopnd.vxd,,
+
+[MATEX.CopyList]
+neccspcm.drv,,
+vncspcmd.vxd,,
+
+[Cb.CopyList]
+neccspcm.drv,,
+necopn.drv,oncb118.drv,
+necmix.drv,mxcb118.drv,
+vncspcmd.vxd,vpcb118.vxd,
+vnopnd.vxd,voncb118.vxd,
+vnecmixd.vxd,,
+
+[J04.CopyList]
+neccspcm.drv,,
+vncspcmd.vxd,,
+
+[Cb2.CopyList]
+necpcm.drv,,
+necmix2.drv,,
+vnecpcm.vxd,,
+vnecmix2.vxd,,
+
+[OPL.CopyFiles]
+necopl.drv,,
+vnecopl.vxd,,
+neccspcm.drv,necpcm.drv,
+necmix.drv,necmix2.drv,
+vncspcmd.vxd,vnecpcm.vxd,
+vnecmixd.vxd,vnecmix2.vxd,
+
+[MPU401.Copy.Sys]
+necmidi.drv,,
+vnecmidi.vxd,,
+
+[OPL3SA.CopyList]
+vopl3sa.vxd
+opl3sa.drv
+
+[NECJSTKCb.CopyList]
+vjoyd.vxd,vjoyd.new,
+necjstk.drv,,
+
+[NECJSTK.CopyList]
+vjoyd.vxd,vjoyd.118,
+necjstk.drv,,
+
+[MIDI118.CopyList]		;MIDI
+midi118.drv,,
+vmidi118.vxd,,
+
+[OPL118.CopyList]		;OPL3
+vopl118.vxd,,
+opl118.drv,,
+
+[OPLCb118.CopyList]		;OPL3
+vopl118.vxd,volcb118.vxd,
+opl118.drv,olcb118.drv,
+
+[PCM118.CopyList]		;WSS PCM
+neccs118.drv,,
+vncs118d.vxd,,
+
+[Cb118.CopyList]
+neccspcm.drv,,
+necmix.drv,,
+vncspcmd.vxd,,
+vnecmixd.vxd,,
+
+;----Del List----------------------;
+
+[NEC73.DelList]
+mpu401.drv,,,1
+snd.cpl,,,1
+necsnd73.drv,,,1
+necsnd26.drv,,,1
+necsnd.drv,,,1
+vsbd.386,,,1
+
+[MATEX.DelList]
+mpu401.drv,,,1
+snd.cpl,,,1
+necpcm.drv,,,1
+vpcmd.386,,,1
+vsbd.386,,,1
+
+[Cb.DelList]
+mpu401.drv,,,1
+snd.cpl,,,1
+necpcm.drv,,,1
+vpcmd.386,,,1
+necsynth.drv,,,1
+vsynthd.386,,,1
+necmix.drv,,,1
+vmixd.386,,,1
+vsbd.386,,,1
+necopn.drv,,,1
+necmix.drv,,,1
+vncspcmd.vxd,,,1
+vnopnd.vxd,,,1
+
+[J04.DelList]
+mpu401.drv,,,1
+snd.cpl,,,1
+necpcmcd.drv,,,1
+vpcmcd.386,,,1
+vsbd.386,,,1
+neccdpcm.drv,,,1
+vncdpcmd.vxd,,,1
+
+[Cb2.DelList]
+mpu401.drv,,,1
+snd.cpl,,,1
+necpcm.drv,,,1
+vpcmd.386,,,1
+necsynth.drv,,,1
+vsynthd.386,,,1
+necmix.drv,,,1
+vmixd.386,,,1
+vsbd.386,,,1
+necopn.drv,,,1
+vnopnd.vxd,,,1
+
+[OPL.DelList]
+vadlibd.386,,,1
+msadlib.drv,,,1
+fmsynth.drv,,,1
+sapi!opl.drv,,,1
+vnecopld.386,,,1	; 118 win3.1
+necopl.drv ,,,1
+vnecmpud.386,,,1	; 118 win3.1
+
+[OPL118.DelList]
+vadlibd.386,,,1
+msadlib.drv,,,1
+fmsynth.drv,,,1
+sapi!opl.drv,,,1
+vnecopld.386,,,1	; 118 win3.1
+necopl.drv ,,,1
+vnecmpud.386,,,1	; 118 win3.1
+vopl118.vxd,,,1
+opl118.drv,,,1
+
+
+[MPU401.DelList]
+mpu401.drv,,,1
+rdmpu401.drv,,,1
+vnecopld.386,,,1	; 118 win3.1
+vnecmpud.386,,,1	; 118 win3.1
+necmidi.drv,,,1
+
+[OPL3SA.DelList]
+opl3sa.drv,,,1
+vopl3sa.386,,,1
+vopl3sa.vxd,,,1
+
+[OPN3.DelList]		;OPN3
+necopn.drv,,,1
+vnopnd.vxd,,,1
+
+[WSS.DelList]		;WSS
+snd.cpl,,,1
+necpcm.drv,,,1
+vpcmd.386,,,1
+necsynth.drv,,,1
+vsynthd.386,,,1
+necmix.drv,,,1
+vmixd.386,,,1
+vsbd.386,,,1
+
+[JOYSTICK.DelList]	;OPN3
+vjoyd.vxd,,,1
+
+[Cb118.DelList]
+mpu401.drv,,,1
+snd.cpl,,,1
+necpcm.drv,,,1
+vpcmd.386,,,1
+necsynth.drv,,,1
+vsynthd.386,,,1
+necmix.drv,,,1
+vmixd.386,,,1
+vsbd.386,,,1
+
+;----Update Inis----------------------;
+
+[NEC73.UpdateInis]
+system.ini,386Enh,"device=vsbd.386"
+system.ini,drivers,"wave*=necsnd73.drv",,1
+system.ini,drivers,"midi*=necsnd26.drv",,1
+system.ini,drivers,"midi*=necsnd73.drv",,1
+system.ini,drivers,"aux*=necsnd73.drv",,1
+system.ini,drivers,"mixer*=necsnd73.drv",,1
+system.ini,drivers,"wave*=necsnd.drv",,1
+system.ini,drivers,"midi*=necsnd.drv",,1
+system.ini,drivers,"aux*=necsnd.drv",,1
+system.ini,drivers,"mixer*=necsnd.drv",,1
+
+[MATEX.UpdateInis]
+system.ini,386Enh,"device=vpcmd.386"
+system.ini,drivers,"wave*=necpcm.drv",,1
+system.ini,drivers,"aux*=necpcm.drv",,1
+system.ini,drivers,"mixer*=necpcm.drv",,1
+system.ini,386Enh,"device=vsbd.386"
+
+[Cb.UpdateInis]
+system.ini,386Enh,"device=vpcmd.386"
+system.ini,386Enh,"device=vsynthd.386"
+system.ini,386Enh,"device=vmixd.386"
+system.ini,drivers,"wave*=necpcm.drv",,1
+system.ini,drivers,"midi*=necsynth.drv",,1
+system.ini,drivers,"aux*=necpcm.drv",,1
+system.ini,drivers,"mixer*=necpcm.drv",,1
+system.ini,drivers,"mixer*=necmix.drv",,1
+system.ini,386Enh,"device=vsbd.386"
+
+[J04.UpdateInis]
+system.ini,386Enh,"device=vpcmcd.386"
+system.ini,drivers,"wave*=necpcmcd.drv",,1
+system.ini,drivers,"aux*=necpcmcd.drv",,1
+system.ini,drivers,"mixer*=necpcmcd.drv",,1
+system.ini,386Enh,"device=vsbd.386"
+
+[Cb2.UpdateInis]
+system.ini,386Enh,"device=vpcmd.386"
+system.ini,386Enh,"device=vsynthd.386"
+system.ini,386Enh,"device=vmixd.386"
+system.ini,drivers,"wave*=necpcm.drv",,1
+system.ini,drivers,"midi*=necsynth.drv",,1
+system.ini,drivers,"aux*=necpcm.drv",,1
+system.ini,drivers,"mixer*=necpcm.drv",,1
+system.ini,drivers,"mixer*=necmix.drv",,1
+system.ini,386Enh,"device=vsbd.386"
+
+[OPL.UpdateInis]
+;delete oldwin driver
+system.ini,386Enh,"device=vnecmpud.386"		; 118 win3.1
+system.ini,386Enh,"device=vnecopld.386"		; 118 win3.1
+system.ini,386Enh,"device=vadlibd.386"
+system.ini,drivers,"midi*=necopl.drv",,1	; 118 win3.1
+system.ini,drivers,"midi*=necmidi.drv",,1	; 118 win3.1
+system.ini,drivers,"midi*=msadlib.drv",,1
+system.ini,drivers,"midi*=fmsynth.drv",,1
+
+[MPU401.UpdateInis]
+system.ini,386Enh,"device=vnecmpud.386"		; 118 win3.1
+system.ini,386Enh,"device=vnecopld.386"		; 118 win3.1
+system.ini,drivers,"midi*=necopl.drv",,1	; 118 win3.1
+system.ini,drivers,"midi*=necmidi.drv",,1	; 118 win3.1
+system.ini,drivers,"midi*=mpu401.drv",,1
+system.ini,drivers,"midi*=rdmpu401.drv",,1
+system.ini,drivers,"midi*=mm16n.drv",,1
+system.ini,drivers,"midi*=mm16c.drv",,1
+system.ini,drivers,"midi*=mm16w.drv",,1
+
+[SASndSys.UpdateInis]
+system.ini,drivers,"WAVE=opl3sa.drv",,1
+system.ini,drivers,"AUX=opl3sa.drv",,1
+system.ini,drivers,"MIXER=opl3sa.drv",,1
+system.ini,drivers,"MIXER1=necmix.drv",,1
+system.ini,386Enh,"device=vopl3sa.386",,1
+
+[NECJSTK.UpdateInis]
+system.ini,drivers,"joystick="
+
+[WSS.UpdateInis]
+system.ini,386Enh,"device=vpcmd.386"
+system.ini,386Enh,"device=vsynthd.386"
+system.ini,386Enh,"device=vmixd.386"
+system.ini,drivers,"wave*=necpcm.drv",,1
+system.ini,drivers,"midi*=necsynth.drv",,1
+system.ini,drivers,"aux*=necpcm.drv",,1
+system.ini,drivers,"mixer*=necpcm.drv",,1
+system.ini,drivers,"mixer*=necmix.drv",,1
+system.ini,386Enh,"device=vsbd.386"
+
+;----Log Config----------------------;
+
+[*NEC73.LogConfig1]
+ConfigPriority=HARDRECONFIG
+IOConfig=188-188(fff::)
+IOConfig=18A-18A(fff::)
+IOConfig=18C-18C(fff::)
+IOConfig=18E-18E(fff::)
+IOConfig=A460-A460(fff::)
+IOConfig=A462-A462(fff::)
+IOConfig=A464-A464(fff::)
+IOConfig=A466-A466(fff::)
+IOConfig=A468-A468(fff::)
+IOConfig=A46A-A46A(fff::)
+IOConfig=A46C-A46C(fff::)
+IOConfig=A46E-A46E(fff::)
+IOConfig=A66E-A66E(fff::)
+IRQConfig=3, 10, 12, 13
+
+[*NEC73.LogConfig2]
+ConfigPriority=HARDRECONFIG
+IOConfig=288-288(fff::)
+IOConfig=28A-28A(fff::)
+IOConfig=28C-28C(fff::)
+IOConfig=28E-28E(fff::)
+IOConfig=A460-A460(fff::)
+IOConfig=A462-A462(fff::)
+IOConfig=A464-A464(fff::)
+IOConfig=A466-A466(fff::)
+IOConfig=A468-A468(fff::)
+IOConfig=A46A-A46A(fff::)
+IOConfig=A46C-A46C(fff::)
+IOConfig=A46E-A46E(fff::)
+IOConfig=A66E-A66E(fff::)
+IRQConfig=3, 10, 12, 13
+
+[*NEC73.LogConfig3]
+ConfigPriority=HARDRECONFIG
+IOConfig=188-188(fff::)
+IOConfig=18A-18A(fff::)
+IOConfig=18C-18C(fff::)
+IOConfig=18E-18E(fff::)
+IOConfig=A460-A460(fff::)
+IOConfig=A462-A462(fff::)
+IOConfig=A464-A464(fff::)
+IOConfig=A466-A466(fff::)
+IOConfig=A468-A468(fff::)
+IOConfig=A46A-A46A(fff::)
+IOConfig=A46C-A46C(fff::)
+IOConfig=A46E-A46E(fff::)
+IOConfig=A66E-A66E(fff::)
+MemConfig=CC000-CFFFF
+IRQConfig=3, 10, 12, 13
+
+[*NEC73.LogConfig4]
+ConfigPriority=HARDRECONFIG
+IOConfig=288-288(fff::)
+IOConfig=28A-28A(fff::)
+IOConfig=28C-28C(fff::)
+IOConfig=28E-28E(fff::)
+IOConfig=A460-A460(fff::)
+IOConfig=A462-A462(fff::)
+IOConfig=A464-A464(fff::)
+IOConfig=A466-A466(fff::)
+IOConfig=A468-A468(fff::)
+IOConfig=A46A-A46A(fff::)
+IOConfig=A46C-A46C(fff::)
+IOConfig=A46E-A46E(fff::)
+IOConfig=A66E-A66E(fff::)
+MemConfig=CC000-CFFFF
+IRQConfig=3, 10, 12, 13
+
+[*MATEX.LogConfig]
+ConfigPriority=HARDRECONFIG
+IOConfig=0C24-C24(fff::)
+IOConfig=0C2B-C2B(fff::)
+IOConfig=0C2D-C2D(fff::)
+IOConfig=0F40-0F47(fff::)
+IOConfig=A460-A460(fff::)
+DMAConfig=1
+IRQConfig=3,  5, 10, 12
+
+[*Np.LogConfig]
+ConfigPriority=HARDRECONFIG
+IOConfig=0C24-C24(fff::)
+IOConfig=0C2B-C2B(fff::)
+IOConfig=0C2D-C2D(fff::)
+IOConfig=0F40-0F47(fff::)
+IOConfig=A460-A460(fff::)
+DMAConfig=0,  3
+IRQConfig=3,  5, 10, 12
+
+[*Cb.LogConfig1]
+ConfigPriority=HARDRECONFIG
+IOConfig=0C24-C24(fff::)
+IOConfig=0C2B-C2B(fff::)
+IOConfig=0C2D-C2D(fff::)
+IOConfig=0F40-0F47(fff::)
+IOConfig=A460-A460(fff::)
+IOConfig=188-188(fff::)
+IOConfig=18A-18A(fff::)
+IOConfig=18C-18C(fff::)
+IOConfig=18E-18E(fff::)
+IOConfig=0F4A-0F4B(fff::)
+DMAConfig=1
+IRQConfig=3,  5, 10, 12
+
+[*Cb.LogConfig2]
+ConfigPriority=HARDRECONFIG
+IOConfig=0C24-C24(fff::)
+IOConfig=0C2B-C2B(fff::)
+IOConfig=0C2D-C2D(fff::)
+IOConfig=0F40-0F47(fff::)
+IOConfig=A460-A460(fff::)
+IOConfig=188-188(fff::)
+IOConfig=18A-18A(fff::)
+IOConfig=18C-18C(fff::)
+IOConfig=18E-18E(fff::)
+IOConfig=0F4A-0F4B(fff::)
+DMAConfig=1
+MemConfig=CC000-CFFFF
+IRQConfig=3, 5, 10, 12
+
+[*J04.LogConfig]
+ConfigPriority=HARDRECONFIG
+IOConfig=0F40-0F49(fff::)
+IRQConfig=3, 6, 10, 12
+
+[*Cb2.LogConfig1]
+ConfigPriority=HARDRECONFIG
+IOConfig=0C24-C24(fff::)
+IOConfig=0C2B-C2B(fff::)
+IOConfig=0C2D-C2D(fff::)
+IOConfig=0F40-0F47(fff::)
+IOConfig=A460-A460(fff::)
+IOConfig=0F4A-0F4B(fff::)
+DMAConfig=1
+IRQConfig=12
+
+[*Cb2.LogConfig2]
+ConfigPriority=HARDRECONFIG
+IOConfig=0C24-C24(fff::)
+IOConfig=0C2B-C2B(fff::)
+IOConfig=0C2D-C2D(fff::)
+IOConfig=0F40-0F47(fff::)
+IOConfig=A460-A460(fff::)
+IOConfig=0F4A-0F4B(fff::)
+DMAConfig=1
+MemConfig=CC000-CFFFF
+IRQConfig=12
+
+[OPL3_Dev.LogConfig]
+ConfigPriority = HARDWIRED
+IOConfig = 1488-148b		 ;Allocate 4 ports at base 388
+IOConfig = 188-188
+IOConfig = 18a-18a
+IOConfig = 18c-18c
+IOConfig = 18e-18e
+
+[*nEC1881.LogConfig]
+ConfigPriority = HARDRECONFIG
+IOConfig=148C-148D
+IRQConfig=10
+
+[OPL3SA_SndSys.FactDef]
+ConfigPriority=NORMAL
+IOConfig=f40-f47(3ff::)
+IOConfig=1488-148b(3ff::)
+IOConfig=c24-c24(3ff::)
+IOConfig=c2b-c2b(3ff::)
+IOConfig=c2d-c2d(3ff::)
+IOConfig=ac6c-ac6f(3ff::)
+IOConfig=a460-a460(3ff::)
+IOConfig=188-188(3ff::)
+IOConfig=18a-18a(3ff::)
+IOConfig=18c-18c(3ff::)
+IOConfig=18e-18e(3ff::)
+IOConfig=f4a-f4b(3ff::)
+IOConfig=548e-548f(3ff::)
+IRQConfig=12
+DMAConfig=3
+DMAConfig=0
+
+[SASndSys.LC0]
+ConfigPriority=NORMAL
+IOConfig=f40-f47(3ff::)
+IOConfig=1488-148b(3ff::)
+IOConfig=c24-c24(3ff::)
+IOConfig=c2b-c2b(3ff::)
+IOConfig=c2d-c2d(3ff::)
+IOConfig=ac6c-ac6f(3ff::)
+IOConfig=a460-a460(3ff::)
+IOConfig=188-188(3ff::)
+IOConfig=18a-18a(3ff::)
+IOConfig=18c-18c(3ff::)
+IOConfig=18e-18e(3ff::)
+IOConfig=f4a-f4b(3ff::)
+IOConfig=548e-548f(3ff::)
+IRQConfig=12
+DMAConfig=3
+DMAConfig=0
+
+[SASndSys.LC1]
+ConfigPriority=NORMAL
+IOConfig=f40-f47(3ff::)
+IOConfig=1488-148b(3ff::)
+IOConfig=c24-c24(3ff::)
+IOConfig=c2b-c2b(3ff::)
+IOConfig=c2d-c2d(3ff::)
+IOConfig=ac6c-ac6f(3ff::)
+IOConfig=a460-a460(3ff::)
+IOConfig=188-188(3ff::)
+IOConfig=18a-18a(3ff::)
+IOConfig=18c-18c(3ff::)
+IOConfig=18e-18e(3ff::)
+IOConfig=f4a-f4b(3ff::)
+IOConfig=548e-548f(3ff::)
+IRQConfig=12
+DMAConfig=0
+DMAConfig=1
+
+[SASndSys.LC2]
+ConfigPriority=NORMAL
+IOConfig=f40-f47(3ff::)
+IOConfig=1488-148b(3ff::)
+IOConfig=c24-c24(3ff::)
+IOConfig=c2b-c2b(3ff::)
+IOConfig=c2d-c2d(3ff::)
+IOConfig=ac6c-ac6f(3ff::)
+IOConfig=a460-a460(3ff::)
+IOConfig=188-188(3ff::)
+IOConfig=18a-18a(3ff::)
+IOConfig=18c-18c(3ff::)
+IOConfig=18e-18e(3ff::)
+IOConfig=f4a-f4b(3ff::)
+IOConfig=548e-548f(3ff::)
+IRQConfig=12
+DMAConfig=1
+DMAConfig=0
+
+[SASndSys.LC3]
+ConfigPriority=NORMAL
+IOConfig=f40-f47(3ff::)
+IOConfig=1488-148b(3ff::)
+IOConfig=c24-c24(3ff::)
+IOConfig=c2b-c2b(3ff::)
+IOConfig=c2d-c2d(3ff::)
+IOConfig=ac6c-ac6f(3ff::)
+IOConfig=a460-a460(3ff::)
+IOConfig=188-188(3ff::)
+IOConfig=18a-18a(3ff::)
+IOConfig=18c-18c(3ff::)
+IOConfig=18e-18e(3ff::)
+IOConfig=f4a-f4b(3ff::)
+IOConfig=548e-548f(3ff::)
+IRQConfig=3
+DMAConfig=3
+DMAConfig=0
+
+[SASndSys.LC4]
+ConfigPriority=NORMAL
+IOConfig=f40-f47(3ff::)
+IOConfig=1488-148b(3ff::)
+IOConfig=c24-c24(3ff::)
+IOConfig=c2b-c2b(3ff::)
+IOConfig=c2d-c2d(3ff::)
+IOConfig=ac6c-ac6f(3ff::)
+IOConfig=a460-a460(3ff::)
+IOConfig=188-188(3ff::)
+IOConfig=18a-18a(3ff::)
+IOConfig=18c-18c(3ff::)
+IOConfig=18e-18e(3ff::)
+IOConfig=f4a-f4b(3ff::)
+IOConfig=548e-548f(3ff::)
+IRQConfig=3
+DMAConfig=0
+DMAConfig=1
+
+[SASndSys.LC5]
+ConfigPriority=NORMAL
+IOConfig=f40-f47(3ff::)
+IOConfig=1488-148b(3ff::)
+IOConfig=c24-c24(3ff::)
+IOConfig=c2b-c2b(3ff::)
+IOConfig=c2d-c2d(3ff::)
+IOConfig=ac6c-ac6f(3ff::)
+IOConfig=a460-a460(3ff::)
+IOConfig=188-188(3ff::)
+IOConfig=18a-18a(3ff::)
+IOConfig=18c-18c(3ff::)
+IOConfig=18e-18e(3ff::)
+IOConfig=f4a-f4b(3ff::)
+IOConfig=548e-548f(3ff::)
+IRQConfig=3
+DMAConfig=1
+DMAConfig=0
+
+[SASndSys.LC6]
+ConfigPriority=NORMAL
+IOConfig=f40-f47(3ff::)
+IOConfig=1488-148b(3ff::)
+IOConfig=c24-c24(3ff::)
+IOConfig=c2b-c2b(3ff::)
+IOConfig=c2d-c2d(3ff::)
+IOConfig=ac6c-ac6f(3ff::)
+IOConfig=a460-a460(3ff::)
+IOConfig=188-188(3ff::)
+IOConfig=18a-18a(3ff::)
+IOConfig=18c-18c(3ff::)
+IOConfig=18e-18e(3ff::)
+IOConfig=f4a-f4b(3ff::)
+IOConfig=548e-548f(3ff::)
+IRQConfig=5
+DMAConfig=3
+DMAConfig=0
+
+[SASndSys.LC7]
+ConfigPriority=NORMAL
+IOConfig=f40-f47(3ff::)
+IOConfig=1488-148b(3ff::)
+IOConfig=c24-c24(3ff::)
+IOConfig=c2b-c2b(3ff::)
+IOConfig=c2d-c2d(3ff::)
+IOConfig=ac6c-ac6f(3ff::)
+IOConfig=a460-a460(3ff::)
+IOConfig=188-188(3ff::)
+IOConfig=18a-18a(3ff::)
+IOConfig=18c-18c(3ff::)
+IOConfig=18e-18e(3ff::)
+IOConfig=f4a-f4b(3ff::)
+IOConfig=548e-548f(3ff::)
+IRQConfig=5
+DMAConfig=0
+DMAConfig=1
+
+[SASndSys.LC8]
+ConfigPriority=NORMAL
+IOConfig=f40-f47(3ff::)
+IOConfig=1488-148b(3ff::)
+IOConfig=c24-c24(3ff::)
+IOConfig=c2b-c2b(3ff::)
+IOConfig=c2d-c2d(3ff::)
+IOConfig=ac6c-ac6f(3ff::)
+IOConfig=a460-a460(3ff::)
+IOConfig=188-188(3ff::)
+IOConfig=18a-18a(3ff::)
+IOConfig=18c-18c(3ff::)
+IOConfig=18e-18e(3ff::)
+IOConfig=f4a-f4b(3ff::)
+IOConfig=548e-548f(3ff::)
+IRQConfig=5
+DMAConfig=1
+DMAConfig=0
+
+[*nEC1882.LogConfig]
+ConfigPriority = HARDRECONFIG
+IOConfig=148c-148d(3ff::)
+IRQConfig=10
+
+[BasicJoyStick.LC0]
+ConfigPriority=HARDWIRED
+IOConfig=1480-1487
+
+[NonPnP1.LogConfig]				;Same NEC8161
+ConfigPriority=HARDRECONFIG
+IOConfig = 0480-0487
+IOConfig = 1480-148F
+
+[NonPnP1M.LogConfig]				;Same NEC8162
+ConfigPriority=HARDRECONFIG
+IOConfig = 0480-0487
+IOConfig = 1480-148F
+IRQConfig=3,5,6,10				;MIDI
+
+[NonPnP2.LogConfig]				;Same NEC8163
+ConfigPriority=HARDRECONFIG
+IOConfig = 0480-0487
+IOConfig = 1480-148F
+IOConfig = 0188-018E
+IRQConfig=3,10,12				;OPN3
+
+[NonPnP2M.LogConfig]				;Same NEC8164
+ConfigPriority=HARDRECONFIG
+IOConfig = 0480-0487
+IOConfig = 1480-148F
+IOConfig = 0188-018E
+IRQConfig=3,5,6,10				;MIDI
+IRQConfig=3,10,12				;OPN3
+
+[NonPnP3.LogConfig1]				;Same NEC8167
+ConfigPriority=HARDRECONFIG
+IOConfig = 0480-0487
+IOConfig = 1480-148F
+IOConfig = 0188-018E
+IOConfig = A460-A461
+IOConfig = 0C24-0C25
+IOConfig = 0C2B-0C2C
+IOConfig = 0C2D-0C2E
+IOConfig = 0F40-0F4F
+IRQConfig=3,10,12				;OPN3/WSS
+DMAConfig=0,3					;WSS playback/capture
+
+[NonPnP3M.LogConfig1]				;Same NEC8168
+ConfigPriority=HARDRECONFIG
+IOConfig = 0480-0487
+IOConfig = 1480-148F
+IOConfig = 0188-018E
+IOConfig = A460-A461
+IOConfig = 0C24-0C25
+IOConfig = 0C2B-0C2C
+IOConfig = 0C2D-0C2E
+IOConfig = 0F40-0F4F
+IRQConfig=3,5,6,10				;MIDI
+IRQConfig=3,10,12				;OPN3/WSS
+DMAConfig=0,3					;WSS playback/capture
+
+;----Det-----------------------------;
+
+[*nEC1802.Det]
+AddReg=PreCopySection
+
+[*nEC1803.Det]
+AddReg=PreCopySection
+
+[*nEC1804.Det]
+AddReg=PreCopySection
+
+[*nEC1805.Det]
+AddReg=PreCopySection
+
+[*nEC1806.Det]
+AddReg=PreCopySection
+
+[*nEC1807.Det]
+AddReg=PreCopySection
+
+[*nEC1808.Det]
+AddReg=PreCopySection
+
+[*nEC180E.Det]
+AddReg=PreCopySection
+
+[*nEC1809.Det]
+AddReg=PreCopySection
+
+[*nEC1818.Det]
+AddReg=PreCopySection
+
+[*nEC1881.Det]
+AddReg=PreCopySection
+
+[*nEC1819.Det]
+AddReg=PreCopySection
+
+[*nEC1882.Det]
+AddReg=PreCopySection
+
+[*nEC18C1.det]
+AddReg=PreCopySection
+
+[*nEC0B81.Det]
+AddReg=PreCopySection
+
+[*nEC0B82.Det]
+AddReg=PreCopySection
+
+[*nEC0B83.Det]
+AddReg=PreCopySection
+
+[*nEC0B84.Det]
+AddReg=PreCopySection
+
+[*nEC0B87.Det]
+AddReg=PreCopySection
+
+[*nEC0B88.Det]
+AddReg=PreCopySection
+
+[*nEC8161.Det]
+AddReg=PreCopySection
+
+[*nEC8162.Det]
+AddReg=PreCopySection
+
+[*nEC8163.Det]
+AddReg=PreCopySection
+
+[*nEC8164.Det]
+AddReg=PreCopySection
+
+[*nEC8165.Det]
+AddReg=PreCopySection
+
+[*nEC8166.Det]
+AddReg=PreCopySection
+
+[*nEC8167.Det]
+AddReg=PreCopySection
+
+[*nEC8168.Det]
+AddReg=PreCopySection
+
+;----Add Register(Device ID)-----;
+
+[nEC1802.AddReg]
+HKR,Drivers\wave\nec73pcm.drv,Description,,%*nEC1802.DeviceDesc%
+HKR,Drivers\mixer\nec73pcm.drv,Description,,%*nEC1802.DeviceDesc%
+HKR,Drivers\aux\nec73pcm.drv,Description,,%*nEC1802.DeviceDesc%
+HKR,Drivers\midi\necopn.drv,Description,,%V_NEC73%
+HKR,Drivers,SubClasses,,"wave,midi,aux,mixer"
+
+[nEC1803.AddReg]
+HKR,Drivers\wave\nec73pcm.drv,Description,,%*nEC1803.DeviceDesc%
+HKR,Drivers\mixer\nec73pcm.drv,Description,,%*nEC1803.DeviceDesc%
+HKR,Drivers\aux\nec73pcm.drv,Description,,%*nEC1803.DeviceDesc%
+HKR,Drivers\midi\necopn.drv,Description,,%V_NEC73%
+HKR,Drivers,SubClasses,,"wave,midi,aux,mixer"
+
+[nEC1804.AddReg]
+HKR,Drivers\wave\nec73pcm.drv,Description,,%*nEC1804.DeviceDesc%
+HKR,Drivers\mixer\nec73pcm.drv,Description,,%*nEC1804.DeviceDesc%
+HKR,Drivers\aux\nec73pcm.drv,Description,,%*nEC1804.DeviceDesc%
+HKR,Drivers\midi\necopn.drv,Description,,%V_NEC73%
+HKR,Drivers,SubClasses,,"wave,midi,aux,mixer"
+
+[nEC1805.AddReg]
+HKR,Drivers\wave\nec73pcm.drv,Description,,%*nEC1805.DeviceDesc%
+HKR,Drivers\mixer\nec73pcm.drv,Description,,%*nEC1805.DeviceDesc%
+HKR,Drivers\aux\nec73pcm.drv,Description,,%*nEC1805.DeviceDesc%
+HKR,Drivers\midi\necopn.drv,Description,,%V_NEC73%
+HKR,Drivers,SubClasses,,"wave,midi,aux,mixer"
+
+[nEC1806.AddReg]
+HKR,Drivers\wave\neccspcm.drv,Description,,%*nEC1806.DeviceDesc%
+HKR,Drivers\mixer\neccspcm.drv,Description,,%*nEC1806.DeviceDesc%
+HKR,Drivers\aux\neccspcm.drv,Description,,%*nEC1806.DeviceDesc%
+HKR,Drivers,SubClasses,,"wave,aux,mixer"
+
+[nEC1807.AddReg]
+HKR,Drivers\wave\neccspcm.drv,Description,,%*nEC1807.DeviceDesc%
+HKR,Drivers\mixer\neccspcm.drv,Description,,%*nEC1807.DeviceDesc%
+HKR,Drivers\aux\neccspcm.drv,Description,,%*nEC1807.DeviceDesc%
+HKR,Drivers,SubClasses,,"wave,aux,mixer"
+
+[nEC1808.AddReg]
+HKR,Drivers\wave\neccspcm.drv,Description,,%*nEC1808.DeviceDesc%
+HKR,Drivers\mixer\necmix.drv,Description,,%*nEC1808M.DeviceDesc%
+HKR,Drivers\mixer\neccspcm.drv,Description,,%*nEC1808.DeviceDesc%
+HKR,Drivers\aux\neccspcm.drv,Description,,%*nEC1808.DeviceDesc%
+HKR,Drivers\midi\necopn.drv,Description,,%V_NECCb%
+HKR,Drivers,SubClasses,,"wave,midi,aux,mixer"
+
+[nEC180E.AddReg]
+HKR,Drivers\wave\neccspcm.drv,Description,,%*nEC180E.DeviceDesc%
+HKR,Drivers\mixer\neccspcm.drv,Description,,%*nEC180E.DeviceDesc%
+HKR,Drivers\aux\neccspcm.drv,Description,,%*nEC180E.DeviceDesc%
+HKR,Drivers,SubClasses,,"wave,aux,mixer"
+
+[nEC1809.AddReg]
+HKR,Drivers\wave\necpcm.drv,Description,,%*nEC1809W.DeviceDesc%
+HKR,Drivers\mixer\necmix2.drv,Description,,%*nEC1809Pre.DeviceDesc%
+HKR,Drivers\mixer\necpcm.drv,Description,,%*nEC1809M.DeviceDesc%
+HKR,Drivers\aux\necpcm.drv,Description,,%*nEC1809A.DeviceDesc%
+HKR,Drivers,SubClasses,,"wave,aux,mixer"
+
+[OPL3_Dev.AddReg]
+HKR,Drivers\midi\necopl.drv,Description,,%*nEC1818.DeviceDesc%
+
+[MPU401.AddRegDeviceDesc]
+HKR,Drivers\midi\necmidi.drv,Description,,%*nEC1881.DeviceDesc%
+
+[OPL3SA.AddReg]
+HKR,Drivers,MIGRATED,0,0
+HKLM,%KEY_IOC%\asm,,0,
+HKLM,%KEY_IOC%\Rec,,0,
+HKLM,%KEY_IOC%\MPlay,,0,
+
+[Machine1.AddReg]	;Same [Machine2.AddReg]
+HKR,,Driver,,"vjoyd.vxd vopl118.vxd"
+HKR,Drivers,SubClasses,,"midi,joystick"
+
+[Machine1M.AddReg]	;Same [Machine2.AddReg]
+HKR,,Driver,,"vjoyd.vxd vopl118.vxd vmidi118.vxd"
+HKR,Drivers,SubClasses,,"midi,joystick"
+
+[Machine3.AddReg]
+HKR,,Driver,," vjoyd.vxd vncs118d.vxd vopl118.vxd"
+HKR,,EnumPropPages,,"neccs118.drv,DrvEnumPropPages"
+HKR,Drivers\wave\neccs118.drv,Driver,,neccs118.drv
+HKR,Drivers\wave\neccs118.drv,Description,,%*nEC8168W.DeviceDesc%
+HKR,Drivers\mixer\neccs118.drv,Driver,,neccs118.drv
+HKR,Drivers\mixer\neccs118.drv,Description,,%*nEC8168M.DeviceDesc%
+HKR,Drivers\aux\neccs118.drv,Driver,,neccs118.drv
+HKR,Drivers\aux\neccs118.drv,Description,,%*nEC8168AUX.DeviceDesc%
+HKR,Drivers,SubClasses,,"wave,aux,mixer,midi,joystick"
+
+[Machine3M.AddReg]
+HKR,,Driver,," vjoyd.vxd vncs118d.vxd vopl118.vxd vmidi118.vxd"
+HKR,,EnumPropPages,,"neccs118.drv,DrvEnumPropPages"
+HKR,Drivers\wave\neccs118.drv,Driver,,neccs118.drv
+HKR,Drivers\wave\neccs118.drv,Description,,%*nEC8168W.DeviceDesc%
+HKR,Drivers\mixer\neccs118.drv,Driver,,neccs118.drv
+HKR,Drivers\mixer\neccs118.drv,Description,,%*nEC8168M.DeviceDesc%
+HKR,Drivers\aux\neccs118.drv,Driver,,neccs118.drv
+HKR,Drivers\aux\neccs118.drv,Description,,%*nEC8168AUX.DeviceDesc%
+HKR,Drivers,SubClasses,,"wave,aux,mixer,midi,joystick"
+
+[nEC180A.AddReg]
+HKR,Drivers\wave\neccspcm.drv,Description,,%*nEC180A.DeviceDesc%
+HKR,Drivers\mixer\necmix.drv,Description,,%*nEC180AM.DeviceDesc%
+HKR,Drivers\mixer\neccspcm.drv,Description,,%*nEC180A.DeviceDesc%
+HKR,Drivers\aux\neccspcm.drv,Description,,%*nEC180A.DeviceDesc%
+HKR,Drivers,SubClasses,,"wave,aux,mixer"
+
+;----Add Register(Sort of Machine)-----;
+
+[NEC73.AddReg]
+HKR,,Driver,,"vn73pcmd.vxd vnopnd.vxd"
+HKR,Drivers\wave\nec73pcm.drv,Driver,,nec73pcm.drv
+HKR,Drivers\mixer\nec73pcm.drv,Driver,,nec73pcm.drv
+HKR,Drivers\aux\nec73pcm.drv,Driver,,nec73pcm.drv
+HKR,Drivers\midi\necopn.drv,Driver,,necopn.drv
+HKR,Drivers,SubClasses,,"wave,midi,aux,mixer"
+
+[MATEX.AddReg]
+HKR,,Driver,,vncspcmd.vxd
+HKR,Drivers\wave\neccspcm.drv,Driver,,neccspcm.drv
+HKR,Drivers\mixer\neccspcm.drv,Driver,,neccspcm.drv
+HKR,Drivers\aux\neccspcm.drv,Driver,,neccspcm.drv
+HKR,Drivers,SubClasses,,"wave,aux,mixer"
+HKR,,EnumPropPages,,"neccspcm.drv,DrvEnumPropPages"
+
+[Cb.AddReg]
+HKR,,Driver,," vncspcmd.vxd vnopnd.vxd vnecmixd.vxd"
+HKR,Drivers\wave\neccspcm.drv,Driver,,neccspcm.drv
+HKR,Drivers\mixer\necmix.drv,Driver,,necmix.drv
+HKR,Drivers\mixer\neccspcm.drv,Driver,,neccspcm.drv
+HKR,Drivers\aux\neccspcm.drv,Driver,,neccspcm.drv
+HKR,Drivers\midi\necopn.drv,Driver,,necopn.drv
+HKR,Drivers,SubClasses,,"wave,midi,aux,mixer"
+HKR,,EnumPropPages,,"neccspcm.drv,DrvEnumPropPages"
+
+[J04.AddReg]
+HKR,,Driver,,vncspcmd.vxd
+HKR,Drivers\wave\neccspcm.drv,Driver,,neccspcm.drv
+HKR,Drivers\mixer\neccspcm.drv,Driver,,neccspcm.drv
+HKR,Drivers\aux\neccspcm.drv,Driver,,neccspcm.drv
+HKR,Drivers,SubClasses,,"wave,aux,mixer"
+HKR,,EnumPropPages,,"neccspcm.drv,DrvEnumPropPages"
+
+[Cb2.AddReg]
+HKR,,Driver,,"vnecpcm.vxd vnecmix2.vxd"
+HKR,Drivers\wave\necpcm.drv,Driver,,necpcm.drv
+HKR,Drivers\mixer\necmix2.drv,Driver,,necmix2.drv
+HKR,Drivers\mixer\necpcm.drv,Driver,,necpcm.drv
+HKR,Drivers\aux\necpcm.drv,Driver,,necpcm.drv
+HKR,Drivers,SubClasses,,"wave,aux,mixer"
+HKR,,EnumPropPages,,"necpcm.drv,DrvEnumPropPages"
+HKR,Config,LeftMasterVol,1,ff,ff,00,00
+HKR,Config,RightMasterVol,1,ff,ff,00,00
+
+[OPL.AddReg]
+HKR,,Driver,,vnecopl.vxd
+HKR,Drivers\midi\necopl.drv,Driver,,necopl.drv
+HKR,Drivers,SubClasses,,"midi"
+
+[MPU401.AddReg]
+HKR,,Driver,,vnecmidi.vxd
+HKR,Drivers\midi\necmidi.drv,Driver,,necmidi.drv
+HKR,Drivers\midi\necmidi.drv,External,1,01,00,00,00
+HKR,Drivers,SubClasses,,"midi"
+
+[SASndSys.AddReg]
+HKR,,DevLoader,,mmdevldr.vxd
+HKR,,Driver,,vopl3sa.vxd
+HKR,Drivers\wave\opl3sa.drv,Driver,0,opl3sa.drv
+HKR,Drivers\wave\opl3sa.drv,Description,0,%WSSDesc%
+HKR,Drivers\aux\opl3sa.drv,Driver,0,opl3sa.drv
+HKR,Drivers\aux\opl3sa.drv,Description,0,%WSSDesc%
+HKR,Drivers\mixer\opl3sa.drv,Driver,0,opl3sa.drv
+HKR,Drivers\mixer\opl3sa.drv,Description,0,%MIXDesc%
+HKR,Drivers\midi\opl3sa.drv,Driver,0,opl3sa.drv
+HKR,Drivers\midi\opl3sa.drv,Description,0,%FMDesc%
+HKR,Drivers\midi\opl3sa.drv,NumPorts,1,02,00,00,00
+HKR,Drivers\midi\opl3sa.drv,Port,1,00,00,00,00
+HKR,Drivers,SubClasses,0,"midi,aux,mixer,wave"
+
+[OPL3SA_MPU401.AddReg]
+HKR,,Driver,,vopl3sa.vxd
+HKR,Drivers\midi\opl3sa.drv,Driver,0,opl3sa.drv
+HKR,Drivers\midi\opl3sa.drv,External,1,01,00,00,00
+HKR,Drivers\midi\opl3sa.drv,NumPorts,1,01,00,00,00
+HKR,Drivers\midi\opl3sa.drv,Port,1,00,00,00,00
+HKR,Drivers\midi\opl3sa.drv,Description,,%MPUDesc%
+HKR,Drivers,SubClasses,0,"midi"
+
+[NECJSTK.AddReg]
+HKR,,Driver,,"vjoyd.vxd"
+HKR,Drivers\joystick\necjstk.drv,Description,,%*nEC18C1.DeviceDesc%
+HKR,Drivers\joystick\necjstk.drv,Driver,,necjstk.drv
+HKR,Drivers,SubClasses,,"joystick"
+
+[JSTK118.AddReg]
+HKR,Drivers\joystick\necjstk.drv,Driver,,necjstk.drv
+HKR,Drivers\joystick\necjstk.drv,Description,,%*nEC8168JOY.DeviceDesc%
+
+[MIDI118.AddReg]
+HKR,Drivers\midi\midi118.drv,Driver,,midi118.drv
+HKR,Drivers\midi\midi118.drv,Description,,%*nEC8168MID.DeviceDesc%
+HKR,Drivers\midi\midi118.drv,External,1,01,00,00,00
+
+[OPL118.AddReg]
+HKR,Drivers\midi\opl118.drv,Driver,,opl118.drv
+HKR,Drivers\midi\opl118.drv,Description,,%*nEC8168OPL.DeviceDesc%
+
+[Cb118.AddReg]
+HKR,,Driver,,"vncspcmd.vxd vnecmixd.vxd"
+HKR,Drivers\wave\neccspcm.drv,Driver,,neccspcm.drv
+HKR,Drivers\mixer\necmix.drv,Driver,,necmix.drv
+HKR,Drivers\mixer\neccspcm.drv,Driver,,neccspcm.drv
+HKR,Drivers\aux\neccspcm.drv,Driver,,neccspcm.drv
+HKR,Drivers,SubClasses,,"wave,aux,mixer"
+HKR,,EnumPropPages,,"neccspcm.drv,DrvEnumPropPages"
+
+;----Add Register(Sort of OutPut)-----;
+
+[MIXER.AddReg]
+HKLM,Software\Microsoft\Windows\CurrentVersion\Run,SystemTray,,"SysTray.Exe"
+HKLM,%KEY_IOC%\Vol,,,
+
+[WAVE.AddReg]
+HKR,,DevLoader,,mmdevldr.vxd
+HKR,Drivers,MIGRATED,,0
+HKR,Drivers\midi,,,
+HKR,Drivers\wave,,,
+HKR,Drivers\mixer,,,
+HKR,Drivers\aux,,,
+HKLM,%KEY_IOC%\acm,,,
+HKLM,%KEY_IOC%\Rec,,,
+HKLM,%KEY_IOC%\MPlay,,,
+
+[MIDI.AddReg]
+HKR,,Devloader,,mmdevldr.vxd
+HKR,Drivers,MIGRATED,,0
+HKR,Drivers\midi,,,
+
+[JOYSTICK.AddReg]
+HKR,,DevLoader,,mmdevldr.vxd
+HKR,Drivers,MIGRATED,,0
+HKR,Drivers\joystick,,,
+
+;----Del Register---------------;
+[CanBe118.DelReg]
+HKR,Drivers\midi\necopn.drv
+HKR,Drivers\midi\necopn.drv
+HKR,,Driver,,vnopnd.vxd
+
+;---------------------------------------------------------------;
+
+[Strings]
+;Non-localized strings
+KEY_WARNVER="SYSTEM\CurrentControlSet\Control\SessionManager\WarnVerDLLs"
+KEY_CHKVER="SYSTEM\CurrentControlSet\Control\SessionManager\CheckVerDLLs"
+KEY_FIL="SYSTEM\CurrentControlSet\Control\MediaResources\FilterList"
+KEY_IOC="SYSTEM\CurrentControlSet\Control\MediaResources\InstallOptionalComponents"
+
+;Localized strings
+MSFT="Microsoft"
+NECMfgName="NEC"
+CLMfgName="Creative Labs"
+*nEC1802.DeviceDesc="PC-9801-73"
+*nEC1803.DeviceDesc="PC-9801-73"
+*nEC1804.DeviceDesc="PC-9801-86 または互換"
+*nEC1805.DeviceDesc="PC-9801-86 または互換"
+*nEC1806.DeviceDesc="PC-9821Np PCM"
+*nEC1807.DeviceDesc="Mate-X PCM"
+*nEC1808.DeviceDesc="98CanBe Sound"
+*nEC1808M.DeviceDesc="98CanBe Mixer"
+*nEC180E.DeviceDesc="PCM Sound Card (PC-9801N-J04)"
+*nEC1809.DeviceDesc="98CanBe PCM/Mixer Driver"
+*nEC1809W.DeviceDesc="98CanBe Wave Driver"
+*nEC1809Pre.DeviceDesc="98CanBe"
+*nEC1809M.DeviceDesc="98CanBe PCM"
+*nEC1809A.DeviceDesc="98CanBe Aux Driver"
+*nEC1818.DeviceDesc="内部 OPL3 FM 音源"
+*nEC1881.DeviceDesc="外部 MIDI ﾎﾟｰﾄ"
+*nEC1819.DeviceDesc="98 CanBe Sound3 Sound System"
+*nEC1882.DeviceDesc="98 CanBe Sound3 MPU401"
+WSSDesc="98 CanBe Sound3 Windows Sound System CODEC"
+MIXDesc="98 CanBe Sound3 Mixer"
+FMDesc="98 CanBe Sound3 FM Synthesizer"
+MPUDesc="98 CanBe Sound3 MPU401"
+*nEC18C1.DeviceDesc="ｹﾞｰﾑﾎﾟｰﾄ ｼﾞｮｲｽﾃｨｯｸ"
+NEC118PnP1.DeviceDesc="PC-9801-118 PnP モード(パソコン本体①) MIDI割り込み未使用"
+NEC118PnP2.DeviceDesc="PC-9801-118 PnP モード(パソコン本体①) MIDI割り込み使用"
+NEC118PnP3.DeviceDesc="PC-9801-118 PnP モード(パソコン本体③) MIDI割り込み未使用"
+NEC118PnP4.DeviceDesc="PC-9801-118 PnP モード(パソコン本体③) MIDI割り込み使用"
+NEC118PnP7.DeviceDesc="PC-9801-118 PnP モード(パソコン本体②④⑤) MIDI割り込み未使用"
+NEC118PnP8.DeviceDesc="PC-9801-118 PnP モード(パソコン本体②④⑤) MIDI割り込み使用"
+*nEC0B81.DeviceDesc="PC-9801-118 非PnP モード(パソコン本体①) MIDI割り込み未使用"
+*nEC0B82.DeviceDesc="PC-9801-118 非PnP モード(パソコン本体①) MIDI割り込み使用"
+*nEC0B83.DeviceDesc="PC-9801-118 非PnP モード(パソコン本体③) MIDI割り込み未使用"
+*nEC0B84.DeviceDesc="PC-9801-118 非PnP モード(パソコン本体③) MIDI割り込み使用"
+*nEC0B87.DeviceDesc="PC-9801-118 非PnP モード(パソコン本体②④⑤) MIDI割り込み未使用"
+*nEC0B88.DeviceDesc="PC-9801-118 非PnP モード(パソコン本体②④⑤) MIDI割り込み使用"
+*nEC8168JOY.DeviceDesc="PC-9801-118 ｹﾞｰﾑﾎﾟｰﾄ ｼﾞｮｲｽﾃｨｯｸ"
+*nEC8168MID.DeviceDesc="PC-9801-118 外部 MIDI"
+*nEC8168OPL.DeviceDesc="PC-9801-118 内部 OPL3 FM 音源"
+*nEC8168OPN.DeviceDesc="PC-9801-118 内部 OPN FM 音源"
+*nEC8168M.DeviceDesc="PC-9801-118 PCM"
+*nEC8168W.DeviceDesc="PC-9801-118 Wave"
+*nEC8168MIX.DeviceDesc="PC-9801-118 Mixer"
+*nEC8168AUX.DeviceDesc="PC-9801-118 Aux"
+*nEC180A.DeviceDesc="98CanBe Sound(OPNなし)"
+*nEC180AM.DeviceDesc="98CanBe Mixer(OPNなし)"
+MediaClassName="ｻｳﾝﾄﾞ、ﾋﾞﾃﾞｵ、およびｹﾞｰﾑのｺﾝﾄﾛｰﾗ"
+V_NEC73="PC-9801-73/86 sound board"
+V_NECCb="98CanBe Internal"
+V_INTERNAL="内部 OPL3 FM 音源"
+V_EXTERNAL="外部 MIDI ﾎﾟｰﾄ"
+V_CLSMIDI="MIDI"
+

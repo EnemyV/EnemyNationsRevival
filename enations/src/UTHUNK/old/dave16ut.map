@@ -1,0 +1,396 @@
+
+ dave16ut
+
+ Start     Length     Name                   Class
+ 0001:0000 00383H     DAVE16UT_TEXT          CODE
+ 0001:0384 007E6H     _TEXT                  CODE
+ 0001:0B6A 00039H     INIT_TEXT              CODE
+ 0002:0000 00010H     NULL                   BEGDATA
+ 0002:0010 000F4H     _DATA                  DATA
+ 0002:0104 0000EH     CDATA                  DATA
+ 0002:0112 00000H     XIFB                   DATA
+ 0002:0112 00000H     XIF                    DATA
+ 0002:0112 00000H     XIFE                   DATA
+ 0002:0112 00000H     XIB                    DATA
+ 0002:0112 00000H     XI                     DATA
+ 0002:0112 00000H     XIE                    DATA
+ 0002:0112 00000H     XPB                    DATA
+ 0002:0112 00000H     XP                     DATA
+ 0002:0112 00000H     XPE                    DATA
+ 0002:0112 00000H     XCB                    DATA
+ 0002:0112 00000H     XC                     DATA
+ 0002:0112 00000H     XCE                    DATA
+ 0002:0112 00000H     XCFB                   DATA
+ 0002:0112 00000H     XCFCRT                 DATA
+ 0002:0112 00000H     XCF                    DATA
+ 0002:0112 00000H     XCFE                   DATA
+ 0002:0112 00000H     XIFCB                  DATA
+ 0002:0112 00000H     XIFU                   DATA
+ 0002:0112 00000H     XIFL                   DATA
+ 0002:0112 00000H     XIFM                   DATA
+ 0002:0112 00000H     XIFCE                  DATA
+ 0002:0112 00000H     DBDATA                 DATA
+ 0002:0112 00000H     CONST                  CONST
+ 0002:0112 00008H     HDR                    MSG
+ 0002:011A 00146H     MSG                    MSG
+ 0002:0260 00002H     PAD                    MSG
+ 0002:0262 00001H     EPAD                   MSG
+ 0002:0264 00002H     _BSS                   BSS
+ 0002:0266 00000H     XOB                    BSS
+ 0002:0266 00000H     XO                     BSS
+ 0002:0266 00000H     XOE                    BSS
+ 0002:0266 00000H     XOFB                   BSS
+ 0002:0266 00000H     XOF                    BSS
+ 0002:0266 00000H     XOFE                   BSS
+
+ Origin   Group
+ 0002:0   DGROUP
+
+ Address   Export                  Alias
+
+ 0001:00A0 ?thrd32Func@@ZCXPEEIGJ@Z  ?thrd32Func@@ZCXPEEIGJ@Z
+ 0001:0000 DLLINIT16               DLLINIT16
+ 0001:007C UTINIT                  UTINIT
+ 0001:00F8 UTPROC                  UTPROC
+ 0001:0032 WEP                     WEP
+
+  Address         Publics by Name
+
+ 0002:0264       ?hInst@@3IA
+ 0002:0010       ?pfnUT32CallBack@@3P7CKPEXKPEPEX@ZE
+ 0001:00A0       ?thrd32Func@@ZCXPEEIGJ@Z
+ 0001:0000       DLLINIT16
+ 0000:0000  Imp  DOS3CALL             (KERNEL.102)
+ 0000:0000  Imp  ENDTASKTHREADS       (THRDUTLS.350)
+ 0000:0000  Imp  EXITTHREAD           (THRDUTLS.240)
+ 0000:0000  Imp  FATALAPPEXIT         (KERNEL.137)
+ 0000:0000  Imp  FATALEXIT            (KERNEL.1)
+ 0000:0000  Imp  FREEPROCINSTANCE     (KERNEL.52)
+ 0000:0000  Imp  GETCURRENTTASK       (KERNEL.36)
+ 0000:0000  Imp  GETCURRENTTHREAD     (THRDUTLS.130)
+ 0000:0000  Imp  GETDOSENVIRONMENT    (KERNEL.131)
+ 0000:0000  Imp  GETMODULEFILENAME    (KERNEL.49)
+ 0000:0000  Imp  GETTHRDUTLSVERSION   (THRDUTLS.100)
+ 0000:0000  Imp  GETVERSION           (KERNEL.3)
+ 0000:0000  Imp  GLOBALREALLOC        (KERNEL.16)
+ 0000:0000  Imp  GLOBALSIZE           (KERNEL.20)
+ 0000:0000  Imp  INITAPP              (USER.5)
+ 0000:0000  Imp  INITTASK             (KERNEL.91)
+ 0001:0B6A       LIBENTRY
+ 0001:0054       LIBMAIN
+ 0000:0000  Imp  LOCALALLOC           (KERNEL.5)
+ 0000:0000  Imp  LOCALFREE            (KERNEL.7)
+ 0000:0000  Imp  LOCALINIT            (KERNEL.4)
+ 0000:0000  Imp  LOCALREALLOC         (KERNEL.6)
+ 0000:0000  Imp  LOCALSIZE            (KERNEL.10)
+ 0000:0000  Imp  LOCKSEGMENT          (KERNEL.23)
+ 0000:0000  Imp  MAKEPROCINSTANCE     (KERNEL.51)
+ 0000:0000  Imp  MESSAGEBOX           (USER.1)
+ 0000:0000  Imp  REMOVETHREAD         (THRDUTLS.310)
+ 0002:0004       rsrvptrs
+ 0000:0000  Imp  SETTHREADPAUSE       (THRDUTLS.270)
+ 0000:0000  Imp  SETTHREADPRIORITY    (THRDUTLS.260)
+ 0000:0000  Imp  STARTTHREAD          (THRDUTLS.320)
+ 0000:0000  Imp  TERMINATETHREAD      (THRDUTLS.250)
+ 0000:0000  Imp  UNLOCKSEGMENT        (KERNEL.24)
+ 0001:007C       UTINIT
+ 0001:00F8       UTPROC
+ 0000:0000  Imp  WAITEVENT            (KERNEL.30)
+ 0001:0032       WEP
+ 0000:0000  Imp  YIELDTHREAD          (THRDUTLS.230)
+ 0002:0084       _aseghi
+ 0002:0082       _aseglo
+ 0002:0264       _edata
+ 0002:0266       _end
+ 0002:00A6       _errno
+ 0001:0553       _exit
+ 0002:0074       _MODULEINSTANCE
+ 0002:0076       _STKHQQ
+ 0002:008A       __acfinfo
+ 0000:9876  Abs  __acrtmsg
+ 0000:9876  Abs  __acrtused
+ 0000:D6D6  Abs  __aDBdoswp
+ 0002:00F4       __adbgmsg
+ 0000:D6D6  Abs  __aDBused
+ 0002:0098       __aintdiv
+ 0002:00FE       __amblksiz
+ 0001:0869       __amsg_exit
+ 0001:039E       __astart
+ 0001:0570       __cexit
+ 0002:00F1       __child
+ 0001:0474       __cinit
+ 0001:0864       __cintDIV
+ 0002:0080       __cmdShow
+ 0002:00B5       __cpumode
+ 0001:05F1       __ctermsub
+ 0001:0581       __c_exit
+ 0002:00B6       __doserrno
+ 0002:0264       __edata
+ 0002:0266       __end
+ 0002:00EA       __environ
+ 0001:0561       __exit
+ 0002:00F3       __exitflag
+ 0002:009C       __fac
+ 0001:062E       __FF_MSGBANNER
+ 0001:0A52       __findlast
+ 0002:0106       __fpinit
+ 0000:9876  Abs  __fptaskdata
+ 0001:08B8       __fptrap
+ 0001:0960       __growseg
+ 0002:007A       __hInstance
+ 0002:0078       __hPrevInstance
+ 0001:09EC       __incseg
+ 0002:007C       __lpszCmdLine
+ 0001:0932       __myalloc
+ 0002:00B8       __nfile
+ 0001:0ACE       __nfree
+ 0001:0A72       __nmalloc
+ 0001:08BE       __NMSG_TEXT
+ 0001:08F5       __NMSG_WRITE
+ 0001:0B56       __nmsize
+ 0001:0441       __nomain
+ 0001:0AE8       __nrealloc
+ 0002:00B6       __oserr
+ 0002:00BE       __osfile
+ 0002:00B1       __osmajor
+ 0002:00B0       __osminor
+ 0002:00B4       __osmode
+ 0002:00B0       __osver
+ 0002:00B2       __osversion
+ 0002:00EC       __pgmptr
+ 0002:0100       __pnhNearHeap
+ 0002:00AC       __psp
+ 0002:00AA       __pspadr
+ 0001:08B1       __QWINClose
+ 0001:08B1       __QWINExit
+ 0001:08B1       __QWINGetBuffSize
+ 0001:08B1       __QWINGetFocus
+ 0001:08B1       __QWINGetSize
+ 0001:08B1       __QWINInit
+ 0001:08B1       __QWINIsQWINin
+ 0001:08B1       __QWINMenuClick
+ 0001:08B1       __QWINOpen
+ 0001:08B1       __QWINRead
+ 0001:08B1       __QWINSetAboutString
+ 0001:08B1       __QWINSetBuffSize
+ 0001:08B1       __QWINSetFocus
+ 0001:08B1       __QWINSetSize
+ 0001:08B1       __QWINTerm
+ 0002:00FC       __qwinused
+ 0001:08B1       __QWINWrite
+ 0001:08B1       __QWINYield
+ 0001:0652       __setargv
+ 0001:07D4       __setenvp
+ 0000:0001  Abs  __sizec
+ 0000:0000  Abs  __sized
+ 0001:0448       __stubmain
+ 0002:00A8       __umaskval
+ 0001:08B1       __wabout
+ 0001:08AC       __wcexit
+ 0001:08AC       __wcinit
+ 0001:08B1       __wclose
+ 0002:00BA       __wfile
+ 0001:0394       __wflags
+ 0001:08B1       __wgetfocus
+ 0001:08B1       __wgetscreenbuf
+ 0001:08B1       __wgetsize
+ 0000:0000  Imp  __WINFLAGS           (KERNEL.178)
+ 0002:00AF       __winmajor
+ 0002:00AE       __winminor
+ 0002:00AE       __winver
+ 0000:0000  Abs  __wiobused
+ 0001:08B1       __wmenuclick
+ 0002:00BC       __wnfile
+ 0001:08B1       __wopen
+ 0001:08B1       __wread
+ 0001:08B1       __wsetfocus
+ 0001:08B1       __wsetscreenbuf
+ 0001:08B1       __wsetsize
+ 0002:00D2       __wsfile
+ 0001:08B1       __wterm
+ 0001:08B1       __wwrite
+ 0002:0088       ___aDBrterr
+ 0002:0086       ___aDBswpflg
+ 0002:00E6       ___argc
+ 0002:00E8       ___argv
+
+  Address         Publics by Value
+
+ 0000:0000  Imp  GETTHRDUTLSVERSION   (THRDUTLS.100)
+ 0000:0000  Imp  EXITTHREAD           (THRDUTLS.240)
+ 0000:0000  Imp  UNLOCKSEGMENT        (KERNEL.24)
+ 0000:0000  Imp  GLOBALREALLOC        (KERNEL.16)
+ 0000:0000  Imp  LOCALREALLOC         (KERNEL.6)
+ 0000:0000  Imp  INITTASK             (KERNEL.91)
+ 0000:0000  Imp  GETCURRENTTASK       (KERNEL.36)
+ 0000:0000  Imp  SETTHREADPAUSE       (THRDUTLS.270)
+ 0000:0000  Imp  ENDTASKTHREADS       (THRDUTLS.350)
+ 0000:0000  Imp  INITAPP              (USER.5)
+ 0000:0000  Imp  FATALEXIT            (KERNEL.1)
+ 0000:0000  Imp  DOS3CALL             (KERNEL.102)
+ 0000:0000  Imp  LOCKSEGMENT          (KERNEL.23)
+ 0000:0000  Imp  SETTHREADPRIORITY    (THRDUTLS.260)
+ 0000:0000  Imp  YIELDTHREAD          (THRDUTLS.230)
+ 0000:0000  Imp  FREEPROCINSTANCE     (KERNEL.52)
+ 0000:0000  Imp  TERMINATETHREAD      (THRDUTLS.250)
+ 0000:0000  Abs  __sized
+ 0000:0000  Imp  __WINFLAGS           (KERNEL.178)
+ 0000:0000  Imp  STARTTHREAD          (THRDUTLS.320)
+ 0000:0000  Abs  __wiobused
+ 0000:0000  Imp  MESSAGEBOX           (USER.1)
+ 0000:0000  Imp  LOCALFREE            (KERNEL.7)
+ 0000:0000  Imp  MAKEPROCINSTANCE     (KERNEL.51)
+ 0000:0000  Imp  GETVERSION           (KERNEL.3)
+ 0000:0000  Imp  GETMODULEFILENAME    (KERNEL.49)
+ 0000:0000  Imp  LOCALALLOC           (KERNEL.5)
+ 0000:0000  Imp  REMOVETHREAD         (THRDUTLS.310)
+ 0000:0000  Imp  LOCALINIT            (KERNEL.4)
+ 0000:0000  Imp  GETCURRENTTHREAD     (THRDUTLS.130)
+ 0000:0000  Imp  WAITEVENT            (KERNEL.30)
+ 0000:0000  Imp  GLOBALSIZE           (KERNEL.20)
+ 0000:0000  Imp  LOCALSIZE            (KERNEL.10)
+ 0000:0000  Imp  FATALAPPEXIT         (KERNEL.137)
+ 0000:0000  Imp  GETDOSENVIRONMENT    (KERNEL.131)
+ 0000:0001  Abs  __sizec
+ 0000:9876  Abs  __fptaskdata
+ 0000:9876  Abs  __acrtused
+ 0000:9876  Abs  __acrtmsg
+ 0000:D6D6  Abs  __aDBdoswp
+ 0000:D6D6  Abs  __aDBused
+ 0001:0000       DLLINIT16
+ 0001:0032       WEP
+ 0001:0054       LIBMAIN
+ 0001:007C       UTINIT
+ 0001:00A0       ?thrd32Func@@ZCXPEEIGJ@Z
+ 0001:00F8       UTPROC
+ 0001:0394       __wflags
+ 0001:039E       __astart
+ 0001:0441       __nomain
+ 0001:0448       __stubmain
+ 0001:0474       __cinit
+ 0001:0553       _exit
+ 0001:0561       __exit
+ 0001:0570       __cexit
+ 0001:0581       __c_exit
+ 0001:05F1       __ctermsub
+ 0001:062E       __FF_MSGBANNER
+ 0001:0652       __setargv
+ 0001:07D4       __setenvp
+ 0001:0864       __cintDIV
+ 0001:0869       __amsg_exit
+ 0001:08AC       __wcexit
+ 0001:08AC       __wcinit
+ 0001:08B1       __wsetfocus
+ 0001:08B1       __wsetscreenbuf
+ 0001:08B1       __QWINIsQWINin
+ 0001:08B1       __QWINSetBuffSize
+ 0001:08B1       __wgetscreenbuf
+ 0001:08B1       __wgetfocus
+ 0001:08B1       __wgetsize
+ 0001:08B1       __QWINMenuClick
+ 0001:08B1       __QWINGetBuffSize
+ 0001:08B1       __wopen
+ 0001:08B1       __wmenuclick
+ 0001:08B1       __QWINTerm
+ 0001:08B1       __QWINOpen
+ 0001:08B1       __wsetsize
+ 0001:08B1       __QWINInit
+ 0001:08B1       __wread
+ 0001:08B1       __QWINClose
+ 0001:08B1       __QWINWrite
+ 0001:08B1       __QWINSetFocus
+ 0001:08B1       __QWINGetFocus
+ 0001:08B1       __wterm
+ 0001:08B1       __QWINSetSize
+ 0001:08B1       __wabout
+ 0001:08B1       __wclose
+ 0001:08B1       __QWINGetSize
+ 0001:08B1       __QWINYield
+ 0001:08B1       __QWINRead
+ 0001:08B1       __wwrite
+ 0001:08B1       __QWINSetAboutString
+ 0001:08B1       __QWINExit
+ 0001:08B8       __fptrap
+ 0001:08BE       __NMSG_TEXT
+ 0001:08F5       __NMSG_WRITE
+ 0001:0932       __myalloc
+ 0001:0960       __growseg
+ 0001:09EC       __incseg
+ 0001:0A52       __findlast
+ 0001:0A72       __nmalloc
+ 0001:0ACE       __nfree
+ 0001:0AE8       __nrealloc
+ 0001:0B56       __nmsize
+ 0001:0B6A       LIBENTRY
+ 0002:0004       rsrvptrs
+ 0002:0010       ?pfnUT32CallBack@@3P7CKPEXKPEPEX@ZE
+ 0002:0074       _MODULEINSTANCE
+ 0002:0076       _STKHQQ
+ 0002:0078       __hPrevInstance
+ 0002:007A       __hInstance
+ 0002:007C       __lpszCmdLine
+ 0002:0080       __cmdShow
+ 0002:0082       _aseglo
+ 0002:0084       _aseghi
+ 0002:0086       ___aDBswpflg
+ 0002:0088       ___aDBrterr
+ 0002:008A       __acfinfo
+ 0002:0098       __aintdiv
+ 0002:009C       __fac
+ 0002:00A6       _errno
+ 0002:00A8       __umaskval
+ 0002:00AA       __pspadr
+ 0002:00AC       __psp
+ 0002:00AE       __winminor
+ 0002:00AE       __winver
+ 0002:00AF       __winmajor
+ 0002:00B0       __osver
+ 0002:00B0       __osminor
+ 0002:00B1       __osmajor
+ 0002:00B2       __osversion
+ 0002:00B4       __osmode
+ 0002:00B5       __cpumode
+ 0002:00B6       __doserrno
+ 0002:00B6       __oserr
+ 0002:00B8       __nfile
+ 0002:00BA       __wfile
+ 0002:00BC       __wnfile
+ 0002:00BE       __osfile
+ 0002:00D2       __wsfile
+ 0002:00E6       ___argc
+ 0002:00E8       ___argv
+ 0002:00EA       __environ
+ 0002:00EC       __pgmptr
+ 0002:00F1       __child
+ 0002:00F3       __exitflag
+ 0002:00F4       __adbgmsg
+ 0002:00FC       __qwinused
+ 0002:00FE       __amblksiz
+ 0002:0100       __pnhNearHeap
+ 0002:0106       __fpinit
+ 0002:0264       _edata
+ 0002:0264       ?hInst@@3IA
+ 0002:0264       __edata
+ 0002:0266       __end
+ 0002:0266       _end
+
+Line numbers for dave16ut.obj(dave16ut.cpp) segment DAVE16UT_TEXT
+
+    32 0001:0000    34 0001:0010    35 0001:001d    36 0001:0026
+     0 0001:0030    39 0001:0032    41 0001:0042    42 0001:0048
+     0 0001:0052    47 0001:0054    49 0001:0064    50 0001:006a
+    51 0001:0070     0 0001:007a    54 0001:007c    56 0001:008c
+    57 0001:0095     0 0001:009f    60 0001:00a0    62 0001:00b0
+    63 0001:00cb    64 0001:00e5    65 0001:00ea     0 0001:00f7
+    68 0001:00f8    72 0001:0108    75 0001:0111    78 0001:011c
+    79 0001:0137    80 0001:0141    81 0001:0159    82 0001:016d
+    83 0001:0176    84 0001:017b    85 0001:01a2    86 0001:01bd
+    90 0001:01c6    91 0001:01d5    93 0001:01de    94 0001:01ed
+    96 0001:01f6    97 0001:0205   100 0001:020e   101 0001:0219
+   102 0001:0226   105 0001:022f   106 0001:023a   107 0001:0245
+   108 0001:024a   110 0001:0254   111 0001:0261   113 0001:026d
+   116 0001:0276   119 0001:0281   122 0001:0289   123 0001:0298
+   125 0001:02a1   126 0001:02b0   127 0001:02b9   129 0001:036f
+   130 0001:0378     0 0001:0382
+
+Program entry point at 0001:0b6a

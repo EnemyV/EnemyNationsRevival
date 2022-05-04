@@ -1,0 +1,47 @@
+
+
+typedef struct VPFTInfo
+{
+	enum { FTREQSENT=1, FTREQRECVD, FTACKSEND, FTACKRECVD, FTSEND, FTRECEIVE, FTDONE };
+	
+	DWORD	totalSize;
+	DWORD   count;
+	VPPLAYERID fromId;
+	VPPLAYERID toId;
+	DWORD	   state;
+	DWORD	   err;
+	DWORD	   sessionId;
+	LPVOID	   vpContext;
+	DWORD	   status2;
+
+} VPFTINFO, FAR *LPVPFTINFO;
+
+typedef CONST VPFTINFO FAR* LPCVPFTINFO;
+ 
+
+BOOL vpSendFile(VPSESSIONHANDLE, LPVPTRANSFER);
+
+{
+	Send FTREQ
+	Wait FTACK
+	Create FTLINK
+	return;
+}
+
+
+BOOL vpAcceptFile(VPSESSIONHANDLE, LPVPTRANSFER)
+{
+	Send FTACK
+	Wait FTLINK;
+	return;
+}
+
+BOOL vpSendBlock(LPVPSESSIONHANDLE, LPVPTRANSFER, LPVOID buf, DWORD bufSize);
+BOOL vpWaitBlock(LPVPSESSIONHANDLE, LPVPTRANSFER, LPVOID buf, DWORD bufSize);
+BOOL vpStopSending(LPVPSESSIONHANDLE, LPVPTRANSFER);
+
+
+
+
+
+

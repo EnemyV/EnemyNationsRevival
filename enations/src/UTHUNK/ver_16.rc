@@ -1,0 +1,36 @@
+/////////////////////////////////////////////////////////////////////////////
+// Version stamp for this .EXE
+
+#include "version.h"
+#include <ver.h>
+
+VS_VERSION_INFO     VERSIONINFO
+  FILEVERSION       VER_MAJOR, VER_MINOR, VER_RELEASE, 0
+  PRODUCTVERSION    VER_MAJOR, VER_MINOR, VER_RELEASE, 0
+  FILEFLAGSMASK     VS_FFI_FILEFLAGSMASK
+  FILEFLAGS         VER_FLAGS
+  FILEOS            VOS_DOS_WINDOWS32
+  FILETYPE          VFT_APP
+  FILESUBTYPE       0   // not used
+BEGIN
+	BLOCK "StringFileInfo"
+	BEGIN
+		BLOCK "040904E4" // Lang=US English, CharSet=Windows Multilingual
+		BEGIN
+			VALUE "CompanyName",     "Windward Studios\0"
+            VALUE "FileDescription", "16 bit side of thread UT\0"
+            VALUE "FileVersion", "1.00.011\0"
+            VALUE "InternalName", "dave16ut\0"
+            VALUE "LegalCopyright", "Copyright \251 1995, by Windward Studios, Inc.\0"
+            VALUE "LegalTrademarks", " \0"
+            VALUE "OriginalFilename", "Dave16UT.dll\0"
+            VALUE "ProductName", "Dave 16-bit UT\0"
+			VALUE "ProductVersion",  "3.1.0.0"
+		END
+	END
+	BLOCK "VarFileInfo"
+	BEGIN
+		VALUE "Translation", 0x409, 1252
+			// English language (0x409) and the Windows ANSI codepage (1252)
+	END
+END

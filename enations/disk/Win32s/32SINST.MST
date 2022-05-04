@@ -1,0 +1,736 @@
+'**************************************************************************
+'*                  MS Test script for Win32s setup program
+'**************************************************************************
+
+'' $DEFINE DEBUG  ''Define for script development/debugging
+
+'$INCLUDE 'setupapi.inc'
+'$INCLUDE 'msdetect.inc'
+
+''Dialog ID's
+CONST WELCOME                  = 100
+CONST ASKQUIT                  = 200
+CONST DESTPATH                 = 300
+CONST EXITFAILURE              = 400
+CONST EXITQUIT                 = 600
+CONST EXITSUCCESS              = 700
+CONST OPTIONS                  = 800
+CONST BADPATH                  = 6400
+
+CONST HELPWELCOME              = 1000
+CONST VERPATH                  = 1100
+CONST EXITFAILNOTWIN31         = 1200
+CONST EXITFAILNOTENH           = 1300
+CONST EXITFAILNOTPAGING        = 1325
+CONST EXITFAILNOTINTEL         = 1350
+CONST EXITFAILRUNAPP           = 1360
+CONST FREECELLINST             = 1400
+CONST FREECELLINSTNOWIN32S     = 1450
+CONST FREECELLPATH             = 1500
+CONST HELPFREECELL             = 1600
+
+
+''Bitmap ID
+CONST LOGO = 1
+
+''GetTempFileName flags
+CONST TF_FORCEDRIVE            = 128
+
+GLOBAL DESTWIN$      ''Windows directory.
+GLOBAL DESTSYS$      ''Windows\System directory.
+GLOBAL DEST32S$      ''Windows\System\Win32s directory
+GLOBAL DESTFREE$     ''Freecell directory
+GLOBAL OLE_PROTECT%  ''Indicates whether ole2 dlls were protected from being
+                     '' copied.
+GLOBAL OLE_OLEBOOT%
+GLOBAL VERNUM$       '' Win32s Version Number (i.e., for v1.25 VERNUM$="125"
+
+DECLARE SUB Install(OLEINCLUDED%, OLEONLY%, OLE2_32%, OLE2_16%, OLE2AUTO_16%, OLE16RUNAPP%)
+DECLARE SUB RecoverFromCopy(szFileName$)
+DECLARE FUNCTION UpdateSystemIni AS INTEGER
+DECLARE FUNCTION RebootSystem(OLEONLY%) AS INTEGER
+DECLARE FUNCTION MakePath (szDir$, szFile$) AS STRING
+DECLARE FUNCTION MakeSystemIni LIB "INIUPD.DLL" (arg1$, arg2$) AS INTEGER
+DECLARE FUNCTION RestartWindows LIB "INIUPD.DLL" AS INTEGER
+DECLARE FUNCTION OnWindowsNT LIB "INIUPD.DLL" AS INTEGER
+DECLARE FUNCTION PagingEnabled LIB "INIUPD.DLL" AS INTEGER
+DECLARE FUNCTION ShareEnabled LIB "INIUPD.DLL" AS INTEGER
+DECLARE FUNCTION IsWin32sLoaded LIB "INIUPD.DLL" (arg1$) AS INTEGER
+DECLARE FUNCTION IsRunningApp LIB "INIUPD.DLL" AS INTEGER
+DECLARE FUNCTION SetCuiFlags LIB "MSCUISTF.DLL" (arg1%, arg2%) AS INTEGER
+DECLARE FUNCTION ExitWindowsExec LIB "USER.EXE" (arg1$, arg2$) AS INTEGER
+DECLARE FUNCTION GetModuleHandle LIB "KRNL386.EXE" (arg1$) AS INTEGER
+DECLARE FUNCTION LoadLibrary LIB "KRNL386.EXE" (arg1$) AS INTEGER
+DECLARE SUB FreeLibrary LIB "KRNL386.EXE" (arg1%)
+DECLARE FUNCTION SetErrorMode LIB "KRNL386.EXE" (arg1%) AS INTEGER
+
+DECLARE FUNCTION GetTempFileName LIB "KRNL386.EXE" (drive%, prefix$, u%, filename$) AS INTEGER
+DECLARE SUB WriteLine LIB "INIUPD.DLL" (filename$, text$)
+DECLARE FUNCTION GetTempFileAt(szDir$, szPrefix$) as string
+INIT:
+    CUIDLL$ = "mscuistf.dll"            '' Custom user interface dll
+    HELPPROC$ = "FHelpDlgProc"          '' Help dialog procedure
+    szOldVer$ ="1.00.000     "          '' Reserve space in string for version
+    WIN32ENABLED% = 0
+    OLEONLY% = 0
+    OLE2_16% = 0
+    OLE2AUTO_16% = 0
+    OLE16RUNAPP% = 0
+    OLE_PROTECT% = 0
+    OLE_OLEBOOT% = 0
+
+    ON ERROR GOTO ERRNORMAL
+
+    SrcDir$ = GetSymbolValue("STF_SRCDIR")
+
+    szInf$ = GetSymbolValue("STF_SRCINFPATH")
+    IF szInf$ = "" THEN
+        szInf$ = GetSymbolValue("STF_CWDDIR") + "32sinst.inf"
+    END IF
+    ReadInfFile szInf$
+
+    SetBitmap CUIDLL$, LOGO
+
+    WIN32SVER$ = MID$(GetSectionKeyVersion("WindowsSystem", "win32s16"), 1, 4)
+    SetTitle "Microsoft Win32s version " + WIN32SVER$ + " Setup Program"
+    VERNUM$ = MID$(WIN32SVER$, 1, 1) + MID$(WIN32SVER$, 3 , 2)
+
+    DESTWIN$ = GetWindowsDir()
+    DESTSYS$ = GetWindowsSysDir()
+    DEST32S$ = DESTSYS + "WIN32S\"
+
+'$IFDEF DEBUG
+    i% = SetSizeCheckMode(scmOnIgnore)    '' could use scmOff; def = scmOnFatal
+    WinDrive$ = MID$(GetWindowsDir, 1, 1)
+    IF IsDriveValid(WinDrive$) = 0 THEN
+        i% = DoMsgBox("Windows drive ('"+WinDrive$+"') is not a valid drive.", "DEBUG", MB_TASKMODAL+MB_ICONHAND+MB_OK)
+        GOTO QUIT
+    END IF
+'$ENDIF ''DEBUG
+
+CHECK:
+    '' Can not run on versions less than 3.10.
+    IF GetWindowsMajorVersion < 3 THEN
+        ExitCode% = EXITFAILNOTWIN31
+        GOTO QUIT
+    END IF
+    IF GetWindowsMajorVersion = 3 AND GetWindowsMinorVersion < 10 THEN
+        ExitCode% = EXITFAILNOTWIN31
+        GOTO QUIT
+    END IF
+    '' Check that we are not runnig on Chicago, including pre-released
+    '' Chicago versions.
+    IF GetWindowsMajorVersion * 100 + GetWindowsMinorVersion > 350 THEN
+        ExitCode% = EXITSUCCESS
+        WIN32ENABLED% = 1
+        GOTO FREECELL
+    END IF
+    IF GetWindowsMode < 2  THEN
+        IF OnWindowsNT() THEN
+            ExitCode% = EXITFAILNOTINTEL '' Running on Windows NT (on RISC)
+        ELSE
+            ExitCode% = EXITFAILNOTENH   '' Standard Mode Windows
+        END IF
+        GOTO QUIT
+    END IF
+    IF OnWindowsNT() THEN
+        ExitCode% = EXITSUCCESS
+        WIN32ENABLED% = 1
+        GOTO FREECELL
+    END IF
+    ExitCode% = EXITSUCCESS
+
+    if IsRunningApp() <> 0 THEN
+        ExitCode% = EXITFAILRUNAPP
+        GOTO QUIT
+    END IF
+
+    '' Get version of Win32s to be installed from version info in INF file
+    szNewVer$ = GetSectionKeyVersion("WindowsSystem", "win32s16")
+
+    '' See if OLE is included.
+
+    OLEINCLUDED% = DoesFileExist( GetSymbolValue("STF_SRCDIR") + "OLE2THK.DL_", femExists )
+    '' Do the same for ole2thk.dll, if it is not compressed
+    OLEINCLUDED% = OLEINCLUDED% OR DoesFileExist( GetSymbolValue("STF_SRCDIR") + "OLE2THK.DLL", femExists )
+
+    IF OLEINCLUDED% = 1 THEN
+        '' See whether one of the OLE 16 bit components is loaded.
+        IF GetModulehandle("compobj") <> 0 THEN
+            OLE16RUNAPP% = 1
+            GOTO GetOleVersion
+        END IF
+        IF GetModuleHandle("ole2") <> 0 THEN
+            OLE16RUNAPP% = 1
+            GOTO GetOleVersion
+        END IF
+        IF GetModuleHandle("ole2prox") <> 0 THEN
+            OLE16RUNAPP% = 1
+            GOTO GetOleVersion
+        END IF
+        IF GetModuleHandle("ole2conv") <> 0 THEN
+            OLE16RUNAPP% = 1
+            GOTO GetOleVersion
+        END IF
+        IF GetModuleHandle("storage") <> 0 THEN
+            OLE16RUNAPP% = 1
+            GOTO GetOleVersion
+        END IF
+        IF GetModuleHandle("ole2nls") <> 0 THEN
+            OLE16RUNAPP% = 1
+            GOTO GetOleVersion
+        END IF
+        IF GetModuleHandle("ole2disp") <> 0 THEN
+            OLE16RUNAPP% = 1
+            GOTO GetOleVersion
+        END IF
+        IF GetModuleHandle("typelib") <> 0 THEN
+            OLE16RUNAPP% = 1
+            GOTO GetOleVersion
+        END IF
+
+GetOleVersion:
+        szOleNewVer$ = GetSectionKeyVersion("OleWindowsSystemWin32s", "ole2thk")
+
+        '' Get version of currently installed OLE32 from version info of
+        '' ole2thk file
+        szOleOldVer$ = GetVersionOfFile( DESTSYS$ + "WIN32S\OLE2THK.DLL" )
+
+        szOle16OldVer$ = GetVersionOfFile( DESTSYS$ + "COMPOBJ.DLL" )
+        szOle16NewVer$ = GetSectionKeyVersion("OleWindowsSystem", "compobj")
+        IF (szOle16NewVer$ > szOle16OldVer$) THEN
+            OLE2_16% = 1
+        END IF
+
+        szOle16OldVer$ = GetVersionOfFile( DESTSYS$ + "OLE2.DLL" )
+        szOle16NewVer$ = GetSectionKeyVersion("OleWindowsSystem", "ole2")
+        IF (szOle16NewVer$ > szOle16OldVer$) THEN
+            OLE2_16% = 1
+        END IF
+
+        szOle16OldVer$ = GetVersionOfFile( DESTSYS$ + "OLE2PROX.DLL" )
+        szOle16NewVer$ = GetSectionKeyVersion("OleWindowsSystem", "ole2prox")
+        IF (szOle16NewVer$ > szOle16OldVer$) THEN
+            OLE2_16% = 1
+        END IF
+
+        szOle16OldVer$ = GetVersionOfFile( DESTSYS$ + "STORAGE.DLL" )
+        szOle16NewVer$ = GetSectionKeyVersion("OleWindowsSystem", "storage")
+        IF (szOle16NewVer$ > szOle16OldVer$) THEN
+            OLE2_16% = 1
+        END IF
+
+        szOle16OldVer$ = GetVersionOfFile( DESTSYS$ + "OLE2CONV.DLL" )
+        szOle16NewVer$ = GetSectionKeyVersion("OleWindowsSystem", "ole2conv")
+        IF (szOle16NewVer$ > szOle16OldVer$) THEN
+            OLE2_16% = 1
+        END IF
+
+        szOle16OldVer$ = GetVersionOfFile( DESTSYS$ + "OLE2NLS.DLL" )
+        szOle16NewVer$ = GetSectionKeyVersion("OleWindowsSystem", "ole2nls")
+        IF (szOle16NewVer$ > szOle16OldVer$) THEN
+            OLE2AUTO_16% = 1
+        END IF
+
+        szOle16OldVer$ = GetVersionOfFile( DESTSYS$ + "OLE2DISP.DLL" )
+        szOle16NewVer$ = GetSectionKeyVersion("OleWindowsSystem", "ole2disp")
+        IF (szOle16NewVer$ > szOle16OldVer$) THEN
+            OLE2AUTO_16% = 1
+        END IF
+
+        szOle16OldVer$ = GetVersionOfFile( DESTSYS$ + "TYPELIB.DLL" )
+        szOle16NewVer$ = GetSectionKeyVersion("OleWindowsSystem", "typelib")
+        IF (szOle16NewVer$ > szOle16OldVer$) THEN
+            OLE2AUTO_16% = 1
+        END IF
+
+    END IF
+
+    OLE2_32% = OLEINCLUDED%
+
+    '' Check if Win32s is partially installed
+    sz$ = GetIniKeyString (DESTSYS$ + "WIN32S.INI", "Win32s", "Setup")
+    '' If WIN32S.INI specifies Win32s Setup=0, then force complete Win32s file overwrite
+    IF sz$ = "0" THEN
+        GOTO WELCOME
+    END IF
+    '' If WIN32S.INI is missing, try and reinstall Win32s files/recreate WIN32S.INI
+    IF sz$ <> "1" THEN
+        GOTO WELCOME
+    END IF
+
+    '' If Win32s is already installed, get running version number
+    i% = DoesFileExist( DESTSYS$ + "W32SYS.DLL", femExists )
+    IF i% = 1 THEN
+        i% = IsWin32sLoaded( szOldVer$ )
+    ENDIF
+
+    IF i% = 0 THEN
+        GOTO WELCOME
+    END IF
+
+    IF szNewVer$ > szOldVer$ THEN
+        GOTO WELCOME
+    END IF
+
+    IF OLEINCLUDED% = 1 THEN
+
+        OLE2_32% = 0
+
+        IF (szNewVer$ = szOldVer$) OR (szNewVer$ < szOldVer$) THEN
+            '' Compare OLE32 version and versions of each of OLE16 libraries.
+            sz$ = GetIniKeyString (DESTSYS$ + "WIN32S.INI", "OLE", "Setup")
+            '' If WIN32S.INI specifies OLE2 Setup=0, then force OLE2 file overwrite
+            IF ((sz$ <> "1") OR (szOleNewVer$ > szOleOldVer$)) THEN
+                OLEONLY% = 1
+                OLE2_32% = 1
+                GOTO WELCOME
+            END IF
+
+            IF OLE2_16% OR OLE2AUTO_16 THEN
+                OLEONLY% = 1
+                GOTO WELCOME
+            END IF
+
+        END IF
+
+    END IF
+
+    WIN32ENABLED% = 1
+    GOTO FREECELL
+
+WELCOME:
+    i% = SetCuiFlags(OLEONLY%, OLE16RUNAPP%)
+    sz$ = UIStartDlg(CUIDLL$, WELCOME, "FInfoDlgProc", HELPWELCOME, HELPPROC$)
+    IF sz$ = "CONTINUE" THEN
+        UIPop 1
+    ELSE
+        UIPop 1
+        GOSUB ASKQUIT
+        GOTO WELCOME
+    END IF
+
+
+GETWIN32SPATH:
+    IF PagingEnabled() = 0 THEN
+        i% = DoMsgBox("Use the Control Panel 386 Enhanced icon and configure Windows using the Virtual Memory option.", "Win32s requires Virtual Memory", MB_TASKMODAL+MB_ICONHAND+MB_OK)
+        ExitCode% = EXITFAILURE '' Enhanced mode but not paging
+        GOTO QUIT
+    END IF
+
+    IF ShareEnabled() = 0 THEN
+        i% = DoMsgBox( "File-sharing must be enabled. Run SHARE.EXE before starting Windows or add SHARE.EXE to your AUTOEXEC.BAT file.", "Win32s Setup: SHARE.EXE is not loaded", MB_TASKMODAL+MB_ICONEXCLAMATION+MB_OK)
+    END IF
+
+    SetSymbolValue "EditTextIn", DESTSYS$
+    SetSymbolValue "EditFocus", "END"
+
+GETPATHL1:
+    sz$ = UIStartDlg(CUIDLL$, VERPATH, "FDispDlgProc", HELPWELCOME, HELPPROC$)
+
+    IF sz$ = "CONTINUE" THEN
+        IF IsDirWritable(DESTSYS$) = 0 THEN
+            GOSUB BADPATH
+            GOTO GETPATHL1
+        END IF
+        UIPop 1
+    ELSEIF sz$ = "REACTIVATE" THEN
+        UIPop 1
+        GOTO GETPATHL1
+    ELSEIF sz$ = "BACK" THEN
+        UIPop 1
+        GOTO WELCOME
+    ELSE
+        UIPop 1
+        GOSUB ASKQUIT
+        GOTO GETPATHL1
+    END IF
+
+COPYFILES:
+    IF OLEONLY% = 0 THEN
+        CreateIniKeyValue DESTSYS$ + "WIN32S.INI", "Win32s", "Setup", "0", cmoOverwrite
+    END IF
+    IF OLE2_32% = 1 THEN
+        CreateIniKeyValue DESTSYS$ + "WIN32S.INI", "OLE", "Setup", "0", cmoOverwrite
+    END IF
+
+    '' Indicate Win32s install failure until all files known to be copied.
+    ExitCode% = EXITFAILURE
+    ERR = 0
+    CreateDir DEST32S$, cmoNone
+    Install OLEINCLUDED%, OLEONLY%, OLE2_32%, OLE2_16%, OLE2AUTO_16%, OLE16RUNAPP%
+    i% = UpdateSystemIni
+    '' Terminate if unhandled fatal error
+    IF (ERR <> 0) OR (i% = 0) THEN
+    GOTO QUIT
+    END IF
+
+    IF OLEONLY% = 0 THEN
+        CreateIniKeyValue DESTSYS$ + "WIN32S.INI", "Win32s", "Setup", "1", cmoOverwrite
+        CreateIniKeyValue DESTSYS$ + "WIN32S.INI", "Win32s", "Version", szNewVer$, cmoOverwrite
+        CreateIniKeyValue DESTSYS$ + "WIN32S.INI", "Nls", "AnsiCP", "1252", cmoOverwrite
+    END IF
+    IF OLE2_32% = 1 THEN
+        CreateIniKeyValue DESTSYS$ + "WIN32S.INI", "OLE", "Setup", "1", cmoOverwrite
+        CreateIniKeyValue DESTSYS$ + "WIN32S.INI", "OLE", "Version", szOleNewVer, cmoOverwrite
+    END IF
+
+    i% = DoMsgBox("Win32s files successfully installed.", "Microsoft Win32s Setup", MB_OK+MB_TASKMODAL)
+    '' Indicate Win32s correctly copied and installed.
+    ExitCode% = EXITSUCCESS
+
+FREECELL:
+    IF OLEONLY% = 1 THEN
+        GOTO QUIT
+    ENDIF
+    IF WIN32ENABLED% = 1 THEN
+        sz$ = UIStartDlg(CUIDLL$, FREECELLINSTNOWIN32S, "FInfoDlgProc",0, "")
+    ELSE
+        sz$ = UIStartDlg(CUIDLL$, FREECELLINST, "FInfoDlgProc",0, "")
+    END IF
+    UIPop 1
+    IF sz$ <> "CONTINUE" THEN
+        GOTO QUIT
+    END IF
+
+GETFREEPATH:
+    DESTFREE$ = MID$(DESTSYS$,1,3) + "WIN32APP\FREECELL\"
+    SetSymbolValue "EditTextIn", DESTFREE$
+    SetSymbolValue "EditFocus", "END"
+
+GETFREEPATHL1:
+    sz$ = UIStartDlg(CUIDLL$, FREECELLPATH, "FEditDlgProc", HELPFREECELL, HELPPROC$)
+
+    IF sz$ = "CONTINUE" THEN
+        DESTFREE$ = GetSymbolValue("EditTextOut")
+
+        IF MID$(DESTFREE$, LEN(DESTFREE$), 1) <> "\" THEN
+            DESTFREE$ = DESTFREE$ + "\"
+        END IF
+        ''Validate new path.
+        IF IsDirWritable(DESTFREE$) = 0 THEN
+            GOSUB BADPATH
+            GOTO GETFREEPATHL1
+        END IF
+        UIPop 1
+
+        GOTO COPYFREECELL
+    ELSEIF sz$ = "REACTIVATE" THEN
+        GOTO GETFREEPATHL1
+    ELSEIF sz$ = "EXIT" THEN
+        UIPop 1
+        GOTO QUIT
+    END IF
+
+COPYFREECELL:
+    ClearCopyList
+    CreateDir DESTFREE$, cmoNone
+
+    SrcDir$ = GetSymbolValue("STF_SRCDIR")
+
+    ERR = 0
+    AddSectionFilesToCopyList "Win32appFreecell", SrcDir$, DESTFREE$
+    CopyFilesInCopyList
+    '' If error copying FreeCell, not a fatal error. Win32s is already installed.
+    IF ERR <> 0 THEN
+    ERR = 0
+    GOTO QUIT
+    END IF
+    ERR = 0
+
+    IF DoesFileExist( DESTSYS$ + "WIN32S.INI", femExists ) THEN
+    CreateIniKeyValue DESTSYS$ + "WIN32S.INI", "Freecell", "Setup", "1", cmoOverwrite
+    CreateIniKeyValue DESTSYS$ + "WIN32S.INI", "Freecell", "Version", szNewVer$, cmoOverwrite
+    END IF
+
+    ERR = 0
+    CreateProgmanGroup "Win32 Applications", "", cmoNone
+    ShowProgmanGroup   "Win32 Applications", 1, cmoNone
+    CreateProgmanItem  "Win32 Applications", "Freecell", DESTFREE$ + "FREECELL.EXE", "", cmoOverwrite
+    '' Only put up success dialog if icon added to group
+    IF ERR = 0 THEN
+    i% = DoMsgBox("Freecell was successfully installed.", "Freecell Setup", MB_OK+MB_TASKMODAL)
+    END IF
+    ERR = 0
+
+QUIT:
+    '' Install error handler for final message box routines
+    ON ERROR GOTO ERRQUIT
+    IF ERR = 0 THEN
+        dlg% = ExitCode%
+    ELSEIF ERR = STFQUIT THEN
+        IF (OLE_PROTECT% = 1) THEN
+            '' Free all previously loaded libraries
+            FreeLibrary GetModuleHandle("compobj")
+            FreeLibrary GetModuleHandle("ole2")
+            FreeLibrary GetModuleHandle("ole2prox")
+            FreeLibrary GetModuleHandle("ole2conv")
+            FreeLibrary GetModuleHandle("storage")
+            FreeLibrary GetModuleHandle("ole2nls")
+            FreeLibrary GetModuleHandle("ole2disp")
+            FreeLibrary GetModuleHandle("typelib")
+        END IF
+        dlg% = EXITQUIT
+        ExitCode% = EXITQUIT
+    ELSE
+        dlg% = EXITFAILURE
+        ExitCode% = EXITQUIT
+    END IF
+
+QUITL1:
+    IF WIN32ENABLED% = 1 THEN
+        UIPop 1
+        END
+    END IF
+
+    sz$ = UIStartDlg(CUIDLL$, dlg%, "FInfo0DlgProc", 0, "")
+    IF sz$ = "REACTIVATE" THEN
+        GOTO QUITL1
+    END IF
+    UIPop 1
+
+    IF ExitCode% = EXITSUCCESS THEN
+        IF RebootSystem(OLEONLY% and not OLE_OLEBOOT%) = 0 THEN
+            CreateIniKeyValue DESTSYS$ + "WIN32S.INI", "Win32s", "Setup", "0", cmoOverwrite
+            IF OLE2_32% = 1 THEN
+                CreateIniKeyValue DESTSYS$ + "WIN32S.INI", "OLE", "Setup", "0", cmoOverwrite
+            END IF
+            i% = DoMsgBox("Win32s is not properly configured and Win32s Setup must be run again.", "Unable to Restart Windows", MB_ICONEXCLAMATION+MB_OK+MB_TASKMODAL)
+        END IF
+    ENDIF
+
+    END
+
+'' Fatal error handler for error message routine
+ERRQUIT:
+    i% = DoMsgBox("Setup sources were corrupted!", "Setup Message", MB_OK+MB_TASKMODAL+MB_ICONHAND)
+    END
+
+'' Bypass run-time errors. Let final dialog box display fatal error message.
+ERRNORMAL:
+    '' Check if user cancelled setup
+    IF ERR = STFQUIT THEN
+    GOTO QUIT
+    END IF
+    RESUME NEXT
+
+
+BADPATH:
+    sz$ = UIStartDlg(CUIDLL$, BADPATH, "FInfo0DlgProc", 0, "")
+    IF sz$ = "REACTIVATE" THEN
+        GOTO BADPATH
+    END IF
+        UIPop 1
+    RETURN
+
+  ASKQUIT:
+    sz$ = UIStartDlg(CUIDLL$, ASKQUIT, "FQuitDlgProc", 0, "")
+
+    IF sz$ = "EXIT" THEN
+        UIPop 1
+        UIPopAll
+        ERROR STFQUIT
+    ELSEIF sz$ = "REACTIVATE" THEN
+        GOTO ASKQUIT
+    ELSE
+        UIPop 1
+    END IF
+    RETURN
+
+
+
+'**
+'** Purpose:
+'**     Builds the copy list and performs all installation operations.
+'** Arguments:
+'**     none.
+'** Returns:
+'**     none.
+'*************************************************************************
+SUB Install(OLEINCLUDED%, OLEONLY%, OLE2_32%, OLE2_16%, OLE2AUTO_16%, OLE16RUNAPP%) STATIC
+
+    SrcDir$ = GetSymbolValue("STF_SRCDIR")
+
+    '' Use file layout sections that specify OLDER file version/time check
+    IF OLEONLY% = 0 THEN
+        AddSectionFilesToCopyList "WindowsSystem", SrcDir$, DESTSYS$
+        AddSectionFilesToCopyList "WindowsSystemWin32s", SrcDir$, DESTSYS$ + "WIN32S\"
+        '' Add obsolete files to be removed
+        AddSectionFilesToCopyList "Win32sSystemObsoleteFiles", SrcDir$, DESTSYS$ + "WIN32S\"
+    END IF
+
+    OLE_PROTECT% = 0
+    if OLEINCLUDED% = 1 THEN
+        IF (OLE2_16% = 1) OR (OLE2AUTO_16% = 1) THEN
+            IF OLE16RUNAPP% = 1 THEN
+                '' Force all OLE2 DLLS to be copied during reboot.
+                i% = SetErrorMode(-32768)
+                i% = LoadLibrary(DESTSYS$ + "compobj.dll")
+                i% = LoadLibrary(DESTSYS$ + "ole2.dll")
+                i% = LoadLibrary(DESTSYS$ + "ole2prox.dll")
+                i% = LoadLibrary(DESTSYS$ + "ole2conv.dll")
+                i% = LoadLibrary(DESTSYS$ + "storage.dll")
+                i% = LoadLibrary(DESTSYS$ + "ole2nls.dll")
+                i% = LoadLibrary(DESTSYS$ + "ole2disp.dll")
+                i% = LoadLibrary(DESTSYS$ + "typelib.dll")
+                OLE_PROTECT% = 1
+            END IF
+            AddSectionFilesToCopyList "OleWindowsSystem", SrcDir$, DESTSYS$
+        END IF
+        IF OLE2_32% = 1 THEN
+            AddSectionFilesToCopyList "OleWindowsSystemWin32s", SrcDir$, DESTSYS$ + "WIN32S\"
+        END IF
+        IF (OLE2_16% = 1) OR (OLE2_32% = 1) OR (OLE2AUTO_16% = 1) THEN
+            AddSectionFilesToCopyList "Ole2RegWindowsSystem", SrcDir$, DESTSYS$
+        END IF
+        IF (OLE2AUTO_16% = 1) THEN
+            AddSectionFilesToCopyList "StdoleWindowsSystem", SrcDir$, DESTSYS$
+            IF (OLE16RUNAPP and DoesFileExist(DESTSYS$ + "stdole.tlb", femExists) ) THEN
+                ' copy stdole.tlb -> tempfile1
+                stdole1$ = DESTSYS$ + GetTempFileAt(DESTSYS$, "STD")
+                CopyFile DESTSYS$+"STDOLE.TLB", stdole1$, cmoOverwrit, 0
+                OLE_OLEBOOT% = 1
+            ENDIF
+        END IF
+    END IF
+
+    SetRestartDir GetWindowsDir()
+
+    CopyFilesInCopyList
+
+    IF (OLEINCLUDED% = 1) THEN
+        RecoverFromCopy DESTSYS$ + "compobj.dll"
+        RecoverFromCopy DESTSYS$ + "ole2.dll"
+        RecoverFromCopy DESTSYS$ + "ole2prox.dll"
+        RecoverFromCopy DESTSYS$ + "ole2conv.dll"
+        RecoverFromCopy DESTSYS$ + "storage.dll"
+        RecoverFromCopy DESTSYS$ + "ole2nls.dll"
+        RecoverFromCopy DESTSYS$ + "ole2disp.dll"
+        RecoverFromCopy DESTSYS$ + "typelib.dll"
+    END IF
+
+    IF (OLE_PROTECT% = 1) THEN
+        '' Free all previously loaded libraries
+        FreeLibrary GetModuleHandle("compobj")
+        FreeLibrary GetModuleHandle("ole2")
+        FreeLibrary GetModuleHandle("ole2prox")
+        FreeLibrary GetModuleHandle("ole2conv")
+        FreeLibrary GetModuleHandle("storage")
+        FreeLibrary GetModuleHandle("ole2nls")
+        FreeLibrary GetModuleHandle("ole2disp")
+        FreeLibrary GetModuleHandle("typelib")
+        OLE_PROTECT% = 0
+    END IF
+    IF (OLE_OLEBOOT% = 1) THEN
+            'rename new stdole.tlb -> tempfile2
+            stdole2$ = GetTempFileAt(DESTSYS$, "STD")
+            RemoveFile DESTSYS$+stdole2$, cmoForce
+            RenameFile DESTSYS$+"STDOLE.TLB" , stdole2$
+            'rename tempfile1 -> stdole.tlb
+            RenameFile stdole1$, "STDOLE.TLB"
+            'write to _mssetup.bat: rename tempfile2 to stdole.tlb
+            WriteLine DESTWIN$+"_MSSETUP.BAT", ""
+            WriteLine DESTWIN$+"_MSSETUP.BAT", "DEL "+DESTSYS$+"STDOLE.TLB"
+            WriteLine DESTWIN$+"_MSSETUP.BAT", "REN "+DESTSYS$+stdole2$+" STDOLE.TLB"
+    ENDIF
+    IF OLEINCLUDED% AND (OLE2_16% OR OLE2_32% OR OLE2AUTO_16%) THEN
+        IF OLE16RUNAPP% THEN
+            reg1$ = DESTWIN$ + GetTempFileAt(DESTWIN$, "REG")
+            CopyFile DESTWIN$+"REG.DAT", reg1$, cmoOverwrit, 0
+        ENDIF
+
+        RUN "regedit /s " + DESTSYS$ + "ole2.reg"
+
+        IF OLE16RUNAPP% THEN
+            reg2$ = GetTempFileAt(DESTWIN$, "REG")
+            RemoveFile DESTWIN$ + reg2$, cmoForce
+            RenameFile DESTWIN$ + "REG.DAT" , reg2$
+            'rename tempfile1 -> reg.dat
+            RenameFile reg1$, "REG.DAT"
+            'write to _mssetup.bat: rename tempfile2 to reg.dat
+            WriteLine DESTWIN$+"_MSSETUP.BAT", ""
+            WriteLine DESTWIN$+"_MSSETUP.BAT", "DEL "+DESTWIN$+"REG.DAT"
+            WriteLine DESTWIN$+"_MSSETUP.BAT", "REN "+DESTWIN$ + reg2$+" REG.DAT"
+            OLE_OLEBOOT% = 1
+        ENDIF
+    END IF
+END SUB
+
+FUNCTION UpdateSystemIni STATIC AS INTEGER
+
+    VxDPath$ = DEST32S$ + "W32S.386"
+    SystemIniPath$ = GetWindowsDir()
+
+    UpdateSystemIni% = MakeSystemIni(SystemIniPath$, VxdPath$)
+
+END FUNCTION
+
+FUNCTION RebootSystem(OLEONLY%) STATIC AS INTEGER
+
+'   Check if any files were locked during install.  If the RestartList
+'   is not empty, ExitExecRestart() will restart Windows, cleanup setup
+'   files, and copy over locked files before Windows restarts.
+    i% = RestartListEmpty()
+    IF i% = 0 THEN
+'      ExitExecRestart() only returns if applications refuse to be shutdown.
+'      Win32s is installed but will not operate until Windows is restarted
+'      and the Win32s VxD is loaded.
+       i% = ExitExecRestart()
+       RebootSystem = 0
+    ELSE
+'      If the RestartList list is empty, it is necessary to restart windows
+'      directly.  The MSSETUP program creates _MSRSTRT.EXE and _MSSETUP.BAT
+'      in the restart directory.  This program should be exec'd to handle
+'      proper MSSETUP cleanup (temp files) and restart Windows.
+       IF (OLEONLY% = 1) THEN
+           RebootSystem = 1
+       ELSE
+           i% = ExitWindowsExec( GetWindowsDir() + "_MSRSTRT.EXE", "_MSSETUP.BAT" )
+           RebootSystem = 0
+       END IF
+    ENDIF
+
+END FUNCTION
+
+
+'**
+'** Purpose:
+'**     Appends a file name to the end of a directory path,
+'**     inserting a backslash character as needed.
+'** Arguments:
+'**     szDir$  - full directory path (with optional ending "\")
+'**     szFile$ - filename to append to directory
+'** Returns:
+'**     Resulting fully qualified path name.
+'*************************************************************************
+FUNCTION MakePath (szDir$, szFile$) STATIC AS STRING
+    IF szDir$ = "" THEN
+    MakePath = szFile$
+    ELSEIF szFile$ = "" THEN
+    MakePath = szDir$
+    ELSEIF MID$(szDir$, LEN(szDir$), 1) = "\" THEN
+    MakePath = szDir$ + szFile$
+    ELSE
+    MakePath = szDir$ + "\" + szFile$
+    END IF
+END FUNCTION
+
+FUNCTION GetTempFileAt(szDir$, szPrefix$) STATIC AS STRING
+    szCurDir$ = CURDIR$
+    CHDIR szDir$ + "."
+    szTempFile$ = STRING$(144, "E")
+    i% = GetTempFileName(TF_FORCEDRIVE, szPrefix$,0, szTempFile$)
+    CHDIR szCurDir$
+    GetTempFileAt = MID$(szTempFile$,3)
+END FUNCTION
+
+SUB RecoverFromCopy(szFileName$) STATIC
+    IF DoesFileExist(szFileName$, femExist) = 0 THEN
+        szBackFile$ = MID$(szFileName$, 1, LEN(szFileName$)-3) + VERNUM$
+        IF DoesfileExist(szBackFile$, femExist) = 0 THEN
+            i% = DoMsgBox("ERROR: Could not find backup file "+szBackfile$, "Setup Error", MB_ICONEXLAMATION + MB_OK)
+        ELSE
+            CopyFile szBackFile$, szFileName$, cmoTimeStamp, 0
+        END IF
+    END IF
+END SUB

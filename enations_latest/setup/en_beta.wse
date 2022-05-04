@@ -1,0 +1,352 @@
+Document Type: WSE
+item: Global
+  Version=5.0
+  Title=Windward Studios - Enemy Nations (beta)
+  Flags=00000100
+  Languages=65 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+  Japanese Font Name=MS Gothic
+  Japanese Font Size=10
+  Start Gradient=0 0 255
+  End Gradient=0 0 0
+  Windows Flags=00000000000000001000000010111000
+  Message Font=MS Sans Serif
+  Font Size=8
+  Disk Filename=SETUP
+  Patch Flags=0000000000000001
+  Patch Threshold=85
+  Patch Memory=4000
+end
+item: Remark
+  Text=Set Vars
+end
+item: Set Variable
+  Variable=TITLE
+  Value=Enemy Nations
+end
+item: Set Variable
+  Variable=FILENAME
+  Value=ENations
+end
+item: Set Variable
+  Variable=EXT
+  Value=.en
+end
+item: Remark
+end
+item: Remark
+  Text=Check version
+end
+item: Get System Information
+  Variable=WIN_VER
+  Flags=00000001
+end
+item: Check Configuration
+  Flags=10011010
+end
+item: If/While Statement
+  Variable=WIN_VER
+  Value=3.1
+  Flags=00001000
+end
+item: Display Message
+  Title=Setup - Error
+  Text=You are running Windows version %WIN_VER%. You must be running Windows 3.1 or later so that we can install Win32s. You can also install on Windows 95 or Windows/NT 3.5 (or later).
+  Text=Do you wish to cancel the installation?
+  Flags=00110001
+end
+item: Exit Installation
+end
+item: End Block
+end
+item: End Block
+end
+item: Check Configuration
+  Message=You must be running in enhanced mode so we can install Win32s.
+  Title=Setup - error
+  Flags=01000011
+end
+item: Check Configuration
+  Message=You must have Virtual Memory paging turned on so we can install Win32s. You can turn this on in the Control Panel, Enhanced (386) program.
+  Title=Setup - error
+  Flags=01001001
+end
+item: Get System Information
+  Variable=W32S_VER
+  Flags=00001011
+end
+item: If/While Statement
+  Variable=W32S_VER
+  Value=1.30.072
+  Flags=00001000
+end
+item: Display Message
+  Title=Check Win32s
+  Text=%TITLE% requires Win32s to run on Windows 3.1. Win32s is a seperate product created by Microsoft.
+  Text=You have version %W32S_VER% of Win32s and %TITLE% requires version 1.3c (1.30.172) or greater. You need to install Win32s before running %TITLE%
+end
+item: End Block
+end
+item: End Block
+end
+item: Check Configuration
+  Flags=10100000
+end
+item: If/While Statement
+  Variable=WIN_VER
+  Value=3.51
+  Flags=00001000
+end
+item: Display Message
+  Title=Setup - Error
+  Text=You are running Windows/NT version %WIN_VER%. You must be running Windows/NT 3.51 or later. You can also install on Windows 95 or Windows 3.1.
+  Text=Do you wish to cancel the installation?
+  Flags=00110001
+end
+item: Exit Installation
+end
+item: End Block
+end
+item: End Block
+end
+item: End Block
+end
+item: Check Configuration
+  Flags=10111001
+end
+item: Check if File/Dir Exists
+  Pathname=%SYS%\ddraw.dll
+  Message=You need to install DirectX (a Microsoft product) for fastest performance
+  Title=DirectX Check
+  Flags=00000001
+end
+item: End Block
+end
+item: Remark
+end
+item: Check Configuration
+  Message=You do not have NT Administrator rights. Enemy Nations will install but it cannot update the registry. The results of this are:
+  Message=1) If you install Enemy Nations a second time it will not be able to find the first installation by itself.
+  Message=2) The uninstall program cannot be registered with NT.
+  Message=3) The game fonts cannot be registered so Enemy Nations will use system fonts.
+  Title=No Registry Access
+  Flags=00011111
+end
+item: Remark
+end
+item: Remark
+  Text=ini/registry stuff
+end
+item: Check Configuration
+  Flags=10111010
+end
+item: Get Registry Key Value
+  Variable=BASE_DIR
+  Key=SOFTWARE\Windward Studios\Setup\Base Dir
+  Default=c:\Windward Studios
+  Flags=00000100
+end
+item: Get Registry Key Value
+  Variable=MAINDIR
+  Key=SOFTWARE\Windward Studios\%TITLE%\Setup\Base Dir
+  Default=%MAINDIR%
+  Flags=00000100
+end
+item: Else Statement
+end
+item: Read INI Value
+  Variable=BASE_DIR
+  Pathname=Windward.ini
+  Section=Setup
+  Item=BaseDir
+  Default=c:\windward
+end
+item: Read INI Value
+  Variable=MAINDIR
+  Pathname=%FILENAME%.ini
+  Section=Setup
+  Item=Directory
+  Default=%MAINDIR%
+end
+item: End Block
+end
+item: Browse for Directory
+  Variable=MAINDIR
+  Flags=00000001
+  Window Name=Program Directory - %TITLE%
+  Prompt Description=%TITLE% will be installed into the following directory. If you would like to install it into a different directory/drive, use the browse list below.
+  Prompt Name=Destination Directory:
+  Default Value=%MAINDIR%
+  Flags=00000001
+end
+item: Check Disk Space
+  Space1=0
+  Variable1=SYS
+  Space2=0
+  Variable2=MAINDIR
+end
+item: Remark
+end
+item: Remark
+  Text=Install WinG
+end
+item: Check Configuration
+  Flags=10011010
+end
+item: Check if File/Dir Exists
+  Pathname=%SYS%\wing.dll
+  Message=You need to install WinG (a Microsoft product) for fastest performance
+  Title=WinG Check
+  Flags=00000001
+end
+item: End Block
+end
+item: Remark
+end
+item: Remark
+  Text=Install Program
+end
+item: Install File
+  Source=e:\enations\disk\enations.exe
+  Destination=%MAINDIR%\enations.exe
+  Description=The game
+  Flags=0000000000000011
+  Patch Existing=%MAINDIR%\enations.exe
+  Patch Previous=e:\enations\024\enations.exe
+  Patch Previous=e:\enations\025\enations.exe
+  Patch Previous=e:\enations\026\enations.exe
+  Patch Previous=e:\enations\001\enations.exe
+  Patch Previous=e:\enations\002\enations.exe
+  Patch Previous=e:\enations\003\enations.exe
+  Patch Previous=e:\enations\005\enations.exe
+  Patch Previous=
+end
+item: Remark
+end
+item: Check Configuration
+  Flags=10111010
+end
+item: Get Registry Key Value
+  Variable=PROGMAN_NAME
+  Key=SOFTWARE\Windward Studios\Setup\Group
+  Default=Windward Studios
+  Flags=00000100
+end
+item: Else Statement
+end
+item: Read INI Value
+  Variable=PROGMAN_NAME
+  Pathname=Windward.ini
+  Section=Setup
+  Item=Group
+  Default=Windward Studios
+end
+item: End Block
+end
+item: Check Configuration
+  Flags=10111011
+end
+item: Get Registry Key Value
+  Variable=GROUP
+  Key=Software\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders
+  Default=%WIN%\Start Menu\Programs
+  Value Name=Programs
+  Flags=00000010
+end
+item: Get Registry Key Value
+  Variable=FOLDER
+  Key=Software\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders
+  Default=%WIN%\Desktop
+  Value Name=Desktop
+  Flags=00000010
+end
+item: Create Shortcut
+  Source=%MAINDIR%\readme.wri
+  Destination=%GROUP%\%PROGMAN_NAME%\Enemy Nations ReadMe.lnk
+  Working Directory=%MAINDIR%
+  Description=ReadMe File
+  Key Type=1536
+  Flags=00000001
+end
+item: Create Shortcut
+  Source=%MAINDIR%\readme.wri
+  Destination=%FOLDER%\%PROGMAN_NAME%\Enemy Nations ReadMe.lnk
+  Working Directory=%MAINDIR%
+  Description=ReadMe file
+  Key Type=1536
+  Flags=00000001
+end
+item: Remark
+end
+item: Edit INI File
+  Pathname=%GROUP%\%PROGMAN_NAME%\Windward Studios WEB Page.url
+  Settings=[InternetShortcut]
+  Settings=URL=http://www.windward.net
+end
+item: Edit INI File
+  Pathname=%FOLDER%\%PROGMAN_NAME%\Windward Studios WEB Page.url
+  Settings=[InternetShortcut]
+  Settings=URL=http://www.windward.net
+end
+item: Edit INI File
+  Pathname=%GROUP%\%PROGMAN_NAME%\Windward Studios Chat.url
+  Settings=[InternetShortcut]
+  Settings=URL=http://www.windward.net/chat
+end
+item: Edit INI File
+  Pathname=%FOLDER%\%PROGMAN_NAME%\Windward Studios Chat.url
+  Settings=[InternetShortcut]
+  Settings=URL=http://www.windward.net/chat
+end
+item: Edit INI File
+  Pathname=%GROUP%\%PROGMAN_NAME%\Windward Studios Technical Support.url
+  Settings=[InternetShortcut]
+  Settings=URL=http://www.windward.net/support
+end
+item: Edit INI File
+  Pathname=%FOLDER%\%PROGMAN_NAME%\Windward Studios Technical Support.url
+  Settings=[InternetShortcut]
+  Settings=URL=http://www.windward.net/support
+end
+item: Else Statement
+end
+item: Add ProgMan Icon
+  Group=%PROGMAN_NAME%
+  Icon Name=Windward Studios WEB Page
+  Command Line=netscape http://www.windward.net
+end
+item: Add ProgMan Icon
+  Group=%PROGMAN_NAME%
+  Icon Name=Windward Studios Chat
+  Command Line=netscape http://www.windward.net/chat
+end
+item: Add ProgMan Icon
+  Group=%PROGMAN_NAME%
+  Icon Name=Windward Studios Technical Support
+  Command Line=netscape http://www.windward.net/support
+end
+item: End Block
+end
+item: Remark
+end
+item: Display Message
+  Title=Setup - [Enemy Nations]
+  Text=Do you wish to view the readme file?
+  Flags=00000001
+end
+item: Set Variable
+  Variable=CMD_LINE
+  Value=%MAINDIR%\readme.wri
+  Flags=00010100
+end
+item: Execute Program
+  Pathname=write.exe
+  Command Line=%CMD_LINE%
+end
+item: End Block
+end
+item: Display Message
+  Title=Patch - [Enemy Nations]
+  Text=The patch is complete.
+  Text=We hope you enjoy playing Enemy Nations!
+  Text=
+end

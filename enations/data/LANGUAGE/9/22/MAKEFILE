@@ -1,0 +1,187 @@
+.SUFFIXES : .raw .wav 
+
+CMP =	sys01.cmp \
+		sys02.cmp \
+		sys03.cmp \
+		sys04.cmp \
+		sys05.cmp \
+		sys06.cmp \
+		sys07.cmp \
+		sys08.cmp \
+		sys09.cmp \
+		sys10.cmp \
+		sys11.cmp \
+		sys12.cmp \
+		sys13.cmp \
+		sys14.cmp \
+		rct01.cmp \
+		com01.cmp \
+		com02.cmp \
+		com03.cmp \
+		com04.cmp \
+		com05.cmp \
+		com06.cmp \
+		com07.cmp \
+		com08.cmp \
+		com09.cmp \
+		com10.cmp \
+		com11.cmp \
+		com12.cmp \
+		com13.cmp \
+		com14.cmp \
+		com15.cmp \
+		com16.cmp \
+		com17.cmp \
+		com18.cmp \
+		com19.cmp \
+		com20.cmp \
+		bld01.cmp \
+		bld02.cmp \
+		bld03.cmp \
+		bld04.cmp \
+		bld05.cmp \
+		bld06.cmp \
+		sci01.cmp \
+		sci02.cmp \
+		sci03.cmp \
+		sci04.cmp \
+		rec01.cmp \
+		rec02.cmp \
+		rec03.cmp \
+		rec04.cmp \
+		tem01.cmp \
+		tem02.cmp \
+		tem03.cmp \
+		tem04.cmp \
+		tem05.cmp \
+		tem06.cmp \
+		tem07.cmp \
+		tem08.cmp \
+		tem09.cmp \
+		tem10.cmp \
+		tem11.cmp \
+		tem12.cmp \
+		tem13.cmp \
+		tem14.cmp \
+		tem15.cmp \
+		tem16.cmp \
+		tem17.cmp \
+		tem18.cmp \
+		fac01.cmp \
+		fac02.cmp \
+		fac03.cmp \
+		fac04.cmp \
+		fac05.cmp \
+		fac06.cmp \
+		cut01.cmp \
+		cut02.cmp \
+		cut03.cmp \
+		cut04.cmp \
+		cut05.cmp \
+		cut06.cmp \
+		cut07.cmp \
+		cut08.cmp \
+		cut09.cmp \
+		cut10.cmp \
+		cut11.cmp \
+		cut12.cmp \
+		cut13.cmp  
+
+RAW = 	sys01.raw \
+		sys02.raw \
+		sys03.raw \
+		sys04.raw \
+		sys05.raw \
+		sys06.raw \
+		sys07.raw \
+		sys08.raw \
+		sys09.raw \
+		sys10.raw \
+		sys11.raw \
+		sys12.raw \
+		sys13.raw \
+		sys14.raw \
+		rct01.raw \
+		com01.raw \
+		com02.raw \
+		com03.raw \
+		com04.raw \
+		com05.raw \
+		com06.raw \
+		com07.raw \
+		com08.raw \
+		com09.raw \
+		com10.raw \
+		com11.raw \
+		com12.raw \
+		com13.raw \
+		com14.raw \
+		com15.raw \
+		com16.raw \
+		com17.raw \
+		com18.raw \
+		com19.raw \
+		com20.raw \
+		bld01.raw \
+		bld02.raw \
+		bld03.raw \
+		bld04.raw \
+		bld05.raw \
+		bld06.raw \
+		sci01.raw \
+		sci02.raw \
+		sci03.raw \
+		sci04.raw \
+		rec01.raw \
+		rec02.raw \
+		rec03.raw \
+		rec04.raw \
+		tem01.raw \
+		tem02.raw \
+		tem03.raw \
+		tem04.raw \
+		tem05.raw \
+		tem06.raw \
+		tem07.raw \
+		tem08.raw \
+		tem09.raw \
+		tem10.raw \
+		tem11.raw \
+		tem12.raw \
+		tem13.raw \
+		tem14.raw \
+		tem15.raw \
+		tem16.raw \
+		tem17.raw \
+		tem18.raw \
+		fac01.raw \
+		fac02.raw \
+		fac03.raw \
+		fac04.raw \
+		fac05.raw \
+		fac06.raw \
+		cut01.raw \
+		cut02.raw \
+		cut03.raw \
+		cut04.raw \
+		cut05.raw \
+		cut06.raw \
+		cut07.raw \
+		cut08.raw \
+		cut09.raw \
+		cut10.raw \
+		cut11.raw \
+		cut12.raw \
+		cut13.raw  
+
+all:	$(RAW) $(CMP)
+
+clean:
+	del *.raw
+
+.wav.raw:
+	vtor $*.wav $@
+
+.raw.cmp:
+	codec16 -r -m $*.raw $@
+

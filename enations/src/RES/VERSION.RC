@@ -1,0 +1,42 @@
+/////////////////////////////////////////////////////////////////////////////
+// Version stamp for this .EXE
+
+#include "version.h"
+#include <ver.h>
+
+VS_VERSION_INFO     VERSIONINFO
+  FILEVERSION       VER_MAJOR, VER_MINOR, VER_RELEASE, 0
+  PRODUCTVERSION    VER_MAJOR, VER_MINOR, VER_RELEASE, 0
+  FILEFLAGSMASK     VS_FFI_FILEFLAGSMASK
+  FILEFLAGS         VER_FLAGS
+  FILEOS            VOS_DOS_WINDOWS32
+  FILETYPE          VFT_APP
+  FILESUBTYPE       0   // not used
+BEGIN
+	BLOCK "StringFileInfo"
+	BEGIN
+		BLOCK "040904E4" // Lang=US English, CharSet=Windows Multilingual
+		BEGIN
+			VALUE "CompanyName",     "Windward Studios\0"
+			VALUE "FileDescription", "Second Chance Program\0"
+			VALUE "FileVersion",     RES_VER_STRING
+			VALUE "InternalName",    "SChance\0"
+			VALUE "LegalCopyright",  "Copyright \251 1995 - 1997 - by Windward Studios\0"
+			VALUE "LegalTrademarks", " \0"
+			VALUE "OriginalFilename","SChance.exe\0"
+			VALUE "ProductName",     "Second Chance\0"
+			VALUE "ProductVersion",  "3.1.0.0"
+		END
+	END
+	BLOCK "VarFileInfo"
+	BEGIN
+		VALUE "Translation", RES_LANG, RES_CODEPAGE
+//		VALUE "Translation", 0x409, 1252
+			// English language (0x409) and the Windows ANSI codepage (1252)
+	END
+END
+
+/////////////////////////////////////////////////////////////////////////////
+// Add additional manually edited resources here...
+
+/////////////////////////////////////////////////////////////////////////////

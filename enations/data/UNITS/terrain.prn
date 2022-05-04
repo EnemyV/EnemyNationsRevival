@@ -1,0 +1,30 @@
+CHUNK DATA {int 1, 0, 1, 1, 1, 1, 0, 12, 6, 5
+int  6, 1 }
+CHUNK DATA {int 2, 1, 3, 5, 3, 2, 0, 2, 2, 2
+int  2, 1 }
+CHUNK DATA {int 4, 5, 4, 8, 9, 12, 0, 10, 4, 3
+int  2, 1 }
+CHUNK DATA {int 5, 0, 0, 0, 0, 8, 1, 1, 1, 1
+int  1, 1 }
+CHUNK DATA {int 7, 3, 7, 10, 11, 0, 0, 6, 4, 3
+int  1, 1 }
+CHUNK DATA {int 12, 0, 14, 21, 0, 0, 0, 11, 5, 4
+int  2, 1 }
+CHUNK DATA {int 5, 0, 0, 0, 0, 12, 1, 1, 1, 1
+int  1, 1 }
+CHUNK DATA {int 1, 10, 2, 4, 3, 2, 0, 2, 2, 2
+int  2, 1 }
+CHUNK DATA {int 5, 0, 12, 0, 0, 6, 0, 1, 1, 1
+int  1, 1 }
+CHUNK DATA {int 1, 0, 1, 1, 1, 1, 0, 1, 2, 2
+int  2, 1 }
+CHUNK DATA {int 3, 6, 4, 7, 6, 12, 0, 4, 4, 3
+int  1, 1 }
+CHUNK DATA {int 6, 2, 8, 14, 16, 6, 0, 5, 4, 3
+int  5, 1 }
+CHUNK DATA {int 12, 0, 4, 16, 12, 18, 8, 2, 1, 1
+int  1, 1 }
+CHUNK DATA {int 1, 10, 3, 5, 3, 3, 0, 4, 3, 2
+int  3, 1 }
+CHUNK DATA {int 1, 10, 2, 4, 3, 2, 0, 2, 2, 2
+int  2, 1 }

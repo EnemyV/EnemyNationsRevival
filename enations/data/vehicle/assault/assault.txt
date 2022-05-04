@@ -1,0 +1,6 @@
+Vehicle hotspot/anchor info.
+
+Anchor points          -> 0 out of 71 views.
+Damage hotspots        -> 71 out of 71 views.
+Turret/Muzzle hotspots -> 70 out of 71 views.
+Flag hotspots          -> 71 out of 71 views.

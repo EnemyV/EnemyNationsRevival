@@ -1,0 +1,876 @@
+{\rtf1\ansi \deff5\deflang1033{\fonttbl{\f0\froman\fcharset0\fprq2 Tms Rmn;}{\f1\froman\fcharset2\fprq2 Symbol;}{\f2\fswiss\fcharset0\fprq2 Helv;}{\f3\fmodern\fcharset0\fprq1 Courier;}
+{\f4\froman\fcharset0\fprq2 Times New Roman;}{\f5\fswiss\fcharset0\fprq2 Arial;}{\f6\froman\fcharset0\fprq2 MS Serif;}{\f7\fswiss\fcharset0\fprq2 MS Sans Serif;}{\f8\froman\fcharset0\fprq2 Times;}{\f9\fswiss\fcharset0\fprq2 Helvetica;}
+{\f10\fswiss\fcharset0\fprq2 System;}{\f11\fmodern\fcharset0\fprq1 Courier New;}{\f12\froman\fcharset0\fprq2 New York;}{\f13\fswiss\fcharset0\fprq2 Geneva;}{\f14\fmodern\fcharset0\fprq1 LinePrinter;}{\f15\froman\fcharset0\fprq2 CG Times;}
+{\f16\fswiss\fcharset0\fprq2 Univers;}{\f17\fnil\fcharset2\fprq2 Marlett;}{\f18\fnil\fcharset2\fprq2 Wingdings;}{\f19\froman\fcharset0\fprq2 Book Antiqua;}{\f20\fnil\fcharset2\fprq2 Monotype Sorts;}{\f21\fswiss\fcharset0\fprq2 Arial Narrow;}
+{\f22\froman\fcharset0\fprq2 Bookman Old Style;}{\f23\fswiss\fcharset0\fprq2 Century Gothic;}{\f24\fscript\fcharset0\fprq2 Monotype Corsiva;}{\f25\froman\fcharset0\fprq2 Century Schoolbook;}{\f26\fmodern\fcharset2\fprq1 MS LineDraw;}
+{\f27\fswiss\fcharset0\fprq2 Haettenschweiler;}{\f28\froman\fcharset0\fprq2 Garamond;}{\f29\froman\fcharset0\fprq2 Map Symbols;}{\f30\fswiss\fcharset0\fprq2 Arial Black;}{\f31\fswiss\fcharset0\fprq2 Arial Rounded MT Bold;}
+{\f32\fdecor\fcharset0\fprq2 Algerian;}{\f33\fdecor\fcharset0\fprq2 Braggadocio;}{\f34\fswiss\fcharset0\fprq2 Britannic Bold;}{\f35\fscript\fcharset0\fprq2 Brush Script MT;}{\f36\fdecor\fcharset0\fprq2 Colonna MT;}{\f37\fdecor\fcharset0\fprq2 Desdemona;}
+{\f38\froman\fcharset0\fprq2 Footlight MT Light;}{\f39\fswiss\fcharset0\fprq2 Impact;}{\f40\fdecor\fcharset0\fprq2 Kino MT;}{\f41\froman\fcharset0\fprq2 Wide Latin;}{\f42\fscript\fcharset0\fprq2 Matura MT Script Capitals;}
+{\f43\fdecor\fcharset0\fprq2 Playbill;}{\f44\fswiss\fcharset2\fprq2 Bookshelf Symbol 1;}{\f45\fswiss\fcharset2\fprq2 Bookshelf Symbol 2;}{\f46\froman\fcharset2\fprq2 Bookshelf Symbol 3;}{\f47\froman\fcharset2\fprq2 MT Extra;}
+{\f48\froman\fcharset0\fprq2 Bell MT;}{\f49\froman\fcharset0\fprq2 Centaur;}{\f50\fdecor\fcharset0\fprq2 Edda;}{\f51\fscript\fcharset0\fprq2 Mistral;}{\f52\fscript\fcharset0\fprq2 Old English Text MT;}{\f53\fdecor\fcharset0\fprq2 Ransom;}
+{\f54\fdecor\fcharset0\fprq2 Augsburger Initials;}{\f55\froman\fcharset0\fprq2 Baskerville Old Face;}{\f56\fscript\fcharset0\fprq2 BriemScript;}{\f57\froman\fcharset0\fprq2 Castellar;}{\f58\fscript\fcharset0\fprq2 Contemporary Brush;}
+{\f59\fscript\fcharset0\fprq2 Eckmann;}{\f60\froman\fcharset0\fprq2 Elephant;}{\f61\fswiss\fcharset0\fprq2 Eurostile;}{\f62\fswiss\fcharset0\fprq2 Futura;}{\f63\fswiss\fcharset0\fprq2 Gill Sans Ultra Bold;}{\f64\fscript\fcharset0\fprq2 Gradl;}
+{\f65\fdecor\fcharset0\fprq2 Harrington;}{\f66\froman\fcharset0\fprq2 New Caledonia;}{\f67\fdecor\fcharset0\fprq2 Onyx;}{\f68\fscript\fcharset0\fprq2 Parade;}{\f69\fdecor\fcharset0\fprq2 Peignot Medium;}{\f70\fdecor\fcharset0\fprq2 Stencil;}
+{\f71\fdecor\fcharset0\fprq2 Stop;}{\f72\froman\fcharset2\fprq2 Wingdings 2;}{\f73\froman\fcharset2\fprq2 Wingdings 3;}{\f74\fmodern\fcharset0\fprq1 LiquidCrystal;}{\f75\fswiss\fcharset0\fprq2 Black Forest;}{\f76\fnil\fcharset0\fprq2 Milford;}
+{\f77\fnil\fcharset2\fprq2 KivunPi;}{\f78\fnil\fcharset0\fprq2 Black Chancery;}{\f79\fmodern\fcharset255\fprq2 Modern;}{\f80\fswiss\fcharset0\fprq1 MS Dialog;}{\f81\froman\fcharset0\fprq2 CG Times (WN);}}{\colortbl;\red0\green0\blue0;\red0\green0\blue255;
+\red0\green255\blue255;\red0\green255\blue0;\red255\green0\blue255;\red255\green0\blue0;\red255\green255\blue0;\red255\green255\blue255;\red0\green0\blue128;\red0\green128\blue128;\red0\green128\blue0;\red128\green0\blue128;\red128\green0\blue0;
+\red128\green128\blue0;\red128\green128\blue128;\red192\green192\blue192;}{\stylesheet{\widctlpar \f5\fs20 \snext0 Normal;}{\s1\sb60\sa120\widctlpar \b\f5\fs28 \sbasedon0\snext0 heading 1;}{\s2\li360\ri360\sb120\widctlpar \b\f5 \sbasedon0\snext0 
+heading 2;}{\s3\sb240\sa60\keepn\widctlpar \b\f5 \sbasedon0\snext0 heading 3;}{\s4\li360\widctlpar \f5\ul \sbasedon0\snext0 heading 4;}{\s5\sb240\sa60\widctlpar \f5\fs22 \sbasedon0\snext0 heading 5;}{\s6\sb240\sa60\widctlpar \i\f5\fs22 \sbasedon0\snext0 
+heading 6;}{\s7\sb240\sa60\widctlpar \f5\fs20 \sbasedon0\snext0 heading 7;}{\s8\sb240\sa60\widctlpar \i\f5\fs20 \sbasedon0\snext0 heading 8;}{\s9\sb240\sa60\widctlpar \i\f5\fs18 \sbasedon0\snext0 heading 9;}{\*\cs10 \additive Default Paragraph Font;}{\*
+\cs15 \additive\sbasedon10 page number;}{\s16\widctlpar\tqc\tx4320\tqr\tx8640 \f5 \sbasedon0\snext16 footer;}{\s17\li180\widctlpar \b\f5\fs28 \sbasedon0\snext21 Topic Caption;}{\s18\qc\widctlpar \b\f5\fs28 \sbasedon0\snext18 Section Heading;}{
+\s19\widctlpar \b\f5\fs20 \sbasedon0\snext19 Topic;}{\s20\widctlpar \b\f5\fs20 \sbasedon0\snext20 Sub-Topic;}{\s21\li360\sb120\widctlpar \b\f5 \sbasedon0\snext22 Topic Heading;}{\s22\li360\ri360\widctlpar \f5\fs20 \sbasedon0\snext22 Topic Text;}{
+\s23\fi-360\li720\ri360\widctlpar \f5\fs20 \sbasedon22\snext23 Topic Text Item;}{\s24\li720\ri720\widctlpar \f5\fs20 \sbasedon22\snext24 Topic Text Indent;}{\s25\li720\widctlpar \f5\fs20 \sbasedon0\snext25 Normal Indent;}{
+\s26\fi-187\li302\widctlpar\tx302{\*\pn \pnlvl11\pnf18\pnfs10\pnstart1\pnindent187\pnhang{\pntxtb n}}\f5\fs20 \sbasedon0\snext26 Topic Text Bulleted;}{\s27\fi-187\li302\widctlpar\tx302{\*\pn \pnlvl10\pndec\pnb0\pni0\pnf5\pnfs16\pnstart1\pnindent187\pnhang
+}\f5\fs20 \sbasedon0\snext27 Topic Text Numbered;}{\s28\widctlpar \f5\fs20 \sbasedon0\snext28 footnote text;}{\*\cs29 \additive\super \sbasedon10 footnote reference;}}{\info{\title Enemy Nations}{\author Virgin Games}{\operator David Thielen}
+{\creatim\yr1996\mo9\dy26\hr16\min31}{\revtim\yr1996\mo9\dy26\hr16\min39}{\version4}{\edmins6}{\nofpages30}{\nofwords5363}{\nofchars30574}{\*\company Virgin Interactive}{\vern57431}}\margl1440\margr1440 \widowctrl\ftnbj\aenddoc\formshade \fet0
+{\*\template D:\\Program Files\\MSOffice\\Templates\\Robort31.dot}\sectd \linex0\endnhere {\footer \pard\plain \s16\widctlpar\tqc\tx4320\tqr\tx8640 \f5 {\i\fs20 
+\par Enemy Nations}{\fs20  Game Manual\tab \tab }{\field{\*\fldinst {\cs15\fs20  PAGE }}{\fldrslt {\cs15\fs20\lang1024 30}}}
+\par }{\*\pnseclvl1\pnucrm\pnstart1\pnindent720\pnhang{\pntxta .}}{\*\pnseclvl2\pnucltr\pnstart1\pnindent720\pnhang{\pntxta .}}{\*\pnseclvl3\pndec\pnstart1\pnindent720\pnhang{\pntxta .}}{\*\pnseclvl4\pnlcltr\pnstart1\pnindent720\pnhang{\pntxta )}}{\*\pnseclvl5
+\pndec\pnstart1\pnindent720\pnhang{\pntxtb (}{\pntxta )}}{\*\pnseclvl6\pnlcltr\pnstart1\pnindent720\pnhang{\pntxtb (}{\pntxta )}}{\*\pnseclvl7\pnlcrm\pnstart1\pnindent720\pnhang{\pntxtb (}{\pntxta )}}{\*\pnseclvl8\pnlcltr\pnstart1\pnindent720\pnhang
+{\pntxtb (}{\pntxta )}}{\*\pnseclvl9\pnlcrm\pnstart1\pnindent720\pnhang{\pntxtb (}{\pntxta )}}\pard\plain \qc\widctlpar \f5\fs20 {\b\i\fs48 Enemy Nations}{\b\fs48 {\field{\*\fldinst SYMBOL 228 \\f "Symbol" \\s 24}{\fldrslt\f1\fs48}}}{\b\fs40 
+\par }\pard \qc\widctlpar {\b\fs28 
+\par GAME MANUAL
+\par version 1.2
+\par 
+\par Updated September 25, 1996}{\fs28 
+\par }\pard \widctlpar 
+\par 
+\par 
+\par 
+\par 
+\par 
+\par 
+\par \pard\plain \s1\sb60\sa120\widctlpar \b\f5\fs28 \page {\cs29\super #{\footnote \pard\plain \s28\widctlpar \f5\fs20 {\cs29\super #} INTRODUCTION}} {\cs29\super ${\footnote \pard\plain \s28\widctlpar \f5\fs20 {\cs29\super $} INTRODUCTION}} {\cs29\super K
+{\footnote \pard\plain \s28\widctlpar \f5\fs20 {\cs29\super K} INTRODUCTION}} {\cs29\super +{\footnote \pard\plain \s28\widctlpar \f5\fs20 {\cs29\super +} MANUAL:0}} INTRODUCTION
+\par \pard\plain \widctlpar \f5\fs20 
+\par \pard\plain \s19\widctlpar \b\f5\fs20 INSTALLATION
+\par \pard\plain \s20\widctlpar \b\f5\fs20 Windows{{\field{\*\fldinst SYMBOL 226 \\f "Symbol" \\s 10}{\fldrslt\f1\fs20}}} \rquote 95
+\par \pard\plain \widctlpar \f5\fs20 Insert the Enemy Nations CD into your CD-ROM drive.  The Enemy Nations\'99 Autoplay screen will appear.  Click SETUP, and follow instructions.
+\par \pard\plain \s20\widctlpar \b\f5\fs20 Windows{{\field{\*\fldinst SYMBOL 226 \\f "Symbol" \\s 10}{\fldrslt\f1\fs20}}} 3.1
+\par \pard\plain \widctlpar \f5\fs20 Insert the Enemy Nations\'99 CD into your CD-ROM drive.  Double-click on your CD-ROM drive icon (for example, \ldblquote D: Enemy Nations\rdblquote ).  Click the SETUP icon, and follow instructions.
+\par \pard \widctlpar 
+\par \pard\plain \s19\widctlpar \b\f5\fs20 INTRODUCTION
+\par \pard\plain \widctlpar \f5\fs20 Enemy Nations\'99
+ is unlike any strategy game you have played.  As commander of your colony, you must manage an economy as well as a military, making sure, as in real life, that things go as well at home as they do abroad.  Luckily, Enemy Nations\'99 can be as 
+intricate or as superficial as you like, offering a wide variety of options to suit your particular taste as a gamer.  Your colony\rquote 
+s economy is designed to automate, leaving you free to press military claims; but the variables that make an economy strong are diverse enough to allow you to get inside of it and perfect it to your liking.
+\par \pard \widctlpar 
+\par \pard\plain \s19\widctlpar \b\f5\fs20 GOAL
+\par \pard\plain \widctlpar \f5\fs20 The goal of Enemy Nations\'99 is to dominate the planet by destroying any trace of opponent colonies.  But this goal can be achieved in many ways, and it is up to you to develop your own style of play.
+\par \pard \widctlpar 
+\par \pard\plain \s19\widctlpar \b\f5\fs20 THIS MANUAL
+\par \pard\plain \widctlpar \f5\fs20 This document is designed to help you understand the many unique and exciting features of Enemy Nations\'99
+.  We recommend that you read it before playing the game, and use it as reference material as well.  The manual is divided into three sections:
+\par {\pntext\pard\plain\f5\fs20 1.\tab}\pard \fi-360\li360\widctlpar\tx360{\*\pn \pnlvlbody\pndec\pnstart1\pnindent360\pnhang{\pntxta .}}The first section will help you get started by taking you through the various screens of Enemy Nations\'99
+, explaining the functions of each piece of interface.  
+\par {\pntext\pard\plain\f5\fs20 2.\tab}The second section takes you through the first mission of the Training Grounds, after which you will be able to play the game without further reading.  
+\par {\pntext\pard\plain\f5\fs20 3.\tab}The third section takes you through all the game elements and features one by one.  This third section should serve as a reference to you while you play the game.
+\par \pard\plain \s1\sb60\sa120\widctlpar \b\f5\fs28 \page \page {\cs29\super #{\footnote \pard\plain \s28\widctlpar \f5\fs20 {\cs29\super #} HISTORY}} {\cs29\super ${\footnote \pard\plain \s28\widctlpar \f5\fs20 {\cs29\super $} HISTORY}} {\cs29\super K
+{\footnote \pard\plain \s28\widctlpar \f5\fs20 {\cs29\super K} HISTORY}} {\cs29\super +{\footnote \pard\plain \s28\widctlpar \f5\fs20 {\cs29\super +} MANUAL:0}} HISTORY
+\par \pard\plain \qc\widctlpar \f5\fs20 {\b 
+\par }\pard \widctlpar On September 26, 2005 the human race finally achieved interstellar flight with the first successful implementation of the Clawson-Hyperdrive developed by Dr. Tanya Clawson.
+\par \pard \widctlpar 
+\par \pard \widctlpar Various governments immediately sent out scout ships to explore the nearby stars.  No longer limited to one planet in one solar system, the human race would at last realize its destiny and expand to fill the galaxy.
+\par \pard \widctlpar 
+ The first scout ships found nothing but inhospitable planets.  But the search continued until the exciting news was received:  A habitable planet had been found.  More stunning, however, was the discovery that it supported an advanced civilization that h
+ad also achieved interstellar flight.  The euphoria of finding another race of sentient beings precluded any doubts.
+\par \pard \widctlpar 
+\par \pard \widctlpar But as the reports from the scout ships continued to arrive, the truth dawned:  Intelligent life was not a rare occurrence.  Every planet capable of sustaining life supported advanced life forms, many of which were fiercely competitive.
+
+\par \pard \widctlpar 
+\par \pard \widctlpar The early evolving races had already traveled outward and colonized unoccupied planets and the last  habitable planet had been found over 20,000 years ago.  There was nothing left for the human race.
+\par \pard \widctlpar 
+\par \pard \widctlpar But dreams die hard and there are always those fools who continue striving no matter how impossible the odds.  And so, a handful of ships continued to explore looking for a planet to colonize.
+\par \pard \widctlpar 
+\par And then it happened.  A habitable planet with no intelligent life was discovered. 
+\par 
+\par \pard \widctlpar 
+Earth hastily dispatched a fleet of ships to colonize the newly discovered planet. But when they arrived they were greeted by warships from various other races. An available planet was a unique treasure.  No race was willing to relinquish the planet to an
+y other and those who tried to run the blockade were annihilated. No single race had a chance against all of the others and there was nothing to offer in exchange for a rare planet.
+\par \pard \widctlpar 
+\par \pard \widctlpar Negotiations ensued and years later, a compromise is announced. Each race will send one colony ship of a predetermined mass down to the surface of the planet. You will lead the expedition for Earth.
+\par \pard \widctlpar 
+\par \pard \widctlpar Your orders are simple:  Do whatever it takes to be the dominant race on the new planet. There is no second chance.  This is the one opportunity to establish the human race on another planet and your leadership w
+ill determine the future of our colony.
+\par \pard \widctlpar 
+\par \pard\plain \s1\sb60\sa120\widctlpar \b\f5\fs28 \page \page {\cs29\super #{\footnote \pard\plain \s28\widctlpar \f5\fs20 {\cs29\super #} SECTION_I_GETTING_STARTED}} {\cs29\super ${\footnote \pard\plain \s28\widctlpar \f5\fs20 {\cs29\super $}
+ SECTION I:  GETTING STARTED}} {\cs29\super K{\footnote \pard\plain \s28\widctlpar \f5\fs20 {\cs29\super K} SECTION I:  GETTING STARTED}} {\cs29\super +{\footnote \pard\plain \s28\widctlpar \f5\fs20 {\cs29\super +} MANUAL:0}} SECTION I:  GETTING STARTED
+
+\par \pard\plain \widctlpar \f5\fs20 {\b 
+\par }\pard \widctlpar After the title screens, you will be given several options.
+\par 
+\par \pard \widctlpar {\i\ul [picture of main menu goes here]
+\par }\pard \widctlpar 
+\par \pard \widctlpar The first-time player should select Training Grounds.  This option  will take the player through a series of missions in a single-player game.  Other options are explained below.
+\par \pard \widctlpar 
+\par \pard\plain \s19\widctlpar \b\f5\fs20 RACES
+\par \pard\plain \widctlpar \f5\fs20 After clicking Training Grounds, you will be asked to select a race.  Each race has slightly different strengths and weaknesses which, over time, you w
+ill come to appreciate (see Section III).  After selecting a race, enter your name in the designated box.
+\par \pard \widctlpar 
+\par \pard \widctlpar {\i NOTE:  You cannot proceed until you have entered your name.
+\par }\pard \widctlpar 
+\par \pard \widctlpar Now click RACE.  A new screen will appear, and you will be given your objective for mission one.  When you have read it, click PLAY.  Then the game will load.
+\par \pard \widctlpar 
+\par \pard\plain \s19\widctlpar \b\f5\fs20 LANDING
+\par \pard\plain \widctlpar \f5\fs20 When the game windows appear, your first task is to land your space ship on the planet.  Find a clearing and click the left mouse button.  Your space ship will appear, and your
+ initial vehicles will roll out of it.  Your space ship, from now on, serves as your first warehouse, containing all the initial materials (RESOURCES, see below) you will need to get started.
+\par \pard \widctlpar 
+\par \pard \widctlpar {\b\i A Note On Placement:  }{\i As you get deeper into Enemy Nations\'99
+, you will find that the placement of your space ship is critical.  You want to put the ship as near to the primary resources as possible.  These resources include trees, coal, iron, and oil.  Trees are easy to spot.  
+Underground resources can be illuminated by using the SHOW RESOURCES toggle button on the Global Tool Bar (see below).
+\par }\pard \widctlpar 
+\par \pard\plain \s19\widctlpar \b\f5\fs20 SCREEN LAYOUT
+\par \pard\plain \s20\widctlpar \b\f5\fs20 Area Maps
+\par \pard\plain \widctlpar \f5\fs20 The action of the game takes place in the Area Maps.  When your first mission begins, you will see only one large Area Map.  The exciting technology of Enemy Nations\'99 allows you to open {\b additional Area Map windows}
+ by holding down CTRL and double-clicking the LMB (left mouse button) on a unit (building or vehicle).  The new window, as with all windows, can be re-sized, brought to the front, sent to the back,
+ or closed, allowing you to customize your screen to suit your particular command style.  For instance, open a window and center it on your enemy\rquote 
+s home base.  Shrink the window and put it in the corner, and you have a constant, real-time update of your enemy\rquote s progress, without having to scroll rapidly half-way across the planet.
+\par \pard \widctlpar 
+\par \pard\plain \s20\widctlpar \b\f5\fs20 Getting Around
+\par \pard\plain \widctlpar \f5\fs20 Scroll across an Area Map by clicking and holding the RMB (right mouse button) and moving the mouse.
+\par 
+\par \pard\plain \s20\widctlpar \b\f5\fs20 Visibility
+\par \pard\plain \widctlpar \f5\fs20 When you land on the planet, you will be able to see the terrain of the entire planet, but only when you send out scouts will you be able to see activity on the planet -- other colonies\rquote 
+ buildings and vehicles.  Visibility range (spotting) varies from vehicle to vehicle, and is indicated by a lightening and darkening of the planet\rquote s surface.  Spotting may also be affected by the type of terrain your vehicles and buildings occupy.
+
+\par \pard \widctlpar 
+\par \pard\plain \s20\widctlpar \b\f5\fs20 World Map
+\par \pard\plain \widctlpar \f5\fs20 The World Map in the corner is your global look at the planet.  Units (yours and your enemies\rquote ) are represented by co
+lored dots.  You can scroll the World Map using the right mouse button (RMB).  The four buttons on the World Map allow you to alter the display of the World Map as follows:
+\par \pard \widctlpar 
+\par \pard \widctlpar {\i [icon of World Map goes here]
+\par }\pard \widctlpar 
+\par \pard \fi720\widctlpar Upper left button:  Toggles display of natural resources.
+\par Lower left button:  Toggles display of your units.
+\par Lower right button:  Toggles display of enemy units.
+\par \pard \widctlpar 
+\par \pard \widctlpar {\i NOTE:  After achieving a certain level of research in the game, you will find that the World Map converts into a Radar, giving you additional functionality.
+\par }\pard \widctlpar 
+\par \pard\plain \s19\widctlpar \b\f5\fs20 UNITS
+\par \pard\plain \widctlpar \f5\fs20 A unit is defined as either a building or a vehicle (land or sea).  
+\par 
+\par \pard\plain \s19\widctlpar \b\f5\fs20 FLAGS
+\par \pard\plain \widctlpar \f5\fs20 The small, colored flags on each unit differentiate one player\rquote s units from another\rquote s.
+\par 
+\par \pard\plain \s19\widctlpar \b\f5\fs20 SELECTING A UNIT
+\par \pard\plain \widctlpar \f5\fs20 
+To control any given unit, the unit must first be selected.  To select a unit, move the mouse over it until the cursor changes to a white rectangle.  Click on the units once with the left mouse button (LMB).  If the unit is a vehicle, a rectangle will app
+ear around the selected unit.  To select multiple units, click SHIFT-LMB on the additional unit.  
+\par \pard \widctlpar 
+\par \pard \widctlpar {\i NOTE:  Military units can also be selected in groups by clicking/holding the LMB and dragging a rectangle around the group of military units you wish to select (civilian units will be ignored by the rectangle).  
+\par }\pard \widctlpar 
+\par Once selected, units can be controlled using a variety of commands.
+\par 
+\par \pard\plain \s19\widctlpar \b\f5\fs20 COMMANDING UNITS
+\par \pard\plain \s20\widctlpar \b\f5\fs20 Move
+\par \pard\plain \widctlpar \f5\fs20 To move a selected vehicle(s), simply click the LMB where you want the vehicle(s) to go.
+\par \pard\plain \s20\widctlpar \b\f5\fs20 Attack  
+\par \pard\plain \widctlpar \f5\fs20 To attack enemy units (buildings or vehicles), simply click the L
+MB on the unit you wish to attack.  The selected unit(s) will attack your target.  (You will notice that, when you place the mouse cursor over an enemy unit, the cursor will change into a target, indicating that the LMB will issue the command to attack.) 
+ 
+\par \pard \widctlpar 
+\par \pard \widctlpar {\i NOTE:  Not all units are combat units; the Crane, for example, is incapable of attack.
+\par }\pard \widctlpar 
+\par \pard\plain \s20\widctlpar \b\f5\fs20 Move Without Attacking
+\par \pard\plain \widctlpar \f5\fs20 If you wish to move units to an enemy unit without attacking, click CTRL-LMB when choosing the destination.  Units will move to the destination but will not attack.
+\par \pard\plain \s20\widctlpar \b\f5\fs20 Forced Attack
+\par \pard\plain \widctlpar \f5\fs20 CTRL-SHIT-LMB is a \ldblquote forced attack\rdblquote ; your unit(s) will attack the target, whether it is friendly or not.
+\par 
+\par \pard\plain \s19\widctlpar \b\f5\fs20 THE LOCAL TOOL BAR
+\par \pard\plain \widctlpar \f5\fs20 
+More sophisticated commands require the Local Tool Bar, which is the row of buttons at the bottom of the Area Map (the larger row of buttons, at the very bottom of the screen, is the Global Tool Bar -- see below). Depending upon which unit is currently se
+lected, the Local Tool Bar will alter its arrangement of buttons.  Below are the possible commands you can execute from the Local Tool Bar:
+\par \pard \widctlpar 
+\par \pard \widctlpar {\i\ul [icon of Local Tool Bar goes here]
+\par }\pard \widctlpar 
+\par \pard\plain \s20\widctlpar \b\f5\fs20 Rotate Clockwise
+\par Rotate Counterclockwise
+\par Zoom In
+\par Zoom Out
+\par \pard\plain \widctlpar \f5\fs20 The above four commands allow you to alter your view of the specific Area Map to which the Local Tool Bar is attached.  If you have multiple Area Maps on screen, each can operate at different rotations and zoom levels.
+
+\par \pard\plain \s20\widctlpar \b\f5\fs20 Show Materials
+\par \pard\plain \widctlpar \f5\fs20 This toggle button will show you the distribution of natural, harvestable minerals across the surface of the planet.  Small icons represent 
+the minerals.  An oil drum indicates the presence of oil, a bucket of coal represents coal, an orange chunk of iron represents iron, etc.
+\par \pard\plain \s20\widctlpar \b\f5\fs20 Build
+\par \pard\plain \widctlpar \f5\fs20 If a Crane is selected, the Build button will bring up a Build Building window, allowing you to create new buildings.  
+\par \pard \widctlpar 
+\par \pard \widctlpar {\i SHORT-CUT:  The Build Building command can also be achieved by double-LMB-clicking on a Crane.  
+\par }\pard \widctlpar 
+\par \pard \widctlpar If a vehicle-producing building is selected (like the Vehicle Factory), the Build button will bring up a Build Vehicle window, allowing you to create new vehicles. 
+\par \pard \widctlpar 
+\par \pard \widctlpar {\i SHORT-CUT:  The Build Vehicle command can also be achieved by double-LMB-clicking on a building.
+\par }\pard \widctlpar 
+\par \pard\plain \s20\widctlpar \b\f5\fs20 Stop 
+\par \pard\plain \widctlpar \f5\fs20 This button will bring to a halt any construction or routing that is in progress by the selected unit.
+\par \pard\plain \s20\widctlpar \b\f5\fs20 Route  
+\par \pard\plain \widctlpar \f5\fs20 If the Route button is clicked, the Route window will appear.  Trucks will route themselves automatically, based on needs, but you can always interrupt a Truck\rquote s route and give it new instructions.
+\par \pard \widctlpar 
+\par \pard \widctlpar {\i SHORT-CUT:  The Route command can also be achieved by double-LMB-clicking on a Truck..
+\par }\pard \widctlpar 
+\par \pard\plain \s19\widctlpar \b\f5\fs20 THE GLOBAL TOOL BAR
+\par \pard\plain \widctlpar \f5\fs20 {\i NOTE:  All of the Global Tool Bar buttons, when clicked, will open windows.  If the window is already open, the Global Tool Bar button will activate that window, and bring it to the front of your desktop.
+\par }\pard \widctlpar 
+\par \pard \widctlpar {\i\ul [icon of Global Tool Bar goes here]
+\par }\pard \widctlpar 
+\par \pard\plain \s20\widctlpar \b\f5\fs20 Area Map
+\par \pard\plain \widctlpar \f5\fs20 This button will activate the current Area Map window.
+\par \pard\plain \s20\widctlpar \b\f5\fs20 World Map
+\par \pard\plain \widctlpar \f5\fs20 This button will activate the World Map window.
+\par \pard\plain \s20\widctlpar \b\f5\fs20 Chat
+\par \pard\plain \widctlpar \f5\fs20 For multi-player games only, this button allows you to communicate with other players.
+\par \pard\plain \s20\widctlpar \b\f5\fs20 Advisor
+\par \pard\plain \widctlpar \f5\fs20 This button brings up the Advisor window, which shows your current relationships to other colonies on the planet. Access to the Advisor window requires an Embassy.
+\par \pard \widctlpar 
+\par \pard \widctlpar {\i SHORT-CUT:  This window can also be activated by double-LMB-clicking on an Embassy.
+\par }\pard \widctlpar 
+\par \pard\plain \s20\widctlpar \b\f5\fs20 Vehicles  List 
+\par \pard\plain \widctlpar \f5\fs20 
+This button brings up the Current Vehicles window, which is a list of all vehicles that currently exist in your colony.  By clicking on vehicles in this list, you can immediately locate the vehicles:  the Area Map will center on your selection.
+\par \pard\plain \s20\widctlpar \b\f5\fs20 Buildings List
+\par \pard\plain \widctlpar \f5\fs20 This b
+utton brings up the Current Buildings window, which is a list of all buildings that currently exist in your colony.  By clicking on buildings in this list, you can immediately locate the buildings:  the Area Map will center on your selection.
+\par \pard\plain \s20\widctlpar \b\f5\fs20 Research  
+\par \pard\plain \widctlpar \f5\fs20 
+This button brings up the Research Options window, which lists your current research options, and allows you to conduct research into new technologies and processes.  Access to the Research window requires a Research Institute.
+\par \pard \widctlpar 
+\par \pard \widctlpar {\i SHORT-CUT: This window can also be activated by double-LMB-clicking on a Research Institute.
+\par }\pard \widctlpar 
+\par \pard\plain \s20\widctlpar \b\f5\fs20 Options
+\par \pard\plain \widctlpar \f5\fs20 This button brings up the Options window, allowing you to load and save games, to quit, to adjust the speed of the game, and to adjust the sound and music volumes.
+\par \pard \widctlpar {\b 
+\par }\pard\plain \s19\widctlpar \b\f5\fs20 INFO BOXES
+\par \pard\plain \widctlpar \f5\fs20 Each unit (building or vehicle) has an \ldblquote info box\rdblquote  containing all pertinent information concerning that unit.  To view the info box, hold the SHIFT key and click the RMB.  
+\par \pard \widctlpar 
+\par \pard \widctlpar {\i NOTE:  The box will remain on the screen as long as your mouse cursor is either not moving, or is within the boundaries of the info box.  To get rid of the box, move the mouse cursor away from the box.
+\par }\pard \widctlpar 
+\par \pard \widctlpar {\i\ul [icon of pop-up box goes here]
+\par }\pard \widctlpar 
+\par \pard \widctlpar 
+These info boxes are essential to effective game-play.  For vehicles, the box indicates precise damage level, as well as (for trucks) materials being transported.  For buildings, the box indicates materials which are housed there, with specific amounts, a
+s well as materials needed for construction completion (these numbers will appear in parentheses).
+\par \pard \widctlpar 
+\par \pard\plain \s19\widctlpar \b\f5\fs20 STATUS BARS
+\par \pard\plain \widctlpar \f5\fs20 The status bars provide you feedback on several of the game\rquote s elements.  There are global status bars, and local status bars.
+\par \pard \widctlpar 
+\par \pard \widctlpar {\i\ul [icon of status bars goes here]
+\par }\pard \widctlpar 
+\par \pard \widctlpar Local status bars report information on the unit that is currently selected in the specific Area Map.  Information will generally include the name of the unit, the damage level of the unit, and the materials stored within the unit.
+\par \pard \widctlpar Global status bars report information based upon where your mouse cursor is located.  Global status bars are a great way
+ to quickly get information about anything in the Area Map or elsewhere in the interface.  If you roll the mouse cursor over a button icon, the Global status bars will tell you the purpose of that button.  You can even roll the mouse cursor over the Local
+ status bars to get additional information on the selected unit.
+\par \pard \widctlpar Generally speaking, the status bars give you \ldblquote gross\rdblquote  information.  For more precise information on a unit, for instance, use the pop-up boxes described above.
+\par \pard \widctlpar {\b 
+\par }\pard\plain \s19\widctlpar \b\f5\fs20 RESOURCE MANAGEMENT
+\par \pard\plain \widctlpar \f5\fs20 Good resource management is the key to establishing a successful economy.
+\par 
+\par \pard\plain \s20\widctlpar \b\f5\fs20 Resource Bars
+\par \pard\plain \widctlpar \f5\fs20 
+The four resource bars in the lower right portion of the Global Tool Bar give you a graphical read-out of your four primary resources.  By rolling the mouse over a given resource bar, you will receive a text read-out (in the Global status bars) of the cur
+rent state of that resource.  If your colony is in desperate need of a given resource, the appropriate resource bar will begin flashing red.
+\par \pard \widctlpar 
+\par \pard \widctlpar {\i\ul [icon of resource status bars goes here]
+\par }\pard \widctlpar 
+\par \pard\plain \s20\widctlpar \b\f5\fs20 Gasoline  
+\par \pard\plain \widctlpar \f5\fs20 
+Increase gasoline supply to your vehicles by harvesting oil from the ground (with an Oil Well) and routing it (with a Truck) to an Oil Refinery.  The Refinery will automatically convert the oil to gasoline.  Gasoline is a global resource -- you do not nee
+d to manually fuel your vehicles.  If you run low on gasoline, your vehicles will move more slowly.  In addition to powering your vehicles, gasoline is also used to build roads.  
+\par \pard\plain \s20\widctlpar \b\f5\fs20 Power  
+\par \pard\plain \widctlpar \f5\fs20 Increase power by building Power Plants.  Each Power P
+lant supplies a fixed amount of power.  Your need for power will increase as you create more and more buildings.  Power is a global resource -- you do not need to manually supply power to buildings.
+\par \pard\plain \s20\widctlpar \b\f5\fs20 Population  
+\par \pard\plain \widctlpar \f5\fs20 
+The population of your colony will increase automatically over time, and will be reflected by the apartment and office buildings which will become available to you for building.  The primary purpose of population is allocation for things like research and
+ driving.  In order to maintain a steady incr
+ease in population, you will need to make sure adequate housing and office space is provided.  By checking the populations of individual apartments and offices, you will know when you need to create additional buildings.
+\par \pard\plain \s20\widctlpar \b\f5\fs20 Food  
+\par \pard\plain \widctlpar \f5\fs20 Increase food supply to your colony by building Farms.  The larger your population, the more Farms you will need to feed your people.
+\par \pard \widctlpar 
+\par \pard\plain \s19\widctlpar \b\f5\fs20 HARVESTING MATERIALS
+\par \pard\plain \widctlpar \f5\fs20 To build a strong economy, you will need to harvest many materials from the planet throughout the course of the game, and then convert some of these materials to useable resources.
+\par \pard\plain \s20\widctlpar \b\f5\fs20 Lumber  
+\par \pard\plain \widctlpar \f5\fs20 
+Lumber is needed, among other things, to create buildings.  Lumber is harvested by building Lumber Mills near forests.  As the Lumber Mill generates lumber, you will see the amount of lumber in the building increase.  Trucks will then route the lumber to 
+the appropriate buildings.
+\par \pard\plain \s20\widctlpar \b\f5\fs20 Iron  
+\par \pard\plain \widctlpar \f5\fs20 Iron is harvested from the ground by building an Iron Mine.  When transported to a Smelter, Iron will be converted (with Coal) into Steel.
+\par \pard\plain \s20\widctlpar \b\f5\fs20 Coal  
+\par \pard\plain \widctlpar \f5\fs20 Coal is harvested from the ground by building a Coal Mine.  When transported to a Smelter, Coal can be converted (with Iron) into Steel.
+\par \pard\plain \s20\widctlpar \b\f5\fs20 Steel  
+\par \pard\plain \widctlpar \f5\fs20 Formed in a Smelter from Iron and Coal, Steel is necessary for creating buildings and vehicles.  Steel must be transported to your various factories before it can be used to construction.
+\par \pard\plain \s20\widctlpar \b\f5\fs20 Oil 
+\par \pard\plain \widctlpar \f5\fs20 Harvested from the ground with an Oil Well, Oil is converted to gasoline when transported to a Refinery.
+\par \pard\plain \s20\widctlpar \b\f5\fs20 Xilitium
+\par \pard\plain \widctlpar \f5\fs20 The most precious of minerals, Xilitium is harvested from the ground by bui
+lding a Xilitium Mine, then used for construction of advanced vehicles.  You must conduct extensive research before you will be able to mine or use Xilitium.
+\par \pard\plain \s1\sb60\sa120\widctlpar \b\f5\fs28 \page \page {\cs29\super #{\footnote \pard\plain \s28\widctlpar \f5\fs20 {\cs29\super #} SECTION_II_YOUR_FIRST_MISSION}} {\cs29\super ${\footnote \pard\plain \s28\widctlpar \f5\fs20 {\cs29\super $}
+ SECTION II:  YOUR FIRST MISSION}} {\cs29\super K{\footnote \pard\plain \s28\widctlpar \f5\fs20 {\cs29\super K} SECTION II:  YOUR FIRST MISSION}} {\cs29\super +{\footnote \pard\plain \s28\widctlpar \f5\fs20 {\cs29\super +} MANUAL:0}}
+ SECTION II:  YOUR FIRST MISSION
+\par \pard\plain \s18\qc\widctlpar \b\f5\fs28 
+\par A WALK-THROUGH
+\par \pard\plain \widctlpar \f5\fs20 
+\par \pard \widctlpar Now that you understand the basic elements of the interface, you are ready for action.  By now, you should have landed your space ship, and noticed several vehicles roll out of it.
+\par \pard \widctlpar 
+\par \pard\plain \s19\widctlpar \b\f5\fs20 MISSION OBJECTIVES
+\par \pard\plain \widctlpar \f5\fs20 Click the OPTIONS icon in the Global Tool Bar.  Then click MISSION.  This will give you a re-cap of your objectives, in case you forgot them.  Notice that, for your first mission, you must generate 1000 units of lumber.
+
+\par \pard \widctlpar 
+\par \pard\plain \s19\widctlpar \b\f5\fs20 CONSTRUCTION OF A BUILDING
+\par \pard\plain \widctlpar \f5\fs20 Select your Crane, and then click the Build button in the Local Tool Bar (or, you can double-LMB-click on the Crane).  The Build Window will appear.
+\par \pard \widctlpar 
+\par \pard \widctlpar {\i\ul [icon of Build Window goes here]
+\par }\pard \widctlpar 
+\par \pard\plain \s20\widctlpar \b\f5\fs20 The Build Window
+\par \pard\plain \widctlpar \f5\fs20 In the Build Window, you must first select a building category by clicking the LMB on an icon from the left column.  At this stage, most of the categories ar
+e empty, since you are just getting started with your new colony.  Select NATURAL RESOURCES.
+\par Once the category is selected, its icon will highlight, and a second column of icons will appear.  This column depicts all of the buildings in that category which are available to you.  Again, at this stage, very few buildings will be available to you.  S
+elect LUMBER MILL.  
+\par \pard \widctlpar The building icon will highlight, and on the right side of the Build Window you can read about the purpose of the Lumber Mill, as well as the c
+ost associated with creating it.  (Luckily, your space ship has landed with sufficient materials to get you off the ground.  You should have enough to build the Lumber Mill and a Farm.)
+\par Finally, click on the BUILD button at the bottom of the window.  You will return to the Area Map, and a white rectangle (which is relative to the size of the building you are about to create) will have replaced the mouse cursor.  Move the rectangle about 
+until you have decided on a placement location, then click the LMB.
+\par \pard\plain \s20\widctlpar \b\f5\fs20 Placing Buildings
+\par \pard\plain \widctlpar \f5\fs20 You can place a building over most terrain (not mountains or water).  You cannot place a building over an existing unit, neither yours nor your enemies\rquote 
+.  The placement rectangle will turn red if you attempt to place the building in an unsuitable location.
+\par \pard \widctlpar 
+Certain buildings, such as mines, must be placed over mineral deposits in order to function properly.  Again, the placement rectangle will turn red or white, depending on whether or not the appropriate mineral can be found at that location.
+  Use the SHOW MATERIALS button on the Local Tool Bar to find out which minerals are where.
+\par \pard\plain \s20\widctlpar \b\f5\fs20 The Lumber Mill
+\par \pard\plain \widctlpar \f5\fs20 
+Find a patch of trees and place the Lumber Mill.  Your Crane will travel to the selected location, and a construction foundation will appear.  It is up to your Trucks to route the necessary materials to the construction site.  Also, your Crane will be una
+vailable to you until the completion of the building. 
+\par \pard \widctlpar Once the Lumber Mill is complete, it will automatically generate lumber (use the pop-up box to track the progress of lumber creation; the number should be increasing).
+\par \pard\plain \s20\widctlpar \b\f5\fs20 The Farm
+\par \pard\plain \widctlpar \f5\fs20 Follow the exact same instructions as the Lumber Mill for creation of a Farm.
+\par \pard \widctlpar {\b 
+\par }\pard\plain \s19\widctlpar \b\f5\fs20 ROADS
+\par \pard\plain \widctlpar \f5\fs20 As it was in Roman times, roads are the backbone of your colony.  Trucks will travel slowly over plains, even more slowly over other types of terrain.  But over roads, all vehicles move much more quickly.
+\par \pard \widctlpar Select a Crane, and then click the ROADS button in the Local Tool Bar.  Your cursor will change into a white square, indicating that you sh
+ould place the road.  You can either places roads in single segments (by clicking the LMB), or place roads in lengths (by clicking and holding the LMB, dragging the mouse across the intended road path, and then releasing the LMB).
+\par Try to lay down a road leading from your space ship to your Lumber Mill.  Trucks will now automatically follow your road when transporting lumber to the various buildings you will be creating.  Notice how much more quickly vehicles travel when using a roa
+d.  This increase in efficiency will be the difference between winning and losing, as you race to establish your dominance.
+\par \pard \widctlpar 
+\par \pard\plain \s19\widctlpar \b\f5\fs20 ROUTING
+\par \pard\plain \widctlpar \f5\fs20 You can always override a Truck\rquote s route by clicking on the Route button in the Local Tool Bar, and setting up a new route.
+\par \pard \widctlpar 
+\par \pard \widctlpar {\i\ul [icon of Route Window goes here]
+\par }\pard \widctlpar 
+\par \pard \widctlpar 
+The Route Window operates by storing a series of commands which you give the truck.  For instance, click LOAD, and you will be asked to select a destination (the cursor will change to a flag).  Once you click a building (the Lumber Mill, for insta
+nce), a load command will appear in the Route Window:
+\par \pard \widctlpar 
+\par \pard \fi720\widctlpar {\b Lumber Mill (load)
+\par }\pard \widctlpar 
+\par Next, click UNLOAD, then click the space ship.  A second command will appear in the Route Window:
+\par 
+\par \pard \widctlpar {\b \tab Rocket Ship (unload)
+\par }\pard \widctlpar 
+\par \pard \widctlpar To delete certain destinations, click on the appropriate command in the list (the command will highlight), and then click DELETE.  The command will be removed from the list.
+\par \pard \widctlpar 
+\par \pard \widctlpar Once you are satisfied with the list of commands, click OK.  The OK button issues instructions to the Truck that it should follow the list o
+f commands you have chosen.  The Truck will continue to repeat these commands unless it does not make sense for it to do so (if a building is empty, for instance, and there is nothing to load).
+\par \pard \widctlpar 
+\par The AUTO button tells the Truck to revert to its own judgment on what should be routed where.
+\par 
+\par \pard \widctlpar {\i NOTE:  Trucks will not revert back to automatic routing unless you expressly tell them to do so with the AUTO button in the Route Window.
+\par }\pard \widctlpar 
+\par \pard \widctlpar {\i NOTE:  You can also \ldblquote take over\rdblquote  a Truck\rquote s route by selecting the Truck and sending it to one of your own buildings.  When the Truck arrives at the building, a new Route Window will appear.\line }
+\par \pard\plain \s19\widctlpar \b\f5\fs20 STORED MATERIALS
+\par \pard\plain \widctlpar \f5\fs20 
+Once your mines are busy harvesting minerals from the ground, you will find that you have more materials than you need to complete construction sites.  Excess materials can be stored in the space ship (route a Truck from the mine to the space ship), or in
+ Warehouses, which you can build.  Materials can also be stored in buildings which require the materials to create, for instance, new vehicles.  
+\par \pard \widctlpar 
+\par \pard\plain \s19\widctlpar \b\f5\fs20 SUCCESS
+\par \pard\plain \widctlpar \f5\fs20 When your Lumber Mill has harvested 1000 units of lumber, you will be told that your mission is a success.  Now you are ready to go on to the next challenge, and eventually dominate the planet.
+\par \pard \widctlpar 
+\par \pard\plain \s19\widctlpar \b\f5\fs20 A WORD ON PROGRESS
+\par \pard\plain \widctlpar \f5\fs20 Unlike many strategy games, Enemy Nations\'99 is not constrained to fixed scenarios.  Each time you play Enemy Nations\'99
+, a new planet is generated randomly, using sophisticated fractal calculations.  Terrain is distributed differently, minerals are distributed differently -- eve
+ry time you play.  And as you make progress through missions, you will realize that you start each mission exactly where you left off at the last mission, taking with you all your buildings, vehicles, research, and resources.  Critical errors early in the
+ game will come back to haunt you later.  Take care how you build your colony, because you will have to sustain it throughout your entire conquest!
+\par \pard\plain \s1\sb60\sa120\widctlpar \b\f5\fs28 \page \page {\cs29\super #{\footnote \pard\plain \s28\widctlpar \f5\fs20 {\cs29\super #} SECTION_III_GAME_ELEMENTS}} {\cs29\super ${\footnote \pard\plain \s28\widctlpar \f5\fs20 {\cs29\super $}
+ SECTION III:  GAME ELEMENTS}} {\cs29\super K{\footnote \pard\plain \s28\widctlpar \f5\fs20 {\cs29\super K} SECTION III:  GAME ELEMENTS}} {\cs29\super +{\footnote \pard\plain \s28\widctlpar \f5\fs20 {\cs29\super +} MANUAL:0}} SECTION III:  GAME ELEMENTS
+
+\par \pard\plain \widctlpar \f5\fs20   
+\par \pard\plain \s19\widctlpar \b\f5\fs20 RESEARCH
+\par \pard\plain \widctlpar \f5\fs20 Research is the most important element that will contribute
+ toward the advancement of your colony.  Your scientists will be able to conduct research into many different areas, and it is up to you to choose which path(s) you want to take first.  For instance, researching Advanced Construction and Manufacturing tec
+hnologies will increase efficiency in these areas, allowing you to build up more quickly in the long run, but will prevent you from researching Weapons technologies as early as you might like.
+\par \pard \widctlpar 
+\par \pard \widctlpar Building multiple Research Institutes will allow you to research individual items more quickly, but will not allow you to research multiple items at once.
+\par \pard \widctlpar 
+\par \pard \widctlpar Once you have completed research in a particular area, click the DISCOVERY button in the Research Window for a description of what your scientists just uncovered.
+\par \pard \widctlpar 
+\par \pard\plain \s19\widctlpar \b\f5\fs20 ECONOMY
+\par \pard\plain \widctlpar \f5\fs20 \'85
+\par 
+\par \pard\plain \s19\widctlpar \b\f5\fs20 YOUR COLONISTS
+\par \pard\plain \widctlpar \f5\fs20 \'85
+\par 
+\par \pard\plain \s19\widctlpar \b\f5\fs20 TERRAIN
+\par \pard\plain \widctlpar \f5\fs20 Different terrain has different effects on different vehicles.  Understanding how to utilize or avoid certain terrain is an important strategy for winning.
+\par \pard \widctlpar {\i\ul 
+\par [icons for each terrain type should go next to the name]
+\par }\pard \widctlpar 
+\par \pard\plain \s20\widctlpar \b\f5\fs20 Desert
+\par \pard\plain \widctlpar \f5\fs20 
+\par \pard\plain \s20\widctlpar \b\f5\fs20 Forest
+\par \pard\plain \widctlpar \f5\fs20 
+\par \pard\plain \s20\widctlpar \b\f5\fs20 Lake
+\par \pard\plain \widctlpar \f5\fs20 
+\par \pard\plain \s20\widctlpar \b\f5\fs20 Hill
+\par \pard\plain \widctlpar \f5\fs20 
+\par \pard\plain \s20\widctlpar \b\f5\fs20 Mountain
+\par \pard\plain \widctlpar \f5\fs20 
+\par \pard\plain \s20\widctlpar \b\f5\fs20 Ocean
+\par 
+\par Plain
+\par \pard\plain \widctlpar \f5\fs20 
+\par \pard\plain \s20\widctlpar \b\f5\fs20 River
+\par \pard\plain \widctlpar \f5\fs20 
+\par \pard\plain \s20\widctlpar \b\f5\fs20 Rough
+\par \pard\plain \widctlpar \f5\fs20 
+\par \pard\plain \s20\widctlpar \b\f5\fs20 Swamp
+\par \pard\plain \widctlpar \f5\fs20 
+\par \pard\plain \s20\widctlpar \b\f5\fs20 Coastline
+\par \pard\plain \widctlpar \f5\fs20 
+\par \pard\plain \s20\widctlpar \b\f5\fs20 Field
+\par \pard\plain \widctlpar \f5\fs20 
+\par \pard\plain \s19\widctlpar \b\f5\fs20 \page BUILDINGS
+\par \pard\plain \widctlpar \f5\fs20 
+\par 
+\par \trowd \trgaph108\trleft-108\trbrdrt\brdrs\brdrw15 \trbrdrl\brdrs\brdrw15 \trbrdrb\brdrs\brdrw15 \trbrdrr\brdrs\brdrw15 \trbrdrh\brdrs\brdrw15 \trbrdrv\brdrs\brdrw15 \clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr
+\brdrs\brdrw15 \cellx1890\clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx9468 \pard \widctlpar\intbl 
+\par \pard \qc\widctlpar\intbl {\i [icon]}
+\par \pard \widctlpar\intbl 
+\par \cell \pard \widctlpar\intbl Your first building, the space ship will be used by you primarily as a warehouse, storing all raw materials you land with, as well as any you may mine in the future.  You cannot build another space ship.\cell \pard 
+\widctlpar\intbl \row \trowd \trgaph108\trleft-108\trbrdrt\brdrs\brdrw15 \trbrdrl\brdrs\brdrw15 \trbrdrb\brdrs\brdrw15 \trbrdrr\brdrs\brdrw15 \trbrdrh\brdrs\brdrw15 \trbrdrv\brdrs\brdrw15 \clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb
+\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx1890\clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx9468 \pard \qc\widctlpar\intbl {\b Space Ship}\cell \pard \widctlpar\intbl Cost:  n.a.\cell \pard 
+\widctlpar\intbl \row \pard \widctlpar 
+\par \pard\plain \s20\widctlpar \b\f5\fs20 Housing & Offices
+\par \pard\plain \widctlpar \f5\fs20 
+\par \trowd \trgaph108\trleft-108\trbrdrt\brdrs\brdrw15 \trbrdrl\brdrs\brdrw15 \trbrdrb\brdrs\brdrw15 \trbrdrr\brdrs\brdrw15 \trbrdrh\brdrs\brdrw15 \trbrdrv\brdrs\brdrw15 \clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr
+\brdrs\brdrw15 \cellx1890\clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx9468 \pard \widctlpar\intbl 
+\par \pard \qc\widctlpar\intbl {\i [icon]}
+\par \pard \widctlpar\intbl 
+\par \cell \pard \widctlpar\intbl Housing for your population.  Build apartments so that your population can continue to thrive.  As you advance through the game, your available apartments will become more and more extravagant.\cell \pard \widctlpar\intbl 
+\row \trowd \trgaph108\trleft-108\trbrdrt\brdrs\brdrw15 \trbrdrl\brdrs\brdrw15 \trbrdrb\brdrs\brdrw15 \trbrdrr\brdrs\brdrw15 \trbrdrh\brdrs\brdrw15 \trbrdrv\brdrs\brdrw15 \clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr
+\brdrs\brdrw15 \cellx1890\clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx9468 \pard \qc\widctlpar\intbl {\b Apartments}\cell \pard \widctlpar\intbl Cost:  \cell \pard \widctlpar\intbl \row \pard 
+\widctlpar 
+\par \trowd \trgaph108\trleft-108\trbrdrt\brdrs\brdrw15 \trbrdrl\brdrs\brdrw15 \trbrdrb\brdrs\brdrw15 \trbrdrr\brdrs\brdrw15 \trbrdrh\brdrs\brdrw15 \trbrdrv\brdrs\brdrw15 \clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr
+\brdrs\brdrw15 \cellx1890\clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx9468 \pard \widctlpar\intbl 
+\par \pard \qc\widctlpar\intbl {\i [icon]}
+\par \pard \widctlpar\intbl 
+\par \cell \pard \widctlpar\intbl Work space for your population. Build office buildings so that your population can continue to thrive.  As you advance through the game, your available office buildings will become more and more extravagant.\cell \pard 
+\widctlpar\intbl \row \trowd \trgaph108\trleft-108\trbrdrt\brdrs\brdrw15 \trbrdrl\brdrs\brdrw15 \trbrdrb\brdrs\brdrw15 \trbrdrr\brdrs\brdrw15 \trbrdrh\brdrs\brdrw15 \trbrdrv\brdrs\brdrw15 \clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb
+\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx1890\clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx9468 \pard \qc\widctlpar\intbl {\b Office Buildings}\cell \pard \widctlpar\intbl Cost:  \cell \pard 
+\widctlpar\intbl \row \pard\plain \s19\widctlpar \b\f5\fs20 \page BUILDINGS
+\par \pard\plain \widctlpar \f5\fs20 
+\par \pard\plain \s20\widctlpar \b\f5\fs20 Military
+\par \pard\plain \widctlpar \f5\fs20 
+\par \trowd \trgaph108\trleft-108\trbrdrt\brdrs\brdrw15 \trbrdrl\brdrs\brdrw15 \trbrdrb\brdrs\brdrw15 \trbrdrr\brdrs\brdrw15 \trbrdrh\brdrs\brdrw15 \trbrdrv\brdrs\brdrw15 \clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr
+\brdrs\brdrw15 \cellx1890\clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx9468 \pard \widctlpar\intbl 
+\par \pard \qc\widctlpar\intbl {\i [icon]}
+\par \pard \widctlpar\intbl 
+\par \cell \pard \widctlpar\intbl Your first military installation, the Camp is used for training ground troops.\cell \pard \widctlpar\intbl \row \trowd \trgaph108\trleft-108\trbrdrt\brdrs\brdrw15 \trbrdrl\brdrs\brdrw15 \trbrdrb\brdrs\brdrw15 \trbrdrr
+\brdrs\brdrw15 \trbrdrh\brdrs\brdrw15 \trbrdrv\brdrs\brdrw15 \clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx1890\clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 
+\cellx9468 \pard \qc\widctlpar\intbl {\b Camp}\cell \pard \widctlpar\intbl Cost:  \cell \pard \widctlpar\intbl \row \pard \widctlpar 
+\par \trowd \trgaph108\trleft-108\trbrdrt\brdrs\brdrw15 \trbrdrl\brdrs\brdrw15 \trbrdrb\brdrs\brdrw15 \trbrdrr\brdrs\brdrw15 \trbrdrh\brdrs\brdrw15 \trbrdrv\brdrs\brdrw15 \clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr
+\brdrs\brdrw15 \cellx1890\clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx9468 \pard \widctlpar\intbl 
+\par \pard \qc\widctlpar\intbl {\i [icon]}
+\par \pard \widctlpar\intbl 
+\par \cell \pard \widctlpar\intbl The Command Center is needed for more advanced buildings and technologies, including the upgrade from a World Map to a Radar.  It is not available to you until you have achieved a sufficient level of research.\cell \pard 
+\widctlpar\intbl \row \trowd \trgaph108\trleft-108\trbrdrt\brdrs\brdrw15 \trbrdrl\brdrs\brdrw15 \trbrdrb\brdrs\brdrw15 \trbrdrr\brdrs\brdrw15 \trbrdrh\brdrs\brdrw15 \trbrdrv\brdrs\brdrw15 \clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb
+\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx1890\clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx9468 \pard \qc\widctlpar\intbl {\b Command Center}\cell \pard \widctlpar\intbl Cost:  \cell \pard 
+\widctlpar\intbl \row \pard \widctlpar 
+\par \trowd \trgaph108\trleft-108\trbrdrt\brdrs\brdrw15 \trbrdrl\brdrs\brdrw15 \trbrdrb\brdrs\brdrw15 \trbrdrr\brdrs\brdrw15 \trbrdrh\brdrs\brdrw15 \trbrdrv\brdrs\brdrw15 \clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr
+\brdrs\brdrw15 \cellx1890\clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx9468 \pard \widctlpar\intbl 
+\par \pard \qc\widctlpar\intbl {\i [icon]}
+\par \pard \widctlpar\intbl 
+\par \cell \pard \widctlpar\intbl Use the Shipyard to create a variety of sea vessels.\cell \pard \widctlpar\intbl \row \trowd \trgaph108\trleft-108\trbrdrt\brdrs\brdrw15 \trbrdrl\brdrs\brdrw15 \trbrdrb\brdrs\brdrw15 \trbrdrr\brdrs\brdrw15 \trbrdrh
+\brdrs\brdrw15 \trbrdrv\brdrs\brdrw15 \clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx1890\clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx9468 \pard 
+\qc\widctlpar\intbl {\b Shipyard}\cell \pard \widctlpar\intbl Cost:  \cell \pard \widctlpar\intbl \row \pard \widctlpar 
+\par \trowd \trgaph108\trleft-108\trbrdrt\brdrs\brdrw15 \trbrdrl\brdrs\brdrw15 \trbrdrb\brdrs\brdrw15 \trbrdrr\brdrs\brdrw15 \trbrdrh\brdrs\brdrw15 \trbrdrv\brdrs\brdrw15 \clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr
+\brdrs\brdrw15 \cellx1890\clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx9468 \pard \widctlpar\intbl 
+\par \pard \qc\widctlpar\intbl {\i [icon]}
+\par \pard \widctlpar\intbl 
+\par \cell \pard \widctlpar\intbl Low-level stationary defense fortification.  Use the Pillbox to protect your colony from invasions.\cell \pard \widctlpar\intbl \row \trowd \trgaph108\trleft-108\trbrdrt\brdrs\brdrw15 \trbrdrl\brdrs\brdrw15 \trbrdrb
+\brdrs\brdrw15 \trbrdrr\brdrs\brdrw15 \trbrdrh\brdrs\brdrw15 \trbrdrv\brdrs\brdrw15 \clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx1890\clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 
+\clbrdrr\brdrs\brdrw15 \cellx9468 \pard \qc\widctlpar\intbl {\b Pillbox}\cell \pard \widctlpar\intbl Cost:  \cell \pard \widctlpar\intbl \row \pard \widctlpar 
+\par \trowd \trgaph108\trleft-108\trbrdrt\brdrs\brdrw15 \trbrdrl\brdrs\brdrw15 \trbrdrb\brdrs\brdrw15 \trbrdrr\brdrs\brdrw15 \trbrdrh\brdrs\brdrw15 \trbrdrv\brdrs\brdrw15 \clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr
+\brdrs\brdrw15 \cellx1890\clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx9468 \pard \widctlpar\intbl 
+\par \pard \qc\widctlpar\intbl {\i [icon]}
+\par \pard \widctlpar\intbl 
+\par \cell \pard \widctlpar\intbl The Weapons Factory is the first in a series of three military factories you can build.  These installations are used to create new vehicles for doing battle with your opponents.\cell \pard \widctlpar\intbl \row \trowd 
+\trgaph108\trleft-108\trbrdrt\brdrs\brdrw15 \trbrdrl\brdrs\brdrw15 \trbrdrb\brdrs\brdrw15 \trbrdrr\brdrs\brdrw15 \trbrdrh\brdrs\brdrw15 \trbrdrv\brdrs\brdrw15 \clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 
+\cellx1890\clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx9468 \pard \qc\widctlpar\intbl {\b Weapons Factory}\cell \pard \widctlpar\intbl Cost:  \cell \pard \widctlpar\intbl \row \pard \widctlpar 
+\par \trowd \trgaph108\trleft-108\trbrdrt\brdrs\brdrw15 \trbrdrl\brdrs\brdrw15 \trbrdrb\brdrs\brdrw15 \trbrdrr\brdrs\brdrw15 \trbrdrh\brdrs\brdrw15 \trbrdrv\brdrs\brdrw15 \clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr
+\brdrs\brdrw15 \cellx1890\clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx9468 \pard \widctlpar\intbl 
+\par \pard \qc\widctlpar\intbl {\i [icon]}
+\par \pard \widctlpar\intbl 
+\par \cell \pard \widctlpar\intbl The Assault Factory is one step up from the Weapons Factory.  With the Assault Factory, you can build new types of military vehicles, as well as generate old vehicles with more efficient production.\cell \pard 
+\widctlpar\intbl \row \trowd \trgaph108\trleft-108\trbrdrt\brdrs\brdrw15 \trbrdrl\brdrs\brdrw15 \trbrdrb\brdrs\brdrw15 \trbrdrr\brdrs\brdrw15 \trbrdrh\brdrs\brdrw15 \trbrdrv\brdrs\brdrw15 \clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb
+\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx1890\clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx9468 \pard \qc\widctlpar\intbl {\b Assault Factory}\cell \pard \widctlpar\intbl Cost:  \cell \pard 
+\widctlpar\intbl \row \pard\plain \s19\widctlpar \b\f5\fs20 \page BUILDINGS
+\par \pard\plain \widctlpar \f5\fs20 
+\par \pard\plain \s20\widctlpar \b\f5\fs20 Advanced Military
+\par \pard\plain \widctlpar \f5\fs20 
+\par \trowd \trgaph108\trleft-108\trbrdrt\brdrs\brdrw15 \trbrdrl\brdrs\brdrw15 \trbrdrb\brdrs\brdrw15 \trbrdrr\brdrs\brdrw15 \trbrdrh\brdrs\brdrw15 \trbrdrv\brdrs\brdrw15 \clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr
+\brdrs\brdrw15 \cellx1890\clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx9468 \pard \widctlpar\intbl 
+\par \pard \qc\widctlpar\intbl {\i [icon]}
+\par \pard \widctlpar\intbl 
+\par \cell \pard \widctlpar\intbl Medium-level stationary defense fortification.  Use the Bunker to protect your colony from invasions.\cell \pard \widctlpar\intbl \row \trowd \trgaph108\trleft-108\trbrdrt\brdrs\brdrw15 \trbrdrl\brdrs\brdrw15 \trbrdrb
+\brdrs\brdrw15 \trbrdrr\brdrs\brdrw15 \trbrdrh\brdrs\brdrw15 \trbrdrv\brdrs\brdrw15 \clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx1890\clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 
+\clbrdrr\brdrs\brdrw15 \cellx9468 \pard \qc\widctlpar\intbl {\b Bunker}\cell \pard \widctlpar\intbl Cost:  \cell \pard \widctlpar\intbl \row \pard \widctlpar 
+\par \trowd \trgaph108\trleft-108\trbrdrt\brdrs\brdrw15 \trbrdrl\brdrs\brdrw15 \trbrdrb\brdrs\brdrw15 \trbrdrr\brdrs\brdrw15 \trbrdrh\brdrs\brdrw15 \trbrdrv\brdrs\brdrw15 \clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr
+\brdrs\brdrw15 \cellx1890\clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx9468 \pard \widctlpar\intbl 
+\par \pard \qc\widctlpar\intbl {\i [icon]}
+\par \pard \widctlpar\intbl 
+\par \cell \pard \widctlpar\intbl High-level stationary defense fortification.  Use the Fort to protect your colony from invasions.\cell \pard \widctlpar\intbl \row \trowd \trgaph108\trleft-108\trbrdrt\brdrs\brdrw15 \trbrdrl\brdrs\brdrw15 \trbrdrb
+\brdrs\brdrw15 \trbrdrr\brdrs\brdrw15 \trbrdrh\brdrs\brdrw15 \trbrdrv\brdrs\brdrw15 \clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx1890\clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 
+\clbrdrr\brdrs\brdrw15 \cellx9468 \pard \qc\widctlpar\intbl {\b Fort}\cell \pard \widctlpar\intbl Cost:  \cell \pard \widctlpar\intbl \row \pard \widctlpar 
+\par \trowd \trgaph108\trleft-108\trbrdrt\brdrs\brdrw15 \trbrdrl\brdrs\brdrw15 \trbrdrb\brdrs\brdrw15 \trbrdrr\brdrs\brdrw15 \trbrdrh\brdrs\brdrw15 \trbrdrv\brdrs\brdrw15 \clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr
+\brdrs\brdrw15 \cellx1890\clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx9468 \pard \widctlpar\intbl 
+\par \pard \qc\widctlpar\intbl {\i [icon]}
+\par \pard \widctlpar\intbl 
+\par \cell \pard \widctlpar\intbl The most advanced military factory you can build.  With the Dread Factory, you can build the most powerful types of military vehicles, as well as generate old vehicles with more efficient production.\cell \pard 
+\widctlpar\intbl \row \trowd \trgaph108\trleft-108\trbrdrt\brdrs\brdrw15 \trbrdrl\brdrs\brdrw15 \trbrdrb\brdrs\brdrw15 \trbrdrr\brdrs\brdrw15 \trbrdrh\brdrs\brdrw15 \trbrdrv\brdrs\brdrw15 \clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb
+\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx1890\clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx9468 \pard \qc\widctlpar\intbl {\b Dread Factory}\cell \pard \widctlpar\intbl Cost:  \cell \pard 
+\widctlpar\intbl \row \pard \widctlpar 
+\par \trowd \trgaph108\trleft-108\trbrdrt\brdrs\brdrw15 \trbrdrl\brdrs\brdrw15 \trbrdrb\brdrs\brdrw15 \trbrdrr\brdrs\brdrw15 \trbrdrh\brdrs\brdrw15 \trbrdrv\brdrs\brdrw15 \clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr
+\brdrs\brdrw15 \cellx1890\clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx9468 \pard \widctlpar\intbl 
+\par \pard \qc\widctlpar\intbl {\i [icon]}
+\par \pard \widctlpar\intbl 
+\par \cell \pard \widctlpar\intbl Use the Warship Factory to create military sea vessels.\cell \pard \widctlpar\intbl \row \trowd \trgaph108\trleft-108\trbrdrt\brdrs\brdrw15 \trbrdrl\brdrs\brdrw15 \trbrdrb\brdrs\brdrw15 \trbrdrr\brdrs\brdrw15 \trbrdrh
+\brdrs\brdrw15 \trbrdrv\brdrs\brdrw15 \clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx1890\clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx9468 \pard 
+\qc\widctlpar\intbl {\b Warship Factory}\cell \pard \widctlpar\intbl Cost:  \cell \pard \widctlpar\intbl \row \pard\plain \s19\widctlpar \b\f5\fs20 \page BUILDINGS
+\par \pard\plain \widctlpar \f5\fs20 
+\par \pard\plain \s20\widctlpar \b\f5\fs20 Natural Resources
+\par \pard\plain \widctlpar \f5\fs20 
+\par \trowd \trgaph108\trleft-108\trbrdrt\brdrs\brdrw15 \trbrdrl\brdrs\brdrw15 \trbrdrb\brdrs\brdrw15 \trbrdrr\brdrs\brdrw15 \trbrdrh\brdrs\brdrw15 \trbrdrv\brdrs\brdrw15 \clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr
+\brdrs\brdrw15 \cellx1890\clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx9468 \pard \widctlpar\intbl 
+\par \pard \qc\widctlpar\intbl {\i [icon]}
+\par \pard \widctlpar\intbl 
+\par \cell \pard \widctlpar\intbl Build Farms in order to feed your people.  The \ldblquote food\rdblquote 
+ status bar in the Global Tool Bar will let you know when you are running out of food, which means it is time to build more Farms.  Some terrain may be more arable than others; be careful where you place your Farms.
+\par \pard \widctlpar\intbl \cell \pard \widctlpar\intbl \row \trowd \trgaph108\trleft-108\trbrdrt\brdrs\brdrw15 \trbrdrl\brdrs\brdrw15 \trbrdrb\brdrs\brdrw15 \trbrdrr\brdrs\brdrw15 \trbrdrh\brdrs\brdrw15 \trbrdrv\brdrs\brdrw15 \clbrdrt\brdrs\brdrw15 \clbrdrl
+\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx1890\clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx9468 \pard \qc\widctlpar\intbl {\b Farm}\cell \pard \widctlpar\intbl Cost:  \cell 
+\pard \widctlpar\intbl \row \pard \widctlpar 
+\par \trowd \trgaph108\trleft-108\trbrdrt\brdrs\brdrw15 \trbrdrl\brdrs\brdrw15 \trbrdrb\brdrs\brdrw15 \trbrdrr\brdrs\brdrw15 \trbrdrh\brdrs\brdrw15 \trbrdrv\brdrs\brdrw15 \clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr
+\brdrs\brdrw15 \cellx1890\clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx9468 \pard \widctlpar\intbl 
+\par \pard \qc\widctlpar\intbl {\i [icon]}
+\par \pard \widctlpar\intbl 
+\par \cell \pard \widctlpar\intbl Build Lumber Mills near trees, and they will automatically harvest trees and convert them to Lumber, which you can then route to various locations.  Lumber is a crucial material needed for creating new buildings.\cell \pard 
+\widctlpar\intbl \row \trowd \trgaph108\trleft-108\trbrdrt\brdrs\brdrw15 \trbrdrl\brdrs\brdrw15 \trbrdrb\brdrs\brdrw15 \trbrdrr\brdrs\brdrw15 \trbrdrh\brdrs\brdrw15 \trbrdrv\brdrs\brdrw15 \clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb
+\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx1890\clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx9468 \pard \qc\widctlpar\intbl {\b Lumber Mill}\cell \pard \widctlpar\intbl Cost:  \cell \pard 
+\widctlpar\intbl \row \pard \widctlpar 
+\par \trowd \trgaph108\trleft-108\trbrdrt\brdrs\brdrw15 \trbrdrl\brdrs\brdrw15 \trbrdrb\brdrs\brdrw15 \trbrdrr\brdrs\brdrw15 \trbrdrh\brdrs\brdrw15 \trbrdrv\brdrs\brdrw15 \clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr
+\brdrs\brdrw15 \cellx1890\clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx9468 \pard \widctlpar\intbl 
+\par \pard \qc\widctlpar\intbl {\i [icon]}
+\par \pard \widctlpar\intbl 
+\par \cell \pard \widctlpar\intbl Build Oil 
+Wells over oil deposits.  They will automatically harvest oil from the ground, which must then be routed to a Refinery, where the oil is converted to gasoline.  Gasoline production is registered in one of the status bars in the Global Tool Bar.\cell 
+\pard \widctlpar\intbl \row \trowd \trgaph108\trleft-108\trbrdrt\brdrs\brdrw15 \trbrdrl\brdrs\brdrw15 \trbrdrb\brdrs\brdrw15 \trbrdrr\brdrs\brdrw15 \trbrdrh\brdrs\brdrw15 \trbrdrv\brdrs\brdrw15 \clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb
+\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx1890\clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx9468 \pard \qc\widctlpar\intbl {\b Oil Well}\cell \pard \widctlpar\intbl Cost:  \cell \pard \widctlpar\intbl 
+\row \pard \widctlpar 
+\par \trowd \trgaph108\trleft-108\trbrdrt\brdrs\brdrw15 \trbrdrl\brdrs\brdrw15 \trbrdrb\brdrs\brdrw15 \trbrdrr\brdrs\brdrw15 \trbrdrh\brdrs\brdrw15 \trbrdrv\brdrs\brdrw15 \clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr
+\brdrs\brdrw15 \cellx1890\clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx9468 \pard \widctlpar\intbl 
+\par \pard \qc\widctlpar\intbl {\i [icon]}
+\par \pard \widctlpar\intbl 
+\par \cell \pard \widctlpar\intbl 
+Build Coal Mines over the Coal deposits.  They will automatically harvest Coal from the ground, which must then be routed to a Smelter, which will convert Coal and Iron into Steel.  Coal is also necessary to power your Coal Power Plants,
+ so you may want to build Coal Power Plants near Coal Mines.
+\par \pard \widctlpar\intbl \cell \pard \widctlpar\intbl \row \trowd \trgaph108\trleft-108\trbrdrt\brdrs\brdrw15 \trbrdrl\brdrs\brdrw15 \trbrdrb\brdrs\brdrw15 \trbrdrr\brdrs\brdrw15 \trbrdrh\brdrs\brdrw15 \trbrdrv\brdrs\brdrw15 \clbrdrt\brdrs\brdrw15 \clbrdrl
+\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx1890\clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx9468 \pard \qc\widctlpar\intbl {\b Coal Mine}\cell \pard \widctlpar\intbl Cost:  
+\cell \pard \widctlpar\intbl \row \pard \widctlpar 
+\par \trowd \trgaph108\trleft-108\trbrdrt\brdrs\brdrw15 \trbrdrl\brdrs\brdrw15 \trbrdrb\brdrs\brdrw15 \trbrdrr\brdrs\brdrw15 \trbrdrh\brdrs\brdrw15 \trbrdrv\brdrs\brdrw15 \clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr
+\brdrs\brdrw15 \cellx1890\clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx9468 \pard \widctlpar\intbl 
+\par \pard \qc\widctlpar\intbl {\i [icon]}
+\par \pard \widctlpar\intbl 
+\par \cell \pard \widctlpar\intbl Build Iron Mines over the Iron deposits.  They will automatically harvest Iron from the ground, which must then be routed to a Smelter, which will convert Iron and Coal into Steel.
+\par \pard \widctlpar\intbl \cell \pard \widctlpar\intbl \row \trowd \trgaph108\trleft-108\trbrdrt\brdrs\brdrw15 \trbrdrl\brdrs\brdrw15 \trbrdrb\brdrs\brdrw15 \trbrdrr\brdrs\brdrw15 \trbrdrh\brdrs\brdrw15 \trbrdrv\brdrs\brdrw15 \clbrdrt\brdrs\brdrw15 \clbrdrl
+\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx1890\clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx9468 \pard \qc\widctlpar\intbl {\b Iron Mine}\cell \pard \widctlpar\intbl Cost:  
+\cell \pard \widctlpar\intbl \row \pard \widctlpar 
+\par \trowd \trgaph108\trleft-108\trbrdrt\brdrs\brdrw15 \trbrdrl\brdrs\brdrw15 \trbrdrb\brdrs\brdrw15 \trbrdrr\brdrs\brdrw15 \trbrdrh\brdrs\brdrw15 \trbrdrv\brdrs\brdrw15 \clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr
+\brdrs\brdrw15 \cellx1890\clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx9468 \pard \widctlpar\intbl 
+\par \pard \qc\widctlpar\intbl {\i [icon]}
+\par \pard \widctlpar\intbl 
+\par \cell \pard \widctlpar\intbl The Xilitium Mine will become available to you in the later stages of the game, after necessary research.  Xilitium, when harvested from the ground, can be very useful in the construction of advanced weapons.
+\par \pard \widctlpar\intbl \cell \pard \widctlpar\intbl \row \trowd \trgaph108\trleft-108\trbrdrt\brdrs\brdrw15 \trbrdrl\brdrs\brdrw15 \trbrdrb\brdrs\brdrw15 \trbrdrr\brdrs\brdrw15 \trbrdrh\brdrs\brdrw15 \trbrdrv\brdrs\brdrw15 \clbrdrt\brdrs\brdrw15 \clbrdrl
+\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx1890\clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx9468 \pard \qc\widctlpar\intbl {\b Xilitium Mine}\cell \pard \widctlpar\intbl Cost:  
+\cell \pard \widctlpar\intbl \row \pard\plain \s19\widctlpar \b\f5\fs20 \page BUILDINGS
+\par \pard\plain \widctlpar \f5\fs20 
+\par \pard\plain \s20\widctlpar \b\f5\fs20 Manufacturing
+\par \pard\plain \widctlpar \f5\fs20 
+\par \trowd \trgaph108\trleft-108\trbrdrt\brdrs\brdrw15 \trbrdrl\brdrs\brdrw15 \trbrdrb\brdrs\brdrw15 \trbrdrr\brdrs\brdrw15 \trbrdrh\brdrs\brdrw15 \trbrdrv\brdrs\brdrw15 \clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr
+\brdrs\brdrw15 \cellx1890\clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx9468 \pard \widctlpar\intbl 
+\par \pard \qc\widctlpar\intbl {\i [icon]}
+\par \pard \widctlpar\intbl 
+\par \cell \pard \widctlpar\intbl 
+The Smelter is necessary for production of Steel.  Route Coal and Iron to the Smelter, and it will automatically begin generating Steel, which is needed for production of buildings and vehicles.  It is generally a good idea to place the Smelter equidistan
+t from both your Coal Mine and your Iron Mine.
+\par \pard \widctlpar\intbl \cell \pard \widctlpar\intbl \row \trowd \trgaph108\trleft-108\trbrdrt\brdrs\brdrw15 \trbrdrl\brdrs\brdrw15 \trbrdrb\brdrs\brdrw15 \trbrdrr\brdrs\brdrw15 \trbrdrh\brdrs\brdrw15 \trbrdrv\brdrs\brdrw15 \clbrdrt\brdrs\brdrw15 \clbrdrl
+\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx1890\clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx9468 \pard \qc\widctlpar\intbl {\b Smelter}\cell \pard \widctlpar\intbl Cost:  \cell 
+\pard \widctlpar\intbl \row \pard \widctlpar 
+\par \trowd \trgaph108\trleft-108\trbrdrt\brdrs\brdrw15 \trbrdrl\brdrs\brdrw15 \trbrdrb\brdrs\brdrw15 \trbrdrr\brdrs\brdrw15 \trbrdrh\brdrs\brdrw15 \trbrdrv\brdrs\brdrw15 \clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr
+\brdrs\brdrw15 \cellx1890\clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx9468 \pard \widctlpar\intbl 
+\par \pard \qc\widctlpar\intbl {\i [icon]}
+\par \pard \widctlpar\intbl 
+\par \cell \pard \widctlpar\intbl The Refinery converts crude oil into gasoline.  It is a good idea to place your Refinery near an Oil Well, so that your Trucks have a short distance to travel when routing oil.\cell \pard \widctlpar\intbl \row \trowd 
+\trgaph108\trleft-108\trbrdrt\brdrs\brdrw15 \trbrdrl\brdrs\brdrw15 \trbrdrb\brdrs\brdrw15 \trbrdrr\brdrs\brdrw15 \trbrdrh\brdrs\brdrw15 \trbrdrv\brdrs\brdrw15 \clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 
+\cellx1890\clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx9468 \pard \qc\widctlpar\intbl {\b Refinery}\cell \pard \widctlpar\intbl Cost:  \cell \pard \widctlpar\intbl \row \pard \widctlpar 
+\par \trowd \trgaph108\trleft-108\trbrdrt\brdrs\brdrw15 \trbrdrl\brdrs\brdrw15 \trbrdrb\brdrs\brdrw15 \trbrdrr\brdrs\brdrw15 \trbrdrh\brdrs\brdrw15 \trbrdrv\brdrs\brdrw15 \clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr
+\brdrs\brdrw15 \cellx1890\clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx9468 \pard \widctlpar\intbl 
+\par \pard \qc\widctlpar\intbl {\i [icon]}
+\par \pard \widctlpar\intbl 
+\par \cell \pard \widctlpar\intbl 
+This is your basic, level-one power plant.  Power Plants are necessary to power the buildings of your colony.  The more buildings you have, the more power you will need.  In the Global Tool Bar, one of the status bars will let you know how much power you 
+need, versus how much power you are generating.  If you need more power, build more Power Plants.  The Coal Power Plant requires Coal to operate, so you may want to build your Coal Power Plants near Coal Mines.
+\par \pard \widctlpar\intbl \cell \pard \widctlpar\intbl \row \trowd \trgaph108\trleft-108\trbrdrt\brdrs\brdrw15 \trbrdrl\brdrs\brdrw15 \trbrdrb\brdrs\brdrw15 \trbrdrr\brdrs\brdrw15 \trbrdrh\brdrs\brdrw15 \trbrdrv\brdrs\brdrw15 \clbrdrt\brdrs\brdrw15 \clbrdrl
+\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx1890\clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx9468 \pard \qc\widctlpar\intbl {\b Coal Power Plant}\cell \pard \widctlpar\intbl 
+Cost:  \cell \pard \widctlpar\intbl \row \pard \widctlpar 
+\par \trowd \trgaph108\trleft-108\trbrdrt\brdrs\brdrw15 \trbrdrl\brdrs\brdrw15 \trbrdrb\brdrs\brdrw15 \trbrdrr\brdrs\brdrw15 \trbrdrh\brdrs\brdrw15 \trbrdrv\brdrs\brdrw15 \clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr
+\brdrs\brdrw15 \cellx1890\clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx9468 \pard \widctlpar\intbl 
+\par \pard \qc\widctlpar\intbl {\i [icon]}
+\par \pard \widctlpar\intbl 
+\par \cell \pard \widctlpar\intbl 
+This is your level-two power plant.  Power Plants are necessary to power the buildings of your colony.  The more buildings you have, the more power you will need.  In the Global Tool Bar, one of the status bars will let you know how much power you need, v
+ersus how much power you are generating.  If you need more power, build more Power Plants.  The Oil Power Plant requires Oil to operate, so you may want to build your Oil Power Plants near Oil Wells.
+\par \pard \widctlpar\intbl \cell \pard \widctlpar\intbl \row \trowd \trgaph108\trleft-108\trbrdrt\brdrs\brdrw15 \trbrdrl\brdrs\brdrw15 \trbrdrb\brdrs\brdrw15 \trbrdrr\brdrs\brdrw15 \trbrdrh\brdrs\brdrw15 \trbrdrv\brdrs\brdrw15 \clbrdrt\brdrs\brdrw15 \clbrdrl
+\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx1890\clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx9468 \pard \qc\widctlpar\intbl {\b Oil Power Plant}\cell \pard \widctlpar\intbl 
+Cost:  \cell \pard \widctlpar\intbl \row \pard \widctlpar 
+\par \trowd \trgaph108\trleft-108\trbrdrt\brdrs\brdrw15 \trbrdrl\brdrs\brdrw15 \trbrdrb\brdrs\brdrw15 \trbrdrr\brdrs\brdrw15 \trbrdrh\brdrs\brdrw15 \trbrdrv\brdrs\brdrw15 \clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr
+\brdrs\brdrw15 \cellx1890\clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx9468 \pard \widctlpar\intbl 
+\par \pard \qc\widctlpar\intbl {\i [icon]}
+\par \pard \widctlpar\intbl 
+\par \cell \pard \widctlpar\intbl This is the most advanced Power Plant you can build, and the most efficient way of producing power for your colony.\cell \pard \widctlpar\intbl \row \trowd \trgaph108\trleft-108\trbrdrt\brdrs\brdrw15 \trbrdrl\brdrs\brdrw15 
+\trbrdrb\brdrs\brdrw15 \trbrdrr\brdrs\brdrw15 \trbrdrh\brdrs\brdrw15 \trbrdrv\brdrs\brdrw15 \clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx1890\clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb
+\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx9468 \pard \qc\widctlpar\intbl {\b Nuclear Power Plant}\cell \pard \widctlpar\intbl Cost:  \cell \pard \widctlpar\intbl \row \pard \widctlpar 
+\par \trowd \trgaph108\trleft-108\trbrdrt\brdrs\brdrw15 \trbrdrl\brdrs\brdrw15 \trbrdrb\brdrs\brdrw15 \trbrdrr\brdrs\brdrw15 \trbrdrh\brdrs\brdrw15 \trbrdrv\brdrs\brdrw15 \clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr
+\brdrs\brdrw15 \cellx1890\clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx9468 \pard \widctlpar\intbl 
+\par \pard \qc\widctlpar\intbl {\i [icon]}
+\par \pard \widctlpar\intbl 
+\par \cell \pard \widctlpar\intbl The Vehicle Factory is your first vehicle-generating installation.  You can create new Cranes and Trucks from the Vehicle Factory, as well as some low-level scout vehicles.\cell \pard \widctlpar\intbl \row \trowd 
+\trgaph108\trleft-108\trbrdrt\brdrs\brdrw15 \trbrdrl\brdrs\brdrw15 \trbrdrb\brdrs\brdrw15 \trbrdrr\brdrs\brdrw15 \trbrdrh\brdrs\brdrw15 \trbrdrv\brdrs\brdrw15 \clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 
+\cellx1890\clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx9468 \pard \qc\widctlpar\intbl {\b Vehicle Factory}\cell \pard \widctlpar\intbl Cost:  \cell \pard \widctlpar\intbl \row \pard\plain 
+\s19\widctlpar \b\f5\fs20 \page BUILDINGS
+\par \pard\plain \widctlpar \f5\fs20 
+\par \pard\plain \s20\widctlpar \b\f5\fs20 Services
+\par \pard\plain \widctlpar \f5\fs20 
+\par \trowd \trgaph108\trleft-108\trbrdrt\brdrs\brdrw15 \trbrdrl\brdrs\brdrw15 \trbrdrb\brdrs\brdrw15 \trbrdrr\brdrs\brdrw15 \trbrdrh\brdrs\brdrw15 \trbrdrv\brdrs\brdrw15 \clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr
+\brdrs\brdrw15 \cellx1890\clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx9468 \pard \widctlpar\intbl 
+\par \pard \qc\widctlpar\intbl {\i [icon]}
+\par \pard \widctlpar\intbl 
+\par \cell \pard \widctlpar\intbl Embassies give you access to the Player Relations window, which allows you to set relations with other players, including AI players.  In multi-player games, build Embassies in other colonies to create alliances.\cell \pard 
+\widctlpar\intbl \row \trowd \trgaph108\trleft-108\trbrdrt\brdrs\brdrw15 \trbrdrl\brdrs\brdrw15 \trbrdrb\brdrs\brdrw15 \trbrdrr\brdrs\brdrw15 \trbrdrh\brdrs\brdrw15 \trbrdrv\brdrs\brdrw15 \clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb
+\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx1890\clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx9468 \pard \qc\widctlpar\intbl {\b Embassy}\cell \pard \widctlpar\intbl Cost:  \cell \pard \widctlpar\intbl 
+\row \pard \widctlpar {\b 
+\par }\trowd \trgaph108\trleft-108\trbrdrt\brdrs\brdrw15 \trbrdrl\brdrs\brdrw15 \trbrdrb\brdrs\brdrw15 \trbrdrr\brdrs\brdrw15 \trbrdrh\brdrs\brdrw15 \trbrdrv\brdrs\brdrw15 \clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr
+\brdrs\brdrw15 \cellx1890\clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx9468 \pard \widctlpar\intbl 
+\par \pard \qc\widctlpar\intbl {\i [icon]}
+\par \pard \widctlpar\intbl 
+\par \cell \pard \widctlpar\intbl Use Warehouses to store materials.  Since materials have to be routed to various locations within your colony, strategic placement of Warehouses can aid in the efficiency of vehicle and materials production.\cell \pard 
+\widctlpar\intbl \row \trowd \trgaph108\trleft-108\trbrdrt\brdrs\brdrw15 \trbrdrl\brdrs\brdrw15 \trbrdrb\brdrs\brdrw15 \trbrdrr\brdrs\brdrw15 \trbrdrh\brdrs\brdrw15 \trbrdrv\brdrs\brdrw15 \clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb
+\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx1890\clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx9468 \pard \qc\widctlpar\intbl {\b Warehouse}\cell \pard \widctlpar\intbl Cost:  \cell \pard 
+\widctlpar\intbl \row \pard \widctlpar 
+\par \trowd \trgaph108\trleft-108\trbrdrt\brdrs\brdrw15 \trbrdrl\brdrs\brdrw15 \trbrdrb\brdrs\brdrw15 \trbrdrr\brdrs\brdrw15 \trbrdrh\brdrs\brdrw15 \trbrdrv\brdrs\brdrw15 \clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr
+\brdrs\brdrw15 \cellx1890\clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx9468 \pard \widctlpar\intbl 
+\par \pard \qc\widctlpar\intbl {\i [icon]}
+\par \pard \widctlpar\intbl 
+\par \cell \pard \widctlpar\intbl Use your Seaport to dock Cargo Ships, which are used for routing materials across bodies of water.\cell \pard \widctlpar\intbl \row \trowd \trgaph108\trleft-108\trbrdrt\brdrs\brdrw15 \trbrdrl\brdrs\brdrw15 \trbrdrb
+\brdrs\brdrw15 \trbrdrr\brdrs\brdrw15 \trbrdrh\brdrs\brdrw15 \trbrdrv\brdrs\brdrw15 \clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx1890\clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 
+\clbrdrr\brdrs\brdrw15 \cellx9468 \pard \qc\widctlpar\intbl {\b Seaport}\cell \pard \widctlpar\intbl Cost:  \cell \pard \widctlpar\intbl \row \pard \widctlpar 
+\par \trowd \trgaph108\trleft-108\trbrdrt\brdrs\brdrw15 \trbrdrl\brdrs\brdrw15 \trbrdrb\brdrs\brdrw15 \trbrdrr\brdrs\brdrw15 \trbrdrh\brdrs\brdrw15 \trbrdrv\brdrs\brdrw15 \clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr
+\brdrs\brdrw15 \cellx1890\clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx9468 \pard \widctlpar\intbl 
+\par \pard \qc\widctlpar\intbl {\i [icon]}
+\par \pard \widctlpar\intbl 
+\par \cell \pard \widctlpar\intbl The Repair Facility is necessary to repair damaged vehicles.\cell \pard \widctlpar\intbl \row \trowd \trgaph108\trleft-108\trbrdrt\brdrs\brdrw15 \trbrdrl\brdrs\brdrw15 \trbrdrb\brdrs\brdrw15 \trbrdrr\brdrs\brdrw15 \trbrdrh
+\brdrs\brdrw15 \trbrdrv\brdrs\brdrw15 \clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx1890\clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx9468 \pard 
+\qc\widctlpar\intbl {\b Repair Facility}\cell \pard \widctlpar\intbl Cost:  \cell \pard \widctlpar\intbl \row \pard \widctlpar 
+\par \trowd \trgaph108\trleft-108\trbrdrt\brdrs\brdrw15 \trbrdrl\brdrs\brdrw15 \trbrdrb\brdrs\brdrw15 \trbrdrr\brdrs\brdrw15 \trbrdrh\brdrs\brdrw15 \trbrdrv\brdrs\brdrw15 \clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr
+\brdrs\brdrw15 \cellx1890\clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx9468 \pard \widctlpar\intbl 
+\par \pard \qc\widctlpar\intbl {\i [icon]}
+\par \pard \widctlpar\intbl 
+\par \cell \pard \widctlpar\intbl 
+Once you build a Research Institute, the Research Window will become available to you.  This crucial step in the development of your colony will allow you to research dozens of different technologies.  Multiple Research Institutes will allow you to resear
+ch individual items more quickly, but will now allow you to research multiple items simultaneously.
+\par \pard \widctlpar\intbl \cell \pard \widctlpar\intbl \row \trowd \trgaph108\trleft-108\trbrdrt\brdrs\brdrw15 \trbrdrl\brdrs\brdrw15 \trbrdrb\brdrs\brdrw15 \trbrdrr\brdrs\brdrw15 \trbrdrh\brdrs\brdrw15 \trbrdrv\brdrs\brdrw15 \clbrdrt\brdrs\brdrw15 \clbrdrl
+\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx1890\clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx9468 \pard \qc\widctlpar\intbl {\b Research Institute}\cell \pard \widctlpar\intbl 
+Cost:  \cell \pard \widctlpar\intbl \row \pard \widctlpar 
+\par 
+\par \pard\plain \s19\widctlpar \b\f5\fs20 \page VEHICLES
+\par \pard\plain \widctlpar \f5\fs20 
+\par \pard\plain \s20\widctlpar \b\f5\fs20 Civilian
+\par \pard\plain \widctlpar \f5\fs20 
+\par \trowd \trgaph108\trleft-108\trbrdrt\brdrs\brdrw15 \trbrdrl\brdrs\brdrw15 \trbrdrb\brdrs\brdrw15 \trbrdrr\brdrs\brdrw15 \trbrdrh\brdrs\brdrw15 \trbrdrv\brdrs\brdrw15 \clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr
+\brdrs\brdrw15 \cellx1890\clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx9468 \pard \widctlpar\intbl 
+\par \pard \qc\widctlpar\intbl {\i [icon]
+\par }\pard \widctlpar\intbl {\i 
+\par }\pard \widctlpar\intbl \cell \pard \widctlpar\intbl Use Cranes to build new buildings, or repair damaged ones.
+\par \cell \pard \widctlpar\intbl \row \trowd \trgaph108\trleft-108\trbrdrt\brdrs\brdrw15 \trbrdrl\brdrs\brdrw15 \trbrdrb\brdrs\brdrw15 \trbrdrr\brdrs\brdrw15 \trbrdrh\brdrs\brdrw15 \trbrdrv\brdrs\brdrw15 \clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb
+\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx1890\clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx9468 \pard \qc\widctlpar\intbl {\b Crane}\cell \pard \widctlpar\intbl Cost:\cell \pard \widctlpar\intbl \row 
+\pard \widctlpar 
+\par \trowd \trgaph108\trleft-108\trbrdrt\brdrs\brdrw15 \trbrdrl\brdrs\brdrw15 \trbrdrb\brdrs\brdrw15 \trbrdrr\brdrs\brdrw15 \trbrdrh\brdrs\brdrw15 \trbrdrv\brdrs\brdrw15 \clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr
+\brdrs\brdrw15 \cellx1890\clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx9468 \pard \widctlpar\intbl 
+\par \pard \qc\widctlpar\intbl {\i [icon]
+\par }\pard \widctlpar\intbl {\i 
+\par }\pard \widctlpar\intbl \cell \pard \widctlpar\intbl Use Trucks to route materials from storage to construction sites.
+\par \cell \pard \widctlpar\intbl \row \trowd \trgaph108\trleft-108\trbrdrt\brdrs\brdrw15 \trbrdrl\brdrs\brdrw15 \trbrdrb\brdrs\brdrw15 \trbrdrr\brdrs\brdrw15 \trbrdrh\brdrs\brdrw15 \trbrdrv\brdrs\brdrw15 \clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb
+\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx1890\clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx9468 \pard \qc\widctlpar\intbl {\b Truck}\cell \pard \widctlpar\intbl Cost:\cell \pard \widctlpar\intbl \row 
+\pard \qc\widctlpar 
+\par \trowd \trgaph108\trleft-108\trbrdrt\brdrs\brdrw15 \trbrdrl\brdrs\brdrw15 \trbrdrb\brdrs\brdrw15 \trbrdrr\brdrs\brdrw15 \trbrdrh\brdrs\brdrw15 \trbrdrv\brdrs\brdrw15 \clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr
+\brdrs\brdrw15 \cellx1890\clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx9468 \pard \widctlpar\intbl 
+\par \pard \qc\widctlpar\intbl {\i [icon]
+\par }\pard \widctlpar\intbl {\i 
+\par }\pard \widctlpar\intbl \cell \pard \widctlpar\intbl Use the Cargo Ship to route materials across bodies of water.  Cargo Ships can only go from Seaport to Seaport.\cell \pard \widctlpar\intbl \row \trowd \trgaph108\trleft-108\trbrdrt\brdrs\brdrw15 
+\trbrdrl\brdrs\brdrw15 \trbrdrb\brdrs\brdrw15 \trbrdrr\brdrs\brdrw15 \trbrdrh\brdrs\brdrw15 \trbrdrv\brdrs\brdrw15 \clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx1890\clbrdrt\brdrs\brdrw15 \clbrdrl
+\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx9468 \pard \qc\widctlpar\intbl {\b Cargo Ship}\cell \pard \widctlpar\intbl Cost:\cell \pard \widctlpar\intbl \row \pard \widctlpar 
+\par \trowd \trgaph108\trleft-108\trbrdrt\brdrs\brdrw15 \trbrdrl\brdrs\brdrw15 \trbrdrb\brdrs\brdrw15 \trbrdrr\brdrs\brdrw15 \trbrdrh\brdrs\brdrw15 \trbrdrv\brdrs\brdrw15 \clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr
+\brdrs\brdrw15 \cellx1890\clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx9468 \pard \widctlpar\intbl 
+\par \pard \qc\widctlpar\intbl {\i [icon]
+\par }\pard \widctlpar\intbl {\i 
+\par }\pard \widctlpar\intbl \cell \pard \widctlpar\intbl Use the Landing Craft to transport units across bodies of water.
+\par \cell \pard \widctlpar\intbl \row \trowd \trgaph108\trleft-108\trbrdrt\brdrs\brdrw15 \trbrdrl\brdrs\brdrw15 \trbrdrb\brdrs\brdrw15 \trbrdrr\brdrs\brdrw15 \trbrdrh\brdrs\brdrw15 \trbrdrv\brdrs\brdrw15 \clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb
+\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx1890\clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx9468 \pard \qc\widctlpar\intbl {\b Landing Craft}\cell \pard \widctlpar\intbl Cost:\cell \pard 
+\widctlpar\intbl \row \pard \widctlpar 
+\par 
+\par \pard\plain \s19\widctlpar \b\f5\fs20 \page VEHICLES
+\par \pard\plain \widctlpar \f5\fs20 
+\par \pard\plain \s20\widctlpar \b\f5\fs20 Military
+\par \pard\plain \widctlpar \f5\fs20 
+\par \trowd \trgaph108\trleft-108\trbrdrt\brdrs\brdrw15 \trbrdrl\brdrs\brdrw15 \trbrdrb\brdrs\brdrw15 \trbrdrr\brdrs\brdrw15 \trbrdrh\brdrs\brdrw15 \trbrdrv\brdrs\brdrw15 \clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr
+\brdrs\brdrw15 \cellx1890\clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx9468 \pard \widctlpar\intbl 
+\par \pard \qc\widctlpar\intbl {\i [icon]
+\par }\pard \widctlpar\intbl {\i 
+\par }\pard \widctlpar\intbl \cell \pard \widctlpar\intbl Your ground troops.
+\par \cell \pard \widctlpar\intbl \row \trowd \trgaph108\trleft-108\trbrdrt\brdrs\brdrw15 \trbrdrl\brdrs\brdrw15 \trbrdrb\brdrs\brdrw15 \trbrdrr\brdrs\brdrw15 \trbrdrh\brdrs\brdrw15 \trbrdrv\brdrs\brdrw15 \clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb
+\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx1890\clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx9468 \pard \qc\widctlpar\intbl {\b Infantry, Special Forces}\cell \pard \widctlpar\intbl Cost:\cell \pard 
+\widctlpar\intbl \row \pard \widctlpar 
+\par \trowd \trgaph108\trleft-108\trbrdrt\brdrs\brdrw15 \trbrdrl\brdrs\brdrw15 \trbrdrb\brdrs\brdrw15 \trbrdrr\brdrs\brdrw15 \trbrdrh\brdrs\brdrw15 \trbrdrv\brdrs\brdrw15 \clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr
+\brdrs\brdrw15 \cellx1890\clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx9468 \pard \widctlpar\intbl 
+\par \pard \qc\widctlpar\intbl {\i [icon]
+\par }\pard \widctlpar\intbl {\i 
+\par }\pard \widctlpar\intbl \cell \pard \widctlpar\intbl Use these to carry ground troops to desired locations.  The Carrier can also be used as an attack vehicle.
+\par \pard \widctlpar\intbl 
+\par \cell \pard \widctlpar\intbl \row \trowd \trgaph108\trleft-108\trbrdrt\brdrs\brdrw15 \trbrdrl\brdrs\brdrw15 \trbrdrb\brdrs\brdrw15 \trbrdrr\brdrs\brdrw15 \trbrdrh\brdrs\brdrw15 \trbrdrv\brdrs\brdrw15 \clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb
+\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx1890\clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx9468 \pard \qc\widctlpar\intbl {\b Infantry Carrier}\cell \pard \widctlpar\intbl Cost:\cell \pard 
+\widctlpar\intbl \row \pard \widctlpar 
+\par \trowd \trgaph108\trleft-108\trbrdrt\brdrs\brdrw15 \trbrdrl\brdrs\brdrw15 \trbrdrb\brdrs\brdrw15 \trbrdrr\brdrs\brdrw15 \trbrdrh\brdrs\brdrw15 \trbrdrv\brdrs\brdrw15 \clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr
+\brdrs\brdrw15 \cellx1890\clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx9468 \pard \widctlpar\intbl 
+\par \pard \qc\widctlpar\intbl {\i [icon]
+\par }\pard \widctlpar\intbl {\i 
+\par }\pard \widctlpar\intbl \cell \pard \widctlpar\intbl 
+These are your light, fast, reconnaissance units.  The Spotter and Heavy Rover are capable of offensive attacks as well.  The Heavy Rover has a very powerful attack, but its weapon takes about 30 seconds to recharge.
+\par \pard \widctlpar\intbl \cell \pard \widctlpar\intbl \row \trowd \trgaph108\trleft-108\trbrdrt\brdrs\brdrw15 \trbrdrl\brdrs\brdrw15 \trbrdrb\brdrs\brdrw15 \trbrdrr\brdrs\brdrw15 \trbrdrh\brdrs\brdrw15 \trbrdrv\brdrs\brdrw15 \clbrdrt\brdrs\brdrw15 \clbrdrl
+\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx1890\clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx9468 \pard \qc\widctlpar\intbl {\b Outrider, Spotter, Heavy Rover}\cell \pard 
+\widctlpar\intbl Cost:\cell \pard \widctlpar\intbl \row \pard \widctlpar 
+\par \trowd \trgaph108\trleft-108\trbrdrt\brdrs\brdrw15 \trbrdrl\brdrs\brdrw15 \trbrdrb\brdrs\brdrw15 \trbrdrr\brdrs\brdrw15 \trbrdrh\brdrs\brdrw15 \trbrdrv\brdrs\brdrw15 \clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr
+\brdrs\brdrw15 \cellx1890\clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx9468 \pard \widctlpar\intbl 
+\par \pard \qc\widctlpar\intbl {\i [icon]
+\par }\pard \widctlpar\intbl {\i 
+\par }\pard \widctlpar\intbl \cell \pard \widctlpar\intbl These are your main-stay offense units, from lightest to heaviest.
+\par \cell \pard \widctlpar\intbl \row \trowd \trgaph108\trleft-108\trbrdrt\brdrs\brdrw15 \trbrdrl\brdrs\brdrw15 \trbrdrb\brdrs\brdrw15 \trbrdrr\brdrs\brdrw15 \trbrdrh\brdrs\brdrw15 \trbrdrv\brdrs\brdrw15 \clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb
+\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx1890\clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx9468 \pard \qc\widctlpar\intbl {\b Destructor, Boss8800, Atomizer}\cell \pard \widctlpar\intbl Cost:\cell 
+\pard \widctlpar\intbl \row \pard \widctlpar 
+\par \trowd \trgaph108\trleft-108\trbrdrt\brdrs\brdrw15 \trbrdrl\brdrs\brdrw15 \trbrdrb\brdrs\brdrw15 \trbrdrr\brdrs\brdrw15 \trbrdrh\brdrs\brdrw15 \trbrdrv\brdrs\brdrw15 \clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr
+\brdrs\brdrw15 \cellx1890\clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx9468 \pard \widctlpar\intbl 
+\par \pard \qc\widctlpar\intbl {\i [icon]
+\par }\pard \widctlpar\intbl {\i 
+\par }\pard \widctlpar\intbl \cell \pard \widctlpar\intbl Your artillery units, lightest to heaviest.
+\par 
+\par \cell \pard \widctlpar\intbl \row \trowd \trgaph108\trleft-108\trbrdrt\brdrs\brdrw15 \trbrdrl\brdrs\brdrw15 \trbrdrb\brdrs\brdrw15 \trbrdrr\brdrs\brdrw15 \trbrdrh\brdrs\brdrw15 \trbrdrv\brdrs\brdrw15 \clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb
+\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx1890\clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx9468 \pard \qc\widctlpar\intbl {\b Mortar, Cannon, Rocket Launcher}\cell \pard \widctlpar\intbl Cost:\cell 
+\pard \widctlpar\intbl \row \pard \widctlpar 
+\par \trowd \trgaph108\trleft-108\trbrdrt\brdrs\brdrw15 \trbrdrl\brdrs\brdrw15 \trbrdrb\brdrs\brdrw15 \trbrdrr\brdrs\brdrw15 \trbrdrh\brdrs\brdrw15 \trbrdrv\brdrs\brdrw15 \clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr
+\brdrs\brdrw15 \cellx1890\clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx9468 \pard \widctlpar\intbl 
+\par \pard \qc\widctlpar\intbl {\i [icon]
+\par }\pard \widctlpar\intbl {\i 
+\par }\pard \widctlpar\intbl \cell \pard \widctlpar\intbl Your combat sea vessels.
+\par \cell \pard \widctlpar\intbl \row \trowd \trgaph108\trleft-108\trbrdrt\brdrs\brdrw15 \trbrdrl\brdrs\brdrw15 \trbrdrb\brdrs\brdrw15 \trbrdrr\brdrs\brdrw15 \trbrdrh\brdrs\brdrw15 \trbrdrv\brdrs\brdrw15 \clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb
+\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx1890\clbrdrt\brdrs\brdrw15 \clbrdrl\brdrs\brdrw15 \clbrdrb\brdrs\brdrw15 \clbrdrr\brdrs\brdrw15 \cellx9468 \pard \qc\widctlpar\intbl {\b Gunboat, Destroyer}\cell \pard \widctlpar\intbl Cost:\cell \pard 
+\widctlpar\intbl \row \pard \widctlpar 
+\par \pard\plain \s1\sb60\sa120\widctlpar \b\f5\fs28 \page \page {\cs29\super #{\footnote \pard\plain \s28\widctlpar \f5\fs20 {\cs29\super #} RACES}} {\cs29\super ${\footnote \pard\plain \s28\widctlpar \f5\fs20 {\cs29\super $} RACES}} {\cs29\super K{\footnote 
+\pard\plain \s28\widctlpar \f5\fs20 {\cs29\super K} RACES}} {\cs29\super +{\footnote \pard\plain \s28\widctlpar \f5\fs20 {\cs29\super +} MANUAL:0}} RACES
+\par \pard\plain \widctlpar \f5\fs20 
+\par \pard\plain \s20\widctlpar \b\f5\fs20 Human
+\par \pard\plain \widctlpar \f5\fs20 While humans have no specific strengths, neither do they have any specific weaknesses. An all around solidly capable species.
+\par \pard \widctlpar 
+\par \pard\plain \s20\widctlpar \b\f5\fs20 Kintaro
+\par \pard\plain \widctlpar \f5\fs20 The Kintaro have an incredibly high birthrate. Out of necessity farms are very productive. Their scientists are also above average.
+\par \pard \widctlpar 
+\par \pard\plain \s20\widctlpar \b\f5\fs20 Trisekan
+\par \pard\plain \widctlpar \f5\fs20 A very productive race that excels at building, manufacturing, and all other facets of a civilian economy.
+\par 
+\par \pard\plain \s20\widctlpar \b\f5\fs20 Crimtona
+\par \pard\plain \widctlpar \f5\fs20 The Crimtona are the most aggressive fighters in the universe. However, they focused on assault to the exclusion of all other skills.
+\par \pard \widctlpar 
+\par \pard\plain \s20\widctlpar \b\f5\fs20 Blaukupa
+\par \pard\plain \widctlpar \f5\fs20 Evolving on a planet with numerous predators, the Blaukupa have refined defense to an artform. They are also incredibly gifted farmers.
+\par \pard \widctlpar 
+\par \pard\plain \s20\widctlpar \b\f5\fs20 Diolian
+\par \pard\plain \widctlpar \f5\fs20 The Diolian have devoted themselves to the pursuit of knowledge to the exclusion of everything else. They are also good basic industry workers.
+\par \pard \widctlpar 
+\par \pard\plain \s20\widctlpar \b\f5\fs20 Roveldan
+\par \pard\plain \widctlpar \f5\fs20 Confident warriors skilled at both offense and defense. They are also capable of manufacturing weapons faster than anyone else.
+\par \pard \widctlpar 
+\par \pard\plain \s20\widctlpar \b\f5\fs20 Mendari
+\par \pard\plain \widctlpar \f5\fs20 Nothing is known of the Mendari.
+\par 
+\par \pard\plain \s20\widctlpar \b\f5\fs20 Kartugan
+\par \pard\plain \widctlpar \f5\fs20 Skilled industrialists and researchers. However, they are not as skilled with natural resources.
+\par 
+\par \pard\plain \s20\widctlpar \b\f5\fs20 Botanes
+\par \pard\plain \widctlpar \f5\fs20 An introspective race of the most skilled warriors in the universe. Their birth rate is incredibly low.
+\par 
+\par \pard\plain \s20\widctlpar \b\f5\fs20 Ekoda
+\par \pard\plain \widctlpar \f5\fs20 A very weak race the Ekoda excel at nothing.
+\par 
+\par \pard\plain \s20\widctlpar \b\f5\fs20 Byarian
+\par \pard\plain \widctlpar \f5\fs20 A race that is very skilled in all parts of a civilian economy. Unfortunately, the Byarian are terrible warriors.
+\par \pard\plain \s1\sb60\sa120\widctlpar \b\f5\fs28 \page \page {\cs29\super #{\footnote \pard\plain \s28\widctlpar \f5\fs20 {\cs29\super #} SECTION_IV_MULTI_PLAYER_GAMES}} {\cs29\super ${\footnote \pard\plain \s28\widctlpar \f5\fs20 {\cs29\super $}
+ SECTION IV:  MULTI-PLAYER GAMES}} {\cs29\super K{\footnote \pard\plain \s28\widctlpar \f5\fs20 {\cs29\super K} SECTION IV:  MULTI-PLAYER GAMES}} {\cs29\super +{\footnote \pard\plain \s28\widctlpar \f5\fs20 {\cs29\super +} MANUAL:0}}
+ SECTION IV:  MULTI-PLAYER GAMES
+\par \pard\plain \widctlpar \f5\fs20 
+\par \pard\plain \s19\widctlpar \b\f5\fs20 CREATING A MULTI-PLAYER GAME
+\par \pard\plain \widctlpar \f5\fs20 
+\par \pard\plain \s19\widctlpar \b\f5\fs20 JOINING A MULTI-PLAYER GAME
+\par \pard\plain \widctlpar \f5\fs20 
+\par \pard\plain \s19\widctlpar \b\f5\fs20 TROUBLE-SHOOTING
+\par \pard\plain \widctlpar \f5\fs20 
+\par 
+\par 
+\par 
+\par 
+\par 
+\par \pard\plain \s1\sb60\sa120\widctlpar \b\f5\fs28 {\*\bkmkstart ROBOHELP}\page {\cs29\super #{\footnote \pard\plain \s28\widctlpar \f5\fs20 {\cs29\super #} HELP}} {\cs29\super ${\footnote \pard\plain \s28\widctlpar \f5\fs20 {\cs29\super $} HELP}} {
+\cs29\super K{\footnote \pard\plain \s28\widctlpar \f5\fs20 {\cs29\super K} HELP}} {\cs29\super +{\footnote \pard\plain \s28\widctlpar \f5\fs20 {\cs29\super +} MANUAL:0}} HELP
+\par \pard\plain \widctlpar \f5\fs20 {\*\bkmkend ROBOHELP}
+\par \pard \widctlpar For Technical Support, please call (303) 739-4019, or fax (303) 739-4513, or e-mail us from our web site at www.viacomnewmedia.com.
+\par \pard \widctlpar 
+\par \pard\plain \s18\qc\widctlpar \b\f5\fs28 SYSTEM REQUIREMENTS
+\par \pard\plain \widctlpar \f5\fs20 
+\par 
+\par \pard\plain \s18\qc\widctlpar \b\f5\fs28 CREDITS
+\par \pard\plain \widctlpar \f5\fs20 
+\par Designed and Programmed by Windward Studios.
+\par 
+\par \pard\plain \s19\widctlpar \b\f5\fs20 VIACOM NEW MEDIA
+\par \pard\plain \widctlpar \f5\fs20 
+\par \pard\plain \s19\widctlpar \b\f5\fs20 WINDWARD STUDIOS
+\par \pard\plain \widctlpar \f5\fs20 
+\par \pard\plain \s19\widctlpar \b\f5\fs20 SARRIRE CORPORATION
+\par \pard\plain \widctlpar \f5\fs20 
+\par \pard \qc\widctlpar *   *   *
+\par \pard \widctlpar 
+\par \pard \widctlpar Copyright \'a9
+ 1996 Viacom International, Inc.  All Rights Reserved.  Viacom New Media, Enemy Nations and all related titles, logos and characters are trademarks of Viacom International, Inc.  Microsoft, Windows, and the Windows Logo are registered trademark
+s of Microsoft Corporation.
+\par \pard \widctlpar 
+\par \pard \widctlpar Uses Miles Sound System from RAD Software.  Copyright \'a9 1994-1996 by Miles Design, Inc.  All Rights Reserved.
+\par \pard \widctlpar 
+\par \pard \widctlpar {\i\ul [Windows 95 logo]
+\par [VNM logo]
+\par [Windward Studios logo]
+\par [ESRB logo]
+\par [MSS logo]
+\par }}

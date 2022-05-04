@@ -1,0 +1,118 @@
+#include "..\data.inc"
+
+RIFF VEHL
+	{
+	LIST FVER
+		{
+
+		CHUNK DATA {short				// version ALWAYS FIRST
+#include ..\rif_ver.inc"
+			}
+		}
+
+	LIST SP08
+	{
+#ifdef ALL_ZOOMS
+		CHUNK NUMS { int 19 }
+
+		CHUNK DATA { int 0 file crane\crane.8 }
+		CHUNK DATA { int 2 file heavytrc\heavytrc.8 }
+		CHUNK DATA { int 3 file outrider\outrider.8 }
+		CHUNK DATA { int 4 file spotter\spotter.8 }
+		CHUNK DATA { int 5 file rover\rover.8 }
+		CHUNK DATA { int 6 file assault\assault.8 }
+		CHUNK DATA { int 7 file destruct\destruct.8 }
+		CHUNK DATA { int 8 file boss8800\boss8800.8 }
+		CHUNK DATA { int 9 file atomizer\atomizer.8 }
+		CHUNK DATA { int 10 file mortar\mortar.8 }
+		CHUNK DATA { int 11 file cannon\cannon.8 }
+		CHUNK DATA { int 12 file rcktlnch\rcktlnch.8 }
+		CHUNK DATA { int 13 file freighte\freighte.8 }
+		CHUNK DATA { int 14 file gunboat\gunboat.8 }
+		CHUNK DATA { int 15 file destroye\destroye.8 }
+		CHUNK DATA { int 16 file frigate\frigate.8 }
+		CHUNK DATA { int 17 file landcraf\landcraf.8 }
+		CHUNK DATA { int 18 file infantry\infantry.8 }
+		CHUNK DATA { int 19 file marine\marine.8 }
+
+#else
+		CHUNK NUMS { int 15 }
+
+		CHUNK DATA { int 0 file crane\crane.s8 }
+		CHUNK DATA { int 2 file heavytrc\heavytrc.s8 }
+		CHUNK DATA { int 3 file outrider\outrider.s8 }
+		CHUNK DATA { int 4 file spotter\spotter.s8 }
+		CHUNK DATA { int 6 file assault\assault.s8 }
+		CHUNK DATA { int 7 file destruct\destruct.s8 }
+		CHUNK DATA { int 8 file boss8800\boss8800.s8 }
+		CHUNK DATA { int 10 file mortar\mortar.s8 }
+		CHUNK DATA { int 11 file cannon\cannon.s8 }
+		CHUNK DATA { int 13 file freighte\freighte.s8 }
+		CHUNK DATA { int 14 file gunboat\gunboat.s8 }
+		CHUNK DATA { int 15 file destroye\destroye.s8 }
+		CHUNK DATA { int 17 file landcraf\landcraf.s8 }
+		CHUNK DATA { int 18 file infantry\infantry.s8 }
+		CHUNK DATA { int 19 file marine\marine.s8 }
+#endif
+	}
+
+#ifdef INC24
+	LIST SP24
+	{
+		CHUNK NUMS { int 19 }
+
+		CHUNK DATA { int 0 file crane\crane.24 }
+		CHUNK DATA { int 2 file heavytrc\heavytrc.24 }
+		CHUNK DATA { int 3 file outrider\outrider.24 }
+		CHUNK DATA { int 4 file spotter\spotter.24 }
+		CHUNK DATA { int 5 file rover\rover.24 }
+		CHUNK DATA { int 6 file assault\assault.24 }
+		CHUNK DATA { int 7 file destruct\destruct.24 }
+		CHUNK DATA { int 8 file boss8800\boss8800.24 }
+		CHUNK DATA { int 9 file atomizer\atomizer.24 }
+		CHUNK DATA { int 10 file mortar\mortar.24 }
+		CHUNK DATA { int 11 file cannon\cannon.24 }
+		CHUNK DATA { int 12 file rcktlnch\rcktlnch.24 }
+		CHUNK DATA { int 13 file freighte\freighte.24 }
+		CHUNK DATA { int 14 file gunboat\gunboat.24 }
+		CHUNK DATA { int 15 file destroye\destroye.24 }
+		CHUNK DATA { int 16 file frigate\frigate.24 }
+		CHUNK DATA { int 17 file landcraf\landcraf.24 }
+		CHUNK DATA { int 18 file infantry\infantry.24 }
+		CHUNK DATA { int 19 file marine\marine.24 }
+	}
+#endif
+
+	LIST HSTU	// Hot spot turret
+	{
+#ifdef MIN
+		CHUNK NUMH { int 1 }
+		CHUNK DATA 
+		{ 
+			int 1, 
+			90, 45, 80, 47, 70, 46, 64, 42, 72, 35, 82, 35, 92, 36, 93, 39,
+			94, 54, 79, 58, 68, 55, 65, 42, 73, 35, 80, 33, 92, 39, 95, 44,
+			94, 39, 79, 38, 67, 38, 64, 36, 71, 36, 79, 37, 93, 35, 93, 36
+		}
+#else
+		CHUNK NUMH { int 2 }
+		// Turret hotspots
+		// (x,y) for each non-damage view
+		CHUNK DATA 
+		{ 
+			int 1, 
+			90, 45, 80, 47, 70, 46, 64, 42, 72, 35, 82, 35, 92, 36, 93, 39,
+			94, 54, 79, 58, 68, 55, 65, 42, 73, 35, 80, 33, 92, 39, 95, 44,
+			94, 39, 79, 38, 67, 38, 64, 36, 71, 36, 79, 37, 93, 35, 93, 36
+		}
+
+		CHUNK DATA 
+		{ 
+			int 8, 
+		  	66, 40, 66, 40, 66, 40, 66, 40, 66, 40, 66, 40, 66, 40, 66, 40,  
+		  	68, 51, 68, 51, 68, 51, 68, 51, 68, 51, 68, 51, 68, 51, 68, 51,  
+		  	70, 38, 70, 38, 70, 38, 70, 38, 70, 38, 70, 38, 70, 38, 70, 38  
+		}
+#endif
+	}
+}

@@ -1,0 +1,5 @@
+You're doing well. You've created a functioning economy and now it's time to begin exploring the area. To do this, you need to build both a Command Center and a Vehicle Factory.
+
+A Command Center which will give you a radar, with a view of the entire world. This is essential if you are going to expand. On the radar you will notice five enemy buildings on your map. You must scout three of those locations by sending a vehicle so it can see those locations itself.
+
+A Vehicle Factory will build the outriders you need to explore the 3 building sites. It can also build additional cranes and trucks to improve your economy. You must build a minimum of 1 Crane, 1 Truck, and 3 Outriders.

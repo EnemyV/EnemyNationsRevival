@@ -1,0 +1,40 @@
+#include "..\data.inc"
+
+RIFF TURR
+	{
+
+	LIST FVER
+		{
+
+		CHUNK DATA {short				// version ALWAYS FIRST
+#include ..\rif_ver.inc"
+			}
+		}
+
+	LIST SP08
+	{
+#ifdef ALL_ZOOMS
+		CHUNK NUMS { int 2 }
+
+		CHUNK DATA { int 0 file destruct\destruct.8 }
+		CHUNK DATA { int 1 file boss8800\boss8800.8 }
+
+#else
+		CHUNK NUMS { int 2 }
+
+		CHUNK DATA { int 0 file destruct\destruct.s8 }
+		CHUNK DATA { int 1 file boss8800\boss8800.s8 }
+#endif
+	}
+
+#ifdef INC24
+	LIST SP24
+	{
+		CHUNK NUMS { int 2 }
+
+		CHUNK DATA { int 0 file destruct\destruct.24 }
+		CHUNK DATA { int 1 file boss8800\boss8800.24 }
+	}
+#endif
+
+}

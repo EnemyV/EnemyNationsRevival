@@ -1,0 +1,29 @@
+VPUT16.OBJ +
+VDMPLAY.OBJ +
+VPENGINE.OBJ +
+SMAP.OBJ +
+TCPNET.OBJ +
+NBNET.OBJ +
+IPX16NET.OBJ +
+VPWINSK.OBJ +
+IPX16STB.OBJ +
+COMMNET.OBJ +
+DATALINK.OBJ +
+W16COMM.OBJ +
+MDMDRVR.OBJ +
+MDMNET.OBJ +
+DIALER.OBJ +
+DATALOG.OBJ +
+VPNET.OBJ +
+COMSTATD.OBJ +
+ADVANCED.OBJ +
+VPUTIL.OBJ +
+FRCODER.OBJ +
+..\NBPOST.OBJ ..\ECBPOST.OBJ
+VDMPL16.DLL
+nul
+c:\msvc\lib\+
+c:\msvc\mfc\lib\+
+c:\util\rogue.61\lib\+
+mtllw oldnames libw ldllcew commdlg.lib mmsystem.lib olecli.lib olesvr.lib shell.lib
+VDMPL16.DEF;

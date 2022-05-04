@@ -1,0 +1,153 @@
+Document Type: WSE
+item: Global
+  Version=5.0
+  Title=Windward Studios - Microsoft Extensions
+  Flags=01000100
+  Languages=65 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+  Japanese Font Name=MS Gothic
+  Japanese Font Size=10
+  Start Gradient=0 0 0
+  End Gradient=0 0 0
+  Windows Flags=00000000000000000010000000111000
+  Message Font=MS Sans Serif
+  Font Size=8
+  Disk Filename=SETUP
+  Patch Flags=0000000000000001
+  Patch Threshold=85
+  Patch Memory=4000
+end
+item: Set Variable
+  Variable=TITLE
+  Value=Enemy Nations
+end
+item: Remark
+end
+item: Remark
+  Text=Check version
+end
+item: Get System Information
+  Variable=WIN_VER
+  Flags=00000001
+end
+item: Check Configuration
+  Message=This setup is only needed for Windows 3.1. There is nothing for it to do under Windows 95 or Windows/NT.
+  Title=Check Windows Version
+  Flags=01111010
+end
+item: If/While Statement
+  Variable=WIN_VER
+  Value=3.1
+  Flags=00001000
+end
+item: Display Message
+  Title=Setup - Error
+  Text=You are running Windows version %WIN_VER%. You must be running Windows 3.1 or later so that we can install Win32s. You can also install on Windows 95 or Windows/NT 3.5 (or later).
+  Text=Do you wish to cancel the installation?
+  Flags=00110001
+end
+item: Exit Installation
+end
+item: End Block
+end
+item: End Block
+end
+item: Check Configuration
+  Message=You must be running in enhanced mode so we can install Win32s.
+  Title=Setup - error
+  Flags=01000011
+end
+item: Check Configuration
+  Message=You must have Virtual Memory paging turned on so we can install Win32s. You can turn this on in the Control Panel, Enhanced (386) program.
+  Title=Setup - error
+  Flags=01001001
+end
+item: Remark
+end
+item: Install File
+  Source=e:\enations\disk\win31.txt
+  Destination=%WIN%\win31mem.txt
+  Description=Win 3.1 memory help file
+  Flags=0000001000010011
+end
+item: Get System Information
+  Variable=MEM_AVAIL
+  Flags=00000011
+end
+item: If/While Statement
+  Variable=MEM_AVAIL
+  Value=65000
+  Flags=00001000
+end
+item: Execute Program
+  Pathname=write
+  Command Line=%WIN%\win31mem.txt
+  Flags=00000010
+end
+item: End Block
+end
+item: Remark
+end
+item: Check Disk Space
+  Space1=4000
+  Variable1=SYS
+end
+item: Remark
+end
+item: Display Message
+  Title=Install Microsoft Extensions
+  Text=This program will install the Microsoft extensions required by %TITLE%.
+  Text=Every file installed is a Microsoft program and is installed as part of your system. Because these are system files there is no uninstall.
+  Text=Files will only be installed if you do not have the file already or you have an older version.
+  Text=This will install:
+  Text=     VC++ ver 4.1 DLLs
+  Text=     WinG
+  Text=     Win32s 1.3c
+end
+item: Remark
+end
+item: Install File
+  Source=e:\enations\disk\dlls\win32s\ctl3dv2.dll
+  Destination=%SYS%\ctl3dv2.dll
+  Description=3D Controls
+  Flags=0000000000000011
+end
+item: Remark
+end
+item: Remark
+  Text=Install WinG
+end
+item: Install File
+  Source=e:\enations\disk\wing\*.*
+  Destination=%SYS%
+  Description=WinG run-time
+  Flags=0000001000010011
+end
+item: Add to SYSTEM.INI
+  Device=device=dva.386
+end
+item: Remark
+end
+item: Remark
+  Text=Install Win32s
+end
+item: Display Message
+  Title=Install Win32s
+  Text=Setup will now copy Microsoft's setup program for Win32s to your system's temporary directory (%TEMP%\Win32s) and then run it.
+  Text=Because Microsoft's setup will now take over we cannot delete the files we copy to the temporary directory. These files should get deleted automatically -- but may not.
+  Text=If this setup prompts you to re-boot your system, please do so before running any Win32 application. (If Win32s is already installed on your system you may not see any additional setup program.)
+end
+item: Install File
+  Source=e:\enations\disk\win32s\*.*
+  Destination=%TEMP%\win32s
+  Description=Win32s setup files
+  Flags=0000000100000010
+end
+item: Execute Program
+  Pathname=%TEMP%\win32s\setup32s.exe
+  Default Directory=%TEMP%\win32s
+  Flags=00000010
+end
+item: Delete File
+  Pathname=%TEMP%\Win32s\*.*
+  Flags=00001100
+end

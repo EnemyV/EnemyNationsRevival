@@ -1,0 +1,7 @@
+; vdmplui.def : Declares the module parameters for the DLL.
+
+LIBRARY      VDMPLUI
+DESCRIPTION  'VDMPLUI Windows Dynamic Link Library'
+
+EXPORTS
+    ; Explicit exports can go here

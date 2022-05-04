@@ -1,0 +1,77 @@
+Document Type: WSE
+item: Global
+  Version=5.0
+  Title=Windward Studios - Microsoft Extensions for Windows 95
+  Flags=01000100
+  Languages=65 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+  Japanese Font Name=MS Gothic
+  Japanese Font Size=10
+  Start Gradient=0 0 0
+  End Gradient=0 0 0
+  Windows Flags=00000000000000000010000000111000
+  Message Font=MS Sans Serif
+  Font Size=8
+  Disk Filename=SETUP
+  Patch Flags=0000000000000001
+  Patch Threshold=85
+  Patch Memory=4000
+end
+item: Set Variable
+  Variable=TITLE
+  Value=Enemy Nations
+end
+item: Remark
+end
+item: Remark
+  Text=Check version
+end
+item: Get System Information
+  Variable=WIN_VER
+  Flags=00000001
+end
+item: Check Configuration
+  Message=This setup is only needed for Windows 95. There is nothing for it to do under Windows 3.1 or Windows/NT.
+  Title=Check Windows Version
+  Flags=01011001
+end
+item: Remark
+end
+item: Check Disk Space
+  Space1=4000
+  Variable1=SYS
+end
+item: Remark
+end
+item: Display Message
+  Title=Install Microsoft Extensions
+  Text=This program will install all of the Microsoft extensions required by %TITLE%.
+  Text=Every file installed is a Microsoft program and is installed as part of your system. Because these are system files there is no uninstall.
+  Text=Files will only be installed if you do not have the file already or you have an older version.
+  Text=This will install:
+  Text=     VC++ ver 4.1 DLLs
+  Text=     DirectX 5
+  Text=
+end
+item: Remark
+end
+item: Display Message
+  Title=Install DirectX 5
+  Text=Setup will now copy Microsoft's setup program for DirectX to your system's temporary directory (%TEMP%\dx5eng.exe) and then run it.
+  Text=Because Microsoft's setup will now take over we may not be able to delete the files we copy to the temporary directory.
+  Text=If this setup prompts you to re-boot your system, please do so before running any Win32 application. (If DirectX is already installed on your system you may not see any additional setup program.)
+end
+item: Install File
+  Source=e:\enations\setup\dx5eng.exe
+  Destination=%TEMP%\dx5eng.exe
+  Description=DirectX setup file
+  Flags=0000000000000010
+end
+item: Execute Program
+  Pathname=%TEMP%\dx5eng.exe
+  Flags=00000010
+end
+item: Delete File
+  Pathname=%TEMP%\dx5eng.exe
+end
+item: Remark
+end

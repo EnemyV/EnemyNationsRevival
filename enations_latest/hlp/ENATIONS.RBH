@@ -1,0 +1,19 @@
+[File Properties]
+HasProperties=1
+BrowseType=0
+AutoMapFile=0
+StartingWith=0
+IncrementBy=20
+NextTopicNumber=0
+StartingNumber=501
+BrowseString=MANUAL:0
+DefaultBuildTag=
+
+[Project]
+Help Compiler=HCP
+
+[.RBH]
+CopyTo=0
+PreBatch=
+PostBatch=
+TMPDir=

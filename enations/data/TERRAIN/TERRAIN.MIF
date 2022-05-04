@@ -1,0 +1,596 @@
+#include "..\data.inc"
+
+RIFF TERN
+	{
+	LIST FVER
+		{
+
+		CHUNK DATA {short				// version ALWAYS FIRST
+#include ..\rif_ver.inc"
+			}
+		}
+
+	LIST SP08
+		{
+#ifdef ALL_ZOOMS
+
+		CHUNK NUMS { int 140 }
+
+		// City
+
+		CHUNK DATA { int 0 file city\0\0.8 }
+		CHUNK DATA { int 0 file city\1\1.8 }
+		CHUNK DATA { int 0 file city\2\2.8 }
+		CHUNK DATA { int 0 file city\3\3.8 }
+		CHUNK DATA { int 0 file city\4\4.8 }
+		CHUNK DATA { int 0 file city\5\5.8 }
+		CHUNK DATA { int 0 file city\6\6.8 }
+		CHUNK DATA { int 0 file city\7\7.8 }
+		CHUNK DATA { int 0 file city\8\8.8 }
+		CHUNK DATA { int 0 file city\9\9.8 }
+		CHUNK DATA { int 0 file city\10\10.8 }
+		CHUNK DATA { int 0 file city\11\11.8 }
+		CHUNK DATA { int 0 file city\12\12.8 }
+		CHUNK DATA { int 0 file city\13\13.8 }
+		CHUNK DATA { int 0 file city\14\14.8 }
+
+		// Desert
+
+		CHUNK DATA { int 1 file desert\0\0.8 }
+		CHUNK DATA { int 1 file desert\1\1.8 }
+		CHUNK DATA { int 1 file desert\2\2.8 }
+		CHUNK DATA { int 1 file desert\3\3.8 }
+		CHUNK DATA { int 1 file desert\4\4.8 }
+		CHUNK DATA { int 1 file desert\5\5.8 }
+		CHUNK DATA { int 1 file desert\6\6.8 }
+		CHUNK DATA { int 1 file desert\7\7.8 }
+
+		// Forest (use plain\plain unitl we get forest art)
+
+		CHUNK DATA { int 2 file plain\0\0.8 }
+		CHUNK DATA { int 2 file plain\1\1.8 }
+		CHUNK DATA { int 2 file plain\2\2.8 }
+		CHUNK DATA { int 2 file plain\3\3.8 }
+		CHUNK DATA { int 2 file plain\4\4.8 }
+		CHUNK DATA { int 2 file plain\5\5.8 }
+		CHUNK DATA { int 2 file plain\6\6.8 }
+		CHUNK DATA { int 2 file plain\7\7.8 }
+
+		// Lake
+
+		CHUNK DATA { int 3 file lake\0\0.8 }
+		CHUNK DATA { int 3 file lake\1\1.8 }
+		CHUNK DATA { int 3 file lake\2\2.8 }
+		CHUNK DATA { int 3 file lake\3\3.8 }
+
+		// Hill
+
+		CHUNK DATA { int 4 file hill\0\0.8 }
+		CHUNK DATA { int 4 file hill\1\1.8 }
+		CHUNK DATA { int 4 file hill\2\2.8 }
+		CHUNK DATA { int 4 file hill\3\3.8 }
+		CHUNK DATA { int 4 file hill\4\4.8 }
+		CHUNK DATA { int 4 file hill\5\5.8 }
+		CHUNK DATA { int 4 file hill\6\6.8 }
+		CHUNK DATA { int 4 file hill\7\7.8 }
+
+		// Mountain		
+		
+		CHUNK DATA { int 5 file mountain\0\0.8 }
+		CHUNK DATA { int 5 file mountain\1\1.8 }
+		CHUNK DATA { int 5 file mountain\2\2.8 }
+		CHUNK DATA { int 5 file mountain\3\3.8 }
+		CHUNK DATA { int 5 file mountain\4\4.8 }
+		CHUNK DATA { int 5 file mountain\5\5.8 }
+		CHUNK DATA { int 5 file mountain\6\6.8 }
+		CHUNK DATA { int 5 file mountain\7\7.8 }
+
+		// Ocean
+
+		CHUNK DATA { int 6 file ocean\0\0.8 }
+		CHUNK DATA { int 6 file ocean\1\1.8 }
+		CHUNK DATA { int 6 file ocean\2\2.8 }
+		CHUNK DATA { int 6 file ocean\3\3.8 }
+
+		// Plain
+
+		CHUNK DATA { int 7 file plain\0\0.8 }
+		CHUNK DATA { int 7 file plain\1\1.8 }
+		CHUNK DATA { int 7 file plain\2\2.8 }
+		CHUNK DATA { int 7 file plain\3\3.8 }
+		CHUNK DATA { int 7 file plain\4\4.8 }
+		CHUNK DATA { int 7 file plain\5\5.8 }
+		CHUNK DATA { int 7 file plain\6\6.8 }
+		CHUNK DATA { int 7 file plain\7\7.8 }
+
+		// River
+
+		CHUNK DATA { int 8 file river\0\0.8 }
+		CHUNK DATA { int 8 file river\1\1.8 }
+		CHUNK DATA { int 8 file river\2\2.8 }
+		CHUNK DATA { int 8 file river\3\3.8 }
+
+		// Road
+
+		CHUNK DATA { int 9 file road\0\0.8 }
+		CHUNK DATA { int 9 long -1, 1 }
+		CHUNK DATA { int 9 file road\1\1.8 }
+		CHUNK DATA { int 9 long -1, 1 }
+		CHUNK DATA { int 9 long -1, 1 }
+		CHUNK DATA { int 9 long -1, 1 }
+		CHUNK DATA { int 9 file road\2\2.8 }
+		CHUNK DATA { int 9 long -1, 1 }
+		CHUNK DATA { int 9 long -1, 1 }
+		CHUNK DATA { int 9 long -1, 1 }
+		CHUNK DATA { int 9 file road\3\3.8 }
+		CHUNK DATA { int 9 file road\4\4.8 }
+
+		// Rough
+
+		CHUNK DATA { int 10 file rough\0\0.8 }
+		CHUNK DATA { int 10 file rough\1\1.8 }
+		CHUNK DATA { int 10 file rough\2\2.8 }
+		CHUNK DATA { int 10 file rough\3\3.8 }
+		CHUNK DATA { int 10 file rough\4\4.8 }
+		CHUNK DATA { int 10 file rough\5\5.8 }
+		CHUNK DATA { int 10 file rough\6\6.8 }
+		CHUNK DATA { int 10 file rough\7\7.8 }
+
+		// Swamp 
+
+		CHUNK DATA { int 11 file swamp\0\0.8 }
+		CHUNK DATA { int 11 file swamp\1\1.8 }
+		CHUNK DATA { int 11 file swamp\2\2.8 }
+		CHUNK DATA { int 11 file swamp\3\3.8 }
+		CHUNK DATA { int 11 file swamp\4\4.8 }
+		CHUNK DATA { int 11 file swamp\5\5.8 }
+		CHUNK DATA { int 11 file swamp\6\6.8 }
+
+		// coastline
+
+		CHUNK DATA { int 12 file coastlne\0\0.8 }
+		CHUNK DATA { int 12 long -1, 1 }
+		CHUNK DATA { int 12 long -1, 1 }
+		CHUNK DATA { int 12 long -1, 1 }
+		CHUNK DATA { int 12 file coastlne\1\1.8 }
+		CHUNK DATA { int 12 long -1, 1 }
+		CHUNK DATA { int 12 long -1, 1 }
+		CHUNK DATA { int 12 long -1, 1 }
+		CHUNK DATA { int 12 file coastlne\2\2.8 }
+		CHUNK DATA { int 12 long -1, 1 }
+		CHUNK DATA { int 12 long -1, 1 }
+		CHUNK DATA { int 12 long -1, 1 }
+		CHUNK DATA { int 12 file coastlne\3\3.8 }
+
+		CHUNK DATA { int 12 file coastlne\4\4.8 }
+		CHUNK DATA { int 12 long -1, 1 }
+		CHUNK DATA { int 12 long -1, 1 }
+		CHUNK DATA { int 12 long -1, 1 }
+		CHUNK DATA { int 12 file coastlne\5\5.8 }
+		CHUNK DATA { int 12 long -1, 1 }
+		CHUNK DATA { int 12 long -1, 1 }
+		CHUNK DATA { int 12 long -1, 1 }
+		CHUNK DATA { int 12 file coastlne\6\6.8 }
+		CHUNK DATA { int 12 long -1, 1 }
+		CHUNK DATA { int 12 long -1, 1 }
+		CHUNK DATA { int 12 long -1, 1 }
+		CHUNK DATA { int 12 file coastlne\7\7.8 }
+
+		CHUNK DATA { int 12 file coastlne\8\8.8 }
+		CHUNK DATA { int 12 long -1, 1 }
+		CHUNK DATA { int 12 long -1, 1 }
+		CHUNK DATA { int 12 long -1, 1 }
+		CHUNK DATA { int 12 file coastlne\9\9.8 }
+		CHUNK DATA { int 12 long -1, 1 }
+		CHUNK DATA { int 12 long -1, 1 }
+		CHUNK DATA { int 12 long -1, 1 }
+		CHUNK DATA { int 12 file coastlne\10\10.8 }
+		CHUNK DATA { int 12 long -1, 1 }
+		CHUNK DATA { int 12 long -1, 1 }
+		CHUNK DATA { int 12 long -1, 1 }
+		CHUNK DATA { int 12 file coastlne\11\11.8 }
+
+		// fields
+
+		CHUNK DATA { int 13 file fields\0\0.8 }
+		CHUNK DATA { int 13 file fields\1\1.8 }
+		CHUNK DATA { int 13 file fields\2\2.8 }
+
+		// resources
+
+		CHUNK DATA { int 14 file resource\0\0.8 }
+		CHUNK DATA { int 14 file resource\1\1.8 }
+		CHUNK DATA { int 14 file resource\2\2.8 }
+		CHUNK DATA { int 14 file resource\3\3.8 }
+
+#else
+
+		CHUNK NUMS { int 140 }
+
+		// City
+
+		CHUNK DATA { int 0 file city\0\0.s8 }
+		CHUNK DATA { int 0 file city\1\1.s8 }
+		CHUNK DATA { int 0 file city\2\2.s8 }
+		CHUNK DATA { int 0 file city\3\3.s8 }
+		CHUNK DATA { int 0 file city\4\4.s8 }
+		CHUNK DATA { int 0 file city\5\5.s8 }
+		CHUNK DATA { int 0 file city\6\6.s8 }
+		CHUNK DATA { int 0 file city\7\7.s8 }
+		CHUNK DATA { int 0 file city\8\8.s8 }
+		CHUNK DATA { int 0 file city\9\9.s8 }
+		CHUNK DATA { int 0 file city\10\10.s8 }
+		CHUNK DATA { int 0 file city\11\11.s8 }
+		CHUNK DATA { int 0 file city\12\12.s8 }
+		CHUNK DATA { int 0 file city\13\13.s8 }
+		CHUNK DATA { int 0 file city\14\14.s8 }
+
+		// Desert
+
+		CHUNK DATA { int 1 file desert\0\0.s8 }
+		CHUNK DATA { int 1 file desert\1\1.s8 }
+		CHUNK DATA { int 1 file desert\2\2.s8 }
+		CHUNK DATA { int 1 file desert\3\3.s8 }
+		CHUNK DATA { int 1 file desert\4\4.s8 }
+		CHUNK DATA { int 1 file desert\5\5.s8 }
+		CHUNK DATA { int 1 file desert\6\6.s8 }
+		CHUNK DATA { int 1 file desert\7\7.s8 }
+
+		// Forest (use plain\plain)
+
+		CHUNK DATA { int 2 file plain\0\0.s8 }
+		CHUNK DATA { int 2 file plain\1\1.s8 }
+		CHUNK DATA { int 2 file plain\2\2.s8 }
+		CHUNK DATA { int 2 file plain\3\3.s8 }
+		CHUNK DATA { int 2 file plain\4\4.s8 }
+		CHUNK DATA { int 2 file plain\5\5.s8 }
+		CHUNK DATA { int 2 file plain\6\6.s8 }
+		CHUNK DATA { int 2 file plain\7\7.s8 }
+
+		// Lake
+
+		CHUNK DATA { int 3 file lake\0\0.s8 }
+		CHUNK DATA { int 3 file lake\1\1.s8 }
+		CHUNK DATA { int 3 file lake\2\2.s8 }
+		CHUNK DATA { int 3 file lake\3\3.s8 }
+
+		// Hill
+
+		CHUNK DATA { int 4 file hill\0\0.s8 }
+		CHUNK DATA { int 4 file hill\1\1.s8 }
+		CHUNK DATA { int 4 file hill\2\2.s8 }
+		CHUNK DATA { int 4 file hill\3\3.s8 }
+		CHUNK DATA { int 4 file hill\4\4.s8 }
+		CHUNK DATA { int 4 file hill\5\5.s8 }
+		CHUNK DATA { int 4 file hill\6\6.s8 }
+		CHUNK DATA { int 4 file hill\7\7.s8 }
+
+		// Mountain		
+		
+		CHUNK DATA { int 5 file mountain\0\0.s8 }
+		CHUNK DATA { int 5 file mountain\1\1.s8 }
+		CHUNK DATA { int 5 file mountain\2\2.s8 }
+		CHUNK DATA { int 5 file mountain\3\3.s8 }
+		CHUNK DATA { int 5 file mountain\4\4.s8 }
+		CHUNK DATA { int 5 file mountain\5\5.s8 }
+		CHUNK DATA { int 5 file mountain\6\6.s8 }
+		CHUNK DATA { int 5 file mountain\7\7.s8 }
+
+		// Ocean
+
+		CHUNK DATA { int 6 file ocean\0\0.s8 }
+		CHUNK DATA { int 6 file ocean\1\1.s8 }
+		CHUNK DATA { int 6 file ocean\2\2.s8 }
+		CHUNK DATA { int 6 file ocean\3\3.s8 }
+
+		// Plain
+
+		CHUNK DATA { int 7 file plain\0\0.s8 }
+		CHUNK DATA { int 7 file plain\1\1.s8 }
+		CHUNK DATA { int 7 file plain\2\2.s8 }
+		CHUNK DATA { int 7 file plain\3\3.s8 }
+		CHUNK DATA { int 7 file plain\4\4.s8 }
+		CHUNK DATA { int 7 file plain\5\5.s8 }
+		CHUNK DATA { int 7 file plain\6\6.s8 }
+		CHUNK DATA { int 7 file plain\7\7.s8 }
+
+		// River
+
+		CHUNK DATA { int 8 file river\0\0.s8 }
+		CHUNK DATA { int 8 file river\1\1.s8 }
+		CHUNK DATA { int 8 file river\2\2.s8 }
+		CHUNK DATA { int 8 file river\3\3.s8 }
+
+		// Road
+
+		CHUNK DATA { int 9 file road\0\0.s8 }
+		CHUNK DATA { int 9 long -1, 1 }
+		CHUNK DATA { int 9 file road\1\1.s8 }
+		CHUNK DATA { int 9 long -1, 1 }
+		CHUNK DATA { int 9 long -1, 1 }
+		CHUNK DATA { int 9 long -1, 1 }
+		CHUNK DATA { int 9 file road\2\2.s8 }
+		CHUNK DATA { int 9 long -1, 1 }
+		CHUNK DATA { int 9 long -1, 1 }
+		CHUNK DATA { int 9 long -1, 1 }
+		CHUNK DATA { int 9 file road\3\3.s8 }
+		CHUNK DATA { int 9 file road\4\4.s8 }
+
+		// Rough
+
+		CHUNK DATA { int 10 file rough\0\0.s8 }
+		CHUNK DATA { int 10 file rough\1\1.s8 }
+		CHUNK DATA { int 10 file rough\2\2.s8 }
+		CHUNK DATA { int 10 file rough\3\3.s8 }
+		CHUNK DATA { int 10 file rough\4\4.s8 }
+		CHUNK DATA { int 10 file rough\5\5.s8 }
+		CHUNK DATA { int 10 file rough\6\6.s8 }
+		CHUNK DATA { int 10 file rough\7\7.s8 }
+
+		// Swamp 
+
+		CHUNK DATA { int 11 file swamp\0\0.s8 }
+		CHUNK DATA { int 11 file swamp\1\1.s8 }
+		CHUNK DATA { int 11 file swamp\2\2.s8 }
+		CHUNK DATA { int 11 file swamp\3\3.s8 }
+		CHUNK DATA { int 11 file swamp\4\4.s8 }
+		CHUNK DATA { int 11 file swamp\5\5.s8 }
+		CHUNK DATA { int 11 file swamp\6\6.s8 }
+
+		// coastline
+
+		CHUNK DATA { int 12 file coastlne\0\0.s8 }
+		CHUNK DATA { int 12 long -1, 1 }
+		CHUNK DATA { int 12 long -1, 1 }
+		CHUNK DATA { int 12 long -1, 1 }
+		CHUNK DATA { int 12 file coastlne\1\1.s8 }
+		CHUNK DATA { int 12 long -1, 1 }
+		CHUNK DATA { int 12 long -1, 1 }
+		CHUNK DATA { int 12 long -1, 1 }
+		CHUNK DATA { int 12 file coastlne\2\2.s8 }
+		CHUNK DATA { int 12 long -1, 1 }
+		CHUNK DATA { int 12 long -1, 1 }
+		CHUNK DATA { int 12 long -1, 1 }
+		CHUNK DATA { int 12 file coastlne\3\3.s8 }
+
+		CHUNK DATA { int 12 file coastlne\4\4.s8 }
+		CHUNK DATA { int 12 long -1, 1 }
+		CHUNK DATA { int 12 long -1, 1 }
+		CHUNK DATA { int 12 long -1, 1 }
+		CHUNK DATA { int 12 file coastlne\5\5.s8 }
+		CHUNK DATA { int 12 long -1, 1 }
+		CHUNK DATA { int 12 long -1, 1 }
+		CHUNK DATA { int 12 long -1, 1 }
+		CHUNK DATA { int 12 file coastlne\6\6.s8 }
+		CHUNK DATA { int 12 long -1, 1 }
+		CHUNK DATA { int 12 long -1, 1 }
+		CHUNK DATA { int 12 long -1, 1 }
+		CHUNK DATA { int 12 file coastlne\7\7.s8 }
+
+		CHUNK DATA { int 12 file coastlne\8\8.s8 }
+		CHUNK DATA { int 12 long -1, 1 }
+		CHUNK DATA { int 12 long -1, 1 }
+		CHUNK DATA { int 12 long -1, 1 }
+		CHUNK DATA { int 12 file coastlne\9\9.s8 }
+		CHUNK DATA { int 12 long -1, 1 }
+		CHUNK DATA { int 12 long -1, 1 }
+		CHUNK DATA { int 12 long -1, 1 }
+		CHUNK DATA { int 12 file coastlne\10\10.s8 }
+		CHUNK DATA { int 12 long -1, 1 }
+		CHUNK DATA { int 12 long -1, 1 }
+		CHUNK DATA { int 12 long -1, 1 }
+		CHUNK DATA { int 12 file coastlne\11\11.s8 }
+
+		// fields
+
+		CHUNK DATA { int 13 file fields\0\0.s8 }
+		CHUNK DATA { int 13 file fields\1\1.s8 }
+		CHUNK DATA { int 13 file fields\2\2.s8 }
+
+		// resources
+
+		CHUNK DATA { int 14 file resource\0\0.s8 }
+		CHUNK DATA { int 14 file resource\1\1.s8 }
+		CHUNK DATA { int 14 file resource\2\2.s8 }
+		CHUNK DATA { int 14 file resource\3\3.s8 }
+#endif
+
+#endif
+		}
+
+#ifdef INC24
+	LIST SP24
+		{
+		CHUNK NUMS { int 140 }
+
+		// City
+
+		CHUNK DATA { int 0 file city\0\0.24 }
+		CHUNK DATA { int 0 file city\1\1.24 }
+		CHUNK DATA { int 0 file city\2\2.24 }
+		CHUNK DATA { int 0 file city\3\3.24 }
+		CHUNK DATA { int 0 file city\4\4.24 }
+		CHUNK DATA { int 0 file city\5\5.24 }
+		CHUNK DATA { int 0 file city\6\6.24 }
+		CHUNK DATA { int 0 file city\7\7.24 }
+		CHUNK DATA { int 0 file city\8\8.24 }
+		CHUNK DATA { int 0 file city\9\9.24 }
+		CHUNK DATA { int 0 file city\10\10.24 }
+		CHUNK DATA { int 0 file city\11\11.24 }
+		CHUNK DATA { int 0 file city\12\12.24 }
+		CHUNK DATA { int 0 file city\13\13.24 }
+		CHUNK DATA { int 0 file city\14\14.24 }
+
+		// Desert
+
+		CHUNK DATA { int 1 file desert\0\0.24 }
+		CHUNK DATA { int 1 file desert\1\1.24 }
+		CHUNK DATA { int 1 file desert\2\2.24 }
+		CHUNK DATA { int 1 file desert\3\3.24 }
+		CHUNK DATA { int 1 file desert\4\4.24 }
+		CHUNK DATA { int 1 file desert\5\5.24 }
+		CHUNK DATA { int 1 file desert\6\6.24 }
+		CHUNK DATA { int 1 file desert\7\7.24 }
+
+		// Forest (use plain\plain)
+
+		CHUNK DATA { int 2 file plain\0\0.24 }
+		CHUNK DATA { int 2 file plain\1\1.24 }
+		CHUNK DATA { int 2 file plain\2\2.24 }
+		CHUNK DATA { int 2 file plain\3\3.24 }
+		CHUNK DATA { int 2 file plain\4\4.24 }
+		CHUNK DATA { int 2 file plain\5\5.24 }
+		CHUNK DATA { int 2 file plain\6\6.24 }
+		CHUNK DATA { int 2 file plain\7\7.24 }
+
+		// Lake
+
+		CHUNK DATA { int 3 file lake\0\0.24 }
+		CHUNK DATA { int 3 file lake\1\1.24 }
+		CHUNK DATA { int 3 file lake\2\2.24 }
+		CHUNK DATA { int 3 file lake\3\3.24 }
+
+		// Hill
+
+		CHUNK DATA { int 4 file hill\0\0.24 }
+		CHUNK DATA { int 4 file hill\1\1.24 }
+		CHUNK DATA { int 4 file hill\2\2.24 }
+		CHUNK DATA { int 4 file hill\3\3.24 }
+		CHUNK DATA { int 4 file hill\4\4.24 }
+		CHUNK DATA { int 4 file hill\5\5.24 }
+		CHUNK DATA { int 4 file hill\6\6.24 }
+		CHUNK DATA { int 4 file hill\7\7.24 }
+
+		// Mountain		
+		
+		CHUNK DATA { int 5 file mountain\0\0.24 }
+		CHUNK DATA { int 5 file mountain\1\1.24 }
+		CHUNK DATA { int 5 file mountain\2\2.24 }
+		CHUNK DATA { int 5 file mountain\3\3.24 }
+		CHUNK DATA { int 5 file mountain\4\4.24 }
+		CHUNK DATA { int 5 file mountain\5\5.24 }
+		CHUNK DATA { int 5 file mountain\6\6.24 }
+		CHUNK DATA { int 5 file mountain\7\7.24 }
+
+		// Ocean
+
+		CHUNK DATA { int 6 file ocean\0\0.24 }
+		CHUNK DATA { int 6 file ocean\1\1.24 }
+		CHUNK DATA { int 6 file ocean\2\2.24 }
+		CHUNK DATA { int 6 file ocean\3\3.24 }
+
+		// Plain
+
+		CHUNK DATA { int 7 file plain\0\0.24 }
+		CHUNK DATA { int 7 file plain\1\1.24 }
+		CHUNK DATA { int 7 file plain\2\2.24 }
+		CHUNK DATA { int 7 file plain\3\3.24 }
+		CHUNK DATA { int 7 file plain\4\4.24 }
+		CHUNK DATA { int 7 file plain\5\5.24 }
+		CHUNK DATA { int 7 file plain\6\6.24 }
+		CHUNK DATA { int 7 file plain\7\7.24 }
+
+		// River
+
+		CHUNK DATA { int 8 file river\0\0.24 }
+		CHUNK DATA { int 8 file river\1\1.24 }
+		CHUNK DATA { int 8 file river\2\2.24 }
+		CHUNK DATA { int 8 file river\3\3.24 }
+
+		// Road
+
+		CHUNK DATA { int 9 file road\0\0.24 }
+		CHUNK DATA { int 9 long -1, 1 }
+		CHUNK DATA { int 9 file road\1\1.24 }
+		CHUNK DATA { int 9 long -1, 1 }
+		CHUNK DATA { int 9 long -1, 1 }
+		CHUNK DATA { int 9 long -1, 1 }
+		CHUNK DATA { int 9 file road\2\2.24 }
+		CHUNK DATA { int 9 long -1, 1 }
+		CHUNK DATA { int 9 long -1, 1 }
+		CHUNK DATA { int 9 long -1, 1 }
+		CHUNK DATA { int 9 file road\3\3.24 }
+		CHUNK DATA { int 9 file road\4\4.24 }
+
+		// Rough
+
+		CHUNK DATA { int 10 file rough\0\0.24 }
+		CHUNK DATA { int 10 file rough\1\1.24 }
+		CHUNK DATA { int 10 file rough\2\2.24 }
+		CHUNK DATA { int 10 file rough\3\3.24 }
+		CHUNK DATA { int 10 file rough\4\4.24 }
+		CHUNK DATA { int 10 file rough\5\5.24 }
+		CHUNK DATA { int 10 file rough\6\6.24 }
+		CHUNK DATA { int 10 file rough\7\7.24 }
+
+		// Swamp
+
+		CHUNK DATA { int 11 file swamp\0\0.24 }
+		CHUNK DATA { int 11 file swamp\1\1.24 }
+		CHUNK DATA { int 11 file swamp\2\2.24 }
+		CHUNK DATA { int 11 file swamp\3\3.24 }
+		CHUNK DATA { int 11 file swamp\4\4.24 }
+		CHUNK DATA { int 11 file swamp\5\5.24 }
+		CHUNK DATA { int 11 file swamp\6\6.24 }
+
+		// coastline
+
+		CHUNK DATA { int 12 file coastlne\0\0.24 }
+		CHUNK DATA { int 12 long -1, 1 }
+		CHUNK DATA { int 12 long -1, 1 }
+		CHUNK DATA { int 12 long -1, 1 }
+		CHUNK DATA { int 12 file coastlne\1\1.24 }
+		CHUNK DATA { int 12 long -1, 1 }
+		CHUNK DATA { int 12 long -1, 1 }
+		CHUNK DATA { int 12 long -1, 1 }
+		CHUNK DATA { int 12 file coastlne\2\2.24 }
+		CHUNK DATA { int 12 long -1, 1 }
+		CHUNK DATA { int 12 long -1, 1 }
+		CHUNK DATA { int 12 long -1, 1 }
+		CHUNK DATA { int 12 file coastlne\3\3.24 }
+
+		CHUNK DATA { int 12 file coastlne\4\4.24 }
+		CHUNK DATA { int 12 long -1, 1 }
+		CHUNK DATA { int 12 long -1, 1 }
+		CHUNK DATA { int 12 long -1, 1 }
+		CHUNK DATA { int 12 file coastlne\5\5.24 }
+		CHUNK DATA { int 12 long -1, 1 }
+		CHUNK DATA { int 12 long -1, 1 }
+		CHUNK DATA { int 12 long -1, 1 }
+		CHUNK DATA { int 12 file coastlne\6\6.24 }
+		CHUNK DATA { int 12 long -1, 1 }
+		CHUNK DATA { int 12 long -1, 1 }
+		CHUNK DATA { int 12 long -1, 1 }
+		CHUNK DATA { int 12 file coastlne\7\7.24 }
+
+		CHUNK DATA { int 12 file coastlne\8\8.24 }
+		CHUNK DATA { int 12 long -1, 1 }
+		CHUNK DATA { int 12 long -1, 1 }
+		CHUNK DATA { int 12 long -1, 1 }
+		CHUNK DATA { int 12 file coastlne\9\9.24 }
+		CHUNK DATA { int 12 long -1, 1 }
+		CHUNK DATA { int 12 long -1, 1 }
+		CHUNK DATA { int 12 long -1, 1 }
+		CHUNK DATA { int 12 file coastlne\10\10.24 }
+		CHUNK DATA { int 12 long -1, 1 }
+		CHUNK DATA { int 12 long -1, 1 }
+		CHUNK DATA { int 12 long -1, 1 }
+		CHUNK DATA { int 12 file coastlne\11\11.24 }
+
+		// fields
+
+		CHUNK DATA { int 13 file fields\0\0.24 }
+		CHUNK DATA { int 13 file fields\1\1.24 }
+		CHUNK DATA { int 13 file fields\2\2.24 }
+
+		// resources
+
+		CHUNK DATA { int 14 file resource\0\0.24 }
+		CHUNK DATA { int 14 file resource\1\1.24 }
+		CHUNK DATA { int 14 file resource\2\2.24 }
+		CHUNK DATA { int 14 file resource\3\3.24 }
+
+		}
+#endif
+
+	}

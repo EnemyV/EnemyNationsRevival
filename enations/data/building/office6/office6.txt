@@ -1,0 +1,7 @@
+Building hotspot/anchor info.
+Using only Finished Construction views.
+
+Anchor points          -> 0 out of 12 views.
+Damage hotspots        -> 12 out of 12 views.
+Turret/Muzzle hotspots -> 0 out of 12 views.
+Flag hotspots          -> 8 out of 12 views.

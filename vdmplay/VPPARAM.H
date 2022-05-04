@@ -1,0 +1,10 @@
+#ifndef __VPPARAM_H__
+#define __VPPARAM_H__
+
+
+#define VP_SERVER_ENUM_PERIOD 5000
+#define VP_SERVER_AGE_PERIOD  (VP_SERVER_ENUM_PERIOD*3)
+#define VP_SLOW_NET_FACTOR 10
+#define VP_REGISTERY_AGE_PERIOD 30000
+#endif  
+

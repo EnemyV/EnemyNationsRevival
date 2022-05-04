@@ -1,0 +1,584 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|Win32">
+      <Configuration>Debug</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="LOGOUT  TRAP|Win32">
+      <Configuration>LOGOUT  TRAP</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Profile|Win32">
+      <Configuration>Profile</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|Win32">
+      <Configuration>Release</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="TRAPs|Win32">
+      <Configuration>TRAPs</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <SccProjectName />
+    <SccLocalPath />
+    <Keyword>MFCProj</Keyword>
+    <ProjectGuid>{7DF340DF-E773-4B92-8649-D4A133B0CC3E}</ProjectGuid>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Profile|Win32'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <PlatformToolset>v141</PlatformToolset>
+    <UseOfMfc>Static</UseOfMfc>
+    <CharacterSet>MultiByte</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <PlatformToolset>v141</PlatformToolset>
+    <UseOfMfc>Static</UseOfMfc>
+    <CharacterSet>MultiByte</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <PlatformToolset>v141</PlatformToolset>
+    <UseOfMfc>Static</UseOfMfc>
+    <CharacterSet>MultiByte</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='LOGOUT  TRAP|Win32'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <PlatformToolset>v141</PlatformToolset>
+    <UseOfMfc>Static</UseOfMfc>
+    <CharacterSet>MultiByte</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='TRAPs|Win32'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <PlatformToolset>v141</PlatformToolset>
+    <UseOfMfc>Static</UseOfMfc>
+    <CharacterSet>MultiByte</CharacterSet>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings">
+  </ImportGroup>
+  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Profile|Win32'" Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+    <Import Project="$(VCTargetsPath)Microsoft.Cpp.UpgradeFromVC60.props" />
+  </ImportGroup>
+  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+    <Import Project="$(VCTargetsPath)Microsoft.Cpp.UpgradeFromVC60.props" />
+  </ImportGroup>
+  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+    <Import Project="$(VCTargetsPath)Microsoft.Cpp.UpgradeFromVC60.props" />
+  </ImportGroup>
+  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='LOGOUT  TRAP|Win32'" Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+    <Import Project="$(VCTargetsPath)Microsoft.Cpp.UpgradeFromVC60.props" />
+  </ImportGroup>
+  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='TRAPs|Win32'" Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+    <Import Project="$(VCTargetsPath)Microsoft.Cpp.UpgradeFromVC60.props" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='TRAPs|Win32'">
+    <OutDir>.\trap\</OutDir>
+    <IntDir>.\trap\</IntDir>
+    <LinkIncremental>true</LinkIncremental>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='LOGOUT  TRAP|Win32'">
+    <OutDir>.\logout\</OutDir>
+    <IntDir>.\logout\</IntDir>
+    <LinkIncremental>true</LinkIncremental>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <OutDir>.\WinDebug\</OutDir>
+    <IntDir>.\WinDebug\</IntDir>
+    <LinkIncremental>true</LinkIncremental>
+    <LibraryPath>C:\Games\Enemy Nations\EnemyNationsSource\enations\setup\dlls\Win32\winnt;C:\Games\Enemy Nations\EnemyNationsSource\enations_latest\019\DLLs\WIN32S;C:\Games\Enemy Nations\EnemyNationsSource\enations\disk\DLLs\Win32s;C:\Games\Enemy Nations\EnemyNationsSource\tools\lib;$(LibraryPath)</LibraryPath>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <OutDir>.\WinRel\</OutDir>
+    <IntDir>.\WinRel\</IntDir>
+    <LinkIncremental>false</LinkIncremental>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Profile|Win32'">
+    <OutDir>.\profile\</OutDir>
+    <IntDir>.\profile\</IntDir>
+    <LinkIncremental>false</LinkIncremental>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='TRAPs|Win32'">
+    <ClCompile>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+      <InlineFunctionExpansion>Default</InlineFunctionExpansion>
+      <StringPooling>true</StringPooling>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <Optimization>MaxSpeed</Optimization>
+      <SuppressStartupBanner>true</SuppressStartupBanner>
+      <WarningLevel>Level3</WarningLevel>
+      <PreprocessorDefinitions>NDEBUG;_TRAP;WIN32;_WINDOWS;_CHEAT;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AssemblerListingLocation>.\trap\</AssemblerListingLocation>
+      <PrecompiledHeaderOutputFile>.\trap\enations.pch</PrecompiledHeaderOutputFile>
+      <PrecompiledHeader>Use</PrecompiledHeader>
+      <PrecompiledHeaderFile>stdafx.h</PrecompiledHeaderFile>
+      <ObjectFileName>.\trap\</ObjectFileName>
+      <ProgramDataBaseFileName>.\trap\</ProgramDataBaseFileName>
+    </ClCompile>
+    <Midl>
+      <SuppressStartupBanner>true</SuppressStartupBanner>
+      <PreprocessorDefinitions>NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <TypeLibraryName>.\trap\enations.tlb</TypeLibraryName>
+      <MkTypLibCompatible>true</MkTypLibCompatible>
+      <TargetEnvironment>Win32</TargetEnvironment>
+    </Midl>
+    <ResourceCompile>
+      <Culture>0x0409</Culture>
+      <AdditionalIncludeDirectories>\\zazoo\e\windward\lib;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>NDEBUG;_WIN32;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ResourceCompile>
+    <Bscmake>
+      <SuppressStartupBanner>true</SuppressStartupBanner>
+      <OutputFile>.\trap\enations.bsc</OutputFile>
+    </Bscmake>
+    <Link>
+      <SuppressStartupBanner>true</SuppressStartupBanner>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <SubSystem>Windows</SubSystem>
+      <IgnoreAllDefaultLibraries>false</IgnoreAllDefaultLibraries>
+      <OutputFile>.\trap\enations.exe</OutputFile>
+      <AdditionalDependencies>shmfc4m.lib;shlw32m.lib;wind40.lib;mss32.lib;vdmplay.lib;vfw32.lib;winmm.lib;version.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='LOGOUT  TRAP|Win32'">
+    <ClCompile>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+      <InlineFunctionExpansion>Default</InlineFunctionExpansion>
+      <StringPooling>true</StringPooling>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <Optimization>MaxSpeed</Optimization>
+      <SuppressStartupBanner>true</SuppressStartupBanner>
+      <WarningLevel>Level3</WarningLevel>
+      <PreprocessorDefinitions>NDEBUG;WIN32;_LOGOUT;_TRAP;_WINDOWS;_CHEAT;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AssemblerListingLocation>.\logout\</AssemblerListingLocation>
+      <PrecompiledHeaderOutputFile>.\logout\enations.pch</PrecompiledHeaderOutputFile>
+      <PrecompiledHeader>Use</PrecompiledHeader>
+      <PrecompiledHeaderFile>stdafx.h</PrecompiledHeaderFile>
+      <ObjectFileName>.\logout\</ObjectFileName>
+      <ProgramDataBaseFileName>.\logout\</ProgramDataBaseFileName>
+    </ClCompile>
+    <Midl>
+      <SuppressStartupBanner>true</SuppressStartupBanner>
+      <PreprocessorDefinitions>NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <TypeLibraryName>.\logout\enations.tlb</TypeLibraryName>
+      <MkTypLibCompatible>true</MkTypLibCompatible>
+      <TargetEnvironment>Win32</TargetEnvironment>
+    </Midl>
+    <ResourceCompile>
+      <Culture>0x0409</Culture>
+      <AdditionalIncludeDirectories>\\zazoo\e\windward\lib;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>NDEBUG;_WIN32;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ResourceCompile>
+    <Bscmake>
+      <SuppressStartupBanner>true</SuppressStartupBanner>
+      <OutputFile>.\logout\enations.bsc</OutputFile>
+    </Bscmake>
+    <Link>
+      <SuppressStartupBanner>true</SuppressStartupBanner>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <SubSystem>Windows</SubSystem>
+      <IgnoreAllDefaultLibraries>false</IgnoreAllDefaultLibraries>
+      <OutputFile>.\logout\enations.exe</OutputFile>
+      <AdditionalDependencies>shmfc4m.lib;shlw32m.lib;wind40.lib;mss32.lib;vdmplay.lib;vfw32.lib;winmm.lib;version.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <ClCompile>
+      <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
+      <InlineFunctionExpansion>Default</InlineFunctionExpansion>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <Optimization>Disabled</Optimization>
+      <SuppressStartupBanner>true</SuppressStartupBanner>
+      <WarningLevel>Level3</WarningLevel>
+      <MinimalRebuild>true</MinimalRebuild>
+      <DebugInformationFormat>EditAndContinue</DebugInformationFormat>
+      <PreprocessorDefinitions>_DEBUG;WIN32;_LOGOUT;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AssemblerListingLocation>.\WinDebug\</AssemblerListingLocation>
+      <PrecompiledHeaderOutputFile>.\WinDebug\enations.pch</PrecompiledHeaderOutputFile>
+      <PrecompiledHeader>Use</PrecompiledHeader>
+      <PrecompiledHeaderFile>stdafx.h</PrecompiledHeaderFile>
+      <ObjectFileName>.\WinDebug\</ObjectFileName>
+      <ProgramDataBaseFileName>.\WinDebug\</ProgramDataBaseFileName>
+      <AdditionalUsingDirectories>C:\Games\Enemy Nations\EnemyNationsSource\windward;C:\Games\Enemy Nations\EnemyNationsSource\windward\include;C:\Games\Enemy Nations\EnemyNationsSource\tools\lib;%(AdditionalUsingDirectories)</AdditionalUsingDirectories>
+      <AdditionalIncludeDirectories>C:\Games\Enemy Nations\EnemyNationsSource\windward;C:\Games\Enemy Nations\EnemyNationsSource\tools\lib;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
+    <Midl>
+      <SuppressStartupBanner>true</SuppressStartupBanner>
+      <PreprocessorDefinitions>_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <TypeLibraryName>.\WinDebug\enations.tlb</TypeLibraryName>
+      <MkTypLibCompatible>true</MkTypLibCompatible>
+      <TargetEnvironment>Win32</TargetEnvironment>
+    </Midl>
+    <ResourceCompile>
+      <Culture>0x0409</Culture>
+      <AdditionalIncludeDirectories>\\zazoo\e\windward\lib;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>_DEBUG;_WIN32;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ResourceCompile>
+    <Bscmake>
+      <SuppressStartupBanner>true</SuppressStartupBanner>
+      <OutputFile>.\WinDebug\enations.bsc</OutputFile>
+    </Bscmake>
+    <Link>
+      <SuppressStartupBanner>true</SuppressStartupBanner>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <SubSystem>Windows</SubSystem>
+      <IgnoreAllDefaultLibraries>false</IgnoreAllDefaultLibraries>
+      <OutputFile>.\WinDebug\enations.exe</OutputFile>
+      <AdditionalDependencies>hamfc4m.lib;haw32m.lib;wind40d.lib;mss32.lib;vdmplay.lib;vfw32.lib;winmm.lib;version.lib;CTL3DV2.LIB;d3drm.lib;WING32.LIB;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <ClCompile>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+      <InlineFunctionExpansion>AnySuitable</InlineFunctionExpansion>
+      <StringPooling>true</StringPooling>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <Optimization>MaxSpeed</Optimization>
+      <SuppressStartupBanner>true</SuppressStartupBanner>
+      <WarningLevel>Level3</WarningLevel>
+      <PreprocessorDefinitions>NDEBUG;WIN32;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AssemblerListingLocation>.\WinRel\</AssemblerListingLocation>
+      <PrecompiledHeaderOutputFile>.\WinRel\enations.pch</PrecompiledHeaderOutputFile>
+      <PrecompiledHeader>Use</PrecompiledHeader>
+      <PrecompiledHeaderFile>stdafx.h</PrecompiledHeaderFile>
+      <ObjectFileName>.\WinRel\</ObjectFileName>
+      <ProgramDataBaseFileName>.\WinRel\</ProgramDataBaseFileName>
+    </ClCompile>
+    <Midl>
+      <SuppressStartupBanner>true</SuppressStartupBanner>
+      <PreprocessorDefinitions>NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <TypeLibraryName>.\WinRel\enations.tlb</TypeLibraryName>
+      <MkTypLibCompatible>true</MkTypLibCompatible>
+      <TargetEnvironment>Win32</TargetEnvironment>
+    </Midl>
+    <ResourceCompile>
+      <Culture>0x0409</Culture>
+      <AdditionalIncludeDirectories>\\zazoo\e\windward\lib;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>NDEBUG;_WIN32;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ResourceCompile>
+    <Bscmake>
+      <SuppressStartupBanner>true</SuppressStartupBanner>
+      <OutputFile>.\WinRel\enations.bsc</OutputFile>
+    </Bscmake>
+    <Link>
+      <SuppressStartupBanner>true</SuppressStartupBanner>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <SubSystem>Windows</SubSystem>
+      <IgnoreAllDefaultLibraries>false</IgnoreAllDefaultLibraries>
+      <OutputFile>.\WinRel\enations.exe</OutputFile>
+      <AdditionalDependencies>shmfc4m.lib;shlw32m.lib;wind40.lib;mss32.lib;vdmplay.lib;vfw32.lib;winmm.lib;version.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Profile|Win32'">
+    <ClCompile>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+      <InlineFunctionExpansion>AnySuitable</InlineFunctionExpansion>
+      <StringPooling>true</StringPooling>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <Optimization>MaxSpeed</Optimization>
+      <SuppressStartupBanner>true</SuppressStartupBanner>
+      <WarningLevel>Level3</WarningLevel>
+      <DebugInformationFormat>OldStyle</DebugInformationFormat>
+      <PreprocessorDefinitions>NDEBUG;WIN32;_WINDOWS;_CHEAT;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AssemblerListingLocation>.\profile\</AssemblerListingLocation>
+      <PrecompiledHeaderOutputFile>.\profile\enations.pch</PrecompiledHeaderOutputFile>
+      <PrecompiledHeader>Use</PrecompiledHeader>
+      <PrecompiledHeaderFile>stdafx.h</PrecompiledHeaderFile>
+      <ObjectFileName>.\profile\</ObjectFileName>
+      <ProgramDataBaseFileName>.\profile\</ProgramDataBaseFileName>
+    </ClCompile>
+    <Midl>
+      <SuppressStartupBanner>true</SuppressStartupBanner>
+      <PreprocessorDefinitions>NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <TypeLibraryName>.\profile\enations.tlb</TypeLibraryName>
+      <MkTypLibCompatible>true</MkTypLibCompatible>
+      <TargetEnvironment>Win32</TargetEnvironment>
+    </Midl>
+    <ResourceCompile>
+      <Culture>0x0409</Culture>
+      <AdditionalIncludeDirectories>\\zazoo\e\windward\lib;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>NDEBUG;_WIN32;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ResourceCompile>
+    <Bscmake>
+      <SuppressStartupBanner>true</SuppressStartupBanner>
+      <OutputFile>.\profile\enations.bsc</OutputFile>
+    </Bscmake>
+    <Link>
+      <SuppressStartupBanner>true</SuppressStartupBanner>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <SubSystem>Windows</SubSystem>
+      <IgnoreAllDefaultLibraries>false</IgnoreAllDefaultLibraries>
+      <OutputFile>.\profile\enations.exe</OutputFile>
+      <AdditionalDependencies>shmfc4m.lib;shlw32m.lib;wind40.lib;mss32.lib;vdmplay.lib;vfw32.lib;winmm.lib;version.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClCompile Include="Ai.cpp" />
+    <ClCompile Include="Area.cpp" />
+    <ClCompile Include="Bmbutton.cpp" />
+    <ClCompile Include="bridge.cpp" />
+    <ClCompile Include="Caicopy.cpp" />
+    <ClCompile Include="Caidata.cpp" />
+    <ClCompile Include="Caigmgr.cpp" />
+    <ClCompile Include="Caigoal.cpp" />
+    <ClCompile Include="Caihex.cpp" />
+    <ClCompile Include="Caiinit.cpp" />
+    <ClCompile Include="Caimap.cpp" />
+    <ClCompile Include="Caimaput.cpp" />
+    <ClCompile Include="Caimgr.cpp" />
+    <ClCompile Include="Caimsg.cpp" />
+    <ClCompile Include="Caiopfor.cpp" />
+    <ClCompile Include="Cairoute.cpp" />
+    <ClCompile Include="Caisavld.cpp" />
+    <ClCompile Include="Caistart.cpp" />
+    <ClCompile Include="Caitask.cpp" />
+    <ClCompile Include="Caitmgr.cpp" />
+    <ClCompile Include="Caiunit.cpp" />
+    <ClCompile Include="CdLoc.cpp" />
+    <ClCompile Include="Chat.cpp" />
+    <ClCompile Include="Chatbar.cpp" />
+    <ClCompile Include="Chproute.cpp" />
+    <ClCompile Include="Cpathmap.cpp" />
+    <ClCompile Include="Cpathmgr.cpp" />
+    <ClCompile Include="Creatmul.cpp" />
+    <ClCompile Include="Creatsin.cpp" />
+    <ClCompile Include="credits.cpp" />
+    <ClCompile Include="Cutscene.cpp" />
+    <ClCompile Include="dlgflic.cpp" />
+    <ClCompile Include="DlgMsg.cpp" />
+    <ClCompile Include="DlgReg.cpp" />
+    <ClCompile Include="DXFER.CPP" />
+    <ClCompile Include="Event.cpp" />
+    <ClCompile Include="Icons.cpp" />
+    <ClCompile Include="Ipcchat.cpp" />
+    <ClCompile Include="Ipccomm.cpp" />
+    <ClCompile Include="Ipcmsg.cpp" />
+    <ClCompile Include="Ipcplay.cpp" />
+    <ClCompile Include="Ipcread.cpp" />
+    <ClCompile Include="Ipcsend.cpp" />
+    <ClCompile Include="Join.cpp" />
+    <ClCompile Include="lastplnt.cpp" />
+    <ClCompile Include="License.cpp" />
+    <ClCompile Include="loadtruk.cpp" />
+    <ClCompile Include="Main.cpp" />
+    <ClCompile Include="Mainloop.cpp" />
+    <ClCompile Include="Minerals.cpp" />
+    <ClCompile Include="movie.cpp" />
+    <ClCompile Include="Netapi.cpp" />
+    <ClCompile Include="Netcmd.cpp" />
+    <ClCompile Include="Newworld.cpp" />
+    <ClCompile Include="New_game.cpp" />
+    <ClCompile Include="New_unit.cpp" />
+    <ClCompile Include="Options.cpp" />
+    <ClCompile Include="Pickrace.cpp" />
+    <ClCompile Include="Player.cpp" />
+    <ClCompile Include="PlyrList.cpp" />
+    <ClCompile Include="Projbase.cpp" />
+    <ClCompile Include="Racedata.cpp" />
+    <ClCompile Include="Relation.cpp" />
+    <ClCompile Include="Research.cpp" />
+    <ClCompile Include="Scenario.cpp" />
+    <ClCompile Include="Sprite.cpp" />
+    <ClCompile Include="Sprtinit.cpp" />
+    <ClCompile Include="STDAFX.CPP">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='TRAPs|Win32'">Create</PrecompiledHeader>
+      <PrecompiledHeaderFile Condition="'$(Configuration)|$(Platform)'=='TRAPs|Win32'">stdafx.h</PrecompiledHeaderFile>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='LOGOUT  TRAP|Win32'">Create</PrecompiledHeader>
+      <PrecompiledHeaderFile Condition="'$(Configuration)|$(Platform)'=='LOGOUT  TRAP|Win32'">stdafx.h</PrecompiledHeaderFile>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Create</PrecompiledHeader>
+      <PrecompiledHeaderFile Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">stdafx.h</PrecompiledHeaderFile>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Create</PrecompiledHeader>
+      <PrecompiledHeaderFile Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">stdafx.h</PrecompiledHeaderFile>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Profile|Win32'">Create</PrecompiledHeader>
+      <PrecompiledHeaderFile Condition="'$(Configuration)|$(Platform)'=='Profile|Win32'">stdafx.h</PrecompiledHeaderFile>
+    </ClCompile>
+    <ClCompile Include="Terrain.cpp" />
+    <ClCompile Include="Toolbar.cpp" />
+    <ClCompile Include="tstsnds.cpp" />
+    <ClCompile Include="Unit.cpp" />
+    <ClCompile Include="Unit_wnd.cpp" />
+    <ClCompile Include="vehicle.cpp" />
+    <ClCompile Include="Vehmove.cpp" />
+    <ClCompile Include="vehoppo.cpp" />
+    <ClCompile Include="VPXFER.CPP" />
+    <ClCompile Include="World.cpp" />
+    <ClCompile Include="Wrldinit.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="Lastplnt.rc" />
+    <ResourceCompile Include="RES\VERSION.RC">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='TRAPs|Win32'">true</ExcludedFromBuild>
+      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='TRAPs|Win32'">RES;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='LOGOUT  TRAP|Win32'">true</ExcludedFromBuild>
+      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='LOGOUT  TRAP|Win32'">RES;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">true</ExcludedFromBuild>
+      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">RES;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">true</ExcludedFromBuild>
+      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">RES;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Profile|Win32'">true</ExcludedFromBuild>
+      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Profile|Win32'">RES;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ResourceCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="ai.h" />
+    <ClInclude Include="area.h" />
+    <ClInclude Include="base.h" />
+    <ClInclude Include="bitmaps.h" />
+    <ClInclude Include="bmbutton.h" />
+    <ClInclude Include="bridge.h" />
+    <ClInclude Include="building.h" />
+    <ClInclude Include="cai.h" />
+    <ClInclude Include="caicopy.hpp" />
+    <ClInclude Include="caidata.hpp" />
+    <ClInclude Include="caigmgr.hpp" />
+    <ClInclude Include="caigoal.hpp" />
+    <ClInclude Include="caihex.hpp" />
+    <ClInclude Include="caiinit.hpp" />
+    <ClInclude Include="caimap.hpp" />
+    <ClInclude Include="caimaput.hpp" />
+    <ClInclude Include="caimgr.hpp" />
+    <ClInclude Include="caimsg.hpp" />
+    <ClInclude Include="caiopfor.hpp" />
+    <ClInclude Include="cairoute.hpp" />
+    <ClInclude Include="caisavld.hpp" />
+    <ClInclude Include="caistart.hpp" />
+    <ClInclude Include="caitargt.h" />
+    <ClInclude Include="caitask.hpp" />
+    <ClInclude Include="caitmgr.hpp" />
+    <ClInclude Include="caiunit.hpp" />
+    <ClInclude Include="CdLoc.h" />
+    <ClInclude Include="chat.h" />
+    <ClInclude Include="chatbar.h" />
+    <ClInclude Include="chproute.hpp" />
+    <ClInclude Include="cpathmap.h" />
+    <ClInclude Include="cpathmgr.h" />
+    <ClInclude Include="creatmul.h" />
+    <ClInclude Include="creatsin.h" />
+    <ClInclude Include="credits.h" />
+    <ClInclude Include="cutscene.h" />
+    <ClInclude Include="dlgflic.h" />
+    <ClInclude Include="dlgmsg.h" />
+    <ClInclude Include="DlgReg.h" />
+    <ClInclude Include="Dxfer.h" />
+    <ClInclude Include="error.h" />
+    <ClInclude Include="event.h" />
+    <ClInclude Include="help.h" />
+    <ClInclude Include="icons.h" />
+    <ClInclude Include="ipcchat.h" />
+    <ClInclude Include="ipccomm.h" />
+    <ClInclude Include="ipcmsg.hpp" />
+    <ClInclude Include="ipcplay.h" />
+    <ClInclude Include="ipcread.h" />
+    <ClInclude Include="ipcsend.h" />
+    <ClInclude Include="join.h" />
+    <ClInclude Include="lastplnt.h" />
+    <ClInclude Include="license.h" />
+    <ClInclude Include="loadtruk.h" />
+    <ClInclude Include="minerals.h" />
+    <ClInclude Include="movie.h" />
+    <ClInclude Include="msgs.h" />
+    <ClInclude Include="netapi.h" />
+    <ClInclude Include="netcmd.h" />
+    <ClInclude Include="new_game.h" />
+    <ClInclude Include="options.h" />
+    <ClInclude Include="ourlog.h" />
+    <ClInclude Include="pickrace.h" />
+    <ClInclude Include="player.h" />
+    <ClInclude Include="PlyrList.h" />
+    <ClInclude Include="racedata.h" />
+    <ClInclude Include="relation.h" />
+    <ClInclude Include="research.h" />
+    <ClInclude Include="scenario.h" />
+    <ClInclude Include="sfx.h" />
+    <ClInclude Include="sprite.h" />
+    <ClInclude Include="stdafx.h" />
+    <ClInclude Include="terrain.h" />
+    <ClInclude Include="toolbar.h" />
+    <ClInclude Include="to_wndrd.h" />
+    <ClInclude Include="tstsnds.h" />
+    <ClInclude Include="ui.h" />
+    <ClInclude Include="unit.h" />
+    <ClInclude Include="unit_wnd.h" />
+    <ClInclude Include="us_eng.h" />
+    <ClInclude Include="vdmplay.h" />
+    <ClInclude Include="vehicle.h" />
+    <ClInclude Include="version.h" />
+    <ClInclude Include="Vpxfer.h" />
+    <ClInclude Include="world.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="building.inl" />
+    <CustomBuild Include="creatmul.inl" />
+    <CustomBuild Include="minerals.inl" />
+    <CustomBuild Include="res\cur00001.cur" />
+    <CustomBuild Include="RES\CUR00002.CUR" />
+    <CustomBuild Include="RES\CUR00003.CUR" />
+    <CustomBuild Include="RES\CUR00004.CUR" />
+    <CustomBuild Include="RES\CUR00005.CUR" />
+    <CustomBuild Include="RES\CUR00006.CUR" />
+    <CustomBuild Include="RES\CUR00007.CUR" />
+    <CustomBuild Include="RES\CUR00008.CUR" />
+    <CustomBuild Include="RES\CUR00010.CUR" />
+    <CustomBuild Include="RES\CUR00011.CUR" />
+    <CustomBuild Include="res\cur00012.cur" />
+    <CustomBuild Include="res\cur00013.cur" />
+    <CustomBuild Include="res\cur00014.cur" />
+    <CustomBuild Include="res\cur00015.cur" />
+    <CustomBuild Include="RES\CURSOR1.CUR" />
+    <CustomBuild Include="RES\GOTO1.CUR" />
+    <CustomBuild Include="RES\GOTO3.CUR" />
+    <CustomBuild Include="res\load1.cur" />
+    <CustomBuild Include="res\load2.cur" />
+    <CustomBuild Include="res\load3.cur" />
+    <CustomBuild Include="res\load4.cur" />
+    <CustomBuild Include="res\move1.cur" />
+    <CustomBuild Include="res\move2.cur" />
+    <CustomBuild Include="res\move3.cur" />
+    <CustomBuild Include="res\move4.cur" />
+    <CustomBuild Include="res\move5.cur" />
+    <CustomBuild Include="res\move6.cur" />
+    <CustomBuild Include="res\move7.cur" />
+    <CustomBuild Include="RES\REPAIR1.CUR" />
+    <CustomBuild Include="res\road_beg.cur" />
+    <CustomBuild Include="res\road_set.cur" />
+    <CustomBuild Include="RES\SELECT1.CUR" />
+    <CustomBuild Include="RES\SELECT2.CUR" />
+    <CustomBuild Include="RES\SELECT3.CUR" />
+    <CustomBuild Include="RES\TARGET1.CUR" />
+    <CustomBuild Include="RES\TARGET2.CUR" />
+    <CustomBuild Include="RES\TARGET3.CUR" />
+    <CustomBuild Include="res\unload1.cur" />
+    <CustomBuild Include="res\unload2.cur" />
+    <CustomBuild Include="res\unload3.cur" />
+    <CustomBuild Include="terrain.inl" />
+    <CustomBuild Include="ui.inl" />
+    <CustomBuild Include="unit.inl" />
+    <CustomBuild Include="vehicle.inl" />
+  </ItemGroup>
+  <ItemGroup>
+    <Image Include="RES\BITMAP1.BMP" />
+    <Image Include="RES\CHAT_MSG.BMP" />
+    <Image Include="RES\CLOSED.DIB" />
+    <Image Include="RES\EMAIL_MS.BMP" />
+    <Image Include="RES\EMAIL_RE.BMP" />
+    <Image Include="res\main.ico" />
+    <Image Include="RES\NO_SELEC.BMP" />
+    <Image Include="RES\PLYR_SEL.BMP" />
+    <Image Include="RES\TOOLBAR.BMP" />
+    <Image Include="RES\VOC_MSG.BMP" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets">
+  </ImportGroup>
+</Project>

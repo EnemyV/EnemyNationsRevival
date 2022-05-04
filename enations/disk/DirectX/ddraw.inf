@@ -1,0 +1,21 @@
+[version]
+signature="$CHICAGO$"
+
+[DefaultInstall]
+AddReg=add.reg
+
+[add.reg]
+HKCR,DirectDraw,,,"DirectDraw Object"
+HKCR,DirectDraw\CLSID,,,{D7B70EE0-4340-11CF-B063-0020AFC2CD35}
+HKCR,CLSID\{D7B70EE0-4340-11CF-B063-0020AFC2CD35},,,"DirectDraw Object"
+HKCR,CLSID\{D7B70EE0-4340-11CF-B063-0020AFC2CD35}\InprocServer32,,,ddraw.dll
+HKCR,CLSID\{D7B70EE0-4340-11CF-B063-0020AFC2CD35}\InprocServer32,"ThreadingModel",,"Both"
+
+HKCR,DirectDrawClipper,,,"DirectDraw Clipper Object"
+HKCR,DirectDrawClipper\CLSID,,,{593817A0-7DB3-11CF-A2DE-00AA00B93356}
+HKCR,CLSID\{593817A0-7DB3-11CF-A2DE-00AA00B93356},,,"DirectDraw Clipper Object"
+HKCR,CLSID\{593817A0-7DB3-11CF-A2DE-00AA00B93356}\InprocServer32,,,ddraw.dll
+HKCR,CLSID\{593817A0-7DB3-11CF-A2DE-00AA00B93356}\InprocServer32,"ThreadingModel",,"Both"
+
+[Strings]
+

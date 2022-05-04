@@ -1,0 +1,344 @@
+#include "..\data.inc"
+
+RIFF MISC
+	{
+	LIST FVER
+		{
+
+		CHUNK DATA {short				// version ALWAYS FIRST
+#include ..\rif_ver.inc"
+			}
+		}
+
+	LIST NUMZ
+	{
+#ifdef ALL_ZOOMS
+		CHUNK DATA { short 4 
+#else
+		CHUNK DATA { short 3 
+#endif
+#ifdef INC24
+		short 1 
+#else
+		short 0
+#endif
+		short
+#include ..\rif_ver.inc"
+		}
+	}
+
+
+	LIST PALT
+		{
+		CHUNK DATA { file palette.dib }
+		}
+	LIST WL08
+		{
+		CHUNK DATA { file wallpapr.d8 }
+		}
+#ifdef NET_VER
+#else
+	LIST MN08
+		{
+		CHUNK DATA { file menudown.d8 }
+		CHUNK DATA { file menubut1.d8 }
+		CHUNK DATA { file menubut2.d8 }
+		CHUNK DATA { file menubut3.d8 }
+		CHUNK DATA { file menubut4.d8 }
+		CHUNK DATA { file menubut5.d8 }
+		CHUNK DATA { file menubut6.d8 }
+		CHUNK DATA { file menubut7.d8 }
+		CHUNK DATA { file menubut8.d8 }
+		CHUNK DATA { file menubut9.d8 }
+		CHUNK DATA { file menubu10.d8 }
+		CHUNK DATA { file menubu11.d8 }
+		}
+#endif
+
+	LIST BT08
+		{
+		CHUNK DATA { short 30, 30 file buttons.d8 }
+		}
+
+	LIST TX08
+		{
+		CHUNK DATA { short 57, 30, 
+					12, 450 string "Newtown Italic" 
+					short 255, 255, 116, 131, 72, 1
+					file text_btn.d8 }
+		CHUNK DATA { short 57, 30, 
+					12, 450 string "Newtown Italic" 
+					short 255, 255, 116, 131, 72, 1
+					file text_btn.d8 }
+//		CHUNK DATA { short 170, 90, 
+//					36, 550 string "Newtown Italic" 
+//					short 255, 255, 116, 131, 72, 1
+//					file text_big.d8 }
+		CHUNK DATA { short 226, 90, 
+					12, 450 string "Newtown Italic" 
+					short 255, 255, 116, 131, 72, 1
+					file cut_btn.d8 }
+		}
+
+	LIST CR08
+		{
+		CHUNK ICON { short 0, 3, 6, 200, 22, 1, 4, 22, 21, 22, 28, 1 file createwo.d8 }
+		}
+
+	LIST IC08
+		{
+		CHUNK NUMI { short 15 }
+		CHUNK ICON { short 0, 6, 6, 21, 21, 1, 0, 0, 183, 0, 30, 0 file research.d8 }
+		CHUNK ICON { short 1, 5, 5, 22, 22, 4, 1, 34, 26, 30, 28, 1 file gas.d8 }
+		CHUNK ICON { short 2, 5, 5, 22, 22, 4, 1, 34, 26, 30, 28, 1 file power.d8 }
+		CHUNK ICON { short 3, 5, 5, 22, 22, 4, 1, 34, 26, 30, 28, 1 file people.d8 }
+		CHUNK ICON { short 4, 5, 5, 22, 22, 4, 1, 34, 26, 30, 28, 1 file food.d8 }
+		CHUNK ICON { short 5, 8, 8, 0, 0, 0, 5, 22, 21, 22, 29, 1,
+					14, 0 string "LiquidCrystal" 
+					short 255, 255, 255, 255, 255, 255, 255, 255, 255
+					file clock.d8 }
+
+		CHUNK ICON { short 6, 8, 8, 0, 0, 0, 2, 34, 26, 30, 28, 1,
+					18, -1 string "Newtown Italic" 
+					int 255, 255, 255, 226, 217, 29, 192, 39, 27
+					file status.d8 }
+
+		CHUNK ICON { short 7, 5, 5, 22, 22, 1, 0, 34, 26, 30, 28, 1 file material.d8 }
+
+		CHUNK ICON { short 8, 2, 2, 1000, 22, 1, 4, 34, 26, 30, 28, 1 file damage.d8 }
+		CHUNK ICON { short 9, 5, 5, 22, 22, 1, 0, 34, 26, 30, 28, 1 file density.d8 }
+		CHUNK ICON { short 10, 5, 5, 22, 22, 1, 0, 34, 26, 30, 28, 1 file bld_bldg.d8 }
+		CHUNK ICON { short 11, 5, 5, 22, 22, 1, 0, 34, 26, 30, 28, 1 file bld_veh.d8 }
+		CHUNK ICON { short 12, 5, 5, 22, 22, 1, 0, 34, 26, 30, 28, 1 file rep_veh.d8 }
+		CHUNK ICON { short 13, 5, 5, 22, 22, 1, 0, 34, 26, 30, 28, 1 file bld_road.d8 }
+		CHUNK ICON { short 14, 5, 5, 20, 22, 1, 0, 34, 26, 30, 28, 1 file carrier.d8 }
+		}
+
+
+	LIST BM08
+		{
+		CHUNK NUMD { short 39 }
+
+		CHUNK DIBB { file barblank.d8 }
+		CHUNK DIBB { file barblank.d8 }
+		CHUNK DIBB { file radar.d8 }		// radar map
+		CHUNK DIBB { file unitback.d8 }
+		CHUNK DIBB { file building.d8 }
+		CHUNK DIBB { file vehicle.d8 }
+
+		// Window frame
+
+		CHUNK DIBB { file bc-dn-l.d8 }	// LL corner
+		CHUNK DIBB { file bc-dn-r.d8 }	// LR corner
+		CHUNK DIBB { file bc-up-l.d8 }	// UL corner
+		CHUNK DIBB { file bc-up-r.d8 }	// UR corner
+		CHUNK DIBB { file border-h.d8 }	// Horizontal border
+		CHUNK DIBB { file border-v.d8 }	// Vertical border
+		CHUNK DIBB { file winbtn.d8 }		// System buttons
+		CHUNK DIBB { file caption1.d8 }	// Title bar (inactive)
+		CHUNK DIBB { file caption2.d8 }	// Title bar (active)
+
+		// Scroll bars
+
+		CHUNK DIBB { file scrolbtn.d8 }	// Thumb
+		CHUNK DIBB { file scroll-h.d8 }	// Horizontal scroll bar
+		CHUNK DIBB { file scroll-v.d8 }	// Vertical scroll bar
+		CHUNK DIBB { file scrolldn.d8 }	// Scroll-down button
+		CHUNK DIBB { file scrollft.d8 }	// Scroll-left button
+		CHUNK DIBB { file scrollrt.d8 }	// Scroll-right button
+		CHUNK DIBB { file scrollup.d8 }	// Scroll-up button
+
+		// Dialog
+
+		CHUNK DIBB { file radiobtn.d8 }  	// Radio buttons
+		CHUNK DIBB { file checkbox.d8 }  	// Check boxes
+		CHUNK DIBB { file gold2.d8 }	// Dialog background
+		CHUNK DIBB { file radarbtn.d8 }		// radar map buttons
+		CHUNK DIBB { file radar.d8 }		// always 8-bit
+		CHUNK DIBB { file rsrcbknd.d8 }		// research dialog
+		CHUNK DIBB { file veh_bknd.d8 }		// build veh dialog
+		CHUNK DIBB { file bldgbknd.d8 }		// build bldg dialog
+
+		CHUNK DIBB { file world.d8 }		// world map
+		CHUNK DIBB { file world.d8 }		// world map always 8-bit
+		CHUNK DIBB { file worldbtn.d8 }		// world map buttons
+
+		// dialog buttons
+		CHUNK DIBB { file bld_but3.d8 }		// build building dialog
+		CHUNK DIBB { file bld_but2.d8 }
+		CHUNK DIBB { file bld_but1.d8 }
+		CHUNK DIBB { file veh_but1.d8 }		// build vehicle
+		CHUNK DIBB { file veh_but4.d8 }
+		CHUNK DIBB { file rsrc_btn.d8 }		// R&D screen
+		}
+
+#ifdef NET_VER
+#else
+	LIST CS08
+		{
+		CHUNK DATA { file cutscene.d8 }
+		}
+	LIST DN08
+		{
+		CHUNK DATA { file victory2.d8 }
+		}
+	LIST WN08
+		{
+		CHUNK DATA { file victory.d8 }
+		}
+	LIST LS08
+		{
+		CHUNK DATA { file defeat.d8 }
+		}
+#endif
+
+#ifdef INC24
+	LIST WL24
+		{
+		CHUNK DATA { file wallpapr.d24 }
+		}
+	LIST MN24
+		{
+		CHUNK DATA { file menudown.d24 }
+		CHUNK DATA { file menubut1.d24 }
+		CHUNK DATA { file menubut2.d24 }
+		CHUNK DATA { file menubut3.d24 }
+		CHUNK DATA { file menubut4.d24 }
+		CHUNK DATA { file menubut5.d24 }
+		CHUNK DATA { file menubut6.d24 }
+		CHUNK DATA { file menubut7.d24 }
+		CHUNK DATA { file menubut8.d24 }
+		CHUNK DATA { file menubut9.d24 }
+		CHUNK DATA { file menubu10.d24 }
+		CHUNK DATA { file menubu11.d24 }
+		}
+
+	LIST BT24
+		{
+		CHUNK DATA { short 30, 30 file buttons.d24 }
+		}
+	LIST TX24
+		{
+		CHUNK DATA { short 57, 30, 
+					12, 450 string "Newtown Italic" 
+					short 255, 255, 116, 131, 72, 1
+					file text_btn.d24 }
+		CHUNK DATA { short 170, 90, 
+					36, 550 string "Newtown Italic" 
+					short 255, 255, 116, 131, 72, 1
+					file text_big.d24 }
+		CHUNK DATA { short 226, 90, 
+					12, 450 string "Newtown Italic" 
+					short 255, 255, 116, 131, 72, 1
+					file cut_btn.d24 }
+		}
+
+	LIST CR24
+		{
+		CHUNK ICON { short 0, 3, 6, 200, 22, 1, 4, 22, 21, 22, 28, 1 file createwo.d24 }
+		}
+
+	LIST IC24
+		{
+		CHUNK NUMI { short 15 }
+		CHUNK ICON { short 0, 6, 6, 21, 21, 1, 0, 0, 183, 0, 30, 0 file research.d24 }
+		CHUNK ICON { short 1, 5, 5, 22, 22, 4, 1, 34, 26, 30, 28, 1 file gas.d24 }
+		CHUNK ICON { short 2, 5, 5, 22, 22, 4, 1, 34, 26, 30, 28, 1 file power.d24 }
+		CHUNK ICON { short 3, 5, 5, 22, 22, 4, 1, 34, 26, 30, 28, 1 file people.d24 }
+		CHUNK ICON { short 4, 5, 5, 22, 22, 4, 1, 34, 26, 30, 28, 1 file food.d24 }
+		CHUNK ICON { short 5, 8, 8, 0, 0, 0, 5, 22, 21, 22, 29, 1,
+					14, 0 string "LiquidCrystal" 
+					short 255, 255, 255, 255, 255, 255, 255, 255, 255
+					file clock.d24 }
+
+		CHUNK ICON { short 6, 8, 8, 0, 0, 0, 2, 34, 26, 30, 28, 1,
+					18, -1 string "Newtown Italic" 
+					int 255, 255, 255, 226, 217, 29, 192, 39, 27
+					file status.d24 }
+
+		CHUNK ICON { short 7, 5, 5, 22, 22, 1, 0, 34, 26, 30, 28, 1 file material.d24 }
+
+		CHUNK ICON { short 8, 2, 2, 1000, 22, 1, 4, 34, 26, 30, 28, 1 file damage.d24 }
+		CHUNK ICON { short 9, 5, 5, 22, 22, 1, 0, 34, 26, 30, 28, 1 file density.d24 }
+		CHUNK ICON { short 10, 5, 5, 22, 22, 1, 0, 34, 26, 30, 28, 1 file bld_bldg.d24 }
+		CHUNK ICON { short 11, 5, 5, 22, 22, 1, 0, 34, 26, 30, 28, 1 file bld_veh.d24 }
+		CHUNK ICON { short 12, 5, 5, 22, 22, 1, 0, 34, 26, 30, 28, 1 file rep_veh.d24 }
+		CHUNK ICON { short 13, 5, 5, 22, 22, 1, 0, 34, 26, 30, 28, 1 file bld_road.d24 }
+		CHUNK ICON { short 14, 5, 5, 20, 22, 1, 0, 34, 26, 30, 28, 1 file carrier.d24 }
+		}
+	LIST BM24
+		{
+		CHUNK NUMD { short 39 }
+
+		CHUNK DIBB { file barblank.d24 }
+		CHUNK DIBB { file barblank.d24 }
+		CHUNK DIBB { file radar.d24 }
+		CHUNK DIBB { file unitback.d24 }
+		CHUNK DIBB { file building.d24 }
+		CHUNK DIBB { file vehicle.d24 }
+
+		// Window frame
+
+		CHUNK DIBB { file bc-dn-l.d24  }	// LL corner
+		CHUNK DIBB { file bc-dn-r.d24  }	// LR corner
+		CHUNK DIBB { file bc-up-l.d24  }	// UL corner
+		CHUNK DIBB { file bc-up-r.d24  }	// UR corner
+		CHUNK DIBB { file border-h.d24 }	// Horizontal border
+		CHUNK DIBB { file border-v.d24 }	// Vertical border
+		CHUNK DIBB { file winbtn.d24    }	// System buttons
+		CHUNK DIBB { file caption1.d24 }	// Title bar (inactive)
+		CHUNK DIBB { file caption2.d24 }	// Title bar (active)
+
+		// Scroll bars
+
+		CHUNK DIBB { file scrolbtn.d24 }	// Thumb
+		CHUNK DIBB { file scroll-h.d24 }	// Horizontal scroll bar
+		CHUNK DIBB { file scroll-v.d24 }	// Vertical scroll bar
+		CHUNK DIBB { file scrolldn.d24 }	// Scroll-down button
+		CHUNK DIBB { file scrollft.d24 }	// Scroll-left button
+		CHUNK DIBB { file scrollrt.d24 }	// Scroll-right button
+		CHUNK DIBB { file scrollup.d24 }	// Scroll-up button
+
+		// Dialog box
+
+		CHUNK DIBB { file radiobtn.d24 }  	// Radio buttons
+		CHUNK DIBB { file checkbox.d24 }  	// Check boxes
+		CHUNK DIBB { file gold2.d24 }	// Dialog background
+		CHUNK DIBB { file radarbtn.d24 }
+		CHUNK DIBB { file radar.d8 }		// always 8-bit
+		CHUNK DIBB { file rsrcbknd.d24 }		// research dialog
+		CHUNK DIBB { file veh_bknd.d24 }		// build veh dialog
+		CHUNK DIBB { file bldgbknd.d24 }		// build bldg dialog
+
+		CHUNK DIBB { file world.d24 }		// world map
+		CHUNK DIBB { file world.d8 }		// world map always 8-bit
+		CHUNK DIBB { file worldbtn.d24 }		// world map buttons
+
+		// dialog buttons
+		CHUNK DIBB { file bld_but3.d24 }		// build building dialog
+		CHUNK DIBB { file bld_but2.d24 }
+		CHUNK DIBB { file bld_but1.d24 }
+		CHUNK DIBB { file veh_but1.d24 }		// build vehicle
+		CHUNK DIBB { file veh_but4.d24 }
+		CHUNK DIBB { file rsrc_btn.d24 }		// R&D screen
+		}
+
+	LIST CS24
+		{
+		CHUNK DATA { file cutscene.d24 }
+		}
+	LIST DN24
+		{
+		CHUNK DATA { file victory2.d24 }
+		}
+	LIST WN24
+		{
+		CHUNK DATA { file victory.d24 }
+		}
+	LIST LS24
+		{
+		CHUNK DATA { file defeat.d24 }
+		}
+#endif
+
+	}

@@ -1,0 +1,48 @@
+Currently :
+
+View ( embedded in sprite ) :
+
+int width, height of view
+int bit depth of view
+int anchor x ( may not be valid, but always present )
+int anchor y ( may not be valid, but always present )
+int number of hotspots
+	for each hotspot
+	int type	- 0 smoke/fire, 1 turret, 2 flag
+	int x		- from UL corner of view
+	int y
+	int index	- index of hotspot
+int base cnt
+	base cnt .fb's - full size, half size, quarter size, eighth size
+int overlay cnt
+	overlay cnt .fb's - full size, half size, quarter size, eighth size
+int anim1 cnt
+	anim1 cnt .fb's - full size, half size, quarter size, eighth size
+int anim2 cnt
+	anim2 cnt .fb's - full size, half size, quarter size, eighth size
+
+Format of .fb's depends on sprite type -
+	Header is always
+		char  id[ 2 ]
+		short hold time
+        short xoff
+        short yoff
+        short width
+        short height
+		int   image size
+	Buildings are cropped and compressed .fb's
+	Terrain is uncompressed with 8 levels of shading,
+	so actual data is 8 times taller than the height given
+	Vehicle is cropped but uncompressed
+
+Sprite :
+
+int type - type of sprite
+int width, height - original ( uncropped ) width/height of sprite
+int bit depth - 8, 15, 16, 24 ( 32 not yet implemented )
+int view cnt
+	Views
+
+building - 12 stage x 4 dir x 4 dam int indicis of view or -1 for no view
+terrain - 4 dir x 4 dam indicis
+vehicle - 3 tilt x 8 dir x 4 dam indicis

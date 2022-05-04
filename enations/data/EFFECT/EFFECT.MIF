@@ -1,0 +1,165 @@
+#include "..\data.inc"
+
+RIFF EFFX
+	{
+	LIST FVER
+		{
+		CHUNK DATA {short				// version ALWAYS FIRST
+#include ..\rif_ver.inc"
+			}
+		}
+
+	LIST SP08
+	{
+#ifdef ALL_ZOOMS
+		// Trees
+
+		CHUNK NUMS { int 28 }
+
+		CHUNK DATA { int 0  file tree\0\0.8 }
+		CHUNK DATA { int 0  file tree\1\1.8 }
+		CHUNK DATA { int 0  file tree\4\4.8 }
+		CHUNK DATA { int 0  file tree\5\5.8 }
+		CHUNK DATA { int 0  file tree\6\6.8 }
+		CHUNK DATA { int 0  file tree\7\7.8 }
+
+		// Projectiles
+
+		CHUNK DATA { int 1  file shell\0\0.8 }
+		CHUNK DATA { int 1  file shell\2\2.8 }
+		CHUNK DATA { int 1  file shell\3\3.8 }
+		CHUNK DATA { int 1  file shell\4\4.8 }
+
+		// Explosions
+
+		CHUNK DATA { int 2  file xplosion\0\0.8 }
+		CHUNK DATA { int 2  file xplosion\1\1.8 }
+		CHUNK DATA { int 2  file xplosion\2\2.8 }
+		CHUNK DATA { int 2  file xplosion\3\3.8 }
+
+		// Smoke
+
+		CHUNK DATA { int 3  file smoke\0\0.8 }
+
+		// Flames
+
+		CHUNK DATA { int 4  file flame\0\0.8 }
+		CHUNK DATA { int 4  file flame\1\1.8 }
+		CHUNK DATA { int 4  file flame\2\2.8 }
+		CHUNK DATA { int 4  file flame\3\3.8 }
+		CHUNK DATA { int 4  file flame\4\4.8 }
+		CHUNK DATA { int 4  file flame\5\5.8 }
+
+		// Flags
+
+		CHUNK DATA { int 5  file flag\0\0.8 }	// Player
+		CHUNK DATA { int 5  file flag\1\1.8 }	// Op 1
+		CHUNK DATA { int 5  file flag\2\2.8 }
+		CHUNK DATA { int 5  file flag\3\3.8 }
+		CHUNK DATA { int 5  file flag\4\4.8 }
+		CHUNK DATA { int 5  file flag\5\5.8 }
+		CHUNK DATA { int 5  file flag\6\6.8 }
+//		CHUNK DATA { int 5  file flag\7\7.8 }
+
+#else
+		CHUNK NUMS { int 28 }
+
+		CHUNK DATA { int 0  file tree\0\0.s8 }
+		CHUNK DATA { int 0  file tree\1\1.s8 }
+		CHUNK DATA { int 0  file tree\4\4.s8 }
+		CHUNK DATA { int 0  file tree\5\5.s8 }
+		CHUNK DATA { int 0  file tree\6\6.s8 }
+		CHUNK DATA { int 0  file tree\7\7.s8 }
+
+		// Projectiles
+
+		CHUNK DATA { int 1  file shell\0\0.s8 }
+		CHUNK DATA { int 1  file shell\2\2.s8 }
+		CHUNK DATA { int 1  file shell\3\3.s8 }
+		CHUNK DATA { int 1  file shell\4\4.s8 }
+
+		// Explosions
+
+		CHUNK DATA { int 2  file xplosion\0\0.s8 }
+		CHUNK DATA { int 2  file xplosion\1\1.s8 }
+		CHUNK DATA { int 2  file xplosion\2\2.s8 }
+		CHUNK DATA { int 2  file xplosion\3\3.s8 }
+
+		// Smoke
+
+		CHUNK DATA { int 3  file smoke\0\0.s8 }
+
+		// Flames
+
+		CHUNK DATA { int 4  file flame\0\0.s8 }
+		CHUNK DATA { int 4  file flame\1\1.s8 }
+		CHUNK DATA { int 4  file flame\2\2.s8 }
+		CHUNK DATA { int 4  file flame\3\3.s8 }
+		CHUNK DATA { int 4  file flame\4\4.s8 }
+		CHUNK DATA { int 4  file flame\5\5.s8 }
+
+		// Flags
+
+		CHUNK DATA { int 5  file flag\0\0.s8 }	// Player
+		CHUNK DATA { int 5  file flag\1\1.s8 }	// Op 1
+		CHUNK DATA { int 5  file flag\2\2.s8 }
+		CHUNK DATA { int 5  file flag\3\3.s8 }
+		CHUNK DATA { int 5  file flag\4\4.s8 }
+		CHUNK DATA { int 5  file flag\5\5.s8 }
+		CHUNK DATA { int 5  file flag\6\6.s8 }
+//		CHUNK DATA { int 5  file flag\7\7.s8 }
+#endif
+	}
+
+#ifdef INC24
+	LIST SP24
+	{
+		CHUNK NUMS { int 28 }
+
+		CHUNK DATA { int 0  file tree\0\0.24 }
+		CHUNK DATA { int 0  file tree\1\1.24 }
+		CHUNK DATA { int 0  file tree\4\4.24 }
+		CHUNK DATA { int 0  file tree\5\5.24 }
+		CHUNK DATA { int 0  file tree\6\6.24 }
+		CHUNK DATA { int 0  file tree\7\7.24 }
+
+		// Projectiles
+
+		CHUNK DATA { int 1  file shell\0\0.24 }
+		CHUNK DATA { int 1  file shell\2\2.24 }
+		CHUNK DATA { int 1  file shell\3\3.24 }
+		CHUNK DATA { int 1  file shell\4\4.24 }
+
+		// Explosions
+
+		CHUNK DATA { int 2  file xplosion\0\0.24 }
+		CHUNK DATA { int 2  file xplosion\1\1.24 }
+		CHUNK DATA { int 2  file xplosion\2\2.24 }
+		CHUNK DATA { int 2  file xplosion\3\3.24 }
+
+		// Smoke
+
+		CHUNK DATA { int 3  file smoke\0\0.24 }
+
+		// Flames
+
+		CHUNK DATA { int 4  file flame\0\0.24 }
+		CHUNK DATA { int 4  file flame\1\1.24 }
+		CHUNK DATA { int 4  file flame\2\2.24 }
+		CHUNK DATA { int 4  file flame\3\3.24 }
+		CHUNK DATA { int 4  file flame\4\4.24 }
+		CHUNK DATA { int 4  file flame\5\5.24 }
+
+		// Flags
+
+		CHUNK DATA { int 5  file flag\0\0.24 }	// Player
+		CHUNK DATA { int 5  file flag\1\1.24 }	// Op 1
+		CHUNK DATA { int 5  file flag\2\2.24 }
+		CHUNK DATA { int 5  file flag\3\3.24 }
+		CHUNK DATA { int 5  file flag\4\4.24 }
+		CHUNK DATA { int 5  file flag\5\5.24 }
+		CHUNK DATA { int 5  file flag\6\6.24 }
+//		CHUNK DATA { int 5  file flag\7\7.24 }
+	}
+#endif
+}
