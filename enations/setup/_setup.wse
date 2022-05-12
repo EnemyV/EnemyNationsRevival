@@ -1,0 +1,968 @@
+Document Type: WSE
+item: Global
+  Version=5.0
+  Title=Windward Studios - Enemy Nations
+  Flags=00000100
+  Languages=65 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+  Japanese Font Name=MS Gothic
+  Japanese Font Size=10
+  Start Gradient=0 0 0
+  End Gradient=0 0 0
+  Windows Flags=00000000000000000010000000111000
+  Message Font=MS Sans Serif
+  Font Size=8
+  Disk Filename=SETUP
+  Patch Flags=0000000000000001
+  Patch Threshold=85
+  Patch Memory=4000
+end
+item: Remark
+  Text=Set Vars
+end
+item: Set Variable
+  Variable=TITLE
+  Value=Enemy Nations
+end
+item: Set Variable
+  Variable=FILENAME
+  Value=ENations
+end
+item: Set Variable
+  Variable=EXT
+  Value=.en
+end
+item: Display Graphic
+  Pathname=E:\enations\setup\windward.bmp
+  X Position=16384
+  Y Position=16384
+end
+item: Display Graphic
+  Pathname=E:\enations\setup\windward.bmp
+  X Position=16384
+  Y Position=16384
+end
+item: Play Wave File
+  Pathname=%INST%\setup.wav
+end
+item: Remark
+end
+item: Remark
+  Text=Check version
+end
+item: Get System Information
+  Variable=WIN_VER
+  Flags=00000001
+end
+item: Check Configuration
+  Flags=10011010
+end
+item: If/While Statement
+  Variable=WIN_VER
+  Value=3.1
+  Flags=00001000
+end
+item: Display Message
+  Title=Setup - Error
+  Text=You are running Windows version %WIN_VER%. You must be running Windows 3.1 or later so that we can install Win32s. You can also install on Windows 95 or Windows/NT 3.5 (or later).
+  Text=Do you wish to cancel the installation?
+  Flags=00110001
+end
+item: Exit Installation
+end
+item: End Block
+end
+item: End Block
+end
+item: Check Configuration
+  Message=You must be running in enhanced mode so we can install Win32s.
+  Title=Setup - error
+  Flags=01000011
+end
+item: Remark
+end
+item: Get System Information
+  Variable=MEM_AVAIL
+  Flags=00000011
+end
+item: If/While Statement
+  Variable=MEM_AVAIL
+  Value=65000
+  Flags=00001000
+end
+item: Execute Program
+  Pathname=write
+  Command Line=%INST%\win31.txt
+  Flags=00000010
+end
+item: End Block
+end
+item: Remark
+end
+item: Check Configuration
+  Message=You must have Virtual Memory paging turned on so we can install Win32s. You can turn this on in the Control Panel, Enhanced (386) program.
+  Title=Setup - error
+  Flags=01001001
+end
+item: End Block
+end
+item: Check Configuration
+  Flags=10100000
+end
+item: If/While Statement
+  Variable=WIN_VER
+  Value=3.51
+  Flags=00001000
+end
+item: Display Message
+  Title=Setup - Error
+  Text=You are running Windows/NT version %WIN_VER%. You must be running Windows/NT 3.51 or later. You can also install on Windows 95 or Windows 3.1.
+  Text=Do you wish to cancel the installation?
+  Flags=00110001
+end
+item: Exit Installation
+end
+item: End Block
+end
+item: End Block
+end
+item: End Block
+end
+item: Remark
+end
+item: Check Configuration
+  Message=You do not have NT Administrator rights. Enemy Nations will install but it cannot update the registry. The results of this are:
+  Message=1) If you install Enemy Nations a second time it will not be able to find the first installation by itself.
+  Message=2) The uninstall program cannot be registered with NT.
+  Message=3) The game fonts cannot be registered so Enemy Nations will use system fonts.
+  Title=No Registry Access
+  Flags=00011111
+end
+item: Remark
+end
+item: Set Variable
+  Variable=SYS32
+  Value=%SYS%
+end
+item: Check Configuration
+  Flags=10100000
+end
+item: Win32 System Directory
+  Variable=SYS32
+end
+item: End Block
+end
+item: Remark
+end
+item: Remark
+  Text=license
+end
+item: Display ReadMe File
+  Pathname=%INST%\license.txt
+  Title=License Agreement
+  Description=PLEASE READ THE FOLLOWING AND ENTER "OK" IF YOU AGREE WITH THE TERMS AND CONDITIONS.
+end
+item: Remark
+end
+item: Remark
+  Text=ini/registry stuff
+end
+item: Check Configuration
+  Flags=10111010
+end
+item: Get Registry Key Value
+  Variable=BASE_DIR
+  Key=SOFTWARE\Windward Studios\Setup\Base Dir
+  Default=c:\Windward Studios
+  Flags=00000100
+end
+item: Set Variable
+  Variable=MAINDIR
+  Value=%BASE_DIR%\%TITLE%
+end
+item: Get Registry Key Value
+  Variable=MAINDIR
+  Key=SOFTWARE\Windward Studios\%TITLE%\Setup\Base Dir
+  Default=%MAINDIR%
+  Flags=00000100
+end
+item: Else Statement
+end
+item: Read INI Value
+  Variable=BASE_DIR
+  Pathname=Windward.ini
+  Section=Setup
+  Item=BaseDir
+  Default=c:\windward
+end
+item: Set Variable
+  Variable=MAINDIR
+  Value=%BASE_DIR%\%FILENAME%
+end
+item: Read INI Value
+  Variable=MAINDIR
+  Pathname=%FILENAME%.ini
+  Section=Setup
+  Item=Directory
+  Default=%MAINDIR%
+end
+item: End Block
+end
+item: Browse for Directory
+  Variable=MAINDIR
+  Flags=00000001
+  Window Name=Program Directory - %TITLE%
+  Prompt Description=%TITLE% will be installed into the following directory. If you would like to install it into a different directory/drive, use the browse list below.
+  Prompt Name=Destination Directory:
+  Default Value=%MAINDIR%
+  Flags=00000001
+end
+item: Check Disk Space
+  Space1=4000
+  Variable1=SYS
+  Space2=1900
+  Variable2=MAINDIR
+end
+item: Remark
+end
+item: Check Configuration
+  Flags=10111010
+end
+item: Get Registry Key Value
+  Variable=PROGMAN_NAME
+  Key=SOFTWARE\Windward Studios\Setup\Group
+  Default=Windward Studios
+  Flags=00000100
+end
+item: Else Statement
+end
+item: Read INI Value
+  Variable=PROGMAN_NAME
+  Pathname=Windward.ini
+  Section=Setup
+  Item=Group
+  Default=Windward Studios
+end
+item: End Block
+end
+item: Get ProgMan Group
+  Variable=PROGMAN_NAME
+  Window=Program Manager - Windward Studios
+  Description=Select the Program Manager group you would like to place the icon for %TITLE% in.
+  Title=Group:
+  Default=%PROGMAN_NAME%
+end
+item: Remark
+end
+item: Remark
+  Text=music off
+end
+item: Play Wave File
+end
+item: Remark
+end
+item: Check Configuration
+  Flags=10111010
+end
+item: Check Configuration
+  Flags=10111111
+end
+item: Edit Registry
+  Key=SOFTWARE\Windward Studios\%TITLE%\Setup\Base Dir
+  New Value=%MAINDIR%
+  Root=2
+end
+item: Edit Registry
+  Key=SOFTWARE\Windward Studios\Games\%TITLE%
+  New Value=%MAINDIR%\%FILENAME%.exe
+  Root=2
+end
+item: End Block
+end
+item: Get Registry Key Value
+  Variable=BASE_DIR
+  Key=SOFTWARE\Windward Studios\%TITLE%\Setup\Base Dir
+  Default=c:\Windward Studios
+  Flags=00000101
+end
+item: Check Configuration
+  Flags=10111111
+end
+item: Open/Close INSTALL.LOG
+  Flags=00000001
+end
+item: Edit Registry
+  Key=SOFTWARE\Windward Studios\Setup\Base Dir
+  New Value=%BASE_DIR%
+  Root=2
+end
+item: Edit Registry
+  Key=SOFTWARE\Windward Studios\Setup\Group
+  New Value=%PROGMAN_NAME%
+  Root=2
+end
+item: Open/Close INSTALL.LOG
+end
+item: End Block
+end
+item: Else Statement
+end
+item: Edit INI File
+  Pathname=%FILENAME%.ini
+  Settings=[Setup]
+  Settings=Directory=%MAINDIR%
+end
+item: Edit INI File
+  Pathname=Windward.ini
+  Settings=[Games]
+  Settings=%TITLE%=%MAINDIR%
+end
+item: Read INI Value
+  Variable=BASE_DIR
+  Pathname=%FILENAME%.ini
+  Section=Setup
+  Item=Directory
+  Flags=00000001
+end
+item: Open/Close INSTALL.LOG
+  Flags=00000001
+end
+item: Edit INI File
+  Pathname=Windward.ini
+  Settings=[Setup]
+  Settings=BaseDir=%BASE_DIR%
+end
+item: Edit INI File
+  Pathname=Windward.ini
+  Settings=[Setup]
+  Settings=Group=%PROGMAN_NAME%
+end
+item: Open/Close INSTALL.LOG
+end
+item: End Block
+end
+item: Remark
+end
+item: Remark
+  Text=copy this first!!!
+end
+item: Copy Local File
+  Source=%INST%\unwise.exe
+  Destination=%MAINDIR%\unwise.exe
+  Description=Uninstall Program
+  Local Path=e:\enations\disk\unwise.exe
+  Flags=0000000001010010
+end
+item: Remark
+end
+item: Remark
+  Text=Eliminate shareware .DAT file
+end
+item: Check if File/Dir Exists
+  Pathname=%MAINDIR%\ENations.dat
+  Flags=01000100
+end
+item: Display Message
+  Title=Install Enemy Nations
+  Text=The demo version of Enemy Nations DAT file:
+  Text=     %MAINDIR%\ENations.dat
+  Text=is on your hard drive. It is not needed for this version of Enemy Nations and is taking over 20M of disk space.
+  Text=Do you want this file deleted?
+  Flags=00000001
+end
+item: Delete File
+  Pathname=%MAINDIR%\ENations.dat
+end
+item: End Block
+end
+item: End Block
+end
+item: Remark
+end
+item: Remark
+  Text=Install WinG
+end
+item: Check Configuration
+  Flags=10011010
+end
+item: Copy Local File
+  Source=%INST%\wing
+  Destination=%SYS%
+  Description=Microsoft WinG
+  Local Path=e:\enations\disk\wing
+  Flags=0000000001000011
+end
+item: Add to SYSTEM.INI
+  Device=device=dva.386
+end
+item: End Block
+end
+item: Remark
+end
+item: Remark
+  Text=Install run-time DLLs
+end
+item: Copy Local File
+  Source=%INST%\dlls\mss32.dll
+  Destination=%MAINDIR%\mss32.dll
+  Description=Sound System Drivers
+  Local Path=e:\enations\disk\dlls\mss32.dll
+  Flags=0000000001000011
+end
+item: Check Configuration
+  Flags=10011010
+end
+item: Copy Local File
+  Source=%INST%\dlls\win32s\mss16.dll
+  Destination=%MAINDIR%\mss16.dll
+  Description=Sound System Drivers
+  Local Path=e:\enations\disk\dlls\win32s\mss16.dll
+  Flags=0000000001000011
+end
+item: Copy Local File
+  Source=%INST%\dlls\win32s\mssb16.tsk
+  Destination=%MAINDIR%\mssb16.tsk
+  Description=Sound System Drivers
+  Local Path=e:\enations\disk\dlls\win32s\mssb16.tsk
+  Flags=0000000001000011
+end
+item: Copy Local File
+  Source=%INST%\dlls\win32s\vdmplay.dll
+  Destination=%MAINDIR%\vdmplay.dll
+  Description=Network Protocol Drivers
+  Local Path=e:\enations\disk\dlls\win32s\vdmplay.dll
+  Flags=0000000001000011
+end
+item: Copy Local File
+  Source=%INST%\dlls\win32s\vdmpl16.dll
+  Destination=%MAINDIR%\vdmpl16.dll
+  Description=Network Protocol Drivers
+  Local Path=e:\enations\disk\dlls\win32s\vdmpl16.dll
+  Flags=0000000001000011
+end
+item: Else Statement
+end
+item: Copy Local File
+  Source=%INST%\dlls\win32\vdmplay.dll
+  Destination=%MAINDIR%\vdmplay.dll
+  Description=Network Protocol Drivers
+  Local Path=e:\enations\disk\dlls\win32\vdmplay.dll
+  Flags=0000000001000011
+end
+item: End Block
+end
+item: Remark
+end
+item: Remark
+  Text=Install Program
+end
+item: Copy Local File
+  Source=%INST%\%FILENAME%.exe
+  Destination=%MAINDIR%\%FILENAME%.exe
+  Description=%TITLE% program
+  Local Path=e:\enations\disk\ENations.exe
+  Flags=0000000001000011
+end
+item: Copy Local File
+  Source=%INST%\%FILENAME%.hlp
+  Destination=%MAINDIR%\%FILENAME%.hlp
+  Description=Online help
+  Local Path=e:\enations\disk\ENations.hlp
+  Flags=0000000001010010
+end
+item: Copy Local File
+  Source=%INST%\VPDiag.exe
+  Destination=%MAINDIR%\VPDiag.exe
+  Description=Network Diagnostics
+  Local Path=e:\enations\disk\VPDiag.exe
+  Flags=0000000001000011
+end
+item: Copy Local File
+  Source=%INST%\VDMPlay.hlp
+  Destination=%MAINDIR%\VDMPlay.hlp
+  Description=Net library help file
+  Local Path=e:\enations\disk\vdmplay.hlp
+  Flags=0000000001000011
+end
+item: Copy Local File
+  Source=%INST%\IServe.exe
+  Destination=%MAINDIR%\IServe.exe
+  Description=Game Server
+  Local Path=e:\enations\disk\IServe.exe
+  Flags=0000000001000011
+end
+item: Check Configuration
+  Flags=10011010
+end
+item: Copy Local File
+  Source=%INST%\DLLs\Win32s\dave32ut.dll
+  Destination=%MAINDIR%\dave32ut.dll
+  Description=Win32s multi-thread drivers
+  Local Path=e:\enations\disk\dlls\win32s\dave32ut.dll
+  Flags=0000000001000011
+end
+item: Copy Local File
+  Source=%INST%\DLLs\Win32s\dave16ut.dll
+  Destination=%MAINDIR%\dave16ut.dll
+  Description=Win32s multi-thread drivers
+  Local Path=e:\enations\disk\dlls\win32s\dave16ut.dll
+  Flags=0000000001000011
+end
+item: Copy Local File
+  Source=%INST%\DLLs\Win32s\thrdutls.dll
+  Destination=%MAINDIR%\thrdutls.dll
+  Description=Win32s multi-thread drivers
+  Local Path=e:\enations\disk\dlls\win32s\thrdutls.dll
+  Flags=0000000001000011
+end
+item: Copy Local File
+  Source=%INST%\DLLs\Win32s\ctl3dv2.dll
+  Destination=%SYS%\ctl3dv2.dll
+  Description=3D Controls
+  Local Path=e:\enations\disk\dlls\win32s\ctl3dv2.dll
+  Flags=0000000001000011
+end
+item: End Block
+end
+item: Remark
+end
+item: Remark
+  Text=Install Data
+end
+item: Edit INI File
+  Pathname=%FILENAME%.ini
+  Settings=[Game]
+  Settings=DataFile=%INST%\%FILENAME%.dat
+  Settings=
+end
+item: Remark
+end
+item: Remark
+  Text=Add icon to the Progman
+end
+item: Check Configuration
+  Flags=10111011
+end
+item: Check Configuration
+  Flags=10111111
+end
+item: Edit Registry
+  Key=EnemyNations
+  New Value=%TITLE% 1.00
+end
+item: Edit Registry
+  Key=EnemyNations\DefaultIcon
+  New Value=%MAINDIR%\%FILENAME%.exe
+end
+item: Edit Registry
+  Key=%EXT%
+  New Value=EnemyNations
+end
+item: Edit Registry
+  Key=%EXT%
+  New Value=%MAINDIR%\%FILENAME%.exe
+  Value Name=DefaultIcon
+end
+item: End Block
+end
+item: Get Registry Key Value
+  Variable=GROUP
+  Key=Software\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders
+  Default=%WIN%\Start Menu\Programs
+  Value Name=Programs
+  Flags=00000010
+end
+item: Get Registry Key Value
+  Variable=FOLDER
+  Key=Software\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders
+  Default=%WIN%\Desktop
+  Value Name=Desktop
+  Flags=00000010
+end
+item: Create Shortcut
+  Source=%MAINDIR%\%FILENAME%.exe
+  Destination=%GROUP%\%PROGMAN_NAME%\%TITLE%.lnk
+  Working Directory=%MAINDIR%
+  Description=%TITLE%
+  Key Type=1536
+  Flags=00000001
+end
+item: Create Shortcut
+  Source=%MAINDIR%\%FILENAME%.exe
+  Destination=%FOLDER%\%PROGMAN_NAME%\%TITLE%.lnk
+  Working Directory=%MAINDIR%
+  Description=%TITLE%
+  Key Type=1536
+  Flags=00000001
+end
+item: Create Shortcut
+  Source=%MAINDIR%\IServe.exe
+  Destination=%GROUP%\%PROGMAN_NAME%\WS Game Server.lnk
+  Working Directory=%MAINDIR%
+  Description=Windward Studios Game Server
+  Key Type=1536
+  Flags=00000001
+end
+item: Create Shortcut
+  Source=%MAINDIR%\IServe.exe
+  Destination=%FOLDER%\%PROGMAN_NAME%\WS Game Server.lnk
+  Working Directory=%MAINDIR%
+  Description=Windward Studios Game Server
+  Key Type=1536
+  Flags=00000001
+end
+item: Create Shortcut
+  Source=%MAINDIR%\ENations.hlp
+  Destination=%GROUP%\%PROGMAN_NAME%\Enemy Nations Help.lnk
+  Working Directory=%INST%
+  Description=Help
+  Key Type=1536
+  Flags=00000001
+end
+item: Create Shortcut
+  Source=%MAINDIR%\ENations.hlp
+  Destination=%FOLDER%\%PROGMAN_NAME%\Enemy Nations Help.lnk
+  Working Directory=%INST%
+  Description=Manual
+  Key Type=1536
+  Flags=00000001
+end
+item: Create Shortcut
+  Source=%INST%\readme.wri
+  Destination=%GROUP%\%PROGMAN_NAME%\Enemy Nations ReadMe.lnk
+  Working Directory=%INST%
+  Description=ReadMe File
+  Key Type=1536
+  Flags=00000001
+end
+item: Create Shortcut
+  Source=%INST%\readme.wri
+  Destination=%FOLDER%\%PROGMAN_NAME%\Enemy Nations ReadMe.lnk
+  Working Directory=%INST%
+  Description=ReadMe file
+  Key Type=1536
+  Flags=00000001
+end
+item: Edit INI File
+  Pathname=%GROUP%\%PROGMAN_NAME%\Windward Studios WEB Page.url
+  Settings=[InternetShortcut]
+  Settings=URL=http://www.windward.net
+end
+item: Edit INI File
+  Pathname=%FOLDER%\%PROGMAN_NAME%\Windward Studios WEB Page.url
+  Settings=[InternetShortcut]
+  Settings=URL=http://www.windward.net
+end
+item: Edit INI File
+  Pathname=%GROUP%\%PROGMAN_NAME%\Windward Studios Chat.url
+  Settings=[InternetShortcut]
+  Settings=URL=http://www.windward.net/chat
+end
+item: Edit INI File
+  Pathname=%FOLDER%\%PROGMAN_NAME%\Windward Studios Chat.url
+  Settings=[InternetShortcut]
+  Settings=URL=http://www.windward.net/chat
+end
+item: Edit INI File
+  Pathname=%GROUP%\%PROGMAN_NAME%\Windward Studios Technical Support.url
+  Settings=[InternetShortcut]
+  Settings=URL=http://www.windward.net/support
+end
+item: Edit INI File
+  Pathname=%FOLDER%\%PROGMAN_NAME%\Windward Studios Technical Support.url
+  Settings=[InternetShortcut]
+  Settings=URL=http://www.windward.net/support
+end
+item: Edit INI File
+  Pathname=%GROUP%\%PROGMAN_NAME%\Windward Studios Registration.url
+  Settings=[InternetShortcut]
+  Settings=URL=http://www.windward.net/register
+end
+item: Edit INI File
+  Pathname=%FOLDER%\%PROGMAN_NAME%\Windward Studios Registration.url
+  Settings=[InternetShortcut]
+  Settings=URL=http://www.windward.net/register
+end
+item: Check Configuration
+  Flags=10111111
+end
+item: Edit Registry
+  Key=SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\%TITLE%
+  New Value=%TITLE% 1.00
+  Value Name=DisplayName
+  Root=2
+end
+item: Set Variable
+  Variable=UNWISE_1
+  Value=%MAINDIR%\unwise.exe
+  Flags=00010100
+end
+item: Set Variable
+  Variable=UNWISE_2
+  Value=%MAINDIR%\install.log
+  Flags=00010100
+end
+item: Edit Registry
+  Key=SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\%TITLE%
+  New Value=%UNWISE_1% /A %UNWISE_2%
+  Value Name=UninstallString
+  Root=2
+end
+item: End Block
+end
+item: Set Variable
+  Variable=CMD_LINE
+  Value=%FOLDER%\%PROGMAN_NAME%
+  Flags=00010100
+end
+item: Execute Program
+  Pathname=%CMD_LINE%
+end
+item: Else Statement
+end
+item: Add ProgMan Icon
+  Group=%PROGMAN_NAME%
+  Icon Name=%TITLE%
+  Command Line=%MAINDIR%\%FILENAME%.exe
+  Default Directory=%MAINDIR%
+end
+item: Add ProgMan Icon
+  Group=%PROGMAN_NAME%
+  Icon Name=Windward Studios Game Server
+  Command Line=%MAINDIR%\IServe.exe
+  Default Directory=%MAINDIR%
+end
+item: Add ProgMan Icon
+  Group=%PROGMAN_NAME%
+  Icon Name=Enemy Nations Manual
+  Command Line=winword %MAINDIR%\manual.doc
+end
+item: Add ProgMan Icon
+  Group=%PROGMAN_NAME%
+  Icon Name=Enemy Nations Help
+  Command Line=winhelp %MAINDIR%\ENations.hlp
+end
+item: Add ProgMan Icon
+  Group=%PROGMAN_NAME%
+  Icon Name=Enemy Nations Readme
+  Command Line=write %INST%\readme.wri
+end
+item: Add ProgMan Icon
+  Group=%PROGMAN_NAME%
+  Icon Name=Windward Studios WEB Page
+  Command Line=netscape http://www.windward.net
+end
+item: Add ProgMan Icon
+  Group=%PROGMAN_NAME%
+  Icon Name=Windward Studios Chat
+  Command Line=netscape http://www.windward.net/chat
+end
+item: Add ProgMan Icon
+  Group=%PROGMAN_NAME%
+  Icon Name=Windward Studios Technical Support
+  Command Line=netscape http://www.windward.net/support
+end
+item: Add ProgMan Icon
+  Group=%PROGMAN_NAME%
+  Icon Name=Windward Studios Registration
+  Command Line=netscape http://www.windward.net/register
+end
+item: End Block
+end
+item: Remark
+end
+item: Check Configuration
+  Flags=10111111
+end
+item: Remark
+  Text=Install fonts
+end
+item: Check Configuration
+  Flags=10100000
+end
+item: Copy Local File
+  Source=%INST%\fonts
+  Destination=%WIN%\fonts
+  Description=Fonts
+  Local Path=e:\enations\disk\fonts\*.*
+  Flags=0000000001000011
+end
+item: Else Statement
+end
+item: Copy Local File
+  Source=%INST%\fonts
+  Destination=%SYS%
+  Description=Fonts
+  Local Path=e:\enations\disk\fonts\*.*
+  Flags=0000000001000011
+end
+item: End Block
+end
+item: Register Font
+  Filename=newtow_i.ttf
+  Font name=Newtown Italic
+end
+item: Register Font
+  Filename=milf____.ttf
+  Font name=Milford
+end
+item: Register Font
+  Filename=liquidcr.ttf
+  Font name=LiquidCrystal
+end
+item: End Block
+end
+item: Remark
+end
+item: Remark
+  Text=Install Win32s, VfW, Indeo, DirectX
+end
+item: Check Configuration
+  Flags=10111111
+end
+item: Check Configuration
+  Flags=10011010
+end
+item: Display Message
+  Title=Install Video for Windows
+  Text=%TITLE% requires Video for Windows to run the Intro movie. Video for Windows is a seperate product created by Microsoft.
+  Text=Setup will now run Microsoft's Setup for Video for Windows. If this setup prompts you to re-boot your system, DO NOT REBOOT because there is more that needs to be installed.
+  Text=If you have any problems with this part of the installation, please contact Microsoft. (If Video for Windows is already installed on your system you may not see any additional setup program.)
+end
+item: Execute Program
+  Pathname=%INST%\vfw\setupvfw.exe
+  Flags=00000010
+end
+item: Display Message
+  Title=Install Win32s
+  Text=%TITLE% requires Win32s to run on Windows 3.1. Win32s is a seperate product created by Microsoft.
+  Text=Setup will now run Microsoft's Setup for Win32s.
+  Text=If this setup prompts you to re-boot your system, DO NOT REBOOT because there is more that needs to be installed.
+  Text=If you have any problems with this part of the installation, please contact Microsoft. (If Win32s is already installed on your system you may not see any additional setup program.)
+end
+item: Execute Program
+  Pathname=%INST%\win32s\setup32s.exe
+  Flags=00000010
+end
+item: Display Message
+  Title=Install Intel Indeo
+  Text=%TITLE% requires Indeo to run the Intro movie. Indeo is a seperate product created by Intel.
+  Text=Setup will now run Intel's Setup for Indeo. 
+  Text=If you have any problems with this part of the installation, please contact Intel. (If Indeo is already installed on your system you may not see any additional setup program.)
+  Text=Do not reboot at the end of Indeo's setup.
+end
+item: Execute Program
+  Pathname=%INST%\Indeo\ivi16.exe
+  Flags=00000010
+end
+item: Else Statement
+end
+item: Check Configuration
+  Flags=10111001
+end
+item: Remark
+end
+item: Set Variable
+  Variable=INST_DX
+  Value=1
+end
+item: Check if File/Dir Exists
+  Pathname=%SYS%\ddraw.dll
+  Flags=01000100
+end
+item: Set Variable
+  Variable=INST_DX
+  Value=0
+end
+item: Display Message
+  Title=Install DirectX IIIa
+  Text=Microsoft's DirectX setup program will install an older version of DirectX over a newer version. Microsoft will not provide the information we need to determine if you have a newer version installed.
+  Text=Therefore, you should not install DirectX IIIa if you have a later version of DirectX installed.
+  Text=Do you need to install DirectX IIIa?
+  Flags=00001101
+end
+item: Set Variable
+  Variable=INST_DX
+  Value=1
+end
+item: End Block
+end
+item: End Block
+end
+item: Remark
+end
+item: If/While Statement
+  Variable=INST_DX
+  Value=1
+end
+item: Display Message
+  Title=Install DirectX
+  Text=%TITLE% uses DirectX for faster speed on Windows 95. DirectX is a seperate product created by Microsoft. Setup will now run Microsoft's Setup for DirectX.
+  Text=If this setup prompts you to re-boot your system, DO NOT REBOOT because there is more that needs to be installed.
+  Text=If you have any problems with this part of the installation, please contact Microsoft. (If DirectX is already installed on your computer then you may see no additional setup.)
+end
+item: Execute Program
+  Pathname=%INST%\DirectX\call_dx.exe
+  Command Line=%INST%\DirectX
+  Default Directory=%INST%\DirectX
+  Flags=00000010
+end
+item: End Block
+end
+item: End Block
+end
+item: Display Message
+  Title=Install Intel Indeo
+  Text=%TITLE% requires Indeo to run the Intro movie. Indeo is a seperate product created by Intel.
+  Text=Setup will now run Intel's Setup for Indeo. 
+  Text=If you have any problems with this part of the installation, please contact Intel. (If Indeo is already installed on your system you may not see any additional setup program.)
+  Text=Do not reboot at the end of Indeo's setup.
+end
+item: Execute Program
+  Pathname=%INST%\Indeo\ivi_95nt.exe
+  Flags=00000010
+end
+item: End Block
+end
+item: End Block
+end
+item: Remark
+end
+item: Display Message
+  Title=Setup - [Enemy Nations]
+  Text=Do you wish to register your copy of Enemy Nations now?
+  Text=This will use your web browser and take you to a web page of ours.
+  Flags=00000001
+end
+item: Execute Program
+  Command Line=http://www.windward.net/register
+end
+item: Edit INI File
+  Pathname=%WIN%\enations.ini
+  Settings=[Warnings]
+  Settings=Register=1
+end
+item: Display Message
+  Title=Setup - [Enemy Nations]
+  Text=If your browser did not take you to our web page, please point your browser at:
+  Text=http://www.windward.net/register
+  Text=and register your copy.
+end
+item: End Block
+end
+item: Display Message
+  Title=Setup - [Enemy Nations]
+  Text=Do you wish to view the readme file?
+  Flags=00000001
+end
+item: Execute Program
+  Pathname=write.exe
+  Command Line=%INST%\readme.wri
+end
+item: End Block
+end
+item: Display Message
+  Title=Setup - [Enemy Nations]
+  Text=If any of the other setup programs we ran asked you to reboot, please reboot before running Enemy Nations.
+  Text=We hope you enjoy playing Enemy Nations!
+  Text=
+end

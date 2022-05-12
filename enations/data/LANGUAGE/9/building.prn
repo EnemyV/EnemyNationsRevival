@@ -1,0 +1,88 @@
+CHUNK LINE { string "Destroyed City" }
+CHUNK DESC { string "The remains of a destroyed building" }
+CHUNK LINE { string "Rocket Ship" }
+CHUNK DESC { string "The colony ship you landed in. As a spacecraft it is considered a heavily armored building." }
+CHUNK LINE { string "Apartment" }
+CHUNK DESC { string "Small apartments for your colonists. Can comfortably house 100 people." }
+CHUNK LINE { string "Apartment" }
+CHUNK DESC { string "Small apartments for your colonists. Can comfortably house 150 people." }
+CHUNK LINE { string "Apartment" }
+CHUNK DESC { string "Medium apartments for your colonists. Can comfortably house 300 people." }
+CHUNK LINE { string "Apartment" }
+CHUNK DESC { string "Medium apartments for your colonists. Can comfortably house 500 people." }
+CHUNK LINE { string "Apartment" }
+CHUNK DESC { string "Large apartments for your colonists. Can comfortably house 800 people." }
+CHUNK LINE { string "Apartment" }
+CHUNK DESC { string "Large apartments for your colonists. Can comfortably house 1000 people." }
+CHUNK LINE { string "Apartment" }
+CHUNK DESC { string "Luxury apartments for your colonists. Can comfortably house 1500 people." }
+CHUNK LINE { string "Apartment" }
+CHUNK DESC { string "Luxury apartments for your colonists. Can comfortably house 1800 people." }
+CHUNK LINE { string "Office Building" }
+CHUNK DESC { string "Small offices for your civilian workforce. Has a capacity of 100 employees." }
+CHUNK LINE { string "Office Building" }
+CHUNK DESC { string "Small offices for your civilian workforce. Has a capacity of 200 employees." }
+CHUNK LINE { string "Office Building" }
+CHUNK DESC { string "Medium offices for your civilian workforce. Has a capacity of 400 employees." }
+CHUNK LINE { string "Office Building" }
+CHUNK DESC { string "Medium offices for your civilian workforce. Has a capacity of 600 employees." }
+CHUNK LINE { string "Office Building" }
+CHUNK DESC { string "Large offices for your civilian workforce. Has a capacity of 700 employees." }
+CHUNK LINE { string "Office Building" }
+CHUNK DESC { string "Large offices for your civilian workforce. Has a capacity of 800 employees." }
+CHUNK LINE { string "Camp" }
+CHUNK DESC { string "Trains civilians as troops. This building can produce all types of troops, but no vehicles. This building can fire on enemy units and is lightly armored." }
+CHUNK LINE { string "Barracks" }
+CHUNK DESC { string "Trains civilians as troops. This building can produce all types of troops, but no vehicles. This building can fire on enemy units and is lightly armored." }
+CHUNK LINE { string "Command Center" }
+CHUNK DESC { string "Provides central command for all of your forces. This building is required to control more advanced units and to administer advanced Research and Development. This building is armored." }
+CHUNK LINE { string "Embassy" }
+CHUNK DESC { string "You build this building for one of the other players (non-computer) in the game so that you can communicate with them." }
+CHUNK LINE { string "Farm" }
+CHUNK DESC { string "Grows all the food and raises all the animals you need to survive." }
+CHUNK LINE { string "Pillbox" }
+CHUNK DESC { string "Light fixed gun emplacement capable of short range heavy direct fire. This building has thick walls which are difficult to destroy." }
+CHUNK LINE { string "Bunker" }
+CHUNK DESC { string "Medium fixed gun capable of moderately heavy direct and indirect fire. This building is very difficult to destroy." }
+CHUNK LINE { string "Fort" }
+CHUNK DESC { string "Heavy fixed gun capable of very heavy sustained direct and indirect fire. This building is extremely difficult to destroy." }
+CHUNK LINE { string "Dread Factory" }
+CHUNK DESC { string "Heavy factory that manufactures our most powerful military vehicles. Because of its construction this building is armored." }
+CHUNK LINE { string "Weapons Factory" }
+CHUNK DESC { string "Light factory that manufactures our basic military vehicles." }
+CHUNK LINE { string "Assault Factory" }
+CHUNK DESC { string "Medium factory that manufactures most of our military vehicles. " }
+CHUNK LINE { string "Lumber Mill" }
+CHUNK DESC { string "Turns trees into lumber for building buildings. Also includes a logging camp to support cutting down nearby trees to bring to the mill. This building must be placed near a forest." }
+CHUNK LINE { string "Oil Well" }
+CHUNK DESC { string "Pumps oil from the ground for transport to a refinery." }
+CHUNK LINE { string "Refinery" }
+CHUNK DESC { string "Processes oil from an oil well into gasoline to fuel all the vehicles and asphalt for building the roads. Oil must be transported from an oil well to this building." }
+CHUNK LINE { string "Coal Mine" }
+CHUNK DESC { string "Digs coal from the ground for transport to a smelter or coal fired power plant." }
+CHUNK LINE { string "Iron Mine" }
+CHUNK DESC { string "Digs iron from the ground for transport to a smelter." }
+CHUNK LINE { string "Xilitium Mine" }
+CHUNK DESC { string "Digs Xilitium from the ground for transport to a factory." }
+CHUNK LINE { string "Coal Power Plant" }
+CHUNK DESC { string "Creates electricity by burning coal. Coal must be transported from a coal mine." }
+CHUNK LINE { string "Oil Power Plant" }
+CHUNK DESC { string "Creates electricity by burning gasoline. Gasoline must be transported from a refinery." }
+CHUNK LINE { string "Nuclear Power Plant" }
+CHUNK DESC { string "Creates electricity by Nuclear Fission. Does not require any material to operate." }
+CHUNK LINE { string "Research Institute" }
+CHUNK DESC { string "Works on discovering how to implement technology using the resources available on the planet" }
+CHUNK LINE { string "Repair Facility" }
+CHUNK DESC { string "Repairs all land vehicles" }
+CHUNK LINE { string "Seaport" }
+CHUNK DESC { string "Ships dock to load and unload their cargo. This is the only place a ship other than a landing craft can load or unload cargo. This building is also capable of attacking nearby units." }
+CHUNK LINE { string "Shipyard" }
+CHUNK DESC { string "A light factory that manufactures and repairs our basic ships." }
+CHUNK LINE { string "Warship Factory" }
+CHUNK DESC { string "A medium factory that manufactures and repairs our main ships. " }
+CHUNK LINE { string "Smelter" }
+CHUNK DESC { string "Refines coal and iron into steel. Iron and coal must be transported from their mines. Steel must be transported to the factories that use it." }
+CHUNK LINE { string "Warehouse" }
+CHUNK DESC { string "Stores excess materials" }
+CHUNK LINE { string "Vehicle Factory" }
+CHUNK DESC { string "A light factory that manufactures our basic military vehicles. " }

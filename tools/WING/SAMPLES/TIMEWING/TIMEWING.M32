@@ -1,0 +1,48 @@
+DEBUG=YES
+
+!if "$(DEBUG)" == "YES"
+DEF = -DDEBUG -DSTRICT
+CC  = cl386 -c -W3 -Zi -Oxwt $(DEF)
+LINK= link32 -map -debug:full -debugtype:cv -out:$(NAME).exe -subsystem:windows
+!else
+DEF = -DSTRICT
+CC  = cl386 -c -W3 -Zi -Oxwt $(DEF)
+LINK= link32 -map -out:$(NAME).exe -subsystem:windows
+!endif
+
+NAME= timewing
+RC  = rc
+
+OBJDIR = .
+OBJ  = $(OBJDIR)\$(NAME).obj $(OBJDIR)\utils.obj
+LIBS = gdi32.lib user32.lib comdlg32.lib wing32.lib winmm.lib
+
+.cpp{$(OBJDIR)}.obj:
+  $(CC) /Fo$*.obj $< 
+
+.c{$(OBJDIR)}.obj:
+  $(CC) /Fo$*.obj $<
+
+goal: $(NAME).exe
+
+$(NAME).exe: $(OBJ) $(NAME).res $(NAME).def $(NAME).m32
+  $(LINK) @<<
+    $(OBJ) $(UTL) $(LIBS) $(NAME).res
+<<    
+
+$(NAME).res: $(NAME).rc $(NAME).ico
+  $(RC) -r $(NAME).rc
+
+clean:
+	if exist $(NAME).exe  del $(NAME).exe
+	if exist *.res  del *.res
+	if exist *.err  del *.err
+	if exist $(OBJDIR)\*.obj  del $(OBJDIR)\*.obj
+	if exist *.map  del *.map
+	if exist *.sym  del *.sym
+	if exist *.cod  del *.cod
+	if exist *.pdb  del *.pdb
+
+$(OBJDIR)\utils.obj: ..\utils\utils.c ..\utils\utils.h
+  $(CC) /Foutils.obj ..\utils\utils.c
+

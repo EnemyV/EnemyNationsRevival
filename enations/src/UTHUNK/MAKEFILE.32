@@ -1,0 +1,42 @@
+# *********************************************************
+#  makefile: for UTSamp sample
+#
+#
+# *********************************************************
+
+MSVC    = d:\tools\msvc20
+UT		= d:\tools\msvc32s\ut
+OTHER   = d:\tools
+
+INCLUDE = $(OTHER)\include;$(UT);$(MSVC)\mfc\include;$(MSVC)\include
+LIB     = $(OTHER)\lib;$(UT);$(MSVC)\mfc\lib;$(MSVC)\lib
+PATH    = $(MSVC)\bin
+
+LINK    =
+
+
+CPU=i386
+!include <ntwin32.mak>
+
+proj = dave32ut
+
+all: $(proj).dll
+
+#
+# thread16.dll must be built using makefile.16 with a 16 bit compiler
+#
+
+ver_32.res: ver_32.rc version.h
+	rc /l 0x409 /d "NDEBUG" ver_32.rc
+
+$(proj).obj: $*.cpp thread.h dave32ut.h
+    $(cc) $(cflags) $(cvarsmt) $(cdebug) $*.cpp
+
+$(proj).lib $(proj).exp: $*.obj $*.def
+    $(implib) -machine:$(CPU) -def:$*.def $*.obj -out:$*.lib
+
+$(proj).dll: $*.obj $*.def $*.exp ver_32.res
+    $(link) $(conflags) -dll -entry:DllInit$(DLLENTRY) -base:0x20000000 -out:$@ $*.exp $*.obj ver_32.res $(guilibsmt) w32sut32.lib mpr.lib
+
+
+#    $(link) $(conflags) $(ldebug) -dll -entry:DllInit$(DLLENTRY) -base:0x20000000 -out:$@ $*.exp $*.obj ver_32.res $(guilibsdll) w32sut32.lib mpr.lib

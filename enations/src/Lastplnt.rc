@@ -1,0 +1,1727 @@
+//Microsoft Developer Studio generated resource script.
+//
+#include "resource.h"
+
+#define APSTUDIO_READONLY_SYMBOLS
+/////////////////////////////////////////////////////////////////////////////
+//
+// Generated from the TEXTINCLUDE 2 resource.
+//
+#include "afxres.h"
+
+/////////////////////////////////////////////////////////////////////////////
+#undef APSTUDIO_READONLY_SYMBOLS
+
+/////////////////////////////////////////////////////////////////////////////
+// English (U.S.) resources
+
+#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_ENU)
+#ifdef _WIN32
+LANGUAGE LANG_ENGLISH, SUBLANG_ENGLISH_US
+#pragma code_page(1252)
+#endif //_WIN32
+
+#ifdef APSTUDIO_INVOKED
+/////////////////////////////////////////////////////////////////////////////
+//
+// TEXTINCLUDE
+//
+
+1 TEXTINCLUDE DISCARDABLE 
+BEGIN
+    "resource.h\0"
+END
+
+2 TEXTINCLUDE DISCARDABLE 
+BEGIN
+    "#include ""afxres.h""\r\n"
+    "\0"
+END
+
+3 TEXTINCLUDE DISCARDABLE 
+BEGIN
+    "#include ""us_eng.h""\r\n"
+    "#include ""res\\version.rc""  // non-App Studio edited resources\r\n"
+    "\r\n"
+    "#include ""afxres.rc""  \t// Standard components\r\n"
+    "#include ""windward.rc""\0"
+END
+
+#endif    // APSTUDIO_INVOKED
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Dialog
+//
+
+IDD_VERSION DIALOG DISCARDABLE  0, 0, 277, 172
+STYLE DS_MODALFRAME | WS_POPUP | WS_VISIBLE | WS_CAPTION | WS_SYSMENU
+CAPTION "Second Chance - Version"
+FONT 8, "MS Sans Serif"
+BEGIN
+    DEFPUSHBUTTON   "OK",IDOK,221,139,50,23
+    LTEXT           "unknown",IDC_VER_TEXT,7,7,264,8
+    LTEXT           "unknown",IDC_VER_TEXT_OS,7,21,264,8
+    LTEXT           "unknown",IDC_VER_NET,7,35,264,8
+    LTEXT           "unknown",IDC_VER_THUNK,7,105,200,8
+    LTEXT           "unknown",IDC_VER_RIF,7,49,264,8
+    LTEXT           "© 1995 - 1997 Windward Studios, Inc.  All Rights Reserved.",
+                    IDC_STATIC,7,148,192,8
+    LTEXT           "unknown",IDC_VER_VIDEO,7,63,264,8
+    LTEXT           "unknown",IDC_VER_SOUND,7,77,264,8
+    LTEXT           "unknown",IDC_VER_SOUND2,35,91,236,8
+    LTEXT           "unknown",IDC_VER_SPEED,7,119,200,8
+    LTEXT           "unknown",IDC_VER_MEMORY,7,133,200,8
+    PUSHBUTTON      "License...",IDC_LICENSE,221,111,50,23
+END
+
+IDD_BUILD_STRUCTURE DIALOG DISCARDABLE  0, 0, 306, 257
+STYLE DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Build Structure"
+FONT 8, "MS Sans Serif"
+BEGIN
+    CONTROL         "Build",IDOK,"Button",BS_OWNERDRAW | WS_TABSTOP,172,222,
+                    55,14
+    CONTROL         "Cancel",IDCANCEL,"Button",BS_OWNERDRAW | WS_TABSTOP,241,
+                    222,55,14
+END
+
+IDD_BUILD_TRANSPORT DIALOG DISCARDABLE  0, 0, 225, 189
+STYLE DS_MODALFRAME | WS_POPUP | WS_VISIBLE | WS_CAPTION | WS_SYSMENU
+CAPTION "Build Vehicle"
+FONT 8, "MS Sans Serif"
+BEGIN
+    CONTROL         "Build",IDOK,"Button",BS_OWNERDRAW | WS_TABSTOP,87,145,
+                    56,14
+    CONTROL         "Close",IDCANCEL,"Button",BS_OWNERDRAW | WS_TABSTOP,163,
+                    145,56,14
+    EDITTEXT        IDC_BUILD_NUM,181,170,38,14
+    CONTROL         "Generic1",IDC_BUILD_SPIN,"msctls_updown32",
+                    UDS_SETBUDDYINT | UDS_ALIGNRIGHT | UDS_AUTOBUDDY,210,170,
+                    9,14
+END
+
+IDD_JOIN_PUBLISH DIALOG DISCARDABLE  0, 0, 168, 177
+STYLE DS_MODALFRAME | WS_POPUP | WS_VISIBLE | WS_CAPTION | WS_SYSMENU
+CAPTION "Connect to the Net"
+FONT 8, "MS Sans Serif"
+BEGIN
+    LTEXT           "Player Name:",IDC_STATIC,4,8,42,9
+    EDITTEXT        IDC_JOIN_NAME,50,6,110,13,ES_AUTOHSCROLL
+    GROUPBOX        "Connection",IDC_STATIC,6,24,156,77,WS_GROUP
+    CONTROL         "Internet (TCP/IP)",IDC_CREATE_TCPIP,"Button",
+                    BS_AUTORADIOBUTTON | WS_GROUP | WS_TABSTOP,11,38,73,10
+    CONTROL         "Novell (IPX)",IDC_CREATE_IPX,"Button",
+                    BS_AUTORADIOBUTTON,11,52,67,10
+    CONTROL         "NETBIOS",IDC_CREATE_NETBIOS,"Button",BS_AUTORADIOBUTTON,
+                    11,66,67,10
+    CONTROL         "Direct Play",IDC_CREATE_DIRECTPLAY,"Button",
+                    BS_AUTORADIOBUTTON,11,80,67,10
+    CONTROL         "Modem (Direct)",IDC_CREATE_MODEM,"Button",
+                    BS_AUTORADIOBUTTON,93,38,65,10
+    CONTROL         "Modem (TAPI)",IDC_CREATE_TAPI,"Button",
+                    BS_AUTORADIOBUTTON,93,52,64,10
+    CONTROL         "Serial Port",IDC_CREATE_DIRECT,"Button",
+                    BS_AUTORADIOBUTTON,93,66,65,10
+    PUSHBUTTON      "&Advanced...",IDC_CREATE_ADV,93,81,59,14,WS_GROUP
+    LTEXT           "Password:",IDC_STATIC,7,112,36,8
+    EDITTEXT        IDC_CREATE_PW,48,110,112,12,ES_AUTOHSCROLL
+    DEFPUSHBUTTON   "Subscribe >>",IDOK,12,130,59,14
+    PUSHBUTTON      "&Unpublish",IDC_JOIN_UNPUBLISH,96,130,59,14,WS_DISABLED
+    PUSHBUTTON      "Cancel",IDCANCEL,12,153,59,14
+    PUSHBUTTON      "&Help...",IDX_HELP,96,153,59,14
+END
+
+IDD_JOIN_GAME DIALOG DISCARDABLE  0, 0, 282, 266
+STYLE DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Join a Game"
+FONT 8, "MS Sans Serif"
+BEGIN
+    GROUPBOX        "Games available",IDC_JOIN_GAMES_PRMT,7,4,135,155
+    LISTBOX         IDC_JOIN_GAMES,7,17,132,142,LBS_SORT | 
+                    LBS_NOINTEGRALHEIGHT | WS_VSCROLL | WS_TABSTOP
+    GROUPBOX        "Game Description",IDC_STATIC,147,4,128,155
+    EDITTEXT        IDC_JOIN_DESC,153,18,116,52,ES_MULTILINE | 
+                    ES_AUTOVSCROLL | ES_READONLY | NOT WS_TABSTOP
+    LTEXT           "Computer Opponents:",IDC_STATIC,153,76,72,8
+    EDITTEXT        IDC_JOIN_NUM_OPPONENTS,229,74,40,12,ES_AUTOHSCROLL | 
+                    ES_READONLY | NOT WS_TABSTOP
+    LTEXT           "Computer Intelligence:",IDC_STATIC,153,92,72,8
+    EDITTEXT        IDC_JOIN_AI_LEVEL,229,90,40,12,ES_AUTOHSCROLL | 
+                    ES_READONLY | NOT WS_TABSTOP
+    LTEXT           "World Size:",IDC_STATIC,153,108,39,8
+    EDITTEXT        IDC_JOIN_WORLD_SIZE,195,106,73,12,ES_AUTOHSCROLL | 
+                    ES_READONLY | NOT WS_TABSTOP
+    LTEXT           "Position:",IDC_STATIC,153,124,33,8
+    EDITTEXT        IDC_JOIN_POS,195,122,73,12,ES_AUTOHSCROLL | ES_READONLY | 
+                    NOT WS_TABSTOP
+    PUSHBUTTON      "<< &Prev",IDC_JOIN_PREV,7,169,46,14
+    DEFPUSHBUTTON   "Join >>",IDOK,62,169,46,14,WS_DISABLED
+    PUSHBUTTON      "Cancel",IDCANCEL,117,169,46,14
+    PUSHBUTTON      "&Help...",IDX_HELP,172,169,46,14
+    LTEXT           "Type:",IDC_STATIC,153,140,25,8
+    EDITTEXT        IDC_JOIN_TYPE,180,138,88,12,ES_AUTOHSCROLL | ES_READONLY | 
+                    NOT WS_TABSTOP
+    EDITTEXT        IDC_PLYR_ADDR,7,193,266,12,ES_AUTOHSCROLL | ES_READONLY | 
+                    NOT WS_TABSTOP
+    EDITTEXT        IDC_PLYR_IS_ADDR,7,211,266,12,ES_AUTOHSCROLL | 
+                    ES_READONLY | NOT WS_TABSTOP
+    EDITTEXT        IDC_PLYR_VP_VER,7,229,266,12,ES_AUTOHSCROLL | 
+                    ES_READONLY | NOT WS_TABSTOP
+    EDITTEXT        IDC_PLYR_EN_VER,7,247,266,12,ES_AUTOHSCROLL | 
+                    ES_READONLY | NOT WS_TABSTOP
+    PUSHBUTTON      "Address >>",IDC_PLYR_DO_ADDR,227,169,46,14
+END
+
+IDD_CREATE_STATUS DIALOG DISCARDABLE  0, 0, 148, 71
+STYLE DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Create World"
+FONT 8, "MS Sans Serif"
+BEGIN
+    PUSHBUTTON      "Cancel",IDCANCEL,51,48,44,14
+    CTEXT           "Waiting for the other player(s)...",
+                    IDC_CREATE_WAIT_TEXT,7,8,131,8
+    CONTROL         "",IDC_PER_BAR,"dcPerBar",0x0,20,25,107,14
+END
+
+IDD_MAIL_COMPOSE DIALOG DISCARDABLE  0, 0, 185, 67
+STYLE WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_POPUP | WS_VISIBLE | WS_CAPTION | 
+    WS_SYSMENU | WS_THICKFRAME
+CAPTION "Compose Mail"
+FONT 8, "MS Sans Serif"
+BEGIN
+    RTEXT           "To:",IDC_STATIC,40,5,20,7
+    COMBOBOX        IDC_MAIL_TO,65,2,119,76,CBS_DROPDOWNLIST | 
+                    CBS_OWNERDRAWVARIABLE | CBS_HASSTRINGS | WS_VSCROLL | 
+                    WS_TABSTOP
+    RTEXT           "RE:",IDC_STATIC,49,19,11,7
+    EDITTEXT        IDC_MAIL_SUBJECT,65,16,119,12,ES_AUTOHSCROLL
+    EDITTEXT        IDC_MAIL_TEXT,0,30,184,37,ES_MULTILINE | ES_AUTOVSCROLL | 
+                    ES_WANTRETURN | WS_VSCROLL
+    DEFPUSHBUTTON   "Send",IDOK,2,3,33,11
+    PUSHBUTTON      "Cancel",IDCANCEL,2,17,33,11
+END
+
+IDD_DIALOG_RAND DIALOG DISCARDABLE  0, 0, 132, 66
+STYLE DS_MODALFRAME | WS_POPUP | WS_VISIBLE | WS_CAPTION | WS_SYSMENU
+CAPTION "Cheat"
+FONT 8, "MS Sans Serif"
+BEGIN
+    LTEXT           "Enter the random number seed",IDC_STATIC,9,6,114,7
+    EDITTEXT        IDC_RAND_EDIT,9,20,109,12,ES_AUTOHSCROLL
+    DEFPUSHBUTTON   "OK",IDOK,10,42,50,14
+    PUSHBUTTON      "Cancel",IDCANCEL,70,42,50,14
+END
+
+IDD_CHATBAR DIALOG DISCARDABLE  0, 0, 149, 19
+STYLE WS_CHILD | WS_BORDER
+FONT 8, "MS Sans Serif"
+BEGIN
+    PUSHBUTTON      "Hang Up",IDC_HANGUP,3,3,35,12,WS_DISABLED | WS_GROUP | 
+                    NOT WS_TABSTOP
+    COMBOBOX        IDC_SELECTPLAYER,43,3,100,60,CBS_DROPDOWN | WS_VSCROLL | 
+                    WS_GROUP | WS_TABSTOP
+END
+
+IDD_MSG_STATUS DIALOG DISCARDABLE  0, 0, 262, 95
+STYLE DS_MODALFRAME | WS_POPUP | WS_VISIBLE | WS_CAPTION | WS_SYSMENU
+CAPTION "Set mail status for players"
+FONT 8, "MS Sans Serif"
+BEGIN
+    DEFPUSHBUTTON   "OK",IDOK,54,74,50,14,WS_GROUP
+    PUSHBUTTON      "Cancel",IDCANCEL,158,74,50,14
+    GROUPBOX        "Email",IDC_STATIC,145,8,52,58
+    GROUPBOX        "Chat",IDC_STATIC,203,8,52,58
+    CONTROL         "Ignore",IDC_IGNORE_EMAIL,"Button",BS_AUTORADIOBUTTON | 
+                    WS_GROUP | WS_TABSTOP,152,28,35,10
+    CONTROL         "Accept",IDC_ACCEPT_EMAIL,"Button",BS_AUTORADIOBUTTON | 
+                    WS_TABSTOP,152,46,35,10
+    CONTROL         "Ignore",IDC_IGNORE_CHAT,"Button",BS_AUTORADIOBUTTON | 
+                    WS_GROUP | WS_TABSTOP,210,28,35,10
+    CONTROL         "Accept",IDC_ACCEPT_CHAT,"Button",BS_AUTORADIOBUTTON | 
+                    WS_TABSTOP,210,46,35,10
+    LISTBOX         IDC_PLAYER_LIST,4,5,128,62,LBS_SORT | LBS_OWNERDRAWFIXED | 
+                    LBS_HASSTRINGS | LBS_NOINTEGRALHEIGHT | WS_VSCROLL | 
+                    WS_TABSTOP
+END
+
+IDD_AI_POS DIALOG DISCARDABLE  0, 0, 136, 63
+STYLE DS_MODALFRAME | WS_POPUP | WS_VISIBLE | WS_CAPTION | WS_SYSMENU
+CAPTION "AI Start Positions"
+FONT 8, "MS Sans Serif"
+BEGIN
+    LISTBOX         IDC_LIST_AI,6,4,65,53,LBS_SORT | LBS_NOINTEGRALHEIGHT | 
+                    WS_VSCROLL | WS_TABSTOP
+    DEFPUSHBUTTON   "Goto",IDOK,78,4,50,22
+    PUSHBUTTON      "Cancel",IDCANCEL,78,35,50,22
+END
+
+IDD_MAIN DIALOG DISCARDABLE  0, 0, 356, 221
+STYLE WS_POPUP | WS_VISIBLE | WS_BORDER
+FONT 8, "MS Sans Serif"
+BEGIN
+    CONTROL         "Training Grounds",IDC_MAIN_CAMPAIGN,"Button",
+                    BS_OWNERDRAW | WS_TABSTOP,9,6,156,34
+    CONTROL         "Create Single Player Game",IDC_MAIN_SINGLE,"Button",
+                    BS_OWNERDRAW | WS_TABSTOP,9,49,156,34
+    CONTROL         "Create Network Game",IDC_MAIN_CREATE,"Button",
+                    BS_OWNERDRAW | WS_TABSTOP,9,92,156,34
+    CONTROL         "Join Network Game",IDC_MAIN_JOIN,"Button",BS_OWNERDRAW | 
+                    WS_TABSTOP,9,135,156,34
+    CONTROL         "Load Single Player Game",IDC_MAIN_LOAD,"Button",
+                    BS_OWNERDRAW | WS_TABSTOP,9,178,156,34
+    CONTROL         "Load Network Game",IDC_MAIN_LOAD_MUL,"Button",
+                    BS_OWNERDRAW | WS_TABSTOP,189,6,156,34
+    CONTROL         "Replay Introduction",IDC_MAIN_INTRO,"Button",
+                    BS_OWNERDRAW | WS_TABSTOP,189,49,156,34
+    CONTROL         "View Credits",IDC_MAIN_CREDITS,"Button",BS_OWNERDRAW | 
+                    WS_TABSTOP,189,92,156,34
+    CONTROL         "Options",IDC_MAIN_OPTIONS,"Button",BS_OWNERDRAW | 
+                    WS_TABSTOP,189,135,156,34
+    CONTROL         "Exit",IDCANCEL,"Button",BS_OWNERDRAW | WS_TABSTOP,189,
+                    178,70,34
+    CONTROL         "Minimize",IDC_MINIMIZE,"Button",BS_OWNERDRAW | 
+                    WS_TABSTOP,275,178,70,34
+END
+
+IDD_SCENARIO DIALOG DISCARDABLE  0, 0, 159, 121
+STYLE DS_MODALFRAME | WS_POPUP | WS_VISIBLE | WS_CAPTION | WS_SYSMENU
+CAPTION "Play Campaign"
+FONT 8, "MS Sans Serif"
+BEGIN
+    GROUPBOX        "Computer Opponents",IDC_STATIC,11,9,75,75
+    CONTROL         "&Easy",IDC_CREATE_EASY,"Button",BS_AUTORADIOBUTTON | 
+                    WS_GROUP | WS_TABSTOP,18,23,48,10
+    CONTROL         "&Moderate",IDC_CREATE_MODERATE,"Button",
+                    BS_AUTORADIOBUTTON,18,37,48,10
+    CONTROL         "&Difficult",IDC_CREATE_DIFFICULT,"Button",
+                    BS_AUTORADIOBUTTON,18,51,48,10
+    CONTROL         "&Impossible",IDC_CREATE_IMPOSSIBLE,"Button",
+                    BS_AUTORADIOBUTTON,18,65,48,10
+    GROUPBOX        "World Size",IDC_STATIC,100,23,49,61,WS_GROUP
+    CONTROL         "&Small",IDC_CREATE_SMALL,"Button",BS_AUTORADIOBUTTON | 
+                    WS_GROUP | WS_TABSTOP,107,38,35,10
+    CONTROL         "&Medium",IDC_CREATE_MEDIUM,"Button",BS_AUTORADIOBUTTON,
+                    107,51,35,10
+    CONTROL         "&Large",IDC_CREATE_LARGE,"Button",BS_AUTORADIOBUTTON,
+                    107,65,34,10
+    DEFPUSHBUTTON   "&Race >>",IDOK,11,97,42,14,WS_GROUP
+    PUSHBUTTON      "Cancel",IDCANCEL,59,97,42,14
+    PUSHBUTTON      "&Help...",IDX_HELP,107,97,42,14
+END
+
+IDD_CREATE_SINGLE DIALOG DISCARDABLE  0, 0, 186, 180
+STYLE DS_MODALFRAME | WS_POPUP | WS_VISIBLE | WS_CAPTION | WS_SYSMENU
+CAPTION "Play Game - [single player]"
+FONT 8, "MS Sans Serif"
+BEGIN
+    GROUPBOX        "Computer Opponents",IDC_STATIC,8,6,75,101
+    LTEXT           "Number:",IDC_STATIC,15,23,30,8
+    EDITTEXT        IDC_CREATE_NUM_AI,47,21,30,13,ES_AUTOHSCROLL
+    CONTROL         "Easy",IDC_CREATE_EASY,"Button",BS_AUTORADIOBUTTON | 
+                    WS_GROUP | WS_TABSTOP,15,45,48,10
+    CONTROL         "Moderate",IDC_CREATE_MODERATE,"Button",
+                    BS_AUTORADIOBUTTON,15,60,48,10
+    CONTROL         "Difficult",IDC_CREATE_DIFFICULT,"Button",
+                    BS_AUTORADIOBUTTON,15,75,48,10
+    CONTROL         "Impossible",IDC_CREATE_IMPOSSIBLE,"Button",
+                    BS_AUTORADIOBUTTON,15,90,48,10
+    GROUPBOX        "World size",IDC_STATIC,95,6,49,61,WS_GROUP
+    CONTROL         "Small",IDC_CREATE_SMALL,"Button",BS_AUTORADIOBUTTON | 
+                    WS_GROUP | WS_TABSTOP,101,20,35,10
+    CONTROL         "Medium",IDC_CREATE_MEDIUM,"Button",BS_AUTORADIOBUTTON,
+                    101,35,35,10
+    CONTROL         "Large",IDC_CREATE_LARGE,"Button",BS_AUTORADIOBUTTON,101,
+                    50,34,10
+    GROUPBOX        "Starting Position",IDC_STATIC,95,71,83,79,WS_GROUP
+    CONTROL         "Minimal Civilian",IDC_PLAY_POS_0,"Button",
+                    BS_AUTORADIOBUTTON | WS_GROUP | WS_TABSTOP,105,85,66,10
+    CONTROL         "Full Civilian",IDC_PLAY_POS_1,"Button",
+                    BS_AUTORADIOBUTTON,105,100,66,10
+    CONTROL         "Minimal Military",IDC_PLAY_POS_2,"Button",
+                    BS_AUTORADIOBUTTON,105,115,66,10
+    CONTROL         "Full Military",IDC_PLAY_POS_3,"Button",
+                    BS_AUTORADIOBUTTON,105,130,66,10
+    DEFPUSHBUTTON   "&Race >>",IDOK,8,159,50,14,WS_GROUP
+    PUSHBUTTON      "Cancel",IDCANCEL,68,159,50,14
+    PUSHBUTTON      "&Help...",IDX_HELP,128,159,50,14
+END
+
+IDD_PICK_RACE DIALOG DISCARDABLE  0, 0, 290, 183
+STYLE DS_MODALFRAME | WS_POPUP | WS_VISIBLE | WS_CAPTION | WS_SYSMENU
+CAPTION "Choose Race"
+FONT 8, "MS Sans Serif"
+BEGIN
+    LISTBOX         IDC_RACE_LIST,7,7,80,164,LBS_OWNERDRAWFIXED | 
+                    LBS_NOINTEGRALHEIGHT | WS_VSCROLL | WS_TABSTOP
+    RTEXT           "Name:",IDC_STATIC,98,9,29,7
+    EDITTEXT        IDC_RACE_NAME,133,7,145,12,ES_AUTOHSCROLL
+    PUSHBUTTON      "<< &Prev",IDC_RACE_PREV,98,134,61,14
+    DEFPUSHBUTTON   "&Start",IDOK,217,134,61,14,WS_GROUP
+    PUSHBUTTON      "Cancel",IDCANCEL,98,157,61,14
+    PUSHBUTTON      "&Help...",IDX_HELP,217,157,61,14
+    LTEXT           "Static",IDC_RACE_DESC,98,32,180,90,NOT WS_VISIBLE | 
+                    WS_DISABLED | NOT WS_GROUP
+END
+
+IDD_CREATE_MULTI DIALOG DISCARDABLE  0, 0, 243, 234
+STYLE DS_MODALFRAME | WS_POPUP | WS_VISIBLE | WS_CAPTION | WS_SYSMENU
+CAPTION "Play Game - [multi player]"
+FONT 8, "MS Sans Serif"
+BEGIN
+    GROUPBOX        "Game",IDC_STATIC,5,25,228,77
+    RTEXT           "Name:",IDC_STATIC,33,36,22,7
+    EDITTEXT        IDC_CREATE_NAME,61,34,163,12,ES_AUTOHSCROLL
+    RTEXT           "Description:",IDC_STATIC,15,52,41,7
+    EDITTEXT        IDC_CREATE_DESC,61,52,163,41,ES_MULTILINE | 
+                    ES_AUTOVSCROLL
+    GROUPBOX        "Computer Opponents",IDC_STATIC,5,108,75,97
+    LTEXT           "Number:",IDC_STATIC,13,126,30,8
+    EDITTEXT        IDC_CREATE_NUM_AI,45,124,30,13,ES_AUTOHSCROLL
+    CONTROL         "Easy",IDC_CREATE_EASY,"Button",BS_AUTORADIOBUTTON | 
+                    WS_GROUP | WS_TABSTOP,13,145,48,10
+    CONTROL         "Moderate",IDC_CREATE_MODERATE,"Button",
+                    BS_AUTORADIOBUTTON,13,160,48,10
+    CONTROL         "Difficult",IDC_CREATE_DIFFICULT,"Button",
+                    BS_AUTORADIOBUTTON,13,175,48,10
+    CONTROL         "Impossible",IDC_CREATE_IMPOSSIBLE,"Button",
+                    BS_AUTORADIOBUTTON,13,190,48,10
+    GROUPBOX        "Starting Position",IDC_STATIC,91,108,83,75,WS_GROUP
+    CONTROL         "Minimal Civilian",IDC_PLAY_POS_0,"Button",
+                    BS_AUTORADIOBUTTON | WS_GROUP | WS_TABSTOP,101,121,66,10
+    CONTROL         "Full Civilian",IDC_PLAY_POS_1,"Button",
+                    BS_AUTORADIOBUTTON,101,136,66,10
+    CONTROL         "Minimal Military",IDC_PLAY_POS_2,"Button",
+                    BS_AUTORADIOBUTTON,101,151,66,10
+    CONTROL         "Full Military",IDC_PLAY_POS_3,"Button",
+                    BS_AUTORADIOBUTTON,101,166,66,10
+    GROUPBOX        "World size",IDC_STATIC,185,108,49,60,WS_GROUP
+    CONTROL         "Small",IDC_CREATE_SMALL,"Button",BS_AUTORADIOBUTTON | 
+                    WS_GROUP | WS_TABSTOP,191,121,35,10
+    CONTROL         "Medium",IDC_CREATE_MEDIUM,"Button",BS_AUTORADIOBUTTON,
+                    191,136,35,10
+    CONTROL         "Large",IDC_CREATE_LARGE,"Button",BS_AUTORADIOBUTTON,191,
+                    151,34,10
+    DEFPUSHBUTTON   "&Connect >>",IDOK,17,212,50,14,WS_GROUP
+    PUSHBUTTON      "Cancel",IDCANCEL,95,212,50,14
+    PUSHBUTTON      "&Help...",IDX_HELP,173,212,50,14
+    RTEXT           "Player Name:",IDC_STATIC,5,8,50,7
+    EDITTEXT        IDC_CREATE_PLAYER,61,7,172,12,ES_AUTOHSCROLL
+END
+
+IDD_CREATE_PUBLISH DIALOG DISCARDABLE  0, 0, 297, 127
+STYLE DS_MODALFRAME | WS_POPUP | WS_VISIBLE | WS_CAPTION | WS_SYSMENU
+CAPTION "Publish a Game"
+FONT 8, "MS Sans Serif"
+BEGIN
+    GROUPBOX        "Connection",IDC_STATIC,7,4,163,73,WS_GROUP
+    CONTROL         "Internet (TCP/IP)",IDC_CREATE_TCPIP,"Button",
+                    BS_AUTORADIOBUTTON | WS_GROUP | WS_TABSTOP,12,18,75,10
+    CONTROL         "Novell (IPX)",IDC_CREATE_IPX,"Button",
+                    BS_AUTORADIOBUTTON,12,32,75,10
+    CONTROL         "NETBIOS",IDC_CREATE_NETBIOS,"Button",BS_AUTORADIOBUTTON,
+                    12,46,75,10
+    CONTROL         "Direct Play",IDC_CREATE_DIRECTPLAY,"Button",
+                    BS_AUTORADIOBUTTON,12,60,75,10
+    CONTROL         "Modem (Direct)",IDC_CREATE_MODEM,"Button",
+                    BS_AUTORADIOBUTTON,97,18,68,10
+    CONTROL         "Modem (TAPI)",IDC_CREATE_TAPI,"Button",
+                    BS_AUTORADIOBUTTON,97,32,68,10
+    CONTROL         "Serial Port",IDC_CREATE_DIRECT,"Button",
+                    BS_AUTORADIOBUTTON,97,46,68,10
+    PUSHBUTTON      "&Advanced...",IDC_CREATE_ADV,95,60,64,14,WS_GROUP
+    GROUPBOX        "Additional Players",IDC_STATIC,180,4,110,58
+    CONTROL         "Until Colonize",IDC_JOIN_NO_MORE,"Button",
+                    BS_AUTORADIOBUTTON | WS_GROUP | WS_TABSTOP,185,18,99,10
+    CONTROL         "Final Approval at Colonize",IDC_JOIN_UNTIL_COLONIZE,
+                    "Button",BS_AUTORADIOBUTTON,185,32,99,10
+    CONTROL         "Can Replace AI Players",IDC_JOIN_FINAL_APPROVAL,
+                    "Button",BS_AUTORADIOBUTTON,185,46,99,10
+    LTEXT           "Password:",IDC_STATIC,7,86,36,8
+    EDITTEXT        IDC_CREATE_PW,42,84,128,12,ES_AUTOHSCROLL | WS_GROUP
+    CONTROL         "Server (no human player)",IDC_JOIN_SERVER,"Button",
+                    BS_AUTOCHECKBOX | WS_GROUP | WS_TABSTOP,185,84,103,10
+    PUSHBUTTON      "<< &Prev",IDC_UNPUBLISH,7,104,66,14
+    DEFPUSHBUTTON   "Publish Game >>",IDOK,89,104,66,14
+    PUSHBUTTON      "Cancel",IDCANCEL,173,104,50,14
+    PUSHBUTTON      "&Help...",IDX_HELP,239,104,50,14
+END
+
+IDD_PLAYER_LIST DIALOG DISCARDABLE  0, 0, 256, 226
+STYLE DS_MODALFRAME | WS_POPUP | WS_VISIBLE | WS_CAPTION
+CAPTION "Game Players"
+FONT 8, "MS Sans Serif"
+BEGIN
+    GROUPBOX        "Players joined: 0",IDC_CREATE_NUM_PLAYERS,6,4,244,116,
+                    WS_GROUP
+    LISTBOX         IDC_CREATE_LIST,7,15,242,104,LBS_OWNERDRAWFIXED | 
+                    LBS_NOINTEGRALHEIGHT | WS_VSCROLL | WS_TABSTOP
+    PUSHBUTTON      "&Start",IDOK,6,129,49,14,WS_DISABLED
+    PUSHBUTTON      "&Delete Player",IDC_CREATE_DELETE_PLAYER,97,129,62,14,
+                    WS_DISABLED
+    EDITTEXT        IDC_PLYR_ADDR,7,153,242,12,ES_AUTOHSCROLL | ES_READONLY | 
+                    NOT WS_TABSTOP
+    EDITTEXT        IDC_PLYR_IS_ADDR,7,171,242,12,ES_AUTOHSCROLL | 
+                    ES_READONLY | NOT WS_TABSTOP
+    EDITTEXT        IDC_PLYR_VP_VER,7,189,242,12,ES_AUTOHSCROLL | 
+                    ES_READONLY | NOT WS_TABSTOP
+    EDITTEXT        IDC_PLYR_EN_VER,7,207,242,12,ES_AUTOHSCROLL | 
+                    ES_READONLY | NOT WS_TABSTOP
+    PUSHBUTTON      "Address >>",IDC_PLYR_DO_ADDR,200,129,49,14
+END
+
+IDD_RELATIONS DIALOG DISCARDABLE  0, 0, 256, 111
+STYLE DS_MODALFRAME | WS_POPUP | WS_VISIBLE | WS_CAPTION | WS_SYSMENU
+CAPTION "Player Relations"
+FONT 8, "MS Sans Serif"
+BEGIN
+    LISTBOX         IDC_REL_LIST,4,6,161,70,LBS_SORT | LBS_OWNERDRAWFIXED | 
+                    LBS_HASSTRINGS | LBS_NOINTEGRALHEIGHT | WS_VSCROLL | 
+                    WS_TABSTOP
+    GROUPBOX        "Status",IDC_STATIC,175,3,71,73
+    CONTROL         "&Alliance",IDC_PLYR_ALLIANCE,"Button",
+                    BS_AUTORADIOBUTTON | WS_GROUP | WS_TABSTOP,184,15,55,10
+    CONTROL         "&Peace",IDC_PLYR_PEACE,"Button",BS_AUTORADIOBUTTON,184,
+                    30,55,10
+    CONTROL         "&Neutral",IDC_PLYR_NEUTRAL,"Button",BS_AUTORADIOBUTTON,
+                    184,45,55,10
+    CONTROL         "&War",IDC_PLYR_WAR,"Button",BS_AUTORADIOBUTTON,184,60,
+                    55,10
+    DEFPUSHBUTTON   "OK",IDOK,13,89,62,14,WS_GROUP
+    PUSHBUTTON      "Cancel",IDCANCEL,96,89,62,14
+    PUSHBUTTON      "&Give Unit(s)",IDC_PLYR_GIVE,179,89,62,14
+END
+
+IDD_FILE DIALOGEX 0, 0, 379, 122
+STYLE DS_MODALFRAME | WS_POPUP | WS_VISIBLE | WS_CAPTION | WS_SYSMENU
+CAPTION "Second Chance"
+FONT 8, "MS Sans Serif", 0, 0, 0x1
+BEGIN
+    PUSHBUTTON      "&Save Game...",IDC_FILE_SAVE,8,8,87,30
+    PUSHBUTTON      "&Mission...",IDC_FILE_SCENE,109,8,87,30
+    PUSHBUTTON      "&Version...",IDC_FILE_VERSION,8,46,87,30
+    PUSHBUTTON      "&Help...",IDC_FILE_HELP,109,46,87,30
+    PUSHBUTTON      "OK",IDOK,8,84,56,30
+    PUSHBUTTON      "&Minimize",IDC_FILE_MINIMIZE,76,84,54,30
+    PUSHBUTTON      "E&xit Game",IDC_FILE_EXIT,142,84,54,30
+    CONTROL         "Generic1",IDC_FILE_SPEED,"msctls_trackbar32",
+                    TBS_AUTOTICKS | WS_TABSTOP,210,8,161,25,WS_EX_CLIENTEDGE
+    CONTROL         "Generic1",IDC_FILE_SOUND,"msctls_trackbar32",
+                    TBS_AUTOTICKS | WS_TABSTOP,210,46,161,25,
+                    WS_EX_CLIENTEDGE
+    CONTROL         "Generic1",IDC_FILE_MUSIC,"msctls_trackbar32",
+                    TBS_AUTOTICKS | WS_TABSTOP,210,84,161,25,
+                    WS_EX_CLIENTEDGE
+    LTEXT           "Off",IDC_STATIC,210,72,29,7
+    CTEXT           "Sound",IDC_STATIC,276,72,29,7
+    RTEXT           "Loud",IDC_STATIC,342,72,29,7
+    LTEXT           "Off",IDC_STATIC,210,110,29,7
+    CTEXT           "Music",IDC_STATIC,277,110,29,7
+    RTEXT           "Loud",IDC_STATIC,342,110,29,7
+    LTEXT           "Slow",IDC_STATIC,210,34,29,8
+    CTEXT           "Speed",IDC_STATIC,276,34,29,8
+    RTEXT           "Fast",IDC_STATIC,342,34,29,8
+END
+
+IDD_SAVE_MSG DIALOG DISCARDABLE  0, 0, 188, 37
+STYLE DS_MODALFRAME | WS_POPUP | WS_VISIBLE | WS_CAPTION
+CAPTION "Please Wait"
+FONT 8, "MS Sans Serif"
+BEGIN
+    CTEXT           "Saving game",IDC_SAVE_NAME,5,6,172,10
+    LTEXT           "",IDC_SAVE_STATUS,5,24,173,8
+END
+
+IDD_RESEARCH DIALOG DISCARDABLE  0, 0, 234, 162
+STYLE DS_MODALFRAME | WS_POPUP | WS_VISIBLE | WS_CAPTION | WS_SYSMENU
+CAPTION "Research Choices"
+FONT 8, "MS Sans Serif"
+BEGIN
+    LISTBOX         IDC_RSRCH_LIST,10,8,103,122,LBS_SORT | 
+                    LBS_OWNERDRAWFIXED | LBS_NOINTEGRALHEIGHT | WS_VSCROLL | 
+                    WS_TABSTOP
+    CONTROL         "Research",IDOK,"Button",BS_OWNERDRAW | WS_TABSTOP,123,
+                    74,102,14
+    CONTROL         "Discovery",IDC_RSRCH_FOUND,"Button",BS_OWNERDRAW | 
+                    WS_DISABLED | WS_TABSTOP,123,95,102,14
+    CONTROL         "Close",IDCANCEL,"Button",BS_OWNERDRAW | WS_TABSTOP,123,
+                    116,102,14
+END
+
+IDD_LOAD_RACE DIALOG DISCARDABLE  0, 0, 249, 154
+STYLE DS_MODALFRAME | WS_POPUP | WS_VISIBLE | WS_CAPTION | WS_SYSMENU
+CAPTION "Choose Player"
+FONT 8, "MS Sans Serif"
+BEGIN
+    LISTBOX         IDC_RACE_LIST,7,7,111,136,LBS_NOINTEGRALHEIGHT | 
+                    WS_VSCROLL | WS_TABSTOP
+    RTEXT           "Name:",IDC_STATIC,123,9,29,7
+    EDITTEXT        IDC_RACE_NAME,159,7,80,12,ES_AUTOHSCROLL
+    PUSHBUTTON      "Start &Single Player Game",IDC_LOAD_SINGLE,133,28,106,
+                    16,WS_GROUP
+    PUSHBUTTON      "Start &Multi Player Game",IDC_LOAD_MULTI,133,52,106,16,
+                    WS_GROUP
+    PUSHBUTTON      "<< &Prev",IDC_LOAD_PREV,133,76,106,16
+    PUSHBUTTON      "Cancel",IDCANCEL,133,100,106,16
+    PUSHBUTTON      "&Help...",IDX_HELP,133,124,106,16
+END
+
+IDD_JOIN_RACE DIALOG DISCARDABLE  0, 0, 249, 154
+STYLE DS_MODALFRAME | WS_POPUP | WS_VISIBLE | WS_CAPTION | WS_SYSMENU
+CAPTION "Choose Player"
+FONT 8, "MS Sans Serif"
+BEGIN
+    LISTBOX         IDC_RACE_LIST,7,7,111,136,LBS_NOINTEGRALHEIGHT | 
+                    WS_VSCROLL | WS_TABSTOP
+    RTEXT           "Name:",IDC_STATIC,123,9,29,7
+    EDITTEXT        IDC_RACE_NAME,159,7,80,12,ES_AUTOHSCROLL
+    DEFPUSHBUTTON   "&Start",IDOK,133,30,106,22,WS_GROUP
+    PUSHBUTTON      "<< &Prev",IDC_LOAD_PREV,133,60,106,22
+    PUSHBUTTON      "Cancel",IDCANCEL,133,90,106,22
+    PUSHBUTTON      "&Help...",IDX_HELP,133,120,106,22
+END
+
+IDD_ADV_OPTIONS DIALOG DISCARDABLE  0, 0, 345, 199
+STYLE DS_MODALFRAME | WS_POPUP | WS_VISIBLE | WS_CAPTION | WS_SYSMENU
+CAPTION "Advanced Options"
+FONT 8, "MS Sans Serif"
+BEGIN
+    GROUPBOX        "Screen Drawing",IDC_STATIC,6,6,102,90,WS_GROUP
+    CONTROL         "Best Available",IDC_ADV_BLT,"Button",BS_AUTORADIOBUTTON | 
+                    WS_GROUP | WS_TABSTOP,16,20,87,10
+    CONTROL         "DirectDraw",IDC_RADIO2,"Button",BS_AUTORADIOBUTTON,16,
+                    34,87,10
+    CONTROL         "WinG",IDC_RADIO3,"Button",BS_AUTORADIOBUTTON,16,48,87,
+                    10
+    CONTROL         "CreateDIBSection",IDC_RADIO4,"Button",
+                    BS_AUTORADIOBUTTON,16,62,87,10
+    CONTROL         "SetDIBBitsToDevice",IDC_RADIO5,"Button",
+                    BS_AUTORADIOBUTTON,16,76,87,10
+    GROUPBOX        "Color Depth",IDC_STATIC,6,105,102,59,WS_GROUP
+    CONTROL         "Based on free memory",IDC_ADV_DEPTH_0,"Button",
+                    BS_AUTORADIOBUTTON | WS_GROUP | WS_TABSTOP,16,118,86,10
+    CONTROL         "8-bit",IDC_ADV_DEPTH_1,"Button",BS_AUTORADIOBUTTON,16,
+                    132,29,10
+    CONTROL         "Driver depth",IDC_ADV_DEPTH_2,"Button",
+                    BS_AUTORADIOBUTTON,16,146,55,10
+    GROUPBOX        "Screen Resolution",IDC_STATIC,119,6,102,90,WS_GROUP
+    CONTROL         "Native Resolution",IDC_ADV_RES_NATIVE,"Button",
+                    BS_AUTORADIOBUTTON | WS_GROUP | WS_TABSTOP,129,20,72,10
+    CONTROL         "Based on CPU speed",IDC_ADV_RES_SPEED,"Button",
+                    BS_AUTORADIOBUTTON,129,34,84,10
+    CONTROL         "640 x 480",IDC_ADV_RES_640,"Button",BS_AUTORADIOBUTTON,
+                    129,48,47,10
+    CONTROL         "800 x 600",IDC_ADV_RES_800,"Button",BS_AUTORADIOBUTTON,
+                    129,62,47,10
+    CONTROL         "1024 x 768",IDC_ADV_RES_1024,"Button",
+                    BS_AUTORADIOBUTTON,129,76,51,10
+    GROUPBOX        "Zoom Levels",IDC_STATIC,119,105,102,60,WS_GROUP
+    CONTROL         "Based on free memory",IDC_ADV_ZOOM_1,"Button",
+                    BS_AUTORADIOBUTTON | WS_GROUP | WS_TABSTOP,129,118,86,10
+    CONTROL         "Always show zoom 0",IDC_ADV_ZOOM_2,"Button",
+                    BS_AUTORADIOBUTTON,129,132,81,10
+    CONTROL         "Never show zoom 0",IDC_ADV_ZOOM_3,"Button",
+                    BS_AUTORADIOBUTTON,129,146,79,10
+    GROUPBOX        "Music",IDC_STATIC,233,6,102,59,WS_GROUP
+    CONTROL         "Based on speed",IDC_ADV_MUSIC,"Button",
+                    BS_AUTORADIOBUTTON | WS_GROUP | WS_TABSTOP,243,20,67,10
+    CONTROL         "Digital Audio",IDC_ADV_MUSIC_1,"Button",
+                    BS_AUTORADIOBUTTON,243,34,90,10
+    CONTROL         "Mixed (MIDI/digital)",IDC_ADV_MUSIC_2,"Button",
+                    BS_AUTORADIOBUTTON,243,48,90,10
+    LTEXT           "Language:",IDC_STATIC,233,71,60,8
+    COMBOBOX        IDC_OPT_LANG,233,83,105,83,CBS_DROPDOWNLIST | CBS_SORT | 
+                    WS_VSCROLL | WS_TABSTOP
+    CONTROL         "Scroll Bars",IDC_OPT_SCROLL,"Button",BS_AUTOCHECKBOX | 
+                    WS_TABSTOP,233,103,87,10
+    CONTROL         "Pause when lose focus",IDC_OPT_PAUSE,"Button",
+                    BS_AUTOCHECKBOX | WS_GROUP | WS_TABSTOP,233,120,87,10
+    CONTROL         "No Intro Movie",IDC_ADV_NO_INTRO,"Button",
+                    BS_AUTOCHECKBOX | WS_TABSTOP,233,137,63,10
+    CONTROL         "Set System Colors",IDC_ADV_USE_SYS_COLORS,"Button",
+                    BS_AUTOCHECKBOX | WS_TABSTOP,233,154,73,10
+    DEFPUSHBUTTON   "OK",IDOK,51,175,50,14,WS_GROUP
+    PUSHBUTTON      "Cancel",IDCANCEL,147,174,50,14
+    PUSHBUTTON      "&Help...",IDC_FILE_HELP,243,175,50,14
+END
+
+IDD_CHAT_INIT DIALOG DISCARDABLE  0, 0, 224, 159
+STYLE DS_MODALFRAME | WS_POPUP | WS_VISIBLE | WS_CAPTION
+CAPTION "Open Chat"
+FONT 8, "MS Sans Serif"
+BEGIN
+    EDITTEXT        IDC_CHAT_RCV,0,0,223,131,ES_MULTILINE | ES_AUTOVSCROLL | 
+                    ES_READONLY | WS_VSCROLL | NOT WS_TABSTOP
+    EDITTEXT        IDC_CHAT_SEND,0,134,223,24,ES_AUTOHSCROLL
+END
+
+IDD_PICK_PLAYER DIALOG DISCARDABLE  0, 0, 290, 183
+STYLE DS_MODALFRAME | WS_POPUP | WS_VISIBLE | WS_CAPTION | WS_SYSMENU
+CAPTION "Choose Player"
+FONT 8, "MS Sans Serif"
+BEGIN
+    LISTBOX         IDC_RACE_LIST,7,7,111,164,LBS_NOINTEGRALHEIGHT | 
+                    WS_VSCROLL | WS_TABSTOP
+    RTEXT           "Name:",IDC_STATIC,123,9,29,7
+    EDITTEXT        IDC_RACE_NAME,159,7,119,12,ES_AUTOHSCROLL
+    EDITTEXT        IDC_RACE_DESC,131,29,147,95,ES_MULTILINE | 
+                    ES_AUTOHSCROLL | ES_READONLY | NOT WS_TABSTOP
+    PUSHBUTTON      "<< &Prev",IDC_RACE_PREV,131,134,61,14
+    DEFPUSHBUTTON   "&Start",IDOK,217,134,61,14,WS_GROUP
+    PUSHBUTTON      "Cancel",IDCANCEL,131,157,61,14
+    PUSHBUTTON      "&Help...",IDX_HELP,217,157,61,14
+END
+
+IDD_LOAD_MULTI DIALOG DISCARDABLE  0, 0, 238, 113
+STYLE DS_MODALFRAME | WS_POPUP | WS_VISIBLE | WS_CAPTION | WS_SYSMENU
+CAPTION "Load Game - [multi player]"
+FONT 8, "MS Sans Serif"
+BEGIN
+    GROUPBOX        "Game",-1,5,2,228,77
+    RTEXT           "Name:",-1,33,14,22,7
+    EDITTEXT        IDC_CREATE_NAME,61,11,163,12,ES_AUTOHSCROLL
+    RTEXT           "Description:",-1,15,30,41,7
+    EDITTEXT        IDC_CREATE_DESC,61,30,163,41,ES_MULTILINE | 
+                    ES_AUTOVSCROLL
+    PUSHBUTTON      "<< &Prev",IDC_UNPUBLISH,5,89,50,14
+    DEFPUSHBUTTON   "Connect >>",IDOK,64,89,50,14
+    PUSHBUTTON      "Cancel",IDCANCEL,123,89,50,14
+    PUSHBUTTON      "&Help...",IDX_HELP,182,89,50,14
+END
+
+IDD_PICK_WAIT DIALOG DISCARDABLE  0, 0, 160, 55
+STYLE DS_MODALFRAME | WS_POPUP | WS_VISIBLE | WS_CAPTION | WS_SYSMENU
+CAPTION "Pick Player"
+FONT 8, "MS Sans Serif"
+BEGIN
+    PUSHBUTTON      "Cancel",IDCANCEL,54,27,50,14
+    CTEXT           "Waiting for pick to be accepted",IDC_STATIC,17,8,126,9
+END
+
+IDD_PLYR_STAT DIALOG DISCARDABLE  0, 0, 185, 95
+STYLE DS_MODALFRAME | WS_POPUP | WS_VISIBLE | WS_CAPTION | WS_SYSMENU
+CAPTION "Player Stats"
+FONT 8, "MS Sans Serif"
+BEGIN
+    DEFPUSHBUTTON   "OK",IDOK,67,71,50,14
+    RTEXT           "Player:",IDC_STATIC,6,6,29,7
+    RTEXT           "Gas (have/1min burn):",IDC_STATIC,6,18,87,7
+    RTEXT           "Power (have/need):",IDC_STATIC,6,30,87,7
+    RTEXT           "Food (have/5min eat):",IDC_STATIC,6,42,87,7
+    RTEXT           "People (have:veh/need):",IDC_STATIC,6,54,87,7
+    LTEXT           "",IDC_STAT_NAME,41,6,144,8
+    LTEXT           "",IDC_STAT_GAS,100,18,68,8
+    LTEXT           "",IDC_STAT_POWER,100,30,68,8
+    LTEXT           "",IDC_STAT_FOOD,100,42,68,8
+    LTEXT           "",IDC_STAT_PEOPLE,100,54,68,8
+END
+
+IDD_NET_ADDR DIALOG DISCARDABLE  0, 0, 186, 50
+STYLE DS_MODALFRAME | WS_POPUP | WS_VISIBLE | WS_CAPTION | WS_SYSMENU
+CAPTION "Network Address"
+FONT 8, "MS Sans Serif"
+BEGIN
+    DEFPUSHBUTTON   "OK",IDOK,58,28,69,14
+    EDITTEXT        IDC_NET_ADDR,8,8,169,12,ES_AUTOHSCROLL | ES_READONLY | 
+                    NOT WS_TABSTOP
+END
+
+IDD_RSRCH_FOUND DIALOG DISCARDABLE  0, 0, 186, 110
+STYLE DS_MODALFRAME | WS_POPUP | WS_VISIBLE | WS_CAPTION | WS_SYSMENU
+CAPTION "Discovered - []"
+FONT 8, "MS Sans Serif"
+BEGIN
+    DEFPUSHBUTTON   "OK",IDOK,43,88,99,14
+    EDITTEXT        IDC_TEXT_DISCOVERY,4,4,178,75,ES_MULTILINE | 
+                    ES_AUTOVSCROLL | ES_READONLY
+END
+
+IDD_PLAY_FLIC DIALOG DISCARDABLE  0, 0, 100, 100
+STYLE WS_POPUP
+FONT 8, "System"
+BEGIN
+END
+
+IDD_TRUCK DIALOG DISCARDABLE  0, 0, 194, 149
+STYLE DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Load Truck"
+FONT 8, "MS Sans Serif"
+BEGIN
+    RTEXT           "Lumber:",IDC_STATIC,7,10,31,8
+    EDITTEXT        IDC_TRUCK_LUMBER,41,7,40,14
+    CONTROL         "Spin1",IDC_TRUCK_SPIN_LUMBER,"msctls_updown32",
+                    UDS_SETBUDDYINT | UDS_ALIGNRIGHT | UDS_AUTOBUDDY | 
+                    UDS_NOTHOUSANDS,71,7,10,14
+    RTEXT           "Steel:",IDC_STATIC,7,30,31,8
+    EDITTEXT        IDC_TRUCK_STEEL,41,27,40,14
+    CONTROL         "Spin1",IDC_TRUCK_SPIN_STEEL,"msctls_updown32",
+                    UDS_SETBUDDYINT | UDS_ALIGNRIGHT | UDS_AUTOBUDDY | 
+                    UDS_NOTHOUSANDS,71,27,10,14
+    RTEXT           "Xilitium:",IDC_STATIC,7,50,31,8
+    EDITTEXT        IDC_TRUCK_XILITIUM,41,47,40,14
+    CONTROL         "Spin1",IDC_TRUCK_SPIN_XILITIUM,"msctls_updown32",
+                    UDS_SETBUDDYINT | UDS_ALIGNRIGHT | UDS_AUTOBUDDY | 
+                    UDS_NOTHOUSANDS,70,47,11,14
+    RTEXT           "Coal:",IDC_STATIC,14,70,24,8
+    EDITTEXT        IDC_TRUCK_COAL,41,67,40,14
+    CONTROL         "Spin1",IDC_TRUCK_SPIN_COAL,"msctls_updown32",
+                    UDS_SETBUDDYINT | UDS_ALIGNRIGHT | UDS_AUTOBUDDY | 
+                    UDS_NOTHOUSANDS,70,67,11,14
+    RTEXT           "Iron:",IDC_STATIC,14,90,24,8
+    EDITTEXT        IDC_TRUCK_IRON,41,87,40,14
+    CONTROL         "Spin1",IDC_TRUCK_SPIN_IRON,"msctls_updown32",
+                    UDS_SETBUDDYINT | UDS_ALIGNRIGHT | UDS_AUTOBUDDY | 
+                    UDS_NOTHOUSANDS,70,87,11,14
+    RTEXT           "Oil:",IDC_STATIC,14,110,24,8
+    EDITTEXT        IDC_TRUCK_OIL,41,107,40,14
+    CONTROL         "Spin1",IDC_TRUCK_SPIN_OIL,"msctls_updown32",
+                    UDS_SETBUDDYINT | UDS_ALIGNRIGHT | UDS_AUTOBUDDY | 
+                    UDS_NOTHOUSANDS,70,107,11,14
+    PUSHBUTTON      "&Unload",IDC_TRUCK_UNLOAD,137,7,50,14
+    PUSHBUTTON      "Const. &Building",IDC_TRUCK_LOAD_BLDG,137,27,50,14
+    PUSHBUTTON      "Const. &Vehicle",IDC_TRUCK_LOAD_VEH,137,47,50,14
+    PUSHBUTTON      "Load &All",IDC_TRUCK_LOAD,137,67,50,14
+    DEFPUSHBUTTON   "OK (select)",IDOK,137,87,50,14
+    PUSHBUTTON      "&Auto Router",IDC_TRUCK_AUTO,137,107,50,14
+    PUSHBUTTON      "Cancel",IDCANCEL,137,128,50,14
+    LTEXT           "0",IDC_TRUCK_HAVE_LUMBER,89,10,20,8
+    LTEXT           "0",IDC_TRUCK_HAVE_STEEL,89,30,20,8
+    LTEXT           "0",IDC_TRUCK_HAVE_XIL,89,50,20,8
+    LTEXT           "0",IDC_TRUCK_HAVE_COAL,89,70,20,8
+    LTEXT           "0",IDC_TRUCK_HAVE_IRON,89,90,20,8
+    LTEXT           "0",IDC_TRUCK_HAVE_OIL,89,110,20,8
+    RTEXT           "Maximum:",IDC_STATIC,44,130,37,8
+    LTEXT           "0",IDC_TRUCK_MAX,89,130,32,8
+END
+
+IDD_LICENSE DIALOG DISCARDABLE  0, 0, 265, 201
+STYLE DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Second Chance"
+FONT 8, "MS Sans Serif"
+BEGIN
+    PUSHBUTTON      "&Yes",IDYES,46,180,50,14
+    PUSHBUTTON      "&No",IDCANCEL,169,180,50,14
+    DEFPUSHBUTTON   "OK",IDOK,208,180,50,14
+    EDITTEXT        IDC_LICENSE,7,7,251,160,ES_MULTILINE | ES_READONLY | 
+                    WS_VSCROLL | NOT WS_TABSTOP
+END
+
+IDD_PAUSE_MSG DIALOG DISCARDABLE  0, 0, 188, 23
+STYLE DS_MODALFRAME | WS_POPUP | WS_VISIBLE | WS_DISABLED | WS_CAPTION
+CAPTION "Game Paused"
+FONT 8, "MS Sans Serif"
+BEGIN
+    CTEXT           "Press CTRL-P to resume",IDC_PAUSE_TEXT,8,8,172,15
+END
+
+IDD_TEST_SOUNDS DIALOG DISCARDABLE  0, 0, 310, 140
+STYLE DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Test Sounds"
+FONT 8, "MS Sans Serif"
+BEGIN
+    GROUPBOX        "Music",IDC_STATIC,7,7,62,64
+    CONTROL         "Midi Only",IDC_SFX_TYP_MIDI,"Button",BS_AUTORADIOBUTTON | 
+                    WS_DISABLED | WS_GROUP,16,21,45,10
+    CONTROL         "Mixed",IDC_SFX_TYP_MIDI2,"Button",BS_AUTORADIOBUTTON | 
+                    WS_DISABLED,16,37,35,10
+    CONTROL         "WAV only",IDC_SFX_TYP_MIDI3,"Button",BS_AUTORADIOBUTTON | 
+                    WS_DISABLED,16,53,47,10
+    GROUPBOX        "Play",IDC_STATIC,80,7,51,64,WS_GROUP
+    CONTROL         "SFX",IDC_SFX_GROUP,"Button",BS_AUTORADIOBUTTON | 
+                    WS_GROUP | WS_TABSTOP,89,21,29,10
+    CONTROL         "Voices",IDC_SFX_GROUP2,"Button",BS_AUTORADIOBUTTON,89,
+                    37,37,10
+    CONTROL         "Music",IDC_SFX_GROUP3,"Button",BS_AUTORADIOBUTTON,89,53,
+                    35,10
+    LTEXT           "WAV format",IDC_SFX_FORMAT,138,16,165,8
+    LTEXT           "number of tracks",IDC_SFX_DESC,138,33,165,8
+    RTEXT           "Track:",IDC_STATIC,139,57,22,8
+    EDITTEXT        IDC_SFX_TRACK,168,54,40,14,ES_AUTOHSCROLL
+    PUSHBUTTON      "Play &Foreground",IDC_PLAY_FORE,27,81,72,14
+    PUSHBUTTON      "Play &Background",IDC_PLAY_BACK,123,81,72,14
+    PUSHBUTTON      "Play &Exclusive",IDC_PLAY_EXCL,219,81,72,14
+    PUSHBUTTON      "&Shut Up",IDC_PLAY_SHUTUP,123,108,72,14
+    DEFPUSHBUTTON   "Exit",IDCANCEL,241,108,50,14
+END
+
+IDD_PLYR_LIST DIALOG DISCARDABLE  0, 0, 302, 194
+STYLE DS_MODALFRAME | WS_POPUP | WS_CAPTION
+CAPTION "Players"
+FONT 8, "MS Sans Serif"
+BEGIN
+    PUSHBUTTON      "&Delete Player",IDC_PLYR_KILL,7,152,60,14
+    PUSHBUTTON      "&Pause Game",IDC_PLYR_PAUSE,83,152,60,14
+    PUSHBUTTON      "&File...",IDC_PLYR_OPTIONS,7,173,60,14
+    PUSHBUTTON      "&Minimize",IDC_PLYR_MINIMIZE,83,173,60,14
+    CONTROL         "Accepts new players",IDC_PLYR_TAKE_OVER,"Button",
+                    BS_AUTOCHECKBOX | WS_TABSTOP,193,154,81,10
+    RTEXT           "Password:",IDC_STATIC,151,176,40,8
+    EDITTEXT        IDC_PLYR_PASSWORD,193,173,102,14,ES_AUTOHSCROLL
+    LISTBOX         IDC_PLYR_LIST,7,7,288,138,LBS_SORT | 
+                    LBS_NOINTEGRALHEIGHT | WS_VSCROLL | WS_TABSTOP
+END
+
+IDD_CD_LOC DIALOG DISCARDABLE  0, 0, 197, 66
+STYLE DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "CD Location"
+FONT 8, "MS Sans Serif"
+BEGIN
+    DEFPUSHBUTTON   "OK",IDOK,15,45,50,14
+    PUSHBUTTON      "Cancel",IDCANCEL,85,45,50,14
+    LTEXT           "Please install the Second Chance CD",IDC_STATIC,15,9,
+                    125,8
+    COMBOBOX        IDC_CD_DRIVES,148,7,42,49,CBS_DROPDOWNLIST | CBS_SORT | 
+                    WS_VSCROLL | WS_TABSTOP
+    LTEXT           "Waiting for CD",IDC_CD_STAT,15,25,125,8
+END
+
+IDD_OPTIONS DIALOGEX 0, 0, 264, 127
+STYLE DS_MODALFRAME | WS_POPUP | WS_VISIBLE | WS_CAPTION | WS_SYSMENU
+CAPTION "Options"
+FONT 8, "MS Sans Serif", 0, 0, 0x1
+BEGIN
+    CONTROL         "Generic1",IDC_FILE_SPEED,"msctls_trackbar32",
+                    TBS_AUTOTICKS | WS_TABSTOP,4,6,161,25,WS_EX_CLIENTEDGE
+    CONTROL         "Generic1",IDC_FILE_SOUND,"msctls_trackbar32",
+                    TBS_AUTOTICKS | WS_TABSTOP,4,44,161,25,WS_EX_CLIENTEDGE
+    CONTROL         "Generic1",IDC_FILE_MUSIC,"msctls_trackbar32",
+                    TBS_AUTOTICKS | WS_TABSTOP,4,82,161,25,WS_EX_CLIENTEDGE
+    LTEXT           "Slow",IDC_STATIC,4,32,29,7
+    CTEXT           "Speed",IDC_STATIC,70,32,29,7
+    RTEXT           "Fast",IDC_STATIC,136,32,29,7
+    LTEXT           "Off",IDC_STATIC,4,70,29,7
+    CTEXT           "Sound",IDC_STATIC,70,70,29,7
+    RTEXT           "Loud",IDC_STATIC,136,70,29,7
+    LTEXT           "Off",IDC_STATIC,4,108,29,7
+    CTEXT           "Music",IDC_STATIC,71,108,29,7
+    RTEXT           "Loud",IDC_STATIC,136,108,29,7
+    PUSHBUTTON      "&Online Manual...",IDC_FILE_HELP,179,6,76,18
+    PUSHBUTTON      "&Version...",IDC_FILE_VERSION,179,30,76,18
+    PUSHBUTTON      "&Advanced...",IDC_FILE_ADV,179,54,76,18
+    DEFPUSHBUTTON   "OK",IDOK,179,78,76,18
+    PUSHBUTTON      "Cancel",IDCANCEL,179,102,76,18
+END
+
+IDD_OPTIONS1 DIALOG DISCARDABLE  0, 0, 264, 127
+STYLE DS_MODALFRAME | WS_POPUP | WS_VISIBLE | WS_CAPTION | WS_SYSMENU
+CAPTION "Options"
+FONT 8, "MS Sans Serif"
+BEGIN
+    SCROLLBAR       IDC_FILE_SPEED,4,6,161,25,WS_TABSTOP
+    LTEXT           "Slow",IDC_STATIC,4,32,29,7
+    CTEXT           "Speed",IDC_STATIC,70,32,29,7
+    RTEXT           "Fast",IDC_STATIC,136,32,29,7
+    SCROLLBAR       IDC_FILE_SOUND,4,44,161,25,WS_TABSTOP
+    LTEXT           "Off",IDC_STATIC,4,70,29,7
+    CTEXT           "Sound",IDC_STATIC,70,70,29,7
+    RTEXT           "Loud",IDC_STATIC,136,70,29,7
+    SCROLLBAR       IDC_FILE_MUSIC,4,82,161,25,WS_TABSTOP
+    LTEXT           "Off",IDC_STATIC,4,108,29,7
+    CTEXT           "Music",IDC_STATIC,71,108,29,7
+    RTEXT           "Loud",IDC_STATIC,136,108,29,7
+    PUSHBUTTON      "&Online Manual...",IDC_FILE_HELP,179,6,76,18
+    PUSHBUTTON      "&Version...",IDC_FILE_VERSION,179,30,76,18
+    PUSHBUTTON      "&Advanced...",IDC_FILE_ADV,179,54,76,18
+    DEFPUSHBUTTON   "OK",IDOK,179,78,76,18
+    PUSHBUTTON      "Cancel",IDCANCEL,179,102,76,18
+END
+
+IDD_FILE1 DIALOG DISCARDABLE  0, 0, 379, 122
+STYLE DS_MODALFRAME | WS_POPUP | WS_VISIBLE | WS_CAPTION | WS_SYSMENU
+CAPTION "Second Chance"
+FONT 8, "MS Sans Serif"
+BEGIN
+    PUSHBUTTON      "&Save Game...",IDC_FILE_SAVE,8,8,87,30
+    PUSHBUTTON      "&Mission...",IDC_FILE_SCENE,109,8,87,30
+    PUSHBUTTON      "&Version...",IDC_FILE_VERSION,8,46,87,30
+    PUSHBUTTON      "&Help...",IDC_FILE_HELP,109,46,87,30
+    PUSHBUTTON      "OK",IDOK,8,84,56,30
+    PUSHBUTTON      "&Minimize",IDC_FILE_MINIMIZE,76,84,54,30
+    PUSHBUTTON      "E&xit Game",IDC_FILE_EXIT,142,84,54,30
+    SCROLLBAR       IDC_FILE_SPEED,210,8,161,25,WS_TABSTOP
+    LTEXT           "Slow",IDC_STATIC,210,34,29,8
+    CTEXT           "Speed",IDC_STATIC,276,34,29,8
+    RTEXT           "Fast",IDC_STATIC,342,34,29,8
+    SCROLLBAR       IDC_FILE_SOUND,210,46,161,25,WS_TABSTOP
+    LTEXT           "Off",IDC_STATIC,210,72,29,7
+    CTEXT           "Sound",IDC_STATIC,276,72,29,7
+    RTEXT           "Loud",IDC_STATIC,342,72,29,7
+    SCROLLBAR       IDC_FILE_MUSIC,210,84,161,25,WS_TABSTOP
+    LTEXT           "Off",IDC_STATIC,210,110,29,7
+    CTEXT           "Music",IDC_STATIC,277,110,29,7
+    RTEXT           "Loud",IDC_STATIC,342,110,29,7
+END
+
+IDD_GPF_DATA DIALOG DISCARDABLE  0, 0, 205, 114
+STYLE DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Second Chance GPF"
+FONT 8, "MS Sans Serif"
+BEGIN
+    DEFPUSHBUTTON   "OK",IDOK,23,65,50,14
+    PUSHBUTTON      "Copy",IDC_COPY_STACK,131,65,50,14
+    EDITTEXT        IDC_STACK_DUMP,7,7,191,50,ES_MULTILINE | ES_READONLY | 
+                    WS_VSCROLL | NOT WS_TABSTOP
+    LTEXT           "Press COPY to copy the above text to the clipboard. You can then paste the text into a bug report.",
+                    IDC_STATIC,7,90,191,18
+END
+
+IDD_MODELESS_MSG DIALOGEX 0, 0, 250, 63
+STYLE DS_MODALFRAME | DS_CENTER | WS_POPUP | WS_VISIBLE | WS_CAPTION | 
+    WS_SYSMENU
+CAPTION "Second Chance"
+FONT 8, "MS Sans Serif", 0, 0, 0x1
+BEGIN
+    DEFPUSHBUTTON   "OK",IDOK,100,42,50,14
+    LTEXT           "",IDS_MSG,38,7,205,15
+    ICON            IDI_MAIN,IDC_STATIC,7,7,21,20,SS_REALSIZEIMAGE,
+                    WS_EX_TRANSPARENT
+END
+
+IDD_REGISTER DIALOG DISCARDABLE  0, 0, 239, 111
+STYLE DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Second Chance Registration"
+FONT 8, "MS Sans Serif"
+BEGIN
+    DEFPUSHBUTTON   "Register Now (via the web)",IDOK,15,59,112,24
+    PUSHBUTTON      "I'll register later",IDCANCEL,155,59,69,24
+    LTEXT           "You need to register Second Chance if you wish to receive notification of new products, patches (hopefully none are needed), etc.\nRegistration is on-line only.\nYou can also join the opponents wanted list when you register.",
+                    IDC_STATIC,7,7,225,40,SS_SUNKEN | WS_BORDER
+    CONTROL         "Do not show this message again",IDC_REG_DONE,"Button",
+                    BS_AUTOCHECKBOX | WS_TABSTOP,15,94,127,10
+END
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Cursor
+//
+
+IDC_ROAD_BEGIN0         CURSOR  DISCARDABLE     "res\\cursor1.cur"
+IDC_TARGET0             CURSOR  DISCARDABLE     "RES\\CUR00002.CUR"
+IDC_SELECT0             CURSOR  DISCARDABLE     "RES\\CUR00003.CUR"
+IDC_GOTO2               CURSOR  DISCARDABLE     "RES\\CUR00004.CUR"
+IDC_ROUTE               CURSOR  DISCARDABLE     "RES\\CUR00005.CUR"
+IDC_GOTO0               CURSOR  DISCARDABLE     "RES\\GOTO1.CUR"
+IDC_GOTO1               CURSOR  DISCARDABLE     "RES\\CUR00006.CUR"
+IDC_GOTO3               CURSOR  DISCARDABLE     "RES\\GOTO3.CUR"
+IDC_TARGET1             CURSOR  DISCARDABLE     "RES\\TARGET1.CUR"
+IDC_TARGET2             CURSOR  DISCARDABLE     "RES\\TARGET2.CUR"
+IDC_TARGET3             CURSOR  DISCARDABLE     "RES\\TARGET3.CUR"
+IDC_SELECT1             CURSOR  DISCARDABLE     "RES\\SELECT1.CUR"
+IDC_SELECT2             CURSOR  DISCARDABLE     "RES\\SELECT2.CUR"
+IDC_SELECT3             CURSOR  DISCARDABLE     "RES\\SELECT3.CUR"
+IDC_MOVE0               CURSOR  DISCARDABLE     "RES\\CUR00007.CUR"
+IDC_WORLD               CURSOR  DISCARDABLE     "RES\\CUR00008.CUR"
+IDC_UNLOAD0             CURSOR  DISCARDABLE     "RES\\CUR00010.CUR"
+IDC_REPAIR              CURSOR  DISCARDABLE     "RES\\CUR00011.CUR"
+IDC_NO_REPAIR           CURSOR  DISCARDABLE     "RES\\REPAIR1.CUR"
+IDC_ROAD_SET0           CURSOR  DISCARDABLE     "res\\road_beg.cur"
+IDC_ROAD_BEGIN1         CURSOR  DISCARDABLE     "res\\cur00001.cur"
+IDC_ROAD_BEGIN2         CURSOR  DISCARDABLE     "res\\cur00012.cur"
+IDC_ROAD_BEGIN3         CURSOR  DISCARDABLE     "res\\cur00013.cur"
+IDC_ROAD_SET1           CURSOR  DISCARDABLE     "res\\cur00014.cur"
+IDC_ROAD_SET2           CURSOR  DISCARDABLE     "res\\cur00015.cur"
+IDC_ROAD_SET3           CURSOR  DISCARDABLE     "res\\road_set.cur"
+IDC_LOAD1               CURSOR  DISCARDABLE     "res\\load1.cur"
+IDC_LOAD2               CURSOR  DISCARDABLE     "res\\load2.cur"
+IDC_LOAD3               CURSOR  DISCARDABLE     "res\\load3.cur"
+IDC_UNLOAD1             CURSOR  DISCARDABLE     "res\\unload1.cur"
+IDC_UNLOAD2             CURSOR  DISCARDABLE     "res\\unload2.cur"
+IDC_UNLOAD3             CURSOR  DISCARDABLE     "res\\unload3.cur"
+IDC_MOVE1               CURSOR  DISCARDABLE     "res\\move1.cur"
+IDC_LOAD0               CURSOR  DISCARDABLE     "res\\load4.cur"
+IDC_MOVE3               CURSOR  DISCARDABLE     "res\\move3.cur"
+IDC_MOVE5               CURSOR  DISCARDABLE     "res\\move5.cur"
+IDC_MOVE7               CURSOR  DISCARDABLE     "res\\move7.cur"
+IDC_MOVE2               CURSOR  DISCARDABLE     "res\\move2.cur"
+IDC_MOVE4               CURSOR  DISCARDABLE     "res\\move4.cur"
+IDC_MOVE6               CURSOR  DISCARDABLE     "res\\move6.cur"
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Bitmap
+//
+
+IDB_CLOSED              BITMAP  DISCARDABLE     "RES\\CLOSED.DIB"
+IDB_TOOL_MAIL           BITMAP  DISCARDABLE     "RES\\toolbar.bmp"
+IDB_TOOL_MAIL_READ      BITMAP  DISCARDABLE     "RES\\BITMAP1.BMP"
+IDB_CHAT_MSG            BITMAP  DISCARDABLE     "RES\\CHAT_MSG.BMP"
+IDB_EMAIL_MSG           BITMAP  DISCARDABLE     "RES\\EMAIL_MS.BMP"
+IDB_EMAIL_READ          BITMAP  DISCARDABLE     "RES\\EMAIL_RE.BMP"
+IDB_NO_SELECT           BITMAP  DISCARDABLE     "RES\\NO_SELEC.BMP"
+IDB_PLYR_SELECTED       BITMAP  DISCARDABLE     "RES\\PLYR_SEL.BMP"
+IDB_VOC_MSG             BITMAP  DISCARDABLE     "RES\\VOC_MSG.BMP"
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Icon
+//
+
+// Icon with lowest ID value placed first to ensure application icon
+// remains consistent on all systems.
+IDI_MAIN                ICON    DISCARDABLE     "res\\main.ico"
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Accelerator
+//
+
+IDR_ACCEL ACCELERATORS DISCARDABLE 
+BEGIN
+    "A",            IDA_AREA,               VIRTKEY, CONTROL, NOINVERT
+    "B",            IDA_BUILDINGS,          VIRTKEY, CONTROL, NOINVERT
+    "D",            IDA_DIPLOMAT,           VIRTKEY, CONTROL, NOINVERT
+    "H",            IDA_HIDE_TOOLBAR,       VIRTKEY, CONTROL, NOINVERT
+    "M",            IDA_MAIL,               VIRTKEY, CONTROL, NOINVERT
+    "O",            IDA_OPTIONS,            VIRTKEY, CONTROL, NOINVERT
+    "P",            IDA_PAUSE,              VIRTKEY, CONTROL, NOINVERT
+    "R",            IDA_RESEARCH,           VIRTKEY, CONTROL, NOINVERT
+    "S",            IDA_SAVE,               VIRTKEY, CONTROL, NOINVERT
+    "U",            IDA_UNHIDE_TOOLBAR,     VIRTKEY, CONTROL, NOINVERT
+    "V",            IDA_VEHICLES,           VIRTKEY, CONTROL, NOINVERT
+    VK_F1,          IDA_HELP,               VIRTKEY, NOINVERT
+    VK_F2,          IDA_BOSS,               VIRTKEY, NOINVERT
+    VK_F4,          IDA_CLOSE_WIN,          VIRTKEY, CONTROL, NOINVERT
+    VK_F4,          IDA_CLOSE_APP,          VIRTKEY, ALT, NOINVERT
+    VK_TAB,         IDA_NEXT,               VIRTKEY, CONTROL, NOINVERT
+    VK_TAB,         IDA_PREV,               VIRTKEY, SHIFT, CONTROL, 
+                                                    NOINVERT
+    "W",            IDA_WORLD,              VIRTKEY, CONTROL, NOINVERT
+END
+
+IDR_WORLD ACCELERATORS DISCARDABLE 
+BEGIN
+    "E",            IDA_ENEMY,              VIRTKEY, NOINVERT
+    "R",            IDA_RESOURSES,          VIRTKEY, NOINVERT
+    "U",            IDA_UNITS,              VIRTKEY, NOINVERT
+    "V",            IDA_VISIBLE,            VIRTKEY, NOINVERT
+    VK_F4,          IDA_CLOSE_WIN,          VIRTKEY, CONTROL, NOINVERT
+END
+
+IDR_AREA ACCELERATORS DISCARDABLE 
+BEGIN
+    "B",            IDA_BUILD,              VIRTKEY, NOINVERT
+    "O",            IDA_OPPO,               VIRTKEY, NOINVERT
+    "R",            IDA_ROUTE,              VIRTKEY, NOINVERT
+    "U",            IDA_UNLOAD,             VIRTKEY, NOINVERT
+    VK_DELETE,      IDA_DESTROY,            VIRTKEY, NOINVERT
+    VK_DOWN,        IDA_CUR_DOWN,           VIRTKEY, NOINVERT
+    VK_ESCAPE,      IDA_DESELECT,           VIRTKEY, NOINVERT
+    VK_F4,          IDA_CLOSE_WIN,          VIRTKEY, CONTROL, NOINVERT
+    VK_HOME,        IDA_CENTER,             VIRTKEY, NOINVERT
+    VK_INSERT,      IDA_STOP_DESTROY,       VIRTKEY, NOINVERT
+    VK_LEFT,        IDA_CUR_LEFT,           VIRTKEY, NOINVERT
+    VK_RIGHT,       IDA_CUR_RIGHT,          VIRTKEY, NOINVERT
+    VK_UP,          IDA_CUR_UP,             VIRTKEY, NOINVERT
+    "X",            IDA_RETREAT,            VIRTKEY, NOINVERT
+END
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// DESIGNINFO
+//
+
+#ifdef APSTUDIO_INVOKED
+GUIDELINES DESIGNINFO DISCARDABLE 
+BEGIN
+    IDD_VERSION, DIALOG
+    BEGIN
+        RIGHTMARGIN, 271
+        BOTTOMMARGIN, 162
+    END
+
+    IDD_JOIN_GAME, DIALOG
+    BEGIN
+        BOTTOMMARGIN, 193
+    END
+
+    IDD_PLAYER_LIST, DIALOG
+    BEGIN
+        BOTTOMMARGIN, 178
+    END
+
+    IDD_SAVE_MSG, DIALOG
+    BEGIN
+        BOTTOMMARGIN, 23
+    END
+
+    IDD_RESEARCH, DIALOG
+    BEGIN
+        RIGHTMARGIN, 214
+        BOTTOMMARGIN, 161
+    END
+
+    IDD_ADV_OPTIONS, DIALOG
+    BEGIN
+        RIGHTMARGIN, 338
+        BOTTOMMARGIN, 188
+    END
+
+    IDD_TRUCK, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 187
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 142
+    END
+
+    IDD_LICENSE, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 258
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 194
+    END
+
+    IDD_TEST_SOUNDS, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 303
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 133
+    END
+
+    IDD_PLYR_LIST, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 295
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 187
+    END
+
+    IDD_CD_LOC, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 190
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 59
+    END
+
+    IDD_GPF_DATA, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 198
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 107
+    END
+
+    IDD_MODELESS_MSG, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 243
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 56
+    END
+
+    IDD_REGISTER, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 232
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 104
+    END
+END
+#endif    // APSTUDIO_INVOKED
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// String Table
+//
+
+STRINGTABLE DISCARDABLE 
+BEGIN
+    IDS_MAIN_TITLE          "Second Chance"
+    IDS_TITLE_AREA_MAP      "Nothing Selected"
+    IDS_TITLE_PLAYERS       "Players Joining - [%1]"
+    IDS_TITLE_CHAT_WND      "Intraplanetary Communication"
+    IDS_TITLE_BUILDINGS     "Existing Buildings"
+    IDS_TITLE_AREA_MAP_MULTI "%1 Units Selected"
+    IDS_TITLE_VEHICLES      "Existing Vehicles"
+    IDH_AREA_CLOCK          "Turns the map clockwise"
+    IDH_AREA_COUNTER        "Turns the map counter-clockwise"
+    IDH_AREA_ZOOM_IN        "Zooms in on the map"
+    IDH_AREA_ZOOM_OUT       "Zooms out from the map"
+END
+
+STRINGTABLE DISCARDABLE 
+BEGIN
+    IDH_UNIT_BUILD          "Select a unit to build"
+    IDH_UNIT_REPAIR         "Repair this building"
+    IDH_UNIT_STOP           "Stop construction or repair"
+END
+
+STRINGTABLE DISCARDABLE 
+BEGIN
+    IDH_AREA_WIN            "Click unit to select, double click for unit window, RMB drag to move"
+    IDH_AREA_WIN_BUILD      "Click on hex for bottom corner of location for building you wish to build"
+    IDH_AREA_WIN_MOVE       "Click on the location you wish to have the selected vehicle(s) move to"
+    IDS_CREATE_CHOOSE       "Choose Race >>"
+    IDS_CREATE_CREATE       "Create Game >>"
+    IDH_WORLD_WIN           "LMB click to send selected units, RMB drag to move"
+    IDS_CREATE_PUBLISH      "Publish Game >>"
+    IDS_JOIN_PUBLISH        "Publish >>"
+    IDS_JOIN_JOIN           "Join >>"
+END
+
+STRINGTABLE DISCARDABLE 
+BEGIN
+    IDH_UNIT_ROUTE          "Setup route for vehicle"
+    IDH_BAR_AREA            "Bring the area map window to the top and give it the focus"
+    IDH_BAR_WORLD           "Bring the radar to the top and give it the focus"
+    IDH_BAR_CHAT            "Bring the chat window to the top and give it the focus"
+    IDH_BAR_ADVISOR         "Bring the advisor window to the top and give it the focus"
+    IDH_BAR_VEHICLES        "Bring the vehicles list window to the top and give it the focus"
+    IDH_BAR_BUILDINGS       "Bring the building list window to the top and give it the focus"
+    IDH_BAR_SCIENCE         "Bring the research window to the top and give it the focus"
+    IDH_BAR_FILE            "Save and Exit the game, Set options, Help, etc."
+END
+
+STRINGTABLE DISCARDABLE 
+BEGIN
+    IDS_JOIN_AI_0           "Easy"
+    IDS_JOIN_AI_1           "Moderate"
+    IDS_JOIN_AI_2           "Difficult"
+    IDS_JOIN_AI_3           "Impossible"
+    IDS_JOIN_SIZE_0         "Small"
+    IDS_JOIN_SIZE_1         "Medium"
+    IDS_JOIN_SIZE_2         "Large"
+    IDS_CREATE_NUM_PLAYERS  "Players Joined: %1"
+    IDS_JOIN1_TITLE         "Join a Game"
+    IDS_JOIN1_TITLE_SEL     "Joined Game - [%1]"
+    IDS_JOIN_UNJOIN         "The game %1\nhas disconnected from the net."
+    IDS_CREATE_WORLD        "Creating the World..."
+    IDS_MSG_UNIT_GOTO       "Select the location to send the %1 to"
+END
+
+STRINGTABLE DISCARDABLE 
+BEGIN
+    IDS_MSG_NET_GOODBYE     "Player %1 has disconnected from the game"
+    IDS_AI_NAME             "Computer Player %1"
+    IDS_LOAD_TERRAIN        "Mapping planet terrain..."
+    IDS_LOAD_STRUCTURES     "Assembling buildings..."
+    IDS_LOAD_TRANSPORTS     "Assembling vehicles..."
+    IDS_CREATE_WINDOWS      "Creating the display..."
+    IDS_ALLOC_MAP           "Creating the world..."
+    IDS_INIT_MAP            "Building the world..."
+    IDS_CHECK_MAP           "Checking the world..."
+    IDS_ASSIGN_TILES        "Determining terrain..."
+    IDH_AREA_WIN_RMB        "Move the mouse with the RMB down to scroll in that direction"
+    IDS_TIME_OUT            "This is the shareware version of Second Chance which has\na play limit. You must end this game now. You can save this\ngame and continue playing with the retail version of Second Chance.\nDo you wish to save?"
+    IDS_MULT_INST           "You are already running a copy of Second Chance.\nDo you wish to switch to the running game (Yes)?\n(Or start a second copy of the game (No).)"
+    IDH_WORLD_WIN_RMB       "Move the mouse with the RMB down to scroll in that direction"
+    IDS_LOAD_FILE           "Loading the file..."
+END
+
+STRINGTABLE DISCARDABLE 
+BEGIN
+    IDS_CONSTRUCTION        "Construction costs"
+    IDS_PEOPLE              "Colonists"
+    IDS_TIME                "Time"
+    IDS_OPERATING           "Operating costs"
+    IDS_POWER               "Power"
+    IDS_GAS                 "Gas"
+    IDS_START_AI2           "Tracking opponent colonies..."
+    IDS_FOOD                "Food"
+    IDS_DAMAGE              "damage"
+    IDS_ROUTE_GOTO          "Set Next"
+    IDS_ROUTE_UNLOAD        "Unload"
+    IDS_ROUTE_LOAD          "Load"
+    IDS_ROUTE_WAYPOINT      "Waypoint"
+    IDS_ROUTE_DELETE        "Delete"
+    IDH_ROUTE_GOTO          "Select the next location in the vehicle's route"
+END
+
+STRINGTABLE DISCARDABLE 
+BEGIN
+    IDH_ROUTE_UNLOAD        "Unload all goods at this location"
+    IDH_ROUTE_LOAD          "Load up the vehicle at this location"
+    IDH_ROUTE_WAYPOINT      "Vehicle will pass over this location"
+    IDH_ROUTE_DELETE        "Delete this stop from the vehicle's route"
+    IDS_NOT_MY_UNIT         "You cannot select other player's units"
+    IDS_SERVER_QUIT         "This will end the game for all players.\nAre you sure you want to quit?"
+    IDS_CLIENT_QUIT         "This will drop you from the game.\nAre you sure you want to quit?"
+    IDS_MAIL_SEND           "Send Mail"
+    IDS_MAIL_REPLY          "Reply to Mail"
+    IDS_MAIL_FORWARD        "Forward Mail"
+    IDS_MAIL_DELETE         "Delete Mail"
+    IDS_MAIL_REFUSE         "Return Unread"
+    IDS_MAIL_CHAT           "Call to Chat"
+END
+
+STRINGTABLE DISCARDABLE 
+BEGIN
+    IDS_MAIL_CHAT_ANS       "Bring up Open Chat"
+    IDS_MAIL_VOICE          "Call to Talk"
+    IDS_MAIL_VOICE_ANS      "Answer Request to Talk"
+    IDS_MAIL_OPTIONS        "Set Mail Options"
+    IDS_MAIL_READ           "Read Mail"
+    IDS_MAIL_PREV           "Previous Message"
+    IDS_MAIL_NEXT           "Next Message"
+    IDS_START_AI1           "Initializing the Computer Opponents"
+    IDS_MSG_ROCKET_START    "Choose the location to land your spaceship"
+END
+
+STRINGTABLE DISCARDABLE 
+BEGIN
+    IDS_MSG_ROCKET_DONE     "Your spaceship has landed"
+    IDS_MSG_ROCKET_WAIT     "Spacship is waiting for clearance to land"
+    IDS_NAME_TOO_LONG       "Your name can not be longer than 78 characters."
+    IDS_DESC_TOO_LONG       "Your game name and description cannot total over 450 characters."
+    IDS_VPSTARTUP_FAILED    "The Network layer could not initialize.\nYou may want to try a different network connection type."
+    IDS_VPCREATE_FAILED     "The network layer could not create a communication channel.\nYou might want to try closing another network application\nyou are running and then try again."
+    IDS_VPENUM_FAILED       "The network layer could not ask for a list of games.\nYou may want to try a different network connection type."
+    IDS_VPJOIN_FAILED       "The network layer could not connect to the requested game.\nThe game may have already started."
+    IDS_VPSEND_FAILED       "The network layer could not talk to one of the other player's computers.\nYou may want to try to reconnect."
+    IDS_MSG_JOIN_FAILED     "You cannot join game%1.\nThe network returned error %2."
+    IDS_COPYRIGHT           "© 1995 - 1997 Windward Studios, Inc.  All Rights Reserved."
+    IDS_AI_PLAYER           "Computer Player %1"
+    IDS_PREV                "<< &Prev"
+END
+
+STRINGTABLE DISCARDABLE 
+BEGIN
+    IDS_UNPUBLISH           "&Unpublish"
+    IDS_POS_MIN_CIV         "Minimal Civilian"
+    IDS_POS_FULL_CIV        "Full Civilian"
+    IDS_POS_MIN_COM         "Minimal Combat"
+    IDS_POS_FULL_COM        "Full Combat"
+    IDH_UNIT_RESUME         "Resume Route, Construction, or Repair"
+    IDH_UNIT_CANCEL         "Cancel new building construction"
+    IDH_UNIT_ROAD           "Build a road"
+    IDS_INFO_DAMAGE         "Damage: %1%"
+    IDS_ROUTE_OK            "OK"
+    IDH_ROUTE_OK            "Closes the window and starts the vehicle"
+    IDS_CHAT_TITLE          "Chat - [%1]"
+    IDS_CHAT_STATUS         "%1 wants to chat"
+    IDS_SAVE_FILTERS        "Game Files (*.en)|*.en|All Files (*.*)|*.*||"
+END
+
+STRINGTABLE DISCARDABLE 
+BEGIN
+    IDS_SAVE_OLD            "Do you wish to save the existing game?"
+    IDS_SAVE_NAME           "Save to File %1"
+    IDS_SAVE_VER            "This file was saved by another version of Second Chance.\nThe file is version %1\nYou are running version%2"
+    IDS_SAVE_ERROR          "Error saving game to file %1"
+    IDS_LOAD_NAME           "Loading: %1"
+    IDS_LOAD_ERROR          "Error loading game from file %1"
+    IDS_ERR_CREATE          "Could not create the game"
+    IDS_RSRCH_NOTHING       "Research Choices"
+    IDS_RSRCH_TITLE         "Researching - [%1]"
+    IDS_SINGLE_QUIT         "This will end the game.\nAre you sure you want to quit?"
+    IDS_JOIN_NEW            "New Game"
+    IDS_JOIN_LOAD           "Loaded Game"
+    IDS_JOIN_INPROGRESS     "Game In Progress"
+    IDS_RAND_MISMATCH       "Did not generate identical world to server.\nYou have been disconnected from the game.\nYou can rejoin the game and it will then copy the world to\nyou (much slower but a guaranteed match)."
+    IDS_PICKING_RACE        "Choosing Race"
+END
+
+STRINGTABLE DISCARDABLE 
+BEGIN
+    IDS_READY_TO_GO         "Waiting for Others"
+    IDS_ASK_START           "Not all players are ready.\nAre you sure you want to start?\nPlayers not ready will be dropped."
+    IDS_DROP_PLAYER         "Are you sure you want to drop this player from the game?"
+    IDS_PICKING_PLAYER      "Choosing Player"
+    IDH_AREA_OK_FARM        "This is a good location for this building"
+    IDH_AREA_BAD_FARM       "This is a poor location for this building"
+    IDH_AREA_NO_FARM        "This is a useless location for this building"
+    IDH_AREA_OK_MINE        "This is a good location for this mine"
+    IDH_AREA_BAD_MINE       "This is a poor location for this mine"
+    IDH_AREA_NO_MINE        "This is a useless location for this mine"
+    IDS_SAVE_EXT            "en"
+    IDH_AREA_RES            "Show all mineral deposits"
+    IDH_UNIT_CANCEL_BUILD   "Cancel build order"
+END
+
+STRINGTABLE DISCARDABLE 
+BEGIN
+    IDS_SAVE_CLOSE          "The game %1\nhas disconnected from the net.\nDo you wish to save the existing game?"
+END
+
+STRINGTABLE DISCARDABLE 
+BEGIN
+    IDH_UNIT_UNLOAD         "Unload all carriers"
+    IDH_UNIT_CANCEL_ROAD    "Cancel building a road"
+    IDH_AREA_WIN_ROAD       "Select where you want a road built"
+    IDH_AREA_WIN_REPAIR     "Select the building to repair"
+    IDS_ERR_LOAD_1          "Error %1 loading the game"
+    IDS_ERR_LOAD_2          "Unknown error loading the game"
+END
+
+STRINGTABLE DISCARDABLE 
+BEGIN
+    IDS_NO_MEMORY           "There is no available memory.\nThe game will exit."
+    IDS_ERR_LOAD_3          "Sorry - an unknown error occured.\r\nVersion: %1\r\nType: 0x%2, Address: 0x%3\r\nStack:0x%4,0x%5,0x%6,0x%7,0x%8"
+    IDS_WRONG_DATA_FILE     "This ENations.dat is for %1, version: %2.\nThis game requires %3, version: %4.\nDo you want to locate the correct file?"
+    IDS_SAVE_ON_ERROR       "You may be able to save your game. Because the cause of the \nerror is unknown this may not work. And if it saves, it may\nsave the game in a corrupted state. Then again, for many errors \nit can successfully save the game. Do you wish to save the game?"
+    IDS_SAVE_ON_ERROR_FAILED "We were not able to save the game - sorry."
+    IDS_EVENT_CONST_LOC     "Pick location to construct building"
+    IDS_EVENT_CONST_CANT    "Can't build a %1 at the construction site"
+    IDS_EVENT_CONST_START   "Construction of %1 has started"
+    IDS_EVENT_HALTED        "Construction of a %1 has been halted"
+    IDS_EVENT_CONST_DONE    "A new %1 has been completed"
+    IDS_EVENT_REPAIR_DONE   "%1 has been repaired"
+END
+
+STRINGTABLE DISCARDABLE 
+BEGIN
+    IDS_EVENT_ROAD_START    "Construction of a road has begun"
+    IDS_EVENT_ROAD_HALTED   "Construction of a road has halted"
+    IDS_EVENT_ROAD_DONE     "Construction of a road has completed"
+    IDS_EVENT_MANF_HALT     "%1 has halted manufacturing"
+    IDS_EVENT_GOTO_CANT     "%1 is stuck"
+    IDS_EVENT_BLDG_UNDER    "%1 is under attack"
+    IDS_EVENT_BLDG_HURTING  "%1 has been seriously damaged"
+    IDS_EVENT_BLDG_DYING    "%1 is about to be destroyed"
+    IDS_EVENT_ATK_TARGET    "Enemy %1 is under attack"
+    IDS_EVENT_ATK_DESTROYED "Enemy %1 has been destroyed"
+    IDS_EVENT_HAVE_MAIL     "You have new mail"
+    IDS_EVENT_HAVE_CALL     "You have a call"
+    IDS_EVENT_RSRCH_DONE    "Research on %1 successfully completed"
+    IDS_EVENT_MINE_EMPTY    "%1 has extracted all available minerals"
+    IDS_EVENT_POP_LOW       "You need more colonists to fully staff your facilities"
+END
+
+STRINGTABLE DISCARDABLE 
+BEGIN
+    IDS_EVENT_GAS_LOW       "You are running low on gasoline"
+    IDS_EVENT_FOOD_LOW      "You are running low on food"
+    IDS_EVENT_POWER_LOW     "You are not generating enough power"
+    IDS_EVENT_GAS_OUT       "You are out of gasoline"
+    IDS_EVENT_FOOD_OUT      "You are out of food - people are starving"
+    IDS_EVENT_DEAD          "Player %1 has died"
+    IDS_EVENT_LEFT          "Player %1 has left the game"
+    IDS_EVENT_JOINED        "Player %1 has joined the game"
+    IDS_BUILD_PEOPLE        "Build Personnel"
+    IDS_ROUTE_AUTO          "Auto"
+    IDH_ROUTE_AUTO          "Let game handle this vehicle"
+    IDS_OPTIONS_ADV         "You need to exit and  restart Second Chance for these changes to take effect"
+    IDS_DISCOVERED_NO_TITLE "Discovered - []"
+    IDS_DISCOVERED_TITLE    "Discovered - [%1]"
+    IDH_STAT_GAS            "Gas: burning at %1/minute,  reserve of %2"
+    IDH_STAT_POWER          "Power: need %1, generating %2"
+END
+
+STRINGTABLE DISCARDABLE 
+BEGIN
+    IDH_STAT_PEOPLE         "%1 Colonists: %2 working, %3 operating vehicles, %4 idle"
+    IDH_STAT_PEOPLE2        "%1 Colonists: %2 working, %3 driving, %4 needed"
+    IDH_STAT_FOOD           "Food: eating %1/minute,  reserve of %2"
+    IDH_STAT_CLOCK          "How long this game has been running"
+    IDS_NO_CHAT1            "Chat is only used in multi-player mode"
+    IDS_NO_CHAT2            "You must research before chat works"
+    IDS_NO_SCIENCE          "You must build a research facility if you wish to discover new technology"
+    IDH_WORLD_RES           "Displays resources on the radar"
+    IDH_WORLD_OWNER         "Displays all of your units on the radar"
+    IDH_WORLD_UNITS         "Displays visible enemy units on the radar"
+    IDH_WORLD_VIS           "Displays terrain visibility on the radar"
+    IDH_WORLD_RES2          "Displays resources on the radar"
+    IDH_WORLD_OWNER2        "Displays all of your buildings on the radar"
+    IDH_WORLD_UNITS2        "Displays visible enemy buildings on the radar"
+    IDH_WORLD_VIS2          "Must build Command Center to display terrain visibility on the radar"
+END
+
+STRINGTABLE DISCARDABLE 
+BEGIN
+    IDS_STAT_DAMAGE         "Damage: %1%"
+    IDS_STAT_CONST          "%1% Construction completed"
+    IDS_STAT_IDLE           "idle"
+    IDS_STAT_BUILD          "%1 %2% constructed"
+    IDS_STAT_REPAIR         "%1 %2% repaired"
+    IDS_STAT_APT            "All Apartments: %1 occupied, %2 vacant"
+    IDS_STAT_APT2           "All Apartments: %1 occupied, %2 needed"
+    IDS_STAT_OFFICE         "All Offices: %1 occupied, %2 vacant"
+    IDS_STAT_OFFICE2        "All Offices: %1 occupied, %2 needed"
+    IDS_STAT_MINE           "Mining %1 units/minute, Remaining: %2 (denisty: %3)"
+    IDS_STAT_MINERALS       "%1: Quantity %2, Density %3"
+    IDS_STAT_FARM           "Producing %1 units/minute."
+    IDS_STAT_POWER          "Generating %1 units power. Full Capacity %2 units."
+    IDS_EVENT_LOW_HOUSING   "You need more housing for your colonists"
+    IDS_EVENT_LOW_OFFICE    "You need more offices for your colonists"
+    IDS_EVENT_NEW_CRANE     "A new crane has been built in your rocket ship"
+END
+
+STRINGTABLE DISCARDABLE 
+BEGIN
+    IDS_EVENT_NEW_TRUCK     "A new truck has been built in your rocket ship"
+    IDS_EVENT_NEW_RELATIONS "Player %1 attacked you, relations changed to war."
+    IDS_NO_EMBASSY          "You must build an embassy if you wish to change your diplomatic relations"
+    IDH_AREA_CANT_BLDG_NEXT "Can't lower/raise ground to match adjoining building."
+    IDH_AREA_CANT_WATER_NEXT "Can't lower ground to match adjoining water."
+    IDH_AREA_CANT_BLDG_RIVER_NEXT 
+                            "Can't lower/raise ground to match adjoinig river or building."
+    IDH_AREA_CANT_VEH_IN_WAY "Can't build over the vehicle in the way."
+    IDH_AREA_CANT_ON_WATER  "Cannot build this building on water."
+    IDH_AREA_CANT_NO_WATER  "This building must be partially on water."
+    IDH_AREA_CANT_NO_LAND_EXIT "Vehicles cannot exit to land."
+    IDH_AREA_CANT_NO_WATER_EXIT "Ships cannot exit to water."
+    IDH_AREA_CANT_TOO_STEEP "The ground is too steep."
+    IDS_WORLD_TITLE_MAP     "World Map (%1)"
+    IDS_WORLD_TITLE_RADAR   "Radar (%1)"
+    IDH_WORLD_FACE          "Must build Command Center to convert to radar"
+    IDS_OK                  "Play"
+END
+
+STRINGTABLE DISCARDABLE 
+BEGIN
+    IDS_CANCEL              "Exit"
+    IDS_SAVE                "Save..."
+    IDS_YOU_WON             "You have conquered the planet"
+    IDS_YOU_LOST            "You Lost"
+    IDS_LOADING             "Loading Second Chance..."
+    IDS_LEAVING             "Leaving Second Chance..."
+    IDS_BAD_PLAYER_NUM      "Did not receive information about joining player."
+    IDS_EXIT_GAME           "Closing Game..."
+    IDS_STAT_CARRIER        "Carrying %1 units"
+    IDS_YOU_END_SCENARIO    "Mission Completed"
+    IDS_LOAD_TRUCK          "Load Truck - [%1]"
+    IDS_PAUSE_CLIENT        "Server has paused the game"
+    IDS_PAUSE_SERVER        "Press CTRL-P to resume the game"
+    IDS_EVENT_HPR_TRUCKS    "You need more trucks"
+    IDS_EVENT_HPR_NOPICKUP  "Your truck cannot find any %1"
+    IDS_EVENT_HPR_SEAPORTS  "Your trucks need seaports"
+END
+
+STRINGTABLE DISCARDABLE 
+BEGIN
+    IDS_EVENT_HPR_CARGOSHIP "Your trucks need a cargo ship"
+    IDS_EVENT_HPR_NOREACH   "Your trucks cannot reach your seaport"
+    IDS_STAT_ROCKET         "Apartments: %1/%2  Offices: %3/%4 (need/have)  Power: %5"
+    IDS_EVENT_CANT_BRIDGE   "You must research bridges first"
+    IDS_EVENT_HAVE_RADAR    "You now have radar"
+    IDS_ERROR_LOW_PHYS_MEM  "Second Chance requires at least 8M of memory.\r\nDo you wish to continue?"
+    IDS_ERROR_LOW_VIRT_MEM  "Second Chance requires at least %1M of virtual memory.\r\nDo you wish to continue?"
+    IDS_ERROR_LOW_AVAIL_MEM "There may not be enough free memory.\r\nPlease close down some other applications.\r\nDo you wish to continue?"
+    IDS_COST                "cost"
+    IDS_HAVE                "have"
+    IDS_NEED                "need"
+    IDS_CONTINUE            "Continue"
+    IDS_STAT_MATERIAL       "Producing %1 %2/minute"
+    IDS_ROUTE_TITLE         "Route - [%1]"
+    IDS_RESEARCHING         "Researching %1"
+    IDS_LONGEST_STRING      "Click on the location you wish to have the selected vehicle(s) move to"
+END
+
+STRINGTABLE DISCARDABLE 
+BEGIN
+    IDS_EXHAUSTED           "%1 Exhausted"
+    IDS_WAYPOINT            "waypoint"
+    IDS_LOAD                "load"
+    IDS_UNLOAD              "unload"
+    IDS_EVENT_ROCKET_CANT_LAND "Your rocket cannot land here"
+    IDS_LOAD_MUSIC          "Arranging Music"
+    IDS_JOIN_LOAD_FILE      "Receiving game..."
+    IDS_JOIN_FILE_ERROR     "Could not receive game from server"
+    IDS_AI_LIMIT_2_MAX      "Your computer cannot handle more than %1 AI opponents"
+    IDS_AI_LIMIT_MAX        "Your computer cannot optimally handle more than %1 AI opponents.\nDo you wish to continue?"
+    IDS_BUILDINGS           "Buildings:"
+    IDS_VEHICLES            "Vehicles:"
+    IDS_PLAYERS             "Players..."
+    IDS_GAME_OVER           "The game has ended"
+    IDH_MAIL_READ           "Read the selected message"
+    IDH_MAIL_SEND           "Send a message"
+END
+
+STRINGTABLE DISCARDABLE 
+BEGIN
+    IDH_MAIL_REPLY          "Reply to the selected message"
+    IDH_MAIL_FORWARD        "Forward the selected message"
+    IDH_MAIL_DELETE         "Delete the selected message(s)"
+    IDH_MAIL_REFUSE         "Refuse delivery of the selected message(s)"
+    IDH_MAIL_CHAT           "Call up a player to chat"
+    IDH_MAIL_CHAT_ANS       "Bring up the Open Chat window"
+    IDH_MAIL_OPTIONS        "Select who you will accept calls from"
+    IDS_GIVE_UNITS          "Are you sure you want to give %1 building(s) and %2 vehicle(s)\nto player %3?"
+    IDS_EVENT_HPR_NOACCESS  "Truck is not able to find materials"
+    IDS_LOAD_SFX            "Loading voices..."
+    IDH_AREA_COMBAT         "Centers map on most recent combat"
+    IDS_UNKNOWN             "{unknown}"
+    IDS_LOAD_FREIGHTER      "Load Freighter"
+    IDS_BUILD_VEHICLE       "Build Vehicle"
+    IDS_BUILD_UNIT          "Building - [%1]"
+    IDS_TRUCK_AUTO          "Auto: "
+END
+
+STRINGTABLE DISCARDABLE 
+BEGIN
+    IDS_TRUCK_IDLE          "idle"
+    IDS_TRUCK_ROUTE         "Route: "
+    IDS_TRUCK_TRAVEL        "traveling"
+    IDS_PLYR_TAKEN          "{player taken}"
+    IDS_ERROR_NT_NET_BUG    "There is a bug in the NT 4.0 TCP/IP stacks that will cause a GPF on some systems the second time it is opened by an application. If you GPF just restart Second Chance after each net game.\r\nDo you wish to continue?"
+    IDS_CANT_SAVE           "Sorry, it could not save the file:\n%1"
+    IDS_MAX_CHAT            "Sorry - you can only edit the last 400 characters of your message"
+    IDS_MAX_MAIL            "Sorry - mail messages can only be 400 characters long."
+    IDS_VDMPLAY_VER         "Second Chance requires VDMPlay.dll version 1.0.33 or later.\nPlease reinstall Second Chance to get the proper version of VDMPlay.dll"
+    IDS_MSS_VER             "Second Chance requires MSS32.dll version 3.6A or later.\nPlease reinstall Second Chance to get the proper version of MSS32.dll"
+    IDS_DEMO_OVER           "You have been playing the demo version of Second Chance for a month.\nTherefore this demo will no longer run.\nIf you have enjoyed the game please consider buying the retail version."
+    IDS_DEMO_RESEARCH_MAX   "You have researched the maximum number of topics allowed in the demo version."
+    IDS_NONE                "{pinging %1 ...}"
+    IDS_YOUR_ADDR           "Your net address: "
+    IDS_IS_ADDR             "Internet server address: "
+    IDS_EN_VER              "Second Chance version: "
+END
+
+STRINGTABLE DISCARDABLE 
+BEGIN
+    IDS_VP_VER              "VDMPlay version: "
+    IDS_DEMO_25             "You have played this demo of Second Chance %1 times.\nThis game cost over $500,000.00 to produce.\nSales locations are listed at www.windward.net.\nIf you like the game will you buy a copy?"
+    IDS_ADDR_OFF            "<< Address"
+    IDS_ADDR                "Address >>"
+    IDS_ADV_DEPTH           "You should not force bitmaps to the screen depth unless you\n have at least a Pentium Pro/200, 32M of RAM, and 16X\nCD-ROM drive.\nDepths other than 8-bit will take 3 - 4 times longer to\nload, require 3 - 4 times the memory, and require\n2 - 4 times the processing power to render."
+    IDS_ADV_ZOOM            "You should not force zoom 0 unless you have at least 32M\nof RAM, and 16X CD-ROM drive. Zoom level 0 will take\n4 - 5 times longer to load and require 4 - 5 times the memory."
+    IDS_ERROR_LOW_COLOR_DEPTH 
+                            "You have set Second Chance to run at Window's color depth (which is greater than 8-bit) and you do not have enough memory to run at this setting. Please change the setting back to based on free memory.\r\nDo you wish to run at 8-bit (will not change the permanent setting)?"
+    IDS_ERROR_LOW_COLOR_DEPTH2 
+                            "You have set Second Chance to run at Window's color depth (which is greater than 8-bit) and you do not have enough processing power to load quickly at this setting. Please change the setting back to based on free memory.\r\nDo you wish to run at 8-bit (will not change the permanent setting)?"
+    IDS_ERROR_LOW_ZOOM      "You have set Second Chance to load the zoom 0 sprites and you do not have enough memory to run at this setting. Please change the setting back to based on free memory.\r\nDo you wish to run with no zoom 0 (will not change the permanent setting)?"
+    IDS_ERROR_LOW_ZOOM2     "You have set Second Chance to load the zoom 0 sprites and you do not have enough processing power to load quickly at this setting. Please change the setting back to based on free memory.\r\nDo you wish to run with no zoom 0 (will not change the permanent setting)?"
+    IDS_ERROR_LOW_MUSIC     "You have set Second Chance to play digital audio music and you do not have enough processor power (P/120 min) and/or CD speed (6X min) to run at this setting. Please change the setting back to based on speed.\r\nDo you wish to run with MIDI (will not change the permanent setting)?"
+    IDS_HPR_BLOCKED         "A truck cannot enter a building (blocked)"
+    IDS_AI_TAKEOVER         "The Computer is taking over player %1"
+    IDS_KILLER_RES          "Your CPU cannot effectively render at your present screen resolution of %1. Do you want Second Chance to set your screen resolution to %2?\r\n(This can be permanently changed in Advanced Options. Will unset when you exit the game.)"
+    IDS_SERVER              "Server"
+    IDS_ERROR_16_BIT_WARNING 
+                            "Warning, some video drivers do not handle 16-bit pixels as 5:6:5\r\nIn this case all art will appear mis-colored.\r\nThe only workaround for this is to try another draw method or another bit depth."
+END
+
+STRINGTABLE DISCARDABLE 
+BEGIN
+    IDS_ERROR_MULT_PROT_WARNING 
+                            "A net lag can occur in the game if you have multiple protocols loaded (especially NETBEUI).\r\nIf this happens the only workaround is to unload the other protocols while playing."
+    IDS_SAVE_REMOTE         "Updating remote data"
+    IDS_SAVE_LOCAL          "Pausing AI players"
+    IDS_SAVE_DATA           "Saving game data"
+    IDS_SAVE_COMPRESS       "Compressing block %1"
+    IDS_SAVE_WRITE          "Writing game to disk"
+    IDS_OUT_OF_MEMORY       "You are out of memory - please increase the size of your virtual memory"
+    IDS_WORLD_NE            "NE"
+    IDS_WORLD_SE            "SE"
+    IDS_WORLD_SW            "SW"
+    IDS_WORLD_NW            "NW"
+    IDS_BAD_REG             "Could not execute your browser.\nPlease point your browser at www.windward.net/register"
+    IDS_GOOD_REG            "Please wait for your browser to start.\nPress OK after you have exited your browser."
+    IDS_EN_LOGGING          "You have logging turned on.\nThis was done by setting:\n     [Advanced]\n     Log=1\nin the file enations.ini.\nThis will slow down the game"
+    IDS_VP_LOGGING          "You have vdmplay logging turned on.\nThis was done by setting:\n     [Vdmplay]\n     UseLogFile=1\nin the file vdmplay.ini.\nThis will slow down the game"
+END
+
+#endif    // English (U.S.) resources
+/////////////////////////////////////////////////////////////////////////////
+
+
+
+#ifndef APSTUDIO_INVOKED
+/////////////////////////////////////////////////////////////////////////////
+//
+// Generated from the TEXTINCLUDE 3 resource.
+//
+#include "us_eng.h"
+#include "res\version.rc"  // non-App Studio edited resources
+
+#include "afxres.rc"  	// Standard components
+#include "windward.rc"
+/////////////////////////////////////////////////////////////////////////////
+#endif    // not APSTUDIO_INVOKED
+

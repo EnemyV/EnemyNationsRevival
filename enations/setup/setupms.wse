@@ -1,0 +1,314 @@
+Document Type: WSE
+item: Global
+  Version=5.0
+  Title=Windward Studios Setup - Microsoft & Intel Extensions
+  Flags=01010100
+  Languages=65 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+  Japanese Font Name=MS Gothic
+  Japanese Font Size=10
+  Start Gradient=0 0 0
+  End Gradient=0 0 0
+  Windows Flags=00000000000000000010000000111000
+  Message Font=MS Sans Serif
+  Font Size=8
+  Disk Filename=SETUP
+  Patch Flags=0000000000000001
+  Patch Threshold=85
+  Patch Memory=30000
+end
+item: Display Graphic
+  Pathname=E:\enations\setup\windward.bmp
+  X Position=16384
+  Y Position=16384
+end
+item: Display Graphic
+  Pathname=E:\enations\setup\windward.bmp
+  X Position=16384
+  Y Position=16384
+end
+item: Display Message
+  Title=Install Extensions
+  Text=This program will install all of the Microsoft and Intel extensions required by most Win32 games.
+  Text=Every file installed is a Microsoft or Intel program and is installed as part of your system. Because these are system files there is no uninstall.
+  Text=Files will only be installed if you do not have the file already or you have an older version.
+  Text=Depending on your operating system this will install:
+  Text=VC++ ver 1.0 - 4.2 DLLs
+  Text=WinG
+  Text=DirectX 5 (Win95 & Win/NT)
+  Text=Win32s 1.3c (Win 3.1)
+  Text=Intel's Indeo CODEC
+end
+item: Remark
+end
+item: Remark
+  Text=Check version
+end
+item: Get System Information
+  Variable=WIN_VER
+  Flags=00000001
+end
+item: Check Configuration
+  Flags=10011010
+end
+item: If/While Statement
+  Variable=WIN_VER
+  Value=3.1
+  Flags=00001000
+end
+item: Display Message
+  Title=Setup - Error
+  Text=You are running Windows version %WIN_VER%. You must be running Windows 3.1 or later so that we can install Win32s. You can also install on Windows 95 or Windows/NT 3.5 (or later).
+  Text=Do you wish to cancel the installation?
+  Flags=00110001
+end
+item: Exit Installation
+end
+item: End Block
+end
+item: End Block
+end
+item: Check Configuration
+  Message=You must be running in enhanced mode so we can install Win32s.
+  Title=Setup - error
+  Flags=01000011
+end
+item: Check Configuration
+  Message=You must have Virtual Memory paging turned on so we can install Win32s. You can turn this on in the Control Panel, Enhanced (386) program.
+  Title=Setup - error
+  Flags=01001001
+end
+item: End Block
+end
+item: Check Configuration
+  Flags=10100000
+end
+item: If/While Statement
+  Variable=WIN_VER
+  Value=3.51
+  Flags=00001000
+end
+item: Display Message
+  Title=Setup - Error
+  Text=You are running Windows/NT version %WIN_VER%. You must be running Windows/NT 3.51 or later. You can also install on Windows 95 or Windows 3.1.
+  Text=Do you wish to cancel the installation?
+  Flags=00110001
+end
+item: Exit Installation
+end
+item: End Block
+end
+item: End Block
+end
+item: End Block
+end
+item: Remark
+end
+item: Set Variable
+  Variable=SYS32
+  Value=%SYS%
+end
+item: Check Configuration
+  Flags=10100000
+end
+item: Win32 System Directory
+  Variable=SYS32
+end
+item: End Block
+end
+item: Check Disk Space
+  Space1=4000
+  Variable1=SYS
+end
+item: Remark
+end
+item: Remark
+  Text=Install VC++ files
+end
+item: Install File
+  Source=E:\ENATIONS\SETUP\DLLS\*.*
+  Destination=%SYS%
+  Description=VC++ run-time libraries
+  Flags=0000001000000011
+end
+item: Check Configuration
+  Flags=10011010
+end
+item: Install File
+  Source=E:\ENATIONS\SETUP\DLLS\WIN32S\*.*
+  Destination=%SYS%
+  Description=VC++ run-time libraries
+  Flags=0000001000000011
+end
+item: Install File
+  Source=e:\enations\disk\dlls\win32s\ctl3dv2.dll
+  Destination=%SYS%\ctl3dv2.dll
+  Description=3D Controls
+  Flags=0000000000000011
+end
+item: Else Statement
+end
+item: Install File
+  Source=E:\ENATIONS\SETUP\DLLS\WIN32\*.*
+  Destination=%SYS%
+  Description=VC++ run-time libraries
+  Flags=0000001000000011
+end
+item: Check Configuration
+  Flags=10111001
+end
+item: Install File
+  Source=E:\ENATIONS\SETUP\DLLS\WIN32\Win95\*.*
+  Destination=%SYS%
+  Description=VC++ run-time libraries
+  Flags=0000001000000011
+end
+item: Else Statement
+end
+item: Install File
+  Source=E:\ENATIONS\SETUP\DLLS\WIN32\WinNT\*.*
+  Destination=%SYS%
+  Description=VC++ run-time libraries
+  Flags=0000001000000011
+end
+item: End Block
+end
+item: End Block
+end
+item: Remark
+end
+item: Remark
+  Text=Install WinG
+end
+item: Install File
+  Source=e:\enations\disk\wing\*.*
+  Destination=%SYS%
+  Description=WinG run-time
+  Flags=0000001000010011
+end
+item: Check Configuration
+  Flags=10011010
+end
+item: Add to SYSTEM.INI
+  Device=device=dva.386
+end
+item: End Block
+end
+item: Remark
+end
+item: Remark
+  Text=Install Win32s, VfW, Indeo, DirectX
+end
+item: Check Configuration
+  Flags=10011010
+end
+item: Display Message
+  Title=Install Video for Windows
+  Text=Setup will now copy Microsoft's setup program for Video for Windows to your system's temporary directory (%TEMP%\vfw) and then run it.
+  Text=Because Microsoft's setup will now take over we cannot delete the files we copy to the temporary directory. These files should get deleted automatically -- but may not.
+  Text=If this setup prompts you to re-boot your system, please NOT DO SO - there is more to install. (If Video for Windows is already installed on your system you may not see any additional setup program.)
+end
+item: Install File
+  Source=e:\enations\disk\vfw\*.*
+  Destination=%TEMP%\vfw
+  Description=Video for Windows setup files
+  Flags=0000000100000010
+end
+item: Execute Program
+  Pathname=%TEMP%\vfw\setupvfw.exe
+  Flags=00000010
+end
+item: Delete File
+  Pathname=%TEMP%\vfw\*.*
+  Flags=00001100
+end
+item: Display Message
+  Title=Install Indeo
+  Text=Setup will now copy Intel's setup program for Indeo to your system's temporary directory (%TEMP%) and then run it.
+  Text=Because Intel's setup will now take over we cannot delete the files we copy to the temporary directory. These files should get deleted automatically -- but may not.
+  Text=If this setup prompts you to re-boot your system, please NOT DO SO - there is more to install. (If Indeo is already installed on your system you may not see any additional setup program.)
+end
+item: Install File
+  Source=e:\enations\disk\indeo\ivi16.exe
+  Destination=%TEMP%\ivi16.exe
+  Description=Indeo setup file
+  Flags=0000000100000010
+end
+item: Execute Program
+  Pathname=%TEMP%\ivi16.exe
+  Flags=00000010
+end
+item: Delete File
+  Pathname=%TEMP%\ivi16.exe
+  Flags=00001100
+end
+item: Display Message
+  Title=Install Win32s
+  Text=Setup will now copy Microsoft's setup program for Win32s to your system's temporary directory (%TEMP%) and then run it.
+  Text=Because Microsoft's setup will now take over we cannot delete the files we copy to the temporary directory. These files should get deleted automatically -- but may not.
+  Text=If this setup prompts you to re-boot your system, please do so before running any Win32 application. (If Win32s is already installed on your system you may not see any additional setup program.)
+end
+item: Install File
+  Source=e:\enations\disk\win32s\*.*
+  Destination=%TEMP%\win32s
+  Description=Win32s setup files
+  Flags=0000000100000010
+end
+item: Execute Program
+  Pathname=%TEMP%\win32s\setup32s.exe
+  Default Directory=%TEMP%\win32s
+  Flags=00000010
+end
+item: Delete File
+  Pathname=%TEMP%\Win32s\*.*
+  Flags=00001100
+end
+item: Else Statement
+end
+item: Display Message
+  Title=Install Indeo
+  Text=Setup will now copy Intel's setup program for Indeo to your system's temporary directory (%TEMP%) and then run it.
+  Text=Because Intel's setup will now take over we cannot delete the files we copy to the temporary directory. These files should get deleted automatically -- but may not.
+  Text=If this setup prompts you to re-boot your system, please NOT DO SO - there is more to install. (If Indeo is already installed on your system you may not see any additional setup program.)
+end
+item: Install File
+  Source=e:\enations\disk\indeo\ivi_95nt.exe
+  Destination=%TEMP%\ivi_95nt.exe
+  Description=Indeo setup file
+  Flags=0000000100000010
+end
+item: Execute Program
+  Pathname=%TEMP%\ivi_95nt.exe
+  Flags=00000010
+end
+item: Delete File
+  Pathname=%TEMP%\ivi_95nt.exe
+  Flags=00001100
+end
+item: Display Message
+  Title=Install DirectX 5
+  Text=Setup will now copy Microsoft's setup program for DirectX to your system's temporary directory (%TEMP%\dx5eng.exe) and then run it.
+  Text=Because Microsoft's setup will now take over we may not be able to delete the files we copy to the temporary directory.
+  Text=If this setup prompts you to re-boot your system, please do so before running any Win32 application. (If DirectX is already installed on your system you may not see any additional setup program.)
+end
+item: Install File
+  Source=e:\enations\setup\dx5eng.exe
+  Destination=%TEMP%\dx5eng.exe
+  Description=DirectX setup file
+  Flags=0000000000000010
+end
+item: Execute Program
+  Pathname=%TEMP%\dx5eng.exe
+  Flags=00000010
+end
+item: Delete File
+  Pathname=%TEMP%\dx5eng.exe
+end
+item: End Block
+end
+item: Remark
+end
+item: Display Message
+  Title=Extension Setup
+  Text=All Microsoft and Intel extensions have been installed. Please be sure to reboot your system before playing the game you are installing if any of the installation programs told you to reboot.
+  Text=This setup program is provided by Windward Studios, Inc. (www.windward.net), developers of quality games.
+end

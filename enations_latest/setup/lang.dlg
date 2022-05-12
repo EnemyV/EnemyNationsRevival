@@ -1,0 +1,272 @@
+Document Type: DLG
+item: Custom Dialog
+  Name=Languages
+  item: Dialog
+    Title=Languages
+    Width=182
+    Height=275
+    Font Name=Helv
+    Font Size=8
+    item: Static
+      Rectangle=6 6 176 26
+      Enabled Color=00000000000000001111111111111111
+      Create Flags=01010000000000000000000000000000
+      Text=Select the additional languages you wish to install.
+      Text=English (U.S.) is always installed.
+    end
+    item: Checkbox
+      Rectangle=6 27 58 42
+      Variable=SWS_ARABIC
+      Enabled Color=00000000000000001111111111111111
+      Create Flags=01010000000000010000000000000011
+      Text=Arabic
+      Text=
+    end
+    item: Checkbox
+      Rectangle=6 39 59 55
+      Variable=SWS_BASQUE
+      Enabled Color=00000000000000001111111111111111
+      Create Flags=01010000000000010000000000000011
+      Text=Basque
+      Text=
+    end
+    item: Checkbox
+      Rectangle=6 54 61 69
+      Variable=SWS_BRITISH
+      Enabled Color=00000000000000001111111111111111
+      Create Flags=01010000000000010000000000000011
+      Text=British
+      Text=
+    end
+    item: Checkbox
+      Rectangle=6 67 63 82
+      Variable=SWS_CATALAN
+      Enabled Color=00000000000000001111111111111111
+      Create Flags=01010000000000010000000000000011
+      Text=Catalan
+      Text=
+    end
+    item: Checkbox
+      Rectangle=6 79 83 95
+      Variable=SWS_SIMPLIFIED
+      Enabled Color=00000000000000001111111111111111
+      Create Flags=01010000000000010000000000000011
+      Text=Chinise (Simplified)
+      Text=
+    end
+    item: Checkbox
+      Rectangle=6 94 83 109
+      Variable=SWS_CHINESE
+      Enabled Color=00000000000000001111111111111111
+      Create Flags=01010000000000010000000000000011
+      Text=Chinese (Traditional)
+      Text=
+    end
+    item: Checkbox
+      Rectangle=6 108 55 123
+      Variable=SWS_CROATIAN
+      Enabled Color=00000000000000001111111111111111
+      Create Flags=01010000000000010000000000000011
+      Text=Croatian
+      Text=
+    end
+    item: Checkbox
+      Rectangle=6 121 52 135
+      Variable=SWS_CZECH
+      Enabled Color=00000000000000001111111111111111
+      Create Flags=01010000000000010000000000000011
+      Text=Czech
+      Text=
+    end
+    item: Checkbox
+      Rectangle=6 135 52 150
+      Variable=SWS_DANISH
+      Enabled Color=00000000000000001111111111111111
+      Create Flags=01010000000000010000000000000011
+      Text=Danish
+      Text=
+    end
+    item: Checkbox
+      Rectangle=6 148 49 163
+      Variable=SWS_DUTCH
+      Enabled Color=00000000000000001111111111111111
+      Create Flags=01010000000000010000000000000011
+      Text=Dutch
+      Text=
+    end
+    item: Checkbox
+      Rectangle=6 162 49 177
+      Variable=SWS_FINNISH
+      Enabled Color=00000000000000001111111111111111
+      Create Flags=01010000000000010000000000000011
+      Text=Finnish
+      Text=
+    end
+    item: Checkbox
+      Rectangle=6 175 54 190
+      Variable=SWS_FRENCH
+      Enabled Color=00000000000000001111111111111111
+      Create Flags=01010000000000010000000000000011
+      Text=French
+      Text=
+    end
+    item: Checkbox
+      Rectangle=6 189 53 204
+      Variable=SWS_GERMAN
+      Enabled Color=00000000000000001111111111111111
+      Create Flags=01010000000000010000000000000011
+      Text=German
+      Text=
+    end
+    item: Checkbox
+      Rectangle=6 202 51 217
+      Variable=SWS_GREEK
+      Enabled Color=00000000000000001111111111111111
+      Create Flags=01010000000000010000000000000011
+      Text=Greek
+      Text=
+    end
+    item: Checkbox
+      Rectangle=6 215 51 230
+      Variable=SWS_HEBREW
+      Enabled Color=00000000000000001111111111111111
+      Create Flags=01010000000000010000000000000011
+      Text=Hebrew
+      Text=
+    end
+    item: Checkbox
+      Rectangle=95 27 167 41
+      Variable=SWS_HUNGARIAN
+      Enabled Color=00000000000000001111111111111111
+      Create Flags=01010000000000010000000000000011
+      Text=Hungarian
+      Text=
+    end
+    item: Checkbox
+      Rectangle=95 38 139 54
+      Variable=SWS_ITALIAN
+      Enabled Color=00000000000000001111111111111111
+      Create Flags=01010000000000010000000000000011
+      Text=Italian
+      Text=
+    end
+    item: Checkbox
+      Rectangle=95 53 146 68
+      Variable=SWS_JAPANESE
+      Enabled Color=00000000000000001111111111111111
+      Create Flags=01010000000000010000000000000011
+      Text=Japanese
+      Text=
+    end
+    item: Checkbox
+      Rectangle=95 66 140 81
+      Variable=SWS_KOREAN
+      Enabled Color=00000000000000001111111111111111
+      Create Flags=01010000000000010000000000000011
+      Text=Korean
+      Text=
+    end
+    item: Checkbox
+      Rectangle=95 80 147 95
+      Variable=SWS_NORWEGIAN
+      Enabled Color=00000000000000001111111111111111
+      Create Flags=01010000000000010000000000000011
+      Text=Norwegian
+      Text=
+    end
+    item: Checkbox
+      Rectangle=95 93 130 108
+      Variable=SWS_POLISH
+      Enabled Color=00000000000000001111111111111111
+      Create Flags=01010000000000010000000000000011
+      Text=Polish
+      Text=
+    end
+    item: Checkbox
+      Rectangle=95 107 177 121
+      Variable=SWS_BRAZILIAN
+      Enabled Color=00000000000000001111111111111111
+      Create Flags=01010000000000010000000000000011
+      Text=Portuguese (Brazil)
+      Text=
+    end
+    item: Checkbox
+      Rectangle=95 121 177 135
+      Variable=SWS_PORTUGUES
+      Enabled Color=00000000000000001111111111111111
+      Create Flags=01010000000000010000000000000011
+      Text=Portuguese (Portugal)
+      Text=
+    end
+    item: Checkbox
+      Rectangle=95 134 147 149
+      Variable=SWS_ROMANIAN
+      Enabled Color=00000000000000001111111111111111
+      Create Flags=01010000000000010000000000000011
+      Text=Romanian
+      Text=
+    end
+    item: Checkbox
+      Rectangle=95 148 143 163
+      Variable=SWS_RUSSIAN
+      Enabled Color=00000000000000001111111111111111
+      Create Flags=01010000000000010000000000000011
+      Text=Russian
+      Text=
+    end
+    item: Checkbox
+      Rectangle=95 161 144 176
+      Variable=SWS_SLOVAK
+      Enabled Color=00000000000000001111111111111111
+      Create Flags=01010000000000010000000000000011
+      Text=Slovakian
+      Text=
+    end
+    item: Checkbox
+      Rectangle=95 175 149 190
+      Variable=SWS_SLOVENIAN
+      Enabled Color=00000000000000001111111111111111
+      Create Flags=01010000000000010000000000000011
+      Text=Slovenian
+      Text=
+    end
+    item: Checkbox
+      Rectangle=95 188 141 203
+      Variable=SWS_SPANISH
+      Enabled Color=00000000000000001111111111111111
+      Create Flags=01010000000000010000000000000011
+      Text=Spanish
+      Text=
+    end
+    item: Checkbox
+      Rectangle=95 202 144 217
+      Variable=SWS_SWEDISH
+      Enabled Color=00000000000000001111111111111111
+      Create Flags=01010000000000010000000000000011
+      Text=Swedish
+      Text=
+    end
+    item: Checkbox
+      Rectangle=95 215 144 230
+      Variable=SWS_TURKISH
+      Enabled Color=00000000000000001111111111111111
+      Create Flags=01010000000000010000000000000011
+      Text=Turkish
+      Text=
+    end
+    item: Push Button
+      Rectangle=26 236 61 251
+      Action=1
+      Enabled Color=00000000000000001111111111111111
+      Create Flags=01010000000000010000000000000001
+      Text=OK
+    end
+    item: Push Button
+      Rectangle=90 236 125 251
+      Action=3
+      Enabled Color=00000000000000001111111111111111
+      Create Flags=01010000000000010000000000000000
+      Text=Cancel
+    end
+  end
+end

@@ -1,0 +1,42 @@
+#include "version.h"
+#include "ver.h"
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Version
+//
+
+VS_VERSION_INFO VERSIONINFO
+ FILEVERSION 1,0,12,0
+ PRODUCTVERSION 1,0,12,0
+ FILEFLAGSMASK 0x3fL
+#ifdef _DEBUG
+ FILEFLAGS 0x3L
+#else
+ FILEFLAGS 0x2L
+#endif
+ FILEOS 0x10004L
+ FILETYPE 0x1L
+ FILESUBTYPE 0x0L
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904e4"
+        BEGIN
+            VALUE "CompanyName", "Windward Studios\0"
+            VALUE "FileDescription", "32 bit side of thread UT\0"
+            VALUE "FileVersion", "1.00.011\0"
+            VALUE "InternalName", "dave32ut\0"
+            VALUE "LegalCopyright", "Copyright \251 1995, by Windward Studios, Inc.\0"
+            VALUE "LegalTrademarks", " \0"
+            VALUE "OriginalFilename", "Dave32UT.dll\0"
+            VALUE "ProductName", "Dave 32-bit UT\0"
+            VALUE "ProductVersion", "3.1.0.0\0"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 1252
+    END
+END

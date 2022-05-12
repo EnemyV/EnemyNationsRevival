@@ -1,0 +1,17 @@
+LIBRARY	     dave16ut	    ; Library's module name
+DESCRIPTION  'Windward Studios Win32s DLL16 Universal Thunk'
+EXETYPE      WINDOWS       ; required for all Windows applications
+STUB         'WINSTUB.EXE' ; Generates error message if application
+						   ; is run without Windows
+
+;CODE can be moved in memory and discarded/reloaded
+CODE  PRELOAD MOVEABLE DISCARDABLE
+
+DATA  PRELOAD MOVEABLE SHARED
+
+HEAPSIZE     1024
+
+EXPORTS
+	WEP	@1 RESIDENTNAME
+	UTINIT	@2
+	UTPROC	@3

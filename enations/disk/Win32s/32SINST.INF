@@ -1,0 +1,177 @@
+[Source Media Descriptions]
+	"1", "Microsoft Win32s Setup Directory", "ole32.dll", "."
+	"2", "Microsoft Win32s Setup Directory", "sortkey.nls", "."
+	"3", "Microsoft Win32s Setup Directory", "winhlp32.exe", "."
+
+[Default File Settings]
+"STF_BACKUP"     = ""
+"STF_COPY"       = "YES"
+"STF_DECOMPRESS" = "YES"
+"STF_OVERWRITE"  = "ALWAYS"
+"STF_READONLY"   = "YES"
+"STF_ROOT"       = ""
+"STF_SETTIME"    = "YES"
+"STF_TIME"       = "0"
+"STF_VITAL"      = "YES"
+
+[WindowsSystemWin32s]
+	2, win32s.exe,,,, 1996-01-31,,,, !READONLY,,,,,, 880, SYSTEM,,,,
+	2, l_intl.nls,,,, 1995-09-05,,,, !READONLY,,,,,, 7142, SYSTEM,,,,
+	2, l_trk.nls,,,, 1995-09-05,,,, !READONLY,,,,,, 7142, SYSTEM,,,,
+	2, p_037.nls,,,, 1995-09-05,,,, !READONLY,,,,,, 2338, SYSTEM,,,,
+	2, p_10000.nls,,,, 1995-09-05,,,, !READONLY,,,,,, 4130, SYSTEM,,,,
+	2, p_10006.nls,,,, 1995-09-05,,,, !READONLY,,,,,, 3362, SYSTEM,,,,
+	2, p_10007.nls,,,, 1995-09-05,,,, !READONLY,,,,,, 3106, SYSTEM,,,,
+	2, p_10029.nls,,,, 1995-09-05,,,, !READONLY,,,,,, 3362, SYSTEM,,,,
+	2, p_10079.nls,,,, 1995-09-05,,,, !READONLY,,,,,, 3874, SYSTEM,,,,
+	2, p_10081.nls,,,, 1995-09-05,,,, !READONLY,,,,,, 3874, SYSTEM,,,,
+	2, p_1026.nls,,,, 1995-09-05,,,, !READONLY,,,,,, 2338, SYSTEM,,,,
+	2, p_500.nls,,,, 1995-09-05,,,, !READONLY,,,,,, 2338, SYSTEM,,,,
+	2, p_737.nls,,,, 1995-09-05,,,, !READONLY,,,,,, 4130, SYSTEM,,,,
+	2, p_875.nls,,,, 1995-09-05,,,, !READONLY,,,,,, 2594, SYSTEM,,,,
+	2, p_1250.nls,,,, 1995-09-05,,,, !READONLY,,,,,, 5410, SYSTEM,,,,
+	2, p_1251.nls,,,, 1995-09-05,,,, !READONLY,,,,,, 3874, SYSTEM,,,,
+	2, p_1252.nls,,,, 1995-09-05,,,, !READONLY,,,,,, 5410, SYSTEM,,,,
+	2, p_1253.nls,,,, 1995-09-05,,,, !READONLY,,,,,, 4130, SYSTEM,,,,
+	2, p_1254.nls,,,, 1995-09-05,,,, !READONLY,,,,,, 5410, SYSTEM,,,,
+	2, p_855.nls,,,, 1995-09-05,,,, !READONLY,,,,,, 4386, SYSTEM,,,,
+	2, p_866.nls,,,, 1995-09-05,,,, !READONLY,,,,,, 4386, SYSTEM,,,,
+	2, p_869.nls,,,, 1995-09-05,,,, !READONLY,,,,,, 4386, SYSTEM,,,,
+	2, version.dll,,,, 1996-01-31,,,, !READONLY,,,,,, 4608, SYSTEM,,,,
+	2, p_437.nls,,,, 1995-09-05,,,, !READONLY,,,,,, 5922, SYSTEM,,,,
+	2, p_850.nls,,,, 1995-09-05,,,, !READONLY,,,,,, 5922, SYSTEM,,,,
+	2, p_852.nls,,,, 1995-09-05,,,, !READONLY,,,,,, 5922, SYSTEM,,,,
+	2, p_857.nls,,,, 1995-09-05,,,, !READONLY,,,,,, 6178, SYSTEM,,,,
+	2, p_860.nls,,,, 1995-09-05,,,, !READONLY,,,,,, 5922, SYSTEM,,,,
+	2, p_861.nls,,,, 1995-09-05,,,, !READONLY,,,,,, 5922, SYSTEM,,,,
+	2, p_863.nls,,,, 1995-09-05,,,, !READONLY,,,,,, 5922, SYSTEM,,,,
+	2, p_865.nls,,,, 1995-09-05,,,, !READONLY,,,,,, 5922, SYSTEM,,,,
+	2, sorttbls.nls,,,, 1995-09-05,,,, !READONLY,,,,,, 3306, SYSTEM,,,,
+	2, lz32.dll,,,, 1996-01-31,,,, !READONLY,,,,,, 5120, SYSTEM,,,,
+	2, ctype.nls,,,, 1995-09-05,,,, !READONLY,,,,,, 6828, SYSTEM,,,,
+	2, shell32.dll,,,, 1996-01-31,,,, !READONLY,,,,,, 7680, SYSTEM,,,,
+	2, winspool.drv,,,, 1996-01-31,,,, !READONLY,,,,,, 9216, SYSTEM,,,,
+	2, olesvr32.dll,,,, 1996-01-31,,,, !READONLY,,,,,, 10752, SYSTEM,,,,
+	2, sck16thk.dll,,,, 1996-01-31,,,, !READONLY,,,,,, 9216, SYSTEM,,, 1.30.172.0,
+	2, netapi32.dll,,,, 1996-01-31,,,, !READONLY,,,,,, 11776, SYSTEM,,,,
+	2, wsock32.dll,,,, 1996-01-31,,,, !READONLY,,,,,, 13824, SYSTEM,,,,
+	2, olecli32.dll,,,, 1996-01-31,,,, !READONLY,,,,,, 19968, SYSTEM,,,,
+	2, unicode.nls,,,, 1995-09-05,,,, !READONLY,,,,,, 34080, SYSTEM,,,,
+	2, locale.nls,,,, 1995-09-05,,,, !READONLY,,,,,, 55588, SYSTEM,,,,
+	2, w32s.386,,,, 1996-01-31,,,, !READONLY,,,,,, 36587, SYSTEM,,,,
+	2, ntmsg.dll,,,, 1995-09-05,,,, !READONLY,,,,,, 59904, SYSTEM,,,,
+	2, comdlg32.dll,,,, 1996-01-31,,,, !READONLY,,,,,, 54784, SYSTEM,,,,
+	2, winmm.dll,,,, 1995-10-02,,,, !READONLY,,,,,, 65628, SYSTEM,,,,
+	2, w32skrnl.dll,,,, 1996-01-31,,,, !READONLY,,,,,, 82944, SYSTEM,,,,
+	2, p_949.nls,,,, 1995-10-19,,,, !READONLY,,,,,, 104994, SYSTEM,,,,
+	2, p_10001.nls,,,, 1995-09-05,,,, !READONLY,,,,,, 87586, SYSTEM,,,,
+	2, p_932.nls,,,, 1995-09-05,,,, !READONLY,,,,,, 88098, SYSTEM,,,,
+	2, p_936.nls,,,, 1995-09-05,,,, !READONLY,,,,,, 104482, SYSTEM,,,,
+	2, p_950.nls,,,, 1995-09-05,,,, !READONLY,,,,,, 130594, SYSTEM,,,,
+	2, crtdll.dll,,,, 1995-09-05,,,, !READONLY,,,,,, 204592, SYSTEM,,,,
+	2, riched32.dll,,,, 1995-09-05,,,, !READONLY,,,,,, 162576, SYSTEM,,,,
+	2, w32scomb.dll,,,, 1996-01-31,,,, !READONLY,,,,,, 236544, SYSTEM,,,,
+	2, comctl32.dll,,,, 1995-12-21,,,, !READONLY,,,,,, 284432, SYSTEM,,,,
+	2, ftsrch.dll,,,, 1995-10-31,,,, !READONLY,,,,,, 253936, SYSTEM,,,,
+	2, sortkey.nls,,,, 1995-09-05,,,, !READONLY,,,,,, 262148, SYSTEM,,,,
+
+[OleWindowsSystem]
+"ole2prox" = 1, ole2prox.dll,, ole2prox.130,, 1995-09-06,,, OLDER, !READONLY,,,,, SHARED, 51712, SYSTEM,,, 2.3.130.166,
+"ole2conv" = 1, ole2conv.dll,, ole2conv.130,, 1995-08-14,,, OLDER, !READONLY,,,,, SHARED, 57328, SYSTEM,,, 2.1.0.1,
+"compobj" = 1, compobj.dll,, compobj.130,, 1995-09-06,,, OLDER, !READONLY,,,,, SHARED, 109056, SYSTEM,,, 2.3.130.166,
+"ole2disp" = 1, ole2disp.dll,, ole2disp.130,, 1995-07-25,,, OLDER, !READONLY,,,,, SHARED, 165008, SYSTEM,,, 2.3.3027.1,
+"storage" = 1, storage.dll,, storage.130,, 1995-03-02,,, OLDER, !READONLY,,,,, SHARED, 157696, SYSTEM,,, 2.3.125.140,
+"ole2nls" = 1, ole2nls.dll,, ole2nls.130,, 1995-07-25,,, OLDER, !READONLY,,,,, SHARED, 152976, SYSTEM,,, 2.3.3027.1,
+"typelib" = 1, typelib.dll,, typelib.130,, 1995-07-25,,, OLDER, !READONLY,,,,, SHARED, 177824, SYSTEM,,, 2.3.3027.1,
+"ole2" = 1, ole2.dll,, ole2.130,, 1995-09-06,,, OLDER, !READONLY,,,,, SHARED, 304640, SYSTEM,,, 2.3.130.166,
+
+[OleWindowsSystemWin32s]
+	1, stdole32.tlb,,,, 1995-07-25,,,, !READONLY,,,,,, 7168, SYSTEM,,,,
+"ole2thk" = 1, ole2thk.dll,,,, 1995-11-09,,,, !READONLY,,,,,, 25088, SYSTEM,,, 2.3.130.168,
+	1, oledlg.dll,,,, 1995-09-06,,,, !READONLY,,,,,, 112128, SYSTEM,,,,
+	1, oleaut32.dll,,,, 1995-08-20,,,, !READONLY,,,,,, 232720, SYSTEM,,,,
+	1, ole32.dll,,,, 1995-11-09,,,, !READONLY,,,,,, 366080, SYSTEM,,,,
+
+[WindowsSystem]
+	3, winhlp32.cnt,,,, 1995-09-05,,,, !READONLY,,,,,, 930, SYSTEM,,,,
+	3, w32sys.dll,,,, 1996-01-31,,,, !READONLY,,,,,, 12544, SYSTEM,,, 1.30.172.0,
+	3, winmm16.dll,,,, 1996-01-31,,,, !READONLY,,,,,, 29184, SYSTEM,,,,
+	3, windows.hlp,,,, 1995-09-05,,,, !READONLY,,,,,, 21473, SYSTEM,,,,
+	3, winhlp32.hlp,,,, 1995-09-05,,,, !READONLY,,,,,, 31684, SYSTEM,,,,
+	3, olecli.dll,, olecli.w31,, 1995-09-05,,, OLDER, !READONLY,,,,,, 82944, SYSTEM,,, 1.32.0.0,
+"win32s16" = 3, win32s16.dll,,,, 1996-01-31,,,, !READONLY,,,,,, 167424, SYSTEM,,, 1.30.172.0,
+	3, winhlp32.exe,,,, 1995-10-31,,,, !READONLY,,,,,, 336400, SYSTEM,,,,
+
+[Win32appFreecell]
+	3, freecell.hlp,,,, 1995-01-15,,,, !READONLY,,,,,, 18751,,,,, !VITAL
+	3, freecell.exe,,,, 1995-01-15,,,, !READONLY,,,,,, 49188,,,,, !VITAL
+	3, cards.dll,,,, 1995-01-15,,,, !READONLY,,,,,, 158180,,,,, !VITAL
+
+[Ole2RegWindowsSystem]
+	1, ole2.reg,,,, 1995-04-16,,,, !READONLY,,,,,, 28113, SYSTEM,,,,
+
+[StdoleWindowsSystem]
+	1, stdole.tlb,, stdole.130,, 1995-07-25,,,, !READONLY,,,,,, 5472, SYSTEM,,,,
+
+[Files]
+	1, setup.lst,,,, 1995-12-05, !DECOMPRESS,,, !READONLY,,,,,, 611,,,,,
+	1, msuilstf.dll,,,, 1995-01-15, !DECOMPRESS,,, !READONLY,,,,,, 6144,,,,,
+	1, msdetect.inc,,,, 1995-01-15, !DECOMPRESS,,, !READONLY,,,,,, 22097,,,,,
+	1, _mssetup.exe,,,, 1995-01-15, !DECOMPRESS,,, !READONLY,,,,,, 9813,,,,,
+	1, iniupd.dll,,,, 1996-01-31, !DECOMPRESS,,, !READONLY,,,,,, 13824,,,,,
+	1, 32sinst.mst,,,, 1996-01-16, !DECOMPRESS,,, !READONLY,,,,,, 25944,,,,,
+	1, msshlstf.dll,,,, 1995-01-15, !DECOMPRESS,,, !READONLY,,,,,, 14928,,,,,
+	1, mscuistf.dll,,,, 1996-01-31, !DECOMPRESS,,, !READONLY,,,,,, 24960,,,,,
+	1, setupapi.inc,,,, 1995-01-15, !DECOMPRESS,,, !READONLY,,,,,, 55620,,,,,
+	1, msdetstf.dll,,,, 1995-01-15, !DECOMPRESS,,, !READONLY,,,,,, 24544,,,,,
+	1, setup.exe,,,, 1995-01-15, !DECOMPRESS,,, !READONLY,,,,,, 24624,,,,,
+	1, msinsstf.dll,,,, 1995-01-15, !DECOMPRESS,,, !READONLY,,,,,, 65440,,,,,
+	1, mscomstf.dll,,,, 1995-01-15, !DECOMPRESS,,, !READONLY,,,,,, 74528,,,,,
+	1, _mstest.exe,,,, 1995-01-15, !DECOMPRESS,,, !READONLY,,,,,, 89504,,,,,
+
+[Win32sSystemObsoleteFiles]
+	1, kernel32.dll,,, !COPY,,,,,, REMOVE,,,,, 0,,,,,
+	1, user32.dll,,, !COPY,,,,,, REMOVE,,,,, 0,,,,,
+	1, gdi32.dll,,, !COPY,,,,,, REMOVE,,,,, 0,,,,,
+	1, advapi32.dll,,, !COPY,,,,,, REMOVE,,,,, 0,,,,,
+	1, ntdll.dll,,, !COPY,,,,,, REMOVE,,,,, 0,,,,,
+	1, mpr.dll,,, !COPY,,,,,, REMOVE,,,,, 0,,,,,
+	1, ctype1.nls,,, !COPY,,,,,, REMOVE,,,,, 0,,,,,
+	1, ctype2.nls,,, !COPY,,,,,, REMOVE,,,,, 0,,,,,
+	1, ctype3.nls,,, !COPY,,,,,, REMOVE,,,,, 0,,,,,
+	1, c_037.nls,,, !COPY,,,,,, REMOVE,,,,, 0,,,,,
+	1, c_10000.nls,,, !COPY,,,,,, REMOVE,,,,, 0,,,,,
+	1, c_10001.nls,,, !COPY,,,,,, REMOVE,,,,, 0,,,,,
+	1, c_10006.nls,,, !COPY,,,,,, REMOVE,,,,, 0,,,,,
+	1, c_10007.nls,,, !COPY,,,,,, REMOVE,,,,, 0,,,,,
+	1, c_10029.nls,,, !COPY,,,,,, REMOVE,,,,, 0,,,,,
+	1, c_10081.nls,,, !COPY,,,,,, REMOVE,,,,, 0,,,,,
+	1, c_1026.nls,,, !COPY,,,,,, REMOVE,,,,, 0,,,,,
+	1, c_1250.nls,,, !COPY,,,,,, REMOVE,,,,, 0,,,,,
+	1, c_1251.nls,,, !COPY,,,,,, REMOVE,,,,, 0,,,,,
+	1, c_1252.nls,,, !COPY,,,,,, REMOVE,,,,, 0,,,,,
+	1, c_1253.nls,,, !COPY,,,,,, REMOVE,,,,, 0,,,,,
+	1, c_1254.nls,,, !COPY,,,,,, REMOVE,,,,, 0,,,,,
+	1, c_437.nls,,, !COPY,,,,,, REMOVE,,,,, 0,,,,,
+	1, c_500.nls,,, !COPY,,,,,, REMOVE,,,,, 0,,,,,
+	1, c_737.nls,,, !COPY,,,,,, REMOVE,,,,, 0,,,,,
+	1, c_850.nls,,, !COPY,,,,,, REMOVE,,,,, 0,,,,,
+	1, c_852.nls,,, !COPY,,,,,, REMOVE,,,,, 0,,,,,
+	1, c_855.nls,,, !COPY,,,,,, REMOVE,,,,, 0,,,,,
+	1, c_857.nls,,, !COPY,,,,,, REMOVE,,,,, 0,,,,,
+	1, c_860.nls,,, !COPY,,,,,, REMOVE,,,,, 0,,,,,
+	1, c_861.nls,,, !COPY,,,,,, REMOVE,,,,, 0,,,,,
+	1, c_863.nls,,, !COPY,,,,,, REMOVE,,,,, 0,,,,,
+	1, c_865.nls,,, !COPY,,,,,, REMOVE,,,,, 0,,,,,
+	1, c_866.nls,,, !COPY,,,,,, REMOVE,,,,, 0,,,,,
+	1, c_869.nls,,, !COPY,,,,,, REMOVE,,,,, 0,,,,,
+	1, c_875.nls,,, !COPY,,,,,, REMOVE,,,,, 0,,,,,
+	1, c_932.nls,,, !COPY,,,,,, REMOVE,,,,, 0,,,,,
+	1, c_936.nls,,, !COPY,,,,,, REMOVE,,,,, 0,,,,,
+	1, c_949.nls,,, !COPY,,,,,, REMOVE,,,,, 0,,,,,
+	1, c_950.nls,,, !COPY,,,,,, REMOVE,,,,, 0,,,,,
+	1, compob32.dll,,, !COPY,,,,,, REMOVE,,,,, 0,,,,,
+	1, ole2pr32.dll,,, !COPY,,,,,, REMOVE,,,,, 0,,,,,
+	1, ole2w32.dll,,, !COPY,,,,,, REMOVE,,,,, 0,,,,,
+	1, storag32.dll,,, !COPY,,,,,, REMOVE,,,,, 0,,,,,
+	1, w32sem87.dll,,, !COPY,,,,,, REMOVE,,,,, 0,,,,,

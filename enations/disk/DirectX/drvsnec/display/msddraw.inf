@@ -1,0 +1,1091 @@
+; INF file for DirectDraw HAL display driver.
+; Copyright 1996, NEC Corporation
+; - Includes drivers for detected & PnP devices
+; - This is DirectDraw inf file ( 960826 )
+
+[version]
+Class=DISPLAY
+signature="$CHICAGO$"
+Provider=%NEC%
+verinfo=4.04.00.0068
+
+[DriverSelect]
+|PCI\VEN_1013&DEV_0038|
+"PC-9821 Na12/13,Cr13,Nb10 (Cirrus Logic)"=is7548.dll
+|PCI\VEN_1013&DEV_00B8|
+"PC-9821 Cu10,Ct16 (Cirrus Logic)"=is5446.dll
+|PCI\VEN_1023&DEV_9320|
+"PC-9821 Na7/H5/H7,Na9/12,La7/10 (Trident)"=is9320.dll
+|PCI\VEN_1023&DEV_9660|
+"PC-9821 Xa7/9/10/12/13/16,Xv13,V13/16/20,Xc13,Ra20 (Trident)"=istri.dll
+
+
+[DestinationDirs]
+DefaultDestDir=11             ;LDID_SYS
+NEC_VFLAT.Copy=22             ;LDID_VMM32
+
+[SourceDisksNames]
+222="DirectDraw Drivers","",1
+
+[SourceDisksFiles]
+; - Trident TGUi968x & Cyber9382
+cy9382.dll=222
+xgiinit.dll=222
+axgixx.drv=222
+vaxgi.vxd=222
+tdci9680.ini=222
+tdci9682.ini=222
+tdci9382.ini=222
+
+; - Trident Cyber9320
+tridentn.drv=222
+vtrin.vxd=222
+
+; - Cirrus 5428,B3,5430/5440,5446,7543,7548,
+acl.drv=222
+acl.dll=222
+acl.vxd=222
+aclb.drv=222
+aclb.dll=222
+aclb.vxd=222
+aclmm.drv=222
+aclmm.dll=222
+aclmm.vxd=222
+acl5446.drv=222
+acl5446.dll=222
+acl5446.vxd=222
+acl5446.dat=222
+acl7543.drv=222
+acl7543.dll=222
+acl7543.vxd=222
+acl7548.drv=222
+acl7548.dll=222
+acl7548.vxd=222
+acl7548.dat=222
+; - Matrox STROM1
+vastmxx.vxd=222
+astmxx.drv=222
+astminit.dll=222
+astm3d32.dll=222
+; - Matrox MGA2
+atls.dll=222
+atlsdd16.dll=222
+atlsdd32.dll=222
+atlsdd.drv=222
+atlsxx.drv=222
+vatlsxx.vxd=222
+vflatd.vxd=222
+; - S3 928,Vision864
+accmdd16.dll=222
+accmdd32.dll=222
+accmxx.drv=222
+accmxxab.drv=222
+vaccxx.vxd=222
+vaccxxab.vxd=222
+[manufacturer]
+"%MSDrvsString%"=NECDrvs
+
+[NECDrvs]
+; Cyber9320 (Trident)
+%*nEC1904.DeviceDesc%=NEC9320.Install,*nEC1904
+%PCI\VEN_1023&DEV_9320.DeviceDesc%=NEC9320P.Install,PCI\VEN_1023&DEV_9320
+
+; PC-9821 Trident TGUi-968x
+%PCI\VEN_1023&DEV_9660.DeviceDesc%=NEC_968x, PCI\VEN_1023&DEV_9660
+
+; 86C928 (S3)
+; Window accelerator board A (PC-9821A-E01)
+; Window accelerator board B (PC-9801-85)
+; Full color window accelerator board A (PC-9821A-E09)
+; Full color window accelerator board B (PC-9801-91)
+%*nEC4011.DeviceDesc%=NECS3A.Install, *nEC4011
+%*nEC0851.DeviceDesc%=NECS3B.Install, *nEC0851
+%*nEC4091.DeviceDesc%=NECS3FA.Install,*nEC4091
+%*nEC0911.DeviceDesc%=NECS3FB.Install,*nEC0911
+
+; 86C928 (S3)
+%*nEC1912.DeviceDesc%=NECS3J.Install, *nEC1912
+
+; Vision864 (S3)
+%*nEC1918.DeviceDesc%=NECS3V.Install, *nEC1918
+
+; MGA2 (Matrox)
+; Window accelerator board A2 (PC-9821A-E11)
+%*nEC4111.DeviceDesc%=NECMGA2.Install,*nEC4111
+
+; MGA2 (Matrox)
+; Full color window accelerator board X (PC-9821X-B01)
+%PCI\VEN_102B&DEV_0518.DeviceDesc%=NECMGA2P.Install,PCI\VEN_102B&DEV_0518
+%PCI\VEN_102B&DEV_0D10.DeviceDesc%=NECMGA2P.Install,PCI\VEN_102B&DEV_0D10
+
+; MGA-2064W (Matrox)
+; Full color window accelerator board X2 (PC-9821X-B03)
+%PCI\VEN_102B&DEV_0519.DeviceDesc%=NECMGA2064W.Install,PCI\VEN_102B&DEV_0519
+
+; CL-GD5428 (Cirrus Logic)
+%*nEC1950.DeviceDesc%=NEC5428.Install,*nEC1950,*nEC1951,*nEC1952,*nEC1953,*nEC1954,*nEC1955,*nEC1956,*nEC1957,*nEC1970
+%*nEC1951.DeviceDesc%=NEC5428.Install,*nEC1951,*nEC1950,*nEC1952,*nEC1953,*nEC1954,*nEC1955,*nEC1956,*nEC1957,*nEC1970
+%*nEC1952.DeviceDesc%=NEC5428.Install,*nEC1952,*nEC1950,*nEC1951,*nEC1953,*nEC1954,*nEC1955,*nEC1956,*nEC1957,*nEC1970
+%*nEC1953.DeviceDesc%=NEC5428.Install,*nEC1953,*nEC1950,*nEC1951,*nEC1952,*nEC1954,*nEC1955,*nEC1956,*nEC1957,*nEC1970
+%*nEC1954.DeviceDesc%=NEC5428.Install,*nEC1954,*nEC1950,*nEC1951,*nEC1952,*nEC1953,*nEC1955,*nEC1956,*nEC1957,*nEC1970
+%*nEC1955.DeviceDesc%=NEC5428.Install,*nEC1955,*nEC1950,*nEC1951,*nEC1952,*nEC1953,*nEC1954,*nEC1956,*nEC1957,*nEC1970
+%*nEC1956.DeviceDesc%=NEC5428.Install,*nEC1956,*nEC1950,*nEC1951,*nEC1952,*nEC1953,*nEC1954,*nEC1955,*nEC1957,*nEC1970
+%*nEC1957.DeviceDesc%=NEC5428.Install,*nEC1957,*nEC1950,*nEC1951,*nEC1952,*nEC1953,*nEC1954,*nEC1955,*nEC1956,*nEC1970
+%*nEC1970.DeviceDesc%=NEC5428.Install,*nEC1970,*nEC1950,*nEC1951,*nEC1952,*nEC1953,*nEC1954,*nEC1955,*nEC1956,*nEC1957
+
+; CL-GD5428 (Cirrus Logic)
+; Window accelerator board B3 (PC-9801-96)
+%*nEC0961.DeviceDesc%=NEC5428B3.Install,*nEC0961
+
+; CL-GD5430,CL-GD5440 (Cirrus Logic)
+%*nEC1958.DeviceDesc%=NEC5430.Install,  *nEC1958,*nEC195A
+%*nEC1959.DeviceDesc%=NEC5430Cb.Install,*nEC1959
+%*nEC195A.DeviceDesc%=NEC5430.Install,  *nEC195A,*nEC1958
+%*nEC195B.DeviceDesc%=NEC543040.Install,*nEC195B
+%*nEC195C.DeviceDesc%=NEC5430E.Install, *nEC195C,*nEC195D
+%*nEC195D.DeviceDesc%=NEC5430E.Install, *nEC195D,*nEC195C
+
+; CL-GD5446 (Cirrus Logic)
+%PCI\VEN_1013&DEV_00B8.DeviceDesc%=NEC5446.Install,PCI\VEN_1013&DEV_00B8
+
+; CL-GD7543 (Cirrus Logic)
+%PCI\VEN_1013&DEV_1202.DeviceDesc%=NEC7543.Install,PCI\VEN_1013&DEV_1202
+
+; CL-GD7548 (Cirrus Logic)
+%PCI\VEN_1013&DEV_0038.DeviceDesc%=NEC7548.Install,PCI\VEN_1013&DEV_0038
+
+; -------------- Cyber9320 (Trident) - Nd2,Ne3,Nx,Lt2,Na7/9/12,La7/10
+[NEC9320.Install]
+CopyFiles=NEC9320.Copy
+DelReg=Prev.DelReg
+AddReg=NEC9320.AddReg
+UpdateInis=Clear_FailSafe, Clear_System.Ini
+LogConfig=NEC9320.LogConfig
+
+[NEC9320P.Install]
+CopyFiles=NEC9320.Copy
+DelReg=Prev.DelReg
+AddReg=NEC9320.AddReg
+UpdateInis=Clear_FailSafe, Clear_System.Ini
+
+[NEC9320.Copy]
+tridentn.drv
+vtrin.vxd
+
+[NEC9320.AddReg]
+HKR,,Ver,,4.0
+HKR,,DevLoader,,*vdd
+HKR,DEFAULT,Mode,,"8,640,480"
+HKR,DEFAULT,drv,,tridentn.drv
+HKR,DEFAULT,vdd,,"*vdd"
+HKR,DEFAULT,minivdd,,vtrin.vxd
+HKR,DEFAULT,grb,,grab98.3gr
+HKR,DEFAULT,AccVal,,2
+HKR,"MODES\8\640,480"
+HKR,"MODES\8\800,600"
+HKR,"MODES\8\1024,768"
+HKR,"MODES\16\640,480"
+HKR,"MODES\16\800,600"
+HKR,"MODES\24\640,480"
+
+[NEC9320.LogConfig]
+ConfigPriority=HARDWIRED
+IOConfig=FAC-FAC
+MemConfig=FFC00000-FFCFFFFF
+MemConfig=FFE00000-FFE1FFFF
+
+[NEC9320.PosDup]
+*nEC1904
+
+; -------Trident TGUi968x & Cyber938x
+[NEC_968x]
+CopyFiles=NEC_968x.Copy
+DelReg=Prev.DelReg
+AddReg=NEC_968x.AddReg
+UpdateInis=Clear_FailSafe, Clear_System.Ini
+
+[NEC_968x.Copy]
+axgixx.drv
+xgiinit.dll
+vaxgi.vxd
+tdci9680.ini
+tdci9682.ini
+cy9382.dll
+tdci9382.ini
+
+[Prev.DelReg]
+HKR,,Ver
+HKR,,DevLoader
+HKR,DEFAULT
+HKR,MODES
+HKR,CURRENT
+
+[NEC_968x.AddReg]
+HKR,,Ver,,4.0
+HKR,,DevLoader,,*vdd
+HKR,DEFAULT,drv,,axgixx.drv
+HKR,DEFAULT,vdd,,"*vdd"
+HKR,DEFAULT,minivdd,,vaxgi.vxd
+HKR,DEFAULT,RefreshRate,,-1
+HKR,DEFAULT,grb,,grab98.3gr
+HKR,DEFAULT,AccVal,,2
+HKR,DEFAULT,Mode,,"8,640,480"
+HKR,"MODES\8\640,480",,,"60,75"
+HKR,"MODES\8\800,600"
+HKR,"MODES\8\1024,768",,,"70,75"
+HKR,"MODES\8\1280,1024",,,"60,75"
+HKR,"MODES\16\640,480"
+HKR,"MODES\16\800,600"
+HKR,"MODES\16\1024,768"
+HKR,"MODES\24\640,480"
+HKR,"MODES\24\800,600"
+HKR,"MODES\32\640,480"
+
+; -------------- 86C928 (S3) - Window accelerator board A (PC-9821A-E01)
+;                              Window accelerator board B (PC-9801-85)
+[NECS3A.Install]
+CopyFiles=NECS3.Copy
+DelReg=Prev.DelReg
+AddReg=NECS3.AddReg
+UpdateInis=Clear_FailSafe, Clear_System.Ini
+LogConfig=NECS3A.LogConfig0,NECS3A.LogConfig1,NECS3A.LogConfig2,NECS3A.LogConfig3
+
+[NECS3B.Install]
+CopyFiles=NECS3.Copy
+DelReg=Prev.DelReg
+AddReg=NECS3.AddReg
+UpdateInis=Clear_FailSafe, Clear_System.Ini
+LogConfig=NECS3B.LogConfig0,NECS3B.LogConfig1,NECS3B.LogConfig2,NECS3B.LogConfig3
+
+[NECS3.Copy]
+accmxxab.drv
+vaccxxab.vxd
+accmdd16.dll
+accmdd32.dll
+
+[NECS3.AddReg]
+HKR,,Ver,,4.0
+HKR,,DevLoader,,*vdd
+HKR,DEFAULT,Mode,,"8,640,480"
+HKR,DEFAULT,drv,,accmxxab.drv
+HKR,DEFAULT,vdd,,"*vdd,*vflatd"
+HKR,DEFAULT,minivdd,,vaccxxab.vxd
+HKR,DEFAULT,grb,,grab98.3gr
+HKR,"MODES\8\640,480"
+HKR,"MODES\8\1024,768"
+
+[NECS3B.LogConfig0]
+ConfigPriority=HARDWIRED
+IOConfig=FA2-FA3
+MemConfig=F00000-F0FFFF
+MemConfig=F80000-F80FFF
+
+[NECS3B.LogConfig1]
+ConfigPriority=HARDWIRED
+IOConfig=FA2-FA3
+MemConfig=F20000-F2FFFF
+MemConfig=F88000-F88FFF
+
+[NECS3B.LogConfig2]
+ConfigPriority=HARDWIRED
+IOConfig=FA2-FA3
+MemConfig=F40000-F4FFFF
+MemConfig=F90000-F90FFF
+
+[NECS3B.LogConfig3]
+ConfigPriority=HARDWIRED
+IOConfig=FA2-FA3
+MemConfig=F80000-F8FFFF
+MemConfig=F98000-F98FFF
+
+[NECS3A.LogConfig0]
+ConfigPriority=HARDWIRED
+IOConfig=FA2-FA3
+MemConfig=F0400000-F05FFFFF
+MemConfig=F0F80000-F0F80FFF
+
+[NECS3A.LogConfig1]
+ConfigPriority=HARDWIRED
+IOConfig=FA2-FA3
+MemConfig=F4400000-F45FFFFF
+MemConfig=F4F80000-F4F80FFF
+
+[NECS3A.LogConfig2]
+ConfigPriority=HARDWIRED
+IOConfig=FA2-FA3
+MemConfig=F8400000-F85FFFFF
+MemConfig=F8F80000-F8F80FFF
+
+[NECS3A.LogConfig3]
+ConfigPriority=HARDWIRED
+IOConfig=FA2-FA3
+MemConfig=FC400000-FC5FFFFF
+MemConfig=FCF80000-FCF80FFF
+
+;[NECS3.PosDup]
+;*nEC0851,*nEC4011
+
+; -------------- 86C928 (S3) - Full color window accelerator board A (PC-9821A-E09)
+;                              Full color window accelerator board B (PC-9801-91)
+[NECS3FA.Install]
+CopyFiles=NECS3F.Copy
+DelReg=Prev.DelReg
+AddReg=NECS3F.AddReg
+UpdateInis=Clear_FailSafe, Clear_System.Ini
+LogConfig=NECS3FA.LogConfig0, NECS3FA.LogConfig1, NECS3FA.LogConfig2, NECS3FA.LogConfig3, NECS3FA.LogConfig4, NECS3FA.LogConfig5, NECS3FA.LogConfig6, NECS3FA.LogConfig7
+
+[NECS3FB.Install]
+CopyFiles=NECS3F.Copy
+DelReg=Prev.DelReg
+AddReg=NECS3F.AddReg
+UpdateInis=Clear_FailSafe, Clear_System.Ini
+LogConfig=NECS3FB.LogConfig0, NECS3FB.LogConfig1, NECS3FB.LogConfig2, NECS3FB.LogConfig3
+
+[NECS3F.Copy]
+accmxxab.drv
+vaccxxab.vxd
+accmdd16.dll
+accmdd32.dll
+
+[NECS3F.AddReg]
+HKR,,Ver,,4.0
+HKR,,DevLoader,,*vdd
+HKR,DEFAULT,Mode,,"8,640,480"
+HKR,DEFAULT,drv,,accmxxab.drv
+HKR,DEFAULT,vdd,,"*vdd,*vflatd"
+HKR,DEFAULT,minivdd,,vaccxxab.vxd
+HKR,DEFAULT,grb,,grab98.3gr
+HKR,"MODES\8\640,480"
+HKR,"MODES\8\1024,768"
+HKR,"MODES\8\1280,1024"
+HKR,"MODES\32\640,480"
+HKR,"MODES\32\1024,768"
+
+[NECS3FB.LogConfig0]
+ConfigPriority=HARDWIRED
+IOConfig=FA2-FA3
+MemConfig=F00000-F0FFFF
+MemConfig=F80000-F80FFF
+
+[NECS3FB.LogConfig1]
+ConfigPriority=HARDWIRED
+IOConfig=FA2-FA3
+MemConfig=F20000-F2FFFF
+MemConfig=F88000-F88FFF
+
+[NECS3FB.LogConfig2]
+ConfigPriority=HARDWIRED
+IOConfig=FA2-FA3
+MemConfig=F40000-F4FFFF
+MemConfig=F90000-F90FFF
+
+[NECS3FB.LogConfig3]
+ConfigPriority=HARDWIRED
+IOConfig=FA2-FA3
+MemConfig=F80000-F8FFFF
+MemConfig=F98000-F98FFF
+
+[NECS3FA.LogConfig0]
+ConfigPriority=HARDWIRED
+IOConfig=FA2-FA3
+MemConfig=F0400000-F05FFFFF
+MemConfig=F0F80000-F0F80FFF
+
+[NECS3FA.LogConfig1]
+ConfigPriority=HARDWIRED
+IOConfig=FA2-FA3
+MemConfig=F4400000-F45FFFFF
+MemConfig=F4F80000-F4F80FFF
+
+[NECS3FA.LogConfig2]
+ConfigPriority=HARDWIRED
+IOConfig=FA2-FA3
+MemConfig=F8400000-F85FFFFF
+MemConfig=F8F80000-F8F80FFF
+
+[NECS3FA.LogConfig3]
+ConfigPriority=HARDWIRED
+IOConfig=FA2-FA3
+MemConfig=FC400000-FC5FFFFF
+MemConfig=FCF80000-FCF80FFF
+
+[NECS3FA.LogConfig4]
+ConfigPriority=HARDWIRED
+IOConfig=FA2-FA3
+MemConfig=F0400000-F07FFFFF
+MemConfig=F0F80000-F0F80FFF
+
+[NECS3FA.LogConfig5]
+ConfigPriority=HARDWIRED
+IOConfig=FA2-FA3
+MemConfig=F4400000-F47FFFFF
+MemConfig=F4F80000-F4F80FFF
+
+[NECS3FA.LogConfig6]
+ConfigPriority=HARDWIRED
+IOConfig=FA2-FA3
+MemConfig=F8400000-F87FFFFF
+MemConfig=F8F80000-F8F80FFF
+
+[NECS3FA.LogConfig7]
+ConfigPriority=HARDWIRED
+IOConfig=FA2-FA3
+MemConfig=FC400000-FC7FFFFF
+MemConfig=FCF80000-FCF80FFF
+
+;[NECS3F.PosDup]
+;*nEC0911,*nEC4091
+
+; -------------- 86C928 (S3) - As2,Ap2,An
+[NECS3J.Install]
+CopyFiles=NECS3J.Copy
+DelReg=Prev.DelReg
+AddReg=NECS3J.AddReg
+UpdateInis=Clear_FailSafe, Clear_System.Ini
+LogConfig=NECS3JV.LogConfig0, NECS3JV.LogConfig1, NECS3JV.LogConfig2, NECS3JV.LogConfig3
+
+[NECS3J.Copy]
+accmxx.drv
+vaccxx.vxd
+accmdd16.dll
+accmdd32.dll
+
+[NECS3J.AddReg]
+HKR,,Ver,,4.0
+HKR,,DevLoader,,*vdd
+HKR,DEFAULT,Mode,,"8,640,480"
+HKR,DEFAULT,drv,,accmxx.drv
+HKR,DEFAULT,vdd,,"*vdd,*vflatd"
+HKR,DEFAULT,minivdd,,vaccxx.vxd
+HKR,DEFAULT,grb,,grab98.3gr
+HKR,DEFAULT,AccVal,,2
+HKR,"MODES\8\640,480"
+HKR,"MODES\8\1024,768"
+HKR,"MODES\24\640,480"
+
+[NECS3JV.LogConfig0]
+ConfigPriority=HARDWIRED
+IOConfig=FAA-FAB
+MemConfig=F0400000-F05FFFFF
+MemConfig=F0F80000-F0F80FFF
+
+[NECS3JV.LogConfig1]
+ConfigPriority=HARDWIRED
+IOConfig=FAA-FAB
+MemConfig=F4400000-F45FFFFF
+MemConfig=F4F80000-F4F80FFF
+
+[NECS3JV.LogConfig2]
+ConfigPriority=HARDWIRED
+IOConfig=FAA-FAB
+MemConfig=F8400000-F85FFFFF
+MemConfig=F8F80000-F8F80FFF
+
+[NECS3JV.LogConfig3]
+ConfigPriority=HARDWIRED
+IOConfig=FAA-FAB
+MemConfig=FC400000-FC5FFFFF
+MemConfig=FCF80000-FCF80FFF
+
+; -------------- Vision864 (S3) - As3,Ap3,Xs,Xp,Xn
+[NECS3V.Install]
+CopyFiles=NECS3V.Copy
+DelReg=Prev.DelReg
+AddReg=NECS3V.AddReg
+UpdateInis=Clear_FailSafe, Clear_System.Ini
+LogConfig=NECS3JV.LogConfig0, NECS3JV.LogConfig1, NECS3JV.LogConfig2, NECS3JV.LogConfig3
+
+[NECS3V.Copy]
+accmxx.drv
+vaccxx.vxd
+accmdd16.dll
+accmdd32.dll
+
+[NECS3V.AddReg]
+HKR,,Ver,,4.0
+HKR,,DevLoader,,*vdd
+HKR,DEFAULT,Mode,,"8,640,480"
+HKR,DEFAULT,drv,,accmxx.drv
+HKR,DEFAULT,vdd,,"*vdd,*vflatd"
+HKR,DEFAULT,minivdd,,vaccxx.vxd
+HKR,DEFAULT,grb,,grab98.3gr
+HKR,DEFAULT,AccVal,,2
+HKR,"MODES\8\640,480"
+HKR,"MODES\8\1024,768"
+HKR,"MODES\8\1280,1024"
+HKR,"MODES\32\640,480"
+
+[NECS3V.PosDup]
+*nEC1912,*nEC1918
+
+; -------------- MGA2 (Matrox) - Window accelerator board A2 (PC-9821A-E11)
+[NECMGA2.Install]
+CopyFiles=NECMGA2.Copy, NEC_VFLAT.Copy
+DelReg=Prev.DelReg
+AddReg=NECMGA2.AddReg
+UpdateInis=Clear_FailSafe, Clear_System.Ini
+LogConfig=NECMGA2.LogConfig0, NECMGA2.LogConfig1, NECMGA2.LogConfig2, NECMGA2.LogConfig3
+
+[NECMGA2.Copy]
+atlsxx.drv
+atls.dll
+vatlsxx.vxd
+atlsdd.drv
+atlsdd16.dll
+atlsdd32.dll
+
+[NEC_VFLAT.Copy]
+vflatd.vxd
+
+[NECMGA2.AddReg]
+HKR,,Ver,,4.0
+HKR,,DevLoader,,*vdd
+HKR,DEFAULT,Mode,,"8,640,480"
+HKR,DEFAULT,drv,,atlsxx.drv
+HKR,DEFAULT,vdd,,"*vdd,*vflatd"
+HKR,DEFAULT,minivdd,,vatlsxx.vxd
+HKR,DEFAULT,grb,,grab98.3gr
+HKR,"MODES\8\640,480"
+HKR,"MODES\8\1024,768"
+HKR,"MODES\8\1280,1024"
+HKR,"MODES\32\640,480"
+
+[NECMGA2.LogConfig0]
+ConfigPriority=HARDWIRED
+IOConfig=FA2-FA3
+MemConfig=F0F80000-F0F83FFF
+
+[NECMGA2.LogConfig1]
+ConfigPriority=HARDWIRED
+IOConfig=FA2-FA3
+MemConfig=F4F80000-F4F83FFF
+
+[NECMGA2.LogConfig2]
+ConfigPriority=HARDWIRED
+IOConfig=FA2-FA3
+MemConfig=F8F80000-F8F83FFF
+
+[NECMGA2.LogConfig3]
+ConfigPriority=HARDWIRED
+IOConfig=FA2-FA3
+MemConfig=FCF80000-FCF83FFF
+
+[NECMGA2.PosDup]
+*nEC4111
+
+; -------------- MGA2(PCI) (Matrox) - Full color window accelerator board X (PC-9821X-B01)
+[NECMGA2P.Install]
+CopyFiles=NECMGA2.Copy, NEC_VFLAT.Copy
+DelReg=Prev.DelReg
+AddReg=NECMGA2P.AddReg
+UpdateInis=Clear_FailSafe, Clear_System.Ini
+
+[NECMGA2P.AddReg]
+HKR,,Ver,,4.0
+HKR,,DevLoader,,*vdd
+HKR,DEFAULT,Mode,,"8,640,480"
+HKR,DEFAULT,drv,,atlsxx.drv
+HKR,DEFAULT,vdd,,"*vdd,*vflatd"
+HKR,DEFAULT,minivdd,,vatlsxx.vxd
+HKR,DEFAULT,grb,,grab98.3gr
+HKR,"MODES\8\640,480"
+HKR,"MODES\8\1024,768"
+HKR,"MODES\8\1280,1024"
+HKR,"MODES\32\640,480"
+HKR,"MODES\32\1024,768"
+
+; -------------- MGA-2064W (Matrox) - Full color window accelerator board X2 (PC-9821X-B03)
+[NECMGA2064W.Install]
+CopyFiles=NECMGA2064W.Copy
+DelReg=Prev.DelReg
+AddReg=NECMGA2064W.AddReg
+UpdateInis=Clear_FailSafe, Clear_System.Ini
+
+[NECMGA2064W.Copy]
+vastmxx.vxd
+astmxx.drv
+astminit.dll
+astm3d32.dll
+
+[Prev.DelReg]
+HKR,,Ver
+HKR,,DevLoader
+HKR,DEFAULT
+HKR,MODES
+HKR,CURRENT
+
+[NECMGA2064W.AddReg]
+HKR,,Ver,,4.0
+HKR,,DevLoader,,*vdd
+HKR,DEFAULT,Mode,,"8,640,480"
+HKR,DEFAULT,drv,,astmxx.drv
+HKR,DEFAULT,vdd,,"*vdd"
+HKR,DEFAULT,minivdd,,vastmxx.vxd
+HKR,DEFAULT,RefreshRate,,-1
+HKR,DEFAULT,grb,,grab98.3gr
+HKR,"MODES\8\640,480",,,"60,75"
+HKR,"MODES\8\800,600",,,"60,75"
+HKR,"MODES\8\1024,768",,,"70,75"
+HKR,"MODES\8\1280,1024",,,"60,75"
+HKR,"MODES\8\1600,1200"
+HKR,"MODES\16\640,480"
+HKR,"MODES\16\800,600"
+HKR,"MODES\16\1024,768"
+HKR,"MODES\16\1280,1024"
+HKR,"MODES\16\1600,1200"
+HKR,"MODES\32\640,480"
+HKR,"MODES\32\800,600"
+HKR,"MODES\32\1024,768"
+
+; -------------- CL-GD5428 (Cirrus Logic) - PC-9821Be,Bs,Bp,Cs2,Bf,Ns,Ts,Np,Es,Ne2,Nd,Nf
+
+[NEC5428.Install]
+CopyFiles=NEC5428.Copy
+DelReg=Prev.DelReg
+AddReg=NEC5428.AddReg
+UpdateInis=Clear_FailSafe,Clear_System.Ini
+LogConfig=NEC5428.LogConfig0,NEC5428.LogConfig1,NEC5428.LogConfig2,NEC5428.LogConfig3
+
+[NEC5428.Copy]
+acl.drv
+acl.vxd
+acl.dll
+
+[NEC5428.AddReg]
+HKR,,Ver,,4.0
+HKR,,DevLoader,,*vdd
+HKR,DEFAULT,Mode,,"8,640,480"
+HKR,DEFAULT,drv,,acl.drv
+HKR,DEFAULT,vdd,,"*vdd,*vflatd"
+HKR,DEFAULT,minivdd,,acl.vxd
+HKR,DEFAULT,grb,,grab98.3gr
+HKR,DEFAULT,AccVal,,2
+HKR,"MODES\8\640,480"
+HKR,"MODES\8\1024,768"
+HKR,"MODES\24\640,480"
+
+[NEC5428.LogConfig0]
+ConfigPriority=HARDWIRED
+IOConfig=FAA-FAB
+IOConfig=904-904
+IOConfig=FF82-FF82
+IOConfig=BA4-BA5
+IOConfig=BAA-BAA
+IOConfig=CA0-CAA
+IOConfig=CAC-CAC
+IOConfig=CAE-CAF
+IOConfig=DA4-DA5
+IOConfig=DAA-DAA
+IOConfig=46E8-46E8
+MemConfig=F00000-F0FFFF
+
+[NEC5428.LogConfig1]
+ConfigPriority=HARDWIRED
+IOConfig=FAA-FAB
+IOConfig=904-904
+IOConfig=FF82-FF82
+IOConfig=BA4-BA5
+IOConfig=BAA-BAA
+IOConfig=CA0-CAA
+IOConfig=CAC-CAC
+IOConfig=CAE-CAF
+IOConfig=DA4-DA5
+IOConfig=DAA-DAA
+IOConfig=46E8-46E8
+MemConfig=F20000-F2FFFF
+
+[NEC5428.LogConfig2]
+ConfigPriority=HARDWIRED
+IOConfig=FAA-FAB
+IOConfig=904-904
+IOConfig=FF82-FF82
+IOConfig=BA4-BA5
+IOConfig=BAA-BAA
+IOConfig=CA0-CAA
+IOConfig=CAC-CAC
+IOConfig=CAE-CAF
+IOConfig=DA4-DA5
+IOConfig=DAA-DAA
+IOConfig=46E8-46E8
+MemConfig=F40000-F4FFFF
+
+[NEC5428.LogConfig3]
+ConfigPriority=HARDWIRED
+IOConfig=FAA-FAB
+IOConfig=904-904
+IOConfig=FF82-FF82
+IOConfig=BA4-BA5
+IOConfig=BAA-BAA
+IOConfig=CA0-CAA
+IOConfig=CAC-CAC
+IOConfig=CAE-CAF
+IOConfig=DA4-DA5
+IOConfig=DAA-DAA
+IOConfig=46E8-46E8
+MemConfig=F60000-F6FFFF
+
+[NEC5428.PosDup]
+*nEC1950,*nEC1951,*nEC1952,*nEC1953,*nEC1954,*nEC1955,*nEC1956,*nEC1957,*nEC1970
+
+; -------------- CL-GD5428 (Cirrus Logic) - Window accelerator board B3 (PC-9801-96)
+
+[NEC5428B3.Install]
+CopyFiles=NEC5428B3.Copy
+DelReg=Prev.DelReg
+AddReg=NEC5428B3.AddReg
+UpdateInis=Clear_FailSafe,Clear_System.Ini
+LogConfig=NEC5428B3.LogConfig0,NEC5428B3.LogConfig1,NEC5428B3.LogConfig2,NEC5428B3.LogConfig3
+
+[NEC5428B3.Copy]
+aclb.drv
+aclb.vxd
+aclb.dll
+
+[NEC5428B3.AddReg]
+HKR,,Ver,,4.0
+HKR,,DevLoader,,*vdd
+HKR,DEFAULT,Mode,,"8,640,480"
+HKR,DEFAULT,drv,,aclb.drv
+HKR,DEFAULT,vdd,,"*vdd,*vflatd"
+HKR,DEFAULT,minivdd,,aclb.vxd
+HKR,DEFAULT,grb,,grab98.3gr
+HKR,"MODES\8\640,480"
+HKR,"MODES\8\1024,768"
+HKR,"MODES\24\640,480"
+
+[NEC5428B3.LogConfig0]
+ConfigPriority=HARDWIRED
+IOConfig=FA2-FA3
+IOConfig=904-904
+IOConfig=902-902
+IOConfig=B54-B55
+IOConfig=B5A-B5A
+IOConfig=C50-C5A
+IOConfig=C5C-C5C
+IOConfig=C5E-C5F
+IOConfig=D54-D55
+IOConfig=D5A-D5A
+IOConfig=46E8-46E8
+MemConfig=F00000-F0FFFF
+
+[NEC5428B3.LogConfig1]
+ConfigPriority=HARDWIRED
+IOConfig=FA2-FA3
+IOConfig=904-904
+IOConfig=902-902
+IOConfig=B54-B55
+IOConfig=B5A-B5A
+IOConfig=C50-C5A
+IOConfig=C5C-C5C
+IOConfig=C5E-C5F
+IOConfig=D54-D55
+IOConfig=D5A-D5A
+IOConfig=46E8-46E8
+MemConfig=F20000-F2FFFF
+
+[NEC5428B3.LogConfig2]
+ConfigPriority=HARDWIRED
+IOConfig=FA2-FA3
+IOConfig=904-904
+IOConfig=902-902
+IOConfig=B54-B55
+IOConfig=B5A-B5A
+IOConfig=C50-C5A
+IOConfig=C5C-C5C
+IOConfig=C5E-C5F
+IOConfig=D54-D55
+IOConfig=D5A-D5A
+IOConfig=46E8-46E8
+MemConfig=F40000-F4FFFF
+
+[NEC5428B3.LogConfig3]
+ConfigPriority=HARDWIRED
+IOConfig=FA2-FA3
+IOConfig=904-904
+IOConfig=902-902
+IOConfig=B54-B55
+IOConfig=B5A-B5A
+IOConfig=C50-C5A
+IOConfig=C5C-C5C
+IOConfig=C5E-C5F
+IOConfig=D54-D55
+IOConfig=D5A-D5A
+IOConfig=46E8-46E8
+MemConfig=F60000-F6FFFF
+
+[NEC5428B3.PosDup]
+*nEC0961
+
+; -------------- CL-GD5430 (Cirrus Logic) - PC-9821Xe,Cx,Cf
+[NEC5430.Install]
+CopyFiles=NEC543040.Copy
+DelReg=Prev.DelReg
+AddReg=NEC5430.AddReg
+UpdateInis=Clear_FailSafe,Clear_System.Ini
+LogConfig=NEC5430.LogConfig
+
+[NEC543040.Copy]
+aclmm.drv
+aclmm.vxd
+aclmm.dll
+
+[NEC5430.AddReg]
+HKR,,Ver,,4.0
+HKR,,DevLoader,,*vdd
+HKR,DEFAULT,Mode,,"8,640,480"
+HKR,DEFAULT,drv,,aclmm.drv
+HKR,DEFAULT,vdd,,*vdd
+HKR,DEFAULT,minivdd,,aclmm.vxd
+HKR,DEFAULT,grb,,grab98.3gr
+HKR,DEFAULT,AccVal,,2
+HKR,"MODES\8\640,480"
+HKR,"MODES\8\1024,768"
+HKR,"MODES\24\640,480"
+
+[NEC5430.LogConfig]
+ConfigPriority=HARDWIRED
+IOConfig=FAA-FAB
+IOConfig=904-904
+IOConfig=FF82-FF82
+IOConfig=BA4-BA5
+IOConfig=BAA-BAA
+IOConfig=CA0-CAA
+IOConfig=CAC-CAC
+IOConfig=CAE-CAF
+IOConfig=DA4-DA5
+IOConfig=DAA-DAA
+IOConfig=46E8-46E8
+MemConfig=F0000000-F00FFFFF
+
+[NEC5430.PosDup]
+*nEC1958,*nEC195A
+
+; -------------- CL-GD5430 (Cirrus Logic) - PC-9821Cb
+[NEC5430Cb.Install]
+CopyFiles=NEC543040.Copy
+DelReg=Prev.DelReg
+AddReg=NEC5430Cb.AddReg
+UpdateInis=Clear_FailSafe,Clear_System.Ini
+LogConfig=NEC5430.LogConfig
+
+[NEC5430Cb.AddReg]
+HKR,,Ver,,4.0
+HKR,,DevLoader,,*vdd
+HKR,DEFAULT,Mode,,"8,640,480"
+HKR,DEFAULT,drv,,aclmm.drv
+HKR,DEFAULT,vdd,,*vdd
+HKR,DEFAULT,minivdd,,aclmm.vxd
+HKR,DEFAULT,grb,,grab98.3gr
+HKR,DEFAULT,AccVal,,2
+HKR,"MODES\8\640,480"
+HKR,"MODES\24\640,480"
+
+[NEC5430Cb.PosDup]
+*nEC1959
+
+; -------------- CL-GD5430,CL-GD5440 (Cirrus Logic) - PC-9821 Cb2,Cx2/3/13,Cb3/10,V7/C4K,V10/C4R
+[NEC5430E.Install]
+CopyFiles=NEC543040.Copy
+DelReg=Prev.DelReg
+AddReg=NEC5430E.AddReg
+UpdateInis=Clear_FailSafe,Clear_System.Ini
+LogConfig=NEC5430.LogConfig
+
+[NEC5430E.AddReg]
+HKR,,Ver,,4.0
+HKR,,DevLoader,,*vdd
+HKR,DEFAULT,Mode,,"8,640,480"
+HKR,DEFAULT,drv,,aclmm.drv
+HKR,DEFAULT,vdd,,*vdd
+HKR,DEFAULT,minivdd,,aclmm.vxd
+HKR,DEFAULT,grb,,grab98.3gr
+HKR,DEFAULT,AccVal,,2
+HKR,"MODES\8\640,480"
+HKR,"MODES\8\800,600"
+HKR,"MODES\8\1024,768"
+HKR,"MODES\16\640,480"
+HKR,"MODES\16\800,600"
+HKR,"MODES\24\640,480"
+
+[NEC5430E.PosDup]
+*nEC195C,*nEC195D
+
+; -------------- CL-GD5430,CL-GD5440 (Cirrus Logic) - PC-9821Xe10,Xa7e,Xb10,V7/S5K/S7K,V10/S5K/S7K,
+;                                                     V12/13/16,Xc13
+[NEC543040.Install]
+CopyFiles=NEC543040.Copy
+DelReg=Prev.DelReg
+AddReg=NEC543040.AddReg
+UpdateInis=Clear_FailSafe,Clear_System.Ini
+LogConfig=NEC5430.LogConfig
+
+[NEC543040.AddReg]
+HKR,,Ver,,4.0
+HKR,,DevLoader,,*vdd
+HKR,DEFAULT,Mode,,"8,640,480"
+HKR,DEFAULT,drv,,aclmm.drv
+HKR,DEFAULT,vdd,,*vdd
+HKR,DEFAULT,minivdd,,aclmm.vxd
+HKR,DEFAULT,RefreshRate,,-1
+HKR,DEFAULT,grb,,grab98.3gr
+HKR,DEFAULT,AccVal,,2
+HKR,"MODES\8\640,480",,,"60,75"
+HKR,"MODES\8\800,600"
+HKR,"MODES\8\1024,768",,,"70,75"
+HKR,"MODES\16\640,480",,,"60,75"
+HKR,"MODES\16\800,600"
+HKR,"MODES\24\640,480",,,"60"
+
+[NEC543040.PosDup]
+*nEC195B
+
+; -------------- CL-GD7543 (Cirrus Logic) - PC-9821Nb7
+[NEC7543.Install]
+CopyFiles=NEC7543.Copy
+DelReg=Prev.DelReg
+AddReg=NEC7543.AddReg
+
+[NEC7543.Copy]
+acl7543.drv
+acl7543.vxd
+acl7543.dll
+
+[NEC7543.AddReg]
+HKR,,Ver,,4.0
+HKR,,DevLoader,,*vdd
+HKR,DEFAULT,Mode,,"8,640,480"
+HKR,DEFAULT,drv,,acl7543.drv
+HKR,DEFAULT,vdd,,*vdd
+HKR,DEFAULT,minivdd,,acl7543.vxd
+HKR,DEFAULT,grb,,grab98.3gr
+HKR,DEFAULT,AccVal,,2
+HKR,"MODES\8\640,480"
+HKR,"MODES\8\800,600"
+HKR,"MODES\8\1024,768"
+HKR,"MODES\16\640,480"
+HKR,"MODES\16\800,600"
+HKR,"MODES\24\640,480"
+
+; -------------- CL-GD7548 (Cirrus Logic) - PC-9821Cr13,Na13,Na12/S8,Na12/S10F
+[NEC7548.Install]
+CopyFiles=NEC7548.Copy
+DelReg=Prev.DelReg
+AddReg=NEC7548.AddReg
+
+[NEC7548.Copy]
+acl7548.drv
+acl7548.vxd
+acl7548.dat
+acl7548.dll
+
+[NEC7548.AddReg]
+HKR,,Ver,,4.0
+HKR,,DevLoader,,*vdd
+HKR,DEFAULT,Mode,,"8,640,480"
+HKR,DEFAULT,drv,,acl7548.drv
+HKR,DEFAULT,vdd,,*vdd
+HKR,DEFAULT,minivdd,,acl7548.vxd
+HKR,DEFAULT,grb,,grab98.3gr
+HKR,DEFAULT,AccVal,,2
+HKR,"MODES\8\640,480"
+HKR,"MODES\8\800,600"
+HKR,"MODES\8\1024,768"
+HKR,"MODES\16\640,480"
+HKR,"MODES\16\800,600"
+HKR,"MODES\24\640,480"
+
+; -------------------- CL-GD5446 (Cirrus Logic) - PC-9821Cu10,Ct16
+[NEC5446.Install]
+CopyFiles=NEC5446.Copy
+DelReg=Prev.DelReg
+AddReg=NEC5446.AddReg
+UpdateInis=Clear_FailSafe,Clear_System.Ini
+
+[NEC5446.Copy]
+acl5446.drv
+acl5446.vxd
+acl5446.dat
+acl5446.dll
+
+[NEC5446.AddReg]
+HKR,,Ver,,4.0
+HKR,,DevLoader,,*vdd
+HKR,DEFAULT,Mode,,"8,640,480"
+HKR,DEFAULT,drv,,acl5446.drv
+HKR,DEFAULT,vdd,,*vdd
+HKR,DEFAULT,minivdd,,acl5446.vxd
+HKR,DEFAULT,grb,,grab98.3gr
+HKR,DEFAULT,AccVal,,2
+HKR,"MODES\8\640,480"
+HKR,"MODES\8\800,600"
+HKR,"MODES\8\1024,768"
+HKR,"MODES\16\640,480"
+HKR,"MODES\16\800,600"
+HKR,"MODES\16\1024,768"
+HKR,"MODES\24\640,480"
+HKR,"MODES\24\800,600"
+
+; -------------- 
+
+[Clear_FailSafe]
+%30%msdos.sys,Options,"BootSafe="
+%31%msdos.sys,Options,"BootSafe="
+
+[Clear_System.Ini]
+system.ini, display, "WidthxHeight=*",
+system.ini, display, "fontsize=*",
+system.ini, atls.drv, "DesktopWidth=*",
+system.ini, atls.drv, "DesktopHeight=*",
+system.ini, atls.drv, "DisplayWidth=*",
+system.ini, atls.drv, "DisplayHeight=*",
+system.ini, atls.drv, "fontsize=*",
+system.ini,Virtual-Screen, "RefreshRate=*",
+system.ini,Virtual-Screen, "ColorDepth=*",
+system.ini,Virtual-Screen, "Screen=*",
+system.ini,Virtual-Screen, "Enable=*",
+system.ini,Virtual-Screen, "Resource=*",
+
+[Prev.DelReg]
+HKR,,Ver
+HKR,,DevLoader
+HKR,DEFAULT
+HKR,MODES
+HKR,CURRENT
+
+[Strings]
+NEC="NEC"
+MSDrvsString="NEC"
+KEY_REFRESHRATE="SOFTWARE\NEC\DisplayUtility\RefreshRateUtility\1.00"
+*nEC1904.DeviceDesc="PC-9821 Nd2,Ne3,Nx,Lt2,Na7/H3/HC7 (Trident)"
+PCI\VEN_1023&DEV_9320.DeviceDesc="PC-9821 Na7/H5/H7,Na9/12,La7/10 (Trident)"
+PCI\VEN_1023&DEV_9660.DeviceDesc="PC-9821 Xa7/9/10/12/13/16,Xv13,V13/16/20,Xc13,Ra20 (Trident)"
+*nEC0961.DeviceDesc="³¨ÝÄÞ³ ±¸¾×Ú°À ÎÞ°ÄÞ B3 (Cirrus Logic)"
+*nEC1950.DeviceDesc="PC-9821 Be,Bs,Bp (Cirrus Logic)"
+*nEC1951.DeviceDesc="PC-9821 Cs2 (Cirrus Logic)"
+*nEC1970.DeviceDesc="PC-9821 Nf (Cirrus Logic)"
+*nEC1952.DeviceDesc="PC-9821 Bf,SV98 (Cirrus Logic)"
+*nEC1953.DeviceDesc="PC-9821 Ns (Cirrus Logic)"
+*nEC1954.DeviceDesc="PC-9821 Ts (Cirrus Logic)"
+*nEC1955.DeviceDesc="PC-9821 Np,Es (Cirrus Logic)"
+*nEC1956.DeviceDesc="PC-9821 Ne2 (Cirrus Logic)"
+*nEC1957.DeviceDesc="PC-9821 Nd (Cirrus Logic)"
+*nEC1958.DeviceDesc="PC-9821 Xe (Cirrus Logic)"
+*nEC1959.DeviceDesc="PC-9821 Cb (Cirrus Logic)"
+*nEC195A.DeviceDesc="PC-9821 Cx/Cf (Cirrus Logic)"
+*nEC195B.DeviceDesc="PC-9821 Xe10,Xa7e,Xb10,V7/S5K/S7K,V10/S5K/S7K,V12/13/16,Xc13 (Cirrus Logic)"
+*nEC195C.DeviceDesc="PC-9821 Cb2 (Cirrus Logic)"
+*nEC195D.DeviceDesc="PC-9821 Cx2/3/13,Cb3/10,V7/C4K,V10/C4R (Cirrus Logic)"
+PCI\VEN_1013&DEV_1202.DeviceDesc="PC-9821 Nb7 (Cirrus Logic)"
+PCI\VEN_1013&DEV_0038.DeviceDesc="PC-9821 Na12/13,Cr13,Nb10 (Cirrus Logic)"
+PCI\VEN_1013&DEV_00B8.DeviceDesc="PC-9821 Cu10,Ct16 (Cirrus Logic)"
+*nEC4011.DeviceDesc="³¨ÝÄÞ³ ±¸¾×Ú°À ÎÞ°ÄÞ A (S3)"
+*nEC0851.DeviceDesc="³¨ÝÄÞ³ ±¸¾×Ú°À ÎÞ°ÄÞ B (S3)"
+*nEC4091.DeviceDesc="ÌÙ¶×° ³¨ÝÄÞ³ ±¸¾×Ú°À ÎÞ°ÄÞ A/VRAM (S3)"
+*nEC0911.DeviceDesc="ÌÙ¶×° ³¨ÝÄÞ³ ±¸¾×Ú°À ÎÞ°ÄÞ B/VRAM (S3)"
+*nEC1912.DeviceDesc="PC-9821 As2,Ap2,An (S3)"
+*nEC1918.DeviceDesc="PC-9821 As3,Ap3,Xs,Xp,Xn (S3)"
+*nEC4111.DeviceDesc="³¨ÝÄÞ³ ±¸¾×Ú°À ÎÞ°ÄÞ A2 (Matrox)"
+PCI\VEN_102B&DEV_0518.DeviceDesc="ÌÙ¶×° ³¨ÝÄÞ³ ±¸¾×Ú°À ÎÞ°ÄÞ X/VRAM (Matrox)"
+PCI\VEN_102B&DEV_0D10.DeviceDesc="ÌÙ¶×° ³¨ÝÄÞ³ ±¸¾×Ú°À ÎÞ°ÄÞ X/VRAM (Matrox)"
+PCI\VEN_102B&DEV_0519.DeviceDesc="ÌÙ¶×° ³¨ÝÄÞ³ ±¸¾×Ú°À ÎÞ°ÄÞ X2/VRAM 3D‘Î‰ž (Matrox)"
+

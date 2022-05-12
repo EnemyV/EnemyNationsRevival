@@ -1,0 +1,30 @@
+CHUNK LINE { string "City" }
+CHUNK DESC { string "building or other structure" }
+CHUNK LINE { string "Desert" }
+CHUNK DESC { string "hot and dry, mostly sand" }
+CHUNK LINE { string "Forest" }
+CHUNK DESC { string "tree covered hillsides" }
+CHUNK LINE { string "Lake" }
+CHUNK DESC { string "navigable water not connected to the ocean" }
+CHUNK LINE { string "Hill" }
+CHUNK DESC { string "somewhat steep and rugged" }
+CHUNK LINE { string "Mountain" }
+CHUNK DESC { string "very steep and almost impassable" }
+CHUNK LINE { string "Ocean" }
+CHUNK DESC { string "naviagble large body of water" }
+CHUNK LINE { string "Plain" }
+CHUNK DESC { string "flat and fertile" }
+CHUNK LINE { string "River" }
+CHUNK DESC { string "rapidly moving water, difficult to cross" }
+CHUNK LINE { string "Road" }
+CHUNK DESC { string "fastest travel speed" }
+CHUNK LINE { string "Rough" }
+CHUNK DESC { string "slightly steep and rough" }
+CHUNK LINE { string "Swamp" }
+CHUNK DESC { string "shallow ponds and small islands of fertile dirt" }
+CHUNK LINE { string "Coastline" }
+CHUNK DESC { string "part land, part water" }
+CHUNK LINE { string "Field" }
+CHUNK DESC { string "Wheat field for farm" }
+CHUNK LINE { string "Resource" }
+CHUNK DESC { string "resource view" }

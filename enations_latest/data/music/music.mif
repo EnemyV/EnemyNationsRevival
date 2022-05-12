@@ -1,0 +1,256 @@
+#include "..\data.inc"
+
+RIFF MUSC
+	{
+	LIST FVER
+		{
+
+		CHUNK DATA {short				// version ALWAYS FIRST
+#include ..\rif_ver.inc"
+			}
+		}
+
+	LIST MIDI
+		{
+		CHUNK NUMM { int 4 }
+		CHUNK DATA { file dtmx.xmi }
+		CHUNK DATA { file 130.xmi }
+		CHUNK DATA { file 135.xmi }
+	 	CHUNK DATA { file 145.xmi }
+		}
+
+	// 11K 8-bit mono
+	LIST SFX1
+		{
+		CHUNK NUMS { int 82 }
+		// group, {preload/cache/buffer}, comp, backupID (-1 => play when read), type, file
+		//      type: mono_11_8, mono_22_16, stereo_22_16
+
+		// sfx
+		CHUNK DATA { short 1, 0, -1, 0, 0 file 11\gen01.raw }
+		CHUNK DATA { short 1, 0, -1, 0, 0 file 11\gen02.raw }
+
+		// terrain, construction, damage
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\gen03.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\gen04.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\gen05.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\gen06.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\gen07.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\gen08.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\gen09.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\gen10.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\gen11.cmp }
+
+		// building sounds
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\bld01.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\bld02.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\bld03.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\bld04.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\bld05.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\bld06.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\bld07.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\bld08.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\bld09.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\bld10.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\bld11.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\bld12.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\bld13.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\bld14.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\bld15.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\bld16.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\bld17.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\bld18.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\bld19.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\bld20.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\bld21.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\bld22.cmp }
+
+		// vehicle sounds
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\veh01.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\veh02.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\veh03.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\veh04.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\veh05.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\veh06.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\veh07.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\veh08.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\veh09.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\veh10.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\veh11.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\veh12.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\veh13.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\veh14.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\veh15.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\veh16.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\veh17.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\veh18.cmp }
+
+		// projectile
+		CHUNK DATA { short 3, 0, 8, 0, 0 file 11\mgn03.cmp }
+		CHUNK DATA { short 3, 0, 8, 0, 0 file 11\rov05.cmp }
+		CHUNK DATA { short 3, 0, 8, 0, 0 file 11\mgn01.cmp }
+		CHUNK DATA { short 3, 0, 8, 0, 0 file 11\gun07.cmp }
+		CHUNK DATA { short 3, 0, 8, 0, 0 file 11\gun16.cmp }
+		CHUNK DATA { short 3, 0, 8, 0, 0 file 11\gun11.cmp }
+		CHUNK DATA { short 3, 0, 8, 0, 0 file 11\gun12.cmp }
+		CHUNK DATA { short 3, 0, 8, 0, 0 file 11\gun14.cmp }
+		CHUNK DATA { short 3, 0, 8, 0, 0 file 11\rkt02.cmp }
+		CHUNK DATA { short 3, 0, 8, 0, 0 file 11\gun08.cmp }
+		CHUNK DATA { short 3, 0, 8, 0, 0 file 11\gun13.cmp }
+		CHUNK DATA { short 3, 0, 8, 0, 0 file 11\gun15.cmp }
+		CHUNK DATA { short 3, 0, 8, 0, 0 file 11\mgn01.cmp }
+		CHUNK DATA { short 3, 0, 8, 0, 0 file 11\gun02.cmp }
+		CHUNK DATA { short 3, 0, 8, 0, 0 file 11\mgn02.cmp }
+		CHUNK DATA { short 3, 0, 8, 0, 0 file 11\sht02.cmp }
+		CHUNK DATA { short 3, 0, 8, 0, 0 file 11\sht03.cmp }
+		CHUNK DATA { short 3, 0, 8, 0, 0 file 11\sht07.cmp }
+		CHUNK DATA { short 3, 0, 8, 0, 0 file 11\sht06.cmp }
+		CHUNK DATA { short 3, 0, 8, 0, 0 file 11\sht05.cmp }
+		CHUNK DATA { short 3, 0, 8, 0, 0 file 11\sht04.cmp }
+		CHUNK DATA { short 3, 0, 8, 0, 0 file 11\sht09.cmp }
+		CHUNK DATA { short 3, 0, 8, 0, 0 file 11\sht10.cmp }
+		CHUNK DATA { short 3, 0, 8, 0, 0 file 11\sht08.cmp }
+
+		// explosion
+		CHUNK DATA { short 3, 0, 8, 23, 0 file 11\exp13.cmp }
+		CHUNK DATA { short 3, 0, 8, 23, 0 file 11\exp09.cmp }
+		CHUNK DATA { short 3, 0, 8, 23, 0 file 11\exp11.cmp }
+		CHUNK DATA { short 3, 0, 8, 23, 0 file 11\exp14.cmp }
+		CHUNK DATA { short 3, 0, 8, 23, 0 file 11\exp05.cmp }
+
+		// rocket landing
+		CHUNK DATA { short 3, 0, -1, 0, 0 file 11\spc01.raw }
+		CHUNK DATA { short 3, 0, -1, 0, 0 file 11\8synth1.raw }
+		}
+
+#ifdef INC_WAV
+	// 22K 16-bit mono
+	LIST SFX2
+		{
+		CHUNK NUMS { int 82 }
+		// group, {preload/cache/buffer}, backupID (-1 => play when read), type, file
+		//      type: mono_11_8, mono_22_16, stereo_22_16
+
+		// sfx
+		CHUNK DATA { short 1, 0, -1, 0, 1 file 22\gen01.raw }
+		CHUNK DATA { short 1, 0, -1, 0, 1 file 22\gen02.raw }
+
+		// terrain, construction, damage
+		CHUNK DATA { short 3, 0, 9, -1, 1 file 22\gen03.cmp }
+		CHUNK DATA { short 3, 0, 9, -1, 1 file 22\gen04.cmp }
+		CHUNK DATA { short 3, 0, 9, -1, 1 file 22\gen05.cmp }
+		CHUNK DATA { short 3, 0, 9, -1, 1 file 22\gen06.cmp }
+		CHUNK DATA { short 3, 0, 9, -1, 1 file 22\gen07.cmp }
+		CHUNK DATA { short 3, 0, 9, -1, 1 file 22\gen08.cmp }
+		CHUNK DATA { short 3, 0, 9, -1, 1 file 22\gen09.cmp }
+		CHUNK DATA { short 3, 0, 9, -1, 1 file 22\gen10.cmp }
+		CHUNK DATA { short 3, 0, 9, -1, 1 file 22\gen11.cmp }
+
+		// building sounds
+		CHUNK DATA { short 3, 0, 9, -1, 1 file 22\bld01.cmp }
+		CHUNK DATA { short 3, 0, 9, -1, 1 file 22\bld02.cmp }
+		CHUNK DATA { short 3, 0, 9, -1, 1 file 22\bld03.cmp }
+		CHUNK DATA { short 3, 0, 9, -1, 1 file 22\bld04.cmp }
+		CHUNK DATA { short 3, 0, 9, -1, 1 file 22\bld05.cmp }
+		CHUNK DATA { short 3, 0, 9, -1, 1 file 22\bld06.cmp }
+		CHUNK DATA { short 3, 0, 9, -1, 1 file 22\bld07.cmp }
+		CHUNK DATA { short 3, 0, 9, -1, 1 file 22\bld08.cmp }
+		CHUNK DATA { short 3, 0, 9, -1, 1 file 22\bld09.cmp }
+		CHUNK DATA { short 3, 0, 9, -1, 1 file 22\bld10.cmp }
+		CHUNK DATA { short 3, 0, 9, -1, 1 file 22\bld11.cmp }
+		CHUNK DATA { short 3, 0, 9, -1, 1 file 22\bld12.cmp }
+		CHUNK DATA { short 3, 0, 9, -1, 1 file 22\bld13.cmp }
+		CHUNK DATA { short 3, 0, 9, -1, 1 file 22\bld14.cmp }
+		CHUNK DATA { short 3, 0, 9, -1, 1 file 22\bld15.cmp }
+		CHUNK DATA { short 3, 0, 9, -1, 1 file 22\bld16.cmp }
+		CHUNK DATA { short 3, 0, 9, -1, 1 file 22\bld17.cmp }
+		CHUNK DATA { short 3, 0, 9, -1, 1 file 22\bld18.cmp }
+		CHUNK DATA { short 3, 0, 9, -1, 1 file 22\bld19.cmp }
+		CHUNK DATA { short 3, 0, 9, -1, 1 file 22\bld20.cmp }
+		CHUNK DATA { short 3, 0, 9, -1, 1 file 22\bld21.cmp }
+		CHUNK DATA { short 3, 0, 9, -1, 1 file 22\bld22.cmp }
+
+		// vehicle sounds
+		CHUNK DATA { short 3, 0, 9, -1, 1 file 22\veh01.cmp }
+		CHUNK DATA { short 3, 0, 9, -1, 1 file 22\veh02.cmp }
+		CHUNK DATA { short 3, 0, 9, -1, 1 file 22\veh03.cmp }
+		CHUNK DATA { short 3, 0, 9, -1, 1 file 22\veh04.cmp }
+		CHUNK DATA { short 3, 0, 9, -1, 1 file 22\veh05.cmp }
+		CHUNK DATA { short 3, 0, 9, -1, 1 file 22\veh06.cmp }
+		CHUNK DATA { short 3, 0, 9, -1, 1 file 22\veh07.cmp }
+		CHUNK DATA { short 3, 0, 9, -1, 1 file 22\veh08.cmp }
+		CHUNK DATA { short 3, 0, 9, -1, 1 file 22\veh09.cmp }
+		CHUNK DATA { short 3, 0, 9, -1, 1 file 22\veh10.cmp }
+		CHUNK DATA { short 3, 0, 9, -1, 1 file 22\veh11.cmp }
+		CHUNK DATA { short 3, 0, 9, -1, 1 file 22\veh12.cmp }
+		CHUNK DATA { short 3, 0, 9, -1, 1 file 22\veh13.cmp }
+		CHUNK DATA { short 3, 0, 9, -1, 1 file 22\veh14.cmp }
+		CHUNK DATA { short 3, 0, 9, -1, 1 file 22\veh15.cmp }
+		CHUNK DATA { short 3, 0, 9, -1, 1 file 22\veh16.cmp }
+		CHUNK DATA { short 3, 0, 9, -1, 1 file 22\veh17.cmp }
+		CHUNK DATA { short 3, 0, 9, -1, 1 file 22\veh18.cmp }
+
+		// projectile
+		CHUNK DATA { short 3, 0, 9, 0, 1 file 22\mgn03.cmp }
+		CHUNK DATA { short 3, 0, 9, 0, 1 file 22\sht05.cmp }
+		CHUNK DATA { short 3, 0, 9, 0, 1 file 22\mgn01.cmp }
+		CHUNK DATA { short 3, 0, 9, 0, 1 file 22\gun07.cmp }
+		CHUNK DATA { short 3, 0, 9, 0, 1 file 22\gun16.cmp }
+		CHUNK DATA { short 3, 0, 9, 0, 1 file 22\gun11.cmp }
+		CHUNK DATA { short 3, 0, 9, 0, 1 file 22\gun12.cmp }
+		CHUNK DATA { short 3, 0, 9, 0, 1 file 22\gun14.cmp }
+		CHUNK DATA { short 3, 0, 9, 0, 1 file 22\rkt02.cmp }
+		CHUNK DATA { short 3, 0, 9, 0, 1 file 22\gun08.cmp }
+		CHUNK DATA { short 3, 0, 9, 0, 1 file 22\gun13.cmp }
+		CHUNK DATA { short 3, 0, 9, 0, 1 file 22\gun15.cmp }
+		CHUNK DATA { short 3, 0, 9, 0, 1 file 22\mgn01.cmp }
+		CHUNK DATA { short 3, 0, 9, 0, 1 file 22\gun02.cmp }
+		CHUNK DATA { short 3, 0, 9, 0, 1 file 22\mgn02.cmp }
+		CHUNK DATA { short 3, 0, 9, 0, 1 file 22\sht02.cmp }
+		CHUNK DATA { short 3, 0, 9, 0, 1 file 22\sht03.cmp }
+		CHUNK DATA { short 3, 0, 9, 0, 1 file 22\sht07.cmp }
+		CHUNK DATA { short 3, 0, 9, 0, 1 file 22\sht06.cmp }
+		CHUNK DATA { short 3, 0, 9, 0, 1 file 22\sht05.cmp }
+		CHUNK DATA { short 3, 0, 9, 0, 1 file 22\sht04.cmp }
+		CHUNK DATA { short 3, 0, 9, 0, 1 file 22\sht09.cmp }
+		CHUNK DATA { short 3, 0, 9, 0, 1 file 22\sht10.cmp }
+		CHUNK DATA { short 3, 0, 9, 0, 1 file 22\sht08.cmp }
+
+		// explosion
+		CHUNK DATA { short 3, 0, 9, 23, 1 file 22\exp13.cmp }
+		CHUNK DATA { short 3, 0, 9, 23, 1 file 22\exp09.cmp }
+		CHUNK DATA { short 3, 0, 9, 23, 1 file 22\exp11.cmp }
+		CHUNK DATA { short 3, 0, 9, 23, 1 file 22\exp14.cmp }
+		CHUNK DATA { short 3, 0, 9, 23, 1 file 22\exp05.cmp }
+
+		// rocket landing
+		CHUNK DATA { short 3, 0, 9, 0, 1 file 22\spc01.cmp }
+		CHUNK DATA { short 3, 0, 9, 0, 1 file 22\16synth1.cmp }
+		}
+
+	// Music used with & w/o MIDI
+	// 22K 16-bit stereo
+	LIST MUS0
+		{
+		CHUNK NUMM { int 5 }
+		CHUNK DATA { short 2, 2, 9, 0, 2 file 22m\credits1.cmp }	// main screen
+		CHUNK DATA { short 2, 0, -1, 0, 0 file 22m\mx02.raw }		// create game
+		CHUNK DATA { short 2, 2, 9, 0, 2 file 22m\wingame.cmp }		// win game
+		CHUNK DATA { short 2, 2, 9, 0, 2 file 22m\losegame.cmp }	// lose game
+		CHUNK DATA { short 2, 2, 9, 0, 2 file 22m\creditlp.cmp }	// credits
+		}
+
+	// Music used only w/o MIDI
+	// 22K 16-bit stereo
+	LIST MUS2
+		{
+		CHUNK NUMM { int 5 }
+		CHUNK DATA { short 4, 2, 9, 0, 2 file 22m\cue120a.cmp }
+		CHUNK DATA { short 4, 2, 9, 0, 2 file 22m\cue120b.cmp }
+		CHUNK DATA { short 4, 2, 9, 0, 2 file 22m\cue130.cmp }
+		CHUNK DATA { short 4, 2, 9, 0, 2 file 22m\cue135.cmp }
+		CHUNK DATA { short 4, 2, 9, 0, 2 file 22m\cue145.cmp }
+		}
+#endif	// INC_WAV
+
+	}

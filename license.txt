@@ -1,0 +1,22 @@
+This is released under a limited license:
+1) No rights are given to the game Enemy Nations, the trademark Enemy Nations, or the concept.
+2) Windward intends to someday create an Enemy Nations II and reserves all rights for all future versions of the game.
+3) You may not sell anything derived from this code, art, or anything else included.
+4) This is released solely for people to learn from the code and to make fixes in the existing code that they will make available for free.
+
+If you don't like these restrictions, don't use this code/data.
+
+
+Notes:
+
+1) All files here are from backup CDs and should be everything needed.
+2) enations_latest is the enations directory on my computer. So it "should" build correctly if it is copied over the enations directory.
+3) This was built using the VC++ in release in 1990/91 - the one that came in the very big box.
+4) My suggestion is build the code first (enations.exe and windward.dll) and use the existing enations.dat file.
+   Then strip out the Windows 3.1 code, all drivers except TCP/IP from vdnplay, and the CD check code and test it runs.
+   Then convert to the latest C++ and test it runs. Then you can start changing it.
+5) To build the data (there may be steps I have forgotten):
+   There is a macro in the xls file to convert the xls to the unit properties.
+   There is a program to create an optimum 8-bit palette from the tga files.
+   There is a program to convert the tga files to 8-bit. All graphics are in the dat file as both 24-bit and 8-bit.
+   There is a program to create a riff file from all the individual data files.

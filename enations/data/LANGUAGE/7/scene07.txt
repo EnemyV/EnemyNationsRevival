@@ -1,0 +1,9 @@
+Ausgezeichnet. Sie haben Ihre Kampffähigkeiten unter Beweis gestellt. Also machen wir es nun ein bißchen anspruchsvoller. Wie Sie sehen, haben wir Ihnen fünf neue Fahrzeuge gegeben. Aber um die Spannung zu erhöhen, haben wir diese Einheiten in eine gegnerische Stadt geschickt. Ihr Einsatzziel ist es, mindestens eine dieser Einheiten in Ihre Stadt zu holen und zu reparieren. 
+
+Dazu müssen Sie eine Reparaturanlage bauen, in die sie das Fahrzeug schicken können. Ihr Einsatz endet erst, wenn Sie eine der neuen Einheiten vollständig repariert haben.
+
+Das ist alles, Soldat. Einfach- aber kein Kinderspiel.
+
+TIP:
+
+1.   Sorgen Sie dafür, daß der Reparaturanlage alle zur Reparatur der Fahrzeuge erforderlichen Materialien zur Verfügung stehen.

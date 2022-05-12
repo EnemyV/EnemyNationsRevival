@@ -1,0 +1,11 @@
+This is the second disk version of Enemy Nations and it has a number of limitations in it:
+*)   This is a full featured game when playing a network game. These limits are only in single-player mode.
+1)   Most game creation choices are limited to 1 selection.
+2)   You can only research 10 items.
+3)   You cannot build the most advanced units.
+4)   You can only play the first 5 scenarios.
+5)   In non-scenario play you can only play for 3 hours.
+6)   You can save, but you cannot load a game. Saved games can be loaded in the retail version.
+7)   You cannot create a multi-player game, you can only join.
+
+Do you wish to play?

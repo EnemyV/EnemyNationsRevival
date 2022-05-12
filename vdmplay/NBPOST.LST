@@ -1,0 +1,66 @@
+Microsoft (R) Macro Assembler Version 6.11		    01/07/96 23:20:08
+nbpost.asm						     Page 1 - 1
+
+
+
+					.MODEL LARGE
+					.286
+ 0000					.CODE
+
+					EXTRN NCBCompletion:FAR
+
+					PUBLIC NetbiosPostRoutine
+
+ 0000				NetbiosPostRoutine PROC
+
+ 0000  60				PUSHA
+					
+ 0001  06				PUSH ES
+ 0002  53				PUSH BX
+
+ 0003  9A ---- 0000 E			call NCBCompletion
+
+ 0008  61				POPA
+ 0009  CB				ret
+ 000A				NetbiosPostRoutine ENDP
+
+					END
+Microsoft (R) Macro Assembler Version 6.11		    01/07/96 23:20:08
+nbpost.asm						     Symbols 2 - 1
+
+
+
+
+Segments and Groups:
+
+                N a m e                 Size     Length   Align   Combine Class
+
+DGROUP . . . . . . . . . . . . .	GROUP
+_DATA  . . . . . . . . . . . . .	16 Bit	 0000	  Word	  Public  'DATA'	
+NBPOST_TEXT  . . . . . . . . . .	16 Bit	 000A	  Word	  Public  'CODE'	
+
+
+Procedures,  parameters and locals:
+
+                N a m e                 Type     Value    Attr
+
+NetbiosPostRoutine . . . . . . .	P Far	 0000	  NBPOST_TEXT	Length= 000A Public
+
+
+Symbols:
+
+                N a m e                 Type     Value    Attr
+
+@CodeSize  . . . . . . . . . . .	Number	 0001h	 
+@DataSize  . . . . . . . . . . .	Number	 0001h	 
+@Interface . . . . . . . . . . .	Number	 0000h	 
+@Model . . . . . . . . . . . . .	Number	 0005h	 
+@code  . . . . . . . . . . . . .	Text   	 NBPOST_TEXT
+@data  . . . . . . . . . . . . .	Text   	 DGROUP
+@fardata?  . . . . . . . . . . .	Text   	 FAR_BSS
+@fardata . . . . . . . . . . . .	Text   	 FAR_DATA
+@stack . . . . . . . . . . . . .	Text   	 DGROUP
+NCBCompletion  . . . . . . . . .	L Far	 0000	  External
+
+	   0 Warnings
+	   0 Errors

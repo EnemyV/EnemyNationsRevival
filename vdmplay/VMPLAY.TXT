@@ -1,0 +1,161 @@
+
+VdmPlay protocol
+
+
+The protocol is designed to allow multi-user game software to exchange information about game state.
+The protocol implements the following communication model:
+There is a server computer S serving the game which contains up to date info about the game
+status and mantains connections with all client workstations participating in the game.
+
+The server listens on well known UDP port SP0  for incoming datagrams and one randomely choosen TCP 
+port - SP1 for incoming connections.  
+
+The client workstations listens on randomely chosen ports WP0 and WP1 for incoming UDP datagrams and TCP connections.
+
+This way entities participating in the game are uniquely identified by the combination of their IP address and the pair of ports they are using. This combination is called VPNETADDRESS.
+
+
+When client starts it can search for all available servers by broadcasting SenumREQ packet on well
+known UDP port SP0.
+The servers which sees the packet replies with a SenumREP packet as UDP datagram unicasted to the client's WP0 (the WP0 and client's IP address are retrieved from the source address/port info in the
+UDP datagaram). This packet contains the server's VPNETADDRESS.
+
+The client collects all the replies and choses one of the game servers. 
+Then it creates a TCP connection with the chosen server SP1 port.  When the connection is established the client sends a game join request - JoinREQ packet over the connection.   The packet contains the client's VPNETADDRESS and the player id PLID. If the server accepts the request
+it replies with the JoinREP packet to the joining client, and send a join advertisement - JoinADV message to all other joined clients. The JoinADV contains the same data as JoinREQ  of the just joined client. The client can send more JoinREQ's each one with different PLID, this way there can be multiple players at each workstation (actually not workstation but VPNETADDRESS)
+The workstation then emit a player enumeration request - PenumREQ to the server. The server replies with a sequence of PenumREP	packets, one  for each joined player. Each JoinREP packet contains the same data as JoinREP except the message code and message sequence number.
+
+When a player at client workstation leaves the game the client send a LeaveREQ packet to the server,
+which replies with LeaveREP and retransmits the LeaveREQ to all other clients. LeaveREQ and LeavREP has
+the same format as JoinREQ except for message code and sequence numbers. For each given VPNETADDRESS the server maintains a list of players that can be found there, when this list becomes empty (as result of LeaveREQs) and there is TCP connection between the server and the VPNETADDRESS  the connection is closed.
+If the connection to the given VPNETADDRESS drops acidently or as result of close operation by the client workstation then for each player identified at this VPNETADDRESS  server sends a LeaveREQ packet to all other workstations.
+
+
+Message format:
+
+
+typedef unsigend short WORD;  // 2 bytes  
+typedef unsigned lomg  DWORD; // 4 bytes
+
+typedef WORD    VPPLAYERID;
+// Predefined player Id's
+const VPPLAYERID  VP_LOCALMACHINE = 0;  // Local VDMPLAY Manager 
+const VPPLAYERID  VP_SESSIONSERVER = 1; 
+const VPPLAYERID  VP_FIRSTPLAYER = 2;
+const VPPLAYERID  VP_ALLPLAYERS = (VPPLAYERID) 0xFFFF;
+
+// All messages are prefixed by this header
+typedef struct VPMsgHdr
+{
+	BYTE         msgKind	// from enum MessageCodes
+	BYTE         msgFlags;
+	VPPLAYERID   msgFrom;   // Sending player ID -	Intel format
+	VPPLAYERID   msgTo;	// Target Player ID  -	Intel format
+	WORD         msgId;	// Message sequnce # -	Intel format	
+	WORD         msgSize;	// Message size	     -	Intel format
+} VPMSGHDR;
+	
+
+enum MessageCodes
+{
+	   JoinREQ = 'J', // Join request 
+	   JoinREP=  'j', // Join Reply (Acceptance of a the join request)
+	   JoinNAK=  'N', // Join Negative acknowledge
+	   JoinADV=  'A', // Join advertisement (sent by the server to advertise
+		              // that somebody joined the session)
+	   LeaveREQ = 'L',  // Leave Request
+	   LeaveREP  = 'l', // Leave Reply
+		   
+	   PenumREQ = 'P',   // Player Enum Request
+	   PenumREP = 'p',   // Player Enum Reply
+		   
+           SenumREQ = 'S',   // Session Enum Request
+	   SenumREP = 's',   // Session Enum Reply
+	   UDataREQ = 'U',   // User Data Request
+	   UBDataREQ = 'B'   // User Broadcast Data Request
+};
+
+enum VP_SESSIONFLAGS 
+{ 
+	VP_NOAUTOJOIN=1    // Require the APP to confirm player join requests
+}; 
+
+enum VPPLAYERFLAGS { VP_AIPLAYER=1, VP_IGNOREBROADCAST=2 }; 
+
+enum VPSENDFLAGS { VP_BROADCAST=1, VP_MUSTDELIVER=2 };
+
+
+typedef struct VPGUID
+{
+	char buf[32];
+} VPGUID;
+	
+struct  tcpaddress_s 
+{
+	   in_addr    m_stationAddress;     // Internet address
+	   u_short    m_streamPort;	    // port number for the stream connections in Net byte ORDER
+	   u_short    m_dgPort;		    // port number for datagrams in Net byte ORDER
+};
+
+typedef union VPNetAddress
+{
+	char   machineAddress[28];
+	struct tcpaddress_s tcpAddress;
+} VPNETADDRESS;
+
+typedef VPNETADDRESS VPSESSIONID;
+
+typedef struct VPSessionInfo
+{
+	VPGUID         gameId; 	      // geme identification key	         
+	VPSESSIONID    sessionId;     // identification of this session	
+	DWORD          version;       // game version
+	DWORD          playerCount;   // how much players we have there 
+	DWORD          sessionFlags;  // From enum VPSESSIONFLAGS
+	DWORD          playerDataSize; // how much player specific data this game needs 
+	DWORD          dataSize;
+//	char           sessionData[dataSize]; 
+} VPSESSIONINFO;
+
+typedef  CONST VPSESSIONINFO FAR* LPCVPSESSIONINFO; 
+
+typedef struct VPPlayerInfo
+{
+	VPNETADDRESS   playerAddress;
+	VPPLAYERID     playerId;
+	DWORD          playerFlags;  // From enum VPPLAYERFLAGS
+	DWORD          dataSize;     // = VPSESSIONINFO.playerDataSize
+//	char           playerData[dateSize];
+} VPPLAYERINFO, FAR* LPVPPLAYERINFO;
+
+
+
+// Used for SenumREQ, PenumREQ
+struct genericMsg
+{
+	VPMSGHDR  hdr;
+};
+
+// Used for PenumREP,LeaveREQ, LeaveREP	
+struct plrInfoMsg
+{
+	VPMSGHDR  hdr;
+	struct // Sequencing info for multi-part responces
+	{      
+		WORD index;   // part number of this message
+		WORD total;   // total number of parts
+    	} seq; 
+									
+	VPPLAYERINFO data;
+};
+
+
+// Used for SenumREP
+struct sesInfoMsg
+{
+	VPMSGHDR	hdr;
+	VPSESSIONINFO   data;
+};
+
+
+

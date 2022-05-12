@@ -1,0 +1,15 @@
+[version]
+signature="$CHICAGO$"
+
+[DefaultInstall]
+AddReg=add.reg
+
+[add.reg]
+HKCR,CLSID\{25E609E0-B259-11CF-BFC7-444535540000}\,,,"Microsoft DirectInput Object"
+HKCR,CLSID\{25E609E0-B259-11CF-BFC7-444535540000}\InProcServer32,,,"%11%\dinput.dll"
+HKCR,CLSID\{25E609E0-B259-11CF-BFC7-444535540000}\InProcServer32,ThreadingModel,,"Both"
+
+HKCR,CLSID\{25E609E1-B259-11CF-BFC7-444535540000}\,,,"Microsoft DirectInputDevice Object"
+HKCR,CLSID\{25E609E1-B259-11CF-BFC7-444535540000}\InProcServer32,,,"%11%\dinput.dll"
+HKCR,CLSID\{25E609E1-B259-11CF-BFC7-444535540000}\InProcServer32,ThreadingModel,,"Both"
+

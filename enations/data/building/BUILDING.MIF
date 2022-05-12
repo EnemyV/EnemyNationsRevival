@@ -1,0 +1,158 @@
+#include "..\data.inc"
+
+RIFF BLDG
+	{
+	LIST FVER
+		{
+
+		CHUNK DATA {short				// version ALWAYS FIRST
+#include ..\rif_ver.inc"
+			}
+		}
+
+	LIST SP08
+	{
+#ifdef ALL_ZOOMS
+		CHUNK NUMS { int 45 }
+
+		CHUNK DATA { int  1  file mothersh\mothersh.8 }
+		CHUNK DATA { int  2  file apt1\apt1.8 }
+		CHUNK DATA { int  3  file apt2\apt2.8 }
+		CHUNK DATA { int  4  file apt4\apt4.8 }
+		CHUNK DATA { int  5  file apt6\apt6.8 }
+		CHUNK DATA { int  6  file apt7\apt7.8 }
+		CHUNK DATA { int  7  file apt8\apt8.8 }
+		CHUNK DATA { int  10  file office1\office1.8 }
+		CHUNK DATA { int  11  file office3\office3.8 }
+		CHUNK DATA { int  12  file office4\office4.8 }
+		CHUNK DATA { int  13  file office6\office6.8 }
+		CHUNK DATA { int  14  file office7\office7.8 }
+		CHUNK DATA { int  16  file camp\camp.8 }
+		CHUNK DATA { int  18  file commandc\commandc.8 }
+		CHUNK DATA { int  19  file embassy\embassy.8 }
+		CHUNK DATA { int  20  file farm\farm.8 }
+		CHUNK DATA { int  21  file pillbox\pillbox.8 }
+		CHUNK DATA { int  22  file bunker\bunker.8 }
+		CHUNK DATA { int  23  file fort\fort.8 }
+		CHUNK DATA { int  24  file dreadfac\dreadfac.8 }
+		CHUNK DATA { int  25  file weaponfa\weaponfa.8 }
+		CHUNK DATA { int  26  file assaultf\assaultf.8 }
+		CHUNK DATA { int  27  file lumbermi\lumbermi.8 }
+		CHUNK DATA { int  28  file oilwell\oilwell.8 }
+		CHUNK DATA { int  29  file oilrefin\oilrefin.8 }
+		CHUNK DATA { int  30  file coalmine\coalmine.8 }
+		CHUNK DATA { int  31  file ironmine\ironmine.8 }
+		CHUNK DATA { int  32  file xmine\xmine.8 }
+		CHUNK DATA { int  33  file coalplan\coalplan.8 }
+		CHUNK DATA { int  34  file oilplant\oilplant.8 }
+		CHUNK DATA { int  35  file nukeplan\nukeplan.8 }
+		CHUNK DATA { int  36  file research\research.8 }
+		CHUNK DATA { int  37  file repairfa\repairfa.8 }
+		CHUNK DATA { int  38  file seaport\seaport.8 }
+		CHUNK DATA { int  39  file shipyrd\shipyrd.8 }
+		CHUNK DATA { int  40  file warshipf\warshipf.8 }
+		CHUNK DATA { int  41  file smelter\smelter.8 }
+		CHUNK DATA { int  42  file warehous\warehous.8 }
+		CHUNK DATA { int  43  file vehiclef\vehiclef.8 }
+		CHUNK DATA { int  44  file bridge-b\bridge-b.8 }
+		CHUNK DATA { int  45  long -1, 4 }
+		CHUNK DATA { int  46  file bridge-e\bridge-e.8 }
+		CHUNK DATA { int  47  long -1, 4 }
+		CHUNK DATA { int  48  long -1, 4 }
+		CHUNK DATA { int  49  long -1, 4 }
+
+#else
+		CHUNK NUMS { int 35 }
+
+		CHUNK DATA { int  1  file mothersh\mothersh.s8 }
+		CHUNK DATA { int  2  file apt1\apt1.s8 }
+		CHUNK DATA { int  3  file apt2\apt2.s8 }
+		CHUNK DATA { int  4  file apt4\apt4.s8 }
+		CHUNK DATA { int  10  file office1\office1.s8 }
+		CHUNK DATA { int  11  file office3\office3.s8 }
+		CHUNK DATA { int  12  file office4\office4.s8 }
+		CHUNK DATA { int  16  file camp\camp.s8 }
+		CHUNK DATA { int  18  file commandc\commandc.s8 }
+		CHUNK DATA { int  19  file embassy\embassy.s8 }
+		CHUNK DATA { int  20  file farm\farm.s8 }
+		CHUNK DATA { int  21  file pillbox\pillbox.s8 }
+		CHUNK DATA { int  22  file bunker\bunker.s8 }
+		CHUNK DATA { int  25  file weaponfa\weaponfa.s8 }
+		CHUNK DATA { int  26  file assaultf\assaultf.s8 }
+		CHUNK DATA { int  27  file lumbermi\lumbermi.s8 }
+		CHUNK DATA { int  28  file oilwell\oilwell.s8 }
+		CHUNK DATA { int  29  file oilrefin\oilrefin.s8 }
+		CHUNK DATA { int  30  file coalmine\coalmine.s8 }
+		CHUNK DATA { int  31  file ironmine\ironmine.s8 }
+		CHUNK DATA { int  33  file coalplan\coalplan.s8 }
+		CHUNK DATA { int  34  file oilplant\oilplant.s8 }
+		CHUNK DATA { int  36  file research\research.s8 }
+		CHUNK DATA { int  37  file repairfa\repairfa.s8 }
+		CHUNK DATA { int  38  file seaport\seaport.s8 }
+		CHUNK DATA { int  39  file shipyrd\shipyrd.s8 }
+		CHUNK DATA { int  41  file smelter\smelter.s8 }
+		CHUNK DATA { int  42  file warehous\warehous.s8 }
+		CHUNK DATA { int  43  file vehiclef\vehiclef.s8 }
+		CHUNK DATA { int  44  file bridge-b\bridge-b.s8 }
+		CHUNK DATA { int  45  long -1, 4 }
+		CHUNK DATA { int  46  file bridge-e\bridge-e.s8 }
+		CHUNK DATA { int  47  long -1, 4 }
+		CHUNK DATA { int  48  long -1, 4 }
+		CHUNK DATA { int  49  long -1, 4 }
+#endif
+	}
+
+#ifdef INC24
+	LIST SP24
+	{
+		CHUNK NUMS { int 45 }
+
+		CHUNK DATA { int  1  file mothersh\mothersh.24 }
+		CHUNK DATA { int  2  file apt1\apt1.24 }
+		CHUNK DATA { int  3  file apt2\apt2.24 }
+		CHUNK DATA { int  4  file apt4\apt4.24 }
+		CHUNK DATA { int  5  file apt6\apt6.24 }
+		CHUNK DATA { int  6  file apt7\apt7.24 }
+		CHUNK DATA { int  7  file apt8\apt8.24 }
+		CHUNK DATA { int  10  file office1\office1.24 }
+		CHUNK DATA { int  11  file office3\office3.24 }
+		CHUNK DATA { int  12  file office4\office4.24 }
+		CHUNK DATA { int  13  file office6\office6.24 }
+		CHUNK DATA { int  14  file office7\office7.24 }
+		CHUNK DATA { int  16  file camp\camp.24 }
+		CHUNK DATA { int  18  file commandc\commandc.24 }
+		CHUNK DATA { int  19  file embassy\embassy.24 }
+		CHUNK DATA { int  20  file farm\farm.24 }
+		CHUNK DATA { int  21  file pillbox\pillbox.24 }
+		CHUNK DATA { int  22  file bunker\bunker.24 }
+		CHUNK DATA { int  23  file fort\fort.24 }
+		CHUNK DATA { int  24  file dreadfac\dreadfac.24 }
+		CHUNK DATA { int  25  file weaponfa\weaponfa.24 }
+		CHUNK DATA { int  26  file assaultf\assaultf.24 }
+		CHUNK DATA { int  27  file lumbermi\lumbermi.24 }
+		CHUNK DATA { int  28  file oilwell\oilwell.24 }
+		CHUNK DATA { int  29  file oilrefin\oilrefin.24 }
+		CHUNK DATA { int  30  file coalmine\coalmine.24 }
+		CHUNK DATA { int  31  file ironmine\ironmine.24 }
+		CHUNK DATA { int  32  file xmine\xmine.24 }
+		CHUNK DATA { int  33  file coalplan\coalplan.24 }
+		CHUNK DATA { int  34  file oilplant\oilplant.24 }
+		CHUNK DATA { int  35  file nukeplan\nukeplan.24 }
+		CHUNK DATA { int  36  file research\research.24 }
+		CHUNK DATA { int  37  file repairfa\repairfa.24 }
+		CHUNK DATA { int  38  file seaport\seaport.24 }
+		CHUNK DATA { int  39  file shipyrd\shipyrd.24 }
+		CHUNK DATA { int  40  file warshipf\warshipf.24 }
+		CHUNK DATA { int  41  file smelter\smelter.24 }
+		CHUNK DATA { int  42  file warehous\warehous.24 }
+		CHUNK DATA { int  43  file vehiclef\vehiclef.24 }
+		CHUNK DATA { int  44  file bridge-b\bridge-b.24 }
+		CHUNK DATA { int  45  long -1, 4 }
+		CHUNK DATA { int  46  file bridge-e\bridge-e.24 }
+		CHUNK DATA { int  47  long -1, 4 }
+		CHUNK DATA { int  48  long -1, 4 }
+		CHUNK DATA { int  49  long -1, 4 }
+	}
+#endif
+
+}

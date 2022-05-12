@@ -1,0 +1,34 @@
+OS=DOS
+ENV=WIN16
+
+MSVC    = d:\tools\msvc
+UT		= d:\tools\msvc32s\ut
+OTHER   = d:\tools
+
+INCLUDE = $(OTHER)\include;$(UT);$(MSVC)\mfc\include;$(MSVC)\include
+LIB     = $(OTHER)\lib;$(UT);$(MSVC)\mfc\lib;$(MSVC)\lib
+PATH    = $(MSVC)\bin
+
+LINK    =
+
+# If this generates the error "Unable to open DOSWIN16.MAK" then you need
+# to put a copy of that file (from the GENERIC sample code directory)
+# into a directory on your INCLUDE environment variable
+
+!include <$(OS)$(ENV).MAK>
+
+proj = dave16ut
+
+all: $(proj).dll
+
+# Update the object file if necessary
+
+ver_16.res: ver_16.rc version.h
+	rc /r /d "NDEBUG" ver_16.rc
+
+$(proj).obj: $*.cpp thread.h thrdapi.h
+    $(cc) $(cflags) $(cvars) $(cdebug) /Od /Zi $*.cpp
+
+$(proj).dll: $*.obj $*.def ver_16.res
+    $(link) $(guiflags) $*.obj libentry.obj, $*.dll,$*.map,thrdutls libw mlibcew, $*.DEF /LI /CO /MAP
+	rc /t ver_16.res dave16ut.dll

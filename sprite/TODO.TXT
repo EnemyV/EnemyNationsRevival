@@ -1,0 +1,21 @@
+Things left to do :
+
+- Set the dir text box in multiple units to be right justified so we get the right end of the path
+- On an error list the bad file - including it's name and path
+- skip bad files on palette create
+- Put palette in 8-bit sprite file
+- Hold times
+- Hotspots
+- Smoke/fire spots
+- Fuzziness on transparent color
+- Minimal variance quantization
+- Reverse lookup for ditherer
+- Optimizations
+- Smoke/Fire, misc sprites
+- Make sure that missing views and bitmaps are set to -1.
+- In palette create, create a histogram for each shaded tile and divide
+  each count by eight, to avoid overbalancing toward terrain
+- Option to turn off prompt on overwrite
+- Pull unused items off of toolbar and add frequently used items
+- Menu item for close all windows
+- Help file with naming convention

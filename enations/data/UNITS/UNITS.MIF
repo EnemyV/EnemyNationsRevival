@@ -1,0 +1,58 @@
+RIFF UNIT
+	{
+	LIST FVER
+		{
+
+		CHUNK DATA {short				// version ALWAYS FIRST
+#include ..\rif_ver.inc"
+			}
+		}
+
+	LIST TERN
+		{
+		CHUNK NMBR { int 12 }
+
+#include "terrain.prn"
+
+		}
+
+	LIST VEHL
+		{
+		CHUNK NUMV { int 21 }
+
+#include "vehicle.prn"
+
+		}
+
+
+	LIST BLDG
+		{
+		CHUNK NUMB { int 44 }
+
+#include "building.prn"
+
+		}
+
+	LIST EXPL
+		{
+		CHUNK NUME { int 6 }
+		// projectile ID, delay, expl ID, expl sound 
+		CHUNK DATA { short -1, 0, -1, 0, 0 }	// nothing
+		CHUNK DATA { short 0, 0, -1, 0, 0 }	// light gun
+		CHUNK DATA { short 3, 0, 0, 1, 0 }		// medium gun
+		CHUNK DATA { short 1, 0, 1, 2, 0 }		// heavy gun
+		CHUNK DATA { short 2, 6, 2, 3, 1 }		// rocket launcher
+		CHUNK DATA { short -1, 0, 3, 4, 0 }	// heavy rover
+		}
+
+	LIST EFCT
+		{
+		CHUNK NUME { int 5 }
+		CHUNK DATA { int 0, 6 }
+		CHUNK DATA { int 6, 1 }
+		CHUNK DATA { int 7, 1 }
+		CHUNK DATA { int 7, 1 }
+		CHUNK DATA { int 7, 1 }
+		}
+}
+

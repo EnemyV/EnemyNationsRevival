@@ -1,0 +1,23 @@
+.SUFFIXES : .raw .wav .xmi .mid
+
+
+all:	voice11 voice22 9.rif
+
+voice11:
+	cd 11
+	nmake
+	cd ..
+
+voice22:
+	cd 22
+	nmake
+	cd ..
+
+9.rif:	9.mif
+	makeriff 9.mif
+
+clean:
+	del *.rif
+
+.wav.raw:
+	vtor $*.wav $@

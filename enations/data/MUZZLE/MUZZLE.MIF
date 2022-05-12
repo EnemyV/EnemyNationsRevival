@@ -1,0 +1,37 @@
+#include "..\data.inc"
+
+RIFF FLAS
+	{
+
+	LIST FVER
+		{
+
+		CHUNK DATA {short				// version ALWAYS FIRST
+#include ..\rif_ver.inc"
+			}
+		}
+
+	LIST SP08
+	{
+#ifdef ALL_ZOOMS
+		CHUNK NUMS { int 1 }
+
+		CHUNK DATA { int 0 file 0\0.8 }
+
+#else
+		CHUNK NUMS { int 1 }
+
+		CHUNK DATA { int 0 file 0\0.s8 }
+#endif
+	}
+
+#ifdef INC24
+	LIST SP24
+	{
+		CHUNK NUMS { int 1 }
+
+		CHUNK DATA { int 0 file 0\0.24 }
+	}
+#endif
+
+}

@@ -1,0 +1,548 @@
+#include "..\..\data.inc"
+
+RIFF LANG
+	{
+	LIST FVER
+		{
+
+		CHUNK DATA {short				// version ALWAYS FIRST
+#include ..\..\rif_ver.inc"
+			}
+		}
+
+	LIST LEGL
+		{
+		CHUNK LIC1 { file anal1.txt }
+		CHUNK LIC2 { file anal2.txt }
+		CHUNK LIC3 { file anal3.txt }
+		CHUNK LIC4 { file anal4.txt }
+		CHUNK LIC5 { file anal5.txt }
+		CHUNK LIC6 { file anal6.txt }
+		}
+
+	LIST RSRH
+		{
+		CHUNK DATA { string "Balloons" }
+		CHUNK DESC { string "We think we can develop a light material for a hot air balloon and cannisters for propane so we can heat the air." }
+		CHUNK RSLT { string "We were successful making the balloons but the air currents on this planet are too treacherous - every flight crashed. However, we have learned enough that we think we can try to build a glider." }
+		CHUNK DATA { string "Gliders" }
+		CHUNK DESC { string "We think we can develop light composites to build an airframe for a glider. We should be able to use the balloon skin we developed as a covering." }
+		CHUNK RSLT { string "The treacherous air currents did us in again. Anything light enough to fly was torn apart. However, with an engine we can build a strong enough plane to withstand the air currents." }
+		CHUNK DATA { string "Prop Planes" }
+		CHUNK DESC { string "We developed a glider that was to heavy to stay aloft but it did withstand the air currents. We think we can develop an engine to keep this airframe aloft." }
+		CHUNK RSLT { string "The air is just too light here. We could never get an engine that was both light and strong enough. However, we developed some useful technology for our radar research." }
+		CHUNK DATA { string "Jet Planes" }
+		CHUNK DESC { string "A jet engine should give us the power we need to keep a strong enough airframe aloft. We think we can build one with the materials we have discovered here." }
+		CHUNK RSLT { string "With the materials available back on earth we could have done this. However, with what we have here we can't stay aloft in this thin tricky air. However, we developed some real useful materials to help improve the effectiveness of our weapons and armor." }
+		CHUNK DATA { string "Rockets" }
+		CHUNK DESC { string "With a rocket we can punch up to low orbit above this tricky atmosphere. We have the materials we need to do this."}
+		CHUNK RSLT { string "Every rocket we fired up to robit was vaporized from space. Apparently the embargo on the planet includes us! However, we can use rockets for short-range weapons and boy are they powerful." }
+
+		CHUNK DATA { string "Sailboats" }
+		CHUNK DESC { string "While the wind and waves would make it tricky we think we can develop a sailboat" }
+		CHUNK RSLT { string "The air currents are too unpredictable. Every boat ended up getting blown every which direction until it was thrown against some rocks. However, with a motor we can avoid that problem."}
+		CHUNK DATA { string "Motorboats" }
+		CHUNK DESC { string "We should be able to develop a marine motor to put on our best sailboat design."}
+		CHUNK RSLT { string "We have conquered the seas. Now we can travel to the four corners of the globe. Build a shipyard and we will build naval vessels."}
+		CHUNK DATA { string "Cargo Handling" }
+		CHUNK DESC { string "We should be able to design and build cranes, forklifts, and the other equipment we need to move heavy cargo around."}
+		CHUNK RSLT { string "We now have the ability to handle cargo for large trucks and even freighters."}
+		CHUNK DATA { string "Fire Control" }
+		CHUNK DESC { string "All of our weapons are being controlled and sighted by eye. We should be able to design somewhat sophisticated fire control systems using the materials we have here."}
+		CHUNK RSLT { string "We now have basic fire control for our weapons. We can use this in our more advanced vehicles and as the basis for research into more advanced radar and sighting systems."}
+		CHUNK DATA { string "Landing Craft" }
+		CHUNK DESC { string "With what we have learned in building naval vesels for the seas here we should be able to design a landing craft where the ramp will withstand the seas."}
+		CHUNK RSLT { string "We have a successful design for a front ramp for landing craft. Our shipyards can now build landing craft and we can use them for amphibious assaults."}
+		CHUNK DATA { string "Naval Construction" }
+		CHUNK DESC { string "We should be able to design a ship that is larger than any we have yet created."}
+		CHUNK RSLT { string "We can now build large ship hulls. With this we can build Frigates and rule the seas. We have also learned some useful tricks for our radar research."}
+
+		CHUNK DATA { string "Large Vehicles" }
+		CHUNK DESC { string "With the materials we have discovered and the steel we are creating we should be able to develop larger vehicles than the small ones we are presently building."}
+		CHUNK RSLT { string "We learned a lot working on this. Not only can we now build larger vehicles, but we should be able to build ones that are more accurate, effective, and more effectively armored."}
+		CHUNK DATA { string "Heavy Vehicles" }
+		CHUNK DESC { string "We should be able to adapt engines and frames to build very heavy vehicles."}
+		CHUNK RSLT { string "We should now be able to build the heaviest vehicles you desire. We also learned how to build even bigger fixed gun emplacements as well as some useful information on extending the range and improving the accuracy of our units."}
+		CHUNK DATA { string "Armored Vehicles" }
+		CHUNK DESC { string "We should be able to develop an effective armor using the steel we are producing and the composites we are developing with local minerals."}
+		CHUNK RSLT { string "We have come up with an armor that is surprisingly effective. Some of the local minerals do wonderful things when mixed with steel. We can now produce armored units."}
+		CHUNK DATA { string "Artillery" }
+		CHUNK DESC { string "With everything else we have learned it should be easy for us to create all the pieces we need to build artillery. After all, it's not that different from a tank gun."}
+		CHUNK RSLT { string "Well, it wasn't easy but we did it. We can now build units capable of indirect fire. And solving all the unexpected problems we hit helped us learn more about making better weapons."}
+		CHUNK DATA { string "Tanks" }
+		CHUNK DESC { string "If we can develop hi-strength ball bearings and lighter armor we can build tanks. Swiveling turrets are a very effective weapon in warfare."}
+		CHUNK RSLT { string "We can now build turreted vehicles. We also had to come up with a better gun which has helped us learn how to make all of our guns better."}
+
+		CHUNK DATA { string "Mid-sized Buildings" }
+		CHUNK DESC { string "If we spend some time experimenting with the local equivilent of concrete and steel we should be able to build larger structures."}
+		CHUNK RSLT { string "We can now build medium sized buildings. And with some more work we should be able to build much larger buildings."}
+		CHUNK DATA { string "Large Buildings" }
+		CHUNK DESC { string "With some of the new composites we should be able to come up with a steel strong enough to build large buildings."}
+		CHUNK RSLT { string "We can now build big buildings. We also learned a lot about making buildings stronger."}
+		CHUNK DATA { string "Advanced Military Buildings" }
+		CHUNK DESC { string "The requirements for the new planned massive military structures will require some advanced construction techniques. We should be able to develop them."}
+		CHUNK RSLT { string "We now know how to build any building structure. This will be useful for our heavy factories and forts."}
+		CHUNK DATA { string "Fortifications" }
+		CHUNK DESC { string "With some research we can determine what combination of concrete and steel plate will give us an effective housing for fortifications."}
+		CHUNK RSLT { string "We can now build walls for fortifications that can withstand significant shelling."}
+
+		CHUNK DATA { string "Radio" }
+		CHUNK DESC { string "With the progress we have made in building electronic components locally we should be able to develop radios so we can have our units keep in touch with central command."}
+		CHUNK RSLT { string "You can now have radio contact (multiple independent windows of the map) with each unit. Just CTRL double-click on the unit you want to center in its own window. (Or double click from the list of units.)"}
+		CHUNK DATA { string "Mail" }
+		CHUNK DESC { string "We have talked to the other colonies and if we set up the infrastructure in our colony we can join their postal cooperative and send and receive mail with the other colonies."}
+		CHUNK RSLT { string "You can now send mail to and receive mail from the other colony leaders who have implemented mail. When you press send the letter is printed and then delivered by truck so it does not arrive instantly."}
+		CHUNK DATA { string "E-mail" }
+		CHUNK DESC { string "We have talked to the other colonies and if we build a radio packet system we can connect to their network to send e-mail."}
+		CHUNK RSLT { string "We have the infrastructure in place. You can now send e-mail that is received instantaneously by the receipient. You cannot chat because the connection has a very low bandwidth so it is presently e-mail only."}
+		CHUNK DATA { string "Telephone" }
+		CHUNK DESC { string "If we upgrade our radio packet system to microwave links we will have the bandwidth to allow real-time chat with the other colonies."}
+		CHUNK RSLT { string "We have the microwave network operational. You can now chat with other colonies that have also upgraded to microwave."}
+
+		CHUNK DATA { string "Gas Turbines" }
+		CHUNK DESC { string "We should be able to design electrical generators that run on gasoline instead of coal. Gas is a lot cleaner and more efficient - if we can build it with the materials they have here."}
+		CHUNK RSLT { string "We can now build power generation plants that use gasoline to produce electricity."}
+		CHUNK DATA { string "Nuclear Power" }
+		CHUNK DESC { string "We should be able to build a nuclear power plant. There is a lot we need to figure out but it should be possible to build one."}
+		CHUNK RSLT { string "We can now build a nuclear power plant. This would mean no more dependence on coal or gas to generate electricity."}
+		CHUNK DATA { string "Bridge Building" }
+		CHUNK DESC { string "With a little work we should be able to come up with a way to build bridges."}
+		CHUNK RSLT { string "We can now build bridges. No longer will rivers stand in the way of our expansion."}
+
+		CHUNK DATA { string "New Construction Techniques" }
+		CHUNK DESC { string "If we spent some time learning how to build buildings more efficiently instead of just working harder it could pay off for us in increased productivity."}
+		CHUNK RSLT { string "With what we have learned we should be able to complete buildings a little faster. However, there is quite a bit left to learn."}
+		CHUNK DATA { string "Improved Construction Techniques" }
+		CHUNK DESC { string "If we spent some more time learning how to build buildings more efficiently instead of just working harder it could pay off for us in increased productivity."}
+		CHUNK RSLT { string "With what we have learned we should be able to complete buildings a significantly faster. However, there is a bit left to learn."}
+		CHUNK DATA { string "Adv. Construction Techniques" }
+		CHUNK DESC { string "If we spent some more time learning how to build buildings more efficiently instead of just working harder it could pay off for us in increased productivity."}
+		CHUNK RSLT { string "With what we have learned we should be able to complete buildings a lot faster. In fact, we now know everything there is to know about construction."}
+		CHUNK DATA { string "New Manufacturing Processes" }
+		CHUNK DESC { string "If we spent some time learning how to build vehicles more efficiently instead of just working harder it could pay off for us in increased productivity."}
+		CHUNK RSLT { string "With what we have learned we should be able to complete vehicles a little faster. However, there is quite a bit left to learn."}
+		CHUNK DATA { string "Improved Manufacturing Processes" }
+		CHUNK DESC { string "If we spent some more time learning how to build vehicles more efficiently instead of just working harder it could pay off for us in increased productivity."}
+		CHUNK RSLT { string "With what we have learned we should be able to complete vehicles a significantly faster. However, there is a bit left to learn."}
+		CHUNK DATA { string "Adv. Manufacturing Processes" }
+		CHUNK DESC { string "If we spent some more time learning how to build vehicles more efficiently instead of just working harder it could pay off for us in increased productivity."}
+		CHUNK RSLT { string "With what we have learned we should be able to complete vehicles a lot faster. In fact, we are now the world's expert on manufacturing."}
+		CHUNK DATA { string "New Mining Technology" }
+		CHUNK DESC { string "If we spent some time learning how to mine minerals more efficiently instead of just working harder it could pay off for us in increased productivity."}
+		CHUNK RSLT { string "With what we have learned we should be able to extract minerals a little faster. However, there is quite a bit left to learn."}
+		CHUNK DATA { string "Advanced Mining Technology" }
+		CHUNK DESC { string "If we spent some more time learning how to mine minerals more efficiently instead of just working harder it could pay off for us in increased productivity."}
+		CHUNK RSLT { string "With what we have learned we should be able to extract minerals a lot faster. In fact, like teenagers, we know it all."}
+		CHUNK DATA { string "Advanced Farming Methods" }
+		CHUNK DESC { string "If we spent some more time learning how to farm more efficiently instead of just working harder it could pay off for us in increased productivity."}
+		CHUNK RSLT { string "With what we have learned we should be able to farm a lot more efficiently. In fact, we don't miss a single bushel of wheat."}
+
+		CHUNK DATA { string "Radar" }
+		CHUNK DESC { string "We should be able to build a radar unit with the electronics industry we have developed."}
+		CHUNK RSLT { string "We are now mass-producing radar. These will be installed in all units built from now on increasing their spotting ability."}
+		CHUNK DATA { string "Advanced Radar" }
+		CHUNK DESC { string "With the recent breakthroughs in emitter technology we should be able to come up with a new radar antenna to increase the effective range of our units."}
+		CHUNK RSLT { string "We have significantly increased the range of our radar units. We will immediately start using these new radar antenna in all units built from now on."}
+		CHUNK DATA { string "OTH Radar" }
+		CHUNK DESC { string "We think we can come up with a more sophisticated radar design that can be built with the materials we have here."}
+		CHUNK RSLT { string "We have pushed up against the limits of what we can build with the limited resource and manufacturing base of our colony. We will use this new device in all units built from now on."}
+		CHUNK DATA { string "Larger Barrels" }
+		CHUNK DESC { string "With the new steel composites we should be able to cast larger gun barrels giving us a longer range."}
+		CHUNK RSLT { string "We have increased the size of all our gun barrels for all future units we build."}
+		CHUNK DATA { string "Improved Gunpowder" }
+		CHUNK DESC { string "With some new mineral discoveries we should be able to increase the explosive power of the powder we use to fire shells increasing their range."}
+		CHUNK RSLT { string "The new gunpowder increased the range of our shells significantly. We will stock all new units with these new shells."}
+		CHUNK DATA { string "Turbo Ignitors" }
+		CHUNK DESC { string "We think there may be a way to ignite more of the powder at once giving us a faster shell and therefore more distance."}
+		CHUNK RSLT { string "The new turbo ignitors are drastically increasing the range of our shells. They will be used in all shells given to new vehicles."}
+
+		CHUNK DATA { string "HE Shells" }
+		CHUNK DESC { string "With some new mineral discoveries we should be able to increase the explosive power of the warheads in our shells."}
+		CHUNK RSLT { string "The new gunpowder increased the explosive power of our shells. We will stock all new units with these new shells."}
+		CHUNK DATA { string "Enriched Shells" }
+		CHUNK DESC { string "If we build machinery to process heavy metals we can add enriched slugs to our shells increasing their firepower."}
+		CHUNK RSLT { string "The enriched shells we are producing increase the firepower of our units significantly. All new units will be stocked with the shells."}
+		CHUNK DATA { string "Fuel-Air Explosive" }
+		CHUNK DESC { string "We think we can develop fuel-air explosive which would give our combat units a nice punch in battle."}
+		CHUNK RSLT { string "The fuel-air shells we have give our units an incredible offensive attack strength. We are loading these shells on all new units."}
+		CHUNK DATA { string "Sandwiched Steel Armor" }
+		CHUNK DESC { string "If we test the different steel combinations we are producing in different combinations we should be able to improve the effectiveness of our armor."}
+		CHUNK RSLT { string "We have increased the defensive strength of our units slightly by improving the armor. This new armor will be used on all new units."}
+		CHUNK DATA { string "Titanium Armor" }
+		CHUNK DESC { string "With some recent mineral discoveries we should be able to create titanium armor."}
+		CHUNK RSLT { string "We have successfully manufactured titanium armor significantly increasing the defensive capability of our units. We will use this new armor on all new units."}
+		CHUNK DATA { string "Durallium Armor" }
+		CHUNK DESC { string "We think we can create a new super-armor. If successful this will make our units virtually impregnable."}
+		CHUNK RSLT { string "The new Durallium armor we have developed will drastically increase the defensive capability of all units using it. We will use this armor on all new units."}
+
+		CHUNK DATA { string "Xilitium" }
+		CHUNK DESC { string "We have discovered a new mineral here that we have never seen before. We think it might have some very useful properities."}
+		CHUNK RSLT { string "With Xilitium we should be able to build some very powerful combat units that are a significant step above anything else on the field of battle."}
+
+		CHUNK DATA { string "Precision Sights" }
+		CHUNK DESC { string "Our sighting mechanisms are pretty crude which means we miss a lot of the time. With some work we could develop better gun sights."}
+		CHUNK RSLT { string "The new precision sights have improved our accuracy a little. They will be standard equipment on all new units."}
+		CHUNK DATA { string "Laser Sights" }
+		CHUNK DESC { string "With our recent successful development of a laser we should be able to adapt that to our gun sights. This will increase our hit ratio."}
+		CHUNK RSLT { string "We have developed a laser sight that will significantly increase the accuracy of our units. We will install it in all new units."}
+		CHUNK DATA { string "Radar Sights" }
+		CHUNK DESC { string "We should be able to tie the radar to the gun using the radar to aim the gun. If this works it should improve our accuracy."}
+		CHUNK RSLT { string "We have developed a radar targeting device that greatly increases the accuracy of our guns. This is now being built in every new unit."}
+		}
+
+	LIST MTRL
+		{
+		CHUNK DATA
+			{ string "Lumber" }
+		CHUNK DATA
+			{ string "Steel" }
+		CHUNK DATA
+			{ string "Xilitium" }
+		CHUNK DATA
+			{ string "Moly" }
+		CHUNK DATA
+			{ string "Goods" }
+		CHUNK DATA
+			{ string "Food" }
+		CHUNK DATA
+			{ string "Oil" }
+		CHUNK DATA
+			{ string "Gas" }
+		CHUNK DATA
+			{ string "Coal" }
+		CHUNK DATA
+			{ string "Iron" }
+		}
+
+	LIST RACE
+		{
+		CHUNK DESC
+			{ string	"Human"
+			  string	"While humans have no specific strengths, neither do they have any specific weaknesses. An all around solidly capable species."}
+		CHUNK DESC
+			{ string	"Kintaro"
+			  string	"The Kintaro have an incredibly high birthrate. Out of necessity farms are very productive. Their scientists are also above average." }
+		CHUNK DESC
+			{ string	"Trisekan"
+			  string	"A very productive race that excels at building, manufacturing, and all other facets of a civilian economy." }
+		CHUNK DESC
+			{ string	"Crimtona"
+			  string	"The Crimtona are the most agressive fighters in the universe. However, they focused on assault to the exclusion of all other skills." }
+		CHUNK DESC
+			{ string	"Blaukupa"
+			  string	"Evolving on a planet with numerous predators, the Blaukupa have refined defense to an artform. They are also incredibly gifted farmers." }
+		CHUNK DESC
+			{ string	"Diolian"
+			  string	"The Diolian have devoted themselves to the pursuit of knowledge to the exclusion of everything else. They are also good basic industry workers." }
+		CHUNK DESC
+			{ string	"Roveldan"
+			  string	"Confident warriors skilled at both offense and defense. They are also capable of manufacturing weapons faster than anyone else." }
+		CHUNK DESC
+			{ string	"Mendari"
+			  string	"Nothing is known of the Mendari." }
+		CHUNK DESC
+			{ string	"Kartugan"
+			  string	"Skilled industrialists and researchers. However, they are not as skilled with natural resources." }
+		CHUNK DESC
+			{ string	"Botanes"
+			  string	"An introspective race of the most skilled warriors in the universe. Their birth rate is incredibly low." }
+		CHUNK DESC
+			{ string	"Ekoda"
+			  string	"A very weak race the Ekoda excel at nothing." }
+		CHUNK DESC
+			{ string	"Byarian"
+			  string	"A race that is very skilled in all parts of a civilian economy. Unfortunately, the Byarian are terrible warriors." }
+		}
+
+	LIST TERN
+		{
+#include "terrain.prn"
+		}
+
+	LIST TYPE
+		{
+		CHUNK DATA
+			{ string "Housing & Offices" }
+		CHUNK DATA
+			{ string "Military" }
+		CHUNK DATA
+			{ string "Advanced Military" }
+		CHUNK DATA
+			{ string "Natural Resources" }
+		CHUNK DATA
+			{ string "Manufacturing" }
+		CHUNK DATA
+			{ string "Services" }
+		}
+
+	LIST BLDG
+		{
+#include "building.prn"
+		}
+
+	LIST VEHL
+		{
+#include "vehicle.prn"
+		}
+
+	LIST SCEN
+		{
+		CHUNK TXTA { file scene01.txt }
+		CHUNK TXTB { file scene02.txt }
+		CHUNK TXTC { file scene03.txt }
+		CHUNK TXTD { file scene04.txt }
+		CHUNK TXTE { file scene05.txt }
+		CHUNK TXTF { file scene06.txt }
+		CHUNK TXTG { file scene07.txt }
+		CHUNK TXTH { file scene08.txt }
+		CHUNK TXTI { file scene09.txt }
+		CHUNK TXTJ { file scene10.txt }
+		CHUNK TXTK { file scene11.txt }
+		CHUNK TXTL { file scene12.txt }
+		CHUNK TXTM { file scene13.txt }
+		}
+
+	// 11K 8-bit mono
+	LIST SFX1
+		{
+#ifdef TWO_VOICES
+		CHUNK NUMS { int 86 }
+#else
+#ifdef NET_VER
+		CHUNK NUMS { int 50 }
+#else
+		CHUNK NUMS { int 57 }
+#endif
+#endif
+
+		// group, {preload/cache/buffer}, comp, backupID (-1 => play when read), type, file
+		//      type: mono_11_8, mono_22_16, stereo_22_16
+
+		// voices
+//		CHUNK DATA { short 3, 0, 9, -1, 0 file 11\sys01.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\sys01.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\sys02.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\sys03.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\sys04.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\sys05.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\sys06.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\sys07.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\sys08.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\sys09.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\sys10.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\sys11.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\sys12.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\sys13.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\sys14.cmp }
+
+		CHUNK DATA { short 3, 0, 8, 0, 0 file 11\rct01.cmp }
+
+		CHUNK DATA { short 3, 0, 8, 0, 0 file 11\com01.cmp }
+		CHUNK DATA { short 3, 0, 8, 0, 0 file 11\com02.cmp }
+		CHUNK DATA { short 3, 0, 8, 0, 0 file 11\com03.cmp }
+		CHUNK DATA { short 3, 0, 8, 0, 0 file 11\com04.cmp }
+		CHUNK DATA { short 3, 0, 8, 0, 0 file 11\com05.cmp }
+		CHUNK DATA { short 3, 0, 8, 0, 0 file 11\com06.cmp }
+		CHUNK DATA { short 3, 0, 8, 0, 0 file 11\com07.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\com08.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\com09.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\com10.cmp }
+
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\bld01.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\bld02.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\bld03.cmp }
+
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\sci01.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\sci02.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\rec01.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\rec02.cmp }
+
+		CHUNK DATA { short 3, 0, 8, 0, 0 file 11\tem01.cmp }
+		CHUNK DATA { short 3, 0, 8, 0, 0 file 11\tem02.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\tem03.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\tem04.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\tem05.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\tem06.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\tem07.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\tem08.cmp }
+		CHUNK DATA { short 3, 0, 8, 0, 0 file 11\tem09.cmp }
+
+		CHUNK DATA { short 3, 0, 8, 0, 0 file 11\fac01.cmp }
+		CHUNK DATA { short 3, 0, 8, 0, 0 file 11\fac02.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\fac03.cmp }
+
+		// cut scenes
+		CHUNK DATA { short 5, 0, 8, -1, 0 file 11\cut01.cmp }
+		CHUNK DATA { short 5, 0, 8, -1, 0 file 11\cut02.cmp }
+		CHUNK DATA { short 5, 0, 8, -1, 0 file 11\cut03.cmp }
+		CHUNK DATA { short 5, 0, 8, -1, 0 file 11\cut04.cmp }
+		CHUNK DATA { short 5, 0, 8, -1, 0 file 11\cut05.cmp }
+		CHUNK DATA { short 5, 0, 8, -1, 0 file 11\cut06.cmp }
+#ifdef NET_VER
+#else
+		CHUNK DATA { short 5, 0, 8, -1, 0 file 11\cut07.cmp }
+		CHUNK DATA { short 5, 0, 8, -1, 0 file 11\cut08.cmp }
+		CHUNK DATA { short 5, 0, 8, -1, 0 file 11\cut09.cmp }
+		CHUNK DATA { short 5, 0, 8, -1, 0 file 11\cut10.cmp }
+		CHUNK DATA { short 5, 0, 8, -1, 0 file 11\cut11.cmp }
+		CHUNK DATA { short 5, 0, 8, -1, 0 file 11\cut12.cmp }
+		CHUNK DATA { short 5, 0, 8, -1, 0 file 11\cut13.cmp }
+#endif
+
+#ifdef TWO_VOICES
+		// second voice
+		CHUNK DATA { short 3, 0, 8, 0, 0 file 11\com11.cmp }
+		CHUNK DATA { short 3, 0, 8, 0, 0 file 11\com12.cmp }
+		CHUNK DATA { short 3, 0, 8, 0, 0 file 11\com13.cmp }
+		CHUNK DATA { short 3, 0, 8, 0, 0 file 11\com14.cmp }
+		CHUNK DATA { short 3, 0, 8, 0, 0 file 11\com15.cmp }
+		CHUNK DATA { short 3, 0, 8, 0, 0 file 11\com16.cmp }
+		CHUNK DATA { short 3, 0, 8, 0, 0 file 11\com17.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\com18.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\com19.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\com20.cmp }
+
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\bld04.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\bld05.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\bld06.cmp }
+
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\sci03.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\sci04.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\rec03.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\rec04.cmp }
+
+		CHUNK DATA { short 3, 0, 8, 0, 0 file 11\tem10.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\tem11.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\tem12.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\tem13.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\tem14.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\tem15.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\tem16.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\tem17.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\tem18.cmp }
+
+		CHUNK DATA { short 3, 0, 8, 0, 0 file 11\fac04.cmp }
+		CHUNK DATA { short 3, 0, 8, 0, 0 file 11\fac05.cmp }
+		CHUNK DATA { short 3, 0, 8, -1, 0 file 11\fac06.cmp }
+#endif
+		}
+
+#ifdef INC_WAV
+	// 22K 16-bit mono
+	LIST SFX2
+		{
+#ifdef TWO_VOICES
+		CHUNK NUMS { int 86 }
+#else
+		CHUNK NUMS { int 57 }
+#endif
+
+		// group, {preload/cache/buffer}, backupID (-1 => play when read), type, file
+		//      type: mono_11_8, mono_22_16, stereo_22_16
+
+		// voices
+		CHUNK DATA { short 3, 0, 9, -1, 1 file 22\sys01.cmp }
+		CHUNK DATA { short 3, 0, 9, -1, 1 file 22\sys02.cmp }
+		CHUNK DATA { short 3, 0, 9, -1, 1 file 22\sys03.cmp }
+		CHUNK DATA { short 3, 0, 9, -1, 1 file 22\sys04.cmp }
+		CHUNK DATA { short 3, 0, 9, -1, 1 file 22\sys05.cmp }
+		CHUNK DATA { short 3, 0, 9, -1, 1 file 22\sys06.cmp }
+		CHUNK DATA { short 3, 0, 9, -1, 1 file 22\sys07.cmp }
+		CHUNK DATA { short 3, 0, 9, -1, 1 file 22\sys08.cmp }
+		CHUNK DATA { short 3, 0, 9, -1, 1 file 22\sys09.cmp }
+		CHUNK DATA { short 3, 0, 9, -1, 1 file 22\sys10.cmp }
+		CHUNK DATA { short 3, 0, 9, -1, 1 file 22\sys11.cmp }
+		CHUNK DATA { short 3, 0, 9, -1, 1 file 22\sys12.cmp }
+		CHUNK DATA { short 3, 0, 9, -1, 1 file 22\sys13.cmp }
+		CHUNK DATA { short 3, 0, 9, -1, 1 file 22\sys14.cmp }
+
+		CHUNK DATA { short 3, 0, 9, 0, 1 file 22\rct01.cmp }
+
+		CHUNK DATA { short 3, 0, 9, 0, 1 file 22\com01.cmp }
+		CHUNK DATA { short 3, 0, 9, 0, 1 file 22\com02.cmp }
+		CHUNK DATA { short 3, 0, 9, 0, 1 file 22\com03.cmp }
+		CHUNK DATA { short 3, 0, 9, 0, 1 file 22\com04.cmp }
+		CHUNK DATA { short 3, 0, 9, 0, 1 file 22\com05.cmp }
+		CHUNK DATA { short 3, 0, 9, 0, 1 file 22\com06.cmp }
+		CHUNK DATA { short 3, 0, 9, 0, 1 file 22\com07.cmp }
+		CHUNK DATA { short 3, 0, 9, -1, 1 file 22\com08.cmp }
+		CHUNK DATA { short 3, 0, 9, -1, 1 file 22\com09.cmp }
+		CHUNK DATA { short 3, 0, 9, -1, 1 file 22\com10.cmp }
+
+		CHUNK DATA { short 3, 0, 9, -1, 1 file 22\bld01.cmp }
+		CHUNK DATA { short 3, 0, 9, -1, 1 file 22\bld02.cmp }
+		CHUNK DATA { short 3, 0, 9, -1, 1 file 22\bld03.cmp }
+
+		CHUNK DATA { short 3, 0, 9, -1, 1 file 22\sci01.cmp }
+		CHUNK DATA { short 3, 0, 9, -1, 1 file 22\sci02.cmp }
+		CHUNK DATA { short 3, 0, 9, -1, 1 file 22\rec01.cmp }
+		CHUNK DATA { short 3, 0, 9, -1, 1 file 22\rec02.cmp }
+
+		CHUNK DATA { short 3, 0, 9, 0, 1 file 22\tem01.cmp }
+		CHUNK DATA { short 3, 0, 9, 0, 1 file 22\tem02.cmp }
+		CHUNK DATA { short 3, 0, 9, -1, 1 file 22\tem03.cmp }
+		CHUNK DATA { short 3, 0, 9, -1, 1 file 22\tem04.cmp }
+		CHUNK DATA { short 3, 0, 9, -1, 1 file 22\tem05.cmp }
+		CHUNK DATA { short 3, 0, 9, -1, 1 file 22\tem06.cmp }
+		CHUNK DATA { short 3, 0, 9, -1, 1 file 22\tem07.cmp }
+		CHUNK DATA { short 3, 0, 9, -1, 1 file 22\tem08.cmp }
+		CHUNK DATA { short 3, 0, 9, 0, 1 file 22\tem09.cmp }
+
+		CHUNK DATA { short 3, 0, 9, 0, 1 file 22\fac01.cmp }
+		CHUNK DATA { short 3, 0, 9, 0, 1 file 22\fac02.cmp }
+		CHUNK DATA { short 3, 0, 9, -1, 1 file 22\fac03.cmp }
+
+		// cut scenes
+		CHUNK DATA { short 5, 0, 9, -1, 1 file 22\cut01.cmp }
+		CHUNK DATA { short 5, 0, 9, -1, 1 file 22\cut02.cmp }
+		CHUNK DATA { short 5, 0, 9, -1, 1 file 22\cut03.cmp }
+		CHUNK DATA { short 5, 0, 9, -1, 1 file 22\cut04.cmp }
+		CHUNK DATA { short 5, 0, 9, -1, 1 file 22\cut05.cmp }
+		CHUNK DATA { short 5, 0, 9, -1, 1 file 22\cut06.cmp }
+		CHUNK DATA { short 5, 0, 9, -1, 1 file 22\cut07.cmp }
+		CHUNK DATA { short 5, 0, 9, -1, 1 file 22\cut08.cmp }
+		CHUNK DATA { short 5, 0, 9, -1, 1 file 22\cut09.cmp }
+		CHUNK DATA { short 5, 0, 9, -1, 1 file 22\cut10.cmp }
+		CHUNK DATA { short 5, 0, 9, -1, 1 file 22\cut11.cmp }
+		CHUNK DATA { short 5, 0, 9, -1, 1 file 22\cut12.cmp }
+		CHUNK DATA { short 5, 0, 9, -1, 1 file 22\cut13.cmp }
+
+#ifdef TWO_VOICES
+		// second voice
+		CHUNK DATA { short 3, 0, 9, 0, 1 file 22\com11.cmp }
+		CHUNK DATA { short 3, 0, 9, 0, 1 file 22\com12.cmp }
+		CHUNK DATA { short 3, 0, 9, 0, 1 file 22\com13.cmp }
+		CHUNK DATA { short 3, 0, 9, 0, 1 file 22\com14.cmp }
+		CHUNK DATA { short 3, 0, 9, 0, 1 file 22\com15.cmp }
+		CHUNK DATA { short 3, 0, 9, 0, 1 file 22\com16.cmp }
+		CHUNK DATA { short 3, 0, 9, 0, 1 file 22\com17.cmp }
+		CHUNK DATA { short 3, 0, 9, -1, 1 file 22\com18.cmp }
+		CHUNK DATA { short 3, 0, 9, -1, 1 file 22\com19.cmp }
+		CHUNK DATA { short 3, 0, 9, -1, 1 file 22\com20.cmp }
+
+		CHUNK DATA { short 3, 0, 9, -1, 1 file 22\bld04.cmp }
+		CHUNK DATA { short 3, 0, 9, -1, 1 file 22\bld05.cmp }
+		CHUNK DATA { short 3, 0, 9, -1, 1 file 22\bld06.cmp }
+
+		CHUNK DATA { short 3, 0, 9, -1, 1 file 22\sci03.cmp }
+		CHUNK DATA { short 3, 0, 9, -1, 1 file 22\sci04.cmp }
+		CHUNK DATA { short 3, 0, 9, -1, 1 file 22\rec03.cmp }
+		CHUNK DATA { short 3, 0, 9, -1, 1 file 22\rec04.cmp }
+
+		CHUNK DATA { short 3, 0, 9, 0, 1 file 22\tem10.cmp }
+		CHUNK DATA { short 3, 0, 9, -1, 1 file 22\tem11.cmp }
+		CHUNK DATA { short 3, 0, 9, -1, 1 file 22\tem12.cmp }
+		CHUNK DATA { short 3, 0, 9, -1, 1 file 22\tem13.cmp }
+		CHUNK DATA { short 3, 0, 9, -1, 1 file 22\tem14.cmp }
+		CHUNK DATA { short 3, 0, 9, -1, 1 file 22\tem15.cmp }
+		CHUNK DATA { short 3, 0, 9, -1, 1 file 22\tem16.cmp }
+		CHUNK DATA { short 3, 0, 9, -1, 1 file 22\tem17.cmp }
+		CHUNK DATA { short 3, 0, 9, -1, 1 file 22\tem18.cmp }
+
+		CHUNK DATA { short 3, 0, 9, 0, 1 file 22\fac04.cmp }
+		CHUNK DATA { short 3, 0, 9, 0, 1 file 22\fac05.cmp }
+		CHUNK DATA { short 3, 0, 9, -1, 1 file 22\fac06.cmp }
+#endif
+		}
+#endif
+	}

@@ -1,0 +1,26 @@
+[MSVC Status File]
+Version=1.00
+ProjectType=10
+External=0
+BrkptCount=4
+BrkptType1=0
+BrkptActive1=0
+BrkptAmbig1=0
+BrkptIndex1=-1
+BrkptLoc1={,c:\projects\vdmplay\vptest\mainfrm.cpp,} .93
+BrkptType2=0
+BrkptActive2=0
+BrkptAmbig2=0
+BrkptIndex2=-1
+BrkptLoc2={,c:\projects\vdmplay\vptest\mainfrm.cpp,} .170
+BrkptType3=0
+BrkptActive3=0
+BrkptAmbig3=0
+BrkptIndex3=-1
+BrkptLoc3={,c:\projects\vdmplay\vptest\mainfrm.cpp,} .177
+BrkptType4=0
+BrkptActive4=0
+BrkptAmbig4=0
+BrkptIndex4=-1
+BrkptLoc4={,c:\projects\vdmplay\nbnet.cpp,} .291
+WatchCount=0

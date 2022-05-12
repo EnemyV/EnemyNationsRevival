@@ -1,0 +1,20 @@
+:Base winhlp32.hlp>proc4
+:Title Windows Help
+:Link windows.hlp
+1 Using Help
+2 Finding a topic in Help=WINHELP_FINDING_TOPICS
+2 Getting information in a dialog box=WINHELP_POPUP_HELP
+2 Copying information from a Help topic=WINHELP_COPY
+2 Printing a Help topic=WINHELP_PRINT
+2 Viewing a list of topics you've seen=WINHELP_HISTORY
+2 Using the Find tab
+3 Searching for words in a Help file=WINHELP_FTS_SEARCH
+3 Searching for phrases in a Help file=WINHELP_FTS_SEARCH_PHRASE
+3 Selecting a Help file to search=WINHELP_FTS_SEARCH_FILES
+3 Marking topics relevant to a search=WINHELP_FTS_SEARCH_RELEVANT
+3 Finding similar topics=WINHELP_FTS_SEARCH_SIMILAR
+1 Customizing Help
+2 Changing the font and color in a Help topic=WINHELP_FONTS
+2 Specifying whether Help stays in front of other windows=WINHELP_STAY_ON_TOP
+2 Adding a comment to a Help topic=WINHELP_ANNOTATE
+2 Putting a bookmark in a Help topic=WINHELP_BOOKMARK

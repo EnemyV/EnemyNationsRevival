@@ -1,0 +1,107 @@
+PRINT THIS OUT SO YOU CAN REFER TO IT AS YOU FOLLOW IT!!
+
+While Enemy Nations can easily run on a system with only 8M of physical 
+memory, it requires 60M of virtual memory. Windows 3.1's default 
+configuration limits virtual memory to 4 time physical memory. So a system
+with 8M of physical memory can only have 32M of virtual memory.
+
+This limit can be increased (and the increase will provide additional virtual
+memory for all of your Windows applications). However, we cannot do it for
+you automatically. You need to print this document and follow the below
+steps.
+
+Note: If you are reading this in setup, complete setup and then print the
+file win31.txt (which is this file) and complete the following steps. There
+is no problem installing Enemy Nations before you perform the below steps,
+you just can't play it until you do.
+
+	1) Bring up the Control Panel.
+
+	2) Bring up the "Enhanced" applet.
+
+	3) Press the "Virtual Memory" button.
+
+	4) Press the "Change >>" button.
+
+	5) Change the swapfile settings to either "None" or "Temporary".
+
+	6) Press "OK"
+
+	7) Press "Yes" "you want to make changes to virtual-memory settings".
+
+	8) Press "OK"
+
+	9) Press "No" on the choice to "Restart Windows."
+
+	10) Exit Windows. (Do not "restart" windows - exit it to DOS.)
+
+	11) Make sure you have at least 120M of free space on your hard drive.
+
+	12) Defragment your hard drive (PC Tools & Norton Utilites can do this).
+
+	12a) In DOS 6 and later this program is named defrag.exe and you should
+	     be able to run it by typing "defrag /f".
+
+	12b) If you have Norton Utilities this program is named sd.exe and you
+	     should be able to run it by typing "sd".
+
+	13) Edit your system.ini file and add/change the setting
+		[386Enh]
+		PageOverCommit=10
+
+	note: This is the multiple of physical memory to virtual memory. So 
+	      depending on your physical memory you can set it to the following
+		  values (you need 80M including Windows itself):
+		  physical memory		setting
+		  8M					10
+		  12M					7
+		  16M					5
+		  20M					4 (ie you shouldn't need to do this)
+
+	13a) The line [386Enh] will already exist in your system.ini file DO NOT ADD
+	     A SECOND INSTANCE OF THE LINE. You need to find the existing instance of
+		 [386Enh] and add the PageOverCommit line AFTER [386Enh] and BEFORE any other
+		 line that is bracketed with [].
+
+	13b) It is unlikely that you already have a line with the PageOverCommit setting.
+	     However, if you do, you need to edit that line, not add a second line. Do
+		 not decrease the number for it. If the existing number is greater than or
+		 equal to the value Enemy Nations requires, leave it alone.
+
+	13c) The total text you will add should be like the following line:
+				PageOverCommit=10
+	     Nothing more (or less). The above table lists out the different values
+		 needed depending on how much physical memory you have but you do not
+		 include the physical memory size and you do not have multiple lines of
+		 text. You are just adding 1 simple line of text and it must be in the
+		 [386Enh] section.
+
+	13d) If you are not sure how much physical (not virtual) memory you have then
+	     enter "PageOverCommit=10". It will not hurt you to do this if you have
+		 more than 8M of RAM.
+
+	14) Restart Windows. If for any reason Windows will not restart, undo the
+	    changes you made in step 13.
+
+	15) Bring up the Control Panel.
+
+	16) Bring up the "Enhanced" applet.
+
+	17) Press the "Virtual Memory" button.
+
+	18) Press the "Change >>" button.
+
+	19) Change the swapfile settings to "Permanent".
+
+	20) Set the swapfile size to "80000" KB or greater.
+
+	21) Press "OK"
+
+	22) Press "Yes" "you want to make changes to virtual-memory settings".
+
+	23) Press "OK"
+
+	24) Press "Yes" on the choice to "Restart Windows."
+	
+Congratulations. Your system now has over 80M of virtual memory and can run
+Enemy Nations.

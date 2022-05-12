@@ -1,0 +1,42 @@
+CHUNK LINE { string "Crane" }
+CHUNK DESC { string "Builds all buildings and roads. Has no combat capability but is considered armored because of its construction" }
+CHUNK LINE { string "Truck" }
+CHUNK DESC { string "Transports all goods between buildings. Has no combat capability and is not armored." }
+CHUNK LINE { string "Heavy Truck" }
+CHUNK DESC { string "Transports all goods between buildings. Has no combat capability and is not armored." }
+CHUNK LINE { string "Outrider" }
+CHUNK DESC { string "A light hover-cycle. It is very fast and manuverable but very easy to kill. It has no combat capability and no armor" }
+CHUNK LINE { string "Spotter" }
+CHUNK DESC { string "A medium scout vehicle. It can see for a long distance, is fast and manuverable. It has very little combat capability and no armor" }
+CHUNK LINE { string "Heavy Rover" }
+CHUNK DESC { string "A lightly armored fast vehicle with an experimental gun. The gun is powerful but has a very long reload time." }
+CHUNK LINE { string "Infantry Carrier" }
+CHUNK DESC { string "A troop carrier it has light guns and is well armored. It can carry 5 infantry units." }
+CHUNK LINE { string "Destructor" }
+CHUNK DESC { string "A light hovercraft tank. It is fast and somewhat manuverable. It has a light gun and armor." }
+CHUNK LINE { string "Boss8800" }
+CHUNK DESC { string "A medium tank. It is has moderate speed and manuverablity. It has a strong firepower gun and armor." }
+CHUNK LINE { string "Atomizer" }
+CHUNK DESC { string "A heavy howitzer. It is slow and unmanuverable. It has an extremely heavy gun and armor." }
+CHUNK LINE { string "Mortar" }
+CHUNK DESC { string "A light artillery (capable of indirect fire) unit. It is fast, somewhat manuverable, and very easy to kill. It has a medium gun and no armor." }
+CHUNK LINE { string "Cannon" }
+CHUNK DESC { string "A hovercraft artillery (capable of indirect fire) unit. It has moderate speed, and is easy to kill. It has a heavy gun and no armor." }
+CHUNK LINE { string "Rocket Launcher" }
+CHUNK DESC { string "A heavy artillery (capable of indirect fire) unit. It is very slow and is not armored. It fires rockets and is the most powerful offensive weapon of any land unit." }
+CHUNK LINE { string "Cargo Ship" }
+CHUNK DESC { string "Transports all goods and vehicles between seaports. Has no combat capability but is considered lightly armored." }
+CHUNK LINE { string "Gunboat" }
+CHUNK DESC { string "A light warship. It is fast and somewhat manuverable. It has a light gun and armor." }
+CHUNK LINE { string "Destroyer" }
+CHUNK DESC { string "A medium warship. It is fast and somewhat manuverable. It has a strong gun and armor." }
+CHUNK LINE { string "Frigate" }
+CHUNK DESC { string "A heavy warship capable of indirect fire. It is slow but has the most powerful offensive and armor of any unit." }
+CHUNK LINE { string "Landing Craft" }
+CHUNK DESC { string "A troop and vehicle carrier it has light guns and is well armored. It can carry 5 infantry units or 1 vehicle." }
+CHUNK LINE { string "Infantry" }
+CHUNK DESC { string "A platoon of basic infantry soldiers. They have light firepower and no armor" }
+CHUNK LINE { string "Special Forces" }
+CHUNK DESC { string "A platoon of special forces soldiers. They have moderate firepower and no armor" }
+CHUNK LINE { string "Marines" }
+CHUNK DESC { string "A platoon of special forces soldiers. They have moderate firepower and no armor." }

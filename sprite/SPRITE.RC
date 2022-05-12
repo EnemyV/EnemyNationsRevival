@@ -1,0 +1,593 @@
+//Microsoft Developer Studio generated resource script.
+//
+#include "resource.h"
+
+#define APSTUDIO_READONLY_SYMBOLS
+/////////////////////////////////////////////////////////////////////////////
+//
+// Generated from the TEXTINCLUDE 2 resource.
+//
+#include "afxres.h"
+
+/////////////////////////////////////////////////////////////////////////////
+#undef APSTUDIO_READONLY_SYMBOLS
+
+/////////////////////////////////////////////////////////////////////////////
+// English (U.S.) resources
+
+#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_ENU)
+#ifdef _WIN32
+LANGUAGE LANG_ENGLISH, SUBLANG_ENGLISH_US
+#pragma code_page(1252)
+#endif //_WIN32
+
+#ifdef APSTUDIO_INVOKED
+/////////////////////////////////////////////////////////////////////////////
+//
+// TEXTINCLUDE
+//
+
+1 TEXTINCLUDE DISCARDABLE 
+BEGIN
+    "resource.h\0"
+END
+
+2 TEXTINCLUDE DISCARDABLE 
+BEGIN
+    "#include ""afxres.h""\r\n"
+    "\0"
+END
+
+3 TEXTINCLUDE DISCARDABLE 
+BEGIN
+    "#include ""res\\sprite.rc2""  // non-Microsoft Visual C++ edited resources\r\n"
+    "\r\n"
+    "#define _AFX_NO_SPLITTER_RESOURCES\r\n"
+    "#define _AFX_NO_OLE_RESOURCES\r\n"
+    "#define _AFX_NO_TRACKER_RESOURCES\r\n"
+    "#define _AFX_NO_PROPERTY_RESOURCES\r\n"
+    "#include ""afxres.rc""  \t// Standard components\r\n"
+    "#include ""afxprint.rc""\t// printing/print preview resources\r\n"
+    "\0"
+END
+
+#endif    // APSTUDIO_INVOKED
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Bitmap
+//
+
+IDR_MAINFRAME           BITMAP  MOVEABLE PURE   "res\\toolbar.bmp"
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Menu
+//
+
+IDR_MAINFRAME MENU PRELOAD DISCARDABLE 
+BEGIN
+    POPUP "&File"
+    BEGIN
+        MENUITEM "Create &Building",            ID_FILE_CREATESPRITE
+        MENUITEM "Create &Terrain",             ID_FILE_CREATETERRAIN
+        MENUITEM "Create &Vehicle",             ID_FILE_CREATEVEHICLE
+        MENUITEM SEPARATOR
+        MENUITEM "Create Multiple Buildings",   ID_FILE_CREATEMULTIPLEBUILDINGS
+
+        MENUITEM "Create Multiple Terrain",     ID_FILE_CREATEMULTIPLETERRAIN
+
+        MENUITEM "Create Multiple Vehicles",    ID_FILE_CREATEMULTIPLEVEHICLES
+
+        MENUITEM SEPARATOR
+        MENUITEM "Create Single &DIB",          ID_FILE_CREATESINGLEDIB
+        MENUITEM "Create Multiple DIBs",        ID_FILE_CREATEMULTIPLEDIBS
+        MENUITEM "Create Movie DIBs",           ID_FILE_CREATE_MOVIE
+        MENUITEM SEPARATOR
+        MENUITEM "Create Shareware Buildings",  ID_FILE_CREATESHAREWAREBUILDINGS
+
+        MENUITEM "Create Shareware Terrain",    ID_FILE_CREATESHAREWARETERRAIN
+
+        MENUITEM "Create Shareware Vehicles",   ID_FILE_CREATESHAREWAREVEHICLES
+
+        MENUITEM SEPARATOR
+        MENUITEM "&Load Sprite",                ID_FILE_LOADSPRITE
+        MENUITEM "&Save Sprite",                ID_FILE_SAVESPRITE
+        MENUITEM SEPARATOR
+        MENUITEM "&Create Palette",             ID_FILE_CREATEPALETTE
+        MENUITEM "Load &Palette",               ID_FILE_LOADPALETTE
+        MENUITEM "&View Palette",               ID_FILE_VIEWPALETTE
+        MENUITEM SEPARATOR
+        MENUITEM "Naming Dialog...",            ID_NAMEDLG
+        MENUITEM SEPARATOR
+        MENUITEM "E&xit",                       ID_APP_EXIT
+    END
+    POPUP "&View"
+    BEGIN
+        MENUITEM "&Toolbar",                    ID_VIEW_TOOLBAR
+        MENUITEM "&Status Bar",                 ID_VIEW_STATUS_BAR
+    END
+    POPUP "&Help"
+    BEGIN
+        MENUITEM "&About sprite...",            ID_APP_ABOUT
+    END
+END
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Accelerator
+//
+
+IDR_MAINFRAME ACCELERATORS PRELOAD MOVEABLE PURE 
+BEGIN
+    "N",            ID_FILE_NEW,            VIRTKEY, CONTROL
+    "O",            ID_FILE_OPEN,           VIRTKEY, CONTROL
+    "S",            ID_FILE_SAVE,           VIRTKEY, CONTROL
+    "P",            ID_FILE_PRINT,          VIRTKEY, CONTROL
+    "Z",            ID_EDIT_UNDO,           VIRTKEY, CONTROL
+    "X",            ID_EDIT_CUT,            VIRTKEY, CONTROL
+    "C",            ID_EDIT_COPY,           VIRTKEY, CONTROL
+    "V",            ID_EDIT_PASTE,          VIRTKEY, CONTROL
+    VK_BACK,        ID_EDIT_UNDO,           VIRTKEY, ALT
+    VK_DELETE,      ID_EDIT_CUT,            VIRTKEY, SHIFT
+    VK_INSERT,      ID_EDIT_COPY,           VIRTKEY, CONTROL
+    VK_INSERT,      ID_EDIT_PASTE,          VIRTKEY, SHIFT
+    VK_F6,          ID_NEXT_PANE,           VIRTKEY 
+    VK_F6,          ID_PREV_PANE,           VIRTKEY, SHIFT
+END
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Dialog
+//
+
+IDD_ABOUTBOX DIALOG DISCARDABLE  34, 22, 217, 55
+STYLE DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "About sprite"
+FONT 8, "MS Sans Serif"
+BEGIN
+    LTEXT           "TLP Sprite Compiler",IDC_STATIC,19,10,119,8
+    LTEXT           "Copyright © 1995 Windward Studios",IDC_STATIC,19,36,119,
+                    8
+    DEFPUSHBUTTON   "OK",IDOK,176,6,32,14,WS_GROUP
+    LTEXT           "Matt Setzer",IDC_STATIC,19,23,119,8
+END
+
+IDD_DIRDIALOG DIALOG DISCARDABLE  0, 0, 186, 124
+STYLE DS_MODALFRAME | WS_POPUP | WS_VISIBLE | WS_CAPTION | WS_SYSMENU
+CAPTION "Choose a directory"
+FONT 8, "MS Sans Serif"
+BEGIN
+    LISTBOX         IDC_DIRLIST,17,11,82,102,LBS_SORT | LBS_NOINTEGRALHEIGHT | 
+                    WS_VSCROLL | WS_TABSTOP
+    DEFPUSHBUTTON   "OK",IDOK,130,6,50,14
+    PUSHBUTTON      "Cancel",IDCANCEL,130,23,50,14
+    COMBOBOX        IDC_DRIVELIST,117,47,48,63,CBS_DROPDOWNLIST | CBS_SORT | 
+                    WS_VSCROLL | WS_TABSTOP
+END
+
+IDD_PROGRESSDLG DIALOG DISCARDABLE  0, 0, 187, 93
+STYLE DS_MODALFRAME | DS_SETFOREGROUND | DS_3DLOOK | DS_CENTER | WS_POPUP | 
+    WS_VISIBLE | WS_CAPTION
+CAPTION "Processing..."
+FONT 8, "MS Sans Serif"
+BEGIN
+    PUSHBUTTON      "Cancel",IDCANCEL,67,60,50,14
+    CONTROL         "Generic1",IDC_PROGRESS,"msctls_progress32",WS_BORDER,21,
+                    20,143,14
+END
+
+IDD_NAMING DIALOGEX 0, 0, 295, 266
+STYLE DS_MODALFRAME | DS_3DLOOK | WS_POPUP | WS_CAPTION | WS_SYSMENU
+EXSTYLE WS_EX_NOPARENTNOTIFY
+CAPTION "File Naming Dialog"
+FONT 8, "MS Sans Serif", 0, 0, 0x1
+BEGIN
+    GROUPBOX        "Damage Level",IDC_STATIC,15,130,266,25,WS_GROUP
+    CONTROL         "No Damage",IDC_NODAMAGE,"Button",BS_AUTORADIOBUTTON,27,
+                    140,54,10
+    CONTROL         "Minor Damage",IDC_MINORDAMAGE,"Button",
+                    BS_AUTORADIOBUTTON,89,140,62,10
+    CONTROL         "Heavy Damage",IDC_HEAVYDAMAGE,"Button",
+                    BS_AUTORADIOBUTTON,155,140,65,10
+    CONTROL         "Destroyed",IDC_DESTROYED,"Button",BS_AUTORADIOBUTTON,
+                    223,140,48,10
+    GROUPBOX        "Direction",IDC_STATIC,15,55,265,70,WS_GROUP
+    CONTROL         "North-East",IDC_NORTHEAST,"Button",BS_AUTORADIOBUTTON,
+                    27,73,49,10
+    CONTROL         "East",IDC_EAST,"Button",BS_AUTORADIOBUTTON,27,83,30,10
+    CONTROL         "South-East",IDC_SOUTHEAST,"Button",BS_AUTORADIOBUTTON,
+                    89,73,51,10
+    CONTROL         "South",IDC_SOUTH,"Button",BS_AUTORADIOBUTTON,89,83,35,
+                    10
+    CONTROL         "South-West",IDC_SOUTHWEST,"Button",BS_AUTORADIOBUTTON,
+                    155,73,53,10
+    CONTROL         "West",IDC_WEST,"Button",BS_AUTORADIOBUTTON,155,83,33,10
+    CONTROL         "North-West",IDC_NORTHWEST,"Button",BS_AUTORADIOBUTTON,
+                    223,73,52,10
+    CONTROL         "North",IDC_NORTH,"Button",BS_AUTORADIOBUTTON,223,83,33,
+                    10
+    GROUPBOX        "Construction",IDC_STATIC,15,5,125,45,WS_GROUP
+    CONTROL         "Foundation",IDC_FOUNDATION,"Button",BS_AUTORADIOBUTTON,
+                    25,15,51,10
+    CONTROL         "Skeleton",IDC_SKELETON,"Button",BS_AUTORADIOBUTTON,25,
+                    30,44,10
+    CONTROL         "Construction",IDC_CONSTRUCTION,"Button",
+                    BS_AUTORADIOBUTTON,80,15,55,10
+    CONTROL         "Done",IDC_DONE,"Button",BS_AUTORADIOBUTTON,80,30,33,10
+    GROUPBOX        "Bitmap",IDC_STATIC,15,160,266,60,WS_GROUP
+    CONTROL         "Overlay Bitmap",IDC_OVERLAY,"Button",BS_AUTORADIOBUTTON,
+                    25,170,65,10
+    CONTROL         "Base bitmap",IDC_BASE,"Button",BS_AUTORADIOBUTTON,25,
+                    185,55,10
+    CONTROL         "Animation 1",IDC_ANIM1,"Button",BS_AUTORADIOBUTTON,25,
+                    200,53,10
+    CONTROL         "Animation 2",IDC_ANIM2,"Button",BS_AUTORADIOBUTTON,155,
+                    170,53,10
+    CONTROL         "Under Anim 1",IDC_UNDERANIM1,"Button",
+                    BS_AUTORADIOBUTTON,155,185,53,10
+    CONTROL         "Under Anim 2",IDC_UNDERANIM2,"Button",
+                    BS_AUTORADIOBUTTON,155,200,59,10
+    LTEXT           "Number",IDC_STATIC,87,185,26,8
+    LTEXT           "Frame",IDC_STATIC,87,200,20,8
+    LTEXT           "Frame",IDC_STATIC,217,170,20,8
+    LTEXT           "Frame",IDC_STATIC,217,185,20,8
+    LTEXT           "Frame",IDC_STATIC,217,200,20,8
+    EDITTEXT        IDC_BASECNT,121,185,19,14,ES_AUTOHSCROLL
+    EDITTEXT        IDC_ANIM1CNT,121,200,19,14,ES_AUTOHSCROLL
+    EDITTEXT        IDC_ANIM2CNT,251,170,19,14,ES_AUTOHSCROLL | 
+                    ES_WANTRETURN,WS_EX_NOPARENTNOTIFY
+    EDITTEXT        IDC_UNDERANIM1CNT,251,185,19,14,ES_AUTOHSCROLL | 
+                    ES_WANTRETURN,WS_EX_NOPARENTNOTIFY
+    EDITTEXT        IDC_UNDERANIM2CNT,251,200,19,14,ES_AUTOHSCROLL | 
+                    ES_WANTRETURN,WS_EX_NOPARENTNOTIFY
+    GROUPBOX        "The filename is...",IDC_STATIC,15,225,145,30,WS_GROUP
+    EDITTEXT        IDC_FILENAME,55,235,72,14,ES_AUTOHSCROLL | ES_WANTRETURN,
+                    WS_EX_NOPARENTNOTIFY
+    GROUPBOX        "Tilt ( Vehicles only )",IDC_STATIC,35,95,220,26,
+                    WS_GROUP
+    CONTROL         "Flat",IDC_FLAT,"Button",BS_AUTORADIOBUTTON,45,105,27,10
+    CONTROL         "Tilted toward viewer",IDC_TILTTOWARD,"Button",
+                    BS_AUTORADIOBUTTON,75,105,79,10
+    CONTROL         "Tilted away from viewer",IDC_TILTAWAY,"Button",
+                    BS_AUTORADIOBUTTON,155,105,90,10
+    GROUPBOX        "Type ( buildings only )",IDC_STATIC,150,5,130,45,
+                    WS_GROUP
+    CONTROL         "Two piece - background",IDC_TWOPIECEBACK,"Button",
+                    BS_AUTORADIOBUTTON,160,35,93,10
+    CONTROL         "Two piece - foreground",IDC_TWOPIECEFORE,"Button",
+                    BS_AUTORADIOBUTTON,160,25,89,10
+    CONTROL         "Single piece",IDC_ONEPIECE,"Button",BS_AUTORADIOBUTTON,
+                    160,15,77,10
+END
+
+IDD_SPPROP_PAGE DIALOG DISCARDABLE  0, 0, 195, 90
+STYLE DS_3DLOOK | WS_CHILD | WS_VISIBLE | WS_DISABLED | WS_CAPTION
+CAPTION "Bitmap Properties"
+FONT 8, "MS Sans Serif"
+BEGIN
+    LTEXT           "X Offset",IDC_STATIC,10,40,26,8
+    LTEXT           "Width",IDC_STATIC,10,10,20,8
+    LTEXT           "Hold Time",IDC_STATIC,10,70,33,8
+    LTEXT           "Y Offset",IDC_STATIC,100,40,26,8
+    EDITTEXT        IDC_SPPROP_XOFF,50,40,40,14,ES_AUTOHSCROLL
+    EDITTEXT        IDC_SPPROP_WIDTH,50,10,40,14,ES_AUTOHSCROLL | 
+                    ES_READONLY
+    EDITTEXT        IDC_SPPROP_HOLD,50,70,40,12,ES_AUTOHSCROLL
+    LTEXT           "Height",IDC_STATIC,100,10,22,8
+    EDITTEXT        IDC_SPPROP_YOFF,140,40,40,14,ES_AUTOHSCROLL
+    EDITTEXT        IDC_SPPROP_HEIGHT,140,10,40,14,ES_AUTOHSCROLL | 
+                    ES_READONLY
+END
+
+IDD_PROGRESS2 DIALOG DISCARDABLE  0, 0, 186, 126
+STYLE DS_MODALFRAME | DS_3DLOOK | DS_CENTER | WS_POPUP | WS_VISIBLE | 
+    WS_CAPTION | WS_SYSMENU
+CAPTION "Creating sprites..."
+FONT 8, "MS Sans Serif"
+BEGIN
+    PUSHBUTTON      "Cancel",IDCANCEL,67,100,50,14
+    LTEXT           "Current Directory :",IDC_STATIC,15,10,58,8
+    EDITTEXT        IDC_CURRENTDIR,75,10,95,14,ES_AUTOHSCROLL | ES_READONLY
+    LTEXT           "Current File :",IDC_STATIC,15,55,40,8
+    EDITTEXT        IDC_CURRENTFILE,75,55,95,14,ES_AUTOHSCROLL | ES_READONLY
+    CONTROL         "Progress1",IDC_FILEPROGRESS,"msctls_progress32",
+                    WS_BORDER,15,75,155,14
+    CONTROL         "Progress2",IDC_DIRPROGRESS,"msctls_progress32",
+                    WS_BORDER,15,30,155,14
+END
+
+IDD_HOLDTIME DIALOG DISCARDABLE  0, 0, 157, 61
+STYLE DS_MODALFRAME | WS_CHILD | WS_VISIBLE | WS_CAPTION | WS_SYSMENU
+CAPTION "Enter hold time"
+FONT 8, "MS Sans Serif"
+BEGIN
+    DEFPUSHBUTTON   "OK",IDOK,15,40,50,14
+    PUSHBUTTON      "Cancel",IDCANCEL,90,40,50,14
+    EDITTEXT        IDC_HT_EDIT,65,15,75,14,ES_AUTOHSCROLL
+    LTEXT           "Hold time :",IDC_STATIC,15,15,34,8
+END
+
+IDD_DLG_ERR DIALOG DISCARDABLE  0, 0, 307, 234
+STYLE DS_MODALFRAME | WS_POPUP | WS_VISIBLE | WS_CAPTION | WS_SYSMENU
+CAPTION "Errors"
+FONT 8, "MS Sans Serif"
+BEGIN
+    LISTBOX         IDC_LIST_ERR,7,7,293,200,NOT LBS_NOTIFY | 
+                    LBS_NOINTEGRALHEIGHT | WS_VSCROLL | WS_HSCROLL | 
+                    WS_TABSTOP
+    DEFPUSHBUTTON   "OK",IDOK,250,213,50,14
+END
+
+
+#ifndef _MAC
+/////////////////////////////////////////////////////////////////////////////
+//
+// Version
+//
+
+VS_VERSION_INFO VERSIONINFO
+ FILEVERSION 1,0,0,1
+ PRODUCTVERSION 1,0,0,1
+ FILEFLAGSMASK 0x3fL
+#ifdef _DEBUG
+ FILEFLAGS 0x1L
+#else
+ FILEFLAGS 0x0L
+#endif
+ FILEOS 0x4L
+ FILETYPE 0x1L
+ FILESUBTYPE 0x0L
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904B0"
+        BEGIN
+            VALUE "CompanyName", "\0"
+            VALUE "FileDescription", "SPRITE MFC Application\0"
+            VALUE "FileVersion", "1, 0, 0, 1\0"
+            VALUE "InternalName", "SPRITE\0"
+            VALUE "LegalCopyright", "Copyright © 1995\0"
+            VALUE "LegalTrademarks", "\0"
+            VALUE "OriginalFilename", "SPRITE.EXE\0"
+            VALUE "ProductName", "SPRITE Application\0"
+            VALUE "ProductVersion", "1, 0, 0, 1\0"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 1200
+    END
+END
+
+#endif    // !_MAC
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Icon
+//
+
+// Icon with lowest ID value placed first to ensure application icon
+// remains consistent on all systems.
+IDR_MAINFRAME           ICON    DISCARDABLE     "res\\idr_main.ico"
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// DESIGNINFO
+//
+
+#ifdef APSTUDIO_INVOKED
+GUIDELINES DESIGNINFO DISCARDABLE 
+BEGIN
+    IDD_NAMING, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 288
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 259
+    END
+
+    IDD_SPPROP_PAGE, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 188
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 83
+    END
+
+    IDD_PROGRESS2, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 179
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 119
+    END
+
+    IDD_HOLDTIME, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 150
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 54
+    END
+
+    IDD_DLG_ERR, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 300
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 227
+    END
+END
+#endif    // APSTUDIO_INVOKED
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// String Table
+//
+
+STRINGTABLE PRELOAD DISCARDABLE 
+BEGIN
+    IDR_MAINFRAME           "sprite"
+    IDR_SPRITETYPE          "\nSprite\nSprite\n\n\nSprite.Document\nSprite Document"
+    IDR_PALTYPE             "\nPalette\nPalette\n\n\nPalette.Document\nPalette Document"
+END
+
+STRINGTABLE PRELOAD DISCARDABLE 
+BEGIN
+    AFX_IDS_APP_TITLE       "sprite"
+    AFX_IDS_IDLEMESSAGE     "Ready"
+END
+
+STRINGTABLE DISCARDABLE 
+BEGIN
+    ID_INDICATOR_EXT        "EXT"
+    ID_INDICATOR_CAPS       "CAP"
+    ID_INDICATOR_NUM        "NUM"
+    ID_INDICATOR_SCRL       "SCRL"
+    ID_INDICATOR_OVR        "OVR"
+    ID_INDICATOR_REC        "REC"
+END
+
+STRINGTABLE DISCARDABLE 
+BEGIN
+    ID_FILE_NEW             "Create a new document\nNew"
+    ID_FILE_OPEN            "Open an existing document\nOpen"
+    ID_FILE_CLOSE           "Close the active document\nClose"
+    ID_FILE_SAVE            "Save the active document\nSave"
+    ID_FILE_SAVE_AS         "Save the active document with a new name\nSave As"
+    ID_FILE_PAGE_SETUP      "Change the printing options\nPage Setup"
+    ID_FILE_PRINT_SETUP     "Change the printer and printing options\nPrint Setup"
+    ID_FILE_PRINT           "Print the active document\nPrint"
+    ID_FILE_PRINT_PREVIEW   "Display full pages\nPrint Preview"
+END
+
+STRINGTABLE DISCARDABLE 
+BEGIN
+    ID_APP_ABOUT            "Display program information, version number and copyright\nAbout"
+    ID_APP_EXIT             "Quit the application\nExit"
+END
+
+STRINGTABLE DISCARDABLE 
+BEGIN
+    ID_FILE_MRU_FILE1       "Open this document"
+    ID_FILE_MRU_FILE2       "Open this document"
+    ID_FILE_MRU_FILE3       "Open this document"
+    ID_FILE_MRU_FILE4       "Open this document"
+END
+
+STRINGTABLE DISCARDABLE 
+BEGIN
+    ID_NEXT_PANE            "Switch to the next window pane\nNext Pane"
+    ID_PREV_PANE            "Switch back to the previous window pane\nPrevious Pane"
+END
+
+STRINGTABLE DISCARDABLE 
+BEGIN
+    ID_WINDOW_NEW           "Open another window for the active document\nNew Window"
+    ID_WINDOW_ARRANGE       "Arrange icons at the bottom of the window\nArrange Icons"
+    ID_WINDOW_CASCADE       "Arrange windows so they overlap\nCascade Windows"
+    ID_WINDOW_TILE_HORZ     "Arrange windows as non-overlapping tiles\nTile Windows"
+    ID_WINDOW_TILE_VERT     "Arrange windows as non-overlapping tiles\nTile Windows"
+    ID_WINDOW_SPLIT         "Split the active window into panes\nSplit"
+END
+
+STRINGTABLE DISCARDABLE 
+BEGIN
+    ID_EDIT_CLEAR           "Erase the selection\nErase"
+    ID_EDIT_CLEAR_ALL       "Erase everything\nErase All"
+    ID_EDIT_COPY            "Copy the selection and put it on the Clipboard\nCopy"
+    ID_EDIT_CUT             "Cut the selection and put it on the Clipboard\nCut"
+    ID_EDIT_FIND            "Find the specified text\nFind"
+    ID_EDIT_PASTE           "Insert Clipboard contents\nPaste"
+    ID_EDIT_REPEAT          "Repeat the last action\nRepeat"
+    ID_EDIT_REPLACE         "Replace specific text with different text\nReplace"
+    ID_EDIT_SELECT_ALL      "Select the entire document\nSelect All"
+    ID_EDIT_UNDO            "Undo the last action\nUndo"
+    ID_EDIT_REDO            "Redo the previously undone action\nRedo"
+END
+
+STRINGTABLE DISCARDABLE 
+BEGIN
+    ID_VIEW_TOOLBAR         "Show or hide the toolbar\nToggle ToolBar"
+    ID_VIEW_STATUS_BAR      "Show or hide the status bar\nToggle StatusBar"
+END
+
+STRINGTABLE DISCARDABLE 
+BEGIN
+    AFX_IDS_SCSIZE          "Change the window size"
+    AFX_IDS_SCMOVE          "Change the window position"
+    AFX_IDS_SCMINIMIZE      "Reduce the window to an icon"
+    AFX_IDS_SCMAXIMIZE      "Enlarge the window to full size"
+    AFX_IDS_SCNEXTWINDOW    "Switch to the next document window"
+    AFX_IDS_SCPREVWINDOW    "Switch to the previous document window"
+    AFX_IDS_SCCLOSE         "Close the active window and prompts to save the documents"
+END
+
+STRINGTABLE DISCARDABLE 
+BEGIN
+    AFX_IDS_SCRESTORE       "Restore the window to normal size"
+    AFX_IDS_SCTASKLIST      "Activate Task List"
+    AFX_IDS_MDICHILD        "Activate this window"
+END
+
+STRINGTABLE DISCARDABLE 
+BEGIN
+    AFX_IDS_PREVIEW_CLOSE   "Close print preview mode\nCancel Preview"
+END
+
+STRINGTABLE DISCARDABLE 
+BEGIN
+    ID_LOAD                 "Load a BMP into the window."
+    ID_FILE_CREATESPRITE    "Create a type 4 sprite from the files in a directory.\nCreate Sprite"
+    ID_FILE_LOADSPRITE      "Load an already existing sprite file.\nLoad Sprite"
+    ID_FILE_CREATEPALETTE   "Create a palette from all of the files in a directory tree.\nCreate Palette"
+    ID_FILE_LOADPALETTE     "Load a palette from an existing 8-bit file.\nLoad Palette"
+    ID_FILE_VIEWPALETTE     "View the currently loaded palette.\nView Palette"
+    ID_FILE_CREATETERRAIN   "Create a terrain sprite from the files in a directory.\nCreate Terrain"
+    ID_FILE_CREATEVEHICLE   "Create a vehicle sprite from the files in a directory.\nCreate Vehicle"
+    ID_NAMEDLG              "Opens the naming dialog.\nNaming Dialog."
+    ID_FILE_SAVESPRITE      "Save the given sprite.\nSave Sprite"
+    ID_FILE_CREATESINGLEDIB "Create a single .dib file\nCreate Single DIB"
+    ID_FILE_CREATEMULTIPLEBUILDINGS 
+                            "Create building sprites in subdirs\nCreate Multiple Buildings"
+END
+
+STRINGTABLE DISCARDABLE 
+BEGIN
+    ID_FILE_CREATEMULTIPLETERRAIN 
+                            "Create terrain sprites from subdirs\nCreate Multiple Terrain"
+    ID_FILE_CREATEMULTIPLEVEHICLES 
+                            "Create vehicle sprites from subdirs\nCreate Multiple Vehicles"
+    ID_FILE_CREATEMULTIPLEDIBS 
+                            "Create multiple .d8 and .d24 files.\nCreate Multiple DIBs."
+    ID_FILE_CREATE_MOVIE    "Create multiple .dibs for AVI.\nCreate Multiple 8-bit DIBs."
+END
+
+#endif    // English (U.S.) resources
+/////////////////////////////////////////////////////////////////////////////
+
+
+
+#ifndef APSTUDIO_INVOKED
+/////////////////////////////////////////////////////////////////////////////
+//
+// Generated from the TEXTINCLUDE 3 resource.
+//
+#include "res\sprite.rc2"  // non-Microsoft Visual C++ edited resources
+
+#define _AFX_NO_SPLITTER_RESOURCES
+#define _AFX_NO_OLE_RESOURCES
+#define _AFX_NO_TRACKER_RESOURCES
+#define _AFX_NO_PROPERTY_RESOURCES
+#include "afxres.rc"  	// Standard components
+#include "afxprint.rc"	// printing/print preview resources
+
+/////////////////////////////////////////////////////////////////////////////
+#endif    // not APSTUDIO_INVOKED
+

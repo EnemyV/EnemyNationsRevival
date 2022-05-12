@@ -1,0 +1,6 @@
+Congratulations, you've landed and survived which is a good first step. And you have half of a self-sustaining economy with your lumber mill. You now need to complete your ability to build additional buildings by manufacturing steel.
+
+You need to build a Coal Mine, Iron Mine, and Smelter and manufacture 1000 units of steel.
+
+Your manufacturing will be slow without a power plant. However, you do not have enough steel to build a power plant too, so you need to manufacture the steel for the power plant. The colony ship had only so much room.
+

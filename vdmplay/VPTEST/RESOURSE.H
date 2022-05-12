@@ -1,0 +1,17 @@
+
+#define   ID_VDMPLAY_VPSTARTUP  1000
+#define   ID_VDMPLAY_VPCLEANUP  1001
+#define   ID_VDMPLAY_VPGETVERSION 1002
+#define   ID_VDMPLAY_VPSUPPORTEDTRANSPORTS  1003
+
+#define   ID_VDMPLAY_VPSTARTENUMSESSIONS    1004
+
+#define   ID_VDMPLAY_VPSTOPENUMSESSION      1005
+
+#define   ID_TRANSPORT_TCP                2001
+#define   ID_TRANSPORT_NETBIOS            2002
+#define   ID_TRANSPORT_IPX                2003
+#define   ID_TRANSPORT_COMM               2004
+#define   ID_TRANSPORT_MODEM              2005
+#define   ID_TRANSPORT_TAPI               2006
+

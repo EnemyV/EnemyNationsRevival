@@ -1,0 +1,11 @@
+//SUPPRESSIONPROJ:Vpdemods
+//ENABLE:Yes
+!include MFC.SUP
+ignore failure KERNEL32.DLL:GetProcAddress in function VDMPlay.dll:_CRT_INIT
+ignore param 7 KERNEL32.DLL:DeviceIoControl in module NETBIOS.dll
+ignore failure USER32.DLL:KillTimer in function VDMPlay.dll:CVdmPlay::CleanupWindowsStuff
+ignore param 1 KERNEL32.DLL:CloseHandle in module VDMPlay.dll
+ignore failure KERNEL32.DLL:CloseHandle in module VDMPlay.dll
+ignore failure WSOCK32.DLL:recvfrom in function VDMPlay.dll:CWSIpxNet::CIPXLink::ReceiveFrom
+ignore param 1 USER32.DLL:DestroyWindow in function VDMPlay.dll:CVdmPlay::~CVdmPlay
+

@@ -1,0 +1,96 @@
+//Microsoft App Studio generated resource script.
+//
+#include "..\resource.h"
+#define ID_HELP                         1000
+#define IDC_STATIC                      -1
+
+#define APSTUDIO_READONLY_SYMBOLS
+/////////////////////////////////////////////////////////////////////////
+//
+// Generated from the TEXTINCLUDE 2 resource.
+//
+#define APSTUDIO_HIDDEN_SYMBOLS
+#include "windows.h"
+#undef APSTUDIO_HIDDEN_SYMBOLS
+
+/////////////////////////////////////////////////////////////////////////////////////
+#undef APSTUDIO_READONLY_SYMBOLS
+
+#ifdef APSTUDIO_INVOKED
+//////////////////////////////////////////////////////////////////////////////
+//
+// TEXTINCLUDE
+//
+
+1 TEXTINCLUDE DISCARDABLE 
+BEGIN
+    "..\resource.h\0"
+END
+
+2 TEXTINCLUDE DISCARDABLE 
+BEGIN
+    "#define APSTUDIO_HIDDEN_SYMBOLS\r\n"
+    "#include ""windows.h""\r\n"
+    "#undef APSTUDIO_HIDDEN_SYMBOLS\r\n"
+    "\0"
+END
+
+3 TEXTINCLUDE DISCARDABLE 
+BEGIN
+    "\r\n"
+    "\0"
+END
+
+/////////////////////////////////////////////////////////////////////////////////////
+#endif    // APSTUDIO_INVOKED
+
+
+//////////////////////////////////////////////////////////////////////////////
+//
+// Dialog
+//
+
+IDD_COMM_STAT DIALOG DISCARDABLE  0, 0, 199, 141
+STYLE DS_MODALFRAME | WS_POPUP | WS_VISIBLE | WS_CAPTION | WS_SYSMENU
+CAPTION "COMM - []"
+FONT 8, "MS Sans Serif"
+BEGIN
+    PUSHBUTTON      "Cancel",IDCANCEL,30,118,50,14
+    PUSHBUTTON      "&Help...",ID_HELP,119,118,50,14
+    RTEXT           "Status:",IDC_STATIC,0,6,29,8
+    EDITTEXT        IDC_COMM_STATUS,32,4,163,12,ES_AUTOHSCROLL
+    LISTBOX         IDC_COMM_DATA,4,24,191,87,LBS_SORT | 
+                    LBS_NOINTEGRALHEIGHT | WS_VSCROLL | WS_TABSTOP
+END
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// String Table
+//
+
+STRINGTABLE DISCARDABLE 
+BEGIN
+    IDS_COMM_STAT_TITLE     "COMM - [%s]"
+    IDS_COMM_STAT_INIT      "Initializing..."
+    IDS_COMM_STAT_DIAL      "Dialing %s"
+    IDS_COMM_STAT_ERROR     "Error"
+    IDS_COMM_STAT_BUSY      "Busy"
+    IDS_COMM_STAT_CONNECT   "Connecting..."
+    IDS_COMM_STAT_NO_ANSWER "No Answer"
+    IDS_COMM_STAT_NO_CONNECT "No Connection"
+    IDS_COMM_STAT_CONNECTED "Connected"
+    IDS_COMM_STAT_WAITCALL  "Waiting for incoming call"
+    IDS_COMM_NOCARRIER      "No Carrier"
+END
+
+
+#ifndef APSTUDIO_INVOKED
+////////////////////////////////////////////////////////////////////////////////
+//
+// Generated from the TEXTINCLUDE 3 resource.
+//
+
+
+/////////////////////////////////////////////////////////////////////////////////////
+#endif    // not APSTUDIO_INVOKED
+

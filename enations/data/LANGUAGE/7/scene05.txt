@@ -1,0 +1,5 @@
+Sie schlagen sich wacker. Sie haben eine funktionierende Wirtschaft eingerichtet und sollten nun mit der Erforschung Ihrer Umgebung beginnen. Dazu müssen Sie eine Einsatzzentrale und eine Fahrzeugfabrik einrichten.
+
+Die Einsatzzentrale enthält einen Radarschirm, auf dem die ganze Welt zu sehen ist. Ohne ihn ist die Eroberung neuer Gebiete fast ausgeschlossen. Auf dem Radar sehen Sie, daß fünf gegnerische Gebäude auf Ihrer Karte erscheinen. Sie müssen ein Aufklärungsfahrzeug zu drei dieser Standorte schicken, um zu ergründen, was dort vor sich geht.
+
+In der Fahrzeugfabrik können Sie die Outrider bauen, die Sie zum Auskundschaften der drei Baustellen benötigen. Außerdem können Sie dort zusätzliche Kräne und Lastwagen herstellen, um Ihre Wirtschaft auszubauen. Sie müssen mindestens 1 Kran, 1 Lastwagen und 3 Outrider bauen.
