@@ -1,6 +1,9 @@
 /.idea/
 /.vs/
 /.vscode/
+/wing/SAMPLES/*
+/wing/BIN/*
+/enations_latest/src/out/*
 /cmake-build-debug/
 /cmake-build-release/
 /Debug/
