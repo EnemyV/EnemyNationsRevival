@@ -500,7 +500,7 @@ BOOL CFramePainter::WindowProc( HWND hWnd, UINT Message, WPARAM wParam, LPARAM l
                         HICON hicon = CWnd::FromHandle(hWnd)->GetIcon(FALSE);
 
                         if (hicon) {
-                            TRAP();
+                           // TRAP(); // VTFIXIT why was this trapped?
 
                             ::DrawIcon(hdc, iFrameW, iFrameW, hicon);
 

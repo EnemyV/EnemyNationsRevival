@@ -896,7 +896,7 @@ NBListNames(int nLana, LPCSTR szName, void (*cbk)(UINT, UINT, LPVOID), LPVOID ct
     pStatus = (ADAPTER_STATUS *) GlobalLock(hNames);
  
 	// Get the list of the netios names from the machine specifed by szName
-    if (!NBAdapterStatus (nLana, (PVOID) pStatus, cbBuffer, szName))
+    if (!NBAdapterStatus (nLana, (LPVOID) pStatus, cbBuffer, szName))
     {
         GlobalFree(hNames);
         return FALSE;
@@ -949,8 +949,7 @@ NBListNames(int nLana, LPCSTR szName, void (*cbk)(UINT, UINT, LPVOID), LPVOID ct
     return TRUE;
 }
  
-BOOL
-NBAdapterStatus (int nLana, PVOID pBuffer, int cbBuffer, LPCSTR szName)
+BOOL NBAdapterStatus (int nLana, LPVOID pBuffer, int cbBuffer, LPCSTR szName)
 {
     NCB ncb;
  

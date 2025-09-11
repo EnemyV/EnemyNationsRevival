@@ -654,7 +654,7 @@ void CDlgCreatePublish::OnOK()
 	m_pCm->m_wndPlyrList.ShowWindow (SW_SHOW);
 
 	if ( m_pCm->m_iTyp == CCreateBase::load_multi )
-		{
+    {
 		m_pCm->GetDlgStatus()->SetMsg (IDS_READY_TO_GO);
 		m_pCm->GetDlgStatus()->SetPer ( 100 );
 		m_pCm->ShowDlgStatus ();

@@ -9,6 +9,8 @@
 #ifndef __BASE_H__
 #define __BASE_H__
 
+
+
 #include "ourlog.h"
 
 #include <dibwnd.h>
@@ -246,7 +248,7 @@ class CHexCoord
     friend CArchive& operator<<( CArchive& ar, const CHexCoord hex );
     friend CArchive& operator>>( CArchive& ar, CHexCoord& hex );
 
-  protected:
+  public:
     int m_iX;
     int m_iY;
 
@@ -605,7 +607,7 @@ class CMaterialTypes
     {
         lumber,  // lumber - goods must be 0-based
         steel,
-        copper,
+        copper, // Xil
         moly,
         goods,
 

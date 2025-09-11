@@ -336,11 +336,29 @@ struct genericMsg : CRef {
         return new char[s + moreData];
     }
 
-    // is this all I needed?
-    void operator delete(void* obj) noexcept {
-        reinterpret_cast<genericMsg*>(obj)->~genericMsg();
-        std::free(obj);
+
+#if _MSC_VER >= 1930    // VS2022
+    void operator delete( void* obj ) noexcept
+    {
+        reinterpret_cast<genericMsg*>( obj )->~genericMsg( );
+        free( obj );
     }
+#elif _MSC_VER >= 1920  // VS2019
+    void operator delete( void* obj ) noexcept
+    {
+        reinterpret_cast<genericMsg*>( obj )->~genericMsg( );
+        std::free( obj );
+    }
+#else
+    // is this all I needed?
+    void operator delete( void* obj ) noexcept
+    {
+        reinterpret_cast<genericMsg*>( obj )->~genericMsg( );
+        std::free( obj );
+    }
+#endif
+
+
 
 #endif
 

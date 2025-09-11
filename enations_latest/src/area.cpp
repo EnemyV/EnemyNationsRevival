@@ -194,6 +194,9 @@ CAreaList::CAreaList( )
 
 void CAreaList::MoveSizeToNew( int xOld, int yOld )
 {
+#ifdef LOGGINGON
+    OutputDebugStringA( "MoveSizeToNew" );
+#endif
 
     POSITION pos;
     for ( pos = GetHeadPosition( ); pos != NULL; )
@@ -257,7 +260,7 @@ void CAreaList::EnableWindows( BOOL bEnable )
     for ( pos = GetHeadPosition( ); pos != NULL; )
     {
         CWndArea* pWndArea = GetNext( pos );
-        ASSERT_STRICT_VALID( pWndArea );
+        ASSERT_STRICT_VALID( pWndArea ); // what's wrong here?
         pWndArea->EnableWindow( bEnable );
     }
 }
@@ -404,7 +407,7 @@ void CListUnits::RemoveAllUnits( BOOL bDoList )
     for ( pos = GetHeadPosition( ); pos != NULL; )
     {
         CUnit* pUnit = GetNext( pos );
-        ASSERT_STRICT_VALID( pUnit );
+        ASSERT_STRICT_VALID( pUnit ); // hmm
         pUnit->SetUnselected( bDoList );
     }
 
@@ -626,6 +629,12 @@ void CWndAreaStatic::OnPaint( )
 
 void CWndAreaStatic::OnSize( UINT nType, int cx, int cy )
 {
+#ifdef LOGGINGON
+    char buf[128];
+    sprintf_s( buf, "CWndAreaStatic::OnSize cx=%d cy=%d\n", cx, cy );
+    OutputDebugStringA( buf );
+#endif
+
 
     CWndBase::OnSize( nType, cx, cy );
 
@@ -874,8 +883,18 @@ void CWndArea::GetClientRect( LPRECT lpRect ) const
     }
 }
 
+#ifdef LOGGINGON
+int  created = 0;
+#endif
+
 void CWndArea::Create( CMapLoc const& ml, CUnit* pUnit, BOOL bFirst )
 {
+#ifdef LOGGINGON
+    created++;
+    char buf[128];
+    sprintf_s( buf, "CWndArea::Create (created=%d)\n", created );
+    OutputDebugStringA( buf );
+#endif
 
     ASSERT_VALID_OR_NULL( pUnit );
 
@@ -1851,8 +1870,18 @@ int CWndArea::OnCreate( LPCREATESTRUCT lpCreateStruct )
 
     m_bScrollBars = theApp.GetProfileInt( "Advanced", "Scroll", 0 );
 
+    // NOTE: this crashes on load game because ?something? isn't initialized
     // if first window AND have placement info - use it
-    BOOL bPlaceIt = ( ( theAreaList.GetCount( ) == 0 ) && ( theGame.m_wpArea.length != 0 ) );
+    BOOL bPlaceIt = ( ( theAreaList.GetCount( ) == 0 ) 
+        && ( theGame.m_wpArea.length != 0 ) );
+
+#ifdef LOGGINGON
+    char buf[128];
+    sprintf_s( buf, "CWndArea::OnCreate: %p\n", bPlaceIt );
+    OutputDebugStringA( buf );
+#endif
+    // override because its crashing on load:
+   // bPlaceIt = FALSE;
 
     tShowStat.Init( );
     uShowStat.Init( );
@@ -1876,15 +1905,36 @@ int CWndArea::OnCreate( LPCREATESTRUCT lpCreateStruct )
 
     ASSERT( ptrthebltformat.Value( ) );
 
+    // this is creating the CDIB for the main area
+    // so like, the background for the gameplay window and mini map methinks!)
+    // or maybe the entire window thing? only 1 of these exist?
+  //  int rWidth = rect.Width( );
+  //  int rHeight = rect.Height( );
+#ifdef LOGGINGON
+    {
+        char buf[256];
+        sprintf_s( buf,
+                   "Main Area CDIB: Format=%d, Type=%d, Direction=%d, "
+                   "Width(local)=%d, Height(local)=%d, Width(rect)=%d, Height(rect)=%d\n",
+                   ptrthebltformat->GetColorFormat( ), ptrthebltformat->GetType( ), ptrthebltformat->GetDirection( ),
+                   m_cx, m_cy, rect.Width( ), rect.Height( ) );
+        OutputDebugStringA( buf );
+    }
+#endif
+    
     m_aa.m_dibwnd.Init(
         this->m_hWnd,
-        new CDIB( ptrthebltformat->GetColorFormat( ), ptrthebltformat->GetType( ), ptrthebltformat->GetDirection( ) ),
+        new CDIB( ptrthebltformat->GetColorFormat( ), ptrthebltformat->GetType( ), 
+            ptrthebltformat->GetDirection( ) ),
         rect.Width( ), rect.Height( ) );
 
     m_bUpdateAll = TRUE;
 
-    if ( bPlaceIt )
+    if ( bPlaceIt ) // only done in loading? or maybe bringing it back up after closing it?
     {
+#ifdef LOGGINGON
+        OutputDebugStringA( "bPlaceIt!");
+#endif
         bPlaceIt = TRUE;
         SetWindowPlacement( &( theGame.m_wpArea ) );
         Center( theGame.m_hexAreaCenter );
@@ -4695,6 +4745,9 @@ const DWORD dwStyle = WS_CHILD;
 
 CWndInfo* CWndInfo::Create( CPoint& pt, CUnit* pUnit, CWndArea* pPar )
 {
+#ifdef LOGGINGON
+    OutputDebugStringA( "CWndInfo::Create" );
+#endif
 
     ASSERT_STRICT_VALID( pUnit );
 

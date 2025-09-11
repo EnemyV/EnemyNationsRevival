@@ -105,6 +105,8 @@ class AIinit
 
 /////////////////////////////////////////////////////////////////////////////
 // CDlgMain dialog
+// maybe the dialouge that comes up when the program starts?
+// i think it's multiple, but not sure
 
 class CDlgMain : public CDialog
 {
@@ -270,6 +272,10 @@ class CConquerApp : public CWinApp
 
     BOOL LoadData( );
 
+#ifdef TESTINGGON
+    void RunTests( );
+#endif
+
 #ifdef BUGBUG
     void LoadVer( );        // load data from the RIF files
     void LoadMain( );       // main screen
@@ -287,6 +293,8 @@ class CConquerApp : public CWinApp
     void UnloadOther( );    // for game
     void UnloadLang( );     // language specific part for game
 #endif
+
+    
 
     CZoomData* GetZoomData( ) const
     {
@@ -331,6 +339,7 @@ class CConquerApp : public CWinApp
     int                      GetCpuSpeed( ) const { return m_iCpuSpeed; }
     int                      GetCdSpeed( ) const { return m_iCdSpeed; }
 
+
     void Log( char const* pText );
 
     // Overrides
@@ -364,6 +373,7 @@ class CConquerApp : public CWinApp
     //{{AFX_MSG(CConquerApp)
     //}}AFX_MSG
     DECLARE_MESSAGE_MAP( )
+
 
   public:
     CString m_sOs;

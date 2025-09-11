@@ -162,7 +162,8 @@ public:
     BOOL        IsInRange( BYTE const*, int iBytes ) const;
     int        GetOffset( int x, int y ) { return GetRow( y ) * GetPitch() + x * GetBytesPerPixel(); }
 
-    LPDIRECTDRAWSURFACE   GetDDSurface();
+    LPDIRECTDRAWSURFACE GetDDSurface( );
+    BOOL HasDDSurface( );
 
     //--------------------------------------------------------------------------
     // 
@@ -313,6 +314,11 @@ inline LPDIRECTDRAWSURFACE CDIB::GetDDSurface() {
         ; // GGFIXIT: throw
 
     return m_pddsurfaceBack;
+}
+
+inline BOOL CDIB::HasDDSurface( )
+{
+    return ( m_pddsurfaceBack != 0 );
 }
 
 /////////////////////////////////////////////////////////////////////////////

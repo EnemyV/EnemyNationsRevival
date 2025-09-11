@@ -422,6 +422,10 @@ CDirectDraw::CDirectDraw():
         m_ddPrimSurfDesc.dwFlags      = DDSD_CAPS;
         m_ddPrimSurfDesc.ddsCaps.dwCaps  = DDSCAPS_PRIMARYSURFACE;
 
+#ifdef LOGGINGON
+        OutputDebugStringA( "create surface blt\n" );
+#endif
+
         m_hRes = m_pdirectdraw->CreateSurface( &m_ddPrimSurfDesc,
                                                        &m_pddsurfacePrim, NULL );
 

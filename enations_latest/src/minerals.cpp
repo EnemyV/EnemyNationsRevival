@@ -171,15 +171,37 @@ CArchive& operator>> (CArchive& ar, CMinerals & mn)
 }
 
 #ifdef _DEBUG
-void CMinerals::AssertValid() const
+void CMinerals::AssertValid( ) const
 {
 
-	CObject::AssertValid ();
+    CObject::AssertValid( );
 
-	ASSERT ((m_cType == CMaterialTypes::oil) || (m_cType == CMaterialTypes::coal) ||
-					(m_cType == CMaterialTypes::iron) || (m_cType == CMaterialTypes::copper));
-	ASSERT ((0 < m_cDensity) && (m_cDensity <= MAX_MINERAL_DENSITY));
-	ASSERT ((0 < m_lQuantity) && (m_lQuantity <= MAX_MINERAL_QUANTITY));
+    ASSERT( ( m_cType == CMaterialTypes::oil ) || ( m_cType == CMaterialTypes::coal ) ||
+            ( m_cType == CMaterialTypes::iron ) || ( m_cType == CMaterialTypes::copper ) );
+    ASSERT( ( 0 < m_cDensity ) && ( m_cDensity <= MAX_MINERAL_DENSITY ) );
+    ASSERT( ( 0 < m_lQuantity ) && ( m_lQuantity <= MAX_MINERAL_QUANTITY ) );
 }
+
 #endif
+BOOL CMinerals::IsValid( ) const
+{
+#ifdef _DEBUG
+    try
+
+    {
+        return ( ( ( m_cType == CMaterialTypes::oil ) || ( m_cType == CMaterialTypes::coal ) ||
+                   ( m_cType == CMaterialTypes::iron ) || ( m_cType == CMaterialTypes::copper ) ) &&
+                 ( ( 0 < m_cDensity ) && ( m_cDensity <= MAX_MINERAL_DENSITY ) ) &&
+                 ( ( 0 < m_lQuantity ) && ( m_lQuantity <= MAX_MINERAL_QUANTITY ) ) );
+    }
+    catch ( ... )
+    {
+    
+			return FALSE;
+    }
+
+#else
+    return TRUE;
+#endif
+}
 

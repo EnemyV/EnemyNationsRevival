@@ -35,19 +35,33 @@ set(wind22_sources
 
 add_library(wind22 STATIC ${wind22_sources})
 
-target_compile_options(wind22 INTERFACE
-        "$<$<CONFIG:RELEASE>:$<BUILD_INTERFACE:/MD;/GX;/Zi;/O2;/Ob2;/EHsc>"
-        "$<$<CONFIG:DEBUG>:$<BUILD_INTERFACE:/MD;/GX;/EHsc>"
-        )
+#target_compile_options(wind22 INTERFACE
+#        "$<$<CONFIG:RELEASE>:$<BUILD_INTERFACE:/MT;/GX;/Zi;/O2;/Ob2;/EHsc>"
+#        "$<$<CONFIG:DEBUG>:$<BUILD_INTERFACE:/MTd;/GX;/EHsc;/Zi>"
+#        )
+
+target_compile_options(wind22 PUBLIC
+    $<$<CONFIG:RELEASE>:/MT /GX /Zi /O2 /Ob2 /EHsc>
+    $<$<CONFIG:DEBUG>:/MTd /GX /EHsc /Zi>
+)
+
+set(CMAKE_MFC_FLAG 1)
 
 target_compile_definitions(wind22 PUBLIC
-        _AFXDLL
-        _WIN32_WINNT=_WIN32_WINNT_WIN7
-        _WINDOWS
-        _MBCS
-        WIN32
-        _X86_ # Hack! This should not be necessary.
-        )
+#    _AFXDLL
+    _WIN32_WINNT=_WIN32_WINNT_WIN7
+    _WINDOWS
+    _MBCS
+    WIN32
+    _X86_ # Hack! This should not be necessary.
+    LOGGINGON
+    $<$<CONFIG:Release>:NDEBUG>
+    $<$<CONFIG:Debug>:_DEBUG>
+)
+
+# Precompiled header - specify the correct path
+target_precompile_headers(wind22 PUBLIC include/stdafx.h)
+
 
 target_link_libraries(wind22 PUBLIC
         winmm.lib
@@ -56,8 +70,9 @@ target_link_libraries(wind22 PUBLIC
 
 target_include_directories(wind22 PUBLIC
         include
-        ../../tools
+        ./include
+        ../../cmake-build-release/tools
         )
 
 target_link_directories(wind22 PUBLIC
-        ../../tools/lib)
+        ../../cmake-build-release/tools/lib)

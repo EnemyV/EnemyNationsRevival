@@ -100,10 +100,25 @@ CWndWorld::CWndWorld() {
 
     m_iResOn = m_iFrameOn = 0;
 
-    m_sDir[0].LoadString(IDS_WORLD_NE);
+    /*
+    int idsne = IDS_WORLD_NE;
+
+    CString s;
+    BOOL    ok = s.LoadString( IDS_WORLD_NE );
+
+    HINSTANCE hRes = AfxGetResourceHandle( );
+    TRACE( "Resource handle: %p\n", hRes );
+
+    TRACE( "ID=%d ok=%d str='%s'\n", IDS_WORLD_NE, ok, s );
+    */
+
+    // moved to oncreate
+    /*
+    m_sDir[0].LoadString( IDS_WORLD_NE );
     m_sDir[1].LoadString(IDS_WORLD_SE);
     m_sDir[2].LoadString(IDS_WORLD_SW);
     m_sDir[3].LoadString(IDS_WORLD_NW);
+       */
 }
 
 void CWndWorld::Close() {
@@ -152,7 +167,16 @@ void CWndWorld::ApplyColors(CDIB const *pDib) {
 
 const DWORD dwStyleWorldWnd = CS_DBLCLKS | CS_HREDRAW | CS_VREDRAW | CS_OWNDC;
 
+// this is, just the map?? ( think so, the radar window and main map?)
 void CWndWorld::Create(BOOL bStart) {
+
+#ifdef LOGGINGON
+    // Print a message with the cx and cy values
+    char buf[128];
+    sprintf_s( buf, sizeof( buf ), "CWndWorld::Create (Start=%d)\n", bStart );
+    OutputDebugStringA( buf );
+#endif
+
 
     m_bRBtnDown = FALSE;
     m_bLBtnDown = FALSE;
@@ -161,6 +185,15 @@ void CWndWorld::Create(BOOL bStart) {
     // the area window must already exist
     ASSERT_STRICT (theAreaList.GetTop() != NULL);
     NewAreaMap(theAreaList.GetTop());
+
+    
+    if ( m_sDir[0].IsEmpty( ) )
+    {
+        m_sDir[0].LoadString( IDS_WORLD_NE );
+        m_sDir[1].LoadString( IDS_WORLD_SE );
+        m_sDir[2].LoadString( IDS_WORLD_SW );
+        m_sDir[3].LoadString( IDS_WORLD_NW );
+    }
 
     // get min size
     CString sTitle, sClass;
@@ -177,16 +210,26 @@ void CWndWorld::Create(BOOL bStart) {
 
     // World window (so it can have a cross-hair
     sClass = AfxRegisterWndClass(dwStyleWorldWnd, theApp.LoadStandardCursor(IDC_CROSS), 0, 0);
-    if (CreateEx(0, sClass, sTitle, dwPopWndStyle,
-                 theApp.GetProfileInt(theApp.m_sResIni, "WorldX", 0),
-                 theApp.GetProfileInt(theApp.m_sResIni, "WorldY", 0),
-                 theApp.GetProfileInt(theApp.m_sResIni, "WorldEX", theApp.m_iCol1 + 1),
-                 theApp.GetProfileInt(theApp.m_sResIni, "WorldEY", theApp.m_iRow1 + 1),
-                 theApp.m_pMainWnd->m_hWnd, NULL, NULL) == 0)
-        throw (ERR_RES_CREATE_WND);
 
-    if (bStart & (!(m_iMode & visible)))
-        OnVisible();
+    // if it crashes here, i think a gfx bitmap is missing?
+    // theApp.m_pMainWnd->m_hWnd is wrong, i think
+    if ( CreateEx( 0, sClass, sTitle, dwPopWndStyle, theApp.GetProfileInt( theApp.m_sResIni, "WorldX", 0 ),
+                   theApp.GetProfileInt( theApp.m_sResIni, "WorldY", 0 ),
+                   theApp.GetProfileInt( theApp.m_sResIni, "WorldEX", theApp.m_iCol1 + 1 ),
+                   theApp.GetProfileInt( theApp.m_sResIni, "WorldEY", theApp.m_iRow1 + 1 ), 
+                   theApp.m_pMainWnd->m_hWnd, // window parent!
+                   NULL, NULL ) == 0 )
+    {
+        throw( ERR_RES_CREATE_WND );
+    }
+
+    if ( bStart & ( !( m_iMode & visible ) ) )
+    {
+#ifdef LOGGINGON
+        OutputDebugStringA( "CWndWorld set OnVisible\n" );
+#endif
+        OnVisible( );
+    }
 
     // init vars
     NewMode();
@@ -289,14 +332,26 @@ void CWndWorld::OnSysCommand(UINT nID, LPARAM lParam) {
 
 int CWndWorld::OnCreate(LPCREATESTRUCT lpCreateStruct) {
 
-    if (CWndAnim::OnCreate(lpCreateStruct) == -1)
+    
+#ifdef LOGGINGON
+    OutputDebugStringA( "CWndWorld::OnCreate\n" );
+#endif
+
+    if ( CWndAnim::OnCreate( lpCreateStruct ) == -1 )
+    {
         return -1;
+    }
 
     // accelerators for this window
     m_hAccel = ::LoadAccelerators(theApp.m_hInstance, MAKEINTRESOURCE (IDR_WORLD));
 
     // we had to start with an icon to get a different class
     ::SetClassLong(m_hWnd, GCL_HCURSOR, NULL);
+
+    m_sDir[0].LoadString( IDS_WORLD_NE );
+    m_sDir[1].LoadString( IDS_WORLD_SE );
+    m_sDir[2].LoadString( IDS_WORLD_SW );
+    m_sDir[3].LoadString( IDS_WORLD_NW );
 
     m_sHelpRMB.LoadString(IDH_WORLD_WIN_RMB);
     m_sHelp.LoadString(IDH_WORLD_WIN);
@@ -332,6 +387,18 @@ int CWndWorld::OnCreate(LPCREATESTRUCT lpCreateStruct) {
 
     CRect rect;
     GetClientRect(&rect);
+    // create the world CDIB
+
+#ifdef LOGGINGON
+    {
+       // char buf[512];
+       // sprintf_s( buf, "CWndWorld::Init called" );// with Format=%d, Type=%d, Direction=%d, Width=%d, Height=%d%s\n",
+                //   ptrthebltformat->GetColorFormat( ), ptrthebltformat->GetType( ), ptrthebltformat->GetDirection( ),
+                //   rect.Width( ), rect.Height( ), m_bIsRadar ? " (radar)" : "" );
+        OutputDebugStringA( "CWndWorld::Init called" );
+    }
+#endif
+
     m_dibwnd.Init(this->m_hWnd,
                   new CDIB(ptrthebltformat->GetColorFormat(),
                            ptrthebltformat->GetType(),
@@ -339,11 +406,24 @@ int CWndWorld::OnCreate(LPCREATESTRUCT lpCreateStruct) {
                   rect.Width(),
                   rect.Height());
 
+    // DO WE NEED TO SIZE IT?
+
     m_bUpdate = TRUE;
     m_iResOn = m_iFrameOn = 0;
 
     // animate us
     theAnimList.AddHead(this);
+
+#ifdef LOGGINGON
+    if ( m_bIsRadar )
+    {
+        OutputDebugStringA( "CWndWorld::Created (radar) \n" );
+    }
+    else
+    {
+        OutputDebugStringA( "CWndWorld::Created \n" );
+    }
+#endif
 
     return 0;
 }
@@ -789,6 +869,14 @@ void CWndWorld::OnGetMinMaxInfo(MINMAXINFO FAR *lpMMI) {
 
 void CWndWorld::OnSize(UINT nType, int cx, int cy) {
 
+    
+#ifdef LOGGINGON
+    // Print a message with the cx and cy values
+    char buf[128];
+    sprintf_s( buf, sizeof( buf ), "CWndWorld::OnSize called: cx=%d, cy=%d, type=%d, radar=%d\n", cx, cy, nType, m_bIsRadar );
+    OutputDebugStringA( buf );
+#endif
+
     CWndAnim::OnSize(nType, cx, cy);
 
     _OnSize();
@@ -799,8 +887,17 @@ void CWndWorld::OnSize(UINT nType, int cx, int cy) {
 
 void CWndWorld::_OnSize() {
 
+#ifdef LOGGINGON
+    OutputDebugStringA( "world _OnSize\n" );
+#endif
+
+
     // can get called when there is no hWnd (command center change)
     if (m_hWnd == NULL) {
+
+#ifdef LOGGINGON
+        OutputDebugStringA( "no m_hWnd!\n" );
+#endif
         TRAP();
         return;
     }
@@ -809,7 +906,15 @@ void CWndWorld::_OnSize() {
     // resize the WinG wnd
     CRect rect;
     GetClientRect(&rect);
-    m_dibwnd.Size(MAKELPARAM (rect.right, rect.bottom));
+    int right = rect.right;
+    int bottom = rect.bottom;
+    m_dibwnd.Size(MAKELPARAM (right, bottom)); // this SHOULD onsize the texture I think?
+
+#ifdef LOGGINGON
+    char buf[128];
+    sprintf_s( buf, "m_dibwnd.Size rect.right=%d rect.bottom=%d\n", rect.right, rect.bottom );
+    OutputDebugStringA( buf );
+#endif
 
     // we build a copy of the map here each time the size
     // changes so we can then BLT it up fast each frame
@@ -940,9 +1045,16 @@ void CWndWorld::_NewDir() {
     // put up the new dir
     CString sTitle;
     if (m_bIsRadar)
-        sTitle.LoadString(IDS_WORLD_TITLE_RADAR);
+        sTitle.LoadString( IDS_WORLD_TITLE_RADAR );
     else
         sTitle.LoadString(IDS_WORLD_TITLE_MAP);
+
+#ifdef LOGGINGON
+    char buf[128];
+    sprintf_s( buf, "New Title: %d\n", sTitle );
+    OutputDebugStringA( buf );
+#endif
+
     csPrintf(&sTitle, (char const *) m_sDir[m_pWndArea->GetAA().m_iDir]);
     SetWindowText(sTitle);
 
@@ -1072,6 +1184,17 @@ void CWndWorld::_NewDir() {
             if (bdwRes & (pHex->GetUnits() & CHex::minerals)) {
                 CMinerals *pMn;
                 if (theMinerals.Lookup(_hex, pMn)) {
+
+                    // VTFIXME
+                    // this was crfashing for loaded games - not sure why, perhaps the deserialization failed
+                    /* if ( !pMn->IsValid( ) )
+                    {
+#ifdef LOGGINGON
+                        OutputDebugStringA( "Invalid Minerals!\n" );
+#endif
+                        return;  // fuck idk, i think it doesn't deserialize correctly when loading
+                    }*/
+
                     switch (pMn->GetType()) {
                         case CMaterialTypes::copper :
                             if (bdwCopper != 0) {
@@ -1245,6 +1368,11 @@ void CWndWorld::_NewLocation() {
 
 void CWndWorld::ReRender() {
 
+    // crashes on load game on start, idk why
+    // this is a tmp workaround
+    // VTFIXME
+   // if ( theGame.LoadGame)
+
     // redraw whatever needs to be redrawn
     if (m_bNewMode)
         _NewMode();
@@ -1343,6 +1471,14 @@ void CWndWorld::ReRender() {
     }
 
     CHexCoord hexcoord(m_pWndArea->GetAA().GetCenter());
+
+    
+#ifdef LOGGINGON
+    char    buf[128];
+    sprintf_s( buf, "MapCoors X=%d Y=%d\n", hexcoord.X( ), hexcoord.Y( ) );
+    OutputDebugStringA( buf );
+#endif
+
     CSubHex _sub(hexcoord);
     CSubHex _subStrt(_sub);
     int iOdd = 1;
@@ -1362,9 +1498,22 @@ void CWndWorld::ReRender() {
         xRem -= m_cx;
     }
 
+    // if there's no DD device, just retunr?
+    if ( !pdib->HasDDSurface( ) )
+    {
+#ifdef LOGGINGON
+        int  type = pdib->GetType( );
+        buf[128];
+        sprintf_s( buf, "no HasDDSurface!! type=%d\n", type );
+        OutputDebugStringA( buf );
+#endif
+
+        return;
+    }
+
     // dest is where we write, radar tells us if we should write
     BYTE *pDibDest, *pDibDestLine;
-    CDIBits dibits = pdib->GetBits();
+    CDIBits dibits = pdib->GetBits(); // exception, gfx surface missing? GetDDSurface null
     pDibDest = pDibDestLine = dibits + pdib->GetOffset(0, 0);
     int iDestPitch = pdib->GetDirPitch();
 

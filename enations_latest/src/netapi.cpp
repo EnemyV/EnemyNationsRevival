@@ -641,8 +641,26 @@ static void OnMsgServerDown( LPCVPSESSIONINFO pSi )
     theApp.m_pCreateGame->OnSessionClose( pSi );
 }
 
+#ifdef TESTINGGON
+bool CGame::RunTests( )
+{
+    return true;  // default to passing
+}
+#endif
+
 void CGame::AddToQueue( CNetCmd const* pCmd, int iLen )
 {
+#ifdef LOGGINGON
+    if ( iLen == 0 )
+    {
+        OutputDebugStringA( "0 length pMsg in AddToQueue?!\n" );
+    }
+    CString str;
+
+    str.Format( "AddingToQueue type %d, %d, %d", pCmd->GetType( ), iLen, sizeof( pCmd ) );
+    OutputDebugStringA( str );
+    OutputDebugStringA( "\n" );
+#endif
 
     ASSERT_VALID( this );
     // can't do - previous messages may need to be processed first	ASSERT_CMD (pCmd);
@@ -667,15 +685,69 @@ void CGame::AddToQueue( CNetCmd const* pCmd, int iLen )
         pBuf = m_memPoolSmall.alloc();
     else
         pBuf = m_memPoolLarge.alloc();
+
+    
+#ifdef LOGGINGON
+     str.Format( "iLen=%d, sizeof(CNetCmd)=%d, type=%d, MSG_POOL_SIZE=%d, pbuf=%d", 
+        iLen, sizeof( CNetCmd ), 
+        pCmd->GetType( ), 
+        MSG_POOL_SIZE,
+        pBuf);
+    OutputDebugStringA( str );
+    OutputDebugStringA( "\n" );
+#endif
+
+    // Zero out the memory
+   // if ( iLen <= MSG_POOL_SIZE )
+   //     memset( pBuf, 0, MSG_POOL_SIZE );  // harcoded from memory pool sizes
+   // else
+   //     memset( pBuf, 0, VP_MAXSENDDATA );
+
     memcpy( pBuf, pCmd, iLen );
+
+#ifdef LOGGINGON
+   // str.Format( "pBuf before setting MemPool type %d", ( (CNetCmd*)pBuf )->GetType( ) );
+  //  OutputDebugStringA( str );
+  //  OutputDebugStringA( "\n" );
+#endif
 
     if ( iLen <= MSG_POOL_SIZE )
         ( (CNetCmd*)pBuf )->m_bMemPool = 1;
     else
         ( (CNetCmd*)pBuf )->m_bMemPool = 0;
 
+    // check that it's the same message?
+
+#ifdef LOGGINGON
+  //  if ( iLen == 0 )
+  //  {
+  //      OutputDebugStringA( "0 length pMsg in AddToQueue?!" );
+ //   }
+ //   str.Format( "Added type %d", ( (CNetCmd*)pBuf )->GetType( ) );
+ //   OutputDebugStringA( str );
+ //   OutputDebugStringA( "\n" );
+#endif
+
     EnterCriticalSection( &cs );
     m_messagePointerList.AddTail(pBuf );
+
+#ifdef LOGGINGON
+ //   str.Format( "pBuf after AddTail %d, [%d]", ( (CNetCmd*)pBuf )->GetType( ), theGame.m_messagePointerList.GetCount( ) );
+ //   OutputDebugStringA( str );
+ //   OutputDebugStringA( "\n" );
+#endif
+    
+#ifdef LOGGINGON
+    char* pBufChar = (char*)theGame.m_messagePointerList.GetTail( );
+
+    str;
+    str.Format( "Verifying type %d (old is %d, origi is %d, orig cast is %d [%d])\n", ((CNetCmd*)pBufChar )->GetType( ),  
+        ( (CNetCmd*)pBuf )->GetType( ), pCmd->GetType( ), ( (CNetCmd*)pCmd )->GetType( ), 
+        theGame.m_messagePointerList.GetCount());
+    OutputDebugStringA( str );
+ //   OutputDebugStringA( pBufChar );
+    OutputDebugStringA( "\n" );
+#endif
 
     // throttle messages off if a net game
     if ( ( theGame.IsNetGame( ) ) && ( !theGame.ShouldPause() ) )
@@ -1280,6 +1352,10 @@ static void CmdYouAre( int iPlyrNum, int iSrvrNum )
 static void CmdPlayer( CNetPlayer* pNp )
 {
 
+#ifdef LOGGINGON
+    OutputDebugStringA( "CmdPlayer\n" );
+#endif
+
     ASSERT( !theGame.AmServer( ) );
 
     // if we already have this one - move it to the end
@@ -1384,6 +1460,10 @@ static void CmdPlyrStatus( CNetPlyrStatus* pMsg )
 static void CmdInitDone( CNetInitDone* pMsg )
 {
 
+#ifdef LOGGINGON
+    OutputDebugStringA( "CmdInitDone" );
+#endif
+
     CPlayer* pPlyr = theGame.GetPlayer( pMsg->m_iPlyrNum );
     if ( pPlyr == NULL )
     {
@@ -1406,6 +1486,9 @@ static void CmdInitDone( CNetInitDone* pMsg )
 
     if ( theApp.m_pCreateGame->m_iTyp == CCreateBase::load_multi )
     {
+#ifdef LOGGINGON
+        OutputDebugStringA( "LoadMulti\n" );
+#endif
         TRAP( );
         theGame.StartGame( FALSE );
         return;
@@ -2752,6 +2835,13 @@ void CGame::ProcessMessage(CNetCmd* pCmd )
     ASSERT(theGame.ShouldProcessMessages() );
     ASSERT_VALID( this );
 
+#ifdef LOGGINGON
+
+    CString str;
+    str.Format( "ProcessMessage (PM1) type %d\n", pCmd->GetType( ) );
+    OutputDebugStringA( str );
+#endif
+
     switch ( pCmd->GetType( ) )
     {
     case CNetCmd::cmd_ready:
@@ -2771,6 +2861,12 @@ void CGame::ProcessMessage(CNetCmd* pCmd )
         CmdPlyrStatus( (CNetPlyrStatus*)pCmd );
         break;
     case CNetCmd::cmd_init_done:
+
+#ifdef LOGGINGON
+        str.Format( "cmd_init_done!\n" );
+        OutputDebugStringA( str );
+#endif
+
         CmdInitDone( (CNetInitDone*)pCmd );
         break;
     case CNetCmd::cmd_play:
@@ -3080,8 +3176,15 @@ void CGame::ProcessMessage(CNetCmd* pCmd )
     }
 
     case CNetCmd::set_rsrch: {
+
         CMsgRsrch* pMsg = (CMsgRsrch*)pCmd;
         CPlayer*   pPlr = theGame.GetPlayerByPlyr( pMsg->m_iPlyrNum );
+        if (!pPlr)
+        {
+            
+            OutputDebugStringA("set_rsrch: player not found\n");
+            break;
+        }
         int        iOn  = pPlr->GetRsrchItem( );
         if ( iOn > 0 )
         {
@@ -3348,8 +3451,10 @@ void CGame::ProcessMessage(CNetCmd* pCmd )
     }
 
 #ifdef _DEBUG
+
+    // we couldn't handle the message!!
     default:
-        ASSERT( FALSE );
+        ASSERT( FALSE ); 
         break;
 #endif
     }

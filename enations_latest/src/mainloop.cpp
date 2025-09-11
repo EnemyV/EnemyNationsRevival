@@ -27,6 +27,7 @@
 #include "vehicle.inl"
 
 
+
 #ifdef _DEBUG
 #undef THIS_FILE
 static char BASED_CODE THIS_FILE[] = __FILE__;
@@ -101,7 +102,7 @@ int CConquerApp::Run( )
 #ifdef _DEBUG
                         if ( afxTraceFlags & traceAppMsg )
                             TRACE0( "CWinThread::BaseYield - Received WM_QUIT.\n" );
-                        m_nDisablePumpCount++;  // application must die
+                        AfxGetThreadState( ) ->m_nDisablePumpCount++;  // application must die
                                                 // Note: prevents calling message loop things in 'ExitInstance'
                                                 // will never be decremented
 #endif
@@ -193,7 +194,9 @@ int CConquerApp::Run( )
     ASSERT( FALSE );  // not reachable
 }
 
-// clears out the message queue and calls OnIdle once - no graphics engine stuff
+// VTBUGBUG this probably shouldn't be here...
+
+    // clears out the message queue and calls OnIdle once - no graphics engine stuff
 BOOL CConquerApp::BaseYield( )
 {
 
@@ -207,11 +210,11 @@ BOOL CConquerApp::BaseYield( )
     while ( ::PeekMessage( &m_msgCur, NULL, NULL, NULL, PM_NOREMOVE ) )
     {
 #ifdef _DEBUG
-        if ( m_nDisablePumpCount != 0 )
+        if ( AfxGetThreadState( ) ->m_nDisablePumpCount != 0 )
         {
             TRACE0( "Error: CWinThread::BaseYield called when not permitted.\n" );
             ASSERT( FALSE );
-        }
+        } 
 #endif
 
         if ( m_msgCur.message == WM_QUIT )
@@ -219,7 +222,7 @@ BOOL CConquerApp::BaseYield( )
 #ifdef _DEBUG
             if ( afxTraceFlags & traceAppMsg )
                 TRACE0( "CWinThread::BaseYield - Received WM_QUIT.\n" );
-            m_nDisablePumpCount++;  // application must die
+            AfxGetThreadState( ) ->m_nDisablePumpCount++;  // application must die
                                     // Note: prevents calling message loop things in 'ExitInstance'
                                     // will never be decremented
 #endif
@@ -359,6 +362,15 @@ void CConquerApp::ProcessAllMessages( )
             break;
         }
         char* pBuf = (char*)theGame.m_messagePointerList.RemoveHead( );
+
+#ifdef LOGGINGON
+        CString str;
+        str.Format( "Processing type %d\n", ( (CNetCmd*)pBuf )->GetType( ) );
+        OutputDebugStringA( str );
+      //  OutputDebugStringA( pBuf );
+        OutputDebugStringA( "\n" );
+#endif
+
         if ( pBuf == NULL )
         {
             LeaveCriticalSection( &cs );
@@ -457,10 +469,11 @@ void CConquerApp::_RenderScreens( )
                 CString sText;
                 sprintf( sText.GetBuffer( 80 ), "_  %d.%d fps", dtRate.quot, dtRate.rem );
                 sText.ReleaseBuffer( -1 );
-                if ( theGame.AreMsgsPaused( ) )
                     sText += "  Msgs PAUSED";
-                if ( theGame.IsToldPause( ) )
-                    sText += "  Told PAUSED";
+                if ( theGame.AreMessagesPaused( ) )
+                    sText += "  Msgs PAUSED";
+                if ( theGame.ShouldPause( ) )
+                    sText += "  Should PAUSED";
                 theApp.m_wndBar.SetDebugText( 0, sText );
                 dwLastTime = dwNow;
             }
@@ -513,7 +526,10 @@ void CConquerApp::GraphicsEnginePump( )
             int dwOperSleep  = (int)theGame.m_dwOperTimeLast + 1000 / FRAME_RATE - dwNow;
             int dwFrameSleep = (int)m_dwMaxNextRender - dwNow;
             int dwSleep      = __min( dwOperSleep, dwFrameSleep );
-            TRAP( dwSleep > 0 );
+
+            // was stopping here? why?
+           // TRAP( dwSleep > 0 );
+
             ::Sleep( __minmax( 10, 1000 / FRAME_RATE, dwSleep ) );
         }
         return;

@@ -55,13 +55,20 @@ message("CMAKE_CXX_FLAGS: ${CMAKE_CXX_FLAGS}")
 get_target_property(copts sprite COMPILE_OPTIONS)
 message("copts: ${copts}")
 
+
+        
+
 target_compile_definitions(sprite PUBLIC
         _AFXDLL
         _WIN32_WINNT=_WIN32_WINNT_WIN7
         _WINDOWS
         _MBCS
         WIN32
+        $<$<CONFIG:Release>:NDEBUG>
+        $<$<CONFIG:Debug>:_DEBUG>
         )
+        
+set(CMAKE_MFC_FLAG 1)
 
 target_link_libraries(sprite PUBLIC
         winmm.lib)

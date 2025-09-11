@@ -8,7 +8,7 @@
 
 // terrain.cpp : the hexes & terrain
 //
-
+#include "base.h" 
 #include "terrain.inl"
 
 #include "bitmaps.h"
@@ -130,7 +130,7 @@ void TerrainShowStatus( void* pData, CDC* pDc, CRect const& rDraw, CDIB* pDibBac
         case CMaterialTypes::oil:
             iMax = MAX_MINERAL_OIL_QUANTITY;
             break;
-        case CMaterialTypes::copper:
+        case CMaterialTypes::copper: // lulz Xil
             iMax = MAX_MINERAL_XIL_QUANTITY;
             break;
         }

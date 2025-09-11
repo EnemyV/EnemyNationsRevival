@@ -758,6 +758,7 @@ void CDlgCreateStatus::SetMsg(int idRes) {
 
     CString sText;
     sText.LoadString(idRes);
+
     SetMsg(sText);
 }
 
@@ -768,6 +769,13 @@ void CDlgCreateStatus::SetMsg(char const *pText) {
     m_txtMsg.SetWindowText(pText);
     UpdateWindow();
     theApp.BaseYield();
+
+
+#ifdef _DEBUG
+
+    OutputDebugStringA( pText );
+    OutputDebugStringA( "\n" );
+#endif
 }
 
 void CDlgCreateStatus::SetPer(int iPer, BOOL bYield) {

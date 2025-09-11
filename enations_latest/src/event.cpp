@@ -303,7 +303,6 @@ DWORD dwLastTime [NUM_EVENTS];
 
 void CGame::_Event (int ID, int iTyp, char const * psText, int iVoice)
 {
-
 	ASSERT ((sizeof (aiRes) / sizeof (int)) == NUM_EVENTS);
 	ASSERT ((sizeof (aiSfx) / sizeof (int)) == NUM_EVENTS);
 

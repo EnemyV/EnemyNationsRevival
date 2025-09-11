@@ -164,9 +164,22 @@ CWndPrimary::~CWndPrimary()
 
 int CWndPrimary::OnCreate(LPCREATESTRUCT lpCreateStruct) 
 {
+#ifdef LOGGINGON
+    OutputDebugStringA( "CWndPrimary::OnCreate\n" );
+#endif
 
- if (CWndBase::OnCreate(lpCreateStruct) == -1)
-  return -1;
+    int baseCreate = CWndBase::OnCreate( lpCreateStruct );
+    if ( baseCreate == -1 )
+    {
+#ifdef LOGGINGON
+        // Print a message with the cx and cy values
+        char buf[128];
+        sprintf_s( buf, sizeof( buf ), "CWndBase::OnCreate( lpCreateStruct ) %d\n", 
+            baseCreate );
+        OutputDebugStringA( buf );
+#endif
+        return -1;
+    }
  
  // add to list
  thePrimaryMap.SetAt (this, this);

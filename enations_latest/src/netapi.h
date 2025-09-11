@@ -27,7 +27,8 @@ class CNetApi : public CObject
 {
 public:
 		CNetApi ();
-		~CNetApi ();
+		~CNetApi( );
+    
 
 static		BOOL		SupportsProtocol (int iPrtcl) 
 									{ return (vpSupportedTransports () & (1 << iPrtcl)); }

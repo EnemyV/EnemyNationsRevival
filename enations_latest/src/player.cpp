@@ -1294,6 +1294,9 @@ void CGame::StartAllPlayers( ) const
 
 void CGame::StartNewWorld( unsigned uRand, int iSide, int iSideSize )
 {
+#ifdef LOGGINGON
+    OutputDebugStringA( "StartNewWorld\n" );
+#endif
 
     ASSERT_VALID( this );
     ASSERT( m_bServer == TRUE );
@@ -1301,6 +1304,9 @@ void CGame::StartNewWorld( unsigned uRand, int iSide, int iSideSize )
     // set the size
     m_iSideSize = iSideSize;
 
+#ifdef LOGGINGON
+    OutputDebugStringA( "CNetStart msg create\n" );
+#endif
     CNetStart msg( uRand, iSide, iSideSize, theApp.m_pCreateGame->m_iAi, theApp.m_pCreateGame->m_iNumAi,
                    theGame.GetAll( ).GetCount( ) - theApp.m_pCreateGame->m_iNumAi, theApp.m_pCreateGame->m_iSize );
 
@@ -1335,11 +1341,23 @@ void CGame::PostToServer( CNetCmd const* pMsg, int iLen )
     ASSERT_VALID( this );
     ASSERT_CMD( pMsg );
 
+
+
     // if we are on the server we call directly
     if ( m_bServer )
+    {
+#ifdef LOGGINGON
+        OutputDebugStringA( "AddToQueue\n" );
+#endif
         AddToQueue( pMsg, iLen );
+    }
     else
+    {
+#ifdef LOGGINGON
+        OutputDebugStringA( "theNet.Send\n" );
+#endif
         theNet.Send( GetServerNetNum( ), pMsg, iLen );
+    }
 }
 
 void CGame::PostToClient( int iPlyr, CNetCmd const* pMsg, int iLen )
@@ -1512,6 +1530,9 @@ BOOL CGame::IsAllReady( ) const
 
 void CGame::AddPlayer( CPlayer* pPlr )
 {
+#ifdef LOGGINGON
+    OutputDebugStringA( "AddPlayer\n" );
+#endif
 
     ASSERT_VALID( this );
     ASSERT_VALID( pPlr );
@@ -1528,8 +1549,12 @@ void CGame::AddPlayer( CPlayer* pPlr )
 
 void CGame::AddAiPlayer( CPlayer* pPlr )
 {
+#ifdef LOGGINGON
+    OutputDebugStringA( "AddAiPlayer\n" );
+#endif
 
     ASSERT_VALID( this );
+    OutputDebugStringA( "this is valid; checking pPlr\n" );
     ASSERT_VALID( pPlr );
 
     if ( pPlr->GetPlyrNum( ) == 0 )
@@ -1937,6 +1962,9 @@ void CGame::CheckAlliances( )
 
 int CGame::LoadGame( CWnd* pPar, BOOL bReplace )
 {
+#ifdef LOGGINGON
+    OutputDebugStringA( "CGame::LoadGame\n" );
+#endif
 
     EnableAllWindows( NULL, FALSE );
 
@@ -2042,6 +2070,9 @@ int CGame::LoadGame( CWnd* pPar, BOOL bReplace )
 
 int CGame::StartGame( BOOL bReplace )
 {
+#ifdef LOGGINGON
+    OutputDebugStringA( "CGame::StartGame\n" );
+#endif
 
     // set relations based on who we picked
     POSITION pos;
@@ -2251,12 +2282,22 @@ int CGame::StartGame( BOOL bReplace )
             if ( theApp.m_pdlgRsrch->m_hWnd == NULL )
                 theApp.m_pdlgRsrch->Create( IDD_RESEARCH, &theApp.m_wndMain );
         }
+
+        // Player load game?
+
+#ifdef LOGGINGON
+        OutputDebugStringA( "Creating CWndArea and setup\n" );
+#endif
+
         CWndArea* pWndArea = new CWndArea( );
         pWndArea->Create( m_maploc, NULL, FALSE );
         pWndArea->SetupDone( );
         pWndArea->GetAA( ).Set( m_maploc, m_iDir, m_iZoom );
         pWndArea->CheckZoomBtns( );
 
+        // but it was already done, maybe? ISSUE? crash?
+        // 
+        // create world for loaded game
         theApp.m_wndWorld.Create( );  // world must come after area
         pWndArea->SetFocus( );
     }
@@ -2678,8 +2719,14 @@ void CGame::Serialize( CArchive& ar )
         // version, cheats, & debug
         ar >> m_dwMaj >> m_dwMin >> m_dwVer >> m_wDbg >> m_wCht;
         if ( theApp.GetProfileInt( "Cheat", "DiffVer", 1 ) )
+        {
             //			if ((m_dwMaj != VER_MAJOR) || (m_dwMin != VER_MINOR) ||
-            if ( ( m_dwMaj != VER_MAJOR ) || ( m_dwMin == 0 ) || ( m_wDbg != _wDebug ) || ( m_wCht != _wCheat ) )
+
+            BOOL wrongMajorVersion     = ( m_dwMaj != VER_MAJOR );
+            BOOL wrongMinorVersion     = ( m_dwMin != VER_MINOR );
+            BOOL debugCheatMissmatched = ( m_wDbg != _wDebug ) || ( m_wCht != _wCheat );
+
+            if ( wrongMajorVersion || wrongMinorVersion || debugCheatMissmatched )
             {
                 CString sMsg, sVer1, sVer2;
                 sMsg.LoadString( IDS_SAVE_VER );
@@ -2689,6 +2736,7 @@ void CGame::Serialize( CArchive& ar )
                 AfxMessageBox( sMsg );
                 ThrowError( ERR_RES_CREATE_WND );
             }
+        }
 
         ar >> m_sFileName;
         ar >> m_xScreen >> m_yScreen;
@@ -2852,8 +2900,16 @@ void CGame::Serialize( CArchive& ar )
 #ifdef _DEBUG
 void CGame::AssertValid( ) const
 {
+#ifdef LOGGINGON
+  //  OutputDebugStringA( "CGame::AssertValid\n" );
+#endif
 
     CObject::AssertValid( );
+
+#ifdef LOGGINGON
+   // OutputDebugStringA( "CGame::AssertValid:ASSERT_VALID_OR_NULL\n" );
+#endif
+
 
     ASSERT_VALID_OR_NULL( m_pMe );
     ASSERT_VALID_OR_NULL( m_pServer );
@@ -2864,7 +2920,7 @@ void CGame::AssertValid( ) const
     if ( m_pServer )
     {
         if ( m_bServer )
-            m_pServer == m_pMe;
+            m_pServer == m_pMe; // should be asserttrue??
         else
             m_pServer->m_iNetNum != m_pMe->m_iNetNum;
     }
@@ -2887,7 +2943,9 @@ BOOL TestEverything( )
         DWORD      dwID;
         CMinerals* pMn;
         theMinerals.GetNextAssoc( pos, dwID, pMn );
-        ASSERT_VALID( pMn );
+
+        // VTFIXME: this was failing on game load?
+        ASSERT_VALID( pMn ); // I think this is 100% nessasary
     }
 
     ASSERT_VALID( &theGame );

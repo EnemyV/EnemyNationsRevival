@@ -255,7 +255,7 @@ public:
     }
 
 #ifdef _DEBUG
-    void AssertValid( ) const;
+  //  void AssertValid( ) const;
 #endif
 
 protected:

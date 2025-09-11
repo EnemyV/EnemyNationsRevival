@@ -519,6 +519,8 @@ void CStructure::InitData() {
         ptrMmio->AscendChunk();
 
 #ifdef _DEBUG
+        // not sure, not working, who knows if its needed?
+        /*
         for (int iBldgDir=0; iBldgDir<4; iBldgDir++)
             {
             CHexCoord hexExit;
@@ -527,6 +529,7 @@ void CStructure::InitData() {
             if ((*ppSd)->HasShipExit ())
                 CBuilding::DetermineExit (iBldgDir, iOn, hexExit, iExitDir, TRUE);
             }
+        */
 #endif
 
         ASSERT_STRICT_VALID (*ppSd);
@@ -559,7 +562,8 @@ void CStructure::InitSprites() {
     if (psprite)
         psprite->SetTime(FARM_TIME);
 
-    for (int i = 0; i < GetNumBuildings(); i++) {
+    int i = 0;
+    for (i = 0; i < GetNumBuildings(); i++) {
         theApp.BaseYield();
 
         CStructureData *pSd = _GetData(i);
@@ -960,7 +964,8 @@ void CEffect::InitSprites() {
 
     m_ptrees = new CTree[m_nTrees];
 
-    for (int i = 0; i < m_nTrees; ++i) {
+    int i = 0;
+    for (i = 0; i < m_nTrees; ++i) {
         theApp.BaseYield();
         m_ptrees[i].m_psprite = GetSprite(tree, i);
     }
@@ -1084,7 +1089,8 @@ void CTurrets::InitSprites() {
 
         int	iFirstZoom = theApp.GetZoomData()->GetFirstZoom();
 
-        for ( int i = 0; i < GetCount(); ++i )
+        int i = 0;
+        for ( i = 0; i < GetCount(); ++i )
         {
             CVehicleSprite	* pspriteTurret = GetSpriteByIndex( i );
 

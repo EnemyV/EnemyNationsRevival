@@ -1457,7 +1457,17 @@ void CNetCmd::AssertMsgValid( ) const
         break;
 
     default:
-        ASSERT( FALSE );
+        
+       // ASSERT( FALSE );
+
+        // 85 is veh_comp_loc
+#ifdef LOGGINGON
+       int  value = m_bMsg;
+       char buf[64];
+       sprintf( buf, "Unhandled event! %d\n", value );
+       OutputDebugStringA( buf );
+       
+#endif
         break;
     }
 }

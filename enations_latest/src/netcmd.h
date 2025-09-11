@@ -244,7 +244,7 @@ class CNetSelectPlyr : public CNetCmd
     {
         m_iNetNum  = iNetNum;
         m_iPlyrNum = iPlyrNum;
-        strncpy( m_sName, pName, 80 );
+        strncpy_s( m_sName, pName, 80 ); // added _s
         m_sName[79] = 0;
     }
     int  m_iNetNum;

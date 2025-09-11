@@ -5,6 +5,7 @@
 #include "building.h"
 
 // CHexCoord
+// FIXMEFIXME
 inline CHexCoord::CHexCoord( CSubHex const& sub ) {
     m_iX = sub.x >> 1; m_iY = sub.y >> 1;
 }
@@ -37,6 +38,8 @@ inline void CHexCoord::Xinc() { m_iX++; m_iX &= theMap.m_iHexMask; }
 inline void CHexCoord::Yinc() { m_iY++; m_iY &= theMap.m_iHexMask; }
 inline void CHexCoord::Xdec() { m_iX--; m_iX &= theMap.m_iHexMask; }
 inline void CHexCoord::Ydec() { m_iY--; m_iY &= theMap.m_iHexMask; }
+
+// same here, something ip! // FIXMEFIXME
 inline BOOL CHexCoord::SameHex( CSubHex src ) const {
     return ( ( m_iX == src.x >> 1 ) && ( m_iY == src.y >> 1 ) );
 }
@@ -44,7 +47,7 @@ inline void	CHexCoord::SetInvalidated() { theMap.GetHexValidMatrix()->SetInvalid
 inline BOOL	CHexCoord::IsInvalidated() const { return theMap.GetHexValidMatrix()->IsInvalidated( m_iX, m_iY ); }
 inline void CHexCoord::ClearInvalidated() { theMap.GetHexValidMatrix()->Clear(); }
 
-
+// what's wrong here?  // FIXMEFIXME
 inline CSubHex::CSubHex( const CHexCoord& hex ) { x = hex.X() << 1; y = hex.Y() << 1; }
 
 inline CSubHex::CSubHex( CMapLoc const& pt ) {

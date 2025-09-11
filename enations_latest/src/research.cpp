@@ -151,7 +151,8 @@ void CRsrchItem::AssertValid( ) const
     CObject::AssertValid( );
     TRAP( );
 
-    for ( int iOn = 0; iOn < m_iNumRsrchRequired; iOn++ )
+    int iOn = 0;
+    for ( iOn = 0; iOn < m_iNumRsrchRequired; iOn++ )
         ASSERT( ( 0 < m_piRsrchRequired[iOn] ) && ( m_piRsrchRequired[iOn] < theRsrch.GetSize( ) ) );
     for ( iOn = 0; iOn < m_iNumBldgsRequired; iOn++ )
         ASSERT( ( 0 < m_piBldgsRequired[iOn] ) && ( m_piBldgsRequired[iOn] < theStructures.GetNumBuildings( ) ) );

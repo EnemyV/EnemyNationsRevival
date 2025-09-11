@@ -164,6 +164,11 @@ void CDlgPickRace::OnOK() {
 
     // only if a net game
     if (m_pCb->m_iTyp == CCreateBase::create_net) {
+
+#ifdef LOGGINGON
+        OutputDebugStringA( "create_net\n" );
+#endif
+
         theGame.SetNetJoin(m_pCb->m_iJoinUntil);
         m_pCb->UpdateBtns();
     }

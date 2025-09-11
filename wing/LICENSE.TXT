@@ -1,0 +1,135 @@
+MICROSOFT DEVELOPMENT LICENSE
+Microsoft WinG Software Development Kit
+
+This is a legal agreement between you (either an individual or an 
+entity) and Microsoft Corporation ("Microsoft").  By accessing and 
+using the software, you are agreeing to be bound by the terms of 
+this Agreement.  If you do not agree to the terms of this Agreement, 
+you are not authorized to use the software.
+
+MICROSOFT LICENSE AGREEMENT
+
+	1.	GRANT OF LICENSE TO USE.  Microsoft Corporation 
+("Microsoft") grants to you the non-exclusive right to use the 
+Microsoft software and electronic text files comprising the 
+documentation (the "SOFTWARE") on a single computer for the sole 
+purposes of designing, developing, and testing your software 
+product(s), including but not limited to Windows-based and Win32-
+based applications, and other software products, which operate in 
+the Microsoft Windows or Windows NT evironments.  Microsoft reserves 
+all rights not expressly granted.
+
+	2.	COPYRIGHT. The SOFTWARE is owned by Microsoft or its 
+suppliers and is protected by United States copyright laws and 
+international treaty provisions.  Therefore, you must treat the 
+SOFTWARE like any other copyrighted material (e.g., a book or 
+musical recording).  You may not use or copy the SOFTWARE for any 
+other purpose than what is described in this Agreement.  Except as 
+provided herein, Microsoft does not grant any express or implied 
+right to you to or under Microsoft patents, copyrights, trademarks, 
+or trade secret information.
+
+	3.	OTHER RESTRICTIONS. You may not rent or lease the 
+SOFTWARE, but you may transfer the SOFTWARE and accompanying written 
+materials on a permanent basis provided you retain no copies and the 
+recipient agrees to the terms of this Agreement.  If the SOFTWARE is 
+an update or has been updated, any transfer must include the most 
+recent update and all prior versions.  You may not reverse engineer, 
+decompile or disassemble the SOFTWARE except to the extent that the 
+foregoing restriction is expressly prohibited by applicable law.
+
+	4.	SAMPLE CODE. Microsoft grants you a non-exclusive 
+royalty-free right to use and modify the source code version of the 
+sample code located in the "samples" directories (Sample Code) for 
+the sole purposes of designing, developing and testing your software 
+products which operate in the Microsoft Windows or Windows NT 
+environments, and to reproduce and distribute the Sample Code along 
+with any modifications thereof, only in object code form provided 
+that you comply with Section 6.
+
+	5. 	REDISTRIBUTABLE CODE.  In addition to the rights 
+granted in Section 1, Microsoft grants you additional rights to the 
+SOFTWARE designated as "Redistributable Code".  The Redistributable 
+Code files and the rights associated with each of them, subject to 
+Section 6, are: WING.DLL, WING32.DLL, WINGDE.DLL, WINGDIB.DRV, 
+WINGPAL.WND, SETUPHLP.DLL, and DVA.386
+
+	6.	DISTRIBUTION REQUIREMENTS.  If you are authorized to 
+redistribute the Sample Code and/or Redistributable Code, 
+(collectively "REDISTRIBUTABLE COMPONENTS") as described in Sections 
+4 and 5 above, you must (a) distribute the REDISTRIBUTABLE 
+COMPONENTS only in conjunction with and as a part of your software 
+application product; (b) not permit further redistribution of the 
+REDISTRIBUTABLE COMPONENTS by your end-user customers; (c) not use 
+Microsoft's name, logo, or trademarks to market you software 
+application product; (e) include a valid copyright notice on your 
+software application product; and (d) agree to indemnify, hold 
+harmless, and defend Microsoft from and against any claims or 
+lawsuits, including attorney's fees, that arise or result from the 
+use or distribution of your software application product.  The 
+license in this section to distribute REDISTRIBUTABLE COMPONENTS is 
+royalty-free provided that your software application product is 
+designed, developed and tested for operation in the Microsoft 
+Windows or Windows NT environments.  Contact Microsoft for the 
+applicable royalties due and other licensing terms for all other 
+uses and/or distribution of the REDISTRIBUTABLE COMPONENTS.
+
+	7.	EXPORT RESTRICTIONS.  You agree that neither you nor 
+your customers intend to or will, directly or indirectly, export or 
+transmit (a) the SOFTWARE or related documentation and technical 
+data or (b) your software application product as described in 
+Section 6 of this Agreement (or any part thereof), or process, or 
+service that is the direct product of the SOFTWARE to any country to 
+which such export or transmission is restricted by any applicable 
+U.S. regulation or statute, without the prior written consent, if 
+required, of the Bureau of Export Administration of the U.S. 
+Department of Commerce, or such other governmental entity as may 
+have jurisdiction over such export or transmission.
+LIMITED WARRANTY
+
+NO WARRANTIES.  To the maximum extent permitted by applicable law, 
+Microsoft expressly disclaims any warranty for the SOFTWARE.  The 
+SOFTWARE and any related documentation is provided "as is" without 
+warranty of any kind, either express or implied, including, without 
+limitation, the implied warranties or merchantability or fitness for 
+a particular purpose.  The entire risk arising out of use or 
+performance of the SOFTWARE remains with you. 
+
+NO LIABILITY FOR CONSEQUENTIAL DAMAGES.  To the maximum extent 
+permitted by applicable law, in no event shall Microsoft or its 
+suppliers be liable for any damages whatsoever (including, without 
+limitation, damages for loss of business profit, business 
+interruption, loss of business information, or any other pecuniary 
+loss) arising out of the use or inability to use this Microsoft 
+product, even if Microsoft has been advised of the possibility of 
+such damages.  Because some states/jurisdictions do not allow the 
+exclusion or limitation of liability for consequential or incidental 
+damages, the above limitation may not apply to you. 
+
+U.S. GOVERNMENT RESTRICTED RIGHTS.
+
+The SOFTWARE and documentation are provided with RESTRICTED RIGHTS.  
+Use, duplication, or disclosure by the Government is subject to 
+restrictions as set forth in subparagraph (c)(1)(ii) of The Rights 
+in Technical Data and Computer Software clause at DFARS 252.227-7013 
+or subparagraphs (c)(1) and (2) of the Commercial Computer Software 
+-- Restricted Rights at 48 CFR 52.227-19, as applicable.  
+Manufacturer is Microsoft Corporation/One Microsoft Way/Redmond, WA 
+98052-6399.
+
+If you acquired this product in the United States, this Agreement is 
+governed by the laws of the State of Washington.  If you acquired 
+this product outside the United States, local law may apply.
+
+Should you have any questions concerning this Agreement, or if you 
+desire to contact Microsoft for any reason, please contact your 
+local Microsoft subsidiary or sales office or write:  Microsoft 
+Sales and Service/One Microsoft Way/Redmond, WA  98052-6399.
+
+
+
+- 3 -
+
+7/5/94    41860006.DOC
+
+

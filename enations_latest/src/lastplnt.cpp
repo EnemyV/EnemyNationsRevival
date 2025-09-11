@@ -14,7 +14,7 @@
 #include "chat.h"
 #include "creatmul.inl"
 #include "creatsin.h"
-#include "dlgflic.h"
+//#include "dlgflic.h"
 #include "error.h"
 #include "join.h"
 #include "license.h"
@@ -37,6 +37,7 @@
 #ifndef __INCLUDE_THIS_LAST__
 #include "lastplnt.h"
 #endif
+
 
 #ifdef _DEBUG
 
@@ -280,7 +281,8 @@ END_MESSAGE_MAP( )
 /////////////////////////////////////////////////////////////////////////////
 // CConquerApp construction
 
-CConquerApp::CConquerApp( ): m_MapClrFmt( CColorFormat::DEPTH_EIGHT ), m_OtherClrFmt( CColorFormat::DEPTH_EIGHT )
+CConquerApp::CConquerApp( ): m_MapClrFmt( CColorFormat::DEPTH_EIGHT ), 
+                m_OtherClrFmt( CColorFormat::DEPTH_EIGHT )
 {
 
     m_bInGame       = FALSE;
@@ -357,9 +359,13 @@ const int MEM_PHYS_NEEDED_32_BIT   = 32;
 const int MEM_NEEDED_32_BIT        = 240;
 const int MEM_NEEDED_32_BIT_ZOOM_0 = 600;
 
+
 void CConquerApp::Log( char const* pText )
 {
-
+#ifdef LOGGINGON
+    OutputDebugStringA( pText);
+    OutputDebugStringA( "\n" );
+#endif
     if ( m_pLogFile == NULL )
         return;
 
@@ -378,9 +384,47 @@ void CConquerApp::Log( char const* pText )
     m_pLogFile->Flush( );
 }
 
+#ifdef TESTINGGON
+void CConquerApp::RunTests( )
+{
+    int totalTests = 0;
+    int pass       = 0;
+    int fail       = 0;
+    OutputDebugStringA( "Starting Tests...\n" );
+
+    // Call NetApi static tests function
+    if ( CGame::RunTests( ) )
+    {
+        pass++;
+        OutputDebugStringA( "NetApi tests passed.\n" );
+    }
+    else
+    {
+        fail++;
+        OutputDebugStringA( "NetApi tests failed.\n" );
+    }
+
+    // Optionally, print summary
+    char buffer[128];
+    sprintf_s( buffer, "Tests complete: %d/%d passed (%.2f%%)\n", pass, totalTests,
+               ( totalTests > 0 ? (float)pass / totalTests * 100.0f : 0.0f ) );
+    OutputDebugStringA( buffer );
+
+    OutputDebugStringA( "Done Tests!\n" );
+}
+#endif
+
 BOOL CConquerApp::InitInstance( )
 {
+#ifdef LOGGINGON
+    OutputDebugStringA( "InitInstance\n" );
 
+#ifdef TESTINGGON
+    // RUN TESTS!!
+    RunTests( );
+#endif
+
+#endif
 
     InitWindwardLib1( this );
 
@@ -522,6 +566,9 @@ _flush2:
     // if we can't switch to 640x480 then we punt on all of this
     if ( iWinType != W32s )
     {
+#ifdef LOGGINGON
+        OutputDebugStringA( "iWinType != W32s" );
+#endif
         DEVMODE dev;
         memset( &dev, 0, sizeof( dev ) );
         dev.dmPelsWidth  = 640;
@@ -690,6 +737,13 @@ _flush2:
         m_sOs = "Unknown";
         break;
     }
+
+#ifdef LOGGINGON
+    CString msg;
+    msg.Format( "OS Detected: %s\n", m_sOs );
+    OutputDebugStringA( msg );
+#endif
+
     OSVERSIONINFO ovi;
     memset( &ovi, 0, sizeof( ovi ) );
     ovi.dwOSVersionInfoSize = sizeof( ovi );
@@ -908,7 +962,7 @@ _flush2:
         m_bShareware  = pMmio->ReadShort( );
         m_bSecondDisk = pMmio->ReadShort( );
         m_bWAV        = pMmio->ReadShort( );
-        m_iRequireCD  = pMmio->ReadShort( );
+        m_iRequireCD  = FALSE; // pMmio->ReadShort( ); // no longer needs CD!
         m_iMultVoices = pMmio->ReadShort( );
         m_iHaveIntro  = pMmio->ReadShort( );
 
@@ -1575,6 +1629,7 @@ _flush2:
 
     if ( iWinType == W32s )
     {
+        Log( "iWinType w32s" );
         WORD    wVer   = myGetThrdUtlsVersion( );
         CString sThunk = "Threads DLL " + IntToCString( HIBYTE( wVer ) ) + "." + IntToCString( LOBYTE( wVer ) );
         Log( sThunk );
@@ -1812,7 +1867,7 @@ int CConquerApp::ExitInstance( )
     CloseHandle( hRenderEvent );
 
 #ifdef USE_SMARTHEAP
-//    MemUnregisterTask( );
+ //   MemUnregisterTask( );
 #endif
 
     if ( m_hLibLang != NULL )
@@ -2061,8 +2116,13 @@ static _BTN_DATA _btnData[NUM_BTNS] = {
 /////////////////////////////////////////////////////////////////////////////
 // CDlgMain message handlers
 
+// main GAME window? like not main menu, its created when we start a new game, and is
+// sized the entire window
 int CDlgMain::OnCreate( LPCREATESTRUCT lpCreateStruct )
 {
+#ifdef LOGGINGON
+    OutputDebugStringA( "CDlgMain::OnCreate\n" );
+#endif
 
     if ( CDialog::OnCreate( lpCreateStruct ) == -1 )
         return -1;
@@ -2123,10 +2183,13 @@ BOOL CDlgMain::OnEraseBkgnd( CDC* )
 
 BOOL CDlgMain::OnInitDialog( )
 {
+#ifdef LOGGINGON
+    OutputDebugStringA( "CDlgMain::OnInitDialog\n" );
+#endif
 
 #ifdef _DEBUG
-    dbgMemSetDefaultErrorOutput( DBGMEM_OUTPUT_FILE, "malloc.log" );
-    dbgMemReportLeakage( NULL, 1, 1 );
+    //dbgMemSetDefaultErrorOutput( DBGMEM_OUTPUT_FILE, "malloc.log" );
+    //dbgMemReportLeakage( NULL, 1, 1 );
 #endif
 
     CDialog::OnInitDialog( );
@@ -2182,13 +2245,31 @@ BOOL CDlgMain::OnInitDialog( )
 
 void CDlgMain::OnSize( UINT nType, int cx, int cy )
 {
+#ifdef LOGGINGON
+    // Print a message with the cx and cy values
+    char buf[128];
+    sprintf_s( buf, sizeof( buf ), "OnSize called: cx=%d, cy=%d\n", cx, cy );
+    OutputDebugStringA( buf );
+#endif
 
     CDialog::OnSize( nType, cx, cy );
 
     // not init'ed yet
     CWnd* pMain = GetDlgItem( IDC_MAIN_CAMPAIGN );
     if ( pMain == NULL )
+    {
+        // probably not an issue!
+#ifdef LOGGINGON
+     //   OutputDebugStringA( "not init'ed yet\n" );
+#endif
         return;
+    }
+    else 
+    {
+#ifdef LOGGINGON
+     //   OutputDebugStringA( "OnSize a go!\n" );
+#endif
+    }
 
     // arrange buttons - if using art
     if ( !m_bTile )

@@ -156,12 +156,23 @@ CZoomData::CZoomData(
 
 void CConquerApp::ReadyToJoin() {
 
+    
+#ifdef LOGGINGON
+    OutputDebugStringA( "ReadyToJoin\n" );
+#endif
+
     ASSERT_VALID (this);
     ASSERT (m_pCreateGame != NULL);
 
     // tell everyone we're ready
     if (theGame.HaveHP()) {
+
+#ifdef LOGGINGON
+        OutputDebugStringA( "HaveHP; CNetPlyrStatus\n" );
+#endif
+
         CNetPlyrStatus msg(theGame.GetMe()->GetNetNum(), 0);
+        ASSERT( sizeof( CNetPlyrStatus ) == sizeof( msg ) );
         theGame.PostToAll(&msg, sizeof(msg), FALSE);
     }
 
@@ -186,6 +197,10 @@ void CConquerApp::ReadyToJoin() {
 }
 
 void CConquerApp::ReadyToCreate() {
+
+#ifdef LOGGINGON
+    OutputDebugStringA( "ReadyToCreate\n" );
+#endif
 
     ReadyToJoin();
 
@@ -225,6 +240,7 @@ void CConquerApp::ReadyToCreate() {
         unsigned uRand = MySeed();
 
 #ifdef _CHEAT
+        // seed override, for testing i assume
         if (theApp.GetProfileInt ("Debug", "SetRand", 0))
             {
             CDlgRandNum dlg;
@@ -374,6 +390,8 @@ void CConquerApp::CreateNewWorld(unsigned uRand, AIinit *pAiData, int iSide, int
     // we all have to build from the same seed
     theGame.SetSeed(uRand);
 
+    theApp.Log( "Set seed " );
+
     // we do it here because of the initial paint
     theGame.SetElapsedSeconds(0);
 
@@ -387,7 +405,7 @@ void CConquerApp::CreateNewWorld(unsigned uRand, AIinit *pAiData, int iSide, int
     xpdibwnd = NULL;
 
     CUnit::m_sDamage.LoadString(IDS_DAMAGE);
-    InitColors();
+    InitColors( );
 
     // put up a creating window and hourglass
     m_wndMain.UpdateWindow();
@@ -396,6 +414,7 @@ void CConquerApp::CreateNewWorld(unsigned uRand, AIinit *pAiData, int iSide, int
     // get R&D data
     theRsrch.Open();
 
+    theApp.Log( "Loading terrain data" );
     // load the data (needed by AI)
     theTerrain.InitData();
     theStructures.InitData();
@@ -405,12 +424,15 @@ void CConquerApp::CreateNewWorld(unsigned uRand, AIinit *pAiData, int iSide, int
     theFlashes.InitData();
     theExplGrp.InitData();
 
+    theApp.Log( "Setup AI" );
     // setup the AI
     // tell the AI about the game (needed for client to for save)
     if (AiInit(pAiData->m_iDiff, pAiData->m_iNumAI, pAiData->m_iNumHp, m_pCreateGame->m_iPos))
         return;
 
-    if (theGame.AmServer()) {
+    if ( theGame.AmServer( ) )
+    {
+        theApp.Log( "Send " + IDS_START_AI1 );
         m_pCreateGame->GetDlgStatus()->SetMsg(IDS_START_AI1);
 
         // Get the attributes for each AI player
@@ -427,6 +449,7 @@ void CConquerApp::CreateNewWorld(unsigned uRand, AIinit *pAiData, int iSide, int
     // set rand
     MySrand(uRand);
 
+    theApp.Log( "Call StartGame on players" );
     // get the players data ready
     POSITION pos;
     for (pos = theGame.GetAll().GetHeadPosition(); pos != NULL;) {
@@ -556,6 +579,8 @@ void CConquerApp::CreateNewWorld(unsigned uRand, AIinit *pAiData, int iSide, int
         }
         CWndArea *pWndArea = new CWndArea();
         pWndArea->Create(theGame.GetMe()->m_hexMapStart, NULL, TRUE);
+
+        // create world for new game (loaded is in player.cpp)
         m_wndWorld.Create(TRUE);        // world must come after area
     }
 
@@ -575,29 +600,50 @@ void CConquerApp::CreateNewWorld(unsigned uRand, AIinit *pAiData, int iSide, int
     if (!theGame.AmServer())
         m_pCreateGame->GetDlgStatus()->SetPer(PER_DONE, FALSE);
 
+    theApp.Log( "SetState wait_AI" );
     // tell everyone we are done
     theGame.SetState(CGame::wait_AI);
     if (theGame.HaveHP()) {
-        CNetInitDone msg(theGame.GetMe());
+        CNetInitDone msg( theGame.GetMe( ) );
+        theApp.Log( "PostToServer" );
         theGame.PostToServer(&msg, sizeof(msg));
+    }
+    else
+    {
+        theApp.Log( "Not HP" );
+    
     }
 
 #ifdef _DEBUG
-    theDataFile.DisableNegativeSeekChecking ();
+  //  theDataFile.DisableNegativeSeekChecking ();
 #endif
 
+    theApp.Log( "IDS_READY_TO_GO" ); // Waiting for Others
     // tell player we are waiting on others
     m_pCreateGame->GetDlgStatus()->SetMsg(IDS_READY_TO_GO);
 }
 
 void CConquerApp::StartAi() {
 
+#ifdef LOGGINGON
+    OutputDebugStringA( "StartAi\n" );
+#endif
+   // TRACE( "StartAi\n");
+
+
     try {
         theGame.SetAI(TRUE);
         theGame.IncTry();
+
+#ifdef LOGGINGON
+//        OutputDebugStringA( "ASSERT\n" );
+#endif
         ASSERT (theGame.AmServer());
         theGame.SetState(CGame::init_AI);
 
+#ifdef LOGGINGON
+        OutputDebugStringA( "SetMsg\n" );
+#endif
         // start the AI
         m_pCreateGame->GetDlgStatus()->SetMsg(IDS_START_AI2);
         m_pCreateGame->GetDlgStatus()->SetPer(PER_START_AI);
@@ -612,8 +658,11 @@ void CConquerApp::StartAi() {
             ASSERT_VALID (pPlr);
             ASSERT (pPlr->IsAI());
 
+#ifdef LOGGINGON
+            OutputDebugStringA( "AiSetup\n" );
+#endif
 #ifdef _CHEAT
-            if (! theApp.GetProfileInt ("Debug", "NoThreads", 0))
+           if (!theApp.GetProfileInt ("Debug", "NoThreads", 0))
 #endif
             AiSetup(pPlr);
 
@@ -622,7 +671,9 @@ void CConquerApp::StartAi() {
         }
 
         // now we start each thread
-        theApp.Log("Start AI threads");
+#ifdef LOGGINGON
+        theApp.Log( "Start AI threads" );
+#endif
         for (pos = theGame.GetAi().GetHeadPosition(); pos != NULL;) {
             CPlayer *pPlr = theGame.GetAi().GetNext(pos);
             ASSERT_VALID (pPlr);
@@ -642,7 +693,9 @@ void CConquerApp::StartAi() {
             // mark it as ready to go
             pPlr->SetState(CPlayer::wait);
         }
-        theApp.Log("AI threads started");
+#ifdef LOGGINGON
+        theApp.Log( "AI threads started" );
+#endif
 
         // get rid of the creation dialogs
         m_pCreateGame->GetDlgStatus()->SetPer(PER_DONE, FALSE);
@@ -733,6 +786,7 @@ static void _UpdateWin(CWnd *pWnd) {
     pWnd->UpdateWindow();
 }
 
+// star the game?
 void CConquerApp::LetsGo() {
 
     // do we have a CD?

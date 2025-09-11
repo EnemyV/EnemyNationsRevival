@@ -33,6 +33,7 @@ static char BASED_CODE THIS_FILE[] = __FILE__;
 /////////////////////////////////////////////////////////////////////////////
 // CDir
 
+#ifdef BUGBUG
 void CDir::ctor(char const *pDir)
 {
  char sBuf [_MAX_PATH];
@@ -523,3 +524,4 @@ void CDir::Dump (CDumpContext& dc) const
 
 #endif
 
+#endif

@@ -1581,6 +1581,10 @@ int CGameMap::DepositMinerals( int x, int y, int iTyp, int iNum )
 
 int CGameMap::MakeMineral( int x, int y, int iTyp, int iSideSize )
 {
+#ifdef LOGGINGON
+   // OutputDebugStringA( "MakeMineral\n" );
+#endif
+
 
     CHexCoord _hex( x, y );
     _hex.Wrap( );

@@ -115,6 +115,7 @@ protected:
 
     void AddRect( CRect const* prect, CRect arect[], int& );
 
+
 public:
 
     CDIBWnd* m_pdibwnd;

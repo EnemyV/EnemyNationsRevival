@@ -41,7 +41,7 @@ public:
 
 		int			GetDensity () { ASSERT_STRICT_VALID (this); return (m_cDensity); }
 		int			GetQuantity () { ASSERT_STRICT_VALID (this); return (m_lQuantity); }
-		CString	GetStatus ();
+		CString		GetStatus ();
 		int			GetType () { ASSERT_STRICT_VALID (this); return (m_cType); }
 		void		SetDensity (int iNum) { m_cDensity = iNum; }
 		void		SetQuantity (int iNum) 
@@ -58,9 +58,11 @@ protected:
 		BYTE			m_cType;
 		BYTE			m_cDensity;
 
+      public:
+        BOOL IsValid( ) const;
 #ifdef _DEBUG
-public:
-	virtual void AssertValid() const;
+      public:
+        virtual void AssertValid( ) const;
 #endif
 };
 

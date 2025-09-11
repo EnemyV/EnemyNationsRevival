@@ -25,7 +25,10 @@ target_compile_options(compit INTERFACE
 target_compile_definitions(compit PUBLIC
         _AFXDLL
         _WIN32_WINNT=_WIN32_WINNT_WIN7
+        $<$<CONFIG:Debug>:_DEBUG>
         )
+
+set(CMAKE_MFC_FLAG 1)
 
 #get_target_property(cdefs cdf COMPILE_DEFINITIONS)
 #message("cdefs: ${cdefs}")
@@ -34,12 +37,17 @@ target_include_directories(compit PUBLIC
         ..
         ../../windward/wind22/include)
 
+
 target_link_libraries(compit PUBLIC
         wind22.lib)
 
-target_link_directories(compit PUBLIC
-        ../../cmake-build-release/windward/wind22)
+#target_link_directories(compit PUBLIC
+#        ../../cmake-build-release/windward/wind22)
+        
 
+    target_link_directories(compit PUBLIC
+        ../../cmake-build-release/windward/wind22/
+    )
 
 set_property(TARGET compit PROPERTY CXX_STANDARD 11)
 

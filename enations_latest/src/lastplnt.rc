@@ -1403,7 +1403,7 @@ STRINGTABLE DISCARDABLE
 BEGIN
     IDS_SAVE_OLD            "Do you wish to save the existing game?"
     IDS_SAVE_NAME           "Save to File %1"
-    IDS_SAVE_VER            "This file was saved by another version of Second Chance.\nThe file is version %1\nYou are running version%2"
+    IDS_SAVE_VER            "This file was saved by another version of Second Chance.\nThe file is version %1\nYou are running version %2"
     IDS_SAVE_ERROR          "Error saving game to file %1"
     IDS_LOAD_NAME           "Loading: %1"
     IDS_LOAD_ERROR          "Error loading game from file %1"

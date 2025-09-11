@@ -599,6 +599,7 @@ class CGame : public CObject
             return ( m_pServer->GetNetNum( ) );
         return ( VP_SESSIONSERVER );
     }
+
     void AddToQueue( CNetCmd const* pCmd, int iLen );
     void FreeQueueElement(CNetCmd* pCmd );
     void EmptyQueue( );
@@ -807,6 +808,7 @@ class CGame : public CObject
     DWORD GetNextID( ) { return ( m_dwNextUnitID ); }
 #endif
 
+
     void Serialize( CArchive& ar );
     int  LoadGame( CWnd* pPar, BOOL bReplace );
     int  StartGame( BOOL bReplace );
@@ -922,6 +924,11 @@ class CGame : public CObject
 
     LONG m_xScreen;  // screen resolution saved at
     LONG m_yScreen;
+
+#ifdef TESTINGGON
+  public:
+    static bool RunTests( );
+#endif
 
 #ifdef _DEBUG
   public:

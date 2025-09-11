@@ -78,10 +78,21 @@ CDIB::CDIB(
 
     case CBLTFormat::DIB_DIRECTDRAW:
 
-        if ( !CDirectDraw::GetTheDirectDraw() )
+
+        if ( !CDirectDraw::GetTheDirectDraw( ) )
+        {
+#ifdef LOGGINGON
+            OutputDebugStringA( "Can't direct draw!!\n" );
+#endif
             m_eType = CBLTFormat::DIB_MEMORY;
+        }
         else
+        {
+#ifdef LOGGINGON
+            OutputDebugStringA( "Setting DD pointer\n" );
+#endif
             m_ptrdirectdraw = ptrtheDirectDraw;
+        }
 
         break;
     }
@@ -148,15 +159,53 @@ CDIB::~CDIB() {
 BOOL CDIB::Resize( int cx, int cy ) {
     ASSERT( !IsLocked() );
 
-#ifdef DEBUG
+
+
+#ifdef DEBUG // NOT _debug??
 
     if ( m_hOrigBm != NULL )  // first time in the bitmap isn't created yet
         ASSERT_STRICT_VALID( this );
 
 #endif
 
+    if (m_hOrigBm != NULL)  // first time in the bitmap isn't created yet
+    {
+#ifdef LOGGINGON
+        OutputDebugStringA( "m_hOrigBm exists\n" );
+#endif
+
+    }
+
+    if (GetType() != CBLTFormat::DIB_MEMORY)
+    {
+        char buf[128];
+        sprintf_s( buf, sizeof( buf ), "Resize called: cx=%d, cy=%d, type=%d\n", cx, cy, GetType( ) );
+        OutputDebugStringA( buf );
+
+    }
+
     if ( cx == m_cx && cy == m_cy )
+    {
+        // same size
         return TRUE;
+    }
+
+#ifdef LOGGINGON
+    // Print a message with the cx and cy values
+
+    if ( GetType( ) != CBLTFormat::DIB_MEMORY )
+    {
+        char buf[128];
+        sprintf_s( buf, sizeof( buf ), "Resize called (and required): cx=%d, cy=%d, type=%d\n", 
+            cx, cy, GetType( ) );
+        OutputDebugStringA( buf );
+    }
+    /*
+    char buf[128];
+    sprintf_s( buf, sizeof( buf ), "Resize called and required: cx=%d, cy=%d, type=%d\n", cx, cy, GetType());
+    OutputDebugStringA( buf );
+    */
+#endif
 
     if ( m_hTextBm != NULL ) {
         DeleteObject( m_hTextBm );
@@ -214,12 +263,16 @@ BOOL CDIB::Resize( int cx, int cy ) {
 
         m_bmi.hdr.biWidth = ( m_bmi.hdr.biWidth + 3 ) & ~3;
         hbm = CWinG::GetTheWinG()->CreateBitmap( m_hDCDib,
-                                                 (BITMAPINFO*)&m_bmi,
-                                                 (void**)&m_pBits );
+                                                 (BITMAPINFO*)&m_bmi, (void**)&m_pBits );
+#ifdef LOGGINGON
+        OutputDebugStringA( "DIB_WING\n" );
+#endif
         break;
 
-    case CBLTFormat::DIB_DIBSECTION:
-    {
+    case CBLTFormat::DIB_DIBSECTION: {
+#ifdef LOGGINGON
+        OutputDebugStringA( "DIB_DIBSECTION\n" );
+#endif
         SelectPalette( m_hDCDib, thePal.hPal(), FALSE );
 
         hbm = CreateDIBSection( m_hDCDib,
@@ -237,6 +290,10 @@ BOOL CDIB::Resize( int cx, int cy ) {
         //
         // create an off-screen surface
         //
+
+#ifdef LOGGINGON
+        OutputDebugStringA( "DIB_DIRECTDRAW\n" );
+#endif
 
         if ( m_pddsurfaceBack ) {
             m_hRes = GetDDSurface()->Release();
@@ -258,7 +315,14 @@ BOOL CDIB::Resize( int cx, int cy ) {
         m_ddOffSurfDesc.dwWidth = GetWidth();
         m_ddOffSurfDesc.dwHeight = GetHeight();
 
-        m_hRes = CDirectDraw::GetTheDirectDraw()->GetDD()->CreateSurface( &m_ddOffSurfDesc, &m_pddsurfaceBack, NULL );
+
+        
+#ifdef LOGGINGON
+        OutputDebugStringA( "create surface\n" );
+#endif
+
+        m_hRes = CDirectDraw::GetTheDirectDraw()->GetDD()->CreateSurface( &m_ddOffSurfDesc, 
+            &m_pddsurfaceBack, NULL );
 
         if ( FAILED( m_hRes ) ) {
             TRACE( "Off-screen surface create failed." );
@@ -281,6 +345,10 @@ BOOL CDIB::Resize( int cx, int cy ) {
         break;
 
     case CBLTFormat::DIB_MEMORY:
+
+#ifdef LOGGINGON
+       // OutputDebugStringA( "DIB_MEMORY\n" );
+#endif
 
         m_pBits = new BYTE[GetHeight() * ( ( GetBytesPerPixel() * m_bmi.hdr.biWidth + 3 ) & ~3 )];
 
@@ -330,6 +398,7 @@ BOOL CDIB::Lock() {
     case CBLTFormat::DIB_DIRECTDRAW:
 
         ASSERT_STRICT( m_pddsurfaceBack );
+        ASSERT( m_pddsurfaceBack );
 
         if ( m_pBits )
             return TRUE;
@@ -574,37 +643,55 @@ int CDIB::BitBlt( HDC hdcDst, CRect const& rectDst, CPoint const& ptSrc ) {
 
     CPoint ptSrcAdjusted = ptSrc;
 
-    switch ( GetType() ) {
+    switch ( GetType( ) )
+    {
     case CBLTFormat::DIB_WING:
 
-        return CWinG::GetTheWinG()->BitBlt( hdcDst,
-                                            rectDst.left,
-                                            rectDst.top,
-                                            rectDst.Width(),
-                                            rectDst.Height(),
-                                            m_hDCDib,
-                                            ptSrcAdjusted.x,
-                                            ptSrcAdjusted.y );
+        return CWinG::GetTheWinG( )->BitBlt( hdcDst, rectDst.left, rectDst.top, rectDst.Width( ), rectDst.Height( ),
+                                             m_hDCDib, ptSrcAdjusted.x, ptSrcAdjusted.y );
 
     case CBLTFormat::DIB_DIBSECTION:
 
-        return ::BitBlt( hdcDst,
-                         rectDst.left,
-                         rectDst.top,
-                         rectDst.Width(),
-                         rectDst.Height(),
-                         m_hDCDib,
-                         ptSrcAdjusted.x,
-                         ptSrcAdjusted.y,
-                         SRCCOPY );
+        return ::BitBlt( hdcDst, rectDst.left, rectDst.top, rectDst.Width( ), rectDst.Height( ), m_hDCDib,
+                         ptSrcAdjusted.x, ptSrcAdjusted.y, SRCCOPY );
 
-    case CBLTFormat::DIB_DIRECTDRAW:
+    case CBLTFormat::DIB_DIRECTDRAW:{
 
+        // this was literally not implemented... why??
+        // im pretty sure that wind22 is not the latest code
+
+        // Use the DirectDraw surface's HDC to BitBlt into the destination DC.
+        // This mirrors the logic used in CDIB::GetDC()/ReleaseDC() where the
+        // surface supplies an HDC for GDI operations.
+        if ( !m_pddsurfaceBack )
+            return 0;
+
+        // Adjust for top-down vs bottom-up like the memory case
+        if ( !IsTopDown( ) )
+            ptSrcAdjusted.y += GetHeight( ) - ptSrcAdjusted.y - ptSrcAdjusted.y - rectDst.Height( );
+
+        HDC     hdcSrc = NULL;
+        HRESULT hr     = m_pddsurfaceBack->GetDC( &hdcSrc );
+        if ( FAILED( hr ) || hdcSrc == NULL )
+            return 0;
+
+        // Perform BitBlt from surface HDC to destination HDC.
+        // We use SRCCOPY to match other cases.
+        int iRet = ::BitBlt( hdcDst, rectDst.left, rectDst.top, rectDst.Width( ), rectDst.Height( ), hdcSrc,
+                             ptSrcAdjusted.x, ptSrcAdjusted.y, SRCCOPY );
+
+        // Release the DC back to the DirectDraw surface.
+        m_pddsurfaceBack->ReleaseDC( hdcSrc );
+
+        return iRet;
+    }
+        /*
         TRAP();
 
         ASSERT_STRICT( 0 ); // FIXIT: Implement
 
         return 0;
+        */
 
     case CBLTFormat::DIB_MEMORY:
 
@@ -1559,10 +1646,19 @@ HDC CDIB::GetDC() {
     ASSERT( 0 == m_iLock );
     ASSERT( !m_bBitmapSelected );
 
+#ifdef LOGGINGON
+  //  OutputDebugStringA( "GetDC\n" );
+#endif
+
     m_iLock++;
 
     switch ( GetType() ) {
     case CBLTFormat::DIB_DIRECTDRAW:
+
+        
+#ifdef LOGGINGON
+        OutputDebugStringA( "DIB_DIRECTDRAW" );
+#endif
 
         m_hRes = GetDDSurface()->GetDC( &m_hDCDib );
         thePal.Paint( m_hDCDib ); // GG 9/11/96 - Just to be consistent, not sure if we need it

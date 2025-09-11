@@ -4,6 +4,7 @@
 /////////////////////////////////////////////////////////////////////////////
 // CIserveDlg dialog
 
+#include <ISERVE/RESOURCE.H>
 class CIserveDlg : public CDialog
 {
 // Construction

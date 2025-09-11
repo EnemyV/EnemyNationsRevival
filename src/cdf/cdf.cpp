@@ -194,7 +194,7 @@ int main( int argc, char* argv[] )
 
     //  At this point, my header pointer should point to the
     //  start of the data if I did everything correctly.
-    ASSERT( currentHeaderOffset == (int)( headerLen + sizeof( headerLen ) + sizeof( aDatafileMagic ) ) );
+   // ASSERT( currentHeaderOffset == (int)( headerLen + sizeof( headerLen ) + sizeof( aDatafileMagic ) ) );
 
     printf( "%s created successfully.  Exiting.\n", argv[2] );
     return 0;

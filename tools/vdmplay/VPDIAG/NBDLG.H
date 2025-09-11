@@ -4,6 +4,10 @@
 /////////////////////////////////////////////////////////////////////////////
 // CNbDlg dialog
 
+#include <afxwin.h>      // Main MFC header
+#include <afxext.h>      // For extended MFC stuff (dialogs, etc.)
+#include "resource.h"
+
 class CNbDlg : public CDialog
 {
 // Construction

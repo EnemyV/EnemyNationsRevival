@@ -1,6 +1,10 @@
 #ifndef __VPLIST_H__
 #define __VPLIST_H__
 
+#ifdef USE_VPMEM
+#include "vputil.h"  // ensures vpAllocMem/vpFreeMem are declared
+#endif
+
 class CVPLink {
     friend class CVPList;
 

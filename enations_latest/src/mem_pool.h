@@ -1,6 +1,8 @@
 //
 // Created by Bobbias on 025, 2023-05-25.
 //
+// from here methinks
+// http://www.mario-konrad.ch/blog/programming/cpp-memory_pool.html
 
 #ifndef ENATIONS_MEM_POOL_H
 #define ENATIONS_MEM_POOL_H
@@ -13,6 +15,11 @@
 #include "vdmplay.h"
 
 #include "netcmd.h"
+
+#include <unordered_set>
+
+//#include <mutex>
+//#include <new>
 
 template<class Strategy>
 class memory_pool {
@@ -48,12 +55,27 @@ private:
         bool operator<(const Entry &other) const { return state < other.state; }
     };
 
+    struct EntryList
+    {
+        uint8_t* p;     // pointer to memory chunk
+        EntryList* next;  // next free chunk
+    };
+
     typedef unsigned int size_type; // convenience
 private:
     size_type available; // number of memory chunks available
     Entry a[N]; // book keeping
     uint8_t buf[S * N]; // the actual memory, here will the objects be stored
-public:
+
+    // tmp tofix? this is super inefficient, we need to improve it!
+    EntryList entries[N];  // bookkeeping array
+    EntryList* freeList;    // head of free list
+   // std::mutex allocMutex;
+
+    // tracking for testing
+    std::unordered_set<void*> allocated;
+
+  public:
     void init() {
         // number of available memory chunks is the size of the memory pool
         available = N;
@@ -66,9 +88,101 @@ public:
 
         // make heap of book keeping array
         std::make_heap(a, a + N);
+
+        for ( unsigned int i = 0; i < N; ++i )
+        {
+            entries[i].p    = &buf[S * i];
+            entries[i].next = ( i < N - 1 ) ? &entries[i + 1] : nullptr;
+        }
+        freeList = &entries[0];
     }
 
-    void* allocate() {
+    void* allocate( )
+    {
+        void* pBuf = std::malloc( S );
+        if ( pBuf )
+        {
+            std::memset( pBuf, 0, S );  // zero out the memory
+            // track this pointer
+            allocated.insert( pBuf );
+        }
+
+        return pBuf;
+    }
+
+    // Deallocate the block
+    void deallocate( void* ptr ) { 
+        
+
+#ifdef _DEBUG
+        // verify pointer was allocated
+        if ( allocated.find( ptr ) == allocated.end( ) )
+        {
+            ASSERT( false && "Attempting to free a pointer that was not allocated!" );
+        }
+        else
+        {
+            allocated.erase( ptr );  // remove from tracking set
+        }
+#endif
+        std::free( ptr ); 
+    }
+
+    void* allocateBroke( )
+    {
+        if ( !freeList )
+            throw std::bad_alloc( );  // no free memory left
+
+      //  std::lock_guard<std::mutex> lock( allocMutex );
+
+        if ( !freeList )
+            throw std::bad_alloc( );
+        EntryList* e = freeList;
+        freeList     = freeList->next;
+
+        allocated.insert( e->p );
+
+#ifdef LOGGINGON
+        char buf[128];
+        sprintf_s( buf, "Allocated pointer: %p\n", e->p );
+        OutputDebugStringA( buf );
+#endif
+        return e->p;
+    }
+
+    void deallocateBroke( void* ptr )
+    {
+      //  std::lock_guard<std::mutex> lock( allocMutex );
+
+        // find the entry corresponding to ptr
+          if ( allocated.find( ptr ) == allocated.end( ) )
+          {
+              throw std::runtime_error( "pointer not allocated from pool" );
+          }
+          allocated.erase( ptr );
+
+
+        for ( unsigned int i = 0; i < N; ++i )
+        {
+            if ( entries[i].p == ptr )
+            {
+#ifdef LOGGINGON
+                char buf[128];
+                sprintf_s( buf, sizeof( buf ), "Deallocated pointer: %p\n", static_cast<void*>( ptr ) );
+                OutputDebugStringA( buf );
+#endif
+
+                entries[i].next = freeList;
+                freeList        = &entries[i];
+                return;
+            }
+        }
+
+        throw std::bad_exception( );  // pointer not from pool
+    }
+
+    void* allocateHeap( )
+    {
         // allocation not possible if memory pool has no more space
         if (available <= 0 || available > N) throw std::bad_alloc();
 
@@ -89,7 +203,8 @@ public:
         return e.p;
     }
 
-    void deallocate(void *ptr) {
+    
+    void deallocateHeap(void *ptr) {
         // invalid pointers are ignored
         if (!ptr || available >= N) return;
 
@@ -105,7 +220,9 @@ public:
     }
 };
 
-const int SMALL_POOL_SIZE = (48 + 3) & ~3;
+const int SMALL_POOL_SIZE = ( 48 + 3 ) & ~3;
+//const int SMALL_POOL_SIZE = (sizeof( CMsgBldgStat )+ 3 ) & ~3;
+;
 // FIXME: This is supposed to be sizeof(CMsgBldgStat), but that class is not visible here for some reason.
 
 typedef memory_pool<mempool_std_heap<VP_MAXSENDDATA, 10>> mempool_large;
