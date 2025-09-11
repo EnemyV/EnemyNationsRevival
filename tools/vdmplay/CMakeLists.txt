@@ -92,10 +92,10 @@ target_link_libraries(vdmplay PUBLIC
     netapi32
     winmm
 #    mtlmt.lib
-    nafxcwd.lib 
+#    nafxcwd.lib 
     legacy_stdio_definitions
-#    $<$<CONFIG:Debug>:nafxcwd.lib>       # Only for Debug
-#    $<$<CONFIG:Release>:nafxcw.lib>      # Only for Release
+    $<$<CONFIG:Debug>:nafxcwd.lib>       # Only for Debug
+    $<$<CONFIG:Release>:nafxcw.lib>      # Only for Release
 )
 
 
