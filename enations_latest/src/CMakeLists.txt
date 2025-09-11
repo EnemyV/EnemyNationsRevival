@@ -103,21 +103,23 @@ add_executable(enations WIN32 ${enations_sources})
 #        "$<$<CONFIG:DEBUG>:$<BUILD_INTERFACE:/MTd;/EHsc;/Zi>"
 #        )
 
+# according to enations.mak this should be MT
+# but i think it used to be MD?
 target_compile_options(enations INTERFACE
-    $<$<CONFIG:Release>:/MT /EHsc /O2 /Ob2 /Zi>
-    $<$<CONFIG:Debug>:/MTd /EHsc /Zi>
+    $<$<CONFIG:Release>:/MD /EHsc /O2 /Ob2 /Zi>
+    $<$<CONFIG:Debug>:/MDd /EHsc /Zi>
 )
 
-set(CMAKE_MFC_FLAG 1)
+set(CMAKE_MFC_FLAG 2)
 
 #target_compile_options(enations PRIVATE
 #    $<$<CONFIG:RELEASE>:/MD;/EHsc;/Zi;/O2;/Ob2>
 #    $<$<CONFIG:DEBUG>:/MDd;/EHsc;/Zi>
 #)
 message("CMAKE_CXX_FLAGS: ${CMAKE_CXX_FLAGS}")
-set_target_properties(enations PROPERTIES
-    MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>"
-)
+
+# set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+
 
 get_target_property(copts enations COMPILE_OPTIONS)
 

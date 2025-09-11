@@ -40,15 +40,20 @@ add_library(wind22 STATIC ${wind22_sources})
 #        "$<$<CONFIG:DEBUG>:$<BUILD_INTERFACE:/MTd;/GX;/EHsc;/Zi>"
 #        )
 
+# according to wind22.mak this should be MD
+# but maybe it was changed to MT in later versions?
+# i still think win22 is older or incomplete somehow
 target_compile_options(wind22 PUBLIC
-    $<$<CONFIG:RELEASE>:/MT /GX /Zi /O2 /Ob2 /EHsc>
-    $<$<CONFIG:DEBUG>:/MTd /GX /EHsc /Zi>
+    $<$<CONFIG:RELEASE>:/MD /GX /Zi /O2 /Ob2 /EHsc>
+    $<$<CONFIG:DEBUG>:/MDd /GX /EHsc /Zi>
 )
 
 set(CMAKE_MFC_FLAG 1)
 
+#set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+
 target_compile_definitions(wind22 PUBLIC
-#    _AFXDLL
+    _AFXDLL
     _WIN32_WINNT=_WIN32_WINNT_WIN7
     _WINDOWS
     _MBCS
@@ -58,6 +63,7 @@ target_compile_definitions(wind22 PUBLIC
     $<$<CONFIG:Release>:NDEBUG>
     $<$<CONFIG:Debug>:_DEBUG>
 )
+
 
 # Precompiled header - specify the correct path
 target_precompile_headers(wind22 PUBLIC include/stdafx.h)

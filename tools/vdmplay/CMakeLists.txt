@@ -37,7 +37,7 @@ set(vdmplay_sources
 
 add_library(vdmplay SHARED ${vdmplay_sources})
 
-set(CMAKE_MFC_FLAG 2)
+set(CMAKE_MFC_FLAG 1)
 
 #target_compile_definitions(vdmplay PUBLIC
    #     _AFXDLL
@@ -56,9 +56,10 @@ set(CMAKE_MFC_FLAG 2)
 
 
 target_compile_definitions(vdmplay PUBLIC
-        _AFXDLL
-        _DLL
+#        _AFXDLL
+#        _DLL
 #        _AFX_STATIC
+        STRICT
         _USRDLL
         _WINDLL
 #        NOMFC
@@ -90,8 +91,11 @@ target_link_directories(vdmplay PUBLIC
 target_link_libraries(vdmplay PUBLIC
     netapi32
     winmm
-#    nafxcwd.lib 
+#    mtlmt.lib
+    nafxcwd.lib 
     legacy_stdio_definitions
+#    $<$<CONFIG:Debug>:nafxcwd.lib>       # Only for Debug
+#    $<$<CONFIG:Release>:nafxcw.lib>      # Only for Release
 )
 
 
@@ -102,6 +106,7 @@ target_link_libraries(vdmplay PUBLIC
 #        "$<$<CONFIG:DEBUG>:$<BUILD_INTERFACE:/MDd>"
 #        )
 
+# according to vdmplay.mak this should be MT ...
 target_compile_options(vdmplay PRIVATE
     $<$<CONFIG:DEBUG>:/MTd>
     $<$<CONFIG:RELEASE>:/MT>
@@ -113,8 +118,8 @@ target_compile_options(vdmplay PRIVATE
         
 
 target_link_options(vdmplay PUBLIC
-        /NODEFAULTLIB:libcmt
-        /NODEFAULTLIB:LIBCMTD
+       # /NODEFAULTLIB:libcmt
+       # /NODEFAULTLIB:LIBCMTD
         /NODEFAULTLIB:mtlgmt
         )
 
