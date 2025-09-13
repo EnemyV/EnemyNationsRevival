@@ -168,6 +168,7 @@ void CWndWorld::ApplyColors(CDIB const *pDib) {
 const DWORD dwStyleWorldWnd = CS_DBLCLKS | CS_HREDRAW | CS_VREDRAW | CS_OWNDC;
 
 // this is, just the map?? ( think so, the radar window and main map?)
+// Map and Radar windows
 void CWndWorld::Create(BOOL bStart) {
 
 #ifdef LOGGINGON
@@ -942,40 +943,31 @@ void CWndWorld::_OnSize() {
     CDIB *pDibRadarBm = theBitmaps.GetByIndex(m_bIsRadar ? DIB_RADAR : DIB_WORLD);
     pDibRadarBm->StretchBlt(m_pdibRadar, m_pdibRadar->GetRect(), pDibRadarBm->GetRect());
 
-    // use 8-bit radar art to determine m_piRadarEdges
-    // we StretchBlt to a temp DIB but OnSize is pretty damn rare
-    CDIB *pDibRadarMask = theBitmaps.GetByIndex(m_bIsRadar ? DIB_RADAR_MASK : DIB_WORLD_MASK);
-    CDIB *pdib8Radar = new CDIB(CColorFormat(CColorFormat::DEPTH_EIGHT), CBLTFormat::DIB_MEMORY,
-                                CBLTFormat::DIR_TOPDOWN, m_cx, m_cy);
-    pDibRadarMask->StretchBlt(pdib8Radar, pdib8Radar->GetRect(), pDibRadarMask->GetRect());
 
-    // ok, we store the left side, then the right side of each row
-    int *piOn = m_piRadarEdges = new int[m_cy * 2];
-    BYTE *pDibRadar, *pDibRadarLine;
-    {    // GG: Make sure dibits leaves scope before pDib8Radar is deleted - else assertion
-        CDIBits dibits = pdib8Radar->GetBits();
-        pDibRadar = pDibRadarLine = dibits;
-        int iRadarPitch = pdib8Radar->GetDirPitch();
+    m_piRadarEdges = new int[m_cy * 2];
 
-        // left
-        for (int y = 0; y < m_cy; y++) {
-            int x = 0;
-            while ((*pDibRadar != 253) && (x < m_cx)) {
-                pDibRadar++;
-                x++;
-            }
-            *piOn++ = x;
+    int cx         = m_cx / 2;
+    int cy         = m_cy / 2;
+    int halfWidth  = m_cx / 2;
+    int halfHeight = m_cy / 2;
 
-            // right
-            while ((*pDibRadar == 253) && (x < m_cx)) {
-                pDibRadar++;
-                x++;
-            }
-            *piOn++ = x;
-            pDibRadar = (pDibRadarLine += iRadarPitch);
-        }
+    for ( int y = 0; y < m_cy; ++y )
+    {
+        float dy    = abs( y - cy );
+        float ratio = dy / halfHeight;  // 0 at center, 1 at top/bottom
+
+        int left  = static_cast<int>( cx - halfWidth * ( 1.0f - ratio ) );
+        int right = static_cast<int>( cx + halfWidth * ( 1.0f - ratio ) );
+
+        if ( left < 0 )
+            left = 0;
+        if ( right > m_cx )
+            right = m_cx;
+
+        m_piRadarEdges[y * 2]     = left;
+        m_piRadarEdges[y * 2 + 1] = right;
     }
-    delete pdib8Radar;
+
 
     // get the buttons
     CDIB *pDibBtnBm = theBitmaps.GetByIndex(m_bIsRadar ? DIB_RADAR_BUTTONS : DIB_WORLD_BUTTONS);
@@ -1535,6 +1527,7 @@ void CWndWorld::ReRender() {
             break;
     }
 
+    // is this the (broken) radar?
     for (int y = 0; y < m_cy; y++) {
 
         // these are the accumulators for a single row in m_pdibGround0
@@ -1577,11 +1570,13 @@ void CWndWorld::ReRender() {
         _sub.y += (iAdd + dtNum.quot) * aInc[5];
 
         // cause we don't do first pixel
+
+        // cause we don't do first pixel
         if ((x < m_cx) && (bdwVis) && (!((x + y) & 1))) {
             CHexCoord _hex(_sub);
             if (!theMap.GetHex(_hex.X(), _hex.Y())->GetVisible()) {
                 DWORD dwClr = 0;
-                (*fnSetPixel)(pDibDest - 1, dwClr);
+                ( *fnSetPixel )( pDibDest - 1, dwClr ); // draw the radar "fog"
             }
         }
 
@@ -1704,7 +1699,7 @@ void CWndWorld::ReRender() {
         // cause we don't do last pixel
         if ((x < m_cx) && (bdwVis) && ((x + y) & 1))
             if (!theMap.GetHex(_sub)->GetVisible())
-                (*fnSetPixel)(pDibDest, 0);
+                (*fnSetPixel)(pDibDest, 0); // draw radar fog again?
 
         pDibDest = (pDibDestLine += iDestPitch);
         _sub = _subStrt;

@@ -1206,8 +1206,9 @@ BOOL CDIB::StretchBlt( CDIB* pdibDst, CRect const& rectDst, CRect const& rectSrc
                     pbyDst++;
                 }
 #endif
-
-                TRAP();
+                // VT FIXME why was there a trap here??
+                // // it triggers when 8bit is used
+               // TRAP();
                 _asm
                 {
                     mov  edi, [pbyDst]
@@ -1335,7 +1336,7 @@ BOOL CDIB::StretchTranBlt( CDIB* pdibDst, CRect const& rectDst, CRect const& rec
             switch ( iBytesPerPixel ) {
             case 1:
 
-                TRAP();
+              //  TRAP();
 
                 while ( iNum-- ) {
                     pbySrc = pbySrcLine + ( fixU >> 16 );
