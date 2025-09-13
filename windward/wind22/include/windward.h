@@ -41,6 +41,7 @@ struct LOGPALETTE256;
 #include <rand.h>
 #include <threads.h>
 
+// so this totally wasn't finished, right??
 /* WIP
 #include <blt.h>
 #include <dib.h>
