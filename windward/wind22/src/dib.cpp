@@ -655,7 +655,14 @@ int CDIB::BitBlt( HDC hdcDst, CRect const& rectDst, CPoint const& ptSrc ) {
         return ::BitBlt( hdcDst, rectDst.left, rectDst.top, rectDst.Width( ), rectDst.Height( ), m_hDCDib,
                          ptSrcAdjusted.x, ptSrcAdjusted.y, SRCCOPY );
 
-    case CBLTFormat::DIB_DIRECTDRAW:{
+    case CBLTFormat::DIB_DIRECTDRAW:{        
+        /*
+        TRAP();
+
+        ASSERT_STRICT( 0 ); // FIXIT: Implement
+
+        return 0;
+        */
 
         // this was literally not implemented... why??
         // im pretty sure that wind22 is not the latest code
@@ -685,13 +692,6 @@ int CDIB::BitBlt( HDC hdcDst, CRect const& rectDst, CPoint const& ptSrc ) {
 
         return iRet;
     }
-        /*
-        TRAP();
-
-        ASSERT_STRICT( 0 ); // FIXIT: Implement
-
-        return 0;
-        */
 
     case CBLTFormat::DIB_MEMORY:
 
