@@ -184,7 +184,7 @@ CBLTFormat::DIB_DIRECTION CBLTFormat::GetMemDirection () const
         return DIR_BOTTOMUP;
 
     // NT/95 can handle top-down
-    if ( iWinType != W32s )
+    if ( iWinType != W32s ) // VTBUGBUG wait, shouldn't this be == then?
         return m_eDirection;
 
     // 3.1 cannot
