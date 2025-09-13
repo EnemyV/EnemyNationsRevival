@@ -1877,7 +1877,7 @@ int CWndArea::OnCreate( LPCREATESTRUCT lpCreateStruct )
 
 #ifdef LOGGINGON
     char buf[128];
-    sprintf_s( buf, "CWndArea::OnCreate: %p\n", bPlaceIt );
+    sprintf_s( buf, "CWndArea::OnCreate: %d\n", bPlaceIt );
     OutputDebugStringA( buf );
 #endif
     // override because its crashing on load:
@@ -1912,6 +1912,7 @@ int CWndArea::OnCreate( LPCREATESTRUCT lpCreateStruct )
   //  int rHeight = rect.Height( );
 #ifdef LOGGINGON
     {
+        /*
         char buf[256];
         sprintf_s( buf,
                    "Main Area CDIB: Format=%d, Type=%d, Direction=%d, "
@@ -1919,6 +1920,7 @@ int CWndArea::OnCreate( LPCREATESTRUCT lpCreateStruct )
                    ptrthebltformat->GetColorFormat( ), ptrthebltformat->GetType( ), ptrthebltformat->GetDirection( ),
                    m_cx, m_cy, rect.Width( ), rect.Height( ) );
         OutputDebugStringA( buf );
+        */
     }
 #endif
     

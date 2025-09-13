@@ -1043,7 +1043,7 @@ void CWndWorld::_NewDir() {
 
 #ifdef LOGGINGON
     char buf[128];
-    sprintf_s( buf, "New Title: %d\n", sTitle );
+    sprintf_s( buf, "New Title: %s\n", (LPCSTR) sTitle );
     OutputDebugStringA( buf );
 #endif
 
