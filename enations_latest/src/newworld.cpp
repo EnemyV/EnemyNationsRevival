@@ -547,6 +547,7 @@ void CConquerApp::CreateNewWorld(unsigned uRand, AIinit *pAiData, int iSide, int
     // restore rand
     MySrand(iSaveRand);
 
+    // This is where we create the actual map / world / terrain
     // create the map
     theApp.Log("Create the map");
     theMap.Init(iSide, iSideSize, m_pCreateGame->m_iTyp == CCreateBase::scenario);

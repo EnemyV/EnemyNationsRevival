@@ -641,13 +641,6 @@ static void OnMsgServerDown( LPCVPSESSIONINFO pSi )
     theApp.m_pCreateGame->OnSessionClose( pSi );
 }
 
-#ifdef TESTINGGON
-bool CGame::RunTests( )
-{
-    return true;  // default to passing
-}
-#endif
-
 void CGame::AddToQueue( CNetCmd const* pCmd, int iLen )
 {
 #ifdef LOGGINGON

@@ -272,10 +272,6 @@ class CConquerApp : public CWinApp
 
     BOOL LoadData( );
 
-#ifdef TESTINGGON
-    void RunTests( );
-#endif
-
 #ifdef BUGBUG
     void LoadVer( );        // load data from the RIF files
     void LoadMain( );       // main screen

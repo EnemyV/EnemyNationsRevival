@@ -384,46 +384,10 @@ void CConquerApp::Log( char const* pText )
     m_pLogFile->Flush( );
 }
 
-#ifdef TESTINGGON
-void CConquerApp::RunTests( )
-{
-    int totalTests = 0;
-    int pass       = 0;
-    int fail       = 0;
-    OutputDebugStringA( "Starting Tests...\n" );
-
-    // Call NetApi static tests function
-    if ( CGame::RunTests( ) )
-    {
-        pass++;
-        OutputDebugStringA( "NetApi tests passed.\n" );
-    }
-    else
-    {
-        fail++;
-        OutputDebugStringA( "NetApi tests failed.\n" );
-    }
-
-    // Optionally, print summary
-    char buffer[128];
-    sprintf_s( buffer, "Tests complete: %d/%d passed (%.2f%%)\n", pass, totalTests,
-               ( totalTests > 0 ? (float)pass / totalTests * 100.0f : 0.0f ) );
-    OutputDebugStringA( buffer );
-
-    OutputDebugStringA( "Done Tests!\n" );
-}
-#endif
-
 BOOL CConquerApp::InitInstance( )
 {
 #ifdef LOGGINGON
     OutputDebugStringA( "InitInstance\n" );
-
-#ifdef TESTINGGON
-    // RUN TESTS!!
-    RunTests( );
-#endif
-
 #endif
 
     InitWindwardLib1( this );

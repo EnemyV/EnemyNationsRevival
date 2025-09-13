@@ -197,16 +197,20 @@ void CGameMap::GetWorldSize( int iSize, int& iSide, int& iSideSize )
     if ( theGame.GetScenario( ) >= 0 )
         fNumBlks += 4.0f;
     else
-        fNumBlks += RandNum( 4 );
+        fNumBlks += RandNum( 4 ); // randomly add 4 blocks? interesting
+
+    // we're adding blocks for more island and ocean players
+    // interestingly this means the map size is dependant on the kind of races
+    // I did notice this, some races had smaller planets
 
     POSITION pos;
     for ( pos = theGame.GetAll( ).GetHeadPosition( ); pos != NULL; )
     {
         CPlayer* pPlr = theGame.GetAll( ).GetNext( pos );
         ASSERT_VALID( pPlr );
-        if ( pPlr->m_InitData.GetSupplies( CRaceDef::island ) )
+        if ( pPlr->m_InitData.GetSupplies( CRaceDef::island ) )  
             fNumBlks += 2;
-        else if ( pPlr->m_InitData.GetSupplies( CRaceDef::ocean ) )
+        else if ( pPlr->m_InitData.GetSupplies( CRaceDef::ocean ) ) 
             fNumBlks += 0.25f;
     }
 
@@ -335,6 +339,8 @@ void CGameMap::Init( int iSide, int iSideSize, int iScenario )
             iIslandPlayersLeft++;
     }
 #ifdef _CHEAT
+    // Specifically force an ocean?
+    // strange because it subtracts?
     if ( ( theGame.GetServerNetNum( ) == 0 ) && ( theApp.GetProfileInt( "Cheat", "ForceOcean", 0 ) ) )
     {
         piBlks[0] = -1;
