@@ -85,15 +85,15 @@ void CHex::SetType( int iType )
 
         // mountain: force if > 15, allow if > 8
         if ( ( iSlope > 15 ) || ( ( iSlope > 8 ) && ( iType == mountain ) ) )
-            iType == mountain;
+            iType = mountain;
         else
             // hill: force if > 8, allow if > 4
             if ( ( iSlope > 8 ) || ( ( iSlope > 4 ) && ( iType == hill ) ) )
-            iType == hill;
+            iType = hill;
         else
             // if mountain - make it rough
             if ( iType == mountain )
-            iType == rough;
+            iType = rough;
         else
             // if hill - rand rough/plains
             if ( iType == hill )
