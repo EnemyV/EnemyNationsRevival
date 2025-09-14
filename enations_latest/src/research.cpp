@@ -281,6 +281,16 @@ void CDlgResearch::DoDataExchange( CDataExchange* pDX )
     //}}AFX_DATA_MAP
 }
 
+int CResearchListBox::CompareItem( LPCOMPAREITEMSTRUCT lpCompareItemStruct )
+{
+    CString str1, str2;
+
+    GetText( lpCompareItemStruct->itemID1, str1 );
+    GetText( lpCompareItemStruct->itemID2, str2 );
+
+    return str1.Compare( str2 );  // negative if str1<str2, 0 if equal, positive if str1>str2
+}
+
 
 BEGIN_MESSAGE_MAP( CDlgResearch, CDialog )
 //{{AFX_MSG_MAP(CDlgResearch)

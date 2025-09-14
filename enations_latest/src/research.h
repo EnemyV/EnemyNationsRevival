@@ -127,6 +127,11 @@ public:
 	void			Close ();
 };
 
+class CResearchListBox : public CListBox
+{
+  public:
+    virtual int CompareItem( LPCOMPAREITEMSTRUCT lpCompareItemStruct );
+};
 
 /////////////////////////////////////////////////////////////////////////////
 // CDlgResearch dialog
