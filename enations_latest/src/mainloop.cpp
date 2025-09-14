@@ -493,7 +493,7 @@ void CConquerApp::_RenderScreens( )
     }
 }
 
-// runs a frame of our graphics engine
+// runs a frame of our graphics engine (and also does a bunch of logic..)
 void CConquerApp::GraphicsEnginePump( )
 {
 
@@ -1276,17 +1276,17 @@ RepairDone:;
     // first we handle combat stuff
     HandleCombat( );
 
-    // special case - rockets generate power
+    // special case - rockets generate free power
     if ( GetData( )->GetType( ) == CStructureData::rocket )
         GetOwner( )->AddPwrHave( (int)( 15.0 * GetFrameProd( 1 ) ) );
 
-    // ok its build - now it has to operate
-    switch ( GetData( )->GetUnionType( ) )
+    // ok its built - now it has to operate
+    switch ( GetData( )->GetUnionType( ) ) // union is like building class
     {
-    case CStructureData::UTmaterials:
+    case CStructureData::UTmaterials: // generates minerals
         BuildMaterials( );
         break;
-    case CStructureData::UTvehicle:
+    case CStructureData::UTvehicle: // builds vehicles
         ( (CVehicleBuilding*)this )->BuildVehicle( );
         break;
     case CStructureData::UTmine:
