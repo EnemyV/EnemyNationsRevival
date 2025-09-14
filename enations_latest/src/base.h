@@ -210,7 +210,7 @@ class CHexCoord
 
     inline void X( int _x );  // note: in terrain.inl cause uses theMap
     inline void Y( int _y );
-    int         MapX( ) const;
+    int         MapX( ) const; // unused, unimplemented
     int         MapY( ) const;
 
     inline void Xinc( );
@@ -360,7 +360,9 @@ class CMapLoc : public CPoint
     int HexOffX( ) const { return x & HEX_HT_MASK; }
     int HexOffY( ) const { return y & HEX_HT_MASK; }
 
-    BOOL   IsHexHit( CPoint, CRect& ) const; // second param was CRect& = CRect( )
+    // second param was CRect& = CRect( ) // well wtf was it changed?!?!?!
+    BOOL   IsHexHit( const CHexCoord&, CPoint,
+                     CRect& ) const;  
     Fixed  CalcAltitude( ) const;
     CPoint CalcNormal( ) const;
 };
@@ -608,8 +610,8 @@ class CMaterialTypes
         lumber,  // lumber - goods must be 0-based
         steel,
         copper, // Xil
-        moly,
-        goods,
+        moly,   // idk, people?
+        goods,  // idk, electricity?
 
         food,
         oil,
