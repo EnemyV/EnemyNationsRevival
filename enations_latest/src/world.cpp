@@ -1178,7 +1178,7 @@ void CWndWorld::_NewDir() {
                 if (theMinerals.Lookup(_hex, pMn)) {
 
                     // VTFIXME
-                    // this was crfashing for loaded games - not sure why, perhaps the deserialization failed
+                    // this was (is!?) crfashing for loaded games - not sure why, perhaps the deserialization failed
                     /* if ( !pMn->IsValid( ) )
                     {
 #ifdef LOGGINGON
@@ -1262,174 +1262,200 @@ void CWndWorld::_NewMode() {
     NewDir();
 }
 
-void CWndWorld::_NewLocation() {
+void CWndWorld::_NewLocation( )
+{
 
-    ASSERT_STRICT_VALID (this);
+    ASSERT_STRICT_VALID( this );
 
     m_bNewLocation = FALSE;
 
     // we get called on CWndArea before we're ready
-    if ((m_pdibGround0 == NULL) || (m_pWndArea == NULL))
+    if ( ( m_pdibGround0 == NULL ) || ( m_pWndArea == NULL ) )
         return;
 
     // area map stuff
-    CHexCoord hexcoord(m_pWndArea->GetAA().GetCenter());
-    hexcoord.Wrap();
-    hexcoord.X() /= 2;
-    hexcoord.Y() /= 2;
+    CHexCoord hexcoord( m_pWndArea->GetAA( ).GetCenter( ) );
+    hexcoord.Wrap( );
+    hexcoord.X( ) /= 2;
+    hexcoord.Y( ) /= 2;
 
     // get the start position for the world bitmap
     int aMul[4];
-    theMap.DirMult(m_pWndArea->GetAA().m_iDir, aMul);
+    theMap.DirMult( m_pWndArea->GetAA( ).m_iDir, aMul );
 
-    int xMap = theMap.WrapX(hexcoord.X() * aMul[0] + hexcoord.Y() * aMul[1]);
-    int yMap = theMap.WrapY(hexcoord.X() * aMul[2] + hexcoord.Y() * aMul[3]);
-    m_xDib = (xMap * m_cx) >> theMap.GetSideShift();
-    m_yDib = (yMap * m_cy) >> theMap.GetSideShift();
+    int xMap = theMap.WrapX( hexcoord.X( ) * aMul[0] + hexcoord.Y( ) * aMul[1] );
+    int yMap = theMap.WrapY( hexcoord.X( ) * aMul[2] + hexcoord.Y( ) * aMul[3] );
+    m_xDib   = ( xMap * m_cx ) >> theMap.GetSideShift( );
+    m_yDib   = ( yMap * m_cy ) >> theMap.GetSideShift( );
 
     // got a GPF below and this is the only way I see how
-    while (m_xDib >= m_cx) {
-        TRAP();
+    while ( m_xDib >= m_cx )
+    {
+        TRAP( );
         m_xDib -= m_cx;
     }
-    while (m_xDib < 0) {
-        TRAP();
+    while ( m_xDib < 0 )
+    {
+        TRAP( );
         m_xDib += m_cx;
     }
-    while (m_yDib >= m_cy) {
-        TRAP();
+    while ( m_yDib >= m_cy )
+    {
+        TRAP( );
         m_yDib -= m_cy;
     }
-    while (m_yDib < 0) {
-        TRAP();
+    while ( m_yDib < 0 )
+    {
+        TRAP( );
         m_yDib += m_cy;
     }
 
-    ASSERT_STRICT(ptrthebltformat.Value());
+    ASSERT_STRICT( ptrthebltformat.Value( ) );
 
-    m_xDibBytes = m_xDib * ptrthebltformat->GetBytesPerPixel();
+    m_xDibBytes = m_xDib * ptrthebltformat->GetBytesPerPixel( );
 
-    m_iLenBytes = ptrthebltformat->GetBytesPerPixel() * (m_cx - m_xDib);
+    m_iLenBytes = ptrthebltformat->GetBytesPerPixel( ) * ( m_cx - m_xDib );
 
     // copy the already generated map centering what's in the area map
     // by definition the center is also in the UL corner (cause every spot is shown twice)
-    CSubHex _subCen(m_pWndArea->GetAA().GetCenter());
+    CSubHex _subCen( m_pWndArea->GetAA( ).GetCenter( ) );
 
-    { // GG: New scope so CDIBits objects leave scope before TranBlt()
-        CDIBits dibitsDest = m_pdibBase->GetBits();
-        BYTE *pDest = dibitsDest;
+    {  // GG: New scope so CDIBits objects leave scope before TranBlt()
+        CDIBits dibitsDest = m_pdibBase->GetBits( );
+        BYTE*   pDest      = dibitsDest;
 
-        CDIBits dibitsGr0 = m_pdibGround0->GetBits();
-        BYTE *pSrc = dibitsGr0 + m_pdibGround0->GetOffset(m_xDib, m_yDib);
-        BYTE *pMax = dibitsGr0 + m_lSizeBytes;
+        CDIBits dibitsGr0 = m_pdibGround0->GetBits( );
+        BYTE*   pSrc      = dibitsGr0 + m_pdibGround0->GetOffset( m_xDib, m_yDib );
+        BYTE*   pMax      = dibitsGr0 + m_lSizeBytes;
 
-        for (int y = 0; y < m_cy; y++) {
-            ASSERT_STRICT(m_pdibBase->IsInRange(pDest, m_iLenBytes));
-            ASSERT_STRICT(m_pdibBase->IsInRange(pDest + m_iLenBytes, m_xDibBytes));
-            ASSERT_STRICT(m_pdibGround0->IsInRange(pSrc, m_iLenBytes));
-            ASSERT_STRICT(m_pdibGround0->IsInRange(pSrc - m_xDibBytes, m_xDibBytes));
+        for ( int y = 0; y < m_cy; y++ )
+        {
+            ASSERT_STRICT( m_pdibBase->IsInRange( pDest, m_iLenBytes ) );
+            ASSERT_STRICT( m_pdibBase->IsInRange( pDest + m_iLenBytes, m_xDibBytes ) );
+            ASSERT_STRICT( m_pdibGround0->IsInRange( pSrc, m_iLenBytes ) );
+            ASSERT_STRICT( m_pdibGround0->IsInRange( pSrc - m_xDibBytes, m_xDibBytes ) );
 
-            memcpy(pDest, pSrc, m_iLenBytes);
-            memcpy(pDest + m_iLenBytes, pSrc - m_xDibBytes, m_xDibBytes);
+            memcpy( pDest, pSrc, m_iLenBytes );
+            memcpy( pDest + m_iLenBytes, pSrc - m_xDibBytes, m_xDibBytes );
 
-            pDest += m_pdibBase->GetDirPitch();
-            pSrc += m_pdibGround0->GetDirPitch();
+            pDest += m_pdibBase->GetDirPitch( );
+            pSrc += m_pdibGround0->GetDirPitch( );
 
-            if (pSrc + m_iLenBytes >= pMax)
-                pSrc = dibitsGr0 + m_pdibGround0->GetOffset(m_xDib, 0);
+            if ( pSrc + m_iLenBytes >= pMax )
+                pSrc = dibitsGr0 + m_pdibGround0->GetOffset( m_xDib, 0 );
         }
     }
-    // radar over it
-    m_pdibRadar->TranBlt(m_pdibBase, m_pdibBase->GetRect(), CPoint(0, 0));
 
-    // buttons over it
-    int iDown = m_pdibButtons->GetWidth() / 2;
-    CRect rect(0, 0, m_pdibButtons->GetWidth() / 2, m_pdibButtons->GetHeight() / 4);
-    rect.OffsetRect(m_xBtnUL, m_yBtnUL);
-    m_pdibButtons->TranBlt(m_pdibBase, rect, CPoint(m_iMode & resources ? iDown : 0, 0));
-    rect.OffsetRect(m_xBtnLR - m_xBtnUL, 0);
-    m_pdibButtons->TranBlt(m_pdibBase, rect, CPoint(m_iMode & visible ? iDown : 0, m_pdibButtons->GetHeight() / 4));
-    rect.OffsetRect(0, m_yBtnLR - m_yBtnUL);
-    m_pdibButtons->TranBlt(m_pdibBase, rect,
-                           CPoint(m_iMode & other_units ? iDown : 0, (3 * m_pdibButtons->GetHeight()) / 4));
-    rect.OffsetRect(-m_xBtnLR + m_xBtnUL, 0);
-    m_pdibButtons->TranBlt(m_pdibBase, rect, CPoint(m_iMode & my_units ? iDown : 0, m_pdibButtons->GetHeight() / 2));
+    // draw radar over it
+    m_pdibRadar->TranBlt( m_pdibBase, m_pdibBase->GetRect( ), CPoint( 0, 0 ) );
 
+    // draw buttons over it
+    int skipPixelTop  = 1;
+    int skipPixelLeft   = 1;
+    int bottomPixelSkip = 0;
+    int iDown         = m_pdibButtons->GetWidth( ) / 2;
+
+    int quarterHeight = m_pdibButtons->GetHeight( ) / 4;
+    int halfWidth     = m_pdibButtons->GetWidth( ) / 2;
+
+    // Top-left button
+    CRect rect( skipPixelLeft, skipPixelTop, halfWidth, quarterHeight - bottomPixelSkip );
+    rect.OffsetRect( m_xBtnUL, m_yBtnUL );
+    m_pdibButtons->TranBlt( m_pdibBase, rect,
+                            CPoint( ( m_iMode & resources ) ? iDown : 0, skipPixelTop ) + CPoint( skipPixelLeft, 0 ) );
+
+    // Top-right button
+    rect.OffsetRect( m_xBtnLR - m_xBtnUL, 0 );
+    m_pdibButtons->TranBlt( m_pdibBase, rect,
+                            CPoint( ( m_iMode & visible ) ? iDown : 0, quarterHeight + skipPixelTop ) +
+                                CPoint( skipPixelLeft, 0 ) );
+
+    // Bottom-right button
+    rect.OffsetRect( 0, m_yBtnLR - m_yBtnUL );
+    m_pdibButtons->TranBlt( m_pdibBase, rect,
+                            CPoint( ( m_iMode & other_units ) ? iDown : 0, 3 * quarterHeight + skipPixelTop ) +
+                                CPoint( skipPixelLeft, 0 ) );
+
+    // Bottom-left button
+    rect.OffsetRect( -m_xBtnLR + m_xBtnUL, 0 );
+    m_pdibButtons->TranBlt( m_pdibBase, rect,
+                            CPoint( ( m_iMode & my_units ) ? iDown : 0, 2 * quarterHeight + skipPixelTop ) +
+                                CPoint( skipPixelLeft, 0 ) );
     m_bUpdate = TRUE;
 }
 
-void CWndWorld::ReRender() {
-
-    // crashes on load game on start, idk why
-    // this is a tmp workaround
-    // VTFIXME
-   // if ( theGame.LoadGame)
+void CWndWorld::ReRender( )
+{
 
     // redraw whatever needs to be redrawn
-    if (m_bNewMode)
-        _NewMode();
+    if ( m_bNewMode )
+        _NewMode( );
 
-    if (m_bNewDir)
-        _NewDir();
+    if ( m_bNewDir )
+        _NewDir( );
 
-    if (m_bNewLocation)
-        _NewLocation();
+    if ( m_bNewLocation )
+        _NewLocation( );
 
     // unit may have moved under (or been created)
     CPoint pt;
-    ::GetCursorPos(&pt);
-    if (::WindowFromPoint(pt) == m_hWnd) {
+    ::GetCursorPos( &pt );
+    if ( ::WindowFromPoint( pt ) == m_hWnd )
+    {
         // make sure in client area
-        ScreenToClient(&pt);
-        if ((pt.x >= 0) && (pt.y >= 0)) {
+        ScreenToClient( &pt );
+        if ( ( pt.x >= 0 ) && ( pt.y >= 0 ) )
+        {
             CRect rect;
-            GetClientRect(&rect);
-            if ((pt.x < rect.right) && (pt.y < rect.bottom))
-                OutputDebugString("CWndWorld::ReRender: before SetMouseState\n");
-                SetMouseState();
+            GetClientRect( &rect );
+            if ( ( pt.x < rect.right ) && ( pt.y < rect.bottom ) )
+                OutputDebugString( "CWndWorld::ReRender: before SetMouseState\n" );
+            SetMouseState( );
         }
     }
 
     // trick for pentium pipeline in tests below
-    DWORD bdwUnits = (m_iMode & (my_units | other_units)) ? -1 : 0;
-    DWORD bdwRes = (m_iMode & resources) ? -1 : 0;
-    DWORD bdwVis = (m_iMode & visible) ? -1 : 0;
-    DWORD bdwCopper = (bdwRes & theGame.GetMe()->CanCopper()) ? -1 : 0;
+    DWORD bdwUnits  = ( m_iMode & ( my_units | other_units ) ) ? -1 : 0;
+    DWORD bdwRes    = ( m_iMode & resources ) ? -1 : 0;
+    DWORD bdwVis    = ( m_iMode & visible ) ? -1 : 0;
+    DWORD bdwCopper = ( bdwRes & theGame.GetMe( )->CanCopper( ) ) ? -1 : 0;
 
     // repaint resources
-    if (bdwRes) {
+    if ( bdwRes )
+    {
         // hold for 1/3 of a second
-        m_iFrameOn += theGame.GetFramesElapsed();
-        if (m_iFrameOn >= NUM_FRAMES_SHOW_RES) {
-            m_bUpdate = TRUE;
+        m_iFrameOn += theGame.GetFramesElapsed( );
+        if ( m_iFrameOn >= NUM_FRAMES_SHOW_RES )
+        {
+            m_bUpdate  = TRUE;
             m_iFrameOn = 0;
             m_iResOn++;
-            if (m_iResOn > 7)
+            if ( m_iResOn > 7 )
                 m_iResOn = 0;
         }
     }
 
     // only repaint if dirty
-    if (!m_bUpdate)
+    if ( !m_bUpdate )
         return;
     m_bUpdate = FALSE;
 
-    ASSERT_STRICT_VALID (this);
+    ASSERT_STRICT_VALID( this );
 
     // we get called on CWndArea before we're ready
-    if ((m_pdibGround0 == NULL) || (m_pWndArea == NULL))
+    if ( ( m_pdibGround0 == NULL ) || ( m_pWndArea == NULL ) )
         return;
 
     // put up everything except vehicles & visibility
-    m_pdibBase->BitBlt(m_dibwnd.GetDIB(), m_pdibBase->GetRect(), CPoint(0, 0));
+    m_pdibBase->BitBlt( m_dibwnd.GetDIB( ), m_pdibBase->GetRect( ), CPoint( 0, 0 ) );
 
-    CDIB *pdib = m_dibwnd.GetDIB();
+    CDIB* pdib = m_dibwnd.GetDIB( );
 
     // is it a radar or a map
-    DWORD bRadar = m_bIsRadar ? -1 : 0;
+    DWORD bRadar    = m_bIsRadar ? -1 : 0;
     DWORD bdwRadUni = bRadar & bdwUnits;
 
-    int iBytesPerPixel = m_dibwnd.GetDIB()->GetBytesPerPixel();
+    int iBytesPerPixel = m_dibwnd.GetDIB( )->GetBytesPerPixel( );
 
     // this is quick & dirty - we grab every n'th tile
 
@@ -1439,62 +1465,65 @@ void CWndWorld::ReRender() {
     //   else           xStrt += aInc[2]; yStrt += aInc[3]
     // X += aInc[4]; Y += aInc[5]
     int aInc[6];
-    switch (m_pWndArea->GetAA().m_iDir) {
-        case 0 :
-            aInc[0] = aInc[3] = 0;
-            aInc[1] = aInc[4] = aInc[5] = 1;
-            aInc[2] = -1;
-            break;
-        case 1 :
-            aInc[1] = aInc[2] = aInc[4] = -1;
-            aInc[0] = aInc[3] = 0;
-            aInc[5] = 1;
-            break;
-        case 2 :
-            aInc[0] = aInc[3] = 0;
-            aInc[1] = aInc[4] = aInc[5] = -1;
-            aInc[2] = 1;
-            break;
-        case 3 :
-            aInc[1] = aInc[2] = aInc[4] = 1;
-            aInc[0] = aInc[3] = 0;
-            aInc[5] = -1;
-            break;
+    switch ( m_pWndArea->GetAA( ).m_iDir )
+    {
+    case 0:
+        aInc[0] = aInc[3] = 0;
+        aInc[1] = aInc[4] = aInc[5] = 1;
+        aInc[2]                     = -1;
+        break;
+    case 1:
+        aInc[1] = aInc[2] = aInc[4] = -1;
+        aInc[0] = aInc[3] = 0;
+        aInc[5]           = 1;
+        break;
+    case 2:
+        aInc[0] = aInc[3] = 0;
+        aInc[1] = aInc[4] = aInc[5] = -1;
+        aInc[2]                     = 1;
+        break;
+    case 3:
+        aInc[1] = aInc[2] = aInc[4] = 1;
+        aInc[0] = aInc[3] = 0;
+        aInc[5]           = -1;
+        break;
     }
 
-    CHexCoord hexcoord(m_pWndArea->GetAA().GetCenter());
+    CHexCoord hexcoord( m_pWndArea->GetAA( ).GetCenter( ) );
 
-    
+
 #ifdef LOGGINGON
-    char    buf[128];
+    char buf[128];
     sprintf_s( buf, "MapCoors X=%d Y=%d\n", hexcoord.X( ), hexcoord.Y( ) );
     OutputDebugStringA( buf );
 #endif
 
-    CSubHex _sub(hexcoord);
-    CSubHex _subStrt(_sub);
-    int iOdd = 1;
+    CSubHex _sub( hexcoord );
+    CSubHex _subStrt( _sub );
+    int     iOdd = 1;
 
     // * 2 cause sub-hex
     int yAdd = m_yAdd * 2;
     int yRem = m_yRem * 2;
-    if (yRem >= m_cy) {
+    if ( yRem >= m_cy )
+    {
         yAdd++;
         yRem -= m_cy;
     }
     int yAcc = 0;
     int xAdd = m_xAdd * 2;
     int xRem = m_xRem * 2;
-    if (xRem >= m_cx) {
+    if ( xRem >= m_cx )
+    {
         xAdd++;
         xRem -= m_cx;
     }
 
-    // if there's no DD device, just retunr?
+    // if there's no DD device, just return?
     if ( !pdib->HasDDSurface( ) )
     {
 #ifdef LOGGINGON
-        int  type = pdib->GetType( );
+        int type = pdib->GetType( );
         buf[128];
         sprintf_s( buf, "no HasDDSurface!! type=%d\n", type );
         OutputDebugStringA( buf );
@@ -1504,184 +1533,211 @@ void CWndWorld::ReRender() {
     }
 
     // dest is where we write, radar tells us if we should write
-    BYTE *pDibDest, *pDibDestLine;
-    CDIBits dibits = pdib->GetBits(); // exception, gfx surface missing? GetDDSurface null
-    pDibDest = pDibDestLine = dibits + pdib->GetOffset(0, 0);
-    int iDestPitch = pdib->GetDirPitch();
+    BYTE *  pDibDest, *pDibDestLine;
+    CDIBits dibits = pdib->GetBits( );  // exception, gfx surface missing? GetDDSurface null
+    pDibDest = pDibDestLine = dibits + pdib->GetOffset( 0, 0 );
+    int iDestPitch          = pdib->GetDirPitch( );
 
-    int *piEdge = m_piRadarEdges;
+    int* piEdge = m_piRadarEdges;
 
     SETPIXEL fnSetPixel;
-    switch (iBytesPerPixel) {
-        case 1 :
-            fnSetPixel = SetPixel1;
-            break;
-        case 2 :
-            fnSetPixel = SetPixel2;
-            break;
-        case 3 :
-            fnSetPixel = SetPixel3;
-            break;
-        case 4 :
-            fnSetPixel = SetPixel4;
-            break;
+    switch ( iBytesPerPixel )
+    {
+    case 1:
+        fnSetPixel = SetPixel1;
+        break;
+    case 2:
+        fnSetPixel = SetPixel2;
+        break;
+    case 3:
+        fnSetPixel = SetPixel3;
+        break;
+    case 4:
+        fnSetPixel = SetPixel4;
+        break;
     }
 
-    // is this the (broken) radar?
-    for (int y = 0; y < m_cy; y++) {
+    // draw radar and fog stuff
+    for ( int y = 0; y < m_cy; y++ )
+    {
 
         // these are the accumulators for a single row in m_pdibGround0
         // above for hexStrt because this is for THIS line
         int xAcc, _yAcc;
-        if (m_pWndArea->GetAA().m_iDir & 1) {
-            _yAcc = ((m_cy - yAcc) * m_cx) / m_cy;
-            xAcc = (yAcc * m_cx) / m_cy;
-        } else {
-            xAcc = ((m_cy - yAcc) * m_cx) / m_cy;
-            _yAcc = (yAcc * m_cx) / m_cy;
+        if ( m_pWndArea->GetAA( ).m_iDir & 1 )
+        {
+            _yAcc = ( ( m_cy - yAcc ) * m_cx ) / m_cy;
+            xAcc  = ( yAcc * m_cx ) / m_cy;
+        }
+        else
+        {
+            xAcc  = ( ( m_cy - yAcc ) * m_cx ) / m_cy;
+            _yAcc = ( yAcc * m_cx ) / m_cy;
         }
 
         // inc to next
         int iSkip = yAdd;
         yAcc += yRem;
-        if (yAcc >= m_cy) {
+        if ( yAcc >= m_cy )
+        {
             iSkip++;
             yAcc -= m_cy;
         }
 
         _subStrt.x += iSkip * aInc[2];
         _subStrt.y += iSkip * aInc[1];
-        _subStrt.Wrap();
+        _subStrt.Wrap( );
 
         // skip initial non-transparent
-        int x = (*piEdge++) + 1;
+        int x = ( *piEdge++ ) + 1;
 
         pDibDest += x * iBytesPerPixel;
 
         // inc sub-hex to match
-        int iJmp = xRem * x;
-        int iAdd = xAdd * x;
-        div_t dtNum = div(iJmp + xAcc, m_cx);
-        xAcc = dtNum.rem;
-        _sub.x += (iAdd + dtNum.quot) * aInc[4];
+        int   iJmp  = xRem * x;
+        int   iAdd  = xAdd * x;
+        div_t dtNum = div( iJmp + xAcc, m_cx );
+        xAcc        = dtNum.rem;
+        _sub.x += ( iAdd + dtNum.quot ) * aInc[4];
 
-        dtNum = div(iJmp + _yAcc, m_cx);
+        dtNum = div( iJmp + _yAcc, m_cx );
         _yAcc = dtNum.rem;
-        _sub.y += (iAdd + dtNum.quot) * aInc[5];
+        _sub.y += ( iAdd + dtNum.quot ) * aInc[5];
 
         // cause we don't do first pixel
-
-        // cause we don't do first pixel
-        if ((x < m_cx) && (bdwVis) && (!((x + y) & 1))) {
-            CHexCoord _hex(_sub);
-            if (!theMap.GetHex(_hex.X(), _hex.Y())->GetVisible()) {
+        if ( ( x < m_cx ) && ( bdwVis ) && ( !( ( x + y ) & 1 ) ) )
+        {
+            CHexCoord _hex( _sub );
+            if ( !theMap.GetHex( _hex.X( ), _hex.Y( ) )->GetVisible( ) )
+            {
                 DWORD dwClr = 0;
-                ( *fnSetPixel )( pDibDest - 1, dwClr ); // draw the radar "fog"
+
+                ( *fnSetPixel )( pDibDest - 1, dwClr );  // adds like a black bar around the edge of the radar
             }
         }
 
         // do the transparent part
-        int iMax = (*piEdge++) - 1;
-        for (; x < iMax; x++) {
+        int iMax = ( *piEdge++ ) - 1;
+        for ( ; x < iMax; x++ )
+        {
             // handle wrap
-            _sub.Wrap();
-            CHexCoord _hex(_sub);
+            _sub.Wrap( );
+            CHexCoord _hex( _sub );
 
-            CHex *pHex = theMap._GetHex(_hex);
-            DWORD dwClr;
-            CBuilding *pBldg;
+            CHex*      pHex = theMap._GetHex( _hex );
+            DWORD      dwClr;
+            CBuilding* pBldg;
 
             // our buildings - never draw over those
-            if (pHex->GetUnits() & CHex::bldg) {
-                pBldg = theBuildingHex._GetBuilding(_hex);
-                if (pBldg->GetOwner()->IsMe()) {
+            if ( pHex->GetUnits( ) & CHex::bldg )
+            {
+                pBldg = theBuildingHex._GetBuilding( _hex );
+                if ( pBldg->GetOwner( )->IsMe( ) )
+                {
                     // if it was hit we need to draw it (this may be the one that just went to 0)
-                    if (m_bBldgHit) {
-                        if (pBldg->m_iFrameHit != 0)
-                            (*fnSetPixel)(pDibDest, m_clrHit);
+                    if ( m_bBldgHit )
+                    {
+                        if ( pBldg->m_iFrameHit != 0 )
+                            ( *fnSetPixel )( pDibDest, m_clrHit );
                         else
-                            (*fnSetPixel)(pDibDest, pBldg->GetOwner()->GetPalColor());
+                            ( *fnSetPixel )( pDibDest, pBldg->GetOwner( )->GetPalColor( ) );
                     }
                     goto PixelDrawn;
                 }
             }
 
             // show resources
-            if (bdwRes & (pHex->GetUnits() & CHex::minerals)) {
-                CMinerals *pMn;
-                if (theMinerals.Lookup(_hex, pMn)) {
-                    switch (pMn->GetType()) {
-                        case CMaterialTypes::copper :
-                            if (bdwCopper != 0) {
-                                dwClr = m_iResOn == 0 ? m_clrResHigh[0] : m_clrResources[0];
-                                break;
-                            }
-                            goto NotMinerals;
-                        case CMaterialTypes::oil :
-                            dwClr = m_iResOn == 2 ? m_clrResHigh[1] : m_clrResources[1];
+            if ( bdwRes & ( pHex->GetUnits( ) & CHex::minerals ) )
+            {
+                CMinerals* pMn;
+                if ( theMinerals.Lookup( _hex, pMn ) )
+                {
+                    switch ( pMn->GetType( ) )
+                    {
+                    case CMaterialTypes::copper:
+                        if ( bdwCopper != 0 )
+                        {
+                            dwClr = m_iResOn == 0 ? m_clrResHigh[0] : m_clrResources[0];
                             break;
-                        case CMaterialTypes::coal :
-                            dwClr = m_iResOn == 4 ? m_clrResHigh[2] : m_clrResources[2];
-                            break;
-                        case CMaterialTypes::iron :
-                            dwClr = m_iResOn == 6 ? m_clrResHigh[3] : m_clrResources[3];
-                            break;
+                        }
+                        goto NotMinerals;
+                    case CMaterialTypes::oil:
+                        dwClr = m_iResOn == 2 ? m_clrResHigh[1] : m_clrResources[1];
+                        break;
+                    case CMaterialTypes::coal:
+                        dwClr = m_iResOn == 4 ? m_clrResHigh[2] : m_clrResources[2];
+                        break;
+                    case CMaterialTypes::iron:
+                        dwClr = m_iResOn == 6 ? m_clrResHigh[3] : m_clrResources[3];
+                        break;
                     }
-                    (*fnSetPixel)(pDibDest, dwClr);
+                    ( *fnSetPixel )( pDibDest, dwClr );  // actual draw of resources colours
                 }
-            } else {
+            }
+            else
+            {
 
-                NotMinerals:;
+            NotMinerals:;
                 // visible (can only see vehicles on visible hexes)
                 // cheat - visible only on if radar
-                if (bdwVis & (!pHex->GetVisible())) {
+                if ( bdwVis & ( !pHex->GetVisible( ) ) )
+                {
                     // we can't draw over buildings that are visible (even though the hex isn't)
                     BOOL bOkDraw = TRUE;
-                    if (pHex->GetUnits() & CHex::bldg) {
+                    if ( pHex->GetUnits( ) & CHex::bldg )
+                    {
                         // got this above -- CBuilding * pBldg = theBuildingHex.GetBuilding (_hex);
-                        if (pBldg->IsVisible())
+                        if ( pBldg->IsVisible( ) )
                             bOkDraw = FALSE;
                     }
 
-                    if (bOkDraw && ((x + y) & 1))
-                        (*fnSetPixel)(pDibDest, 0);
-                } else
+                    if ( bOkDraw && ( ( x + y ) & 1 ) )
+                    {
+                        ( *fnSetPixel )( pDibDest, 0 );  // This is the radar "fog of war" right here!!!
+                    }
+                }
+                else
 
                     // show vehicles
-                if (bdwRadUni & (pHex->GetUnits() & CHex::veh)) {
-                    CVehicle *pVeh = theVehicleHex._GetVehicle(_sub);
+                    if ( bdwRadUni & ( pHex->GetUnits( ) & CHex::veh ) )
+                    {
+                        CVehicle* pVeh = theVehicleHex._GetVehicle( _sub );
 
 #ifdef _CHEAT
-                    if ( (pVeh != NULL) && ( (pVeh->IsVisible () && pHex->GetVisible ()) || _bShowWorld ) )
+                        if ( ( pVeh != NULL ) && ( ( pVeh->IsVisible( ) && pHex->GetVisible( ) ) || _bShowWorld ) )
 #else
-                    if ((pVeh != NULL) && pVeh->IsVisible() && pHex->GetVisible())
+                        if ( ( pVeh != NULL ) && pVeh->IsVisible( ) && pHex->GetVisible( ) )
 #endif
 
-                        if (((pVeh->GetOwner()->IsMe()) && (m_iMode & my_units)) ||
-                            ((!pVeh->GetOwner()->IsMe()) && (m_iMode & other_units))) {
-                            if ((pVeh->GetOwner()->IsMe()) && (pVeh->m_iFrameHit != 0)) {
-                                pVeh->m_iFrameHit -= theGame.GetFramesElapsed();
-                                pVeh->m_iFrameHit = __max (0, pVeh->m_iFrameHit);
-                                dwClr = m_clrHit;
-                            } else
-                                dwClr = pVeh->GetOwner()->GetPalColor();
-                            // we can do this because the radar screen means we are not on an edge
-                            (*fnSetPixel)(pDibDest - iDestPitch, dwClr);
-                            (*fnSetPixel)(pDibDest - 1, dwClr);
-                            (*fnSetPixel)(pDibDest, dwClr);
-                            (*fnSetPixel)(pDibDest + 1, dwClr);
-                            (*fnSetPixel)(pDibDest + iDestPitch, dwClr);
-                        }
-                }
+                            if ( ( ( pVeh->GetOwner( )->IsMe( ) ) && ( m_iMode & my_units ) ) ||
+                                 ( ( !pVeh->GetOwner( )->IsMe( ) ) && ( m_iMode & other_units ) ) )
+                            {
+                                if ( ( pVeh->GetOwner( )->IsMe( ) ) && ( pVeh->m_iFrameHit != 0 ) )
+                                {
+                                    pVeh->m_iFrameHit -= theGame.GetFramesElapsed( );
+                                    pVeh->m_iFrameHit = __max( 0, pVeh->m_iFrameHit );
+                                    dwClr             = m_clrHit;
+                                }
+                                else
+                                    dwClr = pVeh->GetOwner( )->GetPalColor( );
+                                // we can do this because the radar screen means we are not on an edge
+                                ( *fnSetPixel )( pDibDest - iDestPitch, dwClr );
+                                ( *fnSetPixel )( pDibDest - 1, dwClr );
+                                ( *fnSetPixel )( pDibDest, dwClr );
+                                ( *fnSetPixel )( pDibDest + 1, dwClr );
+                                ( *fnSetPixel )( pDibDest + iDestPitch, dwClr );
+                            }
+                    }
             }
 
-            PixelDrawn:
+        PixelDrawn:
             pDibDest += iBytesPerPixel;
 
             // inc to next
             int iSkip = xAdd;
             xAcc += xRem;
-            if (xAcc >= m_cx) {
+            if ( xAcc >= m_cx )
+            {
                 iSkip++;
                 xAcc -= m_cx;
             }
@@ -1689,7 +1745,8 @@ void CWndWorld::ReRender() {
 
             iSkip = xAdd;
             _yAcc += xRem;
-            if (_yAcc >= m_cx) {
+            if ( _yAcc >= m_cx )
+            {
                 iSkip++;
                 _yAcc -= m_cx;
             }
@@ -1697,89 +1754,89 @@ void CWndWorld::ReRender() {
         }
 
         // cause we don't do last pixel
-        if ((x < m_cx) && (bdwVis) && ((x + y) & 1))
-            if (!theMap.GetHex(_sub)->GetVisible())
-                (*fnSetPixel)(pDibDest, 0); // draw radar fog again?
+        if ( ( x < m_cx ) && ( bdwVis ) && ( ( x + y ) & 1 ) )
+            if ( !theMap.GetHex( _sub )->GetVisible( ) )            
+                ( *fnSetPixel )( pDibDest, 0 );  // adds like a black bar around the edge of the radar            
 
-        pDibDest = (pDibDestLine += iDestPitch);
-        _sub = _subStrt;
+        pDibDest = ( pDibDestLine += iDestPitch );
+        _sub     = _subStrt;
     }
 
 #ifdef BUGBUG
     // each vehicle needs at least 1 pixel
     if ( m_bRadar & bdwUnits )
+    {
+        TRAP( );
+        pos = theVehicleMap.GetStartPosition( );
+        while ( pos != NULL )
         {
-        TRAP ();
-        pos = theVehicleMap.GetStartPosition ();
-        while (pos != NULL)
+            DWORD     dwID;
+            CVehicle* pVeh;
+            theVehicleMap.GetNextAssoc( pos, dwID, pVeh );
+            if ( pVeh->GetHexOwnership( ) )
             {
-            DWORD dwID;
-            CVehicle *pVeh;
-            theVehicleMap.GetNextAssoc (pos, dwID, pVeh);
-            if ( pVeh->GetHexOwnership () )
+                if ( ( m_iMode & my_units ) && pVeh->GetOwner( )->IsMe( ) )
                 {
-                if ( (m_iMode & my_units) && pVeh->GetOwner ()->IsMe () )
-                    {
-                    TRAP ();
-                    }
-                else
-                    if ( (m_iMode & other_units) && ( ! pVeh->GetOwner ()->IsMe () ) )
-                        if ( theMap.GetHex (pVeh->GetPtHead ())->GetVisible () )
-                            {
-                            TRAP ();
-                            }
+                    TRAP( );
                 }
+                else if ( ( m_iMode & other_units ) && ( !pVeh->GetOwner( )->IsMe( ) ) )
+                    if ( theMap.GetHex( pVeh->GetPtHead( ) )->GetVisible( ) )
+                    {
+                        TRAP( );
+                    }
             }
         }
+    }
 #endif
 
     // draw a square showing the Area Window
     CRect rect;
-    m_pWndArea->GetClientRect(&rect);
+    m_pWndArea->GetClientRect( &rect );
 
-    int _iZoom = m_pWndArea->GetAA().m_iZoom;
-    int iWid = (m_cx * rect.Width()) / (CGameMap::HexWid(_iZoom) << theMap.GetSideShift()) + 2;
-    int iWidBytes = ptrthebltformat->GetBytesPerPixel() * iWid;
-    if (iWid > m_cx)
+    int _iZoom    = m_pWndArea->GetAA( ).m_iZoom;
+    int iWid      = ( m_cx * rect.Width( ) ) / ( CGameMap::HexWid( _iZoom ) << theMap.GetSideShift( ) ) + 2;
+    int iWidBytes = ptrthebltformat->GetBytesPerPixel( ) * iWid;
+    if ( iWid > m_cx )
         iWid = m_cx;
-    int iHt = (m_cy * rect.Height()) / (CGameMap::HexHt(_iZoom) << theMap.GetSideShift()) + 2;
-    if (iHt > m_cy)
+    int iHt = ( m_cy * rect.Height( ) ) / ( CGameMap::HexHt( _iZoom ) << theMap.GetSideShift( ) ) + 2;
+    if ( iHt > m_cy )
         iHt = m_cy;
 
-    BYTE *pDib = dibits + pdib->GetOffset((m_cx - iWid) / 2, (m_cy - iHt) / 2);
+    BYTE* pDib = dibits + pdib->GetOffset( ( m_cx - iWid ) / 2, ( m_cy - iHt ) / 2 );
 #ifdef BUGBUG
-    if ( pdib->IsTopDown () )
-        pDib = dibits + pdib->GetPitch() * (m_cy - iHt) / 2;
+    if ( pdib->IsTopDown( ) )
+        pDib = dibits + pdib->GetPitch( ) * ( m_cy - iHt ) / 2;
     else
-        pDib = dibits + pdib->GetPitch() * ( m_cy - 1 - (m_cy - iHt) / 2);
-    pDib += ptrthebltformat->GetBytesPerPixel() * (m_cx - iWid) / 2;
+        pDib = dibits + pdib->GetPitch( ) * ( m_cy - 1 - ( m_cy - iHt ) / 2 );
+    pDib += ptrthebltformat->GetBytesPerPixel( ) * ( m_cx - iWid ) / 2;
 #endif
 
     int iSkipBytes;
 
-    iSkipBytes = pdib->GetDirPitch() - iWidBytes;
+    iSkipBytes = pdib->GetDirPitch( ) - iWidBytes;
 
     iHt -= 2;
-    if (iHt < 0)
+    if ( iHt < 0 )
         iHt = 0;
 
-    for (int iOn = 0; iOn < iWid; iOn++, pDib += iBytesPerPixel)
-        (*fnSetPixel)(pDib, m_clrLocation);
+    // draw top of the viewbox (area showing what the main/selected window can see)
+    for ( int iOn = 0; iOn < iWid; iOn++, pDib += iBytesPerPixel ) ( *fnSetPixel )( pDib, m_clrLocation );
 
     pDib += iSkipBytes;
-
-    while (iHt--) {
-        (*fnSetPixel)(pDib, m_clrLocation);
+    // Draw sides of the box
+    while ( iHt-- )
+    {
+        ( *fnSetPixel )( pDib, m_clrLocation );
 
         pDib += iWidBytes;
 
-        (*fnSetPixel)(pDib, m_clrLocation);
+        ( *fnSetPixel )( pDib, m_clrLocation );
 
         pDib += iSkipBytes;
     }
 
-    for (int iOn = 0; iOn < iWid; iOn++, pDib += iBytesPerPixel)
-        (*fnSetPixel)(pDib, m_clrLocation);
+    // Draw bottom line of hte box
+    for ( int iOn = 0; iOn < iWid; iOn++, pDib += iBytesPerPixel ) ( *fnSetPixel )( pDib, m_clrLocation );
 
     // when anyone zeros it'll get set again
     m_bBldgHit = NULL;
