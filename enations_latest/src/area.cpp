@@ -2095,7 +2095,8 @@ void CWndArea::ZoomIn( )
         m_aa.Zoom( CAnimAtr::ZOOM_IN );
 
         ASSERT_STRICT_VALID( &theMap );
-        // GGTESTING		InvalidateWindow ();
+        
+        InvalidateWindow ();
         InvalidateSound( );
     }
 
@@ -2112,7 +2113,8 @@ void CWndArea::ZoomOut( )
         m_aa.Zoom( CAnimAtr::ZOOM_OUT );
 
         ASSERT_STRICT_VALID( &theMap );
-        // GGTESTING		InvalidateWindow ();
+        
+        InvalidateWindow ();
         InvalidateSound( );
     }
 
