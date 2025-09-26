@@ -18,6 +18,7 @@ const int MAX_BOTH_INDEX = 600;
 #define HEADINGS			3
 #define USE_HEADINGS		0
 
+#include "stdafx.h"
 #include "unit.inl"
 #include "terrain.inl"
 

@@ -75,6 +75,9 @@ HCURSOR CWndArea::m_hCurNoRepair;
 static BOOL _bShowPos = 1;  // FIXME: Hack, temporary static variables to get rid of compile errors
 static BOOL _bClickAny = 1;
 
+// accumulator for mouse wheel deltas
+static int s_areaWheelAccum = 0;
+
 // 1 if inc to next, 0 if not
 const int abPos[NUM_AREA_BUTTONS] = { 1, 1, 1, 1, 1, 1, 0, 1, 0, 0, 0, 0, 1, 0, 1, 0, 1 };
 const int abID[NUM_AREA_BUTTONS]  = { IDC_AREA_COMBAT,  IDC_AREA_CLOCK,        IDC_AREA_COUNTER,
@@ -440,6 +443,7 @@ void CWndUnitStat::SetUnit( CUnit* pUnit )
 
 BEGIN_MESSAGE_MAP( CWndUnitStat, CWndStatBar )
 //{{AFX_MSG_MAP(CWndUnitStat)
+ON_WM_MOUSEWHEEL( )
 ON_WM_MOUSEMOVE( )
 ON_WM_PAINT( )
 //}}AFX_MSG_MAP
@@ -2142,7 +2146,7 @@ void CWndArea::TurnClock( )
 
     ASSERT_STRICT_VALID( &theMap );
     theApp.m_wndWorld.NewDir( );
-    // GGTESTING	InvalidateWindow ();
+    InvalidateWindow ();
     InvalidateSound( );
 }
 
@@ -2154,7 +2158,7 @@ void CWndArea::TurnCounter( )
 
     ASSERT_STRICT_VALID( &theMap );
     theApp.m_wndWorld.NewDir( );
-    // GGTESTING	InvalidateWindow ();
+    InvalidateWindow ();
     InvalidateSound( );
 }
 
@@ -4380,6 +4384,32 @@ void CWndArea::SetMouseState( )
 
     m_uMouseMode = lmb_nothing;
     ::SetCursor( m_hCurReg );
+}
+
+BOOL CWndArea::OnMouseWheel( UINT nFlags, short zDelta, CPoint pt )
+{
+    // accumulate wheel deltas; require two notches (2 * WHEEL_DELTA) to trigger a zoom
+    s_areaWheelAccum += (int)zDelta;
+
+    const int needed = 2 * WHEEL_DELTA;
+
+    if ( s_areaWheelAccum >= needed )
+    {
+        // scroll in by 2 clicks => zoom in
+        s_areaWheelAccum = 0;
+        ZoomIn( );
+        return TRUE;  // handled
+    }
+    else if ( s_areaWheelAccum <= -needed )
+    {
+        // scroll out by 2 clicks => zoom out
+        s_areaWheelAccum = 0;
+        ZoomOut( );
+        return TRUE;  // handled
+    }
+
+    // not enough accumulation yet; let base class handle any default behavior
+    return CWndAnim::OnMouseWheel( nFlags, zDelta, pt );
 }
 
 void CWndArea::OnKeyUp( UINT nChar, UINT nRepCnt, UINT nFlags )

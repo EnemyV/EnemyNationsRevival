@@ -386,6 +386,9 @@ protected:
 	afx_msg BOOL OnQueryNewPalette();
 	//}}AFX_MSG
 	DECLARE_MESSAGE_MAP()
+
+  protected:
+    bool m_bInitComplete = false;
 };
 
 

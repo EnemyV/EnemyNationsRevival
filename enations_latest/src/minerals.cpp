@@ -110,7 +110,7 @@ void CMineralHex::Close ()
 	RemoveAll ();
 }
 
-void SerializeElements (CArchive & ar, CMinerals * * ppMn, int nCount)
+/* void SerializeElements( CArchive& ar, CMinerals** ppMn, int nCount )
 {
 
 	while (nCount--)
@@ -124,6 +124,25 @@ void SerializeElements (CArchive & ar, CMinerals * * ppMn, int nCount)
 			}
 		ppMn++;
 		}
+}*/
+
+// explicit specialization fixes loaded game mineral bug
+template<>
+void AFXAPI SerializeElements<CMinerals*>( CArchive& ar, CMinerals** ppMn, INT_PTR nCount )
+{
+    {
+        while ( nCount-- )
+        {
+            if ( ar.IsStoring( ) )
+                ar << *( *ppMn );
+            else
+            {
+                *ppMn = new CMinerals( );
+                ar >> *( *ppMn );
+            }
+            ppMn++;
+        }
+    }
 }
 
 

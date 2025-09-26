@@ -79,6 +79,10 @@ public:
 };
 
 extern CMineralHex theMinerals;
-extern void SerializeElements (CArchive & ar, CMinerals * * pMn, int nCount);
+extern void SerializeElements(CArchive& ar, CMinerals** pMn, int nCount);
+
+template<>
+void AFXAPI SerializeElements<CMinerals*>( CArchive& ar, CMinerals** ppMn, INT_PTR nCount );
+
 
 #endif

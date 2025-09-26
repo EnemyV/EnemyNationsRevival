@@ -242,7 +242,7 @@ void CWndWorld::Create(BOOL bStart) {
     }
 
     // draw it
-    //ReRender(); // don't draw it?
+    ReRender();
 }
 
 BEGIN_MESSAGE_MAP(CWndWorld, CWndAnim)

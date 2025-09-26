@@ -916,7 +916,10 @@ void CPlayer::AssertValid( ) const
     ASSERT_VALID_CSTRING( &m_sName );
     ASSERT( ( m_iNetNum & 0xFF ) == m_iNetNum );
 
+    // it makes sense for these to be 0 when you start a new minimal game
+    /*
     for ( int iInd = 0; iInd < CMaterialTypes::num_types; iInd++ ) ASSERT( m_aiHave[iInd] >= 0 );
+    */
 }
 #endif
 

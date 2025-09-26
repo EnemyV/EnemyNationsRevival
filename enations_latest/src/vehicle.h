@@ -234,7 +234,7 @@ class CMsgVehSetDest;
 
 class CVehicle : public CUnit
 {
-friend CMsgVehCompLocElem CMsgVehCompLocElem::operator= ( CVehicle const & src );
+friend const CMsgVehCompLocElem CMsgVehCompLocElem::operator = ( CVehicle const & src );
 friend static void SetVehDest (CMsgVehSetDest * pMsg);
 friend static void LoadCarrier (CMsgLoadCarrier * pMsg);
 friend static void UnloadCarrier (CMsgUnloadCarrier * pMsg);

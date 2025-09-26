@@ -150,7 +150,7 @@ public:
 	//{{AFX_DATA(CDlgResearch)
 	enum { IDD = IDD_RESEARCH };
 	CWndOD< CButton >	m_btnDiscovery;
-	CListBox	m_lstRsrch;
+    CResearchListBox m_lstRsrch;
 	//}}AFX_DATA
 
 

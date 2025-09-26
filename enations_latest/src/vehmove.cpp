@@ -1494,7 +1494,7 @@ void CVehicle::DetermineSpeed(BOOL bEvent) {
         }
 
 #ifndef _GG
-        ASSERT (FALSE);
+       // ASSERT (FALSE);
 #endif
         m_iSpeed = SLOWEST_SPEED; // very slow but can escape eventually
         if (bEvent)

@@ -1803,6 +1803,7 @@ void CDIB::Copy( LPBITMAPINFO lpBmi, void const* pvBits ) {
 
     ASSERT_STRICT_VALID( this );
 
+    // VT: Does this take into account 24 and 32bit gfx?
     // GG: Shortcut - also handles 8-bit DIB w/ non-palettized screen
     if ( lpBmi->bmiHeader.biBitCount == GetBitsPerPixel() && lpBmi->bmiHeader.biBitCount != 16 ) {
         Resize( lpBmi->bmiHeader.biWidth, abs( lpBmi->bmiHeader.biHeight ) );

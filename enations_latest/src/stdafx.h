@@ -35,6 +35,7 @@
 
 //#define MEM_DEBUG	1
 #include "vdmplay.h"
+#include "base.h"
 #include "windward.h"
 
 

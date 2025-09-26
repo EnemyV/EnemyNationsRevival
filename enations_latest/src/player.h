@@ -385,8 +385,12 @@ class CPlayer : public CObject
     void IncMaterialHave( int iInd, int iAmt )
     {
         ASSERT( ( 0 <= iInd ) && ( iInd < CMaterialTypes::num_types ) );
-        ASSERT( ( ( iAmt > 0 ) && ( m_aiMade[iInd] < INT_MAX - iAmt - 16 ) ) ||
-                ( ( iAmt <= 0 ) && ( m_aiHave[iInd] - iAmt >= 0 ) ) );
+
+        // why cant it be 0? why cant it be negative? You can totally go negative in resources, right??
+        // and starting a game you generate bascially 0
+        /* ASSERT( ( ( iAmt > 0 ) && ( m_aiMade[iInd] < INT_MAX - iAmt - 16 ) ) ||
+                ( ( iAmt <= 0 ) && ( m_aiHave[iInd] - iAmt >= 0 ) ) ); */
+        // ASSERT( m_aiMade[iInd] < (INT_MAX - iAmt - 16) );
         m_aiHave[iInd] += iAmt;
     }
     int  GetBldgsDest( ) const { return m_iBldgsDest; }

@@ -2211,6 +2211,8 @@ CPoint  // View coordinates
 CAnimAtr::WorldToView( const CMapLoc3D& maploc3d ) const
 {
     int iNewX, iNewY;
+    iNewX = 0;
+    iNewY = 0;
 
     switch ( m_iDir )
     {
@@ -2234,6 +2236,8 @@ CAnimAtr::WorldToView( const CMapLoc3D& maploc3d ) const
         iNewY = ( maploc3d.x + maploc3d.y ) >> 1;
         ;
         break;
+    default:
+        TRAP( );
     }
 
     Fixed fixY = maploc3d.m_fixZ << TERRAIN_HT_SHIFT;

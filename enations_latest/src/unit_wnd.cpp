@@ -1513,14 +1513,21 @@ BOOL CDlgBuildTransport::OnInitDialog() {
     UpdateChoices();
 
     ASSERT_VALID (this);
+
+    
+    // now it's safe for handlers to call UpdateData(TRUE)
+    m_bInitComplete = true;
+
     return (TRUE);
 }
 
 void CDlgBuildTransport::OnChangeNum() {
-
-    UpdateData(TRUE);
-    m_iNum = atoi(m_sNum);
-    InvalidateRect(&rectTranText, FALSE);
+    if ( m_bInitComplete )
+    {
+        UpdateData( TRUE );
+        m_iNum = atoi( m_sNum );
+        InvalidateRect( &rectTranText, FALSE );
+    }
 }
 
 void CDlgBuildTransport::UpdateChoices() {

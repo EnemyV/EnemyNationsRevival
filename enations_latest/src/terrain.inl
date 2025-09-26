@@ -2,7 +2,12 @@
 #define __TERRAIN_INL__
 
 #include "terrain.h"
+#include "base.h"
 #include "building.h"
+
+#ifndef __BASE_H__
+#warning "base.h must be included before including this .inl file!"
+#endif
 
 // CHexCoord
 // FIXMEFIXME
@@ -39,7 +44,9 @@ inline void CHexCoord::Yinc() { m_iY++; m_iY &= theMap.m_iHexMask; }
 inline void CHexCoord::Xdec() { m_iX--; m_iX &= theMap.m_iHexMask; }
 inline void CHexCoord::Ydec() { m_iY--; m_iY &= theMap.m_iHexMask; }
 
-// same here, something ip! // FIXMEFIXME
+// same here, something up! // FIXMEFIXME
+// actually, i dont think there's a issue, false error?
+// in debug, i saw no issues
 inline BOOL CHexCoord::SameHex( CSubHex src ) const {
     return ( ( m_iX == src.x >> 1 ) && ( m_iY == src.y >> 1 ) );
 }
@@ -48,7 +55,9 @@ inline BOOL	CHexCoord::IsInvalidated() const { return theMap.GetHexValidMatrix()
 inline void CHexCoord::ClearInvalidated() { theMap.GetHexValidMatrix()->Clear(); }
 
 // what's wrong here?  // FIXMEFIXME
-inline CSubHex::CSubHex( const CHexCoord& hex ) { x = hex.X() << 1; y = hex.Y() << 1; }
+inline CSubHex::CSubHex( const CHexCoord& hex ) {
+    x = hex.X() << 1; y = hex.Y() << 1; 
+}
 
 inline CSubHex::CSubHex( CMapLoc const& pt ) {
     x = pt.x >> HEX_HT_PWR - 1;

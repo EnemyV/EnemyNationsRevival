@@ -30,14 +30,14 @@ set(enations_sources
         chat.cpp
         chatbar.cpp
         chproute.cpp
-        citizen.cpp
+#        citizen.cpp # looks unused, i think an old ai or something?
         cpathmap.cpp
         cpathmgr.cpp
         creatmul.cpp
         creatsin.cpp
         credits.cpp
         cutscene.cpp
-#        dlgflic.cpp
+#        dlgflic.cpp # is used?
         DlgMsg.cpp
         DlgReg.cpp
         dxfer.cpp
@@ -87,7 +87,8 @@ set(enations_sources
         vehoppo.cpp
         vpxfer.cpp
         world.cpp
-        wrldinit.cpp mem_pool.h)
+        wrldinit.cpp
+        mem_pool.h)
 
 
 set(CMAKE_GENERATOR_TOOLSET "host=x86")
@@ -105,8 +106,11 @@ add_executable(enations WIN32 ${enations_sources})
 
 # according to enations.mak this should be MT
 # but i think it used to be MD?
+# should be /Zi for release
+# /Z7 for profiling
+# BUGBUGTODO change back to /Zi
 target_compile_options(enations INTERFACE
-    $<$<CONFIG:Release>:/MD /EHsc /O2 /Ob2 /Zi>
+    $<$<CONFIG:Release>:/MD /EHsc /O2 /Ob2 /Z7>
     $<$<CONFIG:Debug>:/MDd /EHsc /Zi>
 )
 
@@ -139,6 +143,7 @@ target_compile_definitions(enations PUBLIC
         _X86_ # HACK! This should not need to be defined here!
         WIN32
         LOGGINGON        
+        _LOGOUT
         $<$<CONFIG:Release>:NDEBUG>
         $<$<CONFIG:Debug>:_DEBUG>
         )

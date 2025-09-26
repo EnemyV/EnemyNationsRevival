@@ -647,8 +647,31 @@ int fnEnumHex2 (CHex *pHex, CHexCoord _hex, void *);
 
 void CExplosion::Operate ()
 {
-
     ASSERT_VALID (this);
+
+    // VTBUGBUG
+    // this shouldnt be nessasary:
+    // 
+    // --- Safety checks to avoid dereferencing NULL sprite/view/ambient ---
+    // Why was this added? Some explosions were crashing the game.
+    CSprite* pSprite = GetSprite( );
+    if ( pSprite == NULL )
+    {
+        // No sprite attached - remove and destroy this explosion to avoid repeated crashes
+        theProjMap.Remove( this );
+        delete this;
+        return;
+    }
+
+    CSpriteView* pView = GetView( );
+    if ( pView == NULL )
+    {
+        // No view available - remove and destroy
+        theProjMap.Remove( this );
+        delete this;
+        return;
+    }
+
 
     int iOn = GetFrame( CSpriteView::ANIM_FRONT_1 );
     BOOL	bFinished = GetAmbient( CSpriteView::ANIM_FRONT_1 )->IsOneShotFinished( GetView() );

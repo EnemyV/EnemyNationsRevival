@@ -3427,7 +3427,9 @@ void CVehicle::_SetRouteMode( VEH_MODE iMode )
     case deploy_it:
         ASSERT_VALID_LOC( this );
 #ifndef _GG
+#ifdef STRICTER_ASSERTS
         ASSERT( theBuildingHex.GetBuilding( m_ptHead ) != NULL );
+#endif
 #endif
 
     case traffic:

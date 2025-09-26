@@ -1117,8 +1117,9 @@ void CMsgBuildVeh::AssertValid( ) const
 
 void CMsgBuildRoad::AssertValid( ) const
 {
-
-    ASSERT( m_bMsg == build_road );
+    // 67 is err_build_road
+    // is that .. valid? a valid error message?
+    ASSERT( m_bMsg == build_road  || m_bMsg == err_build_road);
 
     _CMsgRoad::AssertValid( );
 }

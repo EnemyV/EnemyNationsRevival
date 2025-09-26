@@ -480,7 +480,7 @@ CSpriteDIB::TerrainDraw() const {
     }
 
     int iCursorMode = phex->GetCursorMode();
-    int iColor;
+    int iColor = -1;
 
     switch (iCursorMode) {
         case CHex::no_cur:

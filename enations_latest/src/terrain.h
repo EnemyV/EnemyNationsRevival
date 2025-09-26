@@ -11,6 +11,7 @@
 
 // terrain.h : header file for all hex/terrain stuff
 //
+#include "stdafx.h"
 
 #include "base.h"
 #include "sprite.h"
@@ -349,7 +350,7 @@ public:
 	int			WrapY (int y) const;
 	void		SpiralHexes (CHexCoord const & hex, int iRadius, int (fnEnum) (CHex * pHex, CHexCoord hex, void  *pData), void  *pData = NULL);
 	void		EnumHexes (CHexCoord const & hex, int ex, int ey, int (fnEnum) (CHex * pHex, CHexCoord hex, void  *pData), void  *pData = NULL);
-	void	  _EnumHexes( CHexCoord const & hex, int ex, int ey, int (fnEnum) (CHex * pHex, CHexCoord hex, void  *pData), void  *pData = NULL );
+	void		_EnumHexes( CHexCoord const & hex, int ex, int ey, int (fnEnum) (CHex * pHex, CHexCoord hex, void  *pData), void  *pData = NULL );
 	void		DirMult (int iDir, int *pInt) const;
 
 	// building stuff

@@ -2964,6 +2964,7 @@ CBuilding* CBuilding::Create( CHexCoord const& hex, int iBldg, int iBldgDir, CVe
 #endif
 
     // now set m_bVisible to 0 for our landing block
+    // since we start with the entire landing area visible
     if ( ( bRocket ) && ( pBldg->GetOwner( )->IsMe( ) ) )
     {
         CHexCoord hexVis( theGame.GetMe( )->m_hexMapStart.X( ) - theGame.GetSideSize( ) / 2,
@@ -5062,7 +5063,7 @@ CVehicle* CVehicle::Create( const CSubHex& ptHead, const CSubHex& ptTail, int iV
         pVeh->GetTurret( )->SetDir( pVeh->m_iDir );
 
     pVeh->m_hexDest   = hexDest;
-    pVeh->m_ptDest    = hexDest;
+    pVeh->m_ptDest    = CSubHex( hexDest );  // i wonder if this is correct
     pVeh->m_iSpeed    = 0;
     pVeh->m_iDestMode = sub;
     pVeh->SetLoc( TRUE );
@@ -6504,7 +6505,10 @@ void CVehicle::AssertValidAndLoc( ) const
 
         if ( !( GetData( )->GetVehFlags( ) & CTransportData::FL1hex ) )
 #ifndef _GG
+#if STRICTER_ASSERTS
+            // triggers on every vehicle spawn
             ASSERT( m_iDir == aiDir[GetDirIndex( m_ptHead, m_ptTail )] )
+#endif
 #endif
                 ;
     }

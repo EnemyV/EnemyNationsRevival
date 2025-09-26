@@ -2,12 +2,20 @@
 #define VPSYSTEM
 #endif
 
+/*
 #include "vdmplay/help.h"
 #include "vdmplay/resource.h"
 #include "stdafx.h"
-#include "vdmplay/base.h"
+//#include "vdmplay/base.h"
+#include "base.h"
 //#include "vdmplay/resource.h" // needed for IDC_* etc.
 #include "vdmplay/vputil.h"   // needed for vpFetchInt etc.
+*/
+
+#include "stdafx.h"
+#include "base.h"
+#include "resource.h"
+#include "help.h"
 #include "version.h"
 
 #ifndef WIN32

@@ -283,13 +283,22 @@ void CDlgResearch::DoDataExchange( CDataExchange* pDX )
 
 int CResearchListBox::CompareItem( LPCOMPAREITEMSTRUCT lpCompareItemStruct )
 {
+    int i1 = lpCompareItemStruct->itemID1;
+    int i2 = lpCompareItemStruct->itemID2;
+
+    int nCount = GetCount( );
+    if ( i1 < 0 || i1 >= nCount )
+        return -1;  // or 0
+    if ( i2 < 0 || i2 >= nCount )
+        return 1;  // or 0
+
     CString str1, str2;
+    GetText( i1, str1 );
+    GetText( i2, str2 );
 
-    GetText( lpCompareItemStruct->itemID1, str1 );
-    GetText( lpCompareItemStruct->itemID2, str2 );
-
-    return str1.Compare( str2 );  // negative if str1<str2, 0 if equal, positive if str1>str2
+    return str1.Compare( str2 );  // alphabetical comparison
 }
+
 
 
 BEGIN_MESSAGE_MAP( CDlgResearch, CDialog )

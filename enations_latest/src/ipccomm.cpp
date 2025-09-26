@@ -596,6 +596,8 @@ LONG CWndComm::OnCreateChatMsg( UINT uParam, LONG lParam )
 
 	// cause the message list box to update its display
 	m_plbEMail->LoadEmail();
+
+	return TRUE; // I.. dont know??
 }
 
 LONG CWndComm::OnReplyEmailWnd( UINT uParam, LONG )
