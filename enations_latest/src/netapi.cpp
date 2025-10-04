@@ -698,37 +698,13 @@ void CGame::AddToQueue( CNetCmd const* pCmd, int iLen )
 
     memcpy( pBuf, pCmd, iLen );
 
-#ifdef LOGGINGON
-   // str.Format( "pBuf before setting MemPool type %d", ( (CNetCmd*)pBuf )->GetType( ) );
-  //  OutputDebugStringA( str );
-  //  OutputDebugStringA( "\n" );
-#endif
-
     if ( iLen <= MSG_POOL_SIZE )
         ( (CNetCmd*)pBuf )->m_bMemPool = 1;
     else
         ( (CNetCmd*)pBuf )->m_bMemPool = 0;
 
-    // check that it's the same message?
-
-#ifdef LOGGINGON
-  //  if ( iLen == 0 )
-  //  {
-  //      OutputDebugStringA( "0 length pMsg in AddToQueue?!" );
- //   }
- //   str.Format( "Added type %d", ( (CNetCmd*)pBuf )->GetType( ) );
- //   OutputDebugStringA( str );
- //   OutputDebugStringA( "\n" );
-#endif
-
     EnterCriticalSection( &cs );
     m_messagePointerList.AddTail(pBuf );
-
-#ifdef LOGGINGON
- //   str.Format( "pBuf after AddTail %d, [%d]", ( (CNetCmd*)pBuf )->GetType( ), theGame.m_messagePointerList.GetCount( ) );
- //   OutputDebugStringA( str );
- //   OutputDebugStringA( "\n" );
-#endif
     
 #ifdef LOGGINGON
     char* pBufChar = (char*)theGame.m_messagePointerList.GetTail( );
