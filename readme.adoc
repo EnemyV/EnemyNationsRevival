@@ -3,13 +3,17 @@ Blair "Bobbias" Stacey <bobbias@gmail.com>
 v1.0, $DATE$
 :toc:
 :imagesdir: /
-:homepage: https://github.com/bobbias/EnemyNations
+:homepage: https://github.com/EnemyV/EnemyNationsRevival/
 // see: https://asciidoctor.org/docs/user-manual/#table-of-contents-summary
 :toc-title: Table of Contents
 // how many headline levels to display in table of contents?
 :toclevels: 2
 
 == Introduction
+
+Gameplay videos here (old retail version running on modern OS):
+https://youtu.be/2frnj2uHqWI
+https://youtu.be/sWHDBbYF9C4
 
 image::Enemy_Nations_cover.jpg[Enemy Nations Cover]
 
