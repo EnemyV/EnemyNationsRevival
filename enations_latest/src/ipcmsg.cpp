@@ -49,7 +49,11 @@ char * CMsgIPC::ToBuf (int * piLen)
 		return (NULL);
 		}
 
-	memcpy (pRtn, this, sizeof (CMsgIPC));
+	memcpy( pRtn, this, sizeof( CMsgIPC ) );
+		
+    // Mark this as NOT allocated from the memory pool
+    ( (CMsgIPC*)pRtn )->m_bMemPool = 0;
+
 	char *pTmp = pRtn + sizeof (CMsgIPC);
 
 	strcpy (pTmp, m_sMessage);
