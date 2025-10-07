@@ -228,6 +228,11 @@ void myYieldThread() {
             myThreadTerminate();
             TRAP();
         }
+
+    if ( SwitchToThread( ) == 0 )
+    {
+        Sleep( 0 );
+    }
 }
 
 void myPauseThread( BOOL bPause ) {
