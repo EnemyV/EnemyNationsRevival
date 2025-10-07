@@ -95,15 +95,6 @@ set(CMAKE_GENERATOR_TOOLSET "host=x86")
 
 add_executable(enations WIN32 ${enations_sources})
 
-#target_compile_options(enations INTERFACE
-#        "$<$<CONFIG:RELEASE>:$<BUILD_INTERFACE:/MD;/EHsc;/Zi;/O2;/Ob2;/DEBUG>"
-#        "$<$<CONFIG:DEBUG>:$<BUILD_INTERFACE:/MD;/EHsc>"
-#        )
-#target_compile_options(enations INTERFACE
-#        "$<$<CONFIG:RELEASE>:$<BUILD_INTERFACE:/MT;/EHsc;/Zi;/O2;/Ob2>" # should be /NDEBUG??
-#        "$<$<CONFIG:DEBUG>:$<BUILD_INTERFACE:/MTd;/EHsc;/Zi>"
-#        )
-
 # according to enations.mak this should be MT
 # but i think it used to be MD?
 # should be /Zi for release
@@ -116,13 +107,7 @@ target_compile_options(enations INTERFACE
 
 set(CMAKE_MFC_FLAG 2)
 
-#target_compile_options(enations PRIVATE
-#    $<$<CONFIG:RELEASE>:/MD;/EHsc;/Zi;/O2;/Ob2>
-#    $<$<CONFIG:DEBUG>:/MDd;/EHsc;/Zi>
-#)
 message("CMAKE_CXX_FLAGS: ${CMAKE_CXX_FLAGS}")
-
-# set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
 
 get_target_property(copts enations COMPILE_OPTIONS)
@@ -142,8 +127,10 @@ target_compile_definitions(enations PUBLIC
         _MBCS
         _X86_ # HACK! This should not need to be defined here!
         WIN32
-        LOGGINGON        
-        _LOGOUT
+        # LOGGINGON        
+        # _LOGOUT
+        # STRICTER_ASSERTS ## these prob all need to be fixed
+        # THREADS_ENABLED # here's hoping!!
         $<$<CONFIG:Release>:NDEBUG>
         $<$<CONFIG:Debug>:_DEBUG>
         )
@@ -153,13 +140,6 @@ target_precompile_headers(enations PRIVATE stdafx.h)
 
 get_target_property(cdefs enations COMPILE_DEFINITIONS)
 message("cdefs: ${cdefs}")
-
-#arget_include_directories(enations PUBLIC
-     #   .
-     #   ./tools/
-     #   ../../cmake-build-release/tools
-       # ../../cmake-build-release/windward/wind22/Debug
-      #  ../../windward/wind22/include)
         
 target_include_directories(enations PUBLIC
         ../../tools/
@@ -192,28 +172,8 @@ target_link_options(enations PUBLIC
         /INCREMENTAL:NO
         )
         
-        
-        
-#if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-#    target_link_directories(enations PUBLIC
-#        .
-#        ../../tools/lib
-#        ../../cmake-build-release/tools/vdmplay/Debug
-#        ../../cmake-build-release/windward/wind22/Debug
-#    )
-#else()
-  #  target_link_directories(enations PUBLIC
-  #      .
-  #      ../../tools/lib
-  #      ../../cmake-build-release/tools/vdmplay/
-  #      ../../cmake-build-release/windward/wind22/
- #   )
-#endif()
-
-
 
     target_link_directories(enations PUBLIC        
-      # "E:/Games/Enemy Nations Source/EnemyNations-master/tools/lib"
         ../../cmake-build-release/tools/lib
         ../../cmake-build-release/tools/vdmplay/$<CONFIG>
         ../../cmake-build-release/windward/wind22/$<CONFIG>
