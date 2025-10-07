@@ -1698,8 +1698,10 @@ void CGameMap::MakeRiver( int x, int y, BOOL& bFound )
 
     // keep making the lowest neighbor a river till we hit water
     //   or can't go down
-    while ( TRUE )
+    int count = 0;
+    while ( count < 32765 ) // this was TRUE, but would take forever sometimes
     {
+        count++;
         for ( iInd = 0; iInd < 4; iInd++ )
         {
             CHex* pHex    = GetHex( CHexCoord( x + aAlt[iInd][0], y + aAlt[iInd][1] ) );
