@@ -6389,6 +6389,7 @@ void CVehicle::AssertValid( ) const
     ASSERT_VALID_STRUCT( &m_ptHead );
     ASSERT_VALID_STRUCT( &m_ptTail );
 #ifndef _GG
+#if STRICTER_ASSERTS
     if ( GetData( )->GetVehFlags( ) & CTransportData::FL1hex )
         ASSERT( m_ptHead == m_ptTail );
     else
@@ -6397,6 +6398,7 @@ void CVehicle::AssertValid( ) const
             ( abs( CSubHex::Diff( m_ptNext.y - m_ptHead.y ) ) < 2 ) );
     ASSERT( ( abs( CSubHex::Diff( m_ptHead.x - m_ptTail.x ) ) < 2 ) &&
             ( abs( CSubHex::Diff( m_ptHead.y - m_ptTail.y ) ) < 2 ) );
+#endif
 #endif
 
     CHexCoord _hex( m_ptHead );
