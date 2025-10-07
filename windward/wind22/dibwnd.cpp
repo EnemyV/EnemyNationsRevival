@@ -12,6 +12,13 @@ BOOL CDIBWnd::Init( HWND hWnd, Ptr<CDIB> const& dib, int cx, int cy ) {
     m_hWnd = hWnd;
     m_ptrdib = dib;
 
+    // release saved HDC if we have one to prevent leaking (shouldn't be one, but just in case)
+    if ( m_hDC != NULL && m_hWnd != NULL )
+    {
+        ::ReleaseDC( m_hWnd, m_hDC );
+        m_hDC = NULL;
+    }
+
     // attempt to get a DC for the window - store it for quick use (if available)
     HDC hdc = ::GetDC( m_hWnd );
     if ( hdc != NULL )
