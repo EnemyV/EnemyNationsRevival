@@ -680,6 +680,7 @@ void CMusicPlayer::Open( int iMusicVol, int iSoundVol, MUSIC_MODE iMode, int iGr
 
 void CMusicPlayer::InitData( MUSIC_MODE iMode, int iGrp ) {
 
+    // GG didn't like the music maybe?
 #ifdef _GG
     return;
 #endif
@@ -1280,7 +1281,10 @@ void CMusicPlayer::PlayForegroundSound( int iSound, int iPri, int iPan, int iVol
             if ( pRaw->m_iIsFore == CRawChannel::fore ) {
                 // if playing - return
                 if ( pRaw->m_iForeSound == iSound ) {
+#ifdef STRICTER_ASSERTS
+                    // do we not like to play it twice or something?
                     TRAP();
+#endif
                     return;
                 }
 

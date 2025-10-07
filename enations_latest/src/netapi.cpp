@@ -656,7 +656,17 @@ void CGame::AddToQueue( CNetCmd const* pCmd, int iLen )
 #endif
 
     ASSERT_VALID( this );
+
+    pCmd->AssertMsgValid( );
     // can't do - previous messages may need to be processed first	ASSERT_CMD (pCmd);
+
+    // check if the command id is too high:
+    int msgType = pCmd->GetType( );
+    if ( msgType < 0 || msgType >= CNetCmd::last_message )
+    {
+        TRACE( "ProcessMessage: Invalid message type %d (corrupted message?)\n", msgType );
+        return;  // Skip corrupted messages instead of asserting
+    }
 
 #ifdef _LOG_LAG
     ( (CNetCmd*)pCmd )->dwPostTime = timeGetTime( );
@@ -672,8 +682,11 @@ void CGame::AddToQueue( CNetCmd const* pCmd, int iLen )
     }
 #endif
 
+    EnterCriticalSection( &cs );
+
     void* pBuf;
     TRAP( iLen > VP_MAXSENDDATA );
+
     if ( iLen <= MSG_POOL_SIZE )
         pBuf = m_memPoolSmall.alloc();
     else
@@ -691,56 +704,57 @@ void CGame::AddToQueue( CNetCmd const* pCmd, int iLen )
 #endif
 
     // Zero out the memory
+    // (should be done in the memory_pool strat now)
    // if ( iLen <= MSG_POOL_SIZE )
    //     memset( pBuf, 0, MSG_POOL_SIZE );  // harcoded from memory pool sizes
    // else
    //     memset( pBuf, 0, VP_MAXSENDDATA );
 
-    memcpy( pBuf, pCmd, iLen );
+    // Validate buffer before memcpy**
+    ASSERT( pBuf != NULL );
+    ASSERT( iLen > 0 );
+    ASSERT( pCmd != NULL );
 
-#ifdef LOGGINGON
-   // str.Format( "pBuf before setting MemPool type %d", ( (CNetCmd*)pBuf )->GetType( ) );
-  //  OutputDebugStringA( str );
-  //  OutputDebugStringA( "\n" );
-#endif
+    memcpy( pBuf, pCmd, iLen );  // crashes here sometimes, pBuf is null? 
+    // once happened when building a lumber mill
+    // didn't happen when idling, but maybe the ai was too?
 
     if ( iLen <= MSG_POOL_SIZE )
         ( (CNetCmd*)pBuf )->m_bMemPool = 1;
     else
         ( (CNetCmd*)pBuf )->m_bMemPool = 0;
 
-    // check that it's the same message?
 
-#ifdef LOGGINGON
-  //  if ( iLen == 0 )
-  //  {
-  //      OutputDebugStringA( "0 length pMsg in AddToQueue?!" );
- //   }
- //   str.Format( "Added type %d", ( (CNetCmd*)pBuf )->GetType( ) );
- //   OutputDebugStringA( str );
- //   OutputDebugStringA( "\n" );
-#endif
-
-    EnterCriticalSection( &cs );
     m_messagePointerList.AddTail(pBuf );
-
-#ifdef LOGGINGON
- //   str.Format( "pBuf after AddTail %d, [%d]", ( (CNetCmd*)pBuf )->GetType( ), theGame.m_messagePointerList.GetCount( ) );
- //   OutputDebugStringA( str );
- //   OutputDebugStringA( "\n" );
-#endif
     
 #ifdef LOGGINGON
-    char* pBufChar = (char*)theGame.m_messagePointerList.GetTail( );
+    char*    pBufChar  = (char*)theGame.m_messagePointerList.GetTail( );
 
     str;
-    str.Format( "Verifying type %d (old is %d, origi is %d, orig cast is %d [%d])\n", ((CNetCmd*)pBufChar )->GetType( ),  
-        ( (CNetCmd*)pBuf )->GetType( ), pCmd->GetType( ), ( (CNetCmd*)pCmd )->GetType( ), 
-        theGame.m_messagePointerList.GetCount());
+    if ( theGame.m_messagePointerList.GetCount( ) >= 2 )
+    {
+        POSITION posTail   = theGame.m_messagePointerList.GetTailPosition( );
+        char*    pBufChar2 = (char*)theGame.m_messagePointerList.GetAt( posTail );
+
+        str.Format( "Verifying type %d (old is %d, origi is %d, orig cast is %d [list count %d]), previous type %d\n",
+                    ( (CNetCmd*)pBufChar )->GetType( ), ( (CNetCmd*)pBuf )->GetType( ), pCmd->GetType( ),
+                    ( (CNetCmd*)pCmd )->GetType( ), theGame.m_messagePointerList.GetCount( ),
+                    ( (CNetCmd*)pBufChar2 )->GetType( ) );
+    }
+    else
+    {
+        str.Format( "Verifying type %d (old is %d, origi is %d, orig cast is %d [list count %d])\n",
+                    ( (CNetCmd*)pBufChar )->GetType( ), ( (CNetCmd*)pBuf )->GetType( ), pCmd->GetType( ),
+                    ( (CNetCmd*)pCmd )->GetType( ), theGame.m_messagePointerList.GetCount( ) );
+    
+    }
     OutputDebugStringA( str );
  //   OutputDebugStringA( pBufChar );
     OutputDebugStringA( "\n" );
+
+    
 #endif
+
 
     // throttle messages off if a net game
     if ( ( theGame.IsNetGame( ) ) && ( !theGame.ShouldPause() ) )
@@ -2808,6 +2822,19 @@ static void NeedSaveInfo( CNetNeedSaveInfo* pMsg )
 
 void CGame::ProcessMessage(CNetCmd* pCmd )
 {
+    // Add validation for corrupted messages**
+    if ( pCmd == NULL )
+    {
+        TRACE( "ProcessMessage: NULL command pointer\n" );
+        return;
+    }
+
+    int msgType = pCmd->GetType( );
+    if ( msgType < 0 || msgType >= CNetCmd::last_message )
+    {
+        TRACE( "ProcessMessage: Invalid message type %d (corrupted message?)\n", msgType );
+        return;  // Skip corrupted messages instead of asserting
+    }
 
 #ifdef _LOG_LAG
     if ( theApp.m_pLogFile != NULL )
@@ -3428,7 +3455,7 @@ void CGame::ProcessMessage(CNetCmd* pCmd )
             pPlr->UpdateRacialAttributes( pMsg->m_iRsrch );
             ( pPlr->GetRsrch( pMsg->m_iRsrch ) ).m_bDiscovered = TRUE;
         }
-        // cheat - give it to the AI
+        // cheat - give it to the AI (wait, does this mean ai gets all tecks anybody researches??)
         if ( !pPlr->IsAI( ) )
             for ( POSITION pos = m_lstAi.GetHeadPosition( ); pos != NULL; )
             {
@@ -3447,6 +3474,8 @@ void CGame::ProcessMessage(CNetCmd* pCmd )
 
     // we couldn't handle the message!!
     default:
+        // WE OFTEN GET A "221" msgKind, not sure where it's from..
+        // and every time it comes, as the game gets later, it seems to be more of them
         ASSERT( FALSE ); 
         break;
 #endif

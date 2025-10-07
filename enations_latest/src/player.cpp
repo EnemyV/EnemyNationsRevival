@@ -935,8 +935,10 @@ void CGame::_ctor( )
     ctor( );
 
     // block size, block count, flags
-    m_memPoolLarge = mempool_large( ); // MEM_POOL_SERIALIZE flag used indicates this needs to be usable multithreaded.
-    m_memPoolSmall = mempool_small( );
+   // m_memPoolLarge = mempool_large( );  // MEM_POOL_SERIALIZE flag used indicates this needs to be usable multithreaded.
+   // m_memPoolSmall = mempool_small( );
+    m_memPoolLarge.init( );
+    m_memPoolSmall.init( );
 
     // MemPoolInitFS creates a new memory pool from which fixed-size memory blocks are to be allocated. You must create
     // a memory pool before allocating fixed-size memory blocks.
@@ -2301,7 +2303,12 @@ int CGame::StartGame( BOOL bReplace )
         // but it was already done, maybe? ISSUE? crash?
         // 
         // create world for loaded game
-        theApp.m_wndWorld.Create( );  // world must come after area
+        // because only do it if its null?
+        if ( theApp.m_wndWorld.m_hWnd == NULL )
+        {
+            theApp.m_wndWorld.Create( );  // world must come after area
+        }
+
         pWndArea->SetFocus( );
     }
     EnableAllWindows( NULL, TRUE );

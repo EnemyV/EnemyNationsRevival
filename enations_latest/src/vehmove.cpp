@@ -32,12 +32,20 @@ const int MAX_TIMES_CIRCLE = 16;
 // the vehicle is moving
 void CVehicle::Move() {
 
+#ifdef STRICTER_ASSERTS
     ASSERT ((m_cMode == moving) && (m_cOwn));
+#endif
+
     ASSERT_VALID (this);
 #ifndef _GG
-    ASSERT (m_ptNext != m_ptHead);
+#ifdef STRICTER_ASSERTS
+    ASSERT( m_ptNext != m_ptHead );
 #endif
-    ASSERT (theVehicleHex.GetVehicle(m_ptNext) == this);
+#endif
+
+#ifdef STRICTER_ASSERTS
+    ASSERT( theVehicleHex.GetVehicle( m_ptNext ) == this );
+#endif
 
 #ifdef TEST_TRAFFIC
     TRAP ( ! m_cOwn );
@@ -104,7 +112,9 @@ void CVehicle::Move() {
         if (!FindNextHex()) {
             ASSERT_VALID (this);
 #ifndef _GG
+#ifdef STRICTER_ASSERTS
             ASSERT (m_cMode == blocked);
+#endif
 #endif
             goto Done;
         }
@@ -259,7 +269,9 @@ void CVehicle::ArrivedDest() {
 #endif
 
     ASSERT ((m_ptHead == m_ptDest) || (m_iEvent == load));
+#ifdef STRICTER_ASSERTS
     ASSERT ((m_cMode != moving) || (theVehicleHex.GetVehicle(m_ptNext) == this));
+#endif
 
     // we're stopped
     _SetRouteMode(stop);
@@ -553,8 +565,10 @@ BOOL CVehicle::FindNextHex() {
 
     // if blocked we are done
     if (!bRtn) {
-#ifndef _GG
+#ifndef _GGASSERT
+        #if STRICTER_ASSERTS
         ASSERT (m_cMode == blocked);
+        #endif
 #endif
         ZeroMoveParams();
 #ifdef _LOGOUT
@@ -1326,8 +1340,10 @@ void CVehicle::SetLoc(BOOL)
 #ifdef _DEBUG
     if (! bNew)
         {
+#ifdef STRICTER_ASSERTS
         ASSERT (x == m_maploc.x);
         ASSERT (y == m_maploc.y);
+#endif
         if (! (GetData()->GetVehFlags () & CTransportData::FL1hex))
         ASSERT (d == m_iDir);
         }
