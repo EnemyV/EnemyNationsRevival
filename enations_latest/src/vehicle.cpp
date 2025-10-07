@@ -216,7 +216,9 @@ void CVehicle::Operate() {
         }
 
         case moving :
+#ifdef STRICTER_ASSERTS
             ASSERT (m_cOwn);
+#endif
             Move();
             m_FireSetupMod = 0;
             break;

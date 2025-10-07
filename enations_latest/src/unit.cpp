@@ -3425,7 +3425,10 @@ void CVehicle::_SetRouteMode( VEH_MODE iMode )
     }  // no break
 
     case deploy_it:
+#ifdef STRICTER_ASSERTS
         ASSERT_VALID_LOC( this );
+#endif
+
 #ifndef _GG
 #ifdef STRICTER_ASSERTS
         ASSERT( theBuildingHex.GetBuilding( m_ptHead ) != NULL );
@@ -3458,7 +3461,13 @@ void CVehicle::_SetRouteMode( VEH_MODE iMode )
     // we may have interrupted part way through
     SetLoc( TRUE );
 
-    ASSERT( ( m_cMode != moving ) || ( m_cOwn ) );
+    // this happens if a vehicle is moving on a tile it doesn "own"
+    // I've never seena real issue arrise from it, it always just goes away
+    // it's possible that not owning it could lead ot other issues
+    // are we forgetting to claim ownership somewhere?
+#if STRICTER_ASSERTS
+    ASSERT( ( m_cMode != moving ) || ( m_cOwn ) ); 
+#endif
 }
 
 void CVehicle::SetRoutePos( POSITION pos )

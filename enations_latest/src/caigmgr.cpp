@@ -8194,9 +8194,17 @@ TryTryAgain:
                                 if ( pVehicle->GetTransport( ) != NULL )
                                     bIsCargo = TRUE;
                             }
+                            else 
+                            {
+                                // it's not where it's supposed to be!
+#ifdef STRICTER_ASSERTS
+                                ASSERT( FALSE );
+#endif
+                            }
                             LeaveCriticalSection( &cs );
 
-                            if ( iVehPlayer == m_iPlayer )
+
+                            if ( pVehicle != NULL && iVehPlayer == m_iPlayer )
                             {
                                 iOpForID    = 0;
                                 dwOpForUnit = 0;

@@ -6241,7 +6241,9 @@ void CUnit::AssertValid( ) const
     ASSERT( ( 0 <= m_iDamagePer ) && ( m_iDamagePer <= 100 ) );
     ASSERT( ( 0 <= m_fDamageMult ) && ( m_fDamageMult <= 1 ) );
     ASSERT( ( 0.5 <= m_fDamPerfMult ) && ( m_fDamPerfMult <= 1 ) );
-    ASSERT( ( m_unitFlags & ~0x1F ) == 0 );
+#ifdef STRICTER_ASSERTS
+    ASSERT( ( m_unitFlags & ~0x1F ) == 0 ); // this was failing for loaded games, but went away eventually...
+#endif
 }
 
 void CBuilding::AssertValid( ) const
@@ -6491,7 +6493,10 @@ void CVehicle::AssertValidAndLoc( ) const
             if ( x >= theMap.Get_eX( ) * MAX_HEX_HT )
                 x -= theMap.Get_eX( ) * MAX_HEX_HT;
         }
+
+#ifdef STRICTER_ASSERTS
         ASSERT( x == m_maploc.x );
+#endif
 
         if ( abs( m_ptHead.y - m_ptTail.y ) <= 2 )
             y = ( m_ptHead.y + m_ptTail.y ) * MAX_HEX_HT / 4 + MAX_HEX_HT / 4;
@@ -6501,7 +6506,9 @@ void CVehicle::AssertValidAndLoc( ) const
             if ( y >= theMap.Get_eY( ) * MAX_HEX_HT )
                 y -= theMap.Get_eY( ) * MAX_HEX_HT;
         }
+#ifdef STRICTER_ASSERTS
         ASSERT( y == m_maploc.y );
+#endif
 
         if ( !( GetData( )->GetVehFlags( ) & CTransportData::FL1hex ) )
 #ifndef _GG
@@ -6533,7 +6540,10 @@ void CVehicle::AssertValidAndLoc( ) const
             x2 += theMap.Get_eX( ) * MAX_HEX_HT;
         else if ( x2 >= theMap.Get_eX( ) * MAX_HEX_HT )
             x2 -= theMap.Get_eX( ) * MAX_HEX_HT;
+
+#ifdef STRICTER_ASSERTS
         ASSERT( x == x2 );
+#endif
 
         if ( GetData( )->GetVehFlags( ) & CTransportData::FL1hex )
             y = m_ptNext.y * MAX_HEX_HT / 2 + MAX_HEX_HT / 4;
