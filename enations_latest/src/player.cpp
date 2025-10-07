@@ -2303,7 +2303,12 @@ int CGame::StartGame( BOOL bReplace )
         // but it was already done, maybe? ISSUE? crash?
         // 
         // create world for loaded game
-        theApp.m_wndWorld.Create( );  // world must come after area
+        // because only do it if its null?
+        if ( theApp.m_wndWorld.m_hWnd == NULL )
+        {
+            theApp.m_wndWorld.Create( );  // world must come after area
+        }
+
         pWndArea->SetFocus( );
     }
     EnableAllWindows( NULL, TRUE );

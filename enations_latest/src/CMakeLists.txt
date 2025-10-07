@@ -142,8 +142,10 @@ target_compile_definitions(enations PUBLIC
         _MBCS
         _X86_ # HACK! This should not need to be defined here!
         WIN32
-        LOGGINGON        
-        _LOGOUT
+        # LOGGINGON        
+        # _LOGOUT
+        # STRICTER_ASSERTS ## these prob all need to be fixed
+        THREADS_ENABLED # here's hoping!!
         $<$<CONFIG:Release>:NDEBUG>
         $<$<CONFIG:Debug>:_DEBUG>
         )

@@ -1,8 +1,6 @@
 //
 // Created by Bobbias on 025, 2023-05-25.
 //
-// from here methinks
-// http://www.mario-konrad.ch/blog/programming/cpp-memory_pool.html
 #ifndef ENATIONS_MEM_POOL_H
 #define ENATIONS_MEM_POOL_H
 #pragma once
@@ -13,8 +11,9 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstring>
-#include <unordered_set>
 #include <mutex>
+#include <unordered_set>
+#include <vector>
 
 // Forward declaration of memory pool wrapper
 template<class Strategy>
@@ -30,54 +29,57 @@ class memory_pool
     memory_pool& operator=( const memory_pool& ) = delete;
 
     void* alloc( ) { return strat.allocate( ); }
-
     void  init( ) { strat.init( ); }
-
-    void free( void* p ) { strat.deallocate( p ); }
+    void  free( void* p ) { strat.deallocate( p ); }
 };
 
-// Memory pool strategy using free list
+// Memory pool strategy using individual heap allocations
+// Each block is allocated separately, so no pointer invalidation!
 template<unsigned int S, unsigned int N>
 class mempool_std_heap
 {
   private:
-    // Free list node structure
-    struct EntryList
+    struct Block
     {
-        uint8_t*   p;     // pointer to memory chunk
-        EntryList* next;  // next free chunk
+        uint8_t data[S];
+
+        Block( ) { std::memset( data, 0, S ); }
     };
 
-    std::mutex           mtx;  // add a mutex
+    std::mutex           mtx;
     typedef unsigned int size_type;
 
   private:
-    uint8_t*   buf;         // pointer to memory buffer (dynamically allocated)
-    EntryList  entries[N];  // bookkeeping array
-    EntryList* freeList;    // head of free list
-    size_type  available;   // number of available chunks
-    bool isInit = false;
+    std::vector<Block*> allocatedBlocks;  // Track all blocks we've allocated
+    std::vector<Block*> freeList;         // Available blocks for reuse
+    bool                isInit;
 
 #ifdef _DEBUG
-    // tracking for testing/debugging
-    std::unordered_set<void*> allocated;
+    std::unordered_set<void*> activeAllocations;  // Track active allocations
 #endif
 
     mempool_std_heap( const mempool_std_heap& )            = delete;
     mempool_std_heap& operator=( const mempool_std_heap& ) = delete;
 
-
   public:
-    mempool_std_heap( ): buf( nullptr ), freeList( nullptr ), available( 0 ) {}
+    mempool_std_heap( ): isInit( false )
+    {
+        allocatedBlocks.reserve( N );
+        freeList.reserve( N );
+    }
 
     ~mempool_std_heap( )
     {
-        if ( buf != nullptr )
+        std::lock_guard<std::mutex> lock( mtx );
+
+        // Delete all blocks
+        for ( Block* block: allocatedBlocks )
         {
-            delete[] buf;
-            buf = nullptr;
+            delete block;
         }
-        freeList = nullptr;
+
+        allocatedBlocks.clear( );
+        freeList.clear( );
         isInit = false;
     }
 
@@ -85,53 +87,64 @@ class mempool_std_heap
     {
         std::lock_guard<std::mutex> lock( mtx );
 
-        // Allocate the buffer if not already allocated
-        if ( !isInit )
-        {
-            buf = new uint8_t[S * N];
-        }
-        else
+        if ( isInit )
         {
             CString str;
             str.Format( "Was already initialized!!" );
-            OutputDebugStringA( str );        
-        }
-
-        // Zero out the entire buffer
-        std::memset( buf, 0, S * N );
-
-        // Initialize available count
-        available = N;
-
-        // Initialize the free list - link all entries together
-        for ( size_type i = 0; i < N; ++i )
-        {
-            entries[i].p    = &buf[S * i];
-            entries[i].next = ( i < N - 1 ) ? &entries[i + 1] : nullptr;
-        }
-
-        // Set free list head to first entry
-        freeList = &entries[0];
-
-#ifdef _DEBUG
-        allocated.clear( );
-#endif
-#ifdef _DEBUG
-        CString str;
-        str.Format( "init: buf=%p, size=%u", buf, S * N );
-        OutputDebugStringA( str );
-        OutputDebugStringA( "\n" );
-
-        for ( size_type i = 0; i < N; ++i )
-        {
-            str.Format( "init: entry[%u].p = %p", i, entries[i].p );
             OutputDebugStringA( str );
-            OutputDebugStringA( "\n" );
+            return;
         }
-#endif
 
+        // Pre-allocate initial blocks
+        for ( size_type i = 0; i < N; ++i )
+        {
+            Block* block = new Block( );
+            allocatedBlocks.push_back( block );
+            freeList.push_back( block );
+        }
+
+#ifdef _DEBUG
+        activeAllocations.clear( );
+
+        CString str;
+        str.Format( "init: allocated %u blocks of size %u bytes each\n", N, S );
+        OutputDebugStringA( str );
+#endif
 
         isInit = true;
+    }
+
+    void expandMemoryPool( )
+    {
+        if ( !isInit )
+        {
+            ASSERT( FALSE );
+            return;
+        }
+
+        size_type currentSize = allocatedBlocks.size( );
+        size_type newBlocks   = currentSize;  // Double the pool size
+
+#ifdef _DEBUG
+        CString str;
+        str.Format( "Expanding pool: adding %u blocks (total will be %u)\n", newBlocks, currentSize + newBlocks );
+        OutputDebugStringA( str );
+#endif
+
+        // Allocate new blocks - each on its own heap address
+        // Old pointers remain completely valid!
+        for ( size_type i = 0; i < newBlocks; ++i )
+        {
+            Block* block = new Block( );
+            allocatedBlocks.push_back( block );
+            freeList.push_back( block );
+        }
+
+#ifdef _DEBUG
+        str.Format( "Pool expanded. Total: %u blocks, Free: %u blocks\n", (unsigned int)allocatedBlocks.size( ),
+                    (unsigned int)freeList.size( ) );
+        OutputDebugStringA( str );
+#endif
     }
 
     // Allocate a block from the pool
@@ -139,57 +152,41 @@ class mempool_std_heap
     {
         std::lock_guard<std::mutex> lock( mtx );
 
-        if (!isInit)
+        if ( !isInit )
         {
-            ASSERT( false );  // Must call init() before allocate()
+            ASSERT( false );
             init( );
         }
 
-        // Check if we have available blocks
-        if ( freeList == nullptr || available == 0 )
+        // Expand if we're out of blocks
+        if ( freeList.empty( ) )
         {
-            return nullptr;  // Pool exhausted
+            expandMemoryPool( );
         }
 
-        // Get the first free block
-        EntryList* node = freeList;
+        // Get a free block
+        Block* block = freeList.back( );
+        freeList.pop_back( );
 
-        // Defensive check - ensure node pointer is valid
-        if ( node == nullptr || node->p == nullptr )
+        if ( block == nullptr )
         {
+            ASSERT( false );
             return nullptr;
         }
 
-        void* ptr = node->p;
+        // Zero out the block
+        std::memset( block->data, 0, S );
+
 #ifdef _DEBUG
+        activeAllocations.insert( block->data );
+
         CString str;
-        str.Format( "allocate: ptr=%p, buf=%p, buf + size=%p", ptr, buf, buf + ( S * N ) );
+        str.Format( "allocate: ptr=%p, free=%u, active=%u\n", block->data, (unsigned int)freeList.size( ),
+                    (unsigned int)activeAllocations.size( ) );
         OutputDebugStringA( str );
-        OutputDebugStringA( "\n" );
 #endif
 
-
-
-        // Verify pointer is within our buffer bounds
-        uint8_t* p = static_cast<uint8_t*>( ptr );
-        if ( p < buf || p >= buf + ( S * N ) )
-        {
-            return nullptr;  // Invalid pointer
-        }
-
-        // Move free list head to next free block
-        freeList = node->next;
-        --available;
-
-        // Zero out the memory - use size_t to avoid any truncation
-        std::memset( ptr, 0, static_cast<size_t>( S ) );
-
-#ifdef _DEBUG
-        // Track this pointer
-        allocated.insert( ptr );
-#endif
-
-        return ptr;
+        return block->data;
     }
 
     // Deallocate a block back to the pool
@@ -201,41 +198,89 @@ class mempool_std_heap
         }
 
         std::lock_guard<std::mutex> lock( mtx );
+
 #ifdef _DEBUG
-        // Verify pointer was allocated from this pool
-        if ( allocated.find( ptr ) == allocated.end( ) )
+        // Verify this was allocated from our pool
+        if ( activeAllocations.find( ptr ) == activeAllocations.end( ) )
         {
-            // Error: trying to free unallocated pointer
+            CString str;
+            str.Format( "deallocate: ERROR - ptr=%p not in active allocations\n", ptr );
+            OutputDebugStringA( str );
+            ASSERT( false );
             return;
         }
-        allocated.erase( ptr );
+        activeAllocations.erase( ptr );
 #endif
 
-        // Find which entry this pointer corresponds to
-        uint8_t*  p   = static_cast<uint8_t*>( ptr );
-        size_type idx = ( p - buf ) / S;
+        // Find the block that contains this pointer
+        Block* targetBlock = nullptr;
 
-        // Validate the pointer is within our buffer and properly aligned
-        if ( idx >= N || p != &buf[S * idx] )
+        for ( Block* block: allocatedBlocks )
         {
-            // Invalid pointer - not from this pool
+            if ( block->data == ptr )
+            {
+                targetBlock = block;
+                break;
+            }
+        }
+
+        if ( targetBlock == nullptr )
+        {
+#ifdef _DEBUG
+            CString str;
+            str.Format( "deallocate: ERROR - ptr=%p not found in pool\n", ptr );
+            OutputDebugStringA( str );
+#endif
+            ASSERT( false );
             return;
         }
 
-        // Return the block to the free list
-        entries[idx].next = freeList;
-        freeList          = &entries[idx];
-        ++available;
+        // Check if already freed
+        for ( Block* freeBlock: freeList )
+        {
+            if ( freeBlock == targetBlock )
+            {
+#ifdef _DEBUG
+                CString str;
+                str.Format( "deallocate: ERROR - ptr=%p already freed (double free)\n", ptr );
+                OutputDebugStringA( str );
+#endif
+                ASSERT( false );
+                return;
+            }
+        }
+
+        // Return to free list
+        freeList.push_back( targetBlock );
+
+#ifdef _DEBUG
+        CString str;
+        str.Format( "deallocate: ptr=%p, free=%u, active=%u\n", ptr, (unsigned int)freeList.size( ),
+                    (unsigned int)activeAllocations.size( ) );
+        OutputDebugStringA( str );
+#endif
     }
 
     // Query available blocks
-    size_type get_available( ) const { return available; }
+    size_type get_available( ) const
+    {
+        std::lock_guard<std::mutex> lock( const_cast<std::mutex&>( mtx ) );
+        return freeList.size( );
+    }
 
     // Check if pool is empty
-    bool is_empty( ) const { return available == N; }
+    bool is_empty( ) const
+    {
+        std::lock_guard<std::mutex> lock( const_cast<std::mutex&>( mtx ) );
+        return freeList.size( ) == allocatedBlocks.size( );
+    }
 
     // Check if pool is full
-    bool is_full( ) const { return available == 0; }
+    bool is_full( ) const
+    {
+        std::lock_guard<std::mutex> lock( const_cast<std::mutex&>( mtx ) );
+        return freeList.empty( );
+    }
 };
 
 // Pool size constants

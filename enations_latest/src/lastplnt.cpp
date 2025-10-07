@@ -64,13 +64,13 @@ const int  NUM_BTNS = sizeof( aiBtns ) / sizeof( int );
 
 
 #ifdef _CHEAT
-BOOL _bShowRate       = FALSE;
+BOOL _bShowRate       = TRUE;
 BOOL _bClickAny       = FALSE;
 BOOL _bMaxMaterials   = FALSE;
 BOOL _bMaxRocket      = FALSE;
 BOOL _bMaxPower       = FALSE;
 BOOL _iFrameRate      = 1;
-BOOL _bShowWorld      = FALSE;
+BOOL _bShowWorld      = TRUE;
 BOOL _bShowStatus     = FALSE;
 BOOL _bSeeAll         = FALSE;
 BOOL _bShowPos        = FALSE;
