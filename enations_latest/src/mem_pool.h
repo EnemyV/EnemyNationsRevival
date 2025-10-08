@@ -179,11 +179,6 @@ class mempool_std_heap
 
 #ifdef _DEBUG
         activeAllocations.insert( block->data );
-
-        CString str;
-        str.Format( "allocate: ptr=%p, free=%u, active=%u\n", block->data, (unsigned int)freeList.size( ),
-                    (unsigned int)activeAllocations.size( ) );
-        OutputDebugStringA( str );
 #endif
 
         return block->data;
@@ -226,11 +221,6 @@ class mempool_std_heap
 
         if ( targetBlock == nullptr )
         {
-#ifdef _DEBUG
-            CString str;
-            str.Format( "deallocate: ERROR - ptr=%p not found in pool\n", ptr );
-            OutputDebugStringA( str );
-#endif
             ASSERT( false );
             return;
         }
@@ -240,11 +230,6 @@ class mempool_std_heap
         {
             if ( freeBlock == targetBlock )
             {
-#ifdef _DEBUG
-                CString str;
-                str.Format( "deallocate: ERROR - ptr=%p already freed (double free)\n", ptr );
-                OutputDebugStringA( str );
-#endif
                 ASSERT( false );
                 return;
             }
@@ -252,13 +237,6 @@ class mempool_std_heap
 
         // Return to free list
         freeList.push_back( targetBlock );
-
-#ifdef _DEBUG
-        CString str;
-        str.Format( "deallocate: ptr=%p, free=%u, active=%u\n", ptr, (unsigned int)freeList.size( ),
-                    (unsigned int)activeAllocations.size( ) );
-        OutputDebugStringA( str );
-#endif
     }
 
     // Query available blocks
