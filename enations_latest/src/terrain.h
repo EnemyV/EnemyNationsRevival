@@ -303,7 +303,7 @@ public:
 	void		InitSquare (int x1, int y1, int x2, int y2, int iTyp1, int iTyp2, int iTyp3, int iTyp4);
 	void		InitSquarePass2 (int x1, int y1, int x2, int y2, int iTyp1, int iTyp2, int iTyp3, int iTyp4);
 	int			DepositMinerals (int x, int y, int iTyp, int iNum);
-	int			MakeMineral (int x, int y, int iTyp, int iSideSize);
+    int         MakeMineral( int x, int y, int iTyp, int iSideSize, int multiplier  = 1);
 	void		CheckAlt ();
 	void		AddCoastlines ();
 	void		EliminateSingles ();

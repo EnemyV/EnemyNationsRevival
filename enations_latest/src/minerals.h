@@ -74,7 +74,7 @@ public:
 	CMineralHex ();
 	~CMineralHex () { Close (); }
 
-	void		InitHex (CHexCoord const & hex, int iType);
+	void		InitHex (CHexCoord const & hex, int iType, int multiplier);
 	void		Close ();
 };
 

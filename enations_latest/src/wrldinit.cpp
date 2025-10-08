@@ -324,11 +324,15 @@ void CGameMap::Init( int iSide, int iSideSize, int iScenario )
 
     // assign players to sub-units in the map
     int  iNumBlks    = iSide * iSide;
-    int  iOceansLeft = iNumBlks - theGame.GetAll( ).GetCount( );
+    // the max oceans are total blocks - players
+    // so theoretically every player could be island
+    int  iOceansLeft = iNumBlks - theGame.GetAll( ).GetCount( ); 
     int* piBlks      = new int[iNumBlks];
     for ( int iInd = 0; iInd < iNumBlks; iInd++ ) piBlks[iInd] = 0;
 
     // we need to know the number of island requesting players
+    // Island players are poorly named - they get 1 ocean edge
+    // should be called shore player?
     POSITION pos;
     int      iIslandPlayersLeft = 0;
     for ( pos = theGame.GetAll( ).GetHeadPosition( ); pos != NULL; )
@@ -356,6 +360,36 @@ void CGameMap::Init( int iSide, int iSideSize, int iScenario )
         if ( iOceansLeft > 0 )
             iOceansLeft--;
     }
+    DWORD seed = theGame.GetSeed();
+    int   seedInt = static_cast<int>( seed );
+
+    // Big maps are too dry, this puts a gigantic ocean in!
+    if ( true )
+    {
+        // lets have a little bit of fun here
+        int blockType = -1; // -1/-2/-3/-4 = ocean/desert/swamp/plains templates       
+
+        // equal chance of ocean or desert blocktype based ont he seed
+       // blockType = ( ( seedInt & 0x01 ) == 0 ) ? -1 : -2;
+
+        if ( theGame.GetAll( ).GetCount( ) > 0 )
+        {
+            // total count can be from half theGame.GetAll( ).GetCount( ) to theGame.GetAll( ).GetCount( ) * 2
+            int totalCount =
+                ( theGame.GetAll( ).GetCount( ) / 2 ) + ( seedInt % ( theGame.GetAll( ).GetCount( ) * 3 / 2 ) );
+
+
+            for ( int i = 0; i < totalCount; ++i )
+            {
+                piBlks[i] = blockType;
+                if ( blockType == -1 && iOceansLeft > 0 )
+                    iOceansLeft--;
+            }
+        }
+    }
+
+    // It's time for a big desert. Not exactly dune, but still fun!
+
 
     theApp.m_pCreateGame->GetDlgStatus( )->SetPer( PER_WORLD_BLKS );
 
@@ -793,14 +827,49 @@ void CGameMap::Init( int iSide, int iSideSize, int iScenario )
                          iTry[RandNum( 3 )], iSideSize );
             MakeTerrain( _x * iSideSize + 4 + RandNum( iSideSize - 8 ), _y * iSideSize + 4 + RandNum( iSideSize - 8 ),
                          iTry[RandNum( 3 )], iSideSize );
-            MakeMineral( _x * iSideSize + iSideSize / 2, _y * iSideSize + 4 + iSideSize / 2, CMaterialTypes::copper,
-                         iSideSize / 4 );
-            MakeMineral( _x * iSideSize + iSideSize / 2, _y * iSideSize + 4 + iSideSize / 2, CMaterialTypes::oil,
-                         iSideSize / 4 );
+
+            // make forest
+            MakeTerrain( _x * iSideSize + 4 + RandNum( iSideSize - 8 ), _y * iSideSize + 4 + RandNum( iSideSize - 8 ),
+                         CHex::forest, iSideSize * 2 );
+
+            if ( RandNum( 5 ) != 0 ) // make most islands the regular old xil oil islands
+            {
+                MakeMineral( _x * iSideSize + iSideSize / 2, _y * iSideSize + 4 + iSideSize / 2, CMaterialTypes::copper,
+                             iSideSize / 4, 2 );
+                MakeMineral( _x * iSideSize + iSideSize / 2, _y * iSideSize + 4 + iSideSize / 2, CMaterialTypes::oil,
+                             iSideSize / 4, 2 );
+            }
+            else if  (RandNum( 4 ) == 0)  // a iron coal island for variety, a nice rare island
+            {
+                MakeMineral( _x * iSideSize + iSideSize / 2, _y * iSideSize + 3 + iSideSize / 2, CMaterialTypes::coal,
+                             iSideSize / 8, 3 );
+                MakeMineral( _x * iSideSize + iSideSize / 2, _y * iSideSize + 3 + iSideSize / 2, CMaterialTypes::iron,
+                             iSideSize / 8, 3 );
+            }
+            else if ( RandNum( 2 ) == 0 )  // individual coal and iron islands that CAN have small oil or xil
+            {
+                MakeMineral( _x * iSideSize + iSideSize / 2, _y * iSideSize + 3 + iSideSize / 2, CMaterialTypes::coal,
+                             iSideSize / 8, 2 );
+
+                MakeMineral( _x * iSideSize + iSideSize / 3, _y * iSideSize + 3 + iSideSize / 3, CMaterialTypes::copper,
+                             iSideSize / 5, 2 );
+                MakeMineral( _x * iSideSize + iSideSize / 3, _y * iSideSize + 3 + iSideSize / 3, CMaterialTypes::oil,
+                             iSideSize / 5, 2 );
+            }
+            else
+            {
+                MakeMineral( _x * iSideSize + iSideSize / 2, _y * iSideSize + 3 + iSideSize / 2, CMaterialTypes::iron,
+                             iSideSize / 8, 2 );
+
+                MakeMineral( _x * iSideSize + iSideSize / 3, _y * iSideSize + 3 + iSideSize / 3, CMaterialTypes::copper,
+                             iSideSize / 5, 2 );
+                MakeMineral( _x * iSideSize + iSideSize / 3, _y * iSideSize + 3 + iSideSize / 3, CMaterialTypes::oil,
+                             iSideSize / 5, 2 );
+            }
             break;
         }
 
-        case -2:    // desert
+        case -2:    // desert (huh? deserts have oil dont they?)
         case -3: {  // swamp
             int x = _x * iSideSize + 8 + RandNum( iSideSize - 16 );
             int y = _y * iSideSize + 8 + RandNum( iSideSize - 16 );
@@ -1585,7 +1654,7 @@ int CGameMap::DepositMinerals( int x, int y, int iTyp, int iNum )
     return ( iRtn + MakeMineral( _x, _y, iTyp, __max( m_iSideSize / 8, iNum / 2 ) ) );
 }
 
-int CGameMap::MakeMineral( int x, int y, int iTyp, int iSideSize )
+int CGameMap::MakeMineral( int x, int y, int iTyp, int iSideSize, int multiplier )
 {
 #ifdef LOGGINGON
    // OutputDebugStringA( "MakeMineral\n" );
@@ -1603,7 +1672,7 @@ int CGameMap::MakeMineral( int x, int y, int iTyp, int iSideSize )
         CHex* pHexOn = _GetHex( _hex );
         if ( ( !pHexOn->IsWater( ) ) && ( !( pHexOn->GetUnits( ) & CHex::minerals ) ) )
         {
-            theMinerals.InitHex( _hex, iTyp );
+            theMinerals.InitHex( _hex, iTyp, multiplier );
             iTotal++;
         }
 

@@ -586,6 +586,7 @@ class CGame : public CObject
     void SetGameMul( int iSpeed );
     int  GetGameMul( ) const;
     void SetSeed( unsigned uSeed ) { m_uSeed = uSeed; }
+    DWORD GetSeed(  ) { return m_uSeed; }
 
     // sending messages
     VPPLAYERID GetMyNetNum( ) const
@@ -928,11 +929,6 @@ class CGame : public CObject
 
     LONG m_xScreen;  // screen resolution saved at
     LONG m_yScreen;
-
-#ifdef TESTINGGON
-  public:
-    static bool RunTests( );
-#endif
 
 #ifdef _DEBUG
   public:

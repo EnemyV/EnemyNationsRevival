@@ -41,7 +41,7 @@ CMineralHex::CMineralHex ()
 #endif
 }
 
-void CMineralHex::InitHex (CHexCoord const & hex, int iType)
+void CMineralHex::InitHex( CHexCoord const& hex, int iType, int multiplier )
 {
 
 	int iDensity = MAX_MINERAL_DENSITY;			
@@ -80,8 +80,8 @@ void CMineralHex::InitHex (CHexCoord const & hex, int iType)
 			break;
 	  }
 
-	iDensity = RandNum ( iDensity );
-	iQuantity = RandNum ( iQuantity );
+	iDensity  = RandNum( iDensity ) + (RandNum( iDensity ) * 0.1) * multiplier;
+      iQuantity = RandNum( iQuantity ) * multiplier;
 
 	if ((iDensity <= 0) || (iQuantity <= 0))
 		return;
