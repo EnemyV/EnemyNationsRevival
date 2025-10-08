@@ -1340,7 +1340,7 @@ int CAIUnitList::GetRepairCount( int iPlayer, DWORD dwRepBldg )
         CAIUnit* pUnit = (CAIUnit*)GetNext( pos );
         if ( pUnit != NULL )
         {
-#if 0  // THREADS_ENABLED
+#if AI_THREADS_ENABLED
        //  BUGBUG this function must yield
 			myYieldThread();
 			//if( myYieldThread() == TM_QUIT )

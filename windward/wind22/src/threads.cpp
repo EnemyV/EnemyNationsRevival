@@ -229,10 +229,12 @@ void myYieldThread() {
             TRAP();
         }
 
+#ifdef AI_THREADS_ENABLED
     if ( SwitchToThread( ) == 0 )
     {
         Sleep( 0 );
     }
+#endif
 }
 
 void myPauseThread( BOOL bPause ) {

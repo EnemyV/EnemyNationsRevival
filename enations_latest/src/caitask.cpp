@@ -226,8 +226,9 @@ CAITask *CAITaskList::GetTask( WORD wId, WORD wGoal )
     POSITION pos = GetHeadPosition();
     while( pos != NULL )
     {   
-#if 0 //THREADS_ENABLED
+#if AI_THREADS_ENABLED
 		// this function is not yielding
+		// VTier - added a sleep into the Yield, which is good enough
 		myYieldThread();
 		//if( myYieldThread() == TM_QUIT )
 		//	throw(ERR_CAI_TM_QUIT); // THROW( pException );
@@ -254,7 +255,7 @@ CAITask *CAITaskList::FindTask( WORD wId )
     POSITION pos = GetHeadPosition();
     while( pos != NULL )
     {   
-#if 0 //THREADS_ENABLED
+#if AI_THREADS_ENABLED
 		// this function is not yielding
 		myYieldThread();
 		//if( myYieldThread() == TM_QUIT )
@@ -341,7 +342,7 @@ CAITask *CAITaskList::GetUnassignedTask( int iTask )
     POSITION pos = GetHeadPosition();
     while( pos != NULL )
     {   
-#if 0 //THREADS_ENABLED
+#if AI_THREADS_ENABLED
 		// this function is not yielding
 		myYieldThread();
 		//if( myYieldThread() == TM_QUIT )
@@ -369,7 +370,7 @@ CAITask *CAITaskList::GetPatrolTask( int iType )
     POSITION pos = GetHeadPosition();
     while( pos != NULL )
     {   
-#if 0 //THREADS_ENABLED
+#if AI_THREADS_ENABLED
 		// this function is not yielding
 		myYieldThread();
 		//if( myYieldThread() == TM_QUIT )
@@ -417,7 +418,7 @@ CAITask *CAITaskList::GetScoutTask( void )
     POSITION pos = GetHeadPosition();
     while( pos != NULL )
     {   
-#if 0 //THREADS_ENABLED
+#if AI_THREADS_ENABLED
 		// this function is not yielding
 		myYieldThread();
 		//if( myYieldThread() == TM_QUIT )
@@ -522,7 +523,7 @@ CAITask *CAITaskList::GetProductionTask( int iFactoryType )
     POSITION pos = GetHeadPosition();
     while( pos != NULL )
     {   
-#if 0 //THREADS_ENABLED
+#if AI_THREADS_ENABLED
 		// this function is not yielding
 		myYieldThread();
 		//if( myYieldThread() == TM_QUIT )
@@ -589,7 +590,7 @@ CAITask *CAITaskList::GetCombatTask( int iUnitType, CAITask *pSkipTask /*= NULL*
     POSITION pos = GetHeadPosition();
     while( pos != NULL )
     {   
-#if 0 //THREADS_ENABLED
+#if AI_THREADS_ENABLED
 		// this function is not yielding
 		myYieldThread();
 		//if( myYieldThread() == TM_QUIT )
@@ -673,7 +674,7 @@ CAITask *CAITaskList::GetNavyTask( int iUnitType )
     POSITION pos = GetHeadPosition();
     while( pos != NULL )
     {   
-#if 0 //THREADS_ENABLED
+#if AI_THREADS_ENABLED
 		// this function is not yielding
 		myYieldThread();
 		//if( myYieldThread() == TM_QUIT )
