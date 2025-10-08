@@ -1338,15 +1338,19 @@ void CVehicle::SetLoc(BOOL)
     }
 
 #ifdef _DEBUG
-    if (! bNew)
-        {
+    if ( !bNew )
+    {
 #ifdef STRICTER_ASSERTS
-        ASSERT (x == m_maploc.x);
-        ASSERT (y == m_maploc.y);
+        ASSERT( x == m_maploc.x );
+        ASSERT( y == m_maploc.y );
 #endif
-        if (! (GetData()->GetVehFlags () & CTransportData::FL1hex))
-        ASSERT (d == m_iDir);
-        }
+
+#ifdef STRICTER_ASSERTS
+        if ( !( GetData( )->GetVehFlags( ) & CTransportData::FL1hex ) )
+            ASSERT( d == m_iDir );
+#endif
+    }
+        
 #endif
 }
 

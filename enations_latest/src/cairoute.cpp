@@ -385,7 +385,8 @@ void CAIRouter::FillPriorities( void )
         CAIUnit* pBldg = (CAIUnit*)m_plBldgsNeed->RemoveHead( );
 
         // DNT - this has GPF'ed several times
-        if ( pBldg != NULL )
+        // it's coming here, not null but either deleted or being deleted
+        if ( pBldg != NULL  ) 
         {
             try
             {

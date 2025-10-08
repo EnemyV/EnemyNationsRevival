@@ -268,6 +268,7 @@ BOOL CPathMap::GetPath( CHexCoord& hexFrom, CHexCoord& hexTo,
 	int iBaseX, int iBaseY, WORD *pMap, int iVehType, 
 	BOOL bLongHang /*=FALSE*/ )
 {
+	// this is a long expensive function that block severybody...
 	EnterCriticalSection (&m_cs);
 	BOOL bPath = _GetPath( hexFrom, hexTo,
 		iBaseX, iBaseY, pMap, iVehType, bLongHang );

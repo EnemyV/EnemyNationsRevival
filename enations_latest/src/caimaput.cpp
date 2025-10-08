@@ -3629,7 +3629,9 @@ int CAIMapUtil::GetClosestTo( CHexCoord hexFrom, int iBldg1, int iBldg2, int iBl
 //
 // find a direct path to the paiHex from the hexFrom
 // for the passed vehicle type
-//
+// ISSUE:
+// what if we cant get there?
+// also, can we memoize this maybe?
 BOOL CAIMapUtil::GetPathRating( CHexCoord& hexFrom, CHexCoord& hexTo, int iVehType /*= CTransportData::construction*/ )
 {
     // 0,0 means no truck involved, this is a placement

@@ -657,7 +657,9 @@ void CGame::AddToQueue( CNetCmd const* pCmd, int iLen )
 
     ASSERT_VALID( this );
 
+#ifdef _DEBUG
     pCmd->AssertMsgValid( );
+#endif
     // can't do - previous messages may need to be processed first	ASSERT_CMD (pCmd);
 
     // check if the command id is too high:
