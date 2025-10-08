@@ -101,7 +101,8 @@ add_executable(enations WIN32 ${enations_sources})
 # /Z7 for profiling
 # BUGBUGTODO change back to /Zi
 target_compile_options(enations INTERFACE
-    $<$<CONFIG:Release>:/MD /EHsc /O2 /Ob2 /Z7>
+    $<$<CONFIG:Release>:/MD /EHsc /Ob2 /Z7> # Profiling build
+   # $<$<CONFIG:Release>:/MD /EHsc /O2 /Ob2>
     $<$<CONFIG:Debug>:/MDd /EHsc /Zi>
 )
 
@@ -130,7 +131,8 @@ target_compile_definitions(enations PUBLIC
         # LOGGINGON        
         # _LOGOUT
         # STRICTER_ASSERTS ## these prob all need to be fixed
-        # THREADS_ENABLED # here's hoping!!
+        AI_THREADS_ENABLED # here's hoping!!
+        _CHEAT
         $<$<CONFIG:Release>:NDEBUG>
         $<$<CONFIG:Debug>:_DEBUG>
         )
