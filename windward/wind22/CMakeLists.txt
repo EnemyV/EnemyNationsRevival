@@ -60,6 +60,7 @@ target_compile_definitions(wind22 PUBLIC
     WIN32
     _X86_ # Hack! This should not be necessary.
     LOGGINGON
+    AI_THREADS_ENABLED
     $<$<CONFIG:Release>:NDEBUG>
     $<$<CONFIG:Debug>:_DEBUG>
 )
