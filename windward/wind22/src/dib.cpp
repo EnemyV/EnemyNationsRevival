@@ -171,7 +171,7 @@ BOOL CDIB::Resize( int cx, int cy ) {
     if (m_hOrigBm != NULL)  // first time in the bitmap isn't created yet
     {
 #ifdef LOGGINGON
-        OutputDebugStringA( "m_hOrigBm exists\n" );
+      //  OutputDebugStringA( "m_hOrigBm exists\n" );
 #endif
 
     }
@@ -296,14 +296,25 @@ BOOL CDIB::Resize( int cx, int cy ) {
 #endif
 
         if ( m_pddsurfaceBack ) {
-            m_hRes = GetDDSurface()->Release();
+            
+            LPDIRECTDRAWSURFACE surface = GetDDSurface( );
+            ASSERT( surface );
+            if ( surface )
+            {
+                m_hRes = surface->Release( );
 
-            m_pddsurfaceBack = NULL;
+                m_pddsurfaceBack = NULL;
 
-            if ( FAILED( m_hRes ) ) {
-                TRACE( "Off-screen surface release failed." );
+                if ( FAILED( m_hRes ) )
+                {
+                    TRACE( "Off-screen surface release failed." );
 
-                return FALSE;
+                    return FALSE;
+                }
+            }
+            else
+            {
+                return false;
             }
         }
 
