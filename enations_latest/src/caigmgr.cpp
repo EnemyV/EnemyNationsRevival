@@ -1922,6 +1922,24 @@ void CAIGoalMgr::CheckPlayer( void )
     m_iGasHave   = pPlayer->GetGasHave( );
     m_iGasNeed   = pPlayer->GetGasNeed( );
 
+    int food   = pPlayer->GetFood( );
+    int coal   = pPlayer->GetMaterialHave( CMaterialTypes::coal );
+    int steel  = pPlayer->GetMaterialHave( CMaterialTypes::steel );
+    int lumber = pPlayer->GetMaterialHave( CMaterialTypes::lumber );
+
+    // Calculate how many 5000s each resource has
+    int foodLevel   = food / 2000;
+    int coalLevel   = coal / 5000;
+    int steelLevel  = steel / 5000;
+    int lumberLevel = lumber / 5000;
+    int gasLevel = (m_iGasHave + 1000) / 1000;
+
+    // The wealth level is limited by the resource with the lowest "level"
+    int wealthLevel = min(min(min(min( foodLevel, coalLevel), steelLevel), lumberLevel ), gasLevel);
+
+
+    // get hours pass in gametime
+    int hoursPassed = theGame.GetElapsedSeconds( ) / ( 60 * 60 );
 
     int iOfcCap  = pPlayer->m_iOfcCap;
     int iOfcNeed = pPlayer->GetPplBldg( );
@@ -1944,20 +1962,30 @@ void CAIGoalMgr::CheckPlayer( void )
             AddPowerTask( );
     }
 
-    // need gas
-    if ( m_iGasHave < m_iGasNeed )
+    // need gas, +100 to make the ai want it more
+    if ( m_iGasHave < (m_iGasNeed + 100) )
     {
         // must already have an oil well
         if ( m_pwaBldgs[CStructureData::oil_well] )
         {
+            // if 10 hours go by, i think it's fine to have 10 extra wells
+            int extraWells = hoursPassed;
+            if ( extraWells > 10)
+                extraWells = 10;
+
             // and users of oil outnumber wells
             if ( ( m_pwaBldgs[CStructureData::refinery] + m_pwaBldgs[CStructureData::power_2] ) >
                  m_pwaBldgs[CStructureData::oil_well] )
             {
                 // but limit number of oil wells based on difficulty
-                if ( m_pwaBldgGoals[CStructureData::oil_well] <= ( pGameData->m_iSmart + 1 ) )
-                    m_pwaBldgGoals[CStructureData::oil_well] = pGameData->m_iSmart + 1;
+                if ( m_pwaBldgGoals[CStructureData::oil_well] <= ( pGameData->m_iSmart + 1 + extraWells ) )
+                    m_pwaBldgGoals[CStructureData::oil_well] = pGameData->m_iSmart + 1 + extraWells;
             }
+
+            int extraRefinaries = (hoursPassed + 1) / 2;
+
+            if ( m_iGasHave <= 100 ) // if it's REALLY low
+                extraRefinaries++;
 
             if ( m_pwaBldgs[CStructureData::refinery] == m_pwaBldgGoals[CStructureData::refinery] )
             {
@@ -1974,25 +2002,31 @@ void CAIGoalMgr::CheckPlayer( void )
     // then adjusts coal and iron to difficulty level
     if ( pGameData->m_iSmart && m_pwaBldgs[CStructureData::command_center] )
     {
+        // every 2 hours add 1 more
+        int extraBuildings = hoursPassed / 2;
+        if ( extraBuildings  > 5 )
+            extraBuildings = 5;
         if ( m_pwaBldgs[CStructureData::coal] < pGameData->m_iSmart )
         {
             // make adjustment only if count == goals
             if ( m_pwaBldgs[CStructureData::coal] == m_pwaBldgGoals[CStructureData::coal] )
                 // ProduceMaterials(CMaterialTypes::coal);
-                m_pwaBldgGoals[CStructureData::coal] = pGameData->m_iSmart + 1;
+                m_pwaBldgGoals[CStructureData::coal] = pGameData->m_iSmart + 1 + extraBuildings;
         }
         if ( m_pwaBldgs[CStructureData::iron] < pGameData->m_iSmart )
         {
             // make adjustment only if count == goals
             if ( m_pwaBldgs[CStructureData::iron] == m_pwaBldgGoals[CStructureData::iron] )
                 // ProduceMaterials(CMaterialTypes::iron);
-                m_pwaBldgGoals[CStructureData::iron] = pGameData->m_iSmart + 1;
+                m_pwaBldgGoals[CStructureData::iron] = pGameData->m_iSmart + 1 + extraBuildings;
         }
     }
 
     // BUGBUG
     // temporarily make sure that certain buildings exist before
     // allowing the apts or offices buildings to be considered
+    // TODO: AIs currently only make 1 type of office or apartment
+    // Fix this, and also change this check to allow lumper-only apts/offices if the player has lumber
     if ( !m_pwaBldgs[CStructureData::power_1] || !m_pwaBldgs[CStructureData::lumber] ||
          !m_pwaBldgs[CStructureData::smelter] || !m_pwaBldgs[CStructureData::farm] ||
          !m_pwaBldgs[CStructureData::refinery] || !m_pwaBldgs[CStructureData::coal] ||
@@ -2015,6 +2049,24 @@ void CAIGoalMgr::CheckPlayer( void )
         m_iNeedApt = FALSE;
     else
         m_iNeedApt = TRUE;
+
+    // in the case that the AI is rich, its more interesting for them to expand their city buildings
+    // if they have tons of steel, lumber, food, and power, they are rich
+    if ( wealthLevel > 0 )
+    {
+        int multi = 3 + hoursPassed / 2;
+        multi *= wealthLevel;
+        
+        if ( iOfcCap > iOfcNeed * multi )
+            m_iNeedOffice = FALSE;
+        else
+            m_iNeedOffice = TRUE;
+
+        if ( iAptCap > iAptNeed * multi )
+            m_iNeedApt = FALSE;
+        else
+            m_iNeedApt = TRUE;
+    }
 }
 //
 // add a power plant task to an existing goal based on
