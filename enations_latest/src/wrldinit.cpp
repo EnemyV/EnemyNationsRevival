@@ -364,21 +364,19 @@ void CGameMap::Init( int iSide, int iSideSize, int iScenario )
     int   seedInt = static_cast<int>( seed );
 
     // Big maps are too dry, this puts a gigantic ocean in!
-    if ( true )
-    {
         // lets have a little bit of fun here
         int blockType = -1; // -1/-2/-3/-4 = ocean/desert/swamp/plains templates       
 
         // equal chance of ocean or desert blocktype based on the seed
        // blockType = ( ( seedInt & 0x01 ) == 0 ) ? -1 : -2;
 
-        if ( theGame.GetAll( ).GetCount( ) > 0 )
-        {            
+        if ( theGame.GetAll( ).GetCount( ) > 6 )
+        {
             int maxOceanTileCount = iNumBlks - theGame.GetAll( ).GetCount( );
 
             // somewhere between no ocean, and a huge ocean
-            int totalCount = MyRand( ) % ( maxOceanTileCount - 2 );
-            
+            int totalCount = MyRand( ) % ( maxOceanTileCount - 3 );
+
 
             for ( int i = 0; i < totalCount; ++i )
             {
@@ -387,7 +385,7 @@ void CGameMap::Init( int iSide, int iSideSize, int iScenario )
                     iOceansLeft--;
             }
         }
-    }
+    
 
 
 
