@@ -228,6 +228,34 @@ public:
 	void ReportGroupHex( int iBldg, int iWidthX,
 		int iWidthY, CHexCoord& hex );
 #endif
+  private:
+    // Memoization cache for path results
+    struct PathCacheEntry
+    {
+        CHexCoord hexFrom;
+        CHexCoord hexTo;
+        int       iVehType;
+        BOOL      bResult;
+        DWORD     dwTimestamp;
+        int       iFailureCount;  // Track repeated failures
+    };
+
+    static const int   MAX_CACHE_SIZE    = 1000;
+    static const DWORD CACHE_EXPIRE_MS   = 35000;  // Clear the cache because the map changes
+    static const int   MAX_FAILURE_COUNT = 2;      // Max failures before temporary ban
+    static const DWORD FAILURE_BAN_MS    = 55000;  // just tempban it after repeated failures
+
+    PathCacheEntry m_pathCache[MAX_CACHE_SIZE];
+    int            m_iCacheSize;
+    DWORD          m_dwLastCacheClear;
+
+    // Methods for cache management
+    int  FindCacheEntry( const CHexCoord& hexFrom, const CHexCoord& hexTo, int iVehType );
+    void AddCacheEntry( const CHexCoord& hexFrom, const CHexCoord& hexTo, int iVehType, BOOL bResult );
+    void ClearExpiredCache( );
+    void InvalidatePathCache( );
+    BOOL IsPathBanned( const CHexCoord& hexFrom, const CHexCoord& hexTo, int iVehType );
+
 };
 
 #endif // __CAIMAPUT_HPP__
