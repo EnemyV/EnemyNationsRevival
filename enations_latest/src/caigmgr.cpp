@@ -1040,6 +1040,7 @@ void CAIGoalMgr::AttackPlayer( int iOpforID )
 
     // need to add defference to AI players based on difficulty
     // no, this is for scenarios, so attack away
+    // VTier: is this actually for scenarios? 
     if ( !pOpFor->AtWar( ) )
         pOpFor->SetWar( TRUE );
 
@@ -1962,6 +1963,8 @@ void CAIGoalMgr::CheckPlayer( void )
             AddPowerTask( );
     }
 
+    bool hasCommandCenter = ( m_pwaBldgs[CStructureData::command_center] > 0 );
+
     // need gas, +100 to make the ai want it more
     if ( m_iGasHave < (m_iGasNeed + 100) )
     {
@@ -1973,6 +1976,15 @@ void CAIGoalMgr::CheckPlayer( void )
             if ( extraWells > 10)
                 extraWells = 10;
 
+            if ( hasCommandCenter )  // a good time to expand oil production
+                extraWells++;
+
+            if ( m_iGasHave <= 100 )  // its OK to build more
+                extraWells++;
+
+            if (wealthLevel > 0) // if the AI is rich, it can afford more oil wells
+                extraWells++;
+
             // and users of oil outnumber wells
             if ( ( m_pwaBldgs[CStructureData::refinery] + m_pwaBldgs[CStructureData::power_2] ) >
                  m_pwaBldgs[CStructureData::oil_well] )
@@ -1982,9 +1994,13 @@ void CAIGoalMgr::CheckPlayer( void )
                     m_pwaBldgGoals[CStructureData::oil_well] = pGameData->m_iSmart + 1 + extraWells;
             }
 
+            // give an extra refinery every 2 hours, starting at hour 1
             int extraRefinaries = (hoursPassed + 1) / 2;
 
             if ( m_iGasHave <= 100 ) // if it's REALLY low
+                extraRefinaries++;
+
+            if ( wealthLevel > 1 )  // if the AI is rich, it can afford an extra refinery
                 extraRefinaries++;
 
             if ( m_pwaBldgs[CStructureData::refinery] == m_pwaBldgGoals[CStructureData::refinery] )
@@ -1995,12 +2011,22 @@ void CAIGoalMgr::CheckPlayer( void )
                     m_pwaBldgGoals[CStructureData::refinery] += 1;
                 }
             }
+
+            if ( wealthLevel >= 1 && m_pwaBldgs[CStructureData::refinery] <= extraRefinaries )
+            {
+                if ( m_pwaBldgs[CStructureData::refinery] < pGameData->m_iSmart + extraRefinaries &&
+                     m_pwaBldgs[CStructureData::refinery] <=
+                         extraRefinaries + ( ( m_pwaBldgGoals[CStructureData::oil_well] + 1 ) / 2 ) )
+                {
+                    m_pwaBldgGoals[CStructureData::refinery] += 1;
+                }
+            }
         }
     }
 
     // on difficult levels, if the command_center exists
     // then adjusts coal and iron to difficulty level
-    if ( pGameData->m_iSmart && m_pwaBldgs[CStructureData::command_center] )
+    if ( hasCommandCenter)
     {
         // every 2 hours add 1 more
         int extraBuildings = hoursPassed / 2;
@@ -6414,7 +6440,15 @@ void CAIGoalMgr::LaunchAssault( CAITask* pTask )
         {
             ASSERT_VALID( pOpFor );
 
-            if ( pOpFor->IsAI( ) && !pOpFor->AtWar( ) )
+            // This is where the AI decides who to attack!! (took me a while to find it)
+            // This skips AI's and players already at WAR
+            // but, now hear me out, why skip AIs?
+            // isn't it more interesting to have AIs fight?
+            // and I've tested games with 20 AIs!
+            // Though, really, this should be an option when starting a new game.. 
+            // lots of stuff should ..
+            bool allowAiTarget = true;
+            if ( ( !allowAiTarget && pOpFor->IsAI( ) ) && !pOpFor->AtWar( ) )
                 continue;
 
             if ( pOpFor->GetAttitude( ) < iMeanest )
@@ -9524,7 +9558,7 @@ void CAIGoalMgr::SetKnownOpFor( int iOpForID )
         pOpFor->SetKnown( TRUE );
 }
 
-//
+// opfor means oponent force btw
 // return the id of the opfor that qualifies based on type passed
 //
 int CAIGoalMgr::GetOpForId( int iType, CHexCoord hex, BOOL bKnown )
@@ -9541,7 +9575,9 @@ int CAIGoalMgr::GetOpForId( int iType, CHexCoord hex, BOOL bKnown )
         if ( !hex.X( ) && !hex.Y( ) )
         {
             // get location of this mgr's rocket
+            // rocket could be destroyed, does this mean you cant target anymore?
             CBuilding* pBldg = pGameData->GetBuildingData( CAI_OPFOR_UNIT, m_dwRocket );
+
             if ( pBldg != NULL )
                 hexNearest = pBldg->GetExitHex( );
             // hexNearest = pBldg->GetHex();
