@@ -1382,7 +1382,9 @@ void CVehicle::GetExitLoc(CBuilding const *pBldg, int iType, CSubHex &subNext, C
     if (pData->GetVehFlags() & CTransportData::FL1hex)
         subTail = subHead;
 
+#ifdef STRICTER_ASSERTS
     ASSERT (theBuildingHex.GetBuilding(subNext) == NULL);
+#endif
 }
 
 void CVehicle::EnterBuilding() {

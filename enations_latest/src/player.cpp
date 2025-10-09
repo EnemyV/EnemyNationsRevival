@@ -332,6 +332,7 @@ BOOL CPlayer::BuildRoad( )
 {
 
     // if not AI or AI & easy do this
+    // in other words, for the ez ai and for humans, roads cost more gas
     if ( ( !IsAI( ) ) || ( theGame.m_iAi == 0 ) )
     {
         if ( m_iGas < GAS_PER_ROAD )
@@ -349,7 +350,7 @@ BOOL CPlayer::BuildRoad( )
         return ( TRUE );
     }
 
-    // level 2 - must have gas
+    // level 2 - must have gas, but costs none
     if ( theGame.m_iAi == 2 )
     {
         if ( m_iGas < 1 )
@@ -357,10 +358,11 @@ BOOL CPlayer::BuildRoad( )
         return ( TRUE );
     }
 
-    // level 3 - must have gas or refinery
+    // level 3+ - must have gas or refinery
     if ( m_iGas > 0 )
         return ( TRUE );
-    TRAP( );
+    TRAP( ); // why trap? because, realistically, the AI should have gas, 
+    // and if it doesn't we want to know
     return GetExists( CStructureData::refinery );
 }
 

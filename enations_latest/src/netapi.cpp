@@ -2858,8 +2858,8 @@ void CGame::ProcessMessage(CNetCmd* pCmd )
 #ifdef LOGGINGON
 
     CString str;
-    str.Format( "ProcessMessage (PM1) type %d\n", pCmd->GetType( ) );
-    OutputDebugStringA( str );
+   // str.Format( "ProcessMessage (PM1) type %d\n", pCmd->GetType( ) );
+   // OutputDebugStringA( str );
 #endif
 
     switch ( pCmd->GetType( ) )

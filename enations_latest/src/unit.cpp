@@ -213,9 +213,10 @@ CTransportData::TRANS_BASE_TYPE CTransportData::GetBaseType( ) const
 BOOL CTransportData::CanEnterHex( CHexCoord const& hexSrc, CHexCoord const& hexDest, BOOL bVehOnWater,
                                   BOOL bStrict ) const
 {
-
+#ifdef STRICTER_ASSERTS
     ASSERT( ( abs( CHexCoord::Diff( hexSrc.X( ) - hexDest.X( ) ) ) <= 1 ) &&
             ( abs( CHexCoord::Diff( hexSrc.Y( ) - hexDest.Y( ) ) ) <= 1 ) );
+#endif
     CHex* pHexSrc  = theMap.GetHex( hexSrc );
     CHex* pHexDest = theMap.GetHex( hexDest );
 

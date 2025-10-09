@@ -132,6 +132,7 @@ target_compile_definitions(enations PUBLIC
         # _LOGOUT
         # STRICTER_ASSERTS ## these prob all need to be fixed
         AI_THREADS_ENABLED # here's hoping!!
+        AI_SPECTATE
         _CHEAT
         $<$<CONFIG:Release>:NDEBUG>
         $<$<CONFIG:Debug>:_DEBUG>

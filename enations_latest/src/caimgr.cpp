@@ -1143,6 +1143,8 @@ void CAIMgr::VehicleErrorResponse( CAIMsg* pMsg )
             if ( pUnit->GetTask( ) == IDT_ATTACKUNIT )
                 hexDest = hexNext;
 
+            // armies have staging areas, which I think is really cool
+            // they like cluster in spots that, i think, are betweenish their base and target
             m_pMap->m_pMapUtil->FindStagingHex( hexVeh, 2, 2, pUnit->GetTypeUnit( ), hexDest, FALSE );
 
             pUnit->SetDestination( hexDest );
@@ -1157,7 +1159,7 @@ void CAIMgr::VehicleErrorResponse( CAIMsg* pMsg )
 
         if ( pUnit->GetTask( ) == IDT_PATROL )
         {
-            // get a new patrol hex
+            // get a new patrol hex (patrol? this is staging is it not?)
             if ( pUnit->GetParamDW( CAI_PATROL ) )
             {
                 // m_pGoalMgr->GetPatrolHex( pUnit, hexDest );
@@ -1262,6 +1264,7 @@ void CAIMgr::VehicleErrorResponse( CAIMsg* pMsg )
         // default response
         //
         // consider that a deadly embrace may be occurring
+        //     NOTE: this when vehicles getting stuck with each other (methinks)
         //
         if ( !IsEmbraced( pMsg ) )
             hexVeh = hexNext;
@@ -1720,6 +1723,43 @@ void CAIMgr::ProcessMessage( CAIMsg* pMsg )
 {
     if ( pMsg == NULL )
         return;
+
+
+#ifdef _DEBUG
+
+    // if start dropping them that makes everything run nice and smooth,
+    // and the AI still functions adequately, however this is going to probably 
+    // break a lot of unknown things, so I'm only using it for testing
+    static DWORD lastAttackFloodCheck = 0;
+    static int   recentAttackCount    = 0;
+
+    DWORD now = timeGetTime( );
+    if ( now - lastAttackFloodCheck > 1000 )
+    {  // Check every second
+        if ( recentAttackCount > 20 ) // More than X attack messages per second
+        {  
+#ifdef _LOGOUT
+            logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC,
+                       "Attack message flood detected: %d messages/sec - activating circuit breaker",
+                       recentAttackCount );
+#endif
+            // Skip processing attack-related messages for a few seconds
+            if ( pMsg->m_iMsg == CNetCmd::unit_attacked || pMsg->m_iMsg == CNetCmd::unit_damage ||
+                 pMsg->m_iMsg == CNetCmd::see_unit )
+            {
+                // return;  // Drop the message to make things run fast, but who knows what that will break
+            }
+        }
+        lastAttackFloodCheck = now;
+        recentAttackCount    = 0;
+    }
+
+    if ( pMsg->m_iMsg == CNetCmd::unit_attacked || pMsg->m_iMsg == CNetCmd::unit_damage ||
+         pMsg->m_iMsg == CNetCmd::see_unit )
+    {
+        recentAttackCount++;
+    } 
+#endif
 
     /*
                         // sent from server

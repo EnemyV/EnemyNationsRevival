@@ -400,7 +400,7 @@ int CAIData::GetOwnerID( DWORD dwID )
 // is non-zero; otherwise if it is zero, then there is
 // a location in hexAt and we want the location that
 // is closest to hexAt and return it there
-//
+// iBldg means building type
 void CAIData::FindBuilding( int iBldg, int iPlayer, CHexCoord& hexAt )
 {
     DWORD      dwDumb;
@@ -420,7 +420,7 @@ void CAIData::FindBuilding( int iBldg, int iPlayer, CHexCoord& hexAt )
         // consider only those building of this player
         if ( pBldg->GetOwner( )->GetPlyrNum( ) == iPlayer )
         {
-            if ( iBldg )
+            if ( iBldg ) // if we're looking for a specific building type (0 means anything)
             {
                 if ( pBldg->GetData( )->GetType( ) == iBldg )
                 {
@@ -431,6 +431,14 @@ void CAIData::FindBuilding( int iBldg, int iPlayer, CHexCoord& hexAt )
                         hexAt = pBldg->GetExitHex( );
 
                     LeaveCriticalSection( &cs );
+
+                    #ifdef AI_SPECTATE
+                    if (!pBldg->GetOwner()->IsAI())
+                    {
+                        TRAP( );
+                    }
+                    #endif
+
                     return;
                 }
             }
@@ -458,6 +466,12 @@ void CAIData::FindBuilding( int iBldg, int iPlayer, CHexCoord& hexAt )
         }
     }
     LeaveCriticalSection( &cs );
+#ifdef AI_SPECTATE
+    if ( !pBldg->GetOwner( )->IsAI( ) )
+    {
+        TRAP( );
+    }
+#endif
 
     hexAt = hexBest;
 }
