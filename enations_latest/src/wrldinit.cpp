@@ -369,15 +369,16 @@ void CGameMap::Init( int iSide, int iSideSize, int iScenario )
         // lets have a little bit of fun here
         int blockType = -1; // -1/-2/-3/-4 = ocean/desert/swamp/plains templates       
 
-        // equal chance of ocean or desert blocktype based ont he seed
+        // equal chance of ocean or desert blocktype based on the seed
        // blockType = ( ( seedInt & 0x01 ) == 0 ) ? -1 : -2;
 
         if ( theGame.GetAll( ).GetCount( ) > 0 )
-        {
-            // total count can be from half theGame.GetAll( ).GetCount( ) to theGame.GetAll( ).GetCount( ) * 2
-            int totalCount =
-                ( theGame.GetAll( ).GetCount( ) / 2 ) + ( seedInt % ( theGame.GetAll( ).GetCount( ) * 3 / 2 ) );
+        {            
+            int maxOceanTileCount = iNumBlks - theGame.GetAll( ).GetCount( );
 
+            // somewhere between no ocean, and a huge ocean
+            int totalCount = MyRand( ) % ( maxOceanTileCount - 2 );
+            
 
             for ( int i = 0; i < totalCount; ++i )
             {
@@ -388,7 +389,6 @@ void CGameMap::Init( int iSide, int iSideSize, int iScenario )
         }
     }
 
-    // It's time for a big desert. Not exactly dune, but still fun!
 
 
     theApp.m_pCreateGame->GetDlgStatus( )->SetPer( PER_WORLD_BLKS );
