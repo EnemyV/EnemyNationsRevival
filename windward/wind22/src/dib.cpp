@@ -321,8 +321,9 @@ BOOL CDIB::Resize( int cx, int cy ) {
         memset( &m_ddOffSurfDesc, 0, sizeof( DDSURFACEDESC ) );
 
         m_ddOffSurfDesc.dwSize = sizeof( DDSURFACEDESC );
-        m_ddOffSurfDesc.dwFlags = DDSD_CAPS | DDSD_HEIGHT | DDSD_WIDTH;
+        m_ddOffSurfDesc.dwFlags        = DDSD_CAPS | DDSD_HEIGHT | DDSD_WIDTH;
         m_ddOffSurfDesc.ddsCaps.dwCaps = DDSCAPS_OFFSCREENPLAIN | DDSCAPS_SYSTEMMEMORY;
+       // m_ddOffSurfDesc.ddsCaps.dwCaps = DDSCAPS_OFFSCREENPLAIN | DDSCAPS_VIDEOMEMORY; // video memory is an issue?
         m_ddOffSurfDesc.dwWidth = GetWidth();
         m_ddOffSurfDesc.dwHeight = GetHeight();
 
@@ -392,8 +393,7 @@ BOOL CDIB::Resize( int cx, int cy ) {
 
     memcpy( &m_ptrbmiIdentity->hdr, &m_bmi.hdr, sizeof( BITMAPINFOHEADER ) );
 
-    SyncPalette();
-
+    SyncPalette( );
     return TRUE;
 }
 
@@ -1669,7 +1669,7 @@ HDC CDIB::GetDC() {
 
         
 #ifdef LOGGINGON
-        OutputDebugStringA( "DIB_DIRECTDRAW" );
+        OutputDebugStringA( "DIB_DIRECTDRAW\n" );
 #endif
 
         m_hRes = GetDDSurface()->GetDC( &m_hDCDib );

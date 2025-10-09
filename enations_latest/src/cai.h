@@ -205,6 +205,7 @@
 #define FROM_ID_HI			5
 
 // BUGBUG this needs to be unique among player numbers
+// I BELIEVE this is how the AI targets the human player
 #define CAI_OPFOR_UNIT	0xFFFF
 
 // CAIUnit and CAICopy object data identifiers
