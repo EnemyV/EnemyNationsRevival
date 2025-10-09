@@ -90,7 +90,7 @@ CAIOpFor::CAIOpFor( int iPlayer, const char* pzName )
 
     for ( int i = 0; i < m_iNumUnits; i++ )
     {
-#if 0  // THREADS_ENABLED
+#if AI_THREADS_ENABLED
        //  BUGBUG this function must yield
 		myYieldThread();
 		//if( myYieldThread() == TM_QUIT )
@@ -102,7 +102,7 @@ CAIOpFor::CAIOpFor( int iPlayer, const char* pzName )
 
     for ( int i = 0; i < m_iNumBldgs; i++ )
     {
-#if 0  // THREADS_ENABLED
+#if AI_THREADS_ENABLED
        //  BUGBUG this function must yield
 		myYieldThread();
 		//if( myYieldThread() == TM_QUIT )
@@ -114,7 +114,7 @@ CAIOpFor::CAIOpFor( int iPlayer, const char* pzName )
 
     for ( int i = 0; i < m_iNumRAs; i++ )
     {
-#if 0  // THREADS_ENABLED
+#if AI_THREADS_ENABLED
        //  BUGBUG this function must yield
 		myYieldThread();
 		//if( myYieldThread() == TM_QUIT )
@@ -224,23 +224,37 @@ int CAIOpFor::GetCombat( void )
         case CTransportData::landing_craft:
         case CTransportData::infantry:
         case CTransportData::rangers:
+            iStrength += ( m_pwaUnits[i] * 1 );
+            break;
         case CTransportData::marines:
             iStrength += ( m_pwaUnits[i] * 1 );
             break;
         case CTransportData::med_scout:
         case CTransportData::light_tank:
+            iStrength += ( m_pwaUnits[i] * 1 );
+            break;
         case CTransportData::light_art:
+            iStrength += ( m_pwaUnits[i] * 1 );
+            break;
         case CTransportData::gun_boat:
             iStrength += ( m_pwaUnits[i] * 2 );
             break;
         case CTransportData::heavy_scout:
         case CTransportData::med_tank:
+            iStrength += ( m_pwaUnits[i] * 3 );
+            break;
         case CTransportData::med_art:
+            iStrength += ( m_pwaUnits[i] * 3 );
+            break;
         case CTransportData::destroyer:
             iStrength += ( m_pwaUnits[i] * 4 );
             break;
         case CTransportData::heavy_tank:
+            iStrength += ( m_pwaUnits[i] * 5 );
+            break;
         case CTransportData::heavy_art:
+            iStrength += ( m_pwaUnits[i] * 5 );
+            break;
         case CTransportData::cruiser:
             iStrength += ( m_pwaUnits[i] * 6 );
             break;
@@ -1290,6 +1304,13 @@ CAIOpFor* CAIOpForList::GetNearest( CHexCoord& hexFrom, BOOL bKnown )
             }
         }
     }
+
+#ifdef SPECTATE
+    // skip human players when spectating
+    if ( pOpFor->isAI( ) == FALSE )
+        continue;
+#endif
+
     return ( pBest );
 }
 
@@ -1307,7 +1328,7 @@ CAIOpFor* CAIOpForList::GetWeakest( BOOL bKnown )
         POSITION pos = GetHeadPosition( );
         while ( pos != NULL )
         {
-#if 0  // THREADS_ENABLED
+#if AI_THREADS_ENABLED
        //  BUGBUG this function must yield
 			myYieldThread();
 			//if( myYieldThread() == TM_QUIT )
@@ -1324,6 +1345,11 @@ CAIOpFor* CAIOpForList::GetWeakest( BOOL bKnown )
                     if ( !pOpFor->IsKnown( ) )
                         continue;
                 }
+#ifdef SPECTATE
+                // skip human players when spectating
+                if ( pOpFor ->isAI() == FALSE )
+                    continue;
+#endif
 
                 iStrength = pOpFor->GetStrengths( );
                 if ( iStrength < iBest )
@@ -1344,7 +1370,7 @@ BOOL CAIOpForList::AllKnown( void )
         POSITION pos = GetHeadPosition( );
         while ( pos != NULL )
         {
-#if 0  // THREADS_ENABLED
+#if AI_THREADS_ENABLED
        //  BUGBUG this function must yield
 			myYieldThread();
 			//if( myYieldThread() == TM_QUIT )
