@@ -2,8 +2,7 @@
 //#include "include/ptr.h"
 
 // this is not the original file
-// i implemented it using AI
-// so im sure it's trash
+// implemented it using claude sonnet 4
 
 BOOL CDIBWnd::Init( HWND hWnd, Ptr<CDIB> const& dib, int cx, int cy ) {
     if ( hWnd == NULL || dib.Value() == NULL) {
