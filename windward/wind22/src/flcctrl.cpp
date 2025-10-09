@@ -475,7 +475,8 @@ CFlcCtrl::UpdatePalette() {
     thePal.SetColors( m_prgbquadCur, 0, 256 );
 
     // FIXIT: move this into CDibWnd
-    m_dibwnd.GetDIB()->SyncPalette();
+    m_dibwnd.SetDirtyPalette( );
+  //  m_dibwnd.GetDIB()->SyncPalette();
     m_dibwnd.Invalidate(); // FIXIT: AnimatePalette() doesn't seem to do anything
 }
 

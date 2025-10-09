@@ -100,12 +100,21 @@ void CDIBWnd::Paint( CRect rect )
     }
 
     // make sure palette is in sync
-    m_ptrdib->SyncPalette( );
+    if ( m_paletteDirty )
+    {
+        m_ptrdib->SyncPalette( );
+        m_paletteDirty = false;
+    }
 
     // blit from DIB to window
     m_ptrdib->BitBlt( hdcWnd, rect, rect.TopLeft( ) );
 
     ::ReleaseDC( m_hWnd, hdcWnd );
+}
+
+void CDIBWnd::SetDirtyPalette( )
+{
+    m_paletteDirty = true;
 }
 
 
@@ -164,7 +173,7 @@ void CDIBWnd::ctor( )
 // CDirtyRects
 // --------------------------------------------------
 
-#define MAX_DIRTY_RECTS 256
+#define MAX_DIRTY_RECTS 320
 
 CDirtyRects::CDirtyRects( CDIBWnd* dibwnd )
 {
@@ -217,7 +226,7 @@ void CDirtyRects::BltRects( )
     if ( !hdcWnd )
         return;
 
-    m_pdibwnd->GetDIB( )->SyncPalette( );
+    // m_pdibwnd->GetDIB( )->SyncPalette( );
 
     for ( int i = 0; i < m_nRectBlt; ++i )
     {
@@ -264,35 +273,57 @@ void CDirtyRects::AddRect( CRect const* prect, CDirtyRects::RECT_LIST eList )
     }
 }
 
-void CDirtyRects::AddRect( CRect const* prect, CRect arect[], int& nCount )
+inline void CDirtyRects::AddRect( const CRect* prect, CRect arect[], int& nCount )
 {
-    if ( prect == NULL || arect == nullptr )
-        return;
-    if ( nCount >= MAX_DIRTY_RECTS )
+    // Validate inputs and array capacity
+    if ( !prect || !arect || nCount >= MAX_DIRTY_RECTS )
     {
-        // too many rects; coalesce to single union rect
-        CRect unionRect = arect[0];
-        for ( int i = 1; i < nCount; ++i ) unionRect |= arect[i];
-        unionRect |= *prect;
-        arect[0] = unionRect;
-        nCount   = 1;
+        if ( !prect || !arect )
+            return;
+
+        // Coalesce to a single union rectangle
+        int minLeft = arect[0].left, maxRight = arect[0].right;
+        int minTop = arect[0].top, maxBottom = arect[0].bottom;
+        for ( int i = 1; i < nCount; ++i )
+        {
+            minLeft   = min( minLeft, arect[i].left );
+            maxRight  = max( maxRight, arect[i].right );
+            minTop    = min( minTop, arect[i].top );
+            maxBottom = max( maxBottom, arect[i].bottom );
+        }
+        minLeft   = min( minLeft, prect->left );
+        maxRight  = max( maxRight, prect->right );
+        minTop    = min( minTop, prect->top );
+        maxBottom = max( maxBottom, prect->bottom );
+
+        arect[0].left   = minLeft;
+        arect[0].right  = maxRight;
+        arect[0].top    = minTop;
+        arect[0].bottom = maxBottom;
+        nCount          = 1;
         return;
     }
 
-    // Try to coalesce with an existing rect that intersects or is adjacent
+    // Cache prect bounds with adjacency margins
+    const int left   = prect->left - 1;
+    const int right  = prect->right + 1;
+    const int top    = prect->top - 1;
+    const int bottom = prect->bottom + 1;
+
+    // Check for intersection or adjacency
     for ( int i = 0; i < nCount; ++i )
     {
-        CRect r = arect[i];
-        // If intersects or touches, merge
-        CRect intersect;
-        if ( intersect.IntersectRect( r, *prect ) || r.left <= prect->right + 1 && r.right + 1 >= prect->left &&
-                                                         r.top <= prect->bottom + 1 && r.bottom + 1 >= prect->top )
+        if ( arect[i].left <= right && arect[i].right >= left && arect[i].top <= bottom && arect[i].bottom >= top )
         {
-            arect[i] |= *prect;  // union
+            // Merge rectangles
+            arect[i].left   = min( arect[i].left, prect->left );
+            arect[i].right  = max( arect[i].right, prect->right );
+            arect[i].top    = min( arect[i].top, prect->top );
+            arect[i].bottom = max( arect[i].bottom, prect->bottom );
             return;
         }
     }
 
-    // otherwise append
+    // Append new rectangle
     arect[nCount++] = *prect;
 }

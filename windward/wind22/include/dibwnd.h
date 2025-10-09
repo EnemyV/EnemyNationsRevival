@@ -40,6 +40,7 @@ public:
 
     void  Paint( CRect );
 
+    void  SetDirtyPalette( );
     void  Invalidate( RECT const* pRect = NULL ) const;
     void  Invalidate( int iLeft, int iTop, int iRight, int iBottom ) const;
     void  Update() const;
@@ -62,6 +63,7 @@ protected:
 
 private:
 
+    BOOL        m_paletteDirty = false;
     HWND        m_hWnd;
     HDC         m_hDC;  // we keep a hDC to the window
     int         m_iWinWid; // the size of the window client area
