@@ -657,9 +657,7 @@ void CGame::AddToQueue( CNetCmd const* pCmd, int iLen )
 
     ASSERT_VALID( this );
 
-#ifdef _DEBUG
     pCmd->AssertMsgValid( );
-#endif
     // can't do - previous messages may need to be processed first	ASSERT_CMD (pCmd);
 
     // check if the command id is too high:
@@ -684,6 +682,7 @@ void CGame::AddToQueue( CNetCmd const* pCmd, int iLen )
     }
 #endif
 
+    EnterCriticalSection( &cs );
 
     void* pBuf;
     TRAP( iLen > VP_MAXSENDDATA );
@@ -716,14 +715,14 @@ void CGame::AddToQueue( CNetCmd const* pCmd, int iLen )
     ASSERT( iLen > 0 );
     ASSERT( pCmd != NULL );
 
-    memcpy( pBuf, pCmd, iLen ); 
+    memcpy( pBuf, pCmd, iLen );  // crashes here sometimes, pBuf is null? 
+    // once happened when building a lumber mill
+    // didn't happen when idling, but maybe the ai was too?
 
     if ( iLen <= MSG_POOL_SIZE )
         ( (CNetCmd*)pBuf )->m_bMemPool = 1;
     else
         ( (CNetCmd*)pBuf )->m_bMemPool = 0;
-
-    EnterCriticalSection( &cs );
 
     m_messagePointerList.AddTail(pBuf );
     

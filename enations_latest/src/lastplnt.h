@@ -29,6 +29,7 @@
 #include "ui.h"
 #include "unit_wnd.h"
 #include "world.h"
+#include <map>
 
 
 class CConquerApp;
@@ -239,6 +240,7 @@ class CZoomData
     int m_nDataZooms;  // # of zooms contained in the sprites
 };
 
+
 /////////////////////////////////////////////////////////////////////////////
 // CConquerApp:
 // See temp.cpp for the implementation of this class
@@ -289,7 +291,7 @@ class CConquerApp : public CWinApp
     void UnloadOther( );    // for game
     void UnloadLang( );     // language specific part for game
 #endif
-
+    
     
 
     CZoomData* GetZoomData( ) const
