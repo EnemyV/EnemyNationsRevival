@@ -101,8 +101,8 @@ add_executable(enations WIN32 ${enations_sources})
 # /Z7 for profiling
 # BUGBUGTODO change back to /Zi
 target_compile_options(enations INTERFACE
-    $<$<CONFIG:Release>:/MD /EHsc /Ob2 /Z7> # Profiling build
-   # $<$<CONFIG:Release>:/MD /EHsc /O2 /Ob2>
+   # $<$<CONFIG:Release>:/MD /EHsc /Ob2 /Z7> # Profiling build
+    $<$<CONFIG:Release>:/MD /EHsc /O2 /Ob2 /Oi /GL /Gy /Gw>
     $<$<CONFIG:Debug>:/MDd /EHsc /Zi>
 )
 
@@ -132,8 +132,8 @@ target_compile_definitions(enations PUBLIC
         # _LOGOUT
         # STRICTER_ASSERTS ## these prob all need to be fixed
         AI_THREADS_ENABLED # here's hoping!!
-        AI_SPECTATE
-        _CHEAT
+        # AI_SPECTATE
+        # _CHEAT
         $<$<CONFIG:Release>:NDEBUG>
         $<$<CONFIG:Debug>:_DEBUG>
         )
@@ -167,13 +167,17 @@ target_link_libraries(enations PUBLIC
         )
 
 target_link_options(enations PUBLIC
-        /NODEFAULTLIB:nafxcw.lib
-        /NODEFAULTLIB:libcmt.lib
-        /DEBUG
-        /OPT:REF # Remove unreferenced functions/data.
-        /OPT:ICF # Identical COMDAT Folding / shrinks size
-        /INCREMENTAL:NO
-        )
+    /NODEFAULTLIB:nafxcw.lib
+    /NODEFAULTLIB:libcmt.lib
+    $<$<CONFIG:Debug>:/DEBUG:FULL>
+    $<$<CONFIG:Release>:/DEBUG:FASTLINK>
+    /OPT:REF
+    /OPT:ICF
+    /INCREMENTAL:NO
+    /DYNAMICBASE
+    /NXCOMPAT
+    $<$<CONFIG:Release>:/LTCG>
+)
         
 
     target_link_directories(enations PUBLIC        

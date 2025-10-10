@@ -35,17 +35,12 @@ set(wind22_sources
 
 add_library(wind22 STATIC ${wind22_sources})
 
-#target_compile_options(wind22 INTERFACE
-#        "$<$<CONFIG:RELEASE>:$<BUILD_INTERFACE:/MT;/GX;/Zi;/O2;/Ob2;/EHsc>"
-#        "$<$<CONFIG:DEBUG>:$<BUILD_INTERFACE:/MTd;/GX;/EHsc;/Zi>"
-#        )
-
 # according to wind22.mak this should be MD
 # but maybe it was changed to MT in later versions?
 # i still think win22 is older or incomplete somehow
 target_compile_options(wind22 PUBLIC
-    $<$<CONFIG:RELEASE>:/MD /GX /Zi /O2 /Ob2 /EHsc>
-    $<$<CONFIG:DEBUG>:/MDd /GX /EHsc /Zi>
+    $<$<CONFIG:RELEASE>:/MD /EHsc /Zi /O2 /Ob2 /EHsc>
+    $<$<CONFIG:DEBUG>:/MDd /EHsc /EHsc /Zi>
 )
 
 set(CMAKE_MFC_FLAG 1)
@@ -59,7 +54,7 @@ target_compile_definitions(wind22 PUBLIC
     _MBCS
     WIN32
     _X86_ # Hack! This should not be necessary.
-    LOGGINGON
+    # LOGGINGON
     AI_THREADS_ENABLED
     $<$<CONFIG:Release>:NDEBUG>
     $<$<CONFIG:Debug>:_DEBUG>
@@ -69,6 +64,16 @@ target_compile_definitions(wind22 PUBLIC
 # Precompiled header - specify the correct path
 target_precompile_headers(wind22 PUBLIC include/stdafx.h)
 
+target_link_options(enations PUBLIC
+    $<$<CONFIG:Debug>:/DEBUG:FULL>
+    $<$<CONFIG:Release>:/DEBUG:FASTLINK>
+    /OPT:REF
+    /OPT:ICF
+    /INCREMENTAL:NO
+    /DYNAMICBASE
+    /NXCOMPAT
+    $<$<CONFIG:Release>:/LTCG>
+)
 
 target_link_libraries(wind22 PUBLIC
         winmm.lib
