@@ -119,7 +119,6 @@ BOOL CDlgCreateSingle::OnInitDialog()
 
 	m_iAiLevel = theApp.GetProfileInt ("Create", "Difficultity", 0);
 	m_iAiLevel = __minmax ( 0, 3, m_iAiLevel );
-  //  m_strAiNum   = theApp.GetProfileInt( "Create", "AiOpponents", 2 ) + "";
     int iNum   = theApp.GetProfileInt( "Create", "AiOpponents", 2 );//
     atoi( m_strAiNum );
 	iNum = __minmax ( 0, 20, iNum );
