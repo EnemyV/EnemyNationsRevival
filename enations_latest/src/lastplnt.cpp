@@ -390,11 +390,16 @@ BOOL CConquerApp::InitInstance( )
     OutputDebugStringA( "InitInstance\n" );
 #endif
 
+    // Set application name first (used by SetRegistryKey internally)
+    m_pszAppName = _tcsdup( _T("Second Chance") );
+    // this redirects profile strings to HKEY_CURRENT_USER
+    SetRegistryKey( _T("Second Chance") );
+
     InitWindwardLib1( this );
 
-    // this redirects profile strings to HKEY_CURRENT_USER
-    SetRegistryKey( _T("EnemyNations") );  
     
+
+
     WriteProfileString( "ADPCM", "Error", "OK" );
 
     if ( GetProfileInt( "Advanced", "Log", 0 ) )
