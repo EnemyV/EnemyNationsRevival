@@ -6367,7 +6367,7 @@ void CAIGoalMgr::LaunchAssault( CAITask* pTask )
         {
             // on higher difficulty, automatic alliance with other AI players!
             //
-            if ( pGameData->m_iSmart && pOpFor->IsAI( ) && !pOpFor->AtWar( ) )
+            if ( pGameData->m_iSmart > 1 && pOpFor->IsAI( ) && !pOpFor->AtWar( ) )
             {
 #ifdef _LOGOUT
                 logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC,
