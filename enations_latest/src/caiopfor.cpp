@@ -1294,7 +1294,7 @@ CAIOpFor* CAIOpForList::GetNearest( CHexCoord& hexFrom, BOOL bKnown )
                 }
 
                 hexCity = hexFrom;
-                pGameData->FindBuilding( CStructureData::rocket, pOpFor->GetPlayerID( ), hexCity );
+                pGameData->FindBuilding( CStructureData::rocket, pOpFor->GetPlayerID( ), hexCity ); // todo attack here maybe this is where the ai decides a building to attack?
                 iDist = pGameData->GetRangeDistance( hexFrom, hexCity );
                 if ( iDist && iDist < iBest )
                 {

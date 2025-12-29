@@ -119,8 +119,9 @@ BOOL CDlgCreateSingle::OnInitDialog()
 
 	m_iAiLevel = theApp.GetProfileInt ("Create", "Difficultity", 0);
 	m_iAiLevel = __minmax ( 0, 3, m_iAiLevel );
-	m_strAiNum = theApp.GetProfileString ("Create", "ComputerOpponents", "2");
-	int iNum = atoi ( m_strAiNum );
+  //  m_strAiNum   = theApp.GetProfileInt( "Create", "AiOpponents", 2 ) + "";
+    int iNum   = theApp.GetProfileInt( "Create", "AiOpponents", 2 );//
+    atoi( m_strAiNum );
 	iNum = __minmax ( 0, 20, iNum );
 	m_strAiNum = IntToCString ( iNum );
 	m_iSizeWorld = theApp.GetProfileInt ("Create", "Size", 1);
@@ -237,7 +238,7 @@ void CDlgCreateSingle::OnOK()
 
 	theApp.WriteProfileInt ("Create", "Difficultity", m_iAiLevel);
 	theApp.WriteProfileInt ("Create", "Size", m_iSizeWorld);
-	theApp.WriteProfileInt ("Create", "ComputerOpponents", m_pCs->m_iNumAi);
+	theApp.WriteProfileInt ("Create", "AiOpponents", m_pCs->m_iNumAi);
 	theApp.WriteProfileInt ("Create", "StartPosition", m_iPosStart);
 
 	// switch to the pick race dialog

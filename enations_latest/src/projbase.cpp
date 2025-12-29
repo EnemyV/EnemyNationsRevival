@@ -925,7 +925,7 @@ void CVehicle::HandleCombat ()
                     theGame.Event (EVENT_ATK_TARGET, EVENT_NOTIFY, this);
                 m_pUnitOppo = m_pUnitTarget;
 
-                // tell the target
+                // tell the target unit attacked
                 CMsgUnitAttacked msg (this,  m_pUnitTarget);
                 theGame.PostToClient ( m_pUnitTarget->GetOwner(), &msg, sizeof (msg));
                 }

@@ -279,7 +279,7 @@ void CDlgCreateMulti::OnOK()
 
 	theApp.WriteProfileInt ("Create", "Difficultity", m_iAi);
 	theApp.WriteProfileInt ("Create", "Size", m_iSize);
-	theApp.WriteProfileInt ("Create", "ComputerOpponents", m_pCm->m_iNumAi);
+	theApp.WriteProfileInt ("Create", "AiOpponents", m_pCm->m_iNumAi);
 	theApp.WriteProfileInt ("Create", "StartPosition", m_iPos);
 	theApp.WriteProfileString ("Create", "Name", m_sPlayer);
 	theApp.WriteProfileString ("Create", "GameName", m_sName);
@@ -312,8 +312,8 @@ BOOL CDlgCreateMulti::OnInitDialog()
 
 	m_iAi = theApp.GetProfileInt ("Create", "Difficultity", 0);
 	m_iAi = __minmax ( 0, 3, m_iAi );
-	m_strNumAI = theApp.GetProfileString ("Create", "ComputerOpponents", "2");
-	int iNum = atoi ( m_strNumAI );
+  //  m_strNumAI = ( theApp.GetProfileInt( "Create", "AiOpponents", 2 ) ) + "";
+    int iNum   = theApp.GetProfileInt( "Create", "AiOpponents", 2 );  // atoi( m_strNumAI );
 	iNum = __minmax ( 0, 20, iNum );
 	m_strNumAI = IntToCString ( iNum );
 	m_iSize = theApp.GetProfileInt ("Create", "Size", 1);

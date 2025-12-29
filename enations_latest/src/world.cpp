@@ -1520,7 +1520,7 @@ void CWndWorld::ReRender( )
     }
 
     // if there's no DD device, just return?
-    if ( !pdib->HasDDSurface( ) )
+    if ( pdib->GetType( ) == CBLTFormat::DIB_DIRECTDRAW && !pdib->HasDDSurface( ) )
     {
 #ifdef LOGGINGON
         int type = pdib->GetType( );

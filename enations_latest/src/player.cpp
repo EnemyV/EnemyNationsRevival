@@ -160,18 +160,21 @@ CPlayer::~CPlayer( )
     delete[] m_piBldgExists;
 
     // make sure we are out of all lists
-    POSITION pos = theGame.GetAi( ).Find( this, NULL );
-    if ( pos != NULL )
-        theGame.GetAi( ).RemoveAt( pos );
-    pos = theGame.GetAll( ).Find( this, NULL );
-    if ( pos != NULL )
-        theGame.GetAll( ).RemoveAt( pos );
-    pos = theGame.m_lstDead.Find( this, NULL );
-    if ( pos != NULL )
-        theGame.m_lstDead.RemoveAt( pos );
-    pos = theGame.m_lstLoad.Find( this, NULL );
-    if ( pos != NULL )
-        theGame.m_lstLoad.RemoveAt( pos );
+    if ( &theGame != NULL )
+    {
+        POSITION pos = theGame.GetAi( ).Find( this, NULL );
+        if ( pos != NULL )
+            theGame.GetAi( ).RemoveAt( pos );
+        pos = theGame.GetAll( ).Find( this, NULL );
+        if ( pos != NULL )
+            theGame.GetAll( ).RemoveAt( pos );
+        pos = theGame.m_lstDead.Find( this, NULL );
+        if ( pos != NULL )
+            theGame.m_lstDead.RemoveAt( pos );
+        pos = theGame.m_lstLoad.Find( this, NULL );
+        if ( pos != NULL )
+            theGame.m_lstLoad.RemoveAt( pos );
+    }
 }
 
 void CPlayer::Close( )
