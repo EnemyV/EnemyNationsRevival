@@ -186,6 +186,13 @@ BOOL CDIB::Resize( int cx, int cy ) {
 
     if ( cx == m_cx && cy == m_cy )
     {
+#ifdef LOGGINGON
+
+        char buf[128];
+        sprintf_s( buf, sizeof( buf ), "Same Size! cx=%d, cy=%d, type=%d\n", cx, cy, GetType( ) );
+        OutputDebugStringA( buf );
+#endif
+
         // same size
         return TRUE;
     }

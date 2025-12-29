@@ -161,7 +161,8 @@ CBLTFormat::CalcBltMethod()
 
             if ( 0 == iType )
                 eType = DIB_DIBSECTION;
-//BUGBUG    eType = DIB_DIRECTDRAW;
+//BUGBUG    
+            eType = DIB_DIRECTDRAW;
 
             // TODO BUGBUG FIXME FIXFIX VTIER
             // Add SDL?
