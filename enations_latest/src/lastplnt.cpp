@@ -64,13 +64,13 @@ const int  NUM_BTNS = sizeof( aiBtns ) / sizeof( int );
 
 
 #ifdef _CHEAT
-BOOL _bShowRate       = TRUE;
+BOOL _bShowRate       = FALSE;
 BOOL _bClickAny       = FALSE;
 BOOL _bMaxMaterials   = FALSE;
 BOOL _bMaxRocket      = FALSE;
 BOOL _bMaxPower       = FALSE;
 BOOL _iFrameRate      = 1;
-BOOL _bShowWorld      = TRUE;
+BOOL _bShowWorld      = FALSE;
 BOOL _bShowStatus     = FALSE;
 BOOL _bSeeAll         = FALSE;
 BOOL _bShowPos        = FALSE;
@@ -392,6 +392,9 @@ BOOL CConquerApp::InitInstance( )
 
     InitWindwardLib1( this );
 
+    // this redirects profile strings to HKEY_CURRENT_USER
+    SetRegistryKey( _T("EnemyNations") );  
+    
     WriteProfileString( "ADPCM", "Error", "OK" );
 
     if ( GetProfileInt( "Advanced", "Log", 0 ) )
