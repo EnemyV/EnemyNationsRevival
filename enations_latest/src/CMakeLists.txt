@@ -166,6 +166,10 @@ target_link_libraries(enations PUBLIC
         version.lib
         )
 
+if(MSVC)
+    target_link_options(enations PRIVATE "/SAFESEH:NO")
+endif()
+
 target_link_options(enations PUBLIC
     /NODEFAULTLIB:nafxcw.lib
     /NODEFAULTLIB:libcmt.lib
