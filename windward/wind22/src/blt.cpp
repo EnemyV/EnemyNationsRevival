@@ -163,6 +163,9 @@ CBLTFormat::CalcBltMethod()
                 eType = DIB_DIBSECTION;
 //BUGBUG    eType = DIB_DIRECTDRAW;
 
+            // TODO BUGBUG FIXME FIXFIX VTIER
+            // Add SDL?
+
             break;
 
         default: ASSERT_STRICT( 0 );
