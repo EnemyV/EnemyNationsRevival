@@ -59,3 +59,9 @@ add_subdirectory(tools/compress)
 ###############################
 
 add_subdirectory(tools/vdmplay)
+
+###############################
+# ISERVE.exe
+###############################
+
+add_subdirectory(tools/vdmplay/iserve)
