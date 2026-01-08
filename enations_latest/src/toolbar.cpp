@@ -18,6 +18,7 @@
 #include "lastplnt.h"
 #include "relation.h"
 #include "stdafx.h"
+#include "terrain.inl"
 
 
 #ifdef _DEBUG

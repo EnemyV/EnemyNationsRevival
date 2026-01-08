@@ -6451,7 +6451,7 @@ void CAIGoalMgr::LaunchAssault( CAITask* pTask )
             if ( ( !allowAiTarget && pOpFor->IsAI( ) ) && !pOpFor->AtWar( ) )
                 continue;
 
-            if ( pOpFor->GetAttitude( ) < iMeanest )
+            if ( pOpFor->GetAttitude( ) < iMeanest ) // a.i. immediately attacks on loading a saved game
             {
                 iMeanest = pOpFor->GetAttitude( );
                 iOpforID = pOpFor->GetPlayerID( );
@@ -9806,7 +9806,8 @@ BOOL CAIGoalMgr::GetPathRating( CHexCoord& hexVeh, CHexCoord& hexAttacked, int i
     CHexCoord hcFrom, hcTo, hcAt;
     int       iStep     = 1;
     int       iMaxSteps = pVehData->_GetRange( ) - 1;
-    while ( iStep < iMaxSteps )
+   // while ( iStep < iMaxSteps ) // what is this loop??
+    for ( int iStep = 1; iStep < iMaxSteps; ++iStep )
     {
         hcFrom.X( hcAt.Wrap( hexAttacked.X( ) - iStep ) );
         hcFrom.Y( hcAt.Wrap( hexAttacked.Y( ) - iStep ) );

@@ -75,6 +75,17 @@ class mempool_std_heap
         // Delete all blocks
         for ( Block* block: allocatedBlocks )
         {
+            if ( block  == nullptr )
+            {
+#if LOGGINGON
+                // log that this is an issue!
+                CString str;
+                str.Format(
+                    "mempool_std_heap::~mempool_std_heap: ERROR - null block pointer found during destruction\n" );
+                OutputDebugStringA( str );
+#endif
+                continue;
+            }
             delete block;
         }
 

@@ -91,7 +91,8 @@ public:
 	void SetTaskForceDestination( int iX, int iY, CAITask *pTask );
 	void ClearTaskUnit( CAIUnit *pUnit );
 
-	void AttackAlert( CAIMsg *pMsg );
+    void AttackAlert( CAIMsg* pMsg );
+    void DamageAlert( CAIMsg* pMsg );
 	void SpottingAlert( CAIMsg *pMsg );
 	void RunAway( CAIUnit *pTargeted, CAIUnit *pAttacker, CAIMsg *pMsg );
 	void SyncStageCargo( CAIUnit *pCarrier, CAITask *pTask );

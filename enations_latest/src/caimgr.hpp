@@ -67,8 +67,10 @@ class CAIMgr : public CObject
 public:
 	BOOL m_bIsDead; // TRUE indicates that AiKillPlayer() was called
 private:
-
-	int m_iIdle;	// counter for cycles without messages (idle time)
+    // Member variables
+    DWORD m_dwLastMessageTime;
+    DWORD m_dwLastIdleProcess;
+	int  m_iIdle;  // counter for cycles without messages (idle time)
 	BOOL m_bIdleFunction[MAX_IDLE_FUNCTIONS];
 
 	int m_iBlockX;	// original location provided by the game, it is usually
@@ -133,7 +135,8 @@ public:
 	BOOL IsEmbraced( CAIMsg *pMsg );
 	void VehicleErrorResponse( CAIMsg *pMsg );
 	void DestinationResponse( CAIMsg *pMsg );
-	void AttackResponse( CAIMsg *pMsg );
+    void AttackResponse( CAIMsg* pMsg );
+    void AttackTargetIfNotAlready( CAIUnit* pTargeted, CAIUnit* pAttacker );
 	void AttackUnit( CAIMsg *pMsg );
 	void LoadedResponse( CAIMsg *pMsg );
 	void PlaceBldg( CAIMsg *pMsg );

@@ -52,6 +52,7 @@ BOOL CLog::OkLevel( int iLevel, int iSection ) const {
 
 void CLog::Write( int iLevel, int iSection, char const* pBuf ) {
 
+
     if ( !m_bOpened ) {
         m_bOpened = TRUE;
 

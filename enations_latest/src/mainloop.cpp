@@ -891,6 +891,7 @@ void CConquerApp::GraphicsEnginePump( )
                     goto NoOper;
         }  // 1 second code
 
+        // got stuck waiting here?
         // take the critical section while we do our thing
         EnterCriticalSection( &cs );
 

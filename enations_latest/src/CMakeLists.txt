@@ -97,13 +97,14 @@ add_executable(enations WIN32 ${enations_sources})
 
 # according to enations.mak this should be MT
 # but i think it used to be MD?
-# should be /Zi for release
+# should be /Zi for release (no it shouldn't?)')
 # /Z7 for profiling
 # BUGBUGTODO change back to /Zi
-target_compile_options(enations INTERFACE
+target_compile_options(enations PRIVATE
    # $<$<CONFIG:Release>:/MD /EHsc /Ob2 /Z7> # Profiling build
-    $<$<CONFIG:Release>:/MD /EHsc /O2 /Ob2 /Oi /GL /Gy /Gw>
-    $<$<CONFIG:Debug>:/MDd /EHsc /Zi>
+    $<$<CONFIG:Release>:/MD /EHsc /O2 /Ob2 /Oi /GL /Gy /Gw> # release
+    $<$<CONFIG:Profile>:/MD /Zi /DEBUG /Od /Ob0>
+    $<$<CONFIG:Debug>:/MDd /EHsc /ZI>
 )
 
 set(CMAKE_MFC_FLAG 2)
@@ -118,6 +119,7 @@ message("copts: ${copts}")
 add_compile_definitions(
     $<$<CONFIG:Debug>:_DEBUG>
     $<$<CONFIG:Release>:NDEBUG>
+    $<$<CONFIG:Profile>:NDEBUG> # disables asserts in profile builds
 )
 
 
@@ -128,13 +130,15 @@ target_compile_definitions(enations PUBLIC
         _MBCS
         _X86_ # HACK! This should not need to be defined here!
         WIN32
-        # LOGGINGON        
-        # _LOGOUT
+        #LOGGINGON        
+        _LOGOUT
         # STRICTER_ASSERTS ## these prob all need to be fixed
         AI_THREADS_ENABLED # here's hoping!!
         # AI_SPECTATE
         # _CHEAT
+        # _PROFILE # doesn't work?
         $<$<CONFIG:Release>:NDEBUG>
+        $<$<CONFIG:Profile>:NDEBUG>
         $<$<CONFIG:Debug>:_DEBUG>
         )
 
@@ -173,15 +177,17 @@ endif()
 target_link_options(enations PUBLIC
     /NODEFAULTLIB:nafxcw.lib
     /NODEFAULTLIB:libcmt.lib
-    $<$<CONFIG:Debug>:/DEBUG:FULL>
-    $<$<CONFIG:Release>:/DEBUG:FASTLINK>
-    /OPT:REF
-    /OPT:ICF
-    /INCREMENTAL:NO
+
+    $<$<CONFIG:Debug>:/DEBUG:FULL /OPT:NOREF /OPT:NOICF>
+
+    $<$<CONFIG:Profile>:/DEBUG:FULL /INCREMENTAL:NO /OPT:NOREF /OPT:NOICF>
+
+    $<$<CONFIG:Release>:/DEBUG:FASTLINK /INCREMENTAL:NO /OPT:REF /OPT:ICF /LTCG>
+
     /DYNAMICBASE
     /NXCOMPAT
-    $<$<CONFIG:Release>:/LTCG>
 )
+
         
 
     target_link_directories(enations PUBLIC        
@@ -189,5 +195,16 @@ target_link_options(enations PUBLIC
         ../../cmake-build-release/tools/vdmplay/$<CONFIG>
         ../../cmake-build-release/windward/wind22/$<CONFIG>
     )
+
+# Copy required DLLs to output directory
+add_custom_command(TARGET enations POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_BINARY_DIR}/tools/mss/MSS32.DLL"
+        $<TARGET_FILE_DIR:enations>
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_BINARY_DIR}/tools/vdmplay/$<CONFIG>/vdmplay.dll"
+        $<TARGET_FILE_DIR:enations>
+    COMMENT "Copying mss32.dll and vdmplay.dll to output directory"
+)
 
 set_property(TARGET enations PROPERTY CXX_STANDARD 11)

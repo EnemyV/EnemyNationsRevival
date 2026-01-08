@@ -684,7 +684,7 @@ CMsgSeeUnit::CMsgSeeUnit( CUnit const* pMe, CUnit const* pSpot ): CNetCmd( see_u
 
 CMsgUnitAttacked::CMsgUnitAttacked( CUnit const* pMe, CUnit const* pTarget ): CNetCmd( unit_attacked )
 {
-
+    // message that a unit was attacked?
     m_dwIDme     = pMe->GetID( );
     m_iPlyrNumMe = pMe->GetOwner( )->GetPlyrNum( );
     m_hexMe =

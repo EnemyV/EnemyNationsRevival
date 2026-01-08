@@ -92,9 +92,14 @@ void CAITaskMgr::Manage( CAIMsg* pMsg )
     }
 
     // this could be the signal to a patrolling unit
-    if ( pMsg->m_iMsg == CNetCmd::unit_attacked || pMsg->m_iMsg == CNetCmd::unit_damage )
+    if ( pMsg->m_iMsg == CNetCmd::unit_attacked)
     {
         AttackAlert( pMsg );
+        return;
+    }
+    if ( pMsg->m_iMsg == CNetCmd::unit_damage )
+    {
+        DamageAlert( pMsg );
         return;
     }
 
@@ -470,9 +475,23 @@ void CAITaskMgr::AssignUnits( void )
         // if( myYieldThread() == TM_QUIT )
         //	throw(ERR_CAI_TM_QUIT); // THROW( pException );
 #endif
+
+        // yield every 100 units?
+        // this helps reduce message flood, and lag
+        int      count = 0;
         POSITION pos = m_pGoalMgr->m_plUnits->GetHeadPosition( );
         while ( pos != NULL )
         {
+            count++;
+            if (count > 100)
+            {
+                count = 0;
+#if THREADS_ENABLED
+                // testing..
+                myYieldThread( );
+#endif
+            }
+
             CAIUnit* pUnit = (CAIUnit*)m_pGoalMgr->m_plUnits->GetNext( pos );
             if ( pUnit != NULL )
             {
@@ -533,9 +552,10 @@ void CAITaskMgr::BalancePatrols( void )
 
     CAIUnit* pBldg = NULL;
     POSITION posB  = m_pGoalMgr->m_plUnits->GetHeadPosition( );
+    int      count = 0;
     while ( posB != NULL )
     {
-        pBldg = (CAIUnit*)m_pGoalMgr->m_plUnits->GetNext( posB );
+        pBldg = (CAIUnit*)m_pGoalMgr->m_plUnits->GetNext( posB ); // this skips the first one?
         if ( pBldg != NULL )
         {
             ASSERT_VALID( pBldg );
@@ -555,6 +575,16 @@ void CAITaskMgr::BalancePatrols( void )
                 {
                     FindAvailablePatrol( pBldg );
                 }
+            }
+
+            count++;
+            if ( count > 50 )
+            {
+                count = 0;
+#if THREADS_ENABLED
+                // testing..
+                myYieldThread( );
+#endif
             }
         }
     }
@@ -6175,6 +6205,16 @@ void CAITaskMgr::UnloadCargo( CAIUnit* pUnit )
 }
 
 //
+// handle the unit_damaged message
+//
+// need a clarification on when this message is sent
+// to the AI
+//
+void CAITaskMgr::DamageAlert( CAIMsg* pMsg )
+{
+    AttackAlert( pMsg );
+}
+    //
 // handle the unit_attacked message
 //
 // need a clarification on when this message is sent
@@ -6232,6 +6272,10 @@ void CAITaskMgr::AttackAlert( CAIMsg* pMsg )
                pMsg->m_dwID2 );
     logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "CAITaskMgr::AttackAlert(): Target player=%d Attacker player=%d \n",
                pMsg->m_idata3, pMsg->m_idata2 );
+
+    char buf[256];
+    sprintf_s( buf, sizeof( buf ), "CAITaskMgr::AttackAlert(): Target=%ld Attacker=%ld ", pMsg->m_dwID, pMsg->m_dwID2 );
+    OutputDebugStringA( buf );
 #endif
 
     CAIUnit* pTarget = m_pGoalMgr->m_plUnits->GetUnit( pMsg->m_dwID );
@@ -6284,12 +6328,23 @@ void CAITaskMgr::AttackAlert( CAIMsg* pMsg )
         //	return;
         // }
     }
+
+    // autofire handles this?
     // always shoot back, if not our side
-    pTarget->AttackUnit( pMsg->m_dwID2 );
+    // if not already attacking, tell it we're attacking!
+    
+    // TODO reenable this, and maybe remove the if (i dont think its correct)?
+    //if ( pTarget->GetDataDW() != pMsg->m_dwID2 )
+    //    pTarget->AttackUnit( pMsg->m_dwID2 );
 
 #ifdef _LOGOUT
     logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "CAITaskMgr::AttackAlert(): Player %d Unit %ld has attacked %ld \n",
                pTarget->GetOwner( ), pTarget->GetID( ), pMsg->m_dwID2 );
+
+    //char buf[256];
+    sprintf_s( buf, sizeof( buf ), "CAITaskMgr::AttackAlert(): Player %d Unit %ld has attacked %ld \n",
+               pTarget->GetOwner( ), pTarget->GetID( ), pMsg->m_dwID2 );
+    OutputDebugStringA( buf );
 #endif
 
 
@@ -6352,6 +6407,8 @@ void CAITaskMgr::AttackAlert( CAIMsg* pMsg )
         POSITION pos = m_pGoalMgr->m_plUnits->GetHeadPosition( );
         while ( pos != NULL )
         {
+            // isn't this potentially huge? if we have a lot of units?
+            // is there a way to optimize this somehow?
             CAIUnit* pUnit = (CAIUnit*)m_pGoalMgr->m_plUnits->GetNext( pos );
             if ( pUnit != NULL )
             {
@@ -6372,7 +6429,7 @@ void CAITaskMgr::AttackAlert( CAIMsg* pMsg )
                     continue;
 
                 // if the target was a building, then it may have
-                // a patrol vehicl assigned, which would be ided
+                // a patrol vehicle assigned, which would be ided
                 // in the patroling unit's params
                 if ( bIsBuildingTarget && pUnit->GetTask( ) == IDT_PATROL &&
                      pUnit->GetParamDW( CAI_PATROL ) == pTarget->GetID( ) )
@@ -6426,12 +6483,12 @@ void CAITaskMgr::AttackAlert( CAIMsg* pMsg )
 
 #ifdef _DNT
                 // can it get to the attacker?
-                if ( !m_pGoalMgr->m_pMap->m_pMapUtil->GetPathRating( hexVeh, hexAttacked, pUnit->GetTypeUnit( ) ) )
+                /* if ( !m_pGoalMgr->m_pMap->m_pMapUtil->GetPathRating( hexVeh, hexAttacked, pUnit->GetTypeUnit( ) ) )
                 {
                     // or just get within range of attacker
                     if ( !m_pGoalMgr->GetPathRating( hexVeh, hexAttacked, pUnit->GetTypeUnit( ) ) )
                         continue;
-                }
+                }*/
 #endif
 
                 // distance to attacker from this unit
@@ -6450,6 +6507,15 @@ void CAITaskMgr::AttackAlert( CAIMsg* pMsg )
                 // we want the closest
                 if ( iDist && iDist < iBest )
                 {
+
+#ifdef _LOGOUT
+
+                    char buf[256];
+                    sprintf_s( buf, sizeof( buf ), "calling GetPathRating: Unit %d and Unit %d \n", pMsg->m_dwID2,
+                               pMsg->m_dwID );
+                    OutputDebugStringA( buf );
+
+#endif
                     // can it get to the attacker?
                     if ( !m_pGoalMgr->m_pMap->m_pMapUtil->GetPathRating( hexVeh, hexAttacked, pUnit->GetTypeUnit( ) ) )
                     {

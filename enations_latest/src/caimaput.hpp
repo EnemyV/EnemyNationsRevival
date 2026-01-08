@@ -232,30 +232,99 @@ public:
     // Memoization cache for path results
     struct PathCacheEntry
     {
-        CHexCoord hexFrom;
-        CHexCoord hexTo;
-        int       iVehType;
-        BOOL      bResult;
-        DWORD     dwTimestamp;
-        int       iFailureCount;  // Track repeated failures
+        uint64_t compositeKey;  // Packed:  hexFrom, hexTo, iVehType
+        BOOL     bResult;
+        DWORD    dwTimestamp;
+        DWORD    dwFirstFailTime;  // When failures started (for ban timing)
+        int      iFailureCount;
+
+        PathCacheEntry( )
+            : compositeKey( 0 ), bResult( FALSE ), dwTimestamp( 0 ), dwFirstFailTime( 0 ), iFailureCount( 0 )
+        {
+        }
+
+        bool IsEmpty( ) const { return compositeKey == 0; }
+
+        void Clear( )
+        {
+            compositeKey    = 0;
+            bResult         = FALSE;
+            dwTimestamp     = 0;
+            dwFirstFailTime = 0;
+            iFailureCount   = 0;
+        }
+
+        void SetKey( const CHexCoord& hexFrom, const CHexCoord& hexTo, int iVehType )
+        {
+            compositeKey = ( static_cast<uint64_t>( static_cast<unsigned long>( hexFrom ) ) << 32 ) |
+                           ( static_cast<uint64_t>( static_cast<unsigned long>( hexTo ) & 0x00FFFFFF ) ) |
+                           ( static_cast<uint64_t>( iVehType & 0xFF ) << 24 );
+        }
+
+        // If you still need to read back the original values:
+        CHexCoord GetHexFrom( ) const { return CHexCoord( static_cast<unsigned long>( compositeKey >> 32 ) ); }
+        CHexCoord GetHexTo( ) const { return CHexCoord( static_cast<unsigned long>( compositeKey & 0x00FFFFFF ) ); }
+        int       GetVehType( ) const { return static_cast<int>( ( compositeKey >> 24 ) & 0xFF ); }
     };
 
-    static const int   MAX_CACHE_SIZE    = 1000;
+	static const int   MAX_PROBE_COUNT   = 4;  // Max probes for hash collisions
     static const DWORD CACHE_EXPIRE_MS   = 35000;  // Clear the cache because the map changes
     static const int   MAX_FAILURE_COUNT = 2;      // Max failures before temporary ban
     static const DWORD FAILURE_BAN_MS    = 55000;  // just tempban it after repeated failures
+    
+	/*
+	static inline uint64_t MakeKey( const CHexCoord& hexFrom, const CHexCoord& hexTo, int iVehType )
+    {
+        return ( static_cast<uint64_t>( static_cast<unsigned long>( hexFrom ) ) << 32 ) |
+               ( static_cast<uint64_t>( static_cast<unsigned long>( hexTo ) & 0x00FFFFFF ) ) |
+               ( static_cast<uint64_t>( iVehType & 0xFF ) << 24 );
+    }*/
 
-    PathCacheEntry m_pathCache[MAX_CACHE_SIZE];
-    int            m_iCacheSize;
+
+    // In class header
+    static constexpr int HASH_TABLE_SIZE = 2048;         // Power of 2 for fast modulo
+    static const int     CACHE_MASK      = HASH_TABLE_SIZE - 1;
+    int                  m_hashTable[HASH_TABLE_SIZE];  // Index into m_pathCache, -1 = empty
+
+    PathCacheEntry m_pathCache[HASH_TABLE_SIZE];
     DWORD          m_dwLastCacheClear;
 
     // Methods for cache management
+  //  int  HashCacheKey( const CHexCoord& hexFrom, const CHexCoord& hexTo, int iVehType ) const;
+
+// void InvalidatePathCache( );
+
     int  FindCacheEntry( const CHexCoord& hexFrom, const CHexCoord& hexTo, int iVehType );
     void AddCacheEntry( const CHexCoord& hexFrom, const CHexCoord& hexTo, int iVehType, BOOL bResult );
     void ClearExpiredCache( );
-    void InvalidatePathCache( );
     BOOL IsPathBanned( const CHexCoord& hexFrom, const CHexCoord& hexTo, int iVehType );
+    BOOL IsPathBanned(int iIndex );
+    void InvalidatePathCache( );
 
+    // 64-bit composite key with vehType mixed in
+    static inline uint64_t MakeCompositeKey( const CHexCoord& hexFrom, const CHexCoord& hexTo, int iVehType )
+    {
+        uint64_t f = static_cast<uint64_t>( static_cast<unsigned long>( hexFrom ) );
+        uint64_t t = static_cast<uint64_t>( static_cast<unsigned long>( hexTo ) );
+        uint64_t v = static_cast<uint32_t>( iVehType );
+
+        uint64_t key = ( f << 32 ) | t;
+        key ^= ( v * 0x9E3779B185EBCA87ull );
+        key = ( key << 13 ) | ( key >> 51 );
+        key ^= ( v << 17 ) ^ ( v >> 11 );
+
+        return key;
+    }
+
+    // Compute hash index from composite key
+    static inline int ComputeHashIndex( uint64_t key )
+    {
+        // Additional mixing for better distribution
+        key ^= key >> 33;
+        key *= 0xff51afd7ed558ccdULL;
+        key ^= key >> 33;
+        return static_cast<int>( key & CACHE_MASK );
+    }
 };
 
 #endif // __CAIMAPUT_HPP__

@@ -1519,7 +1519,7 @@ void CWndWorld::ReRender( )
         xRem -= m_cx;
     }
 
-    // if there's no DD device, just return?
+    // if there's no DD device, just return (only on directdraw!)?
     if ( pdib->GetType( ) == CBLTFormat::DIB_DIRECTDRAW && !pdib->HasDDSurface( ) )
     {
 #ifdef LOGGINGON

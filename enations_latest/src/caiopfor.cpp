@@ -1264,6 +1264,7 @@ WORD CAIOpForList::GetAttackCnt( int iType, int iTypeUnit )
     return ( wCnt );
 }
 
+// GetNearest (Rocket?)
 CAIOpFor* CAIOpForList::GetNearest( CHexCoord& hexFrom, BOOL bKnown )
 {
     CHexCoord hexCity;

@@ -268,7 +268,7 @@ BOOL CPathMap::GetPath( CHexCoord& hexFrom, CHexCoord& hexTo,
 	int iBaseX, int iBaseY, WORD *pMap, int iVehType, 
 	BOOL bLongHang /*=FALSE*/ )
 {
-	// this is a long expensive function that block severybody...
+	// this is a long expensive function that blocks everybody...
 	EnterCriticalSection (&m_cs);
 	BOOL bPath = _GetPath( hexFrom, hexTo,
 		iBaseX, iBaseY, pMap, iVehType, bLongHang );
@@ -714,6 +714,32 @@ CCell *CPathMap::xGetLowestCost( void )
 	return( pcLowest );
 }
 
+CCell* CPathMap::GetLowestCost( void )
+{
+    // use old method if out of range
+    if ( ( m_iLowestBoth <= 0 ) || ( MAX_BOTH_INDEX <= m_iLowestBoth ) )
+        return xGetLowestCost( );
+
+    // advance m_iLowestBoth past empty buckets (cached for future calls)
+    while ( m_iLowestBoth < MAX_BOTH_INDEX && m_acBoth[m_iLowestBoth] == NULL ) m_iLowestBoth++;
+
+    // no valid bucket found
+    if ( m_iLowestBoth >= MAX_BOTH_INDEX )
+    {
+        TRAP( );
+        return xGetLowestCost( );
+    }
+
+    // all cells in this bucket have the same m_iBoth value (cost + distance),
+    // so returning the head is correct - they're all equally "lowest"
+    CCell* pcLowest = m_acBoth[m_iLowestBoth];
+
+#ifdef TEST_RESULT2
+    TRAP( pcLowest != xGetLowestCost( ) );
+#endif
+    return pcLowest;
+}
+/*
 CCell *CPathMap::GetLowestCost( void )
 {
 
@@ -758,6 +784,7 @@ CCell *CPathMap::GetLowestCost( void )
 #endif
 	return( pcLowest );
 }
+*/
 
 void CPathMap::NewBoth ( CCell * pTest )
 {

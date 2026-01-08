@@ -38,10 +38,17 @@ add_library(wind22 STATIC ${wind22_sources})
 # according to wind22.mak this should be MD
 # but maybe it was changed to MT in later versions?
 # i still think win22 is older or incomplete somehow
+#target_compile_options(wind22 PUBLIC
+#    $<$<CONFIG:Release>:/MD /EHsc /O2 /Ob2 /EHsc>
+#    $<$<CONFIG:Profile>:/MD /EHsc /O2 /Ob2 /EHsc>
+#    $<$<CONFIG:Debug>:/MDd /EHsc /EHsc /ZI>
+#)
 target_compile_options(wind22 PUBLIC
-    $<$<CONFIG:RELEASE>:/MD /EHsc /Zi /O2 /Ob2 /EHsc>
-    $<$<CONFIG:DEBUG>:/MDd /EHsc /EHsc /Zi>
+    $<$<CONFIG:Debug>:/MDd /EHsc /Zi /Od /Ob0>
+    $<$<CONFIG:Profile>:/MD /EHsc /Zi /Od /Ob0>
+    $<$<CONFIG:Release>:/MD /EHsc /O2 /Ob2>
 )
+
 
 set(CMAKE_MFC_FLAG 1)
 
@@ -54,9 +61,10 @@ target_compile_definitions(wind22 PUBLIC
     _MBCS
     WIN32
     _X86_ # Hack! This should not be necessary.
-    # LOGGINGON
+    #LOGGINGON
     AI_THREADS_ENABLED
     $<$<CONFIG:Release>:NDEBUG>
+    $<$<CONFIG:Profile>:NDEBUG>    
     $<$<CONFIG:Debug>:_DEBUG>
 )
 
@@ -64,15 +72,22 @@ target_compile_definitions(wind22 PUBLIC
 # Precompiled header - specify the correct path
 target_precompile_headers(wind22 PUBLIC include/stdafx.h)
 
-target_link_options(enations PUBLIC
-    $<$<CONFIG:Debug>:/DEBUG:FULL>
-    $<$<CONFIG:Release>:/DEBUG:FASTLINK>
-    /OPT:REF
-    /OPT:ICF
-    /INCREMENTAL:NO
+#target_link_options(enations PUBLIC
+#    $<$<CONFIG:Debug>:/DEBUG:FULL>
+#    $<$<CONFIG:Release>:/DEBUG:FASTLINK>
+#    /OPT:REF
+#    /OPT:ICF
+#    /INCREMENTAL:NO
+#    /DYNAMICBASE
+#    /NXCOMPAT
+#    $<$<CONFIG:Release>:/LTCG>
+#)
+target_link_options(wind22 PUBLIC
+    $<$<CONFIG:Debug>:/DEBUG:FULL /OPT:NOREF /OPT:NOICF>
+    $<$<CONFIG:Profile>:/DEBUG:FULL /INCREMENTAL:NO /OPT:NOREF /OPT:NOICF>
+    $<$<CONFIG:Release>:/DEBUG:FASTLINK /INCREMENTAL:NO /OPT:REF /OPT:ICF /LTCG>
     /DYNAMICBASE
     /NXCOMPAT
-    $<$<CONFIG:Release>:/LTCG>
 )
 
 target_link_libraries(wind22 PUBLIC

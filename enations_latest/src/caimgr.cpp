@@ -148,10 +148,18 @@ void CAIMgr::Manage( void )
         EnterCriticalSection( &m_cs );
         pMsg = (CAIMsg*)m_plMsgQueue->RemoveHead( );
         LeaveCriticalSection( &m_cs );
-        m_iIdle = 0;
+        m_iIdle             = 0;
     }
     else
+    {
+        // we want to increment this by gametime, as in, how much game time has passed.
+        // since, for example, if we're paused we dont need to be doing idle processing.
+        // lets call it milliseconds passed?
+       // DWORD dwElapsed     = GetTickCount64( ) - m_dwLastMessageTime;
+       // m_iIdle += (int)dwElapsed;
         m_iIdle++;  // inc when there is no message to process
+    }
+  //  m_dwLastMessageTime = GetTickCount64( );
 
     // delete early so that it don't leak if closed
     // in the middle of this function
@@ -190,7 +198,7 @@ void CAIMgr::Manage( void )
     // test for idle time processing
     if ( m_iIdle > AI_IDLE_LIMIT )
     {
-        m_iIdle = 0;
+        m_iIdle             = 0;
 
 #ifdef _LOGOUT
         logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "\nCAIMgr::Manage() player %d idle function, messages %d ", m_iPlayer,
@@ -254,7 +262,7 @@ void CAIMgr::Manage( void )
         }
         else
         {
-            Sleep( pGameData->GetRandom( 100 ) );
+            Sleep( pGameData->GetRandom( 100 ) + 70 );
 
             // reset this time and start over
             for ( int i = 0; i < MAX_IDLE_FUNCTIONS; ++i ) m_bIdleFunction[i] = TRUE;
@@ -1598,8 +1606,9 @@ void CAIMgr::AttackResponse( CAIMsg* pMsg )
                     // vehicle needs to move into range to attack
                     m_pTaskMgr->MoveToRange( pTargeted, hexAttacker );
                     // and go ahead and send attack message
-                    pTargeted->AttackUnit( pAttacker->GetID( ) );
-                    pAttacker->AttackedBy( pTargeted->GetID( ) );
+                    AttackTargetIfNotAlready( pTargeted, pAttacker );
+                   // pTargeted->AttackUnit( pAttacker->GetID( ) );
+                   // pAttacker->AttackedBy( pTargeted->GetID( ) );
                     return;
                 }
             }
@@ -1611,9 +1620,20 @@ void CAIMgr::AttackResponse( CAIMsg* pMsg )
     else
         return;
 
-    // right now, skip range check until DT responds
-    pTargeted->AttackUnit( pAttacker->GetID( ) );
-    pAttacker->AttackedBy( pTargeted->GetID( ) );
+    AttackTargetIfNotAlready( pTargeted, pAttacker );
+}
+
+
+void CAIMgr::AttackTargetIfNotAlready( CAIUnit* pTargeted, CAIUnit* pAttacker )
+{
+    // Only attack unit if we aren't already attacking it!
+    // // i dont think this determines if its being attacked?
+  //  if ( pTargeted->GetDataDW( ) != pAttacker->GetID( ) )
+    {
+        // right now, skip range check until DT responds
+        pTargeted->AttackUnit( pAttacker->GetID( ) );
+        pAttacker->AttackedBy( pTargeted->GetID( ) );
+    }
 }
 
 //

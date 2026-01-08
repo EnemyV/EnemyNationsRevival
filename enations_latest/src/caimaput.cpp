@@ -1,4 +1,4 @@
-////////////////////////////////////////////////////////////////////////////
+﻿////////////////////////////////////////////////////////////////////////////
 //
 //  CAIMapUt.cpp : CAIMapUtil object declaration
 //                 Divide and Conquer AI
@@ -3651,23 +3651,40 @@ BOOL CAIMapUtil::GetPathRating( CHexCoord& hexFrom, CHexCoord& hexTo, int iVehTy
         m_dwLastCacheClear = dwCurrentTime;
     }
 
-    // Check if this path is temporarily banned due to repeated failures
-    if ( IsPathBanned( hexFrom, hexTo, iVehType ) )
-    {
-        return FALSE;
-    }
-
     // Check cache first
     int iCacheIndex = FindCacheEntry( hexFrom, hexTo, iVehType );
     if ( iCacheIndex >= 0 )
     {
+
+        // Check if this path is temporarily banned due to repeated failures
+        if ( IsPathBanned( iCacheIndex ) )
+        {
+#ifdef _LOGOUT
+
+            char buf[256];
+            sprintf_s( buf, sizeof( buf ), "Path is BANNED X,Y %d %d to X,Y %d %d  \n", hexFrom.X( ), hexFrom.Y( ), hexTo.X( ),
+                       hexTo.Y( ));
+            OutputDebugStringA( buf );
+
+#endif
+            return FALSE;
+        }
+
         PathCacheEntry& entry = m_pathCache[iCacheIndex];
 
         // Check if cache entry is still valid
         if ( dwCurrentTime - entry.dwTimestamp < CACHE_EXPIRE_MS )
         {
+#ifdef _LOGOUT
+
+            char buf[256];
+            sprintf_s( buf, sizeof( buf ), "Path was found in cache X,Y %d %d to X,Y %d %d\n", hexFrom.X( ), hexFrom.Y( ), hexTo.X( ));
+            OutputDebugStringA( buf );
+
+#endif
+
             // Update timestamp for LRU behavior
-            entry.dwTimestamp = dwCurrentTime;
+          //  entry.dwTimestamp = dwCurrentTime;
             return entry.bResult;
         }
     }
@@ -3682,99 +3699,123 @@ BOOL CAIMapUtil::GetPathRating( CHexCoord& hexFrom, CHexCoord& hexTo, int iVehTy
     // m_wBaseCol, m_wBaseRow, m_pMap, iVehType) );
 }
 
-
 // Cache management methods
 int CAIMapUtil::FindCacheEntry( const CHexCoord& hexFrom, const CHexCoord& hexTo, int iVehType )
 {
-    for ( int i = 0; i < m_iCacheSize; i++ )
+    const uint64_t key      = MakeCompositeKey( hexFrom, hexTo, iVehType );
+
+    // Use a fast hash - combine coords with vehicle type
+    int idx = static_cast<int>( ( key ^ ( key >> 32 ) ) & CACHE_MASK );  
+
+    for ( int probe = 0; probe < 8; ++probe )
     {
-        PathCacheEntry& entry = m_pathCache[i];
-        if ( entry.hexFrom == hexFrom && entry.hexTo == hexTo && entry.iVehType == iVehType )
-        {
-            return i;
-        }
+        const PathCacheEntry& entry = m_pathCache[idx];
+
+        if ( entry.IsEmpty( ) )
+            return -1;
+
+        // One 64-bit compare + one int compare (much faster than 6 int compares)
+        if ( entry.compositeKey == key && entry.GetVehType( ) == iVehType )
+            return idx;
+
+        idx = ( idx + 1 ) & CACHE_MASK;  // check next hash?
     }
     return -1;
 }
-
 void CAIMapUtil::AddCacheEntry( const CHexCoord& hexFrom, const CHexCoord& hexTo, int iVehType, BOOL bResult )
 {
-    DWORD dwCurrentTime = theGame.GettimeGetTime( );
+    const uint64_t key           = MakeCompositeKey( hexFrom, hexTo, iVehType );
+    int            idx           = static_cast<int>( ( key ^ ( key >> 32 ) ) & CACHE_MASK );
+    const DWORD    dwCurrentTime = theGame.GettimeGetTime( );
 
-    // Find existing entry or create new one
-    int iIndex = FindCacheEntry( hexFrom, hexTo, iVehType );
+    int   emptyIdx   = -1;
+    int   oldestIdx  = idx;
+    DWORD oldestTime = MAXDWORD;
 
-    if ( iIndex >= 0 )
+    // Single pass:  find existing, track empty slot, track oldest for LRU
+    for ( int probe = 0; probe < MAX_PROBE_COUNT; ++probe )  // Use constant instead of 8
     {
-        // Update existing entry
-        PathCacheEntry& entry = m_pathCache[iIndex];
-        entry.bResult         = bResult;
-        entry.dwTimestamp     = dwCurrentTime;
+        PathCacheEntry& entry = m_pathCache[idx];
+        // verify it's the right one
+        if (!entry.IsEmpty() && (entry.GetHexFrom( ) != hexFrom || entry.GetHexTo( ) != hexTo || entry.GetVehType( ) != iVehType ))
+            continue;
 
-        // Track failures
-        if ( !bResult )
+        // Found existing entry - update it
+        if (!entry.IsEmpty( ) && entry.compositeKey == key )  // Added IsEmpty check
         {
-            entry.iFailureCount++;
-        }
-        else
-        {
-            entry.iFailureCount = 0;  // Reset on success
-        }
-    }
-    else
-    {
-        // Add new entry (replace oldest if cache is full)
-        if ( m_iCacheSize < MAX_CACHE_SIZE )
-        {
-            iIndex = m_iCacheSize++;
-        }
-        else
-        {
-            // Find oldest entry to replace (LRU)
-            DWORD dwOldestTime = dwCurrentTime;
-            iIndex             = 0;
-            for ( int i = 0; i < MAX_CACHE_SIZE; i++ )
+            entry.bResult     = bResult;
+            entry.dwTimestamp = dwCurrentTime;
+
+            if ( bResult )
             {
-                if ( m_pathCache[i].dwTimestamp < dwOldestTime )
+                // Success - reset failure tracking
+                entry.iFailureCount   = 0;
+                entry.dwFirstFailTime = 0;  // ← Add this
+            }
+            else
+            {
+                // Failure - increment count, set first fail time if needed
+                entry.iFailureCount++;
+                if ( entry.dwFirstFailTime == 0 )
                 {
-                    dwOldestTime = m_pathCache[i].dwTimestamp;
-                    iIndex       = i;
+                    entry.dwFirstFailTime = dwCurrentTime;
                 }
             }
+            return; // it already existed?
         }
 
-        PathCacheEntry& entry = m_pathCache[iIndex];
-        entry.hexFrom         = hexFrom;
-        entry.hexTo           = hexTo;
-        entry.iVehType        = iVehType;
-        entry.bResult         = bResult;
-        entry.dwTimestamp     = dwCurrentTime;
-        entry.iFailureCount   = bResult ? 0 : 1;
+        // Track first empty slot
+        if ( entry.IsEmpty( ) && emptyIdx < 0 )
+        {
+            emptyIdx = idx;
+        }
+
+        // Track oldest for LRU eviction (only consider non-empty slots)
+        if ( !entry.IsEmpty( ) && entry.dwTimestamp < oldestTime )
+        {
+            oldestTime = entry.dwTimestamp;
+            oldestIdx  = idx;
+        }
+
+        idx = ( idx + 1 ) & CACHE_MASK;
     }
+
+    // Not found - insert new entry
+    // Prefer empty slot, fallback to LRU eviction
+    int insertIdx = ( emptyIdx >= 0 ) ? emptyIdx : oldestIdx;
+
+    PathCacheEntry& entry = m_pathCache[insertIdx];
+    entry.compositeKey    = key;
+    entry.bResult         = bResult;
+    entry.dwTimestamp     = dwCurrentTime;
+    entry.iFailureCount   = bResult ? 0 : 1;
+    entry.dwFirstFailTime = bResult ? 0 : dwCurrentTime;  
+
+    
+#ifdef _LOGOUT
+
+//    char buf[256];
+ //   sprintf_s( buf, sizeof( buf ), "Path was added to cache X,Y %d %d to X,Y %d %d\n", hexFrom.X( ), hexFrom.Y( ));
+//    OutputDebugStringA( buf );
+
+#endif
 }
 
 void CAIMapUtil::ClearExpiredCache( )
 {
-    DWORD dwCurrentTime = theGame.GettimeGetTime( );
+    DWORD       dwCurrentTime     = theGame.GettimeGetTime( );
+    const DWORD dwExpireThreshold = CACHE_EXPIRE_MS * 2;  // Keep a bit longer for LRU
 
-    // Remove expired entries by compacting the array
-    int iWriteIndex = 0;
-    for ( int iReadIndex = 0; iReadIndex < m_iCacheSize; iReadIndex++ )
+    for ( int i = 0; i < HASH_TABLE_SIZE; i++ )
     {
-        PathCacheEntry& entry = m_pathCache[iReadIndex];
+        PathCacheEntry& entry = m_pathCache[i];
 
-        // Keep entry if it's not expired
-        if ( dwCurrentTime - entry.dwTimestamp < CACHE_EXPIRE_MS * 2 )
-        {  // Keep a bit longer for LRU
-            if ( iWriteIndex != iReadIndex )
-            {
-                m_pathCache[iWriteIndex] = entry;
-            }
-            iWriteIndex++;
+        // Clear expired entries in-place - do NOT move them
+        if ( !entry.IsEmpty( ) && ( dwCurrentTime - entry.dwTimestamp >= dwExpireThreshold ) )
+        {
+            entry.Clear( );
         }
     }
-
-    m_iCacheSize = iWriteIndex;
 }
 
 BOOL CAIMapUtil::IsPathBanned( const CHexCoord& hexFrom, const CHexCoord& hexTo, int iVehType )
@@ -3782,12 +3823,31 @@ BOOL CAIMapUtil::IsPathBanned( const CHexCoord& hexFrom, const CHexCoord& hexTo,
     int iIndex = FindCacheEntry( hexFrom, hexTo, iVehType );
     if ( iIndex >= 0 )
     {
+        return ( IsPathBanned( iIndex ) );
+    }
+    return FALSE;
+}
+
+BOOL CAIMapUtil::IsPathBanned( int iIndex )
+{
+    if ( iIndex >= 0 )
+    {
         PathCacheEntry& entry         = m_pathCache[iIndex];
         DWORD           dwCurrentTime = theGame.GettimeGetTime( );
 
-        // Check if path has failed too many times recently
-        if ( entry.iFailureCount >= MAX_FAILURE_COUNT && !entry.bResult &&
-             dwCurrentTime - entry.dwTimestamp < FAILURE_BAN_MS )
+        // Check if ban has expired - reset if so
+        if ( entry.iFailureCount >= MAX_FAILURE_COUNT && entry.dwFirstFailTime != 0 &&
+             dwCurrentTime - entry.dwFirstFailTime >= FAILURE_BAN_MS )
+        {
+            // Ban expired - reset and allow retry
+            entry.iFailureCount   = 0;
+            entry.dwFirstFailTime = 0;
+            return FALSE;
+        }
+
+        // Check if path is currently banned
+        if ( entry.iFailureCount >= MAX_FAILURE_COUNT && !entry.bResult && entry.dwFirstFailTime != 0 &&
+             dwCurrentTime - entry.dwFirstFailTime < FAILURE_BAN_MS )
         {
             return TRUE;
         }
@@ -3799,7 +3859,10 @@ BOOL CAIMapUtil::IsPathBanned( const CHexCoord& hexFrom, const CHexCoord& hexTo,
 // Method to clear cache when map changes significantly
 void CAIMapUtil::InvalidatePathCache( )
 {
-    m_iCacheSize       = 0;
+    for ( int i = 0; i < HASH_TABLE_SIZE; i++ )
+    {
+        m_pathCache[i].Clear( );
+    }
     m_dwLastCacheClear = theGame.GettimeGetTime( );
 }
 
@@ -8832,7 +8895,7 @@ CAIMapUtil::CAIMapUtil( WORD* pMap, CAIUnitList* plUnits, int iBaseX, int iBaseY
     m_tdShip  = theTransports.GetData( CTransportData::landing_craft );
 
     // Initialize cache
-    m_iCacheSize       = 0;
+  //  m_iCacheSize       = HASH_TABLE_SIZE;
     m_dwLastCacheClear = theGame.GettimeGetTime( );
     memset( m_pathCache, 0, sizeof( m_pathCache ) );
 }
