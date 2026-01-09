@@ -808,7 +808,7 @@ _flush2:
         break;
     }
 
-    switch ( GetProfileInt( "Advanced", "ColorDepth", 1 ) )
+    switch ( GetProfileInt( "Advanced", "ColorDepth", 0 ) )
     {
     case 2:
         m_bUse8Bit = FALSE;
@@ -869,7 +869,7 @@ _flush2:
         break;
     }
 
-    switch ( theApp.GetProfileInt( "Advanced", "Zoom", 2 ) )
+    switch ( theApp.GetProfileInt( "Advanced", "Zoom", 0 ) )
     {
     case 1:
         m_bUseZoom0 = TRUE;
