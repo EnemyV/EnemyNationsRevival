@@ -41,7 +41,7 @@ void ResearchDiscovered( int iItem )
         theApp.m_pdlgRsrch->UpdateChoices( TRUE );
     }
 
-    // check the unit build dialogs
+    // check and update the unit build dialogs
     POSITION pos = theBuildingMap.GetStartPosition( );
     while ( pos != NULL )
     {
@@ -53,6 +53,7 @@ void ResearchDiscovered( int iItem )
             pBldg->UpdateChoices( );
     }
 
+    // check and update the vehicle build dialogs
     pos = theVehicleMap.GetStartPosition( );
     while ( pos != NULL )
     {

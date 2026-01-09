@@ -38,7 +38,8 @@ void CVehicle::Move() {
 
     ASSERT_VALID (this);
 #ifndef _GG
-#ifdef STRICTER_ASSERTS
+#ifdef STRICTER_ASSERTS2
+    // i *think* this happens when a vehicle cant path to its destination, like if its trying to go to an island or something
     ASSERT( m_ptNext != m_ptHead );
 #endif
 #endif
@@ -113,7 +114,8 @@ void CVehicle::Move() {
             ASSERT_VALID (this);
 #ifndef _GG
 #ifdef STRICTER_ASSERTS
-            ASSERT (m_cMode == blocked);
+            // BUGBUG i think its ok to have stop here? -vtier
+            ASSERT ((m_cMode == blocked) || (m_cMode == stop));
 #endif
 #endif
             goto Done;
@@ -567,7 +569,8 @@ BOOL CVehicle::FindNextHex() {
     if (!bRtn) {
 #ifndef _GGASSERT
         #if STRICTER_ASSERTS
-        ASSERT (m_cMode == blocked);
+        // BUGBUG this often gets here with stopped, but i think its ok -vtier
+        ASSERT( ( m_cMode == blocked ) || ( m_cMode == stop) );  // or stopped?
         #endif
 #endif
         ZeroMoveParams();

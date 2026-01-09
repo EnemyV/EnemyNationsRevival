@@ -849,13 +849,24 @@ void CPlayer::Serialize( CArchive& ar )
         LONG l;
         ar >> l;
         if ( !l )
+        {
+            ASSERT( l ); // why would this be null?
             m_piBldgExists = NULL;
+        }
         else
         {
-            m_piBldgExists = new LONG[l];
+            // determine the arraysize before memset, to prevent writing outside of the array (if new buildings were added)
+            // get which ever is longer, l or theStructures.GetNumBuildings( )
+            int arraySize  = max( (int)l, theStructures.GetNumBuildings( ) );
+
+            if ( m_piBldgExists ) // in case its somehow called twice?
+                delete[] m_piBldgExists;
+
+            m_piBldgExists = new LONG[arraySize];
+            memset( m_piBldgExists, 0, arraySize * sizeof( LONG ) );
+
             for ( int iOn = 0; iOn < l; iOn++ ) ar >> m_piBldgExists[iOn];
         }
-        memset( m_piBldgExists, 0, theStructures.GetNumBuildings( ) * sizeof( LONG ) );
 
         ar >> m_fConstProd;
         ar >> m_fMtrlsProd;

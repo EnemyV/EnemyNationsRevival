@@ -1215,7 +1215,7 @@ void CWndArea::ReRender( )
     // Render each rect in the current dirty rect list and add it to
     // the list of rects to be blitted
 
-    // GGTESTING	m_aa.Render( this );
+    // GGTESTING m_aa.Render(  ); this creates crazy trails on vehicles
 
     if ( m_bUpdateAll )
     {
@@ -1325,6 +1325,7 @@ void CWndArea::OnMouseMove( UINT nFlags, CPoint point )
         ASSERT_STRICT_VALID_STRUCT( &m_aa );
 
 #ifdef BUGBUG
+        // not needed?
         m_aa.MoveCenterPixels( point.x - m_ptRMB.x, point.y - m_ptRMB.y );
 
         // paint it
@@ -1874,7 +1875,7 @@ int CWndArea::OnCreate( LPCREATESTRUCT lpCreateStruct )
 
     m_bScrollBars = theApp.GetProfileInt( "Advanced", "Scroll", 0 );
 
-    // NOTE: this crashes on load game because ?something? isn't initialized
+    // NOTE: this crashes on load game because? something? wasn't initialized
     // if first window AND have placement info - use it
     BOOL bPlaceIt = ( ( theAreaList.GetCount( ) == 0 ) 
         && ( theGame.m_wpArea.length != 0 ) );

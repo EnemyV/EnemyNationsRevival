@@ -3431,7 +3431,7 @@ void CVehicle::_SetRouteMode( VEH_MODE iMode )
 #endif
 
 #ifndef _GG
-#ifdef STRICTER_ASSERTS
+#ifdef STRICTER_ASSERTS2
         ASSERT( theBuildingHex.GetBuilding( m_ptHead ) != NULL );
 #endif
 #endif

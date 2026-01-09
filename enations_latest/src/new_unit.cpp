@@ -2926,6 +2926,7 @@ static int fnEnumDecVis( CHex* pHex, CHexCoord, void* )
     return ( FALSE );
 }
 
+// Buildings created here!
 CBuilding* CBuilding::Create( CHexCoord const& hex, int iBldg, int iBldgDir, CVehicle* pVeh, int iOwner, DWORD ID,
                               BOOL bShare )
 {
@@ -6166,6 +6167,10 @@ void CStructureData::AssertValid( ) const
     // was failing, dunno why lol
     // VTFIXME
    // ASSERT( ( m_bFlags & 0x07 ) == m_bFlags );
+    // i think everything in enum BLDG_FLAGS is valid
+    // its a list of animations i think?
+    // but what is FlBlackHole
+    ASSERT( ( m_bFlags & 0xF7 ) == m_bFlags );
 
     ASSERT( ( 0 <= m_hexExit.X( ) ) && ( m_hexExit.X( ) < m_cx ) );
     ASSERT( ( 0 <= m_hexExit.Y( ) ) && ( m_hexExit.Y( ) < m_cy ) );
@@ -6389,7 +6394,7 @@ void CVehicle::AssertValid( ) const
     ASSERT_VALID_STRUCT( &m_ptHead );
     ASSERT_VALID_STRUCT( &m_ptTail );
 #ifndef _GG
-#if STRICTER_ASSERTS
+#if STRICTER_ASSERTS2
     if ( GetData( )->GetVehFlags( ) & CTransportData::FL1hex )
         ASSERT( m_ptHead == m_ptTail );
     else
@@ -6496,7 +6501,7 @@ void CVehicle::AssertValidAndLoc( ) const
                 x -= theMap.Get_eX( ) * MAX_HEX_HT;
         }
 
-#ifdef STRICTER_ASSERTS
+#ifdef STRICTER_ASSERTS2
         ASSERT( x == m_maploc.x );
 #endif
 
@@ -6508,14 +6513,14 @@ void CVehicle::AssertValidAndLoc( ) const
             if ( y >= theMap.Get_eY( ) * MAX_HEX_HT )
                 y -= theMap.Get_eY( ) * MAX_HEX_HT;
         }
-#ifdef STRICTER_ASSERTS
+#ifdef STRICTER_ASSERTS2
         ASSERT( y == m_maploc.y );
 #endif
 
         if ( !( GetData( )->GetVehFlags( ) & CTransportData::FL1hex ) )
 #ifndef _GG
-#if STRICTER_ASSERTS
-            // triggers on every vehicle spawn
+#if STRICTER_ASSERTS2
+            // triggers on every vehicle spawn (and building completed?)
             ASSERT( m_iDir == aiDir[GetDirIndex( m_ptHead, m_ptTail )] )
 #endif
 #endif

@@ -195,7 +195,7 @@
 #define CAI_ROUTE_Y	13
 
 #define CAI_UNASSIGNED	10
-#define CAI_SIZE		16	// many values depend on this being 16
+#define CAI_SIZE		16	// many values depend on this being 16 (size of.. cai data?)
 
 // also used in CAIUnit::m_pwaParams slots for transporting materials
 //#define FROM_MATERIAL_ID	1	// material transported
