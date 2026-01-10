@@ -13,6 +13,10 @@ else ()
     message(STATUS "Could not find ccache.")
 endif ()
 
+# Ensure VS multi-config generator exports these solution configurations
+if (CMAKE_GENERATOR MATCHES "Visual Studio")
+  set(CMAKE_CONFIGURATION_TYPES "Debug;Release;Profile;Sanitize" CACHE STRING "Available configurations" FORCE)
+endif ()
 
 project(Enations VERSION 1.0
                  DESCRIPTION "Enemy Nations"
