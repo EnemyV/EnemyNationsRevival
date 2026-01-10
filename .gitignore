@@ -6,6 +6,7 @@
 /enations_latest/src/out/*
 /cmake-build-debug/
 /cmake-build-release/
+/cmakeBuild/
 /Debug/
 /Release/
 /windward/.vs/*
