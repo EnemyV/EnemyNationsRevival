@@ -88,7 +88,9 @@ set(enations_sources
         vpxfer.cpp
         world.cpp
         wrldinit.cpp
-        mem_pool.h)
+        mem_pool.h
+        cpuspeed.cpp
+)
 
 
 set(CMAKE_GENERATOR_TOOLSET "host=x86")
@@ -124,7 +126,7 @@ add_compile_definitions(
 
 
 target_compile_definitions(enations PUBLIC
-     #   _AFXDLL
+        _AFXDLL
         _WIN32
         _WIN32_WINNT=_WIN32_WINNT_WIN7
         _MBCS
@@ -150,11 +152,13 @@ message("cdefs: ${cdefs}")
         
 target_include_directories(enations PUBLIC
         ../../tools/
-       ../../cmake-build-release/tools
+       ../../cmakeBuild/tools
        ../../windward/wind22/include)
 
 
 target_link_libraries(enations PUBLIC
+        vdmplay 
+        wind22
         ddraw.lib
         mss32.lib
         wing32.lib
@@ -177,6 +181,8 @@ endif()
 target_link_options(enations PUBLIC
     /NODEFAULTLIB:nafxcw.lib
     /NODEFAULTLIB:libcmt.lib
+    #/NODEFAULTLIB:mfcs140.lib   # Exclude static MFC release
+    #/NODEFAULTLIB:mfcs140d.lib  # Exclude static MFC debug
 
     $<$<CONFIG:Debug>:/DEBUG:FULL /OPT:NOREF /OPT:NOICF>
 
@@ -191,15 +197,15 @@ target_link_options(enations PUBLIC
         
 
     target_link_directories(enations PUBLIC        
-        ../../cmake-build-release/tools/lib
-        ../../cmake-build-release/tools/vdmplay/$<CONFIG>
-        ../../cmake-build-release/windward/wind22/$<CONFIG>
+        ../../tools/lib
+        ../../cmakeBuild/tools/vdmplay/$<CONFIG>
+        ../../cmakeBuild/windward/wind22/$<CONFIG>
     )
 
 # Copy required DLLs to output directory
 add_custom_command(TARGET enations POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "${CMAKE_BINARY_DIR}/tools/mss/MSS32.DLL"
+        "${CMAKE_BINARY_DIR}/../tools/mss/MSS32.DLL"
         $<TARGET_FILE_DIR:enations>
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${CMAKE_BINARY_DIR}/tools/vdmplay/$<CONFIG>/vdmplay.dll"

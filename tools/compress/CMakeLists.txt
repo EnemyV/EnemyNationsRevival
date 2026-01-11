@@ -46,7 +46,7 @@ target_link_libraries(compit PUBLIC
         
 
     target_link_directories(compit PUBLIC
-        ../../cmake-build-release/windward/wind22/
+        ../../cmakeBuild/windward/wind22/
     )
 
 set_property(TARGET compit PROPERTY CXX_STANDARD 11)

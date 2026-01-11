@@ -37,7 +37,7 @@ set(vdmplay_sources
 
 add_library(vdmplay SHARED ${vdmplay_sources})
 
-set(CMAKE_MFC_FLAG 1)
+set(CMAKE_MFC_FLAG 2)
 
 #target_compile_definitions(vdmplay PUBLIC
    #     _AFXDLL
@@ -56,7 +56,7 @@ set(CMAKE_MFC_FLAG 1)
 
 
 target_compile_definitions(vdmplay PUBLIC
-#        _AFXDLL
+        _AFXDLL
 #        _DLL
 #        _AFX_STATIC
         STRICT
@@ -71,6 +71,7 @@ target_compile_definitions(vdmplay PUBLIC
         _WIN32_WINNT=_WIN32_WINNT_WIN7
         $<$<CONFIG:Release>:NDEBUG>
         $<$<CONFIG:Profile>:NDEBUG>
+        $<$<CONFIG:Sanitize>:_DEBUG>
         $<$<CONFIG:Debug>:_DEBUG>
         )
 
@@ -95,9 +96,9 @@ target_link_libraries(vdmplay PUBLIC
 #    mtlmt.lib
 #    nafxcwd.lib 
     legacy_stdio_definitions
-    $<$<CONFIG:Debug>:nafxcwd.lib>       # Only for Debug
-    $<$<CONFIG:Release>:nafxcw.lib>      # Only for Release
-    $<$<CONFIG:Profile>:nafxcw.lib>      # Only for Release
+   # $<$<CONFIG:Debug>:nafxcwd.lib>       # Only for Debug
+   # $<$<CONFIG:Release>:nafxcw.lib>      # Only for Release
+   # $<$<CONFIG:Profile>:nafxcw.lib>      # Only for Release
 )
 
 
@@ -110,9 +111,10 @@ target_link_libraries(vdmplay PUBLIC
 
 # according to vdmplay.mak this should be MT ...
 target_compile_options(vdmplay PRIVATE
-    $<$<CONFIG:DEBUG>:/MTd /ZI>
-    $<$<CONFIG:RELEASE>:/MT>
-    $<$<CONFIG:Profile>:/MT>
+    $<$<CONFIG:DEBUG>:/MDd /ZI>
+    $<$<CONFIG:RELEASE>:/MD>
+    $<$<CONFIG:Profile>:/MD>
+    $<$<CONFIG:Sanitize>:/MD>
 )
 #target_compile_options(vdmplay PRIVATE
 #        "$<$<CONFIG:RELEASE>:$<BUILD_INTERFACE:/MD;/GX;/Zi;/Ob2;/EHsc>"

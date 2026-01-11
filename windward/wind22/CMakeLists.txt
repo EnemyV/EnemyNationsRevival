@@ -50,7 +50,7 @@ target_compile_options(wind22 PUBLIC
 )
 
 
-set(CMAKE_MFC_FLAG 1)
+set(CMAKE_MFC_FLAG 2)
 
 #set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
@@ -98,8 +98,8 @@ target_link_libraries(wind22 PUBLIC
 target_include_directories(wind22 PUBLIC
         include
         ./include
-        ../../cmake-build-release/tools
+        ../../tools
         )
 
 target_link_directories(wind22 PUBLIC
-        ../../cmake-build-release/tools/lib)
+        ../../cmakeBuild/tools/lib)

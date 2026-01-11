@@ -27,7 +27,7 @@ find_package(MFC REQUIRED)
 
 # Link libraries
 target_link_libraries(iserve PRIVATE
-    ${CMAKE_SOURCE_DIR}/cmake-build-release/tools/vdmplay/Release/vdmplay.lib
+    ${CMAKE_SOURCE_DIR}/cmakeBuild/tools/vdmplay/Release/vdmplay.lib
     wsock32.lib
 )
 
