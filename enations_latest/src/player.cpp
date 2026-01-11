@@ -2946,9 +2946,9 @@ void CGame::AssertValid( ) const
     if ( m_pServer )
     {
         if ( m_bServer )
-            m_pServer == m_pMe; // should be asserttrue??
+            ASSERT(m_pServer == m_pMe);
         else
-            m_pServer->m_iNetNum != m_pMe->m_iNetNum;
+            ASSERT(m_pServer->m_iNetNum != m_pMe->m_iNetNum);
     }
 }
 
