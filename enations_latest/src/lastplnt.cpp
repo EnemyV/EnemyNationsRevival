@@ -37,6 +37,7 @@
 #ifndef __INCLUDE_THIS_LAST__
 #include "lastplnt.h"
 #endif
+#include "cpuspeed.hpp"
 
 
 #ifdef _DEBUG
@@ -444,96 +445,12 @@ BOOL CConquerApp::InitInstance( )
 
     m_sAppName.LoadString( IDS_MAIN_TITLE );
 
+    // Get CPU Speed
+    CPUInfo cpu;
+    double  mhz = cpu.get_cpu_mhz( );
+
     // get the CPU speed (needed before screen res)
-    if ( ( m_iCpuSpeed = GetProfileInt( "Advanced", "CPUspeed", 0 ) ) < 60 )
-    {
-        BOOL        bGotSpeed = FALSE;
-        SYSTEM_INFO si;
-        ::GetSystemInfo( &si );
-
-        if ( ( si.wProcessorArchitecture == PROCESSOR_ARCHITECTURE_INTEL ) && ( si.wProcessorLevel >= 5 ) )
-        {
-            // in case processor can't handle rdtsc
-            try
-            {
-                static int dwStart, dwHigh, dwEnd;
-                m_iCpuSpeed = INT_MAX;
-                for ( int iTry = 0; iTry < 4; iTry++ )
-                {
-                    ::Sleep( 10 );
-
-                    // get the clock count
-                    __asm
-                        {
-                        _emit 0fh
-                        _emit 31h  // rdtsc
-                        mov [dwStart], eax
-                        mov [dwHigh], edx
-                        }
-
-                    // wait 250 ms
-                    DWORD dwTime = timeGetTime( ) + 250;
-                    while ( timeGetTime( ) < dwTime )
-                        ;
-
-                    __asm
-                    {
-                        _emit 0fh
-                        _emit 31h  // rdtsc
-                        mov [dwEnd], eax
-                        sub [dwHigh], edx
-                    }
-
-                    if ( dwHigh == 0 )
-                    {
-                        int iTime   = dwEnd - dwStart;
-                        m_iCpuSpeed = __min( iTime, m_iCpuSpeed );
-                    }
-                }
-                m_iCpuSpeed = ( ( m_iCpuSpeed >> 12 ) * 133 + ( 0x1FAD / 2 ) ) / 0x1FAD;
-                bGotSpeed   = TRUE;
-            }
-
-            catch ( ... )
-            {
-            }
-        }
-
-        if ( !bGotSpeed )
-        {
-            m_iCpuSpeed = INT_MAX;
-            int iPri    = GetThreadPriority( );
-            ::Sleep( 100 );
-
-            for ( int iTry = 0; iTry < 16; iTry++ )
-            {
-                SetThreadPriority( THREAD_PRIORITY_HIGHEST );
-                ::Sleep( 10 );
-                DWORD dwStart = timeGetTime( );
-                _asm {
-                    push	ebx
-                    mov	ecx, 100000h
-                    jmp	_flush2
-_flush2:
-                    mov eax, 01234h
-                    mov edx, 10h
-                    mov	ebx, 100
-                    div ebx
-                    div	ebx
-                    loop	_flush2
-                    pop	ebx
-                }
-                DWORD dwTime = timeGetTime( ) - dwStart;
-                SetThreadPriority( iPri );
-                ::Sleep( 10 );
-                m_iCpuSpeed = __min( m_iCpuSpeed, (int)dwTime );
-            }
-
-            m_iCpuSpeed = __max( 1, m_iCpuSpeed );
-            m_iCpuSpeed = ( 133 * 703 + 351 ) / m_iCpuSpeed;
-        }
-    }
-    m_iCpuSpeed = __max( 60, m_iCpuSpeed );
+    m_iCpuSpeed = mhz;
 
     // if we can't switch to 640x480 then we punt on all of this
     if ( iWinType != W32s )
