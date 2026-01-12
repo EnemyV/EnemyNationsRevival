@@ -43,10 +43,11 @@ add_library(wind22 STATIC ${wind22_sources})
 #    $<$<CONFIG:Profile>:/MD /EHsc /O2 /Ob2 /EHsc>
 #    $<$<CONFIG:Debug>:/MDd /EHsc /EHsc /ZI>
 #)
-target_compile_options(wind22 PUBLIC
-    $<$<CONFIG:Debug>:/MDd /EHsc /Zi /Od /Ob0>
-    $<$<CONFIG:Profile>:/MD /EHsc /Zi /Od /Ob0>
-    $<$<CONFIG:Release>:/MD /EHsc /O2 /Ob2>
+target_compile_options(wind22 PUBLIC    
+    $<$<CONFIG:Sanitize>:/MDd /EHsc /Od /Ob0 /fsanitize=address>
+    $<$<CONFIG:Debug>:/MDd /EHsc /Od /Ob0> # ZI
+    $<$<CONFIG:Profile>:/MD /EHsc /Od /Ob0> # ZI
+    $<$<CONFIG:Release>:/MD /EHsc /O2 /Ob2 /Oi /Ot /GL /Gy /Gw /GF /arch:SSE2>
 )
 
 
@@ -82,7 +83,8 @@ target_precompile_headers(wind22 PUBLIC include/stdafx.h)
 #    /NXCOMPAT
 #    $<$<CONFIG:Release>:/LTCG>
 #)
-target_link_options(wind22 PUBLIC
+target_link_options(wind22 PUBLIC    
+    $<$<CONFIG:Sanitize>:/DEBUG:FULL /OPT:NOREF /OPT:NOICF /fsanitize=address>
     $<$<CONFIG:Debug>:/DEBUG:FULL /OPT:NOREF /OPT:NOICF>
     $<$<CONFIG:Profile>:/DEBUG:FULL /INCREMENTAL:NO /OPT:NOREF /OPT:NOICF>
     $<$<CONFIG:Release>:/DEBUG:FASTLINK /INCREMENTAL:NO /OPT:REF /OPT:ICF /LTCG>
@@ -102,4 +104,5 @@ target_include_directories(wind22 PUBLIC
         )
 
 target_link_directories(wind22 PUBLIC
-        ../../cmakeBuild/tools/lib)
+        ../../cmakeBuild/tools/lib
+        )

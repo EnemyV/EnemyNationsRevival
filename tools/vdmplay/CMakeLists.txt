@@ -123,6 +123,7 @@ target_compile_options(vdmplay PRIVATE
         
 
 target_link_options(vdmplay PUBLIC
+        $<$<CONFIG:Sanitize>:/fsanitize=address>
        # /NODEFAULTLIB:libcmt
        # /NODEFAULTLIB:LIBCMTD
         /NODEFAULTLIB:mtlgmt
