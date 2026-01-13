@@ -76,7 +76,7 @@ void MySrand( DWORD dwSeed ) {
 
 int MyRand() {
 
-    int iInd = ( iRtn * 97 ) / RAND_MAX;
+    int iInd = ( iRtn * 97 ) / RAND_MAX;  // BUGBUG platform dependent?
     ASSERT( ( 0 <= iInd ) && ( iInd < 98 ) );
 
     iRtn = aRnd[iInd];

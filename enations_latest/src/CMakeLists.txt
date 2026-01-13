@@ -102,11 +102,12 @@ add_executable(enations WIN32 ${enations_sources})
 # should be /Zi for release (no it shouldn't?)')
 # /Z7 for profiling
 # BUGBUGTODO change back to /Zi
-target_compile_options(enations PRIVATE
+target_compile_options(enations PRIVATE    
    # $<$<CONFIG:Release>:/MD /EHsc /Ob2 /Z7> # Profiling build
-    $<$<CONFIG:Release>:/MD /EHsc /O2 /Ob2 /Oi /GL /Gy /Gw> # release
+    $<$<CONFIG:Release>:/MD /EHsc /O2 /Ob2 /Oi /GL /Gy /Gw /Ot /GF /arch:SSE2> # release
     $<$<CONFIG:Profile>:/MD /Zi /DEBUG /Od /Ob0>
-    $<$<CONFIG:Debug>:/MDd /EHsc /ZI>
+    $<$<CONFIG:Debug>:/MDd /EHsc> # ZI
+    $<$<CONFIG:Sanitize>:/MDd /EHsc /fsanitize=address> # ZI
 )
 
 set(CMAKE_MFC_FLAG 2)
@@ -119,6 +120,7 @@ get_target_property(copts enations COMPILE_OPTIONS)
 message("copts: ${copts}")
 
 add_compile_definitions(
+    $<$<CONFIG:Sanitize>:_DEBUG>
     $<$<CONFIG:Debug>:_DEBUG>
     $<$<CONFIG:Release>:NDEBUG>
     $<$<CONFIG:Profile>:NDEBUG> # disables asserts in profile builds
@@ -137,7 +139,7 @@ target_compile_definitions(enations PUBLIC
         STRICTER_ASSERTS ## these prob all need to be fixed
         AI_THREADS_ENABLED # here's hoping!!
         # AI_SPECTATE
-        # _CHEAT
+        _CHEAT
         # _PROFILE # doesn't work?
         $<$<CONFIG:Release>:NDEBUG>
         $<$<CONFIG:Profile>:NDEBUG>
@@ -179,10 +181,11 @@ if(MSVC)
 endif()
 
 target_link_options(enations PUBLIC
+    
     /NODEFAULTLIB:nafxcw.lib
     /NODEFAULTLIB:libcmt.lib
-    #/NODEFAULTLIB:mfcs140.lib   # Exclude static MFC release
-    #/NODEFAULTLIB:mfcs140d.lib  # Exclude static MFC debug
+    
+    $<$<CONFIG:Sanitize>:/DEBUG:FULL /OPT:NOREF /OPT:NOICF /fsanitize=address /ZI>
 
     $<$<CONFIG:Debug>:/DEBUG:FULL /OPT:NOREF /OPT:NOICF>
 

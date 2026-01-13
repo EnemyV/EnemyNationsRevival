@@ -56,3 +56,39 @@ Currently, I am working on getting everything to compile with relatively minimal
 * ccache location is hardcoded in CMakeLists.txt
 * There are a ton of horrible hacks to try to get things to compile.
 * Only works on windows.
+
+
+== Getting Started
+
+Prerequisites
+----
+ccache-4.8.1
+VS2022 with prerequisites"
++Desktop dev w/ C++
++Game development with C++
+x86 C++ 2015–2022 Redistributable 
+----
+
+Clone repo locally
+----
+mkdir enations
+cd enations
+git clone https://github.com/EnemyV/EnemyNationsRevival.git
+----
+
+generate project directory with cmake
+I use the VS Developer Console for this
+----
+cmake -S . -B cmakeBuild -G "Visual Studio 17 2022" -A Win32
+----
+
+Open in VS 2022
+----
+open cmakeBuild folder
+Launch Enations.sln
+Select Release/Win32
+Build wind22, vdmplay, then finally enations
+Run enations.exe
+
+optionally: set enations as your startup project
+----

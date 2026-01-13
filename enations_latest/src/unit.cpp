@@ -357,7 +357,8 @@ BOOL CTransportData::CanEnterHex( CHexCoord const& hexSrc, CHexCoord const& hexD
     if ( !bStrict )
         return ( TRUE );
 
-    // dest building must be going to the exit
+    // dest building must be going to the exit/entrance? 
+    // (this is where vehicles enter /leave?) 
     if ( pBldgDest != NULL )
         if ( hexDest != ( IsBoat( ) ? pBldgDest->GetShipHex( ) : pBldgDest->GetExitHex( ) ) )
             return ( FALSE );

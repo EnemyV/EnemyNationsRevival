@@ -11,7 +11,7 @@
 
 
 // this is always defined in windward so it's there for the apps
-#define _LOGOUT
+// #define _LOGOUT
 
 #include <windward.h>
 

@@ -80,6 +80,7 @@ UINT fnMusicReadAhead( LPVOID pParam ) {
         EnterCriticalSection( &( pRawChn->m_cs ) );
     pRawChn->m_cStat = CRawChannel::_unused;
     pRawChn->m_pThread->m_hThread = NULL;
+    pRawChn->m_pThread            = NULL; // prevent FreeDlbBuf from accessing after autodelete
     if ( pRawChn->m_bCriticalSectionCreated )
         LeaveCriticalSection( &( pRawChn->m_cs ) );
 
