@@ -6247,7 +6247,8 @@ void CUnit::AssertValid( ) const
     ASSERT( ( 0 <= m_fDamageMult ) && ( m_fDamageMult <= 1 ) );
     ASSERT( ( 0.5 <= m_fDamPerfMult ) && ( m_fDamPerfMult <= 1 ) );
 #ifdef STRICTER_ASSERTS
-    ASSERT( ( m_unitFlags & ~0x1F ) == 0 ); // this was failing for loaded games, but went away eventually...
+    // was ~0x1F, however, based on UNIT_FLAGS in unit.h i think ~0x07FF includes all valid states?
+    ASSERT( ( m_unitFlags & ~0x07FF ) == 0 ); // this was failing for loaded games, but went away eventually...
 #endif
 }
 
