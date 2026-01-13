@@ -176,6 +176,7 @@ BOOL CDIB::Resize( int cx, int cy ) {
 
     }
 
+#ifdef LOGGINGON
     if (GetType() != CBLTFormat::DIB_MEMORY)
     {
         char buf[128];
@@ -183,6 +184,7 @@ BOOL CDIB::Resize( int cx, int cy ) {
         OutputDebugStringA( buf );
 
     }
+#endif
 
     if ( cx == m_cx && cy == m_cy )
     {
