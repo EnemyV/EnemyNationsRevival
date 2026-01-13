@@ -2122,10 +2122,13 @@ static void SetVehDest( CMsgVehSetDest* pMsg )
     else
         pVeh->SetDestAndMode( pMsg->m_hex, (CVehicle::VEH_POS)pMsg->m_iSub );
 
-    ASSERT( ( pVeh->m_hexDest == pMsg->m_hex ) ||
+    // this can happen if the unit needs to change its destination because its going to a building and 
+    // needs to get to the entrance
+#ifdef STRICTER_ASSERTS2
+    ASSERT( ( pVeh->m_hexDest == pMsg->m_hex) ||
             ( ( theBuildingHex.GetBuilding( pVeh->m_hexDest ) != NULL ) &&
               ( theBuildingHex.GetBuilding( pVeh->m_hexDest ) == theBuildingHex.GetBuilding( pMsg->m_hex ) ) ) );
-
+    #endif
 #ifdef _DEBUG
     if ( pVeh->m_hexDest != pMsg->m_hex )
         logPrintf( LOG_PRI_CRITICAL, LOG_VEH_MOVE, "Vehicle %d SetVehDest (%d,%d) changed to (%d,%d)", pMsg->m_dwID,
