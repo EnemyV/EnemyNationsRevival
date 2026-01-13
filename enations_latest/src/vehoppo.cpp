@@ -410,6 +410,7 @@ void CVehicle::DetermineOppo ()
 		piOn++;
 		}
 }
+/*
 // finds if anyone local can oppo fire on unit that just moved
 void CUnit::OtherOppo( )
 {
@@ -533,6 +534,150 @@ void CUnit::OtherOppo( )
                 int iLOS = theMap.LineOfSight( this, pVeh );
                 if ( iLOS >= 0 && iLOS <= spotRange )
                     IncSee( pVeh );
+            }
+        }
+    }
+}
+*/
+
+// finds if anyone local can oppo fire on unit that just moved
+void CUnit::OtherOppo( )
+{
+    // get the position of the unit for fast testing
+    const CHexCoord _hex( GetUnitType( ) == CUnit::vehicle ? ( (CVehicle*)this )->GetHexHead( )
+                                                           : ( (CBuilding*)this )->GetHex( ) );
+
+    // Cache commonly used values
+    const int hexX     = _hex.X( );
+    const int hexY     = _hex.Y( );
+    CPlayer*  pMyOwner = GetOwner( );
+    CHexCoord hexCheck;
+    const int iRad = MAX_SPOTTING;
+
+    // Optimized: Iterate spatially within spotting range instead of
+    // looping through the entire global unit list.
+    for ( int y = -iRad; y <= iRad; y++ )
+    {
+        hexCheck.Y( CHexCoord::Wrap( hexY + y ) );
+
+        for ( int x = -iRad; x <= iRad; x++ )
+        {
+            hexCheck.X( CHexCoord::Wrap( hexX + x ) );
+
+            CHex* pHex  = theMap.GetHex( hexCheck );
+            BYTE  units = pHex->GetUnits( );
+
+            // If empty, skip
+            if ( !( units & ( CHex::bldg | CHex::ul | CHex::ur | CHex::ll | CHex::lr ) ) )
+                continue;
+
+            int diffX = abs( x );
+            int diffY = abs( y );
+
+            // Process building on this hex
+            if ( units & CHex::bldg )
+            {
+                CBuilding* pBldg = theBuildingHex._GetBuilding( hexCheck );
+                if ( pBldg && !( pBldg->GetFlags( ) & CUnit::dying ) )
+                {
+                    CPlayer* pBldgOwner = pBldg->GetOwner( );
+                    if ( pBldgOwner->IsLocal( ) && pBldgOwner != pMyOwner )
+                    {
+                        // Opportunity fire check
+                        if ( pBldg->m_pUnitOppo == NULL && pBldg->GetRange( ) > 0 )
+                        {
+                            if ( theMap.GetRangeDistance( this, pBldg ) <= pBldg->GetRange( ) )
+                            {
+                                CUnit* pOppo = NULL;
+                                if ( pBldgOwner->IsAI( ) )
+                                    pBldg->CheckAiOppo( this, &pOppo, FALSE );
+                                else
+                                {
+                                    int iDamageOppo = 0;
+                                    pBldg->CheckOppo( this, iDamageOppo, &pOppo );
+                                }
+                                if ( pOppo != NULL )
+                                    pBldg->SetOppo( this );
+                            }
+                        }
+
+                        // AI spotting check
+                        if ( m_pdwPlyrsSee[pBldgOwner->GetPlyrNum( )] == 0 )
+                        {
+                            int spotRange = pBldg->GetSpottingRange( );
+                            if ( diffX <= spotRange && diffY <= spotRange )
+                            {
+                                if ( theMap.GetRangeDistance( this, pBldg ) <= spotRange )
+                                    IncSee( pBldg );
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Process vehicles on this hex (check all 4 sub-hexes)
+            if ( units & ( CHex::ul | CHex::ur | CHex::ll | CHex::lr ) )
+            {
+                const BYTE subHexFlags[4]      = { CHex::ul, CHex::ur, CHex::ll, CHex::lr };
+                const int  subHexOffsets[4][2] = {
+                    { 0, 0 },  // ul:  upper-left
+                    { 1, 0 },  // ur:  upper-right
+                    { 0, 1 },  // ll: lower-left
+                    { 1, 1 }   // lr: lower-right
+                };
+
+                for ( int i = 0; i < 4; i++ )
+                {
+                    // Check if this sub-hex has a vehicle
+                    if ( !( units & subHexFlags[i] ) )
+                        continue;
+
+                    // Compute subhex coordinates
+                    int     subX = hexCheck.X( ) * 2 + subHexOffsets[i][0];
+                    int     subY = hexCheck.Y( ) * 2 + subHexOffsets[i][1];
+                    CSubHex sub( subX, subY );
+
+                    CVehicle* pVeh = theVehicleHex._GetVehicle( sub );
+
+                    // Check vehicle exists, alive, and this subhex is its head (prevents processing same vehicle
+                    // multiple times)
+                    if ( pVeh && !( pVeh->GetFlags( ) & CUnit::dying ) && pVeh->GetPtHead( ) == sub )
+                    {
+                        CPlayer* pVehOwner = pVeh->GetOwner( );
+                        if ( pVehOwner->IsLocal( ) && pVehOwner != pMyOwner )
+                        {
+                            // Opportunity fire check
+                            if ( pVeh->m_pUnitOppo == NULL && pVeh->GetRange( ) > 0 )
+                            {
+                                if ( theMap.GetRangeDistance( this, pVeh ) <= pVeh->GetRange( ) )
+                                {
+                                    CUnit* pOppo = NULL;
+                                    if ( pVehOwner->IsAI( ) )
+                                        pVeh->CheckAiOppo( this, &pOppo, FALSE );
+                                    else
+                                    {
+                                        int iDamageOppo = 0;
+                                        pVeh->CheckOppo( this, iDamageOppo, &pOppo );
+                                    }
+                                    if ( pOppo != NULL )
+                                        pVeh->SetOppo( this );
+                                }
+                            }
+
+                            // AI spotting check
+                            if ( m_pdwPlyrsSee[pVehOwner->GetPlyrNum( )] == 0 )
+                            {
+                                int spotRange = pVeh->GetSpottingRange( );
+                                if ( diffX <= spotRange && diffY <= spotRange )
+                                {
+                                    int iLOS = theMap.LineOfSight( this, pVeh );
+                                    if ( iLOS >= 0 && iLOS <= spotRange )
+                                        IncSee( pVeh );
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }
