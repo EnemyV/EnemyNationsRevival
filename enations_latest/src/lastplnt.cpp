@@ -1255,8 +1255,9 @@ BOOL CConquerApp::InitInstance( )
 
             delete pMmio;
 
-// time the CD
-#ifndef _GG
+// time the CD // we dont have a cd anymore
+            m_iCdSpeed = 100; // assume fast CD drive
+#ifndef _GG && 0
             if ( ( m_iCdSpeed = GetProfileInt( "Advanced", "CDspeed", 0 ) ) <= 0 )
             {
                 CFile* pFile = theDataFile.OpenAsFile( "music" );
