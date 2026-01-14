@@ -110,6 +110,11 @@ void DestructElements( CRsrchStatus* pNewElem, int iCount )
     for ( int i = 0; i < iCount; i++, pNewElem++ ) pNewElem->CRsrchStatus::~CRsrchStatus( );
 }
 
+void SerializeElements( CArchive& ar, CRsrchStatus* pData, int iCount )
+{
+    for ( int i = 0; i < iCount; i++ ) pData[i].Serialize( ar );
+}
+
 
 /////////////////////////////////////////////////////////////////////////////
 // CRsrchItem

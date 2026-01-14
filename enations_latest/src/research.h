@@ -34,6 +34,7 @@ public:
 
 	BYTE			m_bDiscovered;					// TRUE if has been discovered
 	LONG			m_iPtsDiscovered;				// points researched so far
+
 };
 
 
@@ -197,6 +198,7 @@ protected:
 
 extern void ConstructElements (CRsrchStatus * pNewElem, int iCount);
 extern void DestructElements (CRsrchStatus * pNewElem, int iCount);
+extern void SerializeElements( CArchive& ar, CRsrchStatus* pNewElem, int iCount );
 extern void ConstructElements (CRsrchItem * pNewElem, int iCount);
 extern void DestructElements (CRsrchItem * pNewElem, int iCount);
 
