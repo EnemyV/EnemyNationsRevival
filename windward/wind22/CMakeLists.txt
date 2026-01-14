@@ -47,7 +47,7 @@ target_compile_options(wind22 PUBLIC
     $<$<CONFIG:Sanitize>:/MDd /EHsc /Od /Ob0 /fsanitize=address>
     $<$<CONFIG:Debug>:/MDd /EHsc /Od /Ob0> # ZI
     $<$<CONFIG:Profile>:/MD /EHsc /Od /Ob0> # ZI
-    $<$<CONFIG:Release>:/MD /EHsc /O2 /Ob2 /Oi /Ot /GL /Gy /Gw /GF /arch:SSE2>
+    $<$<CONFIG:Release>:/MD /EHsc /O2 /Ob2 /Oi /GL /Gy /Gw /Ot /GF /arch:AVX2 /fp:fast /Zi>
 )
 
 

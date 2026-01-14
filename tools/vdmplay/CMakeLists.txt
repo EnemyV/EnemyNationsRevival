@@ -112,7 +112,7 @@ target_link_libraries(vdmplay PUBLIC
 # according to vdmplay.mak this should be MT ...
 target_compile_options(vdmplay PRIVATE
     $<$<CONFIG:DEBUG>:/MDd /ZI>
-    $<$<CONFIG:RELEASE>:/MD>
+    $<$<CONFIG:Release>:/MD /EHsc /O2 /Ob2 /Oi /GL /Gy /Gw /Ot /GF /arch:AVX2 /fp:fast /Zi>
     $<$<CONFIG:Profile>:/MD>
     $<$<CONFIG:Sanitize>:/MD>
 )
@@ -124,6 +124,7 @@ target_compile_options(vdmplay PRIVATE
 
 target_link_options(vdmplay PUBLIC
         $<$<CONFIG:Sanitize>:/fsanitize=address>
+        $<$<CONFIG:Release>:/DEBUG:FASTLINK /INCREMENTAL:NO /OPT:REF /OPT:ICF /LTCG>
        # /NODEFAULTLIB:libcmt
        # /NODEFAULTLIB:LIBCMTD
         /NODEFAULTLIB:mtlgmt
