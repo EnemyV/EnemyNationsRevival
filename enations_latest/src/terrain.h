@@ -17,6 +17,7 @@
 #include "sprite.h"
 #include "unit.h"
 #include "icons.h"
+#include "player.h"
 
 const int LOS_ALT = 4;		// alt difference needed to obscure
 
@@ -299,7 +300,9 @@ public:
 	~CGameMap () {Close ();}
 
 	void		GetWorldSize (int iSize, int & iSide, int & iSideSize);
-	void		Init (int iSide, int iSideSize, int iScenario);
+    void        Init( int iSide, int iSideSize, int iScenario );
+    void        GenerateMountainBlock( int _x, int iSideSize, int _y, const int iTry2[10] );
+    void        GenerateOcean( int iNumBlks, int* piBlks, int iSide, int blockType, int& iOceansLeft, CGame& theGame );
 	void		InitSquare (int x1, int y1, int x2, int y2, int iTyp1, int iTyp2, int iTyp3, int iTyp4);
 	void		InitSquarePass2 (int x1, int y1, int x2, int y2, int iTyp1, int iTyp2, int iTyp3, int iTyp4);
 	int			DepositMinerals (int x, int y, int iTyp, int iNum);

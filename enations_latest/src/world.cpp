@@ -1408,8 +1408,8 @@ void CWndWorld::ReRender( )
         {
             CRect rect;
             GetClientRect( &rect );
-            if ( ( pt.x < rect.right ) && ( pt.y < rect.bottom ) )
-                OutputDebugString( "CWndWorld::ReRender: before SetMouseState\n" );
+         //   if ( ( pt.x < rect.right ) && ( pt.y < rect.bottom ) )
+         //       OutputDebugString( "CWndWorld::ReRender: before SetMouseState\n" );
             SetMouseState( );
         }
     }

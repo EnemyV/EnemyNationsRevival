@@ -114,7 +114,6 @@ void CHex::SetType( int iType )
 // we change the altitude based on how far apart items are
 static int ConvertAlt( int iAlt, int iSideSize )
 {
-
     int iDiff = ( iAlt - CHex::sea_level );
     return ( CHex::sea_level + ( iDiff / 4 ) + ( iDiff * iSideSize ) / 128 );
 }
@@ -285,7 +284,6 @@ static int fnEnumIncVis( CHex* pHex, CHexCoord, void* )
 
 void CGameMap::Init( int iSide, int iSideSize, int iScenario )
 {
-
     theApp.m_pCreateGame->GetDlgStatus( )->SetMsg( IDS_ALLOC_MAP );
     theApp.m_pCreateGame->GetDlgStatus( )->SetPer( PER_WORLD_START );
 
@@ -365,265 +363,14 @@ void CGameMap::Init( int iSide, int iSideSize, int iScenario )
 
     // Generate ocean here
     // Big maps are too dry, this puts a gigantic ocean in!
-        // lets have a little bit of fun here
-        int blockType = -1; // -1/-2/-3/-4/-5 = ocean/desert/swamp/plains/mountains templates       
+    // lets have a little bit of fun here
+    int blockType = -1; // -1/-2/-3/-4/-5 = ocean/desert/swamp/plains/mountains templates       
 
-        // equal chance of ocean or desert blocktype based on the seed
-       // blockType = ( ( seedInt & 0x01 ) == 0 ) ? -1 : -2;
+    // equal chance of ocean or desert blocktype based on the seed
+    // blockType = ( ( seedInt & 0x01 ) == 0 ) ? -1 : -2;
 
-        if ( theGame.GetAll( ).GetCount( ) > 6 )
-        {
-            int maxOceanTileCount = iNumBlks - theGame.GetAll( ).GetCount( ) * ((iNumBlks > 32) ? 3 : 2);
-
-            // somewhere between no ocean, and a huge ocean, but try to keep ~20% + player starts of it free
-            int totalCount = MyRand( ) % ( maxOceanTileCount);
-            
-            int oceanStyle = MyRand( ) % 4;  // 0 = stripe, 1 = scatter, 2 grow, grow+island
-
-            if (oceanStyle == 3 || true)
-            {
-                const int TEMP_ISLAND = -999;
-
-                // 1. Pick the ONE island block first
-                int islandIndex     = MyRand( ) % iNumBlks;
-                piBlks[islandIndex] = TEMP_ISLAND;
-
-                // 2. Initialize the ocean front specifically AT THE COAST of the island
-                CList<int, int> oceanFront;
-
-                // Get the 4 neighbors of the island to start the flood
-                int coast[4];
-                coast[0] = IndPrev( islandIndex, iSide );
-                coast[1] = IndNext( islandIndex, iSide );
-                coast[2] = IndLeft( islandIndex, iSide );
-                coast[3] = IndRight( islandIndex, iSide );
-
-                for ( int i = 0; i < 4; i++ )
-                {
-                    int neighborIndex = coast[i];
-                    // If the neighbor is empty, make it the "starting line" for the ocean
-                    if ( piBlks[neighborIndex] == 0 )
-                    {
-                        piBlks[neighborIndex] = blockType;
-                        if ( blockType == -1 && iOceansLeft > 0 )
-                            iOceansLeft--;
-                        oceanFront.AddTail( neighborIndex );
-                    }
-                }
-
-                // 3. Flood outward in a "Ring" pattern
-                // Because we use AddTail and remove from Head, it behaves like a Queue (BFS)
-                // which naturally creates a circular/diamond expansion.
-                int blocksToPlace = totalCount - oceanFront.GetCount( );
-
-                while ( blocksToPlace > 0 && !oceanFront.IsEmpty( ) )
-                {
-                    // IMPORTANT: Pull from the HEAD (Front) of the list to ensure BFS order
-                    POSITION headPos      = oceanFront.GetHeadPosition( );
-                    int      currentBlock = oceanFront.GetAt( headPos );
-                    oceanFront.RemoveAt( headPos );
-
-                    int neighbors[4];
-                    neighbors[0] = IndPrev( currentBlock, iSide );
-                    neighbors[1] = IndNext( currentBlock, iSide );
-                    neighbors[2] = IndLeft( currentBlock, iSide );
-                    neighbors[3] = IndRight( currentBlock, iSide );
-
-                    // We still shuffle to keep the "shores" from being perfect squares
-                    for ( int i = 0; i < 4; ++i )
-                    {
-                        int swapWith        = i + ( MyRand( ) % ( 4 - i ) );
-                        int temp            = neighbors[i];
-                        neighbors[i]        = neighbors[swapWith];
-                        neighbors[swapWith] = temp;
-                    }
-
-                    for ( int i = 0; i < 4 && blocksToPlace > 0; ++i )
-                    {
-                        int nb = neighbors[i];
-
-                        if ( piBlks[nb] == 0 )  // Only fill empty land, skip the TEMP_ISLAND
-                        {
-                            piBlks[nb] = blockType;
-                            if ( blockType == -1 && iOceansLeft > 0 )
-                                iOceansLeft--;
-
-                            blocksToPlace--;
-
-                            // Add to the TAIL to ensure we finish the current "ring"
-                            // before moving to the next distance layer
-                            oceanFront.AddTail( nb );
-                        }
-                    }
-                }
-
-                // 4. Reveal the island
-                piBlks[islandIndex] = 0;
-            }
-            else if ( oceanStyle == 2)
-            {// 1. Define a temporary value for island blocks. 
-    // It must be different from 0 (empty) and different from blockType (ocean).
-                const int TEMP_ISLAND = -999;
-
-                // Attempt to "grow" the ocean:
-                int             seedCount = 1 + MyRand( ) % 3;
-                CList<int, int> oceanFront;
-
-                // --- Place initial seed blocks (Unchanged) ---
-                for ( int s = 0; s < seedCount; ++s )
-                {
-                    int attempts = 0;
-                    int seedIndex;
-                    do {
-                        seedIndex = MyRand( ) % iNumBlks;
-                        attempts++;
-                    } while ( piBlks[seedIndex] != 0 && attempts < iNumBlks );
-
-                    if ( piBlks[seedIndex] == 0 )
-                    {
-                        piBlks[seedIndex] = blockType;
-                        if ( blockType == -1 && iOceansLeft > 0 )
-                            iOceansLeft--;
-                        oceanFront.AddTail( seedIndex );
-                    }
-                }
-
-                // --- Grow ocean ---
-                int blocksToPlace = totalCount - seedCount;
-
-                // Increased chance because now it creates permanent barriers
-                // A lower number creates large open oceans, higher creates maze-like oceans.
-                int islandChance = 5;
-
-                while ( blocksToPlace > 0 && !oceanFront.IsEmpty( ) )
-                {
-                    int frontSize = oceanFront.GetCount( );
-                    int pickIndex = MyRand( ) % frontSize;
-
-                    POSITION pos          = oceanFront.FindIndex( pickIndex );
-                    int      currentBlock = oceanFront.GetAt( pos );
-                    oceanFront.RemoveAt( pos );
-
-                    int neighbors[4];
-                    neighbors[0] = IndPrev( currentBlock, iSide );   // above
-                    neighbors[1] = IndNext( currentBlock, iSide );   // below
-                    neighbors[2] = IndLeft( currentBlock, iSide );   // left
-                    neighbors[3] = IndRight( currentBlock, iSide );  // right
-
-                    // Shuffle neighbors (Unchanged)
-                    for ( int i = 0; i < 4; ++i )
-                    {
-                        int swapWith        = i + ( MyRand( ) % ( 4 - i ) );
-                        int temp            = neighbors[i];
-                        neighbors[i]        = neighbors[swapWith];
-                        neighbors[swapWith] = temp;
-                    }
-
-                    // Try to grow into neighbors
-                    for ( int i = 0; i < 4 && blocksToPlace > 0; ++i )
-                    {
-                        int neighborIndex = neighbors[i];
-
-                        // CRITICAL CHANGE: We only grow if it is 0.
-                        // If it is TEMP_ISLAND, the ocean hits a wall and stops.
-                        if ( piBlks[neighborIndex] == 0 )
-                        {
-                            // Check chance to create an island "Wall"
-                            if ( MyRand( ) % 100 < islandChance )
-                            {
-                                // Mark this spot as reserved for an island.
-                                // The ocean can NEVER overwrite this now.
-                                piBlks[neighborIndex] = TEMP_ISLAND;
-
-                                // OPTIONAL: Make islands "clump" better.
-                                // If we made an island block, maybe mark a neighbor as island too
-                                // so we don't just get 1-pixel dots.
-                                if ( MyRand( ) % 100 < 50 )
-                                {
-                                    int extraLand = IndRight( neighborIndex, iSide );
-                                    if ( piBlks[extraLand] == 0 )
-                                        piBlks[extraLand] = TEMP_ISLAND;
-                                }
-
-                                // Do NOT decrement blocksToPlace. We didn't place water.
-                                // We want the ocean to find a different path to reach target size.
-                                continue;
-                            }
-
-                            // Place ocean block
-                            piBlks[neighborIndex] = blockType;
-                            if ( blockType == -1 && iOceansLeft > 0 )
-                                iOceansLeft--;
-
-                            blocksToPlace--;
-
-                            // Add to front (Unchanged logic)
-                            if ( MyRand( ) % 100 < 70 )
-                            {
-                                oceanFront.AddTail( neighborIndex );
-                            }
-                        }
-                    }
-
-                    // Re-add current (Unchanged)
-                    if ( blocksToPlace > 0 && MyRand( ) % 100 < 20 )
-                    {
-                        oceanFront.AddTail( currentBlock );
-                    }
-
-                    // Add new seeds (Unchanged)
-                    if ( blocksToPlace > 0 && MyRand( ) % 100 < 5 )
-                    {
-                        // ... (Your existing new seed logic here) ...
-                        // Just make sure inside this block you check:
-                        // if ( piBlks[newSeedIndex] == 0 ) // Ensure we don't overwrite TEMP_ISLAND
-                    }
-                }
-
-                // --- CLEANUP PHASE ---
-                // Iterate over the entire grid and turn the "Reserved Islands" back into normal land (0)
-                for ( int i = 0; i < iNumBlks; ++i )
-                {
-                    if ( piBlks[i] == TEMP_ISLAND )
-                    {
-                        piBlks[i] = 0;
-                    }
-                }
-            }
-            else if ( oceanStyle == 1 )  // Scatter ocean (random placement)
-            {
-                // Scatter ocean blocks randomly
-                for ( int i = 0; i < totalCount; ++i )
-                {
-                    // Find a random unassigned block
-                    int attempts = 0;
-                    int blockIndex;
-                    do {
-                        blockIndex = MyRand( ) % iNumBlks;
-                        attempts++;
-                    } while ( piBlks[blockIndex] != 0 && attempts < iNumBlks );
-
-                    // If we found an empty block, make it ocean
-                    if ( piBlks[blockIndex] == 0 )
-                    {
-                        piBlks[blockIndex] = blockType;
-                        if ( blockType == -1 && iOceansLeft > 0 )
-                            iOceansLeft--;
-                    }
-                }
-            }
-            else  // stripe ocean generation
-            {
-                for ( int i = 0; i < totalCount; ++i )
-                {
-                    piBlks[i] = blockType;
-                    if ( blockType == -1 && iOceansLeft > 0 )
-                        iOceansLeft--;
-                }
-            }
-        }    
-
-
+    if ( theGame.GetAll( ).GetCount( ) > 6 )
+        GenerateOcean( iNumBlks, piBlks, iSide, blockType, iOceansLeft, theGame );
 
     theApp.m_pCreateGame->GetDlgStatus( )->SetPer( PER_WORLD_BLKS );
 
@@ -958,7 +705,7 @@ void CGameMap::Init( int iSide, int iSideSize, int iScenario )
 
         // mountain
         case -5: {
-            int iAlt = RandNum( 25 ) + 5;  // force different avg altitudes
+            int iAlt = RandNum( 20 ) + 5;  // force different avg altitudes
             for ( int iOn = 0; iOn < NUM_LAND; iOn++ )
                 ( GetHex( CHexCoord( _x * iSideSize + ( land[iOn][0] * iSideSize ) / 64,
                                      _y * iSideSize + ( land[iOn][1] * iSideSize ) / 64 ) ) )
@@ -966,12 +713,13 @@ void CGameMap::Init( int iSide, int iSideSize, int iScenario )
             break;
         }
 
+        // player's starting area
         default: {
             CPlayer* pPlyr = theGame.GetPlayerByPlyr( piBlks[iInd] );
             if ( pPlyr->m_InitData.GetSupplies( CRaceDef::island ) )
                 for ( int iOn = 0; iOn < NUM_ISLAND; iOn++ )
                 {
-                    int iAlt = island[iOn][2];
+                    int iAlt = island[iOn][2]; // island altitude? this was originally going to be an actual island i think
                     ( GetHex( CHexCoord( _x * iSideSize + ( island[iOn][0] * iSideSize ) / 64,
                                          _y * iSideSize + ( island[iOn][1] * iSideSize ) / 64 ) ) )
                         ->Init( ConvertAlt( iAlt / 2 + RandNum( iAlt ), iSideSize ) );
@@ -995,6 +743,66 @@ void CGameMap::Init( int iSide, int iSideSize, int iScenario )
             _y = 0;
         }
     }
+
+#ifdef LOGGINGON
+    for ( iInd = 0; iInd < iNumBlks; iInd++ )
+    {
+        // print out blocktype:
+        int blockType = piBlks[iInd];
+
+        char buf[128];
+        sprintf_s( buf, "iInd=%d\n", blockType );
+        OutputDebugStringA( buf );
+
+        // Let's also sum it up, so we know how many of each we have:
+        int oceans = 0;
+        int deserts = 0;
+        int swamps  = 0;
+        int planes  = 0;
+        int mountains = 0;
+        int other     = 0;
+        switch ( blockType )
+        {
+            case -1:
+            oceans++;
+                break;
+            case -2:
+                deserts++;
+                break;
+            case -3:
+                swamps++;
+                break;
+            case -4:
+                planes++;
+                break;
+            case -5:
+                mountains++;
+                break;
+            default:
+                other++;
+        }
+
+        // Now print out our numbers with percentages:
+        int total = oceans + deserts + swamps + planes + mountains + other;
+
+        // Avoid divide-by-zero
+        float invTotal = ( total > 0 ) ? ( 100.0f / (float)total ) : 0.0f;
+
+        char  buf[512];
+
+        sprintf_s( buf,
+                   "Ocean blocks: %d (%.2f%%)\n"
+                   "Desert blocks: %d (%.2f%%)\n"
+                   "Swamp blocks: %d (%.2f%%)\n"
+                   "Plains blocks: %d (%.2f%%)\n"
+                   "Mountain blocks: %d (%.2f%%)\n"
+                   "Other blocks: %d (%.2f%%)\n"
+                   "Total blocks: %d\n",
+                   oceans, oceans * invTotal, deserts, deserts * invTotal, swamps, swamps * invTotal, planes,
+                   planes * invTotal, mountains, mountains * invTotal, other, other * invTotal, total );
+
+    }
+#endif
 
     // set the altitude for each block
     theApp.m_pCreateGame->GetDlgStatus( )->SetMsg( IDS_INIT_MAP );
@@ -1079,59 +887,60 @@ void CGameMap::Init( int iSide, int iSideSize, int iScenario )
         // merge in other terrain types
         int       iOff[4][2] = { 12, 12, 44, 12, 12, 44, 44, 44 };
         const int iTry1[]    = { CHex::rough, CHex::hill, CHex::forest, 0 };
-        const int iTry2[]    = { CHex::rough, CHex::rough,  CHex::rough, CHex::hill,   CHex::hill,
+        const int iTry2[]    = { CHex::rough, CHex::rough,  CHex::rough, CHex::hill, CHex::hill,
                               CHex::hill,  CHex::desert, CHex::swamp, CHex::forest, 0 };
         switch ( piBlks[iInd] )
         {
         case -1: {  // ocean block resource and terrain feature generation
             const int iTry[] = { CHex::rough, CHex::plain, CHex::hill, CHex::swamp, CHex::desert };
 
-                MakeTerrain( _x * iSideSize + 4 + RandNum( iSideSize - 8 ),
-                             _y * iSideSize + 4 + RandNum( iSideSize - 8 ), iTry[RandNum( 3 )], iSideSize );
-                MakeTerrain( _x * iSideSize + 4 + RandNum( iSideSize - 8 ),
-                             _y * iSideSize + 4 + RandNum( iSideSize - 8 ), iTry[RandNum( 3 )], iSideSize );
+            MakeTerrain( _x * iSideSize + 4 + RandNum( iSideSize - 8 ), _y * iSideSize + 4 + RandNum( iSideSize - 8 ),
+                         iTry[RandNum( 3 )], iSideSize );
+            MakeTerrain( _x * iSideSize + 4 + RandNum( iSideSize - 8 ), _y * iSideSize + 4 + RandNum( iSideSize - 8 ),
+                         iTry[RandNum( 3 )], iSideSize );
 
-                // make forest
-                MakeTerrain( _x * iSideSize + 4 + RandNum( iSideSize - 8 ),
-                             _y * iSideSize + 4 + RandNum( iSideSize - 8 ), CHex::forest, iSideSize * 2 );
+            // make forest
+            MakeTerrain( _x * iSideSize + 4 + RandNum( iSideSize - 8 ), _y * iSideSize + 4 + RandNum( iSideSize - 8 ),
+                         CHex::forest, iSideSize * 2 );
 
-                if ( RandNum( 5 ) != 0 )  // make most islands the regular old xil oil islands
-                {
-                    MakeMineral( _x * iSideSize + iSideSize / 2, _y * iSideSize + 4 + iSideSize / 2,
-                                 CMaterialTypes::copper, iSideSize / 4, 2 );
-                    MakeMineral( _x * iSideSize + iSideSize / 2, _y * iSideSize + 4 + iSideSize / 2,
-                                 CMaterialTypes::oil, iSideSize / 4, 2 );
-                }
-                else if ( RandNum( 4 ) == 0 )  // a iron coal island for variety, a nice rare island
-                {
-                    MakeMineral( _x * iSideSize + iSideSize / 2, _y * iSideSize + 3 + iSideSize / 2,
-                                 CMaterialTypes::coal, iSideSize / 8, 3 );
-                    MakeMineral( _x * iSideSize + iSideSize / 2, _y * iSideSize + 3 + iSideSize / 2,
-                                 CMaterialTypes::iron, iSideSize / 8, 3 );
-                }
-                else if ( RandNum( 2 ) == 0 )  // individual coal island that CAN have small oil or xil
-                {
-                    MakeMineral( _x * iSideSize + iSideSize / 2, _y * iSideSize + 3 + iSideSize / 2,
-                                 CMaterialTypes::coal, iSideSize / 8, 2 );
+            if ( RandNum( 5 ) != 0 )  // make most islands the regular old xil oil islands
+            {
+                MakeMineral( _x * iSideSize + iSideSize / 2, _y * iSideSize + 4 + iSideSize / 2, CMaterialTypes::copper,
+                             iSideSize / 4, 2 );
+                MakeMineral( _x * iSideSize + iSideSize / 2, _y * iSideSize + 4 + iSideSize / 2, CMaterialTypes::oil,
+                             iSideSize / 4, 2 );
+            }
+            else if ( RandNum( 4 ) == 0 )  // a iron coal island for variety, a nice rare island
+            {
+                MakeMineral( _x * iSideSize + iSideSize / 2, _y * iSideSize + 3 + iSideSize / 2, CMaterialTypes::coal,
+                             iSideSize / 8, 3 );
+                MakeMineral( _x * iSideSize + iSideSize / 2, _y * iSideSize + 3 + iSideSize / 2, CMaterialTypes::iron,
+                             iSideSize / 8, 3 );
+            }
+            else if ( RandNum( 2 ) == 0 )  // individual coal island that CAN have small oil or xil
+            {
+                MakeMineral( _x * iSideSize + iSideSize / 2, _y * iSideSize + 3 + iSideSize / 2, CMaterialTypes::coal,
+                             iSideSize / 8, 2 );
 
-                    MakeMineral( _x * iSideSize + iSideSize / 3, _y * iSideSize + 3 + iSideSize / 3,
-                                 CMaterialTypes::copper, iSideSize / 5, 2 );
-                    MakeMineral( _x * iSideSize + iSideSize / 3, _y * iSideSize + 3 + iSideSize / 3,
-                                 CMaterialTypes::oil, iSideSize / 5, 2 );
-                }
-                else  // individual iron island that CAN have small oil or xil
-                {
-                    MakeMineral( _x * iSideSize + iSideSize / 2, _y * iSideSize + 3 + iSideSize / 2,
-                                 CMaterialTypes::iron, iSideSize / 8, 2 );
+                MakeMineral( _x * iSideSize + iSideSize / 3, _y * iSideSize + 3 + iSideSize / 3, CMaterialTypes::copper,
+                             iSideSize / 5, 2 );
+                MakeMineral( _x * iSideSize + iSideSize / 3, _y * iSideSize + 3 + iSideSize / 3, CMaterialTypes::oil,
+                             iSideSize / 5, 2 );
+            }
+            else  // individual iron island that CAN have small oil or xil
+            {
+                MakeMineral( _x * iSideSize + iSideSize / 2, _y * iSideSize + 3 + iSideSize / 2, CMaterialTypes::iron,
+                             iSideSize / 8, 2 );
 
-                    MakeMineral( _x * iSideSize + iSideSize / 3, _y * iSideSize + 3 + iSideSize / 3,
-                                 CMaterialTypes::copper, iSideSize / 5, 2 );
-                    MakeMineral( _x * iSideSize + iSideSize / 3, _y * iSideSize + 3 + iSideSize / 3,
-                                 CMaterialTypes::oil, iSideSize / 5, 2 );
-                }
+                MakeMineral( _x * iSideSize + iSideSize / 3, _y * iSideSize + 3 + iSideSize / 3, CMaterialTypes::copper,
+                             iSideSize / 5, 2 );
+                MakeMineral( _x * iSideSize + iSideSize / 3, _y * iSideSize + 3 + iSideSize / 3, CMaterialTypes::oil,
+                             iSideSize / 5, 2 );
+            }
+            break;
         }
 
-        case -2:    // desert (huh? deserts have oil dont they?)
+        case -2:    // deserts are the same as swamps for resource generation
         case -3: {  // swamp
             int x = _x * iSideSize + 8 + RandNum( iSideSize - 16 );
             int y = _y * iSideSize + 8 + RandNum( iSideSize - 16 );
@@ -1167,207 +976,8 @@ void CGameMap::Init( int iSide, int iSideSize, int iScenario )
 
         case -5: {  // Mountains - multi-peak mountain ranges / Generate Mountain Block
             // mountain ranges with valleys
-            int iNumRanges = 1 + RandNum( 2 );
-
-            for ( int iRange = 0; iRange < iNumRanges; iRange++ )
-            {
-                // Determine if this range is horizontal or vertical
-                BOOL bHorizontal = ( MyRand( ) & 0x0100 ) != 0;
-
-                // Create the spine of the mountain range
-                int spineStart, spineEnd, perpStart, perpEnd;
-                if ( bHorizontal )
-                {
-                    // Horizontal range
-                    spineStart = _x * iSideSize + 8;
-                    spineEnd   = ( _x + 1 ) * iSideSize - 8;
-                    perpStart = perpEnd = _y * iSideSize + RandNum( iSideSize - 16 ) + 8;
-                }
-                else
-                {
-                    // Vertical range
-                    perpStart = perpEnd = _x * iSideSize + RandNum( iSideSize - 16 ) + 8;
-                    spineStart          = _y * iSideSize + 8;
-                    spineEnd            = ( _y + 1 ) * iSideSize - 8;
-                }
-
-                // Create multiple peaks along the range
-                int iNumPeaks   = 2 + RandNum( 3 );  // 2-4 peaks per range
-                int peakSpacing = ( spineEnd - spineStart ) / ( iNumPeaks + 1 );
-
-                for ( int iPeak = 0; iPeak < iNumPeaks; iPeak++ )
-                {
-                    int peakPos =
-                        spineStart + peakSpacing * ( iPeak + 1 ) + RandNum( peakSpacing / 2 ) - peakSpacing / 4;
-                    int peakPerp = perpStart + RandNum( iSideSize / 8 ) - iSideSize / 16;
-
-                    int xPeak, yPeak;
-                    if ( bHorizontal )
-                    {
-                        xPeak = peakPos;
-                        yPeak = peakPerp;
-                    }
-                    else
-                    {
-                        xPeak = peakPerp;
-                        yPeak = peakPos;
-                    }
-
-                    // Create the peak
-                    CHex* pHexPeak = GetHex( CHexCoord( xPeak, yPeak ) );
-                    if ( !pHexPeak->IsWater( ) )
-                    {
-                        int iAlt   = 65 + RandNum( 32 );  // High altitude for peaks
-                        int newAlt = pHexPeak->GetAlt( ) + ConvertAlt( iAlt, iSideSize );
-                        pHexPeak->SetAlt( newAlt );
-                        pHexPeak->SetType( CHex::mountain );
-
-                        // Expand the peak outward
-                        int  iWid    = 1;
-                        int  iMaxWid = iSideSize / 8 + RandNum( iSideSize / 16 );
-                        BOOL bDone   = FALSE;
-
-                        do {
-                            bDone = TRUE;
-                            for ( int y = yPeak - iWid + 1; y < yPeak + iWid; y++ )
-                            {
-                                if ( MakePeak( xPeak - iWid + 1, y, xPeak - iWid, y, iSideSize, TRUE ) )
-                                    bDone = FALSE;
-                                if ( MakePeak( xPeak + iWid - 1, y, xPeak + iWid, y, iSideSize, TRUE ) )
-                                    bDone = FALSE;
-                            }
-                            for ( int x = xPeak - iWid; x < xPeak + iWid + 1; x++ )
-                            {
-                                if ( MakePeak( x, yPeak - iWid + 1, x, yPeak - iWid, iSideSize, TRUE ) )
-                                    bDone = FALSE;
-                                if ( MakePeak( x, yPeak + iWid - 1, x, yPeak + iWid, iSideSize, TRUE ) )
-                                    bDone = FALSE;
-                            }
-                            iWid += 1;
-                        } while ( !bDone && iWid < iMaxWid );
-
-                        // % chance to Add minerals to the peak
-                        int iDif = iWid / 2;
-                        if ( RandNum( 4 ) == 1 )
-                        {
-                            MakeMineral( xPeak - iDif, yPeak - iDif, CMaterialTypes::coal, iWid * 2, 2 );
-                        }
-                        if ( RandNum( 4 ) == 1 )
-                        {
-                            MakeMineral( xPeak + iDif, yPeak + iDif, CMaterialTypes::iron, iWid * 2, 2 );
-                        }
-                    }
-                }
-
-                // Create winding valleys between peaks
-                for ( int iValley = 0; iValley < iNumPeaks - 1; iValley++ )
-                {
-                    // Calculate peak positions for valley endpoints
-                    int peak1Pos =
-                        spineStart + peakSpacing * ( iValley + 1 ) + RandNum( peakSpacing / 2 ) - peakSpacing / 4;
-                    int peak2Pos =
-                        spineStart + peakSpacing * ( iValley + 2 ) + RandNum( peakSpacing / 2 ) - peakSpacing / 4;
-
-                    int peak1Perp = perpStart + RandNum( iSideSize / 8 ) - iSideSize / 16;
-                    int peak2Perp = perpStart + RandNum( iSideSize / 8 ) - iSideSize / 16;
-
-                    int xStart, yStart, xEnd, yEnd;
-                    if ( bHorizontal )
-                    {
-                        xStart = peak1Pos;
-                        yStart = peak1Perp;
-                        xEnd   = peak2Pos;
-                        yEnd   = peak2Perp;
-                    }
-                    else
-                    {
-                        xStart = peak1Perp;
-                        yStart = peak1Pos;
-                        xEnd   = peak2Perp;
-                        yEnd   = peak2Pos;
-                    }
-
-                    // Create a winding path between peaks
-                    int   pathSteps  = 30 + RandNum( 20 );
-                    int   pathWidth  = 2 + RandNum( 2 );
-                    float windAmount = 0.4f + ( (float)RandNum( 40 ) / 100.0f );
-
-                    for ( int step = 0; step <= pathSteps; step++ )
-                    {
-                        float t = (float)step / (float)pathSteps;
-
-                        // Base position interpolated between peaks
-                        int baseX = xStart + (int)( ( xEnd - xStart ) * t );
-                        int baseY = yStart + (int)( ( yEnd - yStart ) * t );
-
-                        // Add sinusoidal winding perpendicular to the main direction
-                        float windPhase = t * 8.0f;  // Multiple waves along the path
-                        int   windMag   = (int)( sin( windPhase ) * windAmount * iSideSize / 8 );
-
-                        int windX, windY;
-                        if ( bHorizontal )
-                        {
-                            windX = 0;
-                            windY = windMag;
-                        }
-                        else
-                        {
-                            windX = windMag;
-                            windY = 0;
-                        }
-
-                        int pathX = baseX + windX;
-                        int pathY = baseY + windY;
-
-                        // Valley altitude - lower in the middle
-                        float valleyDepth = sin( t * 3.14159f );  // Deeper in the middle
-                        int   valleyAlt   = ConvertAlt( 30 + (int)( valleyDepth * 10 ) + RandNum( 8 ), iSideSize );
-
-                        // Create the valley path with width
-                        for ( int wx = -pathWidth; wx <= pathWidth; wx++ )
-                        {
-                            for ( int wy = -pathWidth; wy <= pathWidth; wy++ )
-                            {
-                                int dist = abs( wx ) + abs( wy );
-                                if ( dist <= pathWidth + 1 )
-                                {
-                                    CHex* pHexValley = GetHex( CHexCoord( pathX + wx, pathY + wy ) );
-                                    if ( !pHexValley->IsWater( ) )
-                                    {
-                                        // Altitude varies with distance from center of path
-                                        int altOffset = dist * 3;
-                                        pHexValley->SetAlt( valleyAlt + altOffset );
-
-                                        // Set terrain type based on altitude
-                                        if ( pHexValley->GetAlt( ) < ConvertAlt( 35, iSideSize ) )
-                                            pHexValley->SetType( CHex::plain );
-                                        else if ( pHexValley->GetAlt( ) < ConvertAlt( 45, iSideSize ) )
-                                            pHexValley->SetType( CHex::rough );
-                                        else
-                                            pHexValley->SetType( CHex::hill );
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Add some scattered forest
-            int xDrop = _x * iSideSize + 8 + RandNum( iSideSize - 16 );
-            int yDrop = _y * iSideSize + 8 + RandNum( iSideSize - 16 );
-            MakeTerrain( xDrop, yDrop, CHex::forest, iSideSize );
-
-            // Add additional minerals scattered throughout
-            MakeMineral( _x * iSideSize + 4 + RandNum( iSideSize - 8 ), _y * iSideSize + 1 + RandNum( iSideSize - 8 ),
-                         CMaterialTypes::coal, iSideSize );
-            MakeMineral( _x * iSideSize + 4 + RandNum( iSideSize - 8 ), _y * iSideSize + 1 + RandNum( iSideSize - 8 ),
-                         CMaterialTypes::iron, iSideSize / 2 );
-
-            // Add some varied terrain
-            xDrop = _x * iSideSize + 8 + RandNum( iSideSize - 16 );
-            yDrop = _y * iSideSize + 8 + RandNum( iSideSize - 16 );
-            MakeTerrain( xDrop, yDrop, iTry2[RandNum( 8 )], iSideSize / 2 );
+            
+            GenerateMountainBlock( _x, iSideSize, _y, iTry2 );
             break;
         }
 
@@ -1945,6 +1555,7 @@ void CGameMap::Init( int iSide, int iSideSize, int iScenario )
 
     ASSERT_VALID( this );
 }
+
 
 BOOL CGameMap::MakePeak( int xOk, int yOk, int xTest, int yTest, int iSideSize, BOOL bEasy )
 {
