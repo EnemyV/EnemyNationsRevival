@@ -88,6 +88,7 @@ set(enations_sources
         vpxfer.cpp
         world.cpp
         wrldinit.cpp
+        wrldgen.cpp
         mem_pool.h
         cpuspeed.cpp
 )
@@ -104,7 +105,7 @@ add_executable(enations WIN32 ${enations_sources})
 # BUGBUGTODO change back to /Zi
 target_compile_options(enations PRIVATE    
    # $<$<CONFIG:Release>:/MD /EHsc /Ob2 /Z7> # Profiling build
-    $<$<CONFIG:Release>:/MD /EHsc /O2 /Ob2 /Oi /GL /Gy /Gw /Ot /GF /arch:SSE2> # release
+    $<$<CONFIG:Release>:/MD /EHsc /O2 /Ob2 /Oi /GL /Gy /Gw /Ot /GF /arch:AVX2 /fp:fast /Zi>
     $<$<CONFIG:Profile>:/MD /Zi /DEBUG /Od /Ob0>
     $<$<CONFIG:Debug>:/MDd /EHsc> # ZI
     $<$<CONFIG:Sanitize>:/MDd /EHsc /fsanitize=address> # ZI
