@@ -837,7 +837,8 @@ CCell *CPathMap::GetCellAt( int iX, int iY )
 		return( NULL );
 
 	DWORD dwKey = ( iX & 0xFFFF) | ( ( iY & 0xFFFF ) << 16 );
-	CCell * pCellFind;
+	CCell * pCellFind = NULL;
+
 	// do we have it?
 	if ( m_mapCell.Lookup ( dwKey, pCellFind ) == 0 )
 		pCellFind = NULL;
@@ -849,16 +850,17 @@ CCell *CPathMap::GetCellAt( int iX, int iY )
 			TRAP ();
 			if ( ( pCellFind->m_iX == iX ) && ( pCellFind->m_iY == iY ) )
 				{
-				TRAP ();
+                TRAP( );
 				break;
 				}
-			TRAP ();
-			pCellFind = pCellFind->m_pCellNext;
+                TRAP( );
+                pCellFind = pCellFind->m_pCellNext;
 			}
 #ifdef TEST_RESULT2
 		TRAP ( ( pCellFind->m_iX != iX ) || ( pCellFind->m_iY != iY ) );
 #endif
 		}
+
 
 #ifdef TEST_RESULT1
 
@@ -1057,7 +1059,7 @@ BOOL CPathMap::Init( int iMapEX, int iMapEY )
 	m_iWidth = iMapEX;
 	m_iHeight = iMapEY;
 
-	m_iNumOfCells = (m_iWidth + m_iHeight) * 2; // m_iWidth * m_iHeight;
+	m_iNumOfCells = (m_iWidth + m_iHeight) * 4; // m_iWidth * m_iHeight;
 	m_iNumOfMapCells = m_iWidth * m_iHeight;
 	m_iNextSlot = 0;
 	memset ( m_acBoth , 0, sizeof (m_acBoth) );
@@ -1075,7 +1077,7 @@ BOOL CPathMap::Init( int iMapEX, int iMapEY )
 	m_paCells = new CCell[m_iNumOfCells];
 
 	m_mapCell.RemoveAll ();
-	m_mapCell.InitHashTable ( GetPrime ( m_iNumOfCells * 2 ) );
+	m_mapCell.InitHashTable ( GetPrime ( m_iNumOfCells * 2 ) ); 
 
 	m_tdWheel = theTransports.GetData( CTransportData::construction );
 	m_tdTrack = theTransports.GetData( CTransportData::infantry_carrier );
