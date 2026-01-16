@@ -897,6 +897,7 @@ int CPathMap::GetOffset( int iX, int iY )
 	return( j );
 }
 
+// BUGBUG: identical implementation to CPathMgr::AddCellToArray!
 CCell * CPathMap::AddCellToArray( CCell *pCell )
 {
 

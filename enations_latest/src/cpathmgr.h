@@ -47,6 +47,8 @@ public:
 
 class CPathMgr
 {
+    CRITICAL_SECTION m_cs;  // internal use only
+
 	// BUGBUG
 	// these are used only if the array of cells is used
 	CCell *m_paCells;	// array version
@@ -127,10 +129,8 @@ public:
 	//                    will return upon reaching the destination
 	//                    on its first attempt
 	//
-	CHexCoord *GetPath( CVehicle *pVehicle,
-		CHexCoord& hexFrom, CHexCoord& hexTo, 
-		int& iPathLen, int iVehType = 0, 
-		BOOL bVehBlock = FALSE, BOOL bDirectPath = FALSE );
+    CHexCoord* GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord& hexTo, int& iPathLen, int iVehType = 0,
+                        BOOL bVehBlock = FALSE, BOOL bDirectPath = FALSE );
 
 	CHexCoord *CreateHexPath( int& iPathLen, CCell *pDestCell );
 	int GetCellDirection( CHexCoord& fromHex, CHexCoord& toHex );
@@ -161,6 +161,10 @@ public:
 	CCell *GetCellAt( int iX, int iY );
 	void ClearArray( void );
 	CCell * AddCellToArray( CCell *pCell );
+
+	private:
+    CHexCoord* _GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord& hexTo, int& iPathLen, int iVehType = 0,
+                         BOOL bVehBlock = FALSE, BOOL bDirectPath = FALSE );
 };
 
 extern CPathMgr thePathMgr;

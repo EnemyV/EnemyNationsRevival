@@ -62,11 +62,19 @@ static unsigned char ucHeadings[] = {
 };
 */
 
-//
+CHexCoord* CPathMgr::GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord& hexTo, int& iPathLen, int iVehType,
+                              BOOL bVehBlock, BOOL bDirectPath )
+{
+    EnterCriticalSection( &m_cs );
+    CHexCoord* phcPath = ( _GetPath( pVehicle, hexFrom, hexTo, iPathLen, iVehType, bVehBlock, bDirectPath ) );
+    LeaveCriticalSection( &m_cs );
+    return phcPath;
+}
+    //
 // return the path via a CHexCoord array, passing the size
 // back as the m_iX element of the first CHexCoord
 //
-CHexCoord* CPathMgr::GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord& hexTo, int& iPathLen, int iVehType,
+CHexCoord* CPathMgr::_GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord& hexTo, int& iPathLen, int iVehType,
                               BOOL bVehBlock, BOOL bDirectPath )
 {
 #if PATH_TIMING
@@ -1474,6 +1482,7 @@ found:
     return ( pCellFind );
 }
 
+// BUGBUG: identical implementation to CPathMap::AddCellToArray! 
 CCell* CPathMgr::AddCellToArray( CCell* pCell )
 {
     if ( m_iNextSlot >= m_iNumOfCells )
@@ -1622,7 +1631,11 @@ BOOL CPathMgr::Init( int iMapEX, int iMapEY )
         m_iMaxPath /= 2;
     */
 
-    delete[] m_paCells;
+    if ( m_paCells != NULL )
+    {
+        delete[] m_paCells;
+        DeleteCriticalSection( &m_cs );
+    }
 
     m_paCells = new CCell[m_iNumOfCells];
 
@@ -1648,6 +1661,10 @@ BOOL CPathMgr::Init( int iMapEX, int iMapEY )
 #endif
 #endif
 
+    // private critical section
+    memset( &m_cs, 0, sizeof( m_cs ) );
+    InitializeCriticalSection( &m_cs );
+
     return TRUE;
 }
 
@@ -1670,6 +1687,9 @@ CPathMgr::CPathMgr( void )
 
 CPathMgr::~CPathMgr( )
 {
+    if ( m_paCells != NULL )
+        DeleteCriticalSection( &m_cs );
+
     delete[] m_paCells;
 
     m_mapCell.RemoveAll( );

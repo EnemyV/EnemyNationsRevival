@@ -22,7 +22,7 @@ class CPathMap
 	CCell *m_paCells;	// array version
 
 	// this is to find elements in CCell faster
-	CMap <DWORD, DWORD, CCell *, CCell *>		m_mapCell;
+    CMap<DWORD, DWORD, CCell*, CCell*> m_mapCell;
 
 	int m_iWidth;		// size of MAP in width and height
 	int m_iHeight;
