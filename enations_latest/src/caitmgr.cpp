@@ -475,23 +475,9 @@ void CAITaskMgr::AssignUnits( void )
         // if( myYieldThread() == TM_QUIT )
         //	throw(ERR_CAI_TM_QUIT); // THROW( pException );
 #endif
-
-        // yield every 100 units?
-        // this helps reduce message flood, and lag
-        int      count = 0;
         POSITION pos = m_pGoalMgr->m_plUnits->GetHeadPosition( );
         while ( pos != NULL )
         {
-            count++;
-            if (count > 100)
-            {
-                count = 0;
-#if THREADS_ENABLED
-                // testing..
-                myYieldThread( );
-#endif
-            }
-
             CAIUnit* pUnit = (CAIUnit*)m_pGoalMgr->m_plUnits->GetNext( pos );
             if ( pUnit != NULL )
             {
@@ -5287,13 +5273,15 @@ void CAITaskMgr::ConstructBuilding( CAIUnit* pUnit, CAITask* pTask )
     else  // need to get the truck to go to the build site
     {
         // need to find a place to build on
-        if ( !hexSite.X( ) && !hexSite.Y( ) )
+        if ( !hexSite.X( ) && !hexSite.Y( ) ) // if 0,0
         {
             hexSite = hexVeh;
+
             m_pGoalMgr->m_pMap->GetBuildHex( iBldg, hexSite );
 
             if ( hexSite == hexVeh )
             {
+                // either the best spot WAS the hexVeh, or there was no spot?
                 hexSite.X( 0 );
                 hexSite.Y( 0 );
             }
@@ -6271,20 +6259,42 @@ void CAITaskMgr::AttackAlert( CAIMsg* pMsg )
     logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "\nCAITaskMgr::AttackAlert(): Target=%ld Attacker=%ld ", pMsg->m_dwID,
                pMsg->m_dwID2 );
     logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "CAITaskMgr::AttackAlert(): Target player=%d Attacker player=%d \n",
-               pMsg->m_idata3, pMsg->m_idata2 );
-
-    char buf[256];
-    sprintf_s( buf, sizeof( buf ), "CAITaskMgr::AttackAlert(): Target=%ld Attacker=%ld ", pMsg->m_dwID, pMsg->m_dwID2 );
-    OutputDebugStringA( buf );
+               pMsg->m_idata3, pMsg->m_idata2 ); 
 #endif
+    char buf[256];
+
+    char szTargetCategory[32]   = "Unknown";
+    char szTargetType[32]       = "Unknown";
+    char szAttackerCategory[32] = "Unknown";
+    char szAttackerType[32]     = "Unknown";
+
+    CAIUnit* pTempUnit = m_pGoalMgr->m_plUnits->GetUnit( pMsg->m_dwID );
+    if ( pTempUnit )
+    {
+        // category = building/vehicle, type = unit subtype id
+        sprintf_s( szTargetCategory, sizeof( szTargetCategory ), "%d", pTempUnit->GetType( ) );
+        sprintf_s( szTargetType, sizeof( szTargetType ), "%d", pTempUnit->GetTypeUnit( ) );
+    }
+    pTempUnit = m_pGoalMgr->m_plUnits->GetUnit( pMsg->m_dwID2 );
+    if ( pTempUnit )
+    {
+        sprintf_s( szAttackerCategory, sizeof( szAttackerCategory ), "%d", pTempUnit->GetType( ) );
+        sprintf_s( szAttackerType, sizeof( szAttackerType ), "%d", pTempUnit->GetTypeUnit( ) );
+    }
+
+    sprintf_s( buf, sizeof( buf ), "CAITaskMgr::AttackAlert(): Target=%ld (%s, %s), Attacker=%ld (%s, %s)\n",
+               pMsg->m_dwID, szTargetCategory, szTargetType, pMsg->m_dwID2, szAttackerCategory, szAttackerType );
+    OutputDebugStringA( buf );
+
 
     CAIUnit* pTarget = m_pGoalMgr->m_plUnits->GetUnit( pMsg->m_dwID );
     if ( pTarget == NULL )
         return;
+
     // cause attacker to be added to list if not already there
     CAIUnit* pAttacker = m_pGoalMgr->m_plUnits->GetOpForUnit( pMsg->m_dwID2 );
-    if ( pAttacker == NULL )
-        return;
+    if ( pAttacker == NULL ) // if there is no attacker? why would there be no attacker? It died?
+        return; 
 
     // scenario units do not respond here
     if ( pTarget->GetTask( ) == IDT_ATTACKUNIT )
@@ -6332,10 +6342,9 @@ void CAITaskMgr::AttackAlert( CAIMsg* pMsg )
     // autofire handles this?
     // always shoot back, if not our side
     // if not already attacking, tell it we're attacking!
-    
-    // TODO reenable this, and maybe remove the if (i dont think its correct)?
-    //if ( pTarget->GetDataDW() != pMsg->m_dwID2 )
-    //    pTarget->AttackUnit( pMsg->m_dwID2 );
+    // this sends off another attack message. does this create a loop?
+    // if ( pTarget->GetDataDW( ) != pMsg->m_dwID2 )  // check if we're already targeting attacker? otherwise it just loops?
+        pTarget->AttackUnit( pMsg->m_dwID2 );
 
 #ifdef _LOGOUT
     logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "CAITaskMgr::AttackAlert(): Player %d Unit %ld has attacked %ld \n",

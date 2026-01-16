@@ -148,31 +148,31 @@ void CAIMgr::Manage( void )
         EnterCriticalSection( &m_cs );
         pMsg = (CAIMsg*)m_plMsgQueue->RemoveHead( );
         LeaveCriticalSection( &m_cs );
-        m_iIdle             = 0;
+        m_iIdle = 0;
     }
     else
     {
         // we want to increment this by gametime, as in, how much game time has passed.
         // since, for example, if we're paused we dont need to be doing idle processing.
         // lets call it milliseconds passed?
-       // DWORD dwElapsed     = GetTickCount64( ) - m_dwLastMessageTime;
-       // m_iIdle += (int)dwElapsed;
+        // DWORD dwElapsed     = GetTickCount64( ) - m_dwLastMessageTime;
+        // m_iIdle += (int)dwElapsed;
         m_iIdle++;  // inc when there is no message to process
     }
-  //  m_dwLastMessageTime = GetTickCount64( );
+    //  m_dwLastMessageTime = GetTickCount64( );
 
     // delete early so that it don't leak if closed
     // in the middle of this function
     if ( pMsg != NULL )
     {
-        CAIMsg aMsg( pMsg );
+        CAIMsg* aMsg = new CAIMsg( pMsg );
         delete pMsg;
-        pMsg = &aMsg;
-    }
+        pMsg = aMsg;
 
-    // figure out what the message is about
-    ProcessMessage( pMsg );
-    if ( pMsg == NULL )
+        // figure out what the message is about
+        ProcessMessage( pMsg );
+    }
+    else if ( pMsg == NULL )
     {
         // reset all state flags
         m_bAttackOccurred   = FALSE;
@@ -198,7 +198,7 @@ void CAIMgr::Manage( void )
     // test for idle time processing
     if ( m_iIdle > AI_IDLE_LIMIT )
     {
-        m_iIdle             = 0;
+        m_iIdle = 0;
 
 #ifdef _LOGOUT
         logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "\nCAIMgr::Manage() player %d idle function, messages %d ", m_iPlayer,
@@ -500,6 +500,12 @@ void CAIMgr::Manage( void )
     m_bOutLOS           = FALSE;
     m_bUnitLoaded       = FALSE;
     m_bGiveUnit         = FALSE;
+
+    if (pMsg != NULL)
+    {
+        delete pMsg;
+        pMsg = NULL;
+    }
 }
 
 void CAIMgr::SetDead( void )
@@ -1750,6 +1756,7 @@ void CAIMgr::ProcessMessage( CAIMsg* pMsg )
     // if start dropping them that makes everything run nice and smooth,
     // and the AI still functions adequately, however this is going to probably 
     // break a lot of unknown things, so I'm only using it for testing
+    /*
     static DWORD lastAttackFloodCheck = 0;
     static int   recentAttackCount    = 0;
 
@@ -1778,7 +1785,7 @@ void CAIMgr::ProcessMessage( CAIMsg* pMsg )
          pMsg->m_iMsg == CNetCmd::see_unit )
     {
         recentAttackCount++;
-    } 
+    } */
 #endif
 
     /*

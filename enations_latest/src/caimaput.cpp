@@ -9,12 +9,12 @@
 //
 ////////////////////////////////////////////////////////////////////////////
 
+#include "stdafx.h"
 #include "CAIMapUt.hpp"
-
 #include "CAIData.hpp"
 #include "CPathMap.h"
+
 #include "logging.h"  // dave's logging system
-#include "stdafx.h"
 
 extern CAIData*         pGameData;   // pointer to API object for game data
 extern CException*      pException;  // standard exception for yielding
@@ -1476,7 +1476,7 @@ void CAIMapUtil::FindSpecialHex( int iBldg, int iWidthX, int iWidthY, CHexCoord&
         int      iBestRating = 0;
         int      iBestForts  = CAI_SIZE;
         CAIUnit* pBestBldg   = NULL;
-        DWORD    dwEnd       = theGame.GettimeGetTime( ) + 20 * 1000;
+        DWORD    dwEnd       = theGame.GettimeGetTime( ) + 30 * 1000;
 
         // go through the buildings of this map, and of the buildings
         // interested in, find the highest rated one with the lowest
@@ -1599,7 +1599,7 @@ void CAIMapUtil::FindSpecialHex( int iBldg, int iWidthX, int iWidthY, CHexCoord&
                 for ( int iX = 0; iX < iDeltax; ++iX )
                 {
 
-                    // only get 20 seconds to find it
+                    // only get XX seconds to find it
                     if ( theGame.GettimeGetTime( ) > dwEnd )
                         return;
 
@@ -1649,7 +1649,8 @@ void CAIMapUtil::FindSpecialHex( int iBldg, int iWidthX, int iWidthY, CHexCoord&
                         if ( iRating > iBestForts )
                         {
                             iBestForts = iRating;
-                            hexFound = hexFort = hcAt;
+                            // hexFound = hexFort = hcAt;
+                            hexFort    = hcAt;
                         }
                     }
                 }
@@ -3545,11 +3546,12 @@ int CAIMapUtil::GetClosestTo( CHexCoord hexFrom, int iBldg1, int iBldg2, int iBl
     POSITION pos    = m_plUnits->GetHeadPosition( );
     while ( pos != NULL )
     {
-        if ( iYield > 25 )
+        if ( iYield > 50 )
         {
             myYieldThread( );
             iYield = 0;
         }
+        iYield++;
 
         CAIUnit* pUnit = (CAIUnit*)m_plUnits->GetNext( pos );
         if ( pUnit != NULL )
@@ -3644,13 +3646,6 @@ BOOL CAIMapUtil::GetPathRating( CHexCoord& hexFrom, CHexCoord& hexTo, int iVehTy
 
     DWORD dwCurrentTime = theGame.GettimeGetTime( );
 
-    // Clear expired cache entries periodically
-    if ( dwCurrentTime - m_dwLastCacheClear > CACHE_EXPIRE_MS )
-    {
-        ClearExpiredCache( );
-        m_dwLastCacheClear = dwCurrentTime;
-    }
-
     // Check cache first
     int iCacheIndex = FindCacheEntry( hexFrom, hexTo, iVehType );
     if ( iCacheIndex >= 0 )
@@ -3714,9 +3709,10 @@ int CAIMapUtil::FindCacheEntry( const CHexCoord& hexFrom, const CHexCoord& hexTo
         if ( entry.IsEmpty( ) )
             return -1;
 
-        // One 64-bit compare + one int compare (much faster than 6 int compares)
         if ( entry.compositeKey == key && entry.GetVehType( ) == iVehType )
+        {
             return idx;
+        }
 
         idx = ( idx + 1 ) & CACHE_MASK;  // check next hash?
     }
@@ -4198,6 +4194,10 @@ void CAIMapUtil::FindHexByWater( int iBldg, int iWidthX, int iWidthY, CHexCoord&
 
                     // make sure there is some ocean adjacent
                     if ( !IsWaterAdjacent( hcTo, iWidthX, iWidthY ) )
+                        continue;
+
+                    // make sure the crane can get there
+                    if ( !GetPathRating( hexFound, hcAt ) )
                         continue;
 
                     // use the game's opinion of building this building
@@ -4814,6 +4814,11 @@ BOOL CAIMapUtil::IsHexInCity( CHexCoord& hexTest )
         // skip hex if buildings,roads,minerals are there
         if ( m_pMap[i] & m_wTest )
             return FALSE;
+
+        
+#if THREADS_ENABLED
+        myYieldThread( );
+#endif
 
         // put apts and offices in poor terrain
         if ( m_bCitizen )
@@ -7307,6 +7312,10 @@ int CAIMapUtil::IsOutOpforRange( CHexCoord& hex, int iSpotting /* =0 */ )
     CHexCoord hexUnit;
     int       iRange = 0;
 
+#if THREADS_ENABLED
+    myYieldThread( );
+#endif
+
     // access the m_plUnits list of known units to this
     // AI player, and then for each opfor unit by type, access the
     // game data and then make the in-range determination
@@ -7939,16 +7948,13 @@ void CAIMapUtil::UpdateAdjacentHexes( CAIHex* paiHex )
 BOOL CAIMapUtil::IsWaterAdjacent( CHexCoord hex, BOOL bReally )
 {
     // for each direction
-    int iYield = 0;
     for ( int i = 0; i < MAX_ADJACENT; ++i )
     {
         CHexCoord hcRay = hex;
 
-        if ( iYield > 50 )
-        {
-            myYieldThread( );
-            iYield = 0;
-        }
+#if THREADS_ENABLED // 0
+      myYieldThread();
+#endif
 
         // move ray based on direction i
         switch ( i )

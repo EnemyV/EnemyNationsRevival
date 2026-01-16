@@ -417,9 +417,9 @@ void CAIGoalMgr::Assess( CAIMsg* pMsg )
         m_bLakeWorld  = TRUE;
 
         // check with map for too little ocean to matter
-        if ( m_pMap->m_iOcean < ( m_pMap->m_iLand / 3 ) )  // was 10
+        if ( m_pMap->m_iOcean < ( m_pMap->m_iLand / 5 ) )  // was 10
             m_bOceanWorld = FALSE;
-        if ( m_pMap->m_iLake < ( m_pMap->m_iLand / 4 ) )  // was 20
+        if ( m_pMap->m_iLake < ( m_pMap->m_iLand / 10 ) )  // was 20
             m_bLakeWorld = FALSE;
 
 #ifdef _LOGOUT
@@ -3121,7 +3121,7 @@ void CAIGoalMgr::GetCommodityNeeds( void )
                         // add the materials needed to material goals
                         for ( int i = 0; i < CMaterialTypes::num_build_types; ++i )
                         {
-#if 0  // THREADS_ENABLED
+#if THREADS_ENABLED // 0
        //  BUGBUG this function must yield
 							myYieldThread();
 							//if( myYieldThread() == TM_QUIT )
@@ -3144,7 +3144,7 @@ void CAIGoalMgr::GetCommodityNeeds( void )
                     // go thru materials needed, and record needs
                     for ( int i = 0; i < CMaterialTypes::num_types; ++i )
                     {
-#if 0  // THREADS_ENABLED
+#if  THREADS_ENABLED // 0
        //  BUGBUG this function must yield
 							myYieldThread();
 							//if( myYieldThread() == TM_QUIT )
@@ -3170,7 +3170,7 @@ void CAIGoalMgr::GetCommodityNeeds( void )
                     // go thru materials needed, and record needs
                     for ( int i = 0; i < CMaterialTypes::num_types; ++i )
                     {
-#if 0  // THREADS_ENABLED
+#if THREADS_ENABLED // 0
        //  BUGBUG this function must yield
 							myYieldThread();
 							//if( myYieldThread() == TM_QUIT )
@@ -3332,7 +3332,7 @@ WORD CAIGoalMgr::GetVehicle( WORD wOffset )
             WORD wCnt = 0;
             for ( int i = 0; i < m_iNumUnits; ++i )
             {
-#if 0  // THREADS_ENABLED
+#if THREADS_ENABLED // 0
        //  BUGBUG this function must yield
 				myYieldThread();
 				//if( myYieldThread() == TM_QUIT )
@@ -3382,7 +3382,7 @@ WORD CAIGoalMgr::GetBuilding( WORD wOffset )
             WORD wCnt = 0;
             for ( int i = 0; i < m_iNumBldgs; ++i )
             {
-#if 0  // THREADS_ENABLED
+#if THREADS_ENABLED // 0
        //  BUGBUG this function must yield
 				myYieldThread();
 				//if( myYieldThread() == TM_QUIT )
@@ -8283,7 +8283,7 @@ TryTryAgain:
                             else 
                             {
                                 // it's not where it's supposed to be!
-#ifdef STRICTER_ASSERTS
+#ifdef STRICTER_ASSERTS2
                                 ASSERT( FALSE );
 #endif
                             }
@@ -8340,13 +8340,13 @@ TryTryAgain:
                                 continue;
                             }
 
-#ifdef _DNT
+//#ifdef _DNT 
                             if ( !m_pMap->m_pMapUtil->GetPathRating( hexUnit, hcAt, pUnit->GetTypeUnit( ) ) )
                             {
                                 dwOpForUnit = 0;
                                 continue;
                             }
-#endif
+//#endif
                         }
 
                         if ( iHow == THREAT_TARGET )
@@ -8421,8 +8421,8 @@ TryTryAgain:
                         continue;
                     }
 
-                    // skip buildings that can't be reached
-                    if ( pUnit->GetType( ) == CUnit::vehicle )
+                    // skip *buildings* that can't be reached
+                    if ( pUnit->GetType( ) == CUnit::building )
                     {
                         pGameData->GetVehicleHex( pUnit->GetID( ), hexUnit );
                         if ( !hexUnit.X( ) && !hexUnit.Y( ) )
@@ -8431,13 +8431,13 @@ TryTryAgain:
                             continue;
                         }
 
-#ifdef _DNT
+//#ifdef _DNT
                         if ( !m_pMap->m_pMapUtil->GetPathRating( hexUnit, hcAt, pUnit->GetTypeUnit( ) ) )
                         {
                             dwOpForUnit = 0;
                             continue;
                         }
-#endif
+//#endif
                     }
 
                     if ( iHow == THREAT_TARGET )

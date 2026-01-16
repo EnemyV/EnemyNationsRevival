@@ -243,10 +243,13 @@ void CAIMap::UpdateLoc(	CAIMsg *pMsg )
 //
 void CAIMap::UpdateMap( CAIMsg *pMsg )
 {
-	ASSERT_VALID( this );
-	
-	if( m_pwaMap == NULL )
-		return;
+    ASSERT_VALID( this );
+
+    if ( m_pwaMap == NULL )
+        return;
+
+    if ( pGameData == NULL )
+        return;
 
 	WORD wStatus;
 
@@ -1448,8 +1451,11 @@ void CAIMap::Load( CFile *pFile, CAIUnitList *plUnits )
 	//m_RocketHex.Y( iY );
 
 	// map size might have changed
-	if( m_pwaMap != NULL )
-		delete [] m_pwaMap;
+        if ( m_pwaMap != NULL )
+        {
+            delete[] m_pwaMap;
+            m_pwaMap = NULL;
+        }
 
 	try
 	{
