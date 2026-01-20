@@ -8,7 +8,6 @@
 #include "player.h"
 
 #include "stdafx.h"
-#include "wrldgen.h"
 #include "lastplnt.h"
 #include "netapi.h"
 #include "terrain.inl"
@@ -58,7 +57,14 @@ static int IndRight( int iInd, int iSide )
 static int ConvertAlt( int iAlt, int iSideSize )
 {
     int iDiff = ( iAlt - CHex::sea_level );
-    return ( CHex::sea_level + ( iDiff / 4 ) + ( iDiff * iSideSize ) / 128 );
+    int val = ( CHex::sea_level + ( iDiff / 4 ) + ( iDiff * iSideSize ) / 128 );
+    // Ensure we never return an out-of-range altitude (CHex uses 0..127)
+    if ( val < 0 )
+        val = 0;
+    else if ( val > CHex::MaxAlt )
+        val = CHex::MaxAlt;
+
+    return val;
 }
 
 void CGameMap::GenerateOcean( int iNumBlks, int* piBlks, int iSide, int blockType, int& iOceansLeft, 
@@ -67,272 +73,283 @@ void CGameMap::GenerateOcean( int iNumBlks, int* piBlks, int iSide, int blockTyp
     {
         int maxOceanTileCount = iNumBlks - theGame.GetAll( ).GetCount( ) * ( ( iNumBlks > 32 ) ? 3 : 2 );
 
-        // somewhere between no ocean, and a huge ocean, but try to keep ~20% + player starts of it free
-        int totalCount = MyRand( ) % ( maxOceanTileCount );
+        if ( maxOceanTileCount <= 0 )
+            maxOceanTileCount = iNumBlks - theGame.GetAll( ).GetCount( );
 
-        int oceanStyle = MyRand( ) % 4;  // 0 = stripe, 1 = scatter, 2 grow, grow+island
-
-        if ( oceanStyle == 3 )
+        if ( maxOceanTileCount > 0 )
         {
-            const int TEMP_ISLAND = -999;
+            // somewhere between no ocean, and a huge ocean, but try to keep ~20% + player starts of it free
+            int totalCount = MyRand( ) % ( maxOceanTileCount );
 
-            // 1. Pick the ONE island block first
-            int islandIndex     = MyRand( ) % iNumBlks;
-            piBlks[islandIndex] = TEMP_ISLAND;
+            int oceanStyle = MyRand( ) % 4;  // 0 = stripe, 1 = scatter, 2 grow, grow+island
 
-            // 2. Initialize the ocean front specifically AT THE COAST of the island
-            CList<int, int> oceanFront;
-
-            // Get the 4 neighbors of the island to start the flood
-            int coast[4];
-            coast[0] = IndPrev( islandIndex, iSide );
-            coast[1] = IndNext( islandIndex, iSide );
-            coast[2] = IndLeft( islandIndex, iSide );
-            coast[3] = IndRight( islandIndex, iSide );
-
-            for ( int i = 0; i < 4; i++ )
+            if ( oceanStyle == 3 )
             {
-                int neighborIndex = coast[i];
-                // If the neighbor is empty, make it the "starting line" for the ocean
-                if ( piBlks[neighborIndex] == 0 )
+                const int TEMP_ISLAND = -999;
+
+                // 1. Pick the ONE island block first
+                int islandIndex     = MyRand( ) % iNumBlks;
+                piBlks[islandIndex] = TEMP_ISLAND;
+
+                // 2. Initialize the ocean front specifically AT THE COAST of the island
+                CList<int, int> oceanFront;
+
+                // Get the 4 neighbors of the island to start the flood
+                int coast[4];
+                coast[0] = IndPrev( islandIndex, iSide );
+                coast[1] = IndNext( islandIndex, iSide );
+                coast[2] = IndLeft( islandIndex, iSide );
+                coast[3] = IndRight( islandIndex, iSide );
+
+                for ( int i = 0; i < 4; i++ )
                 {
-                    piBlks[neighborIndex] = blockType;
-                    if ( blockType == -1 && iOceansLeft > 0 )
-                        iOceansLeft--;
-                    oceanFront.AddTail( neighborIndex );
-                }
-            }
-
-            // 3. Flood outward in a "Ring" pattern
-            // Because we use AddTail and remove from Head, it behaves like a Queue (BFS)
-            // which naturally creates a circular/diamond expansion.
-            int blocksToPlace = totalCount - oceanFront.GetCount( );
-
-            while ( blocksToPlace > 0 && !oceanFront.IsEmpty( ) )
-            {
-                // IMPORTANT: Pull from the HEAD (Front) of the list to ensure BFS order
-                POSITION headPos      = oceanFront.GetHeadPosition( );
-                int      currentBlock = oceanFront.GetAt( headPos );
-                oceanFront.RemoveAt( headPos );
-
-                int neighbors[4];
-                neighbors[0] = IndPrev( currentBlock, iSide );
-                neighbors[1] = IndNext( currentBlock, iSide );
-                neighbors[2] = IndLeft( currentBlock, iSide );
-                neighbors[3] = IndRight( currentBlock, iSide );
-
-                // We still shuffle to keep the "shores" from being perfect squares
-                for ( int i = 0; i < 4; ++i )
-                {
-                    int swapWith        = i + ( MyRand( ) % ( 4 - i ) );
-                    int temp            = neighbors[i];
-                    neighbors[i]        = neighbors[swapWith];
-                    neighbors[swapWith] = temp;
-                }
-
-                for ( int i = 0; i < 4 && blocksToPlace > 0; ++i )
-                {
-                    int nb = neighbors[i];
-
-                    if ( piBlks[nb] == 0 )  // Only fill empty land, skip the TEMP_ISLAND
-                    {
-                        piBlks[nb] = blockType;
-                        if ( blockType == -1 && iOceansLeft > 0 )
-                            iOceansLeft--;
-
-                        blocksToPlace--;
-
-                        // Add to the TAIL to ensure we finish the current "ring"
-                        // before moving to the next distance layer
-                        oceanFront.AddTail( nb );
-                    }
-                }
-            }
-
-            // 4. Reveal the island
-            piBlks[islandIndex] = 0;
-        }
-        else if ( oceanStyle == 2 )
-        {
-            // 1. Define a temporary value for island blocks.
-            // It must be different from 0 (empty) and different from blockType (ocean).
-            const int TEMP_ISLAND = -999;
-
-            // Attempt to "grow" the ocean:
-            int             seedCount = 1 + MyRand( ) % 3;
-            CList<int, int> oceanFront;
-
-            // --- Place initial seed blocks (Unchanged) ---
-            for ( int s = 0; s < seedCount; ++s )
-            {
-                int attempts = 0;
-                int seedIndex;
-                do {
-                    seedIndex = MyRand( ) % iNumBlks;
-                    attempts++;
-                } while ( piBlks[seedIndex] != 0 && attempts < iNumBlks );
-
-                if ( piBlks[seedIndex] == 0 )
-                {
-                    piBlks[seedIndex] = blockType;
-                    if ( blockType == -1 && iOceansLeft > 0 )
-                    {
-                        totalCount--;
-                        iOceansLeft--;
-                    }
-                    oceanFront.AddTail( seedIndex );
-                }
-            }
-
-            // --- Grow ocean ---
-            int blocksToPlace = totalCount - seedCount;
-
-            // Increased chance because now it creates permanent barriers
-            // A lower number creates large open oceans, higher creates maze-like oceans.
-            int islandChance = 5;
-
-            while ( blocksToPlace > 0 && !oceanFront.IsEmpty( ) )
-            {
-                int frontSize = oceanFront.GetCount( );
-                int pickIndex = MyRand( ) % frontSize;
-
-                POSITION pos          = oceanFront.FindIndex( pickIndex );
-                int      currentBlock = oceanFront.GetAt( pos );
-                oceanFront.RemoveAt( pos );
-
-                int neighbors[4];
-                neighbors[0] = IndPrev( currentBlock, iSide );   // above
-                neighbors[1] = IndNext( currentBlock, iSide );   // below
-                neighbors[2] = IndLeft( currentBlock, iSide );   // left
-                neighbors[3] = IndRight( currentBlock, iSide );  // right
-
-                // Shuffle neighbors (Unchanged)
-                for ( int i = 0; i < 4; ++i )
-                {
-                    int swapWith        = i + ( MyRand( ) % ( 4 - i ) );
-                    int temp            = neighbors[i];
-                    neighbors[i]        = neighbors[swapWith];
-                    neighbors[swapWith] = temp;
-                }
-
-                // Try to grow into neighbors
-                for ( int i = 0; i < 4 && blocksToPlace > 0; ++i )
-                {
-                    int neighborIndex = neighbors[i];
-
-                    // CRITICAL CHANGE: We only grow if it is 0.
-                    // If it is TEMP_ISLAND, the ocean hits a wall and stops.
+                    int neighborIndex = coast[i];
+                    // If the neighbor is empty, make it the "starting line" for the ocean
                     if ( piBlks[neighborIndex] == 0 )
                     {
-                        // Check chance to create an island "Wall"
-                        if ( MyRand( ) % 100 < islandChance )
-                        {
-                            // Mark this spot as reserved for an island.
-                            // The ocean can NEVER overwrite this now.
-                            piBlks[neighborIndex] = TEMP_ISLAND;
-
-                            // OPTIONAL: Make islands "clump" better.
-                            // If we made an island block, maybe mark a neighbor as island too
-                            // so we don't just get 1-pixel dots.
-                            if ( MyRand( ) % 100 < 50 )
-                            {
-                                int extraLand = IndRight( neighborIndex, iSide );
-                                if ( piBlks[extraLand] == 0 )
-                                    piBlks[extraLand] = TEMP_ISLAND;
-                            }
-
-                            // Do NOT decrement blocksToPlace. We didn't place water.
-                            // We want the ocean to find a different path to reach target size.
-                            continue;
-                        }
-
-                        // Place ocean block
                         piBlks[neighborIndex] = blockType;
                         if ( blockType == -1 && iOceansLeft > 0 )
                             iOceansLeft--;
+                        oceanFront.AddTail( neighborIndex );
+                    }
+                }
 
-                        blocksToPlace--;
+                // 3. Flood outward in a "Ring" pattern
+                // Because we use AddTail and remove from Head, it behaves like a Queue (BFS)
+                // which naturally creates a circular/diamond expansion.
+                int blocksToPlace = totalCount - oceanFront.GetCount( );
 
-                        // Add to front (Unchanged logic)
-                        if ( MyRand( ) % 100 < 70 )
+                while ( blocksToPlace > 0 && !oceanFront.IsEmpty( ) )
+                {
+                    // IMPORTANT: Pull from the HEAD (Front) of the list to ensure BFS order
+                    POSITION headPos      = oceanFront.GetHeadPosition( );
+                    int      currentBlock = oceanFront.GetAt( headPos );
+                    oceanFront.RemoveAt( headPos );
+
+                    int neighbors[4];
+                    neighbors[0] = IndPrev( currentBlock, iSide );
+                    neighbors[1] = IndNext( currentBlock, iSide );
+                    neighbors[2] = IndLeft( currentBlock, iSide );
+                    neighbors[3] = IndRight( currentBlock, iSide );
+
+                    // We still shuffle to keep the "shores" from being perfect squares
+                    for ( int i = 0; i < 4; ++i )
+                    {
+                        int swapWith        = i + ( MyRand( ) % ( 4 - i ) );
+                        int temp            = neighbors[i];
+                        neighbors[i]        = neighbors[swapWith];
+                        neighbors[swapWith] = temp;
+                    }
+
+                    for ( int i = 0; i < 4 && blocksToPlace > 0; ++i )
+                    {
+                        int nb = neighbors[i];
+
+                        if ( piBlks[nb] == 0 )  // Only fill empty land, skip the TEMP_ISLAND
                         {
-                            oceanFront.AddTail( neighborIndex );
+                            piBlks[nb] = blockType;
+                            if ( blockType == -1 && iOceansLeft > 0 )
+                                iOceansLeft--;
+
+                            blocksToPlace--;
+
+                            // Add to the TAIL to ensure we finish the current "ring"
+                            // before moving to the next distance layer
+                            oceanFront.AddTail( nb );
                         }
                     }
                 }
 
-                // Re-add current (Unchanged)
-                if ( blocksToPlace > 0 && MyRand( ) % 100 < 20 )
-                {
-                    oceanFront.AddTail( currentBlock );
-                }
+                // 4. Reveal the island
+                piBlks[islandIndex] = 0;
+            }
+            else if ( oceanStyle == 2 )
+            {
+                // 1. Define a temporary value for island blocks.
+                // It must be different from 0 (empty) and different from blockType (ocean).
+                const int TEMP_ISLAND = -999;
 
-                // Add new seeds (Unchanged)
-                if ( blocksToPlace > 0 && MyRand( ) % 100 < 5 )
+                // Attempt to "grow" the ocean:
+                int             seedCount = 1 + MyRand( ) % 3;
+                CList<int, int> oceanFront;
+
+                // --- Place initial seed blocks (Unchanged) ---
+                for ( int s = 0; s < seedCount; ++s )
                 {
-                    // Spawn a new seed point to accelerate ocean growth
                     int attempts = 0;
-                    int newSeedIndex;
+                    int seedIndex;
                     do {
-                        newSeedIndex = MyRand( ) % iNumBlks;
+                        seedIndex = MyRand( ) % iNumBlks;
                         attempts++;
-                    } while ( ( piBlks[newSeedIndex] != 0 ) && ( attempts < iNumBlks * 2 ) );
+                    } while ( piBlks[seedIndex] != 0 && attempts < iNumBlks );
 
-                    // Only add if we found an empty block (don't overwrite TEMP_ISLAND or blockType)
-                    if ( piBlks[newSeedIndex] == 0 )
+                    if ( piBlks[seedIndex] == 0 )
                     {
-                        piBlks[newSeedIndex] = blockType;
+                        piBlks[seedIndex] = blockType;
                         if ( blockType == -1 && iOceansLeft > 0 )
                         {
                             totalCount--;
                             iOceansLeft--;
                         }
-                        oceanFront.AddTail( newSeedIndex );
-                        blocksToPlace--;
+                        oceanFront.AddTail( seedIndex );
+                    }
+                }
+
+                // --- Grow ocean ---
+                int blocksToPlace = totalCount - seedCount;
+
+                // Increased chance because now it creates permanent barriers
+                // A lower number creates large open oceans, higher creates maze-like oceans.
+                int islandChance = 5;
+
+                while ( blocksToPlace > 0 && !oceanFront.IsEmpty( ) )
+                {
+                    int frontSize = oceanFront.GetCount( );
+                    int pickIndex = MyRand( ) % frontSize;
+
+                    POSITION pos          = oceanFront.FindIndex( pickIndex );
+                    int      currentBlock = oceanFront.GetAt( pos );
+                    oceanFront.RemoveAt( pos );
+
+                    int neighbors[4];
+                    neighbors[0] = IndPrev( currentBlock, iSide );   // above
+                    neighbors[1] = IndNext( currentBlock, iSide );   // below
+                    neighbors[2] = IndLeft( currentBlock, iSide );   // left
+                    neighbors[3] = IndRight( currentBlock, iSide );  // right
+
+                    // Shuffle neighbors (Unchanged)
+                    for ( int i = 0; i < 4; ++i )
+                    {
+                        int swapWith        = i + ( MyRand( ) % ( 4 - i ) );
+                        int temp            = neighbors[i];
+                        neighbors[i]        = neighbors[swapWith];
+                        neighbors[swapWith] = temp;
+                    }
+
+                    // Try to grow into neighbors
+                    for ( int i = 0; i < 4 && blocksToPlace > 0; ++i )
+                    {
+                        int neighborIndex = neighbors[i];
+
+                        // CRITICAL CHANGE: We only grow if it is 0.
+                        // If it is TEMP_ISLAND, the ocean hits a wall and stops.
+                        if ( piBlks[neighborIndex] == 0 )
+                        {
+                            // Check chance to create an island "Wall"
+                            if ( MyRand( ) % 100 < islandChance )
+                            {
+                                // Mark this spot as reserved for an island.
+                                // The ocean can NEVER overwrite this now.
+                                piBlks[neighborIndex] = TEMP_ISLAND;
+
+                                // OPTIONAL: Make islands "clump" better.
+                                // If we made an island block, maybe mark a neighbor as island too
+                                // so we don't just get 1-pixel dots.
+                                if ( MyRand( ) % 100 < 50 )
+                                {
+                                    int extraLand = IndRight( neighborIndex, iSide );
+                                    if ( piBlks[extraLand] == 0 )
+                                        piBlks[extraLand] = TEMP_ISLAND;
+                                }
+
+                                // Do NOT decrement blocksToPlace. We didn't place water.
+                                // We want the ocean to find a different path to reach target size.
+                                continue;
+                            }
+
+                            // Place ocean block
+                            piBlks[neighborIndex] = blockType;
+                            if ( blockType == -1 && iOceansLeft > 0 )
+                                iOceansLeft--;
+
+                            blocksToPlace--;
+
+                            // Add to front (Unchanged logic)
+                            if ( MyRand( ) % 100 < 70 )
+                            {
+                                oceanFront.AddTail( neighborIndex );
+                            }
+                        }
+                    }
+
+                    // Re-add current (Unchanged)
+                    if ( blocksToPlace > 0 && MyRand( ) % 100 < 20 )
+                    {
+                        oceanFront.AddTail( currentBlock );
+                    }
+
+                    // Add new seeds (Unchanged)
+                    if ( blocksToPlace > 0 && MyRand( ) % 100 < 5 )
+                    {
+                        // Spawn a new seed point to accelerate ocean growth
+                        int attempts = 0;
+                        int newSeedIndex;
+                        do {
+                            newSeedIndex = MyRand( ) % iNumBlks;
+                            attempts++;
+                        } while ( ( piBlks[newSeedIndex] != 0 ) && ( attempts < iNumBlks * 2 ) );
+
+                        // Only add if we found an empty block (don't overwrite TEMP_ISLAND or blockType)
+                        if ( piBlks[newSeedIndex] == 0 )
+                        {
+                            piBlks[newSeedIndex] = blockType;
+                            if ( blockType == -1 && iOceansLeft > 0 )
+                            {
+                                totalCount--;
+                                iOceansLeft--;
+                            }
+                            oceanFront.AddTail( newSeedIndex );
+                            blocksToPlace--;
+                        }
+                    }
+                }
+
+                // --- CLEANUP PHASE ---
+                // Iterate over the entire grid and turn the "Reserved Islands" back into normal land (0)
+                for ( int i = 0; i < iNumBlks; ++i )
+                {
+                    if ( piBlks[i] == TEMP_ISLAND )
+                    {
+                        piBlks[i] = 0;
                     }
                 }
             }
-
-            // --- CLEANUP PHASE ---
-            // Iterate over the entire grid and turn the "Reserved Islands" back into normal land (0)
-            for ( int i = 0; i < iNumBlks; ++i )
+            else if ( oceanStyle == 1 )  // Scatter ocean (random placement)
             {
-                if ( piBlks[i] == TEMP_ISLAND )
+                // Scatter ocean blocks randomly
+                for ( int i = 0; i < totalCount; ++i )
                 {
-                    piBlks[i] = 0;
+                    // Find a random unassigned block
+                    int attempts = 0;
+                    int blockIndex;
+                    do {
+                        blockIndex = MyRand( ) % iNumBlks;
+                        attempts++;
+                    } while ( piBlks[blockIndex] != 0 && attempts < iNumBlks );
+
+                    // If we found an empty block, make it ocean
+                    if ( piBlks[blockIndex] == 0 )
+                    {
+                        piBlks[blockIndex] = blockType;
+                        if ( blockType == -1 && iOceansLeft > 0 )
+                            iOceansLeft--;
+                    }
                 }
             }
-        }
-        else if ( oceanStyle == 1 )  // Scatter ocean (random placement)
-        {
-            // Scatter ocean blocks randomly
-            for ( int i = 0; i < totalCount; ++i )
+            else  // simple stripe ocean generation
             {
-                // Find a random unassigned block
-                int attempts = 0;
-                int blockIndex;
-                do {
-                    blockIndex = MyRand( ) % iNumBlks;
-                    attempts++;
-                } while ( piBlks[blockIndex] != 0 && attempts < iNumBlks );
-
-                // If we found an empty block, make it ocean
-                if ( piBlks[blockIndex] == 0 )
+                for ( int i = 0; i < totalCount; ++i )
                 {
-                    piBlks[blockIndex] = blockType;
+                    piBlks[i] = blockType;
                     if ( blockType == -1 && iOceansLeft > 0 )
                         iOceansLeft--;
                 }
             }
         }
-        else  // simple stripe ocean generation
+        else
         {
-            for ( int i = 0; i < totalCount; ++i )
-            {
-                piBlks[i] = blockType;
-                if ( blockType == -1 && iOceansLeft > 0 )
-                    iOceansLeft--;
-            }
+            // no ocean tiles for us :(
+            TRAP( );
         }
     }
 }
@@ -399,7 +416,7 @@ void CGameMap::GenerateMountainBlock( int _x, int iSideSize, int _y, const int i
             CHex* pHexPeak = GetHex( CHexCoord( xPeak, yPeak ) );
             if ( !pHexPeak->IsWater( ) )
             {
-                int newAlt = ConvertAlt( baseAlt, iSideSize );
+                int newAlt = __min( CHex::MaxAlt, ConvertAlt( baseAlt, iSideSize ) );
                 pHexPeak->SetAlt( newAlt );
                 pHexPeak->SetType( CHex::mountain );
 
@@ -427,7 +444,7 @@ void CGameMap::GenerateMountainBlock( int _x, int iSideSize, int _y, const int i
                         if ( !pHex->IsWater( ) )
                         {
                             int existingAlt = pHex->GetAlt( );
-                            int proposedAlt = ConvertAlt( ringAlt + RandNum( 8 ), iSideSize );
+                            int proposedAlt = __min( CHex::MaxAlt, ConvertAlt( ringAlt + RandNum( 8 ), iSideSize ) );
 
                             // Only raise terrain, don't lower existing peaks
                             if ( proposedAlt > existingAlt )

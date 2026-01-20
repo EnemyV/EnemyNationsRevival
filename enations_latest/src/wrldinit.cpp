@@ -677,7 +677,7 @@ void CGameMap::Init( int iSide, int iSideSize, int iScenario )
             for ( int iOn = 0; iOn < NUM_OCEAN; iOn++ )
                 ( GetHex( CHexCoord( _x * iSideSize + ( ocean[iOn][0] * iSideSize ) / 64,
                                      _y * iSideSize + ( ocean[iOn][1] * iSideSize ) / 64 ) ) )
-                    ->Init( ConvertAlt( ocean[iOn][2] / 2 + RandNum( ocean[iOn][2] - (extraOceanDepth + blockExtraOceanDepth) ), iSideSize ) );
+                    ->Init( __minmax(0,CHex::MaxAlt, ConvertAlt( ocean[iOn][2] / 2 + RandNum(__minmax(0,100, ocean[iOn][2] - (extraOceanDepth + blockExtraOceanDepth)) ), iSideSize ) ));
             break;
         }
 
@@ -1576,7 +1576,8 @@ BOOL CGameMap::MakePeak( int xOk, int yOk, int xTest, int yTest, int iSideSize, 
         if ( ( iDiff != 0 ) && ( ( MyRand( ) & 0x1F ) == 0x1F ) )
             iDiff = -iDiff;
 
-        pHexTest->SetAlt( pHexOk->GetAlt( ) - iDiff );
+        int maxAlt = CHex::MaxAlt;
+        pHexTest->SetAlt( __min( maxAlt, pHexOk->GetAlt( ) - iDiff ) );
         int iRand = RandNum( 8 );
         if ( pHexTest->GetAlt( ) < ConvertAlt( 36 + iRand, iSideSize ) )
         {
