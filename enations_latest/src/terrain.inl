@@ -226,8 +226,8 @@ inline int CHex::GetSeaAlt() const {
 }
 
 inline void CHex::SetAlt( int iAlt ) {
-    ASSERT( ( 0 <= iAlt ) && ( iAlt <= 127 ) );
-    iAlt = __minmax( 0, 127, iAlt );
+    ASSERT( ( 0 <= iAlt ) && ( iAlt <= MaxAlt ) );
+    iAlt   = __minmax( 0, MaxAlt, iAlt );
     m_bAlt = (BYTE)( iAlt | ( m_bAlt & 0x80 ) );
 }
 

@@ -133,7 +133,7 @@ public:
 
 	CHexCoord	GetHex () const;
 
-	int			GetAlt () const;
+    int         GetAlt( ) const;
 	int			GetSeaAlt () const;	// likje GetAlt but returns surface of ocean
 	void		SetAlt (int iAlt);
 	void		SetOceanAlt (int iAlt);
@@ -193,7 +193,9 @@ public:
 
 	CTerrainSprite *	GetSprite() { return ( CTerrainSprite * )m_psprite; }
 
-protected:
+	static constexpr int MaxAlt = 127;
+
+  protected:
 
 		BYTE			m_bType;			// 0 - 3 : terrain type
 														// 4 - 6 : tree type
