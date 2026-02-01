@@ -82,12 +82,22 @@ ScanList::CheckPoly(
 
     return TRUE;
 }
-
-//--------------------------------------------------------------------------
+void ScanList::ScanPoly( CPoint const apt[],  // Array of points in clockwise order
+                            int          iCount )         // # points
+{
+    // if caps lock is on, use old, else, use new:
+    if ( GetKeyState( VK_CAPITAL ) & 0x0001 && false )
+    {
+        ScanPolyOld( apt, iCount );
+    } else {
+        ScanPolyNew( apt, iCount );
+    }
+}
+    //--------------------------------------------------------------------------
 // ScanList::ScanPoly
 //--------------------------------------------------------------------------
 void
-ScanList::ScanPoly(
+ScanList::ScanPolyOld(
     CPoint const apt[], // Array of points in clockwise order
     int iCount )        // # points
 {
@@ -96,7 +106,7 @@ ScanList::ScanPoly(
     ASSERT_STRICT( AfxIsValidAddress( apt, iCount * sizeof( CPoint ) ) );
 
 #ifdef _DEBUG
-    CheckPoly( apt, iCount );
+    (CheckPoly( apt, iCount ));
 #endif
 
     m_iTopY = apt[0].y;
@@ -143,7 +153,7 @@ ScanList::ScanPoly(
         int iDelX = ptBot.x - ptTop.x;
         int iX = ptTop.x;
         int* pi = m_aiList[iSide] + ptTop.y - m_iTopY;
-        int iCount = iDelY + 1;
+        int iLineCount  = iDelY + 1;
 
         if ( 0 == iDelX ) {
             __asm
@@ -152,7 +162,7 @@ ScanList::ScanPoly(
 
                 mov eax, [iX]
                 mov edi, [pi]
-                mov ecx, [iCount]
+                mov ecx, [iLineCount]
                 rep stosd
             }
         } else {
@@ -180,7 +190,7 @@ ScanList::ScanPoly(
 
                 mov  edi, [pi]; destination pointer
                 mov  ebx, [iX]; initial x - coordinate
-                mov  ecx, [iCount]; # of rows
+                mov  ecx, [iLineCount]; # of rows
                 mov  edx, eax; assign 16.16 delta - x to edx
                 mov  esi, 80000000H; initial fractional accumulation( 1 / 2 starts in the middle of the pixel )
                 sar  eax, 16; whole part of delta - x
@@ -257,11 +267,139 @@ ScanList::ScanPoly(
     ASSERT_STRICT_VALID( this );
 }
 
+
+//--------------------------------------------------------------------------
+// ScanList::ScanPoly - AVX2 Optimized (works in 32-bit builds)
+//--------------------------------------------------------------------------
+void ScanList::ScanPolyNew( CPoint const apt[], int iCount )
+{
+    ASSERT_STRICT_VALID( this );
+    ASSERT_STRICT( iCount > 2 );
+    ASSERT_STRICT( AfxIsValidAddress( apt, iCount * sizeof( CPoint ) ) );
+
+#ifdef _DEBUG
+    ( CheckPoly( apt, iCount ) );
+#endif
+
+    // Find bounding box using SIMD if polygon is large enough
+    int topY = apt[0].y;
+    int botY = apt[0].y;
+
+    for ( int i = 1; i < iCount; ++i )
+    {
+        const int y = apt[i].y;
+        topY        = ( y < topY ) ? y : topY;
+        botY        = ( y > botY ) ? y : botY;
+    }
+
+    m_iTopY    = topY;
+    m_iBottomY = botY;
+
+    // Process each edge
+    for ( int i = 0; i < iCount; ++i )
+    {
+        const int j = ( i + 1 < iCount ) ? i + 1 : 0;
+
+        int    iSide;
+        CPoint ptTop, ptBot;
+
+        if ( apt[i].y > apt[j].y )
+        {
+            iSide = 0;
+            ptTop = apt[j];
+            ptBot = apt[i];
+        }
+        else
+        {
+            iSide = 1;
+            ptTop = apt[i];
+            ptBot = apt[j];
+        }
+
+        const int iDelY = ptBot.y - ptTop.y;
+
+        if ( iDelY == 0 )
+            continue;
+
+        const int iDelX      = ptBot.x - ptTop.x;
+        int* __restrict pi   = m_aiList[iSide] + ( ptTop.y - topY );
+        const int iLineCount = iDelY + 1;
+
+        if ( iDelX == 0 )
+        {
+            // Vertical edge - AVX2 can blast 8 ints at once
+            const __m256i vx = _mm256_set1_epi32( ptTop.x );
+            int           k  = 0;
+
+            for ( ; k + 8 <= iLineCount; k += 8 )
+            {
+                _mm256_storeu_si256( reinterpret_cast<__m256i*>( pi + k ), vx );
+            }
+            // SSE2 for 4-int chunks
+            if ( k + 4 <= iLineCount )
+            {
+                _mm_storeu_si128( reinterpret_cast<__m128i*>( pi + k ), _mm256_castsi256_si128( vx ) );
+                k += 4;
+            }
+            // Scalar remainder
+            for ( ; k < iLineCount; ++k )
+            {
+                pi[k] = ptTop.x;
+            }
+        }
+        else
+        {
+            // Sloped edge with AVX2
+            // Compute 8 x-values in parallel
+
+            const long long fixedDelta = ( static_cast<long long>( iDelX ) << 32 ) / iDelY;
+            long long       fixedX     = ( static_cast<long long>( ptTop.x ) << 32 ) + 0x80000000LL;
+
+            int k = 0;
+
+            // AVX2: process 8 at a time
+            if ( iLineCount >= 8 )
+            {
+                // Precompute 8 consecutive values and the stride
+                const long long delta8 = fixedDelta * 8;
+
+                for ( ; k + 8 <= iLineCount; k += 8 )
+                {
+                    // Compute 8 values - compiler should optimize this well
+                    const int x0 = static_cast<int>( fixedX >> 32 );
+                    const int x1 = static_cast<int>( ( fixedX + fixedDelta ) >> 32 );
+                    const int x2 = static_cast<int>( ( fixedX + fixedDelta * 2 ) >> 32 );
+                    const int x3 = static_cast<int>( ( fixedX + fixedDelta * 3 ) >> 32 );
+                    const int x4 = static_cast<int>( ( fixedX + fixedDelta * 4 ) >> 32 );
+                    const int x5 = static_cast<int>( ( fixedX + fixedDelta * 5 ) >> 32 );
+                    const int x6 = static_cast<int>( ( fixedX + fixedDelta * 6 ) >> 32 );
+                    const int x7 = static_cast<int>( ( fixedX + fixedDelta * 7 ) >> 32 );
+
+                    const __m256i values = _mm256_set_epi32( x7, x6, x5, x4, x3, x2, x1, x0 );
+                    _mm256_storeu_si256( reinterpret_cast<__m256i*>( pi + k ), values );
+
+                    fixedX += delta8;
+                }
+            }
+
+            // Scalar remainder
+            for ( ; k < iLineCount; ++k )
+            {
+                pi[k] = static_cast<int>( fixedX >> 32 );
+                fixedX += fixedDelta;
+            }
+        }
+    }
+
+    ASSERT_STRICT_VALID( this );
+}
+
 //--------------------------------------------------------------------------
 // ScanList::ScanPolyFixed
 //--------------------------------------------------------------------------
+
 void
-ScanList::ScanPolyFixed(
+ScanList::ScanPolyFixedOld(
     CPoint const apt[],  // Array of points in clockwise order
     int iCount )         // # points
 {
@@ -411,6 +549,144 @@ ScanList::ScanPolyFixed(
             //      *pi++ = fixX;
             //      fixX += fixDelta;
             //  }
+        }
+    }
+
+    ASSERT_STRICT_VALID( this );
+}
+
+
+    //--------------------------------------------------------------------------
+// ScanList::ScanPolyFixed
+//--------------------------------------------------------------------------
+void ScanList::ScanPolyFixed(CPoint const apt[],  // Array of points in clockwise order
+    int          iCount)         // # points
+{
+    // if caps lock is on, use old, else, use new:
+    if (GetKeyState(VK_CAPITAL) & 0x0001) {
+        ScanPolyFixedOld(apt, iCount);
+    }
+    else {
+        ScanPolyFixedNew(apt, iCount);
+    }
+}
+
+
+
+void ScanList::ScanPolyFixedNew(
+    CPoint const apt[],  // Array of points in clockwise order
+    int          iCount )         // # points
+{
+    ASSERT_STRICT_VALID( this );
+    ASSERT_STRICT( iCount > 2 );
+    ASSERT_STRICT( AfxIsValidAddress( apt, iCount * sizeof( CPoint ) ) );
+
+#ifdef _DEBUG
+    CheckPoly( apt, iCount );
+#endif
+
+    // Find bounding box - DO NOT CLAMP these values!
+    m_iTopY    = apt[0].y;
+    m_iBottomY = apt[0].y;
+
+    for ( int i = 1; i < iCount; ++i )
+    {
+        if ( apt[i].y < m_iTopY )
+        {
+            m_iTopY = apt[i].y;
+        }
+        else if ( apt[i].y > m_iBottomY )
+        {
+            m_iBottomY = apt[i].y;
+        }
+    }
+
+    // Process each edge
+    for ( int i = 0; i < iCount; ++i )
+    {
+        const int j = ( i + 1 ) % iCount;
+
+        const CPoint& pt1 = apt[i];
+        const CPoint& pt2 = apt[j];
+
+        if ( pt1.y == pt2.y )
+        {
+            continue;  // Skip horizontal edges
+        }
+
+        int    iSide;
+        CPoint ptTop, ptBot;
+
+        if ( pt1.y > pt2.y )
+        {
+            iSide = 0;
+            ptTop = pt2;
+            ptBot = pt1;
+        }
+        else
+        {
+            iSide = 1;
+            ptTop = pt1;
+            ptBot = pt2;
+        }
+
+        const int iDelY = ptBot.y - ptTop.y;
+        const int iDelX = ptBot.x - ptTop.x;
+
+        // Calculate buffer offset (this is where we check bounds!)
+        int iBufferStart = ptTop.y - m_iTopY;
+
+        // Skip if completely out of range
+        if ( iBufferStart >= m_iMaxHeight || iBufferStart + iDelY < 0 )
+            continue;
+
+        // Clamp to valid buffer range
+        int iClipTop = 0;
+        int iClipBot = iDelY + 1;
+
+        if ( iBufferStart < 0 )
+        {
+            iClipTop     = -iBufferStart;
+            iBufferStart = 0;
+        }
+
+        if ( iBufferStart + iClipBot > m_iMaxHeight )
+        {
+            iClipBot = m_iMaxHeight - iBufferStart;
+        }
+
+        int*      pi         = m_aiList[iSide] + iBufferStart;
+        const int iLineCount = iClipBot - iClipTop;
+
+        if ( iLineCount <= 0 )
+            continue;
+
+        if ( iDelX == 0 )
+        {
+            // Vertical edge - store fixed-point constant
+            const int fixX = ( ptTop.x << 16 ) + 0x8000;
+            for ( int k = 0; k < iLineCount; ++k )
+            {
+                pi[k] = fixX;
+            }
+        }
+        else
+        {
+            // Sloped edge - interpolate in fixed-point
+            const int fixDelta = ( static_cast<long long>( iDelX ) << 16 ) / iDelY;
+
+            // Adjust starting position if we clipped the top
+            int fixX = ( ptTop.x << 16 ) + 0x8000;
+            if ( iClipTop > 0 )
+            {
+                fixX += fixDelta * iClipTop;
+            }
+
+            for ( int k = 0; k < iLineCount; ++k )
+            {
+                pi[k] = fixX;
+                fixX += fixDelta;
+            }
         }
     }
 

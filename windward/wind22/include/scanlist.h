@@ -35,7 +35,11 @@ public:
     static BOOL CheckPoly( CPoint const apt[], int iCount );
 
     void ScanPoly( CPoint const apt[], int iCount );
+    void ScanPolyNew( CPoint const apt[], int iCount );
+    void ScanPolyOld( CPoint const apt[], int iCount );
     void ScanPolyFixed( CPoint const apt[], int iCount );
+    void ScanPolyFixedOld( CPoint const apt[], int iCount );
+    void ScanPolyFixedNew( CPoint const apt[], int iCount );
 
     int TopY() const { return m_iTopY; }
     int BottomY() const { return m_iBottomY; }
