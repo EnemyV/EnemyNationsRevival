@@ -87,13 +87,13 @@ void CRsrchStatus::Serialize( CArchive& ar )
     if ( ar.IsStoring( ) )
     {
         ASSERT_VALID( this );
-        TRAP( );
+        //TRAP( );
 
         ar << m_bDiscovered << m_iPtsDiscovered;
     }
     else
     {
-        TRAP( );
+        //TRAP( );
         ar >> m_bDiscovered >> m_iPtsDiscovered;
     }
 }
