@@ -757,7 +757,11 @@ void CPlayer::Serialize( CArchive& ar )
 
         ar << m_iRsrchHave;
         ar << m_iRsrchItem;
-        m_aRsrch.Serialize( ar );
+
+        // Serialize research statuses element-by-element to avoid raw (vptr) copying.
+        ar.WriteCount( m_aRsrch.GetSize( ) );
+        for ( INT_PTR i = 0; i < m_aRsrch.GetSize( ); ++i ) m_aRsrch.ElementAt( i ).Serialize( ar );
+
         if ( m_piBldgExists == NULL )
             ar << (LONG)0;
         else
@@ -784,7 +788,8 @@ void CPlayer::Serialize( CArchive& ar )
 
         ar << m_iBldgsBuilt;
         ar << m_iVehsBuilt;
-        for ( int iInd = 0; iInd < CMaterialTypes::num_types; iInd++ ) ar << m_aiMade[iInd] << m_aiHave[iInd];
+        for ( int iInd = 0; iInd < CMaterialTypes::num_types; iInd++ ) 
+            ar << m_aiMade[iInd] << m_aiHave[iInd];
         ar << m_iBldgsDest;
         ar << m_iVehsDest;
 
@@ -832,7 +837,12 @@ void CPlayer::Serialize( CArchive& ar )
 
         ar >> m_iRsrchHave;
         ar >> m_iRsrchItem;
-        m_aRsrch.Serialize( ar );
+        // Read research statuses element-by-element to preserve valid object layout.
+        {
+            DWORD_PTR nNewSize = ar.ReadCount( );
+            m_aRsrch.SetSize( nNewSize );
+            for ( INT_PTR i = 0; i < m_aRsrch.GetSize( ); ++i ) m_aRsrch.ElementAt( i ).Serialize( ar );
+        }
 
         // in a net game saved early some players may not have the R&D initialized
         if ( m_aRsrch.GetSize( ) < theRsrch.GetSize( ) )
