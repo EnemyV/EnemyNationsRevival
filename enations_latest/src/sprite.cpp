@@ -1100,275 +1100,170 @@ CSpriteDIB::TerrainDrawQuad(
 }
 
 //-----------------------------------------------------------------------
-// CSpriteDIB::TerrainDrawQuadVert
+// CSpriteDIB::TerrainDrawQuadVert - Pure C++ version
 //-----------------------------------------------------------------------
-void
-CSpriteDIB::TerrainDrawQuadVert(
-        int aiShadeIndex[2],
-        CPoint aptHex[4],
-        BOOL bInvisible) const {
+void CSpriteDIB::TerrainDrawQuadVert( int aiShadeIndex[2], CPoint aptHex[4], BOOL bInvisible ) const
+{
     int iDelY = aptHex[3].y - aptHex[1].y;
 
-    if (0 >= iDelY)
+    if ( 0 >= iDelY )
         return;
 
-    if (bInvisible) {
+    if ( bInvisible )
+    {
         aiShadeIndex[0] = x_aiInvisibleShadeIndex[aiShadeIndex[0]];
         aiShadeIndex[1] = x_aiInvisibleShadeIndex[aiShadeIndex[1]];
     }
 
-    CDIB *pdib = xpdibwnd->GetDIB();
-    CDIBits dibits = pdib->GetBits();
-    BYTE const *pSrcOrg;
-    int iDstDirPitch = pdib->GetDirPitch();
-    int iBytesPerPixel = m_iBytesPerPixel;
-    int iSrcWBytes = Width() * iBytesPerPixel;
-    int fixDV = (Height() >> 3) << 16;
-    int fixDelY = iDelY << 16;
+    CDIB*       pdib   = xpdibwnd->GetDIB( );
+    CDIBits     dibits = pdib->GetBits( );
+    BYTE const* pSrcOrg;
+    int         iDstDirPitch   = pdib->GetDirPitch( );
+    int         iBytesPerPixel = m_iBytesPerPixel;
+    int         iSrcWBytes     = Width( ) * iBytesPerPixel;
+    int         fixDV          = ( Height( ) >> 3 ) << 16;
+    int         fixDelY        = iDelY << 16;
 
-    FIXDIV(fixDV, fixDelY);
+    FIXDIV( fixDV, fixDelY );
 
-    // right/left-dependent vars
+    // Calculate step values (moved from static to local)
+    int aiVintVfracStepV[2];
+    aiVintVfracStepV[1] = iSrcWBytes * ( fixDV >> 16 );
+    aiVintVfracStepV[0] = aiVintVfracStepV[1] + iSrcWBytes;
 
-    int iLeftX;
-    int iRightX;
-    int fixTopDV;
-    int fixTopV;
+    // Precompute the fractional part of fixDV for the inner loop
+    unsigned int fixDVFrac = static_cast<unsigned int>( fixDV ) << 16;
+
+    int    iLeftX;
+    int    iRightX;
+    int    fixTopDV;
+    int    fixTopV;
     CPoint aptHex2[3];
 
-    static int x_aiVintVfracStepV[2];
-
-    x_aiVintVfracStepV[1] = iSrcWBytes * (fixDV >> 16);
-    x_aiVintVfracStepV[0] = x_aiVintVfracStepV[1] + iSrcWBytes;
-
-    for (int i = 0; i < 2; ++i)    // Left then right triangle
+    for ( int i = 0; i < 2; ++i )  // Left then right triangle
     {
-        pSrcOrg = TerrainGetDIBPixels(aiShadeIndex[i]);
+        pSrcOrg = TerrainGetDIBPixels( aiShadeIndex[i] );
 
-        if (!pSrcOrg)
+        if ( !pSrcOrg )
             return;
 
-        if (0 == i) {
-            iLeftX = aptHex[0].x;
-            iRightX = aptHex[1].x;
-            fixTopV = ((Height() >> 3) << 15) - 0x00008000;
+        if ( 0 == i )
+        {
+            iLeftX   = aptHex[0].x;
+            iRightX  = aptHex[1].x;
+            fixTopV  = ( ( Height( ) >> 3 ) << 15 ) - 0x00008000;
             fixTopDV = -0x00008000;
 
-            aptHex2[0] = CPoint(aptHex[0].y, aptHex[0].x);
-            aptHex2[1] = CPoint(aptHex[1].y, aptHex[1].x);
-            aptHex2[2] = CPoint(aptHex[3].y, aptHex[3].x);
-        } else {
-            iLeftX = aptHex[1].x;
-            iRightX = aptHex[2].x;
-            fixTopV = 0;
+            aptHex2[0] = CPoint( aptHex[0].y, aptHex[0].x );
+            aptHex2[1] = CPoint( aptHex[1].y, aptHex[1].x );
+            aptHex2[2] = CPoint( aptHex[3].y, aptHex[3].x );
+        }
+        else
+        {
+            iLeftX   = aptHex[1].x;
+            iRightX  = aptHex[2].x;
+            fixTopV  = 0;
             fixTopDV = 0x00008000;
 
-            aptHex2[0] = CPoint(aptHex[1].y, aptHex[1].x);
-            aptHex2[1] = CPoint(aptHex[2].y, aptHex[2].x);
-            aptHex2[2] = CPoint(aptHex[3].y, aptHex[3].x);
+            aptHex2[0] = CPoint( aptHex[1].y, aptHex[1].x );
+            aptHex2[1] = CPoint( aptHex[2].y, aptHex[2].x );
+            aptHex2[2] = CPoint( aptHex[3].y, aptHex[3].x );
         }
 
-        xscanlist.ScanPoly(aptHex2, 3);
+        xscanlist.ScanPoly( aptHex2, 3 );
 
-        iLeftX = Max((long) iLeftX, prVp->left);
-        iRightX = Min((long) iRightX, prVp->right);
+        iLeftX  = Max( (long)iLeftX, prVp->left );
+        iRightX = Min( (long)iRightX, prVp->right );
 
-        int iDelX = iLeftX - aptHex2[0].y;
-        int *piLeft = xscanlist.m_piLeft + iDelX;
-        int *piRight = xscanlist.m_piRight + iDelX;
-        BYTE const *pSrcOrgTop = pSrcOrg + iBytesPerPixel * (iLeftX - aptHex[0].x);
+        int         iDelX      = iLeftX - aptHex2[0].y;
+        int*        piLeft     = xscanlist.m_piLeft + iDelX;
+        int*        piRight    = xscanlist.m_piRight + iDelX;
+        BYTE const* pSrcOrgTop = pSrcOrg + iBytesPerPixel * ( iLeftX - aptHex[0].x );
 
-        if (iDelX != 0) {
+        if ( iDelX != 0 )
+        {
             int fixTemp = iDelX << 16;
-
-            FIXMUL(fixTemp, fixTopDV);
-
+            FIXMUL( fixTemp, fixTopDV );
             fixTopV += fixTemp;
         }
 
-        for (int iDstX = iLeftX; iDstX < iRightX; ++iDstX) {
+        for ( int iDstX = iLeftX; iDstX < iRightX; ++iDstX )
+        {
             int iDstBotY = *piLeft++;
             int iDstTopY = *piRight++;
 
-            int iDstBotYClipped = Min((long) iDstBotY, prVp->bottom - 1L);
-            int iDstTopYClipped = Max((long) iDstTopY, prVp->top);
+            int iDstBotYClipped = Min( (long)iDstBotY, prVp->bottom - 1L );
+            int iDstTopYClipped = Max( (long)iDstTopY, prVp->top );
 
-            BYTE *pDst = dibits + pdib->GetOffset(iDstX, iDstTopYClipped);
+            BYTE* pDst = dibits + pdib->GetOffset( iDstX, iDstTopYClipped );
 
-            int iDelY = iDstTopYClipped - iDstTopY;
-            int fixV = fixTopV;
+            int iClipDelY = iDstTopYClipped - iDstTopY;
+            int fixV      = fixTopV;
 
-            if (iDelY) {
-                int fixTemp = iDelY << 16;
-
-                FIXMUL(fixTemp, fixDV);
-
+            if ( iClipDelY )
+            {
+                int fixTemp = iClipDelY << 16;
+                FIXMUL( fixTemp, fixDV );
                 fixV += fixTemp;
             }
 
             fixTopV += fixTopDV;
 
-            static int nPixels;
+            int nPixels = iDstBotYClipped - iDstTopYClipped + 1;
 
-            nPixels = iDstBotYClipped - iDstTopYClipped + 1;
-
-            __asm
+            if ( nPixels > 0 )
             {
-                    mov      eax,[nPixels]
-                    cmp      eax, 0
-                    jle      TexLoopDone2; setup initial coordinates
+                // Extract integer and fractional parts of V
+                unsigned int vFrac = static_cast<unsigned int>( fixV ) << 16;
+                int          vInt  = fixV >> 16;
 
-                    mov     ecx,[fixV]; get v 16.16 fixedpoint coordinate
-                    mov      edx, ecx; copy it
-                    shl     ecx, 16; get fractional part
-                    sar      edx, 16; integer part
-                    imul      edx, iSrcWBytes; offset of start source pixel
+                // Bounds check the initial source offset
+                int         srcOffset = vInt * iSrcWBytes;
+                BYTE const* pSrc      = pSrcOrgTop + srcOffset;
 
-                    mov     esi,[pSrcOrgTop]; source address
-                    add      esi, edx; point to start source pixel
-
-                    mov      edi,[pDst]; dest pointer
-                    mov      ebx,[iDstDirPitch]; Dest row length in bytes
-                    mov      edx,[fixDV]; v delta
-                    shl     edx, 16; get fractional part
-                    mov      eax, iBytesPerPixel
-
-                    push    ebp; free up another register; can't access stack frame; edi = dest dib bits at current pixel; esi = texture pointer at current u, v; ebx = dest row length, in bytes; ecx = v fraction; edx = v frac; ebp = v carry scratch
-
-                    cmp    eax, 4
-                    je        TexLoop4Bytes
-                    cmp    eax, 3
-                    je        TexLoop3Bytes
-                    cmp    eax, 2
-                    je        TexLoop2Bytes; 1-byte per pixel case
-
-                    mov    ebp,[nPixels]; # of rows
-                    add[nPixels], 3; unrolled loop count is
-                    shr[nPixels], 2;    ( count + 3 ) / 4
-                    bt        ebp, 0; 1 or 3 extra rows?
-                    jnc    EvenRows; no, 2 or 4
-                    bt        ebp, 1; 3 extra rows?
-                    jc        TexLoopOneByte3; yes
-                    jmp    TexLoopOneByte1; 1 extra row
-
-                    EvenRows:
-
-                    bt  ebp, 1; 2 extra rows?
-                    jc  TexLoopOneByte2; yes; edi = dest dib bits at current pixel; esi = texture pointer at current u, v; ebx = dest row length, in bytes; ecx = v fraction; edx = v frac; ebp = v carry scratch
-
-                    mov al,[edi]; preread the destination cache line
-
-                    TexLoopOneByte4:
-
-                    mov al,[esi]; get texture pixel 1
-                    add ecx, edx; increment v fraction
-                    sbb ebp, ebp; get -1 if carry
-                    mov[edi], al; store pixel 1
-                    add esi, x_aiVintVfracStepV[4+ebp*4]; add in step ints & carries
-                    add edi, ebx; bump dest pointer to next row
-
-                    TexLoopOneByte3:
-
-                    mov al,[esi]; get texture pixel 1
-                    add ecx, edx; increment v fraction
-                    sbb ebp, ebp; get -1 if carry
-                    mov[edi], al; store pixel 1
-                    add esi, x_aiVintVfracStepV[4+ebp*4]; add in step ints & carries
-                    add edi, ebx; bump dest pointer to next row
-
-                    TexLoopOneByte2:
-
-                    mov al,[esi]; get texture pixel 1
-                    add ecx, edx; increment v fraction
-                    sbb ebp, ebp; get -1 if carry
-                    mov[edi], al; store pixel 1
-                    add esi, x_aiVintVfracStepV[4+ebp*4]; add in step ints & carries
-                    add edi, ebx; bump dest pointer to next row
-
-                    TexLoopOneByte1:
-
-                    mov al,[esi]; get texture pixel 1
-                    add ecx, edx; increment v fraction
-                    sbb ebp, ebp; get -1 if carry
-                    mov[edi], al; store pixel 1
-                    add esi, x_aiVintVfracStepV[4+ebp*4]; add in step ints & carries
-                    add edi, ebx; bump dest pointer to next row
-
-                    dec[nPixels]; dec loop counter
-                    jnz TexLoopOneByte4; loop if not done
-                    jmp TexLoopDone; 2 bytes per pixel case
-
-                    TexLoop2Bytes:
-
-                    mov al,[esi+0]; get texture pixel 1
-                    mov[edi+0], al; store pixel 1
-                    mov al,[esi+1]; get texture pixel 1
-                    mov[edi+1], al; store pixel 1
-                    add ecx, edx; increment v fraction
-                    sbb ebp, ebp; get -1 if carry
-                    add esi, x_aiVintVfracStepV[4+ebp*4]; add in step ints & carries
-                    add edi, ebx; bump dest pointer to next row
-                    dec[nPixels]; dec loop counter
-                    jnz TexLoop2Bytes; loop if not done
-                    jmp TexLoopDone; 3 bytes per pixel case
-
-                    TexLoop3Bytes:
-
-                    mov al,[esi+0]; get texture pixel 1
-                    mov[edi+0], al; store pixel 1
-                    mov al,[esi+1]; get texture pixel 1
-                    mov[edi+1], al; store pixel 1
-                    mov al,[esi+2]; get texture pixel 1
-                    mov[edi+2], al; store pixel 1
-                    add ecx, edx; increment v fraction
-                    sbb ebp, ebp; get -1 if carry
-                    add esi, x_aiVintVfracStepV[4+ebp*4]; add in step ints & carries
-                    add edi, ebx; bump dest pointer to next row
-                    dec[nPixels]; dec loop counter
-                    jnz TexLoop3Bytes; loop if not done
-                    jmp TexLoopDone; 4 bytes per pixel case
-
-                    TexLoop4Bytes:
-
-                    mov al,[esi+0]; get texture pixel 1
-                    mov[edi+0], al; store pixel 1
-                    mov al,[esi+1]; get texture pixel 1
-                    mov[edi+1], al; store pixel 1
-                    mov al,[esi+2]; get texture pixel 1
-                    mov[edi+2], al; store pixel 1
-                    mov al,[esi+3]; get texture pixel 1
-                    mov[edi+3], al; store pixel 1
-                    add ecx, edx; increment v fraction
-                    sbb ebp, ebp; get -1 if carry
-                    add esi, x_aiVintVfracStepV[4+ebp*4]; add in step ints & carries
-                    add edi, ebx; bump dest pointer to next row
-                    dec[nPixels]; dec loop counter
-                    jnz TexLoop4Bytes; loop if not done
-
-                    TexLoopDone:
-
-                    pop ebp; stack available again
-
-                    TexLoopDone2:
-
-                    mov eax, iBytesPerPixel
-                    add pSrcOrgTop, eax; Bump source pointer to top of next row
-            }
-
-                /*
-                while ( nPixels-- )
+                // Texture mapping loop
+                for ( int pixel = 0; pixel < nPixels; ++pixel )
                 {
-                    memcpy( pDst, pSrcOrgTop + ( fixV >> 16 ) * iSrcWBytes, m_iBytesPerPixel );
+                    // Copy pixel based on bytes per pixel
+                    switch ( iBytesPerPixel )
+                    {
+                    case 1:
+                        pDst[0] = pSrc[0];
+                        break;
+                    case 2:
+                        pDst[0] = pSrc[0];
+                        pDst[1] = pSrc[1];
+                        break;
+                    case 3:
+                        pDst[0] = pSrc[0];
+                        pDst[1] = pSrc[1];
+                        pDst[2] = pSrc[2];
+                        break;
+                    case 4:
+                        pDst[0] = pSrc[0];
+                        pDst[1] = pSrc[1];
+                        pDst[2] = pSrc[2];
+                        pDst[3] = pSrc[3];
+                        break;
+                    }
 
+                    // Advance destination pointer
                     pDst += iDstDirPitch;
-                    fixV += fixDV;
-                }
 
-                pSrcOrgTop += iBytesPerPixel;
-            */
+                    // Fixed-point V increment with carry detection
+                    unsigned int oldVFrac = vFrac;
+                    vFrac += fixDVFrac;
+
+                    // Check for carry (overflow means we need the larger step)
+                    int carry = ( vFrac < oldVFrac ) ? 0 : 1;
+                    pSrc += aiVintVfracStepV[carry];
+                }
             }
+
+            pSrcOrgTop += iBytesPerPixel;
         }
     }
+}
 
 //-----------------------------------------------------------------------
 // CSpriteDIB::TerrainDrawQuadVertHatched
