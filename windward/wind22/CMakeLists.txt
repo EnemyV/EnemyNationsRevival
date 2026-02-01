@@ -38,22 +38,14 @@ add_library(wind22 STATIC ${wind22_sources})
 # according to wind22.mak this should be MD
 # but maybe it was changed to MT in later versions?
 # i still think win22 is older or incomplete somehow
-#target_compile_options(wind22 PUBLIC
-#    $<$<CONFIG:Release>:/MD /EHsc /O2 /Ob2 /EHsc>
-#    $<$<CONFIG:Profile>:/MD /EHsc /O2 /Ob2 /EHsc>
-#    $<$<CONFIG:Debug>:/MDd /EHsc /EHsc /ZI>
-#)
 target_compile_options(wind22 PUBLIC    
     $<$<CONFIG:Sanitize>:/MDd /EHsc /Od /Ob0 /fsanitize=address>
-    $<$<CONFIG:Debug>:/MDd /EHsc /Od /Ob0> # ZI
+    $<$<CONFIG:Debug>:/MDd /EHsc /Od /Ob0 /fsanitize=address> # ZI
     $<$<CONFIG:Profile>:/MD /EHsc /Od /Ob0> # ZI
     $<$<CONFIG:Release>:/MD /EHsc /O2 /Ob2 /Oi /GL /Gy /Gw /Ot /GF /arch:AVX2 /fp:fast /Zi>
 )
 
-
 set(CMAKE_MFC_FLAG 2)
-
-#set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
 target_compile_definitions(wind22 PUBLIC
     _AFXDLL
@@ -66,23 +58,14 @@ target_compile_definitions(wind22 PUBLIC
     AI_THREADS_ENABLED
     $<$<CONFIG:Release>:NDEBUG>
     $<$<CONFIG:Profile>:NDEBUG>    
-    $<$<CONFIG:Debug>:_DEBUG>
+    $<$<CONFIG:Debug>:_DEBUG>  
+    $<$<CONFIG:Sanitize>:_DEBUG>
 )
 
 
 # Precompiled header - specify the correct path
 target_precompile_headers(wind22 PUBLIC include/stdafx.h)
 
-#target_link_options(enations PUBLIC
-#    $<$<CONFIG:Debug>:/DEBUG:FULL>
-#    $<$<CONFIG:Release>:/DEBUG:FASTLINK>
-#    /OPT:REF
-#    /OPT:ICF
-#    /INCREMENTAL:NO
-#    /DYNAMICBASE
-#    /NXCOMPAT
-#    $<$<CONFIG:Release>:/LTCG>
-#)
 target_link_options(wind22 PUBLIC    
     $<$<CONFIG:Sanitize>:/DEBUG:FULL /OPT:NOREF /OPT:NOICF /fsanitize=address>
     $<$<CONFIG:Debug>:/DEBUG:FULL /OPT:NOREF /OPT:NOICF>

@@ -39,30 +39,11 @@ add_library(vdmplay SHARED ${vdmplay_sources})
 
 set(CMAKE_MFC_FLAG 2)
 
-#target_compile_definitions(vdmplay PUBLIC
-   #     _AFXDLL
-   ##     _DLL
-        # _MT
-   #     _USRDLL
-   #     _WINDLL
-   #     _WIN32_WINNT=_WIN32_WINNT_WIN7
-   #     _WINDOWS
-   #     _MBCS
-   #     VPSYSTEM
-   #     WIN32
-# #       USE_MFC
-  #      _X86_ # Hack! This should not be necessary.
-  #      )
-
-
 target_compile_definitions(vdmplay PUBLIC
         _AFXDLL
-#        _DLL
-#        _AFX_STATIC
         STRICT
         _USRDLL
         _WINDLL
-#        NOMFC
         _WINDOWS
         _MBCS
         WIN32
@@ -78,55 +59,24 @@ target_compile_definitions(vdmplay PUBLIC
 target_link_directories(vdmplay PUBLIC
         ./)
 
-#target_link_libraries(vdmplay PUBLIC
-##        mtlgmt
-    #    netapi32
-    #    winmm
-    #    ucrt
-    #    vcruntime
-    #    mfcs140
-    #    msvcprt
-      #  msvcrt
-##        mtlmt
-      #  legacy_stdio_definitions
-#)
 target_link_libraries(vdmplay PUBLIC
     netapi32
     winmm
-#    mtlmt.lib
-#    nafxcwd.lib 
     legacy_stdio_definitions
-   # $<$<CONFIG:Debug>:nafxcwd.lib>       # Only for Debug
-   # $<$<CONFIG:Release>:nafxcw.lib>      # Only for Release
-   # $<$<CONFIG:Profile>:nafxcw.lib>      # Only for Release
 )
 
-
-#target_include_directories(vdmplay PUBLIC )
-
-#target_compile_options(vdmplay INTERFACE
-#        "$<$<CONFIG:RELEASE>:$<BUILD_INTERFACE:/MD>"
-#        "$<$<CONFIG:DEBUG>:$<BUILD_INTERFACE:/MDd>"
-#        )
 
 # according to vdmplay.mak this should be MT ...
 target_compile_options(vdmplay PRIVATE
     $<$<CONFIG:DEBUG>:/MDd /ZI>
+    $<$<CONFIG:Sanitize>:/MDd /ZI> # /DEBUG:FULL /OPT:NOREF /OPT:NOICF>
     $<$<CONFIG:Release>:/MD /EHsc /O2 /Ob2 /Oi /GL /Gy /Gw /Ot /GF /arch:AVX2 /fp:fast /Zi>
     $<$<CONFIG:Profile>:/MD>
-    $<$<CONFIG:Sanitize>:/MD>
 )
-#target_compile_options(vdmplay PRIVATE
-#        "$<$<CONFIG:RELEASE>:$<BUILD_INTERFACE:/MD;/GX;/Zi;/Ob2;/EHsc>"
-#        "$<$<CONFIG:DEBUG>:$<BUILD_INTERFACE:/MDd;/GX;/EHsc;/Zi>"
-#        )
-        
 
 target_link_options(vdmplay PUBLIC
-        $<$<CONFIG:Sanitize>:/fsanitize=address>
+        $<$<CONFIG:Sanitize>:/DEBUG:FULL /fsanitize=address>
         $<$<CONFIG:Release>:/DEBUG:FASTLINK /INCREMENTAL:NO /OPT:REF /OPT:ICF /LTCG>
-       # /NODEFAULTLIB:libcmt
-       # /NODEFAULTLIB:LIBCMTD
         /NODEFAULTLIB:mtlgmt
         )
 
