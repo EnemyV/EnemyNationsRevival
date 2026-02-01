@@ -103,12 +103,11 @@ add_executable(enations WIN32 ${enations_sources})
 # should be /Zi for release (no it shouldn't?)')
 # /Z7 for profiling
 # BUGBUGTODO change back to /Zi
-target_compile_options(enations PRIVATE    
-   # $<$<CONFIG:Release>:/MD /EHsc /Ob2 /Z7> # Profiling build
-    $<$<CONFIG:Release>:/MD /EHsc /O2 /Ob2 /Oi /GL /Gy /Gw /Ot /GF /arch:AVX2 /fp:fast /Zi>
-    $<$<CONFIG:Profile>:/MD /Zi /DEBUG /Od /Ob0>
-    $<$<CONFIG:Debug>:/MDd /EHsc> # ZI
-    $<$<CONFIG:Sanitize>:/MDd /EHsc /fsanitize=address> # ZI
+target_compile_options(enations PRIVATE
+    $<$<CONFIG:Release>:/MD;/EHsc;/O2;/Ob2;/Oi;/GL;/Gy;/Gw;/Ot;/GF;/arch:AVX2;/fp:fast;/Zi>
+    $<$<CONFIG:Profile>:/MD;/EHsc;/O2;/Ob2;/Oi;/GL;/Gy;/Gw;/Ot;/GF;/arch:AVX2;/fp:fast;/Zi>
+    $<$<CONFIG:Debug>:/MDd;/EHsc;/Zi;/Od;/Ob0>
+    $<$<CONFIG:Sanitize>:/MDd;/EHsc;/Zi;/Od;/Ob0;/fsanitize=address>
 )
 
 set(CMAKE_MFC_FLAG 2)
@@ -139,12 +138,13 @@ target_compile_definitions(enations PUBLIC
         #_LOGOUT
         # STRICTER_ASSERTS ## these prob all need to be fixed
         AI_THREADS_ENABLED # here's hoping!!
+        OPTIMIZE_BLIT_ORDER
         # AI_SPECTATE
-        _CHEAT
-        # _PROFILE # doesn't work?
+        # _CHEAT
         $<$<CONFIG:Release>:NDEBUG>
         $<$<CONFIG:Profile>:NDEBUG>
         $<$<CONFIG:Debug>:_DEBUG>
+        $<$<CONFIG:Sanitize>:_DEBUG>
         )
 
 target_precompile_headers(enations PRIVATE stdafx.h)
@@ -156,7 +156,9 @@ message("cdefs: ${cdefs}")
 target_include_directories(enations PUBLIC
         ../../tools/
        ../../cmakeBuild/tools
-       ../../windward/wind22/include)
+       ./cmakeBuild/tools
+       ../../windward/wind22/include
+)
 
 
 target_link_libraries(enations PUBLIC
@@ -177,6 +179,8 @@ target_link_libraries(enations PUBLIC
         version.lib
         )
 
+        # Disable SafeSEH for MSVC builds as some linked libraries do not support it
+        # For Legacy 32-bit codebases. When we switch to 64 bit, remove this
 if(MSVC)
     target_link_options(enations PRIVATE "/SAFESEH:NO")
 endif()
@@ -186,13 +190,13 @@ target_link_options(enations PUBLIC
     /NODEFAULTLIB:nafxcw.lib
     /NODEFAULTLIB:libcmt.lib
     
-    $<$<CONFIG:Sanitize>:/DEBUG:FULL /OPT:NOREF /OPT:NOICF /fsanitize=address /ZI>
+    $<$<CONFIG:Sanitize>:/DEBUG:FULL /OPT:NOREF /OPT:NOICF /fsanitize=address /LARGEADDRESSAWARE>
 
-    $<$<CONFIG:Debug>:/DEBUG:FULL /OPT:NOREF /OPT:NOICF>
+    $<$<CONFIG:Debug>:/DEBUG:FULL /OPT:NOREF /OPT:NOICF /LARGEADDRESSAWARE>
 
-    $<$<CONFIG:Profile>:/DEBUG:FULL /INCREMENTAL:NO /OPT:NOREF /OPT:NOICF>
+    $<$<CONFIG:Profile>:/DEBUG:FULL /INCREMENTAL:NO /OPT:NOREF /OPT:NOICF /LARGEADDRESSAWARE>
 
-    $<$<CONFIG:Release>:/DEBUG:FASTLINK /INCREMENTAL:NO /OPT:REF /OPT:ICF /LTCG>
+    $<$<CONFIG:Release>:/DEBUG:FASTLINK /INCREMENTAL:NO /OPT:REF /OPT:ICF /LTCG /LARGEADDRESSAWARE>
 
     /DYNAMICBASE
     /NXCOMPAT
@@ -204,6 +208,8 @@ target_link_options(enations PUBLIC
         ../../tools/lib
         ../../cmakeBuild/tools/vdmplay/$<CONFIG>
         ../../cmakeBuild/windward/wind22/$<CONFIG>
+        ./cmakeBuild/tools/vdmplay/$<CONFIG>
+        ./cmakeBuild/windward/wind22/$<CONFIG>
     )
 
 # Copy required DLLs to output directory
