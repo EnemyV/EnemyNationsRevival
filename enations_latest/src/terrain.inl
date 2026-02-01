@@ -218,11 +218,11 @@ inline CHexCoord CHex::GetHex() const {
 // note - all of these may not be handled right by the VC optimizer
 inline int CHex::GetAlt() const {
     ASSERT_STRICT_VALID( this );
-    return ( int( m_bAlt ) & 0x7F );
+    return ( int( m_bAlt & 0x7F ));
 }
 inline int CHex::GetSeaAlt() const {
     ASSERT_STRICT_VALID( this );
-    return ( __max( sea_level, int( m_bAlt ) ) & 0x7F );
+    return ( __max( sea_level, int( m_bAlt & 0x7F )));
 }
 
 inline void CHex::SetAlt( int iAlt ) {

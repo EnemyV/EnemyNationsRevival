@@ -3838,8 +3838,8 @@ void CGameMap::SetBldgCur( CHexCoord const& hex, int iBldg, int iBldgDir, int iT
 
 void CGameMap::ClrBldgCur( )
 {
-
     theMap.EnumHexes( m_hexBldgCur, m_cxBldgCur, m_cyBldgCur, fnEnumCurOff, NULL );
+
     if ( m_pLandExit != NULL )
     {
         m_pLandExit->ClrCursor( );

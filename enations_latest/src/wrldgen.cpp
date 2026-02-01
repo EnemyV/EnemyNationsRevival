@@ -11,7 +11,9 @@
 #include "lastplnt.h"
 #include "netapi.h"
 #include "terrain.inl"
+#include "noise_helpers.inl"
 
+// Max altitude is 127, min is 0
 
 static int IndPrev( int iInd, int iSide )
 {
@@ -67,294 +69,330 @@ static int ConvertAlt( int iAlt, int iSideSize )
     return val;
 }
 
-void CGameMap::GenerateOcean( int iNumBlks, int* piBlks, int iSide, int blockType, int& iOceansLeft, 
-    CGame& theGame )
+/// <summary>
+/// Returns how close you are to the edge.
+/// </summary>
+/// <param name="x"></param>
+/// <param name="y"></param>
+/// <param name="_x"></param>
+/// <param name="_y"></param>
+/// <param name="iSideSize"></param>
+/// <returns>0 if at edge, 1 if in center plateau</returns>
+static float BlockEdgeFactor( int x, int y, int _x, int _y, int iSideSize )
 {
+    int baseX   = _x * iSideSize;
+    int baseY   = _y * iSideSize;
+    int maxX    = baseX + iSideSize - 1;
+    int maxY    = baseY + iSideSize - 1;
+    int distX   = __min( x - baseX, maxX - x );
+    int distY   = __min( y - baseY, maxY - y );
+    int minDist = __min( distX, distY );
+
+    int   edgeWidth = __max( 6, iSideSize / 6 );
+    float t         = (float)minDist / (float)edgeWidth;
+    if ( t < 0.0f )
+        t = 0.0f;
+    if ( t > 1.0f )
+        t = 1.0f;
+
+    // Smoothstep for gentle blending near edges
+    return t * t * ( 3.0f - 2.0f * t );
+}
+
+void CGameMap::GenerateOcean( int iNumBlks, int* piBlks, int iSide, int blockType, int& iOceansLeft, CGame& theGame )
+{
+    // figure out max ocean blocks
+    int   count = theGame.GetAll( ).GetCount( );  // get player count
+    float multi = 1.0f;
+
+    if ( count <= 8 && iNumBlks >= 64 )
+        multi = 3.0f;
+    else if ( count <= 8 && iNumBlks >= 32 )
+        multi = 2.0f;
+    else if ( count <= 16 && iNumBlks >= 64 )
+        multi = 2.0f;
+    else if ( count <= 4 && iNumBlks >= 16 )
+        multi = 2.0f;
+
+    int maxOceanTileCount = iNumBlks - theGame.GetAll( ).GetCount( ) * multi;
+
+    if ( maxOceanTileCount <= 0 )
+        maxOceanTileCount = iNumBlks - theGame.GetAll( ).GetCount( );
+
+    if ( maxOceanTileCount > 0 )
     {
-        int maxOceanTileCount = iNumBlks - theGame.GetAll( ).GetCount( ) * ( ( iNumBlks > 32 ) ? 3 : 2 );
 
-        if ( maxOceanTileCount <= 0 )
-            maxOceanTileCount = iNumBlks - theGame.GetAll( ).GetCount( );
+        // somewhere between no ocean, and a huge ocean, but try to keep ~20% + player starts of it free
+        int totalCount = MyRand( ) % ( maxOceanTileCount );
 
-        if ( maxOceanTileCount > 0 )
+        int oceanStyle = MyRand( ) % 4;  // 0 = stripe, 1 = scatter, 2 grow, grow+island
+
+        if ( oceanStyle == 3 )
         {
-            // somewhere between no ocean, and a huge ocean, but try to keep ~20% + player starts of it free
-            int totalCount = MyRand( ) % ( maxOceanTileCount );
+            const int TEMP_ISLAND = -999;
 
-            int oceanStyle = MyRand( ) % 4;  // 0 = stripe, 1 = scatter, 2 grow, grow+island
+            // 1. Pick the ONE island block first
+            int islandIndex     = MyRand( ) % iNumBlks;
+            piBlks[islandIndex] = TEMP_ISLAND;
 
-            if ( oceanStyle == 3 )
+            // 2. Initialize the ocean front specifically AT THE COAST of the island
+            CList<int, int> oceanFront;
+
+            // Get the 4 neighbors of the island to start the flood
+            int coast[4];
+            coast[0] = IndPrev( islandIndex, iSide );
+            coast[1] = IndNext( islandIndex, iSide );
+            coast[2] = IndLeft( islandIndex, iSide );
+            coast[3] = IndRight( islandIndex, iSide );
+
+            for ( int i = 0; i < 4; i++ )
             {
-                const int TEMP_ISLAND = -999;
-
-                // 1. Pick the ONE island block first
-                int islandIndex     = MyRand( ) % iNumBlks;
-                piBlks[islandIndex] = TEMP_ISLAND;
-
-                // 2. Initialize the ocean front specifically AT THE COAST of the island
-                CList<int, int> oceanFront;
-
-                // Get the 4 neighbors of the island to start the flood
-                int coast[4];
-                coast[0] = IndPrev( islandIndex, iSide );
-                coast[1] = IndNext( islandIndex, iSide );
-                coast[2] = IndLeft( islandIndex, iSide );
-                coast[3] = IndRight( islandIndex, iSide );
-
-                for ( int i = 0; i < 4; i++ )
+                int neighborIndex = coast[i];
+                // If the neighbor is empty, make it the "starting line" for the ocean
+                if ( piBlks[neighborIndex] == 0 )
                 {
-                    int neighborIndex = coast[i];
-                    // If the neighbor is empty, make it the "starting line" for the ocean
+                    piBlks[neighborIndex] = blockType;
+                    if ( blockType == -1 && iOceansLeft > 0 )
+                        iOceansLeft--;
+                    oceanFront.AddTail( neighborIndex );
+                }
+            }
+
+            // 3. Flood outward in a "Ring" pattern
+            // Because we use AddTail and remove from Head, it behaves like a Queue (BFS)
+            // which naturally creates a circular/diamond expansion.
+            int blocksToPlace = totalCount - oceanFront.GetCount( );
+
+            while ( blocksToPlace > 0 && !oceanFront.IsEmpty( ) )
+            {
+                // IMPORTANT: Pull from the HEAD (Front) of the list to ensure BFS order
+                POSITION headPos      = oceanFront.GetHeadPosition( );
+                int      currentBlock = oceanFront.GetAt( headPos );
+                oceanFront.RemoveAt( headPos );
+
+                int neighbors[4];
+                neighbors[0] = IndPrev( currentBlock, iSide );
+                neighbors[1] = IndNext( currentBlock, iSide );
+                neighbors[2] = IndLeft( currentBlock, iSide );
+                neighbors[3] = IndRight( currentBlock, iSide );
+
+                // We still shuffle to keep the "shores" from being perfect squares
+                for ( int i = 0; i < 4; ++i )
+                {
+                    int swapWith        = i + ( MyRand( ) % ( 4 - i ) );
+                    int temp            = neighbors[i];
+                    neighbors[i]        = neighbors[swapWith];
+                    neighbors[swapWith] = temp;
+                }
+
+                for ( int i = 0; i < 4 && blocksToPlace > 0; ++i )
+                {
+                    int nb = neighbors[i];
+
+                    if ( piBlks[nb] == 0 )  // Only fill empty land, skip the TEMP_ISLAND
+                    {
+                        piBlks[nb] = blockType;
+                        if ( blockType == -1 && iOceansLeft > 0 )
+                            iOceansLeft--;
+
+                        blocksToPlace--;
+
+                        // Add to the TAIL to ensure we finish the current "ring"
+                        // before moving to the next distance layer
+                        oceanFront.AddTail( nb );
+                    }
+                }
+            }
+
+            // 4. Reveal the island
+            piBlks[islandIndex] = 0;
+        }
+        else if ( oceanStyle == 2 )
+        {
+            // 1. Define a temporary value for island blocks.
+            // It must be different from 0 (empty) and different from blockType (ocean).
+            const int TEMP_ISLAND = -999;
+
+            // Attempt to "grow" the ocean:
+            int             seedCount = 1 + MyRand( ) % 3;
+            CList<int, int> oceanFront;
+
+            // --- Place initial seed blocks (Unchanged) ---
+            for ( int s = 0; s < seedCount; ++s )
+            {
+                int attempts = 0;
+                int seedIndex;
+                do {
+                    seedIndex = MyRand( ) % iNumBlks;
+                    attempts++;
+                } while ( piBlks[seedIndex] != 0 && attempts < iNumBlks );
+
+                if ( piBlks[seedIndex] == 0 )
+                {
+                    piBlks[seedIndex] = blockType;
+                    if ( blockType == -1 && iOceansLeft > 0 )
+                    {
+                        totalCount--;
+                        iOceansLeft--;
+                    }
+                    oceanFront.AddTail( seedIndex );
+                }
+            }
+
+            // --- Grow ocean ---
+            int blocksToPlace = totalCount - seedCount;
+
+            // Increased chance because now it creates permanent barriers
+            // A lower number creates large open oceans, higher creates maze-like oceans.
+            int islandChance = 5;
+
+            while ( blocksToPlace > 0 && !oceanFront.IsEmpty( ) )
+            {
+                int frontSize = oceanFront.GetCount( );
+                int pickIndex = MyRand( ) % frontSize;
+
+                POSITION pos          = oceanFront.FindIndex( pickIndex );
+                int      currentBlock = oceanFront.GetAt( pos );
+                oceanFront.RemoveAt( pos );
+
+                int neighbors[4];
+                neighbors[0] = IndPrev( currentBlock, iSide );   // above
+                neighbors[1] = IndNext( currentBlock, iSide );   // below
+                neighbors[2] = IndLeft( currentBlock, iSide );   // left
+                neighbors[3] = IndRight( currentBlock, iSide );  // right
+
+                // Shuffle neighbors (Unchanged)
+                for ( int i = 0; i < 4; ++i )
+                {
+                    int swapWith        = i + ( MyRand( ) % ( 4 - i ) );
+                    int temp            = neighbors[i];
+                    neighbors[i]        = neighbors[swapWith];
+                    neighbors[swapWith] = temp;
+                }
+
+                // Try to grow into neighbors
+                for ( int i = 0; i < 4 && blocksToPlace > 0; ++i )
+                {
+                    int neighborIndex = neighbors[i];
+
+                    // CRITICAL CHANGE: We only grow if it is 0.
+                    // If it is TEMP_ISLAND, the ocean hits a wall and stops.
                     if ( piBlks[neighborIndex] == 0 )
                     {
+                        // Check chance to create an island "Wall"
+                        if ( MyRand( ) % 100 < islandChance )
+                        {
+                            // Mark this spot as reserved for an island.
+                            // The ocean can NEVER overwrite this now.
+                            piBlks[neighborIndex] = TEMP_ISLAND;
+
+                            // OPTIONAL: Make islands "clump" better.
+                            // If we made an island block, maybe mark a neighbor as island too
+                            // so we don't just get 1-pixel dots.
+                            if ( MyRand( ) % 100 < 50 )
+                            {
+                                int extraLand = IndRight( neighborIndex, iSide );
+                                if ( piBlks[extraLand] == 0 )
+                                    piBlks[extraLand] = TEMP_ISLAND;
+                            }
+
+                            // Do NOT decrement blocksToPlace. We didn't place water.
+                            // We want the ocean to find a different path to reach target size.
+                            continue;
+                        }
+
+                        // Place ocean block
                         piBlks[neighborIndex] = blockType;
                         if ( blockType == -1 && iOceansLeft > 0 )
                             iOceansLeft--;
-                        oceanFront.AddTail( neighborIndex );
-                    }
-                }
 
-                // 3. Flood outward in a "Ring" pattern
-                // Because we use AddTail and remove from Head, it behaves like a Queue (BFS)
-                // which naturally creates a circular/diamond expansion.
-                int blocksToPlace = totalCount - oceanFront.GetCount( );
+                        blocksToPlace--;
 
-                while ( blocksToPlace > 0 && !oceanFront.IsEmpty( ) )
-                {
-                    // IMPORTANT: Pull from the HEAD (Front) of the list to ensure BFS order
-                    POSITION headPos      = oceanFront.GetHeadPosition( );
-                    int      currentBlock = oceanFront.GetAt( headPos );
-                    oceanFront.RemoveAt( headPos );
-
-                    int neighbors[4];
-                    neighbors[0] = IndPrev( currentBlock, iSide );
-                    neighbors[1] = IndNext( currentBlock, iSide );
-                    neighbors[2] = IndLeft( currentBlock, iSide );
-                    neighbors[3] = IndRight( currentBlock, iSide );
-
-                    // We still shuffle to keep the "shores" from being perfect squares
-                    for ( int i = 0; i < 4; ++i )
-                    {
-                        int swapWith        = i + ( MyRand( ) % ( 4 - i ) );
-                        int temp            = neighbors[i];
-                        neighbors[i]        = neighbors[swapWith];
-                        neighbors[swapWith] = temp;
-                    }
-
-                    for ( int i = 0; i < 4 && blocksToPlace > 0; ++i )
-                    {
-                        int nb = neighbors[i];
-
-                        if ( piBlks[nb] == 0 )  // Only fill empty land, skip the TEMP_ISLAND
+                        // Add to front (Unchanged logic)
+                        if ( MyRand( ) % 100 < 70 )
                         {
-                            piBlks[nb] = blockType;
-                            if ( blockType == -1 && iOceansLeft > 0 )
-                                iOceansLeft--;
-
-                            blocksToPlace--;
-
-                            // Add to the TAIL to ensure we finish the current "ring"
-                            // before moving to the next distance layer
-                            oceanFront.AddTail( nb );
+                            oceanFront.AddTail( neighborIndex );
                         }
                     }
                 }
 
-                // 4. Reveal the island
-                piBlks[islandIndex] = 0;
-            }
-            else if ( oceanStyle == 2 )
-            {
-                // 1. Define a temporary value for island blocks.
-                // It must be different from 0 (empty) and different from blockType (ocean).
-                const int TEMP_ISLAND = -999;
-
-                // Attempt to "grow" the ocean:
-                int             seedCount = 1 + MyRand( ) % 3;
-                CList<int, int> oceanFront;
-
-                // --- Place initial seed blocks (Unchanged) ---
-                for ( int s = 0; s < seedCount; ++s )
+                // Re-add current (Unchanged)
+                if ( blocksToPlace > 0 && MyRand( ) % 100 < 20 )
                 {
-                    int attempts = 0;
-                    int seedIndex;
-                    do {
-                        seedIndex = MyRand( ) % iNumBlks;
-                        attempts++;
-                    } while ( piBlks[seedIndex] != 0 && attempts < iNumBlks );
+                    oceanFront.AddTail( currentBlock );
+                }
 
-                    if ( piBlks[seedIndex] == 0 )
+                // Add new seeds (Unchanged)
+                if ( blocksToPlace > 0 && MyRand( ) % 100 < 5 )
+                {
+                    // Spawn a new seed point to accelerate ocean growth
+                    int attempts = 0;
+                    int newSeedIndex;
+                    do {
+                        newSeedIndex = MyRand( ) % iNumBlks;
+                        attempts++;
+                    } while ( ( piBlks[newSeedIndex] != 0 ) && ( attempts < iNumBlks * 2 ) );
+
+                    // Only add if we found an empty block (don't overwrite TEMP_ISLAND or blockType)
+                    if ( piBlks[newSeedIndex] == 0 )
                     {
-                        piBlks[seedIndex] = blockType;
+                        piBlks[newSeedIndex] = blockType;
                         if ( blockType == -1 && iOceansLeft > 0 )
                         {
                             totalCount--;
                             iOceansLeft--;
                         }
-                        oceanFront.AddTail( seedIndex );
-                    }
-                }
-
-                // --- Grow ocean ---
-                int blocksToPlace = totalCount - seedCount;
-
-                // Increased chance because now it creates permanent barriers
-                // A lower number creates large open oceans, higher creates maze-like oceans.
-                int islandChance = 5;
-
-                while ( blocksToPlace > 0 && !oceanFront.IsEmpty( ) )
-                {
-                    int frontSize = oceanFront.GetCount( );
-                    int pickIndex = MyRand( ) % frontSize;
-
-                    POSITION pos          = oceanFront.FindIndex( pickIndex );
-                    int      currentBlock = oceanFront.GetAt( pos );
-                    oceanFront.RemoveAt( pos );
-
-                    int neighbors[4];
-                    neighbors[0] = IndPrev( currentBlock, iSide );   // above
-                    neighbors[1] = IndNext( currentBlock, iSide );   // below
-                    neighbors[2] = IndLeft( currentBlock, iSide );   // left
-                    neighbors[3] = IndRight( currentBlock, iSide );  // right
-
-                    // Shuffle neighbors (Unchanged)
-                    for ( int i = 0; i < 4; ++i )
-                    {
-                        int swapWith        = i + ( MyRand( ) % ( 4 - i ) );
-                        int temp            = neighbors[i];
-                        neighbors[i]        = neighbors[swapWith];
-                        neighbors[swapWith] = temp;
-                    }
-
-                    // Try to grow into neighbors
-                    for ( int i = 0; i < 4 && blocksToPlace > 0; ++i )
-                    {
-                        int neighborIndex = neighbors[i];
-
-                        // CRITICAL CHANGE: We only grow if it is 0.
-                        // If it is TEMP_ISLAND, the ocean hits a wall and stops.
-                        if ( piBlks[neighborIndex] == 0 )
-                        {
-                            // Check chance to create an island "Wall"
-                            if ( MyRand( ) % 100 < islandChance )
-                            {
-                                // Mark this spot as reserved for an island.
-                                // The ocean can NEVER overwrite this now.
-                                piBlks[neighborIndex] = TEMP_ISLAND;
-
-                                // OPTIONAL: Make islands "clump" better.
-                                // If we made an island block, maybe mark a neighbor as island too
-                                // so we don't just get 1-pixel dots.
-                                if ( MyRand( ) % 100 < 50 )
-                                {
-                                    int extraLand = IndRight( neighborIndex, iSide );
-                                    if ( piBlks[extraLand] == 0 )
-                                        piBlks[extraLand] = TEMP_ISLAND;
-                                }
-
-                                // Do NOT decrement blocksToPlace. We didn't place water.
-                                // We want the ocean to find a different path to reach target size.
-                                continue;
-                            }
-
-                            // Place ocean block
-                            piBlks[neighborIndex] = blockType;
-                            if ( blockType == -1 && iOceansLeft > 0 )
-                                iOceansLeft--;
-
-                            blocksToPlace--;
-
-                            // Add to front (Unchanged logic)
-                            if ( MyRand( ) % 100 < 70 )
-                            {
-                                oceanFront.AddTail( neighborIndex );
-                            }
-                        }
-                    }
-
-                    // Re-add current (Unchanged)
-                    if ( blocksToPlace > 0 && MyRand( ) % 100 < 20 )
-                    {
-                        oceanFront.AddTail( currentBlock );
-                    }
-
-                    // Add new seeds (Unchanged)
-                    if ( blocksToPlace > 0 && MyRand( ) % 100 < 5 )
-                    {
-                        // Spawn a new seed point to accelerate ocean growth
-                        int attempts = 0;
-                        int newSeedIndex;
-                        do {
-                            newSeedIndex = MyRand( ) % iNumBlks;
-                            attempts++;
-                        } while ( ( piBlks[newSeedIndex] != 0 ) && ( attempts < iNumBlks * 2 ) );
-
-                        // Only add if we found an empty block (don't overwrite TEMP_ISLAND or blockType)
-                        if ( piBlks[newSeedIndex] == 0 )
-                        {
-                            piBlks[newSeedIndex] = blockType;
-                            if ( blockType == -1 && iOceansLeft > 0 )
-                            {
-                                totalCount--;
-                                iOceansLeft--;
-                            }
-                            oceanFront.AddTail( newSeedIndex );
-                            blocksToPlace--;
-                        }
-                    }
-                }
-
-                // --- CLEANUP PHASE ---
-                // Iterate over the entire grid and turn the "Reserved Islands" back into normal land (0)
-                for ( int i = 0; i < iNumBlks; ++i )
-                {
-                    if ( piBlks[i] == TEMP_ISLAND )
-                    {
-                        piBlks[i] = 0;
+                        oceanFront.AddTail( newSeedIndex );
+                        blocksToPlace--;
                     }
                 }
             }
-            else if ( oceanStyle == 1 )  // Scatter ocean (random placement)
-            {
-                // Scatter ocean blocks randomly
-                for ( int i = 0; i < totalCount; ++i )
-                {
-                    // Find a random unassigned block
-                    int attempts = 0;
-                    int blockIndex;
-                    do {
-                        blockIndex = MyRand( ) % iNumBlks;
-                        attempts++;
-                    } while ( piBlks[blockIndex] != 0 && attempts < iNumBlks );
 
-                    // If we found an empty block, make it ocean
-                    if ( piBlks[blockIndex] == 0 )
-                    {
-                        piBlks[blockIndex] = blockType;
-                        if ( blockType == -1 && iOceansLeft > 0 )
-                            iOceansLeft--;
-                    }
+            // --- CLEANUP PHASE ---
+            // Iterate over the entire grid and turn the "Reserved Islands" back into normal land (0)
+            for ( int i = 0; i < iNumBlks; ++i )
+            {
+                if ( piBlks[i] == TEMP_ISLAND )
+                {
+                    piBlks[i] = 0;
                 }
             }
-            else  // simple stripe ocean generation
+        }
+        else if ( oceanStyle == 1 )  // Scatter ocean (random placement)
+        {
+            // Scatter ocean blocks randomly
+            for ( int i = 0; i < totalCount; ++i )
             {
-                for ( int i = 0; i < totalCount; ++i )
+                // Find a random unassigned block
+                int attempts = 0;
+                int blockIndex;
+                do {
+                    blockIndex = MyRand( ) % iNumBlks;
+                    attempts++;
+                } while ( piBlks[blockIndex] != 0 && attempts < iNumBlks );
+
+                // If we found an empty block, make it ocean
+                if ( piBlks[blockIndex] == 0 )
                 {
-                    piBlks[i] = blockType;
+                    piBlks[blockIndex] = blockType;
                     if ( blockType == -1 && iOceansLeft > 0 )
                         iOceansLeft--;
                 }
             }
         }
-        else
+        else  // simple stripe ocean generation
         {
-            // no ocean tiles for us :(
-            TRAP( );
+            for ( int i = 0; i < totalCount; ++i )
+            {
+                piBlks[i] = blockType;
+                if ( blockType == -1 && iOceansLeft > 0 )
+                    iOceansLeft--;
+            }
         }
     }
 }
 
-void CGameMap::GenerateMountainBlock( int _x, int iSideSize, int _y, const int iTry2[10] )
+void CGameMap::GenerateMountainBlock( int _x, int iSideSize, int _y)
 {
     int iNumRanges = 1 + RandNum( 2 );
 
@@ -416,9 +454,14 @@ void CGameMap::GenerateMountainBlock( int _x, int iSideSize, int _y, const int i
             CHex* pHexPeak = GetHex( CHexCoord( xPeak, yPeak ) );
             if ( !pHexPeak->IsWater( ) )
             {
-                int newAlt = __min( CHex::MaxAlt, ConvertAlt( baseAlt, iSideSize ) );
-                pHexPeak->SetAlt( newAlt );
-                pHexPeak->SetType( CHex::mountain );
+                float edgeFactor = BlockEdgeFactor( xPeak, yPeak, _x, _y, iSideSize );
+                int   deltaAlt   = ConvertAlt( baseAlt, iSideSize ) - CHex::sea_level;
+                int   addAlt     = (int)( (float)deltaAlt * edgeFactor );
+                // cant be higher than 127!
+                if ( pHexPeak->GetAlt( ) + addAlt > 127 )
+                    addAlt = 127 - pHexPeak->GetAlt( );
+                
+                pHexPeak->SetAlt( __minmax(0, 127, pHexPeak->GetAlt( ) + addAlt) );
 
                 // Create steep, dramatic falloff - sharp peaks
                 int iMaxRadius = iSideSize / 10 + RandNum( iSideSize / 16 );
@@ -444,20 +487,18 @@ void CGameMap::GenerateMountainBlock( int _x, int iSideSize, int _y, const int i
                         if ( !pHex->IsWater( ) )
                         {
                             int existingAlt = pHex->GetAlt( );
-                            int proposedAlt = __min( CHex::MaxAlt, ConvertAlt( ringAlt + RandNum( 8 ), iSideSize ) );
+                            int proposedAlt = ConvertAlt( ringAlt + RandNum( 8 ), iSideSize );
+                            float edgeFactor = BlockEdgeFactor( rx, ry, _x, _y, iSideSize );
 
                             // Only raise terrain, don't lower existing peaks
                             if ( proposedAlt > existingAlt )
                             {
-                                pHex->SetAlt( proposedAlt );
+                                int delta = proposedAlt - existingAlt;
 
-                                // Set terrain type based on altitude
-                                if ( ringAlt > 70 )
-                                    pHex->SetType( CHex::mountain );
-                                else if ( ringAlt > 50 )
-                                    pHex->SetType( CHex::hill );
-                                else
-                                    pHex->SetType( CHex::rough );
+                                // max size is 127!
+                                int newAlt = __minmax( 0, 127, existingAlt + (int)( (float)delta * edgeFactor ) );
+                                
+                                pHex->SetAlt( newAlt );
                             }
                         }
                     }
@@ -522,11 +563,13 @@ void CGameMap::GenerateMountainBlock( int _x, int iSideSize, int _y, const int i
 
                         if ( proposedAlt > pHex->GetAlt( ) )
                         {
-                            pHex->SetAlt( proposedAlt );
-                            if ( hexAlt > 60 )
-                                pHex->SetType( CHex::mountain );
-                            else
-                                pHex->SetType( CHex::hill );
+                            float edgeFactor = BlockEdgeFactor( perpX, perpY, _x, _y, iSideSize );
+                            int   delta      = proposedAlt - pHex->GetAlt( );
+                            // max size is 127!
+                            int   newAlt     = __minmax( 0, 127, 
+                                pHex->GetAlt( ) + (int)( (float)delta * edgeFactor ) );
+                                
+                            pHex->SetAlt( newAlt);
                         }
                     }
                 }
@@ -579,7 +622,9 @@ void CGameMap::GenerateMountainBlock( int _x, int iSideSize, int _y, const int i
                         {
                             // Bowl shape - lower in center, steep walls
                             int bowlAlt = 25 + ( dist * dist * 3 );  // Quadratic rise to edges
-                            pHex->SetAlt( ConvertAlt( bowlAlt, iSideSize ) );
+
+                            bowlAlt = bowlAlt ;
+                            pHex->SetAlt( __minmax( 0, 127, ConvertAlt( bowlAlt, iSideSize )) );
 
                             if ( dist <= cirqueRadius / 2 )
                                 pHex->SetType( CHex::plain );  // Flat valley floor
@@ -659,11 +704,374 @@ void CGameMap::GenerateMountainBlock( int _x, int iSideSize, int _y, const int i
                         valleyAlt += (int)headRise;
 
                         int proposedAlt = ConvertAlt( valleyAlt, iSideSize );
-
+                        proposedAlt     = min( 127, proposedAlt );
                         // Valley carves into terrain (can lower it)
                         if ( absW <= valleyWidth || proposedAlt < pHex->GetAlt( ) )
                         {
-                            pHex->SetAlt( proposedAlt );
+                            float edgeFactor = BlockEdgeFactor( perpX, perpY, _x, _y, iSideSize );
+                            int   curAlt     = pHex->GetAlt( );
+                            int   delta      = proposedAlt - curAlt;
+
+                            // max size is 127!
+                            int newAlt = __minmax( 0, 127, 
+                                curAlt + (int)( (float)delta * edgeFactor ) );
+                            pHex->SetAlt( newAlt );
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+void CGameMap::GenerateBadlandsBlock( int _x, int iSideSize, int _y)
+{
+    // Badlands are harsh, eroded desert terrain with sharp relief
+    // Features: gullies, gorges, mesas, and broken ridgelines
+
+    int boost = 2 + RandNum( 5 );
+
+#ifdef _DEBUG
+    // save original alts
+    int** originalAlts = new int*[iSideSize];
+    for ( int i = 0; i < iSideSize; i++ )
+    {
+        originalAlts[i] = new int[iSideSize];
+        for ( int j = 0; j < iSideSize; j++ )
+        {
+            CHex* pHex         = GetHex( CHexCoord( _x * iSideSize + i, _y * iSideSize + j ) );
+            originalAlts[i][j] = pHex->GetAlt( );
+        }
+    }
+#endif
+
+    // Calculate how much that boost is worth in "Real Altitude Units"
+    // We subtract sea_level at the end to get JUST the change amount
+    int  deltaAmount        = ConvertAlt( CHex::sea_level + boost, iSideSize ) - CHex::sea_level;
+
+    bool avoidChangingWater = false;
+    for ( int x = _x * iSideSize; x < ( _x + 1 ) * iSideSize; x++ )
+    {
+        for ( int y = _y * iSideSize; y < ( _y + 1 ) * iSideSize; y++ )
+        {
+            CHex* pHex = GetHex( CHexCoord( x, y ) );
+            if ( !avoidChangingWater  || !pHex->IsWater( ) )
+            {
+                float edgeFactor = BlockEdgeFactor( x, y, _x, _y, iSideSize );
+                int   variation  = RandNum( 5 ) - 2;
+                int   delta      = (int)( (float)( deltaAmount + variation ) * edgeFactor );
+
+                int previousAlt = pHex->GetAlt( );
+                int newAlt      = previousAlt + delta;
+                newAlt          = __minmax(0, 127, newAlt );
+                pHex->SetAlt( newAlt );
+
+                int appliedAlt = pHex->GetAlt( );
+                if ( appliedAlt < previousAlt )
+                {
+                    TRACE( "SINKING!  old=%d, delta=%d, new=%d, edgeFactor=%f\n", previousAlt, delta, appliedAlt,
+                           edgeFactor );
+                }
+            }
+        }
+    }
+
+    // Add broad undulating relief to avoid flatness
+    // (dont need this because the ground isn't flat to start with)
+    /*
+    for ( int x = _x * iSideSize; x < ( _x + 1 ) * iSideSize; x++ )
+    {
+        for ( int y = _y * iSideSize; y < ( _y + 1 ) * iSideSize; y++ )
+        {
+            CHex* pHex = GetHex( CHexCoord( x, y ) );
+            if ( !avoidChangingWater || !pHex->IsWater( ) )
+            {
+                float edgeFactor = BlockEdgeFactor( x, y, _x, _y, iSideSize );
+                float waveX       = sin( (float)x * 0.06f ) * 3.0f;
+                float waveY       = cos( (float)y * 0.05f ) * 3.0f;
+                int   waveDelta   = (int)( ( waveX + waveY ) * edgeFactor );
+                pHex->SetAlt( pHex->GetAlt( ) + waveDelta );
+            }
+        }
+    }*/   
+
+    
+    // Mesas / plateaus
+    /*
+    int iNumMesas = 2 + RandNum( 3 );
+    for ( int iM = 0; iM < iNumMesas; iM++ )
+    {
+        int cx         = _x * iSideSize + RandNum( iSideSize );
+        int cy         = _y * iSideSize + RandNum( iSideSize );
+        int innerRad   = iSideSize / 12 + RandNum( iSideSize / 16 );
+        int outerRad   = innerRad + iSideSize / 10 + RandNum( iSideSize / 12 );
+        int mesaHeight = 15 + RandNum( 14 );
+
+        for ( int x = cx - outerRad; x <= cx + outerRad; x++ )
+        {
+            for ( int y = cy - outerRad; y <= cy + outerRad; y++ )
+            {
+                int dx = x - cx;
+                int dy = y - cy;
+                int d  = (int)sqrt( (float)( dx * dx + dy * dy ) );
+                if ( d > outerRad )
+                    continue;
+
+                CHex* pHex = GetHex( CHexCoord( x, y ) );
+                if ( !pHex || (avoidChangingWater && pHex->IsWater( ) ))
+                    continue;
+
+                float edgeFactor = BlockEdgeFactor( x, y, _x, _y, iSideSize );
+                if ( edgeFactor <= 0.0f || edgeFactor > 1.0f )
+                    continue;
+
+                int raise = 0;
+                if ( d <= innerRad )
+                    raise = mesaHeight;
+                else
+                {
+                    float t = (float)( d - innerRad ) / (float)( outerRad - innerRad );
+                    if ( t < 0.0f )
+                        t = 0.0f;
+                    if ( t > 1.0f )
+                        t = 1.0f;
+                    raise = (int)( ( 1.0f - t ) * (float)mesaHeight );
+                }
+
+                int delta = ConvertAlt( raise + CHex::sea_level, iSideSize ) - CHex::sea_level;
+
+                delta     = (int)( (float)delta * (edgeFactor) );
+
+                if ( delta > 0)
+                {
+                    delta = 0;
+                  //  *edgeFactor;
+                    if (delta > 10 || delta < 0)
+                    {
+                        delta = 10;
+                    }
+                    pHex->SetAlt( pHex->GetAlt( ) + delta );
+                }
+            }
+        }
+    }
+    
+    // Create sharp ridges and knife-edge features 
+    
+    int iNumRidges = 2 + RandNum( 3 );
+    for ( int iRidge = 0; iRidge < iNumRidges; iRidge++ )
+    {
+        BOOL bHorizontal = ( MyRand( ) & 0x0100 ) != 0;
+        int  ridgeStart  = _x * iSideSize + 4;
+        int  ridgeEnd    = ( _x + 1 ) * iSideSize - 4;
+        int  ridgePerp   = _y * iSideSize + RandNum( iSideSize - 8 ) + 4;
+
+        if ( !bHorizontal )
+        {
+            ridgePerp  = _x * iSideSize + RandNum( iSideSize - 8 ) + 4;
+            ridgeStart = _y * iSideSize + 4;
+            ridgeEnd   = ( _y + 1 ) * iSideSize - 4;
+        }
+
+        int iNumSpires   = 2 + RandNum( 3 );
+        int spireSpacing = ( ridgeEnd - ridgeStart ) / ( iNumSpires + 1 );
+
+        for ( int iSpire = 0; iSpire < iNumSpires; iSpire++ )
+        {
+            int spirePos = ridgeStart + spireSpacing * ( iSpire + 1 ) + RandNum( spireSpacing / 3 ) - spireSpacing / 6;
+            int xS, yS;
+            if ( bHorizontal )
+            {
+                xS = spirePos;
+                yS = ridgePerp + RandNum( 4 ) - 2;
+            }
+            else
+            {
+                xS = ridgePerp + RandNum( 4 ) - 2;
+                yS = spirePos;
+            }
+
+            int spireBoost = 30 + RandNum( 35 );
+            int maxRadius  = iSideSize / 6 + RandNum( iSideSize / 8 );
+
+            for ( int radius = 0; radius <= maxRadius; radius++ )
+            {
+                float falloff = 1.0f - ( (float)radius / (float)maxRadius );
+                falloff       = falloff * falloff;  // Broader mesas/ridges
+
+                int currentBoost = (int)( spireBoost * falloff );
+                if ( currentBoost <= 0 )
+                    continue;
+
+                for ( int angle = 0; angle < 360; angle += 15 )
+                {
+                    float rad = angle * 3.14159f / 180.0f;
+                    int   rx  = xS + (int)( radius * cos( rad ) );
+                    int   ry  = yS + (int)( radius * sin( rad ) );
+
+                    CHex* pHex = GetHex( CHexCoord( rx, ry ) );
+                    if ( !avoidChangingWater || !pHex->IsWater( ) )
+                    {
+                        float edgeFactor = BlockEdgeFactor( rx, ry, _x, _y, iSideSize );
+                        int hexDelta =
+                            ConvertAlt( currentBoost + RandNum( 4 ) + CHex::sea_level, iSideSize ) - CHex::sea_level;
+                        pHex->SetAlt( pHex->GetAlt( ) + (int)( (float)hexDelta * edgeFactor ) );
+                    }
+                }
+            }
+        }
+    }*/
+    
+
+    // Carve gullies and gorges (erosion)
+    // Carve badlands terrain - gullies, buttes, and hoodoos
+    int iNumGullies = 7 + RandNum( 4 );  // More gullies for heavily eroded look
+    for ( int iG = 0; iG < iNumGullies; iG++ )
+    {
+        int length = iSideSize + RandNum( iSideSize / 2 );  // Longer, winding gullies
+        int depth  = 10 + RandNum( 10 );
+        int width  = 3 + RandNum( 5 );
+
+        // Start near a random edge
+        int edge = RandNum( 3 );
+        int xG, yG;
+        switch ( edge )
+        {
+        case 0:
+            xG = _x * iSideSize + RandNum( iSideSize / 4 );
+            yG = _y * iSideSize + RandNum( iSideSize );
+            break;
+        case 1:
+            xG = _x * iSideSize + iSideSize - 1 - RandNum( iSideSize / 4 );
+            yG = _y * iSideSize + RandNum( iSideSize );
+            break;
+        case 2:
+            xG = _x * iSideSize + RandNum( iSideSize );
+            yG = _y * iSideSize + RandNum( iSideSize / 4 );
+            break;
+        case 3:
+            xG = _x * iSideSize + RandNum( iSideSize );
+            yG = _y * iSideSize + iSideSize - 1 - RandNum( iSideSize / 4 );
+            break;
+        }
+
+        int blockCenterX = _x * iSideSize + iSideSize / 2;
+        int blockCenterY = _y * iSideSize + iSideSize / 2;
+
+        int dxToCenter = blockCenterX - xG;
+        int dyToCenter = blockCenterY - yG;
+
+        int dir;
+        if ( abs( dxToCenter ) > abs( dyToCenter ) * 2 )
+            dir = ( dxToCenter > 0 ) ? 0 : 4;
+        else if ( abs( dyToCenter ) > abs( dxToCenter ) * 2 )
+            dir = ( dyToCenter > 0 ) ? 2 : 6;
+        else if ( dxToCenter > 0 )
+            dir = ( dyToCenter > 0 ) ? 1 : 7;
+        else
+            dir = ( dyToCenter > 0 ) ? 3 : 5;
+
+        dir = ( dir + RandNum( 3 ) - 1 + 8 ) % 8;
+
+        float currentDepth   = (float)depth * 0.3f;
+        float depthIncrement = (float)depth * 0.7f / (float)length;
+        float currentWidth   = (float)width * 0.7f;
+
+        for ( int step = 0; step < length; step++ )
+        {
+            // More frequent direction changes - meandering erosion channels
+            if ( RandNum( 3 ) == 0 )
+                dir = ( dir + RandNum( 3 ) - 1 + 8 ) % 8;
+
+            int dx = ( dir == 0 || dir == 1 || dir == 7 ) ? 1 : ( dir >= 3 && dir <= 5 ) ? -1 : 0;
+            int dy = ( dir >= 1 && dir <= 3 ) ? 1 : ( dir >= 5 && dir <= 7 ) ? -1 : 0;
+            xG += dx;
+            yG += dy;
+
+            currentDepth += depthIncrement + (float)( RandNum( 3 ) - 1 ) * 0.15f;
+            currentWidth += 0.03f + (float)( RandNum( 3 ) - 1 ) * 0.02f;
+
+            int stepWidth = (int)__min( currentWidth, (float)( width + 4 ) );
+            int stepDepth = (int)__min( currentDepth, (float)( depth + 6 ) );
+
+            for ( int wx = -stepWidth; wx <= stepWidth; wx++ )
+            {
+                for ( int wy = -stepWidth; wy <= stepWidth; wy++ )
+                {
+                    CHex* pHex = GetHex( CHexCoord( xG + wx, yG + wy ) );
+                    if ( avoidChangingWater && pHex->IsWater( ) )
+                        continue;
+
+                    float dist = sqrtf( (float)( wx * wx + wy * wy ) );
+                    if ( dist > (float)stepWidth )
+                        continue;
+
+                    float normalizedDist = dist / (float)stepWidth;
+
+                    // Steeper V-shaped walls typical of water erosion in soft rock
+                    float falloff = 1.0f - normalizedDist;
+                    falloff       = falloff * falloff;  // Steeper sides
+
+                    float noise = 1.0f + (float)( RandNum( 7 ) - 3 ) * 0.08f;
+
+                    int carve = (int)( (float)stepDepth * falloff * noise );
+
+                    if ( carve > 0 )
+                    {
+                        int newAlt = pHex->GetAlt( ) - carve;
+                        newAlt     = min( 127, newAlt );
+                        pHex->SetAlt( __max( 0, newAlt ) );
+                    }
+                }
+            }
+
+            // Branch gullies - smaller tributaries feeding main channel
+            if ( RandNum( 12 ) == 0 )
+            {
+                int branchDir    = ( dir + ( RandNum( 2 ) == 0 ? 2 : -2 ) + 8 ) % 8;
+                int branchLength = 5 + RandNum( 10 );
+                int bx = xG, by = yG;
+                int branchWidth = stepWidth / 2 + 1;
+                int branchDepth = stepDepth / 2;
+
+                for ( int bs = 0; bs < branchLength; bs++ )
+                {
+                    if ( RandNum( 4 ) == 0 )
+                        branchDir = ( branchDir + RandNum( 3 ) - 1 + 8 ) % 8;
+
+                    int bdx = ( branchDir == 0 || branchDir == 1 || branchDir == 7 ) ? 1
+                              : ( branchDir >= 3 && branchDir <= 5 )                 ? -1
+                                                                                     : 0;
+                    int bdy = ( branchDir >= 1 && branchDir <= 3 ) ? 1 : ( branchDir >= 5 && branchDir <= 7 ) ? -1 : 0;
+                    bx += bdx;
+                    by += bdy;
+
+                    // Branch gets shallower and narrower
+                    branchDepth = __max( 2, branchDepth - 1 );
+                    branchWidth = __max( 1, branchWidth - ( bs / 4 ) );
+
+                    for ( int bwx = -branchWidth; bwx <= branchWidth; bwx++ )
+                    {
+                        for ( int bwy = -branchWidth; bwy <= branchWidth; bwy++ )
+                        {
+                            CHex* pHex = GetHex( CHexCoord( bx + bwx, by + bwy ) );
+                            if ( avoidChangingWater && pHex->IsWater( ) )
+                                continue;
+
+                            float bdist = sqrtf( (float)( bwx * bwx + bwy * bwy ) );
+                            if ( bdist > (float)branchWidth )
+                                continue;
+
+                            float bNormDist = bdist / (float)branchWidth;
+                            float bFalloff  = 1.0f - bNormDist;
+                            bFalloff        = bFalloff * bFalloff;
+
+                            int bCarve = (int)( (float)branchDepth * bFalloff );
+                            if ( bCarve > 0 )
+                            {
+                                int newAlt = pHex->GetAlt( ) - bCarve;
+                                pHex->SetAlt( __max( 0, newAlt ) );
+                            }
                         }
                     }
                 }
@@ -671,32 +1079,553 @@ void CGameMap::GenerateMountainBlock( int _x, int iSideSize, int _y, const int i
         }
     }
 
-    // Add alpine forest on lower slopes
-    int xDrop = _x * iSideSize + 8 + RandNum( iSideSize - 16 );
-    int yDrop = _y * iSideSize + 8 + RandNum( iSideSize - 16 );
-    MakeTerrain( xDrop, yDrop, CHex::forest, iSideSize );
-
-    // Additional scattered forest patches
-    for ( int i = 0; i < 2; i++ )
+    // Create buttes and hoodoos - isolated pillars that resisted erosion
+    int iNumButtes = 3 + RandNum( 4 );
+    for ( int iB = 0; iB < iNumButtes; iB++ )
     {
-        xDrop        = _x * iSideSize + 10 + RandNum( iSideSize - 20 );
-        yDrop        = _y * iSideSize + 10 + RandNum( iSideSize - 20 );
-        CHex* pCheck = GetHex( CHexCoord( xDrop, yDrop ) );
-        // Only place forest below treeline
-        if ( pCheck->GetAlt( ) < ConvertAlt( 50, iSideSize ) )
+        int bx = _x * iSideSize + iSideSize / 4 + RandNum( iSideSize / 2 );
+        int by = _y * iSideSize + iSideSize / 4 + RandNum( iSideSize / 2 );
+
+        int butteRadius = 3 + RandNum( 5 );
+        int butteHeight = 10 + RandNum( 10 );
+
+        // Flat-topped mesa or pointed hoodoo
+        bool isMesa = RandNum( 3 ) == 0;
+
+        for ( int bwx = -butteRadius - 2; bwx <= butteRadius + 2; bwx++ )
         {
-            MakeTerrain( xDrop, yDrop, CHex::forest, iSideSize / 2 );
+            for ( int bwy = -butteRadius - 2; bwy <= butteRadius + 2; bwy++ )
+            {
+                CHex* pHex = GetHex( CHexCoord( bx + bwx, by + bwy ) );
+                if ( avoidChangingWater && pHex->IsWater( ) )
+                    continue;
+
+                float dist = sqrtf( (float)( bwx * bwx + bwy * bwy ) );
+
+                if ( dist <= (float)butteRadius )
+                {
+                    // Top of butte - raise it up
+                    float normalizedDist = dist / (float)butteRadius;
+
+                    int raise;
+                    if ( isMesa )
+                    {
+                        // Flat top with steep edges
+                        if ( normalizedDist < 0.7f )
+                            raise = butteHeight;
+                        else
+                            raise = (int)( (float)butteHeight * ( 1.0f - normalizedDist ) / 0.3f );
+                    }
+                    else
+                    {
+                        // Hoodoo - pointed top, tapers up
+                        float taper = 1.0f - ( normalizedDist * normalizedDist );
+                        raise       = (int)( (float)butteHeight * taper );
+                    }
+
+                    // Add irregular edges
+                    raise += RandNum( 3 ) - 1;
+
+                    if ( raise > 0 )
+                    {
+                        int newAlt = pHex->GetAlt( ) + raise;
+                        pHex->SetAlt( __min( 127, newAlt ) );
+                    }
+                }
+                else if ( dist <= (float)( butteRadius + 2 ) )
+                {
+                    // Erosion debris at base - slight raise with rubble
+                    int debris = RandNum( 3 );
+                    if ( debris > 0 )
+                    {
+                        int newAlt = pHex->GetAlt( ) + debris;
+                        pHex->SetAlt( __min( 127, newAlt ) );
+                    }
+                }
+            }
         }
     }
 
-    // Add minerals scattered throughout
-    MakeMineral( _x * iSideSize + 4 + RandNum( iSideSize - 8 ), _y * iSideSize + 1 + RandNum( iSideSize - 8 ),
-                 CMaterialTypes::coal, iSideSize );
-    MakeMineral( _x * iSideSize + 4 + RandNum( iSideSize - 8 ), _y * iSideSize + 1 + RandNum( iSideSize - 8 ),
-                 CMaterialTypes::iron, iSideSize / 2 );
+    // Add overall surface roughness - wind erosion pitting
+    for ( int rx = _x * iSideSize; rx < ( _x + 1 ) * iSideSize; rx++ )
+    {
+        for ( int ry = _y * iSideSize; ry < ( _y + 1 ) * iSideSize; ry++ )
+        {
+            if ( RandNum( 8 ) == 0 )  // Sparse pitting
+            {
+                CHex* pHex = GetHex( CHexCoord( rx, ry ) );
+                if ( avoidChangingWater && pHex->IsWater( ) )
+                    continue;
 
-    // Add varied terrain in lower areas
-    xDrop = _x * iSideSize + 8 + RandNum( iSideSize - 16 );
-    yDrop = _y * iSideSize + 8 + RandNum( iSideSize - 16 );
-    MakeTerrain( xDrop, yDrop, iTry2[RandNum( 8 )], iSideSize / 2 );
+                // Small random height variation
+                int variation = RandNum( 5 ) - 2;  // -2 to +2
+                int newAlt    = pHex->GetAlt( ) + variation;
+                pHex->SetAlt( __minmax( 0, 127, newAlt ) );
+            }
+        }
+    }
+
+    // Carve a few deep narrow slots - flash flood channels
+    int iNumSlots = 1 + RandNum( 2 );
+    for ( int iS = 0; iS < iNumSlots; iS++ )
+    {
+        int edge = RandNum( 3 );
+        int sx, sy;
+        switch ( edge )
+        {
+        case 0:
+            sx = _x * iSideSize;
+            sy = _y * iSideSize + iSideSize / 4 + RandNum( iSideSize / 2 );
+            break;
+        case 1:
+            sx = _x * iSideSize + iSideSize - 1;
+            sy = _y * iSideSize + iSideSize / 4 + RandNum( iSideSize / 2 );
+            break;
+        case 2:
+            sx = _x * iSideSize + iSideSize / 4 + RandNum( iSideSize / 2 );
+            sy = _y * iSideSize;
+            break;
+        case 3:
+            sx = _x * iSideSize + iSideSize / 4 + RandNum( iSideSize / 2 );
+            sy = _y * iSideSize + iSideSize - 1;
+            break;
+        }
+
+        int blockCenterX = _x * iSideSize + iSideSize / 2;
+        int blockCenterY = _y * iSideSize + iSideSize / 2;
+        int dxToCenter   = blockCenterX - sx;
+        int dyToCenter   = blockCenterY - sy;
+
+        int dir;
+        if ( abs( dxToCenter ) > abs( dyToCenter ) * 2 )
+            dir = ( dxToCenter > 0 ) ? 0 : 4;
+        else if ( abs( dyToCenter ) > abs( dxToCenter ) * 2 )
+            dir = ( dyToCenter > 0 ) ? 2 : 6;
+        else if ( dxToCenter > 0 )
+            dir = ( dyToCenter > 0 ) ? 1 : 7;
+        else
+            dir = ( dyToCenter > 0 ) ? 3 : 5;
+
+        int slotLength = iSideSize / 2 + RandNum( iSideSize / 2 );
+        int slotDepth  = 18 + RandNum( 8 );  // Deep
+        int slotWidth  = 1 + RandNum( 2 );   // Very narrow
+
+        for ( int step = 0; step < slotLength; step++ )
+        {
+            // Slots are straighter - less meandering
+            if ( RandNum( 6 ) == 0 )
+                dir = ( dir + RandNum( 3 ) - 1 + 8 ) % 8;
+
+            int dx = ( dir == 0 || dir == 1 || dir == 7 ) ? 1 : ( dir >= 3 && dir <= 5 ) ? -1 : 0;
+            int dy = ( dir >= 1 && dir <= 3 ) ? 1 : ( dir >= 5 && dir <= 7 ) ? -1 : 0;
+            sx += dx;
+            sy += dy;
+
+            for ( int swx = -slotWidth; swx <= slotWidth; swx++ )
+            {
+                for ( int swy = -slotWidth; swy <= slotWidth; swy++ )
+                {
+                    CHex* pHex = GetHex( CHexCoord( sx + swx, sy + swy ) );
+                    if ( avoidChangingWater && pHex->IsWater( ) )
+                        continue;
+
+                    float dist = sqrtf( (float)( swx * swx + swy * swy ) );
+                    if ( dist > (float)slotWidth )
+                        continue;
+
+                    // Nearly vertical walls
+                    float normalizedDist = dist / (float)slotWidth;
+                    float falloff        = ( normalizedDist < 0.6f ) ? 1.0f : ( 1.0f - normalizedDist ) / 0.4f;
+
+                    int carve = (int)( (float)slotDepth * falloff );
+                    if ( carve > 0 )
+                    {
+                        int newAlt = pHex->GetAlt( ) - carve;
+                        pHex->SetAlt( __max( 0, newAlt ) );
+                    }
+                }
+            }
+        }
+    }
+
+    return;
+
+    /*
+    // Soft smoothing pass to blend mesas and erosion
+    {
+        int baseX = _x * iSideSize;
+        int baseY = _y * iSideSize;
+        int count = iSideSize * iSideSize;
+        int* pAlt = new int[count];
+
+        for ( int pass = 0; pass < 3; pass++ )
+        {
+            for ( int x = baseX; x < baseX + iSideSize; x++ )
+            {
+                for ( int y = baseY; y < baseY + iSideSize; y++ )
+                {
+                    CHex* pHex = GetHex( CHexCoord( x, y ) );
+                    int   idx  = ( x - baseX ) * iSideSize + ( y - baseY );
+                    if ( pHex->IsWater( ) )
+                    {
+                        pAlt[idx] = pHex->GetAlt( );
+                        continue;
+                    }
+
+                    int sumAlt = pHex->GetAlt( );
+                    int cnt    = 1;
+
+                    CHex* pN;
+                    pN = GetHex( CHexCoord( x + 1, y ) );
+                    if ( pN )
+                    {
+                        sumAlt += pN->GetAlt( );
+                        cnt++;
+                    }
+                    pN = GetHex( CHexCoord( x - 1, y ) );
+                    if ( pN )
+                    {
+                        sumAlt += pN->GetAlt( );
+                        cnt++;
+                    }
+                    pN = GetHex( CHexCoord( x, y + 1 ) );
+                    if ( pN )
+                    {
+                        sumAlt += pN->GetAlt( );
+                        cnt++;
+                    }
+                    pN = GetHex( CHexCoord( x, y - 1 ) );
+                    if ( pN )
+                    {
+                        sumAlt += pN->GetAlt( );
+                        cnt++;
+                    }
+                    // Diagonals for smoother terraces
+                    pN = GetHex( CHexCoord( x + 1, y + 1 ) );
+                    if ( pN )
+                    {
+                        sumAlt += pN->GetAlt( );
+                        cnt++;
+                    }
+                    pN = GetHex( CHexCoord( x - 1, y + 1 ) );
+                    if ( pN )
+                    {
+                        sumAlt += pN->GetAlt( );
+                        cnt++;
+                    }
+                    pN = GetHex( CHexCoord( x + 1, y - 1 ) );
+                    if ( pN )
+                    {
+                        sumAlt += pN->GetAlt( );
+                        cnt++;
+                    }
+                    pN = GetHex( CHexCoord( x - 1, y - 1 ) );
+                    if ( pN )
+                    {
+                        sumAlt += pN->GetAlt( );
+                        cnt++;
+                    }
+
+                    int avgAlt  = sumAlt / cnt;
+                    int blended = ( pHex->GetAlt( ) + avgAlt * 2 ) / 3;
+                    pAlt[idx]   = blended;
+                }
+            }
+
+            for ( int x = baseX; x < baseX + iSideSize; x++ )
+            {
+                for ( int y = baseY; y < baseY + iSideSize; y++ )
+                {
+                    CHex* pHex = GetHex( CHexCoord( x, y ) );
+                    if ( !pHex->IsWater( ) )
+                    {
+                        float edgeFactor = BlockEdgeFactor( x, y, _x, _y, iSideSize );
+                        int   curAlt     = pHex->GetAlt( );
+                        int   blendedAlt = pAlt[( x - baseX ) * iSideSize + ( y - baseY )];
+                        pHex->SetAlt( curAlt + (int)( (float)( blendedAlt - curAlt ) * edgeFactor ) );
+                    }
+                }
+            }
+        }
+
+        delete[] pAlt;
+    }
+    */
+
+
+    // Limit per-hex slope to avoid spiky badlands while keeping bold features
+    {
+        int baseX = _x * iSideSize;
+        int baseY = _y * iSideSize;
+        int maxSlope = ConvertAlt( 5, iSideSize ) - CHex::sea_level;
+
+        for ( int x = baseX; x < baseX + iSideSize; x++ )
+        {
+            for ( int y = baseY; y < baseY + iSideSize; y++ )
+            {
+                CHex* pHex = GetHex( CHexCoord( x, y ) );
+                if ( !pHex || pHex->IsWater( ) )
+                    continue;
+
+                int sumAlt = pHex->GetAlt( );
+                int cnt    = 1;
+
+                CHex* pN;
+                pN = GetHex( CHexCoord( x + 1, y ) );
+                if ( pN )
+                {
+                    sumAlt += pN->GetAlt( );
+                    cnt++;
+                }
+                pN = GetHex( CHexCoord( x - 1, y ) );
+                if ( pN )
+                {
+                    sumAlt += pN->GetAlt( );
+                    cnt++;
+                }
+                pN = GetHex( CHexCoord( x, y + 1 ) );
+                if ( pN )
+                {
+                    sumAlt += pN->GetAlt( );
+                    cnt++;
+                }
+                pN = GetHex( CHexCoord( x, y - 1 ) );
+                if ( pN )
+                {
+                    sumAlt += pN->GetAlt( );
+                    cnt++;
+                }
+
+                int avgAlt = sumAlt / cnt;
+                int curAlt = pHex->GetAlt( );
+                if ( abs( curAlt - avgAlt ) > maxSlope )
+                {
+                    if ( curAlt > avgAlt )
+                        pHex->SetAlt( avgAlt + maxSlope );
+                    else
+                        pHex->SetAlt( avgAlt - maxSlope );
+                }
+            }
+        }
+    }
+    
+}
+
+// Gaussian-like blend weight calculation
+// distance: distance from border (0 = on border, increases away)
+// range: maximum blend distance (typically iSideSize/4 or iSideSize/5)
+// returns: blend weight (0.0 = border, 1.0 = fully blended)
+static float ComputeGaussianBlend( int distance, int range )
+{
+    if ( distance >= range )
+        return 1.0f;
+    if ( distance <= 0 )
+        return 0.0f;
+
+    // Gaussian-like curve: weight = 1 - exp(-(distance/range)^2)
+    float normalized = (float)distance / (float)range;
+    float weight     = 1.0f - exp( -normalized * normalized * 3.0f );  // 3.0f controls curve steepness
+    return weight;
+}
+
+// Blend altitude smoothly across block borders using recursive subdivision
+// Similar to InitSquarePass2 but focused on block boundaries
+void CGameMap::SmoothBlockEdges( int iSideSize, int iSide )
+{
+    const int BLEND_WIDTH = iSideSize / 8;  // Width of blend zone on each side
+
+    // Process horizontal borders (between top/bottom blocks)
+    for ( int blockX = 0; blockX < iSide; ++blockX )
+    {
+        for ( int blockY = 0; blockY < iSide - 1; ++blockY )
+        {
+            int borderY = ( blockY + 1 ) * iSideSize;
+
+            // Blend a strip above and below the border
+            int yMin = borderY - BLEND_WIDTH;
+            int yMax = borderY + BLEND_WIDTH;
+
+            for ( int x = blockX * iSideSize; x < ( blockX + 1 ) * iSideSize; ++x )
+            {
+                for ( int y = yMin; y < yMax; ++y )
+                {
+                    CHex* pHexCurrent = GetHex( CHexCoord( x, y ) );
+                    if ( !pHexCurrent || pHexCurrent->IsWater( ) )
+                        continue;
+
+                    // Calculate blend factor based on distance from border
+                    float distFromBorder = (float)abs( y - borderY );
+                    float blendFactor    = distFromBorder / (float)BLEND_WIDTH;
+                    blendFactor          = blendFactor * blendFactor;  // Squared for smoother falloff
+
+                    // Sample neighbors for smoothing
+                    int altSum   = 0;
+                    int altCount = 0;
+
+                    for ( int dx = -1; dx <= 1; ++dx )
+                    {
+                        for ( int dy = -1; dy <= 1; ++dy )
+                        {
+                            CHex* pHexNeighbor = GetHex( CHexCoord( x + dx, y + dy ) );
+                            if ( pHexNeighbor && !pHexNeighbor->IsWater( ) )
+                            {
+                                altSum += pHexNeighbor->GetAlt( );
+                                altCount++;
+                            }
+                        }
+                    }
+
+                    if ( altCount > 0 )
+                    {
+                        int altAvg     = altSum / altCount;
+                        int altCurrent = pHexCurrent->GetAlt( );
+
+                        // Blend between current and average based on distance from border
+                        int altNew = (int)( altCurrent * blendFactor + altAvg * ( 1.0f - blendFactor ) );
+
+                        // Limit change to prevent spikes
+                        if ( altNew < altCurrent - 10 )
+                            altNew = altCurrent - 10;
+                        else if ( altNew > altCurrent + 10 )
+                            altNew = altCurrent + 10;
+
+                        pHexCurrent->SetAlt( altNew );
+                    }
+
+                    // Blend terrain types near the border
+                    if ( distFromBorder < BLEND_WIDTH / 2 )
+                    {
+                        // Find most common terrain type in neighbors
+                        int terrainCounts[CHex::num_types] = { 0 };
+
+                        for ( int dx = -2; dx <= 2; ++dx )
+                        {
+                            for ( int dy = -2; dy <= 2; ++dy )
+                            {
+                                CHex* pHexNeighbor = GetHex( CHexCoord( x + dx, y + dy ) );
+                                if ( pHexNeighbor && !pHexNeighbor->IsWater( ) )
+                                {
+                                    int terrainType = pHexNeighbor->GetType( );
+                                    if ( terrainType < CHex::num_types )
+                                        terrainCounts[terrainType]++;
+                                }
+                            }
+                        }
+
+                        // Find most common terrain (excluding mountain)
+                        int maxCount      = 0;
+                        int commonTerrain = pHexCurrent->GetType( );
+                        for ( int i = 0; i < CHex::num_types; ++i )
+                        {
+                            if ( i != CHex::mountain && terrainCounts[i] > maxCount )
+                            {
+                                maxCount      = terrainCounts[i];
+                                commonTerrain = i;
+                            }
+                        }
+
+                        // Probabilistically switch to common terrain
+                        int switchChance = (int)( ( 1.0f - blendFactor ) * 100.0f );
+                        if ( MyRand( ) % 100 < switchChance && commonTerrain != pHexCurrent->GetType( ) )
+                        {
+                            pHexCurrent->SetType( commonTerrain );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Process vertical borders (between left/right blocks)
+    for ( int blockY = 0; blockY < iSide; ++blockY )
+    {
+        for ( int blockX = 0; blockX < iSide - 1; ++blockX )
+        {
+            int borderX = ( blockX + 1 ) * iSideSize;
+
+            int xMin = borderX - BLEND_WIDTH;
+            int xMax = borderX + BLEND_WIDTH;
+
+            for ( int y = blockY * iSideSize; y < ( blockY + 1 ) * iSideSize; ++y )
+            {
+                for ( int x = xMin; x < xMax; ++x )
+                {
+                    CHex* pHexCurrent = GetHex( CHexCoord( x, y ) );
+                    if ( !pHexCurrent || pHexCurrent->IsWater( ) )
+                        continue;
+
+                    float distFromBorder = (float)abs( x - borderX );
+                    float blendFactor    = distFromBorder / (float)BLEND_WIDTH;
+                    blendFactor          = blendFactor * blendFactor;
+
+                    int altSum   = 0;
+                    int altCount = 0;
+
+                    for ( int dx = -1; dx <= 1; ++dx )
+                    {
+                        for ( int dy = -1; dy <= 1; ++dy )
+                        {
+                            CHex* pHexNeighbor = GetHex( CHexCoord( x + dx, y + dy ) );
+                            if ( pHexNeighbor && !pHexNeighbor->IsWater( ) )
+                            {
+                                altSum += pHexNeighbor->GetAlt( );
+                                altCount++;
+                            }
+                        }
+                    }
+
+                    if ( altCount > 0 )
+                    {
+                        int altAvg     = altSum / altCount;
+                        int altCurrent = pHexCurrent->GetAlt( );
+
+                        int altNew = (int)( altCurrent * blendFactor + altAvg * ( 1.0f - blendFactor ) );
+
+                        if ( altNew < altCurrent - 10 )
+                            altNew = altCurrent - 10;
+                        else if ( altNew > altCurrent + 10 )
+                            altNew = altCurrent + 10;
+
+                        pHexCurrent->SetAlt( altNew );
+                    }
+
+                    if ( distFromBorder < BLEND_WIDTH && distFromBorder > 1 )
+                    {
+                        int terrainCounts[CHex::num_types] = { 0 };
+
+                        for ( int dx = -2; dx <= 2; ++dx )
+                        {
+                            for ( int dy = -2; dy <= 2; ++dy )
+                            {
+                                CHex* pHexNeighbor = GetHex( CHexCoord( x + dx, y + dy ) );
+                                if ( pHexNeighbor && !pHexNeighbor->IsWater( ) )
+                                {
+                                    int terrainType = pHexNeighbor->GetType( );
+                                    if ( terrainType < CHex::num_types )
+                                        terrainCounts[terrainType]++;
+                                }
+                            }
+                        }
+
+                        int maxCount      = 0;
+                        int commonTerrain = pHexCurrent->GetType( );
+                        for ( int i = 0; i < CHex::num_types; ++i )
+                        {
+                            if ( i != CHex::mountain && terrainCounts[i] > maxCount )
+                            {
+                                maxCount      = terrainCounts[i];
+                                commonTerrain = i;
+                            }
+                        }
+
+                        int switchChance = (int)( ( 1.0f - blendFactor ) * 100.0f );
+                        if ( MyRand( ) % 100 < switchChance && commonTerrain != pHexCurrent->GetType( ) )
+                        {
+                            pHexCurrent->SetType( commonTerrain );
+                        }
+                    }
+                }
+            }
+        }
+    }
 }

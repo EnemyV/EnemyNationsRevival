@@ -177,6 +177,8 @@ void CGameMap::Close( )
     delete[] m_pHex;
     m_pHex = NULL;
 
+    m_pLandExit = m_pShipExit = NULL;
+
     m_eX = m_eY = 0;
 }
 
@@ -326,7 +328,7 @@ void CGameMap::Init( int iSide, int iSideSize, int iScenario )
     // so theoretically every player could be island
     int  iOceansLeft = iNumBlks - theGame.GetAll( ).GetCount( ); 
     int* piBlks      = new int[iNumBlks];
-    for ( int iInd = 0; iInd < iNumBlks; iInd++ ) piBlks[iInd] = 0;
+    for ( int iInd = 0; iInd < iNumBlks; iInd++ ) piBlks[iInd] = 0; // set all blocks to 0
 
     // we need to know the number of island requesting players
     // Island players are poorly named - they get 2 ocean edges
@@ -364,11 +366,9 @@ void CGameMap::Init( int iSide, int iSideSize, int iScenario )
     // Generate ocean here
     // Big maps are too dry, this puts a gigantic ocean in!
     // lets have a little bit of fun here
-    int blockType = -1; // -1/-2/-3/-4/-5 = ocean/desert/swamp/plains/mountains templates       
+    int blockType = -1; // -1/-2/-3/-4/-5 = ocean/desert/swamp/plains/mountains templates   
 
-    // equal chance of ocean or desert blocktype based on the seed
-    // blockType = ( ( seedInt & 0x01 ) == 0 ) ? -1 : -2;
-
+    // only generate big oceans if >6 players
     if ( theGame.GetAll( ).GetCount( ) > 6 )
         GenerateOcean( iNumBlks, piBlks, iSide, blockType, iOceansLeft, theGame );
 
@@ -382,12 +382,15 @@ void CGameMap::Init( int iSide, int iSideSize, int iScenario )
     int iPlyrsLeft = theGame.GetAll( ).GetCount( );
     for ( pos = theGame.GetAll( ).GetHeadPosition( ); pos != NULL; )
     {
+        if ( iInd > iNumBlks )
+            break;
+
         // skip to the next blk
-        while ( piBlks[iInd] != 0 )
+        while (piBlks[iInd] != 0 )
         {
+            iInd++;
             if ( iInd >= iNumBlks - iPlyrsLeft )
                 break;
-            iInd++;
         }
 
         // if we are out of blks - find one!!!
@@ -404,6 +407,7 @@ void CGameMap::Init( int iSide, int iSideSize, int iScenario )
 
         if ( pPlr->m_InitData.GetSupplies( CRaceDef::island ) )
         {
+            // spawn "island" player (trys to get 2 oceans)
             // if we have enough oceans, check above & to the left
             // and below (for bottom of column)
             if ( iOceansLeft > iIslandPlayersLeft * 2 - 1 )
@@ -452,6 +456,13 @@ void CGameMap::Init( int iSide, int iSideSize, int iScenario )
                     iOceansLeft--;
                 }
             }
+            else
+            {
+                // why did we run out of oceans?
+#ifdef _LOGOUT
+                TRAP( );
+#endif
+            }
 
             // we assigned [iInd] to the player
             iInd++;
@@ -459,7 +470,7 @@ void CGameMap::Init( int iSide, int iSideSize, int iScenario )
 
         else
         {
-            // ok, its not an island - put it here
+            // Spawn non-island player here (but includes ocean players)
             pPlr->ai.hex = pPlr->m_hexMapStart =
                 CHexCoord( ( iInd / iSide ) * iSideSize + iSideSize / 2, ( iInd % iSide ) * iSideSize + iSideSize / 2 );
             ASSERT( iInd < iNumBlks );
@@ -514,7 +525,12 @@ void CGameMap::Init( int iSide, int iSideSize, int iScenario )
 
                 if ( !bOk )
                 {
-                    // we put it below if there is a below AND there is no ocean to the left
+                    int blk         = iSide * iSide;
+                    int iIndWrapped = iInd;
+                    if ( iIndWrapped > blk )
+                        iIndWrapped = blk - iIndWrapped;
+
+                    // we put an ocean below if there is a below AND there is no ocean to the left
                     if ( ( piBlks[iInd] == 0 ) && ( iInd % iSide != 0 ) && ( piBlks[IndLeft( iInd, iSide )] != -1 ) )
                     {
                         ASSERT( iInd < iNumBlks );
@@ -577,7 +593,7 @@ void CGameMap::Init( int iSide, int iSideSize, int iScenario )
             int  iTestOcean  = piBlks[IndLeft( iInd, iSide )];
             int  iTestIsland = piBlks[IndNext( iInd, iSide )];
             BOOL bOcean      = FALSE;
-            if ( iTestOcean > 0 )
+            if ( iTestOcean > 0 ) // >0 means t hat it is a player
                 if ( theGame.GetPlayerByPlyr( iTestOcean )->m_InitData.GetSupplies( CRaceDef::island ) )
                     bOcean = TRUE;
             if ( iTestIsland > 0 )
@@ -596,16 +612,16 @@ void CGameMap::Init( int iSide, int iSideSize, int iScenario )
                 piBlks[iInd] = -1;
             else
             {
-                // pick - 1, -2, -3, -4 (ocean, desert, swamp, plains)
-                int iRand = MyRand( ) % 5;
-                if ( iRand == 4 && MyRand( ) % 2 == 0 )  // lower chance of mountains
-                    iRand = MyRand( ) % 5;
-
-                piBlks[iInd] = -( iRand + 1 );
+                // blocks near players that aren't island players
+                SetRandomTerrainBlock( piBlks, iInd );
             }
-            iInd++;
             if ( piBlks[iInd]  == -1)
                 iOceansLeft--;
+
+            iInd++;
+
+            if ( iInd >= iNumBlks )
+                break;
 
             // skip to the next blk
             while ( piBlks[iInd] != 0 )
@@ -614,21 +630,18 @@ void CGameMap::Init( int iSide, int iSideSize, int iScenario )
                     break;
                 iInd++;
             }
-            if ( piBlks[iInd] != 0 )
+            if ( piBlks[iInd] != 0 ) // leave if we find an already placed block? not continue?
                 break;
         }
     }  // end of setting piBlks[]
 
-    // set remaining blocks (if any) to ocean (-1), desert (-2), swamp (-3), plains (-4), or mountains (-5)
+    // set remaining blocks (if any) to ocean (-1), desert (-2), swamp (-3), plains (-4), 
+    // mountains (-5), badlands (-6)
     while ( iInd < iNumBlks )
     {
         if ( piBlks[iInd] == 0 )
         {
-            int iRtn = ( MyRand( ) >> 11 ) & 0x03;
-            if ( iRtn == 0 )
-                iRtn = ( ( MyRand( ) >> 10 ) & 0x01 ) + 4;
-            ASSERT( iInd < iNumBlks );
-            piBlks[iInd] = -iRtn;
+            SetRandomTerrainBlock( piBlks, iInd );
         }
         iInd++;
     }
@@ -651,11 +664,7 @@ void CGameMap::Init( int iSide, int iSideSize, int iScenario )
     const int land[NUM_LAND][3]     = { 0,  0,  30, 64, 0,  30, 32, 16, 40, 16, 32, 40, 32, 32,
                                     50, 48, 32, 40, 32, 48, 40, 0,  64, 30, 64, 64, 30 };
 
-    int extraOceanDepth = RandNum( 30 );
-    if ( RandNum( 2 ) == 1 )
-        extraOceanDepth *= 0.5f;
-    if ( RandNum( 3 ) == 1 )
-        extraOceanDepth *= 0.25f;
+    int extraOceanDepth = 0; // TODO: add this to the world config menu when starting a new game
 
     int _x = 0, _y = 0;
     for ( iInd = 0; iInd < iNumBlks; iInd++ )
@@ -666,7 +675,7 @@ void CGameMap::Init( int iSide, int iSideSize, int iScenario )
         {
         // ocean
         case -1: {
-            int blockExtraOceanDepth = RandNum( 40 );
+            int blockExtraOceanDepth = RandNum( 60 );
             if ( RandNum( 2 ) == 1 )
                 blockExtraOceanDepth *= 0.5f;
             if ( RandNum( 3 ) == 1 )
@@ -703,9 +712,19 @@ void CGameMap::Init( int iSide, int iSideSize, int iScenario )
             break;
         }
 
-        // mountain
-        case -5: {
-            int iAlt = RandNum( 20 ) + 5;  // force different avg altitudes
+        case -5: {                          // Mountains
+            int iAlt = RandNum( 20 ) - 5;  // force different avg altitudes
+            for ( int iOn = 0; iOn < NUM_LAND; iOn++ )
+            {
+                ( GetHex( CHexCoord( _x * iSideSize + ( land[iOn][0] * iSideSize ) / 64,
+                                     _y * iSideSize + ( land[iOn][1] * iSideSize ) / 64 ) ) )
+                    ->Init( ConvertAlt( iAlt + land[iOn][2] / 2 + RandNum( land[iOn][2] ), iSideSize ) );
+            }
+
+            break;
+        }
+        case -6: { // Badlands
+            int iAlt = RandNum( 20 ) - 5;  // force different avg altitudes
             for ( int iOn = 0; iOn < NUM_LAND; iOn++ )
                 ( GetHex( CHexCoord( _x * iSideSize + ( land[iOn][0] * iSideSize ) / 64,
                                      _y * iSideSize + ( land[iOn][1] * iSideSize ) / 64 ) ) )
@@ -758,8 +777,9 @@ void CGameMap::Init( int iSide, int iSideSize, int iScenario )
         int oceans = 0;
         int deserts = 0;
         int swamps  = 0;
-        int planes  = 0;
+        int planes    = 0;
         int mountains = 0;
+        int badlands = 0;
         int other     = 0;
         switch ( blockType )
         {
@@ -778,12 +798,15 @@ void CGameMap::Init( int iSide, int iSideSize, int iScenario )
             case -5:
                 mountains++;
                 break;
+            case -6:
+                badlands++;
+                break;
             default:
                 other++;
         }
 
         // Now print out our numbers with percentages:
-        int total = oceans + deserts + swamps + planes + mountains + other;
+        int total = oceans + deserts + swamps + planes + mountains + badlands + other;
 
         // Avoid divide-by-zero
         float invTotal = ( total > 0 ) ? ( 100.0f / (float)total ) : 0.0f;
@@ -796,10 +819,12 @@ void CGameMap::Init( int iSide, int iSideSize, int iScenario )
                    "Swamp blocks: %d (%.2f%%)\n"
                    "Plains blocks: %d (%.2f%%)\n"
                    "Mountain blocks: %d (%.2f%%)\n"
+                   "Badlands blocks: %d (%.2f%%)\n"
                    "Other blocks: %d (%.2f%%)\n"
                    "Total blocks: %d\n",
                    oceans, oceans * invTotal, deserts, deserts * invTotal, swamps, swamps * invTotal, planes,
-                   planes * invTotal, mountains, mountains * invTotal, other, other * invTotal, total );
+                   planes * invTotal, mountains, mountains * invTotal, badlands, badlands * invTotal,
+                    other, other * invTotal, total );
 
     }
 #endif
@@ -871,7 +896,7 @@ void CGameMap::Init( int iSide, int iSideSize, int iScenario )
                             pHexOn->SetType( CHex::mountain );
                         break;
                     }
-                    default: {  // land (or mountain)
+                    default: {  // land (or mountain/badlands/other?)
                         int iRand = RandNum( 8 );
                         if ( iAlt < ConvertAlt( 56 + iRand, iSideSize ) )
                             pHexOn->SetType( CHex::plain );
@@ -884,14 +909,14 @@ void CGameMap::Init( int iSide, int iSideSize, int iScenario )
                     }
             }
 
-        // merge in other terrain types
+        // merge in other terrain types, resources, and forests
         int       iOff[4][2] = { 12, 12, 44, 12, 12, 44, 44, 44 };
         const int iTry1[]    = { CHex::rough, CHex::hill, CHex::forest, 0 };
         const int iTry2[]    = { CHex::rough, CHex::rough,  CHex::rough, CHex::hill, CHex::hill,
                               CHex::hill,  CHex::desert, CHex::swamp, CHex::forest, 0 };
         switch ( piBlks[iInd] )
         {
-        case -1: {  // ocean block resource and terrain feature generation
+        case -1: {  
             const int iTry[] = { CHex::rough, CHex::plain, CHex::hill, CHex::swamp, CHex::desert };
 
             MakeTerrain( _x * iSideSize + 4 + RandNum( iSideSize - 8 ), _y * iSideSize + 4 + RandNum( iSideSize - 8 ),
@@ -975,14 +1000,105 @@ void CGameMap::Init( int iSide, int iSideSize, int iScenario )
         }
 
         case -5: {  // Mountains - multi-peak mountain ranges / Generate Mountain Block
+
             // mountain ranges with valleys
-            
-            GenerateMountainBlock( _x, iSideSize, _y, iTry2 );
+            GenerateMountainBlock( _x, iSideSize, _y );
+
+            // Add forest on lower slopes
+            int xDrop = _x * iSideSize + 8 + RandNum( iSideSize - 16 );
+            int yDrop = _y * iSideSize + 8 + RandNum( iSideSize - 16 );
+            MakeTerrain( xDrop, yDrop, CHex::forest, iSideSize );
+
+            // Additional scattered forest patches
+            for ( int i = 0; i < 2; i++ )
+            {
+                xDrop        = _x * iSideSize + 10 + RandNum( iSideSize - 20 );
+                yDrop        = _y * iSideSize + 10 + RandNum( iSideSize - 20 );
+                CHex* pCheck = GetHex( CHexCoord( xDrop, yDrop ) );
+                // Only place forest below treeline
+                if ( pCheck->GetAlt( ) < ConvertAlt( 50, iSideSize ) )
+                {
+                    MakeTerrain( xDrop, yDrop, CHex::forest, iSideSize / 2 );
+                }
+            }
+
+            // Add minerals scattered throughout
+            MakeMineral( _x * iSideSize + 4 + RandNum( iSideSize - 8 ), _y * iSideSize + 1 + RandNum( iSideSize - 8 ),
+                         CMaterialTypes::coal, iSideSize );
+            MakeMineral( _x * iSideSize + 4 + RandNum( iSideSize - 8 ), _y * iSideSize + 1 + RandNum( iSideSize - 8 ),
+                         CMaterialTypes::iron, iSideSize / 2 );
+
+            // Add varied terrain in lower areas
+            xDrop = _x * iSideSize + 8 + RandNum( iSideSize - 16 );
+            yDrop = _y * iSideSize + 8 + RandNum( iSideSize - 16 );
+            MakeTerrain( xDrop, yDrop, iTry2[RandNum( 8 )], iSideSize / 2 );
+
+            break;
+        }
+        case -6: {
+
+            GenerateBadlandsBlock( _x, iSideSize, _y );
+
+            // Mineral deposits in badlands
+            // Coal x2 multiplier deposit
+            MakeMineral( _x * iSideSize + 10 + RandNum( iSideSize - 20 ),
+                         _y * iSideSize + 10 + RandNum( iSideSize - 20 ), CMaterialTypes::coal, iSideSize / 3, 2 );
+
+            // Small x5 oil deposit (3-4 hex only)
+            if ( RandNum( 3 ) == 0 )
+            {
+                MakeMineral( _x * iSideSize + 20 + RandNum( iSideSize - 40 ),
+                             _y * iSideSize + 20 + RandNum( iSideSize - 40 ), CMaterialTypes::oil, 3 + RandNum( 2 ),
+                             5 );
+            }
+
+            // Small x2-4 coal deposit
+            if ( RandNum( 4 ) == 0 )
+            {
+                MakeMineral( _x * iSideSize + 20 + RandNum( iSideSize - 40 ),
+                             _y * iSideSize + 20 + RandNum( iSideSize - 40 ), CMaterialTypes::coal, 3 + RandNum( 2 ),
+                             2 + RandNum( 3 ) );
+            }
+
+            // Small x2-4 iron deposit
+            if ( RandNum( 5 ) == 0 )
+            {
+                MakeMineral( _x * iSideSize + 20 + RandNum( iSideSize - 40 ),
+                             _y * iSideSize + 20 + RandNum( iSideSize - 40 ), CMaterialTypes::iron, 3 + RandNum( 2 ),
+                             2 + RandNum( 3 ) );
+            }
+
+            for ( int x = _x * iSideSize; x < ( _x + 1 ) * iSideSize; x++ )
+            {
+                for ( int y = _y * iSideSize; y < ( _y + 1 ) * iSideSize; y++ )
+                {
+                    CHex* pHexUR    = GetHex( CHexCoord( x + 1, y - 1 ) );
+                    CHex* pHexTop   = GetHex( CHexCoord( x, y - 1 ) );
+                    CHex* pHexRight = GetHex( CHexCoord( x + 1, y ) );
+
+                    CHex* pHexOn = GetHex( CHexCoord( x, y ) );
+
+                    int iSlope  = abs( pHexOn->GetAlt( ) - pHexTop->GetAlt( ) );
+                    int iSlope2 = abs( pHexOn->GetAlt( ) - pHexRight->GetAlt( ) );
+                    iSlope      = __max( iSlope, iSlope2 );
+                    iSlope2     = abs( pHexOn->GetAlt( ) - pHexUR->GetAlt( ) );
+                    iSlope      = __max( iSlope, iSlope2 );
+                    if ( iSlope > 14 )
+                        pHexOn->SetType( CHex::mountain );
+                    else if ( iSlope > 7 )
+                        pHexOn->SetType( CHex::hill );
+                    else if ( iSlope >= 1 )
+                        pHexOn->SetType( CHex::rough );
+                    else 
+                        pHexOn->SetType( CHex::plain );
+                }
+            }
+
             break;
         }
 
         // we randomly put stuff in 3 of the 4 sub-blocks. 1 is always forest
-        default: {
+        default: { // player blocks are done here
             int  iForest = 0;
             BOOL bSwamp  = FALSE;
             BOOL bRough  = FALSE;
@@ -1094,6 +1210,9 @@ void CGameMap::Init( int iSide, int iSideSize, int iScenario )
         }
     }
 
+    // cleanup the edges between blocks (done again on ln 1192?)
+    // SmoothBlockEdges( iSideSize, iSide );
+
     // at corners of blocks we may place a mountain
     for ( iInd = 0; iInd < iNumBlks; iInd++ )
     {
@@ -1170,6 +1289,7 @@ void CGameMap::Init( int iSide, int iSideSize, int iScenario )
             }
         }
     }
+
 
     // we now walk the borders between blocks averaging types across the line
     // we push up to iSideSize/8 hexes in, and build a new border
@@ -1314,7 +1434,10 @@ void CGameMap::Init( int iSide, int iSideSize, int iScenario )
         }
     }
 
-    // we re-smooth the entire world
+    // check ocean before smoothing to get better results
+    CheckOcean( );
+
+    // we re-smooth the entire world    
     int iAlt = GetHex( 0, 0 )->GetAlt( );
     InitSquarePass2( 0, 0, m_eX, m_eY, iAlt, iAlt, iAlt, iAlt );
 
@@ -1322,8 +1445,11 @@ void CGameMap::Init( int iSide, int iSideSize, int iScenario )
     theApp.BaseYield( );
     CheckAlt( );
 
+    // check ocean before smoothing to get better results
+    CheckOcean( );
+
     // put rivers down the peaks
-    _x = 8;
+    _x = 8; 
     _y = 0;
     for ( iInd = 0; iInd < iNumBlks; iInd++ )
     {
@@ -1366,8 +1492,6 @@ void CGameMap::Init( int iSide, int iSideSize, int iScenario )
     theApp.m_pCreateGame->GetDlgStatus( )->SetMsg( IDS_CHECK_MAP );
 
     delete[] piBlks;
-
-    CheckOcean( );
 
     // check for land & water crossing on an X
     // we have x,y in the dec/inc so we are comparing to already changed hexes
@@ -1427,7 +1551,7 @@ void CGameMap::Init( int iSide, int iSideSize, int iScenario )
         for ( int y = 0; y < m_eY; y++ )
         {
             CHex* pHexOn = GetHex( CHexCoord( x, y ) );
-            if ( ( !pHexOn->IsWater( ) ) && ( pHexOn->GetType( ) != CHex::mountain ) )
+            if ( ( !pHexOn->IsWater( ) ))// && ( pHexOn->GetType( ) != CHex::mountain ) )
             {
                 CHex* pHexUR    = GetHex( CHexCoord( x + 1, y - 1 ) );
                 CHex* pHexTop   = GetHex( CHexCoord( x, y - 1 ) );
@@ -1442,6 +1566,26 @@ void CGameMap::Init( int iSide, int iSideSize, int iScenario )
                     pHexOn->SetType( CHex::mountain );
                 else if ( iSlope > 8 )
                     pHexOn->SetType( CHex::hill );
+                else if ( iSlope < 4 && pHexOn->GetType( ) == CHex::mountain )
+                {
+                    // we dont allow mountain blocks with slow less than 4, 
+                    // so lets look at nearby hex's to see what they are
+                    if ( pHexRight->GetType( ) != CHex::mountain 
+                        && !pHexRight->IsWater( ) )
+                    {
+                        pHexOn->SetType( pHexRight->GetType( ) );
+                    }
+                    else if ( pHexTop->GetType( ) != CHex::mountain 
+                        && !pHexTop->IsWater( ) )
+                    {
+                        pHexOn->SetType( pHexTop->GetType( ) );
+                    }
+                    else if ( pHexUR->GetType( ) != CHex::mountain 
+                        && !pHexUR->IsWater( ) )
+                    {
+                        pHexOn->SetType( pHexUR->GetType( ) );
+                    }
+                }
             }
         }
 
@@ -1554,6 +1698,32 @@ void CGameMap::Init( int iSide, int iSideSize, int iScenario )
     theApp.BaseYield( );
 
     ASSERT_VALID( this );
+}
+
+// Get a random int to specify what to use for 'Generate random block', get random block to generate
+void CGameMap::SetRandomTerrainBlock( int* piBlks, int iInd )
+{
+    int iRtn = ( MyRand( ) >> 11 ) % 5;  // 0–4
+    if ( iRtn == 0 )
+    {
+        // Rare terrain bucket
+        int rare = ( MyRand( ) >> 10 ) & 0x03;  // 0–3
+
+        switch ( rare )
+        {
+        case 0:
+            iRtn = 5;
+            break;  // mountains
+        case 1:
+            iRtn = 6;
+            break;  // badlands
+        default:
+            iRtn = 4;  // fallback to plains
+            break;
+        }
+    }
+
+    piBlks[iInd] = -iRtn;
 }
 
 
@@ -1845,6 +2015,10 @@ void CGameMap::MakeRiver( int x, int y, BOOL& bFound )
         return;
     pHexOn->SetType( CHex::river );
 
+    // if we failed to become water, this isn't a good way to go..
+    if ( !pHexOn->IsWater( ) )
+        return;
+
     // keep making the lowest neighbor a river till we hit water
     //   or can't go down
     int count = 0;
@@ -1874,18 +2048,24 @@ void CGameMap::MakeRiver( int x, int y, BOOL& bFound )
             if ( aAlt[iInd][2] == iLevel )
             {
                 CHex* pHex = GetHex( CHexCoord( x + aAlt[iInd][0], y + aAlt[iInd][1] ) );
-                if ( !pHex->IsWater( ) )
+                if ( !pHex->IsWater() )
                 {
                     if ( !bGotOne )
                     {
-                        if ( pHex->GetType( ) == CHex::ocean || pHex->GetType( ) == CHex::lake )
-                            bFound = TRUE;
                         bGotOne = TRUE;
                         pHex->SetType( CHex::river );
                         iFound = iInd;
                     }
                     else if ( ( !bFound ) && ( MyRand( ) & 0x400 ) )
+                    {
                         MakeRiver( x + aAlt[iInd][0], y + aAlt[iInd][1], bFound );
+                    }
+                }
+                else
+                {
+                    // go until we find an ocean or lake
+                    if ( pHex->GetType( ) == CHex::ocean || pHex->GetType( ) == CHex::lake )
+                        bFound = true;
                 }
             }
 
@@ -2037,9 +2217,12 @@ void CGameMap::InitSquare( int x1, int y1, int x2, int y2, int iAlt1, int iAlt2,
 
 void CGameMap::InitSquarePass2( int x1, int y1, int x2, int y2, int iAlt1, int iAlt2, int iAlt3, int iAlt4 )
 {
+    const int maxHeight = 127;
 
     if ( ( x1 + 1 >= x2 ) && ( y1 + 1 >= y2 ) )
         return;
+
+    int smoothAmount = 8;
 
     int xDif = x2 - x1;
     int yDif = y2 - y1;
@@ -2048,13 +2231,15 @@ void CGameMap::InitSquarePass2( int x1, int y1, int x2, int y2, int iAlt1, int i
     int _iAlt1, _iAlt2, _iAlt3, _iAlt4, _iAlt5;
 
     CHex* pHex = GetHex( _x, y1 );
+
     _iAlt1     = pHex->GetAlt( );
     int iAltL  = GetHex( _x, y1 - yDif / 2 )->GetAlt( );
     int iAltR  = GetHex( _x, y1 + yDif / 2 )->GetAlt( );
     int iNew   = ( iAlt1 + iAlt2 + iAltL + iAltR ) / 4 + ( RandDist( xDif ) + RandDist( yDif ) ) / 4;
     iNew       = ( _iAlt1 + iNew ) / 2;
-    _iAlt1     = iNew < _iAlt1 - 10 ? _iAlt1 - 10 : ( iNew > _iAlt1 + 10 ? _iAlt1 + 10 : iNew );
-    _iAlt1     = _iAlt1 < 0 ? 0 : ( _iAlt1 > 100 ? 100 : _iAlt1 );
+    _iAlt1 = iNew < _iAlt1 - smoothAmount ? _iAlt1 - smoothAmount
+                                              : ( iNew > _iAlt1 + smoothAmount ? _iAlt1 + smoothAmount : iNew );
+    _iAlt1     = _iAlt1 < 0 ? 0 : ( _iAlt1 > maxHeight ? maxHeight : _iAlt1 );
     pHex->SetAlt( _iAlt1 );
 
     pHex      = GetHex( x1, _y );
@@ -2063,8 +2248,8 @@ void CGameMap::InitSquarePass2( int x1, int y1, int x2, int y2, int iAlt1, int i
     int iAltB = GetHex( x1 + xDif / 2, _y )->GetAlt( );
     iNew      = ( iAlt1 + iAlt3 + iAltT + iAltB ) / 4 + ( RandDist( xDif ) + RandDist( yDif ) ) / 4;
     iNew      = ( _iAlt2 + iNew ) / 2;
-    _iAlt2    = iNew < _iAlt2 - 10 ? _iAlt2 - 10 : ( iNew > _iAlt2 + 10 ? _iAlt2 + 10 : iNew );
-    _iAlt2    = _iAlt2 < 0 ? 0 : ( _iAlt2 > 100 ? 100 : _iAlt2 );
+    _iAlt2    = iNew < _iAlt2 - smoothAmount ? _iAlt2 - smoothAmount : ( iNew > _iAlt2 + smoothAmount ? _iAlt2 + smoothAmount : iNew );
+    _iAlt2    = _iAlt2 < 0 ? 0 : ( _iAlt2 > maxHeight ? maxHeight : _iAlt2 );
     pHex->SetAlt( _iAlt2 );
 
     pHex   = GetHex( x2, _y );
@@ -2073,8 +2258,9 @@ void CGameMap::InitSquarePass2( int x1, int y1, int x2, int y2, int iAlt1, int i
     iAltB  = GetHex( x2 + xDif / 2, _y )->GetAlt( );
     iNew   = ( iAlt2 + iAlt4 + iAltT + iAltB ) / 4 + ( RandDist( xDif ) + RandDist( yDif ) ) / 4;
     iNew   = ( _iAlt3 + iNew ) / 2;
-    _iAlt3 = iNew < _iAlt3 - 10 ? _iAlt3 - 10 : ( iNew > _iAlt3 + 10 ? _iAlt3 + 10 : iNew );
-    _iAlt3 = _iAlt3 < 0 ? 0 : ( _iAlt3 > 100 ? 100 : _iAlt3 );
+    _iAlt3 = iNew < _iAlt3 - smoothAmount ? _iAlt3 - smoothAmount
+                                          : ( iNew > _iAlt3 + smoothAmount ? _iAlt3 + smoothAmount : iNew );
+    _iAlt3 = _iAlt3 < 0 ? 0 : ( _iAlt3 > maxHeight ? maxHeight : _iAlt3 );
     pHex->SetAlt( _iAlt3 );
 
     pHex   = GetHex( _x, y2 );
@@ -2083,16 +2269,18 @@ void CGameMap::InitSquarePass2( int x1, int y1, int x2, int y2, int iAlt1, int i
     iAltR  = GetHex( _x, y2 + yDif / 2 )->GetAlt( );
     iNew   = ( iAlt3 + iAlt4 + iAltL + iAltR ) / 4 + ( RandDist( xDif ) + RandDist( yDif ) ) / 4;
     iNew   = ( _iAlt4 + iNew ) / 2;
-    _iAlt4 = iNew < _iAlt4 - 10 ? _iAlt4 - 10 : ( iNew > _iAlt4 + 10 ? _iAlt4 + 10 : iNew );
-    _iAlt4 = _iAlt4 < 0 ? 0 : ( _iAlt4 > 100 ? 100 : _iAlt4 );
+    _iAlt4 = iNew < _iAlt4 - smoothAmount ? _iAlt4 - smoothAmount : ( iNew > _iAlt4 + 
+        smoothAmount ? _iAlt4 + smoothAmount : iNew );
+    _iAlt4 = _iAlt4 < 0 ? 0 : ( _iAlt4 > maxHeight ? maxHeight : _iAlt4 );
     pHex->SetAlt( _iAlt4 );
 
     pHex   = GetHex( _x, _y );
     _iAlt5 = pHex->GetAlt( );
     iNew   = ( _iAlt1 + _iAlt2 + _iAlt3 + _iAlt4 ) / 4 + ( RandDist( xDif ) + RandDist( yDif ) ) / 4;
     iNew   = ( _iAlt5 + iNew ) / 2;
-    _iAlt5 = iNew < _iAlt5 - 10 ? _iAlt5 - 10 : ( iNew > _iAlt5 + 10 ? _iAlt5 + 10 : iNew );
-    _iAlt5 = _iAlt5 < 0 ? 0 : ( _iAlt5 > 100 ? 100 : _iAlt5 );
+    _iAlt5 = iNew < _iAlt5 - smoothAmount ? _iAlt5 - smoothAmount : ( iNew > _iAlt5 + 
+        smoothAmount ? _iAlt5 + smoothAmount : iNew );
+    _iAlt5 = _iAlt5 < 0 ? 0 : ( _iAlt5 > maxHeight ? maxHeight : _iAlt5 );
     pHex->SetAlt( _iAlt5 );
 
     InitSquarePass2( x1, y1, _x, _y, iAlt1, _iAlt1, _iAlt2, _iAlt5 );
@@ -2110,17 +2298,43 @@ void CGameMap::CheckOcean( )
 
             if ( CHex::ocean == phex->GetType( ) )
             {
-                if ( GetHex( x, y )->GetAlt( ) > CHex::sea_level )
-                    GetHex( x, y )->SetAlt( CHex::sea_level );
+                // only if it's "low" enough
+                if (( phex->GetAlt( ) - CHex::sea_level) > 12 )
+                {
+                    CHex* pHexUR    = GetHex( CHexCoord( x + 1, y - 1 ) );
+                    CHex* pHexTop   = GetHex( CHexCoord( x, y - 1 ) );
+                    CHex* pHexRight = GetHex( CHexCoord( x + 1, y ) );
 
-                if ( GetHex( x + 1, y )->GetAlt( ) > CHex::sea_level )
-                    GetHex( x + 1, y )->SetAlt( CHex::sea_level );
+                    // just.. texture it differently. its too high up.
+                    int iSlope  = abs( phex->GetAlt( ) - pHexTop->GetAlt( ) );
+                    int iSlope2 = abs( phex->GetAlt( ) - pHexRight->GetAlt( ) );
+                    iSlope      = __max( iSlope, iSlope2 );
+                    iSlope2     = abs( phex->GetAlt( ) - pHexUR->GetAlt( ) );
+                    iSlope      = __max( iSlope, iSlope2 );
 
-                if ( GetHex( x + 1, y + 1 )->GetAlt( ) > CHex::sea_level )
-                    GetHex( x + 1, y + 1 )->SetAlt( CHex::sea_level );
+                    if ( iSlope > 15 )
+                        phex->SetType( CHex::mountain );
+                    else if ( iSlope > 8 )
+                        phex->SetType( CHex::hill );
+                    else
+                        phex->SetType( CHex::rough );
 
-                if ( GetHex( x, y + 1 )->GetAlt( ) > CHex::sea_level )
-                    GetHex( x, y + 1 )->SetAlt( CHex::sea_level );
+                }
+                else
+                {
+
+                    if ( GetHex( x, y )->GetAlt( ) > CHex::sea_level )
+                        GetHex( x, y )->SetAlt( CHex::sea_level );
+
+                    if ( GetHex( x + 1, y )->GetAlt( ) > CHex::sea_level )
+                        GetHex( x + 1, y )->SetAlt( CHex::sea_level );
+
+                    if ( GetHex( x + 1, y + 1 )->GetAlt( ) > CHex::sea_level )
+                        GetHex( x + 1, y + 1 )->SetAlt( CHex::sea_level );
+
+                    if ( GetHex( x, y + 1 )->GetAlt( ) > CHex::sea_level )
+                        GetHex( x, y + 1 )->SetAlt( CHex::sea_level );
+                }
             }
         }
 }
@@ -2146,7 +2360,7 @@ void CGameMap::CheckAlt( )
 
             // step 1 - if ! water then >= sea_level
             if ( ( !pHexOn->IsWater( ) ) && ( pHexOn->GetAlt( ) < CHex::sea_level ) )
-                pHexOn->SetAlt( CHex::sea_level );
+                pHexOn->SetAlt( CHex::sea_level); // should this be +1?
 
             int aAlt[4];
             aAlt[0]     = pHexOn->GetAdjustStep( );

@@ -303,7 +303,10 @@ public:
 
 	void		GetWorldSize (int iSize, int & iSide, int & iSideSize);
     void        Init( int iSide, int iSideSize, int iScenario );
-    void        GenerateMountainBlock( int _x, int iSideSize, int _y, const int iTry2[10] );
+    void        SetRandomTerrainBlock( int* piBlks, int iInd );
+    void        GenerateMountainBlock( int _x, int iSideSize, int _y);
+    void        GenerateBadlandsBlock( int _x, int iSideSize, int _y);
+    void        SmoothBlockEdges( int iSideSize, int iSide );
     void        GenerateOcean( int iNumBlks, int* piBlks, int iSide, int blockType, int& iOceansLeft, CGame& theGame );
 	void		InitSquare (int x1, int y1, int x2, int y2, int iTyp1, int iTyp2, int iTyp3, int iTyp4);
 	void		InitSquarePass2 (int x1, int y1, int x2, int y2, int iTyp1, int iTyp2, int iTyp3, int iTyp4);
@@ -342,9 +345,9 @@ public:
 	void		ClrBldgCur ();
 	int			IsBldgCurOk () const { return (m_iBldgCur); }
 	BOOL		HaveBldgCur () const { return (m_cxBldgCur > 0); }
-	CHex *		m_pLandExit;		// the hex with the land exit
+	CHex *		m_pLandExit = NULL;		// the hex with the land exit
 	int				m_iLandDir;			// the direction of the land exit
-	CHex *		m_pShipExit;		// the hex with the ship exit
+	CHex *		m_pShipExit = NULL;		// the hex with the ship exit
 	int				m_iShipDir;			// the direction of the ship exit
 
 	CHex *	_Xinc (CHex * pHex);
