@@ -1634,8 +1634,7 @@ void CAIUnitList::RemoveUnit( DWORD dwID, BOOL bObjectToo /*=TRUE*/ )
     }
 }
 
-
-void CAIUnitList::Load( CFile* pFile )
+void CAIUnitList::Load( CArchive& ar )
 {
     // make any old units go away
     if ( GetCount( ) )
@@ -1644,23 +1643,46 @@ void CAIUnitList::Load( CFile* pFile )
     UnitBuff ubUnit;
 
     // now get count of units
-    int iCnt;
-    pFile->Read( (void*)&iCnt, sizeof( int ) );
+    int iCnt = 0;
+    try
+    {
+        ar >> iCnt;
+    }
+    catch ( CFileException* /*theException*/ )
+    {
+        throw( ERR_CAI_BAD_FILE );
+    }
 
     if ( iCnt )
     {
-        int iBytes;
-        for ( int i = 0; i < iCnt; ++i )
+        for ( int idx = 0; idx < iCnt; ++idx )
         {
             // read file data into buffer
-            iBytes = pFile->Read( (void*)&ubUnit, sizeof( UnitBuff ) );
+            UINT uBytes;
+            try
+            {
+                uBytes = ar.Read( (void*)&ubUnit, (UINT)sizeof( UnitBuff ) );
+            }
+            catch ( CFileException* /*theException*/ )
+            {
+                throw( ERR_CAI_BAD_FILE );
+            }
 
             // BUGBUG how should read errors be reported?
-            if ( iBytes != sizeof( UnitBuff ) )
-                return;
+            if ( uBytes != sizeof( UnitBuff ) )
+                throw( ERR_CAI_BAD_FILE );
 
-            // CAIUnit( DWORD dwID, int iOwner, int iType, int iTypeUnit );
-            CAIUnit* pUnit = new CAIUnit( ubUnit.dwID, ubUnit.iOwner, ubUnit.iType, ubUnit.iTypeUnit );
+            CAIUnit* pUnit = NULL;
+            try
+            {
+                // CAIUnit( DWORD dwID, int iOwner, int iType, int iTypeUnit );
+                pUnit = new CAIUnit( ubUnit.dwID, ubUnit.iOwner, ubUnit.iType, ubUnit.iTypeUnit );
+            }
+            catch ( CException* /*e*/ )
+            {
+                // memory allocation failure
+                throw( ERR_CAI_BAD_NEW );
+            }
 
             pUnit->SetControl( ubUnit.bControl );
             pUnit->SetGoal( ubUnit.wGoal );
@@ -1680,12 +1702,19 @@ void CAIUnitList::Load( CFile* pFile )
     }
 }
 
-void CAIUnitList::Save( CFile* pFile )
+void CAIUnitList::Save( CArchive& ar )
 {
     UnitBuff ubUnit;
 
     int iCnt = GetCount( );
-    pFile->Write( (const void*)&iCnt, sizeof( int ) );
+    try
+    {
+        ar << iCnt;
+    }
+    catch ( CFileException* /*theException*/ )
+    {
+        throw( ERR_CAI_BAD_FILE );
+    }
 
     if ( iCnt )
     {
@@ -1693,25 +1722,39 @@ void CAIUnitList::Save( CFile* pFile )
         while ( pos != NULL )
         {
             CAIUnit* pUnit = (CAIUnit*)GetNext( pos );
-            if ( pUnit != NULL )
+            if ( pUnit == NULL )
+                continue;
+
+            ubUnit.dwID      = pUnit->GetID( );
+            ubUnit.iOwner    = pUnit->GetOwner( );
+            ubUnit.iType     = pUnit->GetType( );
+            ubUnit.iTypeUnit = pUnit->GetTypeUnit( );
+            ubUnit.bControl  = pUnit->IsControl( );
+            ubUnit.wGoal     = pUnit->GetGoal( );
+            ubUnit.wTask     = pUnit->GetTask( );
+            ubUnit.dwData    = pUnit->GetDataDW( );
+            ubUnit.wStatus   = pUnit->GetStatus( );
+
+            for ( int i = 0; i < CAI_SIZE; ++i )
             {
-                ubUnit.dwID      = pUnit->GetID( );
-                ubUnit.iOwner    = pUnit->GetOwner( );
-                ubUnit.iType     = pUnit->GetType( );
-                ubUnit.iTypeUnit = pUnit->GetTypeUnit( );
-                ubUnit.bControl  = pUnit->IsControl( );
-                ubUnit.wGoal     = pUnit->GetGoal( );
-                ubUnit.wTask     = pUnit->GetTask( );
-                ubUnit.dwData    = pUnit->GetDataDW( );
-                ubUnit.wStatus   = pUnit->GetStatus( );
+                ubUnit.iParams[i]  = pUnit->GetParam( i );
+                ubUnit.dwParams[i] = pUnit->GetParamDW( i );
+            }
 
-                for ( int i = 0; i < CAI_SIZE; ++i )
+            try
+            {
+                try
                 {
-                    ubUnit.iParams[i]  = pUnit->GetParam( i );
-                    ubUnit.dwParams[i] = pUnit->GetParamDW( i );
+                    ar.Write( (const void*)&ubUnit, (UINT)sizeof( UnitBuff ) );
                 }
-
-                pFile->Write( (const void*)&ubUnit, sizeof( UnitBuff ) );
+                catch ( CFileException* /*theException*/ )
+                {
+                    throw( ERR_CAI_BAD_FILE );
+                }
+            }
+            catch ( CFileException* /*theException*/ )
+            {
+                throw( ERR_CAI_BAD_FILE );
             }
         }
     }

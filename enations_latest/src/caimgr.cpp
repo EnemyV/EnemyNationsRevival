@@ -2889,7 +2889,7 @@ void CAIMgr::SetInitialPos( void )
     delete pInit;
 }
 
-void CAIMgr::SaveGame( CFile* pFile )
+void CAIMgr::SaveGame( CArchive& ar )
 {
 
 #ifdef _LOGOUT
@@ -2898,14 +2898,25 @@ void CAIMgr::SaveGame( CFile* pFile )
 
     try
     {
-        Save( pFile );  // does the CAIMgr data and includes messages
+        // save manager state and queued messages
+        Save( ar );
 
-        m_plUnits->Save( pFile );
-        m_pMap->Save( pFile );
-        m_plOpFors->Save( pFile );
-        m_pGoalMgr->Save( pFile );
-        m_pRouter->Save( pFile );
-        // m_pTaskMgr->Save( pFile );
+        // save subcomponents that accept CArchive
+        if ( m_plUnits != NULL )
+            m_plUnits->Save( ar );
+        if ( m_pMap != NULL )
+            m_pMap->Save( ar );
+        if ( m_plOpFors != NULL )
+            m_plOpFors->Save( ar );
+
+        if ( m_pGoalMgr != NULL )
+            m_pGoalMgr->Save( ar );
+        if ( m_pRouter != NULL )
+            m_pRouter->Save( ar );
+
+        // I guess this resets every time you load?
+        // if ( m_pTaskMgr != NULL )
+        //    m_pTaskMgr->Save( ar );
     }
     catch ( CFileException* theException )
     {
@@ -2926,16 +2937,16 @@ void CAIMgr::SaveGame( CFile* pFile )
 //
 //  and the contents of m_plMsgQueue and m_plTmpQueue
 //
-void CAIMgr::Save( CFile* pFile )
+void CAIMgr::Save( CArchive& ar )
 {
     // CAIHexBuff aiHexBuff;
 
     try
     {
-        pFile->Write( (const void*)&m_iPlayer, sizeof( int ) );
-        pFile->Write( (const void*)&m_bIsAI, sizeof( BOOL ) );
-        pFile->Write( (const void*)&m_iBlockX, sizeof( int ) );
-        pFile->Write( (const void*)&m_iBlockY, sizeof( int ) );
+        ar << m_iPlayer;
+        ar << m_bIsAI;
+        ar << m_iBlockX;
+        ar << m_iBlockY;
     }
     catch ( CFileException* theException )
     {
@@ -2954,7 +2965,7 @@ void CAIMgr::Save( CFile* pFile )
         int iCnt = m_plMsgQueue->GetCount( );
         try
         {
-            pFile->Write( (const void*)&iCnt, sizeof( int ) );
+            ar << iCnt;
         }
         catch ( CFileException* theException )
         {
@@ -2990,7 +3001,7 @@ void CAIMgr::Save( CFile* pFile )
 
                     try
                     {
-                        pFile->Write( (const void*)&mbMessage, sizeof( MsgBuff ) );
+                        ar.Write( &mbMessage, sizeof( MsgBuff ) );
                     }
                     catch ( CFileException* theException )
                     {
@@ -3012,7 +3023,7 @@ void CAIMgr::Save( CFile* pFile )
         int iCnt = m_plTmpQueue->GetCount( );
         try
         {
-            pFile->Write( (const void*)&iCnt, sizeof( int ) );
+            ar << iCnt;
         }
         catch ( CFileException* theException )
         {
@@ -3048,7 +3059,7 @@ void CAIMgr::Save( CFile* pFile )
 
                     try
                     {
-                        pFile->Write( (const void*)&mbMessage, sizeof( MsgBuff ) );
+                        ar.Write( &mbMessage, sizeof( MsgBuff ) );
                     }
                     catch ( CFileException* theException )
                     {
@@ -3062,7 +3073,7 @@ void CAIMgr::Save( CFile* pFile )
     }
 }
 
-void CAIMgr::LoadGame( CFile* pFile )
+void CAIMgr::LoadGame( CArchive& ar )
 {
 #ifdef _LOGOUT
     logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "\nCAIMgr::LoadGame() \n" );
@@ -3070,28 +3081,28 @@ void CAIMgr::LoadGame( CFile* pFile )
 
     try
     {
-        Load( pFile );  // does the CAIMgr data and includes messages
+        Load( ar );  // does the CAIMgr data and includes messages
 
         if ( m_plUnits == NULL )
             CreateCAUnits( );
-        m_plUnits->Load( pFile );
+        m_plUnits->Load( ar );
 
         if ( m_pMap == NULL )
             CreateMap( );
-        m_pMap->Load( pFile, m_plUnits );
+        m_pMap->Load( ar, m_plUnits );
 
         if ( m_plOpFors == NULL )
             CreateOpFors( );
-        m_plOpFors->Load( pFile );
+        m_plOpFors->Load( ar );
 
         if ( m_pGoalMgr == NULL )
             m_pGoalMgr = new CAIGoalMgr( TRUE, m_iPlayer, m_pMap, m_plUnits, m_plOpFors );
-        m_pGoalMgr->Load( pFile, m_pMap, m_plUnits, m_plOpFors );
-        // m_pTaskMgr->Load( pFile );
+        m_pGoalMgr->Load( ar, m_pMap, m_plUnits, m_plOpFors );
+        // m_pTaskMgr->Load( ar );
 
         if ( m_pRouter == NULL )
             m_pRouter = new CAIRouter( m_pMap, m_plUnits, m_iPlayer );
-        m_pRouter->Load( pFile, m_plUnits );
+        m_pRouter->Load( ar, m_plUnits );
     }
     catch ( CFileException* theException )
     {
@@ -3118,7 +3129,7 @@ void CAIMgr::LoadGame( CFile* pFile )
     }
 }
 
-void CAIMgr::Load( CFile* pFile )
+void CAIMgr::Load( CArchive& ar )
 {
     // CAIHexBuff aiHexBuff;
 
@@ -3159,17 +3170,17 @@ void CAIMgr::Load( CFile* pFile )
     int iCnt;
     try
     {
-        pFile->Read( (void*)&iCnt, sizeof( int ) );
+        ar >> iCnt;
         m_iPlayer = iCnt;
-        pFile->Read( (void*)&iCnt, sizeof( BOOL ) );
+        ar >> iCnt;
         m_bIsAI = iCnt;
-        pFile->Read( (void*)&iCnt, sizeof( int ) );
+        ar >> iCnt;
         m_iBlockX = iCnt;
-        pFile->Read( (void*)&iCnt, sizeof( int ) );
+        ar >> iCnt;
         m_iBlockY = iCnt;
 
         // now get the count of m_plMsgQueue messages
-        pFile->Read( (void*)&iCnt, sizeof( int ) );
+        ar >> iCnt;
     }
     catch ( CFileException* theException )
     {
@@ -3182,23 +3193,18 @@ void CAIMgr::Load( CFile* pFile )
     // get count of the prioritized messages
     if ( iCnt )
     {
-        int iBytes;
         for ( int i = 0; i < iCnt; ++i )
         {
             // read file data into buffer
             try
             {
-                iBytes = pFile->Read( (void*)&mbMessage, sizeof( MsgBuff ) );
+                ar.Read( &mbMessage, sizeof( MsgBuff ) );
             }
             catch ( CFileException* theException )
             {
                 // how should read errors be reported?
                 throw( ERR_CAI_BAD_FILE );
             }
-
-            // BUGBUG how should read errors be reported?
-            if ( iBytes != sizeof( MsgBuff ) )
-                return;
 
             CAIMsg* pMsg = NULL;
             try
@@ -3234,7 +3240,7 @@ void CAIMgr::Load( CFile* pFile )
     try
     {
         // now get the count of m_plTmpQueue messages
-        pFile->Read( (void*)&iCnt, sizeof( int ) );
+        ar >> iCnt;
     }
     catch ( CException* anException )
     {
@@ -3244,23 +3250,18 @@ void CAIMgr::Load( CFile* pFile )
 
     if ( iCnt )
     {
-        int iBytes;
         for ( int i = 0; i < iCnt; ++i )
         {
             // read file data into buffer
             try
             {
-                iBytes = pFile->Read( (void*)&mbMessage, sizeof( MsgBuff ) );
+                ar.Read( &mbMessage, sizeof( MsgBuff ) );
             }
             catch ( CFileException* theException )
             {
                 // how should read errors be reported?
                 throw( ERR_CAI_BAD_FILE );
             }
-
-            // BUGBUG how should read errors be reported?
-            if ( iBytes != sizeof( MsgBuff ) )
-                return;
 
             CAIMsg* pMsg = NULL;
             try

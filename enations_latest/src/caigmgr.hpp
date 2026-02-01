@@ -244,9 +244,9 @@ public:
 	//void GetPatrolPoints( CAITask *pTask );
 	
 	// BUGBUG need to know what/how save/loads are to occur
-	void Load( CFile *pFile, CAIMap *pMap, 
+    void Load( CArchive& ar, CAIMap* pMap, 
 		CAIUnitList *plUnits, CAIOpForList *plOpFors );
-	void Save( CFile *pFile );
+    void Save( CArchive& ar );
 
 	void ClearVehGoals( void );
 	void ClearVehSummary( void );

@@ -114,8 +114,8 @@ public:
 	void GetRoadHex( CHexCoord& hexSite );
 	void GetCraneHex( CHexCoord& hexSite, CHexCoord& hexCrane );
 
-	void Save( CFile *pFile );
-	void Load( CFile *pFile, CAIUnitList *plUnits );
+	void Save( CArchive& ar );
+    void Load( CArchive& ar, CAIUnitList* plUnits );
 };
 
 #endif // __CAIMAP_HPP__

@@ -2598,13 +2598,12 @@ BOOL CAIRouter::BuildingNeedsAlways( CAIUnit* pBldg )
     }
     return ( bNeedsAlways );
 }
-
-void CAIRouter::Save( CFile* pFile )
+void CAIRouter::Save( CArchive& ar )
 {
     try
     {
-        pFile->Write( (const void*)&m_iPlayer, sizeof( int ) );
-        pFile->Write( (const void*)&m_dwRocket, sizeof( DWORD ) );
+        ar << m_iPlayer;
+        ar << m_dwRocket;
     }
     catch ( CFileException* theException )
     {
@@ -2619,7 +2618,7 @@ void CAIRouter::Save( CFile* pFile )
     int iCnt = m_plTrucksAvailable->GetCount( );
     try
     {
-        pFile->Write( (const void*)&iCnt, sizeof( int ) );
+        ar << iCnt;
     }
     catch ( CFileException* theException )
     {
@@ -2637,7 +2636,7 @@ void CAIRouter::Save( CFile* pFile )
                 DWORD dwID = pUnit->GetID( );
                 try
                 {
-                    pFile->Write( (const void*)&dwID, sizeof( DWORD ) );
+                    ar << dwID;
                 }
                 catch ( CFileException* theException )
                 {
@@ -2652,7 +2651,7 @@ void CAIRouter::Save( CFile* pFile )
     iCnt = m_plBldgsNeed->GetCount( );
     try
     {
-        pFile->Write( (const void*)&iCnt, sizeof( int ) );
+        ar << iCnt;
     }
     catch ( CFileException* theException )
     {
@@ -2670,7 +2669,7 @@ void CAIRouter::Save( CFile* pFile )
                 DWORD dwID = pUnit->GetID( );
                 try
                 {
-                    pFile->Write( (const void*)&dwID, sizeof( DWORD ) );
+                    ar << dwID;
                 }
                 catch ( CFileException* theException )
                 {
@@ -2682,7 +2681,7 @@ void CAIRouter::Save( CFile* pFile )
     }
 }
 
-void CAIRouter::Load( CFile* pFile, CAIUnitList* plUnits )
+void CAIRouter::Load( CArchive& ar, CAIUnitList* plUnits )
 {
     // newly loaded units
     m_plUnits = plUnits;
@@ -2690,8 +2689,8 @@ void CAIRouter::Load( CFile* pFile, CAIUnitList* plUnits )
     // first get the player id
     try
     {
-        pFile->Read( (void*)&m_iPlayer, sizeof( int ) );
-        pFile->Read( (void*)&m_dwRocket, sizeof( DWORD ) );
+        ar >> m_iPlayer;
+        ar >> m_dwRocket;
     }
     catch ( CException* anException )
     {
@@ -2743,7 +2742,7 @@ void CAIRouter::Load( CFile* pFile, CAIUnitList* plUnits )
     // now get count of trucks
     try
     {
-        pFile->Read( (void*)&iCnt, sizeof( int ) );
+        ar >> iCnt;
     }
     catch ( CException* anException )
     {
@@ -2755,7 +2754,7 @@ void CAIRouter::Load( CFile* pFile, CAIUnitList* plUnits )
     {
         try
         {
-            pFile->Read( (void*)&dwID, sizeof( DWORD ) );
+            ar >> dwID;
         }
         catch ( CException* anException )
         {
@@ -2773,7 +2772,7 @@ void CAIRouter::Load( CFile* pFile, CAIUnitList* plUnits )
     // now get count of buildings in need
     try
     {
-        pFile->Read( (void*)&iCnt, sizeof( int ) );
+        ar >> iCnt;
     }
     catch ( CException* anException )
     {
@@ -2785,7 +2784,7 @@ void CAIRouter::Load( CFile* pFile, CAIUnitList* plUnits )
     {
         try
         {
-            pFile->Read( (void*)&dwID, sizeof( DWORD ) );
+            ar >> dwID;
         }
         catch ( CException* anException )
         {

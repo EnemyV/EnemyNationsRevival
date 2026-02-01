@@ -112,10 +112,10 @@ public:
 
 	void ReplaceRocket( CAIMsg *pMsg );
 	void SetInitialPos( void );
-	void SaveGame( CFile *pFile );
-	void Save( CFile *pFile );
-	void LoadGame( CFile *pFile );
-	void Load( CFile *pFile );
+    void SaveGame( CArchive& ar );
+    void Save( CArchive& ar );
+    void LoadGame( CArchive& ar );
+    void Load( CArchive& ar );
 
 	void AssumeControl( int iBlockX, int iBlockY );
 	void CreateData( int iBlockX, int iBlockY );

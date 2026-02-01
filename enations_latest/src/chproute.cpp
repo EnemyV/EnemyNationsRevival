@@ -5642,15 +5642,14 @@ BOOL CHPRouter::IsTruck( DWORD dwID )
     return FALSE;
 }
 
-
-void CHPRouter::Save( CFile* pFile )
+void CHPRouter::Save( CArchive& ar )
 {
     // ar.Flush();
     // CFile *pFile = ar.GetFile();
 
     try
     {
-        pFile->Write( (const void*)&m_dwRocket, sizeof( DWORD ) );
+        ar << m_dwRocket;
     }
     catch ( CFileException* theException )
     {
@@ -5660,11 +5659,11 @@ void CHPRouter::Save( CFile* pFile )
 
     try
     {
-        pFile->Write( (const void*)&m_iPlayer, sizeof( int ) );
-        pFile->Write( (const void*)&m_bLastLumber, sizeof( BOOL ) );
-        pFile->Write( (const void*)&m_bLastCoal, sizeof( BOOL ) );
-        pFile->Write( (const void*)&m_bLastIron, sizeof( BOOL ) );
-        pFile->Write( (const void*)&m_bLastSmelter, sizeof( BOOL ) );
+        ar << m_iPlayer;
+        ar << m_bLastLumber;
+        ar << m_bLastCoal;
+        ar << m_bLastIron;
+        ar << m_bLastSmelter;
     }
     catch ( CFileException* theException )
     {
@@ -5673,7 +5672,7 @@ void CHPRouter::Save( CFile* pFile )
     }
 
     // save the units
-    m_plUnits->Save( pFile );
+    m_plUnits->Save( ar );
 
     // save the count and just the DWORD id of units in the
     // the available truck and building needs lists
@@ -5682,7 +5681,7 @@ void CHPRouter::Save( CFile* pFile )
     int iCnt = m_plTrucksAvailable->GetCount( );
     try
     {
-        pFile->Write( (const void*)&iCnt, sizeof( int ) );
+        ar << iCnt;
     }
     catch ( CFileException* theException )
     {
@@ -5700,7 +5699,7 @@ void CHPRouter::Save( CFile* pFile )
                 DWORD dwID = pUnit->GetID( );
                 try
                 {
-                    pFile->Write( (const void*)&dwID, sizeof( DWORD ) );
+                    ar << dwID;
                 }
                 catch ( CFileException* theException )
                 {
@@ -5716,7 +5715,7 @@ void CHPRouter::Save( CFile* pFile )
     iCnt = m_plShipsAvailable->GetCount( );
     try
     {
-        pFile->Write( (const void*)&iCnt, sizeof( int ) );
+        ar << iCnt;
     }
     catch ( CFileException* theException )
     {
@@ -5734,7 +5733,7 @@ void CHPRouter::Save( CFile* pFile )
                 DWORD dwID = pUnit->GetID( );
                 try
                 {
-                    pFile->Write( (const void*)&dwID, sizeof( DWORD ) );
+                    ar << dwID;
                 }
                 catch ( CFileException* theException )
                 {
@@ -5749,7 +5748,7 @@ void CHPRouter::Save( CFile* pFile )
     iCnt = m_plBldgsNeed->GetCount( );
     try
     {
-        pFile->Write( (const void*)&iCnt, sizeof( int ) );
+        ar << iCnt;
     }
     catch ( CFileException* theException )
     {
@@ -5767,7 +5766,7 @@ void CHPRouter::Save( CFile* pFile )
                 DWORD dwID = pUnit->GetID( );
                 try
                 {
-                    pFile->Write( (const void*)&dwID, sizeof( DWORD ) );
+                    ar << dwID;
                 }
                 catch ( CFileException* theException )
                 {
@@ -5779,7 +5778,7 @@ void CHPRouter::Save( CFile* pFile )
     }
 }
 
-void CHPRouter::Load( CFile* pFile )
+void CHPRouter::Load( CArchive& ar )
 {
     /*
     ar.Flush();
@@ -5790,7 +5789,7 @@ void CHPRouter::Load( CFile* pFile )
 
     try
     {
-        pFile->Read( (void*)&m_dwRocket, sizeof( DWORD ) );
+        ar >> m_dwRocket;
     }
     catch ( CException* anException )
     {
@@ -5801,11 +5800,11 @@ void CHPRouter::Load( CFile* pFile )
     // first get the player id
     try
     {
-        pFile->Read( (void*)&m_iPlayer, sizeof( int ) );
-        pFile->Read( (void*)&m_bLastLumber, sizeof( BOOL ) );
-        pFile->Read( (void*)&m_bLastCoal, sizeof( BOOL ) );
-        pFile->Read( (void*)&m_bLastIron, sizeof( BOOL ) );
-        pFile->Read( (void*)&m_bLastSmelter, sizeof( BOOL ) );
+        ar >> m_iPlayer;
+        ar >> m_bLastLumber;
+        ar >> m_bLastCoal;
+        ar >> m_bLastIron;
+        ar >> m_bLastSmelter;
     }
     catch ( CException* anException )
     {
@@ -5835,7 +5834,7 @@ void CHPRouter::Load( CFile* pFile )
         throw( ERR_CAI_BAD_NEW );
     }
     // and load them
-    m_plUnits->Load( pFile );
+    m_plUnits->Load( ar );
 
 
     // make sure lists are empty and valid
@@ -5900,7 +5899,7 @@ void CHPRouter::Load( CFile* pFile )
     // now get count of trucks
     try
     {
-        pFile->Read( (void*)&iCnt, sizeof( int ) );
+        ar >> iCnt;
     }
     catch ( CException* anException )
     {
@@ -5912,7 +5911,7 @@ void CHPRouter::Load( CFile* pFile )
     {
         try
         {
-            pFile->Read( (void*)&dwID, sizeof( DWORD ) );
+            ar >> dwID;
         }
         catch ( CException* anException )
         {
@@ -5928,7 +5927,7 @@ void CHPRouter::Load( CFile* pFile )
     // get a count of the ships available
     try
     {
-        pFile->Read( (void*)&iCnt, sizeof( int ) );
+        ar >> iCnt;
     }
     catch ( CException* anException )
     {
@@ -5940,7 +5939,7 @@ void CHPRouter::Load( CFile* pFile )
     {
         try
         {
-            pFile->Read( (void*)&dwID, sizeof( DWORD ) );
+            ar >> dwID;
         }
         catch ( CException* anException )
         {
@@ -5955,7 +5954,7 @@ void CHPRouter::Load( CFile* pFile )
     // now get count of buildings in need
     try
     {
-        pFile->Read( (void*)&iCnt, sizeof( int ) );
+        ar >> iCnt;
     }
     catch ( CException* anException )
     {
@@ -5967,7 +5966,7 @@ void CHPRouter::Load( CFile* pFile )
     {
         try
         {
-            pFile->Read( (void*)&dwID, sizeof( DWORD ) );
+            ar >> dwID;
         }
         catch ( CException* anException )
         {

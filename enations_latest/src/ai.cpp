@@ -423,8 +423,6 @@ void AiMessage( DWORD dwID, CNetCmd const* pMsg, int )
 
 void AiSaveGame( CArchive& ar )
 {
-    ar.Flush( );
-    CFile* pFile = ar.GetFile( );
 
     CAIHexBuff aiHexBuff;
 
@@ -438,25 +436,24 @@ void AiSaveGame( CArchive& ar )
     try
     {
         // the CGameData object stuff
-        pFile->Write( (const void*)&pGameData->m_iSmart, sizeof( int ) );
-        pFile->Write( (const void*)&pGameData->m_iNumAi, sizeof( int ) );
-        pFile->Write( (const void*)&pGameData->m_iNumHuman, sizeof( int ) );
-        pFile->Write( (const void*)&pGameData->m_iHexPerBlk, sizeof( int ) );
-        pFile->Write( (const void*)&pGameData->m_iBlkPerSide, sizeof( int ) );
-        pFile->Write( (const void*)&pGameData->m_iStructureSize, sizeof( int ) );
-        pFile->Write( (const void*)&pGameData->m_iNumTransports, sizeof( int ) );
-        pFile->Write( (const void*)&pGameData->m_iNumBuildings, sizeof( int ) );
+        ar << pGameData->m_iSmart;
+        ar << pGameData->m_iNumAi;
+        ar << pGameData->m_iNumHuman;
+        ar << pGameData->m_iHexPerBlk;
+        ar << pGameData->m_iBlkPerSide;
+        ar << pGameData->m_iStructureSize;
+        ar << pGameData->m_iNumTransports;
+        ar << pGameData->m_iNumBuildings;
+
         // mineral densities
         for ( int i = 0; i < CMaterialTypes::num_types; ++i )
         {
-            CAIHex* paiHex     = &pGameData->m_paihDensity[i];
-            aiHexBuff.iX       = paiHex->m_iX;
-            aiHexBuff.iY       = paiHex->m_iY;
-            aiHexBuff.iUnit    = paiHex->m_iUnit;
-            aiHexBuff.dwUnitID = paiHex->m_dwUnitID;
-            aiHexBuff.cTerrain = paiHex->m_cTerrain;
-
-            pFile->Write( (const void*)&aiHexBuff, sizeof( CAIHexBuff ) );
+            CAIHex* paiHex = &pGameData->m_paihDensity[i];
+            ar << paiHex->m_iX;
+            ar << paiHex->m_iY;
+            ar << paiHex->m_iUnit;
+            ar << paiHex->m_dwUnitID;
+            ar << paiHex->m_cTerrain;
         }
     }
     catch ( CFileException* theException )
@@ -478,7 +475,7 @@ void AiSaveGame( CArchive& ar )
             {
                 ASSERT_VALID( pMgr );
 
-                pMgr->SaveGame( pFile );
+                pMgr->SaveGame( ar );
             }
         }
     }
@@ -517,11 +514,6 @@ void AiLoadGame( CArchive& ar, BOOL bLocal )
 //    if ( pException == NULL )
 //        pException = new CException( );
 
-    ar.Flush( );
-    CFile* pFile = ar.GetFile( );
-    if ( pFile == NULL )
-        throw( ERR_CAI_BAD_FILE );
-
     // the CGameData stuff should be loaded separately from
     // the CAMgr stuff
 
@@ -531,38 +523,29 @@ void AiLoadGame( CArchive& ar, BOOL bLocal )
 
     try
     {
-        pFile->Read( (void*)&iCnt, sizeof( int ) );
-        pGameData->m_iSmart = iCnt;
-        pFile->Read( (void*)&iCnt, sizeof( int ) );
-        pGameData->m_iNumAi = iCnt;
-        pFile->Read( (void*)&iCnt, sizeof( int ) );
-        pGameData->m_iNumHuman = iCnt;
-        pFile->Read( (void*)&iCnt, sizeof( int ) );
-        pGameData->m_iHexPerBlk = iCnt;
-        pFile->Read( (void*)&iCnt, sizeof( int ) );
-        pGameData->m_iBlkPerSide = iCnt;
-        pFile->Read( (void*)&iCnt, sizeof( int ) );
-        pGameData->m_iStructureSize = iCnt;
-        pFile->Read( (void*)&iCnt, sizeof( int ) );
-        pGameData->m_iNumTransports = iCnt;
-        pFile->Read( (void*)&iCnt, sizeof( int ) );
-        pGameData->m_iNumBuildings = iCnt;
+        ar >> pGameData->m_iSmart;
+        ar >> pGameData->m_iNumAi;
+        ar >> pGameData->m_iNumHuman;
+        ar >> pGameData->m_iHexPerBlk;
+        ar >> pGameData->m_iBlkPerSide;
+        ar >> pGameData->m_iStructureSize;
+        ar >> pGameData->m_iNumTransports;
+        ar >> pGameData->m_iNumBuildings;
 
         // mineral densities
         if ( pGameData->m_paihDensity == NULL )
             pGameData->m_paihDensity = new CAIHex[CMaterialTypes::num_types];
+
         for ( int i = 0; i < CMaterialTypes::num_types; ++i )
         {
-            int iBytes = pFile->Read( (void*)&aiHexBuff, sizeof( CAIHexBuff ) );
-
             CAIHex* paiHex = &pGameData->m_paihDensity[i];
-
-            paiHex->m_iX       = aiHexBuff.iX;
-            paiHex->m_iY       = aiHexBuff.iY;
-            paiHex->m_iUnit    = aiHexBuff.iUnit;
-            paiHex->m_dwUnitID = aiHexBuff.dwUnitID;
-            paiHex->m_cTerrain = aiHexBuff.cTerrain;
+            ar >> paiHex->m_iX;
+            ar >> paiHex->m_iY;
+            ar >> paiHex->m_iUnit;
+            ar >> paiHex->m_dwUnitID;
+            ar >> paiHex->m_cTerrain;
         }
+
         int i = pGameData->m_iHexPerBlk * pGameData->m_iBlkPerSide;
 
         // if not local we're done now
@@ -605,7 +588,7 @@ void AiLoadGame( CArchive& ar, BOOL bLocal )
             // make pointer to this CAIMgr available to the game
             pPlr->SetAiHdl( (DWORD)pAIMgr );
 
-            pAIMgr->LoadGame( pFile );
+            pAIMgr->LoadGame( ar );
         }
     }
 }

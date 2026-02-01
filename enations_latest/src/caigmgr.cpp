@@ -10139,12 +10139,7 @@ CAITask* CAIGoalMgr::GetPatrolTask( int iType )
     return ( pPickedTask );
 }
 
-
-//
-// an existing game is being re-started, so goals should come
-// from data out of a saved game file
-//
-void CAIGoalMgr::Load( CFile* pFile, CAIMap* pMap, CAIUnitList* plUnits, CAIOpForList* plOpFors )
+void CAIGoalMgr::Load( CArchive& ar, CAIMap* pMap, CAIUnitList* plUnits, CAIOpForList* plOpFors )
 {
     m_pMap     = pMap;
     m_plUnits  = plUnits;
@@ -10153,208 +10148,211 @@ void CAIGoalMgr::Load( CFile* pFile, CAIMap* pMap, CAIUnitList* plUnits, CAIOpFo
     m_iNeedApt    = FALSE;
     m_iNeedOffice = FALSE;
 
-    // get rocket id
-    pFile->Read( (void*)&m_dwRocket, sizeof( DWORD ) );
-    // get guns/butter flag
-    pFile->Read( (void*)&m_bGunsOrButter, sizeof( BOOL ) );
-    // get last food value
-    pFile->Read( (void*)&m_iLastFood, sizeof( int ) );
-    pFile->Read( (void*)&m_iScenario, sizeof( int ) );
-    pFile->Read( (void*)&m_bOceanWorld, sizeof( BOOL ) );
-    pFile->Read( (void*)&m_bLakeWorld, sizeof( BOOL ) );
-    // not saving m_bNeedTrucks so it will be reset naturally
-
-    // first, make sure goal list is empty
-    if ( m_plGoalList != NULL )
-        m_plGoalList->DeleteList( );
-
-    int iCnt;
-    pFile->Read( (void*)&iCnt, sizeof( int ) );
-
-    // if there are goals to read
-    if ( iCnt )
+    try
     {
-        GoalBuff goalbuffer;
-        int      iBytes;
-        for ( int i = 0; i < iCnt; ++i )
+        // get rocket id
+        ar >> m_dwRocket;
+        // get guns/butter flag
+        ar >> m_bGunsOrButter;
+        // get last food value
+        ar >> m_iLastFood;
+        ar >> m_iScenario;
+        ar >> m_bOceanWorld;
+        ar >> m_bLakeWorld;
+        // not saving m_bNeedTrucks so it will be reset naturally
+
+        // first, make sure goal list is empty
+        if ( m_plGoalList != NULL )
+            m_plGoalList->DeleteList( );
+
+        int iCnt;
+        ar >> iCnt;
+
+        // if there are goals to read
+        if ( iCnt )
         {
-            // read file data into buffer
-            iBytes = pFile->Read( (void*)&goalbuffer, sizeof( GoalBuff ) );
-
-            if ( iBytes != sizeof( GoalBuff ) )
-                return;
-
-            // count actual tasks for this goal
-            int j = 0;
-            for ( ; j < NUM_INITIAL_GOALS; ++j )
+            GoalBuff goalbuffer;
+            for ( int i = 0; i < iCnt; ++i )
             {
-                if ( !goalbuffer.iTasks[j] )
-                    break;
+                // read file data into buffer
+                ar.Read( (void*)&goalbuffer, sizeof( GoalBuff ) );
+
+                // count actual tasks for this goal
+                int j = 0;
+                for ( ; j < NUM_INITIAL_GOALS; ++j )
+                {
+                    if ( !goalbuffer.iTasks[j] )
+                        break;
+                }
+                // j contains number of actual tasks
+                // create array for tasks
+                CWordArray* pwaTasks = new CWordArray( );
+                pwaTasks->SetSize( j );
+                for ( j = 0; j < pwaTasks->GetSize( ); ++j ) pwaTasks->SetAt( j, goalbuffer.iTasks[j] );
+
+                // CAIGoal( WORD wID, BYTE cType, CWordArray *pwaTasks );
+                CAIGoal* pGoal = new CAIGoal( (WORD)goalbuffer.iID, (BYTE)goalbuffer.iType, pwaTasks );
+                m_plGoalList->AddTail( (CObject*)pGoal );
+
+                // clean up array
+                pwaTasks->RemoveAll( );
+                delete pwaTasks;
             }
-            // j contains number of actual tasks
-            // create array for tasks
-            CWordArray* pwaTasks = new CWordArray( );
-            pwaTasks->SetSize( j );
-            for ( j = 0; j < pwaTasks->GetSize( ); ++j ) pwaTasks->SetAt( j, goalbuffer.iTasks[j] );
-
-            // CAIGoal( WORD wID, BYTE cType, CWordArray *pwaTasks );
-            CAIGoal* pGoal = new CAIGoal( (WORD)goalbuffer.iID, (BYTE)goalbuffer.iType, pwaTasks );
-            m_plGoalList->AddTail( (CObject*)pGoal );
-
-            // clean up array
-            pwaTasks->RemoveAll( );
-            delete pwaTasks;
         }
-    }
 
-    TaskBuff taskbuffer;
-    // make sure task list is empty
-    if ( m_plTasks != NULL )
-        m_plTasks->DeleteList( );
+        TaskBuff taskbuffer;
+        // make sure task list is empty
+        if ( m_plTasks != NULL )
+            m_plTasks->DeleteList( );
 
-    // now, read count of tasks
-    pFile->Read( (void*)&iCnt, sizeof( int ) );
+        // now, read count of tasks
+        ar >> iCnt;
 
-    if ( iCnt )
-    {
-        int iBytes;
-        for ( int i = 0; i < iCnt; ++i )
+        if ( iCnt )
         {
-            // read file data into buffer
-            iBytes = pFile->Read( (void*)&taskbuffer, sizeof( TaskBuff ) );
+            for ( int i = 0; i < iCnt; ++i )
+            {
+                // read file data into buffer
+                ar.Read( (void*)&taskbuffer, sizeof( TaskBuff ) );
 
-            if ( iBytes != sizeof( TaskBuff ) )
-                return;
+                // create array for tasks params
+                CWordArray* pwaParams = new CWordArray( );
+                pwaParams->SetSize( MAX_TASKPARAMS );
+                for ( int j = 0; j < pwaParams->GetSize( ); ++j ) pwaParams->SetAt( j, taskbuffer.iParams[j] );
+                //	CAITask( WORD wID, BYTE cType, BYTE cPriority,
+                //		WORD wOrderID, CWordArray *pwaParams );
+                CAITask* pTask = new CAITask( (WORD)taskbuffer.iID, (BYTE)taskbuffer.iType, (BYTE)taskbuffer.iPriority,
+                                              (WORD)taskbuffer.iOrderID, pwaParams );
 
-            // create array for tasks params
-            CWordArray* pwaParams = new CWordArray( );
-            pwaParams->SetSize( MAX_TASKPARAMS );
-            for ( int j = 0; j < pwaParams->GetSize( ); ++j ) pwaParams->SetAt( j, taskbuffer.iParams[j] );
-            //	CAITask( WORD wID, BYTE cType, BYTE cPriority,
-            //		WORD wOrderID, CWordArray *pwaParams );
-            CAITask* pTask = new CAITask( (WORD)taskbuffer.iID, (BYTE)taskbuffer.iType, (BYTE)taskbuffer.iPriority,
-                                          (WORD)taskbuffer.iOrderID, pwaParams );
+                pTask->SetGoalID( (WORD)taskbuffer.iGoal );
 
-            pTask->SetGoalID( (WORD)taskbuffer.iGoal );
+                m_plTasks->AddTail( (CObject*)pTask );
 
-            m_plTasks->AddTail( (CObject*)pTask );
-
-            // clean up array
-            pwaParams->RemoveAll( );
-            delete pwaParams;
+                // clean up array
+                pwaParams->RemoveAll( );
+                delete pwaParams;
+            }
         }
+
+        // now do all the arrays,
+        // which means the arrays have to be set up
+        // but not necessarily initialized as the load does that
+
+        ar.Read( (void*)m_pwaRatios, ( sizeof( WORD ) * m_iNumRatios ) );
+        ar.Read( (void*)m_pwaUnits, ( sizeof( WORD ) * m_iNumUnits ) );
+        ar.Read( (void*)m_pwaBldgs, ( sizeof( WORD ) * m_iNumBldgs ) );
+        ar.Read( (void*)m_pwaMatOnHand, ( sizeof( WORD ) * m_iNumMats ) );
+        ar.Read( (void*)m_pwaAttribs, ( sizeof( WORD ) * m_iNumAttribs ) );
+        ar.Read( (void*)m_pwaBldgGoals, ( sizeof( WORD ) * m_iNumBldgs ) );
+        ar.Read( (void*)m_pwaVehGoals, ( sizeof( WORD ) * m_iNumUnits ) );
+        ar.Read( (void*)m_pwaMatGoals, ( sizeof( WORD ) * m_iNumMats ) );
+        ar.Read( (void*)m_iRDPath, ( sizeof( int ) * CRsrchArray::num_types ) );
     }
-
-    // now do all the arrays,
-    // which means the arrays have to be set up
-    // but not necessarily initialized as the load does that
-
-    pFile->Read( (void*)m_pwaRatios, ( sizeof( WORD ) * m_iNumRatios ) );
-    pFile->Read( (void*)m_pwaUnits, ( sizeof( WORD ) * m_iNumUnits ) );
-    pFile->Read( (void*)m_pwaBldgs, ( sizeof( WORD ) * m_iNumBldgs ) );
-    pFile->Read( (void*)m_pwaMatOnHand, ( sizeof( WORD ) * m_iNumMats ) );
-    pFile->Read( (void*)m_pwaAttribs, ( sizeof( WORD ) * m_iNumAttribs ) );
-    pFile->Read( (void*)m_pwaBldgGoals, ( sizeof( WORD ) * m_iNumBldgs ) );
-    pFile->Read( (void*)m_pwaVehGoals, ( sizeof( WORD ) * m_iNumUnits ) );
-    pFile->Read( (void*)m_pwaMatGoals, ( sizeof( WORD ) * m_iNumMats ) );
-    pFile->Read( (void*)m_iRDPath, ( sizeof( int ) * CRsrchArray::num_types ) );
+    catch ( CFileException* /*theException*/ )
+    {
+        throw( ERR_CAI_BAD_FILE );
+    }
 
     // after a load, the lists should all be reinitialized
     m_bGoalChange = TRUE;
 }
-//
-// save goals data as an existing game into a saved game file
-//
-void CAIGoalMgr::Save( CFile* pFile )
+void CAIGoalMgr::Save( CArchive& ar )
 {
-    // save rocket id
-    pFile->Write( (const void*)&m_dwRocket, sizeof( DWORD ) );
-    // save guns/butter flag
-    pFile->Write( (const void*)&m_bGunsOrButter, sizeof( BOOL ) );
-    // save last food value
-    pFile->Write( (const void*)&m_iLastFood, sizeof( int ) );
-    pFile->Write( (const void*)&m_iScenario, sizeof( int ) );
-    pFile->Write( (const void*)&m_bOceanWorld, sizeof( BOOL ) );
-    pFile->Write( (const void*)&m_bLakeWorld, sizeof( BOOL ) );
-
-
-    GoalBuff goalbuffer;
-
-    // next, write count of goals
-    int iCnt = m_plGoalList->GetCount( );
-    pFile->Write( (const void*)&iCnt, sizeof( int ) );
-
-    // if there are goals to write
-    if ( iCnt )
+    try
     {
-        POSITION pos = m_plGoalList->GetHeadPosition( );
-        while ( pos != NULL )
+        // save rocket id
+        ar << m_dwRocket;
+        // save guns/butter flag
+        ar << m_bGunsOrButter;
+        // save last food value
+        ar << m_iLastFood;
+        ar << m_iScenario;
+        ar << m_bOceanWorld;
+        ar << m_bLakeWorld;
+
+        GoalBuff goalbuffer;
+
+        // next, write count of goals
+        int iCnt = m_plGoalList->GetCount( );
+        ar << iCnt;
+
+        // if there are goals to write
+        if ( iCnt )
         {
-            CAIGoal* pGoal = (CAIGoal*)m_plGoalList->GetNext( pos );
-            if ( pGoal != NULL )
+            POSITION pos = m_plGoalList->GetHeadPosition( );
+            while ( pos != NULL )
             {
-                ASSERT_VALID( pGoal );
-
-                // move data to buffer
-                goalbuffer.iID   = (int)pGoal->GetID( );
-                goalbuffer.iType = (int)pGoal->GetType( );
-
-                for ( int i = 0; i < NUM_INITIAL_GOALS; ++i ) goalbuffer.iTasks[i] = 0;
-
-                int i = 0;
-                while ( pGoal->GetTaskAt( i ) )
+                CAIGoal* pGoal = (CAIGoal*)m_plGoalList->GetNext( pos );
+                if ( pGoal != NULL )
                 {
-                    goalbuffer.iTasks[i] = (int)pGoal->GetTaskAt( i );
-                    ++i;
+                    ASSERT_VALID( pGoal );
+
+                    // move data to buffer
+                    goalbuffer.iID   = (int)pGoal->GetID( );
+                    goalbuffer.iType = (int)pGoal->GetType( );
+
+                    for ( int i = 0; i < NUM_INITIAL_GOALS; ++i ) goalbuffer.iTasks[i] = 0;
+
+                    int i = 0;
+                    while ( pGoal->GetTaskAt( i ) )
+                    {
+                        goalbuffer.iTasks[i] = (int)pGoal->GetTaskAt( i );
+                        ++i;
+                    }
+
+                    // now write buffer out
+                    ar.Write( (const void*)&goalbuffer, sizeof( GoalBuff ) );
                 }
-
-                // now write buffer out
-                pFile->Write( (const void*)&goalbuffer, sizeof( GoalBuff ) );
             }
         }
-    }
 
-    // now, write count of tasks
-    iCnt = m_plTasks->GetCount( );
-    pFile->Write( (const void*)&iCnt, sizeof( int ) );
+        // now, write count of tasks
+        iCnt = m_plTasks->GetCount( );
+        ar << iCnt;
 
-    if ( iCnt )
-    {
-        TaskBuff taskbuffer;
-        POSITION pos = m_plTasks->GetHeadPosition( );
-        while ( pos != NULL )
+        if ( iCnt )
         {
-            CAITask* pTask = (CAITask*)m_plTasks->GetNext( pos );
-            if ( pTask != NULL )
+            TaskBuff taskbuffer;
+            POSITION pos = m_plTasks->GetHeadPosition( );
+            while ( pos != NULL )
             {
-                ASSERT_VALID( pTask );
+                CAITask* pTask = (CAITask*)m_plTasks->GetNext( pos );
+                if ( pTask != NULL )
+                {
+                    ASSERT_VALID( pTask );
 
-                // move data to buffer
-                taskbuffer.iID       = (int)pTask->GetID( );
-                taskbuffer.iGoal     = (int)pTask->GetGoalID( );
-                taskbuffer.iType     = (int)pTask->GetType( );
-                taskbuffer.iPriority = (int)pTask->GetPriority( );
-                taskbuffer.iOrderID  = (int)pTask->GetOrderID( );
+                    // move data to buffer
+                    taskbuffer.iID       = (int)pTask->GetID( );
+                    taskbuffer.iGoal     = (int)pTask->GetGoalID( );
+                    taskbuffer.iType     = (int)pTask->GetType( );
+                    taskbuffer.iPriority = (int)pTask->GetPriority( );
+                    taskbuffer.iOrderID  = (int)pTask->GetOrderID( );
 
-                for ( int i = 0; i < MAX_TASKPARAMS; ++i ) taskbuffer.iParams[i] = 0;
-                for ( int i = 0; i < MAX_TASKPARAMS; ++i ) taskbuffer.iParams[i] = (int)pTask->GetTaskParam( i );
+                    for ( int i = 0; i < MAX_TASKPARAMS; ++i ) taskbuffer.iParams[i] = 0;
+                    for ( int i = 0; i < MAX_TASKPARAMS; ++i ) taskbuffer.iParams[i] = (int)pTask->GetTaskParam( i );
 
-                // now write buffer out
-                pFile->Write( (const void*)&taskbuffer, sizeof( TaskBuff ) );
+                    // now write buffer out
+                    ar.Write( (const void*)&taskbuffer, sizeof( TaskBuff ) );
+                }
             }
         }
+        // now do all the arrays
+        ar.Write( (const void*)m_pwaRatios, ( sizeof( WORD ) * m_iNumRatios ) );
+        ar.Write( (const void*)m_pwaUnits, ( sizeof( WORD ) * m_iNumUnits ) );
+        ar.Write( (const void*)m_pwaBldgs, ( sizeof( WORD ) * m_iNumBldgs ) );
+        ar.Write( (const void*)m_pwaMatOnHand, ( sizeof( WORD ) * m_iNumMats ) );
+        ar.Write( (const void*)m_pwaAttribs, ( sizeof( WORD ) * m_iNumAttribs ) );
+        ar.Write( (const void*)m_pwaBldgGoals, ( sizeof( WORD ) * m_iNumBldgs ) );
+        ar.Write( (const void*)m_pwaVehGoals, ( sizeof( WORD ) * m_iNumUnits ) );
+        ar.Write( (const void*)m_pwaMatGoals, ( sizeof( WORD ) * m_iNumMats ) );
+        ar.Write( (const void*)m_iRDPath, ( sizeof( int ) * CRsrchArray::num_types ) );
     }
-    // now do all the arrays
-    pFile->Write( (const void*)m_pwaRatios, ( sizeof( WORD ) * m_iNumRatios ) );
-    pFile->Write( (const void*)m_pwaUnits, ( sizeof( WORD ) * m_iNumUnits ) );
-    pFile->Write( (const void*)m_pwaBldgs, ( sizeof( WORD ) * m_iNumBldgs ) );
-    pFile->Write( (const void*)m_pwaMatOnHand, ( sizeof( WORD ) * m_iNumMats ) );
-    pFile->Write( (const void*)m_pwaAttribs, ( sizeof( WORD ) * m_iNumAttribs ) );
-    pFile->Write( (const void*)m_pwaBldgGoals, ( sizeof( WORD ) * m_iNumBldgs ) );
-    pFile->Write( (const void*)m_pwaVehGoals, ( sizeof( WORD ) * m_iNumUnits ) );
-    pFile->Write( (const void*)m_pwaMatGoals, ( sizeof( WORD ) * m_iNumMats ) );
-    pFile->Write( (const void*)m_iRDPath, ( sizeof( int ) * CRsrchArray::num_types ) );
+    catch ( CFileException* /*theException*/ )
+    {
+        throw( ERR_CAI_BAD_FILE );
+    }
 }
+
 //
 // clean up on destruction
 //

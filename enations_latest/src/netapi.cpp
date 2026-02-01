@@ -2128,7 +2128,8 @@ static void SetVehDest( CMsgVehSetDest* pMsg )
     ASSERT( ( pVeh->m_hexDest == pMsg->m_hex) ||
             ( ( theBuildingHex.GetBuilding( pVeh->m_hexDest ) != NULL ) &&
               ( theBuildingHex.GetBuilding( pVeh->m_hexDest ) == theBuildingHex.GetBuilding( pMsg->m_hex ) ) ) );
-    #endif
+#endif
+
 #ifdef _LOGOUT
     if ( pVeh->m_hexDest != pMsg->m_hex )
         logPrintf( LOG_PRI_CRITICAL, LOG_VEH_MOVE, "Vehicle %d SetVehDest (%d,%d) changed to (%d,%d)", pMsg->m_dwID,

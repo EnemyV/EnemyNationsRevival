@@ -1393,88 +1393,104 @@ void CAIMap::GetBuildHex( int iBldg, CHexCoord& hexSite )
 			break;
 	}
 }
-
-void CAIMap::Save( CFile *pFile )
+void CAIMap::Save( CArchive& ar )
 {
-	//int iX, iY;
-	//iX = m_RocketHex.X();
-	//iY = m_RocketHex.Y();
-	try
-	{
-		pFile->Write( (const void*)&m_iPlayer, sizeof(int) );
-		pFile->Write( (const void*)&m_wRows, sizeof(WORD) );
-		pFile->Write( (const void*)&m_wCols, sizeof(WORD) );
-		pFile->Write( (const void*)&m_wBaseRow, sizeof(WORD) );
-		pFile->Write( (const void*)&m_wBaseCol, sizeof(WORD) );
-		//pFile->Write( (const void*)&iX, sizeof(int) );
-		//pFile->Write( (const void*)&iY, sizeof(int) );
-		pFile->Write( (const void*)&m_iBaseX, sizeof(int) );
-		pFile->Write( (const void*)&m_iBaseY, sizeof(int) );
-		pFile->Write( (const void*)&m_iMapSize, sizeof(int) );
-		pFile->Write( (const void*)&m_iRoadCount, sizeof(int) );
-		pFile->Write( (const void*)&m_iOcean, sizeof(int) );
-		pFile->Write( (const void*)&m_iLake, sizeof(int) );
-		pFile->Write( (const void*)&m_iLand, sizeof(int) );
-		
-		pFile->Write( (const void*)m_pwaMap, (sizeof(WORD) * m_iMapSize) );
-	}
-    catch( CFileException* theException )
+    // int iX, iY;
+    // iX = m_RocketHex.X();
+    // iY = m_RocketHex.Y();
+    try
     {
-		// BUGBUG how should write errors be reported?
-    	throw(ERR_CAI_BAD_FILE);
+        ar << m_iPlayer;
+        ar << m_wRows;
+        ar << m_wCols;
+        ar << m_wBaseRow;
+        ar << m_wBaseCol;
+        // pFile->Write( (const void*)&iX, sizeof(int) );
+        // pFile->Write( (const void*)&iY, sizeof(int) );
+        ar << m_iBaseX;
+        ar << m_iBaseY;
+        ar << m_iMapSize;
+        ar << m_iRoadCount;
+        ar << m_iOcean;
+        ar << m_iLake;
+        ar << m_iLand;
+
+        ar.Write( (const void*)m_pwaMap, ( sizeof( WORD ) * m_iMapSize ) );
     }
-	// save the utility
-	m_pMapUtil->Save( pFile );
+    catch ( CFileException* theException )
+    {
+        // BUGBUG how should write errors be reported?
+        throw( ERR_CAI_BAD_FILE );
+    }
+    // save the utility
+    m_pMapUtil->Save( ar );
 }
 
-void CAIMap::Load( CFile *pFile, CAIUnitList *plUnits )
+void CAIMap::Load( CArchive& ar, CAIUnitList* plUnits )
 {
-	//int iX, iY;
+    // int iX, iY;
 
-		pFile->Read( (void*)&m_iPlayer, sizeof(int) );
-		pFile->Read( (void*)&m_wRows, sizeof(WORD) );
-		pFile->Read( (void*)&m_wCols, sizeof(WORD) );
-		pFile->Read( (void*)&m_wBaseRow, sizeof(WORD) );
-		pFile->Read( (void*)&m_wBaseCol, sizeof(WORD) );
-		//pFile->Read( (void*)&iX, sizeof(int) );
-		//pFile->Read( (void*)&iY, sizeof(int) );
-		pFile->Read( (void*)&m_iBaseX, sizeof(int) );
-		pFile->Read( (void*)&m_iBaseY, sizeof(int) );
-		pFile->Read( (void*)&m_iMapSize, sizeof(int) );
-		pFile->Read( (void*)&m_iRoadCount, sizeof(int) );
-		pFile->Read( (void*)&m_iOcean, sizeof(int) );
-		pFile->Read( (void*)&m_iLake, sizeof(int) );
-		pFile->Read( (void*)&m_iLand, sizeof(int) );
-		
+    try
+    {
+        ar >> m_iPlayer;
+        ar >> m_wRows;
+        ar >> m_wCols;
+        ar >> m_wBaseRow;
+        ar >> m_wBaseCol;
+        // ar >> iX;
+        // ar >> iY;
+        ar >> m_iBaseX;
+        ar >> m_iBaseY;
+        ar >> m_iMapSize;
+        ar >> m_iRoadCount;
+        ar >> m_iOcean;
+        ar >> m_iLake;
+        ar >> m_iLand;
+    }
+    catch ( CFileException* theException )
+    {
+        // how should read errors be reported?
+        throw( ERR_CAI_BAD_FILE );
+    }
 
-	//m_RocketHex.X( iX );
-	//m_RocketHex.Y( iY );
+    // m_RocketHex.X( iX );
+    // m_RocketHex.Y( iY );
 
-	// map size might have changed
+    // map size might have changed
+    if ( m_pwaMap != NULL )
+    {
+        delete[] m_pwaMap;
+        m_pwaMap = NULL;
+    }
+
+    try
+    {
+        m_pwaMap = new WORD[m_iMapSize];
+        memset( m_pwaMap, 0, (size_t)( m_iMapSize * sizeof( WORD ) ) );
+    }
+    catch ( CException* theException )
+    {
         if ( m_pwaMap != NULL )
         {
             delete[] m_pwaMap;
             m_pwaMap = NULL;
         }
+        throw( ERR_CAI_BAD_NEW );
+    }
 
-	try
-	{
-		m_pwaMap = new WORD[m_iMapSize];
-		memset( m_pwaMap, 0, (size_t)(m_iMapSize * sizeof( WORD )) );
-	}
-	catch( CException* theException )
-	{
-		if( m_pwaMap != NULL )
-		{
-			delete [] m_pwaMap;
-			m_pwaMap = NULL;
-		}
-		throw(ERR_CAI_BAD_NEW);
-	}
+    // read raw map buffer
+    try
+    {
+        UINT uBytes = ar.Read( (void*)m_pwaMap, (UINT)( sizeof( WORD ) * m_iMapSize ) );
+        if ( uBytes != (UINT)( sizeof( WORD ) * m_iMapSize ) )
+            throw( ERR_CAI_BAD_FILE );
+    }
+    catch ( CFileException* theException )
+    {
+        throw( ERR_CAI_BAD_FILE );
+    }
 
-	pFile->Read( (void*)m_pwaMap, (sizeof(WORD) * m_iMapSize) );
-
-	m_pMapUtil->Load( pFile, m_pwaMap, plUnits );
+    m_pMapUtil->Load( ar, m_pwaMap, plUnits );
 }
 
 // end of CAIMap.cpp

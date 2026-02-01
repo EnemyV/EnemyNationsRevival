@@ -666,7 +666,9 @@ void CAIData::BuildAt( CHexCoord& hexSite, int iBldg, int iDir, CAIUnit* paiUnit
         // BUGBUG check the vehicle's location and make
         // sure it matches with the hexSite sent in msg
         CHexCoord hexVeh = pVehicle->GetHexHead( );
+#ifdef _DEBUG || STRICTER_ASSERTS
         ASSERT( hexVeh == hexSite );
+#endif
         if ( hexVeh != hexSite )
         {
             LeaveCriticalSection( &cs );

@@ -112,8 +112,8 @@ public:
 	void AddBldgAttack( int iBldg );
 	WORD GetBldgAttack( int iBldg );
 	
-	void Load( CFile *pFile );
-	void Save( CFile *pFile );
+	void Load( CArchive& ar );
+    void Save( CArchive& ar );
 };
 
 class CAIOpForList : public CObList
@@ -137,8 +137,8 @@ public:
 	CAIOpFor *GetWeakest( BOOL bKnown );
 	BOOL AllKnown( void );
 
-	void Save( CFile *pFile );
-	void Load( CFile *pFile );
+	void Save( CArchive& ar );
+    void Load( CArchive& ar );
 };
 
 #endif // __CAIOPFOR_HPP__

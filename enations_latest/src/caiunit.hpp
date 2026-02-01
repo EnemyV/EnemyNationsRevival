@@ -147,8 +147,8 @@ public:
 
 	// critical section used
 	CAIUnit *GetOpForUnit( DWORD dwId );
-	void Load( CFile *pFile );
-	void Save( CFile *pFile );
+    void     Load( CArchive& ar );
+    void     Save( CArchive& ar );
 };
 
 #endif // __CAIUNIT_HPP__

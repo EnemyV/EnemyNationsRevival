@@ -163,12 +163,34 @@ int CConquerApp::Run( )
         }
         bDoSubclass = TRUE;
         return ( 0 );
-    }
-
+    }     
     catch ( ... )
     {
         TRAP( );
         CatchOther( );
+
+#ifdef _DEBUG
+        /* try
+        {
+            throw;
+        }
+        catch ( CException* e )
+        {
+            TCHAR szCause[255];
+            e->GetErrorMessage( szCause, 255 );
+            TRACE( "MFC Exception: %s\n", szCause );
+            e->Delete( );
+        }
+        catch ( const std::exception& e )
+        {
+            TRACE( "Std Exception: %s\n", e.what( ) );
+        }
+        catch ( ... )
+        {
+            TRACE( "Unknown Exception\n" );
+        }*/
+#endif
+
         bDoSubclass = FALSE;
 
         if ( theGame.GetState( ) == CGame::play )
@@ -190,6 +212,7 @@ int CConquerApp::Run( )
         bDoSubclass = TRUE;
         return ( 0 );
     }
+    
 
     ASSERT( FALSE );  // not reachable
 }

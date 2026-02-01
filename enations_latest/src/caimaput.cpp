@@ -8920,64 +8920,64 @@ CAIMapUtil::~CAIMapUtil( )
     delete[] m_pgrpHexs;
 }
 
-void CAIMapUtil::Save( CFile* pFile )
+void CAIMapUtil::Save( CArchive& ar )
 {
-    int iX, iY;
-    iX = m_RocketHex.X( );
-    iY = m_RocketHex.Y( );
+    int iX = m_RocketHex.X( );
+    int iY = m_RocketHex.Y( );
 
-    pFile->Write( (const void*)&m_iPlayer, sizeof( int ) );
-    pFile->Write( (const void*)&m_wRows, sizeof( WORD ) );
-    pFile->Write( (const void*)&m_wCols, sizeof( WORD ) );
-    pFile->Write( (const void*)&m_wBaseRow, sizeof( WORD ) );
-    pFile->Write( (const void*)&m_wBaseCol, sizeof( WORD ) );
-    pFile->Write( (const void*)&m_wEndRow, sizeof( WORD ) );
-    pFile->Write( (const void*)&m_wEndCol, sizeof( WORD ) );
-    pFile->Write( (const void*)&m_iBaseX, sizeof( int ) );
-    pFile->Write( (const void*)&m_iBaseY, sizeof( int ) );
-    pFile->Write( (const void*)&iX, sizeof( int ) );
-    pFile->Write( (const void*)&iY, sizeof( int ) );
-    pFile->Write( (const void*)&m_iMapSize, sizeof( int ) );
-    pFile->Write( (const void*)&m_iGrpSize, sizeof( int ) );
-    pFile->Write( (const void*)&m_iNumVehicles, sizeof( int ) );
-    pFile->Write( (const void*)&m_iNumBuildings, sizeof( int ) );
-    pFile->Write( (const void*)&m_iBufferSize, sizeof( int ) );
-    pFile->Write( (const void*)&m_iCitySX, sizeof( int ) );
-    pFile->Write( (const void*)&m_iCitySY, sizeof( int ) );
-    pFile->Write( (const void*)&m_iCityEX, sizeof( int ) );
-    pFile->Write( (const void*)&m_iCityEY, sizeof( int ) );
-    pFile->Write( (const void*)&m_bAllKnown, sizeof( BOOL ) );
-    pFile->Write( (const void*)&m_bOceanWorld, sizeof( BOOL ) );
-    pFile->Write( (const void*)&m_bLakeWorld, sizeof( BOOL ) );
+    // Use CArchive streaming for scalars so MFC handles versioning/formatting.
+    ar << m_iPlayer;
+    ar << m_wRows;
+    ar << m_wCols;
+    ar << m_wBaseRow;
+    ar << m_wBaseCol;
+    ar << m_wEndRow;
+    ar << m_wEndCol;
+    ar << m_iBaseX;
+    ar << m_iBaseY;
+    ar << iX;
+    ar << iY;
+    ar << m_iMapSize;
+    ar << m_iGrpSize;
+    ar << m_iNumVehicles;
+    ar << m_iNumBuildings;
+    ar << m_iBufferSize;
+    ar << m_iCitySX;
+    ar << m_iCitySY;
+    ar << m_iCityEX;
+    ar << m_iCityEY;
+    ar << m_bAllKnown;
+    ar << m_bOceanWorld;
+    ar << m_bLakeWorld;
 }
 
-void CAIMapUtil::Load( CFile* pFile, WORD* pMap, CAIUnitList* plUnits )
+void CAIMapUtil::Load( CArchive& ar, WORD* pMap, CAIUnitList* plUnits )
 {
     int iX, iY;
 
-    pFile->Read( (void*)&m_iPlayer, sizeof( int ) );
-    pFile->Read( (void*)&m_wRows, sizeof( WORD ) );
-    pFile->Read( (void*)&m_wCols, sizeof( WORD ) );
-    pFile->Read( (void*)&m_wBaseRow, sizeof( WORD ) );
-    pFile->Read( (void*)&m_wBaseCol, sizeof( WORD ) );
-    pFile->Read( (void*)&m_wEndRow, sizeof( WORD ) );
-    pFile->Read( (void*)&m_wEndCol, sizeof( WORD ) );
-    pFile->Read( (void*)&m_iBaseX, sizeof( int ) );
-    pFile->Read( (void*)&m_iBaseY, sizeof( int ) );
-    pFile->Read( (void*)&iX, sizeof( int ) );
-    pFile->Read( (void*)&iY, sizeof( int ) );
-    pFile->Read( (void*)&m_iMapSize, sizeof( int ) );
-    pFile->Read( (void*)&m_iGrpSize, sizeof( int ) );
-    pFile->Read( (void*)&m_iNumVehicles, sizeof( int ) );
-    pFile->Read( (void*)&m_iNumBuildings, sizeof( int ) );
-    pFile->Read( (void*)&m_iBufferSize, sizeof( int ) );
-    pFile->Read( (void*)&m_iCitySX, sizeof( int ) );
-    pFile->Read( (void*)&m_iCitySY, sizeof( int ) );
-    pFile->Read( (void*)&m_iCityEX, sizeof( int ) );
-    pFile->Read( (void*)&m_iCityEY, sizeof( int ) );
-    pFile->Read( (void*)&m_bAllKnown, sizeof( BOOL ) );
-    pFile->Read( (void*)&m_bOceanWorld, sizeof( BOOL ) );
-    pFile->Read( (void*)&m_bLakeWorld, sizeof( BOOL ) );
+    ar >> m_iPlayer;
+    ar >> m_wRows;
+    ar >> m_wCols;
+    ar >> m_wBaseRow;
+    ar >> m_wBaseCol;
+    ar >> m_wEndRow;
+    ar >> m_wEndCol;
+    ar >> m_iBaseX;
+    ar >> m_iBaseY;
+    ar >> iX;
+    ar >> iY;
+    ar >> m_iMapSize;
+    ar >> m_iGrpSize;
+    ar >> m_iNumVehicles;
+    ar >> m_iNumBuildings;
+    ar >> m_iBufferSize;
+    ar >> m_iCitySX;
+    ar >> m_iCitySY;
+    ar >> m_iCityEX;
+    ar >> m_iCityEY;
+    ar >> m_bAllKnown;
+    ar >> m_bOceanWorld;
+    ar >> m_bLakeWorld;
 
     m_RocketHex.X( iX );
     m_RocketHex.Y( iY );
@@ -9025,7 +9025,6 @@ void CAIMapUtil::Load( CFile* pFile, WORD* pMap, CAIUnitList* plUnits )
         throw( ERR_CAI_BAD_NEW );
     }
 }
-
 #ifdef _LOGOUT
 
 void CAIMapUtil::ReportPavedRoads( void )

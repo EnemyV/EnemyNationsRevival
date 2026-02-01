@@ -163,8 +163,8 @@ protected:
 public:
 	// must save and load separate from the AI
 	// be sure the CFile::Flush() has been called before passing
-	void Save( CFile *pFile );
-	void Load( CFile *pFile );
+  void Save( CArchive& ar );
+  void Load( CArchive& ar );
 };
 
 #endif // __CHPROUTE_HPP__

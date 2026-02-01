@@ -932,25 +932,65 @@ CAIOpFor::~CAIOpFor( )
     }
     m_sName.Empty( );
 }
-
-void CAIOpFor::Save( CFile* pFile )
+void CAIOpFor::Save( CArchive& ar )
 {
-    pFile->Write( (const void*)m_pwaUnits, ( sizeof( WORD ) * m_iNumUnits ) );
-    pFile->Write( (const void*)m_pwaBldgs, ( sizeof( WORD ) * m_iNumBldgs ) );
-    pFile->Write( (const void*)m_pwaRAs, ( sizeof( WORD ) * m_iNumRAs ) );
-    pFile->Write( (const void*)m_pwaAttackedUnits, ( sizeof( WORD ) * m_iNumUnits ) );
-    pFile->Write( (const void*)m_pwaAttackedBldgs, ( sizeof( WORD ) * m_iNumBldgs ) );
+    // validate arrays
+    if ( m_pwaUnits == NULL || m_pwaBldgs == NULL || m_pwaRAs == NULL || m_pwaAttackedUnits == NULL ||
+         m_pwaAttackedBldgs == NULL )
+    {
+        throw( ERR_CAI_BAD_NEW );
+    }
+
+    try
+    {
+        ar.Write( (const void*)m_pwaUnits, (UINT)( sizeof( WORD ) * m_iNumUnits ) );
+        ar.Write( (const void*)m_pwaBldgs, (UINT)( sizeof( WORD ) * m_iNumBldgs ) );
+        ar.Write( (const void*)m_pwaRAs, (UINT)( sizeof( WORD ) * m_iNumRAs ) );
+        ar.Write( (const void*)m_pwaAttackedUnits, (UINT)( sizeof( WORD ) * m_iNumUnits ) );
+        ar.Write( (const void*)m_pwaAttackedBldgs, (UINT)( sizeof( WORD ) * m_iNumBldgs ) );
+    }
+    catch ( CFileException* /*e*/ )
+    {
+        throw( ERR_CAI_BAD_FILE );
+    }
 }
 
-void CAIOpFor::Load( CFile* pFile )
+void CAIOpFor::Load( CArchive& ar )
 {
-    pFile->Read( (void*)m_pwaUnits, ( sizeof( WORD ) * m_iNumUnits ) );
-    pFile->Read( (void*)m_pwaBldgs, ( sizeof( WORD ) * m_iNumBldgs ) );
-    pFile->Read( (void*)m_pwaRAs, ( sizeof( WORD ) * m_iNumRAs ) );
-    pFile->Read( (void*)m_pwaAttackedUnits, ( sizeof( WORD ) * m_iNumUnits ) );
-    pFile->Read( (void*)m_pwaAttackedBldgs, ( sizeof( WORD ) * m_iNumBldgs ) );
-}
+    // validate arrays
+    if ( m_pwaUnits == NULL || m_pwaBldgs == NULL || m_pwaRAs == NULL || m_pwaAttackedUnits == NULL ||
+         m_pwaAttackedBldgs == NULL )
+    {
+        throw( ERR_CAI_BAD_NEW );
+    }
 
+    try
+    {
+        UINT uBytes = ar.Read( (void*)m_pwaUnits, (UINT)( sizeof( WORD ) * m_iNumUnits ) );
+        if ( uBytes != (UINT)( sizeof( WORD ) * m_iNumUnits ) )
+            throw( ERR_CAI_BAD_FILE );
+
+        uBytes = ar.Read( (void*)m_pwaBldgs, (UINT)( sizeof( WORD ) * m_iNumBldgs ) );
+        if ( uBytes != (UINT)( sizeof( WORD ) * m_iNumBldgs ) )
+            throw( ERR_CAI_BAD_FILE );
+
+        uBytes = ar.Read( (void*)m_pwaRAs, (UINT)( sizeof( WORD ) * m_iNumRAs ) );
+        if ( uBytes != (UINT)( sizeof( WORD ) * m_iNumRAs ) )
+            throw( ERR_CAI_BAD_FILE );
+
+        uBytes = ar.Read( (void*)m_pwaAttackedUnits, (UINT)( sizeof( WORD ) * m_iNumUnits ) );
+        if ( uBytes != (UINT)( sizeof( WORD ) * m_iNumUnits ) )
+            throw( ERR_CAI_BAD_FILE );
+
+        uBytes = ar.Read( (void*)m_pwaAttackedBldgs, (UINT)( sizeof( WORD ) * m_iNumBldgs ) );
+        if ( uBytes != (UINT)( sizeof( WORD ) * m_iNumBldgs ) )
+            throw( ERR_CAI_BAD_FILE );
+    }
+    catch ( CFileException* /*e*/ )
+    {
+        throw( ERR_CAI_BAD_FILE );
+    }
+}
 /////////////////////////////////////////////////////////////////////////////
 
 CAIOpForList::~CAIOpForList( void )
@@ -1390,13 +1430,12 @@ BOOL CAIOpForList::AllKnown( void )
     }
     return TRUE;
 }
-
-void CAIOpForList::Save( CFile* pFile )
+void CAIOpForList::Save( CArchive& ar )
 {
     int iCnt = GetCount( );
     try
     {
-        pFile->Write( (const void*)&iCnt, sizeof( int ) );
+        ar << iCnt;
     }
     catch ( CFileException* theException )
     {
@@ -1423,17 +1462,17 @@ void CAIOpForList::Save( CFile* pFile )
                 ofb.bIsAI      = pOpFor->IsAI( );
                 ofb.bIsKnown   = pOpFor->IsKnown( );
 
-                pFile->Write( (const void*)&ofb, sizeof( OpForBuff ) );
+                ar.Write( (const void*)&ofb, sizeof( OpForBuff ) );
 
                 // BUGBUG these arrays are all protected so the opfor list can't see
                 // them and will need to inerate throught the get*() of the opfor
-                pOpFor->Save( pFile );
+                pOpFor->Save( ar );
             }
         }
     }
 }
 
-void CAIOpForList::Load( CFile* pFile )
+void CAIOpForList::Load( CArchive& ar )
 {
     // make any old opfors go away
     DeleteList( );
@@ -1442,18 +1481,18 @@ void CAIOpForList::Load( CFile* pFile )
 
     // now get count of opfors
     int iCnt;
-    pFile->Read( (void*)&iCnt, sizeof( int ) );
+    ar >> iCnt;
 
     if ( iCnt )
     {
-        int iBytes;
+        UINT uBytes;
         for ( int i = 0; i < iCnt; ++i )
         {
             // read file data into buffer
-            iBytes = pFile->Read( (void*)&ofb, sizeof( OpForBuff ) );
+            uBytes = ar.Read( (void*)&ofb, sizeof( OpForBuff ) );
 
             // BUGBUG how should read errors be reported?
-            if ( iBytes != sizeof( OpForBuff ) )
+            if ( uBytes != sizeof( OpForBuff ) )
                 return;
 
             CAIOpFor* pOpFor = NULL;
@@ -1477,7 +1516,7 @@ void CAIOpForList::Load( CFile* pFile )
 
             // BUGBUG these arrays are all protected so the opfor list can't see
             // them and will need to inerate throught the get*() of the opfor
-            pOpFor->Load( pFile );
+            pOpFor->Load( ar );
 
             // put the opfor in the list
             AddTail( (CObject*)pOpFor );
@@ -1503,5 +1542,4 @@ void CAIOpForList::Load( CFile* pFile )
         }
     }
 }
-
 // end of CAIOpFor.cpp

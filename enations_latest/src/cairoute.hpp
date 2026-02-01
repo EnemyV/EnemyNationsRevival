@@ -66,8 +66,8 @@ public:
 	void LoadMaterials( CAIUnit *pTruck, CAIHex *paiHex );
 	BOOL BuildingNeedsAlways( CAIUnit *pBldg );
 
-	void Save( CFile *pFile );
-	void Load( CFile *pFile, CAIUnitList *plUnits );
+	void Save( CArchive& ar );
+    void Load( CArchive& ar, CAIUnitList* plUnits );
 };
 
 #endif // __CAIROUTE_HPP__

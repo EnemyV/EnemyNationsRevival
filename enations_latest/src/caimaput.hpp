@@ -219,8 +219,8 @@ public:
 	WORD GetStatus( int iAt );
 	WORD ConvertStatus( CAIHex *pHex, WORD wOldStatus );
 
-	void Save( CFile *pFile );
-	void Load( CFile *pFile, WORD *pMap, CAIUnitList *plUnits );
+	void Save( CArchive& ar );
+    void Load( CArchive& ar, WORD* pMap, CAIUnitList* plUnits );
 
 #ifdef _LOGOUT
 	void ReportPavedRoads( void );
