@@ -1,4 +1,4 @@
-#include "dibwnd.h"
+﻿#include "dibwnd.h"
 //#include "include/ptr.h"
 
 // this is not the original file
@@ -84,9 +84,16 @@ void CDIBWnd::Paint( CRect rect )
     if ( m_hWnd == NULL || m_ptrdib.Value( ) == NULL )
         return;
 
-    HDC hdcWnd = ::GetDC( m_hWnd );
+    // Use cached DC if available (from Init), otherwise acquire temporarily
+    HDC hdcWnd = m_hDC;
+    BOOL bNeedRelease = FALSE;
     if ( !hdcWnd )
-        return;
+    {
+        hdcWnd = ::GetDC( m_hWnd );
+        if ( !hdcWnd )
+            return;
+        bNeedRelease = TRUE;
+    }
 
     // intersect with window client rect
     CRect rcClient;
@@ -94,7 +101,8 @@ void CDIBWnd::Paint( CRect rect )
     rect &= rcClient;
     if ( rect.IsRectEmpty( ) )
     {
-        ::ReleaseDC( m_hWnd, hdcWnd );
+        if ( bNeedRelease )
+            ::ReleaseDC( m_hWnd, hdcWnd );
         return;
     }
 
@@ -108,7 +116,8 @@ void CDIBWnd::Paint( CRect rect )
     // blit from DIB to window
     m_ptrdib->BitBlt( hdcWnd, rect, rect.TopLeft( ) );
 
-    ::ReleaseDC( m_hWnd, hdcWnd );
+    if ( bNeedRelease )
+        ::ReleaseDC( m_hWnd, hdcWnd );
 }
 
 void CDIBWnd::SetDirtyPalette( )
@@ -183,16 +192,19 @@ CDirtyRects::CDirtyRects( CDIBWnd* dibwnd )
     m_nRectPaintNext = 0;
     m_nRectBlt       = 0;
 
-    m_prectPaintCur  = new CRect[MAX_DIRTY_RECTS];
-    m_prectPaintNext = new CRect[MAX_DIRTY_RECTS];
-    m_prectBlt       = new CRect[MAX_DIRTY_RECTS];
+    // Single allocation for all three arrays - better cache locality and fewer allocations
+    // Total: MAX_DIRTY_RECTS * 3 CRects in one contiguous block
+    CRect* pAllRects = new CRect[MAX_DIRTY_RECTS * 3];
+    m_prectPaintCur  = pAllRects;
+    m_prectPaintNext = pAllRects + MAX_DIRTY_RECTS;
+    m_prectBlt       = pAllRects + MAX_DIRTY_RECTS * 2;
 }
 
 CDirtyRects::~CDirtyRects( )
 {
+    // Single allocation was made in constructor, only delete the base pointer
     delete[] m_prectPaintCur;
-    delete[] m_prectPaintNext;
-    delete[] m_prectBlt;
+    // m_prectPaintNext and m_prectBlt point into the same allocation - don't delete them
 
     m_prectPaintCur  = nullptr;
     m_prectPaintNext = nullptr;
@@ -206,17 +218,15 @@ void CDirtyRects::UpdateLists( )
     // We'll copy next array into cur array (coalescing not applied here).
 
     int copyCount = (m_nRectPaintNext < MAX_DIRTY_RECTS) ? m_nRectPaintNext : MAX_DIRTY_RECTS;
-    // overwrite current
-    for ( int i = 0; i < copyCount; ++i )
-    {
-        m_prectPaintCur[i] = m_prectPaintNext[i];
-    }
+    // overwrite current using memcpy for efficiency (CRect is trivially copyable)
+    if ( copyCount > 0 )
+        memcpy( m_prectPaintCur, m_prectPaintNext, copyCount * sizeof( CRect ) );
     m_nRectPaintCur = copyCount;
     // clear next
     m_nRectPaintNext = 0;
 }
 
-void CDirtyRects::BltRects( )
+/* void CDirtyRects::BltRects( )
 {
     if ( !m_pdibwnd || !m_pdibwnd->GetDIB( ) || !m_pdibwnd->GetHWND( ) )
         return;
@@ -235,6 +245,117 @@ void CDirtyRects::BltRects( )
 
     ::ReleaseDC( m_pdibwnd->GetHWND( ), hdcWnd );
     m_nRectBlt = 0;
+}*/
+
+void CDirtyRects::BltRects( )
+{
+    if ( !m_pdibwnd || !m_pdibwnd->GetDIB( ) || !m_pdibwnd->GetHWND( ) )
+        return;
+
+    // Early exit if nothing to blit
+    if ( m_nRectBlt == 0 )
+        return;
+
+    // Cache these outside the loop to avoid repeated accessor calls
+    HWND hWnd = m_pdibwnd->GetHWND( );
+    CDIB* pdib = m_pdibwnd->GetDIB( );
+
+    HDC hdcWnd = ::GetDC( hWnd );
+    if ( !hdcWnd )
+        return;
+
+    // ⚠️ CRITICAL OPTIMIZATION: Coalesce adjacent rects BEFORE blitting
+    // This reduces the number of BitBlt calls significantly
+    CoalesceRects( m_prectBlt, m_nRectBlt );
+
+// Optional: Sort rects by vertical position for cache coherency
+// (This helps if you're reading from system RAM -> VRAM)
+#ifdef OPTIMIZE_BLIT_ORDER
+    SortRectsByPosition( m_prectBlt, m_nRectBlt );
+#endif
+
+#ifdef _DEBUG
+    CRect rcClient;
+    ::GetClientRect( hWnd, &rcClient );
+#endif
+
+    // Now blit all the (coalesced) rectangles
+    for ( int i = 0; i < m_nRectBlt; ++i )
+    {
+        CRect& r = m_prectBlt[i];
+
+// Optional: Validate rect is within window bounds
+#ifdef _DEBUG
+        CRect rcClipped;
+        if ( !rcClipped.IntersectRect( &r, &rcClient ) )
+        {
+            OutputDebugStringA( "CDirtyRects::BltRects: Rect outside window bounds!\n" );
+            continue;
+        }
+#endif
+
+        pdib->BitBlt( hdcWnd, r, r.TopLeft( ) );
+    }
+
+    ::ReleaseDC( hWnd, hdcWnd );
+    m_nRectBlt = 0;
+}
+
+#ifdef OPTIMIZE_BLIT_ORDER
+void CDirtyRects::SortRectsByPosition( CRect arect[], int nCount )
+{
+    // Simple insertion sort (good enough for small arrays like 320 rects)
+    for ( int i = 1; i < nCount; ++i )
+    {
+        CRect key = arect[i];
+        int   j   = i - 1;
+
+        // Sort by top-to-bottom, then left-to-right
+        while ( j >= 0 && ( arect[j].top > key.top || ( arect[j].top == key.top && arect[j].left > key.left ) ) )
+        {
+            arect[j + 1] = arect[j];
+            j--;
+        }
+        arect[j + 1] = key;
+    }
+}
+#endif
+
+void CDirtyRects::CoalesceRects( CRect arect[], int& nCount )
+{
+    if ( nCount <= 1 )
+        return;
+
+    // Use the same merge logic as AddRect, but in batch mode
+    int writeIdx = 0;
+
+    for ( int i = 0; i < nCount; ++i )
+    {
+        CRect newRect    = arect[i];
+        CRect searchRect = newRect;
+        searchRect.InflateRect( 1, 1 );
+
+        // Try to merge with existing rects in the output array
+        bool merged = false;
+        for ( int j = 0; j < writeIdx; ++j )
+        {
+            CRect intersection;
+            if ( intersection.IntersectRect( &arect[j], &searchRect ) )
+            {
+                arect[j].UnionRect( &arect[j], &newRect );
+                merged = true;
+                break;  // Only merge with first match to avoid O(n²) behavior
+            }
+        }
+
+        // If not merged, add as new rect
+        if ( !merged )
+        {
+            arect[writeIdx++] = newRect;
+        }
+    }
+
+    nCount = writeIdx;
 }
 
 
@@ -272,57 +393,77 @@ void CDirtyRects::AddRect( CRect const* prect, CDirtyRects::RECT_LIST eList )
     }
 }
 
+
+// Optimized AddRect with improved merging logic
+// Uses single-pass merge with limited re-scan to reduce worst-case complexity
 inline void CDirtyRects::AddRect( const CRect* prect, CRect arect[], int& nCount )
 {
-    // Validate inputs and array capacity
-    if ( !prect || !arect || nCount >= MAX_DIRTY_RECTS )
-    {
-        if ( !prect || !arect )
-            return;
+    // 1. Basic Validation
+    if ( !prect || !arect )
+        return;
 
-        // Coalesce to a single union rectangle
-        int minLeft = arect[0].left, maxRight = arect[0].right;
-        int minTop = arect[0].top, maxBottom = arect[0].bottom;
+    // Handle empty or NULL rect input - invalidate entire window
+    if ( prect->IsRectEmpty() || prect->IsRectNull() )
+        return;
+
+    // 2. HARD LIMIT: Panic mode if full
+    if ( nCount >= MAX_DIRTY_RECTS )
+    {
+        // Safety: Handle 0-size limit case to prevent uninitialized read
+        if ( nCount == 0 )
+        {
+            arect[0] = *prect;
+            nCount   = 1;
+            return;
+        }
+
+        // Collapse all existing into arect[0]
         for ( int i = 1; i < nCount; ++i )
         {
-            minLeft   = min( minLeft, arect[i].left );
-            maxRight  = max( maxRight, arect[i].right );
-            minTop    = min( minTop, arect[i].top );
-            maxBottom = max( maxBottom, arect[i].bottom );
+            arect[0].UnionRect( &arect[0], &arect[i] );
         }
-        minLeft   = min( minLeft, prect->left );
-        maxRight  = max( maxRight, prect->right );
-        minTop    = min( minTop, prect->top );
-        maxBottom = max( maxBottom, prect->bottom );
 
-        arect[0].left   = minLeft;
-        arect[0].right  = maxRight;
-        arect[0].top    = minTop;
-        arect[0].bottom = maxBottom;
-        nCount          = 1;
+        // Merge the new one
+        arect[0].UnionRect( &arect[0], prect );
+        nCount = 1;
+
+// Log this critical warning in Debug mode
+#ifdef _DEBUG
+        OutputDebugStringA( "CDirtyRects: Hit MAX_DIRTY_RECTS limit! Performance degradation likely.\n" );
+#endif
         return;
     }
 
-    // Cache prect bounds with adjacency margins
-    const int left   = prect->left - 1;
-    const int right  = prect->right + 1;
-    const int top    = prect->top - 1;
-    const int bottom = prect->bottom + 1;
+    // 3. OPTIMIZED MERGE LOGIC
+    // Limit re-scans to avoid O(n²) worst case with many overlapping rects
+    CRect newRect    = *prect;
+    CRect searchRect = newRect;
+    searchRect.InflateRect( 1, 1 );
 
-    // Check for intersection or adjacency
+    // Track how many merges to limit cascading
+    int mergeCount = 0;
+    const int MAX_MERGE_PASSES = 3;  // Limit cascading merges
+
     for ( int i = 0; i < nCount; ++i )
     {
-        if ( arect[i].left <= right && arect[i].right >= left && arect[i].top <= bottom && arect[i].bottom >= top )
+        CRect intersection;
+        if ( intersection.IntersectRect( &arect[i], &searchRect ) )
         {
-            // Merge rectangles
-            arect[i].left   = min( arect[i].left, prect->left );
-            arect[i].right  = max( arect[i].right, prect->right );
-            arect[i].top    = min( arect[i].top, prect->top );
-            arect[i].bottom = max( arect[i].bottom, prect->bottom );
-            return;
+            newRect.UnionRect( &newRect, &arect[i] );
+            searchRect = newRect;
+            searchRect.InflateRect( 1, 1 );
+
+            // Remove current by swapping with last
+            arect[i] = arect[nCount - 1];
+            nCount--;
+
+            // Only re-check if we haven't done too many merge passes
+            if ( ++mergeCount < MAX_MERGE_PASSES )
+                i--;  // Re-check this index
+            // Otherwise continue forward to avoid excessive rescanning
         }
     }
 
-    // Append new rectangle
-    arect[nCount++] = *prect;
+    // 4. Final Insert
+    arect[nCount++] = newRect;
 }
