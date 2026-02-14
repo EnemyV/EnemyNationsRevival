@@ -70,34 +70,7 @@ set_source_files_properties(ISERVE.RC PROPERTIES
     COMPILE_FLAGS "/l 0x409"  # Language ID for English
 )
 
-# Generate .bsc file (source browser information)
-if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-    set(bsc_files
-        ${CMAKE_BINARY_DIR}/WinDebug/STDAFX.sbr
-        ${CMAKE_BINARY_DIR}/WinDebug/ISERVE.sbr
-        ${CMAKE_BINARY_DIR}/WinDebug/ISERVDLG.sbr
-    )
-    add_custom_command(
-        OUTPUT ${CMAKE_BINARY_DIR}/WinDebug/ISERVE.bsc
-        COMMAND bscmake /nologo /o${CMAKE_BINARY_DIR}/WinDebug/ISERVE.bsc ${bsc_files}
-        DEPENDS ${iserve_sources}
-        COMMENT "Generating ISERVE.bsc for Debug"
-    )
-    add_custom_target(iserve_bsc ALL DEPENDS ${CMAKE_BINARY_DIR}/WinDebug/ISERVE.bsc)
-else()
-    set(bsc_files
-        ${CMAKE_BINARY_DIR}/WinRel/STDAFX.sbr
-        ${CMAKE_BINARY_DIR}/WinRel/ISERVE.sbr
-        ${CMAKE_BINARY_DIR}/WinRel/ISERVDLG.sbr
-    )
-    add_custom_command(
-        OUTPUT ${CMAKE_BINARY_DIR}/WinRel/ISERVE.bsc
-        COMMAND bscmake /nologo /o${CMAKE_BINARY_DIR}/WinRel/ISERVE.bsc ${bsc_files}
-        DEPENDS ${iserve_sources}
-        COMMENT "Generating ISERVE.bsc for Release"
-    )
-    add_custom_target(iserve_bsc ALL DEPENDS ${CMAKE_BINARY_DIR}/WinRel/ISERVE.bsc)
-endif()
+
 
 # Create output directories
 file(MAKE_DIRECTORY ${CMAKE_BINARY_DIR}/WinDebug)
