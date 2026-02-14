@@ -170,7 +170,7 @@ target_link_libraries(enations PUBLIC
 #        msvcrt.lib # was commented
 #        shdw32m.lib # was commented
 #        shlw32m.lib # was commented
-        wind22.lib
+
         vdmplay.lib
         winmm.lib
         vfw32.lib

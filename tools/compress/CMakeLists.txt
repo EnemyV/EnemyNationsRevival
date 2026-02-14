@@ -39,7 +39,7 @@ target_include_directories(compit PUBLIC
 
 
 target_link_libraries(compit PUBLIC
-        wind22.lib)
+        wind22)
         
 
     target_link_directories(compit PUBLIC
