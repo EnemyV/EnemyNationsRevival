@@ -162,10 +162,9 @@ target_include_directories(enations PUBLIC
 
 
 target_link_libraries(enations PUBLIC
-        vdmplay 
+        vdmplay
         wind22
         ddraw.lib
-        mss32.lib
         wing32.lib
 #        msvcrt.lib # was commented
 #        shdw32m.lib # was commented
@@ -215,12 +214,15 @@ target_link_options(enations PUBLIC
 # Copy required DLLs to output directory
 add_custom_command(TARGET enations POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "${CMAKE_BINARY_DIR}/../tools/mss/MSS32.DLL"
+        "${CMAKE_BINARY_DIR}/../tools/sdl2/SDL2-2.30.12/lib/x86/SDL2.dll"
+        $<TARGET_FILE_DIR:enations>
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_BINARY_DIR}/../tools/sdl2/SDL2_mixer-2.8.1/lib/x86/SDL2_mixer.dll"
         $<TARGET_FILE_DIR:enations>
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${CMAKE_BINARY_DIR}/tools/vdmplay/$<CONFIG>/vdmplay.dll"
         $<TARGET_FILE_DIR:enations>
-    COMMENT "Copying mss32.dll and vdmplay.dll to output directory"
+    COMMENT "Copying SDL2.dll, SDL2_mixer.dll, and vdmplay.dll to output directory"
 )
 
 set_property(TARGET enations PROPERTY CXX_STANDARD 11)

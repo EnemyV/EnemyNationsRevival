@@ -78,14 +78,20 @@ target_link_options(wind22 PUBLIC
 target_link_libraries(wind22 PUBLIC
         winmm.lib
         version.lib
+        SDL2.lib
+        SDL2_mixer.lib
         )
 
 target_include_directories(wind22 PUBLIC
         include
         ./include
         ../../tools
+        ../../tools/sdl2/SDL2-2.30.12/include
+        ../../tools/sdl2/SDL2_mixer-2.8.1/include
         )
 
 target_link_directories(wind22 PUBLIC
         ../../cmakeBuild/tools/lib
+        ../../tools/sdl2/SDL2-2.30.12/lib/x86
+        ../../tools/sdl2/SDL2_mixer-2.8.1/lib/x86
         )
