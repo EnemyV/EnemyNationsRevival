@@ -1648,6 +1648,356 @@ pDc->DrawText(sText, -1, &rect, ...);
 
 ---
 
+## MAIN MENU - Detailed Rendering System
+
+**Files:** lastplnt.h (lines 100-159), lastplnt.cpp (lines 1900-2440)
+
+The main menu (CDlgMain) is the first screen users see. It has a sophisticated dual-rendering system that supports both custom artwork and fallback tiled backgrounds. The system scales button positions to any screen resolution while maintaining artwork integrity.
+
+### Dual-Mode Architecture
+
+The menu has two completely different rendering paths determined by `m_bTile` flag:
+
+**Mode 1: Custom Artwork (m_bTile = FALSE)**
+- Loads background image from data file (reference: 1280×768)
+- Loads 11 individual button sprite strips
+- Buttons positioned at exact pixel coordinates on artwork
+- All rendering composited to off-screen DIB then blitted to screen
+- Supports full-screen scaling to any resolution
+
+**Mode 2: Tiled Background (m_bTile = TRUE)**
+- Fallback if custom artwork unavailable
+- Repeating tiled background pattern
+- Buttons auto-positioned in 2-column grid layout
+- Uses Windows 3D beveled button styling
+- No scaling - buttons sized by system
+
+### Button Data Structure
+
+11 buttons stored in static `_btnData` array. Each entry:
+
+```cpp
+class _BTN_DATA {
+    UINT ID;              // Button control ID
+    int x, y;             // Base position on 1280×768 artwork reference
+    UINT fmt;             // Text format (DT_CENTER, DT_LEFT, DT_WORDBREAK)
+    CRect rText;          // Text bounding box within button sprite
+    CPoint ptDnOff;       // Offset when button pressed/selected
+};
+```
+
+**Complete Button Layout (Reference 1280×768):**
+
+```
+Top Row (Y ≈ 25-138):
+├── Load (784, 25) - Single-line CENTER
+├── Options (1060, 28) - Single-line CENTER
+├── Load Multi (776, 135) - Single-line CENTER
+└── Credits (1052, 138) - Single-line CENTER
+
+Middle Row (Y ≈ 407-490):
+├── Campaign (100, 489) - Multi-line LEFT - Large button
+├── Single Player (293, 490) - Multi-line LEFT - Large button
+└── Intro (868, 407) - Multi-line CENTER
+
+Bottom Row (Y ≈ 604-744):
+├── Create Game (345, 632) - Multi-line LEFT
+├── Join Game (326, 744) - Multi-line LEFT
+├── Exit (1021, 604) - Single-line CENTER
+└── Minimize (1035, 703) - Single-line CENTER
+```
+
+### Resolution-Independent Scaling
+
+Buttons scale to any screen resolution using proportional calculations:
+
+```cpp
+// In OnSize() - Custom art mode
+button_x = (_btnData.x * windowWidth) / backgroundWidth;
+button_y = (_btnData.y * windowHeight) / backgroundHeight;
+button_width = (spriteWidth * windowWidth) / (backgroundWidth * 3);
+button_height = (spriteHeight * windowHeight) / backgroundHeight;
+```
+
+**Example:** On 1920×1440 screen:
+- Button at (100, 489) in reference becomes (150, 733)
+- Maintains same relative position and proportions
+
+### Rendering Pipeline (Custom Artwork Mode)
+
+**OnPaint() Flow:**
+
+1. **Composite background + buttons:**
+   ```cpp
+   UpdateBlk();  // Build composite frame in m_pcdibTmp DIB
+   m_pcdibTmp->StretchBlt(dc, rect, m_pcdibTmp->GetRect());  // Final blit to screen
+   ```
+
+2. **UpdateBlk() - Composite building process:**
+   ```cpp
+   // Stretch background artwork to temp DIB
+   m_pcdibWall->StretchBlt(m_pcdibTmp, windowRect, backgroundRect);
+
+   // For each button, extract and composite button sprite
+   for (int i = 0; i < NUM_BTNS; i++) {
+       CRect spriteRect = buttonDIB->GetRect();
+       int stateWidth = spriteRect.Width() / 3;
+
+       // Select state: disabled (right), pressed (middle), normal (left)
+       if (!button->IsWindowEnabled())
+           spriteRect.OffsetRect(stateWidth * 2, 0);  // Disabled
+       else if (button->GetState() & 0x04)
+           spriteRect.OffsetRect(stateWidth, 0);      // Pressed
+
+       // Transparent-blit button into composite
+       m_pcdibBtns[i]->StretchTranBlt(m_pcdibTmp, destRect, spriteRect);
+   }
+   ```
+
+3. **Dynamic Title Rendering:**
+   ```cpp
+   // Font size auto-scales based on text length
+   lf.lfWidth = (3 * (screenWidth / titleLength)) / 4;
+   lf.lfHeight = lf.lfWidth * 2;  // Height 2x width
+   lf.lfWeight = 800;  // Bold
+   strcpy(lf.lfFaceName, "Book Antiqua");
+
+   // Drop shadow effect (3-4 offset draws)
+   int shadowShift = lf.lfWidth / 30;
+   while (shadowShift--) {
+       dc.SetTextColor(PALETTERGB(144, 127, 116));  // Light brown
+       dc.DrawText(sTitle, ...);  // Shadow
+       rect.top--;
+       rect.left -= 2 or 4;  // iJmp based on mode
+   }
+   dc.SetTextColor(PALETTERGB(90, 74, 57));  // Dark brown
+   dc.DrawText(sTitle, ...);  // Final text
+   ```
+
+4. **Copyright text placement:**
+   ```cpp
+   // Bottom-right corner with auto-sizing
+   dc.DrawText(copyright, -1, &rect, DT_CALCRECT | DT_CENTER);
+   rect.top = screenHeight - textHeight - margin;
+   rect.left = screenWidth - textWidth - margin;
+   ```
+
+### Button Rendering (OnDrawItem - Custom Artwork Mode)
+
+**3-State Sprite System:**
+
+Button sprites are stored as horizontal strips with 3 consecutive states:
+
+```
+[Normal State] [Pressed State] [Disabled State]
+   (width/3)       (width/3)        (width/3)
+```
+
+**State Selection:**
+
+```cpp
+int stateWidth = spriteWidth / 3;
+
+if (!IsWindowEnabled())
+    spriteRect.OffsetRect(stateWidth * 2, 0);  // Jump to disabled (right)
+else if (GetState() & 0x04)
+    spriteRect.OffsetRect(stateWidth, 0);      // Jump to pressed (middle)
+// else normal - no offset (left)
+```
+
+**Pressed State Text Offset:**
+
+When button pressed, text shifts to indicate 3D depth:
+
+```cpp
+if (itemState & ODS_SELECTED) {
+    rect.OffsetRect(
+        (buttonWidth * ((ptDnOff.x - stateWidth) - textRect.left)) / stateWidth,
+        (buttonHeight * (ptDnOff.y - textRect.top)) / spriteHeight
+    );
+}
+```
+
+**Text Fitting Algorithm:**
+
+```cpp
+// Initial font size based on button height
+LOGFONT lf;
+lf.lfHeight = (5 * rect.Height()) / 4;
+lf.lfWeight = 400;
+strcpy(lf.lfFaceName, "Book Antiqua");
+
+// Test if text fits
+pDc->DrawText(sText, -1, &testRect, DT_CALCRECT | fmt);
+
+// If doesn't fit, shrink font incrementally
+if (testRect exceeds button) {
+    while (lf.lfHeight > 10) {
+        lf.lfHeight--;
+        pDc->SelectObject(&font);
+        pDc->DrawText(..., DT_CALCRECT);
+        if (fits) break;
+    }
+}
+```
+
+### Button Rendering (OnDrawItem - Tiled Mode)
+
+For fallback tiled mode, uses Windows 3D beveled buttons:
+
+```cpp
+// Create brushes for 3D effect
+brBottom = PALETTERGB(38, 46, 49);   // Dark edge
+brFace = PALETTERGB(70, 86, 82);     // Center
+brTop = PALETTERGB(103, 127, 121);   // Light edge
+
+// Draw with bevel effect
+if (selected)
+    PaintBevel(dc, rect, 6, brBottom, brTop);  // Inverted (pressed)
+else
+    PaintBevel(dc, rect, 6, brTop, brBottom);  // Normal (raised)
+
+// Fill center
+rect.InflateRect(-6, -6);
+pDc->FillRect(&rect, &brFace);
+```
+
+### Initialization & Art Loading
+
+**OnCreate() - Load artwork:**
+
+```cpp
+CMmio* pMmio = theDataFile.OpenAsMMIO("misc", "MISC");
+pMmio->DescendRiff('M', 'I', 'S', 'C');
+
+try {
+    // Try to load custom artwork
+    pMmio->DescendList('M', 'N', bps[0], bps[1]);  // 'MN' = main menu
+    pMmio->DescendChunk('D', 'A', 'T', 'A');
+    m_pcdibWall->Load(*pMmio);
+
+    // Load 11 button sprite strips
+    for (int i = 0; i < NUM_BTNS; i++) {
+        pMmio->DescendChunk('D', 'A', 'T', 'A');
+        m_pcdibBtns[i]->Load(*pMmio);
+        pMmio->AscendChunk();
+    }
+    m_bTile = FALSE;
+} catch (...) {
+    // Artwork not found, use tiled fallback
+    m_bTile = TRUE;
+    pMmio->DescendList('W', 'L', bps[0], bps[1]);  // 'WL' = wall tile
+    pMmio->DescendChunk('D', 'A', 'T', 'A');
+    m_pcdibWall->Load(*pMmio);
+}
+```
+
+**OnInitDialog() - Button states:**
+
+```cpp
+// Shareware restrictions
+if (theApp.IsShareware() || theApp.IsSecondDisk()) {
+    GetDlgItem(IDC_MAIN_LOAD)->EnableWindow(FALSE);
+    GetDlgItem(IDC_MAIN_LOAD_MUL)->EnableWindow(FALSE);
+}
+if (theApp.IsSecondDisk())
+    GetDlgItem(IDC_MAIN_CREATE)->EnableWindow(FALSE);
+
+// Disable if intro movie not available
+if (!theApp.HaveIntro())
+    GetDlgItem(IDC_MAIN_INTRO)->EnableWindow(FALSE);
+
+// Resize buttons for screen if tiled mode
+if (m_bTile) {
+    for (int i = 0; i < NUM_BTNS; i++) {
+        button->SetWindowPos(...,
+            oldWidth / 2 + (screenX * oldWidth) / 2560,
+            oldHeight / 2 + (screenY * oldHeight) / 2048, ...);
+    }
+}
+```
+
+### Main Menu Rendering Gotchas
+
+**1. Silent fallback to tiled mode if art missing**
+```cpp
+try {
+    pMmio->DescendList('M', 'N', ...);  // Try custom art
+} catch (...) {
+    m_bTile = TRUE;  // Silent switch to tiled
+}
+```
+
+**GOTCHA:** If artwork file corrupted or missing, no error shown. Menu appears with basic tiled look but user won't know why artwork didn't load.
+
+**2. Button positions hardcoded for 1280×768 reference**
+All button coordinates in `_btnData` assume background artwork is exactly 1280×768. If artwork is different size, button positioning will be off proportionally.
+
+**3. Sprite strip assumption - must be exactly 3 states**
+```cpp
+int stateWidth = spriteWidth / 3;
+```
+
+**GOTCHA:** Code divides sprite width by 3 without validation. If button sprite width not divisible by 3, state selection gives fractional offset and renders wrong sprite section.
+
+**4. Text rect (rText) vs clickable area mismatch**
+`rText` specifies where text draws, but Windows handles clickable button area separately. Text could draw outside button bounds.
+
+**5. Pressed state offset calculation**
+```cpp
+rect.OffsetRect((rPos.Width() * ((ptDnOff.x - iWid) - rText.left)) / iWid, ...);
+```
+
+This subtracts `iWid` (which is width/3) from `ptDnOff.x`. If formula incorrect, button text won't shift properly when clicked.
+
+**6. UpdateBlk() called every paint - expensive operation**
+```cpp
+void OnPaint() {
+    UpdateBlk();  // Recalculates and reblits all buttons every frame
+}
+```
+
+**GOTCHA:** All button states recalculated and redrawn even if nothing changed. Could optimize with dirty flag - only UpdateBlk() when button state changed.
+
+**7. Font sizing algorithm can get stuck**
+```cpp
+while (lf.lfHeight > 10) {
+    lf.lfHeight--;
+    // Test if fits
+}
+```
+
+If text is too long and even size-10 font doesn't fit, loop ends with font at 10 and text renders clipped. No error or warning.
+
+**8. Title font size depends on text length**
+```cpp
+lf.lfWidth = (3 * (screenWidth / titleLength)) / 4;
+```
+
+If title text changes between versions (e.g., localization), font size changes. Long titles could overflow.
+
+**9. EnableWindow() doesn't visually update buttons immediately**
+```cpp
+GetDlgItem(IDC_MAIN_LOAD)->EnableWindow(FALSE);
+```
+
+Button appears disabled only if OnDrawItem called. Until WM_PAINT or button click, old appearance stays visible.
+
+**10. OnSize() doesn't trigger repaint in custom art mode**
+OnSize() only repositions buttons, doesn't call InvalidateRect(). If window resized, user must trigger paint for new layout to appear (e.g., minimize/restore).
+
+**11. Tiled mode button sizing uses magic formula**
+```cpp
+newWidth = oldWidth / 2 + (screenX * oldWidth) / 2560;
+```
+
+Constants 2560 and 2048 suggest 2560×2048 or 5×2 aspect ratio. If screen dimensions way outside expected range, buttons could size to 0 or huge.
+
+**12. No bounds checking on button coordinates**
+Button positions calculated but never validated to be on-screen. Off-by-one errors in `_btnData` could position button off-screen without warning.
+
+---
+
 ## Porting/Replacement Considerations (For SDL Replacement)
 
 When replacing with SDL:
