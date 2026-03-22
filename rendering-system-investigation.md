@@ -1998,6 +1998,568 @@ Button positions calculated but never validated to be on-screen. Off-by-one erro
 
 ---
 
+## PAUSE MENU - Multiplayer Game Pause Dialog
+
+**Files:** main.cpp (lines 1430-1497), ui.h (lines 290-324)
+
+The pause menu (CDlgPause) is a simple modeless dialog that displays when multiplayer games are paused. It shows different messages depending on whether the player is the host/server or a client.
+
+### Architecture
+
+**Modeless Dialog - Does Not Block Input:**
+- Created once, reused via Show()/Hide()
+- Stays on top of main window
+- No blocking modal behavior
+
+### Rendering System
+
+**Simple Text Display:**
+```cpp
+class CDlgPause : public CDialog {
+    // Dialog Data
+    CString m_sText;  // Single text field
+    enum { IDD = IDD_PAUSE_MSG };
+};
+```
+
+**Show() Method - Three modes:**
+
+```cpp
+void CDlgPause::Show(int iMode) {
+    if (m_hWnd == NULL)
+        Create(IDD_PAUSE_MSG, &theApp.m_wndMain);  // Create if needed
+
+    switch (iMode) {
+    case server:  // Host paused the game
+        m_sText.LoadString(IDS_PAUSE_SERVER);  // "Game paused by host"
+        CenterWindow();
+        ShowWindow(SW_SHOW);
+        SetWindowPos(&wndTop, 0, 0, 0, 0, SWP_NOSIZE | SWP_NOMOVE);
+        theApp.m_wndMain.SetActiveWindow();
+        break;
+
+    case client:  // Waiting for host to unpause
+        m_sText.LoadString(IDS_PAUSE_CLIENT);  // "Waiting for host..."
+        CenterWindow();
+        ShowWindow(SW_SHOW);
+        SetWindowPos(&wndTop, 0, 0, 0, 0, SWP_NOSIZE | SWP_NOMOVE);
+        theApp.m_wndMain.SetActiveWindow();
+        break;
+
+    default:
+        ShowWindow(SW_HIDE);  // Hide pause dialog
+        break;
+    }
+}
+```
+
+### Positioning & Layout
+
+- **Centered on screen** - CenterWindow() called each time
+- **Always on top** - SetWindowPos(&wndTop, ...)
+- **Fixed size** - Resource-defined (IDD_PAUSE_MSG)
+- **Main window stays active** - SetActiveWindow() ensures focus returns
+
+### Pause Menu Gotchas
+
+**1. Dialog recreated if not created yet**
+```cpp
+if (m_hWnd == NULL)
+    Create(IDD_PAUSE_MSG, &theApp.m_wndMain);
+```
+
+**GOTCHA:** First call to Show() has latency creating dialog. Subsequent calls reuse existing window. Could cause noticeable pause on first pause.
+
+**2. PostNcDestroy() calls delete this**
+```cpp
+virtual void PostNcDestroy() { delete this; }
+```
+
+**GOTCHA:** Dialog deletes itself when closed. If Show() called after close, m_hWnd will be invalid and new dialog created. Self-deleting dialogs are error-prone.
+
+**3. CenterWindow() called every Show()**
+```cpp
+CenterWindow();  // Called each time
+```
+
+**GOTCHA:** If window manager or screen resolution changed between Show() calls, dialog centers wrong. Expensive operation called too often.
+
+**4. Main window set active after showing pause**
+```cpp
+theApp.m_wndMain.SetActiveWindow();
+```
+
+**GOTCHA:** This may not be respected if pause dialog is already focused. Race condition between dialog creation/show and SetActiveWindow().
+
+---
+
+## UNIT STATUS WINDOW - Real-Time Unit Information Display
+
+**Files:** area.h (lines 36-59), area.cpp (lines 494-556), new_unit.cpp (lines 324-405)
+
+The unit status window (CWndUnitStat) displays real-time information about selected units in the game world. It shows unit name, damage, materials, and other attributes using a custom icon-based rendering system.
+
+### Architecture
+
+**Window Hierarchy:**
+```
+CWndAreaStatic (toolbar/status bar area)
+└── CWndUnitStat (inherits from CWndStatBar)
+    └── Renders unit information using CStatInst objects
+```
+
+**Core Classes:**
+- **CWndUnitStat** - Window that displays unit information
+- **CStatInst** - Individual status icon/bar renderer (used multiple times)
+- **CUnit** - The unit being displayed
+
+### Rendering System
+
+**Unit Status Display (_UnitShowStatus):**
+
+```cpp
+void _UnitShowStatus(BOOL bText, void* pData, CDC* pDc,
+                     CRect const& rDraw, CDIB* pDibBack, CPoint const& ptOff)
+{
+    CUnit* pUnit = (CUnit*)pData;
+    CRect rect(rDraw);
+
+    // Part 1: Unit description/name (if bText = TRUE)
+    if (bText) {
+        uShowStat.m_siText.SetBack(pDibBack, ptOff);
+        int iWid = 14 * 8 + leftOff + rightOff;
+        iWid = __min(rect.Width() / 2, iWid);  // Max 50% of window
+        rect.right = rect.left + iWid;
+
+        uShowStat.m_siText.SetSize(rect);
+        uShowStat.m_siText.SetText(pUnit->GetData()->GetDesc());
+        uShowStat.m_siText.DrawIcon(pDc);
+
+        rect.left = rect.right;  // Move right for remaining space
+    }
+
+    // Part 2: If enemy unit - name & damage only
+    if (!pUnit->GetOwner()->IsMe()) {
+        // Owner name (left half of remaining space)
+        CStatInst* pSi = &uShowStat.m_si[1][0];
+        rect.right = rect.left + (rDraw.right - rect.left) / 2;
+        pSi->SetText(pUnit->GetOwner()->GetName());
+        pSi->DrawIcon(pDc);
+
+        // Damage bar (right half)
+        rect.left = rect.right + 1;
+        pSi++;
+        pUnit->PaintStatusBars(pSi, 0, pDc);
+        return;
+    }
+
+    // Part 3: If own unit - show all status bars
+    int iNum = pUnit->GetNumStatusBars();  // Usually 3+ bars
+
+    // Evenly divide remaining space
+    for (int i = 0; i < iNum; i++) {
+        rect.left = rect.right + 1;
+        rect.right += (rDraw.right - rect.left) / (iNum - i);
+
+        uShowStat.m_si[i][0].SetSize(rect);
+        pUnit->PaintStatusBars(&uShowStat.m_si[i][0], i, pDc);
+    }
+}
+```
+
+### Layout & Positioning
+
+**Three-Part Horizontal Layout:**
+
+```
+Unit Description (14 chars max) | Enemy Info     | Own Unit Status Bars
+(if bText=TRUE, max 50% width)   | Name | Damage | Health | Materials | ...
+                                 | (for enemies) | (for own units - equal widths)
+```
+
+**Dynamic Width Calculation:**
+- Description: 14 characters × character width (capped at 50% of window)
+- Enemy display: 2 equal sections (name, damage)
+- Own unit: N equal sections (health, materials, power, etc.)
+
+### Mouse Move Handling
+
+**OnMouseMove - Real-time Status Text Update:**
+
+```cpp
+void CWndUnitStat::OnMouseMove(UINT, CPoint) {
+    if (m_pUnit == NULL)
+        CWndStatBar::SetText(NULL);
+    else {
+        CString str;
+        ::UnitStatusText(m_pUnit, str);  // Generate status text
+        theApp.m_wndBar.SetStatusText(1, str);  // Update status bar
+    }
+}
+```
+
+Updates status text in real-time as mouse moves over unit window.
+
+### Unit Status Window Gotchas
+
+**1. CStatInst objects are static globals**
+```cpp
+uShowStat.m_siText, uShowStat.m_si[iNum][0]
+```
+
+**GOTCHA:** Shared global state. If multiple unit windows render simultaneously, they interfere with each other. Not thread-safe.
+
+**2. Dynamic space division can leave gaps**
+```cpp
+int iWid = 14 * 8 + leftOff + rightOff;
+iWid = __min(rect.Width() / 2, iWid);
+```
+
+**GOTCHA:** If window is narrow, description gets clamped but remaining space calculation might be off, causing visual artifacts.
+
+**3. Status bar count varies by unit type**
+```cpp
+int iNum = pUnit->GetNumStatusBars();  // Returns 1, 2, or 3+
+```
+
+**GOTCHA:** Different unit types have different numbers of status bars (building vs vehicle). Layout adjusts but could cause jarring visual changes when selecting different unit types.
+
+**4. OnPaint() called for every mouse move on window**
+```cpp
+void CWndUnitStat::UpdateStat() {
+    if (CWnd::WindowFromPoint(pt) == this)
+        OnMouseMove(0, pt);  // Triggers paint
+}
+```
+
+**GOTCHA:** Mouse movement = repaint. High frequency redraws if mouse hovers. Could be expensive if CUnit data retrieval is slow.
+
+**5. Background DIB must be set correctly**
+```cpp
+uShowStat.m_siText.SetBack(pDibBack, ptOff);
+```
+
+**GOTCHA:** If pDibBack or ptOff are incorrect, status icons render with wrong background. Alignment errors hard to debug.
+
+**6. Enemy vs own unit logic changes entire layout**
+```cpp
+if (!pUnit->GetOwner()->IsMe()) {
+    // 2-part layout
+} else {
+    // N-part layout
+}
+```
+
+**GOTCHA:** Ownership check determines layout. If ownership changes unexpectedly, display changes dramatically. No transition animation.
+
+---
+
+## NEW GAME SYSTEM - Game Creation & Configuration UI
+
+**Files:** new_game.h (lines 1-251), new_game.cpp, newworld.cpp
+
+The new game system handles creating single-player and multiplayer games. It consists of multiple interconnected dialogs that guide players through scenario selection, difficulty settings, player setup, and game initialization.
+
+### Architecture
+
+**Game Type Enumeration:**
+```cpp
+enum game_type {
+    scenario,       // Campaign scenario
+    single,         // Single-player skirmish
+    create_net,     // Host multiplayer game
+    join_net,       // Join multiplayer game
+    load_single,    // Load single-player save
+    load_multi,     // Load multiplayer save
+    load_join,      // Load and join multiplayer
+    num_types
+};
+```
+
+**Class Hierarchy:**
+```
+CCreateBase (abstract base)
+├── CMultiBase (multiplayer support)
+│   └── CJoinMulti (join/host logic)
+├── CCreateNewBase (new game dialogs)
+│   └── CDlgPickRace (race selection)
+└── CCreateLoadBase (load game dialogs)
+    └── CDlgPickPlayer (player selection)
+```
+
+### Main Dialog Classes
+
+**CDlgCreateStatus** - Progress/Status display during game creation:
+- Shows progress bar during world generation/loading
+- Displays status messages (IDD_CREATE_STATUS)
+- Cancel button to abort creation
+- Modeless - doesn't block UI
+
+**CDlgPlayerList** - Multiplayer player management:
+```cpp
+class CDlgPlayerList : public CDialog {
+    CListBox m_lstPlayers;      // List of connected players
+    CString m_sAddr;            // Connection address
+    CString m_sVpVer;           // Network protocol version
+    CWndOD<CButton> m_btnDelete; // Remove player (host only)
+    CWndOD<CButton> m_btnOk;    // Start game
+    BOOL m_bServer;             // TRUE if host/server
+};
+```
+
+**Game Info Structure** (for multiplayer join):
+```cpp
+class CGameInfo : public CObject {
+    int m_iNumOpponents;        // Number of AI opponents
+    int m_iAIlevel;            // AI difficulty (0-3)
+    int m_iWorldSize;          // World size (0-2)
+    int m_iPos;                // Starting position
+    int m_iNumPlayers;         // Total player positions
+    char m_cFlags;             // Game flags
+    CString m_sName;           // Game name
+    CString m_sDesc;           // Game description
+    VPSESSIONID m_ID;          // Network session ID
+};
+```
+
+### New Game Creation Flow
+
+**Single-Player New Game:**
+1. CDlgCreateStatus shows "Creating World..."
+2. NewWorld.cpp generates terrain procedurally
+3. Game initializes with player, AI opponents
+4. Transitions to main game view (CWndArea)
+
+**Multiplayer Host (create_net):**
+1. Player configures game (name, difficulty, size)
+2. CDlgPlayerList shows waiting for players to join
+3. Host can delete players, set "ready"
+4. When ready, host clicks OK to start game
+5. Game broadcasts start command to all clients
+
+**Multiplayer Join (join_net):**
+1. CDlgJoinPublish lists available games
+2. Player selects game, joins
+3. Appears in host's player list
+4. Waits for host to start
+5. Receives game state from host
+
+### New Game Rendering Gotchas
+
+**1. CDlgCreateStatus is modeless - doesn't block**
+```cpp
+class CDlgCreateStatus {
+    virtual void PostNcDestroy() { delete this; }
+};
+```
+
+**GOTCHA:** Dialog self-deletes when closed. If creation fails/cancelled, dialog destroyed but creation thread might still run, orphaning it.
+
+**2. World generation is synchronous in main thread**
+During world creation, UI freezes. Large worlds (size 2) can freeze for 10+ seconds.
+
+**GOTCHA:** No background thread or progress granularity. No way to show per-step progress.
+
+**3. Player list rendering depends on network status**
+```cpp
+void CDlgPlayerList::UpdatePlyrStatus(CPlayer* pPlyr, int iStatus) {
+    // Redraw player list with new status
+}
+```
+
+**GOTCHA:** If network drops, player status updates fail silently. No error indication in list.
+
+**4. Game info (CGameInfo) passed by reference**
+Multiple dialogs reference same CGameInfo. Modifications affect shared state.
+
+**GOTCHA:** If info modified unexpectedly (network message), all dialogs show updated info. No dirty flag or re-sync protection.
+
+**5. CDlgPlayerList only shows for multiplayer**
+Single-player games skip player list entirely.
+
+**GOTCHA:** UI flow completely different between single/multi. Players might be confused where to click.
+
+---
+
+## MULTIPLAYER JOIN/HOST - Network Game Discovery & Connection
+
+**Files:** join.h (lines 1-250), join.cpp, creatmul.inl (included in multiple files)
+
+The multiplayer join/host system handles network game discovery, hosting, and joining. It supports multiple network protocols (TCP, IPX, NetBIOS, DirectPlay, Modem, TAPI, Serial).
+
+### Architecture
+
+**Protocol Support:**
+```cpp
+const int NUM_PROTOCOLS = 7;
+const int aPr[NUM_PROTOCOLS] = {
+    VPT_TCP,      // TCP/IP
+    VPT_IPX,      // IPX
+    VPT_NETBIOS,  // NetBIOS
+    VPT_DP,       // DirectPlay
+    VPT_MODEM,    // Modem
+    VPT_TAPI,     // TAPI (telephony)
+    VPT_COMM      // Serial port
+};
+```
+
+**Game Publishing (Host):**
+
+**CDlgJoinPublish** - Publish/advertise hosted game:
+```cpp
+class CDlgJoinPublish : public CDialog {
+    CEdit m_StrName;           // Game name text field
+    CString m_strPw;           // Password
+    int m_NetRadio;            // Selected protocol radio button
+    CWndOD<CButton> m_btnAdv;  // Advanced settings button
+    CWndOD<CButton> m_btnUnPublish; // Stop hosting button
+};
+```
+
+**Features:**
+- Player enters game name
+- Optionally password-protect
+- Select network protocol
+- Publish to network for others to discover
+- Unpublish to stop accepting joins
+
+**Game Discovery (Joiner):**
+
+**CDlgJoinGame** - Browse and join existing games:
+```cpp
+class CDlgJoinGame : public CDialog {
+    CListBox m_lstGames;       // List of discovered games
+    CGameInfo m_SelectedGame;  // Info about selected game
+    // Shows game name, num players, difficulty, size
+};
+```
+
+**Features:**
+- Displays list of published games
+- Shows game details (players, difficulty, map size)
+- Player selects game and clicks Join
+- Joins multiplayer session
+
+### Network Game Flow
+
+**Host (Publish) Flow:**
+```
+CDlgJoinPublish Created
+    ↓
+Enter game name, select protocol
+    ↓
+Click OK → Publish to network
+    ↓
+Wait in CDlgPlayerList for players to join
+    ↓
+When players join:
+    - CMultiBase::AddPlayer(CPlayer*)
+    - CDlgPlayerList updated with new player
+    - Display shows player name, status
+    ↓
+Host clicks "Start Game" in player list
+    ↓
+Broadcast game start to all clients
+    ↓
+Transition to gameplay
+```
+
+**Client (Join) Flow:**
+```
+CDlgJoinGame Created
+    ↓
+Browse network for published games
+    ↓
+CJoinMulti::OnSessionEnum(LPCVPSESSIONINFO)
+    - Called for each discovered game
+    - Adds to available games list
+    ↓
+Player selects game, clicks Join
+    ↓
+CJoinMulti::GameLoaded(void* pBuf, int iLen)
+    - Receives game state from host
+    ↓
+Transition to gameplay with loaded state
+```
+
+### CJoinMulti Class
+
+**Main multiplayer join controller:**
+
+```cpp
+class CJoinMulti {
+    void Init();                    // Initialize join system
+    void ClosePick();              // Close dialogs
+    void CloseAll();               // Clean up all
+    void GameLoaded(void* pBuf, int iLen);  // Game data received
+
+    CDlgJoinPublish m_dlgJoinPublish;  // Host dialog
+    CDlgJoinGame m_dlgJoinGame;        // Join dialog
+
+    virtual void OnSessionEnum(LPCVPSESSIONINFO);  // New game found
+    virtual void OnSessionClose(LPCVPSESSIONINFO); // Game closed/full
+};
+```
+
+**Key Methods:**
+- **Init()** - Set up as client, load data, show publish/join dialogs
+- **ClosePick()** - Close either dialog
+- **CloseAll()** - Clean up all dialogs and multiplayer state
+
+### Multiplayer Rendering Gotchas
+
+**1. Multiple protocol selection can confuse users**
+```cpp
+int m_NetRadio;  // Radio button for protocol selection
+```
+
+**GOTCHA:** 7 different network protocols available. Non-technical users don't know which to pick. Wrong choice = games can't find each other.
+
+**2. Game list updates asynchronously**
+```cpp
+virtual void OnSessionEnum(LPCVPSESSIONINFO);
+```
+
+**GOTCHA:** Games appear/disappear as discovered. If player is reading list while it updates, visual glitching can occur. No locking mechanism visible.
+
+**3. Password-protected games accepted but silently fail**
+Player might join wrong password-protected game without error.
+
+**GOTCHA:** No feedback if join fails due to password. Player left waiting indefinitely.
+
+**4. Game info (CGameInfo) passed around by reference**
+```cpp
+CGameInfo m_SelectedGame;
+```
+
+**GOTCHA:** Multiple dialogs hold references to same info. Updates from network don't refresh all displays. Stale data shown to user.
+
+**5. CDlgJoinPublish and CDlgJoinGame are mutually exclusive**
+Only one visible at a time (host OR join, not both).
+
+**GOTCHA:** Complex state management. Switching between host/join requires closing/reopening dialogs.
+
+**6. Unpublish doesn't disconnect existing players**
+```cpp
+m_btnUnPublish.Click()  // Only stops new joins
+```
+
+**GOTCHA:** Existing players still connected but can't be seen in player list. Confusing UI state.
+
+**7. Advanced settings button (_btnAdv) hidden complexity**
+```cpp
+CWndOD<CButton> m_btnAdv;  // Advanced settings
+```
+
+**GOTCHA:** Important settings (bandwidth, timeout, retry count) buried in "Advanced". Most users never find them.
+
+**8. Session enumeration might hang**
+Network protocol issues could cause enumeration to block UI.
+
+**GOTCHA:** No timeout on game discovery. User sits with empty list, unclear if searching or stalled.
+
+---
+
 ## Porting/Replacement Considerations (For SDL Replacement)
 
 When replacing with SDL:
