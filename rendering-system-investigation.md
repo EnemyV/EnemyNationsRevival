@@ -2560,6 +2560,251 @@ Network protocol issues could cause enumeration to block UI.
 
 ---
 
+## WATER & BOATS - Ocean & Naval Unit Rendering System
+
+**Files:** terrain.h (lines 85-146), terrain.cpp (lines 2390-2456), vehicle.h (lines 135-189), building.h (lines 263-289), area.cpp (lines 2459-2500)
+
+The water and boat system handles ocean terrain rendering, boat movement, and shipyard-based naval units. It includes sophisticated coastline rendering with feathering, water depth tracking, and boat-specific building exits.
+
+### Water System Architecture
+
+**Altitude System for Water:**
+
+```cpp
+enum {
+    OCEAN_FLOOR = 1,     // Deepest water
+    SEA_LEVEL = 16,      // == 16 → ocean, == 17 → land (threshold)
+    AVERAGE = 44,        // Sea level + 28 altitude
+    MOUNTAIN_TOP = 96,
+    MAX = 104
+};
+```
+
+**Water Detection:**
+```cpp
+int GetSeaAlt() const;   // Get water surface altitude
+int GetAlt() const;      // Get terrain altitude
+BOOL IsWater() const;    // Check if this hex is water
+```
+
+**Key Insight:** Water altitude and land altitude are different. Boats move at SEA_LEVEL (16), while land vehicles navigate land altitude. Water depth = (vehicle water capability) vs (SEA_LEVEL - land altitude).
+
+### Coastline System
+
+**13 Coastline Types (COASTLINE enum):**
+
+```cpp
+enum COASTLINE {
+    // 1/4 land corners (water around 3 sides)
+    LAND_UL, LAND_UR, LAND_LR, LAND_LL,
+
+    // 1/2 land edges (water around 2 sides)
+    LAND_UP, LAND_RT, LAND_DN, LAND_LF,
+
+    // 1/4 water corners (land around 3 sides)
+    WATER_UL, WATER_UR, WATER_LR, WATER_LL,
+
+    // Island (all water neighbors)
+    ISLAND
+};
+```
+
+**Feathering - Smooth Coastal Transitions:**
+
+```cpp
+// Coastline feathering prevents hard transitions between water/land
+if (coastline == iType && coastline != iTypeNeighbor)
+    aeFeather[i] = FEATHER_IN;      // Feather INTO coastline
+else if (coastline == iTypeNeighbor && coastline != iType)
+    aeFeather[i] = FEATHER_OUT;     // Feather OUT from coastline
+else if (coastline != iTypeNeighbor && coastline != iType)
+    aeFeather[i] = FEATHER_INOUT;   // Full transition
+```
+
+**Feathering Process:**
+1. Check each of 4 neighbor hexes
+2. If neighbor is coastline but this hex isn't (or vice versa), apply feathering
+3. 3 feather types smooth edges: IN (darkening), OUT (lightening), INOUT (full blend)
+4. Prevents jarring visual transitions at water/land boundaries
+
+### Boat System
+
+**Boat Classification:**
+
+```cpp
+class CTransportData {
+    BOOL IsBoat() const;         // Is this a naval unit?
+    BOOL IsCarrier() const;      // Can it carry other units?
+    BOOL IsLcCarryable() const;  // Can it be carried by landing craft?
+
+    int GetWaterDepth() const;   // How deep can it go (in altitude units)?
+    int GetWheelType() const;    // WHEEL_TYPES enum
+
+    enum WHEEL_TYPES {
+        WALK = 0,    // Infantry
+        WHEEL = 1,   // Wheeled vehicles
+        TRACK = 2,   // Tracked vehicles
+        HOVER = 3,   // Hovercraft
+        WATER = 4    // Boats
+    };
+
+    enum TRANS_FLAGS {
+        FLboat = 0x02,           // Is a boat
+        FLcarrier = 0x04,        // Can carry units
+        FLlc_carryable = 0x80    // Landing craft carryable
+    };
+};
+
+static int m_iMaxDraft;  // Maximum water depth any boat needs
+```
+
+### Shipyard & Ship Exits
+
+**Buildings with Water Access:**
+
+```cpp
+class CStructureData {
+    BOOL HasShipExit() const;        // Can ships enter/exit?
+    BOOL IsPartWater() const;        // Must be on both land and water?
+
+    CHexCoord GetShipHex() const;    // Naval unit entry/exit point
+    int GetShipDir() const;          // Direction boats approach from
+
+    CBuildShipyard* GetBldShipyard() const;  // If is a shipyard
+};
+```
+
+**Key Difference:** Land units use GetExitHex(), boats use GetShipHex(). Shipyards have separate water-side entries for boats.
+
+### Boat Movement & Docking
+
+**Boat Behavior in area.cpp:**
+
+```cpp
+// Repair dock - boat vs land vehicle
+if (((CVehicle*)pUnit)->GetData()->IsBoat())
+    SetDestAndSfx((CVehicle*)pUnit, ((CBuilding*)pUnitOn)->GetShipHex());
+else
+    SetDestAndSfx((CVehicle*)pUnit, ((CBuilding*)pUnitOn)->GetExitHex());
+
+// Load units into carrier - boats have special cargo
+if (((CVehicle*)pUnitOn)->GetData()->IsBoat() &&
+    ((CVehicle*)pUnit)->GetData()->IsLcCarryable()) {
+    pUnit->ResumeUnit();
+    ((CVehicle*)pUnit)->SetEvent(CVehicle::load);
+    ((CVehicle*)pUnit)->SetLoadOn((CVehicle*)pUnitOn);
+}
+```
+
+**Boat Features:**
+- **Ship Hexes:** Boats dock at separate water-side hexes, not land-side exits
+- **Landing Craft:** Boats can carry specialized landing craft units (amphibious operations)
+- **Water Depth Checking:** Before movement, system validates water depth at destination
+
+### Water Terrain Rendering
+
+**Terrain Drawing with Coastal Feathering:**
+
+```cpp
+// In CHex::Draw()
+CTerrainDrawParms::FEATHER_TYPE aeFeather[4] = {
+    FEATHER_NONE, FEATHER_NONE, FEATHER_NONE, FEATHER_NONE
+};
+
+// For each of 4 neighbors
+for (int i = 0; i < 4; ++i) {
+    CHex* phexNeighbor = theMap.GetHex(neighborCoord);
+    int iTypeNeighbor = phexNeighbor->GetSpriteID();
+
+    // Determine feathering based on coastline neighbors
+    if (coastline == iType && coastline != iTypeNeighbor)
+        aeFeather[i] = FEATHER_IN;
+    else if (coastline == iTypeNeighbor && coastline != iType)
+        aeFeather[i] = FEATHER_OUT;
+    else if (coastline != iTypeNeighbor && coastline != iType)
+        aeFeather[i] = FEATHER_INOUT;
+}
+
+CTerrainDrawParms drawparms(*this, hexcoord, bDrawVert, bShade, aeFeather);
+GetSprite()->GetView(xiDir, 0)->Draw(drawparms);
+```
+
+### Water & Boat Rendering Gotchas
+
+**1. Coastline feathering complexity**
+```cpp
+if (coastline == iType && coastline != iTypeNeighbor)
+    aeFeather[i] = FEATHER_IN;
+```
+
+**GOTCHA:** 4 different feathering conditions must be checked. Off-by-one in neighbor checking could cause missing feathering. Hard to debug because feathering is gradual (not obviously wrong).
+
+**2. Water depth calculation is complex**
+```cpp
+// Boat can travel if:
+// GetWaterDepth() > SEA_LEVEL - pHex->GetAlt()
+```
+
+**GOTCHA:** Subtraction could underflow if altitude > SEA_LEVEL. No validation shown. Shallow water hexes might be unreachable for deep-draft ships.
+
+**3. Ship exits separate from land exits**
+```cpp
+if (IsBoat())
+    SetDest(..., GetShipHex());
+else
+    SetDest(..., GetExitHex());
+```
+
+**GOTCHA:** If shipyard building has both land and water exits, wrong exit used = boat stuck unable to dock. GetShipHex() vs GetExitHex() confusion could cause mission-breaking bugs.
+
+**4. Landing craft carryable flag must match**
+```cpp
+if (((CVehicle*)pUnitOn)->GetData()->IsBoat() &&
+    ((CVehicle*)pUnit)->GetData()->IsLcCarryable()) {
+    // Can load
+}
+```
+
+**GOTCHA:** Only units with explicit IsLcCarryable() flag can load into boats. Regular carryable units can't. If flag not set correctly, players can't load units into boats.
+
+**5. Feathering only applied if not road/resource**
+```cpp
+if (road != iType && resources != iType && city != iType && ...) {
+    // Apply feathering
+}
+```
+
+**GOTCHA:** If a road crosses water terrain, feathering disabled. Road/water intersections could look jarring.
+
+**6. Max draft stored as static class variable**
+```cpp
+static int m_iMaxDraft;  // Shared across all boats
+```
+
+**GOTCHA:** Max draft is global, not per-scenario. If mod changes boat designs, old max draft value stays cached.
+
+**7. GetSeaAlt() vs GetAlt() confusion**
+Terrain system has both water and land altitude. Easy to use wrong one for water operations.
+
+**GOTCHA:** Calling GetAlt() on water hex returns land altitude (not water surface). Developer must remember to use GetSeaAlt() for water logic.
+
+**8. Coastline type calculation during world generation**
+Coastline type determined by 4 neighbors' water status. Procedural generation could create invalid coastline combinations.
+
+**GOTCHA:** Non-adjacent water patches could create isolated coastline hexes that look wrong (e.g., LAND_UL with no actual land corners visible).
+
+**9. Boat rendering layering**
+Boats rendered with vehicles layer. If water hex has terrain feathering, boat appears to be "on top" incorrectly.
+
+**GOTCHA:** Visual glitching where boats appear to float above coastline because feathering doesn't apply to boat sprites.
+
+**10. Ship hex must be water**
+No validation that GetShipHex() actually points to a water hex.
+
+**GOTCHA:** If scenario designer makes shipyard on all-land, GetShipHex() points to water-less area. Boats can't dock/repair.
+
+---
+
 ## Porting/Replacement Considerations (For SDL Replacement)
 
 When replacing with SDL:
