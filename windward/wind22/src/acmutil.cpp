@@ -292,7 +292,7 @@ void CACMStream::Prepare( LPVOID pSrcBuf, DWORD dwSrcSize, LPVOID pDstBuf, DWORD
     }
 
     if ( pDstBuf == NULL ) {
-        m_hdr->pbDst = (LPBYTE)MEM_alloc_lock( dwDstSize + 16 );
+        m_hdr->pbDst = (LPBYTE)malloc( dwDstSize + 16 );
         if ( !m_hdr->pbDst ) {
             m_mmr = MMSYSERR_NOMEM;
             ThrowError( ERR_ADPCM );

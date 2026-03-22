@@ -3,36 +3,23 @@
 
 #include "acmutil.h"
 
+#include <SDL.h>
+#include <SDL_mixer.h>
+
 //---------------------------------------------------------------------------
 //
 //  Copyright (c) 1995, 1996. Windward Studios, Inc.
 //  All Rights Reserved.
 //
-//  Because I wrote the Music (MIDI) player first this is called Music. But it
-//  actually handles all sounds; MIDI, Digital Audio Music, SFX, and voice.
+//  Audio system using SDL2 + SDL_mixer.
+//  Handles digital audio music, SFX, and voice playback.
 //  Voice is just another sfx and all sfx & voice are stored as mono.
 //
-//  Digital Audio is stored at 16-bit 22KHz stereo. SFX is stored at both 8-bit
-//  11 KHz (if using MIDI for music) and 16-bit 22KHz if playing Digital Audio
-//  (so it mixes a lot faster/easier).
+//  All audio is opened at 22050 Hz, 16-bit signed, stereo.
+//  Sounds in other formats (8-bit 11025Hz mono) are converted at load time.
 //
-//  All WAV files belong to a group (some groups have just 1 file). We can load
-//  and unload a group. We can also play a sound which will load that sound if
-//  it's not loaded (useful for 1 file groups).
-//
-//  MIDI just rotates through it's sounds - it's there for low-end systems and
-//  doesn't take much memory so we don't do all this fancy stuff for it.
-//
-//  Because we don't have a 1:1 relation between MIDI tracks and Digital Audio
-//  we have seperate calls for each that the app can make and this code ignores
-//  the irrelevant calls.
-//
-//  WAV files are marked either pre-load (we don't cache them), cache (read when
-//  needed and discarded if not used for awhile), and buffered (primarily music,
-//  it's read in in chunks as it's played).
-//
-//  When you load a group it reads in all the pre-loaded files and reads the offset
-//  and length of all the others.
+//  WAV files belong to a group. We can load and unload a group.
+//  WAV files are marked either pre-load, cache, or buffered (music).
 //
 //---------------------------------------------------------------------------
 
@@ -45,12 +32,30 @@ class CRawData;
 const int MAX_SOUND_SAMPLES = 6;
 const int DBL_BUF_LEN       = 0x20000;  // 128K
 
+// Audio format constants (replaces MSS32 DIG_F_* constants)
+const int AUDIO_FMT_MONO_8    = 0;  // 8-bit unsigned mono 11025Hz
+const int AUDIO_FMT_MONO_16   = 1;  // 16-bit signed mono 22050Hz
+const int AUDIO_FMT_STEREO_8  = 2;  // 8-bit unsigned stereo 11025Hz (unused in practice)
+const int AUDIO_FMT_STEREO_16 = 3;  // 16-bit signed stereo 22050Hz
+
+// Device format we open SDL_mixer with
+const int DEVICE_FREQ     = 22050;
+const int DEVICE_CHANNELS = 2;
+// AUDIO_S16SYS is used at Mix_OpenAudio time
+
 
 /////////////////////////////////////////////////////////////////////////////
 // CRawChannel - this is a channel we are mixing & playing
 
 const int BACKGROUND_PRI = 400;
 const int FOREGROUND_PRI = 50;
+
+// Events set by SDL audio thread, consumed by game thread in YieldPlayer()
+enum PENDING_EVENT
+{
+    PENDING_NONE,
+    PENDING_FINISHED
+};
 
 class CRawChannel
 {
@@ -63,7 +68,10 @@ class CRawChannel
     void FreeDblBuf( );
     void BackgroundRead( HANDLE iHdl, int iOff, int iLen );
 
-    HSAMPLE m_hSmp;
+    int        m_iChannel;       // SDL_mixer channel index (0..MAX_SOUND_SAMPLES-1)
+    Mix_Chunk* m_pChunk;         // currently loaded Mix_Chunk for this channel (we own the wrapper, not the data)
+    volatile PENDING_EVENT m_pendingEvent;  // set by SDL audio thread, consumed by game thread
+
     BOOL    m_bKill;  // we are stopping (for callback)
     enum FORE
     {
@@ -84,6 +92,14 @@ class CRawChannel
 
     CRawData* m_pData;       // data we are playing
     void*     m_pDblBuf[3];  // double buffer for music
+
+    // Streaming state (used by music channel only, channel 0)
+    int           m_iPlayBuf;       // which buffer the hook is reading from (0..2)
+    int           m_iPlayPos;       // byte offset within current play buffer
+    int           m_iPlayLen[3];    // valid byte count per buffer
+    volatile bool m_bBufConsumed;   // signals game thread to kick next read-ahead
+    bool          m_bStreamEOF;     // no more data from disk
+    volatile bool m_bStreamActive;  // hook is actively streaming
 
     CRITICAL_SECTION m_cs;
     BOOL             m_bCriticalSectionCreated;  // critical section created
@@ -122,8 +138,6 @@ class CRawData
     void LoadBuffer( CFile* pFile );
     void UnloadBuffer( );
 
-    static void DblBufCallBack( DWORD dwData );
-
     void StartDblBuffer( CRawChannel* pRaw );
     void LoadNextDblBuffer( CRawChannel* pRaw, int iNeed );
 
@@ -137,9 +151,9 @@ class CRawData
 
     LONG  m_lOff;        // offset in data file of WAV file
     LONG  m_lBufOff;     // offset in when double buffering
-    int   m_iDataLen;    // length of uncompressed data (set on first read in)
-    int   m_iFileLen;    // length of compressed data
-    void* m_pBuf;        // data (NULL if ! allocated)
+    int   m_iDataLen;    // length of data in device format (set on first read in)
+    int   m_iFileLen;    // length of compressed data on disk
+    void* m_pBuf;        // data in device format (NULL if ! allocated)
     DWORD m_dwLastUsed;  // timeGetTime last used
 
     enum STAT
@@ -157,7 +171,7 @@ class CRawData
         mono_22_16,
         stereo_22_16
     };
-    char m_iFmt;         // 8/16 s/mono 11/22
+    char m_iFmt;         // original format from data file
 
     char m_iGroup;       // group it is in
 
@@ -171,6 +185,13 @@ class CRawData
 
     CRawChannel* m_pRc;  // channel on when doing
 };
+
+
+/////////////////////////////////////////////////////////////////////////////
+// Format conversion: convert raw audio data to device format (22050Hz 16-bit stereo)
+
+void ConvertToDeviceFormat( const void* pSrc, int iSrcLen, int iFmt,
+                            void** ppDst, int* piDstLen );
 
 
 /////////////////////////////////////////////////////////////////////////////
@@ -197,34 +218,31 @@ class CMusicPlayer
     void ShutUp( );     // shuts everything off
     void SoundsOff( );  // sound effects (but not music) off
 
-    BOOL SoundsPlaying( ) const { return ( m_hDig != NULL ); }
-    BOOL MusicPlaying( ) const { return ( m_hMdi != NULL ); }
+    BOOL SoundsPlaying( ) const { return m_bDigOpen; }
+    BOOL MusicPlaying( ) const { return FALSE; }  // MIDI removed
 
     BOOL IsGroupLoaded( int iGrp );
     void LoadGroup( int iGrp );
     void UnloadGroup( int iGrp );
-    void UnloadCache( DWORD dwTime );
 
-    // MIDI music (note - we use digital for all non-playing music too)
+    // MIDI stubs (MIDI support removed; these are no-ops for API compatibility)
     void StartMidiMusic( );
     void StopMidiMusic( );
 
-    // this is for digital music that is played on a MIDI system
-    //   MIDI is shut down while this plays
-    void PlayExclusiveMusic( int iSound );  // by ID - 1 track
-    void EndExclusiveMusic( );              // called by StartMidiMusic
+    // digital music - 1 track (exclusive)
+    void PlayExclusiveMusic( int iSound );
+    void EndExclusiveMusic( );
 
-    // this is for digital music - ignored if playing MIDI
-    //     this gets exclusive use of the first channel
-    void PlayMusicGroup( int iGrpFrst, int iNumGrp );  // swap between tracks in group
+    // digital music - rotate through tracks in a group
+    void PlayMusicGroup( int iGrpFrst, int iNumGrp );
     void EndMusicGroup( );
 
-    // these are for sound effects
+    // sound effects
     void PlayForegroundSound( int iSound, int iPri, int iPan = 64,
-                              int iVol = 100 );  // priority over any background sounds
+                              int iVol = 100 );
     void KillForegroundSound( int iSound );
 
-    // clear all sounds (in our counts - is still playing), queue new sounds, update to new set
+    // background ambient sounds
     void ClrBackgroundSounds( );
     void QueueBackgroundSound( int iSound, int iPri = BACKGROUND_PRI, int iPan = 64, int iVol = 100 );
     void UpdateBackgroundSounds( );
@@ -238,37 +256,39 @@ class CMusicPlayer
     int  GetSoundVolume( ) const;
     void SetMusicVolume( int iVol );
     void SetSoundVolume( int iVol );
-    void SetMusicSoundVolume( int iMusVol, int iSfxVol );
 
     MUSIC_MODE  GetMode( ) const { return m_iMode; }
-    BOOL        UseDirectSound( ) const { return m_bUseDS; }
+    BOOL        UseDirectSound( ) const { return FALSE; }  // legacy; SDL manages backend
     BOOL        IsRunning( ) const { return m_bRunning; }
-    BOOL        MidiOk( ) const { return !m_bNoMidi; }
+    BOOL        MidiOk( ) const { return FALSE; }  // MIDI removed
     BOOL        WavOk( ) const { return !m_bNoWav; }
     char const* GetVersion( ) { return m_sVer; }
 
-    void       YieldPlayer( ) const;
-    HMDIDRIVER _GetHMidi( ) { return m_hMdi; }
-    HDIGDRIVER _GetHDig( ) { return m_hDig; }
+    void YieldPlayer( );
+
+    // Diagnostics: replaces _GetHDig() + AIL_digital_configuration()
+    void GetDigitalConfig( int* pRate, int* pChannels, CString& sName );
 
   protected:
-    void LoadRaw( CMmio* pMmio );
-    void LoadMidi( CMmio* pMmio );
-
-    void OpenMidi( int iVol );
-    void OpenDigital( int iVol, BOOL bMidi );
+    void OpenDigital( int iVol );
     void CheckDigVol( );
     BOOL StartRaw( CRawChannel* pRawChannel, CRawData* pRawData );
 
-    void ToExclMusic( );  // used to convert to/from music mode when have MIDI
-    void FromExclMusic( );
+    void HandleChannelFinished( CRawChannel* pCh );
+    void ProcessMusicStreaming( );
 
-    BOOL IsWavMusic( );
+    static void SDLCALL OnChannelFinished( int channel );
+    static void SDLCALL MusicHookCallback( void* udata, Uint8* stream, int len );
 
-    static void WINAPI MidiCallback( HSEQUENCE hSeq );
-    static void WINAPI RawCallback( HSAMPLE hSmp );
-    static void WINAPI RawDblBufCallback( HSAMPLE hSmp );
-    static void        CacheCallback( DWORD dwData );
+    void HaltChannel( CRawChannel* pCh );   // stop channel and clean up immediately
+    void FreeChunk( CRawChannel* pCh );      // free the Mix_Chunk wrapper if any
+
+    void SetChannelVolume( CRawChannel* pCh );
+    void SetChannelPan( CRawChannel* pCh );
+
+    void StartServiceThread( );
+    void StopServiceThread( );
+    static UINT ServiceThreadProc( LPVOID pParam );
 
   public:
     CADPCMtoPCMConvert* m_pAdpcmSfx;
@@ -278,22 +298,16 @@ class CMusicPlayer
 
   protected:
     CString    m_sVer;
-    MUSIC_MODE m_iMode;      // what we use for music
-    BOOL       m_bNoMidi;    // MIDI doesn't work
+    MUSIC_MODE m_iMode;      // always wav_only (kept for API compat)
     BOOL       m_bNoWav;     // WAV doesn't work
     BOOL       m_bRunning;   // we're running (app is active)
-    BOOL       m_bExclWav;   // WAV music playing (instead of MIDI)
-    BOOL       m_bKillMidi;  // we are stopping MIDI (for callback)
-    BOOL       m_bUseDS;     // true if uses DirectSound
+    bool       m_bDigOpen;   // SDL_mixer audio device is open
 
-    int m_iMusicVol;         // volume
-    int m_iSfxVol;
+    int m_iMusicVol;         // volume 0-127
+    int m_iSfxVol;           // volume 0-127
 
     int m_iMusicGrpFirst;  // ID of first WAV in group we are playing
     int m_iMusicGrpNum;    // number of WAVs (sequentially in array)
-
-    HMDIDRIVER m_hMdi;
-    HDIGDRIVER m_hDig;
 
     // WAV data
     CFile*                     m_pFileReg;                    // non-lang for reading cached & buffered data
@@ -301,12 +315,18 @@ class CMusicPlayer
     CRawChannel                m_Channel[MAX_SOUND_SAMPLES];  // channels we are playing on
     CArray<CRawData, CRawData> m_aRaw;                        // array of classes holding RAW data
 
-    // MIDI data
-    HSEQUENCE m_hSeq;              // sequence we are playing
-    int       m_iMidiTrk;          // track we are playing
+  public:
+    // Service thread: processes deferred callbacks and streaming independently of game loop
+    CRITICAL_SECTION m_csAudio;           // protects all audio state from concurrent access
+    BOOL             m_bCsInitialized;    // critical section initialized
 
-    CArray<void*, void*> m_aMidi;  // array of pointers to xmidi data
+  protected:
+    CWinThread*      m_pServiceThread;    // audio service thread
+    volatile bool    m_bServiceRunning;   // service thread should keep running
 };
+
+// Channel map: maps SDL_mixer channel index -> CRawChannel* (set during Open)
+extern CRawChannel* g_channelMap[MAX_SOUND_SAMPLES];
 
 #pragma warning( disable : 4995 )
 void ConstructElements( CRawData* pNew, int nCount );

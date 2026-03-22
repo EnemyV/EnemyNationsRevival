@@ -39,5 +39,5 @@
 //#include <dplay.h>
 //#include <wing.h>
 
-#include <mss/mssw.h>
+// MSS32 removed - using SDL2 + SDL_mixer for audio
 
