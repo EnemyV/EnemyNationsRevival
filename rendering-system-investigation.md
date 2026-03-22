@@ -3538,6 +3538,608 @@ Abrupt sprite changes when zoom changes.
 
 ---
 
+## ANIMATION SYSTEM - Sprite Frame Management
+
+### Architecture
+
+**Classes:** CAmbient (sprite.h:924-969), CAnimAtr
+
+**Files:** sprite.cpp, sprite.h
+
+The animation system manages sprite frame cycling and timing for ambient objects (buildings, terrain features, ambient creatures, etc.). Each animated sprite can cycle through multiple animation types with frame-by-frame control.
+
+### Animation Types
+
+**ANIM_TYPE Enumeration (sprite.h):**
+```cpp
+enum class ANIM_TYPE {
+    ANIM_FRONT_1,    // Default front-facing animation
+    ANIM_FRONT_2,    // Alternate front-facing animation
+    ANIM_BACK_1,     // Default back-facing animation
+    ANIM_BACK_2,     // Alternate back-facing animation
+    ANIM_COUNT
+};
+```
+
+The order **must match** the order in sprite definition files (.SPR). Each animation type represents a directional view or variant of the same sprite.
+
+### Frame Timing System
+
+**CAmbient::UpdateFrame() (sprite.cpp:2082-2107):**
+- Called each render frame to advance sprite animation
+- Uses **real-time clock** (theGame.GettimeGetTime()) for frame timing
+- Frame hold time is stored per-frame in sprite definition
+- Frames advance based on FRAME_RATE constant
+
+**Key Implementation Details:**
+```cpp
+unsigned uHolds = pspriteview->GetAnim(m_eAnim, 0)->Time();
+DWORD dwElapsedTime = dwCurTime - m_dwLastTime;
+DWORD dwHoldTime = uHolds * 1000 / FRAME_RATE;
+if (dwElapsedTime >= dwHoldTime) {
+    m_iFrame++;
+    m_dwLastTime = dwCurTime;
+}
+```
+
+### Animation States
+
+**CAmbient State Variables:**
+- **m_eAnim** - Current animation type (ANIM_FRONT_1, etc.)
+- **m_iFrame** - Current frame index (0-based)
+- **m_dwLastTime** - Last frame update timestamp
+- **m_bEnabled** - Animation actively playing
+- **m_bPaused** - Animation temporarily paused
+- **m_bOneShot** - Animation plays once then stops
+
+### Animation Operations
+
+**1. SetAnimType(ANIM_TYPE)**
+Changes animation without resetting frame counter.
+
+**2. UpdateFrame(CSpriteView)**
+- Advances to next frame based on elapsed time
+- Applies looping logic (frame wraps to 0 after last frame)
+- For one-shot animations, clamps at last frame and disables
+- Returns current frame index
+
+**3. Reset()**
+- Sets frame to 0
+- Resets m_dwLastTime to current time
+- Used when starting new animation or one-shot animations
+
+**4. SetFrame(CSpriteView, int iFrame)**
+- Manually sets frame to specific index
+- Resets timestamp for accurate frame timing
+
+**5. Enable(BOOL bEnable) / Pause(BOOL bPause)**
+- Enable/disable animation playback
+- Pause temporarily stops frame advancement without disabling
+
+**6. SetOneShot(BOOL bOneShot)**
+- Sets animation to play once then stop
+- Automatically calls Reset() when enabled
+
+### One-Shot Animations
+
+One-shot animations are used for effects that should play exactly once:
+- Explosions (animation plays, then freezes on last frame)
+- Building construction completion animations
+- Special events (discovered locations, etc.)
+
+Logic in UpdateFrame():
+```cpp
+if (m_bOneShot && m_iFrame >= nFrames) {
+    Enable(FALSE);        // Stop animation
+    m_iFrame = nFrames - 1; // Freeze on last frame
+}
+```
+
+### Integration with Sprite Rendering
+
+**CSprite::Draw() uses animation state:**
+1. Gets animation type from CAmbient (m_eAnim)
+2. Gets current frame from CAmbient (UpdateFrame())
+3. Passes frame index to CSpriteView::Draw()
+4. Sprite definition contains actual image data for each frame
+
+**Frame storage:** Each animation type is a sequence of CSprite entries in the sprite definition.
+
+### Directional Animation
+
+Some sprites use different animations for different directions:
+- ANIM_FRONT_1/ANIM_FRONT_2: Unit/creature facing camera (north/up)
+- ANIM_BACK_1/ANIM_BACK_2: Unit facing away (south/down)
+
+Direction changes call SetAnimType() to switch between front/back animations.
+
+### Rendering Gotchas
+
+**1. Animation types must match sprite file order**
+If ANIM_TYPE enum doesn't match .SPR file definition order, wrong animation plays.
+
+**GOTCHA:** Adding animation types requires updating both enum and sprite files.
+
+**2. Frame timing assumes 60 FPS baseline**
+FRAME_RATE constant defines frame timing. If game runs at different frame rate, animation speed changes.
+
+**GOTCHA:** Porting to different frame rates requires recalculating all animation timings.
+
+**3. One-shot animation doesn't automatically clean up**
+After animation finishes, sprite remains visible at last frame indefinitely.
+
+**GOTCHA:** Must manually disable sprite or remove from render list after one-shot completes.
+
+**4. UpdateFrame() called every frame**
+If rendering system stalls, animations continue advancing, causing missed frames.
+
+**GOTCHA:** Animation timing is wall-clock time, not game-time, so animations never freeze during pauses unless explicitly paused.
+
+**5. No animation blending between frames**
+Frame changes are discrete, no interpolation between keyframes.
+
+**GOTCHA:** At low frame rates or high animation speed, animations appear jerky.
+
+**6. Animation state is per-instance**
+Each sprite has its own CAmbient, so different instances animate independently (not synchronized).
+
+**GOTCHA:** Two identical buildings at different locations animate out-of-phase with each other.
+
+---
+
+## PROJECTILE RENDERING - Trajectory & Impact Visualization
+
+### Architecture
+
+**Classes:** CProjBase (unit.h:749), CProjectile (unit.h:789), CExplosion (unit.h:807)
+
+**Files:** projbase.cpp, unit.h, unit.cpp
+
+Projectiles are animated sprites that travel from a shooter to a target, with altitude-based rendering to show flight trajectory. Explosions follow impact.
+
+### Projectile System Overview
+
+**Two Phases:**
+1. **Flight Phase** - CProjectile animates from shooter to target with altitude trajectory
+2. **Explosion Phase** - CExplosion renders at impact location with one-shot animation
+
+**Render Chain:**
+- CProjectile::Draw() → CProjBase::Draw() → CSpriteView::Draw()
+- Projectiles inherit from CEffectTile, part of normal sprite rendering pass
+
+### CProjectile Trajectory Calculation
+
+**Constructor (projbase.cpp:90-209) computes:**
+
+1. **Start Position**
+   - m_maploc = shooter unit's map location (wrapped)
+   - m_fixAlt = shooter altitude + 1 (extra height for arc)
+
+2. **End Position**
+   - m_mlEnd = target location (wrapped)
+   - fEndAlt = target altitude + 1
+
+3. **Path Vector**
+   - x = CMapLoc::Diff(mlEnd.x - m_maploc.x)  // Wrapped coordinate difference
+   - y = CMapLoc::Diff(mlEnd.y - m_maploc.y)
+   - Handles wrapping at map boundaries
+
+4. **Step Calculation** (projbase.cpp:128-149)
+   ```cpp
+   if (abs(x) >= abs(y)) {
+       m_xAdd = STEPS_HEX;  // Full hex step
+       m_yAdd = (abs(y) * STEPS_HEX) / abs(x);  // Proportional step
+       m_iSteps = (abs(x) + STEPS_HEX - 1) / STEPS_HEX;  // Distance in hexes
+   } else {
+       m_yAdd = STEPS_HEX;
+       m_xAdd = (abs(x) * STEPS_HEX) / abs(y);
+       m_iSteps = (abs(y) + STEPS_HEX - 1) / STEPS_HEX;
+   }
+   ```
+   - Calculates per-frame movement in map units
+   - STEPS_HEX divides each hex into fixed substeps
+   - y-steps are proportional to x-steps for smooth diagonal movement
+
+5. **Sign Adjustment** (projbase.cpp:145-148)
+   - m_xAdd/m_yAdd negated if target is west/south
+   - Ensures movement is toward target
+
+6. **Altitude Arc** (projbase.cpp:200-205)
+   - m_faAdd = altitude change per step
+   - m_fixAlt starts high, arcs to fEndAlt
+   - Arc height = max(target_alt, shooter_alt) + 1
+
+### Clearance from Shooter
+
+**Initial movement clears shooter location (projbase.cpp:158-190):**
+- For vehicles: skip SubHex positions of head, next, tail
+- For buildings: skip hex coordinates of building footprint
+- Ensures projectile doesn't collide with shooter
+
+### Directional Sprites
+
+**Optional direction-aware projectiles (projbase.cpp:152-155):**
+```cpp
+if ((m_pEd != NULL) && (m_pEd->m_iFlags && CExplData::has_dir)) {
+    SetFrame(CSpriteView::ANIM_TYPE::ANIM_FRONT_1,
+             ((FastATan(x, y) + 8) / 16 - 1) & 0x07);
+}
+```
+- FastATan() calculates heading angle (8 directions)
+- SetFrame() fixes sprite to direction frame
+- Sprite rotates based on flight direction
+
+### Projectile Drawing
+
+**CProjectile::Draw() (projbase.cpp:80-88):**
+
+```cpp
+CRect CProjectile::Draw(const CHexCoord& hexcoord) {
+    CRect rectBound = CProjBase::Draw(hexcoord);
+    xpanimatr->GetDirtyRects()->AddRect(&rectBound,
+                                        CDirtyRects::LIST_PAINT_BOTH);
+    return rectBound;
+}
+```
+
+**CProjBase::Draw() (projbase.cpp:61-78):**
+```cpp
+CMapLoc3D maploc3d(GetMapLoc().x, GetMapLoc().y, GetAlt());
+CPoint ptOffset(xpanimatr->WorldToWindow(
+    xpanimatr->WorldToCenterWorld(maploc3d)));
+
+ptOffset.x -= pspriteview->Width() >> 1;
+ptOffset.y -= pspriteview->Height() >> 1;
+
+CDrawParms drawparms(*this, ptOffset);
+return pspriteview->Draw(drawparms);
+```
+
+**Rendering Steps:**
+1. Create 3D map location: (x, y, altitude)
+2. Convert to "center world" coords (mid-hex position)
+3. Transform to screen window coordinates
+4. Offset by -(width/2, height/2) to center sprite on hex
+5. Pass to sprite draw with CDrawParms
+
+**Altitude affects screen Y-position:**
+- Higher altitude = lower screen Y (visually higher on screen)
+- Projectile arc visible as parabolic path across screen
+
+### Explosion Rendering
+
+**CExplosion inherits from CProjBase (unit.h:807):**
+```cpp
+class CExplosion : public CProjBase {
+public:
+    CExplosion(CProjectile const* pProj, CUnit* pTarget);
+    CRect Draw(const CHexCoord& hexcoord);
+private:
+    // Inherits m_maploc, m_fixAlt from CProjBase
+};
+```
+
+**Explosion positioning (projbase.cpp:309-331):**
+- Same 3D coordinate transformation as projectiles
+- **Key Difference:** Offset by (width/2, height) instead of (width/2, height/2)
+- Places bottom-center of explosion sprite at hex center (trees stick out)
+
+**One-Shot Behavior:**
+- SetOneShotAnimations() called in constructor
+- Animation plays once, then explosion remains frozen at last frame
+- m_iKillFrame = frame when explosion should disappear
+  - = AnimCount(ANIM_FRONT_1) / 2 if target survives
+  - = 10000 (never) if target died in explosion
+
+### Sound Integration
+
+**Sound played on explosion creation (projbase.cpp:228-244):**
+- Gets explosion sound ID from CExplData
+- Calculates pan/volume based on target position
+- Plays if sounds are enabled
+
+**Conditional sound:**
+- Plays if projectile hit target
+- Only plays for local player's buildings/units (for audio spatialization)
+
+### Rendering Gotchas
+
+**1. Wrapping issues with wrapped coordinates**
+Projectile path may wrap map edge. If start/end coordinates don't wrap consistently, projectile travels wrong path.
+
+**GOTCHA:** Map wrapping is complex; projectile might appear on wrong part of map.
+
+**2. Altitude calculation assumes Fixed precision**
+If Fixed type loses precision, altitude arc becomes flat or distorted.
+
+**GOTCHA:** Altitude-based Y-offset calculation could be off by pixels.
+
+**3. No collision detection during flight**
+Projectile rendered regardless of obstacles in path. Rendering doesn't match gameplay collision.
+
+**GOTCHA:** Projectile may pass through buildings on-screen but still collide in game logic.
+
+**4. Fast projectiles skip hex cells**
+With large m_iSteps, projectile may skip over hexes, appearing to teleport rather than travel.
+
+**GOTCHA:** Gaps in visual path if step size too large.
+
+**5. Direction-aware sprites freeze direction**
+If has_dir flag set, sprite direction doesn't update during flight; appears to glide sideways.
+
+**GOTCHA:** Sprite shows launch direction, not flight direction, confusing player.
+
+**6. Explosion timing separate from visuals**
+One-shot animation duration doesn't match game explosion damage timing.
+
+**GOTCHA:** Explosion appears/disappears at different time than damage is applied.
+
+**7. Dirty rect invalidation required**
+Projectiles manually add to dirty rects (LIST_PAINT_BOTH). If omitted, projectile ghosting occurs.
+
+**GOTCHA:** Projectile leaves trail on screen if dirty rects not properly tracked.
+
+---
+
+## UI PREVIEW MODES - Interactive Placement & Planning Overlays
+
+### Architecture
+
+**Classes:** CWndArea, CGameMap, CHex
+
+**Files:** area.cpp, terrain.cpp, terrain.h
+
+Preview modes are interactive overlays that show where buildings will be placed, roads will be built, or units will travel. They provide visual feedback before the user commits to an action.
+
+### Preview Mode Types
+
+**Rendering Modes (area.h:129):**
+```cpp
+enum {
+    normal = 0,
+    build_loc = 1,      // Building placement preview
+    rocket_ready = 2,   // Rocket placement ready
+    veh_route = 3,      // Vehicle route/waypoint preview
+    road_begin = 4,     // Road building start
+    road_set = 5,       // Road building in progress
+    repair_bldg = 6,    // Building repair mode
+    // ... others
+};
+```
+
+### Building Placement Preview (build_loc / build_ready)
+
+**Mode Activation (area.cpp:2138-2140):**
+- User clicks "Build" button → m_iMode = build_ready
+- User clicks on map → m_iMode = build_loc
+- User clicks elsewhere on map again → places building
+
+**Preview Rendering (area.cpp:1383-1460):**
+
+1. **Foundation Validation**
+   ```cpp
+   CHexCoord _hexBuild = ToBuildUL(hexcoord);  // Snap to building grid
+   m_iFound = theMap.FoundationCost(_hexBuild, m_iBuild, GetBuildDir(),
+                                     NULL, NULL, &iWhy);
+   ```
+   - Calls CGameMap::FoundationCost() to check if building can be placed
+   - Returns cost if valid (>= 0), or error reason if invalid (< 0)
+
+2. **Cursor Visualization (terrain.cpp:3786-3825)**
+   ```cpp
+   void CGameMap::SetBldgCur(CHexCoord const& hex, int iBldg,
+                              int iBldgDir, int iTyp) {
+       switch (iTyp) {
+       case 0: m_iBldgCur = CHex::ok_cur;      // Green - can build
+       case 2: m_iBldgCur = CHex::lousy_cur;   // Yellow - risky
+       default: m_iBldgCur = CHex::bad_cur;    // Red - cannot build
+       }
+   }
+   ```
+   - Marks foundation hexes with cursor icons:
+     - ok_cur (green checkmark)
+     - bad_cur (red X)
+     - lousy_cur (yellow warning)
+
+3. **Building Footprint Marking (terrain.cpp:3809)**
+   ```cpp
+   theMap.EnumHexes(hex, m_cxBldgCur, m_cyBldgCur, fnEnumCurOn, NULL);
+   ```
+   - Calls callback on each hex in building footprint
+   - Marks hexes with cursor icons to show preview
+
+4. **Exit Point Visualization (terrain.cpp:3811-3824)**
+   - Marks land exit hex (where units exit building)
+   - Marks ship exit hex if building has naval access
+   - Exit hexes set with SetCursor() for additional visual feedback
+
+5. **Text Feedback (area.cpp:1389-1425)**
+   - Displays help text explaining why building cannot be placed
+   - Shows farm multiplier for farms ("(2x) Farm with good soil")
+   - Shows resource requirements if visible
+
+**Clearing Preview (terrain.cpp:3827-3841):**
+```cpp
+void CGameMap::ClrBldgCur() {
+    theMap.EnumHexes(m_hexBldgCur, m_cxBldgCur, m_cyBldgCur,
+                     fnEnumCurOff, NULL);
+    // Clear exit hex cursors
+    if (m_pLandExit != NULL) m_pLandExit->ClrCursor();
+    if (m_pShipExit != NULL) m_pShipExit->ClrCursor();
+}
+```
+
+### Road Building Preview (road_begin / road_set)
+
+**Mode Activation (area.cpp:2146-2155):**
+- User clicks "Build Road" button → m_iMode = road_begin
+- User clicks on starting hex → m_hexRoadStart = hexcoord, m_iMode = road_set
+- User moves mouse → SetRoadIcons() previews path
+- User clicks to place → road built
+
+**Preview Path Calculation (area.cpp:4804-4900):**
+
+1. **Path Finding Algorithm**
+   ```cpp
+   void CWndArea::SetRoadIcons(CHexCoord hexEnd) {
+       // Pathfinding from m_hexRoadStart to hexEnd
+       // Uses "longest axis" diagonal algorithm (not A*)
+   }
+   ```
+   - Not full pathfinding; uses greedy diagonal approach
+   - Moves along longest distance first, then alternates X/Y
+
+2. **Terrain Checking (area.cpp:4830-4855)**
+   - For each hex on path:
+     - Check if bridge encountered: stop path
+     - Check if water encountered:
+       - If player can build bridges: cross water in straight line
+       - If no bridge tech: stop path
+     - Track water span to prevent bridges > MAX_SPAN length
+
+3. **Visual Overlay Rendering (area.cpp:4857-4862)**
+   ```cpp
+   if (pHex->m_psprite != pSprRoad) {
+       *pHexOn++ = _hexOn;
+       *ppSpriteOn++ = pHex->m_psprite;  // Save original sprite
+       m_iNumRoadHex++;
+       pHex->m_psprite = pSprRoad;       // Replace with road sprite
+       _hexOn.SetInvalidated();          // Mark for redraw
+   }
+   ```
+   - Temporarily replaces terrain sprite with road sprite
+   - Saves original sprite to restore later
+   - Marks hex as invalidated for immediate redraw
+
+4. **Data Structures (area.h member variables)**
+   - m_phexRoadPath[] - Array of hex coordinates along path
+   - m_ppUnderSprite[] - Array of original sprites to restore
+   - m_iNumRoadHex - Count of hexes in path
+   - m_hexRoadStart - Starting hex of road
+
+**Clearing Preview (area.cpp:4786-4802):**
+```cpp
+void CWndArea::ClrRoadIcons() {
+    for (int i = 0; i < m_iNumRoadHex; i++) {
+        CHex* pHex = theMap._GetHex(m_phexRoadPath[i]);
+        pHex->m_psprite = m_ppUnderSprite[i];  // Restore original
+        m_phexRoadPath[i].SetInvalidated();    // Mark for redraw
+    }
+    m_iNumRoadHex = 0;
+}
+```
+
+### Vehicle Route Preview (veh_route)
+
+**Mode Activation (area.cpp:2972-2989):**
+- User clicks "Set Route" on vehicle → m_iMode = veh_route
+- User clicks waypoint hexes → route added to route window
+- User clicks final destination → route applied
+
+**Rendering (area.cpp:2240-2254):**
+- Route visualization handled by separate CWndRoute window dialog
+- Main area window shows selected vehicle highlighted
+- Route destination hex may be marked (implementation dependent)
+
+**Data Structures (CWndArea member variables):**
+- m_pUnit - Currently selected unit (vehicle)
+- m_iRouteType - Type of route (normal, chase, etc.)
+- m_posRoute - Current route position/state
+
+### Rocket Placement Preview (rocket_ready / rocket_pos)
+
+**Mode Activation (area.cpp:2141-2143):**
+- User clicks "Place Rocket" button → m_iMode = rocket_ready
+- User clicks on map → m_iMode = rocket_pos
+- Similar to building placement but for stationary rocket (missile)
+
+**Preview Rendering:**
+- Uses same SetBldgCur() system as buildings
+- Marks hex where rocket will be placed
+- Shows ok/bad cursors for valid/invalid positions
+- Building direction for rocket determines firing direction
+
+### Cursor Handling for Previews
+
+**Cursor Display (area.cpp:3861-3877):**
+```cpp
+switch (m_iMode) {
+case build_loc:
+case rocket_pos:
+    ::SetCursor(NULL);  // Hide cursor (using hex cursors instead)
+    return;
+
+case road_begin:
+    ::SetCursor(m_hCurRoadBgn[m_aa.m_iZoom]);
+    return;
+case road_set:
+    ::SetCursor(m_hCurRoadSet[m_aa.m_iZoom]);
+    return;
+case veh_route:
+    ::SetCursor(m_hCurRoute);
+    return;
+}
+```
+
+**Zoom-Aware Cursors:**
+- m_hCurRoadBgn[], m_hCurRoadSet[] - Different cursors per zoom level
+- m_hCurRoute - Route cursor (single size)
+- Building cursors hidden (CHex cursors used instead)
+
+### Coordinate Transformation for Previews
+
+**Building Grid Snapping (area.cpp:1386, 2268):**
+```cpp
+CHexCoord _hexBuild = ToBuildUL(hexcoord);  // Snap to upper-left corner
+```
+- Buildings are placed at upper-left corner on hex grid
+- ToBuildUL() snaps cursor position to building grid
+- Ensures buildings align to consistent positions
+
+### Rendering Gotchas
+
+**1. Preview state persists if mode not cleared**
+If user doesn't complete preview mode (clicks elsewhere), hexes remain marked with old sprites.
+
+**GOTCHA:** Hex sprites not restored if mode cancelled; visual glitches until manually cleared.
+
+**2. Building footprint must account for rotation**
+Building direction changes footprint (e.g., 2x4 building becomes 4x2 when rotated).
+
+**GOTCHA:** Preview not updated when player rotates building; shows wrong footprint.
+
+**3. Road pathfinding doesn't match movement pathfinding**
+Road preview uses greedy algorithm; actual movement uses A* pathfinding.
+
+**GOTCHA:** Road shown at one location, but player can't move there due to different pathfinding.
+
+**4. Water bridges not visualized**
+Road preview may show bridge segment, but no visual indication of bridge type/cost.
+
+**GOTCHA:** Player sees road across water but doesn't know if bridge is affordable.
+
+**5. Exit points not always accurate**
+Preview shows exit point, but building rotation may change actual exit direction.
+
+**GOTCHA:** Unit exits building in unexpected direction.
+
+**6. Cursor icons overlap on dense areas**
+Many cursor icons stacked on hexes can obscure each other.
+
+**GOTCHA:** In crowded areas, can't see underlying cursor icons clearly.
+
+**7. Preview not synchronized with actual placement logic**
+FoundationCost() may return different result than CanPlace() due to validation differences.
+
+**GOTCHA:** Preview shows green "OK", but placement fails with error.
+
+**8. InvalidateWindow() not called after SetBldgCur()**
+Hex cursors set but screen not updated until next ReRender() call.
+
+**GOTCHA:** Preview appears delayed after mouse movement; doesn't update immediately.
+
+---
+
 ## Porting/Replacement Considerations (For SDL Replacement)
 
 When replacing with SDL:
