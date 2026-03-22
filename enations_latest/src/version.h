@@ -15,11 +15,11 @@ const char GameLogFile[] = "ENations.log";
 
 
 #define         VER_MAJOR       2
-#define         VER_MINOR       0
-#define         VER_RELEASE     3
+#define         VER_MINOR       1
+#define         VER_RELEASE     1
 
-#define         VER_STRING                              "2.00.003"
-#define         RES_VER_STRING                          "2.00.003\0"
+#define         VER_STRING                              "2.01.001"
+#define         RES_VER_STRING                          "2.01.001\0"
 
 #ifdef _DEBUG
 	#define         VER_FLAGS         VS_FF_DEBUG | VS_FF_PRIVATEBUILD | VS_FF_PRERELEASE
