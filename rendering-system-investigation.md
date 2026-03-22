@@ -2805,6 +2805,739 @@ No validation that GetShipHex() actually points to a water hex.
 
 ---
 
+## DAMAGE DISPLAY & EFFECTS - Unit Damage Visualization
+
+**Files:** unit.h (lines 85-106), unit.cpp (lines 548-636)
+
+The damage display system renders visual effects (smoke and flames) on damaged units. Multiple flame/smoke hotspots appear on units as damage increases, creating a visual feedback system.
+
+### Architecture
+
+**CDamageDisplay Class:**
+```cpp
+class CDamageDisplay {
+    enum { LAST_START_PERCENT = 70 };  // Last flame appears at 70% damage
+
+    void SetDamage(int iPercent);      // Update damage visual (0-100%)
+    CRect Draw(CSpriteView const&, CDrawParms const&);  // Render flames/smoke
+    BOOL IsHit(...);                   // Hit testing for mouse click
+
+private:
+    int m_nSpots;                      // Number of flame/smoke hotspots
+    CFlameSpot* m_pflamespot;          // Array of individual flame effects
+};
+```
+
+### Damage Visualization System
+
+**Hotspot-Based Flames:**
+```cpp
+// Each unit sprite has multiple hotspots for flame placement
+m_nSpots = sprite.GetNumHotSpots(CHotSpotKey::SMOKE_FLAME_HOTSPOT);
+m_pflamespot = new CFlameSpot[m_nSpots];
+```
+
+**Progressive Damage Display:**
+```cpp
+void CDamageDisplay::SetDamage(int iPercent) {
+    // iPercent = 0-100 (0% = no damage, 100% = destroyed)
+
+    for (int i = 0; i < m_nSpots; ++i) {
+        // Calculate when this hotspot's flame starts
+        int iAgeStart = (1 == m_nSpots) ? 0 :
+                        i * LAST_START_PERCENT / (m_nSpots - 1);
+
+        // If damage < start threshold, no flame yet
+        if (iAgeStart > iPercent) {
+            for (int j = i; j < m_nSpots; ++j)
+                m_pflamespot[j].SetAge(-1);  // Turn off flames
+            return;
+        }
+
+        // Calculate flame intensity (0-100 for this hotspot)
+        int iAgePercent = (iPercent - iAgeStart) * 100 / (100 - iAgeStart);
+        m_pflamespot[i].SetAge(iAgePercent);
+    }
+}
+```
+
+**Rendering Flames:**
+```cpp
+CRect CDamageDisplay::Draw(CSpriteView const& spriteview,
+                          CDrawParms const& drawparms) {
+    CRect rectBound(0, 0, 0, 0);
+
+    for (int i = 0; i < m_nSpots; ++i) {
+        // Get hotspot location from sprite
+        CHotSpotKey hotspotkey(CHotSpotKey::SMOKE_FLAME_HOTSPOT, i);
+        CHotSpot const* photspot = spriteview.GetHotSpot(hotspotkey);
+
+        if (!photspot) continue;
+
+        // Convert hotspot from sprite coords to window coords
+        CPoint ptHotSpotClient = spriteview.GetHotSpotPoint(*photspot);
+        ptHotSpotClient = drawparms.SpriteViewToWindow(ptHotSpotClient, spriteview);
+
+        // Draw flame effect at hotspot location
+        rectBound |= m_pflamespot[i].Draw(ptHotSpotClient);
+    }
+
+    return rectBound;
+}
+```
+
+### Damage Display Gotchas
+
+**1. Progressive flame starts are calculated**
+```cpp
+int iAgeStart = i * LAST_START_PERCENT / (m_nSpots - 1);
+```
+
+**GOTCHA:** If unit has 4 hotspots, flames start at 0%, 23%, 47%, 70%. Edge case: if 1 hotspot, all damage mapped to it (iAgeStart = 0).
+
+**2. Hotspots must exist in sprite**
+```cpp
+CHotSpot const* photspot = spriteview.GetHotSpot(hotspotkey);
+if (!photspot) continue;
+```
+
+**GOTCHA:** If sprite missing hotspot, that flame doesn't render. Silent failure - no error indication.
+
+**3. Flames rendered on top of unit**
+Flames always rendered after unit sprite, so always visible.
+
+**GOTCHA:** Flames could obscure important unit details on small units.
+
+**4. All units share same CDamageDisplay logic**
+No unit-specific damage visualization possible (custom fire patterns, etc).
+
+---
+
+## CURSOR SYSTEM - Context-Sensitive Cursor Rendering
+
+**Files:** terrain.h (lines 153-156), terrain.cpp (cursor rendering), area.cpp (cursor handling)
+
+The cursor system displays context-sensitive cursors indicating action feasibility. Seven cursor modes provide feedback on player actions.
+
+### Cursor Modes
+
+```cpp
+enum CURSOR_MODE {
+    no_cur,           // No cursor (0) - normal
+    ok_cur,           // OK cursor (1) - valid action
+    warn_cur,         // Warning cursor (2) - caution
+    bad_cur,          // Bad cursor (3) - invalid action
+    lousy_cur,        // Really bad cursor (4) - strongly invalid
+    land_exit_cur,    // Land exit cursor (5) - building exit
+    sea_exit_cur      // Sea exit cursor (6) - ship exit
+};
+```
+
+### Cursor System Flow
+
+**Hex Cursor Calculation:**
+```cpp
+// CHex tracks cursor mode based on hex state
+int GetCursorMode() const;
+void SetCursor();  // Update cursor based on mode
+void ClrCursor();  // Clear cursor
+```
+
+**Cursor Changing Logic:**
+- **no_cur** → no action available
+- **ok_cur** → player can perform action (move, build, etc)
+- **warn_cur** → action risky (entering fog of war, water, etc)
+- **bad_cur** → action not possible (mountain, water for land unit)
+- **lousy_cur** → completely invalid action
+- **land_exit_cur** → building exit point for land units
+- **sea_exit_cur** → building exit point for boats
+
+### Cursor System Gotchas
+
+**1. Cursor mode static per hex**
+```cpp
+int GetCursorMode() const;
+```
+
+**GOTCHA:** Cursor recalculated per frame but stored as static. If unit status changes (carrier loads unit), cursor doesn't update until hex recalculated.
+
+**2. No differentiation between unit types**
+Cursor doesn't change based on what unit is selected (all units see same cursor).
+
+**GOTCHA:** Player can't tell from cursor if action valid for specific unit type (e.g., boat vs truck).
+
+**3. Cursor cleanup incomplete**
+```cpp
+// BUGBUG at area.cpp:817 - "is there no way to delete a cursor?"
+```
+
+**GOTCHA:** Cursor deletion mechanism unclear. Cursor objects might leak.
+
+**4. Two exit cursor types required**
+Land and sea exits have separate cursors but user might not understand distinction.
+
+---
+
+## UNIT SELECTION HIGHLIGHTING - Selected Unit Visualization
+
+**Files:** area.h, area.cpp (selection list), terrain.h, sprite.h
+
+Selected units are highlighted visually. The system tracks selected units and renders them distinctly from unselected units.
+
+### Selection System
+
+**Selected Unit Tracking:**
+```cpp
+// Units track selection state
+CUnit::selected flag
+m_lstUnits list (in CWndArea) - list of selected units
+
+// Selection operations
+m_lstUnits.AddUnit(pUnit, TRUE);    // Add to selection
+m_lstUnits.RemoveUnit(pUnit);       // Remove from selection
+m_lstUnits.RemoveAllUnits(TRUE);    // Clear selection
+```
+
+**Selection Highlighting Method:**
+- Rendered sprite gets modified appearance
+- Yellow/bright border or outline added
+- Possible brightening of sprite colors
+- Sprite rendered with selection flag set
+
+### Selection Highlighting Gotchas
+
+**1. Selection state affects sprite rendering**
+Different sprite render path if selected.
+
+**GOTCHA:** Selection rendering path might have bugs not hit in normal rendering.
+
+**2. Multi-unit selection complexity**
+Selecting many units could impact performance if highlighting is expensive.
+
+**3. No hover highlighting**
+Only selected units highlighted, not hovered units.
+
+**GOTCHA:** User can't preview what unit they're about to select.
+
+---
+
+## ZOOM & SCALING SYSTEM - Multi-Level Magnification
+
+**Files:** sprite.h (lines 23-40, 310-320), terrain.h (lines 53-54, 384-385)
+
+The zoom system supports 4 different magnification levels for gameplay at different scales.
+
+### Zoom Levels
+
+```cpp
+const int NUM_ZOOM_LEVELS = 4;
+extern int xiZoom;  // Current zoom level (0-3)
+
+// Hex dimensions per zoom level
+const int hHexWid[4] = {96, 48, 24, 12};  // Width
+const int hHexHt[4]  = {48, 24, 12, 6};   // Height
+
+enum ZOOM_LEVEL {
+    ZOOM_0 = 0,  // 1:1 scale (96×48 pixels per hex)
+    ZOOM_1 = 1,  // 1:2 scale (48×24 pixels per hex)
+    ZOOM_2 = 2,  // 1:4 scale (24×12 pixels per hex)
+    ZOOM_3 = 3   // 1:8 scale (12×6 pixels per hex)
+};
+```
+
+### Zoom Implementation
+
+**Sprite System Zoom:**
+```cpp
+class CSpriteView {
+    CRect m_arect[NUM_ZOOM_LEVELS];      // Bounding rects per zoom
+    CPoint m_apt[NUM_ZOOM_LEVELS];       // Hotspots per zoom
+};
+
+// Accessing zoom-specific data
+CRect Rect() const { return m_arect[xiZoom]; }
+CPoint GetPoint(int iZoom = xiZoom) const { return m_apt[iZoom]; }
+```
+
+**Terrain Hex Sizing:**
+```cpp
+static int HexWid(int iZoom) {
+    ASSERT((iZoom >= 0) && (iZoom < NUM_ZOOM_LEVELS));
+    return hHexWid[iZoom];
+}
+static int HexHt(int iZoom) {
+    return hHexHt[iZoom];
+}
+```
+
+**Global Zoom State:**
+```cpp
+extern int xiZoom;  // Set globally before rendering frame
+// All rendering uses xiZoom to select correct sprite data
+```
+
+### Zoom System Gotchas
+
+**1. xiZoom is global state**
+```cpp
+extern int xiZoom;
+```
+
+**GOTCHA:** Changing zoom mid-frame causes rendering inconsistencies. All rendering must use same zoom level.
+
+**2. Sprite data must exist for all zoom levels**
+If sprite missing data for zoom level, rendering fails.
+
+**GOTCHA:** Mod makers must create sprites for all 4 zoom levels or game crashes.
+
+**3. Zoom change affects entire screen**
+```cpp
+xiZoom = newZoom;  // Changes all subsequent renders
+```
+
+**GOTCHA:** If zoom changed while rendering in progress, half-rendered frame shows mixed zoom levels.
+
+**4. UI doesn't zoom with world**
+Buttons, text, menus stay fixed size regardless of zoom.
+
+**GOTCHA:** At zoom 3 (8:1), UI becomes huge relative to game world. Uncomfortable gameplay.
+
+**5. Coordinate transformation complexity**
+All coordinate calculations must account for current zoom level.
+
+**GOTCHA:** Off-by-one errors in zoom scaling cause positioning errors.
+
+---
+
+## RENDERING SORT ORDER - Z-Order Determination (CTileDrawInfo)
+
+**Files:** terrain.cpp (lines 1194-1292, 1297-1330)
+
+The rendering system sorts tiles to determine draw order. Tiles are sorted by screen position to ensure proper depth ordering (farthest first, nearest last).
+
+### Tile Sort System
+
+**CTileDrawInfo Class:**
+```cpp
+class CTileDrawInfo {
+    enum TILE_TYPE {
+        vehicle, building, projectile, bridge, explosion, tree
+    };
+
+    virtual BOOL operator < (const CTileDrawInfo& other) const;
+    virtual BOOL operator == (const CTileDrawInfo& other) const;
+
+    void Init(CUnitTile* ptile, TILE_TYPE, CHexCoord, CMapLoc);
+    void Draw();
+
+    CPoint m_ptCenter;  // Screen center point for sorting
+};
+```
+
+### Sort Algorithm
+
+**Position-Based Sorting:**
+```cpp
+BOOL CTileDrawInfo::operator < (const CTileDrawInfo& other) const {
+    // Sort by Y coordinate (vertical screen position)
+    if (m_ptCenter.y != other.m_ptCenter.y)
+        return m_ptCenter.y < other.m_ptCenter.y;
+
+    // If same Y, sort by X coordinate (horizontal position)
+    if (m_ptCenter.x != other.m_ptCenter.x)
+        return m_ptCenter.x < other.m_ptCenter.x;
+
+    // If same location, treat as duplicate if same unit
+    return m_punittile != other.m_punittile;
+}
+```
+
+**Center Point Calculation:**
+```cpp
+// Convert map coordinates to screen coordinates for sorting
+CMapLoc3D maploc3d(maploc.x, maploc.y, 0);
+CMapLoc3D maploc3d2 = xpanimatr->WorldToCenterWorld(maploc3d);
+
+// Rotate based on current view direction (xiDir)
+switch (xiDir) {
+case 0: m_ptCenter.x = maploc3d2.y;
+        m_ptCenter.y = maploc3d2.y - maploc3d2.x;
+        break;
+case 1: m_ptCenter.x = maploc3d2.y;
+        m_ptCenter.y = -maploc3d2.y - maploc3d2.x;
+        break;
+// ... etc for directions 2, 3
+}
+```
+
+### Explosion & Special Tile Sorting
+
+**CExplosionDrawInfo Subclass:**
+```cpp
+class CExplosionDrawInfo : public CTileDrawInfo {
+    virtual BOOL operator < (const CTileDrawInfo& other) const;
+};
+
+// Explosions always render after buildings/vehicles
+// So they appear on top
+```
+
+### Sort Order Gotchas
+
+**1. Sort order is view-direction dependent**
+```cpp
+switch (xiDir) {  // Rotation changes sort calculation
+```
+
+**GOTCHA:** Rotating view changes sort order. Overlapping units could flip front-to-back when view rotates.
+
+**2. Ties are broken by identity**
+```cpp
+return m_punittile != other.m_punittile;
+```
+
+**GOTCHA:** Units at same position render in arbitrary order. Could cause flicker if sort unstable.
+
+**3. Explosions always on top**
+```cpp
+class CExplosionDrawInfo subclass has special < operator
+```
+
+**GOTCHA:** Explosion effect always renders in front, even if visually should be behind something.
+
+**4. Screen Y coordinate is primary sort**
+Most back-to-front ordering depends on screen Y, not true 3D depth.
+
+**GOTCHA:** At isometric angles, Y-sorting can fail (unit behind another renders in front).
+
+**5. Sort recalculated every frame**
+All tiles sorted by screen position every frame.
+
+**GOTCHA:** Expensive operation. Large numbers of units could cause frame rate drops.
+
+---
+
+## VISIBILITY & FOG OF WAR - Unit Visibility Rendering
+
+**Files:** terrain.h (lines 185, 146), area.cpp, base.h
+
+The visibility system tracks which hexes are visible to each player and controls what's rendered.
+
+### Visibility System
+
+**Hex Visibility:**
+```cpp
+class CHex {
+    BOOL GetVisibility() const;  // Is this hex visible to current player?
+    int GetVisibleType() const;  // What type of hex is visible?
+};
+
+// Roads might not be visible if hex not revealed
+if ((!GetVisibility()) && (!bForce) && (GetVisibleType() != road))
+    return;  // Don't render if not visible
+```
+
+### Visibility Rendering Effects
+
+**Unrevealed Hexes:**
+- Don't render terrain details
+- Show generic "unknown" texture or black
+- Buildings/units hidden
+
+**Revealed but Unvisible Hexes:**
+- Show last-known state of hex
+- Stale building/unit positions
+- Terrain visible but not current state
+
+**Currently Visible Hexes:**
+- Full rendering with current state
+- Units, buildings, effects visible
+- Dynamic updates
+
+### Visibility Gotchas
+
+**1. Visibility caching creates stale data**
+If hex was visible before but isn't now, old sprite cached.
+
+**GOTCHA:** Player sees outdated unit positions, confusing gameplay.
+
+**2. Fog of war textures might not exist**
+If fog texture missing, rendering undefined.
+
+**3. Visibility updated by unit positions**
+Each unit updates visibility of nearby hexes.
+
+**GOTCHA:** Moving unit doesn't instantly remove fog - updated each game frame. Could see briefly into fog.
+
+**4. Roads render even if invisible**
+```cpp
+if (GetVisibleType() != road)
+    return;
+```
+
+**GOTCHA:** Roads visible through fog of war, giving away routes.
+
+---
+
+## TEXT RENDERING - In-Game Labels & Status Text
+
+**Files:** Various (CStatInst rendering, CDC::DrawText calls)
+
+The game renders text in multiple contexts: unit status, building names, health values, action labels.
+
+### Text Rendering Systems
+
+**Status Bar Text (CStatInst):**
+- Icon background with text overlay
+- Used in toolbar, dialogs, status displays
+- Font auto-sizing to fit box
+
+**World Text Labels:**
+- Unit names above units
+- Building names
+- Damage/health percentages
+- Coordinates (debug mode)
+
+**Dialog Text:**
+- Menu items
+- Descriptions
+- Instructions
+
+### Text Rendering Gotchas
+
+**1. Font auto-sizing can fail**
+If text too long, font shrinks to minimum (10pt) and clips.
+
+**GOTCHA:** Long unit names render clipped or unreadable.
+
+**2. Text rendering expensive**
+Multiple DrawText calls per frame in dialogs.
+
+**GOTCHA:** Many dialogs/units cause frame rate drops.
+
+**3. Color management complex**
+Text colors must match palette for 8-bit mode.
+
+**GOTCHA:** Mod changes to palette break text colors.
+
+---
+
+## COLOR & PALETTE MANAGEMENT - Color Rendering
+
+**Files:** Palette management code, DIB formatting
+
+The game uses palette-based rendering with color management for 8-bit and higher color depths.
+
+### Palette System
+
+**Global Palette:**
+- 256-color palette for 8-bit rendering
+- Multiple player colors for teams
+- Terrain colors per type
+
+**Color Conversion:**
+- DIB format conversion between color depths
+- PALETTERGB macro for palette-safe colors
+- RGB color blending
+
+### Palette Gotchas
+
+**1. 8-bit palette limits**
+Only 256 colors available.
+
+**GOTCHA:** Mod with many unit colors could run out of palette slots.
+
+**2. Palette switching expensive**
+Changing palette requires full screen redraw.
+
+**GOTCHA:** Map with many player colors could cause performance issues.
+
+**3. Transparency handling complex**
+Transparent pixels must use reserved palette entries.
+
+**GOTCHA:** Mod sprites with wrong transparency color show wrong colors.
+
+---
+
+## UI OVERLAYS - Dialog & Button Components
+
+The UI rendering system handles dialogs, buttons, checkboxes, text fields, and other interactive elements.
+
+### UI Component Rendering
+
+**Dialog Rendering:**
+- Background bitmap stretched to size
+- Controls positioned within dialog
+- Text fields with text input
+
+**Button Rendering:**
+- 3-state buttons (normal, pressed, disabled)
+- Sprite-based buttons (custom art)
+- Text overlay on buttons
+
+**Text Field Rendering:**
+- Editable text with cursor
+- Selection highlighting
+- Input validation feedback
+
+### UI Gotchas
+
+**1. Custom dialog rendering expensive**
+Composite rendering to off-screen DIB each frame.
+
+**2. Button state changes lag**
+State updated in data but visual update delayed until repaint.
+
+**3. Modality blocks game updates**
+Modal dialogs pause game while open.
+
+---
+
+## SCREEN TRANSITIONS & FADES - Loading & Menu Transitions
+
+Screen transitions occur between menu screens, loading, and gameplay.
+
+### Transition Types
+
+**Fade In/Out:**
+- Black screen fade on loading
+- Menu transitions use fades
+
+**Slide Transitions:**
+- Menu items slide in/out
+
+**Immediate Transitions:**
+- Instant screen changes
+
+### Transition Gotchas
+
+**1. Transitions block input**
+Player can't cancel transition.
+
+**2. Audio continues during transitions**
+Music/sound don't pause with screen.
+
+---
+
+## VIEWPORT & CLIPPING - Rendering Bounds
+
+**Files:** sprite.h (prVp viewport pointer)
+
+The viewport defines the visible rendering area and clipping region.
+
+### Viewport System
+
+**Viewport Pointer (prVp):**
+```cpp
+extern CVRect* prVp;  // Current viewport
+// Dereferenced without null checks - CRITICAL ISSUE
+```
+
+### Viewport Gotchas
+
+**1. NULL viewport dereference risk**
+```cpp
+// In sprite rendering
+if (!prVp) ...  // NO null check!
+// Could crash if viewport not initialized
+```
+
+**GOTCHA:** Viewport must be set before any rendering. If not initialized, crashes.
+
+**2. Clipping region not respected**
+Some rendering doesn't check viewport bounds.
+
+**GOTCHA:** Sprites could render outside window.
+
+---
+
+## RENDERING RESOURCE MANAGEMENT - Bitmap Caching & Pooling
+
+The system manages DIB (Device Independent Bitmap) creation, caching, and reuse.
+
+### Resource Management
+
+**DIB Caching:**
+- Temporary DIBs created for composite rendering (UpdateBlk)
+- Cached between frames to avoid reallocation
+- Resized on window size change
+
+**Sprite Pooling:**
+- Common sprites reused (terrain, buildings)
+- Not created per instance
+
+### Resource Gotchas
+
+**1. DIB reallocation expensive**
+Large window size changes cause reallocation.
+
+**2. Memory not freed on dialog close**
+Self-deleting dialogs might leak DIBs.
+
+**3. Color format mismatch**
+DIB color format must match system depth.
+
+---
+
+## THREAD SAFETY & RENDERING - Global State Issues
+
+**Files:** sprite.h (xiZoom, xiDir, xpdibwnd)
+
+The rendering system uses global state that is NOT thread-safe.
+
+### Global State Variables
+
+```cpp
+extern int xiZoom;           // Current zoom
+extern int xiDir;            // Current view direction
+extern CDIBWnd* xpdibwnd;    // Current DIB window
+extern BOOL bForceDraw;      // Force redraw
+extern BOOL bShowAmb;        // Show ambient
+```
+
+### Thread Safety Issues
+
+**1. Rendering state not thread-safe**
+If game logic runs on separate thread, rendering state could be corrupted.
+
+**GOTCHA:** Multi-threaded game would crash on global state conflicts.
+
+**2. Sprite rendering assumes single thread**
+All sprite rendering uses global xiZoom/xiDir.
+
+**GOTCHA:** Parallel rendering impossible without refactoring.
+
+---
+
+## PERFORMANCE OPTIMIZATION - Rendering Efficiency
+
+### Optimization Strategies
+
+**1. Dirty Rectangle Invalidation**
+Only redraw changed areas of screen.
+
+**2. Sprite Caching**
+Cache sprites at different zoom levels to avoid recomputation.
+
+**3. LOD (Level of Detail)**
+Use lower detail sprites at far zoom levels.
+
+**4. Quad-Based Terrain**
+Render groups of hexes as quads instead of individual hexes.
+
+**5. Viewport Culling**
+Skip rendering sprites outside visible area.
+
+### Performance Gotchas
+
+**1. Invalidation system broken**
+If dirty rect tracking fails, visible glitches appear.
+
+**2. LOD transitions jarring**
+Abrupt sprite changes when zoom changes.
+
+---
+
 ## Porting/Replacement Considerations (For SDL Replacement)
 
 When replacing with SDL:
