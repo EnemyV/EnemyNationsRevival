@@ -596,19 +596,7 @@ BOOL CConquerApp::InitInstance( )
         AfxMessageBox( IDS_VDMPLAY_VER, MB_OK | MB_ICONSTOP );
         return ( FALSE );
     }
-    char sTmp[12];
-    strncpy( sTmp, theMusicPlayer.GetVersion( ), 10 );
-    sTmp[10]      = 0;
-    int   iMajVer = atoi( sTmp );
-    char* pBuf    = sTmp;
-    while ( isdigit( *pBuf ) ) pBuf++;
-    while ( !isdigit( *pBuf ) ) pBuf++;
-    int iMinVer = atoi( pBuf );
-    if ( ( iMajVer < 3 ) || ( ( iMajVer == 3 ) && ( iMinVer < 6 ) ) )
-    {
-        AfxMessageBox( IDS_MSS_VER, MB_OK | MB_ICONSTOP );
-        return ( FALSE );
-    }
+    // SDL_mixer version (MSS version check removed)
 
     // list out version
     switch ( iWinType )
@@ -1470,46 +1458,21 @@ BOOL CConquerApp::InitInstance( )
         m_sSound += "Digital Music";
         break;
     }
-    if ( theMusicPlayer.UseDirectSound( ) )
-        m_sSound += " (DirectSound)";
-    else
-        m_sSound += " (MME)";
-
-    if ( ( !theMusicPlayer.MidiOk( ) ) && ( !theMusicPlayer.WavOk( ) ) )
-        m_sSound += " {MIDI and WAV drivers failed}";
-    else if ( !theMusicPlayer.MidiOk( ) )
-        m_sSound += " {MIDI driver failed}";
-    else if ( !theMusicPlayer.WavOk( ) )
+    if ( !theMusicPlayer.WavOk( ) )
         m_sSound += " {WAV driver failed}";
     else if ( !theMusicPlayer.IsRunning( ) )
         m_sSound += " {turned off}";
     Log( m_sSound );
 
-    if ( theMusicPlayer._GetHDig( ) == 0 )
-        m_sSoundVer = "MSS: " + CString( theMusicPlayer.GetVersion( ) ) + " {off}";
-    else
     {
-        char sBuf[130], *psFmt;
-        long iRate, iFmt;
-        sBuf[0] = 0;
-        AIL_digital_configuration( theMusicPlayer._GetHDig( ), &iRate, &iFmt, sBuf );
-        switch ( iFmt )
-        {
-        case DIG_F_MONO_8:
-            psFmt = "K/8-bit/Mono, ";
-            break;
-        case DIG_F_MONO_16:
-            psFmt = "K/16-bit/Mono, ";
-            break;
-        case DIG_F_STEREO_8:
-            psFmt = "K/8-bit/Stereo, ";
-            break;
-        case DIG_F_STEREO_16:
-            psFmt = "K/16-bit/Stereo, ";
-            break;
-        }
-        m_sSoundVer =
-            "MSS: " + CString( theMusicPlayer.GetVersion( ) ) + " " + IntToCString( iRate ) + CString( psFmt ) + sBuf;
+        int iRate, iChannels;
+        CString sDriverName;
+        theMusicPlayer.GetDigitalConfig( &iRate, &iChannels, sDriverName );
+        if ( iRate > 0 )
+            m_sSoundVer = "Audio: " + CString( theMusicPlayer.GetVersion( ) ) + " " +
+                          IntToCString( iRate ) + "Hz/" + IntToCString( iChannels ) + "ch, " + sDriverName;
+        else
+            m_sSoundVer = "Audio: " + CString( theMusicPlayer.GetVersion( ) ) + " {off}";
     }
     Log( m_sSoundVer );
 
@@ -2850,45 +2813,20 @@ CDlgVer::CDlgVer( CWnd* pParent /*=NULL*/ ): CDialog( CDlgVer::IDD, pParent )
         m_sSound += "Digital Music";
         break;
     }
-    if ( theMusicPlayer.UseDirectSound( ) )
-        m_sSound += " (DirectSound)";
-    else
-        m_sSound += " (MME)";
-
-    if ( ( !theMusicPlayer.MidiOk( ) ) && ( !theMusicPlayer.WavOk( ) ) )
-        m_sSound += " {MIDI and WAV drivers failed}";
-    else if ( !theMusicPlayer.MidiOk( ) )
-        m_sSound += " {MIDI driver failed}";
-    else if ( !theMusicPlayer.WavOk( ) )
+    if ( !theMusicPlayer.WavOk( ) )
         m_sSound += " {WAV driver failed}";
     else if ( !theMusicPlayer.IsRunning( ) )
         m_sSound += " {turned off}";
 
-    if ( theMusicPlayer._GetHDig( ) == 0 )
-        m_sSoundVer = "MSS: " + CString( theMusicPlayer.GetVersion( ) ) + " {off}";
-    else
     {
-        char sBuf[130], *psFmt;
-        long iRate, iFmt;
-        sBuf[0] = 0;
-        AIL_digital_configuration( theMusicPlayer._GetHDig( ), &iRate, &iFmt, sBuf );
-        switch ( iFmt )
-        {
-        case DIG_F_MONO_8:
-            psFmt = "K/8-bit/Mono, ";
-            break;
-        case DIG_F_MONO_16:
-            psFmt = "K/16-bit/Mono, ";
-            break;
-        case DIG_F_STEREO_8:
-            psFmt = "K/8-bit/Stereo, ";
-            break;
-        case DIG_F_STEREO_16:
-            psFmt = "K/16-bit/Stereo, ";
-            break;
-        }
-        m_sSoundVer =
-            "MSS: " + CString( theMusicPlayer.GetVersion( ) ) + " " + IntToCString( iRate ) + CString( psFmt ) + sBuf;
+        int iRate, iChannels;
+        CString sDriverName;
+        theMusicPlayer.GetDigitalConfig( &iRate, &iChannels, sDriverName );
+        if ( iRate > 0 )
+            m_sSoundVer = "Audio: " + CString( theMusicPlayer.GetVersion( ) ) + " " +
+                          IntToCString( iRate ) + "Hz/" + IntToCString( iChannels ) + "ch, " + sDriverName;
+        else
+            m_sSoundVer = "Audio: " + CString( theMusicPlayer.GetVersion( ) ) + " {off}";
     }
 
     m_sSpeed = "CPU Speed: ~" + IntToCString( theApp.GetCpuSpeed( ) ) + "  CD-ROM Speed: ~" +

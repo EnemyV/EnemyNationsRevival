@@ -30,7 +30,7 @@
 #include <dsound.h>
 #include <eh.h>
 //#include <dplay.h>
-#include <mss/mssw.h>
+// MSS32 removed - using SDL2 + SDL_mixer for audio
 #include <wing/INCLUDE/wing.h>
 
 //#define MEM_DEBUG	1
