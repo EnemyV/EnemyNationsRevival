@@ -1,7 +1,9 @@
 {
   "permissions": {
     "allow": [
-      "Bash(git diff:*)"
+      "Bash(git diff:*)",
+      "Bash(find 'd:\\\\Enemy Nations\\\\src\\\\tools\\\\lib' -type f -exec file {})",
+      "Bash(2)"
     ]
   }
 }

@@ -1,0 +1,31 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep -n \"class CWndAnim\\\\|class CDIBWnd\\\\|GraphicsEnginePump\" \"d:/Enemy Nations/src/enations/src\"/*.cpp)",
+      "Bash(xargs grep:*)",
+      "Bash(grep -r *)",
+      "Bash(find *)",
+      "Bash(grep -l*)",
+      "Bash(grep -h*)",
+      "Bash(find 'd*)",
+      "Bash(grep -r \"MSS32\\\\|MSS_\" 'd:\\\\Enemy Nations\\\\src' --include=*.h --include=*.cpp)",
+      "Bash(grep -r \"mss32\\\\|MSS32\\\\|AIL_\\\\|HDIGDRIVER\\\\|HSAMPLE\" 'd:\\\\Enemy Nations\\\\src' --include=*.h --include=*.cpp)",
+      "Bash(grep -r AIL_[a-zA-Z_]* 'd:/Enemy Nations/src' --include=*.cpp --include=*.h)",
+      "Bash(grep -h \"^class C\" *.h)",
+      "Bash(grep -rn AIL_ 'd:/Enemy Nations/src/windward' 'd:/Enemy Nations/src/enations' --include=*.cpp)",
+      "Read(//c/Users/tyboy/.claude/projects/d--Enemy-Nations-src/cdc999ca-d12e-43c9-bef7-34c95d477283/tool-results/**)",
+      "Bash(find 'd:\\\\Enemy Nations\\\\src' -type f \\\\\\(-name *.vcxproj.user -o -name *.props \\\\\\))",
+      "Read(//proc/**)",
+      "Bash(find '/d/Enemy Nations/src' -name *.h -type f)",
+      "Bash(curl -L -o SDL2-devel-2.30.12-VC.zip https://github.com/libsdl-org/SDL/releases/download/release-2.30.12/SDL2-devel-2.30.12-VC.zip)",
+      "Bash(cmake --build enations_latest/src/out/build/x86-Release --config RelWithDebInfo)",
+      "Bash(CMAKE=\"/c/Program Files/Microsoft Visual Studio/2022/Community/Common7/IDE/CommonExtensions/Microsoft/CMake/CMake/bin/cmake.exe\")",
+      "Bash(\"$CMAKE\" -S ../.. -B out/build/x86-Release -G \"Visual Studio 17 2022\" -A Win32)",
+      "Bash(\"$CMAKE\" --build \"d:\\\\Enemy Nations\\\\src\\\\enations_latest\\\\src\\\\out\\\\build\\\\x86-Release\" --config Release)",
+      "Bash(cmd //c BuildRelease.bat)",
+      "Bash(find 'd:\\\\Enemy Nations\\\\src' -name sprite.h ! -path */cmakeBuild/* -exec grep -A 20 \"enum.*ANIM\\\\|ANIM_FRONT\\\\|ANIM_BACK\" {} +)",
+      "Bash(ls \"d:/Enemy Nations/src/enations/src\"/*.h)",
+      "Bash(grep -l \"Draw\\\\|Render\" \"d:/Enemy Nations/src/enations/src\"/*.h)"
+    ]
+  }
+}
