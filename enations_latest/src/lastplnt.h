@@ -21,6 +21,7 @@
 
 // #include "area.h"
 #include "credits.h"
+#include <memory>
 #include "cutscene.h"
 #include "ipccomm.h"
 #include "movie.h"
@@ -36,7 +37,9 @@ class CConquerApp;
 class CCreateBase;
 class CDlgPlyrList;
 class CDlgRelations;
+class SDL2MainMenu;
 class CDlgResearch;
+class GameWindow;
 
 #ifdef _CHEAT
 extern BOOL _bShowRate;
@@ -433,6 +436,12 @@ class CConquerApp : public CWinApp
     CDlgPlyrList* m_pdlgPlyrList;  // for server to kill players
     CWndCutScene  m_wndCutScene;
     CDlgChatAll*  m_pdlgChat;
+
+    // Phase 8C: SDL2 rendering window
+    std::shared_ptr<GameWindow> m_gameWindow;
+
+    // SDL2 main menu (replaces CDlgMain)
+    std::unique_ptr<SDL2MainMenu> m_sdlMainMenu;
 
     CDlgPause* GetDlgPause( );
 

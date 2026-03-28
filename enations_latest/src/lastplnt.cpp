@@ -7,6 +7,9 @@
 
 #include "CdLoc.h"
 #include "DlgReg.h"
+#include "GameWindow.h"
+#include "SDL2Video.h"
+#include "SDL2MainMenu.h"
 #include "ai.h"
 #include "area.h"
 #include "bitmaps.h"
@@ -1351,20 +1354,33 @@ BOOL CConquerApp::InitInstance( )
             }
 #endif
 
-        // Play the startup movie
+        // Initialize SDL2 rendering window before PostIntro/CreateMain
+        // so the SDL window is available for the main menu
+        try {
+            m_gameWindow = GameWindow::Create("Enemy Nations - Game View", m_iScrnX, m_iScrnY);
+        } catch (...) {
+            // Non-fatal: fall back to MFC rendering
+        }
+
+        // Play the startup movie via SDL2
         if ( ( HaveIntro( ) ) && ( GetProfileInt( "Game", "NoIntro", 0 ) == 0 ) )
         {
-            try
+            // Temporarily open SDL_mixer so video audio works via Mix_HookMusic.
+            // PostIntro() will call theMusicPlayer.Open() later for the full init.
+            bool tempAudio = false;
+            if ( Mix_OpenAudio( 22050, AUDIO_S16SYS, 2, 2048 ) == 0 )
+                tempAudio = true;
+
+            if ( m_gameWindow )
             {
-                m_wndMovie.AddMovie( "logo.avi" );
-//                m_wndMovie.AddMovie( "headgame.avi" );  // This file doesnt exist
-                m_wndMovie.AddMovie( "intro.avi" );
-                m_wndMovie.Create( FALSE );
+                SDL2VideoPlayer::PlayVideo( m_gameWindow.get(), "assets\\videos\\logo.mpg" );
+                SDL2VideoPlayer::PlayVideo( m_gameWindow.get(), "assets\\videos\\intro.mpg" );
             }
-            catch ( ... )
-            {
-                PostIntro( );
-            }
+
+            if ( tempAudio )
+                Mix_CloseAudio();
+
+            PostIntro( );
         }
         else {
             PostIntro();
@@ -1591,14 +1607,41 @@ void CConquerApp::CreateMain( )
 
     bDoSubclass = TRUE;
 
-    if ( m_pdlgMain == NULL )
+    // Use SDL2 main menu if available, fall back to MFC CDlgMain
+    if ( m_gameWindow )
     {
-        m_pdlgMain = new CDlgMain( m_pMainWnd );
-        m_pdlgMain->Create( IDD_MAIN, m_pMainWnd );
+        if ( !m_sdlMainMenu )
+        {
+            m_sdlMainMenu = std::make_unique<SDL2MainMenu>();
+            if ( !m_sdlMainMenu->Initialize( m_gameWindow.get() ) )
+            {
+                m_sdlMainMenu.reset();
+            }
+        }
     }
 
-    m_pdlgMain->EnableWindow( TRUE );
-    m_pdlgMain->ShowWindow( SW_SHOW );
+    if ( m_sdlMainMenu && m_sdlMainMenu->IsInitialized() )
+    {
+        // SDL2 menu is active - don't create CDlgMain
+        // Show SDL window, hide MFC window
+        m_wndMain.ShowWindow( SW_HIDE );
+        m_gameWindow->Show();
+        m_gameWindow->SetMainMenu( m_sdlMainMenu.get() );
+        m_gameWindow->Raise();
+        Log( "Using SDL2 main menu" );
+    }
+    else
+    {
+        // Fall back to MFC CDlgMain
+        if ( m_pdlgMain == NULL )
+        {
+            m_pdlgMain = new CDlgMain( m_pMainWnd );
+            m_pdlgMain->Create( IDD_MAIN, m_pMainWnd );
+        }
+        m_pdlgMain->EnableWindow( TRUE );
+        m_pdlgMain->ShowWindow( SW_SHOW );
+    }
+
     theGame.SetState( CGame::main );
 
     CheckForCD( );
@@ -1609,6 +1652,18 @@ void CConquerApp::CreateMain( )
 void CConquerApp::DisableMain( )
 {
 
+    if ( m_sdlMainMenu )
+    {
+        // Stop rendering the SDL menu, hide SDL window, restore MFC window
+        if ( m_gameWindow )
+        {
+            m_gameWindow->SetMainMenu( nullptr );
+            m_gameWindow->Hide();
+        }
+        m_wndMain.ShowWindow( SW_SHOW );
+        return;
+    }
+
     if ( m_pdlgMain == NULL )
         return;
 
@@ -1618,6 +1673,19 @@ void CConquerApp::DisableMain( )
 
 void CConquerApp::DestroyMain( )
 {
+
+    if ( m_sdlMainMenu )
+    {
+        if ( m_gameWindow )
+            m_gameWindow->SetMainMenu( nullptr );
+        m_sdlMainMenu->Shutdown();
+        m_sdlMainMenu.reset();
+    }
+
+    // Restore MFC window and show SDL window (for gameplay rendering)
+    m_wndMain.ShowWindow( SW_SHOW );
+    if ( m_gameWindow )
+        m_gameWindow->Show();
 
     if ( m_pdlgMain == NULL )
         return;

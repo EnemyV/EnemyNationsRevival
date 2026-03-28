@@ -91,6 +91,18 @@ set(enations_sources
         wrldgen.cpp
         mem_pool.h
         cpuspeed.cpp
+        GameWindow.cpp
+        RenderingAdapter.cpp
+        SDL2MainMenu.cpp
+        SDL2UI.cpp
+        SDL2Options.cpp
+        SDL2Dialogs.cpp
+        SDL2Video.cpp
+        ../../rendering/SDLButton.cpp
+        ../../rendering/SDLButtonManager.cpp
+        ../../rendering/StatusBar.cpp
+        ../../input/InputHandler.cpp
+        ../../input/UIButtonListener.cpp
 )
 
 
@@ -158,6 +170,11 @@ target_include_directories(enations PUBLIC
        ../../cmakeBuild/tools
        ./cmakeBuild/tools
        ../../windward/wind22/include
+       ../../rendering/
+       ../rendering/
+       ../../tools/sdl2/SDL2-2.30.12/include
+       ../../tools/sdl2/SDL2_ttf-2.22.0/include
+       ../../tools/sdl2/glew-2.2.0/include
 )
 
 
@@ -176,6 +193,7 @@ target_link_libraries(enations PUBLIC
 #        shmfc4m.lib # was commented
         Netapi32.lib
         version.lib
+        SDL2_ttf.lib
         )
 
         # Disable SafeSEH for MSVC builds as some linked libraries do not support it
@@ -203,12 +221,13 @@ target_link_options(enations PUBLIC
 
         
 
-    target_link_directories(enations PUBLIC        
+    target_link_directories(enations PUBLIC
         ../../tools/lib
         ../../cmakeBuild/tools/vdmplay/$<CONFIG>
         ../../cmakeBuild/windward/wind22/$<CONFIG>
         ./cmakeBuild/tools/vdmplay/$<CONFIG>
         ./cmakeBuild/windward/wind22/$<CONFIG>
+        ../../tools/sdl2/SDL2_ttf-2.22.0/lib/x86
     )
 
 # Copy required DLLs to output directory
@@ -222,7 +241,10 @@ add_custom_command(TARGET enations POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${CMAKE_BINARY_DIR}/tools/vdmplay/$<CONFIG>/vdmplay.dll"
         $<TARGET_FILE_DIR:enations>
-    COMMENT "Copying SDL2.dll, SDL2_mixer.dll, and vdmplay.dll to output directory"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_BINARY_DIR}/../tools/sdl2/SDL2_ttf-2.22.0/lib/x86/SDL2_ttf.dll"
+        $<TARGET_FILE_DIR:enations>
+    COMMENT "Copying SDL2.dll, SDL2_mixer.dll, SDL2_ttf.dll, and vdmplay.dll to output directory"
 )
 
 set_property(TARGET enations PROPERTY CXX_STANDARD 11)

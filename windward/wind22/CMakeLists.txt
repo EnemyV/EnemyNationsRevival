@@ -40,7 +40,7 @@ add_library(wind22 STATIC ${wind22_sources})
 # i still think win22 is older or incomplete somehow
 target_compile_options(wind22 PUBLIC    
     $<$<CONFIG:Sanitize>:/MDd /EHsc /Od /Ob0 /fsanitize=address>
-    $<$<CONFIG:Debug>:/MDd /EHsc /Od /Ob0 /fsanitize=address> # ZI
+    $<$<CONFIG:Debug>:/MDd /EHsc /Od /Ob0> # ZI
     $<$<CONFIG:Profile>:/MD /EHsc /Od /Ob0> # ZI
     $<$<CONFIG:Release>:/MD /EHsc /O2 /Ob2 /Oi /GL /Gy /Gw /Ot /GF /arch:AVX2 /fp:fast /Zi>
 )
