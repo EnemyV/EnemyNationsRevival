@@ -60,7 +60,8 @@ The main rendering flow is controlled by:
 **Files:** building.h, unit.cpp, sprite.cpp
 
 **What Gets Rendered:**
-- Structures (command centers, factories, barracks, etc.)
+- Structures (command center
+s, factories, barracks, etc.)
 - Build stage progression (4 stages: NUM_BLDG_STAGES = 4)
 - Damage states (4 levels: NUM_BLDG_DAMAGE = 4)
 - Building direction (4 directions: NUM_BLDG_DIRECTIONS = 4)
