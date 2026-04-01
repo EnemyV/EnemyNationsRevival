@@ -14,8 +14,26 @@
 #include "area.h"
 #include "bitmaps.h"
 #include "building.inl"
+#include "unit.h"
 #include "event.h"
+#include "GameWindow.h"
+#include "SDL2Compositor.h"
+#include "SDL2FileDialog.h"
+#include "SDL2GameDialogs.h"
+#include "SDL2Panel.h"
+#include "SDL2Toolbar.h"
+#include "SDL2UnitList.h"
 #include "lastplnt.h"
+#include <SDL.h>
+
+
+#ifndef PW_RENDERFULLCONTENT
+#define PW_RENDERFULLCONTENT 0x00000002
+#endif
+
+// Static SDL2 unit list instances (persist across open/close)
+static SDL2UnitList* s_sdlVehicleList = nullptr;
+static SDL2UnitList* s_sdlBuildingList = nullptr;
 #include "relation.h"
 #include "stdafx.h"
 #include "terrain.inl"
@@ -226,7 +244,67 @@ int CWndBar::OnCreate( LPCREATESTRUCT lpCS )
     if ( pOld != NULL )
         dc.SelectObject( pOld );
 
+    // Create native SDL2 toolbar (no PrintWindow capture needed)
+    if ( theApp.m_gameWindow && theApp.m_gameWindow->GetCompositor() )
+    {
+        CRect screenRect;
+        GetWindowRect( &screenRect );
+        CRect clientRect;
+        GetClientRect( &clientRect );
+
+        m_sdlPanel = theApp.m_gameWindow->GetCompositor()->AddPanel(
+            "toolbar", screenRect.left, screenRect.top,
+            clientRect.Width(), clientRect.Height(), 30 );
+
+        // Create the native SDL2 toolbar renderer
+        static SDL2Toolbar s_toolbar;
+        s_toolbar.Init( m_sdlPanel, theApp.m_gameWindow.get() );
+        theApp.m_gameWindow->SetSDL2Toolbar( &s_toolbar );
+
+        // Wire up button handlers
+        CWndBar* pThis = this;
+        s_toolbar.SetButtonHandler(0, [pThis]() { pThis->GotoArea(); });
+        s_toolbar.SetButtonHandler(1, [pThis]() { pThis->GotoWorld(); });
+        s_toolbar.SetButtonHandler(2, [pThis]() { pThis->GotoChat(); });
+        s_toolbar.SetButtonHandler(3, [pThis]() { pThis->GotoRelations(); });
+        s_toolbar.SetButtonHandler(4, [pThis]() { pThis->GotoVehicles(); });
+        s_toolbar.SetButtonHandler(5, [pThis]() { pThis->GotoBuildings(); });
+        s_toolbar.SetButtonHandler(6, [pThis]() { pThis->GotoScience(); });
+        s_toolbar.SetButtonHandler(7, [pThis]() { pThis->GotoFile(); });
+
+        // Disable chat if not net play
+        if ( !theGame.IsNetGame() )
+            s_toolbar.EnableButton(2, false);
+
+        // Route events to SDL2Toolbar
+        m_sdlPanel->SetEventCallback(
+            [](SDL_Event& event, int localX, int localY) -> bool {
+                SDL2Toolbar* tb = theApp.m_gameWindow->GetSDL2Toolbar();
+                if (tb) return tb->HandleEvent(event, localX, localY);
+                return false;
+            });
+
+        ::SetWindowLong( m_hWnd, GWL_EXSTYLE,
+            ::GetWindowLong( m_hWnd, GWL_EXSTYLE ) | WS_EX_LAYERED );
+        ::SetLayeredWindowAttributes( m_hWnd, 0, 1, LWA_ALPHA );
+    }
+
     return 0;
+}
+
+void CWndBar::Draw() {
+    // Use native SDL2 toolbar rendering — no PrintWindow needed
+    SDL2Toolbar* tb = nullptr;
+    if ( theApp.m_gameWindow )
+        tb = theApp.m_gameWindow->GetSDL2Toolbar();
+    if ( tb )
+        tb->Render();
+
+    // Render SDL2 unit list panels
+    if ( s_sdlVehicleList )
+        s_sdlVehicleList->Render();
+    if ( s_sdlBuildingList )
+        s_sdlBuildingList->Render();
 }
 
 void CWndBar::OnClose( )
@@ -288,6 +366,12 @@ void CWndBar::SetStatusText( int iLine, const char* psText, CStatInst::IMPORTANC
     ASSERT( ( 0 <= iLine ) && ( iLine <= 1 ) );
     ASSERT( AfxIsValidString( psText ) );
 
+    // Forward to native SDL2 toolbar
+    if ( theApp.m_gameWindow ) {
+        SDL2Toolbar* tb = theApp.m_gameWindow->GetSDL2Toolbar();
+        if ( tb ) tb->SetStatusText( iLine, psText, (int)iImp );
+    }
+
     m_wndText[iLine].SetText( psText, iImp );
 }
 
@@ -298,6 +382,45 @@ void CWndBar::SetStatusFunc( int iLine, FNSTATUSLINE fnStat, void* pData )
     ASSERT( ( 0 <= iLine ) && ( iLine <= 1 ) );
 
     m_wndText[iLine].SetStatusFunc( fnStat, pData );
+
+    // Forward a text summary to the SDL2 toolbar.
+    // The MFC status callback paints directly to a DC — the SDL toolbar can't use that,
+    // so we build a concise text version of whatever the callback would have shown.
+    if ( theApp.m_gameWindow && fnStat == UnitShowStatus && pData )
+    {
+        CUnit* pUnit = (CUnit*)pData;
+        std::string text = (const char*)pUnit->GetData()->GetDesc();
+
+        // If it's our unit, append materials
+        if ( pUnit->GetOwner()->IsMe() )
+        {
+            for ( int i = 0; i < CMaterialTypes::GetNumTypes(); i++ )
+            {
+                int have = pUnit->GetStore( i );
+                int need = 0;
+                if ( i < CMaterialTypes::GetNumBuildTypes() && pUnit->GetUnitType() == CUnit::building )
+                    need = ( (CBuilding*)pUnit )->GetBldgResReq( i, FALSE );
+                if ( have > 0 || need > 0 )
+                {
+                    CString matName = CMaterialTypes::GetDesc( i );
+                    text += "  " + std::string( (const char*)matName ) + ":" + std::to_string( have );
+                    if ( need > 0 )
+                        text += "(" + std::to_string( need ) + ")";
+                }
+            }
+            // Damage
+            int dmg = 100 - pUnit->GetDamagePer();
+            if ( dmg > 0 )
+                text += "  Dmg:" + std::to_string( __min( 99, dmg ) ) + "%";
+        }
+        else
+        {
+            text += " [" + std::string( (const char*)pUnit->GetOwner()->GetName() ) + "]";
+        }
+
+        SDL2Toolbar* tb = theApp.m_gameWindow->GetSDL2Toolbar();
+        if ( tb ) tb->SetStatusText( iLine, text, 0 );
+    }
 }
 
 #ifdef _CHEAT
@@ -520,53 +643,78 @@ void CWndBar::GotoChat( )
     if ( !theGame.IsNetGame( ) )
         return;
 
-    if ( theApp.m_wndChat.m_hWnd == NULL )
-    {
-        TRAP( );
-        theApp.m_wndChat.Create( );  // world must come after area
+    SDL2ChatWindow dlg( theApp.m_gameWindow.get() );
+    dlg.DoModal();
+}
+
+// (moved to top of file)
+
+static void ToggleUnitListPanel(SDL2UnitList*& pList, SDL2UnitList::ListType type, const char* name) {
+    if (!theApp.m_gameWindow || !theApp.m_gameWindow->GetCompositor())
+        return;
+
+    // If already open, toggle visibility
+    if (pList) {
+        // Find the panel and toggle
+        SDL2Panel* panel = theApp.m_gameWindow->GetCompositor()->FindPanel(name);
+        if (panel) {
+            if (panel->IsVisible()) {
+                panel->SetVisible(false);
+                return;
+            }
+            panel->SetVisible(true);
+            pList->Rebuild();
+            return;
+        }
     }
 
-    theApp.m_wndChat.ShowWindow( theApp.m_wndMain.IsIconic( ) ? SW_SHOW : SW_RESTORE );
-    theApp.m_wndChat.SetFocus( );
+    // Create new panel
+    int screenW = theApp.m_gameWindow->GetWidth();
+    int screenH = theApp.m_gameWindow->GetHeight();
+    int panelW = 340, panelH = 400;
+    int panelX = (type == SDL2UnitList::VEHICLES) ? screenW - panelW - 10 : screenW - panelW * 2 - 20;
+    int panelY = SDL2Panel::TITLE_BAR_HT + 10;
+
+    SDL2Panel* panel = theApp.m_gameWindow->GetCompositor()->AddPanel(
+        name, panelX, panelY, panelW, panelH, 25);
+    panel->SetMovable(true);
+    panel->SetResizable(true);
+    panel->SetClosable(true);
+    panel->SetTitle((type == SDL2UnitList::VEHICLES) ? "Vehicles" : "Buildings");
+    panel->SetCloseCallback([panel]() { panel->SetVisible(false); });
+
+    delete pList;
+    pList = new SDL2UnitList(type);
+    pList->Init(panel, theApp.m_gameWindow.get());
+
+    SDL2UnitList* pL = pList;
+    panel->SetEventCallback(
+        [pL](SDL_Event& event, int localX, int localY) -> bool {
+            return pL->HandleEvent(event, localX, localY);
+        });
 }
 
 void CWndBar::GotoVehicles( )
 {
-
-    if ( theApp.m_wndVehicles.m_hWnd == NULL )
-        theApp.m_wndVehicles.Create( );  // world must come after area
-
-    theApp.m_wndVehicles.ShowWindow( theApp.m_wndMain.IsIconic( ) ? SW_SHOW : SW_RESTORE );
-    theApp.m_wndVehicles.SetFocus( );
+    ToggleUnitListPanel(s_sdlVehicleList, SDL2UnitList::VEHICLES, "vehicles");
 }
 
 void CWndBar::GotoBuildings( )
 {
-
-    if ( theApp.m_wndBldgs.m_hWnd == NULL )
-        theApp.m_wndBldgs.Create( );  // world must come after area
-
-    theApp.m_wndBldgs.ShowWindow( theApp.m_wndMain.IsIconic( ) ? SW_SHOW : SW_RESTORE );
-    theApp.m_wndBldgs.SetFocus( );
+    ToggleUnitListPanel(s_sdlBuildingList, SDL2UnitList::BUILDINGS, "buildings");
 }
 
 void CWndBar::GotoRelations( )
 {
-
-    // when built it's called so we enable here
     if ( theGame.GetMe( )->GetExists( CStructureData::embassy ) )
         EnableButton( IDC_BAR_ADVISOR, TRUE );
     else
         return;
 
-    if ( theApp.m_pdlgRelations == NULL )
-        theApp.m_pdlgRelations = new CDlgRelations( &theApp.m_wndMain );
-
-    if ( theApp.m_pdlgRelations->m_hWnd == NULL )
-        theApp.m_pdlgRelations->Create( IDD_RELATIONS, &theApp.m_wndMain );
-
-    theApp.m_pdlgRelations->ShowWindow( theApp.m_wndMain.IsIconic( ) ? SW_SHOW : SW_RESTORE );
-    theApp.m_pdlgRelations->SetFocus( );
+    if ( theApp.m_gameWindow ) {
+        SDL2RelationsDialog dlg( theApp.m_gameWindow.get() );
+        dlg.DoModal();
+    }
 }
 
 void CWndBar::GotoScience( )
@@ -577,34 +725,23 @@ void CWndBar::GotoScience( )
 
 void CWndBar::_GotoScience( )
 {
-
-    // when built it's called so we enable here
     if ( theGame.GetMe( )->GetExists( CStructureData::research ) )
         EnableButton( IDC_BAR_SCIENCE, TRUE );
     else
         return;
 
-    if ( theApp.m_pdlgRsrch == NULL )
-        theApp.m_pdlgRsrch = new CDlgResearch( &theApp.m_wndMain );
-
-    if ( theApp.m_pdlgRsrch->m_hWnd == NULL )
-        theApp.m_pdlgRsrch->Create( IDD_RESEARCH, &theApp.m_wndMain );
-
-    theApp.m_pdlgRsrch->ShowWindow( theApp.m_wndMain.IsIconic( ) ? SW_SHOW : SW_RESTORE );
-    theApp.m_pdlgRsrch->SetFocus( );
+    if ( theApp.m_gameWindow ) {
+        SDL2ResearchDialog dlg( theApp.m_gameWindow.get() );
+        dlg.DoModal();
+    }
 }
 
 void CWndBar::GotoFile( )
 {
-
-    if ( theApp.m_pdlgFile == NULL )
-        theApp.m_pdlgFile = new CDlgFile( &theApp.m_wndMain );
-
-    if ( theApp.m_pdlgFile->m_hWnd == NULL )
-        theApp.m_pdlgFile->Create( iWinType == W32s ? IDD_FILE1 : IDD_FILE, &theApp.m_wndMain );
-
-    theApp.m_pdlgFile->ShowWindow( theApp.m_wndMain.IsIconic( ) ? SW_SHOW : SW_RESTORE );
-    theApp.m_pdlgFile->SetFocus( );
+    if ( theApp.m_gameWindow ) {
+        SDL2FileDialog dlg( theApp.m_gameWindow.get() );
+        dlg.DoModal();
+    }
 }
 
 // if the curosr is over us - update it
@@ -822,6 +959,11 @@ void CWndBar::UpdateTime( )
 
 void CWndBar::OnDestroy( )
 {
+    if ( m_sdlPanel && theApp.m_gameWindow && theApp.m_gameWindow->GetCompositor() )
+    {
+        theApp.m_gameWindow->GetCompositor()->RemovePanel( m_sdlPanel );
+        m_sdlPanel = nullptr;
+    }
 
     CWndBase::SetFnMouseMove( NULL );
 

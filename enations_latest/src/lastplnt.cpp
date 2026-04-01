@@ -8,8 +8,10 @@
 #include "CdLoc.h"
 #include "DlgReg.h"
 #include "GameWindow.h"
+#include "SDL2Compositor.h"
 #include "SDL2Video.h"
 #include "SDL2MainMenu.h"
+#include "SDL2GameDialogs.h"
 #include "ai.h"
 #include "area.h"
 #include "bitmaps.h"
@@ -1246,6 +1248,15 @@ BOOL CConquerApp::InitInstance( )
 
             delete pMmio;
 
+            // Load wallpaper into SDL2 compositor now that theBitmaps is available
+            if ( m_gameWindow && m_gameWindow->GetCompositor() )
+            {
+                if ( m_gameWindow->GetCompositor()->LoadWallpaper() )
+                    Log( "SDL2 compositor: wallpaper loaded" );
+                else
+                    Log( "SDL2 compositor: wallpaper load failed" );
+            }
+
 // time the CD // we dont have a cd anymore
             m_iCdSpeed = 100; // assume fast CD drive
 #ifndef _GG && 0
@@ -1654,13 +1665,13 @@ void CConquerApp::DisableMain( )
 
     if ( m_sdlMainMenu )
     {
-        // Stop rendering the SDL menu, hide SDL window, restore MFC window
+        // Stop rendering the SDL menu but keep SDL window visible
+        // so the create-status dialog can render on it during game creation
         if ( m_gameWindow )
         {
             m_gameWindow->SetMainMenu( nullptr );
-            m_gameWindow->Hide();
+            // Don't hide — the SDL window is needed for the status dialog
         }
-        m_wndMain.ShowWindow( SW_SHOW );
         return;
     }
 
@@ -1677,15 +1688,35 @@ void CConquerApp::DestroyMain( )
     if ( m_sdlMainMenu )
     {
         if ( m_gameWindow )
+        {
             m_gameWindow->SetMainMenu( nullptr );
+
+            // Transfer the WL24 tile wallpaper to the compositor before
+            // Shutdown() frees it, so it's available during world building.
+            SDL2Compositor* comp = m_gameWindow->GetCompositor();
+            SDL_Surface* tile = m_sdlMainMenu->GetTileWallpaper();
+            if ( comp && tile )
+            {
+                // Duplicate the surface — Shutdown() will free the original
+                SDL_Surface* copy = SDL_ConvertSurface( tile, tile->format, 0 );
+                if ( copy )
+                    comp->SetWallpaperSurface( copy );
+            }
+        }
         m_sdlMainMenu->Shutdown();
         m_sdlMainMenu.reset();
     }
 
-    // Restore MFC window and show SDL window (for gameplay rendering)
-    m_wndMain.ShowWindow( SW_SHOW );
+    // Make MFC main window fully transparent during gameplay.
+    // It stays valid and in-place (GetDC/RectVisible work) but invisible.
+    ::SetWindowLong( m_wndMain.m_hWnd, GWL_EXSTYLE,
+                     ::GetWindowLong( m_wndMain.m_hWnd, GWL_EXSTYLE ) | WS_EX_LAYERED );
+    ::SetLayeredWindowAttributes( m_wndMain.m_hWnd, 0, 0, LWA_ALPHA );
     if ( m_gameWindow )
+    {
         m_gameWindow->Show();
+        m_gameWindow->Raise();
+    }
 
     if ( m_pdlgMain == NULL )
         return;
@@ -1839,6 +1870,34 @@ int CConquerApp::ExitInstance( )
     return ( CWinApp::ExitInstance( ) );
 }
 
+// Show a Yes/No or Yes/No/Cancel message box via SDL2 if available, else MFC.
+static int SDL2_MessageBox( int idsString, bool yesNoCancel = false )
+{
+    // Load the string from the resource table
+    CString str;
+    str.LoadString( idsString );
+    std::string msg( (const char*)str );
+
+    // Replace \n with space for single-line display in our dialog
+    for ( auto& c : msg )
+        if ( c == '\n' ) c = ' ';
+
+    if ( theApp.m_gameWindow )
+    {
+        SDL2MessageBox::Style style = yesNoCancel
+            ? SDL2MessageBox::YesNoCancel
+            : SDL2MessageBox::YesNo;
+        SDL2MessageBox dlg( theApp.m_gameWindow.get(), msg, style );
+        return dlg.DoModal();
+    }
+
+    // MFC fallback
+    UINT flags = yesNoCancel
+        ? ( MB_YESNOCANCEL | MB_ICONQUESTION )
+        : ( MB_YESNO | MB_ICONSTOP | MB_TASKMODAL );
+    return AfxMessageBox( idsString, flags );
+}
+
 // true - continue
 BOOL CConquerApp::SaveGame( CWnd* pPar )
 {
@@ -1854,13 +1913,13 @@ BOOL CConquerApp::SaveGame( CWnd* pPar )
     {
         if ( theGame.IsNetGame( ) )
         {
-            if ( AfxMessageBox( IDS_SERVER_QUIT, MB_YESNO | MB_ICONSTOP | MB_TASKMODAL ) == IDNO )
+            if ( SDL2_MessageBox( IDS_SERVER_QUIT ) == IDNO )
                 return ( FALSE );
         }
-        else if ( AfxMessageBox( IDS_SINGLE_QUIT, MB_YESNO | MB_ICONSTOP | MB_TASKMODAL ) == IDNO )
+        else if ( SDL2_MessageBox( IDS_SINGLE_QUIT ) == IDNO )
             return ( FALSE );
     }
-    else if ( AfxMessageBox( IDS_CLIENT_QUIT, MB_YESNO | MB_ICONSTOP | MB_TASKMODAL ) == IDNO )
+    else if ( SDL2_MessageBox( IDS_CLIENT_QUIT ) == IDNO )
         return ( FALSE );
 
     CWndArea* pWnd = theAreaList.GetTop( );
@@ -1868,7 +1927,7 @@ BOOL CConquerApp::SaveGame( CWnd* pPar )
         if ( ( pWnd->GetMode( ) != CWndArea::rocket_ready ) && ( pWnd->GetMode( ) != CWndArea::rocket_pos ) &&
              ( pWnd->GetMode( ) != CWndArea::rocket_wait ) )
         {
-            iRtn = AfxMessageBox( IDS_SAVE_OLD, MB_YESNOCANCEL | MB_ICONQUESTION );
+            iRtn = SDL2_MessageBox( IDS_SAVE_OLD, true );
             if ( iRtn == IDCANCEL )
                 return ( FALSE );
             if ( iRtn == IDYES )

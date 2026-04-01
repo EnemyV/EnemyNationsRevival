@@ -4,6 +4,7 @@
 #include "stdafx.h"
 #include "lastplnt.h"
 #include "loadtruk.h"
+#include "SDL2MFCPanel.h"
 #include "area.h"
 #include "chproute.hpp"
 #include "unit.inl"
@@ -200,6 +201,8 @@ BOOL CDlgLoadTruck::OnInitDialog()
 	m_sMax = IntToCString ( m_pVehPar->GetData()->GetMaxMaterials () );
 
 	UpdateData (FALSE);
+
+	// Native SDL2 dialog handles rendering
 
 	return TRUE;  // return TRUE unless you set the focus to a control
 	              // EXCEPTION: OCX Property Pages should return FALSE
@@ -448,8 +451,9 @@ void CDlgLoadTruck::OnChangeItem()
 	m_btnOk.EnableWindow (TRUE);
 }
 
-void CDlgLoadTruck::OnDestroy() 
+void CDlgLoadTruck::OnDestroy()
 {
+	SDL2MFCPanel::Detach(this);
 
 	// take us out of vehicle
 	m_pVehPar->NullLoadWindow ();

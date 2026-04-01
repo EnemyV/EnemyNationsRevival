@@ -15,6 +15,11 @@
 #include "area.h"
 #include "icons.h"
 #include "bitmaps.h"
+#include "GameWindow.h"
+#include "SDL2Compositor.h"
+#include "SDL2Panel.h"
+#include "RenderingAdapter.h"
+#include <SDL.h>
 
 #include "ui.inl"
 #include "terrain.inl"
@@ -250,6 +255,7 @@ BEGIN_MESSAGE_MAP(CWndWorld, CWndAnim)
                     ON_WM_PAINT()
                     ON_WM_DESTROY()
                     ON_WM_SIZE()
+                    ON_WM_MOVE()
                     ON_WM_CREATE()
                     ON_WM_SYSCOMMAND()
                     ON_COMMAND(IDA_ENEMY, OnUnits)
@@ -407,7 +413,81 @@ int CWndWorld::OnCreate(LPCREATESTRUCT lpCreateStruct) {
                   rect.Width(),
                   rect.Height());
 
-    // DO WE NEED TO SIZE IT?
+    // Create SDL2 panel for this world/radar window
+    if ( theApp.m_gameWindow && theApp.m_gameWindow->GetCompositor() )
+    {
+        CRect screenRect;
+        GetWindowRect( &screenRect );
+        const char* name = m_bIsRadar ? "radar" : "world";
+        // Ensure title bar is on screen (at least TITLE_BAR_HT from top)
+        int panelX = screenRect.left;
+        int panelY = screenRect.top;
+        // Leave room for resize borders and title bar at screen edges
+        if (panelX < SDL2Panel::RESIZE_BORDER)
+            panelX = SDL2Panel::RESIZE_BORDER;
+        int minY = SDL2Panel::TITLE_BAR_HT + SDL2Panel::RESIZE_BORDER;
+        if (panelY < minY)
+            panelY = minY;
+        m_sdlPanel = theApp.m_gameWindow->GetCompositor()->AddPanel(
+            name, panelX, panelY,
+            rect.Width(), rect.Height(), 20 );  // z=20, above area maps
+        m_sdlPanel->SetMovable(true);
+        m_sdlPanel->SetResizable(true);
+        m_sdlPanel->SetTitle(m_bIsRadar ? "Radar" : "World Map");
+
+        // When panel is resized, update the world's DIB and internal data
+        CWndWorld* pResize = this;
+        m_sdlPanel->SetResizeCallback(
+            [pResize](int newW, int newH) {
+                // Trigger the MFC size handler which rebuilds internal bitmaps
+                pResize->m_dibwnd.Size( MAKELPARAM(newW, newH) );
+                pResize->_OnSize();
+            });
+
+        // Make MFC window fully transparent — SDL panel handles display
+        ::SetWindowLong( m_hWnd, GWL_EXSTYLE,
+            ::GetWindowLong( m_hWnd, GWL_EXSTYLE ) | WS_EX_LAYERED );
+        ::SetLayeredWindowAttributes( m_hWnd, 0, 0, LWA_ALPHA );
+
+        // Route SDL events to CWndWorld's handler methods
+        CWndWorld* pThis = this;
+        m_sdlPanel->SetEventCallback(
+            [pThis](SDL_Event& event, int localX, int localY) -> bool {
+                // Build MFC-style modifier flags
+                UINT flags = 0;
+                Uint32 ms = SDL_GetMouseState(nullptr, nullptr);
+                if (ms & SDL_BUTTON_LMASK) flags |= MK_LBUTTON;
+                if (ms & SDL_BUTTON_RMASK) flags |= MK_RBUTTON;
+                SDL_Keymod km = SDL_GetModState();
+                if (km & KMOD_SHIFT) flags |= MK_SHIFT;
+                if (km & KMOD_CTRL)  flags |= MK_CONTROL;
+
+                CPoint pt(localX, localY);
+
+                switch (event.type) {
+                case SDL_MOUSEBUTTONDOWN:
+                    if (event.button.button == SDL_BUTTON_LEFT)
+                        pThis->OnLButtonDown(flags, pt);
+                    else if (event.button.button == SDL_BUTTON_RIGHT)
+                        pThis->OnRButtonDown(flags, pt);
+                    return true;
+                case SDL_MOUSEBUTTONUP:
+                    if (event.button.button == SDL_BUTTON_LEFT)
+                        pThis->OnLButtonUp(flags, pt);
+                    else if (event.button.button == SDL_BUTTON_RIGHT)
+                        pThis->OnRButtonUp(flags, pt);
+                    return true;
+                case SDL_MOUSEMOTION:
+                    pThis->OnMouseMove(flags, pt);
+                    pThis->SetMouseState();
+                    return true;
+                }
+                return false;
+            });
+
+        // Detach to own OS window so it can be dragged to other monitors
+        m_sdlPanel->Detach(theApp.m_gameWindow.get());
+    }
 
     m_bUpdate = TRUE;
     m_iResOn = m_iFrameOn = 0;
@@ -497,7 +577,59 @@ void CWndWorld::OnPaint() {
     // Do not call CWnd::OnPaint() for painting messages
 }
 
+void CWndWorld::Draw() {
+    // Blit DIB content to SDL2 panel if available, else use GDI path
+    if ( m_sdlPanel )
+    {
+        CDIB* pDib = m_dibwnd.GetDIB();
+        if ( pDib )
+        {
+            int dibWidth  = pDib->GetWidth();
+            int dibHeight = pDib->GetHeight();
+            int bitsPerPixel  = pDib->GetBitsPerPixel();
+            int bytesPerPixel = pDib->GetBytesPerPixel();
+            int pitch     = pDib->GetPitch();
+
+            if ( dibWidth > 0 && dibHeight > 0 && pitch > 0 )
+            {
+                CDIBits dibits = pDib->GetBits();
+                BYTE* pPixels = (BYTE*)(dibits);
+                if ( pPixels )
+                {
+                    SDL_Surface* panelSurface = m_sdlPanel->GetSurface();
+                    if ( panelSurface )
+                    {
+                        Uint32 rmask = 0x00FF0000, gmask = 0x0000FF00, bmask = 0x000000FF, amask = 0;
+                        SDL_Surface* dibSurf = SDL_CreateRGBSurfaceFrom(
+                            pPixels, dibWidth, dibHeight, bitsPerPixel, pitch,
+                            (bytesPerPixel >= 3) ? rmask : 0,
+                            (bytesPerPixel >= 3) ? gmask : 0,
+                            (bytesPerPixel >= 3) ? bmask : 0, amask );
+                        if ( dibSurf )
+                        {
+                            SDL_BlitSurface( dibSurf, nullptr, panelSurface, nullptr );
+                            SDL_FreeSurface( dibSurf );
+                        }
+                        m_sdlPanel->SetDirty();
+                    }
+                }
+            }
+        }
+    }
+    else
+    {
+        m_dibwnd.Update();
+    }
+}
+
 void CWndWorld::OnDestroy() {
+
+    // Remove SDL2 panel from compositor
+    if ( m_sdlPanel && theApp.m_gameWindow && theApp.m_gameWindow->GetCompositor() )
+    {
+        theApp.m_gameWindow->GetCompositor()->RemovePanel( m_sdlPanel );
+        m_sdlPanel = nullptr;
+    }
 
     CWndAnim::OnDestroy();
     Close();
@@ -886,6 +1018,17 @@ void CWndWorld::OnSize(UINT nType, int cx, int cy) {
     GetWindowPlacement(&(theGame.m_wpWorld));
 }
 
+void CWndWorld::OnMove(int x, int y) {
+    CWndAnim::OnMove(x, y);
+
+    if ( m_sdlPanel && !m_sdlPanel->IsMovable() )
+    {
+        CRect screenRect;
+        GetWindowRect( &screenRect );
+        m_sdlPanel->SetPosition( screenRect.left, screenRect.top );
+    }
+}
+
 void CWndWorld::_OnSize() {
 
 #ifdef LOGGINGON
@@ -903,13 +1046,30 @@ void CWndWorld::_OnSize() {
         return;
     }
 
-    // we have to do this cause the button bar is in the cx, cy area
-    // resize the WinG wnd
-    CRect rect;
-    GetClientRect(&rect);
-    int right = rect.right;
-    int bottom = rect.bottom;
-    m_dibwnd.Size(MAKELPARAM (right, bottom)); // this SHOULD onsize the texture I think?
+    // When the SDL panel is user-resizable it owns the dimensions;
+    // otherwise fall back to the MFC client rect.
+    int right, bottom;
+    if ( m_sdlPanel && m_sdlPanel->IsResizable() )
+    {
+        right  = m_sdlPanel->GetWidth();
+        bottom = m_sdlPanel->GetHeight();
+    }
+    else
+    {
+        CRect rect;
+        GetClientRect(&rect);
+        right  = rect.right;
+        bottom = rect.bottom;
+
+        // Sync SDL panel to MFC position/size
+        if ( m_sdlPanel )
+        {
+            CRect screenRect;
+            GetWindowRect( &screenRect );
+            m_sdlPanel->SetRect( screenRect.left, screenRect.top, right, bottom );
+        }
+    }
+    m_dibwnd.Size(MAKELPARAM(right, bottom));
 
 #ifdef LOGGINGON
     char buf[128];
@@ -927,15 +1087,15 @@ void CWndWorld::_OnSize() {
 
     int iBytesPerPixel = m_dibwnd.GetDIB()->GetBytesPerPixel();
 
-    m_cx = __max (1, rect.right);
-    m_cy = __max (1, rect.bottom);
+    m_cx = __max (1, right);
+    m_cy = __max (1, bottom);
     m_pdibGround0 = new CDIB(ptrthebltformat->GetColorFormat(), CBLTFormat::DIB_MEMORY,
                              CBLTFormat::DIR_TOPDOWN, m_cx, m_cy);
     m_pdibBase = new CDIB(ptrthebltformat->GetColorFormat(), CBLTFormat::DIB_MEMORY,
                           CBLTFormat::DIR_TOPDOWN, m_cx, m_cy);
 
     m_cxLine = m_pdibGround0->GetDirPitch();
-    m_lSizeBytes = m_pdibGround0->GetDirPitch() * rect.bottom;
+    m_lSizeBytes = m_pdibGround0->GetDirPitch() * bottom;
 
     // stretch the radar art over
     m_pdibRadar = new CDIB(ptrthebltformat->GetColorFormat(), CBLTFormat::DIB_MEMORY,

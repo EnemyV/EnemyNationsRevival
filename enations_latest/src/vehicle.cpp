@@ -7,6 +7,7 @@
 
 
 #include "stdafx.h"
+#include "SDL2GameDialogs.h"
 #include "event.h"
 #include "lastplnt.h"
 #include "cpathmgr.h"
@@ -1234,6 +1235,14 @@ CDlgLoadTruck *CVehicle::GetDlgLoad() {
         return (NULL);
     }
 
+    // Native SDL2 dialog
+    if (theApp.m_gameWindow) {
+        SDL2LoadTruckDialog dlg(theApp.m_gameWindow.get(), this);
+        dlg.DoModal();
+        return m_pDlgLoad;
+    }
+
+    // MFC fallback
     CWndArea *pWndArea = theAreaList.GetTop();
     if (m_pDlgLoad == NULL)
         m_pDlgLoad = new CDlgLoadTruck(pWndArea, this);

@@ -21,6 +21,7 @@ class CDlgPickPlayer;
 class CCreateNewBase;
 class CCreateLoadBase;
 class CCreateBase;
+class SDL2CreateStatus;
 
 
 const int NUM_PROTOCOLS = 7;
@@ -198,8 +199,12 @@ public:
 		CString				m_sGameName;					// for create_net
 		CString				m_sGameDesc;
 
+		// SDL2 progress dialog (renders on SDL window)
+		SDL2CreateStatus * GetSDL2Status() { return m_psdlStatus; }
+
 protected:
 		CDlgCreateStatus *	m_pdlgStatus;
+		SDL2CreateStatus *	m_psdlStatus = nullptr;
 
 #ifdef _DEBUG
 public:

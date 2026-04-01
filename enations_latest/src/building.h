@@ -15,6 +15,8 @@
 #include "unit.h"
 #include "vehicle.h"
 
+class SDL2BuildTransport;
+
 
 const int ROCKET_APT_CAP = 80;
 const int ROCKET_OFC_CAP = 40;
@@ -933,6 +935,7 @@ protected:
 		void					ctor ();
 
 		CDlgBuildTransport *	m_pDlgTransport;
+		SDL2BuildTransport*     m_pSdlBuildTransport = nullptr;  // SDL2 non-modal build dialog
 
 		CBuildUnit const *	m_pBldUnt;				// vehicle building
 		LONG								m_aiUsed [CMaterialTypes::num_build_types];	// materials used for this vehicle

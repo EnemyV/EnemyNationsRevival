@@ -15,6 +15,8 @@
 #include "ai.h"
 #include "area.h"
 #include "bridge.h"
+#include "GameWindow.h"
+#include "SDL2MFCPanel.h"
 #include "building.inl"
 #include "cdloc.h"
 #include "chproute.hpp"
@@ -2336,6 +2338,25 @@ int CGame::StartGame( BOOL bReplace )
         }
 
         pWndArea->SetFocus( );
+
+        // Make MFC main window transparent, attach others as SDL panels
+        if ( theApp.m_gameWindow )
+        {
+            ::SetWindowLong( theApp.m_wndMain.m_hWnd, GWL_EXSTYLE,
+                ::GetWindowLong( theApp.m_wndMain.m_hWnd, GWL_EXSTYLE ) | WS_EX_LAYERED );
+            ::SetLayeredWindowAttributes( theApp.m_wndMain.m_hWnd, 0, 0, LWA_ALPHA );
+
+            // Vehicle/building lists are native SDL2 now — just hide MFC
+            auto hideW = []( CWnd& w ) {
+                if ( !w.m_hWnd ) return;
+                ::SetWindowLong( w.m_hWnd, GWL_EXSTYLE,
+                    ::GetWindowLong( w.m_hWnd, GWL_EXSTYLE ) | WS_EX_LAYERED );
+                ::SetLayeredWindowAttributes( w.m_hWnd, 0, 0, LWA_ALPHA );
+            };
+            hideW( theApp.m_wndVehicles );
+            hideW( theApp.m_wndBldgs );
+            theApp.m_gameWindow->Raise();
+        }
     }
     EnableAllWindows( NULL, TRUE );
 
@@ -2435,26 +2456,34 @@ int CGame::SaveGame( CWnd* pPar )
             ( theAreaList.GetTop( )->GetMode( ) != CWndArea::rocket_pos ) );
     ASSERT( TestEverything( ) );
 
-    CString sFilters, sExt;
-    sFilters.LoadString( IDS_SAVE_FILTERS );
-    sExt.LoadString( IDS_SAVE_EXT );
-
-    char const* pName;
-    if ( m_sFileName.IsEmpty( ) )
-        pName = "";
-    else
-        pName = m_sFileName;
-
-    CFileDialog dlg( FALSE, sExt, pName, OFN_HIDEREADONLY | OFN_OVERWRITEPROMPT, sFilters, pPar );
-    EnableAllWindows( NULL, FALSE );
-    int iRtn = dlg.DoModal( );
-    if ( iRtn != IDOK )
+    // If SDL2 window is active and filename is pre-set, skip MFC file dialog
+    if ( theApp.m_gameWindow && !m_sFileName.IsEmpty() )
     {
-        EnableAllWindows( NULL, TRUE );
-        return ( iRtn );
+        // Filename already chosen by SDL2SaveDialog — proceed directly
     }
+    else
+    {
+        CString sFilters, sExt;
+        sFilters.LoadString( IDS_SAVE_FILTERS );
+        sExt.LoadString( IDS_SAVE_EXT );
 
-    m_sFileName = dlg.GetPathName( );
+        char const* pName;
+        if ( m_sFileName.IsEmpty( ) )
+            pName = "";
+        else
+            pName = m_sFileName;
+
+        CFileDialog dlg( FALSE, sExt, pName, OFN_HIDEREADONLY | OFN_OVERWRITEPROMPT, sFilters, pPar );
+        EnableAllWindows( NULL, FALSE );
+        int iRtn = dlg.DoModal( );
+        if ( iRtn != IDOK )
+        {
+            EnableAllWindows( NULL, TRUE );
+            return ( iRtn );
+        }
+
+        m_sFileName = dlg.GetPathName( );
+    }
 
     // put up a message to say we are saving
     CDlgSaveMsg dlgMsg( pPar );

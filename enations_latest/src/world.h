@@ -16,6 +16,8 @@
 
 #include "resource.h"
 
+class SDL2Panel;
+
 
 
 /////////////////////////////////////////////////////////////////////////////
@@ -55,7 +57,7 @@ public:
 	void		CommandCenterChange ();
 
 	void		ReRender ();										// mainloop - re-render the screen
-	void		Draw () { m_dibwnd.Update (); }	// draw the rendered screen
+	void		Draw ();												// draw the rendered screen
 
 protected:
 	// Generated message map functions
@@ -63,6 +65,7 @@ protected:
 	afx_msg void OnPaint();
 	afx_msg void OnDestroy();
 	afx_msg void OnSize(UINT nType, int cx, int cy);
+	afx_msg void OnMove(int x, int y);
 	afx_msg int OnCreate(LPCREATESTRUCT lpCreateStruct);
 	afx_msg void OnSysCommand(UINT nID, LPARAM lParam);
 	afx_msg void OnUnits ();
@@ -92,13 +95,16 @@ protected:
 	void		SetMouseState ();
 	int			ButtonOn (CPoint const & pt) const;
 	void		ApplyColors (CDIB const *pDib);
-	void		CaptureMouse () { ASSERT (! m_bCapMouse); SetCapture (); m_bCapMouse = TRUE; }
-	void		ReleaseMouse () { ASSERT (m_bCapMouse); ReleaseCapture (); m_bCapMouse = FALSE; }
+	void		CaptureMouse () { if (!m_bCapMouse) { if (!m_sdlPanel) SetCapture(); m_bCapMouse = TRUE; } }
+	void		ReleaseMouse () { if (m_bCapMouse) { if (!m_sdlPanel) ReleaseCapture(); m_bCapMouse = FALSE; } }
 
 	CWndArea *		m_pWndArea;		// area map we represent
 
 	// out WinG window
 	CDIBWnd		m_dibwnd;					// window we blt into
+
+	// SDL2 panel for composited rendering (Phase 1)
+	SDL2Panel*	m_sdlPanel = nullptr;
 
 	// we have several bitmaps to make updates FAST
 	CDIB *				m_pdibGround0;				// this is the terrain starting at 0,0. 

@@ -946,8 +946,19 @@ void CConquerApp::GraphicsEnginePump() {
 
 NoOper:
 
+    // Phase 8C: Update SDL2 rendering window
+    if (m_gameWindow) {
+        const float deltaTime = 1.0f / 24.0f;  // 24 FPS fixed timestep
+        m_gameWindow->Update(deltaTime);
+    }
+
     // where we should render (if the above was fast)
     RenderScreens();
+
+    // Phase 8C: Present SDL2 rendering window
+    if (m_gameWindow) {
+        m_gameWindow->SwapBuffers();
+    }
 
 #ifdef _PROFILE
     if ( timeGetTime() > dwMarkStart + 2000 )

@@ -11,6 +11,8 @@
 
 #include "stdafx.h"
 #include "lastplnt.h"
+#include "GameWindow.h"
+#include "SDL2MFCPanel.h"
 #include "player.h"
 #include "racedata.h"
 #include "new_game.h"
@@ -583,6 +585,31 @@ void CConquerApp::CreateNewWorld(unsigned uRand, AIinit *pAiData, int iSide, int
 
         // create world for new game (loaded is in player.cpp)
         m_wndWorld.Create(TRUE);        // world must come after area
+
+        // Make MFC main window transparent (area, world, toolbar handle themselves).
+        // Attach vehicle/building list windows as SDL panels.
+        if ( m_gameWindow )
+        {
+            // Main window just needs to be transparent
+            ::SetWindowLong( m_wndMain.m_hWnd, GWL_EXSTYLE,
+                ::GetWindowLong( m_wndMain.m_hWnd, GWL_EXSTYLE ) | WS_EX_LAYERED );
+            ::SetLayeredWindowAttributes( m_wndMain.m_hWnd, 0, 0, LWA_ALPHA );
+
+            // Vehicle/building lists are now native SDL2 (opened via toolbar buttons).
+            // Just make MFC windows transparent so they don't show.
+            auto hideWnd = []( CWnd& w ) {
+                if ( !w.m_hWnd ) return;
+                ::SetWindowLong( w.m_hWnd, GWL_EXSTYLE,
+                    ::GetWindowLong( w.m_hWnd, GWL_EXSTYLE ) | WS_EX_LAYERED );
+                ::SetLayeredWindowAttributes( w.m_hWnd, 0, 0, LWA_ALPHA );
+            };
+            hideWnd( m_wndVehicles );
+            hideWnd( m_wndBldgs );
+            if ( m_wndChat.m_hWnd )
+                SDL2MFCPanel::Attach( &m_wndChat, "chat", 25 );
+
+            m_gameWindow->Raise();
+        }
     }
 
     // set up our routing
@@ -1360,6 +1387,13 @@ void CConquerApp::ClearWorld() {
 void CConquerApp::CloseWorld() {
 
     ASSERT_VALID (this);
+
+    // Restore MFC main window from transparent state before cleanup
+    if ( m_wndMain.m_hWnd ) {
+        LONG exStyle = ::GetWindowLong( m_wndMain.m_hWnd, GWL_EXSTYLE );
+        if ( exStyle & WS_EX_LAYERED )
+            ::SetLayeredWindowAttributes( m_wndMain.m_hWnd, 0, 255, LWA_ALPHA );
+    }
 
     theApp.m_wndMain.SetProgPos(CWndMain::game_end);
     theApp.m_wndMain.InvalidateRect(NULL);

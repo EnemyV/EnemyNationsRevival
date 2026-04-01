@@ -83,6 +83,11 @@ class CWndBar : public CWndAnim
     void UpdateFood( );
     void UpdateTime( );
 
+    void ReRender() {}  // GDI-based; no pre-render needed
+    void Draw();        // Capture GDI content to SDL panel
+
+    class SDL2Panel* m_sdlPanel = nullptr;
+
   public:
     // Generated message map functions
     //{{AFX_MSG(CWndBar)

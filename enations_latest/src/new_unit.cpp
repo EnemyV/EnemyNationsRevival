@@ -10,6 +10,8 @@
 //
 
 #include "stdafx.h"
+#include "SDL2BuildStructure.h"
+#include "SDL2BuildTransport.h"
 #include "event.h"
 #include "lastplnt.h"
 #include "player.h"
@@ -3333,6 +3335,12 @@ void CBuilding::MaterialChange( )
 void CVehicleBuilding::DestroyAllWindows( )
 {
 
+    // Close SDL2 non-modal dialog if open
+    if ( m_pSdlBuildTransport ) {
+        m_pSdlBuildTransport->EndDialog( 0 );
+        // m_pSdlBuildTransport is now nullptr (set by the onDone lambda)
+    }
+
     if ( m_pDlgTransport != NULL )
     {
         if ( m_pDlgTransport->m_hWnd != NULL )
@@ -3466,7 +3474,18 @@ void CVehicleBuilding::ctor( )
 
 CDlgBuildTransport* CVehicleBuilding::GetDlgBuild( )
 {
+    // Use native SDL2 build transport dialog if available (non-modal — no blocking loop)
+    if ( theApp.m_gameWindow ) {
+        if ( !m_pSdlBuildTransport ) {
+            m_pSdlBuildTransport = new SDL2BuildTransport( theApp.m_gameWindow.get(), this );
+            m_pSdlBuildTransport->ShowNonModal( [this]( int ) {
+                m_pSdlBuildTransport = nullptr;
+            } );
+        }
+        return m_pDlgTransport;  // MFC pointer not used by SDL2 path
+    }
 
+    // Fallback to MFC
     if ( m_pDlgTransport == NULL )
         m_pDlgTransport = new CDlgBuildTransport( theApp.m_pMainWnd, this );
     ASSERT_STRICT_VALID( m_pDlgTransport );
@@ -5022,6 +5041,12 @@ void CVehicle::DestroyBuildWindow( )
 
     ASSERT_STRICT_VALID( this );
 
+    // Close SDL2 non-modal dialog if open (EndDialog triggers cleanup via GameWindow)
+    if ( m_pSdlBuild ) {
+        m_pSdlBuild->EndDialog( 0 );
+        // m_pSdlBuild is now nullptr (set by the onDone lambda)
+    }
+
     if ( ( m_pDlgStructure != NULL ) && ( m_pDlgStructure->m_hWnd != NULL ) )
         m_pDlgStructure->DestroyWindow( );
     else
@@ -5194,7 +5219,18 @@ CVehicle* CVehicle::Create( const CSubHex& ptHead, const CSubHex& ptTail, int iV
 
 CDlgBuildStructure* CVehicle::GetDlgBuild( )
 {
+    // Use native SDL2 build dialog if available (non-modal — no blocking loop)
+    if ( theApp.m_gameWindow ) {
+        if ( !m_pSdlBuild ) {
+            m_pSdlBuild = new SDL2BuildStructure( theApp.m_gameWindow.get(), this );
+            m_pSdlBuild->ShowNonModal( [this]( int ) {
+                m_pSdlBuild = nullptr;
+            } );
+        }
+        return m_pDlgStructure;  // MFC pointer not used by SDL2 path
+    }
 
+    // Fallback to MFC
     if ( m_pDlgStructure == NULL )
         m_pDlgStructure = new CDlgBuildStructure( theApp.m_pMainWnd, this );
     ASSERT_STRICT_VALID( m_pDlgStructure );

@@ -8,7 +8,7 @@
 
 // terrain.cpp : the hexes & terrain
 //
-#include "base.h" 
+#include "base.h"
 #include "terrain.inl"
 
 #include "bitmaps.h"
@@ -18,8 +18,11 @@
 #include "lastplnt.h"
 #include "minerals.h"
 #include "stdafx.h"
+#include "SDL2Panel.h"
+#include "RenderingAdapter.h"
 #include "unit.inl"
 #include "vehicle.inl"
+#include "RenderingAdapter.h"
 
 
 #ifdef _DEBUG
@@ -638,6 +641,18 @@ void CAnimAtr::Render( )
         m_pwnd->ReleaseDC( pdc );
 
     m_dirtyrects.UpdateLists( );  // Cur rect list <- Next rect list
+
+    // Route rendered content to SDL2 panel (Phase 1) or legacy whole-window path
+    if ( m_sdlPanel )
+    {
+        RenderingAdapter::RenderToPanel( this, m_sdlPanel );
+    }
+    else
+    {
+        // Legacy path: blit to entire SDL window (Phase 8C compat)
+        RenderingAdapter::SetAnimAtr( this );
+        RenderingAdapter::Render();
+    }
 }
 
 //---------------------------------------------------------------------------

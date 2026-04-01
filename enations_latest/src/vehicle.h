@@ -19,6 +19,8 @@
 
 
 class CWndRoute;
+class SDL2RouteWindow;
+class SDL2BuildStructure;
 class CTransportData;
 class CVehicle;
 class CBridgeUnit;
@@ -423,7 +425,8 @@ public:
 		void					FixUp ();
 		void					FixForPlayer ();
 
-		CWndRoute *		m_pWndRoute;						// route window
+		CWndRoute *		m_pWndRoute;						// route window (MFC)
+	SDL2RouteWindow* m_pSdlRoute = nullptr;				// route window (SDL2)
 
 		static int **	m_apiWid;								// used for spotting range
 		static int		m_iMaxRange;
@@ -505,6 +508,7 @@ protected:
 
 		CDlgBuildStructure * 	m_pDlgStructure;
 		CDlgLoadTruck *				m_pDlgLoad;
+	SDL2BuildStructure*     m_pSdlBuild = nullptr;  // SDL2 non-modal build dialog
 
 		// travelling in another vehicle, carrying another vehicle
 		CVehicle *		m_pTransport;						// unit carrying us

@@ -15,6 +15,9 @@
 #include "bitmaps.h"
 #include "minerals.h"
 
+// Phase 8C: SDL2 rendering integration
+#include "RenderingAdapter.h"
+
 #include "terrain.inl"
 #include "unit.inl"
 #include "building.inl"
@@ -625,33 +628,21 @@ CAnimAtr::~CAnimAtr() {}
 // CAnimAtr::Render
 //---------------------------------------------------------------------------
 void CAnimAtr::Render() {
-    // Render each rect and add it to the list of rects to get blitted
+    // Phase 8C: Redirect rendering to SDL2 via RenderingAdapter
+    // Instead of drawing to DIB, we queue sprites to the GPU renderer
 
-    CDC* pdc = m_pwnd->GetDC();
+    // Tell RenderingAdapter about our viewport
+    RenderingAdapter::SetAnimAtr(this);
 
-    try {
-        for ( int i = 0; i < m_dirtyrects.m_nRectPaintCur; ++i )
-            if ( m_dirtyrects.m_prectPaintCur[i].left != INT_MAX ) {
-                CRect rect = m_dirtyrects.m_prectPaintCur[i];
+    // Queue all visible objects to GPU renderer
+    // This will process the same rendering logic but output to SDL2 instead of DIB
+    RenderingAdapter::Render();
 
-                if ( !pdc || pdc->RectVisible( &rect ) ) {
-                    m_dirtyrects.AddRect( &rect, CDirtyRects::LIST_BLT );
+    // Note: Old DIB-based rendering is replaced by the above calls
+    // All drawing that would have gone to theMap.UpdateRect() is now
+    // intercepted by RendererCompat and queued to SDL2
 
-                    theMap.UpdateRect( *this, rect, CDrawParms::draw );
-                }
-            }
-    }
-
-    // and we move to try and fix it
-    catch ( ... ) {
-        TRAP();
-        MoveCenterPixels( 1, 1 );
-    }
-
-    if ( pdc )
-        m_pwnd->ReleaseDC( pdc );
-
-    m_dirtyrects.UpdateLists(); // Cur rect list <- Next rect list
+    m_dirtyrects.UpdateLists(); // Update dirty rect lists for next frame
 }
 
 //---------------------------------------------------------------------------

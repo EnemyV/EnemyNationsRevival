@@ -12,6 +12,7 @@
 #include "research.h"
 
 #include "area.h"
+#include "SDL2MFCPanel.h"
 #include "bitmaps.h"
 #include "building.inl"
 #include "icons.h"
@@ -859,6 +860,8 @@ BOOL CDlgDiscover::OnInitDialog( )
     CDialog::OnInitDialog( );
 
     NewItem( );
+
+    // Native SDL2 dialog handles rendering
 
     return TRUE;  // return TRUE unless you set the focus to a control
                   // EXCEPTION: OCX Property Pages should return FALSE

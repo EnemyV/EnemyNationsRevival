@@ -14,6 +14,7 @@
 #include <dib.h>
 
 #include "lastplnt.h"
+#include "SDL2MFCPanel.h"
 #include "player.h"
 #include "relation.h"
 #include "ipccomm.h"
@@ -1185,13 +1186,15 @@ END_MESSAGE_MAP()
 /////////////////////////////////////////////////////////////////////////////
 // CDlgSaveMsg message handlers
 
-int CDlgSaveMsg::OnCreate(LPCREATESTRUCT lpCreateStruct) 
+int CDlgSaveMsg::OnCreate(LPCREATESTRUCT lpCreateStruct)
 {
 	if (CDialog::OnCreate(lpCreateStruct) == -1)
 		return -1;
-	
+
 	CenterWindow (&theApp.m_wndMain);
-	
+
+	// Save progress handled by MFC internally (serialization display)
+
 	return 0;
 }
 
@@ -1590,13 +1593,15 @@ END_MESSAGE_MAP()
 /////////////////////////////////////////////////////////////////////////////
 // CDlgPause message handlers
 
-BOOL CDlgPause::OnInitDialog() 
+BOOL CDlgPause::OnInitDialog()
 {
 
 	CDialog::OnInitDialog();
-	
+
 	CenterWindow ();
-	
+
+	// Native SDL2 dialog handles rendering
+
 	return TRUE;  // return TRUE unless you set the focus to a control
 	              // EXCEPTION: OCX Property Pages should return FALSE
 }

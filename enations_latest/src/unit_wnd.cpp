@@ -22,6 +22,7 @@
 #include "bitmaps.h"
 #include "area.h"
 #include "sfx.h"
+#include "SDL2MFCPanel.h"
 
 #include "terrain.inl"
 #include "ui.inl"
@@ -907,6 +908,8 @@ BOOL CDlgBuildStructure::OnInitDialog() {
     // init controls
     OnSelchangeBuildListCat();
 
+    // Native SDL2 dialog handles rendering — no MFC bridge needed
+
     ASSERT_VALID (this);
     return (TRUE);
 }
@@ -1156,6 +1159,8 @@ void CDlgBuildStructure::OnOK() {
 }
 
 void CDlgBuildStructure::OnDestroy() {
+
+    SDL2MFCPanel::Detach(this);
 
     // get rid of the pointer cause we're about to be destroyed
     m_pVehPar->m_pDlgStructure = NULL;
@@ -1517,6 +1522,8 @@ BOOL CDlgBuildTransport::OnInitDialog() {
     
     // now it's safe for handlers to call UpdateData(TRUE)
     m_bInitComplete = true;
+
+    // Native SDL2 dialog handles rendering — no MFC bridge needed
 
     return (TRUE);
 }
@@ -1909,6 +1916,8 @@ void CDlgBuildTransport::OnOK() {
 
 void CDlgBuildTransport::OnDestroy() {
 
+    SDL2MFCPanel::Detach(this);
+
     // get rid of the pointer cause we're about to be destroyed
     m_pBldgPar->m_pDlgTransport = NULL;
 
@@ -2036,6 +2045,8 @@ int CWndRoute::OnCreate(LPCREATESTRUCT lpCreateStruct) {
         m_Btns[1].EnableWindow(FALSE);
         m_Btns[2].EnableWindow(FALSE);
     }
+
+    SDL2MFCPanel::Attach(this, "route", 35);
 
     return 0;
 }
@@ -2376,6 +2387,8 @@ void CWndRoute::Invalidate() {
 }
 
 void CWndRoute::OnDestroy() {
+
+    SDL2MFCPanel::Detach(this);
 
     ASSERT_VALID (m_pVeh);
     m_pVeh->m_pWndRoute = NULL;

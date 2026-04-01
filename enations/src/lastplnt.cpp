@@ -33,6 +33,11 @@
 #include "cdloc.h"
 #include "dlgreg.h"
 
+// Phase 8C: SDL2 rendering integration
+#include "GameWindow.h"
+#include "RenderingAdapter.h"
+#include <fstream>
+
 #include "terrain.inl"
 #include "creatmul.inl"
 
@@ -381,6 +386,9 @@ void CConquerApp::Log( char const* pText ) {
 
 BOOL CConquerApp::InitInstance() {
 
+    // Debug: Show message if we reach here
+    MessageBoxA(nullptr, "InitInstance() started", "Debug", MB_OK);
+
 #ifdef USE_SMARTHEAP
     MemRegisterTask();
     MemSetErrorHandler( NULL );
@@ -631,10 +639,57 @@ BOOL CConquerApp::InitInstance() {
 
     // needed for autoplay, etc.
     Log( "Create main window" );
+
+    // Debug: Show message before main window creation
+    MessageBoxA(nullptr, "About to create m_wndMain", "Debug", MB_OK);
+
     m_wndMain.Create();
+
+    // Debug: Marker after main window creation
+    {
+        std::ofstream marker("C:\\Users\\tyboy\\AppData\\Local\\Temp\\AfterMainWindowCreate.txt");
+        marker << "Main window created successfully\n";
+        marker.close();
+    }
+
     m_wndMain.ShowWindow( SW_SHOW );
     m_wndMain.InvalidateRect( NULL );
     m_wndMain.UpdateWindow();
+
+    // Phase 8C: Initialize SDL2 rendering window for game view
+    Log( "Initialize SDL2 rendering window" );
+
+    // Debug: Write a marker file to confirm we reach this point
+    {
+        std::ofstream marker("C:\\Users\\tyboy\\AppData\\Local\\Temp\\GameWindow_Init_Reached.txt");
+        marker << "Phase 8C init reached at line 645\n";
+        marker.close();
+    }
+
+    try {
+        // Debug: Another marker before Create
+        {
+            std::ofstream marker("C:\\Users\\tyboy\\AppData\\Local\\Temp\\GameWindow_Create_Starting.txt");
+            marker << "About to call GameWindow::Create\n";
+            marker.close();
+        }
+        m_gameWindow = GameWindow::Create("Enemy Nations - Game View", 1024, 768);
+        if (!m_gameWindow) {
+            Log( "ERROR: Failed to create SDL2 rendering window" );
+            AfxMessageBox( "Failed to initialize SDL2 rendering window", MB_OK | MB_ICONSTOP );
+            return FALSE;
+        }
+        // Note: RenderingAdapter::Initialize() is called from GameWindow::InitializeRenderingSystems()
+        Log( "SDL2 rendering window initialized" );
+    } catch (const std::exception& e) {
+        Log( std::string("EXCEPTION: ") + e.what() );
+        AfxMessageBox( std::string("Exception creating SDL2 window: ").append(e.what()).c_str(), MB_OK | MB_ICONSTOP );
+        return FALSE;
+    } catch (...) {
+        Log( "EXCEPTION: Unknown exception in GameWindow::Create" );
+        AfxMessageBox( "Unknown exception creating SDL2 window", MB_OK | MB_ICONSTOP );
+        return FALSE;
+    }
 
     Log( "Initialize windward.lib" );
 

@@ -29,6 +29,19 @@
 #include "ui.inl"
 #include "unit.inl"
 #include "vehicle.inl"
+#include "GameWindow.h"
+#include "RenderingAdapter.h"
+#include "SDL2AreaBar.h"
+#include "SDL2Compositor.h"
+#include "SDL2Panel.h"
+#include "SDL2RouteWindow.h"
+#include "SDL2GameDialogs.h"
+#include <SDL.h>
+#include <SDL_syswm.h>
+
+#ifndef PW_RENDERFULLCONTENT
+#define PW_RENDERFULLCONTENT 0x00000002
+#endif
 
 
 #ifdef _DEBUG
@@ -38,6 +51,57 @@ static char BASED_CODE THIS_FILE[] = __FILE__;
 #define new DEBUG_NEW
 
 CAreaList theAreaList;
+
+// Convert SDL keyboard modifier state to MFC nFlags
+static UINT SDLModToMFC() {
+    UINT flags = 0;
+    Uint32 mouseState = SDL_GetMouseState(nullptr, nullptr);
+    if (mouseState & SDL_BUTTON_LMASK) flags |= MK_LBUTTON;
+    if (mouseState & SDL_BUTTON_RMASK) flags |= MK_RBUTTON;
+    if (mouseState & SDL_BUTTON_MMASK) flags |= MK_MBUTTON;
+    SDL_Keymod km = SDL_GetModState();
+    if (km & KMOD_SHIFT) flags |= MK_SHIFT;
+    if (km & KMOD_CTRL)  flags |= MK_CONTROL;
+    return flags;
+}
+
+// Convert SDL scancode to Windows virtual key code
+static UINT SDLKeyToVK(SDL_Scancode sc) {
+    switch (sc) {
+    case SDL_SCANCODE_LSHIFT: case SDL_SCANCODE_RSHIFT: return VK_SHIFT;
+    case SDL_SCANCODE_LCTRL:  case SDL_SCANCODE_RCTRL:  return VK_CONTROL;
+    case SDL_SCANCODE_LALT:   case SDL_SCANCODE_RALT:   return VK_MENU;
+    case SDL_SCANCODE_ESCAPE: return VK_ESCAPE;
+    case SDL_SCANCODE_RETURN: return VK_RETURN;
+    case SDL_SCANCODE_TAB:    return VK_TAB;
+    case SDL_SCANCODE_DELETE: return VK_DELETE;
+    case SDL_SCANCODE_LEFT:   return VK_LEFT;
+    case SDL_SCANCODE_RIGHT:  return VK_RIGHT;
+    case SDL_SCANCODE_UP:     return VK_UP;
+    case SDL_SCANCODE_DOWN:   return VK_DOWN;
+    case SDL_SCANCODE_F1:     return VK_F1;
+    case SDL_SCANCODE_F2:     return VK_F2;
+    case SDL_SCANCODE_F3:     return VK_F3;
+    case SDL_SCANCODE_F4:     return VK_F4;
+    case SDL_SCANCODE_F5:     return VK_F5;
+    case SDL_SCANCODE_F12:    return VK_F12;
+    case SDL_SCANCODE_0: return '0';
+    case SDL_SCANCODE_1: return '1';
+    case SDL_SCANCODE_2: return '2';
+    case SDL_SCANCODE_3: return '3';
+    case SDL_SCANCODE_4: return '4';
+    case SDL_SCANCODE_5: return '5';
+    case SDL_SCANCODE_6: return '6';
+    case SDL_SCANCODE_7: return '7';
+    case SDL_SCANCODE_8: return '8';
+    case SDL_SCANCODE_9: return '9';
+    default:
+        // For letter keys A-Z, SDL_SCANCODE_A = 4
+        if (sc >= SDL_SCANCODE_A && sc <= SDL_SCANCODE_Z)
+            return 'A' + (sc - SDL_SCANCODE_A);
+        return 0;
+    }
+}
 
 CString CWndArea::sWndCls;
 
@@ -512,6 +576,14 @@ CWndAreaStatic::CWndAreaStatic( )
 
 CWndAreaStatic::~CWndAreaStatic( )
 {
+    delete m_sdl2Bar;
+    m_sdl2Bar = nullptr;
+
+    if ( m_sdlPanel && theApp.m_gameWindow && theApp.m_gameWindow->GetCompositor() )
+    {
+        theApp.m_gameWindow->GetCompositor()->RemovePanel( m_sdlPanel );
+        m_sdlPanel = nullptr;
+    }
 }
 
 BOOL CWndAreaStatic::PreCreate( )
@@ -592,6 +664,14 @@ int CWndAreaStatic::OnCreate( LPCREATESTRUCT lpCS )
     m_wndStat.Create( &theIcons, ICON_BAR_TEXT, rect, this, theBitmaps.GetByIndex( DIB_AREA_BAR ) );
     SizeStatus( );
 
+    // Panel and SDL2AreaBar are now created by CWndArea::OnCreate.
+    // Just make MFC window transparent here.
+    if ( theApp.m_gameWindow ) {
+        ::SetWindowLong( m_hWnd, GWL_EXSTYLE,
+            ::GetWindowLong( m_hWnd, GWL_EXSTYLE ) | WS_EX_LAYERED );
+        ::SetLayeredWindowAttributes( m_hWnd, 0, 0, LWA_ALPHA );
+    }
+
     return 0;
 }
 
@@ -605,6 +685,46 @@ BOOL CWndAreaStatic::OnCommand( WPARAM wParam, LPARAM lParam )
     }
 
     return ( CWndBase::OnCommand( wParam, lParam ) );
+}
+
+void CWndAreaStatic::CaptureToPanel() {
+    if ( !m_sdlPanel || !m_hWnd )
+        return;
+
+    SDL_Surface* panelSurface = m_sdlPanel->GetSurface();
+    if ( !panelSurface )
+        return;
+
+    int w = m_sdlPanel->GetWidth();
+    int h = m_sdlPanel->GetHeight();
+    if ( w <= 0 || h <= 0 )
+        return;
+
+    HDC hdcScreen = ::GetDC( NULL );
+    HDC hdcMem    = ::CreateCompatibleDC( hdcScreen );
+    HBITMAP hBmp  = ::CreateCompatibleBitmap( hdcScreen, w, h );
+    HBITMAP hOld  = (HBITMAP)::SelectObject( hdcMem, hBmp );
+
+    ::PrintWindow( m_hWnd, hdcMem, PW_RENDERFULLCONTENT );
+
+    BITMAPINFO bmi = {};
+    bmi.bmiHeader.biSize        = sizeof(BITMAPINFOHEADER);
+    bmi.bmiHeader.biWidth       = w;
+    bmi.bmiHeader.biHeight      = -h;
+    bmi.bmiHeader.biPlanes      = 1;
+    bmi.bmiHeader.biBitCount    = 32;
+    bmi.bmiHeader.biCompression = BI_RGB;
+
+    if ( SDL_LockSurface( panelSurface ) == 0 ) {
+        ::GetDIBits( hdcMem, hBmp, 0, h, panelSurface->pixels, &bmi, DIB_RGB_COLORS );
+        SDL_UnlockSurface( panelSurface );
+        m_sdlPanel->SetDirty();
+    }
+
+    ::SelectObject( hdcMem, hOld );
+    ::DeleteObject( hBmp );
+    ::DeleteDC( hdcMem );
+    ::ReleaseDC( NULL, hdcScreen );
 }
 
 BOOL CWndAreaStatic::OnEraseBkgnd( CDC* )
@@ -680,7 +800,14 @@ void CWndAreaStatic::ShowButton( int ID, BOOL bShow )
 
     CWnd* pBtn = GetDlgItem( ID );
     ASSERT_STRICT_VALID( pBtn );
-    pBtn->ShowWindow( bShow ? SW_SHOW : SW_HIDE );
+    // When using SDL panel, keep buttons visible but disabled instead of hidden
+    if ( m_sdlPanel ) {
+        pBtn->ShowWindow( SW_SHOW );
+        if ( !bShow )
+            pBtn->EnableWindow( FALSE );
+    } else {
+        pBtn->ShowWindow( bShow ? SW_SHOW : SW_HIDE );
+    }
 }
 
 
@@ -803,6 +930,7 @@ CWndArea::CWndArea( )
     m_bRBtnDown   = FALSE;
     m_bCapMouse   = FALSE;
     m_pWndInfo    = NULL;
+    m_pSdlInfo    = NULL;
     m_iBuildDir   = 0;
     m_bNewPos     = TRUE;
     m_uMouseMode  = lmb_nothing;
@@ -828,6 +956,7 @@ void CWndArea::PostNcDestroy( )
     ::ClipCursor( NULL );
 
     delete m_pWndInfo;
+    delete m_pSdlInfo;
 
     UnloadStaticResources( );
 
@@ -836,6 +965,12 @@ void CWndArea::PostNcDestroy( )
 
 CWndArea::~CWndArea( )
 {
+    // Remove SDL2 panel from compositor
+    if ( m_aa.m_sdlPanel && theApp.m_gameWindow && theApp.m_gameWindow->GetCompositor() )
+    {
+        theApp.m_gameWindow->GetCompositor()->RemovePanel( m_aa.m_sdlPanel );
+        m_aa.m_sdlPanel = nullptr;
+    }
 
     delete[] m_pSelUnder;
 
@@ -1003,6 +1138,7 @@ ON_WM_PAINT( )
 ON_WM_VSCROLL( )
 ON_WM_CREATE( )
 ON_WM_SIZE( )
+ON_WM_MOVE( )
 ON_WM_DESTROY( )
 ON_BN_CLICKED( IDC_AREA_COMBAT, LastCombat )
 ON_BN_CLICKED( IDC_AREA_ZOOM_IN, ZoomIn )
@@ -1275,6 +1411,8 @@ void CWndArea::MaterialChange( CUnit const* pUnit )
 {
 
     // see if this is displayed in the tooltip
+    if ( m_pSdlInfo && m_pSdlInfo->IsVisible() && m_pSdlInfo->GetUnit() == pUnit )
+        m_pSdlInfo->Update();
     CWndInfo* pWndInfo = GetInfo( );
     ASSERT_STRICT_VALID_OR_NULL( pWndInfo );
     if ( ( pWndInfo != NULL ) && ( pWndInfo->m_hWnd != NULL ) && ( pWndInfo->GetUnit( ) == pUnit ) )
@@ -1295,10 +1433,14 @@ void CWndArea::OnMouseMove( UINT nFlags, CPoint point )
 {
 
     // kill the info window - if they move > 4 pixels
-    if ( ( m_pWndInfo ) && ( m_pWndInfo->m_hWnd != NULL ) )
-        if ( ( abs( point.x - m_ptRMDN.x ) > theApp.m_iScrnX / 160 ) ||
-             ( abs( point.y - m_ptRMDN.y ) > theApp.m_iScrnX / 160 ) )
+    if ( ( abs( point.x - m_ptRMDN.x ) > theApp.m_iScrnX / 160 ) ||
+         ( abs( point.y - m_ptRMDN.y ) > theApp.m_iScrnX / 160 ) )
+    {
+        if ( m_pSdlInfo && m_pSdlInfo->IsVisible() )
+            m_pSdlInfo->Hide();
+        if ( ( m_pWndInfo ) && ( m_pWndInfo->m_hWnd != NULL ) )
             m_pWndInfo->DestroyWindow( );
+    }
 
     CRect rect;
     GetClientRect( &rect );
@@ -1548,6 +1690,41 @@ void CWndArea::Draw( )
     // Blt the dirty rects to the screen
 
     m_aa.GetDirtyRects( )->BltRects( );
+
+    // Re-copy DIB to SDL panel after overlays (selection rect) are drawn.
+    // CAnimAtr::Render() copied the DIB before overlays, so we need a second pass.
+    if ( m_aa.m_sdlPanel )
+        RenderingAdapter::RenderToPanel( &m_aa, m_aa.m_sdlPanel );
+
+    // Sync area static bar position and z-order to area panel
+    // Resize the bar panel surface to match the area panel width
+    if ( m_aa.m_sdlPanel && m_WndStatic.m_sdlPanel ) {
+        int staticH = m_WndStatic.m_iYmin;
+        m_WndStatic.m_sdlPanel->SetSize(
+            m_aa.m_sdlPanel->GetWidth(), staticH );
+    }
+    if ( m_WndStatic.m_sdl2Bar )
+    {
+        m_WndStatic.m_sdl2Bar->Render();
+        // Blit the bar into the bottom of the area panel (its only display location).
+        if ( m_aa.m_sdlPanel && m_WndStatic.m_sdlPanel )
+        {
+            SDL_Surface* barSurf  = m_WndStatic.m_sdlPanel->GetSurface();
+            SDL_Surface* areaSurf = m_aa.m_sdlPanel->GetSurface();
+            if ( barSurf && areaSurf )
+            {
+                int barOffY = m_aa.m_sdlPanel->GetHeight() - m_WndStatic.m_sdlPanel->GetHeight();
+                if ( barOffY >= 0 )
+                {
+                    SDL_Rect dst = { 0, barOffY, barSurf->w, barSurf->h };
+                    SDL_BlitSurface( barSurf, nullptr, areaSurf, &dst );
+                    m_aa.m_sdlPanel->SetDirty();
+                }
+            }
+        }
+    }
+    else
+        m_WndStatic.CaptureToPanel();
 
     // Erase the selection rect (blted next frame)
 
@@ -1931,9 +2108,191 @@ int CWndArea::OnCreate( LPCREATESTRUCT lpCreateStruct )
     
     m_aa.m_dibwnd.Init(
         this->m_hWnd,
-        new CDIB( ptrthebltformat->GetColorFormat( ), ptrthebltformat->GetType( ), 
+        new CDIB( ptrthebltformat->GetColorFormat( ), ptrthebltformat->GetType( ),
             ptrthebltformat->GetDirection( ) ),
         rect.Width( ), rect.Height( ) );
+
+    // Create SDL2 panel for this area window
+    if ( theApp.m_gameWindow && theApp.m_gameWindow->GetCompositor() )
+    {
+        // Get screen position of this window's client area
+        CRect screenRect;
+        GetWindowRect( &screenRect );
+
+        // Panel name includes the area index for debugging
+        char panelName[64];
+        sprintf_s( panelName, "area_%d", theAreaList.GetCount() );
+
+        int panelX = screenRect.left;
+        int panelY = screenRect.top;
+        // Leave room for resize borders and title bar at screen edges
+        if (panelX < SDL2Panel::RESIZE_BORDER)
+            panelX = SDL2Panel::RESIZE_BORDER;
+        int minY = SDL2Panel::TITLE_BAR_HT + SDL2Panel::RESIZE_BORDER;
+        if (panelY < minY)
+            panelY = minY;
+        m_aa.m_sdlPanel = theApp.m_gameWindow->GetCompositor()->AddPanel(
+            panelName, panelX, panelY,
+            rect.Width(), rect.Height(), 10 );  // z=10 for area views
+        m_aa.m_sdlPanel->SetMovable(true);
+        m_aa.m_sdlPanel->SetResizable(true);
+        m_aa.m_sdlPanel->SetTitle("Area Map");
+
+        // Route SDL events to CWndArea's MFC handler methods
+        CWndArea* pThis = this;
+        m_aa.m_sdlPanel->SetEventCallback(
+            [pThis](SDL_Event& event, int localX, int localY) -> bool {
+                // Route events in the area-bar region (bottom of area panel)
+                // to the bar handler rather than the map handler.
+                if ( pThis->m_WndStatic.m_sdl2Bar && pThis->m_WndStatic.m_sdlPanel )
+                {
+                    int barH   = pThis->m_WndStatic.m_sdlPanel->GetHeight();
+                    int areaH  = pThis->m_aa.m_sdlPanel->GetHeight();
+                    int barOffY = areaH - barH;
+                    if ( localY >= barOffY )
+                        return pThis->m_WndStatic.m_sdl2Bar->HandleEvent(
+                            event, localX, localY - barOffY );
+                }
+
+                UINT flags = SDLModToMFC();
+                CPoint pt(localX, localY);
+
+                switch (event.type) {
+                case SDL_MOUSEBUTTONDOWN:
+                    if (event.button.button == SDL_BUTTON_LEFT) {
+                        if (event.button.clicks >= 2)
+                            pThis->OnLButtonDblClk(flags, pt);
+                        else
+                            pThis->OnLButtonDown(flags, pt);
+                    } else if (event.button.button == SDL_BUTTON_RIGHT) {
+                        if (event.button.clicks >= 2)
+                            pThis->OnRButtonDblClk(flags, pt);
+                        else
+                            pThis->OnRButtonDown(flags, pt);
+                    }
+                    return true;
+
+                case SDL_MOUSEBUTTONUP:
+                    if (event.button.button == SDL_BUTTON_LEFT)
+                        pThis->OnLButtonUp(flags, pt);
+                    else if (event.button.button == SDL_BUTTON_RIGHT)
+                        pThis->OnRButtonUp(flags, pt);
+                    return true;
+
+                case SDL_MOUSEMOTION:
+                    pThis->OnMouseMove(flags, pt);
+                    pThis->SetMouseState();  // Update cursor & m_uMouseMode (replaces WM_SETCURSOR)
+                    return true;
+
+                case SDL_MOUSEWHEEL:
+                    pThis->OnMouseWheel(flags, (short)(event.wheel.y * WHEEL_DELTA), pt);
+                    return true;
+
+                case SDL_KEYDOWN: {
+                    UINT vk = SDLKeyToVK(event.key.keysym.scancode);
+                    if (!vk) return false;
+
+                    // Simulate MFC accelerator commands that arrow keys
+                    // and letter keys would normally trigger
+                    switch (vk) {
+                    case VK_LEFT:   pThis->CurLeft(); return true;
+                    case VK_RIGHT:  pThis->CurRight(); return true;
+                    case VK_UP:     pThis->CurUp(); return true;
+                    case VK_DOWN:   pThis->CurDown(); return true;
+                    case VK_ESCAPE: pThis->OnDeselect(); return true;
+                    case VK_DELETE: pThis->DestroyUnit(); return true;
+                    case VK_INSERT: pThis->StopDestroyUnit(); return true;
+                    case 'B':       pThis->BuildUnit(); return true;
+                    case 'O':       pThis->OppoUnit(); return true;
+                    case 'R':       pThis->RouteUnit(); return true;
+                    case 'U':       pThis->UnloadUnit(); return true;
+                    case 'X':       pThis->RetreatUnit(); return true;
+                    default:
+                        pThis->OnKeyDown(vk, 1, 0);
+                        return true;
+                    }
+                }
+                case SDL_KEYUP: {
+                    UINT vk = SDLKeyToVK(event.key.keysym.scancode);
+                    if (vk) pThis->OnKeyUp(vk, 1, 0);
+                    return vk != 0;
+                }
+                }
+                return false;
+            });
+
+        // When panel is resized by user, update the game's rendering buffers
+        m_aa.m_sdlPanel->SetResizeCallback(
+            [pThis](int newW, int newH) {
+                // Resize the CAnimAtr's DIB to match the new panel size
+                pThis->m_aa.m_dibwnd.Size( MAKELPARAM(newW, newH) );
+                pThis->m_cx = newW;
+                pThis->m_cy = newH;
+                pThis->m_bUpdateAll = TRUE;
+                pThis->m_aa.Resized();
+
+                // Reposition the static button bar at the bottom of the area
+                if ( pThis->m_WndStatic.m_sdlPanel ) {
+                    SDL2Panel* areaPanel = pThis->m_aa.m_sdlPanel;
+                    int staticH = pThis->m_WndStatic.m_iYmin;
+                    pThis->m_WndStatic.m_sdlPanel->SetPosition(
+                        areaPanel->GetX(),
+                        areaPanel->GetY() + newH - staticH );
+                    pThis->m_WndStatic.m_sdlPanel->SetSize( newW, staticH );
+                }
+
+                // Update the selection buffer
+                CDIB* pdib = pThis->m_aa.m_dibwnd.GetDIB();
+                if ( pdib ) {
+                    int iBytesPerPixel = pdib->GetBytesPerPixel();
+                    delete[] pThis->m_pSelUnder;
+                    pThis->m_pSelUnder = new BYTE[
+                        pdib->GetWidth() * iBytesPerPixel * SEL_WIDTH * 2 +
+                        pdib->GetHeight() * iBytesPerPixel * SEL_WIDTH * 2 +
+                        iBytesPerPixel * SEL_WIDTH * 8];
+                }
+            });
+
+        // Make MFC window fully transparent — SDL panel handles display.
+        ::SetWindowLong( m_hWnd, GWL_EXSTYLE,
+            ::GetWindowLong( m_hWnd, GWL_EXSTYLE ) | WS_EX_LAYERED );
+        ::SetLayeredWindowAttributes( m_hWnd, 0, 0, LWA_ALPHA );
+
+        // Create the area button bar panel HERE (not in CWndAreaStatic::OnCreate)
+        // so we have full control over lifecycle
+        if ( m_WndStatic.m_hWnd ) {
+            int staticH = m_WndStatic.m_iYmin;
+            if (staticH < 20) staticH = 36;  // ensure minimum height
+
+            int barX = m_aa.m_sdlPanel->GetX();
+            int barY = m_aa.m_sdlPanel->GetY() + m_aa.m_sdlPanel->GetHeight() - staticH;
+            int barW = m_aa.m_sdlPanel->GetWidth();
+            int barZ = m_aa.m_sdlPanel->GetZOrder() + 1;
+
+            m_WndStatic.m_sdlPanel = theApp.m_gameWindow->GetCompositor()->AddPanel(
+                "area_bar", barX, barY, barW, staticH, barZ );
+            // Bar is only shown inside the detached area window (via blit),
+            // never on the background window, so hide it from the compositor.
+            m_WndStatic.m_sdlPanel->SetVisible(false);
+
+            delete m_WndStatic.m_sdl2Bar;
+            m_WndStatic.m_sdl2Bar = new SDL2AreaBar();
+            m_WndStatic.m_sdl2Bar->Init( m_WndStatic.m_sdlPanel, this, m_WndStatic.m_hWnd );
+
+            SDL2AreaBar* pBar = m_WndStatic.m_sdl2Bar;
+            m_WndStatic.m_sdlPanel->SetEventCallback(
+                [pBar](SDL_Event& event, int localX, int localY) -> bool {
+                    return pBar->HandleEvent(event, localX, localY);
+                });
+        }
+
+        // Detach to own OS window so it can be dragged to other monitors
+        m_aa.m_sdlPanel->Detach(theApp.m_gameWindow.get());
+    }
+
+    // Re-run SetButtonState now that m_sdlPanel is set,
+    // so ShowButton keeps buttons visible (just disabled) for SDL rendering
+    SetButtonState();
 
     m_bUpdateAll = TRUE;
 
@@ -1979,6 +2338,15 @@ void CWndArea::OnSize( UINT nType, int cx, int cy )
     // create the bitmap for the new size
     m_aa.m_dibwnd.Size( MAKELPARAM( m_cx, m_cy ) );
 
+    // Update SDL2 panel size/position to match — but only if the panel
+    // isn't user-resizable (when it is, the panel owns its position/size).
+    if ( m_aa.m_sdlPanel && !m_aa.m_sdlPanel->IsResizable() )
+    {
+        CRect screenRect;
+        GetWindowRect( &screenRect );
+        m_aa.m_sdlPanel->SetRect( screenRect.left, screenRect.top, m_cx, m_cy );
+    }
+
     // cursor under buffer
     CDIB* pdib           = m_aa.m_dibwnd.GetDIB( );
     int   iBytesPerPixel = pdib->GetBytesPerPixel( );
@@ -2005,6 +2373,20 @@ void CWndArea::OnSize( UINT nType, int cx, int cy )
 
     // redraw the map
     // GGTESTING InvalidateWindow ();
+}
+
+void CWndArea::OnMove( int x, int y )
+{
+    CWndAnim::OnMove( x, y );
+
+    // Don't sync MFC → panel when panel is movable (user controls position)
+    // Only sync when panel isn't user-managed (e.g. during initial placement)
+    if ( m_aa.m_sdlPanel && !m_aa.m_sdlPanel->IsMovable() )
+    {
+        CRect screenRect;
+        GetWindowRect( &screenRect );
+        m_aa.m_sdlPanel->SetPosition( screenRect.left, screenRect.top );
+    }
 }
 
 void CWndArea::OnGetMinMaxInfo( MINMAXINFO FAR* lpMMI )
@@ -2360,6 +2742,9 @@ void CWndArea::OnLButtonUp( UINT nFlags, CPoint point )
         ( (CVehicle*)m_pUnit )->SetLocation( hex, m_posRoute, m_iRouteType );
         if ( ( (CVehicle*)m_pUnit )->m_pWndRoute != NULL )
             ( ( (CVehicle*)m_pUnit )->m_pWndRoute )->NewRoute( (CVehicle*)m_pUnit );
+        // Refresh SDL2 route window if open
+        if ( ( (CVehicle*)m_pUnit )->m_pSdlRoute != NULL )
+            ( (CVehicle*)m_pUnit )->m_pSdlRoute->RefreshRoute();
 
         // may now allow resume
         SetButtonState( );
@@ -3290,6 +3675,27 @@ void CWndArea::OnRButtonDown( UINT nFlags, CPoint point )
                  ( pUnitOn->GetOwner( )->GetTheirRelations( ) != RELATIONS_ALLIANCE ) )
                 return;
 
+        // SDL2 unit info tooltip
+        if ( theApp.m_gameWindow ) {
+            if ( m_pSdlInfo == NULL )
+                m_pSdlInfo = new SDL2UnitInfoPanel();
+
+            // Convert client point to screen coordinates for panel positioning
+            CPoint ptScreen = point;
+            ClientToScreen( &ptScreen );
+            // Convert to SDL window coords (relative to game window)
+            SDL_SysWMinfo wmInfo;
+            SDL_VERSION( &wmInfo.version );
+            RECT sdlRect = {};
+            if ( SDL_GetWindowWMInfo( theApp.m_gameWindow->GetWindow(), &wmInfo ) )
+                ::GetWindowRect( wmInfo.info.win.window, &sdlRect );
+            int sx = ptScreen.x - sdlRect.left + 16;
+            int sy = ptScreen.y - sdlRect.top + 16;
+            m_pSdlInfo->Show( pUnitOn, sx, sy );
+            return;
+        }
+
+        // MFC fallback
         if ( m_pWndInfo == NULL )
             m_pWndInfo = new CWndInfo( );
 
@@ -3374,8 +3780,12 @@ void CWndArea::OnRButtonDown( UINT nFlags, CPoint point )
 
     ::SetCursor( m_hCurMove[m_iMoveCur] );
 
-    ClientToScreen( &rect );
-    ::ClipCursor( &rect );
+    // Only clip cursor to window when using MFC input (not SDL)
+    if ( !m_aa.m_sdlPanel )
+    {
+        ClientToScreen( &rect );
+        ::ClipCursor( &rect );
+    }
 }
 
 void CWndArea::OnRButtonUp( UINT, CPoint )
@@ -3550,15 +3960,12 @@ void CWndArea::OnLButtonDblClk( UINT nFlags, CPoint point )
 
     // if someone wants to route a non-truck - fine
     CVehicle* pVeh = (CVehicle*)punit;
-    if ( pVeh->m_pWndRoute == NULL )
-        pVeh->m_pWndRoute = new CWndRoute( pVeh );
 
-    if ( pVeh->m_pWndRoute->m_hWnd == NULL )
-        pVeh->m_pWndRoute->Create( this );
-
-    pVeh->m_pWndRoute->ShowWindow( SW_SHOWNORMAL );
-    pVeh->m_pWndRoute->SetFocus( );
-    SetButtonState( );
+    if (!pVeh->m_pSdlRoute) {
+        pVeh->m_pSdlRoute = new SDL2RouteWindow(theApp.m_gameWindow.get(), pVeh, m_aa.m_sdlPanel);
+        pVeh->m_pSdlRoute->Show();
+    }
+    SetButtonState();
 }
 
 void CWndArea::InvalidateWindow( RECT* )
@@ -3675,15 +4082,12 @@ void CWndArea::RouteUnit( )
     CVehicle* pVeh = (CVehicle*)m_pUnit;
     ASSERT_STRICT_VALID( pVeh );
 
-    if ( pVeh->m_pWndRoute == NULL )
-        pVeh->m_pWndRoute = new CWndRoute( pVeh );
-
-    if ( pVeh->m_pWndRoute->m_hWnd == NULL )
-        pVeh->m_pWndRoute->Create( this );
-
-    pVeh->m_pWndRoute->ShowWindow( SW_SHOWNORMAL );
-    pVeh->m_pWndRoute->SetFocus( );
-    SetButtonState( );
+    // Use SDL2 route window
+    if (!pVeh->m_pSdlRoute) {
+        pVeh->m_pSdlRoute = new SDL2RouteWindow(theApp.m_gameWindow.get(), pVeh, m_aa.m_sdlPanel);
+        pVeh->m_pSdlRoute->Show();
+    }
+    SetButtonState();
 }
 
 void CWndArea::RoadUnit( )
@@ -4529,6 +4933,11 @@ void CWndArea::UnitDying( CUnit* pUnit )
     }
 
     // remove it's info window
+    if ( m_pSdlInfo && m_pSdlInfo->IsVisible() && m_pSdlInfo->GetUnit() == pUnit )
+    {
+        m_pSdlInfo->Hide();
+        bRedraw = TRUE;
+    }
     if ( ( m_pWndInfo != NULL ) && ( m_pWndInfo->m_hWnd != NULL ) && ( m_pWndInfo->GetUnit( ) == pUnit ) )
     {
         m_pWndInfo->DestroyWindow( );

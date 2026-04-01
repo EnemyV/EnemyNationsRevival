@@ -575,6 +575,10 @@ class CAnimAtr
     CPoint      m_ptUL;  // View coords of UL corner of window
     CWnd*       m_pwnd;  // Owner window
 
+    // SDL2 panel for composited rendering (Phase 1).
+    // Set by CWndArea when it creates its panel.  NULL until assigned.
+    class SDL2Panel* m_sdlPanel = nullptr;
+
 #ifdef _DEBUG
   public:
     virtual void AssertValid( ) const;

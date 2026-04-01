@@ -29,6 +29,7 @@ class CWndOrders;
 class CWndListUnits;
 class CWndWorld;
 class CAreaList;
+class SDL2UnitInfoPanel;
 
 
 
@@ -99,6 +100,11 @@ protected:
 
 			CBmButton			m_Btns [NUM_AREA_BUTTONS];
 			CWndUnitStat	m_wndStat;								// unit status
+
+			// SDL2 panel for composited rendering
+			class SDL2Panel* m_sdlPanel = nullptr;
+			class SDL2AreaBar* m_sdl2Bar = nullptr;  // Native SDL2 renderer
+			void CaptureToPanel();  // Legacy capture (unused when m_sdl2Bar set)
 };
 
 
@@ -123,6 +129,7 @@ friend CWndAreaStatic;
 friend CWndListUnits;
 friend CWndWorld;
 friend CAreaList;
+friend class SDL2AreaBar;
 // Construction
 public:
 	// for m_iMode
@@ -203,8 +210,8 @@ public:
 
 protected:
 	CUnit * GetUnitOn (CSubHex & hex);
-	void		CaptureMouse () { if (! m_bCapMouse) { SetCapture (); m_bCapMouse = TRUE; } }
-	void		ReleaseMouse () { if (m_bCapMouse) { ReleaseCapture (); m_bCapMouse = FALSE; } }
+	void		CaptureMouse () { if (! m_bCapMouse) { if (!m_aa.m_sdlPanel) SetCapture (); m_bCapMouse = TRUE; } }
+	void		ReleaseMouse () { if (m_bCapMouse) { if (!m_aa.m_sdlPanel) ReleaseCapture (); m_bCapMouse = FALSE; } }
 	void		LoadStaticResources ();
 	void		UnloadStaticResources ();
 	void		ClrRoadIcons ();
@@ -222,6 +229,7 @@ protected:
 	afx_msg void OnVScroll(UINT nSBCode, UINT nPos, CScrollBar* pScrollBar);
 	afx_msg int OnCreate(LPCREATESTRUCT lpCreateStruct);
 	afx_msg void OnSize(UINT nType, int cx, int cy);
+	afx_msg void OnMove(int x, int y);
 	afx_msg void OnDestroy();
 	afx_msg void LastCombat ();
 	afx_msg void ZoomIn ();
@@ -288,7 +296,8 @@ protected:
 	CRect					m_selRect;
 	CPoint				m_selOrig;
 	BOOL					m_bCapMouse;	// have we captured the mouse?
-	CWndInfo *		m_pWndInfo;		// tooltip window
+	CWndInfo *		m_pWndInfo;		// tooltip window (MFC, legacy)
+	SDL2UnitInfoPanel* m_pSdlInfo;	// SDL2 tooltip replacement
 
 	CListUnits		m_lstUnits;
 	BYTE *				m_pSelUnder;	// pixels under the selection box

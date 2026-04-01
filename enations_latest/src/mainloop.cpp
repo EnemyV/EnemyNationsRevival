@@ -13,6 +13,10 @@
 #include "cpathmgr.h"
 #include "cutscene.h"
 #include "event.h"
+#include "GameWindow.h"
+#include "SDL2CreateStatus.h"
+#include "SDL2Compositor.h"
+#include "SDL2MFCPanel.h"
 #include "lastplnt.h"
 #include "minerals.inl"
 #include "player.h"
@@ -301,6 +305,26 @@ BOOL CConquerApp::BaseYield( )
         theMusicPlayer.YieldPlayer( );
     }
 
+    // Process SDL events alongside Windows messages
+    if ( m_gameWindow && m_gameWindow->PollEvents() )
+    {
+        // SDL_QUIT received - post WM_QUIT so MFC shuts down normally
+        ::PostQuitMessage( 0 );
+        return ( TRUE );
+    }
+
+    // Render progress dialog directly — PollEvents() has a re-entrancy guard that
+    // blocks rendering when world creation is triggered from inside PollEvents()
+    // (e.g. main menu button → SDL2_RunCreateSinglePlayerFlow → ReadyToCreate →
+    //  BaseYield → PollEvents skipped → Render never called).
+    // Calling Render() here bypasses that guard.
+    if ( m_gameWindow )
+    {
+        SDL2CreateStatus* pStatus = m_gameWindow->GetCreateStatus();
+        if ( pStatus && pStatus->IsVisible() )
+            pStatus->Render();
+    }
+
     return FALSE;
 }
 
@@ -471,6 +495,18 @@ void CConquerApp::_RenderScreens( )
     }
 
     CHexCoord::ClearInvalidated( );  // Set terrain invalidated flags to FALSE
+
+    if ( theApp.m_wndBar.m_sdlPanel )
+        theApp.m_wndBar.Draw();
+
+    // SDL2 compositor: composite all panels to window surface and present.
+    // This replaces CDIBWnd::Update()'s GDI BitBlt for the SDL2 path.
+    if ( theApp.m_gameWindow )
+    {
+        SDL2Compositor* pCompositor = theApp.m_gameWindow->GetCompositor();
+        if ( pCompositor )
+            pCompositor->Composite();
+    }
 
 // show the frame rate
 #ifdef _CHEAT
@@ -1105,6 +1141,12 @@ NoOper:
 
     // where we should render (if the above was fast)
     RenderScreens( );
+
+    // TODO: SDL UI rendering disabled - need to integrate with game's DirectDraw system
+    // if (m_gameWindow) {
+    //     m_gameWindow->UpdateStatusBar();
+    //     m_gameWindow->Render();
+    // }
 
 #ifdef _PROFILE
     if ( timeGetTime( ) > dwMarkStart + 2000 )

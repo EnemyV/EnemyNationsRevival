@@ -408,6 +408,9 @@ public:
 
     HACCEL     GetAccel () const { return m_hAccel; }
 
+    // SDL2 rendering window for game view (Phase 8C)
+    std::shared_ptr<class GameWindow> m_gameWindow;
+
 protected:
     CDlgPause *   m_pdlgPause;  // when game paused
 

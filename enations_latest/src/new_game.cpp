@@ -12,6 +12,8 @@
 #include "stdafx.h"
 #include "lastplnt.h"
 #include "new_game.h"
+#include "SDL2CreateStatus.h"
+#include "GameWindow.h"
 #include "player.h"
 #include "error.h"
 #include "bitmaps.h"
@@ -109,6 +111,14 @@ void CCreateBase::CloseAll() {
 
     ClosePick();
 
+    // Destroy SDL2 status dialog
+    if (m_psdlStatus != NULL) {
+        if (theApp.m_gameWindow)
+            theApp.m_gameWindow->SetCreateStatus(nullptr);
+        delete m_psdlStatus;
+        m_psdlStatus = NULL;
+    }
+
     if (m_pdlgStatus != NULL) {
         CDlgCreateStatus *pDlg = m_pdlgStatus;
         m_pdlgStatus = NULL;
@@ -128,6 +138,14 @@ void CCreateBase::ShowDlgStatus() {
 
     m_pdlgStatus->EnableWindow(TRUE);
     m_pdlgStatus->ShowWindow(SW_SHOW);
+
+    // Also show SDL2 version
+    if (m_psdlStatus == NULL && theApp.m_gameWindow) {
+        m_psdlStatus = new SDL2CreateStatus(theApp.m_gameWindow.get());
+        theApp.m_gameWindow->SetCreateStatus(m_psdlStatus);
+    }
+    if (m_psdlStatus)
+        m_psdlStatus->Show();
 }
 
 void CCreateBase::CreateDlgStatus() {
@@ -137,9 +155,18 @@ void CCreateBase::CreateDlgStatus() {
 
     if (m_pdlgStatus->m_hWnd == NULL)
         m_pdlgStatus->Create();
+
+    // Also create SDL2 version
+    if (m_psdlStatus == NULL && theApp.m_gameWindow) {
+        m_psdlStatus = new SDL2CreateStatus(theApp.m_gameWindow.get());
+        theApp.m_gameWindow->SetCreateStatus(m_psdlStatus);
+    }
 }
 
 void CCreateBase::HideDlgStatus() {
+
+    if (m_psdlStatus)
+        m_psdlStatus->Hide();
 
     if (m_pdlgStatus == NULL)
         return;
@@ -160,6 +187,16 @@ void CCreateBase::ToWorld() {
         m_pdlgStatus->Create();
 
     m_pdlgStatus->ShowWindow(SW_SHOW);
+
+    // Create and show the SDL2 status dialog so progress renders
+    // on the SDL window during world building (same as ShowDlgStatus)
+    if (m_psdlStatus == NULL && theApp.m_gameWindow) {
+        m_psdlStatus = new SDL2CreateStatus(theApp.m_gameWindow.get());
+        theApp.m_gameWindow->SetCreateStatus(m_psdlStatus);
+    }
+    if (m_psdlStatus)
+        m_psdlStatus->Show();
+
     ClosePick();
 }
 
@@ -766,6 +803,12 @@ void CDlgCreateStatus::SetMsg(char const *pText) {
 
     ASSERT_VALID (this);
 
+    // Forward to SDL2 status dialog
+    if (theApp.m_gameWindow) {
+        SDL2CreateStatus* sdl = theApp.m_gameWindow->GetCreateStatus();
+        if (sdl) sdl->SetMsg(pText ? pText : "");
+    }
+
     m_txtMsg.SetWindowText(pText);
     UpdateWindow();
     theApp.BaseYield();
@@ -809,6 +852,16 @@ void CDlgCreateStatus::SetPer(int iPer, BOOL bYield) {
 
     // this is 0 .. 100
     m_iPer = iPer == -1 ? 0 : iPer;
+
+    // Forward to SDL2 status dialog; auto-hide when done
+    if (theApp.m_gameWindow) {
+        SDL2CreateStatus* sdl = theApp.m_gameWindow->GetCreateStatus();
+        if (sdl) {
+            sdl->SetPer(m_iPer);
+            if (m_iPer >= PER_DONE)
+                sdl->Hide();
+        }
+    }
 
     CWnd *pWnd = GetDlgItem(IDC_PER_BAR);
     if (pWnd != NULL) {
