@@ -98,14 +98,33 @@ void SDL2BuildStructure::OnInit() {
     m_lblCostHdr->SetTopAligned(true);
     m_lblCostHdr->SetColor({41, 255, 8, 255});
 
-    // Separator line (1px tall green bar)
+    // Table grid lines (green, matching original pen color PALETTERGB(41,255,8))
+    // Horizontal separator below header
     {
-        auto* sep = AddWidget<SDL2Image>(ox + 252, oy + 167, 190, 1);
-        SDL_Surface* line = SDL_CreateRGBSurface(0, 190, 1, 32, 0xFF0000, 0xFF00, 0xFF, 0);
-        if (line) {
-            SDL_FillRect(line, nullptr, SDL_MapRGB(line->format, 41, 255, 8));
-            sep->SetSurface(line, true);
-        }
+        auto* hLine = AddWidget<SDL2Image>(ox + 264, oy + 167, 175, 1);
+        SDL_Surface* s = SDL_CreateRGBSurface(0, 175, 1, 32, 0xFF0000, 0xFF00, 0xFF, 0);
+        if (s) { SDL_FillRect(s, nullptr, SDL_MapRGB(s->format, 41, 255, 8)); hLine->SetSurface(s, true); }
+    }
+    // Vertical line: between labels and "cost" column (x=366 in MFC)
+    {
+        int lineH = 100;  // spans header + cost rows
+        auto* vLine = AddWidget<SDL2Image>(ox + 330, oy + 150, 1, lineH);
+        SDL_Surface* s = SDL_CreateRGBSurface(0, 1, lineH, 32, 0xFF0000, 0xFF00, 0xFF, 0);
+        if (s) { SDL_FillRect(s, nullptr, SDL_MapRGB(s->format, 41, 255, 8)); vLine->SetSurface(s, true); }
+    }
+    // Vertical line: between "cost" and "have" columns (x=402 in MFC)
+    {
+        int lineH = 100;
+        auto* vLine = AddWidget<SDL2Image>(ox + 375, oy + 150, 1, lineH);
+        SDL_Surface* s = SDL_CreateRGBSurface(0, 1, lineH, 32, 0xFF0000, 0xFF00, 0xFF, 0);
+        if (s) { SDL_FillRect(s, nullptr, SDL_MapRGB(s->format, 41, 255, 8)); vLine->SetSurface(s, true); }
+    }
+    // Vertical line: between "have" and "need" columns (x=439 in MFC)
+    {
+        int lineH = 100;
+        auto* vLine = AddWidget<SDL2Image>(ox + 415, oy + 150, 1, lineH);
+        SDL_Surface* s = SDL_CreateRGBSurface(0, 1, lineH, 32, 0xFF0000, 0xFF00, 0xFF, 0);
+        if (s) { SDL_FillRect(s, nullptr, SDL_MapRGB(s->format, 41, 255, 8)); vLine->SetSurface(s, true); }
     }
 
     // Cost values — green for build costs
