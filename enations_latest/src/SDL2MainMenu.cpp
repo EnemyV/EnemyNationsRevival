@@ -129,7 +129,7 @@ bool SDL2MainMenu::Initialize(GameWindow* gameWindow) {
             return false;
         }
 
-        LogMenu("Wallpaper loaded: " + std::to_string(m_wallWidth) + "x" + std::to_string(m_wallHeight));
+        LogMenu("Menu background loaded: " + std::to_string(m_wallWidth) + "x" + std::to_string(m_wallHeight));
 
         // Load button bitmaps
         if (hasBitmapMenu) {
@@ -153,6 +153,40 @@ bool SDL2MainMenu::Initialize(GameWindow* gameWindow) {
     }
 
     delete pMmio;
+    pMmio = nullptr;
+
+    // If we loaded MN24 (the full menu screen), also load WL24 (tiled wallpaper)
+    // for use behind dialogs during new game creation, matching MFC CDlgMain behavior.
+    // Must be done AFTER closing pMmio — theDataFile may not support concurrent readers.
+    if (hasBitmapMenu) {
+        CMmio* pMmioWL = nullptr;
+        try {
+            pMmioWL = theDataFile.OpenAsMMIO("misc", "MISC");
+            if (pMmioWL) {
+                pMmioWL->DescendRiff('M', 'I', 'S', 'C');
+                pMmioWL->DescendList('W', 'L', theApp.m_szOtherBPS[0], theApp.m_szOtherBPS[1]);
+                pMmioWL->DescendChunk('D', 'A', 'T', 'A');
+
+                CDIB* pTile = new CDIB(ptrthebltformat->GetColorFormat(), CBLTFormat::DIB_MEMORY,
+                                        ptrthebltformat->GetMemDirection());
+                pTile->Load(*pMmioWL);
+                m_surfTileWallpaper = CreateSurfaceFromDIB(pTile);
+                delete pTile;
+
+                if (m_surfTileWallpaper) {
+                    LogMenu("Tiled wallpaper loaded: " + std::to_string(m_surfTileWallpaper->w) +
+                            "x" + std::to_string(m_surfTileWallpaper->h));
+                } else {
+                    LogMenu("WARNING: Failed to create tiled wallpaper surface");
+                }
+                delete pMmioWL;
+                pMmioWL = nullptr;
+            }
+        } catch (...) {
+            LogMenu("WARNING: Could not load WL tiled wallpaper");
+            delete pMmioWL;
+        }
+    }
 
     // Set button enabled states (matching CDlgMain::OnInitDialog)
     for (int i = 0; i < NUM_BTNS; i++)
@@ -184,6 +218,10 @@ void SDL2MainMenu::Shutdown() {
     if (m_surfWallpaper) {
         SDL_FreeSurface(m_surfWallpaper);
         m_surfWallpaper = nullptr;
+    }
+    if (m_surfTileWallpaper) {
+        SDL_FreeSurface(m_surfTileWallpaper);
+        m_surfTileWallpaper = nullptr;
     }
     for (auto& pair : m_fontCache) {
         if (pair.second) TTF_CloseFont(pair.second);
@@ -312,16 +350,37 @@ int SDL2MainMenu::HitTestButton(int screenX, int screenY) {
     return -1;
 }
 
+void SDL2MainMenu::TileWallpaper(SDL_Surface* dst) {
+    // Use the WL24 tile surface; fall back to main wallpaper if WL24 wasn't loaded
+    // (which happens when MN24 wasn't available and m_surfWallpaper IS the WL24 tile)
+    SDL_Surface* tile = m_surfTileWallpaper ? m_surfTileWallpaper : m_surfWallpaper;
+    if (!tile || !dst) return;
+    int wallW = tile->w;
+    int wallH = tile->h;
+    if (wallW <= 0 || wallH <= 0) return;
+
+    for (int y = 0; y < dst->h; y += wallH) {
+        for (int x = 0; x < dst->w; x += wallW) {
+            SDL_Rect srcRect = { 0, 0, wallW, wallH };
+            SDL_Rect dstRect = { x, y, wallW, wallH };
+            if (x + wallW > dst->w) srcRect.w = dst->w - x;
+            if (y + wallH > dst->h) srcRect.h = dst->h - y;
+            dstRect.w = srcRect.w;
+            dstRect.h = srcRect.h;
+            SDL_BlitSurface(tile, &srcRect, dst, &dstRect);
+        }
+    }
+}
+
 void SDL2MainMenu::RenderWallpaperOnly() {
     if (!m_initialized || !m_gameWindow) return;
 
     SDL_Surface* winSurface = SDL_GetWindowSurface(m_gameWindow->GetWindow());
     if (!winSurface) return;
 
-    if (m_surfWallpaper) {
-        SDL_Rect dstRect = { 0, 0, m_gameWindow->GetWidth(), m_gameWindow->GetHeight() };
-        SDL_BlitScaled(m_surfWallpaper, nullptr, winSurface, &dstRect);
-    }
+    // Tile the WL24 wallpaper, matching MFC CDlgMain behavior when m_bTile is TRUE.
+    // This is what shows behind dialogs during new game creation.
+    TileWallpaper(winSurface);
 
     SDL_UpdateWindowSurface(m_gameWindow->GetWindow());
 }
@@ -335,7 +394,7 @@ void SDL2MainMenu::Render() {
     int winW = m_gameWindow->GetWidth();
     int winH = m_gameWindow->GetHeight();
 
-    // Draw wallpaper
+    // Draw wallpaper (stretched to fill)
     if (m_surfWallpaper) {
         SDL_Rect dstRect = { 0, 0, winW, winH };
         SDL_BlitScaled(m_surfWallpaper, nullptr, winSurface, &dstRect);

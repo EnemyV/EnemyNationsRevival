@@ -157,23 +157,28 @@ void SDL2CreateSingleDialog::OnInit() {
     int colW = (m_width - 60) / 2;
     int rx = lx + colW + 20;
 
-    AddWidget<SDL2Label>(lx, y, colW, rowH, "AI Difficulty:");
+    // Group boxes first (render behind widgets). Titles replace the old section labels.
+    AddWidget<SDL2GroupBox>(lx - 8, y - 8, colW + 16, rowH * 6 + 8, "AI Difficulty");
+    AddWidget<SDL2GroupBox>(rx - 8, y - 8, colW + 16, rowH * 3 + 8, "World Size");
+    AddWidget<SDL2GroupBox>(rx - 8, y + rowH * 3 + 8, colW + 16, rowH * 5 + 8, "Starting Position");
+
+    // AI difficulty — no separate title label, group box carries it
     int savedAi = std::max(0, std::min(3, (int)theApp.GetProfileInt("Create", "Difficultity", 0)));
-    m_radAiLevel = AddWidget<SDL2RadioGroup>(lx, y + rowH, colW, rowH * 4,
+    m_radAiLevel = AddWidget<SDL2RadioGroup>(lx, y, colW, rowH * 4,
         std::vector<std::string>{"Easy", "Moderate", "Difficult", "Impossible"}, savedAi);
 
     int numAi = std::max(1, std::min(20, (int)theApp.GetProfileInt("Create", "AiOpponents", 2)));
-    AddWidget<SDL2Label>(lx, y + rowH * 5 + 8, colW - 60, rowH, "AI Players:");
-    m_edtNumAi = AddWidget<SDL2EditBox>(lx + colW - 50, y + rowH * 5 + 8, 50, rowH, std::to_string(numAi));
+    AddWidget<SDL2Label>(lx, y + rowH * 4 + 4, colW - 60, rowH, "AI Players:");
+    m_edtNumAi = AddWidget<SDL2EditBox>(lx + colW - 50, y + rowH * 4 + 4, 50, rowH, std::to_string(numAi));
 
-    AddWidget<SDL2Label>(rx, y, colW, rowH, "World Size:");
+    // World size
     int savedSize = std::max(0, std::min(2, (int)theApp.GetProfileInt("Create", "Size", 1)));
-    m_radWorldSize = AddWidget<SDL2RadioGroup>(rx, y + rowH, colW, rowH * 3,
+    m_radWorldSize = AddWidget<SDL2RadioGroup>(rx, y, colW, rowH * 3,
         std::vector<std::string>{"Small", "Medium", "Large"}, savedSize);
 
-    AddWidget<SDL2Label>(rx, y + rowH * 4 + 10, colW, rowH, "Starting Position:");
+    // Starting position
     int savedPos = std::max(0, std::min(3, (int)theApp.GetProfileInt("Create", "StartPosition", 1)));
-    m_radStartPos = AddWidget<SDL2RadioGroup>(rx, y + rowH * 5 + 10, colW, rowH * 4,
+    m_radStartPos = AddWidget<SDL2RadioGroup>(rx, y + rowH * 3 + 14, colW, rowH * 4,
         std::vector<std::string>{"Minimal Civilian", "Full Civilian", "Minimal Military", "Full Military"}, savedPos);
 
     AddOKCancelButtons();
@@ -230,15 +235,15 @@ void SDL2PickRaceDialog::OnInit() {
     // Right side: picture on top, description below
     int rightX = lx + listW + 15;
     int rightW = w - listW - 15;
-    int picH = 140;
+    int picH = 200;  // larger portrait
 
     // Race picture
     m_imgPicture = AddWidget<SDL2Image>(rightX, y, rightW, picH);
 
-    // Race description (wrapped text below picture, fills remaining space)
+    // Race description (wrapped text below picture, fills remaining space) — blue text
     int descY = y + picH + 8;
     int descH = bottomY - descY;
-    m_lblDesc = AddWidget<SDL2Label>(rightX, descY, rightW, descH, "", SDL_Color{180, 190, 200, 255});
+    m_lblDesc = AddWidget<SDL2Label>(rightX, descY, rightW, descH, "", SDL_Color{48, 58, 148, 255});
     m_lblDesc->SetWrapped(true);
 
     // OK / Cancel
@@ -288,14 +293,16 @@ SDL2ScenarioDialog::SDL2ScenarioDialog(GameWindow* gameWindow)
 
 void SDL2ScenarioDialog::OnInit() {
     int lx = m_x + 20, y = m_y + 45, rowH = 24, colW = (m_width - 60) / 2;
+    int rx = lx + colW + 20;
 
-    AddWidget<SDL2Label>(lx, y, colW, rowH, "AI Difficulty:");
-    m_radAiLevel = AddWidget<SDL2RadioGroup>(lx, y + rowH, colW, rowH * 4,
+    // Group boxes first (render behind other widgets)
+    AddWidget<SDL2GroupBox>(lx - 8, y - 8, colW + 16, rowH * 4 + 8, "AI Difficulty");
+    AddWidget<SDL2GroupBox>(rx - 8, y - 8, colW + 16, rowH * 3 + 8, "World Size");
+
+    m_radAiLevel = AddWidget<SDL2RadioGroup>(lx, y, colW, rowH * 4,
         std::vector<std::string>{"Easy", "Moderate", "Difficult", "Impossible"}, 0);
 
-    int rx = lx + colW + 20;
-    AddWidget<SDL2Label>(rx, y, colW, rowH, "World Size:");
-    m_radWorldSize = AddWidget<SDL2RadioGroup>(rx, y + rowH, colW, rowH * 3,
+    m_radWorldSize = AddWidget<SDL2RadioGroup>(rx, y, colW, rowH * 3,
         std::vector<std::string>{"Small", "Medium", "Large"}, 1);
 
     AddOKCancelButtons();
@@ -354,6 +361,11 @@ bool SDL2_RunCreateSinglePlayerFlow(GameWindow* gameWindow) {
         theApp.m_pCreateGame = NULL;
         return false;
     }
+
+    // Raise the main window so the progress dialog (rendered on it) is visible
+    // after the ALWAYS_ON_TOP DoModal dialogs are destroyed.
+    if (gameWindow->GetWindow())
+        SDL_RaiseWindow(gameWindow->GetWindow());
 
     // Step 3: Set parameters from our SDL2 dialogs (same as CDlgCreateSingle::OnOK)
     theGame.m_iAi = pCreate->m_iAi = createDlg.m_iAiLevel;
@@ -424,6 +436,10 @@ bool SDL2_RunCreateScenarioFlow(GameWindow* gameWindow) {
         theApp.m_pCreateGame = NULL;
         return false;
     }
+
+    // Raise main window so progress dialog is visible
+    if (gameWindow->GetWindow())
+        SDL_RaiseWindow(gameWindow->GetWindow());
 
     theGame.m_iAi = pCreate->m_iAi = scnDlg.m_iAiLevel;
     theGame.m_iSize = pCreate->m_iSize = scnDlg.m_iWorldSize;
@@ -681,6 +697,10 @@ bool SDL2_RunLoadSinglePlayerFlow(GameWindow* gameWindow) {
         else { pP->SetRelations(RELATIONS_NEUTRAL); pP->SetTheirRelations(RELATIONS_NEUTRAL); }
     }
 
+    // Raise main window so progress dialog is visible
+    if (gameWindow->GetWindow())
+        SDL_RaiseWindow(gameWindow->GetWindow());
+
     try {
         theGame.IncTry();
         pCreate->ClosePick();
@@ -742,6 +762,10 @@ bool SDL2_RunCreateNetworkFlow(GameWindow* gameWindow) {
     theGame.GetMe()->SetName(raceDlg.m_playerName.c_str());
     theGame.GetMe()->m_InitData.Set(pRace, pCreate->m_iPos);
     pCreate->GetNew()->m_InitData.Set(pRace, pCreate->m_iPos);
+
+    // Raise main window so progress dialog is visible
+    if (gameWindow->GetWindow())
+        SDL_RaiseWindow(gameWindow->GetWindow());
 
     try {
         theGame.IncTry(); theApp.ReadyToCreate(); theGame.DecTry();

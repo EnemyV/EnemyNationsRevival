@@ -42,8 +42,14 @@ public:
     // Convert a CDIB to an SDL_Surface. Caller owns the returned surface.
     static SDL_Surface* CreateSurfaceFromDIB(CDIB* pDib);
 
-    // Access wallpaper surface (for dialog backgrounds)
-    SDL_Surface* GetWallpaper() const { return m_surfWallpaper; }
+    // Access the tiled wallpaper surface (WL24 - for dialog/game backgrounds)
+    SDL_Surface* GetTileWallpaper() const { return m_surfTileWallpaper; }
+
+    // Access the menu background surface (MN24 - for main menu)
+    SDL_Surface* GetMenuWallpaper() const { return m_surfWallpaper; }
+
+    // Tile the WL24 wallpaper across an entire surface
+    void TileWallpaper(SDL_Surface* dst);
 
 private:
     static const int NUM_BTNS = 11;
@@ -74,7 +80,8 @@ private:
     GameWindow* m_gameWindow = nullptr;
 
     // Surfaces (owned by us)
-    SDL_Surface* m_surfWallpaper = nullptr;
+    SDL_Surface* m_surfWallpaper = nullptr;       // MN24 menu background (stretched)
+    SDL_Surface* m_surfTileWallpaper = nullptr;   // WL24 tiled wallpaper (for behind dialogs)
     SDL_Surface* m_surfButtons[NUM_BTNS] = {};
 
     // Font helpers

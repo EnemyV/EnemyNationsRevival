@@ -1,29 +1,42 @@
 #include "stdafx.h"
 #include "SDL2UI.h"
 #include "GameWindow.h"
+#include "SDL2MainMenu.h"
+#include "bitmaps.h"
 #include <SDL.h>
 #include <SDL_ttf.h>
+#ifdef _WIN32
+#include <SDL_syswm.h>
+#endif
 
 // Prevent Windows min/max macros from breaking std::min/std::max
 #undef min
 #undef max
 #include <algorithm>
 
-// Colors used by the dialog system - matching the game's style
+// Static game art surfaces shared by all dialogs
+SDL_Surface* SDL2Dialog::s_dlgBkgnd   = nullptr;
+SDL_Surface* SDL2Dialog::s_dlgGold    = nullptr;
+SDL_Surface* SDL2Dialog::s_borderHorz = nullptr;
+SDL_Surface* SDL2Dialog::s_borderVert = nullptr;
+bool SDL2Dialog::s_artLoaded = false;
+
+// Colors used by the dialog system - matching the original Enemy Nations style
 namespace UIColors {
-    const SDL_Color DialogBg    = { 60,  65,  62,  255 };  // Dark green-gray
-    const SDL_Color DialogFrame = { 103, 127, 121, 255 };  // Light frame
-    const SDL_Color DialogDark  = { 38,  46,  49,  255 };  // Dark frame
-    const SDL_Color TitleText   = { 220, 210, 200, 255 };  // Light title
-    const SDL_Color LabelText   = { 200, 190, 180, 255 };  // Normal text
-    const SDL_Color BtnFace     = { 70,  86,  82,  255 };  // Button face
-    const SDL_Color BtnLight    = { 103, 127, 121, 255 };  // Button highlight
-    const SDL_Color BtnDark     = { 38,  46,  49,  255 };  // Button shadow
-    const SDL_Color BtnText     = { 220, 210, 200, 255 };  // Button text
-    const SDL_Color BtnPressed  = { 50,  60,  56,  255 };  // Pressed button
+    const SDL_Color DialogBg    = { 60,  65,  62,  255 };  // Dark green-gray (fallback)
+    const SDL_Color DialogFrame = { 103, 127, 121, 255 };  // Light frame (fallback)
+    const SDL_Color DialogDark  = { 38,  46,  49,  255 };  // Dark frame (fallback)
+    const SDL_Color TitleBg     = { 42,  22,  65,  255 };  // Dark purple title bar
+    const SDL_Color TitleText   = { 255, 255, 255, 255 };  // White title text
+    const SDL_Color LabelText   = {  48,  58, 148, 255 };  // Blue label text (matching original)
+    const SDL_Color BtnFace     = { 68,  55,  135, 255 };  // Blueish-purple button
+    const SDL_Color BtnLight    = { 115,  98, 195, 255 };  // Lighter purple highlight
+    const SDL_Color BtnDark     = { 32,  22,  72,  255 };  // Darker purple shadow
+    const SDL_Color BtnText     = { 225, 182,  55, 255 };  // Gold button text
+    const SDL_Color BtnPressed  = { 48,  38,  98,  255 };  // Pressed button (darker purple)
     const SDL_Color SliderTrack = { 40,  48,  45,  255 };  // Slider track
     const SDL_Color SliderThumb = { 140, 160, 150, 255 };  // Slider thumb
-    const SDL_Color CheckMark   = { 200, 220, 210, 255 };  // Check/radio mark
+    const SDL_Color CheckMark   = { 225, 182,  55,  255 };  // Gold check/radio mark
     const SDL_Color Disabled    = { 100, 100, 100, 255 };  // Disabled text
 }
 
@@ -46,6 +59,21 @@ static void DrawBevel(SDL_Surface* dst, SDL_Rect r, int width, SDL_Color light, 
     }
 }
 
+// Helper: symmetric horizontal gradient — dark at left/right edges, lighter at center
+static void FillGradientSymH(SDL_Surface* dst, SDL_Rect r, SDL_Color edge, SDL_Color center) {
+    if (r.w <= 0) return;
+    float halfW = r.w / 2.0f;
+    for (int i = 0; i < r.w; i++) {
+        float t = 1.0f - std::abs(i - halfW + 0.5f) / halfW;
+        t = t * t;  // quadratic for a softer center peak
+        Uint8 rc = (Uint8)(edge.r + (center.r - edge.r) * t);
+        Uint8 gc = (Uint8)(edge.g + (center.g - edge.g) * t);
+        Uint8 bc = (Uint8)(edge.b + (center.b - edge.b) * t);
+        SDL_Rect col = { r.x + i, r.y, 1, r.h };
+        SDL_FillRect(dst, &col, SDL_MapRGB(dst->format, rc, gc, bc));
+    }
+}
+
 // Helper: render text (single line, clipped to rect)
 static void RenderText(SDL_Surface* dst, TTF_Font* font, const char* text,
                        SDL_Rect rect, SDL_Color color, bool centerH = true, bool centerV = true) {
@@ -64,16 +92,30 @@ static void RenderText(SDL_Surface* dst, TTF_Font* font, const char* text,
     SDL_FreeSurface(surf);
 }
 
-// Helper: render wrapped text (multi-line, clipped to rect)
+// Helper: render wrapped text (multi-line, clipped to rect, vertically centered)
 static void RenderTextWrapped(SDL_Surface* dst, TTF_Font* font, const char* text,
-                              SDL_Rect rect, SDL_Color color) {
+                              SDL_Rect rect, SDL_Color color, bool centerH = false,
+                              bool topAligned = false) {
     if (!font || !text || !text[0]) return;
+
+    // Use TTF_SetFontWrappedAlign for per-line centering (SDL_ttf 2.20+)
+    int oldAlign = TTF_GetFontWrappedAlign(font);
+    if (centerH)
+        TTF_SetFontWrappedAlign(font, TTF_WRAPPED_ALIGN_CENTER);
+
     SDL_Surface* surf = TTF_RenderText_Blended_Wrapped(font, text, color, rect.w);
+
+    // Restore original alignment
+    TTF_SetFontWrappedAlign(font, oldAlign);
+
     if (!surf) return;
 
     // Clip to the available rect height
     SDL_Rect srcRect = { 0, 0, std::min(surf->w, rect.w), std::min(surf->h, rect.h) };
     SDL_Rect dstRect = rect;
+    // Vertically center the text block within the rect (unless top-aligned)
+    if (!topAligned && surf->h < rect.h)
+        dstRect.y += (rect.h - surf->h) / 2;
     dstRect.w = srcRect.w;
     dstRect.h = srcRect.h;
     SDL_BlitSurface(surf, &srcRect, dst, &dstRect);
@@ -94,10 +136,12 @@ void SDL2Label::Render(SDL_Surface* dst, TTF_Font* font) {
     if (!m_visible || m_text.empty()) return;
     if (m_wrapped) {
         RenderTextWrapped(dst, font, m_text.c_str(), m_rect,
-                          m_enabled ? m_color : UIColors::Disabled);
+                          m_enabled ? m_color : UIColors::Disabled,
+                          false, m_topAligned);
     } else {
         RenderText(dst, font, m_text.c_str(), m_rect,
-                   m_enabled ? m_color : UIColors::Disabled, m_centered, true);
+                   m_enabled ? m_color : UIColors::Disabled, m_centered,
+                   !m_topAligned);
     }
 }
 
@@ -110,17 +154,84 @@ SDL2Button::SDL2Button(int x, int y, int w, int h, const std::string& text, Clic
 void SDL2Button::Render(SDL_Surface* dst, TTF_Font* font) {
     if (!m_visible) return;
 
-    SDL_Color face = m_pressed ? UIColors::BtnPressed : UIColors::BtnFace;
-    FillRect(dst, m_rect, face);
-
-    if (m_pressed)
-        DrawBevel(dst, m_rect, 2, UIColors::BtnDark, UIColors::BtnLight);
-    else
-        DrawBevel(dst, m_rect, 2, UIColors::BtnLight, UIColors::BtnDark);
+    // Use 3-state sprite sheet if available (matching CUnitButton::DrawItem)
+    // m_toggled shows the pressed frame when selected (like original m_cState & 0x01)
+    bool showPressed = m_pressed || m_toggled;
+    if (m_btnSheet) {
+        int frameW = m_btnSheet->w / 3;
+        int frameH = m_btnSheet->h;
+        int frameIdx = 0;  // normal
+        if (!m_enabled)
+            frameIdx = 2;  // disabled
+        else if (showPressed)
+            frameIdx = 1;  // pressed
+        SDL_Rect src = { frameIdx * frameW, 0, frameW, frameH };
+        SDL_Rect dstR = m_rect;
+        SDL_BlitScaled(m_btnSheet, &src, dst, &dstR);
+    } else {
+        // Gradient: symmetric dark edges → lighter center (matching original game style)
+        if (showPressed) {
+            FillGradientSymH(dst, m_rect, UIColors::BtnDark,    UIColors::BtnPressed);
+            DrawBevel(dst, m_rect, 2, UIColors::BtnDark, UIColors::BtnLight);
+        } else {
+            FillGradientSymH(dst, m_rect, UIColors::BtnDark,    UIColors::BtnLight);
+            DrawBevel(dst, m_rect, 1, UIColors::BtnLight, UIColors::BtnDark);
+        }
+    }
 
     SDL_Color textColor = m_enabled ? UIColors::BtnText : UIColors::Disabled;
-    SDL_Rect textRect = { m_rect.x + 4, m_rect.y + 2, m_rect.w - 8, m_rect.h - 4 };
-    RenderText(dst, font, m_text.c_str(), textRect, textColor);
+    // Inset rect: large buttons use -6 (matching CUnitButton), small buttons use -2
+    int inset = (m_rect.h >= 32) ? 6 : 2;
+    SDL_Rect faceRect = { m_rect.x + inset, m_rect.y + inset, m_rect.w - 2*inset, m_rect.h - 2*inset };
+
+    // Draw icon if set — fills the ENTIRE face rect (matching original CUnitButton).
+    // In the original, the icon takes the full button area and text is drawn
+    // ON TOP of the icon at the bottom.
+    bool hasIcon = (m_iconSheet && m_iconSrc.w > 0 && m_iconSrc.h > 0);
+    if (hasIcon) {
+        int shift = showPressed ? 2 : 0;
+        int iconH = m_iconSrc.h;
+        int iconW = m_iconSrc.w;
+
+        // Scale icon to fill the face rect entirely
+        float scale = (float)faceRect.w / iconW;
+        if ((int)(iconH * scale) > faceRect.h)
+            scale = (float)faceRect.h / iconH;
+        int dstW = (int)(iconW * scale);
+        int dstH = (int)(iconH * scale);
+
+        // Center in face rect
+        SDL_Rect dr = {
+            faceRect.x + (faceRect.w - dstW) / 2 + shift,
+            faceRect.y + (faceRect.h - dstH) / 2 + shift,
+            dstW, dstH
+        };
+        SDL_BlitScaled(m_iconSheet, &m_iconSrc, dst, &dr);
+    }
+
+    // Text rect: overlays the bottom of the face (on top of icon) or full face if no icon
+    SDL_Rect textRect = faceRect;
+    if (hasIcon) {
+        int textStripH = 14;
+        textRect.y = faceRect.y + faceRect.h - textStripH;
+        textRect.h = textStripH;
+    }
+
+    // Original uses black shadow then white text, both DT_CENTER | DT_WORDBREAK.
+    // We draw white centered text (shadow omitted for clarity on dark backgrounds).
+    SDL_Color white = {255, 255, 255, 255};
+    SDL_Color actualColor = m_btnSheet ? white : textColor;
+
+    if (m_rect.h >= 32 && font) {
+        int textW = 0, textH = 0;
+        TTF_SizeText(font, m_text.c_str(), &textW, &textH);
+        if (textW > textRect.w)
+            RenderTextWrapped(dst, font, m_text.c_str(), textRect, actualColor, true);
+        else
+            RenderText(dst, font, m_text.c_str(), textRect, actualColor, true, true);
+    } else {
+        RenderText(dst, font, m_text.c_str(), textRect, actualColor, true, true);
+    }
 }
 
 bool SDL2Button::HandleEvent(const SDL_Event& event) {
@@ -305,15 +416,17 @@ void SDL2RadioGroup::Render(SDL_Surface* dst, TTF_Font* font) {
         int iy = m_rect.y + i * itemH;
         bool enabled = m_enabled && m_optEnabled[i];
 
-        // Radio circle (approximated as rect)
+        // Radio circle: white background, blue border
+        static const SDL_Color kRadioBg     = { 255, 255, 255, 255 };
+        static const SDL_Color kRadioBorder = {  48,  58, 148, 255 };
         SDL_Rect radioRect = { m_rect.x + 2, iy + (itemH - radioSize)/2, radioSize, radioSize };
-        FillRect(dst, radioRect, UIColors::SliderTrack);
-        DrawBevel(dst, radioRect, 1, UIColors::BtnDark, UIColors::BtnLight);
+        FillRect(dst, radioRect, kRadioBg);
+        DrawBevel(dst, radioRect, 1, kRadioBorder, kRadioBorder);
 
-        // Selected indicator
+        // Selected indicator: blue dot
         if (i == m_selected) {
             SDL_Rect dotRect = { radioRect.x + 3, radioRect.y + 3, radioSize - 6, radioSize - 6 };
-            FillRect(dst, dotRect, UIColors::CheckMark);
+            FillRect(dst, dotRect, kRadioBorder);
         }
 
         // Label
@@ -391,25 +504,32 @@ const std::string& SDL2Listbox::GetItemText(int index) const {
 void SDL2Listbox::Render(SDL_Surface* dst, TTF_Font* font) {
     if (!m_visible) return;
 
+    static const SDL_Color kListBg  = { 255, 255, 255, 255 };  // white background
+    static const SDL_Color kSelRow  = {  48,  58, 148, 255 };  // blue selection row
+    static const SDL_Color kSelText = { 225, 182,  55, 255 };  // gold text when selected
+
     // Background
-    FillRect(dst, m_rect, UIColors::SliderTrack);
+    FillRect(dst, m_rect, kListBg);
     DrawBevel(dst, m_rect, 1, UIColors::BtnDark, UIColors::BtnLight);
 
     int visibleItems = m_rect.h / m_itemHeight;
     for (int i = 0; i < visibleItems && (i + m_scrollOffset) < (int)m_items.size(); i++) {
         int idx = i + m_scrollOffset;
         int iy = m_rect.y + i * m_itemHeight;
+        bool selected = (idx == m_selected);
 
-        // Highlight selected
-        if (idx == m_selected) {
+        // Highlight selected row
+        if (selected) {
             SDL_Rect hlRect = { m_rect.x + 1, iy, m_rect.w - 2, m_itemHeight };
-            FillRect(dst, hlRect, UIColors::BtnFace);
+            FillRect(dst, hlRect, kSelRow);
         }
 
-        // Item text
+        // Item text — gold on selected, blue otherwise
+        SDL_Color textColor = !m_enabled ? UIColors::Disabled
+                              : selected ? kSelText
+                                         : UIColors::LabelText;
         SDL_Rect textRect = { m_rect.x + 6, iy, m_rect.w - 12, m_itemHeight };
-        RenderText(dst, font, m_items[idx].text.c_str(), textRect,
-                   m_enabled ? UIColors::LabelText : UIColors::Disabled, false, true);
+        RenderText(dst, font, m_items[idx].text.c_str(), textRect, textColor, false, true);
     }
 }
 
@@ -494,14 +614,66 @@ bool SDL2Listbox::HandleEvent(const SDL_Event& event) {
 // SDL2EditBox
 // ============================================================================
 SDL2EditBox::SDL2EditBox(int x, int y, int w, int h, const std::string& text, ChangeCallback onChange)
-    : SDL2Widget(x, y, w, h), m_text(text), m_onChange(onChange), m_cursorPos((int)text.size()) {}
+    : SDL2Widget(x, y, w, h), m_text(text), m_onChange(onChange),
+      m_cursorPos((int)text.size()), m_selStart((int)text.size()), m_selEnd((int)text.size()) {}
+
+int SDL2EditBox::CharIndexToX(int index) const {
+    int x = m_rect.x + 4;
+    if (m_cachedFont && !m_text.empty() && index > 0) {
+        int tw, th;
+        std::string sub = m_text.substr(0, index);
+        TTF_SizeText(m_cachedFont, sub.c_str(), &tw, &th);
+        x += tw;
+    }
+    return x;
+}
+
+int SDL2EditBox::XToCharIndex(int pixelX) const {
+    if (!m_cachedFont || m_text.empty()) return 0;
+    int textX = m_rect.x + 4;
+    // Binary-ish search: measure progressively to find best fit
+    for (int i = 1; i <= (int)m_text.size(); i++) {
+        int tw, th;
+        std::string sub = m_text.substr(0, i);
+        TTF_SizeText(m_cachedFont, sub.c_str(), &tw, &th);
+        int charRight = textX + tw;
+        // If click is before the midpoint of this character, place cursor before it
+        int prevTw = 0;
+        if (i > 1) {
+            int dummy;
+            std::string prevSub = m_text.substr(0, i - 1);
+            TTF_SizeText(m_cachedFont, prevSub.c_str(), &prevTw, &dummy);
+        }
+        int charMid = textX + prevTw + (tw - prevTw) / 2;
+        if (pixelX < charMid) return i - 1;
+    }
+    return (int)m_text.size();
+}
+
+void SDL2EditBox::DeleteSelection() {
+    if (!HasSelection()) return;
+    int lo = SelMin(), hi = SelMax();
+    m_text.erase(lo, hi - lo);
+    m_cursorPos = lo;
+    ClearSelection();
+    if (m_onChange) m_onChange(m_text);
+}
 
 void SDL2EditBox::Render(SDL_Surface* dst, TTF_Font* font) {
     if (!m_visible) return;
+    m_cachedFont = font;  // Cache for hit-testing in HandleEvent
 
-    // Background
-    FillRect(dst, m_rect, { 30, 35, 32, 255 });
+    // Background: white
+    FillRect(dst, m_rect, { 255, 255, 255, 255 });
     DrawBevel(dst, m_rect, 1, UIColors::BtnDark, UIColors::BtnLight);
+
+    // Selection highlight
+    if (m_focused && HasSelection() && font) {
+        int selMinX = CharIndexToX(SelMin());
+        int selMaxX = CharIndexToX(SelMax());
+        SDL_Rect selRect = { selMinX, m_rect.y + 2, selMaxX - selMinX, m_rect.h - 4 };
+        FillRect(dst, selRect, { 80, 120, 160, 255 });
+    }
 
     // Text
     SDL_Rect textRect = { m_rect.x + 4, m_rect.y + 2, m_rect.w - 8, m_rect.h - 4 };
@@ -510,17 +682,11 @@ void SDL2EditBox::Render(SDL_Surface* dst, TTF_Font* font) {
                    m_enabled ? UIColors::LabelText : UIColors::Disabled, false, true);
     }
 
-    // Cursor blink
-    if (m_focused && ((SDL_GetTicks() / 500) % 2 == 0)) {
-        int cursorX = m_rect.x + 4;
-        if (font && !m_text.empty()) {
-            int tw, th;
-            std::string beforeCursor = m_text.substr(0, m_cursorPos);
-            TTF_SizeText(font, beforeCursor.c_str(), &tw, &th);
-            cursorX += tw;
-        }
+    // Cursor blink (don't blink when there's an active selection)
+    if (m_focused && !HasSelection() && ((SDL_GetTicks() / 500) % 2 == 0)) {
+        int cursorX = CharIndexToX(m_cursorPos);
         SDL_Rect cursorRect = { cursorX, m_rect.y + 3, 1, m_rect.h - 6 };
-        FillRect(dst, cursorRect, UIColors::LabelText);
+        FillRect(dst, cursorRect, { 30, 30, 30, 255 });  // dark cursor on white bg
     }
 }
 
@@ -532,62 +698,184 @@ bool SDL2EditBox::HandleEvent(const SDL_Event& event) {
     if (m_focused && s_activeEdit != this) {
         SDL_StartTextInput();
         s_activeEdit = this;
-        m_cursorPos = (int)m_text.size();
+        // Select all on initial focus so typing replaces existing text
+        m_selStart = 0;
+        m_selEnd = m_cursorPos = (int)m_text.size();
     } else if (!m_focused && s_activeEdit == this) {
         SDL_StopTextInput();
         s_activeEdit = nullptr;
     }
 
-    // Click to focus
+    // Mouse down — click to position cursor, start drag
     if (event.type == SDL_MOUSEBUTTONDOWN && event.button.button == SDL_BUTTON_LEFT) {
         if (PointInRect(event.button.x, event.button.y, m_rect)) {
-            m_cursorPos = (int)m_text.size();
+            m_cursorPos = XToCharIndex(event.button.x);
+            m_selStart = m_selEnd = m_cursorPos;
+            m_dragging = true;
+            return true;
+        }
+    }
+
+    // Mouse motion — extend selection while dragging
+    if (event.type == SDL_MOUSEMOTION && m_dragging) {
+        m_cursorPos = XToCharIndex(event.motion.x);
+        m_selEnd = m_cursorPos;
+        return true;
+    }
+
+    // Mouse up — end drag
+    if (event.type == SDL_MOUSEBUTTONUP && event.button.button == SDL_BUTTON_LEFT) {
+        if (m_dragging) {
+            m_dragging = false;
+            m_cursorPos = XToCharIndex(event.button.x);
+            m_selEnd = m_cursorPos;
             return true;
         }
     }
 
     if (!m_focused) return false;
 
-    // Text input
+    // Text input — replace selection if any
     if (event.type == SDL_TEXTINPUT) {
+        if (HasSelection()) DeleteSelection();
         m_text.insert(m_cursorPos, event.text.text);
         m_cursorPos += (int)strlen(event.text.text);
+        ClearSelection();
         if (m_onChange) m_onChange(m_text);
         return true;
     }
 
     // Key handling
     if (event.type == SDL_KEYDOWN) {
+        bool shift = (event.key.keysym.mod & KMOD_SHIFT) != 0;
+        bool ctrl = (event.key.keysym.mod & KMOD_CTRL) != 0;
+
         switch (event.key.keysym.sym) {
+            case SDLK_a:
+                if (ctrl) {
+                    // Ctrl+A: select all
+                    m_selStart = 0;
+                    m_selEnd = m_cursorPos = (int)m_text.size();
+                    return true;
+                }
+                break;
+            case SDLK_c:
+                if (ctrl && HasSelection()) {
+                    SDL_SetClipboardText(m_text.substr(SelMin(), SelMax() - SelMin()).c_str());
+                    return true;
+                }
+                break;
+            case SDLK_x:
+                if (ctrl && HasSelection()) {
+                    SDL_SetClipboardText(m_text.substr(SelMin(), SelMax() - SelMin()).c_str());
+                    DeleteSelection();
+                    return true;
+                }
+                break;
+            case SDLK_v:
+                if (ctrl) {
+                    char* clip = SDL_GetClipboardText();
+                    if (clip && clip[0]) {
+                        if (HasSelection()) DeleteSelection();
+                        m_text.insert(m_cursorPos, clip);
+                        m_cursorPos += (int)strlen(clip);
+                        ClearSelection();
+                        if (m_onChange) m_onChange(m_text);
+                    }
+                    SDL_free(clip);
+                    return true;
+                }
+                break;
             case SDLK_BACKSPACE:
-                if (m_cursorPos > 0) {
+                if (HasSelection()) {
+                    DeleteSelection();
+                } else if (m_cursorPos > 0) {
                     m_text.erase(m_cursorPos - 1, 1);
                     m_cursorPos--;
+                    ClearSelection();
                     if (m_onChange) m_onChange(m_text);
                 }
                 return true;
             case SDLK_DELETE:
-                if (m_cursorPos < (int)m_text.size()) {
+                if (HasSelection()) {
+                    DeleteSelection();
+                } else if (m_cursorPos < (int)m_text.size()) {
                     m_text.erase(m_cursorPos, 1);
+                    ClearSelection();
                     if (m_onChange) m_onChange(m_text);
                 }
                 return true;
             case SDLK_LEFT:
                 if (m_cursorPos > 0) m_cursorPos--;
+                if (shift) m_selEnd = m_cursorPos;
+                else ClearSelection();
                 return true;
             case SDLK_RIGHT:
                 if (m_cursorPos < (int)m_text.size()) m_cursorPos++;
+                if (shift) m_selEnd = m_cursorPos;
+                else ClearSelection();
                 return true;
             case SDLK_HOME:
                 m_cursorPos = 0;
+                if (shift) m_selEnd = m_cursorPos;
+                else ClearSelection();
                 return true;
             case SDLK_END:
                 m_cursorPos = (int)m_text.size();
+                if (shift) m_selEnd = m_cursorPos;
+                else ClearSelection();
                 return true;
         }
     }
 
     return false;
+}
+
+// ============================================================================
+// SDL2GroupBox
+// ============================================================================
+SDL2GroupBox::SDL2GroupBox(int x, int y, int w, int h, const std::string& label)
+    : SDL2Widget(x, y, w, h), m_label(label) {}
+
+void SDL2GroupBox::Render(SDL_Surface* dst, TTF_Font* font) {
+    if (!m_visible) return;
+
+    // Blue-purple border matching the original game group box style
+    static const SDL_Color kBorder = { 75, 62, 175, 255 };
+
+    // Measure label text so we can cut a gap in the top border line
+    int labelW = 0, labelH = 0;
+    if (font && !m_label.empty())
+        TTF_SizeText(font, m_label.c_str(), &labelW, &labelH);
+
+    const int textPadX = 4;   // gap between border end and text
+    const int textOffX = 8;   // distance from left edge to start of text
+    int gapStart = m_rect.x + textOffX - textPadX;
+    int gapEnd   = m_rect.x + textOffX + labelW + textPadX;
+
+    // Top border — left segment (2px)
+    FillRect(dst, { m_rect.x, m_rect.y,     gapStart - m_rect.x, 1 }, kBorder);
+    FillRect(dst, { m_rect.x, m_rect.y + 1, gapStart - m_rect.x, 1 }, kBorder);
+    // Top border — right segment (2px)
+    if (gapEnd < m_rect.x + m_rect.w) {
+        FillRect(dst, { gapEnd, m_rect.y,     m_rect.x + m_rect.w - gapEnd, 1 }, kBorder);
+        FillRect(dst, { gapEnd, m_rect.y + 1, m_rect.x + m_rect.w - gapEnd, 1 }, kBorder);
+    }
+    // Left border (2px)
+    FillRect(dst, { m_rect.x,     m_rect.y, 1, m_rect.h }, kBorder);
+    FillRect(dst, { m_rect.x + 1, m_rect.y, 1, m_rect.h }, kBorder);
+    // Right border (2px)
+    FillRect(dst, { m_rect.x + m_rect.w - 1, m_rect.y, 1, m_rect.h }, kBorder);
+    FillRect(dst, { m_rect.x + m_rect.w - 2, m_rect.y, 1, m_rect.h }, kBorder);
+    // Bottom border (2px)
+    FillRect(dst, { m_rect.x, m_rect.y + m_rect.h - 1, m_rect.w, 1 }, kBorder);
+    FillRect(dst, { m_rect.x, m_rect.y + m_rect.h - 2, m_rect.w, 1 }, kBorder);
+
+    // Label text — vertically centered on the top border line
+    if (font && !m_label.empty()) {
+        SDL_Rect textRect = { m_rect.x + textOffX, m_rect.y - labelH / 2, labelW, labelH };
+        RenderText(dst, font, m_label.c_str(), textRect, kBorder, false, false);
+    }
 }
 
 // ============================================================================
@@ -659,6 +947,10 @@ SDL2Dialog::SDL2Dialog(GameWindow* gameWindow, const std::string& title, int w, 
 }
 
 SDL2Dialog::~SDL2Dialog() {
+    if (m_dlgWindow) {
+        SDL_DestroyWindow(m_dlgWindow);
+        m_dlgWindow = nullptr;
+    }
     if (m_background) SDL_FreeSurface(m_background);
     for (auto& pair : m_fontCache)
         if (pair.second) TTF_CloseFont(pair.second);
@@ -673,6 +965,70 @@ TTF_Font* SDL2Dialog::GetFont(int size) {
     return font;
 }
 
+void SDL2Dialog::LoadDialogArt() {
+    if (s_artLoaded) return;
+    s_artLoaded = true;
+
+    // Convert game CDIBs to SDL surfaces using the same helper as the main menu
+    auto convert = [](int dibIndex) -> SDL_Surface* {
+        CDIB* pDib = theBitmaps.GetByIndex(dibIndex);
+        if (!pDib) return nullptr;
+        return SDL2MainMenu::CreateSurfaceFromDIB(pDib);
+    };
+
+    s_dlgBkgnd   = convert(CBitmapLib::DLG_BKGND);
+    s_dlgGold    = convert(DIB_GOLD);
+    s_borderHorz = convert(DIB_BORDER_HORZ);
+    s_borderVert = convert(DIB_BORDER_VERT);
+}
+
+void SDL2Dialog::FreeDialogArt() {
+    if (s_dlgBkgnd)   { SDL_FreeSurface(s_dlgBkgnd);   s_dlgBkgnd = nullptr; }
+    if (s_dlgGold)     { SDL_FreeSurface(s_dlgGold);     s_dlgGold = nullptr; }
+    if (s_borderHorz)  { SDL_FreeSurface(s_borderHorz);  s_borderHorz = nullptr; }
+    if (s_borderVert)  { SDL_FreeSurface(s_borderVert);  s_borderVert = nullptr; }
+    s_artLoaded = false;
+}
+
+void SDL2Dialog::PaintGameBorder(SDL_Surface* dst, SDL_Rect rect) {
+    // Gold background fill (stretched to fill dialog area)
+    if (s_dlgGold) {
+        SDL_BlitScaled(s_dlgGold, nullptr, dst, &rect);
+    }
+
+    // Horizontal borders (top and bottom) — tile across width
+    if (s_borderHorz) {
+        int bh = s_borderHorz->h;
+        for (int x = rect.x; x < rect.x + rect.w; x += s_borderHorz->w) {
+            int w = std::min(s_borderHorz->w, rect.x + rect.w - x);
+            SDL_Rect src = { 0, 0, w, bh };
+            // Top border
+            SDL_Rect dstTop = { x, rect.y, w, bh };
+            SDL_BlitSurface(s_borderHorz, &src, dst, &dstTop);
+            // Bottom border
+            SDL_Rect dstBot = { x, rect.y + rect.h - bh, w, bh };
+            SDL_BlitSurface(s_borderHorz, &src, dst, &dstBot);
+        }
+    }
+
+    // Vertical borders (left and right) — angled inward like PaintBorder
+    if (s_borderVert) {
+        int bw = s_borderVert->w;
+        int bh = s_borderHorz ? s_borderHorz->h : 0;
+        for (int col = 0; col < bw; col++) {
+            // Left side: each column is 1px wide, inset by col from top/bottom
+            SDL_Rect src = { col, col, 1, s_borderVert->h - 2 * col };
+            int stripH = rect.h - 2 * bh - 2 * col;
+            if (stripH <= 0) continue;
+            SDL_Rect dstLeft = { rect.x + col, rect.y + bh + col, 1, stripH };
+            SDL_BlitScaled(s_borderVert, &src, dst, &dstLeft);
+            // Right side
+            SDL_Rect dstRight = { rect.x + rect.w - 1 - col, rect.y + bh + col, 1, stripH };
+            SDL_BlitScaled(s_borderVert, &src, dst, &dstRight);
+        }
+    }
+}
+
 void SDL2Dialog::AddOKCancelButtons() {
     int btnW = 90, btnH = 30;
     int btnY = m_y + m_height - btnH - 15;
@@ -685,42 +1041,81 @@ void SDL2Dialog::AddOKCancelButtons() {
 }
 
 void SDL2Dialog::Render() {
-    SDL_Surface* winSurface = SDL_GetWindowSurface(m_gameWindow->GetWindow());
-    if (!winSurface) return;
+    // Lazy-load game art on first render
+    if (!s_artLoaded) LoadDialogArt();
 
-    // Restore the captured background (main menu or whatever was behind)
-    if (m_background) {
-        SDL_BlitSurface(m_background, nullptr, winSurface, nullptr);
+    // Draw the dialog into the main window's surface at (m_x, m_y).
+    // Widget coords are baked relative to (m_x, m_y) so we always use the main surface.
+    SDL_Surface* mainSurface = SDL_GetWindowSurface(m_gameWindow->GetWindow());
+    if (!mainSurface) return;
+
+    // Restore captured background if falling back to main window display
+    if (!m_dlgWindow && m_background) {
+        SDL_BlitSurface(m_background, nullptr, mainSurface, nullptr);
     }
 
-    // Dialog background
     SDL_Rect dlgRect = { m_x, m_y, m_width, m_height };
-    FillRect(winSurface, dlgRect, UIColors::DialogBg);
-    DrawBevel(winSurface, dlgRect, 3, UIColors::DialogFrame, UIColors::DialogDark);
+    int borderTop = s_borderHorz ? s_borderHorz->h : 3;
+    int borderSide = s_borderVert ? s_borderVert->w : 3;
 
-    // Title bar
-    SDL_Rect titleRect = { m_x + 3, m_y + 3, m_width - 6, 28 };
-    FillRect(winSurface, titleRect, {50, 55, 52, 255});
+    const int titleBarH = 26;
+
+    if (s_artLoaded && (s_dlgGold || s_borderHorz)) {
+        PaintGameBorder(mainSurface, dlgRect);
+
+        SDL_Rect interior = {
+            dlgRect.x + borderSide, dlgRect.y + borderTop,
+            dlgRect.w - 2 * borderSide, dlgRect.h - 2 * borderTop
+        };
+        if (m_customBg) {
+            // Custom background goes BELOW the title bar at natural size
+            SDL_Rect bgRect = {
+                interior.x, interior.y + titleBarH,
+                interior.w, interior.h - titleBarH
+            };
+            SDL_BlitScaled(m_customBg, nullptr, mainSurface, &bgRect);
+        } else if (s_dlgGold) {
+            SDL_BlitScaled(s_dlgGold, nullptr, mainSurface, &interior);
+        }
+    } else {
+        FillRect(mainSurface, dlgRect, UIColors::DialogBg);
+        DrawBevel(mainSurface, dlgRect, 3, UIColors::DialogFrame, UIColors::DialogDark);
+    }
+
+    SDL_Rect titleRect = { m_x + borderSide, m_y + borderTop, m_width - 2 * borderSide, titleBarH };
+    FillRect(mainSurface, titleRect, UIColors::TitleBg);
+
     TTF_Font* titleFont = GetFont(16);
     if (titleFont) {
-        SDL_Rect titleTextRect = { m_x + 10, m_y + 5, m_width - 20, 24 };
-        RenderText(winSurface, titleFont, m_title.c_str(), titleTextRect,
+        SDL_Rect titleTextRect = { titleRect.x + 6, titleRect.y, titleRect.w - 12, titleRect.h };
+        RenderText(mainSurface, titleFont, m_title.c_str(), titleTextRect,
                    UIColors::TitleText, false, true);
     }
 
-    // Render all widgets
-    TTF_Font* widgetFont = GetFont(14);
+    TTF_Font* widgetFont = GetFont(13);
     for (auto& widget : m_widgets) {
-        widget->Render(winSurface, widgetFont);
-        // Draw focus indicator
+        widget->Render(mainSurface, widgetFont);
         if (widget->HasFocus()) {
             SDL_Rect r = widget->GetRect();
             r.x -= 2; r.y -= 2; r.w += 4; r.h += 4;
-            DrawBevel(winSurface, r, 1, {180, 200, 220, 255}, {180, 200, 220, 255});
+            DrawBevel(mainSurface, r, 1, {180, 200, 220, 255}, {180, 200, 220, 255});
         }
     }
 
-    SDL_UpdateWindowSurface(m_gameWindow->GetWindow());
+    if (m_dlgWindow) {
+        // Keep on top — re-raise each frame in case another topmost window stole z-order
+        SDL_RaiseWindow(m_dlgWindow);
+
+        // Copy the dialog rectangle from the main surface into the dedicated dialog window
+        SDL_Surface* dlgSurface = SDL_GetWindowSurface(m_dlgWindow);
+        if (dlgSurface) {
+            SDL_Rect src = { m_x, m_y, m_width, m_height };
+            SDL_BlitSurface(mainSurface, &src, dlgSurface, nullptr);
+            SDL_UpdateWindowSurface(m_dlgWindow);
+        }
+    } else {
+        SDL_UpdateWindowSurface(m_gameWindow->GetWindow());
+    }
 }
 
 void SDL2Dialog::FocusNext() {
@@ -764,6 +1159,33 @@ void SDL2Dialog::FocusPrev() {
 }
 
 bool SDL2Dialog::HandleEvent(SDL_Event& event) {
+    // When using a dedicated dialog window, mouse coordinates arrive relative to
+    // that window's (0,0). Widgets use coordinates relative to the main window
+    // (m_x + offset). Shift mouse events so they match widget rects.
+    SDL_Event shifted = event;
+    if (m_dlgWindow) {
+        uint32_t dlgWinID = SDL_GetWindowID(m_dlgWindow);
+        switch (event.type) {
+        case SDL_MOUSEBUTTONDOWN:
+        case SDL_MOUSEBUTTONUP:
+            if (event.button.windowID == dlgWinID) {
+                shifted.button.x += m_x;
+                shifted.button.y += m_y;
+            }
+            break;
+        case SDL_MOUSEMOTION:
+            if (event.motion.windowID == dlgWinID) {
+                shifted.motion.x += m_x;
+                shifted.motion.y += m_y;
+            }
+            break;
+        case SDL_MOUSEWHEEL:
+            // wheel events don't carry coords, no shift needed
+            break;
+        }
+        event = shifted;
+    }
+
     // ESC = cancel
     if (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_ESCAPE) {
         OnCancel();
@@ -834,8 +1256,37 @@ int SDL2Dialog::DoModal() {
     m_running = true;
     m_result = 0;
 
-    // Capture current screen content as dialog background
-    CaptureBackground();
+    // Create a dedicated ALWAYS_ON_TOP window for this dialog so it floats
+    // above the Area View and World View detached panels (also ALWAYS_ON_TOP).
+    // This avoids touching the main window's z-order, which would disturb panel visibility.
+    int mainX = 0, mainY = 0;
+    if (m_gameWindow->GetWindow())
+        SDL_GetWindowPosition(m_gameWindow->GetWindow(), &mainX, &mainY);
+
+    const std::string& titleStr = m_title.empty() ? "Dialog" : m_title;
+    m_dlgWindow = GameWindow::CreateSDLWindow(
+        titleStr.c_str(),
+        mainX + m_x, mainY + m_y, m_width, m_height,
+        SDL_WINDOW_SHOWN | SDL_WINDOW_BORDERLESS | SDL_WINDOW_SKIP_TASKBAR);
+
+    if (!m_dlgWindow) {
+        // Fallback: render on the main window with a background snapshot
+        CaptureBackground();
+    } else {
+#ifdef _WIN32
+        // Set the background window as owner so the dialog stays above it
+        if (m_gameWindow->GetWindow()) {
+            SDL_SysWMinfo mainInfo, dlgInfo;
+            SDL_VERSION(&mainInfo.version);
+            SDL_VERSION(&dlgInfo.version);
+            if (SDL_GetWindowWMInfo(m_gameWindow->GetWindow(), &mainInfo) &&
+                SDL_GetWindowWMInfo(m_dlgWindow, &dlgInfo))
+                ::SetWindowLongPtr(dlgInfo.info.win.window, GWLP_HWNDPARENT,
+                                   (LONG_PTR)mainInfo.info.win.window);
+        }
+#endif
+        SDL_RaiseWindow(m_dlgWindow);
+    }
 
     OnInit();
 
@@ -856,17 +1307,16 @@ int SDL2Dialog::DoModal() {
         // Don't burn CPU
         SDL_Delay(16);
 
-        // Also pump Windows messages so MFC doesn't freeze
-        MSG msg;
-        while (::PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) {
-            if (msg.message == WM_QUIT) {
-                m_running = false;
-                m_result = 0;
-                break;
-            }
-            ::TranslateMessage(&msg);
-            ::DispatchMessage(&msg);
-        }
+        // SDL receives mouse/keyboard events for its own windows via its
+        // registered WndProc — no MFC message pump needed here.
+        // Pumping MFC messages inside DoModal causes re-entrant BuildUnit()
+        // calls (WM_KICKIDLE → OnIdle → BaseYield → second DoModal), which
+        // creates nested dialogs that block each other.
+    }
+
+    if (m_dlgWindow) {
+        SDL_DestroyWindow(m_dlgWindow);
+        m_dlgWindow = nullptr;
     }
 
     return m_result;
@@ -875,4 +1325,61 @@ int SDL2Dialog::DoModal() {
 void SDL2Dialog::EndDialog(int result) {
     m_result = result;
     m_running = false;
+
+    if (m_nonModal) {
+        // Destroy window immediately so it vanishes this frame
+        if (m_dlgWindow) {
+            SDL_DestroyWindow(m_dlgWindow);
+            m_dlgWindow = nullptr;
+        }
+        // Fire callback (e.g., clears the caller's pointer to us)
+        if (m_onDone) m_onDone(result);
+        // GameWindow will delete this during its next cleanup pass
+        // (UnregisterDialog detects IsNonModalActive() == false)
+    }
+}
+
+void SDL2Dialog::ShowNonModal(std::function<void(int)> onDone) {
+    m_nonModal = true;
+    m_onDone   = onDone;
+    m_running  = true;
+    m_result   = 0;
+
+    int mainX = 0, mainY = 0;
+    if (m_gameWindow->GetWindow())
+        SDL_GetWindowPosition(m_gameWindow->GetWindow(), &mainX, &mainY);
+
+    const std::string& titleStr = m_title.empty() ? "Dialog" : m_title;
+    m_dlgWindow = GameWindow::CreateSDLWindow(
+        titleStr.c_str(),
+        mainX + m_x, mainY + m_y, m_width, m_height,
+        SDL_WINDOW_SHOWN | SDL_WINDOW_BORDERLESS | SDL_WINDOW_SKIP_TASKBAR);
+
+    if (!m_dlgWindow) {
+        CaptureBackground();
+    } else {
+#ifdef _WIN32
+        // Set the background window as owner so the dialog stays above it
+        if (m_gameWindow->GetWindow()) {
+            SDL_SysWMinfo mainInfo, dlgInfo;
+            SDL_VERSION(&mainInfo.version);
+            SDL_VERSION(&dlgInfo.version);
+            if (SDL_GetWindowWMInfo(m_gameWindow->GetWindow(), &mainInfo) &&
+                SDL_GetWindowWMInfo(m_dlgWindow, &dlgInfo))
+                ::SetWindowLongPtr(dlgInfo.info.win.window, GWLP_HWNDPARENT,
+                                   (LONG_PTR)mainInfo.info.win.window);
+        }
+#endif
+        SDL_RaiseWindow(m_dlgWindow);
+    }
+
+    OnInit();
+
+    // Register with GameWindow for per-frame event routing and rendering
+    if (m_gameWindow)
+        m_gameWindow->RegisterDialog(this);
+}
+
+uint32_t SDL2Dialog::GetSDLWindowID() const {
+    return m_dlgWindow ? SDL_GetWindowID(m_dlgWindow) : 0;
 }
