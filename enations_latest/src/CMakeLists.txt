@@ -98,6 +98,19 @@ set(enations_sources
         SDL2Options.cpp
         SDL2Dialogs.cpp
         SDL2Video.cpp
+        SDL2Panel.cpp
+        SDL2Compositor.cpp
+        SDL2AreaBar.cpp
+        SDL2BuildStructure.cpp
+        SDL2BuildTransport.cpp
+        SDL2CreateStatus.cpp
+        SDL2FileDialog.cpp
+        SDL2GameDialogs.cpp
+        SDL2MFCPanel.cpp
+        SDL2RouteWindow.cpp
+        SDL2SaveDialog.cpp
+        SDL2Toolbar.cpp
+        SDL2UnitList.cpp
         ../../rendering/SDLButton.cpp
         ../../rendering/SDLButtonManager.cpp
         ../../rendering/StatusBar.cpp

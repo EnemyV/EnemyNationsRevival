@@ -29,6 +29,12 @@ project(Enations VERSION 1.0
 add_subdirectory(enations_latest/src)
 
 ###############################
+# rif_converter.exe (SDL2 Phase 0 - Asset Conversion)
+###############################
+
+add_subdirectory(tools/rif_converter)
+
+###############################
 # makeriff.exe
 ###############################
 
