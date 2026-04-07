@@ -10,6 +10,8 @@
 #include "_windwrd.h"
 #include "io.h"
 #include "w22_settings.h"
+#include <shlwapi.h>
+#pragma comment(lib, "shlwapi.lib")
 
 #ifdef _DEBUG
 #undef THIS_FILE
@@ -92,9 +94,11 @@ BOOL CDataFile::Init(const char *pFilename, int iRifVer, BOOL bErr) {
     m_iRifVer = iRifVer;
 
     CString strFileName;
-    if ((!bErr) && (ptheApp->m_lpCmdLine[0])) {
+    // Use Win32 command line — skip exe name, grab first argument if present
+    const char* pCmdArgs = ::PathGetArgsA(::GetCommandLineA());
+    if ((!bErr) && pCmdArgs && pCmdArgs[0]) {
         TRAP();
-        strFileName = ptheApp->m_lpCmdLine;
+        strFileName = pCmdArgs;
     } else {
         CString sDefault = CString(".\\") + pFilename;
         strFileName = w22::GetProfileString("Game", "DataFile", sDefault);

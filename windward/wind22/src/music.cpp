@@ -264,7 +264,7 @@ BOOL CRawChannel::AllocDblBuf() {
 
     // get a thread for reading ahead
     if ( m_pPar != NULL )
-        if ( AfxGetApp()->GetProfileInt( _T("Advanced"), _T("MusicThread"), 1 ) ) {
+        if ( w22::GetProfileInt( "Advanced", "MusicThread", 1 ) ) {
             m_iBufOn = 0;
             m_cStat = _idle;
             m_bRunning = TRUE;

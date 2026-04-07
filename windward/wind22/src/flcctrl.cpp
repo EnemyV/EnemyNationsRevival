@@ -234,13 +234,14 @@ CFlcCtrl::Play(
 
     for ( ;; ) {
         while ( ::PeekMessage( &msg, NULL, 0, 0, PM_NOREMOVE ) ) {
-            if ( !ptheApp->PumpMessage() ) {
+            if ( !::GetMessage( &msg, NULL, 0, 0 ) ) {
+                // WM_QUIT received
                 m_bPlaying = FALSE;
-
                 ::PostQuitMessage( 0 );
-
                 break;
             }
+            ::TranslateMessage( &msg );
+            ::DispatchMessage( &msg );
 
             if ( !IsPlaying() )
                 return;
