@@ -1,5 +1,8 @@
 // DlgMsg.cpp : implementation file
 //
+// CDlgModelessMsg — No longer CDialog-based.
+// Creates a simple Win32 popup window with the message text.
+// Auto-deletes itself when the window is closed.
 
 #include "stdafx.h"
 #include "lastplnt.h"
@@ -11,48 +14,97 @@
 static char THIS_FILE[] = __FILE__;
 #endif
 
-/////////////////////////////////////////////////////////////////////////////
-// CDlgModelessMsg dialog
+const char* CDlgModelessMsg::s_className = "ENModelessMsg";
+bool CDlgModelessMsg::s_classRegistered = false;
 
+/////////////////////////////////////////////////////////////////////////////
+// CDlgModelessMsg
 
 CDlgModelessMsg::CDlgModelessMsg(CWnd* pParent /*=NULL*/)
-	: CDialog(CDlgModelessMsg::IDD, pParent)
+	: m_hWnd( NULL )
 {
-	//{{AFX_DATA_INIT(CDlgModelessMsg)
 	m_sMsg = _T("");
-	//}}AFX_DATA_INIT
 }
 
-
-void CDlgModelessMsg::DoDataExchange(CDataExchange* pDX)
+CDlgModelessMsg::~CDlgModelessMsg()
 {
-	CDialog::DoDataExchange(pDX);
-	//{{AFX_DATA_MAP(CDlgModelessMsg)
-	DDX_Text(pDX, IDS_MSG, m_sMsg);
-	//}}AFX_DATA_MAP
+	if ( m_hWnd && ::IsWindow( m_hWnd ) )
+		::DestroyWindow( m_hWnd );
 }
 
-
-BEGIN_MESSAGE_MAP(CDlgModelessMsg, CDialog)
-	//{{AFX_MSG_MAP(CDlgModelessMsg)
-		// NOTE: the ClassWizard will add message map macros here
-	//}}AFX_MSG_MAP
-END_MESSAGE_MAP()
-
-/////////////////////////////////////////////////////////////////////////////
-// CDlgModelessMsg message handlers
-
-void CDlgModelessMsg::Create ( const char * pMsg )
+LRESULT CALLBACK CDlgModelessMsg::WndProc( HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam )
 {
+	switch ( msg )
+	{
+	case WM_CREATE:
+	{
+		CREATESTRUCT* pcs = (CREATESTRUCT*)lParam;
+		::SetWindowLongPtr( hwnd, GWLP_USERDATA, (LONG_PTR)pcs->lpCreateParams );
+		return 0;
+	}
+	case WM_PAINT:
+	{
+		PAINTSTRUCT ps;
+		HDC hdc = ::BeginPaint( hwnd, &ps );
+		CDlgModelessMsg* pThis = (CDlgModelessMsg*)::GetWindowLongPtr( hwnd, GWLP_USERDATA );
+		if ( pThis )
+		{
+			RECT rc;
+			::GetClientRect( hwnd, &rc );
+			::InflateRect( &rc, -10, -10 );
+			::DrawTextA( hdc, pThis->m_sMsg, -1, &rc, DT_WORDBREAK | DT_CENTER | DT_VCENTER );
+		}
+		::EndPaint( hwnd, &ps );
+		return 0;
+	}
+	case WM_LBUTTONDOWN:
+	case WM_RBUTTONDOWN:
+	case WM_KEYDOWN:
+		::DestroyWindow( hwnd );
+		return 0;
+	case WM_DESTROY:
+	{
+		CDlgModelessMsg* pThis = (CDlgModelessMsg*)::GetWindowLongPtr( hwnd, GWLP_USERDATA );
+		if ( pThis )
+		{
+			pThis->m_hWnd = NULL;
+			delete pThis;
+		}
+		return 0;
+	}
+	}
+	return ::DefWindowProc( hwnd, msg, wParam, lParam );
+}
 
+void CDlgModelessMsg::Create( const char* pMsg )
+{
 	m_sMsg = pMsg;
-	CDialog::Create ( IDD_MODELESS_MSG, theApp.m_wndMain.m_hWnd ? &(theApp.m_wndMain) : NULL );
-}
 
-void CDlgModelessMsg::PostNcDestroy() 
-{
-	
-	CDialog::PostNcDestroy();
+	if ( !s_classRegistered )
+	{
+		WNDCLASSEXA wc = {};
+		wc.cbSize        = sizeof( wc );
+		wc.lpfnWndProc   = WndProc;
+		wc.hInstance      = ::GetModuleHandle( NULL );
+		wc.hCursor        = ::LoadCursor( NULL, IDC_ARROW );
+		wc.hbrBackground  = (HBRUSH)( COLOR_BTNFACE + 1 );
+		wc.lpszClassName  = s_className;
+		::RegisterClassExA( &wc );
+		s_classRegistered = true;
+	}
 
-	delete this;
+	// Center on screen
+	int w = 320, h = 120;
+	int x = ( ::GetSystemMetrics( SM_CXSCREEN ) - w ) / 2;
+	int y = ( ::GetSystemMetrics( SM_CYSCREEN ) - h ) / 2;
+
+	m_hWnd = ::CreateWindowExA(
+		WS_EX_TOPMOST,
+		s_className,
+		"Enemy Nations",
+		WS_POPUP | WS_BORDER | WS_VISIBLE,
+		x, y, w, h,
+		NULL, NULL,
+		::GetModuleHandle( NULL ),
+		this );
 }

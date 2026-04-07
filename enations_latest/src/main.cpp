@@ -31,6 +31,7 @@
 #include "toolbar.h"
 #include "msgs.h"
 #include "chat.h"
+#include "SDL2Dialogs.h"
 
 #include "ui.inl"
 
@@ -273,7 +274,7 @@ void CWndMain::OnDisplayChange2 ()
 	MoveToNew ( theApp.m_pdlgRelations, xOld, yOld );
 	MoveToNew ( theApp.m_pdlgFile, xOld, yOld );
 	MoveToNew ( theApp.m_pdlgRsrch, xOld, yOld );
-	MoveToNew ( theApp.GetDlgPause (), xOld, yOld );
+	// MoveToNew for CDlgPause removed — no longer a CWnd, centers itself on Show()
 	MoveToNew ( theApp.m_pdlgPlyrList, xOld, yOld );
 
 	// these move & size
@@ -944,11 +945,12 @@ void CDlgFile::OnFileHelp()
 	theApp.WinHelp (0, HELP_CONTENTS);
 }
 
-void CDlgFile::OnFileVersion() 
+void CDlgFile::OnFileVersion()
 {
-	
-	CDlgVer dlgVer (this);
-	dlgVer.DoModal ();
+	if (theApp.m_gameWindow) {
+		SDL2VersionDialog dlg(theApp.m_gameWindow.get());
+		dlg.DoModal();
+	}
 }
 
 void CDlgFile::OnFileMinimize() 
@@ -1154,48 +1156,112 @@ void CDlgFile::OnHScroll(UINT nSBCode, UINT nPos, CScrollBar* pScrollBar)
 
 
 /////////////////////////////////////////////////////////////////////////////
-// CDlgSaveMsg dialog
+// CDlgSaveMsg — non-MFC modeless save progress indicator
+
+const char* CDlgSaveMsg::s_className = "ENSaveMsg";
+bool CDlgSaveMsg::s_classRegistered = false;
 
 CDlgSaveMsg::CDlgSaveMsg(CWnd* pParent /*=NULL*/)
-	: CDialog(CDlgSaveMsg::IDD, pParent)
+	: m_hWnd( NULL )
 {
-	//{{AFX_DATA_INIT(CDlgSaveMsg)
 	m_sText = _T("");
 	m_sStat = _T("");
-	//}}AFX_DATA_INIT
 }
 
-
-void CDlgSaveMsg::DoDataExchange(CDataExchange* pDX)
+CDlgSaveMsg::~CDlgSaveMsg()
 {
-	CDialog::DoDataExchange(pDX);
-	//{{AFX_DATA_MAP(CDlgSaveMsg)
-	DDX_Text(pDX, IDC_SAVE_NAME, m_sText);
-	DDX_Text(pDX, IDC_SAVE_STATUS, m_sStat);
-	//}}AFX_DATA_MAP
+	DestroyWindow();
 }
 
-
-BEGIN_MESSAGE_MAP(CDlgSaveMsg, CDialog)
-	//{{AFX_MSG_MAP(CDlgSaveMsg)
-	ON_WM_CREATE()
-	//}}AFX_MSG_MAP
-END_MESSAGE_MAP()
-
-
-/////////////////////////////////////////////////////////////////////////////
-// CDlgSaveMsg message handlers
-
-int CDlgSaveMsg::OnCreate(LPCREATESTRUCT lpCreateStruct)
+LRESULT CALLBACK CDlgSaveMsg::WndProc( HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam )
 {
-	if (CDialog::OnCreate(lpCreateStruct) == -1)
-		return -1;
+	switch ( msg )
+	{
+	case WM_CREATE:
+	{
+		CREATESTRUCT* pcs = (CREATESTRUCT*)lParam;
+		::SetWindowLongPtr( hwnd, GWLP_USERDATA, (LONG_PTR)pcs->lpCreateParams );
+		return 0;
+	}
+	case WM_PAINT:
+	{
+		PAINTSTRUCT ps;
+		HDC hdc = ::BeginPaint( hwnd, &ps );
+		CDlgSaveMsg* pThis = (CDlgSaveMsg*)::GetWindowLongPtr( hwnd, GWLP_USERDATA );
+		if ( pThis )
+		{
+			RECT rc;
+			::GetClientRect( hwnd, &rc );
+			::SetBkMode( hdc, TRANSPARENT );
 
-	CenterWindow (&theApp.m_wndMain);
+			// Draw m_sText in upper area
+			RECT rcText = { 10, 10, rc.right - 10, rc.bottom / 2 };
+			::DrawTextA( hdc, pThis->m_sText, -1, &rcText, DT_WORDBREAK | DT_CENTER );
 
-	// Save progress handled by MFC internally (serialization display)
+			// Draw m_sStat in lower area
+			RECT rcStat = { 10, rc.bottom / 2, rc.right - 10, rc.bottom - 10 };
+			::DrawTextA( hdc, pThis->m_sStat, -1, &rcStat, DT_WORDBREAK | DT_CENTER );
+		}
+		::EndPaint( hwnd, &ps );
+		return 0;
+	}
+	}
+	return ::DefWindowProc( hwnd, msg, wParam, lParam );
+}
 
-	return 0;
+void CDlgSaveMsg::Create( UINT /*nIDTemplate*/, CWnd* pParent )
+{
+	if ( !s_classRegistered )
+	{
+		WNDCLASSEXA wc = {};
+		wc.cbSize        = sizeof( wc );
+		wc.lpfnWndProc   = WndProc;
+		wc.hInstance      = ::GetModuleHandle( NULL );
+		wc.hCursor        = ::LoadCursor( NULL, IDC_WAIT );
+		wc.hbrBackground  = (HBRUSH)( COLOR_BTNFACE + 1 );
+		wc.lpszClassName  = s_className;
+		::RegisterClassExA( &wc );
+		s_classRegistered = true;
+	}
+
+	int w = 320, h = 100;
+	int x = ( ::GetSystemMetrics( SM_CXSCREEN ) - w ) / 2;
+	int y = ( ::GetSystemMetrics( SM_CYSCREEN ) - h ) / 2;
+
+	m_hWnd = ::CreateWindowExA(
+		WS_EX_TOPMOST,
+		s_className,
+		"Enemy Nations",
+		WS_POPUP | WS_BORDER | WS_VISIBLE,
+		x, y, w, h,
+		pParent ? pParent->m_hWnd : NULL,
+		NULL,
+		::GetModuleHandle( NULL ),
+		this );
+	Repaint();
+}
+
+void CDlgSaveMsg::DestroyWindow()
+{
+	if ( m_hWnd && ::IsWindow( m_hWnd ) )
+	{
+		::SetWindowLongPtr( m_hWnd, GWLP_USERDATA, 0 );  // prevent WM_DESTROY from using stale pointer
+		::DestroyWindow( m_hWnd );
+	}
+	m_hWnd = NULL;
+}
+
+void CDlgSaveMsg::UpdateData( BOOL /*bSaveAndValidate*/ )
+{
+	// In the MFC version, UpdateData(FALSE) pushes member data to controls.
+	// We just repaint to show current m_sText/m_sStat.
+	Repaint();
+}
+
+void CDlgSaveMsg::Repaint()
+{
+	if ( m_hWnd && ::IsWindow( m_hWnd ) )
+		::InvalidateRect( m_hWnd, NULL, TRUE );
 }
 
 void CWndMain::OnSave() 
@@ -1567,75 +1633,131 @@ void CWndMain::OnRButtonDown(UINT nFlags, CPoint point)
 // CDlgPause dialog
 
 
+// CDlgPause — non-MFC modeless pause notification
+
+const char* CDlgPause::s_className = "ENPauseMsg";
+bool CDlgPause::s_classRegistered = false;
+
 CDlgPause::CDlgPause(CWnd* pParent /*=NULL*/)
-	: CDialog(CDlgPause::IDD, pParent)
+	: m_hWnd( NULL )
 {
-	//{{AFX_DATA_INIT(CDlgPause)
 	m_sText = _T("");
-	//}}AFX_DATA_INIT
 }
 
-
-void CDlgPause::DoDataExchange(CDataExchange* pDX)
+CDlgPause::~CDlgPause()
 {
-	CDialog::DoDataExchange(pDX);
-	//{{AFX_DATA_MAP(CDlgPause)
-	DDX_Text(pDX, IDC_PAUSE_TEXT, m_sText);
-	//}}AFX_DATA_MAP
+	if ( m_hWnd && ::IsWindow( m_hWnd ) )
+	{
+		::SetWindowLongPtr( m_hWnd, GWLP_USERDATA, 0 );
+		::DestroyWindow( m_hWnd );
+	}
+	m_hWnd = NULL;
 }
 
-
-BEGIN_MESSAGE_MAP(CDlgPause, CDialog)
-	//{{AFX_MSG_MAP(CDlgPause)
-	//}}AFX_MSG_MAP
-END_MESSAGE_MAP()
-
-/////////////////////////////////////////////////////////////////////////////
-// CDlgPause message handlers
-
-BOOL CDlgPause::OnInitDialog()
+LRESULT CALLBACK CDlgPause::WndProc( HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam )
 {
+	switch ( msg )
+	{
+	case WM_CREATE:
+	{
+		CREATESTRUCT* pcs = (CREATESTRUCT*)lParam;
+		::SetWindowLongPtr( hwnd, GWLP_USERDATA, (LONG_PTR)pcs->lpCreateParams );
+		return 0;
+	}
+	case WM_PAINT:
+	{
+		PAINTSTRUCT ps;
+		HDC hdc = ::BeginPaint( hwnd, &ps );
+		CDlgPause* pThis = (CDlgPause*)::GetWindowLongPtr( hwnd, GWLP_USERDATA );
+		if ( pThis )
+		{
+			RECT rc;
+			::GetClientRect( hwnd, &rc );
+			::SetBkMode( hdc, TRANSPARENT );
+			RECT rcText = { 10, 10, rc.right - 10, rc.bottom - 10 };
+			::DrawTextA( hdc, pThis->m_sText, -1, &rcText, DT_WORDBREAK | DT_CENTER | DT_VCENTER | DT_SINGLELINE );
+		}
+		::EndPaint( hwnd, &ps );
+		return 0;
+	}
+	}
+	return ::DefWindowProc( hwnd, msg, wParam, lParam );
+}
 
-	CDialog::OnInitDialog();
-
-	CenterWindow ();
-
-	// Native SDL2 dialog handles rendering
-
-	return TRUE;  // return TRUE unless you set the focus to a control
-	              // EXCEPTION: OCX Property Pages should return FALSE
+void CDlgPause::Repaint()
+{
+	if ( m_hWnd && ::IsWindow( m_hWnd ) )
+		::InvalidateRect( m_hWnd, NULL, TRUE );
 }
 
 void CDlgPause::Show (int iMode)
 {
+	if ( iMode == off )
+	{
+		if ( m_hWnd && ::IsWindow( m_hWnd ) )
+			::ShowWindow( m_hWnd, SW_HIDE );
+		return;
+	}
 
+	// Create window if needed
 	if ( m_hWnd == NULL )
-		Create (IDD_PAUSE_MSG, &(theApp.m_wndMain));
+	{
+		if ( !s_classRegistered )
+		{
+			WNDCLASSEXA wc = {};
+			wc.cbSize        = sizeof( wc );
+			wc.lpfnWndProc   = WndProc;
+			wc.hInstance      = ::GetModuleHandle( NULL );
+			wc.hCursor        = ::LoadCursor( NULL, IDC_ARROW );
+			wc.hbrBackground  = (HBRUSH)( COLOR_BTNFACE + 1 );
+			wc.lpszClassName  = s_className;
+			::RegisterClassExA( &wc );
+			s_classRegistered = true;
+		}
+
+		int w = 280, h = 80;
+		int x = ( ::GetSystemMetrics( SM_CXSCREEN ) - w ) / 2;
+		int y = ( ::GetSystemMetrics( SM_CYSCREEN ) - h ) / 2;
+
+		m_hWnd = ::CreateWindowExA(
+			WS_EX_TOPMOST,
+			s_className,
+			"Enemy Nations",
+			WS_POPUP | WS_BORDER,
+			x, y, w, h,
+			NULL, NULL,
+			::GetModuleHandle( NULL ),
+			this );
+	}
 
 	switch (iMode)
 	  {
 		case server :
-			UpdateData (TRUE);
 			m_sText.LoadString (IDS_PAUSE_SERVER);
-			UpdateData (FALSE);
-			CenterWindow ();
-			ShowWindow ( SW_SHOW );
-			SetWindowPos (&wndTop, 0, 0, 0, 0, SWP_NOSIZE | SWP_NOMOVE);
-			theApp.m_wndMain.SetActiveWindow ();
+			Repaint();
+			::ShowWindow( m_hWnd, SW_SHOW );
+			::SetWindowPos( m_hWnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOSIZE | SWP_NOMOVE );
 			break;
 
 		case client :
-			UpdateData (TRUE);
 			m_sText.LoadString (IDS_PAUSE_CLIENT);
-			UpdateData (FALSE);
-			CenterWindow ();
-			ShowWindow ( SW_SHOW );
-			SetWindowPos (&wndTop, 0, 0, 0, 0, SWP_NOSIZE | SWP_NOMOVE);
-			theApp.m_wndMain.SetActiveWindow ();
+			Repaint();
+			::ShowWindow( m_hWnd, SW_SHOW );
+			::SetWindowPos( m_hWnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOSIZE | SWP_NOMOVE );
 			break;
 
 		default:
-			ShowWindow ( SW_HIDE );
+			::ShowWindow( m_hWnd, SW_HIDE );
 			break;
 	  }
+}
+
+void CDlgPause::DestroyWindow()
+{
+	if ( m_hWnd && ::IsWindow( m_hWnd ) )
+	{
+		::SetWindowLongPtr( m_hWnd, GWLP_USERDATA, 0 );
+		::DestroyWindow( m_hWnd );
+	}
+	m_hWnd = NULL;
 }

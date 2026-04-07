@@ -1439,8 +1439,11 @@ void CWndComm::OnGlobalChat ()
 
 	ASSERT_VALID (this);
 	// bring up chat
-	theApp.GetDlgChat ()->ShowWindow ( SW_SHOWNORMAL );
-	theApp.GetDlgChat ()->SetFocus ();
+	CDlgChatAll* pChat = theApp.GetDlgChat();
+	if (pChat) {
+		pChat->ShowWindow ( SW_SHOWNORMAL );
+		pChat->SetFocus ();
+	}
 }
 
 void CWndComm::OnChat ()

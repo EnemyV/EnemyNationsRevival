@@ -12,6 +12,7 @@
 #include "SDL2Video.h"
 #include "SDL2MainMenu.h"
 #include "SDL2GameDialogs.h"
+#include "SDL2Options.h"
 #include "ai.h"
 #include "area.h"
 #include "bitmaps.h"
@@ -160,9 +161,8 @@ void CatchSE( SE_Exception e )
     theGame.SetShouldProcessMessages(FALSE);
     theGame.EmptyQueue( );
 
-    CDlgStackDump dlg;
-    dlg.m_pe = &e;
-    dlg.m_sText.LoadString( IDS_ERR_LOAD_3 );
+    CString sDumpText;
+    sDumpText.LoadString( IDS_ERR_LOAD_3 );
 
     MEMORYSTATUS ms;
     ms.dwLength = sizeof( ms );
@@ -172,7 +172,7 @@ void CatchSE( SE_Exception e )
     {
         CString sMsg;
         sMsg.LoadString( IDS_OUT_OF_MEMORY );
-        dlg.m_sText = sMsg + "\r\n" + dlg.m_sText;
+        sDumpText = sMsg + "\r\n" + sDumpText;
     }
 
     char sNum1[20], sNum2[80], sNumS[5][20];
@@ -196,16 +196,9 @@ void CatchSE( SE_Exception e )
         break;
     }
     for ( int iOn = 0; iOn < 5; iOn++ ) itoa( e.m_stack[iOn], sNumS[iOn], 16 );
-    csPrintf( &dlg.m_sText, (char const*)VER_STRING, (char const*)sNum1, (char const*)sNum2, (char const*)sNumS[0],
+    csPrintf( &sDumpText, (char const*)VER_STRING, (char const*)sNum1, (char const*)sNum2, (char const*)sNumS[0],
               (char const*)sNumS[1], (char const*)sNumS[2], (char const*)sNumS[3], (char const*)sNumS[4] );
-    try
-    {
-        dlg.DoModal( );
-    }
-    catch ( ... )
-    {
-        AfxMessageBox( dlg.m_sText, MB_OK | MB_ICONSTOP );
-    }
+    ::MessageBoxA( NULL, sDumpText, "Enemy Nations - Exception", MB_OK | MB_ICONSTOP );
 
     bDoSubclass = TRUE;
 }
@@ -1750,6 +1743,9 @@ void CConquerApp::DestroyExceptMain( )
 
 CDlgChatAll* CConquerApp::GetDlgChat( )
 {
+    // SDL2 path: chat not yet implemented in SDL2
+    if ( m_gameWindow )
+        return nullptr;
 
     if ( m_pdlgChat == NULL )
         m_pdlgChat = new CDlgChatAll( &m_wndMain );
@@ -2812,8 +2808,16 @@ void CDlgMain::OnMainOptions( )
 {
 
     theMusicPlayer.PlayForegroundSound( SOUNDS::GetID( SOUNDS::button ), SFXPRIORITY::selected_pri );
-    CDlgOptions dlg( this );
-    dlg.DoModal( );
+    if ( theApp.m_gameWindow )
+    {
+        SDL2OptionsDialog dlg( theApp.m_gameWindow.get() );
+        dlg.DoModal();
+    }
+    else
+    {
+        CDlgOptions dlg( this );
+        dlg.DoModal( );
+    }
 }
 
 /////////////////////////////////////////////////////////////////////////////

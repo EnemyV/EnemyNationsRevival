@@ -558,7 +558,9 @@ static void OnMsgJoin( LPCVPPLAYERINFO pPi, BOOL bLocal, BYTE bErr )
         pPlyr = theGame.GetMe( );
 
         // enable the chat window
-        theApp.GetDlgChat( )->EnableWindow( TRUE );
+        CDlgChatAll* pChat = theApp.GetDlgChat( );
+        if ( pChat )
+            pChat->EnableWindow( TRUE );
     }
 
     else

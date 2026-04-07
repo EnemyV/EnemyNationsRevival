@@ -224,12 +224,28 @@ void SDL2LoadTruckDialog::OnInit() {
 
     AddWidget<SDL2Button>(m_x + 10, y, 80, 26, "OK",
         [this]() {
-            // For now, just exit the building
+            // Transfer materials from sliders to vehicle/building
+            for (int i = 0; i < 6; i++) {
+                int iAmount = m_sliders[i]->GetValue();
+                int iTotal = m_pVeh->GetStore(i) + m_pBldg->GetStore(i);
+                if (iAmount > iTotal) iAmount = iTotal;
+                m_pBldg->SetStore(i, iTotal - iAmount);
+                m_pVeh->SetStore(i, iAmount);
+            }
+            // Tell the building it can build now
+            m_pBldg->MaterialMessage();
+            m_pBldg->EventOff();
+            // Send truck out the exit
             m_pVeh->ExitBuilding();
+            // Clear pointer so MFC dialog also goes away
+            m_pVeh->NullLoadWindow();
             EndDialog(1);
         });
     AddWidget<SDL2Button>(m_x + 100, y, 80, 26, "Cancel",
-        [this]() { EndDialog(0); });
+        [this]() {
+            m_pVeh->NullLoadWindow();
+            EndDialog(0);
+        });
 }
 
 void SDL2LoadTruckDialog::OnLoad() {

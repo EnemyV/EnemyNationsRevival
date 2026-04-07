@@ -252,75 +252,55 @@ protected:
 
 
 /////////////////////////////////////////////////////////////////////////////
-// CDlgSaveMsg dialog
+// CDlgSaveMsg — modeless save progress indicator
+// No longer inherits CDialog. Uses a Win32 popup window.
 
-class CDlgSaveMsg : public CDialog
+class CDlgSaveMsg
 {
-// Construction
 public:
-	CDlgSaveMsg(CWnd* pParent = NULL);   // standard constructor
+	CDlgSaveMsg(CWnd* pParent = NULL);
+	~CDlgSaveMsg();
 
-// Dialog Data
-	//{{AFX_DATA(CDlgSaveMsg)
-	enum { IDD = IDD_SAVE_MSG };
+	void Create( UINT nIDTemplate, CWnd* pParent );
+	void DestroyWindow();
+	void UpdateData( BOOL bSaveAndValidate );
+
 	CString	m_sText;
 	CString	m_sStat;
-	//}}AFX_DATA
 
+private:
+	HWND m_hWnd;
+	void Repaint();
 
-// Overrides
-	// ClassWizard generated virtual function overrides
-	//{{AFX_VIRTUAL(CDlgSaveMsg)
-	protected:
-	virtual void DoDataExchange(CDataExchange* pDX);    // DDX/DDV support
-	//}}AFX_VIRTUAL
-
-// Implementation
-protected:
-
-	// Generated message map functions
-	//{{AFX_MSG(CDlgSaveMsg)
-	afx_msg int OnCreate(LPCREATESTRUCT lpCreateStruct);
-	//}}AFX_MSG
-	DECLARE_MESSAGE_MAP()
+	static LRESULT CALLBACK WndProc( HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam );
+	static const char* s_className;
+	static bool s_classRegistered;
 };
 
 
 /////////////////////////////////////////////////////////////////////////////
-// CDlgPause dialog
+// CDlgPause — modeless pause notification
+// No longer inherits CDialog. Uses a Win32 popup window.
 
-class CDlgPause : public CDialog
+class CDlgPause
 {
-// Construction
 public:
-	CDlgPause(CWnd* pParent = NULL);   // standard constructor
+	CDlgPause(CWnd* pParent = NULL);
+	~CDlgPause();
 
-	void		Show (int iMode);
-				enum { server, client, off };
+	void Show( int iMode );
+	void DestroyWindow();
+	enum { server, client, off };
 
-// Dialog Data
-	//{{AFX_DATA(CDlgPause)
-	enum { IDD = IDD_PAUSE_MSG };
-	CString	m_sText;
-	//}}AFX_DATA
+	HWND m_hWnd;
+	CString m_sText;
 
+private:
+	void Repaint();
 
-// Overrides
-	// ClassWizard generated virtual function overrides
-	//{{AFX_VIRTUAL(CDlgPause)
-	protected:
-	virtual void DoDataExchange(CDataExchange* pDX);    // DDX/DDV support
-	virtual void PostNcDestroy() { delete this; }
-	//}}AFX_VIRTUAL
-
-// Implementation
-protected:
-
-	// Generated message map functions
-	//{{AFX_MSG(CDlgPause)
-	virtual BOOL OnInitDialog();
-	//}}AFX_MSG
-	DECLARE_MESSAGE_MAP()
+	static LRESULT CALLBACK WndProc( HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam );
+	static const char* s_className;
+	static bool s_classRegistered;
 };
 
 #endif

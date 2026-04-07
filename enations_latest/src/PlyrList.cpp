@@ -5,6 +5,7 @@
 #include "lastplnt.h"
 #include "player.h"
 #include "PlyrList.h"
+#include "SDL2FileDialog.h"
 
 #ifdef _DEBUG
 #define new DEBUG_NEW
@@ -17,6 +18,11 @@ void CConquerApp::ShowPlayerList( )
 {
 
     if ( ( !theGame.IsNetGame( ) ) || ( !theGame.AmServer( ) ) )
+        return;
+
+    // SDL2 path: multiplayer player list not yet implemented in SDL2
+    // Skip MFC dialog when GameWindow active
+    if ( m_gameWindow )
         return;
 
     if ( m_pdlgPlyrList == NULL )
@@ -205,6 +211,11 @@ void CDlgPlyrList::OnPlyrMinimize( )
 
 void CDlgPlyrList::OnPlyrOptions( )
 {
+    if ( theApp.m_gameWindow ) {
+        SDL2FileDialog dlg( theApp.m_gameWindow.get() );
+        dlg.DoModal();
+        return;
+    }
 
     if ( theApp.m_pdlgFile == NULL )
         theApp.m_pdlgFile = new CDlgFile( &theApp.m_wndMain );

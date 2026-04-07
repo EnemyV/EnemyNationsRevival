@@ -1,37 +1,26 @@
 // DlgMsg.h : header file
 //
+// CDlgModelessMsg — notification popup that auto-closes.
+// No longer inherits CDialog. Uses a simple Win32 popup window.
 
 /////////////////////////////////////////////////////////////////////////////
-// CDlgModelessMsg dialog
-class CDlgModelessMsg : public CDialog
+// CDlgModelessMsg
+
+class CDlgModelessMsg
 {
 // Construction
 public:
-	CDlgModelessMsg(CWnd* pParent = NULL);   // standard constructor
+	CDlgModelessMsg(CWnd* pParent = NULL);
+	~CDlgModelessMsg();
 
 	void Create ( const char * pMsg );
 
-// Dialog Data
-	//{{AFX_DATA(CDlgModelessMsg)
-	enum { IDD = IDD_MODELESS_MSG };
 	CString	m_sMsg;
-	//}}AFX_DATA
 
+private:
+	HWND m_hWnd;
 
-// Overrides
-	// ClassWizard generated virtual function overrides
-	//{{AFX_VIRTUAL(CDlgModelessMsg)
-	protected:
-	virtual void DoDataExchange(CDataExchange* pDX);    // DDX/DDV support
-	virtual void PostNcDestroy();
-	//}}AFX_VIRTUAL
-
-// Implementation
-protected:
-
-	// Generated message map functions
-	//{{AFX_MSG(CDlgModelessMsg)
-		// NOTE: the ClassWizard will add member functions here
-	//}}AFX_MSG
-	DECLARE_MESSAGE_MAP()
+	static LRESULT CALLBACK WndProc( HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam );
+	static const char* s_className;
+	static bool s_classRegistered;
 };

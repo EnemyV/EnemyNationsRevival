@@ -130,6 +130,18 @@ void CCreateBase::CloseAll() {
 
 void CCreateBase::ShowDlgStatus() {
 
+    // SDL2 path
+    if (theApp.m_gameWindow) {
+        if (m_psdlStatus == NULL) {
+            m_psdlStatus = new SDL2CreateStatus(theApp.m_gameWindow.get());
+            theApp.m_gameWindow->SetCreateStatus(m_psdlStatus);
+        }
+        if (m_psdlStatus)
+            m_psdlStatus->Show();
+        return;
+    }
+
+    // MFC fallback
     if (m_pdlgStatus == NULL)
         m_pdlgStatus = new CDlgCreateStatus(&theApp.m_wndMain);
 
@@ -138,28 +150,23 @@ void CCreateBase::ShowDlgStatus() {
 
     m_pdlgStatus->EnableWindow(TRUE);
     m_pdlgStatus->ShowWindow(SW_SHOW);
-
-    // Also show SDL2 version
-    if (m_psdlStatus == NULL && theApp.m_gameWindow) {
-        m_psdlStatus = new SDL2CreateStatus(theApp.m_gameWindow.get());
-        theApp.m_gameWindow->SetCreateStatus(m_psdlStatus);
-    }
-    if (m_psdlStatus)
-        m_psdlStatus->Show();
 }
 
 void CCreateBase::CreateDlgStatus() {
 
-    if (m_pdlgStatus == NULL)
-        m_pdlgStatus = new CDlgCreateStatus(&theApp.m_wndMain);
+    // SDL2 path
+    if (theApp.m_gameWindow) {
+        if (m_psdlStatus == NULL) {
+            m_psdlStatus = new SDL2CreateStatus(theApp.m_gameWindow.get());
+            theApp.m_gameWindow->SetCreateStatus(m_psdlStatus);
+        }
+    } else {
+        // MFC fallback
+        if (m_pdlgStatus == NULL)
+            m_pdlgStatus = new CDlgCreateStatus(&theApp.m_wndMain);
 
-    if (m_pdlgStatus->m_hWnd == NULL)
-        m_pdlgStatus->Create();
-
-    // Also create SDL2 version
-    if (m_psdlStatus == NULL && theApp.m_gameWindow) {
-        m_psdlStatus = new SDL2CreateStatus(theApp.m_gameWindow.get());
-        theApp.m_gameWindow->SetCreateStatus(m_psdlStatus);
+        if (m_pdlgStatus->m_hWnd == NULL)
+            m_pdlgStatus->Create();
     }
 }
 
@@ -181,21 +188,22 @@ void CCreateBase::ToWorld() {
 
     ASSERT_VALID (this);
 
-    if (m_pdlgStatus == NULL)
-        m_pdlgStatus = new CDlgCreateStatus(&(theApp.m_wndMain));
-    if (m_pdlgStatus->m_hWnd == NULL)
-        m_pdlgStatus->Create();
-
-    m_pdlgStatus->ShowWindow(SW_SHOW);
-
-    // Create and show the SDL2 status dialog so progress renders
-    // on the SDL window during world building (same as ShowDlgStatus)
-    if (m_psdlStatus == NULL && theApp.m_gameWindow) {
-        m_psdlStatus = new SDL2CreateStatus(theApp.m_gameWindow.get());
-        theApp.m_gameWindow->SetCreateStatus(m_psdlStatus);
+    // SDL2 path
+    if (theApp.m_gameWindow) {
+        if (m_psdlStatus == NULL) {
+            m_psdlStatus = new SDL2CreateStatus(theApp.m_gameWindow.get());
+            theApp.m_gameWindow->SetCreateStatus(m_psdlStatus);
+        }
+        if (m_psdlStatus)
+            m_psdlStatus->Show();
+    } else {
+        // MFC fallback
+        if (m_pdlgStatus == NULL)
+            m_pdlgStatus = new CDlgCreateStatus(&(theApp.m_wndMain));
+        if (m_pdlgStatus->m_hWnd == NULL)
+            m_pdlgStatus->Create();
+        m_pdlgStatus->ShowWindow(SW_SHOW);
     }
-    if (m_psdlStatus)
-        m_psdlStatus->Show();
 
     ClosePick();
 }

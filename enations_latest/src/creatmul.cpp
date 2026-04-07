@@ -33,7 +33,9 @@ CCreateMultiBase::CCreateMultiBase (int iTyp) : CMultiBase (iTyp)
 void CMultiBase::CreateWndChat () 
 { 
 
-	theApp.GetDlgChat ()->EnableWindow (theGame.GetMyNetNum () != VP_LOCALMACHINE);
+	CDlgChatAll* pChat = theApp.GetDlgChat();
+	if (pChat)
+		pChat->EnableWindow (theGame.GetMyNetNum () != VP_LOCALMACHINE);
 }
 
 void CCreateMultiBase::ClosePick ()

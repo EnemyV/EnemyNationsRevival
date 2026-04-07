@@ -12,10 +12,12 @@ static char THIS_FILE[] = __FILE__;
 #endif
 
 
-// checks for the CD
+// checks for the CD — CD requirement is always disabled (m_iRequireCD = FALSE)
 BOOL CheckForCD ()
 {
+	return (TRUE);
 
+#if 0 // CD check disabled — no physical media requirement
 #ifdef _CHEAT
 	return (TRUE);
 #endif
@@ -65,6 +67,7 @@ BOOL CheckForCD ()
 	if ( iRtn != IDOK )
 		return (FALSE);
 	return (TRUE);
+#endif // CD check disabled
 }
 
 

@@ -15,6 +15,7 @@
 #include "player.h"
 #include "help.h"
 #include "license.h"
+#include "SDL2Dialogs.h"
 
 #ifdef _DEBUG
 #undef THIS_FILE
@@ -80,11 +81,12 @@ void CDlgOptions::OnFileHelp()
 	theApp.WinHelp (0, HELP_CONTENTS);
 }
 
-void CDlgOptions::OnFileVersion() 
+void CDlgOptions::OnFileVersion()
 {
-	
-	CDlgVer dlgVer (this);
-	dlgVer.DoModal ();
+	if (theApp.m_gameWindow) {
+		SDL2VersionDialog dlg(theApp.m_gameWindow.get());
+		dlg.DoModal();
+	}
 }
 
 void CDlgOptions::OnHScroll(UINT nSBCode, UINT nPos, CScrollBar* pScrollBar)

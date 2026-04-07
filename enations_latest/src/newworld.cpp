@@ -573,12 +573,15 @@ void CConquerApp::CreateNewWorld(unsigned uRand, AIinit *pAiData, int iSide, int
         m_wndVehicles.Create();
         m_wndBldgs.Create();
         if (theGame.GetAll().GetCount() > theGame.GetAi().GetCount() + 1)
-            m_wndChat.Create();
+            if ( !m_gameWindow )  // SDL2 path: chat not yet implemented
+                m_wndChat.Create();
         if (theGame.GetMe()->GetExists(CStructureData::research)) {
-            if (m_pdlgRsrch == NULL)
-                m_pdlgRsrch = new CDlgResearch(&m_wndMain);
-            if (m_pdlgRsrch->m_hWnd == NULL)
-                m_pdlgRsrch->Create(IDD_RESEARCH, &m_wndMain);
+            if ( !m_gameWindow ) {
+                if (m_pdlgRsrch == NULL)
+                    m_pdlgRsrch = new CDlgResearch(&m_wndMain);
+                if (m_pdlgRsrch->m_hWnd == NULL)
+                    m_pdlgRsrch->Create(IDD_RESEARCH, &m_wndMain);
+            }
         }
         CWndArea *pWndArea = new CWndArea();
         pWndArea->Create(theGame.GetMe()->m_hexMapStart, NULL, TRUE);
@@ -923,10 +926,12 @@ void CConquerApp::LetsGo() {
         theApp.ShowPlayerList();
     else {
         if (theGame.GetMe()->GetExists(CStructureData::research)) {
-            if (m_pdlgRsrch == NULL)
-                m_pdlgRsrch = new CDlgResearch(&m_wndMain);
-            if (m_pdlgRsrch->m_hWnd == NULL)
-                m_pdlgRsrch->Create(IDD_RESEARCH, &m_wndMain);
+            if ( !m_gameWindow ) {
+                if (m_pdlgRsrch == NULL)
+                    m_pdlgRsrch = new CDlgResearch(&m_wndMain);
+                if (m_pdlgRsrch->m_hWnd == NULL)
+                    m_pdlgRsrch->Create(IDD_RESEARCH, &m_wndMain);
+            }
         }
 
         CWnd *pWndChat = (theGame.GetAll().GetCount() > theGame.GetAi().GetCount() + 1) ? &m_wndChat : NULL;

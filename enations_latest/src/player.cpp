@@ -17,6 +17,7 @@
 #include "bridge.h"
 #include "GameWindow.h"
 #include "SDL2MFCPanel.h"
+#include "SDL2FileBrowser.h"
 #include "building.inl"
 #include "cdloc.h"
 #include "chproute.hpp"
@@ -2001,23 +2002,42 @@ int CGame::LoadGame( CWnd* pPar, BOOL bReplace )
 
     EnableAllWindows( NULL, FALSE );
 
-    CString sFilters, sExt;
-    sFilters.LoadString( IDS_SAVE_FILTERS );
-    sExt.LoadString( IDS_SAVE_EXT );
-    CFileDialog dlg( TRUE, sExt, NULL, OFN_HIDEREADONLY | OFN_FILEMUSTEXIST, sFilters, pPar );
-    if ( dlg.DoModal( ) != IDOK )
+    // Use SDL2 file browser if the SDL2 window is active, else fall back to MFC
+    if ( theApp.m_gameWindow )
     {
-        EnableAllWindows( NULL, TRUE );
-        return ( IDCANCEL );
+        SDL2FileBrowser browser( theApp.m_gameWindow.get(), SDL2FileBrowser::Open,
+                                 "Load Game", "", "", ".en" );
+        if ( browser.DoModal() != 1 || !browser.WasConfirmed() )
+        {
+            EnableAllWindows( NULL, TRUE );
+            return ( IDCANCEL );
+        }
+        theGame.m_sFileName = browser.GetSelectedPath().c_str();
+    }
+    else
+    {
+        CString sFilters, sExt;
+        sFilters.LoadString( IDS_SAVE_FILTERS );
+        sExt.LoadString( IDS_SAVE_EXT );
+        CFileDialog dlg( TRUE, sExt, NULL, OFN_HIDEREADONLY | OFN_FILEMUSTEXIST, sFilters, pPar );
+        if ( dlg.DoModal( ) != IDOK )
+        {
+            EnableAllWindows( NULL, TRUE );
+            return ( IDCANCEL );
+        }
+        theGame.m_sFileName = dlg.GetPathName( );
     }
 
-    theGame.m_sFileName = dlg.GetPathName( );
+    // Extract just the filename for the status message
+    CString sFileTitle = theGame.m_sFileName;
+    int iSlash = sFileTitle.ReverseFind( '\\' );
+    if ( iSlash >= 0 ) sFileTitle = sFileTitle.Mid( iSlash + 1 );
 
     // put up a message to say we are loading
     theApp.m_pCreateGame->CreateDlgStatus( );
     CString sText;
     sText.LoadString( IDS_LOAD_NAME );
-    csPrintf( &sText, dlg.GetFileTitle( ) );
+    csPrintf( &sText, (LPCTSTR)sFileTitle );
     theApp.m_pCreateGame->GetDlgStatus( )->SetWindowText( sText );
     theApp.m_pCreateGame->GetDlgStatus( )->SetPer( 0 );
     theApp.m_pCreateGame->GetDlgStatus( )->SetMsg( IDS_LOAD_FILE );
@@ -2306,14 +2326,16 @@ int CGame::StartGame( BOOL bReplace )
     else
     {
         theApp.m_wndBar.Create( );  // first to set row3
-        if ( theGame.IsNetGame( ) )
+        if ( theGame.IsNetGame( ) && !theApp.m_gameWindow )
             theApp.m_wndChat.Create( );
         if ( GetMe( )->GetExists( CStructureData::research ) )
         {
-            if ( theApp.m_pdlgRsrch == NULL )
-                theApp.m_pdlgRsrch = new CDlgResearch( &theApp.m_wndMain );
-            if ( theApp.m_pdlgRsrch->m_hWnd == NULL )
-                theApp.m_pdlgRsrch->Create( IDD_RESEARCH, &theApp.m_wndMain );
+            if ( !theApp.m_gameWindow ) {
+                if ( theApp.m_pdlgRsrch == NULL )
+                    theApp.m_pdlgRsrch = new CDlgResearch( &theApp.m_wndMain );
+                if ( theApp.m_pdlgRsrch->m_hWnd == NULL )
+                    theApp.m_pdlgRsrch->Create( IDD_RESEARCH, &theApp.m_wndMain );
+            }
         }
 
         // Player load game?
@@ -2456,10 +2478,30 @@ int CGame::SaveGame( CWnd* pPar )
             ( theAreaList.GetTop( )->GetMode( ) != CWndArea::rocket_pos ) );
     ASSERT( TestEverything( ) );
 
-    // If SDL2 window is active and filename is pre-set, skip MFC file dialog
+    // If SDL2 window is active and filename is pre-set, skip file dialog
     if ( theApp.m_gameWindow && !m_sFileName.IsEmpty() )
     {
-        // Filename already chosen by SDL2SaveDialog — proceed directly
+        // Filename already chosen by SDL2FileBrowser — proceed directly
+    }
+    else if ( theApp.m_gameWindow )
+    {
+        // Use SDL2 file browser
+        std::string defaultName = (const char*)m_sFileName;
+        size_t lastSlash = defaultName.find_last_of("\\/");
+        if (lastSlash != std::string::npos)
+            defaultName = defaultName.substr(lastSlash + 1);
+        if (defaultName.empty()) defaultName = "savegame";
+
+        SDL2FileBrowser browser( theApp.m_gameWindow.get(), SDL2FileBrowser::Save,
+                                 "Save Game", "", defaultName, ".en" );
+        EnableAllWindows( NULL, FALSE );
+        int iRtn = browser.DoModal();
+        if ( iRtn != 1 || !browser.WasConfirmed() )
+        {
+            EnableAllWindows( NULL, TRUE );
+            return ( IDCANCEL );
+        }
+        m_sFileName = browser.GetSelectedPath().c_str();
     }
     else
     {

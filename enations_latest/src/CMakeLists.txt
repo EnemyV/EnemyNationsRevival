@@ -108,6 +108,7 @@ set(enations_sources
         SDL2GameDialogs.cpp
         SDL2MFCPanel.cpp
         SDL2RouteWindow.cpp
+        SDL2FileBrowser.cpp
         SDL2SaveDialog.cpp
         SDL2Toolbar.cpp
         SDL2UnitList.cpp
