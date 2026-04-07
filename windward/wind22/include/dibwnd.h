@@ -19,9 +19,6 @@
 //
 
 class CDIBWnd
-#ifdef _DEBUG
-    : public CObject
-#endif
 {
 
 public:
@@ -79,9 +76,6 @@ private:
 // Handles dirty rects for a CDibWnd
 
 class CDirtyRects
-#ifdef _DEBUG
-    : public CObject
-#endif
 {
 
 public:

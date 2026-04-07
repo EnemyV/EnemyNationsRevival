@@ -25,7 +25,7 @@ struct LOGPALETTE256 {
     PALETTEENTRY palPalEntry[256];
 };
 
-class CAppPalette: public CObject {
+class CAppPalette {
 public:
     CAppPalette();
     ~CAppPalette();

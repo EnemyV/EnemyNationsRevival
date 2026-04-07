@@ -41,13 +41,17 @@ public:
 };
 
 
-class CMmio : public CObject
+class CMmio
 {
     public:
 
     CMmio () {ctor ();}
     CMmio (const char *pFile);
     virtual ~CMmio ();
+
+#ifdef _DEBUG
+    virtual void AssertValid() const {}
+#endif
 
     //  Overridables.
     virtual void  Open( const char *pFilename );

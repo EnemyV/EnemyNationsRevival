@@ -698,7 +698,6 @@ void ScanList::ScanPolyFixedNew(
 //-------------------------------------------------------------------------
 #ifdef _DEBUG
 void ScanList::AssertValid() const {
-    CObject::AssertValid();
 
     ASSERT_STRICT( 0 <= m_iMaxHeight && m_iMaxHeight < 2000 );
 

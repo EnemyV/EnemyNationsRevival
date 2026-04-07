@@ -22,7 +22,7 @@ const int DEF_COUNTRY_CODE = 9; // English
 //
 // The format consists of a header, followed by several files concatenated together.
 // The files are all RIFF files, except stdgta.dat, which is a currently unknown format.
-class CDataFile : public CObject
+class CDataFile
 {
     private :
 

@@ -25,12 +25,12 @@
 //#else
 //class ScanList
 //#endif
-class ScanList: public CObject {
+class ScanList {
 public:
 
     ScanList() = default;
     ScanList( int iMaxHeight );
-    ~ScanList() final;
+    ~ScanList();
 
     static BOOL CheckPoly( CPoint const apt[], int iCount );
 
@@ -56,7 +56,7 @@ public:
     }
 
 #ifdef _DEBUG
-    void AssertValid() const override;
+    void AssertValid() const;
 #endif
 
 //protected:

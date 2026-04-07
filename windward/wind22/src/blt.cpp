@@ -201,7 +201,6 @@ CBLTFormat::DIB_DIRECTION CBLTFormat::GetMemDirection () const
 #ifdef _DEBUG
 void CBLTFormat::AssertValid() const
 {
-    CObject::AssertValid();
 }
 #endif
 
@@ -564,7 +563,6 @@ void CColorFormat::CalcScreenFormat() {
 #ifdef _DEBUG
 void CColorFormat::AssertValid() const
 {
-    CObject::AssertValid();
 
     ASSERT_STRICT(  8 == m_iBitsPerPixel ||
               15 == m_iBitsPerPixel ||

@@ -120,7 +120,7 @@ int WINAPI ExtMsgBox( const char* psText, UINT uStyle, long lHelp, const char* p
         if ( GetWindowThreadProcessId( hWndPar, NULL ) != GetCurrentThreadId() )
             hWndPar = NULL;
 
-    return ( ExtMsgBox( hWndPar, psText, AfxGetAppName(), uStyle, lHelp, psButtons, lpFn ) );
+    return ( ExtMsgBox( hWndPar, psText, "Enemy Nations", uStyle, lHelp, psButtons, lpFn ) );
 }
 
 int WINAPI ExtMsgBox( CWnd* pWnd, const char* psText, int iRes, UINT uStyle, long lHelp, const char* psButtons, LOOPPROC lpFn ) {

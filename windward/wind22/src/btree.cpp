@@ -30,7 +30,7 @@ static char BASED_CODE THIS_FILE[] = __FILE__;
 void
 BTreeNode::AssertValid() const
 {
- CObject::AssertValid();
+ // CObject::AssertValid() removed
 
  ASSERT_STRICT( !m_pvData || AfxIsValidAddress( m_pvData, 1 ));
 

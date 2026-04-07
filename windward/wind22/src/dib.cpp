@@ -1985,8 +1985,6 @@ void CDIB::Copy( CBitmap const& bmp ) {
 //-------------------------------------------------------------------------
 #ifdef _DEBUG
 void CDIB::AssertValid() const {
-    CObject::AssertValid();
-
     // FIXIT - finish
 }
 #endif

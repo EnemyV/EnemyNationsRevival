@@ -72,7 +72,7 @@ static BOOL GetFileName(CString &strFileName) {
         CString sMsg;
         sMsg.LoadString(IDS_BAD_DATA_FILE);
         csPrintf(&sMsg, (char const *) strFileName);
-        if (AfxMessageBox(sMsg, MB_YESNO | MB_ICONSTOP) != IDYES)
+        if (::MessageBoxA(NULL, sMsg, "Enemy Nations", MB_YESNO | MB_ICONSTOP) != IDYES)
             return (FALSE);
 
         CString sFilters;

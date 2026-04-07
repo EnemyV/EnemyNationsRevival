@@ -28,8 +28,8 @@ int __iAssertSection = -1;
 
 void PureFunc() {
 
-    AfxMessageBox( "Pure Virtual Function - report the addresses in the next MessageBox",
-                   MB_OK | MB_ICONSTOP | MB_TASKMODAL );
+    ::MessageBoxA( NULL, "Pure Virtual Function - report the addresses in the next MessageBox",
+                   "Enemy Nations", MB_OK | MB_ICONSTOP | MB_TASKMODAL );
     // force a GPF
     char* pBuf = 0;
     char ch = *pBuf;
@@ -71,66 +71,8 @@ void InitWindwardLib1( CWinApp const* pWa ) {
 
 BOOL InitWindwardLib2() {
 
-    // make sure we have 256+ colors
-    if ( ptheApp->GetProfileInt( "Compatibility", "NumColors", 0 ) != 1 ) {
-        HDC hdc = GetDC( NULL );
-        // note: 1<<BITSPIXEL overflows for 32-bit
-        long lBits = GetDeviceCaps( hdc, BITSPIXEL );
-        long lPlanes = GetDeviceCaps( hdc, PLANES );
-        ReleaseDC( NULL, hdc );
-
-        if ( ( lBits < 8 ) && ( lPlanes < 256 ) &&
-             ( ( 1L << GetDeviceCaps( hdc, BITSPIXEL ) ) * (long)GetDeviceCaps( hdc, PLANES ) < 256 ) ) {
-            AfxMessageBox( IDS_256_MIN, MB_OK | MB_ICONSTOP | MB_TASKMODAL );
-            return ( FALSE );
-        }
-    }
-
-    // make sure 3.1+ (protected mode guaranteed in Win32s)
-    OSVERSIONINFO ovi;
-    memset( &ovi, 0, sizeof( ovi ) );
-    ovi.dwOSVersionInfoSize = sizeof( ovi );
-#pragma warning(suppress : 4996)
-    if ( !GetVersionEx( &ovi ) ) {
-        AfxMessageBox( IDS_NO_WIN_VER, MB_OK | MB_ICONSTOP | MB_TASKMODAL );
-        return ( FALSE );
-    }
-
-    switch ( ovi.dwPlatformId ) {
-    case VER_PLATFORM_WIN32s:
-        iWinType = W32s;
-        break;
-    case 1: // BUGBUG - VER_PLATFORM_WIN32_WINDOWS :
-        iWinType = W95;
-        break;
-    default: // if its new hopefully its NT compatible
-        iWinType = WNT;
-        break;
-    }
-
-    if ( ptheApp->GetProfileInt( "Compatibility", "Version", 0 ) != 1 )
-        switch ( ovi.dwPlatformId ) {
-        case VER_PLATFORM_WIN32s:
-        {
-            if ( ( ovi.dwMajorVersion == 1 ) && ( ovi.dwMinorVersion < 3 ) ) {
-                AfxMessageBox( IDS_NEED_32S, MB_OK | MB_ICONSTOP | MB_TASKMODAL );
-                return ( FALSE );
-            }
-#pragma warning(suppress : 4996)
-            WORD wVer = LOWORD( GetVersion() );
-            if ( ( HIBYTE( wVer ) == 3 ) && ( LOBYTE( wVer ) < 10 ) ) {
-                AfxMessageBox( IDS_NEED_31, MB_OK | MB_ICONSTOP | MB_TASKMODAL );
-                return ( FALSE );
-            }
-            break;
-        }
-        default: // if its new hopefully its NT compatible
-            if ( ( ovi.dwMajorVersion == 3 ) && ( ovi.dwMinorVersion < 51 ) ) {
-                AfxMessageBox( IDS_NEED_351, MB_OK | MB_ICONSTOP | MB_TASKMODAL );
-                return ( FALSE );
-            }
-            break;
-        }
+    // OS version checks removed — only running on modern Windows (Win7+)
+    iWinType = WNT;
 
     // check DirectX version
     DWORD dwMS, dwLS;

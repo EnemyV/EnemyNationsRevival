@@ -552,10 +552,6 @@ void CAppPalette::SysColors( BOOL bActive, HDC hdc ) {
 
 #ifdef _DEBUG
 void CAppPalette::AssertValid() const {
-
-    // assert base object
-    CObject::AssertValid();
-
     ASSERT( m_iNumSys == 20 );
 }
 #endif

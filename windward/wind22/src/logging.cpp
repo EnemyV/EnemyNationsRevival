@@ -59,7 +59,7 @@ void CLog::Write( int iLevel, int iSection, char const* pBuf ) {
         m_bLogToFile = ptheApp->GetProfileInt( "Logging", "ToFile", 0 );
 
         if ( m_bLogToFile ) {
-            CString sName = ptheApp->GetProfileString( "Logging", "FileName", CString( AfxGetAppName() + CString( ".log" ) ) );
+            CString sName = ptheApp->GetProfileString( "Logging", "FileName", "enations.log" );
             if ( m_File.Open( sName, CFile::modeCreate | CFile::modeWrite | CFile::shareDenyWrite | CFile::typeBinary ) == 0 )
                 m_bLogToFile = FALSE;
         }

@@ -74,9 +74,6 @@ private:
 // Device-independent bitmap
 
 class CDIB
-#ifdef _DEBUG
-    : public CObject
-#endif
 {
 
 public:

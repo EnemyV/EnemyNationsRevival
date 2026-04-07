@@ -19,15 +19,16 @@
 //------------------------------ C B L T B a s e ---------------------------
 
 class CBLTBase
-#ifdef _DEBUG
-    : public CObject
-#endif
 {
 
   public:
     CBLTBase( ) { SetValid( FALSE ); }
 
     BOOL IsValid( ) const { return m_bValid; }
+
+#ifdef _DEBUG
+    virtual void AssertValid( ) const {}
+#endif
 
   protected:
     void SetValid( BOOL bValid ) { m_bValid = bValid; }
@@ -98,9 +99,6 @@ class CDirectDraw : public CBLTBase
 // Device-dependent color format info
 
 class CColorFormat
-#ifdef _DEBUG
-    : public CObject
-#endif
 {
 
   public:
@@ -148,9 +146,6 @@ class CColorFormat
 //
 
 class CBLTFormat
-#ifdef _DEBUG
-    : public CObject
-#endif
 {
 
   public:

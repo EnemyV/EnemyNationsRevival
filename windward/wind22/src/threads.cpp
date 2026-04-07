@@ -58,7 +58,7 @@ void myThreadInit( AITHREAD fnThread ) {
     if ( xt.m_hLib == NULL ) {
         xt.m_hLib = LoadLibrary( "dave32ut.dll" );
         if ( xt.m_hLib == NULL ) {
-            AfxMessageBox( IDS_NO_THREAD_LIB, MB_OK | MB_ICONSTOP );
+            ::MessageBoxA( NULL, "Thread library not found", "Enemy Nations", MB_OK | MB_ICONSTOP );
             ThrowError( ERR_NO_THREAD_LIB );
         }
 
@@ -71,12 +71,12 @@ void myThreadInit( AITHREAD fnThread ) {
         if ( ( pfnEndTaskThread == NULL ) || ( pfnGetThrdUtlsVersion == NULL ) ||
              ( pfnSetAiFunc == NULL ) || ( pfnStartThread == NULL ) ||
              ( pfnYieldThread == NULL ) ) {
-            AfxMessageBox( IDS_BAD_THREAD_LIB, MB_OK | MB_ICONSTOP );
+            ::MessageBoxA( NULL, "Bad thread library", "Enemy Nations", MB_OK | MB_ICONSTOP );
             ThrowError( ERR_NO_THREAD_LIB );
         }
 
         if ( pfnGetThrdUtlsVersion() < 256 ) {
-            AfxMessageBox( IDS_BAD_THREAD_VER, MB_OK | MB_ICONSTOP );
+            ::MessageBoxA( NULL, "Bad thread library version", "Enemy Nations", MB_OK | MB_ICONSTOP );
             ThrowError( ERR_NO_THREAD_LIB );
         }
     }
