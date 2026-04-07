@@ -9,6 +9,7 @@
 
 #include "stdafx.h"
 #include "_windwrd.h"
+#include "w22_settings.h"
 
 #ifdef _DEBUG
 #undef THIS_FILE
@@ -118,14 +119,14 @@ CBLTFormat::Init()
             m_eDirection = DIR_BOTTOMUP;
         }
 
-    int iDir = ptheApp->GetProfileInt( "Advanced", "Direction", m_eDirection );
+    int iDir = w22::GetProfileInt( "Advanced", "Direction", m_eDirection );
     if ( (iDir != m_eDirection) && ( abs (iDir) == 1) )
         if ( (iWinType != W32s) || (m_eType != DIB_MEMORY) )
             m_eDirection = (DIB_DIRECTION) iDir;
 
-    ptheApp->WriteProfileInt( "Advanced", "BLTUsed", 1 + m_eType );
-    ptheApp->WriteProfileInt( "Advanced", "DirUsed", m_eDirection );
-    ptheApp->WriteProfileInt( "Advanced", "DepthUsed", GetBitsPerPixel() );
+    w22::WriteProfileInt( "Advanced", "BLTUsed", 1 + m_eType );
+    w22::WriteProfileInt( "Advanced", "DirUsed", m_eDirection );
+    w22::WriteProfileInt( "Advanced", "DepthUsed", GetBitsPerPixel() );
 
     ASSERT_STRICT_VALID( this );
 
@@ -138,7 +139,7 @@ CBLTFormat::Init()
 CBLTFormat::DIB_TYPE
 CBLTFormat::CalcBltMethod()
 {
-    int iType = ptheApp->GetProfileInt( "Advanced", "BLT", 0 );
+    int iType = w22::GetProfileInt( "Advanced", "BLT", 0 );
     iType = __max ( 0, iType );
     iType = __min ( DIB_NUM_TYPES, iType );
 
@@ -401,13 +402,11 @@ CDirectDraw::CDirectDraw():
             return;
         }
 
-        ASSERT_STRICT( ptheApp );
-        ASSERT_STRICT_VALID( ptheApp->m_pMainWnd );
-
-        if ( !ptheApp || !ptheApp->m_pMainWnd )
+        HWND hMainWnd = w22::GetMainHWND();
+        if ( hMainWnd == NULL )
             return;
-    
-        m_hRes = m_pdirectdraw->SetCooperativeLevel( ptheApp->m_pMainWnd->m_hWnd, DDSCL_NORMAL );
+
+        m_hRes = m_pdirectdraw->SetCooperativeLevel( hMainWnd, DDSCL_NORMAL );
 
         if ( FAILED( m_hRes ))
         {

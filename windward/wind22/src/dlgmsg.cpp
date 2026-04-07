@@ -6,6 +6,7 @@
 #include "stdafx.h"
 #include "_windwrd.h"
 #include "DlgMsg.h"
+#include "w22_settings.h"
 
 #ifdef _DEBUG
 #define new DEBUG_NEW
@@ -32,7 +33,7 @@ int CDlgMsg::MsgBox (UINT nIDPrompt, UINT nType, char const * psEntry, char cons
 int CDlgMsg::MsgBox (char const * psPrompt, UINT nType, char const * psEntry, char const * psSection, int iDefault)
 {
  // if they don't want to be warned - ok
- if ( ptheApp->GetProfileInt( psEntry, psSection, 0 ) != 0 )
+ if ( w22::GetProfileInt( psEntry, psSection, 0 ) != 0 )
   return iDefault;
 
  m_sText = psPrompt;
@@ -56,9 +57,7 @@ int CDlgMsg::MsgBox (char const * psPrompt, UINT nType, char const * psEntry, ch
  else if ( nType & MB_ICONINFORMATION )
   uType |= MB_ICONINFORMATION;
 
- HWND hParent = NULL;
- if ( ptheApp && ptheApp->m_pMainWnd )
-  hParent = ptheApp->m_pMainWnd->m_hWnd;
+ HWND hParent = w22::GetMainHWND();
 
  int iRtn = ::MessageBoxA( hParent, psPrompt, "Enemy Nations", uType );
 
@@ -68,7 +67,7 @@ int CDlgMsg::MsgBox (char const * psPrompt, UINT nType, char const * psEntry, ch
 
  // Suppress future prompts — original only suppressed if checkbox was checked.
  // Without a checkbox, we always suppress after user responds.
- ptheApp->WriteProfileInt( psEntry, psSection, 1 );
+ w22::WriteProfileInt( psEntry, psSection, 1 );
 
  return ( iRtn );
 }

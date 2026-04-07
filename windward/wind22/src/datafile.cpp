@@ -9,6 +9,7 @@
 #include "stdafx.h"
 #include "_windwrd.h"
 #include "io.h"
+#include "w22_settings.h"
 
 #ifdef _DEBUG
 #undef THIS_FILE
@@ -94,9 +95,11 @@ BOOL CDataFile::Init(const char *pFilename, int iRifVer, BOOL bErr) {
     if ((!bErr) && (ptheApp->m_lpCmdLine[0])) {
         TRAP();
         strFileName = ptheApp->m_lpCmdLine;
-    } else
-        strFileName = ptheApp->GetProfileString("Game", "DataFile", CString(".\\") + pFilename);
-    CString sPatch = ptheApp->GetProfileString("Game", "Patch", "data");
+    } else {
+        CString sDefault = CString(".\\") + pFilename;
+        strFileName = w22::GetProfileString("Game", "DataFile", sDefault);
+    }
+    CString sPatch = w22::GetProfileString("Game", "Patch", "data");
     if (!sPatch.IsEmpty())
         if (sPatch[sPatch.GetLength() - 1] == '\\')
             sPatch.ReleaseBuffer(sPatch.GetLength() - 1);
@@ -111,7 +114,7 @@ BOOL CDataFile::Init(const char *pFilename, int iRifVer, BOOL bErr) {
     for (; TRUE;) {
         try {
             theDataFile._Init(strFileName, sPatch, iRifVer);
-            ptheApp->WriteProfileString("Game", "DataFile", strFileName);
+            w22::WriteProfileString("Game", "DataFile", strFileName);
             return (TRUE);
         }
 

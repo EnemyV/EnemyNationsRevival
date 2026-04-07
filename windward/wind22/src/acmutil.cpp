@@ -1,6 +1,7 @@
 #include "stdafx.h"
 #include <thielen.h>
 #include "_windwrd.h"
+#include "w22_settings.h"
 
 
 #include "assert.h"
@@ -351,7 +352,7 @@ CADPCMtoPCMConvert::CADPCMtoPCMConvert( int iChannels, int iBits, int iRate )
     _acm.IncUse();
 
     // if not multi-threaded then 2 sector at a time
-    if ( !ptheApp->GetProfileInt( "Advanced", "MusicThread", 1 ) )
+    if ( !w22::GetProfileInt( "Advanced", "MusicThread", 1 ) )
         _dwMaxSize = __min( 4 * 2 * 2048, DBL_BUF_LEN / 4 );
     else
         _dwMaxSize = DBL_BUF_LEN / 4;

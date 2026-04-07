@@ -29,6 +29,7 @@ set(wind22_sources
         src/strext.cpp
         src/subclass.cpp
         src/threads.cpp
+        src/w22_settings.cpp
         src/wndbase.cpp
         dibwnd.cpp
         )

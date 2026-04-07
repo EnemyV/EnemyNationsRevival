@@ -13,6 +13,7 @@
 #include "SDL2MainMenu.h"
 #include "SDL2GameDialogs.h"
 #include "SDL2Options.h"
+#include "w22_settings.h"
 #include "ai.h"
 #include "area.h"
 #include "bitmaps.h"
@@ -582,6 +583,9 @@ BOOL CConquerApp::InitInstance( )
     m_wndMain.ShowWindow( SW_SHOW );
     m_wndMain.InvalidateRect( NULL );
     m_wndMain.UpdateWindow( );
+
+    // Tell wind22 about our main window so it doesn't need ptheApp->m_pMainWnd
+    w22::SetMainHWND( m_wndMain.m_hWnd );
 
     Log( "Initialize windward.lib" );
 

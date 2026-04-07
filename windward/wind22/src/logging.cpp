@@ -11,6 +11,7 @@
 
 #include "STDAFX.H"
 #include "_windwrd.h"
+#include "w22_settings.h"
 
 
 #ifdef _LOGOUT
@@ -56,18 +57,18 @@ void CLog::Write( int iLevel, int iSection, char const* pBuf ) {
     if ( !m_bOpened ) {
         m_bOpened = TRUE;
 
-        m_bLogToFile = ptheApp->GetProfileInt( "Logging", "ToFile", 0 );
+        m_bLogToFile = w22::GetProfileInt( "Logging", "ToFile", 0 );
 
         if ( m_bLogToFile ) {
-            CString sName = ptheApp->GetProfileString( "Logging", "FileName", "enations.log" );
+            const char* sName = w22::GetProfileString( "Logging", "FileName", "enations.log" );
             if ( m_File.Open( sName, CFile::modeCreate | CFile::modeWrite | CFile::shareDenyWrite | CFile::typeBinary ) == 0 )
                 m_bLogToFile = FALSE;
         }
 
-        m_bLogToDebug = ptheApp->GetProfileInt( "Logging", "ToDebug", 0 );
+        m_bLogToDebug = w22::GetProfileInt( "Logging", "ToDebug", 0 );
 
-        m_iSection = ptheApp->GetProfileInt( "Logging", "Section", -1 );
-        m_iLevel = ptheApp->GetProfileInt( "Logging", "Level", LOG_PRI_USEFUL );
+        m_iSection = w22::GetProfileInt( "Logging", "Section", -1 );
+        m_iLevel = w22::GetProfileInt( "Logging", "Level", LOG_PRI_USEFUL );
     }
 
     if ( ( iLevel > m_iLevel ) || ( !( m_iSection & iSection ) ) )

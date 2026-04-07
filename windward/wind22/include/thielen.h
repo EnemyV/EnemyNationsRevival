@@ -139,8 +139,6 @@ inline void TRAP (bool f = true) { }
 /////////////////////////////////////////////////////////////////////////////
 // Classes declared in this file
 
-    class CDir;                                 // dir stuff
-    class CFileName;                            // a CFile that tracks the file name
     class CGlobal;                              // wraps a GlobalAlloc
     class COStrStream;                          // ostrstream that free's its memory on dtor
 
@@ -255,108 +253,7 @@ public:
 
 
 /////////////////////////////////////////////////////////////////////////////
-// CDir - directory stuff
-// BUGBUG - implement the rest of this, trace test
-
-#ifdef BUGBUG
-typedef int (* FILEFINDPROC) (CFileStatus & fs, void * pvData);
-typedef int (* WALKDIRPROC) (CDir & dir, void * pvData);
-class CDir : public CObject
-{
-// Construction
-public:
-    CDir();
-    CDir(char const *pDir);
-    CDir(CDir& src);
-    void operator=(const CDir& src);
-private:
-    void ctor(char const *pDir);
-    int  NextSub(const char *pDir, WALKDIRPROC fnEnum, void *pvData);
-
-// Data
-protected:
-    CString     sPathName;
-    bool      bIncFile;
-
-// Attributes
-public:
-
-// Operations
-public:
-    void       AddFile(char const *pFile);
-    unsigned   ChDir(bool bChDrive = false);
-    bool       DoesExist();
-    int        FindAll(FILEFINDPROC fnEnum, void* pvData = nullptr, unsigned uAtr = 0x21);
-    CString    GetDir(bool bIncDrv = true, bool bIncEndSlash = true);
-    CString    GetDrive(bool bIncSemi = true);
-    CString    GetExt(bool bIncPer = false);
-    CString    GetFile();
-    CString    GetFullPath() {
-        return (sPathName);
-    }
-    CString    GetRelPath(char const *pDir = nullptr);
-    bool       IsLocal();
-    unsigned   MkDir();
-    int        WalkDirs(WALKDIRPROC fnEnum, void * pvData = nullptr);
-    void       RmDir(bool bDelNode = false);
-
-// Static operations
-    static CString  SetName (char const *pDrv, char const *pDir, char const *pFile);
-// static CDriveStatus GetDriveStatus (char const *pDir);
-
-#ifdef _DEBUG
-    virtual void AssertValid() const;
-    virtual void Dump(CDumpContext& dc) const;
-#endif
-};
-#endif
-
-
-/////////////////////////////////////////////////////////////////////////////
-// CFileName
-
-class CFileName : public CFile
-{
-    DECLARE_DYNAMIC(CFileName)
-
-public:
-    CFileName() = default;
-    explicit CFileName(HANDLE hFile) : CFile (hFile) {}
-    CFileName(const char* pszFileName, UINT nOpenFlags):
-        CFile (pszFileName, nOpenFlags),
-        m_strFileName (pszFileName)
-    {}
-
-    ULONGLONG GetPosition() const override;
-
-    BOOL Open(const char* pszFileName, UINT nOpenFlags, CFileException* pError = NULL) override;
-
-
-    DWORD SeekToEnd();
-    void SeekToBegin();
-
-    DWORD ReadHuge(void FAR* lpBuffer, DWORD dwCount);
-    void WriteHuge(const void FAR* lpBuffer, DWORD dwCount);
-
-    virtual LONG Seek(LONG lOff, UINT nFrom);
-    virtual void SetLength(DWORD dwNewLen);
-    ULONGLONG GetLength() const override;
-
-    virtual UINT Read(void FAR* lpBuf, UINT nCount) override;
-    virtual void Write(const void FAR* lpBuf, UINT nCount) override;
-
-    virtual void Flush() override;
-    virtual void Close() override;
-
-#ifdef _DEBUG
-    virtual void AssertValid() const override;
-    virtual void Dump(CDumpContext& dc) const override;
-#endif
-
-protected:
-    CString  m_strFileName;
-};
-
+// CDir and CFileName classes removed — were unused dead code
 
 #endif
 

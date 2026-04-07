@@ -12,6 +12,7 @@
 
 #include <thielen.h>
 #include "_windwrd.h"
+#include "w22_settings.h"
 #include "_res.h"
 #include "acmutil.h"
 
@@ -860,7 +861,7 @@ void CMusicPlayer::Open( int iMusicVol, int iSoundVol, MUSIC_MODE iMode, int iGr
     m_iMusicVol = ( iMusicVol * 127 ) / 100;
     m_iSfxVol = ( iSoundVol * 127 ) / 100;
 
-    ptheApp->WriteProfileInt( "Advanced", "MusicModeUsed", static_cast<int>( m_iMode ) );
+    w22::WriteProfileInt( "Advanced", "MusicModeUsed", static_cast<int>( m_iMode ) );
 
     // if this fails we just don't have sound
     try {

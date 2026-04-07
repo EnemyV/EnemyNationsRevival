@@ -9,6 +9,7 @@
 #include "stdafx.h"
 #include "_windwrd.h"
 #include "_res.h"
+#include "w22_settings.h"
 
 
 #ifdef _DEBUG
@@ -105,8 +106,8 @@ BOOL InitWindwardLib2() {
 
 #ifdef _DEBUG
     // get assert flags here
-    __iAssertPriority = ptheApp->GetProfileInt( "Logging", "Priority", ASSERT_PRI_CRITICAL );
-    __iAssertSection = ptheApp->GetProfileInt( "Logging", "Section", -1 );
+    __iAssertPriority = w22::GetProfileInt( "Logging", "Priority", ASSERT_PRI_CRITICAL );
+    __iAssertSection = w22::GetProfileInt( "Logging", "Section", -1 );
 #endif
 
     return ( TRUE );
