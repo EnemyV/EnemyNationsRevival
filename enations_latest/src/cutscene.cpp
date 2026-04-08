@@ -15,6 +15,8 @@
 #include "lastplnt.h"
 #include "bitmaps.h"
 #include "sfx.h"
+#include "SDL2GameDialogs.h"
+#include "resource.h"
 
 #ifdef _DEBUG
 #undef THIS_FILE
@@ -50,14 +52,6 @@ void CCutScene::PlayEnd (int iEnd, BOOL bAsync)
 
 UINT CCutScene::_PlayScene (int iTyp, int iScenario, BOOL bAsync)
 {
-
-	// disable the main window (and all children)
-	theApp.m_wndBar.ShowWindow (SW_HIDE);
-
-	theApp.m_wndCutScene.Create ( iTyp, iScenario );
-	theApp.m_wndCutScene.ShowWindow (SW_SHOW);
-	theApp.m_wndCutScene.UpdateWindow ();
-
 	// kill what was playing
 	theMusicPlayer.SoundsOff ();
 
@@ -76,6 +70,64 @@ UINT CCutScene::_PlayScene (int iTyp, int iScenario, BOOL bAsync)
 			theMusicPlayer.PlayExclusiveMusic (MUSIC::GetID (MUSIC::loose_game));
 			break;
 	  }
+
+	// SDL2 path: use SDL2CutSceneDialog instead of CWndCutScene
+	if ( theApp.m_gameWindow )
+	  {
+		// Load the text
+		std::string sText;
+		switch (iTyp)
+		  {
+			case CWndCutScene::win:
+			  { CString s; s.LoadString(IDS_YOU_WON); sText = (const char*)s; break; }
+			case CWndCutScene::lose:
+			  { CString s; s.LoadString(IDS_YOU_LOST); sText = (const char*)s; break; }
+			case CWndCutScene::scenario_end:
+			  { CString s; s.LoadString(IDS_YOU_END_SCENARIO); sText = (const char*)s; break; }
+			case CWndCutScene::cut:
+			case CWndCutScene::repeat:
+			  {
+				// Load scenario intro text from LANG data
+				try {
+					CMmio* pMmio = theDataFile.OpenAsMMIO(NULL, "LANG");
+					pMmio->DescendRiff('L', 'A', 'N', 'G');
+					pMmio->DescendList('S', 'C', 'E', 'N');
+					pMmio->DescendChunk('T', 'X', 'T', (char)('A' + iScenario));
+					long lSize = pMmio->ReadLong();
+					CString s;
+					pMmio->Read(s.GetBuffer(lSize + 2), lSize);
+					s.ReleaseBuffer(lSize);
+					sText = (const char*)s;
+					delete pMmio;
+				} catch (...) {
+					sText = "(Scenario text unavailable)";
+				}
+				break;
+			  }
+		  }
+
+		SDL2CutSceneDialog dlg(theApp.m_gameWindow.get(), iTyp, sText, iScenario);
+		dlg.DoModal();
+
+		theMusicPlayer.SoundsOff();
+		theMusicPlayer.UnloadGroup(SFXGROUP::cut_scenes);
+
+		if ( (iTyp == CWndCutScene::cut) || (iTyp == CWndCutScene::repeat) )
+		  {
+			theMusicPlayer.StartMidiMusic();
+			theMusicPlayer.PlayMusicGroup(MUSIC::GetID(MUSIC::play_game), MUSIC::num_play_game);
+		  }
+
+		return (UINT)dlg.GetResult();
+	  }
+
+	// MFC path
+	// disable the main window (and all children)
+	theApp.m_wndBar.ShowWindow (SW_HIDE);
+
+	theApp.m_wndCutScene.Create ( iTyp, iScenario );
+	theApp.m_wndCutScene.ShowWindow (SW_SHOW);
+	theApp.m_wndCutScene.UpdateWindow ();
 
 	// loop till done
 	if ( ! bAsync )

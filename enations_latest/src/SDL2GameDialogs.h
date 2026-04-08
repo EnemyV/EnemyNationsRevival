@@ -204,3 +204,26 @@ private:
     SDL2EditBox* m_editSubject = nullptr;
     SDL2EditBox* m_editBody = nullptr;
 };
+
+// ============================================================================
+// SDL2CutSceneDialog — replaces CWndCutScene (win/lose/scenario screens)
+// Shows the end/scenario screen text with appropriate buttons.
+// Returns CUT_OK (1) or CUT_CANCEL (2).
+// ============================================================================
+class SDL2CutSceneDialog : public SDL2Dialog {
+public:
+    // typ matches CWndCutScene enum: cut=0, repeat=1, scenario_end=2, win=3, lose=4
+    SDL2CutSceneDialog(GameWindow* gw, int typ, const std::string& text, int scenario);
+    int GetResult() const { return m_result; }
+protected:
+    void OnInit() override;
+private:
+    void OnOK();
+    void OnCancel();
+    void OnSave();
+
+    int m_typ;
+    std::string m_text;
+    int m_scenario;
+    int m_result = 1; // CUT_OK by default
+};

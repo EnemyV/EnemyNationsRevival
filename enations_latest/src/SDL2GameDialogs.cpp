@@ -782,3 +782,71 @@ void SDL2ComposeDialog::OnSend() {
     }
     EndDialog(1);
 }
+
+// ============================================================================
+// SDL2CutSceneDialog — win/lose/scenario text screen
+// ============================================================================
+
+SDL2CutSceneDialog::SDL2CutSceneDialog(GameWindow* gw, int typ, const std::string& text, int scenario)
+    : SDL2Dialog(gw, "", 600, 400)
+    , m_typ(typ)
+    , m_text(text)
+    , m_scenario(scenario)
+{
+    // No title bar text — the content IS the message
+}
+
+void SDL2CutSceneDialog::OnInit() {
+    // Large text area — most of the dialog
+    int textH = m_height - 100;
+    SDL2Label* lbl = AddWidget<SDL2Label>(m_x + 20, m_y + 20, m_width - 40, textH, m_text,
+                                          SDL_Color{220, 200, 160, 255});
+    lbl->SetWrapped(true);
+
+    // Buttons at the bottom
+    int btnY = m_y + m_height - 46;
+    int btnW = 90, btnH = 32;
+
+    // cut=0, repeat=1, scenario_end=2, win=3, lose=4
+    bool isEndScreen = (m_typ == 2 || m_typ == 3 || m_typ == 4);
+    bool canCancel   = (m_typ == 0);  // cut (not repeat, not end screens)
+    bool canSave     = (m_typ == 0) && (m_scenario > 0);  // first scenario has no save
+
+    if (isEndScreen) {
+        // Just a Continue button centred
+        AddWidget<SDL2Button>(m_x + m_width/2 - btnW/2, btnY, btnW, btnH, "Continue",
+            [this]() { OnOK(); });
+    } else {
+        int bx = m_x + 20;
+        AddWidget<SDL2Button>(bx, btnY, btnW, btnH, "OK",
+            [this]() { OnOK(); });
+        bx += btnW + 10;
+
+        if (canCancel) {
+            AddWidget<SDL2Button>(bx, btnY, btnW, btnH, "Cancel",
+                [this]() { OnCancel(); });
+            bx += btnW + 10;
+        }
+        if (canSave) {
+            AddWidget<SDL2Button>(bx, btnY, btnW, btnH, "Save",
+                [this]() { OnSave(); });
+        }
+    }
+}
+
+void SDL2CutSceneDialog::OnOK() {
+    m_result = 1; // CUT_OK
+    EndDialog(1);
+}
+
+void SDL2CutSceneDialog::OnCancel() {
+    m_result = 2; // CUT_CANCEL
+    EndDialog(2);
+}
+
+void SDL2CutSceneDialog::OnSave() {
+    // Save game, then continue
+    theGame.SaveGame(NULL);
+    m_result = 1; // CUT_OK (continue after save)
+    EndDialog(1);
+}
