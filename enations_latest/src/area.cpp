@@ -3889,7 +3889,8 @@ void CWndArea::OnLButtonDblClk( UINT nFlags, CPoint point )
     // if ctrl is down we bring up a new window
     if ( nFlags & MK_CONTROL )
     {
-        if ( theGame.GetMe( )->CanMultiArea( ) )
+        // Multi-area windows require MFC HWND; not supported in SDL2 mode (Phase 3)
+        if ( !theApp.m_gameWindow && theGame.GetMe( )->CanMultiArea( ) )
         {
             CWndArea* pWndArea = new CWndArea( );
             pWndArea->Create( hitinfo._GetHexCoord( ), punit, FALSE );
