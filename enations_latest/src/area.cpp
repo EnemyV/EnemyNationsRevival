@@ -5764,7 +5764,7 @@ void CWndArea::GiveSelectedUnits( CPlayer* pPlr )
     sNumB = IntToCString( iBldgs, 10, TRUE );
     sNumV = IntToCString( iVehs, 10, TRUE );
     csPrintf( &sSure, (char const*)sNumB, (char const*)sNumV, (char const*)pPlr->GetName( ) );
-    if ( AfxMessageBox( sSure, MB_YESNO | MB_ICONQUESTION ) != IDYES )
+    if ( EnMessageBox( sSure, MB_YESNO | MB_ICONQUESTION ) != IDYES )
     {
         TRAP( );
         return;

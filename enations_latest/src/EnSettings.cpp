@@ -151,3 +151,14 @@ CString EnLoadString( unsigned int id )
         return CString();
     return CString( buf, len );
 }
+
+int EnMessageBox( const char* text, unsigned int type, unsigned int /*helpId*/ )
+{
+    return ::MessageBoxA( NULL, text ? text : "", "Second Chance", type );
+}
+
+int EnMessageBox( unsigned int idText, unsigned int type, unsigned int /*helpId*/ )
+{
+    CString s = EnLoadString( idText );
+    return ::MessageBoxA( NULL, (const char*)s, "Second Chance", type );
+}

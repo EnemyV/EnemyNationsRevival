@@ -105,14 +105,14 @@ void CDlgReg::OnOK()
 	PROCESS_INFORMATION pi;
 
 	if ( CreateProcess ( NULL, (char *) (char const *) sCmd, NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi ) == 0 )
-		AfxMessageBox ( IDS_BAD_REG, MB_OK | MB_ICONSTOP | MB_TASKMODAL );
+		EnMessageBox( IDS_BAD_REG, MB_OK | MB_ICONSTOP | MB_TASKMODAL );
 	else
 		{
 		theApp.m_wndMain.UpdateWindow ();
 		WaitForSingleObject ( pi.hProcess, 10 * 1000 );
 		CloseHandle ( pi.hProcess );
 		CloseHandle ( pi.hThread );
-		AfxMessageBox ( IDS_GOOD_REG, MB_OK | MB_ICONSTOP | MB_TASKMODAL );
+		EnMessageBox( IDS_GOOD_REG, MB_OK | MB_ICONSTOP | MB_TASKMODAL );
 		}
 
 	CDialog::OnOK ();

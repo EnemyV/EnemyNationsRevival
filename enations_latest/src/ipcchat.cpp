@@ -934,7 +934,7 @@ void CMySplitterWnd::OnChange( )
     // delete location & length - but no time to fix
     if ( msg.m_sMessage.GetLength( ) > VP_MAXSENDDATA - sizeof( msg ) )
     {
-        AfxMessageBox( IDS_MAX_CHAT, MB_OK );
+        EnMessageBox( IDS_MAX_CHAT, MB_OK );
         return;
     }
 

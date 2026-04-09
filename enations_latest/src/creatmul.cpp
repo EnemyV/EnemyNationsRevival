@@ -230,13 +230,13 @@ void CDlgCreateMulti::OnOK()
 	if (m_sName.GetLength () >= iMaxNameLen)
 		{
 		TRAP ();
-		AfxMessageBox (IDS_NAME_TOO_LONG, MB_OK | MB_ICONSTOP);
+		EnMessageBox(IDS_NAME_TOO_LONG, MB_OK | MB_ICONSTOP);
 		return;
 		}
 	if (sizeof (CNetPublish)+4+m_sName.GetLength()+m_sDesc.GetLength() > VP_MAXSENDDATA)
 		{
 		TRAP ();
-		AfxMessageBox (IDS_DESC_TOO_LONG, MB_OK | MB_ICONSTOP);
+		EnMessageBox(IDS_DESC_TOO_LONG, MB_OK | MB_ICONSTOP);
 		return;
 		}
 
@@ -254,7 +254,7 @@ void CDlgCreateMulti::OnOK()
 			sText = EnLoadString( IDS_AI_LIMIT_2_MAX );
 			CString sNum = IntToCString ( 2 * iMax );
 			csPrintf (&sText, (char const *) sNum);
-			AfxMessageBox ( sText, MB_OK | MB_ICONSTOP );
+			EnMessageBox( sText, MB_OK | MB_ICONSTOP );
 			return;
 			}
 		else
@@ -265,7 +265,7 @@ void CDlgCreateMulti::OnOK()
 				sText = EnLoadString( IDS_AI_LIMIT_MAX );
 				CString sNum = IntToCString ( iMax );
 				csPrintf (&sText, (char const *) sNum);
-				if ( AfxMessageBox ( sText, MB_YESNO | MB_ICONSTOP ) != IDYES )
+				if ( EnMessageBox( sText, MB_YESNO | MB_ICONSTOP ) != IDYES )
 					return;
 				}
 		}

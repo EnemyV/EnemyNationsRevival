@@ -1408,7 +1408,7 @@ CSpriteParms::CSpriteParms(CMmio *pmmio, unsigned int uTime, int iTypeOverride, 
 //    m_ptrspritehdr = new CSpriteHdr();
     m_ptrspritehdr = (CSpriteHdr *) (new BYTE[lHdrLen]); // Allocate the full size.
     if (m_ptrspritehdr.Value() == NULL) {
-        AfxMessageBox(IDS_NO_MEMORY, MB_OK);
+        EnMessageBox(IDS_NO_MEMORY, MB_OK);
         ThrowError(ERR_OUT_OF_MEMORY);
     }
 
@@ -1430,7 +1430,7 @@ CSpriteParms::CSpriteParms(CMmio *pmmio, unsigned int uTime, int iTypeOverride, 
 //BUGBUG	m_ptrbyCompressedSuperviews = new BYTE [ lLength ];
     m_ptrbyCompressedSuperviews = new BYTE[lLength];
     if (m_ptrbyCompressedSuperviews.Value() == NULL) {
-        AfxMessageBox(IDS_NO_MEMORY, MB_OK);
+        EnMessageBox(IDS_NO_MEMORY, MB_OK);
         ThrowError(ERR_OUT_OF_MEMORY);
     }
 

@@ -2633,7 +2633,7 @@ int CGame::SaveGame( CWnd* pPar )
         CString sMsg;
         sMsg = EnLoadString( IDS_CANT_SAVE );
         csPrintf( &sMsg, (char const*)m_sFileName );
-        AfxMessageBox( sMsg );
+        EnMessageBox( sMsg );
 
         theGame.SetShouldOperate(TRUE);
         LeaveCriticalSection( &cs );
@@ -2840,7 +2840,7 @@ void CGame::Serialize( CArchive& ar )
                 sVer1 = GetVerText( m_dwMaj, m_dwMin, m_dwVer, m_wDbg, m_wCht );
                 sVer2 = GetVerText( VER_MAJOR, VER_MINOR, VER_RELEASE, _wDebug, _wCheat );
                 csPrintf( &sMsg, (char const*)sVer1, (char const*)sVer2 );
-                AfxMessageBox( sMsg );
+                EnMessageBox( sMsg );
                 ThrowError( ERR_RES_CREATE_WND );
             }
         }

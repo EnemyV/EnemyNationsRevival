@@ -72,7 +72,7 @@ void CMsgIPC::PostToClient ()
 	if ( iLen > VP_MAXSENDDATA )
 		{
 		TRAP ();
-		AfxMessageBox ( IDS_MAX_MAIL, MB_OK );
+		EnMessageBox( IDS_MAX_MAIL, MB_OK );
 		delete [] pBuf;
 		return;
 		}

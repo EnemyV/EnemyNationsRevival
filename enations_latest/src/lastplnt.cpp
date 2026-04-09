@@ -146,7 +146,7 @@ void CatchNum( int iNum )
         iNum += 100;
     itoa( iNum, sNum, 10 );
     csPrintf( &sMsg, (char const*)sNum );
-    AfxMessageBox( sMsg, MB_OK | MB_ICONSTOP );
+    EnMessageBox( sMsg, MB_OK | MB_ICONSTOP );
 
     bDoSubclass = TRUE;
 }
@@ -217,7 +217,7 @@ void CatchOther( )
 
     CString sMsg;
     sMsg = EnLoadString( IDS_ERR_LOAD_2 );
-    AfxMessageBox( sMsg, MB_OK | MB_ICONSTOP );
+    EnMessageBox( sMsg, MB_OK | MB_ICONSTOP );
 
     bDoSubclass = TRUE;
 }
@@ -336,7 +336,7 @@ CConquerApp theApp;
 int _excep_new_handler( size_t )
 {
 
-    AfxMessageBox( IDS_NO_MEMORY, MB_OK | MB_SYSTEMMODAL | MB_ICONSTOP );
+    EnMessageBox( IDS_NO_MEMORY, MB_OK | MB_SYSTEMMODAL | MB_ICONSTOP );
     ::PostQuitMessage( 0 );
     throw;
     return ( 0 );
@@ -404,7 +404,7 @@ BOOL CConquerApp::InitInstance( )
 
     if ( EnGetProfileInt( "Advanced", "Log", 0 ) )
     {
-        AfxMessageBox( IDS_EN_LOGGING, MB_OK | MB_ICONINFORMATION );
+        EnMessageBox( IDS_EN_LOGGING, MB_OK | MB_ICONINFORMATION );
         m_pLogFile    = new CFile( );
         CString sName = EnGetProfileString( "Advanced", "LogName", GameLogFile );
         if ( m_pLogFile->Open( sName, CFile::modeCreate | CFile::modeWrite | CFile::shareDenyWrite ) == 0 )
@@ -423,7 +423,7 @@ BOOL CConquerApp::InitInstance( )
         }
     }
     else if ( ::GetPrivateProfileInt( "vdmplay", "UseLogFile", 0, "vdmplay.ini" ) )
-        AfxMessageBox( IDS_VP_LOGGING, MB_OK | MB_ICONINFORMATION );
+        EnMessageBox( IDS_VP_LOGGING, MB_OK | MB_ICONINFORMATION );
 
     EnWriteProfileString( "Advanced", "Version", VER_STRING );
 
@@ -567,7 +567,7 @@ BOOL CConquerApp::InitInstance( )
 
     HWND hPrevWnd = ::FindWindow( m_sClsName, m_sAppName );
     if ( hPrevWnd != NULL )
-        if ( AfxMessageBox( IDS_MULT_INST, MB_YESNO | MB_ICONQUESTION ) == IDYES )
+        if ( EnMessageBox( IDS_MULT_INST, MB_YESNO | MB_ICONQUESTION ) == IDYES )
         {
             ::SetForegroundWindow( hPrevWnd );
             return ( FALSE );
@@ -595,7 +595,7 @@ BOOL CConquerApp::InitInstance( )
 
     if ( CNetApi::GetVersion( ) < 0x01000021 )
     {
-        AfxMessageBox( IDS_VDMPLAY_VER, MB_OK | MB_ICONSTOP );
+        EnMessageBox( IDS_VDMPLAY_VER, MB_OK | MB_ICONSTOP );
         return ( FALSE );
     }
     // SDL_mixer version (MSS version check removed)
@@ -879,7 +879,7 @@ BOOL CConquerApp::InitInstance( )
             sNum1 = IntToCString( m_iRifVer );
             sNum2 = IntToCString( VER_RIFF );
             csPrintf( &sMsg, (char const*)sName, (char const*)sNum1, (char const*)sNum2 );
-            if ( AfxMessageBox( sMsg, MB_YESNO | MB_ICONSTOP ) != IDYES )
+            if ( EnMessageBox( sMsg, MB_YESNO | MB_ICONSTOP ) != IDYES )
                 return ( 0 );
             bErr = TRUE;
         }
@@ -917,7 +917,7 @@ BOOL CConquerApp::InitInstance( )
                                KEY_ALL_ACCESS, &key ) != ERROR_SUCCESS )
             {
                 Log( "Expired 1" );
-                AfxMessageBox( IDS_DEMO_OVER, MB_OK | MB_ICONSTOP );
+                EnMessageBox( IDS_DEMO_OVER, MB_OK | MB_ICONSTOP );
                 return ( 0 );
             }
 
@@ -931,7 +931,7 @@ BOOL CConquerApp::InitInstance( )
             {
                 TRAP( );
                 Log( "Expired 2" );
-                AfxMessageBox( IDS_DEMO_OVER, MB_OK | MB_ICONSTOP );
+                EnMessageBox( IDS_DEMO_OVER, MB_OK | MB_ICONSTOP );
                 return ( 0 );
             }
 
@@ -939,7 +939,7 @@ BOOL CConquerApp::InitInstance( )
             {
                 TRAP( );
                 Log( "Expired 3" );
-                AfxMessageBox( IDS_DEMO_OVER, MB_OK | MB_ICONSTOP );
+                EnMessageBox( IDS_DEMO_OVER, MB_OK | MB_ICONSTOP );
                 return ( 0 );
             }
 
@@ -960,7 +960,7 @@ BOOL CConquerApp::InitInstance( )
                 CTime   _time( dwTime );
                 CString sBuf = _time.Format( "Installed: %x" );
                 Log( sBuf );
-                AfxMessageBox( IDS_DEMO_OVER, MB_OK | MB_ICONSTOP );
+                EnMessageBox( IDS_DEMO_OVER, MB_OK | MB_ICONSTOP );
                 return ( 0 );
             }
 
@@ -992,7 +992,7 @@ BOOL CConquerApp::InitInstance( )
                 CTime   _time( iTime );
                 CString sBuf = _time.Format( "Installed: %x" );
                 Log( sBuf );
-                AfxMessageBox( IDS_DEMO_OVER, MB_OK | MB_ICONSTOP );
+                EnMessageBox( IDS_DEMO_OVER, MB_OK | MB_ICONSTOP );
                 return ( 0 );
             }
         }
@@ -1015,7 +1015,7 @@ BOOL CConquerApp::InitInstance( )
             sMsg = EnLoadString( IDS_DEMO_25 );
             CString sNum = IntToCString( iTry );
             csPrintf( &sMsg, (char const*)sNum );
-            if ( AfxMessageBox( sMsg, MB_YESNO | MB_ICONSTOP ) != IDYES )
+            if ( EnMessageBox( sMsg, MB_YESNO | MB_ICONSTOP ) != IDYES )
             {
                 EnWriteProfileInt( "Game", "NumDemo", iTry );
                 return ( 0 );
@@ -1409,7 +1409,7 @@ BOOL CConquerApp::InitInstance( )
     }
     catch ( ... )
     {
-        AfxMessageBox( IDS_ERR_LOAD_2, MB_OK | MB_ICONSTOP );
+        EnMessageBox( IDS_ERR_LOAD_2, MB_OK | MB_ICONSTOP );
         return ( 0 );
     }
 
@@ -1895,7 +1895,7 @@ static int SDL2_MessageBox( int idsString, bool yesNoCancel = false )
     UINT flags = yesNoCancel
         ? ( MB_YESNOCANCEL | MB_ICONQUESTION )
         : ( MB_YESNO | MB_ICONSTOP | MB_TASKMODAL );
-    return AfxMessageBox( idsString, flags );
+    return EnMessageBox( idsString, flags );
 }
 
 // true - continue

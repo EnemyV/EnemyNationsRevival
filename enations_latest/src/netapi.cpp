@@ -100,7 +100,7 @@ BOOL CNetApi::OpenServer( int iProtocol, HWND hWnd, char const* pName, void cons
     if ( ( m_vpHdl = vpStartup( VPAPI_VERSION, &tlpGUID, iMaxNameLen, iMaxNameLen, iProtocol, pPrtcl ) ) == NULL )
     {
         Close( FALSE );
-        AfxMessageBox( IDS_VPSTARTUP_FAILED, MB_OK | MB_ICONSTOP );
+        EnMessageBox( IDS_VPSTARTUP_FAILED, MB_OK | MB_ICONSTOP );
         return ( TRUE );
     }
 
@@ -109,7 +109,7 @@ BOOL CNetApi::OpenServer( int iProtocol, HWND hWnd, char const* pName, void cons
     if ( ( m_vpSession = vpCreateSession( m_vpHdl, hWnd, pName, 0, pData ) ) == NULL )
     {
         Close( FALSE );
-        AfxMessageBox( IDS_VPCREATE_FAILED, MB_OK | MB_ICONSTOP );
+        EnMessageBox( IDS_VPCREATE_FAILED, MB_OK | MB_ICONSTOP );
         return ( TRUE );
     }
 
@@ -141,7 +141,7 @@ BOOL CNetApi::OpenClient( int iProtocol, HWND hWnd, void const* pPrtcl )
     if ( ( m_vpHdl = vpStartup( VPAPI_VERSION, &tlpGUID, iMaxNameLen, iMaxNameLen, iProtocol, pPrtcl ) ) == NULL )
     {
         Close( FALSE );
-        AfxMessageBox( IDS_VPSTARTUP_FAILED, MB_OK | MB_ICONSTOP );
+        EnMessageBox( IDS_VPSTARTUP_FAILED, MB_OK | MB_ICONSTOP );
         return ( TRUE );
     }
 
@@ -150,7 +150,7 @@ BOOL CNetApi::OpenClient( int iProtocol, HWND hWnd, void const* pPrtcl )
     if ( !vpEnumSessions( m_vpHdl, hWnd, TRUE, NULL ) )
     {
         Close( FALSE );
-        AfxMessageBox( IDS_VPENUM_FAILED, MB_OK | MB_ICONSTOP );
+        EnMessageBox( IDS_VPENUM_FAILED, MB_OK | MB_ICONSTOP );
         return ( TRUE );
     }
 
@@ -181,7 +181,7 @@ BOOL CNetApi::Join( LPCVPSESSIONID id, CNetJoin const* pJn )
     if ( ( m_vpSession = vpJoinSession( m_vpHdl, m_hWnd, id, (LPCSTR)pJn, 0, (LPVOID)TRUE ) ) == NULL )
     {
         TRAP( );
-        AfxMessageBox( IDS_VPJOIN_FAILED, MB_OK | MB_ICONSTOP );
+        EnMessageBox( IDS_VPJOIN_FAILED, MB_OK | MB_ICONSTOP );
         return ( TRUE );
     }
     return ( FALSE );
@@ -196,7 +196,7 @@ VPPLAYERID CNetApi::AddPlayer( CNetJoin const* pJn )
     if ( !vpAddPlayer( m_vpSession, (LPCSTR)pJn, 0, (LPVOID)TRUE, &rtn ) )
     {
         TRAP( );
-        AfxMessageBox( IDS_VPJOIN_FAILED, MB_OK | MB_ICONSTOP );
+        EnMessageBox( IDS_VPJOIN_FAILED, MB_OK | MB_ICONSTOP );
         return ( 0 );
     }
 
@@ -295,7 +295,7 @@ BOOL CNetApi::Send( VPPLAYERID idTo, LPCVPMSGHDR pData, int iLen )
     if ( theGame._GetPlayer( idTo ) == NULL )
         return ( FALSE );
 
-    AfxMessageBox( IDS_VPSEND_FAILED, MB_OK | MB_ICONSTOP );
+    EnMessageBox( IDS_VPSEND_FAILED, MB_OK | MB_ICONSTOP );
     SaveExistingGame( );
     theApp.CloseWorld( );
     ThrowError( ERR_TLP_QUIT );
@@ -318,7 +318,7 @@ BOOL CNetApi::Broadcast( LPCVPMSGHDR pData, int iLen, BOOL bLocal )
                      bLocal ? NULL : (LPVOID)TRUE ) )
         return ( FALSE );
 
-    AfxMessageBox( IDS_VPSEND_FAILED, MB_OK | MB_ICONSTOP );
+    EnMessageBox( IDS_VPSEND_FAILED, MB_OK | MB_ICONSTOP );
     SaveExistingGame( );
     theApp.CloseWorld( );
     ThrowError( ERR_TLP_QUIT );
@@ -496,7 +496,7 @@ static void OnMsgSessionClose( )
             sMsg = EnLoadString( IDS_SAVE_CLOSE );
             csPrintf( &sMsg, (const char*)theGame.m_sGameName );
 
-            if ( AfxMessageBox( sMsg, MB_YESNO | MB_ICONQUESTION ) == IDYES )
+            if ( EnMessageBox( sMsg, MB_YESNO | MB_ICONQUESTION ) == IDYES )
                 theGame.SaveGame( NULL );
         }
 
@@ -515,7 +515,7 @@ static void OnMsgSessionClose( )
             sTxt = EnLoadString( IDS_UNKNOWN );
             csPrintf( &sMsg, (const char*)sTxt );
         }
-        AfxMessageBox( sMsg, MB_OK | MB_TASKMODAL );
+        EnMessageBox( sMsg, MB_OK | MB_TASKMODAL );
     }
 
     // close it (will call CloseWorld after returning)
@@ -550,7 +550,7 @@ static void OnMsgJoin( LPCVPPLAYERINFO pPi, BOOL bLocal, BYTE bErr )
             sMsg = EnLoadString( IDS_MSG_JOIN_FAILED );
             CString sNum = IntToCString( bErr );
             csPrintf( &sMsg, (char const*)theGame.GetServer( )->GetName( ), (char const*)sNum );
-            AfxMessageBox( sMsg, MB_OK | MB_ICONSTOP );
+            EnMessageBox( sMsg, MB_OK | MB_ICONSTOP );
             return;
         }
 
@@ -851,7 +851,7 @@ LRESULT CNetApi::OnNetMsg( WPARAM wParam, LPARAM lParam )
             theGame.m_pXferFromServer = NULL;
             delete[] theGame.m_pGameFile;
             theGame.m_pGameFile = NULL;
-            AfxMessageBox( IDS_JOIN_FILE_ERROR, MB_OK | MB_ICONSTOP );
+            EnMessageBox( IDS_JOIN_FILE_ERROR, MB_OK | MB_ICONSTOP );
 
             theGame.Close( );
             theNet.Close( TRUE );
@@ -1461,7 +1461,7 @@ static void CmdPlyrStatus( CNetPlyrStatus* pMsg )
     }
     catch ( ... )
     {
-        AfxMessageBox( IDS_BAD_PLAYER_NUM, MB_OK | MB_ICONSTOP );
+        EnMessageBox( IDS_BAD_PLAYER_NUM, MB_OK | MB_ICONSTOP );
         theApp.CloseWorld( );
         return;
     }
@@ -1517,7 +1517,7 @@ static void CmdPlay( CNetPlay* pMsg )
         ASSERT( !theGame.AmServer( ) );
         theGame.Close( );
         theNet.Close( TRUE );
-        AfxMessageBox( IDS_RAND_MISMATCH, MB_OK | MB_ICONSTOP );
+        EnMessageBox( IDS_RAND_MISMATCH, MB_OK | MB_ICONSTOP );
         theApp.CloseWorld( );
         return;
     }

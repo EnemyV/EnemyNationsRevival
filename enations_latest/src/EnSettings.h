@@ -29,4 +29,12 @@ void    EnWriteProfileString( const char* section, const char* entry, const char
 // not found in the .RC string table.
 CString EnLoadString( unsigned int id );
 
+// Win32 MessageBoxA wrapper that does not depend on CWinApp/MFC. The third
+// "helpId" parameter is accepted for source-compatibility with AfxMessageBox
+// call sites and is otherwise ignored on modern Windows. The title used is
+// "Second Chance", matching what MFC's AfxMessageBox produced via
+// CWinApp::m_pszAppName before this shim.
+int EnMessageBox( const char*  text,   unsigned int type = 0, unsigned int helpId = 0 );
+int EnMessageBox( unsigned int idText, unsigned int type = 0, unsigned int helpId = 0 );
+
 #endif // __EN_SETTINGS_H__

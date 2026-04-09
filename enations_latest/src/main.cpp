@@ -790,7 +790,7 @@ void SaveExistingGame ()
 		return;
 		}
 
-	if (AfxMessageBox (IDS_SAVE_OLD, MB_YESNO | MB_ICONQUESTION) == IDYES)
+	if (EnMessageBox(IDS_SAVE_OLD, MB_YESNO | MB_ICONQUESTION) == IDYES)
 		theGame.SaveGame (NULL);
 }
 
@@ -967,7 +967,7 @@ void CDlgFile::OnFileExit()
 									( theGame.GetAll().GetCount () > theGame.GetAi().GetCount () + 1 ) )
 		{
 		// make sure
-		if (AfxMessageBox (IDS_CLIENT_QUIT, MB_YESNO | MB_ICONSTOP | MB_TASKMODAL) == IDNO)
+		if (EnMessageBox(IDS_CLIENT_QUIT, MB_YESNO | MB_ICONSTOP | MB_TASKMODAL) == IDNO)
 			return;
 
 		// we're gone

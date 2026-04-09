@@ -214,7 +214,7 @@ void CDlgCreateSingle::OnOK()
 			sText = EnLoadString( IDS_AI_LIMIT_2_MAX );
 			CString sNum = IntToCString ( 2 * iMax );
 			csPrintf (&sText, (char const *) sNum);
-			AfxMessageBox ( sText, MB_OK | MB_ICONSTOP );
+			EnMessageBox( sText, MB_OK | MB_ICONSTOP );
 			return;
 			}
 		else
@@ -224,7 +224,7 @@ void CDlgCreateSingle::OnOK()
 				sText = EnLoadString( IDS_AI_LIMIT_MAX );
 				CString sNum = IntToCString ( iMax );
 				csPrintf (&sText, (char const *) sNum);
-				if ( AfxMessageBox ( sText, MB_YESNO | MB_ICONSTOP ) != IDYES )
+				if ( EnMessageBox( sText, MB_YESNO | MB_ICONSTOP ) != IDYES )
 					return;
 				}
 		}

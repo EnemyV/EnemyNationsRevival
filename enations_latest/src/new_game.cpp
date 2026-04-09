@@ -593,7 +593,7 @@ void CDlgPlayerList::OnOK() {
         if (m_pCb->m_iTyp == CCreateBase::load_multi) {
             if (theGame.m_lstLoad.GetCount() > 0) {
                 TRAP();
-                if (AfxMessageBox(IDS_ASK_START, MB_YESNO | MB_ICONSTOP | MB_TASKMODAL) != IDYES)
+                if (EnMessageBox(IDS_ASK_START, MB_YESNO | MB_ICONSTOP | MB_TASKMODAL) != IDYES)
                     return;
             }
         } else {
@@ -602,7 +602,7 @@ void CDlgPlayerList::OnOK() {
                 CPlayer *pPlr = theGame.GetAll().GetPrev(pos);
                 ASSERT_VALID (pPlr);
                 if (pPlr->GetState() != CPlayer::ready) {
-                    if (AfxMessageBox(IDS_ASK_START, MB_YESNO | MB_ICONSTOP | MB_TASKMODAL) != IDYES)
+                    if (EnMessageBox(IDS_ASK_START, MB_YESNO | MB_ICONSTOP | MB_TASKMODAL) != IDYES)
                         return;
                     break;
                 }
@@ -770,15 +770,15 @@ void CDlgCreateStatus::OnCancel() {
     ASSERT_VALID (this);
 
     if (theGame._GetMe() == NULL) {
-        if (AfxMessageBox(IDS_SERVER_QUIT, MB_YESNO | MB_ICONSTOP | MB_TASKMODAL) != IDYES)
+        if (EnMessageBox(IDS_SERVER_QUIT, MB_YESNO | MB_ICONSTOP | MB_TASKMODAL) != IDYES)
             return;
     } else if (theGame.AmServer()) {
         if (theGame.IsNetGame()) {
-            if (AfxMessageBox(IDS_SERVER_QUIT, MB_YESNO | MB_ICONSTOP | MB_TASKMODAL) != IDYES)
+            if (EnMessageBox(IDS_SERVER_QUIT, MB_YESNO | MB_ICONSTOP | MB_TASKMODAL) != IDYES)
                 return;
-        } else if (AfxMessageBox(IDS_SINGLE_QUIT, MB_YESNO | MB_ICONSTOP | MB_TASKMODAL) != IDYES)
+        } else if (EnMessageBox(IDS_SINGLE_QUIT, MB_YESNO | MB_ICONSTOP | MB_TASKMODAL) != IDYES)
             return;
-    } else if (AfxMessageBox(IDS_CLIENT_QUIT, MB_YESNO | MB_ICONSTOP | MB_TASKMODAL) != IDYES)
+    } else if (EnMessageBox(IDS_CLIENT_QUIT, MB_YESNO | MB_ICONSTOP | MB_TASKMODAL) != IDYES)
         return;
 
     m_Quit = TRUE;

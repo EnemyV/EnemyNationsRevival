@@ -173,7 +173,7 @@ void CDlgPlyrList::OnPlyrKill( )
         return;
     }
 
-    if ( AfxMessageBox( IDS_DROP_PLAYER, MB_YESNO | MB_ICONQUESTION ) != IDYES )
+    if ( EnMessageBox( IDS_DROP_PLAYER, MB_YESNO | MB_ICONQUESTION ) != IDYES )
         return;
 
     // ok, this will drop this guy and tell everyone when he is dropped

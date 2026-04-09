@@ -322,7 +322,7 @@ void CDlgAdvOptions::OnOK()
 		EnWriteProfileInt("Advanced", "ColorDepth", m_iDepth);
 		bWarn = TRUE;
 		if ( m_iDepth == 2 )
-			AfxMessageBox (IDS_ADV_DEPTH, MB_OK);
+			EnMessageBox(IDS_ADV_DEPTH, MB_OK);
 		}
 
 	if ( (int) EnGetProfileInt("Advanced", "Zoom", 2) != m_iZoom )
@@ -330,7 +330,7 @@ void CDlgAdvOptions::OnOK()
 		EnWriteProfileInt("Advanced", "Zoom", m_iZoom);
 		bWarn = TRUE;
 		if ( m_iZoom == 1 )
-			AfxMessageBox (IDS_ADV_ZOOM, MB_OK);
+			EnMessageBox(IDS_ADV_ZOOM, MB_OK);
 		}
 
 	int iInd = m_lstLang.GetCurSel ();
@@ -345,7 +345,7 @@ void CDlgAdvOptions::OnOK()
 		}
 
 	if (bWarn)
-		AfxMessageBox (IDS_OPTIONS_ADV, MB_OK);
+		EnMessageBox(IDS_OPTIONS_ADV, MB_OK);
 
 	CDialog::OnOK();
 }

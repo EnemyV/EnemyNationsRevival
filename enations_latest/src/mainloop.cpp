@@ -127,7 +127,7 @@ int CConquerApp::Run( )
         {
             theGame.SetState( CGame::error );
             myThreadClose( (THREADEXITFUNC)AiExit );
-            if ( AfxMessageBox( IDS_SAVE_ON_ERROR, MB_YESNO | MB_ICONQUESTION ) == IDYES )
+            if ( EnMessageBox( IDS_SAVE_ON_ERROR, MB_YESNO | MB_ICONQUESTION ) == IDYES )
             {
                 TRAP( );
                 try
@@ -136,7 +136,7 @@ int CConquerApp::Run( )
                 }
                 catch ( ... )
                 {
-                    AfxMessageBox( IDS_SAVE_ON_ERROR_FAILED, MB_OK | MB_ICONSTOP );
+                    EnMessageBox( IDS_SAVE_ON_ERROR_FAILED, MB_OK | MB_ICONSTOP );
                 }
             }
         }
@@ -153,7 +153,7 @@ int CConquerApp::Run( )
         {
             theGame.SetState( CGame::error );
             myThreadClose( (THREADEXITFUNC)AiExit );
-            if ( AfxMessageBox( IDS_SAVE_ON_ERROR, MB_YESNO | MB_ICONQUESTION ) == IDYES )
+            if ( EnMessageBox( IDS_SAVE_ON_ERROR, MB_YESNO | MB_ICONQUESTION ) == IDYES )
             {
                 try
                 {
@@ -161,7 +161,7 @@ int CConquerApp::Run( )
                 }
                 catch ( ... )
                 {
-                    AfxMessageBox( IDS_SAVE_ON_ERROR_FAILED, MB_OK | MB_ICONSTOP );
+                    EnMessageBox( IDS_SAVE_ON_ERROR_FAILED, MB_OK | MB_ICONSTOP );
                 }
             }
         }
@@ -201,7 +201,7 @@ int CConquerApp::Run( )
         {
             theGame.SetState( CGame::error );
             myThreadClose( (THREADEXITFUNC)AiExit );
-            if ( AfxMessageBox( IDS_SAVE_ON_ERROR, MB_YESNO | MB_ICONQUESTION ) == IDYES )
+            if ( EnMessageBox( IDS_SAVE_ON_ERROR, MB_YESNO | MB_ICONQUESTION ) == IDYES )
             {
                 try
                 {
@@ -209,7 +209,7 @@ int CConquerApp::Run( )
                 }
                 catch ( ... )
                 {
-                    AfxMessageBox( IDS_SAVE_ON_ERROR_FAILED, MB_OK | MB_ICONSTOP );
+                    EnMessageBox( IDS_SAVE_ON_ERROR_FAILED, MB_OK | MB_ICONSTOP );
                 }
             }
         }
@@ -681,7 +681,7 @@ void CConquerApp::GraphicsEnginePump( )
                     LeaveCriticalSection( &cs );
                     if ( m_pdlgPlyrList != NULL )
                         m_pdlgPlyrList->ShowWindow( SW_HIDE );
-                    AfxMessageBox( IDS_GAME_OVER, MB_OK | MB_ICONSTOP );
+                    EnMessageBox( IDS_GAME_OVER, MB_OK | MB_ICONSTOP );
                     theApp.CloseWorld( );
                     return;
                 }
@@ -695,7 +695,7 @@ void CConquerApp::GraphicsEnginePump( )
                     {
                         LeaveCriticalSection( &cs );
                         TRAP( );
-                        if ( AfxMessageBox( IDS_TIME_OUT, MB_YESNO | MB_ICONQUESTION ) == IDYES )
+                        if ( EnMessageBox( IDS_TIME_OUT, MB_YESNO | MB_ICONQUESTION ) == IDYES )
                             theGame.SaveGame( &m_wndMain );
                         theApp.CloseWorld( );
                         return;
@@ -794,7 +794,7 @@ void CConquerApp::GraphicsEnginePump( )
                         {
                             TRAP( );
                             CString sMsg, sName;
-                            if ( AfxMessageBox( IDS_TIME_OUT, MB_YESNO | MB_ICONQUESTION ) == IDYES )
+                            if ( EnMessageBox( IDS_TIME_OUT, MB_YESNO | MB_ICONQUESTION ) == IDYES )
                                 theGame.SaveGame( &m_wndMain );
                             theApp.m_wndCutScene.DestroyWindow( );
                             theApp.CloseWorld( );

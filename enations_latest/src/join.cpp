@@ -382,7 +382,7 @@ void CDlgJoinPublish::OnOK( )
     if ( m_sName.GetLength( ) >= iMaxNameLen )
     {
         TRAP( );
-        AfxMessageBox( IDS_NAME_TOO_LONG, MB_OK | MB_ICONSTOP );
+        EnMessageBox( IDS_NAME_TOO_LONG, MB_OK | MB_ICONSTOP );
         return;
     }
 
