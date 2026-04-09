@@ -552,10 +552,10 @@ void CDlgResearch::OnOK( )
     UpdateData( TRUE );
     CString sTitle;
     if ( iSel < 0 )
-        sTitle.LoadString( IDS_RSRCH_NOTHING );
+        sTitle = EnLoadString( IDS_RSRCH_NOTHING );
     else
     {
-        sTitle.LoadString( IDS_RSRCH_TITLE );
+        sTitle = EnLoadString( IDS_RSRCH_TITLE );
         csPrintf( &sTitle, (char const*)theRsrch.ElementAt( iSel ).m_sName );
     }
     SetWindowText( sTitle );
@@ -574,7 +574,7 @@ void CDlgResearch::ItemDiscovered( int iItem )
 
     m_iPerDone = 0;
     CString sTitle;
-    sTitle.LoadString( IDS_RSRCH_NOTHING );
+    sTitle = EnLoadString( IDS_RSRCH_NOTHING );
     SetWindowText( sTitle );
 
     UpdateProgress( );
@@ -636,8 +636,8 @@ BOOL CDlgResearch::OnInitDialog( )
     // font for the listbox
     LOGFONT lf;
     memset( &lf, 0, sizeof( lf ) );
-    lf.lfHeight   = theApp.GetProfileInt( "StatusBar", "RDListHeight", 18 );
-    CString sFont = theApp.GetProfileString( "StatusBar", "RDListFont", "Newtown Italic" );
+    lf.lfHeight   = EnGetProfileInt( "StatusBar", "RDListHeight", 18 );
+    CString sFont = EnGetProfileString( "StatusBar", "RDListFont", "Newtown Italic" );
     strncpy( lf.lfFaceName, sFont, LF_FACESIZE - 1 );
     m_fntList.CreateFontIndirect( &lf );
 
@@ -660,7 +660,7 @@ BOOL CDlgResearch::OnInitDialog( )
     {
         TRAP( );
         m_bShareLimit = TRUE;
-        m_strDesc.LoadString( IDS_DEMO_RESEARCH_MAX );
+        m_strDesc = EnLoadString( IDS_DEMO_RESEARCH_MAX );
     }
 
     UpdateChoices( TRUE );
@@ -691,7 +691,7 @@ void CDlgResearch::UpdateChoices( BOOL bCheck )
     {
         TRAP( );
         m_bShareLimit = TRUE;
-        m_strDesc.LoadString( IDS_DEMO_RESEARCH_MAX );
+        m_strDesc = EnLoadString( IDS_DEMO_RESEARCH_MAX );
         InvalidateRect( &rectText, FALSE );
         m_lstRsrch.ResetContent( );
         GetDlgItem( IDOK )->EnableWindow( FALSE );
@@ -756,10 +756,10 @@ void CDlgResearch::UpdateChoices( BOOL bCheck )
         // list what we are researching
         CString sTitle;
         if ( theGame.GetMe( )->GetRsrchItem( ) <= 0 )
-            sTitle.LoadString( IDS_RSRCH_NOTHING );
+            sTitle = EnLoadString( IDS_RSRCH_NOTHING );
         else
         {
-            sTitle.LoadString( IDS_RSRCH_TITLE );
+            sTitle = EnLoadString( IDS_RSRCH_TITLE );
             csPrintf( &sTitle, (char const*)theRsrch.ElementAt( theGame.GetMe( )->GetRsrchItem( ) ).m_sName );
         }
         SetWindowText( sTitle );
@@ -771,7 +771,7 @@ void CDlgResearch::UpdateChoices( BOOL bCheck )
     if ( iSel < 0 )
     {
         if ( m_bShareLimit )
-            m_strDesc.LoadString( IDS_DEMO_RESEARCH_MAX );
+            m_strDesc = EnLoadString( IDS_DEMO_RESEARCH_MAX );
         else
             m_strDesc = "";
     }
@@ -887,12 +887,12 @@ void CDlgDiscover::NewItem( )
     if ( m_iRsrchNum < 0 )
     {
         m_strText = "";
-        sTitle.LoadString( IDS_DISCOVERED_NO_TITLE );
+        sTitle = EnLoadString( IDS_DISCOVERED_NO_TITLE );
     }
     else
     {
         m_strText = theRsrch.ElementAt( m_iRsrchNum ).m_sResult;
-        sTitle.LoadString( IDS_DISCOVERED_TITLE );
+        sTitle = EnLoadString( IDS_DISCOVERED_TITLE );
         csPrintf( &sTitle, (char const*)theRsrch.ElementAt( m_iRsrchNum ).m_sName );
     }
     SetWindowText( sTitle );

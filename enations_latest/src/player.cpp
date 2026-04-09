@@ -283,7 +283,7 @@ void CPlayer::StartGame( )
             m_aRsrch.ElementAt( iOn ).m_bDiscovered = TRUE;
 
 #ifdef _CHEAT
-    if ( theApp.GetProfileInt( "Cheat", "KnowItAll", 0 ) )
+    if ( EnGetProfileInt( "Cheat", "KnowItAll", 0 ) )
         for ( int iOn = 1; iOn < m_aRsrch.GetSize( ); iOn++ ) m_aRsrch.ElementAt( iOn ).m_bDiscovered = TRUE;
 #endif
 
@@ -483,7 +483,7 @@ void CPlayer::Research( int iNumSec )
     {
         ResearchDiscovered( iTmp );
         CString sMsg;
-        sMsg.LoadString( IDS_EVENT_RSRCH_DONE );
+        sMsg = EnLoadString( IDS_EVENT_RSRCH_DONE );
         pRi = &theRsrch.ElementAt( iTmp );
         csPrintf( &sMsg, &(pRi->m_sName) );
         theApp.m_wndBar.SetStatusText( 0, sMsg, CStatInst::status );
@@ -1060,7 +1060,7 @@ void CGame::Open( BOOL bLocal )
         ctor( );
     theGame.m_sFileName = sSaveName;
 
-    int iSpeed = theApp.GetProfileInt( "Game", "Speed", NUM_SPEEDS / 2 );
+    int iSpeed = EnGetProfileInt( "Game", "Speed", NUM_SPEEDS / 2 );
     iSpeed     = __minmax( 0, NUM_SPEEDS - 1, iSpeed );
     SetGameMul( iSpeed );
 
@@ -1597,7 +1597,7 @@ void CGame::AddAiPlayer( CPlayer* pPlr )
     if ( pPlr->m_sName.IsEmpty( ) )
     {
         CString sNum = IntToCString( m_iNextAINum++ );
-        pPlr->m_sName.LoadString( IDS_AI_NAME );
+        pPlr->m_sName = EnLoadString( IDS_AI_NAME );
         csPrintf( &( pPlr->m_sName ), (char const*)sNum );
     }
     pPlr->m_iNetNum = 0;
@@ -1644,7 +1644,7 @@ void CGame::AiTakeOverPlayer( CPlayer* pPlr, BOOL bStartThread, BOOL bShowDlg )
         CDlgSaveMsg dlgMsg( &( theApp.m_wndMain ) );
         if ( bShowDlg )
         {
-            dlgMsg.m_sText.LoadString( IDS_AI_TAKEOVER );
+            dlgMsg.m_sText = EnLoadString( IDS_AI_TAKEOVER );
             csPrintf( &( dlgMsg.m_sText ), (const char*)pPlr->GetName( ) );
             dlgMsg.Create( IDD_SAVE_MSG, &( theApp.m_wndMain ) );
         }
@@ -2017,8 +2017,8 @@ int CGame::LoadGame( CWnd* pPar, BOOL bReplace )
     else
     {
         CString sFilters, sExt;
-        sFilters.LoadString( IDS_SAVE_FILTERS );
-        sExt.LoadString( IDS_SAVE_EXT );
+        sFilters = EnLoadString( IDS_SAVE_FILTERS );
+        sExt = EnLoadString( IDS_SAVE_EXT );
         CFileDialog dlg( TRUE, sExt, NULL, OFN_HIDEREADONLY | OFN_FILEMUSTEXIST, sFilters, pPar );
         if ( dlg.DoModal( ) != IDOK )
         {
@@ -2036,7 +2036,7 @@ int CGame::LoadGame( CWnd* pPar, BOOL bReplace )
     // put up a message to say we are loading
     theApp.m_pCreateGame->CreateDlgStatus( );
     CString sText;
-    sText.LoadString( IDS_LOAD_NAME );
+    sText = EnLoadString( IDS_LOAD_NAME );
     csPrintf( &sText, (LPCTSTR)sFileTitle );
     theApp.m_pCreateGame->GetDlgStatus( )->SetWindowText( sText );
     theApp.m_pCreateGame->GetDlgStatus( )->SetPer( 0 );
@@ -2396,7 +2396,7 @@ int CGame::StartGame( BOOL bReplace )
             pPlr->ai.hex   = pPlr->m_hexMapStart;
 
 #ifdef _CHEAT
-            if ( theApp.GetProfileInt( "Debug", "NoThreads", 0 ) == 0 )
+            if ( EnGetProfileInt( "Debug", "NoThreads", 0 ) == 0 )
 #endif
                 myStartThread( &( pPlr->ai ), (AFX_THREADPROC)AiThread );
 
@@ -2448,7 +2448,7 @@ static void fnCompSave( DWORD dwData, int iBlk )
 
     CDlgSaveMsg* pDlg = (CDlgSaveMsg*)dwData;
     pDlg->UpdateData( TRUE );
-    pDlg->m_sStat.LoadString( IDS_SAVE_COMPRESS );
+    pDlg->m_sStat = EnLoadString( IDS_SAVE_COMPRESS );
     CString sNum = IntToCString( iBlk );
     csPrintf( &( pDlg->m_sStat ), sNum );
     pDlg->UpdateData( FALSE );
@@ -2506,8 +2506,8 @@ int CGame::SaveGame( CWnd* pPar )
     else
     {
         CString sFilters, sExt;
-        sFilters.LoadString( IDS_SAVE_FILTERS );
-        sExt.LoadString( IDS_SAVE_EXT );
+        sFilters = EnLoadString( IDS_SAVE_FILTERS );
+        sExt = EnLoadString( IDS_SAVE_EXT );
 
         char const* pName;
         if ( m_sFileName.IsEmpty( ) )
@@ -2529,12 +2529,12 @@ int CGame::SaveGame( CWnd* pPar )
 
     // put up a message to say we are saving
     CDlgSaveMsg dlgMsg( pPar );
-    dlgMsg.m_sText.LoadString( IDS_SAVE_NAME );
+    dlgMsg.m_sText = EnLoadString( IDS_SAVE_NAME );
     csPrintf( &dlgMsg.m_sText, m_sFileName );
     if ( IsNetGame( ) )
-        dlgMsg.m_sStat.LoadString( IDS_SAVE_REMOTE );
+        dlgMsg.m_sStat = EnLoadString( IDS_SAVE_REMOTE );
     else
-        dlgMsg.m_sStat.LoadString( IDS_SAVE_LOCAL );
+        dlgMsg.m_sStat = EnLoadString( IDS_SAVE_LOCAL );
     dlgMsg.Create( IDD_SAVE_MSG, pPar );
 
     // disable all other windows
@@ -2591,7 +2591,7 @@ int CGame::SaveGame( CWnd* pPar )
         ProcessAllMessages( );
 
         dlgMsg.UpdateData( TRUE );
-        dlgMsg.m_sStat.LoadString( IDS_SAVE_DATA );
+        dlgMsg.m_sStat = EnLoadString( IDS_SAVE_DATA );
         dlgMsg.UpdateData( FALSE );
 
         // CMemFile to save to
@@ -2611,7 +2611,7 @@ int CGame::SaveGame( CWnd* pPar )
         theApp.BaseYield( );
 
         dlgMsg.UpdateData( TRUE );
-        dlgMsg.m_sStat.LoadString( IDS_SAVE_WRITE );
+        dlgMsg.m_sStat = EnLoadString( IDS_SAVE_WRITE );
         dlgMsg.UpdateData( FALSE );
 
         // write it to disk
@@ -2631,7 +2631,7 @@ int CGame::SaveGame( CWnd* pPar )
     catch ( ... )
     {
         CString sMsg;
-        sMsg.LoadString( IDS_CANT_SAVE );
+        sMsg = EnLoadString( IDS_CANT_SAVE );
         csPrintf( &sMsg, (char const*)m_sFileName );
         AfxMessageBox( sMsg );
 
@@ -2825,7 +2825,7 @@ void CGame::Serialize( CArchive& ar )
 
         // version, cheats, & debug
         ar >> m_dwMaj >> m_dwMin >> m_dwVer >> m_wDbg >> m_wCht;
-        if ( theApp.GetProfileInt( "Cheat", "DiffVer", 1 ) )
+        if ( EnGetProfileInt( "Cheat", "DiffVer", 1 ) )
         {
             //			if ((m_dwMaj != VER_MAJOR) || (m_dwMin != VER_MINOR) ||
 
@@ -2836,7 +2836,7 @@ void CGame::Serialize( CArchive& ar )
             if ( wrongMajorVersion || wrongMinorVersion || debugCheatMissmatched )
             {
                 CString sMsg, sVer1, sVer2;
-                sMsg.LoadString( IDS_SAVE_VER );
+                sMsg = EnLoadString( IDS_SAVE_VER );
                 sVer1 = GetVerText( m_dwMaj, m_dwMin, m_dwVer, m_wDbg, m_wCht );
                 sVer2 = GetVerText( VER_MAJOR, VER_MINOR, VER_RELEASE, _wDebug, _wCheat );
                 csPrintf( &sMsg, (char const*)sVer1, (char const*)sVer2 );

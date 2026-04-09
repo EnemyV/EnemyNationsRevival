@@ -351,7 +351,7 @@ void CGame::_Event (int ID, int iTyp, char const * psText, int iVoice)
 	int iSfx = aiSfx [ID];
 
 	CString sMsg;
-	sMsg.LoadString (iRes);
+	sMsg = EnLoadString(iRes);
 	if (psText != NULL)
 		csPrintf (&sMsg, psText);
 

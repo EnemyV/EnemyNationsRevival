@@ -37,6 +37,7 @@
 #include "vdmplay.h"
 #include "base.h"
 #include "windward.h"
+#include "EnSettings.h"
 
 
 // Smartheap's lib was compiled against a very out of date c runtime. There's no need for optimizing allocation

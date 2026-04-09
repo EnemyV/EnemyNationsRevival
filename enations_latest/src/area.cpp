@@ -825,25 +825,25 @@ void CWndArea::LoadStaticResources( )
     m_hhk = SetWindowsHookEx( WH_MOUSE, MouseProc, NULL, theApp.m_nThreadID );
 
     // load them
-    m_sHelp.LoadString( IDH_AREA_WIN );
-    m_sHelpBuild.LoadString( IDH_AREA_WIN_BUILD );
-    m_sHelpRoad.LoadString( IDH_AREA_WIN_ROAD );
-    m_sHelpCantBuild[0].LoadString( IDH_AREA_CANT_BLDG_NEXT );
-    m_sHelpCantBuild[1].LoadString( IDH_AREA_CANT_WATER_NEXT );
-    m_sHelpCantBuild[2].LoadString( IDH_AREA_CANT_BLDG_RIVER_NEXT );
-    m_sHelpCantBuild[3].LoadString( IDH_AREA_CANT_VEH_IN_WAY );
-    m_sHelpCantBuild[4].LoadString( IDH_AREA_CANT_ON_WATER );
-    m_sHelpCantBuild[5].LoadString( IDH_AREA_CANT_NO_WATER );
-    m_sHelpCantBuild[6].LoadString( IDH_AREA_CANT_NO_LAND_EXIT );
-    m_sHelpCantBuild[7].LoadString( IDH_AREA_CANT_NO_WATER_EXIT );
-    m_sHelpCantBuild[8].LoadString( IDH_AREA_CANT_TOO_STEEP );
-    m_sHelpRMB.LoadString( IDH_AREA_WIN_RMB );
-    m_sHelpOkFarm.LoadString( IDH_AREA_OK_FARM );
-    m_sHelpBadFarm.LoadString( IDH_AREA_BAD_FARM );
-    m_sHelpNoFarm.LoadString( IDH_AREA_NO_FARM );
-    m_sHelpOkMine.LoadString( IDH_AREA_OK_MINE );
-    m_sHelpBadMine.LoadString( IDH_AREA_BAD_MINE );
-    m_sHelpNoMine.LoadString( IDH_AREA_NO_MINE );
+    m_sHelp = EnLoadString( IDH_AREA_WIN );
+    m_sHelpBuild = EnLoadString( IDH_AREA_WIN_BUILD );
+    m_sHelpRoad = EnLoadString( IDH_AREA_WIN_ROAD );
+    m_sHelpCantBuild[0] = EnLoadString( IDH_AREA_CANT_BLDG_NEXT );
+    m_sHelpCantBuild[1] = EnLoadString( IDH_AREA_CANT_WATER_NEXT );
+    m_sHelpCantBuild[2] = EnLoadString( IDH_AREA_CANT_BLDG_RIVER_NEXT );
+    m_sHelpCantBuild[3] = EnLoadString( IDH_AREA_CANT_VEH_IN_WAY );
+    m_sHelpCantBuild[4] = EnLoadString( IDH_AREA_CANT_ON_WATER );
+    m_sHelpCantBuild[5] = EnLoadString( IDH_AREA_CANT_NO_WATER );
+    m_sHelpCantBuild[6] = EnLoadString( IDH_AREA_CANT_NO_LAND_EXIT );
+    m_sHelpCantBuild[7] = EnLoadString( IDH_AREA_CANT_NO_WATER_EXIT );
+    m_sHelpCantBuild[8] = EnLoadString( IDH_AREA_CANT_TOO_STEEP );
+    m_sHelpRMB = EnLoadString( IDH_AREA_WIN_RMB );
+    m_sHelpOkFarm = EnLoadString( IDH_AREA_OK_FARM );
+    m_sHelpBadFarm = EnLoadString( IDH_AREA_BAD_FARM );
+    m_sHelpNoFarm = EnLoadString( IDH_AREA_NO_FARM );
+    m_sHelpOkMine = EnLoadString( IDH_AREA_OK_MINE );
+    m_sHelpBadMine = EnLoadString( IDH_AREA_BAD_MINE );
+    m_sHelpNoMine = EnLoadString( IDH_AREA_NO_MINE );
 
     // need our own class so we can change the cursor
     m_hCurReg        = theApp.LoadStandardCursor( IDC_ARROW );
@@ -1050,10 +1050,10 @@ void CWndArea::Create( CMapLoc const& ml, CUnit* pUnit, BOOL bFirst )
     CRect     rect;
     CWndArea* pPrev = theAreaList.GetTop( );
     if ( pPrev == NULL )
-        rect.SetRect( theApp.GetProfileInt( theApp.m_sResIni, "AreaX", theApp.m_iCol1 ),
-                      theApp.GetProfileInt( theApp.m_sResIni, "AreaY", 0 ),
-                      theApp.GetProfileInt( theApp.m_sResIni, "AreaEX", theApp.m_iScrnX ),
-                      theApp.GetProfileInt( theApp.m_sResIni, "AreaEY", theApp.m_iRow3 ) );
+        rect.SetRect( EnGetProfileInt( theApp.m_sResIni, "AreaX", theApp.m_iCol1 ),
+                      EnGetProfileInt( theApp.m_sResIni, "AreaY", 0 ),
+                      EnGetProfileInt( theApp.m_sResIni, "AreaEX", theApp.m_iScrnX ),
+                      EnGetProfileInt( theApp.m_sResIni, "AreaEY", theApp.m_iRow3 ) );
     else
     {
         pPrev->GetWindowRect( &rect );
@@ -1069,7 +1069,7 @@ void CWndArea::Create( CMapLoc const& ml, CUnit* pUnit, BOOL bFirst )
     }
 
     CString sTitle;
-    sTitle.LoadString( IDS_TITLE_AREA_MAP );
+    sTitle = EnLoadString( IDS_TITLE_AREA_MAP );
     DWORD dwStyle = dwPopWndStyle;
 
     if ( CreateEx( 0, sWndCls, sTitle, dwStyle, rect.left, rect.top, rect.Width( ), rect.Height( ),
@@ -2050,7 +2050,7 @@ int CWndArea::OnCreate( LPCREATESTRUCT lpCreateStruct )
 
     CWndAnim::OnCreate( lpCreateStruct );
 
-    m_bScrollBars = theApp.GetProfileInt( "Advanced", "Scroll", 0 );
+    m_bScrollBars = EnGetProfileInt( "Advanced", "Scroll", 0 );
 
     // NOTE: this crashes on load game because? something? wasn't initialized
     // if first window AND have placement info - use it
@@ -2792,7 +2792,7 @@ void CWndArea::OnLButtonUp( UINT nFlags, CPoint point )
 
             theGame.Event( EVENT_ROCKET_CANT, EVENT_OFF );
             CString sMsg;
-            sMsg.LoadString( IDS_MSG_ROCKET_WAIT );
+            sMsg = EnLoadString( IDS_MSG_ROCKET_WAIT );
             SetStatusText( sMsg );
             CMsgPlaceBldg msg( hex, GetBuildDir( ), CStructureData::rocket );
             msg.m_iPlyrNum = theGame.GetMe( )->GetPlyrNum( );
@@ -3432,7 +3432,7 @@ void CWndArea::SetupStart( )
 
     ::SetCursor( NULL );
     CString sMsg;
-    sMsg.LoadString( IDS_MSG_ROCKET_START );
+    sMsg = EnLoadString( IDS_MSG_ROCKET_START );
     SetStatusText( sMsg );
 
     // start with resources showing
@@ -3449,7 +3449,7 @@ void CWndArea::SetupDone( )
 
     BldgCurOff( );
     CString sMsg;
-    sMsg.LoadString( IDS_MSG_ROCKET_DONE );
+    sMsg = EnLoadString( IDS_MSG_ROCKET_DONE );
     SetStatusText( sMsg );
     InvalidateStatus( );
 
@@ -3521,7 +3521,7 @@ void CWndArea::GotoOn( CVehicle* pUnit, int iMode, int iRouteType, POSITION posR
     ASSERT_STRICT( iMode == veh_route );
 
     CString sMsg;
-    sMsg.LoadString( IDS_MSG_UNIT_GOTO );
+    sMsg = EnLoadString( IDS_MSG_UNIT_GOTO );
     csPrintf( &sMsg, (char const*)pUnit->GetData( )->GetDesc( ) );
     SetStatusText( sMsg );
 
@@ -4227,10 +4227,10 @@ void CWndArea::SetButtonState( )
     {
         CString sTitle;
         if ( m_lstUnits.GetCount( ) <= 0 )
-            sTitle.LoadString( IDS_TITLE_AREA_MAP );
+            sTitle = EnLoadString( IDS_TITLE_AREA_MAP );
         else
         {
-            sTitle.LoadString( IDS_TITLE_AREA_MAP_MULTI );
+            sTitle = EnLoadString( IDS_TITLE_AREA_MAP_MULTI );
             csPrintf( &sTitle, (const char*)IntToCString( m_lstUnits.GetCount( ) ) );
         }
         SetWindowText( sTitle );
@@ -5307,7 +5307,7 @@ void CWndInfo::OnPaint( )
     rect.top += theApp.TextHt( ) + theApp.FlatDimen( );
     rect.bottom = rect.top + theApp.TextHt( );
     CString sText;
-    sText.LoadString( IDS_INFO_DAMAGE );
+    sText = EnLoadString( IDS_INFO_DAMAGE );
     csPrintf( &sText, (const char*)IntToCString( __min( 99, 100 - m_pUnit->GetDamagePer( ) ) ) );
     _DrawText( pDc, rect, sText, m_pUnit->GetDamagePer( ) < 50 );
 
@@ -5760,7 +5760,7 @@ void CWndArea::GiveSelectedUnits( CPlayer* pPlr )
 
     // create prompt
     CString sSure, sNumB, sNumV;
-    sSure.LoadString( IDS_GIVE_UNITS );
+    sSure = EnLoadString( IDS_GIVE_UNITS );
     sNumB = IntToCString( iBldgs, 10, TRUE );
     sNumV = IntToCString( iVehs, 10, TRUE );
     csPrintf( &sSure, (char const*)sNumB, (char const*)sNumV, (char const*)pPlr->GetName( ) );

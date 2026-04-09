@@ -414,7 +414,7 @@ void CWndComm::ProcessIncomingChat( CMsgIPC *pMsg )
 	// annouce incoming chat request in status window
 	// get name of player of message and put in title
 	CString sStatus;
-	sStatus.LoadString (IDS_CHAT_STATUS);
+	sStatus = EnLoadString(IDS_CHAT_STATUS);
 	csPrintf (&sStatus, (const char *) pPlyr->GetName ());
 
 	// turn off status bar completely
@@ -428,7 +428,7 @@ void CWndComm::ProcessIncomingChat( CMsgIPC *pMsg )
 	
 
 	CString sTitle;
-	sTitle.LoadString (IDS_CHAT_TITLE);
+	sTitle = EnLoadString(IDS_CHAT_TITLE);
 	csPrintf (&sTitle, (const char *) pPlyr->GetName ());
 	pWnd->Create (NULL, sTitle, dwPopWndStyle, rect, this);
 
@@ -791,12 +791,12 @@ void CWndComm::Create ()
 {
 
 	CString sTitle;
-	sTitle.LoadString (IDS_TITLE_CHAT_WND);
+	sTitle = EnLoadString(IDS_TITLE_CHAT_WND);
 	if (CWndBase::CreateEx (0, theApp.m_sWndCls, sTitle, dwPopWndStyle,
-					theApp.GetProfileInt (theApp.m_sResIni, "ChatX", 0),
-					theApp.GetProfileInt (theApp.m_sResIni, "ChatY", theApp.m_iRow2),
-					theApp.GetProfileInt (theApp.m_sResIni, "ChatEX", theApp.m_iCol1 + 1),
-					theApp.GetProfileInt (theApp.m_sResIni, "ChatEY", theApp.m_iRow3 - theApp.m_iRow2 + 1),
+					EnGetProfileInt(theApp.m_sResIni, "ChatX", 0),
+					EnGetProfileInt(theApp.m_sResIni, "ChatY", theApp.m_iRow2),
+					EnGetProfileInt(theApp.m_sResIni, "ChatEX", theApp.m_iCol1 + 1),
+					EnGetProfileInt(theApp.m_sResIni, "ChatEY", theApp.m_iRow3 - theApp.m_iRow2 + 1),
 					theApp.m_pMainWnd->m_hWnd, NULL) == 0)
 		ThrowError (ERR_RES_CREATE_WND);
 
@@ -1452,7 +1452,7 @@ void CWndComm::OnChat ()
 	ASSERT_VALID (this);
 
 	CString sTitle;
-	sTitle.LoadString (IDS_CHAT_TITLE);
+	sTitle = EnLoadString(IDS_CHAT_TITLE);
 	csPrintf (&sTitle, " ");
 
 	// get parent location

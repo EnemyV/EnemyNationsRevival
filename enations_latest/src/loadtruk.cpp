@@ -153,7 +153,7 @@ BOOL CDlgLoadTruck::OnInitDialog()
 		{
 		TRAP ();
 		CString sTitle;
-		sTitle.LoadString ( IDS_LOAD_FREIGHTER );
+		sTitle = EnLoadString( IDS_LOAD_FREIGHTER );
 		SetWindowText ( sTitle );
 		}
 
@@ -186,7 +186,7 @@ BOOL CDlgLoadTruck::OnInitDialog()
 		}
 
 	CString sTitle;
-	sTitle.LoadString (IDS_LOAD_TRUCK);
+	sTitle = EnLoadString(IDS_LOAD_TRUCK);
 	csPrintf ( &sTitle, (char const *) m_pBldgPar->GetData()->GetDesc () );
 	SetWindowText ( sTitle );
 

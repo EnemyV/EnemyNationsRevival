@@ -118,24 +118,24 @@ void SDL2AdvOptionsDialog::OnInit() {
     AddWidget<SDL2Label>(lx, y, 120, rowH, "Zoom Levels:");
     m_radZoom = AddWidget<SDL2RadioGroup>(lx + 130, y, 200, rowH * 3,
         std::vector<std::string>{"All 4 levels", "3 levels", "2 levels"},
-        theApp.GetProfileInt("Advanced", "Zoom", 2));
+        EnGetProfileInt("Advanced", "Zoom", 2));
     if (theApp.GetFirstZoom() == 1) {
         m_radZoom->SetEnabled(0, false); m_radZoom->SetEnabled(1, false); m_radZoom->SetSelected(2);
     }
     y += rowH * 3 + 8;
     m_chkScroll = AddWidget<SDL2Checkbox>(lx, y, w, rowH, "Smooth Scrolling",
-        (bool)theApp.GetProfileInt("Advanced", "Scroll", 0)); y += rowH + 4;
+        (bool)EnGetProfileInt("Advanced", "Scroll", 0)); y += rowH + 4;
     m_chkPause = AddWidget<SDL2Checkbox>(lx, y, w, rowH, "Pause on Inactive",
-        (bool)theApp.GetProfileInt("Advanced", "Pause", 1)); y += rowH + 4;
+        (bool)EnGetProfileInt("Advanced", "Pause", 1)); y += rowH + 4;
     m_chkNoIntro = AddWidget<SDL2Checkbox>(lx, y, w, rowH, "Skip Intro Movie",
-        (bool)theApp.GetProfileInt("Game", "NoIntro", 0));
+        (bool)EnGetProfileInt("Game", "NoIntro", 0));
     AddOKCancelButtons();
 }
 
 void SDL2AdvOptionsDialog::OnOK() {
     BOOL bWarn = FALSE;
     auto check = [&](const char* sec, const char* key, int val, int def) {
-        if ((int)theApp.GetProfileInt(sec, key, def) != val) { theApp.WriteProfileInt(sec, key, val); bWarn = TRUE; }
+        if ((int)EnGetProfileInt(sec, key, def) != val) { EnWriteProfileInt(sec, key, val); bWarn = TRUE; }
     };
     check("Advanced", "Zoom", m_radZoom->GetSelected(), 2);
     check("Advanced", "Scroll", m_chkScroll->IsChecked() ? 1 : 0, 0);
@@ -163,21 +163,21 @@ void SDL2CreateSingleDialog::OnInit() {
     AddWidget<SDL2GroupBox>(rx - 8, y + rowH * 3 + 8, colW + 16, rowH * 5 + 8, "Starting Position");
 
     // AI difficulty — no separate title label, group box carries it
-    int savedAi = std::max(0, std::min(3, (int)theApp.GetProfileInt("Create", "Difficultity", 0)));
+    int savedAi = std::max(0, std::min(3, (int)EnGetProfileInt("Create", "Difficultity", 0)));
     m_radAiLevel = AddWidget<SDL2RadioGroup>(lx, y, colW, rowH * 4,
         std::vector<std::string>{"Easy", "Moderate", "Difficult", "Impossible"}, savedAi);
 
-    int numAi = std::max(1, std::min(20, (int)theApp.GetProfileInt("Create", "AiOpponents", 2)));
+    int numAi = std::max(1, std::min(20, (int)EnGetProfileInt("Create", "AiOpponents", 2)));
     AddWidget<SDL2Label>(lx, y + rowH * 4 + 4, colW - 60, rowH, "AI Players:");
     m_edtNumAi = AddWidget<SDL2EditBox>(lx + colW - 50, y + rowH * 4 + 4, 50, rowH, std::to_string(numAi));
 
     // World size
-    int savedSize = std::max(0, std::min(2, (int)theApp.GetProfileInt("Create", "Size", 1)));
+    int savedSize = std::max(0, std::min(2, (int)EnGetProfileInt("Create", "Size", 1)));
     m_radWorldSize = AddWidget<SDL2RadioGroup>(rx, y, colW, rowH * 3,
         std::vector<std::string>{"Small", "Medium", "Large"}, savedSize);
 
     // Starting position
-    int savedPos = std::max(0, std::min(3, (int)theApp.GetProfileInt("Create", "StartPosition", 1)));
+    int savedPos = std::max(0, std::min(3, (int)EnGetProfileInt("Create", "StartPosition", 1)));
     m_radStartPos = AddWidget<SDL2RadioGroup>(rx, y + rowH * 3 + 14, colW, rowH * 4,
         std::vector<std::string>{"Minimal Civilian", "Full Civilian", "Minimal Military", "Full Military"}, savedPos);
 
@@ -209,7 +209,7 @@ void SDL2PickRaceDialog::OnInit() {
 
     // Player name
     AddWidget<SDL2Label>(lx, y, 60, 24, "Name:");
-    std::string savedName = (LPCTSTR)CString(theApp.GetProfileString("Create", "Name", ""));
+    std::string savedName = (LPCTSTR)CString(EnGetProfileString("Create", "Name", ""));
     m_edtName = AddWidget<SDL2EditBox>(lx + 65, y, w - 65, 24, savedName,
         [this](const std::string& name) { OnNameChanged(name); });
     y += 34;
@@ -281,7 +281,7 @@ void SDL2PickRaceDialog::UpdateOKButton() {
 void SDL2PickRaceDialog::OnOK() {
     if (m_iSelectedRace < 0 || m_edtName->GetText().empty()) return;
     m_playerName = m_edtName->GetText();
-    theApp.WriteProfileString("Create", "Name", m_playerName.c_str());
+    EnWriteProfileString("Create", "Name", m_playerName.c_str());
     EndDialog(1);
 }
 
@@ -374,10 +374,10 @@ bool SDL2_RunCreateSinglePlayerFlow(GameWindow* gameWindow) {
     pCreate->m_iNumAi = createDlg.m_iNumAi;
     pCreate->m_iNet = -1;
 
-    theApp.WriteProfileInt("Create", "Difficultity", createDlg.m_iAiLevel);
-    theApp.WriteProfileInt("Create", "Size", createDlg.m_iWorldSize);
-    theApp.WriteProfileInt("Create", "AiOpponents", createDlg.m_iNumAi);
-    theApp.WriteProfileInt("Create", "StartPosition", createDlg.m_iStartPos);
+    EnWriteProfileInt("Create", "Difficultity", createDlg.m_iAiLevel);
+    EnWriteProfileInt("Create", "Size", createDlg.m_iWorldSize);
+    EnWriteProfileInt("Create", "AiOpponents", createDlg.m_iNumAi);
+    EnWriteProfileInt("Create", "StartPosition", createDlg.m_iStartPos);
 
     // Step 4: Set player race (same as CDlgPickRace::OnOK)
     CRaceDef* pRace = &ptheRaces[raceDlg.m_iSelectedRace];
@@ -482,7 +482,7 @@ void SDL2PickPlayerDialog::OnInit() {
     int lx = m_x + 20, y = m_y + 45, w = m_width - 40;
 
     AddWidget<SDL2Label>(lx, y, 60, 24, "Name:");
-    std::string savedName = (LPCTSTR)CString(theApp.GetProfileString("Create", "Name", ""));
+    std::string savedName = (LPCTSTR)CString(EnGetProfileString("Create", "Name", ""));
     m_edtName = AddWidget<SDL2EditBox>(lx + 65, y, w - 65, 24, savedName,
         [this](const std::string& name) { OnNameChanged(name); });
     y += 34;
@@ -548,7 +548,7 @@ void SDL2PickPlayerDialog::OnOK() {
     if (sel < 0 || m_edtName->GetText().empty()) return;
     m_iSelectedPlyrNum = m_players[sel].plyrNum;
     m_playerName = m_edtName->GetText();
-    theApp.WriteProfileString("Create", "Name", m_playerName.c_str());
+    EnWriteProfileString("Create", "Name", m_playerName.c_str());
     EndDialog(1);
 }
 
@@ -565,7 +565,7 @@ void SDL2CreateNetDialog::OnInit() {
     m_edtGameName = AddWidget<SDL2EditBox>(lx + 105, y, colW - 105, rowH, "My Game");
     y += rowH + 4;
     AddWidget<SDL2Label>(lx, y, 100, rowH, "Your Name:");
-    std::string savedName = (LPCTSTR)CString(theApp.GetProfileString("Create", "Name", ""));
+    std::string savedName = (LPCTSTR)CString(EnGetProfileString("Create", "Name", ""));
     m_edtPlayerName = AddWidget<SDL2EditBox>(lx + 105, y, colW - 105, rowH, savedName);
     AddWidget<SDL2Label>(rx, m_y + 45, 50, rowH, "Port:");
     m_edtPort = AddWidget<SDL2EditBox>(rx + 55, m_y + 45, 80, rowH, "2346");
@@ -574,19 +574,19 @@ void SDL2CreateNetDialog::OnInit() {
     AddWidget<SDL2Label>(lx, y, colW, rowH, "AI Difficulty:");
     m_radAiLevel = AddWidget<SDL2RadioGroup>(lx, y + rowH, colW, rowH * 4,
         std::vector<std::string>{"Easy", "Moderate", "Difficult", "Impossible"},
-        std::max(0, std::min(3, (int)theApp.GetProfileInt("Create", "Difficultity", 0))));
-    int numAi = std::max(0, std::min(20, (int)theApp.GetProfileInt("Create", "AiOpponents", 2)));
+        std::max(0, std::min(3, (int)EnGetProfileInt("Create", "Difficultity", 0))));
+    int numAi = std::max(0, std::min(20, (int)EnGetProfileInt("Create", "AiOpponents", 2)));
     AddWidget<SDL2Label>(lx, y + rowH * 5 + 8, colW - 60, rowH, "AI Players:");
     m_edtNumAi = AddWidget<SDL2EditBox>(lx + colW - 50, y + rowH * 5 + 8, 50, rowH, std::to_string(numAi));
 
     AddWidget<SDL2Label>(rx, y, colW, rowH, "World Size:");
     m_radWorldSize = AddWidget<SDL2RadioGroup>(rx, y + rowH, colW, rowH * 3,
         std::vector<std::string>{"Small", "Medium", "Large"},
-        std::max(0, std::min(2, (int)theApp.GetProfileInt("Create", "Size", 1))));
+        std::max(0, std::min(2, (int)EnGetProfileInt("Create", "Size", 1))));
     AddWidget<SDL2Label>(rx, y + rowH * 4 + 10, colW, rowH, "Starting Condition:");
     m_radStartPos = AddWidget<SDL2RadioGroup>(rx, y + rowH * 5 + 10, colW, rowH * 4,
         std::vector<std::string>{"Minimal Civilian", "Full Civilian", "Minimal Military", "Full Military"},
-        std::max(0, std::min(3, (int)theApp.GetProfileInt("Create", "StartPosition", 1))));
+        std::max(0, std::min(3, (int)EnGetProfileInt("Create", "StartPosition", 1))));
 
     AddOKCancelButtons();
 }
@@ -614,7 +614,7 @@ SDL2JoinNetDialog::SDL2JoinNetDialog(GameWindow* gameWindow)
 void SDL2JoinNetDialog::OnInit() {
     int lx = m_x + 20, y = m_y + 45, w = m_width - 40, rowH = 28;
     AddWidget<SDL2Label>(lx, y, 110, rowH, "Your Name:");
-    std::string savedName = (LPCTSTR)CString(theApp.GetProfileString("Create", "Name", ""));
+    std::string savedName = (LPCTSTR)CString(EnGetProfileString("Create", "Name", ""));
     m_edtPlayerName = AddWidget<SDL2EditBox>(lx + 115, y, w - 115, 24, savedName);
     y += rowH + 4;
     AddWidget<SDL2Label>(lx, y, 110, rowH, "Server Address:");
@@ -732,10 +732,10 @@ bool SDL2_RunCreateNetworkFlow(GameWindow* gameWindow) {
     pCreate->m_iNumAi = createDlg.m_iNumAi;
     pCreate->m_iNet = 0;
 
-    theApp.WriteProfileInt("Create", "Difficultity", createDlg.m_iAiLevel);
-    theApp.WriteProfileInt("Create", "Size", createDlg.m_iWorldSize);
-    theApp.WriteProfileInt("Create", "AiOpponents", createDlg.m_iNumAi);
-    theApp.WriteProfileInt("Create", "StartPosition", createDlg.m_iStartPos);
+    EnWriteProfileInt("Create", "Difficultity", createDlg.m_iAiLevel);
+    EnWriteProfileInt("Create", "Size", createDlg.m_iWorldSize);
+    EnWriteProfileInt("Create", "AiOpponents", createDlg.m_iNumAi);
+    EnWriteProfileInt("Create", "StartPosition", createDlg.m_iStartPos);
 
     CString sPort; sPort.Format("%d", createDlg.m_iPort);
     WritePrivateProfileString("TCP", "WellKnownPort", sPort, "vdmplay.ini");

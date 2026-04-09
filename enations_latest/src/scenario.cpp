@@ -1145,8 +1145,8 @@ void CDlgScenario::OnOK() {
 
     theGame.SetScenario(0);
 
-    theApp.WriteProfileInt("Create", "Difficultity", m_iAi);
-    theApp.WriteProfileInt("Create", "Size", m_iSize);
+    EnWriteProfileInt("Create", "Difficultity", m_iAi);
+    EnWriteProfileInt("Create", "Size", m_iSize);
 
     // switch to the pick race dialog
     if (m_pCs->m_dlgPickRace.m_hWnd == NULL)
@@ -1165,8 +1165,8 @@ BOOL CDlgScenario::OnInitDialog() {
     // init the radio buttons
     UpdateData(TRUE);
 
-    m_iAi = theApp.GetProfileInt("Create", "Difficultity", 0);
-    m_iSize = theApp.GetProfileInt("Create", "Size", 0);
+    m_iAi = EnGetProfileInt("Create", "Difficultity", 0);
+    m_iSize = EnGetProfileInt("Create", "Size", 0);
 
 #ifndef HACK_TEST_AI
     // shareware restrictions

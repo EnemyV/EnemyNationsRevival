@@ -91,6 +91,7 @@ set(enations_sources
         wrldgen.cpp
         mem_pool.h
         cpuspeed.cpp
+        EnSettings.cpp
         GameWindow.cpp
         RenderingAdapter.cpp
         SDL2MainMenu.cpp

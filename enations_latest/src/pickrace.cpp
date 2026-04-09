@@ -138,7 +138,7 @@ void CDlgPickRace::OnOK() {
     m_pCb->m_sName = m_sName;
     m_pCb->m_sRace = pRaceDef->GetLine();
 
-    theApp.WriteProfileString("Create", "Name", m_sName);
+    EnWriteProfileString("Create", "Name", m_sName);
 
     // copy the attributes
     theGame.GetMe()->SetName(m_sName);
@@ -248,7 +248,7 @@ BOOL CDlgPickRace::OnInitDialog() {
 
     // init the radio buttons
     UpdateData(TRUE);
-    m_sName = theApp.GetProfileString("Create", "Name");
+    m_sName = EnGetProfileString("Create", "Name");
     UpdateData(FALSE);
     m_btnOk.EnableWindow(FALSE);
 
@@ -426,14 +426,14 @@ void CDlgPickPlayer::OnSelchangeRaceList() {
     if (pData->m_bAvail)
         m_sDesc = "";
     else {
-        m_sDesc.LoadString(IDS_PLYR_TAKEN);
+        m_sDesc = EnLoadString(IDS_PLYR_TAKEN);
         m_sDesc += "\r\n";
     }
 
     CString sTmp;
-    sTmp.LoadString(IDS_BUILDINGS);
+    sTmp = EnLoadString(IDS_BUILDINGS);
     m_sDesc += sTmp + " " + IntToCString(pData->m_iNumBldgs) + "\r\n";
-    sTmp.LoadString(IDS_VEHICLES);
+    sTmp = EnLoadString(IDS_VEHICLES);
     m_sDesc += sTmp + " " + IntToCString(pData->m_iNumVeh) + "\r\n";
     for (int iOn = 0; iOn < CMaterialTypes::GetNumTypes(); iOn++)
         if (pData->m_iMat[iOn] > 0)
@@ -488,7 +488,7 @@ void CDlgPickPlayer::OnOK() {
     // save the parameters we use
     UpdateData(TRUE);
     m_pCb->m_sName = m_sName;
-    theApp.WriteProfileString("Create", "Name", m_sName);
+    EnWriteProfileString("Create", "Name", m_sName);
 
     // we handle join here because it hasn't loaded the game yet
     // ask if we can have this player
@@ -614,7 +614,7 @@ BOOL CDlgPickPlayer::OnInitDialog() {
     CenterWindow(theApp.m_pMainWnd);
 
     UpdateData(TRUE);
-    m_sName = theApp.GetProfileString("Create", "Name");
+    m_sName = EnGetProfileString("Create", "Name");
     UpdateData(FALSE);
 
     BOOL bEnb = FALSE;

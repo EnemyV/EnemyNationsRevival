@@ -154,10 +154,10 @@ void CWndBar::Create( )
 {
 
     // load the strings
-    m_sChat1.LoadString( IDS_NO_CHAT1 );
-    m_sChat2.LoadString( IDS_NO_CHAT2 );
-    m_sScience.LoadString( IDS_NO_SCIENCE );
-    m_sRelations.LoadString( IDS_NO_EMBASSY );
+    m_sChat1 = EnLoadString( IDS_NO_CHAT1 );
+    m_sChat2 = EnLoadString( IDS_NO_CHAT2 );
+    m_sScience = EnLoadString( IDS_NO_SCIENCE );
+    m_sRelations = EnLoadString( IDS_NO_EMBASSY );
 
     // we go at the bottom of the main window (in case the Windows toolbar pushes it up/over)
     CRect rect;
@@ -565,7 +565,7 @@ LRESULT CWndBar::OnStatusMouseMove( WPARAM, LPARAM lParam )
     CString sText;  // default to blank
     if ( (CWnd*)lParam == &m_wndStat[gas] )
     {
-        sText.LoadString( IDH_STAT_GAS );
+        sText = EnLoadString( IDH_STAT_GAS );
         CString sNum1, sNum2;
         sNum1 = IntToCString( theGame.GetMe( )->GetGasNeed( ) );
         sNum2 = IntToCString( theGame.GetMe( )->GetGasHave( ) );
@@ -573,7 +573,7 @@ LRESULT CWndBar::OnStatusMouseMove( WPARAM, LPARAM lParam )
     }
     else if ( (CWnd*)lParam == &m_wndStat[power] )
     {
-        sText.LoadString( IDH_STAT_POWER );
+        sText = EnLoadString( IDH_STAT_POWER );
         CString sNum1, sNum2;
         sNum1 = IntToCString( theGame.GetMe( )->GetPwrNeed( ) );
         sNum2 = IntToCString( theGame.GetMe( )->GetPwrHave( ) );
@@ -586,7 +586,7 @@ LRESULT CWndBar::OnStatusMouseMove( WPARAM, LPARAM lParam )
         sNum3 = IntToCString( theGame.GetMe( )->GetPplVeh( ) );
         if ( theGame.GetMe( )->GetPplBldg( ) >= theGame.GetMe( )->GetPplNeedBldg( ) )
         {
-            sText.LoadString( IDH_STAT_PEOPLE );
+            sText = EnLoadString( IDH_STAT_PEOPLE );
             CString sNum2, sNum4;
             sNum2 = IntToCString( theGame.GetMe( )->GetPplNeedBldg( ) );
             sNum4 = IntToCString( theGame.GetMe( )->GetPplBldg( ) - theGame.GetMe( )->GetPplNeedBldg( ) );
@@ -594,7 +594,7 @@ LRESULT CWndBar::OnStatusMouseMove( WPARAM, LPARAM lParam )
         }
         else
         {
-            sText.LoadString( IDH_STAT_PEOPLE2 );
+            sText = EnLoadString( IDH_STAT_PEOPLE2 );
             CString sNum2, sNum4;
             sNum2 = IntToCString( theGame.GetMe( )->GetPplBldg( ) );
             sNum4 = IntToCString( theGame.GetMe( )->GetPplNeedBldg( ) - theGame.GetMe( )->GetPplBldg( ) );
@@ -603,14 +603,14 @@ LRESULT CWndBar::OnStatusMouseMove( WPARAM, LPARAM lParam )
     }
     else if ( (CWnd*)lParam == &m_wndStat[food] )
     {
-        sText.LoadString( IDH_STAT_FOOD );
+        sText = EnLoadString( IDH_STAT_FOOD );
         CString sNum1, sNum2;
         sNum1 = IntToCString( theGame.GetMe( )->GetFoodNeed( ) );
         sNum2 = IntToCString( theGame.GetMe( )->GetFood( ) );
         csPrintf( &sText, (char const*)sNum1, (char const*)sNum2 );
     }
     else if ( (CWnd*)lParam == &m_wndTime )
-        sText.LoadString( IDH_STAT_CLOCK );
+        sText = EnLoadString( IDH_STAT_CLOCK );
 
     m_wndText[1].SetText( sText );
     return ( 0 );

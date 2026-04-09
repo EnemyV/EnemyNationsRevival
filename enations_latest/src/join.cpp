@@ -286,7 +286,7 @@ void CDlgJoinPublish::SetControls( )
     {
         m_idOK = ID;
         CString sBtn;
-        sBtn.LoadString( ID );
+        sBtn = EnLoadString( ID );
         m_BtnOk.SetWindowText( sBtn );
     }
 
@@ -328,9 +328,9 @@ BOOL CDlgJoinPublish::OnInitDialog( )
 
     UpdateData( TRUE );
 
-    m_sName = theApp.GetProfileString( "Create", "Name" );
+    m_sName = EnGetProfileString( "Create", "Name" );
 
-    m_NetRadio = theApp.GetProfileInt( "Create", "Connection", 0 );
+    m_NetRadio = EnGetProfileInt( "Create", "Connection", 0 );
     m_NetRadio = __minmax( 0, NUM_PROTOCOLS - 1, m_NetRadio );
     if ( !CNetApi::SupportsProtocol( aPr[m_NetRadio] ) )
         for ( int iRad = 0; iRad < NUM_PROTOCOLS; iRad++ )
@@ -375,8 +375,8 @@ void CDlgJoinPublish::OnOK( )
     m_pJm->m_iNet  = m_NetRadio;
     m_pJm->m_sName = m_sName;
 
-    theApp.WriteProfileString( "Create", "Name", m_sName );
-    theApp.WriteProfileInt( "Create", "Connection", m_NetRadio );
+    EnWriteProfileString( "Create", "Name", m_sName );
+    EnWriteProfileInt( "Create", "Connection", m_NetRadio );
 
     // check for a name that is too long
     if ( m_sName.GetLength( ) >= iMaxNameLen )
@@ -467,9 +467,9 @@ CDlgJoinGame::CDlgJoinGame( CWnd* pParent /*=NULL*/ ): CDialog( CDlgJoinGame::ID
     m_strType    = _T("");
     //}}AFX_DATA_INIT
 
-    m_sVer.LoadString( IDS_EN_VER );
+    m_sVer = EnLoadString( IDS_EN_VER );
     m_sVer += VER_STRING;
-    m_sVpVer.LoadString( IDS_VP_VER );
+    m_sVpVer = EnLoadString( IDS_VP_VER );
     long lVer = CNetApi::GetVersion( );
     m_sVpVer += IntToCString( HIBYTE( HIWORD( lVer ) ) ) + "." + IntToCString( LOBYTE( HIWORD( lVer ) ) ) + "." +
                 IntToCString( LOWORD( lVer ) );
@@ -531,26 +531,26 @@ void CDlgJoinGame::SetControls( )
     CString sText;
     if ( theNet.GetMode( ) != CNetApi::joined )
     {
-        sText.LoadString( IDS_JOIN_JOIN );
+        sText = EnLoadString( IDS_JOIN_JOIN );
         m_btnOK.SetWindowText( sText );
-        sText.LoadString( IDS_PREV );
+        sText = EnLoadString( IDS_PREV );
         m_btnPrev.SetWindowText( sText );
     }
     else
     {
-        sText.LoadString( IDS_CREATE_CHOOSE );
+        sText = EnLoadString( IDS_CREATE_CHOOSE );
         m_btnOK.SetWindowText( sText );
-        sText.LoadString( IDS_UNPUBLISH );
+        sText = EnLoadString( IDS_UNPUBLISH );
         m_btnPrev.SetWindowText( sText );
     }
 
     if ( theNet.GetMode( ) == CNetApi::joined )
     {
-        sText.LoadString( IDS_JOIN1_TITLE_SEL );
+        sText = EnLoadString( IDS_JOIN1_TITLE_SEL );
         csPrintf( &sText, (const char*)m_pJm->m_sGameName );
     }
     else
-        sText.LoadString( IDS_JOIN1_TITLE );
+        sText = EnLoadString( IDS_JOIN1_TITLE );
     SetWindowText( sText );
 }
 
@@ -567,16 +567,16 @@ BOOL CDlgJoinGame::OnInitDialog( )
 
     UpdateData( TRUE );
     CString sTemp;
-    sTemp.LoadString( IDS_YOUR_ADDR );
+    sTemp = EnLoadString( IDS_YOUR_ADDR );
     m_sAddr = sTemp + theNet.GetAddress( );
 
-    sTemp.LoadString( IDS_IS_ADDR );
+    sTemp = EnLoadString( IDS_IS_ADDR );
     m_sIsAddr = theNet.GetIServeAddress( );
     if ( m_sIsAddr.IsEmpty( ) )
     {
         m_bTimer = TRUE;
         SetTimer( 109, 2000, NULL );
-        m_sIsAddr.LoadString( IDS_NONE );
+        m_sIsAddr = EnLoadString( IDS_NONE );
         char sName[160];
         GetPrivateProfileString( "TCP", "ServerAddress", "iserve.windward.net", sName, 158, "vdmplay.ini" );
         csPrintf( &m_sIsAddr, (const char*)sName );
@@ -603,7 +603,7 @@ void CDlgJoinGame::OnShowAddr( )
 
     SetWindowPos( NULL, 0, 0, m_iWid, m_bAddrShowing ? m_iHtAddr : m_iHtNoAddr, SWP_NOMOVE | SWP_NOZORDER );
     CString sText;
-    sText.LoadString( m_bAddrShowing ? IDS_ADDR_OFF : IDS_ADDR );
+    sText = EnLoadString( m_bAddrShowing ? IDS_ADDR_OFF : IDS_ADDR );
     SetDlgItemText( IDC_PLYR_DO_ADDR, sText );
 }
 
@@ -620,7 +620,7 @@ void CDlgJoinGame::OnTimer( UINT nIDEvent )
     KillTimer( nIDEvent );
 
     UpdateData( TRUE );
-    m_sIsAddr.LoadString( IDS_IS_ADDR );
+    m_sIsAddr = EnLoadString( IDS_IS_ADDR );
     m_sIsAddr += sIserve;
     UpdateData( FALSE );
 }
@@ -799,8 +799,8 @@ void CDlgJoinGame::OnSelchangeJoinGames( )
         m_pJm->m_sGameName = pCgi->m_sName;
         m_strDesc          = pCgi->m_sDesc;
         m_strNumAI         = IntToCString( pCgi->m_iNumOpponents );
-        m_strAIlevel.LoadString( IDS_JOIN_AI_0 + pCgi->m_iAIlevel );
-        m_strSize.LoadString( IDS_JOIN_SIZE_0 + pCgi->m_iWorldSize );
+        m_strAIlevel = EnLoadString( IDS_JOIN_AI_0 + pCgi->m_iAIlevel );
+        m_strSize = EnLoadString( IDS_JOIN_SIZE_0 + pCgi->m_iWorldSize );
 
         INT ID = IDS_POS_MIN_CIV;
         switch ( pCgi->m_iPos )
@@ -815,14 +815,14 @@ void CDlgJoinGame::OnSelchangeJoinGames( )
             ID = IDS_POS_FULL_COM;
             break;
         }
-        m_sPos.LoadString( ID );
+        m_sPos = EnLoadString( ID );
 
         ID = IDS_JOIN_NEW;
         if ( pCgi->m_cFlags & CNetPublish::fload )
             ID = IDS_JOIN_LOAD;
         else if ( pCgi->m_cFlags & CNetPublish::finprogress )
             ID = IDS_JOIN_INPROGRESS;
-        m_strType.LoadString( ID );
+        m_strType = EnLoadString( ID );
     }
 
     UpdateData( FALSE );

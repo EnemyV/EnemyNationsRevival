@@ -477,12 +477,12 @@ void CWndListBuildings::Create() {
     m_pDibUnit = theBitmaps.GetByIndex(DIB_LIST_UNIT_BUILDINGS);
 
     CString sTitle;
-    sTitle.LoadString(IDS_TITLE_BUILDINGS);
+    sTitle = EnLoadString(IDS_TITLE_BUILDINGS);
     if (CreateEx(0, theApp.m_sWndCls, sTitle, dwPopWndStyle,
-                 theApp.GetProfileInt(theApp.m_sResIni, "BuildX", theApp.m_iCol2),
-                 theApp.GetProfileInt(theApp.m_sResIni, "BuildY", theApp.m_iRow4),
-                 __max (256, theApp.GetProfileInt(theApp.m_sResIni, "BuildEX", theApp.m_iScrnX - theApp.m_iCol2 + 1)),
-                 theApp.GetProfileInt(theApp.m_sResIni, "BuildEY", (theApp.m_iRow3 - theApp.m_iRow4 + 1) / 2),
+                 EnGetProfileInt(theApp.m_sResIni, "BuildX", theApp.m_iCol2),
+                 EnGetProfileInt(theApp.m_sResIni, "BuildY", theApp.m_iRow4),
+                 __max (256, EnGetProfileInt(theApp.m_sResIni, "BuildEX", theApp.m_iScrnX - theApp.m_iCol2 + 1)),
+                 EnGetProfileInt(theApp.m_sResIni, "BuildEY", (theApp.m_iRow3 - theApp.m_iRow4 + 1) / 2),
                  theApp.m_pMainWnd->m_hWnd, NULL, NULL) == 0)
         ThrowError(ERR_RES_CREATE_WND);
 }
@@ -543,13 +543,13 @@ void CWndListVehicles::Create() {
     m_pDibUnit = theBitmaps.GetByIndex(DIB_LIST_UNIT_VEHICLES);
 
     CString sTitle;
-    sTitle.LoadString(IDS_TITLE_VEHICLES);
+    sTitle = EnLoadString(IDS_TITLE_VEHICLES);
     int y = (theApp.m_iRow3 + theApp.m_iRow4) / 2 - 1;
     if (CreateEx(0, theApp.m_sWndCls, sTitle, dwPopWndStyle,
-                 theApp.GetProfileInt(theApp.m_sResIni, "VehicleX", theApp.m_iCol2),
-                 theApp.GetProfileInt(theApp.m_sResIni, "VehicleY", y),
-                 __max (256, theApp.GetProfileInt(theApp.m_sResIni, "VehicleEX", theApp.m_iScrnX - theApp.m_iCol2 + 1)),
-                 theApp.GetProfileInt(theApp.m_sResIni, "VehicleEY", theApp.m_iRow3 - y + 1),
+                 EnGetProfileInt(theApp.m_sResIni, "VehicleX", theApp.m_iCol2),
+                 EnGetProfileInt(theApp.m_sResIni, "VehicleY", y),
+                 __max (256, EnGetProfileInt(theApp.m_sResIni, "VehicleEX", theApp.m_iScrnX - theApp.m_iCol2 + 1)),
+                 EnGetProfileInt(theApp.m_sResIni, "VehicleEY", theApp.m_iRow3 - y + 1),
                  theApp.m_pMainWnd->m_hWnd, NULL, NULL) == 0)
         ThrowError(ERR_RES_CREATE_WND);
 }
@@ -856,13 +856,13 @@ BOOL CDlgBuildStructure::OnInitDialog() {
 
     m_pSd = NULL;
 
-    m_sCost.LoadString(IDS_COST);
-    m_sHave.LoadString(IDS_HAVE);
-    m_sNeed.LoadString(IDS_NEED);
-    m_sTime.LoadString(IDS_TIME);
-    m_sOper.LoadString(IDS_OPERATING);
-    m_sPeople.LoadString(IDS_PEOPLE);
-    m_sPower.LoadString(IDS_POWER);
+    m_sCost = EnLoadString(IDS_COST);
+    m_sHave = EnLoadString(IDS_HAVE);
+    m_sNeed = EnLoadString(IDS_NEED);
+    m_sTime = EnLoadString(IDS_TIME);
+    m_sOper = EnLoadString(IDS_OPERATING);
+    m_sPeople = EnLoadString(IDS_PEOPLE);
+    m_sPower = EnLoadString(IDS_POWER);
 
     m_pDibBkgnd = new CDIB(ptrthebltformat->GetColorFormat(), CBLTFormat::DIB_MEMORY,
                            CBLTFormat::DIR_BOTTOMUP, 465, 345);
@@ -1459,11 +1459,11 @@ BOOL CDlgBuildTransport::OnInitDialog() {
 
     m_pBu = NULL;
 
-    m_sCost.LoadString(IDS_COST);
-    m_sHave.LoadString(IDS_HAVE);
-    m_sNeed.LoadString(IDS_NEED);
-    m_sTime.LoadString(IDS_TIME);
-    m_sPeople.LoadString(IDS_PEOPLE);
+    m_sCost = EnLoadString(IDS_COST);
+    m_sHave = EnLoadString(IDS_HAVE);
+    m_sNeed = EnLoadString(IDS_NEED);
+    m_sTime = EnLoadString(IDS_TIME);
+    m_sPeople = EnLoadString(IDS_PEOPLE);
 
     m_pDibBkgnd = new CDIB(ptrthebltformat->GetColorFormat(), CBLTFormat::DIB_MEMORY,
                            CBLTFormat::DIR_BOTTOMUP, 380, 332);
@@ -1509,7 +1509,7 @@ BOOL CDlgBuildTransport::OnInitDialog() {
     // if its troops we change the title
     if (m_pBldgPar->GetData()->GetBldgType() == CStructureData::barracks) {
         CString sTitle;
-        sTitle.LoadString(IDS_BUILD_PEOPLE);
+        sTitle = EnLoadString(IDS_BUILD_PEOPLE);
         SetWindowText(sTitle);
     }
 
@@ -1645,16 +1645,16 @@ void CDlgBuildTransport::UpdateStatus(int iPer) {
     // set the title
     CString sTitle;
     if (iPer != 0) {
-        sTitle.LoadString(IDS_BUILD_UNIT);
+        sTitle = EnLoadString(IDS_BUILD_UNIT);
         CBuildUnit const *pBu = m_pBldgPar->GetBldUnt();
         if (pBu == NULL)
             csPrintf(&sTitle, (char const *) "");
         else
             csPrintf(&sTitle, (char const *) theTransports.GetData(pBu->GetVehType())->GetDesc());
     } else if (m_pBldgPar->GetData()->GetBldgType() == CStructureData::barracks)
-        sTitle.LoadString(IDS_BUILD_PEOPLE);
+        sTitle = EnLoadString(IDS_BUILD_PEOPLE);
     else
-        sTitle.LoadString(IDS_BUILD_VEHICLE);
+        sTitle = EnLoadString(IDS_BUILD_VEHICLE);
     SetWindowText(sTitle);
 
     // the below we do only if we aren't active
@@ -2033,7 +2033,7 @@ int CWndRoute::OnCreate(LPCREATESTRUCT lpCreateStruct) {
     OnLbnClk();
 
     CString sTitle;
-    sTitle.LoadString(IDS_ROUTE_TITLE);
+    sTitle = EnLoadString(IDS_ROUTE_TITLE);
     csPrintf(&sTitle, (char const *) m_pVeh->GetData()->GetDesc());
     SetWindowText(sTitle);
 
@@ -2325,7 +2325,7 @@ void CWndRoute::VehDesc(CVehicle *pVeh, POSITION &pos, CString &sLine) {
     }
 
     CString sRes;
-    sRes.LoadString(ID);
+    sRes = EnLoadString(ID);
     sLine += "\t" + sRes;
 }
 

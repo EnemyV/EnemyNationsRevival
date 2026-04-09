@@ -207,7 +207,7 @@ void CChatWnd::SetFrom( CPlayer* pPlyr )
 
     // update the title
     CString sTitle;
-    sTitle.LoadString( IDS_CHAT_TITLE );
+    sTitle = EnLoadString( IDS_CHAT_TITLE );
     csPrintf( &sTitle, (const char*)pPlyr->GetName( ) );
     SetWindowText( sTitle );
 

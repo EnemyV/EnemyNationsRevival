@@ -315,7 +315,7 @@ BOOL CMyButton::Create( char const* psText, int idHelp, CRect& rect, CDIB* pBack
     ASSERT_VALID( pPar );
 
     // the help text
-    m_sHelp.LoadString( idHelp );
+    m_sHelp = EnLoadString( idHelp );
 
     m_pBackDib = pBackDib;
 
@@ -452,7 +452,7 @@ BOOL CTextButton::Create( int idText, int idHelp, CTextBtnData* pTbd, CRect& rec
     m_pTextBtnData = pTbd;
 
     CString sTitle;
-    sTitle.LoadString( idText );
+    sTitle = EnLoadString( idText );
 
     return ( CMyButton::Create( sTitle, idHelp, rect, pBackDib, pPar, ID ) );
 }

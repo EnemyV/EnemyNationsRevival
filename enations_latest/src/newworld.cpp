@@ -212,7 +212,7 @@ void CConquerApp::ReadyToCreate() {
     float fInc = (float) (theGame.GetAll().GetCount()) / (float) m_pCreateGame->m_iNumAi;
     float fOn = 0.0;
     CString sName;
-    sName.LoadString(IDS_AI_PLAYER);
+    sName = EnLoadString(IDS_AI_PLAYER);
 
     for (int iPlyrOn = 0; iPlyrOn < m_pCreateGame->m_iNumAi; iPlyrOn++) {
         CString sBuf(sName);
@@ -243,7 +243,7 @@ void CConquerApp::ReadyToCreate() {
 
 #ifdef _CHEAT
         // seed override, for testing i assume
-        if (theApp.GetProfileInt ("Debug", "SetRand", 0))
+        if (EnGetProfileInt("Debug", "SetRand", 0))
             {
             CDlgRandNum dlg;
             dlg.m_sNum = IntToCString (uRand);
@@ -305,7 +305,7 @@ void CConquerApp::StartCreateWorld() {
     unsigned uRand = MySeed();
 
 #ifdef _CHEAT
-    if (theApp.GetProfileInt ("Debug", "SetRand", 0))
+    if (EnGetProfileInt("Debug", "SetRand", 0))
         {
         CDlgRandNum dlg;
         dlg.m_sNum = IntToCString (uRand);
@@ -406,7 +406,7 @@ void CConquerApp::CreateNewWorld(unsigned uRand, AIinit *pAiData, int iSide, int
     xiDir = 0;
     xpdibwnd = NULL;
 
-    CUnit::m_sDamage.LoadString(IDS_DAMAGE);
+    CUnit::m_sDamage = EnLoadString(IDS_DAMAGE);
     InitColors( );
 
     // put up a creating window and hourglass
@@ -693,7 +693,7 @@ void CConquerApp::StartAi() {
             OutputDebugStringA( "AiSetup\n" );
 #endif
 #ifdef _CHEAT
-           if (!theApp.GetProfileInt ("Debug", "NoThreads", 0))
+           if (!EnGetProfileInt("Debug", "NoThreads", 0))
 #endif
             AiSetup(pPlr);
 
@@ -872,7 +872,7 @@ void CConquerApp::LetsGo() {
     // eric needs AI locations
 #ifdef _CHEAT
     if (theGame.AmServer ())
-        if (theApp.GetProfileInt ("Debug", "ShowAIStart", 0))
+        if (EnGetProfileInt("Debug", "ShowAIStart", 0))
             dlgAiPos.Create (CDlgAiPos::IDD, &m_wndMain);
 #endif
 

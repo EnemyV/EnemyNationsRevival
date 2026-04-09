@@ -78,7 +78,7 @@ void CUnit::ShowStatusText( CString& str )
 {
 
     // list the damage level
-    str.LoadString( IDS_STAT_DAMAGE );
+    str = EnLoadString( IDS_STAT_DAMAGE );
     int iPer     = 100 - GetDamagePer( );
     iPer         = __min( 99, iPer );
     CString sNum = IntToCString( iPer );
@@ -91,7 +91,7 @@ void CBuilding::ShowStatusText( CString& str )
     // if under construction show % done
     if ( m_iConstDone != -1 )
     {
-        str.LoadString( IDS_STAT_CONST );
+        str = EnLoadString( IDS_STAT_CONST );
         CString sNum = IntToCString( m_iLastPer );
         csPrintf( &str, (char const*)sNum );
         return;
@@ -99,7 +99,7 @@ void CBuilding::ShowStatusText( CString& str )
 
     if ( GetData( )->GetType( ) == CStructureData::rocket )
     {
-        str.LoadString( IDS_STAT_ROCKET );
+        str = EnLoadString( IDS_STAT_ROCKET );
         CString sNum1 = IntToCString( theGame.GetMe( )->GetPplTotal( ) );
         CString sNum2 = IntToCString( theGame.GetMe( )->m_iAptCap );
         CString sNum3 = IntToCString( theGame.GetMe( )->GetPplBldg( ) );
@@ -115,10 +115,10 @@ void CBuilding::ShowStatusText( CString& str )
     {
         if ( theGame.GetMe( )->GetRsrchItem( ) <= 0 )
         {
-            str.LoadString( IDS_STAT_IDLE );
+            str = EnLoadString( IDS_STAT_IDLE );
             return;
         }
-        str.LoadString( IDS_RESEARCHING );
+        str = EnLoadString( IDS_RESEARCHING );
         csPrintf( &str, (char const*)theRsrch.ElementAt( theGame.GetMe( )->GetRsrchItem( ) ).m_sName );
         return;
     }
@@ -155,7 +155,7 @@ void CMaterialBuilding::ShowStatusText( CString& str )
                                             float( pBm->GetTime( ) ) ) );
     itoa( iNum, sNum, 10 );
 
-    str.LoadString( IDS_STAT_MATERIAL );
+    str = EnLoadString( IDS_STAT_MATERIAL );
     csPrintf( &str, pDesc, sNum );
 }
 
@@ -171,12 +171,12 @@ void CVehicleBuilding::ShowStatusText( CString& str )
     CBuildUnit const* pBldUnt = GetBldUnt( );
     if ( pBldUnt == NULL )
     {
-        str.LoadString( IDS_STAT_IDLE );
+        str = EnLoadString( IDS_STAT_IDLE );
         return;
     }
 
     // show what we are building
-    str.LoadString( IDS_STAT_BUILD );
+    str = EnLoadString( IDS_STAT_BUILD );
     CString sNum = IntToCString( m_iLastPer );
     csPrintf( &str, (LPCSTR)theTransports.GetData( pBldUnt->GetVehType( ) )->GetDesc( ), (char const*)sNum );
 }
@@ -190,7 +190,7 @@ void CFarmBuilding::ShowStatusText( CString& str )
         return;
     }
 
-    str.LoadString( IDS_STAT_FARM );
+    str = EnLoadString( IDS_STAT_FARM );
     CBuildFarm* pBf = GetData( )->GetBldFarm( );
     CString     sNum =
         IntToCString( GetFrameProd( GetOwner( )->GetFarmProd( ) * m_iTerMult * float( 24 * 60 * pBf->GetQuantity( ) ) /
@@ -212,11 +212,11 @@ void CPowerBuilding::ShowStatusText( CString& str )
     if ( pBp->GetInput( ) >= 0 )
         if ( GetStore( pBp->GetInput( ) ) <= 0 )
         {
-            str.LoadString( IDS_STAT_IDLE );
+            str = EnLoadString( IDS_STAT_IDLE );
             return;
         }
 
-    str.LoadString( IDS_STAT_POWER );
+    str = EnLoadString( IDS_STAT_POWER );
     CString sNum  = IntToCString( (int)( GetFrameProd( 1 ) * (float)GetData( )->GetBldPower( )->GetPower( ) ) );
     CString sNum2 = IntToCString( GetData( )->GetBldPower( )->GetPower( ) );
     csPrintf( &str, (char const*)sNum, (char const*)sNum2 );
@@ -233,12 +233,12 @@ void CRepairBuilding::ShowStatusText( CString& str )
 
     if ( m_pVehRepairing == NULL )
     {
-        str.LoadString( IDS_STAT_IDLE );
+        str = EnLoadString( IDS_STAT_IDLE );
         return;
     }
 
     // show what we are building
-    str.LoadString( IDS_STAT_REPAIR );
+    str = EnLoadString( IDS_STAT_REPAIR );
     CString sNum = IntToCString( m_iLastPer );
     csPrintf( &str, (LPCSTR)m_pVehRepairing->GetData( )->GetDesc( ), (char const*)sNum );
 }
@@ -253,7 +253,7 @@ void CShipyardBuilding::ShowStatusText( CString& str )
     }
 
     // show what we are building
-    str.LoadString( IDS_STAT_REPAIR );
+    str = EnLoadString( IDS_STAT_REPAIR );
     CString sNum = IntToCString( m_iLastPer );
     csPrintf( &str, (LPCSTR)m_pVehRepairing->GetData( )->GetDesc( ), (char const*)sNum );
 }
@@ -284,7 +284,7 @@ void CHousingBuilding::ShowStatusText( CString& str )
         iRes2 = IDS_STAT_OFFICE2;
     }
 
-    str.LoadString( iHave >= iNeed ? iRes1 : iRes2 );
+    str = EnLoadString( iHave >= iNeed ? iRes1 : iRes2 );
     CString sNum1 = IntToCString( iHave >= iNeed ? iNeed : iHave, 10, TRUE );
     CString sNum2 = IntToCString( iHave >= iNeed ? iHave - iNeed : iNeed, 10, TRUE );
     csPrintf( &str, (char const*)sNum1, (char const*)sNum2 );
@@ -302,7 +302,7 @@ void CMineBuilding::ShowStatusText( CString& str )
     // if out - say so
     if ( m_iMinerals <= 0 )
     {
-        str.LoadString( IDS_EXHAUSTED );
+        str = EnLoadString( IDS_EXHAUSTED );
         csPrintf( &str, (LPCSTR)CMaterialTypes::GetDesc( GetData( )->GetBldMine( )->GetTypeMines( ) ) );
         return;
     }
@@ -317,7 +317,7 @@ void CMineBuilding::ShowStatusText( CString& str )
     else
         sNum1 = IntToCString( iRate10 / 10 ) + "." + IntToCString( iRate10 % 10 );
 
-    str.LoadString( IDS_STAT_MINE );
+    str = EnLoadString( IDS_STAT_MINE );
     CString sNum2 = IntToCString( m_iMinerals, 10, TRUE );
     CString sNum3 = IntToCString( m_iDensity, 10, TRUE );
     csPrintf( &str, (char const*)sNum1, (char const*)sNum2, (char const*)sNum3 );
@@ -328,7 +328,7 @@ void CVehicle::ShowStatusText( CString& str )
 
     if ( GetData( )->IsCarrier( ) )
     {
-        str.LoadString( IDS_STAT_CARRIER );
+        str = EnLoadString( IDS_STAT_CARRIER );
         CString sNum = IntToCString( m_lstCargo.GetCount( ) );
         csPrintf( &str, (char const*)sNum );
         return;
@@ -1923,7 +1923,7 @@ CBuilding::CBuilding( int iBldg, int iBldgDir, int iOwner, DWORD dwID ): m_hex( 
     m_iVisible = 0;
 
 #ifdef _CHEAT
-    if ( theApp.GetProfileInt( "Cheat", "SeeAll", 0 ) )
+    if ( EnGetProfileInt( "Cheat", "SeeAll", 0 ) )
         m_iVisible = 1;
 #endif
 
@@ -2866,7 +2866,7 @@ BOOL CBuilding::InitRocket( CHexCoord const& hex, BOOL bMe )
         }
 
 #ifdef _CHEAT
-        if ( theApp.GetProfileInt( "Cheat", "AllUnits", 0 ) )
+        if ( EnGetProfileInt( "Cheat", "AllUnits", 0 ) )
         {
             int i = 0;
             for ( i = 0; i < CTransportData::light_cargo; i++ )
@@ -2886,7 +2886,7 @@ BOOL CBuilding::InitRocket( CHexCoord const& hex, BOOL bMe )
                 DropUnits(i, pData->GetWheelType( ), 3, 3, aiTime, iBlkSiz, m_hexExit, hexUL );
         }
 
-        if ( ( !GetOwner( )->IsAI( ) ) && ( theApp.GetProfileInt( "Cheat", "MoreTanks", 0 ) ) )
+        if ( ( !GetOwner( )->IsAI( ) ) && ( EnGetProfileInt( "Cheat", "MoreTanks", 0 ) ) )
         {
             DropUnits( CTransportData::heavy_tank, theTransports.GetData( CTransportData::heavy_tank )->GetWheelType( ),
                        8, 8, aiTime, iBlkSiz, m_hexExit, hexUL );

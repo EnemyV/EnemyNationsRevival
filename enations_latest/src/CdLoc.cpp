@@ -26,8 +26,8 @@ BOOL CheckForCD ()
 		return (TRUE);
 
 	// default is the .DAT file location
-	theApp.m_sCdFile = theApp.GetProfileString ("Game", "DataFile", "");
-	theApp.m_sCdFile = theApp.GetProfileString ("Game", "CDLocation", theApp.m_sCdFile );
+	theApp.m_sCdFile = EnGetProfileString("Game", "DataFile", "");
+	theApp.m_sCdFile = EnGetProfileString("Game", "CDLocation", theApp.m_sCdFile );
 
 	// force the drive location
 	theApp.m_sCdFile = CString ( theApp.m_sCdFile [0] ) + ":\\";
@@ -106,7 +106,7 @@ void CDlgCdLoc::OnOK()
 {
 
 	UpdateData (TRUE);
-	m_strStat.LoadString ( IDS_CD_CHECKING );
+	m_strStat = EnLoadString( IDS_CD_CHECKING );
 	SetDlgItemText ( IDC_CD_STAT, m_strStat );
 	UpdateData (FALSE);
 	UpdateWindow ();
@@ -122,7 +122,7 @@ void CDlgCdLoc::OnOK()
 	int iInd = m_cbDrives.GetCurSel ();
 	if (iInd < 0)
 		{
-		m_strStat.LoadString ( IDS_CD_NOT );
+		m_strStat = EnLoadString( IDS_CD_NOT );
 		UpdateData (FALSE);
 		UpdateWindow ();
 		return;
@@ -133,7 +133,7 @@ void CDlgCdLoc::OnOK()
 	CString sDrv = CString ( drv ) + ":\\";
 	if ( ! GetVolumeInformation ( sDrv, NULL, 0, &dw1, &dw2, &dw3, NULL, 0 ) )
 		{
-		m_strStat.LoadString ( IDS_CD_NOT_READY );
+		m_strStat = EnLoadString( IDS_CD_NOT_READY );
 		UpdateData (FALSE);
 		UpdateWindow ();
 		return;
@@ -143,18 +143,18 @@ void CDlgCdLoc::OnOK()
 	CFileStatus fs;
 	if ( (CFile::GetStatus ( theApp.m_sCdFile, fs ) == 0) || (fs.m_size < 1000) )
 		{
-		m_strStat.LoadString ( IDS_CD_NO_FILE );
+		m_strStat = EnLoadString( IDS_CD_NO_FILE );
 		UpdateData (FALSE);
 		UpdateWindow ();
 		return;
 		}
 
-	m_strStat.LoadString ( IDS_CD_OK );
+	m_strStat = EnLoadString( IDS_CD_OK );
 	UpdateData (FALSE);
 	SetDlgItemText ( IDC_CD_STAT, m_strStat );
 	UpdateWindow ();
 
-	theApp.WriteProfileString ("Game", "CDLocation", theApp.m_sCdFile );
+	EnWriteProfileString("Game", "CDLocation", theApp.m_sCdFile );
 
 	CDialog::OnOK();
 }

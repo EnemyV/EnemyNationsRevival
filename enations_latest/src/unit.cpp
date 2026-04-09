@@ -1128,7 +1128,7 @@ void CUnit::ShowWindow( )
         {
             TRAP( );  // BUGBUG - what is this???
             CString sMsg;
-            sMsg.LoadString( IDS_NOT_MY_UNIT );
+            sMsg = EnLoadString( IDS_NOT_MY_UNIT );
             theApp.m_wndBar.SetStatusText( 0, sMsg, CStatInst::warn );
             MessageBeep( 0 );
             return;

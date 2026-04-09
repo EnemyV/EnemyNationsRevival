@@ -164,7 +164,7 @@ void SDL2RouteWindow::Show() {
     if (m_panel) {
         m_panel->SetVisible(true);
         CString sTitle;
-        sTitle.LoadString(IDS_ROUTE_TITLE);
+        sTitle = EnLoadString(IDS_ROUTE_TITLE);
         csPrintf(&sTitle, (char const*)m_pVeh->GetData()->GetDesc());
         m_panel->SetTitle(std::string((LPCSTR)sTitle));
     }

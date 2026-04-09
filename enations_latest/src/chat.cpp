@@ -105,7 +105,7 @@ void CDlgChatAll::OnReturn()
 	if ( theGame.HaveHP () )
 		sMsg = theGame.GetMe()->GetName ();
 	else
-		sMsg.LoadString ( IDS_SERVER );
+		sMsg = EnLoadString( IDS_SERVER );
 	sMsg += ": " + m_strSend + "\r\n";
 
 	CNetChat * pMsg = CNetChat::Alloc (theGame.GetMe (), sMsg);

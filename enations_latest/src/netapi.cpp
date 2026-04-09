@@ -355,7 +355,7 @@ static void OnMsgLeave( VPPLAYERID id )
         if ( ( theApp.m_pCreateGame != NULL ) && ( theApp.m_pCreateGame->m_iTyp == CCreateBase::load_multi ) )
         {
             CString sMsg;
-            sMsg.LoadString( IDS_MSG_NET_GOODBYE );
+            sMsg = EnLoadString( IDS_MSG_NET_GOODBYE );
             csPrintf( &sMsg, (const char*)pPlr->GetName( ) );
             CDlgModelessMsg* pDlg = new CDlgModelessMsg( );
             pDlg->Create( sMsg );
@@ -411,7 +411,7 @@ static void OnMsgLeave( VPPLAYERID id )
     default: {
         // before the AI sets the race name
         CString sMsg;
-        sMsg.LoadString( IDS_MSG_NET_GOODBYE );
+        sMsg = EnLoadString( IDS_MSG_NET_GOODBYE );
         csPrintf( &sMsg, (const char*)pPlr->GetName( ) );
 
         // have the AI take over
@@ -493,7 +493,7 @@ static void OnMsgSessionClose( )
         {
             bTold = TRUE;
             CString sMsg;
-            sMsg.LoadString( IDS_SAVE_CLOSE );
+            sMsg = EnLoadString( IDS_SAVE_CLOSE );
             csPrintf( &sMsg, (const char*)theGame.m_sGameName );
 
             if ( AfxMessageBox( sMsg, MB_YESNO | MB_ICONQUESTION ) == IDYES )
@@ -505,14 +505,14 @@ static void OnMsgSessionClose( )
     if ( !bTold )
     {
         CString sMsg;
-        sMsg.LoadString( IDS_JOIN_UNJOIN );
+        sMsg = EnLoadString( IDS_JOIN_UNJOIN );
         CPlayer* pPlyr = theGame.GetServer( );
         if ( pPlyr != NULL )
             csPrintf( &sMsg, (const char*)theGame.GetServer( )->GetName( ) );
         else
         {
             CString sTxt;
-            sTxt.LoadString( IDS_UNKNOWN );
+            sTxt = EnLoadString( IDS_UNKNOWN );
             csPrintf( &sMsg, (const char*)sTxt );
         }
         AfxMessageBox( sMsg, MB_OK | MB_TASKMODAL );
@@ -547,7 +547,7 @@ static void OnMsgJoin( LPCVPPLAYERINFO pPi, BOOL bLocal, BYTE bErr )
         {
             TRAP( );
             CString sMsg;
-            sMsg.LoadString( IDS_MSG_JOIN_FAILED );
+            sMsg = EnLoadString( IDS_MSG_JOIN_FAILED );
             CString sNum = IntToCString( bErr );
             csPrintf( &sMsg, (char const*)theGame.GetServer( )->GetName( ), (char const*)sNum );
             AfxMessageBox( sMsg, MB_OK | MB_ICONSTOP );
@@ -2926,7 +2926,7 @@ void CGame::ProcessMessage(CNetCmd* pCmd )
         BOOL    bMsg;
         if ( ( !theGame.AmServer( ) ) && ( pPlr->GetNetNum( ) != 0 ) )
         {
-            sMsg.LoadString( IDS_MSG_NET_GOODBYE );
+            sMsg = EnLoadString( IDS_MSG_NET_GOODBYE );
             csPrintf( &sMsg, (const char*)pPlr->GetName( ) );
 
             theGame.AiTakeOverPlayer( pPlr, TRUE );
@@ -3194,7 +3194,7 @@ void CGame::ProcessMessage(CNetCmd* pCmd )
             pPlr->m_bMsgDead = TRUE;
             theGame.Event( EVENT_PLAYER_DEAD, EVENT_NOTIFY, pPlr );
             CString sMsg;
-            sMsg.LoadString( IDS_EVENT_DEAD );
+            sMsg = EnLoadString( IDS_EVENT_DEAD );
             csPrintf( &sMsg, pPlr->GetName( ) );
             CDlgModelessMsg* pDlg = new CDlgModelessMsg( );
             pDlg->Create( sMsg );

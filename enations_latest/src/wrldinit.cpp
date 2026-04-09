@@ -190,7 +190,7 @@ void CGameMap::GetWorldSize( int iSize, int& iSide, int& iSideSize )
     float fNumBlks = (float)theGame.GetAll( ).GetCount( ) * 1.125f + 1; // -0.4f;
 
 #ifdef _CHEAT
-    if ( ( theGame.GetServerNetNum( ) == 0 ) && ( theApp.GetProfileInt( "Cheat", "ForceOcean", 0 ) ) )
+    if ( ( theGame.GetServerNetNum( ) == 0 ) && ( EnGetProfileInt( "Cheat", "ForceOcean", 0 ) ) )
         fNumBlks += 2.0f;
 #endif
 
@@ -345,7 +345,7 @@ void CGameMap::Init( int iSide, int iSideSize, int iScenario )
     }
 #ifdef _CHEAT
     // Specifically force an ocean?
-    if ( ( theGame.GetServerNetNum( ) == 0 ) && ( theApp.GetProfileInt( "Cheat", "ForceOcean", 0 ) ) )
+    if ( ( theGame.GetServerNetNum( ) == 0 ) && ( EnGetProfileInt( "Cheat", "ForceOcean", 0 ) ) )
     {
         piBlks[0] = -1; // set ocean
         if ( iOceansLeft > 0 )
@@ -1703,11 +1703,11 @@ void CGameMap::Init( int iSide, int iSideSize, int iScenario )
 // Get a random int to specify what to use for 'Generate random block', get random block to generate
 void CGameMap::SetRandomTerrainBlock( int* piBlks, int iInd )
 {
-    int iRtn = ( MyRand( ) >> 11 ) % 5;  // 0–4
+    int iRtn = ( MyRand( ) >> 11 ) % 5;  // 0ï¿½4
     if ( iRtn == 0 )
     {
         // Rare terrain bucket
-        int rare = ( MyRand( ) >> 10 ) & 0x03;  // 0–3
+        int rare = ( MyRand( ) >> 10 ) & 0x03;  // 0ï¿½3
 
         switch ( rare )
         {

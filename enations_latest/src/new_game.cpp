@@ -275,9 +275,9 @@ CDlgPlayerList::CDlgPlayerList(CWnd *pParent /*=NULL*/)
     //{{AFX_DATA_INIT(CDlgPlayerList)
     //}}AFX_DATA_INIT
 
-    m_sVer.LoadString(IDS_EN_VER);
+    m_sVer = EnLoadString(IDS_EN_VER);
     m_sVer += VER_STRING;
-    m_sVpVer.LoadString(IDS_VP_VER);
+    m_sVpVer = EnLoadString(IDS_VP_VER);
     long lVer = CNetApi::GetVersion();
     m_sVpVer += IntToCString(HIBYTE (HIWORD(lVer))) + "." +
                 IntToCString(LOBYTE (HIWORD(lVer))) + "." +
@@ -352,15 +352,15 @@ BOOL CDlgPlayerList::OnInitDialog() {
     UpdateData(TRUE);
 
     CString sTemp;
-    sTemp.LoadString(IDS_YOUR_ADDR);
+    sTemp = EnLoadString(IDS_YOUR_ADDR);
     m_sAddr = sTemp + theNet.GetAddress();
 
-    sTemp.LoadString(IDS_IS_ADDR);
+    sTemp = EnLoadString(IDS_IS_ADDR);
     m_sIsAddr = theNet.GetIServeAddress();
     if (m_sIsAddr.IsEmpty()) {
         m_bTimer = TRUE;
         SetTimer(109, 2000, NULL);
-        m_sIsAddr.LoadString(IDS_NONE);
+        m_sIsAddr = EnLoadString(IDS_NONE);
         char sName[160];
         GetPrivateProfileString("TCP", "RegistrationAddress", "iserve.windward.net",
                                 sName, 158, "vdmplay.ini");
@@ -389,7 +389,7 @@ void CDlgPlayerList::OnShowAddr() {
     SetWindowPos(NULL, 0, 0, m_iWid, m_bAddrShowing ? m_iHtAddr : m_iHtNoAddr,
                  SWP_NOMOVE | SWP_NOZORDER);
     CString sText;
-    sText.LoadString(m_bAddrShowing ? IDS_ADDR_OFF : IDS_ADDR);
+    sText = EnLoadString(m_bAddrShowing ? IDS_ADDR_OFF : IDS_ADDR);
     SetDlgItemText(IDC_PLYR_DO_ADDR, sText);
 }
 
@@ -405,7 +405,7 @@ void CDlgPlayerList::OnTimer(UINT nIDEvent) {
     KillTimer(nIDEvent);
 
     UpdateData(TRUE);
-    m_sIsAddr.LoadString(IDS_IS_ADDR);
+    m_sIsAddr = EnLoadString(IDS_IS_ADDR);
     m_sIsAddr += sIserve;
     UpdateData(FALSE);
 }
@@ -547,7 +547,7 @@ void CDlgPlayerList::SetNumPlayers() {
     ASSERT_VALID (this);
 
     CString sText;
-    sText.LoadString(IDS_CREATE_NUM_PLAYERS);
+    sText = EnLoadString(IDS_CREATE_NUM_PLAYERS);
     CString sNum = IntToCString(m_lstPlayers.GetCount());
     csPrintf(&sText, (const char *) sNum);
     m_btnNumPlayers.SetWindowText(sText);
@@ -689,21 +689,21 @@ void CDlgPlayerList::OnDrawItem(int, LPDRAWITEMSTRUCT lpDIS) {
     sText = " ";
     if (pPlyr->GetState() == CPlayer::load_pick) {
         CString sStatus;
-        sStatus.LoadString(IDS_PICKING_PLAYER);
+        sStatus = EnLoadString(IDS_PICKING_PLAYER);
         sText += sStatus;
     } else if (pPlyr->m_iPerInit < 0) {
         CString sStatus;
-        sStatus.LoadString(IDS_PICKING_RACE);
+        sStatus = EnLoadString(IDS_PICKING_RACE);
         sText += sStatus;
     } else if (pPlyr->m_iPerInit == 0) {
         CString sRes;
-        sRes.LoadString(IDS_READY_TO_GO);
+        sRes = EnLoadString(IDS_READY_TO_GO);
         sText += sRes;
     } else if (pPlyr->m_iPerInit < 100)
         sText += IntToCString(pPlyr->m_iPerInit) + "%";
     else {
         CString sRes;
-        sRes.LoadString(IDS_READY_TO_GO);
+        sRes = EnLoadString(IDS_READY_TO_GO);
         sText += sRes;
     }
 
@@ -802,7 +802,7 @@ void CDlgCreateStatus::SetMsg(int idRes) {
     ASSERT_VALID (this);
 
     CString sText;
-    sText.LoadString(idRes);
+    sText = EnLoadString(idRes);
 
     SetMsg(sText);
 }

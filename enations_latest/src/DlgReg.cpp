@@ -92,7 +92,7 @@ void CDlgReg::OnOK()
 
 	UpdateData (TRUE);
 	if ( m_bDone )
-		theApp.WriteProfileInt ( "Warnings", "Register", 1 );
+		EnWriteProfileInt( "Warnings", "Register", 1 );
 
 	// get the browser
 	CString sCmd = GetDefaultApp ( ".html", "netscape", "http://www.windward.net/register/index.html" );
@@ -123,7 +123,7 @@ void CDlgReg::OnCancel()
 
 	UpdateData (TRUE);
 	if ( m_bDone )
-		theApp.WriteProfileInt ( "Warnings", "Register", 1 );
+		EnWriteProfileInt( "Warnings", "Register", 1 );
 
 	CDialog::OnCancel ();
 }

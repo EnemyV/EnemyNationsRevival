@@ -109,7 +109,7 @@ CWndWorld::CWndWorld() {
     int idsne = IDS_WORLD_NE;
 
     CString s;
-    BOOL    ok = s.LoadString( IDS_WORLD_NE );
+    BOOL    ok = s = EnLoadString( IDS_WORLD_NE );
 
     HINSTANCE hRes = AfxGetResourceHandle( );
     TRACE( "Resource handle: %p\n", hRes );
@@ -119,10 +119,10 @@ CWndWorld::CWndWorld() {
 
     // moved to oncreate
     /*
-    m_sDir[0].LoadString( IDS_WORLD_NE );
-    m_sDir[1].LoadString(IDS_WORLD_SE);
-    m_sDir[2].LoadString(IDS_WORLD_SW);
-    m_sDir[3].LoadString(IDS_WORLD_NW);
+    m_sDir[0] = EnLoadString( IDS_WORLD_NE );
+    m_sDir[1] = EnLoadString(IDS_WORLD_SE);
+    m_sDir[2] = EnLoadString(IDS_WORLD_SW);
+    m_sDir[3] = EnLoadString(IDS_WORLD_NW);
        */
 }
 
@@ -195,19 +195,19 @@ void CWndWorld::Create(BOOL bStart) {
     
     if ( m_sDir[0].IsEmpty( ) )
     {
-        m_sDir[0].LoadString( IDS_WORLD_NE );
-        m_sDir[1].LoadString( IDS_WORLD_SE );
-        m_sDir[2].LoadString( IDS_WORLD_SW );
-        m_sDir[3].LoadString( IDS_WORLD_NW );
+        m_sDir[0] = EnLoadString( IDS_WORLD_NE );
+        m_sDir[1] = EnLoadString( IDS_WORLD_SE );
+        m_sDir[2] = EnLoadString( IDS_WORLD_SW );
+        m_sDir[3] = EnLoadString( IDS_WORLD_NW );
     }
 
     // get min size
     CString sTitle, sClass;
     m_bIsRadar = theGame.GetMe()->GetExists(CStructureData::command_center);
     if (m_bIsRadar)
-        sTitle.LoadString(IDS_WORLD_TITLE_RADAR);
+        sTitle = EnLoadString(IDS_WORLD_TITLE_RADAR);
     else
-        sTitle.LoadString(IDS_WORLD_TITLE_MAP);
+        sTitle = EnLoadString(IDS_WORLD_TITLE_MAP);
 
     if (m_pWndArea == NULL)
         csPrintf(&sTitle, (char const *) "");
@@ -219,10 +219,10 @@ void CWndWorld::Create(BOOL bStart) {
 
     // if it crashes here, i think a gfx bitmap is missing?
     // theApp.m_pMainWnd->m_hWnd is wrong, i think
-    if ( CreateEx( 0, sClass, sTitle, dwPopWndStyle, theApp.GetProfileInt( theApp.m_sResIni, "WorldX", 0 ),
-                   theApp.GetProfileInt( theApp.m_sResIni, "WorldY", 0 ),
-                   theApp.GetProfileInt( theApp.m_sResIni, "WorldEX", theApp.m_iCol1 + 1 ),
-                   theApp.GetProfileInt( theApp.m_sResIni, "WorldEY", theApp.m_iRow1 + 1 ), 
+    if ( CreateEx( 0, sClass, sTitle, dwPopWndStyle, EnGetProfileInt( theApp.m_sResIni, "WorldX", 0 ),
+                   EnGetProfileInt( theApp.m_sResIni, "WorldY", 0 ),
+                   EnGetProfileInt( theApp.m_sResIni, "WorldEX", theApp.m_iCol1 + 1 ),
+                   EnGetProfileInt( theApp.m_sResIni, "WorldEY", theApp.m_iRow1 + 1 ), 
                    theApp.m_pMainWnd->m_hWnd, // window parent!
                    NULL, NULL ) == 0 )
     {
@@ -355,27 +355,27 @@ int CWndWorld::OnCreate(LPCREATESTRUCT lpCreateStruct) {
     // we had to start with an icon to get a different class
     ::SetClassLong(m_hWnd, GCL_HCURSOR, NULL);
 
-    m_sDir[0].LoadString( IDS_WORLD_NE );
-    m_sDir[1].LoadString( IDS_WORLD_SE );
-    m_sDir[2].LoadString( IDS_WORLD_SW );
-    m_sDir[3].LoadString( IDS_WORLD_NW );
+    m_sDir[0] = EnLoadString( IDS_WORLD_NE );
+    m_sDir[1] = EnLoadString( IDS_WORLD_SE );
+    m_sDir[2] = EnLoadString( IDS_WORLD_SW );
+    m_sDir[3] = EnLoadString( IDS_WORLD_NW );
 
-    m_sHelpRMB.LoadString(IDH_WORLD_WIN_RMB);
-    m_sHelp.LoadString(IDH_WORLD_WIN);
-    m_sHelpBtn[pos_res].LoadString(IDH_WORLD_RES);
-    m_sHelpBtn[pos_vis].LoadString(IDH_WORLD_VIS);
-    m_sHelpBtn[pos_mine].LoadString(IDH_WORLD_OWNER);
-    m_sHelpBtn[pos_units].LoadString(IDH_WORLD_UNITS);
-    m_sHelpBtnDis[pos_res].LoadString(IDH_WORLD_RES2);
-    m_sHelpBtnDis[pos_vis].LoadString(IDH_WORLD_VIS2);
-    m_sHelpBtnDis[pos_mine].LoadString(IDH_WORLD_OWNER2);
-    m_sHelpBtnDis[pos_units].LoadString(IDH_WORLD_UNITS2);
+    m_sHelpRMB = EnLoadString(IDH_WORLD_WIN_RMB);
+    m_sHelp = EnLoadString(IDH_WORLD_WIN);
+    m_sHelpBtn[pos_res] = EnLoadString(IDH_WORLD_RES);
+    m_sHelpBtn[pos_vis] = EnLoadString(IDH_WORLD_VIS);
+    m_sHelpBtn[pos_mine] = EnLoadString(IDH_WORLD_OWNER);
+    m_sHelpBtn[pos_units] = EnLoadString(IDH_WORLD_UNITS);
+    m_sHelpBtnDis[pos_res] = EnLoadString(IDH_WORLD_RES2);
+    m_sHelpBtnDis[pos_vis] = EnLoadString(IDH_WORLD_VIS2);
+    m_sHelpBtnDis[pos_mine] = EnLoadString(IDH_WORLD_OWNER2);
+    m_sHelpBtnDis[pos_units] = EnLoadString(IDH_WORLD_UNITS2);
 
     m_bIsRadar = theGame.GetMe()->GetExists(CStructureData::command_center);
     if (m_bIsRadar)
         m_sHelpFace = "";
     else
-        m_sHelpFace.LoadString(IDH_WORLD_FACE);
+        m_sHelpFace = EnLoadString(IDH_WORLD_FACE);
 
     m_hCurArrow = theApp.LoadStandardCursor(IDC_ARROW);
     m_hCurCross = theApp.LoadCursor(IDC_WORLD);
@@ -554,10 +554,10 @@ void CWndWorld::CommandCenterChange() {
     CString sTitle;
     if (m_bIsRadar) {
         m_sHelpFace = "";
-        sTitle.LoadString(IDS_WORLD_TITLE_RADAR);
+        sTitle = EnLoadString(IDS_WORLD_TITLE_RADAR);
     } else {
-        m_sHelpFace.LoadString(IDH_WORLD_FACE);
-        sTitle.LoadString(IDS_WORLD_TITLE_MAP);
+        m_sHelpFace = EnLoadString(IDH_WORLD_FACE);
+        sTitle = EnLoadString(IDS_WORLD_TITLE_MAP);
     }
 
     if (m_pWndArea == NULL)
@@ -1197,9 +1197,9 @@ void CWndWorld::_NewDir() {
     // put up the new dir
     CString sTitle;
     if (m_bIsRadar)
-        sTitle.LoadString( IDS_WORLD_TITLE_RADAR );
+        sTitle = EnLoadString( IDS_WORLD_TITLE_RADAR );
     else
-        sTitle.LoadString(IDS_WORLD_TITLE_MAP);
+        sTitle = EnLoadString(IDS_WORLD_TITLE_MAP);
 
 #ifdef LOGGINGON
     char buf[128];

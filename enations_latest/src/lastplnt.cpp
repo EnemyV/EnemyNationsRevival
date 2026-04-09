@@ -138,7 +138,7 @@ void CatchNum( int iNum )
         return;
 
     CString sMsg;
-    sMsg.LoadString( IDS_ERR_LOAD_1 );
+    sMsg = EnLoadString( IDS_ERR_LOAD_1 );
     char sNum[20];
     if ( iNum >= ERR_BASE_USER_ERROR )
         iNum -= ERR_BASE_USER_ERROR;
@@ -163,7 +163,7 @@ void CatchSE( SE_Exception e )
     theGame.EmptyQueue( );
 
     CString sDumpText;
-    sDumpText.LoadString( IDS_ERR_LOAD_3 );
+    sDumpText = EnLoadString( IDS_ERR_LOAD_3 );
 
     MEMORYSTATUS ms;
     ms.dwLength = sizeof( ms );
@@ -172,7 +172,7 @@ void CatchSE( SE_Exception e )
     if ( ms.dwAvailPageFile / ONE_MEG < 8 )
     {
         CString sMsg;
-        sMsg.LoadString( IDS_OUT_OF_MEMORY );
+        sMsg = EnLoadString( IDS_OUT_OF_MEMORY );
         sDumpText = sMsg + "\r\n" + sDumpText;
     }
 
@@ -216,7 +216,7 @@ void CatchOther( )
     theGame.EmptyQueue( );
 
     CString sMsg;
-    sMsg.LoadString( IDS_ERR_LOAD_2 );
+    sMsg = EnLoadString( IDS_ERR_LOAD_2 );
     AfxMessageBox( sMsg, MB_OK | MB_ICONSTOP );
 
     bDoSubclass = TRUE;
@@ -400,13 +400,13 @@ BOOL CConquerApp::InitInstance( )
     
 
 
-    WriteProfileString( "ADPCM", "Error", "OK" );
+    EnWriteProfileString( "ADPCM", "Error", "OK" );
 
-    if ( GetProfileInt( "Advanced", "Log", 0 ) )
+    if ( EnGetProfileInt( "Advanced", "Log", 0 ) )
     {
         AfxMessageBox( IDS_EN_LOGGING, MB_OK | MB_ICONINFORMATION );
         m_pLogFile    = new CFile( );
-        CString sName = GetProfileString( "Advanced", "LogName", GameLogFile );
+        CString sName = EnGetProfileString( "Advanced", "LogName", GameLogFile );
         if ( m_pLogFile->Open( sName, CFile::modeCreate | CFile::modeWrite | CFile::shareDenyWrite ) == 0 )
         {
             m_pLogFile->Close( );
@@ -425,14 +425,14 @@ BOOL CConquerApp::InitInstance( )
     else if ( ::GetPrivateProfileInt( "vdmplay", "UseLogFile", 0, "vdmplay.ini" ) )
         AfxMessageBox( IDS_VP_LOGGING, MB_OK | MB_ICONINFORMATION );
 
-    WriteProfileString( "Advanced", "Version", VER_STRING );
+    EnWriteProfileString( "Advanced", "Version", VER_STRING );
 
     // over-ride default event method
-    m_bUseEvents  = GetProfileInt( "Advanced", "Events", m_bUseEvents );
-    m_bPauseOnAct = GetProfileInt( "Advanced", "Pause", TRUE );
+    m_bUseEvents  = EnGetProfileInt( "Advanced", "Events", m_bUseEvents );
+    m_bPauseOnAct = EnGetProfileInt( "Advanced", "Pause", TRUE );
 
     // load the correct language
-    m_iLangCode  = GetProfileInt( "Advanced", "Language", PRIMARYLANGID( LANGIDFROMLCID( ::GetUserDefaultLCID( ) ) ) );
+    m_iLangCode  = EnGetProfileInt( "Advanced", "Language", PRIMARYLANGID( LANGIDFROMLCID( ::GetUserDefaultLCID( ) ) ) );
     CString sLib = "ENLang" + IntToCString( m_iLangCode ) + ".DLL";
     if ( ( m_hLibLang = LoadLibrary( sLib ) ) != NULL )
         AfxSetResourceHandle( m_hLibLang );
@@ -442,7 +442,7 @@ BOOL CConquerApp::InitInstance( )
     InitializeCriticalSection( &cs );
     hRenderEvent = CreateEvent( NULL, TRUE, FALSE, "RenderEvent" );
 
-    m_sAppName.LoadString( IDS_MAIN_TITLE );
+    m_sAppName = EnLoadString( IDS_MAIN_TITLE );
 
     // Get CPU Speed
     CPUInfo cpu;
@@ -472,7 +472,7 @@ BOOL CConquerApp::InitInstance( )
         if ( lRtn == DISP_CHANGE_SUCCESSFUL )
         {
             // do we set the screen resolution?
-            int iRes     = GetProfileInt( "Advanced", "ScreenResolution", 0 );
+            int iRes     = EnGetProfileInt( "Advanced", "ScreenResolution", 0 );
             m_iOldWidth  = GetSystemMetrics( SM_CXSCREEN );
             m_iOldHeight = GetSystemMetrics( SM_CYSCREEN );
             HDC hdc      = GetDC( NULL );
@@ -511,7 +511,7 @@ BOOL CConquerApp::InitInstance( )
             {
                 CDlgMsg dlg;
                 CString sMsg;
-                sMsg.LoadString( IDS_KILLER_RES );
+                sMsg = EnLoadString( IDS_KILLER_RES );
                 CString sRes = IntToCString( m_iOldWidth ) + "x" + IntToCString( m_iOldHeight ) + "x" +
                                IntToCString( m_iOldDepth );
                 csPrintf( &sMsg, (char const*)sRes, pRes );
@@ -668,7 +668,7 @@ BOOL CConquerApp::InitInstance( )
     if ( ms.dwTotalPageFile < 1024 * 1024 * MEM_NEEDED_BASE )
     {
         CString sText;
-        sText.LoadString( IDS_ERROR_LOW_VIRT_MEM );
+        sText = EnLoadString( IDS_ERROR_LOW_VIRT_MEM );
         CString sNum;
         sNum = IntToCString( MEM_NEEDED_BASE );
         csPrintf( &sText, (char const*)sNum );
@@ -715,7 +715,7 @@ BOOL CConquerApp::InitInstance( )
         break;
     }
 
-    switch ( GetProfileInt( "Advanced", "ColorDepth", 0 ) )
+    switch ( EnGetProfileInt( "Advanced", "ColorDepth", 0 ) )
     {
     case 2:
         m_bUse8Bit = FALSE;
@@ -776,7 +776,7 @@ BOOL CConquerApp::InitInstance( )
         break;
     }
 
-    switch ( theApp.GetProfileInt( "Advanced", "Zoom", 0 ) )
+    switch ( EnGetProfileInt( "Advanced", "Zoom", 0 ) )
     {
     case 1:
         m_bUseZoom0 = TRUE;
@@ -875,7 +875,7 @@ BOOL CConquerApp::InitInstance( )
         {
             TRAP( );
             CString sMsg, sNum1, sNum2;
-            sMsg.LoadString( IDS_WRONG_DATA_FILE );
+            sMsg = EnLoadString( IDS_WRONG_DATA_FILE );
             sNum1 = IntToCString( m_iRifVer );
             sNum2 = IntToCString( VER_RIFF );
             csPrintf( &sMsg, (char const*)sName, (char const*)sNum1, (char const*)sNum2 );
@@ -969,13 +969,13 @@ BOOL CConquerApp::InitInstance( )
 
         else
         {
-            time_t iTime = ::GetProfileInt( "DOS Emulation", "_COMM", -1 );
+            time_t iTime = ::GetProfileIntA( "DOS Emulation", "_COMM", -1 );
             if ( iTime == -1 )
             {
                 TRAP( );
                 char sBuf[20];
                 itoa( iToday + i1Month, sBuf, 10 );
-                ::WriteProfileString( "DOS Emulation", "_COMM", sBuf );
+                ::WriteProfileStringA( "DOS Emulation", "_COMM", sBuf );
             }
             else
                 // is it earlier (ie did they advance the date before installing)?
@@ -984,7 +984,7 @@ BOOL CConquerApp::InitInstance( )
                 iToday -= i1Month / 2;
                 char sBuf[20];
                 itoa( iToday + i1Month, sBuf, 10 );
-                ::WriteProfileString( "DOS Emulation", "_COMM", sBuf );
+                ::WriteProfileStringA( "DOS Emulation", "_COMM", sBuf );
             }
             else if ( iToday > (int)iTime + i1Month )
             {
@@ -1007,17 +1007,17 @@ BOOL CConquerApp::InitInstance( )
     // shareware notice
     if ( IsShareware( ) )
     {
-        int iTry = GetProfileInt( "Game", "NumDemo", 1 );
-        WriteProfileInt( "Game", "NumDemo", iTry + 1 );
+        int iTry = EnGetProfileInt( "Game", "NumDemo", 1 );
+        EnWriteProfileInt( "Game", "NumDemo", iTry + 1 );
         if ( ( iTry % 25 ) == 0 )
         {
             CString sMsg;
-            sMsg.LoadString( IDS_DEMO_25 );
+            sMsg = EnLoadString( IDS_DEMO_25 );
             CString sNum = IntToCString( iTry );
             csPrintf( &sMsg, (char const*)sNum );
             if ( AfxMessageBox( sMsg, MB_YESNO | MB_ICONSTOP ) != IDYES )
             {
-                WriteProfileInt( "Game", "NumDemo", iTry );
+                EnWriteProfileInt( "Game", "NumDemo", iTry );
                 return ( 0 );
             }
         }
@@ -1053,7 +1053,7 @@ BOOL CConquerApp::InitInstance( )
         SetDialogBkColor( ::GetOurSysClr( COLOR_BTNFACE ), ::GetOurSysClr( COLOR_WINDOWTEXT ) );
         Enable3dControls( );
 #endif
-        m_bSetSysColors = GetProfileInt( "Advanced", "SetSysColors", 0 );
+        m_bSetSysColors = EnGetProfileInt( "Advanced", "SetSysColors", 0 );
 
 
         // RedText class for -#s in dialogs
@@ -1077,19 +1077,19 @@ BOOL CConquerApp::InitInstance( )
 //        }
 
 #ifdef _CHEAT
-        _bShowRate       = GetProfileInt( "Debug", "ShowRate", 0 );
-        _bClickAny       = GetProfileInt( "Cheat", "ClickAny", 0 );
-        _bMaxMaterials   = GetProfileInt( "Cheat", "MaxMaterials", 0 );
-        _bMaxRocket      = GetProfileInt( "Cheat", "MaxRocket", 0 );
-        _bMaxPower       = GetProfileInt( "Cheat", "MaxPower", 0 );
-        _iFrameRate      = GetProfileInt( "Cheat", "FrameRate", 1 );
+        _bShowRate       = EnGetProfileInt( "Debug", "ShowRate", 0 );
+        _bClickAny       = EnGetProfileInt( "Cheat", "ClickAny", 0 );
+        _bMaxMaterials   = EnGetProfileInt( "Cheat", "MaxMaterials", 0 );
+        _bMaxRocket      = EnGetProfileInt( "Cheat", "MaxRocket", 0 );
+        _bMaxPower       = EnGetProfileInt( "Cheat", "MaxPower", 0 );
+        _iFrameRate      = EnGetProfileInt( "Cheat", "FrameRate", 1 );
         _iFrameRate      = __minmax( 1, 48, _iFrameRate );
-        _bSeeAll         = GetProfileInt( "Cheat", "SeeAll", 0 );
-        _bShowWorld      = GetProfileInt( "Cheat", "SeeWorld", 0 );
-        _bShowStatus     = GetProfileInt( "Cheat", "ShowStatus", 0 );
-        _bShowPos        = GetProfileInt( "Cheat", "ShowPos", 0 );
-        _bShowAISelected = theApp.GetProfileInt( "Cheat", "ShowAISelected", 0 );
-        _iScenarioOn     = theApp.GetProfileInt( "Cheat", "Scenario", -1 );
+        _bSeeAll         = EnGetProfileInt( "Cheat", "SeeAll", 0 );
+        _bShowWorld      = EnGetProfileInt( "Cheat", "SeeWorld", 0 );
+        _bShowStatus     = EnGetProfileInt( "Cheat", "ShowStatus", 0 );
+        _bShowPos        = EnGetProfileInt( "Cheat", "ShowPos", 0 );
+        _bShowAISelected = EnGetProfileInt( "Cheat", "ShowAISelected", 0 );
+        _iScenarioOn     = EnGetProfileInt( "Cheat", "Scenario", -1 );
 #endif
 
         // get screen resolution, default positions for windows
@@ -1107,8 +1107,8 @@ BOOL CConquerApp::InitInstance( )
         // get the main font - we try Newtown, then Arial, then Arial condensed till we fit
         LOGFONT lf;
         memset( &lf, 0, sizeof( lf ) );
-        lf.lfHeight   = GetProfileInt( "StatusBar", "CharHeight", 16 );
-        CString sFont = GetProfileString( "StatusBar", "Font", "Newtown Italic" );
+        lf.lfHeight   = EnGetProfileInt( "StatusBar", "CharHeight", 16 );
+        CString sFont = EnGetProfileString( "StatusBar", "Font", "Newtown Italic" );
         strncpy( lf.lfFaceName, sFont, LF_FACESIZE - 1 );
         m_Fnt.CreateFontIndirect( &lf );
 
@@ -1121,22 +1121,22 @@ BOOL CConquerApp::InitInstance( )
             m_iBtnBevel = 2;
 
         // dialog fonts
-        int iHt = GetProfileInt( "StatusBar", "RDHeight", 14 );
-        sFont   = GetProfileString( "StatusBar", "RDFont", "Lucida Console" );
+        int iHt = EnGetProfileInt( "StatusBar", "RDHeight", 14 );
+        sFont   = EnGetProfileString( "StatusBar", "RDFont", "Lucida Console" );
         memset( &lf, 0, sizeof( lf ) );
         lf.lfHeight = iHt;
         strncpy( lf.lfFaceName, sFont, LF_FACESIZE - 1 );
         m_FntRD.CreateFontIndirect( &lf );
 
-        iHt   = GetProfileInt( "StatusBar", "DescHeight", 18 );
-        sFont = GetProfileString( "StatusBar", "DescFont", "Newtown Italic" );
+        iHt   = EnGetProfileInt( "StatusBar", "DescHeight", 18 );
+        sFont = EnGetProfileString( "StatusBar", "DescFont", "Newtown Italic" );
         memset( &lf, 0, sizeof( lf ) );
         lf.lfHeight = iHt;
         strncpy( lf.lfFaceName, sFont, LF_FACESIZE - 1 );
         m_FntDesc.CreateFontIndirect( &lf );
 
-        iHt   = GetProfileInt( "StatusBar", "CostHeight", 11 );
-        sFont = GetProfileString( "StatusBar", "CostFont", "Lucida Console" );
+        iHt   = EnGetProfileInt( "StatusBar", "CostHeight", 11 );
+        sFont = EnGetProfileString( "StatusBar", "CostFont", "Lucida Console" );
         memset( &lf, 0, sizeof( lf ) );
         lf.lfHeight = iHt;
         strncpy( lf.lfFaceName, sFont, LF_FACESIZE - 1 );
@@ -1257,7 +1257,7 @@ BOOL CConquerApp::InitInstance( )
 // time the CD // we dont have a cd anymore
             m_iCdSpeed = 100; // assume fast CD drive
 #ifndef _GG && 0
-            if ( ( m_iCdSpeed = GetProfileInt( "Advanced", "CDspeed", 0 ) ) <= 0 )
+            if ( ( m_iCdSpeed = EnGetProfileInt( "Advanced", "CDspeed", 0 ) ) <= 0 )
             {
                 CFile* pFile = theDataFile.OpenAsFile( "music" );
                 void*  pBuf  = malloc( 0x10000 );
@@ -1290,7 +1290,7 @@ BOOL CConquerApp::InitInstance( )
             if ( !m_bWAV )
                 m_mMode = CMusicPlayer::MUSIC_MODE::midi_only;
             else
-                switch ( GetProfileInt( "Advanced", "Music", -1 ) )
+                switch ( EnGetProfileInt( "Advanced", "Music", -1 ) )
                 {
                 case 2:
                     if ( ( ms.dwAvailPageFile < 1000 * 1000 * MEM_NEEDED_MUSIC_MIXED ) || ( m_iCdSpeed < 4 ) )
@@ -1345,7 +1345,7 @@ BOOL CConquerApp::InitInstance( )
 
         // demo license agreement
         if ( IsShareware( ) )
-            if ( GetProfileInt( "Game", "NoIntro", 0 ) == 0 )
+            if ( EnGetProfileInt( "Game", "NoIntro", 0 ) == 0 )
             {
                 PostIntro( );
                 goto MovieDone;
@@ -1354,7 +1354,7 @@ BOOL CConquerApp::InitInstance( )
 #ifdef BUGBUG
         // remind them to register
         if ( W32s != iWinType )
-            if ( ( !IsShareware( ) ) && ( GetProfileInt( "Warnings", "Register", 0 ) == 0 ) )
+            if ( ( !IsShareware( ) ) && ( EnGetProfileInt( "Warnings", "Register", 0 ) == 0 ) )
             {
                 CDlgReg dlg( &m_wndMain );
                 dlg.DoModal( );
@@ -1371,7 +1371,7 @@ BOOL CConquerApp::InitInstance( )
         }
 
         // Play the startup movie via SDL2
-        if ( ( HaveIntro( ) ) && ( GetProfileInt( "Game", "NoIntro", 0 ) == 0 ) )
+        if ( ( HaveIntro( ) ) && ( EnGetProfileInt( "Game", "NoIntro", 0 ) == 0 ) )
         {
             // Temporarily open SDL_mixer so video audio works via Mix_HookMusic.
             // PostIntro() will call theMusicPlayer.Open() later for the full init.
@@ -1539,10 +1539,10 @@ void CConquerApp::PostIntro( )
         bDidIt = TRUE;
 
         // start the audio
-        theMusicPlayer.Open( GetProfileInt( "Game", "Music", 100 ), GetProfileInt( "Game", "Sound", 100 ), m_mMode,
+        theMusicPlayer.Open( EnGetProfileInt( "Game", "Music", 100 ), EnGetProfileInt( "Game", "Sound", 100 ), m_mMode,
                              SFXGROUP::global );
 
-        if ( GetProfileInt( "Game", "CustomUI", W32s != iWinType ) ) {
+        if ( EnGetProfileInt( "Game", "CustomUI", W32s != iWinType ) ) {
             InitCustomUI();
         }
         theMusicPlayer.YieldPlayer( );
@@ -1809,7 +1809,7 @@ int CConquerApp::ExitInstance( )
         dc.SetBkMode( TRANSPARENT );
         dc.SetTextColor( RGB( 0, 0, 0 ) );
         CString sLoad;
-        sLoad.LoadString( IDS_LEAVING );
+        sLoad = EnLoadString( IDS_LEAVING );
         dc.TextOut( 0, 0, sLoad );
     }
 
@@ -1875,7 +1875,7 @@ static int SDL2_MessageBox( int idsString, bool yesNoCancel = false )
 {
     // Load the string from the resource table
     CString str;
-    str.LoadString( idsString );
+    str = EnLoadString( idsString );
     std::string msg( (const char*)str );
 
     // Replace \n with space for single-line display in our dialog
@@ -2184,7 +2184,7 @@ BOOL CDlgMain::OnInitDialog( )
 
     SendMessage( WM_SETICON, (WPARAM)TRUE, (LPARAM)theApp.LoadIcon( MAKEINTRESOURCE( IDI_MAIN ) ) );
     CString sTitle;
-    sTitle.LoadString( IDS_MAIN_TITLE );
+    sTitle = EnLoadString( IDS_MAIN_TITLE );
     SetWindowText( sTitle );
 
     // if shareware no loading
@@ -2385,7 +2385,7 @@ void CDlgMain::OnPaint( )
 
     // put up the title
     CString sTitle;
-    sTitle.LoadString( IDS_MAIN_TITLE );
+    sTitle = EnLoadString( IDS_MAIN_TITLE );
     LOGFONT lf;
     memset( &lf, 0, sizeof( lf ) );
     lf.lfWidth  = ( 3 * ( iWid / sTitle.GetLength( ) ) ) / 4;
@@ -2429,7 +2429,7 @@ void CDlgMain::OnPaint( )
 
     // put up copyright
     CString sCopy;
-    sCopy.LoadString( IDS_COPYRIGHT );
+    sCopy = EnLoadString( IDS_COPYRIGHT );
     GetClientRect( &rect );
     dc.DrawText( sCopy, -1, &rect, DT_CALCRECT | DT_CENTER | DT_SINGLELINE | DT_TOP );
     int iHt     = rect.Height( );
@@ -2787,7 +2787,7 @@ void CDlgMain::OnMainCredits( )
 {
 
 #ifdef _CHEAT
-    if ( theApp.GetProfileInt( "Cheat", "TestAudio", 0 ) == 1 )
+    if ( EnGetProfileInt( "Cheat", "TestAudio", 0 ) == 1 )
     {
         CDlgTestSounds dlg;
         dlg.DoModal( );
@@ -3082,7 +3082,7 @@ void CDlgStackDump::OnCopyStack( )
     CString sMsg;
     if ( ms.dwAvailPageFile / ONE_MEG < 8 )
     {
-        sMsg.LoadString( IDS_OUT_OF_MEMORY );
+        sMsg = EnLoadString( IDS_OUT_OF_MEMORY );
         sMsg += "\r\n";
     }
     sMsg += "Sorry, an unknown error occured.\r\nVersion: " + CString( VER_STRING ) + "\r\n" +

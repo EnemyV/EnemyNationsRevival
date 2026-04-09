@@ -117,15 +117,15 @@ BOOL CDlgCreateSingle::OnInitDialog()
 	
 	UpdateData (TRUE);
 
-	m_iAiLevel = theApp.GetProfileInt ("Create", "Difficultity", 0);
+	m_iAiLevel = EnGetProfileInt("Create", "Difficultity", 0);
 	m_iAiLevel = __minmax ( 0, 3, m_iAiLevel );
-    int iNum   = theApp.GetProfileInt( "Create", "AiOpponents", 2 );//
+    int iNum   = EnGetProfileInt( "Create", "AiOpponents", 2 );//
     atoi( m_strAiNum );
 	iNum = __minmax ( 0, 20, iNum );
 	m_strAiNum = IntToCString ( iNum );
-	m_iSizeWorld = theApp.GetProfileInt ("Create", "Size", 1);
+	m_iSizeWorld = EnGetProfileInt("Create", "Size", 1);
 	m_iSizeWorld = __minmax ( 0, 2, m_iSizeWorld );
-	m_iPosStart = theApp.GetProfileInt ("Create", "StartPosition", 1);
+	m_iPosStart = EnGetProfileInt("Create", "StartPosition", 1);
 	m_iPosStart = __minmax ( 0, 3, m_iPosStart );
 
 #ifndef	HACK_TEST_AI
@@ -204,14 +204,14 @@ void CDlgCreateSingle::OnOK()
 
 	// is the number of AI players ok?
 	m_pCs->m_iNumAi = atoi (m_strAiNum);
-	if ( theApp.GetProfileInt ("Advanced", "IgnoreAiLimit", 0) == 0 )
+	if ( EnGetProfileInt("Advanced", "IgnoreAiLimit", 0) == 0 )
 		{
 		int iMax = __max ( 0, theApp.GetCpuSpeed () - 100 );
 		iMax = 3 + iMax / 20;
 		if ( m_pCs->m_iNumAi > iMax * 2 )
 			{
 			CString sText;
-			sText.LoadString ( IDS_AI_LIMIT_2_MAX );
+			sText = EnLoadString( IDS_AI_LIMIT_2_MAX );
 			CString sNum = IntToCString ( 2 * iMax );
 			csPrintf (&sText, (char const *) sNum);
 			AfxMessageBox ( sText, MB_OK | MB_ICONSTOP );
@@ -221,7 +221,7 @@ void CDlgCreateSingle::OnOK()
 			if ( m_pCs->m_iNumAi > iMax )
 				{
 				CString sText;
-				sText.LoadString ( IDS_AI_LIMIT_MAX );
+				sText = EnLoadString( IDS_AI_LIMIT_MAX );
 				CString sNum = IntToCString ( iMax );
 				csPrintf (&sText, (char const *) sNum);
 				if ( AfxMessageBox ( sText, MB_YESNO | MB_ICONSTOP ) != IDYES )
@@ -235,10 +235,10 @@ void CDlgCreateSingle::OnOK()
 	theGame.m_iPos = m_pCs->m_iPos = m_iPosStart;
 	m_pCs->m_iNet = -1;
 
-	theApp.WriteProfileInt ("Create", "Difficultity", m_iAiLevel);
-	theApp.WriteProfileInt ("Create", "Size", m_iSizeWorld);
-	theApp.WriteProfileInt ("Create", "AiOpponents", m_pCs->m_iNumAi);
-	theApp.WriteProfileInt ("Create", "StartPosition", m_iPosStart);
+	EnWriteProfileInt("Create", "Difficultity", m_iAiLevel);
+	EnWriteProfileInt("Create", "Size", m_iSizeWorld);
+	EnWriteProfileInt("Create", "AiOpponents", m_pCs->m_iNumAi);
+	EnWriteProfileInt("Create", "StartPosition", m_iPosStart);
 
 	// switch to the pick race dialog
 	if (m_pCs->m_dlgPickRace.m_hWnd == NULL)

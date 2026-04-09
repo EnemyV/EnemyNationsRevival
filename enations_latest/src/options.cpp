@@ -155,11 +155,11 @@ BOOL CDlgOptions::OnInitDialog()
 	if ( iWinType == W32s )
 		{
 		m_scrSpeed.SetScrollRange (0, NUM_SPEEDS - 1);
-		m_scrSpeed.SetScrollPos (theApp.GetProfileInt ("Game", "Speed", NUM_SPEEDS/2));
+		m_scrSpeed.SetScrollPos (EnGetProfileInt("Game", "Speed", NUM_SPEEDS/2));
 		m_scrSound.SetScrollRange (0, 100);
-		m_scrSound.SetScrollPos (theApp.GetProfileInt ("Game", "Sound", 100));
+		m_scrSound.SetScrollPos (EnGetProfileInt("Game", "Sound", 100));
 		m_scrMusic.SetScrollRange (0, 100);
-		m_scrMusic.SetScrollPos (theApp.GetProfileInt ("Game", "Music", 100));
+		m_scrMusic.SetScrollPos (EnGetProfileInt("Game", "Music", 100));
 		}
 
 	else
@@ -168,21 +168,21 @@ BOOL CDlgOptions::OnInitDialog()
 		m_sldSpeed.SetPageSize (1);
 		m_sldSpeed.SetRange (0, NUM_SPEEDS - 1);
 		m_sldSpeed.SetSelection (0, NUM_SPEEDS - 1);
-		m_sldSpeed.SetPos (theApp.GetProfileInt ("Game", "Speed", NUM_SPEEDS/2));
+		m_sldSpeed.SetPos (EnGetProfileInt("Game", "Speed", NUM_SPEEDS/2));
 		m_sldSpeed.SetTicFreq (2);
 
 		m_sldSound.SetLineSize (1);
 		m_sldSound.SetPageSize (1);
 		m_sldSound.SetRange (0, 100);
 		m_sldSound.SetSelection (0, 100);
-		m_sldSound.SetPos (theApp.GetProfileInt ("Game", "Sound", 100));
+		m_sldSound.SetPos (EnGetProfileInt("Game", "Sound", 100));
 		m_sldSound.SetTicFreq (10);
 	
 		m_sldMusic.SetLineSize (1);
 		m_sldMusic.SetPageSize (1);
 		m_sldMusic.SetRange (0, 100);
 		m_sldMusic.SetSelection (0, 100);
-		m_sldMusic.SetPos (theApp.GetProfileInt ("Game", "Music", 100));
+		m_sldMusic.SetPos (EnGetProfileInt("Game", "Music", 100));
 		m_sldMusic.SetTicFreq (10);
 		}
 	
@@ -208,13 +208,13 @@ void CDlgOptions::OnOK()
 		}
 
 	ASSERT ((0 <= iSpeed) && (iSpeed < NUM_SPEEDS));
-	theApp.WriteProfileInt ("Game", "Speed", iSpeed);
+	EnWriteProfileInt("Game", "Speed", iSpeed);
 	theGame.SetGameMul (iSpeed);
 
-	theApp.WriteProfileInt ("Game", "Sound", iSound);
+	EnWriteProfileInt("Game", "Sound", iSound);
 	theMusicPlayer.SetSoundVolume (iSound);
 
-	theApp.WriteProfileInt ("Game", "Music", iMusic);
+	EnWriteProfileInt("Game", "Music", iMusic);
 	theMusicPlayer.SetMusicVolume (iMusic);
 
 	CDialog::OnOK();
@@ -281,53 +281,53 @@ void CDlgAdvOptions::OnOK()
 	UpdateData (TRUE);
 
 	BOOL bWarn = FALSE;
-	if ( (int) theApp.GetProfileInt ("Advanced", "BLT", 0) != m_iBlt )
+	if ( (int) EnGetProfileInt("Advanced", "BLT", 0) != m_iBlt )
 		{
-		theApp.WriteProfileInt ("Advanced", "BLT", m_iBlt);
+		EnWriteProfileInt("Advanced", "BLT", m_iBlt);
 		bWarn = TRUE;
 		}
-	if ( (int) theApp.GetProfileInt ("Advanced", "ScreenResolution", 0) != m_iRes )
+	if ( (int) EnGetProfileInt("Advanced", "ScreenResolution", 0) != m_iRes )
 		{
-		theApp.WriteProfileInt ("Advanced", "ScreenResolution", m_iRes);
+		EnWriteProfileInt("Advanced", "ScreenResolution", m_iRes);
 		bWarn = TRUE;
 		}
-	if ( (int) theApp.GetProfileInt ("Advanced", "Music", 0) != m_iMusic )
+	if ( (int) EnGetProfileInt("Advanced", "Music", 0) != m_iMusic )
 		{
-		theApp.WriteProfileInt ("Advanced", "Music", m_iMusic);
+		EnWriteProfileInt("Advanced", "Music", m_iMusic);
 		bWarn = TRUE;
 		}
-	if ( (int) theApp.GetProfileInt ("Advanced", "Scroll", 0) != m_iScroll )
+	if ( (int) EnGetProfileInt("Advanced", "Scroll", 0) != m_iScroll )
 		{
-		theApp.WriteProfileInt ("Advanced", "Scroll", m_iScroll);
+		EnWriteProfileInt("Advanced", "Scroll", m_iScroll);
 		bWarn = TRUE;
 		}
-	if ( (int) theApp.GetProfileInt ("Advanced", "Pause", 1) != m_iPause )
+	if ( (int) EnGetProfileInt("Advanced", "Pause", 1) != m_iPause )
 		{
-		theApp.WriteProfileInt ("Advanced", "Pause", m_iPause);
+		EnWriteProfileInt("Advanced", "Pause", m_iPause);
 		bWarn = TRUE;
 		}
-	if ( (int) theApp.GetProfileInt ("Game", "NoIntro", 0) != m_iIntro )
+	if ( (int) EnGetProfileInt("Game", "NoIntro", 0) != m_iIntro )
 		{
-		theApp.WriteProfileInt ("Game", "NoIntro", m_iIntro);
+		EnWriteProfileInt("Game", "NoIntro", m_iIntro);
 		bWarn = TRUE;
 		}
-	if ( (int) theApp.GetProfileInt ("Advanced", "SetSysColors", 0) != m_iSysColors )
+	if ( (int) EnGetProfileInt("Advanced", "SetSysColors", 0) != m_iSysColors )
 		{
-		theApp.WriteProfileInt ("Advanced", "SetSysColors", m_iSysColors);
+		EnWriteProfileInt("Advanced", "SetSysColors", m_iSysColors);
 		bWarn = TRUE;
 		}
 
-	if ( (int) theApp.GetProfileInt ("Advanced", "ColorDepth", 1) != m_iDepth )
+	if ( (int) EnGetProfileInt("Advanced", "ColorDepth", 1) != m_iDepth )
 		{
-		theApp.WriteProfileInt ("Advanced", "ColorDepth", m_iDepth);
+		EnWriteProfileInt("Advanced", "ColorDepth", m_iDepth);
 		bWarn = TRUE;
 		if ( m_iDepth == 2 )
 			AfxMessageBox (IDS_ADV_DEPTH, MB_OK);
 		}
 
-	if ( (int) theApp.GetProfileInt ("Advanced", "Zoom", 2) != m_iZoom )
+	if ( (int) EnGetProfileInt("Advanced", "Zoom", 2) != m_iZoom )
 		{
-		theApp.WriteProfileInt ("Advanced", "Zoom", m_iZoom);
+		EnWriteProfileInt("Advanced", "Zoom", m_iZoom);
 		bWarn = TRUE;
 		if ( m_iZoom == 1 )
 			AfxMessageBox (IDS_ADV_ZOOM, MB_OK);
@@ -337,9 +337,9 @@ void CDlgAdvOptions::OnOK()
 	if ( iInd >= 0 )
 		{
 		iInd = m_lstLang.GetItemData ( iInd );
-		if ( (int) theApp.GetProfileInt ("Advanced", "Language", theApp.m_iLangCode) != iInd )
+		if ( (int) EnGetProfileInt("Advanced", "Language", theApp.m_iLangCode) != iInd )
 			{
-			theApp.WriteProfileInt ("Advanced", "Language", iInd );
+			EnWriteProfileInt("Advanced", "Language", iInd );
 			bWarn = TRUE;
 			}
 		}
@@ -356,11 +356,11 @@ BOOL CDlgAdvOptions::OnInitDialog()
 	try
 		{
 		if ( ( theApp.Have24Bit () || theApp.HaveWAV () || (theApp.GetNumDataZooms() > 3) )
-								&& (theApp.GetProfileInt ("Warnings", "AdvancedNote", 0) == 0) )
+								&& (EnGetProfileInt("Warnings", "AdvancedNote", 0) == 0) )
 			{
 			CDlgLicense dlgLic (6, TRUE);
 			dlgLic.DoModal ();
-			theApp.WriteProfileInt ( "Warnings", "AdvancedNote", 1 );
+			EnWriteProfileInt( "Warnings", "AdvancedNote", 1 );
 			}
 		}
 	catch (...)
@@ -373,23 +373,23 @@ BOOL CDlgAdvOptions::OnInitDialog()
 
 	UpdateData (TRUE);
 	
-	m_iRes = theApp.GetProfileInt ("Advanced", "ScreenResolution", 0);
+	m_iRes = EnGetProfileInt("Advanced", "ScreenResolution", 0);
 	m_iRes = __minmax ( 0, 4, m_iRes );
-	m_iBlt = theApp.GetProfileInt ("Advanced", "BLT", 0);
+	m_iBlt = EnGetProfileInt("Advanced", "BLT", 0);
 	m_iBlt = __minmax ( 0, 4, m_iBlt );
-	m_iMusic = theApp.GetProfileInt ("Advanced", "Music", 0);
+	m_iMusic = EnGetProfileInt("Advanced", "Music", 0);
 	m_iMusic = __minmax ( 0, 2, m_iMusic );
-	m_iScroll = theApp.GetProfileInt ("Advanced", "Scroll", 0);
+	m_iScroll = EnGetProfileInt("Advanced", "Scroll", 0);
 	m_iScroll = __minmax ( 0, 1, m_iScroll );
-	m_iDepth = theApp.GetProfileInt ("Advanced", "ColorDepth", 1);
+	m_iDepth = EnGetProfileInt("Advanced", "ColorDepth", 1);
 	m_iDepth = __minmax ( 0, 2, m_iDepth );
-	m_iZoom = theApp.GetProfileInt ("Advanced", "Zoom", 2);
+	m_iZoom = EnGetProfileInt("Advanced", "Zoom", 2);
 	m_iZoom = __minmax ( 0, 2, m_iZoom );
-	m_iPause = theApp.GetProfileInt ("Advanced", "Pause", 1);
+	m_iPause = EnGetProfileInt("Advanced", "Pause", 1);
 	m_iPause = __minmax ( 0, 1, m_iPause );
-	m_iIntro = theApp.GetProfileInt ("Game", "NoIntro", 0);
+	m_iIntro = EnGetProfileInt("Game", "NoIntro", 0);
 	m_iIntro = __minmax ( 0, 1, m_iIntro );
-	m_iSysColors = theApp.GetProfileInt ("Advanced", "SetSysColors", 0);
+	m_iSysColors = EnGetProfileInt("Advanced", "SetSysColors", 0);
 	m_iSysColors = __minmax ( 0, 1, m_iSysColors );
 
 	// may not have a choice because of DAT file

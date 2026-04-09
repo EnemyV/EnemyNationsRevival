@@ -340,7 +340,7 @@ void CWndMain::SetProgPos ( PROG_POS ppMode )
 	m_sText.ReleaseBuffer (lSize);
 
 	// get the font
-	CString sFont = theApp.GetProfileString ("StatusBar", "Font", "Newtown Italic");
+	CString sFont = EnGetProfileString("StatusBar", "Font", "Newtown Italic");
 	LOGFONT lf;
 	int iFntHt = 36;
 	CRect rect;
@@ -456,9 +456,9 @@ void CWndMain::OnPaint()
 		dc.SetTextColor ( RGB (255, 255, 255) );
 		CString sLoad;
 		if (m_progPos == exiting)
-			sLoad.LoadString (IDS_LEAVING);
+			sLoad = EnLoadString(IDS_LEAVING);
 		else
-			sLoad.LoadString (IDS_LOADING);
+			sLoad = EnLoadString(IDS_LOADING);
 		dc.TextOut (0, 0, sLoad);
 		dc.SelectObject (pOldFont);
 		return;
@@ -488,7 +488,7 @@ void CWndMain::OnPaint()
 
 		dc.SetTextColor ( RGB (255, 255, 255) );
 		CString sLoad;
-		sLoad.LoadString (IDS_EXIT_GAME);
+		sLoad = EnLoadString(IDS_EXIT_GAME);
 		dc.TextOut (0, 0, sLoad);
 		dc.SelectObject (pOldFont);
 		thePal.EndPaint (dc.m_hDC);
@@ -805,11 +805,11 @@ BOOL CDlgFile::OnInitDialog()
 	if ( iWinType == W32s )
 		{
 		m_scrSpeed.SetScrollRange (0, NUM_SPEEDS - 1);
-		m_scrSpeed.SetScrollPos (theApp.GetProfileInt ("Game", "Speed", NUM_SPEEDS/2));
+		m_scrSpeed.SetScrollPos (EnGetProfileInt("Game", "Speed", NUM_SPEEDS/2));
 		m_scrSound.SetScrollRange (0, 100);
-		m_scrSound.SetScrollPos (theApp.GetProfileInt ("Game", "Sound", 100));
+		m_scrSound.SetScrollPos (EnGetProfileInt("Game", "Sound", 100));
 		m_scrMusic.SetScrollRange (0, 100);
-		m_scrMusic.SetScrollPos (theApp.GetProfileInt ("Game", "Music", 100));
+		m_scrMusic.SetScrollPos (EnGetProfileInt("Game", "Music", 100));
 		}
 
 	else
@@ -841,7 +841,7 @@ BOOL CDlgFile::OnInitDialog()
 	if ( (theGame.IsNetGame ()) && (theGame.AmServer ()) )
 		{
 		CString sBtn;
-		sBtn.LoadString ( IDS_PLAYERS );
+		sBtn = EnLoadString( IDS_PLAYERS );
 		m_btnMission.SetWindowText ( sBtn );
 		}
 	else
@@ -1030,7 +1030,7 @@ void CDlgFile::OnOK()
 		if ( ! theMusicPlayer.IsGroupLoaded ( SFXGROUP::play ) )
 			{
 			CDlgSaveMsg dlgMsg ( this );
-			dlgMsg.m_sText.LoadString (IDS_LOAD_SFX);
+			dlgMsg.m_sText = EnLoadString(IDS_LOAD_SFX);
 			dlgMsg.Create (IDD_SAVE_MSG, this);
 			theMusicPlayer.LoadGroup (SFXGROUP::play);
 			dlgMsg.DestroyWindow ();
@@ -1107,7 +1107,7 @@ void CDlgFile::OnHScroll(UINT nSBCode, UINT nPos, CScrollBar* pScrollBar)
 		else
 			iSpeed = m_sldSpeed.GetPos ();
 		ASSERT ((0 <= iSpeed) && (iSpeed < NUM_SPEEDS));
-		theApp.WriteProfileInt ("Game", "Speed", iSpeed);
+		EnWriteProfileInt("Game", "Speed", iSpeed);
 
 		if ( theGame.GetServerNetNum () == 0 )
 			theGame.SetGameMul (iSpeed);
@@ -1127,7 +1127,7 @@ void CDlgFile::OnHScroll(UINT nSBCode, UINT nPos, CScrollBar* pScrollBar)
 				iSound = m_scrSound.GetScrollPos ();
 			else
 				iSound = m_sldSound.GetPos ();
-			theApp.WriteProfileInt ("Game", "Sound", iSound);
+			EnWriteProfileInt("Game", "Sound", iSound);
 			theMusicPlayer.SetSoundVolume (iSound);
 			}
 
@@ -1140,7 +1140,7 @@ void CDlgFile::OnHScroll(UINT nSBCode, UINT nPos, CScrollBar* pScrollBar)
 					iMusic = m_scrMusic.GetScrollPos ();
 				else
 					iMusic = m_sldMusic.GetPos ();
-				theApp.WriteProfileInt ("Game", "Music", iMusic);
+				EnWriteProfileInt("Game", "Music", iMusic);
 				int iOld = theMusicPlayer.GetMusicVolume ();
 				theMusicPlayer.SetMusicVolume (iMusic);
 
@@ -1515,7 +1515,7 @@ void CWndMain::EndLicense ()
 	if ( m_progPos == demo_license )
 		{
 	  // Play the startup movie
-		if ( (theApp.HaveIntro ()) && (theApp.GetProfileInt ("Game", "NoIntro", 0) == 0) )
+		if ( (theApp.HaveIntro ()) && (EnGetProfileInt("Game", "NoIntro", 0) == 0) )
 			{
 			try
 				{
@@ -1733,14 +1733,14 @@ void CDlgPause::Show (int iMode)
 	switch (iMode)
 	  {
 		case server :
-			m_sText.LoadString (IDS_PAUSE_SERVER);
+			m_sText = EnLoadString(IDS_PAUSE_SERVER);
 			Repaint();
 			::ShowWindow( m_hWnd, SW_SHOW );
 			::SetWindowPos( m_hWnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOSIZE | SWP_NOMOVE );
 			break;
 
 		case client :
-			m_sText.LoadString (IDS_PAUSE_CLIENT);
+			m_sText = EnLoadString(IDS_PAUSE_CLIENT);
 			Repaint();
 			::ShowWindow( m_hWnd, SW_SHOW );
 			::SetWindowPos( m_hWnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOSIZE | SWP_NOMOVE );

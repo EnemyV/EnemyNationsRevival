@@ -19,19 +19,19 @@ void SDL2OptionsDialog::OnInit() {
     AddWidget<SDL2Label>(lx, startY, 100, rowH, "Game Speed:");
     m_sldSpeed = AddWidget<SDL2Slider>(sx, startY + 8, sw, 24,
                                         0, NUM_SPEEDS - 1,
-                                        theApp.GetProfileInt("Game", "Speed", NUM_SPEEDS/2));
+                                        EnGetProfileInt("Game", "Speed", NUM_SPEEDS/2));
 
     // Sound Volume
     AddWidget<SDL2Label>(lx, startY + rowH, 100, rowH, "Sound:");
     m_sldSound = AddWidget<SDL2Slider>(sx, startY + rowH + 8, sw, 24,
                                         0, 100,
-                                        theApp.GetProfileInt("Game", "Sound", 100));
+                                        EnGetProfileInt("Game", "Sound", 100));
 
     // Music Volume
     AddWidget<SDL2Label>(lx, startY + 2*rowH, 100, rowH, "Music:");
     m_sldMusic = AddWidget<SDL2Slider>(sx, startY + 2*rowH + 8, sw, 24,
                                         0, 100,
-                                        theApp.GetProfileInt("Game", "Music", 100));
+                                        EnGetProfileInt("Game", "Music", 100));
 
     // Buttons
     int btnW = 90, btnH = 30;
@@ -64,13 +64,13 @@ void SDL2OptionsDialog::OnOK() {
     int iMusic = m_sldMusic->GetValue();
 
     ASSERT((0 <= iSpeed) && (iSpeed < NUM_SPEEDS));
-    theApp.WriteProfileInt("Game", "Speed", iSpeed);
+    EnWriteProfileInt("Game", "Speed", iSpeed);
     theGame.SetGameMul(iSpeed);
 
-    theApp.WriteProfileInt("Game", "Sound", iSound);
+    EnWriteProfileInt("Game", "Sound", iSound);
     theMusicPlayer.SetSoundVolume(iSound);
 
-    theApp.WriteProfileInt("Game", "Music", iMusic);
+    EnWriteProfileInt("Game", "Music", iMusic);
     theMusicPlayer.SetMusicVolume(iMusic);
 
     EndDialog(1);

@@ -572,7 +572,7 @@ void CStructure::InitSprites() {
     }
 
 #ifdef _CHEAT
-    if (theApp.GetProfileInt ("Cheat", "ShowLoad", 0))
+    if (EnGetProfileInt("Cheat", "ShowLoad", 0))
         theApp.m_pCreateGame->GetDlgStatus()->SetMsg ("Building bitmaps loaded");
 #endif
 
@@ -673,10 +673,10 @@ void CTransport::InitData() {
     if (m_bLoaded & 0x01)
         return;
 
-    CTransportData::m_sAuto.LoadString(IDS_TRUCK_AUTO);
-    CTransportData::m_sRoute.LoadString(IDS_TRUCK_ROUTE);
-    CTransportData::m_sIdle.LoadString(IDS_TRUCK_IDLE);
-    CTransportData::m_sTravel.LoadString(IDS_TRUCK_TRAVEL);
+    CTransportData::m_sAuto = EnLoadString(IDS_TRUCK_AUTO);
+    CTransportData::m_sRoute = EnLoadString(IDS_TRUCK_ROUTE);
+    CTransportData::m_sIdle = EnLoadString(IDS_TRUCK_IDLE);
+    CTransportData::m_sTravel = EnLoadString(IDS_TRUCK_TRAVEL);
 
     // read in the RIF data
     Ptr<CMmio> ptrMmio = theDataFile.OpenAsMMIO("units", "UNIT");
@@ -776,7 +776,7 @@ void CTransport::InitSprites() {
     theApp.BaseYield();
 
 #ifdef _CHEAT
-    if (theApp.GetProfileInt ("Cheat", "ShowLoad", 0))
+    if (EnGetProfileInt("Cheat", "ShowLoad", 0))
         theApp.m_pCreateGame->GetDlgStatus()->SetMsg ("Vehicle bitmaps loaded");
 #endif
 
@@ -859,7 +859,7 @@ void CTransport::InitSprites() {
     }
 
 #ifdef _CHEAT
-    if (theApp.GetProfileInt ("Cheat", "ShowLoad", 0))
+    if (EnGetProfileInt("Cheat", "ShowLoad", 0))
         theApp.m_pCreateGame->GetDlgStatus()->SetMsg ("Vehicle hotspots loaded");
 #endif
 
@@ -2174,7 +2174,7 @@ BOOL CSpriteCollection::Read( CMmio &mmio, unsigned int uTime, int iPerStart, in
     for (int i = 0; i < m_nSprite; ++i) {
         try {
 #ifdef _CHEAT
-            if (theApp.GetProfileInt ("Cheat", "ShowLoad", 0))
+            if (EnGetProfileInt("Cheat", "ShowLoad", 0))
             {
                 CString sText = "Sprite: " + IntToCString (i);
                 theApp.m_pCreateGame->GetDlgStatus()->SetMsg (sText);
@@ -2296,7 +2296,7 @@ BOOL CSpriteCollection::Read( CMmio &mmio, unsigned int uTime, int iPerStart, in
     m_bOpen = TRUE;
 
 #ifdef _CHEAT
-    if (theApp.GetProfileInt ("Cheat", "ShowLoad", 0))
+    if (EnGetProfileInt("Cheat", "ShowLoad", 0))
         theApp.m_pCreateGame->GetDlgStatus()->SetMsg ("Sprites Loaded");
 #endif
 

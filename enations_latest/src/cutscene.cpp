@@ -79,11 +79,11 @@ UINT CCutScene::_PlayScene (int iTyp, int iScenario, BOOL bAsync)
 		switch (iTyp)
 		  {
 			case CWndCutScene::win:
-			  { CString s; s.LoadString(IDS_YOU_WON); sText = (const char*)s; break; }
+			  { CString s; s = EnLoadString(IDS_YOU_WON); sText = (const char*)s; break; }
 			case CWndCutScene::lose:
-			  { CString s; s.LoadString(IDS_YOU_LOST); sText = (const char*)s; break; }
+			  { CString s; s = EnLoadString(IDS_YOU_LOST); sText = (const char*)s; break; }
 			case CWndCutScene::scenario_end:
-			  { CString s; s.LoadString(IDS_YOU_END_SCENARIO); sText = (const char*)s; break; }
+			  { CString s; s = EnLoadString(IDS_YOU_END_SCENARIO); sText = (const char*)s; break; }
 			case CWndCutScene::cut:
 			case CWndCutScene::repeat:
 			  {
@@ -336,7 +336,7 @@ void CWndCutScene::OnCreateOther (int idRes)
 {
 
 	// get the text
-	m_sText.LoadString (idRes);
+	m_sText = EnLoadString(idRes);
 
 	CRect rect;
 	GetClientRect (&rect);

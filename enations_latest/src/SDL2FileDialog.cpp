@@ -2,6 +2,7 @@
 
 #include "SDL2FileDialog.h"
 #include "SDL2SaveDialog.h"
+#include "SDL2FileBrowser.h"
 #include "GameWindow.h"
 #include "lastplnt.h"
 #include "player.h"
@@ -62,17 +63,17 @@ void SDL2FileDialog::ApplySettings() {
     if (m_sldSpeed) {
         int speed = m_sldSpeed->GetValue();
         theGame.SetGameMul(speed);
-        theApp.WriteProfileInt("Game", "Speed", speed);
+        EnWriteProfileInt("Game", "Speed", speed);
     }
     if (m_sldSound) {
         int vol = m_sldSound->GetValue();
         theMusicPlayer.SetSoundVolume(vol);
-        theApp.WriteProfileInt("Game", "Sound", vol);
+        EnWriteProfileInt("Game", "Sound", vol);
     }
     if (m_sldMusic) {
         int vol = m_sldMusic->GetValue();
         theMusicPlayer.SetMusicVolume(vol);
-        theApp.WriteProfileInt("Game", "Music", vol);
+        EnWriteProfileInt("Game", "Music", vol);
     }
 }
 
@@ -85,16 +86,21 @@ void SDL2FileDialog::OnSave() {
     ApplySettings();
     EndDialog(1);
 
-    // Get filename via SDL2 dialog, then let SaveGame handle the rest
+    // Get filename via SDL2 file browser with full directory navigation
     std::string defaultName = (const char*)theGame.m_sFileName;
+    // Strip path to just filename for the edit box default
+    size_t lastSlash = defaultName.find_last_of("\\/");
+    if (lastSlash != std::string::npos)
+        defaultName = defaultName.substr(lastSlash + 1);
     if (defaultName.empty()) defaultName = "savegame";
 
-    SDL2SaveDialog saveDlg(m_gameWindow, defaultName);
-    saveDlg.DoModal();
+    SDL2FileBrowser browser(m_gameWindow, SDL2FileBrowser::Save,
+                            "Save Game", "", defaultName, ".en");
+    browser.DoModal();
 
-    if (saveDlg.WasSaved()) {
+    if (browser.WasConfirmed()) {
         // Pre-set the filename so SaveGame can skip its file dialog
-        theGame.m_sFileName = saveDlg.GetFilename().c_str();
+        theGame.m_sFileName = browser.GetSelectedPath().c_str();
         theGame.SaveGame(NULL);
     }
 }

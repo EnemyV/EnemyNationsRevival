@@ -60,7 +60,7 @@ void TerrainStatusText( void* pData, CString& str )
         return;
     }
 
-    str.LoadString( IDS_STAT_MINERALS );
+    str = EnLoadString( IDS_STAT_MINERALS );
     CString sNum1 = IntToCString( pMn->GetQuantity( ) );
     CString sNum2 = IntToCString( pMn->GetDensity( ) );
     csPrintf( &str, (char const*)CMaterialTypes::GetDesc( pMn->GetType( ) ), (char const*)sNum1, (char const*)sNum2 );

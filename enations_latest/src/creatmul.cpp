@@ -241,7 +241,7 @@ void CDlgCreateMulti::OnOK()
 		}
 
 	m_pCm->m_iNumAi = atoi (m_strNumAI);
-	if ( theApp.GetProfileInt ("Advanced", "IgnoreAiLimit", 0) == 0 )
+	if ( EnGetProfileInt("Advanced", "IgnoreAiLimit", 0) == 0 )
 		{
 		int iMax = __max ( 0, theApp.GetCpuSpeed () - 100 );
 		iMax = 3 + iMax / 20;
@@ -251,7 +251,7 @@ void CDlgCreateMulti::OnOK()
 			{
 			TRAP ();
 			CString sText;
-			sText.LoadString ( IDS_AI_LIMIT_2_MAX );
+			sText = EnLoadString( IDS_AI_LIMIT_2_MAX );
 			CString sNum = IntToCString ( 2 * iMax );
 			csPrintf (&sText, (char const *) sNum);
 			AfxMessageBox ( sText, MB_OK | MB_ICONSTOP );
@@ -262,7 +262,7 @@ void CDlgCreateMulti::OnOK()
 				{
 				TRAP ();
 				CString sText;
-				sText.LoadString ( IDS_AI_LIMIT_MAX );
+				sText = EnLoadString( IDS_AI_LIMIT_MAX );
 				CString sNum = IntToCString ( iMax );
 				csPrintf (&sText, (char const *) sNum);
 				if ( AfxMessageBox ( sText, MB_YESNO | MB_ICONSTOP ) != IDYES )
@@ -279,13 +279,13 @@ void CDlgCreateMulti::OnOK()
 	m_pCm->m_sGameDesc = m_sDesc;
 	m_pCm->m_sName = m_sPlayer;
 
-	theApp.WriteProfileInt ("Create", "Difficultity", m_iAi);
-	theApp.WriteProfileInt ("Create", "Size", m_iSize);
-	theApp.WriteProfileInt ("Create", "AiOpponents", m_pCm->m_iNumAi);
-	theApp.WriteProfileInt ("Create", "StartPosition", m_iPos);
-	theApp.WriteProfileString ("Create", "Name", m_sPlayer);
-	theApp.WriteProfileString ("Create", "GameName", m_sName);
-	theApp.WriteProfileString ("Create", "GameDesc", m_sDesc);
+	EnWriteProfileInt("Create", "Difficultity", m_iAi);
+	EnWriteProfileInt("Create", "Size", m_iSize);
+	EnWriteProfileInt("Create", "AiOpponents", m_pCm->m_iNumAi);
+	EnWriteProfileInt("Create", "StartPosition", m_iPos);
+	EnWriteProfileString("Create", "Name", m_sPlayer);
+	EnWriteProfileString("Create", "GameName", m_sName);
+	EnWriteProfileString("Create", "GameDesc", m_sDesc);
 
 	// switch to the pick race dialog
 	if (m_pCm->m_dlgCreatePublish.m_hWnd == NULL)
@@ -312,19 +312,19 @@ BOOL CDlgCreateMulti::OnInitDialog()
 	
 	UpdateData (TRUE);
 
-	m_iAi = theApp.GetProfileInt ("Create", "Difficultity", 0);
+	m_iAi = EnGetProfileInt("Create", "Difficultity", 0);
 	m_iAi = __minmax ( 0, 3, m_iAi );
-  //  m_strNumAI = ( theApp.GetProfileInt( "Create", "AiOpponents", 2 ) ) + "";
-    int iNum   = theApp.GetProfileInt( "Create", "AiOpponents", 2 );  // atoi( m_strNumAI );
+  //  m_strNumAI = ( EnGetProfileInt( "Create", "AiOpponents", 2 ) ) + "";
+    int iNum   = EnGetProfileInt( "Create", "AiOpponents", 2 );  // atoi( m_strNumAI );
 	iNum = __minmax ( 0, 20, iNum );
 	m_strNumAI = IntToCString ( iNum );
-	m_iSize = theApp.GetProfileInt ("Create", "Size", 1);
+	m_iSize = EnGetProfileInt("Create", "Size", 1);
 	m_iSize = __minmax ( 0, 2, m_iSize );
-	m_iPos = theApp.GetProfileInt ("Create", "StartPosition", 1);
+	m_iPos = EnGetProfileInt("Create", "StartPosition", 1);
 	m_iPos = __minmax ( 0, 3, m_iPos );
-	m_sPlayer = theApp.GetProfileString ("Create", "Name");
-	m_sName = theApp.GetProfileString ("Create", "GameName");
-	m_sDesc = theApp.GetProfileString ("Create", "GameDesc");
+	m_sPlayer = EnGetProfileString("Create", "Name");
+	m_sName = EnGetProfileString("Create", "GameName");
+	m_sDesc = EnGetProfileString("Create", "GameDesc");
 
 	// shareware restrictions
 	if ( ( theApp.IsShareware () ) || ( theApp.IsSecondDisk () ) )
@@ -436,7 +436,7 @@ BOOL CDlgCreatePublish::OnInitDialog()
 	UpdateData (TRUE);
 
 	// make sure the protocol is ok
-	m_iConn = theApp.GetProfileInt ("Create", "Connection", 0);
+	m_iConn = EnGetProfileInt("Create", "Connection", 0);
 	m_iConn = __minmax ( 0, NUM_PROTOCOLS - 1, m_iConn );
 	if (! CNetApi::SupportsProtocol (aPr [m_iConn]) )
 		for (int iRad=0; iRad<NUM_PROTOCOLS; iRad++)
@@ -446,9 +446,9 @@ BOOL CDlgCreatePublish::OnInitDialog()
 				break;
 				}
 
-	m_iJoin = theApp.GetProfileInt ("Create", "JoinUntil", 0);
+	m_iJoin = EnGetProfileInt("Create", "JoinUntil", 0);
 	m_iJoin = __minmax ( 0, 2, m_iJoin );
-	m_bServer = theApp.GetProfileInt ("Create", "NoPlayer", FALSE);
+	m_bServer = EnGetProfileInt("Create", "NoPlayer", FALSE);
 
 	// if shareware - no server
 	if ( ( theApp.IsShareware () ) || ( theApp.IsSecondDisk () ) )
@@ -511,10 +511,10 @@ void CDlgCreatePublish::UpdateBtns()
 		{
 		m_idOK = ID;
 		CString sBtn;
-		sBtn.LoadString (ID);
+		sBtn = EnLoadString(ID);
 		m_btnOk.SetWindowText (sBtn);
 
-		sBtn.LoadString (ID2);
+		sBtn = EnLoadString(ID2);
 		m_btnUnpub.SetWindowText (sBtn);
 		}
 
@@ -589,9 +589,9 @@ void CDlgCreatePublish::OnOK()
 	m_pCm->m_iJoinUntil = m_iJoin;
 	theGame.m_sPwJoin = m_pCm->m_sPw = m_strPw;
 
-	theApp.WriteProfileInt ("Create", "Connection", m_iConn);
-	theApp.WriteProfileInt ("Create", "JoinUntil", m_iJoin);
-	theApp.WriteProfileInt ("Create", "NoPlayer", m_bServer);
+	EnWriteProfileInt("Create", "Connection", m_iConn);
+	EnWriteProfileInt("Create", "JoinUntil", m_iJoin);
+	EnWriteProfileInt("Create", "NoPlayer", m_bServer);
 
 	// create the game
 	//   only publish if not yet published (could be here from a Prev)
@@ -738,11 +738,11 @@ void CCreateLoadMulti::Init ()
 	m_iNumPlayers = theGame.GetAll ().GetCount ();
 
 	if (theGame.m_sGameName.IsEmpty ())
-		m_sGameName = theApp.GetProfileString ("Create", "GameName");
+		m_sGameName = EnGetProfileString("Create", "GameName");
 	else
 		m_sGameName = theGame.m_sGameName;
 	if (theGame.m_sGameDesc.IsEmpty ())
-		m_sGameDesc = theApp.GetProfileString ("Create", "GameDesc");
+		m_sGameDesc = EnGetProfileString("Create", "GameDesc");
 	else
 		m_sGameDesc = theGame.m_sGameDesc;
 
@@ -865,8 +865,8 @@ void CDlgLoadMulti::OnOK()
 
 	theGame.m_sGameName = m_pLm->m_sGameName = m_sName;
 	theGame.m_sGameDesc = m_pLm->m_sGameDesc = m_sDesc;
-	theApp.WriteProfileString ("Create", "GameName", m_sName);
-	theApp.WriteProfileString ("Create", "GameDesc", m_sDesc);
+	EnWriteProfileString("Create", "GameName", m_sName);
+	EnWriteProfileString("Create", "GameDesc", m_sDesc);
 
 	// switch to the pick race dialog
 	m_pLm->m_dlgPickPlayer.Create ( m_pLm, IDD_PICK_PLAYER, theApp.m_pMainWnd );

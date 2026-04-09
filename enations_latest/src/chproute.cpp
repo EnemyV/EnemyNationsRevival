@@ -161,7 +161,7 @@ void CHPRouter::MsgErrGoto( CVehicle const* pVeh )
 #if 0
     // should use an event
     CString sMsg;
-    sMsg.LoadString ( IDS_HPR_BLOCKED );
+    sMsg = EnLoadString( IDS_HPR_BLOCKED );
     theApp.m_wndBar.SetStatusText ( 0, sMsg );
 #endif
     CMsgVehGoto msg( pVeh );

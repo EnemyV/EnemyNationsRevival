@@ -468,7 +468,7 @@ BOOL CNetbios::AddGroupName (LPCSTR pName, LPCVOID pData)
 #ifdef BUGBUG
 		{
 		CString sErr;
-		sErr.LoadString (IDS_NETBIOS_ADD_GROUP_ERROR);
+		sErr = EnLoadString(IDS_NETBIOS_ADD_GROUP_ERROR);
 		csPrintf (&sErr, pName);
 		MsgBox (sErr);
 		}
@@ -518,7 +518,7 @@ BOOL CNetbios::AddName (LPCSTR pName, LPCVOID pData)
 #ifdef BUGBUG
 		{
 		CString sErr;
-		sErr.LoadString (IDS_NETBIOS_ADD_DUP);
+		sErr = EnLoadString(IDS_NETBIOS_ADD_DUP);
 		csPrintf (&sErr, pName);
 		MsgBox (sErr);
 		}

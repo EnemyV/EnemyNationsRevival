@@ -162,9 +162,8 @@ void SDL2CreateStatus::SetMsg(const std::string& text) {
 }
 
 void SDL2CreateStatus::SetMsg(int stringResourceID) {
-    // Load string from MFC resource table
-    CString str;
-    if (str.LoadString(stringResourceID))
+    CString str = EnLoadString(stringResourceID);
+    if (!str.IsEmpty())
         m_message = (const char*)str;
     else
         m_message = "Loading...";

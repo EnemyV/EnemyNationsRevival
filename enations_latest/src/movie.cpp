@@ -114,11 +114,11 @@ void CWndMovie::AddMovie(char const *pFile) {
 
     if (bFirst) {
         bFirst = FALSE;
-        m_sDataDir = theApp.GetProfileString("Game", "DataFile", ".\\");
+        m_sDataDir = EnGetProfileString("Game", "DataFile", ".\\");
         m_sDataDir.ReleaseBuffer(m_sDataDir.ReverseFind('\\') + 1);
         m_sDataDir += "avi\\";
 
-        m_sPatchDir = theApp.GetProfileString("Game", "Patch", "..\\data");
+        m_sPatchDir = EnGetProfileString("Game", "Patch", "..\\data");
         if (!m_sPatchDir.IsEmpty())
             if (m_sPatchDir[m_sPatchDir.GetLength() - 1] != '\\')
                 m_sPatchDir += "\\";

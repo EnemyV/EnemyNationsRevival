@@ -129,7 +129,7 @@ void CAIInitPos::DoIt( void )
 
 
 #ifdef _LOGOUT
-    iCnt = theApp.GetProfileInt( "Cheat", "AiMedScouts", iCnt );
+    iCnt = EnGetProfileInt( "Cheat", "AiMedScouts", iCnt );
 #endif
 
 
@@ -175,7 +175,7 @@ void CAIInitPos::DoIt( void )
 
 
 #ifdef _LOGOUT
-    iCnt = theApp.GetProfileInt( "Cheat", "AiMedTanks", iCnt );
+    iCnt = EnGetProfileInt( "Cheat", "AiMedTanks", iCnt );
 #endif
 
 
@@ -222,7 +222,7 @@ void CAIInitPos::DoIt( void )
 
 
 #ifdef _LOGOUT
-    iCnt = theApp.GetProfileInt( "Cheat", "AiLightTanks", iCnt );
+    iCnt = EnGetProfileInt( "Cheat", "AiLightTanks", iCnt );
 #endif
 
 
@@ -269,7 +269,7 @@ void CAIInitPos::DoIt( void )
 
 
 #ifdef _LOGOUT
-    iCnt = theApp.GetProfileInt( "Cheat", "AiLightArts", iCnt );
+    iCnt = EnGetProfileInt( "Cheat", "AiLightArts", iCnt );
 #endif
 
 
@@ -348,7 +348,7 @@ void CAIInitPos::DoIt( void )
 
 
 #ifdef _LOGOUT
-    iCnt = theApp.GetProfileInt( "Cheat", "AiCranes", iCnt );
+    iCnt = EnGetProfileInt( "Cheat", "AiCranes", iCnt );
 #endif
 
 
@@ -392,7 +392,7 @@ void CAIInitPos::DoIt( void )
 
 
 #ifdef _LOGOUT
-    iCnt = theApp.GetProfileInt( "Cheat", "AiTrucks", iCnt );
+    iCnt = EnGetProfileInt( "Cheat", "AiTrucks", iCnt );
 #endif
 
 
@@ -437,7 +437,7 @@ void CAIInitPos::DoIt( void )
 
 
 #ifdef _LOGOUT
-    iCnt = theApp.GetProfileInt( "Cheat", "AiLightScouts", iCnt );
+    iCnt = EnGetProfileInt( "Cheat", "AiLightScouts", iCnt );
 #endif
 
     /*
@@ -497,7 +497,7 @@ void CAIInitPos::DoIt( void )
 
 
 #ifdef _LOGOUT
-    iCnt = theApp.GetProfileInt( "Cheat", "AiInfantry", iCnt );
+    iCnt = EnGetProfileInt( "Cheat", "AiInfantry", iCnt );
 #endif
 
 
@@ -541,7 +541,7 @@ void CAIInitPos::DoIt( void )
 
 
 #ifdef _LOGOUT
-    iCnt = theApp.GetProfileInt( "Cheat", "AiIFV", iCnt );
+    iCnt = EnGetProfileInt( "Cheat", "AiIFV", iCnt );
 #endif
 
 

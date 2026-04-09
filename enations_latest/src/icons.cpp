@@ -185,7 +185,7 @@ void CStatData::Init (CMmio * pMmio)
 				CClientDC dc ( NULL );
 				CFont * pOldFont = dc.SelectObject (m_pFnt);
 				CString sTest;
-				sTest.LoadString (IDS_LONGEST_STRING);
+				sTest = EnLoadString(IDS_LONGEST_STRING);
 				CRect rect (0, 0, theApp.m_iScrnX, theApp.m_iScrnY);
 				dc.DrawText (sTest, -1, &rect, DT_CALCRECT | DT_LEFT | DT_SINGLELINE);
 				dc.SelectObject ( pOldFont );
