@@ -29,7 +29,7 @@ CLog::CLog() {
 
     m_iSection = m_iLevel = 0;
     m_bLogToFile = m_bLogToDebug = m_bOpened = FALSE;
-    m_File.m_hFile = reinterpret_cast<HANDLE>( UINT_MAX );
+    m_pFile = NULL;
 }
 
 CLog::~CLog() {
@@ -37,8 +37,8 @@ CLog::~CLog() {
     if ( ( m_bLogToFile ) || ( m_bLogToDebug ) )
         DeleteCriticalSection( &m_cs );
 
-    if ( m_File.m_hFile != reinterpret_cast<HANDLE>( UINT_MAX ) )
-        m_File.Close();
+    if ( m_pFile != NULL )
+        fclose( m_pFile );
 }
 
 BOOL CLog::OkLevel( int iLevel, int iSection ) const {
@@ -61,7 +61,7 @@ void CLog::Write( int iLevel, int iSection, char const* pBuf ) {
 
         if ( m_bLogToFile ) {
             const char* sName = w22::GetProfileString( "Logging", "FileName", "enations.log" );
-            if ( m_File.Open( sName, CFile::modeCreate | CFile::modeWrite | CFile::shareDenyWrite | CFile::typeBinary ) == 0 )
+            if ( fopen_s( &m_pFile, sName, "wb" ) != 0 || m_pFile == NULL )
                 m_bLogToFile = FALSE;
         }
 
@@ -77,12 +77,13 @@ void CLog::Write( int iLevel, int iSection, char const* pBuf ) {
     EnterCriticalSection( &m_cs );
 
     // write to the file (we assume an exception is disk full)
-    if ( m_bLogToFile ) {
-        try {
-            m_File.Write( pBuf, strlen( pBuf ) );
-        } catch ( ... ) {
-            m_File.SetLength( 0 );
+    if ( m_bLogToFile && m_pFile != NULL ) {
+        size_t len = strlen( pBuf );
+        if ( fwrite( pBuf, 1, len, m_pFile ) < len ) {
+            // disk full — truncate
+            _chsize_s( _fileno( m_pFile ), 0 );
         }
+        fflush( m_pFile );
     }
 
     if ( m_bLogToDebug )
