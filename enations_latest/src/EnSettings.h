@@ -18,6 +18,7 @@
 // Including <afx.h> here gives us the right typedef without depending on
 // the precompiled header for callers.
 #include <afx.h>
+#include <string>
 
 int     EnGetProfileInt    ( const char* section, const char* entry, int default_val );
 void    EnWriteProfileInt  ( const char* section, const char* entry, int value );
@@ -28,6 +29,11 @@ void    EnWriteProfileString( const char* section, const char* entry, const char
 // Returns the requested resource string, or an empty CString if the id was
 // not found in the .RC string table.
 CString EnLoadString( unsigned int id );
+
+// --- std::string variants (Phase 5a prep) ---
+// These allow callers to migrate away from CString incrementally.
+std::string EnGetProfileStdString( const char* section, const char* entry, const char* default_val = "" );
+std::string EnLoadStdString( unsigned int id );
 
 // Win32 MessageBoxA wrapper that does not depend on CWinApp/MFC. The third
 // "helpId" parameter is accepted for source-compatibility with AfxMessageBox

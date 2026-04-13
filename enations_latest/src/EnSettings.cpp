@@ -208,3 +208,51 @@ int EnMessageBoxOnce( unsigned int idText, unsigned int type, const char* sectio
     CString s = EnLoadString( idText );
     return EnMessageBoxOnce( (const char*)s, type, section, entry, iDefault );
 }
+
+// --- std::string variants (Phase 5a prep) ---
+
+std::string EnGetProfileStdString( const char* section, const char* entry, const char* default_val )
+{
+    if ( !section || !entry )
+        return default_val ? default_val : "";
+
+    char keyPath[ 512 ];
+    _snprintf_s( keyPath, sizeof( keyPath ), _TRUNCATE, "%s\\%s", "Software\\Second Chance\\Second Chance", section );
+
+    HKEY hKey = NULL;
+    if ( ::RegOpenKeyExA( HKEY_CURRENT_USER, keyPath, 0, KEY_READ, &hKey ) != ERROR_SUCCESS )
+        return default_val ? default_val : "";
+
+    // Query size first
+    DWORD type = 0;
+    DWORD size = 0;
+    LONG  rc   = ::RegQueryValueExA( hKey, entry, NULL, &type, NULL, &size );
+    if ( rc != ERROR_SUCCESS || ( type != REG_SZ && type != REG_EXPAND_SZ ) || size == 0 )
+    {
+        ::RegCloseKey( hKey );
+        return default_val ? default_val : "";
+    }
+
+    std::string result( size, '\0' );
+    rc = ::RegQueryValueExA( hKey, entry, NULL, &type, (LPBYTE)&result[0], &size );
+    ::RegCloseKey( hKey );
+
+    if ( rc != ERROR_SUCCESS )
+        return default_val ? default_val : "";
+
+    // Remove null terminator if present
+    if ( !result.empty() && result.back() == '\0' )
+        result.pop_back();
+
+    return result;
+}
+
+std::string EnLoadStdString( unsigned int id )
+{
+    char buf[ 1024 ];
+    HMODULE hModule = ::GetModuleHandleA( NULL );
+    int len = ::LoadStringA( hModule, id, buf, (int)sizeof( buf ) );
+    if ( len <= 0 )
+        return std::string();
+    return std::string( buf, len );
+}
