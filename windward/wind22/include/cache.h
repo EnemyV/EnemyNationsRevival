@@ -1,8 +1,8 @@
 #ifndef __CACHE_H__
 #define __CACHE_H__
 
-#include <afxwin.h>
-#include <afxmt.h>
+#include <windows.h>
+#include <list>
 
 const int MSG_CACHE = WM_USER + 583;
 
@@ -62,11 +62,11 @@ class CDiskCache
     void ctor( );
     void _ThreadFunc( );
 
-    POSITION                        m_posOn;        // element presently on
-    CCriticalSection                m_cs;           // for access to the linked list
-    BOOL                            m_bKillMe;      // kill the thread
-    CCacheElem*                     m_pCceOn;       // element we are reading right now
-    CList<CCacheElem*, CCacheElem*> m_lstRequests;  // stuff to read
+    std::list<CCacheElem*>::iterator m_posOn;  // element presently on
+    CRITICAL_SECTION                m_cs;      // for access to the linked list
+    BOOL                            m_bKillMe; // kill the thread
+    CCacheElem*                     m_pCceOn;  // element we are reading right now
+    std::list<CCacheElem*>          m_lstRequests;  // stuff to read
 
     HWND m_hWnd;  // window that handles messages
 };

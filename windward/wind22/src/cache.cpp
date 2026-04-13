@@ -40,10 +40,12 @@ CCacheElem::CCacheElem( HANDLE hFil, int iOff, int iLen, void* pBuf, void ( *fnC
 
 void CDiskCache::ctor() {
 
-    m_posOn = NULL;
+    m_posOn = m_lstRequests.end();
     m_bKillMe = FALSE;
     m_dwThrd = NULL;
     m_hWnd = NULL;
+    m_pCceOn = NULL;
+    InitializeCriticalSection( &m_cs );
 }
 
 void CDiskCache::Open( HWND hWnd ) {
@@ -54,31 +56,36 @@ void CDiskCache::Open( HWND hWnd ) {
 
 CDiskCache::~CDiskCache() {
 
-    if ( m_dwThrd == NULL )
+    if ( m_dwThrd == NULL ) {
+        DeleteCriticalSection( &m_cs );
         return;
+    }
 
     Close();
 
     if ( m_dwThrd != NULL )
         TerminateThread( ( (CWinThread*)m_dwThrd )->m_hThread, 1 );
+
+    DeleteCriticalSection( &m_cs );
 }
 
 void CDiskCache::KillAllRequests() {
 
-    m_cs.Lock();
+    EnterCriticalSection( &m_cs );
 
     // remove all elements
-    POSITION pos = m_lstRequests.GetHeadPosition();
-    while ( pos != NULL ) {
-        POSITION posDel = pos;
-        CCacheElem* pCceTst = m_lstRequests.GetNext( pos );
+    auto it = m_lstRequests.begin();
+    while ( it != m_lstRequests.end() ) {
+        CCacheElem* pCceTst = *it;
         // if we are not reading it we can kill it
         if ( pCceTst != m_pCceOn ) {
             TRAP();
             delete pCceTst;
-            m_lstRequests.RemoveAt( posDel );
-        } else
+            it = m_lstRequests.erase( it );
+        } else {
             TRAP();
+            ++it;
+        }
     }
 
     int iOff;
@@ -87,7 +94,7 @@ void CDiskCache::KillAllRequests() {
     else
         iOff = -1;
 
-    m_cs.Unlock();
+    LeaveCriticalSection( &m_cs );
 
     if ( iOff != -1 )
         KillRequest( iOff );
@@ -100,35 +107,26 @@ void CDiskCache::KillAllRequests() {
 
 void CDiskCache::Close() {
 
-    m_cs.Lock();
+    EnterCriticalSection( &m_cs );
 
     // remove all elements
-    POSITION pos = m_lstRequests.GetHeadPosition();
-    while ( pos != NULL ) {
-        POSITION posDel = pos;
-        CCacheElem* pCceTst = m_lstRequests.GetNext( pos );
+    auto it = m_lstRequests.begin();
+    while ( it != m_lstRequests.end() ) {
+        CCacheElem* pCceTst = *it;
         // if we are not reading it we can kill it
         if ( pCceTst != m_pCceOn ) {
             TRAP();
             delete pCceTst;
-            m_lstRequests.RemoveAt( posDel );
-        } else
+            it = m_lstRequests.erase( it );
+        } else {
             TRAP();
+            ++it;
+        }
     }
 
     m_bKillMe = TRUE;
 
-#ifdef BUGBUG
-    if ( m_dwThrd != NULL ) {
-        myThreadPause( m_dwThrd, FALSE );
-
-        // boost it
-        if ( iWinType != W32s )
-            ( (CWinThread*)m_dwThrd )->SetThreadPriority( THREAD_PRIORITY_ABOVE_NORMAL );
-    }
-#endif
-
-    m_cs.Unlock();
+    LeaveCriticalSection( &m_cs );
 }
 
 // does a synchronous read
@@ -161,75 +159,71 @@ void CDiskCache::AddRequest( int hFil, int iOff, int iLen, void* pBuf, void ( *f
 #ifdef BUGBUG
     CCacheElem* pCce = new CCacheElem( (HANDLE)hFil, iOff, iLen, pBuf, fnCall, dwData );
 
-    m_cs.Lock();
+    EnterCriticalSection( &m_cs );
 
     // add to the list sorted by offset
-    POSITION pos = m_lstRequests.GetHeadPosition();
-    POSITION posLast = pos;
-    while ( pos != NULL ) {
-        CCacheElem* pCceTst = m_lstRequests.GetNext( pos );
-        if ( pCceTst->m_iOff >= iOff )
+    auto insertBefore = m_lstRequests.end();
+    for ( auto it = m_lstRequests.begin(); it != m_lstRequests.end(); ++it ) {
+        if ( (*it)->m_iOff >= iOff ) {
+            insertBefore = it;
             break;
-        posLast = pos;
+        }
     }
-    if ( posLast != NULL )
-        m_lstRequests.InsertBefore( posLast, pCce );
-    else
-        m_lstRequests.AddTail( pCce );
+    m_lstRequests.insert( insertBefore, pCce );
 
-    m_cs.Unlock();
+    LeaveCriticalSection( &m_cs );
 
     // unblock if there were no requests
-    if ( m_lstRequests.GetCount() == 1 )
+    if ( m_lstRequests.size() == 1 )
         myThreadPause( m_dwThrd, FALSE );
 #endif
 }
 
 void CDiskCache::KillRequest( int iOff ) {
 
-    m_cs.Lock();
+    EnterCriticalSection( &m_cs );
 
     // find it
-    POSITION pos = m_lstRequests.GetHeadPosition();
-    while ( pos != NULL ) {
-        POSITION posDel = pos;
-        CCacheElem* pCceTst = m_lstRequests.GetNext( pos );
+    bool bFoundInProcess = false;
+    for ( auto it = m_lstRequests.begin(); it != m_lstRequests.end(); ++it ) {
+        CCacheElem* pCceTst = *it;
         if ( pCceTst->m_iOff == iOff ) {
             TRAP();
             // if we are not reading it we can kill it
             if ( pCceTst != m_pCceOn ) {
                 TRAP();
                 delete pCceTst;
-                m_lstRequests.RemoveAt( posDel );
-                pos = NULL;
-            } else
+                m_lstRequests.erase( it );
+            } else {
                 TRAP();
+                bFoundInProcess = true;
+            }
             break;
         }
     }
 
-    m_cs.Unlock();
+    LeaveCriticalSection( &m_cs );
 
     // if it wasn't the one in process we're done
-    if ( pos == NULL )
+    if ( !bFoundInProcess )
         return;
 
     // ok - we need to wait till it reads (when we return the buf may be deleted)
     while ( TRUE ) {
-        m_cs.Lock();
+        EnterCriticalSection( &m_cs );
 
         if ( m_pCceOn == NULL ) {
             TRAP();
-            m_cs.Unlock();
+            LeaveCriticalSection( &m_cs );
             return;
         }
         if ( m_pCceOn->m_iOff != iOff ) {
             TRAP();
-            m_cs.Unlock();
+            LeaveCriticalSection( &m_cs );
             return;
         }
 
-        m_cs.Unlock();
+        LeaveCriticalSection( &m_cs );
         ::Sleep( 100 );
         myYieldThread();
     }
@@ -249,22 +243,22 @@ void CDiskCache::_ThreadFunc() {
 
 #ifdef BUGBUG
     while ( !m_bKillMe ) {
-        m_cs.Lock();
+        EnterCriticalSection( &m_cs );
 
         // get the next element
-        if ( m_posOn == NULL )
-            m_posOn = m_lstRequests.GetHeadPosition();
+        if ( m_posOn == m_lstRequests.end() )
+            m_posOn = m_lstRequests.begin();
 
         // if nothing we block
-        if ( m_posOn == NULL ) {
-            m_cs.Unlock();
+        if ( m_posOn == m_lstRequests.end() ) {
+            LeaveCriticalSection( &m_cs );
             myThreadPause( m_dwThrd, TRUE );
             continue;
         }
 
         // we've got one
-        m_pCceOn = m_lstRequests.GetAt( m_posOn );
-        m_cs.Unlock();
+        m_pCceOn = *m_posOn;
+        LeaveCriticalSection( &m_cs );
 
         // read it
         ::SetFilePointer( m_pCceOn->m_hFil, m_pCceOn->m_iOff, NULL, FILE_BEGIN );
@@ -282,28 +276,21 @@ void CDiskCache::_ThreadFunc() {
                 break;
 
         // take it out of the list
-        m_cs.Lock();
-        POSITION posDel = m_posOn;
-        m_lstRequests.GetNext( m_posOn );
-        m_lstRequests.RemoveAt( posDel );
+        EnterCriticalSection( &m_cs );
+        m_posOn = m_lstRequests.erase( m_posOn );
         m_pCceOn = NULL;
-        m_cs.Unlock();
+        LeaveCriticalSection( &m_cs );
     }
 
     // all done - clean it out then kill the thread
-    m_cs.Lock();
+    EnterCriticalSection( &m_cs );
 
     // remove all elements
-    POSITION pos = m_lstRequests.GetHeadPosition();
-    while ( pos != NULL ) {
-        POSITION posDel = pos;
-        CCacheElem* pCceTst = m_lstRequests.GetNext( pos );
-        delete pCceTst;
-        m_lstRequests.RemoveAt( posDel );
-    }
-    m_lstRequests.RemoveAll();
+    for ( auto* p : m_lstRequests )
+        delete p;
+    m_lstRequests.clear();
 
-    m_cs.Unlock();
+    LeaveCriticalSection( &m_cs );
 
     m_dwThrd = NULL;
     myThreadTerminate();
