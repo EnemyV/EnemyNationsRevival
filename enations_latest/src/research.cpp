@@ -12,6 +12,7 @@
 #include "research.h"
 
 #include "area.h"
+#include "SDL2GameDialogs.h"
 #include "SDL2MFCPanel.h"
 #include "bitmaps.h"
 #include "building.inl"
@@ -808,7 +809,18 @@ void CDlgResearch::OnRsrchFound( )
     // we only let them see once
     m_btnDiscovery.EnableWindow( FALSE );
 
-    // put up the window
+    // SDL2 path: show discovery in a native SDL2 dialog
+    if ( theApp.m_gameWindow && m_iRsrchNum >= 0 )
+    {
+        CString sTitle = EnLoadString( IDS_DISCOVERED_TITLE );
+        csPrintf( &sTitle, (char const*)theRsrch.ElementAt( m_iRsrchNum ).m_sName );
+        std::string desc = (const char*)theRsrch.ElementAt( m_iRsrchNum ).m_sResult;
+        SDL2DiscoverDialog dlg( theApp.m_gameWindow.get(), (const char*)sTitle, desc );
+        dlg.DoModal();
+        return;
+    }
+
+    // MFC fallback
     if ( m_pDlgDiscvr == NULL )
         m_pDlgDiscvr = new CDlgDiscover( this );
     if ( m_pDlgDiscvr->m_hWnd == NULL )
