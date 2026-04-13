@@ -92,13 +92,37 @@ int CConquerApp::Run( )
     try
     {
 
-        // acquire and dispatch messages until a WM_QUIT message is received.
+        // Main event loop: SDL2 events take priority, Windows messages are secondary.
+        // The loop structure:
+        // 1. Check SDL2 events (primary event source when GameWindow exists)
+        // 2. Process any pending Windows messages (fallback/housekeeping)
+        // 3. Render one frame
         for ( ;; )
         {
-            // process all pending messages
-            if ( BaseYield( ) )
+            BOOL bQuitReceived = FALSE;
 
-                // it's a QUIT
+            // === Phase 3a: INVERTED event loop - SDL2 events first ===
+            // Process SDL2 events if game window is active
+            if ( m_gameWindow && m_gameWindow->PollEvents() )
+            {
+                // SDL_QUIT received - post WM_QUIT so shutdown is clean
+                ::PostQuitMessage( 0 );
+                bQuitReceived = TRUE;
+            }
+
+            // Render progress dialog directly (same logic as BaseYield)
+            if ( !bQuitReceived && m_gameWindow )
+            {
+                SDL2CreateStatus* pStatus = m_gameWindow->GetCreateStatus();
+                if ( pStatus && pStatus->IsVisible() )
+                    pStatus->Render();
+            }
+
+            // === Secondary: Windows messages (for system integration, Win32 housekeeping) ===
+            // Check for WM_QUIT or other Windows messages if they're pending
+            if ( bQuitReceived || BaseYield( ) )
+            {
+                // BaseYield returned TRUE (WM_QUIT detected) or we already got SDL_QUIT
                 if ( ::PeekMessage( &m_msgCur, NULL, NULL, NULL, PM_NOREMOVE ) )
                     if ( m_msgCur.message == WM_QUIT )
                     {
@@ -112,8 +136,9 @@ int CConquerApp::Run( )
 #endif
                         return ExitInstance( );
                     }
+            }
 
-            // run a frame
+            // === Render one frame ===
             GraphicsEnginePump( );
         }
     }
@@ -305,7 +330,7 @@ BOOL CConquerApp::BaseYield( )
         theMusicPlayer.YieldPlayer( );
     }
 
-    // Process SDL events alongside Windows messages
+    // Process SDL events (also called from Run() — re-entrancy guard in PollEvents prevents double-processing)
     if ( m_gameWindow && m_gameWindow->PollEvents() )
     {
         // SDL_QUIT received - post WM_QUIT so MFC shuts down normally
@@ -315,8 +340,8 @@ BOOL CConquerApp::BaseYield( )
 
     // Render progress dialog directly — PollEvents() has a re-entrancy guard that
     // blocks rendering when world creation is triggered from inside PollEvents()
-    // (e.g. main menu button → SDL2_RunCreateSinglePlayerFlow → ReadyToCreate →
-    //  BaseYield → PollEvents skipped → Render never called).
+    // (e.g. main menu button -> SDL2_RunCreateSinglePlayerFlow -> ReadyToCreate ->
+    //  BaseYield -> PollEvents skipped -> Render never called).
     // Calling Render() here bypasses that guard.
     if ( m_gameWindow )
     {
