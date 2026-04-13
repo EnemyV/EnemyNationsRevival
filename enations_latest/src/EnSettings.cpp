@@ -259,6 +259,20 @@ std::string EnLoadStdString( unsigned int id )
 
 #include <cstdarg>
 
+std::string IntToStr( int iNum, int iRadix )
+{
+    char buf[34];
+    _itoa_s( iNum, buf, iRadix );
+    return std::string( buf );
+}
+
+std::string LongToStr( long lNum, int iRadix )
+{
+    char buf[34];
+    _ltoa_s( lNum, buf, iRadix );
+    return std::string( buf );
+}
+
 std::string strPrintf( const char* fmt, ... )
 {
     if ( !fmt )

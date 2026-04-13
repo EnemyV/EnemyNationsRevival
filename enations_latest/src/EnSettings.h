@@ -40,6 +40,10 @@ std::string EnLoadStdString( unsigned int id );
 // corresponding variadic const char* arguments (same semantics as csPrintf).
 std::string strPrintf( const char* fmt, ... );
 
+// std::string equivalents of wind22's IntToCString/LongToCString.
+std::string IntToStr( int iNum, int iRadix = 10 );
+std::string LongToStr( long lNum, int iRadix = 10 );
+
 // Win32 MessageBoxA wrapper that does not depend on CWinApp/MFC. The third
 // "helpId" parameter is accepted for source-compatibility with AfxMessageBox
 // call sites and is otherwise ignored on modern Windows. The title used is
