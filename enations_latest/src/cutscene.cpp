@@ -79,11 +79,11 @@ UINT CCutScene::_PlayScene (int iTyp, int iScenario, BOOL bAsync)
 		switch (iTyp)
 		  {
 			case CWndCutScene::win:
-			  { CString s; s = EnLoadString(IDS_YOU_WON); sText = (const char*)s; break; }
+			  sText = EnLoadStdString(IDS_YOU_WON); break;
 			case CWndCutScene::lose:
-			  { CString s; s = EnLoadString(IDS_YOU_LOST); sText = (const char*)s; break; }
+			  sText = EnLoadStdString(IDS_YOU_LOST); break;
 			case CWndCutScene::scenario_end:
-			  { CString s; s = EnLoadString(IDS_YOU_END_SCENARIO); sText = (const char*)s; break; }
+			  sText = EnLoadStdString(IDS_YOU_END_SCENARIO); break;
 			case CWndCutScene::cut:
 			case CWndCutScene::repeat:
 			  {
@@ -94,10 +94,9 @@ UINT CCutScene::_PlayScene (int iTyp, int iScenario, BOOL bAsync)
 					pMmio->DescendList('S', 'C', 'E', 'N');
 					pMmio->DescendChunk('T', 'X', 'T', (char)('A' + iScenario));
 					long lSize = pMmio->ReadLong();
-					CString s;
-					pMmio->Read(s.GetBuffer(lSize + 2), lSize);
-					s.ReleaseBuffer(lSize);
-					sText = (const char*)s;
+					std::vector<char> buf(lSize + 2, 0);
+					pMmio->Read(buf.data(), lSize);
+					sText.assign(buf.data(), lSize);
 					delete pMmio;
 				} catch (...) {
 					sText = "(Scenario text unavailable)";

@@ -350,10 +350,9 @@ void CGame::_Event (int ID, int iTyp, char const * psText, int iVoice)
 	int iRes = aiRes [ID];
 	int iSfx = aiSfx [ID];
 
-	CString sMsg;
-	sMsg = EnLoadString(iRes);
+	std::string sMsg = EnLoadStdString(iRes);
 	if (psText != NULL)
-		csPrintf (&sMsg, psText);
+		sMsg = strPrintf(sMsg.c_str(), psText);
 
 	CStatInst::IMPORTANCE iImp;
 	int iShow;
@@ -377,7 +376,7 @@ void CGame::_Event (int ID, int iTyp, char const * psText, int iVoice)
 	  }
 
 	iLastEvent = ID;
-	theApp.m_wndBar.SetStatusText (0, sMsg, iImp);
+	theApp.m_wndBar.SetStatusText (0, sMsg.c_str(), iImp);
 
 	// we kill the message after iShow seconds
 	if (hTimer != NULL)

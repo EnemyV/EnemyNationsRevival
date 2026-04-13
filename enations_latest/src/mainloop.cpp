@@ -436,10 +436,9 @@ void CConquerApp::ProcessAllMessages( )
         char* pBuf = (char*)theGame.m_messagePointerList.RemoveHead( );
 
 #ifdef LOGGINGON
-        CString str;
-        str.Format( "Processing type %d\n", ( (CNetCmd*)pBuf )->GetType( ) );
-        OutputDebugStringA( str );
-      //  OutputDebugStringA( pBuf );
+        char dbgBuf[80];
+        _snprintf_s( dbgBuf, sizeof(dbgBuf), _TRUNCATE, "Processing type %d\n", ( (CNetCmd*)pBuf )->GetType( ) );
+        OutputDebugStringA( dbgBuf );
         OutputDebugStringA( "\n" );
 #endif
 
@@ -550,15 +549,14 @@ void CConquerApp::_RenderScreens( )
                     dwTemp = 10000L;
                 }
                 div_t   dtRate = div( dwTemp, 10 );
-                CString sText;
-                sprintf( sText.GetBuffer( 80 ), "_  %d.%d fps", dtRate.quot, dtRate.rem );
-                sText.ReleaseBuffer( -1 );
-                    sText += "  Msgs PAUSED";
+                char sText[128];
+                _snprintf_s( sText, sizeof(sText), _TRUNCATE, "_  %d.%d fps", dtRate.quot, dtRate.rem );
+                std::string dbg = sText;
                 if ( theGame.AreMessagesPaused( ) )
-                    sText += "  Msgs PAUSED";
+                    dbg += "  Msgs PAUSED";
                 if ( theGame.ShouldPause( ) )
-                    sText += "  Should PAUSED";
-                theApp.m_wndBar.SetDebugText( 0, sText );
+                    dbg += "  Should PAUSED";
+                theApp.m_wndBar.SetDebugText( 0, dbg.c_str() );
                 dwLastTime = dwNow;
             }
     }
@@ -818,7 +816,6 @@ void CConquerApp::GraphicsEnginePump( )
                              ( theGame.GetScenario( ) > 4 ) )
                         {
                             TRAP( );
-                            CString sMsg, sName;
                             if ( EnMessageBox( IDS_TIME_OUT, MB_YESNO | MB_ICONQUESTION ) == IDYES )
                                 theGame.SaveGame( &m_wndMain );
                             theApp.m_wndCutScene.DestroyWindow( );

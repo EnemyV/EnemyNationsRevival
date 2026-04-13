@@ -340,7 +340,7 @@ void CWndMain::SetProgPos ( PROG_POS ppMode )
 	m_sText.ReleaseBuffer (lSize);
 
 	// get the font
-	CString sFont = EnGetProfileString("StatusBar", "Font", "Newtown Italic");
+	std::string sFont = EnGetProfileStdString("StatusBar", "Font", "Newtown Italic");
 	LOGFONT lf;
 	int iFntHt = 36;
 	CRect rect;
@@ -356,7 +356,7 @@ void CWndMain::SetProgPos ( PROG_POS ppMode )
 
 		memset (&lf, 0, sizeof (lf));
 		lf.lfHeight = iFntHt;
-		strncpy (lf.lfFaceName, sFont, LF_FACESIZE-1);
+		strncpy (lf.lfFaceName, sFont.c_str(), LF_FACESIZE-1);
 		m_fnt.CreateFontIndirect (&lf);
 
 		// size it
