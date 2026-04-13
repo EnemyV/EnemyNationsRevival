@@ -37,4 +37,11 @@ CString EnLoadString( unsigned int id );
 int EnMessageBox( const char*  text,   unsigned int type = 0, unsigned int helpId = 0 );
 int EnMessageBox( unsigned int idText, unsigned int type = 0, unsigned int helpId = 0 );
 
+// "Show once" message box — checks registry key <section>\<entry> first;
+// if the user already dismissed this warning the default is returned silently.
+// After the user responds, the entry is set so the warning won't appear again.
+// Replaces wind22's CDlgMsg::MsgBox pattern.
+int EnMessageBoxOnce( const char*  text,   unsigned int type, const char* section, const char* entry, int iDefault = IDYES );
+int EnMessageBoxOnce( unsigned int idText, unsigned int type, const char* section, const char* entry, int iDefault = IDYES );
+
 #endif // __EN_SETTINGS_H__

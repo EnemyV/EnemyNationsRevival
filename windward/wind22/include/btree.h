@@ -121,10 +121,7 @@ BTreeNode::Parent(
 
 //------------------------------- B T r e e --------------------
 
-template <class T> class BTree: CObject
-//#ifdef _DEBUG
-//: public CObject
-//#endif
+template <class T> class BTree
 {
 public:
 

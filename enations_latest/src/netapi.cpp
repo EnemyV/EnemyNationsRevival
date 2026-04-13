@@ -17,7 +17,9 @@
 #include "building.inl"
 #include "chproute.hpp"
 #include "creatmul.inl"
-#include "dlgmsg.h"
+// CDlgMsg calls replaced by EnMessageBoxOnce (Phase 2a).
+// Keep this include for CDlgModelessMsg which is still used.
+#include "DlgMsg.h"
 #include "event.h"
 #include "help.h"
 #include "join.h"
@@ -88,8 +90,7 @@ BOOL CNetApi::OpenServer( int iProtocol, HWND hWnd, char const* pName, void cons
                 iNumProt++;
         if ( iNumProt > 1 )
         {
-            CDlgMsg dlg;
-            dlg.MsgBox( IDS_ERROR_MULT_PROT_WARNING, MB_OK | MB_ICONSTOP | MB_TASKMODAL, "Warnings",
+            EnMessageBoxOnce( IDS_ERROR_MULT_PROT_WARNING, MB_OK | MB_ICONSTOP | MB_TASKMODAL, "Warnings",
                         "MultProtWarning" );
         }
     }
@@ -129,8 +130,7 @@ BOOL CNetApi::OpenClient( int iProtocol, HWND hWnd, void const* pPrtcl )
                 iNumProt++;
         if ( iNumProt > 1 )
         {
-            CDlgMsg dlg;
-            dlg.MsgBox( IDS_ERROR_MULT_PROT_WARNING, MB_OK | MB_ICONSTOP | MB_TASKMODAL, "Warnings",
+            EnMessageBoxOnce( IDS_ERROR_MULT_PROT_WARNING, MB_OK | MB_ICONSTOP | MB_TASKMODAL, "Warnings",
                         "MultProtWarning" );
         }
     }

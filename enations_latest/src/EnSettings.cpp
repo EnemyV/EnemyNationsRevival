@@ -162,3 +162,49 @@ int EnMessageBox( unsigned int idText, unsigned int type, unsigned int /*helpId*
     CString s = EnLoadString( idText );
     return ::MessageBoxA( NULL, (const char*)s, "Second Chance", type );
 }
+
+int EnMessageBoxOnce( const char* text, unsigned int type, const char* section, const char* entry, int iDefault )
+{
+    // Already dismissed? Return the default silently.
+    if ( EnGetProfileInt( section, entry, 0 ) != 0 )
+        return iDefault;
+
+    UINT uType = MB_TASKMODAL;
+
+    // Map button style
+    if ( type & MB_YESNOCANCEL )
+        uType |= MB_YESNOCANCEL;
+    else if ( type & MB_YESNO )
+        uType |= MB_YESNO;
+    else
+        uType |= MB_OK;
+
+    // Map icon style
+    if ( type & MB_ICONSTOP )
+        uType |= MB_ICONSTOP;
+    else if ( type & MB_ICONEXCLAMATION )
+        uType |= MB_ICONEXCLAMATION;
+    else if ( type & MB_ICONINFORMATION )
+        uType |= MB_ICONINFORMATION;
+
+    int iRtn = ::MessageBoxA( NULL, text ? text : "", "Second Chance", uType );
+
+    // Map OK -> YES for callers that expect IDYES (matches original CDlgMsg behavior)
+    if ( iRtn == IDOK )
+        iRtn = IDYES;
+
+    // Suppress future prompts
+    EnWriteProfileInt( section, entry, 1 );
+
+    return iRtn;
+}
+
+int EnMessageBoxOnce( unsigned int idText, unsigned int type, const char* section, const char* entry, int iDefault )
+{
+    // Already dismissed? Return the default silently (skip the LoadString too).
+    if ( EnGetProfileInt( section, entry, 0 ) != 0 )
+        return iDefault;
+
+    CString s = EnLoadString( idText );
+    return EnMessageBoxOnce( (const char*)s, type, section, entry, iDefault );
+}

@@ -509,13 +509,12 @@ BOOL CConquerApp::InitInstance( )
                 ( m_iOldWidth * m_iOldHeight * ( ( m_iOldDepth + 7 ) / 8 ) ) / m_iCpuSpeed <= ( 640 * 480 ) / 60;
             if ( ( iBest < 5 ) && ( iRes == 0 ) && !bNativeOk )
             {
-                CDlgMsg dlg;
                 CString sMsg;
                 sMsg = EnLoadString( IDS_KILLER_RES );
                 CString sRes = IntToCString( m_iOldWidth ) + "x" + IntToCString( m_iOldHeight ) + "x" +
                                IntToCString( m_iOldDepth );
                 csPrintf( &sMsg, (char const*)sRes, pRes );
-                if ( dlg.MsgBox( sMsg, MB_YESNO | MB_ICONSTOP | MB_TASKMODAL, "Warnings", "ScreenRes", IDNO ) == IDYES )
+                if ( EnMessageBoxOnce( sMsg, MB_YESNO | MB_ICONSTOP | MB_TASKMODAL, "Warnings", "ScreenRes", IDNO ) == IDYES )
                     iRes = iBest;
             }
             else if ( iRes == 1 )
@@ -658,8 +657,7 @@ BOOL CConquerApp::InitInstance( )
     // need 8M system
     if ( ms.dwTotalPhys < 1024 * 1024 * 7 )
     {
-        CDlgMsg dlg;
-        if ( dlg.MsgBox( IDS_ERROR_LOW_PHYS_MEM, MB_YESNO | MB_ICONSTOP | MB_TASKMODAL, "Warnings", "LessThan8Meg" ) !=
+        if ( EnMessageBoxOnce( IDS_ERROR_LOW_PHYS_MEM, MB_YESNO | MB_ICONSTOP | MB_TASKMODAL, "Warnings", "LessThan8Meg" ) !=
              IDYES )
             return ( 0 );
         Log( "Error: Not enough physical memory to run" );
@@ -672,16 +670,14 @@ BOOL CConquerApp::InitInstance( )
         CString sNum;
         sNum = IntToCString( MEM_NEEDED_BASE );
         csPrintf( &sText, (char const*)sNum );
-        CDlgMsg dlg;
-        if ( dlg.MsgBox( sText, MB_YESNO | MB_ICONSTOP | MB_TASKMODAL, "Warnings", "LessThan8Meg" ) != IDYES )
+        if ( EnMessageBoxOnce( sText, MB_YESNO | MB_ICONSTOP | MB_TASKMODAL, "Warnings", "LessThan8Meg" ) != IDYES )
             return ( 0 );
         Log( "Error: Not enough virtual memory to run" );
         m_wndMain.UpdateWindow( );
     }
     if ( ( ms.dwTotalPhys < 1024 * 1024 * 7 ) || ( ms.dwAvailPageFile < 1024 * 1024 * ( MEM_NEEDED_BASE - 10 ) ) )
     {
-        CDlgMsg dlg;
-        if ( dlg.MsgBox( IDS_ERROR_LOW_AVAIL_MEM, MB_YESNO | MB_ICONSTOP | MB_TASKMODAL, "Warnings",
+        if ( EnMessageBoxOnce( IDS_ERROR_LOW_AVAIL_MEM, MB_YESNO | MB_ICONSTOP | MB_TASKMODAL, "Warnings",
                          "NotEnoughFreeMem" ) != IDYES )
             return ( 0 );
         m_wndMain.UpdateWindow( );
@@ -723,16 +719,14 @@ BOOL CConquerApp::InitInstance( )
             break;
         if ( bForce8 )
         {
-            CDlgMsg dlg;
-            if ( dlg.MsgBox( IDS_ERROR_LOW_COLOR_DEPTH, MB_YESNO | MB_ICONSTOP | MB_TASKMODAL, "Warnings",
+            if ( EnMessageBoxOnce( IDS_ERROR_LOW_COLOR_DEPTH, MB_YESNO | MB_ICONSTOP | MB_TASKMODAL, "Warnings",
                              "LessThanColorDepth" ) == IDYES )
                 m_bUse8Bit = TRUE;
             m_wndMain.UpdateWindow( );
         }
         else if ( m_iCpuSpeed <= 200 )
         {
-            CDlgMsg dlg;
-            if ( dlg.MsgBox( IDS_ERROR_LOW_COLOR_DEPTH2, MB_YESNO | MB_ICONSTOP | MB_TASKMODAL, "Warnings",
+            if ( EnMessageBoxOnce( IDS_ERROR_LOW_COLOR_DEPTH2, MB_YESNO | MB_ICONSTOP | MB_TASKMODAL, "Warnings",
                              "LessThanColorDepth" ) == IDYES )
                 m_bUse8Bit = TRUE;
             m_wndMain.UpdateWindow( );
@@ -782,16 +776,14 @@ BOOL CConquerApp::InitInstance( )
         m_bUseZoom0 = TRUE;
         if ( !bUse0 )
         {
-            CDlgMsg dlg;
-            if ( dlg.MsgBox( IDS_ERROR_LOW_ZOOM, MB_YESNO | MB_ICONSTOP | MB_TASKMODAL, "Warnings", "LessThanZoom" ) ==
+            if ( EnMessageBoxOnce( IDS_ERROR_LOW_ZOOM, MB_YESNO | MB_ICONSTOP | MB_TASKMODAL, "Warnings", "LessThanZoom" ) ==
                  IDYES )
                 m_bUseZoom0 = FALSE;
             m_wndMain.UpdateWindow( );
         }
         else if ( m_iCpuSpeed <= 200 )
         {
-            CDlgMsg dlg;
-            if ( dlg.MsgBox( IDS_ERROR_LOW_ZOOM2, MB_YESNO | MB_ICONSTOP | MB_TASKMODAL, "Warnings", "LessThanZoom" ) ==
+            if ( EnMessageBoxOnce( IDS_ERROR_LOW_ZOOM2, MB_YESNO | MB_ICONSTOP | MB_TASKMODAL, "Warnings", "LessThanZoom" ) ==
                  IDYES )
                 m_bUseZoom0 = FALSE;
             m_wndMain.UpdateWindow( );
@@ -899,8 +891,7 @@ BOOL CConquerApp::InitInstance( )
         ReleaseDC( NULL, hdc );
         if ( iDepth == 16 )
         {
-            CDlgMsg dlg;
-            dlg.MsgBox( IDS_ERROR_16_BIT_WARNING, MB_OK | MB_ICONSTOP | MB_TASKMODAL, "Warnings", "16bitWarning" );
+            EnMessageBoxOnce( IDS_ERROR_16_BIT_WARNING, MB_OK | MB_ICONSTOP | MB_TASKMODAL, "Warnings", "16bitWarning" );
         }
     }
 
@@ -1304,8 +1295,7 @@ BOOL CConquerApp::InitInstance( )
                     if ( ( ms.dwAvailPageFile < 1000 * 1000 * MEM_NEEDED_MUSIC_DIGITAL ) || ( m_iCdSpeed < 6 ) ||
                          ( m_iCpuSpeed < 120 ) )
                     {
-                        CDlgMsg dlg;
-                        if ( dlg.MsgBox( IDS_ERROR_LOW_MUSIC, MB_YESNO | MB_ICONSTOP | MB_TASKMODAL, "Warnings",
+                        if ( EnMessageBoxOnce( IDS_ERROR_LOW_MUSIC, MB_YESNO | MB_ICONSTOP | MB_TASKMODAL, "Warnings",
                                          "LessThanMusic" ) == IDYES )
                         {
                             if ( ( ms.dwAvailPageFile < 1000 * 1000 * MEM_NEEDED_MUSIC_MIXED ) || ( m_iCdSpeed < 4 ) )
@@ -2716,8 +2706,7 @@ void       CDlgMain::OnMainCreate( )
 
     if ( ( iWinType == WNT ) && ( iNumTimesNet > 0 ) )
     {
-        CDlgMsg dlg;
-        dlg.MsgBox( IDS_ERROR_NT_NET_BUG, MB_OK | MB_ICONSTOP | MB_TASKMODAL, "Warnings", "NTnetBug" );
+        EnMessageBoxOnce( IDS_ERROR_NT_NET_BUG, MB_OK | MB_ICONSTOP | MB_TASKMODAL, "Warnings", "NTnetBug" );
         UpdateWindow( );
     }
     iNumTimesNet++;
@@ -2732,8 +2721,7 @@ void CDlgMain::OnMainJoin( )
 
     if ( ( iWinType == WNT ) && ( iNumTimesNet > 0 ) )
     {
-        CDlgMsg dlg;
-        dlg.MsgBox( IDS_ERROR_NT_NET_BUG, MB_OK | MB_ICONSTOP | MB_TASKMODAL, "Warnings", "NTnetBug" );
+        EnMessageBoxOnce( IDS_ERROR_NT_NET_BUG, MB_OK | MB_ICONSTOP | MB_TASKMODAL, "Warnings", "NTnetBug" );
         UpdateWindow( );
     }
     iNumTimesNet++;
@@ -2772,8 +2760,7 @@ void CDlgMain::OnMainLoadMulti( )
 
     if ( ( iWinType == WNT ) && ( iNumTimesNet > 0 ) )
     {
-        CDlgMsg dlg;
-        dlg.MsgBox( IDS_ERROR_NT_NET_BUG, MB_OK | MB_ICONSTOP | MB_TASKMODAL, "Warnings", "NTnetBug" );
+        EnMessageBoxOnce( IDS_ERROR_NT_NET_BUG, MB_OK | MB_ICONSTOP | MB_TASKMODAL, "Warnings", "NTnetBug" );
         UpdateWindow( );
     }
     iNumTimesNet++;
