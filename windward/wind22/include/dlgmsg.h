@@ -4,7 +4,7 @@
 // DlgMsg.h : header file
 //
 // CDlgMsg — message box with "don't show again" registry suppression.
-// No longer inherits CDialog. Uses Win32 MessageBoxA internally.
+// Uses Win32 MessageBoxA internally. No MFC dependency.
 
 /////////////////////////////////////////////////////////////////////////////
 // CDlgMsg
@@ -13,15 +13,12 @@ class CDlgMsg
 {
 // Construction
 public:
- CDlgMsg(CWnd* pParent = NULL);
+ CDlgMsg() : m_btnCheck(FALSE) {}
 
  int  MsgBox (char const * psPrompt, UINT nType, char const * psEntry, char const * psSection, int iDefault = IDYES );
  int  MsgBox (UINT nIDPrompt, UINT nType, char const * psEntry, char const * psSection, int iDefault = IDYES );
 
- CString  m_sSection;  // for check box
- CString  m_sEntry;
  BOOL m_btnCheck;
- CString m_sText;
 };
 
 #endif
