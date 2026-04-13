@@ -39,7 +39,7 @@ set(enations_sources
         cutscene.cpp
 #        dlgflic.cpp # is used?
         DlgMsg.cpp
-        DlgReg.cpp
+        DlgReg.cpp  # GetDefaultApp() still referenced from ExitInstance
         dxfer.cpp
         event.cpp
         icons.cpp
@@ -78,7 +78,7 @@ set(enations_sources
         stdafx.cpp
         terrain.cpp
         toolbar.cpp
-        tstsnds.cpp
+        tstsnds.cpp  # CDlgTestSounds referenced from exception tables
         ui.cpp
         unit.cpp
         unit_wnd.cpp
