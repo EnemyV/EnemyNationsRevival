@@ -256,3 +256,54 @@ std::string EnLoadStdString( unsigned int id )
         return std::string();
     return std::string( buf, len );
 }
+
+#include <cstdarg>
+
+std::string strPrintf( const char* fmt, ... )
+{
+    if ( !fmt )
+        return std::string();
+
+    std::string result( fmt );
+
+    va_list va;
+    va_start( va, fmt );
+
+    // Replace %1, %2, ... with corresponding variadic args (same as csPrintf)
+    int iStrOn = 1;
+    bool bFound;
+    do
+    {
+        bFound = false;
+        size_t pos = 0;
+        while ( ( pos = result.find( '%', pos ) ) != std::string::npos )
+        {
+            // Check if the digit(s) after % match iStrOn
+            size_t dStart = pos + 1;
+            if ( dStart < result.size() && isdigit( (unsigned char)result[dStart] ) )
+            {
+                int num = atoi( &result[dStart] );
+                if ( num == iStrOn )
+                {
+                    bFound = true;
+                    const char* pStr = va_arg( va, const char* );
+                    if ( !pStr ) pStr = "";
+
+                    // Count digits in the number
+                    size_t dLen = 1;
+                    while ( dStart + dLen < result.size() && isdigit( (unsigned char)result[dStart + dLen] ) )
+                        dLen++;
+
+                    result.replace( pos, 1 + dLen, pStr );
+                    iStrOn++;
+                    pos = 0;  // restart scan
+                    break;
+                }
+            }
+            pos++;
+        }
+    } while ( bFound );
+
+    va_end( va );
+    return result;
+}

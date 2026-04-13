@@ -209,7 +209,7 @@ void SDL2PickRaceDialog::OnInit() {
 
     // Player name
     AddWidget<SDL2Label>(lx, y, 60, 24, "Name:");
-    std::string savedName = (LPCTSTR)CString(EnGetProfileString("Create", "Name", ""));
+    std::string savedName = EnGetProfileStdString("Create", "Name", "");
     m_edtName = AddWidget<SDL2EditBox>(lx + 65, y, w - 65, 24, savedName,
         [this](const std::string& name) { OnNameChanged(name); });
     y += 34;
@@ -482,7 +482,7 @@ void SDL2PickPlayerDialog::OnInit() {
     int lx = m_x + 20, y = m_y + 45, w = m_width - 40;
 
     AddWidget<SDL2Label>(lx, y, 60, 24, "Name:");
-    std::string savedName = (LPCTSTR)CString(EnGetProfileString("Create", "Name", ""));
+    std::string savedName = EnGetProfileStdString("Create", "Name", "");
     m_edtName = AddWidget<SDL2EditBox>(lx + 65, y, w - 65, 24, savedName,
         [this](const std::string& name) { OnNameChanged(name); });
     y += 34;
@@ -501,7 +501,7 @@ void SDL2PickPlayerDialog::OnInit() {
         pi.available = pData->m_bAvail;
         pi.numBldgs = pData->m_iNumBldgs;
         pi.numVeh = pData->m_iNumVeh;
-        pi.name = (LPCTSTR)CString(pPlr->GetName());
+        pi.name = pPlr->GetName();
         m_players.push_back(pi);
         m_lstPlayers->AddItem(pi.name);
         delete[] (char*)pData;
@@ -565,7 +565,7 @@ void SDL2CreateNetDialog::OnInit() {
     m_edtGameName = AddWidget<SDL2EditBox>(lx + 105, y, colW - 105, rowH, "My Game");
     y += rowH + 4;
     AddWidget<SDL2Label>(lx, y, 100, rowH, "Your Name:");
-    std::string savedName = (LPCTSTR)CString(EnGetProfileString("Create", "Name", ""));
+    std::string savedName = EnGetProfileStdString("Create", "Name", "");
     m_edtPlayerName = AddWidget<SDL2EditBox>(lx + 105, y, colW - 105, rowH, savedName);
     AddWidget<SDL2Label>(rx, m_y + 45, 50, rowH, "Port:");
     m_edtPort = AddWidget<SDL2EditBox>(rx + 55, m_y + 45, 80, rowH, "2346");
@@ -614,7 +614,7 @@ SDL2JoinNetDialog::SDL2JoinNetDialog(GameWindow* gameWindow)
 void SDL2JoinNetDialog::OnInit() {
     int lx = m_x + 20, y = m_y + 45, w = m_width - 40, rowH = 28;
     AddWidget<SDL2Label>(lx, y, 110, rowH, "Your Name:");
-    std::string savedName = (LPCTSTR)CString(EnGetProfileString("Create", "Name", ""));
+    std::string savedName = EnGetProfileStdString("Create", "Name", "");
     m_edtPlayerName = AddWidget<SDL2EditBox>(lx + 115, y, w - 115, 24, savedName);
     y += rowH + 4;
     AddWidget<SDL2Label>(lx, y, 110, rowH, "Server Address:");
@@ -737,8 +737,8 @@ bool SDL2_RunCreateNetworkFlow(GameWindow* gameWindow) {
     EnWriteProfileInt("Create", "AiOpponents", createDlg.m_iNumAi);
     EnWriteProfileInt("Create", "StartPosition", createDlg.m_iStartPos);
 
-    CString sPort; sPort.Format("%d", createDlg.m_iPort);
-    WritePrivateProfileString("TCP", "WellKnownPort", sPort, "vdmplay.ini");
+    std::string sPort = std::to_string(createDlg.m_iPort);
+    WritePrivateProfileString("TCP", "WellKnownPort", sPort.c_str(), "vdmplay.ini");
 
     if (theNet.OpenServer(VPT_TCP, theApp.m_wndMain.m_hWnd,
                           (char*)createDlg.m_gameName.c_str(), NULL, NULL)) {
@@ -783,8 +783,8 @@ bool SDL2_RunJoinNetworkFlow(GameWindow* gameWindow) {
     if (joinDlg.DoModal() != 1) return false;
 
     WritePrivateProfileString("TCP", "ServerAddress", joinDlg.m_serverAddr.c_str(), "vdmplay.ini");
-    CString sPort; sPort.Format("%d", joinDlg.m_iPort);
-    WritePrivateProfileString("TCP", "WellKnownPort", sPort, "vdmplay.ini");
+    std::string sPort2 = std::to_string(joinDlg.m_iPort);
+    WritePrivateProfileString("TCP", "WellKnownPort", sPort2.c_str(), "vdmplay.ini");
 
     // Join flow requires async session enumeration — delegate to MFC for now
     ASSERT(theApp.m_pCreateGame == NULL);

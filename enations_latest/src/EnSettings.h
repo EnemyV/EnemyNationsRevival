@@ -35,6 +35,11 @@ CString EnLoadString( unsigned int id );
 std::string EnGetProfileStdString( const char* section, const char* entry, const char* default_val = "" );
 std::string EnLoadStdString( unsigned int id );
 
+// std::string formatting helper — replaces wind22's csPrintf(CString*, ...).
+// Performs positional substitution: %1, %2, etc. are replaced by the
+// corresponding variadic const char* arguments (same semantics as csPrintf).
+std::string strPrintf( const char* fmt, ... );
+
 // Win32 MessageBoxA wrapper that does not depend on CWinApp/MFC. The third
 // "helpId" parameter is accepted for source-compatibility with AfxMessageBox
 // call sites and is otherwise ignored on modern Windows. The title used is

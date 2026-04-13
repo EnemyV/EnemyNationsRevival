@@ -163,10 +163,9 @@ TTF_Font* SDL2RouteWindow::GetFont(int size) {
 void SDL2RouteWindow::Show() {
     if (m_panel) {
         m_panel->SetVisible(true);
-        CString sTitle;
-        sTitle = EnLoadString(IDS_ROUTE_TITLE);
-        csPrintf(&sTitle, (char const*)m_pVeh->GetData()->GetDesc());
-        m_panel->SetTitle(std::string((LPCSTR)sTitle));
+        std::string sTitle = strPrintf(EnLoadStdString(IDS_ROUTE_TITLE).c_str(),
+                                       (const char*)m_pVeh->GetData()->GetDesc());
+        m_panel->SetTitle(sTitle);
     }
     RebuildList();
     Render();

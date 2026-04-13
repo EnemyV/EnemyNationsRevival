@@ -162,9 +162,9 @@ void SDL2CreateStatus::SetMsg(const std::string& text) {
 }
 
 void SDL2CreateStatus::SetMsg(int stringResourceID) {
-    CString str = EnLoadString(stringResourceID);
-    if (!str.IsEmpty())
-        m_message = (const char*)str;
+    std::string str = EnLoadStdString(stringResourceID);
+    if (!str.empty())
+        m_message = str;
     else
         m_message = "Loading...";
 }

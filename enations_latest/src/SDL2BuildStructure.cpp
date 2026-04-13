@@ -72,9 +72,9 @@ void SDL2BuildStructure::OnInit() {
 
     // Category buttons (left column): CRect(11,22,115,71) offset 50px each
     for (int i = 0; i < 6; i++) {
-        CString catName = theStructureType.GetDesc(i);
+        const char* catName = theStructureType.GetDesc(i);
         m_catBtns[i] = AddWidget<SDL2Button>(ox + 11, oy + 22 + i * 50, 104, 49,
-            (const char*)catName,
+            catName,
             [this, i]() { SelectCategory(i); });
         if (m_catBtnSheet) m_catBtns[i]->SetBtnSheet(m_catBtnSheet);
     }
@@ -245,8 +245,7 @@ void SDL2BuildStructure::UpdateDescription() {
         int need = m_pSd->GetBuild(i);
         if (need > 0) {
             int have = theGame.GetMe()->GetMaterialHave(i);
-            CString matName = CMaterialTypes::GetDesc(i);
-            std::string line = (const char*)matName;
+            std::string line = (const char*)CMaterialTypes::GetDesc(i);
             while (line.size() < 12) line += ' ';
             line += std::to_string(need);
             while (line.size() < 18) line += ' ';
