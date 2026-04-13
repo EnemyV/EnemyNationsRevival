@@ -21,7 +21,7 @@ CDlgLicense::CDlgLicense(int iText, BOOL bOK, CWnd* /*pParent*/)
 int CDlgLicense::DoModal()
 {
     // Load license text from data file (LANG/LEGL/LICn chunk)
-    CString strLicense;
+    std::string strLicense;
     try
     {
         CMmio* pMmio = theDataFile.OpenAsMMIO( NULL, "LANG" );
@@ -30,8 +30,9 @@ int CDlgLicense::DoModal()
         pMmio->DescendChunk( 'L', 'I', 'C', (char)( '0' + m_iText ) );
 
         long lSize = pMmio->ReadLong();
-        pMmio->Read( strLicense.GetBuffer( lSize + 2 ), lSize );
-        strLicense.ReleaseBuffer( lSize );
+        std::vector<char> buf( lSize + 2, 0 );
+        pMmio->Read( buf.data(), lSize );
+        strLicense.assign( buf.data(), lSize );
 
         delete pMmio;
     }
@@ -46,7 +47,7 @@ int CDlgLicense::DoModal()
     else
         uType |= MB_YESNO | MB_ICONINFORMATION;
 
-    int iRtn = ::MessageBoxA( NULL, (const char*)strLicense, "Enemy Nations — License", uType );
+    int iRtn = ::MessageBoxA( NULL, strLicense.c_str(), "Enemy Nations - License", uType );
 
     // Map Yes -> OK for callers that check IDOK
     if ( iRtn == IDYES )
