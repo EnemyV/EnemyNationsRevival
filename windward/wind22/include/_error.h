@@ -121,15 +121,16 @@ static constexpr const char* GetWind22ErrString(int iErr) {
 
 _inline void ThrowError(int iErr) {
 
-    auto errStr = CString( GetWind22ErrString( iErr ) );
-    if ( errStr.IsEmpty() ) {
-        errStr.Format( "Application error thrown, error number: %d\n", iErr );
-        OutputDebugString( (LPCSTR)errStr );
+    const char* errStr = GetWind22ErrString( iErr );
+    char buf[256];
+    if ( errStr == NULL || errStr[0] == '\0' ) {
+        _snprintf_s( buf, sizeof(buf), _TRUNCATE,
+            "Application error thrown, error number: %d\n", iErr );
     } else {
-        auto finalStr = CString();
-        finalStr.Format( "Wind22 error thrown, error: %s, number: %d\n", (LPCSTR)errStr, iErr );
-        OutputDebugString((LPCSTR)finalStr );
+        _snprintf_s( buf, sizeof(buf), _TRUNCATE,
+            "Wind22 error thrown, error: %s, number: %d\n", errStr, iErr );
     }
+    OutputDebugString( buf );
 
     throw ( iErr );
 }
