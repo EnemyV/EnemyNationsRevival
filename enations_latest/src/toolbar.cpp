@@ -402,8 +402,7 @@ void CWndBar::SetStatusFunc( int iLine, FNSTATUSLINE fnStat, void* pData )
                     need = ( (CBuilding*)pUnit )->GetBldgResReq( i, FALSE );
                 if ( have > 0 || need > 0 )
                 {
-                    CString matName = CMaterialTypes::GetDesc( i );
-                    text += "  " + std::string( (const char*)matName ) + ":" + std::to_string( have );
+                    text += "  " + std::string( (const char*)CMaterialTypes::GetDesc( i ) ) + ":" + std::to_string( have );
                     if ( need > 0 )
                         text += "(" + std::to_string( need ) + ")";
                 }
@@ -562,57 +561,48 @@ LRESULT CWndBar::OnButtonMouseMove( WPARAM, LPARAM lParam )
 LRESULT CWndBar::OnStatusMouseMove( WPARAM, LPARAM lParam )
 {
 
-    CString sText;  // default to blank
+    std::string sText;  // default to blank
     if ( (CWnd*)lParam == &m_wndStat[gas] )
     {
-        sText = EnLoadString( IDH_STAT_GAS );
-        CString sNum1, sNum2;
-        sNum1 = IntToCString( theGame.GetMe( )->GetGasNeed( ) );
-        sNum2 = IntToCString( theGame.GetMe( )->GetGasHave( ) );
-        csPrintf( &sText, (char const*)sNum1, (char const*)sNum2 );
+        std::string sNum1 = IntToStr( theGame.GetMe( )->GetGasNeed( ) );
+        std::string sNum2 = IntToStr( theGame.GetMe( )->GetGasHave( ) );
+        sText = strPrintf( EnLoadStdString( IDH_STAT_GAS ).c_str(), sNum1.c_str(), sNum2.c_str() );
     }
     else if ( (CWnd*)lParam == &m_wndStat[power] )
     {
-        sText = EnLoadString( IDH_STAT_POWER );
-        CString sNum1, sNum2;
-        sNum1 = IntToCString( theGame.GetMe( )->GetPwrNeed( ) );
-        sNum2 = IntToCString( theGame.GetMe( )->GetPwrHave( ) );
-        csPrintf( &sText, (char const*)sNum1, (char const*)sNum2 );
+        std::string sNum1 = IntToStr( theGame.GetMe( )->GetPwrNeed( ) );
+        std::string sNum2 = IntToStr( theGame.GetMe( )->GetPwrHave( ) );
+        sText = strPrintf( EnLoadStdString( IDH_STAT_POWER ).c_str(), sNum1.c_str(), sNum2.c_str() );
     }
     else if ( (CWnd*)lParam == &m_wndStat[people] )
     {
-        CString sNum1, sNum3;
-        sNum1 = IntToCString( theGame.GetMe( )->GetPplTotal( ) );
-        sNum3 = IntToCString( theGame.GetMe( )->GetPplVeh( ) );
+        std::string sNum1 = IntToStr( theGame.GetMe( )->GetPplTotal( ) );
+        std::string sNum3 = IntToStr( theGame.GetMe( )->GetPplVeh( ) );
         if ( theGame.GetMe( )->GetPplBldg( ) >= theGame.GetMe( )->GetPplNeedBldg( ) )
         {
-            sText = EnLoadString( IDH_STAT_PEOPLE );
-            CString sNum2, sNum4;
-            sNum2 = IntToCString( theGame.GetMe( )->GetPplNeedBldg( ) );
-            sNum4 = IntToCString( theGame.GetMe( )->GetPplBldg( ) - theGame.GetMe( )->GetPplNeedBldg( ) );
-            csPrintf( &sText, (char const*)sNum1, (char const*)sNum2, (char const*)sNum3, (char const*)sNum4 );
+            std::string sNum2 = IntToStr( theGame.GetMe( )->GetPplNeedBldg( ) );
+            std::string sNum4 = IntToStr( theGame.GetMe( )->GetPplBldg( ) - theGame.GetMe( )->GetPplNeedBldg( ) );
+            sText = strPrintf( EnLoadStdString( IDH_STAT_PEOPLE ).c_str(),
+                               sNum1.c_str(), sNum2.c_str(), sNum3.c_str(), sNum4.c_str() );
         }
         else
         {
-            sText = EnLoadString( IDH_STAT_PEOPLE2 );
-            CString sNum2, sNum4;
-            sNum2 = IntToCString( theGame.GetMe( )->GetPplBldg( ) );
-            sNum4 = IntToCString( theGame.GetMe( )->GetPplNeedBldg( ) - theGame.GetMe( )->GetPplBldg( ) );
-            csPrintf( &sText, (char const*)sNum1, (char const*)sNum2, (char const*)sNum3, (char const*)sNum4 );
+            std::string sNum2 = IntToStr( theGame.GetMe( )->GetPplBldg( ) );
+            std::string sNum4 = IntToStr( theGame.GetMe( )->GetPplNeedBldg( ) - theGame.GetMe( )->GetPplBldg( ) );
+            sText = strPrintf( EnLoadStdString( IDH_STAT_PEOPLE2 ).c_str(),
+                               sNum1.c_str(), sNum2.c_str(), sNum3.c_str(), sNum4.c_str() );
         }
     }
     else if ( (CWnd*)lParam == &m_wndStat[food] )
     {
-        sText = EnLoadString( IDH_STAT_FOOD );
-        CString sNum1, sNum2;
-        sNum1 = IntToCString( theGame.GetMe( )->GetFoodNeed( ) );
-        sNum2 = IntToCString( theGame.GetMe( )->GetFood( ) );
-        csPrintf( &sText, (char const*)sNum1, (char const*)sNum2 );
+        std::string sNum1 = IntToStr( theGame.GetMe( )->GetFoodNeed( ) );
+        std::string sNum2 = IntToStr( theGame.GetMe( )->GetFood( ) );
+        sText = strPrintf( EnLoadStdString( IDH_STAT_FOOD ).c_str(), sNum1.c_str(), sNum2.c_str() );
     }
     else if ( (CWnd*)lParam == &m_wndTime )
-        sText = EnLoadString( IDH_STAT_CLOCK );
+        sText = EnLoadStdString( IDH_STAT_CLOCK );
 
-    m_wndText[1].SetText( sText );
+    m_wndText[1].SetText( sText.c_str() );
     return ( 0 );
 }
 
