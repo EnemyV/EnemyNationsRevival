@@ -60,10 +60,13 @@ void TerrainStatusText( void* pData, CString& str )
         return;
     }
 
-    str = EnLoadString( IDS_STAT_MINERALS );
-    CString sNum1 = IntToCString( pMn->GetQuantity( ) );
-    CString sNum2 = IntToCString( pMn->GetDensity( ) );
-    csPrintf( &str, (char const*)CMaterialTypes::GetDesc( pMn->GetType( ) ), (char const*)sNum1, (char const*)sNum2 );
+    std::string sNum1 = IntToStr( pMn->GetQuantity( ) );
+    std::string sNum2 = IntToStr( pMn->GetDensity( ) );
+    std::string sResult = strPrintf(
+        EnLoadStdString( IDS_STAT_MINERALS ).c_str(),
+        (const char*)CMaterialTypes::GetDesc( pMn->GetType( ) ),
+        sNum1.c_str(), sNum2.c_str() );
+    str = sResult.c_str();
 }
 
 void CTerrainShowStat::Init( )

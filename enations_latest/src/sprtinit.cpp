@@ -2176,8 +2176,8 @@ BOOL CSpriteCollection::Read( CMmio &mmio, unsigned int uTime, int iPerStart, in
 #ifdef _CHEAT
             if (EnGetProfileInt("Cheat", "ShowLoad", 0))
             {
-                CString sText = "Sprite: " + IntToCString (i);
-                theApp.m_pCreateGame->GetDlgStatus()->SetMsg (sText);
+                std::string sText = "Sprite: " + std::to_string(i);
+                theApp.m_pCreateGame->GetDlgStatus()->SetMsg (sText.c_str());
             }
 #endif
 
