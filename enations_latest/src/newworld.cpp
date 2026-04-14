@@ -211,14 +211,12 @@ void CConquerApp::ReadyToCreate() {
     POSITION pos = theGame.GetAll().GetHeadPosition();
     float fInc = (float) (theGame.GetAll().GetCount()) / (float) m_pCreateGame->m_iNumAi;
     float fOn = 0.0;
-    CString sName;
-    sName = EnLoadString(IDS_AI_PLAYER);
+    std::string sName = EnLoadStdString(IDS_AI_PLAYER);
 
     for (int iPlyrOn = 0; iPlyrOn < m_pCreateGame->m_iNumAi; iPlyrOn++) {
-        CString sBuf(sName);
-        CString sNum = IntToCString(iPlyrOn + 1);
-        csPrintf(&sBuf, (const char *) sNum);
-        CPlayer *pPlr = new CPlayer(sBuf, 0);
+        std::string sNum = IntToStr(iPlyrOn + 1);
+        std::string sBuf = strPrintf(sName.c_str(), sNum.c_str());
+        CPlayer *pPlr = new CPlayer(sBuf.c_str(), 0);
         pPlr->SetLocal(TRUE);
         theGame.AddAiPlayer(pPlr);
 

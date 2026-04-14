@@ -638,8 +638,8 @@ BOOL CDlgResearch::OnInitDialog( )
     LOGFONT lf;
     memset( &lf, 0, sizeof( lf ) );
     lf.lfHeight   = EnGetProfileInt( "StatusBar", "RDListHeight", 18 );
-    CString sFont = EnGetProfileString( "StatusBar", "RDListFont", "Newtown Italic" );
-    strncpy( lf.lfFaceName, sFont, LF_FACESIZE - 1 );
+    std::string sFont = EnGetProfileStdString( "StatusBar", "RDListFont", "Newtown Italic" );
+    strncpy( lf.lfFaceName, sFont.c_str(), LF_FACESIZE - 1 );
     m_fntList.CreateFontIndirect( &lf );
 
     // if rebuilding use old pos
