@@ -1108,7 +1108,7 @@ void CWndArea::Create( CMapLoc const& ml, CUnit* pUnit, BOOL bFirst )
     theAreaList.AddWindow( this );
 
     // the area map is always added at the head, everything else at the tail
-    theAnimList.AddHead( this );
+    theAnimList.push_front( this );
 
     // set the cursor of starting
     if ( bFirst )

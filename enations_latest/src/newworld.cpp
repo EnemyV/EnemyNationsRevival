@@ -1192,7 +1192,7 @@ void CConquerApp::DestroyWorld() {
     }
 
     // no more animating
-    theAnimList.RemoveAll();
+    theAnimList.clear();
 
     // clean out any messages from DestroyWindow
     //   process existing messages - base class call cause

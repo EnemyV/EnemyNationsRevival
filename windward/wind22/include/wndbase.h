@@ -127,8 +127,10 @@ protected:
 };
 
 
-extern CList <CWndAnim*, CWndAnim*> theAnimList;
-extern CMap <CWndPrimary*, CWndPrimary*, CWndPrimary*, CWndPrimary*> thePrimaryMap;
+#include <list>
+#include <unordered_map>
+extern std::list<CWndAnim*> theAnimList;
+extern std::unordered_map<CWndPrimary*, CWndPrimary*> thePrimaryMap;
 
 
 #endif

@@ -10,12 +10,13 @@ static char BASED_CODE THIS_FILE[] = __FILE__;
 #endif
 
 #include "wndbase.h"
+#include <algorithm>
 
 // windows to animate
-CList <CWndAnim *, CWndAnim*> theAnimList;
+std::list<CWndAnim*> theAnimList;
 
 // windows to accelerate, swap between (like MDI clients)
-CMap <CWndPrimary *, CWndPrimary*, CWndPrimary *, CWndPrimary*> thePrimaryMap;
+std::unordered_map<CWndPrimary*, CWndPrimary*> thePrimaryMap;
 
 
 /////////////////////////////////////////////////////////////////////////////
@@ -182,16 +183,16 @@ int CWndPrimary::OnCreate(LPCREATESTRUCT lpCreateStruct)
     }
  
  // add to list
- thePrimaryMap.SetAt (this, this);
- 
+ thePrimaryMap[this] = this;
+
  return 0;
 }
 
-void CWndPrimary::OnDestroy() 
+void CWndPrimary::OnDestroy()
 {
 
- // remove from list 
- thePrimaryMap.RemoveKey (this);
+ // remove from list
+ thePrimaryMap.erase( this );
 
  CWndBase::OnDestroy();
 }
@@ -209,20 +210,16 @@ END_MESSAGE_MAP()
 void CWndAnim::InvalidateAllWindows ()
 {
 
- POSITION pos = theAnimList.GetHeadPosition ();
- while (pos != NULL)
-  {
-  CWndAnim *pWnd = theAnimList.GetNext (pos);
+ for ( CWndAnim* pWnd : theAnimList )
   pWnd->InvalidateWindow (NULL);
-  }
 }
 
-void CWndAnim::OnDestroy() 
+void CWndAnim::OnDestroy()
 {
 
- POSITION pos = theAnimList.Find (this);
- if (pos != NULL)
-  theAnimList.RemoveAt (pos);
+ auto it = std::find( theAnimList.begin(), theAnimList.end(), this );
+ if ( it != theAnimList.end() )
+  theAnimList.erase( it );
 
  CWndPrimary::OnDestroy();
 }

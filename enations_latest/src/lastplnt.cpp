@@ -1946,10 +1946,8 @@ BOOL CConquerApp::PreTranslateMessage( MSG* pMsg )
 
         // erase WinG screen area
         case VK_F12: {
-            POSITION pos = theAnimList.GetHeadPosition( );
-            while ( pos != NULL )
+            for ( CWndAnim* pWnd : theAnimList )
             {
-                CWndAnim* pWnd = theAnimList.GetNext( pos );
                 CClientDC dc( pWnd );
                 CBrush    br;
                 br.CreateSolidBrush( RGB( 0, 0, 0 ) );

@@ -493,7 +493,7 @@ int CWndWorld::OnCreate(LPCREATESTRUCT lpCreateStruct) {
     m_iResOn = m_iFrameOn = 0;
 
     // animate us
-    theAnimList.AddHead(this);
+    theAnimList.push_front(this);
 
 #ifdef LOGGINGON
     if ( m_bIsRadar )

@@ -296,8 +296,7 @@ BOOL CConquerApp::BaseYield( )
                     CWndPrimary* pWndPrimary = (CWndPrimary*)CWndBase::GetActiveWindow( );
                     if ( pWndPrimary != NULL )
                     {
-                        CWndPrimary* pTmp;
-                        if ( thePrimaryMap.Lookup( pWndPrimary, pTmp ) )
+                        if ( thePrimaryMap.find( pWndPrimary ) != thePrimaryMap.end() )
                             if ( pWndPrimary->m_hAccel != NULL )
                                 bTran = TranslateAccelerator( pWndPrimary->m_hWnd, pWndPrimary->m_hAccel, &m_msgCur );
                     }
@@ -505,18 +504,10 @@ void CConquerApp::_RenderScreens( )
     theGame.m_dwFrame++;
 
     // animate the screen
-    POSITION pos = theAnimList.GetHeadPosition( );
-    while ( pos != NULL )
-    {
-        CWndAnim* pWnd = theAnimList.GetNext( pos );
+    for ( CWndAnim* pWnd : theAnimList )
         pWnd->ReRender( );
-    }
-    pos = theAnimList.GetHeadPosition( );
-    while ( pos != NULL )
-    {
-        CWndAnim* pWnd = theAnimList.GetNext( pos );
+    for ( CWndAnim* pWnd : theAnimList )
         pWnd->Draw( );
-    }
 
     CHexCoord::ClearInvalidated( );  // Set terrain invalidated flags to FALSE
 
@@ -538,7 +529,7 @@ void CConquerApp::_RenderScreens( )
         static DWORD dwLastTime = 0;
 
         if ( _bShowRate )
-            if ( !theAnimList.IsEmpty( ) )
+            if ( !theAnimList.empty( ) )
             {
                 DWORD dwTemp;
                 if ( dwNow > dwLastTime )
