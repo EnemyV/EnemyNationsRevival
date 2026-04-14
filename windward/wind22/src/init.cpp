@@ -75,32 +75,26 @@ BOOL InitWindwardLib2() {
     // OS version checks removed — only running on modern Windows (Win7+)
     iWinType = WNT;
 
-    // check DirectX version
+    // check DirectX version (effectively dead on modern Windows — DDraw/DSound are 10.x)
     DWORD dwMS, dwLS;
     if ( GetDllVersion( "ddraw.dll", dwMS, dwLS ) )
         if ( ( dwMS < 0x40000 ) || ( ( dwMS == 0x40000 ) && ( dwLS < 0x55E0001 ) ) ) {
-            CString sText, sNum1, sNum2, sNum3, sNum4;
-            (void)sText.LoadString( IDS_DDRAW_VER );
-            sNum1 = IntToCString( HIWORD( dwMS ) );
-            sNum2 = IntToCString( LOWORD( dwMS ) );
-            sNum3 = IntToCString( HIWORD( dwLS ) );
-            sNum4 = IntToCString( LOWORD( dwLS ) );
-            csPrintf( &sText, (char const*)sNum1, (char const*)sNum2, (char const*)sNum3, (char const*)sNum4 );
+            char msg[512];
+            _snprintf_s( msg, sizeof(msg), _TRUNCATE,
+                "DirectDraw version %u.%u.%u.%u is too old.",
+                HIWORD( dwMS ), LOWORD( dwMS ), HIWORD( dwLS ), LOWORD( dwLS ) );
             CDlgMsg dlg;
-            if ( dlg.MsgBox( sText, MB_YESNO | MB_ICONSTOP | MB_TASKMODAL, "Warnings", "DirectDraw" ) != IDYES )
+            if ( dlg.MsgBox( msg, MB_YESNO | MB_ICONSTOP | MB_TASKMODAL, "Warnings", "DirectDraw" ) != IDYES )
                 return ( FALSE );
         }
     if ( GetDllVersion( "dsound.dll", dwMS, dwLS ) )
         if ( ( dwMS < 0x40000 ) || ( ( dwMS == 0x40000 ) && ( dwLS < 0x55B0001 ) ) ) {
-            CString sText, sNum1, sNum2, sNum3, sNum4;
-            (void)sText.LoadString( IDS_DSOUND_VER );
-            sNum1 = IntToCString( HIWORD( dwMS ) );
-            sNum2 = IntToCString( LOWORD( dwMS ) );
-            sNum3 = IntToCString( HIWORD( dwLS ) );
-            sNum4 = IntToCString( LOWORD( dwLS ) );
-            csPrintf( &sText, (char const*)sNum1, (char const*)sNum2, (char const*)sNum3, (char const*)sNum4 );
+            char msg[512];
+            _snprintf_s( msg, sizeof(msg), _TRUNCATE,
+                "DirectSound version %u.%u.%u.%u is too old.",
+                HIWORD( dwMS ), LOWORD( dwMS ), HIWORD( dwLS ), LOWORD( dwLS ) );
             CDlgMsg dlg;
-            if ( dlg.MsgBox( sText, MB_YESNO | MB_ICONSTOP | MB_TASKMODAL, "Warnings", "DirectSound" ) != IDYES )
+            if ( dlg.MsgBox( msg, MB_YESNO | MB_ICONSTOP | MB_TASKMODAL, "Warnings", "DirectSound" ) != IDYES )
                 return ( FALSE );
         }
 
