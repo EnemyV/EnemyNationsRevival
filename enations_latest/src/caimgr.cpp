@@ -1948,8 +1948,8 @@ void CAIMgr::ProcessMessage( CAIMsg* pMsg )
     }
 
 #ifdef _LOGOUT
-    CString sMsg = pGameData->GetMsgString( pMsg->m_iMsg );
-    logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "\nProcessMessage(): %s msg=%d  player %d ", (const char*)sMsg,
+    const char* sMsg = pGameData->GetMsgString( pMsg->m_iMsg );
+    logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "\nProcessMessage(): %s msg=%d  player %d ", sMsg,
                pMsg->m_iMsg, m_iPlayer );
 
     if ( pMsg->m_iMsg == CNetCmd::bldg_stat )

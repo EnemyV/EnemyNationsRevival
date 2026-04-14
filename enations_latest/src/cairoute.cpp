@@ -79,10 +79,9 @@ void CAIRouter::DoRouting( CAIMsg* pMsg )
 
     if ( pMsg != NULL )
     {
-        CString sMsg = pGameData->GetMsgString( pMsg->m_iMsg );
+        const char* sMsg = pGameData->GetMsgString( pMsg->m_iMsg );
 
-        logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "Message id %d is a %s ", pMsg->m_iMsg, (const char*)sMsg );
-        sMsg.Empty( );
+        logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "Message id %d is a %s ", pMsg->m_iMsg, sMsg );
 
         if ( pMsg->m_iMsg == CNetCmd::bldg_new && pMsg->m_idata3 == m_iPlayer )
         {

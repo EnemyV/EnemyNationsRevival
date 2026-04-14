@@ -370,11 +370,9 @@ void CAIGoalMgr::Assess( CAIMsg* pMsg )
 #endif
 
 #ifdef _LOGOUT
-    CString sMsg = pGameData->GetMsgString( pMsg->m_iMsg );
+    const char* sMsg = pGameData->GetMsgString( pMsg->m_iMsg );
     logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "CAIGoalMgr::Assess() Player=%d ", m_iPlayer );
-    logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "Message id %d is a %s ", pMsg->m_iMsg, (const char*)sMsg );
-
-    sMsg.Empty( );
+    logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "Message id %d is a %s ", pMsg->m_iMsg, sMsg );
 #endif
 
     if ( pMsg->m_iMsg == CNetCmd::unit_damage && pMsg->m_idata3 != m_iPlayer )
