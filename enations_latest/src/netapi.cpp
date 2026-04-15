@@ -354,11 +354,10 @@ static void OnMsgLeave( VPPLAYERID id )
     case CNetApi::opened:
         if ( ( theApp.m_pCreateGame != NULL ) && ( theApp.m_pCreateGame->m_iTyp == CCreateBase::load_multi ) )
         {
-            CString sMsg;
-            sMsg = EnLoadString( IDS_MSG_NET_GOODBYE );
-            csPrintf( &sMsg, (const char*)pPlr->GetName( ) );
+            std::string sMsg = strPrintf( EnLoadStdString( IDS_MSG_NET_GOODBYE ).c_str(),
+                                          pPlr->GetName( ) );
             CDlgModelessMsg* pDlg = new CDlgModelessMsg( );
-            pDlg->Create( sMsg );
+            pDlg->Create( sMsg.c_str() );
 
             // set back to AI
             pPlr->SetAI( TRUE );
@@ -410,9 +409,8 @@ static void OnMsgLeave( VPPLAYERID id )
 
     default: {
         // before the AI sets the race name
-        CString sMsg;
-        sMsg = EnLoadString( IDS_MSG_NET_GOODBYE );
-        csPrintf( &sMsg, (const char*)pPlr->GetName( ) );
+        std::string sMsg = strPrintf( EnLoadStdString( IDS_MSG_NET_GOODBYE ).c_str(),
+                                      pPlr->GetName( ) );
 
         // have the AI take over
         if ( theGame.AmServer( ) )
@@ -453,13 +451,13 @@ static void OnMsgLeave( VPPLAYERID id )
         }
 
         if ( theApp.m_wndBar.m_hWnd != NULL )
-            theApp.m_wndBar.SetStatusText( 0, sMsg );
+            theApp.m_wndBar.SetStatusText( 0, sMsg.c_str() );
         if ( ( theGame._GetMe( ) != NULL ) && ( pPlr != theGame.GetMe( ) ) )
             if ( !pPlr->m_bMsgDead )
             {
                 pPlr->m_bMsgDead      = TRUE;
                 CDlgModelessMsg* pDlg = new CDlgModelessMsg( );
-                pDlg->Create( sMsg );
+                pDlg->Create( sMsg.c_str() );
             }
         break;
     }
