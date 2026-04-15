@@ -482,11 +482,10 @@ void CPlayer::Research( int iNumSec )
     if ( IsMe( ) )
     {
         ResearchDiscovered( iTmp );
-        CString sMsg;
-        sMsg = EnLoadString( IDS_EVENT_RSRCH_DONE );
         pRi = &theRsrch.ElementAt( iTmp );
-        csPrintf( &sMsg, &(pRi->m_sName) );
-        theApp.m_wndBar.SetStatusText( 0, sMsg, CStatInst::status );
+        std::string sMsg = strPrintf( EnLoadStdString( IDS_EVENT_RSRCH_DONE ).c_str(),
+                                      (const char*)pRi->m_sName );
+        theApp.m_wndBar.SetStatusText( 0, sMsg.c_str(), CStatInst::status );
         theGame.MulEvent( MEVENT_RSRCH_DONE, NULL );
         CWndComm::UpdateMail( );
     }
@@ -2029,16 +2028,14 @@ int CGame::LoadGame( CWnd* pPar, BOOL bReplace )
     }
 
     // Extract just the filename for the status message
-    CString sFileTitle = theGame.m_sFileName;
-    int iSlash = sFileTitle.ReverseFind( '\\' );
-    if ( iSlash >= 0 ) sFileTitle = sFileTitle.Mid( iSlash + 1 );
+    std::string sFileTitle = (const char*)theGame.m_sFileName;
+    size_t iSlash = sFileTitle.find_last_of( '\\' );
+    if ( iSlash != std::string::npos ) sFileTitle = sFileTitle.substr( iSlash + 1 );
 
     // put up a message to say we are loading
     theApp.m_pCreateGame->CreateDlgStatus( );
-    CString sText;
-    sText = EnLoadString( IDS_LOAD_NAME );
-    csPrintf( &sText, (LPCTSTR)sFileTitle );
-    theApp.m_pCreateGame->GetDlgStatus( )->SetWindowText( sText );
+    std::string sText = strPrintf( EnLoadStdString( IDS_LOAD_NAME ).c_str(), sFileTitle.c_str() );
+    theApp.m_pCreateGame->GetDlgStatus( )->SetWindowText( sText.c_str() );
     theApp.m_pCreateGame->GetDlgStatus( )->SetPer( 0 );
     theApp.m_pCreateGame->GetDlgStatus( )->SetMsg( IDS_LOAD_FILE );
     theApp.m_pCreateGame->ShowDlgStatus( );
@@ -2630,10 +2627,9 @@ int CGame::SaveGame( CWnd* pPar )
 
     catch ( ... )
     {
-        CString sMsg;
-        sMsg = EnLoadString( IDS_CANT_SAVE );
-        csPrintf( &sMsg, (char const*)m_sFileName );
-        EnMessageBox( sMsg );
+        std::string sMsg = strPrintf( EnLoadStdString( IDS_CANT_SAVE ).c_str(),
+                                      (const char*)m_sFileName );
+        EnMessageBox( sMsg.c_str() );
 
         theGame.SetShouldOperate(TRUE);
         LeaveCriticalSection( &cs );
@@ -2835,12 +2831,11 @@ void CGame::Serialize( CArchive& ar )
 
             if ( wrongMajorVersion || wrongMinorVersion || debugCheatMissmatched )
             {
-                CString sMsg, sVer1, sVer2;
-                sMsg = EnLoadString( IDS_SAVE_VER );
-                sVer1 = GetVerText( m_dwMaj, m_dwMin, m_dwVer, m_wDbg, m_wCht );
-                sVer2 = GetVerText( VER_MAJOR, VER_MINOR, VER_RELEASE, _wDebug, _wCheat );
-                csPrintf( &sMsg, (char const*)sVer1, (char const*)sVer2 );
-                EnMessageBox( sMsg );
+                CString sVer1 = GetVerText( m_dwMaj, m_dwMin, m_dwVer, m_wDbg, m_wCht );
+                CString sVer2 = GetVerText( VER_MAJOR, VER_MINOR, VER_RELEASE, _wDebug, _wCheat );
+                std::string sMsg = strPrintf( EnLoadStdString( IDS_SAVE_VER ).c_str(),
+                                              (const char*)sVer1, (const char*)sVer2 );
+                EnMessageBox( sMsg.c_str() );
                 ThrowError( ERR_RES_CREATE_WND );
             }
         }
