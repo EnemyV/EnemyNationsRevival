@@ -490,11 +490,10 @@ static void OnMsgSessionClose( )
              ( pWnd->GetMode( ) != CWndArea::rocket_wait ) )
         {
             bTold = TRUE;
-            CString sMsg;
-            sMsg = EnLoadString( IDS_SAVE_CLOSE );
-            csPrintf( &sMsg, (const char*)theGame.m_sGameName );
+            std::string sMsg = strPrintf( EnLoadStdString( IDS_SAVE_CLOSE ).c_str(),
+                                          (const char*)theGame.m_sGameName );
 
-            if ( EnMessageBox( sMsg, MB_YESNO | MB_ICONQUESTION ) == IDYES )
+            if ( EnMessageBox( sMsg.c_str(), MB_YESNO | MB_ICONQUESTION ) == IDYES )
                 theGame.SaveGame( NULL );
         }
 
@@ -502,18 +501,15 @@ static void OnMsgSessionClose( )
     // then we go back to the main screen
     if ( !bTold )
     {
-        CString sMsg;
-        sMsg = EnLoadString( IDS_JOIN_UNJOIN );
+        std::string sMsg;
         CPlayer* pPlyr = theGame.GetServer( );
         if ( pPlyr != NULL )
-            csPrintf( &sMsg, (const char*)theGame.GetServer( )->GetName( ) );
+            sMsg = strPrintf( EnLoadStdString( IDS_JOIN_UNJOIN ).c_str(),
+                              theGame.GetServer( )->GetName( ) );
         else
-        {
-            CString sTxt;
-            sTxt = EnLoadString( IDS_UNKNOWN );
-            csPrintf( &sMsg, (const char*)sTxt );
-        }
-        EnMessageBox( sMsg, MB_OK | MB_TASKMODAL );
+            sMsg = strPrintf( EnLoadStdString( IDS_JOIN_UNJOIN ).c_str(),
+                              EnLoadStdString( IDS_UNKNOWN ).c_str() );
+        EnMessageBox( sMsg.c_str(), MB_OK | MB_TASKMODAL );
     }
 
     // close it (will call CloseWorld after returning)
@@ -544,11 +540,10 @@ static void OnMsgJoin( LPCVPPLAYERINFO pPi, BOOL bLocal, BYTE bErr )
         if ( bErr )
         {
             TRAP( );
-            CString sMsg;
-            sMsg = EnLoadString( IDS_MSG_JOIN_FAILED );
-            CString sNum = IntToCString( bErr );
-            csPrintf( &sMsg, (char const*)theGame.GetServer( )->GetName( ), (char const*)sNum );
-            EnMessageBox( sMsg, MB_OK | MB_ICONSTOP );
+            std::string sNum = IntToStr( bErr );
+            std::string sMsg = strPrintf( EnLoadStdString( IDS_MSG_JOIN_FAILED ).c_str(),
+                                          theGame.GetServer( )->GetName( ), sNum.c_str() );
+            EnMessageBox( sMsg.c_str(), MB_OK | MB_ICONSTOP );
             return;
         }
 
@@ -2920,12 +2915,12 @@ void CGame::ProcessMessage(CNetCmd* pCmd )
         }
 
         // if it was the server player we have to handle the LEAVE stuff here
-        CString sMsg;
+        std::string sMsg;
         BOOL    bMsg;
         if ( ( !theGame.AmServer( ) ) && ( pPlr->GetNetNum( ) != 0 ) )
         {
-            sMsg = EnLoadString( IDS_MSG_NET_GOODBYE );
-            csPrintf( &sMsg, (const char*)pPlr->GetName( ) );
+            sMsg = strPrintf( EnLoadStdString( IDS_MSG_NET_GOODBYE ).c_str(),
+                              pPlr->GetName( ) );
 
             theGame.AiTakeOverPlayer( pPlr, TRUE );
 
@@ -2961,11 +2956,11 @@ void CGame::ProcessMessage(CNetCmd* pCmd )
         if ( bMsg )
         {
             if ( theApp.m_wndBar.m_hWnd != NULL )
-                theApp.m_wndBar.SetStatusText( 0, sMsg );
+                theApp.m_wndBar.SetStatusText( 0, sMsg.c_str() );
             if ( theGame.GetState( ) == CGame::play )
             {
                 CDlgModelessMsg* pDlg = new CDlgModelessMsg( );
-                pDlg->Create( sMsg );
+                pDlg->Create( sMsg.c_str() );
             }
         }
         break;
@@ -3191,11 +3186,10 @@ void CGame::ProcessMessage(CNetCmd* pCmd )
         {
             pPlr->m_bMsgDead = TRUE;
             theGame.Event( EVENT_PLAYER_DEAD, EVENT_NOTIFY, pPlr );
-            CString sMsg;
-            sMsg = EnLoadString( IDS_EVENT_DEAD );
-            csPrintf( &sMsg, pPlr->GetName( ) );
+            std::string sMsg = strPrintf( EnLoadStdString( IDS_EVENT_DEAD ).c_str(),
+                                          pPlr->GetName( ) );
             CDlgModelessMsg* pDlg = new CDlgModelessMsg( );
-            pDlg->Create( sMsg );
+            pDlg->Create( sMsg.c_str() );
         }
         break;
     }
