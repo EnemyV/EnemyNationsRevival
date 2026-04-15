@@ -143,6 +143,16 @@ _RELEASE_INLINE void CMmio::ReadString( CString& sRtn ) {
     sRtn.ReleaseBuffer( -1 );
 }
 
+_RELEASE_INLINE void CMmio::ReadString( std::string& sRtn ) {
+
+    short int iLen;
+    Read( &iLen, 2 );
+
+    sRtn.resize( iLen );
+    if ( iLen > 0 )
+        Read( &sRtn[0], iLen );
+}
+
 _RELEASE_INLINE const MMCKINFO& CMmio::GetRiffChunkInfo() const {
     ASSERT_STRICT_VALID( this );
     return m_mckiRiff;

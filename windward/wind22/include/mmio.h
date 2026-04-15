@@ -9,6 +9,7 @@
 //
 //---------------------------------------------------------------------------
 
+#include <string>
 
 const int MMIO_NUM_LIST = 5;
 
@@ -87,6 +88,7 @@ class CMmio
     long  ReadLong ();
     float  ReadFloat ();
     void  ReadString (CString & sRtn);
+    void  ReadString (std::string & sRtn);  // Phase 5a: std::string alternative
 
     //
     // 4/28/96 BobP, These are for getting chunk and list sizes
