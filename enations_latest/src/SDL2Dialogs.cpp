@@ -830,8 +830,8 @@ void SDL2_RunCredits(GameWindow* gameWindow) {
             pMmio->DescendChunk('L', 'I', 'N', 'E');
             lines[i].align = pMmio->ReadShort();
             lines[i].size = pMmio->ReadShort();
-            CString sText; pMmio->ReadString(sText);
-            lines[i].text = (LPCTSTR)sText;
+            std::string sText; pMmio->ReadString(sText);
+            lines[i].text = sText;
             lines[i].hasReturn = pMmio->ReadShort();
             pMmio->AscendChunk();
         }

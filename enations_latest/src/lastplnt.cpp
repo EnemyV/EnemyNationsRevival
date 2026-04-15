@@ -855,7 +855,7 @@ BOOL CConquerApp::InitInstance( )
 #endif
 
         // check the version
-        CString sName;
+        std::string sName;
         pMmio->AscendChunk( );
         pMmio->DescendChunk( 'N', 'A', 'M', 'E' );
         pMmio->ReadString( sName );
@@ -866,12 +866,11 @@ BOOL CConquerApp::InitInstance( )
         if ( ( m_iRifVer != VER_RIFF ) || ( sName != GameDataName ) )
         {
             TRAP( );
-            CString sMsg, sNum1, sNum2;
-            sMsg = EnLoadString( IDS_WRONG_DATA_FILE );
-            sNum1 = IntToCString( m_iRifVer );
-            sNum2 = IntToCString( VER_RIFF );
-            csPrintf( &sMsg, (char const*)sName, (char const*)sNum1, (char const*)sNum2 );
-            if ( EnMessageBox( sMsg, MB_YESNO | MB_ICONSTOP ) != IDYES )
+            std::string sNum1 = IntToStr( m_iRifVer );
+            std::string sNum2 = IntToStr( VER_RIFF );
+            std::string sMsg = strPrintf( EnLoadStdString( IDS_WRONG_DATA_FILE ).c_str(),
+                                          sName.c_str(), sNum1.c_str(), sNum2.c_str() );
+            if ( EnMessageBox( sMsg.c_str(), MB_YESNO | MB_ICONSTOP ) != IDYES )
                 return ( 0 );
             bErr = TRUE;
         }
