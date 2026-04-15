@@ -176,9 +176,10 @@ void CVehicleBuilding::ShowStatusText( CString& str )
     }
 
     // show what we are building
-    str = EnLoadString( IDS_STAT_BUILD );
-    CString sNum = IntToCString( m_iLastPer );
-    csPrintf( &str, (LPCSTR)theTransports.GetData( pBldUnt->GetVehType( ) )->GetDesc( ), (char const*)sNum );
+    std::string sNum = IntToStr( m_iLastPer );
+    str = strPrintf( EnLoadStdString( IDS_STAT_BUILD ).c_str(),
+                     (const char*)theTransports.GetData( pBldUnt->GetVehType( ) )->GetDesc( ),
+                     sNum.c_str() ).c_str();
 }
 
 void CFarmBuilding::ShowStatusText( CString& str )
@@ -190,13 +191,12 @@ void CFarmBuilding::ShowStatusText( CString& str )
         return;
     }
 
-    str = EnLoadString( IDS_STAT_FARM );
     CBuildFarm* pBf = GetData( )->GetBldFarm( );
-    CString     sNum =
-        IntToCString( GetFrameProd( GetOwner( )->GetFarmProd( ) * m_iTerMult * float( 24 * 60 * pBf->GetQuantity( ) ) /
-                                    float( pBf->GetTimeToFarm( ) ) ),
-                      10, TRUE );
-    csPrintf( &str, (char const*)sNum );
+    std::string sNum =
+        IntToStr( GetFrameProd( GetOwner( )->GetFarmProd( ) * m_iTerMult * float( 24 * 60 * pBf->GetQuantity( ) ) /
+                                float( pBf->GetTimeToFarm( ) ) ),
+                  10, true );
+    str = strPrintf( EnLoadStdString( IDS_STAT_FARM ).c_str(), sNum.c_str() ).c_str();
 }
 
 void CPowerBuilding::ShowStatusText( CString& str )
