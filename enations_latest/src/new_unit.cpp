@@ -152,8 +152,7 @@ void CMaterialBuilding::ShowStatusText( CString& str )
                                             float( pBm->GetTime( ) ) ) );
     itoa( iNum, sNum, 10 );
 
-    str = EnLoadString( IDS_STAT_MATERIAL );
-    csPrintf( &str, pDesc, sNum );
+    str = strPrintf( EnLoadStdString( IDS_STAT_MATERIAL ).c_str(), pDesc, sNum ).c_str();
 }
 
 void CVehicleBuilding::ShowStatusText( CString& str )

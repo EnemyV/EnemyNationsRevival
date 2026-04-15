@@ -454,12 +454,8 @@ void CWndMain::OnPaint()
 
 		dc.SetBkMode (TRANSPARENT);
 		dc.SetTextColor ( RGB (255, 255, 255) );
-		CString sLoad;
-		if (m_progPos == exiting)
-			sLoad = EnLoadString(IDS_LEAVING);
-		else
-			sLoad = EnLoadString(IDS_LOADING);
-		dc.TextOut (0, 0, sLoad);
+		std::string sLoad = EnLoadStdString(m_progPos == exiting ? IDS_LEAVING : IDS_LOADING);
+		dc.TextOut (0, 0, sLoad.c_str(), (int)sLoad.length());
 		dc.SelectObject (pOldFont);
 		return;
 		}
@@ -487,9 +483,8 @@ void CWndMain::OnPaint()
 		CFont * pOldFont = dc.SelectObject (&fnt);
 
 		dc.SetTextColor ( RGB (255, 255, 255) );
-		CString sLoad;
-		sLoad = EnLoadString(IDS_EXIT_GAME);
-		dc.TextOut (0, 0, sLoad);
+		std::string sLoad = EnLoadStdString(IDS_EXIT_GAME);
+		dc.TextOut (0, 0, sLoad.c_str(), (int)sLoad.length());
 		dc.SelectObject (pOldFont);
 		thePal.EndPaint (dc.m_hDC);
 		return;
@@ -840,9 +835,8 @@ BOOL CDlgFile::OnInitDialog()
 
 	if ( (theGame.IsNetGame ()) && (theGame.AmServer ()) )
 		{
-		CString sBtn;
-		sBtn = EnLoadString( IDS_PLAYERS );
-		m_btnMission.SetWindowText ( sBtn );
+		std::string sBtn = EnLoadStdString( IDS_PLAYERS );
+		m_btnMission.SetWindowText ( sBtn.c_str() );
 		}
 	else
 		m_btnMission.EnableWindow (theGame.GetScenario () >= 0);
