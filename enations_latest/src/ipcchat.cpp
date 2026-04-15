@@ -206,10 +206,9 @@ void CChatWnd::SetFrom( CPlayer* pPlyr )
     //((CWndComm *) GetParent ())->CheckChatButton ();
 
     // update the title
-    CString sTitle;
-    sTitle = EnLoadString( IDS_CHAT_TITLE );
-    csPrintf( &sTitle, (const char*)pPlyr->GetName( ) );
-    SetWindowText( sTitle );
+    std::string sTitle = strPrintf( EnLoadStdString( IDS_CHAT_TITLE ).c_str(),
+                                    pPlyr->GetName() );
+    SetWindowText( sTitle.c_str() );
 
     // we now disable the combo box & enable the hang-up
     m_pdbChatBar->GetDlgItem( IDC_SELECTPLAYER )->EnableWindow( FALSE );

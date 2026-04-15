@@ -2032,10 +2032,9 @@ int CWndRoute::OnCreate(LPCREATESTRUCT lpCreateStruct) {
     }
     OnLbnClk();
 
-    CString sTitle;
-    sTitle = EnLoadString(IDS_ROUTE_TITLE);
-    csPrintf(&sTitle, (char const *) m_pVeh->GetData()->GetDesc());
-    SetWindowText(sTitle);
+    std::string sTitle = strPrintf( EnLoadStdString(IDS_ROUTE_TITLE).c_str(),
+                                    (const char*)m_pVeh->GetData()->GetDesc() );
+    SetWindowText(sTitle.c_str());
 
     // fill the listbox
     NewRoute(m_pVeh);
