@@ -259,18 +259,40 @@ std::string EnLoadStdString( unsigned int id )
 
 #include <cstdarg>
 
-std::string IntToStr( int iNum, int iRadix )
+static std::string InsertCommas( std::string s )
+{
+    // Insert thousand-separators into the decimal digits
+    size_t start = ( !s.empty() && ( s[0] == '-' || s[0] == '+' ) ) ? 1 : 0;
+    size_t n = s.length();
+    if ( n <= start + 3 )
+        return s;
+    size_t pos = n;
+    while ( pos > start + 3 )
+    {
+        pos -= 3;
+        s.insert( s.begin() + pos, ',' );
+    }
+    return s;
+}
+
+std::string IntToStr( int iNum, int iRadix, bool bComma )
 {
     char buf[34];
     _itoa_s( iNum, buf, iRadix );
-    return std::string( buf );
+    std::string s( buf );
+    if ( bComma && iRadix == 10 )
+        s = InsertCommas( s );
+    return s;
 }
 
-std::string LongToStr( long lNum, int iRadix )
+std::string LongToStr( long lNum, int iRadix, bool bComma )
 {
     char buf[34];
     _ltoa_s( lNum, buf, iRadix );
-    return std::string( buf );
+    std::string s( buf );
+    if ( bComma && iRadix == 10 )
+        s = InsertCommas( s );
+    return s;
 }
 
 std::string strPrintf( const char* fmt, ... )

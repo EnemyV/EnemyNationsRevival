@@ -3520,10 +3520,9 @@ void CWndArea::GotoOn( CVehicle* pUnit, int iMode, int iRouteType, POSITION posR
     ASSERT_STRICT_VALID( pUnit );
     ASSERT_STRICT( iMode == veh_route );
 
-    CString sMsg;
-    sMsg = EnLoadString( IDS_MSG_UNIT_GOTO );
-    csPrintf( &sMsg, (char const*)pUnit->GetData( )->GetDesc( ) );
-    SetStatusText( sMsg );
+    std::string sMsg = strPrintf( EnLoadStdString( IDS_MSG_UNIT_GOTO ).c_str(),
+                                  (const char*)pUnit->GetData( )->GetDesc( ) );
+    SetStatusText( sMsg.c_str() );
 
     m_lstUnits.RemoveAllUnits( TRUE );
     m_lstUnits.AddUnit( pUnit, TRUE );
@@ -4225,15 +4224,13 @@ void CWndArea::SetButtonState( )
     // set the title
     if ( m_pUnit == NULL )
     {
-        CString sTitle;
+        std::string sTitle;
         if ( m_lstUnits.GetCount( ) <= 0 )
-            sTitle = EnLoadString( IDS_TITLE_AREA_MAP );
+            sTitle = EnLoadStdString( IDS_TITLE_AREA_MAP );
         else
-        {
-            sTitle = EnLoadString( IDS_TITLE_AREA_MAP_MULTI );
-            csPrintf( &sTitle, (const char*)IntToCString( m_lstUnits.GetCount( ) ) );
-        }
-        SetWindowText( sTitle );
+            sTitle = strPrintf( EnLoadStdString( IDS_TITLE_AREA_MAP_MULTI ).c_str(),
+                                IntToStr( m_lstUnits.GetCount( ) ).c_str() );
+        SetWindowText( sTitle.c_str() );
     }
     else
     {
@@ -5759,12 +5756,11 @@ void CWndArea::GiveSelectedUnits( CPlayer* pPlr )
     }
 
     // create prompt
-    CString sSure, sNumB, sNumV;
-    sSure = EnLoadString( IDS_GIVE_UNITS );
-    sNumB = IntToCString( iBldgs, 10, TRUE );
-    sNumV = IntToCString( iVehs, 10, TRUE );
-    csPrintf( &sSure, (char const*)sNumB, (char const*)sNumV, (char const*)pPlr->GetName( ) );
-    if ( EnMessageBox( sSure, MB_YESNO | MB_ICONQUESTION ) != IDYES )
+    std::string sNumB = IntToStr( iBldgs, 10, true );
+    std::string sNumV = IntToStr( iVehs, 10, true );
+    std::string sSure = strPrintf( EnLoadStdString( IDS_GIVE_UNITS ).c_str(),
+                                   sNumB.c_str(), sNumV.c_str(), pPlr->GetName() );
+    if ( EnMessageBox( sSure.c_str(), MB_YESNO | MB_ICONQUESTION ) != IDYES )
     {
         TRAP( );
         return;

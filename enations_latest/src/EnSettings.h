@@ -41,8 +41,9 @@ std::string EnLoadStdString( unsigned int id );
 std::string strPrintf( const char* fmt, ... );
 
 // std::string equivalents of wind22's IntToCString/LongToCString.
-std::string IntToStr( int iNum, int iRadix = 10 );
-std::string LongToStr( long lNum, int iRadix = 10 );
+// bComma=true inserts thousand-separators (e.g. 1234 -> "1,234").
+std::string IntToStr( int iNum, int iRadix = 10, bool bComma = false );
+std::string LongToStr( long lNum, int iRadix = 10, bool bComma = false );
 
 // Win32 MessageBoxA wrapper that does not depend on CWinApp/MFC. The third
 // "helpId" parameter is accepted for source-compatibility with AfxMessageBox
