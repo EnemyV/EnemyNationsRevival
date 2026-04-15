@@ -1643,19 +1643,16 @@ void CDlgBuildTransport::UpdateStatus(int iPer) {
     InvalidateRect(&(m_statInst.m_rDest), FALSE);
 
     // set the title
-    CString sTitle;
+    std::string sTitle;
     if (iPer != 0) {
-        sTitle = EnLoadString(IDS_BUILD_UNIT);
         CBuildUnit const *pBu = m_pBldgPar->GetBldUnt();
-        if (pBu == NULL)
-            csPrintf(&sTitle, (char const *) "");
-        else
-            csPrintf(&sTitle, (char const *) theTransports.GetData(pBu->GetVehType())->GetDesc());
+        const char* pDesc = (pBu == NULL) ? "" : (const char*)theTransports.GetData(pBu->GetVehType())->GetDesc();
+        sTitle = strPrintf(EnLoadStdString(IDS_BUILD_UNIT).c_str(), pDesc);
     } else if (m_pBldgPar->GetData()->GetBldgType() == CStructureData::barracks)
-        sTitle = EnLoadString(IDS_BUILD_PEOPLE);
+        sTitle = EnLoadStdString(IDS_BUILD_PEOPLE);
     else
-        sTitle = EnLoadString(IDS_BUILD_VEHICLE);
-    SetWindowText(sTitle);
+        sTitle = EnLoadStdString(IDS_BUILD_VEHICLE);
+    SetWindowText(sTitle.c_str());
 
     // the below we do only if we aren't active
     if (CWnd::GetActiveWindow() == this)
