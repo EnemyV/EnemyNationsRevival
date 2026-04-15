@@ -551,21 +551,19 @@ void CWndWorld::CommandCenterChange() {
     if (iOldMode != m_iMode)
         NewMode();
 
-    CString sTitle;
+    std::string sTitle;
     if (m_bIsRadar) {
         m_sHelpFace = "";
-        sTitle = EnLoadString(IDS_WORLD_TITLE_RADAR);
+        sTitle = EnLoadStdString(IDS_WORLD_TITLE_RADAR);
     } else {
         m_sHelpFace = EnLoadString(IDH_WORLD_FACE);
-        sTitle = EnLoadString(IDS_WORLD_TITLE_MAP);
+        sTitle = EnLoadStdString(IDS_WORLD_TITLE_MAP);
     }
 
-    if (m_pWndArea == NULL)
-        csPrintf(&sTitle, (char const *) "");
-    else
-        csPrintf(&sTitle, (char const *) m_sDir[m_pWndArea->GetAA().m_iDir]);
+    const char* pArg = (m_pWndArea == NULL) ? "" : (const char*)m_sDir[m_pWndArea->GetAA().m_iDir];
+    sTitle = strPrintf(sTitle.c_str(), pArg);
 
-    SetWindowText(sTitle);
+    SetWindowText(sTitle.c_str());
     // BUGBUG - if change black it & do noise
 }
 
@@ -1195,20 +1193,16 @@ void CWndWorld::_NewDir() {
     ASSERT_STRICT (m_pWndArea->m_hWnd != NULL);
 
     // put up the new dir
-    CString sTitle;
-    if (m_bIsRadar)
-        sTitle = EnLoadString( IDS_WORLD_TITLE_RADAR );
-    else
-        sTitle = EnLoadString(IDS_WORLD_TITLE_MAP);
+    std::string sTitle = EnLoadStdString( m_bIsRadar ? IDS_WORLD_TITLE_RADAR : IDS_WORLD_TITLE_MAP );
 
 #ifdef LOGGINGON
     char buf[128];
-    sprintf_s( buf, "New Title: %s\n", (LPCSTR) sTitle );
+    sprintf_s( buf, "New Title: %s\n", sTitle.c_str() );
     OutputDebugStringA( buf );
 #endif
 
-    csPrintf(&sTitle, (char const *) m_sDir[m_pWndArea->GetAA().m_iDir]);
-    SetWindowText(sTitle);
+    sTitle = strPrintf( sTitle.c_str(), (const char*)m_sDir[m_pWndArea->GetAA().m_iDir] );
+    SetWindowText(sTitle.c_str());
 
     int iBytesPerPixel = m_dibwnd.GetDIB()->GetBytesPerPixel();
 
