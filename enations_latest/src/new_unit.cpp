@@ -78,11 +78,10 @@ void CUnit::ShowStatusText( CString& str )
 {
 
     // list the damage level
-    str = EnLoadString( IDS_STAT_DAMAGE );
     int iPer     = 100 - GetDamagePer( );
     iPer         = __min( 99, iPer );
-    CString sNum = IntToCString( iPer );
-    csPrintf( &str, (char const*)sNum );
+    std::string sNum = IntToStr( iPer );
+    str = strPrintf( EnLoadStdString( IDS_STAT_DAMAGE ).c_str(), sNum.c_str() ).c_str();
 }
 
 void CBuilding::ShowStatusText( CString& str )
@@ -91,22 +90,20 @@ void CBuilding::ShowStatusText( CString& str )
     // if under construction show % done
     if ( m_iConstDone != -1 )
     {
-        str = EnLoadString( IDS_STAT_CONST );
-        CString sNum = IntToCString( m_iLastPer );
-        csPrintf( &str, (char const*)sNum );
+        std::string sNum = IntToStr( m_iLastPer );
+        str = strPrintf( EnLoadStdString( IDS_STAT_CONST ).c_str(), sNum.c_str() ).c_str();
         return;
     }
 
     if ( GetData( )->GetType( ) == CStructureData::rocket )
     {
-        str = EnLoadString( IDS_STAT_ROCKET );
-        CString sNum1 = IntToCString( theGame.GetMe( )->GetPplTotal( ) );
-        CString sNum2 = IntToCString( theGame.GetMe( )->m_iAptCap );
-        CString sNum3 = IntToCString( theGame.GetMe( )->GetPplBldg( ) );
-        CString sNum4 = IntToCString( theGame.GetMe( )->m_iOfcCap );
-        CString sNum5 = IntToCString( (int)( 15.0 * GetFrameProd( 1 ) ) );
-        csPrintf( &str, (char const*)sNum1, (char const*)sNum2, (char const*)sNum3, (char const*)sNum4,
-                  (char const*)sNum5 );
+        std::string sNum1 = IntToStr( theGame.GetMe( )->GetPplTotal( ) );
+        std::string sNum2 = IntToStr( theGame.GetMe( )->m_iAptCap );
+        std::string sNum3 = IntToStr( theGame.GetMe( )->GetPplBldg( ) );
+        std::string sNum4 = IntToStr( theGame.GetMe( )->m_iOfcCap );
+        std::string sNum5 = IntToStr( (int)( 15.0 * GetFrameProd( 1 ) ) );
+        str = strPrintf( EnLoadStdString( IDS_STAT_ROCKET ).c_str(),
+                         sNum1.c_str(), sNum2.c_str(), sNum3.c_str(), sNum4.c_str(), sNum5.c_str() ).c_str();
         return;
     }
 
@@ -118,8 +115,8 @@ void CBuilding::ShowStatusText( CString& str )
             str = EnLoadString( IDS_STAT_IDLE );
             return;
         }
-        str = EnLoadString( IDS_RESEARCHING );
-        csPrintf( &str, (char const*)theRsrch.ElementAt( theGame.GetMe( )->GetRsrchItem( ) ).m_sName );
+        str = strPrintf( EnLoadStdString( IDS_RESEARCHING ).c_str(),
+                         (const char*)theRsrch.ElementAt( theGame.GetMe( )->GetRsrchItem( ) ).m_sName ).c_str();
         return;
     }
 
@@ -216,10 +213,9 @@ void CPowerBuilding::ShowStatusText( CString& str )
             return;
         }
 
-    str = EnLoadString( IDS_STAT_POWER );
-    CString sNum  = IntToCString( (int)( GetFrameProd( 1 ) * (float)GetData( )->GetBldPower( )->GetPower( ) ) );
-    CString sNum2 = IntToCString( GetData( )->GetBldPower( )->GetPower( ) );
-    csPrintf( &str, (char const*)sNum, (char const*)sNum2 );
+    std::string sNum  = IntToStr( (int)( GetFrameProd( 1 ) * (float)GetData( )->GetBldPower( )->GetPower( ) ) );
+    std::string sNum2 = IntToStr( GetData( )->GetBldPower( )->GetPower( ) );
+    str = strPrintf( EnLoadStdString( IDS_STAT_POWER ).c_str(), sNum.c_str(), sNum2.c_str() ).c_str();
 }
 
 void CRepairBuilding::ShowStatusText( CString& str )
@@ -238,9 +234,9 @@ void CRepairBuilding::ShowStatusText( CString& str )
     }
 
     // show what we are building
-    str = EnLoadString( IDS_STAT_REPAIR );
-    CString sNum = IntToCString( m_iLastPer );
-    csPrintf( &str, (LPCSTR)m_pVehRepairing->GetData( )->GetDesc( ), (char const*)sNum );
+    std::string sNum = IntToStr( m_iLastPer );
+    str = strPrintf( EnLoadStdString( IDS_STAT_REPAIR ).c_str(),
+                     (const char*)m_pVehRepairing->GetData( )->GetDesc( ), sNum.c_str() ).c_str();
 }
 
 void CShipyardBuilding::ShowStatusText( CString& str )
@@ -253,9 +249,9 @@ void CShipyardBuilding::ShowStatusText( CString& str )
     }
 
     // show what we are building
-    str = EnLoadString( IDS_STAT_REPAIR );
-    CString sNum = IntToCString( m_iLastPer );
-    csPrintf( &str, (LPCSTR)m_pVehRepairing->GetData( )->GetDesc( ), (char const*)sNum );
+    std::string sNum = IntToStr( m_iLastPer );
+    str = strPrintf( EnLoadStdString( IDS_STAT_REPAIR ).c_str(),
+                     (const char*)m_pVehRepairing->GetData( )->GetDesc( ), sNum.c_str() ).c_str();
 }
 
 void CHousingBuilding::ShowStatusText( CString& str )
@@ -284,10 +280,10 @@ void CHousingBuilding::ShowStatusText( CString& str )
         iRes2 = IDS_STAT_OFFICE2;
     }
 
-    str = EnLoadString( iHave >= iNeed ? iRes1 : iRes2 );
-    CString sNum1 = IntToCString( iHave >= iNeed ? iNeed : iHave, 10, TRUE );
-    CString sNum2 = IntToCString( iHave >= iNeed ? iHave - iNeed : iNeed, 10, TRUE );
-    csPrintf( &str, (char const*)sNum1, (char const*)sNum2 );
+    std::string sNum1 = IntToStr( iHave >= iNeed ? iNeed : iHave, 10, true );
+    std::string sNum2 = IntToStr( iHave >= iNeed ? iHave - iNeed : iNeed, 10, true );
+    str = strPrintf( EnLoadStdString( iHave >= iNeed ? iRes1 : iRes2 ).c_str(),
+                     sNum1.c_str(), sNum2.c_str() ).c_str();
 }
 
 void CMineBuilding::ShowStatusText( CString& str )
@@ -302,8 +298,8 @@ void CMineBuilding::ShowStatusText( CString& str )
     // if out - say so
     if ( m_iMinerals <= 0 )
     {
-        str = EnLoadString( IDS_EXHAUSTED );
-        csPrintf( &str, (LPCSTR)CMaterialTypes::GetDesc( GetData( )->GetBldMine( )->GetTypeMines( ) ) );
+        str = strPrintf( EnLoadStdString( IDS_EXHAUSTED ).c_str(),
+                         (const char*)CMaterialTypes::GetDesc( GetData( )->GetBldMine( )->GetTypeMines( ) ) ).c_str();
         return;
     }
 
@@ -311,16 +307,16 @@ void CMineBuilding::ShowStatusText( CString& str )
     int         iRate10 =
         (int)( GetFrameProd( GetOwner( )->GetMineProd( ) * (float)( 10 * m_iDensity * 24 * 60 * pBm->GetAmount( ) ) /
                              (float)( CMinerals::DensityDiv( ) * pBm->GetTimeToMine( ) ) ) );
-    CString sNum1;
+    std::string sNum1;
     if ( iRate10 >= 20 )
-        sNum1 = IntToCString( iRate10 / 10 );
+        sNum1 = IntToStr( iRate10 / 10 );
     else
-        sNum1 = IntToCString( iRate10 / 10 ) + "." + IntToCString( iRate10 % 10 );
+        sNum1 = IntToStr( iRate10 / 10 ) + "." + IntToStr( iRate10 % 10 );
 
-    str = EnLoadString( IDS_STAT_MINE );
-    CString sNum2 = IntToCString( m_iMinerals, 10, TRUE );
-    CString sNum3 = IntToCString( m_iDensity, 10, TRUE );
-    csPrintf( &str, (char const*)sNum1, (char const*)sNum2, (char const*)sNum3 );
+    std::string sNum2 = IntToStr( m_iMinerals, 10, true );
+    std::string sNum3 = IntToStr( m_iDensity, 10, true );
+    str = strPrintf( EnLoadStdString( IDS_STAT_MINE ).c_str(),
+                     sNum1.c_str(), sNum2.c_str(), sNum3.c_str() ).c_str();
 }
 
 void CVehicle::ShowStatusText( CString& str )
@@ -328,9 +324,8 @@ void CVehicle::ShowStatusText( CString& str )
 
     if ( GetData( )->IsCarrier( ) )
     {
-        str = EnLoadString( IDS_STAT_CARRIER );
-        CString sNum = IntToCString( m_lstCargo.GetCount( ) );
-        csPrintf( &str, (char const*)sNum );
+        std::string sNum = IntToStr( m_lstCargo.GetCount( ) );
+        str = strPrintf( EnLoadStdString( IDS_STAT_CARRIER ).c_str(), sNum.c_str() ).c_str();
         return;
     }
 
