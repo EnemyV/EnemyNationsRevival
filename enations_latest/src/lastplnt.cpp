@@ -433,8 +433,8 @@ BOOL CConquerApp::InitInstance( )
 
     // load the correct language
     m_iLangCode  = EnGetProfileInt( "Advanced", "Language", PRIMARYLANGID( LANGIDFROMLCID( ::GetUserDefaultLCID( ) ) ) );
-    CString sLib = "ENLang" + IntToCString( m_iLangCode ) + ".DLL";
-    if ( ( m_hLibLang = LoadLibrary( sLib ) ) != NULL )
+    std::string sLib = "ENLang" + IntToStr( m_iLangCode ) + ".DLL";
+    if ( ( m_hLibLang = LoadLibrary( sLib.c_str() ) ) != NULL )
         AfxSetResourceHandle( m_hLibLang );
 
     // init critical section (before maybe exiting below)
@@ -509,12 +509,11 @@ BOOL CConquerApp::InitInstance( )
                 ( m_iOldWidth * m_iOldHeight * ( ( m_iOldDepth + 7 ) / 8 ) ) / m_iCpuSpeed <= ( 640 * 480 ) / 60;
             if ( ( iBest < 5 ) && ( iRes == 0 ) && !bNativeOk )
             {
-                CString sMsg;
-                sMsg = EnLoadString( IDS_KILLER_RES );
-                CString sRes = IntToCString( m_iOldWidth ) + "x" + IntToCString( m_iOldHeight ) + "x" +
-                               IntToCString( m_iOldDepth );
-                csPrintf( &sMsg, (char const*)sRes, pRes );
-                if ( EnMessageBoxOnce( sMsg, MB_YESNO | MB_ICONSTOP | MB_TASKMODAL, "Warnings", "ScreenRes", IDNO ) == IDYES )
+                std::string sRes = IntToStr( m_iOldWidth ) + "x" + IntToStr( m_iOldHeight ) + "x" +
+                                   IntToStr( m_iOldDepth );
+                std::string sMsg = strPrintf( EnLoadStdString( IDS_KILLER_RES ).c_str(),
+                                              sRes.c_str(), pRes );
+                if ( EnMessageBoxOnce( sMsg.c_str(), MB_YESNO | MB_ICONSTOP | MB_TASKMODAL, "Warnings", "ScreenRes", IDNO ) == IDYES )
                     iRes = iBest;
             }
             else if ( iRes == 1 )
@@ -665,12 +664,9 @@ BOOL CConquerApp::InitInstance( )
     }
     if ( ms.dwTotalPageFile < 1024 * 1024 * MEM_NEEDED_BASE )
     {
-        CString sText;
-        sText = EnLoadString( IDS_ERROR_LOW_VIRT_MEM );
-        CString sNum;
-        sNum = IntToCString( MEM_NEEDED_BASE );
-        csPrintf( &sText, (char const*)sNum );
-        if ( EnMessageBoxOnce( sText, MB_YESNO | MB_ICONSTOP | MB_TASKMODAL, "Warnings", "LessThan8Meg" ) != IDYES )
+        std::string sNum = IntToStr( MEM_NEEDED_BASE );
+        std::string sText = strPrintf( EnLoadStdString( IDS_ERROR_LOW_VIRT_MEM ).c_str(), sNum.c_str() );
+        if ( EnMessageBoxOnce( sText.c_str(), MB_YESNO | MB_ICONSTOP | MB_TASKMODAL, "Warnings", "LessThan8Meg" ) != IDYES )
             return ( 0 );
         Log( "Error: Not enough virtual memory to run" );
         m_wndMain.UpdateWindow( );
