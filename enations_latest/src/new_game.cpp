@@ -673,44 +673,35 @@ void CDlgPlayerList::OnDrawItem(int, LPDRAWITEMSTRUCT lpDIS) {
     CRect rect(lpDIS->rcItem);
     rect.right = rect.left + tm.tmAveCharWidth * 4;
 
-    CString sText;
+    std::string sText;
     if (pPlyr == theGame._GetMe())
         sText = "�";
     else
         sText = " ";
     pDc->ExtTextOut(rect.left, rect.top, ETO_CLIPPED | ETO_OPAQUE,
-                    &rect, sText, sText.GetLength(), NULL);
+                    &rect, sText.c_str(), (UINT)sText.length(), NULL);
 
     rect.left = rect.right;
     rect.right = lpDIS->rcItem.left + (lpDIS->rcItem.right - lpDIS->rcItem.left) / 2;
     pDc->ExtTextOut(rect.left, rect.top, ETO_CLIPPED | ETO_OPAQUE,
-                    &rect, pPlyr->GetName(), strlen(pPlyr->GetName()), NULL);
+                    &rect, pPlyr->GetName(), (UINT)strlen(pPlyr->GetName()), NULL);
 
     sText = " ";
-    if (pPlyr->GetState() == CPlayer::load_pick) {
-        CString sStatus;
-        sStatus = EnLoadString(IDS_PICKING_PLAYER);
-        sText += sStatus;
-    } else if (pPlyr->m_iPerInit < 0) {
-        CString sStatus;
-        sStatus = EnLoadString(IDS_PICKING_RACE);
-        sText += sStatus;
-    } else if (pPlyr->m_iPerInit == 0) {
-        CString sRes;
-        sRes = EnLoadString(IDS_READY_TO_GO);
-        sText += sRes;
-    } else if (pPlyr->m_iPerInit < 100)
-        sText += IntToCString(pPlyr->m_iPerInit) + "%";
-    else {
-        CString sRes;
-        sRes = EnLoadString(IDS_READY_TO_GO);
-        sText += sRes;
-    }
+    if (pPlyr->GetState() == CPlayer::load_pick)
+        sText += EnLoadStdString(IDS_PICKING_PLAYER);
+    else if (pPlyr->m_iPerInit < 0)
+        sText += EnLoadStdString(IDS_PICKING_RACE);
+    else if (pPlyr->m_iPerInit == 0)
+        sText += EnLoadStdString(IDS_READY_TO_GO);
+    else if (pPlyr->m_iPerInit < 100)
+        sText += IntToStr(pPlyr->m_iPerInit) + "%";
+    else
+        sText += EnLoadStdString(IDS_READY_TO_GO);
 
     rect.left = rect.right;
     rect.right = lpDIS->rcItem.right;
     pDc->ExtTextOut(rect.left, rect.top, ETO_CLIPPED | ETO_OPAQUE,
-                    &rect, sText, sText.GetLength(), NULL);
+                    &rect, sText.c_str(), (UINT)sText.length(), NULL);
 }
 
 
@@ -801,10 +792,8 @@ void CDlgCreateStatus::SetMsg(int idRes) {
 
     ASSERT_VALID (this);
 
-    CString sText;
-    sText = EnLoadString(idRes);
-
-    SetMsg(sText);
+    std::string sText = EnLoadStdString(idRes);
+    SetMsg(sText.c_str());
 }
 
 void CDlgCreateStatus::SetMsg(char const *pText) {
