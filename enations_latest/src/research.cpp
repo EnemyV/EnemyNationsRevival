@@ -551,15 +551,13 @@ void CDlgResearch::OnOK( )
 
     // list what we are researching
     UpdateData( TRUE );
-    CString sTitle;
+    std::string sTitle;
     if ( iSel < 0 )
-        sTitle = EnLoadString( IDS_RSRCH_NOTHING );
+        sTitle = EnLoadStdString( IDS_RSRCH_NOTHING );
     else
-    {
-        sTitle = EnLoadString( IDS_RSRCH_TITLE );
-        csPrintf( &sTitle, (char const*)theRsrch.ElementAt( iSel ).m_sName );
-    }
-    SetWindowText( sTitle );
+        sTitle = strPrintf( EnLoadStdString( IDS_RSRCH_TITLE ).c_str(),
+                            (const char*)theRsrch.ElementAt( iSel ).m_sName );
+    SetWindowText( sTitle.c_str() );
 
     UpdateProgress( );
 }
@@ -755,15 +753,13 @@ void CDlgResearch::UpdateChoices( BOOL bCheck )
         }
 
         // list what we are researching
-        CString sTitle;
+        std::string sTitle;
         if ( theGame.GetMe( )->GetRsrchItem( ) <= 0 )
-            sTitle = EnLoadString( IDS_RSRCH_NOTHING );
+            sTitle = EnLoadStdString( IDS_RSRCH_NOTHING );
         else
-        {
-            sTitle = EnLoadString( IDS_RSRCH_TITLE );
-            csPrintf( &sTitle, (char const*)theRsrch.ElementAt( theGame.GetMe( )->GetRsrchItem( ) ).m_sName );
-        }
-        SetWindowText( sTitle );
+            sTitle = strPrintf( EnLoadStdString( IDS_RSRCH_TITLE ).c_str(),
+                                (const char*)theRsrch.ElementAt( theGame.GetMe( )->GetRsrchItem( ) ).m_sName );
+        SetWindowText( sTitle.c_str() );
     }
 
     UpdateData( TRUE );
@@ -812,10 +808,10 @@ void CDlgResearch::OnRsrchFound( )
     // SDL2 path: show discovery in a native SDL2 dialog
     if ( theApp.m_gameWindow && m_iRsrchNum >= 0 )
     {
-        CString sTitle = EnLoadString( IDS_DISCOVERED_TITLE );
-        csPrintf( &sTitle, (char const*)theRsrch.ElementAt( m_iRsrchNum ).m_sName );
+        std::string sTitle = strPrintf( EnLoadStdString( IDS_DISCOVERED_TITLE ).c_str(),
+                                        (const char*)theRsrch.ElementAt( m_iRsrchNum ).m_sName );
         std::string desc = (const char*)theRsrch.ElementAt( m_iRsrchNum ).m_sResult;
-        SDL2DiscoverDialog dlg( theApp.m_gameWindow.get(), (const char*)sTitle, desc );
+        SDL2DiscoverDialog dlg( theApp.m_gameWindow.get(), sTitle, desc );
         dlg.DoModal();
         return;
     }
@@ -895,19 +891,19 @@ void CDlgDiscover::NewItem( )
     UpdateData( TRUE );
 
     // list the item we are on
-    CString sTitle;
+    std::string sTitle;
     if ( m_iRsrchNum < 0 )
     {
         m_strText = "";
-        sTitle = EnLoadString( IDS_DISCOVERED_NO_TITLE );
+        sTitle = EnLoadStdString( IDS_DISCOVERED_NO_TITLE );
     }
     else
     {
         m_strText = theRsrch.ElementAt( m_iRsrchNum ).m_sResult;
-        sTitle = EnLoadString( IDS_DISCOVERED_TITLE );
-        csPrintf( &sTitle, (char const*)theRsrch.ElementAt( m_iRsrchNum ).m_sName );
+        sTitle = strPrintf( EnLoadStdString( IDS_DISCOVERED_TITLE ).c_str(),
+                            (const char*)theRsrch.ElementAt( m_iRsrchNum ).m_sName );
     }
-    SetWindowText( sTitle );
+    SetWindowText( sTitle.c_str() );
 
     UpdateData( FALSE );
 }
