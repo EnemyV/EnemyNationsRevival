@@ -258,9 +258,9 @@ void CTextBtnData::Init( CMmio* pMmio )
     lf.lfHeight = pMmio->ReadShort( );
     lf.lfWidth  = lf.lfHeight / 2;
     lf.lfWeight = pMmio->ReadShort( );
-    CString sName;
+    std::string sName;
     pMmio->ReadString( sName );
-    strcpy( lf.lfFaceName, sName );
+    strcpy( lf.lfFaceName, sName.c_str() );
     m_fntText.CreateFontIndirect( &lf );
     for ( int iInd = 0; iInd < 2; iInd++ )
     {

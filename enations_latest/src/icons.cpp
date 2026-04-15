@@ -148,7 +148,7 @@ void CStatData::Init (CMmio * pMmio)
 		{
 		int iHt = pMmio->ReadShort ();
 		int iWt = pMmio->ReadShort ();
-		CString sName;
+		std::string sName;
 		pMmio->ReadString (sName);
 		m_pFnt = new CFont ();
 
@@ -164,7 +164,7 @@ void CStatData::Init (CMmio * pMmio)
 					case 0 :
 					case 1 :
 						lf.lfHeight = iHt - 2 * iTry;
-						strncpy (lf.lfFaceName, sName, LF_FACESIZE-1);
+						strncpy (lf.lfFaceName, sName.c_str(), LF_FACESIZE-1);
 						break;
 					case 2 :
 					case 3 :
@@ -200,7 +200,7 @@ void CStatData::Init (CMmio * pMmio)
 			memset (&lf, 0, sizeof (lf));
 			lf.lfHeight = iHt;
 			lf.lfWeight = iWt;
-			strcpy (lf.lfFaceName, sName);
+			strcpy (lf.lfFaceName, sName.c_str());
 			m_pFnt->CreateFontIndirect (&lf);
 			}
 
