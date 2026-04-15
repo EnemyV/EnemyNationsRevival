@@ -137,16 +137,14 @@ void CatchNum( int iNum )
     if ( iNum == ERR_TLP_QUIT )
         return;
 
-    CString sMsg;
-    sMsg = EnLoadString( IDS_ERR_LOAD_1 );
     char sNum[20];
     if ( iNum >= ERR_BASE_USER_ERROR )
         iNum -= ERR_BASE_USER_ERROR;
     else
         iNum += 100;
     itoa( iNum, sNum, 10 );
-    csPrintf( &sMsg, (char const*)sNum );
-    EnMessageBox( sMsg, MB_OK | MB_ICONSTOP );
+    std::string sMsg = strPrintf( EnLoadStdString( IDS_ERR_LOAD_1 ).c_str(), sNum );
+    EnMessageBox( sMsg.c_str(), MB_OK | MB_ICONSTOP );
 
     bDoSubclass = TRUE;
 }
@@ -162,8 +160,7 @@ void CatchSE( SE_Exception e )
     theGame.SetShouldProcessMessages(FALSE);
     theGame.EmptyQueue( );
 
-    CString sDumpText;
-    sDumpText = EnLoadString( IDS_ERR_LOAD_3 );
+    std::string sDumpText = EnLoadStdString( IDS_ERR_LOAD_3 );
 
     MEMORYSTATUS ms;
     ms.dwLength = sizeof( ms );
@@ -171,9 +168,7 @@ void CatchSE( SE_Exception e )
     const int ONE_MEG = 1024 * 1024;
     if ( ms.dwAvailPageFile / ONE_MEG < 8 )
     {
-        CString sMsg;
-        sMsg = EnLoadString( IDS_OUT_OF_MEMORY );
-        sDumpText = sMsg + "\r\n" + sDumpText;
+        sDumpText = EnLoadStdString( IDS_OUT_OF_MEMORY ) + "\r\n" + sDumpText;
     }
 
     char sNum1[20], sNum2[80], sNumS[5][20];
@@ -197,9 +192,9 @@ void CatchSE( SE_Exception e )
         break;
     }
     for ( int iOn = 0; iOn < 5; iOn++ ) itoa( e.m_stack[iOn], sNumS[iOn], 16 );
-    csPrintf( &sDumpText, (char const*)VER_STRING, (char const*)sNum1, (char const*)sNum2, (char const*)sNumS[0],
-              (char const*)sNumS[1], (char const*)sNumS[2], (char const*)sNumS[3], (char const*)sNumS[4] );
-    ::MessageBoxA( NULL, sDumpText, "Enemy Nations - Exception", MB_OK | MB_ICONSTOP );
+    sDumpText = strPrintf( sDumpText.c_str(), VER_STRING, sNum1, sNum2,
+                           sNumS[0], sNumS[1], sNumS[2], sNumS[3], sNumS[4] );
+    ::MessageBoxA( NULL, sDumpText.c_str(), "Enemy Nations - Exception", MB_OK | MB_ICONSTOP );
 
     bDoSubclass = TRUE;
 }
@@ -997,11 +992,9 @@ BOOL CConquerApp::InitInstance( )
         EnWriteProfileInt( "Game", "NumDemo", iTry + 1 );
         if ( ( iTry % 25 ) == 0 )
         {
-            CString sMsg;
-            sMsg = EnLoadString( IDS_DEMO_25 );
-            CString sNum = IntToCString( iTry );
-            csPrintf( &sMsg, (char const*)sNum );
-            if ( EnMessageBox( sMsg, MB_YESNO | MB_ICONSTOP ) != IDYES )
+            std::string sNum = IntToStr( iTry );
+            std::string sMsg = strPrintf( EnLoadStdString( IDS_DEMO_25 ).c_str(), sNum.c_str() );
+            if ( EnMessageBox( sMsg.c_str(), MB_YESNO | MB_ICONSTOP ) != IDYES )
             {
                 EnWriteProfileInt( "Game", "NumDemo", iTry );
                 return ( 0 );
