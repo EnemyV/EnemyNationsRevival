@@ -185,10 +185,9 @@ BOOL CDlgLoadTruck::OnInitDialog()
 		GetDlgItem (IDC_TRUCK_LOAD_VEH)->EnableWindow (FALSE);
 		}
 
-	CString sTitle;
-	sTitle = EnLoadString(IDS_LOAD_TRUCK);
-	csPrintf ( &sTitle, (char const *) m_pBldgPar->GetData()->GetDesc () );
-	SetWindowText ( sTitle );
+	std::string sTitle = strPrintf( EnLoadStdString(IDS_LOAD_TRUCK).c_str(),
+	                                (const char*)m_pBldgPar->GetData()->GetDesc() );
+	SetWindowText ( sTitle.c_str() );
 
 	// set up the controls
 	InitData (&m_spnCoal, m_sCoal, IDC_TRUCK_COAL, CMaterialTypes::coal, m_pBldgPar, m_iMaxCoal);

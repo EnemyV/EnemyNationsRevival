@@ -413,24 +413,14 @@ void CWndComm::ProcessIncomingChat( CMsgIPC *pMsg )
 
 	// annouce incoming chat request in status window
 	// get name of player of message and put in title
-	CString sStatus;
-	sStatus = EnLoadString(IDS_CHAT_STATUS);
-	csPrintf (&sStatus, (const char *) pPlyr->GetName ());
+	std::string sStatus = strPrintf( EnLoadStdString(IDS_CHAT_STATUS).c_str(),
+	                                 pPlyr->GetName() );
 
-	// turn off status bar completely
-	/*
-#if EN_CONTROLS
-	m_status.SetText ( sStatus, 255, SBT_OWNERDRAW );
-#else
-	m_status.SetText ( sStatus, 255, 0 );
-#endif
-	*/
-	
+	// turn off status bar completely — unused
 
-	CString sTitle;
-	sTitle = EnLoadString(IDS_CHAT_TITLE);
-	csPrintf (&sTitle, (const char *) pPlyr->GetName ());
-	pWnd->Create (NULL, sTitle, dwPopWndStyle, rect, this);
+	std::string sTitle = strPrintf( EnLoadStdString(IDS_CHAT_TITLE).c_str(),
+	                                pPlyr->GetName() );
+	pWnd->Create (NULL, sTitle.c_str(), dwPopWndStyle, rect, this);
 
 	pWnd->SetFrom (pPlyr);
 	pWnd->ShowWindow (SW_SHOW);
