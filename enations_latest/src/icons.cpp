@@ -184,10 +184,9 @@ void CStatData::Init (CMmio * pMmio)
 				// see if it will fit
 				CClientDC dc ( NULL );
 				CFont * pOldFont = dc.SelectObject (m_pFnt);
-				CString sTest;
-				sTest = EnLoadString(IDS_LONGEST_STRING);
+				std::string sTest = EnLoadStdString(IDS_LONGEST_STRING);
 				CRect rect (0, 0, theApp.m_iScrnX, theApp.m_iScrnY);
-				dc.DrawText (sTest, -1, &rect, DT_CALCRECT | DT_LEFT | DT_SINGLELINE);
+				dc.DrawText (sTest.c_str(), -1, &rect, DT_CALCRECT | DT_LEFT | DT_SINGLELINE);
 				dc.SelectObject ( pOldFont );
 				if (rect.Width () + rect.Width () / 8 < theApp.m_iScrnX / 2)
 					break;
