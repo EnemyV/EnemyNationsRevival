@@ -414,7 +414,7 @@ BOOL CWndMain::OnEraseBkgnd(CDC *)
 void CWndMain::OnPaint()
 {
 #ifdef _CHEAT
-	CString sVer ("Version: " VER_STRING);
+	std::string sVer ("Version: " VER_STRING);
 #ifdef _DEBUG
 	sVer += " (debug, cheat)";
 #else
@@ -438,7 +438,7 @@ void CWndMain::OnPaint()
 		TEXTMETRIC tm;
 		dc.GetTextMetrics (&tm);
 		dc.SetBkMode (TRANSPARENT);
-		dc.TextOut (0, rect.bottom - tm.tmHeight, sVer);
+		dc.TextOut (0, rect.bottom - tm.tmHeight, sVer.c_str(), (int)sVer.length());
 #endif
 
 		// no text on a movie
@@ -470,7 +470,7 @@ void CWndMain::OnPaint()
 #ifdef _CHEAT
 	TEXTMETRIC tm;
 	dc.GetTextMetrics (&tm);
-	dc.TextOut (0, rect.bottom - tm.tmHeight, sVer);
+	dc.TextOut (0, rect.bottom - tm.tmHeight, sVer.c_str(), (int)sVer.length());
 #endif
 
 	if (m_progPos == game_end)
