@@ -572,9 +572,8 @@ void CDlgResearch::ItemDiscovered( int iItem )
         m_pDlgDiscvr->ItemDiscovered( iItem );
 
     m_iPerDone = 0;
-    CString sTitle;
-    sTitle = EnLoadString( IDS_RSRCH_NOTHING );
-    SetWindowText( sTitle );
+    std::string sTitle = EnLoadStdString( IDS_RSRCH_NOTHING );
+    SetWindowText( sTitle.c_str() );
 
     UpdateProgress( );
 }
