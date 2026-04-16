@@ -218,7 +218,7 @@ void CWndMailRead::Create (CWnd * pPar)
 	ASSERT_VALID (pPar);
 
 	// get name of player of message and put in title
-	CString sName;
+	std::string sName;
 	CPlayer *pPlayer = theGame.GetPlayerByPlyr( m_pMsg->m_iFrom );
 	if( pPlayer != NULL )
 		sName = pPlayer->GetName();
@@ -227,24 +227,21 @@ void CWndMailRead::Create (CWnd * pPar)
 
 #if USE_FAKE_NET
 	// make something appear
-	if( sName.IsEmpty() )
+	if( sName.empty() )
 		sName = "Eric";
 #endif
 
-	CString sTitle = "Read - [" + sName + "]";
+	std::string sTitle = "Read - [" + sName + "]";
 
 	CRect rect;
 	pPar->GetClientRect (&rect);
 	pPar->ClientToScreen (&rect);
 
-	CreateEx (0, theApp.m_sWndCls, sTitle, dwPopWndStyle, rect.left, 
+	CreateEx (0, theApp.m_sWndCls, sTitle.c_str(), dwPopWndStyle, rect.left,
 		rect.top, rect.Width (), rect.Height(), pPar->m_hWnd, NULL);
 
 	ShowWindow (SW_SHOW);
 	UpdateWindow ();
-
-	sName.Empty();
-	sTitle.Empty();
 }
 
 void CWndMailRead::PostNcDestroy() 
@@ -354,7 +351,7 @@ void CWndMailRead::SetNewMessage( CEMsg *pNewMsg )
 		m_iID = m_pMsg->m_iID;
 
 		// get name of player of message and put in title
-		CString sName;
+		std::string sName;
 		CPlayer *pPlayer = theGame.GetPlayerByPlyr( m_pMsg->m_iFrom );
 		if( pPlayer != NULL )
 			sName = pPlayer->GetName();
@@ -363,18 +360,15 @@ void CWndMailRead::SetNewMessage( CEMsg *pNewMsg )
 
 #if USE_FAKE_NET
 		// make something appear
-		if( sName.IsEmpty() )
+		if( sName.empty() )
 			sName = "Eric";
 #endif
 
-		CString sTitle = "Read - [" + sName + "]";
-		SetWindowText( sTitle );
-		sTitle.Empty();
-		sName.Empty();
+		std::string sTitle = "Read - [" + sName + "]";
+		SetWindowText( sTitle.c_str() );
 
-		sTitle = "RE: " + m_pMsg->m_sSubject;
-		m_sub.SetWindowText( sTitle );
-		sTitle.Empty();
+		sTitle = std::string("RE: ") + (const char*)m_pMsg->m_sSubject;
+		m_sub.SetWindowText( sTitle.c_str() );
 		m_text.SetWindowText( m_pMsg->m_sMessage );
 	}
 }
