@@ -210,9 +210,7 @@ void CatchOther( )
     theGame.SetShouldProcessMessages(FALSE);
     theGame.EmptyQueue( );
 
-    CString sMsg;
-    sMsg = EnLoadString( IDS_ERR_LOAD_2 );
-    EnMessageBox( sMsg, MB_OK | MB_ICONSTOP );
+    EnMessageBox( IDS_ERR_LOAD_2, MB_OK | MB_ICONSTOP );
 
     bDoSubclass = TRUE;
 }
@@ -401,8 +399,8 @@ BOOL CConquerApp::InitInstance( )
     {
         EnMessageBox( IDS_EN_LOGGING, MB_OK | MB_ICONINFORMATION );
         m_pLogFile    = new CFile( );
-        CString sName = EnGetProfileString( "Advanced", "LogName", GameLogFile );
-        if ( m_pLogFile->Open( sName, CFile::modeCreate | CFile::modeWrite | CFile::shareDenyWrite ) == 0 )
+        std::string sName = EnGetProfileStdString( "Advanced", "LogName", GameLogFile );
+        if ( m_pLogFile->Open( sName.c_str(), CFile::modeCreate | CFile::modeWrite | CFile::shareDenyWrite ) == 0 )
         {
             m_pLogFile->Close( );
             delete m_pLogFile;
@@ -1087,8 +1085,8 @@ BOOL CConquerApp::InitInstance( )
         LOGFONT lf;
         memset( &lf, 0, sizeof( lf ) );
         lf.lfHeight   = EnGetProfileInt( "StatusBar", "CharHeight", 16 );
-        CString sFont = EnGetProfileString( "StatusBar", "Font", "Newtown Italic" );
-        strncpy( lf.lfFaceName, sFont, LF_FACESIZE - 1 );
+        std::string sFont = EnGetProfileStdString( "StatusBar", "Font", "Newtown Italic" );
+        strncpy( lf.lfFaceName, sFont.c_str(), LF_FACESIZE - 1 );
         m_Fnt.CreateFontIndirect( &lf );
 
         TEXTMETRIC tm;
@@ -1101,24 +1099,24 @@ BOOL CConquerApp::InitInstance( )
 
         // dialog fonts
         int iHt = EnGetProfileInt( "StatusBar", "RDHeight", 14 );
-        sFont   = EnGetProfileString( "StatusBar", "RDFont", "Lucida Console" );
+        sFont   = EnGetProfileStdString( "StatusBar", "RDFont", "Lucida Console" );
         memset( &lf, 0, sizeof( lf ) );
         lf.lfHeight = iHt;
-        strncpy( lf.lfFaceName, sFont, LF_FACESIZE - 1 );
+        strncpy( lf.lfFaceName, sFont.c_str(), LF_FACESIZE - 1 );
         m_FntRD.CreateFontIndirect( &lf );
 
         iHt   = EnGetProfileInt( "StatusBar", "DescHeight", 18 );
-        sFont = EnGetProfileString( "StatusBar", "DescFont", "Newtown Italic" );
+        sFont = EnGetProfileStdString( "StatusBar", "DescFont", "Newtown Italic" );
         memset( &lf, 0, sizeof( lf ) );
         lf.lfHeight = iHt;
-        strncpy( lf.lfFaceName, sFont, LF_FACESIZE - 1 );
+        strncpy( lf.lfFaceName, sFont.c_str(), LF_FACESIZE - 1 );
         m_FntDesc.CreateFontIndirect( &lf );
 
         iHt   = EnGetProfileInt( "StatusBar", "CostHeight", 11 );
-        sFont = EnGetProfileString( "StatusBar", "CostFont", "Lucida Console" );
+        sFont = EnGetProfileStdString( "StatusBar", "CostFont", "Lucida Console" );
         memset( &lf, 0, sizeof( lf ) );
         lf.lfHeight = iHt;
-        strncpy( lf.lfFaceName, sFont, LF_FACESIZE - 1 );
+        strncpy( lf.lfFaceName, sFont.c_str(), LF_FACESIZE - 1 );
         m_FntCost.CreateFontIndirect( &lf );
         Log( "fonts Created" );
 
