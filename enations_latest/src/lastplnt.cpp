@@ -639,11 +639,11 @@ BOOL CConquerApp::InitInstance( )
     ms.dwLength = sizeof( ms );
     GlobalMemoryStatus( &ms );
     const int ONE_MEG   = 1024 * 1024;
-    CString sMemory = "Memory (avail/total) Physical: " + IntToCString( ms.dwAvailPhys / ONE_MEG ) + "M/" +
-                      IntToCString( ms.dwTotalPhys / ONE_MEG ) +
-                      "M Virtual: " + IntToCString( ms.dwAvailPageFile / ONE_MEG ) + "M/" +
-                      IntToCString( ms.dwTotalPageFile / ONE_MEG ) + "M";
-    Log( sMemory );
+    std::string sMemory = "Memory (avail/total) Physical: " + IntToStr( ms.dwAvailPhys / ONE_MEG ) + "M/" +
+                          IntToStr( ms.dwTotalPhys / ONE_MEG ) +
+                          "M Virtual: " + IntToStr( ms.dwAvailPageFile / ONE_MEG ) + "M/" +
+                          IntToStr( ms.dwTotalPageFile / ONE_MEG ) + "M";
+    Log( sMemory.c_str() );
 
     // enough memory?
     // need 8M system
