@@ -61,7 +61,7 @@ extern HANDLE hRenderEvent;
 extern BOOL   bDoSubclass;
 
 
-CString          GetDefaultApp( char const* pExt, char const* pDef, char const* pCmdLine );
+std::string      GetDefaultApp( char const* pExt, char const* pDef, char const* pCmdLine );
 LRESULT CALLBACK PerBarProc( HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam );
 
 
@@ -609,8 +609,8 @@ BOOL CConquerApp::InitInstance( )
     }
 
 #ifdef LOGGINGON
-    CString msg;
-    msg.Format( "OS Detected: %s\n", m_sOs );
+    char msg[256];
+    snprintf( msg, sizeof(msg), "OS Detected: %s\n", (LPCSTR)m_sOs );
     OutputDebugStringA( msg );
 #endif
 
@@ -1784,9 +1784,8 @@ int CConquerApp::ExitInstance( )
         dc.FillRect( &rect, &brBlack );
         dc.SetBkMode( TRANSPARENT );
         dc.SetTextColor( RGB( 0, 0, 0 ) );
-        CString sLoad;
-        sLoad = EnLoadString( IDS_LEAVING );
-        dc.TextOut( 0, 0, sLoad );
+        std::string sLoad = EnLoadStdString( IDS_LEAVING );
+        dc.TextOut( 0, 0, sLoad.c_str(), (int)sLoad.size() );
     }
 
     m_wndMain.DestroyWindow( );  // background window
@@ -1829,7 +1828,7 @@ int CConquerApp::ExitInstance( )
     // show the order form
     if ( IsShareware( ) )
     {
-        CString sCmd = GetDefaultApp( ".doc", "write", "order.doc" );
+        std::string sCmd = GetDefaultApp( ".doc", "write", "order.doc" );
 
         STARTUPINFO si;
         memset( &si, 0, sizeof( si ) );
@@ -1838,7 +1837,7 @@ int CConquerApp::ExitInstance( )
         si.dwFlags     = STARTF_USESHOWWINDOW;
         PROCESS_INFORMATION pi;
 
-        CreateProcess( NULL, (char*)(char const*)sCmd, NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi );
+        CreateProcess( NULL, &sCmd[0], NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi );
         CloseHandle( pi.hProcess );
         CloseHandle( pi.hThread );
     }

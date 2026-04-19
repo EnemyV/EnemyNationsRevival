@@ -41,11 +41,11 @@ END_MESSAGE_MAP()
 /////////////////////////////////////////////////////////////////////////////
 // CDlgReg message handlers
 
-CString GetDefaultApp ( char const *pExt, char const *pDef, char const *pCmdLine )
+std::string GetDefaultApp ( char const *pExt, char const *pDef, char const *pCmdLine )
 {
 
 	// in case of error
-	CString sRtn = pDef + CString ( " " ) + pCmdLine;
+	std::string sRtn = std::string( pDef ) + " " + pCmdLine;
 
 	// get the extension
 	char cmd [258];
@@ -64,9 +64,9 @@ CString GetDefaultApp ( char const *pExt, char const *pDef, char const *pCmdLine
 		return sRtn;
 
 	// now find the app for this key value
-	CString sKey = cmd + CString ( "\\shell\\open\\command" );
+	std::string sKey = std::string( cmd ) + "\\shell\\open\\command";
 
-	if (RegOpenKeyEx (HKEY_CLASSES_ROOT, sKey, NULL, KEY_READ, &key) != ERROR_SUCCESS)
+	if (RegOpenKeyEx (HKEY_CLASSES_ROOT, sKey.c_str(), NULL, KEY_READ, &key) != ERROR_SUCCESS)
 		return sRtn;
 
 	iLen = 256;
@@ -79,11 +79,12 @@ CString GetDefaultApp ( char const *pExt, char const *pDef, char const *pCmdLine
 
 	// put command line in it (may have %1)
 	sRtn = cmd;
-	int iInd = sRtn.Find ( '%' );
-	if ( ( iInd < 0 ) || ( sRtn [iInd+1] != '1' ) )
+	size_t iInd = sRtn.find ( '%' );
+	if ( ( iInd == std::string::npos ) || ( sRtn [iInd+1] != '1' ) )
 		return sRtn + " " + pCmdLine;
-		
-	csPrintf ( &sRtn, pCmdLine );
+
+	// replace %1 with pCmdLine
+	sRtn.replace( iInd, 2, pCmdLine );
 	return sRtn;
 }
 
@@ -95,7 +96,7 @@ void CDlgReg::OnOK()
 		EnWriteProfileInt( "Warnings", "Register", 1 );
 
 	// get the browser
-	CString sCmd = GetDefaultApp ( ".html", "netscape", "http://www.windward.net/register/index.html" );
+	std::string sCmd = GetDefaultApp ( ".html", "netscape", "http://www.windward.net/register/index.html" );
 
 	STARTUPINFO si;
 	memset ( &si, 0, sizeof (si) );
@@ -104,7 +105,7 @@ void CDlgReg::OnOK()
 	si.dwFlags = STARTF_USESHOWWINDOW;
 	PROCESS_INFORMATION pi;
 
-	if ( CreateProcess ( NULL, (char *) (char const *) sCmd, NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi ) == 0 )
+	if ( CreateProcess ( NULL, &sCmd[0], NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi ) == 0 )
 		EnMessageBox( IDS_BAD_REG, MB_OK | MB_ICONSTOP | MB_TASKMODAL );
 	else
 		{
