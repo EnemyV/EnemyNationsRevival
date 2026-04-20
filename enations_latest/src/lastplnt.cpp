@@ -2156,9 +2156,8 @@ BOOL CDlgMain::OnInitDialog( )
     theApp.DestroyExceptMain( );
 
     SendMessage( WM_SETICON, (WPARAM)TRUE, (LPARAM)theApp.LoadIcon( MAKEINTRESOURCE( IDI_MAIN ) ) );
-    CString sTitle;
-    sTitle = EnLoadString( IDS_MAIN_TITLE );
-    SetWindowText( sTitle );
+    std::string sTitle = EnLoadStdString( IDS_MAIN_TITLE );
+    SetWindowText( sTitle.c_str() );
 
     // if shareware no loading
     if ( ( theApp.IsShareware( ) ) || ( theApp.IsSecondDisk( ) ) )
@@ -2357,11 +2356,10 @@ void CDlgMain::OnPaint( )
     }
 
     // put up the title
-    CString sTitle;
-    sTitle = EnLoadString( IDS_MAIN_TITLE );
+    std::string sTitle = EnLoadStdString( IDS_MAIN_TITLE );
     LOGFONT lf;
     memset( &lf, 0, sizeof( lf ) );
-    lf.lfWidth  = ( 3 * ( iWid / sTitle.GetLength( ) ) ) / 4;
+    lf.lfWidth  = ( 3 * ( iWid / (int)sTitle.size( ) ) ) / 4;
     lf.lfHeight = lf.lfWidth * 2;
     lf.lfWeight = 800;
     strcpy( lf.lfFaceName, "Book Antiqua" );
@@ -2375,13 +2373,13 @@ void CDlgMain::OnPaint( )
     dc.SetTextColor( PALETTERGB( 144, 127, 116 ) );
     while ( iShift-- )
     {
-        dc.DrawText( sTitle, -1, &rect, dtFmt );
+        dc.DrawText( sTitle.c_str(), -1, &rect, dtFmt );
         rect.top--;
         rect.left -= iJmp;
     }
 
     dc.SetTextColor( PALETTERGB( 90, 74, 57 ) );
-    dc.DrawText( sTitle, -1, &rect, dtFmt );
+    dc.DrawText( sTitle.c_str(), -1, &rect, dtFmt );
 
     rect.top = 0;
     dc.SelectObject( pOld );
@@ -2389,7 +2387,7 @@ void CDlgMain::OnPaint( )
     dc.SetTextColor( PALETTERGB( 255, 255, 255 ) );
 
 #ifdef _CHEAT
-    CString sVer( "Version: " VER_STRING );
+    std::string sVer = "Version: " VER_STRING;
 #ifdef _DEBUG
     sVer += " (debug, cheat)";
 #else
@@ -2397,20 +2395,19 @@ void CDlgMain::OnPaint( )
 #endif
     TEXTMETRIC tm;
     dc.GetTextMetrics( &tm );
-    dc.TextOut( tm.tmAveCharWidth, theApp.m_iScrnY - tm.tmHeight, sVer );
+    dc.TextOut( tm.tmAveCharWidth, theApp.m_iScrnY - tm.tmHeight, sVer.c_str(), (int)sVer.size() );
 #endif
 
     // put up copyright
-    CString sCopy;
-    sCopy = EnLoadString( IDS_COPYRIGHT );
+    std::string sCopy = EnLoadStdString( IDS_COPYRIGHT );
     GetClientRect( &rect );
-    dc.DrawText( sCopy, -1, &rect, DT_CALCRECT | DT_CENTER | DT_SINGLELINE | DT_TOP );
+    dc.DrawText( sCopy.c_str(), -1, &rect, DT_CALCRECT | DT_CENTER | DT_SINGLELINE | DT_TOP );
     int iHt     = rect.Height( );
     rect.top    = theApp.m_iScrnY - iHt - iHt / 2;
     rect.bottom = theApp.m_iScrnY;
     rect.left   = theApp.m_iScrnX - rect.Width( ) - iHt / 2;
     rect.right  = theApp.m_iScrnX;
-    dc.DrawText( sCopy, -1, &rect, DT_CENTER | DT_SINGLELINE | DT_TOP );
+    dc.DrawText( sCopy.c_str(), -1, &rect, DT_CENTER | DT_SINGLELINE | DT_TOP );
 
     thePal.EndPaint( dc.m_hDC );
     // Do not call CDialog::OnPaint() for painting messages
@@ -3049,45 +3046,45 @@ void CDlgStackDump::OnCopyStack( )
     char sNum1[20], sNum2[20];
     itoa( m_pe->m_uEc, sNum1, 16 );
     itoa( (int)m_pe->m_pExCode, sNum2, 16 );
-    CString sMsg;
+    std::string sMsg;
     if ( ms.dwAvailPageFile / ONE_MEG < 8 )
     {
-        sMsg = EnLoadString( IDS_OUT_OF_MEMORY );
+        sMsg = EnLoadStdString( IDS_OUT_OF_MEMORY );
         sMsg += "\r\n";
     }
-    sMsg += "Sorry, an unknown error occured.\r\nVersion: " + CString( VER_STRING ) + "\r\n" +
-            "Type: " + CString( sNum1 ) + ", Address: 0x" + CString( sNum2 ) + "\r\n";
+    sMsg += std::string( "Sorry, an unknown error occured.\r\nVersion: " ) + VER_STRING + "\r\n" +
+            "Type: " + sNum1 + ", Address: 0x" + sNum2 + "\r\n";
     for ( int iOn = 0; iOn < NUM_EXCEP; iOn++ )
     {
         itoa( m_pe->m_stack[iOn], sNum1, 16 );
-        sMsg += "     0x" + CString( sNum1 ) + "\r\n";
+        sMsg += std::string( "     0x" ) + sNum1 + "\r\n";
     }
 
     time_t t;
     time( &t );
     struct tm* _now = localtime( &t );
-    sMsg += CString( asctime( _now ) );
-    sMsg += theApp.m_sOs + "\r\n";
-    sMsg += theApp.m_sNet + "\r\n";
+    sMsg += asctime( _now );
+    sMsg += std::string( (LPCSTR)theApp.m_sOs ) + "\r\n";
+    sMsg += std::string( (LPCSTR)theApp.m_sNet ) + "\r\n";
 
-    sMsg += "Memory (avail/total) Physical: " + IntToCString( ms.dwAvailPhys / ONE_MEG ) + "M/" +
-            IntToCString( ms.dwTotalPhys / ONE_MEG ) + "M Virtual: " + IntToCString( ms.dwAvailPageFile / ONE_MEG ) +
-            "M/" + IntToCString( ms.dwTotalPageFile / ONE_MEG ) + "M\r\n";
-    sMsg += theApp.m_sRif + "\r\n";
-    sMsg += theApp.m_sVideo + "\r\n";
-    sMsg += theApp.m_sSound + "\r\n";
-    sMsg += theApp.m_sSoundVer + "\r\n";
-    sMsg += theApp.m_sSpeed + "\r\n";
+    sMsg += "Memory (avail/total) Physical: " + IntToStr( ms.dwAvailPhys / ONE_MEG ) + "M/" +
+            IntToStr( ms.dwTotalPhys / ONE_MEG ) + "M Virtual: " + IntToStr( ms.dwAvailPageFile / ONE_MEG ) +
+            "M/" + IntToStr( ms.dwTotalPageFile / ONE_MEG ) + "M\r\n";
+    sMsg += std::string( (LPCSTR)theApp.m_sRif ) + "\r\n";
+    sMsg += std::string( (LPCSTR)theApp.m_sVideo ) + "\r\n";
+    sMsg += std::string( (LPCSTR)theApp.m_sSound ) + "\r\n";
+    sMsg += std::string( (LPCSTR)theApp.m_sSoundVer ) + "\r\n";
+    sMsg += std::string( (LPCSTR)theApp.m_sSpeed ) + "\r\n";
 
     // set the data
-    int     iLen = sMsg.GetLength( ) + 1;
+    size_t  iLen = sMsg.size( ) + 1;
     HGLOBAL hMem = GlobalAlloc( GMEM_MOVEABLE | GMEM_DDESHARE, iLen + 1 );
     if ( hMem != NULL )
     {
         void* pData = GlobalLock( hMem );
         if ( pData != NULL )
         {
-            memcpy( pData, (char const*)sMsg, iLen );
+            memcpy( pData, sMsg.c_str(), iLen );
             GlobalUnlock( hMem );
             SetClipboardData( CF_TEXT, hMem );
         }
