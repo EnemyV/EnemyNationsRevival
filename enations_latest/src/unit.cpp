@@ -1127,9 +1127,8 @@ void CUnit::ShowWindow( )
         if ( ( m_pOwner == NULL ) || ( !m_pOwner->IsMe( ) ) )
         {
             TRAP( );  // BUGBUG - what is this???
-            CString sMsg;
-            sMsg = EnLoadString( IDS_NOT_MY_UNIT );
-            theApp.m_wndBar.SetStatusText( 0, sMsg, CStatInst::warn );
+            std::string sMsg = EnLoadStdString( IDS_NOT_MY_UNIT );
+            theApp.m_wndBar.SetStatusText( 0, sMsg.c_str( ), CStatInst::warn );
             MessageBeep( 0 );
             return;
         }
