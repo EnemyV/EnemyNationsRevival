@@ -1483,9 +1483,9 @@ BOOL CConquerApp::InitInstance( )
     if ( iWinType == W32s )
     {
         Log( "iWinType w32s" );
-        WORD    wVer   = myGetThrdUtlsVersion( );
-        CString sThunk = "Threads DLL " + IntToCString( HIBYTE( wVer ) ) + "." + IntToCString( LOBYTE( wVer ) );
-        Log( sThunk );
+        WORD        wVer   = myGetThrdUtlsVersion( );
+        std::string sThunk = "Threads DLL " + IntToStr( HIBYTE( wVer ) ) + "." + IntToStr( LOBYTE( wVer ) );
+        Log( sThunk.c_str( ) );
     }
 
     Log( "Initialization complete" );
@@ -1849,9 +1849,7 @@ int CConquerApp::ExitInstance( )
 static int SDL2_MessageBox( int idsString, bool yesNoCancel = false )
 {
     // Load the string from the resource table
-    CString str;
-    str = EnLoadString( idsString );
-    std::string msg( (const char*)str );
+    std::string msg = EnLoadStdString( idsString );
 
     // Replace \n with space for single-line display in our dialog
     for ( auto& c : msg )
