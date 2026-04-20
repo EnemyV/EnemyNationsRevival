@@ -1487,7 +1487,7 @@ void CDlgAiPos::OnDblclkListAi()
     if (iInd < 0)
         return;
 
-    CString sLine;
+    char sLine[128];
     m_lstBox.GetText (iInd, sLine);
     CPlayer * pPlyr = theGame.GetPlayerByPlyr (atoi (sLine));
     if (pPlyr == NULL)
@@ -1520,10 +1520,10 @@ BOOL CDlgAiPos::OnInitDialog()
         CPlayer *pPlr = theGame.GetAi().GetNext (pos);
         ASSERT_VALID (pPlr);
         ASSERT (pPlr->IsAI ());
-        CString sLine = IntToCString (pPlr->GetPlyrNum ()) + "  " +
-                                        IntToCString (pPlr->m_hexMapStart.X()) + "," +
-                                        IntToCString (pPlr->m_hexMapStart.Y());
-        m_lstBox.AddString (sLine);
+        std::string sLine = IntToStr (pPlr->GetPlyrNum ()) + "  " +
+                                        IntToStr (pPlr->m_hexMapStart.X()) + "," +
+                                        IntToStr (pPlr->m_hexMapStart.Y());
+        m_lstBox.AddString (sLine.c_str ());
         }
 
     OnSelchangeListAi();

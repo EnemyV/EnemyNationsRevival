@@ -451,10 +451,8 @@ BOOL CTextButton::Create( int idText, int idHelp, CTextBtnData* pTbd, CRect& rec
 
     m_pTextBtnData = pTbd;
 
-    CString sTitle;
-    sTitle = EnLoadString( idText );
-
-    return ( CMyButton::Create( sTitle, idHelp, rect, pBackDib, pPar, ID ) );
+    std::string sTitle = EnLoadStdString( idText );
+    return ( CMyButton::Create( sTitle.c_str( ), idHelp, rect, pBackDib, pPar, ID ) );
 }
 
 void CTextButton::DrawItem( LPDRAWITEMSTRUCT lpDIS )
