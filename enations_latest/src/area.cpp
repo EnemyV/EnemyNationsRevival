@@ -1068,11 +1068,10 @@ void CWndArea::Create( CMapLoc const& ml, CUnit* pUnit, BOOL bFirst )
         m_aa.m_iZoom = pPrev->m_aa.m_iZoom;
     }
 
-    CString sTitle;
-    sTitle = EnLoadString( IDS_TITLE_AREA_MAP );
+    std::string sTitle = EnLoadStdString( IDS_TITLE_AREA_MAP );
     DWORD dwStyle = dwPopWndStyle;
 
-    if ( CreateEx( 0, sWndCls, sTitle, dwStyle, rect.left, rect.top, rect.Width( ), rect.Height( ),
+    if ( CreateEx( 0, sWndCls, sTitle.c_str( ), dwStyle, rect.left, rect.top, rect.Width( ), rect.Height( ),
                    theApp.m_pMainWnd->m_hWnd, NULL, NULL ) == 0 )
         throw( ERR_RES_CREATE_WND );
 
@@ -1507,10 +1506,9 @@ void CWndArea::OnMouseMove( UINT nFlags, CPoint point )
 #ifdef _CHEAT
     if ( _bShowPos )
     {
-        CString sBuf;
-        sBuf = IntToCString( hexcoord.X( ) ) + "," + IntToCString( hexcoord.Y( ) ) + " (" +
-               IntToCString( pHex->GetAlt( ) ) + ") ";
-        theApp.m_wndBar.SetStatusText( 0, sBuf );
+        std::string sBuf = IntToStr( hexcoord.X( ) ) + "," + IntToStr( hexcoord.Y( ) ) + " (" +
+                           IntToStr( pHex->GetAlt( ) ) + ") ";
+        theApp.m_wndBar.SetStatusText( 0, sBuf.c_str( ) );
     }
 #endif
 
@@ -2791,9 +2789,8 @@ void CWndArea::OnLButtonUp( UINT nFlags, CPoint point )
             theMusicPlayer.PlayForegroundSound( SOUNDS::GetID( SOUNDS::rocket_landing ), SFXPRIORITY::selected_pri );
 
             theGame.Event( EVENT_ROCKET_CANT, EVENT_OFF );
-            CString sMsg;
-            sMsg = EnLoadString( IDS_MSG_ROCKET_WAIT );
-            SetStatusText( sMsg );
+            std::string sMsg = EnLoadStdString( IDS_MSG_ROCKET_WAIT );
+            SetStatusText( sMsg.c_str( ) );
             CMsgPlaceBldg msg( hex, GetBuildDir( ), CStructureData::rocket );
             msg.m_iPlyrNum = theGame.GetMe( )->GetPlyrNum( );
             msg.m_bShow    = theApp.IsShareware( );
@@ -3431,9 +3428,8 @@ void CWndArea::SetupStart( )
     m_iBuildDir = ( theStructures.GetData( CStructureData::rocket )->GetExitDir( ) - 2 ) & 0x03;
 
     ::SetCursor( NULL );
-    CString sMsg;
-    sMsg = EnLoadString( IDS_MSG_ROCKET_START );
-    SetStatusText( sMsg );
+    std::string sMsg = EnLoadStdString( IDS_MSG_ROCKET_START );
+    SetStatusText( sMsg.c_str( ) );
 
     // start with resources showing
     ResClicked( );
@@ -3448,9 +3444,8 @@ void CWndArea::SetupDone( )
     ASSERT_STRICT_VALID( this );
 
     BldgCurOff( );
-    CString sMsg;
-    sMsg = EnLoadString( IDS_MSG_ROCKET_DONE );
-    SetStatusText( sMsg );
+    std::string sMsg = EnLoadStdString( IDS_MSG_ROCKET_DONE );
+    SetStatusText( sMsg.c_str( ) );
     InvalidateStatus( );
 
     if ( ( theApp.m_pdlgFile != NULL ) && ( theApp.m_pdlgFile->m_hWnd != NULL ) )
@@ -3495,8 +3490,9 @@ void CWndArea::BuildOn( int iIndex )
 
     CStructureData const* pData = theStructures.GetData( iIndex );
 
-    CString sText = m_pUnit->GetData( )->GetDesc( ) + " - [" + pData->GetDesc( ) + "]";
-    SetWindowText( sText );
+    std::string sText = std::string( (LPCSTR)m_pUnit->GetData( )->GetDesc( ) ) + " - [" +
+                        (LPCSTR)pData->GetDesc( ) + "]";
+    SetWindowText( sText.c_str( ) );
 
     theGame.Event( EVENT_CONST_LOC, EVENT_NOTIFY, m_pUnit );
 
@@ -4238,9 +4234,9 @@ void CWndArea::SetButtonState( )
         if ( ( m_pUnit->GetUnitType( ) == CUnit::vehicle ) &&
              ( ( (CVehicle*)m_pUnit )->GetData( )->GetType( ) == CTransportData::construction ) && ( m_iBuild > 0 ) )
         {
-            CString sText =
-                m_pUnit->GetData( )->GetDesc( ) + " - [" + theStructures.GetData( m_iBuild )->GetDesc( ) + "]";
-            SetWindowText( sText );
+            std::string sText = std::string( (LPCSTR)m_pUnit->GetData( )->GetDesc( ) ) + " - [" +
+                                (LPCSTR)theStructures.GetData( m_iBuild )->GetDesc( ) + "]";
+            SetWindowText( sText.c_str( ) );
         }
         else
             SetWindowText( m_pUnit->GetData( )->GetDesc( ) );
