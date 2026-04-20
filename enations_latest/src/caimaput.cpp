@@ -1868,7 +1868,7 @@ void CAIMapUtil::FindHexOnMaterial( int iBldg, int iWidthX, int iWidthY, CHexCoo
     if ( pBldgData == NULL )
         return;
 
-    CString sMat;
+    const char* sMat = "";
 
     // use the base type rather than specific type
     switch ( pBldgData->GetBldgType( ) )
@@ -1960,7 +1960,7 @@ TryTryAgain:
 
 #ifdef _LOGOUT
     logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "\nFindHexOnMaterial() player %d for %s (%d) ", m_iPlayer,
-               (const char*)sMat, iMaterial );
+               sMat, iMaterial );
     logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "from %d,%d to %d,%d ", hcStart.X( ), hcStart.Y( ), hcEnd.X( ),
                hcEnd.Y( ) );
     logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "best density %d  wTest=%d \n", iDenseFactor, wTest );
@@ -2146,12 +2146,8 @@ TryTryAgain:
             goto TryTryAgain;
         }
 
-        sMat.Empty( );
-
         return;
     }
-
-    sMat.Empty( );
 
     // only one found
     if ( iCnt == 1 )
@@ -9167,16 +9163,14 @@ void CAIMapUtil::ReportPavedRoads( void )
 //
 void CAIMapUtil::ReportGroupHex( int iBldg, int iWidthX, int iWidthY, CHexCoord& hex )
 {
-    CString               sName;
+    const char*           sName     = "";
     CStructureData const* pBldgData = pGameData->GetStructureData( iBldg );
     if ( pBldgData != NULL )
     {
         sName = pBldgData->GetDesc( );
     }
-    logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "Player %d Placing a %s at %d,%d ", m_iPlayer, (const char*)sName, hex.X( ),
+    logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "Player %d Placing a %s at %d,%d ", m_iPlayer, sName, hex.X( ),
                hex.Y( ) );
-
-    sName.Empty( );
 
     ClearGroupHexes( );
     int isy = hex.Y( );

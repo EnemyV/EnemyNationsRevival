@@ -2171,7 +2171,7 @@ void CAIGoalMgr::ProduceMaterials( int iMat )
     BOOL    bBuild = FALSE;
     int     iBldg  = 0;
     WORD    wTask, wGoal;
-    CString sMat;
+    const char* sMat = "";
 
     // based on the material, set the type of building,
     // the id of the task to update, and the id of the
@@ -2244,7 +2244,7 @@ void CAIGoalMgr::ProduceMaterials( int iMat )
 
 #ifdef _LOGOUT
         logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "\nCAIGoalMgr::ProduceMaterials() player %d for %s ", m_iPlayer,
-                   (const char*)sMat );
+                   sMat );
         logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "onhand=%d  need=%d  increased task %d to quantity %d ",
                    m_pwaMatOnHand[iMat], m_pwaMatGoals[iMat], wTask, iQty );
         logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "bldgs=%d  need=%d \n", m_pwaBldgs[iBldg], m_pwaBldgGoals[iBldg] );
