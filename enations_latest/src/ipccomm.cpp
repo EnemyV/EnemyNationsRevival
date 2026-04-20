@@ -159,7 +159,7 @@ void CMyHeaderCtrl::DrawItem (LPDRAWITEMSTRUCT lpDIS)
 	*/
 
 	// try brute force
-	CString sName;
+	const char* sName;
 	switch( lpDIS->itemID )
 	{
 	case 1:
@@ -173,9 +173,9 @@ void CMyHeaderCtrl::DrawItem (LPDRAWITEMSTRUCT lpDIS)
 		sName = "";
 		break;
 	}
-	
 
-	dc.TextOut( iX, iY, sName, sName.GetLength() );
+
+	dc.TextOut( iX, iY, sName, (int)strlen( sName ) );
 
 	dc.SetTextColor( dwOldText );
 	dc.SetBkMode( iOldMode );
@@ -780,9 +780,8 @@ LONG CWndComm::OnDestroyEmailWnd( UINT uParam, LONG )
 void CWndComm::Create ()
 {
 
-	CString sTitle;
-	sTitle = EnLoadString(IDS_TITLE_CHAT_WND);
-	if (CWndBase::CreateEx (0, theApp.m_sWndCls, sTitle, dwPopWndStyle,
+	std::string sTitle = EnLoadStdString(IDS_TITLE_CHAT_WND);
+	if (CWndBase::CreateEx (0, theApp.m_sWndCls, sTitle.c_str(), dwPopWndStyle,
 					EnGetProfileInt(theApp.m_sResIni, "ChatX", 0),
 					EnGetProfileInt(theApp.m_sResIni, "ChatY", theApp.m_iRow2),
 					EnGetProfileInt(theApp.m_sResIni, "ChatEX", theApp.m_iCol1 + 1),
@@ -1441,9 +1440,7 @@ void CWndComm::OnChat ()
 
 	ASSERT_VALID (this);
 
-	CString sTitle;
-	sTitle = EnLoadString(IDS_CHAT_TITLE);
-	csPrintf (&sTitle, " ");
+	std::string sTitle = strPrintf( EnLoadStdString(IDS_CHAT_TITLE).c_str(), " " );
 
 	// get parent location
 	CRect rect;
@@ -1484,7 +1481,7 @@ void CWndComm::OnChat ()
 	if( bNew )
 	{
 		pWnd = new CChatWnd();
-		pWnd->Create( NULL, sTitle, dwPopWndStyle, rect, this );
+		pWnd->Create( NULL, sTitle.c_str(), dwPopWndStyle, rect, this );
 		pWnd->ShowWindow( SW_SHOW );
 		pWnd->UpdateWindow();
 	}
@@ -1600,10 +1597,9 @@ void CEMailLB::LoadEmail(void)
 CEMailLB::CEMailLB( UINT uID, CWnd *pParent, CRect& rLoc )
 {
 	CClientDC dc( pParent );
-	CString sTest = "Test String";
-	CSize csName = dc.GetTextExtent( sTest, sTest.GetLength() );
+	const char sTest[] = "Test String";
+	CSize csName = dc.GetTextExtent( sTest, (int)sizeof(sTest) - 1 );
 	m_uCharHeight = csName.cy + 1;
-	sTest.Empty();
 
 	CListBox();
 
@@ -1659,7 +1655,7 @@ void CEMailLB::DrawItem( LPDRAWITEMSTRUCT lpDIS )
 
 		CBitmap *pOldWork = workDC.SelectObject( &workBM );
 
-		CString sName;
+		std::string sName;
 		CPlayer *pPlayer = theGame.GetPlayerByPlyr( pMsg->m_iFrom );
 		if( pPlayer != NULL )
 			sName = pPlayer->GetName();
@@ -1667,7 +1663,7 @@ void CEMailLB::DrawItem( LPDRAWITEMSTRUCT lpDIS )
 			sName = "Unknown player";
 
 #if USE_FAKE_NET
-		if( sName.IsEmpty() )
+		if( sName.empty() )
 			sName = "Eric";
 #endif
 		int iWidth = lpDIS->rcItem.right - lpDIS->rcItem.left;
@@ -1695,7 +1691,7 @@ void CEMailLB::DrawItem( LPDRAWITEMSTRUCT lpDIS )
 				&workDC, 0, 0, SRCCOPY );
 
 			iX = lpDIS->rcItem.left + m_iNameAt; //(iWidth / 8);
-			pDC->TextOut( iX, iY, sName, sName.GetLength() );
+			pDC->TextOut( iX, iY, sName.c_str(), (int)sName.size() );
 			iX = lpDIS->rcItem.left + m_iSubjectAt; //(iWidth / 4);
 			pDC->TextOut( iX, iY, 
 				pMsg->m_sSubject, pMsg->m_sSubject.GetLength() );
@@ -1720,7 +1716,7 @@ void CEMailLB::DrawItem( LPDRAWITEMSTRUCT lpDIS )
 				&workDC, 0, 0, SRCCOPY );
 
 			iX = lpDIS->rcItem.left + m_iNameAt;
-			pDC->TextOut( iX, iY, sName, sName.GetLength() );
+			pDC->TextOut( iX, iY, sName.c_str(), (int)sName.size() );
 			iX = lpDIS->rcItem.left + m_iSubjectAt;
 			pDC->TextOut( iX, iY, 
 				pMsg->m_sSubject, pMsg->m_sSubject.GetLength() );
@@ -1744,7 +1740,7 @@ void CEMailLB::DrawItem( LPDRAWITEMSTRUCT lpDIS )
 				&workDC, 0, 0, SRCCOPY );
 
 			iX = lpDIS->rcItem.left + m_iNameAt;
-			pDC->TextOut( iX, iY, sName, sName.GetLength() );
+			pDC->TextOut( iX, iY, sName.c_str(), (int)sName.size() );
 			iX = lpDIS->rcItem.left + m_iSubjectAt;
 			pDC->TextOut( iX, iY, 
 				pMsg->m_sSubject, pMsg->m_sSubject.GetLength() );
@@ -1753,7 +1749,6 @@ void CEMailLB::DrawItem( LPDRAWITEMSTRUCT lpDIS )
 			pDC->SetBkMode( iOldMode );
 		}
 
-		sName.Empty();
 		workDC.SelectObject( pOldWork );
 		workDC.DeleteDC();
 		workBM.DeleteObject();
