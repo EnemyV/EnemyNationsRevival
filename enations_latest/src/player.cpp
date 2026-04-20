@@ -1053,11 +1053,11 @@ void CGame::Open( BOOL bLocal )
 
     ASSERT_VALID( this );
 
-    CString sSaveName = theGame.m_sFileName;
+    std::string sSaveName = (LPCSTR)theGame.m_sFileName;
     if ( ( theApp.m_pCreateGame == NULL ) || ( ( theApp.m_pCreateGame->m_iTyp != CCreateBase::load_single ) &&
                                                ( theApp.m_pCreateGame->m_iTyp != CCreateBase::load_multi ) ) )
         ctor( );
-    theGame.m_sFileName = sSaveName;
+    theGame.m_sFileName = sSaveName.c_str( );
 
     int iSpeed = EnGetProfileInt( "Game", "Speed", NUM_SPEEDS / 2 );
     iSpeed     = __minmax( 0, NUM_SPEEDS - 1, iSpeed );
@@ -1595,9 +1595,9 @@ void CGame::AddAiPlayer( CPlayer* pPlr )
 
     if ( pPlr->m_sName.IsEmpty( ) )
     {
-        CString sNum = IntToCString( m_iNextAINum++ );
+        std::string sNum = IntToStr( m_iNextAINum++ );
         pPlr->m_sName = EnLoadString( IDS_AI_NAME );
-        csPrintf( &( pPlr->m_sName ), (char const*)sNum );
+        csPrintf( &( pPlr->m_sName ), sNum.c_str( ) );
     }
     pPlr->m_iNetNum = 0;
     pPlr->SetAI( TRUE );
@@ -2055,7 +2055,7 @@ int CGame::LoadGame( CWnd* pPar, BOOL bReplace )
         theApp.m_pCreateGame->GetDlgStatus( )->SetMsg( IDS_LOAD_FILE );
 
         // game file - read into memory
-        CString sSaveName = theGame.m_sFileName;
+        std::string sSaveName = (LPCSTR)theGame.m_sFileName;
         CFile   fil( m_sFileName, CFile::modeRead | CFile::shareExclusive | CFile::typeBinary );
         int     iLen = fil.GetLength( );
         char*   pBuf = (char*)malloc( iLen );
@@ -2080,7 +2080,7 @@ int CGame::LoadGame( CWnd* pPar, BOOL bReplace )
         filMem.Detach( );
         CoDec::FreeBuf( pDeComp );
         filMem.Close( );
-        theGame.m_sFileName = sSaveName;
+        theGame.m_sFileName = sSaveName.c_str( );
         theGame.DecTry( );
     }
 
@@ -2446,8 +2446,8 @@ static void fnCompSave( DWORD dwData, int iBlk )
     CDlgSaveMsg* pDlg = (CDlgSaveMsg*)dwData;
     pDlg->UpdateData( TRUE );
     pDlg->m_sStat = EnLoadString( IDS_SAVE_COMPRESS );
-    CString sNum = IntToCString( iBlk );
-    csPrintf( &( pDlg->m_sStat ), sNum );
+    std::string sNum = IntToStr( iBlk );
+    csPrintf( &( pDlg->m_sStat ), sNum.c_str( ) );
     pDlg->UpdateData( FALSE );
 
     // needed for MODEM games
@@ -2645,10 +2645,10 @@ int CGame::SaveGame( CWnd* pPar )
     return ( IDOK );
 }
 
-static CString GetVerText( DWORD dwMaj, DWORD dwMin, DWORD dwVer, WORD wDbg, WORD wCht )
+static std::string GetVerText( DWORD dwMaj, DWORD dwMin, DWORD dwVer, WORD wDbg, WORD wCht )
 {
 
-    CString sRtn = IntToCString( dwMaj ) + "." + IntToCString( dwMin ) + "." + IntToCString( dwVer );
+    std::string sRtn = IntToStr( dwMaj ) + "." + IntToStr( dwMin ) + "." + IntToStr( dwVer );
 
     if ( wDbg && wCht )
         sRtn += " (debug, cheat)";
@@ -2831,10 +2831,10 @@ void CGame::Serialize( CArchive& ar )
 
             if ( wrongMajorVersion || wrongMinorVersion || debugCheatMissmatched )
             {
-                CString sVer1 = GetVerText( m_dwMaj, m_dwMin, m_dwVer, m_wDbg, m_wCht );
-                CString sVer2 = GetVerText( VER_MAJOR, VER_MINOR, VER_RELEASE, _wDebug, _wCheat );
+                std::string sVer1 = GetVerText( m_dwMaj, m_dwMin, m_dwVer, m_wDbg, m_wCht );
+                std::string sVer2 = GetVerText( VER_MAJOR, VER_MINOR, VER_RELEASE, _wDebug, _wCheat );
                 std::string sMsg = strPrintf( EnLoadStdString( IDS_SAVE_VER ).c_str(),
-                                              (const char*)sVer1, (const char*)sVer2 );
+                                              sVer1.c_str( ), sVer2.c_str( ) );
                 EnMessageBox( sMsg.c_str() );
                 ThrowError( ERR_RES_CREATE_WND );
             }
