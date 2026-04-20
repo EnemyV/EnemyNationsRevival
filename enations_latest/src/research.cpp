@@ -300,11 +300,11 @@ int CResearchListBox::CompareItem( LPCOMPAREITEMSTRUCT lpCompareItemStruct )
     if ( i2 < 0 || i2 >= nCount )
         return 1;  // or 0
 
-    CString str1, str2;
+    char str1[256], str2[256];
     GetText( i1, str1 );
     GetText( i2, str2 );
 
-    return str1.Compare( str2 );  // alphabetical comparison
+    return strcmp( str1, str2 );  // alphabetical comparison
 }
 
 
@@ -463,8 +463,8 @@ void CDlgResearch::OnDrawItem( int, LPDRAWITEMSTRUCT pDis )
         pDc->SetBkMode( TRANSPARENT );
         pDc->SetTextColor( CLR_UNIT_BUILD );
         pDc->SetTextColor( PALETTERGB( 255, 33, 8 ) );
-        CString sText;
-        GetDlgItem( pDis->CtlID )->GetWindowText( sText );
+        char sText[256];
+        GetDlgItem( pDis->CtlID )->GetWindowText( sText, (int)sizeof( sText ) );
         pDc->DrawText( sText, -1, &rDest,
                        DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX | DT_WORDBREAK | DT_NOPREFIX );
 
