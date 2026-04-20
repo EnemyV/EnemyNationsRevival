@@ -375,10 +375,10 @@ void _UnitShowStatus( BOOL bText, void* pData, CDC* pDc, CRect const& rDraw, CDI
 #ifdef _CHEAT
         if ( _bShowStatus )
         {
-            CString sText( IntToCString( pUnit->GetID( ) ) + CString( "(" ) +
-                           IntToCString( pUnit->GetOwner( )->GetPlyrNum( ) ) + CString( "): " ) +
-                           pUnit->GetData( )->GetDesc( ) );
-            uShowStat.m_siText.SetText( sText );
+            std::string sText = IntToStr( pUnit->GetID( ) ) + "(" +
+                                IntToStr( pUnit->GetOwner( )->GetPlyrNum( ) ) + "): " +
+                                pUnit->GetData( )->GetDesc( );
+            uShowStat.m_siText.SetText( sText.c_str( ) );
         }
 #endif
 
@@ -724,8 +724,8 @@ void CVehicleBuilding::PaintStatusBars( CStatInst* pSi, int iNum, CDC* pDc ) con
         {
             pDcTxt->SetBkMode( TRANSPARENT );
             pDcTxt->SetTextColor( CLR_CONST );
-            CString sText = theTransports.GetData( pBldUnt->GetVehType( ) )->GetDesc( );
-            pDcTxt->DrawText( sText, -1, &( pSi->m_rDest ), DT_CENTER | DT_SINGLELINE | DT_VCENTER );
+            pDcTxt->DrawText( theTransports.GetData( pBldUnt->GetVehType( ) )->GetDesc( ), -1,
+                              &( pSi->m_rDest ), DT_CENTER | DT_SINGLELINE | DT_VCENTER );
         }
 
         // blt the internal bitmap to the screen
@@ -769,8 +769,8 @@ void CRepairBuilding::PaintStatusBars( CStatInst* pSi, int iNum, CDC* pDc ) cons
         {
             pDcTxt->SetBkMode( TRANSPARENT );
             pDcTxt->SetTextColor( CLR_CONST );
-            CString sText = m_pVehRepairing->GetData( )->GetDesc( );
-            pDcTxt->DrawText( sText, -1, &( pSi->m_rDest ), DT_CENTER | DT_SINGLELINE | DT_VCENTER );
+            pDcTxt->DrawText( m_pVehRepairing->GetData( )->GetDesc( ), -1,
+                              &( pSi->m_rDest ), DT_CENTER | DT_SINGLELINE | DT_VCENTER );
         }
 
         // blt the internal bitmap to the screen
@@ -815,8 +815,8 @@ void CShipyardBuilding::PaintStatusBars( CStatInst* pSi, int iNum, CDC* pDc ) co
         {
             pDcTxt->SetBkMode( TRANSPARENT );
             pDcTxt->SetTextColor( CLR_CONST );
-            CString sText = m_pVehRepairing->GetData( )->GetDesc( );
-            pDcTxt->DrawText( sText, -1, &( pSi->m_rDest ), DT_CENTER | DT_SINGLELINE | DT_VCENTER );
+            pDcTxt->DrawText( m_pVehRepairing->GetData( )->GetDesc( ), -1,
+                              &( pSi->m_rDest ), DT_CENTER | DT_SINGLELINE | DT_VCENTER );
         }
 
         // blt the internal bitmap to the screen
