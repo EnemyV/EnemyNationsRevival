@@ -643,9 +643,8 @@ void CGame::AddToQueue( CNetCmd const* pCmd, int iLen )
     {
         OutputDebugStringA( "0 length pMsg in AddToQueue?!\n" );
     }
-    CString str;
-
-    str.Format( "AddingToQueue type %d, %d, %d", pCmd->GetType( ), iLen, sizeof( pCmd ) );
+    char str[128];
+    snprintf( str, sizeof(str), "AddingToQueue type %d, %d, %d", pCmd->GetType( ), iLen, sizeof( pCmd ) );
     OutputDebugStringA( str );
     OutputDebugStringA( "\n" );
 #endif
@@ -2856,9 +2855,8 @@ void CGame::ProcessMessage(CNetCmd* pCmd )
     ASSERT_VALID( this );
 
 #ifdef LOGGINGON
-
-    CString str;
-   // str.Format( "ProcessMessage (PM1) type %d\n", pCmd->GetType( ) );
+   // char str[128];
+   // snprintf( str, sizeof(str), "ProcessMessage (PM1) type %d\n", pCmd->GetType( ) );
    // OutputDebugStringA( str );
 #endif
 
@@ -3523,13 +3521,11 @@ CNetPublish* CNetPublish::Alloc( CCreateBase* pCm )
 CNetPublish* CNetPublish::Alloc( CGame* pGame )
 {
 
-    CString sName;
+    std::string sName;
     if ( pGame->HaveHP( ) )
         sName = pGame->GetMe( )->GetName( );
-    else
-        sName = "";
 
-    int iLen = sizeof( CNetPublish ) + 2 + sName.GetLength( ) + pGame->m_sPwJoin.GetLength( ) +
+    int iLen = sizeof( CNetPublish ) + 2 + (int)sName.size( ) + pGame->m_sPwJoin.GetLength( ) +
                pGame->m_sGameName.GetLength( ) + pGame->m_sGameDesc.GetLength( );
     CNetPublish* pMsg     = (CNetPublish*)new char[__max( 516, iLen )];
     pMsg->m_iLen          = iLen;
@@ -3552,7 +3548,7 @@ CNetPublish* CNetPublish::Alloc( CGame* pGame )
     pMsg->m_cFlags |= fcheat;
 #endif
 
-    strcpy( pMsg->m_sPlyrName, sName );
+    strcpy( pMsg->m_sPlyrName, sName.c_str( ) );
     char* pBuf = pMsg->m_sPlyrName + strlen( pMsg->m_sPlyrName ) + 1;
     strcpy( pBuf, pGame->m_sPwJoin );
     pBuf = pBuf + strlen( pBuf ) + 1;
