@@ -476,9 +476,8 @@ void CWndListBuildings::Create() {
     // units
     m_pDibUnit = theBitmaps.GetByIndex(DIB_LIST_UNIT_BUILDINGS);
 
-    CString sTitle;
-    sTitle = EnLoadString(IDS_TITLE_BUILDINGS);
-    if (CreateEx(0, theApp.m_sWndCls, sTitle, dwPopWndStyle,
+    std::string sTitle = EnLoadStdString(IDS_TITLE_BUILDINGS);
+    if (CreateEx(0, theApp.m_sWndCls, sTitle.c_str(), dwPopWndStyle,
                  EnGetProfileInt(theApp.m_sResIni, "BuildX", theApp.m_iCol2),
                  EnGetProfileInt(theApp.m_sResIni, "BuildY", theApp.m_iRow4),
                  __max (256, EnGetProfileInt(theApp.m_sResIni, "BuildEX", theApp.m_iScrnX - theApp.m_iCol2 + 1)),
@@ -542,10 +541,9 @@ void CWndListVehicles::Create() {
     // units
     m_pDibUnit = theBitmaps.GetByIndex(DIB_LIST_UNIT_VEHICLES);
 
-    CString sTitle;
-    sTitle = EnLoadString(IDS_TITLE_VEHICLES);
+    std::string sTitle = EnLoadStdString(IDS_TITLE_VEHICLES);
     int y = (theApp.m_iRow3 + theApp.m_iRow4) / 2 - 1;
-    if (CreateEx(0, theApp.m_sWndCls, sTitle, dwPopWndStyle,
+    if (CreateEx(0, theApp.m_sWndCls, sTitle.c_str(), dwPopWndStyle,
                  EnGetProfileInt(theApp.m_sResIni, "VehicleX", theApp.m_iCol2),
                  EnGetProfileInt(theApp.m_sResIni, "VehicleY", y),
                  __max (256, EnGetProfileInt(theApp.m_sResIni, "VehicleEX", theApp.m_iScrnX - theApp.m_iCol2 + 1)),
@@ -1378,8 +1376,8 @@ void CDlgBuildStructure::OnDrawItem(int, LPDRAWITEMSTRUCT pDis) {
         pDc->SetBkMode(TRANSPARENT);
         pDc->SetTextColor(CLR_UNIT_BUILD);
         pDc->SetTextColor(RGB (255, 255, 255));
-        CString sText;
-        GetDlgItem(pDis->CtlID)->GetWindowText(sText);
+        char sText[256];
+        GetDlgItem(pDis->CtlID)->GetWindowText(sText, (int)sizeof(sText));
         pDc->DrawText(sText, -1, &rDest,
                       DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX | DT_WORDBREAK | DT_NOPREFIX);
 
@@ -1508,9 +1506,8 @@ BOOL CDlgBuildTransport::OnInitDialog() {
 
     // if its troops we change the title
     if (m_pBldgPar->GetData()->GetBldgType() == CStructureData::barracks) {
-        CString sTitle;
-        sTitle = EnLoadString(IDS_BUILD_PEOPLE);
-        SetWindowText(sTitle);
+        std::string sTitle = EnLoadStdString(IDS_BUILD_PEOPLE);
+        SetWindowText(sTitle.c_str());
     }
 
     CenterWindow(&theApp.m_wndMain);
@@ -1852,8 +1849,8 @@ void CDlgBuildTransport::OnDrawItem(int, LPDRAWITEMSTRUCT pDis) {
         pDc->SetBkMode(TRANSPARENT);
         pDc->SetTextColor(CLR_UNIT_BUILD);
         pDc->SetTextColor(RGB (255, 255, 255));
-        CString sText;
-        GetDlgItem(pDis->CtlID)->GetWindowText(sText);
+        char sText[256];
+        GetDlgItem(pDis->CtlID)->GetWindowText(sText, (int)sizeof(sText));
         pDc->DrawText(sText, -1, &rDest,
                       DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX | DT_WORDBREAK | DT_NOPREFIX);
 
