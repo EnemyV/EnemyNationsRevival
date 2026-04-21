@@ -476,7 +476,7 @@ class CUnit : public CUnitTile
 
     void Shoot( CUnit* pUnit, int iLOS );
 
-    virtual BOOL IsHit( CHexCoord, CPoint ) const PURE_FUNC virtual void GetDesc( CString& sText ) const PURE_FUNC
+    virtual BOOL IsHit( CHexCoord, CPoint ) const PURE_FUNC virtual void GetDesc( std::string& sText ) const PURE_FUNC
         virtual void InvalidateStatus( ) const PURE_FUNC virtual void MaterialChange( );
 
     virtual int  GetNumStatusBars( ) const { return 1; }

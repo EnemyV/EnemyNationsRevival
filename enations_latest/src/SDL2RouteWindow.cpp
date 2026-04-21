@@ -204,13 +204,13 @@ void SDL2RouteWindow::RebuildList() {
 
         // Location name
         std::string loc;
-        CString sName;
+        std::string sName;
         CBuilding* pBldg = theBuildingHex._GetBuilding(pR->GetCoord());
         if (pBldg != NULL)
             pBldg->GetDesc(sName);
 
-        if (sName.GetLength() > 0)
-            loc = std::string((LPCSTR)sName);
+        if (!sName.empty())
+            loc = sName;
         else
             loc = std::to_string(pR->GetCoord().X()) + "," + std::to_string(pR->GetCoord().Y());
 

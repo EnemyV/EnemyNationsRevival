@@ -1649,18 +1649,18 @@ void CBuilding::UpdateConst( CMsgBldgStat* pMsg )
         SetConstPer( );
 }
 
-void CBuilding::GetDesc( CString& sText ) const
+void CBuilding::GetDesc( std::string& sText ) const
 {
 
     ASSERT_VALID( this );
-    sText = m_pUnitData->GetDesc( );
+    sText = (LPCSTR)m_pUnitData->GetDesc( );
 
 #ifdef _CHEAT
     if ( _bShowStatus )
-        sText += " ID:" + IntToCString( m_dwID ) + " Own:" + IntToCString( GetOwner( )->GetPlyrNum( ) ) +
-                 " Dmg:" + IntToCString( m_iDamagePer ) +
-                 " Trgt:" + ( m_pUnitTarget == NULL ? "0" : IntToCString( m_pUnitTarget->GetID( ) ) ) +
-                 " Oppo:" + ( m_pUnitOppo == NULL ? "0" : IntToCString( m_pUnitOppo->GetID( ) ) );
+        sText += " ID:" + IntToStr( m_dwID ) + " Own:" + IntToStr( GetOwner( )->GetPlyrNum( ) ) +
+                 " Dmg:" + IntToStr( m_iDamagePer ) +
+                 " Trgt:" + ( m_pUnitTarget == NULL ? std::string( "0" ) : IntToStr( m_pUnitTarget->GetID( ) ) ) +
+                 " Oppo:" + ( m_pUnitOppo == NULL ? std::string( "0" ) : IntToStr( m_pUnitOppo->GetID( ) ) );
 #endif
 }
 
@@ -2497,18 +2497,18 @@ void CTurret::DoMuzzleFlash( )
 /////////////////////////////////////////////////////////////////////////////
 // CVehicle - a vehicle
 
-void CVehicle::GetDesc( CString& sText ) const
+void CVehicle::GetDesc( std::string& sText ) const
 {
 
     ASSERT_VALID( this );
-    sText = m_pUnitData->GetDesc( );
+    sText = (LPCSTR)m_pUnitData->GetDesc( );
 
 #ifdef _CHEAT
     if ( _bShowStatus )
-        sText += " ID:" + IntToCString( m_dwID ) + " Own:" + IntToCString( GetOwner( )->GetPlyrNum( ) ) +
-                 " Dmg:" + IntToCString( m_iDamagePer ) +
-                 " Trgt:" + ( m_pUnitTarget == NULL ? "0" : IntToCString( m_pUnitTarget->GetID( ) ) ) +
-                 " Oppo:" + ( m_pUnitOppo == NULL ? "0" : IntToCString( m_pUnitOppo->GetID( ) ) );
+        sText += " ID:" + IntToStr( m_dwID ) + " Own:" + IntToStr( GetOwner( )->GetPlyrNum( ) ) +
+                 " Dmg:" + IntToStr( m_iDamagePer ) +
+                 " Trgt:" + ( m_pUnitTarget == NULL ? std::string( "0" ) : IntToStr( m_pUnitTarget->GetID( ) ) ) +
+                 " Oppo:" + ( m_pUnitOppo == NULL ? std::string( "0" ) : IntToStr( m_pUnitOppo->GetID( ) ) );
 #endif
 }
 

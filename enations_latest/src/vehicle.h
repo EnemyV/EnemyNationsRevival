@@ -277,7 +277,7 @@ public:
 		void					PaintStatusCarrier (CStatInst * pSi, CDC * pDc) const;
 		void					ShowStatusText (std::string & str);
 
-		void 					GetDesc (CString & sText) const;
+		void 					GetDesc (std::string & sText) const;
 		CRect					Draw( const CHexCoord & );
 		BOOL					IsHit( CHexCoord, CPoint ) const;
 

@@ -719,7 +719,7 @@ public:
 		virtual void	PaintStatusBars (CStatInst * pSi, int iNum, CDC * pDc) const;
 		virtual void	ShowStatusText (std::string & str);
 
-		void 					GetDesc (CString & sText) const;
+		void 					GetDesc (std::string & sText) const;
 		CRect					Draw( const CHexCoord & );
 		void					DrawFoundation( const CHexCoord & );
 		CRect					DrawTurret( CPoint );

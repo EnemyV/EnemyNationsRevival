@@ -2290,12 +2290,12 @@ void CWndRoute::VehDesc(CVehicle *pVeh, POSITION &pos, CString &sLine) {
 
     CRoute *pR = pVeh->GetRouteList().GetNext(pos);
 
-    CString sName;
+    std::string sName;
     CBuilding *pBldg = theBuildingHex._GetBuilding(pR->GetCoord());
     if (pBldg != NULL)
         pBldg->GetDesc(sName);
-    if (sName.GetLength() > 0)
-        sLine += sName;
+    if (!sName.empty())
+        sLine += sName.c_str();
     else
         sLine += IntToCString(pR->GetCoord().X()) + "," + IntToCString(pR->GetCoord().Y());
 
