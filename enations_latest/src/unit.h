@@ -482,7 +482,7 @@ class CUnit : public CUnitTile
     virtual int  GetNumStatusBars( ) const { return 1; }
     virtual void PaintStatusBars( CStatInst* pSi, int iNum, CDC* pDc ) const;
     void         PaintStatusMaterials( CStatInst* pSi, CDC* pDc ) const;
-    virtual void ShowStatusText( CString& str );
+    virtual void ShowStatusText( std::string& str );
 
     enum UNIT_FLAGS
     {
@@ -881,7 +881,7 @@ CUnit*  GetUnit( CSubHex const& sub );  // bldg takes priority
 CSubHex Rotate( int iDir, CSubHex const& ptHead, CSubHex const& ptTail );
 void    UnitShowStatus( void* pData, CDC* pDc, CRect const& rDraw, CDIB* pDib, CPoint const& ptOff );
 void    _UnitShowStatus( BOOL bText, void* pData, CDC* pDc, CRect const& rDraw, CDIB* pDibBack, CPoint const& ptOff );
-void    UnitStatusText( void* pData, CString& str );
+void    UnitStatusText( void* pData, std::string& str );
 
 
 extern CTurrets       theTurrets;

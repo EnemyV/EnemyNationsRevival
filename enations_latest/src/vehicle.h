@@ -275,7 +275,7 @@ public:
 		virtual int		GetNumStatusBars () const;
 		virtual void	PaintStatusBars (CStatInst * pSi, int iNum, CDC * pDc) const;
 		void					PaintStatusCarrier (CStatInst * pSi, CDC * pDc) const;
-		void					ShowStatusText (CString & str);
+		void					ShowStatusText (std::string & str);
 
 		void 					GetDesc (CString & sText) const;
 		CRect					Draw( const CHexCoord & );

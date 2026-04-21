@@ -504,9 +504,9 @@ void SDL2UnitInfoPanel::BuildContent() {
         case CStructureData::UTmine:
         case CStructureData::UTfarm:
         case CStructureData::UTshipyard: {
-            CString sText;
+            std::string sText;
             pBldg->ShowStatusText(sText);
-            m_lines.push_back({(const char*)sText, m_pUnit->GetDamagePer() < 50});
+            m_lines.push_back({sText, m_pUnit->GetDamagePer() < 50});
             break;
         }
         }

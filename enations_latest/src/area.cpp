@@ -535,9 +535,9 @@ void CWndUnitStat::OnMouseMove( UINT, CPoint )
         CWndStatBar::SetText( NULL );
     else
     {
-        CString str;
+        std::string str;
         ::UnitStatusText( m_pUnit, str );
-        theApp.m_wndBar.SetStatusText( 1, str );
+        theApp.m_wndBar.SetStatusText( 1, str.c_str( ) );
     }
 }
 
@@ -5299,10 +5299,9 @@ void CWndInfo::OnPaint( )
     // draw the damage
     rect.top += theApp.TextHt( ) + theApp.FlatDimen( );
     rect.bottom = rect.top + theApp.TextHt( );
-    CString sText;
-    sText = EnLoadString( IDS_INFO_DAMAGE );
-    csPrintf( &sText, (const char*)IntToCString( __min( 99, 100 - m_pUnit->GetDamagePer( ) ) ) );
-    _DrawText( pDc, rect, sText, m_pUnit->GetDamagePer( ) < 50 );
+    std::string sStatus = strPrintf( EnLoadStdString( IDS_INFO_DAMAGE ).c_str(),
+                                     IntToStr( __min( 99, 100 - m_pUnit->GetDamagePer( ) ) ).c_str( ) );
+    _DrawText( pDc, rect, sStatus.c_str( ), m_pUnit->GetDamagePer( ) < 50 );
 
     // if building draw it's status
     if ( m_pUnit->GetUnitType( ) == CUnit::building )
@@ -5318,8 +5317,8 @@ void CWndInfo::OnPaint( )
         case CStructureData::UTshipyard:
             rect.top += theApp.TextHt( ) + theApp.FlatDimen( );
             rect.bottom = rect.top + theApp.TextHt( );
-            ( (CBuilding*)m_pUnit )->ShowStatusText( sText );
-            _DrawText( pDc, rect, sText, m_pUnit->GetDamagePer( ) < 50 );
+            ( (CBuilding*)m_pUnit )->ShowStatusText( sStatus );
+            _DrawText( pDc, rect, sStatus.c_str( ), m_pUnit->GetDamagePer( ) < 50 );
             break;
         }
 

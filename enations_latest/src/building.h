@@ -717,7 +717,7 @@ public:
 		void					DrawStatusPer (CDC *pDc, CRect *pRect) const;
 		virtual int		GetNumStatusBars () const;
 		virtual void	PaintStatusBars (CStatInst * pSi, int iNum, CDC * pDc) const;
-		virtual void	ShowStatusText (CString & str);
+		virtual void	ShowStatusText (std::string & str);
 
 		void 					GetDesc (CString & sText) const;
 		CRect					Draw( const CHexCoord & );
@@ -876,7 +876,7 @@ public:
 
 		virtual BOOL	IsOperating () const;
 		virtual int		GetNextMinuteMat (int iInd) const;
-		virtual void	ShowStatusText (CString & str);
+		virtual void	ShowStatusText (std::string & str);
 
 		virtual void GetInputs (int * pVals) const;
 		virtual void GetAccepts (int * pVals) const { GetInputs (pVals); }
@@ -920,7 +920,7 @@ public:
 		void					MaterialChange ();
 		int						GetNumStatusBars () const { return 3; }
 		void					PaintStatusBars (CStatInst * pSi, int iNum, CDC * pDc) const;
-		void					ShowStatusText (CString & str);
+		void					ShowStatusText (std::string & str);
 
 									// iInd material needed to finish vehicle building
 		int						NeedToFinish (int iInd) const;
@@ -971,7 +971,7 @@ public:
 		void					MaterialChange ();
 		int						GetNumStatusBars () const { return 3; }
 		void					PaintStatusBars (CStatInst * pSi, int iNum, CDC * pDc) const;
-		void					ShowStatusText (CString & str);
+		void					ShowStatusText (std::string & str);
 
 		CVehicle *		GetVehRepairing () { return (m_pVehRepairing); }
 
@@ -1022,7 +1022,7 @@ public:
 		void					MaterialChange ();
 		int						GetNumStatusBars () const { return 3; }
 		void					PaintStatusBars (CStatInst * pSi, int iNum, CDC * pDc) const;
-		void					ShowStatusText (CString & str);
+		void					ShowStatusText (std::string & str);
 
 									// iInd material needed to finish vehicle building
 		int						NeedToFinish (int iInd) const;
@@ -1062,7 +1062,7 @@ public:
 
 		virtual BOOL	IsOperating () const;
 		void					BuildPower ();
-		void					ShowStatusText (CString & str);
+		void					ShowStatusText (std::string & str);
 		virtual int		GetNextMinuteMat (int iInd) const;
 
 		virtual void GetInputs (int * pVals) const;
@@ -1110,7 +1110,7 @@ public:
 
 		int						GetNumStatusBars () const { if (m_iConstDone != -1) return (3); return 2; }
 		void					PaintStatusBars (CStatInst * pSi, int iNum, CDC * pDc) const;
-		void					ShowStatusText (CString & str);
+		void					ShowStatusText (std::string & str);
 
 protected:
 };
@@ -1138,7 +1138,7 @@ public:
 
 		// show what we have mined
 		int						GetNumStatusBars () const { if (m_iConstDone != -1) return (3); return 2; }
-		void					ShowStatusText (CString & str);
+		void					ShowStatusText (std::string & str);
 
 		void 					Serialize (CArchive & ar);
 
@@ -1184,7 +1184,7 @@ public:
 		// lumber for mill, production rate for farm
 		int						GetNumStatusBars () const;
 		void					PaintStatusBars (CStatInst * pSi, int iNum, CDC * pDc) const;
-		void					ShowStatusText (CString & str);
+		void					ShowStatusText (std::string & str);
 
 		void 					Serialize (CArchive & ar);
 
