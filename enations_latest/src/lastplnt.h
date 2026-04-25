@@ -181,43 +181,7 @@ class CDlgMain : public CDialog
 
 
 /////////////////////////////////////////////////////////////////////////////
-// CDlgVer dialog
-
-class CDlgVer : public CDialog
-{
-    // Construction
-  public:
-    CDlgVer( CWnd* pParent = NULL );  // standard constructor
-
-                                      // Dialog Data
-    //{{AFX_DATA(CDlgVer)
-    enum
-    {
-        IDD = IDD_VERSION
-    };
-    CString m_sVer;
-    CString m_sOs;
-    CString m_sNet;
-    CString m_sThunk;
-    CString m_sRif;
-    CString m_sVideo;
-    CString m_sSound;
-    CString m_sSoundVer;
-    CString m_sSpeed;
-    CString m_sMemory;
-    //}}AFX_DATA
-
-    // Implementation
-  protected:
-    virtual void DoDataExchange( CDataExchange* pDX );  // DDX/DDV support
-
-    // Generated message map functions
-    //{{AFX_MSG(CDlgVer)
-    virtual BOOL OnInitDialog( );
-    afx_msg void OnLicense( );
-    //}}AFX_MSG
-    DECLARE_MESSAGE_MAP( )
-};
+// CDlgVer dialog removed; SDL2VersionDialog (SDL2Dialogs.h) replaces it.
 
 //---------------------------- C Z o o m D a t a ----------------------------
 //

@@ -83,10 +83,8 @@ void CDlgOptions::OnFileHelp()
 
 void CDlgOptions::OnFileVersion()
 {
-	if (theApp.m_gameWindow) {
-		SDL2VersionDialog dlg(theApp.m_gameWindow.get());
-		dlg.DoModal();
-	}
+	SDL2VersionDialog dlg(theApp.m_gameWindow.get());
+	dlg.DoModal();
 }
 
 void CDlgOptions::OnHScroll(UINT nSBCode, UINT nPos, CScrollBar* pScrollBar)

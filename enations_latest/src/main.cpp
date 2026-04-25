@@ -941,10 +941,8 @@ void CDlgFile::OnFileHelp()
 
 void CDlgFile::OnFileVersion()
 {
-	if (theApp.m_gameWindow) {
-		SDL2VersionDialog dlg(theApp.m_gameWindow.get());
-		dlg.DoModal();
-	}
+	SDL2VersionDialog dlg(theApp.m_gameWindow.get());
+	dlg.DoModal();
 }
 
 void CDlgFile::OnFileMinimize() 
