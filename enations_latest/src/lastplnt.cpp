@@ -2426,9 +2426,9 @@ void CDlgMain::OnDrawItem( int, LPDRAWITEMSTRUCT lpDIS )
     // set the palette
     thePal.Paint( pDc->m_hDC );
 
-    CRect   rect( lpDIS->rcItem );
-    CString sText;
-    pWnd->GetWindowText( sText );
+    CRect rect( lpDIS->rcItem );
+    char  sText[256];
+    pWnd->GetWindowText( sText, (int)sizeof( sText ) );
     int iInd = 0;  // in case m_bTile
 
     CRect rPos;
