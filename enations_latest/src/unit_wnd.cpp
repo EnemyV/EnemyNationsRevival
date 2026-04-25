@@ -2317,9 +2317,8 @@ void CWndRoute::VehDesc(CVehicle *pVeh, POSITION &pos, CString &sLine) {
 #endif
     }
 
-    CString sRes;
-    sRes = EnLoadString(ID);
-    sLine += "\t" + sRes;
+    std::string sRes = EnLoadStdString(ID);
+    sLine += "\t" + CString(sRes.c_str());
 }
 
 void CWndRoute::NewRoute(CVehicle *pVeh) {
