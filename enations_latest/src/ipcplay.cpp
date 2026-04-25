@@ -106,19 +106,19 @@ void CIPCPlayerList::InitPlayers( void )
 }
 
 
-CIPCPlayer *CIPCPlayerList::GetPlayer( CString& sName )
+CIPCPlayer *CIPCPlayerList::GetPlayer( const std::string& sName )
 {
 	ASSERT_VALID( this );
 
     POSITION pos = GetHeadPosition();
     while( pos != NULL )
-    {   
+    {
         CIPCPlayer *pPlayer = (CIPCPlayer *)GetNext( pos );
         if( pPlayer != NULL )
         {
         	ASSERT_VALID( pPlayer );
 
-			if( pPlayer->m_sName == sName )
+			if( pPlayer->m_sName == sName.c_str() )
                 return( pPlayer );
         }
     }
@@ -145,21 +145,21 @@ CIPCPlayer *CIPCPlayerList::GetPlayer( WORD wID )
 }
 
 
-void CIPCPlayerList::RemovePlayer( CString& sName )
+void CIPCPlayerList::RemovePlayer( const std::string& sName )
 {
 	ASSERT_VALID( this );
 
     POSITION pos1, pos2;
-    for( pos1 = GetHeadPosition(); 
+    for( pos1 = GetHeadPosition();
         ( pos2 = pos1 ) != NULL; )
     {
         CIPCPlayer *pPlayer = (CIPCPlayer *)GetNext( pos1 );
         if( pPlayer == NULL )
             break;
-            
+
         ASSERT_VALID( pPlayer );
 
-		if( pPlayer->m_sName != sName )
+		if( pPlayer->m_sName != sName.c_str() )
             continue;
             
         pPlayer = (CIPCPlayer *)GetAt( pos2 );
@@ -357,7 +357,7 @@ void CPlyrMsgStatusDlg::OnOK()
 		return;
 
 	// get IPC player
-	CString sItem;
+	char sItem[256];
 	pcbPlayers->GetText( iRet, sItem );
 
 	//CPlayer *pPlyr = (CPlayer *)pcbPlayers->GetItemDataPtr(iRet);
@@ -484,7 +484,7 @@ void CPlyrMsgStatusDlg::OnSelchangePlayerList()
 		return;
 
 	// get IPC player
-	CString sItem;
+	char sItem[256];
 	pcbPlayers->GetText( iRet, sItem );
 
 	//CPlayer *pPlyr = (CPlayer *)pcbPlayers->GetItemDataPtr(iRet);

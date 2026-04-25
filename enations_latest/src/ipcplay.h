@@ -59,11 +59,11 @@ public:
 	~CIPCPlayerList();
 
 	CIPCPlayer *GetPlayer( WORD wID );
-	CIPCPlayer *GetPlayer( CString& sName );
+	CIPCPlayer *GetPlayer( const std::string& sName );
 
 	void InitPlayers( void );
 	void RemovePlayer( WORD wID );
-	void RemovePlayer( CString& sName );
+	void RemovePlayer( const std::string& sName );
 	void DeleteList( void );
 };
 
