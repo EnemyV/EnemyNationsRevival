@@ -478,10 +478,10 @@ void CWndListBuildings::Create() {
 
     std::string sTitle = EnLoadStdString(IDS_TITLE_BUILDINGS);
     if (CreateEx(0, theApp.m_sWndCls, sTitle.c_str(), dwPopWndStyle,
-                 EnGetProfileInt(theApp.m_sResIni, "BuildX", theApp.m_iCol2),
-                 EnGetProfileInt(theApp.m_sResIni, "BuildY", theApp.m_iRow4),
-                 __max (256, EnGetProfileInt(theApp.m_sResIni, "BuildEX", theApp.m_iScrnX - theApp.m_iCol2 + 1)),
-                 EnGetProfileInt(theApp.m_sResIni, "BuildEY", (theApp.m_iRow3 - theApp.m_iRow4 + 1) / 2),
+                 EnGetProfileInt(theApp.m_sResIni.c_str(), "BuildX", theApp.m_iCol2),
+                 EnGetProfileInt(theApp.m_sResIni.c_str(), "BuildY", theApp.m_iRow4),
+                 __max (256, EnGetProfileInt(theApp.m_sResIni.c_str(), "BuildEX", theApp.m_iScrnX - theApp.m_iCol2 + 1)),
+                 EnGetProfileInt(theApp.m_sResIni.c_str(), "BuildEY", (theApp.m_iRow3 - theApp.m_iRow4 + 1) / 2),
                  theApp.m_pMainWnd->m_hWnd, NULL, NULL) == 0)
         ThrowError(ERR_RES_CREATE_WND);
 }
@@ -544,10 +544,10 @@ void CWndListVehicles::Create() {
     std::string sTitle = EnLoadStdString(IDS_TITLE_VEHICLES);
     int y = (theApp.m_iRow3 + theApp.m_iRow4) / 2 - 1;
     if (CreateEx(0, theApp.m_sWndCls, sTitle.c_str(), dwPopWndStyle,
-                 EnGetProfileInt(theApp.m_sResIni, "VehicleX", theApp.m_iCol2),
-                 EnGetProfileInt(theApp.m_sResIni, "VehicleY", y),
-                 __max (256, EnGetProfileInt(theApp.m_sResIni, "VehicleEX", theApp.m_iScrnX - theApp.m_iCol2 + 1)),
-                 EnGetProfileInt(theApp.m_sResIni, "VehicleEY", theApp.m_iRow3 - y + 1),
+                 EnGetProfileInt(theApp.m_sResIni.c_str(), "VehicleX", theApp.m_iCol2),
+                 EnGetProfileInt(theApp.m_sResIni.c_str(), "VehicleY", y),
+                 __max (256, EnGetProfileInt(theApp.m_sResIni.c_str(), "VehicleEX", theApp.m_iScrnX - theApp.m_iCol2 + 1)),
+                 EnGetProfileInt(theApp.m_sResIni.c_str(), "VehicleEY", theApp.m_iRow3 - y + 1),
                  theApp.m_pMainWnd->m_hWnd, NULL, NULL) == 0)
         ThrowError(ERR_RES_CREATE_WND);
 }

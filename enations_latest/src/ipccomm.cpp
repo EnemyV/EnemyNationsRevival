@@ -782,10 +782,10 @@ void CWndComm::Create ()
 
 	std::string sTitle = EnLoadStdString(IDS_TITLE_CHAT_WND);
 	if (CWndBase::CreateEx (0, theApp.m_sWndCls, sTitle.c_str(), dwPopWndStyle,
-					EnGetProfileInt(theApp.m_sResIni, "ChatX", 0),
-					EnGetProfileInt(theApp.m_sResIni, "ChatY", theApp.m_iRow2),
-					EnGetProfileInt(theApp.m_sResIni, "ChatEX", theApp.m_iCol1 + 1),
-					EnGetProfileInt(theApp.m_sResIni, "ChatEY", theApp.m_iRow3 - theApp.m_iRow2 + 1),
+					EnGetProfileInt(theApp.m_sResIni.c_str(), "ChatX", 0),
+					EnGetProfileInt(theApp.m_sResIni.c_str(), "ChatY", theApp.m_iRow2),
+					EnGetProfileInt(theApp.m_sResIni.c_str(), "ChatEX", theApp.m_iCol1 + 1),
+					EnGetProfileInt(theApp.m_sResIni.c_str(), "ChatEY", theApp.m_iRow3 - theApp.m_iRow2 + 1),
 					theApp.m_pMainWnd->m_hWnd, NULL) == 0)
 		ThrowError (ERR_RES_CREATE_WND);
 

@@ -610,7 +610,7 @@ BOOL CConquerApp::InitInstance( )
 
 #ifdef LOGGINGON
     char msg[256];
-    snprintf( msg, sizeof(msg), "OS Detected: %s\n", (LPCSTR)m_sOs );
+    snprintf( msg, sizeof(msg), "OS Detected: %s\n", m_sOs.c_str() );
     OutputDebugStringA( msg );
 #endif
 
@@ -618,22 +618,22 @@ BOOL CConquerApp::InitInstance( )
     memset( &ovi, 0, sizeof( ovi ) );
     ovi.dwOSVersionInfoSize = sizeof( ovi );
     GetVersionEx( &ovi );
-    m_sOs += " " + LongToCString( ovi.dwMajorVersion ) + "." + LongToCString( ovi.dwMinorVersion ) + " (";
+    m_sOs += " " + LongToStr( ovi.dwMajorVersion ) + "." + LongToStr( ovi.dwMinorVersion ) + " (";
     if ( ( ovi.dwBuildNumber & 0xFFFF0000 ) == 0 )
-        m_sOs += LongToCString( ovi.dwBuildNumber ) + ")";
+        m_sOs += LongToStr( ovi.dwBuildNumber ) + ")";
     else
-        m_sOs += LongToCString( ovi.dwBuildNumber >> 16 ) + "," + LongToCString( ovi.dwBuildNumber & 0xFFFF ) + ")";
+        m_sOs += LongToStr( ovi.dwBuildNumber >> 16 ) + "," + LongToStr( ovi.dwBuildNumber & 0xFFFF ) + ")";
     if ( iWinType == W32s )
     {
         WORD wVer = LOWORD( GetVersion( ) );
-        m_sOs += " [Windows " + IntToCString( LOBYTE( wVer ) ) + "." + IntToCString( HIBYTE( wVer ) ) + "]";
+        m_sOs += " [Windows " + IntToStr( LOBYTE( wVer ) ) + "." + IntToStr( HIBYTE( wVer ) ) + "]";
     }
-    Log( m_sOs );
+    Log( m_sOs.c_str( ) );
 
     long lVer = CNetApi::GetVersion( );
-    m_sNet    = "VDMPlay API " + IntToCString( HIBYTE( HIWORD( lVer ) ) ) + "." +
-             IntToCString( LOBYTE( HIWORD( lVer ) ) ) + "." + IntToCString( LOWORD( lVer ) );
-    Log( m_sNet );
+    m_sNet    = "VDMPlay API " + IntToStr( HIBYTE( HIWORD( lVer ) ) ) + "." +
+             IntToStr( LOBYTE( HIWORD( lVer ) ) ) + "." + IntToStr( LOWORD( lVer ) );
+    Log( m_sNet.c_str( ) );
 
     MEMORYSTATUS ms;
     ms.dwLength = sizeof( ms );
@@ -1070,7 +1070,7 @@ BOOL CConquerApp::InitInstance( )
 #endif
 
         // get screen resolution, default positions for windows
-        m_sResIni = IntToCString( m_iScrnX ) + "x" + IntToCString( m_iScrnY );
+        m_sResIni = IntToStr( m_iScrnX ) + "x" + IntToStr( m_iScrnY );
         m_iCol1   = m_iScrnX / 5;
         m_iCol2   = __min( ( m_iScrnX * 4 ) / 5, m_iScrnX - 256 );
         m_iRow1   = m_iScrnY / 4;
@@ -1390,7 +1390,7 @@ BOOL CConquerApp::InitInstance( )
     }
 
     // list out version
-    m_sRif = "Data Ver: " + IntToCString( theApp.GetRifVer( ) ) + "." + IntToCString( VER_RIFF );
+    m_sRif = "Data Ver: " + IntToStr( theApp.GetRifVer( ) ) + "." + IntToStr( VER_RIFF );
     if ( theApp.IsShareware( ) )
         m_sRif += " {Shareware}";
     if ( theApp.HaveWAV( ) )
@@ -1405,7 +1405,7 @@ BOOL CConquerApp::InitInstance( )
         m_sRif += ", Zoom1";
     else
         m_sRif += ", Zoom0";
-    Log( m_sRif );
+    Log( m_sRif.c_str( ) );
 
     // video info
     m_sVideo = "Video: ";
@@ -1435,14 +1435,14 @@ BOOL CConquerApp::InitInstance( )
         m_sVideo += "bottom-up";
         break;
     }
-    m_sVideo += "), " + IntToCString( ptrthebltformat->GetBitsPerPixel( ) ) + "-bit, (" +
-                IntToCString( GetSystemMetrics( SM_CXSCREEN ) ) + "x" +
-                IntToCString( GetSystemMetrics( SM_CYSCREEN ) ) + "x";
+    m_sVideo += "), " + IntToStr( ptrthebltformat->GetBitsPerPixel( ) ) + "-bit, (" +
+                IntToStr( GetSystemMetrics( SM_CXSCREEN ) ) + "x" +
+                IntToStr( GetSystemMetrics( SM_CYSCREEN ) ) + "x";
     hdc           = GetDC( NULL );
     int iBitDepth = GetDeviceCaps( hdc, BITSPIXEL ) * GetDeviceCaps( hdc, PLANES );
     ReleaseDC( NULL, hdc );
-    m_sVideo += IntToCString( iBitDepth ) + ")";
-    Log( m_sVideo );
+    m_sVideo += IntToStr( iBitDepth ) + ")";
+    Log( m_sVideo.c_str( ) );
 
     // sound info
     m_sSound = "Sound: ";
@@ -1462,23 +1462,23 @@ BOOL CConquerApp::InitInstance( )
         m_sSound += " {WAV driver failed}";
     else if ( !theMusicPlayer.IsRunning( ) )
         m_sSound += " {turned off}";
-    Log( m_sSound );
+    Log( m_sSound.c_str( ) );
 
     {
         int iRate, iChannels;
         CString sDriverName;
         theMusicPlayer.GetDigitalConfig( &iRate, &iChannels, sDriverName );
         if ( iRate > 0 )
-            m_sSoundVer = "Audio: " + CString( theMusicPlayer.GetVersion( ) ) + " " +
-                          IntToCString( iRate ) + "Hz/" + IntToCString( iChannels ) + "ch, " + sDriverName;
+            m_sSoundVer = std::string( "Audio: " ) + theMusicPlayer.GetVersion( ) + " " +
+                          IntToStr( iRate ) + "Hz/" + IntToStr( iChannels ) + "ch, " + (LPCSTR)sDriverName;
         else
-            m_sSoundVer = "Audio: " + CString( theMusicPlayer.GetVersion( ) ) + " {off}";
+            m_sSoundVer = std::string( "Audio: " ) + theMusicPlayer.GetVersion( ) + " {off}";
     }
-    Log( m_sSoundVer );
+    Log( m_sSoundVer.c_str( ) );
 
-    m_sSpeed = "CPU Speed: ~" + IntToCString( theApp.GetCpuSpeed( ) ) + "  CD-ROM Speed: ~" +
-               IntToCString( theApp.GetCdSpeed( ) ) + "X";
-    Log( m_sSpeed );
+    m_sSpeed = "CPU Speed: ~" + IntToStr( theApp.GetCpuSpeed( ) ) + "  CD-ROM Speed: ~" +
+               IntToStr( theApp.GetCdSpeed( ) ) + "X";
+    Log( m_sSpeed.c_str( ) );
 
     if ( iWinType == W32s )
     {
@@ -2864,17 +2864,17 @@ void CDlgStackDump::OnCopyStack( )
     time( &t );
     struct tm* _now = localtime( &t );
     sMsg += asctime( _now );
-    sMsg += std::string( (LPCSTR)theApp.m_sOs ) + "\r\n";
-    sMsg += std::string( (LPCSTR)theApp.m_sNet ) + "\r\n";
+    sMsg += theApp.m_sOs + "\r\n";
+    sMsg += theApp.m_sNet + "\r\n";
 
     sMsg += "Memory (avail/total) Physical: " + IntToStr( ms.dwAvailPhys / ONE_MEG ) + "M/" +
             IntToStr( ms.dwTotalPhys / ONE_MEG ) + "M Virtual: " + IntToStr( ms.dwAvailPageFile / ONE_MEG ) +
             "M/" + IntToStr( ms.dwTotalPageFile / ONE_MEG ) + "M\r\n";
-    sMsg += std::string( (LPCSTR)theApp.m_sRif ) + "\r\n";
-    sMsg += std::string( (LPCSTR)theApp.m_sVideo ) + "\r\n";
-    sMsg += std::string( (LPCSTR)theApp.m_sSound ) + "\r\n";
-    sMsg += std::string( (LPCSTR)theApp.m_sSoundVer ) + "\r\n";
-    sMsg += std::string( (LPCSTR)theApp.m_sSpeed ) + "\r\n";
+    sMsg += theApp.m_sRif + "\r\n";
+    sMsg += theApp.m_sVideo + "\r\n";
+    sMsg += theApp.m_sSound + "\r\n";
+    sMsg += theApp.m_sSoundVer + "\r\n";
+    sMsg += theApp.m_sSpeed + "\r\n";
 
     // set the data
     size_t  iLen = sMsg.size( ) + 1;

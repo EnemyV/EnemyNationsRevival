@@ -1050,10 +1050,10 @@ void CWndArea::Create( CMapLoc const& ml, CUnit* pUnit, BOOL bFirst )
     CRect     rect;
     CWndArea* pPrev = theAreaList.GetTop( );
     if ( pPrev == NULL )
-        rect.SetRect( EnGetProfileInt( theApp.m_sResIni, "AreaX", theApp.m_iCol1 ),
-                      EnGetProfileInt( theApp.m_sResIni, "AreaY", 0 ),
-                      EnGetProfileInt( theApp.m_sResIni, "AreaEX", theApp.m_iScrnX ),
-                      EnGetProfileInt( theApp.m_sResIni, "AreaEY", theApp.m_iRow3 ) );
+        rect.SetRect( EnGetProfileInt( theApp.m_sResIni.c_str(), "AreaX", theApp.m_iCol1 ),
+                      EnGetProfileInt( theApp.m_sResIni.c_str(), "AreaY", 0 ),
+                      EnGetProfileInt( theApp.m_sResIni.c_str(), "AreaEX", theApp.m_iScrnX ),
+                      EnGetProfileInt( theApp.m_sResIni.c_str(), "AreaEY", theApp.m_iRow3 ) );
     else
     {
         pPrev->GetWindowRect( &rect );

@@ -219,10 +219,10 @@ void CWndWorld::Create(BOOL bStart) {
 
     // if it crashes here, i think a gfx bitmap is missing?
     // theApp.m_pMainWnd->m_hWnd is wrong, i think
-    if ( CreateEx( 0, sClass, sTitle, dwPopWndStyle, EnGetProfileInt( theApp.m_sResIni, "WorldX", 0 ),
-                   EnGetProfileInt( theApp.m_sResIni, "WorldY", 0 ),
-                   EnGetProfileInt( theApp.m_sResIni, "WorldEX", theApp.m_iCol1 + 1 ),
-                   EnGetProfileInt( theApp.m_sResIni, "WorldEY", theApp.m_iRow1 + 1 ), 
+    if ( CreateEx( 0, sClass, sTitle, dwPopWndStyle, EnGetProfileInt( theApp.m_sResIni.c_str(), "WorldX", 0 ),
+                   EnGetProfileInt( theApp.m_sResIni.c_str(), "WorldY", 0 ),
+                   EnGetProfileInt( theApp.m_sResIni.c_str(), "WorldEX", theApp.m_iCol1 + 1 ),
+                   EnGetProfileInt( theApp.m_sResIni.c_str(), "WorldEY", theApp.m_iRow1 + 1 ), 
                    theApp.m_pMainWnd->m_hWnd, // window parent!
                    NULL, NULL ) == 0 )
     {

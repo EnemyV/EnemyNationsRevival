@@ -341,23 +341,23 @@ class CConquerApp : public CWinApp
 
 
   public:
-    CString m_sOs;
-    CString m_sNet;
-    CString m_sRif;
-    CString m_sVideo;
-    CString m_sSound;
-    CString m_sSoundVer;
-    CString m_sSpeed;
-    int     m_iRestoreRes;
-    int     m_iOldWidth;
-    int     m_iOldHeight;
-    int     m_iOldDepth;
+    std::string m_sOs;
+    std::string m_sNet;
+    std::string m_sRif;
+    std::string m_sVideo;
+    std::string m_sSound;
+    std::string m_sSoundVer;
+    std::string m_sSpeed;
+    int         m_iRestoreRes;
+    int         m_iOldWidth;
+    int         m_iOldHeight;
+    int         m_iOldDepth;
 
     CString m_sAppName;  // the name of the application
     CString m_sClsName;  // main window (for finding 1st instance)
     CString m_sWndCls;   // CWnd class for pop-up windows
 
-    CString m_sResIni;   // the [1024x768] for the ini file
+    std::string m_sResIni;   // the [1024x768] for the ini file
     int     m_iScrnX;    // screen width
     int     m_iScrnY;    // screen height
     int     m_iCol1;     // default positions for windows (left of area)
