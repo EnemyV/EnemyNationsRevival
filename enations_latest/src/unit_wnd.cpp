@@ -297,9 +297,9 @@ void CWndListUnits::OnDrawItem(int, LPDRAWITEMSTRUCT pDis) {
             CVehicle *pVeh = (CVehicle *) pUnit;
             if (pVeh->GetData()->IsTransport()) {
                 if (!pVeh->IsHpControl())
-                    sText += CTransportData::m_sAuto;
+                    sText += CTransportData::m_sAuto.c_str();
                 else if (pVeh->GetEvent() == CVehicle::route)
-                    sText += CTransportData::m_sRoute;
+                    sText += CTransportData::m_sRoute.c_str();
             }
 
             CBuilding *pBldg = theBuildingHex.GetBuilding(pVeh->GetPtHead());
@@ -309,9 +309,9 @@ void CWndListUnits::OnDrawItem(int, LPDRAWITEMSTRUCT pDis) {
                 sText += "[" + pBldg->GetData()->GetDesc() + "]";
             else if (pVeh->GetData()->IsTransport()) {
                 if (pVeh->GetRouteMode() == CVehicle::stop)
-                    sText += CTransportData::m_sIdle;
+                    sText += CTransportData::m_sIdle.c_str();
                 else
-                    sText += CTransportData::m_sTravel;
+                    sText += CTransportData::m_sTravel.c_str();
             }
         }
 

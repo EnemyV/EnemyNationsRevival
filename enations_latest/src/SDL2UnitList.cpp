@@ -325,9 +325,9 @@ void SDL2UnitList::RenderItem(SDL_Surface* dst, int idx, int x, int y, int w, bo
             // Transport: show AUTO/ROUTE prefix
             if (pVeh->GetData()->IsTransport()) {
                 if (!pVeh->IsHpControl())
-                    sText += (const char*)CTransportData::m_sAuto;
+                    sText += CTransportData::m_sAuto;
                 else if (pVeh->GetEvent() == CVehicle::route)
-                    sText += (const char*)CTransportData::m_sRoute;
+                    sText += CTransportData::m_sRoute;
             }
 
             // Show destination building name
@@ -338,9 +338,9 @@ void SDL2UnitList::RenderItem(SDL_Surface* dst, int idx, int x, int y, int w, bo
                 sText += std::string("[") + (const char*)pBldg->GetData()->GetDesc() + "]";
             else if (pVeh->GetData()->IsTransport()) {
                 if (pVeh->GetRouteMode() == CVehicle::stop)
-                    sText += (const char*)CTransportData::m_sIdle;
+                    sText += CTransportData::m_sIdle;
                 else
-                    sText += (const char*)CTransportData::m_sTravel;
+                    sText += CTransportData::m_sTravel;
             }
         } else {
             CBuilding* pBldg = (CBuilding*)item.pUnit;
@@ -683,9 +683,9 @@ void SDL2UnitList::RenderStatusBars(SDL_Surface* dst, CUnit* pUnit, int x, int y
                 // Route text (ICON_BAR_TEXT)
                 std::string routeText;
                 if (!pVeh->IsHpControl())
-                    routeText = (const char*)CTransportData::m_sAuto;
+                    routeText = CTransportData::m_sAuto;
                 else if (pVeh->GetEvent() == CVehicle::route)
-                    routeText = (const char*)CTransportData::m_sRoute;
+                    routeText = CTransportData::m_sRoute;
 
                 CBuilding* pBldg = theBuildingHex.GetBuilding(pVeh->GetPtHead());
                 if (pBldg == NULL || pVeh->GetHexOwnership())
@@ -693,9 +693,9 @@ void SDL2UnitList::RenderStatusBars(SDL_Surface* dst, CUnit* pUnit, int x, int y
                 if (pBldg != NULL && pBldg->GetOwner()->IsMe())
                     routeText += (const char*)pBldg->GetData()->GetDesc();
                 else if (pVeh->GetRouteMode() == CVehicle::stop)
-                    routeText += (const char*)CTransportData::m_sIdle;
+                    routeText += CTransportData::m_sIdle;
                 else
-                    routeText += (const char*)CTransportData::m_sTravel;
+                    routeText += CTransportData::m_sTravel;
 
                 RenderIconText(dst, ICON_BAR_TEXT, routeText.c_str(), renderX, y, renderW, barH);
             } else if (pVeh->GetData()->IsCrane() && iOn == 1) {

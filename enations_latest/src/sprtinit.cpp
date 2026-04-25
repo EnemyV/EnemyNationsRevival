@@ -34,10 +34,10 @@ int **CVehicle::m_apiWid = NULL;
 int CVehicle::m_iMaxRange = 0;
 
 int CTransportData::m_iMaxDraft = CHex::sea_level;
-CString    CTransportData::m_sAuto;
-CString    CTransportData::m_sRoute;
-CString    CTransportData::m_sIdle;
-CString    CTransportData::m_sTravel;
+std::string  CTransportData::m_sAuto;
+std::string  CTransportData::m_sRoute;
+std::string  CTransportData::m_sIdle;
+std::string  CTransportData::m_sTravel;
 
 CCriticalSection    CSpriteCollection::g_cs;
 BOOL                    CSpriteCollection::g_bTerminateReadThread;
@@ -673,10 +673,10 @@ void CTransport::InitData() {
     if (m_bLoaded & 0x01)
         return;
 
-    CTransportData::m_sAuto = EnLoadString(IDS_TRUCK_AUTO);
-    CTransportData::m_sRoute = EnLoadString(IDS_TRUCK_ROUTE);
-    CTransportData::m_sIdle = EnLoadString(IDS_TRUCK_IDLE);
-    CTransportData::m_sTravel = EnLoadString(IDS_TRUCK_TRAVEL);
+    CTransportData::m_sAuto = EnLoadStdString(IDS_TRUCK_AUTO);
+    CTransportData::m_sRoute = EnLoadStdString(IDS_TRUCK_ROUTE);
+    CTransportData::m_sIdle = EnLoadStdString(IDS_TRUCK_IDLE);
+    CTransportData::m_sTravel = EnLoadStdString(IDS_TRUCK_TRAVEL);
 
     // read in the RIF data
     Ptr<CMmio> ptrMmio = theDataFile.OpenAsMMIO("units", "UNIT");

@@ -5273,9 +5273,9 @@ void CWndInfo::OnPaint( )
         {
             CString sText;
             if ( !pVeh->IsHpControl( ) )
-                sText = CTransportData::m_sAuto;
+                sText = CTransportData::m_sAuto.c_str( );
             else if ( pVeh->GetEvent( ) == CVehicle::route )
-                sText = CTransportData::m_sRoute;
+                sText = CTransportData::m_sRoute.c_str( );
 
             CBuilding* pBldg = theBuildingHex.GetBuilding( pVeh->GetPtHead( ) );
             if ( ( pBldg == NULL ) || ( pVeh->GetHexOwnership( ) ) )
@@ -5285,9 +5285,9 @@ void CWndInfo::OnPaint( )
             else if ( pVeh->GetData( )->IsTransport( ) )
             {
                 if ( pVeh->GetRouteMode( ) == CVehicle::stop )
-                    sText += CTransportData::m_sIdle;
+                    sText += CTransportData::m_sIdle.c_str( );
                 else
-                    sText += CTransportData::m_sTravel;
+                    sText += CTransportData::m_sTravel.c_str( );
             }
 
             rect.top += theApp.TextHt( ) + theApp.FlatDimen( );

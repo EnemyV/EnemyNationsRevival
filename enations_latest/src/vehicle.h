@@ -178,10 +178,10 @@ protected:
 			TRANS_FLAGS			m_transFlags;								// see enums
 
 public:
-			static CString 		m_sAuto;
-			static CString 		m_sRoute;
-			static CString 		m_sIdle;
-			static CString 		m_sTravel;
+			static std::string 	m_sAuto;
+			static std::string 	m_sRoute;
+			static std::string 	m_sIdle;
+			static std::string 	m_sTravel;
 
 static int m_iMaxDraft;								// depth of water needed for biggest boat
 

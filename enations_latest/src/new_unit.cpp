@@ -864,18 +864,18 @@ void CVehicle::PaintStatusBars( CStatInst* pSi, int iNum, CDC* pDc ) const
     {
         CString sText;
         if ( !IsHpControl( ) )
-            sText = CTransportData::m_sAuto;
+            sText = CTransportData::m_sAuto.c_str( );
         else if ( GetEvent( ) == route )
-            sText = CTransportData::m_sRoute;
+            sText = CTransportData::m_sRoute.c_str( );
         CBuilding* pBldg = theBuildingHex.GetBuilding( GetPtHead( ) );
         if ( ( pBldg == NULL ) || ( GetHexOwnership( ) ) )
             pBldg = theBuildingHex.GetBuilding( GetHexDest( ) );
         if ( ( pBldg != NULL ) && ( pBldg->GetOwner( )->IsMe( ) ) )
             sText += pBldg->GetData( )->GetDesc( );
         else if ( GetRouteMode( ) == stop )
-            sText += CTransportData::m_sIdle;
+            sText += CTransportData::m_sIdle.c_str( );
         else
-            sText += CTransportData::m_sTravel;
+            sText += CTransportData::m_sTravel.c_str( );
         pSi->Attach( &theIcons, ICON_BAR_TEXT );
         pSi->SetText( sText );
         pSi->DrawIcon( pDc );

@@ -470,9 +470,9 @@ void SDL2UnitInfoPanel::BuildContent() {
         if (pVeh->GetData()->IsTransport()) {
             std::string sText;
             if (!pVeh->IsHpControl())
-                sText = (const char*)CTransportData::m_sAuto;
+                sText = CTransportData::m_sAuto.c_str();
             else if (pVeh->GetEvent() == CVehicle::route)
-                sText = (const char*)CTransportData::m_sRoute;
+                sText = CTransportData::m_sRoute.c_str();
 
             CBuilding* pBldg = theBuildingHex.GetBuilding(pVeh->GetPtHead());
             if (pBldg == NULL || pVeh->GetHexOwnership())
@@ -480,9 +480,9 @@ void SDL2UnitInfoPanel::BuildContent() {
             if (pBldg != NULL && pBldg->GetOwner()->IsMe())
                 sText += std::string("[") + (const char*)pBldg->GetData()->GetDesc() + "]";
             else if (pVeh->GetRouteMode() == CVehicle::stop)
-                sText += (const char*)CTransportData::m_sIdle;
+                sText += CTransportData::m_sIdle.c_str();
             else
-                sText += (const char*)CTransportData::m_sTravel;
+                sText += CTransportData::m_sTravel.c_str();
 
             m_lines.push_back({sText, false});
         }
