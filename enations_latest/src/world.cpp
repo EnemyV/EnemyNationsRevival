@@ -202,7 +202,7 @@ void CWndWorld::Create(BOOL bStart) {
     }
 
     // get min size
-    CString sTitle, sClass;
+    CString sTitle;
     m_bIsRadar = theGame.GetMe()->GetExists(CStructureData::command_center);
     if (m_bIsRadar)
         sTitle = EnLoadString(IDS_WORLD_TITLE_RADAR);
@@ -215,7 +215,7 @@ void CWndWorld::Create(BOOL bStart) {
         csPrintf(&sTitle, (char const *) m_sDir[m_pWndArea->GetAA().m_iDir]);
 
     // World window (so it can have a cross-hair
-    sClass = AfxRegisterWndClass(dwStyleWorldWnd, theApp.LoadStandardCursor(IDC_CROSS), 0, 0);
+    LPCTSTR sClass = AfxRegisterWndClass(dwStyleWorldWnd, theApp.LoadStandardCursor(IDC_CROSS), 0, 0);
 
     // if it crashes here, i think a gfx bitmap is missing?
     // theApp.m_pMainWnd->m_hWnd is wrong, i think
