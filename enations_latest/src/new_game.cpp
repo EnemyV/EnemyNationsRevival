@@ -388,9 +388,8 @@ void CDlgPlayerList::OnShowAddr() {
 
     SetWindowPos(NULL, 0, 0, m_iWid, m_bAddrShowing ? m_iHtAddr : m_iHtNoAddr,
                  SWP_NOMOVE | SWP_NOZORDER);
-    CString sText;
-    sText = EnLoadString(m_bAddrShowing ? IDS_ADDR_OFF : IDS_ADDR);
-    SetDlgItemText(IDC_PLYR_DO_ADDR, sText);
+    std::string sText = EnLoadStdString(m_bAddrShowing ? IDS_ADDR_OFF : IDS_ADDR);
+    SetDlgItemText(IDC_PLYR_DO_ADDR, sText.c_str());
 }
 
 void CDlgPlayerList::OnTimer(UINT nIDEvent) {
@@ -546,11 +545,9 @@ void CDlgPlayerList::SetNumPlayers() {
 
     ASSERT_VALID (this);
 
-    CString sText;
-    sText = EnLoadString(IDS_CREATE_NUM_PLAYERS);
-    CString sNum = IntToCString(m_lstPlayers.GetCount());
-    csPrintf(&sText, (const char *) sNum);
-    m_btnNumPlayers.SetWindowText(sText);
+    std::string sText = strPrintf(EnLoadStdString(IDS_CREATE_NUM_PLAYERS).c_str(),
+                                  IntToStr(m_lstPlayers.GetCount()).c_str());
+    m_btnNumPlayers.SetWindowText(sText.c_str());
 
     UpdateBtns();
 }
