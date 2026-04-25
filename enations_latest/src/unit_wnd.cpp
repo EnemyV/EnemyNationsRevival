@@ -1264,7 +1264,8 @@ void CDlgBuildStructure::OnPaint() {
         // time
         pDcTxt->DrawText(m_sTime, &rect, DT_LEFT | DT_SINGLELINE | DT_TOP);
         rect.right = 366;
-        int iHt = pDcTxt->DrawText(IntToCString(m_pSd->m_iTimeBuild / 24), &rect, DT_RIGHT | DT_SINGLELINE | DT_TOP);
+        std::string sNum = IntToStr(m_pSd->m_iTimeBuild / 24);
+        int iHt = pDcTxt->DrawText(sNum.c_str(), -1, &rect, DT_RIGHT | DT_SINGLELINE | DT_TOP);
         rect.top += iHt;
 
         // materials
@@ -1272,15 +1273,17 @@ void CDlgBuildStructure::OnPaint() {
             if (m_pSd->m_aiBuild[iInd] > 0) {
                 pDcTxt->DrawText(CMaterialTypes::GetDesc(iInd).c_str(), -1, &rect, DT_LEFT | DT_SINGLELINE | DT_TOP);
                 rect.right = 366;
-                pDcTxt->DrawText(IntToCString(m_pSd->m_aiBuild[iInd]), &rect, DT_RIGHT | DT_SINGLELINE | DT_TOP);
+                sNum = IntToStr(m_pSd->m_aiBuild[iInd]);
+                pDcTxt->DrawText(sNum.c_str(), -1, &rect, DT_RIGHT | DT_SINGLELINE | DT_TOP);
                 rect.right = 402;
-                iHt = pDcTxt->DrawText(IntToCString(theGame.GetMe()->GetMaterialHave(iInd)), &rect,
-                                       DT_RIGHT | DT_SINGLELINE | DT_TOP);
+                sNum = IntToStr(theGame.GetMe()->GetMaterialHave(iInd));
+                iHt = pDcTxt->DrawText(sNum.c_str(), -1, &rect, DT_RIGHT | DT_SINGLELINE | DT_TOP);
                 int iLoss = theGame.GetMe()->GetMaterialHave(iInd) - m_pSd->m_aiBuild[iInd];
                 if (iLoss < 0) {
                     rect.right = 439;
                     pDcTxt->SetTextColor(PALETTERGB (255, 41, 8));
-                    pDcTxt->DrawText("(" + IntToCString(iLoss) + ")", &rect, DT_RIGHT | DT_SINGLELINE | DT_TOP);
+                    std::string sLoss = "(" + IntToStr(iLoss) + ")";
+                    pDcTxt->DrawText(sLoss.c_str(), -1, &rect, DT_RIGHT | DT_SINGLELINE | DT_TOP);
                     pDcTxt->SetTextColor(PALETTERGB (41, 255, 8));
                 }
                 rect.top += iHt;
@@ -1293,28 +1296,34 @@ void CDlgBuildStructure::OnPaint() {
 
         pDcTxt->DrawText(m_sPeople, &rect, DT_LEFT | DT_SINGLELINE | DT_TOP);
         rect.right = 366;
-        pDcTxt->DrawText(IntToCString(m_pSd->GetPeople()), &rect, DT_RIGHT | DT_SINGLELINE | DT_TOP);
+        sNum = IntToStr(m_pSd->GetPeople());
+        pDcTxt->DrawText(sNum.c_str(), -1, &rect, DT_RIGHT | DT_SINGLELINE | DT_TOP);
         rect.right = 402;
-        iHt = pDcTxt->DrawText(IntToCString(theGame.GetMe()->GetPplTotal()), &rect, DT_RIGHT | DT_SINGLELINE | DT_TOP);
+        sNum = IntToStr(theGame.GetMe()->GetPplTotal());
+        iHt = pDcTxt->DrawText(sNum.c_str(), -1, &rect, DT_RIGHT | DT_SINGLELINE | DT_TOP);
         int iLoss = theGame.GetMe()->GetPplBldg() - theGame.GetMe()->GetPplNeedBldg() - m_pSd->GetPeople();
         if (iLoss < 0) {
             rect.right = 439;
             pDcTxt->SetTextColor(PALETTERGB (255, 41, 8));
-            pDcTxt->DrawText("(" + IntToCString(iLoss) + ")", &rect, DT_RIGHT | DT_SINGLELINE | DT_TOP);
+            std::string sLoss = "(" + IntToStr(iLoss) + ")";
+            pDcTxt->DrawText(sLoss.c_str(), -1, &rect, DT_RIGHT | DT_SINGLELINE | DT_TOP);
             pDcTxt->SetTextColor(PALETTERGB (71, 71, 225));
         }
         rect.top += iHt;
 
         pDcTxt->DrawText(m_sPower, &rect, DT_LEFT | DT_SINGLELINE | DT_TOP);
         rect.right = 366;
-        pDcTxt->DrawText(IntToCString(m_pSd->m_iPower), &rect, DT_RIGHT | DT_SINGLELINE | DT_TOP);
+        sNum = IntToStr(m_pSd->m_iPower);
+        pDcTxt->DrawText(sNum.c_str(), -1, &rect, DT_RIGHT | DT_SINGLELINE | DT_TOP);
         rect.right = 402;
-        iHt = pDcTxt->DrawText(IntToCString(theGame.GetMe()->GetPwrHave()), &rect, DT_RIGHT | DT_SINGLELINE | DT_TOP);
+        sNum = IntToStr(theGame.GetMe()->GetPwrHave());
+        iHt = pDcTxt->DrawText(sNum.c_str(), -1, &rect, DT_RIGHT | DT_SINGLELINE | DT_TOP);
         iLoss = theGame.GetMe()->GetPwrHave() - theGame.GetMe()->GetPwrNeed() - m_pSd->m_iPower;
         if (iLoss < 0) {
             rect.right = 439;
             pDcTxt->SetTextColor(PALETTERGB (255, 41, 8));
-            pDcTxt->DrawText("(" + IntToCString(iLoss) + ")", &rect, DT_RIGHT | DT_SINGLELINE | DT_TOP);
+            std::string sLoss = "(" + IntToStr(iLoss) + ")";
+            pDcTxt->DrawText(sLoss.c_str(), -1, &rect, DT_RIGHT | DT_SINGLELINE | DT_TOP);
             pDcTxt->SetTextColor(PALETTERGB (71, 71, 225));
         }
         rect.top += iHt;
@@ -1757,12 +1766,12 @@ void CDlgBuildTransport::OnPaint() {
         // time
         pDcTxt->DrawText(m_sTime, &rect, DT_LEFT | DT_SINGLELINE | DT_TOP);
         rect.right = 270;
-        CString sTime = IntToCString(m_pBu->m_iTime / 24);
-        int iHt = pDcTxt->DrawText(sTime, &rect, DT_RIGHT | DT_SINGLELINE | DT_TOP);
+        std::string sTime = IntToStr(m_pBu->m_iTime / 24);
+        int iHt = pDcTxt->DrawText(sTime.c_str(), -1, &rect, DT_RIGHT | DT_SINGLELINE | DT_TOP);
         if (m_iNum > 1) {
-            sTime = "(" + IntToCString((m_iNum * m_pBu->m_iTime) / 24) + ")";
+            sTime = "(" + IntToStr((m_iNum * m_pBu->m_iTime) / 24) + ")";
             rect.right = 315;
-            pDcTxt->DrawText(sTime, &rect, DT_RIGHT | DT_SINGLELINE | DT_TOP);
+            pDcTxt->DrawText(sTime.c_str(), -1, &rect, DT_RIGHT | DT_SINGLELINE | DT_TOP);
         }
         rect.top += iHt;
 
@@ -1771,16 +1780,17 @@ void CDlgBuildTransport::OnPaint() {
             if (m_pBu->m_aiInput[iInd] > 0) {
                 pDcTxt->DrawText(CMaterialTypes::GetDesc(iInd).c_str(), -1, &rect, DT_LEFT | DT_SINGLELINE | DT_TOP);
                 rect.right = 270;
-                pDcTxt->DrawText(IntToCString(m_pBu->m_aiInput[iInd] * m_iNum), &rect,
-                                 DT_RIGHT | DT_SINGLELINE | DT_TOP);
+                std::string sNum = IntToStr(m_pBu->m_aiInput[iInd] * m_iNum);
+                pDcTxt->DrawText(sNum.c_str(), -1, &rect, DT_RIGHT | DT_SINGLELINE | DT_TOP);
                 rect.right = 315;
-                int iHt = pDcTxt->DrawText(IntToCString(m_pBldgPar->GetStore(iInd)), &rect,
-                                           DT_RIGHT | DT_SINGLELINE | DT_TOP);
+                sNum = IntToStr(m_pBldgPar->GetStore(iInd));
+                int iHt = pDcTxt->DrawText(sNum.c_str(), -1, &rect, DT_RIGHT | DT_SINGLELINE | DT_TOP);
                 int iLoss = m_pBldgPar->GetStore(iInd) - (m_pBu->m_aiInput[iInd] * m_iNum);
                 if (iLoss < 0) {
                     rect.right = 360;
                     pDcTxt->SetTextColor(PALETTERGB (255, 41, 8));
-                    pDcTxt->DrawText("(" + IntToCString(iLoss) + ")", &rect, DT_RIGHT | DT_SINGLELINE | DT_TOP);
+                    std::string sLoss = "(" + IntToStr(iLoss) + ")";
+                    pDcTxt->DrawText(sLoss.c_str(), -1, &rect, DT_RIGHT | DT_SINGLELINE | DT_TOP);
                     pDcTxt->SetTextColor(PALETTERGB (41, 255, 8));
                 }
                 rect.top += iHt;
@@ -1793,8 +1803,8 @@ void CDlgBuildTransport::OnPaint() {
         pDcTxt->DrawText(m_sPeople, &rect, DT_LEFT | DT_SINGLELINE | DT_TOP);
         rect.right = 315;
         CTransportData const *pData = theTransports.GetData(m_pBu->GetVehType());
-        rect.top += pDcTxt->DrawText(IntToCString(m_iNum * pData->GetPeople()), &rect,
-                                     DT_RIGHT | DT_SINGLELINE | DT_TOP);
+        std::string sPeople = IntToStr(m_iNum * pData->GetPeople());
+        rect.top += pDcTxt->DrawText(sPeople.c_str(), -1, &rect, DT_RIGHT | DT_SINGLELINE | DT_TOP);
 
         pDcTxt->MoveTo(210, 142);
         pDcTxt->LineTo(210, rect.top);
