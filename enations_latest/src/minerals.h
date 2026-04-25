@@ -41,7 +41,7 @@ public:
 
 		int			GetDensity () { ASSERT_STRICT_VALID (this); return (m_cDensity); }
 		int			GetQuantity () { ASSERT_STRICT_VALID (this); return (m_lQuantity); }
-		CString		GetStatus ();
+		std::string	GetStatus ();
 		int			GetType () { ASSERT_STRICT_VALID (this); return (m_cType); }
 		void		SetDensity (int iNum) { m_cDensity = iNum; }
 		void		SetQuantity (int iNum) 

@@ -149,13 +149,13 @@ void AFXAPI SerializeElements<CMinerals*>( CArchive& ar, CMinerals** ppMn, INT_P
 /////////////////////////////////////////////////////////////////////////////
 // A mineral deposit
 
-CString CMinerals::GetStatus ()
+std::string CMinerals::GetStatus ()
 {
 
 	ASSERT_VALID (this);
 
-	return (CString (" - [" + CMaterialTypes::GetDesc (m_cType) + " (" + 
-					IntToCString (m_cDensity) + "," + IntToCString (m_lQuantity) + ")]"));
+	return std::string (" - [") + (LPCSTR)CMaterialTypes::GetDesc (m_cType) + " (" +
+		   IntToStr (m_cDensity) + "," + IntToStr (m_lQuantity) + ")]";
 }
 
 CMinerals::CMinerals (int iType, int iDensity, int iQuantity)

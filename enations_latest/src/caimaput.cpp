@@ -9217,11 +9217,8 @@ void CAIMapUtil::ReportGroupHex( int iBldg, int iWidthX, int iWidthY, CHexCoord&
         // check hex for material
         if ( theMinerals.Lookup( hexMin, pmn ) )
         {
-            sName = pmn->GetStatus( );
-
-            logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "Mineral found: %s ", (const char*)sName );
-
-            sName.Empty( );
+            std::string sStatus = pmn->GetStatus( );
+            logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "Mineral found: %s ", sStatus.c_str( ) );
         }
 
         if ( paiGrpHex->m_dwUnitID )
