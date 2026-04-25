@@ -46,10 +46,10 @@ static char BASED_CODE THIS_FILE[] = __FILE__;
 #define new DEBUG_NEW
 
 
-CString CWndBar::m_sChat1;
-CString CWndBar::m_sChat2;
-CString CWndBar::m_sScience;
-CString CWndBar::m_sRelations;
+std::string CWndBar::m_sChat1;
+std::string CWndBar::m_sChat2;
+std::string CWndBar::m_sScience;
+std::string CWndBar::m_sRelations;
 
 
 /////////////////////////////////////////////////////////////////////////////
@@ -154,10 +154,10 @@ void CWndBar::Create( )
 {
 
     // load the strings
-    m_sChat1 = EnLoadString( IDS_NO_CHAT1 );
-    m_sChat2 = EnLoadString( IDS_NO_CHAT2 );
-    m_sScience = EnLoadString( IDS_NO_SCIENCE );
-    m_sRelations = EnLoadString( IDS_NO_EMBASSY );
+    m_sChat1 = EnLoadStdString( IDS_NO_CHAT1 );
+    m_sChat2 = EnLoadStdString( IDS_NO_CHAT2 );
+    m_sScience = EnLoadStdString( IDS_NO_SCIENCE );
+    m_sRelations = EnLoadStdString( IDS_NO_EMBASSY );
 
     // we go at the bottom of the main window (in case the Windows toolbar pushes it up/over)
     CRect rect;
@@ -968,14 +968,14 @@ void CWndBar::OnMouseMove( UINT nFlags, CPoint point )
     if ( pChild == GetDlgItem( IDC_BAR_CHAT ) )
     {
         if ( ( theGame.GetMe( ) != NULL ) && ( theGame.GetMe( )->GetNetNum( ) != 0 ) )
-            m_wndText[1].SetText( m_sChat2 );
+            m_wndText[1].SetText( m_sChat2.c_str( ) );
         else
-            m_wndText[1].SetText( m_sChat1 );
+            m_wndText[1].SetText( m_sChat1.c_str( ) );
     }
     else if ( pChild == GetDlgItem( IDC_BAR_SCIENCE ) )
-        m_wndText[1].SetText( m_sScience );
+        m_wndText[1].SetText( m_sScience.c_str( ) );
     else if ( pChild == GetDlgItem( IDC_BAR_ADVISOR ) )
-        m_wndText[1].SetText( m_sRelations );
+        m_wndText[1].SetText( m_sRelations.c_str( ) );
     else
         m_wndText[1].SetText( "" );
 }

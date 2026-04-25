@@ -128,10 +128,10 @@ class CWndBar : public CWndAnim
     static const int aID[NUM_BAR_BTNS];
     static const int aBtn[NUM_BAR_BTNS];
     static const int aHelp[NUM_BAR_BTNS];
-    static CString   m_sChat1;
-    static CString   m_sChat2;
-    static CString   m_sScience;
-    static CString   m_sRelations;
+    static std::string m_sChat1;
+    static std::string m_sChat2;
+    static std::string m_sScience;
+    static std::string m_sRelations;
 };
 
 
