@@ -173,8 +173,8 @@ void CDlgCreateSingle::OnChangeCreateNumAi()
 		}
 
 	// must be legit number
-	CString sNum = IntToCString (iNum);
-	if (sNum != m_strAiNum)
+	std::string sNum = IntToStr (iNum);
+	if (sNum != (LPCSTR)m_strAiNum)
 		{
 		m_btnOk.EnableWindow (FALSE);
 		return;
@@ -210,21 +210,17 @@ void CDlgCreateSingle::OnOK()
 		iMax = 3 + iMax / 20;
 		if ( m_pCs->m_iNumAi > iMax * 2 )
 			{
-			CString sText;
-			sText = EnLoadString( IDS_AI_LIMIT_2_MAX );
-			CString sNum = IntToCString ( 2 * iMax );
-			csPrintf (&sText, (char const *) sNum);
-			EnMessageBox( sText, MB_OK | MB_ICONSTOP );
+			std::string sText = strPrintf( EnLoadStdString( IDS_AI_LIMIT_2_MAX ).c_str(),
+			                               IntToStr( 2 * iMax ).c_str() );
+			EnMessageBox( sText.c_str(), MB_OK | MB_ICONSTOP );
 			return;
 			}
 		else
 			if ( m_pCs->m_iNumAi > iMax )
 				{
-				CString sText;
-				sText = EnLoadString( IDS_AI_LIMIT_MAX );
-				CString sNum = IntToCString ( iMax );
-				csPrintf (&sText, (char const *) sNum);
-				if ( EnMessageBox( sText, MB_YESNO | MB_ICONSTOP ) != IDYES )
+				std::string sText = strPrintf( EnLoadStdString( IDS_AI_LIMIT_MAX ).c_str(),
+				                               IntToStr( iMax ).c_str() );
+				if ( EnMessageBox( sText.c_str(), MB_YESNO | MB_ICONSTOP ) != IDYES )
 					return;
 				}
 		}
