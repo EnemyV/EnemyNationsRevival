@@ -2944,7 +2944,7 @@ void CVehicle::SetDestAndMode( CSubHex sub, VEH_POS iMode )
     m_hexLastDest = sub;
 
     // a goto for ANY reason means this goes away
-    DestroyLoadWindow( );
+    // (was DestroyLoadWindow(); SDL2LoadTruckDialog is modal so nothing persists)
 
     m_iTimesOn      = 0;
     m_iClosest      = INT_MAX;

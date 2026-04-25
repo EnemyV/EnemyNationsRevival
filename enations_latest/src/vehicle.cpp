@@ -1219,40 +1219,15 @@ BOOL CVehicle::CanShootAt(CUnit *pTarget) {
     return (iDif <= 2);
 }
 
-void CVehicle::DestroyLoadWindow() {
-
-    if ((m_pDlgLoad != NULL) && (m_pDlgLoad->m_hWnd != NULL))
-        m_pDlgLoad->DestroyWindow();
-    else
-        delete m_pDlgLoad;
-    m_pDlgLoad = NULL;
-}
-
-CDlgLoadTruck *CVehicle::GetDlgLoad() {
+void CVehicle::ShowLoadDialog() {
 
     if (!GetData()->IsTransport()) {
         TRAP();
-        return (NULL);
+        return;
     }
 
-    // Native SDL2 dialog
-    if (theApp.m_gameWindow) {
-        SDL2LoadTruckDialog dlg(theApp.m_gameWindow.get(), this);
-        dlg.DoModal();
-        return m_pDlgLoad;
-    }
-
-    // MFC fallback
-    CWndArea *pWndArea = theAreaList.GetTop();
-    if (m_pDlgLoad == NULL)
-        m_pDlgLoad = new CDlgLoadTruck(pWndArea, this);
-    if (m_pDlgLoad->m_hWnd == NULL)
-        m_pDlgLoad->Create(IDD_TRUCK, pWndArea);
-
-    m_pDlgLoad->ShowWindow(SW_RESTORE);
-    m_pDlgLoad->SetFocus();
-
-    return (m_pDlgLoad);
+    SDL2LoadTruckDialog dlg(theApp.m_gameWindow.get(), this);
+    dlg.DoModal();
 }
 
 void CVehicle::SetBridgeHex(CHexCoord const &hexStart, CHexCoord const &hexEnd, DWORD dwID, int iAlt) {
@@ -1310,7 +1285,6 @@ void CVehicle::DestroyAllWindows() {
 
     DestroyRouteWindow();
     DestroyBuildWindow();
-    DestroyLoadWindow();
 }
 
 // dump the contents of this truck in the nearest warehouse and give to auto router

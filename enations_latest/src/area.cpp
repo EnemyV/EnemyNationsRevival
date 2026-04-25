@@ -3936,7 +3936,7 @@ void CWndArea::OnLButtonDblClk( UINT nFlags, CPoint point )
                  ( pVeh->GetData( )->IsTransport( ) ) && ( pVeh->IsHpControl( ) ) &&
                  ( theBuildingHex._GetBuilding( pVeh->GetPtHead( ) ) == punit ) )
             {
-                pVeh->GetDlgLoad( );
+                pVeh->ShowLoadDialog( );
                 break;
             }
         }

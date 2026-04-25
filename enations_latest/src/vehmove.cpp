@@ -446,7 +446,7 @@ void CVehicle::ArrivedDest() {
 
             // if we're controlling the truck
             if ((GetData()->IsTransport()) && ((m_bFlags & hp_controls) != 0))
-                GetDlgLoad();
+                ShowLoadDialog();
             break;
         }
 

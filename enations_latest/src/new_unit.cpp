@@ -4547,7 +4547,6 @@ void CVehicle::ctor( )
     m_pWndRoute     = NULL;
     m_cOwn          = FALSE;
     m_pDlgStructure = NULL;
-    m_pDlgLoad      = NULL;
 
     m_pVehLoadOn = NULL;
     m_pTransport = NULL;

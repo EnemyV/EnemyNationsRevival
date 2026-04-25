@@ -14,7 +14,6 @@
 
 #include "unit.h"
 #include "unit_wnd.h"
-#include "loadtruk.h"
 #include "netcmd.h"
 
 
@@ -328,13 +327,11 @@ public:
 
 		void					DestroyRouteWindow ();
 		void					DestroyBuildWindow ();
-		void					DestroyLoadWindow ();
 		void					DestroyAllWindows ();
 
 		void					UpdateChoices ();
 		CDlgBuildStructure * 	GetDlgBuild ();
-		CDlgLoadTruck * 	GetDlgLoad ();
-		void					NullLoadWindow () { m_pDlgLoad = NULL; }
+		void					ShowLoadDialog ();
 
 		static CVehicle * Create ( const CSubHex & ptHead, const CSubHex & ptTail, 
 											int iVeh, int iOwner = 0, DWORD ID = 0, VEH_MODE iRouteMode = stop, 
@@ -507,7 +504,6 @@ protected:
 										CPoint * ) const;
 
 		CDlgBuildStructure * 	m_pDlgStructure;
-		CDlgLoadTruck *				m_pDlgLoad;
 	SDL2BuildStructure*     m_pSdlBuild = nullptr;  // SDL2 non-modal build dialog
 
 		// travelling in another vehicle, carrying another vehicle

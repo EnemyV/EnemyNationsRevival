@@ -237,13 +237,10 @@ void SDL2LoadTruckDialog::OnInit() {
             m_pBldg->EventOff();
             // Send truck out the exit
             m_pVeh->ExitBuilding();
-            // Clear pointer so MFC dialog also goes away
-            m_pVeh->NullLoadWindow();
             EndDialog(1);
         });
     AddWidget<SDL2Button>(m_x + 100, y, 80, 26, "Cancel",
         [this]() {
-            m_pVeh->NullLoadWindow();
             EndDialog(0);
         });
 }
