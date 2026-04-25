@@ -430,11 +430,10 @@ void CDlgPickPlayer::OnSelchangeRaceList() {
         m_sDesc += "\r\n";
     }
 
-    CString sTmp;
-    sTmp = EnLoadString(IDS_BUILDINGS);
-    m_sDesc += sTmp + " " + IntToCString(pData->m_iNumBldgs) + "\r\n";
-    sTmp = EnLoadString(IDS_VEHICLES);
-    m_sDesc += sTmp + " " + IntToCString(pData->m_iNumVeh) + "\r\n";
+    std::string sTmp = EnLoadStdString(IDS_BUILDINGS);
+    m_sDesc += sTmp.c_str() + CString(" ") + IntToCString(pData->m_iNumBldgs) + "\r\n";
+    sTmp = EnLoadStdString(IDS_VEHICLES);
+    m_sDesc += sTmp.c_str() + CString(" ") + IntToCString(pData->m_iNumVeh) + "\r\n";
     for (int iOn = 0; iOn < CMaterialTypes::GetNumTypes(); iOn++)
         if (pData->m_iMat[iOn] > 0)
             m_sDesc += CMaterialTypes::GetDesc(iOn) + ": " + IntToCString(pData->m_iMat[iOn]) + "\r\n";
