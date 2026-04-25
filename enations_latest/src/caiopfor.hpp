@@ -36,7 +36,7 @@ class CAIOpFor : public CObject
 protected:
 
 	int m_iPlayer;			// game generated id (called owner sometimes)
-	CString m_sName;		// name of the OpFor
+	std::string m_sName;	// name of the OpFor
 	DWORD m_dwRocket;		// id of the rocket building
 
 							// the OpFor units we know about
@@ -72,7 +72,7 @@ public:
 
 	int GetPlayerID( void );
 	
-	CString& GetName( void );
+	std::string& GetName( void );
 
 	int GetStrengths( void );
 	int GetIndustrial( void );

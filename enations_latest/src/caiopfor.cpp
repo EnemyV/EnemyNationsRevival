@@ -895,7 +895,7 @@ void CAIOpFor::SetAttitude( int iAttitude )
 //
 // return the name of the CAIOpFor
 //
-CString& CAIOpFor::GetName( void )
+std::string& CAIOpFor::GetName( void )
 {
     ASSERT_VALID( this );
     return m_sName;
@@ -930,7 +930,6 @@ CAIOpFor::~CAIOpFor( )
         delete[] m_pwaAttackedBldgs;
         m_pwaAttackedBldgs = NULL;
     }
-    m_sName.Empty( );
 }
 void CAIOpFor::Save( CArchive& ar )
 {
