@@ -5332,7 +5332,8 @@ void CWndInfo::OnPaint( )
         {
             rect.top += theApp.TextHt( ) + theApp.FlatDimen( );
             rect.bottom   = rect.top + theApp.TextHt( );
-            CString sText = CMaterialTypes::GetDesc( iOn ) + ": " + IntToCString( m_pUnit->GetStore( iOn ), 10, TRUE );
+            CString sText = CMaterialTypes::GetDesc( iOn ).c_str( ) + CString( ": " ) +
+                            IntToCString( m_pUnit->GetStore( iOn ), 10, TRUE );
             _DrawText( pDc, rect, sText );
 
             if ( iNeed > 0 )

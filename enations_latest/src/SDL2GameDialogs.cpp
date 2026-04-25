@@ -518,7 +518,7 @@ void SDL2UnitInfoPanel::BuildContent() {
         if (i < CMaterialTypes::GetNumBuildTypes() && m_pUnit->GetUnitType() == CUnit::building)
             iNeed = ((CBuilding*)m_pUnit)->GetBldgResReq(i, FALSE);
         if (m_pUnit->GetStore(i) != 0 || iNeed > 0) {
-            std::string s = (const char*)CMaterialTypes::GetDesc(i);
+            std::string s = CMaterialTypes::GetDesc(i);
             s += ": " + std::to_string(m_pUnit->GetStore(i));
             if (iNeed > 0)
                 s += " (" + std::to_string(iNeed) + ")";

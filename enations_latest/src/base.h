@@ -631,7 +631,7 @@ class CMaterialTypes
 
     static int            GetNumTypes( ) { return ( num_types ); }
     static int            GetNumBuildTypes( ) { return ( num_build_types ); }
-    static CString const& GetDesc( int iInd )
+    static std::string const& GetDesc( int iInd )
     {
         ASSERT_STRICT( ( 0 <= iInd ) && ( iInd < num_types ) );
         return ( m_saDesc[iInd] );
@@ -643,7 +643,7 @@ class CMaterialTypes
     }
 
   protected:
-    static CString  m_saDesc[num_types];
+    static std::string m_saDesc[num_types];
     static COLORREF m_rgb[num_types + 1];
 };
 

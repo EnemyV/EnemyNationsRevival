@@ -64,7 +64,7 @@ void TerrainStatusText( void* pData, CString& str )
     std::string sNum2 = IntToStr( pMn->GetDensity( ) );
     std::string sResult = strPrintf(
         EnLoadStdString( IDS_STAT_MINERALS ).c_str(),
-        (const char*)CMaterialTypes::GetDesc( pMn->GetType( ) ),
+        CMaterialTypes::GetDesc( pMn->GetType( ) ).c_str( ),
         sNum1.c_str(), sNum2.c_str() );
     str = sResult.c_str();
 }

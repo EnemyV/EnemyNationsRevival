@@ -154,7 +154,7 @@ std::string CMinerals::GetStatus ()
 
 	ASSERT_VALID (this);
 
-	return std::string (" - [") + (LPCSTR)CMaterialTypes::GetDesc (m_cType) + " (" +
+	return " - [" + CMaterialTypes::GetDesc (m_cType) + " (" +
 		   IntToStr (m_cDensity) + "," + IntToStr (m_lQuantity) + ")]";
 }
 

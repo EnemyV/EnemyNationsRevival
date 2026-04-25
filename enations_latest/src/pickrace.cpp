@@ -436,7 +436,7 @@ void CDlgPickPlayer::OnSelchangeRaceList() {
     m_sDesc += sTmp.c_str() + CString(" ") + IntToCString(pData->m_iNumVeh) + "\r\n";
     for (int iOn = 0; iOn < CMaterialTypes::GetNumTypes(); iOn++)
         if (pData->m_iMat[iOn] > 0)
-            m_sDesc += CMaterialTypes::GetDesc(iOn) + ": " + IntToCString(pData->m_iMat[iOn]) + "\r\n";
+            m_sDesc += CMaterialTypes::GetDesc(iOn).c_str() + CString(": ") + IntToCString(pData->m_iMat[iOn]) + "\r\n";
 
     UpdateData(FALSE);
 

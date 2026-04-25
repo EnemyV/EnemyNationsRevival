@@ -52,7 +52,7 @@ COLORREF CUnit::m_clrOk;
 COLORREF CUnit::m_clrWarn;
 COLORREF CUnit::m_clrBad;
 
-CString  CMaterialTypes::m_saDesc[num_types];
+std::string CMaterialTypes::m_saDesc[num_types];
 COLORREF CMaterialTypes::m_rgb[num_types + 1];
 
 // GG: Default sprite for each vehicle category.
@@ -146,7 +146,7 @@ void CMaterialBuilding::ShowStatusText( std::string& str )
     }
 
     // this is the only way it generates code correctly
-    char const* pDesc = CMaterialTypes::GetDesc( iTyp );
+    char const* pDesc = CMaterialTypes::GetDesc( iTyp ).c_str( );
     char        sNum[14];
     int         iNum = (int)( GetFrameProd( GetOwner( )->GetMtrlsProd( ) * float( 24 * 60 * pBm->GetOutput( iTyp ) ) /
                                             float( pBm->GetTime( ) ) ) );
@@ -298,7 +298,7 @@ void CMineBuilding::ShowStatusText( std::string& str )
     if ( m_iMinerals <= 0 )
     {
         str = strPrintf( EnLoadStdString( IDS_EXHAUSTED ).c_str(),
-                         (const char*)CMaterialTypes::GetDesc( GetData( )->GetBldMine( )->GetTypeMines( ) ) );
+                         CMaterialTypes::GetDesc( GetData( )->GetBldMine( )->GetTypeMines( ) ).c_str( ) );
         return;
     }
 
@@ -1026,7 +1026,7 @@ void CMaterialTypes::ctor( )
     pMmio->DescendRiff( 'L', 'A', 'N', 'G' );
     pMmio->DescendList( 'M', 'T', 'R', 'L' );
 
-    CString* pStr = m_saDesc;
+    std::string* pStr = m_saDesc;
     for ( int iOn = 0; iOn < GetNumTypes( ); iOn++, pStr++ )
     {
         pMmio->DescendChunk( 'D', 'A', 'T', 'A' );
@@ -1052,13 +1052,7 @@ void CMaterialTypes::ctor( )
 
 void CMaterialTypes::dtor( )
 {
-
-    CString* pStr = m_saDesc;
-    for ( int iOn = 0; iOn < GetNumTypes( ); iOn++, pStr++ )
-    {
-        pStr->ReleaseBuffer( 0 );
-        pStr->FreeExtra( );
-    }
+    // std::string handles its own memory; nothing to do
 }
 
 

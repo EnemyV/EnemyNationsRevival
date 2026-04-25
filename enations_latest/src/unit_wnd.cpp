@@ -1270,7 +1270,7 @@ void CDlgBuildStructure::OnPaint() {
         // materials
         for (int iInd = 0; iInd < CMaterialTypes::GetNumBuildTypes(); iInd++)
             if (m_pSd->m_aiBuild[iInd] > 0) {
-                pDcTxt->DrawText(CMaterialTypes::GetDesc(iInd), &rect, DT_LEFT | DT_SINGLELINE | DT_TOP);
+                pDcTxt->DrawText(CMaterialTypes::GetDesc(iInd).c_str(), -1, &rect, DT_LEFT | DT_SINGLELINE | DT_TOP);
                 rect.right = 366;
                 pDcTxt->DrawText(IntToCString(m_pSd->m_aiBuild[iInd]), &rect, DT_RIGHT | DT_SINGLELINE | DT_TOP);
                 rect.right = 402;
@@ -1769,7 +1769,7 @@ void CDlgBuildTransport::OnPaint() {
         // materials
         for (int iInd = 0; iInd < CMaterialTypes::GetNumBuildTypes(); iInd++)
             if (m_pBu->m_aiInput[iInd] > 0) {
-                pDcTxt->DrawText(CMaterialTypes::GetDesc(iInd), &rect, DT_LEFT | DT_SINGLELINE | DT_TOP);
+                pDcTxt->DrawText(CMaterialTypes::GetDesc(iInd).c_str(), -1, &rect, DT_LEFT | DT_SINGLELINE | DT_TOP);
                 rect.right = 270;
                 pDcTxt->DrawText(IntToCString(m_pBu->m_aiInput[iInd] * m_iNum), &rect,
                                  DT_RIGHT | DT_SINGLELINE | DT_TOP);

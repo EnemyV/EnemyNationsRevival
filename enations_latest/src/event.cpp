@@ -217,7 +217,7 @@ void CGame::Event (int ID, int iTyp, int iVal)
 		case EVENT_HPR_NOACCESS :
 		case EVENT_HPR_NOPICKUP : {
 			int iTyp = __minmax ( 0, CMaterialTypes::GetNumTypes (), iVal );
-			psText = CMaterialTypes::GetDesc ( iTyp );
+			psText = CMaterialTypes::GetDesc ( iTyp ).c_str ();
 			break; }
 		case EVENT_CONST_CANT :
 			psText = theStructures.GetData (iVal)->GetDesc ();

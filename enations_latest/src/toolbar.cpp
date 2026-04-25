@@ -402,7 +402,7 @@ void CWndBar::SetStatusFunc( int iLine, FNSTATUSLINE fnStat, void* pData )
                     need = ( (CBuilding*)pUnit )->GetBldgResReq( i, FALSE );
                 if ( have > 0 || need > 0 )
                 {
-                    text += "  " + std::string( (const char*)CMaterialTypes::GetDesc( i ) ) + ":" + std::to_string( have );
+                    text += "  " + CMaterialTypes::GetDesc( i ) + ":" + std::to_string( have );
                     if ( need > 0 )
                         text += "(" + std::to_string( need ) + ")";
                 }

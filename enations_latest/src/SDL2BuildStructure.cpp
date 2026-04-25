@@ -245,7 +245,7 @@ void SDL2BuildStructure::UpdateDescription() {
         int need = m_pSd->GetBuild(i);
         if (need > 0) {
             int have = theGame.GetMe()->GetMaterialHave(i);
-            std::string line = (const char*)CMaterialTypes::GetDesc(i);
+            std::string line = CMaterialTypes::GetDesc(i);
             while (line.size() < 12) line += ' ';
             line += std::to_string(need);
             while (line.size() < 18) line += ' ';
