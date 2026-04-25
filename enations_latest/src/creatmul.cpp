@@ -208,8 +208,8 @@ void CDlgCreateMulti::OnChangeCreateText ()
 		}
 
 	// must be legit number
-	CString sNum = IntToCString (iNum);
-	if ( (! m_strNumAI.IsEmpty ()) && (sNum != m_strNumAI) )
+	std::string sNum = IntToStr (iNum);
+	if ( (! m_strNumAI.IsEmpty ()) && (sNum != (LPCSTR)m_strNumAI) )
 		{
 		m_btnOk.EnableWindow (FALSE);
 		return;
@@ -250,22 +250,18 @@ void CDlgCreateMulti::OnOK()
 		if ( m_pCm->m_iNumAi > iMax * 2 )
 			{
 			TRAP ();
-			CString sText;
-			sText = EnLoadString( IDS_AI_LIMIT_2_MAX );
-			CString sNum = IntToCString ( 2 * iMax );
-			csPrintf (&sText, (char const *) sNum);
-			EnMessageBox( sText, MB_OK | MB_ICONSTOP );
+			std::string sText = strPrintf( EnLoadStdString( IDS_AI_LIMIT_2_MAX ).c_str(),
+			                               IntToStr( 2 * iMax ).c_str() );
+			EnMessageBox( sText.c_str(), MB_OK | MB_ICONSTOP );
 			return;
 			}
 		else
 			if ( m_pCm->m_iNumAi > iMax )
 				{
 				TRAP ();
-				CString sText;
-				sText = EnLoadString( IDS_AI_LIMIT_MAX );
-				CString sNum = IntToCString ( iMax );
-				csPrintf (&sText, (char const *) sNum);
-				if ( EnMessageBox( sText, MB_YESNO | MB_ICONSTOP ) != IDYES )
+				std::string sText = strPrintf( EnLoadStdString( IDS_AI_LIMIT_MAX ).c_str(),
+				                               IntToStr( iMax ).c_str() );
+				if ( EnMessageBox( sText.c_str(), MB_YESNO | MB_ICONSTOP ) != IDYES )
 					return;
 				}
 		}
@@ -510,12 +506,11 @@ void CDlgCreatePublish::UpdateBtns()
 	if (ID != m_idOK)
 		{
 		m_idOK = ID;
-		CString sBtn;
-		sBtn = EnLoadString(ID);
-		m_btnOk.SetWindowText (sBtn);
+		std::string sBtn = EnLoadStdString(ID);
+		m_btnOk.SetWindowText (sBtn.c_str());
 
-		sBtn = EnLoadString(ID2);
-		m_btnUnpub.SetWindowText (sBtn);
+		sBtn = EnLoadStdString(ID2);
+		m_btnUnpub.SetWindowText (sBtn.c_str());
 		}
 
 	// if we're connected can't change the protocol
