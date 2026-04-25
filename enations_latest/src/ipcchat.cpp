@@ -420,11 +420,10 @@ BOOL CChatWnd::OnCreateClient( LPCREATESTRUCT, CCreateContext* pContext )
     if ( m_wndSplitter.CreateStatic( this, 2, 1 ) )
     {
         CClientDC dc( this );
-        CString   sText;
-        GetWindowText( sText );
-        CSize csText     = dc.GetTextExtent( sText, sText.GetLength( ) );
+        char sText[256];
+        int  iLen        = GetWindowText( sText, (int)sizeof( sText ) );
+        CSize csText     = dc.GetTextExtent( sText, iLen );
         m_iMinPaneHeight = csText.cy + ( csText.cy / 4 );
-        sText.Empty( );
 
         CRect rect;
         GetClientRect( &rect );
