@@ -47,7 +47,7 @@ void ShowBuilding( int iInd, CBuilding* pBldg );
 void UnshowBuilding( CBuilding* pBldg );
 
 
-CString  CUnit::m_sDamage;
+std::string CUnit::m_sDamage;
 COLORREF CUnit::m_clrOk;
 COLORREF CUnit::m_clrWarn;
 COLORREF CUnit::m_clrBad;

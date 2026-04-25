@@ -404,7 +404,7 @@ void CConquerApp::CreateNewWorld(unsigned uRand, AIinit *pAiData, int iSide, int
     xiDir = 0;
     xpdibwnd = NULL;
 
-    CUnit::m_sDamage = EnLoadString(IDS_DAMAGE);
+    CUnit::m_sDamage = EnLoadStdString(IDS_DAMAGE);
     InitColors( );
 
     // put up a creating window and hourglass

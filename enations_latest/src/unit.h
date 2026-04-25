@@ -631,9 +631,9 @@ class CUnit : public CUnitTile
     static COLORREF    GetOk( ) { return ( m_clrOk ); }
     static COLORREF    GetWarn( ) { return ( m_clrWarn ); }
     static COLORREF    GetBad( ) { return ( m_clrBad ); }
-    static char const* GetsDamage( ) { return ( m_sDamage ); }
+    static char const* GetsDamage( ) { return ( m_sDamage.c_str( ) ); }
 
-    static CString  m_sDamage;
+    static std::string m_sDamage;
     static COLORREF m_clrOk;
     static COLORREF m_clrWarn;
     static COLORREF m_clrBad;
