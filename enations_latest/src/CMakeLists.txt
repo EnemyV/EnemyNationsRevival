@@ -53,7 +53,6 @@ set(enations_sources
         lastplnt.cpp
         lastplnt.rc
         license.cpp
-#        loadtruk.cpp  # CDlgLoadTruck removed; SDL2LoadTruckDialog replaces it
         main.cpp
         mainloop.cpp
         minerals.cpp
