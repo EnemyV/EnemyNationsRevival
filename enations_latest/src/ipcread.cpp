@@ -283,10 +283,8 @@ int CWndMailRead::OnCreate(LPCREATESTRUCT lpCreateStruct)
 	// load message body
 	if( m_pMsg != NULL )
 	{
-		CString sBody;
-		sBody = "RE: " + m_pMsg->m_sSubject;
+		CString sBody = "RE: " + m_pMsg->m_sSubject;
 		m_sub.SetWindowText( sBody );
-		sBody.Empty();
 		m_text.SetWindowText( m_pMsg->m_sMessage );
 	}
 	
