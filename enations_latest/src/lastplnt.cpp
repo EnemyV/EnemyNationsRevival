@@ -936,8 +936,9 @@ BOOL CConquerApp::InitInstance( )
             }
             else if ( iToday > (int)dwTime + i1Month )
             {
-                CTime   _time( dwTime );
-                CString sBuf = _time.Format( "Installed: %x" );
+                time_t tInstalled = (time_t)dwTime;
+                char   sBuf[64];
+                strftime( sBuf, sizeof(sBuf), "Installed: %x", localtime( &tInstalled ) );
                 Log( sBuf );
                 EnMessageBox( IDS_DEMO_OVER, MB_OK | MB_ICONSTOP );
                 return ( 0 );
@@ -968,8 +969,8 @@ BOOL CConquerApp::InitInstance( )
             else if ( iToday > (int)iTime + i1Month )
             {
                 TRAP( );
-                CTime   _time( iTime );
-                CString sBuf = _time.Format( "Installed: %x" );
+                char sBuf[64];
+                strftime( sBuf, sizeof(sBuf), "Installed: %x", localtime( &iTime ) );
                 Log( sBuf );
                 EnMessageBox( IDS_DEMO_OVER, MB_OK | MB_ICONSTOP );
                 return ( 0 );
