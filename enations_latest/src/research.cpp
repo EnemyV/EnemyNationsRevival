@@ -553,7 +553,7 @@ void CDlgResearch::OnOK( )
     UpdateData( TRUE );
     std::string sTitle;
     if ( iSel < 0 )
-        sTitle = EnLoadStdString( IDS_RSRCH_NOTHING );
+        sTitle = EnLoadString( IDS_RSRCH_NOTHING );
     else
         sTitle = strPrintf( EnLoadStdString( IDS_RSRCH_TITLE ).c_str(),
                             (const char*)theRsrch.ElementAt( iSel ).m_sName );
@@ -572,7 +572,7 @@ void CDlgResearch::ItemDiscovered( int iItem )
         m_pDlgDiscvr->ItemDiscovered( iItem );
 
     m_iPerDone = 0;
-    std::string sTitle = EnLoadStdString( IDS_RSRCH_NOTHING );
+    std::string sTitle = EnLoadString( IDS_RSRCH_NOTHING );
     SetWindowText( sTitle.c_str() );
 
     UpdateProgress( );
@@ -754,7 +754,7 @@ void CDlgResearch::UpdateChoices( BOOL bCheck )
         // list what we are researching
         std::string sTitle;
         if ( theGame.GetMe( )->GetRsrchItem( ) <= 0 )
-            sTitle = EnLoadStdString( IDS_RSRCH_NOTHING );
+            sTitle = EnLoadString( IDS_RSRCH_NOTHING );
         else
             sTitle = strPrintf( EnLoadStdString( IDS_RSRCH_TITLE ).c_str(),
                                 (const char*)theRsrch.ElementAt( theGame.GetMe( )->GetRsrchItem( ) ).m_sName );
@@ -894,7 +894,7 @@ void CDlgDiscover::NewItem( )
     if ( m_iRsrchNum < 0 )
     {
         m_strText = "";
-        sTitle = EnLoadStdString( IDS_DISCOVERED_NO_TITLE );
+        sTitle = EnLoadString( IDS_DISCOVERED_NO_TITLE );
     }
     else
     {

@@ -142,14 +142,10 @@ void EnWriteProfileString( const char* section, const char* entry, const char* v
 
 CString EnLoadString( unsigned int id )
 {
-    // Win32 LoadStringA against the game module — no MFC AfxGetResourceHandle
-    // dependency. Buffer 1024 chars matches the longest IDS_* in the .RC file.
-    char buf[ 1024 ];
-    HMODULE hModule = ::GetModuleHandleA( NULL );
-    int len = ::LoadStringA( hModule, id, buf, (int)sizeof( buf ) );
-    if ( len <= 0 )
-        return CString();
-    return CString( buf, len );
+    // Thin CString wrapper over EnLoadStdString for legacy callers that
+    // assign the result into a CString DDX member. New code should call
+    // EnLoadStdString directly.
+    return CString( EnLoadStdString( id ).c_str() );
 }
 
 int EnMessageBox( const char* text, unsigned int type, unsigned int /*helpId*/ )

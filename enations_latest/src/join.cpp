@@ -285,7 +285,7 @@ void CDlgJoinPublish::SetControls( )
     if ( ID != m_idOK )
     {
         m_idOK = ID;
-        std::string sBtn = EnLoadStdString( ID );
+        std::string sBtn = EnLoadString( ID );
         m_BtnOk.SetWindowText( sBtn.c_str() );
     }
 
@@ -530,16 +530,16 @@ void CDlgJoinGame::SetControls( )
     std::string sText;
     if ( theNet.GetMode( ) != CNetApi::joined )
     {
-        sText = EnLoadStdString( IDS_JOIN_JOIN );
+        sText = EnLoadString( IDS_JOIN_JOIN );
         m_btnOK.SetWindowText( sText.c_str() );
-        sText = EnLoadStdString( IDS_PREV );
+        sText = EnLoadString( IDS_PREV );
         m_btnPrev.SetWindowText( sText.c_str() );
     }
     else
     {
-        sText = EnLoadStdString( IDS_CREATE_CHOOSE );
+        sText = EnLoadString( IDS_CREATE_CHOOSE );
         m_btnOK.SetWindowText( sText.c_str() );
-        sText = EnLoadStdString( IDS_UNPUBLISH );
+        sText = EnLoadString( IDS_UNPUBLISH );
         m_btnPrev.SetWindowText( sText.c_str() );
     }
 
@@ -547,7 +547,7 @@ void CDlgJoinGame::SetControls( )
         sText = strPrintf( EnLoadStdString( IDS_JOIN1_TITLE_SEL ).c_str(),
                            (const char*)m_pJm->m_sGameName );
     else
-        sText = EnLoadStdString( IDS_JOIN1_TITLE );
+        sText = EnLoadString( IDS_JOIN1_TITLE );
     SetWindowText( sText.c_str() );
 }
 
@@ -599,7 +599,7 @@ void CDlgJoinGame::OnShowAddr( )
     m_bAddrShowing = !m_bAddrShowing;
 
     SetWindowPos( NULL, 0, 0, m_iWid, m_bAddrShowing ? m_iHtAddr : m_iHtNoAddr, SWP_NOMOVE | SWP_NOZORDER );
-    std::string sText = EnLoadStdString( m_bAddrShowing ? IDS_ADDR_OFF : IDS_ADDR );
+    std::string sText = EnLoadString( m_bAddrShowing ? IDS_ADDR_OFF : IDS_ADDR );
     SetDlgItemText( IDC_PLYR_DO_ADDR, sText.c_str() );
 }
 

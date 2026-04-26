@@ -476,7 +476,7 @@ void CWndListBuildings::Create() {
     // units
     m_pDibUnit = theBitmaps.GetByIndex(DIB_LIST_UNIT_BUILDINGS);
 
-    std::string sTitle = EnLoadStdString(IDS_TITLE_BUILDINGS);
+    std::string sTitle = EnLoadString(IDS_TITLE_BUILDINGS);
     if (CreateEx(0, theApp.m_sWndCls, sTitle.c_str(), dwPopWndStyle,
                  EnGetProfileInt(theApp.m_sResIni.c_str(), "BuildX", theApp.m_iCol2),
                  EnGetProfileInt(theApp.m_sResIni.c_str(), "BuildY", theApp.m_iRow4),
@@ -541,7 +541,7 @@ void CWndListVehicles::Create() {
     // units
     m_pDibUnit = theBitmaps.GetByIndex(DIB_LIST_UNIT_VEHICLES);
 
-    std::string sTitle = EnLoadStdString(IDS_TITLE_VEHICLES);
+    std::string sTitle = EnLoadString(IDS_TITLE_VEHICLES);
     int y = (theApp.m_iRow3 + theApp.m_iRow4) / 2 - 1;
     if (CreateEx(0, theApp.m_sWndCls, sTitle.c_str(), dwPopWndStyle,
                  EnGetProfileInt(theApp.m_sResIni.c_str(), "VehicleX", theApp.m_iCol2),
@@ -1515,7 +1515,7 @@ BOOL CDlgBuildTransport::OnInitDialog() {
 
     // if its troops we change the title
     if (m_pBldgPar->GetData()->GetBldgType() == CStructureData::barracks) {
-        std::string sTitle = EnLoadStdString(IDS_BUILD_PEOPLE);
+        std::string sTitle = EnLoadString(IDS_BUILD_PEOPLE);
         SetWindowText(sTitle.c_str());
     }
 
@@ -1653,11 +1653,11 @@ void CDlgBuildTransport::UpdateStatus(int iPer) {
     if (iPer != 0) {
         CBuildUnit const *pBu = m_pBldgPar->GetBldUnt();
         const char* pDesc = (pBu == NULL) ? "" : (const char*)theTransports.GetData(pBu->GetVehType())->GetDesc();
-        sTitle = strPrintf(EnLoadStdString(IDS_BUILD_UNIT).c_str(), pDesc);
+        sTitle = strPrintf(EnLoadStdString( IDS_BUILD_UNIT ).c_str(), pDesc);
     } else if (m_pBldgPar->GetData()->GetBldgType() == CStructureData::barracks)
-        sTitle = EnLoadStdString(IDS_BUILD_PEOPLE);
+        sTitle = EnLoadString(IDS_BUILD_PEOPLE);
     else
-        sTitle = EnLoadStdString(IDS_BUILD_VEHICLE);
+        sTitle = EnLoadString(IDS_BUILD_VEHICLE);
     SetWindowText(sTitle.c_str());
 
     // the below we do only if we aren't active
@@ -2036,7 +2036,7 @@ int CWndRoute::OnCreate(LPCREATESTRUCT lpCreateStruct) {
     }
     OnLbnClk();
 
-    std::string sTitle = strPrintf( EnLoadStdString(IDS_ROUTE_TITLE).c_str(),
+    std::string sTitle = strPrintf( EnLoadStdString( IDS_ROUTE_TITLE ).c_str(),
                                     (const char*)m_pVeh->GetData()->GetDesc() );
     SetWindowText(sTitle.c_str());
 
@@ -2327,7 +2327,7 @@ void CWndRoute::VehDesc(CVehicle *pVeh, POSITION &pos, std::string &sLine) {
 #endif
     }
 
-    sLine += "\t" + EnLoadStdString(ID);
+    sLine += "\t" + EnLoadString(ID);
 }
 
 void CWndRoute::NewRoute(CVehicle *pVeh) {

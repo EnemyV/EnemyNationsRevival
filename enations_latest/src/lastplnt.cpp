@@ -158,7 +158,7 @@ void CatchSE( SE_Exception e )
     theGame.SetShouldProcessMessages(FALSE);
     theGame.EmptyQueue( );
 
-    std::string sDumpText = EnLoadStdString( IDS_ERR_LOAD_3 );
+    std::string sDumpText = EnLoadString( IDS_ERR_LOAD_3 );
 
     MEMORYSTATUS ms;
     ms.dwLength = sizeof( ms );
@@ -166,7 +166,7 @@ void CatchSE( SE_Exception e )
     const int ONE_MEG = 1024 * 1024;
     if ( ms.dwAvailPageFile / ONE_MEG < 8 )
     {
-        sDumpText = EnLoadStdString( IDS_OUT_OF_MEMORY ) + "\r\n" + sDumpText;
+        sDumpText = EnLoadString( IDS_OUT_OF_MEMORY ) + "\r\n" + sDumpText;
     }
 
     char sNum1[20], sNum2[80], sNumS[5][20];
@@ -1783,7 +1783,7 @@ int CConquerApp::ExitInstance( )
         dc.FillRect( &rect, &brBlack );
         dc.SetBkMode( TRANSPARENT );
         dc.SetTextColor( RGB( 0, 0, 0 ) );
-        std::string sLoad = EnLoadStdString( IDS_LEAVING );
+        std::string sLoad = EnLoadString( IDS_LEAVING );
         dc.TextOut( 0, 0, sLoad.c_str(), (int)sLoad.size() );
     }
 
@@ -1848,7 +1848,7 @@ int CConquerApp::ExitInstance( )
 static int SDL2_MessageBox( int idsString, bool yesNoCancel = false )
 {
     // Load the string from the resource table
-    std::string msg = EnLoadStdString( idsString );
+    std::string msg = EnLoadString( idsString );
 
     // Replace \n with space for single-line display in our dialog
     for ( auto& c : msg )
@@ -2153,7 +2153,7 @@ BOOL CDlgMain::OnInitDialog( )
     theApp.DestroyExceptMain( );
 
     SendMessage( WM_SETICON, (WPARAM)TRUE, (LPARAM)theApp.LoadIcon( MAKEINTRESOURCE( IDI_MAIN ) ) );
-    std::string sTitle = EnLoadStdString( IDS_MAIN_TITLE );
+    std::string sTitle = EnLoadString( IDS_MAIN_TITLE );
     SetWindowText( sTitle.c_str() );
 
     // if shareware no loading
@@ -2353,7 +2353,7 @@ void CDlgMain::OnPaint( )
     }
 
     // put up the title
-    std::string sTitle = EnLoadStdString( IDS_MAIN_TITLE );
+    std::string sTitle = EnLoadString( IDS_MAIN_TITLE );
     LOGFONT lf;
     memset( &lf, 0, sizeof( lf ) );
     lf.lfWidth  = ( 3 * ( iWid / (int)sTitle.size( ) ) ) / 4;
@@ -2396,7 +2396,7 @@ void CDlgMain::OnPaint( )
 #endif
 
     // put up copyright
-    std::string sCopy = EnLoadStdString( IDS_COPYRIGHT );
+    std::string sCopy = EnLoadString( IDS_COPYRIGHT );
     GetClientRect( &rect );
     dc.DrawText( sCopy.c_str(), -1, &rect, DT_CALCRECT | DT_CENTER | DT_SINGLELINE | DT_TOP );
     int iHt     = rect.Height( );
@@ -2842,7 +2842,7 @@ void CDlgStackDump::OnCopyStack( )
     std::string sMsg;
     if ( ms.dwAvailPageFile / ONE_MEG < 8 )
     {
-        sMsg = EnLoadStdString( IDS_OUT_OF_MEMORY );
+        sMsg = EnLoadString( IDS_OUT_OF_MEMORY );
         sMsg += "\r\n";
     }
     sMsg += std::string( "Sorry, an unknown error occured.\r\nVersion: " ) + VER_STRING + "\r\n" +

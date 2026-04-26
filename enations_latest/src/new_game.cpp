@@ -388,7 +388,7 @@ void CDlgPlayerList::OnShowAddr() {
 
     SetWindowPos(NULL, 0, 0, m_iWid, m_bAddrShowing ? m_iHtAddr : m_iHtNoAddr,
                  SWP_NOMOVE | SWP_NOZORDER);
-    std::string sText = EnLoadStdString(m_bAddrShowing ? IDS_ADDR_OFF : IDS_ADDR);
+    std::string sText = EnLoadString(m_bAddrShowing ? IDS_ADDR_OFF : IDS_ADDR);
     SetDlgItemText(IDC_PLYR_DO_ADDR, sText.c_str());
 }
 
@@ -545,7 +545,7 @@ void CDlgPlayerList::SetNumPlayers() {
 
     ASSERT_VALID (this);
 
-    std::string sText = strPrintf(EnLoadStdString(IDS_CREATE_NUM_PLAYERS).c_str(),
+    std::string sText = strPrintf(EnLoadStdString( IDS_CREATE_NUM_PLAYERS ).c_str(),
                                   IntToStr(m_lstPlayers.GetCount()).c_str());
     m_btnNumPlayers.SetWindowText(sText.c_str());
 
@@ -685,15 +685,15 @@ void CDlgPlayerList::OnDrawItem(int, LPDRAWITEMSTRUCT lpDIS) {
 
     sText = " ";
     if (pPlyr->GetState() == CPlayer::load_pick)
-        sText += EnLoadStdString(IDS_PICKING_PLAYER);
+        sText += EnLoadString(IDS_PICKING_PLAYER);
     else if (pPlyr->m_iPerInit < 0)
-        sText += EnLoadStdString(IDS_PICKING_RACE);
+        sText += EnLoadString(IDS_PICKING_RACE);
     else if (pPlyr->m_iPerInit == 0)
-        sText += EnLoadStdString(IDS_READY_TO_GO);
+        sText += EnLoadString(IDS_READY_TO_GO);
     else if (pPlyr->m_iPerInit < 100)
         sText += IntToStr(pPlyr->m_iPerInit) + "%";
     else
-        sText += EnLoadStdString(IDS_READY_TO_GO);
+        sText += EnLoadString(IDS_READY_TO_GO);
 
     rect.left = rect.right;
     rect.right = lpDIS->rcItem.right;
@@ -789,7 +789,7 @@ void CDlgCreateStatus::SetMsg(int idRes) {
 
     ASSERT_VALID (this);
 
-    std::string sText = EnLoadStdString(idRes);
+    std::string sText = EnLoadString(idRes);
     SetMsg(sText.c_str());
 }
 
