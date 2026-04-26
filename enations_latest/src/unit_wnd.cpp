@@ -2288,7 +2288,7 @@ void CWndRoute::Auto() {
     DestroyWindow();
 }
 
-void CWndRoute::VehDesc(CVehicle *pVeh, POSITION &pos, CString &sLine) {
+void CWndRoute::VehDesc(CVehicle *pVeh, POSITION &pos, std::string &sLine) {
 
     ASSERT_VALID (this);
     ASSERT_VALID (pVeh);
@@ -2305,9 +2305,9 @@ void CWndRoute::VehDesc(CVehicle *pVeh, POSITION &pos, CString &sLine) {
     if (pBldg != NULL)
         pBldg->GetDesc(sName);
     if (!sName.empty())
-        sLine += sName.c_str();
+        sLine += sName;
     else
-        sLine += IntToCString(pR->GetCoord().X()) + "," + IntToCString(pR->GetCoord().Y());
+        sLine += IntToStr(pR->GetCoord().X()) + "," + IntToStr(pR->GetCoord().Y());
 
     int ID = 0;
     switch (pR->GetRouteType()) {
@@ -2327,8 +2327,7 @@ void CWndRoute::VehDesc(CVehicle *pVeh, POSITION &pos, CString &sLine) {
 #endif
     }
 
-    std::string sRes = EnLoadStdString(ID);
-    sLine += "\t" + CString(sRes.c_str());
+    sLine += "\t" + EnLoadStdString(ID);
 }
 
 void CWndRoute::NewRoute(CVehicle *pVeh) {
@@ -2341,9 +2340,9 @@ void CWndRoute::NewRoute(CVehicle *pVeh) {
     m_listbox.ResetContent();
     POSITION pos = pVeh->GetRouteList().GetHeadPosition();
     while (pos != NULL) {
-        CString sLine;
+        std::string sLine;
         VehDesc(pVeh, pos, sLine);
-        m_listbox.AddString(sLine);
+        m_listbox.AddString(sLine.c_str());
     }
     m_listbox.SetCurSel(iSel + 1);
 
@@ -2381,9 +2380,9 @@ void CWndRoute::Invalidate() {
     m_listbox.ResetContent();
 
     while (pos != NULL) {
-        CString sLine;
+        std::string sLine;
         VehDesc(m_pVeh, pos, sLine);
-        m_listbox.AddString(sLine);
+        m_listbox.AddString(sLine.c_str());
     }
     m_listbox.SetCurSel(iIndex);
 }

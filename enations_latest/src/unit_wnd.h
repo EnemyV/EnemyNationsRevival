@@ -65,7 +65,7 @@ protected:
 	CListBox		m_listbox;
 	CTextButton	m_Btns[NUM_ROUTE_BTNS];
 
-	void		VehDesc (CVehicle *pVeh, POSITION & pos, CString & sDesc);
+	void		VehDesc (CVehicle *pVeh, POSITION & pos, std::string & sDesc);
 
 	//{{AFX_MSG(CWndRoute)
 	afx_msg int OnCreate(LPCREATESTRUCT lpCreateStruct);
