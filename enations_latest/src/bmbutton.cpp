@@ -529,8 +529,8 @@ void CTextButton::DrawItem( LPDRAWITEMSTRUCT lpDIS )
     m_pDib->BitBlt (pDc->m_hDC, &(lpDIS->rcItem), CPoint (0, 0));
 
     // draw the text
-    CString sText;
-    GetWindowText (sText);
+    char sText[256];
+    GetWindowText (sText, (int)sizeof(sText));
     pDc->SetBkMode (TRANSPARENT);
     pDc->SelectObject (&(m_pTextBtnData->m_fntText));
 
