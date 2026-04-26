@@ -37,37 +37,7 @@ CGameMap         theMap;                   // the world (only one instance)
 CTerrain         theTerrain( "terrain" );  // data about the terrain types
 CTerrainShowStat tShowStat;
 
-void TerrainStatusText( void* pData, CString& str )
-{
-
-    TRAP( );
-    CHex* pHex = (CHex*)pData;
-
-    // if no minerals - done
-    CMinerals* pMn = NULL;
-    if ( ( pHex->GetUnits( ) & CHex::minerals ) != 0 )
-        if ( !theMinerals.Lookup( pHex->GetHex( ), pMn ) )
-            pMn = NULL;
-
-    // can we show copper?
-    if ( ( pMn != NULL ) && ( pMn->GetType( ) == CMaterialTypes::copper ) && ( !theGame.GetMe( )->CanCopper( ) ) )
-        pMn = NULL;
-
-    if ( pMn == NULL )
-    {
-        TRAP( );
-        str = "";
-        return;
-    }
-
-    std::string sNum1 = IntToStr( pMn->GetQuantity( ) );
-    std::string sNum2 = IntToStr( pMn->GetDensity( ) );
-    std::string sResult = strPrintf(
-        EnLoadStdString( IDS_STAT_MINERALS ).c_str(),
-        CMaterialTypes::GetDesc( pMn->GetType( ) ).c_str( ),
-        sNum1.c_str(), sNum2.c_str() );
-    str = sResult.c_str();
-}
+// Dead: TerrainStatusText had no callers. Removed.
 
 void CTerrainShowStat::Init( )
 {
