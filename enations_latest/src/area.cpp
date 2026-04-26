@@ -5214,9 +5214,9 @@ CWndInfo* CWndInfo::Create( CPoint& pt, CUnit* pUnit, CWndArea* pPar )
     return ( (CWndInfo*)CWndBase::Create( NULL, pUnit->GetData( )->GetDesc( ), dwStyle, rectWin, pPar, 100, NULL ) );
 }
 
-static void _DrawText( CDC* pDc, CRect& rect, CString const& sText, BOOL bRed = FALSE );
+static void _DrawText( CDC* pDc, CRect& rect, char const* sText, BOOL bRed = FALSE );
 
-static void _DrawText( CDC* pDc, CRect& rect, CString const& sText, BOOL bRed )
+static void _DrawText( CDC* pDc, CRect& rect, char const* sText, BOOL bRed )
 {
 
     rect.OffsetRect( 1, 1 );
@@ -5263,7 +5263,7 @@ void CWndInfo::OnPaint( )
     rect.left      = pdibVert->GetWidth( ) + theApp.FlatDimen( );
     rect.right -= theApp.FlatDimen( );
     rect.bottom = rect.top + theApp.TextHt( );
-    _DrawText( pDc, rect, m_pUnit->GetData( )->GetDesc( ) );
+    _DrawText( pDc, rect, (LPCSTR)m_pUnit->GetData( )->GetDesc( ) );
 
     // draw the state
     if ( m_pUnit->GetUnitType( ) == CUnit::vehicle )
@@ -5271,28 +5271,28 @@ void CWndInfo::OnPaint( )
         CVehicle* pVeh = (CVehicle*)m_pUnit;
         if ( pVeh->GetData( )->IsTransport( ) )
         {
-            CString sText;
+            std::string sText;
             if ( !pVeh->IsHpControl( ) )
-                sText = CTransportData::m_sAuto.c_str( );
+                sText = CTransportData::m_sAuto;
             else if ( pVeh->GetEvent( ) == CVehicle::route )
-                sText = CTransportData::m_sRoute.c_str( );
+                sText = CTransportData::m_sRoute;
 
             CBuilding* pBldg = theBuildingHex.GetBuilding( pVeh->GetPtHead( ) );
             if ( ( pBldg == NULL ) || ( pVeh->GetHexOwnership( ) ) )
                 pBldg = theBuildingHex.GetBuilding( pVeh->GetHexDest( ) );
             if ( ( pBldg != NULL ) && ( pBldg->GetOwner( )->IsMe( ) ) )
-                sText += "[" + pBldg->GetData( )->GetDesc( ) + "]";
+                sText += std::string( "[" ) + (LPCSTR)pBldg->GetData( )->GetDesc( ) + "]";
             else if ( pVeh->GetData( )->IsTransport( ) )
             {
                 if ( pVeh->GetRouteMode( ) == CVehicle::stop )
-                    sText += CTransportData::m_sIdle.c_str( );
+                    sText += CTransportData::m_sIdle;
                 else
-                    sText += CTransportData::m_sTravel.c_str( );
+                    sText += CTransportData::m_sTravel;
             }
 
             rect.top += theApp.TextHt( ) + theApp.FlatDimen( );
             rect.bottom = rect.top + theApp.TextHt( );
-            _DrawText( pDc, rect, sText );
+            _DrawText( pDc, rect, sText.c_str( ) );
         }
     }
 
@@ -5332,18 +5332,18 @@ void CWndInfo::OnPaint( )
         {
             rect.top += theApp.TextHt( ) + theApp.FlatDimen( );
             rect.bottom   = rect.top + theApp.TextHt( );
-            CString sText = CMaterialTypes::GetDesc( iOn ).c_str( ) + CString( ": " ) +
-                            IntToCString( m_pUnit->GetStore( iOn ), 10, TRUE );
-            _DrawText( pDc, rect, sText );
+            std::string sText = CMaterialTypes::GetDesc( iOn ) + ": " +
+                                IntToStr( m_pUnit->GetStore( iOn ), 10, true );
+            _DrawText( pDc, rect, sText.c_str( ) );
 
             if ( iNeed > 0 )
             {
                 CRect rectNum( rect );
-                pDc->DrawText( sText, -1, &rectNum, DT_CALCRECT | DT_LEFT | DT_SINGLELINE | DT_VCENTER );
+                pDc->DrawText( sText.c_str( ), -1, &rectNum, DT_CALCRECT | DT_LEFT | DT_SINGLELINE | DT_VCENTER );
                 rectNum.left  = rectNum.right + theApp.FlatDimen( );
                 rectNum.right = rect.right;
-                sText         = "(" + IntToCString( iNeed, 10, TRUE ) + ")";
-                _DrawText( pDc, rectNum, sText, TRUE );
+                sText         = "(" + IntToStr( iNeed, 10, true ) + ")";
+                _DrawText( pDc, rectNum, sText.c_str( ), TRUE );
             }
         }
     }
@@ -5357,7 +5357,7 @@ void CWndInfo::OnPaint( )
             CVehicle* pVeh = ( (CVehicle*)m_pUnit )->GetCargoNext( pos );
             rect.top += theApp.TextHt( ) + theApp.FlatDimen( );
             rect.bottom = rect.top + theApp.TextHt( );
-            _DrawText( pDc, rect, pVeh->GetData( )->GetDesc( ) );
+            _DrawText( pDc, rect, (LPCSTR)pVeh->GetData( )->GetDesc( ) );
         }
     }
 
@@ -5375,7 +5375,7 @@ void CWndInfo::OnPaint( )
             {
                 rect.top += theApp.TextHt( ) + theApp.FlatDimen( );
                 rect.bottom = rect.top + theApp.TextHt( );
-                _DrawText( pDc, rect, pVeh->GetData( )->GetDesc( ) );
+                _DrawText( pDc, rect, (LPCSTR)pVeh->GetData( )->GetDesc( ) );
             }
         }
     }
