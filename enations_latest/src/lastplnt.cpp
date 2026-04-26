@@ -158,7 +158,7 @@ void CatchSE( SE_Exception e )
     theGame.SetShouldProcessMessages(FALSE);
     theGame.EmptyQueue( );
 
-    std::string sDumpText = EnLoadString( IDS_ERR_LOAD_3 );
+    std::string sDumpText = EnLoadStdString( IDS_ERR_LOAD_3 );
 
     MEMORYSTATUS ms;
     ms.dwLength = sizeof( ms );
@@ -166,7 +166,7 @@ void CatchSE( SE_Exception e )
     const int ONE_MEG = 1024 * 1024;
     if ( ms.dwAvailPageFile / ONE_MEG < 8 )
     {
-        sDumpText = EnLoadString( IDS_OUT_OF_MEMORY ) + "\r\n" + sDumpText;
+        sDumpText = EnLoadStdString( IDS_OUT_OF_MEMORY ) + "\r\n" + sDumpText;
     }
 
     char sNum1[20], sNum2[80], sNumS[5][20];

@@ -154,12 +154,12 @@ protected:
 
 	CPoint				m_ptRMB;
 
-	CString				m_sHelpRMB;
-	CString				m_sHelp;
-	CString				m_sHelpBtn[4];
-	CString				m_sHelpBtnDis[4];
-	CString				m_sHelpFace;
-	CString				m_sDir [4];
+	std::string			m_sHelpRMB;
+	std::string			m_sHelp;
+	std::string			m_sHelpBtn[4];
+	std::string			m_sHelpBtnDis[4];
+	std::string			m_sHelpFace;
+	std::string			m_sDir [4];
 
 	HCURSOR				m_hCurArrow{};	// standard cursor
 	HCURSOR				m_hCurCross{};	// cross hairs

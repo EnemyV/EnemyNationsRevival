@@ -119,10 +119,10 @@ CWndWorld::CWndWorld() {
 
     // moved to oncreate
     /*
-    m_sDir[0] = EnLoadString( IDS_WORLD_NE );
-    m_sDir[1] = EnLoadString(IDS_WORLD_SE);
-    m_sDir[2] = EnLoadString(IDS_WORLD_SW);
-    m_sDir[3] = EnLoadString(IDS_WORLD_NW);
+    m_sDir[0] = EnLoadStdString( IDS_WORLD_NE );
+    m_sDir[1] = EnLoadStdString(IDS_WORLD_SE);
+    m_sDir[2] = EnLoadStdString(IDS_WORLD_SW);
+    m_sDir[3] = EnLoadStdString(IDS_WORLD_NW);
        */
 }
 
@@ -193,12 +193,12 @@ void CWndWorld::Create(BOOL bStart) {
     NewAreaMap(theAreaList.GetTop());
 
     
-    if ( m_sDir[0].IsEmpty( ) )
+    if ( m_sDir[0].empty( ) )
     {
-        m_sDir[0] = EnLoadString( IDS_WORLD_NE );
-        m_sDir[1] = EnLoadString( IDS_WORLD_SE );
-        m_sDir[2] = EnLoadString( IDS_WORLD_SW );
-        m_sDir[3] = EnLoadString( IDS_WORLD_NW );
+        m_sDir[0] = EnLoadStdString( IDS_WORLD_NE );
+        m_sDir[1] = EnLoadStdString( IDS_WORLD_SE );
+        m_sDir[2] = EnLoadStdString( IDS_WORLD_SW );
+        m_sDir[3] = EnLoadStdString( IDS_WORLD_NW );
     }
 
     // get min size
@@ -212,7 +212,7 @@ void CWndWorld::Create(BOOL bStart) {
     if (m_pWndArea == NULL)
         csPrintf(&sTitle, (char const *) "");
     else
-        csPrintf(&sTitle, (char const *) m_sDir[m_pWndArea->GetAA().m_iDir]);
+        csPrintf(&sTitle, m_sDir[m_pWndArea->GetAA().m_iDir].c_str());
 
     // World window (so it can have a cross-hair
     LPCTSTR sClass = AfxRegisterWndClass(dwStyleWorldWnd, theApp.LoadStandardCursor(IDC_CROSS), 0, 0);
@@ -355,27 +355,27 @@ int CWndWorld::OnCreate(LPCREATESTRUCT lpCreateStruct) {
     // we had to start with an icon to get a different class
     ::SetClassLong(m_hWnd, GCL_HCURSOR, NULL);
 
-    m_sDir[0] = EnLoadString( IDS_WORLD_NE );
-    m_sDir[1] = EnLoadString( IDS_WORLD_SE );
-    m_sDir[2] = EnLoadString( IDS_WORLD_SW );
-    m_sDir[3] = EnLoadString( IDS_WORLD_NW );
+    m_sDir[0] = EnLoadStdString( IDS_WORLD_NE );
+    m_sDir[1] = EnLoadStdString( IDS_WORLD_SE );
+    m_sDir[2] = EnLoadStdString( IDS_WORLD_SW );
+    m_sDir[3] = EnLoadStdString( IDS_WORLD_NW );
 
-    m_sHelpRMB = EnLoadString(IDH_WORLD_WIN_RMB);
-    m_sHelp = EnLoadString(IDH_WORLD_WIN);
-    m_sHelpBtn[pos_res] = EnLoadString(IDH_WORLD_RES);
-    m_sHelpBtn[pos_vis] = EnLoadString(IDH_WORLD_VIS);
-    m_sHelpBtn[pos_mine] = EnLoadString(IDH_WORLD_OWNER);
-    m_sHelpBtn[pos_units] = EnLoadString(IDH_WORLD_UNITS);
-    m_sHelpBtnDis[pos_res] = EnLoadString(IDH_WORLD_RES2);
-    m_sHelpBtnDis[pos_vis] = EnLoadString(IDH_WORLD_VIS2);
-    m_sHelpBtnDis[pos_mine] = EnLoadString(IDH_WORLD_OWNER2);
-    m_sHelpBtnDis[pos_units] = EnLoadString(IDH_WORLD_UNITS2);
+    m_sHelpRMB = EnLoadStdString(IDH_WORLD_WIN_RMB);
+    m_sHelp = EnLoadStdString(IDH_WORLD_WIN);
+    m_sHelpBtn[pos_res] = EnLoadStdString(IDH_WORLD_RES);
+    m_sHelpBtn[pos_vis] = EnLoadStdString(IDH_WORLD_VIS);
+    m_sHelpBtn[pos_mine] = EnLoadStdString(IDH_WORLD_OWNER);
+    m_sHelpBtn[pos_units] = EnLoadStdString(IDH_WORLD_UNITS);
+    m_sHelpBtnDis[pos_res] = EnLoadStdString(IDH_WORLD_RES2);
+    m_sHelpBtnDis[pos_vis] = EnLoadStdString(IDH_WORLD_VIS2);
+    m_sHelpBtnDis[pos_mine] = EnLoadStdString(IDH_WORLD_OWNER2);
+    m_sHelpBtnDis[pos_units] = EnLoadStdString(IDH_WORLD_UNITS2);
 
     m_bIsRadar = theGame.GetMe()->GetExists(CStructureData::command_center);
     if (m_bIsRadar)
         m_sHelpFace = "";
     else
-        m_sHelpFace = EnLoadString(IDH_WORLD_FACE);
+        m_sHelpFace = EnLoadStdString(IDH_WORLD_FACE);
 
     m_hCurArrow = theApp.LoadStandardCursor(IDC_ARROW);
     m_hCurCross = theApp.LoadCursor(IDC_WORLD);
@@ -554,13 +554,13 @@ void CWndWorld::CommandCenterChange() {
     std::string sTitle;
     if (m_bIsRadar) {
         m_sHelpFace = "";
-        sTitle = EnLoadStdString(IDS_WORLD_TITLE_RADAR);
+        sTitle = EnLoadString(IDS_WORLD_TITLE_RADAR);
     } else {
-        m_sHelpFace = EnLoadString(IDH_WORLD_FACE);
-        sTitle = EnLoadStdString(IDS_WORLD_TITLE_MAP);
+        m_sHelpFace = EnLoadStdString(IDH_WORLD_FACE);
+        sTitle = EnLoadString(IDS_WORLD_TITLE_MAP);
     }
 
-    const char* pArg = (m_pWndArea == NULL) ? "" : (const char*)m_sDir[m_pWndArea->GetAA().m_iDir];
+    const char* pArg = (m_pWndArea == NULL) ? "" : m_sDir[m_pWndArea->GetAA().m_iDir].c_str();
     sTitle = strPrintf(sTitle.c_str(), pArg);
 
     SetWindowText(sTitle.c_str());
@@ -874,7 +874,7 @@ void CWndWorld::OnRButtonDown(UINT, CPoint pt) {
     m_ptRMB = pt;
 
     CaptureMouse();
-    theApp.m_wndBar.SetStatusText(1, m_sHelpRMB);
+    theApp.m_wndBar.SetStatusText(1, m_sHelpRMB.c_str());
 
     // put up the move cursor
     ::SetCursor(m_hCurMove);
@@ -887,7 +887,7 @@ void CWndWorld::OnRButtonUp(UINT, CPoint) {
     m_bRBtnDown = FALSE;
     if (m_bCapMouse)
         ReleaseMouse();
-    theApp.m_wndBar.SetStatusText(1, m_sHelp);
+    theApp.m_wndBar.SetStatusText(1, m_sHelp.c_str());
 
     NewLocation();
 }
@@ -924,21 +924,21 @@ void CWndWorld::OnMouseMove(UINT nFlags, CPoint point) {
     // handle help
     int iFunc = ButtonOn(point);
     if (iFunc == -2) {
-        theApp.m_wndBar.SetStatusText(1, m_sHelpFace);
+        theApp.m_wndBar.SetStatusText(1, m_sHelpFace.c_str());
         return;
     }
     if (iFunc == -1) {
         if (m_bRBtnDown)
-            theApp.m_wndBar.SetStatusText(1, m_sHelpRMB);
+            theApp.m_wndBar.SetStatusText(1, m_sHelpRMB.c_str());
         else
-            theApp.m_wndBar.SetStatusText(1, m_sHelp);
+            theApp.m_wndBar.SetStatusText(1, m_sHelp.c_str());
         return;
     }
 
     if ((!m_bIsRadar) || (GetButtonState(iFunc) == disabled))
-        theApp.m_wndBar.SetStatusText(1, m_sHelpBtnDis[iFunc]);
+        theApp.m_wndBar.SetStatusText(1, m_sHelpBtnDis[iFunc].c_str());
     else
-        theApp.m_wndBar.SetStatusText(1, m_sHelpBtn[iFunc]);
+        theApp.m_wndBar.SetStatusText(1, m_sHelpBtn[iFunc].c_str());
 }
 
 int CWndWorld::GetButtonState(int iBtn) const {
@@ -1193,7 +1193,7 @@ void CWndWorld::_NewDir() {
     ASSERT_STRICT (m_pWndArea->m_hWnd != NULL);
 
     // put up the new dir
-    std::string sTitle = EnLoadStdString( m_bIsRadar ? IDS_WORLD_TITLE_RADAR : IDS_WORLD_TITLE_MAP );
+    std::string sTitle = EnLoadString( m_bIsRadar ? IDS_WORLD_TITLE_RADAR : IDS_WORLD_TITLE_MAP );
 
 #ifdef LOGGINGON
     char buf[128];
@@ -1201,7 +1201,7 @@ void CWndWorld::_NewDir() {
     OutputDebugStringA( buf );
 #endif
 
-    sTitle = strPrintf( sTitle.c_str(), (const char*)m_sDir[m_pWndArea->GetAA().m_iDir] );
+    sTitle = strPrintf( sTitle.c_str(), m_sDir[m_pWndArea->GetAA().m_iDir].c_str() );
     SetWindowText(sTitle.c_str());
 
     int iBytesPerPixel = m_dibwnd.GetDIB()->GetBytesPerPixel();
