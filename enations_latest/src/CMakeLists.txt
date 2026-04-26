@@ -2,7 +2,6 @@ message("Current CMAKE_SOURCE_DIR: ${CMAKE_SOURCE_DIR}")
 
 set(enations_sources
 #        advanced.cpp
-#        advdlg.cpp
         ai.cpp
         area.cpp
         bmbutton.cpp
