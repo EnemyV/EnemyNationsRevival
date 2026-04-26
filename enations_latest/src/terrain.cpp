@@ -2428,11 +2428,11 @@ CBuilding* CHex::GetVisibleBuilding( CHexCoord hexcoord ) const
     return pbuilding;
 }
 
-CString CHex::GetStatus( )
+char const* CHex::GetStatus( )
 {
 
     ASSERT_VALID( this );
-    return ( theTerrain.GetData( GetVisibleType( ) ).GetDesc( ) );
+    return ( (LPCSTR)theTerrain.GetData( GetVisibleType( ) ).GetDesc( ) );
 }
 
 // change to road hex, call for any neighbors because we can change them

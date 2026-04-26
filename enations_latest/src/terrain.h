@@ -129,7 +129,7 @@ public:
 	void		Init (int iAlt);
 	void		InitType ();
 	CRect		Draw( const CHexCoord & );
-	CString	GetStatus ();
+	char const*	GetStatus ();
 
 	CHexCoord	GetHex () const;
 
