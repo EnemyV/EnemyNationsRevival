@@ -159,8 +159,8 @@ int EnMessageBox( const char* text, unsigned int type, unsigned int /*helpId*/ )
 
 int EnMessageBox( unsigned int idText, unsigned int type, unsigned int /*helpId*/ )
 {
-    CString s = EnLoadString( idText );
-    return ::MessageBoxA( NULL, (const char*)s, "Second Chance", type );
+    std::string s = EnLoadStdString( idText );
+    return ::MessageBoxA( NULL, s.c_str(), "Second Chance", type );
 }
 
 int EnMessageBoxOnce( const char* text, unsigned int type, const char* section, const char* entry, int iDefault )
@@ -205,8 +205,8 @@ int EnMessageBoxOnce( unsigned int idText, unsigned int type, const char* sectio
     if ( EnGetProfileInt( section, entry, 0 ) != 0 )
         return iDefault;
 
-    CString s = EnLoadString( idText );
-    return EnMessageBoxOnce( (const char*)s, type, section, entry, iDefault );
+    std::string s = EnLoadStdString( idText );
+    return EnMessageBoxOnce( s.c_str(), type, section, entry, iDefault );
 }
 
 // --- std::string variants (Phase 5a prep) ---
