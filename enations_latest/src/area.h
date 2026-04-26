@@ -343,17 +343,17 @@ protected:
 
 	static	HHOOK					m_hhk;
 
-	static	CString				m_sHelp;			// help in normal mode
-	static	CString				m_sHelpBuild;	// what to build
-	static	CString				m_sHelpRoad;	// help when building a road
-	static	CString				m_sHelpCantBuild[9];
-	static	CString				m_sHelpRMB;		// help when the RMB button is down
-	static	CString				m_sHelpOkFarm;
-	static	CString				m_sHelpBadFarm;
-	static	CString				m_sHelpNoFarm;
-	static	CString				m_sHelpOkMine;
-	static	CString				m_sHelpBadMine;
-	static	CString				m_sHelpNoMine;
+	static	std::string			m_sHelp;			// help in normal mode
+	static	std::string			m_sHelpBuild;	// what to build
+	static	std::string			m_sHelpRoad;	// help when building a road
+	static	std::string			m_sHelpCantBuild[9];
+	static	std::string			m_sHelpRMB;		// help when the RMB button is down
+	static	std::string			m_sHelpOkFarm;
+	static	std::string			m_sHelpBadFarm;
+	static	std::string			m_sHelpNoFarm;
+	static	std::string			m_sHelpOkMine;
+	static	std::string			m_sHelpBadMine;
+	static	std::string			m_sHelpNoMine;
 
 	static	HCURSOR				m_hCurReg;		// standard cursor
 	static	HCURSOR				m_hCurGoto[4];// cursor to send vehicle

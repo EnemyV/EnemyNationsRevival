@@ -109,17 +109,17 @@ const int SEL_WIDTH = 2;
 
 
 int     CWndArea::m_iCount = 0;
-CString CWndArea::m_sHelp;
-CString CWndArea::m_sHelpBuild;
-CString CWndArea::m_sHelpRoad;
-CString CWndArea::m_sHelpCantBuild[9];
-CString CWndArea::m_sHelpRMB;
-CString CWndArea::m_sHelpOkFarm;
-CString CWndArea::m_sHelpBadFarm;
-CString CWndArea::m_sHelpNoFarm;
-CString CWndArea::m_sHelpOkMine;
-CString CWndArea::m_sHelpBadMine;
-CString CWndArea::m_sHelpNoMine;
+std::string CWndArea::m_sHelp;
+std::string CWndArea::m_sHelpBuild;
+std::string CWndArea::m_sHelpRoad;
+std::string CWndArea::m_sHelpCantBuild[9];
+std::string CWndArea::m_sHelpRMB;
+std::string CWndArea::m_sHelpOkFarm;
+std::string CWndArea::m_sHelpBadFarm;
+std::string CWndArea::m_sHelpNoFarm;
+std::string CWndArea::m_sHelpOkMine;
+std::string CWndArea::m_sHelpBadMine;
+std::string CWndArea::m_sHelpNoMine;
 
 HCURSOR CWndArea::m_hCurReg;
 HCURSOR CWndArea::m_hCurGoto[4];
@@ -825,25 +825,25 @@ void CWndArea::LoadStaticResources( )
     m_hhk = SetWindowsHookEx( WH_MOUSE, MouseProc, NULL, theApp.m_nThreadID );
 
     // load them
-    m_sHelp = EnLoadString( IDH_AREA_WIN );
-    m_sHelpBuild = EnLoadString( IDH_AREA_WIN_BUILD );
-    m_sHelpRoad = EnLoadString( IDH_AREA_WIN_ROAD );
-    m_sHelpCantBuild[0] = EnLoadString( IDH_AREA_CANT_BLDG_NEXT );
-    m_sHelpCantBuild[1] = EnLoadString( IDH_AREA_CANT_WATER_NEXT );
-    m_sHelpCantBuild[2] = EnLoadString( IDH_AREA_CANT_BLDG_RIVER_NEXT );
-    m_sHelpCantBuild[3] = EnLoadString( IDH_AREA_CANT_VEH_IN_WAY );
-    m_sHelpCantBuild[4] = EnLoadString( IDH_AREA_CANT_ON_WATER );
-    m_sHelpCantBuild[5] = EnLoadString( IDH_AREA_CANT_NO_WATER );
-    m_sHelpCantBuild[6] = EnLoadString( IDH_AREA_CANT_NO_LAND_EXIT );
-    m_sHelpCantBuild[7] = EnLoadString( IDH_AREA_CANT_NO_WATER_EXIT );
-    m_sHelpCantBuild[8] = EnLoadString( IDH_AREA_CANT_TOO_STEEP );
-    m_sHelpRMB = EnLoadString( IDH_AREA_WIN_RMB );
-    m_sHelpOkFarm = EnLoadString( IDH_AREA_OK_FARM );
-    m_sHelpBadFarm = EnLoadString( IDH_AREA_BAD_FARM );
-    m_sHelpNoFarm = EnLoadString( IDH_AREA_NO_FARM );
-    m_sHelpOkMine = EnLoadString( IDH_AREA_OK_MINE );
-    m_sHelpBadMine = EnLoadString( IDH_AREA_BAD_MINE );
-    m_sHelpNoMine = EnLoadString( IDH_AREA_NO_MINE );
+    m_sHelp = EnLoadStdString( IDH_AREA_WIN );
+    m_sHelpBuild = EnLoadStdString( IDH_AREA_WIN_BUILD );
+    m_sHelpRoad = EnLoadStdString( IDH_AREA_WIN_ROAD );
+    m_sHelpCantBuild[0] = EnLoadStdString( IDH_AREA_CANT_BLDG_NEXT );
+    m_sHelpCantBuild[1] = EnLoadStdString( IDH_AREA_CANT_WATER_NEXT );
+    m_sHelpCantBuild[2] = EnLoadStdString( IDH_AREA_CANT_BLDG_RIVER_NEXT );
+    m_sHelpCantBuild[3] = EnLoadStdString( IDH_AREA_CANT_VEH_IN_WAY );
+    m_sHelpCantBuild[4] = EnLoadStdString( IDH_AREA_CANT_ON_WATER );
+    m_sHelpCantBuild[5] = EnLoadStdString( IDH_AREA_CANT_NO_WATER );
+    m_sHelpCantBuild[6] = EnLoadStdString( IDH_AREA_CANT_NO_LAND_EXIT );
+    m_sHelpCantBuild[7] = EnLoadStdString( IDH_AREA_CANT_NO_WATER_EXIT );
+    m_sHelpCantBuild[8] = EnLoadStdString( IDH_AREA_CANT_TOO_STEEP );
+    m_sHelpRMB = EnLoadStdString( IDH_AREA_WIN_RMB );
+    m_sHelpOkFarm = EnLoadStdString( IDH_AREA_OK_FARM );
+    m_sHelpBadFarm = EnLoadStdString( IDH_AREA_BAD_FARM );
+    m_sHelpNoFarm = EnLoadStdString( IDH_AREA_NO_FARM );
+    m_sHelpOkMine = EnLoadStdString( IDH_AREA_OK_MINE );
+    m_sHelpBadMine = EnLoadStdString( IDH_AREA_BAD_MINE );
+    m_sHelpNoMine = EnLoadStdString( IDH_AREA_NO_MINE );
 
     // need our own class so we can change the cursor
     m_hCurReg        = theApp.LoadStandardCursor( IDC_ARROW );
@@ -902,11 +902,11 @@ void CWndArea::UnloadStaticResources( )
     UnhookWindowsHookEx( m_hhk );
 
     // unload them
-    m_sHelp.Empty( );
-    m_sHelpBuild.Empty( );
-    m_sHelpRoad.Empty( );
-    m_sHelpRMB.Empty( );
-    for ( int iOn = 0; iOn < 9; iOn++ ) m_sHelpCantBuild[iOn].Empty( );
+    m_sHelp.clear( );
+    m_sHelpBuild.clear( );
+    m_sHelpRoad.clear( );
+    m_sHelpRMB.clear( );
+    for ( int iOn = 0; iOn < 9; iOn++ ) m_sHelpCantBuild[iOn].clear( );
 
     // BUGBUG - is there no way to delete a cursor?
 }
@@ -1518,14 +1518,14 @@ void CWndArea::OnMouseMove( UINT nFlags, CPoint point )
         theApp.m_wndBar.SetStatusFunc( 1, TerrainShowStatus, pHex );
 
         // tell them what they can do
-        SetStatusText( m_sHelp );
+        SetStatusText( m_sHelp.c_str( ) );
     }
     else
         // ok, we have a unit
         theApp.m_wndBar.SetStatusFunc( 1, UnitShowStatus, pUnit );
 
     if ( m_iMode == road_begin )
-        theApp.m_wndBar.SetStatusText( 0, m_sHelpRoad );
+        theApp.m_wndBar.SetStatusText( 0, m_sHelpRoad.c_str( ) );
 
     // rocket pos - special test
     BOOL bBuildOk = TRUE;
@@ -1553,13 +1553,13 @@ void CWndArea::OnMouseMove( UINT nFlags, CPoint point )
         if ( ( m_iFound < 0 ) || ( !bBuildOk ) )
         {
             theMap.SetBldgCur( _hexBuild, m_iBuild, GetBuildDir( ), 1 );
-            if ( ( iWhy > 0 ) && ( iWhy <= 9 ) && ( !m_sHelpCantBuild[iWhy - 1].IsEmpty( ) ) )
+            if ( ( iWhy > 0 ) && ( iWhy <= 9 ) && ( !m_sHelpCantBuild[iWhy - 1].empty( ) ) )
             {
-                TRAP( m_sHelpCantBuild[iWhy - 1].IsEmpty( ) );
-                theApp.m_wndBar.SetStatusText( 0, m_sHelpCantBuild[iWhy - 1], CStatInst::critical );
+                TRAP( m_sHelpCantBuild[iWhy - 1].empty( ) );
+                theApp.m_wndBar.SetStatusText( 0, m_sHelpCantBuild[iWhy - 1].c_str( ), CStatInst::critical );
             }
             else
-                theApp.m_wndBar.SetStatusText( 0, m_sHelpCantBuild[6], CStatInst::critical );
+                theApp.m_wndBar.SetStatusText( 0, m_sHelpCantBuild[6].c_str( ), CStatInst::critical );
             CWnd::OnMouseMove( nFlags, point );
             return;
         }
@@ -1570,7 +1570,7 @@ void CWndArea::OnMouseMove( UINT nFlags, CPoint point )
         case CStructureData::farm:
         case CStructureData::lumber: {
             int                   iMul = CFarmBuilding::LandMult( _hexBuild, m_iBuild, GetBuildDir( ) );
-            CString               sText( "(" + IntToCString( iMul ) + ") " );
+            std::string           sText = "(" + IntToStr( iMul ) + ") ";
             CStatInst::IMPORTANCE iImp;
             if ( ( iMul < 2 ) || ( m_iFound < 0 ) )
             {
@@ -1590,7 +1590,7 @@ void CWndArea::OnMouseMove( UINT nFlags, CPoint point )
                 sText += m_sHelpOkFarm;
                 iImp = CStatInst::status;
             }
-            theApp.m_wndBar.SetStatusText( 0, sText, iImp );
+            theApp.m_wndBar.SetStatusText( 0, sText.c_str( ), iImp );
             break;
         }
 
@@ -1629,7 +1629,7 @@ void CWndArea::OnMouseMove( UINT nFlags, CPoint point )
             if ( dMul > 0 )
                 iDen = __max( 1, iDen );
 
-            CString               sText( "(" + IntToCString( iQuan, 10, TRUE ) + ", " + IntToCString( iDen ) + ") " );
+            std::string           sText = "(" + IntToStr( iQuan, 10, true ) + ", " + IntToStr( iDen ) + ") ";
             CStatInst::IMPORTANCE iImp;
             if ( ( qMul < 2 ) || ( m_iFound < 0 ) || ( dMul < 1 ) )
             {
@@ -1649,12 +1649,12 @@ void CWndArea::OnMouseMove( UINT nFlags, CPoint point )
                 sText += m_sHelpOkMine;
                 iImp = CStatInst::status;
             }
-            theApp.m_wndBar.SetStatusText( 0, sText, iImp );
+            theApp.m_wndBar.SetStatusText( 0, sText.c_str( ), iImp );
             break;
         }
 
         default:
-            theApp.m_wndBar.SetStatusText( 0, m_sHelpBuild );
+            theApp.m_wndBar.SetStatusText( 0, m_sHelpBuild.c_str( ) );
             break;
         }
 
@@ -3707,7 +3707,7 @@ void CWndArea::OnRButtonDown( UINT nFlags, CPoint point )
     m_ptRMB = m_ptRMDN = point;
 
     CaptureMouse( );
-    theApp.m_wndBar.SetStatusText( 1, m_sHelpRMB );
+    theApp.m_wndBar.SetStatusText( 1, m_sHelpRMB.c_str( ) );
 
     CRect rect;
     GetClientRect( &rect );
@@ -3794,7 +3794,7 @@ void CWndArea::OnRButtonUp( UINT, CPoint )
     if ( m_bNewPos )
         InvalidateSound( );
 
-    theApp.m_wndBar.SetStatusText( 1, m_sHelp );
+    theApp.m_wndBar.SetStatusText( 1, m_sHelp.c_str( ) );
 }
 
 // center on this location on the screen
