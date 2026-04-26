@@ -38,7 +38,7 @@ set(enations_sources
         cutscene.cpp
 #        dlgflic.cpp # is used?
         DlgMsg.cpp
-        DlgReg.cpp  # GetDefaultApp() still referenced from ExitInstance
+        DlgReg.cpp  # holds the GetDefaultApp helper used by ExitInstance
         dxfer.cpp
         event.cpp
         icons.cpp

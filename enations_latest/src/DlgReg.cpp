@@ -1,45 +1,14 @@
-// DlgReg.cpp : implementation file
+// DlgReg.cpp : GetDefaultApp helper (CDlgReg dialog removed)
 //
 
 #include "stdafx.h"
 #include "lastplnt.h"
-#include "DlgReg.h"
 
 #ifdef _DEBUG
 #define new DEBUG_NEW
 #undef THIS_FILE
 static char THIS_FILE[] = __FILE__;
 #endif
-
-/////////////////////////////////////////////////////////////////////////////
-// CDlgReg dialog
-
-
-CDlgReg::CDlgReg(CWnd* pParent /*=NULL*/)
-	: CDialog(CDlgReg::IDD, pParent)
-{
-	//{{AFX_DATA_INIT(CDlgReg)
-	m_bDone = FALSE;
-	//}}AFX_DATA_INIT
-}
-
-
-void CDlgReg::DoDataExchange(CDataExchange* pDX)
-{
-	CDialog::DoDataExchange(pDX);
-	//{{AFX_DATA_MAP(CDlgReg)
-	DDX_Check(pDX, IDC_REG_DONE, m_bDone);
-	//}}AFX_DATA_MAP
-}
-
-
-BEGIN_MESSAGE_MAP(CDlgReg, CDialog)
-	//{{AFX_MSG_MAP(CDlgReg)
-	//}}AFX_MSG_MAP
-END_MESSAGE_MAP()
-
-/////////////////////////////////////////////////////////////////////////////
-// CDlgReg message handlers
 
 std::string GetDefaultApp ( char const *pExt, char const *pDef, char const *pCmdLine )
 {
@@ -86,45 +55,4 @@ std::string GetDefaultApp ( char const *pExt, char const *pDef, char const *pCmd
 	// replace %1 with pCmdLine
 	sRtn.replace( iInd, 2, pCmdLine );
 	return sRtn;
-}
-
-void CDlgReg::OnOK()
-{
-
-	UpdateData (TRUE);
-	if ( m_bDone )
-		EnWriteProfileInt( "Warnings", "Register", 1 );
-
-	// get the browser
-	std::string sCmd = GetDefaultApp ( ".html", "netscape", "http://www.windward.net/register/index.html" );
-
-	STARTUPINFO si;
-	memset ( &si, 0, sizeof (si) );
-	si.cb = sizeof (si);
-	si.wShowWindow = SW_SHOWMAXIMIZED;
-	si.dwFlags = STARTF_USESHOWWINDOW;
-	PROCESS_INFORMATION pi;
-
-	if ( CreateProcess ( NULL, &sCmd[0], NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi ) == 0 )
-		EnMessageBox( IDS_BAD_REG, MB_OK | MB_ICONSTOP | MB_TASKMODAL );
-	else
-		{
-		theApp.m_wndMain.UpdateWindow ();
-		WaitForSingleObject ( pi.hProcess, 10 * 1000 );
-		CloseHandle ( pi.hProcess );
-		CloseHandle ( pi.hThread );
-		EnMessageBox( IDS_GOOD_REG, MB_OK | MB_ICONSTOP | MB_TASKMODAL );
-		}
-
-	CDialog::OnOK ();
-}
-
-void CDlgReg::OnCancel()
-{
-
-	UpdateData (TRUE);
-	if ( m_bDone )
-		EnWriteProfileInt( "Warnings", "Register", 1 );
-
-	CDialog::OnCancel ();
 }

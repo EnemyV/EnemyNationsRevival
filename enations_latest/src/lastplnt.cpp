@@ -6,7 +6,6 @@
 //---------------------------------------------------------------------------
 
 #include "CdLoc.h"
-#include "DlgReg.h"
 #include "GameWindow.h"
 #include "SDL2Compositor.h"
 #include "SDL2Video.h"
