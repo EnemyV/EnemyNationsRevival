@@ -328,34 +328,8 @@ int CInitAttrib::ComputePts( int iVal ) const
     return ( 0 );
 }
 
-CString CInitAttrib::GetLine( int iVal ) const
-{
-
-    ASSERT_VALID( this );
-    CString sRtn;
-    int     iPts = ComputePts( iVal );
-
-    switch ( m_iTyp )
-    {
-    case ATRIB_TYP_RANGE:
-        sRtn = m_sLine + "\t" + IntToCString( iVal ) + "%\t(" + IntToCString( iPts ) + ")";
-        break;
-    case ATRIB_TYP_UNITS:
-        sRtn = m_sLine + "\t" + IntToCString( iVal ) + "\t(" + IntToCString( iPts ) + ")";
-        break;
-    case ATRIB_TYP_SPLYS:
-        sRtn = m_sLine + "\t" + IntToCString( iVal ) + "\t(" + IntToCString( iPts ) + ")";
-        break;
-    case ATRIB_TYP_FEE:
-        if ( iVal )
-            sRtn = m_sLine + "\tYes\t(" + IntToCString( iPts ) + ")";
-        else
-            sRtn = m_sLine + "\tNo\t(0)";
-        break;
-    }
-
-    return ( sRtn );
-}
+// Dead: CInitAttrib::GetLine(int) had no callers; class itself appears
+// to have no header anymore. Removed.
 
 #ifdef _DEBUG
 void CInitAttrib::AssertValid( ) const
