@@ -32,7 +32,6 @@
 #include "sprite.h"
 #include "stdafx.h"
 #include "terrain.inl"
-#include "tstsnds.h"
 
 #include <processenv.h>
 
@@ -2752,14 +2751,8 @@ void CDlgMain::OnMainLoadMulti( )
 void CDlgMain::OnMainCredits( )
 {
 
-#ifdef _CHEAT
-    if ( EnGetProfileInt( "Cheat", "TestAudio", 0 ) == 1 )
-    {
-        CDlgTestSounds dlg;
-        dlg.DoModal( );
-        return;
-    }
-#endif
+    // Removed CHEAT-only CDlgTestSounds branch (TestAudio reg key) along
+    // with CDlgTestSounds itself.
 
     theMusicPlayer.PlayForegroundSound( SOUNDS::GetID( SOUNDS::button ), SFXPRIORITY::selected_pri );
     theApp.m_wndCredits.Create( );

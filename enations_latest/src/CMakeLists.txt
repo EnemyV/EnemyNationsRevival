@@ -76,7 +76,6 @@ set(enations_sources
         stdafx.cpp
         terrain.cpp
         toolbar.cpp
-        tstsnds.cpp  # CDlgTestSounds referenced from exception tables
         ui.cpp
         unit.cpp
         unit_wnd.cpp
