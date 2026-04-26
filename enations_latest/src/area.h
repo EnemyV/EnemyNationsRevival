@@ -206,7 +206,7 @@ public:
 	CHexCoord	ToBuildUL (CHexCoord & hexCur);
 	int		GetBuildDir () const { return ((m_aa.m_iDir + m_iBuildDir) & 3); }
 
-	static	CString		sWndCls;
+	static	std::string	sWndCls;
 
 protected:
 	CUnit * GetUnitOn (CSubHex & hex);

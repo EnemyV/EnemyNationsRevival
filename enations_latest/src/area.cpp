@@ -103,7 +103,7 @@ static UINT SDLKeyToVK(SDL_Scancode sc) {
     }
 }
 
-CString CWndArea::sWndCls;
+std::string CWndArea::sWndCls;
 
 const int SEL_WIDTH = 2;
 
@@ -341,10 +341,10 @@ CWndArea* CAreaList::GetTop( )
     if ( GetCount( ) == 1 )
         return ( GetHead( ) );
 
-    if ( CWndArea::sWndCls.GetLength( ) == 0 )
+    if ( CWndArea::sWndCls.empty( ) )
         return ( NULL );
 
-    return ( (CWndArea*)CWndBase::FindWindow( CWndArea::sWndCls, NULL ) );
+    return ( (CWndArea*)CWndBase::FindWindow( CWndArea::sWndCls.c_str( ), NULL ) );
 }
 
 CWndArea* CAreaList::BringToTop( )
@@ -1041,7 +1041,7 @@ void CWndArea::Create( CMapLoc const& ml, CUnit* pUnit, BOOL bFirst )
         ASSERT( m_lstUnits.GetCount( ) == 1 );
     }
 
-    if ( sWndCls.GetLength( ) == 0 )
+    if ( sWndCls.empty( ) )
         sWndCls = AfxRegisterWndClass( CS_DBLCLKS | CS_HREDRAW | CS_VREDRAW | CS_OWNDC, m_hCurMove[8], 0, 0 );
 
     m_aa.Set( ml, 0, max( 1, theApp.GetZoomData( )->GetFirstZoom( ) ) );
@@ -1071,7 +1071,7 @@ void CWndArea::Create( CMapLoc const& ml, CUnit* pUnit, BOOL bFirst )
     std::string sTitle = EnLoadStdString( IDS_TITLE_AREA_MAP );
     DWORD dwStyle = dwPopWndStyle;
 
-    if ( CreateEx( 0, sWndCls, sTitle.c_str( ), dwStyle, rect.left, rect.top, rect.Width( ), rect.Height( ),
+    if ( CreateEx( 0, sWndCls.c_str( ), sTitle.c_str( ), dwStyle, rect.left, rect.top, rect.Width( ), rect.Height( ),
                    theApp.m_pMainWnd->m_hWnd, NULL, NULL ) == 0 )
         throw( ERR_RES_CREATE_WND );
 
@@ -2072,7 +2072,7 @@ int CWndArea::OnCreate( LPCREATESTRUCT lpCreateStruct )
     CRect rect;
     CWndAnim::GetClientRect( &rect );
     rect.top = rect.bottom - m_WndStatic.m_iYmin;
-    CString sWndCls( AfxRegisterWndClass( CS_DBLCLKS | CS_HREDRAW | CS_VREDRAW | CS_OWNDC, m_hCurLoad[0] ) );
+    LPCTSTR sWndCls = AfxRegisterWndClass( CS_DBLCLKS | CS_HREDRAW | CS_VREDRAW | CS_OWNDC, m_hCurLoad[0] );
     m_WndStatic.Create( sWndCls, NULL, dwStatusWndStyle, rect, this, 0, NULL );
 
     // we had to start with the build icon to get a different class
