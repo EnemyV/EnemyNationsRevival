@@ -28,7 +28,7 @@ static char BASED_CODE THIS_FILE[] = __FILE__;
 
 /////////////////////////////////////////////////////////////////////////////
 // FitDrawText - smaller font if needed
-void FitDrawText( CDC* pDc, CFont& fnt, CString& sText, CRect& rect )
+void FitDrawText( CDC* pDc, CFont& fnt, char const* sText, CRect& rect )
 {
 
     CFont* pOldFont = pDc->SelectObject( &fnt );
@@ -451,7 +451,7 @@ BOOL CTextButton::Create( int idText, int idHelp, CTextBtnData* pTbd, CRect& rec
 
     m_pTextBtnData = pTbd;
 
-    std::string sTitle = EnLoadStdString( idText );
+    std::string sTitle = EnLoadString( idText );
     return ( CMyButton::Create( sTitle.c_str( ), idHelp, rect, pBackDib, pPar, ID ) );
 }
 

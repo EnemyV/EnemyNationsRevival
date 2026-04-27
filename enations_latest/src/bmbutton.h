@@ -12,7 +12,7 @@
 #include "msgs.h"
 #include "windward.h"
 
-void FitDrawText( CDC* pDc, CFont& fnt, CString& sText, CRect& rect );
+void FitDrawText( CDC* pDc, CFont& fnt, char const* sText, CRect& rect );
 void PaintBorder( CDIB* pDib, CRect const& rect, BOOL bBack );
 void PaintBevel( CDC& dc, CRect& rEdge, unsigned uWid, CBrush& brTop, CBrush& brBottom );
 
