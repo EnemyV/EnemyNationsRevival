@@ -2015,10 +2015,10 @@ int CGame::LoadGame( CWnd* pPar, BOOL bReplace )
     }
     else
     {
-        CString sFilters, sExt;
-        sFilters = EnLoadString( IDS_SAVE_FILTERS );
-        sExt = EnLoadString( IDS_SAVE_EXT );
-        CFileDialog dlg( TRUE, sExt, NULL, OFN_HIDEREADONLY | OFN_FILEMUSTEXIST, sFilters, pPar );
+        std::string sFilters = EnLoadStdString( IDS_SAVE_FILTERS );
+        std::string sExt     = EnLoadStdString( IDS_SAVE_EXT );
+        CFileDialog dlg( TRUE, sExt.c_str(), NULL, OFN_HIDEREADONLY | OFN_FILEMUSTEXIST,
+                         sFilters.c_str(), pPar );
         if ( dlg.DoModal( ) != IDOK )
         {
             EnableAllWindows( NULL, TRUE );
@@ -2502,9 +2502,8 @@ int CGame::SaveGame( CWnd* pPar )
     }
     else
     {
-        CString sFilters, sExt;
-        sFilters = EnLoadString( IDS_SAVE_FILTERS );
-        sExt = EnLoadString( IDS_SAVE_EXT );
+        std::string sFilters = EnLoadStdString( IDS_SAVE_FILTERS );
+        std::string sExt     = EnLoadStdString( IDS_SAVE_EXT );
 
         char const* pName;
         if ( m_sFileName.IsEmpty( ) )
@@ -2512,7 +2511,8 @@ int CGame::SaveGame( CWnd* pPar )
         else
             pName = m_sFileName;
 
-        CFileDialog dlg( FALSE, sExt, pName, OFN_HIDEREADONLY | OFN_OVERWRITEPROMPT, sFilters, pPar );
+        CFileDialog dlg( FALSE, sExt.c_str(), pName, OFN_HIDEREADONLY | OFN_OVERWRITEPROMPT,
+                         sFilters.c_str(), pPar );
         EnableAllWindows( NULL, FALSE );
         int iRtn = dlg.DoModal( );
         if ( iRtn != IDOK )
