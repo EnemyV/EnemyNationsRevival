@@ -465,14 +465,7 @@ BOOL CNetbios::AddGroupName (LPCSTR pName, LPCVOID pData)
 		return (TRUE);
 		}
 
-#ifdef BUGBUG
-		{
-		CString sErr;
-		sErr = EnLoadString(IDS_NETBIOS_ADD_GROUP_ERROR);
-		csPrintf (&sErr, pName);
-		MsgBox (sErr);
-		}
-#endif
+	// (BUGBUG message-box on netbios add-group error removed; never compiled)
 
 	_asm int 3
 	pNcb->msg.bInUse = FALSE;
@@ -515,14 +508,7 @@ BOOL CNetbios::AddName (LPCSTR pName, LPCVOID pData)
 		return (TRUE);
 		}
 
-#ifdef BUGBUG
-		{
-		CString sErr;
-		sErr = EnLoadString(IDS_NETBIOS_ADD_DUP);
-		csPrintf (&sErr, pName);
-		MsgBox (sErr);
-		}
-#endif
+	// (BUGBUG message-box on netbios add-dup removed; never compiled)
 
 	_asm int 3
 	pNcb->msg.bInUse = FALSE;
