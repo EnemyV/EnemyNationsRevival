@@ -862,22 +862,22 @@ void CVehicle::PaintStatusBars( CStatInst* pSi, int iNum, CDC* pDc ) const
     // show route for truck
     if ( ( GetData( )->IsTransport( ) ) && ( iNum == 1 ) )
     {
-        CString sText;
+        std::string sText;
         if ( !IsHpControl( ) )
-            sText = CTransportData::m_sAuto.c_str( );
+            sText = CTransportData::m_sAuto;
         else if ( GetEvent( ) == route )
-            sText = CTransportData::m_sRoute.c_str( );
+            sText = CTransportData::m_sRoute;
         CBuilding* pBldg = theBuildingHex.GetBuilding( GetPtHead( ) );
         if ( ( pBldg == NULL ) || ( GetHexOwnership( ) ) )
             pBldg = theBuildingHex.GetBuilding( GetHexDest( ) );
         if ( ( pBldg != NULL ) && ( pBldg->GetOwner( )->IsMe( ) ) )
-            sText += pBldg->GetData( )->GetDesc( );
+            sText += (LPCSTR)pBldg->GetData( )->GetDesc( );
         else if ( GetRouteMode( ) == stop )
-            sText += CTransportData::m_sIdle.c_str( );
+            sText += CTransportData::m_sIdle;
         else
-            sText += CTransportData::m_sTravel.c_str( );
+            sText += CTransportData::m_sTravel;
         pSi->Attach( &theIcons, ICON_BAR_TEXT );
-        pSi->SetText( sText );
+        pSi->SetText( sText.c_str( ) );
         pSi->DrawIcon( pDc );
         return;
     }
