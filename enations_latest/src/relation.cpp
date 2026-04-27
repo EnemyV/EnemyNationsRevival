@@ -25,7 +25,7 @@ static char BASED_CODE THIS_FILE[] = __FILE__;
 #endif
 
 #ifdef _CHEAT
-CDlgStats * pDlgStats = NULL;
+// CDlgStats removed (CHEAT-only player-stats dialog)
 #endif
 
 /////////////////////////////////////////////////////////////////////////////
@@ -149,32 +149,9 @@ void CDlgRelations::OnOK()
 	ShowWindow (SW_HIDE);
 }
 
-void CDlgRelations::OnDblclkRelList() 
+void CDlgRelations::OnDblclkRelList()
 {
-
-#ifdef _CHEAT
-	int iInd = m_lstPlayers.GetCurSel ();
-	if (iInd < 0)
-		return;
-	CPlayer * pPlr = (CPlayer *) m_lstPlayers.GetItemDataPtr (iInd);
-
-	if (pDlgStats != NULL)
-		{
-		pDlgStats->m_iPlyrNum = pPlr->GetPlyrNum ();
-		pDlgStats->UpdateData (TRUE);
-		pDlgStats->m_strName = pPlr->GetName ();
-		pDlgStats->UpdateData (FALSE);
-		pDlgStats->Update ();
-		return;
-		}
-
-	pDlgStats = new CDlgStats (&theApp.m_wndMain);
-	pDlgStats->m_iPlyrNum = pPlr->GetPlyrNum ();
-	pDlgStats->m_strName = pPlr->GetName ();
-	pDlgStats->Create (IDD_PLYR_STAT, &theApp.m_wndMain);
-	pDlgStats->Update ();
-	
-#endif
+    // (CHEAT player-stats popup removed with CDlgStats)
 }
 
 void CDlgRelations::OnRadio() 
@@ -406,78 +383,5 @@ void CDlgRelations::OnDestroy()
 }
 
 
-#ifdef _CHEAT
-/////////////////////////////////////////////////////////////////////////////
-// CDlgStats dialog
-
-
-CDlgStats::CDlgStats(CWnd* pParent /*=NULL*/)
-	: CDialog(CDlgStats::IDD, pParent)
-{
-	//{{AFX_DATA_INIT(CDlgStats)
-	m_strFood = _T("");
-	m_strGas = _T("");
-	m_strName = _T("");
-	m_strPeople = _T("");
-	m_strPower = _T("");
-	//}}AFX_DATA_INIT
-}
-
-
-void CDlgStats::DoDataExchange(CDataExchange* pDX)
-{
-	CDialog::DoDataExchange(pDX);
-	//{{AFX_DATA_MAP(CDlgStats)
-	DDX_Text(pDX, IDC_STAT_FOOD, m_strFood);
-	DDX_Text(pDX, IDC_STAT_GAS, m_strGas);
-	DDX_Text(pDX, IDC_STAT_NAME, m_strName);
-	DDX_Text(pDX, IDC_STAT_PEOPLE, m_strPeople);
-	DDX_Text(pDX, IDC_STAT_POWER, m_strPower);
-	//}}AFX_DATA_MAP
-}
-
-
-BEGIN_MESSAGE_MAP(CDlgStats, CDialog)
-	//{{AFX_MSG_MAP(CDlgStats)
-	//}}AFX_MSG_MAP
-END_MESSAGE_MAP()
-
-
-/////////////////////////////////////////////////////////////////////////////
-// CDlgStats message handlers
-
-BOOL CDlgStats::OnInitDialog() 
-{
-
-	CDialog::OnInitDialog();
-	
-	// TODO: Add extra initialization here
-	
-	return TRUE;  // return TRUE unless you set the focus to a control
-	              // EXCEPTION: OCX Property Pages should return FALSE
-}
-
-void CDlgStats::OnOK() 
-{
-	
-	pDlgStats = NULL;
-
-	CDialog::OnOK();
-}
-
-void CDlgStats::Update ()
-{
-
-	UpdateData (TRUE);
-
-	CPlayer * pPlyr = theGame.GetPlayerByPlyr (m_iPlyrNum);	
-	m_strGas = IntToCString (pPlyr->GetGasHave ()) + "/" + IntToCString (pPlyr->GetGasNeed ());
-	m_strPower = IntToCString (pPlyr->GetPwrHave ()) + "/" + IntToCString (pPlyr->GetPwrNeed ());
-	m_strPeople = IntToCString (pPlyr->GetPplVeh ()) + ":" + IntToCString (pPlyr->GetPplBldg ()) 
-																			+ "/" + IntToCString (pPlyr->GetPplNeedBldg ());
-	m_strFood = IntToCString (pPlyr->GetFood ()) + "/" + IntToCString (pPlyr->GetFoodNeed ());
-
-	UpdateData (FALSE);
-}
-#endif
+// CDlgStats removed (CHEAT-only player-stats dialog)
 

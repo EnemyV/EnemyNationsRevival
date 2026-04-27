@@ -839,10 +839,7 @@ void CConquerApp::GraphicsEnginePump( )
                 }
             }
 
-#ifdef _CHEAT
-            if ( pDlgStats != NULL )
-                pDlgStats->Update( );
-#endif
+            // (CDlgStats removed; was a _CHEAT-only diagnostic dialog)
 
             // grow the population
             // eat the food

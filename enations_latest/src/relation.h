@@ -13,10 +13,7 @@
 // relation.h : header file
 //
 
-#ifdef _CHEAT
-class CDlgStats;
-extern CDlgStats * pDlgStats;
-#endif
+// CDlgStats removed (CHEAT-only player-stats dialog)
 class CPlayer;
 
 
@@ -74,51 +71,7 @@ protected:
 };
 
 
-#ifdef _CHEAT
-
-/////////////////////////////////////////////////////////////////////////////
-// CDlgStats dialog
-
-class CDlgStats : public CDialog
-{
-// Construction
-public:
-	CDlgStats(CWnd* pParent = NULL);   // standard constructor
-
-	void		Update ();
-
-// Dialog Data
-	//{{AFX_DATA(CDlgStats)
-	enum { IDD = IDD_PLYR_STAT };
-	CString	m_strFood;
-	CString	m_strGas;
-	CString	m_strName;
-	CString	m_strPeople;
-	CString	m_strPower;
-	//}}AFX_DATA
-
-	int		m_iPlyrNum;
-
-
-// Overrides
-	// ClassWizard generated virtual function overrides
-	//{{AFX_VIRTUAL(CDlgStats)
-	protected:
-	virtual void DoDataExchange(CDataExchange* pDX);    // DDX/DDV support
-	virtual void PostNcDestroy() { delete this; }
-	//}}AFX_VIRTUAL
-
-// Implementation
-protected:
-
-	// Generated message map functions
-	//{{AFX_MSG(CDlgStats)
-	virtual BOOL OnInitDialog();
-	virtual void OnOK();
-	//}}AFX_MSG
-	DECLARE_MESSAGE_MAP()
-};
-#endif
+// CDlgStats removed (CHEAT-only player-stats dialog)
 
 
 #endif
