@@ -430,13 +430,15 @@ void CDlgPickPlayer::OnSelchangeRaceList() {
         m_sDesc += "\r\n";
     }
 
-    std::string sTmp = EnLoadStdString(IDS_BUILDINGS);
-    m_sDesc += sTmp.c_str() + CString(" ") + IntToCString(pData->m_iNumBldgs) + "\r\n";
-    sTmp = EnLoadStdString(IDS_VEHICLES);
-    m_sDesc += sTmp.c_str() + CString(" ") + IntToCString(pData->m_iNumVeh) + "\r\n";
+    std::string sTmp = EnLoadStdString(IDS_BUILDINGS) + " " + IntToStr(pData->m_iNumBldgs) + "\r\n";
+    m_sDesc += sTmp.c_str();
+    sTmp = EnLoadStdString(IDS_VEHICLES) + " " + IntToStr(pData->m_iNumVeh) + "\r\n";
+    m_sDesc += sTmp.c_str();
     for (int iOn = 0; iOn < CMaterialTypes::GetNumTypes(); iOn++)
-        if (pData->m_iMat[iOn] > 0)
-            m_sDesc += CMaterialTypes::GetDesc(iOn).c_str() + CString(": ") + IntToCString(pData->m_iMat[iOn]) + "\r\n";
+        if (pData->m_iMat[iOn] > 0) {
+            std::string sLine = CMaterialTypes::GetDesc(iOn) + ": " + IntToStr(pData->m_iMat[iOn]) + "\r\n";
+            m_sDesc += sLine.c_str();
+        }
 
     UpdateData(FALSE);
 
