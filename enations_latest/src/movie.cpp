@@ -114,27 +114,29 @@ void CWndMovie::AddMovie(char const *pFile) {
 
     if (bFirst) {
         bFirst = FALSE;
-        m_sDataDir = EnGetProfileString("Game", "DataFile", ".\\");
-        m_sDataDir.ReleaseBuffer(m_sDataDir.ReverseFind('\\') + 1);
+        m_sDataDir = EnGetProfileStdString("Game", "DataFile", ".\\");
+        size_t iSlash = m_sDataDir.find_last_of('\\');
+        if (iSlash != std::string::npos)
+            m_sDataDir.resize(iSlash + 1);
         m_sDataDir += "avi\\";
 
-        m_sPatchDir = EnGetProfileString("Game", "Patch", "..\\data");
-        if (!m_sPatchDir.IsEmpty())
-            if (m_sPatchDir[m_sPatchDir.GetLength() - 1] != '\\')
+        m_sPatchDir = EnGetProfileStdString("Game", "Patch", "..\\data");
+        if (!m_sPatchDir.empty())
+            if (m_sPatchDir[m_sPatchDir.size() - 1] != '\\')
                 m_sPatchDir += "\\";
         m_sPatchDir += "avi\\";
     }
 
-    CString sFile = m_sPatchDir + CString(pFile);
+    std::string sFile = m_sPatchDir + pFile;
     CFileStatus fs;
-    if (CFile::GetStatus(sFile, fs) == 0) {
-        sFile = m_sDataDir + CString(pFile);
-        if (CFile::GetStatus(sFile, fs) == 0)
+    if (CFile::GetStatus(sFile.c_str(), fs) == 0) {
+        sFile = m_sDataDir + pFile;
+        if (CFile::GetStatus(sFile.c_str(), fs) == 0)
             return;
     }
 
-    char *pStore = new char[sFile.GetLength() + 2];
-    strcpy(pStore, (char const *) sFile);
+    char *pStore = new char[sFile.size() + 2];
+    strcpy(pStore, sFile.c_str());
     m_lstFiles.AddTail(pStore);
 }
 
