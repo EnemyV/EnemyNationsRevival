@@ -126,38 +126,7 @@ inline LRESULT CWndMain::OnNetFlowOff (WPARAM , LPARAM )
 		{ CNetApi::OnNetFlowOff (); return 0; }
 
 
-/////////////////////////////////////////////////////////////////////////////
-// CDlgRandNum dialog
-
-class CDlgRandNum : public CDialog
-{
-// Construction
-public:
-	CDlgRandNum(CWnd* pParent = NULL);   // standard constructor
-
-// Dialog Data
-	//{{AFX_DATA(CDlgRandNum)
-	enum { IDD = IDD_DIALOG_RAND };
-	CString	m_sNum;
-	//}}AFX_DATA
-
-
-// Overrides
-	// ClassWizard generated virtual function overrides
-	//{{AFX_VIRTUAL(CDlgRandNum)
-	protected:
-	virtual void DoDataExchange(CDataExchange* pDX);    // DDX/DDV support
-	//}}AFX_VIRTUAL
-
-// Implementation
-protected:
-
-	// Generated message map functions
-	//{{AFX_MSG(CDlgRandNum)
-		// NOTE: the ClassWizard will add member functions here
-	//}}AFX_MSG
-	DECLARE_MESSAGE_MAP()
-};
+// CDlgRandNum removed (cheat seed-override dialog)
 
 /////////////////////////////////////////////////////////////////////////////
 // CDlgAiPos dialog

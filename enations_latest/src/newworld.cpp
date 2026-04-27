@@ -239,16 +239,7 @@ void CConquerApp::ReadyToCreate() {
 
         unsigned uRand = MySeed();
 
-#ifdef _CHEAT
-        // seed override, for testing i assume
-        if (EnGetProfileInt("Debug", "SetRand", 0))
-            {
-            CDlgRandNum dlg;
-            dlg.m_sNum = IntToCString (uRand);
-            if (dlg.DoModal () == IDOK)
-                uRand = atoi (dlg.m_sNum);
-            }
-#endif
+        // (cheat seed-override dialog removed — Debug:SetRand was its only use)
 
         AIinit aiData(m_pCreateGame->m_iAi, m_pCreateGame->m_iNumAi,
                       theGame.GetAll().GetCount() - m_pCreateGame->m_iNumAi, m_pCreateGame->m_iSize);
@@ -302,15 +293,7 @@ void CConquerApp::StartCreateWorld() {
     // lets start the game
     unsigned uRand = MySeed();
 
-#ifdef _CHEAT
-    if (EnGetProfileInt("Debug", "SetRand", 0))
-        {
-        CDlgRandNum dlg;
-        dlg.m_sNum = IntToCString (uRand);
-        if (dlg.DoModal () == IDOK)
-            uRand = atoi (dlg.m_sNum);
-        }
-#endif
+    // (cheat seed-override dialog removed)
 
     AIinit aiData(m_pCreateGame->m_iAi, m_pCreateGame->m_iNumAi,
                   theGame.GetAll().GetCount() - m_pCreateGame->m_iNumAi, m_pCreateGame->m_iSize);
@@ -1407,37 +1390,7 @@ void CConquerApp::CloseWorld() {
 }
 
 #ifdef _CHEAT
-/////////////////////////////////////////////////////////////////////////////
-// CDlgRandNum dialog
-
-
-CDlgRandNum::CDlgRandNum(CWnd* pParent /*=NULL*/)
-    : CDialog(CDlgRandNum::IDD, pParent)
-{
-    //{{AFX_DATA_INIT(CDlgRandNum)
-    m_sNum = _T("");
-    //}}AFX_DATA_INIT
-}
-
-
-void CDlgRandNum::DoDataExchange(CDataExchange* pDX)
-{
-    CDialog::DoDataExchange(pDX);
-    //{{AFX_DATA_MAP(CDlgRandNum)
-    DDX_Text(pDX, IDC_RAND_EDIT, m_sNum);
-    //}}AFX_DATA_MAP
-}
-
-
-BEGIN_MESSAGE_MAP(CDlgRandNum, CDialog)
-    //{{AFX_MSG_MAP(CDlgRandNum)
-        // NOTE: the ClassWizard will add message map macros here
-    //}}AFX_MSG_MAP
-END_MESSAGE_MAP()
-
-
-/////////////////////////////////////////////////////////////////////////////
-// CDlgRandNum message handlers
+// CDlgRandNum removed (cheat seed-override; replaced by hardcoded uRand path)
 
 /////////////////////////////////////////////////////////////////////////////
 // CDlgAiPos dialog
