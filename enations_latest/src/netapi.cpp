@@ -67,7 +67,7 @@ CNetApi::~CNetApi( )
     Close( FALSE );
 }
 
-CString CNetApi::GetIServeAddress( )
+std::string CNetApi::GetIServeAddress( )
 {
 
     VPNETADDRESS addr;
@@ -159,17 +159,15 @@ BOOL CNetApi::OpenClient( int iProtocol, HWND hWnd, void const* pPrtcl )
     return ( FALSE );
 }
 
-CString CNetApi::GetAddress( ) const
+std::string CNetApi::GetAddress( ) const
 {
 
     VPNETADDRESS addr;
     vpGetAddress( m_vpHdl, &addr );
 
-    CString sRtn;
-    vpGetAddressString( m_vpHdl, &addr, sRtn.GetBuffer( 256 ), 258 );
-    sRtn.ReleaseBuffer( -1 );
-
-    return ( sRtn );
+    char sBuf[258];
+    vpGetAddressString( m_vpHdl, &addr, sBuf, 258 );
+    return std::string( sBuf );
 }
 
 BOOL CNetApi::Join( LPCVPSESSIONID id, CNetJoin const* pJn )

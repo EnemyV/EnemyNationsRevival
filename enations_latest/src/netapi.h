@@ -37,12 +37,12 @@ static		LRESULT OnNetMsg (WPARAM wParam, LPARAM lParam);
 static		void OnNetFlowOn ();
 static		void OnNetFlowOff ();
 
-		CString	GetIServeAddress ();
+		std::string	GetIServeAddress ();
 
 		BOOL		OpenServer (int iPrtcl, HWND hWnd, char const *pName, void const * pData, void const * pPrtcl);
 		BOOL		UpdateSessionData (void const * pData) { return (! vpUpdateSessionData (m_vpSession, pData)); }
 		BOOL		OpenClient (int iPrtcl, HWND hWnd, void const * pPrtcl);
-		CString	GetAddress () const ;
+		std::string	GetAddress () const ;
 
 		BOOL		StartEnum () { return (! vpEnumSessions (m_vpHdl, m_hWnd, TRUE, NULL)); }
 		BOOL		StopEnum () { return (! vpStopEnumSessions (m_vpHdl)); }

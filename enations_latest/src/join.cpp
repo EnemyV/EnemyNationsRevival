@@ -565,10 +565,10 @@ BOOL CDlgJoinGame::OnInitDialog( )
     UpdateData( TRUE );
     CString sTemp;
     sTemp = EnLoadString( IDS_YOUR_ADDR );
-    m_sAddr = sTemp + theNet.GetAddress( );
+    m_sAddr = sTemp + theNet.GetAddress( ).c_str( );
 
     sTemp = EnLoadString( IDS_IS_ADDR );
-    m_sIsAddr = theNet.GetIServeAddress( );
+    m_sIsAddr = theNet.GetIServeAddress( ).c_str( );
     if ( m_sIsAddr.IsEmpty( ) )
     {
         m_bTimer = TRUE;
@@ -607,8 +607,8 @@ void CDlgJoinGame::OnTimer( UINT nIDEvent )
 {
 
     // see if we've got it
-    CString sIserve = theNet.GetIServeAddress( );
-    if ( sIserve.IsEmpty( ) )
+    std::string sIserve = theNet.GetIServeAddress( );
+    if ( sIserve.empty( ) )
         return;
 
     // we've got it - kill the timer
@@ -617,7 +617,7 @@ void CDlgJoinGame::OnTimer( UINT nIDEvent )
 
     UpdateData( TRUE );
     m_sIsAddr = EnLoadString( IDS_IS_ADDR );
-    m_sIsAddr += sIserve;
+    m_sIsAddr += sIserve.c_str( );
     UpdateData( FALSE );
 }
 
