@@ -202,24 +202,17 @@ void CWndWorld::Create(BOOL bStart) {
     }
 
     // get min size
-    CString sTitle;
     m_bIsRadar = theGame.GetMe()->GetExists(CStructureData::command_center);
-    if (m_bIsRadar)
-        sTitle = EnLoadString(IDS_WORLD_TITLE_RADAR);
-    else
-        sTitle = EnLoadString(IDS_WORLD_TITLE_MAP);
-
-    if (m_pWndArea == NULL)
-        csPrintf(&sTitle, (char const *) "");
-    else
-        csPrintf(&sTitle, m_sDir[m_pWndArea->GetAA().m_iDir].c_str());
+    std::string sTitle = strPrintf(
+        EnLoadStdString(m_bIsRadar ? IDS_WORLD_TITLE_RADAR : IDS_WORLD_TITLE_MAP).c_str(),
+        m_pWndArea == NULL ? "" : m_sDir[m_pWndArea->GetAA().m_iDir].c_str());
 
     // World window (so it can have a cross-hair
     LPCTSTR sClass = AfxRegisterWndClass(dwStyleWorldWnd, theApp.LoadStandardCursor(IDC_CROSS), 0, 0);
 
     // if it crashes here, i think a gfx bitmap is missing?
     // theApp.m_pMainWnd->m_hWnd is wrong, i think
-    if ( CreateEx( 0, sClass, sTitle, dwPopWndStyle, EnGetProfileInt( theApp.m_sResIni.c_str(), "WorldX", 0 ),
+    if ( CreateEx( 0, sClass, sTitle.c_str(), dwPopWndStyle, EnGetProfileInt( theApp.m_sResIni.c_str(), "WorldX", 0 ),
                    EnGetProfileInt( theApp.m_sResIni.c_str(), "WorldY", 0 ),
                    EnGetProfileInt( theApp.m_sResIni.c_str(), "WorldEX", theApp.m_iCol1 + 1 ),
                    EnGetProfileInt( theApp.m_sResIni.c_str(), "WorldEY", theApp.m_iRow1 + 1 ), 
