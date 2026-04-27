@@ -754,9 +754,9 @@ void CUnitButton::DrawItem(LPDRAWITEMSTRUCT pDis) {
     }
 
     // if we have text
-    CString sText;
-    GetWindowText(sText);
-    if (!sText.IsEmpty()) {
+    char sText[256];
+    int  sTextLen = GetWindowText(sText, (int)sizeof(sText));
+    if (sTextLen > 0) {
         CDC *pDc = CDC::FromHandle(m_pDib->GetDC());
         if (pDc == NULL)
             return;
