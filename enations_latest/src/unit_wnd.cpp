@@ -290,28 +290,28 @@ void CWndListUnits::OnDrawItem(int, LPDRAWITEMSTRUCT pDis) {
         pDc->SetBkMode(TRANSPARENT);
         CFont *pOldFont = pDc->SelectObject(&theApp.TextFont());
 
-        CString sText = pUnit->GetData()->GetDesc();
+        std::string sText = (LPCSTR)pUnit->GetData()->GetDesc();
         // put dest/location if dest is a building
         if (pUnit->GetUnitType() == CUnit::vehicle) {
             sText += " ";
             CVehicle *pVeh = (CVehicle *) pUnit;
             if (pVeh->GetData()->IsTransport()) {
                 if (!pVeh->IsHpControl())
-                    sText += CTransportData::m_sAuto.c_str();
+                    sText += CTransportData::m_sAuto;
                 else if (pVeh->GetEvent() == CVehicle::route)
-                    sText += CTransportData::m_sRoute.c_str();
+                    sText += CTransportData::m_sRoute;
             }
 
             CBuilding *pBldg = theBuildingHex.GetBuilding(pVeh->GetPtHead());
             if ((pBldg == NULL) || (pVeh->GetHexOwnership()))
                 pBldg = theBuildingHex.GetBuilding(pVeh->GetHexDest());
             if ((pBldg != NULL) && (pBldg->GetOwner()->IsMe()))
-                sText += "[" + pBldg->GetData()->GetDesc() + "]";
+                sText += std::string("[") + (LPCSTR)pBldg->GetData()->GetDesc() + "]";
             else if (pVeh->GetData()->IsTransport()) {
                 if (pVeh->GetRouteMode() == CVehicle::stop)
-                    sText += CTransportData::m_sIdle.c_str();
+                    sText += CTransportData::m_sIdle;
                 else
-                    sText += CTransportData::m_sTravel.c_str();
+                    sText += CTransportData::m_sTravel;
             }
         }
 
@@ -320,25 +320,25 @@ void CWndListUnits::OnDrawItem(int, LPDRAWITEMSTRUCT pDis) {
         BOOL bShrink = FALSE;
         while (TRUE) {
             rFit = rect;
-            pDc->DrawText(sText, -1, &rFit, DT_CALCRECT | DT_LEFT | DT_SINGLELINE | DT_VCENTER);
+            pDc->DrawText(sText.c_str(), -1, &rFit, DT_CALCRECT | DT_LEFT | DT_SINGLELINE | DT_VCENTER);
             if (rFit.right < rect.right)
                 break;
-            if (sText.GetLength() < 5)
+            if (sText.size() < 5)
                 break;
-            sText.ReleaseBuffer(sText.GetLength() - 1);
+            sText.resize(sText.size() - 1);
             bShrink = TRUE;
         }
         if (bShrink) {
-            sText.ReleaseBuffer(sText.GetLength() - 2);
+            sText.resize(sText.size() - 2);
             sText += "...";
         }
 
         rect.OffsetRect(1, 1);
         pDc->SetTextColor(RGB (0, 0, 0));
-        pDc->DrawText(sText, -1, &rect, DT_LEFT | DT_SINGLELINE | DT_VCENTER);
+        pDc->DrawText(sText.c_str(), -1, &rect, DT_LEFT | DT_SINGLELINE | DT_VCENTER);
         rect.OffsetRect(-2, -2);
         pDc->SetTextColor(RGB (255, 255, 255));
-        pDc->DrawText(sText, -1, &rect, DT_LEFT | DT_SINGLELINE | DT_VCENTER);
+        pDc->DrawText(sText.c_str(), -1, &rect, DT_LEFT | DT_SINGLELINE | DT_VCENTER);
 
         // now the status
         rect.top = 60 - m_iStatHt;
