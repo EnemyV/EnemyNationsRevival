@@ -101,14 +101,14 @@ void CDlgChatAll::OnReturn()
 
 	UpdateData (TRUE);
 
-	CString sMsg;
+	std::string sMsg;
 	if ( theGame.HaveHP () )
 		sMsg = theGame.GetMe()->GetName ();
 	else
-		sMsg = EnLoadString( IDS_SERVER );
-	sMsg += ": " + m_strSend + "\r\n";
+		sMsg = EnLoadStdString( IDS_SERVER );
+	sMsg += std::string(": ") + (LPCSTR)m_strSend + "\r\n";
 
-	CNetChat * pMsg = CNetChat::Alloc (theGame.GetMe (), sMsg);
+	CNetChat * pMsg = CNetChat::Alloc (theGame.GetMe (), sMsg.c_str());
 	theGame.PostToAll (pMsg, pMsg->m_iLen, FALSE);
 	delete [] ((char *) pMsg);
 
