@@ -279,9 +279,10 @@ CDlgPlayerList::CDlgPlayerList(CWnd *pParent /*=NULL*/)
     m_sVer += VER_STRING;
     m_sVpVer = EnLoadString(IDS_VP_VER);
     long lVer = CNetApi::GetVersion();
-    m_sVpVer += IntToCString(HIBYTE (HIWORD(lVer))) + "." +
-                IntToCString(LOBYTE (HIWORD(lVer))) + "." +
-                IntToCString(LOWORD (lVer));
+    std::string sVer = IntToStr(HIBYTE (HIWORD(lVer))) + "." +
+                       IntToStr(LOBYTE (HIWORD(lVer))) + "." +
+                       IntToStr(LOWORD (lVer));
+    m_sVpVer += sVer.c_str();
 
     m_bServer = FALSE;
     m_bTimer = FALSE;
@@ -351,11 +352,10 @@ BOOL CDlgPlayerList::OnInitDialog() {
 
     UpdateData(TRUE);
 
-    CString sTemp;
-    sTemp = EnLoadString(IDS_YOUR_ADDR);
-    m_sAddr = sTemp + theNet.GetAddress().c_str();
+    std::string sTemp = EnLoadStdString(IDS_YOUR_ADDR);
+    m_sAddr = (sTemp + theNet.GetAddress()).c_str();
 
-    sTemp = EnLoadString(IDS_IS_ADDR);
+    sTemp = EnLoadStdString(IDS_IS_ADDR);
     m_sIsAddr = theNet.GetIServeAddress().c_str();
     if (m_sIsAddr.IsEmpty()) {
         m_bTimer = TRUE;
@@ -366,7 +366,7 @@ BOOL CDlgPlayerList::OnInitDialog() {
                                 sName, 158, "vdmplay.ini");
         csPrintf(&m_sIsAddr, (const char *) sName);
     }
-    m_sIsAddr = sTemp + m_sIsAddr;
+    m_sIsAddr = (sTemp + (LPCSTR)m_sIsAddr).c_str();
 
     UpdateData(FALSE);
 
