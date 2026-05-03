@@ -27,6 +27,7 @@
 #include "netcmd.h"
 #include "player.h"
 #include "relation.h"
+#include "SDL2CreateStatus.h"
 #include "stdafx.h"
 #include "terrain.inl"
 #include "unit.inl"
@@ -862,7 +863,7 @@ LRESULT CNetApi::OnNetMsg( WPARAM wParam, LPARAM lParam )
             // update status bar
             else if ( bProcessed )
             {
-                CDlgCreateStatus* pDlg = theApp.m_pCreateGame->GetDlgStatus( );
+                SDL2CreateStatus* pDlg = theApp.m_pCreateGame->GetDlgStatus( );
                 if ( pDlg != NULL )
                     pDlg->SetPer( ( theGame.m_pXferFromServer->TransferredDataAmount( ) * 100 ) /
                                   theGame.m_iGameBufLen );
@@ -1224,7 +1225,7 @@ static void CmdSelectOk( CNetSelectPlyr* )
 {
 
     theApp.m_pCreateGame->ClosePick( );
-    CDlgCreateStatus* pDlg = theApp.m_pCreateGame->GetDlgStatus( );
+    SDL2CreateStatus* pDlg = theApp.m_pCreateGame->GetDlgStatus( );
     if ( pDlg != NULL )
     {
         pDlg->SetPer( 0 );
@@ -1290,7 +1291,7 @@ static void CmdGetFile( CNetGetFile* pCmd )
 
     // show loading
     theApp.m_pCreateGame->ShowDlgStatus( );
-    CDlgCreateStatus* pDlg = theApp.m_pCreateGame->GetDlgStatus( );
+    SDL2CreateStatus* pDlg = theApp.m_pCreateGame->GetDlgStatus( );
     if ( pDlg != NULL )
         pDlg->SetMsg( IDS_JOIN_LOAD_FILE );
 

@@ -14,6 +14,7 @@
 #include "lastplnt.h"
 #include "minerals.inl"
 #include "player.h"
+#include "SDL2CreateStatus.h"
 #include "stdafx.h"
 #include "terrain.inl"
 

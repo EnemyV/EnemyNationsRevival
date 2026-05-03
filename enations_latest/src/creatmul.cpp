@@ -14,6 +14,7 @@
 #include "player.h"
 #include "help.h"
 #include "error.h"
+#include "SDL2CreateStatus.h"
 
 #include "creatmul.inl"
 

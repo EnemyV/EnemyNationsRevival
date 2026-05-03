@@ -6,6 +6,12 @@
 #include "GameWindow.h"
 #include "SDL2Compositor.h"
 #include "bitmaps.h"
+#include "player.h"
+#include "lastplnt.h"
+#include "netcmd.h"
+#include "error.h"
+#include "help.h"
+#include "EnSettings.h"
 
 #include <SDL.h>
 #include <SDL_ttf.h>
@@ -170,10 +176,41 @@ void SDL2CreateStatus::SetMsg(int stringResourceID) {
 }
 
 void SDL2CreateStatus::SetPer(int percent) {
-    if (percent < -1) percent = -1;
-    if (percent > 100) percent = 100;
-    if (percent == -1) percent = 0;
-    m_percent = percent;
+    SetPer(percent, FALSE);
+}
+
+void SDL2CreateStatus::SetPer(int percent, BOOL bYield) {
+    // Match CDlgCreateStatus::SetPer(int,BOOL) semantics.
+    if (bYield) {
+        if (m_cancelled)
+            ThrowError(ERR_TLP_QUIT);
+        theApp.BaseYield();
+        theGame.ProcessAllMessages();
+        if (m_cancelled)
+            ThrowError(ERR_TLP_QUIT);
+    }
+
+    percent = percent < -1 ? -1 : (percent > 100 ? 100 : percent);
+    // Don't go backward (except resetting to 0).
+    if ((m_percent >= percent) && (percent != 0))
+        return;
+
+    // Tell other players our new status.
+    if (theGame.IsNetGame() && theGame.HaveHP()) {
+        CNetPlyrStatus msg(theGame.GetMe()->GetNetNum(), percent);
+        theGame.PostToAll(&msg, sizeof(msg), FALSE);
+    }
+
+    m_percent = (percent == -1) ? 0 : percent;
+
+    if (m_percent >= PER_DONE)
+        Hide();
+}
+
+void SDL2CreateStatus::SetStatus() {
+    // Matches CDlgCreateStatus::SetStatus(): reset to "Creating World..." 0%
+    SetPer(0);
+    SetMsg(IDS_CREATE_WORLD);
 }
 
 void SDL2CreateStatus::Render() {
@@ -340,8 +377,22 @@ bool SDL2CreateStatus::HandleEvent(const SDL_Event& event) {
             int mx = event.button.x, my = event.button.y;
             if (mx >= m_btnCancelRect.x && mx < m_btnCancelRect.x + m_btnCancelRect.w &&
                 my >= m_btnCancelRect.y && my < m_btnCancelRect.y + m_btnCancelRect.h) {
+                // Match CDlgCreateStatus::OnCancel — confirm before quitting.
+                int idsQuit;
+                if (theGame._GetMe() == NULL)
+                    idsQuit = IDS_SERVER_QUIT;
+                else if (theGame.AmServer())
+                    idsQuit = theGame.IsNetGame() ? IDS_SERVER_QUIT : IDS_SINGLE_QUIT;
+                else
+                    idsQuit = IDS_CLIENT_QUIT;
+
+                if (EnMessageBox(idsQuit, MB_YESNO | MB_ICONSTOP | MB_TASKMODAL) != IDYES)
+                    return true;
+
                 m_cancelled = true;
-                LogStatus("Cancel clicked");
+                LogStatus("Cancel clicked (confirmed)");
+                if (!theGame.GetTry())
+                    theApp.CloseWorld();
                 return true;
             }
         }

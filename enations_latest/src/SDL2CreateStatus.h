@@ -32,7 +32,13 @@ public:
 
     // Update progress percentage (0-100, or -1 to reset)
     void SetPer(int percent);
+    // Yielding overload: pumps SDL events + game messages, broadcasts CNetPlyrStatus,
+    // throws ERR_TLP_QUIT if the user clicked Cancel. Matches CDlgCreateStatus::SetPer(int,BOOL).
+    void SetPer(int percent, BOOL bYield);
     int  GetPer() const { return m_percent; }
+
+    // Reset to "Creating World..." 0% (matches CDlgCreateStatus::SetStatus)
+    void SetStatus();
 
     // Cancel support
     bool WasCancelled() const { return m_cancelled; }

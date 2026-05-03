@@ -17,6 +17,7 @@
 #include "netapi.h"
 #include "player.h"
 #include "racedata.h"
+#include "SDL2CreateStatus.h"
 #include "stdafx.h"
 
 
@@ -104,7 +105,7 @@ void CJoinMulti::GameLoaded( void* pBuf, int iLen )
 {
 
     // load the game file
-    CDlgCreateStatus* pDlg = theApp.m_pCreateGame->GetDlgStatus( );
+    SDL2CreateStatus* pDlg = theApp.m_pCreateGame->GetDlgStatus( );
     if ( pDlg != NULL )
         pDlg->SetPer( 0 );
 

@@ -34,49 +34,9 @@ const int aPr[NUM_PROTOCOLS] = {
 						VPT_TAPI,
 						VPT_COMM };
 
-/////////////////////////////////////////////////////////////////////////////
-// CDlgCreateStatus dialog
-
-class CDlgCreateStatus : public CDialog
-{
-// Construction
-public:
-	CDlgCreateStatus (CWnd* pParent = NULL);	// standard constructor
-	BOOL	Create () { return (CDialog::Create (IDD)); }
-	void	SetStatus ();
-	void	SetMsg (int idRes);
-	void	SetMsg (char const * pText);
-	void	SetPer (int iPer, BOOL bYield = TRUE);
-
-// Overrides
-	// ClassWizard generated virtual function overrides
-	//{{AFX_VIRTUAL(CWndRoute)
-	protected:
-	virtual void			PostNcDestroy () { delete this; }
-	//}}AFX_VIRTUAL
-
-// Dialog Data
-	//{{AFX_DATA(CDlgCreateStatus)
-	enum { IDD = IDD_CREATE_STATUS };
-	CStatic	m_txtMsg;
-	CWndOD< CButton >	m_btnCancel;
-	//}}AFX_DATA
-
-// Implementation
-protected:
-	int			m_iPer;
-	BOOL		m_Quit;
-
-	virtual void DoDataExchange(CDataExchange* pDX);	// DDX/DDV support
-
-	// Generated message map functions
-	//{{AFX_MSG(CDlgCreateStatus)
-	virtual BOOL OnInitDialog();
-	virtual void OnOK();
-	virtual void OnCancel();
-	//}}AFX_MSG
-	DECLARE_MESSAGE_MAP()
-};
+// CDlgCreateStatus removed (replaced by SDL2CreateStatus)
+// Forward decl so CCreateBase can hold SDL2CreateStatus*
+class SDL2CreateStatus;
 
 
 /////////////////////////////////////////////////////////////////////////////
@@ -168,7 +128,7 @@ public:
 		virtual void	OnSessionEnum (LPCVPSESSIONINFO) {}
 		virtual void	OnSessionClose (LPCVPSESSIONINFO) {}
 
-		CDlgCreateStatus * GetDlgStatus () { ASSERT (m_pdlgStatus != NULL); return (m_pdlgStatus); }
+		SDL2CreateStatus * GetDlgStatus () { ASSERT (m_psdlStatus != NULL); return (m_psdlStatus); }
 		void		CreateDlgStatus ();
 		void		ShowDlgStatus ();
 		void		HideDlgStatus ();
@@ -203,7 +163,6 @@ public:
 		SDL2CreateStatus * GetSDL2Status() { return m_psdlStatus; }
 
 protected:
-		CDlgCreateStatus *	m_pdlgStatus;
 		SDL2CreateStatus *	m_psdlStatus = nullptr;
 
 #ifdef _DEBUG

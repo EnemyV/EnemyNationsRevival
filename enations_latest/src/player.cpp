@@ -32,6 +32,7 @@
 #include "plyrlist.h"
 #include "relation.h"
 #include "research.h"
+#include "SDL2CreateStatus.h"
 #include "stdafx.h"
 #include "terrain.inl"
 #include "unit.inl"
@@ -2029,9 +2030,8 @@ int CGame::LoadGame( CWnd* pPar, BOOL bReplace )
     // put up a message to say we are loading
     theApp.m_pCreateGame->CreateDlgStatus( );
     std::string sText = strPrintf( EnLoadStdString( IDS_LOAD_NAME ).c_str(), sFileTitle.c_str() );
-    theApp.m_pCreateGame->GetDlgStatus( )->SetWindowText( sText.c_str() );
+    theApp.m_pCreateGame->GetDlgStatus( )->SetMsg( sText );
     theApp.m_pCreateGame->GetDlgStatus( )->SetPer( 0 );
-    theApp.m_pCreateGame->GetDlgStatus( )->SetMsg( IDS_LOAD_FILE );
     theApp.m_pCreateGame->ShowDlgStatus( );
 
     theApp.BaseYield( );

@@ -13,6 +13,7 @@
 #include "lastplnt.h"
 #include "GameWindow.h"
 #include "SDL2MFCPanel.h"
+#include "SDL2CreateStatus.h"
 #include "player.h"
 #include "racedata.h"
 #include "new_game.h"
@@ -187,7 +188,6 @@ void CConquerApp::ReadyToJoin() {
                                         (theGame.GetNetJoin() != CGame::approve)))
         m_pCreateGame->GetDlgStatus()->SetStatus();
 
-    m_pCreateGame->GetDlgStatus()->UpdateWindow();
     m_pCreateGame->UpdateBtns();
 
     theMusicPlayer.SoundsOff();
@@ -259,7 +259,6 @@ void CConquerApp::StartCreateWorld() {
 
     // set the status box
     m_pCreateGame->GetDlgStatus()->SetStatus();
-    m_pCreateGame->GetDlgStatus()->UpdateWindow();
 
     // stop the net till we are running
     theNet.SetMode(CNetApi::starting);

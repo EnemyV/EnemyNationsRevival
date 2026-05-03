@@ -96,7 +96,6 @@ CCreateBase::CCreateBase(int iTyp) {
     m_iNet = -1;
     m_iJoinUntil = 0;
     m_iNumPlayers = 0;
-    m_pdlgStatus = NULL;
     m_pAdvNet = NULL;
 
     memset(&m_ID, 0, sizeof(m_ID));
@@ -118,55 +117,22 @@ void CCreateBase::CloseAll() {
         delete m_psdlStatus;
         m_psdlStatus = NULL;
     }
-
-    if (m_pdlgStatus != NULL) {
-        CDlgCreateStatus *pDlg = m_pdlgStatus;
-        m_pdlgStatus = NULL;
-
-        TRAP(pDlg->m_hWnd == NULL);        // got a GPF on delete pDlg
-        pDlg->DestroyWindow();
-    }
 }
 
 void CCreateBase::ShowDlgStatus() {
 
-    // SDL2 path
-    if (theApp.m_gameWindow) {
-        if (m_psdlStatus == NULL) {
-            m_psdlStatus = new SDL2CreateStatus(theApp.m_gameWindow.get());
-            theApp.m_gameWindow->SetCreateStatus(m_psdlStatus);
-        }
-        if (m_psdlStatus)
-            m_psdlStatus->Show();
-        return;
+    if (m_psdlStatus == NULL) {
+        m_psdlStatus = new SDL2CreateStatus(theApp.m_gameWindow.get());
+        theApp.m_gameWindow->SetCreateStatus(m_psdlStatus);
     }
-
-    // MFC fallback
-    if (m_pdlgStatus == NULL)
-        m_pdlgStatus = new CDlgCreateStatus(&theApp.m_wndMain);
-
-    if (m_pdlgStatus->m_hWnd == NULL)
-        m_pdlgStatus->Create();
-
-    m_pdlgStatus->EnableWindow(TRUE);
-    m_pdlgStatus->ShowWindow(SW_SHOW);
+    m_psdlStatus->Show();
 }
 
 void CCreateBase::CreateDlgStatus() {
 
-    // SDL2 path
-    if (theApp.m_gameWindow) {
-        if (m_psdlStatus == NULL) {
-            m_psdlStatus = new SDL2CreateStatus(theApp.m_gameWindow.get());
-            theApp.m_gameWindow->SetCreateStatus(m_psdlStatus);
-        }
-    } else {
-        // MFC fallback
-        if (m_pdlgStatus == NULL)
-            m_pdlgStatus = new CDlgCreateStatus(&theApp.m_wndMain);
-
-        if (m_pdlgStatus->m_hWnd == NULL)
-            m_pdlgStatus->Create();
+    if (m_psdlStatus == NULL) {
+        m_psdlStatus = new SDL2CreateStatus(theApp.m_gameWindow.get());
+        theApp.m_gameWindow->SetCreateStatus(m_psdlStatus);
     }
 }
 
@@ -174,36 +140,17 @@ void CCreateBase::HideDlgStatus() {
 
     if (m_psdlStatus)
         m_psdlStatus->Hide();
-
-    if (m_pdlgStatus == NULL)
-        return;
-
-    if (m_pdlgStatus->m_hWnd == NULL)
-        return;
-
-    m_pdlgStatus->ShowWindow(SW_HIDE);
 }
 
 void CCreateBase::ToWorld() {
 
     ASSERT_VALID (this);
 
-    // SDL2 path
-    if (theApp.m_gameWindow) {
-        if (m_psdlStatus == NULL) {
-            m_psdlStatus = new SDL2CreateStatus(theApp.m_gameWindow.get());
-            theApp.m_gameWindow->SetCreateStatus(m_psdlStatus);
-        }
-        if (m_psdlStatus)
-            m_psdlStatus->Show();
-    } else {
-        // MFC fallback
-        if (m_pdlgStatus == NULL)
-            m_pdlgStatus = new CDlgCreateStatus(&(theApp.m_wndMain));
-        if (m_pdlgStatus->m_hWnd == NULL)
-            m_pdlgStatus->Create();
-        m_pdlgStatus->ShowWindow(SW_SHOW);
+    if (m_psdlStatus == NULL) {
+        m_psdlStatus = new SDL2CreateStatus(theApp.m_gameWindow.get());
+        theApp.m_gameWindow->SetCreateStatus(m_psdlStatus);
     }
+    m_psdlStatus->Show();
 
     ClosePick();
 }
@@ -213,8 +160,6 @@ void CCreateBase::AssertValid() const
 {
 
     CObject::AssertValid ();
-
-    ASSERT_VALID_OR_NULL (m_pdlgStatus);
 }
 #endif
 
@@ -702,167 +647,4 @@ void CDlgPlayerList::OnDrawItem(int, LPDRAWITEMSTRUCT lpDIS) {
 }
 
 
-/////////////////////////////////////////////////////////////////////////////
-// CDlgCreateStatus message handlers
-
-CDlgCreateStatus::CDlgCreateStatus(CWnd *pParent /*=NULL*/)
-        : CDialog(CDlgCreateStatus::IDD, pParent) {
-    //{{AFX_DATA_INIT(CDlgCreateStatus)
-    //}}AFX_DATA_INIT
-}
-
-void CDlgCreateStatus::DoDataExchange(CDataExchange *pDX) {
-    CDialog::DoDataExchange(pDX);
-    //{{AFX_DATA_MAP(CDlgCreateStatus)
-    DDX_Control(pDX, IDC_CREATE_WAIT_TEXT, m_txtMsg);
-    DDX_Control(pDX, IDCANCEL, m_btnCancel);
-    //}}AFX_DATA_MAP
-}
-
-BEGIN_MESSAGE_MAP(CDlgCreateStatus, CDialog)
-                    //{{AFX_MSG_MAP(CDlgCreateStatus)
-                    //}}AFX_MSG_MAP
-END_MESSAGE_MAP()
-
-BOOL CDlgCreateStatus::OnInitDialog() {
-
-    CDialog::OnInitDialog();
-
-    CenterWindow(theApp.m_pMainWnd);
-
-    CWnd *pWnd = GetDlgItem(IDC_PER_BAR);
-    CRect rect;
-    pWnd->GetClientRect(&rect);
-    CStatData *pSd = theIcons.GetByIndex(ICON_CLOCK);
-    pWnd->SetWindowPos(NULL, 0, 0, rect.Width(), pSd->m_cyBack, SWP_NOMOVE | SWP_NOZORDER);
-
-    m_iPer = 0;
-    m_Quit = FALSE;
-
-    ASSERT_VALID (this);
-
-    // set the focus to the text so a <CR> doesn't cancel
-    GetDlgItem(IDC_PER_BAR)->SetFocus();
-    return (FALSE);
-}
-
-void CDlgCreateStatus::OnOK() {
-
-    ASSERT_VALID (this);
-
-    MessageBeep(0);
-}
-
-void CDlgCreateStatus::OnCancel() {
-
-    ASSERT_VALID (this);
-
-    if (theGame._GetMe() == NULL) {
-        if (EnMessageBox(IDS_SERVER_QUIT, MB_YESNO | MB_ICONSTOP | MB_TASKMODAL) != IDYES)
-            return;
-    } else if (theGame.AmServer()) {
-        if (theGame.IsNetGame()) {
-            if (EnMessageBox(IDS_SERVER_QUIT, MB_YESNO | MB_ICONSTOP | MB_TASKMODAL) != IDYES)
-                return;
-        } else if (EnMessageBox(IDS_SINGLE_QUIT, MB_YESNO | MB_ICONSTOP | MB_TASKMODAL) != IDYES)
-            return;
-    } else if (EnMessageBox(IDS_CLIENT_QUIT, MB_YESNO | MB_ICONSTOP | MB_TASKMODAL) != IDYES)
-        return;
-
-    m_Quit = TRUE;
-
-    // if we are hanging out we need to kill now
-    if (theGame.GetTry()) {
-        m_Quit = TRUE;
-        CDialog::OnCancel();
-    } else
-        theApp.CloseWorld();
-}
-
-void CDlgCreateStatus::SetStatus() {
-
-    SetPer(0, FALSE);
-    SetMsg(IDS_CREATE_WORLD);
-}
-
-void CDlgCreateStatus::SetMsg(int idRes) {
-
-    ASSERT_VALID (this);
-
-    std::string sText = EnLoadString(idRes);
-    SetMsg(sText.c_str());
-}
-
-void CDlgCreateStatus::SetMsg(char const *pText) {
-
-    ASSERT_VALID (this);
-
-    // Forward to SDL2 status dialog
-    if (theApp.m_gameWindow) {
-        SDL2CreateStatus* sdl = theApp.m_gameWindow->GetCreateStatus();
-        if (sdl) sdl->SetMsg(pText ? pText : "");
-    }
-
-    m_txtMsg.SetWindowText(pText);
-    UpdateWindow();
-    theApp.BaseYield();
-
-
-#ifdef _DEBUG
-
-    OutputDebugStringA( pText );
-    OutputDebugStringA( "\n" );
-#endif
-}
-
-void CDlgCreateStatus::SetPer(int iPer, BOOL bYield) {
-
-    ASSERT_VALID (this);
-    ASSERT ((0 <= iPer) && (iPer <= 100));
-
-    if (bYield) {
-        if (m_Quit)
-            ThrowError(ERR_TLP_QUIT);
-
-        // yield for messages
-        theApp.BaseYield();
-
-        // need to handle % changes we got
-        theGame.ProcessAllMessages();
-
-        if (m_Quit)
-            ThrowError(ERR_TLP_QUIT);
-    }
-
-    iPer = iPer < -1 ? -1 : (iPer > 100 ? 100 : iPer);
-    if ((m_iPer >= iPer) && (iPer != 0))
-        return;
-
-    // tell everyone our new status
-    if (theGame.IsNetGame() && theGame.HaveHP()) {
-        auto msg = CNetPlyrStatus(theGame.GetMe()->GetNetNum(), iPer);
-        theGame.PostToAll(&msg, sizeof(msg), FALSE);
-    }
-
-    // this is 0 .. 100
-    m_iPer = iPer == -1 ? 0 : iPer;
-
-    // Forward to SDL2 status dialog; auto-hide when done
-    if (theApp.m_gameWindow) {
-        SDL2CreateStatus* sdl = theApp.m_gameWindow->GetCreateStatus();
-        if (sdl) {
-            sdl->SetPer(m_iPer);
-            if (m_iPer >= PER_DONE)
-                sdl->Hide();
-        }
-    }
-
-    CWnd *pWnd = GetDlgItem(IDC_PER_BAR);
-    if (pWnd != NULL) {
-        ::SetWindowWord(pWnd->m_hWnd, 0, (WORD) iPer);
-        pWnd->InvalidateRect(NULL, FALSE);
-        pWnd->UpdateWindow();
-    }
-    return;
-}
 

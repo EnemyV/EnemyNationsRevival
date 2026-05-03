@@ -15,6 +15,7 @@
 #include "help.h"
 #include "error.h"
 #include "sfx.h"
+#include "SDL2CreateStatus.h"
 
 #include "terrain.inl"
 #include "unit.inl"
