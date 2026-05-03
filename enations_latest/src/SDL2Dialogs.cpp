@@ -83,11 +83,11 @@ void SDL2VersionDialog::OnInit() {
     AddWidget<SDL2Label>(lx, y, w, rowH, sSound, tc); y += rowH;
 
     {
-        int iRate, iChannels; CString sDriverName;
+        int iRate, iChannels; std::string sDriverName;
         theMusicPlayer.GetDigitalConfig(&iRate, &iChannels, sDriverName);
         std::string sv = "Audio: " + std::string(theMusicPlayer.GetVersion());
         if (iRate > 0)
-            sv += " " + std::to_string(iRate) + "Hz/" + std::to_string(iChannels) + "ch, " + std::string((LPCTSTR)sDriverName);
+            sv += " " + std::to_string(iRate) + "Hz/" + std::to_string(iChannels) + "ch, " + sDriverName;
         else sv += " {off}";
         AddWidget<SDL2Label>(lx, y, w, rowH, sv, tc); y += rowH;
     }

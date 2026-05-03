@@ -268,6 +268,7 @@ class CMusicPlayer
 
     // Diagnostics: replaces _GetHDig() + AIL_digital_configuration()
     void GetDigitalConfig( int* pRate, int* pChannels, CString& sName );
+    void GetDigitalConfig( int* pRate, int* pChannels, std::string& sName );
 
   protected:
     void OpenDigital( int iVol );

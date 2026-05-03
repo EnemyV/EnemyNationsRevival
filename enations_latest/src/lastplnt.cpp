@@ -1465,11 +1465,11 @@ BOOL CConquerApp::InitInstance( )
 
     {
         int iRate, iChannels;
-        CString sDriverName;
+        std::string sDriverName;
         theMusicPlayer.GetDigitalConfig( &iRate, &iChannels, sDriverName );
         if ( iRate > 0 )
             m_sSoundVer = std::string( "Audio: " ) + theMusicPlayer.GetVersion( ) + " " +
-                          IntToStr( iRate ) + "Hz/" + IntToStr( iChannels ) + "ch, " + (LPCSTR)sDriverName;
+                          IntToStr( iRate ) + "Hz/" + IntToStr( iChannels ) + "ch, " + sDriverName;
         else
             m_sSoundVer = std::string( "Audio: " ) + theMusicPlayer.GetVersion( ) + " {off}";
     }

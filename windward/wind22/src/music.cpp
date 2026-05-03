@@ -2126,6 +2126,13 @@ void CMusicPlayer::FreeOldSounds( int iSec ) {
 
 void CMusicPlayer::GetDigitalConfig( int* pRate, int* pChannels, CString& sName ) {
 
+    std::string s;
+    GetDigitalConfig( pRate, pChannels, s );
+    sName = s.c_str();
+}
+
+void CMusicPlayer::GetDigitalConfig( int* pRate, int* pChannels, std::string& sName ) {
+
     if ( m_bDigOpen ) {
         int iFreq, iChannels;
         Uint16 uFmt;
