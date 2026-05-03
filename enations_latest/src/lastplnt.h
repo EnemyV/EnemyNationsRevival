@@ -459,42 +459,7 @@ class CConquerApp : public CWinApp
 };
 
 
-/////////////////////////////////////////////////////////////////////////////
-// CDlgStackDump dialog
-
-class CDlgStackDump : public CDialog
-{
-    // Construction
-  public:
-    CDlgStackDump( CWnd* pParent = NULL );  // standard constructor
-
-                                            // Dialog Data
-    SE_Exception* m_pe;
-
-    //{{AFX_DATA(CDlgStackDump)
-    enum
-    {
-        IDD = IDD_GPF_DATA
-    };
-    CString m_sText;
-    //}}AFX_DATA
-
-
-    // Overrides
-    // ClassWizard generated virtual function overrides
-    //{{AFX_VIRTUAL(CDlgStackDump)
-  protected:
-    virtual void DoDataExchange( CDataExchange* pDX );  // DDX/DDV support
-                                                        //}}AFX_VIRTUAL
-
-                                                        // Implementation
-  protected:
-    // Generated message map functions
-    //{{AFX_MSG(CDlgStackDump)
-    afx_msg void OnCopyStack( );
-    //}}AFX_MSG
-    DECLARE_MESSAGE_MAP( )
-};
+// CDlgStackDump removed (exception-stack dialog with no live callers)
 
 extern CConquerApp theApp;
 
