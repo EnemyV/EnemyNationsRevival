@@ -13,7 +13,6 @@ set(wind22_sources
 #        src/dircore.cpp
         src/dlgmsg.cpp
         src/fixpoint.cpp
-#        src/flcctrl.cpp  # dead code — replaced by SDL2Video
         src/global.cpp
         src/huffmanc.cpp
         src/init.cpp
