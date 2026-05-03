@@ -16,7 +16,7 @@
 #include "icons.h"
 
 
-class CDlgDiscover;
+// CDlgDiscover removed (replaced by SDL2DiscoverDialog)
 
 
 void ResearchDiscovered (int iRsrch);
@@ -167,7 +167,6 @@ public:
 // Implementation
 protected:
 
-	CDlgDiscover *	m_pDlgDiscvr;
 	int							m_iRsrchNum;
 	int							m_iPerDone;
 	CString					m_strDesc;
@@ -206,43 +205,6 @@ extern void DestructElements (CRsrchItem * pNewElem, int iCount);
 extern CRsrchArray theRsrch;
 
 
-/////////////////////////////////////////////////////////////////////////////
-// CDlgDiscover dialog
-
-class CDlgDiscover : public CDialog
-{
-// Construction
-public:
-	CDlgDiscover(CWnd* pParent = NULL);   // standard constructor
-
-	void		ItemDiscovered (int iItem);
-
-// Dialog Data
-	//{{AFX_DATA(CDlgDiscover)
-	enum { IDD = IDD_RSRCH_FOUND };
-	CString	m_strText;
-	//}}AFX_DATA
-
-
-// Overrides
-	// ClassWizard generated virtual function overrides
-	//{{AFX_VIRTUAL(CDlgDiscover)
-	protected:
-	virtual void DoDataExchange(CDataExchange* pDX);    // DDX/DDV support
-	virtual void PostNcDestroy() { delete this; }
-	//}}AFX_VIRTUAL
-
-// Implementation
-protected:
-	void		NewItem ();
-
-	int			m_iRsrchNum;
-
-	// Generated message map functions
-	//{{AFX_MSG(CDlgDiscover)
-	virtual BOOL OnInitDialog();
-	//}}AFX_MSG
-	DECLARE_MESSAGE_MAP()
-};
+// CDlgDiscover removed (replaced by SDL2DiscoverDialog)
 
 #endif

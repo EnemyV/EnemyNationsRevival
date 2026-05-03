@@ -272,7 +272,6 @@ CDlgResearch::CDlgResearch( CWnd* pParent /*=NULL*/ ): CDialog( CDlgResearch::ID
     //}}AFX_DATA_INIT
 
     m_pDib = m_pDibBtn = NULL;
-    m_pDlgDiscvr       = NULL;
     m_iRsrchNum        = 0;
     m_iPerDone         = 0;
     m_strDesc          = _T("");
@@ -568,9 +567,6 @@ void CDlgResearch::ItemDiscovered( int iItem )
     m_iRsrchNum = iItem;
     m_btnDiscovery.EnableWindow( TRUE );
 
-    if ( m_pDlgDiscvr != NULL )
-        m_pDlgDiscvr->ItemDiscovered( iItem );
-
     m_iPerDone = 0;
     std::string sTitle = EnLoadString( IDS_RSRCH_NOTHING );
     SetWindowText( sTitle.c_str() );
@@ -804,105 +800,14 @@ void CDlgResearch::OnRsrchFound( )
     // we only let them see once
     m_btnDiscovery.EnableWindow( FALSE );
 
-    // SDL2 path: show discovery in a native SDL2 dialog
-    if ( theApp.m_gameWindow && m_iRsrchNum >= 0 )
-    {
-        std::string sTitle = strPrintf( EnLoadStdString( IDS_DISCOVERED_TITLE ).c_str(),
-                                        (const char*)theRsrch.ElementAt( m_iRsrchNum ).m_sName );
-        std::string desc = (const char*)theRsrch.ElementAt( m_iRsrchNum ).m_sResult;
-        SDL2DiscoverDialog dlg( theApp.m_gameWindow.get(), sTitle, desc );
-        dlg.DoModal();
-        return;
-    }
-
-    // MFC fallback
-    if ( m_pDlgDiscvr == NULL )
-        m_pDlgDiscvr = new CDlgDiscover( this );
-    if ( m_pDlgDiscvr->m_hWnd == NULL )
-        m_pDlgDiscvr->Create( IDD_RSRCH_FOUND, this );
-
-    m_pDlgDiscvr->ItemDiscovered( m_iRsrchNum );
-
-    // only if the game is not minimized
-    if ( !theApp.m_wndMain.IsIconic( ) )
-        m_pDlgDiscvr->ShowWindow( SW_SHOW );
-}
-
-
-/////////////////////////////////////////////////////////////////////////////
-// CDlgDiscover dialog
-
-
-CDlgDiscover::CDlgDiscover( CWnd* pParent /*=NULL*/ ): CDialog( CDlgDiscover::IDD, pParent )
-{
-    //{{AFX_DATA_INIT(CDlgDiscover)
-    m_strText = _T("");
-    //}}AFX_DATA_INIT
-
-    m_iRsrchNum = 0;
-}
-
-
-void CDlgDiscover::DoDataExchange( CDataExchange* pDX )
-{
-    CDialog::DoDataExchange( pDX );
-    //{{AFX_DATA_MAP(CDlgDiscover)
-    DDX_Text( pDX, IDC_TEXT_DISCOVERY, m_strText );
-    //}}AFX_DATA_MAP
-}
-
-
-BEGIN_MESSAGE_MAP( CDlgDiscover, CDialog )
-//{{AFX_MSG_MAP(CDlgDiscover)
-//}}AFX_MSG_MAP
-END_MESSAGE_MAP( )
-
-
-/////////////////////////////////////////////////////////////////////////////
-// CDlgDiscover message handlers
-
-BOOL CDlgDiscover::OnInitDialog( )
-{
-
-    CDialog::OnInitDialog( );
-
-    NewItem( );
-
-    // Native SDL2 dialog handles rendering
-
-    return TRUE;  // return TRUE unless you set the focus to a control
-                  // EXCEPTION: OCX Property Pages should return FALSE
-}
-
-void CDlgDiscover::ItemDiscovered( int iItem )
-{
-
-    m_iRsrchNum = iItem;
-
-    // update if up
-    if ( m_hWnd != NULL )
-        NewItem( );
-}
-
-void CDlgDiscover::NewItem( )
-{
-
-    UpdateData( TRUE );
-
-    // list the item we are on
-    std::string sTitle;
     if ( m_iRsrchNum < 0 )
-    {
-        m_strText = "";
-        sTitle = EnLoadString( IDS_DISCOVERED_NO_TITLE );
-    }
-    else
-    {
-        m_strText = theRsrch.ElementAt( m_iRsrchNum ).m_sResult;
-        sTitle = strPrintf( EnLoadStdString( IDS_DISCOVERED_TITLE ).c_str(),
-                            (const char*)theRsrch.ElementAt( m_iRsrchNum ).m_sName );
-    }
-    SetWindowText( sTitle.c_str() );
+        return;
 
-    UpdateData( FALSE );
+    std::string sTitle = strPrintf( EnLoadStdString( IDS_DISCOVERED_TITLE ).c_str(),
+                                    (const char*)theRsrch.ElementAt( m_iRsrchNum ).m_sName );
+    std::string desc = (const char*)theRsrch.ElementAt( m_iRsrchNum ).m_sResult;
+    SDL2DiscoverDialog dlg( theApp.m_gameWindow.get(), sTitle, desc );
+    dlg.DoModal();
 }
+
+// CDlgDiscover removed: SDL2DiscoverDialog (SDL2GameDialogs.cpp) replaces it.
