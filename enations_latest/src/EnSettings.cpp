@@ -67,47 +67,9 @@ void EnWriteProfileInt( const char* section, const char* entry, int value )
 
 CString EnGetProfileString( const char* section, const char* entry, const char* default_val )
 {
-    CString result;
-    if ( default_val )
-        result = default_val;
-
-    if ( !section || !entry )
-        return result;
-
-    char keyPath[ 512 ];
-    BuildKeyPath( keyPath, sizeof( keyPath ), section );
-
-    HKEY hKey = NULL;
-    if ( ::RegOpenKeyExA( HKEY_CURRENT_USER, keyPath, 0, KEY_READ, &hKey ) != ERROR_SUCCESS )
-        return result;
-
-    // Query size first.
-    DWORD type = 0;
-    DWORD size = 0;
-    LONG  rc   = ::RegQueryValueExA( hKey, entry, NULL, &type, NULL, &size );
-    if ( rc != ERROR_SUCCESS || ( type != REG_SZ && type != REG_EXPAND_SZ ) || size == 0 )
-    {
-        ::RegCloseKey( hKey );
-        return result;
-    }
-
-    char* buf = result.GetBuffer( (int)size + 1 );
-    rc = ::RegQueryValueExA( hKey, entry, NULL, &type, (LPBYTE)buf, &size );
-    if ( rc == ERROR_SUCCESS )
-    {
-        // Ensure null-terminated even if registry value wasn't.
-        buf[ size ] = '\0';
-        result.ReleaseBuffer( -1 );
-    }
-    else
-    {
-        result.ReleaseBuffer( 0 );
-        if ( default_val )
-            result = default_val;
-    }
-
-    ::RegCloseKey( hKey );
-    return result;
+    // Thin CString wrapper over EnGetProfileStdString for legacy callers
+    // that assign the result into a CString DDX member.
+    return CString( EnGetProfileStdString( section, entry, default_val ? default_val : "" ).c_str() );
 }
 
 void EnWriteProfileString( const char* section, const char* entry, const char* value )
