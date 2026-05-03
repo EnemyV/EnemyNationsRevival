@@ -176,7 +176,7 @@ void SDL2RelationsDialog::SetRelation(int level) {
     if (m_selected < 0) return;
     CPlayer* pPlr = m_players[m_selected].pPlr;
 
-    CDlgRelations::NewRelations(pPlr, level);
+    NewRelations(pPlr, level);
 }
 
 // ============================================================================

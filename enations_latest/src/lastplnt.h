@@ -36,7 +36,6 @@
 class CConquerApp;
 class CCreateBase;
 class CDlgPlyrList;
-class CDlgRelations;
 class SDL2MainMenu;
 class CDlgResearch;
 class GameWindow;
@@ -388,7 +387,6 @@ class CConquerApp : public CWinApp
     CWndBar           m_wndBar;       // the button bar window
     CWndListBuildings m_wndBldgs;     // the buildings listbox
     CWndListVehicles  m_wndVehicles;  // the vehicles listbox
-    CDlgRelations*    m_pdlgRelations;
     CDlgFile*         m_pdlgFile;
     CDlgResearch*     m_pdlgRsrch;
 

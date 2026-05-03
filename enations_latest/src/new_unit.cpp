@@ -2197,13 +2197,7 @@ CBuilding::~CBuilding( )
                     theApp.m_pdlgRsrch = NULL;
                 }
 
-            // if it was our last embassy - kill the relations window
-            if ( ( GetData( )->GetBldgType( ) == CStructureData::embassy ) && ( theApp.m_pdlgRelations != NULL ) )
-                if ( theGame.GetMe( )->GetExists( CStructureData::embassy ) <= 0 )
-                {
-                    theApp.m_pdlgRelations->DestroyWindow( );
-                    theApp.m_pdlgRelations = NULL;
-                }
+            // (last-embassy CDlgRelations cleanup removed; SDL2RelationsDialog is modal)
         }
 
         // if any vehicles are in us - kill them (except 1 crane)
@@ -2372,11 +2366,7 @@ void CBuilding::RemoveUnit( )
                     theGame.PostToClient( pPlr->GetPlyrNum( ), &msg, sizeof( msg ) );
                 }
             }
-            if ( theApp.m_pdlgRelations != NULL )
-            {
-                theApp.m_pdlgRelations->DestroyWindow( );
-                theApp.m_pdlgRelations = NULL;
-            }
+            // (CDlgRelations destruction removed; SDL2RelationsDialog is modal)
         }
 
         // if it was our last R&D center - kill the R&D window

@@ -1150,10 +1150,6 @@ void CConquerApp::DestroyWorld() {
     m_wndWorld.DestroyWindow();
     theAreaList.DestroyAllWindows();
     m_wndBar.DestroyWindow();
-    if (m_pdlgRelations != NULL) {
-        m_pdlgRelations->DestroyWindow();
-        m_pdlgRelations = NULL;
-    }
     if (m_pdlgRsrch != NULL) {
         m_pdlgRsrch->DestroyWindow();
         m_pdlgRsrch = NULL;

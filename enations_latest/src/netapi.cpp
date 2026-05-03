@@ -2496,7 +2496,7 @@ static void UnitAttacked( CMsgUnitAttacked* pMsg )
         {
             if ( pPlyrAtk->GetRelations( ) <= RELATIONS_NEUTRAL )
             {
-                CDlgRelations::NewRelations( pPlyrAtk, RELATIONS_WAR );
+                NewRelations( pPlyrAtk, RELATIONS_WAR );
                 // I can't find why but pAttacker can be bad when this returns
                 theGame.Event( EVENT_NEW_RELATIONS, EVENT_NOTIFY, pPlyrAtk );
 
@@ -2944,9 +2944,7 @@ void CGame::ProcessMessage(CNetCmd* pCmd )
             theNet.SetSessionVisibility( TRUE );
         }
 
-        // update relations
-        if ( ( theApp.m_pdlgRelations != NULL ) && ( theApp.m_pdlgRelations->m_hWnd != NULL ) )
-            theApp.m_pdlgRelations->ChangedIfAi( );
+        // (CDlgRelations relations refresh removed; SDL2RelationsDialog is modal)
 
         // tell the player
         if ( bMsg )
@@ -2977,9 +2975,7 @@ void CGame::ProcessMessage(CNetCmd* pCmd )
             theNet.SetSessionVisibility( FALSE );
         }
 
-        // update relations
-        if ( ( theApp.m_pdlgRelations != NULL ) && ( theApp.m_pdlgRelations->m_hWnd != NULL ) )
-            theApp.m_pdlgRelations->ChangedIfAi( );
+        // (CDlgRelations relations refresh removed; SDL2RelationsDialog is modal)
         break;
     }
 

@@ -6,17 +6,17 @@
 //---------------------------------------------------------------------------
 
 
-// relation.cpp : implementation file
+// relation.cpp : NewRelations free function (CDlgRelations removed)
 //
 
 #include "stdafx.h"
 #include "lastplnt.h"
 #include "relation.h"
-#include "area.h"
-
-#include "unit.inl"
+#include "player.h"
+#include "msgs.h"
 #include "building.inl"
 #include "vehicle.inl"
+#include "unit.inl"
 
 
 #ifdef _DEBUG
@@ -24,364 +24,48 @@
 static char BASED_CODE THIS_FILE[] = __FILE__;
 #endif
 
-#ifdef _CHEAT
-// CDlgStats removed (CHEAT-only player-stats dialog)
-#endif
-
-/////////////////////////////////////////////////////////////////////////////
-// CDlgRelations dialog
-
-
-CDlgRelations::CDlgRelations(CWnd* pParent /*=NULL*/)
-	: CDialog(CDlgRelations::IDD, pParent)
+void NewRelations( CPlayer* pPlyr, int iLevel )
 {
-	//{{AFX_DATA_INIT(CDlgRelations)
-	m_btnRelations = -1;
-	//}}AFX_DATA_INIT
-}
-
-
-void CDlgRelations::DoDataExchange(CDataExchange* pDX)
-{
-	CDialog::DoDataExchange(pDX);
-	//{{AFX_DATA_MAP(CDlgRelations)
-	DDX_Control(pDX, IDC_PLYR_GIVE, m_btnGive);
-	DDX_Control(pDX, IDC_REL_LIST, m_lstPlayers);
-	DDX_Radio(pDX, IDC_PLYR_ALLIANCE, m_btnRelations);
-	//}}AFX_DATA_MAP
-}
-
-
-BEGIN_MESSAGE_MAP(CDlgRelations, CDialog)
-	//{{AFX_MSG_MAP(CDlgRelations)
-	ON_LBN_DBLCLK(IDC_REL_LIST, OnDblclkRelList)
-	ON_LBN_SELCHANGE(IDC_REL_LIST, OnSelchangeRelList)
-	ON_BN_CLICKED(IDC_PLYR_ALLIANCE, OnRadio)
-	ON_WM_ACTIVATE()
-	ON_WM_DESTROY()
-	ON_WM_DRAWITEM()
-	ON_WM_MEASUREITEM()
-	ON_WM_SYSCOMMAND()
-	ON_BN_CLICKED(IDC_PLYR_HOSTILE, OnRadio)
-	ON_BN_CLICKED(IDC_PLYR_NEUTRAL, OnRadio)
-	ON_BN_CLICKED(IDC_PLYR_PEACE, OnRadio)
-	ON_BN_CLICKED(IDC_PLYR_WAR, OnRadio)
-	ON_BN_CLICKED(IDC_PLYR_GIVE, OnPlyrGive)
-	//}}AFX_MSG_MAP
-END_MESSAGE_MAP()
-
-
-/////////////////////////////////////////////////////////////////////////////
-// CDlgRelations message handlers
-
-BOOL CDlgRelations::OnInitDialog() 
-{
-
-	CDialog::OnInitDialog();
-	
-	m_btnGive.EnableWindow ( FALSE );
-
-	// put players in the list box
-	POSITION pos;
-	for (pos = theGame.GetAll().GetHeadPosition(); pos != NULL; )
-		{
-		CPlayer *pPlr = theGame.GetAll().GetNext (pos);
-		ASSERT_VALID (pPlr);
-		if (! pPlr->IsMe ())
-			{
-			int iInd = m_lstPlayers.AddString (pPlr->GetName ());
-			m_lstPlayers.SetItemDataPtr (iInd, pPlr);
-			}
-		}
-
-	// if rebuilding use old pos
-	if ( theGame.m_wpRelations.length != 0 )
-		SetWindowPlacement ( &(theGame.m_wpRelations) );
-	else
-		{
-		// down by e-mail
-		SetWindowPos (NULL, 0, theApp.m_iRow2, 0, 0, SWP_NOACTIVATE | SWP_NOSIZE | SWP_NOZORDER);
-
-		// save position
-		theGame.m_wpRelations.length = sizeof (WINDOWPLACEMENT);
-		GetWindowPlacement ( &(theGame.m_wpRelations) );
-		}
-
-	return TRUE;  // return TRUE unless you set the focus to a control
-	              // EXCEPTION: OCX Property Pages should return FALSE
-}
-
-void CDlgRelations::RemovePlayer ( CPlayer * pPlr )
-{
-
-	int iNum = m_lstPlayers.GetCount ();
-	for (int iInd=0; iInd<iNum; iInd++)
-		if ( m_lstPlayers.GetItemDataPtr ( iInd ) == (void *) pPlr )
-			{
-			m_lstPlayers.DeleteString ( iInd );
-			return;
-			}
-}
-
-void CDlgRelations::ChangedIfAi ()
-{
-
-	// redo all players
-	m_lstPlayers.ResetContent ();
-
-	// put players in the list box
-	POSITION pos;
-	for (pos = theGame.GetAll().GetHeadPosition(); pos != NULL; )
-		{
-		CPlayer *pPlr = theGame.GetAll().GetNext (pos);
-		ASSERT_VALID (pPlr);
-		if (! pPlr->IsMe ())
-			{
-			int iInd = m_lstPlayers.AddString (pPlr->GetName ());
-			m_lstPlayers.SetItemDataPtr (iInd, pPlr);
-			}
-		}
-}
-
-void CDlgRelations::OnOK() 
-{
-	
-	ShowWindow (SW_HIDE);
-}
-
-void CDlgRelations::OnDblclkRelList()
-{
-    // (CHEAT player-stats popup removed with CDlgStats)
-}
-
-void CDlgRelations::OnRadio() 
-{
-	
-	int iInd = m_lstPlayers.GetCurSel ();
-	if (iInd < 0)
-		return;
-		
-	UpdateData (TRUE);
-
-	NewRelations ((CPlayer *) m_lstPlayers.GetItemDataPtr (iInd), m_btnRelations);
-}
-
-void CDlgRelations::NewRelations (CPlayer * pPlyr, int iLevel)
-{
-
 	// if no change nothing to do
-	if (pPlyr->GetRelations () == iLevel)
+	if ( pPlyr->GetRelations() == iLevel )
 		return;
 
-	if (pPlyr->IsMe ())
+	if ( pPlyr->IsMe() )
 		return;
 
-	pPlyr->SetRelations (iLevel);
+	pPlyr->SetRelations( iLevel );
 
-	CMsgSetRelations msg (theGame.GetMe (), pPlyr, iLevel);
-	theGame.PostToClient (pPlyr, &msg, sizeof (msg));
+	CMsgSetRelations msg( theGame.GetMe(), pPlyr, iLevel );
+	theGame.PostToClient( pPlyr, &msg, sizeof( msg ) );
 
-	// things may have changed (we may want to stop/start/switch targets) - redo oppo fire
-	POSITION pos = theBuildingMap.GetStartPosition ();
-	while (pos != NULL)
+	// things may have changed (we may want to stop/start/switch targets)
+	// - redo oppo fire
+	POSITION pos = theBuildingMap.GetStartPosition();
+	while ( pos != NULL )
+	{
+		DWORD       dwID;
+		CBuilding*  pBldg;
+		theBuildingMap.GetNextAssoc( pos, dwID, pBldg );
+		ASSERT_STRICT_VALID( pBldg );
+
+		if ( pBldg->GetOwner()->IsMe() )
 		{
-		DWORD dwID;
-		CBuilding *pBldg;
-		theBuildingMap.GetNextAssoc (pos, dwID, pBldg);
-		ASSERT_STRICT_VALID (pBldg);
-
-		if (pBldg->GetOwner()->IsMe ())
-			{
-			pBldg->SetOppo (NULL);
+			pBldg->SetOppo( NULL );
 
 			// tell them the contents of our buildings if alliance
 			if ( iLevel == RELATIONS_ALLIANCE )
-				pBldg->UpdateStore (TRUE);
-			}
+				pBldg->UpdateStore( TRUE );
 		}
-
-	pos = theVehicleMap.GetStartPosition ();
-	while (pos != NULL)
-		{
-		DWORD dwID;
-		CVehicle *pVeh;
-		theVehicleMap.GetNextAssoc (pos, dwID, pVeh);
-		ASSERT_STRICT_VALID (pVeh);
-		if (pVeh->GetOwner()->IsMe ())
-			pVeh->SetOppo (NULL);
-		}
-
-	// update the window
-	if ( theApp.m_pdlgRelations != NULL )
-		{
-		int iInd = theApp.m_pdlgRelations->m_lstPlayers.GetCurSel ();
-		if (iInd >= 0)
-			{
-			CPlayer * pPlr = (CPlayer *) theApp.m_pdlgRelations->m_lstPlayers.GetItemDataPtr (iInd);
-			theApp.m_pdlgRelations->UpdateData (TRUE);
-			theApp.m_pdlgRelations->m_btnRelations = pPlr->GetRelations ();
-			theApp.m_pdlgRelations->UpdateData (FALSE);
-			}
-		theApp.m_pdlgRelations->InvalidateRect ( NULL );
-		}
-}
-
-void CDlgRelations::OnSelchangeRelList() 
-{
-	
-	int iInd = m_lstPlayers.GetCurSel ();
-	if (iInd < 0)
-		{
-		m_btnGive.EnableWindow ( FALSE );
-		return;
-		}
-
-	CWndArea * pWndArea = theAreaList.GetTop ();
-	if ( pWndArea == NULL )
-		{
-		TRAP ();
-		m_btnGive.EnableWindow ( FALSE );
-		}
-	else
-		m_btnGive.EnableWindow ( pWndArea->NumGiveable () > 0 );
-		
-	CPlayer * pPlr = (CPlayer *) m_lstPlayers.GetItemDataPtr (iInd);
-	ASSERT_VALID (pPlr);
-
-	// cannot alliance with an AI player
-	GetDlgItem (IDC_PLYR_ALLIANCE)->EnableWindow ( ! pPlr->IsAI () );
-
-	UpdateData (TRUE);
-	m_btnRelations = pPlr->GetRelations ();
-	UpdateData (FALSE);
-}
-
-void CDlgRelations::OnActivate (UINT nState, CWnd *, BOOL)
-{
-
-	if ( nState == WA_INACTIVE )
-		{
-		m_btnGive.EnableWindow ( FALSE );
-		return;
-		}
-
-	if ( m_lstPlayers.GetCurSel () < 0 )
-		{
-		m_btnGive.EnableWindow ( FALSE );
-		return;
-		}
-
-	// are there area map units selected
-	CWndArea * pWndArea = theAreaList.GetTop ();
-	if ( pWndArea == NULL )
-		{
-		TRAP ();
-		m_btnGive.EnableWindow ( FALSE );
-		return;
-		}
-
-	m_btnGive.EnableWindow ( pWndArea->NumGiveable () > 0 );
-}
-
-void CDlgRelations::OnPlyrGive() 
-{
-
-	// is there anything?
-	CWndArea * pWndArea = theAreaList.GetTop ();
-	if ( ( pWndArea == NULL ) || ( pWndArea->NumGiveable () <= 0 ) )
-		{
-		TRAP ();
-		m_btnGive.EnableWindow ( FALSE );
-		return;
-		}
-
-	int iInd = m_lstPlayers.GetCurSel ();
-	if (iInd < 0)
-		{
-		TRAP ();
-		m_btnGive.EnableWindow ( FALSE );
-		return;
-		}
-	
-	// hand them over	
-	pWndArea->GiveSelectedUnits ( (CPlayer *) m_lstPlayers.GetItemDataPtr (iInd) );
-
-	// we have nothing selected
-	m_btnGive.EnableWindow ( FALSE );
-}
-
-void CDlgRelations::OnMeasureItem (int, LPMEASUREITEMSTRUCT lpMIS)
-{
-
-	ASSERT_VALID (this);
-
-	lpMIS->itemHeight = theApp.TextHt () + 1;
-}
-
-void CDlgRelations::OnDrawItem (int, LPDRAWITEMSTRUCT lpDIS)
-{
-
-	if ( ODT_BUTTON == lpDIS->CtlType ) // GG
-	{
-		Default();
-		return;
 	}
 
-	CPlayer * pPlr = (CPlayer *) lpDIS->itemData;
-	if (pPlr == NULL)
-		return;
-
-	CDC *pDc = CDC::FromHandle (lpDIS->hDC);
-	if (pDc == NULL)
-		return;
-	thePal.Paint (pDc->m_hDC);
-	CFont * pOldFont = pDc->SelectObject (&theApp.TextFont ());
-
-	CRect rect ( lpDIS->rcItem );
-
-	if (lpDIS->itemState & ODS_SELECTED)
-		{
-		pDc->FillSolidRect ( &rect, pPlr->GetRGBColor () );
-		pDc->SetTextColor ( RGB (255, 255, 255) );
-		}
-	else
-	  {
-		pDc->FillSolidRect ( &rect, RGB (255, 255, 255) );
-		pDc->SetTextColor ( RGB (0, 0, 0) );
-	  }
-	pDc->SetBkMode ( TRANSPARENT );
-
-	rect.left += 5;
-	rect.top += 1;
-	pDc->DrawText ( pPlr->GetName (), -1, &rect, DT_TOP | DT_LEFT | DT_SINGLELINE | DT_NOPREFIX );
-
-	if (lpDIS->itemState & ODS_SELECTED)
-		pDc->SetTextColor (RGB (0, 0, 0));
-	else
-		pDc->SetTextColor (pPlr->GetRGBColor ());
-
-	rect.left --;
-	rect.top --;
-	pDc->DrawText ( pPlr->GetName (), -1, &rect, DT_TOP | DT_LEFT | DT_SINGLELINE | DT_NOPREFIX );
-
-	pDc->SelectObject ( pOldFont );
-	thePal.EndPaint (pDc->m_hDC);
+	pos = theVehicleMap.GetStartPosition();
+	while ( pos != NULL )
+	{
+		DWORD     dwID;
+		CVehicle* pVeh;
+		theVehicleMap.GetNextAssoc( pos, dwID, pVeh );
+		ASSERT_STRICT_VALID( pVeh );
+		if ( pVeh->GetOwner()->IsMe() )
+			pVeh->SetOppo( NULL );
+	}
 }
-
-void CDlgRelations::OnCancel() 
-{
-
-	DestroyWindow ();
-}
-
-void CDlgRelations::OnDestroy() 
-{
-
-	theApp.m_pdlgRelations = NULL;
-
-	CDialog::OnDestroy();
-}
-
-
-// CDlgStats removed (CHEAT-only player-stats dialog)
-

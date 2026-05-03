@@ -524,7 +524,7 @@ static void Start6() {
     // drop an AI unit in their middle, set us at war if not at easy level
     int iTotal = 5;
     if (theGame.m_iAi > 0) {
-        CDlgRelations::NewRelations(pBldgLoc->GetOwner(), RELATIONS_WAR);
+        NewRelations(pBldgLoc->GetOwner(), RELATIONS_WAR);
         iTotal = 6;
     }
 
@@ -735,7 +735,7 @@ static void Start7() {
                     if ( ( iInd == 4 ) && ( theGame.m_iAi > 1 ) ) {
                         TRAP();
                         // set us at war
-                        CDlgRelations::NewRelations(pPlr, RELATIONS_WAR);
+                        NewRelations(pPlr, RELATIONS_WAR);
 
                         // find a clear hex nearby
                         CHexCoord _hexAI(_hex.X() + RandNum(4) - 2, _hex.Y() + RandNum(4) - 2);

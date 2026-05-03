@@ -271,7 +271,7 @@ void CWndMain::OnDisplayChange2 ()
 	MakeFullScreen ( &theApp.m_wndCutScene );
 
 	// these are dialogs - just move, don't size
-	MoveToNew ( theApp.m_pdlgRelations, xOld, yOld );
+	// MoveToNew for CDlgRelations removed (replaced by SDL2RelationsDialog)
 	MoveToNew ( theApp.m_pdlgFile, xOld, yOld );
 	MoveToNew ( theApp.m_pdlgRsrch, xOld, yOld );
 	// MoveToNew for CDlgPause removed — no longer a CWnd, centers itself on Show()
@@ -454,7 +454,7 @@ void CWndMain::OnPaint()
 
 		dc.SetBkMode (TRANSPARENT);
 		dc.SetTextColor ( RGB (255, 255, 255) );
-		std::string sLoad = EnLoadStdString(m_progPos == exiting ? IDS_LEAVING : IDS_LOADING);
+		std::string sLoad = EnLoadString(m_progPos == exiting ? IDS_LEAVING : IDS_LOADING);
 		dc.TextOut (0, 0, sLoad.c_str(), (int)sLoad.length());
 		dc.SelectObject (pOldFont);
 		return;
@@ -483,7 +483,7 @@ void CWndMain::OnPaint()
 		CFont * pOldFont = dc.SelectObject (&fnt);
 
 		dc.SetTextColor ( RGB (255, 255, 255) );
-		std::string sLoad = EnLoadStdString(IDS_EXIT_GAME);
+		std::string sLoad = EnLoadString(IDS_EXIT_GAME);
 		dc.TextOut (0, 0, sLoad.c_str(), (int)sLoad.length());
 		dc.SelectObject (pOldFont);
 		thePal.EndPaint (dc.m_hDC);
@@ -835,7 +835,7 @@ BOOL CDlgFile::OnInitDialog()
 
 	if ( (theGame.IsNetGame ()) && (theGame.AmServer ()) )
 		{
-		std::string sBtn = EnLoadStdString( IDS_PLAYERS );
+		std::string sBtn = EnLoadString( IDS_PLAYERS );
 		m_btnMission.SetWindowText ( sBtn.c_str() );
 		}
 	else
@@ -986,11 +986,6 @@ void CDlgFile::OnFileExit()
 		theApp.m_wndWorld.DestroyWindow ();
 		theAreaList.DestroyAllWindows ();
 		theApp.m_wndBar.DestroyWindow ();
-		if (theApp.m_pdlgRelations != NULL)
-			{
-			theApp.m_pdlgRelations->DestroyWindow ();
-			theApp.m_pdlgRelations = NULL;
-			}
 		if (theApp.m_pdlgRsrch != NULL)
 			{
 			theApp.m_pdlgRsrch->DestroyWindow ();
@@ -1438,8 +1433,6 @@ void CWndMain::_EnableGameWindows ( BOOL bEnable )
 		theApp.m_wndBldgs.EnableWindow ( bEnable );
 	if ( theApp.m_wndVehicles.m_hWnd != NULL )
 		theApp.m_wndVehicles.EnableWindow ( bEnable );
-	if ( (theApp.m_pdlgRelations != NULL) && (theApp.m_pdlgRelations->m_hWnd != NULL) )
-		theApp.m_pdlgRelations->EnableWindow ( bEnable );
 	if ( (theApp.m_pdlgFile != NULL) && (theApp.m_pdlgFile->m_hWnd != NULL) )
 		theApp.m_pdlgFile->EnableWindow ( bEnable );
 	if ( (theApp.m_pdlgRsrch != NULL) && (theApp.m_pdlgRsrch->m_hWnd != NULL) )

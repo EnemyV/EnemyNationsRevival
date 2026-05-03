@@ -1654,8 +1654,7 @@ void CGame::AiTakeOverPlayer( CPlayer* pPlr, BOOL bStartThread, BOOL bShowDlg )
 
         if ( theApp.m_pdlgPlyrList != NULL )
             theApp.m_pdlgPlyrList->NameChange( pPlr );
-        if ( theApp.m_pdlgRelations != NULL )
-            theApp.m_pdlgRelations->InvalidateRect( NULL );
+        // (CDlgRelations invalidate removed)
 
         if ( bShowDlg )
             dlgMsg.DestroyWindow( );
@@ -1687,11 +1686,7 @@ void CGame::AiReleasePlayer( CPlayer* pPlr, int iNetNum, const char* pName, BOOL
             TRAP( );  // name change?
             theApp.m_pdlgPlyrList->NameChange( pPlr );
         }
-        if ( theApp.m_pdlgRelations != NULL )
-        {
-            TRAP( );
-            theApp.m_pdlgRelations->InvalidateRect( NULL );
-        }
+        // (CDlgRelations invalidate removed)
     }
 
     if ( !bLocal )
@@ -1796,8 +1791,7 @@ NoUnPause:
     // they're gone
     if ( theApp.m_pdlgPlyrList != NULL )
         theApp.m_pdlgPlyrList->RemovePlayer( pPlr );
-    if ( theApp.m_pdlgRelations != NULL )
-        theApp.m_pdlgRelations->RemovePlayer( pPlr );
+    // (CDlgRelations RemovePlayer removed)
 
     // tell the AI
     DWORD dwAiID = pPlr->GetAiHdl( );

@@ -3108,7 +3108,7 @@ void CWndArea::OnLButtonUp( UINT nFlags, CPoint point )
                     }
 
                     pUnit->MsgSetTarget( pUnitOn );
-                    CDlgRelations::NewRelations( pUnitOn->GetOwner( ), RELATIONS_WAR );
+                    NewRelations( pUnitOn->GetOwner( ), RELATIONS_WAR );
                 }
 
                 else if ( pUnit->GetUnitType( ) == CUnit::vehicle )
