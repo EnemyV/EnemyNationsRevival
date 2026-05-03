@@ -128,42 +128,7 @@ inline LRESULT CWndMain::OnNetFlowOff (WPARAM , LPARAM )
 
 // CDlgRandNum removed (cheat seed-override dialog)
 
-/////////////////////////////////////////////////////////////////////////////
-// CDlgAiPos dialog
-
-class CDlgAiPos : public CDialog
-{
-// Construction
-public:
-	CDlgAiPos(CWnd* pParent = NULL);   // standard constructor
-
-// Dialog Data
-	//{{AFX_DATA(CDlgAiPos)
-	enum { IDD = IDD_AI_POS };
-	CWndOD< CButton >	m_btnGoto;
-	CListBox	m_lstBox;
-	//}}AFX_DATA
-
-
-// Overrides
-	// ClassWizard generated virtual function overrides
-	//{{AFX_VIRTUAL(CDlgAiPos)
-	protected:
-	virtual void DoDataExchange(CDataExchange* pDX);    // DDX/DDV support
-	//}}AFX_VIRTUAL
-
-// Implementation
-protected:
-
-	// Generated message map functions
-	//{{AFX_MSG(CDlgAiPos)
-	virtual void OnOK();
-	afx_msg void OnDblclkListAi();
-	afx_msg void OnSelchangeListAi();
-	virtual BOOL OnInitDialog();
-	//}}AFX_MSG
-	DECLARE_MESSAGE_MAP()
-};
+// CDlgAiPos removed (CHEAT-only AI position dialog)
 
 
 /////////////////////////////////////////////////////////////////////////////

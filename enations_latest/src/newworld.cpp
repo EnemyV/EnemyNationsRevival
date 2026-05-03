@@ -47,9 +47,7 @@ static char BASED_CODE THIS_FILE[] = __FILE__;
 #define new DEBUG_NEW
 
 
-#ifdef _CHEAT
-CDlgAiPos dlgAiPos;
-#endif
+// CDlgAiPos removed (CHEAT-only AI position dialog)
 
 extern DWORD dwFrameCheck;
 
@@ -850,12 +848,7 @@ void CConquerApp::LetsGo() {
         (theGame.GetAll().GetCount() <= theGame.GetAi().GetCount() + 1))
         theApp.CloseDlgChat();
 
-    // eric needs AI locations
-#ifdef _CHEAT
-    if (theGame.AmServer ())
-        if (EnGetProfileInt("Debug", "ShowAIStart", 0))
-            dlgAiPos.Create (CDlgAiPos::IDD, &m_wndMain);
-#endif
+    // (CDlgAiPos removed; was a CHEAT-only dialog gated on Debug:ShowAIStart)
 
     // for loaded games - have all IsMe buildings say out_mat
     POSITION pos = theBuildingMap.GetStartPosition();
@@ -1389,98 +1382,4 @@ void CConquerApp::CloseWorld() {
     CreateMain();
 }
 
-#ifdef _CHEAT
-// CDlgRandNum removed (cheat seed-override; replaced by hardcoded uRand path)
-
-/////////////////////////////////////////////////////////////////////////////
-// CDlgAiPos dialog
-
-
-CDlgAiPos::CDlgAiPos(CWnd* pParent /*=NULL*/)
-    : CDialog(CDlgAiPos::IDD, pParent)
-{
-    //{{AFX_DATA_INIT(CDlgAiPos)
-        // NOTE: the ClassWizard will add member initialization here
-    //}}AFX_DATA_INIT
-}
-
-
-void CDlgAiPos::DoDataExchange(CDataExchange* pDX)
-{
-    CDialog::DoDataExchange(pDX);
-    //{{AFX_DATA_MAP(CDlgAiPos)
-    DDX_Control(pDX, IDOK, m_btnGoto);
-    DDX_Control(pDX, IDC_LIST_AI, m_lstBox);
-    //}}AFX_DATA_MAP
-}
-
-
-BEGIN_MESSAGE_MAP(CDlgAiPos, CDialog)
-    //{{AFX_MSG_MAP(CDlgAiPos)
-    ON_LBN_DBLCLK(IDC_LIST_AI, OnDblclkListAi)
-    ON_LBN_SELCHANGE(IDC_LIST_AI, OnSelchangeListAi)
-    //}}AFX_MSG_MAP
-END_MESSAGE_MAP()
-
-
-/////////////////////////////////////////////////////////////////////////////
-// CDlgAiPos message handlers
-
-void CDlgAiPos::OnOK() 
-{
-
-    // goto that location - no kill dialog
-    OnDblclkListAi ();
-}
-
-void CDlgAiPos::OnDblclkListAi() 
-{
-
-    int iInd = m_lstBox.GetCurSel ();
-    if (iInd < 0)
-        return;
-
-    char sLine[128];
-    m_lstBox.GetText (iInd, sLine);
-    CPlayer * pPlyr = theGame.GetPlayerByPlyr (atoi (sLine));
-    if (pPlyr == NULL)
-        return;
-
-    CWndArea * pWnd = theAreaList.BringToTop ();
-    if (pWnd != NULL)
-        pWnd->GetAA().SetCenter( CMapLoc( pPlyr->m_hexMapStart ), CAnimAtr::SET_CENTER_SCROLL );
-}
-
-void CDlgAiPos::OnSelchangeListAi() 
-{
-
-    // goto only enabled if something selected
-    if (m_lstBox.GetCurSel () >= 0)
-        m_btnGoto.EnableWindow (TRUE);
-    else
-        m_btnGoto.EnableWindow (FALSE);
-}
-
-BOOL CDlgAiPos::OnInitDialog() 
-{
-
-    CDialog::OnInitDialog();
-
-    // init list box
-    POSITION pos;
-    for (pos = theGame.GetAi().GetHeadPosition(); pos != NULL; )
-        {
-        CPlayer *pPlr = theGame.GetAi().GetNext (pos);
-        ASSERT_VALID (pPlr);
-        ASSERT (pPlr->IsAI ());
-        std::string sLine = IntToStr (pPlr->GetPlyrNum ()) + "  " +
-                                        IntToStr (pPlr->m_hexMapStart.X()) + "," +
-                                        IntToStr (pPlr->m_hexMapStart.Y());
-        m_lstBox.AddString (sLine.c_str ());
-        }
-
-    OnSelchangeListAi();
-
-    return TRUE;  // return TRUE unless you set the focus to a control
-}
-#endif
+// CDlgRandNum and CDlgAiPos removed (CHEAT-only debug dialogs)
