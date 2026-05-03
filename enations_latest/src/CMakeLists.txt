@@ -60,7 +60,6 @@ set(enations_sources
         new_game.cpp
         new_unit.cpp
         newworld.cpp
-        options.cpp
         pickrace.cpp
         player.cpp
         PlyrList.cpp

@@ -24,7 +24,6 @@
 #include "error.h"
 #include "join.h"
 #include "license.h"
-#include "options.h"
 #include "racedata.h"
 #include "scenario.h"
 #include "sfx.h"
@@ -2770,16 +2769,8 @@ void CDlgMain::OnMainOptions( )
 {
 
     theMusicPlayer.PlayForegroundSound( SOUNDS::GetID( SOUNDS::button ), SFXPRIORITY::selected_pri );
-    if ( theApp.m_gameWindow )
-    {
-        SDL2OptionsDialog dlg( theApp.m_gameWindow.get() );
-        dlg.DoModal();
-    }
-    else
-    {
-        CDlgOptions dlg( this );
-        dlg.DoModal( );
-    }
+    SDL2OptionsDialog dlg( theApp.m_gameWindow.get() );
+    dlg.DoModal();
 }
 
 /////////////////////////////////////////////////////////////////////////////

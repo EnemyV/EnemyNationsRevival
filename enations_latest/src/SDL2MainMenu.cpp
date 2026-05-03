@@ -8,7 +8,6 @@
 #include "creatmul.h"
 #include "join.h"
 #include "scenario.h"
-#include "options.h"
 #include "SDL2Options.h"
 #include "SDL2Dialogs.h"
 #include "SDL2Video.h"
