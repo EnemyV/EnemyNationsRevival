@@ -1152,11 +1152,8 @@ void CConquerApp::DestroyWorld() {
         m_pdlgRsrch->DestroyWindow();
         m_pdlgRsrch = NULL;
     }
-    if ((m_pdlgFile != NULL) && (m_pdlgFile->m_hWnd != NULL)) {
-        m_pdlgFile->DestroyWindow();
-        m_pdlgFile = NULL;
-    }
-    // CDlgPlyrList removed (Phase 2d) — SDL2PlayerListDialog is modal, nothing to destroy.
+    // CDlgFile removed (Phase 2d) — SDL2FileDialog is modal.
+    // CDlgPlyrList removed (Phase 2d) — SDL2PlayerListDialog is modal.
 
     // no more animating
     theAnimList.clear();

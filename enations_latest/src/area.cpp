@@ -3434,8 +3434,7 @@ void CWndArea::SetupStart( )
     // start with resources showing
     ResClicked( );
 
-    if ( ( theApp.m_pdlgFile != NULL ) && ( theApp.m_pdlgFile->m_hWnd != NULL ) )
-        theApp.m_pdlgFile->SetState( );
+    // CDlgFile removed (Phase 2d) — SDL2FileDialog rebuilds state on each open.
 }
 
 void CWndArea::SetupDone( )
@@ -3448,8 +3447,7 @@ void CWndArea::SetupDone( )
     SetStatusText( sMsg.c_str( ) );
     InvalidateStatus( );
 
-    if ( ( theApp.m_pdlgFile != NULL ) && ( theApp.m_pdlgFile->m_hWnd != NULL ) )
-        theApp.m_pdlgFile->SetState( );
+    // CDlgFile removed (Phase 2d) — SDL2FileDialog rebuilds state on each open.
 }
 
 void CWndArea::SelectOff( )

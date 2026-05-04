@@ -131,58 +131,9 @@ inline LRESULT CWndMain::OnNetFlowOff (WPARAM , LPARAM )
 // CDlgAiPos removed (CHEAT-only AI position dialog)
 
 
-/////////////////////////////////////////////////////////////////////////////
-// CDlgFile dialog
-
-class CDlgFile : public CDialog
-{
-// Construction
-public:
-	CDlgFile(CWnd* pParent = NULL);   // standard constructor
-
-	void		SetState ();
-	void		SetSpeed ();
-
-// Dialog Data
-	//{{AFX_DATA(CDlgFile)
-	enum { IDD = IDD_FILE };
-	CWndOD< CButton >	m_btnMission;
-	CSliderCtrl	m_sldMusic;
-	CSliderCtrl	m_sldSound;
-	CSliderCtrl	m_sldSpeed;
-	CScrollBar	m_scrSpeed;
-	CScrollBar	m_scrSound;
-	CScrollBar	m_scrMusic;
-	//}}AFX_DATA
-
-
-// Overrides
-	// ClassWizard generated virtual function overrides
-	//{{AFX_VIRTUAL(CDlgFile)
-	protected:
-	virtual void DoDataExchange(CDataExchange* pDX);    // DDX/DDV support
-	virtual void PostNcDestroy();
-	//}}AFX_VIRTUAL
-
-// Implementation
-protected:
-
-	// Generated message map functions
-	//{{AFX_MSG(CDlgFile)
-	virtual BOOL OnInitDialog();
-	afx_msg void OnFileSave();
-	afx_msg void OnFileHelp();
-	afx_msg void OnFileExit();
-	afx_msg void OnDestroy();
-	virtual void OnOK();
-	afx_msg void OnHScroll(UINT nSBCode, UINT nPos, CScrollBar* pScrollBar);
-	afx_msg void OnFileVersion();
-	afx_msg void OnFileMinimize();
-	afx_msg void OnActivate(UINT nState, CWnd* pWndOther, BOOL bMinimized);
-	afx_msg void OnFileScene();
-	//}}AFX_MSG
-	DECLARE_MESSAGE_MAP()
-};
+// CDlgFile removed (Phase 2d) — replaced by SDL2FileDialog (in SDL2FileDialog.cpp).
+// The MFC Save/Load/Options/Speed/Sound/Music/Exit dialog is gone; the SDL2
+// equivalent is invoked from the toolbar Options button.
 
 
 /////////////////////////////////////////////////////////////////////////////

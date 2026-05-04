@@ -18,7 +18,7 @@
 
 class CNetCmd;
 class CUnit;
-class CDlgFile;
+// CDlgFile removed (Phase 2d).
 class CConquerApp;
 class CHPRouter;
 class CStructureData;
@@ -549,7 +549,7 @@ class CPlayer : public CObject
 
 class CGame : public CObject
 {
-    friend CDlgFile;
+    // friend CDlgFile removed (Phase 2d).
     friend class CConquerApp;
 #ifdef _DEBUG
     friend class CPlayer;

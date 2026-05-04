@@ -387,7 +387,7 @@ class CConquerApp : public CWinApp
     CWndBar           m_wndBar;       // the button bar window
     CWndListBuildings m_wndBldgs;     // the buildings listbox
     CWndListVehicles  m_wndVehicles;  // the vehicles listbox
-    CDlgFile*         m_pdlgFile;
+    // CDlgFile removed (Phase 2d) — SDL2FileDialog is the sole replacement.
     CDlgResearch*     m_pdlgRsrch;
 
     CWndMain      m_wndMain;       // the main window - first created, last destroyed

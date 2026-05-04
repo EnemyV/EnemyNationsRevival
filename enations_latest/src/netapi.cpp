@@ -2553,8 +2553,7 @@ static void GameSpeed( CMsgGameSpeed* pMsg )
     if ( !theGame.AmServer( ) )
     {
         theGame.SetGameMul( pMsg->m_iSpeed );
-        if ( theApp.m_pdlgFile != NULL )
-            theApp.m_pdlgFile->SetSpeed( );
+        // CDlgFile removed (Phase 2d) — SDL2FileDialog re-reads speed on next open.
         return;
     }
 
@@ -2606,8 +2605,7 @@ static void GameSpeed( CMsgGameSpeed* pMsg )
             CMsgGameSpeed msg( NUM_SPEEDS / 2 );
             theGame.PostToAllClients( &msg, sizeof( msg ), FALSE );
             theGame.SetGameMul( NUM_SPEEDS / 2 );
-            if ( theApp.m_pdlgFile != NULL )
-                theApp.m_pdlgFile->SetSpeed( );
+            // CDlgFile removed (Phase 2d) — SDL2FileDialog re-reads speed on next open.
         }
     }
 }
