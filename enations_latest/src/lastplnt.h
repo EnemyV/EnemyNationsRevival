@@ -35,7 +35,7 @@
 
 class CConquerApp;
 class CCreateBase;
-class CDlgPlyrList;
+// CDlgPlyrList removed (Phase 2d).
 class SDL2MainMenu;
 class CDlgResearch;
 class GameWindow;
@@ -395,7 +395,7 @@ class CConquerApp : public CWinApp
     CCreateBase*  m_pCreateGame;   // holder for creating game data & dialogs
     CWndMovie     m_wndMovie;
     CWndCredits   m_wndCredits;    // playing credits
-    CDlgPlyrList* m_pdlgPlyrList;  // for server to kill players
+    // CDlgPlyrList removed (Phase 2d) — replaced by SDL2PlayerListDialog (modal).
     CWndCutScene  m_wndCutScene;
     CDlgChatAll*  m_pdlgChat;
 

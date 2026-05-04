@@ -29,7 +29,6 @@
 #include "lastplnt.h"
 #include "minerals.h"
 #include "netapi.h"
-#include "plyrlist.h"
 #include "relation.h"
 #include "research.h"
 #include "SDL2CreateStatus.h"
@@ -1653,8 +1652,8 @@ void CGame::AiTakeOverPlayer( CPlayer* pPlr, BOOL bStartThread, BOOL bShowDlg )
         if ( bStartThread )
             myStartThread( &( pPlr->ai ), (AFX_THREADPROC)AiThread );
 
-        if ( theApp.m_pdlgPlyrList != NULL )
-            theApp.m_pdlgPlyrList->NameChange( pPlr );
+        // CDlgPlyrList removed (Phase 2d) — SDL2PlayerListDialog refreshes from
+        // theGame state on each open, so no name-change push is needed.
         // (CDlgRelations invalidate removed)
 
         if ( bShowDlg )
@@ -1682,11 +1681,7 @@ void CGame::AiReleasePlayer( CPlayer* pPlr, int iNetNum, const char* pName, BOOL
         ::AiKillPlayer( pPlr->GetAiHdl( ) );
         pPlr->m_iNumAiGpfs = 0;
 
-        if ( theApp.m_pdlgPlyrList != NULL )
-        {
-            TRAP( );  // name change?
-            theApp.m_pdlgPlyrList->NameChange( pPlr );
-        }
+        // CDlgPlyrList removed (Phase 2d) — SDL2PlayerListDialog refreshes on open.
         // (CDlgRelations invalidate removed)
     }
 
@@ -1789,9 +1784,7 @@ void CGame::RemovePlayer( CPlayer* pPlr )
     }
 NoUnPause:
 
-    // they're gone
-    if ( theApp.m_pdlgPlyrList != NULL )
-        theApp.m_pdlgPlyrList->RemovePlayer( pPlr );
+    // CDlgPlyrList removed (Phase 2d) — SDL2PlayerListDialog refreshes on open.
     // (CDlgRelations RemovePlayer removed)
 
     // tell the AI

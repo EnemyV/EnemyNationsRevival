@@ -29,7 +29,6 @@
 #include "cpathmap.h"
 #include "area.h"
 #include "bridge.h"
-#include "plyrlist.h"
 #include "cdloc.h"
 
 #include "terrain.inl"
@@ -1157,10 +1156,7 @@ void CConquerApp::DestroyWorld() {
         m_pdlgFile->DestroyWindow();
         m_pdlgFile = NULL;
     }
-    if (m_pdlgPlyrList != NULL) {
-        m_pdlgPlyrList->DestroyWindow();
-        m_pdlgPlyrList = NULL;
-    }
+    // CDlgPlyrList removed (Phase 2d) — SDL2PlayerListDialog is modal, nothing to destroy.
 
     // no more animating
     theAnimList.clear();

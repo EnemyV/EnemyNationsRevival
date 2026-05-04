@@ -20,7 +20,6 @@
 #include "lastplnt.h"
 #include "minerals.inl"
 #include "player.h"
-#include "plyrlist.h"
 #include "relation.h"
 #include "research.h"
 #include "scenario.h"
@@ -693,8 +692,8 @@ void CConquerApp::GraphicsEnginePump( )
                 if ( theGame.GetAll( ).GetCount( ) <= theGame.GetAi( ).GetCount( ) )
                 {
                     LeaveCriticalSection( &cs );
-                    if ( m_pdlgPlyrList != NULL )
-                        m_pdlgPlyrList->ShowWindow( SW_HIDE );
+                    // CDlgPlyrList removed (Phase 2d) — SDL2PlayerListDialog is modal so
+                    // no game-state hide hook is needed.
                     EnMessageBox( IDS_GAME_OVER, MB_OK | MB_ICONSTOP );
                     theApp.CloseWorld( );
                     return;

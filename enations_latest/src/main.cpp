@@ -26,7 +26,6 @@
 #include "sfx.h"
 #include "area.h"
 #include "bitmaps.h"
-#include "plyrlist.h"
 #include "cdloc.h"
 #include "toolbar.h"
 #include "msgs.h"
@@ -275,7 +274,7 @@ void CWndMain::OnDisplayChange2 ()
 	MoveToNew ( theApp.m_pdlgFile, xOld, yOld );
 	MoveToNew ( theApp.m_pdlgRsrch, xOld, yOld );
 	// MoveToNew for CDlgPause removed — no longer a CWnd, centers itself on Show()
-	MoveToNew ( theApp.m_pdlgPlyrList, xOld, yOld );
+	// MoveToNew for CDlgPlyrList removed (Phase 2d) — SDL2PlayerListDialog is modal.
 
 	// these move & size
 	MoveSizeToNew ( &theApp.m_wndWorld, xOld, yOld );
