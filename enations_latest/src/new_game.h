@@ -13,11 +13,8 @@
 #include "netapi.h"
 #include "netcmd.h"
 #include "racedata.h"
-#include "pickrace.h"
 #include "chat.h"
 
-class CDlgPickRace;
-class CDlgPickPlayer;
 class CCreateNewBase;
 class CCreateLoadBase;
 class CCreateBase;
@@ -190,15 +187,16 @@ public:
 #endif
 };
 
+// CDlgPickRace + CDlgPickPlayer removed (Phase 2d) — SDL2PickRaceDialog and
+// SDL2PickPlayerDialog now drive race / player selection from the SDL2 flows.
+
 class CCreateNewBase
 {
 public:
 		CCreateNewBase () {}
-		
+
 		virtual void  ClosePick ();
 		virtual void  CloseAll () { ClosePick (); }
-
-		CDlgPickRace			m_dlgPickRace;
 
 		CInitData					m_InitData;
 };
@@ -211,7 +209,6 @@ public:
 		virtual void  ClosePick ();
 		virtual void  CloseAll () { ClosePick (); }
 
-		CDlgPickPlayer			m_dlgPickPlayer;
 		BOOL								m_bReplace;
 };
 

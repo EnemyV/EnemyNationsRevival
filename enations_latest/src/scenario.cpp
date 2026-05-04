@@ -1052,8 +1052,7 @@ void CCreateScenario::Init() {
 }
 
 void CCreateScenario::Close() {
-    if (m_dlgPickRace.m_hWnd != NULL)
-        m_dlgPickRace.DestroyWindow();
+    // CDlgPickRace removed (Phase 2d) — nothing to close here now.
 }
 
 #ifdef _DEBUG

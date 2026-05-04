@@ -1164,22 +1164,17 @@ static void CmdEnumPlyrs( int iNetNum )
     }
 }
 
-static void CmdPlyrJoin( CNetPlyrJoin* pMsg )
+static void CmdPlyrJoin( CNetPlyrJoin* /*pMsg*/ )
 {
-
+    // CDlgPickPlayer removed (Phase 2d). The MFC load-join path that received
+    // these messages is dead; the SDL2 SDL2PickPlayerDialog populates its own
+    // listbox from theGame state via CNetPlyrJoin sent earlier in the handshake.
     if ( ( theApp.m_pCreateGame == NULL ) || ( theGame.AmServer( ) ) ||
-         ( theApp.m_pCreateGame->m_iTyp != CCreateBase::load_join ) ||
-         ( ( (CJoinMulti*)theApp.m_pCreateGame )->m_dlgPickPlayer.m_hWnd == NULL ) )
+         ( theApp.m_pCreateGame->m_iTyp != CCreateBase::load_join ) )
     {
         TRAP( );
-        ASSERT( FALSE );
         return;
     }
-
-    CNetPlyrJoin* pData = CNetPlyrJoin::Alloc( pMsg );
-
-    int iInd = ( (CJoinMulti*)theApp.m_pCreateGame )->m_dlgPickPlayer.m_lstRace.AddString( pData->m_sName );
-    ( (CJoinMulti*)theApp.m_pCreateGame )->m_dlgPickPlayer.m_lstRace.SetItemDataPtr( iInd, pData );
 }
 
 static void CmdSelectPlyr( CNetSelectPlyr* pMsg )
@@ -1236,40 +1231,23 @@ static void CmdSelectOk( CNetSelectPlyr* )
 
 static void CmdSelectNotOk( CNetSelectPlyr* )
 {
-
     TRAP( );
 
     if ( theApp.m_pCreateGame->m_iTyp != CCreateBase::load_join )
         return;
 
-    ( (CJoinMulti*)theApp.m_pCreateGame )->m_dlgPickPlayer.m_dlgWait.DestroyWindow( );
-    ( (CJoinMulti*)theApp.m_pCreateGame )->m_dlgPickPlayer.EnableWindow( TRUE );
+    // CDlgPickPlayer removed (Phase 2d) — the MFC m_dlgWait
+    // (CDlgPickWait) modal that gated re-entry is gone; SDL2 join
+    // flow re-enables itself when its DoModal loop resumes.
 }
 
-static void CmdPlayerTaken( CNetSelectPlyr* pMsg )
+static void CmdPlayerTaken( CNetSelectPlyr* /*pMsg*/ )
 {
-
-    // we have a pPlyr for the person who joined (iNetNum) & for the
-    // player in the loaded game (iPlyrNum). We keep the joined player.
-    if ( ( theApp.m_pCreateGame != NULL ) || ( NULL == ( (CJoinMulti*)theApp.m_pCreateGame )->m_dlgPickPlayer ) ||
-         ( ( (CJoinMulti*)theApp.m_pCreateGame )->m_dlgPickPlayer.m_hWnd == NULL ) )
-        return;
+    // CDlgPickPlayer removed (Phase 2d). The MFC handler walked the dialog's
+    // listbox to mark the taken player and refresh button state; the SDL2
+    // join flow re-queries theGame state from its own DoModal loop.
+    if ( theApp.m_pCreateGame == NULL ) return;
     TRAP( );
-
-    // update the taken player
-    CListBox* pLb  = &( ( (CJoinMulti*)theApp.m_pCreateGame )->m_dlgPickPlayer.m_lstRace );
-    int       iMax = pLb->GetCount( );
-    for ( int iOn = 0; iOn < iMax; iOn++ )
-    {
-        CNetPlyrJoin* pData = (CNetPlyrJoin*)pLb->GetItemDataPtr( iOn );
-        if ( pData->m_iPlyrNum == pMsg->m_iPlyrNum )
-        {
-            TRAP( );
-            pData->m_bAvail = FALSE;
-            ( (CJoinMulti*)theApp.m_pCreateGame )->m_dlgPickPlayer.UpdateBtns( );
-            break;
-        }
-    }
 }
 
 // sending the game file to this player

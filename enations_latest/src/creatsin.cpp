@@ -53,41 +53,11 @@ void CCreateSingle::AssertValid() const
 
 void CCreateLoadSingle::Init ()
 {
-
+	// CDlgPickPlayer removed (Phase 2d). The SDL2 flow does load + pick-player
+	// via SDL2_RunLoadSinglePlayerFlow / SDL2PickPlayerDialog directly.
+	// This MFC entry point only ran from CDlgMain::OnMainLoad (dead fallback).
 	ASSERT_VALID (this);
-	theApp.Log ( "Load single-player game" );
-
-	theApp.DisableMain ();
-
-	theGame.ctor ();
-	theGame.SetServer (TRUE);
-	theGame._SetIsNetGame ( FALSE );
-
-	// set it as the server
-	if (theGame.LoadGame (theApp.m_pMainWnd, FALSE) != IDOK)
-		{
-		theApp.CreateMain ();
-		return;
-		}
-
-	// if it's not a scenario pick the player
-	if (theGame.GetScenario () < 0)
-		{
-		m_dlgPickPlayer.Create (this, IDD_PICK_PLAYER, theApp.m_pMainWnd);
-		return;
-		}
-
-	theGame.SetHP (TRUE);
-	theGame.SetAI (TRUE);
-	theGame.GetMe()->SetState (CPlayer::ready);
-
-	// it's a scenario - we know who we are
-	if (theGame.StartGame (FALSE) != IDOK)
-		{
-		TRAP ();
-		theApp.CloseWorld ();
-		theApp.CreateMain ();
-		}
+	theApp.Log ( "Load single-player game (MFC entry — no-op)" );
 }
 
 void CCreateLoadSingle::ClosePick ()
@@ -107,10 +77,7 @@ void CCreateLoadSingle::CloseAll ()
 #ifdef _DEBUG
 void CCreateLoadSingle::AssertValid() const
 {
-
 	CCreateBase::AssertValid ();
-
-	ASSERT_VALID (&m_dlgPickPlayer);
 }
 #endif
 

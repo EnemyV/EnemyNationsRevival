@@ -47,7 +47,8 @@ public:
 		~CCreateLoadSingle () { CloseAll (); }
 
 		CCreateLoadBase *	GetLoad () { return (this); }
-		void  UpdateBtns () { if (m_dlgPickPlayer.m_hWnd != NULL) m_dlgPickPlayer.UpdateBtns (); }
+		// CDlgPickPlayer removed (Phase 2d) — SDL2PickPlayerDialog does its own button state.
+		void  UpdateBtns () {}
 
 		void	Init ();
 		void  ClosePick ();

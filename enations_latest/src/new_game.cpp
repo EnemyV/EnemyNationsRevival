@@ -192,22 +192,14 @@ void CMultiBase::AssertValid() const
 
 
 /////////////////////////////////////////////////////////////////////////////
-// CCreateNewBase
+// CCreateNewBase / CCreateLoadBase
+// MFC dialogs CDlgPickRace/CDlgPickPlayer removed (Phase 2d) — nothing to
+// destroy in ClosePick now; SDL2 dialogs are local DoModal scopes.
 
 void CCreateNewBase::ClosePick() {
-
-    if (m_dlgPickRace.m_hWnd != NULL)
-        m_dlgPickRace.DestroyWindow();
 }
 
-
-/////////////////////////////////////////////////////////////////////////////
-// CCreateLoadBase
-
 void CCreateLoadBase::ClosePick() {
-
-    if (m_dlgPickPlayer.m_hWnd != NULL)
-        m_dlgPickPlayer.DestroyWindow();
 }
 
 

@@ -72,7 +72,8 @@ public:
 		CCreateLoadMulti () : CCreateMultiBase (CCreateBase::load_multi) {}
 		~CCreateLoadMulti () { CloseAll (); }
 
-		void  UpdateBtns () { if (m_dlgPickPlayer.m_hWnd != NULL) m_dlgPickPlayer.UpdateBtns (); }
+		// CDlgPickPlayer removed (Phase 2d) — SDL2PickPlayerDialog does its own button state.
+		void  UpdateBtns () {}
 		CCreateLoadBase *	GetLoad () { return (this); }
 
 		void	Init ();

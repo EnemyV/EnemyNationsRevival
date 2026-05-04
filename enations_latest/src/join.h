@@ -59,7 +59,8 @@ public:
 
 		CCreateNewBase *	GetNew ();
 		CCreateLoadBase *	GetLoad ();
-		void  UpdateBtns () { if (m_dlgPickPlayer.m_hWnd != NULL) m_dlgPickPlayer.UpdateBtns (); }
+		// CDlgPickPlayer removed (Phase 2d) — SDL2PickPlayerDialog does its own button state.
+		void  UpdateBtns () {}
 
 		void	MakeLoad () { m_iTyp = CCreateBase::load_join; }
 
