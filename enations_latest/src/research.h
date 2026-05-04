@@ -128,72 +128,9 @@ public:
 	void			Close ();
 };
 
-class CResearchListBox : public CListBox
-{
-  public:
-    virtual int CompareItem( LPCOMPAREITEMSTRUCT lpCompareItemStruct );
-};
-
-/////////////////////////////////////////////////////////////////////////////
-// CDlgResearch dialog
-
-class CDlgResearch : public CDialog
-{
-// Construction
-public:
-	CDlgResearch(CWnd* pParent = NULL);   // standard constructor
-
-	void		UpdateChoices (BOOL bCheck);
-	void		ItemDiscovered (int iItem);
-	void		UpdateProgress ();
-
-	// Dialog Data
-	//{{AFX_DATA(CDlgResearch)
-	enum { IDD = IDD_RESEARCH };
-	CWndOD< CButton >	m_btnDiscovery;
-    CResearchListBox m_lstRsrch;
-	//}}AFX_DATA
-
-
-// Overrides
-	// ClassWizard generated virtual function overrides
-	//{{AFX_VIRTUAL(CDlgResearch)
-	public:
-	protected:
-	virtual void DoDataExchange(CDataExchange* pDX);    // DDX/DDV support
-	virtual void PostNcDestroy() { delete this; }
-	//}}AFX_VIRTUAL
-
-// Implementation
-protected:
-
-	int							m_iRsrchNum;
-	int							m_iPerDone;
-	CString					m_strDesc;
-	CDIB *					m_pDib;
-	CDIB *					m_pDibBtn;
-	CStatInst				m_statInst;				// data to draw the icons
-	CFont						m_fntList;
-	BOOL						m_bShareLimit;
-
-	// Generated message map functions
-	//{{AFX_MSG(CDlgResearch)
-	virtual void OnOK();
-	virtual void OnCancel();
-	virtual BOOL OnInitDialog();
-	afx_msg void OnDblclkRsrchList();
-	afx_msg void OnSelchangeRsrchList();
-	afx_msg void OnDestroy();
-	afx_msg BOOL OnEraseBkgnd(CDC* pDC);
-	afx_msg void OnPaint();
-	afx_msg void OnRsrchFound();
-	afx_msg void OnDrawItem(int nIDCtl, LPDRAWITEMSTRUCT lpDrawItemStruct);
-	afx_msg void OnMeasureItem(int nIDCtl, LPMEASUREITEMSTRUCT lpMeasureItemStruct);
-	afx_msg void OnPaletteChanged(CWnd* pFocusWnd);
-	afx_msg BOOL OnQueryNewPalette();
-	//}}AFX_MSG
-	DECLARE_MESSAGE_MAP()
-};
+// CDlgResearch + CResearchListBox removed (Phase 2d) — replaced by
+// SDL2ResearchDialog. The CRsrchArray / CRsrchItem / CRsrchStatus state classes
+// below remain (used by AI research progression and serialization).
 
 extern void ConstructElements (CRsrchStatus * pNewElem, int iCount);
 extern void DestructElements (CRsrchStatus * pNewElem, int iCount);

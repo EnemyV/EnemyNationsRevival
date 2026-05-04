@@ -276,7 +276,6 @@ CConquerApp::CConquerApp( ): m_MapClrFmt( CColorFormat::DEPTH_EIGHT ),
 {
 
     m_bInGame       = FALSE;
-    m_pdlgRsrch     = NULL;
     m_hAccel        = NULL;
     m_hLibLang      = NULL;
     m_iLangCode     = 0;

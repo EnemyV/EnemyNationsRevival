@@ -37,7 +37,7 @@ class CConquerApp;
 class CCreateBase;
 // CDlgPlyrList removed (Phase 2d).
 class SDL2MainMenu;
-class CDlgResearch;
+// CDlgResearch removed (Phase 2d).
 class GameWindow;
 
 #ifdef _CHEAT
@@ -388,7 +388,7 @@ class CConquerApp : public CWinApp
     CWndListBuildings m_wndBldgs;     // the buildings listbox
     CWndListVehicles  m_wndVehicles;  // the vehicles listbox
     // CDlgFile removed (Phase 2d) — SDL2FileDialog is the sole replacement.
-    CDlgResearch*     m_pdlgRsrch;
+    // CDlgResearch removed (Phase 2d) — SDL2ResearchDialog is the sole replacement.
 
     CWndMain      m_wndMain;       // the main window - first created, last destroyed
     CDlgMain*     m_pdlgMain;      // the main menu

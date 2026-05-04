@@ -449,8 +449,7 @@ void CPlayer::Research( int iNumSec )
 
     if ( !bFoundIt )
     {
-        if ( ( !IsAI( ) ) && ( theApp.m_pdlgRsrch != NULL ) )
-            theApp.m_pdlgRsrch->UpdateProgress( );
+        // CDlgResearch removed (Phase 2d) — SDL2ResearchDialog re-reads progress on open.
         return;
     }
 
@@ -2312,15 +2311,7 @@ int CGame::StartGame( BOOL bReplace )
         theApp.m_wndBar.Create( );  // first to set row3
         if ( theGame.IsNetGame( ) && !theApp.m_gameWindow )
             theApp.m_wndChat.Create( );
-        if ( GetMe( )->GetExists( CStructureData::research ) )
-        {
-            if ( !theApp.m_gameWindow ) {
-                if ( theApp.m_pdlgRsrch == NULL )
-                    theApp.m_pdlgRsrch = new CDlgResearch( &theApp.m_wndMain );
-                if ( theApp.m_pdlgRsrch->m_hWnd == NULL )
-                    theApp.m_pdlgRsrch->Create( IDD_RESEARCH, &theApp.m_wndMain );
-            }
-        }
+        // CDlgResearch removed (Phase 2d) — SDL2ResearchDialog is modal.
 
         // Player load game?
 

@@ -739,11 +739,7 @@ void CConquerApp::GraphicsEnginePump( )
                         m_wndWorld.DestroyWindow( );
                         theAreaList.DestroyAllWindows( );
                         m_wndBar.DestroyWindow( );
-                        if ( m_pdlgRsrch != NULL )
-                        {
-                            m_pdlgRsrch->DestroyWindow( );
-                            m_pdlgRsrch = NULL;
-                        }
+                        // CDlgResearch removed (Phase 2d) — modal SDL2 dialog.
                         return;
                     }
 

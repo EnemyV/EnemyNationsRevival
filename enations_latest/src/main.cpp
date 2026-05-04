@@ -272,7 +272,7 @@ void CWndMain::OnDisplayChange2 ()
 	// these are dialogs - just move, don't size
 	// MoveToNew for CDlgRelations removed (replaced by SDL2RelationsDialog)
 	// MoveToNew for CDlgFile removed (Phase 2d) — SDL2FileDialog is modal.
-	MoveToNew ( theApp.m_pdlgRsrch, xOld, yOld );
+	// MoveToNew for CDlgResearch removed (Phase 2d) — SDL2ResearchDialog is modal.
 	// MoveToNew for CDlgPause removed — no longer a CWnd, centers itself on Show()
 	// MoveToNew for CDlgPlyrList removed (Phase 2d) — SDL2PlayerListDialog is modal.
 
@@ -1036,9 +1036,7 @@ void CWndMain::_EnableGameWindows ( BOOL bEnable )
 		theApp.m_wndBldgs.EnableWindow ( bEnable );
 	if ( theApp.m_wndVehicles.m_hWnd != NULL )
 		theApp.m_wndVehicles.EnableWindow ( bEnable );
-	// CDlgFile removed (Phase 2d) — SDL2FileDialog is modal.
-	if ( (theApp.m_pdlgRsrch != NULL) && (theApp.m_pdlgRsrch->m_hWnd != NULL) )
-		theApp.m_pdlgRsrch->EnableWindow ( bEnable );
+	// CDlgFile + CDlgResearch removed (Phase 2d) — both modal in SDL2 path.
 
 	theAreaList.EnableWindows ( bEnable );
 

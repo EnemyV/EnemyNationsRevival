@@ -2189,14 +2189,7 @@ CBuilding::~CBuilding( )
                 }
             }
 
-            // if it was our last R&D center - kill the R&D window
-            if ( ( GetData( )->GetBldgType( ) == CStructureData::research ) && ( theApp.m_pdlgRsrch != NULL ) )
-                if ( theGame.GetMe( )->GetExists( CStructureData::research ) <= 0 )
-                {
-                    theApp.m_pdlgRsrch->DestroyWindow( );
-                    theApp.m_pdlgRsrch = NULL;
-                }
-
+            // (last R&D-center CDlgResearch cleanup removed; SDL2ResearchDialog is modal)
             // (last-embassy CDlgRelations cleanup removed; SDL2RelationsDialog is modal)
         }
 
@@ -2369,13 +2362,7 @@ void CBuilding::RemoveUnit( )
             // (CDlgRelations destruction removed; SDL2RelationsDialog is modal)
         }
 
-        // if it was our last R&D center - kill the R&D window
-        if ( ( GetData( )->GetBldgType( ) == CStructureData::research ) && ( theApp.m_pdlgRsrch != NULL ) )
-            if ( theGame.GetMe( )->GetExists( CStructureData::research ) <= 0 )
-            {
-                theApp.m_pdlgRsrch->DestroyWindow( );
-                theApp.m_pdlgRsrch = NULL;
-            }
+        // (last R&D-center CDlgResearch cleanup removed; SDL2ResearchDialog is modal)
 
         DestroyAllWindows( );
 

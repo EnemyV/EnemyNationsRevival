@@ -552,14 +552,8 @@ void CConquerApp::CreateNewWorld(unsigned uRand, AIinit *pAiData, int iSide, int
         if (theGame.GetAll().GetCount() > theGame.GetAi().GetCount() + 1)
             if ( !m_gameWindow )  // SDL2 path: chat not yet implemented
                 m_wndChat.Create();
-        if (theGame.GetMe()->GetExists(CStructureData::research)) {
-            if ( !m_gameWindow ) {
-                if (m_pdlgRsrch == NULL)
-                    m_pdlgRsrch = new CDlgResearch(&m_wndMain);
-                if (m_pdlgRsrch->m_hWnd == NULL)
-                    m_pdlgRsrch->Create(IDD_RESEARCH, &m_wndMain);
-            }
-        }
+        // CDlgResearch removed (Phase 2d) — SDL2ResearchDialog is modal,
+        // launched from the toolbar Research button on demand.
         CWndArea *pWndArea = new CWndArea();
         pWndArea->Create(theGame.GetMe()->m_hexMapStart, NULL, TRUE);
 
@@ -897,29 +891,22 @@ void CConquerApp::LetsGo() {
     if (!theGame.HaveHP())
         theApp.ShowPlayerList();
     else {
-        if (theGame.GetMe()->GetExists(CStructureData::research)) {
-            if ( !m_gameWindow ) {
-                if (m_pdlgRsrch == NULL)
-                    m_pdlgRsrch = new CDlgResearch(&m_wndMain);
-                if (m_pdlgRsrch->m_hWnd == NULL)
-                    m_pdlgRsrch->Create(IDD_RESEARCH, &m_wndMain);
-            }
-        }
+        // CDlgResearch removed (Phase 2d) — SDL2ResearchDialog is modal,
+        // launched from the toolbar Research button on demand.
 
         CWnd *pWndChat = (theGame.GetAll().GetCount() > theGame.GetAi().GetCount() + 1) ? &m_wndChat : NULL;
         CWnd *pWndArea = theAreaList.GetTop();
         _OrderWin(&m_wndVehicles, NULL);
         _OrderWin(&m_wndBldgs, &m_wndVehicles);
         _OrderWin(pWndChat, &m_wndBldgs);
-        _OrderWin(m_pdlgRsrch, pWndChat != NULL ? pWndChat : &m_wndBldgs);
-        _OrderWin(&m_wndWorld, m_pdlgRsrch != NULL ? m_pdlgRsrch : (pWndChat != NULL ? pWndChat : &m_wndBldgs));
+        // CDlgResearch removed (Phase 2d).
+        _OrderWin(&m_wndWorld, pWndChat != NULL ? pWndChat : &m_wndBldgs);
         _OrderWin(pWndArea, &m_wndWorld);
         _OrderWin(&m_wndBar, pWndArea);
 
         _ShowWin(&m_wndBldgs, &(theGame.m_wpBldgs));
         _ShowWin(&m_wndVehicles, &(theGame.m_wpVehicles));
         _ShowWin(pWndChat, &(theGame.m_wpChat));
-        _ShowWin(m_pdlgRsrch, &(theGame.m_wpRsrch));
         _ShowWin(&m_wndWorld, &(theGame.m_wpWorld));
         _ShowWin(pWndArea, &(theGame.m_wpArea));
         _ShowWin(&m_wndBar, NULL);
@@ -929,7 +916,6 @@ void CConquerApp::LetsGo() {
         _UpdateWin(&m_wndBar);
         _UpdateWin(pWndArea);
         _UpdateWin(&m_wndWorld);
-        _UpdateWin(m_pdlgRsrch);
         _UpdateWin(pWndChat);
         _UpdateWin(&m_wndVehicles);
         _UpdateWin(&m_wndBldgs);
@@ -1148,10 +1134,7 @@ void CConquerApp::DestroyWorld() {
     m_wndWorld.DestroyWindow();
     theAreaList.DestroyAllWindows();
     m_wndBar.DestroyWindow();
-    if (m_pdlgRsrch != NULL) {
-        m_pdlgRsrch->DestroyWindow();
-        m_pdlgRsrch = NULL;
-    }
+    // CDlgResearch removed (Phase 2d) — SDL2ResearchDialog is modal.
     // CDlgFile removed (Phase 2d) — SDL2FileDialog is modal.
     // CDlgPlyrList removed (Phase 2d) — SDL2PlayerListDialog is modal.
 
