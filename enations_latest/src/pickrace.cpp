@@ -550,13 +550,10 @@ void CDlgPickPlayer::OnOK() {
 
                 // server - load game
             case CCreateBase::load_multi : {
-                // now we can publish
+                // CDlgCreatePublish removed (Phase 2d). This MFC dialog is dead;
+                // SDL2 load-network flow drives this state without these calls.
                 pPlr->m_iPerInit = 100;
-                if (((CCreateMultiBase *) m_pCb)->m_dlgCreatePublish.m_hWnd == NULL)
-                    ((CCreateMultiBase *) m_pCb)->m_dlgCreatePublish.Create((CCreateMultiBase *) m_pCb, NULL,
-                                                                            CDlgCreatePublish::IDD, theApp.m_pMainWnd);
-                ((CCreateMultiBase *) m_pCb)->m_dlgCreatePublish.ShowWindow(SW_SHOW);
-                ShowWindow(SW_HIDE);
+                TRAP ();
                 break;
             }
 
