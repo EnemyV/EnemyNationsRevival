@@ -39,7 +39,7 @@ CEMsgList *plEmailMsgs;
 // list of players specific to IPC
 CIPCPlayerList *plIPCPlayers = NULL;
 // one player status dialog
-CPlyrMsgStatusDlg *pPlayerDlg = NULL; 
+// CPlyrMsgStatusDlg removed (Phase 2d).
 
 static UINT buttons[] =
 {
@@ -1372,15 +1372,9 @@ void CWndComm::OnDelete ()
 
 void CWndComm::OnPlayerStatus()
 {
+	// CPlyrMsgStatusDlg removed (Phase 2d). The MFC chat window CWndComm is
+	// itself queued for removal in the chat-dialog cluster.
 	ASSERT_VALID (this);
-
-	if( pPlayerDlg == NULL )
-	{
-		pPlayerDlg= new CPlyrMsgStatusDlg(NULL);
-		pPlayerDlg->Create (CPlyrMsgStatusDlg::IDD, this);
-	}
-	else
-		pPlayerDlg->ShowWindow(SW_SHOW);
 }
 
 void CWndComm::OnRefuse ()
