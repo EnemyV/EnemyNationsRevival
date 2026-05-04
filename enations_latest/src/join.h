@@ -65,7 +65,7 @@ public:
 		void	MakeLoad () { m_iTyp = CCreateBase::load_join; }
 
 		void 	UpdatePlyrStatus (CPlayer * pPlyr, int iStatus)
-									{ if ( m_wndPlyrList.m_hWnd != NULL) m_wndPlyrList.UpdatePlyrStatus (pPlyr, iStatus); }
+									{ m_wndPlyrList.UpdatePlyrStatus (pPlyr, iStatus); }
 		void	AddPlayer (CPlayer * pPlyr)
 									{ m_wndPlyrList.AddPlayer (pPlyr); }
 		// MFC CDlgJoinGame::OnSessionEnum/Close paths removed; SDL2 join flow

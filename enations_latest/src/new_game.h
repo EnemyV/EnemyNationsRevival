@@ -37,68 +37,9 @@ class SDL2CreateStatus;
 
 
 /////////////////////////////////////////////////////////////////////////////
-// CDlgPlayerList dialog
-
-class CDlgPlayerList : public CDialog
-{
-// Construction
-public:
-	CDlgPlayerList(CWnd* pParent = NULL);   // standard constructor
-	void Create (CCreateBase * pCb, UINT id, CWnd *pPar = NULL);
-
-	void	RemoveAll () { m_lstPlayers.ResetContent (); }
-	void	AddPlayer (CPlayer * pPlr);
-	void	RemovePlayer (CPlayer *pPlr);
-	void	SetNumPlayers ();
-	void	UpdateBtns ();
-	void 	UpdatePlyrStatus (CPlayer * pPlyr, int iStatus);
-
-	CCreateBase *		m_pCb;
-	BOOL						m_bServer;		// TRUE if server (can delete, start game)
-	BOOL						m_bTimer;
-	BOOL						m_bAddrShowing;
-	int							m_iWid;
-	int							m_iHtAddr;
-	int							m_iHtNoAddr;
-
-// Dialog Data
-	//{{AFX_DATA(CDlgPlayerList)
-	enum { IDD = IDD_PLAYER_LIST };
-	CString	m_sAddr;
-	CString	m_sIsAddr;
-	CString	m_sVpVer;
-	CString	m_sVer;
-	CWndOD< CButton >	m_btnDelete;
-	CWndOD< CButton >	m_btnOk;
-	CWndOD< CButton >	m_btnNumPlayers;
-	CWndOD< CButton >	m_btnAddr;
-	CListBox	m_lstPlayers;
-	//}}AFX_DATA
-
-
-// Overrides
-	// ClassWizard generated virtual function overrides
-	//{{AFX_VIRTUAL(CDlgPlayerList)
-	protected:
-	virtual void DoDataExchange(CDataExchange* pDX);    // DDX/DDV support
-	//}}AFX_VIRTUAL
-
-// Implementation
-protected:
-
-	// Generated message map functions
-	//{{AFX_MSG(CDlgPlayerList)
-	virtual BOOL OnInitDialog();
-	virtual void OnOK();
-	afx_msg void OnDestroy();
-	afx_msg void OnTimer(UINT nIDEvent);
-	afx_msg void OnSelchangeCreateList();
-	afx_msg void OnDrawItem(int nIDCtl, LPDRAWITEMSTRUCT lpDrawItemStruct);
-	afx_msg void OnCreateDeletePlayer();
-	afx_msg void OnShowAddr();
-	//}}AFX_MSG
-	DECLARE_MESSAGE_MAP()
-};
+// CDlgPlayerList removed (Phase 2d) — was the multiplayer pre-game waiting
+// room. The SDL2 multiplayer flow drives this state directly from
+// SDL2_RunCreateNetworkFlow / SDL2_RunJoinNetworkFlow.
 
 
 /////////////////////////////////////////////////////////////////////////////
@@ -174,12 +115,20 @@ public:
 		CMultiBase (int iTyp) : CCreateBase (iTyp) {}
 
 		virtual void  ClosePick () {}
-		virtual void  CloseAll ();
+		virtual void  CloseAll () { CCreateBase::CloseAll(); }
 
 		void		CreateWndChat ();
-		void		CreatePlyrList (CCreateBase * pCb);
-
-		CDlgPlayerList		m_wndPlyrList;
+		// CDlgPlayerList removed (Phase 2d) — these no-ops keep network handlers
+		// (e.g. CmdPlyrJoin / load-game restore in player.cpp) compiling. The
+		// SDL2 multiplayer flow renders the player list inside its own dialog.
+		void		CreatePlyrList (CCreateBase *) {}
+		struct PlyrListStub {
+			void RemovePlayer(CPlayer*) {}
+			void AddPlayer(CPlayer*) {}
+			void UpdatePlyrStatus(CPlayer*, int) {}
+			void UpdateBtns() {}
+			void RemoveAll() {}
+		} m_wndPlyrList;
 
 #ifdef _DEBUG
 public:

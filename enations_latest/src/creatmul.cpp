@@ -31,8 +31,8 @@ static char BASED_CODE THIS_FILE[] = __FILE__;
 
 CCreateMultiBase::CCreateMultiBase (int iTyp) : CMultiBase (iTyp)
 {
-
-	m_wndPlyrList.m_bServer = TRUE;
+	// CDlgPlayerList removed (Phase 2d) — server-flag tracking moved into the
+	// SDL2 multiplayer flow's own dialog state.
 }
 
 void CMultiBase::CreateWndChat ()

@@ -36,10 +36,10 @@ public:
 
 		void RemovePlayer (CPlayer * pPlr) { m_wndPlyrList.RemovePlayer (pPlr); }
 		void UpdatePlyrStatus (CPlayer * pPlyr, int iStatus)
-									{ if (m_wndPlyrList.m_hWnd != NULL) m_wndPlyrList.UpdatePlyrStatus (pPlyr, iStatus); }
+									{ m_wndPlyrList.UpdatePlyrStatus (pPlyr, iStatus); }
 		void AddPlayer (CPlayer * pPlyr)
 									{ m_wndPlyrList.AddPlayer (pPlyr); }
-		void  UpdateBtns () { if (m_wndPlyrList.m_hWnd != NULL) m_wndPlyrList.UpdateBtns (); }
+		void  UpdateBtns () { m_wndPlyrList.UpdateBtns (); }
 
 #ifdef _DEBUG
 public:
