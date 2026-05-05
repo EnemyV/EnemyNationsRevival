@@ -23,7 +23,7 @@ bool CDlgModelessMsg::s_classRegistered = false;
 CDlgModelessMsg::CDlgModelessMsg(CWnd* pParent /*=NULL*/)
 	: m_hWnd( NULL )
 {
-	m_sMsg = _T("");
+	m_sMsg.clear();
 }
 
 CDlgModelessMsg::~CDlgModelessMsg()
@@ -52,7 +52,7 @@ LRESULT CALLBACK CDlgModelessMsg::WndProc( HWND hwnd, UINT msg, WPARAM wParam, L
 			RECT rc;
 			::GetClientRect( hwnd, &rc );
 			::InflateRect( &rc, -10, -10 );
-			::DrawTextA( hdc, pThis->m_sMsg, -1, &rc, DT_WORDBREAK | DT_CENTER | DT_VCENTER );
+			::DrawTextA( hdc, pThis->m_sMsg.c_str(), -1, &rc, DT_WORDBREAK | DT_CENTER | DT_VCENTER );
 		}
 		::EndPaint( hwnd, &ps );
 		return 0;

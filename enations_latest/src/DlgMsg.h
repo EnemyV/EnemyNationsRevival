@@ -15,7 +15,7 @@ public:
 
 	void Create ( const char * pMsg );
 
-	CString	m_sMsg;
+	std::string	m_sMsg;
 
 private:
 	HWND m_hWnd;
