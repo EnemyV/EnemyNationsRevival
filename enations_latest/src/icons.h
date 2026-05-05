@@ -189,7 +189,7 @@ protected:
 	CDIB *						m_pBackDib;			// bitmap that is the background (for transparent parts)
 	CPoint						m_ptBackOff;		// where to start tiling from
 
-	CString						m_sText;				// text for status text type windows
+	std::string				m_sText;				// text for status text type windows
 	IMPORTANCE				m_iImp;					// how important
 };
 

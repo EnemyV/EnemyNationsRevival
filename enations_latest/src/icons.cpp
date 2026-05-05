@@ -474,7 +474,7 @@ void CStatInst::DrawStatHave () const
 void CStatInst::DrawStatText () const
 {
 
-	if (m_sText.IsEmpty ())
+	if (m_sText.empty ())
 		return;
 
 	CRect rText (m_rDest);
@@ -498,7 +498,7 @@ void CStatInst::DrawStatText () const
 	pDc->SetBkMode (TRANSPARENT);
 	if (m_pStatData->m_pFnt == NULL)
 		{
-		pDc->DrawText (m_sText, -1, rText, dtStyle);
+		pDc->DrawText (m_sText.c_str(), -1, rText, dtStyle);
 		return;
 		}
 
@@ -506,7 +506,7 @@ void CStatInst::DrawStatText () const
 	CFont * pOld = pDc->SelectObject (m_pStatData->m_pFnt);
 	CFont fntTemp;
 	CRect rFit ( rText );
-	pDc->DrawText (m_sText, -1, &rFit, DT_CALCRECT | dtStyle );
+	pDc->DrawText (m_sText.c_str(), -1, &rFit, DT_CALCRECT | dtStyle );
 	if ( (rFit.right > rText.right) || (rFit.bottom > rText.bottom) )
 		{
 		// make it smaller
@@ -528,7 +528,7 @@ void CStatInst::DrawStatText () const
 
 			// see if this works
 			pDc->SelectObject ( &fntTemp );
-			pDc->DrawText (m_sText, -1, &rFit, DT_CALCRECT | dtStyle );
+			pDc->DrawText (m_sText.c_str(), -1, &rFit, DT_CALCRECT | dtStyle );
 			if ( (rFit.right <= rText.right) && (rFit.bottom <= rText.bottom) )
 				break;
 			}
@@ -540,7 +540,7 @@ void CStatInst::DrawStatText () const
 	if (*pClr == *(pClr+1))
 		{
 		pDc->SetTextColor (*pClr);
-		pDc->DrawText (m_sText, -1, rText, dtStyle);
+		pDc->DrawText (m_sText.c_str(), -1, rText, dtStyle);
 		pDc->SelectObject ( pOld );
 		return;
 		}
@@ -548,11 +548,11 @@ void CStatInst::DrawStatText () const
 	// shaded letters
 	pDc->SetTextColor (*(pClr+1));
 	rText.OffsetRect (1, 1);
-	pDc->DrawText (m_sText, -1, rText, dtStyle);
+	pDc->DrawText (m_sText.c_str(), -1, rText, dtStyle);
 
 	pDc->SetTextColor (*pClr);
 	rText.OffsetRect (-1, -1);
-	pDc->DrawText (m_sText, -1, rText, dtStyle);
+	pDc->DrawText (m_sText.c_str(), -1, rText, dtStyle);
 
 	pDc->SelectObject ( pOld );
 }
@@ -719,7 +719,7 @@ void CWndStatBar::SetText (char const * pText, CStatInst::IMPORTANCE iImp)
 		pText = "";
 
 	ASSERT ( (m_statInst.m_pStatData->m_iTypIcon == CStatData::text) || (m_statInst.m_pStatData->m_iTypIcon == CStatData::text_right));
-	if ((iImp == m_statInst.m_iImp) && (! strcmp (m_statInst.m_sText, pText)))
+	if ((iImp == m_statInst.m_iImp) && (m_statInst.m_sText == pText))
 		return;
 
 	m_statInst.SetText (pText, iImp);
