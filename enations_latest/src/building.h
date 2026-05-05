@@ -106,11 +106,11 @@ friend void CStructure::InitLang ();
 friend void CStructure::Close ();
 public:
 					CStructureType () {}
-		char const *	GetDesc (int iInd) { ASSERT_STRICT ((0 <= iInd) && (iInd < 6)); return (m_sTitle[iInd]); }
+		char const *	GetDesc (int iInd) { ASSERT_STRICT ((0 <= iInd) && (iInd < 6)); return (m_sTitle[iInd].c_str()); }
 		int						GetNum () { return (6); }
 
 protected:
-		CString		m_sTitle[6];
+		std::string		m_sTitle[6];
 
 #ifdef _DEBUG
 public:
