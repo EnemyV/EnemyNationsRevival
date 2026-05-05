@@ -391,7 +391,7 @@ class CConquerApp : public CWinApp
     // CDlgResearch removed (Phase 2d) — SDL2ResearchDialog is the sole replacement.
 
     CWndMain      m_wndMain;       // the main window - first created, last destroyed
-    CDlgMain*     m_pdlgMain;      // the main menu
+    // CDlgMain m_pdlgMain removed (Phase 2d) — SDL2MainMenu is the sole path.
     CCreateBase*  m_pCreateGame;   // holder for creating game data & dialogs
     CWndMovie     m_wndMovie;
     CWndCredits   m_wndCredits;    // playing credits

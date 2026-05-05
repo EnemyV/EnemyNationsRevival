@@ -11,6 +11,7 @@
 #include "creatmul.h"
 #include "join.h"
 #include "scenario.h"
+#include "creatmul.inl"
 #include "netcmd.h"
 #include "netapi.h"
 

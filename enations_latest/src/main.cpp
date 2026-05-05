@@ -264,7 +264,7 @@ void CWndMain::OnDisplayChange2 ()
 
 	// these windows are all full screen
 	MakeFullScreen ( this );
-	MakeFullScreen ( theApp.m_pdlgMain );
+	// CDlgMain excluded from build (Phase 2d) — SDL2MainMenu owns layout.
 	MakeFullScreen ( &theApp.m_wndMovie );
 	MakeFullScreen ( &theApp.m_wndCredits );
 	MakeFullScreen ( &theApp.m_wndCutScene );

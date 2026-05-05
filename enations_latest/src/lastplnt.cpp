@@ -1586,39 +1586,21 @@ void CConquerApp::CreateMain( )
 
     bDoSubclass = TRUE;
 
-    // Use SDL2 main menu if available, fall back to MFC CDlgMain
-    if ( m_gameWindow )
+    // SDL2 main menu is the only path. CDlgMain MFC fallback excluded from
+    // build (Phase 2d).
+    if ( !m_sdlMainMenu )
     {
-        if ( !m_sdlMainMenu )
-        {
-            m_sdlMainMenu = std::make_unique<SDL2MainMenu>();
-            if ( !m_sdlMainMenu->Initialize( m_gameWindow.get() ) )
-            {
-                m_sdlMainMenu.reset();
-            }
-        }
+        m_sdlMainMenu = std::make_unique<SDL2MainMenu>();
+        if ( !m_sdlMainMenu->Initialize( m_gameWindow.get() ) )
+            m_sdlMainMenu.reset();
     }
-
     if ( m_sdlMainMenu && m_sdlMainMenu->IsInitialized() )
     {
-        // SDL2 menu is active - don't create CDlgMain
-        // Show SDL window, hide MFC window
         m_wndMain.ShowWindow( SW_HIDE );
         m_gameWindow->Show();
         m_gameWindow->SetMainMenu( m_sdlMainMenu.get() );
         m_gameWindow->Raise();
         Log( "Using SDL2 main menu" );
-    }
-    else
-    {
-        // Fall back to MFC CDlgMain
-        if ( m_pdlgMain == NULL )
-        {
-            m_pdlgMain = new CDlgMain( m_pMainWnd );
-            m_pdlgMain->Create( IDD_MAIN, m_pMainWnd );
-        }
-        m_pdlgMain->EnableWindow( TRUE );
-        m_pdlgMain->ShowWindow( SW_SHOW );
     }
 
     theGame.SetState( CGame::main );
@@ -1643,11 +1625,7 @@ void CConquerApp::DisableMain( )
         return;
     }
 
-    if ( m_pdlgMain == NULL )
-        return;
-
-    m_pdlgMain->EnableWindow( FALSE );
-    m_pdlgMain->ShowWindow( SW_HIDE );
+    // CDlgMain excluded from build (Phase 2d).
 }
 
 void CConquerApp::DestroyMain( )
@@ -1686,12 +1664,7 @@ void CConquerApp::DestroyMain( )
         m_gameWindow->Raise();
     }
 
-    if ( m_pdlgMain == NULL )
-        return;
-
-    CDlgMain* pDm = m_pdlgMain;
-    m_pdlgMain    = NULL;
-    pDm->DestroyWindow( );
+    // CDlgMain excluded from build (Phase 2d).
 }
 
 void CConquerApp::DestroyExceptMain( )
@@ -1954,14 +1927,16 @@ void CConquerApp::AssertValid( ) const
     ASSERT_VALID( &m_wndVehicles );
 
     ASSERT_VALID( &m_wndMain );
-    ASSERT_VALID_OR_NULL( m_pdlgMain );
+    // CDlgMain excluded from build (Phase 2d).
     ASSERT_VALID_OR_NULL( m_pCreateGame );
 }
 #endif
 
 
 /////////////////////////////////////////////////////////////////////////////
-// CDlgMain dialog
+// CDlgMain dialog — excluded from build (Phase 2d). SDL2MainMenu is the
+// live main-menu path. Body kept in source for reference but not compiled.
+#if 0  // MFC_LEGACY_MAIN_MENU
 
 CDlgMain::CDlgMain( CWnd* pParent /*=NULL*/ ): CDialog( CDlgMain::IDD, pParent )
 {
@@ -2769,6 +2744,8 @@ void CDlgMain::OnMainOptions( )
     SDL2OptionsDialog dlg( theApp.m_gameWindow.get() );
     dlg.DoModal();
 }
+
+#endif // MFC_LEGACY_MAIN_MENU
 
 /////////////////////////////////////////////////////////////////////////////
 // CDlgVer dialog removed; SDL2VersionDialog (SDL2Dialogs.cpp) replaces it.
