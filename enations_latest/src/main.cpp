@@ -31,6 +31,8 @@
 #include "msgs.h"
 #include "chat.h"
 #include "SDL2Dialogs.h"
+#include "SDL2Video.h"
+#include "GameWindow.h"
 
 #include "ui.inl"
 
@@ -265,7 +267,7 @@ void CWndMain::OnDisplayChange2 ()
 	// these windows are all full screen
 	MakeFullScreen ( this );
 	// CDlgMain excluded from build (Phase 2d) — SDL2MainMenu owns layout.
-	MakeFullScreen ( &theApp.m_wndMovie );
+	// CWndMovie excluded from build (Phase 2d) — SDL2VideoPlayer is synchronous.
 	MakeFullScreen ( &theApp.m_wndCredits );
 	MakeFullScreen ( &theApp.m_wndCutScene );
 
@@ -1099,26 +1101,26 @@ void CWndMain::EndLicense ()
 
 	if ( m_progPos == demo_license )
 		{
-	  // Play the startup movie
-		if ( (theApp.HaveIntro ()) && (EnGetProfileInt("Game", "NoIntro", 0) == 0) )
+		// Play the startup movie via SDL2VideoPlayer (Phase 2d — CWndMovie excluded).
+		// Note: CConquerApp::InitInstance also kicks off intro videos via
+		// SDL2VideoPlayer when SDL2 is up; this path covers the post-license
+		// flow when the license dialog finishes after init.
+		if ( (theApp.HaveIntro ()) && (EnGetProfileInt("Game", "NoIntro", 0) == 0)
+		     && (theApp.m_gameWindow) )
 			{
 			try
 				{
 				SetProgPos ( CWndMain::movie );
 				UpdateWindow ();
 
-				theApp.m_wndMovie.AddMovie ("logo.avi");
-				theApp.m_wndMovie.AddMovie ("headgame.avi");
-				theApp.m_wndMovie.AddMovie ("intro.avi");
-				theApp.m_wndMovie.Create ( FALSE );
+				SDL2VideoPlayer::PlayVideo( theApp.m_gameWindow.get(), "assets\\videos\\logo.mpg" );
+				SDL2VideoPlayer::PlayVideo( theApp.m_gameWindow.get(), "assets\\videos\\intro.mpg" );
 				}
 			catch (...)
 				{
-				theApp.PostIntro ();
 				}
 			}
-		else
-			theApp.PostIntro ();
+		theApp.PostIntro ();
 		return;
 		}
 

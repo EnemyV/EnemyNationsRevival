@@ -54,7 +54,7 @@ set(enations_sources
         main.cpp
         mainloop.cpp
         minerals.cpp
-        movie.cpp
+        # movie.cpp excluded (Phase 2d) — CWndMovie replaced by SDL2VideoPlayer
         netapi.cpp
         netcmd.cpp
         new_game.cpp

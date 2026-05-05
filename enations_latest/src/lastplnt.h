@@ -393,7 +393,7 @@ class CConquerApp : public CWinApp
     CWndMain      m_wndMain;       // the main window - first created, last destroyed
     // CDlgMain m_pdlgMain removed (Phase 2d) — SDL2MainMenu is the sole path.
     CCreateBase*  m_pCreateGame;   // holder for creating game data & dialogs
-    CWndMovie     m_wndMovie;
+    // CWndMovie m_wndMovie removed (Phase 2d) — SDL2VideoPlayer is the sole path.
     CWndCredits   m_wndCredits;    // playing credits
     // CDlgPlyrList removed (Phase 2d) — replaced by SDL2PlayerListDialog (modal).
     CWndCutScene  m_wndCutScene;

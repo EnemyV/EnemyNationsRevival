@@ -1574,9 +1574,8 @@ void CConquerApp::CreateMain( )
     // close chat (cancel on multi create)
     CloseDlgChat( );
 
-    // kill movie if running
-    if ( ( m_wndMovie.m_hWnd != NULL ) && ( !m_wndMovie.m_bInDestroy ) )
-        m_wndMovie.DestroyWindow( );
+    // CWndMovie excluded from build (Phase 2d) — SDL2VideoPlayer is synchronous,
+    // nothing to destroy at this point.
 
     // if coming from a game setup - kill it
     theGame.SetShouldProcessMessages(FALSE);
