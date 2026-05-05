@@ -1419,14 +1419,8 @@ void CWndComm::OnRefuse ()
 
 void CWndComm::OnGlobalChat ()
 {
-
+	// CDlgChatAll excluded from build (Phase 2d).
 	ASSERT_VALID (this);
-	// bring up chat
-	CDlgChatAll* pChat = theApp.GetDlgChat();
-	if (pChat) {
-		pChat->ShowWindow ( SW_SHOWNORMAL );
-		pChat->SetFocus ();
-	}
 }
 
 void CWndComm::OnChat ()

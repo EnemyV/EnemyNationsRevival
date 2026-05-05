@@ -1042,17 +1042,7 @@ void CWndMain::_EnableGameWindows ( BOOL bEnable )
 
 	theAreaList.EnableWindows ( bEnable );
 
-	// if disabling put the chat window on the top
-	if ( ! bEnable )
-		if ( theApp.m_pdlgChat != NULL )
-			{
-			CDlgChatAll * pDlg = theApp.GetDlgChat ();
-			if ( pDlg != NULL )
-				{
-				pDlg->ShowWindow ( SW_SHOWNORMAL );
-				pDlg->SetFocus ();
-				}
-			}
+	// CDlgChatAll excluded from build (Phase 2d) — no chat-on-top behaviour.
 }
 
 BOOL CWndMain::OnQueryEndSession() 

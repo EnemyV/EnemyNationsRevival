@@ -26,7 +26,7 @@ set(enations_sources
         caitmgr.cpp
         caiunit.cpp
         CdLoc.cpp
-        chat.cpp
+        # chat.cpp excluded (Phase 2d) — CDlgChatAll replaced by SDL2ChatWindow
         chatbar.cpp
         chproute.cpp
 #        citizen.cpp # looks unused, i think an old ai or something?

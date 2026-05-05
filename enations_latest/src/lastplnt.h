@@ -397,7 +397,7 @@ class CConquerApp : public CWinApp
     CWndCredits   m_wndCredits;    // playing credits
     // CDlgPlyrList removed (Phase 2d) — replaced by SDL2PlayerListDialog (modal).
     CWndCutScene  m_wndCutScene;
-    CDlgChatAll*  m_pdlgChat;
+    // CDlgChatAll m_pdlgChat removed (Phase 2d) — chat.cpp excluded from build.
 
     // Phase 8C: SDL2 rendering window
     std::shared_ptr<GameWindow> m_gameWindow;

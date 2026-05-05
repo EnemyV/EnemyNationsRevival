@@ -37,10 +37,8 @@ CCreateMultiBase::CCreateMultiBase (int iTyp) : CMultiBase (iTyp)
 
 void CMultiBase::CreateWndChat ()
 {
-
-	CDlgChatAll* pChat = theApp.GetDlgChat();
-	if (pChat)
-		pChat->EnableWindow (theGame.GetMyNetNum () != VP_LOCALMACHINE);
+	// CDlgChatAll excluded from build (Phase 2d). SDL2ChatWindow when wired
+	// will manage its own enable state.
 }
 
 void CCreateMultiBase::ClosePick ()

@@ -549,10 +549,7 @@ static void OnMsgJoin( LPCVPPLAYERINFO pPi, BOOL bLocal, BYTE bErr )
         theGame.GetMe( )->SetNetNum( pPi->playerId );
         pPlyr = theGame.GetMe( );
 
-        // enable the chat window
-        CDlgChatAll* pChat = theApp.GetDlgChat( );
-        if ( pChat )
-            pChat->EnableWindow( TRUE );
+        // CDlgChatAll excluded from build (Phase 2d).
     }
 
     else
@@ -2866,9 +2863,8 @@ void CGame::ProcessMessage(CNetCmd* pCmd )
         CmdPlay( (CNetPlay*)pCmd );
         break;
     case CNetCmd::cmd_chat: {
-        CDlgChatAll* pDlg = theApp.GetDlgChat( );
-        if ( pDlg != NULL )
-            pDlg->NewMessage( ( (CNetChat*)pCmd )->m_sMsg );
+        // CDlgChatAll excluded from build (Phase 2d) — chat messages drop on the floor
+        // until SDL2ChatWindow is wired with network routing.
         break;
     }
 

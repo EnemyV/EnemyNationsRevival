@@ -288,7 +288,6 @@ CConquerApp::CConquerApp( ): m_MapClrFmt( CColorFormat::DEPTH_EIGHT ),
     m_iMultVoices = TRUE;
     m_iHaveIntro  = TRUE;
     m_pdlgPause   = NULL;
-    m_pdlgChat    = NULL;
 
     m_pLogFile = NULL;
 
@@ -1690,24 +1689,14 @@ void CConquerApp::DestroyExceptMain( )
 
 CDlgChatAll* CConquerApp::GetDlgChat( )
 {
-    // SDL2 path: chat not yet implemented in SDL2
-    if ( m_gameWindow )
-        return nullptr;
-
-    if ( m_pdlgChat == NULL )
-        m_pdlgChat = new CDlgChatAll( &m_wndMain );
-    if ( m_pdlgChat->m_hWnd == NULL )
-        m_pdlgChat->Create( IDD_CHAT_INIT, &m_wndMain );
-
-    return ( m_pdlgChat );
+    // CDlgChatAll excluded from build (Phase 2d). SDL2ChatWindow is the
+    // intended replacement; until its network routing is wired, no chat UI.
+    return nullptr;
 }
 
 void CConquerApp::CloseDlgChat( )
 {
-
-    if ( ( m_pdlgChat != NULL ) && ( m_pdlgChat->m_hWnd != NULL ) )
-        m_pdlgChat->DestroyWindow( );
-    m_pdlgChat = NULL;
+    // CDlgChatAll excluded from build (Phase 2d).
 }
 
 int CConquerApp::ExitInstance( )
