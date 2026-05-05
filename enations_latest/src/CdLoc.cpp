@@ -26,15 +26,15 @@ BOOL CheckForCD ()
 		return (TRUE);
 
 	// default is the .DAT file location
-	theApp.m_sCdFile = EnGetProfileString("Game", "DataFile", "");
-	theApp.m_sCdFile = EnGetProfileString("Game", "CDLocation", theApp.m_sCdFile );
+	theApp.m_sCdFile = EnGetProfileStdString("Game", "DataFile", "");
+	theApp.m_sCdFile = EnGetProfileStdString("Game", "CDLocation", theApp.m_sCdFile.c_str() );
 
 	// force the drive location
-	theApp.m_sCdFile = CString ( theApp.m_sCdFile [0] ) + ":\\";
+	theApp.m_sCdFile = std::string( 1, theApp.m_sCdFile[0] ) + ":\\";
 
 	// if not a CD - prompt
 	BOOL bPrompt = FALSE;
-	UINT uTyp = GetDriveType ( theApp.m_sCdFile );
+	UINT uTyp = GetDriveType ( theApp.m_sCdFile.c_str() );
 	if ( uTyp != DRIVE_CDROM )
 		bPrompt = TRUE;
 	else
@@ -43,7 +43,7 @@ BOOL CheckForCD ()
 		{
 		theApp.m_sCdFile += GameDataFile;
 		CFileStatus fs;
-		if ( CFile::GetStatus ( theApp.m_sCdFile, fs ) == 0 )
+		if ( CFile::GetStatus ( theApp.m_sCdFile.c_str(), fs ) == 0 )
 			bPrompt = TRUE;
 		else
 			if ( fs.m_size < 1000 )

@@ -369,7 +369,7 @@ class CConquerApp : public CWinApp
     BOOL    m_bPauseOnAct;
     BOOL    m_bSetSysColors;
     BOOL    m_bSubClass;
-    CString m_sCdFile;             // file to check for to insure CD in
+    std::string m_sCdFile;         // file to check for to insure CD in
 
     char         m_szMapBPS[4];    // either "08" or "24"
     char         m_szOtherBPS[4];  // either "08" or "24"
