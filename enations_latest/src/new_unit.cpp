@@ -3306,23 +3306,15 @@ void CVehicleBuilding::DestroyAllWindows( )
         // m_pSdlBuildTransport is now nullptr (set by the onDone lambda)
     }
 
-    if ( m_pDlgTransport != NULL )
-    {
-        if ( m_pDlgTransport->m_hWnd != NULL )
-            m_pDlgTransport->DestroyWindow( );
-        else
-            delete m_pDlgTransport;
-        m_pDlgTransport = NULL;
-    }
+    // CDlgBuildTransport excluded from build (Phase 2d).
+    m_pDlgTransport = NULL;
 
     CBuilding::DestroyAllWindows( );
 }
 
 CVehicleBuilding::~CVehicleBuilding( )
 {
-
-    if ( ( m_pDlgTransport != NULL ) && ( m_pDlgTransport->m_hWnd != NULL ) )
-        m_pDlgTransport->DestroyWindow( );
+    // CDlgBuildTransport excluded from build (Phase 2d).
 }
 
 // see if we have enough materials to finish our job
@@ -3420,10 +3412,7 @@ void CVehicleBuilding::StartVehicle( int iIndex, int iNum )
 
     AnimateOperating( TRUE );
 
-    // show it on the dialog
-    CDlgBuildTransport* pDlg = QueryDlgBuild( );
-    if ( pDlg != NULL )
-        pDlg->UpdateStatus( 1 );
+    // CDlgBuildTransport excluded from build (Phase 2d) — SDL2 dialog re-reads on open.
 
     theGame.MulEvent( MEVENT_BUILD_FACTORY, this );
 }
@@ -3450,21 +3439,9 @@ CDlgBuildTransport* CVehicleBuilding::GetDlgBuild( )
         return m_pDlgTransport;  // MFC pointer not used by SDL2 path
     }
 
-    // Fallback to MFC
-    if ( m_pDlgTransport == NULL )
-        m_pDlgTransport = new CDlgBuildTransport( theApp.m_pMainWnd, this );
-    ASSERT_STRICT_VALID( m_pDlgTransport );
-
-    if ( m_pBldUnt == NULL )
-        m_iLastPer = 0;
-
-    if ( m_pDlgTransport->m_hWnd == NULL )
-        m_pDlgTransport->Create( theApp.m_pMainWnd );
-
-    m_pDlgTransport->ShowWindow( SW_SHOWNORMAL );
-    m_pDlgTransport->SetFocus( );
-
-    return ( m_pDlgTransport );
+    // MFC CDlgBuildTransport excluded from build (Phase 2d). Without an SDL2
+    // GameWindow there's no in-game UI; abort.
+    return NULL;
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -5011,10 +4988,7 @@ void CVehicle::DestroyBuildWindow( )
         // m_pSdlBuild is now nullptr (set by the onDone lambda)
     }
 
-    if ( ( m_pDlgStructure != NULL ) && ( m_pDlgStructure->m_hWnd != NULL ) )
-        m_pDlgStructure->DestroyWindow( );
-    else
-        delete m_pDlgStructure;
+    // CDlgBuildStructure excluded from build (Phase 2d).
     m_pDlgStructure = NULL;
 }
 
@@ -5194,18 +5168,9 @@ CDlgBuildStructure* CVehicle::GetDlgBuild( )
         return m_pDlgStructure;  // MFC pointer not used by SDL2 path
     }
 
-    // Fallback to MFC
-    if ( m_pDlgStructure == NULL )
-        m_pDlgStructure = new CDlgBuildStructure( theApp.m_pMainWnd, this );
-    ASSERT_STRICT_VALID( m_pDlgStructure );
-
-    if ( m_pDlgStructure->m_hWnd == NULL )
-        m_pDlgStructure->Create( theApp.m_pMainWnd );
-
-    m_pDlgStructure->ShowWindow( SW_SHOWNORMAL );
-    m_pDlgStructure->SetFocus( );
-
-    return ( m_pDlgStructure );
+    // MFC CDlgBuildStructure excluded from build (Phase 2d). Without an SDL2
+    // GameWindow there's no in-game UI; abort.
+    return NULL;
 }
 
 void CVehicle::StartConst( CBuilding* pBldg )

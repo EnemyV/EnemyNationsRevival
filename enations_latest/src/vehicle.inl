@@ -48,7 +48,7 @@ inline int CVehicle::GetProd (float fProd) {
 
 inline CVehicle::VEH_MODE CVehicle::GetRouteMode () const 	{ ASSERT_STRICT_VALID (this); return (m_cMode); }
 inline CTransportData const *	CVehicle::GetData () const { ASSERT_STRICT_VALID (this); return ((CTransportData const *) m_pUnitData); }
-inline void CVehicle::UpdateChoices () { if (m_pDlgStructure != NULL) m_pDlgStructure->UpdateChoices (); }
+inline void CVehicle::UpdateChoices () { /* CDlgBuildStructure excluded (Phase 2d). */ }
 inline CSubHex CVehicle::Rotate (int iDir) { return (::Rotate (iDir, m_ptHead, m_ptTail)); }
 
 

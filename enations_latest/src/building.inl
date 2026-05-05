@@ -321,8 +321,7 @@ inline CBuildUnit const* CVehicleBuilding::GetBldUnt( ) const
 }
 inline void CVehicleBuilding::UpdateChoices( )
 {
-    if ( m_pDlgTransport != NULL )
-        m_pDlgTransport->UpdateChoices( );
+    // CDlgBuildTransport excluded from build (Phase 2d) — SDL2 dialog re-reads on open.
 }
 
 //   CBuildRepair

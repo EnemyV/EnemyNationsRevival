@@ -8,6 +8,7 @@
 #include "player.h"
 #include "building.inl"
 #include "bitmaps.h"
+#include "unit.inl"
 #include "vehicle.inl"
 
 SDL2BuildStructure::SDL2BuildStructure(GameWindow* gw, CVehicle* pVeh)

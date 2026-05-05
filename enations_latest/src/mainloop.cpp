@@ -1771,9 +1771,8 @@ void CVehicleBuilding::BuildVehicle( )
         // update the status
         MaterialChange( );
         theAreaList.MaterialChange( this );
-        CDlgBuildTransport* pDlg = QueryDlgBuild( );
-        if ( pDlg != NULL )
-            pDlg->UpdateStatus( m_iNum > 0 ? 1 : 0 );
+        // CDlgBuildTransport excluded from build (Phase 2d) — SDL2BuildTransport
+        // re-reads status from the building on each open.
         return;
     }
 
@@ -1786,10 +1785,8 @@ void CVehicleBuilding::BuildVehicle( )
     // update the status
     MaterialChange( );
 
-    // update the dialog
-    CDlgBuildTransport* pDlg = QueryDlgBuild( );
-    if ( pDlg != NULL )
-        pDlg->UpdateStatus( iPer );
+    // CDlgBuildTransport excluded from build (Phase 2d) — SDL2BuildTransport
+    // re-reads progress from the building on each open.
 }
 
 void CVehicleBuilding::CancelUnit( )

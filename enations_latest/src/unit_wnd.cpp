@@ -798,7 +798,10 @@ void CUnitButton::DrawItem(LPDRAWITEMSTRUCT pDis) {
 
 
 /////////////////////////////////////////////////////////////////////////////
-// CDlgBuildStructure dialog
+// CDlgBuildStructure / CDlgBuildTransport dialogs — excluded from build (Phase 2d).
+// Replaced by SDL2BuildStructure / SDL2BuildTransport. Bodies kept in source for
+// reference but not compiled.
+#if 0  // MFC_LEGACY_BUILD_DIALOGS
 
 const int FIRST_CAT_BUTTON = 100;
 const int FIRST_BLDG_BUTTON = 110;
@@ -1932,6 +1935,8 @@ void CDlgBuildTransport::OnDestroy() {
 
     CDialog::OnDestroy();
 }
+
+#endif // MFC_LEGACY_BUILD_DIALOGS
 
 
 /////////////////////////////////////////////////////////////////////////////
