@@ -79,11 +79,11 @@ UINT CCutScene::_PlayScene (int iTyp, int iScenario, BOOL bAsync)
 		switch (iTyp)
 		  {
 			case CWndCutScene::win:
-			  sText = EnLoadStdString(IDS_YOU_WON); break;
+			  sText = EnLoadString(IDS_YOU_WON); break;
 			case CWndCutScene::lose:
-			  sText = EnLoadStdString(IDS_YOU_LOST); break;
+			  sText = EnLoadString(IDS_YOU_LOST); break;
 			case CWndCutScene::scenario_end:
-			  sText = EnLoadStdString(IDS_YOU_END_SCENARIO); break;
+			  sText = EnLoadString(IDS_YOU_END_SCENARIO); break;
 			case CWndCutScene::cut:
 			case CWndCutScene::repeat:
 			  {
@@ -270,10 +270,11 @@ void CWndCutScene::OnCreateCut ()
 	pMmio->DescendChunk ('T', 'X', 'T', (char) ('A' + m_iScenario));
 
 	long lSize = pMmio->ReadLong ();
-	pMmio->Read (m_sText.GetBuffer (lSize+2), lSize);
-	
+	m_sText.resize( lSize + 2 );
+	pMmio->Read (&m_sText[0], lSize);
+
 	delete pMmio;
-	m_sText.ReleaseBuffer (lSize);
+	m_sText.resize( lSize );
 
 	CRect rect;
 	GetClientRect (&rect);
@@ -298,7 +299,7 @@ void CWndCutScene::OnCreateCut ()
 		rect.left = (rect.right * 2) / 3;
 		rect.right = (rect.right * 95) / 100;
 		CFont * pOldFont = dc.SelectObject (&m_font);
-		dc.DrawText ( m_sText, &rect, DT_CALCRECT | DT_NOPREFIX | DT_LEFT | DT_WORDBREAK);
+		dc.DrawText ( m_sText.c_str(), -1, &rect, DT_CALCRECT | DT_NOPREFIX | DT_LEFT | DT_WORDBREAK);
 		dc.SelectObject (pOldFont);
 		iFntHt --;
 		}
@@ -335,12 +336,12 @@ void CWndCutScene::OnCreateOther (int idRes)
 {
 
 	// get the text
-	m_sText = EnLoadString(idRes);
+	m_sText = EnLoadStdString(idRes);
 
 	CRect rect;
 	GetClientRect (&rect);
 	int iWid = (rect.Width () * 2) / 3;
-	int iFntHt = 2 * rect.Width () / m_sText.GetLength ();
+	int iFntHt = 2 * rect.Width () / (int)m_sText.length ();
 
 	// get the font
 	CWindowDC dc (this);
@@ -358,7 +359,7 @@ void CWndCutScene::OnCreateOther (int idRes)
 		// will this font fit?
 		GetClientRect (&rect);
 		CFont * pOldFont = dc.SelectObject (&m_font);
-		dc.DrawText ( m_sText, &rect, DT_CALCRECT | DT_NOPREFIX | DT_CENTER | DT_TOP | DT_SINGLELINE);
+		dc.DrawText ( m_sText.c_str(), -1, &rect, DT_CALCRECT | DT_NOPREFIX | DT_CENTER | DT_TOP | DT_SINGLELINE);
 		dc.SelectObject (pOldFont);
 		iFntHt --;
 		}
@@ -489,18 +490,18 @@ void CWndCutScene::OnPaintCut (CDC & dc)
 
 	// get height
 	int iHt = rect.Height ();
-	dc.DrawText ( m_sText, &rect, DT_CALCRECT | DT_NOPREFIX | DT_LEFT | DT_WORDBREAK);
+	dc.DrawText ( m_sText.c_str(), -1, &rect, DT_CALCRECT | DT_NOPREFIX | DT_LEFT | DT_WORDBREAK);
 	if (rect.Height () < iHt)
 		rect.OffsetRect (0, (iHt - rect.Height ()) / 2);
 
 	dc.SetTextColor (PALETTERGB (0, 0, 0));
-	dc.DrawText ( m_sText, &rect, DT_NOPREFIX | DT_LEFT | DT_WORDBREAK);
+	dc.DrawText ( m_sText.c_str(), -1, &rect, DT_NOPREFIX | DT_LEFT | DT_WORDBREAK);
 	rect.OffsetRect ( -1, -1 );
-	dc.DrawText ( m_sText, &rect, DT_NOPREFIX | DT_LEFT | DT_WORDBREAK);
+	dc.DrawText ( m_sText.c_str(), -1, &rect, DT_NOPREFIX | DT_LEFT | DT_WORDBREAK);
 	rect.OffsetRect ( -1, -1 );
 	dc.SetTextColor (PALETTERGB (255, 251, 120));
 //BUGBUG	dc.SetTextColor (PALETTERGB (230, 251, 120));
-	dc.DrawText ( m_sText, &rect, DT_NOPREFIX | DT_LEFT | DT_WORDBREAK);
+	dc.DrawText ( m_sText.c_str(), -1, &rect, DT_NOPREFIX | DT_LEFT | DT_WORDBREAK);
 
 	dc.SelectObject (pOldFont);
 }
@@ -519,11 +520,11 @@ void CWndCutScene::OnPaintWin (CDC & dc)
 	rect.top = rect.Height () / 4;
 
 	dc.SetTextColor (PALETTERGB (78, 90, 98));
-	dc.DrawText ( m_sText, &rect, DT_NOPREFIX | DT_CENTER | DT_TOP | DT_SINGLELINE);
+	dc.DrawText ( m_sText.c_str(), -1, &rect, DT_NOPREFIX | DT_CENTER | DT_TOP | DT_SINGLELINE);
 
 	rect.OffsetRect (-4, -4);
 	dc.SetTextColor (PALETTERGB (255, 244, 221));
-	dc.DrawText ( m_sText, &rect, DT_NOPREFIX | DT_CENTER | DT_TOP | DT_SINGLELINE);
+	dc.DrawText ( m_sText.c_str(), -1, &rect, DT_NOPREFIX | DT_CENTER | DT_TOP | DT_SINGLELINE);
 
 	dc.SelectObject (pOldFont);
 }
@@ -542,11 +543,11 @@ void CWndCutScene::OnPaintLose (CDC & dc)
 	rect.top = rect.Height () / 4;
 
 	dc.SetTextColor (PALETTERGB (148, 100, 70));
-	dc.DrawText ( m_sText, &rect, DT_NOPREFIX | DT_CENTER | DT_TOP | DT_SINGLELINE);
+	dc.DrawText ( m_sText.c_str(), -1, &rect, DT_NOPREFIX | DT_CENTER | DT_TOP | DT_SINGLELINE);
 
 	rect.OffsetRect (-4, -4);
 	dc.SetTextColor (PALETTERGB (57, 0, 0));
-	dc.DrawText ( m_sText, &rect, DT_NOPREFIX | DT_CENTER | DT_TOP | DT_SINGLELINE);
+	dc.DrawText ( m_sText.c_str(), -1, &rect, DT_NOPREFIX | DT_CENTER | DT_TOP | DT_SINGLELINE);
 
 	dc.SelectObject (pOldFont);
 }

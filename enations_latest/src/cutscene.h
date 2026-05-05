@@ -85,7 +85,7 @@ protected:
 	DECLARE_MESSAGE_MAP()
 
 	CDIB *			m_pdibPicture;
-	CString			m_sText;
+	std::string		m_sText;
 	int					m_iTyp;
 	int					m_iRtn;
 	int					m_iScenario;
