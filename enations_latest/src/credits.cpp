@@ -187,14 +187,14 @@ void CWndCredits::OnPaint()
 		if (bFigRect)
 			{
 			rect.bottom = iBottom;
-			dc.DrawText (pCcl->m_sText, -1, &rect, DT_CALCRECT | DT_TOP | DT_SINGLELINE | DT_NOPREFIX | DT_LEFT);
+			dc.DrawText (pCcl->m_sText.c_str(), -1, &rect, DT_CALCRECT | DT_TOP | DT_SINGLELINE | DT_NOPREFIX | DT_LEFT);
 			rect.left = iLeft;
 			rect.right = iRight;
 			if (! pCcl->m_iRtn)
 				rect.bottom += rect.Height () / 3;
 			}
 
-		dc.DrawText (pCcl->m_sText, -1, &rect, DT_BOTTOM | DT_SINGLELINE | DT_NOPREFIX |
+		dc.DrawText (pCcl->m_sText.c_str(), -1, &rect, DT_BOTTOM | DT_SINGLELINE | DT_NOPREFIX |
 						(pCcl->m_iAlign == 0 ? DT_LEFT : (pCcl->m_iAlign == 1 ? DT_CENTER : DT_RIGHT)) );
 
 		int iHt = rect.Height () + rect.Height () / 5;
