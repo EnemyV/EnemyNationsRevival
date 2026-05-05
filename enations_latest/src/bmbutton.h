@@ -70,7 +70,7 @@ class CMyButton : public CButton
   public:
     // Operations
   public:
-    char const* GetHelp( ) const { return ( m_sHelp ); }
+    char const* GetHelp( ) const { return ( m_sHelp.c_str() ); }
     void        SetToggleMode( BOOL bOn )
     {
         if ( bOn )
@@ -94,7 +94,7 @@ class CMyButton : public CButton
 
     CDIB* m_pBackDib;  // bitmap that is the background (for transparent parts)
 
-    CString m_sHelp;   // help text for button
+    std::string m_sHelp;   // help text for button
     BYTE    m_cState;  // if button is down or up & if it's toggleable
     enum
     {

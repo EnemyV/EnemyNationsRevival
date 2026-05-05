@@ -315,7 +315,7 @@ BOOL CMyButton::Create( char const* psText, int idHelp, CRect& rect, CDIB* pBack
     ASSERT_VALID( pPar );
 
     // the help text
-    m_sHelp = EnLoadString( idHelp );
+    m_sHelp = EnLoadStdString( idHelp );
 
     m_pBackDib = pBackDib;
 
