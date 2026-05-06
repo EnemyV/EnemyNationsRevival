@@ -162,9 +162,9 @@ class CNetCmd : public VPMsgHdr
 
     int GetType( ) const { return ( m_bMsg ); }
 
-    static CNetUnpublish* AllocUnpublish( CString const& sName );
-    static CNetJoinGame*  AllocJoinGame( CString const& sName );
-    static CNetJoinName*  AllocJoinName( CString const& sName );
+    static CNetUnpublish* AllocUnpublish( std::string const& sName );
+    static CNetJoinGame*  AllocJoinGame( std::string const& sName );
+    static CNetJoinName*  AllocJoinName( std::string const& sName );
     static CNetPlayer*    AllocPlayer( CPlayer* pPlr );
 
   public:
