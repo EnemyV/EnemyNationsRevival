@@ -116,7 +116,7 @@ void CBuilding::ShowStatusText( std::string& str )
             return;
         }
         str = strPrintf( EnLoadStdString( IDS_RESEARCHING ).c_str(),
-                         (const char*)theRsrch.ElementAt( theGame.GetMe( )->GetRsrchItem( ) ).m_sName );
+                         theRsrch.ElementAt( theGame.GetMe( )->GetRsrchItem( ) ).m_sName.c_str() );
         return;
     }
 

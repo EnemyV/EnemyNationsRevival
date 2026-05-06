@@ -90,7 +90,7 @@ void SDL2ResearchDialog::PopulateList() {
         if (available || discovered) {
             RsrchEntry entry;
             entry.index = i;
-            entry.name = (const char*)item.m_sName;
+            entry.name = item.m_sName.c_str();
             entry.available = available && !discovered;
 
             std::string displayName = entry.name;
@@ -108,7 +108,7 @@ void SDL2ResearchDialog::SelectItem(int idx) {
     m_selected = idx;
 
     CRsrchItem const& item = theRsrch[m_items[idx].index];
-    m_lblDesc->SetText((const char*)item.m_sDesc);
+    m_lblDesc->SetText(item.m_sDesc.c_str());
 
     int discovered = theGame.GetMe()->GetRsrch(m_items[idx].index).m_iPtsDiscovered;
     int required = item.m_iPtsRequired;

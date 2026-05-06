@@ -54,9 +54,9 @@ public:
 	int				m_iNumBldgsRequired;
 	int				m_iScenarioReq;					// cannot be discovered till this scenario
 
-	CString		m_sName;								// name of item
-	CString		m_sDesc;								// description in choose dialog
-	CString		m_sResult;							// description in discovered dialog
+	std::string	m_sName;							// name of item
+	std::string	m_sDesc;							// description in choose dialog
+	std::string	m_sResult;						// description in discovered dialog
 
 #ifdef _DEBUG
 public:

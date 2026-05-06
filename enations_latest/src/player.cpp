@@ -483,7 +483,7 @@ void CPlayer::Research( int iNumSec )
         ResearchDiscovered( iTmp );
         pRi = &theRsrch.ElementAt( iTmp );
         std::string sMsg = strPrintf( EnLoadStdString( IDS_EVENT_RSRCH_DONE ).c_str(),
-                                      (const char*)pRi->m_sName );
+                                      pRi->m_sName.c_str() );
         theApp.m_wndBar.SetStatusText( 0, sMsg.c_str(), CStatInst::status );
         theGame.MulEvent( MEVENT_RSRCH_DONE, NULL );
         CWndComm::UpdateMail( );
