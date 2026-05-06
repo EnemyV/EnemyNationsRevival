@@ -428,7 +428,7 @@ BOOL CConquerApp::InitInstance( )
     InitializeCriticalSection( &cs );
     hRenderEvent = CreateEvent( NULL, TRUE, FALSE, "RenderEvent" );
 
-    m_sAppName = EnLoadString( IDS_MAIN_TITLE );
+    m_sAppName = EnLoadStdString( IDS_MAIN_TITLE );
 
     // Get CPU Speed
     CPUInfo cpu;
@@ -544,12 +544,12 @@ BOOL CConquerApp::InitInstance( )
     wc.hInstance     = AfxGetInstanceHandle( );
     wc.hIcon         = LoadIcon( IDI_MAIN );
     wc.hCursor       = LoadStandardCursor( IDC_ARROW );
-    wc.lpszClassName = m_sClsName;
+    wc.lpszClassName = m_sClsName.c_str();
     if ( !AfxRegisterClass( &wc ) ) {
         return FALSE;
     }
 
-    HWND hPrevWnd = ::FindWindow( m_sClsName, m_sAppName );
+    HWND hPrevWnd = ::FindWindow( m_sClsName.c_str(), m_sAppName.c_str() );
     if ( hPrevWnd != NULL )
         if ( EnMessageBox( IDS_MULT_INST, MB_YESNO | MB_ICONQUESTION ) == IDYES )
         {

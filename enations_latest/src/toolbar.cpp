@@ -165,7 +165,7 @@ void CWndBar::Create( )
 
     theApp.m_iRow3 = rect.Height( ) - TOOLBAR_HT;
 
-    if ( CreateEx( WS_EX_TOPMOST, theApp.m_sWndCls, "", WS_POPUP, 0, theApp.m_iRow3, rect.Width( ), TOOLBAR_HT,
+    if ( CreateEx( WS_EX_TOPMOST, theApp.m_sWndCls.c_str(), "", WS_POPUP, 0, theApp.m_iRow3, rect.Width( ), TOOLBAR_HT,
                    theApp.m_pMainWnd->m_hWnd, NULL, NULL ) == 0 )
         throw( ERR_RES_CREATE_WND );
 

@@ -352,9 +352,9 @@ class CConquerApp : public CWinApp
     int         m_iOldHeight;
     int         m_iOldDepth;
 
-    CString m_sAppName;  // the name of the application
-    CString m_sClsName;  // main window (for finding 1st instance)
-    CString m_sWndCls;   // CWnd class for pop-up windows
+    std::string m_sAppName;  // the name of the application
+    std::string m_sClsName;  // main window (for finding 1st instance)
+    std::string m_sWndCls;   // CWnd class for pop-up windows
 
     std::string m_sResIni;   // the [1024x768] for the ini file
     int     m_iScrnX;    // screen width

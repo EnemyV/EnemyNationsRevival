@@ -62,7 +62,7 @@ void CWndMain::Create ()
 
 	const DWORD dwExSty = WS_EX_APPWINDOW;
 	const DWORD dwSty = WS_POPUP;
-	if (CreateEx (dwExSty, theApp.m_sClsName, theApp.m_sAppName, dwSty, 0, 0, GetSystemMetrics (SM_CXSCREEN), 
+	if (CreateEx (dwExSty, theApp.m_sClsName.c_str(), theApp.m_sAppName.c_str(), dwSty, 0, 0, GetSystemMetrics (SM_CXSCREEN),
 												GetSystemMetrics (SM_CYSCREEN), NULL, NULL, NULL) == 0)
 		ThrowError (ERR_RES_CREATE_WND);
 }

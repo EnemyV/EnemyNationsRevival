@@ -477,7 +477,7 @@ void CWndListBuildings::Create() {
     m_pDibUnit = theBitmaps.GetByIndex(DIB_LIST_UNIT_BUILDINGS);
 
     std::string sTitle = EnLoadString(IDS_TITLE_BUILDINGS);
-    if (CreateEx(0, theApp.m_sWndCls, sTitle.c_str(), dwPopWndStyle,
+    if (CreateEx(0, theApp.m_sWndCls.c_str(), sTitle.c_str(), dwPopWndStyle,
                  EnGetProfileInt(theApp.m_sResIni.c_str(), "BuildX", theApp.m_iCol2),
                  EnGetProfileInt(theApp.m_sResIni.c_str(), "BuildY", theApp.m_iRow4),
                  __max (256, EnGetProfileInt(theApp.m_sResIni.c_str(), "BuildEX", theApp.m_iScrnX - theApp.m_iCol2 + 1)),
@@ -543,7 +543,7 @@ void CWndListVehicles::Create() {
 
     std::string sTitle = EnLoadString(IDS_TITLE_VEHICLES);
     int y = (theApp.m_iRow3 + theApp.m_iRow4) / 2 - 1;
-    if (CreateEx(0, theApp.m_sWndCls, sTitle.c_str(), dwPopWndStyle,
+    if (CreateEx(0, theApp.m_sWndCls.c_str(), sTitle.c_str(), dwPopWndStyle,
                  EnGetProfileInt(theApp.m_sResIni.c_str(), "VehicleX", theApp.m_iCol2),
                  EnGetProfileInt(theApp.m_sResIni.c_str(), "VehicleY", y),
                  __max (256, EnGetProfileInt(theApp.m_sResIni.c_str(), "VehicleEX", theApp.m_iScrnX - theApp.m_iCol2 + 1)),
@@ -1993,7 +1993,7 @@ void CWndRoute::Create(CWndArea *pPar) {
     pPar->GetClientRect(&rect);
     pPar->ClientToScreen(&rect);
 
-    CreateEx(0, theApp.m_sWndCls, m_pVeh->GetData()->GetDesc(), dwPopWndStyle,
+    CreateEx(0, theApp.m_sWndCls.c_str(), m_pVeh->GetData()->GetDesc(), dwPopWndStyle,
              rect.right - m_iXmin, rect.bottom - m_iYmin * 2, m_iXmin, m_iYmin * 2,
              pPar->m_hWnd, NULL, NULL);
 }

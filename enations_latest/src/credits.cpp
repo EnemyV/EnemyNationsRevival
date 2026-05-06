@@ -55,7 +55,7 @@ void CWndCredits::Create ()
 	const char *pCls = AfxRegisterWndClass (0, NULL, NULL, theApp.LoadIcon (IDI_MAIN));
 
 	const DWORD dwSty = WS_POPUP;
-	if (CreateEx (0, pCls, theApp.m_sAppName, dwSty, 0, 0, theApp.m_iScrnX, 
+	if (CreateEx (0, pCls, theApp.m_sAppName.c_str(), dwSty, 0, 0, theApp.m_iScrnX,
 												theApp.m_iScrnY, theApp.m_wndMain.m_hWnd, NULL, NULL) == 0)
 		ThrowError (ERR_RES_CREATE_WND);
 }

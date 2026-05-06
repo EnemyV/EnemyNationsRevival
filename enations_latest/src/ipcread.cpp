@@ -237,7 +237,7 @@ void CWndMailRead::Create (CWnd * pPar)
 	pPar->GetClientRect (&rect);
 	pPar->ClientToScreen (&rect);
 
-	CreateEx (0, theApp.m_sWndCls, sTitle.c_str(), dwPopWndStyle, rect.left,
+	CreateEx (0, theApp.m_sWndCls.c_str(), sTitle.c_str(), dwPopWndStyle, rect.left,
 		rect.top, rect.Width (), rect.Height(), pPar->m_hWnd, NULL);
 
 	ShowWindow (SW_SHOW);
