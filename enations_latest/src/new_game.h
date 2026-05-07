@@ -91,11 +91,11 @@ public:
 
 		void *				m_pAdvNet;		// advanced net data
 
-		CString				m_sName;			// player name
-		CString				m_sRace;			// race name
-		CString				m_sPw;				// password
-		CString				m_sGameName;					// for create_net
-		CString				m_sGameDesc;
+		std::string			m_sName;			// player name
+		std::string			m_sRace;			// race name
+		std::string			m_sPw;				// password
+		std::string			m_sGameName;					// for create_net
+		std::string			m_sGameDesc;
 
 		// SDL2 progress dialog (renders on SDL window)
 		SDL2CreateStatus * GetSDL2Status() { return m_psdlStatus; }

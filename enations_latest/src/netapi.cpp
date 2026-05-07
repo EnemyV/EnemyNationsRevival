@@ -3451,8 +3451,8 @@ CNetPublish* CNetPublish::Alloc( CCreateBase* pCm )
 
     ASSERT_VALID( pCm );
 
-    int iLen = sizeof( CNetPublish ) + 2 + pCm->m_sName.GetLength( ) + pCm->m_sPw.GetLength( ) +
-               pCm->m_sGameName.GetLength( ) + pCm->m_sGameDesc.GetLength( );
+    int iLen = sizeof( CNetPublish ) + 2 + (int)pCm->m_sName.length( ) + (int)pCm->m_sPw.length( ) +
+               (int)pCm->m_sGameName.length( ) + (int)pCm->m_sGameDesc.length( );
     CNetPublish* pMsg     = (CNetPublish*)new char[__max( 516, iLen )];
     pMsg->m_iLen          = iLen;
     pMsg->m_iNumOpponents = pCm->m_iNumAi;
@@ -3474,13 +3474,13 @@ CNetPublish* CNetPublish::Alloc( CCreateBase* pCm )
     pMsg->m_cFlags |= fcheat;
 #endif
 
-    strcpy( pMsg->m_sPlyrName, pCm->m_sName );
+    strcpy( pMsg->m_sPlyrName, pCm->m_sName.c_str() );
     char* pBuf = pMsg->m_sPlyrName + strlen( pMsg->m_sPlyrName ) + 1;
-    strcpy( pBuf, pCm->m_sPw );
+    strcpy( pBuf, pCm->m_sPw.c_str() );
     pBuf = pBuf + strlen( pBuf ) + 1;
-    strcpy( pBuf, pCm->m_sGameName );
+    strcpy( pBuf, pCm->m_sGameName.c_str() );
     pBuf = pBuf + strlen( pBuf ) + 1;
-    strcpy( pBuf, pCm->m_sGameDesc );
+    strcpy( pBuf, pCm->m_sGameDesc.c_str() );
 
     return ( pMsg );
 }
