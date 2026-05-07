@@ -324,7 +324,7 @@ void CWndMain::SetProgPos ( PROG_POS ppMode )
 
 	if ( (m_progPos != demo_license) && (m_progPos != retail_license) )
 		{
-		m_sText.Empty ();
+		m_sText.clear ();
 		if (m_fnt.m_hObject != NULL)
 			m_fnt.DeleteObject ();
 		return;
@@ -336,9 +336,10 @@ void CWndMain::SetProgPos ( PROG_POS ppMode )
 	pMmio->DescendChunk ('L', 'I', 'C', m_progPos == demo_license ? '2' : '3');
 
 	long lSize = pMmio->ReadLong ();
-	pMmio->Read (m_sText.GetBuffer (lSize+2), lSize);
+	m_sText.resize (lSize + 2);
+	pMmio->Read (&m_sText[0], lSize);
 	delete pMmio;
-	m_sText.ReleaseBuffer (lSize);
+	m_sText.resize (lSize);
 
 	// get the font
 	std::string sFont = EnGetProfileStdString("StatusBar", "Font", "Newtown Italic");
@@ -366,7 +367,7 @@ void CWndMain::SetProgPos ( PROG_POS ppMode )
 		int iDif = rect.Width () / 4;
 		rect.left += iDif;
 		rect.right -= iDif;
-		dc.DrawText ( m_sText, &rect, DT_CALCRECT | DT_NOPREFIX | DT_LEFT | DT_WORDBREAK);
+		dc.DrawText ( m_sText.c_str(), -1, &rect, DT_CALCRECT | DT_NOPREFIX | DT_LEFT | DT_WORDBREAK);
 		dc.SelectObject ( pOld );
 
 		iFntHt --;
@@ -504,28 +505,28 @@ void CWndMain::OnPaint()
 	int iHt = rect.Height ();
 	rect.left += iDif;
 	rect.right -= iDif;
-	dc.DrawText ( m_sText, &rect, DT_CALCRECT | DT_NOPREFIX | DT_LEFT | DT_WORDBREAK);
+	dc.DrawText ( m_sText.c_str(), -1, &rect, DT_CALCRECT | DT_NOPREFIX | DT_LEFT | DT_WORDBREAK);
 	rect.top = (iHt - rect.Height ()) / 2;
 	rect.bottom = iHt;
 
 	// draw dark bevel
 	rect.OffsetRect (- 1, - 1 );
 	dc.SetTextColor (PALETTERGB (9, 11, 20));
-	dc.DrawText ( m_sText, &rect, DT_NOPREFIX | DT_LEFT | DT_WORDBREAK);
+	dc.DrawText ( m_sText.c_str(), -1, &rect, DT_NOPREFIX | DT_LEFT | DT_WORDBREAK);
 	rect.OffsetRect ( 1, 0 );
-	dc.DrawText ( m_sText, &rect, DT_NOPREFIX | DT_LEFT | DT_WORDBREAK);
+	dc.DrawText ( m_sText.c_str(), -1, &rect, DT_NOPREFIX | DT_LEFT | DT_WORDBREAK);
 
 	// draw light bevel
 	rect.OffsetRect ( 0, 2 );
 	dc.SetTextColor (PALETTERGB (76, 81, 118));
-	dc.DrawText ( m_sText, &rect, DT_NOPREFIX | DT_LEFT | DT_WORDBREAK);
+	dc.DrawText ( m_sText.c_str(), -1, &rect, DT_NOPREFIX | DT_LEFT | DT_WORDBREAK);
 	rect.OffsetRect ( 1, 0 );
-	dc.DrawText ( m_sText, &rect, DT_NOPREFIX | DT_LEFT | DT_WORDBREAK);
+	dc.DrawText ( m_sText.c_str(), -1, &rect, DT_NOPREFIX | DT_LEFT | DT_WORDBREAK);
 
 	// draw face
 	rect.OffsetRect (- 1, - 1);
 	dc.SetTextColor (PALETTERGB (152, 162, 236));
-	dc.DrawText ( m_sText, &rect, DT_NOPREFIX | DT_LEFT | DT_WORDBREAK);
+	dc.DrawText ( m_sText.c_str(), -1, &rect, DT_NOPREFIX | DT_LEFT | DT_WORDBREAK);
 
 	dc.SelectObject (pOldFont);
 	thePal.EndPaint (dc.m_hDC);
@@ -756,8 +757,8 @@ bool CDlgSaveMsg::s_classRegistered = false;
 CDlgSaveMsg::CDlgSaveMsg(CWnd* pParent /*=NULL*/)
 	: m_hWnd( NULL )
 {
-	m_sText = _T("");
-	m_sStat = _T("");
+	m_sText.clear();
+	m_sStat.clear();
 }
 
 CDlgSaveMsg::~CDlgSaveMsg()
@@ -788,11 +789,11 @@ LRESULT CALLBACK CDlgSaveMsg::WndProc( HWND hwnd, UINT msg, WPARAM wParam, LPARA
 
 			// Draw m_sText in upper area
 			RECT rcText = { 10, 10, rc.right - 10, rc.bottom / 2 };
-			::DrawTextA( hdc, pThis->m_sText, -1, &rcText, DT_WORDBREAK | DT_CENTER );
+			::DrawTextA( hdc, pThis->m_sText.c_str(), -1, &rcText, DT_WORDBREAK | DT_CENTER );
 
 			// Draw m_sStat in lower area
 			RECT rcStat = { 10, rc.bottom / 2, rc.right - 10, rc.bottom - 10 };
-			::DrawTextA( hdc, pThis->m_sStat, -1, &rcStat, DT_WORDBREAK | DT_CENTER );
+			::DrawTextA( hdc, pThis->m_sStat.c_str(), -1, &rcStat, DT_WORDBREAK | DT_CENTER );
 		}
 		::EndPaint( hwnd, &ps );
 		return 0;
@@ -1218,7 +1219,7 @@ bool CDlgPause::s_classRegistered = false;
 CDlgPause::CDlgPause(CWnd* pParent /*=NULL*/)
 	: m_hWnd( NULL )
 {
-	m_sText = _T("");
+	m_sText.clear();
 }
 
 CDlgPause::~CDlgPause()
@@ -1252,7 +1253,7 @@ LRESULT CALLBACK CDlgPause::WndProc( HWND hwnd, UINT msg, WPARAM wParam, LPARAM 
 			::GetClientRect( hwnd, &rc );
 			::SetBkMode( hdc, TRANSPARENT );
 			RECT rcText = { 10, 10, rc.right - 10, rc.bottom - 10 };
-			::DrawTextA( hdc, pThis->m_sText, -1, &rcText, DT_WORDBREAK | DT_CENTER | DT_VCENTER | DT_SINGLELINE );
+			::DrawTextA( hdc, pThis->m_sText.c_str(), -1, &rcText, DT_WORDBREAK | DT_CENTER | DT_VCENTER | DT_SINGLELINE );
 		}
 		::EndPaint( hwnd, &ps );
 		return 0;
@@ -1310,14 +1311,14 @@ void CDlgPause::Show (int iMode)
 	switch (iMode)
 	  {
 		case server :
-			m_sText = EnLoadString(IDS_PAUSE_SERVER);
+			m_sText = EnLoadStdString(IDS_PAUSE_SERVER);
 			Repaint();
 			::ShowWindow( m_hWnd, SW_SHOW );
 			::SetWindowPos( m_hWnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOSIZE | SWP_NOMOVE );
 			break;
 
 		case client :
-			m_sText = EnLoadString(IDS_PAUSE_CLIENT);
+			m_sText = EnLoadStdString(IDS_PAUSE_CLIENT);
 			Repaint();
 			::ShowWindow( m_hWnd, SW_SHOW );
 			::SetWindowPos( m_hWnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOSIZE | SWP_NOMOVE );

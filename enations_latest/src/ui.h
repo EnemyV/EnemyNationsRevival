@@ -111,7 +111,7 @@ protected:
 	int					m_iWid;
 	int					m_iHt;
 	PROG_POS		m_progPos;
-	CString			m_sText;				// license agreement
+	std::string	m_sText;				// license agreement
 	CFont				m_fnt;
 	BOOL				m_bPauseOnActive;
 	BOOL				m_bLicTimer;
@@ -150,8 +150,8 @@ public:
 	void DestroyWindow();
 	void UpdateData( BOOL bSaveAndValidate );
 
-	CString	m_sText;
-	CString	m_sStat;
+	std::string	m_sText;
+	std::string	m_sStat;
 
 private:
 	HWND m_hWnd;
@@ -178,7 +178,7 @@ public:
 	enum { server, client, off };
 
 	HWND m_hWnd;
-	CString m_sText;
+	std::string m_sText;
 
 private:
 	void Repaint();

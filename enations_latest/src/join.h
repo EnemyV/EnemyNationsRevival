@@ -28,8 +28,8 @@ public:
 		int					m_iPos;
 		int					m_iNumPlayers;
 		char				m_cFlags;
-		CString			m_sName;
-		CString			m_sDesc;
+		std::string	m_sName;
+		std::string	m_sDesc;
 		VPSESSIONID	m_ID;
 
 #ifdef _DEBUG

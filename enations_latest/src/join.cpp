@@ -42,8 +42,7 @@ void CGameInfo::AssertValid( ) const
     ASSERT( ( 0 <= m_iNumOpponents ) && ( m_iNumOpponents < 257 ) );
     ASSERT( ( 0 <= m_iAIlevel ) && ( m_iAIlevel < 4 ) );
     ASSERT( ( 0 <= m_iWorldSize ) && ( m_iWorldSize < 3 ) );
-    ASSERT_VALID_CSTRING( &m_sName );
-    ASSERT_VALID_CSTRING( &m_sDesc );
+    // m_sName / m_sDesc converted to std::string (Phase 5a) — no MFC validator.
 }
 #endif
 

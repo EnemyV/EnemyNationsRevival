@@ -1642,8 +1642,8 @@ void CGame::AiTakeOverPlayer( CPlayer* pPlr, BOOL bStartThread, BOOL bShowDlg )
         CDlgSaveMsg dlgMsg( &( theApp.m_wndMain ) );
         if ( bShowDlg )
         {
-            dlgMsg.m_sText = EnLoadString( IDS_AI_TAKEOVER );
-            csPrintf( &( dlgMsg.m_sText ), (const char*)pPlr->GetName( ) );
+            dlgMsg.m_sText = strPrintf( EnLoadStdString( IDS_AI_TAKEOVER ).c_str(),
+                                        (const char*)pPlr->GetName( ) );
             dlgMsg.Create( IDD_SAVE_MSG, &( theApp.m_wndMain ) );
         }
 
@@ -2423,9 +2423,8 @@ static void fnCompSave( DWORD dwData, int iBlk )
 
     CDlgSaveMsg* pDlg = (CDlgSaveMsg*)dwData;
     pDlg->UpdateData( TRUE );
-    pDlg->m_sStat = EnLoadString( IDS_SAVE_COMPRESS );
     std::string sNum = IntToStr( iBlk );
-    csPrintf( &( pDlg->m_sStat ), sNum.c_str( ) );
+    pDlg->m_sStat = strPrintf( EnLoadStdString( IDS_SAVE_COMPRESS ).c_str(), sNum.c_str() );
     pDlg->UpdateData( FALSE );
 
     // needed for MODEM games
@@ -2504,12 +2503,12 @@ int CGame::SaveGame( CWnd* pPar )
 
     // put up a message to say we are saving
     CDlgSaveMsg dlgMsg( pPar );
-    dlgMsg.m_sText = EnLoadString( IDS_SAVE_NAME );
-    csPrintf( &dlgMsg.m_sText, m_sFileName );
+    dlgMsg.m_sText = strPrintf( EnLoadStdString( IDS_SAVE_NAME ).c_str(),
+                                (const char*)m_sFileName );
     if ( IsNetGame( ) )
-        dlgMsg.m_sStat = EnLoadString( IDS_SAVE_REMOTE );
+        dlgMsg.m_sStat = EnLoadStdString( IDS_SAVE_REMOTE );
     else
-        dlgMsg.m_sStat = EnLoadString( IDS_SAVE_LOCAL );
+        dlgMsg.m_sStat = EnLoadStdString( IDS_SAVE_LOCAL );
     dlgMsg.Create( IDD_SAVE_MSG, pPar );
 
     // disable all other windows
@@ -2566,7 +2565,7 @@ int CGame::SaveGame( CWnd* pPar )
         ProcessAllMessages( );
 
         dlgMsg.UpdateData( TRUE );
-        dlgMsg.m_sStat = EnLoadString( IDS_SAVE_DATA );
+        dlgMsg.m_sStat = EnLoadStdString( IDS_SAVE_DATA );
         dlgMsg.UpdateData( FALSE );
 
         // CMemFile to save to
@@ -2586,7 +2585,7 @@ int CGame::SaveGame( CWnd* pPar )
         theApp.BaseYield( );
 
         dlgMsg.UpdateData( TRUE );
-        dlgMsg.m_sStat = EnLoadString( IDS_SAVE_WRITE );
+        dlgMsg.m_sStat = EnLoadStdString( IDS_SAVE_WRITE );
         dlgMsg.UpdateData( FALSE );
 
         // write it to disk
