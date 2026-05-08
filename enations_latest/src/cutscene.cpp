@@ -79,11 +79,11 @@ UINT CCutScene::_PlayScene (int iTyp, int iScenario, BOOL bAsync)
 		switch (iTyp)
 		  {
 			case CWndCutScene::win:
-			  sText = EnLoadString(IDS_YOU_WON); break;
+			  sText = EnLoadStdString(IDS_YOU_WON); break;
 			case CWndCutScene::lose:
-			  sText = EnLoadString(IDS_YOU_LOST); break;
+			  sText = EnLoadStdString(IDS_YOU_LOST); break;
 			case CWndCutScene::scenario_end:
-			  sText = EnLoadString(IDS_YOU_END_SCENARIO); break;
+			  sText = EnLoadStdString(IDS_YOU_END_SCENARIO); break;
 			case CWndCutScene::cut:
 			case CWndCutScene::repeat:
 			  {

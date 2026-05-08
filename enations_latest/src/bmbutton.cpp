@@ -451,7 +451,7 @@ BOOL CTextButton::Create( int idText, int idHelp, CTextBtnData* pTbd, CRect& rec
 
     m_pTextBtnData = pTbd;
 
-    std::string sTitle = EnLoadString( idText );
+    std::string sTitle = EnLoadStdString( idText );
     return ( CMyButton::Create( sTitle.c_str( ), idHelp, rect, pBackDib, pPar, ID ) );
 }
 

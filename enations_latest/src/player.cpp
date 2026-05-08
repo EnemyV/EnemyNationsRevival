@@ -1595,8 +1595,8 @@ void CGame::AddAiPlayer( CPlayer* pPlr )
     if ( pPlr->m_sName.IsEmpty( ) )
     {
         std::string sNum = IntToStr( m_iNextAINum++ );
-        pPlr->m_sName = EnLoadString( IDS_AI_NAME );
-        csPrintf( &( pPlr->m_sName ), sNum.c_str( ) );
+        std::string sName = strPrintf( EnLoadStdString( IDS_AI_NAME ).c_str(), sNum.c_str() );
+        pPlr->m_sName = sName.c_str();
     }
     pPlr->m_iNetNum = 0;
     pPlr->SetAI( TRUE );

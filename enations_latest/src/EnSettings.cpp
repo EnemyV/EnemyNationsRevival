@@ -102,13 +102,7 @@ void EnWriteProfileString( const char* section, const char* entry, const char* v
     ::RegCloseKey( hKey );
 }
 
-CString EnLoadString( unsigned int id )
-{
-    // Thin CString wrapper over EnLoadStdString for legacy callers that
-    // assign the result into a CString DDX member. New code should call
-    // EnLoadStdString directly.
-    return CString( EnLoadStdString( id ).c_str() );
-}
+// EnLoadString CString shim removed (Phase 5a) — all callers now use EnLoadStdString.
 
 int EnMessageBox( const char* text, unsigned int type, unsigned int /*helpId*/ )
 {

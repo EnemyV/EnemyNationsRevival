@@ -109,7 +109,7 @@ CWndWorld::CWndWorld() {
     int idsne = IDS_WORLD_NE;
 
     CString s;
-    BOOL    ok = s = EnLoadString( IDS_WORLD_NE );
+    BOOL    ok = s = EnLoadStdString( IDS_WORLD_NE );
 
     HINSTANCE hRes = AfxGetResourceHandle( );
     TRACE( "Resource handle: %p\n", hRes );
@@ -547,10 +547,10 @@ void CWndWorld::CommandCenterChange() {
     std::string sTitle;
     if (m_bIsRadar) {
         m_sHelpFace = "";
-        sTitle = EnLoadString(IDS_WORLD_TITLE_RADAR);
+        sTitle = EnLoadStdString(IDS_WORLD_TITLE_RADAR);
     } else {
         m_sHelpFace = EnLoadStdString(IDH_WORLD_FACE);
-        sTitle = EnLoadString(IDS_WORLD_TITLE_MAP);
+        sTitle = EnLoadStdString(IDS_WORLD_TITLE_MAP);
     }
 
     const char* pArg = (m_pWndArea == NULL) ? "" : m_sDir[m_pWndArea->GetAA().m_iDir].c_str();
@@ -1186,7 +1186,7 @@ void CWndWorld::_NewDir() {
     ASSERT_STRICT (m_pWndArea->m_hWnd != NULL);
 
     // put up the new dir
-    std::string sTitle = EnLoadString( m_bIsRadar ? IDS_WORLD_TITLE_RADAR : IDS_WORLD_TITLE_MAP );
+    std::string sTitle = EnLoadStdString( m_bIsRadar ? IDS_WORLD_TITLE_RADAR : IDS_WORLD_TITLE_MAP );
 
 #ifdef LOGGINGON
     char buf[128];

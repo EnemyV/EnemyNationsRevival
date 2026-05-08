@@ -26,12 +26,9 @@ void    EnWriteProfileInt  ( const char* section, const char* entry, int value )
 CString EnGetProfileString ( const char* section, const char* entry, const char* default_val = 0 );
 void    EnWriteProfileString( const char* section, const char* entry, const char* value );
 
-// Returns the requested resource string, or an empty CString if the id was
-// not found in the .RC string table.
-CString EnLoadString( unsigned int id );
+// EnLoadString CString shim removed (Phase 5a) — call EnLoadStdString directly.
 
-// --- std::string variants (Phase 5a prep) ---
-// These allow callers to migrate away from CString incrementally.
+// --- std::string variants ---
 std::string EnGetProfileStdString( const char* section, const char* entry, const char* default_val = "" );
 std::string EnLoadStdString( unsigned int id );
 

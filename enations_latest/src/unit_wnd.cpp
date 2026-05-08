@@ -476,7 +476,7 @@ void CWndListBuildings::Create() {
     // units
     m_pDibUnit = theBitmaps.GetByIndex(DIB_LIST_UNIT_BUILDINGS);
 
-    std::string sTitle = EnLoadString(IDS_TITLE_BUILDINGS);
+    std::string sTitle = EnLoadStdString(IDS_TITLE_BUILDINGS);
     if (CreateEx(0, theApp.m_sWndCls.c_str(), sTitle.c_str(), dwPopWndStyle,
                  EnGetProfileInt(theApp.m_sResIni.c_str(), "BuildX", theApp.m_iCol2),
                  EnGetProfileInt(theApp.m_sResIni.c_str(), "BuildY", theApp.m_iRow4),
@@ -541,7 +541,7 @@ void CWndListVehicles::Create() {
     // units
     m_pDibUnit = theBitmaps.GetByIndex(DIB_LIST_UNIT_VEHICLES);
 
-    std::string sTitle = EnLoadString(IDS_TITLE_VEHICLES);
+    std::string sTitle = EnLoadStdString(IDS_TITLE_VEHICLES);
     int y = (theApp.m_iRow3 + theApp.m_iRow4) / 2 - 1;
     if (CreateEx(0, theApp.m_sWndCls.c_str(), sTitle.c_str(), dwPopWndStyle,
                  EnGetProfileInt(theApp.m_sResIni.c_str(), "VehicleX", theApp.m_iCol2),
@@ -857,13 +857,13 @@ BOOL CDlgBuildStructure::OnInitDialog() {
 
     m_pSd = NULL;
 
-    m_sCost = EnLoadString(IDS_COST);
-    m_sHave = EnLoadString(IDS_HAVE);
-    m_sNeed = EnLoadString(IDS_NEED);
-    m_sTime = EnLoadString(IDS_TIME);
-    m_sOper = EnLoadString(IDS_OPERATING);
-    m_sPeople = EnLoadString(IDS_PEOPLE);
-    m_sPower = EnLoadString(IDS_POWER);
+    m_sCost = EnLoadStdString(IDS_COST);
+    m_sHave = EnLoadStdString(IDS_HAVE);
+    m_sNeed = EnLoadStdString(IDS_NEED);
+    m_sTime = EnLoadStdString(IDS_TIME);
+    m_sOper = EnLoadStdString(IDS_OPERATING);
+    m_sPeople = EnLoadStdString(IDS_PEOPLE);
+    m_sPower = EnLoadStdString(IDS_POWER);
 
     m_pDibBkgnd = new CDIB(ptrthebltformat->GetColorFormat(), CBLTFormat::DIB_MEMORY,
                            CBLTFormat::DIR_BOTTOMUP, 465, 345);
@@ -1469,11 +1469,11 @@ BOOL CDlgBuildTransport::OnInitDialog() {
 
     m_pBu = NULL;
 
-    m_sCost = EnLoadString(IDS_COST);
-    m_sHave = EnLoadString(IDS_HAVE);
-    m_sNeed = EnLoadString(IDS_NEED);
-    m_sTime = EnLoadString(IDS_TIME);
-    m_sPeople = EnLoadString(IDS_PEOPLE);
+    m_sCost = EnLoadStdString(IDS_COST);
+    m_sHave = EnLoadStdString(IDS_HAVE);
+    m_sNeed = EnLoadStdString(IDS_NEED);
+    m_sTime = EnLoadStdString(IDS_TIME);
+    m_sPeople = EnLoadStdString(IDS_PEOPLE);
 
     m_pDibBkgnd = new CDIB(ptrthebltformat->GetColorFormat(), CBLTFormat::DIB_MEMORY,
                            CBLTFormat::DIR_BOTTOMUP, 380, 332);
@@ -1518,7 +1518,7 @@ BOOL CDlgBuildTransport::OnInitDialog() {
 
     // if its troops we change the title
     if (m_pBldgPar->GetData()->GetBldgType() == CStructureData::barracks) {
-        std::string sTitle = EnLoadString(IDS_BUILD_PEOPLE);
+        std::string sTitle = EnLoadStdString(IDS_BUILD_PEOPLE);
         SetWindowText(sTitle.c_str());
     }
 
@@ -1658,9 +1658,9 @@ void CDlgBuildTransport::UpdateStatus(int iPer) {
         const char* pDesc = (pBu == NULL) ? "" : theTransports.GetData(pBu->GetVehType())->GetDesc().c_str();
         sTitle = strPrintf(EnLoadStdString( IDS_BUILD_UNIT ).c_str(), pDesc);
     } else if (m_pBldgPar->GetData()->GetBldgType() == CStructureData::barracks)
-        sTitle = EnLoadString(IDS_BUILD_PEOPLE);
+        sTitle = EnLoadStdString(IDS_BUILD_PEOPLE);
     else
-        sTitle = EnLoadString(IDS_BUILD_VEHICLE);
+        sTitle = EnLoadStdString(IDS_BUILD_VEHICLE);
     SetWindowText(sTitle.c_str());
 
     // the below we do only if we aren't active
@@ -2332,7 +2332,7 @@ void CWndRoute::VehDesc(CVehicle *pVeh, POSITION &pos, std::string &sLine) {
 #endif
     }
 
-    sLine += "\t" + EnLoadString(ID);
+    sLine += "\t" + EnLoadStdString(ID);
 }
 
 void CWndRoute::NewRoute(CVehicle *pVeh) {
