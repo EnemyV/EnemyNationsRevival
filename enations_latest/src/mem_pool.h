@@ -7,6 +7,7 @@
 
 #include "netcmd.h"
 #include "vdmplay.h"
+#include "EnSettings.h"
 
 #include <algorithm>
 #include <cstdint>
@@ -79,10 +80,9 @@ class mempool_std_heap
             {
 #if LOGGINGON
                 // log that this is an issue!
-                CString str;
-                str.Format(
+                std::string str = strPrintf(
                     "mempool_std_heap::~mempool_std_heap: ERROR - null block pointer found during destruction\n" );
-                OutputDebugStringA( str );
+                OutputDebugStringA( str.c_str() );
 #endif
                 continue;
             }
@@ -100,9 +100,7 @@ class mempool_std_heap
 
         if ( isInit )
         {
-            CString str;
-            str.Format( "Was already initialized!!" );
-            OutputDebugStringA( str );
+            OutputDebugStringA( "Was already initialized!!" );
             return;
         }
 
@@ -117,9 +115,9 @@ class mempool_std_heap
 #ifdef _DEBUG
         activeAllocations.clear( );
 
-        CString str;
-        str.Format( "init: allocated %u blocks of size %u bytes each\n", N, S );
-        OutputDebugStringA( str );
+        std::string str = strPrintf( "init: allocated %u blocks of size %u bytes each\n",
+                                      (unsigned)N, (unsigned)S );
+        OutputDebugStringA( str.c_str() );
 #endif
 
         isInit = true;
@@ -137,9 +135,9 @@ class mempool_std_heap
         size_type newBlocks   = currentSize;  // Double the pool size
 
 #ifdef _DEBUG
-        CString str;
-        str.Format( "Expanding pool: adding %u blocks (total will be %u)\n", newBlocks, currentSize + newBlocks );
-        OutputDebugStringA( str );
+        std::string str = strPrintf( "Expanding pool: adding %u blocks (total will be %u)\n",
+                                      (unsigned)newBlocks, (unsigned)( currentSize + newBlocks ) );
+        OutputDebugStringA( str.c_str() );
 #endif
 
         // Allocate new blocks - each on its own heap address
@@ -213,9 +211,8 @@ class mempool_std_heap
         // Verify this was allocated from our pool
         if ( activeAllocations.find( ptr ) == activeAllocations.end( ) )
         {
-            CString str;
-            str.Format( "deallocate: ERROR - ptr=%p not in active allocations\n", ptr );
-            OutputDebugStringA( str );
+            std::string str = strPrintf( "deallocate: ERROR - ptr=%p not in active allocations\n", ptr );
+            OutputDebugStringA( str.c_str() );
             ASSERT( false );
             return;
         }
