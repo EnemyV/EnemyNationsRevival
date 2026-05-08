@@ -8,10 +8,6 @@
 #include <windows.h>
 #include <stdio.h>
 
-// CString header — still using MFC's CString during Phase 4. Phase 5 will
-// migrate to std::string.
-#include <afx.h>
-
 namespace {
 
 const char* const kRegBasePath = "Software\\Second Chance\\Second Chance";
