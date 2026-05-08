@@ -14,10 +14,6 @@
 // previously-persisted settings continue to load correctly.)
 //---------------------------------------------------------------------------
 
-// CString is still in use throughout the game (Phase 5 will replace it).
-// Including <afx.h> here gives us the right typedef without depending on
-// the precompiled header for callers.
-#include <afx.h>
 #include <string>
 
 int     EnGetProfileInt    ( const char* section, const char* entry, int default_val );
