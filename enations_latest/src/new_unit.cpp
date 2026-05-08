@@ -5959,8 +5959,7 @@ void CUnitData::AssertValid( ) const
     ASSERT( ( 0 <= m_iDefense ) && ( m_iDefense < 40 ) );
     ASSERT( ( 0 <= m_iFireRate ) && ( m_iFireRate < 1440 ) );
     ASSERT( ( 0 <= m_iAccuracy ) && ( m_iAccuracy < 20 ) );
-    ASSERT_VALID_CSTRING( &m_sDesc );
-    ASSERT_VALID_CSTRING( &m_sText );
+    // m_sDesc / m_sText converted to std::string (Phase 5a) — no MFC validator.
     ASSERT( ( 1 <= m_cx ) && ( m_cx <= 5 ) );
     ASSERT( ( 1 <= m_cy ) && ( m_cy <= 5 ) );
     ASSERT( ( 0 <= m_iSoundIdle ) && ( m_iSoundIdle < 200 ) );
