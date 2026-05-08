@@ -65,12 +65,7 @@ void EnWriteProfileInt( const char* section, const char* entry, int value )
     ::RegCloseKey( hKey );
 }
 
-CString EnGetProfileString( const char* section, const char* entry, const char* default_val )
-{
-    // Thin CString wrapper over EnGetProfileStdString for legacy callers
-    // that assign the result into a CString DDX member.
-    return CString( EnGetProfileStdString( section, entry, default_val ? default_val : "" ).c_str() );
-}
+// EnGetProfileString CString shim removed (Phase 5a) — all callers now use EnGetProfileStdString.
 
 void EnWriteProfileString( const char* section, const char* entry, const char* value )
 {

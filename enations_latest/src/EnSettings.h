@@ -23,7 +23,7 @@
 int     EnGetProfileInt    ( const char* section, const char* entry, int default_val );
 void    EnWriteProfileInt  ( const char* section, const char* entry, int value );
 
-CString EnGetProfileString ( const char* section, const char* entry, const char* default_val = 0 );
+// EnGetProfileString CString shim removed (Phase 5a) — call EnGetProfileStdString directly.
 void    EnWriteProfileString( const char* section, const char* entry, const char* value );
 
 // EnLoadString CString shim removed (Phase 5a) — call EnLoadStdString directly.
