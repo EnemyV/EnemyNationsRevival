@@ -3492,7 +3492,7 @@ CNetPublish* CNetPublish::Alloc( CGame* pGame )
     if ( pGame->HaveHP( ) )
         sName = pGame->GetMe( )->GetName( );
 
-    int iLen = sizeof( CNetPublish ) + 2 + (int)sName.size( ) + pGame->m_sPwJoin.GetLength( ) +
+    int iLen = sizeof( CNetPublish ) + 2 + (int)sName.size( ) + (int)pGame->m_sPwJoin.length( ) +
                pGame->m_sGameName.GetLength( ) + pGame->m_sGameDesc.GetLength( );
     CNetPublish* pMsg     = (CNetPublish*)new char[__max( 516, iLen )];
     pMsg->m_iLen          = iLen;
@@ -3517,7 +3517,7 @@ CNetPublish* CNetPublish::Alloc( CGame* pGame )
 
     strcpy( pMsg->m_sPlyrName, sName.c_str( ) );
     char* pBuf = pMsg->m_sPlyrName + strlen( pMsg->m_sPlyrName ) + 1;
-    strcpy( pBuf, pGame->m_sPwJoin );
+    strcpy( pBuf, pGame->m_sPwJoin.c_str() );
     pBuf = pBuf + strlen( pBuf ) + 1;
     strcpy( pBuf, pGame->m_sGameName );
     pBuf = pBuf + strlen( pBuf ) + 1;

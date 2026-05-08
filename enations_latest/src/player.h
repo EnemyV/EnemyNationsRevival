@@ -866,7 +866,7 @@ class CGame : public CObject
     int          m_iGameBufLen;      // how big it is
     int          m_iNumSends;        // how many we are sending to
 
-    CString m_sPwJoin;  // password for joining a game
+    std::string m_sPwJoin;  // password for joining a game
 
     CMsgShoot m_msgShoot;  // batch up shoot commands
 
