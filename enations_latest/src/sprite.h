@@ -907,7 +907,7 @@ public:
 	CSprite       *	GetSprite( int iID, int iIndex = 0, BOOL bStrict = FALSE );
 	CSprite const *	GetSprite( int iID, int iIndex = 0, BOOL bStrict = FALSE ) const;
 	void					SetSprite( Ptr< CSprite > const &, int iID, int iIndex = 0 );
-	char 	  const *	GetRifName() const { return m_strRif; }
+	char 	  const *	GetRifName() const { return m_strRif.c_str(); }
 	CFile 		  *	GetFile();
 
 	#ifdef _DEBUG
@@ -942,7 +942,7 @@ protected:
 	int				  m_bLoaded;		// 0x01 data loaded, 0x02 sprites loaded, 0x04 lang loaded
 	int				  m_nSprite;
 	BOOL				  m_bOpen;
-	CString			  m_strRif;
+	std::string		  m_strRif;
 	Ptr< CSprite > * m_pptrsprite;
 	Ptr< CFile >	  m_ptrfile;
 	Ptr< CSpriteCollectionInfo	> m_ptrspritecollectioninfo;
