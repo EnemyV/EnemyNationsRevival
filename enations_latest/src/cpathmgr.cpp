@@ -304,7 +304,7 @@ CHexCoord* CPathMgr::_GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord
 #ifdef _LOGOUT
                         logPrintf( LOG_PRI_ALWAYS, LOG_VEH_PATH,
                                    "GetPath() direct for a %s took %ld ticks for %d steps ",
-                                   (const char*)m_pTD->GetDesc( ), ( dwEnd - dwStart ), iPathLen );
+                                   m_pTD->GetDesc( ).c_str(), ( dwEnd - dwStart ), iPathLen );
                         logPrintf( LOG_PRI_ALWAYS, LOG_VEH_PATH, "Took %d interations with %d cells in list \n", iTicks,
                                    iList );
                         if ( phexPath == NULL )
@@ -331,7 +331,7 @@ CHexCoord* CPathMgr::_GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord
 #ifdef _LOGOUT
                             logPrintf( LOG_PRI_ALWAYS, LOG_VEH_PATH,
                                        "GetPath() early end for a %s took %ld ticks for %d steps ",
-                                       (const char*)m_pTD->GetDesc( ), ( dwEnd - dwStart ), iPathLen );
+                                       m_pTD->GetDesc( ).c_str(), ( dwEnd - dwStart ), iPathLen );
                             logPrintf( LOG_PRI_ALWAYS, LOG_VEH_PATH, "Took %d interations with %d cells in list \n",
                                        iTicks, iList );
                             if ( phexPath == NULL )
@@ -371,7 +371,7 @@ CHexCoord* CPathMgr::_GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord
 #ifdef _LOGOUT
                         logPrintf( LOG_PRI_ALWAYS, LOG_VEH_PATH,
                                    "GetPath() blocked for a %s took %ld ticks for %d steps ",
-                                   (const char*)m_pTD->GetDesc( ), ( dwEnd - dwStart ), iPathLen );
+                                   m_pTD->GetDesc( ).c_str(), ( dwEnd - dwStart ), iPathLen );
                         logPrintf( LOG_PRI_ALWAYS, LOG_VEH_PATH, "returning path to %d,%d instead of destination ",
                                    m_hexTo.X( ), m_hexTo.Y( ) );
                         logPrintf( LOG_PRI_ALWAYS, LOG_VEH_PATH, "Took %d interations with %d cells in list \n", iTicks,
@@ -509,7 +509,7 @@ CHexCoord* CPathMgr::_GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord
     dwEnd = timeGetTime( );
 #ifdef _LOGOUT
     logPrintf( LOG_PRI_ALWAYS, LOG_VEH_PATH, "GetPath() for a %s took %ld ticks for %d steps ",
-               (const char*)m_pTD->GetDesc( ), ( dwEnd - dwStart ), iPathLen );
+               m_pTD->GetDesc( ).c_str(), ( dwEnd - dwStart ), iPathLen );
     logPrintf( LOG_PRI_ALWAYS, LOG_VEH_PATH, "from %d,%d to %d,%d ", m_hexFrom.X( ), m_hexFrom.Y( ), m_hexTo.X( ),
                m_hexTo.Y( ) );
     logPrintf( LOG_PRI_ALWAYS, LOG_VEH_PATH, "Took %d interations with %d cells in list \n", iTicks, iList );

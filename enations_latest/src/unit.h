@@ -176,8 +176,8 @@ class CUnitData
     int _GetDefense( ) const { return m_iDefense; }
     int _GetAccuracy( ) const;
 
-    CString const& GetDesc( ) const;
-    CString const& GetText( ) const;
+    std::string const& GetDesc( ) const;
+    std::string const& GetText( ) const;
     int            GetCX( ) const;
     int            GetCY( ) const;
 
@@ -219,8 +219,8 @@ class CUnitData
     int m_iFireRate;    // how often it fires
     int m_iAccuracy;    // how accurate it is
 
-    CString m_sDesc;  // what its called
-    CString m_sText;  // explanation about it
+    std::string m_sDesc;  // what its called
+    std::string m_sText;  // explanation about it
 
     int m_cx;  // size in hexes
     int m_cy;

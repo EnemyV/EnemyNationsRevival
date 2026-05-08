@@ -389,7 +389,7 @@ void CWndBar::SetStatusFunc( int iLine, FNSTATUSLINE fnStat, void* pData )
     if ( theApp.m_gameWindow && fnStat == UnitShowStatus && pData )
     {
         CUnit* pUnit = (CUnit*)pData;
-        std::string text = (const char*)pUnit->GetData()->GetDesc();
+        std::string text = pUnit->GetData()->GetDesc();
 
         // If it's our unit, append materials
         if ( pUnit->GetOwner()->IsMe() )

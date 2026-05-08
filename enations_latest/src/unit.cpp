@@ -1653,7 +1653,7 @@ void CBuilding::GetDesc( std::string& sText ) const
 {
 
     ASSERT_VALID( this );
-    sText = (LPCSTR)m_pUnitData->GetDesc( );
+    sText = m_pUnitData->GetDesc( );
 
 #ifdef _CHEAT
     if ( _bShowStatus )
@@ -2501,7 +2501,7 @@ void CVehicle::GetDesc( std::string& sText ) const
 {
 
     ASSERT_VALID( this );
-    sText = (LPCSTR)m_pUnitData->GetDesc( );
+    sText = m_pUnitData->GetDesc( );
 
 #ifdef _CHEAT
     if ( _bShowStatus )

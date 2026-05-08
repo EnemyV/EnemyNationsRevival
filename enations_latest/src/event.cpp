@@ -168,25 +168,25 @@ void CGame::Event (int ID, int iTyp, CUnit *pUnit)
 	switch (ID)
 	  {
 		case EVENT_CONST_CANT :
-			psText = theStructures.GetData (((CVehicle *)pUnit)->GetBldgType ())->GetDesc ();
+			psText = theStructures.GetData (((CVehicle *)pUnit)->GetBldgType ())->GetDesc ().c_str();
 			break;
 
 		case EVENT_BUILD_HALTED :
 		case EVENT_BUILD_DONE :
-			psText = theTransports.GetData (((CVehicleBuilding*)pUnit)->GetBldUnt()->GetVehType ())->GetDesc ();
+			psText = theTransports.GetData (((CVehicleBuilding*)pUnit)->GetBldUnt()->GetVehType ())->GetDesc ().c_str();
 			break;
 
 		case EVENT_ATK_TARGET :
 		case EVENT_ATK_DESTROYED : {
 			CUnit * pTarget = pUnit->GetTarget ();
 			if ((pTarget != NULL) && (pTarget->GetUnitType () == CUnit::building))
-				psText = theStructures.GetData (((CBuilding *)pTarget)->GetData()->GetType ())->GetDesc ();
+				psText = theStructures.GetData (((CBuilding *)pTarget)->GetData()->GetType ())->GetDesc ().c_str();
 			else
 				psText = NULL;
 			break; }
-	
+
 		default:
-			psText = pUnit->GetData()->GetDesc ();
+			psText = pUnit->GetData()->GetDesc ().c_str();
 			break;
 	  }
 
@@ -220,7 +220,7 @@ void CGame::Event (int ID, int iTyp, int iVal)
 			psText = CMaterialTypes::GetDesc ( iTyp ).c_str ();
 			break; }
 		case EVENT_CONST_CANT :
-			psText = theStructures.GetData (iVal)->GetDesc ();
+			psText = theStructures.GetData (iVal)->GetDesc ().c_str();
 			break;
 		default:
 			psText = NULL;

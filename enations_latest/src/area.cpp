@@ -3488,8 +3488,8 @@ void CWndArea::BuildOn( int iIndex )
 
     CStructureData const* pData = theStructures.GetData( iIndex );
 
-    std::string sText = std::string( (LPCSTR)m_pUnit->GetData( )->GetDesc( ) ) + " - [" +
-                        (LPCSTR)pData->GetDesc( ) + "]";
+    std::string sText = m_pUnit->GetData( )->GetDesc( ) + " - [" +
+                        pData->GetDesc( ) + "]";
     SetWindowText( sText.c_str( ) );
 
     theGame.Event( EVENT_CONST_LOC, EVENT_NOTIFY, m_pUnit );
@@ -3515,7 +3515,7 @@ void CWndArea::GotoOn( CVehicle* pUnit, int iMode, int iRouteType, POSITION posR
     ASSERT_STRICT( iMode == veh_route );
 
     std::string sMsg = strPrintf( EnLoadStdString( IDS_MSG_UNIT_GOTO ).c_str(),
-                                  (const char*)pUnit->GetData( )->GetDesc( ) );
+                                  pUnit->GetData( )->GetDesc( ).c_str() );
     SetStatusText( sMsg.c_str() );
 
     m_lstUnits.RemoveAllUnits( TRUE );
@@ -4232,12 +4232,12 @@ void CWndArea::SetButtonState( )
         if ( ( m_pUnit->GetUnitType( ) == CUnit::vehicle ) &&
              ( ( (CVehicle*)m_pUnit )->GetData( )->GetType( ) == CTransportData::construction ) && ( m_iBuild > 0 ) )
         {
-            std::string sText = std::string( (LPCSTR)m_pUnit->GetData( )->GetDesc( ) ) + " - [" +
-                                (LPCSTR)theStructures.GetData( m_iBuild )->GetDesc( ) + "]";
+            std::string sText = m_pUnit->GetData( )->GetDesc( ) + " - [" +
+                                theStructures.GetData( m_iBuild )->GetDesc( ) + "]";
             SetWindowText( sText.c_str( ) );
         }
         else
-            SetWindowText( m_pUnit->GetData( )->GetDesc( ) );
+            SetWindowText( m_pUnit->GetData( )->GetDesc( ).c_str() );
     }
 
     m_uFlags = 0;
@@ -5192,7 +5192,7 @@ CWndInfo* CWndInfo::Create( CPoint& pt, CUnit* pUnit, CWndArea* pPar )
     // figure the size
     CRect rect;
     rect.left = rect.top = 0;
-    rect.right           = __max( m_pUnit->GetData( )->GetDesc( ).GetLength( ) + 2, 20 ) * theApp.TextWid( );
+    rect.right           = __max( (int)m_pUnit->GetData( )->GetDesc( ).length( ) + 2, 20 ) * theApp.TextWid( );
     rect.bottom          = FigureHt( );
 
     // stop clipping to the right/below (above/left impossible)
@@ -5209,7 +5209,7 @@ CWndInfo* CWndInfo::Create( CPoint& pt, CUnit* pUnit, CWndArea* pPar )
         m_pdib = new CDIB( ptrthebltformat->GetColorFormat( ), CBLTFormat::DIB_MEMORY,
                            ptrthebltformat->GetMemDirection( ), rectWin.Width( ), rectWin.Height( ) );
 
-    return ( (CWndInfo*)CWndBase::Create( NULL, pUnit->GetData( )->GetDesc( ), dwStyle, rectWin, pPar, 100, NULL ) );
+    return ( (CWndInfo*)CWndBase::Create( NULL, pUnit->GetData( )->GetDesc( ).c_str(), dwStyle, rectWin, pPar, 100, NULL ) );
 }
 
 static void _DrawText( CDC* pDc, CRect& rect, char const* sText, BOOL bRed = FALSE );
@@ -5261,7 +5261,7 @@ void CWndInfo::OnPaint( )
     rect.left      = pdibVert->GetWidth( ) + theApp.FlatDimen( );
     rect.right -= theApp.FlatDimen( );
     rect.bottom = rect.top + theApp.TextHt( );
-    _DrawText( pDc, rect, (LPCSTR)m_pUnit->GetData( )->GetDesc( ) );
+    _DrawText( pDc, rect, m_pUnit->GetData( )->GetDesc( ).c_str() );
 
     // draw the state
     if ( m_pUnit->GetUnitType( ) == CUnit::vehicle )
@@ -5279,7 +5279,7 @@ void CWndInfo::OnPaint( )
             if ( ( pBldg == NULL ) || ( pVeh->GetHexOwnership( ) ) )
                 pBldg = theBuildingHex.GetBuilding( pVeh->GetHexDest( ) );
             if ( ( pBldg != NULL ) && ( pBldg->GetOwner( )->IsMe( ) ) )
-                sText += std::string( "[" ) + (LPCSTR)pBldg->GetData( )->GetDesc( ) + "]";
+                sText += std::string( "[" ) + pBldg->GetData( )->GetDesc( ).c_str() + "]";
             else if ( pVeh->GetData( )->IsTransport( ) )
             {
                 if ( pVeh->GetRouteMode( ) == CVehicle::stop )
@@ -5355,7 +5355,7 @@ void CWndInfo::OnPaint( )
             CVehicle* pVeh = ( (CVehicle*)m_pUnit )->GetCargoNext( pos );
             rect.top += theApp.TextHt( ) + theApp.FlatDimen( );
             rect.bottom = rect.top + theApp.TextHt( );
-            _DrawText( pDc, rect, (LPCSTR)pVeh->GetData( )->GetDesc( ) );
+            _DrawText( pDc, rect, pVeh->GetData( )->GetDesc( ).c_str() );
         }
     }
 
@@ -5373,7 +5373,7 @@ void CWndInfo::OnPaint( )
             {
                 rect.top += theApp.TextHt( ) + theApp.FlatDimen( );
                 rect.bottom = rect.top + theApp.TextHt( );
-                _DrawText( pDc, rect, (LPCSTR)pVeh->GetData( )->GetDesc( ) );
+                _DrawText( pDc, rect, pVeh->GetData( )->GetDesc( ).c_str() );
             }
         }
     }
@@ -5403,7 +5403,7 @@ int CWndInfo::FigureHt( )
 
     CRect rect;
     rect.left = rect.top = 0;
-    rect.right           = __max( m_pUnit->GetData( )->GetDesc( ).GetLength( ) + 2, 20 ) * theApp.TextWid( );
+    rect.right           = __max( (int)m_pUnit->GetData( )->GetDesc( ).length( ) + 2, 20 ) * theApp.TextWid( );
     rect.bottom          = 2;
 
     if ( m_pUnit->GetUnitType( ) == CUnit::vehicle )

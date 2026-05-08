@@ -37,12 +37,12 @@ inline int CUnitData::_GetFireRate() const {
     return (m_iFireRate);
 }
 
-inline CString const &CUnitData::GetDesc() const {
+inline std::string const &CUnitData::GetDesc() const {
     ASSERT_STRICT_VALID (this);
     return (m_sDesc);
 }
 
-inline CString const &CUnitData::GetText() const {
+inline std::string const &CUnitData::GetText() const {
     ASSERT_STRICT_VALID (this);
     return (m_sText);
 }

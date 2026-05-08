@@ -36,7 +36,7 @@ void SDL2BuildTransport::OnInit() {
 
         int y = m_y + 34 + slot * 46;
         m_vehBtns[slot] = AddWidget<SDL2Button>(vehX, y, btnW, btnH,
-            (const char*)pTd->GetDesc(),
+            pTd->GetDesc().c_str(),
             [this, slot]() { SelectVehicle(slot); });
         slot++;
     }
@@ -102,7 +102,7 @@ void SDL2BuildTransport::UpdateDescription() {
         return;
     }
 
-    m_lblDesc->SetText((const char*)m_pTd->GetDesc());
+    m_lblDesc->SetText(m_pTd->GetDesc().c_str());
 
     // Show basic vehicle info (detailed costs would require CBuildUnit access)
     std::string info;

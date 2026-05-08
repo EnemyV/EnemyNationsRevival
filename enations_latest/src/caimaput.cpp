@@ -6687,7 +6687,7 @@ TryTryAgain:
 
 #ifdef _LOGOUT
     logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "\nFindStagingHex() player %d for a %s from nearby %d,%d  iRadi=%d ",
-               m_iPlayer, (const char*)pVehData->GetDesc( ), hexNearBy.X( ), hexNearBy.Y( ), iRadi );
+               m_iPlayer, pVehData->GetDesc( ).c_str(), hexNearBy.X( ), hexNearBy.Y( ), iRadi );
     logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "within area of %d,%d to %d,%d  deltaX=%d deltaY=%d ", hcStartArea.X( ),
                hcStartArea.Y( ), hcEndArea.X( ), hcEndArea.Y( ), hcDelta.X( ), hcDelta.Y( ) );
     if ( bExclude )
@@ -6775,7 +6775,7 @@ TryTryAgain:
 #ifdef _LOGOUT
         dwEnd = timeGetTime( );
         logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "player %d for a %s staging at %d,%d  took %ld ticks \n", m_iPlayer,
-                   (const char*)pVehData->GetDesc( ), hexDest.X( ), hexDest.Y( ), ( dwEnd - dwStart ) );
+                   pVehData->GetDesc( ).c_str(), hexDest.X( ), hexDest.Y( ), ( dwEnd - dwStart ) );
 #endif
         return;
     }
@@ -6872,7 +6872,7 @@ TryTryAgain:
 #ifdef _LOGOUT
                 dwEnd = timeGetTime( );
                 logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "player %d for a %s SPIRAL staging at %d,%d  took %ld ticks \n",
-                           m_iPlayer, (const char*)pVehData->GetDesc( ), hexDest.X( ), hexDest.Y( ),
+                           m_iPlayer, pVehData->GetDesc( ).c_str(), hexDest.X( ), hexDest.Y( ),
                            ( dwEnd - dwStart ) );
 #endif
                 return;
@@ -6887,7 +6887,7 @@ TryTryAgain:
 #ifdef _LOGOUT
     dwEnd = timeGetTime( );
     logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "player %d for a %s could not stage from %d,%d  took %ld ticks \n",
-               m_iPlayer, (const char*)pVehData->GetDesc( ), hexDest.X( ), hexDest.Y( ), ( dwEnd - dwStart ) );
+               m_iPlayer, pVehData->GetDesc( ).c_str(), hexDest.X( ), hexDest.Y( ), ( dwEnd - dwStart ) );
 #endif
 }
 
@@ -6928,7 +6928,7 @@ void CAIMapUtil::FindLandingHex( CHexCoord& hexHead )
 
 #ifdef _LOGOUT
         logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "\nFindLandingHex() player %d for a %s from nearby %d,%d ", m_iPlayer,
-                   (const char*)pVehData->GetDesc( ), hexVeh.X( ), hexVeh.Y( ) );
+                   pVehData->GetDesc( ).c_str(), hexVeh.X( ), hexVeh.Y( ) );
         logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "within area of %d,%d to %d,%d  deltaX=%d deltaY=%d ", hcStartArea.X( ),
                    hcStartArea.Y( ), hcEndArea.X( ), hcEndArea.Y( ), iDeltaX, iDeltaY );
 #endif
@@ -6989,7 +6989,7 @@ void CAIMapUtil::FindLandingHex( CHexCoord& hexHead )
 #ifdef _LOGOUT
                 dwEnd = timeGetTime( );
                 logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "player %d for a %s unloading at %d,%d  took %ld ticks \n",
-                           m_iPlayer, (const char*)pVehData->GetDesc( ), hex.X( ), hex.Y( ), ( dwEnd - dwStart ) );
+                           m_iPlayer, pVehData->GetDesc( ).c_str(), hex.X( ), hex.Y( ), ( dwEnd - dwStart ) );
 #endif
                 return;
             }
@@ -7000,7 +7000,7 @@ void CAIMapUtil::FindLandingHex( CHexCoord& hexHead )
 #ifdef _LOGOUT
     dwEnd = timeGetTime( );
     logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "player %d for a %s could find landing site from %d,%d  took %ld ticks \n",
-               m_iPlayer, (const char*)pVehData->GetDesc( ), hexVeh.X( ), hexVeh.Y( ), ( dwEnd - dwStart ) );
+               m_iPlayer, pVehData->GetDesc( ).c_str(), hexVeh.X( ), hexVeh.Y( ), ( dwEnd - dwStart ) );
 #endif
 }
 

@@ -176,7 +176,7 @@ void SDL2BuildStructure::SelectCategory(int cat) {
         if (CanBuild(cat, pSd)) {
             m_bldgs[slot].structureIndex = i;
             m_bldgs[slot].pData = pSd;
-            m_bldgBtns[slot]->SetText((const char*)pSd->GetDesc());
+            m_bldgBtns[slot]->SetText(pSd->GetDesc().c_str());
             m_bldgBtns[slot]->SetEnabled(true);
             m_bldgBtns[slot]->SetVisible(true);
 
@@ -232,7 +232,7 @@ void SDL2BuildStructure::UpdateDescription() {
     }
 
     // Description text (green)
-    m_lblDesc->SetText((const char*)m_pSd->GetText());
+    m_lblDesc->SetText(m_pSd->GetText().c_str());
 
     // Cost header (separate label above the line)
     m_lblCostHdr->SetText("            cost  have  need");

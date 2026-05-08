@@ -459,7 +459,7 @@ void SDL2UnitInfoPanel::BuildContent() {
     if (!m_pUnit) return;
 
     // Unit name
-    m_lines.push_back({(const char*)m_pUnit->GetData()->GetDesc(), false});
+    m_lines.push_back({m_pUnit->GetData()->GetDesc().c_str(), false});
 
     // Vehicle transport status
     if (m_pUnit->GetUnitType() == CUnit::vehicle) {
@@ -475,7 +475,7 @@ void SDL2UnitInfoPanel::BuildContent() {
             if (pBldg == NULL || pVeh->GetHexOwnership())
                 pBldg = theBuildingHex.GetBuilding(pVeh->GetHexDest());
             if (pBldg != NULL && pBldg->GetOwner()->IsMe())
-                sText += std::string("[") + (const char*)pBldg->GetData()->GetDesc() + "]";
+                sText += std::string("[") + pBldg->GetData()->GetDesc().c_str() + "]";
             else if (pVeh->GetRouteMode() == CVehicle::stop)
                 sText += CTransportData::m_sIdle.c_str();
             else
@@ -528,7 +528,7 @@ void SDL2UnitInfoPanel::BuildContent() {
         POSITION pos = ((CVehicle*)m_pUnit)->GetCargoHeadPosition();
         while (pos != NULL) {
             CVehicle* pVeh = ((CVehicle*)m_pUnit)->GetCargoNext(pos);
-            m_lines.push_back({(const char*)pVeh->GetData()->GetDesc(), false});
+            m_lines.push_back({pVeh->GetData()->GetDesc().c_str(), false});
         }
     }
 
@@ -541,7 +541,7 @@ void SDL2UnitInfoPanel::BuildContent() {
             theVehicleMap.GetNextAssoc(pos, dwID, pVeh);
             if (pVeh->GetOwner()->IsMe() && !pVeh->GetHexOwnership() &&
                 theBuildingHex._GetBuilding(pVeh->GetPtHead()) == m_pUnit)
-                m_lines.push_back({(const char*)pVeh->GetData()->GetDesc(), false});
+                m_lines.push_back({pVeh->GetData()->GetDesc().c_str(), false});
         }
     }
 }

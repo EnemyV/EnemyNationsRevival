@@ -174,7 +174,7 @@ void CVehicleBuilding::ShowStatusText( std::string& str )
     // show what we are building
     std::string sNum = IntToStr( m_iLastPer );
     str = strPrintf( EnLoadStdString( IDS_STAT_BUILD ).c_str(),
-                     (const char*)theTransports.GetData( pBldUnt->GetVehType( ) )->GetDesc( ),
+                     theTransports.GetData( pBldUnt->GetVehType( ) )->GetDesc( ).c_str(),
                      sNum.c_str() );
 }
 
@@ -235,7 +235,7 @@ void CRepairBuilding::ShowStatusText( std::string& str )
     // show what we are building
     std::string sNum = IntToStr( m_iLastPer );
     str = strPrintf( EnLoadStdString( IDS_STAT_REPAIR ).c_str(),
-                     (const char*)m_pVehRepairing->GetData( )->GetDesc( ), sNum.c_str() );
+                     m_pVehRepairing->GetData( )->GetDesc( ).c_str(), sNum.c_str() );
 }
 
 void CShipyardBuilding::ShowStatusText( std::string& str )
@@ -250,7 +250,7 @@ void CShipyardBuilding::ShowStatusText( std::string& str )
     // show what we are building
     std::string sNum = IntToStr( m_iLastPer );
     str = strPrintf( EnLoadStdString( IDS_STAT_REPAIR ).c_str(),
-                     (const char*)m_pVehRepairing->GetData( )->GetDesc( ), sNum.c_str() );
+                     m_pVehRepairing->GetData( )->GetDesc( ).c_str(), sNum.c_str() );
 }
 
 void CHousingBuilding::ShowStatusText( std::string& str )
@@ -370,7 +370,7 @@ void _UnitShowStatus( BOOL bText, void* pData, CDC* pDc, CRect const& rDraw, CDI
         rect.right = rect.left + iWid;
         uShowStat.m_siText.SetSize( rect );
 
-        uShowStat.m_siText.SetText( pUnit->GetData( )->GetDesc( ) );
+        uShowStat.m_siText.SetText( pUnit->GetData( )->GetDesc( ).c_str() );
 
 #ifdef _CHEAT
         if ( _bShowStatus )
@@ -724,7 +724,7 @@ void CVehicleBuilding::PaintStatusBars( CStatInst* pSi, int iNum, CDC* pDc ) con
         {
             pDcTxt->SetBkMode( TRANSPARENT );
             pDcTxt->SetTextColor( CLR_CONST );
-            pDcTxt->DrawText( theTransports.GetData( pBldUnt->GetVehType( ) )->GetDesc( ), -1,
+            pDcTxt->DrawText( theTransports.GetData( pBldUnt->GetVehType( ) )->GetDesc( ).c_str(), -1,
                               &( pSi->m_rDest ), DT_CENTER | DT_SINGLELINE | DT_VCENTER );
         }
 
@@ -769,7 +769,7 @@ void CRepairBuilding::PaintStatusBars( CStatInst* pSi, int iNum, CDC* pDc ) cons
         {
             pDcTxt->SetBkMode( TRANSPARENT );
             pDcTxt->SetTextColor( CLR_CONST );
-            pDcTxt->DrawText( m_pVehRepairing->GetData( )->GetDesc( ), -1,
+            pDcTxt->DrawText( m_pVehRepairing->GetData( )->GetDesc( ).c_str(), -1,
                               &( pSi->m_rDest ), DT_CENTER | DT_SINGLELINE | DT_VCENTER );
         }
 
@@ -815,7 +815,7 @@ void CShipyardBuilding::PaintStatusBars( CStatInst* pSi, int iNum, CDC* pDc ) co
         {
             pDcTxt->SetBkMode( TRANSPARENT );
             pDcTxt->SetTextColor( CLR_CONST );
-            pDcTxt->DrawText( m_pVehRepairing->GetData( )->GetDesc( ), -1,
+            pDcTxt->DrawText( m_pVehRepairing->GetData( )->GetDesc( ).c_str(), -1,
                               &( pSi->m_rDest ), DT_CENTER | DT_SINGLELINE | DT_VCENTER );
         }
 
@@ -871,7 +871,7 @@ void CVehicle::PaintStatusBars( CStatInst* pSi, int iNum, CDC* pDc ) const
         if ( ( pBldg == NULL ) || ( GetHexOwnership( ) ) )
             pBldg = theBuildingHex.GetBuilding( GetHexDest( ) );
         if ( ( pBldg != NULL ) && ( pBldg->GetOwner( )->IsMe( ) ) )
-            sText += (LPCSTR)pBldg->GetData( )->GetDesc( );
+            sText += pBldg->GetData( )->GetDesc( );
         else if ( GetRouteMode( ) == stop )
             sText += CTransportData::m_sIdle;
         else

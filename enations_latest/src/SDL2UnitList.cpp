@@ -168,7 +168,7 @@ void SDL2UnitList::Rebuild() {
 void SDL2UnitList::AddUnit(CUnit* pUnit) {
     ListItem item;
     item.pUnit = pUnit;
-    item.name = (const char*)pUnit->GetData()->GetDesc();
+    item.name = pUnit->GetData()->GetDesc().c_str();
 
     if (m_type == VEHICLES) {
         CVehicle* pVeh = (CVehicle*)pUnit;
@@ -335,7 +335,7 @@ void SDL2UnitList::RenderItem(SDL_Surface* dst, int idx, int x, int y, int w, bo
             if (pBldg == NULL || pVeh->GetHexOwnership())
                 pBldg = theBuildingHex.GetBuilding(pVeh->GetHexDest());
             if (pBldg != NULL && pBldg->GetOwner()->IsMe())
-                sText += std::string("[") + (const char*)pBldg->GetData()->GetDesc() + "]";
+                sText += std::string("[") + pBldg->GetData()->GetDesc().c_str() + "]";
             else if (pVeh->GetData()->IsTransport()) {
                 if (pVeh->GetRouteMode() == CVehicle::stop)
                     sText += CTransportData::m_sIdle;
@@ -691,7 +691,7 @@ void SDL2UnitList::RenderStatusBars(SDL_Surface* dst, CUnit* pUnit, int x, int y
                 if (pBldg == NULL || pVeh->GetHexOwnership())
                     pBldg = theBuildingHex.GetBuilding(pVeh->GetHexDest());
                 if (pBldg != NULL && pBldg->GetOwner()->IsMe())
-                    routeText += (const char*)pBldg->GetData()->GetDesc();
+                    routeText += pBldg->GetData()->GetDesc().c_str();
                 else if (pVeh->GetRouteMode() == CVehicle::stop)
                     routeText += CTransportData::m_sIdle;
                 else

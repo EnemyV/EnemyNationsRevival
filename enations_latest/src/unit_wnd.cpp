@@ -290,7 +290,7 @@ void CWndListUnits::OnDrawItem(int, LPDRAWITEMSTRUCT pDis) {
         pDc->SetBkMode(TRANSPARENT);
         CFont *pOldFont = pDc->SelectObject(&theApp.TextFont());
 
-        std::string sText = (LPCSTR)pUnit->GetData()->GetDesc();
+        std::string sText = pUnit->GetData()->GetDesc();
         // put dest/location if dest is a building
         if (pUnit->GetUnitType() == CUnit::vehicle) {
             sText += " ";
@@ -306,7 +306,7 @@ void CWndListUnits::OnDrawItem(int, LPDRAWITEMSTRUCT pDis) {
             if ((pBldg == NULL) || (pVeh->GetHexOwnership()))
                 pBldg = theBuildingHex.GetBuilding(pVeh->GetHexDest());
             if ((pBldg != NULL) && (pBldg->GetOwner()->IsMe()))
-                sText += std::string("[") + (LPCSTR)pBldg->GetData()->GetDesc() + "]";
+                sText += std::string("[") + pBldg->GetData()->GetDesc().c_str() + "]";
             else if (pVeh->GetData()->IsTransport()) {
                 if (pVeh->GetRouteMode() == CVehicle::stop)
                     sText += CTransportData::m_sIdle;
@@ -1655,7 +1655,7 @@ void CDlgBuildTransport::UpdateStatus(int iPer) {
     std::string sTitle;
     if (iPer != 0) {
         CBuildUnit const *pBu = m_pBldgPar->GetBldUnt();
-        const char* pDesc = (pBu == NULL) ? "" : (const char*)theTransports.GetData(pBu->GetVehType())->GetDesc();
+        const char* pDesc = (pBu == NULL) ? "" : theTransports.GetData(pBu->GetVehType())->GetDesc().c_str();
         sTitle = strPrintf(EnLoadStdString( IDS_BUILD_UNIT ).c_str(), pDesc);
     } else if (m_pBldgPar->GetData()->GetBldgType() == CStructureData::barracks)
         sTitle = EnLoadString(IDS_BUILD_PEOPLE);
@@ -1993,7 +1993,7 @@ void CWndRoute::Create(CWndArea *pPar) {
     pPar->GetClientRect(&rect);
     pPar->ClientToScreen(&rect);
 
-    CreateEx(0, theApp.m_sWndCls.c_str(), m_pVeh->GetData()->GetDesc(), dwPopWndStyle,
+    CreateEx(0, theApp.m_sWndCls.c_str(), m_pVeh->GetData()->GetDesc().c_str(), dwPopWndStyle,
              rect.right - m_iXmin, rect.bottom - m_iYmin * 2, m_iXmin, m_iYmin * 2,
              pPar->m_hWnd, NULL, NULL);
 }
@@ -2042,7 +2042,7 @@ int CWndRoute::OnCreate(LPCREATESTRUCT lpCreateStruct) {
     OnLbnClk();
 
     std::string sTitle = strPrintf( EnLoadStdString( IDS_ROUTE_TITLE ).c_str(),
-                                    (const char*)m_pVeh->GetData()->GetDesc() );
+                                    m_pVeh->GetData()->GetDesc().c_str() );
     SetWindowText(sTitle.c_str());
 
     // fill the listbox
