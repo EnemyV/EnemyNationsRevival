@@ -2301,7 +2301,7 @@ void CTerrainData::AssertValid( ) const
         ASSERT( ( 0 <= m_iWheelMult[iInd] ) && ( m_iWheelMult[iInd] <= 42 ) );
         ASSERT( ( 0 < m_iDefenseMult[iInd] ) && ( m_iDefenseMult[iInd] <= MAX_DEF_MULT ) );
     }
-    ASSERT_VALID_CSTRING( &m_sDesc );
+    // m_sDesc converted to std::string (Phase 5a) — no MFC validator.
 }
 
 void CTerrain::AssertValid( ) const
@@ -2432,7 +2432,7 @@ char const* CHex::GetStatus( )
 {
 
     ASSERT_VALID( this );
-    return ( (LPCSTR)theTerrain.GetData( GetVisibleType( ) ).GetDesc( ) );
+    return ( theTerrain.GetData( GetVisibleType( ) ).GetDesc( ).c_str() );
 }
 
 // change to road hex, call for any neighbors because we can change them

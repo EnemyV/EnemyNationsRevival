@@ -237,7 +237,7 @@ public:
 			int				GetDefenseMult (int iInd) const { ASSERT_STRICT_VALID (this);
 														ASSERT_STRICT ((0 <= iInd) && (iInd < NUM_WHEEL_TYPES));
 														return (m_iDefenseMult [iInd]); }
-			CString const &	GetDesc () const { ASSERT_STRICT_VALID (this); return (m_sDesc); }
+			std::string const &	GetDesc () const { ASSERT_STRICT_VALID (this); return (m_sDesc); }
 
 			static int GetBuildRoadTime () { return (8); }
 
@@ -246,7 +246,7 @@ protected:
 			int			m_iFarmMult;						// reduction in farm output
 			int			m_iWheelMult [NUM_WHEEL_TYPES]; // multiplier for movement
 			int			m_iDefenseMult [NUM_WHEEL_TYPES]; // multiplier for defense at that location
-			CString	m_sDesc;								// what its called
+			std::string	m_sDesc;								// what its called
 
 #ifdef _DEBUG
 public:
