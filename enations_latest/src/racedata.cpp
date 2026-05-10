@@ -351,11 +351,11 @@ void CInitAttrib::AssertValid( ) const
 #endif
 
 
-// sHdr stays CString — used as the magic-number tag in race-data archive.
-// SaveCompat.h preserves binary-equivalence between CString and std::string,
-// so converting this would not change the on-disk format, but the comparison
-// at load time uses CString::operator!= so leaving as CString is simplest.
-static CString sHdr( "RaceData file\n\032" );
+// Magic-number tag at the start of a serialized race-data archive.
+// SaveCompat.h's CArchive overloads preserve binary equivalence between
+// CString and std::string, so converting this from CString doesn't change
+// the on-disk format.
+static const std::string sHdr( "RaceData file\n\032" );
 
 void CRaceDefinition::Serialize( CArchive& ar )
 {
@@ -376,7 +376,7 @@ void CRaceDefinition::Serialize( CArchive& ar )
 
     else
     {
-        CString sTmp;
+        std::string sTmp;
         ar >> sTmp;
         if ( sTmp != sHdr )
             ThrowError( ERR_TLP_BAD_RCE_FILE );
