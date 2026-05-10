@@ -497,6 +497,37 @@ This is the gating work. Approach:
 
 2. **CArchive serialization** — `Serialize(CArchive& ar)` methods + `ar << field`, `ar >> field` chains. This is the save-file format. Can NOT be replaced piecemeal because the binary format must remain stable for save-file compatibility.
 
+**Phase 5c progress (introduced 2026-05-10): `SaveCompat.h` bridge.**
+
+`enations_latest/src/SaveCompat.h` provides:
+
+```cpp
+inline CArchive& operator<<( CArchive& ar, const std::string& s ) {
+    CString cs( s.c_str() ); ar << cs; return ar;
+}
+inline CArchive& operator>>( CArchive& ar, std::string& s ) {
+    CString cs; ar >> cs; s.assign( (LPCSTR)cs ); return ar;
+}
+```
+
+These overloads route std::string serialization through a temporary CString, which means **the on-disk binary format is byte-for-byte identical to the pre-migration CString format.** Saved files load correctly regardless of whether the member was CString or std::string when written.
+
+Cost: one extra string copy per serialize boundary (the CString temp). Acceptable — serialization happens at save/load, not in a hot path.
+
+To migrate a CArchive-serialized CString member:
+
+1. `#include "SaveCompat.h"` in the .cpp that defines the class's Serialize method.
+2. Change the member type from `CString` to `std::string` in the header.
+3. Fix immediate call sites (`.IsEmpty()` → `.empty()`, `(LPCSTR)` casts → `.c_str()` where const char* is expected).
+4. `ar << m_member` and `ar >> m_member` keep working — the new overloads kick in.
+5. Build. Most files compile clean.
+
+Already migrated this way (session 2026-05-10):
+- `CGame::m_sFileName` / `m_sGameName` / `m_sGameDesc` / `m_sPwJoin`
+- `CPlayer::m_sName`
+- `CRaceDef::m_sLine` / `m_sDesc` + the file-header `static std::string sHdr`
+- `CIPCPlayer::m_sName`
+
 **Catalog the save format.** `theGame.Serialize` is the entry point in `player.cpp:~2680-2880`. It writes raw binary via `CFile::Write` / `CArchive::operator<<`. The format is NOT XML or JSON — it's raw `sizeof(struct)` writes plus length-prefixed strings.
 
 2. **Replace `CFile` with `std::fstream` (binary mode).** API:
