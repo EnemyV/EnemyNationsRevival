@@ -941,7 +941,7 @@ void CPlayer::AssertValid( ) const
 
     CObject::AssertValid( );
 
-    ASSERT_VALID_CSTRING( &m_sName );
+    // m_sName converted to std::string (Phase 5c) — no MFC validator.
     ASSERT( ( m_iNetNum & 0xFF ) == m_iNetNum );
 
     // it makes sense for these to be 0 when you start a new minimal game
@@ -1593,7 +1593,7 @@ void CGame::AddAiPlayer( CPlayer* pPlr )
     if ( pPlr->GetPlyrNum( ) == 0 )
         pPlr->SetPlyrNum( m_iNextPlyrNum++ );
 
-    if ( pPlr->m_sName.IsEmpty( ) )
+    if ( pPlr->m_sName.empty( ) )
     {
         std::string sNum = IntToStr( m_iNextAINum++ );
         std::string sName = strPrintf( EnLoadStdString( IDS_AI_NAME ).c_str(), sNum.c_str() );

@@ -139,7 +139,7 @@ class CPlayer : public CObject
     char const* GetName( ) const
     {
         ASSERT_STRICT_VALID( this );
-        return ( m_sName );
+        return ( m_sName.c_str() );
     }
     void SetNetNum( VPPLAYERID iNum )
     {
@@ -520,7 +520,7 @@ class CPlayer : public CObject
     void ctor( );   // reset (close)
     void _ctor( );  // init everything
 
-    CString    m_sName;     // name of player
+    std::string m_sName;    // name of player
     DWORD      m_dwAiHdl;   // AI internal handle
     VPPLAYERID m_iNetNum;   // net connection to that player
     LONG       m_iPlyrNum;  // player number (0 == self, 1 == server)
