@@ -13,6 +13,7 @@
 
 #include "error.h"
 #include "lastplnt.h"
+#include "SaveCompat.h"
 #include "stdafx.h"
 
 
@@ -345,12 +346,15 @@ void CInitAttrib::AssertValid( ) const
 
     // BUGBUG - do the rest
 
-    ASSERT_VALID_CSTRING( &m_sLine );
-    ASSERT_VALID_CSTRING( &m_sDesc );
+    // m_sLine / m_sDesc converted to std::string (Phase 5c) — no MFC validator.
 }
 #endif
 
 
+// sHdr stays CString — used as the magic-number tag in race-data archive.
+// SaveCompat.h preserves binary-equivalence between CString and std::string,
+// so converting this would not change the on-disk format, but the comparison
+// at load time uses CString::operator!= so leaving as CString is simplest.
 static CString sHdr( "RaceData file\n\032" );
 
 void CRaceDefinition::Serialize( CArchive& ar )

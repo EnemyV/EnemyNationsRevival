@@ -65,8 +65,8 @@ class CRaceDef : public CObject
 
     float       GetRace( int iInd ) const { return m_fRace[iInd]; }
     int         GetSupplies( int iTyp, int iInd ) const { return m_iPos[iTyp][iInd]; }
-    char const* GetLine( ) const { return m_sLine; }
-    char const* GetDesc( ) const { return m_sDesc; }
+    char const* GetLine( ) const { return m_sLine.c_str(); }
+    char const* GetDesc( ) const { return m_sDesc.c_str(); }
     CDIB*       GetPicture( ) { return m_pdibPicture; }
 
   private:
@@ -78,8 +78,8 @@ class CRaceDef : public CObject
 
     float   m_fRace[num_race];
     DWORD   m_iPos[NUM_START_TYPES][num_supplies];
-    CString m_sLine;
-    CString m_sDesc;
+    std::string m_sLine;
+    std::string m_sDesc;
     CDIB*   m_pdibPicture;
 
 #ifdef _DEBUG
