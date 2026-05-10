@@ -87,7 +87,7 @@ void SDL2FileDialog::OnSave() {
     EndDialog(1);
 
     // Get filename via SDL2 file browser with full directory navigation
-    std::string defaultName = (const char*)theGame.m_sFileName;
+    std::string defaultName = theGame.m_sFileName;
     // Strip path to just filename for the edit box default
     size_t lastSlash = defaultName.find_last_of("\\/");
     if (lastSlash != std::string::npos)

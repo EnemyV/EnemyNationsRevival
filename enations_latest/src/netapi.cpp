@@ -1194,7 +1194,7 @@ static void CmdSelectPlyr( CNetSelectPlyr* pMsg )
         // read in the file
         if ( theGame.m_pGameFile == NULL )
         {
-            CFile fil( theGame.m_sFileName, CFile::modeRead | CFile::shareExclusive | CFile::typeBinary );
+            CFile fil( theGame.m_sFileName.c_str(), CFile::modeRead | CFile::shareExclusive | CFile::typeBinary );
             theGame.m_iGameBufLen = fil.GetLength( );
             theGame.m_pGameFile   = new char[theGame.m_iGameBufLen];
             fil.Read( theGame.m_pGameFile, theGame.m_iGameBufLen );

@@ -31,6 +31,7 @@
 #include "netapi.h"
 #include "relation.h"
 #include "research.h"
+#include "SaveCompat.h"
 #include "SDL2CreateStatus.h"
 #include "stdafx.h"
 #include "terrain.inl"
@@ -1052,11 +1053,11 @@ void CGame::Open( BOOL bLocal )
 
     ASSERT_VALID( this );
 
-    std::string sSaveName = (LPCSTR)theGame.m_sFileName;
+    std::string sSaveName = theGame.m_sFileName;
     if ( ( theApp.m_pCreateGame == NULL ) || ( ( theApp.m_pCreateGame->m_iTyp != CCreateBase::load_single ) &&
                                                ( theApp.m_pCreateGame->m_iTyp != CCreateBase::load_multi ) ) )
         ctor( );
-    theGame.m_sFileName = sSaveName.c_str( );
+    theGame.m_sFileName = sSaveName;
 
     int iSpeed = EnGetProfileInt( "Game", "Speed", NUM_SPEEDS / 2 );
     iSpeed     = __minmax( 0, NUM_SPEEDS - 1, iSpeed );
@@ -2011,11 +2012,11 @@ int CGame::LoadGame( CWnd* pPar, BOOL bReplace )
             EnableAllWindows( NULL, TRUE );
             return ( IDCANCEL );
         }
-        theGame.m_sFileName = dlg.GetPathName( );
+        theGame.m_sFileName = (LPCSTR)dlg.GetPathName( );
     }
 
     // Extract just the filename for the status message
-    std::string sFileTitle = (const char*)theGame.m_sFileName;
+    std::string sFileTitle = theGame.m_sFileName;
     size_t iSlash = sFileTitle.find_last_of( '\\' );
     if ( iSlash != std::string::npos ) sFileTitle = sFileTitle.substr( iSlash + 1 );
 
@@ -2041,8 +2042,8 @@ int CGame::LoadGame( CWnd* pPar, BOOL bReplace )
         theApp.m_pCreateGame->GetDlgStatus( )->SetMsg( IDS_LOAD_FILE );
 
         // game file - read into memory
-        std::string sSaveName = (LPCSTR)theGame.m_sFileName;
-        CFile   fil( m_sFileName, CFile::modeRead | CFile::shareExclusive | CFile::typeBinary );
+        std::string sSaveName = theGame.m_sFileName;
+        CFile   fil( m_sFileName.c_str(), CFile::modeRead | CFile::shareExclusive | CFile::typeBinary );
         int     iLen = fil.GetLength( );
         char*   pBuf = (char*)malloc( iLen );
         if ( pBuf == NULL )
@@ -2066,7 +2067,7 @@ int CGame::LoadGame( CWnd* pPar, BOOL bReplace )
         filMem.Detach( );
         CoDec::FreeBuf( pDeComp );
         filMem.Close( );
-        theGame.m_sFileName = sSaveName.c_str( );
+        theGame.m_sFileName = sSaveName;
         theGame.DecTry( );
     }
 
@@ -2453,14 +2454,14 @@ int CGame::SaveGame( CWnd* pPar )
     ASSERT( TestEverything( ) );
 
     // If SDL2 window is active and filename is pre-set, skip file dialog
-    if ( theApp.m_gameWindow && !m_sFileName.IsEmpty() )
+    if ( theApp.m_gameWindow && !m_sFileName.empty() )
     {
         // Filename already chosen by SDL2FileBrowser — proceed directly
     }
     else if ( theApp.m_gameWindow )
     {
         // Use SDL2 file browser
-        std::string defaultName = (const char*)m_sFileName;
+        std::string defaultName = m_sFileName;
         size_t lastSlash = defaultName.find_last_of("\\/");
         if (lastSlash != std::string::npos)
             defaultName = defaultName.substr(lastSlash + 1);
@@ -2483,10 +2484,10 @@ int CGame::SaveGame( CWnd* pPar )
         std::string sExt     = EnLoadStdString( IDS_SAVE_EXT );
 
         char const* pName;
-        if ( m_sFileName.IsEmpty( ) )
+        if ( m_sFileName.empty( ) )
             pName = "";
         else
-            pName = m_sFileName;
+            pName = m_sFileName.c_str();
 
         CFileDialog dlg( FALSE, sExt.c_str(), pName, OFN_HIDEREADONLY | OFN_OVERWRITEPROMPT,
                          sFilters.c_str(), pPar );
@@ -2498,13 +2499,13 @@ int CGame::SaveGame( CWnd* pPar )
             return ( iRtn );
         }
 
-        m_sFileName = dlg.GetPathName( );
+        m_sFileName = (LPCSTR)dlg.GetPathName( );
     }
 
     // put up a message to say we are saving
     CDlgSaveMsg dlgMsg( pPar );
     dlgMsg.m_sText = strPrintf( EnLoadStdString( IDS_SAVE_NAME ).c_str(),
-                                (const char*)m_sFileName );
+                                m_sFileName.c_str() );
     if ( IsNetGame( ) )
         dlgMsg.m_sStat = EnLoadStdString( IDS_SAVE_REMOTE );
     else
@@ -2589,7 +2590,7 @@ int CGame::SaveGame( CWnd* pPar )
         dlgMsg.UpdateData( FALSE );
 
         // write it to disk
-        CFile filDest( m_sFileName, CFile::modeCreate | CFile::modeWrite | CFile::shareExclusive | CFile::typeBinary );
+        CFile filDest( m_sFileName.c_str(), CFile::modeCreate | CFile::modeWrite | CFile::shareExclusive | CFile::typeBinary );
         filDest.Write( pComp, iCompLen );
         CoDec::FreeBuf( pComp );
         filDest.Close( );
@@ -2605,7 +2606,7 @@ int CGame::SaveGame( CWnd* pPar )
     catch ( ... )
     {
         std::string sMsg = strPrintf( EnLoadStdString( IDS_CANT_SAVE ).c_str(),
-                                      (const char*)m_sFileName );
+                                      m_sFileName.c_str() );
         EnMessageBox( sMsg.c_str() );
 
         theGame.SetShouldOperate(TRUE);

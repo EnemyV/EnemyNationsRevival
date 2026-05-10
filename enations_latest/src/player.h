@@ -824,7 +824,7 @@ class CGame : public CObject
     mempool_large m_memPoolLarge;
     mempool_small m_memPoolSmall;
 
-    CString m_sFileName;    // file name of the game (if loaded or saved)
+    std::string m_sFileName;    // file name of the game (if loaded or saved)
     DWORD   m_dwFinalRand;  // final seed at end of init
 
     // what the game was started at (for loading descriptions)
