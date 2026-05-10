@@ -490,7 +490,7 @@ static void OnMsgSessionClose( )
         {
             bTold = TRUE;
             std::string sMsg = strPrintf( EnLoadStdString( IDS_SAVE_CLOSE ).c_str(),
-                                          (const char*)theGame.m_sGameName );
+                                          theGame.m_sGameName.c_str() );
 
             if ( EnMessageBox( sMsg.c_str(), MB_YESNO | MB_ICONQUESTION ) == IDYES )
                 theGame.SaveGame( NULL );
@@ -3493,7 +3493,7 @@ CNetPublish* CNetPublish::Alloc( CGame* pGame )
         sName = pGame->GetMe( )->GetName( );
 
     int iLen = sizeof( CNetPublish ) + 2 + (int)sName.size( ) + (int)pGame->m_sPwJoin.length( ) +
-               pGame->m_sGameName.GetLength( ) + pGame->m_sGameDesc.GetLength( );
+               (int)pGame->m_sGameName.length( ) + (int)pGame->m_sGameDesc.length( );
     CNetPublish* pMsg     = (CNetPublish*)new char[__max( 516, iLen )];
     pMsg->m_iLen          = iLen;
     pMsg->m_iNumOpponents = pGame->GetAi( ).GetCount( );
@@ -3519,9 +3519,9 @@ CNetPublish* CNetPublish::Alloc( CGame* pGame )
     char* pBuf = pMsg->m_sPlyrName + strlen( pMsg->m_sPlyrName ) + 1;
     strcpy( pBuf, pGame->m_sPwJoin.c_str() );
     pBuf = pBuf + strlen( pBuf ) + 1;
-    strcpy( pBuf, pGame->m_sGameName );
+    strcpy( pBuf, pGame->m_sGameName.c_str() );
     pBuf = pBuf + strlen( pBuf ) + 1;
-    strcpy( pBuf, pGame->m_sGameDesc );
+    strcpy( pBuf, pGame->m_sGameDesc.c_str() );
 
     return ( pMsg );
 }

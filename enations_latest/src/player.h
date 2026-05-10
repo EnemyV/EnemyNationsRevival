@@ -831,8 +831,8 @@ class CGame : public CObject
     LONG    m_iAi;        // AI intelligence
     LONG    m_iSize;      // world size
     LONG    m_iPos;       // initial position
-    CString m_sGameName;  // for create_net
-    CString m_sGameDesc;
+    std::string m_sGameName;  // for create_net
+    std::string m_sGameDesc;
 
     CHPRouter* m_pHpRtr;
 
