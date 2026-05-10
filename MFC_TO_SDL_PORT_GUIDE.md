@@ -480,7 +480,24 @@ If the compat header is missing a method that the game uses, add it to `windward
 
 This is the gating work. Approach:
 
-1. **Catalog the save format.** `theGame.Serialize` is the entry point in `player.cpp:~2680-2880`. It writes raw binary via `CFile::Write` / `CArchive::operator<<`. The format is NOT XML or JSON — it's raw `sizeof(struct)` writes plus length-prefixed strings.
+**Footprint:** 45 `CFile`, 119 `CArchive`, 71 `CFileException`, 6 `CMemFile` references across 42 files. Most live in `player.cpp` (CGame::Serialize), `caisavld.cpp` (AI save/load), `racedata.cpp` (CRaceDef::Serialize), `minerals.cpp`, `research.cpp`, `terrain.cpp`. Plus a handful of file-existence checks in `lastplnt.cpp`, `cailog.cpp`, etc.
+
+**Two distinct usage classes:**
+
+1. **Plain file I/O** — `CFile::GetStatus`, file-exists checks, raw `Read/Write(buf, len)`. These are easy to swap for Win32 (`GetFileAttributesExA`, `CreateFileA`) or `<filesystem>`. Pattern for size check (already applied in `lastplnt.cpp:861`):
+   ```cpp
+   WIN32_FILE_ATTRIBUTE_DATA wfad;
+   if ( ::GetFileAttributesExA( name, GetFileExInfoStandard, &wfad ) ) {
+       ULARGE_INTEGER size;
+       size.HighPart = wfad.nFileSizeHigh;
+       size.LowPart  = wfad.nFileSizeLow;
+       // size.QuadPart now has the file size in bytes
+   }
+   ```
+
+2. **CArchive serialization** — `Serialize(CArchive& ar)` methods + `ar << field`, `ar >> field` chains. This is the save-file format. Can NOT be replaced piecemeal because the binary format must remain stable for save-file compatibility.
+
+**Catalog the save format.** `theGame.Serialize` is the entry point in `player.cpp:~2680-2880`. It writes raw binary via `CFile::Write` / `CArchive::operator<<`. The format is NOT XML or JSON — it's raw `sizeof(struct)` writes plus length-prefixed strings.
 
 2. **Replace `CFile` with `std::fstream` (binary mode).** API:
    ```cpp
