@@ -858,11 +858,18 @@ BOOL CConquerApp::InitInstance( )
         }
     } while ( bErr );
 
-    // if .dat < 400M then it's shareware (anti-pirate)
-    CFileStatus fs;
-    CFile::GetStatus( theDataFile.GetName( ), fs );
-    if ( fs.m_size < 400000000 )
-        m_bShareware = TRUE;
+    // if .dat < 400M then it's shareware (anti-pirate) — Phase 5c: Win32 file-size check
+    {
+        WIN32_FILE_ATTRIBUTE_DATA wfad;
+        if ( ::GetFileAttributesExA( theDataFile.GetName(), GetFileExInfoStandard, &wfad ) )
+        {
+            ULARGE_INTEGER size;
+            size.HighPart = wfad.nFileSizeHigh;
+            size.LowPart  = wfad.nFileSizeLow;
+            if ( size.QuadPart < 400000000ULL )
+                m_bShareware = TRUE;
+        }
+    }
 
     // warn on 16-bit
     if ( !m_bUse8Bit )
