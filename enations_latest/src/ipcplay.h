@@ -38,7 +38,7 @@ class CIPCPlayer : public CObject
 	DECLARE_SERIAL( CIPCPlayer );
 public:
 	WORD m_wID;		// id of player
-	CString m_sName;// name of player
+	std::string m_sName;// name of player
 	WORD m_wStatus;	// bitmap of current status
 	CPlayer * m_pPlyr;	// player
 	CChatWnd *	m_pwndChat;	// chat window to this person
