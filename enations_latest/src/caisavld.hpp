@@ -11,6 +11,8 @@
 #include "CAIGoal.hpp"
 #include "CAITask.hpp"
 
+#include <string>
+
 #ifndef __CAISAVLD_HPP__
 #define __CAISAVLD_HPP__
 
@@ -42,15 +44,15 @@ public:
 
     CWordArray *LoadRCIP( int iSmart );
 	CWordArray *LoadIG( int iSmart );
-	CWordArray *LoadArrays( int iSmart, CString& sHead );
+	CWordArray *LoadArrays( int iSmart, const std::string& sHead );
     CWordArray *LoadData( CFile *pFile );
     void SaveRCIP( int iSmart, CWordArray *pwaData );
 	void SaveIG( int iSmart, CWordArray *pwaData );
-	void SaveArrays( int iSmart, CWordArray *pwaData, CString& sHead );
+	void SaveArrays( int iSmart, CWordArray *pwaData, const std::string& sHead );
     void DumpData( CFile *pFile, CWordArray *pwaData );
-    
-    CFile* OpenForLoad( const CString& rFileName );
-    CFile* OpenForDump( const CString& rFileName );
+
+    CFile* OpenForLoad( const std::string& rFileName );
+    CFile* OpenForDump( const std::string& rFileName );
 };
 
 /*
