@@ -364,10 +364,10 @@ void CConquerApp::Log( char const* pText )
         iLen--;
     }
 
-    m_pLogFile->Write( pText, iLen );
-    m_pLogFile->Write( "\r\n", 2 );
+    fwrite( pText, 1, iLen, m_pLogFile );
+    fwrite( "\r\n", 1, 2, m_pLogFile );
 
-    m_pLogFile->Flush( );
+    fflush( m_pLogFile );
 }
 
 BOOL CConquerApp::InitInstance( )
@@ -391,15 +391,9 @@ BOOL CConquerApp::InitInstance( )
     if ( EnGetProfileInt( "Advanced", "Log", 0 ) )
     {
         EnMessageBox( IDS_EN_LOGGING, MB_OK | MB_ICONINFORMATION );
-        m_pLogFile    = new CFile( );
         std::string sName = EnGetProfileStdString( "Advanced", "LogName", GameLogFile );
-        if ( m_pLogFile->Open( sName.c_str(), CFile::modeCreate | CFile::modeWrite | CFile::shareDenyWrite ) == 0 )
-        {
-            m_pLogFile->Close( );
-            delete m_pLogFile;
-            m_pLogFile = NULL;
-        }
-        else
+        m_pLogFile = fopen( sName.c_str(), "wb" );  // Phase 4c prep — replaces CFile
+        if ( m_pLogFile != NULL )
         {
             time_t t;
             time( &t );
@@ -1783,8 +1777,7 @@ int CConquerApp::ExitInstance( )
 
     if ( m_pLogFile != NULL )
     {
-        m_pLogFile->Close( );
-        delete m_pLogFile;
+        fclose( m_pLogFile );
         m_pLogFile = NULL;
     }
 

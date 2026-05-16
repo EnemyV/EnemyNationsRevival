@@ -376,7 +376,7 @@ class CConquerApp : public CWinApp
     CColorFormat m_MapClrFmt;
     CColorFormat m_OtherClrFmt;
 
-    CFile* m_pLogFile;  // for tracking loading
+    FILE* m_pLogFile;  // for tracking loading (Phase 4c prep — was CFile*)
 
     int FlatDimen( ) const { return ( m_iBtnBevel ); }
     int BevelDimen( ) const { return ( m_iBtnBevel ); }
