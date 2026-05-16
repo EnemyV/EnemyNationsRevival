@@ -17,7 +17,9 @@
 //
 ////////////////////////////////////////////////////////////////////////////
 
-class CChatWnd;
+// CChatWnd type forward decl no longer needed — chat cluster excluded
+// from build (Phase 2d-cont, 2026-05-11). m_pwndChat retained as void*
+// to preserve struct layout; never set, only NULL-initialized.
 
 
 //
@@ -41,7 +43,7 @@ public:
 	std::string m_sName;// name of player
 	WORD m_wStatus;	// bitmap of current status
 	CPlayer * m_pPlyr;	// player
-	CChatWnd *	m_pwndChat;	// chat window to this person
+	void *	m_pwndChat;	// chat window to this person — always NULL post-Phase-2d
 
 	CIPCPlayer() { m_pwndChat = NULL; };
 	//CIPCPlayer( WORD wID );

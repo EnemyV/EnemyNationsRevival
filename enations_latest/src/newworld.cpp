@@ -579,8 +579,7 @@ void CConquerApp::CreateNewWorld(unsigned uRand, AIinit *pAiData, int iSide, int
             };
             hideWnd( m_wndVehicles );
             hideWnd( m_wndBldgs );
-            if ( m_wndChat.m_hWnd )
-                SDL2MFCPanel::Attach( &m_wndChat, "chat", 25 );
+            // m_wndChat is now ChatStub (Phase 2d-cont) — never has an HWND, never attaches.
 
             m_gameWindow->Raise();
         }
@@ -894,7 +893,8 @@ void CConquerApp::LetsGo() {
         // CDlgResearch removed (Phase 2d) — SDL2ResearchDialog is modal,
         // launched from the toolbar Research button on demand.
 
-        CWnd *pWndChat = (theGame.GetAll().GetCount() > theGame.GetAi().GetCount() + 1) ? &m_wndChat : NULL;
+        // m_wndChat is now ChatStub (Phase 2d-cont) — never a CWnd, always NULL.
+        CWnd *pWndChat = NULL;
         CWnd *pWndArea = theAreaList.GetTop();
         _OrderWin(&m_wndVehicles, NULL);
         _OrderWin(&m_wndBldgs, &m_wndVehicles);

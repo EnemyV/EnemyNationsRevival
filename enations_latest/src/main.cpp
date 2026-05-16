@@ -280,7 +280,7 @@ void CWndMain::OnDisplayChange2 ()
 
 	// these move & size
 	MoveSizeToNew ( &theApp.m_wndWorld, xOld, yOld );
-	MoveSizeToNew ( &theApp.m_wndChat, xOld, yOld );
+	// m_wndChat skipped (Phase 2d-cont) — ChatStub has no CWnd surface, m_hWnd always NULL
 	MoveSizeToNew ( &theApp.m_wndBldgs, xOld, yOld );
 	MoveSizeToNew ( &theApp.m_wndVehicles, xOld, yOld );
 

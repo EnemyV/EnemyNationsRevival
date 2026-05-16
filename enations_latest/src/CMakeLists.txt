@@ -27,7 +27,7 @@ set(enations_sources
         caiunit.cpp
         CdLoc.cpp
         # chat.cpp excluded (Phase 2d) — CDlgChatAll replaced by SDL2ChatWindow
-        chatbar.cpp
+        # chatbar.cpp excluded (Phase 2d-cont, 2026-05-11) — CChatBar dead
         chproute.cpp
 #        citizen.cpp # looks unused, i think an old ai or something?
         cpathmap.cpp
@@ -41,12 +41,12 @@ set(enations_sources
         dxfer.cpp
         event.cpp
         icons.cpp
-        ipcchat.cpp
-        ipccomm.cpp
+        # ipcchat.cpp excluded (Phase 2d-cont) — CChatWnd dead at runtime
+        # ipccomm.cpp excluded (Phase 2d-cont) — CWndComm replaced by ChatStub in ipccomm.h
         ipcmsg.cpp
         ipcplay.cpp
-        ipcread.cpp
-        ipcsend.cpp
+        # ipcread.cpp excluded (Phase 2d-cont) — CWndMailRead dead at runtime
+        # ipcsend.cpp excluded (Phase 2d-cont) — CDlgCompose dead at runtime
         join.cpp
         lastplnt.cpp
         lastplnt.rc
