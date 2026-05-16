@@ -55,8 +55,10 @@ extern "C"
 
 #define WM_KICKIDLE 0x036A  // from afxpriv.h
 
-// for ::Run
-BOOL AFXAPI AfxOleGetUserCtrl( );
+// AfxOleGetUserCtrl removed (Phase 4c prep, 2026-05-11) — Enemy Nations
+// doesn't use OLE, so /Embedding /Automation aren't possible. The
+// original guard `if (m_pMainWnd == NULL && AfxOleGetUserCtrl())` is now
+// just `if (m_pMainWnd == NULL)`.
 
 #ifdef _CHEAT
 extern BOOL _bShowRate;
@@ -78,9 +80,10 @@ int CConquerApp::Run( )
 
     ASSERT_VALID( this );
 
-    if ( m_pMainWnd == NULL && AfxOleGetUserCtrl( ) )
+    if ( m_pMainWnd == NULL )
     {
-        // Not launched /Embedding or /Automation, but has no main window!
+        // No main window: quit. (Phase 4c prep — original guard included
+        // an AfxOleGetUserCtrl() check that's always TRUE for this app.)
         TRACE0( "Warning: m_pMainWnd is NULL in CWinApp::Run - quitting application.\n" );
         AfxPostQuitMessage( 0 );
     }
