@@ -48,6 +48,8 @@ The current binary still depends on MFC because Phase 5 isn't fully done.
 | **Phase 4b — LoadString shim** | DONE | `EnLoadStdString` wraps `Win32 LoadStringA`; CString shim deleted |
 | **Phase 5 — CString purge** | DONE for live code (0 refs) | 21 remaining refs are: comments (15), SaveCompat.h infrastructure (6). |
 | **Phase 2d-cont — Chat cluster structural exclusion** | DONE (2026-05-11) | ipcchat/ipccomm/ipcread/ipcsend/chatbar .cpp dropped from build. ipccomm.h replaced with minimal non-MFC stub CWndComm. CIPCPlayer::m_pwndChat retyped to void*. |
+| **Phase 4c prep — small MFC API removals** | DONE (2026-05-11) | AfxBeginThread → _beginthreadex (sprtinit.cpp); AfxOleGetUserCtrl removed (mainloop.cpp); m_pLogFile CFile* → FILE* (lastplnt.cpp). |
+| **Phase 1 wind22 recon** | DONE (2026-05-11) | Hierarchy + surface mapped; 2-3 day implementation plan in [phase1_wind22_strip_plan.md](file:///C:/Users/tyboy/.claude/projects/d--Enemy-Nations-src/memory/phase1_wind22_strip_plan.md). CDIBWnd at wind22/include/dibwnd.h is the non-MFC template. |
 | **SDL2 dialog toolkit** | DONE | SDL2Dialog, SDL2Button, SDL2Label, SDL2EditBox, SDL2Listbox, SDL2RadioGroup, SDL2Checkbox, SDL2Slider, SDL2Image, SDL2GroupBox |
 | **SDL2 game window infrastructure** | DONE | GameWindow, Compositor, Panels, RenderingAdapter, MainMenu, Toolbar |
 | **SDL2 video player** | DONE | Replaces `CWndMovie` (Indeo .avi → MPEG-1 .mpg via pl_mpeg) |
