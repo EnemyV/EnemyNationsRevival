@@ -539,7 +539,7 @@ BOOL CConquerApp::InitInstance( )
     wc.hIcon         = LoadIcon( IDI_MAIN );
     wc.hCursor       = LoadStandardCursor( IDC_ARROW );
     wc.lpszClassName = m_sClsName.c_str();
-    if ( !AfxRegisterClass( &wc ) ) {
+    if ( !::RegisterClass( &wc ) ) {  // Phase 4c prep: was AfxRegisterClass
         return FALSE;
     }
 
