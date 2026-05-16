@@ -311,6 +311,12 @@ CConquerApp::~CConquerApp( )
     ptheRaces = NULL;
 
     CGlobalSubClass::UnSubClass( );
+
+    // Phase 4c prep: HFONT cleanup (was automatic via CFont dtor)
+    if ( m_Fnt )     { ::DeleteObject( m_Fnt );     m_Fnt = NULL; }
+    if ( m_FntRD )   { ::DeleteObject( m_FntRD );   m_FntRD = NULL; }
+    if ( m_FntDesc ) { ::DeleteObject( m_FntDesc ); m_FntDesc = NULL; }
+    if ( m_FntCost ) { ::DeleteObject( m_FntCost ); m_FntCost = NULL; }
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -1082,7 +1088,7 @@ BOOL CConquerApp::InitInstance( )
         lf.lfHeight   = EnGetProfileInt( "StatusBar", "CharHeight", 16 );
         std::string sFont = EnGetProfileStdString( "StatusBar", "Font", "Newtown Italic" );
         strncpy( lf.lfFaceName, sFont.c_str(), LF_FACESIZE - 1 );
-        m_Fnt.CreateFontIndirect( &lf );
+        m_Fnt = ::CreateFontIndirect( &lf );
 
         TEXTMETRIC tm;
         dc.GetTextMetrics( &tm );
@@ -1098,21 +1104,21 @@ BOOL CConquerApp::InitInstance( )
         memset( &lf, 0, sizeof( lf ) );
         lf.lfHeight = iHt;
         strncpy( lf.lfFaceName, sFont.c_str(), LF_FACESIZE - 1 );
-        m_FntRD.CreateFontIndirect( &lf );
+        m_FntRD = ::CreateFontIndirect( &lf );
 
         iHt   = EnGetProfileInt( "StatusBar", "DescHeight", 18 );
         sFont = EnGetProfileStdString( "StatusBar", "DescFont", "Newtown Italic" );
         memset( &lf, 0, sizeof( lf ) );
         lf.lfHeight = iHt;
         strncpy( lf.lfFaceName, sFont.c_str(), LF_FACESIZE - 1 );
-        m_FntDesc.CreateFontIndirect( &lf );
+        m_FntDesc = ::CreateFontIndirect( &lf );
 
         iHt   = EnGetProfileInt( "StatusBar", "CostHeight", 11 );
         sFont = EnGetProfileStdString( "StatusBar", "CostFont", "Lucida Console" );
         memset( &lf, 0, sizeof( lf ) );
         lf.lfHeight = iHt;
         strncpy( lf.lfFaceName, sFont.c_str(), LF_FACESIZE - 1 );
-        m_FntCost.CreateFontIndirect( &lf );
+        m_FntCost = ::CreateFontIndirect( &lf );
         Log( "fonts Created" );
 
         m_iRow3 = m_iScrnY - TOOLBAR_HT;

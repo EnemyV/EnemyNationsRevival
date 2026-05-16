@@ -5252,7 +5252,7 @@ void CWndInfo::OnPaint( )
     }
     thePal.Paint( pDc->m_hDC );
     pDc->SetBkMode( TRANSPARENT );
-    CFont* pOldFont = pDc->SelectObject( &theApp.TextFont( ) );
+    HGDIOBJ pOldFont = ::SelectObject( pDc->m_hDC, theApp.TextFont( ) );  // Phase 4c prep
 
     // draw the name
     CDIB* pdibHorz = theBitmaps.GetByIndex( DIB_BORDER_HORZ );
@@ -5381,7 +5381,7 @@ void CWndInfo::OnPaint( )
     // paint it
     m_pdib->BitBlt( dc.m_hDC, m_pdib->GetRect( ), CPoint( 0, 0 ) );
 
-    pDc->SelectObject( pOldFont );
+    ::SelectObject( pDc->m_hDC, pOldFont );  // Phase 4c prep
     thePal.EndPaint( pDc->m_hDC );
     if ( m_pdib->IsBitmapSelected( ) )
         m_pdib->ReleaseDC( );

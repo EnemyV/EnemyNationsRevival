@@ -288,7 +288,7 @@ void CWndListUnits::OnDrawItem(int, LPDRAWITEMSTRUCT pDis) {
         }
         thePal.Paint(pDc->m_hDC);
         pDc->SetBkMode(TRANSPARENT);
-        CFont *pOldFont = pDc->SelectObject(&theApp.TextFont());
+        HGDIOBJ pOldFontTop = ::SelectObject(pDc->m_hDC, theApp.TextFont());  // Phase 4c prep
 
         std::string sText = pUnit->GetData()->GetDesc();
         // put dest/location if dest is a building
@@ -345,7 +345,7 @@ void CWndListUnits::OnDrawItem(int, LPDRAWITEMSTRUCT pDis) {
         rect.bottom = 60;
         _UnitShowStatus(FALSE, pUnit, pDc, rect, m_pDibBack, CPoint(0, 0));
 
-        pDc->SelectObject(pOldFont);
+        ::SelectObject(pDc->m_hDC, pOldFontTop);  // Phase 4c prep
         thePal.EndPaint(pDc->m_hDC);
     }
 
@@ -763,11 +763,11 @@ void CUnitButton::DrawItem(LPDRAWITEMSTRUCT pDis) {
 
         pDc->SetBkMode(TRANSPARENT);
         pDc->SetTextColor(CLR_UNIT_BUILD);
-        CFont *pOldFont;
+        HGDIOBJ pOldFont;
         if (m_pOvrlyDib != NULL)
-            pOldFont = pDc->SelectObject(&theApp.CostFont());
+            pOldFont = ::SelectObject(pDc->m_hDC, theApp.CostFont());  // Phase 4c prep
         else
-            pOldFont = pDc->SelectObject(&theApp.TextFont());
+            pOldFont = ::SelectObject(pDc->m_hDC, theApp.TextFont());
 
         pDc->SetTextColor(RGB (0, 0, 0));
         int iHt = rect.Height();
@@ -784,7 +784,7 @@ void CUnitButton::DrawItem(LPDRAWITEMSTRUCT pDis) {
         pDc->SetTextColor(RGB (255, 255, 255));
         pDc->DrawText(sText, -1, &rect, DT_CENTER | DT_NOPREFIX | DT_WORDBREAK | DT_NOPREFIX);
 
-        pDc->SelectObject(pOldFont);
+        ::SelectObject(pDc->m_hDC, pOldFont);  // Phase 4c prep
     }
 
     // BLT to the screen DC

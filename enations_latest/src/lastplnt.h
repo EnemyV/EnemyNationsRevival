@@ -280,10 +280,10 @@ class CConquerApp : public CWinApp
 
     int    TextHt( ) const { return ( m_iCharHt ); }
     int    TextWid( ) const { return ( m_iCharWid ); }
-    CFont& TextFont( ) { return ( m_Fnt ); }
-    CFont& RDFont( ) { return ( m_FntRD ); }      // R&D desc
-    CFont& DescFont( ) { return ( m_FntDesc ); }  // bldg/veh desc
-    CFont& CostFont( ) { return ( m_FntCost ); }  // bldg/veh cost win
+    HFONT TextFont( ) { return ( m_Fnt ); }       // Phase 4c prep: was CFont&
+    HFONT RDFont( ) { return ( m_FntRD ); }       // R&D desc
+    HFONT DescFont( ) { return ( m_FntDesc ); }   // bldg/veh desc
+    HFONT CostFont( ) { return ( m_FntCost ); }   // bldg/veh cost win
 
                                                   // BUGBUG	int		ListHt () const				{return (m_iUnitListHt);}
 
@@ -415,10 +415,10 @@ class CConquerApp : public CWinApp
     int   m_iCharHt;         // standard font we use
     int   m_iCharWid;
     int   m_iBtnBevel;
-    CFont m_Fnt;                         // font used for everything else
-    CFont m_FntRD;                       // cost font (descriptions in dialogs)
-    CFont m_FntDesc;                     // cost font (descriptions in dialogs)
-    CFont m_FntCost;                     // cost font (descriptions in dialogs)
+    HFONT m_Fnt = NULL;                  // Phase 4c prep: was CFont
+    HFONT m_FntRD = NULL;                // cost font (descriptions in dialogs)
+    HFONT m_FntDesc = NULL;              // cost font (descriptions in dialogs)
+    HFONT m_FntCost = NULL;              // cost font (descriptions in dialogs)
 
     BOOL                     m_bInGame;  // we're in a game
     BOOL                     m_bTimeLimit;

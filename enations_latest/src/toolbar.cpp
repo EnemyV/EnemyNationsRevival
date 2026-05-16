@@ -428,7 +428,7 @@ void CWndBar::SetDebugText( int iLine, const char* psText )
 
     // draw it
     CClientDC dc( &( m_wndText[iLine] ) );
-    CFont*    pOld = dc.SelectObject( &theApp.TextFont( ) );
+    HGDIOBJ   pOld = ::SelectObject( dc.m_hDC, theApp.TextFont( ) );  // Phase 4c prep
     dc.SetBkColor( RGB( 0, 0, 0 ) );
     dc.SetTextColor( RGB( 255, 255, 255 ) );
     dc.SetBkMode( OPAQUE );
@@ -437,7 +437,7 @@ void CWndBar::SetDebugText( int iLine, const char* psText )
     rect.right -= 6;
 
     dc.DrawText( psText, -1, &rect, DT_RIGHT | DT_SINGLELINE | DT_VCENTER );
-    dc.SelectObject( pOld );
+    ::SelectObject( dc.m_hDC, pOld );
 }
 #endif
 
