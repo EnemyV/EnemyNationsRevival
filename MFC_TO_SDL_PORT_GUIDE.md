@@ -46,7 +46,7 @@ The current binary still depends on MFC because Phase 5 isn't fully done.
 | **Phase 2 — MFC dialog/window removal** | ~95% (live runtime: 100%) | 19 of 25 classes removed/excluded; remaining 5 are dead at runtime |
 | **Phase 4a — Registry shim** | DONE | `EnGetProfileInt/EnWriteProfileInt` replace `theApp.GetProfileInt/WriteProfileInt` |
 | **Phase 4b — LoadString shim** | DONE | `EnLoadStdString` wraps `Win32 LoadStringA`; CString shim deleted |
-| **Phase 5a — CString purge** | live code: 100%, total: ~70 refs left | All remaining are CArchive serialize / dead chat / `#if 0` / comments |
+| **Phase 5 — CString purge** | DONE for live code (0 refs) | 42 remaining refs are: dead-but-built chat cluster (21), comments (15), SaveCompat.h infrastructure (6). None block Phase 1g. |
 | **SDL2 dialog toolkit** | DONE | SDL2Dialog, SDL2Button, SDL2Label, SDL2EditBox, SDL2Listbox, SDL2RadioGroup, SDL2Checkbox, SDL2Slider, SDL2Image, SDL2GroupBox |
 | **SDL2 game window infrastructure** | DONE | GameWindow, Compositor, Panels, RenderingAdapter, MainMenu, Toolbar |
 | **SDL2 video player** | DONE | Replaces `CWndMovie` (Indeo .avi → MPEG-1 .mpg via pl_mpeg) |
@@ -552,17 +552,43 @@ Already migrated this way (session 2026-05-10):
 
 ### Phase 4c — CWinApp removal
 
-`CConquerApp : public CWinApp` is the last MFC inheritance in the live runtime. Removing it requires:
+`CConquerApp : public CWinApp` is the last MFC inheritance in the live runtime. Phase 5 (CString purge) is now structurally complete, so 4c is the next major task.
 
-1. **WinMain implementation.** Today MFC's `_tWinMain` calls `CConquerApp::InitInstance` / `Run` / `ExitInstance`. Replace with a hand-written `int WINAPI WinMain` that initializes SDL, runs the SDL event loop, calls into game code.
+**Exact CWinApp surface in use** (reconnaissance done 2026-05-11, 37 callsites across 12 files):
 
-2. **Accelerator handling.** `m_hAccel` + `PreTranslateMessage` route F1-F12 / arrow keys / B / O / R shortcuts. Translate to SDL keyboard events.
+| Inherited member/method | Callsites | Replacement |
+|---|---|---|
+| `m_pMainWnd` (CWnd*) | 11 reads, 2 writes (lastplnt:1153, main:629) | Own as `CWnd* m_pMainWnd = nullptr` member; or replace with HWND once CWnd disappears |
+| `m_pszAppName` (LPTSTR) | 1 write (lastplnt:380) | `std::string m_sAppName` member (already exists alongside) |
+| `m_hInstance` (HINSTANCE) | 4 reads (lastplnt, area, world) | Own as `HINSTANCE m_hInstance` member; set from WinMain |
+| `m_msgCur` (MSG) | 4 reads in mainloop.cpp | Own as `MSG m_msgCur` member |
+| `m_hAccel` (HACCEL) | already an owned member | No change |
+| `SetRegistryKey()` | 1 call (lastplnt:382) | No-op (EnSettings already handles registry path) |
+| `AfxGetInstanceHandle()` | 3 calls (lastplnt) | `theApp.m_hInstance` |
+| `AfxOleGetUserCtrl()` | 1 call (mainloop:81) | Return TRUE (no OLE in this game) |
+| `AfxBeginThread()` | 1 call (sprtinit:2168) | `std::thread` or `_beginthreadex` |
+| `InitInstance/ExitInstance/Run/PreTranslateMessage` virtuals | overrides | Become plain methods called by hand-written WinMain |
+| `BEGIN_MESSAGE_MAP(CConquerApp, CWinApp)` | 1 (lastplnt:266) | Empty map, delete the macros |
 
-3. **`m_pMainWnd` pointer.** Used everywhere as the parent for MFC dialogs. With dialogs gone, this can be NULL — but check for stragglers.
+**Implementation steps** (do in this order with a build check after each):
 
-4. **`AfxGetApp()` callers.** A few wind22 functions call this. Provide a stub or pass the equivalent via a config struct.
+1. **Add owned shadow members alongside the inherited ones.** While CWinApp inheritance is still in place, add a parallel `m_hInstanceOwned`, `m_msgCurOwned`, etc. Don't switch callsites yet. (Build sanity.)
 
-5. **`AfxRegisterClass` / `AfxRegisterWndClass`.** Replace with `RegisterClassEx` directly.
+2. **Change `class CConquerApp : public CWinApp` to `class CConquerApp : public CWinAppStub`**, where CWinAppStub is a new header you provide. CWinAppStub declares the surface above as members — `CWnd* m_pMainWnd; HINSTANCE m_hInstance; MSG m_msgCur; LPTSTR m_pszAppName;` plus stub methods. No inheritance from MFC. Keep the BEGIN_MESSAGE_MAP path working by also defining empty stubs for the macros (or removing the macro invocation entirely).
+
+3. **Write WinMain in a new file** `WinMain.cpp`. Calls `theApp.m_hInstance = hInstance; theApp.InitInstance(); theApp.Run(); theApp.ExitInstance();`. Drop the `CMAKE_MFC_FLAG`'s auto-WinMain.
+
+4. **Replace `AfxBeginThread` callsite** in `sprtinit.cpp` with std::thread.
+
+5. **Update the 11 `m_pMainWnd` reads** to handle nullptr gracefully (some already do via HWND checks).
+
+6. **Verify enations.exe import table** — `dumpbin /imports Release\enations.exe | findstr mfc` should return nothing after this AND Phase 3 (CWnd removal in gameplay windows) are done.
+
+**Blockers BEFORE Phase 4c can fully land:**
+- The chat cluster's `CWndComm m_wndChat` member in CConquerApp is CWnd-derived; CWnd is gated on MFC. The chat cluster must be excluded structurally first (~60 stub call sites — see Phase 2d-cont).
+- 8 other CWnd-derived member windows (`m_wndWorld`, `m_wndBar`, `m_wndBldgs`, `m_wndVehicles`, `m_wndMain`, `m_wndCredits`, `m_wndCutScene`) are part of Phase 3.
+
+**Realistic estimate:** 3-5 focused sessions. Phase 4c on its own is one session; the prerequisite chat exclusion + Phase 3 CWnd removal in gameplay windows are the bigger chunks.
 
 ### Phase 1 — Strip MFC from wind22
 
