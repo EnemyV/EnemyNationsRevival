@@ -46,7 +46,8 @@ The current binary still depends on MFC because Phase 5 isn't fully done.
 | **Phase 2 — MFC dialog/window removal** | ~95% (live runtime: 100%) | 19 of 25 classes removed/excluded; remaining 5 are dead at runtime |
 | **Phase 4a — Registry shim** | DONE | `EnGetProfileInt/EnWriteProfileInt` replace `theApp.GetProfileInt/WriteProfileInt` |
 | **Phase 4b — LoadString shim** | DONE | `EnLoadStdString` wraps `Win32 LoadStringA`; CString shim deleted |
-| **Phase 5 — CString purge** | DONE for live code (0 refs) | 42 remaining refs are: dead-but-built chat cluster (21), comments (15), SaveCompat.h infrastructure (6). None block Phase 1g. |
+| **Phase 5 — CString purge** | DONE for live code (0 refs) | 21 remaining refs are: comments (15), SaveCompat.h infrastructure (6). |
+| **Phase 2d-cont — Chat cluster structural exclusion** | DONE (2026-05-11) | ipcchat/ipccomm/ipcread/ipcsend/chatbar .cpp dropped from build. ipccomm.h replaced with minimal non-MFC stub CWndComm. CIPCPlayer::m_pwndChat retyped to void*. |
 | **SDL2 dialog toolkit** | DONE | SDL2Dialog, SDL2Button, SDL2Label, SDL2EditBox, SDL2Listbox, SDL2RadioGroup, SDL2Checkbox, SDL2Slider, SDL2Image, SDL2GroupBox |
 | **SDL2 game window infrastructure** | DONE | GameWindow, Compositor, Panels, RenderingAdapter, MainMenu, Toolbar |
 | **SDL2 video player** | DONE | Replaces `CWndMovie` (Indeo .avi → MPEG-1 .mpg via pl_mpeg) |
@@ -62,15 +63,14 @@ CDlgVer, CDlgLoadTruck, CDlgTestSounds, CDlgReg, CDlgRandNum, CDlgStats, CDlgCdL
 ## What is left
 
 ### Major work
-- **Phase 5c — CFile/CArchive replacement.** ~21 CString refs and the entire save-file format depend on `CFile` + `CArchive` serialization. This is the gating work for Phase 5a completion and for save-file portability. Files: `caisavld.cpp` (13 refs), `racedata.cpp`, `player.cpp` Serialize, `sprite.cpp`.
-- **Phase 4c — `CConquerApp : CWinApp` removal.** The app singleton still inherits CWinApp. Removing it requires reimplementing WinMain, accelerator handling, message-loop entry. ~30 references to `m_pMainWnd`, `m_hAccel`, `InitInstance`, `ExitInstance`, `PreTranslateMessage`.
-- **Phase 3 — Event loop inversion.** SDL is the input source today, but `PeekMessage` is still pumped for Win32 housekeeping. `WM_VPNOTIFY` (VDMPLAY net), Windows timers (109, 99, 119), `::SetCursor` calls all need replacement.
-- **Phase 1 — Strip MFC from wind22.** This is *gated by Phase 5*. The wind22 library still has `CMAKE_MFC_FLAG 2` and won't compile without MFC because the game-side headers it consumes still use `CString`/`CFile`. Once those are gone, wind22 can drop afx.
+- **Phase 4c — `CConquerApp : CWinApp` removal.** The app singleton still inherits CWinApp. Removing it requires reimplementing WinMain, accelerator handling, message-loop entry. 37 callsites across 12 files. See the Phase 4c section below for the full reconnaissance and per-member replacement table.
+- **Phase 3 — Drop CWnd from live gameplay windows.** ~20 CWnd-derived classes still in the binary (CWndMain, CWndWorld, CWndBar, CWndArea, CWndRoute, CWndCredits, CWndCutScene, CWndInfo, CWndStatBar, CWndStatLine, CWndUnitStat, CWndAreaStatic, CWndListBuildings, CWndListVehicles, CWndListUnits, CUnitButton, CMyButton). Many inherit from wind22's CWndBase/CWndAnim/CWndPrimary — so Phase 3 is tightly coupled to Phase 1 (wind22 MFC strip). Could be done in one bang by changing wind22's CWndBase to a non-MFC stub.
+- **Phase 1 — Strip MFC from wind22.** Originally gated by Phase 5; with Phase 5 now done for live code, this is unblocked. The wind22 library still has `CMAKE_MFC_FLAG 2`. Replacing wind22's CWnd-derived base classes with non-MFC stubs unblocks both Phase 3 and Phase 1g.
 
 ### Secondary work
-- **Chat cluster** (chatbar.cpp, ipcchat.cpp, ipccomm.cpp, ipcread.cpp, ipcsend.cpp): compiled but unreachable at runtime. Excluding from the build needs ~60 stubbed call sites in network handlers (`CmdPlyrJoin` etc.) or extracting the protocol layer. Defer until Phase 5c forces touching the same files.
 - **CList / CMap / CArray** (40 sites in 19 files): Phase 5d. Mostly mechanical `using` aliases or template replacements with `std::list/unordered_map/vector`.
 - **Debug macros**: `ASSERT/ASSERT_STRICT → assert()`, `TRACE → SDL_Log/OutputDebugStringA`, `VERIFY`, `DEBUG_NEW`. Phase 5e.
+- **CObject inheritance**: CIPCPlayer, CIPCPlayerList, CAIGoal, CAITask, CAIGoalList, CAITaskList, CAISavLd, CGame, CPlayer all inherit CObject. The DECLARE_SERIAL macros tie into MFC's CArchive serialization. Phase 5c partial work — needs a non-MFC serialization replacement first.
 
 ---
 
@@ -80,11 +80,11 @@ The full plan lives at `C:\Users\tyboy\.claude\plans\hidden-waddling-petal.md`. 
 
 | Phase | What | Risk | Status |
 |---|---|---|---|
-| 1 | Strip MFC from wind22 (keep CDIB/CMmio/codecs/BTree) | Medium | Blocked on 5 |
-| 2 | Replace 48 CDialog + 21 CWnd/CFrameWnd/CDialogBar | Low-Med | ~95% |
-| 3 | Invert event loop, drop HWND from game windows | High | ~10% |
+| 1 | Strip MFC from wind22 (keep CDIB/CMmio/codecs/BTree) | Medium | Pending — unblocked now |
+| 2 | Replace 48 CDialog + 21 CWnd/CFrameWnd/CDialogBar | Low-Med | ~98% — chat cluster excluded; only inherited CWnd-derived gameplay windows remain (=Phase 3) |
+| 3 | Drop CWnd from live gameplay windows | High | Pending — ~20 classes; tightly coupled to Phase 1 |
 | 4 | Replace registry / LoadString / CWinApp | High | 4a ✅ 4b ✅ 4c pending |
-| 5 | Replace CString (99) / CRect (58) / CFile (58) | Very High | 5a ~95%, 5b compat ready, 5c pending |
+| 5 | Replace CString (99) / CRect (58) / CFile (58) | Very High | 5a ✅ 5b compat ready 5c ✅ for live code (caisavld done) |
 | 6 | Cross-platform (Linux/macOS) | Medium | Pending |
 
 **Phase order matters**: Phase 1g (remove `_AFXDLL` from wind22) must come *after* Phase 5 because wind22 functions take MFC types as parameters, called by game code that still uses MFC. They have to use the same types until both sides flip simultaneously.
