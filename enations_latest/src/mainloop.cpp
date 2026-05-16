@@ -85,7 +85,7 @@ int CConquerApp::Run( )
         // No main window: quit. (Phase 4c prep — original guard included
         // an AfxOleGetUserCtrl() check that's always TRUE for this app.)
         TRACE0( "Warning: m_pMainWnd is NULL in CWinApp::Run - quitting application.\n" );
-        AfxPostQuitMessage( 0 );
+        ::PostQuitMessage( 0 );  // Phase 4c prep: was AfxPostQuitMessage
     }
 
     // we take the critical section and only let it go when we aren't

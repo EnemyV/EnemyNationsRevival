@@ -535,7 +535,7 @@ BOOL CConquerApp::InitInstance( )
     WNDCLASS wc;
     memset( &wc, 0, sizeof( wc ) );
     wc.lpfnWndProc   = ::DefWindowProc;
-    wc.hInstance     = AfxGetInstanceHandle( );
+    wc.hInstance     = ::GetModuleHandle( NULL );  // Phase 4c prep: was AfxGetInstanceHandle
     wc.hIcon         = LoadIcon( IDI_MAIN );
     wc.hCursor       = LoadStandardCursor( IDC_ARROW );
     wc.lpszClassName = m_sClsName.c_str();
@@ -1034,14 +1034,14 @@ BOOL CConquerApp::InitInstance( )
         WNDCLASS wc;
         memset( &wc, 0, sizeof( wc ) );
         wc.lpfnWndProc   = RedTextProc;
-        wc.hInstance     = AfxGetInstanceHandle( );
+        wc.hInstance     = ::GetModuleHandle( NULL );  // Phase 4c prep: was AfxGetInstanceHandle
         wc.lpszClassName = "RedText";
         if ( !RegisterClass( &wc ) )
             return ( FALSE );
         memset( &wc, 0, sizeof( wc ) );
         wc.lpfnWndProc   = PerBarProc;
         wc.cbWndExtra    = 2;
-        wc.hInstance     = AfxGetInstanceHandle( );
+        wc.hInstance     = ::GetModuleHandle( NULL );  // Phase 4c prep: was AfxGetInstanceHandle
         wc.lpszClassName = "dcPerBar";
         if ( !RegisterClass( &wc ) )
             return ( FALSE );
