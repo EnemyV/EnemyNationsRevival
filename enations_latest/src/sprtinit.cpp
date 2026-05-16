@@ -17,6 +17,8 @@
 #include "sfx.h"
 #include "SDL2CreateStatus.h"
 
+#include <process.h>  // _beginthreadex (replaces AfxBeginThread)
+
 #include "terrain.inl"
 #include "unit.inl"
 #include "building.inl"
@@ -2165,11 +2167,18 @@ BOOL CSpriteCollection::Read( CMmio &mmio, unsigned int uTime, int iPerStart, in
         g_bTerminateReadThread = FALSE;
         g_bReadThreadError = FALSE;
 
-        CWinThread *pthread = AfxBeginThread(ReadThreadFunc, &threadparms, THREAD_PRIORITY_HIGHEST);
-
-        // GG: Hope the thread doesn't terminate before we get here.
-
-        hThread = pthread->m_hThread;
+        // Replaced AfxBeginThread with _beginthreadex (Phase 4c prep, 2026-05-11).
+        // ReadThreadFunc returns UINT (__cdecl) — wrap with a __stdcall lambda
+        // for _beginthreadex's required calling convention.
+        struct ThreadWrap {
+            static unsigned __stdcall Run(void* p) {
+                return CSpriteCollection::ReadThreadFunc(p);
+            }
+        };
+        unsigned threadId = 0;
+        hThread = (HANDLE)_beginthreadex(NULL, 0, &ThreadWrap::Run, &threadparms, 0, &threadId);
+        ASSERT(hThread != NULL);
+        ::SetThreadPriority(hThread, THREAD_PRIORITY_HIGHEST);
     }
 
     for (int i = 0; i < m_nSprite; ++i) {
