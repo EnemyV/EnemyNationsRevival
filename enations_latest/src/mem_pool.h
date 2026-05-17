@@ -150,9 +150,10 @@ class mempool_std_heap
         }
 
 #ifdef _DEBUG
-        str.Format( "Pool expanded. Total: %u blocks, Free: %u blocks\n", (unsigned int)allocatedBlocks.size( ),
-                    (unsigned int)freeList.size( ) );
-        OutputDebugStringA( str );
+        str = strPrintf( "Pool expanded. Total: %u blocks, Free: %u blocks\n",
+                         (unsigned int)allocatedBlocks.size( ),
+                         (unsigned int)freeList.size( ) );
+        OutputDebugStringA( str.c_str() );
 #endif
     }
 
