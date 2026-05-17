@@ -306,6 +306,21 @@ class CConquerApp : public CWinApp
 
     void Log( char const* pText );
 
+    // Phase 4c prep: shadow CWinApp::LoadIcon / LoadStandardCursor with thin Win32
+    // wrappers. Same signatures the codebase already calls (`theApp.LoadIcon(IDI_MAIN)`,
+    // `theApp.LoadStandardCursor(IDC_ARROW)`), but routes through ::LoadIcon /
+    // ::LoadCursor directly instead of MFC's CWinApp implementation in mfc140.dll.
+    HICON   LoadIcon( LPCTSTR lpszResourceName ) const
+        { return ::LoadIcon( m_hInstance, lpszResourceName ); }
+    HICON   LoadIcon( UINT nIDResource ) const
+        { return ::LoadIcon( m_hInstance, MAKEINTRESOURCE( nIDResource ) ); }
+    HCURSOR LoadStandardCursor( LPCTSTR lpszCursorName ) const
+        { return ::LoadCursor( NULL, lpszCursorName ); }
+    HCURSOR LoadCursor( LPCTSTR lpszResourceName ) const
+        { return ::LoadCursor( m_hInstance, lpszResourceName ); }
+    HCURSOR LoadCursor( UINT nIDResource ) const
+        { return ::LoadCursor( m_hInstance, MAKEINTRESOURCE( nIDResource ) ); }
+
     // Overrides
     BOOL InitInstance( );
     int  ExitInstance( );
