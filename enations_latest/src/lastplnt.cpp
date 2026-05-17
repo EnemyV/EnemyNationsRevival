@@ -1313,8 +1313,9 @@ BOOL CConquerApp::InitInstance( )
         thePal.UpdateDeviceColors( 0, 256 );
 
         // this is the window class for all our popup windows
-        m_sWndCls = AfxRegisterWndClass( CS_DBLCLKS | CS_HREDRAW | CS_VREDRAW | CS_OWNDC,
-                                         LoadStandardCursor( IDC_ARROW ), 0, 0 );
+        m_sWndCls = EnRegisterWndClass( "EnPopupWnd",
+                                        CS_DBLCLKS | CS_HREDRAW | CS_VREDRAW | CS_OWNDC,
+                                        LoadStandardCursor( IDC_ARROW ) );
 
 #ifdef _DEBUG
         theDataFile.DisableNegativeSeekChecking( );

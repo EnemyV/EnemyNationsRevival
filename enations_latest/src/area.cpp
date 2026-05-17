@@ -1042,7 +1042,8 @@ void CWndArea::Create( CMapLoc const& ml, CUnit* pUnit, BOOL bFirst )
     }
 
     if ( sWndCls.empty( ) )
-        sWndCls = AfxRegisterWndClass( CS_DBLCLKS | CS_HREDRAW | CS_VREDRAW | CS_OWNDC, m_hCurMove[8], 0, 0 );
+        sWndCls = CConquerApp::EnRegisterWndClass( "EnAreaWnd",
+                      CS_DBLCLKS | CS_HREDRAW | CS_VREDRAW | CS_OWNDC, m_hCurMove[8] );
 
     m_aa.Set( ml, 0, max( 1, theApp.GetZoomData( )->GetFirstZoom( ) ) );
 
@@ -2072,7 +2073,8 @@ int CWndArea::OnCreate( LPCREATESTRUCT lpCreateStruct )
     CRect rect;
     CWndAnim::GetClientRect( &rect );
     rect.top = rect.bottom - m_WndStatic.m_iYmin;
-    LPCTSTR sWndCls = AfxRegisterWndClass( CS_DBLCLKS | CS_HREDRAW | CS_VREDRAW | CS_OWNDC, m_hCurLoad[0] );
+    LPCTSTR sWndCls = CConquerApp::EnRegisterWndClass( "EnAreaStaticWnd",
+                          CS_DBLCLKS | CS_HREDRAW | CS_VREDRAW | CS_OWNDC, m_hCurLoad[0] );
     m_WndStatic.Create( sWndCls, NULL, dwStatusWndStyle, rect, this, 0, NULL );
 
     // we had to start with the build icon to get a different class

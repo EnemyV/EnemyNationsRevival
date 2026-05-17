@@ -208,7 +208,8 @@ void CWndWorld::Create(BOOL bStart) {
         m_pWndArea == NULL ? "" : m_sDir[m_pWndArea->GetAA().m_iDir].c_str());
 
     // World window (so it can have a cross-hair
-    LPCTSTR sClass = AfxRegisterWndClass(dwStyleWorldWnd, theApp.LoadStandardCursor(IDC_CROSS), 0, 0);
+    LPCTSTR sClass = CConquerApp::EnRegisterWndClass("EnWorldWnd", dwStyleWorldWnd,
+                                                     theApp.LoadStandardCursor(IDC_CROSS));
 
     // if it crashes here, i think a gfx bitmap is missing?
     // theApp.m_pMainWnd->m_hWnd is wrong, i think

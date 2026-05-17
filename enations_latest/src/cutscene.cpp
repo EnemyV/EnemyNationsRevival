@@ -177,8 +177,9 @@ void CWndCutScene::Create (int iTyp, int iScenario)
 
 	if ( m_hWnd == NULL )
 		{
-		const char *pCls = AfxRegisterWndClass (0, theApp.LoadStandardCursor (IDC_ARROW),
-																								NULL, theApp.LoadIcon (IDI_MAIN));
+		const char *pCls = CConquerApp::EnRegisterWndClass ("EnCutSceneWnd", 0,
+		                       theApp.LoadStandardCursor (IDC_ARROW),
+		                       NULL, theApp.LoadIcon ((UINT)IDI_MAIN));
 
 		const DWORD dwSty = WS_POPUP;	
 		if (CreateEx (0, pCls, theApp.m_sAppName.c_str(), dwSty, 0, 0, theApp.m_iScrnX,

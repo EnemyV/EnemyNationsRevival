@@ -52,7 +52,8 @@ END_MESSAGE_MAP()
 void CWndCredits::Create ()
 {
 
-	const char *pCls = AfxRegisterWndClass (0, NULL, NULL, theApp.LoadIcon (IDI_MAIN));
+	const char *pCls = CConquerApp::EnRegisterWndClass ("EnCreditsWnd", 0, NULL, NULL,
+	                                                    theApp.LoadIcon ((UINT)IDI_MAIN));
 
 	const DWORD dwSty = WS_POPUP;
 	if (CreateEx (0, pCls, theApp.m_sAppName.c_str(), dwSty, 0, 0, theApp.m_iScrnX,

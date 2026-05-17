@@ -306,6 +306,29 @@ class CConquerApp : public CWinApp
 
     void Log( char const* pText );
 
+    // Phase 4c prep: replace AfxRegisterWndClass — same semantics (idempotent
+    // registration of a WNDCLASS), but no MFC dependency.
+    static LPCTSTR EnRegisterWndClass( LPCTSTR pszName, UINT style,
+                                       HCURSOR hCursor = NULL,
+                                       HBRUSH hbrBackground = NULL,
+                                       HICON hIcon = NULL )
+    {
+        WNDCLASS wc;
+        HINSTANCE hInst = ::GetModuleHandle( NULL );
+        if ( ::GetClassInfo( hInst, pszName, &wc ) )
+            return pszName;  // already registered, dedupe
+        memset( &wc, 0, sizeof( wc ) );
+        wc.style         = style;
+        wc.lpfnWndProc   = ::DefWindowProc;
+        wc.hInstance     = hInst;
+        wc.hCursor       = hCursor;
+        wc.hbrBackground = hbrBackground;
+        wc.hIcon         = hIcon;
+        wc.lpszClassName = pszName;
+        ::RegisterClass( &wc );
+        return pszName;
+    }
+
     // Phase 4c prep: shadow CWinApp::LoadIcon / LoadStandardCursor with thin Win32
     // wrappers. Same signatures the codebase already calls (`theApp.LoadIcon(IDI_MAIN)`,
     // `theApp.LoadStandardCursor(IDC_ARROW)`), but routes through ::LoadIcon /
