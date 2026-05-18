@@ -74,6 +74,18 @@ protected:
     virtual void OnMouseMove( UINT nFlags, int x, int y );
     virtual void OnPaletteChanged( HWND hwndFocus );
     virtual BOOL OnQueryNewPalette();
+    // Bring CWndStub's POINT-taking forwarders into scope so derived calls
+    // like `CWndBase::OnMouseMove(nFlags, point)` resolve to the forwarder
+    // that unpacks to (UINT, int, int). C++ name-hiding would otherwise
+    // make CWndBase::OnMouseMove only match the (UINT, int, int) override.
+public:
+    using CWndStub::OnMouseMove;
+    using CWndStub::OnLButtonDown;
+    using CWndStub::OnLButtonDblClk;
+    using CWndStub::OnRButtonDown;
+    using CWndStub::OnMButtonDown;
+    using CWndStub::OnPaletteChanged;
+protected:
     // No DECLARE_MESSAGE_MAP() in gate-on mode — CWndStub uses virtual dispatch.
 #else
     //{{AFX_MSG(CWndBase)

@@ -14,6 +14,7 @@
 #include "ourlog.h"
 
 #include <dibwnd.h>
+#include <wndbase.h>  // ensures ENATIONS_USE_STUB_WND is visible for the CAnimAtr SetWnd overload below
 
 const int FRAME_RATE = 24;
 

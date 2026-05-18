@@ -322,6 +322,8 @@ public:
     void OnRButtonDown( UINT flags, POINT point )                 { OnRButtonDown( flags, point.x, point.y ); }
     void OnMButtonDown( UINT flags, POINT point )                 { OnMButtonDown( flags, point.x, point.y ); }
 
+    BOOL OnMouseWheel( UINT flags, short zDelta, POINT point )    { return OnMouseWheel( flags, zDelta, point.x, point.y ); }
+
     // MFC-type forwarders for callers using `CWnd*` / `CScrollBar*` / `CDC*`.
     // They unwrap to the HWND/HDC signatures the virtuals actually use.
     void OnPaletteChanged( CWnd* pFocus )                         { OnPaletteChanged( pFocus ? pFocus->GetSafeHwnd() : (HWND)NULL ); }

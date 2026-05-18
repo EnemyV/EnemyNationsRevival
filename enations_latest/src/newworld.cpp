@@ -571,7 +571,7 @@ void CConquerApp::CreateNewWorld(unsigned uRand, AIinit *pAiData, int iSide, int
 
             // Vehicle/building lists are now native SDL2 (opened via toolbar buttons).
             // Just make MFC windows transparent so they don't show.
-            auto hideWnd = []( CWnd& w ) {
+            auto hideWnd = []( auto& w ) {
                 if ( !w.m_hWnd ) return;
                 ::SetWindowLong( w.m_hWnd, GWL_EXSTYLE,
                     ::GetWindowLong( w.m_hWnd, GWL_EXSTYLE ) | WS_EX_LAYERED );

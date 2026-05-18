@@ -2345,7 +2345,7 @@ int CGame::StartGame( BOOL bReplace )
             ::SetLayeredWindowAttributes( theApp.m_wndMain.m_hWnd, 0, 0, LWA_ALPHA );
 
             // Vehicle/building lists are native SDL2 now — just hide MFC
-            auto hideW = []( CWnd& w ) {
+            auto hideW = []( auto& w ) {
                 if ( !w.m_hWnd ) return;
                 ::SetWindowLong( w.m_hWnd, GWL_EXSTYLE,
                     ::GetWindowLong( w.m_hWnd, GWL_EXSTYLE ) | WS_EX_LAYERED );
