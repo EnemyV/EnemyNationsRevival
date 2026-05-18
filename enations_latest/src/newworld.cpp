@@ -323,8 +323,8 @@ int GetPrime(int iMin) {
 
 void CConquerApp::CreateNewWorld(unsigned uRand, AIinit *pAiData, int iSide, int iSideSize) {
 
-    ASSERT_VALID (m_pCreateGame->GetDlgStatus());
-    ASSERT (m_pCreateGame->GetDlgStatus()->m_hWnd != NULL);
+    ASSERT (m_pCreateGame->GetDlgStatus() != NULL);
+    // ASSERT_VALID + m_hWnd check removed — SDL2CreateStatus is the replacement (Phase 2d) and is not a CObject/CWnd
 
 #ifdef _DEBUG
     theDataFile.EnableNegativeSeekChecking ();
@@ -1097,8 +1097,7 @@ void CConquerApp::DestroyWorld() {
     m_bInGame = FALSE;
 
 #ifdef _CHEAT
-    if (dlgAiPos.m_hWnd != NULL)
-        dlgAiPos.DestroyWindow ();
+    // CDlgAiPos removed (Phase 2d) — was CHEAT-only AI position debug dialog
 #endif
 
     // close down the net link
@@ -1233,8 +1232,7 @@ void CConquerApp::ClearWorld() {
     myThreadClose((THREADEXITFUNC) AiExit);
 
 #ifdef _CHEAT
-    if (dlgAiPos.m_hWnd != NULL)
-        dlgAiPos.DestroyWindow ();
+    // CDlgAiPos removed (Phase 2d) — was CHEAT-only AI position debug dialog
 #endif
 
     // close down the net link
