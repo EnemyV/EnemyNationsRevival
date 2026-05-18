@@ -1,6 +1,11 @@
 #ifndef __WNDBASE_H__
 #define __WNDBASE_H__
 
+// Phase 1 migration gate. To flip on for testing, either define
+// ENATIONS_USE_STUB_WND in the build system (CMakeLists.txt) or uncomment
+// the line below. Default is off.
+// #define ENATIONS_USE_STUB_WND
+
 //#include "..\lib\_res.h"
 #include <subclass.h>
 
@@ -16,16 +21,17 @@
 #ifdef ENATIONS_USE_STUB_WND
 #include "wndstub.h"
 typedef CWndStub CWndBaseSuper;
+// In gate-on mode, the FNMOUSEMOVE callback takes CWndStub* (not CWnd*)
+// and (x,y) ints (not CPoint), since CPoint is an MFC type.
+typedef void ( FNMOUSEMOVE )( CWndStub* pWnd, UINT nFlags, int x, int y );
 #else
 typedef CWnd     CWndBaseSuper;
+// MFC mode: original signature
+typedef void ( FNMOUSEMOVE )( CWnd* pWnd, UINT nFlags, CPoint point );
 #endif
 
 /////////////////////////////////////////////////////////////////////////////
 // CWndBase window
-
-// this is a function that is called for all mouse move messages that aren't handled
-// by their window (used in Enemy Nations to blank out the status help
-typedef void ( FNMOUSEMOVE )( CWnd* pWnd, UINT nFlags, CPoint point );
 
 class CWndBase: public CWndBaseSuper {
     // Construction
@@ -35,8 +41,14 @@ public:
 
     // Attributes
 public:
+#ifdef ENATIONS_USE_STUB_WND
+    // Gate-on: HDC-based DC management
+    HDC GetDC() { if ( m_pDc != NULL ) return ( m_pDc ); return CWndStub::GetDC(); }
+    int ReleaseDC( HDC h ) { if ( h == m_pDc ) return TRUE; return CWndStub::ReleaseDC( h ); }
+#else
     CDC* GetDC() { if ( m_pDc != NULL ) return ( m_pDc ); return CWnd::GetDC(); }
     int  ReleaseDC( CDC* pDc ) { if ( pDc == m_pDc ) return TRUE; return CWnd::ReleaseDC( pDc ); }
+#endif
 
     // Operations
 public:
@@ -53,6 +65,17 @@ public:
 
     // Generated message map functions
 protected:
+#ifdef ENATIONS_USE_STUB_WND
+    // Gate-on: virtual overrides of CWndStub handlers. Signatures must match
+    // CWndStub's virtuals exactly (HDC, int x,y instead of CDC*, CPoint).
+    virtual int  OnCreate( LPCREATESTRUCT lpCreateStruct );
+    virtual void OnDestroy();
+    virtual BOOL OnEraseBkgnd( HDC hdc );
+    virtual void OnMouseMove( UINT nFlags, int x, int y );
+    virtual void OnPaletteChanged( HWND hwndFocus );
+    virtual BOOL OnQueryNewPalette();
+    // No DECLARE_MESSAGE_MAP() in gate-on mode — CWndStub uses virtual dispatch.
+#else
     //{{AFX_MSG(CWndBase)
     afx_msg int OnCreate( LPCREATESTRUCT lpCreateStruct );
     afx_msg void OnDestroy();
@@ -62,6 +85,7 @@ protected:
     afx_msg BOOL OnQueryNewPalette();
     //}}AFX_MSG
     DECLARE_MESSAGE_MAP()
+#endif
 
     LRESULT WindowProc( UINT Message, WPARAM wParam, LPARAM lParam );
 
@@ -69,7 +93,11 @@ protected:
 
     CFramePainter m_framepainter;
 
+#ifdef ENATIONS_USE_STUB_WND
+    HDC  m_pDc;   // for own DC windows (gate-on: raw HDC)
+#else
     CDC* m_pDc;   // for own DC windows
+#endif
 };
 
 
@@ -93,12 +121,16 @@ public:
     virtual ~CWndPrimary();
 
 protected:
-    // Generated message map functions
+#ifdef ENATIONS_USE_STUB_WND
+    virtual int  OnCreate( LPCREATESTRUCT lpCreateStruct );
+    virtual void OnDestroy();
+#else
     //{{AFX_MSG(CWndPrimary)
     afx_msg int OnCreate( LPCREATESTRUCT lpCreateStruct );
     afx_msg void OnDestroy();
     //}}AFX_MSG
     DECLARE_MESSAGE_MAP()
+#endif
 };
 
 
@@ -132,11 +164,14 @@ public:
     virtual ~CWndAnim() {}
 
 protected:
-    // Generated message map functions
+#ifdef ENATIONS_USE_STUB_WND
+    virtual void OnDestroy();
+#else
     //{{AFX_MSG(CWndAnim)
     afx_msg void OnDestroy();
     //}}AFX_MSG
     DECLARE_MESSAGE_MAP()
+#endif
 };
 
 

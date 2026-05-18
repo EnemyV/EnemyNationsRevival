@@ -94,6 +94,88 @@
 
 #include <windows.h>
 
+// When the gate is on, MFC's message-map macros (DECLARE_MESSAGE_MAP /
+// BEGIN_MESSAGE_MAP / END_MESSAGE_MAP / ON_WM_*) need to dissolve because
+// they reference CWnd internals (GetMessageMap virtual, _messageEntries
+// array, etc.) that CWndStub doesn't provide. CWndStub uses direct virtual
+// dispatch instead — derived classes' OnCreate/OnDestroy/OnPaint/etc. just
+// override the virtuals declared in CWndStub.
+//
+// For custom messages (ON_MESSAGE(WM_FOO, OnFoo)) we drop the registration
+// here; derived classes that need custom WM_ values must override virtual
+// WindowProc and switch on those values themselves.
+#ifdef ENATIONS_USE_STUB_WND
+  // Make sure afx headers can't redefine these out from under us — these
+  // overrides must take final precedence. Undef first, then define empty.
+  #ifdef DECLARE_MESSAGE_MAP
+    #undef DECLARE_MESSAGE_MAP
+  #endif
+  #define DECLARE_MESSAGE_MAP()
+  #ifdef BEGIN_MESSAGE_MAP
+    #undef BEGIN_MESSAGE_MAP
+  #endif
+  // BEGIN_MESSAGE_MAP needs to swallow its body up to END_MESSAGE_MAP. The
+  // cleanest no-op form is to open an anonymous namespace that nothing can
+  // see, then close it at END_MESSAGE_MAP — but that's fragile. Instead,
+  // wrap the body in a static-const inline-init that the compiler discards.
+  // Even simpler: leave the body in place but redirect to nothing useful.
+  // We use a trick: define BEGIN_MESSAGE_MAP to start a struct, and the
+  // ON_* macros to declare unused members; END_MESSAGE_MAP closes the struct.
+  // The struct is local to the function-level scope or namespace.
+  #define BEGIN_MESSAGE_MAP(theClass, baseClass) \
+      namespace __msgmap_##theClass { struct _ignore_msgmap {
+  #define END_MESSAGE_MAP() }; }
+  // ON_WM_* and ON_MESSAGE / ON_COMMAND / ON_NOTIFY: emit harmless typedefs
+  // inside the struct above.
+  #define ON_WM_CREATE()              typedef int   _wm_create_dummy_##__LINE__;
+  #define ON_WM_DESTROY()             typedef int   _wm_destroy_dummy_##__LINE__;
+  #define ON_WM_PAINT()               typedef int   _wm_paint_dummy_##__LINE__;
+  #define ON_WM_SIZE()                typedef int   _wm_size_dummy_##__LINE__;
+  #define ON_WM_ERASEBKGND()          typedef int   _wm_erasebkgnd_dummy_##__LINE__;
+  #define ON_WM_MOUSEMOVE()           typedef int   _wm_mousemove_dummy_##__LINE__;
+  #define ON_WM_LBUTTONDOWN()         typedef int   _wm_lbtndn_dummy_##__LINE__;
+  #define ON_WM_LBUTTONDBLCLK()       typedef int   _wm_lbtndbl_dummy_##__LINE__;
+  #define ON_WM_RBUTTONDOWN()         typedef int   _wm_rbtndn_dummy_##__LINE__;
+  #define ON_WM_MBUTTONDOWN()         typedef int   _wm_mbtndn_dummy_##__LINE__;
+  #define ON_WM_PALETTECHANGED()      typedef int   _wm_palchg_dummy_##__LINE__;
+  #define ON_WM_QUERYNEWPALETTE()     typedef int   _wm_qnewpal_dummy_##__LINE__;
+  #define ON_WM_KEYDOWN()             typedef int   _wm_keydn_dummy_##__LINE__;
+  #define ON_WM_CHAR()                typedef int   _wm_char_dummy_##__LINE__;
+  #define ON_WM_TIMER()               typedef int   _wm_timer_dummy_##__LINE__;
+  #define ON_WM_ACTIVATEAPP()         typedef int   _wm_actapp_dummy_##__LINE__;
+  #define ON_WM_QUERYENDSESSION()     typedef int   _wm_qend_dummy_##__LINE__;
+  #define ON_WM_CLOSE()               typedef int   _wm_close_dummy_##__LINE__;
+  #define ON_WM_SYSCOMMAND()          typedef int   _wm_syscmd_dummy_##__LINE__;
+  #define ON_WM_SETFOCUS()            typedef int   _wm_setfocus_dummy_##__LINE__;
+  #define ON_WM_KILLFOCUS()           typedef int   _wm_killfocus_dummy_##__LINE__;
+  #define ON_WM_MOVE()                typedef int   _wm_move_dummy_##__LINE__;
+  #define ON_WM_GETMINMAXINFO()       typedef int   _wm_getminmax_dummy_##__LINE__;
+  #define ON_WM_DRAWITEM()            typedef int   _wm_drawitem_dummy_##__LINE__;
+  #define ON_WM_HSCROLL()             typedef int   _wm_hscroll_dummy_##__LINE__;
+  #define ON_WM_VSCROLL()             typedef int   _wm_vscroll_dummy_##__LINE__;
+  #define ON_WM_LBUTTONUP()           typedef int   _wm_lbtnup_dummy_##__LINE__;
+  #define ON_WM_MBUTTONUP()           typedef int   _wm_mbtnup_dummy_##__LINE__;
+  #define ON_WM_RBUTTONUP()           typedef int   _wm_rbtnup_dummy_##__LINE__;
+  #define ON_WM_ACTIVATE()            typedef int   _wm_activate_dummy_##__LINE__;
+  #define ON_WM_NCLBUTTONDOWN()       typedef int   _wm_ncbtndn_dummy_##__LINE__;
+  #define ON_WM_NCMOUSEMOVE()         typedef int   _wm_ncmm_dummy_##__LINE__;
+  #define ON_MESSAGE(msg, fn)         typedef int   _on_msg_dummy_##__LINE__;
+  #define ON_COMMAND(id, fn)          typedef int   _on_cmd_dummy_##__LINE__;
+  #define ON_COMMAND_RANGE(lo, hi, fn) typedef int  _on_cmdrng_dummy_##__LINE__;
+  #define ON_NOTIFY(code, id, fn)     typedef int   _on_ntfy_dummy_##__LINE__;
+  #define ON_NOTIFY_RANGE(code, lo, hi, fn) typedef int _on_ntfyrng_dummy_##__LINE__;
+  #define ON_BN_CLICKED(id, fn)       typedef int   _on_bnclk_dummy_##__LINE__;
+  #define ON_EN_CHANGE(id, fn)        typedef int   _on_enchg_dummy_##__LINE__;
+  #define ON_LBN_SELCHANGE(id, fn)    typedef int   _on_lbnsc_dummy_##__LINE__;
+  #define ON_LBN_DBLCLK(id, fn)       typedef int   _on_lbndb_dummy_##__LINE__;
+  #define ON_CBN_SELCHANGE(id, fn)    typedef int   _on_cbnsc_dummy_##__LINE__;
+  // Also kill the AFX_MSG enclosure markers
+  #ifdef afx_msg
+    #undef afx_msg
+  #endif
+  #define afx_msg
+#endif // ENATIONS_USE_STUB_WND
+
 // Forward declarations
 class CWndStub;
 
