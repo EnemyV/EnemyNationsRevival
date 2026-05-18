@@ -337,4 +337,94 @@ protected:
 };
 
 
+//---------------------------------------------------------------------------
+// CStubPaintDC / CStubClientDC / CStubWindowDC — RAII HDC holders that
+// replace MFC's CPaintDC / CClientDC / CWindowDC when the gate is on.
+//
+// Operator HDC() conversion lets call sites that previously used `dc` as
+// a CDC* (e.g. `pdib->BltDC(dc)`) keep compiling — anything taking HDC
+// also takes a CStubXxxDC because of the conversion. Game code using
+// `dc.m_hDC` directly works because m_hDC is a public member.
+//
+// CDC*-style method calls (`dc.TextOut(...)`, `dc.SetBkColor(...)`) are
+// NOT supported here — those derived classes that use such methods must
+// be updated to call the global ::TextOut / ::SetBkColor instead, passing
+// `dc.m_hDC` (or `dc` directly thanks to operator HDC()) as the first arg.
+//---------------------------------------------------------------------------
+#ifdef ENATIONS_USE_STUB_WND
+
+// CDC-style methods exposed via this mixin so all three DC RAII classes
+// (Paint/Client/Window) get the same surface. Game-side code calls things
+// like `dc.SetTextColor(...)`, `dc.SelectObject(...)`, `dc.FillRect(...)`
+// — these all forward to the global Win32 GDI calls using m_hDC.
+#define STUBDC_CDC_METHODS()                                                                  \
+    COLORREF SetBkColor( COLORREF c )         { return ::SetBkColor( m_hDC, c ); }            \
+    COLORREF SetTextColor( COLORREF c )       { return ::SetTextColor( m_hDC, c ); }          \
+    int  SetBkMode( int m )                   { return ::SetBkMode( m_hDC, m ); }             \
+    HGDIOBJ SelectObject( HGDIOBJ h )         { return ::SelectObject( m_hDC, h ); }          \
+    int  FillRect( const RECT* r, HBRUSH b )  { return ::FillRect( m_hDC, r, b ); }           \
+    void FillSolidRect( const RECT* r, COLORREF c ) {                                          \
+        COLORREF old = ::SetBkColor( m_hDC, c );                                              \
+        RECT rc = *r;                                                                          \
+        ::ExtTextOutA( m_hDC, 0, 0, ETO_OPAQUE, &rc, NULL, 0, NULL );                          \
+        ::SetBkColor( m_hDC, old );                                                            \
+    }                                                                                          \
+    void FillSolidRect( int x, int y, int cx, int cy, COLORREF c ) {                          \
+        RECT rc = { x, y, x + cx, y + cy };                                                    \
+        FillSolidRect( &rc, c );                                                               \
+    }                                                                                          \
+    int  DrawTextA( LPCSTR s, int n, LPRECT r, UINT fmt ) { return ::DrawTextA( m_hDC, s, n, r, fmt ); } \
+    BOOL GetTextMetricsA( LPTEXTMETRICA pm )  { return ::GetTextMetricsA( m_hDC, pm ); }      \
+    BOOL TextOutA( int x, int y, LPCSTR s, int n ) { return ::TextOutA( m_hDC, x, y, s, n ); }\
+    BOOL Rectangle( int l, int t, int r, int b ) { return ::Rectangle( m_hDC, l, t, r, b ); } \
+    BOOL MoveToEx( int x, int y, LPPOINT pt ) { return ::MoveToEx( m_hDC, x, y, pt ); }       \
+    BOOL MoveTo  ( int x, int y )             { return ::MoveToEx( m_hDC, x, y, NULL ); }     \
+    BOOL LineTo  ( int x, int y )             { return ::LineTo( m_hDC, x, y ); }             \
+    HDC  GetSafeHdc() const                   { return m_hDC; }
+
+class CStubPaintDC {
+public:
+    CStubPaintDC( CWndStub* p ) : m_hWnd( p->m_hWnd ) { m_hDC = ::BeginPaint( m_hWnd, &m_ps ); }
+    ~CStubPaintDC()                                   { ::EndPaint( m_hWnd, &m_ps ); }
+    operator HDC() const                              { return m_hDC; }
+    HDC          m_hDC;
+    PAINTSTRUCT  m_ps;
+    STUBDC_CDC_METHODS()
+private:
+    HWND m_hWnd;
+};
+
+class CStubClientDC {
+public:
+    CStubClientDC( CWndStub* p ) : m_hWnd( p->m_hWnd ) { m_hDC = ::GetDC( m_hWnd ); }
+    ~CStubClientDC()                                   { ::ReleaseDC( m_hWnd, m_hDC ); }
+    operator HDC() const                               { return m_hDC; }
+    HDC m_hDC;
+    STUBDC_CDC_METHODS()
+private:
+    HWND m_hWnd;
+};
+
+class CStubWindowDC {
+public:
+    CStubWindowDC( CWndStub* p ) : m_hWnd( p->m_hWnd ) { m_hDC = ::GetWindowDC( m_hWnd ); }
+    ~CStubWindowDC()                                   { ::ReleaseDC( m_hWnd, m_hDC ); }
+    operator HDC() const                               { return m_hDC; }
+    HDC m_hDC;
+    STUBDC_CDC_METHODS()
+private:
+    HWND m_hWnd;
+};
+
+// Macro aliases — game code keeps using CPaintDC / CClientDC / CWindowDC
+// verbatim, but they resolve to the stub classes when the gate is on.
+// Position the macros AFTER the class declarations so the macro
+// definitions don't recursively replace tokens inside the class bodies.
+#define CPaintDC   CStubPaintDC
+#define CClientDC  CStubClientDC
+#define CWindowDC  CStubWindowDC
+
+#endif // ENATIONS_USE_STUB_WND
+
+
 #endif // __WNDSTUB_H__
