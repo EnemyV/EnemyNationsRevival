@@ -755,17 +755,27 @@ void CConquerApp::StartAi() {
     }
 }
 
-static void _OrderWin(CWnd *pWnd, CWnd *pBefore) {
+#ifdef ENATIONS_USE_STUB_WND
+typedef CWndStub _OrderShowUpdateWin;
+#else
+typedef CWnd     _OrderShowUpdateWin;
+#endif
+
+static void _OrderWin(_OrderShowUpdateWin *pWnd, _OrderShowUpdateWin *pBefore) {
 
     if ((pWnd == NULL) || (pWnd->m_hWnd == NULL))
         return;
 
     // set the order
     if (pBefore != NULL)
+#ifdef ENATIONS_USE_STUB_WND
+        pWnd->SetWindowPos(pBefore->m_hWnd, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOREDRAW | SWP_NOSIZE);
+#else
         pWnd->SetWindowPos(pBefore, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOREDRAW | SWP_NOSIZE);
+#endif
 }
 
-static void _ShowWin(CWnd *pWnd, WINDOWPLACEMENT *pWp) {
+static void _ShowWin(_OrderShowUpdateWin *pWnd, WINDOWPLACEMENT *pWp) {
 
     if ((pWnd == NULL) || (pWnd->m_hWnd == NULL))
         return;
@@ -778,7 +788,7 @@ static void _ShowWin(CWnd *pWnd, WINDOWPLACEMENT *pWp) {
     pWnd->ShowWindow(SW_SHOW);
 }
 
-static void _UpdateWin(CWnd *pWnd) {
+static void _UpdateWin(_OrderShowUpdateWin *pWnd) {
 
     if ((pWnd == NULL) || (pWnd->m_hWnd == NULL))
         return;
@@ -894,8 +904,8 @@ void CConquerApp::LetsGo() {
         // launched from the toolbar Research button on demand.
 
         // m_wndChat is now ChatStub (Phase 2d-cont) — never a CWnd, always NULL.
-        CWnd *pWndChat = NULL;
-        CWnd *pWndArea = theAreaList.GetTop();
+        _OrderShowUpdateWin *pWndChat = NULL;
+        _OrderShowUpdateWin *pWndArea = theAreaList.GetTop();
         _OrderWin(&m_wndVehicles, NULL);
         _OrderWin(&m_wndBldgs, &m_wndVehicles);
         _OrderWin(pWndChat, &m_wndBldgs);

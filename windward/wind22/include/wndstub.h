@@ -224,10 +224,13 @@ public:
     BOOL SetWindowPlacement( const WINDOWPLACEMENT* pwp );
     BOOL GetWindowPlacement( WINDOWPLACEMENT* pwp ) const;
 
-    // Parent / sibling / dialog item lookup. GetParent returns HWND to match
-    // most game-code call sites which only need the handle. If you need to
-    // dispatch to the parent's virtual handlers, use FromHandle(GetParent()).
-    HWND GetParent() const;
+    // Parent / sibling / dialog item lookup. GetParent returns CWndStub*
+    // (MFC-compatible) so call sites like `GetParent()->SendMessage(...)`
+    // keep working. For parents that aren't stub-managed (no GWLP_USERDATA),
+    // a thread-local temporary CWndStub wraps the HWND and exposes the same
+    // SendMessage/PostMessage/InvalidateRect/etc. surface.
+    CWndStub* GetParent() const;
+    HWND GetParentHwnd() const                                    { return ::GetParent( m_hWnd ); }
     HWND GetTopLevelParent() const;
     HWND GetSafeHwnd() const                                      { return m_hWnd; }
     HWND GetDlgItem( int nID ) const;
@@ -362,7 +365,12 @@ protected:
     COLORREF SetTextColor( COLORREF c )       { return ::SetTextColor( m_hDC, c ); }          \
     int  SetBkMode( int m )                   { return ::SetBkMode( m_hDC, m ); }             \
     HGDIOBJ SelectObject( HGDIOBJ h )         { return ::SelectObject( m_hDC, h ); }          \
+    CFont*   SelectObject( CFont*   p )       { return (CFont*  )CFont  ::FromHandle( (HFONT  )::SelectObject( m_hDC, p->GetSafeHandle() ) ); }    \
+    CPen*    SelectObject( CPen*    p )       { return (CPen*   )CPen   ::FromHandle( (HPEN   )::SelectObject( m_hDC, p->GetSafeHandle() ) ); }    \
+    CBrush*  SelectObject( CBrush*  p )       { return (CBrush* )CBrush ::FromHandle( (HBRUSH )::SelectObject( m_hDC, p->GetSafeHandle() ) ); }    \
+    CBitmap* SelectObject( CBitmap* p )       { return (CBitmap*)CBitmap::FromHandle( (HBITMAP)::SelectObject( m_hDC, p->GetSafeHandle() ) ); }    \
     int  FillRect( const RECT* r, HBRUSH b )  { return ::FillRect( m_hDC, r, b ); }           \
+    int  FillRect( const RECT* r, CBrush* pb ){ return ::FillRect( m_hDC, r, (HBRUSH)pb->GetSafeHandle() ); } \
     void FillSolidRect( const RECT* r, COLORREF c ) {                                          \
         COLORREF old = ::SetBkColor( m_hDC, c );                                              \
         RECT rc = *r;                                                                          \
@@ -380,7 +388,19 @@ protected:
     BOOL MoveToEx( int x, int y, LPPOINT pt ) { return ::MoveToEx( m_hDC, x, y, pt ); }       \
     BOOL MoveTo  ( int x, int y )             { return ::MoveToEx( m_hDC, x, y, NULL ); }     \
     BOOL LineTo  ( int x, int y )             { return ::LineTo( m_hDC, x, y ); }             \
+    COLORREF GetNearestColor( COLORREF c )    { return ::GetNearestColor( m_hDC, c ); }       \
+    HPALETTE SelectPalette( HPALETTE hp, BOOL bFB ) { return ::SelectPalette( m_hDC, hp, bFB ); } \
+    CPalette* SelectPalette( CPalette* p, BOOL bFB ) { return (CPalette*)CPalette::FromHandle( ::SelectPalette( m_hDC, (HPALETTE)p->GetSafeHandle(), bFB ) ); } \
+    UINT RealizePalette()                     { return ::RealizePalette( m_hDC ); }           \
     HDC  GetSafeHdc() const                   { return m_hDC; }
+
+// Compat conversions for code that takes CDC* or CDC&.
+// CDC::FromHandle(HDC) returns a CDC* wrapping the raw HDC, so those
+// game-defined functions still work — they end up calling CDC methods
+// that forward to the same HDC via ::GDI calls.
+#define STUBDC_CDC_CONVERSIONS()                                                              \
+    operator CDC*() const                     { return CDC::FromHandle( m_hDC ); }            \
+    operator CDC&() const                     { return *CDC::FromHandle( m_hDC ); }
 
 class CStubPaintDC {
 public:
@@ -390,6 +410,7 @@ public:
     HDC          m_hDC;
     PAINTSTRUCT  m_ps;
     STUBDC_CDC_METHODS()
+    STUBDC_CDC_CONVERSIONS()
 private:
     HWND m_hWnd;
 };
@@ -401,6 +422,7 @@ public:
     operator HDC() const                               { return m_hDC; }
     HDC m_hDC;
     STUBDC_CDC_METHODS()
+    STUBDC_CDC_CONVERSIONS()
 private:
     HWND m_hWnd;
 };
@@ -412,6 +434,7 @@ public:
     operator HDC() const                               { return m_hDC; }
     HDC m_hDC;
     STUBDC_CDC_METHODS()
+    STUBDC_CDC_CONVERSIONS()
 private:
     HWND m_hWnd;
 };

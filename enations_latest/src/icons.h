@@ -207,6 +207,10 @@ public:
 					CWndStatBar();
 
 	void		Create (CIcons * pIcons, int iIndex, CRect & rect, CWnd * pPar, CDIB * pBack = NULL);
+#ifdef ENATIONS_USE_STUB_WND
+	void		Create (CIcons * pIcons, int iIndex, CRect & rect, CWndStub * pPar, CDIB * pBack = NULL)
+		{ Create( pIcons, iIndex, rect, CWnd::FromHandle( pPar ? pPar->m_hWnd : NULL ), pBack ); }
+#endif
 	void		Attach (CIcons * pIcons, int iIndex) { m_statInst.Attach (pIcons, iIndex); }
 	void		CheckSize ();
 

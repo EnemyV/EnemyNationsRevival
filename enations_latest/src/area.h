@@ -155,7 +155,11 @@ public:
 
 	void		GiveUnits ( CPlayer * pPlyr );
 
+#ifdef ENATIONS_USE_STUB_WND
+	CWndStub *	_GetStatBar () { return &(m_WndStatic.m_wndStat); }
+#else
 	CWnd *	_GetStatBar () { return &(m_WndStatic.m_wndStat); }
+#endif
 
 	void		GetPanAndVol (CUnit const * pUnit, int & iPan, int & iVol);
 	void		SetDestAndSfx ( CVehicle * pVeh, CHexCoord const & hex );

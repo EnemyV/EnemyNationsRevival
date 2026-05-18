@@ -65,6 +65,9 @@ class CMyButton : public CButton
     virtual ~CMyButton( ) {}
 
     BOOL Create( char const* psText, int idHelp, CRect& rect, CDIB* pBackDib, CWnd* pPar, int ID );
+    template<class WndT>
+    BOOL Create( char const* psText, int idHelp, CRect& rect, CDIB* pBackDib, WndT* pPar, int ID )
+        { return Create( psText, idHelp, rect, pBackDib, CWnd::FromHandle( pPar ? pPar->m_hWnd : NULL ), ID ); }
 
     // Attributes
   public:
@@ -118,6 +121,9 @@ class CBmButton : public CMyButton
     // Operations
   public:
     BOOL Create( int iBtnNum, int idHelp, CBmBtnData* pBbd, CRect& rect, CDIB* pBackDib, CWnd* pPar, int ID );
+    template<class WndT>
+    BOOL Create( int iBtnNum, int idHelp, CBmBtnData* pBbd, CRect& rect, CDIB* pBackDib, WndT* pPar, int ID )
+        { return Create( iBtnNum, idHelp, pBbd, rect, pBackDib, CWnd::FromHandle( pPar ? pPar->m_hWnd : NULL ), ID ); }
 
     // Implementation
   public:
@@ -150,6 +156,9 @@ class CTextButton : public CMyButton
     // Operations
   public:
     BOOL Create( int idText, int idHelp, CTextBtnData* pTbd, CRect& rect, CDIB* pBackDib, CWnd* pPar, int ID );
+    template<class WndT>
+    BOOL Create( int idText, int idHelp, CTextBtnData* pTbd, CRect& rect, CDIB* pBackDib, WndT* pPar, int ID )
+        { return Create( idText, idHelp, pTbd, rect, pBackDib, CWnd::FromHandle( pPar ? pPar->m_hWnd : NULL ), ID ); }
 
     // Implementation
   public:

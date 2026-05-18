@@ -27,12 +27,15 @@ CWndStub::CWndStub()
 
 CWndStub::~CWndStub()
 {
-    if ( m_hWnd != NULL )
-    {
-        // PostNcDestroy hasn't run; clean up explicitly.
-        ::DestroyWindow( m_hWnd );
-        m_hWnd = NULL;
-    }
+    // Note: do NOT auto-destroy the HWND here. Two reasons:
+    // 1) Win32 cleanup happens via WM_NCDESTROY in StaticWndProc, which
+    //    nulls m_hWnd and calls PostNcDestroy. So m_hWnd is typically
+    //    already NULL by the time ~CWndStub runs.
+    // 2) Temporary CWndStub objects (like the thread-local one used by
+    //    GetParent() for non-stub parents) hold a *borrowed* HWND they
+    //    don't own. Destroying it here would tear down somebody else's
+    //    window. Callers that want explicit destruction should call
+    //    DestroyWindow() before ~CWndStub.
 }
 
 
@@ -305,7 +308,19 @@ BOOL CWndStub::SetWindowPlacement( const WINDOWPLACEMENT* pwp )
 BOOL CWndStub::GetWindowPlacement( WINDOWPLACEMENT* pwp ) const
     { return ::GetWindowPlacement( m_hWnd, pwp ); }
 
-HWND CWndStub::GetParent() const                              { return ::GetParent( m_hWnd ); }
+CWndStub* CWndStub::GetParent() const
+{
+    HWND hParent = ::GetParent( m_hWnd );
+    if ( hParent == NULL ) return NULL;
+    CWndStub* p = (CWndStub*)::GetWindowLongPtr( hParent, GWLP_USERDATA );
+    if ( p != NULL ) return p;
+    // Parent isn't stub-managed (likely an MFC widget or a foreign window).
+    // Return a thread-local temp that wraps just the HWND so call patterns
+    // like GetParent()->SendMessage(...) still dispatch to the right window.
+    thread_local CWndStub s_tempParent;
+    s_tempParent.m_hWnd = hParent;
+    return &s_tempParent;
+}
 HWND CWndStub::GetTopLevelParent() const
 {
     HWND h = m_hWnd;

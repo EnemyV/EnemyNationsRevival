@@ -508,6 +508,9 @@ class CAnimAtr
     ~CAnimAtr( );
 
     void SetWnd( CWnd* pwnd ) { m_pwnd = pwnd; }
+#ifdef ENATIONS_USE_STUB_WND
+    void SetWnd( CWndStub* pwnd ) { m_pwnd = CWnd::FromHandle( pwnd ? pwnd->m_hWnd : NULL ); }
+#endif
     void Set( CMapLoc maplocCenter, int iDir, int iZoom );
 
     CMapLoc GetCenter( ) const { return m_maploc; }

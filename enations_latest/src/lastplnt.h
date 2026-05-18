@@ -267,6 +267,9 @@ class CConquerApp : public CWinApp
     }
 
     BOOL SaveGame( CWnd* pPar );  // saves game
+#ifdef ENATIONS_USE_STUB_WND
+    BOOL SaveGame( CWndStub* pPar ) { return SaveGame( CWnd::FromHandle( pPar ? pPar->m_hWnd : NULL ) ); }
+#endif
 
     void ScenarioStart( );        // set up a scenario
     BOOL ScenarioEnd( );          // is the scenario over?

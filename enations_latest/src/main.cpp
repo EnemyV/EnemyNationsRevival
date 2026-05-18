@@ -164,7 +164,13 @@ LRESULT CWndMain::OnCacheMsg (WPARAM wParam, LPARAM )
 }
 #endif
 
-static void MakeFullScreen ( CWnd * pWnd )
+#ifdef ENATIONS_USE_STUB_WND
+typedef CWndStub _MainCmnWin;
+#else
+typedef CWnd     _MainCmnWin;
+#endif
+
+static void MakeFullScreen ( _MainCmnWin * pWnd )
 {
 
 	if ( (pWnd != NULL) && (pWnd->m_hWnd != NULL) )
@@ -174,7 +180,7 @@ static void MakeFullScreen ( CWnd * pWnd )
 		}
 }
 
-static void MoveToNew ( CWnd * pWnd, int xOld, int yOld )
+static void MoveToNew ( _MainCmnWin * pWnd, int xOld, int yOld )
 {
 
 	if ( (pWnd == NULL) || (pWnd->m_hWnd == NULL) )
@@ -200,7 +206,7 @@ static void MoveToNew ( CWnd * pWnd, int xOld, int yOld )
 	pWnd->InvalidateRect ( NULL );
 }
 
-static void MoveSizeToNew ( CWnd * pWnd, int xOld, int yOld )
+static void MoveSizeToNew ( _MainCmnWin * pWnd, int xOld, int yOld )
 {
 
 	if ( (pWnd == NULL) || (pWnd->m_hWnd == NULL) )
