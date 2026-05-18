@@ -850,8 +850,13 @@ BOOL CConquerApp::InitInstance( )
             TRAP( );
             std::string sNum1 = IntToStr( m_iRifVer );
             std::string sNum2 = IntToStr( VER_RIFF );
+            // IDS_WRONG_DATA_FILE has 4 positional placeholders (%1=actualName,
+            // %2=actualVer, %3=expectedName, %4=expectedVer). The legacy code
+            // passed only 3 args, which made strPrintf walk past the va_list
+            // tail and dereference garbage when this branch fired.
             std::string sMsg = strPrintf( EnLoadStdString( IDS_WRONG_DATA_FILE ).c_str(),
-                                          sName.c_str(), sNum1.c_str(), sNum2.c_str() );
+                                          sName.c_str(), sNum1.c_str(),
+                                          GameDataName, sNum2.c_str() );
             if ( EnMessageBox( sMsg.c_str(), MB_YESNO | MB_ICONSTOP ) != IDYES )
                 return ( 0 );
             bErr = TRUE;
@@ -1916,7 +1921,7 @@ void CConquerApp::AssertValid( ) const
     CWinApp::AssertValid( );
 
     ASSERT_VALID( &m_wndWorld );
-    ASSERT_VALID( &m_wndChat );
+    // ASSERT_VALID( &m_wndChat );  // ChatStub is not CObject-derived (Phase 2d-cont)
     ASSERT_VALID( &m_wndBar );
     ASSERT_VALID( &m_wndBldgs );
     ASSERT_VALID( &m_wndVehicles );
