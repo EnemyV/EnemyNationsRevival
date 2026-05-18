@@ -7,6 +7,19 @@
 // wndbase.h : header file
 //
 
+// Phase 1 migration gate. When ENATIONS_USE_STUB_WND is defined, CWndBase
+// inherits from the non-MFC CWndStub (see wndstub.h) instead of MFC's CWnd.
+// Default is off — CWndBase still inherits from CWnd. Flipping this on
+// also requires updating the 15 derived classes' message-map macros and
+// the BEGIN_MESSAGE_MAP machinery in wndbase.cpp; see wndstub.h's header
+// comment for the per-class migration recipe.
+#ifdef ENATIONS_USE_STUB_WND
+#include "wndstub.h"
+typedef CWndStub CWndBaseSuper;
+#else
+typedef CWnd     CWndBaseSuper;
+#endif
+
 /////////////////////////////////////////////////////////////////////////////
 // CWndBase window
 
@@ -14,7 +27,7 @@
 // by their window (used in Enemy Nations to blank out the status help
 typedef void ( FNMOUSEMOVE )( CWnd* pWnd, UINT nFlags, CPoint point );
 
-class CWndBase: public CWnd {
+class CWndBase: public CWndBaseSuper {
     // Construction
 public:
 
