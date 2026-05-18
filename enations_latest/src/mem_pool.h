@@ -115,9 +115,11 @@ class mempool_std_heap
 #ifdef _DEBUG
         activeAllocations.clear( );
 
-        std::string str = strPrintf( "init: allocated %u blocks of size %u bytes each\n",
-                                      (unsigned)N, (unsigned)S );
-        OutputDebugStringA( str.c_str() );
+        // strPrintf only handles positional %1/%2 (not printf %u/%s) — use snprintf here.
+        char buf[128];
+        _snprintf( buf, sizeof( buf ), "init: allocated %u blocks of size %u bytes each\n",
+                   (unsigned)N, (unsigned)S );
+        OutputDebugStringA( buf );
 #endif
 
         isInit = true;
@@ -135,9 +137,11 @@ class mempool_std_heap
         size_type newBlocks   = currentSize;  // Double the pool size
 
 #ifdef _DEBUG
-        std::string str = strPrintf( "Expanding pool: adding %u blocks (total will be %u)\n",
-                                      (unsigned)newBlocks, (unsigned)( currentSize + newBlocks ) );
-        OutputDebugStringA( str.c_str() );
+        // strPrintf only handles positional %1/%2 (not printf %u/%s) — use snprintf.
+        char buf1[128];
+        _snprintf( buf1, sizeof( buf1 ), "Expanding pool: adding %u blocks (total will be %u)\n",
+                   (unsigned)newBlocks, (unsigned)( currentSize + newBlocks ) );
+        OutputDebugStringA( buf1 );
 #endif
 
         // Allocate new blocks - each on its own heap address
@@ -150,10 +154,11 @@ class mempool_std_heap
         }
 
 #ifdef _DEBUG
-        str = strPrintf( "Pool expanded. Total: %u blocks, Free: %u blocks\n",
-                         (unsigned int)allocatedBlocks.size( ),
-                         (unsigned int)freeList.size( ) );
-        OutputDebugStringA( str.c_str() );
+        char buf2[128];
+        _snprintf( buf2, sizeof( buf2 ), "Pool expanded. Total: %u blocks, Free: %u blocks\n",
+                   (unsigned int)allocatedBlocks.size( ),
+                   (unsigned int)freeList.size( ) );
+        OutputDebugStringA( buf2 );
 #endif
     }
 
