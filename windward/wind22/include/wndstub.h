@@ -212,6 +212,31 @@ public:
     BOOL ShowWindow( int nCmdShow );
     BOOL EnableWindow( BOOL bEnable = TRUE );
     BOOL MoveWindow( int x, int y, int cx, int cy, BOOL bRepaint = TRUE );
+    BOOL ValidateRect( const RECT* pRect = NULL ) const;
+
+    // Coordinate conversion - MFC-compatible 4 overloads
+    BOOL ScreenToClient( LPPOINT pt ) const;
+    BOOL ScreenToClient( LPRECT  rc ) const;
+    BOOL ClientToScreen( LPPOINT pt ) const;
+    BOOL ClientToScreen( LPRECT  rc ) const;
+
+    // Placement
+    BOOL SetWindowPlacement( const WINDOWPLACEMENT* pwp );
+    BOOL GetWindowPlacement( WINDOWPLACEMENT* pwp ) const;
+
+    // Parent / sibling / dialog item lookup. GetParent returns HWND to match
+    // most game-code call sites which only need the handle. If you need to
+    // dispatch to the parent's virtual handlers, use FromHandle(GetParent()).
+    HWND GetParent() const;
+    HWND GetTopLevelParent() const;
+    HWND GetSafeHwnd() const                                      { return m_hWnd; }
+    HWND GetDlgItem( int nID ) const;
+    int  GetDlgCtrlID() const;
+    static HWND FindWindow( LPCSTR lpszClassName, LPCSTR lpszWindowName );
+
+    // Long-ptr access (raw Win32; useful for subclassing / GWLP_USERDATA games)
+    LONG_PTR GetWindowLongPtr( int idx ) const                    { return ::GetWindowLongPtr( m_hWnd, idx ); }
+    LONG_PTR SetWindowLongPtr( int idx, LONG_PTR v )              { return ::SetWindowLongPtr( m_hWnd, idx, v ); }
 
     // ----- Input / focus -----
     HWND SetFocus();
@@ -269,6 +294,24 @@ public:
     virtual void OnKillFocus( HWND hwndNew )                      { }
     virtual void OnMove( int x, int y )                           { }
     virtual void OnGetMinMaxInfo( MINMAXINFO* pMmi )               { }
+
+    // Additional virtual handlers covering common WM_* the game uses.
+    // BOOL-returning ones: return TRUE if the message was handled; FALSE
+    // causes WindowProc to fall through to DefWindowProc (so derived
+    // classes don't have to remember to invoke base behavior).
+    virtual BOOL OnCommand( WPARAM wParam, LPARAM lParam )        { return FALSE; }
+    virtual BOOL OnNotify ( WPARAM wParam, LPARAM lParam,
+                            LRESULT* pResult )                    { return FALSE; }
+    virtual void OnHScroll( UINT nSBCode, UINT nPos, HWND hwndSB ){ }
+    virtual void OnVScroll( UINT nSBCode, UINT nPos, HWND hwndSB ){ }
+    virtual BOOL OnSetCursor( HWND hwnd, UINT nHitTest, UINT msg ){ return FALSE; }
+    virtual void OnActivate( UINT nState, HWND hwndOther, BOOL bMin ) { }
+    virtual BOOL OnMouseWheel( UINT nFlags, short zDelta,
+                               int x, int y )                     { return FALSE; }
+    virtual void OnKeyUp( UINT nChar, UINT nRepCnt, UINT nFlags ) { }
+    virtual HBRUSH OnCtlColor( HDC hdc, HWND hwndCtrl, UINT nCtlColor ) { return NULL; }
+    virtual BOOL PreCreateWindow( CREATESTRUCT& cs )              { return TRUE; }
+    virtual BOOL PreTranslateMessage( MSG* pMsg )                 { return FALSE; }
 
     // PostNcDestroy: MFC's hook for `delete this` after WM_NCDESTROY.
     virtual void PostNcDestroy()                                  { }

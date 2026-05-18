@@ -159,6 +159,53 @@ LRESULT CWndStub::WindowProc( UINT msg, WPARAM wParam, LPARAM lParam )
         case WM_GETMINMAXINFO:
             OnGetMinMaxInfo( (MINMAXINFO*)lParam );
             return 0;
+        case WM_COMMAND:
+            if ( OnCommand( wParam, lParam ) )
+                return 0;
+            break;
+        case WM_NOTIFY: {
+            LRESULT result = 0;
+            if ( OnNotify( wParam, lParam, &result ) )
+                return result;
+            break;
+        }
+        case WM_HSCROLL:
+            OnHScroll( (UINT)LOWORD( wParam ), (UINT)HIWORD( wParam ), (HWND)lParam );
+            return 0;
+        case WM_VSCROLL:
+            OnVScroll( (UINT)LOWORD( wParam ), (UINT)HIWORD( wParam ), (HWND)lParam );
+            return 0;
+        case WM_SETCURSOR:
+            if ( OnSetCursor( (HWND)wParam, (UINT)LOWORD( lParam ), (UINT)HIWORD( lParam ) ) )
+                return TRUE;
+            break;
+        case WM_ACTIVATE:
+            OnActivate( (UINT)LOWORD( wParam ), (HWND)lParam, (BOOL)HIWORD( wParam ) );
+            return 0;
+        case WM_MOUSEWHEEL: {
+            short zDelta = (short)HIWORD( wParam );
+            UINT  flags  = (UINT)LOWORD( wParam );
+            int   x      = (int)(short)LOWORD( lParam );
+            int   y      = (int)(short)HIWORD( lParam );
+            if ( OnMouseWheel( flags, zDelta, x, y ) )
+                return 0;
+            break;
+        }
+        case WM_KEYUP:
+            OnKeyUp( (UINT)wParam, (UINT)LOWORD( lParam ), (UINT)HIWORD( lParam ) );
+            return 0;
+        case WM_CTLCOLORBTN:
+        case WM_CTLCOLOREDIT:
+        case WM_CTLCOLORDLG:
+        case WM_CTLCOLORLISTBOX:
+        case WM_CTLCOLORMSGBOX:
+        case WM_CTLCOLORSCROLLBAR:
+        case WM_CTLCOLORSTATIC: {
+            HBRUSH hbr = OnCtlColor( (HDC)wParam, (HWND)lParam, msg - WM_CTLCOLORMSGBOX );
+            if ( hbr != NULL )
+                return (LRESULT)hbr;
+            break;
+        }
     }
     return ::DefWindowProc( m_hWnd, msg, wParam, lParam );
 }
@@ -225,6 +272,51 @@ BOOL CWndStub::ShowWindow( int nCmdShow )                   { return ::ShowWindo
 BOOL CWndStub::EnableWindow( BOOL bEnable )                 { return ::EnableWindow( m_hWnd, bEnable ); }
 BOOL CWndStub::MoveWindow( int x, int y, int cx, int cy, BOOL bRepaint )
     { return ::MoveWindow( m_hWnd, x, y, cx, cy, bRepaint ); }
+BOOL CWndStub::ValidateRect( const RECT* pRect ) const
+    { return ::ValidateRect( m_hWnd, pRect ); }
+
+BOOL CWndStub::ScreenToClient( LPPOINT pt ) const
+    { return ::ScreenToClient( m_hWnd, pt ); }
+BOOL CWndStub::ScreenToClient( LPRECT  rc ) const
+{
+    POINT p1 = { rc->left,  rc->top    };
+    POINT p2 = { rc->right, rc->bottom };
+    BOOL b1 = ::ScreenToClient( m_hWnd, &p1 );
+    BOOL b2 = ::ScreenToClient( m_hWnd, &p2 );
+    rc->left = p1.x;  rc->top    = p1.y;
+    rc->right= p2.x;  rc->bottom = p2.y;
+    return b1 && b2;
+}
+BOOL CWndStub::ClientToScreen( LPPOINT pt ) const
+    { return ::ClientToScreen( m_hWnd, pt ); }
+BOOL CWndStub::ClientToScreen( LPRECT  rc ) const
+{
+    POINT p1 = { rc->left,  rc->top    };
+    POINT p2 = { rc->right, rc->bottom };
+    BOOL b1 = ::ClientToScreen( m_hWnd, &p1 );
+    BOOL b2 = ::ClientToScreen( m_hWnd, &p2 );
+    rc->left = p1.x;  rc->top    = p1.y;
+    rc->right= p2.x;  rc->bottom = p2.y;
+    return b1 && b2;
+}
+
+BOOL CWndStub::SetWindowPlacement( const WINDOWPLACEMENT* pwp )
+    { return ::SetWindowPlacement( m_hWnd, pwp ); }
+BOOL CWndStub::GetWindowPlacement( WINDOWPLACEMENT* pwp ) const
+    { return ::GetWindowPlacement( m_hWnd, pwp ); }
+
+HWND CWndStub::GetParent() const                              { return ::GetParent( m_hWnd ); }
+HWND CWndStub::GetTopLevelParent() const
+{
+    HWND h = m_hWnd;
+    for ( HWND p = ::GetParent( h ); p != NULL; p = ::GetParent( p ) )
+        h = p;
+    return h;
+}
+HWND CWndStub::GetDlgItem( int nID ) const                    { return ::GetDlgItem( m_hWnd, nID ); }
+int  CWndStub::GetDlgCtrlID() const                           { return ::GetDlgCtrlID( m_hWnd ); }
+HWND CWndStub::FindWindow( LPCSTR lpszClassName, LPCSTR lpszWindowName )
+    { return ::FindWindowA( lpszClassName, lpszWindowName ); }
 
 HWND CWndStub::SetFocus()                                   { return ::SetFocus( m_hWnd ); }
 HWND CWndStub::SetCapture()                                 { return ::SetCapture( m_hWnd ); }
