@@ -151,6 +151,15 @@ _RELEASE_INLINE void CMmio::ReadString( std::string& sRtn ) {
     sRtn.resize( iLen );
     if ( iLen > 0 )
         Read( &sRtn[0], iLen );
+
+    // The CString overload above calls `ReleaseBuffer(-1)`, which scans for an
+    // embedded null and trims length there. Data files written by the legacy
+    // game store strings as length-prefixed C-strings whose length includes a
+    // trailing '\0'; without this trim, comparisons against literal strings
+    // (e.g. version-check "Enemy Nations") fail by one byte.
+    size_t nullPos = sRtn.find( '\0' );
+    if ( nullPos != std::string::npos )
+        sRtn.resize( nullPos );
 }
 
 _RELEASE_INLINE const MMCKINFO& CMmio::GetRiffChunkInfo() const {
