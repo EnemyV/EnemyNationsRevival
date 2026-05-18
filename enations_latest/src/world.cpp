@@ -2001,7 +2001,7 @@ void CWndWorld::PaletteChange() {
 
 BOOL CWndWorld::OnSetCursor(CWnd *pWnd, UINT nHitTest, UINT message) {
 
-    if ((pWnd != this) || (nHitTest != HTCLIENT))
+    if ((pWnd->GetSafeHwnd() != m_hWnd) || (nHitTest != HTCLIENT))
         return CWndAnim::OnSetCursor(pWnd, nHitTest, message);
 
     SetMouseState();

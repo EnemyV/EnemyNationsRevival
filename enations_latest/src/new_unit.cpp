@@ -1036,7 +1036,7 @@ void CMaterialTypes::ctor( )
     pMmio->AscendList( );
     delete pMmio;
 
-    CWindowDC dc( NULL );
+    CWindowDC dc( (CWnd*)NULL );
     m_rgb[0]  = dc.GetNearestColor( PALETTERGB( 230, 154, 108 ) );
     m_rgb[1]  = dc.GetNearestColor( PALETTERGB( 128, 128, 255 ) );
     m_rgb[2]  = dc.GetNearestColor( PALETTERGB( 232, 163, 60 ) );

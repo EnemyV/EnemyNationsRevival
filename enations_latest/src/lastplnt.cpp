@@ -1085,7 +1085,7 @@ BOOL CConquerApp::InitInstance( )
 
         // get the font and sizes for the button bars
         Log( "Creating fonts" );
-        CWindowDC dc( NULL );
+        CWindowDC dc( (CWnd*)NULL );
 
         // get the main font - we try Newtown, then Arial, then Arial condensed till we fit
         LOGFONT lf;
@@ -1155,7 +1155,11 @@ BOOL CConquerApp::InitInstance( )
             // this is our main window - first created and last destroyed
             // already created by here but now we can load it's data (palette above)
             m_wndMain.LoadData( );
+#ifdef ENATIONS_USE_STUB_WND
+            m_pMainWnd = CWnd::FromHandle( m_wndMain.m_hWnd );
+#else
             m_pMainWnd = &m_wndMain;
+#endif
 
             // set up the thread code if we're Win32s (after window created)
             Log( "Initialize AI multi-threading" );
@@ -1504,7 +1508,11 @@ CDlgPause* CConquerApp::GetDlgPause( )
 {
 
     if ( m_pdlgPause == NULL )
+#ifdef ENATIONS_USE_STUB_WND
+        m_pdlgPause = new CDlgPause( CWnd::FromHandle( m_wndMain.m_hWnd ) );
+#else
         m_pdlgPause = new CDlgPause( &m_wndMain );
+#endif
     return ( m_pdlgPause );
 }
 

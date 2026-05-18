@@ -260,7 +260,11 @@ void CWndCredits::OnTimer(UINT nIDEvent)
 			}
 		}
 
+#ifdef ENATIONS_USE_STUB_WND
+	::ScrollWindow ( m_hWnd, 0, - iNum, &m_rText, NULL );
+#else
 	ScrollWindow ( 0, - iNum, &m_rText );
+#endif
   
 	CRect rect (m_rText);
 	rect.top = rect.bottom - iNum;

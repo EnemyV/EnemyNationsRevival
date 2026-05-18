@@ -554,9 +554,13 @@ void CWndUnitStat::OnPaint( )
         CRect rect;
         GetClientRect( &rect );
         CPoint pt( 0, 0 );
+#ifdef ENATIONS_USE_STUB_WND
+        ::MapWindowPoints( m_hWnd, GetParent( )->m_hWnd, &pt, 1 );
+        ::UnitShowStatus( m_pUnit, (CDC*)dc, rect, theBitmaps.GetByIndex( DIB_AREA_BAR ), pt );
+#else
         MapWindowPoints( GetParent( ), &pt, 1 );
-
         ::UnitShowStatus( m_pUnit, &dc, rect, theBitmaps.GetByIndex( DIB_AREA_BAR ), pt );
+#endif
 
         thePal.EndPaint( dc.m_hDC );
     }
@@ -1209,7 +1213,7 @@ BOOL CWndArea::OnEraseBkgnd( CDC* )
 BOOL CWndArea::OnSetCursor( CWnd* pWnd, UINT nHitTest, UINT message )
 {
 
-    if ( ( pWnd != this ) || ( nHitTest != HTCLIENT ) )
+    if ( ( pWnd->GetSafeHwnd() != m_hWnd ) || ( nHitTest != HTCLIENT ) )
         return CWndAnim::OnSetCursor( pWnd, nHitTest, message );
 
     SetMouseState( );

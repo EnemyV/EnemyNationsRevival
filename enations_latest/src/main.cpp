@@ -683,9 +683,9 @@ void CWndMain::OnActivateApp(BOOL bActive, DWORD hTask)
 	// of the window we came from
 	if (bActive)
 		{
-		CWnd *pWnd = SetActiveWindow ();
+		auto pWnd = SetActiveWindow ();
 		SetActiveWindow ();
-		pWnd->SetActiveWindow ();
+		if (pWnd) pWnd->SetActiveWindow ();
 		}
 
 	// set it to our system colors

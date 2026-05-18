@@ -81,9 +81,15 @@ int CWndListUnits::OnCreate(LPCREATESTRUCT lpCreateStruct) {
     // create the list box
     CRect rect;
     GetClientRect(&rect);
+#ifdef ENATIONS_USE_STUB_WND
+    m_ListBox.Create(WS_CHILD | WS_VISIBLE | LBS_NOINTEGRALHEIGHT | WS_VSCROLL | LBS_SORT |
+                     LBS_NOTIFY | LBS_OWNERDRAWFIXED | LBS_MULTIPLESEL | LBS_EXTENDEDSEL,
+                     rect, CWnd::FromHandle( m_hWnd ), 101);
+#else
     m_ListBox.Create(WS_CHILD | WS_VISIBLE | LBS_NOINTEGRALHEIGHT | WS_VSCROLL | LBS_SORT |
                      LBS_NOTIFY | LBS_OWNERDRAWFIXED | LBS_MULTIPLESEL | LBS_EXTENDEDSEL,
                      rect, this, 101);
+#endif
 
     return 0;
 }
@@ -2010,7 +2016,11 @@ int CWndRoute::OnCreate(LPCREATESTRUCT lpCreateStruct) {
     rect.left = theApp.BevelDimen();
     rect.bottom -= (theApp.TextHt() + 4 * theApp.BevelDimen());
     rect.right -= theApp.BevelDimen();
+#ifdef ENATIONS_USE_STUB_WND
+    m_listbox.Create(WS_CHILD | WS_VISIBLE | WS_VSCROLL | LBS_NOTIFY | LBS_USETABSTOPS, rect, CWnd::FromHandle( m_hWnd ), 101);
+#else
     m_listbox.Create(WS_CHILD | WS_VISIBLE | WS_VSCROLL | LBS_NOTIFY | LBS_USETABSTOPS, rect, this, 101);
+#endif
 
     m_iYmin = theApp.TextHt() + 5 * theApp.BevelDimen() +
               3 * m_listbox.GetItemHeight(0);
@@ -2054,7 +2064,11 @@ int CWndRoute::OnCreate(LPCREATESTRUCT lpCreateStruct) {
         m_Btns[2].EnableWindow(FALSE);
     }
 
+#ifdef ENATIONS_USE_STUB_WND
+    SDL2MFCPanel::Attach(CWnd::FromHandle( m_hWnd ), "route", 35);
+#else
     SDL2MFCPanel::Attach(this, "route", 35);
+#endif
 
     return 0;
 }
@@ -2394,7 +2408,11 @@ void CWndRoute::Invalidate() {
 
 void CWndRoute::OnDestroy() {
 
+#ifdef ENATIONS_USE_STUB_WND
+    SDL2MFCPanel::Detach(CWnd::FromHandle( m_hWnd ));
+#else
     SDL2MFCPanel::Detach(this);
+#endif
 
     ASSERT_VALID (m_pVeh);
     m_pVeh->m_pWndRoute = NULL;

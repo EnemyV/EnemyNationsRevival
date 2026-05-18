@@ -171,6 +171,18 @@
   #define ON_WM_HELPINFO()            typedef int   _wm_helpinfo_dummy_##__LINE__;
   #define ON_WM_RBUTTONDBLCLK_EX()    typedef int   _wm_rdblex_dummy_##__LINE__;
   #define ON_WM_LBUTTONDBLCLK_EX()    typedef int   _wm_ldblex_dummy_##__LINE__;
+  #define ON_WM_MEASUREITEM()         typedef int   _wm_measureitem_dummy_##__LINE__;
+  #define ON_WM_COMPAREITEM()         typedef int   _wm_compareitem_dummy_##__LINE__;
+  #define ON_WM_DELETEITEM()          typedef int   _wm_deleteitem_dummy_##__LINE__;
+  #define ON_WM_PARENTNOTIFY()        typedef int   _wm_parentnotify_dummy_##__LINE__;
+  #define ON_WM_WINDOWPOSCHANGING()   typedef int   _wm_winposchg_dummy_##__LINE__;
+  #define ON_WM_WINDOWPOSCHANGED()    typedef int   _wm_winposchgd_dummy_##__LINE__;
+  #define ON_WM_SHOWWINDOW()          typedef int   _wm_showwindow_dummy_##__LINE__;
+  #define ON_WM_NCCALCSIZE()          typedef int   _wm_nccalcsize_dummy_##__LINE__;
+  #define ON_WM_NCHITTEST()           typedef int   _wm_nchittest_dummy_##__LINE__;
+  #define ON_WM_NCPAINT()             typedef int   _wm_ncpaint_dummy_##__LINE__;
+  #define ON_WM_VKEYTOITEM()          typedef int   _wm_vkeytoitem_dummy_##__LINE__;
+  #define ON_WM_CHARTOITEM()          typedef int   _wm_chartoitem_dummy_##__LINE__;
   #define ON_MESSAGE(msg, fn)         typedef int   _on_msg_dummy_##__LINE__;
   #define ON_COMMAND(id, fn)          typedef int   _on_cmd_dummy_##__LINE__;
   #define ON_COMMAND_RANGE(lo, hi, fn) typedef int  _on_cmdrng_dummy_##__LINE__;
@@ -214,6 +226,26 @@ public:
                    DWORD dwStyle, int x, int y, int cx, int cy,
                    HWND hwndParent, HMENU hMenu, LPVOID lpParam );
     BOOL DestroyWindow();
+
+    // MFC-compatible Create overloads. CWndBase::Create / CWndStatBar::Create
+    // and friends use this signature; we delegate to CreateEx with the parent
+    // unwrapped to HWND. Accepts CWnd* (MFC widget parents) or CWndStub*.
+    BOOL Create( LPCSTR lpszClassName, LPCSTR lpszWindowName, DWORD dwStyle,
+                 const RECT& rect, CWndStub* pParent, UINT nID, void* pContext = NULL )
+    {
+        (void)pContext;
+        return CreateEx( 0, lpszClassName, lpszWindowName, dwStyle,
+                         rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top,
+                         pParent ? pParent->m_hWnd : NULL, (HMENU)(UINT_PTR)nID, NULL );
+    }
+    BOOL Create( LPCSTR lpszClassName, LPCSTR lpszWindowName, DWORD dwStyle,
+                 const RECT& rect, CWnd* pParent, UINT nID, void* pContext = NULL )
+    {
+        (void)pContext;
+        return CreateEx( 0, lpszClassName, lpszWindowName, dwStyle,
+                         rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top,
+                         pParent ? pParent->GetSafeHwnd() : NULL, (HMENU)(UINT_PTR)nID, NULL );
+    }
 
     // ----- Geometry / state -----
     BOOL GetClientRect( RECT* pRect ) const;
@@ -262,6 +294,9 @@ public:
     static BOOL ReleaseCapture();
     HWND SetForegroundWindow();
     BOOL BringWindowToTop();
+    // SetActiveWindow has MFC semantics: takes no args, returns previous active.
+    CWndStub* SetActiveWindow();
+    CWndStub* ChildWindowFromPoint( POINT pt ) const;
     UINT_PTR SetTimer( UINT_PTR id, UINT msElapsed, TIMERPROC proc = NULL );
     BOOL KillTimer( UINT_PTR id );
 
@@ -284,6 +319,12 @@ public:
     BOOL IsIconic() const;
     BOOL IsWindowVisible() const;
     BOOL IsWindowEnabled() const;
+
+    // MFC compat — Default() forwards to DefWindowProc with the current message
+    // context (used inside WindowProc overrides). For non-message-context calls
+    // it's a no-op. SetRedraw is a simple WM_SETREDRAW dispatch.
+    LRESULT Default()                                             { return 0; }
+    BOOL SetRedraw( BOOL bRedraw = TRUE )                         { ::SendMessage( m_hWnd, WM_SETREDRAW, (WPARAM)bRedraw, 0 ); return TRUE; }
 
     // ----- Virtual handlers (override in derived classes) -----
     // Default implementations call DefWindowProc.
@@ -440,6 +481,7 @@ protected:
 class CStubPaintDC {
 public:
     CStubPaintDC( CWndStub* p ) : m_hWnd( p->m_hWnd ) { m_hDC = ::BeginPaint( m_hWnd, &m_ps ); }
+    CStubPaintDC( CWnd* p )     : m_hWnd( p->GetSafeHwnd() ) { m_hDC = ::BeginPaint( m_hWnd, &m_ps ); }
     ~CStubPaintDC()                                   { ::EndPaint( m_hWnd, &m_ps ); }
     operator HDC() const                              { return m_hDC; }
     HDC          m_hDC;
@@ -453,6 +495,7 @@ private:
 class CStubClientDC {
 public:
     CStubClientDC( CWndStub* p ) : m_hWnd( p->m_hWnd ) { m_hDC = ::GetDC( m_hWnd ); }
+    CStubClientDC( CWnd* p )     : m_hWnd( p->GetSafeHwnd() ) { m_hDC = ::GetDC( m_hWnd ); }
     ~CStubClientDC()                                   { ::ReleaseDC( m_hWnd, m_hDC ); }
     operator HDC() const                               { return m_hDC; }
     HDC m_hDC;
@@ -465,6 +508,7 @@ private:
 class CStubWindowDC {
 public:
     CStubWindowDC( CWndStub* p ) : m_hWnd( p->m_hWnd ) { m_hDC = ::GetWindowDC( m_hWnd ); }
+    CStubWindowDC( CWnd* p )     : m_hWnd( p->GetSafeHwnd() ) { m_hDC = ::GetWindowDC( m_hWnd ); }
     ~CStubWindowDC()                                   { ::ReleaseDC( m_hWnd, m_hDC ); }
     operator HDC() const                               { return m_hDC; }
     HDC m_hDC;

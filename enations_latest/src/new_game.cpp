@@ -66,18 +66,20 @@ LRESULT CALLBACK PerBarProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
         case WM_PAINT : {
             // check pDib
             CRect rect;
-            CWnd *pWnd = CWnd::FromHandle(hWnd);
-            pWnd->GetClientRect(&rect);
+            ::GetClientRect(hWnd, &rect);
             si.SetSize(rect);
 
             // set the percentage
             si.SetPer(::GetWindowWord(hWnd, 0));
 
-            // draw the frame
-            CPaintDC dc(pWnd);
-            thePal.Paint(dc.m_hDC);
-            si.DrawIcon(&dc);
-            thePal.EndPaint(dc.m_hDC);
+            // draw the frame -- raw HDC pattern (no MFC CWnd* needed)
+            PAINTSTRUCT ps;
+            HDC hdc = ::BeginPaint(hWnd, &ps);
+            thePal.Paint(hdc);
+            CDC* pdc = CDC::FromHandle(hdc);
+            si.DrawIcon(pdc);
+            thePal.EndPaint(hdc);
+            ::EndPaint(hWnd, &ps);
             return (0);
         }
     }

@@ -182,7 +182,7 @@ void CStatData::Init (CMmio * pMmio)
 				m_pFnt->CreateFontIndirect (&lf);
 
 				// see if it will fit
-				CClientDC dc ( NULL );
+				CClientDC dc ( (CWnd*)NULL );
 				CFont * pOldFont = dc.SelectObject (m_pFnt);
 				std::string sTest = EnLoadStdString(IDS_LONGEST_STRING);
 				CRect rect (0, 0, theApp.m_iScrnX, theApp.m_iScrnY);
@@ -754,7 +754,11 @@ void CWndStatBar::OnPaint()
 	CPaintDC dc(this); // device context for painting
 	thePal.Paint (dc.m_hDC);
 	
+#ifdef ENATIONS_USE_STUB_WND
+	m_statInst.DrawIcon ((CDC*)dc);
+#else
 	m_statInst.DrawIcon (&dc);
+#endif
 
 	thePal.EndPaint (dc.m_hDC);
 	// Do not call CWndBase::OnPaint() for painting messages

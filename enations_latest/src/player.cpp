@@ -1640,6 +1640,15 @@ void CGame::AiTakeOverPlayer( CPlayer* pPlr, BOOL bStartThread, BOOL bShowDlg )
     NoUnPause:
 
         // tell them
+#ifdef ENATIONS_USE_STUB_WND
+        CDlgSaveMsg dlgMsg( CWnd::FromHandle( theApp.m_wndMain.m_hWnd ) );
+        if ( bShowDlg )
+        {
+            dlgMsg.m_sText = strPrintf( EnLoadStdString( IDS_AI_TAKEOVER ).c_str(),
+                                        (const char*)pPlr->GetName( ) );
+            dlgMsg.Create( IDD_SAVE_MSG, CWnd::FromHandle( theApp.m_wndMain.m_hWnd ) );
+        }
+#else
         CDlgSaveMsg dlgMsg( &( theApp.m_wndMain ) );
         if ( bShowDlg )
         {
@@ -1647,6 +1656,7 @@ void CGame::AiTakeOverPlayer( CPlayer* pPlr, BOOL bStartThread, BOOL bShowDlg )
                                         (const char*)pPlr->GetName( ) );
             dlgMsg.Create( IDD_SAVE_MSG, &( theApp.m_wndMain ) );
         }
+#endif
 
         ::AiTakeOverPlayer( pPlr );
         if ( bStartThread )

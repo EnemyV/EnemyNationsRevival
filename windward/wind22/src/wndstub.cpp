@@ -348,6 +348,28 @@ BOOL CWndStub::ReleaseCapture()                             { return ::ReleaseCa
 HWND CWndStub::SetForegroundWindow()                        { return ::SetForegroundWindow( m_hWnd ) ? m_hWnd : NULL; }
 BOOL CWndStub::BringWindowToTop()                           { return ::BringWindowToTop( m_hWnd ); }
 
+CWndStub* CWndStub::SetActiveWindow()
+{
+    HWND hPrev = ::SetActiveWindow( m_hWnd );
+    if ( hPrev == NULL ) return NULL;
+    CWndStub* p = (CWndStub*)::GetWindowLongPtr( hPrev, GWLP_USERDATA );
+    if ( p != NULL ) return p;
+    thread_local CWndStub s_tempPrevActive;
+    s_tempPrevActive.m_hWnd = hPrev;
+    return &s_tempPrevActive;
+}
+
+CWndStub* CWndStub::ChildWindowFromPoint( POINT pt ) const
+{
+    HWND h = ::ChildWindowFromPoint( m_hWnd, pt );
+    if ( h == NULL ) return NULL;
+    CWndStub* p = (CWndStub*)::GetWindowLongPtr( h, GWLP_USERDATA );
+    if ( p != NULL ) return p;
+    thread_local CWndStub s_tempChild;
+    s_tempChild.m_hWnd = h;
+    return &s_tempChild;
+}
+
 UINT_PTR CWndStub::SetTimer( UINT_PTR id, UINT msElapsed, TIMERPROC proc )
     { return ::SetTimer( m_hWnd, id, msElapsed, proc ); }
 BOOL CWndStub::KillTimer( UINT_PTR id )                     { return ::KillTimer( m_hWnd, id ); }
