@@ -101,7 +101,7 @@ void SDL2FileDialog::OnSave() {
     if (browser.WasConfirmed()) {
         // Pre-set the filename so SaveGame can skip its file dialog
         theGame.m_sFileName = browser.GetSelectedPath().c_str();
-        theGame.SaveGame(NULL);
+        theGame.SaveGame( (CWnd*)NULL );
     }
 }
 

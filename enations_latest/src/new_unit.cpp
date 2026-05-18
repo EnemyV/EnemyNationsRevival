@@ -1295,7 +1295,7 @@ void CUnit::MaterialChange( )
     {
         CPoint pt;
         ::GetCursorPos( &pt );
-        if ( CWnd::WindowFromPoint( pt ) == pAreaWnd->_GetStatBar( ) )
+        if ( ::WindowFromPoint( pt ) == pAreaWnd->_GetStatBar( )->m_hWnd )
         {
             std::string str;
             ShowStatusText( str );

@@ -562,19 +562,19 @@ LRESULT CWndBar::OnStatusMouseMove( WPARAM, LPARAM lParam )
 {
 
     std::string sText;  // default to blank
-    if ( (CWnd*)lParam == &m_wndStat[gas] )
+    if ( (CWndBaseSuper*)lParam == &m_wndStat[gas] )
     {
         std::string sNum1 = IntToStr( theGame.GetMe( )->GetGasNeed( ) );
         std::string sNum2 = IntToStr( theGame.GetMe( )->GetGasHave( ) );
         sText = strPrintf( EnLoadStdString( IDH_STAT_GAS ).c_str(), sNum1.c_str(), sNum2.c_str() );
     }
-    else if ( (CWnd*)lParam == &m_wndStat[power] )
+    else if ( (CWndBaseSuper*)lParam == &m_wndStat[power] )
     {
         std::string sNum1 = IntToStr( theGame.GetMe( )->GetPwrNeed( ) );
         std::string sNum2 = IntToStr( theGame.GetMe( )->GetPwrHave( ) );
         sText = strPrintf( EnLoadStdString( IDH_STAT_POWER ).c_str(), sNum1.c_str(), sNum2.c_str() );
     }
-    else if ( (CWnd*)lParam == &m_wndStat[people] )
+    else if ( (CWndBaseSuper*)lParam == &m_wndStat[people] )
     {
         std::string sNum1 = IntToStr( theGame.GetMe( )->GetPplTotal( ) );
         std::string sNum3 = IntToStr( theGame.GetMe( )->GetPplVeh( ) );
@@ -593,13 +593,13 @@ LRESULT CWndBar::OnStatusMouseMove( WPARAM, LPARAM lParam )
                                sNum1.c_str(), sNum2.c_str(), sNum3.c_str(), sNum4.c_str() );
         }
     }
-    else if ( (CWnd*)lParam == &m_wndStat[food] )
+    else if ( (CWndBaseSuper*)lParam == &m_wndStat[food] )
     {
         std::string sNum1 = IntToStr( theGame.GetMe( )->GetFoodNeed( ) );
         std::string sNum2 = IntToStr( theGame.GetMe( )->GetFood( ) );
         sText = strPrintf( EnLoadStdString( IDH_STAT_FOOD ).c_str(), sNum1.c_str(), sNum2.c_str() );
     }
-    else if ( (CWnd*)lParam == &m_wndTime )
+    else if ( (CWndBaseSuper*)lParam == &m_wndTime )
         sText = EnLoadStdString( IDH_STAT_CLOCK );
 
     m_wndText[1].SetText( sText.c_str() );
@@ -740,7 +740,7 @@ void CWndBar::UpdateHelp( CWnd* pWnd )
 
     CPoint pt;
     ::GetCursorPos( &pt );
-    if ( CWnd::WindowFromPoint( pt ) == pWnd )
+    if ( ::WindowFromPoint( pt ) == pWnd->GetSafeHwnd() )
         SendMessage( WM_ICONMOUSEMOVE, 0, (LPARAM)pWnd );
 }
 

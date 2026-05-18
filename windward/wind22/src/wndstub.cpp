@@ -328,7 +328,16 @@ HWND CWndStub::GetTopLevelParent() const
         h = p;
     return h;
 }
-HWND CWndStub::GetDlgItem( int nID ) const                    { return ::GetDlgItem( m_hWnd, nID ); }
+CWndStub* CWndStub::GetDlgItem( int nID ) const
+{
+    HWND h = ::GetDlgItem( m_hWnd, nID );
+    if ( h == NULL ) return NULL;
+    CWndStub* p = (CWndStub*)::GetWindowLongPtr( h, GWLP_USERDATA );
+    if ( p != NULL ) return p;
+    thread_local CWndStub s_tempItem;
+    s_tempItem.m_hWnd = h;
+    return &s_tempItem;
+}
 int  CWndStub::GetDlgCtrlID() const                           { return ::GetDlgCtrlID( m_hWnd ); }
 HWND CWndStub::FindWindow( LPCSTR lpszClassName, LPCSTR lpszWindowName )
     { return ::FindWindowA( lpszClassName, lpszWindowName ); }

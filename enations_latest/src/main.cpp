@@ -392,7 +392,7 @@ void CWndMain::OnPaletteChanged(CWnd* pFocusWnd)
 	if ( (m_progPos == loading) || (m_progPos == movie) || (m_progPos == exiting) )
 		{
 		// do NOT call CWndBase::
-		CWnd::OnPaletteChanged (pFocusWnd);
+		CWndBaseSuper::OnPaletteChanged(pFocusWnd);
 		return;
 		}
 
@@ -407,7 +407,7 @@ BOOL CWndMain::OnQueryNewPalette()
 	if ( (m_progPos == loading) || (m_progPos == movie) || (m_progPos == exiting) )
 		{
 		// do NOT call CWndBase::
-		return ( CWnd::OnQueryNewPalette () );
+		return ( CWndBaseSuper::OnQueryNewPalette() );
 		}
 
 	// call CWndBase - we want a palette
@@ -750,7 +750,7 @@ void SaveExistingGame ()
 	}
 
 	if (EnMessageBox(IDS_SAVE_OLD, MB_YESNO | MB_ICONQUESTION) == IDYES)
-		theGame.SaveGame (NULL);
+		theGame.SaveGame( (CWnd*)NULL );
 }
 
 

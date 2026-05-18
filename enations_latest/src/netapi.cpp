@@ -493,7 +493,7 @@ static void OnMsgSessionClose( )
                                           theGame.m_sGameName.c_str() );
 
             if ( EnMessageBox( sMsg.c_str(), MB_YESNO | MB_ICONQUESTION ) == IDYES )
-                theGame.SaveGame( NULL );
+                theGame.SaveGame( (CWnd*)NULL );
         }
 
     // We have to tell the player (this is bad news) and

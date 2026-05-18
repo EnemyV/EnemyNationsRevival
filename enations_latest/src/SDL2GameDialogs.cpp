@@ -843,7 +843,7 @@ void SDL2CutSceneDialog::OnCancel() {
 
 void SDL2CutSceneDialog::OnSave() {
     // Save game, then continue
-    theGame.SaveGame(NULL);
+    theGame.SaveGame( (CWnd*)NULL );
     m_result = 1; // CUT_OK (continue after save)
     EndDialog(1);
 }

@@ -159,7 +159,7 @@ int CConquerApp::Run( )
                 TRAP( );
                 try
                 {
-                    theGame.SaveGame( NULL );
+                    theGame.SaveGame( (CWnd*)NULL );
                 }
                 catch ( ... )
                 {
@@ -184,7 +184,7 @@ int CConquerApp::Run( )
             {
                 try
                 {
-                    theGame.SaveGame( NULL );
+                    theGame.SaveGame( (CWnd*)NULL );
                 }
                 catch ( ... )
                 {
@@ -232,7 +232,7 @@ int CConquerApp::Run( )
             {
                 try
                 {
-                    theGame.SaveGame( NULL );
+                    theGame.SaveGame( (CWnd*)NULL );
                 }
                 catch ( ... )
                 {

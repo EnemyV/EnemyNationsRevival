@@ -159,6 +159,18 @@
   #define ON_WM_ACTIVATE()            typedef int   _wm_activate_dummy_##__LINE__;
   #define ON_WM_NCLBUTTONDOWN()       typedef int   _wm_ncbtndn_dummy_##__LINE__;
   #define ON_WM_NCMOUSEMOVE()         typedef int   _wm_ncmm_dummy_##__LINE__;
+  #define ON_WM_RBUTTONDBLCLK()       typedef int   _wm_rbtndbl_dummy_##__LINE__;
+  #define ON_WM_MBUTTONDBLCLK()       typedef int   _wm_mbtndbl_dummy_##__LINE__;
+  #define ON_WM_SETCURSOR()           typedef int   _wm_setcursor_dummy_##__LINE__;
+  #define ON_WM_KEYUP()               typedef int   _wm_keyup_dummy_##__LINE__;
+  #define ON_WM_CTLCOLOR()            typedef int   _wm_ctlcolor_dummy_##__LINE__;
+  #define ON_WM_MOUSEWHEEL()          typedef int   _wm_mousewheel_dummy_##__LINE__;
+  #define ON_WM_NOTIFY()              typedef int   _wm_notify_dummy_##__LINE__;
+  #define ON_WM_CONTEXTMENU()         typedef int   _wm_ctxmenu_dummy_##__LINE__;
+  #define ON_WM_INITDIALOG()          typedef int   _wm_initdlg_dummy_##__LINE__;
+  #define ON_WM_HELPINFO()            typedef int   _wm_helpinfo_dummy_##__LINE__;
+  #define ON_WM_RBUTTONDBLCLK_EX()    typedef int   _wm_rdblex_dummy_##__LINE__;
+  #define ON_WM_LBUTTONDBLCLK_EX()    typedef int   _wm_ldblex_dummy_##__LINE__;
   #define ON_MESSAGE(msg, fn)         typedef int   _on_msg_dummy_##__LINE__;
   #define ON_COMMAND(id, fn)          typedef int   _on_cmd_dummy_##__LINE__;
   #define ON_COMMAND_RANGE(lo, hi, fn) typedef int  _on_cmdrng_dummy_##__LINE__;
@@ -233,7 +245,10 @@ public:
     HWND GetParentHwnd() const                                    { return ::GetParent( m_hWnd ); }
     HWND GetTopLevelParent() const;
     HWND GetSafeHwnd() const                                      { return m_hWnd; }
-    HWND GetDlgItem( int nID ) const;
+    // GetDlgItem returns CWndStub* (MFC-compatible) so `pBtn->ShowWindow(...)`
+    // patterns work. Non-stub-managed dialog items get a thread-local temp.
+    CWndStub* GetDlgItem( int nID ) const;
+    HWND GetDlgItemHwnd( int nID ) const                          { return ::GetDlgItem( m_hWnd, nID ); }
     int  GetDlgCtrlID() const;
     static HWND FindWindow( LPCSTR lpszClassName, LPCSTR lpszWindowName );
 
@@ -297,6 +312,24 @@ public:
     virtual void OnKillFocus( HWND hwndNew )                      { }
     virtual void OnMove( int x, int y )                           { }
     virtual void OnGetMinMaxInfo( MINMAXINFO* pMmi )               { }
+
+    // CPoint-taking forwarders for OnMouseMove/OnLButtonDown/etc — game
+    // code with MFC-style signatures (`CWnd::OnMouseMove(UINT, CPoint)`)
+    // can call these. The forwarders unpack to (UINT, int x, int y).
+    void OnMouseMove( UINT flags, POINT point )                   { OnMouseMove( flags, point.x, point.y ); }
+    void OnLButtonDown( UINT flags, POINT point )                 { OnLButtonDown( flags, point.x, point.y ); }
+    void OnLButtonDblClk( UINT flags, POINT point )               { OnLButtonDblClk( flags, point.x, point.y ); }
+    void OnRButtonDown( UINT flags, POINT point )                 { OnRButtonDown( flags, point.x, point.y ); }
+    void OnMButtonDown( UINT flags, POINT point )                 { OnMButtonDown( flags, point.x, point.y ); }
+
+    // MFC-type forwarders for callers using `CWnd*` / `CScrollBar*` / `CDC*`.
+    // They unwrap to the HWND/HDC signatures the virtuals actually use.
+    void OnPaletteChanged( CWnd* pFocus )                         { OnPaletteChanged( pFocus ? pFocus->GetSafeHwnd() : (HWND)NULL ); }
+    void OnHScroll( UINT nSBCode, UINT nPos, CScrollBar* pSB )    { OnHScroll( nSBCode, nPos, pSB ? pSB->GetSafeHwnd() : (HWND)NULL ); }
+    void OnVScroll( UINT nSBCode, UINT nPos, CScrollBar* pSB )    { OnVScroll( nSBCode, nPos, pSB ? pSB->GetSafeHwnd() : (HWND)NULL ); }
+    BOOL OnSetCursor( CWnd* pWnd, UINT nHit, UINT msg )           { return OnSetCursor( pWnd ? pWnd->GetSafeHwnd() : (HWND)NULL, nHit, msg ); }
+    void OnActivate( UINT nState, CWnd* pOther, BOOL bMin )       { OnActivate( nState, pOther ? pOther->GetSafeHwnd() : (HWND)NULL, bMin ); }
+    HBRUSH OnCtlColor( CDC* pDC, CWnd* pCtrl, UINT nType )        { return OnCtlColor( pDC ? pDC->GetSafeHdc() : (HDC)NULL, pCtrl ? pCtrl->GetSafeHwnd() : (HWND)NULL, nType ); }
 
     // Additional virtual handlers covering common WM_* the game uses.
     // BOOL-returning ones: return TRUE if the message was handled; FALSE

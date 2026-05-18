@@ -784,7 +784,7 @@ void CWndStatBar::OnMouseMove(UINT nFlags, CPoint point)
 	// tell the parent
 	GetParent()->SendMessage ( WM_ICONMOUSEMOVE, 0, (LPARAM) this );
 
-	CWnd::OnMouseMove(nFlags, point);
+	CWndBaseSuper::OnMouseMove(nFlags, point);
 }
 
 int CWndStatBar::OnCreate(LPCREATESTRUCT lpCreateStruct) 

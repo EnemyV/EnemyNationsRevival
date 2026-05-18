@@ -523,7 +523,7 @@ void CWndUnitStat::UpdateStat( )
 
     CPoint pt;
     ::GetCursorPos( &pt );
-    if ( CWnd::WindowFromPoint( pt ) == this )
+    if ( ::WindowFromPoint( pt ) == m_hWnd )
         OnMouseMove( 0, pt );
 }
 
@@ -782,7 +782,7 @@ void CWndAreaStatic::SizeStatus( )
 BOOL CWndArea::IsButtonEnabled( int ID ) const
 {
 
-    CWnd* pBtn = m_WndStatic.GetDlgItem( ID );
+    auto pBtn = m_WndStatic.GetDlgItem( ID );
     ASSERT_STRICT_VALID( pBtn );
     return ( pBtn->IsWindowEnabled( ) );
 }
@@ -790,7 +790,7 @@ BOOL CWndArea::IsButtonEnabled( int ID ) const
 void CWndAreaStatic::EnableButton( int ID, BOOL bEnable )
 {
 
-    CWnd* pBtn = GetDlgItem( ID );
+    auto pBtn = GetDlgItem( ID );
     ASSERT_STRICT_VALID( pBtn );
     pBtn->EnableWindow( bEnable );
 }
@@ -798,7 +798,7 @@ void CWndAreaStatic::EnableButton( int ID, BOOL bEnable )
 void CWndAreaStatic::ShowButton( int ID, BOOL bShow )
 {
 
-    CWnd* pBtn = GetDlgItem( ID );
+    auto pBtn = GetDlgItem( ID );
     ASSERT_STRICT_VALID( pBtn );
     // When using SDL panel, keep buttons visible but disabled instead of hidden
     if ( m_sdlPanel ) {
@@ -1561,7 +1561,7 @@ void CWndArea::OnMouseMove( UINT nFlags, CPoint point )
             }
             else
                 theApp.m_wndBar.SetStatusText( 0, m_sHelpCantBuild[6].c_str( ), CStatInst::critical );
-            CWnd::OnMouseMove( nFlags, point );
+            CWndBaseSuper::OnMouseMove( nFlags, point );
             return;
         }
 
@@ -1663,7 +1663,7 @@ void CWndArea::OnMouseMove( UINT nFlags, CPoint point )
         theMap.SetBldgCur( _hexBuild, m_iBuild, GetBuildDir( ), iCurType );
     }
 
-    CWnd::OnMouseMove( nFlags, point );
+    CWndBaseSuper::OnMouseMove( nFlags, point );
 }
 
 //--------------------------------------------------------------------------

@@ -373,7 +373,7 @@ void CWndMovie::PostNcDestroy() {
 
 void CWndMovie::OnSize(UINT nType, int cx, int cy) {
 
-    CWnd::OnSize(nType, cx, cy);
+    CWndBaseSuper::OnSize(nType, cx, cy);
 
     if (m_hWndAvi != NULL) {
         TRAP();
