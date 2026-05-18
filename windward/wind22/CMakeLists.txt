@@ -57,9 +57,10 @@ target_compile_definitions(wind22 PUBLIC
     _X86_ # Hack! This should not be necessary.
     #LOGGINGON
     AI_THREADS_ENABLED
+    # ENATIONS_USE_STUB_WND  # Phase 1: flip this on to swap CWndBase to non-MFC CWndStub
     $<$<CONFIG:Release>:NDEBUG>
-    $<$<CONFIG:Profile>:NDEBUG>    
-    $<$<CONFIG:Debug>:_DEBUG>  
+    $<$<CONFIG:Profile>:NDEBUG>
+    $<$<CONFIG:Debug>:_DEBUG>
     $<$<CONFIG:Sanitize>:_DEBUG>
 )
 

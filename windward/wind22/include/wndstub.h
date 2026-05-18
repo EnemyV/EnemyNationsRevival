@@ -36,23 +36,56 @@
 //
 // MIGRATION STEPS (to be done in a later session)
 // -----------------------------------------------
-//   1. Implement CWndStub fully (this file + wndstub.cpp).
-//   2. In wndbase.h, add `#ifdef ENATIONS_USE_STUB_WND` to inherit from
-//      CWndStub instead of CWnd. Replace `LRESULT WindowProc(UINT, WPARAM, LPARAM)`
-//      override to keep its CFramePainter passthrough behavior.
-//   3. In wndbase.cpp, redefine BEGIN_MESSAGE_MAP / END_MESSAGE_MAP /
-//      ON_WM_* macros to expand to no-ops (since CWndStub uses direct
-//      virtual dispatch, not a message map).
-//   4. Walk the 15 derived classes (CWndMain, CWndArea, CWndWorld, etc.).
+//   1. Implement CWndStub fully (this file + wndstub.cpp).   ✅ DONE
+//   2. In wndbase.h, gate on ENATIONS_USE_STUB_WND.          ✅ DONE
+//   3. In wndbase.h, replace `CDC* GetDC()` / `int ReleaseDC(CDC*)`
+//      overrides with HDC-returning versions when gate on. The current
+//      overrides use CWnd::GetDC() and m_pDc is a CDC*.
+//   4. In wndbase.cpp, replace BEGIN_MESSAGE_MAP / END_MESSAGE_MAP with
+//      `#ifdef ENATIONS_USE_STUB_WND` blocks. When the gate is on, the
+//      message map disappears entirely and CWndStub's virtual dispatch
+//      handles routing.
+//   5. In wndbase.cpp, replace `CWnd::OnCreate(lpCs)` / `CWnd::OnDestroy()`
+//      / `CWnd::WindowProc(...)` / `CWnd::OnMouseMove(...)` /
+//      `CWnd::OnPaletteChanged(...)` / `CWnd::OnQueryNewPalette()` calls
+//      with CWndStub:: versions (which themselves no-op or call
+//      DefWindowProc as appropriate). The CFramePainter passthrough in
+//      WindowProc stays.
+//   6. Replace `CClientDC dc(this)` with raw `HDC hdc = GetDC(); ...
+//      ReleaseDC(hdc)`. Two sites in wndbase.cpp (OnPaletteChanged +
+//      OnQueryNewPalette).
+//   7. Change FNMOUSEMOVE typedef from `void(CWnd*, UINT, CPoint)` to
+//      `void(CWndStub*, UINT, int x, int y)` when gate on.
+//   8. Walk the 15 derived classes (CWndMain, CWndArea, CWndWorld, etc.).
 //      For each one that uses `ON_MESSAGE(WM_FOO, OnFoo)`, add a
 //      WindowProc override that handles those messages by switch+call.
 //      ~30 ON_MESSAGE / ON_COMMAND / ON_NOTIFY entries in main.cpp's
 //      CWndMain map alone — those need explicit dispatch.
-//   5. Build, fix, iterate.
-//   6. Drop CWnd's `Default*` window message handlers (DefWindowProc
-//      handles those).
-//   7. Remove `#include <afxwin.h>` from places where it's only there
+//   9. For each derived class that overrides OnEraseBkgnd(CDC*), update
+//      signature to OnEraseBkgnd(HDC) when gate on.
+//  10. Build, fix, iterate.
+//  11. Remove `#include <afxwin.h>` from places where it's only there
 //      for CWnd.
+//
+// ERROR SURFACE (when gate is flipped, before the above is done)
+// --------------------------------------------------------------
+// Captured 2026-05-17 by temporarily flipping ENATIONS_USE_STUB_WND on:
+//   ~30 errors, all in wndbase.h (3 errors) and wndbase.cpp (~27).
+//   No errors in derived classes because their override signatures
+//   already match CWndStub's virtual signatures (OnCreate takes
+//   LPCREATESTRUCT, OnDestroy takes void, etc.). The CDC*-vs-HDC
+//   issue only bites in wndbase.cpp/h plus any derived class that
+//   overrides OnEraseBkgnd(CDC*) — those will surface when the wndbase
+//   layer compiles clean.
+//
+//   Categories:
+//   - C3668 (1):  GetMessageMap override has no base — message map dead
+//   - C2737 (2):  _messageEntries / messageMap const-init — message map dead
+//   - C2440 (4):  static_cast CWndBase::Method to CWnd::Method — msg-map
+//   - C2352 (~12): CWnd::OnCreate/OnDestroy/WindowProc/etc. need this ptr
+//   - C2248 (~6): CWnd::OnCreate/OnDestroy/etc. are protected in CWnd
+//   - C2665 (2):  CClientDC ctor wants CWnd*, has CWndBase*
+//   - C2664 (1):  FNMOUSEMOVE expects CWnd*, has CWndBase*
 //
 //---------------------------------------------------------------------------
 
