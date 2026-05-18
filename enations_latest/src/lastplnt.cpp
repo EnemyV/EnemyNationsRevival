@@ -540,7 +540,13 @@ BOOL CConquerApp::InitInstance( )
     m_sClsName = "EnemyNationsMainWindow";
     WNDCLASS wc;
     memset( &wc, 0, sizeof( wc ) );
+#ifdef ENATIONS_USE_STUB_WND
+    // Gate-on: route the main window class through CWndStub::StaticWndProc so
+    // CWndMain::OnCreate / OnPaint / OnEraseBkgnd / etc. virtuals actually fire.
+    wc.lpfnWndProc   = &CWndStub::StaticWndProc;
+#else
     wc.lpfnWndProc   = ::DefWindowProc;
+#endif
     wc.hInstance     = ::GetModuleHandle( NULL );  // Phase 4c prep: was AfxGetInstanceHandle
     wc.hIcon         = LoadIcon( IDI_MAIN );
     wc.hCursor       = LoadStandardCursor( IDC_ARROW );
@@ -1156,7 +1162,19 @@ BOOL CConquerApp::InitInstance( )
             // already created by here but now we can load it's data (palette above)
             m_wndMain.LoadData( );
 #ifdef ENATIONS_USE_STUB_WND
-            m_pMainWnd = CWnd::FromHandle( m_wndMain.m_hWnd );
+            // Gate-on: m_wndMain is CWndStub-derived (not CWnd), so we can't
+            // do `m_pMainWnd = &m_wndMain` directly. CWnd::FromHandle returns
+            // a *temporary* CWnd that MFC garbage-collects in OnIdle, which
+            // makes storing it in m_pMainWnd dangerous (crashes inside MFC).
+            // Instead: use a permanent proxy CWnd and Attach our HWND to it —
+            // this puts the HWND in MFC's permanent handle map. The proxy
+            // doesn't get message dispatch (that goes through CWndStub via
+            // the registered wndproc), but it lets CWinApp::Run see a valid
+            // m_pMainWnd->m_hWnd.
+            static CWnd s_mfcMainWndProxy;
+            if ( s_mfcMainWndProxy.m_hWnd == NULL )
+                s_mfcMainWndProxy.Attach( m_wndMain.m_hWnd );
+            m_pMainWnd = &s_mfcMainWndProxy;
 #else
             m_pMainWnd = &m_wndMain;
 #endif

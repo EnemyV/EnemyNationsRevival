@@ -322,7 +322,14 @@ class CConquerApp : public CWinApp
             return pszName;  // already registered, dedupe
         memset( &wc, 0, sizeof( wc ) );
         wc.style         = style;
+#ifdef ENATIONS_USE_STUB_WND
+        // Gate-on: route through CWndStub::StaticWndProc so virtuals (OnCreate,
+        // OnPaint, etc.) actually fire. Without this, WM_* messages go straight
+        // to DefWindowProc and our handlers never run.
+        wc.lpfnWndProc   = &CWndStub::StaticWndProc;
+#else
         wc.lpfnWndProc   = ::DefWindowProc;
+#endif
         wc.hInstance     = hInst;
         wc.hCursor       = hCursor;
         wc.hbrBackground = hbrBackground;

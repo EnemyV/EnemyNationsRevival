@@ -250,7 +250,17 @@ BOOL CWndStub::CreateEx( DWORD dwExStyle, LPCSTR lpszClassName, LPCSTR lpszWindo
     HWND hwnd = ::CreateWindowEx( dwExStyle, lpszClassName, lpszWindowName, dwStyle,
                                   x, y, cx, cy, hwndParent, hMenu,
                                   ::GetModuleHandle( NULL ), actualParam );
-    return ( hwnd != NULL );
+    if ( hwnd == NULL )
+        return FALSE;
+    // Set m_hWnd directly. StaticWndProc would also set it during WM_NCCREATE,
+    // but only if the window class points at StaticWndProc — many game-side
+    // classes register with DefWindowProc (e.g. EnemyNationsMainWindow), in
+    // which case WM_NCCREATE never reaches us. Setting it here ensures m_hWnd
+    // is valid post-CreateEx regardless of which wndproc the class uses.
+    // (If StaticWndProc also fires, it will re-set the same value — harmless.)
+    if ( m_hWnd == NULL )
+        m_hWnd = hwnd;
+    return TRUE;
 }
 
 BOOL CWndStub::DestroyWindow()
@@ -332,8 +342,19 @@ CWndStub* CWndStub::GetDlgItem( int nID ) const
 {
     HWND h = ::GetDlgItem( m_hWnd, nID );
     if ( h == NULL ) return NULL;
+    // Stub-managed (GWLP_USERDATA was stashed at WM_NCCREATE)?
     CWndStub* p = (CWndStub*)::GetWindowLongPtr( h, GWLP_USERDATA );
     if ( p != NULL ) return p;
+    // MFC-managed child (e.g. CBmButton, CScrollBar, CListBox)? CWnd::FromHandle
+    // returns the registered MFC CWnd* if it's in MFC's permanent handle map.
+    // The caller often does `(CBmButton*)GetDlgItem(ID)` — the cast through
+    // CWndStub* is a type lie, but reinterpreting the returned CWnd* as
+    // CBmButton* works because CBmButton derives from CWnd, so the cast
+    // back to the concrete MFC type lands on the right object.
+    CWnd* pMfc = CWnd::FromHandle( h );
+    if ( pMfc != NULL )
+        return (CWndStub*)pMfc;
+    // Last resort: thread-local temp wrapping just the HWND.
     thread_local CWndStub s_tempItem;
     s_tempItem.m_hWnd = h;
     return &s_tempItem;

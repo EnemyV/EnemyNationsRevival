@@ -325,6 +325,8 @@ public:
     // it's a no-op. SetRedraw is a simple WM_SETREDRAW dispatch.
     LRESULT Default()                                             { return 0; }
     BOOL SetRedraw( BOOL bRedraw = TRUE )                         { ::SendMessage( m_hWnd, WM_SETREDRAW, (WPARAM)bRedraw, 0 ); return TRUE; }
+    // MFC-compatible AssertValid for ASSERT_VALID(this) in Debug builds.
+    void AssertValid() const                                      { }
 
     // ----- Virtual handlers (override in derived classes) -----
     // Default implementations call DefWindowProc.
@@ -400,6 +402,11 @@ public:
     static CWndStub* GetActiveWindow();
     static void SetFnMouseMove( FNMOUSEMOVE_STUB* fn );
 
+    // The single static window procedure all CWndStub-derived windows use.
+    // Public so game-side window classes can register it as their wndproc
+    // (e.g. `wc.lpfnWndProc = &CWndStub::StaticWndProc;`).
+    static LRESULT CALLBACK StaticWndProc( HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam );
+
 protected:
     // Helper: register a WNDCLASS with the given style + cursor + icon + brush.
     // Returns the class atom or 0. The class is registered with our static
@@ -408,9 +415,6 @@ protected:
                                    HCURSOR hCursor = NULL,
                                    HBRUSH hbrBackground = NULL,
                                    HICON hIcon = NULL );
-
-    // The single static window procedure all CWndStub-derived windows use.
-    static LRESULT CALLBACK StaticWndProc( HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam );
 
     static FNMOUSEMOVE_STUB* sm_fnMouseMove;
 };
