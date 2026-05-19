@@ -111,9 +111,10 @@ class AIinit
 
 
 /////////////////////////////////////////////////////////////////////////////
-// CDlgMain dialog
-// maybe the dialouge that comes up when the program starts?
-// i think it's multiple, but not sure
+// CDlgMain dialog — excluded from build (Phase 2d). SDL2MainMenu replaces it
+// as the live main-menu path. Class body kept for historical reference but
+// not compiled. The body is also #if 0'd in lastplnt.cpp.
+#if 0  // MFC_LEGACY_MAIN_MENU
 
 class CDlgMain : public CDialog
 {
@@ -182,6 +183,7 @@ class CDlgMain : public CDialog
     BOOL  m_bTile;
 };
 
+#endif // MFC_LEGACY_MAIN_MENU
 
 /////////////////////////////////////////////////////////////////////////////
 // CDlgVer dialog removed; SDL2VersionDialog (SDL2Dialogs.h) replaces it.
