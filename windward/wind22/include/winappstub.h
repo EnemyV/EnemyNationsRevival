@@ -54,23 +54,44 @@ public:
     virtual ~CWinAppStub();
 
     // ----- Members exposed publicly (CConquerApp uses these by name) -----
+    // CWinApp members:
     CWnd*      m_pMainWnd;    // current main window pointer (legacy MFC name)
     HINSTANCE  m_hInstance;   // module handle; set from WinMain entry
     LPSTR      m_pszAppName;  // owned heap-allocated C-string (free in dtor)
     MSG        m_msgCur;      // current message being pumped
+    // CWinThread members CConquerApp also references:
+    DWORD      m_nThreadID;   // thread id of the main UI thread
 
     // ----- App lifecycle (virtuals — CConquerApp overrides) -----
     virtual BOOL InitInstance()                          { return TRUE; }
     virtual int  ExitInstance()                          { return 0; }
     virtual int  Run();           // default: standard message pump
     virtual BOOL PreTranslateMessage( MSG* pMsg )        { return FALSE; }
+    virtual BOOL IsIdleMessage( MSG* pMsg )              { return TRUE; }
+    virtual BOOL OnIdle( LONG lCount )                   { return FALSE; }
 
-    // ----- MFC compat shims -----
+    // ----- CWinApp compat shims -----
     // SetRegistryKey is a no-op — EnSettings already handles the registry
-    // namespace. Returning the old (free'd) string would be unsafe, so we
-    // just dup the new one and discard the old.
-    void SetRegistryKey( LPCSTR pszRegKey )              { /* no-op */ (void)pszRegKey; }
-    void SetRegistryKey( UINT nIDRegKey )                { /* no-op */ (void)nIDRegKey; }
+    // namespace. Both string and int-resource overloads supported.
+    void SetRegistryKey( LPCSTR pszRegKey )              { (void)pszRegKey; }
+    void SetRegistryKey( UINT nIDRegKey )                { (void)nIDRegKey; }
+
+    // WinHelp — game uses this for Help button callbacks. Forwards to Win32
+    // ::WinHelpA against the main window handle if known. CConquerApp's
+    // call sites (SDL2Options, SDL2FileDialog, lastplnt, main) pass HELP_*
+    // commands; for the SDL2 migration we just no-op since there's no .hlp
+    // file shipped with the modern build.
+    virtual void WinHelp( DWORD_PTR dwData, UINT nCmd = 0x0001 /*HELP_CONTEXT*/ )
+    {
+        (void)dwData; (void)nCmd;
+        // No-op: legacy WinHelp .hlp files aren't shipped with the SDL2 port.
+    }
+
+    // ----- CWinThread compat shims -----
+    // The game tweaks main-thread priority in a few spots. Forward to the
+    // Win32 thread handle of the main UI thread.
+    int  GetThreadPriority()                             { return ::GetThreadPriority( ::GetCurrentThread() ); }
+    BOOL SetThreadPriority( int nPriority )              { return ::SetThreadPriority( ::GetCurrentThread(), nPriority ); }
 
     // CWinApp::LoadStdString / LoadIcon / LoadCursor / LoadStandardCursor —
     // CConquerApp already has its own shadow versions of these (added in

@@ -17,6 +17,7 @@ CWinAppStub::CWinAppStub()
     : m_pMainWnd( nullptr )
     , m_hInstance( ::GetModuleHandle( nullptr ) )
     , m_pszAppName( nullptr )
+    , m_nThreadID( ::GetCurrentThreadId() )
 {
     ZeroMemory( &m_msgCur, sizeof( m_msgCur ) );
 }

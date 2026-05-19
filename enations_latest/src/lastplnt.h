@@ -12,6 +12,17 @@
 // lastplnt.h : main header file for The Last Planet application
 //
 
+// Phase 4c migration gate (see winappstub.h). Off in production. When
+// flipped, also requires: the message-map stub macros (currently behind
+// ENATIONS_USE_STUB_WND in wndstub.h) and a custom WinMain.cpp replacing
+// MFC's AfxWinMain. Surface still missing on CWinAppStub:
+//   - WinHelp (4 callsites)
+//   - GetThreadPriority / SetThreadPriority (3 sites, CWinThread API)
+//   - IsIdleMessage / OnIdle (2 sites)
+//   - m_nThreadID member (1 site)
+//   - InitWindwardLib1 expects const CWinApp* (signature change needed)
+// #define ENATIONS_USE_STUB_APP
+
 #ifndef __AFXWIN_H__
 #error include 'stdafx.h' before including this file for PCH
 #endif
@@ -214,7 +225,17 @@ class CZoomData
 
 typedef void( FNYIELDFUNC )( );
 
-class CConquerApp : public CWinApp
+// Phase 4c migration gate. When ENATIONS_USE_STUB_APP is defined,
+// CConquerApp inherits from CWinAppStub (no MFC) instead of MFC's CWinApp.
+// See winappstub.h for the migration plan.
+#ifdef ENATIONS_USE_STUB_APP
+#include <winappstub.h>
+typedef CWinAppStub CConquerAppSuper;
+#else
+typedef CWinApp     CConquerAppSuper;
+#endif
+
+class CConquerApp : public CConquerAppSuper
 {
   public:
     CConquerApp( );
