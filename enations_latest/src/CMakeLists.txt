@@ -50,6 +50,7 @@ set(enations_sources
         join.cpp
         lastplnt.cpp
         lastplnt.rc
+        WinMain.cpp
         license.cpp
         main.cpp
         mainloop.cpp
