@@ -1678,7 +1678,7 @@ void CDlgBuildTransport::UpdateStatus(int iPer) {
     m_iNum = atoi(m_sNum);
     if (m_iNum != m_pBldgPar->GetNum()) {
         m_iNum = __max (1, m_pBldgPar->GetNum());
-        m_sNum = IntToCString(m_iNum);
+        m_sNum = IntToStr(m_iNum);
         UpdateData(FALSE);
     }
     InvalidateRect(&rectTranText, FALSE);
