@@ -47,7 +47,12 @@ target_compile_options(wind22 PUBLIC
     $<$<CONFIG:Release>:/MD /EHsc /O2 /Ob2 /Oi /GL /Gy /Gw /Ot /GF /arch:AVX2 /fp:fast /Zi>
 )
 
-set(CMAKE_MFC_FLAG 2)
+# Phase 1g experiment: drop CMAKE_MFC_FLAG. CMAKE_MFC_FLAG=2 auto-links
+# mfcsXX.lib (static MFC entry point shim — provides _AfxWinMain etc.).
+# Our gate-on path supplies its own WinMain (WinMain.cpp), so we don't
+# need the auto-entry shim. _AFXDLL is kept so MFC types from afxwin.h
+# (CRect, CString, CFile, CWnd, CDialog) still link via the DLL.
+# set(CMAKE_MFC_FLAG 2)
 
 target_compile_definitions(wind22 PUBLIC
     _AFXDLL
