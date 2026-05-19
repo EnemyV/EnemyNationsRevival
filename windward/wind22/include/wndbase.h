@@ -1,10 +1,11 @@
 #ifndef __WNDBASE_H__
 #define __WNDBASE_H__
 
-// Phase 1 migration gate. To flip on for testing, either define
-// ENATIONS_USE_STUB_WND in the build system (CMakeLists.txt) or uncomment
-// the line below. Default is off.
-// #define ENATIONS_USE_STUB_WND
+// Phase 1 + Phase 4c migration gates are defined in CMakeLists.txt
+// (target_compile_definitions). To toggle: comment them out in
+// wind22/CMakeLists.txt AND enations_latest/src/CMakeLists.txt.
+//   ENATIONS_USE_STUB_WND  — Phase 1: CWndBase -> CWndStub
+//   ENATIONS_USE_STUB_APP  — Phase 4c: CConquerApp : CWinApp -> CWinAppStub
 
 //#include "..\lib\_res.h"
 #include <subclass.h>

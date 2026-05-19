@@ -1836,7 +1836,7 @@ int CConquerApp::ExitInstance( )
         CloseHandle( pi.hThread );
     }
 
-    return ( CWinApp::ExitInstance( ) );
+    return ( CConquerAppSuper::ExitInstance( ) );
 }
 
 // Show a Yes/No or Yes/No/Cancel message box via SDL2 if available, else MFC.
@@ -1937,7 +1937,7 @@ BOOL CConquerApp::PreTranslateMessage( MSG* pMsg )
 #endif
         }
 
-    return ( CWinApp::PreTranslateMessage( pMsg ) );
+    return ( CConquerAppSuper::PreTranslateMessage( pMsg ) );
 }
 
 #ifdef _DEBUG

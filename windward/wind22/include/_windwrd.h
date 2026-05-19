@@ -15,8 +15,15 @@
 
 #include <windward.h>
 
-// needed by some
+// needed by some — type is gate-conditional. The single user (w22_settings.cpp
+// GetMainHWND fallback) only reads m_pMainWnd, so both CWinApp and CWinAppStub
+// satisfy the contract since both expose `CWnd* m_pMainWnd`.
+#ifdef ENATIONS_USE_STUB_APP
+class CWinAppStub;
+extern CWinAppStub * ptheApp;
+#else
 extern CWinApp * ptheApp;
+#endif
 
 
 

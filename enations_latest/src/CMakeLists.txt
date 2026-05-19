@@ -160,6 +160,9 @@ target_compile_definitions(enations PUBLIC
         # STRICTER_ASSERTS ## these prob all need to be fixed
         AI_THREADS_ENABLED # here's hoping!!
         OPTIMIZE_BLIT_ORDER
+        # Phase 1 / 4c gates (synced with wind22 CMakeLists.txt)
+        ENATIONS_USE_STUB_WND
+        ENATIONS_USE_STUB_APP
         # AI_SPECTATE
         # _CHEAT
         $<$<CONFIG:Release>:NDEBUG>

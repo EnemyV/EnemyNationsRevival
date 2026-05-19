@@ -10,6 +10,9 @@
 #include "_windwrd.h"
 #include "_res.h"
 #include "w22_settings.h"
+#ifdef ENATIONS_USE_STUB_APP
+#include "winappstub.h"
+#endif
 
 
 #ifdef _DEBUG
@@ -21,7 +24,11 @@ static char BASED_CODE THIS_FILE[] = __FILE__;
 #include "init.h"
 
 int iWinType = WNT; // the default
+#ifdef ENATIONS_USE_STUB_APP
+CWinAppStub* ptheApp = NULL;
+#else
 CWinApp* ptheApp = NULL;
+#endif
 
 // for asserts
 int __iAssertPriority = ASSERT_PRI_CRITICAL;
@@ -65,10 +72,15 @@ BOOL GetDllVersion( char const* pFile, DWORD& dwMS, DWORD& dwLS ) {
 
 // this sets up an app for us
 // returns TRUE if can run
+#ifdef ENATIONS_USE_STUB_APP
+void InitWindwardLib1( CWinAppStub const* pWa ) {
+    ptheApp = (CWinAppStub*)pWa;
+}
+#else
 void InitWindwardLib1( CWinApp const* pWa ) {
-
     ptheApp = (CWinApp*)pWa;
 }
+#endif
 
 BOOL InitWindwardLib2() {
 

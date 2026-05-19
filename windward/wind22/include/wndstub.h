@@ -104,7 +104,12 @@
 // For custom messages (ON_MESSAGE(WM_FOO, OnFoo)) we drop the registration
 // here; derived classes that need custom WM_ values must override virtual
 // WindowProc and switch on those values themselves.
-#ifdef ENATIONS_USE_STUB_WND
+//
+// These stubs also activate under ENATIONS_USE_STUB_APP because Phase 4c
+// removes CConquerApp's CWinApp inheritance — its BEGIN_MESSAGE_MAP(CConquerApp,
+// CWinApp) at lastplnt.cpp:266 references CWinApp internals that disappear.
+// Phase 4c is gated together with Phase 1 (both required for no-MFC).
+#if defined(ENATIONS_USE_STUB_WND) || defined(ENATIONS_USE_STUB_APP)
   // Make sure afx headers can't redefine these out from under us — these
   // overrides must take final precedence. Undef first, then define empty.
   #ifdef DECLARE_MESSAGE_MAP

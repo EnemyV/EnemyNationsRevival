@@ -50,7 +50,12 @@ struct LOGPALETTE256;
 #include <wndbase.h>
 */
 
+#ifdef ENATIONS_USE_STUB_APP
+class CWinAppStub;
+extern void InitWindwardLib1( CWinAppStub const* pWa );
+#else
 extern void InitWindwardLib1( CWinApp const* pWa );
+#endif
 extern BOOL InitWindwardLib2( );
 
 // this brings in the inlines in non-debug mode

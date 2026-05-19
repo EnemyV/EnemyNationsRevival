@@ -5,6 +5,9 @@
 #include "stdafx.h"
 #include "_windwrd.h"
 #include "w22_settings.h"
+#ifdef ENATIONS_USE_STUB_APP
+#include "winappstub.h"
+#endif
 
 namespace w22 {
 
