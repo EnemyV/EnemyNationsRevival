@@ -150,7 +150,7 @@ add_compile_definitions(
 
 
 target_compile_definitions(enations PUBLIC
-        _AFXDLL
+        _AFXDLL  # required while stdafx.h still pulls in afx*.h headers
         _WIN32
         _WIN32_WINNT=_WIN32_WINNT_WIN7
         _MBCS

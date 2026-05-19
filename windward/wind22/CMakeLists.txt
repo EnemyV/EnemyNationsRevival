@@ -55,7 +55,7 @@ target_compile_options(wind22 PUBLIC
 # set(CMAKE_MFC_FLAG 2)
 
 target_compile_definitions(wind22 PUBLIC
-    _AFXDLL
+    _AFXDLL  # required while stdafx.h still pulls in afx*.h headers
     _WIN32_WINNT=_WIN32_WINNT_WIN7
     _WINDOWS
     _MBCS
