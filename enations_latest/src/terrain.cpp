@@ -585,7 +585,14 @@ void CAnimAtr::Render( )
 {
     // Render each rect and add it to the list of rects to get blitted
 
+#ifdef ENATIONS_USE_STUB_WND
+    // m_pwnd is a temp CWnd that MFC garbage-collects — don't dereference it.
+    // Get an HDC from the stable HWND and wrap as CDC* fresh each call.
+    HDC  hdc = m_hwndOwner ? ::GetDC( m_hwndOwner ) : NULL;
+    CDC* pdc = hdc ? CDC::FromHandle( hdc ) : NULL;
+#else
     CDC* pdc = m_pwnd->GetDC( );
+#endif
 
     try
     {
@@ -611,7 +618,11 @@ void CAnimAtr::Render( )
     }
 
     if ( pdc )
+#ifdef ENATIONS_USE_STUB_WND
+        ::ReleaseDC( m_hwndOwner, hdc );
+#else
         m_pwnd->ReleaseDC( pdc );
+#endif
 
     m_dirtyrects.UpdateLists( );  // Cur rect list <- Next rect list
 
