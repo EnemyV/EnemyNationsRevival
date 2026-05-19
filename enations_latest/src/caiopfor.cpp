@@ -26,7 +26,11 @@ extern CAIData*         pGameData;   // pointer to game data interface
 CAIOpFor::CAIOpFor( int iPlayer, const char* pzName )
 {
     m_iPlayer          = iPlayer;
-    m_sName            = pzName;
+    // m_sName is std::string (Phase 5 conversion from CString). CString's
+    // operator=(const char*) accepted NULL as an empty-string assignment;
+    // std::string treats NULL as UB and crashes. AddOpFor() at line 1070
+    // explicitly passes NULL, so guard here.
+    m_sName            = pzName ? pzName : "";
     m_pwaUnits         = NULL;
     m_pwaBldgs         = NULL;
     m_pwaAttackedUnits = NULL;
