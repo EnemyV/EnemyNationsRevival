@@ -126,7 +126,7 @@ LRESULT CWndStub::WindowProc( UINT msg, WPARAM wParam, LPARAM lParam )
             OnMButtonDown( (UINT)wParam, (int)(short)LOWORD( lParam ), (int)(short)HIWORD( lParam ) );
             return 0;
         case WM_PALETTECHANGED:
-            OnPaletteChanged( (HWND)wParam );
+            OnPaletteChanged( wParam ? CWnd::FromHandle( (HWND)wParam ) : (CWnd*)NULL );
             return 0;
         case WM_QUERYNEWPALETTE:
             return OnQueryNewPalette() ? 1 : 0;
@@ -173,17 +173,26 @@ LRESULT CWndStub::WindowProc( UINT msg, WPARAM wParam, LPARAM lParam )
             break;
         }
         case WM_HSCROLL:
-            OnHScroll( (UINT)LOWORD( wParam ), (UINT)HIWORD( wParam ), (HWND)lParam );
+            // Use MFC-typed virtual so game-side overrides taking CScrollBar*
+            // actually dispatch. FromHandle on lParam returns NULL for scrollbar
+            // notifications that aren't from a control (in which case lParam=0).
+            OnHScroll( (UINT)LOWORD( wParam ), (UINT)HIWORD( wParam ),
+                       lParam ? (CScrollBar*)CWnd::FromHandle( (HWND)lParam ) : (CScrollBar*)NULL );
             return 0;
         case WM_VSCROLL:
-            OnVScroll( (UINT)LOWORD( wParam ), (UINT)HIWORD( wParam ), (HWND)lParam );
+            OnVScroll( (UINT)LOWORD( wParam ), (UINT)HIWORD( wParam ),
+                       lParam ? (CScrollBar*)CWnd::FromHandle( (HWND)lParam ) : (CScrollBar*)NULL );
             return 0;
         case WM_SETCURSOR:
-            if ( OnSetCursor( (HWND)wParam, (UINT)LOWORD( lParam ), (UINT)HIWORD( lParam ) ) )
+            // Game-side OnSetCursor declared with CWnd* signature — use MFC-typed virtual.
+            if ( OnSetCursor( wParam ? CWnd::FromHandle( (HWND)wParam ) : (CWnd*)NULL,
+                              (UINT)LOWORD( lParam ), (UINT)HIWORD( lParam ) ) )
                 return TRUE;
             break;
         case WM_ACTIVATE:
-            OnActivate( (UINT)LOWORD( wParam ), (HWND)lParam, (BOOL)HIWORD( wParam ) );
+            OnActivate( (UINT)LOWORD( wParam ),
+                        lParam ? CWnd::FromHandle( (HWND)lParam ) : (CWnd*)NULL,
+                        (BOOL)HIWORD( wParam ) );
             return 0;
         case WM_MOUSEWHEEL: {
             short zDelta = (short)HIWORD( wParam );
@@ -204,7 +213,10 @@ LRESULT CWndStub::WindowProc( UINT msg, WPARAM wParam, LPARAM lParam )
         case WM_CTLCOLORMSGBOX:
         case WM_CTLCOLORSCROLLBAR:
         case WM_CTLCOLORSTATIC: {
-            HBRUSH hbr = OnCtlColor( (HDC)wParam, (HWND)lParam, msg - WM_CTLCOLORMSGBOX );
+            // Game-side OnCtlColor declared with CDC*/CWnd* — use MFC-typed virtual.
+            CDC*  pdc  = wParam ? CDC::FromHandle( (HDC)wParam ) : (CDC*)NULL;
+            CWnd* pCtl = lParam ? CWnd::FromHandle( (HWND)lParam ) : (CWnd*)NULL;
+            HBRUSH hbr = OnCtlColor( pdc, pCtl, msg - WM_CTLCOLORMSGBOX );
             if ( hbr != NULL )
                 return (LRESULT)hbr;
             break;

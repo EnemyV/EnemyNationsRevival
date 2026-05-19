@@ -367,14 +367,22 @@ public:
 
     BOOL OnMouseWheel( UINT flags, short zDelta, POINT point )    { return OnMouseWheel( flags, zDelta, point.x, point.y ); }
 
-    // MFC-type forwarders for callers using `CWnd*` / `CScrollBar*` / `CDC*`.
-    // They unwrap to the HWND/HDC signatures the virtuals actually use.
-    void OnPaletteChanged( CWnd* pFocus )                         { OnPaletteChanged( pFocus ? pFocus->GetSafeHwnd() : (HWND)NULL ); }
-    void OnHScroll( UINT nSBCode, UINT nPos, CScrollBar* pSB )    { OnHScroll( nSBCode, nPos, pSB ? pSB->GetSafeHwnd() : (HWND)NULL ); }
-    void OnVScroll( UINT nSBCode, UINT nPos, CScrollBar* pSB )    { OnVScroll( nSBCode, nPos, pSB ? pSB->GetSafeHwnd() : (HWND)NULL ); }
-    BOOL OnSetCursor( CWnd* pWnd, UINT nHit, UINT msg )           { return OnSetCursor( pWnd ? pWnd->GetSafeHwnd() : (HWND)NULL, nHit, msg ); }
-    void OnActivate( UINT nState, CWnd* pOther, BOOL bMin )       { OnActivate( nState, pOther ? pOther->GetSafeHwnd() : (HWND)NULL, bMin ); }
-    HBRUSH OnCtlColor( CDC* pDC, CWnd* pCtrl, UINT nType )        { return OnCtlColor( pDC ? pDC->GetSafeHdc() : (HDC)NULL, pCtrl ? pCtrl->GetSafeHwnd() : (HWND)NULL, nType ); }
+    // MFC-type virtual handlers — these are the ACTUAL dispatch targets for
+    // WM_SETCURSOR / WM_HSCROLL / WM_VSCROLL / WM_ACTIVATE / WM_CTLCOLOR* /
+    // WM_PALETTECHANGED. Game-side classes (CWndArea/CWndWorld/etc.) declare
+    // these with CWnd* / CScrollBar* / CDC* signatures (MFC style), so the
+    // virtual dispatch needs to USE those signatures. CWndStub::WindowProc
+    // wraps the raw HWND/HDC via FromHandle and calls these.
+    //
+    // The HWND/HDC-typed virtuals above (OnPaletteChanged(HWND), OnSetCursor
+    // (HWND,...), etc.) are still virtual so HWND-style overrides work too,
+    // but the standard message dispatch goes through these MFC-typed virtuals.
+    virtual void OnPaletteChanged( CWnd* pFocus )                 { OnPaletteChanged( pFocus ? pFocus->GetSafeHwnd() : (HWND)NULL ); }
+    virtual void OnHScroll( UINT nSBCode, UINT nPos, CScrollBar* pSB ) { OnHScroll( nSBCode, nPos, pSB ? pSB->GetSafeHwnd() : (HWND)NULL ); }
+    virtual void OnVScroll( UINT nSBCode, UINT nPos, CScrollBar* pSB ) { OnVScroll( nSBCode, nPos, pSB ? pSB->GetSafeHwnd() : (HWND)NULL ); }
+    virtual BOOL OnSetCursor( CWnd* pWnd, UINT nHit, UINT msg )   { return OnSetCursor( pWnd ? pWnd->GetSafeHwnd() : (HWND)NULL, nHit, msg ); }
+    virtual void OnActivate( UINT nState, CWnd* pOther, BOOL bMin ) { OnActivate( nState, pOther ? pOther->GetSafeHwnd() : (HWND)NULL, bMin ); }
+    virtual HBRUSH OnCtlColor( CDC* pDC, CWnd* pCtrl, UINT nType ) { return OnCtlColor( pDC ? pDC->GetSafeHdc() : (HDC)NULL, pCtrl ? pCtrl->GetSafeHwnd() : (HWND)NULL, nType ); }
 
     // Additional virtual handlers covering common WM_* the game uses.
     // BOOL-returning ones: return TRUE if the message was handled; FALSE
