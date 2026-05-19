@@ -132,7 +132,10 @@ target_compile_options(enations PRIVATE
     $<$<CONFIG:Sanitize>:/MDd;/EHsc;/Zi;/Od;/Ob0;/fsanitize=address>
 )
 
-set(CMAKE_MFC_FLAG 2)
+# Phase 1g step 1: drop CMAKE_MFC_FLAG. Our own WinMain (WinMain.cpp)
+# replaces MFC's auto-generated AfxWinMain entry shim. The MFC types from
+# afx*.h still link via _AFXDLL until Phase 1g step 2 (header purge).
+# set(CMAKE_MFC_FLAG 2)
 
 message("CMAKE_CXX_FLAGS: ${CMAKE_CXX_FLAGS}")
 
