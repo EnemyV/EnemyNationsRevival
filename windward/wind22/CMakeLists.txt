@@ -30,6 +30,7 @@ set(wind22_sources
         src/threads.cpp
         src/w22_settings.cpp
         src/wndbase.cpp
+        src/winappstub.cpp
         src/wndstub.cpp
         dibwnd.cpp
         )
