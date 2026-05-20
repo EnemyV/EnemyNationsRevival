@@ -111,6 +111,22 @@ public:
     BOOL operator!=( const RECT& rc ) const { return !::EqualRect( this, &rc ); }
 };
 
+//------------------------------ C O b j e c t -------------------------------
+// Phase 1g step 2: minimal CObject stub. The cai*.hpp AI classes inherit
+// CObject for legacy reasons but don't use serialization, runtime class info,
+// or IsKindOf in the live code paths. A virtual dtor is enough.
+
+class CObject
+{
+public:
+    virtual ~CObject() {}
+
+protected:
+    CObject() {}
+    CObject( const CObject& ) {}
+    CObject& operator=( const CObject& ) { return *this; }
+};
+
 //--------------------------- M F C  H e l p e r s ---------------------------
 
 // AfxIsValidAddress — simple pointer validation (replaces MFC's version)
