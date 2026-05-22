@@ -21,6 +21,7 @@
 #include <cstring>
 #include <map>
 #include <string>
+#include <vector>
 
 #ifndef __AFX_H__  // Only define if MFC is not included
 
@@ -118,6 +119,11 @@ public:
     }
     CRect operator+( POINT pt ) const { return CRect( left + pt.x, top + pt.y, right + pt.x, bottom + pt.y ); }
     CRect operator-( POINT pt ) const { return CRect( left - pt.x, top - pt.y, right - pt.x, bottom - pt.y ); }
+    CRect& operator+=( POINT pt ) { OffsetRect( pt.x, pt.y ); return *this; }
+    CRect& operator-=( POINT pt ) { OffsetRect( -pt.x, -pt.y ); return *this; }
+    CRect& operator+=( SIZE sz )  { OffsetRect( sz.cx, sz.cy ); return *this; }
+    CRect& operator-=( SIZE sz )  { OffsetRect( -sz.cx, -sz.cy ); return *this; }
+    CRect& operator+=( const RECT* prc ) { InflateRect( prc ); return *this; }
 
     BOOL operator==( const RECT& rc ) const { return ::EqualRect( this, &rc ); }
     BOOL operator!=( const RECT& rc ) const { return !::EqualRect( this, &rc ); }
@@ -223,10 +229,17 @@ public:
         if ( m_str.empty() ) m_str.resize( 1, '\0' );
         return &m_str[0];
     }
+    LPSTR GetBufferSetLength( int nNewLength ) {
+        if ( nNewLength < 0 ) nNewLength = 0;
+        m_str.resize( (size_t)nNewLength, '\0' );
+        if ( m_str.empty() ) m_str.resize( 1, '\0' );
+        return &m_str[0];
+    }
     void ReleaseBuffer( int nNewLength = -1 ) {
         if ( nNewLength < 0 ) nNewLength = (int)std::strlen( m_str.c_str() );
         m_str.resize( (size_t)nNewLength );
     }
+    int GetAllocLength() const { return (int)m_str.capacity(); }
 
     void Format( LPCSTR pszFmt, ... ) {
         va_list ap;
@@ -715,6 +728,116 @@ public:
 // CDialogBar — used by the (excluded) chat bar. Same shape as CDialog for
 // our purposes: just needs to be inheritable.
 class CDialogBar : public CDialog {};
+
+//------------------------- C W i n T h r e a d ------------------------------
+// MFC's worker-thread class. Live code (CMusicPlayer) uses these methods:
+// m_hThread (HANDLE), ResumeThread, SuspendThread, m_bAutoDelete (bool).
+// AfxBeginThread starts a new thread.
+
+typedef UINT( __stdcall* AFX_THREADPROC )( LPVOID );
+
+class CWinThread
+{
+public:
+    CWinThread() : m_hThread( NULL ), m_nThreadID( 0 ), m_bAutoDelete( TRUE ) {}
+    virtual ~CWinThread() { if ( m_hThread ) ::CloseHandle( m_hThread ); }
+
+    DWORD ResumeThread()   { return m_hThread ? ::ResumeThread( m_hThread ) : (DWORD)-1; }
+    DWORD SuspendThread()  { return m_hThread ? ::SuspendThread( m_hThread ) : (DWORD)-1; }
+    BOOL  SetThreadPriority( int nPri ) { return m_hThread ? ::SetThreadPriority( m_hThread, nPri ) : FALSE; }
+    int   GetThreadPriority() const { return m_hThread ? ::GetThreadPriority( m_hThread ) : THREAD_PRIORITY_NORMAL; }
+
+    HANDLE m_hThread;
+    DWORD  m_nThreadID;
+    BOOL   m_bAutoDelete;
+};
+
+inline CWinThread* AfxBeginThread( AFX_THREADPROC pfnThreadProc, LPVOID pParam,
+                                   int nPriority = THREAD_PRIORITY_NORMAL,
+                                   UINT /*nStackSize*/ = 0,
+                                   DWORD dwCreateFlags = 0,
+                                   LPSECURITY_ATTRIBUTES lpSecurityAttrs = NULL )
+{
+    CWinThread* p = new CWinThread();
+    HANDLE h = ::CreateThread( lpSecurityAttrs, 0,
+                               (LPTHREAD_START_ROUTINE)pfnThreadProc, pParam,
+                               dwCreateFlags, &p->m_nThreadID );
+    if ( !h ) { delete p; return NULL; }
+    p->m_hThread = h;
+    if ( nPriority != THREAD_PRIORITY_NORMAL ) ::SetThreadPriority( h, nPriority );
+    return p;
+}
+
+//-------------------------------- C A r r a y -------------------------------
+// MFC's CArray<TYPE, ARG_TYPE> — dynamic array. Backed by std::vector with
+// the MFC method names. Only a handful of methods are used in the live
+// code: Add, GetSize, GetAt/SetAt, operator[], RemoveAll, SetSize.
+
+template<class TYPE, class ARG_TYPE>
+class CArray
+{
+public:
+    int  GetSize() const  { return (int)m_v.size(); }
+    int  GetCount() const { return (int)m_v.size(); }
+    BOOL IsEmpty() const  { return m_v.empty() ? TRUE : FALSE; }
+    int  GetUpperBound() const { return (int)m_v.size() - 1; }
+
+    void SetSize( int nNewSize, int /*nGrowBy*/ = -1 ) { m_v.resize( (size_t)nNewSize ); }
+
+    void RemoveAll() { m_v.clear(); }
+    void RemoveAt( int nIndex, int nCount = 1 )
+    {
+        if ( nIndex < 0 || nCount <= 0 ) return;
+        if ( (size_t)nIndex >= m_v.size() ) return;
+        size_t end = (size_t)nIndex + (size_t)nCount;
+        if ( end > m_v.size() ) end = m_v.size();
+        m_v.erase( m_v.begin() + nIndex, m_v.begin() + end );
+    }
+
+    int  Add( ARG_TYPE v ) { m_v.push_back( v ); return (int)m_v.size() - 1; }
+    void InsertAt( int nIndex, ARG_TYPE v, int nCount = 1 )
+    {
+        m_v.insert( m_v.begin() + nIndex, (size_t)nCount, v );
+    }
+
+    const TYPE& GetAt( int nIndex ) const { return m_v[(size_t)nIndex]; }
+    TYPE&       GetAt( int nIndex )       { return m_v[(size_t)nIndex]; }
+    void SetAt( int nIndex, ARG_TYPE v )  { m_v[(size_t)nIndex] = v; }
+    void SetAtGrow( int nIndex, ARG_TYPE v )
+    {
+        if ( (size_t)nIndex >= m_v.size() ) m_v.resize( (size_t)nIndex + 1 );
+        m_v[(size_t)nIndex] = v;
+    }
+    TYPE&       ElementAt( int nIndex )       { return m_v[(size_t)nIndex]; }
+    const TYPE& operator[]( int nIndex ) const { return m_v[(size_t)nIndex]; }
+    TYPE&       operator[]( int nIndex )       { return m_v[(size_t)nIndex]; }
+
+    const TYPE* GetData() const { return m_v.empty() ? nullptr : m_v.data(); }
+    TYPE*       GetData()       { return m_v.empty() ? nullptr : m_v.data(); }
+
+private:
+    std::vector<TYPE> m_v;
+};
+
+//----------------------------- M I S C   M A C R O S ------------------------
+// DEBUG_NEW: MFC's debug allocator macro. Maps to plain new under the gate.
+#ifndef DEBUG_NEW
+#define DEBUG_NEW new
+#endif
+
+// Message-map macros: MFC's wiring for WM_* handlers. wndstub.h already
+// defines a stronger set for files that include it; this just makes sure
+// headers that declare DECLARE_MESSAGE_MAP/AFX_MSG/AFX_DATA without including
+// wndstub.h (e.g. datafile.h's CDlgSelCD) still parse cleanly.
+#ifndef DECLARE_MESSAGE_MAP
+#define DECLARE_MESSAGE_MAP()
+#endif
+#ifndef AFX_MSG
+#define AFX_MSG
+#endif
+#ifndef afx_msg
+#define afx_msg
+#endif
 
 //--------------------------- M F C  H e l p e r s ---------------------------
 

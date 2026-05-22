@@ -1,7 +1,15 @@
 #ifndef __SUBCLASS_H__
 #define __SUBCLASS_H__
 
+// Phase 1g step 2: under the stub gates windows.h covers HWND/COLORREF/
+// DRAWITEMSTRUCT, mfc_compat.h (via stdafx.h) covers CRect/CPoint/CSize,
+// and CFont is forward-declared since this file only uses CFont*.
+#if defined(ENATIONS_USE_STUB_WND) && defined(ENATIONS_USE_STUB_APP)
+#include <windows.h>
+class CFont;
+#else
 #include "afxwin.h"
+#endif
 #include "dib.h"
 
 // subclass.h : header file

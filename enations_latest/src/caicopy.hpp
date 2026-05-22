@@ -9,7 +9,13 @@
 //
 ////////////////////////////////////////////////////////////////////////////
 
+// Phase 1g step 2: under the stub gates CObject comes from mfc_compat.h
+// (pulled via stdafx.h) instead of MFC's afxwin.h.
+#if defined(ENATIONS_USE_STUB_WND) && defined(ENATIONS_USE_STUB_APP)
+#include <windows.h>
+#else
 #include <afxwin.h>
+#endif
 #include "cai.h"
 
 #ifndef __CAICOPY_HPP__

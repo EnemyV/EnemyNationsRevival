@@ -9,7 +9,12 @@
 //
 ////////////////////////////////////////////////////////////////////////////
 
+// Phase 1g step 2: CObject from mfc_compat.h under gate.
+#if defined(ENATIONS_USE_STUB_WND) && defined(ENATIONS_USE_STUB_APP)
+#include <windows.h>
+#else
 #include <afxwin.h>
+#endif
 
 #ifndef __CAITASK_HPP__
 #define __CAITASK_HPP__

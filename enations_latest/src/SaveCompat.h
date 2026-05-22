@@ -20,7 +20,14 @@
 // scaffolding that lets the migration proceed incrementally.
 //---------------------------------------------------------------------------
 
+// Phase 1g step 2: under the stub gates CArchive/CString come from
+// mfc_compat.h via stdafx.h; afx.h is gone. The operator bodies don't
+// care which CArchive/CString implementation is providing them.
+#if defined(ENATIONS_USE_STUB_WND) && defined(ENATIONS_USE_STUB_APP)
+// mfc_compat.h types are already in scope via the precompiled stdafx.h
+#else
 #include <afx.h>     // CArchive, CString
+#endif
 #include <string>
 
 inline CArchive& operator<<( CArchive& ar, const std::string& s )
