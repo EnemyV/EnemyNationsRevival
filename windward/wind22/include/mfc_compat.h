@@ -892,54 +892,106 @@ private:
 };
 
 //-------------------------------- C A r r a y -------------------------------
-// MFC's CArray<TYPE, ARG_TYPE> — dynamic array. Backed by std::vector with
-// the MFC method names. Only a handful of methods are used in the live
-// code: Add, GetSize, GetAt/SetAt, operator[], RemoveAll, SetSize.
+// MFC's CArray<TYPE, ARG_TYPE> — dynamic array. CRITICAL: must match MFC's
+// memcpy-on-grow + ConstructElements/DestructElements pattern (NOT std::
+// vector's move-construct-then-destroy). Live code (music.cpp's CRawData)
+// has classes with raw pointer members and trivial copy semantics; MFC
+// relies on bitwise copy when growing the storage. A std::vector backing
+// triggers move-then-dtor cycles that double-free those pointers.
+//
+// Storage: raw malloc/free buffer. ConstructElements/DestructElements are
+// called for new/removed tail elements, and unqualified-name lookup +
+// ADL pick up per-type overloads (e.g. music.cpp's CRawData overrides)
+// when present, falling back to the catch-all templates below.
 
 template<class TYPE, class ARG_TYPE>
 class CArray
 {
 public:
-    int  GetSize() const  { return (int)m_v.size(); }
-    int  GetCount() const { return (int)m_v.size(); }
-    BOOL IsEmpty() const  { return m_v.empty() ? TRUE : FALSE; }
-    int  GetUpperBound() const { return (int)m_v.size() - 1; }
+    CArray() : m_pData( nullptr ), m_nSize( 0 ), m_nMaxSize( 0 ) {}
+    ~CArray()
+    {
+        if ( m_nSize > 0 ) DestructElements( m_pData, m_nSize );
+        if ( m_pData ) std::free( m_pData );
+    }
 
-    void SetSize( int nNewSize, int /*nGrowBy*/ = -1 ) { m_v.resize( (size_t)nNewSize ); }
+    int  GetSize() const  { return m_nSize; }
+    int  GetCount() const { return m_nSize; }
+    BOOL IsEmpty() const  { return m_nSize == 0 ? TRUE : FALSE; }
+    int  GetUpperBound() const { return m_nSize - 1; }
 
-    void RemoveAll() { m_v.clear(); }
+    void SetSize( int nNewSize, int /*nGrowBy*/ = -1 )
+    {
+        if ( nNewSize < 0 ) nNewSize = 0;
+        if ( nNewSize == m_nSize ) return;
+        if ( nNewSize < m_nSize ) {
+            DestructElements( m_pData + nNewSize, m_nSize - nNewSize );
+            m_nSize = nNewSize;
+            return;
+        }
+        // Growing — ensure capacity, then construct the tail.
+        if ( nNewSize > m_nMaxSize ) {
+            TYPE* pNew = (TYPE*)std::malloc( (size_t)nNewSize * sizeof( TYPE ) );
+            if ( m_nSize > 0 ) std::memcpy( pNew, m_pData, (size_t)m_nSize * sizeof( TYPE ) );
+            if ( m_pData ) std::free( m_pData );
+            m_pData = pNew;
+            m_nMaxSize = nNewSize;
+        }
+        ConstructElements( m_pData + m_nSize, nNewSize - m_nSize );
+        m_nSize = nNewSize;
+    }
+
+    void RemoveAll()
+    {
+        if ( m_nSize > 0 ) DestructElements( m_pData, m_nSize );
+        m_nSize = 0;
+    }
     void RemoveAt( int nIndex, int nCount = 1 )
     {
-        if ( nIndex < 0 || nCount <= 0 ) return;
-        if ( (size_t)nIndex >= m_v.size() ) return;
-        size_t end = (size_t)nIndex + (size_t)nCount;
-        if ( end > m_v.size() ) end = m_v.size();
-        m_v.erase( m_v.begin() + nIndex, m_v.begin() + end );
+        if ( nIndex < 0 || nCount <= 0 || nIndex >= m_nSize ) return;
+        if ( nIndex + nCount > m_nSize ) nCount = m_nSize - nIndex;
+        DestructElements( m_pData + nIndex, nCount );
+        int nTail = m_nSize - ( nIndex + nCount );
+        if ( nTail > 0 )
+            std::memmove( m_pData + nIndex, m_pData + nIndex + nCount, (size_t)nTail * sizeof( TYPE ) );
+        m_nSize -= nCount;
     }
 
-    int  Add( ARG_TYPE v ) { m_v.push_back( v ); return (int)m_v.size() - 1; }
+    int Add( ARG_TYPE v )
+    {
+        SetSize( m_nSize + 1 );
+        m_pData[m_nSize - 1] = v;
+        return m_nSize - 1;
+    }
     void InsertAt( int nIndex, ARG_TYPE v, int nCount = 1 )
     {
-        m_v.insert( m_v.begin() + nIndex, (size_t)nCount, v );
+        if ( nIndex < 0 || nCount <= 0 ) return;
+        if ( nIndex >= m_nSize ) { SetSize( nIndex + nCount ); for ( int i = 0; i < nCount; ++i ) m_pData[nIndex + i] = v; return; }
+        int nOld = m_nSize;
+        SetSize( m_nSize + nCount );
+        std::memmove( m_pData + nIndex + nCount, m_pData + nIndex, (size_t)( nOld - nIndex ) * sizeof( TYPE ) );
+        for ( int i = 0; i < nCount; ++i ) m_pData[nIndex + i] = v;
     }
 
-    const TYPE& GetAt( int nIndex ) const { return m_v[(size_t)nIndex]; }
-    TYPE&       GetAt( int nIndex )       { return m_v[(size_t)nIndex]; }
-    void SetAt( int nIndex, ARG_TYPE v )  { m_v[(size_t)nIndex] = v; }
+    const TYPE& GetAt( int nIndex ) const { return m_pData[nIndex]; }
+    TYPE&       GetAt( int nIndex )       { return m_pData[nIndex]; }
+    void SetAt( int nIndex, ARG_TYPE v )  { m_pData[nIndex] = v; }
     void SetAtGrow( int nIndex, ARG_TYPE v )
     {
-        if ( (size_t)nIndex >= m_v.size() ) m_v.resize( (size_t)nIndex + 1 );
-        m_v[(size_t)nIndex] = v;
+        if ( nIndex >= m_nSize ) SetSize( nIndex + 1 );
+        m_pData[nIndex] = v;
     }
-    TYPE&       ElementAt( int nIndex )       { return m_v[(size_t)nIndex]; }
-    const TYPE& operator[]( int nIndex ) const { return m_v[(size_t)nIndex]; }
-    TYPE&       operator[]( int nIndex )       { return m_v[(size_t)nIndex]; }
+    TYPE&       ElementAt( int nIndex )       { return m_pData[nIndex]; }
+    const TYPE& operator[]( int nIndex ) const { return m_pData[nIndex]; }
+    TYPE&       operator[]( int nIndex )       { return m_pData[nIndex]; }
 
-    const TYPE* GetData() const { return m_v.empty() ? nullptr : m_v.data(); }
-    TYPE*       GetData()       { return m_v.empty() ? nullptr : m_v.data(); }
+    const TYPE* GetData() const { return m_pData; }
+    TYPE*       GetData()       { return m_pData; }
 
 private:
-    std::vector<TYPE> m_v;
+    TYPE* m_pData;
+    int   m_nSize;
+    int   m_nMaxSize;
 };
 
 //-------------------------------- C L i s t ---------------------------------
@@ -1384,7 +1436,23 @@ public:
     virtual void    OnCancel()                    {}
     virtual void    DoDataExchange( CDataExchange* /*pDX*/ ) {}
     virtual INT_PTR DoModal()                     { return IDCANCEL; }
-    virtual BOOL    Create( UINT /*nIDTemplate*/, void* /*pParent*/ = NULL ) { return FALSE; }
+    // Create a modeless dialog from the embedded resource template. Used by
+    // wind22's CGlobalSubClassX which creates an invisible host dialog with
+    // dummy IDC_SUBCLASS_BUTTON / IDC_SUBCLASS_STATIC controls. Without a
+    // real HWND the subclass init throws ERR_SUBCLASS_DLG_CREATE.
+    //
+    // Force-hide immediately after creation. The template may have
+    // WS_VISIBLE set; if so the dialog would steal focus from the SDL2
+    // game window and silently swallow mouse input.
+    virtual BOOL Create( UINT nIDTemplate, CWnd* pParent = NULL )
+    {
+        m_hWnd = ::CreateDialogA( ::GetModuleHandleA( NULL ),
+                                  MAKEINTRESOURCEA( nIDTemplate ),
+                                  pParent ? pParent->m_hWnd : NULL,
+                                  NULL );  // NULL → DefDialogProc
+        if ( m_hWnd ) ::ShowWindow( m_hWnd, SW_HIDE );
+        return m_hWnd != NULL;
+    }
     void EndDialog( int /*nResult*/ )             {}
     BOOL UpdateData( BOOL /*bSaveAndValidate*/ = TRUE ) { return TRUE; }
 };
@@ -1673,14 +1741,24 @@ public:
 #ifndef AFX_CDECL
 #define AFX_CDECL __cdecl
 #endif
-// SerializeElements/ConstructElements/DestructElements/CopyElements/
-// HashKey: CArray/CMap/CList template hooks. The live code only declares
-// these for primitive types; no actual implementation is called at runtime
-// because we've stubbed the containers in std::vector / std::map / std::list.
-// Provide weakly-defined inlines so prototype declarations link.
-template<class T> inline void AFXAPI SerializeElements( CArchive& /*ar*/, T* /*pElements*/, int /*nCount*/ ) {}
-template<class T> inline void AFXAPI ConstructElements( T* /*pElements*/, int /*nCount*/ ) {}
-template<class T> inline void AFXAPI DestructElements ( T* /*pElements*/, int /*nCount*/ ) {}
+// SerializeElements/ConstructElements/DestructElements: CArray template
+// hooks. CArray<TYPE,ARG_TYPE>::SetSize calls these unqualified for
+// growing/shrinking; per-type overloads (e.g. music.cpp's CRawData) are
+// picked up via ADL at instantiation. The default templates handle the
+// trivial cases — placement new for construct, explicit dtor for destruct.
+//
+// Calling-convention note: no AFXAPI / __stdcall here. Live code's
+// per-type overloads use the default __cdecl convention; matching it
+// avoids overload-resolution ambiguity at instantiation.
+template<class T> inline void SerializeElements( CArchive& /*ar*/, T* /*pElements*/, int /*nCount*/ ) {}
+template<class T> inline void ConstructElements( T* pElements, int nCount )
+{
+    for ( int i = 0; i < nCount; ++i ) new ( pElements + i ) T();
+}
+template<class T> inline void DestructElements( T* pElements, int nCount )
+{
+    for ( int i = 0; i < nCount; ++i ) ( pElements + i )->~T();
+}
 
 // MFC's runtime-class / dynamic-creation / serialization framework. Live code
 // uses DECLARE_SERIAL/IMPLEMENT_SERIAL on a handful of classes to support
