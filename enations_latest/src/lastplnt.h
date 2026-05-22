@@ -16,7 +16,8 @@
 // so it's visible to wind22 headers like windward.h before InitWindwardLib1
 // declaration. See winappstub.h for the migration plan.
 
-#ifndef __AFXWIN_H__
+// Phase 1g step 2: same PCH-guard relaxation as sprite.h / scanlist.h.
+#if !defined(__AFXWIN_H__) && !defined(_WINDOWS_)
 #error include 'stdafx.h' before including this file for PCH
 #endif
 

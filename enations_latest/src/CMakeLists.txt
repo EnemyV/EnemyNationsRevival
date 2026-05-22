@@ -153,7 +153,12 @@ add_compile_definitions(
 
 
 target_compile_definitions(enations PUBLIC
-        _AFXDLL  # required while stdafx.h still pulls in afx*.h headers
+        # Phase 1g step 2 (2026-05-21): _AFXDLL no longer required —
+        # stdafx.h's afx*.h chain is gated out and mfc_compat.h provides
+        # the MFC type surface (CString/CFile/CArchive/CMap/CDialog/CWnd/
+        # CDC/CFont/CBrush/CPen/CBitmap/CList/CWinThread/CCriticalSection
+        # etc.). MFC not linked: verified via ./mfc-status.ps1.
+        # _AFXDLL
         _WIN32
         _WIN32_WINNT=_WIN32_WINNT_WIN7
         _MBCS

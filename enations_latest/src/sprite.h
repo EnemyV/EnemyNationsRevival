@@ -11,7 +11,9 @@
 // sprite.h : header file for sprites
 //
 
-#ifndef __AFXWIN_H__
+// Phase 1g step 2: the original PCH guard checked __AFXWIN_H__. Under the
+// stub gates we don't include afxwin.h; accept windows.h's _WINDOWS_ marker.
+#if !defined(__AFXWIN_H__) && !defined(_WINDOWS_)
 	#error include 'stdafx.h' before including this file for PCH
 #endif
 
