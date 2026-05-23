@@ -711,11 +711,15 @@ public:
         if ( !p ) return;
         rKey   = p->it->first;
         rValue = p->it->second;
-        ++p->it;
-        // Don't free the IterPos — callers may have copied POSITION
-        // (e.g. `POSITION _pos = pos;`) and a delete here would leave
-        // the copy dangling. See the CList GetNext/GetPrev comment.
-        if ( p->it == p->map->end() ) rNextPosition = nullptr;
+        auto next_it = p->it; ++next_it;
+        // Allocate a fresh IterPos for the advanced position so aliased
+        // POSITION copies don't share state (see CList::GetNext comment).
+        if ( next_it == p->map->end() ) {
+            rNextPosition = nullptr;
+        } else {
+            IterPos* newp = new IterPos{ next_it, p->map };
+            rNextPosition = (POSITION)newp;
+        }
     }
 
     // No-op Serialize: the gate-on save format doesn't round-trip MFC
@@ -1044,48 +1048,75 @@ public:
     POSITION GetHeadPosition() const { return m_list.empty() ? nullptr : wrap( m_list.begin() ); }
     POSITION GetTailPosition() const { return m_list.empty() ? nullptr : wrap( --m_list.end() ); }
 
-    // CRITICAL: GetNext/GetPrev DON'T delete the IterPos at end. Live code
-    // routinely copies POSITION values (`POSITION _pos = pos;`) — both
-    // copies point to the SAME heap-allocated IterPos. If we delete via
-    // one copy the other becomes a dangling pointer, the next access reads
-    // FEEEFEEE-pattern garbage, and the next CPlayer*-style consumer
-    // crashes with an access violation. Caught at wrldinit.cpp:610 during
-    // CGameMap::Init's island/ocean placement — `_pPlr=FEEEFEEE` in trace.
+    // CRITICAL: GetNext/GetPrev allocate a NEW IterPos for the advanced
+    // position, and rebind the caller's pos to it. The old IterPos is
+    // orphaned (leaks).
     //
-    // MFC's POSITION is a list-node address — not owned by anyone, freed
-    // only when the node itself is removed. We mirror that: the IterPos
-    // wrappers leak by design (one allocation per Position-bearing call;
-    // bounded by iteration count over the game's lifetime, ~MB at worst).
+    // Live code routinely copies POSITION values (`POSITION _pos = pos;`)
+    // and advances each copy independently — wrldinit.cpp:603-608 does
+    // this for an inner "peek next player" against an outer iteration.
+    // MFC's POSITION is a list-node address (independent on copy). If we
+    // mutated a shared heap IterPos in place, _pos and pos would alias:
+    // advancing one advances the other, and on the NEXT outer iteration
+    // *p->it would dereference end() — UB returning FEEEFEEE-pattern
+    // garbage that the next CPlayer* consumer crashes on.
+    //
+    // Allocating a fresh IterPos per advance gives each POSITION copy its
+    // own iterator state, mirroring MFC semantics. The old IterPos is
+    // leaked: bounded by total iteration count over the game's lifetime,
+    // ~MB at most. Acceptable for the gate-on path.
     TYPE& GetNext( POSITION& pos )
     {
         IterPos* p = (IterPos*)pos;
         TYPE& ref = *p->it;
-        ++p->it;
-        if ( p->it == m_list.end() ) pos = nullptr;
+        auto next_it = p->it; ++next_it;
+        if ( next_it == m_list.end() ) {
+            pos = nullptr;
+        } else {
+            IterPos* newp = new IterPos;
+            newp->it = next_it;
+            pos = (POSITION)newp;
+        }
         return ref;
     }
     const TYPE& GetNext( POSITION& pos ) const
     {
         IterPos* p = (IterPos*)pos;
         const TYPE& ref = *p->it;
-        ++p->it;
-        if ( p->it == m_list.end() ) pos = nullptr;
+        auto next_it = p->it; ++next_it;
+        if ( next_it == m_list.end() ) {
+            pos = nullptr;
+        } else {
+            IterPos* newp = new IterPos;
+            newp->it = next_it;
+            pos = (POSITION)newp;
+        }
         return ref;
     }
     TYPE& GetPrev( POSITION& pos )
     {
         IterPos* p = (IterPos*)pos;
         TYPE& ref = *p->it;
-        if ( p->it == m_list.begin() ) pos = nullptr;
-        else --p->it;
+        if ( p->it == m_list.begin() ) {
+            pos = nullptr;
+        } else {
+            IterPos* newp = new IterPos;
+            newp->it = p->it; --newp->it;
+            pos = (POSITION)newp;
+        }
         return ref;
     }
     const TYPE& GetPrev( POSITION& pos ) const
     {
         IterPos* p = (IterPos*)pos;
         const TYPE& ref = *p->it;
-        if ( p->it == m_list.begin() ) pos = nullptr;
-        else --p->it;
+        if ( p->it == m_list.begin() ) {
+            pos = nullptr;
+        } else {
+            IterPos* newp = new IterPos;
+            newp->it = p->it; --newp->it;
+            pos = (POSITION)newp;
+        }
         return ref;
     }
     TYPE& GetAt( POSITION pos )       { return *( (IterPos*)pos )->it; }
