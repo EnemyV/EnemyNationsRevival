@@ -712,10 +712,10 @@ public:
         rKey   = p->it->first;
         rValue = p->it->second;
         ++p->it;
-        if ( p->it == p->map->end() ) {
-            delete p;
-            rNextPosition = nullptr;
-        }
+        // Don't free the IterPos — callers may have copied POSITION
+        // (e.g. `POSITION _pos = pos;`) and a delete here would leave
+        // the copy dangling. See the CList GetNext/GetPrev comment.
+        if ( p->it == p->map->end() ) rNextPosition = nullptr;
     }
 
     // No-op Serialize: the gate-on save format doesn't round-trip MFC
@@ -1044,12 +1044,24 @@ public:
     POSITION GetHeadPosition() const { return m_list.empty() ? nullptr : wrap( m_list.begin() ); }
     POSITION GetTailPosition() const { return m_list.empty() ? nullptr : wrap( --m_list.end() ); }
 
+    // CRITICAL: GetNext/GetPrev DON'T delete the IterPos at end. Live code
+    // routinely copies POSITION values (`POSITION _pos = pos;`) — both
+    // copies point to the SAME heap-allocated IterPos. If we delete via
+    // one copy the other becomes a dangling pointer, the next access reads
+    // FEEEFEEE-pattern garbage, and the next CPlayer*-style consumer
+    // crashes with an access violation. Caught at wrldinit.cpp:610 during
+    // CGameMap::Init's island/ocean placement — `_pPlr=FEEEFEEE` in trace.
+    //
+    // MFC's POSITION is a list-node address — not owned by anyone, freed
+    // only when the node itself is removed. We mirror that: the IterPos
+    // wrappers leak by design (one allocation per Position-bearing call;
+    // bounded by iteration count over the game's lifetime, ~MB at worst).
     TYPE& GetNext( POSITION& pos )
     {
         IterPos* p = (IterPos*)pos;
         TYPE& ref = *p->it;
         ++p->it;
-        if ( p->it == m_list.end() ) { delete p; pos = nullptr; }
+        if ( p->it == m_list.end() ) pos = nullptr;
         return ref;
     }
     const TYPE& GetNext( POSITION& pos ) const
@@ -1057,14 +1069,14 @@ public:
         IterPos* p = (IterPos*)pos;
         const TYPE& ref = *p->it;
         ++p->it;
-        if ( p->it == m_list.end() ) { delete p; pos = nullptr; }
+        if ( p->it == m_list.end() ) pos = nullptr;
         return ref;
     }
     TYPE& GetPrev( POSITION& pos )
     {
         IterPos* p = (IterPos*)pos;
         TYPE& ref = *p->it;
-        if ( p->it == m_list.begin() ) { delete p; pos = nullptr; }
+        if ( p->it == m_list.begin() ) pos = nullptr;
         else --p->it;
         return ref;
     }
@@ -1072,7 +1084,7 @@ public:
     {
         IterPos* p = (IterPos*)pos;
         const TYPE& ref = *p->it;
-        if ( p->it == m_list.begin() ) { delete p; pos = nullptr; }
+        if ( p->it == m_list.begin() ) pos = nullptr;
         else --p->it;
         return ref;
     }
@@ -1111,7 +1123,8 @@ public:
         IterPos* p = (IterPos*)pos;
         // const_cast OK: we own the list, the const iterator is just our wire format
         m_list.erase( m_list.erase( p->it, p->it ) );
-        delete p;
+        // IterPos is leaked by design (see GetNext/GetPrev comment); callers
+        // may hold aliased POSITION copies and freeing here would dangle them.
     }
 
     // No-op Serialize (see CMap::Serialize comment).
