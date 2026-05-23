@@ -132,6 +132,13 @@ static LRESULT CALLBACK SdlSubclassWndProc(HWND hWnd, UINT msg, WPARAM wParam, L
     if (msg == WM_SETCURSOR && LOWORD(lParam) == HTCLIENT) {
         return TRUE;
     }
+    // SDL2's default WM_MOUSEACTIVATE handler returns MA_ACTIVATEANDEAT when an
+    // inactive window receives a click — the click activates the window but is
+    // consumed, forcing users to click twice. Override to MA_ACTIVATE so the
+    // first click both activates and registers.
+    if (msg == WM_MOUSEACTIVATE) {
+        return MA_ACTIVATE;
+    }
     return ::CallWindowProc(s_sdlOrigWndProc, hWnd, msg, wParam, lParam);
 }
 #endif // _WIN32

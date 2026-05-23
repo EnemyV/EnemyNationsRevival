@@ -800,8 +800,29 @@ public:
     CWinThread() : m_hThread( NULL ), m_nThreadID( 0 ), m_bAutoDelete( TRUE ) {}
     virtual ~CWinThread() { if ( m_hThread ) ::CloseHandle( m_hThread ); }
 
-    DWORD ResumeThread()   { return m_hThread ? ::ResumeThread( m_hThread ) : (DWORD)-1; }
-    DWORD SuspendThread()  { return m_hThread ? ::SuspendThread( m_hThread ) : (DWORD)-1; }
+    DWORD ResumeThread() {
+        if (!m_hThread) return (DWORD)-1;
+        DWORD prev = ::ResumeThread(m_hThread);
+        // Phase 1g step 2 race-fix: legacy code (music.cpp's read-ahead
+        // worker) uses the SuspendThread/ResumeThread self-suspend pattern
+        // for synchronization. That pattern races inherently — if main
+        // calls ResumeThread BEFORE the worker has entered its
+        // ::SuspendThread syscall, our resume returns prev=0 (no-op) and
+        // the worker then self-suspends with nobody to wake it.
+        //
+        // MFC's AfxBeginThread used to mask this via _beginthreadex's CRT
+        // setup latency; our raw CreateThread is faster, so the race fires
+        // every time. Retry up to ~50ms until we've actually decremented a
+        // suspended thread (prev >= 1) or we time out.
+        if (prev == 0 && ::GetCurrentThreadId() != m_nThreadID) {
+            for (int i = 0; i < 50 && prev == 0; ++i) {
+                ::Sleep(1);
+                prev = ::ResumeThread(m_hThread);
+            }
+        }
+        return prev;
+    }
+    DWORD SuspendThread() { return m_hThread ? ::SuspendThread(m_hThread) : (DWORD)-1; }
     BOOL  SetThreadPriority( int nPri ) { return m_hThread ? ::SetThreadPriority( m_hThread, nPri ) : FALSE; }
     int   GetThreadPriority() const { return m_hThread ? ::GetThreadPriority( m_hThread ) : THREAD_PRIORITY_NORMAL; }
 
@@ -1436,21 +1457,31 @@ public:
     virtual void    OnCancel()                    {}
     virtual void    DoDataExchange( CDataExchange* /*pDX*/ ) {}
     virtual INT_PTR DoModal()                     { return IDCANCEL; }
-    // Create a modeless dialog from the embedded resource template. Used by
-    // wind22's CGlobalSubClassX which creates an invisible host dialog with
-    // dummy IDC_SUBCLASS_BUTTON / IDC_SUBCLASS_STATIC controls. Without a
-    // real HWND the subclass init throws ERR_SUBCLASS_DLG_CREATE.
+    // Wind22's CGlobalSubClassX::CGlobalSubClassX needs `m_dlg.Create(
+    // IDD_SUBCLASS)` to produce a non-NULL m_hWnd so `Init()` doesn't
+    // throw ERR_SUBCLASS_DLG_CREATE. The subclass machinery does
+    // `::GetDlgItem(m_dlg.m_hWnd, IDC_SUBCLASS_BUTTON)` — but only uses
+    // the result to compare against the HWND being subclassed, so NULL
+    // is fine.
     //
-    // Force-hide immediately after creation. The template may have
-    // WS_VISIBLE set; if so the dialog would steal focus from the SDL2
-    // game window and silently swallow mouse input.
-    virtual BOOL Create( UINT nIDTemplate, CWnd* pParent = NULL )
+    // We DELIBERATELY don't use ::CreateDialogA from the .RC template:
+    // even with ShowWindow(SW_HIDE) immediately after, the dialog (with
+    // WS_CAPTION from the template) briefly grabs activation, which
+    // breaks input routing to the SDL2 main menu — user-reported
+    // mouse-input regression at the main menu.
+    //
+    // Instead create a 1×1 hidden tool window with WS_EX_NOACTIVATE so
+    // it never enters the activation list and never steals foreground
+    // from the SDL2 window.
+    virtual BOOL Create( UINT /*nIDTemplate*/, CWnd* pParent = NULL )
     {
-        m_hWnd = ::CreateDialogA( ::GetModuleHandleA( NULL ),
-                                  MAKEINTRESOURCEA( nIDTemplate ),
-                                  pParent ? pParent->m_hWnd : NULL,
-                                  NULL );  // NULL → DefDialogProc
-        if ( m_hWnd ) ::ShowWindow( m_hWnd, SW_HIDE );
+        m_hWnd = ::CreateWindowExA(
+            WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW,
+            "STATIC", "",
+            WS_POPUP,  // no WS_VISIBLE, no WS_CAPTION
+            0, 0, 1, 1,
+            pParent ? pParent->m_hWnd : NULL,
+            NULL, ::GetModuleHandleA( NULL ), NULL );
         return m_hWnd != NULL;
     }
     void EndDialog( int /*nResult*/ )             {}
