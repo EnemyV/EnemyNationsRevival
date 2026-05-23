@@ -179,6 +179,19 @@ public:
     class SDL2Toolbar* GetSDL2Toolbar() const { return m_sdl2Toolbar; }
     void SetSDL2Toolbar(class SDL2Toolbar* tb) { m_sdl2Toolbar = tb; }
 
+    // Force the SDL arrow cursor visible. Used by detached SDL panels (e.g.
+    // CWndArea's map window) where SDL owns the cursor and Win32 ::SetCursor
+    // calls from game code get overridden by SDL's WM_SETCURSOR handler.
+    void SetArrowCursor();
+
+    // Drive the Win32 ShowCursor display counter back to 0 without changing
+    // the cursor shape. Game code's ::SetCursor(m_hCurReg / m_hCurMove / ...)
+    // calls are then visible. Call this each frame from cursor-aware hot paths
+    // (e.g. CWndArea's SDL panel MOUSEMOTION callback) to compensate for
+    // legacy ShowCursor(FALSE) calls (intro movie etc.) that left the counter
+    // negative.
+    void EnsureCursorVisible();
+
     /**
      * Raise the SDL window to the foreground (above MFC windows)
      */

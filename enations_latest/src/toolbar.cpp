@@ -297,7 +297,7 @@ int CWndBar::OnCreate( LPCREATESTRUCT lpCS )
             });
 
         ::SetWindowLong( m_hWnd, GWL_EXSTYLE,
-            ::GetWindowLong( m_hWnd, GWL_EXSTYLE ) | WS_EX_LAYERED );
+            ::GetWindowLong( m_hWnd, GWL_EXSTYLE ) | WS_EX_LAYERED | WS_EX_TRANSPARENT );
         ::SetLayeredWindowAttributes( m_hWnd, 0, 1, LWA_ALPHA );
     }
 
@@ -326,6 +326,23 @@ void CWndBar::OnClose( )
 
 void CWndBar::EnableButton( int ID, BOOL bEnable )
 {
+
+    if ( theApp.m_gameWindow )
+    {
+        SDL2Toolbar* tb = theApp.m_gameWindow->GetSDL2Toolbar();
+        if ( tb )
+            for ( int i = 0; i < NUM_BAR_BTNS; ++i )
+                if ( aID[i] == ID )
+                {
+                    tb->EnableButton( i, bEnable != FALSE );
+                    break;
+                }
+
+        HWND hBtn = GetDlgItemHwnd( ID );
+        if ( hBtn )
+            ::EnableWindow( hBtn, bEnable );
+        return;
+    }
 
     CBmButton* pBtn = (CBmButton*)GetDlgItem( ID );
     ASSERT_VALID( pBtn );

@@ -669,10 +669,11 @@ int CWndAreaStatic::OnCreate( LPCREATESTRUCT lpCS )
     SizeStatus( );
 
     // Panel and SDL2AreaBar are now created by CWndArea::OnCreate.
-    // Just make MFC window transparent here.
+    // Just make MFC window transparent here. WS_EX_TRANSPARENT also makes the
+    // window click-through so clicks reach the SDL panel rendered behind it.
     if ( theApp.m_gameWindow ) {
         ::SetWindowLong( m_hWnd, GWL_EXSTYLE,
-            ::GetWindowLong( m_hWnd, GWL_EXSTYLE ) | WS_EX_LAYERED );
+            ::GetWindowLong( m_hWnd, GWL_EXSTYLE ) | WS_EX_LAYERED | WS_EX_TRANSPARENT );
         ::SetLayeredWindowAttributes( m_hWnd, 0, 0, LWA_ALPHA );
     }
 
@@ -1043,6 +1044,15 @@ void CWndArea::Create( CMapLoc const& ml, CUnit* pUnit, BOOL bFirst )
     {
         m_lstUnits.AddUnit( pUnit, TRUE );
         ASSERT( m_lstUnits.GetCount( ) == 1 );
+    }
+
+    // CWndStub::CreateEx() bypasses MFC's PreCreateWindow flow. PreCreateWindow
+    // is where LoadStaticResources() loads the area cursors (m_hCurReg /
+    // m_hCurGoto / m_hCurTarget / ...). Without this call those HCURSORs stay
+    // NULL and SetMouseState's ::SetCursor(m_hCurReg) hides the cursor.
+    {
+        CREATESTRUCT cs = {};
+        PreCreateWindow( cs );
     }
 
     if ( sWndCls.empty( ) )
@@ -2084,6 +2094,10 @@ int CWndArea::OnCreate( LPCREATESTRUCT lpCreateStruct )
 
     CRect rect;
     CWndAnim::GetClientRect( &rect );
+    // CWndStub::Create bypasses MFC's PreCreate flow, so invoke explicitly
+    // before reading PreCreate-computed members (m_iYmin / m_iXmin / button
+    // layout positions). Otherwise m_iYmin is uninitialized garbage.
+    m_WndStatic.PreCreate();
     rect.top = rect.bottom - m_WndStatic.m_iYmin;
     LPCTSTR sWndCls = CConquerApp::EnRegisterWndClass( "EnAreaStaticWnd",
                           CS_DBLCLKS | CS_HREDRAW | CS_VREDRAW | CS_OWNDC, m_hCurLoad[0] );
@@ -2194,6 +2208,11 @@ int CWndArea::OnCreate( LPCREATESTRUCT lpCreateStruct )
                 case SDL_MOUSEMOTION:
                     pThis->OnMouseMove(flags, pt);
                     pThis->SetMouseState();  // Update cursor & m_uMouseMode (replaces WM_SETCURSOR)
+                    // movie.cpp's intro playback calls Win32 ShowCursor(FALSE);
+                    // drive the display counter back to 0 so SetMouseState's
+                    // ::SetCursor() actually shows the game cursor.
+                    if (theApp.m_gameWindow)
+                        theApp.m_gameWindow->EnsureCursorVisible();
                     return true;
 
                 case SDL_MOUSEWHEEL:
@@ -2266,8 +2285,10 @@ int CWndArea::OnCreate( LPCREATESTRUCT lpCreateStruct )
             });
 
         // Make MFC window fully transparent — SDL panel handles display.
+        // WS_EX_TRANSPARENT makes the window click-through so cursor/mouse
+        // events reach the detached SDL panel underneath.
         ::SetWindowLong( m_hWnd, GWL_EXSTYLE,
-            ::GetWindowLong( m_hWnd, GWL_EXSTYLE ) | WS_EX_LAYERED );
+            ::GetWindowLong( m_hWnd, GWL_EXSTYLE ) | WS_EX_LAYERED | WS_EX_TRANSPARENT );
         ::SetLayeredWindowAttributes( m_hWnd, 0, 0, LWA_ALPHA );
 
         // Create the area button bar panel HERE (not in CWndAreaStatic::OnCreate)
@@ -5501,11 +5522,48 @@ void CWndInfo::Refigure( )
 BOOL CWndArea::OnCommand( WPARAM wParam, LPARAM lParam )
 {
 
+    // With CWndStub the BEGIN_MESSAGE_MAP no-ops, so ON_BN_CLICKED / ON_COMMAND
+    // entries are dead. Dispatch them manually here.
     switch ( LOWORD( wParam ) )
     {
     case IDA_SAVE:
         GetParent( )->SendMessage( WM_COMMAND, wParam, lParam );
         return ( TRUE );
+
+    // Area toolbar buttons (SDL2AreaBar) — match the ON_BN_CLICKED table above
+    case IDC_AREA_COMBAT:       LastCombat();         return TRUE;
+    case IDC_AREA_ZOOM_IN:      ZoomIn();             return TRUE;
+    case IDC_AREA_ZOOM_OUT:     ZoomOut();            return TRUE;
+    case IDC_AREA_CLOCK:        TurnClock();          return TRUE;
+    case IDC_AREA_COUNTER:      TurnCounter();        return TRUE;
+    case IDC_AREA_RES:          ResClicked();         return TRUE;
+    case IDC_UNIT_STOP:         StopUnit();           return TRUE;
+    case IDC_UNIT_RESUME:       ResumeUnit();         return TRUE;
+    case IDC_UNIT_ROAD:         RoadUnit();           return TRUE;
+    case IDC_UNIT_CANCEL_ROAD:  CancelRoadUnit();     return TRUE;
+    case IDC_UNIT_BUILD:        BuildUnit();          return TRUE;
+    case IDC_UNIT_CANCEL_BUILD: CancelBuildUnit();    return TRUE;
+    case IDC_UNIT_ROUTE:        RouteUnit();          return TRUE;
+    case IDC_UNIT_UNLOAD:       UnloadUnit();         return TRUE;
+    case IDC_UNIT_RETREAT:      RetreatUnit();        return TRUE;
+    case IDC_UNIT_REPAIR:       RepairUnit();         return TRUE;
+    case IDC_UNIT_CANCEL_REPAIR: CancelRepairUnit();  return TRUE;
+
+    // Accelerator commands
+    case IDA_CENTER:            CenterUnit();         return TRUE;
+    case IDA_DESTROY:           DestroyUnit();        return TRUE;
+    case IDA_STOP_DESTROY:      StopDestroyUnit();    return TRUE;
+    case IDA_CUR_UP:            CurUp();              return TRUE;
+    case IDA_CUR_RIGHT:         CurRight();           return TRUE;
+    case IDA_CUR_DOWN:          CurDown();            return TRUE;
+    case IDA_CUR_LEFT:          CurLeft();            return TRUE;
+    case IDA_OPPO:              OppoUnit();           return TRUE;
+    case IDA_CLOSE_WIN:         OnCloseWin();         return TRUE;
+    case IDA_DESELECT:          OnDeselect();         return TRUE;
+    case IDA_BUILD:             BuildUnit();          return TRUE;
+    case IDA_RETREAT:           RetreatUnit();        return TRUE;
+    case IDA_ROUTE:             RouteUnit();          return TRUE;
+    case IDA_UNLOAD:            UnloadUnit();         return TRUE;
     }
 
     return ( CWndAnim::OnCommand( wParam, lParam ) );

@@ -91,12 +91,12 @@ protected:
 	//}}AFX_MSG
 	DECLARE_MESSAGE_MAP()
 
-			int						m_iXmin;
-			int						m_iYmin;
-			int						m_iStatusStrt;
-			int						m_iStatusCraneStrt;
-			int						m_iStatusNoCraneStrt;
-			int						m_iNumStatusText;
+			int						m_iXmin = 0;
+			int						m_iYmin = 36;   // bar height fallback; PreCreate overwrites
+			int						m_iStatusStrt = 0;
+			int						m_iStatusCraneStrt = 0;
+			int						m_iStatusNoCraneStrt = 0;
+			int						m_iNumStatusText = 0;
 
 			CBmButton			m_Btns [NUM_AREA_BUTTONS];
 			CWndUnitStat	m_wndStat;								// unit status

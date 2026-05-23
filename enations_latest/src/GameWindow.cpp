@@ -120,6 +120,41 @@ static void EnsureResizeCursors() {
     }
 }
 
+void GameWindow::SetArrowCursor() {
+    EnsureResizeCursors();
+    if (s_cursors[0]) {
+        SDL_ShowCursor(SDL_ENABLE);
+        SDL_SetCursor(s_cursors[0]);
+    }
+#ifdef _WIN32
+    static HCURSOR s_hArrow = ::LoadCursor(NULL, IDC_ARROW);
+    if (s_hArrow)
+        ::SetCursor(s_hArrow);
+    EnsureCursorVisible();
+#endif
+}
+
+void GameWindow::EnsureCursorVisible() {
+#ifdef _WIN32
+    // Win32 maintains a display counter for the cursor. movie.cpp calls
+    // ShowCursor(FALSE) during intro playback. If the counter never returns to
+    // 0 (or worse, goes negative) the cursor stays hidden regardless of
+    // ::SetCursor. Drive the counter back to >=0 without changing what cursor
+    // shape is shown — game code's ::SetCursor(m_hCurReg / m_hCurMove / ...)
+    // calls then take effect normally.
+    int count = ::ShowCursor(TRUE);
+    int guard = 0;
+    while (count < 0 && guard++ < 20) {
+        count = ::ShowCursor(TRUE);
+    }
+    // If we incremented past 0, push back to exactly 0 so we don't permanently
+    // shift the counter (otherwise legitimate hide calls won't work).
+    while (count > 0) {
+        count = ::ShowCursor(FALSE);
+    }
+#endif
+}
+
 #ifdef _WIN32
 // Subclass the SDL window to intercept WM_SETCURSOR.
 // The game changes cursors via ::SetCursor() in CWndArea::SetMouseState().
@@ -130,6 +165,10 @@ static WNDPROC s_sdlOrigWndProc = NULL;
 
 static LRESULT CALLBACK SdlSubclassWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     if (msg == WM_SETCURSOR && LOWORD(lParam) == HTCLIENT) {
+        // Returning TRUE alone preserves whatever cursor was last ::SetCursor'd —
+        // which the game's CWndArea::SetMouseState() updates on every mouse move.
+        // Do NOT force a system arrow here; that would override game-specific
+        // cursors (move, select, attack, build, repair, ...).
         return TRUE;
     }
     // SDL2's default WM_MOUSEACTIVATE handler returns MA_ACTIVATEANDEAT when an
@@ -139,7 +178,12 @@ static LRESULT CALLBACK SdlSubclassWndProc(HWND hWnd, UINT msg, WPARAM wParam, L
     if (msg == WM_MOUSEACTIVATE) {
         return MA_ACTIVATE;
     }
-    return ::CallWindowProc(s_sdlOrigWndProc, hWnd, msg, wParam, lParam);
+    // Each SDL window stores its original wndproc as a window property so we
+    // can route through the right one. Fall back to the static (main-window)
+    // copy for backwards compat with installs that predate per-window storage.
+    WNDPROC orig = (WNDPROC)::GetProp(hWnd, "EN_origWndProc");
+    if (!orig) orig = s_sdlOrigWndProc;
+    return ::CallWindowProc(orig, hWnd, msg, wParam, lParam);
 }
 #endif // _WIN32
 
@@ -167,6 +211,25 @@ SDL_Window* GameWindow::CreateSDLWindow(const char* title, int x, int y, int w, 
 #ifdef _WIN32
     if (hook) {
         ::UnhookWindowsHookEx(hook);
+    }
+
+    // Subclass every SDL window — including detached panel windows — so
+    // WM_SETCURSOR forces a visible arrow. Otherwise SDL's default handler
+    // leaves the cursor as whatever the game last ::SetCursor()'d, which
+    // includes NULL (invisible) during rocket placement / build modes.
+    if (win) {
+        SDL_SysWMinfo wmInfo;
+        SDL_VERSION(&wmInfo.version);
+        if (SDL_GetWindowWMInfo(win, &wmInfo)) {
+            HWND hSDL = wmInfo.info.win.window;
+            if (::GetProp(hSDL, "EN_origWndProc") == NULL) {
+                WNDPROC orig = (WNDPROC)::GetWindowLongPtr(hSDL, GWLP_WNDPROC);
+                ::SetProp(hSDL, "EN_origWndProc", (HANDLE)orig);
+                ::SetWindowLongPtr(hSDL, GWLP_WNDPROC, (LONG_PTR)SdlSubclassWndProc);
+                if (!s_sdlOrigWndProc)
+                    s_sdlOrigWndProc = orig;
+            }
+        }
     }
 #endif
     return win;
@@ -223,14 +286,18 @@ bool GameWindow::InitializeSDL() {
     EnsureResizeCursors();
 
 #ifdef _WIN32
-    // Windows-specific: subclass to intercept WM_SETCURSOR so the game's
-    // ::SetCursor() calls in SetMouseState() aren't overridden by SDL.
+    // Subclass main window for WM_SETCURSOR / WM_MOUSEACTIVATE handling.
+    // Detached panel windows get subclassed automatically in CreateSDLWindow.
     SDL_SysWMinfo wmInfo;
     SDL_VERSION(&wmInfo.version);
     if (SDL_GetWindowWMInfo(m_window, &wmInfo)) {
         HWND hSDL = wmInfo.info.win.window;
-        s_sdlOrigWndProc = (WNDPROC)::GetWindowLongPtr(hSDL, GWLP_WNDPROC);
-        ::SetWindowLongPtr(hSDL, GWLP_WNDPROC, (LONG_PTR)SdlSubclassWndProc);
+        if (::GetProp(hSDL, "EN_origWndProc") == NULL) {
+            WNDPROC orig = (WNDPROC)::GetWindowLongPtr(hSDL, GWLP_WNDPROC);
+            ::SetProp(hSDL, "EN_origWndProc", (HANDLE)orig);
+            ::SetWindowLongPtr(hSDL, GWLP_WNDPROC, (LONG_PTR)SdlSubclassWndProc);
+            s_sdlOrigWndProc = orig;
+        }
     }
 #endif
 
