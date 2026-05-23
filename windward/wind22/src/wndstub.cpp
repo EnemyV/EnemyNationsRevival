@@ -353,7 +353,19 @@ HWND CWndStub::GetTopLevelParent() const
 CWndStub* CWndStub::GetDlgItem( int nID ) const
 {
     HWND h = ::GetDlgItem( m_hWnd, nID );
-    if ( h == NULL ) return NULL;
+    // CRITICAL: must NOT return NULL even if the child doesn't exist yet.
+    // Live code uses MFC's GetDlgItem idiom: `pBtn = GetDlgItem(ID);
+    // pBtn->EnableWindow(FALSE);` — MFC always returns a non-NULL temp
+    // wrapping the (possibly NULL) HWND, so the EnableWindow call becomes
+    // a harmless ::EnableWindow(NULL, ...). Caught in area.cpp:4383
+    // SetButtonState calling EnableButton(IDC_UNIT_RESUME) during the
+    // area window's WM_CREATE — IDC_UNIT_RESUME isn't created yet, our
+    // GetDlgItem returned NULL, and the caller AV'd dereferencing it.
+    if ( h == NULL ) {
+        thread_local CWndStub s_nullItem;
+        s_nullItem.m_hWnd = NULL;
+        return &s_nullItem;
+    }
     // Stub-managed (GWLP_USERDATA was stashed at WM_NCCREATE)?
     CWndStub* p = (CWndStub*)::GetWindowLongPtr( h, GWLP_USERDATA );
     if ( p != NULL ) return p;
