@@ -44,10 +44,22 @@ private:
     SDL2Button* m_catBtns[6] = {};
     SDL2Button* m_bldgBtns[6] = {};
     SDL2Label*  m_lblDesc = nullptr;
-    SDL2Label*  m_lblCostHdr = nullptr;  // "cost have need" header
-    SDL2Label*  m_lblCosts = nullptr;
-    SDL2Label*  m_lblOper = nullptr;     // Operating costs (blue)
+    SDL2Label*  m_lblCosts = nullptr;       // Material cost names ("Time", "Gold", etc.)
     SDL2Button* m_btnBuild = nullptr;
+
+    // Column labels for proportional-font cost alignment
+    // Header row
+    SDL2Label* m_lblCostColHdr = nullptr;   // "cost"
+    SDL2Label* m_lblHaveColHdr = nullptr;   // "have"
+    SDL2Label* m_lblNeedColHdr = nullptr;   // "need"
+    // Cost value rows (multi-line)
+    SDL2Label* m_lblCostCol = nullptr;      // material cost values
+    SDL2Label* m_lblHaveCol = nullptr;      // material have values
+    SDL2Label* m_lblNeedCol = nullptr;      // deficit values
+
+    // Operating cost column labels
+    SDL2Label* m_lblOperNames = nullptr;    // Operating cost names
+    SDL2Label* m_lblOperVals = nullptr;     // Operating cost values (have)
 
     // Art surfaces (from theBitmaps)
     SDL_Surface* m_bldgIconSheet = nullptr;    // DIB_LIST_UNIT_BUILDINGS - building icons

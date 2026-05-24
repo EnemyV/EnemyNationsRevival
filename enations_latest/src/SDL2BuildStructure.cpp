@@ -10,6 +10,7 @@
 #include "bitmaps.h"
 #include "unit.inl"
 #include "vehicle.inl"
+#include "netcmd.h"
 
 SDL2BuildStructure::SDL2BuildStructure(GameWindow* gw, CVehicle* pVeh)
     : SDL2Dialog(gw, "Build Structure", 465 + 12, 345 + 12 + 26)
@@ -84,6 +85,8 @@ void SDL2BuildStructure::OnInit() {
     for (int i = 0; i < 6; i++) {
         m_bldgBtns[i] = AddWidget<SDL2Button>(ox + 129, oy + 22 + i * 50, 104, 49, "",
             [this, i]() { SelectBuilding(i); });
+        m_bldgBtns[i]->SetOnDblClick(
+            [this, i]() { if (m_iBldgOn == i) OnBuild(); });
         m_bldgBtns[i]->SetEnabled(false);
         if (m_bldgBtnSheet) m_bldgBtns[i]->SetBtnSheet(m_bldgBtnSheet);
     }
@@ -94,33 +97,43 @@ void SDL2BuildStructure::OnInit() {
     m_lblDesc->SetTopAligned(true);
     m_lblDesc->SetColor({41, 255, 8, 255});
 
-    // Cost header
-    m_lblCostHdr = AddWidget<SDL2Label>(ox + 252, oy + 150, 198, 16, "");
-    m_lblCostHdr->SetTopAligned(true);
-    m_lblCostHdr->SetColor({41, 255, 8, 255});
+    // --- Cost table with per-column labels (proportional-font safe) ---
+    // MFC column centers: name ~287, cost ~348, have ~388, need ~427
+    // We use left-aligned per-column labels so numbers line up correctly
+    // with Book Antiqua (proportional) instead of relying on space padding.
 
-    // Table grid lines (green, matching original pen color PALETTERGB(41,255,8))
-    // Horizontal separator below header
+    // Header row: "cost" "have" "need" — right-aligned to match number columns
+    m_lblCostColHdr = AddWidget<SDL2Label>(ox + 332, oy + 150, 42, 15, "cost");
+    m_lblCostColHdr->SetTopAligned(true);
+    m_lblCostColHdr->SetRightAligned(true);
+    m_lblCostColHdr->SetColor({41, 255, 8, 255});
+    m_lblHaveColHdr = AddWidget<SDL2Label>(ox + 377, oy + 150, 38, 15, "");
+    m_lblHaveColHdr->SetTopAligned(true);
+    m_lblHaveColHdr->SetRightAligned(true);
+    m_lblHaveColHdr->SetColor({41, 255, 8, 255});
+    m_lblNeedColHdr = AddWidget<SDL2Label>(ox + 417, oy + 150, 35, 15, "");
+    m_lblNeedColHdr->SetTopAligned(true);
+    m_lblNeedColHdr->SetRightAligned(true);
+    m_lblNeedColHdr->SetColor({41, 255, 8, 255});
+
+    // Grid lines (green)
     {
         auto* hLine = AddWidget<SDL2Image>(ox + 264, oy + 167, 175, 1);
         SDL_Surface* s = SDL_CreateRGBSurface(0, 175, 1, 32, 0xFF0000, 0xFF00, 0xFF, 0);
         if (s) { SDL_FillRect(s, nullptr, SDL_MapRGB(s->format, 41, 255, 8)); hLine->SetSurface(s, true); }
     }
-    // Vertical line: between labels and "cost" column (x=366 in MFC)
     {
-        int lineH = 100;  // spans header + cost rows
+        int lineH = 100;
         auto* vLine = AddWidget<SDL2Image>(ox + 330, oy + 150, 1, lineH);
         SDL_Surface* s = SDL_CreateRGBSurface(0, 1, lineH, 32, 0xFF0000, 0xFF00, 0xFF, 0);
         if (s) { SDL_FillRect(s, nullptr, SDL_MapRGB(s->format, 41, 255, 8)); vLine->SetSurface(s, true); }
     }
-    // Vertical line: between "cost" and "have" columns (x=402 in MFC)
     {
         int lineH = 100;
         auto* vLine = AddWidget<SDL2Image>(ox + 375, oy + 150, 1, lineH);
         SDL_Surface* s = SDL_CreateRGBSurface(0, 1, lineH, 32, 0xFF0000, 0xFF00, 0xFF, 0);
         if (s) { SDL_FillRect(s, nullptr, SDL_MapRGB(s->format, 41, 255, 8)); vLine->SetSurface(s, true); }
     }
-    // Vertical line: between "have" and "need" columns (x=439 in MFC)
     {
         int lineH = 100;
         auto* vLine = AddWidget<SDL2Image>(ox + 415, oy + 150, 1, lineH);
@@ -128,17 +141,45 @@ void SDL2BuildStructure::OnInit() {
         if (s) { SDL_FillRect(s, nullptr, SDL_MapRGB(s->format, 41, 255, 8)); vLine->SetSurface(s, true); }
     }
 
-    // Cost values — green for build costs
-    m_lblCosts = AddWidget<SDL2Label>(ox + 252, oy + 170, 198, 65, "");
+    // Cost name column (e.g. "Time", "Gold", "Wood")
+    m_lblCosts = AddWidget<SDL2Label>(ox + 255, oy + 170, 72, 95, "");
     m_lblCosts->SetWrapped(true);
     m_lblCosts->SetTopAligned(true);
     m_lblCosts->SetColor({41, 255, 8, 255});
 
-    // Operating costs — blue PALETTERGB(71,71,225)
-    m_lblOper = AddWidget<SDL2Label>(ox + 252, oy + 235, 198, 55, "");
-    m_lblOper->SetWrapped(true);
-    m_lblOper->SetTopAligned(true);
-    m_lblOper->SetColor({71, 71, 225, 255});
+    // Cost value column (right-aligned numbers)
+    m_lblCostCol = AddWidget<SDL2Label>(ox + 332, oy + 170, 42, 95, "");
+    m_lblCostCol->SetWrapped(true);
+    m_lblCostCol->SetTopAligned(true);
+    m_lblCostCol->SetRightAligned(true);
+    m_lblCostCol->SetColor({41, 255, 8, 255});
+
+    // Have value column
+    m_lblHaveCol = AddWidget<SDL2Label>(ox + 377, oy + 170, 38, 95, "");
+    m_lblHaveCol->SetWrapped(true);
+    m_lblHaveCol->SetTopAligned(true);
+    m_lblHaveCol->SetRightAligned(true);
+    m_lblHaveCol->SetColor({41, 255, 8, 255});
+
+    // Need/deficit column
+    m_lblNeedCol = AddWidget<SDL2Label>(ox + 417, oy + 170, 35, 95, "");
+    m_lblNeedCol->SetWrapped(true);
+    m_lblNeedCol->SetTopAligned(true);
+    m_lblNeedCol->SetRightAligned(true);
+    m_lblNeedCol->SetColor({41, 255, 8, 255});
+
+    // Operating costs — name column (blue PALETTERGB(71,71,225))
+    m_lblOperNames = AddWidget<SDL2Label>(ox + 255, oy + 270, 72, 60, "");
+    m_lblOperNames->SetWrapped(true);
+    m_lblOperNames->SetTopAligned(true);
+    m_lblOperNames->SetColor({71, 71, 225, 255});
+
+    // Operating costs — value column (right-aligned numbers)
+    m_lblOperVals = AddWidget<SDL2Label>(ox + 332, oy + 270, 42, 60, "");
+    m_lblOperVals->SetWrapped(true);
+    m_lblOperVals->SetTopAligned(true);
+    m_lblOperVals->SetRightAligned(true);
+    m_lblOperVals->SetColor({71, 71, 225, 255});
 
     // Build (249,300) 98x23   Cancel (359,300) 98x23
     m_btnBuild = AddWidget<SDL2Button>(ox + 249, oy + 300, 98, 23, "Build",
@@ -158,8 +199,15 @@ void SDL2BuildStructure::SelectCategory(int cat) {
     m_numBldgs = 0;
     m_btnBuild->SetEnabled(false);
     m_lblDesc->SetText("");
+    m_lblCostColHdr->SetText("");
+    m_lblHaveColHdr->SetText("");
+    m_lblNeedColHdr->SetText("");
     m_lblCosts->SetText("");
-    m_lblOper->SetText("");
+    m_lblCostCol->SetText("");
+    m_lblHaveCol->SetText("");
+    m_lblNeedCol->SetText("");
+    m_lblOperNames->SetText("");
+    m_lblOperVals->SetText("");
 
     // Toggle selected category (red dot highlight), clear building selection
     for (int i = 0; i < 6; i++) {
@@ -225,60 +273,65 @@ void SDL2BuildStructure::SelectBuilding(int idx) {
 void SDL2BuildStructure::UpdateDescription() {
     if (!m_pSd) {
         m_lblDesc->SetText("");
-        m_lblCostHdr->SetText("");
+        m_lblCostColHdr->SetText("");
+        m_lblHaveColHdr->SetText("");
+        m_lblNeedColHdr->SetText("");
         m_lblCosts->SetText("");
-        m_lblOper->SetText("");
+        m_lblCostCol->SetText("");
+        m_lblHaveCol->SetText("");
+        m_lblNeedCol->SetText("");
+        m_lblOperNames->SetText("");
+        m_lblOperVals->SetText("");
         return;
     }
 
     // Description text (green)
     m_lblDesc->SetText(m_pSd->GetText().c_str());
 
-    // Cost header (separate label above the line)
-    m_lblCostHdr->SetText("            cost  have  need");
+    // Header row for buy-cost columns
+    m_lblCostColHdr->SetText("cost");
+    m_lblHaveColHdr->SetText("have");
+    m_lblNeedColHdr->SetText("need");
 
-    // Build costs (green) — below separator line
-    std::string costs;
+    // Build costs — per-column lines for proportional-font alignment.
+    // Lines MUST match 1:1 across the four column labels
+    // so the multiline blocks align vertically.
     int timeSecs = m_pSd->GetTimeBuild() / 24;
-    costs += "Time        " + std::to_string(timeSecs) + "\n";
+
+    std::string names = "Time\n";
+    std::string needsCol = std::to_string(timeSecs) + "\n";
+    std::string havesCol = "\n";   // No "have" for time
+    std::string deficitsCol = "\n";
 
     for (int i = 0; i < CMaterialTypes::GetNumBuildTypes(); i++) {
         int need = m_pSd->GetBuild(i);
         if (need > 0) {
             int have = theGame.GetMe()->GetMaterialHave(i);
-            std::string line = CMaterialTypes::GetDesc(i);
-            while (line.size() < 12) line += ' ';
-            line += std::to_string(need);
-            while (line.size() < 18) line += ' ';
-            line += std::to_string(have);
+            names += CMaterialTypes::GetDesc(i);
+            names += "\n";
+            needsCol += std::to_string(need) + "\n";
+            havesCol += std::to_string(have) + "\n";
             int deficit = have - need;
-            if (deficit < 0) {
-                while (line.size() < 24) line += ' ';
-                line += std::to_string(deficit);
-            }
-            costs += line + "\n";
+            deficitsCol += (deficit < 0 ? std::to_string(deficit) : "") + "\n";
         }
     }
-    m_lblCosts->SetText(costs);
 
-    // Operating costs (blue) — matching original PALETTERGB(71,71,225)
-    std::string oper;
-    oper += "Operating costs\n";
-    {
-        std::string line = "Colonists   ";
-        line += std::to_string(m_pSd->GetPeople());
-        while (line.size() < 18) line += ' ';
-        line += std::to_string(theGame.GetMe()->GetPplTotal());
-        oper += line + "\n";
-    }
-    {
-        std::string line = "Power       ";
-        line += std::to_string(m_pSd->GetPower());
-        while (line.size() < 18) line += ' ';
-        line += std::to_string(theGame.GetMe()->GetPwrHave());
-        oper += line + "\n";
-    }
-    m_lblOper->SetText(oper);
+    m_lblCosts->SetText(names);
+    m_lblCostCol->SetText(needsCol);
+    m_lblHaveCol->SetText(havesCol);
+    m_lblNeedCol->SetText(deficitsCol);
+
+    // Operating costs (blue) — per-column
+    std::string operNames;
+    operNames += "Colonists\n";
+    operNames += "Power";
+
+    std::string operVals;
+    operVals += std::to_string(m_pSd->GetPeople()) + "\n";
+    operVals += std::to_string(m_pSd->GetPower());
+
+    m_lblOperNames->SetText(operNames);
+    m_lblOperVals->SetText(operVals);
 }
 
 void SDL2BuildStructure::OnBuild() {
@@ -296,5 +349,16 @@ void SDL2BuildStructure::OnBuild() {
 }
 
 void SDL2BuildStructure::OnCancel() {
+    // MFC original: SendMessage(WM_COMMAND, ID_UNIT_DESTROY) then DestroyWindow().
+    // This cancels the build selection AND issues a destroy command to selected units.
+    if (m_pVeh) {
+        CUnit* pUnit = m_pVeh; // CVehicle* is a CUnit*
+        pUnit->SetDestroyUnit();
+        // Post to server in network games
+        if (!theGame.AmServer()) {
+            CMsgDestroyUnit msg(pUnit);
+            theGame.PostToServer(&msg, sizeof(msg));
+        }
+    }
     EndDialog(0);
 }

@@ -60,6 +60,7 @@ public:
     void SetCentered(bool c) { m_centered = c; }
     void SetWrapped(bool w) { m_wrapped = w; }
     void SetTopAligned(bool t) { m_topAligned = t; }
+    void SetRightAligned(bool r) { m_rightAligned = r; }
 
 private:
     std::string m_text;
@@ -67,10 +68,11 @@ private:
     bool m_centered = false;
     bool m_wrapped = false;
     bool m_topAligned = false;
+    bool m_rightAligned = false;
 };
 
 // ============================================================================
-// SDL2Button - Clickable button
+// SDL2Button - Clickable button with optional double-click support
 // ============================================================================
 class SDL2Button : public SDL2Widget {
 public:
@@ -85,6 +87,10 @@ public:
 
     void SetText(const std::string& text) { m_text = text; }
     void SetOnClick(ClickCallback cb) { m_onClick = cb; }
+
+    // Set a double-click callback. Fires when the button is clicked twice
+    // within 500ms (matching the MFC MSG_BTN_DBLCLK behavior).
+    void SetOnDblClick(ClickCallback cb) { m_onDblClick = cb; }
 
     // Set an icon surface and source rect to render above the text.
     // The surface is NOT owned by the button — caller must keep it alive.
@@ -102,12 +108,16 @@ public:
 private:
     std::string m_text;
     ClickCallback m_onClick;
+    ClickCallback m_onDblClick;
     bool m_pressed = false;
     bool m_toggled = false;
     bool m_hovered = false;
     SDL_Surface* m_iconSheet = nullptr;
     SDL_Rect m_iconSrc = {0, 0, 0, 0};
     SDL_Surface* m_btnSheet = nullptr;  // 3-state sprite sheet background
+
+    // Double-click tracking
+    Uint32 m_lastClickTime = 0;
 };
 
 // ============================================================================

@@ -95,12 +95,15 @@ static void RenderText(SDL_Surface* dst, TTF_Font* font, const char* text,
 // Helper: render wrapped text (multi-line, clipped to rect, vertically centered)
 static void RenderTextWrapped(SDL_Surface* dst, TTF_Font* font, const char* text,
                               SDL_Rect rect, SDL_Color color, bool centerH = false,
-                              bool topAligned = false) {
+                              bool topAligned = false, bool rightAligned = false) {
     if (!font || !text || !text[0]) return;
 
-    // Use TTF_SetFontWrappedAlign for per-line centering (SDL_ttf 2.20+)
+    // Use TTF_SetFontWrappedAlign for per-line alignment (SDL_ttf 2.20+).
+    // rightAligned wins over centerH if both are set.
     int oldAlign = TTF_GetFontWrappedAlign(font);
-    if (centerH)
+    if (rightAligned)
+        TTF_SetFontWrappedAlign(font, TTF_WRAPPED_ALIGN_RIGHT);
+    else if (centerH)
         TTF_SetFontWrappedAlign(font, TTF_WRAPPED_ALIGN_CENTER);
 
     SDL_Surface* surf = TTF_RenderText_Blended_Wrapped(font, text, color, rect.w);
@@ -116,6 +119,8 @@ static void RenderTextWrapped(SDL_Surface* dst, TTF_Font* font, const char* text
     // Vertically center the text block within the rect (unless top-aligned)
     if (!topAligned && surf->h < rect.h)
         dstRect.y += (rect.h - surf->h) / 2;
+    // For right-aligned single short lines, the wrapped surface still spans rect.w
+    // so blitting at dstRect.x is correct — the right-align lives inside surf.
     dstRect.w = srcRect.w;
     dstRect.h = srcRect.h;
     SDL_BlitSurface(surf, &srcRect, dst, &dstRect);
@@ -137,7 +142,21 @@ void SDL2Label::Render(SDL_Surface* dst, TTF_Font* font) {
     if (m_wrapped) {
         RenderTextWrapped(dst, font, m_text.c_str(), m_rect,
                           m_enabled ? m_color : UIColors::Disabled,
-                          false, m_topAligned);
+                          m_centered, m_topAligned, m_rightAligned);
+    } else if (m_rightAligned) {
+        // Single-line right-align: render at natural width, then offset to right edge.
+        SDL_Surface* surf = TTF_RenderText_Blended(font, m_text.c_str(),
+            m_enabled ? m_color : UIColors::Disabled);
+        if (surf) {
+            SDL_Rect srcRect = { 0, 0, std::min(surf->w, m_rect.w), std::min(surf->h, m_rect.h) };
+            SDL_Rect dstRect = m_rect;
+            if (surf->w < m_rect.w) dstRect.x += (m_rect.w - surf->w);
+            if (!m_topAligned && surf->h < m_rect.h) dstRect.y += (m_rect.h - surf->h) / 2;
+            dstRect.w = srcRect.w;
+            dstRect.h = srcRect.h;
+            SDL_BlitSurface(surf, &srcRect, dst, &dstRect);
+            SDL_FreeSurface(surf);
+        }
     } else {
         RenderText(dst, font, m_text.c_str(), m_rect,
                    m_enabled ? m_color : UIColors::Disabled, m_centered,
@@ -257,8 +276,18 @@ bool SDL2Button::HandleEvent(const SDL_Event& event) {
     if (event.type == SDL_MOUSEBUTTONUP && event.button.button == SDL_BUTTON_LEFT) {
         if (m_pressed) {
             m_pressed = false;
-            if (PointInRect(event.button.x, event.button.y, m_rect) && m_onClick)
-                m_onClick();
+            if (PointInRect(event.button.x, event.button.y, m_rect)) {
+                Uint32 now = SDL_GetTicks();
+                // Double-click: two clicks within 500ms fire m_onDblClick instead of m_onClick
+                if (m_onDblClick && (now - m_lastClickTime) < 500) {
+                    m_lastClickTime = 0;
+                    m_onDblClick();
+                } else {
+                    m_lastClickTime = now;
+                    if (m_onClick)
+                        m_onClick();
+                }
+            }
             return true;
         }
     }
