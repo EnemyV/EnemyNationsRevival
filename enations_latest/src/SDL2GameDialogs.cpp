@@ -200,10 +200,17 @@ void SDL2RelationsDialog::OnInit() {
         0, [this](int sel) { SetRelation(sel); });
     for (int r = 0; r < 4; r++) m_radRelations->SetEnabled(r, false);
 
-    AddWidget<SDL2Button>(m_x + 170, m_y + 210, 90, 28, "Close",
+    // Give button — hands selected area-map units to the chosen player.
+    // Enabled when there's both a selected non-self player AND at least one
+    // giveable unit selected on the area map (matches CDlgRelations).
+    m_btnGive = AddWidget<SDL2Button>(m_x + 10, m_y + 220, 100, 28, "Give Units",
+        [this]() { OnGive(); });
+    m_btnGive->SetEnabled(false);
+
+    AddWidget<SDL2Button>(m_x + 240, m_y + 220, 90, 28, "Close",
         [this]() { EndDialog(0); });
 
-    // Populate player list
+    // Populate player list (skip self)
     POSITION pos = theGame.GetAll().GetHeadPosition();
     while (pos != NULL) {
         CPlayer* pPlr = theGame.GetAll().GetNext(pos);
@@ -223,9 +230,19 @@ void SDL2RelationsDialog::SelectPlayer(int idx) {
     CPlayer* pPlr = m_players[idx].pPlr;
 
     m_lblInfo->SetText(m_players[idx].name);
-    // Enable all radio options
+
+    // Enable all relation radios — but disable Alliance for AI players
+    // (matches MFC GetDlgItem(IDC_PLYR_ALLIANCE)->EnableWindow(!pPlr->IsAI())).
+    // Indices: 0=War, 1=Neutral, 2=Peace, 3=Alliance.
     for (int r = 0; r < 4; r++) m_radRelations->SetEnabled(r, true);
+    if (pPlr->IsAI())
+        m_radRelations->SetEnabled(3, false);
     m_radRelations->SetSelected(pPlr->GetRelations());
+
+    // Update Give button state from area-map selection
+    CWndArea* pWndArea = theAreaList.GetTop();
+    bool canGive = (pWndArea && pWndArea->NumGiveable() > 0);
+    m_btnGive->SetEnabled(canGive);
 }
 
 void SDL2RelationsDialog::SetRelation(int level) {
@@ -233,6 +250,18 @@ void SDL2RelationsDialog::SetRelation(int level) {
     CPlayer* pPlr = m_players[m_selected].pPlr;
 
     NewRelations(pPlr, level);
+}
+
+void SDL2RelationsDialog::OnGive() {
+    if (m_selected < 0) return;
+    CWndArea* pWndArea = theAreaList.GetTop();
+    if (!pWndArea || pWndArea->NumGiveable() <= 0) {
+        m_btnGive->SetEnabled(false);
+        return;
+    }
+    pWndArea->GiveSelectedUnits(m_players[m_selected].pPlr);
+    // Nothing left to give now that the units have changed owner
+    m_btnGive->SetEnabled(false);
 }
 
 // ============================================================================

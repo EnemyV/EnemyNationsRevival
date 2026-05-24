@@ -54,6 +54,7 @@ protected:
 private:
     void SelectPlayer(int idx);
     void SetRelation(int level);
+    void OnGive();
 
     struct PlayerEntry { CPlayer* pPlr; std::string name; };
     std::vector<PlayerEntry> m_players;
@@ -62,6 +63,7 @@ private:
     SDL2Listbox*    m_list = nullptr;
     SDL2RadioGroup* m_radRelations = nullptr;
     SDL2Label*      m_lblInfo = nullptr;
+    SDL2Button*     m_btnGive = nullptr;
 };
 
 // ============================================================================
