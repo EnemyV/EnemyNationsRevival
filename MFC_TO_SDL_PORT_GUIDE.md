@@ -2,6 +2,8 @@
 
 A complete handoff document for an agent picking up the migration of *Enemy Nations* (1996, Windward Studios) from a Win32/MFC/DirectDraw codebase to a portable SDL2 implementation. Captures everything learned from ~167 commits of incremental work.
 
+> Current status note (2026-05-23): this guide is still valuable for strategy and landmarks, but parts of the phase status are now superseded. The Release binary currently reports `mfc_linked: false` / `mfc_imports: 0`; `CMAKE_MFC_FLAG` and `_AFXDLL` are commented out; `ENATIONS_USE_STUB_WND` and `ENATIONS_USE_STUB_APP` are enabled. Debug and Release both build cleanly through `build.ps1`. Treat the sections below as historical context unless verified against source and `mfc-status.ps1`.
+
 ---
 
 ## Table of contents
@@ -78,18 +80,21 @@ CDlgVer, CDlgLoadTruck, CDlgTestSounds, CDlgReg, CDlgRandNum, CDlgStats, CDlgCdL
 
 ## The 6-phase plan
 
-The full plan lives at `C:\Users\tyboy\.claude\plans\hidden-waddling-petal.md`. Summary:
-
 | Phase | What | Risk | Status |
 |---|---|---|---|
-| 1 | Strip MFC from wind22 (keep CDIB/CMmio/codecs/BTree) | Medium | Pending — unblocked now |
-| 2 | Replace 48 CDialog + 21 CWnd/CFrameWnd/CDialogBar | Low-Med | ~98% — chat cluster excluded; only inherited CWnd-derived gameplay windows remain (=Phase 3) |
-| 3 | Drop CWnd from live gameplay windows | High | Pending — ~20 classes; tightly coupled to Phase 1 |
-| 4 | Replace registry / LoadString / CWinApp | High | 4a ✅ 4b ✅ 4c pending |
-| 5 | Replace CString (99) / CRect (58) / CFile (58) | Very High | 5a ✅ 5b compat ready 5c ✅ for live code (caisavld done) |
-| 6 | Cross-platform (Linux/macOS) | Medium | Pending |
+| 1 | Strip MFC from wind22 (keep CDIB/CMmio/codecs/BTree) | Medium | ✅ DONE — `CWndStub` + `mfc_compat.h` replace MFC types; `_AFXDLL` removed |
+| 2 | Replace 48 CDialog + 21 CWnd/CFrameWnd/CDialogBar | Low-Med | ✅ DONE — all live dialogs migrated or excluded |
+| 3 | Drop CWnd from live gameplay windows | High | ✅ DONE — gameplay windows now derive from `CWndStub`, not `CWnd` |
+| 4 | Replace registry / LoadString / CWinApp | High | ✅ DONE — 4a, 4b, 4c all landed |
+| 5 | Replace CString / CRect / CFile | Very High | ✅ DONE for live code — references go through `mfc_compat.h` stubs |
+| **Playable-state cleanup** | Gate-on visual/input bugs | Medium | 🔧 IN PROGRESS — see [plans/playable-state-fixes.md](plans/playable-state-fixes.md) |
+| 6 | Cross-platform (Linux/macOS) | Medium | ⏳ Pending — Win32 APIs (`HWND`, `::SetCursor`, ...) still need abstracting |
 
-**Phase order matters**: Phase 1g (remove `_AFXDLL` from wind22) must come *after* Phase 5 because wind22 functions take MFC types as parameters, called by game code that still uses MFC. They have to use the same types until both sides flip simultaneously.
+**Current binary state** (2026-05-23): Release reports `mfc_linked: false`,
+`mfc_imports: 0` via `./mfc-status.ps1`. Game reaches gameplay; the gate-on
+runtime has a handful of visual/input bugs being worked through now (see
+playable-state-fixes.md). Debug build temporarily broken (`BASED_CODE`
+macro one-liner).
 
 ---
 
