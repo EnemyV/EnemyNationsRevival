@@ -3,6 +3,7 @@
 #include "SDL2FileDialog.h"
 #include "SDL2SaveDialog.h"
 #include "SDL2FileBrowser.h"
+#include "SDL2Dialogs.h"
 #include "GameWindow.h"
 #include "lastplnt.h"
 #include "player.h"
@@ -38,24 +39,26 @@ void SDL2FileDialog::OnInit() {
         0, 100, theMusicPlayer.GetMusicVolume());
     y += 40;
 
-    // Buttons in a centered 2x2 grid + close button
+    // Buttons in a 3x2 grid — Save/Load paired, then Exit/Help, then Minimize/Close.
     int btnW = 100, btnH = 26, btnGap = 6;
     int gridW = btnW * 2 + btnGap;
     int gridX = m_x + (m_width - gridW) / 2;
 
     AddWidget<SDL2Button>(gridX, y, btnW, btnH, "Save Game",
         [this]() { OnSave(); });
-    AddWidget<SDL2Button>(gridX + btnW + btnGap, y, btnW, btnH, "Exit Game",
-        [this]() { OnExit(); });
+    AddWidget<SDL2Button>(gridX + btnW + btnGap, y, btnW, btnH, "Load Game",
+        [this]() { OnLoad(); });
     y += btnH + btnGap;
 
-    AddWidget<SDL2Button>(gridX, y, btnW, btnH, "Help",
+    AddWidget<SDL2Button>(gridX, y, btnW, btnH, "Exit Game",
+        [this]() { OnExit(); });
+    AddWidget<SDL2Button>(gridX + btnW + btnGap, y, btnW, btnH, "Help",
         [this]() { OnHelp(); });
-    AddWidget<SDL2Button>(gridX + btnW + btnGap, y, btnW, btnH, "Minimize",
-        [this]() { OnMinimize(); });
-    y += btnH + btnGap + 4;
+    y += btnH + btnGap;
 
-    AddWidget<SDL2Button>(m_x + (m_width - btnW) / 2, y, btnW, btnH, "Close",
+    AddWidget<SDL2Button>(gridX, y, btnW, btnH, "Minimize",
+        [this]() { OnMinimize(); });
+    AddWidget<SDL2Button>(gridX + btnW + btnGap, y, btnW, btnH, "Close",
         [this]() { OnOK(); });
 }
 
@@ -131,6 +134,43 @@ void SDL2FileDialog::OnExit() {
     ApplySettings();
     EndDialog(0);
     theApp.CloseWorld();
+}
+
+// Confirmation dialog for load (discards current game)
+class SDL2ConfirmLoad : public SDL2Dialog {
+public:
+    SDL2ConfirmLoad(GameWindow* gw) : SDL2Dialog(gw, "Load Game", 320, 140), m_confirmed(false) {}
+    bool WasConfirmed() const { return m_confirmed; }
+protected:
+    void OnInit() override {
+        auto* lbl = AddWidget<SDL2Label>(m_x + 15, m_y + 36, 290, 40,
+            "Loading will discard your current game.\nContinue?");
+        lbl->SetCentered(true);
+        lbl->SetWrapped(true);
+        AddWidget<SDL2Button>(m_x + 60, m_y + 98, 90, 26, "Yes",
+            [this]() { m_confirmed = true; EndDialog(1); });
+        AddWidget<SDL2Button>(m_x + 170, m_y + 98, 90, 26, "No",
+            [this]() { EndDialog(0); });
+    }
+private:
+    bool m_confirmed;
+};
+
+void SDL2FileDialog::OnLoad() {
+    SDL2ConfirmLoad confirm(m_gameWindow);
+    confirm.DoModal();
+    if (!confirm.WasConfirmed()) return;
+
+    ApplySettings();
+    EndDialog(1);
+
+    // Tear down the current world (same path as Exit), then run the main-menu
+    // load flow. CloseWorld → DestroyWorld + CreateMain, after which
+    // m_pCreateGame is NULL and we satisfy SDL2_RunLoadSinglePlayerFlow's
+    // precondition. If the user cancels the file picker the main menu stays
+    // up — same behavior as clicking "Load Single Player Game" there directly.
+    theApp.CloseWorld();
+    SDL2_RunLoadSinglePlayerFlow(m_gameWindow);
 }
 
 void SDL2FileDialog::OnHelp() {

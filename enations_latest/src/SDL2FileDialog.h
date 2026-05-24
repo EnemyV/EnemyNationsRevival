@@ -15,6 +15,7 @@ protected:
 
 private:
     void OnSave();
+    void OnLoad();
     void OnExit();
     void OnHelp();
     void OnMinimize();
