@@ -100,6 +100,21 @@ class CWndBar : public CWndAnim
     void ClearStatusFunc( int line );       // detach status-callback
     void InvalidateStatusLine( int line );  // force redraw of a text line
 
+    // Shadow the CWndStub geometry/visibility methods so callers that target
+    // the bar (m_wndBar.SetWindowPos / .ShowWindow / .GetWindowRect) route
+    // through the SDL panel once the MFC HWND is gone. With the HWND still
+    // present these just delegate to the base implementation.
+    BOOL SetWindowPos( HWND hwndAfter, int x, int y, int cx, int cy, UINT flags );
+    BOOL ShowWindow( int nCmdShow );
+    BOOL GetWindowRect( RECT* pRect ) const;
+
+    // Shadow DestroyWindow so the SDL panel + SDL2Toolbar get torn down even
+    // when there's no MFC HWND. Without this, CWndStub::DestroyWindow sees
+    // m_hWnd == NULL, returns FALSE immediately, and OnDestroy never fires —
+    // leaving the toolbar panel in the compositor where it intercepts input
+    // after the world closes (hangs the main menu on quit-to-menu).
+    BOOL DestroyWindow();
+
     class SDL2Panel* m_sdlPanel = nullptr;
 
   public:

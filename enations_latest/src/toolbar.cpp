@@ -164,28 +164,102 @@ void fnMouseMove( CWnd* pWnd, UINT nFlags, CPoint point )
 
 void CWndBar::Create( )
 {
-
     // load the strings
     m_sChat1 = EnLoadStdString( IDS_NO_CHAT1 );
     m_sChat2 = EnLoadStdString( IDS_NO_CHAT2 );
     m_sScience = EnLoadStdString( IDS_NO_SCIENCE );
     m_sRelations = EnLoadStdString( IDS_NO_EMBASSY );
 
-    // we go at the bottom of the main window (in case the Windows toolbar pushes it up/over)
+    // Bottom of the main window — no Windows-taskbar dodging since the bar
+    // lives inside the SDL2 main window's client area now.
     CRect rect;
     theApp.m_pMainWnd->GetClientRect( &rect );
-
     theApp.m_iRow3 = rect.Height( ) - TOOLBAR_HT;
 
-    if ( CreateEx( WS_EX_TOPMOST, theApp.m_sWndCls.c_str(), "", WS_POPUP, 0, theApp.m_iRow3, rect.Width( ), TOOLBAR_HT,
-                   theApp.m_pMainWnd->m_hWnd, NULL, NULL ) == 0 )
-        throw( ERR_RES_CREATE_WND );
+    // Phase A.1: no MFC HWND. Create the SDL panel + SDL2Toolbar directly,
+    // skip the legacy CBmButton / CWndStatBar / CWndStatLine children — they
+    // were invisible (parent layered alpha=1) and SDL2Toolbar already does
+    // all rendering, hit-testing, hover state, and animation.
+    if ( theApp.m_gameWindow && theApp.m_gameWindow->GetCompositor() )
+    {
+        m_sdlPanel = theApp.m_gameWindow->GetCompositor()->AddPanel(
+            "toolbar", 0, theApp.m_iRow3, rect.Width(), TOOLBAR_HT, 30 );
 
-    // if not net play - disable the chat window
-    if ( !theGame.IsNetGame( ) )
-        EnableButton( IDC_BAR_CHAT, FALSE );
+        static SDL2Toolbar s_toolbar;
+        s_toolbar.Init( m_sdlPanel, theApp.m_gameWindow.get() );
+        theApp.m_gameWindow->SetSDL2Toolbar( &s_toolbar );
 
-    CWndBase::SetFnMouseMove( fnMouseMove );
+        CWndBar* pThis = this;
+        s_toolbar.SetButtonHandler(0, [pThis]() { pThis->GotoArea(); });
+        s_toolbar.SetButtonHandler(1, [pThis]() { pThis->GotoWorld(); });
+        s_toolbar.SetButtonHandler(2, [pThis]() { pThis->GotoChat(); });
+        s_toolbar.SetButtonHandler(3, [pThis]() { pThis->GotoRelations(); });
+        s_toolbar.SetButtonHandler(4, [pThis]() { pThis->GotoVehicles(); });
+        s_toolbar.SetButtonHandler(5, [pThis]() { pThis->GotoBuildings(); });
+        s_toolbar.SetButtonHandler(6, [pThis]() { pThis->GotoScience(); });
+        s_toolbar.SetButtonHandler(7, [pThis]() { pThis->GotoFile(); });
+
+        if ( !theGame.IsNetGame() )
+            s_toolbar.EnableButton(2, false);
+
+        m_sdlPanel->SetEventCallback(
+            []( SDL_Event& event, int localX, int localY ) -> bool {
+                SDL2Toolbar* tb = theApp.m_gameWindow->GetSDL2Toolbar();
+                if ( tb ) return tb->HandleEvent( event, localX, localY );
+                return false;
+            });
+    }
+}
+
+// --- Geometry / visibility shadows (route to SDL panel post-collapse) -------
+
+BOOL CWndBar::SetWindowPos( HWND /*hwndAfter*/, int x, int y, int cx, int cy, UINT flags )
+{
+    if ( !m_sdlPanel )
+        return FALSE;
+    if ( !( flags & SWP_NOMOVE ) )
+        m_sdlPanel->SetPosition( x, y );
+    if ( !( flags & SWP_NOSIZE ) )
+        m_sdlPanel->SetSize( cx, cy );
+    return TRUE;
+}
+
+BOOL CWndBar::ShowWindow( int nCmdShow )
+{
+    if ( !m_sdlPanel )
+        return FALSE;
+    m_sdlPanel->SetVisible( nCmdShow != SW_HIDE );
+    return TRUE;
+}
+
+BOOL CWndBar::GetWindowRect( RECT* pRect ) const
+{
+    if ( !m_sdlPanel || !pRect )
+        return FALSE;
+    // SDL panel coords are screen-relative inside the main window (which is
+    // borderless fullscreen), so x/y already match screen coords.
+    pRect->left   = m_sdlPanel->GetX();
+    pRect->top    = m_sdlPanel->GetY();
+    pRect->right  = pRect->left + m_sdlPanel->GetWidth();
+    pRect->bottom = pRect->top + m_sdlPanel->GetHeight();
+    return TRUE;
+}
+
+BOOL CWndBar::DestroyWindow()
+{
+    // MFC path: real HWND → ::DestroyWindow → WM_DESTROY → OnDestroy() →
+    // panel removal. Delegate to the base implementation.
+    if ( m_hWnd )
+        return CWndStub::DestroyWindow();
+
+    // Collapsed-panel mode (no MFC HWND): OnDestroy would never fire on its
+    // own because CWndStub::DestroyWindow short-circuits when m_hWnd is NULL.
+    // Call OnDestroy directly so the SDL panel and the SDL2Toolbar reference
+    // on GameWindow get cleaned up.
+    OnDestroy();
+    if ( theApp.m_gameWindow )
+        theApp.m_gameWindow->SetSDL2Toolbar( nullptr );
+    return TRUE;
 }
 
 int CWndBar::OnCreate( LPCREATESTRUCT lpCS )
@@ -507,12 +581,10 @@ void CWndBar::SetDebugText( int iLine, const char* psText )
 
 void CWndBar::CheckButtons( )
 {
-
-    if ( m_hWnd != NULL )
-    {
-        EnableButton( IDC_BAR_SCIENCE, theGame.GetMe( )->GetExists( CStructureData::research ) );
-        EnableButton( IDC_BAR_ADVISOR, theGame.GetMe( )->GetExists( CStructureData::embassy ) );
-    }
+    if ( !IsCreated() )
+        return;
+    EnableButton( IDC_BAR_SCIENCE, theGame.GetMe( )->GetExists( CStructureData::research ) );
+    EnableButton( IDC_BAR_ADVISOR, theGame.GetMe( )->GetExists( CStructureData::embassy ) );
 }
 
 #ifdef BUGBUG
