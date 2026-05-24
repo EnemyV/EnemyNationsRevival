@@ -449,7 +449,7 @@ static void OnMsgLeave( VPPLAYERID id )
                 theNet.SetSessionVisibility( TRUE );
         }
 
-        if ( theApp.m_wndBar.m_hWnd != NULL )
+        if ( theApp.m_wndBar.IsCreated() )
             theApp.m_wndBar.SetStatusText( 0, sMsg.c_str() );
         if ( ( theGame._GetMe( ) != NULL ) && ( pPlr != theGame.GetMe( ) ) )
             if ( !pPlr->m_bMsgDead )
@@ -2922,7 +2922,7 @@ void CGame::ProcessMessage(CNetCmd* pCmd )
         // tell the player
         if ( bMsg )
         {
-            if ( theApp.m_wndBar.m_hWnd != NULL )
+            if ( theApp.m_wndBar.IsCreated() )
                 theApp.m_wndBar.SetStatusText( 0, sMsg.c_str() );
             if ( theGame.GetState( ) == CGame::play )
             {

@@ -982,7 +982,7 @@ void CWndWorld::OnGetMinMaxInfo(MINMAXINFO FAR *lpMMI) {
     if (lpMMI->ptMinTrackSize.y < rect.Height())
         lpMMI->ptMinTrackSize.y = rect.Height();
 
-    if (theApp.m_wndBar.m_hWnd != NULL) {
+    if (theApp.m_wndBar.IsCreated()) {
         CRect rect;
         theApp.m_wndBar.GetWindowRect(&rect);
         lpMMI->ptMaxTrackSize.y = __min (lpMMI->ptMaxTrackSize.y, rect.top);

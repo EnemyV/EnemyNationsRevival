@@ -2431,7 +2431,7 @@ void CWndArea::OnGetMinMaxInfo( MINMAXINFO FAR* lpMMI )
     if ( lpMMI->ptMinTrackSize.y < m_iYmin )
         lpMMI->ptMinTrackSize.y = m_iYmin;
 
-    if ( theApp.m_wndBar.m_hWnd != NULL )
+    if ( theApp.m_wndBar.IsCreated() )
     {
         CRect rect;
         theApp.m_wndBar.GetWindowRect( &rect );

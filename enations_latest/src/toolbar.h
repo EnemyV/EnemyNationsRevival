@@ -89,6 +89,10 @@ class CWndBar : public CWndAnim
     void ReRender() {}  // GDI-based; no pre-render needed
     void Draw();        // Capture GDI content to SDL panel
 
+    // True once Create() has run and the SDL panel exists. Replaces the
+    // legacy `m_wndBar.m_hWnd != NULL` "is initialized?" check at ~18 sites.
+    bool IsCreated() const { return m_sdlPanel != nullptr; }
+
     class SDL2Panel* m_sdlPanel = nullptr;
 
   public:

@@ -304,7 +304,7 @@ void CWndMain::OnSize(UINT nType, int cx, int cy)
 	CWndBase::OnSize ( nType, cx, cy );
 
 	// we need to put the toolbar at the bottom - if it exists
-	if ( theApp.m_wndBar.m_hWnd == NULL )
+	if ( !theApp.m_wndBar.IsCreated() )
 		return;
 
 	theApp.m_wndBar.SetWindowPos (NULL, 0, cy - TOOLBAR_HT, cx, TOOLBAR_HT, SWP_NOZORDER);
@@ -884,7 +884,7 @@ void CWndMain::OnHelp()
 void CWndMain::OnHide() 
 {
 
-	if (theApp.m_wndBar.m_hWnd != NULL)
+	if (theApp.m_wndBar.IsCreated())
 		theApp.m_wndBar.ShowWindow ( SW_HIDE );
 }
 
@@ -918,63 +918,63 @@ void CWndMain::OnUnHide()
 	ScreenToClient ( &rect );
 	theApp.m_wndBar.SetWindowPos (NULL, rect.left, rect.top, rect.Width (), TOOLBAR_HT, SWP_NOZORDER);
 
-	if (theApp.m_wndBar.m_hWnd != NULL)
+	if (theApp.m_wndBar.IsCreated())
 		theApp.m_wndBar.ShowWindow ( SW_SHOW );
 }
 
 void CWndMain::OnArea() 
 {
 
-	if (theApp.m_wndBar.m_hWnd != NULL)
+	if (theApp.m_wndBar.IsCreated())
 		theApp.m_wndBar.GotoArea ();
 }
 
 void CWndMain::OnMail() 
 {
 	
-	if (theApp.m_wndBar.m_hWnd != NULL)
+	if (theApp.m_wndBar.IsCreated())
 		theApp.m_wndBar.GotoChat ();
 }
 
 void CWndMain::OnOptions() 
 {
 
-	if (theApp.m_wndBar.m_hWnd != NULL)
+	if (theApp.m_wndBar.IsCreated())
 		theApp.m_wndBar.GotoFile ();
 }
 
 void CWndMain::OnWorld() 
 {
 	
-	if (theApp.m_wndBar.m_hWnd != NULL)
+	if (theApp.m_wndBar.IsCreated())
 		theApp.m_wndBar.GotoWorld ();
 }
 
 void CWndMain::OnResearch() 
 {
 	
-	if (theApp.m_wndBar.m_hWnd != NULL)
+	if (theApp.m_wndBar.IsCreated())
 		theApp.m_wndBar.GotoScience ();
 }
 
 void CWndMain::OnDiplomat() 
 {
 	
-	if (theApp.m_wndBar.m_hWnd != NULL)
+	if (theApp.m_wndBar.IsCreated())
 		theApp.m_wndBar.GotoRelations ();
 }
 
 void CWndMain::OnBuildings() 
 {
 	
-	if (theApp.m_wndBar.m_hWnd != NULL)
+	if (theApp.m_wndBar.IsCreated())
 		theApp.m_wndBar.GotoBuildings ();
 }
 
 void CWndMain::OnVehicles() 
 {
 	
-	if (theApp.m_wndBar.m_hWnd != NULL)
+	if (theApp.m_wndBar.IsCreated())
 		theApp.m_wndBar.GotoVehicles ();
 }
 
@@ -1039,7 +1039,7 @@ void CWndMain::_EnableGameWindows ( BOOL bEnable )
 		theApp.m_wndWorld.EnableWindow ( bEnable );
 	if ( theApp.m_wndChat.m_hWnd != NULL )
 		theApp.m_wndChat.EnableWindow ( bEnable );
-	if ( theApp.m_wndBar.m_hWnd != NULL )
+	if ( theApp.m_wndBar.IsCreated() )
 		theApp.m_wndBar.EnableWindow ( bEnable );
 	if ( theApp.m_wndBldgs.m_hWnd != NULL )
 		theApp.m_wndBldgs.EnableWindow ( bEnable );

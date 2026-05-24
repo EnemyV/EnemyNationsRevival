@@ -96,7 +96,7 @@ int CWndListUnits::OnCreate(LPCREATESTRUCT lpCreateStruct) {
 
 void CWndListUnits::OnGetMinMaxInfo(MINMAXINFO FAR *lpMMI) {
 
-    if (theApp.m_wndBar.m_hWnd != NULL) {
+    if (theApp.m_wndBar.IsCreated()) {
         CRect rect;
         theApp.m_wndBar.GetWindowRect(&rect);
         lpMMI->ptMaxTrackSize.y = __min (lpMMI->ptMaxTrackSize.y, rect.top);

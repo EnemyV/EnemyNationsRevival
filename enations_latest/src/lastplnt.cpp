@@ -1765,7 +1765,7 @@ int CConquerApp::ExitInstance( )
     m_pdlgPause = NULL;
 
     DestroyExceptMain( );  // if in create
-    if ( m_wndBar.m_hWnd != NULL )
+    if ( m_wndBar.IsCreated() )
         DestroyWorld( );  // game
     DestroyMain( );       // main window (dialog)
 
@@ -1944,7 +1944,7 @@ BOOL CConquerApp::PreTranslateMessage( MSG* pMsg )
 void CConquerApp::AssertValid( ) const
 {
 
-    CWinApp::AssertValid( );
+    CConquerAppSuper::AssertValid( );
 
     ASSERT_VALID( &m_wndWorld );
     // ASSERT_VALID( &m_wndChat );  // ChatStub is not CObject-derived (Phase 2d-cont)
