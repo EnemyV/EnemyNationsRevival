@@ -324,6 +324,41 @@ void CWndBar::OnClose( )
     // don't do anything
 }
 
+// --- Legacy-child wrappers (insulate callers from MFC widgets) ---------------
+
+void CWndBar::FlashLowIcon( int idx )
+{
+    // Legacy: flash the MFC stat-bar icon when a resource is low.
+    // SDL2Toolbar already animates at ~1Hz via m_animFrame, so the SDL bar
+    // doesn't need an extra kick. Keep the MFC call for now until the legacy
+    // children are removed wholesale.
+    if ( 0 <= idx && idx < 4 && m_wndStat[idx].m_hWnd != NULL )
+        m_wndStat[idx].IncIcon( );
+}
+
+void* CWndBar::GetStatusLineData( int line )
+{
+    if ( line < 0 || line > 1 || m_wndText[line].m_hWnd == NULL )
+        return NULL;
+    return m_wndText[line].GetStatusData( );
+}
+
+void CWndBar::ClearStatusFunc( int line )
+{
+    if ( line < 0 || line > 1 )
+        return;
+    if ( m_wndText[line].m_hWnd != NULL )
+        m_wndText[line].SetStatusFunc( NULL );
+}
+
+void CWndBar::InvalidateStatusLine( int line )
+{
+    if ( line < 0 || line > 1 )
+        return;
+    if ( m_wndText[line].m_hWnd != NULL )
+        m_wndText[line].InvalidateRect( NULL );
+}
+
 void CWndBar::EnableButton( int ID, BOOL bEnable )
 {
 

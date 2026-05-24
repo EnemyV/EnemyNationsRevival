@@ -2460,11 +2460,11 @@ void CWndArea::OnDestroy( )
 {
 
     // if we're the status line kill it
-    if ( theApp.m_wndBar.m_wndText[1].GetStatusData( ) != NULL )
+    if ( theApp.m_wndBar.GetStatusLineData( 1 ) != NULL )
     {
         CPoint pt;
         ::GetCursorPos( &pt );
-        theApp.m_wndBar.m_wndText[1].SetStatusFunc( NULL );
+        theApp.m_wndBar.ClearStatusFunc( 1 );
     }
 
     // give the world map a new area map

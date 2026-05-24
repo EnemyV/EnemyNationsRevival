@@ -93,6 +93,13 @@ class CWndBar : public CWndAnim
     // legacy `m_wndBar.m_hWnd != NULL` "is initialized?" check at ~18 sites.
     bool IsCreated() const { return m_sdlPanel != nullptr; }
 
+    // Wrappers that hide the legacy CWndStatBar / CWndStatLine children from
+    // callers, so we can drop those children when the MFC HWND goes away.
+    void FlashLowIcon( int idx );          // mainloop's low-resource flasher
+    void* GetStatusLineData( int line );    // status-callback owner (for "is this me?")
+    void ClearStatusFunc( int line );       // detach status-callback
+    void InvalidateStatusLine( int line );  // force redraw of a text line
+
     class SDL2Panel* m_sdlPanel = nullptr;
 
   public:

@@ -1211,8 +1211,8 @@ CUnit::~CUnit( )
 #endif
 
     // pull us off the toolbar and area status lines
-    if ( theApp.m_wndBar.m_wndText[1].GetStatusData( ) == this )
-        theApp.m_wndBar.m_wndText[1].SetStatusFunc( NULL );
+    if ( theApp.m_wndBar.GetStatusLineData( 1 ) == this )
+        theApp.m_wndBar.ClearStatusFunc( 1 );
 
     // if any area windows have us selected kill it
     theAreaList.UnitDying( this );
@@ -1300,7 +1300,7 @@ void CUnit::MaterialChange( )
             std::string str;
             ShowStatusText( str );
             theApp.m_wndBar.SetStatusText( 1, str.c_str( ) );
-            theApp.m_wndBar.m_wndText[1].InvalidateRect( NULL );
+            theApp.m_wndBar.InvalidateStatusLine( 1 );
         }
     }
 

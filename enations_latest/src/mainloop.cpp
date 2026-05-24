@@ -899,7 +899,7 @@ void CConquerApp::GraphicsEnginePump( )
                     iLastGasNeed = theGame.GetMe( )->GetGasNeed( );
                     iLastGasHave = theGame.GetMe( )->GetGasHave( );
                     if ( bLow )
-                        m_wndBar.m_wndStat[CWndBar::gas].IncIcon( );
+                        m_wndBar.FlashLowIcon( CWndBar::gas );
                     m_wndBar.UpdateGas( );
                 }
 
@@ -917,7 +917,7 @@ void CConquerApp::GraphicsEnginePump( )
                     iLastPwrNeed = theGame.GetMe( )->GetPwrNeed( );
                     iLastPwrHave = theGame.GetMe( )->GetPwrHave( );
                     if ( bLow )
-                        m_wndBar.m_wndStat[CWndBar::power].IncIcon( );
+                        m_wndBar.FlashLowIcon( CWndBar::power );
                     m_wndBar.UpdatePower( );
                 }
 
@@ -931,7 +931,7 @@ void CConquerApp::GraphicsEnginePump( )
                     iLastPplNeed = theGame.GetMe( )->GetPplNeedBldg( );
                     iLastPplHave = theGame.GetMe( )->GetPplBldg( );
                     if ( bLow )
-                        m_wndBar.m_wndStat[CWndBar::people].IncIcon( );
+                        m_wndBar.FlashLowIcon( CWndBar::people );
                     m_wndBar.UpdatePeople( );
                     bPpl = TRUE;
                 }
@@ -943,7 +943,7 @@ void CConquerApp::GraphicsEnginePump( )
                 {
                     iLastFood = theGame.GetMe( )->GetFood( );
                     if ( bLow )
-                        m_wndBar.m_wndStat[CWndBar::food].IncIcon( );
+                        m_wndBar.FlashLowIcon( CWndBar::food );
                     m_wndBar.UpdateFood( );
                 }
             }  // HaveHP
