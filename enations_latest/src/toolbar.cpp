@@ -199,6 +199,12 @@ void CWndBar::Create( )
         s_toolbar.SetButtonHandler(6, [pThis]() { pThis->GotoScience(); });
         s_toolbar.SetButtonHandler(7, [pThis]() { pThis->GotoFile(); });
 
+        // Populate the sentence-length hover text from the legacy IDH_BAR_*
+        // string resources (matches what the original MFC toolbar showed in
+        // the status strip when the cursor hovered a button).
+        for ( int i = 0; i < NUM_BAR_BTNS; i++ )
+            s_toolbar.SetButtonHelpText( i, EnLoadStdString( aHelp[ i ] ) );
+
         if ( !theGame.IsNetGame() )
             s_toolbar.EnableButton(2, false);
 

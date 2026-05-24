@@ -40,6 +40,11 @@ public:
     using ButtonHandler = std::function<void()>;
     void SetButtonHandler(int index, ButtonHandler handler);
 
+    // Optional descriptive hover text (status line 1). When empty the button's
+    // short label is used instead. Populated by CWndBar from the IDH_BAR_*
+    // string resources so we show the MFC-original sentence-length help.
+    void SetButtonHelpText(int index, const std::string& text);
+
     static const int NUM_BUTTONS = 8;
     static const int NUM_STATS = 4;
     static const int TOOLBAR_HT = 66;
@@ -59,6 +64,7 @@ private:
     // Button state
     struct ButtonState {
         std::string label;
+        std::string helpText;  // Hover text (status line 1) — falls back to label if empty
         bool enabled = true;
         bool pressed = false;
         ButtonHandler handler;

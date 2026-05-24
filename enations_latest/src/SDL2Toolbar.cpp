@@ -132,6 +132,11 @@ void SDL2Toolbar::SetButtonHandler(int index, ButtonHandler handler) {
         m_buttons[index].handler = std::move(handler);
 }
 
+void SDL2Toolbar::SetButtonHelpText(int index, const std::string& text) {
+    if (index >= 0 && index < NUM_BUTTONS)
+        m_buttons[index].helpText = text;
+}
+
 void SDL2Toolbar::Render() {
     if (!m_panel) return;
     SDL_Surface* dst = m_panel->GetSurface();
@@ -216,14 +221,18 @@ void SDL2Toolbar::Render() {
                         m_statusText[1] = buf;
                     }
                 }
-                // Check button hover
+                // Check button hover — prefer the long helpText (the MFC
+                // sentence-length IDH_BAR_* string) and fall back to the
+                // short label only if no help text was provided.
                 if (m_statusText[1].empty()) {
                     int btnW2 = (m_btnSpriteW > 0) ? m_btnSpriteW : 50;
                     int btnGap2 = 4;
                     for (int i = 0; i < NUM_BUTTONS; i++) {
                         int bx = btnGap2 + i * (btnW2 + btnGap2);
                         if (lx >= bx && lx < bx + btnW2) {
-                            m_statusText[1] = m_buttons[i].label;
+                            m_statusText[1] = m_buttons[i].helpText.empty()
+                                ? m_buttons[i].label
+                                : m_buttons[i].helpText;
                             break;
                         }
                     }
