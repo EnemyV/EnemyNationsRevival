@@ -168,14 +168,21 @@ void SDL2BuildStructure::OnInit() {
     m_lblNeedCol->SetRightAligned(true);
     m_lblNeedCol->SetColor({41, 255, 8, 255});
 
-    // Operating costs — name column (blue PALETTERGB(71,71,225))
-    m_lblOperNames = AddWidget<SDL2Label>(ox + 255, oy + 270, 72, 60, "");
+    // Operating costs — name column (blue PALETTERGB(71,71,225)).
+    // Shares the same name column as build costs (MFC rect.left=264; "Colonists"
+    // is the longest entry and fits in the ~65px gap to the vertical divider).
+    // Positioned just below the build-cost rows so it doesn't run into the
+    // Build/Cancel buttons at oy+300. MFC stacks these dynamically after the
+    // last material row; oy+240 leaves room for 3 materials + half-row gap.
+    m_lblOperNames = AddWidget<SDL2Label>(ox + 255, oy + 240, 72, 50, "");
     m_lblOperNames->SetWrapped(true);
     m_lblOperNames->SetTopAligned(true);
     m_lblOperNames->SetColor({71, 71, 225, 255});
 
-    // Operating costs — value column (right-aligned numbers)
-    m_lblOperVals = AddWidget<SDL2Label>(ox + 332, oy + 270, 42, 60, "");
+    // Operating costs — value column (right-aligned numbers).
+    // MUST share the same column as m_lblCostCol so "15" / "4" line up under
+    // the green "cost" header. MFC draws all values right-aligned at x=366.
+    m_lblOperVals = AddWidget<SDL2Label>(ox + 332, oy + 240, 42, 50, "");
     m_lblOperVals->SetWrapped(true);
     m_lblOperVals->SetTopAligned(true);
     m_lblOperVals->SetRightAligned(true);
