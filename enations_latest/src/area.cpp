@@ -2284,15 +2284,19 @@ int CWndArea::OnCreate( LPCREATESTRUCT lpCreateStruct )
                 }
             });
 
-        // Make MFC window fully transparent — SDL panel handles display.
-        // WS_EX_TRANSPARENT makes the window click-through so cursor/mouse
-        // events reach the detached SDL panel underneath.
+        // SDL2-only renderer now: the MFC stub HWND has no visible role. Hide
+        // it from the desktop so the compositor-managed SDL panel (with its
+        // own green title bar) is the only visible window. WS_EX_TRANSPARENT
+        // keeps any stray hit-testing click-through.
         ::SetWindowLong( m_hWnd, GWL_EXSTYLE,
             ::GetWindowLong( m_hWnd, GWL_EXSTYLE ) | WS_EX_LAYERED | WS_EX_TRANSPARENT );
         ::SetLayeredWindowAttributes( m_hWnd, 0, 0, LWA_ALPHA );
+        ::ShowWindow( m_hWnd, SW_HIDE );
 
-        // Create the area button bar panel HERE (not in CWndAreaStatic::OnCreate)
-        // so we have full control over lifecycle
+        // Create the area button bar as a compositor panel that lives inside
+        // the area map panel (blitted into m_aa.m_sdlPanel's surface). It's
+        // hidden from the compositor's own render pass — the area panel's
+        // Render handler does the blit.
         if ( m_WndStatic.m_hWnd ) {
             int staticH = m_WndStatic.m_iYmin;
             if (staticH < 20) staticH = 36;  // ensure minimum height
@@ -2304,8 +2308,6 @@ int CWndArea::OnCreate( LPCREATESTRUCT lpCreateStruct )
 
             m_WndStatic.m_sdlPanel = theApp.m_gameWindow->GetCompositor()->AddPanel(
                 "area_bar", barX, barY, barW, staticH, barZ );
-            // Bar is only shown inside the detached area window (via blit),
-            // never on the background window, so hide it from the compositor.
             m_WndStatic.m_sdlPanel->SetVisible(false);
 
             delete m_WndStatic.m_sdl2Bar;
@@ -2318,9 +2320,6 @@ int CWndArea::OnCreate( LPCREATESTRUCT lpCreateStruct )
                     return pBar->HandleEvent(event, localX, localY);
                 });
         }
-
-        // Detach to own OS window so it can be dragged to other monitors
-        m_aa.m_sdlPanel->Detach(theApp.m_gameWindow.get());
     }
 
     // Re-run SetButtonState now that m_sdlPanel is set,

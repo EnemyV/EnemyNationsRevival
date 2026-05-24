@@ -438,10 +438,14 @@ int CWndWorld::OnCreate(LPCREATESTRUCT lpCreateStruct) {
                 pResize->_OnSize();
             });
 
-        // Make MFC window fully transparent — SDL panel handles display
+        // SDL2-only renderer now: the MFC stub HWND has no visible role. Hide
+        // it from the desktop so the compositor-managed SDL panel (with its
+        // own green title bar) is the only visible window. WS_EX_TRANSPARENT
+        // keeps any stray hit-testing click-through.
         ::SetWindowLong( m_hWnd, GWL_EXSTYLE,
-            ::GetWindowLong( m_hWnd, GWL_EXSTYLE ) | WS_EX_LAYERED );
+            ::GetWindowLong( m_hWnd, GWL_EXSTYLE ) | WS_EX_LAYERED | WS_EX_TRANSPARENT );
         ::SetLayeredWindowAttributes( m_hWnd, 0, 0, LWA_ALPHA );
+        ::ShowWindow( m_hWnd, SW_HIDE );
 
         // Route SDL events to CWndWorld's handler methods
         CWndWorld* pThis = this;
@@ -478,9 +482,6 @@ int CWndWorld::OnCreate(LPCREATESTRUCT lpCreateStruct) {
                 }
                 return false;
             });
-
-        // Detach to own OS window so it can be dragged to other monitors
-        m_sdlPanel->Detach(theApp.m_gameWindow.get());
     }
 
     m_bUpdate = TRUE;
