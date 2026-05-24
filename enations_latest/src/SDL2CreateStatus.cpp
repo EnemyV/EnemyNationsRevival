@@ -112,6 +112,14 @@ SDL2CreateStatus::SDL2CreateStatus(GameWindow* gameWindow)
 }
 
 SDL2CreateStatus::~SDL2CreateStatus() {
+    // Tear down the always-on-top SDL window if it's still up — otherwise it
+    // outlives the dialog object and lingers over the game (the load flow
+    // never calls SetPer(PER_DONE) → Hide(), so when LetsGo() deletes
+    // m_pCreateGame the C++ object dies but the OS window persists).
+    if (m_ownWindow) {
+        SDL_DestroyWindow(m_ownWindow);
+        m_ownWindow = nullptr;
+    }
     for (auto& pair : m_fontCache)
         if (pair.second) TTF_CloseFont(pair.second);
     LogStatus("SDL2CreateStatus destroyed");
