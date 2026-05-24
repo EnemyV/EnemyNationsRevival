@@ -20,28 +20,79 @@
 #include <SDL_ttf.h>
 
 // ============================================================================
-// SDL2ResearchDialog
+// SDL2ResearchDialog — matches CDlgResearch layout from the original MFC dialog
+//
+// MFC client area was 447x291. Layout from CDlgResearch::OnInitDialog:
+//   list      (18,  35) 155x198    — listbox of researchable items
+//   desc text (192, 37) → (420,156) — rectText, green PALETTERGB(41,255,8)
+//   IDOK     (188, 170) 116x25     — "Research" button
+//   IDCANCEL (311, 170) 116x25     — "Close" button
+//   Discovery(311, 211) 116x25     — "Discovery" button (enabled when there's
+//                                     a new discovery to view)
+//   bulbs    (17, 248) → (425,272) — light-bulb progress strip (DIB+ICON_RESEARCH)
 // ============================================================================
 
 SDL2ResearchDialog::SDL2ResearchDialog(GameWindow* gw)
-    : SDL2Dialog(gw, "Research", 400, 340)
-{}
+    // Interior = 447x291 to match MFC. Outer dim = interior + side borders
+    // (6 each) + title bar (26). See SDL2BuildStructure for the same recipe.
+    : SDL2Dialog(gw, "Research", 447 + 12, 291 + 12 + 26)
+{
+    auto load = [](int idx) -> SDL_Surface* {
+        CDIB* p = theBitmaps.GetByIndex(idx);
+        return p ? SDL2MainMenu::CreateSurfaceFromDIB(p) : nullptr;
+    };
+    m_bkgnd    = load(DIB_RSRCH_BKGND);
+    m_btnSheet = load(DIB_RESEARCH_BTNS);
+}
+
+SDL2ResearchDialog::~SDL2ResearchDialog() {
+    if (m_bkgnd)    SDL_FreeSurface(m_bkgnd);
+    if (m_btnSheet) SDL_FreeSurface(m_btnSheet);
+}
 
 void SDL2ResearchDialog::OnInit() {
-    m_list = AddWidget<SDL2Listbox>(m_x + 10, m_y + 34, 170, 240,
+    if (m_bkgnd) SetCustomBackground(m_bkgnd);
+
+    // Dialog interior origin == MFC client area origin (skip side border + title)
+    const int bdrSide = 6, bdrTop = 6, titleH = 26;
+    int ox = m_x + bdrSide;
+    int oy = m_y + bdrTop + titleH;
+
+    // List: red text on white, blue selection (close to MFC red-text-on-black-when-selected)
+    m_list = AddWidget<SDL2Listbox>(ox + 18, oy + 35, 155, 198,
         [this](int idx) { SelectItem(idx); });
 
-    m_lblDesc = AddWidget<SDL2Label>(m_x + 190, m_y + 34, 200, 100, "");
+    // Description text: green PALETTERGB(41,255,8), top-aligned, wrapped.
+    // MFC rectText(192, 37, 420, 156) → x=192,y=37, w=228, h=119
+    m_lblDesc = AddWidget<SDL2Label>(ox + 192, oy + 37, 228, 119, "");
     m_lblDesc->SetWrapped(true);
+    m_lblDesc->SetTopAligned(true);
+    m_lblDesc->SetColor({41, 255, 8, 255});
 
-    m_lblProgress = AddWidget<SDL2Label>(m_x + 190, m_y + 140, 200, 40, "");
+    // Progress label sits where the legacy MFC light-bulb strip was painted
+    // (rect 17,248,425,272 in CDlgResearch::OnInitDialog). Until the bulb
+    // widget is built we use a centered text line in that same band.
+    m_lblProgress = AddWidget<SDL2Label>(ox + 18, oy + 256, 405, 18, "");
+    m_lblProgress->SetColor({41, 255, 8, 255});
+    m_lblProgress->SetCentered(true);
 
-    m_btnStart = AddWidget<SDL2Button>(m_x + 190, m_y + 190, 100, 28, "Research",
+    // Buttons — use the 3-state research button sheet (red-text-on-circuit art)
+    m_btnStart = AddWidget<SDL2Button>(ox + 188, oy + 170, 116, 25, "Research",
         [this]() { OnStart(); });
     m_btnStart->SetEnabled(false);
+    if (m_btnSheet) m_btnStart->SetBtnSheet(m_btnSheet);
 
-    AddWidget<SDL2Button>(m_x + 300, m_y + 190, 90, 28, "Close",
+    m_btnClose = AddWidget<SDL2Button>(ox + 311, oy + 170, 116, 25, "Close",
         [this]() { EndDialog(0); });
+    if (m_btnSheet) m_btnClose->SetBtnSheet(m_btnSheet);
+
+    m_btnDiscover = AddWidget<SDL2Button>(ox + 311, oy + 211, 116, 25, "Discovery",
+        [this]() { OnDiscover(); });
+    // Enabled only when there's a freshly-discovered item to view. The MFC
+    // version flips it on via CDlgResearch::ItemDiscovered(). We don't have
+    // that hook yet — leave disabled for now so the button is visible-but-grey.
+    m_btnDiscover->SetEnabled(false);
+    if (m_btnSheet) m_btnDiscover->SetBtnSheet(m_btnSheet);
 
     PopulateList();
 
@@ -54,6 +105,11 @@ void SDL2ResearchDialog::OnInit() {
             break;
         }
     }
+}
+
+void SDL2ResearchDialog::OnDiscover() {
+    // Placeholder — when ItemDiscovered hook is wired up this will open the
+    // discovery dialog. For now treat as no-op.
 }
 
 void SDL2ResearchDialog::PopulateList() {

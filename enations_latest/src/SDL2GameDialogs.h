@@ -18,12 +18,14 @@ class SDL2Compositor;
 class SDL2ResearchDialog : public SDL2Dialog {
 public:
     SDL2ResearchDialog(GameWindow* gw);
+    ~SDL2ResearchDialog();
 protected:
     void OnInit() override;
 private:
     void PopulateList();
     void SelectItem(int idx);
     void OnStart();
+    void OnDiscover();
 
     struct RsrchEntry { int index; std::string name; bool available; };
     std::vector<RsrchEntry> m_items;
@@ -33,6 +35,12 @@ private:
     SDL2Label*   m_lblDesc = nullptr;
     SDL2Label*   m_lblProgress = nullptr;
     SDL2Button*  m_btnStart = nullptr;
+    SDL2Button*  m_btnClose = nullptr;
+    SDL2Button*  m_btnDiscover = nullptr;
+
+    // Art (loaded from theBitmaps — matches CDlgResearch::OnPaint / OnDrawItem)
+    SDL_Surface* m_bkgnd     = nullptr;   // DIB_RSRCH_BKGND — PCB circuit-board art
+    SDL_Surface* m_btnSheet  = nullptr;   // DIB_RESEARCH_BTNS — 3-state button sheet
 };
 
 // ============================================================================
