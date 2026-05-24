@@ -325,10 +325,61 @@ CConquerApp::~CConquerApp( )
 CConquerApp theApp;
 
 
-int _excep_new_handler( size_t )
+int _excep_new_handler( size_t size )
 {
+    // Log the failed allocation. The size is the SINGLE request that exceeded
+    // available address space — for a 32-bit process this is almost always a
+    // corrupted count read from a save / archive (e.g. 0xFFFFFFFF interpreted
+    // as a length). Capturing the size and a stack snapshot here makes it
+    // possible to pinpoint the bad reader instead of guessing.
+    char head[256];
+    _snprintf_s( head, sizeof( head ), _TRUNCATE,
+                 "[bad_alloc] requested %zu bytes (%.2f MB)",
+                 size, (double)size / (1024.0 * 1024.0) );
+    ::OutputDebugStringA( head );
+    ::OutputDebugStringA( "\n" );
+    theApp.Log( head );
 
-    EnMessageBox( IDS_NO_MEMORY, MB_OK | MB_SYSTEMMODAL | MB_ICONSTOP );
+#ifdef _WIN32
+    // Brief stack snapshot — symbols only resolve if dbghelp + PDB present,
+    // but raw module+offset is still searchable in the map file.
+    void*  frames[ 24 ];
+    USHORT count = ::CaptureStackBackTrace( 1, 24, frames, nullptr );
+    for ( USHORT i = 0; i < count; ++i )
+    {
+        HMODULE hMod = NULL;
+        char line[ 256 ];
+        if ( ::GetModuleHandleExA( GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+                                   GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                                   (LPCSTR)frames[ i ], &hMod ) && hMod )
+        {
+            char modPath[ MAX_PATH ] = { 0 };
+            ::GetModuleFileNameA( hMod, modPath, sizeof( modPath ) );
+            const char* base = strrchr( modPath, '\\' );
+            base = base ? base + 1 : modPath;
+            uintptr_t off = (uintptr_t)frames[ i ] - (uintptr_t)hMod;
+            _snprintf_s( line, sizeof( line ), _TRUNCATE,
+                         "  [%02u] %p  %s+0x%zX", i, frames[ i ], base, (size_t)off );
+        }
+        else
+        {
+            _snprintf_s( line, sizeof( line ), _TRUNCATE,
+                         "  [%02u] %p", i, frames[ i ] );
+        }
+        ::OutputDebugStringA( line );
+        ::OutputDebugStringA( "\n" );
+        theApp.Log( line );
+    }
+#endif
+
+    // Show the size in the message box so users can flag huge requests
+    // (e.g. 4 GB) immediately instead of just seeing a generic OOM.
+    char msg[ 512 ];
+    std::string stdMsg = EnLoadStdString( IDS_NO_MEMORY );
+    _snprintf_s( msg, sizeof( msg ), _TRUNCATE,
+                 "%s\n\n(Requested %zu bytes / %.2f MB. See log for stack.)",
+                 stdMsg.c_str(), size, (double)size / (1024.0 * 1024.0) );
+    EnMessageBox( msg, MB_OK | MB_SYSTEMMODAL | MB_ICONSTOP );
     ::PostQuitMessage( 0 );
     throw;
     return ( 0 );

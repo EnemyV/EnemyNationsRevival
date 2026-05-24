@@ -95,15 +95,20 @@ void EnWriteProfileString( const char* section, const char* entry, const char* v
 
 // EnLoadString CString shim removed (Phase 5a) — all callers now use EnLoadStdString.
 
+// MB_TOPMOST keeps the Win32 message box above the SDL game/create-status
+// windows. Without it (and with no owner HWND), the box can be hidden behind
+// the SDL window — e.g. the "save-version mismatch" error during load.
+static constexpr unsigned int kEnMsgBoxBaseFlags = MB_TOPMOST | MB_SETFOREGROUND;
+
 int EnMessageBox( const char* text, unsigned int type, unsigned int /*helpId*/ )
 {
-    return ::MessageBoxA( NULL, text ? text : "", "Second Chance", type );
+    return ::MessageBoxA( NULL, text ? text : "", "Second Chance", type | kEnMsgBoxBaseFlags );
 }
 
 int EnMessageBox( unsigned int idText, unsigned int type, unsigned int /*helpId*/ )
 {
     std::string s = EnLoadStdString( idText );
-    return ::MessageBoxA( NULL, s.c_str(), "Second Chance", type );
+    return ::MessageBoxA( NULL, s.c_str(), "Second Chance", type | kEnMsgBoxBaseFlags );
 }
 
 int EnMessageBoxOnce( const char* text, unsigned int type, const char* section, const char* entry, int iDefault )
