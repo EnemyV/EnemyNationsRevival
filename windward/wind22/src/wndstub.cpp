@@ -257,11 +257,32 @@ BOOL CWndStub::CreateEx( DWORD dwExStyle, LPCSTR lpszClassName, LPCSTR lpszWindo
                         DWORD dwStyle, int x, int y, int cx, int cy,
                         HWND hwndParent, HMENU hMenu, LPVOID lpParam )
 {
+    // Mirror MFC's CWnd::Create flow: invoke PreCreateWindow before the OS
+    // call so game-side overrides have a chance to initialize members and
+    // adjust the window style. The CREATESTRUCT mirrors the arguments we're
+    // about to pass to ::CreateWindowEx; we honor any changes the override
+    // makes to dwStyle / dwExStyle / x / y / cx / cy.
+    CREATESTRUCT cs = {};
+    cs.lpCreateParams = lpParam;
+    cs.hInstance      = ::GetModuleHandle( NULL );
+    cs.hMenu          = hMenu;
+    cs.hwndParent     = hwndParent;
+    cs.cy             = cy;
+    cs.cx             = cx;
+    cs.y              = y;
+    cs.x              = x;
+    cs.style          = dwStyle;
+    cs.lpszName       = lpszWindowName;
+    cs.lpszClass      = lpszClassName;
+    cs.dwExStyle      = dwExStyle;
+    if ( !PreCreateWindow( cs ) )
+        return FALSE;
+
     // Pass `this` as the create param so WM_NCCREATE can stash it.
-    LPVOID actualParam = ( lpParam != NULL ) ? lpParam : (LPVOID)this;
-    HWND hwnd = ::CreateWindowEx( dwExStyle, lpszClassName, lpszWindowName, dwStyle,
-                                  x, y, cx, cy, hwndParent, hMenu,
-                                  ::GetModuleHandle( NULL ), actualParam );
+    LPVOID actualParam = ( cs.lpCreateParams != NULL ) ? cs.lpCreateParams : (LPVOID)this;
+    HWND hwnd = ::CreateWindowEx( cs.dwExStyle, cs.lpszClass, cs.lpszName, cs.style,
+                                  cs.x, cs.y, cs.cx, cs.cy, cs.hwndParent, cs.hMenu,
+                                  cs.hInstance, actualParam );
     if ( hwnd == NULL )
         return FALSE;
     // Set m_hWnd directly. StaticWndProc would also set it during WM_NCCREATE,
