@@ -269,7 +269,16 @@ void SDL2RelationsDialog::OnGive() {
 // ============================================================================
 
 SDL2LoadTruckDialog::SDL2LoadTruckDialog(GameWindow* gw, CVehicle* pVeh)
-    : SDL2Dialog(gw, "Load Truck", 300, 300)
+    // Dynamic title: "Load Freighter" for boats, otherwise "Load Truck - [Bldg]"
+    // (matches CDlgLoadTruck::OnInitDialog using IDS_LOAD_FREIGHTER / IDS_LOAD_TRUCK)
+    : SDL2Dialog(gw,
+        pVeh && pVeh->GetData()->IsBoat() ? "Load Freighter" :
+        ([&]() -> std::string {
+            CBuilding* pB = pVeh ? theBuildingHex._GetBuilding(pVeh->GetPtHead()) : nullptr;
+            if (pB) return std::string("Load Truck - [") + pB->GetData()->GetDesc().c_str() + "]";
+            return "Load Truck";
+        })(),
+        360, 460)
     , m_pVeh(pVeh)
     , m_pBldg(nullptr)
 {
@@ -278,15 +287,14 @@ SDL2LoadTruckDialog::SDL2LoadTruckDialog(GameWindow* gw, CVehicle* pVeh)
 
 void SDL2LoadTruckDialog::OnInit() {
     if (!m_pBldg) {
-        AddWidget<SDL2Label>(m_x + 10, m_y + 40, 280, 24, "No building found.");
-        AddWidget<SDL2Button>(m_x + 100, m_y + 80, 90, 28, "Close",
+        AddWidget<SDL2Label>(m_x + 10, m_y + 40, 340, 24, "No building found.");
+        AddWidget<SDL2Button>(m_x + 130, m_y + 80, 90, 28, "Close",
             [this]() { EndDialog(0); });
         return;
     }
 
     const char* matNames[] = {"Coal", "Iron", "Lumber", "Oil", "Steel", "Copper"};
     int y = m_y + 36;
-    int maxCargo = m_pVeh->GetData()->GetMaxMaterials();
 
     for (int i = 0; i < 6; i++) {
         int vehHas = m_pVeh->GetStore(i);
@@ -294,59 +302,139 @@ void SDL2LoadTruckDialog::OnInit() {
         int maxVal = vehHas + bldgHas;
 
         AddWidget<SDL2Label>(m_x + 10, y, 70, 20, matNames[i]);
-        m_sliders[i] = AddWidget<SDL2Slider>(m_x + 85, y, 140, 20, 0, maxVal, vehHas);
-        m_lblAmounts[i] = AddWidget<SDL2Label>(m_x + 230, y, 60, 20,
+        m_sliders[i] = AddWidget<SDL2Slider>(m_x + 85, y, 180, 20, 0, maxVal, vehHas);
+        m_lblAmounts[i] = AddWidget<SDL2Label>(m_x + 275, y, 70, 20,
             std::to_string(vehHas) + "/" + std::to_string(maxVal));
         y += 28;
     }
 
+    // Capacity readout — total/cap below the material rows
     y += 8;
-    AddWidget<SDL2Button>(m_x + 10, y, 80, 26, "Load All",
-        [this]() { OnLoad(); });
-    AddWidget<SDL2Button>(m_x + 100, y, 80, 26, "Unload",
-        [this]() { OnUnload(); });
-    y += 34;
+    int maxCargo = m_pVeh->GetData()->GetMaxMaterials();
+    m_lblCapacity = AddWidget<SDL2Label>(m_x + 10, y, 340, 20,
+        "Capacity: 0 / " + std::to_string(maxCargo));
+    m_lblCapacity->SetCentered(true);
+    y += 26;
 
-    AddWidget<SDL2Button>(m_x + 10, y, 80, 26, "OK",
-        [this]() {
-            // Transfer materials from sliders to vehicle/building
-            for (int i = 0; i < 6; i++) {
-                int iAmount = m_sliders[i]->GetValue();
-                int iTotal = m_pVeh->GetStore(i) + m_pBldg->GetStore(i);
-                if (iAmount > iTotal) iAmount = iTotal;
-                m_pBldg->SetStore(i, iTotal - iAmount);
-                m_pVeh->SetStore(i, iAmount);
-            }
-            // Tell the building it can build now
-            m_pBldg->MaterialMessage();
-            m_pBldg->EventOff();
-            // Send truck out the exit
-            m_pVeh->ExitBuilding();
-            EndDialog(1);
-        });
-    AddWidget<SDL2Button>(m_x + 100, y, 80, 26, "Cancel",
-        [this]() {
-            EndDialog(0);
-        });
+    // Preset buttons row 1: Load (proportional), Load Bldg (50/50 steel/lumber),
+    // Load Veh (80/20 steel/copper) — same presets the MFC dialog offered.
+    int btnW = 105, btnH = 26, btnGap = 6;
+    AddWidget<SDL2Button>(m_x + 10, y, btnW, btnH, "Load",
+        [this]() { OnLoad(); });
+    AddWidget<SDL2Button>(m_x + 10 + (btnW + btnGap), y, btnW, btnH, "Load Bldg",
+        [this]() { OnLoadBldg(); });
+    AddWidget<SDL2Button>(m_x + 10 + 2 * (btnW + btnGap), y, btnW, btnH, "Load Veh",
+        [this]() { OnLoadVeh(); });
+    y += btnH + btnGap;
+
+    // Preset buttons row 2: Unload (clear) + Auto (hand back to router)
+    AddWidget<SDL2Button>(m_x + 10, y, btnW, btnH, "Unload",
+        [this]() { OnUnload(); });
+    AddWidget<SDL2Button>(m_x + 10 + (btnW + btnGap), y, btnW, btnH, "Auto",
+        [this]() { OnAuto(); });
+    y += btnH + 12;
+
+    // OK / Cancel
+    AddWidget<SDL2Button>(m_x + 60, y, 100, btnH, "OK",
+        [this]() { OnOK(); });
+    AddWidget<SDL2Button>(m_x + 200, y, 100, btnH, "Cancel",
+        [this]() { OnCancel(); });
+
+    RefreshTotals();
+}
+
+void SDL2LoadTruckDialog::RefreshTotals() {
+    if (!m_lblCapacity) return;
+    int total = 0;
+    for (int i = 0; i < 6; i++) total += m_sliders[i]->GetValue();
+    int maxCargo = m_pVeh->GetData()->GetMaxMaterials();
+    m_lblCapacity->SetText("Capacity: " + std::to_string(total) +
+                           " / " + std::to_string(maxCargo));
 }
 
 void SDL2LoadTruckDialog::OnLoad() {
+    // MFC OnTruckLoad: fill from combined truck+building stocks, scaling DOWN
+    // proportionally if the total exceeds vehicle capacity.
+    if (!m_pBldg) return;
+    int amounts[6];
+    int total = 0;
+    for (int i = 0; i < 6; i++) {
+        amounts[i] = m_pVeh->GetStore(i) + m_pBldg->GetStore(i);
+        total += amounts[i];
+    }
+    int maxCargo = m_pVeh->GetData()->GetMaxMaterials();
+    if (total > maxCargo && total > 0) {
+        // Leave one slot of headroom (matching MFC's max-1 trick)
+        float fMul = (float)(maxCargo - 1) / (float)total;
+        for (int i = 0; i < 6; i++)
+            amounts[i] = (int)((float)amounts[i] * fMul);
+    }
+    for (int i = 0; i < 6; i++) m_sliders[i]->SetValue(amounts[i]);
+    RefreshTotals();
+}
+
+void SDL2LoadTruckDialog::OnLoadBldg() {
+    // 50/50 Steel / Lumber — construction load preset.
     if (!m_pBldg) return;
     int maxCargo = m_pVeh->GetData()->GetMaxMaterials();
-    // Load everything we can
-    int total = 0;
-    for (int i = 0; i < 6; i++)
-        total += m_pVeh->GetStore(i) + m_pBldg->GetStore(i);
+    int iSteel  = maxCargo / 2;
+    int iLumber = maxCargo / 2;
 
+    int steelCap  = m_pVeh->GetStore(CMaterialTypes::steel)  + m_pBldg->GetStore(CMaterialTypes::steel);
+    int lumberCap = m_pVeh->GetStore(CMaterialTypes::lumber) + m_pBldg->GetStore(CMaterialTypes::lumber);
+    if (iSteel  > steelCap)  { iSteel  = steelCap;  iLumber = maxCargo - iSteel;  }
+    if (iLumber > lumberCap) { iLumber = lumberCap; }
+
+    for (int i = 0; i < 6; i++) m_sliders[i]->SetValue(0);
+    m_sliders[CMaterialTypes::steel]->SetValue(iSteel);
+    m_sliders[CMaterialTypes::lumber]->SetValue(iLumber);
+    RefreshTotals();
+}
+
+void SDL2LoadTruckDialog::OnLoadVeh() {
+    // 80/20 Steel / Copper — vehicle-factory load preset.
+    if (!m_pBldg) return;
+    int maxCargo = m_pVeh->GetData()->GetMaxMaterials();
+    int iSteel  = (maxCargo * 4) / 5;
+    int iCopper = maxCargo / 5;
+
+    int steelCap  = m_pVeh->GetStore(CMaterialTypes::steel)  + m_pBldg->GetStore(CMaterialTypes::steel);
+    int copperCap = m_pVeh->GetStore(CMaterialTypes::copper) + m_pBldg->GetStore(CMaterialTypes::copper);
+    if (iSteel  > steelCap)  { iSteel  = steelCap;  iCopper = maxCargo - iSteel; }
+    if (iCopper > copperCap) { iCopper = copperCap; }
+
+    for (int i = 0; i < 6; i++) m_sliders[i]->SetValue(0);
+    m_sliders[CMaterialTypes::steel]->SetValue(iSteel);
+    m_sliders[CMaterialTypes::copper]->SetValue(iCopper);
+    RefreshTotals();
+}
+
+void SDL2LoadTruckDialog::OnOK() {
+    // Transfer materials from sliders to vehicle/building, capping at the
+    // combined truck+building total per material (matches MFC Transfer()).
     for (int i = 0; i < 6; i++) {
-        int available = m_pVeh->GetStore(i) + m_pBldg->GetStore(i);
-        m_sliders[i]->SetValue(available);
+        int iAmount = m_sliders[i]->GetValue();
+        int iTotal = m_pVeh->GetStore(i) + m_pBldg->GetStore(i);
+        if (iAmount > iTotal) iAmount = iTotal;
+        m_pBldg->SetStore(i, iTotal - iAmount);
+        m_pVeh->SetStore(i, iAmount);
     }
+    m_pBldg->MaterialMessage();
+    m_pBldg->EventOff();
+    m_pVeh->ExitBuilding();
+    // (MFC's NullLoadWindow was a back-pointer cleanup on CVehicle->m_pDlgLoad —
+    // SDL2 path doesn't retain that back-pointer, so nothing to null.)
+    EndDialog(1);
+}
+
+void SDL2LoadTruckDialog::OnCancel() {
+    EndDialog(0);
 }
 
 void SDL2LoadTruckDialog::OnUnload() {
     for (int i = 0; i < 6; i++)
         m_sliders[i]->SetValue(0);
+    RefreshTotals();
 }
 
 void SDL2LoadTruckDialog::OnAuto() {

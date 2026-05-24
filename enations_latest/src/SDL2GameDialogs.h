@@ -75,14 +75,20 @@ public:
 protected:
     void OnInit() override;
 private:
-    void OnLoad();
-    void OnUnload();
-    void OnAuto();
+    void OnLoad();        // Load proportionally up to vehicle capacity
+    void OnLoadBldg();    // Preset: 50/50 Steel/Lumber (construction trip)
+    void OnLoadVeh();     // Preset: 80/20 Steel/Copper (vehicle-factory trip)
+    void OnUnload();      // Clear all amounts
+    void OnAuto();        // Hand back to auto-router
+    void OnOK();
+    void OnCancel();
+    void RefreshTotals();
 
     CVehicle*  m_pVeh;
     CBuilding* m_pBldg;
     SDL2Slider* m_sliders[6] = {};
     SDL2Label*  m_lblAmounts[6] = {};
+    SDL2Label*  m_lblCapacity = nullptr;
 };
 
 // ============================================================================
