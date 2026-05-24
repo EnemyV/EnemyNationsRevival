@@ -14,6 +14,7 @@
 #include "area.h"
 #include "bitmaps.h"
 #include "building.inl"
+#include "minerals.h"
 #include "unit.h"
 #include "event.h"
 #include "GameWindow.h"
@@ -528,9 +529,23 @@ void CWndBar::SetStatusFunc( int iLine, FNSTATUSLINE fnStat, void* pData )
     m_wndText[iLine].SetStatusFunc( fnStat, pData );
 
     // Forward a text summary to the SDL2 toolbar.
-    // The MFC status callback paints directly to a DC — the SDL toolbar can't use that,
-    // so we build a concise text version of whatever the callback would have shown.
-    if ( theApp.m_gameWindow && fnStat == UnitShowStatus && pData )
+    // The MFC status callback paints directly to a DC — the SDL toolbar can't
+    // use that, so we build a concise text version of whatever the callback
+    // would have shown. Two cases — unit hover (a CUnit*) and terrain hover
+    // (a CHex*) — match what CWndArea::OnMouseMove forwards.
+    SDL2Toolbar* tb = theApp.m_gameWindow ? theApp.m_gameWindow->GetSDL2Toolbar() : nullptr;
+    if ( !tb )
+        return;
+
+    if ( fnStat == NULL || pData == NULL )
+    {
+        // Clearing the status callback — wipe the world-hover text so the
+        // toolbar doesn't show stale info after the cursor leaves the map.
+        tb->SetStatusText( iLine, "", 0 );
+        return;
+    }
+
+    if ( fnStat == UnitShowStatus )
     {
         CUnit* pUnit = (CUnit*)pData;
         std::string text = pUnit->GetData()->GetDesc();
@@ -561,8 +576,48 @@ void CWndBar::SetStatusFunc( int iLine, FNSTATUSLINE fnStat, void* pData )
             text += " [" + std::string( (const char*)pUnit->GetOwner()->GetName() ) + "]";
         }
 
-        SDL2Toolbar* tb = theApp.m_gameWindow->GetSDL2Toolbar();
-        if ( tb ) tb->SetStatusText( iLine, text, 0 );
+        tb->SetStatusText( iLine, text, 0 );
+        return;
+    }
+
+    if ( fnStat == TerrainShowStatus )
+    {
+        // Terrain name + (optional) mineral type and remaining quantity %,
+        // mirroring what TerrainShowStatus paints in MFC.
+        CHex* pHex = (CHex*)pData;
+        std::string text = pHex->GetStatus();
+
+        if ( ( pHex->GetUnits() & CHex::minerals ) != 0 )
+        {
+            CMinerals* pMn = NULL;
+            if ( theMinerals.Lookup( pHex->GetHex(), pMn ) && pMn )
+            {
+                // Hide xilitium / copper until the player has researched it
+                bool show = !( pMn->GetType() == CMaterialTypes::copper &&
+                               !theGame.GetMe()->CanCopper() );
+                if ( show )
+                {
+                    int iMax = MAX_MINERAL_QUANTITY;
+                    switch ( pMn->GetType() )
+                    {
+                    case CMaterialTypes::coal:   iMax = MAX_MINERAL_COAL_QUANTITY;   break;
+                    case CMaterialTypes::iron:   iMax = MAX_MINERAL_IRON_QUANTITY;   break;
+                    case CMaterialTypes::oil:    iMax = MAX_MINERAL_OIL_QUANTITY;    break;
+                    case CMaterialTypes::copper: iMax = MAX_MINERAL_XIL_QUANTITY;    break;
+                    }
+                    int pctQty = pMn->GetQuantity() == 0
+                        ? 0 : __max( 1, pMn->GetQuantity() / ( iMax / 100 ) );
+                    int pctDen = __max( 1,
+                        ( 100 * pMn->GetDensity() ) / MAX_MINERAL_DENSITY );
+                    text += "  " + CMaterialTypes::GetDesc( pMn->GetType() ) +
+                            "  Qty:" + std::to_string( pctQty ) + "%" +
+                            "  Density:" + std::to_string( pctDen ) + "%";
+                }
+            }
+        }
+
+        tb->SetStatusText( iLine, text, 0 );
+        return;
     }
 }
 
