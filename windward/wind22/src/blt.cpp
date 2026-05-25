@@ -106,6 +106,14 @@ CBLTFormat::Init()
     if ( DIB_DIBSECTION == m_eType )
         m_eDirection  = DIR_TOPDOWN;
 
+    // Phase 6 Stage 2: SDL_Surface storage is always top-down (SDL convention),
+    // same as the DDraw and DIB section paths above. Without this forcing,
+    // every primary-format CDIB inherits DIR_BOTTOMUP, GetRow()/GetOffset()
+    // flip every write into memory, and the game renders upside-down
+    // (verified empirically when BLT=5 was first tested).
+    if ( DIB_SDL_SURFACE == m_eType )
+        m_eDirection  = DIR_TOPDOWN;
+
     // check dir for WinG
     if ( DIB_WING == m_eType )
         {
@@ -160,13 +168,16 @@ CBLTFormat::CalcBltMethod()
         case W95:
         case WNT:
 
-            if ( 0 == iType )
-                eType = DIB_DIBSECTION;
-//BUGBUG    
-            eType = DIB_DIRECTDRAW;
-
-            // TODO BUGBUG FIXME FIXFIX VTIER
-            // Add SDL?
+            if ( 0 == iType ) {
+                // No profile preference — historical default. Phase 6
+                // Stage 3 will flip this to DIB_SDL_SURFACE.
+                eType = DIB_DIRECTDRAW;
+            }
+            // Else: honor the profile setting (iType-1 already in eType).
+            // Phase 6 Stage 2 dev opt-in: BLT=5 -> DIB_SDL_SURFACE so the
+            // new backing can be exercised before the Stage 3 default flip.
+            // Lifts the prior unconditional "eType = DIB_DIRECTDRAW" //BUGBUG
+            // override, which made every profile value collapse to DDraw.
 
             break;
 

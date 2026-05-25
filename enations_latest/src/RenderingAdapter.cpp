@@ -86,20 +86,44 @@ bool RenderingAdapter::BlitDIBToSurface(const CAnimAtr* aa, SDL_Surface* dst,
 
     int dibWidth  = pDib->GetWidth();
     int dibHeight = pDib->GetHeight();
-    int bytesPerPixel = pDib->GetBytesPerPixel();
-    int pitch     = pDib->GetPitch();
-    int bitsPerPixel  = pDib->GetBitsPerPixel();
 
-    if (dibWidth <= 0 || dibHeight <= 0 || pitch <= 0)
+    if (dibWidth <= 0 || dibHeight <= 0)
         return false;
 
-    // Lock the DIB bits — CDIBits is RAII; unlocks when it goes out of scope
+    // Phase 6 Stage 2: if the CDIB is SDL-backed, blit its surface directly.
+    // This skips the per-frame SDL_CreateRGBSurfaceFrom wrap and the CDIBits
+    // lock — SDL_BlitSurface locks the surface internally. All three size
+    // branches preserved (exact-match, scaled, offset) — collapsing to a
+    // single blit breaks differently-sized panels.
+    SDL_Surface* sdlBacking = pDib->GetSDLSurface();
+    if (sdlBacking) {
+        SDL_Rect dstRect = { dstX, dstY, dibWidth, dibHeight };
+        if (dibWidth == dst->w && dibHeight == dst->h && dstX == 0 && dstY == 0) {
+            SDL_BlitSurface(sdlBacking, nullptr, dst, nullptr);
+        } else if (dibWidth != dst->w - dstX || dibHeight != dst->h - dstY) {
+            SDL_Rect fitRect = { dstX, dstY, dst->w - dstX, dst->h - dstY };
+            SDL_BlitScaled(sdlBacking, nullptr, dst, &fitRect);
+        } else {
+            SDL_BlitSurface(sdlBacking, nullptr, dst, &dstRect);
+        }
+        return true;
+    }
+
+    // Fallback path: non-SDL-backed CDIB (DDraw etc.). Lock bits, wrap in a
+    // throwaway SDL surface, blit, free. Live default until Stage 3 flips
+    // CalcBltMethod; after Stage 3 + 4 this fallback should rarely run.
+    int bytesPerPixel = pDib->GetBytesPerPixel();
+    int pitch         = pDib->GetPitch();
+    int bitsPerPixel  = pDib->GetBitsPerPixel();
+
+    if (pitch <= 0)
+        return false;
+
     CDIBits dibits = pDib->GetBits();
     BYTE* pDibPixels = (BYTE*)(dibits);
     if (!pDibPixels)
         return false;
 
-    // Create a temporary SDL surface wrapping the DIB pixel data
     SDL_Surface* dibSurface = nullptr;
 
     if (bytesPerPixel == 3 || bytesPerPixel == 4) {
@@ -120,14 +144,11 @@ bool RenderingAdapter::BlitDIBToSurface(const CAnimAtr* aa, SDL_Surface* dst,
     if (!dibSurface)
         return false;
 
-    // Blit to destination surface
     SDL_Rect dstRect = { dstX, dstY, dibWidth, dibHeight };
 
-    // If DIB size matches destination, direct blit; otherwise scale
     if (dibWidth == dst->w && dibHeight == dst->h && dstX == 0 && dstY == 0) {
         SDL_BlitSurface(dibSurface, nullptr, dst, nullptr);
     } else if (dibWidth != dst->w - dstX || dibHeight != dst->h - dstY) {
-        // Scale to fit the destination area (panel may be different size)
         SDL_Rect fitRect = { dstX, dstY, dst->w - dstX, dst->h - dstY };
         SDL_BlitScaled(dibSurface, nullptr, dst, &fitRect);
     } else {

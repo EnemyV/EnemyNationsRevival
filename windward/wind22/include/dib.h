@@ -166,6 +166,12 @@ public:
     LPDIRECTDRAWSURFACE GetDDSurface( );
     BOOL HasDDSurface( );
 
+    // Phase 6 Stage 2: SDL surface accessor. Returns the long-lived backing
+    // for DIB_SDL_SURFACE; NULL for any other type. Intended for SDL_BlitSurface
+    // callers (they lock internally). Raw-pixel callers should keep going
+    // through GetBits()/CDIBits so the lock contract stays uniform.
+    SDL_Surface* GetSDLSurface() { return m_psdlsurfaceBack; }
+
     //--------------------------------------------------------------------------
     // 
     // CDIB helpers

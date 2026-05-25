@@ -388,6 +388,15 @@ BOOL CDIB::Resize( int cx, int cy ) {
         // on resize, freed in dtor. m_pBits/m_lPitch point into the surface
         // so the raw-pointer callers (GetBits/GetPitch/GetOffset) keep working.
 
+        // SDL surfaces are physically top-down. Force direction to match the
+        // storage so GetRow()/GetOffset() compute offsets that land in the
+        // correct memory rows. CBLTFormat::Init() does the same for the
+        // global default; this handles any caller that constructs an
+        // SDL-backed CDIB with DIR_BOTTOMUP explicitly. m_lPitch /
+        // m_lDirPitch are recomputed below.
+        m_iDir = CBLTFormat::DIR_TOPDOWN;
+        m_bmi.hdr.biHeight = m_cy * m_iDir;
+
         if ( m_psdlsurfaceBack ) {
             SDL_FreeSurface( m_psdlsurfaceBack );
             m_psdlsurfaceBack = NULL;
