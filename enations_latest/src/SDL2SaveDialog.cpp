@@ -28,9 +28,9 @@ void SDL2SaveDialog::OnSave() {
         if (m_filename.empty())
             return;
 
-        // Add .gam extension if missing
+        // Add .en extension if missing (matches IDS_SAVE_EXT)
         if (m_filename.find('.') == std::string::npos)
-            m_filename += ".gam";
+            m_filename += ".en";
 
         // Add save game directory if no path
         if (m_filename.find('\\') == std::string::npos &&
