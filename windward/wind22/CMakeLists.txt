@@ -66,12 +66,6 @@ target_compile_definitions(wind22 PUBLIC
     _X86_ # Hack! This should not be necessary.
     #LOGGINGON
     AI_THREADS_ENABLED
-    # Phase 1 / 4c gates. Use the build system (not headers) because some
-    # headers like windward.h declare functions whose signatures depend on
-    # these gates, and the include order doesn't always reach the in-header
-    # define before the function declaration.
-    ENATIONS_USE_STUB_WND  # Phase 1: CWndBase -> CWndStub
-    ENATIONS_USE_STUB_APP  # Phase 4c: CConquerApp : CWinApp -> CWinAppStub
     $<$<CONFIG:Release>:NDEBUG>
     $<$<CONFIG:Profile>:NDEBUG>
     $<$<CONFIG:Debug>:_DEBUG>
