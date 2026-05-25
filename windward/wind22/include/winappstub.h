@@ -2,13 +2,11 @@
 //
 // winappstub.h — Non-MFC replacement for MFC's CWinApp.
 //
-// Phase 4c keystone. When ENATIONS_USE_STUB_APP is defined, CConquerApp
-// inherits from CWinAppStub instead of CWinApp. CWinAppStub provides the
-// exact surface CConquerApp uses from CWinApp (recon done 2026-05-11,
-// see MFC_TO_SDL_PORT_GUIDE.md "Phase 4c"):
+// CConquerApp inherits from CWinAppStub (Phase 4c, landed 2026-05-18).
+// CWinAppStub provides the exact surface CConquerApp uses from CWinApp:
 //
 //   Members exposed:
-//     CWnd*      m_pMainWnd     (CWndStub* when gate-on; nullptr default)
+//     CWnd*      m_pMainWnd     (CWndStub*; nullptr default)
 //     HINSTANCE  m_hInstance    (set from WinMain, defaults to GetModuleHandle(NULL))
 //     LPTSTR     m_pszAppName   (owned C-string)
 //     MSG        m_msgCur       (current message in pump)
@@ -21,17 +19,9 @@
 //     virtual BOOL PreTranslateMessage(MSG* pMsg)
 //     BOOL SetRegistryKey(LPCTSTR pszCompany)        — no-op (EnSettings handles registry path)
 //
-// When this gate is on, MFC's auto-generated WinMain is replaced by our
-// own (WinMain.cpp) that calls theApp.InitInstance() / Run() / ExitInstance().
-// The CMAKE_MFC_FLAG must be 0 (instead of 2) to suppress the auto-WinMain;
-// for the transition, we keep the gate off in production and exercise via
-// a #define.
-//
-// STATUS: header committed but not wired in. The wire-in step is to change
-//   class CConquerApp : public CWinApp
-// to
-//   class CConquerApp : public CWinAppStub
-// (gated on ENATIONS_USE_STUB_APP), then add WinMain.cpp.
+// MFC's auto-generated WinMain is replaced by our own (WinMain.cpp) that
+// calls theApp.InitInstance() / Run() / ExitInstance(). CMAKE_MFC_FLAG is
+// commented out in CMakeLists.txt to suppress the auto-WinMain.
 //
 //---------------------------------------------------------------------------
 

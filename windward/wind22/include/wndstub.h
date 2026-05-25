@@ -105,13 +105,12 @@
 // here; derived classes that need custom WM_ values must override virtual
 // WindowProc and switch on those values themselves.
 //
-// These stubs also activate under ENATIONS_USE_STUB_APP because Phase 4c
-// removes CConquerApp's CWinApp inheritance — its BEGIN_MESSAGE_MAP(CConquerApp,
-// CWinApp) at lastplnt.cpp:266 references CWinApp internals that disappear.
-// Phase 4c is gated together with Phase 1 (both required for no-MFC).
-#if defined(ENATIONS_USE_STUB_WND) || defined(ENATIONS_USE_STUB_APP)
-  // Make sure afx headers can't redefine these out from under us — these
-  // overrides must take final precedence. Undef first, then define empty.
+// Phase 4c removed CConquerApp's CWinApp inheritance; its old
+// BEGIN_MESSAGE_MAP(CConquerApp, CWinApp) referenced CWinApp internals
+// that are gone. These macro overrides keep BEGIN_MESSAGE_MAP / ON_WM_*
+// as cheap no-ops so any remaining declarations still compile.
+  // Undef first, then define empty so afx headers cannot redefine these
+  // out from under us — these overrides must take final precedence.
   #ifdef DECLARE_MESSAGE_MAP
     #undef DECLARE_MESSAGE_MAP
   #endif
@@ -203,7 +202,6 @@
     #undef afx_msg
   #endif
   #define afx_msg
-#endif // ENATIONS_USE_STUB_WND
 
 // Forward declarations
 class CWndStub;
@@ -447,7 +445,6 @@ protected:
 // be updated to call the global ::TextOut / ::SetBkColor instead, passing
 // `dc.m_hDC` (or `dc` directly thanks to operator HDC()) as the first arg.
 //---------------------------------------------------------------------------
-#ifdef ENATIONS_USE_STUB_WND
 
 // CDC-style methods exposed via this mixin so all three DC RAII classes
 // (Paint/Client/Window) get the same surface. Game-side code calls things
@@ -536,14 +533,12 @@ private:
 };
 
 // Macro aliases — game code keeps using CPaintDC / CClientDC / CWindowDC
-// verbatim, but they resolve to the stub classes when the gate is on.
-// Position the macros AFTER the class declarations so the macro
-// definitions don't recursively replace tokens inside the class bodies.
+// verbatim; they resolve to the stub classes. Position the macros AFTER
+// the class declarations so the macro definitions don't recursively
+// replace tokens inside the class bodies.
 #define CPaintDC   CStubPaintDC
 #define CClientDC  CStubClientDC
 #define CWindowDC  CStubWindowDC
-
-#endif // ENATIONS_USE_STUB_WND
 
 
 #endif // __WNDSTUB_H__

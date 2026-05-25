@@ -26,17 +26,10 @@
 #include <ios>
 #include <strstream>
 #endif
-// Phase 1g step 2: afxcoll.h pulled in CString and the MFC collection
-// classes. Under the stub gates CString comes from mfc_compat.h (via
-// stdafx.h); the IntToCString / CStringDelete helpers are now dead in
-// live code (Phase 5 replaced them with IntToStr / std::string).
-#if defined(ENATIONS_USE_STUB_WND) && defined(ENATIONS_USE_STUB_APP)
+// CString comes from mfc_compat.h (via stdafx.h); the IntToCString /
+// CStringDelete helpers are dead in live code (Phase 5 replaced them
+// with IntToStr / std::string).
 class CWnd;
-#else
-#ifndef __AFXCOLL_H__
-#include "afxcoll.h"
-#endif
-#endif
 
 
 // put this for all pure virtual functions
