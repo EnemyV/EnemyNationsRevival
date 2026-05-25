@@ -960,7 +960,7 @@ CAIData::~CAIData( )
     if ( m_paihDensity != NULL )
         delete[] m_paihDensity;
 #if 0
-	CString sDesc;
+	std::string sDesc;
 
 #if 0
 	for( int i=0; i<m_iNumTransports; ++i )
