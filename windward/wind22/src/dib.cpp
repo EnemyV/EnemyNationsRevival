@@ -1087,6 +1087,20 @@ BOOL CDIB::BitBlt( CDIB* pdibDst, CRect const& rectDst, CPoint const& ptSrc ) {
     if ( rectDstClipped.IsRectEmpty() )
         return TRUE;
 
+    // Phase 6 Stage 1: SDL fast path when both src and dst are SDL-backed.
+    // Same-class private access to peer's m_psdlsurfaceBack; the public
+    // GetSDLSurface() accessor lands in Stage 2.
+    if ( CBLTFormat::DIB_SDL_SURFACE == GetType()
+      && CBLTFormat::DIB_SDL_SURFACE == pdibDst->GetType() ) {
+        SDL_Rect srcRect = { rectSrcClipped.left, rectSrcClipped.top,
+                             rectSrcClipped.Width(), rectSrcClipped.Height() };
+        SDL_Rect dstRect = { rectDstClipped.left, rectDstClipped.top,
+                             rectDstClipped.Width(), rectDstClipped.Height() };
+        SDL_BlitSurface( m_psdlsurfaceBack, &srcRect,
+                         pdibDst->m_psdlsurfaceBack, &dstRect );
+        return TRUE;
+    }
+
     // BLT it
 
     CDIBits bitsDst = pdibDst->GetBits();
@@ -1229,6 +1243,19 @@ BOOL CDIB::StretchBlt( CDIB* pdibDst, CRect const& rectDst, CRect const& rectSrc
     if ( rectDstClip.IsRectEmpty() )
         return TRUE;
 
+    // Phase 6 Stage 1: SDL fast path for stretched blit. SDL_BlitScaled
+    // does its own proportional clipping; pass the unclipped rects.
+    if ( CBLTFormat::DIB_SDL_SURFACE == GetType()
+      && CBLTFormat::DIB_SDL_SURFACE == pdibDst->GetType() ) {
+        SDL_Rect srcRect = { rectSrc.left, rectSrc.top,
+                             rectSrc.Width(), rectSrc.Height() };
+        SDL_Rect dstRect = { rectDst.left, rectDst.top,
+                             rectDst.Width(), rectDst.Height() };
+        SDL_BlitScaled( m_psdlsurfaceBack, &srcRect,
+                        pdibDst->m_psdlsurfaceBack, &dstRect );
+        return TRUE;
+    }
+
     // Calc scale using pre-clipped rects
 
     int fixDU = rectSrc.Width() << 16;
@@ -1365,6 +1392,23 @@ BOOL CDIB::StretchTranBlt( CDIB* pdibDst, CRect const& rectDst, CRect const& rec
     // return if nothing to do
     if ( rectDstClip.IsRectEmpty() )
         return TRUE;
+
+    // Phase 6 Stage 1: SDL fast path for stretched tran-blit. Colorkey
+    // set per-blit and cleared after (hygiene per plan). SDL_BlitScaled
+    // does its own proportional clipping.
+    if ( CBLTFormat::DIB_SDL_SURFACE == GetType()
+      && CBLTFormat::DIB_SDL_SURFACE == pdibDst->GetType() ) {
+        Uint32 key = (Uint32)thePal.GetDeviceColor( iTransColor, GetBitsPerPixel() );
+        SDL_SetColorKey( m_psdlsurfaceBack, SDL_TRUE, key );
+        SDL_Rect srcRect = { rectSrc.left, rectSrc.top,
+                             rectSrc.Width(), rectSrc.Height() };
+        SDL_Rect dstRect = { rectDst.left, rectDst.top,
+                             rectDst.Width(), rectDst.Height() };
+        SDL_BlitScaled( m_psdlsurfaceBack, &srcRect,
+                        pdibDst->m_psdlsurfaceBack, &dstRect );
+        SDL_SetColorKey( m_psdlsurfaceBack, SDL_FALSE, 0 );
+        return TRUE;
+    }
 
     // Calc scale using pre-clipped rects
 
@@ -1552,6 +1596,23 @@ BOOL CDIB::TranBlt( CDIB* pdibDst, CRect const& rectDst, CPoint const& ptSrc, in
 
     if ( rectDstClip.IsRectEmpty() )
         return TRUE;
+
+    // Phase 6 Stage 1: SDL fast path for TranBlt. Colorkey set per-blit
+    // and cleared after — hygiene per plan: don't leave the key sticky on
+    // a surface that could be a blit destination later.
+    if ( CBLTFormat::DIB_SDL_SURFACE == GetType()
+      && CBLTFormat::DIB_SDL_SURFACE == pdibDst->GetType() ) {
+        Uint32 key = (Uint32)thePal.GetDeviceColor( iTransColor, GetBitsPerPixel() );
+        SDL_SetColorKey( m_psdlsurfaceBack, SDL_TRUE, key );
+        SDL_Rect srcRect = { rectSrcClip.left, rectSrcClip.top,
+                             rectSrcClip.Width(), rectSrcClip.Height() };
+        SDL_Rect dstRect = { rectDstClip.left, rectDstClip.top,
+                             rectDstClip.Width(), rectDstClip.Height() };
+        SDL_BlitSurface( m_psdlsurfaceBack, &srcRect,
+                         pdibDst->m_psdlsurfaceBack, &dstRect );
+        SDL_SetColorKey( m_psdlsurfaceBack, SDL_FALSE, 0 );
+        return TRUE;
+    }
 
     // Blit
 
