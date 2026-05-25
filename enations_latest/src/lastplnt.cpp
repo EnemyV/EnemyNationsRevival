@@ -591,13 +591,9 @@ BOOL CConquerApp::InitInstance( )
     m_sClsName = "EnemyNationsMainWindow";
     WNDCLASS wc;
     memset( &wc, 0, sizeof( wc ) );
-#ifdef ENATIONS_USE_STUB_WND
-    // Gate-on: route the main window class through CWndStub::StaticWndProc so
+    // Route the main window class through CWndStub::StaticWndProc so
     // CWndMain::OnCreate / OnPaint / OnEraseBkgnd / etc. virtuals actually fire.
     wc.lpfnWndProc   = &CWndStub::StaticWndProc;
-#else
-    wc.lpfnWndProc   = ::DefWindowProc;
-#endif
     wc.hInstance     = ::GetModuleHandle( NULL );  // Phase 4c prep: was AfxGetInstanceHandle
     wc.hIcon         = LoadIcon( IDI_MAIN );
     wc.hCursor       = LoadStandardCursor( IDC_ARROW );
@@ -1212,9 +1208,8 @@ BOOL CConquerApp::InitInstance( )
             // this is our main window - first created and last destroyed
             // already created by here but now we can load it's data (palette above)
             m_wndMain.LoadData( );
-#ifdef ENATIONS_USE_STUB_WND
-            // Gate-on: m_wndMain is CWndStub-derived (not CWnd), so we can't
-            // do `m_pMainWnd = &m_wndMain` directly. CWnd::FromHandle returns
+            // m_wndMain is CWndStub-derived (not CWnd), so we can't do
+            // `m_pMainWnd = &m_wndMain` directly. CWnd::FromHandle returns
             // a *temporary* CWnd that MFC garbage-collects in OnIdle, which
             // makes storing it in m_pMainWnd dangerous (crashes inside MFC).
             // Instead: use a permanent proxy CWnd and Attach our HWND to it —
@@ -1226,9 +1221,6 @@ BOOL CConquerApp::InitInstance( )
             if ( s_mfcMainWndProxy.m_hWnd == NULL )
                 s_mfcMainWndProxy.Attach( m_wndMain.m_hWnd );
             m_pMainWnd = &s_mfcMainWndProxy;
-#else
-            m_pMainWnd = &m_wndMain;
-#endif
 
             // set up the thread code if we're Win32s (after window created)
             Log( "Initialize AI multi-threading" );
@@ -1577,11 +1569,7 @@ CDlgPause* CConquerApp::GetDlgPause( )
 {
 
     if ( m_pdlgPause == NULL )
-#ifdef ENATIONS_USE_STUB_WND
         m_pdlgPause = new CDlgPause( CWnd::FromHandle( m_wndMain.m_hWnd ) );
-#else
-        m_pdlgPause = new CDlgPause( &m_wndMain );
-#endif
     return ( m_pdlgPause );
 }
 

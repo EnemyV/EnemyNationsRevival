@@ -754,11 +754,7 @@ void CWndStatBar::OnPaint()
 	CPaintDC dc(this); // device context for painting
 	thePal.Paint (dc.m_hDC);
 	
-#ifdef ENATIONS_USE_STUB_WND
 	m_statInst.DrawIcon ((CDC*)dc);
-#else
-	m_statInst.DrawIcon (&dc);
-#endif
 
 	thePal.EndPaint (dc.m_hDC);
 	// Do not call CWndBase::OnPaint() for painting messages

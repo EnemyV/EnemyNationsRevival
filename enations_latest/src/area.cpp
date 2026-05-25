@@ -554,13 +554,8 @@ void CWndUnitStat::OnPaint( )
         CRect rect;
         GetClientRect( &rect );
         CPoint pt( 0, 0 );
-#ifdef ENATIONS_USE_STUB_WND
         ::MapWindowPoints( m_hWnd, GetParent( )->m_hWnd, &pt, 1 );
         ::UnitShowStatus( m_pUnit, (CDC*)dc, rect, theBitmaps.GetByIndex( DIB_AREA_BAR ), pt );
-#else
-        MapWindowPoints( GetParent( ), &pt, 1 );
-        ::UnitShowStatus( m_pUnit, &dc, rect, theBitmaps.GetByIndex( DIB_AREA_BAR ), pt );
-#endif
 
         thePal.EndPaint( dc.m_hDC );
     }
@@ -1101,19 +1096,11 @@ void CWndArea::Create( CMapLoc const& ml, CUnit* pUnit, BOOL bFirst )
         CRect rectV( rectClient.Width( ), 0, rectClient.Width( ) + GetSystemMetrics( SM_CXVSCROLL ),
                      rectClient.Height( ) );
 
-#ifdef ENATIONS_USE_STUB_WND
         if ( !m_scrollbarH.Create( SBS_HORZ | WS_CHILD | WS_VISIBLE, rectH, CWnd::FromHandle( m_hWnd ), unsigned( -1 ) ) )
             throw( ERR_RES_CREATE_WND );
 
         if ( !m_scrollbarV.Create( SBS_VERT | WS_CHILD | WS_VISIBLE, rectV, CWnd::FromHandle( m_hWnd ), unsigned( -1 ) ) )
             throw( ERR_RES_CREATE_WND );
-#else
-        if ( !m_scrollbarH.Create( SBS_HORZ | WS_CHILD | WS_VISIBLE, rectH, this, unsigned( -1 ) ) )
-            throw( ERR_RES_CREATE_WND );
-
-        if ( !m_scrollbarV.Create( SBS_VERT | WS_CHILD | WS_VISIBLE, rectV, this, unsigned( -1 ) ) )
-            throw( ERR_RES_CREATE_WND );
-#endif
 
         // set up the scroll bars
         //   note: the button is always in the middle and the range is always the map size

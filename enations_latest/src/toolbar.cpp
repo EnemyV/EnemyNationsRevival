@@ -124,13 +124,8 @@ void CWndStatLine::OnPaint( )
 
     // get the offset of the background
     CPoint pt( 0, 0 );
-#ifdef ENATIONS_USE_STUB_WND
     ::MapWindowPoints( m_hWnd, GetParent( )->m_hWnd, &pt, 1 );
     ( *m_fnStatus )( m_pFnData, (CDC*)dc, rect, theBitmaps.GetByIndex( DIB_TOOLBAR ), pt );
-#else
-    MapWindowPoints( GetParent( ), &pt, 1 );
-    ( *m_fnStatus )( m_pFnData, &dc, rect, theBitmaps.GetByIndex( DIB_TOOLBAR ), pt );
-#endif
 
     thePal.EndPaint( dc.m_hDC );
 }
@@ -149,19 +144,11 @@ const int CWndBar::aBtn[NUM_BAR_BTNS]  = { 43, 17, 15, 31, 19, 18, 0, 27 };
 const int CWndBar::aHelp[NUM_BAR_BTNS] = { IDH_BAR_AREA,     IDH_BAR_WORLD,     IDH_BAR_CHAT,    IDH_BAR_ADVISOR,
                                            IDH_BAR_VEHICLES, IDH_BAR_BUILDINGS, IDH_BAR_SCIENCE, IDH_BAR_FILE };
 
-#ifdef ENATIONS_USE_STUB_WND
 void fnMouseMove( CWndStub* pWnd, UINT nFlags, int x, int y )
 {
 
     theApp.m_wndBar.SetStatusText( 1, "" );
 }
-#else
-void fnMouseMove( CWnd* pWnd, UINT nFlags, CPoint point )
-{
-
-    theApp.m_wndBar.SetStatusText( 1, "" );
-}
-#endif
 
 void CWndBar::Create( )
 {

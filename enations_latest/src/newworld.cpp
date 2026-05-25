@@ -755,11 +755,7 @@ void CConquerApp::StartAi() {
     }
 }
 
-#ifdef ENATIONS_USE_STUB_WND
 typedef CWndStub _OrderShowUpdateWin;
-#else
-typedef CWnd     _OrderShowUpdateWin;
-#endif
 
 static void _OrderWin(_OrderShowUpdateWin *pWnd, _OrderShowUpdateWin *pBefore) {
 
@@ -768,11 +764,7 @@ static void _OrderWin(_OrderShowUpdateWin *pWnd, _OrderShowUpdateWin *pBefore) {
 
     // set the order
     if (pBefore != NULL)
-#ifdef ENATIONS_USE_STUB_WND
         pWnd->SetWindowPos(pBefore->m_hWnd, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOREDRAW | SWP_NOSIZE);
-#else
-        pWnd->SetWindowPos(pBefore, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOREDRAW | SWP_NOSIZE);
-#endif
 }
 
 static void _ShowWin(_OrderShowUpdateWin *pWnd, WINDOWPLACEMENT *pWp) {

@@ -164,11 +164,7 @@ LRESULT CWndMain::OnCacheMsg (WPARAM wParam, LPARAM )
 }
 #endif
 
-#ifdef ENATIONS_USE_STUB_WND
 typedef CWndStub _MainCmnWin;
-#else
-typedef CWnd     _MainCmnWin;
-#endif
 
 static void MakeFullScreen ( _MainCmnWin * pWnd )
 {
