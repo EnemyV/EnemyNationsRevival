@@ -169,15 +169,16 @@ CBLTFormat::CalcBltMethod()
         case WNT:
 
             if ( 0 == iType ) {
-                // No profile preference — historical default. Phase 6
-                // Stage 3 will flip this to DIB_SDL_SURFACE.
-                eType = DIB_DIRECTDRAW;
+                // Phase 6 Stage 3: default backing is SDL_Surface. The
+                // DirectDraw path is still allocated (Stage 4 removes it)
+                // and can be forced for diagnostics via BLT=1 in
+                // HKCU\Software\Second Chance\Second Chance\Advanced\BLT.
+                eType = DIB_SDL_SURFACE;
             }
             // Else: honor the profile setting (iType-1 already in eType).
-            // Phase 6 Stage 2 dev opt-in: BLT=5 -> DIB_SDL_SURFACE so the
-            // new backing can be exercised before the Stage 3 default flip.
-            // Lifts the prior unconditional "eType = DIB_DIRECTDRAW" //BUGBUG
-            // override, which made every profile value collapse to DDraw.
+            // BLT=1 -> DIB_DIRECTDRAW (diagnostic escape until Stage 4).
+            // BLT=5 -> DIB_SDL_SURFACE (now the default; the explicit
+            // setting still serves to pin the choice unambiguously).
 
             break;
 
