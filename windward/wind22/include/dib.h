@@ -163,9 +163,6 @@ public:
     BOOL        IsInRange( BYTE const*, int iBytes ) const;
     int        GetOffset( int x, int y ) { return GetRow( y ) * GetPitch() + x * GetBytesPerPixel(); }
 
-    LPDIRECTDRAWSURFACE GetDDSurface( );
-    BOOL HasDDSurface( );
-
     // Phase 6 Stage 2: SDL surface accessor. Returns the long-lived backing
     // for DIB_SDL_SURFACE; NULL for any other type. Intended for SDL_BlitSurface
     // callers (they lock internally). Raw-pixel callers should keep going
@@ -252,8 +249,6 @@ private:
     HBITMAP       m_hOrigBm;    // the original bitmap attached to hDCWinG
     HBITMAP       m_hTextBm;    // the original bitmap attached to hDCWinG
     BITMAPINFO256     m_bmi;      // WinG DIB header
-    DDSURFACEDESC     m_ddOffSurfDesc;  // off-screen surface desc
-    LPDIRECTDRAWSURFACE   m_pddsurfaceBack;  // off-screen surface (the bitmap)
     SDL_Surface*      m_psdlsurfaceBack;  // DIB_SDL_SURFACE backing (Phase 6)
     HRESULT       m_hRes;
     Ptr< BITMAPINFO256 >   m_ptrbmiIdentity;
@@ -261,7 +256,6 @@ private:
     BOOL        m_bBitmapSelected;
 
     Ptr< CWinG >     m_ptrwing;
-    Ptr< CDirectDraw >   m_ptrdirectdraw;
 };
 
 
@@ -304,29 +298,6 @@ inline CDIBHDC::CDIBHDC(
 //-------------------------------------------------------------------------
 inline CDIBHDC::~CDIBHDC() {
     m_pdib->ReleaseDC();
-}
-
-//-------------------------------------------------------------------------
-// CDIB::GetDDSurface
-//-------------------------------------------------------------------------
-inline LPDIRECTDRAWSURFACE CDIB::GetDDSurface() {
-    ASSERT( CBLTFormat::DIB_DIRECTDRAW == m_eType );
-    ASSERT( m_pddsurfaceBack );
-
-    m_hRes = m_pddsurfaceBack->IsLost();
-
-    if ( m_hRes == DDERR_SURFACELOST )
-        m_hRes = m_pddsurfaceBack->Restore();
-
-    if ( FAILED( m_hRes ) )
-        ; // GGFIXIT: throw
-
-    return m_pddsurfaceBack;
-}
-
-inline BOOL CDIB::HasDDSurface( )
-{
-    return ( m_pddsurfaceBack != 0 );
 }
 
 /////////////////////////////////////////////////////////////////////////////

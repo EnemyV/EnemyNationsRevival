@@ -1483,9 +1483,6 @@ BOOL CConquerApp::InitInstance( )
     m_sVideo = "Video: ";
     switch ( ptrthebltformat->GetType( ) )
     {
-    case CBLTFormat::DIB_DIRECTDRAW:
-        m_sVideo += "DirectDraw";
-        break;
     case CBLTFormat::DIB_WING:
         m_sVideo += "WinG";
         break;
@@ -1494,6 +1491,12 @@ BOOL CConquerApp::InitInstance( )
         break;
     case CBLTFormat::DIB_MEMORY:
         m_sVideo += "StretchDIBits";
+        break;
+    case CBLTFormat::DIB_SDL_SURFACE:
+        m_sVideo += "SDL_Surface";
+        break;
+    default:
+        m_sVideo += "?";
         break;
     }
     m_sVideo += " (";

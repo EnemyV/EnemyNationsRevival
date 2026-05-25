@@ -75,18 +75,9 @@ BOOL InitWindwardLib2() {
     // OS version checks removed — only running on modern Windows (Win7+)
     iWinType = WNT;
 
-    // check DirectX version (effectively dead on modern Windows — DDraw/DSound are 10.x)
+    // Phase 6 Stage 4: DirectDraw removed entirely. DSound version check kept
+    // for now (Stage 5+ may revisit audio along with the GDI removal).
     DWORD dwMS, dwLS;
-    if ( GetDllVersion( "ddraw.dll", dwMS, dwLS ) )
-        if ( ( dwMS < 0x40000 ) || ( ( dwMS == 0x40000 ) && ( dwLS < 0x55E0001 ) ) ) {
-            char msg[512];
-            _snprintf_s( msg, sizeof(msg), _TRUNCATE,
-                "DirectDraw version %u.%u.%u.%u is too old.",
-                HIWORD( dwMS ), LOWORD( dwMS ), HIWORD( dwLS ), LOWORD( dwLS ) );
-            CDlgMsg dlg;
-            if ( dlg.MsgBox( msg, MB_YESNO | MB_ICONSTOP | MB_TASKMODAL, "Warnings", "DirectDraw" ) != IDYES )
-                return ( FALSE );
-        }
     if ( GetDllVersion( "dsound.dll", dwMS, dwLS ) )
         if ( ( dwMS < 0x40000 ) || ( ( dwMS == 0x40000 ) && ( dwLS < 0x55B0001 ) ) ) {
             char msg[512];

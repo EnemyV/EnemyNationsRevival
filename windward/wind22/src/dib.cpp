@@ -60,7 +60,6 @@ CDIB::CDIB(
     m_eType( eType ),
     m_iDir( eDirection ),
     m_pBits( NULL ),
-    m_pddsurfaceBack( NULL ),
     m_psdlsurfaceBack( NULL ),
     m_hDCDib( NULL ),
     m_hOrigBm( NULL ),
@@ -76,26 +75,6 @@ CDIB::CDIB(
             m_eType = CBLTFormat::DIB_MEMORY;
         else
             m_ptrwing = ptrtheWinG;
-
-        break;
-
-    case CBLTFormat::DIB_DIRECTDRAW:
-
-
-        if ( !CDirectDraw::GetTheDirectDraw( ) )
-        {
-#ifdef LOGGINGON
-            OutputDebugStringA( "Can't direct draw!!\n" );
-#endif
-            m_eType = CBLTFormat::DIB_MEMORY;
-        }
-        else
-        {
-#ifdef LOGGINGON
-            OutputDebugStringA( "Setting DD pointer\n" );
-#endif
-            m_ptrdirectdraw = ptrtheDirectDraw;
-        }
 
         break;
     }
@@ -148,9 +127,6 @@ CDIB::~CDIB() {
         thePal.EndPaint( m_hDCDib );
         DeleteDC( m_hDCDib );
     }
-
-    if ( m_pddsurfaceBack )
-        m_pddsurfaceBack->Release();
 
     if ( m_psdlsurfaceBack )
         SDL_FreeSurface( m_psdlsurfaceBack );
@@ -300,77 +276,6 @@ BOOL CDIB::Resize( int cx, int cy ) {
         break;
     }
 
-    case CBLTFormat::DIB_DIRECTDRAW:
-
-        //
-        // create an off-screen surface
-        //
-
-#ifdef LOGGINGON
-        OutputDebugStringA( "DIB_DIRECTDRAW\n" );
-#endif
-
-        if ( m_pddsurfaceBack ) {
-            
-            LPDIRECTDRAWSURFACE surface = GetDDSurface( );
-            ASSERT( surface );
-            if ( surface )
-            {
-                m_hRes = surface->Release( );
-
-                m_pddsurfaceBack = NULL;
-
-                if ( FAILED( m_hRes ) )
-                {
-                    TRACE( "Off-screen surface release failed." );
-
-                    return FALSE;
-                }
-            }
-            else
-            {
-                return false;
-            }
-        }
-
-        memset( &m_ddOffSurfDesc, 0, sizeof( DDSURFACEDESC ) );
-
-        m_ddOffSurfDesc.dwSize = sizeof( DDSURFACEDESC );
-        m_ddOffSurfDesc.dwFlags        = DDSD_CAPS | DDSD_HEIGHT | DDSD_WIDTH;
-        m_ddOffSurfDesc.ddsCaps.dwCaps = DDSCAPS_OFFSCREENPLAIN | DDSCAPS_SYSTEMMEMORY;
-       // m_ddOffSurfDesc.ddsCaps.dwCaps = DDSCAPS_OFFSCREENPLAIN | DDSCAPS_VIDEOMEMORY; // video memory is an issue?
-        m_ddOffSurfDesc.dwWidth = GetWidth();
-        m_ddOffSurfDesc.dwHeight = GetHeight();
-
-
-        
-#ifdef LOGGINGON
-        OutputDebugStringA( "create surface\n" );
-#endif
-
-        m_hRes = CDirectDraw::GetTheDirectDraw()->GetDD()->CreateSurface( &m_ddOffSurfDesc, 
-            &m_pddsurfaceBack, NULL );
-
-        if ( FAILED( m_hRes ) ) {
-            TRACE( "Off-screen surface create failed." );
-
-            return FALSE;
-        }
-
-        //
-        // get a full description of the surface
-        //
-
-        m_hRes = m_pddsurfaceBack->GetSurfaceDesc( &m_ddOffSurfDesc );
-
-        if ( FAILED( m_hRes ) ) {
-            TRACE( "Off-screen Surface GetSurfaceDesc failed." );
-
-            return FALSE;
-        }
-
-        break;
-
     case CBLTFormat::DIB_MEMORY:
 
 #ifdef LOGGINGON
@@ -417,7 +322,7 @@ BOOL CDIB::Resize( int cx, int cy ) {
 
     }
 
-    if ( CBLTFormat::DIB_MEMORY != GetType() && hbm == NULL && m_pddsurfaceBack == NULL && m_psdlsurfaceBack == NULL )
+    if ( CBLTFormat::DIB_MEMORY != GetType() && hbm == NULL && m_psdlsurfaceBack == NULL )
         return FALSE;
 
     if ( 1 == GetBytesPerPixel() ) {
@@ -428,9 +333,7 @@ BOOL CDIB::Resize( int cx, int cy ) {
             m_bmi.hdr.biClrImportant = 256;
     }
 
-    if ( CBLTFormat::DIB_DIRECTDRAW == GetType() )
-        m_lPitch = m_ddOffSurfDesc.lPitch;
-    else if ( CBLTFormat::DIB_SDL_SURFACE == GetType() )
+    if ( CBLTFormat::DIB_SDL_SURFACE == GetType() )
         m_lPitch = m_psdlsurfaceBack->pitch;
     else
         m_lPitch = ( GetBytesPerPixel() * m_bmi.hdr.biWidth + 3 ) & ~3;
@@ -457,24 +360,6 @@ BOOL CDIB::Lock() {
     m_iLock++;
 
     switch ( GetType() ) {
-    case CBLTFormat::DIB_DIRECTDRAW:
-
-        ASSERT_STRICT( m_pddsurfaceBack );
-        ASSERT( m_pddsurfaceBack );
-
-        if ( m_pBits )
-            return TRUE;
-
-        m_hRes = GetDDSurface()->Lock( 0, &m_ddOffSurfDesc, DDLOCK_SURFACEMEMORYPTR | DDLOCK_WAIT, 0 );
-
-        if ( SUCCEEDED( m_hRes ) ) {
-            m_pBits = (LPBYTE)m_ddOffSurfDesc.lpSurface;
-
-            return TRUE;
-        }
-
-        return FALSE;
-
     case CBLTFormat::DIB_SDL_SURFACE:
 
         // Software surface: SDL_MUSTLOCK is false, so the lock is a no-op and
@@ -508,20 +393,6 @@ BOOL CDIB::Unlock() {
     ASSERT( 0 < m_iLock );
 
     m_iLock--;
-
-    if ( CBLTFormat::DIB_DIRECTDRAW == GetType() ) {
-        if ( m_pBits ) {
-            m_hRes = GetDDSurface()->Unlock( m_pBits );
-
-            if ( SUCCEEDED( m_hRes ) ) {
-                m_pBits = 0;
-
-                return TRUE;
-            }
-        }
-
-        return FALSE;
-    }
 
     if ( CBLTFormat::DIB_SDL_SURFACE == GetType() ) {
         // Mirror of Lock: no-op for a software surface. Keep m_pBits valid
@@ -563,11 +434,7 @@ void CDIB::Clear( CRect const* prect, /* NULL means the entire window*/ int iPal
 
     if ( 0 == iPaletteIndex || 1 == GetBytesPerPixel() ) {
         if ( prect == NULL ) {
-            if ( CBLTFormat::DIB_DIRECTDRAW != GetType() ||
-                 m_ddOffSurfDesc.lPitch == (LONG)m_ddOffSurfDesc.dwWidth )
-
-                memset( pbyDst, iPaletteIndex, m_bmi.hdr.biSizeImage );
-
+            memset( pbyDst, iPaletteIndex, m_bmi.hdr.biSizeImage );
             return;
         }
 
@@ -740,44 +607,6 @@ int CDIB::BitBlt( HDC hdcDst, CRect const& rectDst, CPoint const& ptSrc ) {
         return ::BitBlt( hdcDst, rectDst.left, rectDst.top, rectDst.Width( ), rectDst.Height( ), m_hDCDib,
                          ptSrcAdjusted.x, ptSrcAdjusted.y, SRCCOPY );
 
-    case CBLTFormat::DIB_DIRECTDRAW:{        
-        /*
-        TRAP();
-
-        ASSERT_STRICT( 0 ); // FIXIT: Implement
-
-        return 0;
-        */
-
-        // this was literally not implemented... why??
-        // im pretty sure that wind22 is not the latest code
-
-        // Use the DirectDraw surface's HDC to BitBlt into the destination DC.
-        // This mirrors the logic used in CDIB::GetDC()/ReleaseDC() where the
-        // surface supplies an HDC for GDI operations.
-        if ( !m_pddsurfaceBack )
-            return 0;
-
-        // Adjust for top-down vs bottom-up like the memory case
-        if ( !IsTopDown( ) )
-            ptSrcAdjusted.y += GetHeight( ) - ptSrcAdjusted.y - ptSrcAdjusted.y - rectDst.Height( );
-
-        HDC     hdcSrc = NULL;
-        HRESULT hr     = m_pddsurfaceBack->GetDC( &hdcSrc );
-        if ( FAILED( hr ) || hdcSrc == NULL )
-            return 0;
-
-        // Perform BitBlt from surface HDC to destination HDC.
-        // We use SRCCOPY to match other cases.
-        int iRet = ::BitBlt( hdcDst, rectDst.left, rectDst.top, rectDst.Width( ), rectDst.Height( ), hdcSrc,
-                             ptSrcAdjusted.x, ptSrcAdjusted.y, SRCCOPY );
-
-        // Release the DC back to the DirectDraw surface.
-        m_pddsurfaceBack->ReleaseDC( hdcSrc );
-
-        return iRet;
-    }
-
     case CBLTFormat::DIB_MEMORY:
 
         if ( !IsTopDown() )
@@ -857,14 +686,6 @@ int CDIB::StretchBlt( HDC hdcDst, CRect const& rectDst, CRect const& rectSrc ) {
                              rectSrcAdjusted.Width(),
                              rectSrcAdjusted.Height(),
                              SRCCOPY );
-
-    case CBLTFormat::DIB_DIRECTDRAW:
-
-        TRAP();
-
-        ASSERT_STRICT( 0 ); // FIXIT: Implement
-
-        return 0;
 
     default:
 
@@ -1800,18 +1621,6 @@ HDC CDIB::GetDC() {
     m_iLock++;
 
     switch ( GetType() ) {
-    case CBLTFormat::DIB_DIRECTDRAW:
-
-        
-#ifdef LOGGINGON
-        OutputDebugStringA( "DIB_DIRECTDRAW\n" );
-#endif
-
-        m_hRes = GetDDSurface()->GetDC( &m_hDCDib );
-        thePal.Paint( m_hDCDib ); // GG 9/11/96 - Just to be consistent, not sure if we need it
-
-        break;
-
     case CBLTFormat::DIB_MEMORY:
     {
 
@@ -1856,12 +1665,6 @@ void CDIB::ReleaseDC( BOOL bSaveChanges ) {
     m_iLock--;
 
     switch ( GetType() ) {
-    case CBLTFormat::DIB_DIRECTDRAW:
-
-        thePal.EndPaint( m_hDCDib );
-        m_hRes = GetDDSurface()->ReleaseDC( m_hDCDib );
-        break;
-
     case CBLTFormat::DIB_MEMORY:
     {
 

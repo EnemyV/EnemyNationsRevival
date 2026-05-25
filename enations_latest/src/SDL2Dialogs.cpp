@@ -64,10 +64,11 @@ void SDL2VersionDialog::OnInit() {
 
     std::string sVideo = "Video: ";
     switch (ptrthebltformat->GetType()) {
-        case CBLTFormat::DIB_DIRECTDRAW: sVideo += "DirectDraw"; break;
-        case CBLTFormat::DIB_WING:       sVideo += "WinG"; break;
-        case CBLTFormat::DIB_DIBSECTION: sVideo += "CreateDIBSection"; break;
-        case CBLTFormat::DIB_MEMORY:     sVideo += "StretchDIBits"; break;
+        case CBLTFormat::DIB_WING:        sVideo += "WinG"; break;
+        case CBLTFormat::DIB_DIBSECTION:  sVideo += "CreateDIBSection"; break;
+        case CBLTFormat::DIB_MEMORY:      sVideo += "StretchDIBits"; break;
+        case CBLTFormat::DIB_SDL_SURFACE: sVideo += "SDL_Surface"; break;
+        default:                          sVideo += "?"; break;
     }
     sVideo += (ptrthebltformat->GetDirection() == CBLTFormat::DIR_TOPDOWN) ? " (top-down)" : " (bottom-up)";
     sVideo += ", " + std::to_string(ptrthebltformat->GetBitsPerPixel()) + "-bit";

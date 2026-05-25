@@ -199,7 +199,6 @@ target_include_directories(enations PUBLIC
 target_link_libraries(enations PUBLIC
         vdmplay
         wind22
-        ddraw.lib
         wing32.lib
 #        msvcrt.lib # was commented
 #        shdw32m.lib # was commented

@@ -48,7 +48,6 @@
 //#include <ctl3d.h> // Unnecessary as of modern windows...
 #include <cctype>
 #include <clocale>
-#include <ddraw.h>
 #include <dsound.h>
 #include <eh.h>
 //#include <dplay.h>

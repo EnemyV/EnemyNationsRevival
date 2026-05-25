@@ -68,7 +68,6 @@
 #include <io.h>
 //#include <ctl3d.h>
 
-#include <ddraw.h>
 #include <dsound.h>
 //#include <dplay.h>
 //#include <wing.h>

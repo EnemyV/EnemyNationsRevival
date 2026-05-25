@@ -1668,22 +1668,13 @@ void CWndWorld::ReRender( )
         xRem -= m_cx;
     }
 
-    // if there's no DD device, just return (only on directdraw!)?
-    if ( pdib->GetType( ) == CBLTFormat::DIB_DIRECTDRAW && !pdib->HasDDSurface( ) )
-    {
-#ifdef LOGGINGON
-        int type = pdib->GetType( );
-        buf[128];
-        sprintf_s( buf, "no HasDDSurface!! type=%d\n", type );
-        OutputDebugStringA( buf );
-#endif
-
-        return;
-    }
+    // Phase 6 Stage 4: DDraw-specific surface-missing check removed
+    // (DIB_DIRECTDRAW and HasDDSurface are gone). The CDIB always has a
+    // valid backing if GetBits()/GetOffset() are about to be called.
 
     // dest is where we write, radar tells us if we should write
     BYTE *  pDibDest, *pDibDestLine;
-    CDIBits dibits = pdib->GetBits( );  // exception, gfx surface missing? GetDDSurface null
+    CDIBits dibits = pdib->GetBits( );
     pDibDest = pDibDestLine = dibits + pdib->GetOffset( 0, 0 );
     int iDestPitch          = pdib->GetDirPitch( );
 

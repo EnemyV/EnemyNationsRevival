@@ -33,8 +33,6 @@ typedef BOOL    ( WINGAPI* WINGSTRETCHBLT_FUNC )         ( HDC, int, int, int, i
 // in case it didn't get installed correctly
 //
 
-typedef HRESULT ( WINAPI* DIRECTDRAWCREATE_FUNC )( GUID*, LPDIRECTDRAW*, IUnknown* );
-
 static WINGCREATEDC_FUNC            pfnWinGCreateDC            = nullptr;
 static WINGRECOMMENDDIBFORMAT_FUNC  pfnWinGRecommendDIBFormat  = nullptr;
 static WINGCREATEBITMAP_FUNC        pfnWinGCreateBitmap        = nullptr;
@@ -43,10 +41,7 @@ static WINGSETDIBCOLORTABLE_FUNC    pfnWinGSetDIBColorTable    = nullptr;
 static WINGBITBLT_FUNC              pfnWinGBitBlt              = nullptr;
 static WINGSTRETCHBLT_FUNC          pfnWinGStretchBlt          = nullptr;
 
-static DIRECTDRAWCREATE_FUNC        pfnDirectDrawCreate        = nullptr;
-
 Ptr< CWinG >        ptrtheWinG;
-Ptr< CDirectDraw >  ptrtheDirectDraw;
 Ptr< CBLTFormat >   ptrthebltformat;
 
 //--------------------------- C B L T F o r m a t ---------------------------
@@ -92,16 +87,6 @@ CBLTFormat::Init()
                 m_eType = DIB_MEMORY;
             else
                 m_eType = DIB_DIBSECTION;
-
-    //
-    // 3/14/96 - BobP try DD on win95 before CreateDibSection
-    //
-
-    if ( DIB_DIRECTDRAW == m_eType )
-        if ( !CDirectDraw::GetTheDirectDraw() )
-            m_eType = DIB_DIBSECTION;
-        else
-            m_eDirection  = DIR_TOPDOWN;
 
     if ( DIB_DIBSECTION == m_eType )
         m_eDirection  = DIR_TOPDOWN;
@@ -169,26 +154,22 @@ CBLTFormat::CalcBltMethod()
         case WNT:
 
             if ( 0 == iType ) {
-                // Phase 6 Stage 3: default backing is SDL_Surface. The
-                // DirectDraw path is still allocated (Stage 4 removes it)
-                // and can be forced for diagnostics via BLT=1 in
-                // HKCU\Software\Second Chance\Second Chance\Advanced\BLT.
+                // Phase 6 Stage 3+4: SDL_Surface is the default backing.
+                // The DDraw path is gone. The BLT registry value still
+                // works for diagnostics: 1=DIB_WING, 2=DIB_DIBSECTION,
+                // 3=DIB_MEMORY, 4=DIB_SDL_SURFACE. None of 1-3 are
+                // exercised in the live game today; 4 is redundant with
+                // the default but pins the choice unambiguously.
                 eType = DIB_SDL_SURFACE;
             }
-            // Else: honor the profile setting (iType-1 already in eType).
-            // BLT=1 -> DIB_DIRECTDRAW (diagnostic escape until Stage 4).
-            // BLT=5 -> DIB_SDL_SURFACE (now the default; the explicit
-            // setting still serves to pin the choice unambiguously).
 
             break;
 
         default: ASSERT_STRICT( 0 );
     }
 
-    CColorFormat colorformat; // Get screen color format
-
-    if ( DIB_DIRECTDRAW == eType && m_colorformat.GetBitsPerPixel() != colorformat.GetBitsPerPixel() )
-        eType = DIB_DIBSECTION;
+    // SDL_SURFACE allocates 32-bit RGB888 explicitly via SDL, regardless of
+    // screen depth, so no bpp-mismatch fallback is needed.
 
     return eType;
 }
@@ -366,159 +347,6 @@ void CWinG::AssertValid() const
     ASSERT_STRICT( pfnWinGSetDIBColorTable );
     ASSERT_STRICT( pfnWinGBitBlt );
     ASSERT_STRICT( pfnWinGStretchBlt );
-}
-#endif
-
-//---------------------------- C D i r e c t D r a w ------------------------
-
-//-------------------------------------------------------------------------
-// CDirectDraw::GetDirectDraw
-//-------------------------------------------------------------------------
-CDirectDraw* CDirectDraw::GetTheDirectDraw() {
-    if ( !ptrtheDirectDraw.Value() )
-
-    {
-        ptrtheDirectDraw = new CDirectDraw;
-
-        if ( !ptrtheDirectDraw->IsValid() )
-            ptrtheDirectDraw = NULL;
-    }
-
-    return ptrtheDirectDraw.Value();
-}
-
-//-------------------------------------------------------------------------
-// CDirectDraw::CDirectDraw
-//-------------------------------------------------------------------------
-CDirectDraw::CDirectDraw():
-    m_hInstDDrawLib( 0 ),
-    m_hRes( 0 ),
-    m_pdirectdraw( 0 ),
-    m_pddsurfacePrim( 0 ),
-    m_pddclipper( 0 )
-{
-    UINT uOld = ::SetErrorMode ( SEM_NOOPENFILEERRORBOX );
-    m_hInstDDrawLib = LoadLibrary( "DDRAW" );
-    SetErrorMode ( uOld );
-
-    if ( m_hInstDDrawLib )
-        pfnDirectDrawCreate = ( DIRECTDRAWCREATE_FUNC )GetProcAddress(( HMODULE )m_hInstDDrawLib, "DirectDrawCreate" );
-
-    if ( pfnDirectDrawCreate )
-    {
-        m_hRes = pfnDirectDrawCreate( NULL, &m_pdirectdraw, NULL );
-
-        if ( FAILED( m_hRes ))
-        {
-            TRACE( "DirectDrawCreate failed." );
-            return;
-        }
-
-        HWND hMainWnd = w22::GetMainHWND();
-        if ( hMainWnd == NULL )
-            return;
-
-        m_hRes = m_pdirectdraw->SetCooperativeLevel( hMainWnd, DDSCL_NORMAL );
-
-        if ( FAILED( m_hRes ))
-        {
-            TRACE( "Set cooperative level failed." );
-            return;
-        }
-
-        //
-        // create an object for the display surface
-        //
-
-        memset( &m_ddPrimSurfDesc, 0, sizeof( DDSURFACEDESC ));
-
-        m_ddPrimSurfDesc.dwSize     = sizeof( DDSURFACEDESC );
-        m_ddPrimSurfDesc.dwFlags      = DDSD_CAPS;
-        m_ddPrimSurfDesc.ddsCaps.dwCaps  = DDSCAPS_PRIMARYSURFACE;
-
-#ifdef LOGGINGON
-        OutputDebugStringA( "create surface blt\n" );
-#endif
-
-        m_hRes = m_pdirectdraw->CreateSurface( &m_ddPrimSurfDesc,
-                                                       &m_pddsurfacePrim, NULL );
-
-        if ( FAILED( m_hRes ))
-        {
-            TRACE( "Primary surface create failed." );
-            return;
-        }
-
-        //
-        // get a full description of the surface
-        //
-
-        m_hRes = m_pddsurfacePrim->GetSurfaceDesc( &m_ddPrimSurfDesc );
-
-        if ( FAILED( m_hRes ))
-        {
-            TRACE( "Primary Surface GetSurfaceDesc failed." );
-            return;
-        }
-
-        // Create a clipper 
-
-        m_hRes = m_pdirectdraw->CreateClipper( 0, &m_pddclipper, NULL );
-
-        if ( FAILED( m_hRes ))
-        {
-            TRACE( "Clipper create failed." );
-            return;
-        }
-
-        SetValid( TRUE );
-    }
-
-    ASSERT_STRICT_VALID( this );
-}
-
-//-------------------------------------------------------------------------
-// CDirectDraw::~CDirectDraw
-//-------------------------------------------------------------------------
-CDirectDraw::~CDirectDraw() {
-    if ( m_pddsurfacePrim )
-        m_pddsurfacePrim->Release();
-
-    if ( m_pdirectdraw )
-        m_pdirectdraw->Release();
-
-    if ( m_hInstDDrawLib )
-        FreeLibrary( m_hInstDDrawLib );
-}
-
-//-------------------------------------------------------------------------
-// CDirectDraw::GetFrontSurface
-//-------------------------------------------------------------------------
-LPDIRECTDRAWSURFACE CDirectDraw::GetFrontSurface() {
-    ASSERT( m_pddsurfacePrim );
-
-    m_hRes = m_pddsurfacePrim->IsLost();
-
-    if ( m_hRes == DDERR_SURFACELOST )
-        m_hRes = m_pddsurfacePrim->Restore();
-
-    if ( FAILED( m_hRes )) // GGTODO: Need all this for primary surface?
-        ; // GGFIXIT: throw
-
-    return m_pddsurfacePrim;
-}
-
-//-------------------------------------------------------------------------
-// CDirectDraw::AssertValid
-//-------------------------------------------------------------------------
-#ifdef _DEBUG
-void CDirectDraw::AssertValid() const
-{
-    CBLTBase::AssertValid();
-
-    ASSERT_STRICT( m_bValid );
-    ASSERT_STRICT( m_hInstDDrawLib );
-    ASSERT_STRICT( pfnDirectDrawCreate );
 }
 #endif
 
