@@ -155,6 +155,7 @@ class CBLTFormat
         DIB_WING,
         DIB_DIBSECTION,
         DIB_MEMORY,
+        DIB_SDL_SURFACE,
         DIB_NUM_TYPES
     };
 

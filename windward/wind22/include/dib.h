@@ -12,6 +12,10 @@
 #include "thielen.h"
 #include <_windwrd.h>
 
+// Phase 6 Stage 0: SDL_Surface backing for CDIB. Forward-declared here so
+// the (widely-included) header doesn't pull in SDL.h; dib.cpp includes it.
+typedef struct SDL_Surface SDL_Surface;
+
 class CDIB;
 
 //------------------------- B I T M A P I N F O 2 5 6 -----------------------
@@ -244,6 +248,7 @@ private:
     BITMAPINFO256     m_bmi;      // WinG DIB header
     DDSURFACEDESC     m_ddOffSurfDesc;  // off-screen surface desc
     LPDIRECTDRAWSURFACE   m_pddsurfaceBack;  // off-screen surface (the bitmap)
+    SDL_Surface*      m_psdlsurfaceBack;  // DIB_SDL_SURFACE backing (Phase 6)
     HRESULT       m_hRes;
     Ptr< BITMAPINFO256 >   m_ptrbmiIdentity;
     int        m_iLock;

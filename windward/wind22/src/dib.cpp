@@ -13,6 +13,8 @@
 
 #include "dib.h"
 
+#include <SDL.h>  // Phase 6 Stage 0: DIB_SDL_SURFACE backing
+
 #ifdef _DEBUG
 #undef THIS_FILE
 static char BASED_CODE THIS_FILE[] = __FILE__;
@@ -59,6 +61,7 @@ CDIB::CDIB(
     m_iDir( eDirection ),
     m_pBits( NULL ),
     m_pddsurfaceBack( NULL ),
+    m_psdlsurfaceBack( NULL ),
     m_hDCDib( NULL ),
     m_hOrigBm( NULL ),
     m_hTextBm( NULL ),
@@ -148,6 +151,9 @@ CDIB::~CDIB() {
 
     if ( m_pddsurfaceBack )
         m_pddsurfaceBack->Release();
+
+    if ( m_psdlsurfaceBack )
+        SDL_FreeSurface( m_psdlsurfaceBack );
 
     if ( m_pBits && CBLTFormat::DIB_MEMORY == GetType() )
         delete[] m_pBits;
@@ -375,9 +381,34 @@ BOOL CDIB::Resize( int cx, int cy ) {
 
         break;
 
+    case CBLTFormat::DIB_SDL_SURFACE:
+
+        // Phase 6: long-lived SDL_Surface backing. 32-bit BGRX (RGB888) to
+        // match the screen/bridge format. Allocated once, freed + recreated
+        // on resize, freed in dtor. m_pBits/m_lPitch point into the surface
+        // so the raw-pointer callers (GetBits/GetPitch/GetOffset) keep working.
+
+        if ( m_psdlsurfaceBack ) {
+            SDL_FreeSurface( m_psdlsurfaceBack );
+            m_psdlsurfaceBack = NULL;
+            m_pBits = NULL;
+        }
+
+        m_psdlsurfaceBack = SDL_CreateRGBSurfaceWithFormat(
+            0, m_cx, m_cy, 32, SDL_PIXELFORMAT_RGB888 );
+
+        if ( !m_psdlsurfaceBack ) {
+            TRACE( "SDL_CreateRGBSurfaceWithFormat failed." );
+            return FALSE;
+        }
+
+        m_pBits = (BYTE*)m_psdlsurfaceBack->pixels;
+
+        break;
+
     }
 
-    if ( CBLTFormat::DIB_MEMORY != GetType() && hbm == NULL && m_pddsurfaceBack == NULL )
+    if ( CBLTFormat::DIB_MEMORY != GetType() && hbm == NULL && m_pddsurfaceBack == NULL && m_psdlsurfaceBack == NULL )
         return FALSE;
 
     if ( 1 == GetBytesPerPixel() ) {
@@ -390,6 +421,8 @@ BOOL CDIB::Resize( int cx, int cy ) {
 
     if ( CBLTFormat::DIB_DIRECTDRAW == GetType() )
         m_lPitch = m_ddOffSurfDesc.lPitch;
+    else if ( CBLTFormat::DIB_SDL_SURFACE == GetType() )
+        m_lPitch = m_psdlsurfaceBack->pitch;
     else
         m_lPitch = ( GetBytesPerPixel() * m_bmi.hdr.biWidth + 3 ) & ~3;
 
@@ -433,6 +466,20 @@ BOOL CDIB::Lock() {
 
         return FALSE;
 
+    case CBLTFormat::DIB_SDL_SURFACE:
+
+        // Software surface: SDL_MUSTLOCK is false, so the lock is a no-op and
+        // the pixel pointer is valid for the surface's lifetime. m_pBits was
+        // set in Resize and persists; refresh it defensively.
+        if ( !m_psdlsurfaceBack )
+            return FALSE;
+
+        if ( SDL_MUSTLOCK( m_psdlsurfaceBack ) )
+            SDL_LockSurface( m_psdlsurfaceBack );
+
+        m_pBits = (BYTE*)m_psdlsurfaceBack->pixels;
+        return TRUE;
+
     case CBLTFormat::DIB_WING:
     case CBLTFormat::DIB_DIBSECTION:
 
@@ -465,6 +512,15 @@ BOOL CDIB::Unlock() {
         }
 
         return FALSE;
+    }
+
+    if ( CBLTFormat::DIB_SDL_SURFACE == GetType() ) {
+        // Mirror of Lock: no-op for a software surface. Keep m_pBits valid
+        // (the pixel pointer survives the unlock), unlike the DD path.
+        if ( m_psdlsurfaceBack && SDL_MUSTLOCK( m_psdlsurfaceBack ) )
+            SDL_UnlockSurface( m_psdlsurfaceBack );
+
+        return TRUE;
     }
 
     return TRUE;
