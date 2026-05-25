@@ -4,11 +4,11 @@ This repo is an SDL2 port of the original MFC/Win32 Enemy Nations codebase. The 
 
 ## Current State
 
-- Release currently builds with no MFC link dependency. `mfc-status.ps1` reports `mfc_linked: false` and `mfc_imports: 0` as of 2026-05-23.
-- `ENATIONS_USE_STUB_WND` and `ENATIONS_USE_STUB_APP` are enabled. `CMAKE_MFC_FLAG` and `_AFXDLL` are commented out.
+- Release currently builds with no MFC link dependency. `mfc-status.ps1` reports `mfc_linked: false` and `mfc_imports: 0` as of 2026-05-24.
+- `ENATIONS_USE_STUB_WND` / `ENATIONS_USE_STUB_APP` gates were collapsed 2026-05-24 — code is now unconditionally on the stub path. `CMAKE_MFC_FLAG` and `_AFXDLL` are commented out.
 - `WinMain.cpp` owns startup instead of MFC's `AfxWinMain`.
 - Remaining `CString`, `CFile`, `CArchive`, `CWnd`, and `CDialog` names are largely compatibility-surface stubs from `windward/wind22/include/mfc_compat.h`, not proof of MFC linkage.
-- Debug and Release both build as of 2026-05-23. Debug relies on compatibility shims for legacy `_DEBUG` MFC macros such as `BASED_CODE`, `ASSERT_VALID`, `AfxGetThreadState`, and `AfxAssertFailedLine`.
+- Debug and Release both build as of 2026-05-24. Debug relies on compatibility shims for legacy `_DEBUG` MFC macros such as `BASED_CODE`, `ASSERT_VALID`, `AfxGetThreadState`, and `AfxAssertFailedLine`.
 
 ## Build And Status
 
