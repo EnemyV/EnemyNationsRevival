@@ -2,9 +2,8 @@
 //
 // wndstub.cpp — Implementation of the non-MFC HWND wrapper.
 //
-// Skeleton committed 2026-05-17 alongside wndstub.h. NOT WIRED IN YET —
-// CWndBase still inherits from CWnd. When ENATIONS_USE_STUB_WND lands,
-// this file becomes the runtime back-end for all wind22 window classes.
+// CWndBase inherits from CWndStub (Phase 1 keystone). This file is the
+// runtime back-end for all wind22 window classes.
 //
 // The implementation is intentionally thin: Win32 wrappers, a static
 // WndProc + GWLP_USERDATA stash, and virtual dispatch via WindowProc().

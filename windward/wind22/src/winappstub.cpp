@@ -2,10 +2,8 @@
 //
 // winappstub.cpp — Implementation of the non-MFC CWinApp replacement.
 //
-// See winappstub.h for the design notes. This file is a transitional
-// scaffold; the runtime path through it doesn't activate until the
-// ENATIONS_USE_STUB_APP gate is flipped on (and CConquerApp's base class
-// is switched from CWinApp to CWinAppStub).
+// See winappstub.h for the design notes. CConquerApp inherits from
+// CWinAppStub (Phase 4c keystone).
 //
 //---------------------------------------------------------------------------
 

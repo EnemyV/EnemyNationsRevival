@@ -34,32 +34,16 @@ CWndBase::~CWndBase()
 {
 }
 
-#ifndef ENATIONS_USE_STUB_WND
-BEGIN_MESSAGE_MAP(CWndBase, CWnd)
- //{{AFX_MSG_MAP(CWndBase)
- ON_WM_ERASEBKGND()
- ON_WM_MOUSEMOVE()
- ON_WM_PALETTECHANGED()
- ON_WM_QUERYNEWPALETTE()
- //}}AFX_MSG_MAP
-END_MESSAGE_MAP()
-#endif // !ENATIONS_USE_STUB_WND
-
 /////////////////////////////////////////////////////////////////////////////
 // CWndBase message handlers
 
 int CWndBase::OnCreate(LPCREATESTRUCT lpCreateStruct)
 {
 
-#ifdef ENATIONS_USE_STUB_WND
  if (CWndStub::OnCreate(lpCreateStruct) == -1)
   return -1;
-#else
- if (CWnd::OnCreate(lpCreateStruct) == -1)
-  return -1;
-#endif
 
- // if it's OWN_DC we grab a [HDC|CDC*]
+ // if it's OWN_DC we grab an HDC
  if ( GetClassLong (m_hWnd, GCL_STYLE) & CS_OWNDC )
   m_pDc = GetDC ();
 
@@ -69,11 +53,7 @@ int CWndBase::OnCreate(LPCREATESTRUCT lpCreateStruct)
 void CWndBase::OnDestroy()
 {
 
-#ifdef ENATIONS_USE_STUB_WND
  CWndStub::OnDestroy();
-#else
- CWnd::OnDestroy();
-#endif
 
  // delete dc
  if ( m_pDc != NULL )
@@ -83,11 +63,7 @@ void CWndBase::OnDestroy()
   }
 }
 
-#ifdef ENATIONS_USE_STUB_WND
 BOOL CWndBase::OnEraseBkgnd(HDC)
-#else
-BOOL CWndBase::OnEraseBkgnd(CDC *)
-#endif
 {
 
  // we fully draw all of our windows
@@ -108,14 +84,9 @@ CWndBase::WindowProc(
  if ( m_framepainter.WindowProc( m_hWnd, Message, wParam, lParam, &result ))
   return result;
 
-#ifdef ENATIONS_USE_STUB_WND
  return CWndStub::WindowProc( Message, wParam, lParam );
-#else
- return CWnd::WindowProc( Message, wParam, lParam );
-#endif
 }
 
-#ifdef ENATIONS_USE_STUB_WND
 void CWndBase::OnMouseMove(UINT nFlags, int x, int y)
 {
  // if we have a global handler, call it
@@ -124,18 +95,7 @@ void CWndBase::OnMouseMove(UINT nFlags, int x, int y)
 
  CWndStub::OnMouseMove(nFlags, x, y);
 }
-#else
-void CWndBase::OnMouseMove(UINT nFlags, CPoint point)
-{
- // if we have a global handler, call it
- if (sm_fnMouseMove != NULL)
-  sm_fnMouseMove (this, nFlags, point);
 
- CWnd::OnMouseMove(nFlags, point);
-}
-#endif
-
-#ifdef ENATIONS_USE_STUB_WND
 void CWndBase::OnPaletteChanged(HWND hwndFocus)
 {
 static BOOL bInFunc = FALSE;
@@ -162,37 +122,10 @@ static BOOL bInFunc = FALSE;
 
  bInFunc = FALSE;
 }
-#else
-void CWndBase::OnPaletteChanged(CWnd* pFocusWnd)
-{
-static BOOL bInFunc = FALSE;
-
- CWnd::OnPaletteChanged(pFocusWnd);
-
- // Win32s locks up if we do the below code
- if (iWinType == W32s)
-  return;
-
- // stop infinite recursion
- if (bInFunc)
-  return;
- bInFunc = TRUE;
-
- CClientDC dc (this);
- int iRtn = thePal.PalMsg (dc.m_hDC, m_hWnd, WM_PALETTECHANGED, (WPARAM) pFocusWnd->m_hWnd, 0);
-
- // invalidate the window
- if (iRtn)
-  InvalidateRect (NULL);
-
- bInFunc = FALSE;
-}
-#endif
 
 BOOL CWndBase::OnQueryNewPalette()
 {
 
-#ifdef ENATIONS_USE_STUB_WND
  if (iWinType == W32s)
   return CWndStub::OnQueryNewPalette();
 
@@ -201,15 +134,6 @@ BOOL CWndBase::OnQueryNewPalette()
  ::ReleaseDC( m_hWnd, hdc );
 
  return CWndStub::OnQueryNewPalette();
-#else
- if (iWinType == W32s)
-  return CWnd::OnQueryNewPalette();
-
- CClientDC dc (this);
- thePal.PalMsg (dc.m_hDC, m_hWnd, WM_QUERYNEWPALETTE, 0, 0);
-
- return CWnd::OnQueryNewPalette();
-#endif
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -220,15 +144,6 @@ CWndPrimary::CWndPrimary ()
 
  m_hAccel = NULL;
 }
-
-#ifndef ENATIONS_USE_STUB_WND
-BEGIN_MESSAGE_MAP(CWndPrimary, CWndBase)
- //{{AFX_MSG_MAP(CWndPrimary)
- ON_WM_CREATE()
- ON_WM_DESTROY()
- //}}AFX_MSG_MAP
-END_MESSAGE_MAP()
-#endif // !ENATIONS_USE_STUB_WND
 
 CWndPrimary::~CWndPrimary()
 {
@@ -272,14 +187,6 @@ void CWndPrimary::OnDestroy()
 
 /////////////////////////////////////////////////////////////////////////////
 // CWndAnim - base class for animated windows
-
-#ifndef ENATIONS_USE_STUB_WND
-BEGIN_MESSAGE_MAP(CWndAnim, CWndPrimary)
- //{{AFX_MSG_MAP(CWndAnim)
- ON_WM_DESTROY()
- //}}AFX_MSG_MAP
-END_MESSAGE_MAP()
-#endif // !ENATIONS_USE_STUB_WND
 
 void CWndAnim::InvalidateAllWindows ()
 {
