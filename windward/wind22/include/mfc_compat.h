@@ -726,6 +726,7 @@ public:
     // collections through CArchive — game state goes through bespoke
     // CFile reads/writes elsewhere. Just lets prototype declarations link.
     void Serialize( class CArchive& /*ar*/ ) {}
+    void AssertValid() const {}
 
 private:
     typedef std::map<KEY, VALUE> MapT;
@@ -754,6 +755,7 @@ class CObject
 public:
     virtual ~CObject() {}
     virtual void Serialize( CArchive& /*ar*/ ) {}
+    virtual void AssertValid() const {}
 
 protected:
     CObject() {}
@@ -859,6 +861,32 @@ inline void        AfxEndThread( UINT nExitCode, BOOL /*bDelete*/ = TRUE ) { ::E
 inline HINSTANCE   AfxGetResourceHandle()                 { return ::GetModuleHandleA( NULL ); }
 inline void        AfxSetResourceHandle( HINSTANCE /*h*/ ) {}
 inline HINSTANCE   AfxGetInstanceHandle()                 { return ::GetModuleHandleA( NULL ); }
+
+struct AFX_THREAD_STATE_COMPAT
+{
+    int m_nDisablePumpCount = 0;
+};
+inline AFX_THREAD_STATE_COMPAT* AfxGetThreadState()
+{
+    static AFX_THREAD_STATE_COMPAT s_state;
+    return &s_state;
+}
+
+static const int traceAppMsg = 0x0001;
+static int afxTraceFlags = 0;
+
+inline BOOL AfxAssertFailedLine( LPCSTR pszFileName, int nLine )
+{
+    char buf[512];
+    std::snprintf( buf, sizeof( buf ), "Assertion failed: %s:%d\n",
+                   pszFileName ? pszFileName : "(unknown)", nLine );
+    ::OutputDebugStringA( buf );
+    return FALSE;
+}
+inline void AfxDebugBreak()
+{
+    ::DebugBreak();
+}
 
 //------------------------- C C r i t i c a l S e c t i o n ------------------
 // MFC's sync primitives. CSyncObject is the base; CCriticalSection wraps
@@ -1012,6 +1040,7 @@ public:
 
     const TYPE* GetData() const { return m_pData; }
     TYPE*       GetData()       { return m_pData; }
+    void        AssertValid() const {}
 
 private:
     TYPE* m_pData;
@@ -1160,6 +1189,7 @@ public:
 
     // No-op Serialize (see CMap::Serialize comment).
     void Serialize( class CArchive& /*ar*/ ) {}
+    void AssertValid() const {}
 
 private:
     typedef std::list<TYPE> ListT;
@@ -1189,6 +1219,7 @@ class CGdiObject
 public:
     CGdiObject() : m_hObject( NULL ) {}
     virtual ~CGdiObject() {}
+    virtual void AssertValid() const {}
     HGDIOBJ GetSafeHandle() const { return m_hObject; }
     BOOL    Attach( HGDIOBJ h )   { m_hObject = h; return h != NULL; }
     HGDIOBJ Detach()              { HGDIOBJ h = m_hObject; m_hObject = NULL; return h; }
@@ -1407,6 +1438,7 @@ class CWnd
 public:
     CWnd() : m_hWnd( NULL ) {}
     virtual ~CWnd() {}
+    virtual void AssertValid() const {}
 
     HWND  GetSafeHwnd() const { return this ? m_hWnd : NULL; }
     operator HWND() const { return m_hWnd; }
@@ -1727,6 +1759,12 @@ public:
 // DEBUG_NEW: MFC's debug allocator macro. Maps to plain new under the gate.
 #ifndef DEBUG_NEW
 #define DEBUG_NEW new
+#endif
+
+// BASED_CODE: old MFC memory-model annotation used by `_DEBUG` THIS_FILE
+// declarations. It is meaningless for the modern flat 32-bit build.
+#ifndef BASED_CODE
+#define BASED_CODE
 #endif
 
 // Message-map macros: MFC's wiring for WM_* handlers. wndstub.h already

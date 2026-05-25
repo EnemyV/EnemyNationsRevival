@@ -69,6 +69,7 @@ public:
     virtual BOOL PreTranslateMessage( MSG* pMsg )        { return FALSE; }
     virtual BOOL IsIdleMessage( MSG* pMsg )              { return TRUE; }
     virtual BOOL OnIdle( LONG lCount )                   { return FALSE; }
+    virtual void AssertValid() const                     {}
 
     // ----- CWinApp compat shims -----
     // SetRegistryKey is a no-op — EnSettings already handles the registry
