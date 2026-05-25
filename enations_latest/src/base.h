@@ -14,7 +14,7 @@
 #include "ourlog.h"
 
 #include <dibwnd.h>
-#include <wndbase.h>  // ensures ENATIONS_USE_STUB_WND is visible for the CAnimAtr SetWnd overload below
+#include <wndbase.h>  // CWndBase / CWndStub
 
 const int FRAME_RATE = 24;
 
@@ -511,11 +511,8 @@ class CAnimAtr
     void SetWnd( CWnd* pwnd )
     {
         m_pwnd = pwnd;
-#ifdef ENATIONS_USE_STUB_WND
         m_hwndOwner = pwnd ? pwnd->GetSafeHwnd() : NULL;
-#endif
     }
-#ifdef ENATIONS_USE_STUB_WND
     void SetWnd( CWndStub* pwnd )
     {
         m_hwndOwner = pwnd ? pwnd->m_hWnd : NULL;
@@ -524,7 +521,6 @@ class CAnimAtr
         // instead (which doesn't go stale).
         m_pwnd = CWnd::FromHandle( m_hwndOwner );
     }
-#endif
     void Set( CMapLoc maplocCenter, int iDir, int iZoom );
 
     CMapLoc GetCenter( ) const { return m_maploc; }
@@ -590,12 +586,10 @@ class CAnimAtr
     CDIBWnd     m_dibwnd;  // window we blt into
     CDirtyRects m_dirtyrects;
     CPoint      m_ptUL;  // View coords of UL corner of window
-    CWnd*       m_pwnd;  // Owner window — under gate, this is a TEMP CWnd from
-                         // CWnd::FromHandle and gets garbage-collected by MFC.
-                         // Don't dereference long-term under gate; use m_hwndOwner.
-#ifdef ENATIONS_USE_STUB_WND
-    HWND        m_hwndOwner = NULL;  // Stable HWND for use under gate.
-#endif
+    CWnd*       m_pwnd;  // Owner window — TEMP CWnd from CWnd::FromHandle;
+                         // gets garbage-collected by MFC. Don't dereference
+                         // long-term; use m_hwndOwner instead.
+    HWND        m_hwndOwner = NULL;  // Stable HWND.
 
     // SDL2 panel for composited rendering (Phase 1).
     // Set by CWndArea when it creates its panel.  NULL until assigned.

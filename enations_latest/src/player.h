@@ -818,10 +818,8 @@ class CGame : public CObject
     int  LoadGame( CWnd* pPar, BOOL bReplace );
     int  StartGame( BOOL bReplace );
     int  SaveGame( CWnd* pPar );
-#ifdef ENATIONS_USE_STUB_WND
     int  LoadGame( CWndStub* pPar, BOOL bReplace ) { return LoadGame( CWnd::FromHandle( pPar ? pPar->m_hWnd : NULL ), bReplace ); }
     int  SaveGame( CWndStub* pPar )                { return SaveGame( CWnd::FromHandle( pPar ? pPar->m_hWnd : NULL ) ); }
-#endif
 
 
     CPtrList m_messagePointerList;  // posted messages

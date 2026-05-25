@@ -11,11 +11,10 @@
 
 #pragma warning( disable : 4711 )
 
-// Phase 1g step 2: under the two stub gates pull windows.h + cassert for
-// ASSERT/VERIFY/TRACE, and rely on mfc_compat.h (included by windward.h's
-// wind22 stdafx.h chain) for CString/CFile/CArchive/CMap/CDialog/CObject/
-// CDC/CFont/CBrush/CPen/CBitmap/CPalette/CList/CWinThread.
-#if defined(ENATIONS_USE_STUB_WND) && defined(ENATIONS_USE_STUB_APP)
+// Pull windows.h + cassert for ASSERT/VERIFY/TRACE; rely on mfc_compat.h
+// (included by windward.h's wind22 stdafx.h chain) for CString / CFile /
+// CArchive / CMap / CDialog / CObject / CDC / CFont / CBrush / CPen /
+// CBitmap / CPalette / CList / CWinThread.
 #include <windows.h>
 #include <cassert>
 #ifndef ASSERT
@@ -38,13 +37,6 @@
 #endif
 #ifndef TRACE2
 #define TRACE2(s, p1, p2)   ((void)0)
-#endif
-#else
-#include <afxcmn.h>
-#include <afxext.h>
-#include <afxmt.h>
-#include <afxtempl.h>
-#include <afxwin.h>  // MFC core and standard components
 #endif
 #include <climits>
 #include <cmath>

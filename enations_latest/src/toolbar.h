@@ -77,9 +77,7 @@ class CWndBar : public CWndAnim
 #endif
 
     void UpdateHelp( CWnd* pWnd );
-#ifdef ENATIONS_USE_STUB_WND
     void UpdateHelp( CWndStub* pWnd ) { UpdateHelp( CWnd::FromHandle( pWnd ? pWnd->m_hWnd : NULL ) ); }
-#endif
     void UpdateGas( );
     void UpdatePower( );
     void UpdatePeople( );

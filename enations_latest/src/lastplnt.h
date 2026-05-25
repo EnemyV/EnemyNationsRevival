@@ -12,12 +12,8 @@
 // lastplnt.h : main header file for The Last Planet application
 //
 
-// Phase 4c migration gate is now in wndbase.h (next to ENATIONS_USE_STUB_WND)
-// so it's visible to wind22 headers like windward.h before InitWindwardLib1
-// declaration. See winappstub.h for the migration plan.
-
-// Phase 1g step 2: same PCH-guard relaxation as sprite.h / scanlist.h.
-#if !defined(__AFXWIN_H__) && !defined(_WINDOWS_)
+// Require stdafx.h (PCH) before this header.
+#if !defined(_WINDOWS_)
 #error include 'stdafx.h' before including this file for PCH
 #endif
 
@@ -221,15 +217,9 @@ class CZoomData
 
 typedef void( FNYIELDFUNC )( );
 
-// Phase 4c migration gate. When ENATIONS_USE_STUB_APP is defined,
-// CConquerApp inherits from CWinAppStub (no MFC) instead of MFC's CWinApp.
-// See winappstub.h for the migration plan.
-#ifdef ENATIONS_USE_STUB_APP
+// CConquerApp inherits from CWinAppStub (no MFC). See winappstub.h.
 #include <winappstub.h>
 typedef CWinAppStub CConquerAppSuper;
-#else
-typedef CWinApp     CConquerAppSuper;
-#endif
 
 class CConquerApp : public CConquerAppSuper
 {
@@ -284,9 +274,7 @@ class CConquerApp : public CConquerAppSuper
     }
 
     BOOL SaveGame( CWnd* pPar );  // saves game
-#ifdef ENATIONS_USE_STUB_WND
     BOOL SaveGame( CWndStub* pPar ) { return SaveGame( CWnd::FromHandle( pPar ? pPar->m_hWnd : NULL ) ); }
-#endif
 
     void ScenarioStart( );        // set up a scenario
     BOOL ScenarioEnd( );          // is the scenario over?
@@ -339,14 +327,10 @@ class CConquerApp : public CConquerAppSuper
             return pszName;  // already registered, dedupe
         memset( &wc, 0, sizeof( wc ) );
         wc.style         = style;
-#ifdef ENATIONS_USE_STUB_WND
-        // Gate-on: route through CWndStub::StaticWndProc so virtuals (OnCreate,
-        // OnPaint, etc.) actually fire. Without this, WM_* messages go straight
+        // Route through CWndStub::StaticWndProc so virtuals (OnCreate, OnPaint,
+        // etc.) actually fire. Without this, WM_* messages would go straight
         // to DefWindowProc and our handlers never run.
         wc.lpfnWndProc   = &CWndStub::StaticWndProc;
-#else
-        wc.lpfnWndProc   = ::DefWindowProc;
-#endif
         wc.hInstance     = hInst;
         wc.hCursor       = hCursor;
         wc.hbrBackground = hbrBackground;
