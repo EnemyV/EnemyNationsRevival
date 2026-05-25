@@ -137,8 +137,12 @@ inline LRESULT CWndMain::OnNetFlowOff (WPARAM , LPARAM )
 
 
 /////////////////////////////////////////////////////////////////////////////
-// CDlgSaveMsg — modeless save progress indicator
-// No longer inherits CDialog. Uses a Win32 popup window.
+// CDlgSaveMsg — modeless save progress indicator (SDL2-rendered).
+//
+// Owns an internal SDL2 dialog object that GameWindow renders per frame.
+// UpdateData(FALSE) pushes m_sText/m_sStat into the dialog labels.
+
+class _SaveProgressDialog;  // defined privately in main.cpp
 
 class CDlgSaveMsg
 {
@@ -154,12 +158,7 @@ public:
 	std::string	m_sStat;
 
 private:
-	HWND m_hWnd;
-	void Repaint();
-
-	static LRESULT CALLBACK WndProc( HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam );
-	static const char* s_className;
-	static bool s_classRegistered;
+	_SaveProgressDialog* m_pDlg;  // owned by GameWindow (heap, deleted on EndDialog cleanup)
 };
 
 

@@ -751,13 +751,58 @@ void SaveExistingGame ()
 
 
 /////////////////////////////////////////////////////////////////////////////
-// CDlgSaveMsg — non-MFC modeless save progress indicator
+// CDlgSaveMsg — SDL2-rendered modeless save-progress indicator
+//
+// Owns an internal heap-allocated SDL2 dialog (deleted by GameWindow on
+// EndDialog cleanup). UpdateData() syncs m_sText/m_sStat into the label
+// widgets; GameWindow renders the dialog each frame, so the save loop's
+// theApp.BaseYield() calls naturally pick up the refresh.
 
-const char* CDlgSaveMsg::s_className = "ENSaveMsg";
-bool CDlgSaveMsg::s_classRegistered = false;
+class _SaveProgressDialog : public SDL2Dialog
+{
+public:
+	_SaveProgressDialog( GameWindow* gw )
+		: SDL2Dialog( gw, "Enemy Nations - Saving", 360, 120 )
+	{}
 
-CDlgSaveMsg::CDlgSaveMsg(CWnd* pParent /*=NULL*/)
-	: m_hWnd( NULL )
+	void SetMessages( const std::string& text, const std::string& stat )
+	{
+		if ( m_lblText ) m_lblText->SetText( text );
+		if ( m_lblStat ) m_lblStat->SetText( stat );
+	}
+
+	std::string m_initialText;
+	std::string m_initialStat;
+
+protected:
+	void OnInit() override
+	{
+		const int margin = 10;
+		const int halfH  = ( m_height - 30 ) / 2;
+		m_lblText = AddWidget<SDL2Label>(
+			m_x + margin, m_y + 30, m_width - margin * 2, halfH - 4,
+			m_initialText );
+		m_lblText->SetWrapped( true );
+		m_lblText->SetTopAligned( true );
+
+		m_lblStat = AddWidget<SDL2Label>(
+			m_x + margin, m_y + 30 + halfH, m_width - margin * 2, halfH - 4,
+			m_initialStat );
+		m_lblStat->SetWrapped( true );
+		m_lblStat->SetTopAligned( true );
+	}
+
+	// Progress dialog — no buttons. Block accidental ESC dismissal so
+	// the save loop can close us programmatically when finished.
+	void OnCancel() override { /* swallow */ }
+
+private:
+	SDL2Label* m_lblText = nullptr;
+	SDL2Label* m_lblStat = nullptr;
+};
+
+CDlgSaveMsg::CDlgSaveMsg(CWnd* /*pParent*/)
+	: m_pDlg( nullptr )
 {
 	m_sText.clear();
 	m_sStat.clear();
@@ -768,95 +813,39 @@ CDlgSaveMsg::~CDlgSaveMsg()
 	DestroyWindow();
 }
 
-LRESULT CALLBACK CDlgSaveMsg::WndProc( HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam )
+void CDlgSaveMsg::Create( UINT /*nIDTemplate*/, CWnd* /*pParent*/ )
 {
-	switch ( msg )
-	{
-	case WM_CREATE:
-	{
-		CREATESTRUCT* pcs = (CREATESTRUCT*)lParam;
-		::SetWindowLongPtr( hwnd, GWLP_USERDATA, (LONG_PTR)pcs->lpCreateParams );
-		return 0;
-	}
-	case WM_PAINT:
-	{
-		PAINTSTRUCT ps;
-		HDC hdc = ::BeginPaint( hwnd, &ps );
-		CDlgSaveMsg* pThis = (CDlgSaveMsg*)::GetWindowLongPtr( hwnd, GWLP_USERDATA );
-		if ( pThis )
-		{
-			RECT rc;
-			::GetClientRect( hwnd, &rc );
-			::SetBkMode( hdc, TRANSPARENT );
+	if ( m_pDlg )
+		return;
 
-			// Draw m_sText in upper area
-			RECT rcText = { 10, 10, rc.right - 10, rc.bottom / 2 };
-			::DrawTextA( hdc, pThis->m_sText.c_str(), -1, &rcText, DT_WORDBREAK | DT_CENTER );
+	GameWindow* gw = theApp.m_gameWindow ? theApp.m_gameWindow.get() : nullptr;
+	if ( !gw )
+		return;
 
-			// Draw m_sStat in lower area
-			RECT rcStat = { 10, rc.bottom / 2, rc.right - 10, rc.bottom - 10 };
-			::DrawTextA( hdc, pThis->m_sStat.c_str(), -1, &rcStat, DT_WORDBREAK | DT_CENTER );
-		}
-		::EndPaint( hwnd, &ps );
-		return 0;
-	}
-	}
-	return ::DefWindowProc( hwnd, msg, wParam, lParam );
-}
+	m_pDlg = new _SaveProgressDialog( gw );
+	m_pDlg->m_initialText = m_sText;
+	m_pDlg->m_initialStat = m_sStat;
 
-void CDlgSaveMsg::Create( UINT /*nIDTemplate*/, CWnd* pParent )
-{
-	if ( !s_classRegistered )
-	{
-		WNDCLASSEXA wc = {};
-		wc.cbSize        = sizeof( wc );
-		wc.lpfnWndProc   = WndProc;
-		wc.hInstance      = ::GetModuleHandle( NULL );
-		wc.hCursor        = ::LoadCursor( NULL, IDC_WAIT );
-		wc.hbrBackground  = (HBRUSH)( COLOR_BTNFACE + 1 );
-		wc.lpszClassName  = s_className;
-		::RegisterClassExA( &wc );
-		s_classRegistered = true;
-	}
-
-	int w = 320, h = 100;
-	int x = ( ::GetSystemMetrics( SM_CXSCREEN ) - w ) / 2;
-	int y = ( ::GetSystemMetrics( SM_CYSCREEN ) - h ) / 2;
-
-	m_hWnd = ::CreateWindowExA(
-		WS_EX_TOPMOST,
-		s_className,
-		"Enemy Nations",
-		WS_POPUP | WS_BORDER | WS_VISIBLE,
-		x, y, w, h,
-		pParent ? pParent->m_hWnd : NULL,
-		NULL,
-		::GetModuleHandle( NULL ),
-		this );
-	Repaint();
+	_SaveProgressDialog** ppDlg = &m_pDlg;
+	m_pDlg->ShowNonModal( [ppDlg]( int /*result*/ ) { *ppDlg = nullptr; } );
 }
 
 void CDlgSaveMsg::DestroyWindow()
 {
-	if ( m_hWnd && ::IsWindow( m_hWnd ) )
+	if ( m_pDlg )
 	{
-		::SetWindowLongPtr( m_hWnd, GWLP_USERDATA, 0 );  // prevent WM_DESTROY from using stale pointer
-		::DestroyWindow( m_hWnd );
+		m_pDlg->EndDialog( 0 );  // fires onDone -> sets m_pDlg = nullptr
+		// GameWindow's next cleanup pass deletes the dialog object itself.
+		m_pDlg = nullptr;
 	}
-	m_hWnd = NULL;
 }
 
 void CDlgSaveMsg::UpdateData( BOOL /*bSaveAndValidate*/ )
 {
-	// In the MFC version, UpdateData(FALSE) pushes member data to controls.
-	// We just repaint to show current m_sText/m_sStat.
-	Repaint();
-}
-
-void CDlgSaveMsg::Repaint()
-{
-	if ( m_hWnd && ::IsWindow( m_hWnd ) )
-		::InvalidateRect( m_hWnd, NULL, TRUE );
+	if ( m_pDlg )
+		m_pDlg->SetMessages( m_sText, m_sStat );
+	// GameWindow renders the dialog per frame; theApp.BaseYield() in the
+	// save loop pumps the frame, so the new text appears within a tick.
 }
 
 void CWndMain::OnSave() 
