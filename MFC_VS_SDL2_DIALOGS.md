@@ -718,9 +718,8 @@ current codebase. A native SDL2 crash reporter could replace it if desired.
 
 ### Not Yet Replaced
 
-- **CDlgModelessMsg** — still uses Win32 popup (not SDL2-rendered)
-- **CDlgSaveMsg** — still uses Win32 popup (not SDL2-rendered)
-- **CDlgLicense** — uses MessageBoxA (not SDL2-rendered)
+(All three previously-listed items here were SDL2-rendered 2026-05-24 —
+see updated #4, #5, #6 in the gaps table.)
 
 ### Actionable Gaps — Features Present in MFC But Missing in SDL2
 
@@ -733,9 +732,9 @@ doc was written.
 | 1 | **Build dialog double-click** | Double-clicking a building/vehicle button in `CDlgBuildStructure`/`CDlgBuildTransport` triggers `OnDblClk()` and immediately builds the item | ✅ **DONE.** `SDL2BuildStructure.cpp:88-89` and `SDL2BuildTransport.cpp:81-82` wire `SetOnDblClick` to call `OnBuild()` when the same slot is double-clicked. | — |
 | 2 | **BuildStructure "Cancel" handled as "Destroy"** | `OnCancel()` in MFC calls `SendMessage(WM_COMMAND, ID_UNIT_DESTROY)` plus `DestroyWindow()`, aborting selection AND issuing a destroy command | ✅ **DONE.** `SDL2BuildStructure::OnCancel()` (lines 358-371) calls `pUnit->SetDestroyUnit()` and posts `CMsgDestroyUnit` for network games. | — |
 | 3 | **CDlgPause is still a Win32 popup** | MFC modeless dialog with game-paused notice | SDL2 replaces with `SDL2PauseDialog` rendered in SDL. (#16) | Low — already functional |
-| 4 | **CDlgSaveMsg still uses Win32** | MFC `CDialog`-based progress indicator during saves | Current implementation uses Win32 popup, not SDL2 overlay. (#25) | Low — cosmetic |
-| 5 | **CDlgModelessMsg still uses Win32** | MFC `CDialog`-based auto-dismiss notification | Current implementation uses Win32 popup. (#26) | Low — cosmetic |
-| 6 | **CDlgLicense uses MessageBoxA** | MFC `CDialog` showing license text from LANG data | Current implementation uses `MessageBoxA`. (#27) | Very Low — rarely seen |
+| 4 | **CDlgSaveMsg still uses Win32** | MFC `CDialog`-based progress indicator during saves | ✅ **DONE 2026-05-24.** `main.cpp` `_SaveProgressDialog` (SDL2Dialog subclass) opened via `ShowNonModal`; `UpdateData()` syncs two `SDL2Label` widgets; GameWindow renders per frame, `BaseYield()` pumps. | — |
+| 5 | **CDlgModelessMsg still uses Win32** | MFC `CDialog`-based auto-dismiss notification | ✅ **DONE 2026-05-24.** `DlgMsg.cpp/h` now inherits `SDL2Dialog`; `Create()` calls `ShowNonModal`; dismiss via OK button. Public API unchanged. | — |
+| 6 | **CDlgLicense uses MessageBoxA** | MFC `CDialog` showing license text from LANG data | ✅ **DONE 2026-05-24.** `license.cpp` `LicenseDialog` (anon SDL2Dialog subclass) replaces `MessageBoxA`; returns `IDOK`/`IDCANCEL` for both read-only and acceptance paths. | — |
 | 7 | **BuildStructure resizes on open** | `OnInitDialog()` calls `SetWindowPos` to expand the dialog based on content, and `m_btnBuild`/`m_btnCancel` are repositioned | SDL2 version hard-codes dialog size; no dynamic resize | Low — edge case, only affects rare large-cost buildings |
 | 8 | **MFC palette management removed** | `OnPaletteChanged`/`OnQueryNewPalette` in BuildStructure, BuildTransport, LoadTruck for 256-color mode | SDL2 always true-color — not needed | None — intentional simplification |
 | 9 | **Double-click to select race** | `CDlgPickRace` supported `ON_LBN_DBLCLK` to immediately confirm selection | ✅ **DONE.** `SDL2Dialogs.cpp:224` wires the listbox `DblClickCallback` to select the race and call `OnOK()` if the button is enabled. | — |
