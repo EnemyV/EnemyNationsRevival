@@ -92,8 +92,17 @@ private:
     IconData m_iconData[7];  // ICON_RESEARCH(0)..ICON_BAR_TEXT(6)
     int m_animFrame = 0;     // Animation counter
 
-    // Status text
+    // Status text.
+    //   m_statusText[]    — what RenderTextLine actually draws each frame.
+    //   m_externalText[]  — what callers wrote via SetStatusText(). The hover
+    //                       poll inside Render() can override line 1 with a
+    //                       toolbar-button hover string while the cursor is
+    //                       on the toolbar, but as soon as the cursor leaves
+    //                       we fall back to m_externalText[1] so area-map
+    //                       hover info (unit / terrain descriptions sent by
+    //                       CWndArea::OnMouseMove) stays visible.
     std::string m_statusText[2];
+    std::string m_externalText[2];
     int         m_statusImportance[2] = {};
 
     // Font

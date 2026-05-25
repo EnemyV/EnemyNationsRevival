@@ -113,13 +113,14 @@ void SDL2Toolbar::Init(SDL2Panel* panel, GameWindow* gw) {
 }
 
 void SDL2Toolbar::SetStatusText(int line, const std::string& text, int importance) {
-    if (line == 0) {
-        // Line 0: game status (terrain, unit info) — accept from MFC forwarding
-        m_statusText[0] = text;
-        m_statusImportance[0] = importance;
-    }
-    // Line 1: hover text — managed exclusively by poll in Render()
-    // MFC stat bar children send stale text via WM_ICONMOUSEMOVE, so ignore line 1
+    if (line < 0 || line > 1) return;
+    // Persist the caller's value. For line 1 the hover poll in Render() may
+    // override this while the cursor sits on the toolbar, but the override
+    // is transient — the moment the cursor leaves the toolbar we fall back
+    // to this value so the area-map hover info from CWndArea stays visible.
+    m_externalText[line] = text;
+    m_statusText[line]   = text;
+    m_statusImportance[line] = importance;
 }
 
 void SDL2Toolbar::EnableButton(int index, bool enabled) {
@@ -191,7 +192,11 @@ void SDL2Toolbar::Render() {
     }
 
     // Poll mouse position BEFORE drawing text so hover is immediate.
-    // This is the ONLY place that sets m_statusText[1] — no MFC interference.
+    // While the cursor is on the toolbar we override line 1 with the
+    // toolbar's own hover string (resource bar / button). As soon as the
+    // cursor leaves the toolbar we restore line 1 to whatever the game
+    // last set via SetStatusText(1, ...) — that's the area-map hover info
+    // (unit / terrain descriptions) sent from CWndArea::OnMouseMove.
     {
         // Use GetCursorPos (Windows API) instead of SDL_GetMouseState
         // because the MFC toolbar at alpha=1 intercepts mouse messages,
@@ -201,10 +206,15 @@ void SDL2Toolbar::Render() {
         int lx = cursorPos.x - m_panel->GetX();
         int ly = cursorPos.y - m_panel->GetY();
 
-        // Clear line 1 — will be re-set below if cursor is over something
-        m_statusText[1].clear();
+        // Default: mirror what the world last set
+        m_statusText[1] = m_externalText[1];
 
         if (lx >= 0 && lx < w && ly >= 0 && ly < h) {
+            // Cursor is on the toolbar — temporarily clear so the resource
+            // bar / button hover blocks below can populate. If neither
+            // matches, the empty line is appropriate (cursor over dead toolbar
+            // space, not over the world).
+            m_statusText[1].clear();
             if (ly < BTN_ROW_HT) {
                 // Check resource bars
                 if (m_statBarW > 0 && lx >= m_statBarX) {
