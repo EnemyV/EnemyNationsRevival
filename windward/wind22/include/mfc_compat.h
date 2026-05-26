@@ -14,6 +14,7 @@
 //---------------------------------------------------------------------------
 
 #include <windows.h>
+#include "mfc_compat_text.h"  // Phase 6 Stage 5 Phase C: SDL_ttf text helpers
 #include <algorithm>
 #include <cctype>
 #include <cstdarg>
@@ -1337,7 +1338,17 @@ public:
 
     // SelectObject — MFC returns the previous CXxx*. We return a fresh
     // wrapper around the previously-selected handle.
-    CFont*    SelectObject( CFont* pFont )       { return CFont::FromHandle( (HFONT)::SelectObject( m_hDC, pFont ? pFont->m_hObject : NULL ) ); }
+    CFont*    SelectObject( CFont* pFont )       {
+        // Phase 6 Stage 5 Phase C: extract pixel height and mirror to the
+        // SDL_ttf state so DrawText/TextOut on a CDIB-backed HDC uses a
+        // size-matching TTF font.
+        if ( pFont && pFont->m_hObject ) {
+            LOGFONT lf;
+            if ( pFont->GetLogFont( &lf ) )
+                Wind22_SetFontHeight( m_hDC, abs( lf.lfHeight ) );
+        }
+        return CFont::FromHandle( (HFONT)::SelectObject( m_hDC, pFont ? pFont->m_hObject : NULL ) );
+    }
     CBrush*   SelectObject( CBrush* pBrush )     { return CBrush::FromHandle( (HBRUSH)::SelectObject( m_hDC, pBrush ? pBrush->m_hObject : NULL ) ); }
     CPen*     SelectObject( CPen* pPen )         { return CPen::FromHandle( (HPEN)::SelectObject( m_hDC, pPen ? pPen->m_hObject : NULL ) ); }
     CBitmap*  SelectObject( CBitmap* pBitmap )   { return CBitmap::FromHandle( (HBITMAP)::SelectObject( m_hDC, pBitmap ? pBitmap->m_hObject : NULL ) ); }
@@ -1349,17 +1360,35 @@ public:
 
     int  GetDeviceCaps( int nIndex ) const { return ::GetDeviceCaps( m_hDC, nIndex ); }
 
-    COLORREF SetTextColor( COLORREF cr )      { return ::SetTextColor( m_hDC, cr ); }
+    // Phase 6 Stage 5 Phase C: route text through SDL_ttf when the HDC is
+    // backed by a CDIB SDL_Surface; fall back to GDI for Win32 windows
+    // (loading splash, credits). See mfc_compat_text.h.
+    COLORREF SetTextColor( COLORREF cr )      { Wind22_SetTextColor( m_hDC, cr ); return ::SetTextColor( m_hDC, cr ); }
     COLORREF GetTextColor() const             { return ::GetTextColor( m_hDC ); }
-    COLORREF SetBkColor( COLORREF cr )        { return ::SetBkColor( m_hDC, cr ); }
-    int      SetBkMode( int nBkMode )         { return ::SetBkMode( m_hDC, nBkMode ); }
+    COLORREF SetBkColor( COLORREF cr )        { Wind22_SetBkColor( m_hDC, cr );   return ::SetBkColor( m_hDC, cr ); }
+    int      SetBkMode( int nBkMode )         { Wind22_SetBkMode( m_hDC, nBkMode ); return ::SetBkMode( m_hDC, nBkMode ); }
 
-    BOOL TextOut( int x, int y, LPCSTR psz, int n ) { return ::TextOutA( m_hDC, x, y, psz, n ); }
-    BOOL TextOut( int x, int y, const CString& s )  { return ::TextOutA( m_hDC, x, y, (LPCSTR)s, s.GetLength() ); }
-    BOOL DrawText( LPCSTR psz, int n, LPRECT pr, UINT uFormat ) { return ::DrawTextA( m_hDC, psz, n, pr, uFormat ); }
-    BOOL DrawText( const CString& s, LPRECT pr, UINT uFormat )  { return ::DrawTextA( m_hDC, (LPCSTR)s, s.GetLength(), pr, uFormat ); }
+    BOOL TextOut( int x, int y, LPCSTR psz, int n ) {
+        if ( Wind22_SDLTextOut( m_hDC, x, y, psz, n ) ) return TRUE;
+        return ::TextOutA( m_hDC, x, y, psz, n );
+    }
+    BOOL TextOut( int x, int y, const CString& s )  {
+        if ( Wind22_SDLTextOut( m_hDC, x, y, (LPCSTR)s, s.GetLength() ) ) return TRUE;
+        return ::TextOutA( m_hDC, x, y, (LPCSTR)s, s.GetLength() );
+    }
+    BOOL DrawText( LPCSTR psz, int n, LPRECT pr, UINT uFormat ) {
+        if ( Wind22_SDLDrawText( m_hDC, psz, n, pr, uFormat ) ) return TRUE;
+        return ::DrawTextA( m_hDC, psz, n, pr, uFormat );
+    }
+    BOOL DrawText( const CString& s, LPRECT pr, UINT uFormat )  {
+        if ( Wind22_SDLDrawText( m_hDC, (LPCSTR)s, s.GetLength(), pr, uFormat ) ) return TRUE;
+        return ::DrawTextA( m_hDC, (LPCSTR)s, s.GetLength(), pr, uFormat );
+    }
     BOOL ExtTextOut( int x, int y, UINT u, LPCRECT pr, LPCSTR psz, UINT cb, const int* lpDx )
     {
+        // ExtTextOut is currently only used by FillSolidRect below (with empty
+        // text and ETO_OPAQUE) — no SDL path needed for that pattern. Real
+        // text via ExtTextOut would need its own helper if it shows up.
         return ::ExtTextOutA( m_hDC, x, y, u, pr, psz, cb, lpDx );
     }
 
@@ -1375,7 +1404,14 @@ public:
     BOOL RoundRect( LPCRECT pr, POINT pt ) { return ::RoundRect( m_hDC, pr->left, pr->top, pr->right, pr->bottom, pt.x, pt.y ); }
     BOOL MoveTo( int x, int y, LPPOINT pOld = NULL ) { return ::MoveToEx( m_hDC, x, y, pOld ); }
     BOOL LineTo( int x, int y ) { return ::LineTo( m_hDC, x, y ); }
-    CSize GetTextExtent( LPCSTR psz, int n ) const { SIZE sz = {0,0}; ::GetTextExtentPoint32A( m_hDC, psz, n, &sz ); return CSize( sz.cx, sz.cy ); }
+    CSize GetTextExtent( LPCSTR psz, int n ) const {
+        int cx = 0, cy = 0;
+        if ( Wind22_SDLTextExtent( m_hDC, psz, n, &cx, &cy ) )
+            return CSize( cx, cy );
+        SIZE sz = {0,0};
+        ::GetTextExtentPoint32A( m_hDC, psz, n, &sz );
+        return CSize( sz.cx, sz.cy );
+    }
     CSize GetTextExtent( const CString& s )   const { return GetTextExtent( (LPCSTR)s, s.GetLength() ); }
     BOOL  RectVisible( LPCRECT pr ) const           { return ::RectVisible( m_hDC, pr ); }
     COLORREF GetNearestColor( COLORREF cr ) const   { return ::GetNearestColor( m_hDC, cr ); }

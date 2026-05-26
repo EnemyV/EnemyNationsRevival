@@ -12,6 +12,7 @@
 #pragma intrinsic( memcpy )
 
 #include "dib.h"
+#include "mfc_compat_text.h"  // Phase 6 Stage 5 Phase C: GetDC/ReleaseDC register
 
 #include <SDL.h>  // Phase 6 Stage 0: DIB_SDL_SURFACE backing
 
@@ -1652,6 +1653,14 @@ HDC CDIB::GetDC() {
 
     m_bBitmapSelected = TRUE;
 
+    // Phase 6 Stage 5 Phase C: register this CDIB against its HDC so that
+    // CDC::DrawText/TextOut/GetTextExtent can route to SDL_ttf when the
+    // backing is an SDL_Surface. For non-SDL-backed CDIBs (DIB_MEMORY,
+    // DIB_DIBSECTION) the helpers no-op and the existing ::DrawTextA
+    // path takes over via the fallback in mfc_compat.h.
+    if ( m_hDCDib )
+        Wind22_RegisterDibForHdc( m_hDCDib, this );
+
     return m_hDCDib;
 }
 
@@ -1688,6 +1697,10 @@ void CDIB::ReleaseDC( BOOL bSaveChanges ) {
         thePal.EndPaint( m_hDCDib );
         break;
     }
+
+    // Phase 6 Stage 5 Phase C: unregister from the SDL_ttf routing map.
+    if ( m_hDCDib )
+        Wind22_UnregisterDibForHdc( m_hDCDib );
 
     m_bBitmapSelected = FALSE;
 }

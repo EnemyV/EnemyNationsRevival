@@ -25,6 +25,7 @@ set(wind22_sources
         src/rand.cpp
         src/scanlist.cpp
         src/stdafx.cpp
+        src/mfc_compat_text.cpp
         src/strext.cpp
         src/subclass.cpp
         src/threads.cpp
@@ -90,6 +91,7 @@ target_link_libraries(wind22 PUBLIC
         version.lib
         SDL2.lib
         SDL2_mixer.lib
+        SDL2_ttf.lib
         )
 
 target_include_directories(wind22 PUBLIC
@@ -98,10 +100,12 @@ target_include_directories(wind22 PUBLIC
         ../../tools
         ../../tools/sdl2/SDL2-2.30.12/include
         ../../tools/sdl2/SDL2_mixer-2.8.1/include
+        ../../tools/sdl2/SDL2_ttf-2.22.0/include
         )
 
 target_link_directories(wind22 PUBLIC
         ../../cmakeBuild/tools/lib
         ../../tools/sdl2/SDL2-2.30.12/lib/x86
         ../../tools/sdl2/SDL2_mixer-2.8.1/lib/x86
+        ../../tools/sdl2/SDL2_ttf-2.22.0/lib/x86
         )
