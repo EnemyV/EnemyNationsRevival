@@ -1418,6 +1418,32 @@ BOOL CConquerApp::InitInstance( )
             // Non-fatal: fall back to MFC rendering
         }
 
+        // Phase 6 hotfix: make the legacy Win32 main window (EnemyNations-
+        // MainWindow stub) transparent + click-through once the SDL window
+        // is up. Otherwise both windows compete for Z-order during video
+        // playback — clicking to skip a video can land on the Win32 stub
+        // instead, bringing it forward and pushing the SDL render target
+        // behind it.
+        //
+        // Important: do NOT SW_HIDE the window. The MFC vehicle/building
+        // list-box child windows (m_wndVehicles.m_ListBox, etc.) are
+        // created later in newworld.cpp via CreateWindow with this stub
+        // as the parent; if the parent is hidden, MFC's CListBox lazy-
+        // create leaves m_hWnd NULL and AddToList silently bails — which
+        // makes CVehicle::InvalidateStatus FindItem return -1 and trip the
+        // ASSERT at unit.cpp:2914. WS_EX_LAYERED + alpha=0 +
+        // WS_EX_TRANSPARENT keeps the window in the tree but invisible
+        // and click-through. (This mirrors what newworld.cpp:568-570 was
+        // already doing later in the lifecycle for the post-game-create
+        // window; we just need it earlier so videos benefit.)
+        if ( m_gameWindow && m_wndMain.m_hWnd )
+        {
+            LONG ex = ::GetWindowLong( m_wndMain.m_hWnd, GWL_EXSTYLE );
+            ::SetWindowLong( m_wndMain.m_hWnd, GWL_EXSTYLE,
+                             ex | WS_EX_LAYERED | WS_EX_TRANSPARENT );
+            ::SetLayeredWindowAttributes( m_wndMain.m_hWnd, 0, 0, LWA_ALPHA );
+        }
+
         // Play the startup movie via SDL2
         if ( ( HaveIntro( ) ) && ( EnGetProfileInt( "Game", "NoIntro", 0 ) == 0 ) )
         {

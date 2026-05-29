@@ -98,6 +98,13 @@ bool SDL2VideoPlayer::PlayVideo(GameWindow* gameWindow, const std::string& fileP
     int winW = gameWindow->GetWidth();
     int winH = gameWindow->GetHeight();
 
+    // The legacy Win32 main window (EnemyNationsMainWindow stub, created
+    // at lastplnt.cpp:619) is still alive and can steal Z-order when the
+    // user clicks during video 1 — video 2 then starts rendering into the
+    // SDL window which is now behind the Win32 stub. Raise + reclaim
+    // focus on every PlayVideo entry so the video is always visible.
+    SDL_RaiseWindow( window );
+
     // Load file into memory
     FILE* mpgFile = fopen(resolvedPath.c_str(), "rb");
     if (!mpgFile) return false;

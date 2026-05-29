@@ -693,6 +693,10 @@ void CWndStatBar::SetPer (int iPer)
 {
 
 	ASSERT ((0 <= iPer) && (iPer <= 100));
+	// Same null-guard as SetText below — pre-init SetPer / SetHaveNeed
+	// calls can fire before m_pStatData is populated, crashing Debug.
+	if (m_statInst.m_pStatData == NULL)
+		return;
 	ASSERT (m_statInst.m_pStatData->m_iTypIcon == CStatData::done);
 	if (iPer == m_statInst.m_iPerDone)
 		return;
@@ -704,6 +708,8 @@ void CWndStatBar::SetPer (int iPer)
 void CWndStatBar::SetHaveNeed (int iHave, int iNeed)
 {
 
+	if (m_statInst.m_pStatData == NULL)
+		return;
 	ASSERT (m_statInst.m_pStatData->m_iTypIcon == CStatData::have_all);
 	if ((iHave == m_statInst.m_iPerDone) && (iNeed == m_statInst.m_iNeed))
 		return;
@@ -717,6 +723,12 @@ void CWndStatBar::SetText (char const * pText, CStatInst::IMPORTANCE iImp)
 
 	if (pText == NULL)
 		pText = "";
+
+	// Guard: m_pStatData can be NULL on early/pre-init SetText calls
+	// (Debug-only crash captured 2026-05-24 / again 2026-05-25 at icons.cpp:721
+	// during Phase 6 testing). Release passed because ASSERT is a no-op.
+	if (m_statInst.m_pStatData == NULL)
+		return;
 
 	ASSERT ( (m_statInst.m_pStatData->m_iTypIcon == CStatData::text) || (m_statInst.m_pStatData->m_iTypIcon == CStatData::text_right));
 	if ((iImp == m_statInst.m_iImp) && (m_statInst.m_sText == pText))
