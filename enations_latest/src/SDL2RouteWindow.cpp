@@ -51,11 +51,12 @@ SDL2RouteWindow::SDL2RouteWindow(GameWindow* gw, CVehicle* pVeh, SDL2Panel* area
                 return HandleEvent(event, lx, ly);
             });
 
-        // Detach to own OS window, owned by the area view so it floats above it.
-        if (areaPanel && areaPanel->IsDetached() && areaPanel->GetOwnWindow())
-            m_panel->Detach(areaPanel->GetOwnWindow());
-        else
-            m_panel->Detach(gw);
+        // Stay composited inside the main game window as a movable panel
+        // (like the research / vehicle-list windows). Do NOT Detach() to a
+        // separate OS window — that produced the "double-wrapped" floating
+        // window the area/world maps used to have before their Detach() calls
+        // were removed.
+        (void)areaPanel;
     }
 
     // Create buttons
@@ -177,6 +178,18 @@ void SDL2RouteWindow::Hide() {
 
 void SDL2RouteWindow::Close() {
     m_pVeh->m_pSdlRoute = nullptr;
+
+    // If any area window still has us in veh_route mode, take it out — this
+    // resets m_iMode back to normal so the route cursor doesn't stay stuck on
+    // after Start / Auto / Close. Mirrors CWndRoute::OnDestroy (unit_wnd.cpp).
+    POSITION pos;
+    for (pos = theAreaList.GetHeadPosition(); pos != NULL;) {
+        CWndArea* pWndArea = theAreaList.GetNext(pos);
+        if (pWndArea && pWndArea->GetUnit() == m_pVeh &&
+            pWndArea->GetMode() == CWndArea::veh_route)
+            pWndArea->SelectOff();
+    }
+
     Hide();
     delete this;
 }

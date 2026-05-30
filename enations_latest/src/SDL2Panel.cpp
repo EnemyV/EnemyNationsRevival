@@ -322,9 +322,22 @@ bool SDL2Panel::HandleEvent(SDL_Event& event) {
             return true;
         }
         if (inTitleBar) {
-            m_dragging = true;
-            m_dragOffX = screenX - m_x;
-            m_dragOffY = screenY - m_y;
+            // Don't start a drag if the press lands on the close button —
+            // otherwise the matching mouse-up is swallowed by the m_dragging
+            // early-return above and never reaches the close-button handler,
+            // so the [X] would appear dead.
+            bool onCloseBtn = false;
+            if (m_closable) {
+                int cbX = m_x + m_width - CLOSE_BTN_SIZE - 2;
+                int cbY = (m_y - TITLE_BAR_HT) + (TITLE_BAR_HT - CLOSE_BTN_SIZE) / 2;
+                onCloseBtn = (screenX >= cbX && screenX < cbX + CLOSE_BTN_SIZE &&
+                              screenY >= cbY && screenY < cbY + CLOSE_BTN_SIZE);
+            }
+            if (!onCloseBtn) {
+                m_dragging = true;
+                m_dragOffX = screenX - m_x;
+                m_dragOffY = screenY - m_y;
+            }
             return true;
         }
     }
