@@ -38,6 +38,8 @@
 #include "SDL2GameDialogs.h"
 #include <SDL.h>
 #include <SDL_syswm.h>
+#include <unordered_map>
+#include <vector>
 
 #ifndef PW_RENDERFULLCONTENT
 #define PW_RENDERFULLCONTENT 0x00000002
@@ -101,6 +103,122 @@ static UINT SDLKeyToVK(SDL_Scancode sc) {
             return 'A' + (sc - SDL_SCANCODE_A);
         return 0;
     }
+}
+
+// ===========================================================================
+// SDL-native cursor bridge
+// ---------------------------------------------------------------------------
+// The area map changes its cursor with ::SetCursor(HCURSOR) in ~40 places
+// (SetMouseState plus the build / road / rocket flows). On the SDL window the
+// OS cursor is owned by SDL, so a bare ::SetCursor doesn't reliably stick —
+// the game cursor would blink to the system arrow or vanish on the next mouse
+// move (the long-standing "area cursor invisible" bug).
+//
+// AreaApplyCursor() is the single chokepoint every one of those call sites now
+// routes through. It converts each Win32 HCURSOR (including the custom
+// IDC_MOVE* / IDC_SELECT* / IDC_TARGET* resource cursors) into an SDL_Cursor*
+// once, caches it by handle, and drives SDL_SetCursor (which applies the
+// cursor through the OS immediately). A NULL handle means "hide" — the
+// original game draws its own build-footprint / rocket cursor onto the map
+// canvas in those modes.
+// ===========================================================================
+static std::unordered_map<HCURSOR, SDL_Cursor*> s_sdlCursorCache;
+
+static SDL_Cursor* SdlCursorFromHCURSOR( HCURSOR hCur )
+{
+    ICONINFO ii = {};
+    if ( !::GetIconInfo( hCur, &ii ) )
+        return nullptr;
+
+    // Only color cursors are handled here (every game cursor, and the modern
+    // system cursors, are color). Monochrome handles return nullptr and the
+    // caller falls back to the plain Win32 ::SetCursor path.
+    SDL_Cursor* result = nullptr;
+    if ( ii.hbmColor != NULL )
+    {
+        BITMAP bm = {};
+        ::GetObject( ii.hbmColor, sizeof( bm ), &bm );
+        int w = bm.bmWidth;
+        int h = bm.bmHeight;
+        if ( ( w > 0 ) && ( h > 0 ) )
+        {
+            BITMAPINFO bi = {};
+            bi.bmiHeader.biSize        = sizeof( BITMAPINFOHEADER );
+            bi.bmiHeader.biWidth       = w;
+            bi.bmiHeader.biHeight      = -h;            // top-down
+            bi.bmiHeader.biPlanes      = 1;
+            bi.bmiHeader.biBitCount    = 32;
+            bi.bmiHeader.biCompression = BI_RGB;
+
+            std::vector<DWORD> color( (size_t)w * h, 0 );
+            std::vector<DWORD> mask ( (size_t)w * h, 0 );
+            HDC hdc = ::GetDC( NULL );
+            ::GetDIBits( hdc, ii.hbmColor, 0, h, color.data(), &bi, DIB_RGB_COLORS );
+            if ( ii.hbmMask )
+                ::GetDIBits( hdc, ii.hbmMask, 0, h, mask.data(), &bi, DIB_RGB_COLORS );
+            ::ReleaseDC( NULL, hdc );
+
+            // If the color DIB carries a real alpha channel, trust it; else
+            // derive transparency from the AND mask (white pixel = clear).
+            bool bHasAlpha = false;
+            for ( size_t i = 0; i < color.size(); ++i )
+                if ( ( color[i] & 0xFF000000 ) != 0 ) { bHasAlpha = true; break; }
+
+            SDL_Surface* surf = SDL_CreateRGBSurfaceWithFormat(
+                0, w, h, 32, SDL_PIXELFORMAT_ARGB8888 );
+            if ( surf )
+            {
+                Uint32* px      = (Uint32*)surf->pixels;
+                int     pitchPx = surf->pitch / 4;
+                for ( int y = 0; y < h; ++y )
+                    for ( int x = 0; x < w; ++x )
+                    {
+                        DWORD c   = color[(size_t)y * w + x];
+                        DWORD rgb = c & 0x00FFFFFF;
+                        BYTE  a;
+                        if ( bHasAlpha )
+                            a = (BYTE)( c >> 24 );
+                        else
+                            a = ( mask[(size_t)y * w + x] & 0x00FFFFFF ) ? 0x00 : 0xFF;
+                        px[(size_t)y * pitchPx + x] = ( (Uint32)a << 24 ) | rgb;
+                    }
+                result = SDL_CreateColorCursor( surf, ii.xHotspot, ii.yHotspot );
+                SDL_FreeSurface( surf );
+            }
+        }
+    }
+
+    if ( ii.hbmColor ) ::DeleteObject( ii.hbmColor );
+    if ( ii.hbmMask )  ::DeleteObject( ii.hbmMask );
+    return result;
+}
+
+static void AreaApplyCursor( HCURSOR hCur )
+{
+    if ( hCur == NULL )
+    {
+        // Build / rocket placement: hide the OS cursor; the footprint is drawn
+        // onto the map canvas (matches the original game behavior).
+        SDL_ShowCursor( SDL_DISABLE );
+        ::SetCursor( NULL );
+        return;
+    }
+    SDL_ShowCursor( SDL_ENABLE );
+
+    SDL_Cursor* sc;
+    std::unordered_map<HCURSOR, SDL_Cursor*>::iterator it = s_sdlCursorCache.find( hCur );
+    if ( it != s_sdlCursorCache.end() )
+        sc = it->second;
+    else
+    {
+        sc = SdlCursorFromHCURSOR( hCur );
+        s_sdlCursorCache[hCur] = sc;   // cache even nullptr so we don't retry
+    }
+
+    if ( sc )
+        SDL_SetCursor( sc );           // applies through the OS immediately
+    else
+        ::SetCursor( hCur );           // fallback: Win32 cursor (subclass keeps it)
 }
 
 std::string CWndArea::sWndCls;
@@ -1044,7 +1162,7 @@ void CWndArea::Create( CMapLoc const& ml, CUnit* pUnit, BOOL bFirst )
     // CWndStub::CreateEx() bypasses MFC's PreCreateWindow flow. PreCreateWindow
     // is where LoadStaticResources() loads the area cursors (m_hCurReg /
     // m_hCurGoto / m_hCurTarget / ...). Without this call those HCURSORs stay
-    // NULL and SetMouseState's ::SetCursor(m_hCurReg) hides the cursor.
+    // NULL and SetMouseState's AreaApplyCursor(m_hCurReg) hides the cursor.
     {
         CREATESTRUCT cs = {};
         PreCreateWindow( cs );
@@ -1334,7 +1452,7 @@ void CWndArea::ReRender( )
             m_iMoveCur = 8;
             break;
         }
-        ::SetCursor( m_hCurMove[m_iMoveCur] );
+        AreaApplyCursor( m_hCurMove[m_iMoveCur] );
 
         if ( ( x != 0 ) || ( y != 0 ) )
         {
@@ -2197,7 +2315,7 @@ int CWndArea::OnCreate( LPCREATESTRUCT lpCreateStruct )
                     pThis->SetMouseState();  // Update cursor & m_uMouseMode (replaces WM_SETCURSOR)
                     // movie.cpp's intro playback calls Win32 ShowCursor(FALSE);
                     // drive the display counter back to 0 so SetMouseState's
-                    // ::SetCursor() actually shows the game cursor.
+                    // AreaApplyCursor() actually shows the game cursor.
                     if (theApp.m_gameWindow)
                         theApp.m_gameWindow->EnsureCursorVisible();
                     return true;
@@ -2656,7 +2774,7 @@ void CWndArea::OnLButtonDown( UINT nFlags, CPoint point )
         m_hexRoadStart = hexcoord;
         m_iMode        = road_set;
         ClrRoadIcons( );
-        ::SetCursor( m_hCurRoadSet[m_aa.m_iZoom] );
+        AreaApplyCursor( m_hCurRoadSet[m_aa.m_iZoom] );
         return;
     }
 
@@ -2818,7 +2936,7 @@ void CWndArea::OnLButtonUp( UINT nFlags, CPoint point )
             theGame.PostToServer( &msg, sizeof( msg ) );
             BldgCurOff( );
             m_iMode = rocket_wait;
-            ::SetCursor( m_hCurStart );
+            AreaApplyCursor( m_hCurStart );
             return;
         }
 
@@ -2829,7 +2947,7 @@ void CWndArea::OnLButtonUp( UINT nFlags, CPoint point )
             TRAP( );
             SetButtonState( );
             BldgCurOff( );
-            ::SetCursor( m_hCurStart );
+            AreaApplyCursor( m_hCurStart );
             SelectOff( );
             return;
         }
@@ -2852,7 +2970,7 @@ void CWndArea::OnLButtonUp( UINT nFlags, CPoint point )
         m_pUnit = NULL;
         SetButtonState( );
         BldgCurOff( );
-        ::SetCursor( m_hCurStart );
+        AreaApplyCursor( m_hCurStart );
         SelectOff( );
         return;
     }
@@ -3448,7 +3566,7 @@ void CWndArea::SetupStart( )
     m_iBuild    = CStructureData::rocket;
     m_iBuildDir = ( theStructures.GetData( CStructureData::rocket )->GetExitDir( ) - 2 ) & 0x03;
 
-    ::SetCursor( NULL );
+    AreaApplyCursor( NULL );
     std::string sMsg = EnLoadStdString( IDS_MSG_ROCKET_START );
     SetStatusText( sMsg.c_str( ) );
 
@@ -3516,7 +3634,7 @@ void CWndArea::BuildOn( int iIndex )
     theGame.Event( EVENT_CONST_LOC, EVENT_NOTIFY, m_pUnit );
 
     m_iMode = build_ready;
-    ::SetCursor( NULL );
+    AreaApplyCursor( NULL );
     m_iBuild    = iIndex;
     m_iBuildDir = ( pData->GetExitDir( ) - 2 ) & 0x03;
     SetButtonState( );
@@ -3549,7 +3667,7 @@ void CWndArea::GotoOn( CVehicle* pUnit, int iMode, int iRouteType, POSITION posR
 
     SetButtonState( );
 
-    ::SetCursor( m_hCurGoto[m_aa.m_iZoom] );
+    AreaApplyCursor( m_hCurGoto[m_aa.m_iZoom] );
 }
 
 void CWndArea::Center( CMapLoc maploc )
@@ -3792,7 +3910,7 @@ void CWndArea::OnRButtonDown( UINT nFlags, CPoint point )
         break;
     }
 
-    ::SetCursor( m_hCurMove[m_iMoveCur] );
+    AreaApplyCursor( m_hCurMove[m_iMoveCur] );
 
     // Only clip cursor to window when using MFC input (not SDL)
     if ( !m_aa.m_sdlPanel )
@@ -4115,7 +4233,7 @@ void CWndArea::RoadUnit( )
 
     m_iMode = road_begin;
 
-    ::SetCursor( m_hCurRoadBgn[m_aa.m_iZoom] );
+    AreaApplyCursor( m_hCurRoadBgn[m_aa.m_iZoom] );
     SetButtonState( );
 }
 
@@ -4137,7 +4255,7 @@ void CWndArea::RepairUnit( )
 
     m_iMode = repair_bldg;
 
-    ::SetCursor( m_hCurNoRepair );
+    AreaApplyCursor( m_hCurNoRepair );
     SetButtonState( );
 }
 
@@ -4537,7 +4655,7 @@ void CWndArea::SetMouseState( )
     static int iNum = 0;
     if ( iNum != 0 )
     {
-        ::SetCursor( m_hCurReg );
+        AreaApplyCursor( m_hCurReg );
         return;
     }
 
@@ -4546,7 +4664,7 @@ void CWndArea::SetMouseState( )
     // if RMB down its move
     if ( m_bRBtnDown )
     {
-        ::SetCursor( m_hCurMove[m_iMoveCur] );
+        AreaApplyCursor( m_hCurMove[m_iMoveCur] );
         return;
     }
 
@@ -4557,17 +4675,17 @@ void CWndArea::SetMouseState( )
     case rocket_pos:
     case build_ready:
     case build_loc:
-        ::SetCursor( NULL );
+        AreaApplyCursor( NULL );
         return;
 
     case road_begin:
-        ::SetCursor( m_hCurRoadBgn[m_aa.m_iZoom] );
+        AreaApplyCursor( m_hCurRoadBgn[m_aa.m_iZoom] );
         return;
     case road_set:
-        ::SetCursor( m_hCurRoadSet[m_aa.m_iZoom] );
+        AreaApplyCursor( m_hCurRoadSet[m_aa.m_iZoom] );
         return;
     case veh_route:
-        ::SetCursor( m_hCurRoute );
+        AreaApplyCursor( m_hCurRoute );
         return;
 
     case repair_bldg: {
@@ -4579,9 +4697,9 @@ void CWndArea::SetMouseState( )
         CBuilding* pBldg = theBuildingHex._GetBuilding( hex );
         if ( ( pBldg != NULL ) && ( pBldg->GetOwner( )->IsMe( ) ) &&
              ( ( pBldg->GetDamagePer( ) < 100 ) || ( pBldg->IsConstructing( ) ) ) )
-            ::SetCursor( m_hCurRepair );
+            AreaApplyCursor( m_hCurRepair );
         else
-            ::SetCursor( m_hCurNoRepair );
+            AreaApplyCursor( m_hCurNoRepair );
         return;
     }
 
@@ -4590,7 +4708,7 @@ void CWndArea::SetMouseState( )
         break;
 
     default:
-        ::SetCursor( m_hCurReg );
+        AreaApplyCursor( m_hCurReg );
         return;
     }
 
@@ -4604,7 +4722,7 @@ void CWndArea::SetMouseState( )
         if ( ( abs( pt.x - m_ptLMB.x ) >= theMap.HexWid( m_aa.m_iZoom ) / 2 ) ||
              ( abs( pt.y - m_ptLMB.y ) >= theMap.HexHt( m_aa.m_iZoom ) / 2 ) )
         {
-            ::SetCursor( m_hCurReg );
+            AreaApplyCursor( m_hCurReg );
             m_uMouseMode = lmb_select;
             return;
         }
@@ -4618,19 +4736,19 @@ void CWndArea::SetMouseState( )
         {
             if ( m_uFlags & attk )
             {
-                ::SetCursor( m_hCurTarget[m_aa.m_iZoom] );
+                AreaApplyCursor( m_hCurTarget[m_aa.m_iZoom] );
                 m_uMouseMode = lmb_attack;
             }
             else
             {
-                ::SetCursor( m_hCurReg );
+                AreaApplyCursor( m_hCurReg );
                 m_uMouseMode = lmb_nothing;
             }
             return;
         }
         if ( ( iCtrl ) && ( ( m_pUnit == NULL ) || ( m_pUnit->GetUnitType( ) == CUnit::vehicle ) ) )
         {
-            ::SetCursor( m_hCurGoto[m_aa.m_iZoom] );
+            AreaApplyCursor( m_hCurGoto[m_aa.m_iZoom] );
             m_uMouseMode = lmb_goto;
             return;
         }
@@ -4658,12 +4776,12 @@ void CWndArea::SetMouseState( )
     {
         if ( ( pUnitOn != NULL ) && ( pUnitOn->GetOwner( )->IsMe( ) ) )
         {
-            ::SetCursor( m_hCurSelect[m_aa.m_iZoom] );
+            AreaApplyCursor( m_hCurSelect[m_aa.m_iZoom] );
             m_uMouseMode = lmb_select;
         }
         else
         {
-            ::SetCursor( m_hCurReg );
+            AreaApplyCursor( m_hCurReg );
             m_uMouseMode = lmb_nothing;
         }
         return;
@@ -4674,7 +4792,7 @@ void CWndArea::SetMouseState( )
         if ( ( !( m_uFlags & non_crane ) ) && ( m_uFlags & crane ) && ( !pBu->GetParent( )->IsBuilt( ) ) &&
              ( pBu->IsExit( ) ) )
         {
-            ::SetCursor( m_hCurRepair );
+            AreaApplyCursor( m_hCurRepair );
             m_uMouseMode = lmb_repair_bldg;
             return;
         }
@@ -4687,7 +4805,7 @@ void CWndArea::SetMouseState( )
             if ( ( pUnitOn->GetUnitType( ) == CUnit::building ) &&
                  ( ( pUnitOn->GetDamagePer( ) < 100 ) || ( ( (CBuilding*)pUnitOn )->IsConstructing( ) ) ) )
             {
-                ::SetCursor( m_hCurRepair );
+                AreaApplyCursor( m_hCurRepair );
                 m_uMouseMode = lmb_repair_bldg;
                 return;
             }
@@ -4696,7 +4814,7 @@ void CWndArea::SetMouseState( )
         if ( ( !( m_uFlags & non_truck ) ) && ( m_uFlags & truck ) && ( pUnitOn->GetUnitType( ) == CUnit::building ) &&
              ( ( (CBuilding*)pUnitOn )->GetData( )->GetType( ) != CStructureData::repair ) )
         {
-            ::SetCursor( m_hCurGoto[m_aa.m_iZoom] );
+            AreaApplyCursor( m_hCurGoto[m_aa.m_iZoom] );
             m_uMouseMode = lmb_goto;
             return;
         }
@@ -4723,7 +4841,7 @@ void CWndArea::SetMouseState( )
         if ( ( ( ( m_uFlags & land_repairable ) != 0 ) && ( bLandRepair ) ) ||
              ( ( ( m_uFlags & sea_repairable ) != 0 ) && ( bSeaRepair ) ) )
         {
-            ::SetCursor( m_hCurRepair );
+            AreaApplyCursor( m_hCurRepair );
             m_uMouseMode = lmb_repair_self;
             return;
         }
@@ -4733,7 +4851,7 @@ void CWndArea::SetMouseState( )
              ( ( (CVehicle*)pUnitOn )->GetCargoSize( ) < ( (CVehicle*)pUnitOn )->GetData( )->GetPeopleCarry( ) ) )
             if ( ( m_uFlags & carryable ) || ( ( bLcCarrier ) && ( m_uFlags & lc_carryable ) ) )
             {
-                ::SetCursor( m_hCurLoad[m_aa.m_iZoom] );
+                AreaApplyCursor( m_hCurLoad[m_aa.m_iZoom] );
                 m_uMouseMode = lmb_load;
                 return;
             }
@@ -4744,12 +4862,12 @@ void CWndArea::SetMouseState( )
             if ( ( !theMap._GetHex( ( (CVehicle*)pUnitOn )->GetPtHead( ) )->IsWater( ) ) ||
                  ( !theMap._GetHex( ( (CVehicle*)pUnitOn )->GetPtTail( ) )->IsWater( ) ) )
             {
-                ::SetCursor( m_hCurUnload[m_aa.m_iZoom] );
+                AreaApplyCursor( m_hCurUnload[m_aa.m_iZoom] );
                 m_uMouseMode = lmb_unload;
                 return;
             }
 
-        ::SetCursor( m_hCurSelect[m_aa.m_iZoom] );
+        AreaApplyCursor( m_hCurSelect[m_aa.m_iZoom] );
         m_uMouseMode = lmb_select;
         return;
     }
@@ -4758,7 +4876,7 @@ void CWndArea::SetMouseState( )
     if ( ( pUnitOn != NULL ) && ( pUnitOn->GetOwner( )->GetTheirRelations( ) == RELATIONS_ALLIANCE ) )
         if ( ( !( m_uFlags & non_truck ) ) && ( m_uFlags & truck ) && ( pUnitOn->GetUnitType( ) == CUnit::building ) )
         {
-            ::SetCursor( m_hCurGoto[m_aa.m_iZoom] );
+            AreaApplyCursor( m_hCurGoto[m_aa.m_iZoom] );
             m_uMouseMode = lmb_goto;
             return;
         }
@@ -4771,12 +4889,12 @@ void CWndArea::SetMouseState( )
                  ( ( m_pUnit != NULL ) && ( ( (CVehicle*)m_pUnit )->CanEnterBldg( (CBuilding*)pUnitOn ) ) ) )
             {
                 m_uMouseMode = lmb_goto;
-                ::SetCursor( m_hCurGoto[m_aa.m_iZoom] );
+                AreaApplyCursor( m_hCurGoto[m_aa.m_iZoom] );
                 return;
             }
 
         m_uMouseMode = lmb_nothing;
-        ::SetCursor( m_hCurReg );
+        AreaApplyCursor( m_hCurReg );
         return;
     }
 
@@ -4785,7 +4903,7 @@ void CWndArea::SetMouseState( )
     {
         if ( ( m_pUnit == NULL ) || ( m_pUnit->GetUnitType( ) != CUnit::building ) )
         {
-            ::SetCursor( m_hCurTarget[m_aa.m_iZoom] );
+            AreaApplyCursor( m_hCurTarget[m_aa.m_iZoom] );
             m_uMouseMode = lmb_attack;
             return;
         }
@@ -4794,14 +4912,14 @@ void CWndArea::SetMouseState( )
         int iLOS = theMap.LineOfSight( m_pUnit, pUnitOn );
         if ( abs( iLOS ) <= m_pUnit->GetRange( ) )
         {
-            ::SetCursor( m_hCurTarget[m_aa.m_iZoom] );
+            AreaApplyCursor( m_hCurTarget[m_aa.m_iZoom] );
             m_uMouseMode = lmb_attack;
             return;
         }
     }
 
     m_uMouseMode = lmb_nothing;
-    ::SetCursor( m_hCurReg );
+    AreaApplyCursor( m_hCurReg );
 }
 
 BOOL CWndArea::OnMouseWheel( UINT nFlags, short zDelta, CPoint pt )
@@ -5585,7 +5703,7 @@ void CWndArea::BldgCurOff( )
     theMap.ClrBldgCur( );
     m_iBuild = -1;
     m_iMode  = normal;
-    ::SetCursor( m_hCurReg );
+    AreaApplyCursor( m_hCurReg );
 }
 
 // add this unit to the list of selected units
