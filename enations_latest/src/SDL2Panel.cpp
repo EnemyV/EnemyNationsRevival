@@ -87,7 +87,17 @@ static void DrawRaisedBorder(SDL_Surface* dst, int x, int y, int w, int h, int t
 static SDL_Surface* s_goldBg   = nullptr;
 static SDL_Surface* s_borderH  = nullptr;  // horizontal border strip (top/bottom)
 static SDL_Surface* s_borderV  = nullptr;  // vertical border strip (left/right)
+static SDL_Surface* s_winBtn   = nullptr;  // winbtn.d24  (BM24 idx 12): 5col x 2row of 14x14 system-button glyphs
+static SDL_Surface* s_caption  = nullptr;  // caption2.d24 (BM24 idx 14): 913x24 active title-bar gradient
 static bool         s_goldTried = false;
+
+// BM24 library indices for the window-chrome art (see enations data MISC misc.mif).
+static const int BMIDX_WINBTN   = 12;  // system buttons (minimize/maximize/restore/close)
+static const int BMIDX_CAPTION  = 14;  // active title bar background (caption2)
+// winbtn.d24 cell geometry: each glyph is 14x14, laid out on a 16px pitch with a
+// 1px magenta separator. Row 0 = normal, row 1 = pressed.
+static const int WINBTN_PITCH = 16;
+static const int WINBTN_GLYPH = 14;
 
 static void EnsureGoldArt() {
     if (s_goldTried) return;
@@ -98,6 +108,10 @@ static void EnsureGoldArt() {
     if (pH) s_borderH = SDL2MainMenu::CreateSurfaceFromDIB(pH);
     CDIB* pV = theBitmaps.GetByIndex(DIB_BORDER_VERT);
     if (pV) s_borderV = SDL2MainMenu::CreateSurfaceFromDIB(pV);
+    CDIB* pBtn = theBitmaps.GetByIndex(BMIDX_WINBTN);
+    if (pBtn) s_winBtn = SDL2MainMenu::CreateSurfaceFromDIB(pBtn);
+    CDIB* pCap = theBitmaps.GetByIndex(BMIDX_CAPTION);
+    if (pCap) s_caption = SDL2MainMenu::CreateSurfaceFromDIB(pCap);
 }
 
 static inline int IMin(int a, int b) { return a < b ? a : b; }
@@ -113,9 +127,31 @@ static int DrawGoldFrame(SDL_Surface* dst, int x, int y, int w, int h) {
     return IMin(s_borderH ? s_borderH->h : 4, s_borderV ? s_borderV->w : 4);
 }
 
-// Draw one Win98-style caption button with a 3D double bevel and a crisp glyph.
-// glyph: 1 = minimize (bottom bar), 2 = maximize (titled box), 3 = close (X).
-static void DrawCaptionButton(SDL_Surface* dst, SDL_Rect b, int glyph) {
+// Draw one caption button. Prefers the original Enemy Nations system-button art
+// (winbtn.d24): a strip of 14x14 blue glyph cells. glyph 1=minimize, 2=maximize,
+// 3=close map to winbtn columns 1, 2 and 4; `pressed` selects the lower (row 1)
+// state. Falls back to a Win98 3D double-bevel button if the art is unavailable.
+static void DrawCaptionButton(SDL_Surface* dst, SDL_Rect b, int glyph, bool pressed = false) {
+    EnsureGoldArt();
+    if (s_winBtn) {
+        int col;
+        switch (glyph) {
+            case 1:  col = 1; break;   // minimize (bottom bar)
+            case 2:  col = 2; break;   // maximize (single box)
+            case 3:  col = 4; break;   // close (X)
+            default: col = 0; break;
+        }
+        int row = pressed ? 1 : 0;
+        SDL_Rect src = { col * WINBTN_PITCH + 1, row * WINBTN_PITCH + 1,
+                         WINBTN_GLYPH, WINBTN_GLYPH };
+        SDL_Rect d   = { b.x + (b.w - WINBTN_GLYPH) / 2,
+                         b.y + (b.h - WINBTN_GLYPH) / 2,
+                         WINBTN_GLYPH, WINBTN_GLYPH };
+        SDL_BlitSurface(s_winBtn, &src, dst, &d);
+        return;
+    }
+
+    // --- Fallback: classic Win98 double-bevel button drawn by hand ---
     FillRectP(dst, b, BtnFace);
     // Outer bevel: white top/left, near-black bottom/right.
     FillRectP(dst, { b.x, b.y, b.w, 1 }, BtnHi);
@@ -247,11 +283,19 @@ static TTF_Font* GetTitleFont() {
 }
 
 void SDL2Panel::DrawTitleBar(SDL_Surface* dst, int x, int y, int w) {
-    // Purple horizontal gradient caption
+    // Title-bar background: the original purple caption art (caption2.d24),
+    // stretched across the window width. Falls back to a hand-drawn violet
+    // gradient if the art is unavailable.
     SDL_Rect tbRect = { x, y, w, TITLE_BAR_HT };
-    FillGradientH(dst, tbRect, TitleGradL, TitleGradR);
-    // thin highlight along the very top of the caption
-    FillRectP(dst, { x, y, w, 1 }, BorderLight);
+    EnsureGoldArt();
+    if (s_caption) {
+        SDL_Rect capSrc = { 0, 0, s_caption->w, s_caption->h };
+        SDL_BlitScaled(s_caption, &capSrc, dst, &tbRect);
+    } else {
+        FillGradientH(dst, tbRect, TitleGradL, TitleGradR);
+        // thin highlight along the very top of the caption
+        FillRectP(dst, { x, y, w, 1 }, BorderLight);
+    }
 
     // Caption buttons (right-aligned): minimize, maximize, close.
     // All three are drawn for visual fidelity with the original chrome.

@@ -133,14 +133,17 @@ public:
     bool HandleDetachedResize(SDL_Event& event);
     bool IsDetachedResizing() const { return m_dResizing; }
 
-    static const int TITLE_BAR_HT = 20;
+    // Title bar matches the original Enemy Nations caption art (caption2.d24 is
+    // 24px tall); the system buttons (winbtn.d24) are 14x14 glyphs in 16px cells.
+    static const int TITLE_BAR_HT = 24;
     static const int CLOSE_BTN_SIZE = 16;
     static const int RESIZE_BORDER = 6;
     static const int MIN_WIDTH = 80;
     static const int MIN_HEIGHT = 60;
-    // Win95-style caption buttons (minimize / maximize / close), right-aligned.
-    static const int TITLE_BTN_W = 18;
-    static const int TITLE_BTN_H = 14;
+    // Caption buttons (minimize / maximize / close), right-aligned. Sized to the
+    // game's 14x14 system-button art with a little breathing room.
+    static const int TITLE_BTN_W = 16;
+    static const int TITLE_BTN_H = 16;
 
     // Title-bar caption button ids (return of HitTestTitleButton).
     enum { TB_BTN_NONE = 0, TB_BTN_MIN = 1, TB_BTN_MAX = 2, TB_BTN_CLOSE = 3 };
