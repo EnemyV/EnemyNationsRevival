@@ -238,6 +238,12 @@ SDL_Window* GameWindow::CreateSDLWindow(const char* title, int x, int y, int w, 
 bool GameWindow::InitializeSDL() {
     LogToFile("Initializing SDL...");
 
+    // Deliver the click that focuses an unfocused window as a normal mouse
+    // event (instead of swallowing it for focus only). This lets the FIRST
+    // click on a detached map window select a unit / start a resize, without a
+    // separate "click to activate" first.
+    SDL_SetHint(SDL_HINT_MOUSE_FOCUS_CLICKTHROUGH, "1");
+
     // Initialize SDL with video and timer subsystems
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER) < 0) {
         LogToFile(std::string("ERROR: SDL_Init failed: ") + SDL_GetError());

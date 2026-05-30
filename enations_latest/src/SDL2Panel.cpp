@@ -127,11 +127,15 @@ static int DrawGoldFrame(SDL_Surface* dst, int x, int y, int w, int h) {
         }
     }
 
-    // Left & right vertical strips, mitered into the corners.
+    // Left & right vertical strips, mitered into the corners. Each column steps
+    // inward by only 1px (top+1+ix .. bottom-1-ix) — matching the original
+    // PaintBorder — so the OUTER columns run nearly full height and overlap the
+    // top/bottom strips, filling the corners (no gap), while the inner columns
+    // form the 45° miter.
     if (s_borderV) {
         for (int ix = 0; ix < s_borderV->w && ix < w / 2; ix++) {
-            int top = y + brdH + ix;
-            int bot = y + h - brdH - ix;
+            int top = y + 1 + ix;
+            int bot = y + h - 1 - ix;
             if (top >= bot) break;
             for (int ty = top; ty < bot; ty += s_borderV->h) {
                 int bh = IMin(s_borderV->h, bot - ty);
