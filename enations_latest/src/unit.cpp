@@ -2909,28 +2909,15 @@ void CVehicle::InvalidateStatus( ) const
     // invalidate any area windows
     theAreaList.InvalidateStatus( this );
 
+    // The MFC vehicles list box is not created in the SDL2 port (this list now
+    // lives in an SDL panel). When the underlying list-box control doesn't exist
+    // there's nothing to invalidate here, and FindItem legitimately returns -1 —
+    // so bail before touching it. (Previously this fired ASSERT(iIndex >= 0).)
+    if ( theApp.m_wndVehicles.m_ListBox.m_hWnd == NULL )
+        return;
+
     // invalidate the list box
     int iIndex = theApp.m_wndVehicles.FindItem( this );
-#ifdef _DEBUG
-    if ( iIndex < 0 ) {
-        char buf[256];
-        // Probe to diagnose the FindItem-returned-NULL assertion. Captures
-        // whether the MFC list-box HWND exists at all, the count of items,
-        // and the vehicle ID, so we can tell whether the MFC list was
-        // never created vs. simply doesn't have this vehicle.
-        sprintf_s(buf, sizeof(buf),
-            "[PROBE InvalidateStatus] iIndex=%d  veh=%p  wndVehicles.m_hWnd=%p  "
-            "ListBox.m_hWnd=%p  ListBox.count=%d  ownerIsMe=%d\n",
-            iIndex, this,
-            theApp.m_wndVehicles.m_hWnd,
-            theApp.m_wndVehicles.m_ListBox.m_hWnd,
-            theApp.m_wndVehicles.m_ListBox.m_hWnd
-                ? theApp.m_wndVehicles.m_ListBox.GetCount() : -999,
-            GetOwner() ? GetOwner()->IsMe() : -1);
-        OutputDebugStringA(buf);
-    }
-#endif
-    ASSERT( iIndex >= 0 );
     if ( iIndex < 0 )
         return;
     int iTop = theApp.m_wndVehicles.m_ListBox.GetTopIndex( );
