@@ -737,47 +737,8 @@ void SDL2UnitInfoPanel::Render() {
         SDL_FillRect(dst, nullptr, SDL_MapRGB(dst->format, 160, 140, 90));
     }
 
-    // --- Border: horizontal bars top/bottom ---
-    if (m_borderH) {
-        // Top border (tile across width)
-        for (int tx = 0; tx < w; tx += m_borderH->w) {
-            int bw = __min(m_borderH->w, w - tx);
-            SDL_Rect sr = {0, 0, bw, m_borderH->h};
-            SDL_Rect dr = {tx, 0, bw, m_borderH->h};
-            SDL_BlitSurface(m_borderH, &sr, dst, &dr);
-        }
-        // Bottom border
-        for (int tx = 0; tx < w; tx += m_borderH->w) {
-            int bw = __min(m_borderH->w, w - tx);
-            SDL_Rect sr = {0, 0, bw, m_borderH->h};
-            SDL_Rect dr = {tx, h - m_borderH->h, bw, m_borderH->h};
-            SDL_BlitSurface(m_borderH, &sr, dst, &dr);
-        }
-    }
-
-    // --- Border: vertical bars left/right (beveled inward) ---
-    if (m_borderV) {
-        for (int ix = 0; ix < m_borderV->w && ix < w / 2; ix++) {
-            int top = borderH + ix;
-            int bot = h - borderH - ix;
-            if (top >= bot) break;
-            // Left side
-            SDL_Rect sr = {ix, ix, 1, m_borderV->h};
-            for (int ty = top; ty < bot; ty += m_borderV->h) {
-                int bh = __min(m_borderV->h, bot - ty);
-                SDL_Rect sr2 = {ix, ix, 1, bh};
-                SDL_Rect dr = {ix, ty, 1, bh};
-                SDL_BlitSurface(m_borderV, &sr2, dst, &dr);
-            }
-            // Right side
-            for (int ty = top; ty < bot; ty += m_borderV->h) {
-                int bh = __min(m_borderV->h, bot - ty);
-                SDL_Rect sr2 = {ix, ix, 1, bh};
-                SDL_Rect dr = {w - 1 - ix, ty, 1, bh};
-                SDL_BlitSurface(m_borderV, &sr2, dst, &dr);
-            }
-        }
-    }
+    // --- Carved-gold frame (shared corner-correct routine) ---
+    SDL2MainMenu::DrawGoldBorder(dst, 0, 0, w, h, m_borderH, m_borderV);
 
     // --- Text (matching original: gray shadow at +1,+1, then black or red) ---
     TTF_Font* font = GetFont(11);

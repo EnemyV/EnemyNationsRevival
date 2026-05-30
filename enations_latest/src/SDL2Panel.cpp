@@ -102,52 +102,15 @@ static void EnsureGoldArt() {
 
 static inline int IMin(int a, int b) { return a < b ? a : b; }
 
-// Frame the rectangle (x,y,w,h) with the carved-gold Enemy Nations border art,
-// mitering the corners exactly as the original PaintBorder() (bmbutton.cpp):
-// the horizontal strip runs full width top & bottom; the vertical strips step
-// inward 1px per column (top+ix, bottom-ix) and sample the bitmap diagonally
-// (source x=ix, y=ix), so the verticals meet the horizontals in a clean 45°
-// corner instead of butting/overlapping. Returns the border thickness.
+// Frame the rectangle with the carved-gold Enemy Nations border art. Delegates
+// to the shared, corner-correct SDL2MainMenu::DrawGoldBorder so every framed
+// window/dialog draws an identical border from one implementation.
 static int DrawGoldFrame(SDL_Surface* dst, int x, int y, int w, int h) {
     EnsureGoldArt();
     if (!s_borderH && !s_borderV)
         return 0;
-    int brdH = s_borderH ? s_borderH->h : 4;
-    int brdV = s_borderV ? s_borderV->w : 4;
-
-    // Top & bottom horizontal strips (tiled across the full width).
-    if (s_borderH) {
-        for (int tx = 0; tx < w; tx += s_borderH->w) {
-            int bw = IMin(s_borderH->w, w - tx);
-            SDL_Rect sr = { 0, 0, bw, brdH };
-            SDL_Rect dr = { x + tx, y, bw, brdH };
-            SDL_BlitSurface(s_borderH, &sr, dst, &dr);
-            dr.y = y + h - brdH;
-            SDL_BlitSurface(s_borderH, &sr, dst, &dr);
-        }
-    }
-
-    // Left & right vertical strips, mitered into the corners. Each column steps
-    // inward by only 1px (top+1+ix .. bottom-1-ix) — matching the original
-    // PaintBorder — so the OUTER columns run nearly full height and overlap the
-    // top/bottom strips, filling the corners (no gap), while the inner columns
-    // form the 45° miter.
-    if (s_borderV) {
-        for (int ix = 0; ix < s_borderV->w && ix < w / 2; ix++) {
-            int top = y + 1 + ix;
-            int bot = y + h - 1 - ix;
-            if (top >= bot) break;
-            for (int ty = top; ty < bot; ty += s_borderV->h) {
-                int bh = IMin(s_borderV->h, bot - ty);
-                SDL_Rect sr  = { ix, ix, 1, bh };
-                SDL_Rect drL = { x + ix, ty, 1, bh };
-                SDL_Rect drR = { x + w - 1 - ix, ty, 1, bh };
-                SDL_BlitSurface(s_borderV, &sr, dst, &drL);
-                SDL_BlitSurface(s_borderV, &sr, dst, &drR);
-            }
-        }
-    }
-    return IMin(brdH, brdV);
+    SDL2MainMenu::DrawGoldBorder(dst, x, y, w, h, s_borderH, s_borderV);
+    return IMin(s_borderH ? s_borderH->h : 4, s_borderV ? s_borderV->w : 4);
 }
 
 // Draw one Win98-style caption button with a 3D double bevel and a crisp glyph.

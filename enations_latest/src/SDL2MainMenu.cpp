@@ -231,6 +231,46 @@ void SDL2MainMenu::Shutdown() {
     m_initialized = false;
 }
 
+void SDL2MainMenu::DrawGoldBorder(SDL_Surface* dst, int x, int y, int w, int h,
+                                 SDL_Surface* borderH, SDL_Surface* borderV) {
+    if (!dst || (!borderH && !borderV) || w <= 0 || h <= 0)
+        return;
+    int brdH = borderH ? borderH->h : 4;
+
+    // Top & bottom horizontal strips, tiled across the full width.
+    if (borderH) {
+        for (int tx = 0; tx < w; tx += borderH->w) {
+            int bw = (borderH->w < w - tx) ? borderH->w : (w - tx);
+            SDL_Rect sr = { 0, 0, bw, brdH };
+            SDL_Rect dr = { x + tx, y, bw, brdH };
+            SDL_BlitSurface(borderH, &sr, dst, &dr);
+            dr.y = y + h - brdH;
+            SDL_BlitSurface(borderH, &sr, dst, &dr);
+        }
+    }
+
+    // Left & right vertical strips. Each column steps inward only 1px
+    // (top+1+ix .. bottom-1-ix), so the outer columns run nearly full height
+    // and overlap the top/bottom strips — filling the corners (no gap) — while
+    // the inner columns form the 45-degree miter. Matches the original
+    // PaintBorder (bmbutton.cpp).
+    if (borderV) {
+        for (int ix = 0; ix < borderV->w && ix < w / 2; ix++) {
+            int top = y + 1 + ix;
+            int bot = y + h - 1 - ix;
+            if (top >= bot) break;
+            for (int ty = top; ty < bot; ty += borderV->h) {
+                int bh = (borderV->h < bot - ty) ? borderV->h : (bot - ty);
+                SDL_Rect sr  = { ix, ix, 1, bh };
+                SDL_Rect drL = { x + ix, ty, 1, bh };
+                SDL_Rect drR = { x + w - 1 - ix, ty, 1, bh };
+                SDL_BlitSurface(borderV, &sr, dst, &drL);
+                SDL_BlitSurface(borderV, &sr, dst, &drR);
+            }
+        }
+    }
+}
+
 SDL_Surface* SDL2MainMenu::CreateSurfaceFromDIB(CDIB* pDib) {
     if (!pDib) return nullptr;
 

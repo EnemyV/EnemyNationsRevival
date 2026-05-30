@@ -42,6 +42,16 @@ public:
     // Convert a CDIB to an SDL_Surface. Caller owns the returned surface.
     static SDL_Surface* CreateSurfaceFromDIB(CDIB* pDib);
 
+    // Draw the carved-gold Enemy Nations border framing the rect (x,y,w,h) onto
+    // `dst`, using the DIB_BORDER_HORZ / DIB_BORDER_VERT art. The horizontal
+    // strip runs full width top & bottom; the vertical strips step inward 1px
+    // per column (matching the original PaintBorder) so the outer columns
+    // overlap the top/bottom strips — filling the corners with no gap.
+    // Shared by all framed windows/dialogs so the border looks identical and
+    // is fixed in one place. `borderH`/`borderV` may be null (then no-op).
+    static void DrawGoldBorder(SDL_Surface* dst, int x, int y, int w, int h,
+                               SDL_Surface* borderH, SDL_Surface* borderV);
+
     // Access the tiled wallpaper surface (WL24 - for dialog/game backgrounds)
     SDL_Surface* GetTileWallpaper() const { return m_surfTileWallpaper; }
 

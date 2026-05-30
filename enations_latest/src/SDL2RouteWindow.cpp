@@ -126,34 +126,8 @@ void SDL2RouteWindow::RenderBackground(SDL_Surface* dst) {
         SDL_FillRect(dst, nullptr, SDL_MapRGB(dst->format, 160, 140, 90));
     }
 
-    // Horizontal borders top/bottom
-    if (m_borderH) {
-        for (int tx = 0; tx < w; tx += m_borderH->w) {
-            int bw = __min(m_borderH->w, w - tx);
-            SDL_Rect sr = {0, 0, bw, m_borderH->h};
-            SDL_Rect dr = {tx, 0, bw, m_borderH->h};
-            SDL_BlitSurface(m_borderH, &sr, dst, &dr);
-            dr.y = h - m_borderH->h;
-            SDL_BlitSurface(m_borderH, &sr, dst, &dr);
-        }
-    }
-
-    // Vertical borders left/right (beveled)
-    if (m_borderV) {
-        for (int ix = 0; ix < m_borderV->w && ix < w / 2; ix++) {
-            int top = brdH + ix;
-            int bot = h - brdH - ix;
-            if (top >= bot) break;
-            for (int ty = top; ty < bot; ty += m_borderV->h) {
-                int bh = __min(m_borderV->h, bot - ty);
-                SDL_Rect sr = {ix, ix, 1, bh};
-                SDL_Rect drL = {ix, ty, 1, bh};
-                SDL_Rect drR = {w - 1 - ix, ty, 1, bh};
-                SDL_BlitSurface(m_borderV, &sr, dst, &drL);
-                SDL_BlitSurface(m_borderV, &sr, dst, &drR);
-            }
-        }
-    }
+    // Carved-gold frame (shared corner-correct routine — fills the corners).
+    SDL2MainMenu::DrawGoldBorder(dst, 0, 0, w, h, m_borderH, m_borderV);
 }
 
 TTF_Font* SDL2RouteWindow::GetFont(int size) {

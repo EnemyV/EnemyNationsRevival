@@ -1025,37 +1025,10 @@ void SDL2Dialog::PaintGameBorder(SDL_Surface* dst, SDL_Rect rect) {
         SDL_BlitScaled(s_dlgGold, nullptr, dst, &rect);
     }
 
-    // Horizontal borders (top and bottom) — tile across width
-    if (s_borderHorz) {
-        int bh = s_borderHorz->h;
-        for (int x = rect.x; x < rect.x + rect.w; x += s_borderHorz->w) {
-            int w = std::min(s_borderHorz->w, rect.x + rect.w - x);
-            SDL_Rect src = { 0, 0, w, bh };
-            // Top border
-            SDL_Rect dstTop = { x, rect.y, w, bh };
-            SDL_BlitSurface(s_borderHorz, &src, dst, &dstTop);
-            // Bottom border
-            SDL_Rect dstBot = { x, rect.y + rect.h - bh, w, bh };
-            SDL_BlitSurface(s_borderHorz, &src, dst, &dstBot);
-        }
-    }
-
-    // Vertical borders (left and right) — angled inward like PaintBorder
-    if (s_borderVert) {
-        int bw = s_borderVert->w;
-        int bh = s_borderHorz ? s_borderHorz->h : 0;
-        for (int col = 0; col < bw; col++) {
-            // Left side: each column is 1px wide, inset by col from top/bottom
-            SDL_Rect src = { col, col, 1, s_borderVert->h - 2 * col };
-            int stripH = rect.h - 2 * bh - 2 * col;
-            if (stripH <= 0) continue;
-            SDL_Rect dstLeft = { rect.x + col, rect.y + bh + col, 1, stripH };
-            SDL_BlitScaled(s_borderVert, &src, dst, &dstLeft);
-            // Right side
-            SDL_Rect dstRight = { rect.x + rect.w - 1 - col, rect.y + bh + col, 1, stripH };
-            SDL_BlitScaled(s_borderVert, &src, dst, &dstRight);
-        }
-    }
+    // Carved-gold frame (shared corner-correct routine — fills the corners with
+    // no gap; the side strips overlap the top/bottom).
+    SDL2MainMenu::DrawGoldBorder(dst, rect.x, rect.y, rect.w, rect.h,
+                                 s_borderHorz, s_borderVert);
 }
 
 void SDL2Dialog::AddOKCancelButtons() {
