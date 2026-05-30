@@ -438,6 +438,45 @@ int CWndWorld::OnCreate(LPCREATESTRUCT lpCreateStruct) {
                 pResize->_OnSize();
             });
 
+        // Keep the hidden MFC stub window glued under the visible SDL panel so
+        // ScreenToClient-based selection (OnLButtonDown band-box, ::GetCursorPos
+        // reads) stays aligned wherever the panel is dragged. See area.cpp for
+        // the rationale.
+        {
+            HWND hMfc = m_hWnd;
+            SDL2Panel* pPanel = m_sdlPanel;
+            pPanel->SetMoveCallback(
+                [hMfc, pPanel](int x, int y, int w, int h) {
+                    int sx, sy;
+                    if ( pPanel->IsDetached() && pPanel->GetOwnWindow() ) {
+                        int wx = 0, wy = 0;
+                        SDL_GetWindowPosition( pPanel->GetOwnWindow(), &wx, &wy );
+                        sx = wx;
+                        sy = wy + pPanel->GetTitleBarHeight();
+                    } else {
+                        sx = x; sy = y;
+                        if ( theApp.m_gameWindow && theApp.m_gameWindow->GetWindow() ) {
+                            int wx = 0, wy = 0;
+                            SDL_GetWindowPosition( theApp.m_gameWindow->GetWindow(), &wx, &wy );
+                            sx += wx; sy += wy;
+                        }
+                    }
+                    // Align the MFC CLIENT rect (what ScreenToClient measures)
+                    // to the content origin, compensating for caption/frame.
+                    RECT wr, cr; POINT tl = { 0, 0 };
+                    ::GetWindowRect( hMfc, &wr );
+                    ::GetClientRect( hMfc, &cr );
+                    ::ClientToScreen( hMfc, &tl );
+                    int ncL = tl.x - wr.left;
+                    int ncT = tl.y - wr.top;
+                    int ncW = ( wr.right - wr.left ) - ( cr.right - cr.left );
+                    int ncH = ( wr.bottom - wr.top ) - ( cr.bottom - cr.top );
+                    ::SetWindowPos( hMfc, NULL, sx - ncL, sy - ncT, w + ncW, h + ncH,
+                                    SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOREDRAW );
+                });
+            pPanel->InvokeMoveCallback();
+        }
+
         // SDL2-only renderer now: the MFC stub HWND has no visible role. Hide
         // it from the desktop so the compositor-managed SDL panel (with its
         // own green title bar) is the only visible window. WS_EX_TRANSPARENT
@@ -482,6 +521,15 @@ int CWndWorld::OnCreate(LPCREATESTRUCT lpCreateStruct) {
                 }
                 return false;
             });
+
+        // Give the world/radar map its own borderless OS window (purple chrome)
+        // so it can be dragged onto any monitor; the move-callback keeps the
+        // hidden MFC window aligned for selection.
+        m_sdlPanel->Detach( theApp.m_gameWindow.get() );
+
+        // The close [X] hides the window (matches CWndWorld::OnCloseWin); the
+        // World icon in the status bar (CWndBar::GotoWorld) brings it back.
+        m_sdlPanel->SetClosable(true);
     }
 
     m_bUpdate = TRUE;

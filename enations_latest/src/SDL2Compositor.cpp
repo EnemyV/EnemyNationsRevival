@@ -232,9 +232,24 @@ bool SDL2Compositor::RouteEventInner(SDL_Event& event) {
         eventWindowID = event.key.windowID; break;
     }
 
+    // While a detached panel is being manually resized it has captured the
+    // mouse — route all mouse events to it regardless of the reported window ID.
+    if (event.type == SDL_MOUSEMOTION || event.type == SDL_MOUSEBUTTONUP ||
+        event.type == SDL_MOUSEBUTTONDOWN) {
+        for (auto& p : m_panels) {
+            if (p->IsDetachedResizing() && p->HandleDetachedResize(event))
+                return true;
+        }
+    }
+
     if (eventWindowID) {
         for (auto& p : m_panels) {
             if (p->IsDetached() && p->GetOwnWindowID() == eventWindowID) {
+                // Manual edge/corner resize takes priority over content + drag.
+                if ((event.type == SDL_MOUSEMOTION || event.type == SDL_MOUSEBUTTONDOWN) &&
+                    p->HandleDetachedResize(event))
+                    return true;
+
                 // Handle window resize/close events from the detached window
                 if (event.type == SDL_WINDOWEVENT) {
                     if (event.window.event == SDL_WINDOWEVENT_SIZE_CHANGED) {
@@ -245,6 +260,17 @@ bool SDL2Compositor::RouteEventInner(SDL_Event& event) {
                             p->InvokeResizeCallback(newW, newH);
                         }
                         p->SetDirty();
+                    }
+                    else if (event.window.event == SDL_WINDOWEVENT_MOVED) {
+                        // OS dragged the borderless window (possibly to another
+                        // monitor). Re-sync the backing MFC window so selection /
+                        // hit-testing stays aligned with the new screen position.
+                        p->InvokeMoveCallback();
+                        p->SetDirty();
+                    }
+                    else if (event.window.event == SDL_WINDOWEVENT_EXPOSED ||
+                             event.window.event == SDL_WINDOWEVENT_FOCUS_GAINED) {
+                        p->SetDirty();  // force a repaint of the detached window
                     }
                     else if (event.window.event == SDL_WINDOWEVENT_CLOSE) {
                         p->Attach();  // re-dock on close

@@ -1135,6 +1135,17 @@ void SDL2Dialog::Render() {
         // Keep on top — re-raise each frame in case another topmost window stole z-order
         SDL_RaiseWindow(m_dlgWindow);
 
+        // If the window has moved to a different monitor, SDL's cached window
+        // framebuffer surface is stale (it's only rebuilt on resize). Destroy
+        // it so the SDL_GetWindowSurface below recreates one bound to the new
+        // monitor — otherwise a dialog dragged to monitor 2/3 renders nothing.
+        int disp = SDL_GetWindowDisplayIndex(m_dlgWindow);
+        if (disp >= 0 && disp != m_dlgLastDisplay) {
+            if (m_dlgLastDisplay != -1)
+                SDL_DestroyWindowSurface(m_dlgWindow);
+            m_dlgLastDisplay = disp;
+        }
+
         // Copy the dialog rectangle from the main surface into the dedicated dialog window
         SDL_Surface* dlgSurface = SDL_GetWindowSurface(m_dlgWindow);
         if (dlgSurface) {

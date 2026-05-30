@@ -59,6 +59,8 @@ public:
 	void		ReRender ();										// mainloop - re-render the screen
 	void		Draw ();												// draw the rendered screen
 
+	SDL2Panel*	GetMapPanel () const { return m_sdlPanel; }		// detached SDL window (may be NULL)
+
 protected:
 	// Generated message map functions
 	//{{AFX_MSG(CWndWorld)

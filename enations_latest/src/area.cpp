@@ -2389,6 +2389,53 @@ int CWndArea::OnCreate( LPCREATESTRUCT lpCreateStruct )
                 }
             });
 
+        // Keep the hidden MFC stub window glued under the visible SDL panel.
+        // Selection / build-placement / hover code reads the cursor through
+        // ::GetCursorPos() + ScreenToClient() against THIS HWND, so if the
+        // panel is dragged but the MFC window stays put, those reads desync.
+        // Tracking the MFC window to the panel's on-screen content rect keeps
+        // them aligned wherever the panel is moved (incl. other monitors).
+        {
+            HWND hMfc = m_hWnd;
+            SDL2Panel* pPanel = m_aa.m_sdlPanel;
+            pPanel->SetMoveCallback(
+                [hMfc, pPanel](int x, int y, int w, int h) {
+                    int sx, sy;
+                    if ( pPanel->IsDetached() && pPanel->GetOwnWindow() ) {
+                        // Own borderless OS window: content sits below our custom
+                        // title bar. Derive content screen origin from the window.
+                        int wx = 0, wy = 0;
+                        SDL_GetWindowPosition( pPanel->GetOwnWindow(), &wx, &wy );
+                        sx = wx;
+                        sy = wy + pPanel->GetTitleBarHeight();
+                    } else {
+                        sx = x; sy = y;
+                        if ( theApp.m_gameWindow && theApp.m_gameWindow->GetWindow() ) {
+                            int wx = 0, wy = 0;
+                            SDL_GetWindowPosition( theApp.m_gameWindow->GetWindow(), &wx, &wy );
+                            sx += wx; sy += wy;
+                        }
+                    }
+                    // The MFC window has a caption + frame (non-client area).
+                    // Selection reads coords via ScreenToClient against its
+                    // CLIENT rect, so align the CLIENT (not the window rect) to
+                    // the panel's content origin — otherwise clicks are offset
+                    // by the border/caption thickness (~8px x, ~31px y).
+                    RECT wr, cr; POINT tl = { 0, 0 };
+                    ::GetWindowRect( hMfc, &wr );
+                    ::GetClientRect( hMfc, &cr );
+                    ::ClientToScreen( hMfc, &tl );
+                    int ncL = tl.x - wr.left;
+                    int ncT = tl.y - wr.top;
+                    int ncW = ( wr.right - wr.left ) - ( cr.right - cr.left );
+                    int ncH = ( wr.bottom - wr.top ) - ( cr.bottom - cr.top );
+                    ::SetWindowPos( hMfc, NULL, sx - ncL, sy - ncT, w + ncW, h + ncH,
+                                    SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOREDRAW );
+                });
+            // Sync the MFC window to the panel's initial position right away.
+            pPanel->InvokeMoveCallback();
+        }
+
         // SDL2-only renderer now: the MFC stub HWND has no visible role. Hide
         // it from the desktop so the compositor-managed SDL panel (with its
         // own green title bar) is the only visible window. WS_EX_TRANSPARENT
@@ -2425,6 +2472,16 @@ int CWndArea::OnCreate( LPCREATESTRUCT lpCreateStruct )
                     return pBar->HandleEvent(event, localX, localY);
                 });
         }
+
+        // Give the area map its own borderless OS window (purple chrome drawn
+        // by SDL2Panel) so it can be dragged onto any monitor. The move-callback
+        // keeps the hidden MFC window aligned for selection. The area button bar
+        // is blitted into this panel's surface, so it travels with the window.
+        m_aa.m_sdlPanel->Detach( theApp.m_gameWindow.get() );
+
+        // The close [X] hides the window; the Map icon in the status bar
+        // (CWndBar::GotoArea) brings it back.
+        m_aa.m_sdlPanel->SetClosable(true);
     }
 
     // Re-run SetButtonState now that m_sdlPanel is set,
@@ -2439,7 +2496,13 @@ int CWndArea::OnCreate( LPCREATESTRUCT lpCreateStruct )
         OutputDebugStringA( "bPlaceIt!");
 #endif
         bPlaceIt = TRUE;
-        SetWindowPlacement( &( theGame.m_wpArea ) );
+        // For a detached SDL window the SDL panel owns the on-screen geometry
+        // and the hidden MFC window is kept aligned to it by the move-callback.
+        // Restoring the saved WINDOWPLACEMENT onto the MFC window would resize
+        // its client out from under the SDL content and scale-desync selection,
+        // so skip it in that case (the SDL window was already clamped to screen).
+        if ( !m_aa.m_sdlPanel || !m_aa.m_sdlPanel->IsDetached( ) )
+            SetWindowPlacement( &( theGame.m_wpArea ) );
         Center( theGame.m_hexAreaCenter );
 
         // bring the world window back too
@@ -2471,6 +2534,17 @@ void CWndArea::OnSize( UINT nType, int cx, int cy )
     GetClientRect( &rect );
     m_cx = rect.Width( );
     m_cy = rect.Height( );
+
+    // When an SDL panel backs this window it owns the *visible* size. The hidden
+    // MFC client can transiently differ (restored WINDOWPLACEMENT, non-client
+    // tracking), and the render DIB + hit-testing (WindowToHex uses m_cx/m_cy)
+    // must match exactly what's on screen — otherwise clicks scale-diverge from
+    // the cursor toward the bottom. Use the panel's content size as the truth.
+    if ( m_aa.m_sdlPanel )
+    {
+        m_cx = m_aa.m_sdlPanel->GetWidth( );
+        m_cy = m_aa.m_sdlPanel->GetHeight( );
+    }
 
     // create the bitmap for the new size
     m_aa.m_dibwnd.Size( MAKELPARAM( m_cx, m_cy ) );

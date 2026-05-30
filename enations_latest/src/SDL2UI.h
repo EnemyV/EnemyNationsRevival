@@ -409,6 +409,13 @@ private:
     int  m_dlgDragMouseX = 0, m_dlgDragMouseY = 0;  // global mouse pos at grab
     int  m_dlgDragWinX = 0,   m_dlgDragWinY = 0;    // window pos at grab
 
+    // Which display the dialog window is currently on. SDL caches the window
+    // framebuffer surface and only rebuilds it on resize, NOT when the window
+    // crosses to another monitor — so a dialog dragged to a second monitor
+    // keeps presenting through the stale (monitor-1) surface and shows nothing.
+    // We watch the display index and force the surface to be recreated on change.
+    int  m_dlgLastDisplay = -1;
+
     // Background snapshot (captured when dialog opens; only used when rendering
     // to the main window as a fallback)
     SDL_Surface* m_background = nullptr;

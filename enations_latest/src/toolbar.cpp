@@ -793,8 +793,14 @@ LRESULT CWndBar::OnStatusMouseMove( WPARAM, LPARAM lParam )
 void CWndBar::GotoArea( )
 {
 
-    if ( theAreaList.BringToTop( ) != NULL )
+    CWndArea* pTop = theAreaList.BringToTop( );
+    if ( pTop != NULL )
+    {
+        // Already exists — un-hide its SDL window if the user had closed it.
+        if ( pTop->GetAA( ).m_sdlPanel )
+            pTop->GetAA( ).m_sdlPanel->SetVisible( true );
         return;
+    }
 
     // need to create one
     CWndArea* pWndArea = new CWndArea( );
@@ -809,6 +815,10 @@ void CWndBar::GotoWorld( )
 
     theApp.m_wndWorld.ShowWindow( theApp.m_wndMain.IsIconic( ) ? SW_SHOW : SW_RESTORE );
     theApp.m_wndWorld.SetFocus( );
+
+    // Un-hide the SDL World Map window if the user had closed it via the [X].
+    if ( theApp.m_wndWorld.GetMapPanel( ) )
+        theApp.m_wndWorld.GetMapPanel( )->SetVisible( true );
 }
 
 void CWndBar::GotoChat( )
