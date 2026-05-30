@@ -168,25 +168,23 @@ static void DrawCaptionButton(SDL_Surface* dst, SDL_Rect b, int glyph) {
     Uint32 g = SDL_MapRGB(dst->format, BtnGlyph.r, BtnGlyph.g, BtnGlyph.b);
     int cx = b.x + b.w / 2;
     int cy = b.y + b.h / 2;
-    if (glyph == 1) {            // minimize: short thick bar near the bottom
-        SDL_Rect bar = { cx - 3, b.y + b.h - 5, 6, 2 };
+    if (glyph == 1) {            // minimize: short bar at the bottom (Win95)
+        SDL_Rect bar = { cx - 3, cy + 3, 7, 2 };
         SDL_FillRect(dst, &bar, g);
-    } else if (glyph == 2) {     // maximize: box with a thick (title) top edge
-        int x0 = cx - 4, y0 = cy - 4, x1 = cx + 4, y1 = cy + 4;
-        SDL_Rect top = { x0, y0, x1 - x0, 2 };
+    } else if (glyph == 2) {     // maximize: window box with a thick title edge
+        int x0 = cx - 5, y0 = cy - 4, x1 = cx + 5, y1 = cy + 4;
+        SDL_Rect top = { x0, y0, x1 - x0, 2 };               // title bar (thick)
         SDL_Rect lft = { x0, y0, 1, y1 - y0 };
         SDL_Rect rgt = { x1 - 1, y0, 1, y1 - y0 };
         SDL_Rect bot = { x0, y1 - 1, x1 - x0, 1 };
         SDL_FillRect(dst, &top, g); SDL_FillRect(dst, &lft, g);
         SDL_FillRect(dst, &rgt, g); SDL_FillRect(dst, &bot, g);
-    } else if (glyph == 3) {     // close: a bold 2px X
+    } else if (glyph == 3) {     // close: an X (Win95 — two clean diagonals)
         for (int i = -3; i <= 3; i++) {
-            for (int t = 0; t < 2; t++) {
-                SDL_Rect p1 = { cx + i + t, cy + i, 1, 1 };
-                SDL_Rect p2 = { cx + i + t, cy - i, 1, 1 };
-                SDL_FillRect(dst, &p1, g);
-                SDL_FillRect(dst, &p2, g);
-            }
+            SDL_Rect p1 = { cx - 3 + (i + 3), cy + i, 2, 1 };
+            SDL_Rect p2 = { cx - 3 + (i + 3), cy - i, 2, 1 };
+            SDL_FillRect(dst, &p1, g);
+            SDL_FillRect(dst, &p2, g);
         }
     }
 }
@@ -799,6 +797,18 @@ void SDL2Panel::RenderDetached() {
     SDL_Surface* winSurf = SDL_GetWindowSurface(m_ownWindow);
     if (!winSurf)
         return;
+
+    // After a manual resize SDL can hand back a window surface still sized to
+    // the OLD dimensions; clearing/blitting into it leaves the newly-exposed
+    // strip showing stale backbuffer pixels. Force a fresh surface bound to the
+    // current window size whenever they disagree.
+    int wW = 0, wH = 0;
+    SDL_GetWindowSize(m_ownWindow, &wW, &wH);
+    if (winSurf->w != wW || winSurf->h != wH) {
+        SDL_DestroyWindowSurface(m_ownWindow);
+        winSurf = SDL_GetWindowSurface(m_ownWindow);
+        if (!winSurf) return;
+    }
 
     int tbH = GetTitleBarHeight();
     int W = winSurf->w, H = winSurf->h;
