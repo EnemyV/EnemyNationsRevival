@@ -9,6 +9,7 @@
 #include "bitmaps.h"
 #include "bmbutton.h"
 #include "icons.h"
+#include "sfx.h"        // theMusicPlayer, SOUNDS, SFXPRIORITY (button click sound)
 
 #include <SDL.h>
 
@@ -278,6 +279,9 @@ bool SDL2AreaBar::HandleEvent(SDL_Event& event, int localX, int localY) {
                     localY >= bp.y && localY < bp.y + bp.h) {
                     m_btns[i].pressed = true;
                     m_pressedBtn = i;
+                    // Match the original CMyButton::OnLButtonDown click feedback.
+                    theMusicPlayer.PlayForegroundSound(
+                        SOUNDS::GetID(SOUNDS::button), SFXPRIORITY::selected_pri);
                     return true;
                 }
             }

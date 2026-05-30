@@ -526,6 +526,9 @@ bool SDL2Toolbar::HandleEvent(SDL_Event& event, int localX, int localY) {
                 if (localX >= bx && localX < bx + btnW && m_buttons[i].enabled) {
                     m_buttons[i].pressed = true;
                     m_pressedBtn = i;
+                    // Match the original CMyButton::OnLButtonDown click feedback.
+                    theMusicPlayer.PlayForegroundSound(
+                        SOUNDS::GetID(SOUNDS::button), SFXPRIORITY::selected_pri);
                     return true;
                 }
             }
