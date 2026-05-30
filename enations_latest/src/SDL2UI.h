@@ -400,6 +400,15 @@ private:
     // the Area View and World View detached panels).
     SDL_Window*  m_dlgWindow = nullptr;
 
+    // Title-bar drag state. The dialog window is borderless, so we move it
+    // ourselves when the user drags its title bar. m_x/m_y (render offset +
+    // event-coord shift) are intentionally NOT touched — only the OS window
+    // position moves, so the dialog can be dragged anywhere, even onto a
+    // second monitor.
+    bool m_dlgDragging = false;
+    int  m_dlgDragMouseX = 0, m_dlgDragMouseY = 0;  // global mouse pos at grab
+    int  m_dlgDragWinX = 0,   m_dlgDragWinY = 0;    // window pos at grab
+
     // Background snapshot (captured when dialog opens; only used when rendering
     // to the main window as a fallback)
     SDL_Surface* m_background = nullptr;

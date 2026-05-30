@@ -1188,6 +1188,47 @@ void SDL2Dialog::FocusPrev() {
 }
 
 bool SDL2Dialog::HandleEvent(SDL_Event& event) {
+    // --- Title-bar drag: move the borderless dialog window (incl. to another
+    // monitor). The window is borderless so there's no OS title bar to grab;
+    // we drive the move ourselves via SDL_SetWindowPosition. Only the OS window
+    // position changes — m_x/m_y (render offset + coord shift) stay put, so the
+    // content keeps rendering correctly and widget hit-testing is unaffected.
+    if (m_dlgWindow) {
+        uint32_t dlgWinID = SDL_GetWindowID(m_dlgWindow);
+        int borderTop  = s_borderHorz ? s_borderHorz->h : 3;
+        int borderSide = s_borderVert ? s_borderVert->w : 3;
+        const int titleBarH = 26;
+
+        if (event.type == SDL_MOUSEBUTTONDOWN &&
+            event.button.button == SDL_BUTTON_LEFT &&
+            event.button.windowID == dlgWinID) {
+            // event coords are dialog-window-local (0,0)-based
+            int lx = event.button.x, ly = event.button.y;
+            if (lx >= borderSide && lx < m_width - borderSide &&
+                ly >= borderTop && ly < borderTop + titleBarH) {
+                m_dlgDragging = true;
+                SDL_GetGlobalMouseState(&m_dlgDragMouseX, &m_dlgDragMouseY);
+                SDL_GetWindowPosition(m_dlgWindow, &m_dlgDragWinX, &m_dlgDragWinY);
+                SDL_CaptureMouse(SDL_TRUE);   // keep motion events if cursor outruns window
+                return true;
+            }
+        }
+        if (event.type == SDL_MOUSEMOTION && m_dlgDragging) {
+            int gx, gy;
+            SDL_GetGlobalMouseState(&gx, &gy);
+            SDL_SetWindowPosition(m_dlgWindow,
+                                  m_dlgDragWinX + (gx - m_dlgDragMouseX),
+                                  m_dlgDragWinY + (gy - m_dlgDragMouseY));
+            return true;
+        }
+        if (event.type == SDL_MOUSEBUTTONUP && m_dlgDragging &&
+            event.button.button == SDL_BUTTON_LEFT) {
+            m_dlgDragging = false;
+            SDL_CaptureMouse(SDL_FALSE);
+            return true;
+        }
+    }
+
     // When using a dedicated dialog window, mouse coordinates arrive relative to
     // that window's (0,0). Widgets use coordinates relative to the main window
     // (m_x + offset). Shift mouse events so they match widget rects.
@@ -1285,9 +1326,11 @@ int SDL2Dialog::DoModal() {
     m_running = true;
     m_result = 0;
 
-    // Create a dedicated ALWAYS_ON_TOP window for this dialog so it floats
-    // above the Area View and World View detached panels (also ALWAYS_ON_TOP).
-    // This avoids touching the main window's z-order, which would disturb panel visibility.
+    // Create a dedicated borderless top-level window for this dialog, owned by
+    // the main game window. Being its own OS window (not a composited panel) is
+    // intentional: the user can drag it out onto a second monitor. The title
+    // bar drag is implemented in HandleEvent (the window is borderless, so there
+    // is no OS caption to grab).
     int mainX = 0, mainY = 0;
     if (m_gameWindow->GetWindow())
         SDL_GetWindowPosition(m_gameWindow->GetWindow(), &mainX, &mainY);
