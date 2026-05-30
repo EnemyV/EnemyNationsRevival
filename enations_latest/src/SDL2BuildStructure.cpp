@@ -356,16 +356,9 @@ void SDL2BuildStructure::OnBuild() {
 }
 
 void SDL2BuildStructure::OnCancel() {
-    // MFC original: SendMessage(WM_COMMAND, ID_UNIT_DESTROY) then DestroyWindow().
-    // This cancels the build selection AND issues a destroy command to selected units.
-    if (m_pVeh) {
-        CUnit* pUnit = m_pVeh; // CVehicle* is a CUnit*
-        pUnit->SetDestroyUnit();
-        // Post to server in network games
-        if (!theGame.AmServer()) {
-            CMsgDestroyUnit msg(pUnit);
-            theGame.PostToServer(&msg, sizeof(msg));
-        }
-    }
+    // The original CDlgBuildStructure::OnCancel() just closes the dialog
+    // (DestroyWindow()) — it does NOT destroy the construction vehicle. An earlier
+    // port misread it as issuing ID_UNIT_DESTROY, which made canceling the build
+    // menu kill the selected crane. Cancel simply dismisses the menu.
     EndDialog(0);
 }

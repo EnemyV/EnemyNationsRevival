@@ -1105,8 +1105,26 @@ void SDL2Dialog::Render() {
     }
 
     if (m_dlgWindow) {
-        // Keep on top — re-raise each frame in case another topmost window stole z-order
+        // Keep the dialog above the game/sibling windows each frame — but WITHOUT
+        // stealing focus. SDL_RaiseWindow() calls SetForegroundWindow() on Windows,
+        // which yanked the OS focus back ~60x/sec: it broke the Start menu and made
+        // it impossible to interact with any other window while a dialog was open.
+        // Instead reorder z-order with SWP_NOACTIVATE, and only when our own process
+        // is already foreground (so we never fight the Start menu or another app the
+        // user switched to). One-time activation still happens at show time.
+#ifdef _WIN32
+        SDL_SysWMinfo wm; SDL_VERSION(&wm.version);
+        if (SDL_GetWindowWMInfo(m_dlgWindow, &wm)) {
+            HWND hDlg = wm.info.win.window;
+            DWORD forePid = 0;
+            ::GetWindowThreadProcessId(::GetForegroundWindow(), &forePid);
+            if (forePid == ::GetCurrentProcessId())
+                ::SetWindowPos(hDlg, HWND_TOP, 0, 0, 0, 0,
+                               SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+        }
+#else
         SDL_RaiseWindow(m_dlgWindow);
+#endif
 
         // If the window has moved to a different monitor, SDL's cached window
         // framebuffer surface is stale (it's only rebuilt on resize). Destroy
