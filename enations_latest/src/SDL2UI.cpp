@@ -1109,22 +1109,31 @@ void SDL2Dialog::Render() {
     }
 
     if (m_dlgWindow) {
-        // Keep the dialog above the game/sibling windows each frame — but WITHOUT
-        // stealing focus. SDL_RaiseWindow() calls SetForegroundWindow() on Windows,
-        // which yanked the OS focus back ~60x/sec: it broke the Start menu and made
-        // it impossible to interact with any other window while a dialog was open.
-        // Instead reorder z-order with SWP_NOACTIVATE, and only when our own process
-        // is already foreground (so we never fight the Start menu or another app the
-        // user switched to). One-time activation still happens at show time.
+        // Keep the dialog above the game/sibling windows each frame.
+        //
+        // NON-MODAL dialogs (build menu, etc.): do it WITHOUT stealing focus —
+        // SDL_RaiseWindow() calls SetForegroundWindow() on Windows, which yanked
+        // OS focus back ~60x/sec and broke the Start menu / interacting with other
+        // windows. Use SWP_NOACTIVATE, and only when our process is foreground.
+        //
+        // MODAL dialogs (research, options, etc.): they block the game loop
+        // entirely, so they MUST sit on top of the detached map/unit windows and
+        // hold focus. With the non-activating path a modal dialog could open
+        // BEHIND a detached map — the frozen map then looked "unresponsive" while
+        // the real (modal) dialog was hidden. Force it to the foreground.
 #ifdef _WIN32
-        SDL_SysWMinfo wm; SDL_VERSION(&wm.version);
-        if (SDL_GetWindowWMInfo(m_dlgWindow, &wm)) {
-            HWND hDlg = wm.info.win.window;
-            DWORD forePid = 0;
-            ::GetWindowThreadProcessId(::GetForegroundWindow(), &forePid);
-            if (forePid == ::GetCurrentProcessId())
-                ::SetWindowPos(hDlg, HWND_TOP, 0, 0, 0, 0,
-                               SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+        if (m_nonModal) {
+            SDL_SysWMinfo wm; SDL_VERSION(&wm.version);
+            if (SDL_GetWindowWMInfo(m_dlgWindow, &wm)) {
+                HWND hDlg = wm.info.win.window;
+                DWORD forePid = 0;
+                ::GetWindowThreadProcessId(::GetForegroundWindow(), &forePid);
+                if (forePid == ::GetCurrentProcessId())
+                    ::SetWindowPos(hDlg, HWND_TOP, 0, 0, 0, 0,
+                                   SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+            }
+        } else {
+            SDL_RaiseWindow(m_dlgWindow);
         }
 #else
         SDL_RaiseWindow(m_dlgWindow);
