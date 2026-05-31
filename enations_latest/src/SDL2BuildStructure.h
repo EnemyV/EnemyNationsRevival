@@ -61,6 +61,11 @@ private:
     SDL2Label* m_lblOperNames = nullptr;    // Operating cost names
     SDL2Label* m_lblOperVals = nullptr;     // Operating cost values (have)
 
+    // Cost-table grid lines (shown only while a building is selected, matching
+    // the original which drew the whole table inside `if (m_pSd != NULL)`).
+    SDL2Image* m_gridH = nullptr;           // horizontal line under the header
+    SDL2Image* m_gridV = nullptr;           // single vertical divider (name | values)
+
     // Art surfaces (from theBitmaps)
     SDL_Surface* m_bldgIconSheet = nullptr;    // DIB_LIST_UNIT_BUILDINGS - building icons
     SDL_Surface* m_structBkgnd = nullptr;      // DIB_STRUCTURE_BKGND - dialog background
