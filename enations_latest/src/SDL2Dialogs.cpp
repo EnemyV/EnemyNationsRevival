@@ -2,6 +2,7 @@
 #include "SDL2Dialogs.h"
 #include "SDL2MainMenu.h"
 #include "GameWindow.h"
+#include "SDL2CreateStatus.h"   // GetCreateStatus()->Hide() before the pick-player dialog
 #include "lastplnt.h"
 #include "sfx.h"
 #include "player.h"
@@ -671,6 +672,12 @@ bool SDL2_RunLoadSinglePlayerFlow(GameWindow* gameWindow) {
         }
         return true;
     }
+
+    // Hide the loading-progress window before the pick-player dialog. The
+    // progress window is topmost (always-on-top) and would otherwise render over
+    // the dialog. StartGame() below re-shows it for the AI-startup progress.
+    if (gameWindow->GetCreateStatus())
+        gameWindow->GetCreateStatus()->Hide();
 
     ShowWallpaperBackground(gameWindow);
     SDL2PickPlayerDialog pickDlg(gameWindow);

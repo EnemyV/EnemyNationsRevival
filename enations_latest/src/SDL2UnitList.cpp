@@ -457,26 +457,13 @@ void SDL2UnitList::RenderIconDone(SDL_Surface* dst, int iconIdx, int percent,
     int barH = h - 4;
     if (barH < 2) { barTop = y + 1; barH = h - 2; }
 
-    // Fill from the icon's OWN gradient art (the damage icon is a 1000px
-    // red->yellow->green strip with vertical 3D shading), sampled by percent —
-    // this reproduces the original DrawStatDone look instead of a flat colour
-    // rectangle. A 1px-wide vertical slice keeps the top->bottom shading and is
-    // stretched across the filled width.
-    if (icon.sheet && icon.cxIcon > 1 && icon.cyIcon > 0) {
-        int srcX = ((icon.cxIcon - 1) * percent) / 100;
-        if (srcX < 0) srcX = 0;
-        if (srcX > icon.cxIcon - 1) srcX = icon.cxIcon - 1;
-        SDL_Rect sr = { srcX, 0, 1, icon.cyIcon };
-        SDL_Rect dr = { barLeft, barTop, fillW, barH };
-        StretchBlit(icon.sheet, sr, dst, dr);
-    } else {
-        // Fallback: flat colour (green 66-100%, yellow 33-66%, red 0-33%)
-        SDL_Color c;
-        if (percent > 66)      c = {50, 150, 60, 255};
-        else if (percent > 33) c = {170, 150, 40, 255};
-        else                   c = {180, 50, 50, 255};
-        FillU(dst, {barLeft, barTop, fillW, barH}, c);
-    }
+    // Color: green (66-100%), yellow (33-66%), red (0-33%)
+    SDL_Color c;
+    if (percent > 66)      c = {50, 150, 60, 255};
+    else if (percent > 33) c = {170, 150, 40, 255};
+    else                   c = {180, 50, 50, 255};
+
+    FillU(dst, {barLeft, barTop, fillW, barH}, c);
 }
 
 // DrawStatHave: have icons (green) then need icons (red/animated)
@@ -684,9 +671,13 @@ void SDL2UnitList::RenderStatusBars(SDL_Surface* dst, CUnit* pUnit, int x, int y
             CVehicle* pVeh = (CVehicle*)pUnit;
 
             if (iOn == 0) {
-                // Bar 0: Damage (ICON_DAMAGE, DrawStatDone)
+                // Bar 0: Damage/health. ICON_DAMAGE is a TYP_ICON 'bar' (its art is
+                // a 1000px red->yellow->green gradient), so it draws with DrawStatBar:
+                // the gradient is scaled by percent into the fill. Use RenderIconBar,
+                // NOT RenderIconDone (which is for 'done'-type icons and was drawing a
+                // flat colour that didn't match the original).
                 int dmg = std::max(1, pVeh->GetDamagePer());
-                RenderIconDone(dst, ICON_DAMAGE, dmg, renderX, y, renderW, barH);
+                RenderIconBar(dst, ICON_DAMAGE, dmg, renderX, y, renderW, barH);
             } else if (pVeh->GetData()->IsCarrier() &&
                        ((pVeh->GetData()->IsTransport() && iOn == 2) ||
                         (!pVeh->GetData()->IsTransport() && iOn == 1))) {
@@ -735,9 +726,9 @@ void SDL2UnitList::RenderStatusBars(SDL_Surface* dst, CUnit* pUnit, int x, int y
             CBuilding* pBldg = (CBuilding*)pUnit;
 
             if (iOn == 0) {
-                // Damage
+                // Damage/health — gradient 'bar' icon (see vehicle note above).
                 int dmg = std::max(1, pBldg->GetDamagePer());
-                RenderIconDone(dst, ICON_DAMAGE, dmg, renderX, y, renderW, barH);
+                RenderIconBar(dst, ICON_DAMAGE, dmg, renderX, y, renderW, barH);
             } else if (iOn == 1) {
                 // Materials
                 RenderMaterialsBar(dst, pBldg, ICON_MATERIALS, renderX, y, renderW, barH);
