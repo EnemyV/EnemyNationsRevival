@@ -179,18 +179,26 @@ void SDL2BuildTransport::OnInit() {
     if (m_okBtnSheet) btnCancel->SetBtnSheet(m_okBtnSheet);
 
     // --- Quantity control --------------------------------------------------
-    // MFC used an edit box + spinner at (282, 295). We provide -/+ buttons
-    // flanking a count label in the same horizontal band.
-    m_lblNum = AddWidget<SDL2Label>(ox + 240, oy + 295, 40, 22,
-        std::to_string(m_buildNum));
-    m_lblNum->SetCentered(true);
-    m_lblNum->SetColor({41, 255, 8, 255});
+    // MFC had an editable number field + spinner spanning x=282..322 at y=295.
+    // We restore the typeable field (SDL2EditBox) and flank it with square -/+
+    // buttons, so you can either type a count or step it.
+    //   "-"  (258..280)  |  edit (282..322)  |  "+"  (324..346)
+    // Edit field at the MFC coords (282,295,40,22). The "-"/"+" steppers flank
+    // it; the 2px gaps keep the trio visually centered on that field.
+    const int qy = oy + 295, qBtn = 22, qEditW = 40;
+    const int qEditX = ox + 282;
+    m_edtNum = AddWidget<SDL2EditBox>(qEditX, qy, qEditW, qBtn,
+        std::to_string(m_buildNum),
+        [this](const std::string& s) { OnQtyEdited(s); });
+    // Black field with white text — fits the dark vehicle-build chrome far
+    // better than the stock white box (the MFC original was a plain CEdit).
+    m_edtNum->SetColors({ 0, 0, 0, 255 }, { 255, 255, 255, 255 });
 
-    AddWidget<SDL2Button>(ox + 220, oy + 295, 20, 22, "-",
+    AddWidget<SDL2Button>(qEditX - 2 - qBtn, qy, qBtn, qBtn, "-",
         [this]() {
             if (m_buildNum > 1) { m_buildNum--; RefreshQty(); }
         });
-    AddWidget<SDL2Button>(ox + 285, oy + 295, 20, 22, "+",
+    AddWidget<SDL2Button>(qEditX + qEditW + 2, qy, qBtn, qBtn, "+",
         [this]() { m_buildNum++; RefreshQty(); });
 
     // Auto-select first vehicle if available
@@ -199,8 +207,18 @@ void SDL2BuildTransport::OnInit() {
 }
 
 void SDL2BuildTransport::RefreshQty() {
-    if (m_lblNum) m_lblNum->SetText(std::to_string(m_buildNum));
-    // Cost values depend on quantity, so re-render the grid
+    // Called by the -/+ buttons: push the new count into the edit field and
+    // re-render the cost grid (costs scale with quantity).
+    if (m_edtNum) m_edtNum->SetText(std::to_string(m_buildNum));
+    UpdateDescription();
+}
+
+void SDL2BuildTransport::OnQtyEdited(const std::string& text) {
+    // The user typed into the count field. Parse + clamp to >= 1, recompute the
+    // cost grid, but DON'T rewrite the field here (that would fight live typing).
+    int n = atoi(text.c_str());
+    if (n < 1) n = 1;
+    m_buildNum = n;
     UpdateDescription();
 }
 

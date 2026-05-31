@@ -184,7 +184,7 @@ int LZSSCoDec::AddString( int iNewNode, int* piMatchPosition ) {
 //  in new characters, deletes the strings that are 
 //  overwritten by the new character, and adds the 
 //  strings that are created by the new character.
-void* LZSSCoDec::Compress( const void* pUncompressedBuffer, int iUncompressedBufSize, void* pCompressedBuffer, int* piCompressedBufSize, FNCOMPSTAT fnStat, DWORD dwData ) {
+void* LZSSCoDec::Compress( const void* pUncompressedBuffer, int iUncompressedBufSize, void* pCompressedBuffer, int* piCompressedBufSize, FNCOMPSTAT fnStat, DWORD_PTR dwData ) {
     ASSERT( pUncompressedBuffer );
     ASSERT( 0 < iUncompressedBufSize );
     ASSERT( piCompressedBufSize );
@@ -288,7 +288,7 @@ void* LZSSCoDec::Compress( const void* pUncompressedBuffer, int iUncompressedBuf
 //  bits, decide whether to read in a character 
 //  or an index/length pair, and take the appropriate 
 //  action.
-void* LZSSCoDec::Decompress( const void* pCompressedBuffer, int iCompressedBufSize, void* pUncompressedBuf, int* piUncompressedBufSize, FNCOMPSTAT fnStat, DWORD dwData ) {
+void* LZSSCoDec::Decompress( const void* pCompressedBuffer, int iCompressedBufSize, void* pUncompressedBuf, int* piUncompressedBufSize, FNCOMPSTAT fnStat, DWORD_PTR dwData ) {
     ASSERT( pCompressedBuffer );
     ASSERT( 0 < iCompressedBufSize );
     ASSERT( piUncompressedBufSize );

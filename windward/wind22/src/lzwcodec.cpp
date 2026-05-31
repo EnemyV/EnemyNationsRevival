@@ -18,7 +18,7 @@ void LZWCoDec::InitializeDictionary() {
     dwNextBumpCode = 511;
 }
 
-void* LZWCoDec::Compress( const void* pUncompressedBuffer, int iUncompressedBufSize, void* pCompressedBuffer, int* piCompressedBufSize, FNCOMPSTAT fnStat, DWORD dwData ) {
+void* LZWCoDec::Compress( const void* pUncompressedBuffer, int iUncompressedBufSize, void* pCompressedBuffer, int* piCompressedBufSize, FNCOMPSTAT fnStat, DWORD_PTR dwData ) {
     ASSERT( pUncompressedBuffer );
     ASSERT( 0 < iUncompressedBufSize );
     ASSERT( piCompressedBufSize );
@@ -81,7 +81,7 @@ void* LZWCoDec::Compress( const void* pUncompressedBuffer, int iUncompressedBufS
     return pCompressedBuffer;
 }
 
-void* LZWCoDec::Decompress( const void* pCompressedBuffer, int iCompressedBufSize, void* pUncompressedBuf, int* piUncompressedBufSize, FNCOMPSTAT fnStat, DWORD dwData ) {
+void* LZWCoDec::Decompress( const void* pCompressedBuffer, int iCompressedBufSize, void* pUncompressedBuf, int* piUncompressedBufSize, FNCOMPSTAT fnStat, DWORD_PTR dwData ) {
     ASSERT( pCompressedBuffer );
     ASSERT( 0 < iCompressedBufSize );
     ASSERT( piUncompressedBufSize );

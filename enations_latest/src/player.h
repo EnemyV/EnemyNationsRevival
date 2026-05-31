@@ -35,7 +35,7 @@ const int RELATIONS_WAR      = 3;
 
 typedef struct tagAI_INIT
 {
-    DWORD     dwHdl;
+    DWORD_PTR dwHdl;          // holds a CAIMgr* — must be pointer-width on x64
     CHexCoord hex;
 } AI_INIT;
 
@@ -125,8 +125,8 @@ class CPlayer : public CObject
         dead
     };
 
-    void  SetAiHdl( DWORD dwHdl );
-    DWORD GetAiHdl( ) const
+    void      SetAiHdl( DWORD_PTR dwHdl );
+    DWORD_PTR GetAiHdl( ) const
     {
         ASSERT_STRICT_VALID( this );
         return ( m_dwAiHdl );
@@ -521,7 +521,7 @@ class CPlayer : public CObject
     void _ctor( );  // init everything
 
     std::string m_sName;    // name of player
-    DWORD      m_dwAiHdl;   // AI internal handle
+    DWORD_PTR  m_dwAiHdl;   // AI internal handle (holds a CAIMgr* — pointer-width)
     VPPLAYERID m_iNetNum;   // net connection to that player
     LONG       m_iPlyrNum;  // player number (0 == self, 1 == server)
 

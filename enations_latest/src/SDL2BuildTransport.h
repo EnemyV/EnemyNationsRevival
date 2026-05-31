@@ -23,6 +23,7 @@ private:
     void OnBuild();
     void UpdateDescription();
     void RefreshQty();
+    void OnQtyEdited(const std::string& text);
 
     CVehicleBuilding* m_pBldg;
 
@@ -51,8 +52,8 @@ private:
     SDL2Label* m_lblHaveCol    = nullptr;   // have values (right-aligned)
     SDL2Label* m_lblNeedCol    = nullptr;   // deficit values (right-aligned, red if neg)
 
-    SDL2Button* m_btnBuild = nullptr;
-    SDL2Label*  m_lblNum   = nullptr;
+    SDL2Button*  m_btnBuild = nullptr;
+    SDL2EditBox* m_edtNum   = nullptr;   // editable quantity field (+/- also adjust it)
 
     // Art (from theBitmaps — matches CDlgBuildTransport OnPaint / OnInitDialog)
     SDL_Surface* m_vehBkgnd     = nullptr;  // DIB_VEHICLE_BKGND — purple metallic bg

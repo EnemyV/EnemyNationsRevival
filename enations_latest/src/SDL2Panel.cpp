@@ -12,6 +12,14 @@
 #include <SDL_syswm.h>
 #endif
 #include <fstream>
+#include <unordered_map>
+
+// Remembered detached-window placements, keyed by panel name. A game window
+// (area/world/vehicles) that is closed and reopened — or, like an area map,
+// destroyed and later recreated — comes back where the user last dragged and
+// sized it. Stored as the global OS-window rect (top-left includes the title
+// bar). Process-lifetime only; not persisted to disk.
+static std::unordered_map<std::string, SDL_Rect> g_savedPlacements;
 
 static void LogPanel(const std::string& msg) {
     std::ofstream log("SDL2Panel.log", std::ios::app);
@@ -567,13 +575,75 @@ void SDL2Panel::SetVisible(bool visible) {
     // makes the window disappear (and the status-bar icon can bring it back).
     if (m_ownWindow) {
         if (visible) {
+            // Reopen where the user last left it (no-op the first time, or a
+            // no-op if the window never moved).
+            RestoreSavedPlacement();
             SDL_ShowWindow(m_ownWindow);
             SDL_RaiseWindow(m_ownWindow);
         } else {
+            // Capture the position before hiding so the next open restores it,
+            // even if a stray MOVED event was missed.
+            RememberPlacement();
             SDL_HideWindow(m_ownWindow);
         }
     }
     SetDirty();
+}
+
+// Record this detached window's current OS rect under its name so a later
+// (re)open can restore it. No-op for non-detached panels.
+void SDL2Panel::RememberPlacement() {
+    if (!m_ownWindow)
+        return;
+    int wx = 0, wy = 0, ww = 0, wh = 0;
+    SDL_GetWindowPosition(m_ownWindow, &wx, &wy);
+    SDL_GetWindowSize(m_ownWindow, &ww, &wh);
+    if (ww > 0 && wh > 0)
+        g_savedPlacements[m_name] = SDL_Rect{ wx, wy, ww, wh };
+}
+
+// Re-apply a remembered rect (position + size) to this detached window. Called
+// from Detach (recreated windows) and SetVisible(true) (hidden→shown windows).
+void SDL2Panel::RestoreSavedPlacement() {
+    if (!m_ownWindow)
+        return;
+    auto it = g_savedPlacements.find(m_name);
+    if (it == g_savedPlacements.end())
+        return;
+    const SDL_Rect& r = it->second;
+    int tbH = GetTitleBarHeight();
+    int cw = r.w;
+    int ch = r.h - tbH;
+    if (cw < MIN_WIDTH)  cw = MIN_WIDTH;
+    if (ch < MIN_HEIGHT) ch = MIN_HEIGHT;
+    if (cw != m_width || ch != m_height) {
+        m_width  = cw;
+        m_height = ch;
+        CreateSurface();
+        SDL_SetWindowSize(m_ownWindow, cw, ch + tbH);
+        InvokeResizeCallback(m_width, m_height);
+    }
+    SDL_SetWindowPosition(m_ownWindow, r.x, r.y);
+    int gx = r.x, gy = r.y;
+    SDL_GetWindowPosition(m_ownWindow, &gx, &gy);  // OS may clamp to a monitor
+    m_x = gx;
+    m_y = gy + tbH;
+    InvokeMoveCallback();
+}
+
+// Compositor hook: the OS dragged our borderless window. Keep the stored
+// content origin in sync (so GetX/GetY never go stale after a drag) and
+// remember the new placement.
+void SDL2Panel::OnOwnWindowMoved() {
+    if (!m_ownWindow)
+        return;
+    int wx = 0, wy = 0;
+    SDL_GetWindowPosition(m_ownWindow, &wx, &wy);
+    m_x = wx;
+    m_y = wy + GetTitleBarHeight();
+    RememberPlacement();
+    InvokeMoveCallback();
+    m_dirty = true;
 }
 
 void SDL2Panel::Invalidate() {
@@ -614,8 +684,10 @@ void SDL2Panel::SetSize(int w, int h) {
     m_width = w;
     m_height = h;
     CreateSurface();
-    if (m_ownWindow && !m_suppressSync)
+    if (m_ownWindow && !m_suppressSync) {
         SDL_SetWindowSize(m_ownWindow, w, h + GetTitleBarHeight());
+        RememberPlacement();  // remember the new size for reopen
+    }
     m_dirty = true;
     if (!m_suppressSync)
         InvokeMoveCallback();
@@ -723,6 +795,11 @@ void SDL2Panel::Detach(SDL_Window* ownerWindow) {
     }
 #endif
 
+    // If this window has been opened (and moved/sized) before, reopen it in the
+    // same spot. Done before the on-monitor clamp below so a restored rect is
+    // still validated against the current display bounds.
+    RestoreSavedPlacement();
+
     // Keep the new window fully on its monitor — a detached map can inherit a
     // near-fullscreen placement from the old composited layout and hang off the
     // screen edges otherwise.
@@ -791,6 +868,10 @@ void SDL2Panel::Attach(GameWindow* mainWin) {
 
 void SDL2Panel::DestroyOwnWindow() {
     if (m_ownWindow) {
+        // Capture the final placement so a window that is destroyed and later
+        // recreated under the same name (e.g. an area map closed then reopened
+        // from the status bar) comes back in the same spot.
+        RememberPlacement();
         SDL_DestroyWindow(m_ownWindow);
         m_ownWindow = nullptr;
         m_ownWindowID = 0;

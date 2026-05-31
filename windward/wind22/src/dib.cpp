@@ -946,94 +946,16 @@ BOOL CDIB::BitBlt( CDIB* pdibDst, CRect const& rectDst, CPoint const& ptSrc ) {
     int iSrcAdd = GetDirPitch() - iWBytes;
     int iDstAdd = pdibDst->GetDirPitch() - iWBytes;
 
-    int iNumDword = iWBytes / 4;
-    int iNumBytes = iWBytes & 3;
-
+    // x64 port: the per-remainder asm blit (rep movsd + 1/2/3 tail bytes,
+    // switched on iWBytes & 3) collapses to a portable per-row memcpy. Each
+    // row copies iWBytes and advances by the full pitch (iWBytes + iSrcAdd /
+    // iDstAdd) — exactly what the asm did. memcpy vectorizes at least as well
+    // as rep movsd, so there is no speed loss.
     try {
-        switch ( iNumBytes ) {
-        case 0:
-            _asm
-            {
-                mov  esi, pbySrc
-                mov  edi, pbyDst
-                mov  edx, iH
-
-                DoNextLine0 :
-                mov  ecx, iNumDword
-                    rep  movsd
-
-                    add  esi, iSrcAdd
-                    add  edi, iDstAdd
-                    dec  edx
-                    jnz  DoNextLine0
-            }
-            return TRUE;
-
-        case 1:
-            iSrcAdd++;  // extra byte to move
-            iDstAdd++;
-
-            _asm
-            {
-                mov  esi, pbySrc
-                mov  edi, pbyDst
-                mov  edx, iH
-
-                DoNextLine1 :
-                mov  ecx, iNumDword
-                    rep  movsd
-                    mov  al, [esi]
-                    mov[edi], al
-
-                    add  esi, iSrcAdd
-                    add  edi, iDstAdd
-                    dec  edx
-                    jnz  DoNextLine1
-            }
-            return TRUE;
-
-        case 2:
-            iSrcAdd += 2;  // extra word to move
-            iDstAdd += 2;
-
-            _asm
-            {
-                mov  esi, pbySrc
-                mov  edi, pbyDst
-                mov  edx, iH
-
-                DoNextLine2 :
-                mov  ecx, iNumDword
-                    rep  movsd
-                    mov  ax, [esi]
-                    mov[edi], ax
-
-                    add  esi, iSrcAdd
-                    add  edi, iDstAdd
-                    dec  edx
-                    jnz  DoNextLine2
-            }
-            return TRUE;
-
-        case 3:
-            _asm
-            {
-                mov  esi, pbySrc
-                mov  edi, pbyDst
-                mov  edx, iH
-
-                DoNextLine3 :
-                mov  ecx, iNumDword
-                    rep  movsd
-                    movsw
-                    movsb
-
-                    add  esi, iSrcAdd
-                    add  edi, iDstAdd
-                    dec  edx
-                    jnz  DoNextLine3
-            }
-            return TRUE;
+        for ( int y = 0; y < iH; ++y ) {
+            memcpy( pbyDst, pbySrc, iWBytes );
+            pbySrc += iWBytes + iSrcAdd;
+            pbyDst += iWBytes + iDstAdd;
         }
     }
 
@@ -1143,21 +1065,15 @@ BOOL CDIB::StretchBlt( CDIB* pdibDst, CRect const& rectDst, CRect const& rectSrc
                 // VT FIXME why was there a trap here??
                 // // it triggers when 8bit is used
                // TRAP();
-                _asm
+                // x64 port: 8-bit stretched row. Sample the source row at the
+                // scaled U positions (fixDU is the 16.16 source-pixels-per-dest
+                // step). Faithful to the asm, the accumulator starts at fixDU.
                 {
-                    mov  edi, [pbyDst]
-                    mov  ecx, [iNum]
-                    mov  ebx, [pbySrcLine]
-                    mov  edx, [fixDU]
-                    _doline:
-                    mov  esi, edx
-                        shr  esi, 16
-                        mov  al, [esi + ebx]
-                        mov[edi], al
-                        add  edx, [fixDU]
-                        inc  edi
-                        dec  ecx
-                        jnz  _doline
+                    int fixUAcc = fixDU;
+                    for ( int n = 0; n < iNum; ++n ) {
+                        pbyDst[n] = pbySrcLine[ fixUAcc >> 16 ];
+                        fixUAcc += fixDU;
+                    }
                 }
 
                 break;
@@ -1464,31 +1380,20 @@ BOOL CDIB::TranBlt( CDIB* pdibDst, CRect const& rectDst, CPoint const& ptSrc, in
         int iSrcLineAdd = GetDirPitch() - iNumPixels;
         int iDestLineAdd = pdibDst->GetDirPitch() - iNumPixels;
 
-        _asm
+        // x64 port: 8-bit transparent blit. Copy each source pixel unless it is
+        // the transparent index (0xFD); advance one full pitch per row.
         {
-            mov  esi, pbySrcLine
-            mov  edi, pbyDstLine
-            mov  edx, iNumLines
-
-            DoNextLine :
-            mov  ecx, iNumPixels
-
-                DoLine :
-            mov  al, byte ptr[esi]
-                inc  esi
-                cmp  al, 0FDh
-                je  IsTran
-                mov[edi], al
-                IsTran :
-            inc  edi
-
-                dec  ecx
-                jnz  DoLine
-
-                add  esi, iSrcLineAdd
-                add  edi, iDestLineAdd
-                dec  edx
-                jnz  DoNextLine
+            BYTE* pSrc = pbySrcLine;
+            BYTE* pDst = pbyDstLine;
+            for ( int y = 0; y < iNumLines; ++y ) {
+                for ( int x = 0; x < iNumPixels; ++x ) {
+                    BYTE by = pSrc[x];
+                    if ( by != 0xFD )
+                        pDst[x] = by;
+                }
+                pSrc += iNumPixels + iSrcLineAdd;
+                pDst += iNumPixels + iDestLineAdd;
+            }
         }
         break;
     }
@@ -1501,32 +1406,23 @@ BOOL CDIB::TranBlt( CDIB* pdibDst, CRect const& rectDst, CPoint const& ptSrc, in
         // in 16-bit mode the transparent color can have several values
         DWORD  dwTransColor = thePal.GetDeviceColor( iTransColor, GetBitsPerPixel() );
 
-        _asm
+        // x64 port: 16-bit transparent blit. Skip pixels matching the device
+        // transparent color; advance one full pitch per row.
         {
-            mov  esi, pbySrcLine
-            mov  edi, pbyDstLine
-            mov  edx, iNumLines
-            mov  ebx, dwTransColor
-
-            DoNextLine2 :
-            mov  ecx, iNumPixels
-
-                DoLine2 :
-            mov  eax, [esi]
-                add  esi, 2
-                cmp  ax, bx
-                je  IsTran2
-                mov[edi], ax
-                IsTran2 :
-            add  edi, 2
-
-                dec  ecx
-                jnz  DoLine2
-
-                add  esi, iSrcLineAdd
-                add  edi, iDestLineAdd
-                dec  edx
-                jnz  DoNextLine2
+            WORD  wTran = (WORD)dwTransColor;
+            BYTE* pSrc = pbySrcLine;
+            BYTE* pDst = pbyDstLine;
+            for ( int y = 0; y < iNumLines; ++y ) {
+                WORD* s = (WORD*)pSrc;
+                WORD* d = (WORD*)pDst;
+                for ( int x = 0; x < iNumPixels; ++x ) {
+                    WORD w = s[x];
+                    if ( w != wTran )
+                        d[x] = w;
+                }
+                pSrc += iNumPixels * 2 + iSrcLineAdd;
+                pDst += iNumPixels * 2 + iDestLineAdd;
+            }
         }
         break;
     }
@@ -1536,35 +1432,24 @@ BOOL CDIB::TranBlt( CDIB* pdibDst, CRect const& rectDst, CPoint const& ptSrc, in
         int iSrcLineAdd = GetDirPitch() - iNumPixels * 3;
         int iDestLineAdd = pdibDst->GetDirPitch() - iNumPixels * 3;
 
-        _asm
+        // x64 port: 24-bit transparent blit. Transparent color is 0xFF00FF;
+        // copy the 3 source bytes per opaque pixel, one full pitch per row.
         {
-            mov  esi, pbySrcLine
-            mov  edi, pbyDstLine
-            mov  edx, iNumLines
-
-            DoNextLine3 :
-            mov  ecx, iNumPixels
-
-                DoLine3 :
-            mov  eax, [esi]
-                add  esi, 3
-                and eax, 0FFFFFFh
-                cmp  eax, 0FF00FFh
-                je  IsTran3
-                mov  ebx, [edi]
-                and ebx, 0FF000000h
-                or ebx, eax
-                mov[edi], eax
-                IsTran3 :
-            add  edi, 3
-
-                dec  ecx
-                jnz  DoLine3
-
-                add  esi, iSrcLineAdd
-                add  edi, iDestLineAdd
-                dec  edx
-                jnz  DoNextLine3
+            BYTE* pSrc = pbySrcLine;
+            BYTE* pDst = pbyDstLine;
+            for ( int y = 0; y < iNumLines; ++y ) {
+                BYTE* s = pSrc;
+                BYTE* d = pDst;
+                for ( int x = 0; x < iNumPixels; ++x ) {
+                    DWORD px = (DWORD)s[0] | ( (DWORD)s[1] << 8 ) | ( (DWORD)s[2] << 16 );
+                    if ( px != 0x00FF00FF ) {
+                        d[0] = s[0]; d[1] = s[1]; d[2] = s[2];
+                    }
+                    s += 3; d += 3;
+                }
+                pSrc += iNumPixels * 3 + iSrcLineAdd;
+                pDst += iNumPixels * 3 + iDestLineAdd;
+            }
         }
         break;
     }
@@ -1574,31 +1459,22 @@ BOOL CDIB::TranBlt( CDIB* pdibDst, CRect const& rectDst, CPoint const& ptSrc, in
         int iSrcLineAdd = GetDirPitch() - iNumPixels * 4;
         int iDestLineAdd = pdibDst->GetDirPitch() - iNumPixels * 4;
 
-        _asm
+        // x64 port: 32-bit transparent blit. Transparent color is 0xFF00FF;
+        // copy the source dword per opaque pixel, one full pitch per row.
         {
-            mov  esi, pbySrcLine
-            mov  edi, pbyDstLine
-            mov  edx, iNumLines
-
-            DoNextLine4 :
-            mov  ecx, iNumPixels
-
-                DoLine4 :
-            mov  eax, [esi]
-                add  esi, 4
-                cmp  eax, 0FF00FFh
-                je  IsTran4
-                mov[edi], eax
-                IsTran4 :
-            add  edi, 4
-
-                dec  ecx
-                jnz  DoLine4
-
-                add  esi, iSrcLineAdd
-                add  edi, iDestLineAdd
-                dec  edx
-                jnz  DoNextLine4
+            BYTE* pSrc = pbySrcLine;
+            BYTE* pDst = pbyDstLine;
+            for ( int y = 0; y < iNumLines; ++y ) {
+                DWORD* s = (DWORD*)pSrc;
+                DWORD* d = (DWORD*)pDst;
+                for ( int x = 0; x < iNumPixels; ++x ) {
+                    DWORD px = s[x];
+                    if ( px != 0x00FF00FF )
+                        d[x] = px;
+                }
+                pSrc += iNumPixels * 4 + iSrcLineAdd;
+                pDst += iNumPixels * 4 + iDestLineAdd;
+            }
         }
         break;
     }

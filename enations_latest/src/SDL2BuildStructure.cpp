@@ -44,6 +44,75 @@ bool SDL2BuildStructure::CanBuild(int iCat, const CStructureData* pSd) {
     if (theGame.GetScenario() != -1 && pSd->GetScenario() > theGame.GetScenario())
         return false;
 
+    // === CUSTOM GAMEPLAY TWEAK (2026-05-31) ===============================
+    // The housing-menu windowing below intentionally DEVIATES from the original
+    // game: it drops the population-driven slide that hid the cheapest building
+    // "for balance", and it lets one type overflow into the other's unused slots.
+    // See the comment block below for details. (Original logic: unit_wnd.cpp,
+    // CDlgBuildStructure::CanBuild.)
+    // ======================================================================
+    //
+    // Apartments/offices share the 6-slot housing menu. Each type shows a window of
+    // its best (newest/highest-tier) discovered buildings; the window is anchored to
+    // the top, so the cheapest/oldest tier is dropped ONLY when there isn't room for
+    // it. As you research newer tiers, older ones fall off the bottom once the menu
+    // is full ("hides old ones") — but the cheapest stays visible while a slot is
+    // free.
+    //
+    // Slot allocation between the two types:
+    //   - Each type gets up to NUM_CIV_BLDG (3) slots.
+    //   - If one type has fewer than 3 available, its unused slots overflow to the
+    //     other type, so the menu still fills all 6 (e.g. 4 apartments + 2 offices
+    //     shows all 6, not just 3 apartments + 2 offices with a blank slot).
+    // When both types have >=3 available this reduces to "best 3 of each".
+    //
+    // Based on CDlgBuildStructure::CanBuild (unit_wnd.cpp), but intentionally drops
+    // the original's population-driven slide (GetPplTotal()/200, GetPplBldg()/100),
+    // which hid the cheapest building "for balance" even when a slot was free.
+    //
+    // Without this windowing ALL discovered apartments pass CanBuild, the menu fills
+    // its 6 slots with apartments first (they sort before offices), and the offices
+    // get pushed out.
+    const int NUM_CIV_BLDG = 3;
+    const int CIV_SLOTS    = 6;  // building buttons in the menu
+
+    if (pSd->GetBldgType() == CStructureData::apartment ||
+        pSd->GetBldgType() == CStructureData::office) {
+
+        // Number of discovered tiers of each type. (Research unlocks them in order
+        // from the base, so the discovered set is the contiguous low-index run.)
+        auto countDisc = [](int base, int max) {
+            int n = 0;
+            for (int iOn = base; iOn < base + max; iOn++)
+                if (theStructures.GetData(iOn)->IsDiscovered())
+                    n++;
+            return n;
+        };
+
+        int aptMax = theApp.IsShareware() ? CStructureData::num_shareware_civ
+                                          : countDisc(CStructureData::apartment_base, CStructureData::num_apartments);
+        int offMax = theApp.IsShareware() ? CStructureData::num_shareware_civ
+                                          : countDisc(CStructureData::office_base, CStructureData::num_offices);
+
+        // How many of each to show: own availability, capped so the pair fits in
+        // CIV_SLOTS, but allowed to overflow into the other type's unused slots.
+        int aptShow = __min(aptMax, CIV_SLOTS - __min(offMax, NUM_CIV_BLDG));
+        int offShow = __min(offMax, CIV_SLOTS - __min(aptMax, NUM_CIV_BLDG));
+
+        int base, iMax, iShow;
+        if (pSd->GetBldgType() == CStructureData::apartment) {
+            base = CStructureData::apartment_base; iMax = aptMax; iShow = aptShow;
+        } else {
+            base = CStructureData::office_base;     iMax = offMax; iShow = offShow;
+        }
+
+        // Top-anchored window: show the highest iShow tiers. The cheapest is hidden
+        // only by the (iMax - iShow) tiers we can't fit — never "before it needs to".
+        int iStrt = base + (iMax - iShow);
+        if (pSd->GetType() < iStrt || pSd->GetType() >= base + iMax)
+            return false;
+    }
+
     // Factories: must have at least 1 buildable vehicle
     if (pSd->GetUnionType() == CStructureData::UTvehicle ||
         pSd->GetUnionType() == CStructureData::UTshipyard) {

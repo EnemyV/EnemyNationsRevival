@@ -249,6 +249,12 @@ public:
     void SetFocused(bool f) { m_focused = f; }
     bool IsFocused() const { return m_focused; }
 
+    // Override the default white-bg / blue-text scheme. Used by dark in-game
+    // dialogs (e.g. Build Vehicle) where a stock white field looks out of place.
+    void SetColors(SDL_Color bg, SDL_Color text) {
+        m_bgColor = bg; m_textColor = text; m_customColors = true;
+    }
+
 private:
     // Map a pixel X coordinate to a character index in m_text
     int XToCharIndex(int pixelX) const;
@@ -271,6 +277,10 @@ private:
     int m_selEnd = 0;         // Moving end of selection (== cursorPos during selection)
     bool m_dragging = false;  // Mouse button held for drag-select
     TTF_Font* m_cachedFont = nullptr;  // Cached from last Render for hit-testing
+
+    bool m_customColors = false;
+    SDL_Color m_bgColor   = { 255, 255, 255, 255 };
+    SDL_Color m_textColor = {  48,  58, 148, 255 };
 };
 
 // ============================================================================
@@ -335,6 +345,11 @@ public:
 protected:
     // Override to initialize widgets
     virtual void OnInit() {}
+
+    // Called once per frame while the dialog is running (both modal and
+    // non-modal). Override to do per-frame polling (e.g. refresh a list
+    // from an async data source). Default is a no-op.
+    virtual void OnFrame() {}
 
     // Override to handle OK
     virtual void OnOK() { EndDialog(1); }

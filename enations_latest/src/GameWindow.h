@@ -208,6 +208,15 @@ public:
     void Show();
 
     /**
+     * Request application shutdown. The main loop (CConquerApp::Run) is driven by
+     * SDL_PollEvent, but Win32 PostQuitMessage posts a NULL-hwnd WM_QUIT thread
+     * message that SDL's internal pump silently discards (no SDL_QUIT is produced),
+     * so the loop never sees the quit and spins forever. Push an SDL_QUIT directly —
+     * PollEvents() handles it and returns true, giving a clean shutdown.
+     */
+    void RequestQuit();
+
+    /**
      * Create an SDL_Window safely (with MFC CBT hook protection on Windows).
      * Use this instead of calling SDL_CreateWindow directly.
      */

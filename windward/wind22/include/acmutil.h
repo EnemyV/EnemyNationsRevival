@@ -39,7 +39,7 @@ protected:
     static BOOL PASCAL fmtEnumCallback(
         HACMDRIVERID hadid,
         LPACMFORMATDETAILS pafd,
-        DWORD dwInstance,
+        DWORD_PTR dwInstance,   // x64: must match ACMFORMATENUMCB's pointer-width param
         DWORD fdwSupport );
 
 

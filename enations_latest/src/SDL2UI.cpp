@@ -212,17 +212,24 @@ void SDL2Button::Render(SDL_Surface* dst, TTF_Font* font) {
         int iconH = m_iconSrc.h;
         int iconW = m_iconSrc.w;
 
-        // Scale icon to fill the face rect entirely
-        float scale = (float)faceRect.w / iconW;
-        if ((int)(iconH * scale) > faceRect.h)
-            scale = (float)faceRect.h / iconH;
-        int dstW = (int)(iconW * scale);
-        int dstH = (int)(iconH * scale);
+        // Match the original CUnitButton::DrawItem exactly: the icon spans the
+        // full face HEIGHT (stretched, not aspect-preserved) and keeps its native
+        // WIDTH, centered — or fills the face width if the icon is wider than the
+        // face. The previous aspect-preserving fit left a square icon shrunk to a
+        // small block adrift in a wide button; this fills it the way the game did.
+        int dstW = (faceRect.w >= iconW) ? iconW : faceRect.w;
+        int dstH = faceRect.h;
+        int dstY = faceRect.y;
+        // If the face is taller than the icon, don't upscale past native height —
+        // center vertically (mirrors MFC's rDest.Height() > rSrc.Height() branch).
+        if (faceRect.h > iconH) {
+            dstH = iconH;
+            dstY = faceRect.y + (faceRect.h - iconH) / 2;
+        }
 
-        // Center in face rect
         SDL_Rect dr = {
             faceRect.x + (faceRect.w - dstW) / 2 + shift,
-            faceRect.y + (faceRect.h - dstH) / 2 + shift,
+            dstY + shift,
             dstW, dstH
         };
         SDL_BlitScaled(m_iconSheet, &m_iconSrc, dst, &dr);
@@ -624,10 +631,12 @@ bool SDL2Listbox::HandleEvent(const SDL_Event& event) {
         }
     }
 
-    // Mouse wheel scrolling
+    // Mouse wheel scrolling. Use the wheel event's own mouse position (shifted to
+    // main-window coords by the dialog) rather than SDL_GetMouseState — the latter
+    // returns dialog-window-local coords for dialogs in their own window, which
+    // never match m_rect, so wheel scrolling silently did nothing there.
     if (event.type == SDL_MOUSEWHEEL) {
-        int mx, my;
-        SDL_GetMouseState(&mx, &my);
+        int mx = event.wheel.mouseX, my = event.wheel.mouseY;
         if (PointInRect(mx, my, m_rect)) {
             m_scrollOffset -= event.wheel.y * 2;
             int maxScroll = std::max(0, (int)m_items.size() - m_rect.h / m_itemHeight);
@@ -692,8 +701,10 @@ void SDL2EditBox::Render(SDL_Surface* dst, TTF_Font* font) {
     if (!m_visible) return;
     m_cachedFont = font;  // Cache for hit-testing in HandleEvent
 
-    // Background: white
-    FillRect(dst, m_rect, { 255, 255, 255, 255 });
+    // Background (white by default; dark dialogs can override via SetColors)
+    SDL_Color bg   = m_customColors ? m_bgColor   : SDL_Color{ 255, 255, 255, 255 };
+    SDL_Color text = m_customColors ? m_textColor : UIColors::LabelText;
+    FillRect(dst, m_rect, bg);
     DrawBevel(dst, m_rect, 1, UIColors::BtnDark, UIColors::BtnLight);
 
     // Selection highlight
@@ -708,14 +719,17 @@ void SDL2EditBox::Render(SDL_Surface* dst, TTF_Font* font) {
     SDL_Rect textRect = { m_rect.x + 4, m_rect.y + 2, m_rect.w - 8, m_rect.h - 4 };
     if (!m_text.empty()) {
         RenderText(dst, font, m_text.c_str(), textRect,
-                   m_enabled ? UIColors::LabelText : UIColors::Disabled, false, true);
+                   m_enabled ? text : UIColors::Disabled, false, true);
     }
 
-    // Cursor blink (don't blink when there's an active selection)
+    // Cursor blink (don't blink when there's an active selection). On a dark
+    // field draw a light caret, otherwise a dark one.
     if (m_focused && !HasSelection() && ((SDL_GetTicks() / 500) % 2 == 0)) {
         int cursorX = CharIndexToX(m_cursorPos);
         SDL_Rect cursorRect = { cursorX, m_rect.y + 3, 1, m_rect.h - 6 };
-        FillRect(dst, cursorRect, { 30, 30, 30, 255 });  // dark cursor on white bg
+        bool darkBg = (bg.r + bg.g + bg.b) < 256;
+        FillRect(dst, cursorRect, darkBg ? SDL_Color{ 230, 230, 230, 255 }
+                                         : SDL_Color{ 30, 30, 30, 255 });
     }
 }
 
@@ -1116,24 +1130,24 @@ void SDL2Dialog::Render() {
         // OS focus back ~60x/sec and broke the Start menu / interacting with other
         // windows. Use SWP_NOACTIVATE, and only when our process is foreground.
         //
-        // MODAL dialogs (research, options, etc.): they block the game loop
-        // entirely, so they MUST sit on top of the detached map/unit windows and
-        // hold focus. With the non-activating path a modal dialog could open
-        // BEHIND a detached map — the frozen map then looked "unresponsive" while
-        // the real (modal) dialog was hidden. Force it to the foreground.
+        // MODAL dialogs (research, options, etc.) likewise MUST sit on top of the
+        // detached map/unit windows — they block the game loop, so a modal that
+        // opened BEHIND a detached map left the frozen map looking "unresponsive"
+        // while the real dialog was hidden. The one-time SDL_RaiseWindow() in
+        // DoModal() gives the modal its initial focus; here we only need to keep
+        // it above siblings. Use the SAME non-activating bump as the non-modal
+        // path — calling SDL_RaiseWindow() per frame re-runs SetForegroundWindow()
+        // ~60x/sec, which yanked OS focus back and stopped the user from alt-tabbing
+        // away or interacting with other windows while the Game Options dialog was up.
 #ifdef _WIN32
-        if (m_nonModal) {
-            SDL_SysWMinfo wm; SDL_VERSION(&wm.version);
-            if (SDL_GetWindowWMInfo(m_dlgWindow, &wm)) {
-                HWND hDlg = wm.info.win.window;
-                DWORD forePid = 0;
-                ::GetWindowThreadProcessId(::GetForegroundWindow(), &forePid);
-                if (forePid == ::GetCurrentProcessId())
-                    ::SetWindowPos(hDlg, HWND_TOP, 0, 0, 0, 0,
-                                   SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
-            }
-        } else {
-            SDL_RaiseWindow(m_dlgWindow);
+        SDL_SysWMinfo wm; SDL_VERSION(&wm.version);
+        if (SDL_GetWindowWMInfo(m_dlgWindow, &wm)) {
+            HWND hDlg = wm.info.win.window;
+            DWORD forePid = 0;
+            ::GetWindowThreadProcessId(::GetForegroundWindow(), &forePid);
+            if (forePid == ::GetCurrentProcessId())
+                ::SetWindowPos(hDlg, HWND_TOP, 0, 0, 0, 0,
+                               SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
         }
 #else
         SDL_RaiseWindow(m_dlgWindow);
@@ -1265,7 +1279,12 @@ bool SDL2Dialog::HandleEvent(SDL_Event& event) {
             }
             break;
         case SDL_MOUSEWHEEL:
-            // wheel events don't carry coords, no shift needed
+            // Wheel events carry the mouse position (SDL 2.0.18+) in dialog-window
+            // coords; shift to main-window coords so widgets hit-test correctly.
+            if (event.wheel.windowID == dlgWinID) {
+                shifted.wheel.mouseX += m_x;
+                shifted.wheel.mouseY += m_y;
+            }
             break;
         }
         event = shifted;
@@ -1388,6 +1407,8 @@ int SDL2Dialog::DoModal() {
             }
             HandleEvent(event);
         }
+
+        OnFrame();
 
         Render();
 

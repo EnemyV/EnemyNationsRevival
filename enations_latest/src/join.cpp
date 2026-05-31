@@ -11,6 +11,8 @@
 
 #include "join.h"
 
+#include <algorithm>
+#include "base.h"
 #include "creatmul.inl"
 #include "help.h"
 #include "lastplnt.h"
@@ -19,6 +21,7 @@
 #include "racedata.h"
 #include "SDL2CreateStatus.h"
 #include "stdafx.h"
+#include "version.h"
 
 
 #ifdef _DEBUG
@@ -78,6 +81,69 @@ void CJoinMulti::CloseAll( )
     CCreateNewBase::CloseAll( );
     CCreateLoadBase::CloseAll( );
     CMultiBase::CloseAll( );
+}
+
+void CJoinMulti::OnSessionEnum( LPCVPSESSIONINFO pSi )
+{
+    const CNetPublish* pPub = (const CNetPublish*)( pSi->sessionName );
+
+    // Version + game-ID guard (mirrors original CDlgJoinGame::OnSessionEnum)
+    WORD wTst = 0;
+#ifdef _DEBUG
+    wTst |= CNetPublish::fdebug;
+#endif
+    if ( pPub->m_iGameID != TLP_GAME_ID ||
+         pPub->m_cVerMajor != VER_MAJOR  ||
+         pPub->m_cVerMinor != VER_MINOR  ||
+         ( pPub->m_cFlags & ( CNetPublish::fdebug | CNetPublish::fcheat ) ) != wTst )
+        return;
+
+    // Skip in-progress games (not joinable from lobby)
+    if ( pPub->m_cFlags & CNetPublish::finprogress )
+        return;
+
+    const char* pGame = pPub->GetGameName();
+
+    // Update if already listed
+    for ( auto& s : m_sessions )
+    {
+        if ( s.gameName == pGame )
+        {
+            s.id           = pSi->sessionId;
+            s.numOpponents = pPub->m_iNumOpponents;
+            s.aiLevel      = pPub->m_iAIlevel;
+            s.worldSize    = pPub->m_iWorldSize;
+            s.startPos     = pPub->m_iPos;
+            s.cFlags       = pPub->m_cFlags;
+            return;
+        }
+    }
+
+    // New entry
+    SessionEntry e;
+    e.id           = pSi->sessionId;
+    e.gameName     = pGame;
+    e.numOpponents = pPub->m_iNumOpponents;
+    e.aiLevel      = pPub->m_iAIlevel;
+    e.worldSize    = pPub->m_iWorldSize;
+    e.startPos     = pPub->m_iPos;
+    e.cFlags       = pPub->m_cFlags;
+    m_sessions.push_back( e );
+}
+
+void CJoinMulti::OnSessionClose( LPCVPSESSIONINFO pSi )
+{
+    if ( pSi == NULL )
+    {
+        m_sessions.clear();
+        return;
+    }
+    m_sessions.erase(
+        std::remove_if( m_sessions.begin(), m_sessions.end(),
+            [pSi]( const SessionEntry& e ) {
+                return memcmp( &e.id, &pSi->sessionId, sizeof( VPSESSIONID ) ) == 0;
+            } ),
+        m_sessions.end() );
 }
 
 void CJoinMulti::GameLoaded( void* pBuf, int iLen )

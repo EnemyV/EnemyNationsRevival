@@ -82,7 +82,7 @@ T Min( T const & t1, T const & t2 ) // Requires T to define an operator <
 inline void TRAP (bool f=true)
 {
     if (f)
-        _asm int 3;
+        __debugbreak();   // was `_asm int 3` — x64 has no inline asm; this intrinsic is portable
 }
 
 void AssertString (CString const *pStr);
@@ -102,7 +102,7 @@ void AssertString (CString const *pStr);
 inline void TRAP (bool f=true)
 {
     if (f)
-        _asm int 3;
+        __debugbreak();   // was `_asm int 3` — x64 has no inline asm; this intrinsic is portable
 }
 #else
 

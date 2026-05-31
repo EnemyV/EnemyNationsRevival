@@ -152,6 +152,16 @@ add_compile_definitions(
 )
 
 
+# windows.h normally derives _X86_/_AMD64_ from the compiler's _M_* macros,
+# but this codebase defined _X86_ by hand (see HACK note below). Pick the macro
+# that matches the build platform so an x64 compile doesn't pull in the 32-bit
+# SDK definitions.
+if(CMAKE_GENERATOR_PLATFORM STREQUAL "x64" OR CMAKE_SIZEOF_VOID_P EQUAL 8)
+    set(EN_ARCH_DEFINE _AMD64_)
+else()
+    set(EN_ARCH_DEFINE _X86_)
+endif()
+
 target_compile_definitions(enations PUBLIC
         # Phase 1g step 2 (2026-05-21): _AFXDLL no longer required —
         # stdafx.h's afx*.h chain is gated out and mfc_compat.h provides
@@ -162,7 +172,7 @@ target_compile_definitions(enations PUBLIC
         _WIN32
         _WIN32_WINNT=_WIN32_WINNT_WIN7
         _MBCS
-        _X86_ # HACK! This should not need to be defined here!
+        ${EN_ARCH_DEFINE} # arch macro (_X86_ / _AMD64_), selected by platform above
         WIN32
         #LOGGINGON        
         #_LOGOUT
@@ -213,9 +223,17 @@ target_link_libraries(enations PUBLIC
         SDL2_ttf.lib
         )
 
-        # Disable SafeSEH for MSVC builds as some linked libraries do not support it
-        # For Legacy 32-bit codebases. When we switch to 64 bit, remove this
-if(MSVC)
+# Pick the SDL2 import-lib arch to match the build platform. VS sets
+# CMAKE_GENERATOR_PLATFORM (Win32/x64); fall back to pointer size otherwise.
+if(CMAKE_GENERATOR_PLATFORM STREQUAL "x64" OR CMAKE_SIZEOF_VOID_P EQUAL 8)
+    set(SDL2_ARCH x64)
+else()
+    set(SDL2_ARCH x86)
+endif()
+
+        # Disable SafeSEH for MSVC builds as some linked libraries do not support it.
+        # SAFESEH is an x86-only concept; the x64 linker rejects the flag, so guard it.
+if(MSVC AND SDL2_ARCH STREQUAL "x86")
     target_link_options(enations PRIVATE "/SAFESEH:NO")
 endif()
 
@@ -244,22 +262,22 @@ target_link_options(enations PUBLIC
         ../../cmakeBuild/windward/wind22/$<CONFIG>
         ./cmakeBuild/tools/vdmplay/$<CONFIG>
         ./cmakeBuild/windward/wind22/$<CONFIG>
-        ../../tools/sdl2/SDL2_ttf-2.22.0/lib/x86
+        ../../tools/sdl2/SDL2_ttf-2.22.0/lib/${SDL2_ARCH}
     )
 
 # Copy required DLLs to output directory
 add_custom_command(TARGET enations POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "${CMAKE_BINARY_DIR}/../tools/sdl2/SDL2-2.30.12/lib/x86/SDL2.dll"
+        "${CMAKE_BINARY_DIR}/../tools/sdl2/SDL2-2.30.12/lib/${SDL2_ARCH}/SDL2.dll"
         $<TARGET_FILE_DIR:enations>
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "${CMAKE_BINARY_DIR}/../tools/sdl2/SDL2_mixer-2.8.1/lib/x86/SDL2_mixer.dll"
+        "${CMAKE_BINARY_DIR}/../tools/sdl2/SDL2_mixer-2.8.1/lib/${SDL2_ARCH}/SDL2_mixer.dll"
         $<TARGET_FILE_DIR:enations>
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${CMAKE_BINARY_DIR}/tools/vdmplay/$<CONFIG>/vdmplay.dll"
         $<TARGET_FILE_DIR:enations>
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "${CMAKE_BINARY_DIR}/../tools/sdl2/SDL2_ttf-2.22.0/lib/x86/SDL2_ttf.dll"
+        "${CMAKE_BINARY_DIR}/../tools/sdl2/SDL2_ttf-2.22.0/lib/${SDL2_ARCH}/SDL2_ttf.dll"
         $<TARGET_FILE_DIR:enations>
     COMMENT "Copying SDL2.dll, SDL2_mixer.dll, SDL2_ttf.dll, and vdmplay.dll to output directory"
 )

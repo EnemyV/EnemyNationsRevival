@@ -842,7 +842,7 @@ BOOL CVdmPlay::GetServerAddress( OUT LPVPNETADDRESS addr ) {
 
 
 LRESULT APIENTRY CVdmPlay::WinProc( HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam ) {
-    CVdmPlay* vp = (CVdmPlay*)GetWindowLong( hWnd, GWL_USERDATA );
+    CVdmPlay* vp = (CVdmPlay*)GetWindowLongPtr( hWnd, GWLP_USERDATA );
 
     if ( !vp )
         return DefWindowProc( hWnd, uMsg, wParam, lParam );
@@ -923,7 +923,7 @@ BOOL CVdmPlay::InitWindowsStuff() {
     }
 
 
-    SetWindowLong( m_window, GWL_USERDATA, (DWORD)this );
+    SetWindowLongPtr( m_window, GWLP_USERDATA, (LONG_PTR)this );
 
     m_timer = SetTimer( m_window, 0, 250L, NULL );
 
@@ -1580,7 +1580,7 @@ void vpassertion( LPCSTR text, LPCSTR file, int line ) {
     MessageBox( NULL, buf, "VDMPLAY", MB_OK );
 #endif
     if ( gBreakOnAssert ) {
-        __asm int 3
+        __debugbreak();   // was `__asm int 3` — x64 has no inline asm
     }
 
 #if defined (WIN32)

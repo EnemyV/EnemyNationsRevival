@@ -28,7 +28,7 @@ extern "C"
 CDiskCache theDiskCache;
 
 
-CCacheElem::CCacheElem( HANDLE hFil, int iOff, int iLen, void* pBuf, void ( *fnCall ) ( DWORD dwData ), DWORD dwData ) {
+CCacheElem::CCacheElem( HANDLE hFil, int iOff, int iLen, void* pBuf, void ( *fnCall ) ( DWORD_PTR dwData ), DWORD_PTR dwData ) {
 
     m_hFil = hFil;
     m_iOff = iOff;
@@ -140,7 +140,7 @@ void CDiskCache::SyncRequest( int hFil, int iOff, int iLen, void* pBuf ) {
         ThrowError( ERR_CACHE_READ );
 }
 
-void CDiskCache::AddRequest( int hFil, int iOff, int iLen, void* pBuf, void ( *fnCall ) ( DWORD dwData ), DWORD dwData ) {
+void CDiskCache::AddRequest( int hFil, int iOff, int iLen, void* pBuf, void ( *fnCall ) ( DWORD_PTR dwData ), DWORD_PTR dwData ) {
 
     // if we aren't going yet we do a sync read
    //BUGBUG if (m_dwThrd == NULL)

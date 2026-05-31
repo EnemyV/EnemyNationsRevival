@@ -922,8 +922,14 @@ void CWndBar::_GotoScience( )
         return;
 
     if ( theApp.m_gameWindow ) {
-        SDL2ResearchDialog dlg( theApp.m_gameWindow.get() );
-        dlg.DoModal();
+        // Non-modal: the game must keep running while the research window is up
+        // (DoModal ran its own loop and froze the simulation). Guard against a
+        // second copy; the onDone callback clears the pointer and GameWindow
+        // deletes the object on its next cleanup pass.
+        if ( !m_pSdlResearch ) {
+            m_pSdlResearch = new SDL2ResearchDialog( theApp.m_gameWindow.get() );
+            m_pSdlResearch->ShowNonModal( [this]( int ) { m_pSdlResearch = nullptr; } );
+        }
     }
 }
 

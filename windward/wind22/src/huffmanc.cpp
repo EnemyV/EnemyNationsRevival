@@ -7,7 +7,7 @@ HuffmanCoDec::HuffmanCoDec(): bitBuffer() {}
 
 HuffmanCoDec::~HuffmanCoDec() {}
 
-void* HuffmanCoDec::Compress( const void* pUncompressedBuffer, int iUncompressedBufSize, void* pCompressedBuffer, int* piCompressedBufSize, FNCOMPSTAT fnStat, DWORD dwData ) {
+void* HuffmanCoDec::Compress( const void* pUncompressedBuffer, int iUncompressedBufSize, void* pCompressedBuffer, int* piCompressedBufSize, FNCOMPSTAT fnStat, DWORD_PTR dwData ) {
     ASSERT( pUncompressedBuffer );
     ASSERT( 0 < iUncompressedBufSize );
     ASSERT( piCompressedBufSize );
@@ -44,7 +44,7 @@ void* HuffmanCoDec::Compress( const void* pUncompressedBuffer, int iUncompressed
     return pCompressedBuffer;
 }
 
-void* HuffmanCoDec::Decompress( const void* pCompressedBuffer, int iCompressedBufSize, void* pUncompressedBuf, int* piUncompressedBufSize, FNCOMPSTAT fnStat, DWORD dwData ) {
+void* HuffmanCoDec::Decompress( const void* pCompressedBuffer, int iCompressedBufSize, void* pUncompressedBuf, int* piUncompressedBufSize, FNCOMPSTAT fnStat, DWORD_PTR dwData ) {
     ASSERT( pCompressedBuffer );
     ASSERT( 0 < iCompressedBufSize );
     ASSERT( piUncompressedBufSize );

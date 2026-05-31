@@ -2,8 +2,12 @@
 
 #include "SDL2UI.h"
 #include <vector>
+#include <string>
 #include <unordered_map>
 #include <SDL_ttf.h>
+
+// Called from netapi.cpp when a cmd_chat network message arrives.
+void SDL2Chat_AddMessage(const std::string& line);
 
 class CVehicle;
 class CBuilding;
@@ -33,7 +37,6 @@ private:
 
     SDL2Listbox* m_list = nullptr;
     SDL2Label*   m_lblDesc = nullptr;
-    SDL2Label*   m_lblProgress = nullptr;
     SDL2Button*  m_btnStart = nullptr;
     SDL2Button*  m_btnClose = nullptr;
     SDL2Button*  m_btnDiscover = nullptr;
@@ -41,6 +44,7 @@ private:
     // Art (loaded from theBitmaps — matches CDlgResearch::OnPaint / OnDrawItem)
     SDL_Surface* m_bkgnd     = nullptr;   // DIB_RSRCH_BKGND — PCB circuit-board art
     SDL_Surface* m_btnSheet  = nullptr;   // DIB_RESEARCH_BTNS — 3-state button sheet
+    SDL_Surface* m_flaskSheet = nullptr;  // ICON_RESEARCH — flask/bulb progress sprite
 };
 
 // ============================================================================
@@ -162,12 +166,16 @@ private:
     SDL_Surface* m_bgGold = nullptr;
     SDL_Surface* m_borderH = nullptr;
     SDL_Surface* m_borderV = nullptr;
+    SDL_Surface* m_matIcons = nullptr;  // ICON_MATERIALS strip (one icon per material type)
+    int m_matIconW = 0;                 // width of each material icon in the strip
+    int m_matIconH = 0;                 // height of each material icon
     bool m_artLoaded = false;
     void LoadArt();
 
     struct TextLine {
         std::string text;
         bool red;
+        int matIdx = -1;  // material type index → draw ICON_MATERIALS icon before text; -1 = none
     };
     std::vector<TextLine> m_lines;
     static const int LINE_HT = 16;
@@ -183,12 +191,14 @@ public:
     SDL2ChatWindow(GameWindow* gw);
 protected:
     void OnInit() override;
+    void OnFrame() override;
 private:
     void OnSend();
     void RefreshMessages();
 
     SDL2Listbox* m_msgList = nullptr;
     SDL2EditBox* m_editMsg = nullptr;
+    int          m_lastMsgCount = -1;
 };
 
 // ============================================================================

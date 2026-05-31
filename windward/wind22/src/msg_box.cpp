@@ -12,7 +12,7 @@
 #include "_windwrd.h"
 
 
-BOOL CALLBACK MsgBoxDlgProc( HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam );
+INT_PTR CALLBACK MsgBoxDlgProc( HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam );
 static HWND hDlgBox = NULL;
 
 
@@ -358,7 +358,7 @@ int WINAPI ExtMsgBox( HWND hWndPar, const char* psText, const char* psTitle, UIN
         return ( MessageBox( hWndPar, psText, psTitle, uStyle ) );
     }
 
-    SetWindowLong( hDlg, DWL_USER, (LONG)( void FAR* ) ( &mbd ) );
+    SetWindowLongPtr( hDlg, DWLP_USER, (LONG_PTR)( void* ) ( &mbd ) );   // x64: pointer-width user data
     cgDlg.Free();
 
     // disable parent
@@ -427,7 +427,7 @@ int WINAPI ExtMsgBox( HWND hWndPar, const char* psText, const char* psTitle, UIN
     return ( iRtn );
 }
 
-BOOL CALLBACK MsgBoxDlgProc( HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam ) {
+INT_PTR CALLBACK MsgBoxDlgProc( HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam ) {
     MBDATA* pMbd;
 
     switch ( uMsg ) {
@@ -471,7 +471,7 @@ BOOL CALLBACK MsgBoxDlgProc( HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam 
         break;
 
     case WM_PAINT:
-        pMbd = (MBDATA*)GetWindowLong( hDlg, DWL_USER );
+        pMbd = (MBDATA*)GetWindowLongPtr( hDlg, DWLP_USER );
         if ( ( pMbd == NULL ) || ( pMbd->hIcon == NULL ) )
             break;
         PAINTSTRUCT ps;
@@ -483,7 +483,7 @@ BOOL CALLBACK MsgBoxDlgProc( HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam 
     case WM_COMMAND:
         if ( ( LOWORD( lParam ) == 0 ) || ( HIWORD( lParam ) != BN_CLICKED ) )
             break;
-        if ( ( pMbd = (MBDATA*)GetWindowLong( hDlg, DWL_USER ) ) == NULL )
+        if ( ( pMbd = (MBDATA*)GetWindowLongPtr( hDlg, DWLP_USER ) ) == NULL )
             break;
 
         // check for help

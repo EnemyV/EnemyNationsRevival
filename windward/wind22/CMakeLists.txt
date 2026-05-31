@@ -55,6 +55,14 @@ target_compile_options(wind22 PUBLIC
 # (CRect, CString, CFile, CWnd, CDialog) still link via the DLL.
 # set(CMAKE_MFC_FLAG 2)
 
+# Arch macro: select _X86_ / _AMD64_ to match the build platform (see the
+# matching note in enations_latest/src/CMakeLists.txt).
+if(CMAKE_GENERATOR_PLATFORM STREQUAL "x64" OR CMAKE_SIZEOF_VOID_P EQUAL 8)
+    set(EN_ARCH_DEFINE _AMD64_)
+else()
+    set(EN_ARCH_DEFINE _X86_)
+endif()
+
 target_compile_definitions(wind22 PUBLIC
     # Phase 1g step 2 (2026-05-21): _AFXDLL no longer required —
     # stdafx.h's afx*.h chain is gated out and mfc_compat.h provides the
@@ -64,7 +72,7 @@ target_compile_definitions(wind22 PUBLIC
     _WINDOWS
     _MBCS
     WIN32
-    _X86_ # Hack! This should not be necessary.
+    ${EN_ARCH_DEFINE} # arch macro (_X86_ / _AMD64_), selected by platform above
     #LOGGINGON
     AI_THREADS_ENABLED
     $<$<CONFIG:Release>:NDEBUG>
@@ -103,9 +111,17 @@ target_include_directories(wind22 PUBLIC
         ../../tools/sdl2/SDL2_ttf-2.22.0/include
         )
 
+# Pick the SDL2 import-lib arch to match the build platform. VS sets
+# CMAKE_GENERATOR_PLATFORM (Win32/x64); fall back to pointer size otherwise.
+if(CMAKE_GENERATOR_PLATFORM STREQUAL "x64" OR CMAKE_SIZEOF_VOID_P EQUAL 8)
+    set(SDL2_ARCH x64)
+else()
+    set(SDL2_ARCH x86)
+endif()
+
 target_link_directories(wind22 PUBLIC
         ../../cmakeBuild/tools/lib
-        ../../tools/sdl2/SDL2-2.30.12/lib/x86
-        ../../tools/sdl2/SDL2_mixer-2.8.1/lib/x86
-        ../../tools/sdl2/SDL2_ttf-2.22.0/lib/x86
+        ../../tools/sdl2/SDL2-2.30.12/lib/${SDL2_ARCH}
+        ../../tools/sdl2/SDL2_mixer-2.8.1/lib/${SDL2_ARCH}
+        ../../tools/sdl2/SDL2_ttf-2.22.0/lib/${SDL2_ARCH}
         )

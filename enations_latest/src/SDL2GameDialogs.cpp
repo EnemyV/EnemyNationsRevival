@@ -16,8 +16,88 @@
 #include "area.h"
 #include "netcmd.h"
 #include "base.h"
+#include "icons.h"      // theIcons / ICON_RESEARCH — flask progress sprite
 
 #include <SDL_ttf.h>
+#include <vector>
+#include <string>
+
+// ---------------------------------------------------------------------------
+// Chat message store — receives incoming cmd_chat network messages.
+// SDL2Chat_AddMessage() is called from netapi.cpp; SDL2ChatWindow reads it.
+// ---------------------------------------------------------------------------
+static std::vector<std::string> g_chatMessages;
+
+void SDL2Chat_AddMessage(const std::string& line) {
+    g_chatMessages.push_back(line);
+    // Cap history at 200 lines so the listbox stays reasonable
+    if (g_chatMessages.size() > 200)
+        g_chatMessages.erase(g_chatMessages.begin());
+}
+
+// ----------------------------------------------------------------------------
+// ResearchFlaskBar — the light-bulb/flask progress strip from CDlgResearch.
+// The original painted ICON_RESEARCH via CStatInst::DrawStatDone: the flask
+// sprite tiled (overlapping by half its width) across `percent`% of the strip.
+// We mirror that here, querying the live percent each frame so the strip fills
+// as research advances while the (non-modal) window stays open.
+// ----------------------------------------------------------------------------
+class ResearchFlaskBar : public SDL2Widget {
+public:
+    ResearchFlaskBar(int x, int y, int w, int h, SDL_Surface* sheet,
+                     int cx, int cy, int leftOff, int rightOff,
+                     std::function<int()> getPercent)
+        : SDL2Widget(x, y, w, h), m_sheet(sheet), m_cx(cx), m_cy(cy),
+          m_leftOff(leftOff), m_rightOff(rightOff), m_getPercent(std::move(getPercent)) {}
+
+    void Render(SDL_Surface* dst, TTF_Font*) override {
+        if (!m_visible || !m_sheet || m_cx <= 0 || m_cy <= 0) return;
+        int per = m_getPercent ? m_getPercent() : 0;
+        if (per <= 0) return;
+        if (per > 100) per = 100;
+
+        // Mirror CStatInst::DrawStatDone (icons.cpp), in absolute coords.
+        int top   = m_rect.y + (m_rect.h - m_cy) / 2;
+        int left  = m_rect.x + m_leftOff;
+        int right = m_rect.x + m_rect.w - m_rightOff;
+        int width = right - left;
+        int iEnd  = right;
+        if (per < 100) iEnd -= m_cx / 2;       // leave the last flask for 100%
+        int iRight = left + (width * per) / 100;
+        iRight = __max(left + 1, iRight);      // at least one flask when > 0
+        int iAdd = m_cx / 2;
+        if (iAdd < 1) iAdd = 1;
+        for (int x = left; x < iRight; x += iAdd) {
+            if (x + m_cx > iEnd) break;
+            SDL_Rect sr = { 0, 0, m_cx, m_cy };   // m_iBaseOn == 0 (base flask)
+            SDL_Rect dr = { x, top, m_cx, m_cy };
+            SDL_BlitSurface(m_sheet, &sr, dst, &dr);
+        }
+    }
+
+private:
+    SDL_Surface* m_sheet;
+    int m_cx, m_cy, m_leftOff, m_rightOff;
+    std::function<int()> m_getPercent;
+};
+
+// Current research progress as a percent (1..99), matching CDlgResearch::UpdateProgress.
+// Runs every frame from the (non-modal) flask bar, so it must tolerate having no
+// local player: GetMe() asserts + returns NULL during game teardown / before the
+// player is set. Use the assert-free _GetMe() and bail when there's no player.
+static int ResearchCurrentPercent() {
+    CPlayer* pMe = theGame._GetMe();
+    if (!pMe) return 0;
+    int iSel = pMe->GetRsrchItem();
+    if (iSel <= 0) return 0;
+    int disc = pMe->GetRsrch(iSel).m_iPtsDiscovered;
+    int req  = theRsrch.ElementAt(iSel).m_iPtsRequired;
+    if (req <= 0) return 0;
+    int per = (disc * 50) / req;
+    per = __min(per, 99);
+    per = __max(1, per);
+    return per;
+}
 
 // ============================================================================
 // SDL2ResearchDialog — matches CDlgResearch layout from the original MFC dialog
@@ -46,8 +126,9 @@ SDL2ResearchDialog::SDL2ResearchDialog(GameWindow* gw)
 }
 
 SDL2ResearchDialog::~SDL2ResearchDialog() {
-    if (m_bkgnd)    SDL_FreeSurface(m_bkgnd);
-    if (m_btnSheet) SDL_FreeSurface(m_btnSheet);
+    if (m_bkgnd)      SDL_FreeSurface(m_bkgnd);
+    if (m_btnSheet)   SDL_FreeSurface(m_btnSheet);
+    if (m_flaskSheet) SDL_FreeSurface(m_flaskSheet);
 }
 
 void SDL2ResearchDialog::OnInit() {
@@ -58,9 +139,11 @@ void SDL2ResearchDialog::OnInit() {
     int ox = m_x + bdrSide;
     int oy = m_y + bdrTop + titleH;
 
-    // List: red text on white, blue selection (close to MFC red-text-on-black-when-selected)
+    // List: red text on white, blue selection (close to MFC red-text-on-black-when-selected).
+    // Double-click starts researching the item (matches CDlgResearch::OnDblclkRsrchList).
     m_list = AddWidget<SDL2Listbox>(ox + 18, oy + 35, 155, 198,
-        [this](int idx) { SelectItem(idx); });
+        [this](int idx) { SelectItem(idx); },
+        [this](int idx) { SelectItem(idx); OnStart(); });
 
     // Description text: green PALETTERGB(41,255,8), top-aligned, wrapped.
     // MFC rectText(192, 37, 420, 156) → x=192,y=37, w=228, h=119
@@ -69,12 +152,17 @@ void SDL2ResearchDialog::OnInit() {
     m_lblDesc->SetTopAligned(true);
     m_lblDesc->SetColor({41, 255, 8, 255});
 
-    // Progress label sits where the legacy MFC light-bulb strip was painted
-    // (rect 17,248,425,272 in CDlgResearch::OnInitDialog). Until the bulb
-    // widget is built we use a centered text line in that same band.
-    m_lblProgress = AddWidget<SDL2Label>(ox + 18, oy + 256, 405, 18, "");
-    m_lblProgress->SetColor({41, 255, 8, 255});
-    m_lblProgress->SetCentered(true);
+    // Light-bulb/flask progress strip (MFC rect 17,248,425,272 — ICON_RESEARCH).
+    // Renders live each frame so it fills as the current research advances.
+    {
+        CStatData* pSd = theIcons.GetByIndex(ICON_RESEARCH);
+        if (pSd && pSd->m_pcDib) {
+            m_flaskSheet = SDL2MainMenu::CreateSurfaceFromDIB(pSd->m_pcDib);
+            AddWidget<ResearchFlaskBar>(ox + 17, oy + 248, 408, 24, m_flaskSheet,
+                pSd->m_cxIcon, pSd->m_cyIcon, pSd->m_leftOff, pSd->m_rightOff,
+                []() { return ResearchCurrentPercent(); });
+        }
+    }
 
     // Buttons — use the 3-state research button sheet (red-text-on-circuit art)
     m_btnStart = AddWidget<SDL2Button>(ox + 188, oy + 170, 116, 25, "Research",
@@ -166,18 +254,30 @@ void SDL2ResearchDialog::SelectItem(int idx) {
     CRsrchItem const& item = theRsrch[m_items[idx].index];
     m_lblDesc->SetText(item.m_sDesc.c_str());
 
-    int discovered = theGame.GetMe()->GetRsrch(m_items[idx].index).m_iPtsDiscovered;
-    int required = item.m_iPtsRequired;
-    int pct = required > 0 ? (discovered * 100) / required : 100;
-    m_lblProgress->SetText("Progress: " + std::to_string(pct) + "%");
-
+    // Progress is shown by the flask strip (current research), not per-selection.
     m_btnStart->SetEnabled(m_items[idx].available);
 }
 
 void SDL2ResearchDialog::OnStart() {
     if (m_selected < 0 || m_selected >= (int)m_items.size()) return;
-    theGame.GetMe()->SetRsrchItem(m_items[m_selected].index);
-    EndDialog(1);
+    if (!m_items[m_selected].available) return;
+    int iSel = m_items[m_selected].index;
+
+    // Switching away from another in-progress topic costs it 10% of its points,
+    // matching CDlgResearch::OnOK. Then set the new topic — but DON'T close the
+    // window (the original stayed open and just updated its title/progress).
+    int iOn = theGame.GetMe()->GetRsrchItem();
+    if (iOn > 0 && iOn != iSel) {
+        CRsrchStatus& rs = theGame.GetMe()->GetRsrch(iOn);
+        rs.m_iPtsDiscovered -= rs.m_iPtsDiscovered / 10;
+    }
+    theGame.GetMe()->SetRsrchItem(iSel);
+
+    // Refresh the list (markers) and keep the just-started item selected. The
+    // flask strip picks up the new current-research progress on its own.
+    PopulateList();
+    for (int i = 0; i < (int)m_items.size(); i++)
+        if (m_items[i].index == iSel) { m_list->SetSelected(i); SelectItem(i); break; }
 }
 
 // ============================================================================
@@ -537,6 +637,7 @@ SDL2UnitInfoPanel::~SDL2UnitInfoPanel() {
     if (m_bgGold) SDL_FreeSurface(m_bgGold);
     if (m_borderH) SDL_FreeSurface(m_borderH);
     if (m_borderV) SDL_FreeSurface(m_borderV);
+    if (m_matIcons) SDL_FreeSurface(m_matIcons);
     for (auto& p : m_fontCache)
         if (p.second) TTF_CloseFont(p.second);
 }
@@ -554,6 +655,17 @@ void SDL2UnitInfoPanel::LoadArt() {
 
     CDIB* pV = theBitmaps.GetByIndex(DIB_BORDER_VERT);
     if (pV) m_borderV = SDL2MainMenu::CreateSurfaceFromDIB(pV);
+
+    // Material icons (barrel/log/etc.) — the original drew these in the unit info
+    // box instead of spelling out the material name. The ICON_MATERIALS strip holds
+    // one icon per material type, laid out left-to-right at srcX = type * m_cxIcon
+    // (see CUnit::PaintStatusMaterials in the legacy new_unit.cpp).
+    CStatData* pMat = theIcons.GetByIndex(ICON_MATERIALS);
+    if (pMat && pMat->m_pcDib) {
+        m_matIcons = SDL2MainMenu::CreateSurfaceFromDIB(pMat->m_pcDib);
+        m_matIconW = pMat->m_cxIcon;
+        m_matIconH = pMat->m_cyIcon;
+    }
 }
 
 TTF_Font* SDL2UnitInfoPanel::GetFont(int size) {
@@ -688,11 +800,18 @@ void SDL2UnitInfoPanel::BuildContent() {
         if (i < CMaterialTypes::GetNumBuildTypes() && m_pUnit->GetUnitType() == CUnit::building)
             iNeed = ((CBuilding*)m_pUnit)->GetBldgResReq(i, FALSE);
         if (m_pUnit->GetStore(i) != 0 || iNeed > 0) {
-            std::string s = CMaterialTypes::GetDesc(i);
-            s += ": " + std::to_string(m_pUnit->GetStore(i));
+            // The original game showed the material's icon (a barrel of oil, a log,
+            // etc.) instead of its name, followed by the stored amount. When the icon
+            // strip is available we carry the material index and emit just the number;
+            // Render() blits the icon. Fall back to the text label if art is missing.
+            std::string s;
+            if (m_matIcons)
+                s = std::to_string(m_pUnit->GetStore(i));
+            else
+                s = CMaterialTypes::GetDesc(i) + ": " + std::to_string(m_pUnit->GetStore(i));
             if (iNeed > 0)
                 s += " (" + std::to_string(iNeed) + ")";
-            m_lines.push_back({s, false});
+            m_lines.push_back({s, false, m_matIcons ? i : -1});
         }
     }
 
@@ -745,26 +864,40 @@ void SDL2UnitInfoPanel::Render() {
     if (!font) { m_panel->SetDirty(); return; }
 
     int textX = borderV + 4;
-    int textMaxW = w - textX * 2;
     int y = borderH + 4;
+
+    int fontH = TTF_FontHeight(font);
 
     for (auto& line : m_lines) {
         if (line.text.empty()) { y += LINE_HT; continue; }
+
+        // Material lines lead with the resource icon (barrel, log, …) in place of
+        // the name; the text following it is just the quantity. Reserve a fixed
+        // icon-width gutter so the numbers line up across rows.
+        int lineTextX = textX;
+        if (line.matIdx >= 0 && m_matIcons && m_matIconW > 0) {
+            SDL_Rect isr = {line.matIdx * m_matIconW, 0, m_matIconW, m_matIconH};
+            SDL_Rect idr = {textX, y + (fontH - m_matIconH) / 2, m_matIconW, m_matIconH};
+            SDL_SetSurfaceBlendMode(m_matIcons, SDL_BLENDMODE_BLEND);
+            SDL_BlitSurface(m_matIcons, &isr, dst, &idr);
+            lineTextX = textX + m_matIconW + 4;
+        }
+        int lineMaxW = w - lineTextX - (borderV + 4);
 
         SDL_Color shadow = {128, 128, 128, 255};
         SDL_Color fg = line.red ? SDL_Color{255, 50, 27, 255} : SDL_Color{0, 0, 0, 255};
 
         SDL_Surface* ts = TTF_RenderText_Blended(font, line.text.c_str(), shadow);
         if (ts) {
-            SDL_Rect sr = {0, 0, __min(ts->w, textMaxW), ts->h};
-            SDL_Rect dr = {textX + 1, y + 1, sr.w, sr.h};
+            SDL_Rect sr = {0, 0, __min(ts->w, lineMaxW), ts->h};
+            SDL_Rect dr = {lineTextX + 1, y + 1, sr.w, sr.h};
             SDL_BlitSurface(ts, &sr, dst, &dr);
             SDL_FreeSurface(ts);
         }
         ts = TTF_RenderText_Blended(font, line.text.c_str(), fg);
         if (ts) {
-            SDL_Rect sr = {0, 0, __min(ts->w, textMaxW), ts->h};
-            SDL_Rect dr = {textX, y, sr.w, sr.h};
+            SDL_Rect sr = {0, 0, __min(ts->w, lineMaxW), ts->h};
+            SDL_Rect dr = {lineTextX, y, sr.w, sr.h};
             SDL_BlitSurface(ts, &sr, dst, &dr);
             SDL_FreeSurface(ts);
         }
@@ -799,15 +932,23 @@ void SDL2ChatWindow::OnInit() {
     RefreshMessages();
 }
 
+void SDL2ChatWindow::OnFrame() {
+    RefreshMessages();
+}
+
 void SDL2ChatWindow::OnSend() {
     if (!m_editMsg) return;
-    std::string msg = m_editMsg->GetText();
-    if (msg.empty()) return;
+    std::string text = m_editMsg->GetText();
+    if (text.empty()) return;
 
-    // Send via the MFC chat window (it handles network messaging)
-    if (theGame.IsNetGame() && theApp.m_wndChat.m_hWnd != NULL) {
-        // Post the message text to the MFC chat system
-        theApp.m_wndChat.PostMessage(WM_COMMAND, MAKEWPARAM(IDOK, BN_CLICKED), 0);
+    if (theGame.IsNetGame() && theGame.GetMyNetNum() != 0) {
+        CNetChat* pMsg = CNetChat::Alloc(theGame.GetMe(), text.c_str());
+        theGame.PostToAll(pMsg, pMsg->m_iLen, FALSE);
+        delete[] pMsg;
+    } else {
+        // Single player or not yet in-game — show locally only
+        std::string from = theGame.GetMe() ? theGame.GetMe()->GetName() : "Me";
+        SDL2Chat_AddMessage(from + ": " + text);
     }
 
     m_editMsg->SetText("");
@@ -815,11 +956,19 @@ void SDL2ChatWindow::OnSend() {
 }
 
 void SDL2ChatWindow::RefreshMessages() {
-    // Chat messages are managed by the MFC CWndComm system
-    // Just show a placeholder until messages are available
     if (!m_msgList) return;
+    int count = (int)g_chatMessages.size();
+    if (count == m_lastMsgCount) return;
+    m_lastMsgCount = count;
+
     m_msgList->Clear();
-    m_msgList->AddItem("(Chat messages appear here)");
+    // Show the most recent N lines that fit
+    int start = __max(0, count - 50);
+    for (int i = start; i < count; i++)
+        m_msgList->AddItem(g_chatMessages[i]);
+    // Scroll to bottom: select last item
+    if (count > 0)
+        m_msgList->SetSelected(m_msgList->GetCount() - 1);
 }
 
 // ============================================================================

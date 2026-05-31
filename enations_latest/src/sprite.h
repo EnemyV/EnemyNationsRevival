@@ -226,6 +226,12 @@ struct CDIBLayoutInfo
 //--------------------------- C S p r i t e D I B ----------------------------
 //
 
+// pack(4): this struct overlays a 32-bit on-disk sprite record and is array-
+// walked by sizeof() stride in CSpriteView::Init. The m_pspriteview pointer
+// would otherwise force 8-byte alignment on x64, adding trailing padding that
+// the 32-bit data layout doesn't have. pack(4) keeps sizeof() == the 32-bit
+// stride. (Combined with the _WIN64 reserved-area trim that keeps field offsets.)
+#pragma pack( push, 4 )
 struct CSpriteDIB
 {
 	int				Type() 		 			const	{ return m_iType; 				}
@@ -311,10 +317,16 @@ private:
 
 	CSpriteDIB();	// Can't construct a CSpriteDIB, can only point to a block of memory
 
-	// 8 bytes of reserved spave follows
-
+	// 8 bytes of reserved space follows. This MUST stay exactly 8 bytes so the
+	// on-disk "file image" below keeps its 32-bit offset and sizeof(CSpriteDIB)
+	// stays the array stride the data was written with. On x64 the 8-byte
+	// pointer fills the reserved area on its own; on x86 it's int + 4-byte ptr.
+#ifdef _WIN64
+	CSpriteView	 * m_pspriteview;			// 8 bytes — fills the reserved area
+#else
 	int				m_aiReserved[1];
 	CSpriteView	 * m_pspriteview;
+#endif
 
 	// File image follows
 
@@ -328,6 +340,7 @@ private:
 	static CDrawParms 		 * G_pdrawparms;
 	static CSpriteView const * G_pspriteview;
 };
+#pragma pack( pop )
 
 //------------------------- C H o t S p o t K e y ---------------------------
 
@@ -421,6 +434,10 @@ typedef CViewCoord	CAnchor;
 class CUnitTile;
 class CSimpleTile;
 
+// pack(4): same reason as CSpriteDIB — CSpriteView overlays a 32-bit on-disk
+// record and is allocated/array-walked by its byte layout. Its pointer members
+// must not force x64 8-byte alignment/padding that the data wasn't written with.
+#pragma pack( push, 4 )
 class CSpriteView
 {
 
@@ -507,7 +524,13 @@ private:
 	CSpriteDIB 	 * m_pspritedibOverlay;
 	CSpriteDIB   * m_apspritedibAnim[ ANIM_COUNT ];
 
+	// The 8 pointers above are 4 bytes each on x86 and 8 on x64. m_aiReserved[8]
+	// (32 bytes) was sized to exactly absorb that 32-byte growth, keeping the
+	// on-disk "file image" below (m_anchor onward) and sizeof(CSpriteView) the
+	// same on both arches. So on x64 the pointers consume it and we drop it.
+#ifndef _WIN64
 	int				m_aiReserved[ 8 ];
+#endif
 
 	CAnchor	 		m_anchor;
 	int				m_iSuperviewIndex;
@@ -516,6 +539,7 @@ private:
 	int				m_nOverlay;
 	int				m_anAnim[ ANIM_COUNT ];
 };
+#pragma pack( pop )
 
 //----------------------------------------------------------------------------
 // CSpriteDIB::GetDIBPixels

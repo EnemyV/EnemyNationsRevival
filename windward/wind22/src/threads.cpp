@@ -19,6 +19,18 @@ static char BASED_CODE THIS_FILE[] = __FILE__;
 #define new DEBUG_NEW
 
 CRITICAL_SECTION cs;
+// `cs` was historically never initialized. A zero-initialized CRITICAL_SECTION
+// happens to work on x86 for the uncontended fast path (interlocked LockCount),
+// so the game ran for years. But the contended slow path
+// (EnterCriticalSection -> wait) dereferences the lock's wait structures, which
+// on a never-initialized CS are garbage. On x64 that slow path AVs — it bites on
+// quit, when a worker thread still holds `cs` while the main thread's
+// myThreadClose() tries to enter it. Initialize the lock before first use via a
+// static-init object (cs is only ever touched at runtime, so no init-order race).
+struct _CsAutoInit {
+    _CsAutoInit()  { InitializeCriticalSection( &cs ); }
+    ~_CsAutoInit() { DeleteCriticalSection( &cs ); }
+} _csAutoInit;
 BOOL bEndThreads = FALSE;
 CObList lstThrds;
 
@@ -154,8 +166,18 @@ void myThreadClose( THREADEXITFUNC fnExit ) {
                 if ( AfxIsValidAddress( pThrd, sizeof( CWinThread ) ) )
                     if ( pThrd->m_hThread ) {
                         ASSERT_VALID( pThrd );
-                        TerminateThread( pThrd->m_hThread, 1 );
-                        delete pThrd;
+                        // Do NOT TerminateThread: it kills the thread with no cleanup,
+                        // and if the thread held the process heap lock at that instant
+                        // the lock is orphaned and the delete below (RtlFreeHeap)
+                        // deadlocks forever. The 3s grace loop above already gave
+                        // threads a clean chance to exit. Free only those that actually
+                        // exited; leak any straggler rather than risk a heap deadlock.
+                        // WaitForSingleObject(h,0) is a non-blocking poll, so it can't
+                        // deadlock on cs (a stuck worker can't exit while we hold it).
+                        if ( WaitForSingleObject( pThrd->m_hThread, 0 ) == WAIT_OBJECT_0 )
+                            delete pThrd;   // confirmed gone -> safe to free
+                        // else: leak it (no terminate, no delete) -- a tiny one-time
+                        // leak beats freezing the game on return to the menu.
                         iThrdsLeft--;
                     }
         }

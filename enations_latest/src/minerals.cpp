@@ -128,7 +128,7 @@ void CMineralHex::Close ()
 
 // explicit specialization fixes loaded game mineral bug
 template<>
-void AFXAPI SerializeElements<CMinerals*>( CArchive& ar, CMinerals** ppMn, INT_PTR nCount )
+void AFXAPI SerializeElements<CMinerals*>( CArchive& ar, CMinerals** ppMn, int nCount )
 {
     {
         while ( nCount-- )
@@ -141,6 +141,49 @@ void AFXAPI SerializeElements<CMinerals*>( CArchive& ar, CMinerals** ppMn, INT_P
                 ar >> *( *ppMn );
             }
             ppMn++;
+        }
+    }
+}
+
+// Round-trip every deposit through the archive. The base CMap::Serialize in the
+// MFC-compat layer is a no-op, so this override is what actually persists
+// theMinerals — without it, loaded games have no deposits and mines/oil wells
+// report a "useless" (0,0) location everywhere. The key is the packed hex DWORD
+// (CHexCoord <-> unsigned long); each value uses CMinerals' own operator<</>>.
+void CMineralHex::Serialize( CArchive& ar )
+{
+
+    if ( ar.IsStoring( ) )
+    {
+        ar << (DWORD)GetCount( );
+        POSITION pos = GetStartPosition( );
+        while ( pos != NULL )
+        {
+            DWORD      dwKey;
+            CMinerals* pMn;
+            GetNextAssoc( pos, dwKey, pMn );
+            ar << dwKey;
+            ar << *pMn;
+        }
+    }
+    else
+    {
+        // drop any stale deposits before reading the saved set
+        Close( );
+
+        DWORD nCount = 0;
+        ar >> nCount;
+        while ( nCount-- )
+        {
+            DWORD dwKey = 0;
+            ar >> dwKey;
+            CMinerals* pMn = new CMinerals( );
+            ar >> *pMn;
+            SetAt( dwKey, pMn );
+
+            // Re-flag the hex so the toolbar hover and any GetUnits() checks see
+            // the deposit, matching what InitHex does when generating a new map.
+            theMap._GetHex( CHexCoord( (unsigned long)dwKey ) )->OrUnits( CHex::minerals );
         }
     }
 }

@@ -5,6 +5,9 @@
 //
 //---------------------------------------------------------------------------
 
+#ifndef __ENATIONS_VERSION_H__
+#define __ENATIONS_VERSION_H__
+
 
 const int				VER_RIFF = 10;
 
@@ -30,4 +33,6 @@ const char GameLogFile[] = "ENations.log";
 	  #define       VER_FLAGS         0
   #endif
 #endif
+
+#endif // __ENATIONS_VERSION_H__
 

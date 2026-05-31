@@ -263,9 +263,10 @@ bool SDL2Compositor::RouteEventInner(SDL_Event& event) {
                     }
                     else if (event.window.event == SDL_WINDOWEVENT_MOVED) {
                         // OS dragged the borderless window (possibly to another
-                        // monitor). Re-sync the backing MFC window so selection /
-                        // hit-testing stays aligned with the new screen position.
-                        p->InvokeMoveCallback();
+                        // monitor). Sync the stored content origin, remember the
+                        // placement for reopen, and re-sync the backing MFC
+                        // window so selection / hit-testing stays aligned.
+                        p->OnOwnWindowMoved();
                         p->SetDirty();
                     }
                     else if (event.window.event == SDL_WINDOWEVENT_EXPOSED ||

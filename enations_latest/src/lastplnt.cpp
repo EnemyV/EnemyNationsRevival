@@ -103,7 +103,11 @@ void trans_func( unsigned int u, EXCEPTION_POINTERS* pExp )
     memset( exp.m_stack, 0, sizeof( exp.m_stack ) );
 
     // no clean way to do this so we walk the stack looking for pointers to code
+#ifdef _WIN64
+    DWORD* pCall = (DWORD*)pExp->ContextRecord->Rsp;   // x64 stack pointer (Esp is 32-bit only)
+#else
     DWORD* pCall = (DWORD*)pExp->ContextRecord->Esp;
+#endif
     for ( int iInd = 0; iInd < NUM_EXCEP; pCall++ )
     {
         // if the pointer is bad - we're done (we don't write but the stack is writeable)
@@ -1643,6 +1647,12 @@ void CConquerApp::CloseApp( )
     CGlobalSubClass::UnSubClass( );
 
     ::PostQuitMessage( 0 );
+
+    // The SDL-driven main loop (CConquerApp::Run -> GameWindow::PollEvents) never
+    // sees the WM_QUIT above — SDL's message pump discards the NULL-hwnd thread
+    // message. Push an SDL_QUIT so PollEvents() returns true and the loop exits.
+    if ( m_gameWindow )
+        m_gameWindow->RequestQuit( );
 }
 
 //---------------------------------------------------------------------------

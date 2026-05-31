@@ -193,7 +193,7 @@ BOOL AiNewPlayer( CPlayer* pPlr )
     }
 
     // make pointer to this CAIMgr available to the game
-    pPlr->SetAiHdl( (DWORD)pAIMgr );
+    pPlr->SetAiHdl( (DWORD_PTR)pAIMgr );
 
     // BUGBUG consider if the player is human and flag CAIMgr
     pAIMgr->SetAI( pPlr->IsAI( ) );
@@ -413,7 +413,7 @@ void WINAPI AiThread( AI_INIT* pAiI )
 //
 // the AI message function called by the game on messages
 //
-void AiMessage( DWORD dwID, CNetCmd const* pMsg, int )
+void AiMessage( DWORD_PTR dwID, CNetCmd const* pMsg, int )
 {
     // tell the manager that a message has come in
     CAIMgr* pAIMgr = (CAIMgr*)dwID;
@@ -586,7 +586,7 @@ void AiLoadGame( CArchive& ar, BOOL bLocal )
                 throw( ERR_CAI_BAD_NEW );
             }
             // make pointer to this CAIMgr available to the game
-            pPlr->SetAiHdl( (DWORD)pAIMgr );
+            pPlr->SetAiHdl( (DWORD_PTR)pAIMgr );
 
             pAIMgr->LoadGame( ar );
         }

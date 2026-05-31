@@ -437,7 +437,10 @@ void SDL2UnitList::Render3PieceBg(SDL_Surface* dst, int iconIdx, int x, int y, i
     }
 }
 
-// DrawStatDone: 3-piece background frame with colored fill bar inside
+// DrawStatDone: tiles the stat icon sprite (e.g. the construction wrench / road /
+// build-vehicle tool) across `percent`% of the bar — matching the original
+// CStatInst::DrawStatDone. The previous version drew a flat colour block, which
+// is why crane/build progress showed a solid bar instead of tool icons.
 void SDL2UnitList::RenderIconDone(SDL_Surface* dst, int iconIdx, int percent,
                                    int x, int y, int w, int h) {
     Render3PieceBg(dst, iconIdx, x, y, w);
@@ -445,25 +448,27 @@ void SDL2UnitList::RenderIconDone(SDL_Surface* dst, int iconIdx, int percent,
     if (percent <= 0) return;
 
     IconData& icon = m_iconData[iconIdx];
-    int barLeft = x + std::max(2, icon.leftOff);
-    int barRight = x + w - std::max(2, icon.rightOff);
-    int barW = barRight - barLeft;
-    if (barW <= 0) return;
+    if (!icon.sheet || icon.cxIcon <= 0 || icon.cyIcon <= 0) return;
 
-    int fillW = std::max(1, (barW * percent) / 100);
+    int iconY  = y + (h - icon.cyIcon) / 2;
+    int left   = x + icon.leftOff;
+    int right  = x + w - icon.rightOff;
+    int width  = right - left;
+    if (width <= 0) return;
 
-    // Inset vertically within the 3-piece frame
-    int barTop = y + 2;
-    int barH = h - 4;
-    if (barH < 2) { barTop = y + 1; barH = h - 2; }
+    int iEnd = right;
+    if (percent < 100) iEnd -= icon.cxIcon / 2;   // leave the last icon for 100%
+    int iRight = left + (width * percent) / 100;
+    iRight = std::max(left + 1, iRight);           // at least one icon when > 0
+    int iStep = std::max(1, icon.cxIcon / 2);      // overlap by half (like the original)
 
-    // Color: green (66-100%), yellow (33-66%), red (0-33%)
-    SDL_Color c;
-    if (percent > 66)      c = {50, 150, 60, 255};
-    else if (percent > 33) c = {170, 150, 40, 255};
-    else                   c = {180, 50, 50, 255};
-
-    FillU(dst, {barLeft, barTop, fillW, barH}, c);
+    SDL_SetSurfaceBlendMode(icon.sheet, SDL_BLENDMODE_BLEND);
+    for (int ix = left; ix < iRight; ix += iStep) {
+        if (ix + icon.cxIcon > iEnd) break;
+        SDL_Rect sr = {0, 0, icon.cxIcon, icon.cyIcon};   // base icon (frame 0)
+        SDL_Rect dr = {ix, iconY, icon.cxIcon, icon.cyIcon};
+        SDL_BlitSurface(icon.sheet, &sr, dst, &dr);
+    }
 }
 
 // DrawStatHave: have icons (green) then need icons (red/animated)
@@ -523,7 +528,9 @@ void SDL2UnitList::RenderIconText(SDL_Surface* dst, int iconIdx, const char* tex
     IconData& icon = m_iconData[iconIdx];
     if (!text || !text[0]) return;
 
-    TTF_Font* font = GetFont(9);
+    // Status text (e.g. "Auto: Idle") — 9pt was too small to read; 11 matches the
+    // item-name font and still fits the bar height.
+    TTF_Font* font = GetFont(11);
     if (!font) return;
 
     int textX = x + icon.leftOff;
@@ -559,13 +566,13 @@ void SDL2UnitList::RenderIconBar(SDL_Surface* dst, int iconIdx, int percent,
     int fillW = (barW * percent) / 100;
     if (fillW <= 0) return;
 
-    int iconY = y + (h - icon.cyIcon) / 2;
-
-    // Stretch the bar icon sprite proportionally
+    // Fill the FULL box height. Drawing only cyIcon tall and centering left a thin
+    // black strip at the top/bottom of the health bar; the original gradient fills
+    // the bar interior, so stretch it to the box height instead.
     int srcW = (icon.cxIcon * percent) / 100;
     if (srcW <= 0) srcW = 1;
     SDL_Rect sr = {0, 0, srcW, icon.cyIcon};
-    SDL_Rect dr = {barLeft, iconY, fillW, icon.cyIcon};
+    SDL_Rect dr = {barLeft, y, fillW, h};
     StretchBlit(icon.sheet, sr, dst, dr);
 }
 

@@ -61,6 +61,11 @@ public:
 public:
 	virtual ~CWndMain() {}
 
+    // Route custom Win32 messages that the dead MFC message map can no longer
+    // register.  CWndStub::WindowProc handles standard WM_*, but WM_VPNOTIFY
+    // etc. are user-range messages that need explicit dispatch here.
+    virtual LRESULT WindowProc(UINT msg, WPARAM wParam, LPARAM lParam) override;
+
 protected:
 	void		OnDisplayChange2 ();
 	void		DrawScreen ( CRect const & rectDst );

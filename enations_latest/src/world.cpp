@@ -361,7 +361,7 @@ int CWndWorld::OnCreate(LPCREATESTRUCT lpCreateStruct) {
     m_hAccel = ::LoadAccelerators(theApp.m_hInstance, MAKEINTRESOURCE (IDR_WORLD));
 
     // we had to start with an icon to get a different class
-    ::SetClassLong(m_hWnd, GCL_HCURSOR, NULL);
+    ::SetClassLongPtr(m_hWnd, GCLP_HCURSOR, NULL);
 
     m_sDir[0] = EnLoadStdString( IDS_WORLD_NE );
     m_sDir[1] = EnLoadStdString( IDS_WORLD_SE );
@@ -1313,6 +1313,9 @@ void CWndWorld::_NewDir() {
     DWORD bdwRes = (m_iMode & resources) ? -1 : 0;
     DWORD bdwCopper = (bdwRes & theGame.GetMe()->CanCopper()) ? -1 : 0;
 
+    // TEMP DEBUG: resource-render diagnosis counters (feed the [_NewDir] readout below)
+    int dbgFlagged = 0, dbgLookupOK = 0, dbgDrawn = 0;
+
     SETPIXEL fnSetPixel;
     switch (iBytesPerPixel) {
         case 1 :
@@ -1385,8 +1388,10 @@ void CWndWorld::_NewDir() {
 
             // show resources
             if (bdwRes & (pHex->GetUnits() & CHex::minerals)) {
+                dbgFlagged++;
                 CMinerals *pMn;
                 if (theMinerals.Lookup(_hex, pMn)) {
+                    dbgLookupOK++;
 
                     // VTFIXME
                     // this was (is!?) crfashing for loaded games - not sure why, perhaps the deserialization failed
@@ -1415,6 +1420,7 @@ void CWndWorld::_NewDir() {
                             dwClr = m_clrResources[3];
                             break;
                     }
+                    dbgDrawn++;
                     goto GotClr;
                 }
             }
@@ -1451,6 +1457,27 @@ void CWndWorld::_NewDir() {
         _hex = _hexStrt;
     }
     ASSERT_STRICT (pDib == m_pdibGround0->GetBits() + m_lSizeBytes);
+
+    {
+        // Mineral-rendering health probe — a cheap diagnostic kept after the
+        // save/load mineral bug (see project_cmap_serialize_noop_trap). minTotal
+        // is theMinerals.GetCount(): the number that went to 0 in bugged loaded
+        // saves. flagged-vs-lookupOK and lookupOK-vs-drawn isolate which stage
+        // breaks if minerals ever regress. Emits via OutputDebugString only when
+        // the readout CHANGES — prints once at load, again only if it shifts —
+        // so there's no per-frame spam and no disk write.
+        char dbgbuf[256];
+        sprintf_s( dbgbuf, sizeof( dbgbuf ),
+                   "[_NewDir] radar=%d mode=0x%X resBit=%d minTotal=%d | flagged=%d lookupOK=%d drawn=%d cx=%d cy=%d eX=%d eY=%d\n",
+                   (int)m_bIsRadar, m_iMode, (m_iMode & resources) ? 1 : 0, (int)theMinerals.GetCount(),
+                   dbgFlagged, dbgLookupOK, dbgDrawn, m_cx, m_cy, theMap.Get_eX(), theMap.Get_eY() );
+        static char s_dbgLast[256] = "";
+        if ( strcmp( dbgbuf, s_dbgLast ) != 0 )
+        {
+            strcpy_s( s_dbgLast, sizeof( s_dbgLast ), dbgbuf );
+            OutputDebugStringA( dbgbuf );
+        }
+    }
 
     NewLocation();
 }
@@ -1597,7 +1624,6 @@ void CWndWorld::_NewLocation( )
 
 void CWndWorld::ReRender( )
 {
-
     // redraw whatever needs to be redrawn
     if ( m_bNewMode )
         _NewMode( );

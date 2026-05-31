@@ -13,7 +13,7 @@ void AiDeletePlayer (DWORD dwID);
 void AiExit ();
 void WINAPI AiThread (AI_INIT *pAiI);
 void AiSetup (CPlayer * pPlr);
-void AiMessage( DWORD dwID, CNetCmd const * pMsg, int iLen);
+void AiMessage( DWORD_PTR dwID, CNetCmd const * pMsg, int iLen);   // dwID is a CAIMgr* — pointer-width
 void AiSaveGame( CArchive& ar );
 void AiLoadGame( CArchive& ar, BOOL bLocal );
 void AiLoadComplete( void );

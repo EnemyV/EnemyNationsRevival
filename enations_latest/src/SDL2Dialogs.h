@@ -6,6 +6,7 @@
 class GameWindow;
 class CRaceDef;
 class CPlayer;
+class CJoinMulti;
 
 // ============================================================================
 // SDL2 Version Dialog (replaces CDlgVer)
@@ -123,6 +124,10 @@ private:
         int numBldgs;
         int numVeh;
         std::string name;
+        // Stored resources (material name + amount, only those > 0) so the
+        // description can list them like the original CDlgPickPlayer did.
+        struct ResEntry { std::string name; int amount; };
+        std::vector<ResEntry> resources;
     };
     std::vector<PlayerInfo> m_players;
 
@@ -181,6 +186,75 @@ public:
     std::string m_playerName;
     std::string m_serverAddr;
     int m_iPort = 0;
+};
+
+// ============================================================================
+// SDL2HostLoadedDialog — minimal server dialog for Load Network Game flow.
+// Collects player name and TCP port only (game settings come from the save).
+// ============================================================================
+class SDL2HostLoadedDialog : public SDL2Dialog {
+public:
+    SDL2HostLoadedDialog(GameWindow* gw, const std::string& gameName);
+protected:
+    void OnInit() override;
+    void OnOK() override;
+private:
+    std::string  m_gameName;
+    SDL2EditBox* m_edtPlayerName = nullptr;
+    SDL2EditBox* m_edtPort       = nullptr;
+public:
+    std::string m_playerName;
+    int         m_iPort = 2346;
+};
+
+// ============================================================================
+// SDL2LobbyDialog — server waiting room shown after OpenServer / race pick,
+// before ReadyToCreate(). Polls theGame.GetAll() each frame to show who has
+// joined. Server clicks "Start" when ready.
+// ============================================================================
+class SDL2LobbyDialog : public SDL2Dialog {
+public:
+    SDL2LobbyDialog(GameWindow* gw, const std::string& gameName);
+protected:
+    void OnInit() override;
+    void OnFrame() override;
+private:
+    void OnStart();
+    void UpdatePlayerList();
+
+    std::string  m_gameName;
+    SDL2Listbox* m_lstPlayers = nullptr;
+    SDL2Label*   m_lblStatus  = nullptr;
+    int          m_lastCount  = -1;
+};
+
+// ============================================================================
+// SDL2SessionBrowseDialog — TCP/IP session browser for Join flow
+// Enumerates available games via VDMPLAY, lets the user pick one and join.
+// OnFrame() refreshes the list each frame as VP_SESSIONENUM callbacks fire.
+// ============================================================================
+class SDL2SessionBrowseDialog : public SDL2Dialog {
+public:
+    SDL2SessionBrowseDialog(GameWindow* gw, CJoinMulti* pJoin);
+protected:
+    void OnInit() override;
+    void OnFrame() override;
+private:
+    void OnJoin();
+    void OnRefresh();
+    void UpdateList();
+    void SelectIndex(int idx);
+
+    CJoinMulti*  m_pJoin;
+    SDL2Listbox* m_lstSessions = nullptr;
+    SDL2Label*   m_lblInfo     = nullptr;
+    SDL2Button*  m_btnJoin     = nullptr;
+
+    int m_lastCount  = -1;
+    int m_selectedIdx = -1;
+
+public:
+    int m_chosenIdx = -1;   // index into m_pJoin->m_sessions on OK
 };
 
 // ============================================================================

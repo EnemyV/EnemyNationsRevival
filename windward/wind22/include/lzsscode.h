@@ -39,8 +39,8 @@ public:
     LZSSCoDec( int iIndexBitCount = 12, int iLengthBitCount = 4 );
     virtual ~LZSSCoDec();
 
-    virtual void* Compress( const void* pUncompressedBuffer, int iUncompressedBufSize, void* pCb, int* piCompressedBufSize, FNCOMPSTAT fnStat, DWORD dwData );
-    virtual void* Decompress( const void* pCompressedBuffer, int iCompressedBufSize, void* pUb, int* piUncompressedBufSize, FNCOMPSTAT fnStat, DWORD dwData );
+    virtual void* Compress( const void* pUncompressedBuffer, int iUncompressedBufSize, void* pCb, int* piCompressedBufSize, FNCOMPSTAT fnStat, DWORD_PTR dwData );
+    virtual void* Decompress( const void* pCompressedBuffer, int iCompressedBufSize, void* pUb, int* piUncompressedBufSize, FNCOMPSTAT fnStat, DWORD_PTR dwData );
 };
 
 #endif

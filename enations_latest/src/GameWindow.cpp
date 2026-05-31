@@ -340,7 +340,17 @@ bool GameWindow::PollEvents() {
     // Guard against re-entrancy: DoModal's PeekMessage pump can trigger
     // BaseYield() → PollEvents() while a dialog event loop is already active.
     // If we drain SDL events here, the dialog never sees them and hangs.
-    if (m_pollingEvents) return false;
+    if (m_pollingEvents) {
+        // Re-entrant call (e.g. SaveGame's BaseYield loop while the in-game menu's
+        // DoModal is still on the stack). Don't drain events — the active modal
+        // loop needs them — but DO render active non-modal dialogs so the
+        // save-progress window (and any other modeless dialog) still paints.
+        // Without this the save dialog never showed when saving from the menu.
+        for (SDL2Dialog* dlg : m_activeDialogs)
+            if (dlg->IsNonModalActive())
+                dlg->RenderFrameNonModal();
+        return false;
+    }
     m_pollingEvents = true;
 
     SDL_Event event;
@@ -380,8 +390,14 @@ bool GameWindow::PollEvents() {
             case SDL_MOUSEBUTTONDOWN:
             case SDL_MOUSEBUTTONUP:  evWinID = event.button.windowID;  break;
             case SDL_MOUSEMOTION:    evWinID = event.motion.windowID;  break;
+            case SDL_MOUSEWHEEL:     evWinID = event.wheel.windowID;   break;
             case SDL_KEYDOWN:
             case SDL_KEYUP:          evWinID = event.key.windowID;     break;
+            // Text input/editing carry their own windowID. Without these the
+            // edit boxes in non-modal in-game dialogs (e.g. Build Vehicle's
+            // count field) never receive typed characters.
+            case SDL_TEXTINPUT:      evWinID = event.text.windowID;    break;
+            case SDL_TEXTEDITING:    evWinID = event.edit.windowID;    break;
             case SDL_WINDOWEVENT:    evWinID = event.window.windowID;  break;
             default:                 evWinID = 0;                      break;
             }
@@ -536,6 +552,15 @@ void GameWindow::Show() {
     if (m_window) {
         SDL_ShowWindow(m_window);
     }
+}
+
+void GameWindow::RequestQuit() {
+    // See header: Win32 PostQuitMessage's WM_QUIT is eaten by SDL's pump, so signal
+    // shutdown through the SDL event queue that the main loop actually drains.
+    SDL_Event q;
+    SDL_zero(q);
+    q.type = SDL_QUIT;
+    SDL_PushEvent(&q);
 }
 
 void GameWindow::SwapBuffers() {

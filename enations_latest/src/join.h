@@ -68,10 +68,22 @@ public:
 									{ m_wndPlyrList.UpdatePlyrStatus (pPlyr, iStatus); }
 		void	AddPlayer (CPlayer * pPlyr)
 									{ m_wndPlyrList.AddPlayer (pPlyr); }
-		// MFC CDlgJoinGame::OnSessionEnum/Close paths removed; SDL2 join flow
-		// performs session enumeration directly via the netapi callbacks.
-		void	OnSessionEnum (LPCVPSESSIONINFO) {}
-		void	OnSessionClose (LPCVPSESSIONINFO) {}
+
+		// Session data accumulated by WM_VPNOTIFY / VP_SESSIONENUM callbacks.
+		// SDL2SessionBrowseDialog reads this to populate its list.
+		struct SessionEntry {
+			VPSESSIONID  id;
+			std::string  gameName;
+			int          numOpponents;
+			int          aiLevel;
+			int          worldSize;
+			int          startPos;
+			char         cFlags;
+		};
+		std::vector<SessionEntry> m_sessions;
+
+		void	OnSessionEnum (LPCVPSESSIONINFO pSi);
+		void	OnSessionClose (LPCVPSESSIONINFO pSi);
 
 #ifdef _DEBUG
 public:

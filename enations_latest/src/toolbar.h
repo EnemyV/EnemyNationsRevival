@@ -23,6 +23,8 @@ const int BAR_TEXT_HT     = 28;  // height of text backdrop
 const int TOOLBAR_HT      = BAR_BTN_HT + BAR_TEXT_HT;
 
 
+class SDL2ResearchDialog;
+
 typedef void ( *FNSTATUSLINE )( void* pData, CDC* pDc, CRect const& rDraw, CDIB* pDib, CPoint const& ptOff );
 
 
@@ -159,6 +161,11 @@ class CWndBar : public CWndAnim
     static std::string m_sChat2;
     static std::string m_sScience;
     static std::string m_sRelations;
+
+    // Non-modal research window. Held so the game keeps ticking while it's open
+    // (DoModal would freeze the simulation). Nulled by its onDone callback; the
+    // GameWindow owns deletion. Guards against opening a second copy.
+    SDL2ResearchDialog* m_pSdlResearch = nullptr;
 };
 
 

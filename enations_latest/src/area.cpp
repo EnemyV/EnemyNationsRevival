@@ -747,7 +747,7 @@ int CWndAreaStatic::OnCreate( LPCREATESTRUCT lpCS )
         return -1;
 
     // we had to start with the load icon to get a different class
-    ::SetClassLong( m_hWnd, GCL_HCURSOR, NULL );
+    ::SetClassLongPtr( m_hWnd, GCLP_HCURSOR, NULL );
 
     // create the position buttons
     CRect rect( AREA_BTN_X_SKIP, AREA_BTN_Y_START, AREA_BTN_X_SKIP + theBmBtnData.Width( ),
@@ -2209,7 +2209,7 @@ int CWndArea::OnCreate( LPCREATESTRUCT lpCreateStruct )
     m_WndStatic.Create( sWndCls, NULL, dwStatusWndStyle, rect, this, 0, NULL );
 
     // we had to start with the build icon to get a different class
-    ::SetClassLong( m_hWnd, GCL_HCURSOR, NULL );
+    ::SetClassLongPtr( m_hWnd, GCLP_HCURSOR, NULL );
 
     // set up a WinG DC for the client area
     GetClientRect( &rect );

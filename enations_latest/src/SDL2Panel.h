@@ -122,6 +122,12 @@ public:
     // Render to own detached window (called by compositor for detached panels)
     void RenderDetached();
 
+    // Called by the compositor when the OS moved this panel's detached window
+    // (title-bar drag, possibly across monitors). Updates the stored content
+    // origin and remembers the placement so the window reopens where the user
+    // left it.
+    void OnOwnWindowMoved();
+
     // Suppress syncing position/size to OS window (used during temp coordinate swaps)
     void SuppressWindowSync(bool s) { m_suppressSync = s; }
 
@@ -159,6 +165,14 @@ private:
     // Which caption button (if any) is at screen/window point (sx, sy), using
     // the panel's current (m_x, m_y) title-bar frame. Returns a TB_BTN_* id.
     int HitTestTitleButton(int sx, int sy) const;
+
+    // Detached-window placement memory (keyed by panel name). RememberPlacement
+    // records the current OS-window rect; RestoreSavedPlacement re-applies a
+    // remembered rect when the window is (re)shown. Together these give every
+    // in-game window the same "reopens where you left it" behavior, even for
+    // windows that are destroyed and later recreated (e.g. area maps).
+    void RememberPlacement();
+    void RestoreSavedPlacement();
 
     // Determine resize edge at screen point (0=none, 1-8 = N,NE,E,SE,S,SW,W,NW)
     int HitTestResize(int screenX, int screenY) const;

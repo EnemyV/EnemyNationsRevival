@@ -67,6 +67,25 @@ void CWndMain::Create ()
 		ThrowError (ERR_RES_CREATE_WND);
 }
 
+LRESULT CWndMain::WindowProc(UINT msg, WPARAM wParam, LPARAM lParam)
+{
+    // The MFC-style BEGIN_MESSAGE_MAP / ON_MESSAGE entries in this file are
+    // killed by wndstub.h's macro overrides, so custom (user-range) messages
+    // are never routed to their handlers.  Dispatch them here explicitly so
+    // the virtual CWndStub::WindowProc sees them.
+    switch (msg)
+    {
+        case WM_VPNOTIFY:         return OnNetMsg(wParam, lParam);
+        case WM_VPFLOWOFF:        return OnNetFlowOff(wParam, lParam);
+        case WM_VPFLOWON:         return OnNetFlowOn(wParam, lParam);
+        case WM_ACTIVATE_MUSIC:   return OnActivateMusicMsg(wParam, lParam);
+        case WM_MY_DISPLAYCHANGE: return OnMyDisplayChange(wParam, lParam);
+        case WM_DISPLAYCHANGE:    return OnDisplayChange(wParam, lParam);
+        default: break;
+    }
+    return CWndBase::WindowProc(msg, wParam, lParam);
+}
+
 
 BEGIN_MESSAGE_MAP(CWndMain, CWndBase)
 	//{{AFX_MSG_MAP(CWndMain)

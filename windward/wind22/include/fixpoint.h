@@ -19,28 +19,20 @@
 
 
 //------------------------------- F i x e d --------------------------------
-// Last resort, when compiler refuses to inline
+// In-place 16.16 fixed-point ops. These were x86 inline-asm macros (64-bit
+// imul/idiv via edx:eax); rewritten as portable expressions over `long long`
+// so they build on x64 (MSVC has no inline asm there). Every call site passes
+// an lvalue as i1 and the result is stored back into it, matching the asm.
+//   FIXMUL:    i1 = (i1 * i2) >> 16, round-half-up (the +0x8000 reproduces the
+//              asm's shrd/adc carry rounding for both signs)
+//   FIXDIV:    i1 = (i1 << 16) / i2          (idiv truncates toward zero == C++)
+//   FIXMULDIV: i1 = (i1 * i2) / i3           (full 64-bit product, then divide)
 
-#define FIXDIV( i1, i2 )   \
-    _asm mov  eax, [i1]  \
-    _asm cdq         \
-    _asm shld edx, eax, 16 \
-    _asm shl  eax, 16   \
-    _asm idiv [i2]    \
-    _asm mov  [i1], eax
+#define FIXDIV( i1, i2 )        ( (i1) = (long)( ( (long long)(i1) << 16 ) / (long long)(i2) ) )
 
-#define FIXMUL( i1, i2 )  \
-    _asm mov  eax, [i1]  \
-    _asm imul  [i2]    \
-    _asm shrd  eax, edx, 16 \
-    _asm adc  eax, 0   \
-    _asm mov  [i1], eax
+#define FIXMUL( i1, i2 )        ( (i1) = (long)( ( (long long)(i1) * (long long)(i2) + 0x8000 ) >> 16 ) )
 
-#define FIXMULDIV( i1, i2, i3 )  \
-    _asm mov  eax, [i1]   \
-    _asm imul  [i2]     \
-    _asm idiv  [i3]     \
-    _asm mov  [i1], eax
+#define FIXMULDIV( i1, i2, i3 ) ( (i1) = (long)( ( (long long)(i1) * (long long)(i2) ) / (long long)(i3) ) )
 
 struct Fixed {
 
@@ -267,18 +259,12 @@ __inline void Fixed::operator -= ( Fixed fixSrc )
 //---------------------------------------------------------------------------
 __inline void Fixed::operator *= ( Fixed fixRHS )
 {
-    long lFixedLHS = m_lFixed;
-
-    _asm 
-    {
-        mov  eax, [lFixedLHS]
-        imul  [fixRHS]
-        shrd  eax, edx, 16
-        adc eax, 0
-        mov [lFixedLHS], eax
-    }
-
-    m_lFixed = lFixedLHS;
+    // 16.16 fixed-point multiply. Was x86 inline asm (imul; shrd eax,edx,16;
+    // adc eax,0) — a full 64-bit signed product shifted right 16 with round-
+    // half-up. The portable form computes the same: the +0x8000 before the
+    // arithmetic >>16 reproduces the asm's carry-bit rounding for both signs.
+    long long llProduct = (long long)m_lFixed * (long long)fixRHS.m_lFixed;
+    m_lFixed = (long)( ( llProduct + 0x8000 ) >> 16 );
 }
 
 
@@ -287,19 +273,11 @@ __inline void Fixed::operator *= ( Fixed fixRHS )
 //---------------------------------------------------------------------------
 __inline void Fixed::operator /= ( Fixed fixRHS )
 {
-    long lFixedLHS = m_lFixed;
-
-    _asm {
-        
-        mov  eax, [lFixedLHS]
-        cdq
-        shld edx, eax, 16
-        shl eax, 16
-        idiv [fixRHS]
-        mov [lFixedLHS], eax
-    }
-
-    m_lFixed = lFixedLHS;
+    // 16.16 fixed-point divide. Was x86 inline asm (cdq; shld/shl to form
+    // LHS<<16 in edx:eax; idiv). idiv truncates toward zero, matching C++
+    // integer division, so the 64-bit form is an exact translation.
+    long long llNum = (long long)m_lFixed << 16;
+    m_lFixed = (long)( llNum / (long long)fixRHS.m_lFixed );
 }
 
 #pragma warning( disable : 4244 )
@@ -478,18 +456,10 @@ __inline Fixed operator - ( Fixed fix )
 //---------------------------------------------------------------------------
 __inline Fixed operator * ( Fixed fixLHS, Fixed fixRHS )
 {
-    long lResult;
-
-    _asm 
-    {
-        mov  eax, [fixLHS]
-        imul  [fixRHS]
-        shrd  eax, edx, 16
-        adc eax, 0
-        mov [lResult], eax
-    }
-
-    return lResult;
+    // 16.16 multiply — portable form of the x86 imul/shrd/adc asm (see
+    // Fixed::operator*= for the derivation of the +0x8000 round-half-up).
+    long long llProduct = (long long)fixLHS.m_lFixed * (long long)fixRHS.m_lFixed;
+    return (long)( ( llProduct + 0x8000 ) >> 16 );
 }
 
 //---------------------------------------------------------------------------
@@ -497,19 +467,10 @@ __inline Fixed operator * ( Fixed fixLHS, Fixed fixRHS )
 //---------------------------------------------------------------------------
 __inline Fixed operator / ( Fixed fixLHS, Fixed fixRHS )
 {
-    long lResult;
-
-    _asm {
-        
-        mov  eax, [fixLHS]
-        cdq
-        shld edx, eax, 16
-        shl eax, 16
-        idiv [fixRHS]
-        mov [lResult], eax
-    }
-
-    return lResult;
+    // 16.16 divide — portable form of the x86 cdq/shld/shl/idiv asm (see
+    // Fixed::operator/= ). idiv truncates toward zero, matching C++.
+    long long llNum = (long long)fixLHS.m_lFixed << 16;
+    return (long)( llNum / (long long)fixRHS.m_lFixed );
 }
 
 //---------------------------------------------------------------------------

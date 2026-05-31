@@ -20,14 +20,14 @@ const int MSG_CACHE = WM_USER + 583;
 // of requests, etc. We do lowest to highest only (and not elevator back) because a
 // CD doesn't like to go backwards.
 
-typedef void ( *CACHECALLBACK )( DWORD dwData );
+typedef void ( *CACHECALLBACK )( DWORD_PTR dwData );
 
 // linked list element of cache requests
 class CCacheElem
 {
   public:
     CCacheElem( );
-    CCacheElem( HANDLE hFil, int iOff, int iLen, void* pBuf, void ( *fnCall )( DWORD dwData ), DWORD dwData );
+    CCacheElem( HANDLE hFil, int iOff, int iLen, void* pBuf, void ( *fnCall )( DWORD_PTR dwData ), DWORD_PTR dwData );
 
     HANDLE        m_hFil;        // file handle
     int           m_iOff;        // file offset
@@ -49,7 +49,7 @@ class CDiskCache
 
     void ProcessMessage( CCacheElem* pCce );
 
-    void AddRequest( int hFil, int iOff, int iLen, void* pBuf, void ( *fnCall )( DWORD dwData ), DWORD dwData );
+    void AddRequest( int hFil, int iOff, int iLen, void* pBuf, void ( *fnCall )( DWORD_PTR dwData ), DWORD_PTR dwData );
     void SyncRequest( int hFil, int iOff, int iLen, void* pBuf );
     void KillRequest( int iOff );
 

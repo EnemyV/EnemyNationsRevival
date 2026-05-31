@@ -505,13 +505,20 @@ void SDL2PickPlayerDialog::OnInit() {
         pi.numBldgs = pData->m_iNumBldgs;
         pi.numVeh = pData->m_iNumVeh;
         pi.name = pPlr->GetName();
+        // Resources the player holds (only non-zero), matching the original
+        // CDlgPickPlayer::OnSelchangeRaceList material loop.
+        for (int iMat = 0; iMat < CMaterialTypes::GetNumTypes(); iMat++)
+            if (pData->m_iMat[iMat] > 0)
+                pi.resources.push_back({ CMaterialTypes::GetDesc(iMat), pData->m_iMat[iMat] });
         m_players.push_back(pi);
         m_lstPlayers->AddItem(pi.name);
         delete[] (char*)pData;
     }
 
     int rightX = lx + listW + 15, rightW = w - listW - 15;
-    m_lblDesc = AddWidget<SDL2Label>(rightX, y, rightW, listH, "", SDL_Color{180, 190, 200, 255});
+    // Dark blue (the default label color, also used by SDL2PickRaceDialog) — the
+    // old light gray {180,190,200} was nearly illegible on the gold background.
+    m_lblDesc = AddWidget<SDL2Label>(rightX, y, rightW, listH, "", SDL_Color{48, 58, 148, 255});
     m_lblDesc->SetWrapped(true);
 
     m_btnOK = AddWidget<SDL2Button>(m_x + m_width / 2 - 100, m_y + m_height - 45, 90, 30, "OK",
@@ -534,7 +541,15 @@ void SDL2PickPlayerDialog::OnInit() {
 void SDL2PickPlayerDialog::OnPlayerSelected(int index) {
     if (index < 0 || index >= (int)m_players.size()) return;
     auto& pi = m_players[index];
-    std::string desc = "Buildings: " + std::to_string(pi.numBldgs) + "\nVehicles: " + std::to_string(pi.numVeh);
+    // Mirror CDlgPickPlayer::OnSelchangeRaceList: optional "taken" line, then
+    // buildings, vehicles, and every resource the player holds.
+    std::string desc;
+    if (!pi.available)
+        desc += "(player taken)\n";
+    desc += "Buildings: " + std::to_string(pi.numBldgs) + "\n";
+    desc += "Vehicles: " + std::to_string(pi.numVeh) + "\n";
+    for (const auto& r : pi.resources)
+        desc += r.name + ": " + std::to_string(r.amount) + "\n";
     m_lblDesc->SetText(desc);
     UpdateOKButton();
 }
@@ -542,7 +557,11 @@ void SDL2PickPlayerDialog::OnPlayerSelected(int index) {
 void SDL2PickPlayerDialog::OnNameChanged(const std::string&) { UpdateOKButton(); }
 
 void SDL2PickPlayerDialog::UpdateOKButton() {
-    bool valid = !m_edtName->GetText().empty() && m_lstPlayers->GetSelected() >= 0;
+    int sel = m_lstPlayers->GetSelected();
+    // Original enabled OK only for a named, *available* player (taken slots
+    // can't be picked when loading a saved game).
+    bool valid = !m_edtName->GetText().empty() && sel >= 0 &&
+                 sel < (int)m_players.size() && m_players[sel].available;
     if (m_btnOK) m_btnOK->SetEnabled(valid);
 }
 
@@ -722,9 +741,211 @@ bool SDL2_RunLoadSinglePlayerFlow(GameWindow* gameWindow) {
 }
 
 // ============================================================================
+// SDL2HostLoadedDialog
+// ============================================================================
+SDL2HostLoadedDialog::SDL2HostLoadedDialog(GameWindow* gw, const std::string& gameName)
+    : SDL2Dialog(gw, "Host Saved Game (TCP/IP)", 400, 200)
+    , m_gameName(gameName) {}
+
+void SDL2HostLoadedDialog::OnInit() {
+    int lx = m_x + 16, y = m_y + 36, w = m_width - 32, rowH = 28;
+
+    AddWidget<SDL2Label>(lx, y, w, rowH, ("Game: " + m_gameName).c_str());
+    y += rowH + 4;
+
+    AddWidget<SDL2Label>(lx, y, 110, rowH, "Your Name:");
+    std::string savedName = EnGetProfileStdString("Create", "Name", "");
+    m_edtPlayerName = AddWidget<SDL2EditBox>(lx + 115, y, w - 115, 24, savedName);
+    y += rowH + 4;
+
+    AddWidget<SDL2Label>(lx, y, 110, rowH, "Port:");
+    m_edtPort = AddWidget<SDL2EditBox>(lx + 115, y, 80, 24, "2346");
+
+    AddOKCancelButtons();
+}
+
+void SDL2HostLoadedDialog::OnOK() {
+    m_playerName = m_edtPlayerName ? m_edtPlayerName->GetText() : "";
+    if (m_playerName.empty()) return;
+    m_iPort = m_edtPort ? atoi(m_edtPort->GetText().c_str()) : 2346;
+    if (m_iPort <= 0) m_iPort = 2346;
+    EndDialog(1);
+}
+
+// ============================================================================
+// SDL2LobbyDialog
+// ============================================================================
+SDL2LobbyDialog::SDL2LobbyDialog(GameWindow* gw, const std::string& gameName)
+    : SDL2Dialog(gw, "Waiting for Players", 440, 320)
+    , m_gameName(gameName) {}
+
+void SDL2LobbyDialog::OnInit() {
+    int lx = m_x + 12, y = m_y + 36, w = m_width - 24, rowH = 24;
+
+    AddWidget<SDL2Label>(lx, y, w, rowH, ("Game: " + m_gameName).c_str());
+    y += rowH + 6;
+
+    AddWidget<SDL2Label>(lx, y, w, rowH, "Players (waiting for clients to join):");
+    y += rowH + 2;
+
+    m_lstPlayers = AddWidget<SDL2Listbox>(lx, y, w, 140);
+    y += 148;
+
+    m_lblStatus = AddWidget<SDL2Label>(lx, y, w, rowH, "Server ready. Click Start when all players have joined.");
+    m_lblStatus->SetWrapped(true);
+    y += rowH + 12;
+
+    int btnW = 110, gap = 12;
+    AddWidget<SDL2Button>(lx, y, btnW, rowH, "Start Game",
+        [this]() { OnStart(); });
+    AddWidget<SDL2Button>(lx + btnW + gap, y, btnW, rowH, "Cancel",
+        [this]() { EndDialog(0); });
+}
+
+void SDL2LobbyDialog::OnFrame() {
+    UpdatePlayerList();
+}
+
+void SDL2LobbyDialog::OnStart() {
+    EndDialog(1);
+}
+
+void SDL2LobbyDialog::UpdatePlayerList() {
+    if (!m_lstPlayers) return;
+
+    int count = theGame.GetAll().GetCount();
+    if (count == m_lastCount) return;
+    m_lastCount = count;
+
+    m_lstPlayers->Clear();
+    POSITION pos = theGame.GetAll().GetHeadPosition();
+    while (pos != NULL) {
+        CPlayer* pPlr = theGame.GetAll().GetNext(pos);
+        if (!pPlr) continue;
+        std::string line = pPlr->GetName();
+        if (pPlr->IsMe())          line += " (you)";
+        else if (pPlr->IsAI())     line += " (AI)";
+        else if (pPlr->GetNetNum()) line += " (joined)";
+        m_lstPlayers->AddItem(line);
+    }
+
+    if (m_lblStatus) {
+        int human = 0;
+        POSITION pos2 = theGame.GetAll().GetHeadPosition();
+        while (pos2 != NULL) {
+            CPlayer* p = theGame.GetAll().GetNext(pos2);
+            if (p && !p->IsAI() && p->GetNetNum() != 0) human++;
+        }
+        std::string status = human <= 1
+            ? "Waiting for clients to join... Click Start when ready."
+            : std::to_string(human) + " player(s) connected. Click Start when ready.";
+        m_lblStatus->SetText(status);
+    }
+}
+
+// ============================================================================
+// SDL2SessionBrowseDialog
+// ============================================================================
+SDL2SessionBrowseDialog::SDL2SessionBrowseDialog(GameWindow* gw, CJoinMulti* pJoin)
+    : SDL2Dialog(gw, "Join Network Game \xe2\x80\x94 Available Games", 500, 320)
+    , m_pJoin(pJoin) {}
+
+void SDL2SessionBrowseDialog::OnInit() {
+    int lx = m_x + 12, y = m_y + 36, w = m_width - 24, rowH = 24;
+
+    AddWidget<SDL2Label>(lx, y, w, rowH, "Available games (searching...):");
+    y += rowH + 2;
+
+    m_lstSessions = AddWidget<SDL2Listbox>(lx, y, w, 130,
+        [this](int idx) { SelectIndex(idx); });
+    y += 136;
+
+    m_lblInfo = AddWidget<SDL2Label>(lx, y, w, 36, "");
+    m_lblInfo->SetWrapped(true);
+    y += 42;
+
+    int btnW = 90, gap = 10;
+    m_btnJoin = AddWidget<SDL2Button>(lx, y, btnW, rowH, "Join",
+        [this]() { OnJoin(); });
+    m_btnJoin->SetEnabled(false);
+
+    AddWidget<SDL2Button>(lx + btnW + gap, y, btnW, rowH, "Refresh",
+        [this]() { OnRefresh(); });
+
+    AddWidget<SDL2Button>(lx + (btnW + gap) * 2, y, btnW, rowH, "Cancel",
+        [this]() { EndDialog(0); });
+}
+
+void SDL2SessionBrowseDialog::OnFrame() {
+    UpdateList();
+}
+
+void SDL2SessionBrowseDialog::SelectIndex(int idx) {
+    m_selectedIdx = idx;
+    bool valid = idx >= 0 && idx < (int)m_pJoin->m_sessions.size();
+    if (m_btnJoin) m_btnJoin->SetEnabled(valid);
+    if (!m_lblInfo) return;
+
+    if (!valid) { m_lblInfo->SetText(""); return; }
+
+    const auto& s = m_pJoin->m_sessions[idx];
+    static const char* aiNames[] = { "Easy", "Moderate", "Difficult", "Impossible" };
+    static const char* szNames[]  = { "Small", "Medium", "Large" };
+    std::string info = s.gameName;
+    if (s.aiLevel  >= 0 && s.aiLevel  < 4) info += std::string("  AI: ") + aiNames[s.aiLevel];
+    if (s.worldSize >= 0 && s.worldSize < 3) info += std::string("  Size: ") + szNames[s.worldSize];
+    if (s.numOpponents > 0) info += "  Opp: " + std::to_string(s.numOpponents);
+    m_lblInfo->SetText(info);
+}
+
+void SDL2SessionBrowseDialog::UpdateList() {
+    if (!m_lstSessions) return;
+    int count = (int)m_pJoin->m_sessions.size();
+    if (count == m_lastCount) return;
+    m_lastCount = count;
+
+    // Preserve selection by name if possible
+    std::string selName;
+    if (m_selectedIdx >= 0 && m_selectedIdx < (int)m_pJoin->m_sessions.size())
+        selName = m_pJoin->m_sessions[m_selectedIdx].gameName;
+
+    m_lstSessions->Clear();
+    int newSel = -1;
+    for (int i = 0; i < count; i++) {
+        m_lstSessions->AddItem(m_pJoin->m_sessions[i].gameName);
+        if (!selName.empty() && m_pJoin->m_sessions[i].gameName == selName)
+            newSel = i;
+    }
+
+    m_selectedIdx = newSel;
+    if (newSel >= 0) m_lstSessions->SetSelected(newSel);
+    if (m_btnJoin) m_btnJoin->SetEnabled(newSel >= 0);
+
+    if (count == 0 && m_lblInfo)
+        m_lblInfo->SetText("No games found — check the server address and port, then Refresh.");
+}
+
+void SDL2SessionBrowseDialog::OnJoin() {
+    if (m_selectedIdx < 0 || m_selectedIdx >= (int)m_pJoin->m_sessions.size()) return;
+    m_chosenIdx = m_selectedIdx;
+    EndDialog(1);
+}
+
+void SDL2SessionBrowseDialog::OnRefresh() {
+    theNet.StopEnum();
+    m_pJoin->m_sessions.clear();
+    m_lastCount = -1;
+    m_selectedIdx = -1;
+    if (m_btnJoin) m_btnJoin->SetEnabled(false);
+    if (m_lblInfo) m_lblInfo->SetText("Searching...");
+    theNet.StartEnum();
+}
+
+// ============================================================================
 // Create Network Game flow (TCP/IP only)
 // ============================================================================
 bool SDL2_RunCreateNetworkFlow(GameWindow* gameWindow) {
+    // Step 1: collect game settings + player name from the server
     ShowWallpaperBackground(gameWindow);
     SDL2CreateNetDialog createDlg(gameWindow);
     if (createDlg.DoModal() != 1) return false;
@@ -735,28 +956,36 @@ bool SDL2_RunCreateNetworkFlow(GameWindow* gameWindow) {
 
     theGame.ctor(); theGame.SetServer(TRUE); theGame._SetIsNetGame(TRUE); theGame.Open(TRUE);
 
-    theGame.m_iAi = pCreate->m_iAi = createDlg.m_iAiLevel;
+    theGame.m_iAi  = pCreate->m_iAi  = createDlg.m_iAiLevel;
     theGame.m_iSize = pCreate->m_iSize = createDlg.m_iWorldSize;
-    theGame.m_iPos = pCreate->m_iPos = createDlg.m_iStartPos;
-    pCreate->m_iNumAi = createDlg.m_iNumAi;
-    pCreate->m_iNet = 0;
+    theGame.m_iPos  = pCreate->m_iPos  = createDlg.m_iStartPos;
+    pCreate->m_iNumAi    = createDlg.m_iNumAi;
+    pCreate->m_iNet      = 0;
+    pCreate->m_sName     = createDlg.m_playerName;
+    pCreate->m_sGameName = createDlg.m_gameName;
 
     EnWriteProfileInt("Create", "Difficultity", createDlg.m_iAiLevel);
-    EnWriteProfileInt("Create", "Size", createDlg.m_iWorldSize);
-    EnWriteProfileInt("Create", "AiOpponents", createDlg.m_iNumAi);
+    EnWriteProfileInt("Create", "Size",          createDlg.m_iWorldSize);
+    EnWriteProfileInt("Create", "AiOpponents",   createDlg.m_iNumAi);
     EnWriteProfileInt("Create", "StartPosition", createDlg.m_iStartPos);
 
     std::string sPort = std::to_string(createDlg.m_iPort);
     WritePrivateProfileString("TCP", "WellKnownPort", sPort.c_str(), "vdmplay.ini");
 
-    if (theNet.OpenServer(VPT_TCP, theApp.m_wndMain.m_hWnd,
-                          (char*)createDlg.m_gameName.c_str(), NULL, NULL)) {
-        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Second Chance",
+    // Step 2: publish the session — pass CNetPublish so clients can read game
+    // metadata (AI level, world size, etc.) from VP_SESSIONENUM callbacks.
+    CNetPublish* pPub = CNetPublish::Alloc(pCreate);
+    BOOL bErr = theNet.OpenServer(VPT_TCP, theApp.m_wndMain.m_hWnd,
+                                  (LPCSTR)pPub, NULL, NULL);
+    delete[] pPub;
+    if (bErr) {
+        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Network Error",
             "Failed to open TCP/IP server.", nullptr);
         theGame.Close(); delete theApp.m_pCreateGame; theApp.m_pCreateGame = NULL;
         return false;
     }
 
+    // Step 3: server picks race
     ShowWallpaperBackground(gameWindow);
     SDL2PickRaceDialog raceDlg(gameWindow);
     if (raceDlg.DoModal() != 1) {
@@ -771,8 +1000,18 @@ bool SDL2_RunCreateNetworkFlow(GameWindow* gameWindow) {
     theGame.GetMe()->SetName(raceDlg.m_playerName.c_str());
     theGame.GetMe()->m_InitData.Set(pRace, pCreate->m_iPos);
     pCreate->GetNew()->m_InitData.Set(pRace, pCreate->m_iPos);
+    EnWriteProfileString("Create", "Name", raceDlg.m_playerName.c_str());
 
-    // Raise main window so progress dialog is visible
+    // Step 4: lobby — wait for clients to join, then server clicks Start
+    ShowWallpaperBackground(gameWindow);
+    SDL2LobbyDialog lobbyDlg(gameWindow, createDlg.m_gameName);
+    if (lobbyDlg.DoModal() != 1) {
+        theNet.Close(FALSE); theGame.Close();
+        delete theApp.m_pCreateGame; theApp.m_pCreateGame = NULL;
+        return false;
+    }
+
+    // Step 5: create world
     if (gameWindow->GetWindow())
         SDL_RaiseWindow(gameWindow->GetWindow());
 
@@ -788,29 +1027,232 @@ bool SDL2_RunCreateNetworkFlow(GameWindow* gameWindow) {
 // ============================================================================
 bool SDL2_RunJoinNetworkFlow(GameWindow* gameWindow) {
     ShowWallpaperBackground(gameWindow);
+
+    // Step 1: collect player name + server address
     SDL2JoinNetDialog joinDlg(gameWindow);
     if (joinDlg.DoModal() != 1) return false;
 
+    // Step 2: write TCP config for VDMPLAY
     WritePrivateProfileString("TCP", "ServerAddress", joinDlg.m_serverAddr.c_str(), "vdmplay.ini");
-    std::string sPort2 = std::to_string(joinDlg.m_iPort);
-    WritePrivateProfileString("TCP", "WellKnownPort", sPort2.c_str(), "vdmplay.ini");
+    std::string sPort = std::to_string(joinDlg.m_iPort);
+    WritePrivateProfileString("TCP", "WellKnownPort", sPort.c_str(), "vdmplay.ini");
 
-    // Join flow requires async session enumeration — delegate to MFC for now
+    // Step 3: create orchestrator + initialise game state for a joining client
     ASSERT(theApp.m_pCreateGame == NULL);
     CJoinMulti* pJoin = new CJoinMulti();
     theApp.m_pCreateGame = pJoin;
-    pJoin->Init();
+
+    // Step 4: open the VDMPLAY client transport; this starts async session
+    //         enumeration — VP_SESSIONENUM messages will fire into
+    //         CJoinMulti::OnSessionEnum() as results arrive.
+    if (theNet.OpenClient(VPT_TCP, theApp.m_wndMain.m_hWnd, NULL)) {
+        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Network Error",
+            "Failed to open TCP/IP client.", nullptr);
+        delete theApp.m_pCreateGame;
+        theApp.m_pCreateGame = NULL;
+        return false;
+    }
+
+    // Step 5: show session browser — OnFrame() polls m_pJoin->m_sessions each
+    //         frame and updates the list as VP_SESSIONENUM callbacks fire.
+    ShowWallpaperBackground(gameWindow);
+    SDL2SessionBrowseDialog browseDlg(gameWindow, pJoin);
+    if (browseDlg.DoModal() != 1) {
+        theNet.Close(FALSE);
+        delete theApp.m_pCreateGame;
+        theApp.m_pCreateGame = NULL;
+        return false;
+    }
+
+    // Step 6: join the selected session
+    const CJoinMulti::SessionEntry& chosen = pJoin->m_sessions[browseDlg.m_chosenIdx];
+    pJoin->m_ID   = chosen.id;
+    pJoin->m_iAi  = chosen.aiLevel;
+    pJoin->m_iSize = chosen.worldSize;
+    pJoin->m_iPos  = chosen.startPos;
+
+    theNet.StopEnum();
+    theGame.ctor();
+    theGame.SetServer(FALSE);
+    theGame._SetIsNetGame(TRUE);
+    theGame.Open(TRUE);
+    theGame.m_iAi   = pJoin->m_iAi;
+    theGame.m_iSize = pJoin->m_iSize;
+    theGame.m_iPos  = pJoin->m_iPos;
+    theGame.m_sGameName = chosen.gameName;
+
+    theGame.GetMe()->SetName(joinDlg.m_playerName.c_str());
+    CNetJoin* pJn = CNetJoin::Alloc(theGame.GetMe(), FALSE);
+    BOOL bJoinErr = theNet.Join(&pJoin->m_ID, pJn);
+    delete[] pJn;
+    if (bJoinErr) {
+        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Network Error",
+            "Failed to join the selected game.", nullptr);
+        theNet.Close(FALSE);
+        theGame.Close();
+        delete theApp.m_pCreateGame;
+        theApp.m_pCreateGame = NULL;
+        return false;
+    }
+
+    // Step 7: player picks their race
+    ShowWallpaperBackground(gameWindow);
+    SDL2PickRaceDialog raceDlg(gameWindow);
+    if (raceDlg.DoModal() != 1) {
+        theNet.Close(FALSE);
+        theGame.Close();
+        delete theApp.m_pCreateGame;
+        theApp.m_pCreateGame = NULL;
+        return false;
+    }
+
+    // Step 8: wire race data into the player and signal readiness to server.
+    // CNetReady carries our InitData to the server; CmdReady on the server
+    // marks us ready and fires StartCreateWorld once all players are ready.
+    CRaceDef* pRace = &ptheRaces[raceDlg.m_iSelectedRace];
+    pJoin->m_sName = raceDlg.m_playerName.c_str();
+    pJoin->m_sRace = pRace->GetLine();
+    theGame.GetMe()->SetName(raceDlg.m_playerName.c_str());
+    theGame.GetMe()->m_InitData.Set(pRace, pJoin->m_iPos);
+    pJoin->GetNew()->m_InitData.Set(pRace, pJoin->m_iPos);
+
+    EnWriteProfileString("Create", "Name", raceDlg.m_playerName.c_str());
+
+    // Send race selection to server (mirrors original CDlgPickRace::OnOK join path)
+    CNetReady readyMsg(&theGame.GetMe()->m_InitData);
+    theNet.Send(theGame.GetServerNetNum(), &readyMsg, sizeof(readyMsg));
+
+    if (gameWindow->GetWindow())
+        SDL_RaiseWindow(gameWindow->GetWindow());
+
+    try {
+        theGame.IncTry();
+        theApp.ReadyToJoin();
+        theGame.DecTry();
+    } catch (int iNum) { CatchNum(iNum); theApp.CloseWorld(); return false; }
+    catch (...) { CatchOther(); theApp.CloseWorld(); return false; }
+
     return true;
 }
 
 // ============================================================================
 // Load Network Game flow
+// Host a saved game over TCP/IP so clients can join and resume play.
 // ============================================================================
 bool SDL2_RunLoadNetworkFlow(GameWindow* gameWindow) {
     ShowWallpaperBackground(gameWindow);
     ASSERT(theApp.m_pCreateGame == NULL);
-    theApp.m_pCreateGame = new CCreateLoadMulti();
-    theApp.m_pCreateGame->Init();
+
+    CCreateLoadMulti* pCreate = new CCreateLoadMulti();
+    theApp.m_pCreateGame = pCreate;
+
+    // Step 1: load a saved game (same as single-player load)
+    theGame.ctor();
+    theGame.SetServer(TRUE);
+    theGame._SetIsNetGame(TRUE);
+
+    if (theGame.LoadGame(theApp.m_pMainWnd, FALSE) != IDOK) {
+        delete theApp.m_pCreateGame;
+        theApp.m_pCreateGame = NULL;
+        return false;
+    }
+
+    // Step 2: collect player name and port (game settings come from the save)
+    ShowWallpaperBackground(gameWindow);
+    SDL2HostLoadedDialog hostDlg(gameWindow, theGame.m_sGameName);
+    if (hostDlg.DoModal() != 1) {
+        theGame.Close();
+        delete theApp.m_pCreateGame;
+        theApp.m_pCreateGame = NULL;
+        return false;
+    }
+
+    pCreate->m_sName     = hostDlg.m_playerName;
+    pCreate->m_sGameName = theGame.m_sGameName;
+    std::string sPort = std::to_string(hostDlg.m_iPort);
+    WritePrivateProfileString("TCP", "WellKnownPort", sPort.c_str(), "vdmplay.ini");
+
+    // Step 3: publish the loaded game session for clients to enumerate
+    CNetPublish* pPub = CNetPublish::Alloc(pCreate);
+    pPub->m_cFlags |= CNetPublish::fload;
+    pPub->m_iNumPlayers = theGame.GetAll().GetCount();
+    BOOL bErr = theNet.OpenServer(VPT_TCP, theApp.m_wndMain.m_hWnd,
+                                  (LPCSTR)pPub, NULL, NULL);
+    delete[] pPub;
+    if (bErr) {
+        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Network Error",
+            "Failed to open TCP/IP server.", nullptr);
+        theGame.Close();
+        delete theApp.m_pCreateGame;
+        theApp.m_pCreateGame = NULL;
+        return false;
+    }
+
+    // Step 4: server picks which player they control from the save
+    if (gameWindow->GetCreateStatus())
+        gameWindow->GetCreateStatus()->Hide();
+    ShowWallpaperBackground(gameWindow);
+
+    SDL2PickPlayerDialog pickDlg(gameWindow);
+    if (pickDlg.DoModal() != 1) {
+        theNet.Close(FALSE);
+        theGame.Close();
+        delete theApp.m_pCreateGame;
+        theApp.m_pCreateGame = NULL;
+        return false;
+    }
+
+    CPlayer* pPlr = theGame.GetPlayerByPlyr(pickDlg.m_iSelectedPlyrNum);
+    if (!pPlr) {
+        theNet.Close(FALSE);
+        theGame.Close();
+        delete theApp.m_pCreateGame;
+        theApp.m_pCreateGame = NULL;
+        return false;
+    }
+
+    theGame.SetHP(TRUE);
+    theGame.SetScenario(-1);
+    if (pPlr != theGame._GetMe()) {
+        theGame._SetMe(pPlr);
+        if (theGame.AmServer()) theGame._SetServer(pPlr);
+    }
+    pPlr->SetState(CPlayer::ready);
+    pPlr->SetName(pickDlg.m_playerName.c_str());
+    pCreate->m_sName = pickDlg.m_playerName.c_str();
+
+    // Mark other players as AI-controlled until a client claims them
+    POSITION pos;
+    for (pos = theGame.GetAll().GetHeadPosition(); pos != NULL;) {
+        CPlayer* pP = theGame.GetAll().GetNext(pos);
+        if (!pP->IsMe() && pP->GetNetNum() == 0) {
+            pP->SetAI(TRUE);
+            pP->SetLocal(TRUE);
+        }
+    }
+
+    // Step 5: lobby — wait for clients to claim saved-game players
+    ShowWallpaperBackground(gameWindow);
+    SDL2LobbyDialog lobbyDlg(gameWindow, theGame.m_sGameName);
+    if (lobbyDlg.DoModal() != 1) {
+        theNet.Close(FALSE);
+        theGame.Close();
+        delete theApp.m_pCreateGame;
+        theApp.m_pCreateGame = NULL;
+        return false;
+    }
+
+    if (gameWindow->GetWindow())
+        SDL_RaiseWindow(gameWindow->GetWindow());
+
+    try {
+        theGame.IncTry();
+        pCreate->ClosePick();
+        theApp.ReadyToCreate();
+        theGame.DecTry();
+    } catch (int iNum) { CatchNum(iNum); theApp.CloseWorld(); return false; }
+    catch (...) { CatchOther(); theApp.CloseWorld(); return false; }
+
     return true;
 }
 

@@ -215,7 +215,7 @@ void CPlayer::SetLocal( BYTE bLocal )
         m_bMe = FALSE;
 }
 
-void CPlayer::SetAiHdl( DWORD dwHdl )
+void CPlayer::SetAiHdl( DWORD_PTR dwHdl )
 {
 
     ASSERT_STRICT_VALID( this );
@@ -2419,7 +2419,7 @@ int CGame::StartGame( BOOL bReplace )
     return ( IDOK );
 }
 
-static void fnCompSave( DWORD dwData, int iBlk )
+static void fnCompSave( DWORD_PTR dwData, int iBlk )
 {
 
     CDlgSaveMsg* pDlg = (CDlgSaveMsg*)dwData;
@@ -2580,7 +2580,7 @@ int CGame::SaveGame( CWnd* pPar )
         int   iLen = fil.GetLength( );
         BYTE* pBuf = fil.Detach( );
         int   iCompLen;
-        void* pComp = CoDec::Compress( CoDec::CODEC::GAME, pBuf, iLen, iCompLen, fnCompSave, (DWORD)&dlgMsg );
+        void* pComp = CoDec::Compress( CoDec::CODEC::GAME, pBuf, iLen, iCompLen, fnCompSave, (DWORD_PTR)&dlgMsg );
         free( pBuf );
 
         theApp.BaseYield( );
@@ -2757,6 +2757,19 @@ void CGame::Serialize( CArchive& ar )
         theMap.Serialize( ar );
         theMinerals.Serialize( ar );
 
+        // TEMP DEBUG: mineral flag/map round-trip diagnosis (store)
+        {
+            int flagged = 0;
+            for ( int yy = 0; yy < theMap.Get_eY( ); yy++ )
+                for ( int xx = 0; xx < theMap.Get_eX( ); xx++ )
+                    if ( theMap._GetHex( xx, yy )->GetUnits( ) & CHex::minerals ) flagged++;
+            char b[160];
+            sprintf_s( b, sizeof( b ), "[SAVE store] minerals=%d flaggedHexes=%d eX=%d eY=%d\n",
+                       (int)theMinerals.GetCount( ), flagged, theMap.Get_eX( ), theMap.Get_eY( ) );
+            OutputDebugStringA( b );
+            FILE* f = NULL; if ( fopen_s( &f, "d:\\tmp\\worlddbg.log", "a" ) == 0 && f ) { fputs( b, f ); fclose( f ); }
+        }
+
         // save the bridges
         theBridgeMap.Serialize( ar );
 
@@ -2899,6 +2912,19 @@ void CGame::Serialize( CArchive& ar )
         ASSERT_VALID( &theMap );
         theMinerals.Serialize( ar );
         ASSERT_VALID( &theMinerals );
+
+        // TEMP DEBUG: mineral flag/map round-trip diagnosis (load)
+        {
+            int flagged = 0;
+            for ( int yy = 0; yy < theMap.Get_eY( ); yy++ )
+                for ( int xx = 0; xx < theMap.Get_eX( ); xx++ )
+                    if ( theMap._GetHex( xx, yy )->GetUnits( ) & CHex::minerals ) flagged++;
+            char b[160];
+            sprintf_s( b, sizeof( b ), "[LOAD] minerals=%d flaggedHexes=%d eX=%d eY=%d\n",
+                       (int)theMinerals.GetCount( ), flagged, theMap.Get_eX( ), theMap.Get_eY( ) );
+            OutputDebugStringA( b );
+            FILE* f = NULL; if ( fopen_s( &f, "d:\\tmp\\worlddbg.log", "a" ) == 0 && f ) { fputs( b, f ); fclose( f ); }
+        }
 
         // load the bridges
         theBridgeMap.Serialize( ar );

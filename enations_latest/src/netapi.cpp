@@ -11,6 +11,7 @@
 
 #include "netapi.h"
 
+#include "SDL2GameDialogs.h"
 #include "ai.h"
 #include "area.h"
 #include "bridge.h"
@@ -2863,8 +2864,11 @@ void CGame::ProcessMessage(CNetCmd* pCmd )
         CmdPlay( (CNetPlay*)pCmd );
         break;
     case CNetCmd::cmd_chat: {
-        // CDlgChatAll excluded from build (Phase 2d) — chat messages drop on the floor
-        // until SDL2ChatWindow is wired with network routing.
+        const CNetChat* pChat = (const CNetChat*)pCmd;
+        // Look up sender name from net number
+        CPlayer* pSender = theGame._GetPlayer( pChat->m_iPlyrNetNum );
+        std::string from = pSender ? pSender->GetName() : "?";
+        SDL2Chat_AddMessage( from + ": " + pChat->m_sMsg );
         break;
     }
 

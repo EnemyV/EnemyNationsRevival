@@ -1258,9 +1258,18 @@ BOOL CTileDrawInfo::operator<( const CTileDrawInfo& tiledrawinfo ) const
     if ( m_ptCenter.x != tiledrawinfo.m_ptCenter.x )
         return m_ptCenter.x < tiledrawinfo.m_ptCenter.x;
 
-    // If same location, treat as duplicate if the same unit
+    // If same location, impose a stable, deterministic order on distinct units.
+    // NOTE: this used to be `m_punittile != tiledrawinfo.m_punittile`, i.e. pointer
+    // INEQUALITY. That is not a valid ordering: for two distinct tiles that tie on
+    // projected center, it returns TRUE in *both* directions, so the BTree never
+    // treats them as equal and the one inserted second always lands in front. Since
+    // insertion order = hex-scan order (which shifts as the viewpoint scrolls), the
+    // two tiles flickered — most visibly with a large + small building on the same
+    // anti-diagonal (equal center.y). Comparing pointer VALUE gives a strict weak
+    // ordering: equal pointers => equal (deduped), distinct pointers => one fixed
+    // way round, independent of insertion order. Stops the flicker.
 
-    return m_punittile != tiledrawinfo.m_punittile;
+    return m_punittile < tiledrawinfo.m_punittile;
 }
 
 //--------------------- C E x p l o s i o n D r a w I n f o --------------------
@@ -3740,9 +3749,15 @@ void CGameMap::UpdateRect( CAnimAtr& aa, CRect rect, CDrawParms::UPDATE_MODE eMo
     }
 }
 
-static int fnEnumCurOn( CHex* pHex, CHexCoord, void* )
+static int fnEnumCurOn( CHex* pHex, CHexCoord _hex, void* )
 {
 
+    // Mirror fnEnumCurOff: invalidate the hex so the cursor footprint redraws
+    // immediately. Without this, hexes newly covered by the cursor (e.g. when a
+    // non-square building is rotated in place, so no mouse move clears+invalidates
+    // the old footprint) get the cursor flag but are never marked dirty — so the
+    // white box doesn't appear until the next mouse move invalidates them.
+    _hex.SetInvalidated( );
     pHex->SetCursor( );
     return ( FALSE );
 }
@@ -3815,6 +3830,7 @@ void CGameMap::SetBldgCur( CHexCoord const& hex, int iBldg, int iBldgDir, int iT
     _hex.Wrap( );
     m_pLandExit = _GetHex( _hex );
     m_pLandExit->SetCursor( );
+    _hex.SetInvalidated( );     // redraw immediately (see fnEnumCurOn)
 
     if ( pData->HasShipExit( ) )
     {
@@ -3822,6 +3838,7 @@ void CGameMap::SetBldgCur( CHexCoord const& hex, int iBldg, int iBldgDir, int iT
         _hex.Wrap( );
         m_pShipExit = _GetHex( _hex );
         m_pShipExit->SetCursor( );
+        _hex.SetInvalidated( );     // redraw immediately
     }
     else
         m_pShipExit = NULL;

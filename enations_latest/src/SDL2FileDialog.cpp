@@ -10,56 +10,55 @@
 #include "sfx.h"
 
 SDL2FileDialog::SDL2FileDialog(GameWindow* gw)
-    : SDL2Dialog(gw, "Game Options", 360, 310)
+    : SDL2Dialog(gw, "Game Options", 360, 300)
 {
 }
 
 void SDL2FileDialog::OnInit() {
-    int y = m_y + 36;
-    int labelW = 90;
-    int sliderX = m_x + labelW + 10;
-    // Leave 45px right margin for value text (e.g. "100")
-    int sliderW = m_width - labelW - 55;
+    // --- Settings group: speed + volumes, boxed together -------------------
+    const int gbX = m_x + 12, gbW = m_width - 24;
+    const int gbY = m_y + 34, gbH = 118;
+    AddWidget<SDL2GroupBox>(gbX, gbY, gbW, gbH, "Settings");
 
-    // Game Speed
-    AddWidget<SDL2Label>(m_x + 15, y, labelW, 24, "Game Speed:");
+    int labelW = 86;
+    int sliderX = gbX + 14 + labelW + 8;
+    int sliderRight = gbX + gbW - 48;        // leave room for the value text
+    int sliderW = sliderRight - sliderX;
+    int y = gbY + 22;
+
+    AddWidget<SDL2Label>(gbX + 14, y, labelW, 24, "Game Speed:");
     m_sldSpeed = AddWidget<SDL2Slider>(sliderX, y, sliderW, 24,
         0, NUM_SPEEDS - 1, theGame.GetGameMul());
-    y += 34;
+    y += 32;
 
-    // Sound Volume
-    AddWidget<SDL2Label>(m_x + 15, y, labelW, 24, "Sound:");
+    AddWidget<SDL2Label>(gbX + 14, y, labelW, 24, "Sound:");
     m_sldSound = AddWidget<SDL2Slider>(sliderX, y, sliderW, 24,
         0, 100, theMusicPlayer.GetSoundVolume());
-    y += 34;
+    y += 32;
 
-    // Music Volume
-    AddWidget<SDL2Label>(m_x + 15, y, labelW, 24, "Music:");
+    AddWidget<SDL2Label>(gbX + 14, y, labelW, 24, "Music:");
     m_sldMusic = AddWidget<SDL2Slider>(sliderX, y, sliderW, 24,
         0, 100, theMusicPlayer.GetMusicVolume());
-    y += 40;
 
-    // Buttons in a 3x2 grid — Save/Load paired, then Exit/Help, then Minimize/Close.
-    int btnW = 100, btnH = 26, btnGap = 6;
-    int gridW = btnW * 2 + btnGap;
-    int gridX = m_x + (m_width - gridW) / 2;
+    // --- Action buttons: a tidy 2-column grid below the settings box -------
+    //   Save | Load          (file)
+    //   Minimize | Help       (utility)
+    //   Exit Game | Resume    (leave vs return)
+    const int btnW = 152, btnH = 30, colGap = 12, rowGap = 10;
+    const int gridX = m_x + (m_width - (btnW * 2 + colGap)) / 2;
+    const int col2 = gridX + btnW + colGap;
+    int by = gbY + gbH + 14;
 
-    AddWidget<SDL2Button>(gridX, y, btnW, btnH, "Save Game",
-        [this]() { OnSave(); });
-    AddWidget<SDL2Button>(gridX + btnW + btnGap, y, btnW, btnH, "Load Game",
-        [this]() { OnLoad(); });
-    y += btnH + btnGap;
+    AddWidget<SDL2Button>(gridX, by, btnW, btnH, "Save Game", [this]() { OnSave(); });
+    AddWidget<SDL2Button>(col2,  by, btnW, btnH, "Load Game", [this]() { OnLoad(); });
+    by += btnH + rowGap;
 
-    AddWidget<SDL2Button>(gridX, y, btnW, btnH, "Exit Game",
-        [this]() { OnExit(); });
-    AddWidget<SDL2Button>(gridX + btnW + btnGap, y, btnW, btnH, "Help",
-        [this]() { OnHelp(); });
-    y += btnH + btnGap;
+    AddWidget<SDL2Button>(gridX, by, btnW, btnH, "Minimize", [this]() { OnMinimize(); });
+    AddWidget<SDL2Button>(col2,  by, btnW, btnH, "Help",     [this]() { OnHelp(); });
+    by += btnH + rowGap;
 
-    AddWidget<SDL2Button>(gridX, y, btnW, btnH, "Minimize",
-        [this]() { OnMinimize(); });
-    AddWidget<SDL2Button>(gridX + btnW + btnGap, y, btnW, btnH, "Close",
-        [this]() { OnOK(); });
+    AddWidget<SDL2Button>(gridX, by, btnW, btnH, "Exit Game",   [this]() { OnExit(); });
+    AddWidget<SDL2Button>(col2,  by, btnW, btnH, "Resume Game", [this]() { OnOK(); });
 }
 
 void SDL2FileDialog::ApplySettings() {

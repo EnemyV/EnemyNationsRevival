@@ -11,14 +11,18 @@ static DWORD _dwMaxSize = DBL_BUF_LEN;
 
 extern "C"
 {
+    // dwCallback/dwInstance are DWORD_PTR in the real msacm32 API. They MUST be
+    // pointer-width here: the callers pass a pointer (e.g. &done) and on x64 a
+    // plain DWORD truncates it, so the ACM driver hands the callback a bad
+    // 32-bit address and it faults on first dereference.
     typedef MMRESULT( ACMAPI* PROC_acmStreamOpen ) ( LPHACMSTREAM phas, HACMDRIVER had,
                                                      LPWAVEFORMATEX pwfxSrc, LPWAVEFORMATEX pwfxDst, LPWAVEFILTER pwfltr,
-                                                     DWORD dwCallback, DWORD dwInstance, DWORD fdwOpen );
+                                                     DWORD_PTR dwCallback, DWORD_PTR dwInstance, DWORD fdwOpen );
     typedef MMRESULT( ACMAPI* PROC_acmFormatEnumA ) (
         HACMDRIVER              had,
         LPACMFORMATDETAILSA     pafd,
         ACMFORMATENUMCBA        fnCallback,
-        DWORD                   dwInstance,
+        DWORD_PTR               dwInstance,
         DWORD                   fdwEnum );
     typedef MMRESULT( ACMAPI* PROC_acmFormatTagDetailsA ) (
         HACMDRIVER              had,
@@ -176,7 +180,7 @@ CACMWaveFormat::~CACMWaveFormat() {
 
 
 BOOL PASCAL CACMWaveFormat::fmtEnumCallback( HACMDRIVERID hadid,
-                                             LPACMFORMATDETAILS pafd, DWORD dwInstance, DWORD fdwSupport ) {
+                                             LPACMFORMATDETAILS pafd, DWORD_PTR dwInstance, DWORD fdwSupport ) {
     LPDWORD pDw = (LPDWORD)dwInstance;
 
     *pDw = TRUE;
@@ -196,7 +200,7 @@ BOOL CACMWaveFormat::Prepare( DWORD flags ) {
     MMRESULT mmr = fnacmFormatEnum( NULL,
                                     fmtD,
                                     fmtEnumCallback,
-                                    (DWORD)&done,
+                                    (DWORD_PTR)&done,   // x64: pointer-width instance param, not DWORD
                                     flags );
 
     // BUBUG getting mmr=Invalid paramater, on WAVE_FORMAT_PCM

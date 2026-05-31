@@ -413,6 +413,16 @@ void CStructure::InitData() {
             (*ppSd)->m_aiBuild[iInd] = ptrMmio->ReadShort();
         for (int iInd = 3; iInd < CMaterialTypes::GetNumBuildTypes(); iInd++)
             (*ppSd)->m_aiBuild[iInd] = 0;
+
+        // === CUSTOM GAMEPLAY TWEAK (2026-05-31) ===========================
+        // The second apartment ("the tall one", apartment_1_2) now costs an
+        // extra 10 steel on top of its existing 400 lumber. Applied here after
+        // the data load (rather than editing the binary data file) so it's
+        // deterministic across all clients — every client runs the same exe, so
+        // multiplayer stays in sync. To revert: delete these two lines.
+        // ==================================================================
+        if (iOn == CStructureData::apartment_1_2)
+            (*ppSd)->m_aiBuild[CMaterialTypes::steel] = 10;
         (*ppSd)->m_iPower = ptrMmio->ReadShort();
         (*ppSd)->m_fNoPower = (float) ptrMmio->ReadShort() / 100.0;
 
