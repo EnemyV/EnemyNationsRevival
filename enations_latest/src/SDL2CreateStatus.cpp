@@ -237,8 +237,10 @@ void SDL2CreateStatus::Render() {
     SDL_Surface* winSurface = m_ownWindow ? SDL_GetWindowSurface(m_ownWindow) : nullptr;
     if (!winSurface) return;
 
-    // Re-raise each frame to stay on top of other topmost windows (detached panels, etc.)
-    SDL_RaiseWindow(m_ownWindow);
+    // The window is created SDL_WINDOW_ALWAYS_ON_TOP, so the OS keeps it above
+    // other windows without a per-frame SDL_RaiseWindow(). That raise called
+    // SetForegroundWindow() every frame and stole OS focus (couldn't alt-tab away
+    // during world generation) — drop it and rely on the always-on-top flag.
 
     // Ensure dialog art is loaded
     SDL2Dialog::LoadDialogArt();
@@ -271,27 +273,10 @@ void SDL2CreateStatus::Render() {
     if (s_gold) {
         SDL_BlitScaled(s_gold, nullptr, winSurface, &dlgRect);
     }
-    if (s_bdrH) {
-        for (int x = dlgRect.x; x < dlgRect.x + dlgRect.w; x += s_bdrH->w) {
-            int w = std::min(s_bdrH->w, dlgRect.x + dlgRect.w - x);
-            SDL_Rect src = { 0, 0, w, s_bdrH->h };
-            SDL_Rect dTop = { x, dlgRect.y, w, s_bdrH->h };
-            SDL_BlitSurface(s_bdrH, &src, winSurface, &dTop);
-            SDL_Rect dBot = { x, dlgRect.y + dlgRect.h - s_bdrH->h, w, s_bdrH->h };
-            SDL_BlitSurface(s_bdrH, &src, winSurface, &dBot);
-        }
-    }
-    if (s_bdrV) {
-        for (int col = 0; col < s_bdrV->w; col++) {
-            SDL_Rect src = { col, col, 1, s_bdrV->h - 2 * col };
-            int stripH = dlgRect.h - 2 * borderTop - 2 * col;
-            if (stripH <= 0) continue;
-            SDL_Rect dL = { dlgRect.x + col, dlgRect.y + borderTop + col, 1, stripH };
-            SDL_BlitScaled(s_bdrV, &src, winSurface, &dL);
-            SDL_Rect dR = { dlgRect.x + dlgRect.w - 1 - col, dlgRect.y + borderTop + col, 1, stripH };
-            SDL_BlitScaled(s_bdrV, &src, winSurface, &dR);
-        }
-    }
+    // Carved-gold frame via the shared, corner-correct routine (the old per-edge
+    // loops left the same bottom-corner gaps fixed elsewhere).
+    SDL2MainMenu::DrawGoldBorder(winSurface, dlgRect.x, dlgRect.y,
+                                 dlgRect.w, dlgRect.h, s_bdrH, s_bdrV);
     // Interior: stretch gold texture (matching SDL2Dialog style)
     {
         SDL_Rect interior = { dlgRect.x + borderSide, dlgRect.y + borderTop,

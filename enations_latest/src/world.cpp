@@ -211,12 +211,23 @@ void CWndWorld::Create(BOOL bStart) {
     LPCTSTR sClass = CConquerApp::EnRegisterWndClass("EnWorldWnd", dwStyleWorldWnd,
                                                      theApp.LoadStandardCursor(IDC_CROSS));
 
+    // The world map renders the whole game world stretched to fill the window,
+    // and the world is always square (CGameMap m_eX == m_eY). So the *client*
+    // must be square or the map is distorted. The legacy default (screenX/5 wide
+    // x screenY/4 tall) is only ~square at 4:3 — on a widescreen monitor it made
+    // the map look vertically squished. Default to a square client (adding the
+    // window frame/caption so the client itself, not the outer window, is square).
+    int iWorldClient = theApp.m_iCol1 + 1;  // square client edge
+    int iWorldDefEX  = iWorldClient + 2 * ::GetSystemMetrics( SM_CXSIZEFRAME );
+    int iWorldDefEY  = iWorldClient + ::GetSystemMetrics( SM_CYCAPTION ) +
+                       2 * ::GetSystemMetrics( SM_CYSIZEFRAME );
+
     // if it crashes here, i think a gfx bitmap is missing?
     // theApp.m_pMainWnd->m_hWnd is wrong, i think
     if ( CreateEx( 0, sClass, sTitle.c_str(), dwPopWndStyle, EnGetProfileInt( theApp.m_sResIni.c_str(), "WorldX", 0 ),
                    EnGetProfileInt( theApp.m_sResIni.c_str(), "WorldY", 0 ),
-                   EnGetProfileInt( theApp.m_sResIni.c_str(), "WorldEX", theApp.m_iCol1 + 1 ),
-                   EnGetProfileInt( theApp.m_sResIni.c_str(), "WorldEY", theApp.m_iRow1 + 1 ), 
+                   EnGetProfileInt( theApp.m_sResIni.c_str(), "WorldEX", iWorldDefEX ),
+                   EnGetProfileInt( theApp.m_sResIni.c_str(), "WorldEY", iWorldDefEY ),
                    theApp.m_pMainWnd->m_hWnd, // window parent!
                    NULL, NULL ) == 0 )
     {

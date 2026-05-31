@@ -8,6 +8,7 @@
 #include "SDL2Compositor.h"
 #include "SDL2CreateStatus.h"
 #include "SDL2Panel.h"
+#include "music.h"        // theMusicPlayer (pause/resume on app focus change)
 #include "../rendering/SDLButtonManager.h"
 #include "../rendering/StatusBar.h"
 #include "../input/UIButtonListener.h"
@@ -397,6 +398,21 @@ bool GameWindow::PollEvents() {
             continue;
 
         HandleEvent(event);
+    }
+
+    // App-level focus → pause/resume music. SDL_GetKeyboardFocus() is non-NULL
+    // whenever ANY of our windows (main, detached maps, dialogs) holds focus, and
+    // NULL only when another application is in front. Tracking that transition
+    // (rather than per-window FOCUS_LOST/GAINED) means switching between our own
+    // windows doesn't stop the music, but alt-tabbing to another app does — and
+    // tabbing back resumes it. (The MFC WM_ACTIVATEAPP path is unreliable here
+    // because the MFC main window is hidden.)
+    {
+        bool appActive = (SDL_GetKeyboardFocus() != nullptr);
+        if (appActive != m_appActive) {
+            m_appActive = appActive;
+            theMusicPlayer.OnActivate(appActive ? TRUE : FALSE);
+        }
     }
 
     // Render active non-modal dialogs

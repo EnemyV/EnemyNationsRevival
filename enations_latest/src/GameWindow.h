@@ -244,6 +244,7 @@ private:
     SDL_Window* m_window = nullptr;
     SDL_Renderer* m_renderer = nullptr;  // SDL renderer for UI
     bool m_pollingEvents = false;  // re-entrancy guard for PollEvents()
+    bool m_appActive = true;       // app-level focus (any of our windows focused)
 
     // UI Components (Phase 9.2)
     std::unique_ptr<SDLButtonManager> m_buttonManager;
