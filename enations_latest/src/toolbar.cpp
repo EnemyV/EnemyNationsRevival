@@ -876,6 +876,13 @@ static void ToggleUnitListPanel(SDL2UnitList*& pList, SDL2UnitList::ListType typ
         [pL](SDL_Event& event, int localX, int localY) -> bool {
             return pL->HandleEvent(event, localX, localY);
         });
+
+    // Detach into its own OS window (like the area/world maps). This gives the
+    // window the carved-gold Enemy Nations chrome (RenderDetached draws the
+    // border + title bar) AND lets it float/raise above the detached map windows
+    // — as a composited panel it was stuck inside the main window, permanently
+    // beneath the maps. Clicking it now raises it like any top-level window.
+    panel->Detach(theApp.m_gameWindow.get());
 }
 
 void CWndBar::GotoVehicles( )
