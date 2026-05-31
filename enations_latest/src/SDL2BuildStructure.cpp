@@ -106,15 +106,15 @@ void SDL2BuildStructure::OnInit() {
     // Starts empty: like the MFC dialog, the whole cost table only appears once a
     // building is selected (CDlgBuildStructure::OnPaint draws it inside
     // `if (m_pSd != NULL)`).
-    m_lblCostColHdr = AddWidget<SDL2Label>(ox + 332, oy + 150, 42, 15, "");
+    m_lblCostColHdr = AddWidget<SDL2Label>(ox + 332, oy + 158, 42, 15, "");
     m_lblCostColHdr->SetTopAligned(true);
     m_lblCostColHdr->SetRightAligned(true);
     m_lblCostColHdr->SetColor({41, 255, 8, 255});
-    m_lblHaveColHdr = AddWidget<SDL2Label>(ox + 377, oy + 150, 38, 15, "");
+    m_lblHaveColHdr = AddWidget<SDL2Label>(ox + 377, oy + 158, 38, 15, "");
     m_lblHaveColHdr->SetTopAligned(true);
     m_lblHaveColHdr->SetRightAligned(true);
     m_lblHaveColHdr->SetColor({41, 255, 8, 255});
-    m_lblNeedColHdr = AddWidget<SDL2Label>(ox + 417, oy + 150, 35, 15, "");
+    m_lblNeedColHdr = AddWidget<SDL2Label>(ox + 417, oy + 158, 35, 15, "");
     m_lblNeedColHdr->SetTopAligned(true);
     m_lblNeedColHdr->SetRightAligned(true);
     m_lblNeedColHdr->SetColor({41, 255, 8, 255});
@@ -124,41 +124,44 @@ void SDL2BuildStructure::OnInit() {
     // header — not a line between every column. Both are hidden until a building
     // is selected (see UpdateDescription), matching the MFC `if (m_pSd != NULL)`.
     {
-        m_gridH = AddWidget<SDL2Image>(ox + 264, oy + 167, 175, 1);
+        m_gridH = AddWidget<SDL2Image>(ox + 264, oy + 173, 175, 1);
         SDL_Surface* s = SDL_CreateRGBSurface(0, 175, 1, 32, 0xFF0000, 0xFF00, 0xFF, 0);
         if (s) { SDL_FillRect(s, nullptr, SDL_MapRGB(s->format, 41, 255, 8)); m_gridH->SetSurface(s, true); }
         m_gridH->SetVisible(false);
     }
     {
-        int lineH = 118;
-        m_gridV = AddWidget<SDL2Image>(ox + 330, oy + 150, 1, lineH);
+        // Vertical divider. Its length is set per-selection in UpdateDescription
+        // to span from the header down to the bottom of the (variable) rows, so
+        // it neither overshoots the top nor stops short of the bottom.
+        int lineH = 1;
+        m_gridV = AddWidget<SDL2Image>(ox + 330, oy + 158, 1, lineH);
         SDL_Surface* s = SDL_CreateRGBSurface(0, 1, lineH, 32, 0xFF0000, 0xFF00, 0xFF, 0);
         if (s) { SDL_FillRect(s, nullptr, SDL_MapRGB(s->format, 41, 255, 8)); m_gridV->SetSurface(s, true); }
         m_gridV->SetVisible(false);
     }
 
     // Cost name column (e.g. "Time", "Gold", "Wood")
-    m_lblCosts = AddWidget<SDL2Label>(ox + 255, oy + 170, 72, 95, "");
+    m_lblCosts = AddWidget<SDL2Label>(ox + 255, oy + 175, 72, 95, "");
     m_lblCosts->SetWrapped(true);
     m_lblCosts->SetTopAligned(true);
     m_lblCosts->SetColor({41, 255, 8, 255});
 
     // Cost value column (right-aligned numbers)
-    m_lblCostCol = AddWidget<SDL2Label>(ox + 332, oy + 170, 42, 95, "");
+    m_lblCostCol = AddWidget<SDL2Label>(ox + 332, oy + 175, 42, 95, "");
     m_lblCostCol->SetWrapped(true);
     m_lblCostCol->SetTopAligned(true);
     m_lblCostCol->SetRightAligned(true);
     m_lblCostCol->SetColor({41, 255, 8, 255});
 
     // Have value column
-    m_lblHaveCol = AddWidget<SDL2Label>(ox + 377, oy + 170, 38, 95, "");
+    m_lblHaveCol = AddWidget<SDL2Label>(ox + 377, oy + 175, 38, 95, "");
     m_lblHaveCol->SetWrapped(true);
     m_lblHaveCol->SetTopAligned(true);
     m_lblHaveCol->SetRightAligned(true);
     m_lblHaveCol->SetColor({41, 255, 8, 255});
 
     // Need/deficit column
-    m_lblNeedCol = AddWidget<SDL2Label>(ox + 417, oy + 170, 35, 95, "");
+    m_lblNeedCol = AddWidget<SDL2Label>(ox + 417, oy + 175, 35, 95, "");
     m_lblNeedCol->SetWrapped(true);
     m_lblNeedCol->SetTopAligned(true);
     m_lblNeedCol->SetRightAligned(true);
@@ -339,12 +342,28 @@ void SDL2BuildStructure::UpdateDescription() {
     // a half-row gap. The previous fixed y (oy+240) sat too low for buildings with
     // few materials. ~16px per line matches the size-13 widget font's line skip.
     const int lineH = 16;
-    int costTop  = m_lblCosts->GetRect().y;            // == oy + 170
+    int costTop  = m_lblCosts->GetRect().y;            // == oy + 175
     int operTop  = costTop + rows * lineH + lineH / 2;  // below rows + half-row gap
     SDL_Rect rN = m_lblOperNames->GetRect();
     SDL_Rect rV = m_lblOperVals->GetRect();
     m_lblOperNames->SetRect(rN.x, operTop, rN.w, rN.h);
     m_lblOperVals->SetRect(rV.x, operTop, rV.w, rV.h);
+
+    // Size the vertical divider to span from the header down to the bottom of the
+    // two blue operating-cost rows — matching the MFC line that ran y=158..rect.top.
+    // (SDL2Image scales aspect-preserving, so recreate the surface at the exact
+    // height rather than stretching a fixed one.)
+    if (m_gridV) {
+        SDL_Rect rv = m_gridV->GetRect();
+        int vTop = m_lblCostColHdr->GetRect().y;        // header top
+        int vBot = operTop + 2 * lineH;                 // below Colonists + Power
+        int vH = vBot - vTop;
+        if (vH > 0) {
+            SDL_Surface* s = SDL_CreateRGBSurface(0, 1, vH, 32, 0xFF0000, 0xFF00, 0xFF, 0);
+            if (s) { SDL_FillRect(s, nullptr, SDL_MapRGB(s->format, 41, 255, 8)); m_gridV->SetSurface(s, true); }
+            m_gridV->SetRect(rv.x, vTop, 1, vH);
+        }
+    }
 
     // Operating costs (blue) — per-column
     std::string operNames;

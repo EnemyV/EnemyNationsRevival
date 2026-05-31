@@ -1095,8 +1095,12 @@ void SDL2Dialog::Render() {
     }
 
     TTF_Font* widgetFont = GetFont(13);
-    for (auto& widget : m_widgets) {
+    for (auto& widget : m_widgets)
         widget->Render(mainSurface, widgetFont);
+    // Focus highlight in a SECOND pass, after all widgets are drawn — otherwise a
+    // neighbouring widget (e.g. the next stacked button) renders over the bottom
+    // edge of the focus box and the box looks clipped.
+    for (auto& widget : m_widgets) {
         if (widget->HasFocus()) {
             SDL_Rect r = widget->GetRect();
             r.x -= 2; r.y -= 2; r.w += 4; r.h += 4;
