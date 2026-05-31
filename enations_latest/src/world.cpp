@@ -211,27 +211,19 @@ void CWndWorld::Create(BOOL bStart) {
     LPCTSTR sClass = CConquerApp::EnRegisterWndClass("EnWorldWnd", dwStyleWorldWnd,
                                                      theApp.LoadStandardCursor(IDC_CROSS));
 
-    // Default window size. The FULL world map (non-radar) renders the whole game
-    // world stretched to fill the client, and the world is always square
-    // (CGameMap m_eX == m_eY) — so its client must be square or the map is
-    // vertically squished (the legacy screenX/5 x screenY/4 default is only
-    // ~square at 4:3). Make the client square, adding the window frame/caption so
-    // the client (not the outer window) is square. The RADAR mini-map keeps its
-    // original proportions — it has its own circular art + button layout and is
-    // not a plain square stretch, so squaring it made it too tall.
-    int iWorldDefEX, iWorldDefEY;
-    if ( m_bIsRadar )
-    {
-        iWorldDefEX = theApp.m_iCol1 + 1;
-        iWorldDefEY = theApp.m_iRow1 + 1;
-    }
-    else
-    {
-        int iWorldClient = theApp.m_iCol1 + 1;  // square client edge
-        iWorldDefEX = iWorldClient + 2 * ::GetSystemMetrics( SM_CXSIZEFRAME );
-        iWorldDefEY = iWorldClient + ::GetSystemMetrics( SM_CYCAPTION ) +
+    // Default window size. Both the world map and the radar render square art
+    // (288x288, the world is CGameMap m_eX == m_eY) stretched to fill the client,
+    // so a square *client* keeps the map undistorted (the legacy screenX/5 x
+    // screenY/4 default is only ~square at 4:3 and looked squished on widescreen).
+    // BUT the detached window also has our title bar on top, which makes a square
+    // client read as too tall overall. Shorten the client ~8% so the whole window
+    // (client + title bar + frame) looks balanced; the resulting slight map
+    // stretch is small and matches the proportions players are used to.
+    int iWorldClientW = theApp.m_iCol1 + 1;          // client width
+    int iWorldClientH = ( iWorldClientW * 92 ) / 100; // ~8% shorter than square
+    int iWorldDefEX = iWorldClientW + 2 * ::GetSystemMetrics( SM_CXSIZEFRAME );
+    int iWorldDefEY = iWorldClientH + ::GetSystemMetrics( SM_CYCAPTION ) +
                       2 * ::GetSystemMetrics( SM_CYSIZEFRAME );
-    }
 
     // if it crashes here, i think a gfx bitmap is missing?
     // theApp.m_pMainWnd->m_hWnd is wrong, i think
