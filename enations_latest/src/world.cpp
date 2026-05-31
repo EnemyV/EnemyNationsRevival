@@ -211,16 +211,27 @@ void CWndWorld::Create(BOOL bStart) {
     LPCTSTR sClass = CConquerApp::EnRegisterWndClass("EnWorldWnd", dwStyleWorldWnd,
                                                      theApp.LoadStandardCursor(IDC_CROSS));
 
-    // The world map renders the whole game world stretched to fill the window,
-    // and the world is always square (CGameMap m_eX == m_eY). So the *client*
-    // must be square or the map is distorted. The legacy default (screenX/5 wide
-    // x screenY/4 tall) is only ~square at 4:3 — on a widescreen monitor it made
-    // the map look vertically squished. Default to a square client (adding the
-    // window frame/caption so the client itself, not the outer window, is square).
-    int iWorldClient = theApp.m_iCol1 + 1;  // square client edge
-    int iWorldDefEX  = iWorldClient + 2 * ::GetSystemMetrics( SM_CXSIZEFRAME );
-    int iWorldDefEY  = iWorldClient + ::GetSystemMetrics( SM_CYCAPTION ) +
-                       2 * ::GetSystemMetrics( SM_CYSIZEFRAME );
+    // Default window size. The FULL world map (non-radar) renders the whole game
+    // world stretched to fill the client, and the world is always square
+    // (CGameMap m_eX == m_eY) — so its client must be square or the map is
+    // vertically squished (the legacy screenX/5 x screenY/4 default is only
+    // ~square at 4:3). Make the client square, adding the window frame/caption so
+    // the client (not the outer window) is square. The RADAR mini-map keeps its
+    // original proportions — it has its own circular art + button layout and is
+    // not a plain square stretch, so squaring it made it too tall.
+    int iWorldDefEX, iWorldDefEY;
+    if ( m_bIsRadar )
+    {
+        iWorldDefEX = theApp.m_iCol1 + 1;
+        iWorldDefEY = theApp.m_iRow1 + 1;
+    }
+    else
+    {
+        int iWorldClient = theApp.m_iCol1 + 1;  // square client edge
+        iWorldDefEX = iWorldClient + 2 * ::GetSystemMetrics( SM_CXSIZEFRAME );
+        iWorldDefEY = iWorldClient + ::GetSystemMetrics( SM_CYCAPTION ) +
+                      2 * ::GetSystemMetrics( SM_CYSIZEFRAME );
+    }
 
     // if it crashes here, i think a gfx bitmap is missing?
     // theApp.m_pMainWnd->m_hWnd is wrong, i think

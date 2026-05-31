@@ -15,6 +15,7 @@
 
 #include <SDL.h>
 #include <SDL_ttf.h>
+#include <SDL_syswm.h>
 #include <fstream>
 
 #undef min
@@ -237,10 +238,26 @@ void SDL2CreateStatus::Render() {
     SDL_Surface* winSurface = m_ownWindow ? SDL_GetWindowSurface(m_ownWindow) : nullptr;
     if (!winSurface) return;
 
-    // The window is created SDL_WINDOW_ALWAYS_ON_TOP, so the OS keeps it above
-    // other windows without a per-frame SDL_RaiseWindow(). That raise called
-    // SetForegroundWindow() every frame and stole OS focus (couldn't alt-tab away
-    // during world generation) — drop it and rely on the always-on-top flag.
+    // Keep the loading window on top during world generation — but WITHOUT
+    // stealing OS focus. The old per-frame SDL_RaiseWindow() called
+    // SetForegroundWindow() ~60x/sec (couldn't alt-tab away during gen); simply
+    // relying on the ALWAYS_ON_TOP flag, however, let the main window cover it so
+    // the dialog never appeared. Instead bump z-order with SWP_NOACTIVATE, and
+    // only while our own process is foreground (so we never fight another app the
+    // user switched to mid-generation).
+#ifdef _WIN32
+    {
+        SDL_SysWMinfo wm; SDL_VERSION(&wm.version);
+        if (SDL_GetWindowWMInfo(m_ownWindow, &wm)) {
+            HWND h = wm.info.win.window;
+            DWORD forePid = 0;
+            ::GetWindowThreadProcessId(::GetForegroundWindow(), &forePid);
+            if (forePid == ::GetCurrentProcessId())
+                ::SetWindowPos(h, HWND_TOPMOST, 0, 0, 0, 0,
+                               SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+        }
+    }
+#endif
 
     // Ensure dialog art is loaded
     SDL2Dialog::LoadDialogArt();

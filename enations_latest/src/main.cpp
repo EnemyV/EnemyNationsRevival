@@ -707,7 +707,12 @@ void CWndMain::OnActivateApp(BOOL bActive, DWORD hTask)
 	if (bActive)
 		{
 //BUGBUG		theApp.SetThreadPriority (THREAD_PRIORITY_NORMAL);
-		PostMessage (WM_ACTIVATE_MUSIC, 0, 0);
+		// Resume sound directly. This used to PostMessage(WM_ACTIVATE_MUSIC) to
+		// defer until the app was truly active, but in the SDL2 port the MFC main
+		// window is hidden and the posted message wasn't reliably dispatched — so
+		// music paused on focus loss (OnActivate(FALSE) above) but never resumed.
+		// OnActivate(TRUE) is safe to call synchronously here.
+		theMusicPlayer.OnActivate ( TRUE );
 		if ( ( theGame.HaveHP () ) && ( m_bPauseOnActive ) )
 			_OnPause ( FALSE );
 		}
