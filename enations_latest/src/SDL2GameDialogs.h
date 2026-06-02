@@ -34,6 +34,7 @@ private:
     struct RsrchEntry { int index; std::string name; bool available; };
     std::vector<RsrchEntry> m_items;
     int m_selected = -1;
+    bool m_showDone = false;   // already-discovered ("[Done]") items are hidden by default
 
     SDL2Listbox* m_list = nullptr;
     SDL2Label*   m_lblDesc = nullptr;

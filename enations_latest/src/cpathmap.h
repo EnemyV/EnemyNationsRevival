@@ -16,7 +16,8 @@
 
 class CPathMap
 {
-	CRITICAL_SECTION m_cs; // internal use only
+	CRITICAL_SECTION m_cs; // internal use only — guards ALL shared scratch state
+	BOOL m_bCsInited;      // m_cs created in ctor, deleted once in dtor/Close
 
 	// these are used only if the array of cells is used
 	CCell *m_paCells;	// array version
@@ -122,6 +123,11 @@ public:
 
 	CHexCoord *CreateHexPath( int& iPathLen, CCell *pDestCell );
 	int GetPathCount( CCell *pDestCell );
+
+	// Diagnostic: exact live node count of the per-path CCell scratch map.
+	// Should hover near 0 between paths (ClearArray empties it); a steadily
+	// rising value would mean a path exit is skipping the clear.
+	int GetMapCellCount() const { return (int)m_mapCell.GetCount(); }
 };
 
 extern CPathMap thePathMap;

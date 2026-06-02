@@ -1057,6 +1057,23 @@ int CPathMap::GetPathCount( CCell *pDestCell )
 //
 BOOL CPathMap::Init( int iMapEX, int iMapEY )
 {
+	// thePathMap is a single GLOBAL object shared by every AI player's worker
+	// thread; GetPath()/GetRoadPath() serialize through m_cs. Init() can be
+	// called DURING gameplay (ai.cpp/caidata.cpp, on map resize/expansion) while
+	// other AI threads are mid-path. The original code tore down the shared
+	// state — delete[] m_paCells, m_mapCell.RemoveAll(), and even
+	// DeleteCriticalSection(&m_cs)/InitializeCriticalSection — with NO lock held.
+	// That frees the std::map nodes and cell array another thread is walking, and
+	// destroys the very lock another thread is inside, producing red-black-tree
+	// heap corruption (STATUS_HEAP_CORRUPTION 0xc0000374, seen via AI combat
+	// pathfinding SeekOpfor->FindDefenseHex->GetPath). Hold m_cs across the
+	// rebuild, and do NOT destroy/recreate the lock here (it is created once in
+	// the constructor and destroyed in ~CPathMap/Close).
+	//
+	// Note: m_cs is created in the constructor, so it is valid on entry here even
+	// on the first Init().
+	EnterCriticalSection( &m_cs );
+
 	m_iWidth = iMapEX;
 	m_iHeight = iMapEY;
 
@@ -1068,17 +1085,13 @@ BOOL CPathMap::Init( int iMapEX, int iMapEY )
 	m_iFirst = m_iNumOfCells-1;
 	m_iLast = 0;
 
-
 	if( m_paCells != NULL )
-		{
 		delete [] m_paCells;
-		DeleteCriticalSection(&m_cs);
-		}
 
 	m_paCells = new CCell[m_iNumOfCells];
 
 	m_mapCell.RemoveAll ();
-	m_mapCell.InitHashTable ( GetPrime ( m_iNumOfCells * 2 ) ); 
+	m_mapCell.InitHashTable ( GetPrime ( m_iNumOfCells * 2 ) );
 
 	m_tdWheel = theTransports.GetData( CTransportData::construction );
 	m_tdTrack = theTransports.GetData( CTransportData::infantry_carrier );
@@ -1091,15 +1104,13 @@ BOOL CPathMap::Init( int iMapEX, int iMapEY )
 
 #if PATH_TIMING
 #ifdef _LOGOUT
-	logPrintf(LOG_PRI_ALWAYS, LOG_VEH_PATH, 
-		"\nCPathMap::Init() for %d,%d  m_iNumOfCells=%d  m_iNumOfMapCells=%d ", 
+	logPrintf(LOG_PRI_ALWAYS, LOG_VEH_PATH,
+		"\nCPathMap::Init() for %d,%d  m_iNumOfCells=%d  m_iNumOfMapCells=%d ",
 		iMapEX, iMapEX, m_iNumOfCells, m_iNumOfMapCells );
 #endif
 #endif
 
-	// private critical section 
-	memset( &m_cs, 0, sizeof( m_cs ) );
-	InitializeCriticalSection(&m_cs);
+	LeaveCriticalSection( &m_cs );
 
 	return TRUE;
 }
@@ -1128,13 +1139,21 @@ CPathMap::CPathMap( void )
 	memset ( m_acBoth , 0, sizeof (m_acBoth) );
 	m_iLowestBoth = 0;
 
+	// Create the lock here, ONCE, so Init() (which may run during gameplay while
+	// AI threads are pathing) never has to create/destroy it. m_bCsInited tracks
+	// ownership so the destructor/Close() delete it exactly once.
 	memset( &m_cs, 0, sizeof( m_cs ) );
+	InitializeCriticalSection( &m_cs );
+	m_bCsInited = TRUE;
 }
 
 CPathMap::~CPathMap()
 {
-	if ( m_paCells != NULL )
+	if ( m_bCsInited )
+	{
 		DeleteCriticalSection(&m_cs);
+		m_bCsInited = FALSE;
+	}
 
 	delete [] m_paCells;
 	m_mapCell.RemoveAll ();
@@ -1146,7 +1165,11 @@ void CPathMap::Close ()
 	m_paCells = NULL;
 	m_mapCell.RemoveAll ();
 
-	DeleteCriticalSection(&m_cs);
+	if ( m_bCsInited )
+	{
+		DeleteCriticalSection(&m_cs);
+		m_bCsInited = FALSE;
+	}
 }
 
 // end of CPathMap.cpp

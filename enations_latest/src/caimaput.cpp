@@ -3724,16 +3724,27 @@ void CAIMapUtil::AddCacheEntry( const CHexCoord& hexFrom, const CHexCoord& hexTo
     int   oldestIdx  = idx;
     DWORD oldestTime = MAXDWORD;
 
-    // Single pass:  find existing, track empty slot, track oldest for LRU
-    for ( int probe = 0; probe < MAX_PROBE_COUNT; ++probe )  // Use constant instead of 8
+    // Single linear-probe pass. NOTE: idx MUST advance every iteration. The
+    // previous version advanced idx only at the bottom of the body but used
+    // `continue` on a collision (occupied slot, different key) — which skipped
+    // the advance and spun on the SAME slot for all remaining probes. It never
+    // linear-probed to the real entry or an empty slot, and never updated the
+    // LRU candidate, so a colliding insert always evicted the home slot and the
+    // cache barely held anything. Advancing in the for-header fixes it.
+    for ( int probe = 0; probe < MAX_PROBE_COUNT; ++probe, idx = ( idx + 1 ) & CACHE_MASK )
     {
         PathCacheEntry& entry = m_pathCache[idx];
-        // verify it's the right one
-        if (!entry.IsEmpty() && (entry.GetHexFrom( ) != hexFrom || entry.GetHexTo( ) != hexTo || entry.GetVehType( ) != iVehType ))
-            continue;
 
-        // Found existing entry - update it
-        if (!entry.IsEmpty( ) && entry.compositeKey == key )  // Added IsEmpty check
+        // First empty slot ends the probe sequence: the key isn't present
+        // (FindCacheEntry also stops at the first empty), so insert here.
+        if ( entry.IsEmpty( ) )
+        {
+            emptyIdx = idx;
+            break;
+        }
+
+        // Existing entry for this key — update it in place.
+        if ( entry.compositeKey == key && entry.GetVehType( ) == iVehType )
         {
             entry.bResult     = bResult;
             entry.dwTimestamp = dwCurrentTime;
@@ -3742,38 +3753,28 @@ void CAIMapUtil::AddCacheEntry( const CHexCoord& hexFrom, const CHexCoord& hexTo
             {
                 // Success - reset failure tracking
                 entry.iFailureCount   = 0;
-                entry.dwFirstFailTime = 0;  // ← Add this
+                entry.dwFirstFailTime = 0;
             }
             else
             {
                 // Failure - increment count, set first fail time if needed
                 entry.iFailureCount++;
                 if ( entry.dwFirstFailTime == 0 )
-                {
                     entry.dwFirstFailTime = dwCurrentTime;
-                }
             }
-            return; // it already existed?
+            return;
         }
 
-        // Track first empty slot
-        if ( entry.IsEmpty( ) && emptyIdx < 0 )
-        {
-            emptyIdx = idx;
-        }
-
-        // Track oldest for LRU eviction (only consider non-empty slots)
-        if ( !entry.IsEmpty( ) && entry.dwTimestamp < oldestTime )
+        // Occupied by a different key — remember the oldest for LRU eviction in
+        // case we never hit an empty slot within MAX_PROBE_COUNT.
+        if ( entry.dwTimestamp < oldestTime )
         {
             oldestTime = entry.dwTimestamp;
             oldestIdx  = idx;
         }
-
-        idx = ( idx + 1 ) & CACHE_MASK;
     }
 
-    // Not found - insert new entry
-    // Prefer empty slot, fallback to LRU eviction
+    // Insert: prefer the first empty slot, else evict the oldest probed slot.
     int insertIdx = ( emptyIdx >= 0 ) ? emptyIdx : oldestIdx;
 
     PathCacheEntry& entry = m_pathCache[insertIdx];

@@ -5274,12 +5274,21 @@ void CWndArea::UpdateSound( )
                 if ( !pBldg->GetOwner( )->IsMe( ) )
                     iVol = 60;
 
-                if ( pBldg->GetDamage( ) == 3 )
-                    theMusicPlayer.QueueBackgroundSound( SOUNDS::damage3, SFXPRIORITY::damage_pri, iPan, iVol );
-                else if ( pBldg->GetDamage( ) == 4 )
+                // Own buildings pass the gate above at ANY position, but an
+                // off-screen one yields a sub-audible (even negative) iVol from
+                // GetPanAndVol. QueueBackgroundSound requires iVol >= 10 and
+                // (debug) TRAPs an inaudible call. Skip it here — matching the
+                // original release build, where the queue simply returned and
+                // the off-screen sound was dropped.
+                if ( iVol >= 10 )
                 {
-                    TRAP( );
-                    theMusicPlayer.QueueBackgroundSound( SOUNDS::damage4, SFXPRIORITY::damage_pri, iPan, iVol );
+                    if ( pBldg->GetDamage( ) == 3 )
+                        theMusicPlayer.QueueBackgroundSound( SOUNDS::damage3, SFXPRIORITY::damage_pri, iPan, iVol );
+                    else if ( pBldg->GetDamage( ) == 4 )
+                    {
+                        TRAP( );
+                        theMusicPlayer.QueueBackgroundSound( SOUNDS::damage4, SFXPRIORITY::damage_pri, iPan, iVol );
+                    }
                 }
             }
 

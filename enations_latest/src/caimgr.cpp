@@ -20,8 +20,17 @@
 #include "stdafx.h"
 #include "version.h"
 
+#include "Perf.h"  // lightweight runtime metrics (gated by EN_PERF)
+
 #define new DEBUG_NEW
 #define AI_IDLE_LIMIT 20000
+
+// Running total of CAIMsg objects enqueued but not yet processed, summed across
+// ALL AI managers/threads. Incremented in MessageArrived (enqueue), decremented
+// in Manage when a message is pulled for processing. Published as the
+// "ai.q.depth" gauge each Perf interval. Interlocked so it is correct across the
+// per-player AI worker threads. Instrumentation only — does not affect AI logic.
+static volatile LONG g_aiMsgBacklog = 0;
 
 
 extern CAITaskList* plTaskList;  // standard CAITask list
@@ -149,6 +158,10 @@ void CAIMgr::Manage( void )
         pMsg = (CAIMsg*)m_plMsgQueue->RemoveHead( );
         LeaveCriticalSection( &m_cs );
         m_iIdle = 0;
+
+        // metrics: one message left the AI pipeline (about to be processed)
+        Perf::CounterInc( "ai.msg.proc" );
+        Perf::GaugeSet( "ai.q.depth", InterlockedDecrement( &g_aiMsgBacklog ) );
     }
     else
     {
@@ -568,6 +581,11 @@ void CAIMgr::UpdatePlayer( CAIMsg* pMsg )
     if ( pMsg->m_idata3 == m_iPlayer )
         return;
 
+    // Scrub the router's borrowed helper lists of this player's units BEFORE
+    // the master bulk-frees them, so none is left dangling (e.g. a unit we
+    // gave to the now-dying player).
+    if ( m_pRouter != NULL )
+        m_pRouter->RemovePlayerUnitsFromLists( pMsg->m_idata3 );
     m_plUnits->RemoveUnits( pMsg->m_idata3 );
     m_plOpFors->RemoveOpFor( pMsg->m_idata3 );
     m_pMap->UpdateMap( NULL );
@@ -662,6 +680,11 @@ void CAIMgr::UpdateUnits( CAIMsg* pMsg )
                 // pUnit->SetDataDW(0);
                 m_plUnits->ClearTarget( pMsg->m_dwID );
             }
+            // Scrub the router's borrowed helper lists BEFORE the master frees
+            // this CAIUnit, so an ownership-changed unit dying under a foreign
+            // player id can't leave a dangling pointer there (AI-thread UAF).
+            if ( m_pRouter != NULL )
+                m_pRouter->RemoveUnitFromLists( pMsg->m_dwID );
             m_plUnits->RemoveUnit( pMsg->m_dwID );
         }
 
@@ -2173,6 +2196,10 @@ void CAIMgr::MessageArrived( CNetCmd const* pNewMsg )
         EnterCriticalSection( &m_cs );
         m_plTmpQueue->AddTail( (CObject*)pMsg );
         LeaveCriticalSection( &m_cs );
+
+        // metrics: one message entered the AI pipeline
+        Perf::CounterInc( "ai.msg.enq" );
+        Perf::GaugeSet( "ai.q.depth", InterlockedIncrement( &g_aiMsgBacklog ) );
     }
 }
 

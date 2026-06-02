@@ -5,12 +5,13 @@
 #include "SDL2FileBrowser.h"
 #include "SDL2Dialogs.h"
 #include "GameWindow.h"
+#include "SDL2Compositor.h"
 #include "lastplnt.h"
 #include "player.h"
 #include "sfx.h"
 
 SDL2FileDialog::SDL2FileDialog(GameWindow* gw)
-    : SDL2Dialog(gw, "Game Options", 360, 300)
+    : SDL2Dialog(gw, "Game Options", 360, 372)
 {
 }
 
@@ -41,12 +42,14 @@ void SDL2FileDialog::OnInit() {
         0, 100, theMusicPlayer.GetMusicVolume());
 
     // --- Action buttons: a tidy 2-column grid below the settings box -------
-    //   Save | Load          (file)
-    //   Minimize | Help       (utility)
-    //   Exit Game | Resume    (leave vs return)
+    //   Save | Load           (file)
+    //   Minimize | Help        (utility)
+    //   Reset Windows          (full width — restore default window layout)
+    //   Exit Game | Resume     (leave vs return)
     const int btnW = 152, btnH = 30, colGap = 12, rowGap = 10;
     const int gridX = m_x + (m_width - (btnW * 2 + colGap)) / 2;
     const int col2 = gridX + btnW + colGap;
+    const int fullW = btnW * 2 + colGap;
     int by = gbY + gbH + 14;
 
     AddWidget<SDL2Button>(gridX, by, btnW, btnH, "Save Game", [this]() { OnSave(); });
@@ -55,6 +58,9 @@ void SDL2FileDialog::OnInit() {
 
     AddWidget<SDL2Button>(gridX, by, btnW, btnH, "Minimize", [this]() { OnMinimize(); });
     AddWidget<SDL2Button>(col2,  by, btnW, btnH, "Help",     [this]() { OnHelp(); });
+    by += btnH + rowGap;
+
+    AddWidget<SDL2Button>(gridX, by, fullW, btnH, "Reset Windows", [this]() { OnResetWindows(); });
     by += btnH + rowGap;
 
     AddWidget<SDL2Button>(gridX, by, btnW, btnH, "Exit Game",   [this]() { OnExit(); });
@@ -173,7 +179,26 @@ void SDL2FileDialog::OnLoad() {
 }
 
 void SDL2FileDialog::OnHelp() {
-    theApp.WinHelp(0, HELP_CONTENTS);
+    // The original WinHelp .hlp file is long gone; point players at the revival
+    // project's issue tracker instead so Help opens something useful.
+#ifdef _WIN32
+    // The game holds the foreground, and its borderless map/dialog windows are
+    // owned by (and therefore drawn above) the main window — so the browser that
+    // SDL_OpenURL launches opens *behind* the game and Help looks like it did
+    // nothing. Grant the next process the right to take the foreground so the
+    // browser can raise itself to the front.
+    ::AllowSetForegroundWindow(ASFW_ANY);
+#endif
+    if (SDL_OpenURL("https://github.com/EnemyV/EnemyNationsRevival/issues") != 0)
+        SDL_Log("Help: SDL_OpenURL failed: %s", SDL_GetError());
+}
+
+void SDL2FileDialog::OnResetWindows() {
+    // Restore the default on-screen layout for the in-game windows (area/world/
+    // radar maps, vehicle/building lists) and forget any remembered positions.
+    if (m_gameWindow && m_gameWindow->GetCompositor())
+        m_gameWindow->GetCompositor()->ResetWindowLayout();
+    EndDialog(1);
 }
 
 void SDL2FileDialog::OnMinimize() {

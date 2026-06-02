@@ -87,6 +87,8 @@ set(enations_sources
         mem_pool.h
         cpuspeed.cpp
         EnSettings.cpp
+        Perf.cpp
+        Perf.h
         GameWindow.cpp
         RenderingAdapter.cpp
         SDL2MainMenu.cpp

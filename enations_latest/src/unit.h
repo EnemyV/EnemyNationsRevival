@@ -779,6 +779,15 @@ class CExplGrp
 
 class CInitProjMem;
 
+// Fixed-block size for CProjBase::m_memPool. Must be >= the largest pooled
+// derived object (CProjectile / CExplosion). It can't be written as
+// sizeof(CProjectile) here because those classes aren't defined yet, so it's a
+// generous constant guarded by a static_assert below (after the classes are
+// complete). The original hardcoded 188 was sized for the 32-bit build; on x64
+// the wider pointers/vtable pushed sizeof(CProjectile) past 188, so every fired
+// projectile overran its pool block -> combat heap corruption.
+constexpr unsigned PROJ_POOL_BLOCK = 256;
+
 class CProjBase : public CEffectTile
 {
     friend CProjMap;
@@ -812,7 +821,7 @@ class CProjBase : public CEffectTile
     // GG						enum { projectile, explosion };
     Fixed m_fixAlt;
 
-    static memory_pool<mempool_std_heap<188, 64>> m_memPool; // FIXME: should be PROJ_BASE_ALLOC_SIZE not hardcoded!
+    static memory_pool<mempool_std_heap<PROJ_POOL_BLOCK, 64>> m_memPool;
 
     // for linked list in CProjMap
     CProjBase* m_pNext;
@@ -854,6 +863,11 @@ class CExplosion : public CProjBase
 };
 
 const int PROJ_BASE_ALLOC_SIZE = __max(sizeof(CProjectile), sizeof(CExplosion));
+
+// Guarantee the pool block actually fits the largest pooled object. If this
+// ever fails, bump PROJ_POOL_BLOCK (above) to at least PROJ_BASE_ALLOC_SIZE.
+static_assert( PROJ_BASE_ALLOC_SIZE <= (int)PROJ_POOL_BLOCK,
+               "CProjBase::m_memPool block is smaller than CProjectile/CExplosion - bump PROJ_POOL_BLOCK" );
 
 // we map based on CHex
 class CProjMap : public CMap<DWORD, DWORD, CProjBase*, CProjBase*>

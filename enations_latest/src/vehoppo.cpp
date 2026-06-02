@@ -378,7 +378,8 @@ void CVehicle::DetermineOppo ()
 	for (int y=-iMax; y<iMax; y++)
 		{
 		_hex.X (m_ptHead.x / 2 - *piOn);
-		CHex * pHex = theMap._GetHex (_hex);
+		_hex.WrapX ();                       // torus: this X can fall off the left/right
+		CHex * pHex = theMap._GetHex (_hex); // edge, and _GetHex does NOT wrap its index
 		for (int x=(*piOn)*2; x>=0; x--)
 			{
 			if (pHex->GetUnits () & (CHex::ul | CHex::ur | CHex::ll | CHex::lr | CHex::bldg))
@@ -403,9 +404,9 @@ void CVehicle::DetermineOppo ()
 					SetOppo (pOppo);
 					}
 				}
-			_hex.Xinc ();
-			pHex = theMap._Xinc (pHex);
-			}
+			_hex.Xinc ();                  // wraps X across the right edge, so the raw
+			pHex = theMap._GetHex (_hex);  // pHex+1 of _Xinc would desync and run off
+			}                              // the hex array — re-fetch from the wrapped hex
 		_hex.Yinc ();
 		piOn++;
 		}

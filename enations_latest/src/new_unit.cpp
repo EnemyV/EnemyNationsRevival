@@ -6527,7 +6527,7 @@ void CVehicle::AssertValidAndLoc( ) const
             {
                 y = ( m_ptNext.y + m_ptHead.y + theMap.Get_eY( ) * 2 ) * MAX_HEX_HT / 4 + MAX_HEX_HT / 4;
                 if ( y >= theMap.Get_eY( ) * MAX_HEX_HT )
-                    y -= theMap.Get_eX( ) * MAX_HEX_HT;
+                    y -= theMap.Get_eY( ) * MAX_HEX_HT;
             }
         }
 

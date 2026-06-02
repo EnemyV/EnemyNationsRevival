@@ -239,6 +239,14 @@ private:
     bool InitializeSDL();
     void Cleanup();
     void HandleEvent(SDL_Event& event);
+
+    // Translate a global keyboard shortcut (Ctrl+letter accelerators, F1 help,
+    // Esc → game options) into the matching game command and dispatch it.
+    // Returns true if the key was handled. Mirrors the original IDR_ACCEL
+    // accelerator table, which is dead under SDL because SDL key events never
+    // reach MFC's TranslateAccelerator.
+    bool HandleGlobalShortcut(SDL_Event& event);
+
     void UpdateWindowTitle();  // Rebuild window title from components
 
     std::string m_title;
@@ -254,6 +262,7 @@ private:
     SDL_Renderer* m_renderer = nullptr;  // SDL renderer for UI
     bool m_pollingEvents = false;  // re-entrancy guard for PollEvents()
     bool m_appActive = true;       // app-level focus (any of our windows focused)
+    Uint32 m_focusLostAt = 0;      // SDL_GetTicks() when focus first read NULL (0 = focused)
 
     // UI Components (Phase 9.2)
     std::unique_ptr<SDLButtonManager> m_buttonManager;

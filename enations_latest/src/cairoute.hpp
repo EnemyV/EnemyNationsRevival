@@ -53,6 +53,12 @@ public:
 	BOOL IsValidUnit( CAIUnit *pUnit );
 	BOOL IsValidUnit( DWORD dwID );
 
+	// Producer-side safety scrub of the borrowed helper lists. Call these with
+	// the CAIUnit object(s) still ALIVE, immediately before the owning master
+	// list frees them, so no freed pointer is ever left behind here. See impl.
+	void RemoveUnitFromLists( DWORD dwID );
+	void RemovePlayerUnitsFromLists( int iPlayer );
+
 	BOOL TrucksAreEnroute( CAIUnit *pBldg );
 	void UnassignTruck( DWORD dwTruckID );
 	void UnassignTrucks( DWORD dwTruckID );

@@ -161,7 +161,10 @@ inline BOOL CUnit::GetSee(CUnit *pSpotter) { return (m_pdwPlyrsSee[pSpotter->Get
 
 
 inline void *CProjBase::operator new(size_t iSiz) {
-    TRAP(iSiz > PROJ_BASE_ALLOC_SIZE);
+    // Guard against the actual block size, not PROJ_BASE_ALLOC_SIZE: the pool
+    // hands out PROJ_POOL_BLOCK-byte blocks, so an object larger than that is
+    // the real overrun condition.
+    TRAP(iSiz > PROJ_POOL_BLOCK);
     return m_memPool.alloc();
 }
 

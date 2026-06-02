@@ -84,6 +84,7 @@ private:
     // Items
     struct ListItem {
         CUnit* pUnit;
+        DWORD  dwID;        // unit ID — re-resolved against the live map each draw
         std::string name;
         int typeIndex;      // Index into sprite sheet
     };
@@ -105,4 +106,13 @@ private:
 
     // Status bar height (from ICON_DAMAGE cyBack)
     int m_statBarHt = 14;
+
+    // Repaint throttle. Render() is called every game frame, but the list shows
+    // slowly-changing live data, so redrawing it (and marking the panel dirty,
+    // which forces a detached-window re-present) at 60fps just steals frames from
+    // the game. We refresh on a fixed interval instead, and force an immediate
+    // redraw on interaction so scrolling/selection still feels instant.
+    DWORD m_lastDrawMs = 0;
+    bool  m_forceDraw = true;
+    static const DWORD DRAW_INTERVAL_MS = 142;  // ~7 fps (forced redraw on interaction keeps it responsive)
 };

@@ -116,6 +116,28 @@ public:
     virtual void  ReRender() { ASSERT( FALSE ); }
     virtual void  Draw() { ASSERT( FALSE ); }
 
+    // --- Per-window frame-rate throttle ------------------------------------
+    // The mainloop re-renders every CWndAnim each game frame, which steals
+    // frames from the simulation. Windows that show slowly-changing data only
+    // need to repaint a few times a second. Map windows that need smooth
+    // scrolling (the area map and the radar) override RendersEveryFrame() to
+    // return TRUE and keep the full frame rate.
+    //
+    // DecideRenderFrame() is called once per frame (in the ReRender pass); it
+    // records whether this window paints this frame so the later Draw pass
+    // makes the same decision. Returns TRUE if the window should render now.
+    virtual bool  RendersEveryFrame() const { return false; }
+    bool DecideRenderFrame( DWORD dwNow, DWORD dwIntervalMs ) {
+        if ( RendersEveryFrame() || ( dwNow - m_dwLastRenderTick ) >= dwIntervalMs ) {
+            m_dwLastRenderTick = dwNow;
+            m_bRenderThisFrame = true;
+        } else {
+            m_bRenderThisFrame = false;
+        }
+        return m_bRenderThisFrame;
+    }
+    bool RenderingThisFrame() const { return m_bRenderThisFrame; }
+
 #ifdef BUGBUG
     virtual void  InvalidateMap();
     virtual void  Update() { ASSERT( FALSE ); }
@@ -130,6 +152,10 @@ public:
 
 protected:
     virtual void OnDestroy();
+
+    // Frame-rate throttle state (see DecideRenderFrame above).
+    DWORD m_dwLastRenderTick = 0;
+    bool  m_bRenderThisFrame = true;
 };
 
 

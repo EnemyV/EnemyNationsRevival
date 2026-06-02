@@ -1187,6 +1187,52 @@ BOOL CAIRouter::IsValidUnit( DWORD dwID )
     return FALSE;
 }
 
+//
+// Drop any borrowed reference to dwID from the helper lists. The borrowed
+// lists (m_plBldgsNeed / m_plTrucksAvailable) hold pointers to CAIUnit objects
+// OWNED by the master m_plUnits. The normal delete_unit path scrubs them via
+// DoRouting before the master frees, but a unit whose ownership changed
+// (give_unit -> SetOwner) dies under a different player id and so skips that
+// scrub, leaving a dangling pointer that a later list walk dereferences (UAF
+// crash on the AI thread). Calling this with the object still alive, right
+// before the master free, closes the window for every free path. Removing a
+// missing id is a harmless no-op, so this is safe to call unconditionally.
+//
+void CAIRouter::RemoveUnitFromLists( DWORD dwID )
+{
+    if ( m_plBldgsNeed != NULL )
+        m_plBldgsNeed->RemoveUnit( dwID, FALSE );
+    if ( m_plTrucksAvailable != NULL )
+        m_plTrucksAvailable->RemoveUnit( dwID, FALSE );
+}
+
+//
+// Bulk version for the player-dying path: the master list is about to
+// RemoveUnits( iPlayer ) (freeing all of that player's CAIUnit objects). Any
+// of those still referenced here — e.g. a unit we once owned that was given
+// to the now-dying player — must be dropped first. The objects are still
+// alive at call time, so reading GetOwner() is safe; we remove the node only
+// (FALSE-equivalent: never delete a borrowed object).
+//
+void CAIRouter::RemovePlayerUnitsFromLists( int iPlayer )
+{
+    CAIUnitList* aLists[2] = { m_plBldgsNeed, m_plTrucksAvailable };
+    for ( int i = 0; i < 2; ++i )
+    {
+        CAIUnitList* pl = aLists[i];
+        if ( pl == NULL )
+            continue;
+
+        POSITION pos1, pos2;
+        for ( pos1 = pl->GetHeadPosition( ); ( pos2 = pos1 ) != NULL; )
+        {
+            CAIUnit* pUnit = (CAIUnit*)pl->GetNext( pos1 );
+            if ( pUnit != NULL && pUnit->GetOwner( ) == iPlayer )
+                pl->RemoveAt( pos2 );  // borrowed pointer — remove node, don't delete object
+        }
+    }
+}
+
 
 //
 // get CAIUnit pointer of the building nearest to this

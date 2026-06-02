@@ -19,6 +19,7 @@ private:
     void OnExit();
     void OnHelp();
     void OnMinimize();
+    void OnResetWindows();
 
     void ApplySettings();
 

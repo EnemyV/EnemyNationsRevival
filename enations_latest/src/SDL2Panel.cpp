@@ -590,6 +590,12 @@ void SDL2Panel::SetVisible(bool visible) {
     SetDirty();
 }
 
+// Forget every remembered placement (process-wide). After this, windows open
+// at their caller-provided default position until moved again.
+void SDL2Panel::ResetAllPlacements() {
+    g_savedPlacements.clear();
+}
+
 // Record this detached window's current OS rect under its name so a later
 // (re)open can restore it. No-op for non-detached panels.
 void SDL2Panel::RememberPlacement() {
@@ -716,32 +722,13 @@ void SDL2Panel::SetRect(int x, int y, int w, int h) {
 // ---------------------------------------------------------------------------
 
 // Hit-test callback for detached panel windows. The window is borderless and
-// we draw our own purple title bar. SDL/Windows won't reliably OS-resize a
-// borderless window (it strips WS_THICKFRAME), so we return NORMAL on the edges
-// and resize them MANUALLY (HandleDetachedResize). The title bar stays OS-
-// DRAGGABLE (works great, crosses monitors). Buttons/content -> NORMAL.
-static SDL_HitTestResult SDLCALL DetachedPanelHitTest(SDL_Window* win, const SDL_Point* pt, void* data) {
-    SDL2Panel* panel = static_cast<SDL2Panel*>(data);
-    int w, h;
-    SDL_GetWindowSize(win, &w, &h);
-    int tbH = panel->GetTitleBarHeight();
-    int grip = SDL2Panel::RESIZE_BORDER;
-
-    // Edges/corners → NORMAL so the mouse-down reaches HandleDetachedResize.
-    if (pt->x < grip || pt->x >= w - grip || pt->y < grip || pt->y >= h - grip)
-        return SDL_HITTEST_NORMAL;
-
-    if (tbH > 0 && pt->y < tbH) {
-        // Caption buttons must deliver a normal click to our event handler.
-        int byTop = (tbH - SDL2Panel::TITLE_BTN_H) / 2;
-        int closeX = w - 2 - SDL2Panel::TITLE_BTN_W;
-        int minX   = closeX - 2 * (SDL2Panel::TITLE_BTN_W + 1);
-        if (pt->y >= byTop && pt->y < byTop + SDL2Panel::TITLE_BTN_H &&
-            pt->x >= minX && pt->x < closeX + SDL2Panel::TITLE_BTN_W)
-            return SDL_HITTEST_NORMAL;
-        return SDL_HITTEST_DRAGGABLE;  // OS moves the window — crosses monitors
-    }
-
+// we draw our own purple title bar. We return NORMAL everywhere so every press
+// reaches our own event handlers: edges/corners drive HandleDetachedResize and
+// the title bar drives HandleDetachedDrag. We deliberately do NOT return
+// SDL_HITTEST_DRAGGABLE for the title bar — that hands the move to the Windows
+// modal move loop, which blocks the app's main loop and freezes rendering until
+// the drag ends. Driving the drag ourselves keeps the game rendering.
+static SDL_HitTestResult SDLCALL DetachedPanelHitTest(SDL_Window* /*win*/, const SDL_Point* /*pt*/, void* /*data*/) {
     return SDL_HITTEST_NORMAL;
 }
 
@@ -959,11 +946,31 @@ bool SDL2Panel::HandleDetachedResize(SDL_Event& event) {
             int minH = MIN_HEIGHT + GetTitleBarHeight();
             if (nw < minW) { if (m_dResizeEdge & 1) nx -= (minW - nw); nw = minW; }
             if (nh < minH) { if (m_dResizeEdge & 4) ny -= (minH - nh); nh = minH; }
-            SDL_SetWindowPosition(m_ownWindow, nx, ny);
-            SDL_SetWindowSize(m_ownWindow, nw, nh);
+            // Remember the latest target so mouse-up can apply the exact final
+            // size, then push to SDL at ~10 Hz. Each push fires SIZE_CHANGED,
+            // which rebuilds the map DIB — too slow to run on every one of the
+            // ~125 motion events/sec: doing so floods the event queue so the
+            // main loop never drains it and never renders, so the window only
+            // visibly resizes on mouse-up. Throttling lets the queue drain and
+            // the loop repaint the content between steps for live feedback.
+            m_dPendWX = nx; m_dPendWY = ny; m_dPendWW = nw; m_dPendWH = nh;
+            m_dPendValid = true;
+            uint32_t now = SDL_GetTicks();
+            if (now - m_dLastApply >= 100) {
+                m_dLastApply = now;
+                SDL_SetWindowPosition(m_ownWindow, nx, ny);
+                SDL_SetWindowSize(m_ownWindow, nw, nh);
+                m_dPendValid = false;
+            }
             return true;
         }
         if (event.type == SDL_MOUSEBUTTONUP) {
+            // Apply the exact final size even if the last motion was throttled.
+            if (m_dPendValid) {
+                SDL_SetWindowPosition(m_ownWindow, m_dPendWX, m_dPendWY);
+                SDL_SetWindowSize(m_ownWindow, m_dPendWW, m_dPendWH);
+                m_dPendValid = false;
+            }
             m_dResizing = false;
             SDL_CaptureMouse(SDL_FALSE);
             return true;
@@ -1009,8 +1016,66 @@ bool SDL2Panel::HandleDetachedResize(SDL_Event& event) {
         SDL_GetGlobalMouseState(&m_dStartMX, &m_dStartMY);
         SDL_GetWindowPosition(m_ownWindow, &m_dStartWX, &m_dStartWY);
         SDL_GetWindowSize(m_ownWindow, &m_dStartWW, &m_dStartWH);
+        m_dLastApply = 0;       // first motion applies immediately
+        m_dPendValid = false;
         SDL_CaptureMouse(SDL_TRUE);
         return true;
     }
     return false;
+}
+
+// Manual title-bar drag of the borderless own-window. Mirrors HandleDetachedResize:
+// capture the mouse and drive SDL_SetWindowPosition from the global cursor delta,
+// so we never enter the OS modal move loop (which would freeze the render loop).
+// Resize is checked BEFORE this (edges win), so by here an edge press has already
+// been claimed. Returns true if the event was consumed.
+bool SDL2Panel::HandleDetachedDrag(SDL_Event& event) {
+    if (!m_ownWindow) return false;
+
+    if (m_dDragging) {
+        if (event.type == SDL_MOUSEMOTION) {
+            int gx = 0, gy = 0;
+            SDL_GetGlobalMouseState(&gx, &gy);
+            SDL_SetWindowPosition(m_ownWindow,
+                                  m_dDragStartWX + (gx - m_dDragStartMX),
+                                  m_dDragStartWY + (gy - m_dDragStartMY));
+            return true;
+        }
+        if (event.type == SDL_MOUSEBUTTONUP) {
+            m_dDragging = false;
+            SDL_CaptureMouse(SDL_FALSE);
+            return true;
+        }
+        return true;  // swallow other events mid-drag
+    }
+
+    if (event.type != SDL_MOUSEBUTTONDOWN || event.button.button != SDL_BUTTON_LEFT)
+        return false;
+
+    int w = 0, h = 0;
+    SDL_GetWindowSize(m_ownWindow, &w, &h);
+    int tbH  = GetTitleBarHeight();
+    int grip = SDL2Panel::RESIZE_BORDER;
+    int px = event.button.x, py = event.button.y;
+
+    // Title-bar band only, excluding the resize grips (handled earlier) and the
+    // caption buttons (min/max/close act on their own mouse-up — starting a drag
+    // here would swallow that mouse-up and the button would look dead). The
+    // button geometry matches the old DetachedPanelHitTest / DrawTitleBar layout.
+    if (tbH <= 0 || py < grip || py >= tbH || px < grip || px >= w - grip)
+        return false;
+    {
+        int byTop  = (tbH - SDL2Panel::TITLE_BTN_H) / 2;
+        int closeX = w - 2 - SDL2Panel::TITLE_BTN_W;
+        int minX   = closeX - 2 * (SDL2Panel::TITLE_BTN_W + 1);
+        if (py >= byTop && py < byTop + SDL2Panel::TITLE_BTN_H &&
+            px >= minX && px < closeX + SDL2Panel::TITLE_BTN_W)
+            return false;  // on a caption button — let the click reach HandleEvent
+    }
+
+    SDL_GetGlobalMouseState(&m_dDragStartMX, &m_dDragStartMY);
+    SDL_GetWindowPosition(m_ownWindow, &m_dDragStartWX, &m_dDragStartWY);
+    m_dDragging = true;
+    SDL_CaptureMouse(SDL_TRUE);
+    return true;
 }

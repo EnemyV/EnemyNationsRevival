@@ -20,14 +20,15 @@
 // use. ASSERT/VERIFY/TRACE come from <cassert>.
 #include <windows.h>
 #include <cassert>
+#include "en_assert.h"   // non-fatal, logged ASSERT (mirrors original MFC "Ignore")
 #ifndef ASSERT
-#define ASSERT(expr)        assert(expr)
+#define ASSERT(expr)        EN_ASSERT_NONFATAL(expr)
 #endif
 #ifndef VERIFY
-#define VERIFY(expr)        assert(expr)
+#define VERIFY(expr)        EN_ASSERT_NONFATAL(expr)
 #endif
 #ifndef ENSURE
-#define ENSURE(expr)        assert(expr)
+#define ENSURE(expr)        EN_ASSERT_NONFATAL(expr)
 #endif
 #ifndef TRACE
 #define TRACE(...)          ((void)0)
@@ -49,7 +50,9 @@
 #undef ASSERT_VALID
 #endif
 #ifdef _DEBUG
-#define ASSERT_VALID(pOb) ( assert((pOb) != nullptr), (pOb)->AssertValid() )
+// Non-fatal + null-safe: a null pOb logs instead of dereferencing into an AV,
+// and AssertValid()'s own ASSERTs are now non-fatal too.
+#define ASSERT_VALID(pOb) ( (pOb) ? (void)(pOb)->AssertValid() : EnAssertFire( "ASSERT_VALID: null", __FILE__, __LINE__ ) )
 #else
 #define ASSERT_VALID(pOb) ((void)0)
 #endif

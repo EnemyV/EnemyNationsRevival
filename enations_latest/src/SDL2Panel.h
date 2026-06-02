@@ -128,6 +128,10 @@ public:
     // left it.
     void OnOwnWindowMoved();
 
+    // Forget ALL remembered window placements (process-wide). Used by the
+    // "Reset Windows" command so windows stop reopening at their saved spots.
+    static void ResetAllPlacements();
+
     // Suppress syncing position/size to OS window (used during temp coordinate swaps)
     void SuppressWindowSync(bool s) { m_suppressSync = s; }
 
@@ -138,6 +142,15 @@ public:
     // a borderless window reliably). Returns true if the event was consumed.
     bool HandleDetachedResize(SDL_Event& event);
     bool IsDetachedResizing() const { return m_dResizing; }
+
+    // Manual title-bar drag for the borderless own-window. Previously the title
+    // bar was OS-draggable (SDL_HITTEST_DRAGGABLE), but that hands the move to
+    // the Windows modal move loop, which blocks the app's main loop so the game
+    // stops rendering until the drag ends. Driving the move ourselves (global
+    // mouse delta -> SDL_SetWindowPosition) keeps the render loop running.
+    // Returns true if the event was consumed.
+    bool HandleDetachedDrag(SDL_Event& event);
+    bool IsDetachedDragging() const { return m_dDragging; }
 
     // Title bar matches the original Enemy Nations caption art (caption2.d24 is
     // 24px tall); the system buttons (winbtn.d24) are 14x14 glyphs in 16px cells.
@@ -219,4 +232,18 @@ private:
     int  m_dStartMX = 0, m_dStartMY = 0;   // global mouse at gesture start
     int  m_dStartWX = 0, m_dStartWY = 0;   // window pos at gesture start
     int  m_dStartWW = 0, m_dStartWH = 0;   // window size at gesture start
+
+    // Live-resize throttle: applying a new size rebuilds the map DIB, which is
+    // too expensive to do every mouse-motion. We push the window size (and thus
+    // the rebuild + repaint) at ~10 Hz during the drag, holding the latest
+    // target so the exact final size is applied on mouse-up.
+    uint32_t m_dLastApply = 0;              // SDL_GetTicks of last applied step
+    int  m_dPendWX = 0, m_dPendWY = 0;      // latest target window pos
+    int  m_dPendWW = 0, m_dPendWH = 0;      // latest target window size
+    bool m_dPendValid = false;              // is there an un-applied target?
+
+    // Manual detached title-bar drag state (parallels the resize state above).
+    bool m_dDragging = false;
+    int  m_dDragStartMX = 0, m_dDragStartMY = 0;  // global mouse at grab
+    int  m_dDragStartWX = 0, m_dDragStartWY = 0;  // window pos at grab
 };

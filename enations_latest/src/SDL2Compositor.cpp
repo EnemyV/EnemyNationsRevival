@@ -150,6 +150,65 @@ SDL2Panel* SDL2Compositor::FindPanel(const std::string& name) const {
     return nullptr;
 }
 
+void SDL2Compositor::ResetWindowLayout() {
+    // Forget every remembered placement so closed/recreated windows no longer
+    // snap back to wherever they last were.
+    SDL2Panel::ResetAllPlacements();
+
+    const int W = m_window ? m_window->GetWidth()  : 1280;
+    const int H = m_window ? m_window->GetHeight() : 720;
+    const int tb = SDL2Panel::TITLE_BAR_HT;
+    const int margin = 8;
+
+    // Default geometry for the well-known game windows. The area map gets the
+    // bulk of the screen on the left; the minimap + unit lists stack down the
+    // right edge — mirroring the original Enemy Nations arrangement.
+    const int rightW   = 320;
+    const int rightX   = W - rightW - margin;
+    const int topY     = tb + margin;
+    const int mapH     = 300;
+    const int listY    = topY + mapH + margin;
+    const int listH    = (H - listY - margin);
+
+    int areaCascade = 0;  // offset successive area maps so they don't fully overlap
+
+    for (const auto& up : m_panels) {
+        SDL2Panel* p = up.get();
+        const std::string& n = p->GetName();
+
+        int nx, ny, nw, nh;
+        if (n == "area_bar") {
+            // Repositioned automatically by the area's resize callback below.
+            continue;
+        } else if (n.rfind("area", 0) == 0) {
+            nx = margin + areaCascade;
+            ny = topY  + areaCascade;
+            nw = (W - rightW - 3 * margin) - areaCascade;
+            nh = (H - ny - margin);
+            areaCascade += 30;
+        } else if (n == "world" || n == "radar") {
+            nx = rightX; ny = topY;  nw = rightW; nh = mapH;
+        } else if (n == "vehicles") {
+            nx = rightX; ny = listY; nw = rightW; nh = listH;
+        } else if (n == "buildings") {
+            nx = rightX - rightW - margin; ny = listY; nw = rightW; nh = listH;
+        } else {
+            continue;  // toolbar/status bar and anything else: leave alone
+        }
+
+        if (nw < SDL2Panel::MIN_WIDTH)  nw = SDL2Panel::MIN_WIDTH;
+        if (nh < SDL2Panel::MIN_HEIGHT) nh = SDL2Panel::MIN_HEIGHT;
+
+        // Size first (rebuilds the backing surface; the detached-window
+        // SIZE_CHANGED event fires the resize callback that rebuilds the map
+        // DIB), then move into place.
+        p->SetSize(nw, nh);
+        p->SetPosition(nx, ny);
+    }
+
+    InvalidateAll();
+}
+
 void SDL2Compositor::Composite() {
     if (!m_window || !m_window->GetWindow())
         return;
@@ -189,9 +248,16 @@ void SDL2Compositor::Composite() {
     // Step 4: Present the main window
     SDL_UpdateWindowSurface(m_window->GetWindow());
 
-    // Step 5: Render detached panels to their own windows
+    // Step 5: Render detached panels to their own windows — but only the ones
+    // whose own content actually changed. A detached panel lives in its own OS
+    // window, so it has no reason to re-present just because a *different* panel
+    // (e.g. the always-dirty toolbar) changed. Without this gate, opening the
+    // vehicle/building list re-blits + presents its window every game frame,
+    // which visibly drags the framerate down. SetDirty() is raised on content
+    // change, resize, move, and EXPOSED/FOCUS_GAINED, so an uncovered window
+    // still repaints correctly. RenderDetached() clears the flag.
     for (auto& p : m_panels) {
-        if (p->IsVisible() && p->IsDetached()) {
+        if (p->IsVisible() && p->IsDetached() && p->IsDirty()) {
             p->RenderDetached();
         }
     }
@@ -232,12 +298,15 @@ bool SDL2Compositor::RouteEventInner(SDL_Event& event) {
         eventWindowID = event.key.windowID; break;
     }
 
-    // While a detached panel is being manually resized it has captured the
-    // mouse — route all mouse events to it regardless of the reported window ID.
+    // While a detached panel is being manually resized or dragged it has
+    // captured the mouse — route all mouse events to it regardless of the
+    // reported window ID.
     if (event.type == SDL_MOUSEMOTION || event.type == SDL_MOUSEBUTTONUP ||
         event.type == SDL_MOUSEBUTTONDOWN) {
         for (auto& p : m_panels) {
             if (p->IsDetachedResizing() && p->HandleDetachedResize(event))
+                return true;
+            if (p->IsDetachedDragging() && p->HandleDetachedDrag(event))
                 return true;
         }
     }
@@ -248,6 +317,12 @@ bool SDL2Compositor::RouteEventInner(SDL_Event& event) {
                 // Manual edge/corner resize takes priority over content + drag.
                 if ((event.type == SDL_MOUSEMOTION || event.type == SDL_MOUSEBUTTONDOWN) &&
                     p->HandleDetachedResize(event))
+                    return true;
+
+                // Title-bar press (not on an edge/caption button) begins a manual
+                // window drag. Checked after resize so edges win. Driving the move
+                // ourselves avoids the OS modal move loop that froze rendering.
+                if (event.type == SDL_MOUSEBUTTONDOWN && p->HandleDetachedDrag(event))
                     return true;
 
                 // Handle window resize/close events from the detached window

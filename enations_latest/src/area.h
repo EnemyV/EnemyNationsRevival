@@ -170,6 +170,9 @@ public:
 	int			GetMode () const { return (m_iMode); }
 
 	void		Create (CMapLoc const & ml, CUnit * pUnit, BOOL bFirst);
+	// The tactical map needs smooth scrolling — keep it at the full frame rate
+	// rather than the reduced rate used for the other game windows.
+	bool		RendersEveryFrame () const override { return true; }
 	void		ReRender ();
 	void		DrawSelectionRect();
 	void		RestoreSelectionRect();

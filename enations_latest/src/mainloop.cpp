@@ -11,9 +11,11 @@
 #include "building.inl"
 #include "chproute.hpp"
 #include "cpathmgr.h"
+#include "cpathmap.h"
 #include "cutscene.h"
 #include "event.h"
 #include "GameWindow.h"
+#include "Perf.h"
 #include "SDL2CreateStatus.h"
 #include "SDL2Compositor.h"
 #include "SDL2MFCPanel.h"
@@ -80,6 +82,9 @@ int CConquerApp::Run( )
 
     ASSERT_VALID( this );
 
+    // Profiling harness: reads EN_PERF / EN_PERF_INTERVAL_MS. No-op unless enabled.
+    Perf::Init();
+
     if ( m_pMainWnd == NULL )
     {
         // No main window: quit. (Phase 4c prep — original guard included
@@ -102,6 +107,12 @@ int CConquerApp::Run( )
         for ( ;; )
         {
             BOOL bQuitReceived = FALSE;
+
+            // Profiling: one "frame" == one outer loop iteration. Cheap no-op
+            // unless EN_PERF is set; flushes a perf.log line each interval.
+            Perf::FrameMark();
+
+            uint64_t _perfPumpStart = Perf::IsEnabled() ? Perf::Now() : 0;
 
             // === Phase 3a: INVERTED event loop - SDL2 events first ===
             // Process SDL2 events if game window is active
@@ -140,8 +151,14 @@ int CConquerApp::Run( )
                     }
             }
 
+            if ( Perf::IsEnabled() )
+                Perf::SectionEnd( Perf::SEC_PUMP, _perfPumpStart );
+
             // === Render one frame ===
-            GraphicsEnginePump( );
+            {
+                Perf::ScopeSlot _perfSim( Perf::SEC_SIM );
+                GraphicsEnginePump( );
+            }
         }
     }
 
@@ -505,21 +522,35 @@ void CConquerApp::_RenderScreens( )
 
     theGame.m_dwFrame++;
 
-    // animate the screen
-    for ( CWndAnim* pWnd : theAnimList )
-        pWnd->ReRender( );
-    for ( CWndAnim* pWnd : theAnimList )
-        pWnd->Draw( );
+    {
+        Perf::ScopeSlot _perfRender( Perf::SEC_RENDER );
 
-    CHexCoord::ClearInvalidated( );  // Set terrain invalidated flags to FALSE
+        // animate the screen. Most game windows repaint at a reduced rate
+        // (ANIM_THROTTLE_MS) so they don't steal frames from the simulation;
+        // the area map and radar override RendersEveryFrame() to stay smooth.
+        // DecideRenderFrame() (called in the ReRender pass) records the choice
+        // so the Draw pass skips the same windows.
+        const DWORD ANIM_THROTTLE_MS = 1000 / 7;  // 7 fps for throttled windows
+        DWORD dwAnimNow = timeGetTime( );
+        for ( CWndAnim* pWnd : theAnimList )
+            if ( pWnd->DecideRenderFrame( dwAnimNow, ANIM_THROTTLE_MS ) )
+                pWnd->ReRender( );
+        for ( CWndAnim* pWnd : theAnimList )
+            if ( pWnd->RenderingThisFrame( ) )
+                pWnd->Draw( );
 
-    if ( theApp.m_wndBar.m_sdlPanel )
-        theApp.m_wndBar.Draw();
+        CHexCoord::ClearInvalidated( );  // Set terrain invalidated flags to FALSE
+
+        if ( theApp.m_wndBar.m_sdlPanel &&
+             theApp.m_wndBar.DecideRenderFrame( dwAnimNow, ANIM_THROTTLE_MS ) )
+            theApp.m_wndBar.Draw();
+    }
 
     // SDL2 compositor: composite all panels to window surface and present.
     // This replaces CDIBWnd::Update()'s GDI BitBlt for the SDL2 path.
     if ( theApp.m_gameWindow )
     {
+        Perf::ScopeSlot _perfPresent( Perf::SEC_PRESENT );
         SDL2Compositor* pCompositor = theApp.m_gameWindow->GetCompositor();
         if ( pCompositor )
             pCompositor->Composite();
@@ -884,6 +915,58 @@ void CConquerApp::GraphicsEnginePump( )
             }
 
             LeaveCriticalSection( &cs );
+
+            // Profiling: sample key object counts once per game-second so we
+            // can correlate slowdown with unbounded growth. Uses the same
+            // position-walk idiom as the operate loops above; only runs when
+            // EN_PERF is set.
+            if ( Perf::IsEnabled() )
+            {
+                int64_t nBldg = 0, nVeh = 0, nProj = 0;
+                {
+                    POSITION p = theBuildingMap.GetStartPosition( );
+                    while ( p != NULL )
+                    {
+                        DWORD dwID; CBuilding* pB;
+                        theBuildingMap.GetNextAssoc( p, dwID, pB );
+                        ++nBldg;
+                    }
+                }
+                {
+                    POSITION p = theVehicleMap.GetStartPosition( );
+                    while ( p != NULL )
+                    {
+                        DWORD dwID; CVehicle* pV;
+                        theVehicleMap.GetNextAssoc( p, dwID, pV );
+                        ++nVeh;
+                    }
+                }
+                {
+                    POSITION p = theProjMap.GetStartPosition( );
+                    while ( p != NULL )
+                    {
+                        DWORD dwID; CProjBase* pP;
+                        theProjMap.GetNextAssoc( p, dwID, pP );
+                        for ( ; pP != NULL; pP = theProjMap.GetNext( pP ) )
+                            ++nProj;
+                    }
+                }
+                Perf::GaugeSet( "obj.bldgs", nBldg );
+                Perf::GaugeSet( "obj.vehs",  nVeh );
+                Perf::GaugeSet( "obj.projs", nProj );
+                Perf::GaugeSet( "obj.anims", (int64_t)theAnimList.size() );
+
+                // Exact (un-sampled) leak probes:
+                //  path.cells  = live nodes in the two pathfinders' CCell scratch
+                //                maps (should sit near 0; rising = a clear is missed)
+                //  mfc.iterpos = net-live CMap/CList iterator wrappers (rising =
+                //                the per-advance iterator leak)
+                extern CPathMap thePathMap;
+                extern CPathMgr thePathMgr;
+                extern long     g_mfcIterPosLive;
+                Perf::GaugeSet( "path.cells",  (int64_t)( thePathMap.GetMapCellCount() + thePathMgr.GetMapCellCount() ) );
+                Perf::GaugeSet( "mfc.iterpos", (int64_t)g_mfcIterPosLive );
+            }
 
             // the status bars
             if ( theGame.HaveHP( ) )
@@ -1501,7 +1584,7 @@ void CBuilding::Construct( )
         if ( GetOwner( )->IsMe( ) )
             ResearchDiscovered( 0 );
         if ( ( bRsrch ) && ( GetOwner( )->IsMe( ) ) )
-            theApp.m_wndBar._GotoScience( );
+            theApp.m_wndBar._GotoScience( TRUE );   // alert: pop above map + focus
 
         // if command center turn on the radar
         if ( ( GetOwner( )->IsMe( ) ) && ( GetData( )->GetType( ) == CStructureData::command_center ) &&

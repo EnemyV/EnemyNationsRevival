@@ -6,6 +6,8 @@
 #include "GameWindow.h"
 #include "lastplnt.h"
 #include "area.h"
+#include "building.h"
+#include "building.inl"   // CBuilding::IsConstructing, CVehicleBuilding::GetBldUnt (inline)
 #include "bitmaps.h"
 #include "bmbutton.h"
 #include "icons.h"
@@ -203,12 +205,29 @@ void SDL2AreaBar::UpdateButtons() {
 
     } else if (isFac) {
         SetStopResume((flags & CWndArea::can_stop) != 0);
-        // Build/CancelBuild toggle for factory
-        bool buildReady = (iMode == CWndArea::build_ready);
-        m_btns[ORD_OFFSET + 2].visible = !buildReady;
-        m_btns[ORD_OFFSET + 2].enabled = !buildReady;
-        m_btns[ORD_OFFSET + 3].visible =  buildReady;
-        m_btns[ORD_OFFSET + 3].enabled =  buildReady;
+        // Build/CancelBuild toggle for factory. Mirrors the "build -> cancel"
+        // branch of the original CWndArea::SetButtonState: a vehicle factory or
+        // shipyard that has finished constructing itself and currently has a unit
+        // queued (GetBldUnt() != NULL) shows Cancel Build instead of Build. (The
+        // crane-only path keys off build_ready; a producing factory does not, so
+        // checking iMode alone never flipped the icon here.)
+        bool bBuilding = (iMode == CWndArea::build_ready);
+        if (!bBuilding) {
+            POSITION pos = m_pArea->m_lstUnits.GetHeadPosition();
+            CUnit* pUnit = pos ? m_pArea->m_lstUnits.GetNext(pos) : nullptr;
+            if (pUnit && pUnit->GetUnitType() == CUnit::building) {
+                CBuilding* pBldg = (CBuilding*)pUnit;
+                CStructureData::BLDG_UNION_TYPE ut = pBldg->GetData()->GetUnionType();
+                if (!pBldg->IsConstructing() &&
+                    (ut == CStructureData::UTvehicle || ut == CStructureData::UTshipyard) &&
+                    ((CVehicleBuilding*)pBldg)->GetBldUnt() != NULL)
+                    bBuilding = true;
+            }
+        }
+        m_btns[ORD_OFFSET + 2].visible = !bBuilding;
+        m_btns[ORD_OFFSET + 2].enabled = !bBuilding;
+        m_btns[ORD_OFFSET + 3].visible =  bBuilding;
+        m_btns[ORD_OFFSET + 3].enabled =  bBuilding;
 
     } else if (isBldgOnly) {
         SetStopResume((flags & CWndArea::can_stop) != 0);
@@ -230,18 +249,12 @@ void SDL2AreaBar::Render() {
     // Update button states from MFC
     UpdateButtons();
 
-    // Tile background
+    // Stretch the brushed-gold background to fill the bar. (It was tiled before,
+    // but the strip isn't seamless, so the repeat seam was visible — stretching
+    // matches the original single-piece look.)
     if (m_bgTile) {
-        for (int ty = 0; ty < h; ty += m_bgTile->h) {
-            for (int tx = 0; tx < w; tx += m_bgTile->w) {
-                SDL_Rect sr = {0, 0, m_bgTile->w, m_bgTile->h};
-                SDL_Rect dr = {tx, ty, m_bgTile->w, m_bgTile->h};
-                if (tx + sr.w > w) sr.w = w - tx;
-                if (ty + sr.h > h) sr.h = h - ty;
-                dr.w = sr.w; dr.h = sr.h;
-                SDL_BlitSurface(m_bgTile, &sr, dst, &dr);
-            }
-        }
+        SDL_Rect dr = {0, 0, w, h};
+        SDL_BlitScaled(m_bgTile, nullptr, dst, &dr);
     } else {
         SDL_FillRect(dst, nullptr, SDL_MapRGB(dst->format, 50, 55, 52));
     }

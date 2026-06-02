@@ -56,6 +56,10 @@ public:
 				enum { up = 0, down = 1, disabled = 2 };
 	void		CommandCenterChange ();
 
+	// The radar (minimap) tracks unit movement, so it keeps the full frame
+	// rate; the larger world overview repaints at the reduced rate like the
+	// other game windows.
+	bool		RendersEveryFrame () const override { return m_bIsRadar != FALSE; }
 	void		ReRender ();										// mainloop - re-render the screen
 	void		Draw ();												// draw the rendered screen
 

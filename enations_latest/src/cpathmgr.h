@@ -162,6 +162,9 @@ public:
 	void ClearArray( void );
 	CCell * AddCellToArray( CCell *pCell );
 
+	// Diagnostic: exact live node count of the per-path CCell scratch map.
+	int GetMapCellCount() const { return (int)m_mapCell.GetCount(); }
+
 	private:
     CHexCoord* _GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord& hexTo, int& iPathLen, int iVehType = 0,
                          BOOL bVehBlock = FALSE, BOOL bDirectPath = FALSE );

@@ -159,8 +159,14 @@ public:
 	void DestroyWindow();
 	void UpdateData( BOOL bSaveAndValidate );
 
+	// Drive the determinate progress bar (0-100). The save compressor reports a
+	// running block index; m_iTotalBlocks (set before compression starts) lets
+	// the per-block callback turn that into a percentage.
+	void SetProgress( int pct );
+
 	std::string	m_sText;
 	std::string	m_sStat;
+	int			m_iTotalBlocks = 0;
 
 private:
 	_SaveProgressDialog* m_pDlg;  // owned by GameWindow (heap, deleted on EndDialog cleanup)

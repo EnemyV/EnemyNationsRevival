@@ -534,36 +534,12 @@ void CWndBar::SetStatusFunc( int iLine, FNSTATUSLINE fnStat, void* pData )
 
     if ( fnStat == UnitShowStatus )
     {
-        CUnit* pUnit = (CUnit*)pData;
-        std::string text = pUnit->GetData()->GetDesc();
-
-        // If it's our unit, append materials
-        if ( pUnit->GetOwner()->IsMe() )
-        {
-            for ( int i = 0; i < CMaterialTypes::GetNumTypes(); i++ )
-            {
-                int have = pUnit->GetStore( i );
-                int need = 0;
-                if ( i < CMaterialTypes::GetNumBuildTypes() && pUnit->GetUnitType() == CUnit::building )
-                    need = ( (CBuilding*)pUnit )->GetBldgResReq( i, FALSE );
-                if ( have > 0 || need > 0 )
-                {
-                    text += "  " + CMaterialTypes::GetDesc( i ) + ":" + std::to_string( have );
-                    if ( need > 0 )
-                        text += "(" + std::to_string( need ) + ")";
-                }
-            }
-            // Damage
-            int dmg = 100 - pUnit->GetDamagePer();
-            if ( dmg > 0 )
-                text += "  Dmg:" + std::to_string( __min( 99, dmg ) ) + "%";
-        }
-        else
-        {
-            text += " [" + std::string( (const char*)pUnit->GetOwner()->GetName() ) + "]";
-        }
-
-        tb->SetStatusText( iLine, text, 0 );
+        // Draw the unit's status as ICON BARS (damage gradient, materials icons,
+        // construction progress) in the SDL toolbar, matching the original
+        // _UnitShowStatus. The toolbar reads live data from the unit each frame;
+        // CWndBar::ClearStatusFunc() clears the pointer when the cursor leaves
+        // the map or the unit dies (so the CUnit* never dangles).
+        tb->SetUnitStatus( iLine, (CUnit*)pData );
         return;
     }
 
@@ -885,6 +861,19 @@ static void ToggleUnitListPanel(SDL2UnitList*& pList, SDL2UnitList::ListType typ
     panel->Detach(theApp.m_gameWindow.get());
 }
 
+// Tear down a unit-list window: remove its (possibly detached) compositor panel
+// — which destroys the panel surface and its own OS window — and delete the
+// list object, which is owned here via the static, not by the panel.
+static void CloseUnitListPanel(SDL2UnitList*& pList, const char* name) {
+    if (theApp.m_gameWindow && theApp.m_gameWindow->GetCompositor()) {
+        SDL2Panel* panel = theApp.m_gameWindow->GetCompositor()->FindPanel(name);
+        if (panel)
+            theApp.m_gameWindow->GetCompositor()->RemovePanel(panel);
+    }
+    delete pList;
+    pList = nullptr;
+}
+
 void CWndBar::GotoVehicles( )
 {
     ToggleUnitListPanel(s_sdlVehicleList, SDL2UnitList::VEHICLES, "vehicles");
@@ -914,7 +903,7 @@ void CWndBar::GotoScience( )
     _GotoScience( );
 }
 
-void CWndBar::_GotoScience( )
+void CWndBar::_GotoScience( BOOL bAlert )
 {
     if ( theGame.GetMe( )->GetExists( CStructureData::research ) )
         EnableButton( IDC_BAR_SCIENCE, TRUE );
@@ -930,6 +919,14 @@ void CWndBar::_GotoScience( )
             m_pSdlResearch = new SDL2ResearchDialog( theApp.m_gameWindow.get() );
             m_pSdlResearch->ShowNonModal( [this]( int ) { m_pSdlResearch = nullptr; } );
         }
+
+        // bAlert: the first research center just finished, so we opened this
+        // window unprompted. Surface it above the topmost detached map and grab
+        // focus so the player notices — otherwise the auto-popup hides behind the
+        // map. (Manual opens from the Science button pass FALSE and keep the
+        // non-stealing behavior.)
+        if ( bAlert && m_pSdlResearch )
+            m_pSdlResearch->RaiseAndAlert( );
     }
 }
 
@@ -1156,6 +1153,18 @@ void CWndBar::UpdateTime( )
 
 void CWndBar::OnDestroy( )
 {
+    // Close the gameplay windows the toolbar opens, so they don't linger on the
+    // main menu after quit-to-menu. The vehicles/buildings lists are detached
+    // compositor panels; research is a non-modal dialog (EndDialog destroys its
+    // window immediately and its onDone callback nulls m_pSdlResearch).
+    CloseUnitListPanel( s_sdlVehicleList, "vehicles" );
+    CloseUnitListPanel( s_sdlBuildingList, "buildings" );
+    if ( m_pSdlResearch )
+    {
+        m_pSdlResearch->EndDialog( 0 );
+        m_pSdlResearch = nullptr;
+    }
+
     if ( m_sdlPanel && theApp.m_gameWindow && theApp.m_gameWindow->GetCompositor() )
     {
         theApp.m_gameWindow->GetCompositor()->RemovePanel( m_sdlPanel );

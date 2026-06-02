@@ -2428,6 +2428,11 @@ static void fnCompSave( DWORD_PTR dwData, int iBlk )
     pDlg->m_sStat = strPrintf( EnLoadStdString( IDS_SAVE_COMPRESS ).c_str(), sNum.c_str() );
     pDlg->UpdateData( FALSE );
 
+    // iBlk is the 1-based compression block index; m_iTotalBlocks was computed
+    // from the uncompressed length so we can show a real percentage.
+    if ( pDlg->m_iTotalBlocks > 0 )
+        pDlg->SetProgress( __min( 100, ( iBlk * 100 ) / pDlg->m_iTotalBlocks ) );
+
     // needed for MODEM games
     theApp.BaseYield( );
     ::Sleep( 0 );
@@ -2580,6 +2585,11 @@ int CGame::SaveGame( CWnd* pPar )
         int   iLen = fil.GetLength( );
         BYTE* pBuf = fil.Detach( );
         int   iCompLen;
+        // The GAME codec (BPE) compresses in fixed 5000-byte blocks
+        // (BPECoDec::BLOCKSIZE); fnCompSave turns the running block index into a
+        // percentage against this total.
+        const int kBpeBlockSize = 5000;
+        dlgMsg.m_iTotalBlocks = ( iLen + kBpeBlockSize - 1 ) / kBpeBlockSize;
         void* pComp = CoDec::Compress( CoDec::CODEC::GAME, pBuf, iLen, iCompLen, fnCompSave, (DWORD_PTR)&dlgMsg );
         free( pBuf );
 
@@ -3031,7 +3041,12 @@ void CGame::AssertValid( ) const
             ASSERT(m_pServer->m_iNetNum != m_pMe->m_iNetNum);
     }
 }
+#endif // _DEBUG (CGame::AssertValid)
 
+// TestEverything() is NOT Debug-only: the port's ASSERT (en_assert.h) evaluates
+// its argument in Release as well, so every ASSERT( TestEverything() ) site needs
+// this defined in all configs. The body's ASSERT_VALID(...) checks compile to
+// no-ops in Release; the plain ASSERT(...) invariants stay live (and logged).
 BOOL TestEverything( )
 {
 
@@ -3123,5 +3138,3 @@ BOOL TestEverything( )
 
     return ( TRUE );
 }
-
-#endif

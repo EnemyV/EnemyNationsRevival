@@ -786,7 +786,7 @@ class _SaveProgressDialog : public SDL2Dialog
 {
 public:
 	_SaveProgressDialog( GameWindow* gw )
-		: SDL2Dialog( gw, "Enemy Nations - Saving", 360, 120 )
+		: SDL2Dialog( gw, "Enemy Nations - Saving", 380, 150 )
 	{}
 
 	void SetMessages( const std::string& text, const std::string& stat )
@@ -795,25 +795,41 @@ public:
 		if ( m_lblStat ) m_lblStat->SetText( stat );
 	}
 
+	void SetProgressPct( int pct )
+	{
+		if ( m_progress ) m_progress->SetProgress( pct );
+	}
+
 	std::string m_initialText;
 	std::string m_initialStat;
 
 protected:
 	void OnInit() override
 	{
-		const int margin = 10;
-		const int halfH  = ( m_height - 30 ) / 2;
-		m_lblText = AddWidget<SDL2Label>(
-			m_x + margin, m_y + 30, m_width - margin * 2, halfH - 4,
-			m_initialText );
-		m_lblText->SetWrapped( true );
-		m_lblText->SetTopAligned( true );
+		// Interior starts just below the framework's border + 26px title bar
+		// (~29px from the dialog top). Lay out three stacked rows: the file
+		// name (centered, may wrap to a 2nd line for long paths), the current
+		// phase status (centered), then the progress bar.
+		const int margin = 14;
+		const int innerX = m_x + margin;
+		const int innerW = m_width - margin * 2;
+		int       y      = m_y + 36;
 
-		m_lblStat = AddWidget<SDL2Label>(
-			m_x + margin, m_y + 30 + halfH, m_width - margin * 2, halfH - 4,
-			m_initialStat );
-		m_lblStat->SetWrapped( true );
-		m_lblStat->SetTopAligned( true );
+		m_lblText = AddWidget<SDL2Label>( innerX, y, innerW, 34, m_initialText );
+		m_lblText->SetWrapped( true );
+		m_lblText->SetCentered( true );
+		y += 38;
+
+		m_lblStat = AddWidget<SDL2Label>( innerX, y, innerW, 18, m_initialStat );
+		m_lblStat->SetCentered( true );
+		y += 24;
+
+		// Determinate: the BPE save compressor reports a running block index, and
+		// the save loop knows the uncompressed length, so SetProgress() can show a
+		// real climbing percentage during the (slow) compression pass. An animated
+		// sweep was used before, but it relied on per-frame re-rendering that the
+		// blocking save loop doesn't provide — so it froze, reading as a stuck 0%.
+		m_progress = AddWidget<SDL2ProgressBar>( innerX, y, innerW, 20 );
 	}
 
 	// Progress dialog — no buttons. Block accidental ESC dismissal so
@@ -821,8 +837,9 @@ protected:
 	void OnCancel() override { /* swallow */ }
 
 private:
-	SDL2Label* m_lblText = nullptr;
-	SDL2Label* m_lblStat = nullptr;
+	SDL2Label*       m_lblText  = nullptr;
+	SDL2Label*       m_lblStat  = nullptr;
+	SDL2ProgressBar* m_progress = nullptr;
 };
 
 CDlgSaveMsg::CDlgSaveMsg(CWnd* /*pParent*/)
@@ -870,6 +887,12 @@ void CDlgSaveMsg::UpdateData( BOOL /*bSaveAndValidate*/ )
 		m_pDlg->SetMessages( m_sText, m_sStat );
 	// GameWindow renders the dialog per frame; theApp.BaseYield() in the
 	// save loop pumps the frame, so the new text appears within a tick.
+}
+
+void CDlgSaveMsg::SetProgress( int pct )
+{
+	if ( m_pDlg )
+		m_pDlg->SetProgressPct( pct );
 }
 
 void CWndMain::OnSave() 

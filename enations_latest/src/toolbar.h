@@ -65,7 +65,7 @@ class CWndBar : public CWndAnim
 
     void Create( );
     void CheckButtons( );
-    void _GotoScience( );
+    void _GotoScience( BOOL bAlert = FALSE );
 
     void InvalidateStatus( void* pData );
     void EnableButton( int ID, BOOL bEnable );

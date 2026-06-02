@@ -3179,6 +3179,22 @@ void CGame::ProcessMessage(CNetCmd* pCmd )
             CRsrchStatus* pRs = &( pPlr->GetRsrch( pPlr->GetRsrchItem( ) ) );
             pRs->m_iPtsDiscovered -= pRs->m_iPtsDiscovered / 10;
         }
+        // Root-cause guard for the CPlayer::Research ASSERT( !m_bDiscovered )
+        // crash: set_rsrch is posted asynchronously (e.g. AI CheckResearch ->
+        // NextResearchTopic -> PostToServer). Between the topic being chosen and
+        // this message being processed, that topic can already become discovered
+        // — the AI is handed techs for free when other players research them
+        // (research_disc handler), and Research() can complete it independently.
+        // Pointing m_iRsrchItem at an already-discovered topic is exactly the
+        // stale state the assert catches. Drop the stale request instead of
+        // entering it; the AI's CheckResearch will pick a fresh topic next pass.
+        if ( pMsg->m_iTopic > 0 &&
+             pPlr->GetRsrch( pMsg->m_iTopic ).m_bDiscovered )
+        {
+            OutputDebugStringA( "set_rsrch: ignoring already-discovered topic (stale request)\n" );
+            pPlr->SetRsrchItem( 0 );
+            break;
+        }
         pPlr->SetRsrchItem( pMsg->m_iTopic );
         break;
     }

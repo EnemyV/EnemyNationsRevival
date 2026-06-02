@@ -32,7 +32,7 @@ static char BASED_CODE THIS_FILE[] = __FILE__;
 CExplGrp theExplGrp;
 CProjMap theProjMap;
 CInitProjMem theInitProjMem;
-memory_pool<mempool_std_heap<188, 64>> CProjBase::m_memPool;
+memory_pool<mempool_std_heap<PROJ_POOL_BLOCK, 64>> CProjBase::m_memPool;
 
 
 const int MAX_NUM_PROJECTILES = 24;

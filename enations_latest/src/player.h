@@ -40,9 +40,11 @@ typedef struct tagAI_INIT
 } AI_INIT;
 
 
-#ifdef _DEBUG
+// TestEverything() is referenced from ASSERT( TestEverything() ) call-sites.
+// The SDL2/x64 port's ASSERT (en_assert.h) evaluates its argument in every
+// build (non-fatal but logged), so this must be visible in Release too — not
+// just under _DEBUG.
 extern BOOL TestEverything( );
-#endif
 
 
 /////////////////////////////////////////////////////////////////////////////

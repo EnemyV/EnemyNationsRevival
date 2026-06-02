@@ -1,21 +1,23 @@
-# keys.ps1 — send keystrokes to the running Enemy Nations window.
+﻿# keys.ps1 — send keystrokes to the running Enemy Nations window.
+#
+# By default the target auto-resolves (in-game: Area Map child; menu/dialog: the
+# active SDL window). Override with -Window when a specific window needs focus
+# (e.g. -Window pick to type into the Pick-Your-Player dialog).
 #
 # Usage:
-#   ./keys.ps1 -Key Enter                  # press named key once
-#   ./keys.ps1 -Key Down -Times 3          # repeat a key
+#   ./keys.ps1 -Key Enter                  # press named key once (auto target)
+#   ./keys.ps1 -Window map -Key Down -Times 3
 #   ./keys.ps1 -Text "Hello"               # type literal text
 #   ./keys.ps1 -ListKeys                   # show the named-key table
-#   ./keys.ps1 -ProcessName foo            # override (default: auto enations/enations_gate)
 #   ./keys.ps1 -Key Enter -Hwnd 12345      # target specific HWND
 #
-# Notes:
-#   - Uses PostMessage (no focus needed). For text, sends WM_KEYDOWN +
-#     WM_CHAR + WM_KEYUP per character — SDL2's text input picks this up.
-#   - Modifier keys (Ctrl/Shift/Alt held with other keys) are NOT supported.
-#   - Common keys: Enter, Escape, Tab, Space, Backspace, Delete, Up, Down,
-#     Left, Right, Home, End, PageUp, PageDown, F1..F12, A..Z, 0..9.
+# Window roles: main/menu, map/area, radar, vehicles, buildings, research,
+# pick/player — or any substring of a window title.
 #
-# Exit codes: 0 ok, 1 game not running, 2 send failed.
+# Notes: uses PostMessage (no focus needed). For text, sends WM_KEYDOWN +
+# WM_CHAR + WM_KEYUP per char. Modifier combos (Ctrl/Shift/Alt+key) NOT supported.
+#
+# Exit codes: 0 ok, 1 game not running / window not found, 2 send failed.
 
 [CmdletBinding()]
 param(
@@ -23,6 +25,7 @@ param(
     [string]$Text,
     [int]$Times = 1,
     [int]$DelayMs = 30,
+    [string]$Window,
     [string]$ProcessName,
     [int]$Hwnd,
     [switch]$ListKeys
@@ -62,87 +65,10 @@ if (-not $Key -and -not $Text) {
     exit 2
 }
 
-if (-not ('GameWin32' -as [type])) {
-    Add-Type @'
-using System;
-using System.Collections.Generic;
-using System.Runtime.InteropServices;
-using System.Text;
+. (Join-Path $PSScriptRoot 'harness-common.ps1')
 
-public class GameWindowInfo {
-    public IntPtr Hwnd; public string Title; public string Class;
-    public int Width; public int Height; public int Area;
-}
-
-public static class GameWin32 {
-    [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
-    [DllImport("user32.dll")] public static extern bool EnumWindows(EnumWindowsProc enumProc, IntPtr lParam);
-    [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
-    [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr hWnd);
-    [DllImport("user32.dll")] public static extern bool GetClientRect(IntPtr hWnd, out RECT lpRect);
-    [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
-    [DllImport("user32.dll")] public static extern bool PrintWindow(IntPtr hWnd, IntPtr hdcBlt, uint nFlags);
-    [DllImport("user32.dll")] public static extern bool ClientToScreen(IntPtr hWnd, ref POINT lpPoint);
-    [DllImport("user32.dll", CharSet = CharSet.Auto)] public static extern int GetWindowText(IntPtr hWnd, StringBuilder lpString, int nMaxCount);
-    [DllImport("user32.dll", CharSet = CharSet.Auto)] public static extern int GetClassName(IntPtr hWnd, StringBuilder lpClassName, int nMaxCount);
-    public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
-    [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left, Top, Right, Bottom; }
-    [StructLayout(LayoutKind.Sequential)] public struct POINT { public int X, Y; }
-
-    public static List<GameWindowInfo> EnumProcessWindows(uint targetPid) {
-        var results = new List<GameWindowInfo>();
-        EnumWindows(delegate(IntPtr hwnd, IntPtr lparam) {
-            uint wpid; GetWindowThreadProcessId(hwnd, out wpid);
-            if (wpid == targetPid && IsWindowVisible(hwnd)) {
-                RECT r; GetClientRect(hwnd, out r);
-                var title = new StringBuilder(256); GetWindowText(hwnd, title, 256);
-                var cls = new StringBuilder(256); GetClassName(hwnd, cls, 256);
-                int w = r.Right - r.Left; int h = r.Bottom - r.Top;
-                results.Add(new GameWindowInfo {
-                    Hwnd = hwnd, Title = title.ToString(), Class = cls.ToString(),
-                    Width = w, Height = h, Area = w * h
-                });
-            }
-            return true;
-        }, IntPtr.Zero);
-        return results;
-    }
-}
-'@
-}
-
-function Find-GameProcess {
-    param([string]$ExplicitName)
-    if ($ExplicitName) {
-        return (Get-Process $ExplicitName -ErrorAction SilentlyContinue | Select-Object -First 1)
-    }
-    foreach ($name in @('enations', 'enations_gate')) {
-        $p = Get-Process $name -ErrorAction SilentlyContinue | Select-Object -First 1
-        if ($p) { return $p }
-    }
-    return $null
-}
-
-function Resolve-GameHwnd {
-    param([int]$HwndOverride, [string]$ProcessName)
-    if ($HwndOverride -gt 0) { return [IntPtr]$HwndOverride }
-    $proc = Find-GameProcess -ExplicitName $ProcessName
-    if (-not $proc) {
-        $hint = if ($ProcessName) { "'$ProcessName'" } else { "'enations' or 'enations_gate'" }
-        Write-Error "No process found matching $hint. Is the game running?"
-        exit 1
-    }
-    $windows = [GameWin32]::EnumProcessWindows([uint32]$proc.Id) | Sort-Object Area -Descending
-    # Prefer SDL_app — SDL2 only translates Win32 messages for windows it owns.
-    $sdl = $windows | Where-Object { $_.Class -eq 'SDL_app' } | Select-Object -First 1
-    if ($sdl) { return $sdl.Hwnd }
-    if ($windows.Count -gt 0) { return $windows[0].Hwnd }
-    if ($proc.MainWindowHandle -ne [IntPtr]::Zero) { return $proc.MainWindowHandle }
-    Write-Error "Process '$($proc.ProcessName)' has no visible windows."
-    exit 1
-}
-
-$hwndTarget = Resolve-GameHwnd -HwndOverride $Hwnd -ProcessName $ProcessName
+$info = Resolve-GameTarget -Hwnd $Hwnd -Window $Window -ProcessName $ProcessName
+$hwndTarget = $info.Hwnd
 
 $WM_KEYDOWN = 0x0100
 $WM_KEYUP   = 0x0101
@@ -188,5 +114,5 @@ $summary = @()
 if ($Key)  { $summary += "Key=$Key" }
 if ($Text) { $summary += ("Text=`"{0}`"" -f $Text) }
 if ($Times -gt 1) { $summary += "Times=$Times" }
-Write-Output ("Sent {0} to HWND {1}" -f ($summary -join ' '), $hwndTarget)
+Write-Output ("Sent {0} to '{1}' [HWND {2}]" -f ($summary -join ' '), $info.Title, $hwndTarget.ToInt64())
 exit 0

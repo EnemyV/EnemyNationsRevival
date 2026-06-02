@@ -168,6 +168,7 @@ void SDL2UnitList::Rebuild() {
 void SDL2UnitList::AddUnit(CUnit* pUnit) {
     ListItem item;
     item.pUnit = pUnit;
+    item.dwID  = pUnit->GetID();
     item.name = pUnit->GetData()->GetDesc().c_str();
 
     if (m_type == VEHICLES) {
@@ -190,6 +191,17 @@ void SDL2UnitList::RemoveUnit(CUnit* pUnit) {
 
 void SDL2UnitList::Render() {
     if (!m_panel) return;
+
+    // Throttle: only actually redraw on a fixed interval (or when forced by an
+    // interaction). On skipped frames we leave the panel's surface and dirty flag
+    // untouched, so the compositor's present-gate skips re-presenting our detached
+    // window — that's what keeps an open list from dragging the game's framerate.
+    DWORD nowTick = ::timeGetTime();
+    if (!m_forceDraw && (nowTick - m_lastDrawMs) < DRAW_INTERVAL_MS)
+        return;
+    m_lastDrawMs = nowTick;
+    m_forceDraw = false;
+
     SDL_Surface* dst = m_panel->GetSurface();
     if (!dst) return;
 
@@ -276,6 +288,19 @@ void SDL2UnitList::RenderShadowText(SDL_Surface* dst, TTF_Font* font, const char
 
 void SDL2UnitList::RenderItem(SDL_Surface* dst, int idx, int x, int y, int w, bool selected) {
     ListItem& item = m_items[idx];
+
+    // The list is only rebuilt every ~2s (see Render), so a unit can die in
+    // combat and leave this row pointing at freed memory until the next rebuild.
+    // The original kept rows in sync by removing them on death; here we instead
+    // re-resolve the cached pointer against the live map by ID every draw and
+    // skip the row if the unit is gone. (Refresh item.pUnit so the rest of this
+    // function — GetData(), status bars, etc. — uses the live object.)
+    CUnit* pLive = (m_type == VEHICLES)
+                       ? (CUnit*)theVehicleMap.GetVehicle( item.dwID )
+                       : (CUnit*)theBuildingMap.GetBldg( item.dwID );
+    if ( pLive == NULL )
+        return;            // unit died since the last Rebuild() — don't draw a stale row
+    item.pUnit = pLive;
 
     // --- Background: STRETCH to fill entire item (matching original StretchBlt) ---
     SDL_Surface* bg = selected ? m_bgSelected : m_bgNormal;
@@ -504,15 +529,18 @@ void SDL2UnitList::RenderIconHave(SDL_Surface* dst, int iconIdx, int have, int n
     int splitX = barLeft + (barW * iDone) / 100;
     int iStep = std::max(1, icon.cxIcon / 2);
 
-    // "Have" icons (sprite at x=0)
-    for (int ix = barLeft; ix < splitX; ix += iStep) {
+    // ONE cursor advances by iStep across the bar; the "need" run continues from
+    // where the "have" run stopped, on the same half-icon grid (matching the
+    // original CStatInst::DrawStatHave). Restarting at the off-grid splitX shifted
+    // the red icons and overlapped the seam icon (misaligned + doubled look).
+    int ix = barLeft;
+    for (; ix < splitX; ix += iStep) {
         if (ix + icon.cxIcon > barRight) break;
         SDL_Rect sr = {0, 0, icon.cxIcon, icon.cyIcon};
         SDL_Rect dr = {ix, iconY, icon.cxIcon, icon.cyIcon};
         SDL_BlitSurface(icon.sheet, &sr, dst, &dr);
     }
-    // "Need" icons
-    for (int ix = std::max(splitX, barLeft); ix < barRight; ix += iStep) {
+    for (; ix < barRight; ix += iStep) {
         if (ix + icon.cxIcon > barRight) break;
         SDL_Rect sr = {needSrcX, 0, icon.cxIcon, icon.cyIcon};
         SDL_Rect dr = {ix, iconY, icon.cxIcon, icon.cyIcon};
@@ -633,27 +661,46 @@ void SDL2UnitList::RenderMaterialsBar(SDL_Surface* dst, CUnit* pUnit, int iconId
     int barW = barRight - barLeft;
     if (barW <= 0) return;
 
-    // Draw material icons from left to right, each type gets proportional space
-    // Icons use the sprite sheet: have icons at srcX=0, rest at srcX=cxIcon
-    int drawX = barLeft;
-    int iStep = std::max(1, icon.cxIcon / 2);
+    // Faithful port of CUnit::PaintStatusMaterials: a single cursor advances by
+    // cxIcon/2 across ALL material types (no per-type reset), and each type's run
+    // reserves room for one icon of every remaining type. Carrying the cursor
+    // continuously is what prevents the last icon of one type overlapping the
+    // first of the next. Each type uses its own sprite column (srcX = i*cxIcon),
+    // matching the original's `CPoint pt(iOn*cxIcon, 0)`.
+    int iIconAdd = std::max(1, icon.cxIcon / 2);
+    int iLen   = barW - icon.cxIcon;     // drawable run length (minus one icon)
+    int iRight = barRight - icon.cxIcon; // rightmost legal icon left-edge
 
-    for (int i = 0; i < CMaterialTypes::GetNumTypes() && drawX < barRight; i++) {
+    int iNumTypes = 0;
+    for (int i = 0; i < CMaterialTypes::GetNumTypes(); i++)
+        if (pUnit->GetStore(i) > 0) iNumTypes++;
+
+    int iTotal = maxStore;
+    int cursor = barLeft;
+
+    for (int i = 0; i < CMaterialTypes::GetNumTypes(); i++) {
         int stored = pUnit->GetStore(i);
         if (stored <= 0) continue;
 
-        int segW = (stored * barW) / maxStore;
-        if (segW < 1) segW = 1;
-        int segEnd = drawX + segW;
+        int iWid = (iTotal > 0) ? (iLen * stored) / iTotal : iLen;
+        iWid = std::max(1, iWid);
+        iNumTypes--;
+        iWid = std::min(iWid, iLen - iNumTypes * iIconAdd);  // room for 1 of each remaining
+        iTotal -= stored;
+        iWid += cursor;                                       // absolute stop x
 
-        // Fill this segment with "have" icons (srcX=0)
-        for (int ix = drawX; ix < segEnd && ix + icon.cxIcon <= barRight; ix += iStep) {
-            SDL_Rect sr = {0, 0, icon.cxIcon, icon.cyIcon};
-            SDL_Rect dr = {ix, iconY, icon.cxIcon, icon.cyIcon};
-            SDL_SetSurfaceBlendMode(icon.sheet, SDL_BLENDMODE_BLEND);
+        int srcX = i * icon.cxIcon;
+        if (srcX + icon.cxIcon > icon.sheet->w)
+            srcX = 0;  // out-of-range type: fall back to first icon
+
+        SDL_SetSurfaceBlendMode(icon.sheet, SDL_BLENDMODE_BLEND);
+        for (; cursor < iWid; cursor += iIconAdd) {
+            if (cursor > iRight) break;
+            SDL_Rect sr = {srcX, 0, icon.cxIcon, icon.cyIcon};
+            SDL_Rect dr = {cursor, iconY, icon.cxIcon, icon.cyIcon};
             SDL_BlitSurface(icon.sheet, &sr, dst, &dr);
+            iLen -= iIconAdd;
         }
-        drawX = segEnd;
     }
 }
 
@@ -755,10 +802,37 @@ void SDL2UnitList::OnClick(int itemIdx, bool dblClick) {
     CWndArea* pArea = theAreaList.GetTop();
 
     if (dblClick) {
+        // ShowWindow() brings the relevant area map to the top of the list and
+        // centers it on the unit. (Multiple area maps are supported — BringToTop
+        // picks the right one.)
         if (pUnit->GetUnitType() == CUnit::vehicle)
             ((CVehicle*)pUnit)->ShowWindow();
         else if (pUnit->GetUnitType() == CUnit::building)
             ((CBuilding*)pUnit)->ShowWindow();
+
+        // Select the unit and hand keyboard focus back to the map window. Clicking
+        // in this (detached) unit-list window moved OS keyboard focus here, so the
+        // arrow keys stopped scrolling the map. Re-fetch the top map (ShowWindow
+        // may have raised a different one) and focus its host window.
+        CWndArea* pTop = theAreaList.GetTop();
+        if (pTop) {
+            pTop->OnlySelectUnit(pUnit);
+            pTop->InvalidateWindow();
+
+            // A detached map owns its own SDL window; otherwise the map lives in
+            // the main game window. Raise whichever holds it so the keystrokes
+            // route to the area panel again.
+            SDL_Window* mapWin = nullptr;
+            if (SDL2Panel* p = pTop->GetAA().m_sdlPanel)
+                if (p->IsDetached())
+                    mapWin = p->GetOwnWindow();
+            if (!mapWin && theApp.m_gameWindow)
+                mapWin = theApp.m_gameWindow->GetWindow();
+            if (mapWin) {
+                SDL_RaiseWindow(mapWin);
+                SDL_SetWindowInputFocus(mapWin);
+            }
+        }
     } else {
         if (pArea) {
             pArea->OnlySelectUnit(pUnit);
@@ -812,6 +886,7 @@ bool SDL2UnitList::HandleEvent(SDL_Event& event, int localX, int localY) {
                 m_selectedIdx = itemIdx;
                 OnClick(itemIdx, dblClick);
             }
+            m_forceDraw = true;  // repaint immediately so selection/scroll feels instant
         }
         return true;
 
@@ -824,6 +899,7 @@ bool SDL2UnitList::HandleEvent(SDL_Event& event, int localX, int localY) {
         m_scrollY -= event.wheel.y * 48;
         if (m_scrollY < 0) m_scrollY = 0;
         if (m_scrollY > maxScroll) m_scrollY = maxScroll;
+        m_forceDraw = true;
         return true;
 
     case SDL_MOUSEMOTION:
@@ -836,6 +912,7 @@ bool SDL2UnitList::HandleEvent(SDL_Event& event, int localX, int localY) {
                 if (m_scrollY < 0) m_scrollY = 0;
                 if (m_scrollY > maxScroll) m_scrollY = maxScroll;
             }
+            m_forceDraw = true;
         }
         ::SetCursor(::LoadCursor(NULL, IDC_ARROW));
         return true;

@@ -101,35 +101,30 @@ The game runs from `d:\Enemy Nations\` (the run dir has the DLLs). The smoke-tes
 
 When something crashes during init, `dbgcatch.ps1` is the right tool — it catches `OutputDebugString` and exception events, walks the stack via dbghelp.
 
-## UI navigation (menus and dialogs)
+## UI harness (screenshot + click the live game)
 
-For verifying SDL2 dialog/menu work without asking the user to describe what they see, three scripts let you screenshot the game and drive it via mouse/keyboard:
+Drive the running game yourself instead of asking the user what they see. **Just act**: screenshot → Read the PNG → click → screenshot to confirm. Each call is ~1s; don't narrate or ask between steps. ([feedback_harness_act_fast](file:///C:/Users/tyboy/.claude/projects/d--Enemy-Nations-src/memory/feedback_harness_act_fast.md))
 
 ```powershell
-./screenshot.ps1                   # save screenshot.png of the game's main window
-./screenshot.ps1 -Out menu.png     # custom path
-./screenshot.ps1 -ListWindows      # debug: enumerate visible windows in the process
-./screenshot.ps1 -Screen           # fallback: screen-grab (use if PrintWindow returns black)
-
-./click.ps1 -X 320 -Y 240          # left click at client coords (320,240)
-./click.ps1 -X 100 -Y 50 -Right    # right click
-./click.ps1 -X 100 -Y 50 -Double   # double-click
-
-./keys.ps1 -Key Enter              # press a named key
-./keys.ps1 -Key Down -Times 3      # repeat
-./keys.ps1 -Text "Player1"         # type text
-./keys.ps1 -ListKeys               # show the named-key table
+& '.\screenshot.ps1' -ListWindows          # list the game's SDL windows + roles
+& '.\screenshot.ps1' -Out d:\tmp\s.png      # 50% shot of the auto-target window
+& '.\click.ps1' -X 1850 -Y 145              # click client-px coords (read from the PNG)
+& '.\keys.ps1'  -Key Enter                  # named key; -Text "foo" types; -ListKeys
 ```
 
-**Workflow:** screenshot → Read the PNG → click/keys to interact → screenshot again. Since I (Claude) am multimodal, the PNG is enough — no OCR needed.
+**The game is multi-window** — target by role, not "the big window." In-game the main "Game View" window is only toolbar/chrome; the **map, radar, detached panels, and dialogs are each their own child `SDL_app` window** (SDL routes input by windowID, and `PrintWindow` on the parent can't capture a child's GL surface — you get blank blue). Pick the window with `-Window`:
 
-**Important:**
-- Coordinates are **client-area pixels** at the game's actual resolution (likely 2560x1440 fullscreen). Read the PNG to estimate coords; the file dimensions match the click space exactly.
-- All three use `PostMessage` → the game does **not** need focus, runs fine in background. Verified working against the live game.
-- Auto-detects `enations` then `enations_gate`. Picks the largest visible window (skips the hidden MFC plumbing HWND).
-- **Escape on the main menu exits the game outright.** Only press Escape when you mean to close, or when you're inside a sub-dialog you want to back out of.
-- **Modifier keys (Ctrl+S, Shift+click) are not supported** — would need SendInput which requires focus.
-- For gameplay (scrolling map, world view) these tools are weak. Built for menu/dialog verification.
+```powershell
+& '.\screenshot.ps1' -Window map -Full      # native-res Area Map (the interactive map)
+& '.\click.ps1' -Window map -X 800 -Y 600   # click lands on the map child
+& '.\screenshot.ps1' -Composite             # main + all children stitched = true view
+& '.\keys.ps1' -Window "Load Game" -Text x   # any title substring also works
+```
+
+- Roles: `map`/`area`, `radar`, `vehicles`, `buildings`, `research`, `main`/`menu`, `pick`/`player`, or any title substring. **Omit `-Window`** → auto (Area Map in-game, else the sole menu/dialog window).
+- Shared resolver is [harness-common.ps1](harness-common.ps1); HWNDs change on reload so it re-resolves by class+title each call. `dbgshot.ps1` = token-cheap wrapper (33% + JPEG).
+- **Coords are client px of the target window**, at native res. Read at `-Full` to pick exact coords (small dialogs have ~19px rows — unforgiving). Screenshots are **50% by default** to save vision-tokens (`-Scale N`, `-Full`; each shot prints a token estimate).
+- `PostMessage`-based: **no focus needed**, runs in background. **No modifier combos** (Ctrl/Shift+key). **Escape on the main menu quits the game.** `-Screen` is the fallback if PrintWindow returns black.
 
 ## Don't do
 

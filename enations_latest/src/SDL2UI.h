@@ -52,6 +52,7 @@ class SDL2Label : public SDL2Widget {
 public:
     SDL2Label(int x, int y, int w, int h, const std::string& text,
               SDL_Color color = {48, 58, 148, 255});
+    ~SDL2Label() override;
 
     void Render(SDL_Surface* dst, TTF_Font* font) override;
     void SetText(const std::string& text) { m_text = text; }
@@ -69,6 +70,18 @@ private:
     bool m_wrapped = false;
     bool m_topAligned = false;
     bool m_rightAligned = false;
+
+    // Cached rasterized text. Re-rendering TTF every frame (especially the wrapped
+    // multi-line variant) is expensive enough to visibly drop the game's framerate
+    // while a non-modal dialog is open. We keep the rendered surface and only
+    // regenerate it when an input that affects the glyphs changes.
+    SDL_Surface* m_cache = nullptr;
+    std::string  m_cacheText;
+    SDL_Color    m_cacheColor = {0, 0, 0, 0};
+    TTF_Font*    m_cacheFont = nullptr;
+    int          m_cacheWrapW = -1;     // rect.w used for the cached wrap, or -1
+    bool         m_cacheWrapped = false;
+    bool         m_cacheEnabled = true;
 };
 
 // ============================================================================
@@ -87,6 +100,9 @@ public:
 
     void SetText(const std::string& text) { m_text = text; }
     void SetOnClick(ClickCallback cb) { m_onClick = cb; }
+    // Override the default gold button-text color (research buttons use red, matching
+    // CDlgResearch::OnDrawItem's PALETTERGB(255,33,8)).
+    void SetTextColor(SDL_Color c) { m_textColor = c; m_customTextColor = true; }
 
     // Set a double-click callback. Fires when the button is clicked twice
     // within 500ms (matching the MFC MSG_BTN_DBLCLK behavior).
@@ -112,6 +128,8 @@ private:
     bool m_pressed = false;
     bool m_toggled = false;
     bool m_hovered = false;
+    bool m_customTextColor = false;
+    SDL_Color m_textColor = { 225, 182, 55, 255 };  // default gold
     SDL_Surface* m_iconSheet = nullptr;
     SDL_Rect m_iconSrc = {0, 0, 0, 0};
     SDL_Surface* m_btnSheet = nullptr;  // 3-state sprite sheet background
@@ -214,6 +232,18 @@ public:
     void Clear();
     int GetSelected() const { return m_selected; }
     void SetSelected(int s) { m_selected = s; }
+    // Scroll so that item idx is within the visible window (no-op if already visible).
+    void EnsureVisible(int idx);
+    // A persistently-highlighted "active" row, independent of the browse selection
+    // (e.g. the research item currently being worked on). -1 = none.
+    void SetMarked(int m) { m_marked = m; }
+    int GetMarked() const { return m_marked; }
+    // Override the default white-bg / blue-text / gold-on-blue-selection scheme.
+    // The research list uses this to match the original red-on-white (normal) /
+    // red-on-black (selected) look from CDlgResearch::OnDrawItem.
+    void SetColors(SDL_Color bg, SDL_Color selBg, SDL_Color text, SDL_Color selText) {
+        m_colBg = bg; m_colSelBg = selBg; m_colText = text; m_colSelText = selText;
+    }
     int GetCount() const { return (int)m_items.size(); }
     void* GetItemData(int index) const;
     const std::string& GetItemText(int index) const;
@@ -222,7 +252,14 @@ private:
     struct Item { std::string text; void* data; };
     std::vector<Item> m_items;
     int m_selected = -1;
+    int m_marked = -1;
     int m_scrollOffset = 0;
+
+    // Row colors (defaults mirror the historic white/blue/gold scheme).
+    SDL_Color m_colBg      = { 255, 255, 255, 255 };
+    SDL_Color m_colSelBg   = {  48,  58, 148, 255 };
+    SDL_Color m_colText    = {  48,  58, 148, 255 };
+    SDL_Color m_colSelText = { 225, 182,  55, 255 };
     int m_itemHeight = 22;
     SelectCallback m_onSelect;
     DblClickCallback m_onDblClick;
@@ -314,6 +351,31 @@ private:
 };
 
 // ============================================================================
+// SDL2ProgressBar - Horizontal determinate progress bar (0..100%)
+// ============================================================================
+class SDL2ProgressBar : public SDL2Widget {
+public:
+    SDL2ProgressBar(int x, int y, int w, int h) : SDL2Widget(x, y, w, h) {}
+
+    void Render(SDL_Surface* dst, TTF_Font* font) override;
+
+    // Determinate mode: clamped to [0,100]. Set bShowText=false to hide "NN%".
+    void SetProgress(int pct) { m_pct = pct < 0 ? 0 : (pct > 100 ? 100 : pct); }
+    int  GetProgress() const { return m_pct; }
+    void SetShowText(bool b) { m_showText = b; }
+
+    // Indeterminate mode: a highlight block sweeps left-to-right to signal
+    // ongoing work when the total isn't known ahead of time (e.g. the save
+    // compressor reports a block index but no block count). No percentage shown.
+    void SetIndeterminate(bool b) { m_indeterminate = b; }
+
+private:
+    int  m_pct = 0;
+    bool m_showText = true;
+    bool m_indeterminate = false;
+};
+
+// ============================================================================
 // SDL2Dialog - Modal dialog container
 // ============================================================================
 class SDL2Dialog {
@@ -332,12 +394,31 @@ public:
     // True while the non-modal dialog is still open (EndDialog not yet called)
     bool IsNonModalActive() const { return m_nonModal && m_running; }
 
+    // Force this dialog above the ALWAYS_ON_TOP detached Area/World windows and
+    // give it focus. The per-frame z-order bump only uses HWND_TOP, which leaves a
+    // plain dialog BELOW the topmost detached map; an auto-opened alert (e.g. the
+    // first research center finishing) would then hide behind the map. This joins
+    // the topmost band so the per-frame HWND_TOP bump keeps it on top, and takes
+    // focus once so the player actually notices. No-op if the window isn't open.
+    void RaiseAndAlert();
+
     // SDL window ID for this dialog's dedicated window (0 if not open)
     uint32_t GetSDLWindowID() const;
 
     // Called by GameWindow each frame for active non-modal dialogs
-    void ProcessEventNonModal(SDL_Event& event) { HandleEvent(event); }
-    void RenderFrameNonModal() { Render(); }
+    void ProcessEventNonModal(SDL_Event& event) { m_forceFrame = true; HandleEvent(event); }
+    // Throttle the per-frame repaint: a non-modal dialog renders into its own
+    // window and presents it every game frame, which steals frames from the game.
+    // Repaint on a fixed interval (enough for the research flask animation) and
+    // immediately after any event so input stays responsive.
+    void RenderFrameNonModal() {
+        Uint32 now = SDL_GetTicks();
+        if (!m_forceFrame && (now - m_lastFrameMs) < FRAME_INTERVAL_MS)
+            return;
+        m_lastFrameMs = now;
+        m_forceFrame = false;
+        Render();
+    }
 
     // Close the dialog with a result
     void EndDialog(int result);
@@ -410,6 +491,11 @@ private:
     // Non-modal state
     bool m_nonModal = false;
     std::function<void(int)> m_onDone;
+
+    // Per-frame repaint throttle for the non-modal path (see RenderFrameNonModal).
+    Uint32 m_lastFrameMs = 0;
+    bool   m_forceFrame = true;
+    static const Uint32 FRAME_INTERVAL_MS = 142;  // ~7 fps (forced repaint on input keeps it responsive)
 
     // Dedicated SDL_Window for this dialog (ALWAYS_ON_TOP so it floats above
     // the Area View and World View detached panels).

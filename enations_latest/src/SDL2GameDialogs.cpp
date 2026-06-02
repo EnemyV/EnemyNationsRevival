@@ -139,11 +139,15 @@ void SDL2ResearchDialog::OnInit() {
     int ox = m_x + bdrSide;
     int oy = m_y + bdrTop + titleH;
 
-    // List: red text on white, blue selection (close to MFC red-text-on-black-when-selected).
+    // List: matches CDlgResearch::OnDrawItem — red text PALETTERGB(255,33,8) on a
+    // white row, inverted to red-on-black when selected.
     // Double-click starts researching the item (matches CDlgResearch::OnDblclkRsrchList).
     m_list = AddWidget<SDL2Listbox>(ox + 18, oy + 35, 155, 198,
         [this](int idx) { SelectItem(idx); },
         [this](int idx) { SelectItem(idx); OnStart(); });
+    const SDL_Color kRsrchRed = { 255, 33, 8, 255 };
+    m_list->SetColors(/*bg*/{255, 255, 255, 255}, /*selBg*/{0, 0, 0, 255},
+                      /*text*/kRsrchRed, /*selText*/kRsrchRed);
 
     // Description text: green PALETTERGB(41,255,8), top-aligned, wrapped.
     // MFC rectText(192, 37, 420, 156) → x=192,y=37, w=228, h=119
@@ -164,14 +168,18 @@ void SDL2ResearchDialog::OnInit() {
         }
     }
 
-    // Buttons — use the 3-state research button sheet (red-text-on-circuit art)
+    // Buttons — use the 3-state research button sheet (circuit art) with red text
+    // PALETTERGB(255,33,8), matching CDlgResearch::OnDrawItem.
+    const SDL_Color kBtnRed = { 255, 33, 8, 255 };
     m_btnStart = AddWidget<SDL2Button>(ox + 188, oy + 170, 116, 25, "Research",
         [this]() { OnStart(); });
     m_btnStart->SetEnabled(false);
+    m_btnStart->SetTextColor(kBtnRed);
     if (m_btnSheet) m_btnStart->SetBtnSheet(m_btnSheet);
 
     m_btnClose = AddWidget<SDL2Button>(ox + 311, oy + 170, 116, 25, "Close",
         [this]() { EndDialog(0); });
+    m_btnClose->SetTextColor(kBtnRed);
     if (m_btnSheet) m_btnClose->SetBtnSheet(m_btnSheet);
 
     m_btnDiscover = AddWidget<SDL2Button>(ox + 311, oy + 211, 116, 25, "Discovery",
@@ -180,6 +188,7 @@ void SDL2ResearchDialog::OnInit() {
     // version flips it on via CDlgResearch::ItemDiscovered(). We don't have
     // that hook yet — leave disabled for now so the button is visible-but-grey.
     m_btnDiscover->SetEnabled(false);
+    m_btnDiscover->SetTextColor(kBtnRed);
     if (m_btnSheet) m_btnDiscover->SetBtnSheet(m_btnSheet);
 
     PopulateList();
@@ -189,6 +198,7 @@ void SDL2ResearchDialog::OnInit() {
     for (int i = 0; i < (int)m_items.size(); i++) {
         if (m_items[i].index == curRsrch) {
             m_list->SetSelected(i);
+            m_list->EnsureVisible(i);
             SelectItem(i);
             break;
         }
@@ -203,6 +213,11 @@ void SDL2ResearchDialog::OnDiscover() {
 void SDL2ResearchDialog::PopulateList() {
     m_items.clear();
     m_list->Clear();
+
+    // The topic currently being researched gets a persistent green marker in the
+    // list (separate from the blue browse-selection) so it stays identifiable even
+    // while the player clicks other items to read their descriptions.
+    int curRsrch = theGame.GetMe()->GetRsrchItem();
 
     for (int i = 0; i < theRsrch.GetSize(); i++) {
         CRsrchItem const& item = theRsrch[i];
@@ -231,6 +246,9 @@ void SDL2ResearchDialog::PopulateList() {
         // Already discovered?
         bool discovered = theGame.GetMe()->GetRsrch(i).m_iPtsDiscovered >= item.m_iPtsRequired;
 
+        // "[Done]" items are hidden by default — skip them unless explicitly shown.
+        if (discovered && !m_showDone) continue;
+
         if (available || discovered) {
             RsrchEntry entry;
             entry.index = i;
@@ -240,6 +258,9 @@ void SDL2ResearchDialog::PopulateList() {
             std::string displayName = entry.name;
             if (discovered) displayName += " [Done]";
             else if (!available) displayName += " [Locked]";
+
+            if (i == curRsrch)
+                m_list->SetMarked((int)m_items.size());  // list index of the active topic
 
             m_items.push_back(entry);
             m_list->AddItem(displayName);
@@ -254,7 +275,12 @@ void SDL2ResearchDialog::SelectItem(int idx) {
     CRsrchItem const& item = theRsrch[m_items[idx].index];
     m_lblDesc->SetText(item.m_sDesc.c_str());
 
-    // Progress is shown by the flask strip (current research), not per-selection.
+    // The Research button stays "down" (pressed sprite) while the selected item is
+    // the topic currently being researched; for any other item it's an enabled
+    // "start researching this" button. Progress itself is shown by the flask strip
+    // (always the current research), not per-selection.
+    bool isActive = (m_items[idx].index == theGame.GetMe()->GetRsrchItem());
+    m_btnStart->SetToggled(isActive);
     m_btnStart->SetEnabled(m_items[idx].available);
 }
 
@@ -277,7 +303,12 @@ void SDL2ResearchDialog::OnStart() {
     // flask strip picks up the new current-research progress on its own.
     PopulateList();
     for (int i = 0; i < (int)m_items.size(); i++)
-        if (m_items[i].index == iSel) { m_list->SetSelected(i); SelectItem(i); break; }
+        if (m_items[i].index == iSel) {
+            m_list->SetSelected(i);
+            m_list->EnsureVisible(i);  // keep scroll position; don't jump to top
+            SelectItem(i);
+            break;
+        }
 }
 
 // ============================================================================

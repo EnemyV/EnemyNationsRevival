@@ -54,6 +54,12 @@ public:
     // Find a panel by name
     SDL2Panel* FindPanel(const std::string& name) const;
 
+    // Forget all remembered window placements and move the known in-game
+    // windows (area/world/radar maps, vehicle/building lists) back to a sane
+    // default on-screen layout. Wired to the "Reset Windows" button in the
+    // Game Options dialog.
+    void ResetWindowLayout();
+
     // Composite all panels to the window surface and present.
     // Call this once per frame after all game rendering is complete.
     void Composite();

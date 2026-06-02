@@ -8,6 +8,7 @@
 #include "SDL2Compositor.h"
 #include "SDL2CreateStatus.h"
 #include "SDL2Panel.h"
+#include "area.h"         // CWndArea, theAreaList (Esc deselect-vs-options decision)
 #include "music.h"        // theMusicPlayer (pause/resume on app focus change)
 #include "../rendering/SDLButtonManager.h"
 #include "../rendering/StatusBar.h"
@@ -409,6 +410,12 @@ bool GameWindow::PollEvents() {
         }
         if (consumedByDialog) continue;
 
+        // Global keyboard shortcuts (Ctrl+letter, F1, Esc). Checked before the
+        // compositor so the area map's bare-letter handlers don't shadow the
+        // Ctrl-modified accelerators. Only consumes keys it actually maps.
+        if (HandleGlobalShortcut(event))
+            continue;
+
         // Route through compositor panels (top-down z-order)
         if (m_compositor && m_compositor->RouteEvent(event))
             continue;
@@ -424,10 +431,29 @@ bool GameWindow::PollEvents() {
     // tabbing back resumes it. (The MFC WM_ACTIVATEAPP path is unreliable here
     // because the MFC main window is hidden.)
     {
-        bool appActive = (SDL_GetKeyboardFocus() != nullptr);
-        if (appActive != m_appActive) {
-            m_appActive = appActive;
-            theMusicPlayer.OnActivate(appActive ? TRUE : FALSE);
+        // Focus can drop to NULL for a frame or two while WE create and raise one
+        // of our own borderless windows (a build dialog, a detached map): the old
+        // window loses focus before the new one gains it. Reacting to that single
+        // null reading would pause the music every time an in-game window opens
+        // (e.g. double-clicking a crane to open its build dialog). So require the
+        // focus loss to *persist* past a short grace period before treating it as a
+        // real app-deactivation; resume immediately when focus returns.
+        const Uint32 kFocusLossGraceMs = 400;
+        bool hasFocus = (SDL_GetKeyboardFocus() != nullptr);
+        Uint32 now = SDL_GetTicks();
+        if (hasFocus) {
+            m_focusLostAt = 0;
+            if (!m_appActive) {
+                m_appActive = true;
+                theMusicPlayer.OnActivate(TRUE);
+            }
+        } else {
+            if (m_focusLostAt == 0)
+                m_focusLostAt = now;
+            if (m_appActive && (now - m_focusLostAt) >= kFocusLossGraceMs) {
+                m_appActive = false;
+                theMusicPlayer.OnActivate(FALSE);
+            }
         }
     }
 
@@ -524,6 +550,68 @@ void GameWindow::HandleEvent(SDL_Event& event) {
         default:
             break;
     }
+}
+
+bool GameWindow::HandleGlobalShortcut(SDL_Event& event) {
+#ifdef _WIN32
+    if (event.type != SDL_KEYDOWN)
+        return false;
+
+    // Only while actually in a game (toolbar exists). At the main menu the
+    // menu handles its own keys, and there's no m_wndMain command target.
+    if (!theApp.m_wndBar.IsCreated() || theApp.m_wndMain.m_hWnd == NULL)
+        return false;
+
+    HWND hMain = theApp.m_wndMain.m_hWnd;
+    SDL_Keycode key = event.key.keysym.sym;
+    SDL_Keymod mod  = (SDL_Keymod)event.key.keysym.mod;
+    bool ctrl  = (mod & KMOD_CTRL)  != 0;
+
+    auto Post = [hMain](int cmd) {
+        ::PostMessage(hMain, WM_COMMAND, (WPARAM)cmd, 0);
+    };
+
+    // Esc: back out of the current action if there is one, otherwise open the
+    // Game Options dialog. Letting it fall through (return false) when an area
+    // has a selection / non-normal mode preserves the original Esc = deselect.
+    if (key == SDLK_ESCAPE && !ctrl) {
+        CWndArea* pArea = theAreaList.GetTop();
+        if (pArea && (pArea->GetMode() != CWndArea::normal || pArea->NumSelected() > 0))
+            return false;  // area handler will deselect / cancel the mode
+        Post(IDA_OPTIONS);
+        return true;
+    }
+
+    // F1 → Help. The original opened the .hlp file (gone); send players to the
+    // revival project's issue tracker instead.
+    if (key == SDLK_F1) {
+        SDL_OpenURL("https://github.com/EnemyV/EnemyNationsRevival/issues");
+        return true;
+    }
+    if (key == SDLK_F2) { Post(IDA_BOSS); return true; }
+
+    // Ctrl+letter accelerators (the IDR_ACCEL table).
+    if (ctrl) {
+        switch (key) {
+        case SDLK_a: Post(IDA_AREA);            return true;
+        case SDLK_w: Post(IDA_WORLD);           return true;
+        case SDLK_v: Post(IDA_VEHICLES);        return true;
+        case SDLK_b: Post(IDA_BUILDINGS);       return true;
+        case SDLK_m: Post(IDA_MAIL);            return true;
+        case SDLK_o: Post(IDA_OPTIONS);         return true;
+        case SDLK_r: Post(IDA_RESEARCH);        return true;
+        case SDLK_d: Post(IDA_DIPLOMAT);        return true;
+        case SDLK_p: Post(IDA_PAUSE);           return true;
+        case SDLK_s: Post(IDA_SAVE);            return true;
+        case SDLK_h: Post(IDA_HIDE_TOOLBAR);    return true;
+        case SDLK_u: Post(IDA_UNHIDE_TOOLBAR);  return true;
+        default: break;
+        }
+    }
+#else
+    (void)event;
+#endif
+    return false;
 }
 
 void GameWindow::Raise() {

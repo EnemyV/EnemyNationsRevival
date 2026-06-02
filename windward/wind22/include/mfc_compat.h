@@ -22,6 +22,8 @@
 #include <cstring>
 #include <list>
 #include <map>
+#include <unordered_map>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -328,6 +330,20 @@ public:
 private:
     std::string m_str;
 };
+
+// Hash support so CString can key a std::unordered_map (the CMapStringToPtr
+// typedef, used by datafile.cpp's filename->ptr map). Cold path, so the
+// temporary std::string is fine.
+namespace std
+{
+    template<> struct hash<CString>
+    {
+        size_t operator()( const CString& s ) const noexcept
+        {
+            return std::hash<std::string>{}( std::string( s.GetString() ) );
+        }
+    };
+}
 
 //------------------------- C E x c e p t i o n ------------------------------
 // MFC exception base class. CFileException/CArchiveException are siblings
@@ -666,6 +682,25 @@ private:
 
 typedef void* POSITION;
 
+// Diagnostic counter: net-live IterPos wrappers across all CMap/CList instances.
+// Every wrapper alloc bumps it; every free drops it. A monotonically rising
+// value is precisely the per-advance iterator leak (CMap early-break residual +
+// the CList GetNext/GetPrev/RemoveAt leak). Exact and atomic — not sampled.
+// EN_PERF surfaces it as the "mfc.iterpos" gauge. __declspec(selectany) lets
+// this live in a header (linker folds the duplicate definitions).
+__declspec(selectany) long g_mfcIterPosLive = 0;
+
+// One global lock guarding every CList's IterPos pool. CList instances have no
+// internal locking, and some lists (e.g. the global player list) are iterated
+// read-only by several AI threads at once. The old scheme tolerated that since
+// each advance just `new`'d an independent wrapper on the thread-safe CRT heap;
+// the pool adds shared per-list state (the vector), so its mutations must be
+// serialized. Critical sections are tiny (one push_back / one bulk free), so a
+// single global mutex is cheap and avoids giving every CList its own.
+// Meyers-singleton accessor (not an inline variable) so this header still
+// compiles in translation units built below /std:c++17.
+inline std::mutex& MfcIterPoolMtx() { static std::mutex m; return m; }
+
 template<class KEY, class ARG_KEY, class VALUE, class ARG_VALUE>
 class CMap
 {
@@ -703,6 +738,7 @@ public:
     {
         if ( m_map.empty() ) return nullptr;
         auto* pos = new IterPos{ m_map.begin(), &m_map };
+        InterlockedIncrement( &g_mfcIterPosLive );
         return (POSITION)pos;
     }
 
@@ -712,15 +748,22 @@ public:
         if ( !p ) return;
         rKey   = p->it->first;
         rValue = p->it->second;
-        auto next_it = p->it; ++next_it;
-        // Allocate a fresh IterPos for the advanced position so aliased
-        // POSITION copies don't share state (see CList::GetNext comment).
-        if ( next_it == p->map->end() ) {
+        // Advance the IterPos IN PLACE and free it at end(), instead of
+        // allocating a fresh IterPos per advance (which leaked the predecessor
+        // on every call — the dominant runtime memory leak). Safe for CMap
+        // because a CMap POSITION can ONLY be fed back into GetNextAssoc: the
+        // class exposes no GetAt/SetAt/RemoveAt by POSITION, so the
+        // "save a position, mutate that element after advancing" aliasing
+        // pattern (which CList relies on) is impossible to express here. A
+        // full walk now leaks 0; an early `break` abandons a single IterPos
+        // (was: one per element visited).
+        ++p->it;
+        if ( p->it == m_map.end() ) {
+            delete p;
+            InterlockedDecrement( &g_mfcIterPosLive );
             rNextPosition = nullptr;
-        } else {
-            IterPos* newp = new IterPos{ next_it, p->map };
-            rNextPosition = (POSITION)newp;
         }
+        // else: rNextPosition unchanged — same pointer, nothing allocated.
     }
 
     // No-op Serialize: the gate-on save format doesn't round-trip MFC
@@ -730,7 +773,15 @@ public:
     void AssertValid() const {}
 
 private:
-    typedef std::map<KEY, VALUE> MapT;
+    // Hash map (not std::map): MFC's CMap was a hash table — InitHashTable()
+    // sized it for O(1) lookups (e.g. CPathMap sizes m_mapCell to 2*numCells).
+    // std::map made every Lookup an O(log n) red-black-tree walk (plus Debug
+    // checked-iterator overhead), which dominated the AI pathfinding profile.
+    // unordered_map restores O(1) average and the original's unordered iteration
+    // (so this is also more faithful — std::map had imposed an ordering the
+    // original never had). All live keys are DWORD/void* (hashable); the unused
+    // CString typedef is never instantiated, so no std::hash<CString> is needed.
+    typedef std::unordered_map<KEY, VALUE> MapT;
     struct IterPos {
         typename MapT::const_iterator it;
         const MapT* map;
@@ -1050,159 +1101,141 @@ private:
 };
 
 //-------------------------------- C L i s t ---------------------------------
-// MFC's doubly-linked list. std::list-backed. POSITION here is a heap-
-// allocated iterator wrapper, same scheme as CMap. Surface kept narrow to
-// what the live code uses: AddTail, AddHead, GetCount, IsEmpty, RemoveAll,
-// GetHead, GetTail, RemoveHead, RemoveTail, GetHeadPosition, GetNext,
-// GetPrev, Find, RemoveAt.
+// MFC's doubly-linked list. Implemented as a hand-rolled INTRUSIVE doubly
+// linked list so that POSITION can be the node address itself (8 bytes, fits
+// in void*) — exactly like real MFC. This is deliberate: the earlier
+// std::list-backed version had to heap-allocate a 24-byte iterator wrapper
+// per POSITION (std::list iterators don't fit in a void* under /MDd's
+// _ITERATOR_DEBUG_LEVEL=2) and could not free it on advance without breaking
+// the call sites that copy a POSITION, save a prev-position for RemoveAt/SetAt,
+// or stash one long-term as a route cursor. That wrapper was THE dominant
+// runtime memory leak (~15k/sec). With node-pointer POSITIONs there is no
+// per-advance allocation at all: nothing to leak, pool, or lock, and POSITION
+// identity (pos == m_pos) works as MFC intended (fixing latent route-cursor
+// comparisons that the wrapper scheme silently broke). Nodes are allocated on
+// insert and freed on removal — bounded by the list's size, never leaked.
 
 template<class TYPE, class ARG_TYPE>
 class CList
 {
+    struct Node { Node* prev; Node* next; TYPE val; };
+    Node* m_head = nullptr;
+    Node* m_tail = nullptr;
+    int   m_count = 0;
+
+    void linkEmpty( Node* n ) { n->prev = n->next = nullptr; m_head = m_tail = n; ++m_count; }
+
 public:
-    int  GetCount() const { return (int)m_list.size(); }
-    BOOL IsEmpty()  const { return m_list.empty() ? TRUE : FALSE; }
-    void RemoveAll()      { m_list.clear(); }
-
-    TYPE& GetHead()             { return m_list.front(); }
-    const TYPE& GetHead() const { return m_list.front(); }
-    TYPE& GetTail()             { return m_list.back(); }
-    const TYPE& GetTail() const { return m_list.back(); }
-
-    POSITION AddHead( ARG_TYPE v ) { m_list.push_front( v ); return wrap( m_list.begin() ); }
-    POSITION AddTail( ARG_TYPE v ) { m_list.push_back( v );  return wrap( --m_list.end() ); }
-
-    TYPE RemoveHead() { TYPE v = m_list.front(); m_list.pop_front(); return v; }
-    TYPE RemoveTail() { TYPE v = m_list.back();  m_list.pop_back();  return v; }
-
-    POSITION GetHeadPosition() const { return m_list.empty() ? nullptr : wrap( m_list.begin() ); }
-    POSITION GetTailPosition() const { return m_list.empty() ? nullptr : wrap( --m_list.end() ); }
-
-    // CRITICAL: GetNext/GetPrev allocate a NEW IterPos for the advanced
-    // position, and rebind the caller's pos to it. The old IterPos is
-    // orphaned (leaks).
-    //
-    // Live code routinely copies POSITION values (`POSITION _pos = pos;`)
-    // and advances each copy independently — wrldinit.cpp:603-608 does
-    // this for an inner "peek next player" against an outer iteration.
-    // MFC's POSITION is a list-node address (independent on copy). If we
-    // mutated a shared heap IterPos in place, _pos and pos would alias:
-    // advancing one advances the other, and on the NEXT outer iteration
-    // *p->it would dereference end() — UB returning FEEEFEEE-pattern
-    // garbage that the next CPlayer* consumer crashes on.
-    //
-    // Allocating a fresh IterPos per advance gives each POSITION copy its
-    // own iterator state, mirroring MFC semantics. The old IterPos is
-    // leaked: bounded by total iteration count over the game's lifetime,
-    // ~MB at most. Acceptable for the gate-on path.
-    TYPE& GetNext( POSITION& pos )
+    CList() = default;
+    ~CList() { RemoveAll(); }
+    // Deep-copy contents only; the copy gets its own fresh nodes. (POSITIONs
+    // into the source were never valid for a copy, same as MFC.)
+    CList( const CList& o ) { for ( Node* n = o.m_head; n; n = n->next ) AddTail( n->val ); }
+    CList& operator=( const CList& o )
     {
-        IterPos* p = (IterPos*)pos;
-        TYPE& ref = *p->it;
-        auto next_it = p->it; ++next_it;
-        if ( next_it == m_list.end() ) {
-            pos = nullptr;
-        } else {
-            IterPos* newp = new IterPos;
-            newp->it = next_it;
-            pos = (POSITION)newp;
-        }
-        return ref;
+        if ( this != &o ) { RemoveAll(); for ( Node* n = o.m_head; n; n = n->next ) AddTail( n->val ); }
+        return *this;
     }
-    const TYPE& GetNext( POSITION& pos ) const
-    {
-        IterPos* p = (IterPos*)pos;
-        const TYPE& ref = *p->it;
-        auto next_it = p->it; ++next_it;
-        if ( next_it == m_list.end() ) {
-            pos = nullptr;
-        } else {
-            IterPos* newp = new IterPos;
-            newp->it = next_it;
-            pos = (POSITION)newp;
-        }
-        return ref;
-    }
-    TYPE& GetPrev( POSITION& pos )
-    {
-        IterPos* p = (IterPos*)pos;
-        TYPE& ref = *p->it;
-        if ( p->it == m_list.begin() ) {
-            pos = nullptr;
-        } else {
-            IterPos* newp = new IterPos;
-            newp->it = p->it; --newp->it;
-            pos = (POSITION)newp;
-        }
-        return ref;
-    }
-    const TYPE& GetPrev( POSITION& pos ) const
-    {
-        IterPos* p = (IterPos*)pos;
-        const TYPE& ref = *p->it;
-        if ( p->it == m_list.begin() ) {
-            pos = nullptr;
-        } else {
-            IterPos* newp = new IterPos;
-            newp->it = p->it; --newp->it;
-            pos = (POSITION)newp;
-        }
-        return ref;
-    }
-    TYPE& GetAt( POSITION pos )       { return *( (IterPos*)pos )->it; }
-    const TYPE& GetAt( POSITION pos ) const { return *( (IterPos*)pos )->it; }
-    void SetAt( POSITION pos, ARG_TYPE v ) { *( (IterPos*)pos )->it = v; }
 
-    POSITION Find( ARG_TYPE v, POSITION /*after*/ = nullptr ) const
+    int  GetCount() const { return m_count; }
+    BOOL IsEmpty()  const { return m_count == 0 ? TRUE : FALSE; }
+    void RemoveAll()
     {
-        for ( auto it = m_list.begin(); it != m_list.end(); ++it )
-            if ( *it == v ) return wrap( it );
+        for ( Node* n = m_head; n; ) { Node* nx = n->next; delete n; n = nx; }
+        m_head = m_tail = nullptr; m_count = 0;
+    }
+
+    TYPE& GetHead()             { return m_head->val; }
+    const TYPE& GetHead() const { return m_head->val; }
+    TYPE& GetTail()             { return m_tail->val; }
+    const TYPE& GetTail() const { return m_tail->val; }
+
+    POSITION AddHead( ARG_TYPE v )
+    {
+        Node* n = new Node{ nullptr, nullptr, v };
+        if ( !m_head ) { linkEmpty( n ); }
+        else { n->next = m_head; m_head->prev = n; m_head = n; ++m_count; }
+        return (POSITION)n;
+    }
+    POSITION AddTail( ARG_TYPE v )
+    {
+        Node* n = new Node{ nullptr, nullptr, v };
+        if ( !m_tail ) { linkEmpty( n ); }
+        else { n->prev = m_tail; m_tail->next = n; m_tail = n; ++m_count; }
+        return (POSITION)n;
+    }
+
+    TYPE RemoveHead()
+    {
+        Node* n = m_head; TYPE v = n->val;
+        m_head = n->next;
+        if ( m_head ) m_head->prev = nullptr; else m_tail = nullptr;
+        delete n; --m_count; return v;
+    }
+    TYPE RemoveTail()
+    {
+        Node* n = m_tail; TYPE v = n->val;
+        m_tail = n->prev;
+        if ( m_tail ) m_tail->next = nullptr; else m_head = nullptr;
+        delete n; --m_count; return v;
+    }
+
+    POSITION GetHeadPosition() const { return (POSITION)m_head; }
+    POSITION GetTailPosition() const { return (POSITION)m_tail; }
+
+    // GetNext/GetPrev return the element AT pos, then advance pos to the next /
+    // previous node (NULL past the end), exactly like MFC. No allocation: pos
+    // is simply the node pointer. Copies of a POSITION are independent because
+    // each holds its own node pointer.
+    TYPE& GetNext( POSITION& pos )             { Node* n = (Node*)pos; pos = (POSITION)n->next; return n->val; }
+    const TYPE& GetNext( POSITION& pos ) const { Node* n = (Node*)pos; pos = (POSITION)n->next; return n->val; }
+    TYPE& GetPrev( POSITION& pos )             { Node* n = (Node*)pos; pos = (POSITION)n->prev; return n->val; }
+    const TYPE& GetPrev( POSITION& pos ) const { Node* n = (Node*)pos; pos = (POSITION)n->prev; return n->val; }
+
+    TYPE& GetAt( POSITION pos )             { return ( (Node*)pos )->val; }
+    const TYPE& GetAt( POSITION pos ) const { return ( (Node*)pos )->val; }
+    void SetAt( POSITION pos, ARG_TYPE v )  { ( (Node*)pos )->val = v; }
+
+    POSITION Find( ARG_TYPE v, POSITION after = nullptr ) const
+    {
+        for ( Node* n = after ? ( (Node*)after )->next : m_head; n; n = n->next )
+            if ( n->val == v ) return (POSITION)n;
         return nullptr;
     }
     POSITION FindIndex( int nIndex ) const
     {
-        if ( nIndex < 0 || (size_t)nIndex >= m_list.size() ) return nullptr;
-        auto it = m_list.begin();
-        std::advance( it, nIndex );
-        return wrap( it );
+        if ( nIndex < 0 || nIndex >= m_count ) return nullptr;
+        Node* n = m_head; while ( nIndex-- && n ) n = n->next; return (POSITION)n;
     }
     POSITION InsertBefore( POSITION pos, ARG_TYPE v )
     {
-        IterPos* p = (IterPos*)pos;
-        auto inserted = const_cast<ListT&>( m_list ).insert( p->it, v );
-        return wrap( inserted );
+        if ( !pos ) return AddHead( v );
+        Node* at = (Node*)pos;
+        Node* n  = new Node{ at->prev, at, v };
+        if ( at->prev ) at->prev->next = n; else m_head = n;
+        at->prev = n; ++m_count;
+        return (POSITION)n;
     }
     POSITION InsertAfter( POSITION pos, ARG_TYPE v )
     {
-        IterPos* p = (IterPos*)pos;
-        auto next = p->it; ++next;
-        auto inserted = const_cast<ListT&>( m_list ).insert( next, v );
-        return wrap( inserted );
+        if ( !pos ) return AddTail( v );
+        Node* at = (Node*)pos;
+        Node* n  = new Node{ at, at->next, v };
+        if ( at->next ) at->next->prev = n; else m_tail = n;
+        at->next = n; ++m_count;
+        return (POSITION)n;
     }
     void RemoveAt( POSITION pos )
     {
-        IterPos* p = (IterPos*)pos;
-        // const_cast OK: we own the list, the const iterator is just our wire format
-        m_list.erase( m_list.erase( p->it, p->it ) );
-        // IterPos is leaked by design (see GetNext/GetPrev comment); callers
-        // may hold aliased POSITION copies and freeing here would dangle them.
+        Node* n = (Node*)pos; if ( !n ) return;
+        if ( n->prev ) n->prev->next = n->next; else m_head = n->next;
+        if ( n->next ) n->next->prev = n->prev; else m_tail = n->prev;
+        delete n; --m_count;
     }
 
     // No-op Serialize (see CMap::Serialize comment).
     void Serialize( class CArchive& /*ar*/ ) {}
     void AssertValid() const {}
-
-private:
-    typedef std::list<TYPE> ListT;
-    struct IterPos { typename ListT::iterator it; };
-    POSITION wrap( typename ListT::const_iterator it ) const
-    {
-        auto* p = new IterPos;
-        // const_cast: stored iterators are mutable; the POSITION wire is opaque
-        p->it = const_cast<ListT&>( m_list ).erase( it, it );  // no-op erase returns mutable iterator
-        return (POSITION)p;
-    }
-    ListT m_list;
 };
 
 //------------------------- G D I   o b j e c t   w r a p p e r s ------------

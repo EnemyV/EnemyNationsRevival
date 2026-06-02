@@ -137,31 +137,61 @@ static bool PointInRect(int x, int y, SDL_Rect r) {
 SDL2Label::SDL2Label(int x, int y, int w, int h, const std::string& text, SDL_Color color)
     : SDL2Widget(x, y, w, h), m_text(text), m_color(color) {}
 
+SDL2Label::~SDL2Label() {
+    if (m_cache) SDL_FreeSurface(m_cache);
+}
+
 void SDL2Label::Render(SDL_Surface* dst, TTF_Font* font) {
     if (!m_visible || m_text.empty()) return;
-    if (m_wrapped) {
-        RenderTextWrapped(dst, font, m_text.c_str(), m_rect,
-                          m_enabled ? m_color : UIColors::Disabled,
-                          m_centered, m_topAligned, m_rightAligned);
-    } else if (m_rightAligned) {
-        // Single-line right-align: render at natural width, then offset to right edge.
-        SDL_Surface* surf = TTF_RenderText_Blended(font, m_text.c_str(),
-            m_enabled ? m_color : UIColors::Disabled);
-        if (surf) {
-            SDL_Rect srcRect = { 0, 0, std::min(surf->w, m_rect.w), std::min(surf->h, m_rect.h) };
-            SDL_Rect dstRect = m_rect;
-            if (surf->w < m_rect.w) dstRect.x += (m_rect.w - surf->w);
-            if (!m_topAligned && surf->h < m_rect.h) dstRect.y += (m_rect.h - surf->h) / 2;
-            dstRect.w = srcRect.w;
-            dstRect.h = srcRect.h;
-            SDL_BlitSurface(surf, &srcRect, dst, &dstRect);
-            SDL_FreeSurface(surf);
+
+    SDL_Color color = m_enabled ? m_color : UIColors::Disabled;
+
+    // (Re)rasterize only when an input affecting the glyphs changes. TTF rendering
+    // — particularly the wrapped multi-line path — is costly enough that doing it
+    // every frame visibly drags the game's framerate down while a dialog is open.
+    bool colorChanged = (color.r != m_cacheColor.r || color.g != m_cacheColor.g ||
+                         color.b != m_cacheColor.b || color.a != m_cacheColor.a);
+    bool needRegen = !m_cache || m_cacheText != m_text || m_cacheFont != font ||
+                     m_cacheWrapped != m_wrapped || m_cacheEnabled != m_enabled ||
+                     colorChanged || (m_wrapped && m_cacheWrapW != m_rect.w);
+
+    if (needRegen) {
+        if (m_cache) { SDL_FreeSurface(m_cache); m_cache = nullptr; }
+        if (m_wrapped) {
+            int oldAlign = TTF_GetFontWrappedAlign(font);
+            if (m_rightAligned)    TTF_SetFontWrappedAlign(font, TTF_WRAPPED_ALIGN_RIGHT);
+            else if (m_centered)   TTF_SetFontWrappedAlign(font, TTF_WRAPPED_ALIGN_CENTER);
+            m_cache = TTF_RenderText_Blended_Wrapped(font, m_text.c_str(), color, m_rect.w);
+            TTF_SetFontWrappedAlign(font, oldAlign);
+        } else {
+            m_cache = TTF_RenderText_Blended(font, m_text.c_str(), color);
         }
-    } else {
-        RenderText(dst, font, m_text.c_str(), m_rect,
-                   m_enabled ? m_color : UIColors::Disabled, m_centered,
-                   !m_topAligned);
+        m_cacheText    = m_text;
+        m_cacheColor   = color;
+        m_cacheFont    = font;
+        m_cacheWrapped = m_wrapped;
+        m_cacheEnabled = m_enabled;
+        m_cacheWrapW   = m_wrapped ? m_rect.w : -1;
     }
+
+    if (!m_cache) return;
+    SDL_Surface* surf = m_cache;
+
+    // Positioning mirrors the original RenderText / RenderTextWrapped helpers.
+    SDL_Rect srcRect = { 0, 0, std::min(surf->w, m_rect.w), std::min(surf->h, m_rect.h) };
+    SDL_Rect dstRect = m_rect;
+    if (m_wrapped) {
+        if (!m_topAligned && surf->h < m_rect.h) dstRect.y += (m_rect.h - surf->h) / 2;
+    } else if (m_rightAligned) {
+        if (surf->w < m_rect.w) dstRect.x += (m_rect.w - surf->w);
+        if (!m_topAligned && surf->h < m_rect.h) dstRect.y += (m_rect.h - surf->h) / 2;
+    } else {
+        if (m_centered && surf->w < m_rect.w) dstRect.x += (m_rect.w - surf->w) / 2;
+        if (!m_topAligned && surf->h < m_rect.h) dstRect.y += (m_rect.h - surf->h) / 2;
+    }
+    dstRect.w = srcRect.w;
+    dstRect.h = srcRect.h;
+    SDL_BlitSurface(surf, &srcRect, dst, &dstRect);
 }
 
 // ============================================================================
@@ -198,7 +228,9 @@ void SDL2Button::Render(SDL_Surface* dst, TTF_Font* font) {
         }
     }
 
-    SDL_Color textColor = m_enabled ? UIColors::BtnText : UIColors::Disabled;
+    SDL_Color textColor = !m_enabled ? UIColors::Disabled
+                          : m_customTextColor ? m_textColor
+                          : UIColors::BtnText;
     // Inset rect: large buttons use -6 (matching CUnitButton), small buttons use -2
     int inset = (m_rect.h >= 32) ? 6 : 2;
     SDL_Rect faceRect = { m_rect.x + inset, m_rect.y + inset, m_rect.w - 2*inset, m_rect.h - 2*inset };
@@ -523,7 +555,20 @@ void SDL2Listbox::AddItem(const std::string& text, void* data) {
 void SDL2Listbox::Clear() {
     m_items.clear();
     m_selected = -1;
+    m_marked = -1;
     m_scrollOffset = 0;
+}
+
+void SDL2Listbox::EnsureVisible(int idx) {
+    if (idx < 0 || idx >= (int)m_items.size()) return;
+    int visibleItems = m_rect.h / m_itemHeight;
+    if (visibleItems <= 0) return;
+    if (idx < m_scrollOffset)
+        m_scrollOffset = idx;
+    else if (idx >= m_scrollOffset + visibleItems)
+        m_scrollOffset = idx - visibleItems + 1;
+    int maxScroll = std::max(0, (int)m_items.size() - visibleItems);
+    m_scrollOffset = std::max(0, std::min(maxScroll, m_scrollOffset));
 }
 
 void* SDL2Listbox::GetItemData(int index) const {
@@ -540,12 +585,11 @@ const std::string& SDL2Listbox::GetItemText(int index) const {
 void SDL2Listbox::Render(SDL_Surface* dst, TTF_Font* font) {
     if (!m_visible) return;
 
-    static const SDL_Color kListBg  = { 255, 255, 255, 255 };  // white background
-    static const SDL_Color kSelRow  = {  48,  58, 148, 255 };  // blue selection row
-    static const SDL_Color kSelText = { 225, 182,  55, 255 };  // gold text when selected
+    static const SDL_Color kMarkRow  = {  22, 120,  28, 255 };  // green "active" row
+    static const SDL_Color kMarkText = { 235, 255, 235, 255 };  // near-white on green
 
     // Background
-    FillRect(dst, m_rect, kListBg);
+    FillRect(dst, m_rect, m_colBg);
     DrawBevel(dst, m_rect, 1, UIColors::BtnDark, UIColors::BtnLight);
 
     int visibleItems = m_rect.h / m_itemHeight;
@@ -553,17 +597,22 @@ void SDL2Listbox::Render(SDL_Surface* dst, TTF_Font* font) {
         int idx = i + m_scrollOffset;
         int iy = m_rect.y + i * m_itemHeight;
         bool selected = (idx == m_selected);
+        bool marked   = (idx == m_marked);
 
-        // Highlight selected row
+        // Row highlight: browse-selection wins over the persistent "active"
+        // marker (green) when they land on the same row.
         if (selected) {
             SDL_Rect hlRect = { m_rect.x + 1, iy, m_rect.w - 2, m_itemHeight };
-            FillRect(dst, hlRect, kSelRow);
+            FillRect(dst, hlRect, m_colSelBg);
+        } else if (marked) {
+            SDL_Rect hlRect = { m_rect.x + 1, iy, m_rect.w - 2, m_itemHeight };
+            FillRect(dst, hlRect, kMarkRow);
         }
 
-        // Item text — gold on selected, blue otherwise
         SDL_Color textColor = !m_enabled ? UIColors::Disabled
-                              : selected ? kSelText
-                                         : UIColors::LabelText;
+                              : selected ? m_colSelText
+                              : marked   ? kMarkText
+                                         : m_colText;
         SDL_Rect textRect = { m_rect.x + 6, iy, m_rect.w - 12, m_itemHeight };
         RenderText(dst, font, m_items[idx].text.c_str(), textRect, textColor, false, true);
     }
@@ -960,6 +1009,54 @@ void SDL2Image::Render(SDL_Surface* dst, TTF_Font* font) {
 
     SDL_Rect dstRect = { dstX, dstY, dstW, dstH };
     SDL_BlitScaled(m_surface, nullptr, dst, &dstRect);
+}
+
+// ============================================================================
+// SDL2ProgressBar
+// ============================================================================
+void SDL2ProgressBar::Render(SDL_Surface* dst, TTF_Font* font) {
+    if (!m_visible) return;
+
+    SDL_Rect r = m_rect;
+
+    // Sunken track: light-grey well with a dark-top / light-bottom bevel.
+    FillRect(dst, r, {200, 200, 200, 255});
+    DrawBevel(dst, r, 1, {110, 110, 110, 255}, {245, 245, 245, 255});
+
+    int innerW = r.w - 4;
+
+    if (m_indeterminate) {
+        // A chunk ~30% of the track sweeps left-to-right on a ~1.4s loop, then
+        // wraps. Communicates "working" without a meaningful percentage.
+        if (innerW > 0) {
+            int chunkW = std::max(8, innerW * 30 / 100);
+            int span   = innerW + chunkW;              // travel incl. off-track ends
+            int phase  = (int)(SDL_GetTicks() % 1400);
+            int pos    = (span * phase) / 1400 - chunkW; // -chunkW .. innerW
+            int x0     = std::max(0, pos);
+            int x1     = std::min(innerW, pos + chunkW);
+            if (x1 > x0) {
+                SDL_Rect fr = { r.x + 2 + x0, r.y + 2, x1 - x0, r.h - 4 };
+                FillGradientSymH(dst, fr, {24, 40, 120, 255}, {72, 104, 224, 255});
+            }
+        }
+        return;
+    }
+
+    // Determinate: filled portion (blue gradient, same family as the title bar).
+    int fillW = innerW > 0 ? (innerW * m_pct) / 100 : 0;
+    if (fillW > 0) {
+        SDL_Rect fr = { r.x + 2, r.y + 2, fillW, r.h - 4 };
+        FillGradientSymH(dst, fr, {24, 40, 120, 255}, {72, 104, 224, 255});
+    }
+
+    // "NN%" overlay, centered. Dark navy reads well on the light track (the
+    // bar's state at the start of a save) and stays legible on the blue fill.
+    if (m_showText && font) {
+        char buf[16];
+        snprintf(buf, sizeof(buf), "%d%%", m_pct);
+        RenderText(dst, font, buf, r, {20, 24, 60, 255}, true, true);
+    }
 }
 
 // ============================================================================
@@ -1486,6 +1583,28 @@ void SDL2Dialog::ShowNonModal(std::function<void(int)> onDone) {
     // Register with GameWindow for per-frame event routing and rendering
     if (m_gameWindow)
         m_gameWindow->RegisterDialog(this);
+}
+
+void SDL2Dialog::RaiseAndAlert() {
+    if (!m_dlgWindow)
+        return;
+#ifdef _WIN32
+    SDL_SysWMinfo wm; SDL_VERSION(&wm.version);
+    if (SDL_GetWindowWMInfo(m_dlgWindow, &wm)) {
+        HWND h = wm.info.win.window;
+        // Join the topmost band so we sit above the ALWAYS_ON_TOP detached
+        // Area/World windows. The per-frame HWND_TOP bump (Render) then keeps us
+        // at the top of that band — a plain HWND_TOP on a non-topmost window would
+        // be reclaimed by the topmost map within one frame.
+        ::SetWindowPos(h, HWND_TOPMOST, 0, 0, 0, 0,
+                       SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
+        // Take focus once so the alert is actually noticed (a deliberate one-shot
+        // grab — the per-frame path stays non-activating so we don't fight focus).
+        ::SetForegroundWindow(h);
+    }
+#else
+    SDL_RaiseWindow(m_dlgWindow);
+#endif
 }
 
 uint32_t SDL2Dialog::GetSDLWindowID() const {

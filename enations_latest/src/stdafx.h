@@ -17,14 +17,15 @@
 // CBitmap / CPalette / CList / CWinThread.
 #include <windows.h>
 #include <cassert>
+#include "en_assert.h"   // non-fatal, logged ASSERT (mirrors original MFC "Ignore")
 #ifndef ASSERT
-#define ASSERT(expr)        assert(expr)
+#define ASSERT(expr)        EN_ASSERT_NONFATAL(expr)
 #endif
 #ifndef VERIFY
-#define VERIFY(expr)        assert(expr)
+#define VERIFY(expr)        EN_ASSERT_NONFATAL(expr)
 #endif
 #ifndef ENSURE
-#define ENSURE(expr)        assert(expr)
+#define ENSURE(expr)        EN_ASSERT_NONFATAL(expr)
 #endif
 #ifndef TRACE
 #define TRACE(...)          ((void)0)

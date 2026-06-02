@@ -8,6 +8,8 @@
 
 class SDL2Panel;
 class GameWindow;
+class CUnit;
+class CVehicle;
 
 // Native SDL2 toolbar replacing CWndBar's PrintWindow capture.
 // Renders directly to a panel surface each frame.
@@ -33,6 +35,12 @@ public:
     // Set status text (called by game code)
     void SetStatusText(int line, const std::string& text, int importance = 0);
 
+    // Set a unit whose status (damage / materials / construction) should be
+    // drawn as ICON BARS on the given status line, matching the original
+    // _UnitShowStatus. Passing nullptr reverts the line to plain text.
+    // Mutually exclusive with SetStatusText for the same line.
+    void SetUnitStatus(int line, CUnit* pUnit);
+
     // Enable/disable a button by index
     void EnableButton(int index, bool enabled);
 
@@ -57,6 +65,18 @@ private:
     void RenderStatBar(SDL_Surface* dst, int idx, int x, int y, int w, int h);
     void RenderClock(SDL_Surface* dst, int x, int y, int w, int h);
     void RenderTextLine(SDL_Surface* dst, int line, int x, int y, int w, int h);
+
+    // Icon-based unit status (mirrors _UnitShowStatus / CStatInst). Used to
+    // draw a hovered building's / vehicle's resources as icons on a status line.
+    void RenderUnitStatus(SDL_Surface* dst, CUnit* pUnit, int x, int y, int w, int h);
+    int  GetNumStatusBars(CUnit* pUnit);
+    void RenderStatusBars(SDL_Surface* dst, CUnit* pUnit, int x, int y, int w, int numBars);
+    void Render3PieceBg(SDL_Surface* dst, int iconIdx, int x, int y, int w);
+    void RenderIconBar(SDL_Surface* dst, int iconIdx, int percent, int x, int y, int w, int h);
+    void RenderIconDone(SDL_Surface* dst, int iconIdx, int percent, int x, int y, int w, int h);
+    void RenderIconText(SDL_Surface* dst, int iconIdx, const char* text, int x, int y, int w, int h);
+    void RenderMaterialsBar(SDL_Surface* dst, CUnit* pUnit, int iconIdx, int x, int y, int w, int h);
+    void RenderCarrierCargo(SDL_Surface* dst, CVehicle* pVeh, int iconIdx, int x, int y, int w, int h);
 
     SDL2Panel*   m_panel = nullptr;
     GameWindow*  m_gw = nullptr;
@@ -89,8 +109,16 @@ private:
         int typBack = 0;                // Background type
         int nNeedIcon = 0;              // Animation frame count
     };
-    IconData m_iconData[7];  // ICON_RESEARCH(0)..ICON_BAR_TEXT(6)
+    IconData m_iconData[15]; // ICON_RESEARCH(0)..ICON_VEHICLES(14)
     int m_animFrame = 0;     // Animation counter
+    int m_statBarHt = 0;     // status-bar row height (ICON_DAMAGE cyBack)
+
+    // Unit whose status is drawn as icon bars on each line (nullptr = text).
+    // Set by SetUnitStatus when the cursor hovers a unit on the map; cleared
+    // by SetStatusText / SetUnitStatus(nullptr). The pointer's lifetime is
+    // managed by CWndBar: ClearStatusFunc() (called on unit death and when the
+    // cursor leaves the map) clears it before the CUnit is destroyed.
+    CUnit* m_statusUnit[2] = { nullptr, nullptr };
 
     // Status text.
     //   m_statusText[]    — what RenderTextLine actually draws each frame.
