@@ -271,6 +271,43 @@ static float TriBrightness( int z0, int z1, int z2, int z3, bool left )
     return b < 0.80f ? 0.80f : ( b > 1.40f ? 1.40f : b );
 }
 
+const SDL2Terrain::Tile* SDL2Terrain::TileForHex( CHex* phex, int iDir )
+{
+    if ( !phex )
+        return nullptr;
+    CTerrainSprite* psprite = phex->GetSprite( );
+    int             type    = psprite ? psprite->GetID( ) : -1;
+    if ( type < 0 || type >= kNumTypeNames )
+        return nullptr;
+
+    const char* typeName = kTypeName[type];
+    if ( !typeName[0] )                                   // forest → plain ground
+        return GetDefaultForType( "plain" );
+
+    if ( type == CHex::road )
+    {
+        int F = psprite->GetIndex( );
+        if ( F < 0 || F > 11 ) F = CHex::r_x;
+        int srcDir  = kRoadSrcDir[F];
+        int viewDir = ( ( iDir - kRoadRot[F] ) % 4 + 4 ) % 4;
+        const Tile* t = Get( "road", srcDir, std::string( kDirPrefix[viewDir] ) + "010000" );
+        return t ? t : GetDefaultForType( "road" );
+    }
+
+    int  variant = psprite->GetIndex( );
+    auto it      = s_byTypeVar.find( std::string( typeName ) + "_" + std::to_string( variant ) );
+    return ( it != s_byTypeVar.end() ) ? it->second : GetDefaultForType( typeName );
+}
+
+// T5: which terrain types feather (soft-blend) at their boundaries. Excludes
+// road / city / resources (engine CHex::Draw rules) and fields (farm plots stay
+// crisp — user). Excluding a type stops blending in BOTH directions.
+static bool Featherable( int type )
+{
+    return type >= 0 && type != CHex::road && type != CHex::city &&
+           type != CHex::resources && type != CHex::fields;
+}
+
 void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
 {
     if ( !s_loaded || !r )
@@ -293,6 +330,9 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
 
     // Batch quads by texture (SDL_RenderGeometry binds one texture per call).
     std::unordered_map<SDL_Texture*, std::vector<SDL_Vertex>> batches;
+    // T5: edge-feather triangles (neighbour tiles bled into shared edges),
+    // drawn in a 2nd pass over the opaque base so boundaries soft-blend.
+    std::unordered_map<SDL_Texture*, std::vector<SDL_Vertex>> featherBatches;
 
     for ( int y = iTopY;; ++y )
     {
@@ -328,34 +368,7 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
             if ( type < 0 || type >= kNumTypeNames )
                 continue;
 
-            // forest (type 2) has no terrain art — trees are sprites; draw a
-            // grass/plain ground under them (representative tile).
-            const char* typeName = kTypeName[type];
-            const Tile* tile      = nullptr;
-            if ( !typeName[0] )                       // forest → plain ground
-            {
-                tile = GetDefaultForType( "plain" );
-            }
-            else if ( type == CHex::road )
-            {
-                // Road facing → base source-dir + rotation; rotation selects a
-                // different camera-view tile (aa/ac/ae/ag), matching MakeRotated.
-                int F = psprite->GetIndex( );
-                if ( F < 0 || F > 11 ) F = CHex::r_x;
-                int srcDir  = kRoadSrcDir[F];
-                int viewDir = ( ( aa.m_iDir - kRoadRot[F] ) % 4 + 4 ) % 4;
-                tile = Get( "road", srcDir, std::string( kDirPrefix[viewDir] ) + "010000" );
-                if ( !tile ) tile = GetDefaultForType( "road" );
-            }
-            else
-            {
-                // Variant-accurate: GetIndex() is the per-type sprite index. For
-                // single-shape types this is the exact tile; coastline/river/swamp
-                // shapes are still base-shape (their MakeRotated table is TODO).
-                int  variant = psprite->GetIndex( );
-                auto it      = s_byTypeVar.find( std::string( typeName ) + "_" + std::to_string( variant ) );
-                tile = ( it != s_byTypeVar.end() ) ? it->second : GetDefaultForType( typeName );
-            }
+            const Tile* tile = TileForHex( phex, aa.m_iDir );  // forest/road/variant
             if ( !tile || !tile->tex[zoom] )
                 continue;
 
@@ -429,6 +442,46 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
             vR.color = grayCol( bR * fog[2] );
             vB.color = grayCol( bR * fog[3] );
             vb.push_back( vT ); vb.push_back( vR ); vb.push_back( vB );
+
+            // T5 edge feather: for each diamond edge bordering a DIFFERENT
+            // featherable type, bleed the neighbour's tile in from that edge with
+            // a soft alpha gradient (≈half at the edge → 0 at the diamond centre).
+            // Both hexes do this mutually → a smooth INOUT-style blend, replacing
+            // the original checkerboard dither. road/city/resources never feather.
+            if ( Featherable( type ) )
+            {
+                static const SDL_FPoint fuv[4] = { {0.f,0.5f}, {0.5f,0.f}, {1.f,0.5f}, {0.5f,1.f} };
+                static const int nbrDX[4] = { 0, 1, 0, -1 };
+                static const int nbrDY[4] = { -1, 0, 1, 0 };
+                const Uint8 kFeatherA = 205;                       // ~0.8 blend at the edge (strong)
+                float cxF = ( pts[0].x + pts[1].x + pts[2].x + pts[3].x ) * 0.25f;
+                float cyF = ( pts[0].y + pts[1].y + pts[2].y + pts[3].y ) * 0.25f;
+                Uint8 gc  = (Uint8)__min( 255, (int)( ( fog[0]+fog[1]+fog[2]+fog[3] ) * 0.25f * 255.0f ) );
+
+                for ( int e = 0; e < 4; ++e )
+                {
+                    CHexCoord nhc( hx + nbrDX[e], hy + nbrDY[e] ); nhc.Wrap( );
+                    CHex* pn = theMap.GetHex( nhc );
+                    if ( !pn ) continue;
+                    CTerrainSprite* ns = pn->GetSprite( );
+                    int ntype = ns ? ns->GetID( ) : -1;
+                    if ( !Featherable( ntype ) || ntype == type ) continue;
+                    const Tile* ntile = TileForHex( pn, aa.m_iDir );
+                    if ( !ntile || !ntile->tex[zoom] ) continue;
+
+                    int   c0 = e, c1 = ( e + 1 ) & 3;
+                    Uint8 g0 = (Uint8)__min( 255, (int)( fog[c0] * 255.0f ) );
+                    Uint8 g1 = (Uint8)__min( 255, (int)( fog[c1] * 255.0f ) );
+
+                    SDL_Vertex fa, fb, fc;
+                    fa.position = { (float)pts[c0].x, (float)pts[c0].y }; fa.tex_coord = fuv[c0]; fa.color = { g0, g0, g0, kFeatherA };
+                    fb.position = { (float)pts[c1].x, (float)pts[c1].y }; fb.tex_coord = fuv[c1]; fb.color = { g1, g1, g1, kFeatherA };
+                    fc.position = { cxF, cyF };                          fc.tex_coord = { 0.5f, 0.5f }; fc.color = { gc, gc, gc, 0 };
+
+                    std::vector<SDL_Vertex>& fvb = featherBatches[ntile->tex[zoom]];
+                    fvb.push_back( fa ); fvb.push_back( fb ); fvb.push_back( fc );
+                }
+            }
         }
 
         // Stop once we're below the viewport and rows have gone empty.
@@ -439,5 +492,8 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
     }
 
     for ( auto& b : batches )
+        SDL_RenderGeometry( r, b.first, b.second.data(), (int)b.second.size(), nullptr, 0 );
+    // T5: feather pass on top (textures are BLEND mode, vertex alpha gradient).
+    for ( auto& b : featherBatches )
         SDL_RenderGeometry( r, b.first, b.second.data(), (int)b.second.size(), nullptr, 0 );
 }

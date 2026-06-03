@@ -14,6 +14,7 @@
 struct SDL_Renderer;
 struct SDL_Texture;
 class  CAnimAtr;
+class  CHex;
 
 class SDL2Terrain
 {
@@ -66,4 +67,8 @@ private:
 
     static std::string MakeKey( const std::string& type, int variant,
                                 const std::string& stem );
+
+    // Resolve the tile a hex should draw (forest→plain, road facing+rotation,
+    // else variant). Shared by the main pass and the T5 edge-feather pass.
+    static const Tile* TileForHex( CHex* phex, int iDir );
 };
