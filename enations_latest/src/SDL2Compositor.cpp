@@ -150,6 +150,13 @@ SDL2Panel* SDL2Compositor::FindPanel(const std::string& name) const {
     return nullptr;
 }
 
+bool SDL2Compositor::AnyPanelInteracting() const {
+    for (auto& p : m_panels)
+        if (p && p->IsInteracting())
+            return true;
+    return false;
+}
+
 void SDL2Compositor::ResetWindowLayout() {
     // Forget every remembered placement so closed/recreated windows no longer
     // snap back to wherever they last were.
@@ -160,15 +167,22 @@ void SDL2Compositor::ResetWindowLayout() {
     const int tb = SDL2Panel::TITLE_BAR_HT;
     const int margin = 8;
 
-    // Default geometry for the well-known game windows. The area map gets the
-    // bulk of the screen on the left; the minimap + unit lists stack down the
-    // right edge — mirroring the original Enemy Nations arrangement.
-    const int rightW   = 320;
-    const int rightX   = W - rightW - margin;
+    // Default geometry mirrors the original Enemy Nations startup arrangement:
+    // a narrow LEFT column holds the world/radar minimap (top) with the unit
+    // lists stacked below it, and the area map fills the remaining width on the
+    // RIGHT. (The shipped game put the world map at x=0 over the left ~1/5 of the
+    // screen and the area map from there to the right edge.)
+    const int leftW    = 320;
+    const int leftX    = margin;
     const int topY     = tb + margin;
     const int mapH     = 300;
     const int listY    = topY + mapH + margin;
-    const int listH    = (H - listY - margin);
+    const int listSpan = (H - listY - margin);
+    const int vehH     = (listSpan - margin) / 2;   // split the column below the
+    const int bldgY    = listY + vehH + margin;     // minimap between the two lists
+    const int bldgH    = (H - bldgY - margin);
+
+    const int areaX    = leftX + leftW + margin;     // area map starts right of the column
 
     int areaCascade = 0;  // offset successive area maps so they don't fully overlap
 
@@ -181,17 +195,17 @@ void SDL2Compositor::ResetWindowLayout() {
             // Repositioned automatically by the area's resize callback below.
             continue;
         } else if (n.rfind("area", 0) == 0) {
-            nx = margin + areaCascade;
+            nx = areaX + areaCascade;
             ny = topY  + areaCascade;
-            nw = (W - rightW - 3 * margin) - areaCascade;
+            nw = (W - areaX - margin) - areaCascade;
             nh = (H - ny - margin);
             areaCascade += 30;
         } else if (n == "world" || n == "radar") {
-            nx = rightX; ny = topY;  nw = rightW; nh = mapH;
+            nx = leftX; ny = topY;  nw = leftW; nh = mapH;
         } else if (n == "vehicles") {
-            nx = rightX; ny = listY; nw = rightW; nh = listH;
+            nx = leftX; ny = listY; nw = leftW; nh = vehH;
         } else if (n == "buildings") {
-            nx = rightX - rightW - margin; ny = listY; nw = rightW; nh = listH;
+            nx = leftX; ny = bldgY; nw = leftW; nh = bldgH;
         } else {
             continue;  // toolbar/status bar and anything else: leave alone
         }
@@ -213,7 +227,7 @@ void SDL2Compositor::Composite() {
     if (!m_window || !m_window->GetWindow())
         return;
 
-    SDL_Surface* windowSurface = SDL_GetWindowSurface(m_window->GetWindow());
+    SDL_Surface* windowSurface = m_window->GetPresentSurface();  // T0: software surface or renderer back-buffer
     if (!windowSurface)
         return;
 
@@ -246,7 +260,7 @@ void SDL2Compositor::Composite() {
     }
 
     // Step 4: Present the main window
-    SDL_UpdateWindowSurface(m_window->GetWindow());
+    m_window->PresentSurface();
 
     // Step 5: Render detached panels to their own windows — but only the ones
     // whose own content actually changed. A detached panel lives in its own OS

@@ -5,6 +5,9 @@
 #include "SDL2MainMenu.h"  // CreateSurfaceFromDIB
 #include "bmbutton.h"      // must precede bitmaps.h (provides CBmBtnData)
 #include "bitmaps.h"       // theBitmaps, DIB_GOLD, DIB_BORDER_HORZ/VERT
+#include "w22_settings.h"  // w22::GetProfileInt — [Advanced] Renderer flag (T0b)
+#include "SDL2Terrain.h"    // T2: load terrain tile textures on the area renderer
+#include "base.h"           // T2.3: CAnimAtr::GetSpriteLayerSurface for compositing
 
 #include <SDL.h>
 #include <SDL_ttf.h>
@@ -217,17 +220,31 @@ SDL2Panel::~SDL2Panel() {
 }
 
 void SDL2Panel::CreateSurface() {
-    FreeSurface();
-    if (m_width <= 0 || m_height <= 0)
+    if (m_width <= 0 || m_height <= 0) {
+        FreeSurface();
         return;
+    }
 
-    m_surface = SDL_CreateRGBSurface(
+    SDL_Surface* fresh = SDL_CreateRGBSurface(
         0, m_width, m_height, 32,
         0x00FF0000, 0x0000FF00, 0x000000FF, 0);
 
-    if (!m_surface) {
+    if (!fresh) {
         LogPanel("ERROR: Failed to create surface for panel '" + m_name + "': " + SDL_GetError());
+        return;  // keep the old surface rather than dropping to nothing
     }
+
+    // Carry the previous content into the resized surface. A live resize fires
+    // SIZE_CHANGED ~10x/sec; each one lands here, and a freshly-allocated (black)
+    // surface presented before the owner repaints made the window flicker. Blitting
+    // the old pixels in (clipped to the overlap) shows the prior frame until the
+    // next real repaint, so the resize looks smooth instead of strobing black.
+    if (m_surface) {
+        SDL_SetSurfaceBlendMode(m_surface, SDL_BLENDMODE_NONE);
+        SDL_BlitSurface(m_surface, nullptr, fresh, nullptr);
+        SDL_FreeSurface(m_surface);
+    }
+    m_surface = fresh;
 }
 
 void SDL2Panel::FreeSurface() {
@@ -825,10 +842,109 @@ void SDL2Panel::Detach(SDL_Window* ownerWindow) {
         m_y = wy + tbH;
     }
 
+    MaybeCreateOwnRenderer();  // T0b: GPU present for this window if the flag is on
+
     SDL_RaiseWindow(m_ownWindow);
     LogPanel("Detached panel '" + m_name + "' to own window (ID=" + std::to_string(m_ownWindowID) + ")");
     m_dirty = true;
     InvokeMoveCallback();  // sync the backing MFC window to the new screen pos
+}
+
+// ---- T0b: optional GPU present path for the detached window ----
+// Mirrors GameWindow's main-window present abstraction. When [Advanced] Renderer
+// is on, the whole detached frame (content + chrome) is composited into m_ownBack
+// and presented through m_ownRenderer. This is the window/surface the GPU terrain
+// mesh (T2) will render into; for T0b it just re-presents today's composite, so
+// the result is pixel-parity with the software path.
+void SDL2Panel::MaybeCreateOwnRenderer() {
+    if (m_ownRenderer || !m_ownWindow)
+        return;
+    if (w22::GetProfileInt("Advanced", "Renderer", 0) == 0)
+        return;  // software present (default) — unchanged behavior
+    // No PRESENT_VSYNC (same rationale as the main window: present is called
+    // per content-change, not from a single per-frame chokepoint yet).
+    m_ownRenderer = SDL_CreateRenderer(m_ownWindow, -1, SDL_RENDERER_ACCELERATED);
+    if (!m_ownRenderer) {
+        LogPanel("WARN: own-window SDL_CreateRenderer failed for '" + m_name +
+                 "', staying software: " + SDL_GetError());
+        return;
+    }
+    SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "1");
+    EnsureOwnBack();
+    LogPanel("T0b: GPU present active for detached panel '" + m_name + "'");
+
+    // T2: the area-map panel is the terrain-bearing window — load the baked
+    // terrain tile textures onto its renderer so the GPU mesh (T2.3) can draw.
+    if (m_name.rfind("area", 0) == 0) {
+        int n = SDL2Terrain::Load(m_ownRenderer);
+        LogPanel("T2: loaded " + std::to_string(n) + " terrain tiles for '" + m_name + "'");
+    }
+}
+
+void SDL2Panel::DestroyOwnRenderer() {
+    // T2: terrain textures live on the area renderer — free them first.
+    if (m_name.rfind("area", 0) == 0 && SDL2Terrain::IsLoaded())
+        SDL2Terrain::Unload();
+    if (m_ownBackTex) { SDL_DestroyTexture(m_ownBackTex); m_ownBackTex = nullptr; }
+    if (m_ownBack)    { SDL_FreeSurface(m_ownBack);       m_ownBack = nullptr; }
+    if (m_ownRenderer){ SDL_DestroyRenderer(m_ownRenderer); m_ownRenderer = nullptr; }
+    m_ownBackW = m_ownBackH = 0;
+}
+
+SDL_Surface* SDL2Panel::EnsureOwnBack() {
+    if (!m_ownRenderer)
+        return nullptr;
+    int w = 0, h = 0;
+    SDL_GetRendererOutputSize(m_ownRenderer, &w, &h);
+    if (w <= 0 || h <= 0)
+        return nullptr;
+    if (m_ownBack && m_ownBackW == w && m_ownBackH == h)
+        return m_ownBack;
+    if (m_ownBackTex) { SDL_DestroyTexture(m_ownBackTex); m_ownBackTex = nullptr; }
+    if (m_ownBack)    { SDL_FreeSurface(m_ownBack);       m_ownBack = nullptr; }
+    m_ownBack = SDL_CreateRGBSurfaceWithFormat(0, w, h, 32, SDL_PIXELFORMAT_ARGB8888);
+    m_ownBackTex = SDL_CreateTexture(m_ownRenderer, SDL_PIXELFORMAT_ARGB8888,
+                                     SDL_TEXTUREACCESS_STREAMING, w, h);
+    if (!m_ownBack || !m_ownBackTex) {
+        LogPanel("ERROR: own-window back-buffer alloc failed for '" + m_name + "'");
+        return nullptr;
+    }
+    // BLEND so the T2.3 overlay's transparent content lets GPU terrain show through.
+    SDL_SetTextureBlendMode(m_ownBackTex, SDL_BLENDMODE_BLEND);
+    m_ownBackW = w; m_ownBackH = h;
+    return m_ownBack;
+}
+
+void SDL2Panel::PresentOwn() {
+    if (!m_ownRenderer || !m_ownBack || !m_ownBackTex)
+        return;
+
+    // T2.3 layered composite (terrain window): GPU terrain mesh on the bottom,
+    // then the transparent overlay (color-keyed sprite layer + chrome) on top.
+    if (m_terrainAA && SDL2Terrain::IsLoaded()) {
+        int tbH = GetTitleBarHeight();
+        SDL_SetRenderDrawColor(m_ownRenderer, 0, 0, 0, 255);
+        SDL_RenderClear(m_ownRenderer);
+
+        // Terrain mesh into the content area (below the title bar). The mesh
+        // coords are content-relative, so a viewport offset by tbH places them.
+        SDL_Rect vp = { 0, tbH, m_width, m_height };
+        SDL_RenderSetViewport(m_ownRenderer, &vp);
+        SDL2Terrain::Render(m_ownRenderer, *m_terrainAA);
+        SDL_RenderSetViewport(m_ownRenderer, nullptr);
+
+        // Overlay: m_ownBack = sprites (opaque) + chrome (opaque), content
+        // transparent → terrain shows through. m_ownBackTex is BLEND mode.
+        SDL_UpdateTexture(m_ownBackTex, nullptr, m_ownBack->pixels, m_ownBack->pitch);
+        SDL_RenderCopy(m_ownRenderer, m_ownBackTex, nullptr, nullptr);
+        SDL_RenderPresent(m_ownRenderer);
+        return;
+    }
+
+    SDL_UpdateTexture(m_ownBackTex, nullptr, m_ownBack->pixels, m_ownBack->pitch);
+    SDL_RenderClear(m_ownRenderer);
+    SDL_RenderCopy(m_ownRenderer, m_ownBackTex, nullptr, nullptr);
+    SDL_RenderPresent(m_ownRenderer);
 }
 
 void SDL2Panel::Attach(GameWindow* mainWin) {
@@ -859,6 +975,7 @@ void SDL2Panel::DestroyOwnWindow() {
         // recreated under the same name (e.g. an area map closed then reopened
         // from the status bar) comes back in the same spot.
         RememberPlacement();
+        DestroyOwnRenderer();  // T0b: free renderer/back-buffer before the window
         SDL_DestroyWindow(m_ownWindow);
         m_ownWindow = nullptr;
         m_ownWindowID = 0;
@@ -869,33 +986,55 @@ void SDL2Panel::RenderDetached() {
     if (!m_ownWindow || !m_visible || !m_surface)
         return;
 
-    SDL_Surface* winSurf = SDL_GetWindowSurface(m_ownWindow);
-    if (!winSurf)
-        return;
-
-    // After a manual resize SDL can hand back a window surface still sized to
-    // the OLD dimensions; clearing/blitting into it leaves the newly-exposed
-    // strip showing stale backbuffer pixels. Force a fresh surface bound to the
-    // current window size whenever they disagree.
-    int wW = 0, wH = 0;
-    SDL_GetWindowSize(m_ownWindow, &wW, &wH);
-    if (winSurf->w != wW || winSurf->h != wH) {
-        SDL_DestroyWindowSurface(m_ownWindow);
+    // T0b: in renderer mode, composite into the offscreen back-buffer (sized to
+    // the renderer output, which tracks the window) instead of the window surface
+    // — SDL forbids SDL_GetWindowSurface on a window that has a renderer.
+    SDL_Surface* winSurf;
+    if (m_ownRenderer) {
+        winSurf = EnsureOwnBack();
+        if (!winSurf)
+            return;
+    } else {
         winSurf = SDL_GetWindowSurface(m_ownWindow);
-        if (!winSurf) return;
+        if (!winSurf)
+            return;
+
+        // After a manual resize SDL can hand back a window surface still sized to
+        // the OLD dimensions; clearing/blitting into it leaves the newly-exposed
+        // strip showing stale backbuffer pixels. Force a fresh surface bound to the
+        // current window size whenever they disagree.
+        int wW = 0, wH = 0;
+        SDL_GetWindowSize(m_ownWindow, &wW, &wH);
+        if (winSurf->w != wW || winSurf->h != wH) {
+            SDL_DestroyWindowSurface(m_ownWindow);
+            winSurf = SDL_GetWindowSurface(m_ownWindow);
+            if (!winSurf) return;
+        }
     }
 
     int tbH = GetTitleBarHeight();
     int W = winSurf->w, H = winSurf->h;
 
-    // Clear background
-    SDL_FillRect(winSurf, nullptr, SDL_MapRGB(winSurf->format, 0, 0, 0));
+    // T2.3: GPU-terrain window. Build winSurf (m_ownBack) as a transparent
+    // OVERLAY — only the color-keyed sprite layer + chrome are opaque; the
+    // content area stays transparent so the GPU terrain mesh (drawn in
+    // PresentOwn, underneath) shows through.
+    bool bGpuTerrain = m_ownRenderer && m_terrainAA && SDL2Terrain::IsLoaded();
 
-    // Content below the title bar (full width; the frame overlays the outer
-    // few px of the edges, so the content origin stays at (0, tbH) and
-    // selection coordinates are unaffected).
     SDL_Rect dstRect = { 0, tbH, m_width, m_height };
-    SDL_BlitSurface(m_surface, nullptr, winSurf, &dstRect);
+    if (bGpuTerrain) {
+        SDL_FillRect(winSurf, nullptr, 0x00000000);   // transparent
+        SDL_Surface* spriteSurf = m_terrainAA->GetSpriteLayerSurface();
+        if (spriteSurf) {
+            SDL_SetColorKey(spriteSurf, SDL_TRUE,
+                            SDL_MapRGB(spriteSurf->format, 255, 0, 255));
+            SDL_BlitSurface(spriteSurf, nullptr, winSurf, &dstRect);  // sprites only
+        }
+    } else {
+        // Clear background, then the full CPU composite (terrain+sprites).
+        SDL_FillRect(winSurf, nullptr, SDL_MapRGB(winSurf->format, 0, 0, 0));
+        SDL_BlitSurface(m_surface, nullptr, winSurf, &dstRect);
+    }
 
     // Purple title bar across the top (full width — drawn at the same (0,0)
     // frame the button hit-testing assumes). Drawn before the gold so the
@@ -912,7 +1051,10 @@ void SDL2Panel::RenderDetached() {
     else
         DrawRaisedBorder(winSurf, 0, 0, W, H, 4);
 
-    SDL_UpdateWindowSurface(m_ownWindow);
+    if (m_ownRenderer)
+        PresentOwn();                       // T0b: upload back-buffer + present via GPU
+    else
+        SDL_UpdateWindowSurface(m_ownWindow);
     m_dirty = false;
 }
 

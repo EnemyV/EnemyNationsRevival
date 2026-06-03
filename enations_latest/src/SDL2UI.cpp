@@ -1159,7 +1159,7 @@ void SDL2Dialog::Render() {
 
     // Draw the dialog into the main window's surface at (m_x, m_y).
     // Widget coords are baked relative to (m_x, m_y) so we always use the main surface.
-    SDL_Surface* mainSurface = SDL_GetWindowSurface(m_gameWindow->GetWindow());
+    SDL_Surface* mainSurface = m_gameWindow->GetPresentSurface();  // T0: software surface or renderer back-buffer
     if (!mainSurface) return;
 
     // Restore captured background if falling back to main window display
@@ -1206,8 +1206,16 @@ void SDL2Dialog::Render() {
     }
 
     TTF_Font* widgetFont = GetFont(13);
-    for (auto& widget : m_widgets)
-        widget->Render(mainSurface, widgetFont);
+    for (auto& widget : m_widgets) {
+        // Honour a per-widget font-size override (e.g. larger race-pick text),
+        // falling back to the shared 13pt widget font.
+        TTF_Font* wf = widgetFont;
+        if (widget->GetFontSize() > 0) {
+            TTF_Font* ov = GetFont(widget->GetFontSize());
+            if (ov) wf = ov;
+        }
+        widget->Render(mainSurface, wf);
+    }
     // Focus highlight in a SECOND pass, after all widgets are drawn — otherwise a
     // neighbouring widget (e.g. the next stacked button) renders over the bottom
     // edge of the focus box and the box looks clipped.
@@ -1269,7 +1277,7 @@ void SDL2Dialog::Render() {
             SDL_UpdateWindowSurface(m_dlgWindow);
         }
     } else {
-        SDL_UpdateWindowSurface(m_gameWindow->GetWindow());
+        m_gameWindow->PresentSurface();
     }
 }
 
@@ -1446,7 +1454,7 @@ bool SDL2Dialog::HandleEvent(SDL_Event& event) {
 }
 
 void SDL2Dialog::CaptureBackground() {
-    SDL_Surface* winSurface = SDL_GetWindowSurface(m_gameWindow->GetWindow());
+    SDL_Surface* winSurface = m_gameWindow->GetPresentSurface();  // T0: software surface or renderer back-buffer
     if (!winSurface) return;
 
     if (m_background) SDL_FreeSurface(m_background);

@@ -76,6 +76,10 @@ public:
     bool IsResizable() const { return m_resizable; }
     bool IsDragging() const { return m_dragging; }
     bool IsResizing() const { return m_resizing; }
+    // True while the user is actively moving/resizing this panel — whether it's a
+    // composited panel or a detached own-window. Used to lift the gameplay render
+    // throttle so the drag tracks smoothly.
+    bool IsInteracting() const { return m_dragging || m_resizing || m_dDragging || m_dResizing; }
 
     // Title bar height. Movable panels draw their own purple title bar in BOTH
     // composited and detached (own borderless OS window) modes — detached game
@@ -116,7 +120,14 @@ public:
     void Detach(SDL_Window* ownerWindow);    // Create own SDL_Window, owned by given window
     void Attach(class GameWindow* mainWin = nullptr); // Destroy own window, return to compositor
     bool IsDetached() const { return m_ownWindow != nullptr; }
+    // T0b/T1: true when this detached window presents via its own SDL_Renderer
+    // (the GPU present path). Used to gate the T1 terrain/sprite layer split.
+    bool HasOwnRenderer() const { return m_ownRenderer != nullptr; }
     SDL_Window* GetOwnWindow() const { return m_ownWindow; }
+
+    // T2: the area panel hands us its CAnimAtr so PresentOwn can draw the GPU
+    // terrain mesh for its window. nullptr = not a terrain window.
+    void SetTerrainAnimAtr( const class CAnimAtr* aa ) { m_terrainAA = aa; }
     uint32_t    GetOwnWindowID() const { return m_ownWindowID; }
 
     // Render to own detached window (called by compositor for detached panels)
@@ -225,6 +236,20 @@ private:
     SDL_Window* m_ownWindow   = nullptr;
     uint32_t    m_ownWindowID = 0;
     bool        m_suppressSync = false;  // skip SDL_SetWindowPos/Size during temp swaps
+
+    // T0b: optional GPU present for the detached window (gated by [Advanced]
+    // Renderer). When set, RenderDetached composites the frame into m_ownBack
+    // and presents it via m_ownRenderer instead of SDL_GetWindowSurface — this
+    // is the surface/window the GPU terrain mesh (T2) will render into.
+    struct SDL_Renderer* m_ownRenderer = nullptr;
+    struct SDL_Surface*  m_ownBack     = nullptr;   // offscreen frame buffer
+    struct SDL_Texture*  m_ownBackTex  = nullptr;   // streaming texture for m_ownBack
+    int m_ownBackW = 0, m_ownBackH = 0;
+    const class CAnimAtr* m_terrainAA = nullptr;  // T2: area-map view, else null
+    void MaybeCreateOwnRenderer();   // called from Detach() if the flag is on
+    void DestroyOwnRenderer();       // called from DestroyOwnWindow()
+    SDL_Surface* EnsureOwnBack();    // (re)create m_ownBack to renderer output size
+    void PresentOwn();               // upload m_ownBack + RenderCopy + Present
 
     // Manual detached-resize state
     bool m_dResizing   = false;
