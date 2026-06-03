@@ -125,7 +125,10 @@ static SDL_Texture* LoadPng( SDL_Renderer* r, const std::string& path, int& outW
     {
         SDL_UpdateTexture( tex, nullptr, px, w * 4 );
         SDL_SetTextureBlendMode( tex, SDL_BLENDMODE_BLEND );
-        SDL_SetTextureScaleMode( tex, SDL_ScaleModeNearest );
+        // T3: bilinear sampling (was nearest) — smooths the 1996 blockiness. The
+        // Square corner-fill keeps the inscribed-diamond UVs from bleeding the
+        // colour key, and per-zoom LOD picks the right base size before filtering.
+        SDL_SetTextureScaleMode( tex, SDL_ScaleModeLinear );
         outW = w; outH = h;
     }
     stbi_image_free( px );
@@ -241,6 +244,13 @@ const SDL2Terrain::Tile* SDL2Terrain::Get( const std::string& type, int variant,
 // CSpriteDIB::TerrainGetShadeIndex (sprite.cpp:378) but WITHOUT the 8-level
 // quantization — light from the right, SHADE_CONTRAST=14, range ~[0.6,1.3]
 // (the original Shade() lightness span). Flat ground → 1.0 (neutral).
+// Slope brightness for one triangle (engine TerrainGetShadeIndex curve, but
+// continuous). Tuned a touch brighter than the original: neutral ~1.06, a
+// higher floor (less aggressive dark dips) — user wanted brighter terrain.
+// Fog dim is applied separately by the caller.
+static const float kFogDim = 0.58f;   // invisible (out-of-sight) hexes — dim, but
+                                      // between the old too-light and too-dark (darker side)
+
 static float TriBrightness( int z0, int z1, int z2, int z3, bool left )
 {
     const int SC = 14;
@@ -257,8 +267,8 @@ static float TriBrightness( int z0, int z1, int z2, int z3, bool left )
         shadeF = den > 0.0f ? ( (float)kk * (float)kk * 2.0f / den ) : 4.0f;
         if ( shadeF > 7.0f ) shadeF = 7.0f;
     }
-    float b = 1.0f + 0.1f * ( shadeF - 4.0f );      // shade 4 = neutral
-    return b < 0.6f ? 0.6f : ( b > 1.3f ? 1.3f : b );
+    float b = 1.06f + 0.09f * ( shadeF - 4.0f );    // neutral 1.06 (brighter)
+    return b < 0.80f ? 0.80f : ( b > 1.40f ? 1.40f : b );
 }
 
 void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
@@ -283,7 +293,6 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
 
     // Batch quads by texture (SDL_RenderGeometry binds one texture per call).
     std::unordered_map<SDL_Texture*, std::vector<SDL_Vertex>> batches;
-    const SDL_Color white = { 255, 255, 255, 255 };
 
     for ( int y = iTopY;; ++y )
     {
@@ -353,17 +362,23 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
             SDL_Texture* tex = tile->tex[zoom];
             std::vector<SDL_Vertex>& vb = batches[tex];
 
-            // T4 slope shading (only on shaded land types; water/coast stay flat).
-            SDL_Color colL = white, colR = white;
+            // T4 slope shading + T6 fog-of-war dim. Shaded land gets per-triangle
+            // slope brightness; water/coast stay at full colour; invisible
+            // (out-of-sight) hexes are darkened by kFogDim.
+            bool  bInvis = ( phex->GetVisibility() == 0 );
+            float bL = 1.0f, bR = 1.0f;
             if ( tile->shade )
             {
                 int z0 = c3d[0].m_fixZ.Round(), z1 = c3d[1].m_fixZ.Round();
                 int z2 = c3d[2].m_fixZ.Round(), z3 = c3d[3].m_fixZ.Round();
-                float bL = TriBrightness( z0, z1, z2, z3, true );
-                float bR = TriBrightness( z0, z1, z2, z3, false );
-                colL.r = colL.g = colL.b = (Uint8)__min( 255, (int)( bL * 255.0f ) );
-                colR.r = colR.g = colR.b = (Uint8)__min( 255, (int)( bR * 255.0f ) );
+                bL = TriBrightness( z0, z1, z2, z3, true );
+                bR = TriBrightness( z0, z1, z2, z3, false );
             }
+            if ( bInvis ) { bL *= kFogDim; bR *= kFogDim; }
+            SDL_Color colL, colR;
+            colL.a = colR.a = 255;
+            colL.r = colL.g = colL.b = (Uint8)__min( 255, (int)( bL * 255.0f ) );
+            colR.r = colR.g = colR.b = (Uint8)__min( 255, (int)( bR * 255.0f ) );
 
             // Diamond-vertex UVs: the tile's edge-midpoints land on the 4 diamond
             // vertices (TerrainDrawQuad maps U=screen-x from Left, V=screen-y from
