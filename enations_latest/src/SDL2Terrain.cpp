@@ -40,6 +40,17 @@ static const int kRoadSrcDir[12] = { 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 4 };
 static const int kRoadRot[12]    = { 0, 1, 0, 1, 2, 3, 1, 2, 3, 0, 0, 0 };
 static const char* const kDirPrefix[4] = { "aa", "ac", "ae", "ag" };
 
+// Coastline facing (0-38) → (source coastlne dir 0-11, rotation). Base sprites
+// load at indices 0,4,8,12,13,17,21,25,26,30,34,38 ← coastlne/0..11 (TERRAIN.MIF),
+// with MakeRotated filling the gaps (sprtinit.cpp:123-151). Coastline tiles are
+// single-shape per dir at damage "a"; not bDrawVert, not shaded.
+static const int kCoastSrcDir[39] = {
+    0, 0, 0, 0,  1, 1, 1, 1,  2, 2, 2, 2,  3,  4, 4, 4, 4,  5, 5, 5, 5,
+    6, 6, 6, 6,  7,  8, 8, 8, 8,  9, 9, 9, 9,  10, 10, 10, 10,  11 };
+static const int kCoastRot[39] = {
+    0, 1, 2, 3,  0, 1, 2, 3,  0, 1, 2, 3,  0,  0, 1, 2, 3,  0, 1, 2, 3,
+    0, 1, 2, 3,  0,  0, 1, 2, 3,  0, 1, 2, 3,  0, 1, 2, 3,  0 };
+
 static void LogTerrain( const std::string& msg )
 {
     std::ofstream log( "SDL2Terrain.log", std::ios::app );
@@ -294,6 +305,16 @@ const SDL2Terrain::Tile* SDL2Terrain::TileForHex( CHex* phex, int iDir )
         int viewDir = ( ( iDir - kRoadRot[F] ) % 4 + 4 ) % 4;
         const Tile* t = Get( "road", srcDir, std::string( kDirPrefix[viewDir] ) + "010000" );
         return t ? t : GetDefaultForType( "road" );
+    }
+
+    if ( type == CHex::coastline )
+    {
+        int F = psprite->GetIndex( );
+        if ( F < 0 || F > 38 ) F = 0;
+        int srcDir  = kCoastSrcDir[F];
+        int viewDir = ( ( iDir - kCoastRot[F] ) % 4 + 4 ) % 4;
+        const Tile* t = Get( "coastline", srcDir, std::string( kDirPrefix[viewDir] ) + "00a000" );
+        return t ? t : GetDefaultForType( "coastline" );
     }
 
     int  variant = psprite->GetIndex( );
