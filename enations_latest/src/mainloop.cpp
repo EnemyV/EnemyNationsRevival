@@ -964,7 +964,10 @@ void CConquerApp::GraphicsEnginePump( )
                 extern CPathMap thePathMap;
                 extern CPathMgr thePathMgr;
                 extern long     g_mfcIterPosLive;
-                Perf::GaugeSet( "path.cells",  (int64_t)( thePathMap.GetMapCellCount() + thePathMgr.GetMapCellCount() ) );
+                extern int      AiTotalPathCells( );
+                // Include the per-AI path maps: AI pathing now runs on per-AI
+                // CPathMap instances, so the two globals no longer see it.
+                Perf::GaugeSet( "path.cells",  (int64_t)( thePathMap.GetMapCellCount() + thePathMgr.GetMapCellCount() + AiTotalPathCells() ) );
                 Perf::GaugeSet( "mfc.iterpos", (int64_t)g_mfcIterPosLive );
             }
 

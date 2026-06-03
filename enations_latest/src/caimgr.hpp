@@ -98,6 +98,9 @@ public:
 	~CAIMgr();
 
 	int GetPlayer( void );
+	// Live CCell scratch count of THIS AI's per-AI path map (0 if none). For the
+	// EN_PERF "path.cells" gauge only — read once/sec, diagnostic.
+	int GetPathMapCellCount( void ) const;
 	BOOL IsAI( void );
 	void SetAI( BOOL );
 	void SetDead( void );

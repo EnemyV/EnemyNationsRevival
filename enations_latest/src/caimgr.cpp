@@ -3588,6 +3588,13 @@ void CAIMgr::CreateManagers( void )
 // BUGBUG consider moving the plMapList of CAUnits
 // of this manager to be a member of CAIMap class
 //
+int CAIMgr::GetPathMapCellCount( void ) const
+{
+    if ( m_pMap == NULL || m_pMap->m_pMapUtil == NULL || m_pMap->m_pMapUtil->m_pPathMap == NULL )
+        return 0;
+    return m_pMap->m_pMapUtil->m_pPathMap->GetMapCellCount( );
+}
+
 void CAIMgr::CreateMap( void )
 {
     ASSERT_VALID( this );

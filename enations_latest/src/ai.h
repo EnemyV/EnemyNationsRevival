@@ -20,5 +20,6 @@ void AiLoadComplete( void );
 BOOL AiOppoFire (CUnit * pUnit, CUnit const * pTarget);
 int  AiNextRsrch (CPlayer * pPlyr, int iCompleted);
 void AiCityCenter (CHexCoord & _hex);
+int  AiTotalPathCells ();   // sum of every AI's per-AI path-map scratch cells (EN_PERF gauge)
 
 #endif

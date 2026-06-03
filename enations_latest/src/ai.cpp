@@ -206,6 +206,26 @@ BOOL AiNewPlayer( CPlayer* pPlr )
     return ( FALSE );
 }
 
+// Sum the live CCell scratch across every AI's per-AI path map. Diagnostic only
+// (EN_PERF "path.cells" gauge): AI pathing moved off the global thePathMap to
+// per-AI instances, so the global's count no longer reflects AI activity. Called
+// once/sec on the main thread; the per-AI size() reads are a benign race (an
+// aligned word read returns old-or-new, never torn) and only run while profiling.
+int AiTotalPathCells( )
+{
+    if ( plAIMgrList == NULL )
+        return 0;
+    int iTotal = 0;
+    POSITION pos = plAIMgrList->GetHeadPosition( );
+    while ( pos != NULL )
+    {
+        CAIMgr* pMgr = (CAIMgr*)plAIMgrList->GetNext( pos );
+        if ( pMgr != NULL )
+            iTotal += pMgr->GetPathMapCellCount( );
+    }
+    return iTotal;
+}
+
 // iHexPerBlk - the number of hex's a block is wide or high (a block is ALWAYS
 // square).
 //   This is presently 64, 128, or 256
