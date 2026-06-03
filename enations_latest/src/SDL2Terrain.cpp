@@ -362,10 +362,8 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
             SDL_Texture* tex = tile->tex[zoom];
             std::vector<SDL_Vertex>& vb = batches[tex];
 
-            // T4 slope shading + T6 fog-of-war dim. Shaded land gets per-triangle
-            // slope brightness; water/coast stay at full colour; invisible
-            // (out-of-sight) hexes are darkened by kFogDim.
-            bool  bInvis = ( phex->GetVisibility() == 0 );
+            // T4 slope shading: shaded land gets per-triangle slope brightness;
+            // water/coast stay full colour. T6 fog is applied per-vertex below.
             float bL = 1.0f, bR = 1.0f;
             if ( tile->shade )
             {
@@ -374,11 +372,28 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
                 bL = TriBrightness( z0, z1, z2, z3, true );
                 bR = TriBrightness( z0, z1, z2, z3, false );
             }
-            if ( bInvis ) { bL *= kFogDim; bR *= kFogDim; }
-            SDL_Color colL, colR;
-            colL.a = colR.a = 255;
-            colL.r = colL.g = colL.b = (Uint8)__min( 255, (int)( bL * 255.0f ) );
-            colR.r = colR.g = colR.b = (Uint8)__min( 255, (int)( bR * 255.0f ) );
+
+            // T6 SOFT fog-of-war: per-corner visibility = average of the nearby
+            // hexes meeting at that corner, so the dim blends smoothly across hex
+            // edges (Gouraud-interpolated) instead of hard diamond steps.
+            // fog[c] in [kFogDim, 1]: 1 = fully in sight, kFogDim = fully fogged.
+            int  hx = hexcoord.X( ), hy = hexcoord.Y( );
+            auto visAt = [&]( int dx, int dy ) -> float {
+                CHexCoord hc( hx + dx, hy + dy ); hc.Wrap( );
+                CHex* h = theMap.GetHex( hc );
+                return ( h && h->GetVisibility( ) ) ? 1.0f : 0.0f;
+            };
+            float vS = visAt( 0, 0 );
+            float fog[4];
+            fog[0] = kFogDim + ( 1.0f - kFogDim ) * ( vS + visAt(-1,0) + visAt(0,-1) + visAt(-1,-1) ) * 0.25f;
+            fog[1] = kFogDim + ( 1.0f - kFogDim ) * ( vS + visAt( 1,0) + visAt(0,-1) + visAt( 1,-1) ) * 0.25f;
+            fog[2] = kFogDim + ( 1.0f - kFogDim ) * ( vS + visAt( 1,0) + visAt(0, 1) + visAt( 1, 1) ) * 0.25f;
+            fog[3] = kFogDim + ( 1.0f - kFogDim ) * ( vS + visAt(-1,0) + visAt(0, 1) + visAt(-1, 1) ) * 0.25f;
+
+            auto grayCol = []( float b ) -> SDL_Color {
+                Uint8 g = (Uint8)__min( 255, (int)( b * 255.0f ) );
+                SDL_Color c; c.r = c.g = c.b = g; c.a = 255; return c;
+            };
 
             // Diamond-vertex UVs: the tile's edge-midpoints land on the 4 diamond
             // vertices (TerrainDrawQuad maps U=screen-x from Left, V=screen-y from
@@ -404,11 +419,15 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
             vR.position = { (float)pts[2].x, (float)pts[2].y }; vR.tex_coord = uvR;  // Right
             vB.position = { (float)pts[3].x, (float)pts[3].y }; vB.tex_coord = uvB;  // Bottom
 
-            // Left triangle (L,T,B) + right triangle (T,R,B), matching the engine's
-            // split; each carries its own slope brightness.
-            vL.color = colL; vT.color = colL; vB.color = colL;
+            // Left tri (corners 0,1,3) shade bL; right (1,2,3) shade bR. Per-vertex
+            // colour = slope brightness * corner fog → smooth (Gouraud) fog edges.
+            vL.color = grayCol( bL * fog[0] );
+            vT.color = grayCol( bL * fog[1] );
+            vB.color = grayCol( bL * fog[3] );
             vb.push_back( vL ); vb.push_back( vT ); vb.push_back( vB );
-            vT.color = colR; vR.color = colR; vB.color = colR;
+            vT.color = grayCol( bR * fog[1] );
+            vR.color = grayCol( bR * fog[2] );
+            vB.color = grayCol( bR * fog[3] );
             vb.push_back( vT ); vb.push_back( vR ); vb.push_back( vB );
         }
 
