@@ -6531,7 +6531,12 @@ void CAITaskMgr::AttackAlert( CAIMsg* pMsg )
                         // or just get within range of attacker
                         if ( !m_pGoalMgr->GetPathRating( hexVeh, hexAttacked, pUnit->GetTypeUnit( ) ) )
                         {
-                            TRAP( );
+                            // No path from this candidate to the attacker — a normal
+                            // combat outcome (blocked / across water / no route); the
+                            // loop simply skips it as a rescuer. The original release
+                            // build no-op'd this TRAP, but in Debug __debugbreak made it
+                            // fatal, crashing on a benign, already-handled condition.
+                            // Investigated twice, confirmed not a bug -> TRAP removed.
                             continue;
                         }
                     }
