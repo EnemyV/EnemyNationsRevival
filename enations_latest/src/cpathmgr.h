@@ -53,8 +53,9 @@ class CPathMgr
 	// these are used only if the array of cells is used
 	CCell *m_paCells;	// array version
 
-	// this is to find elements in CCell faster
-	CMap <DWORD, DWORD, CCell *, CCell *>		m_mapCell;
+	// this is to find elements in CCell faster (pooled node allocator: fills+clears
+	// thousands of nodes per A* search — pooling kills the CRT-heap churn/lock).
+	CMap <DWORD, DWORD, CCell *, CCell *, EnPoolAllocator<std::pair<const DWORD, CCell*>>>		m_mapCell;
 
 	int m_iPaths;	// count of all calls
 	int m_iOrtho;	// count of x==x or y==y paths

@@ -701,7 +701,63 @@ __declspec(selectany) long g_mfcIterPosLive = 0;
 // compiles in translation units built below /std:c++17.
 inline std::mutex& MfcIterPoolMtx() { static std::mutex m; return m; }
 
-template<class KEY, class ARG_KEY, class VALUE, class ARG_VALUE>
+// Thread-local free-list allocator for fixed-size NODE allocations. Restores the
+// node pooling MFC's CMap had (CPlex blocks) that std::unordered_map lacks: the
+// path-cell map (CPathMap/CPathMgr m_mapCell) fills+clears thousands of nodes per
+// A* search, otherwise hammering the CRT heap — and, with many AI threads, the
+// process heap LOCK (the 50-100-AI bottleneck the alloc profiler flagged).
+//
+// Stateless => is_always_equal (empty type), so it's a trivial drop-in for any
+// std container (no propagate/swap headaches). The free list is thread_local PER
+// NODE TYPE, so it is lock-free; a node freed on a different thread simply
+// migrates to that thread's list (same-size block — no corruption). Only single-
+// object allocations (n==1, i.e. nodes) are pooled; bucket arrays (n>1) pass
+// through to the global operator new/delete. Opt in per map (see CPathMap); the
+// default CMap allocator is unchanged, so other maps are untouched.
+template<class T>
+struct EnPoolAllocator
+{
+    typedef T value_type;
+
+    EnPoolAllocator() noexcept {}
+    template<class U> EnPoolAllocator( const EnPoolAllocator<U>& ) noexcept {}
+
+    static void*& FreeHead() { thread_local void* head = nullptr; return head; }
+
+    T* allocate( std::size_t n )
+    {
+        if ( n == 1 && sizeof( T ) >= sizeof( void* ) )
+        {
+            void*& head = FreeHead();
+            if ( head )
+            {
+                void* p = head;
+                head    = *reinterpret_cast<void**>( p );
+                return static_cast<T*>( p );
+            }
+            return static_cast<T*>( ::operator new( sizeof( T ) ) );
+        }
+        return static_cast<T*>( ::operator new( n * sizeof( T ) ) );
+    }
+
+    void deallocate( T* p, std::size_t n ) noexcept
+    {
+        if ( n == 1 && sizeof( T ) >= sizeof( void* ) )
+        {
+            void*& head                       = FreeHead();
+            *reinterpret_cast<void**>( p )     = head;
+            head                               = p;
+            return;
+        }
+        ::operator delete( p );
+    }
+
+    template<class U> bool operator==( const EnPoolAllocator<U>& ) const noexcept { return true; }
+    template<class U> bool operator!=( const EnPoolAllocator<U>& ) const noexcept { return false; }
+};
+
+template<class KEY, class ARG_KEY, class VALUE, class ARG_VALUE,
+         class NODEALLOC = std::allocator<std::pair<const KEY, VALUE>>>
 class CMap
 {
 public:
@@ -783,7 +839,7 @@ private:
     // (so this is also more faithful — std::map had imposed an ordering the
     // original never had). All live keys are DWORD/void* (hashable); the unused
     // CString typedef is never instantiated, so no std::hash<CString> is needed.
-    typedef std::unordered_map<KEY, VALUE> MapT;
+    typedef std::unordered_map<KEY, VALUE, std::hash<KEY>, std::equal_to<KEY>, NODEALLOC> MapT;
     struct IterPos {
         typename MapT::const_iterator it;
         const MapT* map;

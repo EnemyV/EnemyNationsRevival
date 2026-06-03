@@ -23,7 +23,9 @@ class CPathMap
 	CCell *m_paCells;	// array version
 
 	// this is to find elements in CCell faster
-    CMap<DWORD, DWORD, CCell*, CCell*> m_mapCell;
+    // Pooled node allocator: this map fills+clears thousands of nodes per A*
+    // search; pooling kills the CRT-heap churn (and heap-lock contention at scale).
+    CMap<DWORD, DWORD, CCell*, CCell*, EnPoolAllocator<std::pair<const DWORD, CCell*>>> m_mapCell;
 
 	int m_iWidth;		// size of MAP in width and height
 	int m_iHeight;
