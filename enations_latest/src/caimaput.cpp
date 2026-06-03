@@ -3680,8 +3680,10 @@ BOOL CAIMapUtil::GetPathRating( CHexCoord& hexFrom, CHexCoord& hexTo, int iVehTy
         }
     }
 
-    // Perform actual pathfinding
-    BOOL bResult = thePathMap.GetPath( hexFrom, hexTo, 0, 0, m_pMap, iVehType );
+    // Perform actual pathfinding on this AI's OWN path instance (per-AI => no
+    // cross-AI lock wait). Falls back to the global only if somehow unallocated.
+    CPathMap&    pathMap = m_pPathMap ? *m_pPathMap : thePathMap;
+    BOOL bResult = pathMap.GetPath( hexFrom, hexTo, 0, 0, m_pMap, iVehType );
 
     // Cache the result
     AddCacheEntry( hexFrom, hexTo, iVehType, bResult );
@@ -8897,6 +8899,15 @@ CAIMapUtil::CAIMapUtil( WORD* pMap, CAIUnitList* plUnits, int iBaseX, int iBaseY
     m_tdFoot  = theTransports.GetData( CTransportData::infantry );
     m_tdShip  = theTransports.GetData( CTransportData::landing_craft );
 
+    // Per-AI path search instance: replaces the shared global thePathMap for
+    // this AI's pathing so AI threads no longer serialize on one lock. Sized to
+    // the full map exactly like the global Init (see ai.cpp / caidata.cpp).
+    {
+        int iMapSide = pGameData->m_iHexPerBlk * pGameData->m_iBlkPerSide;
+        m_pPathMap   = new CPathMap;
+        m_pPathMap->Init( iMapSide, iMapSide );
+    }
+
     // Initialize cache
   //  m_iCacheSize       = HASH_TABLE_SIZE;
     m_dwLastCacheClear = theGame.GettimeGetTime( );
@@ -8915,6 +8926,9 @@ CAIMapUtil::~CAIMapUtil( )
         m_pwaWork = NULL;
     }
     delete[] m_pgrpHexs;
+
+    delete m_pPathMap;
+    m_pPathMap = NULL;
 }
 
 void CAIMapUtil::Save( CArchive& ar )

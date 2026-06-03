@@ -711,8 +711,10 @@ BOOL CAIMap::ConnectRoad( CHexCoord& hexFrom, CHexCoord& hexTo )
 	//	BOOL bAllowWater=FALSE, BOOL bRiverCrossing=TRUE );
 
 	int iPathLen = 0;
-	CHexCoord *pRoadPath = 
-		thePathMap.GetRoadPath( hexFrom, hexTo, iPathLen, m_pwaMap );
+	// Use this AI's own path instance (per-AI; no cross-AI lock contention).
+	CPathMap& pathMap = ( m_pMapUtil && m_pMapUtil->m_pPathMap ) ? *m_pMapUtil->m_pPathMap : thePathMap;
+	CHexCoord *pRoadPath =
+		pathMap.GetRoadPath( hexFrom, hexTo, iPathLen, m_pwaMap );
 	if( pRoadPath != NULL )
 	{
 		CHexCoord hexGame;

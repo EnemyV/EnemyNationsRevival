@@ -17,6 +17,8 @@
 //
 // this class provides utilities for CAIMap
 //
+class CPathMap;   // per-AI path search instance (see m_pPathMap)
+
 class CAIMapUtil
 {
 	WORD *m_pMap;		// map for whom this utility serves
@@ -77,6 +79,12 @@ public:
 	BOOL m_bLakeWorld;
 
 	CAIUnitList *m_plUnits;	// list of units of this AI player
+
+	// Per-AI path search instance. AI pathing used to funnel through the single
+	// global thePathMap, serializing every AI thread on its m_cs. Each AI now
+	// owns its own CPathMap so they path in parallel with no cross-AI contention.
+	// Created + Init'd in the ctor; its scratch is touched only by this AI's thread.
+	CPathMap *m_pPathMap;
 
 	CAIMapUtil( WORD *pMap, CAIUnitList *plUnits,
 		int iBaseX, int iBaseY,
