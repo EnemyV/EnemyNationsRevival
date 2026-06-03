@@ -35,7 +35,9 @@ static const int kNumTypeNames = (int)( sizeof( kTypeName ) / sizeof( kTypeName[
 // view (m_iDir - rot) mod 4. Base road sprites load at engine indices 0,2,6,10,11
 // ↔ source road dirs 0,1,2,3,4 (sprtinit.cpp:114-120, ChangeToRoad:2574).
 static const int kRoadSrcDir[12] = { 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 4 };
-static const int kRoadRot[12]    = { 0, 1, 0, 1, 2, 3, 0, 1, 2, 3, 0, 0 };
+// Corner facings (6-9 = r_l_*) come out 90° rotated vs straights/T (the corner
+// base art orientation differs), so they carry an extra +1 quarter-turn.
+static const int kRoadRot[12]    = { 0, 1, 0, 1, 2, 3, 1, 2, 3, 0, 0, 0 };
 static const char* const kDirPrefix[4] = { "aa", "ac", "ae", "ag" };
 
 static void LogTerrain( const std::string& msg )
