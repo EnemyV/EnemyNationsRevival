@@ -42,7 +42,7 @@ extern CRITICAL_SECTION cs;          // used by threads
 extern CAIData*         pGameData;   // pointer to game data interface
 extern CPathMap         thePathMap;  // the map pathfinding object (no yield)
 
-extern void AiDeletePlayer( DWORD dwID );
+extern void AiDeletePlayer( DWORD_PTR dwID );
 
 CAIMgr::CAIMgr( int iPlayer )
 {
@@ -141,7 +141,7 @@ void CAIMgr::Manage( void )
     {
         // probably need to send a message to the game so it will
         // call AiDeletePlayer() to actually delete this player
-        AiDeletePlayer( (DWORD)this );
+        AiDeletePlayer( (DWORD_PTR)this );
         myThreadTerminate( );
         return;
     }

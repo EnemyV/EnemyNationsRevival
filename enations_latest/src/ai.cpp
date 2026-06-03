@@ -284,10 +284,16 @@ void AiSetup( CPlayer* pPlr )
 //
 // dwID is the ID returned from AiNewPlayer
 //
-void AiKillPlayer( DWORD dwID )
+void AiKillPlayer( DWORD_PTR dwID )
 {
+    // dwID is a CAIMgr* — pointer-width. It was DWORD, which TRUNCATED the
+    // pointer on x64 so SetDead() wrote m_bIsDead through a garbage `this`
+    // (silent corruption when the low-32 address was mapped, AV when not —
+    // e.g. crashed on player release). Null-guard too so a double-release or
+    // cleared handle is harmless (a double-click confirming a Pick must not crash).
     CAIMgr* pAIMgr = (CAIMgr*)dwID;
-    pAIMgr->SetDead( );
+    if ( pAIMgr != NULL )
+        pAIMgr->SetDead( );
 }
 
 //
@@ -296,9 +302,11 @@ void AiKillPlayer( DWORD dwID )
 //
 // dwID is the ID returned from AiNewPlayer
 //
-void AiDeletePlayer( DWORD dwID )
+void AiDeletePlayer( DWORD_PTR dwID )
 {
-    CAIMgr* pAIMgr = (CAIMgr*)dwID;
+    CAIMgr* pAIMgr = (CAIMgr*)dwID;   // pointer-width (was DWORD -> x64 truncation)
+    if ( pAIMgr == NULL )
+        return;
     ASSERT_VALID( pAIMgr );
 
     if ( plAIMgrList != NULL )

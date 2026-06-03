@@ -8,8 +8,8 @@ BOOL AiInit (int iSmart, int iNumAi, int iNumHuman, int iStartPos);
 BOOL AiWorldSize (int iHexPerBlk, int iBlkPerSide);
 BOOL AiNewPlayer (CPlayer *pPlr);
 BOOL AiTakeOverPlayer (CPlayer *pPlr);
-void AiKillPlayer (DWORD dwID);
-void AiDeletePlayer (DWORD dwID);
+void AiKillPlayer (DWORD_PTR dwID);   // dwID is a CAIMgr* — pointer-width (x64)
+void AiDeletePlayer (DWORD_PTR dwID); // dwID is a CAIMgr* — pointer-width (x64)
 void AiExit ();
 void WINAPI AiThread (AI_INIT *pAiI);
 void AiSetup (CPlayer * pPlr);

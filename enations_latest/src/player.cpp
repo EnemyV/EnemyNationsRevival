@@ -1788,7 +1788,7 @@ NoUnPause:
     // (CDlgRelations RemovePlayer removed)
 
     // tell the AI
-    DWORD dwAiID = pPlr->GetAiHdl( );
+    DWORD_PTR dwAiID = pPlr->GetAiHdl( );   // pointer-width (was DWORD -> x64 truncation)
     pPlr->SetAiHdl( 0 );
     if ( ( m_bServer ) && ( dwAiID != 0 ) && ( pPlr->IsAI( ) ) && ( pPlr->m_iNumAiGpfs < 100 ) )
         ::AiKillPlayer( dwAiID );
