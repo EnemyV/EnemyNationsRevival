@@ -737,7 +737,9 @@ public:
     POSITION GetStartPosition() const
     {
         if ( m_map.empty() ) return nullptr;
-        auto* pos = new IterPos{ m_map.begin(), &m_map };
+        IterPos* pos = AcquireIterPos();
+        pos->it  = m_map.begin();
+        pos->map = &m_map;
         InterlockedIncrement( &g_mfcIterPosLive );
         return (POSITION)pos;
     }
@@ -759,7 +761,7 @@ public:
         // (was: one per element visited).
         ++p->it;
         if ( p->it == m_map.end() ) {
-            delete p;
+            ReleaseIterPos( p );
             InterlockedDecrement( &g_mfcIterPosLive );
             rNextPosition = nullptr;
         }
@@ -785,7 +787,33 @@ private:
     struct IterPos {
         typename MapT::const_iterator it;
         const MapT* map;
+        IterPos*    poolNext;   // freelist link (thread-local pool below)
     };
+
+    // Thread-local freelist of IterPos nodes. A std::unordered_map const_iterator
+    // is larger than the void* POSITION, so each live iteration needs a heap node.
+    // Recycling them per thread drops steady-state allocation to ZERO for full
+    // walks (the hot per-frame UpdateSound scan + AI map scans iterate to the
+    // end), removing thousands of new/delete per second from the lock-protected
+    // CRT heap. Thread-local => no lock of our own. An early `break` abandons its
+    // node (the MFC POSITION API has no close hook), exactly as before — not
+    // worsened; g_mfcIterPosLive still surfaces that as an outstanding count.
+    // (Pool nodes are intentionally not freed at thread exit: bounded to the max
+    // concurrent walks per thread per map type — a handful — so it's negligible.)
+    static IterPos*& FreeHead() { thread_local IterPos* head = nullptr; return head; }
+    static IterPos*  AcquireIterPos()
+    {
+        IterPos*& head = FreeHead();
+        if ( head ) { IterPos* p = head; head = p->poolNext; return p; }
+        return new IterPos;
+    }
+    static void ReleaseIterPos( IterPos* p )
+    {
+        IterPos*& head = FreeHead();
+        p->poolNext = head;
+        head = p;
+    }
+
     MapT m_map;
 };
 
