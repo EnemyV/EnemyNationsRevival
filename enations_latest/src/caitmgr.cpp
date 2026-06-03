@@ -6536,7 +6536,9 @@ void CAITaskMgr::AttackAlert( CAIMsg* pMsg )
                             // loop simply skips it as a rescuer. The original release
                             // build no-op'd this TRAP, but in Debug __debugbreak made it
                             // fatal, crashing on a benign, already-handled condition.
-                            // Investigated twice, confirmed not a bug -> TRAP removed.
+                            // Investigated twice, confirmed not a bug -> TRAP replaced
+                            // with a one-shot debug log so the condition stays visible.
+                            EN_TRAP_REMOVED( "AttackAlert: no path from candidate rescuer to attacker" );
                             continue;
                         }
                     }

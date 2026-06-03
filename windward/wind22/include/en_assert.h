@@ -59,3 +59,39 @@ inline void EnAssertFire( const char* expr, const char* file, int line )
 
 // Evaluates expr exactly once; non-fatal. Usable in statement context.
 #define EN_ASSERT_NONFATAL( expr ) ( ( expr ) ? (void)0 : EnAssertFire( #expr, __FILE__, __LINE__ ) )
+
+// Replacement for a TRAP() we've DELIBERATELY removed after confirming the
+// guarded condition is benign and already handled (e.g. a normal RTS outcome).
+// Never halts; logs ONCE per call-site (deduped) via OutputDebugString so the
+// condition stays visible in the debugger / dbgcatch — we don't lose the signal
+// the TRAP gave us, we just stop crashing on it. Use ONLY where a TRAP was
+// removed on purpose; real invariant checks should stay TRAP/ASSERT.
+inline void EnTrapRemovedLog( const char* msg, const char* file, int line )
+{
+    InterlockedIncrement( &g_enAssertFires );
+
+    enum { MAXSITES = 1024 };
+    static const char* seenFile[MAXSITES] = {};
+    static int         seenLine[MAXSITES] = {};
+    static long        seenCount = 0;
+
+    long n = seenCount;
+    if ( n > MAXSITES )
+        n = MAXSITES;
+    for ( long i = 0; i < n; ++i )
+        if ( seenLine[i] == line && seenFile[i] == file )
+            return;  // already reported this site
+
+    if ( seenCount < MAXSITES )
+    {
+        seenFile[seenCount] = file;
+        seenLine[seenCount] = line;
+        seenCount           = seenCount + 1;
+    }
+
+    char buf[600];
+    _snprintf_s( buf, sizeof( buf ), _TRUNCATE, "[TRAP-REMOVED] %s  (%s:%d)\n", msg ? msg : "", file, line );
+    OutputDebugStringA( buf );
+}
+
+#define EN_TRAP_REMOVED( msg ) EnTrapRemovedLog( ( msg ), __FILE__, __LINE__ )
