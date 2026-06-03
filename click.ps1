@@ -35,6 +35,7 @@ param(
     [switch]$Middle,
     [switch]$Double,
     [switch]$NoMove,
+    [switch]$NoCursor,
     [int]$DelayMs = 40
 )
 
@@ -66,6 +67,17 @@ if ($Right) {
 
 # Pack X (low word) and Y (high word) into LPARAM
 $lparam = [IntPtr](($Y -shl 16) -bor ($X -band 0xFFFF))
+
+# Physically place the OS cursor at the target. SDL derives a button event's
+# position from the last known mouse position, not the message's lParam — so if
+# the real cursor sits elsewhere (screen unlocked), the click lands there instead
+# of our target. Moving the real cursor first makes SDL agree. Skip with -NoCursor.
+if (-not $NoCursor) {
+    $sp = New-Object GameWin32+POINT; $sp.X = $X; $sp.Y = $Y
+    [void][GameWin32]::ClientToScreen($hwndTarget, [ref]$sp)
+    [void][GameWin32]::SetCursorPos($sp.X, $sp.Y)
+    Start-Sleep -Milliseconds $DelayMs
+}
 
 if (-not $NoMove) {
     [void][GameWin32]::PostMessage($hwndTarget, $WM_MOUSEMOVE, [IntPtr]0, $lparam)
