@@ -66,6 +66,25 @@ public:
      */
     void SwapBuffers();
 
+    // ---- T0 GPU present path (gated by [Advanced] Renderer profile int) ----
+    // The main game window is presented in one of two ways:
+    //   software (Renderer=0, default): SDL_GetWindowSurface / SDL_UpdateWindowSurface
+    //   renderer (Renderer=1): draw into an offscreen back-buffer surface, then
+    //     upload it to a streaming texture and present via SDL_Renderer (VSync'd,
+    //     and the layer GPU terrain composites onto).
+    // Every main-window present site funnels through these two calls so the two
+    // paths are byte-identical at Renderer=0. Secondary/own windows are unaffected.
+    bool IsRendererMode() const { return m_useRenderer; }
+
+    // Back-buffer to draw the main window's frame into. Software mode returns the
+    // window surface (unchanged behavior); renderer mode returns the persistent
+    // offscreen surface (recreated to match output size on resize). May be null.
+    SDL_Surface* GetPresentSurface();
+
+    // Present whatever was drawn into GetPresentSurface() to the main window.
+    // Software: SDL_UpdateWindowSurface. Renderer: upload + RenderCopy + Present.
+    void PresentSurface();
+
     /**
      * Clear screen with color
      */
@@ -265,7 +284,14 @@ private:
     std::string m_gameMode;     // "Single Player", "Multiplayer", etc.
 
     SDL_Window* m_window = nullptr;
-    SDL_Renderer* m_renderer = nullptr;  // SDL renderer for UI
+    SDL_Renderer* m_renderer = nullptr;  // T0: main-window GPU present (null in software mode)
+    bool m_useRenderer = false;          // T0: [Advanced] Renderer flag, read once at init
+    struct SDL_Surface* m_backBuffer = nullptr;  // T0: offscreen draw target (renderer mode)
+    struct SDL_Texture* m_backTex = nullptr;     // T0: streaming texture for the back-buffer
+    int m_backW = 0, m_backH = 0;                // current back-buffer size
+    // (Re)create the back-buffer surface + texture to match the renderer output
+    // size. No-op if size unchanged. Renderer mode only.
+    bool EnsureBackBuffer();
     bool m_pollingEvents = false;  // re-entrancy guard for PollEvents()
     bool m_appActive = true;       // app-level focus (any of our windows focused)
     Uint32 m_focusLostAt = 0;      // SDL_GetTicks() when focus first read NULL (0 = focused)

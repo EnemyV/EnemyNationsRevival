@@ -20,6 +20,7 @@
 #include "stdafx.h"
 #include "SDL2Panel.h"
 #include "RenderingAdapter.h"
+#include <SDL.h>          // T1: SDL_FillRect/SDL_MapRGB on the sprite-layer CDIB
 #include "unit.inl"
 #include "vehicle.inl"
 #include "RenderingAdapter.h"
@@ -708,6 +709,25 @@ void CAnimAtr::SetCurrent( ) const
     xiZoom    = m_iZoom;
     xpdibwnd  = (CDIBWnd*)&m_dibwnd;
     xpanimatr = this;
+}
+
+//---------------------------------------------------------------------------
+// CAnimAtr::UseSplitLayer - T1: split terrain (m_dibwnd) from a color-keyed
+// sprite layer (m_dibSprite) when this view presents through its own GPU
+// renderer (T0b). Gated on the panel's renderer so the software path is
+// untouched; this is what lets GPU terrain (T2) draw under the CPU sprites.
+//---------------------------------------------------------------------------
+bool CAnimAtr::UseSplitLayer( ) const
+{
+    return m_sdlPanel != nullptr && m_sdlPanel->HasOwnRenderer( );
+}
+
+// T2.3: the magenta-keyed sprite layer surface, for GPU compositing over the
+// terrain mesh. nullptr if not split or the CDIB isn't SDL-backed.
+SDL_Surface* CAnimAtr::GetSpriteLayerSurface( ) const
+{
+    CDIB* pDib = m_dibSprite.GetDIB( );
+    return pDib ? pDib->GetSDLSurface( ) : nullptr;
 }
 
 //--------------------------------------------------------------------------
@@ -2408,7 +2428,21 @@ CRect CHex::Draw( const CHexCoord& hexcoord )
 
     CTerrainDrawParms drawparms( *this, hexcoord, bDrawVert, bShade, aeFeather );
 
-    CRect rectBound = GetSprite( )->GetView( xiDir, 0 )->Draw( drawparms );
+    // For field plots, the terrain sprite is a matrix of [rotation][growth stage]
+    // (4 furrow rotations x 3 grow stages). Pick a deterministic rotation from the
+    // hex coords (patchwork look, multiplayer-safe) and the stored growth stage.
+    int iViewDir = xiDir, iViewDamage = 0;
+    if ( fields == iType )
+    {
+        iViewDir    = ( hexcoord.X( ) * 2 + hexcoord.Y( ) ) & ( NUM_TERRAIN_DIRECTIONS - 1 );
+        iViewDamage = GetGrowStage( );
+    }
+
+    CSpriteView* pView = GetSprite( )->GetView( iViewDir, iViewDamage );
+    if ( pView == NULL )  // missing rotation/stage view - fall back to the base tile
+        pView = GetSprite( )->GetView( xiDir, 0 );
+
+    CRect rectBound = pView->Draw( drawparms );
 
     if ( CDrawParms::IsInvalidateMode( ) )
     {
@@ -3415,6 +3449,45 @@ void CGameMap::UpdateRect( CAnimAtr& aa, CRect rect, CDrawParms::UPDATE_MODE eMo
         CDrawParms::SetUpdateFlags( eMode );
         CDrawParms::SetClipRect( rect );
 
+        // T1: when the split layer is active, terrain stays in m_dibwnd and
+        // sprites are routed (below) into the color-keyed m_dibSprite. Lazily
+        // size it to match m_dibwnd and clear the repaint region to magenta
+        // (index 253) so only real sprite pixels composite over the terrain.
+        bool bSplit = bDraw && aa.UseSplitLayer( );
+        if ( bSplit )
+        {
+            CSize ws = aa.m_dibwnd.GetWinSize( );
+            bool  bFresh = false;
+            if ( aa.m_dibSprite.GetDIB( ) == NULL )
+            {
+                aa.m_dibSprite.Init(
+                    aa.m_dibwnd.GetHWND( ),
+                    new CDIB( ptrthebltformat->GetColorFormat( ), ptrthebltformat->GetType( ),
+                              ptrthebltformat->GetDirection( ) ),
+                    ws.cx, ws.cy );
+                bFresh = true;
+            }
+            else if ( aa.m_dibSprite.GetWinSize( ).cx != ws.cx ||
+                      aa.m_dibSprite.GetWinSize( ).cy != ws.cy )
+            {
+                aa.m_dibSprite.Size( ws.cx, ws.cy );
+                bFresh = true;
+            }
+
+            CDIB*        pSprDib  = aa.m_dibSprite.GetDIB( );
+            SDL_Surface* pSprSurf = pSprDib ? pSprDib->GetSDLSurface( ) : NULL;
+            if ( pSprSurf )
+            {
+                Uint32 key = SDL_MapRGB( pSprSurf->format, 255, 0, 255 );
+                if ( bFresh )
+                    SDL_FillRect( pSprSurf, NULL, key );  // whole buffer once
+                SDL_Rect clr = { rect.left, rect.top, rect.Width( ), rect.Height( ) };
+                SDL_FillRect( pSprSurf, &clr, key );
+            }
+            else
+                bSplit = false;  // not SDL-backed → can't color-key; single buffer
+        }
+
         CHexCoord hexTL( aa._WindowToHex( CPoint( rect.left, rect.top ) ) );
         CHexCoord hexTR( aa._WindowToHex( CPoint( rect.right - 1, rect.top ) ) );
 
@@ -3483,7 +3556,11 @@ void CGameMap::UpdateRect( CAnimAtr& aa, CRect rect, CDrawParms::UPDATE_MODE eMo
 
                         iRowTopY = min( iRowTopY, rectHexBound.top );
 
+                        // Foundation is a sprite-layer element (sits over terrain,
+                        // under the building) → route to m_dibSprite when split.
+                        if ( bSplit ) xpdibwnd = (CDIBWnd*)&aa.m_dibSprite;
                         pbuilding->DrawFoundation( hexcoord );
+                        if ( bSplit ) xpdibwnd = (CDIBWnd*)&aa.m_dibwnd;
 
                         CHexCoord hexBuilding = pbuilding->GetLeftHex( xiDir );
 
@@ -3736,11 +3813,20 @@ void CGameMap::UpdateRect( CAnimAtr& aa, CRect rect, CDrawParms::UPDATE_MODE eMo
             }
 
             if ( bDraw )
+            {
+                // Sprites (buildings/bridges/vehicles/trees/effects) → sprite layer.
+                if ( bSplit ) xpdibwnd = (CDIBWnd*)&aa.m_dibSprite;
                 tiledraw.DrawRow( );
+                if ( bSplit ) xpdibwnd = (CDIBWnd*)&aa.m_dibwnd;
+            }
         }
 
         if ( bDraw )
+        {
+            if ( bSplit ) xpdibwnd = (CDIBWnd*)&aa.m_dibSprite;
             tiledraw.Flush( );
+            if ( bSplit ) xpdibwnd = (CDIBWnd*)&aa.m_dibwnd;
+        }
     }  // end try
 
     catch ( ... )

@@ -43,8 +43,14 @@ bool RenderingAdapter::RenderToPanel(const CAnimAtr* aa, SDL2Panel* panel) {
     if (!panelSurface)
         return false;
 
+    // Terrain layer (m_dibwnd). When the T1 split is active this holds terrain
+    // only; otherwise it's the full combined frame (legacy/software path).
     if (!BlitDIBToSurface(aa, panelSurface, 0, 0))
         return false;
+
+    // T1: composite the color-keyed sprite layer (m_dibSprite) on top.
+    if (aa->UseSplitLayer())
+        BlitCDIBToSurface(aa->m_dibSprite.GetDIB(), panelSurface, 0, 0, /*colorkey*/ true);
 
     panel->SetDirty();
     return true;
@@ -60,12 +66,12 @@ void RenderingAdapter::Render() {
     if (!s_gameWindow || !s_animAtr)
         return;
 
-    SDL_Surface* windowSurface = SDL_GetWindowSurface(s_gameWindow->GetWindow());
+    SDL_Surface* windowSurface = s_gameWindow->GetPresentSurface();  // T0: software surface or renderer back-buffer
     if (!windowSurface)
         return;
 
     if (BlitDIBToSurface(s_animAtr, windowSurface, 0, 0)) {
-        SDL_UpdateWindowSurface(s_gameWindow->GetWindow());
+        s_gameWindow->PresentSurface();
     }
 }
 
@@ -78,10 +84,12 @@ bool RenderingAdapter::BlitDIBToSurface(const CAnimAtr* aa, SDL_Surface* dst,
                                          int dstX, int dstY) {
     if (!aa || !dst)
         return false;
+    return BlitCDIBToSurface(aa->m_dibwnd.GetDIB(), dst, dstX, dstY, false);
+}
 
-    const CDIBWnd& dibwnd = aa->m_dibwnd;
-    CDIB* pDib = dibwnd.GetDIB();
-    if (!pDib)
+bool RenderingAdapter::BlitCDIBToSurface(CDIB* pDib, SDL_Surface* dst,
+                                          int dstX, int dstY, bool colorkey) {
+    if (!pDib || !dst)
         return false;
 
     int dibWidth  = pDib->GetWidth();
@@ -97,6 +105,9 @@ bool RenderingAdapter::BlitDIBToSurface(const CAnimAtr* aa, SDL_Surface* dst,
     // single blit breaks differently-sized panels.
     SDL_Surface* sdlBacking = pDib->GetSDLSurface();
     if (sdlBacking) {
+        // T1 sprite layer: magenta (index 253) → transparent so terrain shows through.
+        SDL_SetColorKey(sdlBacking, colorkey ? SDL_TRUE : SDL_FALSE,
+                        SDL_MapRGB(sdlBacking->format, 255, 0, 255));
         SDL_Rect dstRect = { dstX, dstY, dibWidth, dibHeight };
         if (dibWidth == dst->w && dibHeight == dst->h && dstX == 0 && dstY == 0) {
             SDL_BlitSurface(sdlBacking, nullptr, dst, nullptr);
@@ -143,6 +154,9 @@ bool RenderingAdapter::BlitDIBToSurface(const CAnimAtr* aa, SDL_Surface* dst,
 
     if (!dibSurface)
         return false;
+
+    if (colorkey)  // T1 sprite layer: magenta (index 253) → transparent
+        SDL_SetColorKey(dibSurface, SDL_TRUE, SDL_MapRGB(dibSurface->format, 255, 0, 255));
 
     SDL_Rect dstRect = { dstX, dstY, dibWidth, dibHeight };
 

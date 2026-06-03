@@ -583,7 +583,16 @@ class CAnimAtr
     CMapLoc     m_maploc;  // Map coords of center of window
     int         m_iDir;    // direction to render at
     int         m_iZoom;   // zoom
-    CDIBWnd     m_dibwnd;  // window we blt into
+    CDIBWnd     m_dibwnd;  // window we blt into (terrain layer once split is active)
+    // T1: separate color-keyed (magenta/253) sprite layer. When UseSplitLayer()
+    // is true, UpdateRect routes sprites (units/buildings/foundations/effects)
+    // here while terrain stays in m_dibwnd, so GPU terrain (T2) can composite
+    // underneath. Lazily sized to match m_dibwnd. Unused in the software path.
+    CDIBWnd     m_dibSprite;
+    bool        UseSplitLayer() const;  // defined in terrain.cpp (needs SDL2Panel)
+    // T2.3: the sprite-layer SDL surface (magenta-keyed) for GPU compositing
+    // over the terrain mesh. nullptr if not split / not SDL-backed.
+    struct SDL_Surface* GetSpriteLayerSurface() const;
     CDirtyRects m_dirtyrects;
     CPoint      m_ptUL;  // View coords of UL corner of window
     CWnd*       m_pwnd;  // Owner window — TEMP CWnd from CWnd::FromHandle;

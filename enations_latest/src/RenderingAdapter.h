@@ -41,9 +41,13 @@ public:
     static void FlushRenderQueue();
 
 private:
-    // Shared helper: blit DIB data to an SDL surface at an optional offset
+    // Shared helper: blit a CAnimAtr's terrain DIB (m_dibwnd) to an SDL surface.
     static bool BlitDIBToSurface(const CAnimAtr* aa, struct SDL_Surface* dst,
                                   int dstX = 0, int dstY = 0);
+    // Core: blit one CDIB to an SDL surface; colorkey=true treats magenta
+    // (index 253) as transparent — used for the T1 sprite layer over terrain.
+    static bool BlitCDIBToSurface(class CDIB* pDib, struct SDL_Surface* dst,
+                                  int dstX, int dstY, bool colorkey);
 
     static GameWindow*  s_gameWindow;
     static const CAnimAtr* s_animAtr;

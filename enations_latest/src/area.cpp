@@ -2276,6 +2276,7 @@ int CWndArea::OnCreate( LPCREATESTRUCT lpCreateStruct )
         m_aa.m_sdlPanel->SetMovable(true);
         m_aa.m_sdlPanel->SetResizable(true);
         m_aa.m_sdlPanel->SetTitle("Area Map");
+        m_aa.m_sdlPanel->SetTerrainAnimAtr(&m_aa);  // T2: GPU terrain mesh source
 
         // Route SDL events to CWndArea's MFC handler methods
         CWndArea* pThis = this;

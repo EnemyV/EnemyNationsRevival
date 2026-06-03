@@ -19,6 +19,33 @@
 #undef min
 #undef max
 
+// World-type presets shown in the Create dialogs. The list index is the EWorldType
+// value (terrain.h) and is stored on m_iWorldType / synced via CNetStart, so order
+// here must match the enum. Entry 0 keeps the original random behavior.
+static const std::vector<std::string>& WorldTypeLabels() {
+    static const std::vector<std::string> labels = {
+        "Default (random)",
+        "Big Ocean",
+        "Strip Ocean",
+        "Scattered Ocean",
+        "Islands",
+        "Mountain Planet",
+        "Badlands Planet",
+        "Desert Planet",
+    };
+    return labels;
+}
+
+// Fill a (freshly created) World Type listbox and preselect the saved choice.
+static void PopulateWorldTypeList(SDL2Listbox* lst) {
+    for (const auto& s : WorldTypeLabels())
+        lst->AddItem(s);
+    int sel = (int)EnGetProfileInt("Create", "WorldType", 0);
+    if (sel < 0 || sel >= (int)WorldTypeLabels().size()) sel = 0;
+    lst->SetSelected(sel);
+    lst->EnsureVisible(sel);
+}
+
 // ============================================================================
 // SDL2VersionDialog
 // ============================================================================
@@ -153,7 +180,7 @@ void SDL2AdvOptionsDialog::OnOK() {
 // SDL2CreateSingleDialog
 // ============================================================================
 SDL2CreateSingleDialog::SDL2CreateSingleDialog(GameWindow* gameWindow)
-    : SDL2Dialog(gameWindow, "Create Single Player Game", 480, 380) {}
+    : SDL2Dialog(gameWindow, "Create Single Player Game", 480, 500) {}
 
 void SDL2CreateSingleDialog::OnInit() {
     int lx = m_x + 20, y = m_y + 45, rowH = 24;
@@ -184,6 +211,12 @@ void SDL2CreateSingleDialog::OnInit() {
     m_radStartPos = AddWidget<SDL2RadioGroup>(rx, y + rowH * 3 + 14, colW, rowH * 4,
         std::vector<std::string>{"Minimal Civilian", "Full Civilian", "Minimal Military", "Full Military"}, savedPos);
 
+    // World type — full-width preset list below the two columns
+    int wtY = y + rowH * 8 + 28;
+    AddWidget<SDL2GroupBox>(lx - 8, wtY - 8, m_width - 24, rowH * 5 + 16, "World Type");
+    m_lstWorldType = AddWidget<SDL2Listbox>(lx, wtY + 4, m_width - 40, rowH * 5);
+    PopulateWorldTypeList(m_lstWorldType);
+
     AddOKCancelButtons();
 }
 
@@ -191,6 +224,7 @@ void SDL2CreateSingleDialog::OnOK() {
     m_iAiLevel = m_radAiLevel->GetSelected();
     m_iWorldSize = m_radWorldSize->GetSelected();
     m_iStartPos = m_radStartPos->GetSelected();
+    m_iWorldType = m_lstWorldType ? std::max(0, m_lstWorldType->GetSelected()) : 0;
     m_iNumAi = atoi(m_edtNumAi->GetText().c_str());
     if (m_iNumAi <= 0) m_iNumAi = 1;
     EndDialog(1);
@@ -224,6 +258,7 @@ void SDL2PickRaceDialog::OnInit() {
     m_lstRaces = AddWidget<SDL2Listbox>(lx, y, listW, listH,
         [this](int idx) { OnRaceSelected(idx); },
         [this](int idx) { OnRaceSelected(idx); if (m_btnOK && m_btnOK->IsEnabled()) OnOK(); });
+    m_lstRaces->SetFontSize(16);   // the default 13pt race names were hard to read
 
     // Pre-convert all race pictures to SDL surfaces
     int numRaces = CRaceDef::GetNumRaces();
@@ -248,6 +283,7 @@ void SDL2PickRaceDialog::OnInit() {
     int descH = bottomY - descY;
     m_lblDesc = AddWidget<SDL2Label>(rightX, descY, rightW, descH, "", SDL_Color{48, 58, 148, 255});
     m_lblDesc->SetWrapped(true);
+    m_lblDesc->SetFontSize(15);   // larger, more readable race description
 
     // OK / Cancel
     m_btnOK = AddWidget<SDL2Button>(m_x + m_width / 2 - 100, m_y + m_height - 45, 90, 30, "OK",
@@ -374,6 +410,7 @@ bool SDL2_RunCreateSinglePlayerFlow(GameWindow* gameWindow) {
     theGame.m_iAi = pCreate->m_iAi = createDlg.m_iAiLevel;
     theGame.m_iSize = pCreate->m_iSize = createDlg.m_iWorldSize;
     theGame.m_iPos = pCreate->m_iPos = createDlg.m_iStartPos;
+    theGame.m_iWorldType = pCreate->m_iWorldType = createDlg.m_iWorldType;
     pCreate->m_iNumAi = createDlg.m_iNumAi;
     pCreate->m_iNet = -1;
 
@@ -381,6 +418,7 @@ bool SDL2_RunCreateSinglePlayerFlow(GameWindow* gameWindow) {
     EnWriteProfileInt("Create", "Size", createDlg.m_iWorldSize);
     EnWriteProfileInt("Create", "AiOpponents", createDlg.m_iNumAi);
     EnWriteProfileInt("Create", "StartPosition", createDlg.m_iStartPos);
+    EnWriteProfileInt("Create", "WorldType", createDlg.m_iWorldType);
 
     // Step 4: Set player race (same as CDlgPickRace::OnOK)
     CRaceDef* pRace = &ptheRaces[raceDlg.m_iSelectedRace];
@@ -578,7 +616,7 @@ void SDL2PickPlayerDialog::OnOK() {
 // SDL2CreateNetDialog
 // ============================================================================
 SDL2CreateNetDialog::SDL2CreateNetDialog(GameWindow* gameWindow)
-    : SDL2Dialog(gameWindow, "Create Network Game (TCP/IP)", 520, 440) {}
+    : SDL2Dialog(gameWindow, "Create Network Game (TCP/IP)", 520, 560) {}
 
 void SDL2CreateNetDialog::OnInit() {
     int lx = m_x + 20, y = m_y + 45, rowH = 24, colW = (m_width - 60) / 2, rx = lx + colW + 20;
@@ -610,6 +648,12 @@ void SDL2CreateNetDialog::OnInit() {
         std::vector<std::string>{"Minimal Civilian", "Full Civilian", "Minimal Military", "Full Military"},
         std::max(0, std::min(3, (int)EnGetProfileInt("Create", "StartPosition", 1))));
 
+    // World type — full-width preset list below the two columns
+    int wtY = y + rowH * 9 + 16;
+    AddWidget<SDL2Label>(lx, wtY, colW, rowH, "World Type:");
+    m_lstWorldType = AddWidget<SDL2Listbox>(lx, wtY + rowH, m_width - 40, rowH * 5);
+    PopulateWorldTypeList(m_lstWorldType);
+
     AddOKCancelButtons();
 }
 
@@ -620,6 +664,7 @@ void SDL2CreateNetDialog::OnOK() {
     m_iAiLevel = m_radAiLevel->GetSelected();
     m_iWorldSize = m_radWorldSize->GetSelected();
     m_iStartPos = m_radStartPos->GetSelected();
+    m_iWorldType = m_lstWorldType ? std::max(0, m_lstWorldType->GetSelected()) : 0;
     m_iNumAi = atoi(m_edtNumAi->GetText().c_str());
     if (m_iNumAi < 0) m_iNumAi = 0;
     m_iPort = atoi(m_edtPort->GetText().c_str());
@@ -959,6 +1004,7 @@ bool SDL2_RunCreateNetworkFlow(GameWindow* gameWindow) {
     theGame.m_iAi  = pCreate->m_iAi  = createDlg.m_iAiLevel;
     theGame.m_iSize = pCreate->m_iSize = createDlg.m_iWorldSize;
     theGame.m_iPos  = pCreate->m_iPos  = createDlg.m_iStartPos;
+    theGame.m_iWorldType = pCreate->m_iWorldType = createDlg.m_iWorldType;
     pCreate->m_iNumAi    = createDlg.m_iNumAi;
     pCreate->m_iNet      = 0;
     pCreate->m_sName     = createDlg.m_playerName;
@@ -968,6 +1014,7 @@ bool SDL2_RunCreateNetworkFlow(GameWindow* gameWindow) {
     EnWriteProfileInt("Create", "Size",          createDlg.m_iWorldSize);
     EnWriteProfileInt("Create", "AiOpponents",   createDlg.m_iNumAi);
     EnWriteProfileInt("Create", "StartPosition", createDlg.m_iStartPos);
+    EnWriteProfileInt("Create", "WorldType",     createDlg.m_iWorldType);
 
     std::string sPort = std::to_string(createDlg.m_iPort);
     WritePrivateProfileString("TCP", "WellKnownPort", sPort.c_str(), "vdmplay.ini");
@@ -1336,7 +1383,7 @@ void SDL2_RunCredits(GameWindow* gameWindow) {
         lastTick = now;
         if (scrollY < -(float)totalHeight) { running = false; break; }
 
-        SDL_Surface* ws = SDL_GetWindowSurface(window);
+        SDL_Surface* ws = gameWindow->GetPresentSurface();  // T0: software surface or renderer back-buffer
         if (!ws) break;
         SDL_FillRect(ws, nullptr, SDL_MapRGB(ws->format, 0, 0, 0));
 
@@ -1353,7 +1400,7 @@ void SDL2_RunCredits(GameWindow* gameWindow) {
             drawY += rl.height;
         }
 
-        SDL_UpdateWindowSurface(window);
+        gameWindow->PresentSurface();
         SDL_Delay(16);
         MSG msg;
         while (::PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) {

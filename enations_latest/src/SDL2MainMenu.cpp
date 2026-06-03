@@ -414,20 +414,20 @@ void SDL2MainMenu::TileWallpaper(SDL_Surface* dst) {
 void SDL2MainMenu::RenderWallpaperOnly() {
     if (!m_initialized || !m_gameWindow) return;
 
-    SDL_Surface* winSurface = SDL_GetWindowSurface(m_gameWindow->GetWindow());
+    SDL_Surface* winSurface = m_gameWindow->GetPresentSurface();  // T0: software surface or renderer back-buffer
     if (!winSurface) return;
 
     // Tile the WL24 wallpaper, matching MFC CDlgMain behavior when m_bTile is TRUE.
     // This is what shows behind dialogs during new game creation.
     TileWallpaper(winSurface);
 
-    SDL_UpdateWindowSurface(m_gameWindow->GetWindow());
+    m_gameWindow->PresentSurface();
 }
 
 void SDL2MainMenu::Render() {
     if (!m_initialized || !m_gameWindow) return;
 
-    SDL_Surface* winSurface = SDL_GetWindowSurface(m_gameWindow->GetWindow());
+    SDL_Surface* winSurface = m_gameWindow->GetPresentSurface();  // T0: software surface or renderer back-buffer
     if (!winSurface) return;
 
     int winW = m_gameWindow->GetWidth();
@@ -537,7 +537,7 @@ void SDL2MainMenu::Render() {
         }
     }
 
-    SDL_UpdateWindowSurface(m_gameWindow->GetWindow());
+    m_gameWindow->PresentSurface();
 }
 
 bool SDL2MainMenu::HandleEvent(const SDL_Event& event) {

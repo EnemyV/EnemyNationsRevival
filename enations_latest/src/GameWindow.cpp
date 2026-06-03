@@ -11,6 +11,7 @@
 #include "area.h"         // CWndArea, theAreaList (Esc deselect-vs-options decision)
 #include "music.h"        // theMusicPlayer (pause/resume on app focus change)
 #include "Perf.h"         // GaugeSet — correlate window state with frame cost
+#include "w22_settings.h" // w22::GetProfileInt — [Advanced] Renderer flag (T0)
 #include "../rendering/SDLButtonManager.h"
 #include "../rendering/StatusBar.h"
 #include "../input/UIButtonListener.h"
@@ -335,7 +336,83 @@ bool GameWindow::InitializeSDL() {
     }
 #endif
 
+    // T0: GPU present path. Read once at init — must happen BEFORE anything calls
+    // SDL_GetWindowSurface on m_window, since SDL forbids a renderer on a window
+    // that already has a framebuffer surface.
+    m_useRenderer = (w22::GetProfileInt("Advanced", "Renderer", 0) != 0);
+    if (m_useRenderer) {
+        // NOTE: no PRESENT_VSYNC yet. Today's loop presents from several sites
+        // per frame (RenderingAdapter + Compositor), so a vblank-blocking present
+        // on each call would cap the main-thread loop and throttle the sim —
+        // violating the decoupled-loop rule. VSync gets enabled once present is
+        // funneled to a single per-frame chokepoint (decoupled-loop follow-up).
+        // For T0 this matches the non-VSync software present (parity, no throttle).
+        m_renderer = SDL_CreateRenderer(m_window, -1, SDL_RENDERER_ACCELERATED);
+        if (!m_renderer) {
+            // Fall back to software present rather than failing the whole window.
+            LogToFile(std::string("WARN: SDL_CreateRenderer failed, falling back to "
+                                  "software present: ") + SDL_GetError());
+            m_useRenderer = false;
+        } else {
+            SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "1");  // linear when scaling
+            EnsureBackBuffer();
+            SDL_RendererInfo info;
+            if (SDL_GetRendererInfo(m_renderer, &info) == 0)
+                LogToFile(std::string("T0 renderer present path active: ") + info.name);
+        }
+    }
+
     return true;
+}
+
+bool GameWindow::EnsureBackBuffer() {
+    if (!m_useRenderer || !m_renderer)
+        return false;
+
+    int w = 0, h = 0;
+    SDL_GetRendererOutputSize(m_renderer, &w, &h);  // != window size on HiDPI
+    if (w <= 0 || h <= 0)
+        return false;
+    if (m_backBuffer && m_backW == w && m_backH == h)
+        return true;  // already the right size
+
+    if (m_backTex) { SDL_DestroyTexture(m_backTex); m_backTex = nullptr; }
+    if (m_backBuffer) { SDL_FreeSurface(m_backBuffer); m_backBuffer = nullptr; }
+
+    // ARGB8888 matches the window's typical 32-bit BGRX framebuffer and the
+    // CDIB 32-bit BGRX blit format used across the renderer (phase-6 finding).
+    m_backBuffer = SDL_CreateRGBSurfaceWithFormat(0, w, h, 32, SDL_PIXELFORMAT_ARGB8888);
+    m_backTex = SDL_CreateTexture(m_renderer, SDL_PIXELFORMAT_ARGB8888,
+                                  SDL_TEXTUREACCESS_STREAMING, w, h);
+    if (!m_backBuffer || !m_backTex) {
+        LogToFile(std::string("ERROR: back-buffer alloc failed: ") + SDL_GetError());
+        return false;
+    }
+    m_backW = w; m_backH = h;
+    return true;
+}
+
+SDL_Surface* GameWindow::GetPresentSurface() {
+    if (m_useRenderer) {
+        EnsureBackBuffer();
+        return m_backBuffer;
+    }
+    return m_window ? SDL_GetWindowSurface(m_window) : nullptr;
+}
+
+void GameWindow::PresentSurface() {
+    if (!m_window)
+        return;
+    if (m_useRenderer) {
+        if (!m_backBuffer || !m_backTex)
+            return;
+        SDL_UpdateTexture(m_backTex, nullptr, m_backBuffer->pixels, m_backBuffer->pitch);
+        SDL_RenderClear(m_renderer);
+        SDL_RenderCopy(m_renderer, m_backTex, nullptr, nullptr);
+        SDL_RenderPresent(m_renderer);
+    } else {
+        SDL_UpdateWindowSurface(m_window);
+    }
 }
 
 void GameWindow::Cleanup() {
@@ -349,6 +426,8 @@ void GameWindow::Cleanup() {
     m_uiInputListener.reset();
     m_inputHandler.reset();
 
+    if (m_backTex) { SDL_DestroyTexture(m_backTex); m_backTex = nullptr; }
+    if (m_backBuffer) { SDL_FreeSurface(m_backBuffer); m_backBuffer = nullptr; }
     if (m_renderer) {
         SDL_DestroyRenderer(m_renderer);
         m_renderer = nullptr;
@@ -701,20 +780,20 @@ void GameWindow::RequestQuit() {
 
 void GameWindow::SwapBuffers() {
     if (m_window) {
-        SDL_UpdateWindowSurface(m_window);
+        PresentSurface();
     }
 }
 
 void GameWindow::ClearScreen(float r, float g, float b, float a) {
     if (!m_window) return;
-    SDL_Surface* surface = SDL_GetWindowSurface(m_window);
+    SDL_Surface* surface = GetPresentSurface();
     if (!surface) return;
     Uint8 red = (Uint8)(r * 255.0f);
     Uint8 green = (Uint8)(g * 255.0f);
     Uint8 blue = (Uint8)(b * 255.0f);
     Uint32 color = SDL_MapRGB(surface->format, red, green, blue);
     SDL_FillRect(surface, nullptr, color);
-    SDL_UpdateWindowSurface(m_window);
+    PresentSurface();
 }
 
 void GameWindow::UpdateWindowTitle() {

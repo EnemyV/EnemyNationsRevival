@@ -175,7 +175,7 @@ bool SDL2VideoPlayer::PlayVideo(GameWindow* gameWindow, const std::string& fileP
                 0x000000FF, 0x0000FF00, 0x00FF0000, 0);
 
             if (frameSurf) {
-                SDL_Surface* winSurface = SDL_GetWindowSurface(window);
+                SDL_Surface* winSurface = gameWindow->GetPresentSurface();  // T0: software surface or renderer back-buffer
                 if (winSurface) {
                     float scaleX = (float)winW / videoW;
                     float scaleY = (float)winH / videoH;
@@ -188,7 +188,7 @@ bool SDL2VideoPlayer::PlayVideo(GameWindow* gameWindow, const std::string& fileP
                     SDL_FillRect(winSurface, nullptr, SDL_MapRGB(winSurface->format, 0, 0, 0));
                     SDL_Rect dstRect = { dstX, dstY, dstW, dstH };
                     SDL_BlitScaled(frameSurf, nullptr, winSurface, &dstRect);
-                    SDL_UpdateWindowSurface(window);
+                    gameWindow->PresentSurface();
                 }
                 SDL_FreeSurface(frameSurf);
             }
