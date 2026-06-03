@@ -35,6 +35,7 @@
 #include "SDL2Compositor.h"
 #include "SDL2Panel.h"
 #include "SDL2RouteWindow.h"
+#include "Perf.h"
 #include "SDL2GameDialogs.h"
 #include <SDL.h>
 #include <SDL_syswm.h>
@@ -1814,6 +1815,13 @@ void CWndArea::Draw( )
     }
 
     // Blt the dirty rects to the screen
+
+    // How much of the map got repainted this frame. Small = incremental (just moving
+    // units/animations); large = full-viewport redraw (scrolling, or something forcing
+    // a full invalidate). Pair with ui.dialogs to see whether opening the research
+    // window is what pushes the area map into full redraws every frame.
+    if ( Perf::IsEnabled() )
+        Perf::CounterAdd( "area.paintrects", m_aa.GetDirtyRects( )->m_nRectPaintCur );
 
     m_aa.GetDirtyRects( )->BltRects( );
 

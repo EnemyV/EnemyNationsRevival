@@ -10,6 +10,7 @@
 #include "SDL2Panel.h"
 #include "area.h"         // CWndArea, theAreaList (Esc deselect-vs-options decision)
 #include "music.h"        // theMusicPlayer (pause/resume on app focus change)
+#include "Perf.h"         // GaugeSet — correlate window state with frame cost
 #include "../rendering/SDLButtonManager.h"
 #include "../rendering/StatusBar.h"
 #include "../input/UIButtonListener.h"
@@ -157,6 +158,18 @@ void GameWindow::EnsureCursorVisible() {
 #endif
 }
 
+bool GameWindow::IsAreaPanelWindow(uint32_t winID) const {
+    if (!m_compositor || winID == 0)
+        return false;
+    for (int i = 0; i < m_compositor->GetPanelCount(); i++) {
+        SDL2Panel* p = m_compositor->GetPanel(i);
+        if (p && p->IsDetached() && p->GetOwnWindowID() == winID &&
+            p->GetName().rfind("area_", 0) == 0)
+            return true;
+    }
+    return false;
+}
+
 #ifdef _WIN32
 // Subclass the SDL window to intercept WM_SETCURSOR.
 // The game changes cursors via ::SetCursor() in CWndArea::SetMouseState().
@@ -179,6 +192,19 @@ static LRESULT CALLBACK SdlSubclassWndProc(HWND hWnd, UINT msg, WPARAM wParam, L
     // first click both activates and registers.
     if (msg == WM_MOUSEACTIVATE) {
         return MA_ACTIVATE;
+    }
+    // Defeat SDL's OTHER first-click swallow: on WM_ACTIVATE with WA_CLICKACTIVE
+    // (window activated by a mouse click), SDL arms `focus_click_pending` and
+    // eats the matching button-down AND button-up — so the click that brings an
+    // inactive window forward is lost, both when the whole app was in the
+    // background and when switching between our own windows. SDL only arms this
+    // for WA_CLICKACTIVE, so rewrite it to WA_ACTIVE before SDL sees it: the
+    // window still activates, but no click is swallowed. (The MA_ACTIVATE above
+    // and the SDL_HINT_MOUSE_FOCUS_CLICKTHROUGH hint are meant to handle this,
+    // but proved unreliable across this multi-window setup; this is the
+    // deterministic fix.)
+    if (msg == WM_ACTIVATE && LOWORD(wParam) == WA_CLICKACTIVE) {
+        wParam = MAKEWPARAM(WA_ACTIVE, HIWORD(wParam));
     }
     // Each SDL window stores its original wndproc as a window property so we
     // can route through the right one. Fall back to the static (main-window)
@@ -362,6 +388,17 @@ bool GameWindow::PollEvents() {
             return true;
         }
 
+        // The area map hides the OS cursor while placing a building/rocket (it
+        // draws its own footprint). SDL_ShowCursor is application-global, so that
+        // hide otherwise leaks into the toolbar / world map / dialogs. Re-show the
+        // cursor whenever the pointer enters any non-area window; the area map
+        // re-hides it on its own mouse-move while it still owns the pointer.
+        if (event.type == SDL_WINDOWEVENT &&
+            event.window.event == SDL_WINDOWEVENT_ENTER &&
+            !IsAreaPanelWindow(event.window.windowID)) {
+            SDL_ShowCursor(SDL_ENABLE);
+        }
+
         // Reset resize cursor before routing — if a dialog/menu consumes the event,
         // HandleEvent() never runs and the cursor would stay stuck as a resize arrow.
         if (event.type == SDL_MOUSEMOTION) {
@@ -455,6 +492,17 @@ bool GameWindow::PollEvents() {
                 theMusicPlayer.OnActivate(FALSE);
             }
         }
+    }
+
+    // Correlate frame cost with how many of our own extra windows are open. If the
+    // SEC_RENDER spike (area map redraw) tracks ui.dialogs going 0→1, the overlapping
+    // research/build window is the trigger; if it doesn't, the cost is elsewhere
+    // (e.g. full-viewport redraws while scrolling). Near-zero cost when EN_PERF off.
+    if (Perf::IsEnabled()) {
+        int nDlg = 0;
+        for (SDL2Dialog* dlg : m_activeDialogs)
+            if (dlg->IsNonModalActive()) nDlg++;
+        Perf::GaugeSet("ui.dialogs", nDlg);
     }
 
     // Render active non-modal dialogs

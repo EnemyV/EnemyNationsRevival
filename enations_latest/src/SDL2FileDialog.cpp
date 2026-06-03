@@ -11,14 +11,21 @@
 #include "sfx.h"
 
 SDL2FileDialog::SDL2FileDialog(GameWindow* gw)
-    : SDL2Dialog(gw, "Game Options", 360, 372)
+    : SDL2Dialog(gw, "Game Options", 360, 344)
 {
 }
 
 void SDL2FileDialog::OnInit() {
+    // Anchor to the usable interior (below the title bar, inside the gold border)
+    // instead of guessing offsets off m_y — that previously slid the Settings box
+    // under the title bar. The four button rows are then distributed evenly down
+    // to the bottom border so there's no dead space at the foot of the dialog.
+    const int cl = ContentLeft(), cr = ContentRight();
+    const int cTop = ContentTop(), cBot = ContentBottom();
+
     // --- Settings group: speed + volumes, boxed together -------------------
-    const int gbX = m_x + 12, gbW = m_width - 24;
-    const int gbY = m_y + 34, gbH = 118;
+    const int gbX = cl + 6, gbW = (cr - cl) - 12;
+    const int gbY = cTop + 8, gbH = 118;
     AddWidget<SDL2GroupBox>(gbX, gbY, gbW, gbH, "Settings");
 
     int labelW = 86;
@@ -41,27 +48,35 @@ void SDL2FileDialog::OnInit() {
     m_sldMusic = AddWidget<SDL2Slider>(sliderX, y, sliderW, 24,
         0, 100, theMusicPlayer.GetMusicVolume());
 
-    // --- Action buttons: a tidy 2-column grid below the settings box -------
+    // --- Action buttons: a tidy 2-column grid filling the rest of the dialog
     //   Save | Load           (file)
     //   Minimize | Help        (utility)
     //   Reset Windows          (full width — restore default window layout)
     //   Exit Game | Resume     (leave vs return)
-    const int btnW = 152, btnH = 30, colGap = 12, rowGap = 10;
+    const int btnW = 152, btnH = 30, colGap = 12;
     const int gridX = m_x + (m_width - (btnW * 2 + colGap)) / 2;
     const int col2 = gridX + btnW + colGap;
     const int fullW = btnW * 2 + colGap;
-    int by = gbY + gbH + 14;
+
+    // Distribute the 4 rows evenly between the settings box and the bottom border.
+    const int areaTop = gbY + gbH + 12;
+    const int areaBot = cBot - 8;
+    int rowGap = (areaBot - areaTop - 4 * btnH) / 3;
+    if (rowGap < 8)  rowGap = 8;
+    if (rowGap > 16) rowGap = 16;
+    const int rowStep = btnH + rowGap;
+    int by = areaTop;
 
     AddWidget<SDL2Button>(gridX, by, btnW, btnH, "Save Game", [this]() { OnSave(); });
     AddWidget<SDL2Button>(col2,  by, btnW, btnH, "Load Game", [this]() { OnLoad(); });
-    by += btnH + rowGap;
+    by += rowStep;
 
     AddWidget<SDL2Button>(gridX, by, btnW, btnH, "Minimize", [this]() { OnMinimize(); });
     AddWidget<SDL2Button>(col2,  by, btnW, btnH, "Help",     [this]() { OnHelp(); });
-    by += btnH + rowGap;
+    by += rowStep;
 
     AddWidget<SDL2Button>(gridX, by, fullW, btnH, "Reset Windows", [this]() { OnResetWindows(); });
-    by += btnH + rowGap;
+    by += rowStep;
 
     AddWidget<SDL2Button>(gridX, by, btnW, btnH, "Exit Game",   [this]() { OnExit(); });
     AddWidget<SDL2Button>(col2,  by, btnW, btnH, "Resume Game", [this]() { OnOK(); });

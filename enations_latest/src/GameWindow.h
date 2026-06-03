@@ -192,6 +192,12 @@ public:
     // negative.
     void EnsureCursorVisible();
 
+    // True if winID belongs to a detached Area Map panel window. The area map
+    // hides the OS cursor while placing a building/rocket; this lets PollEvents
+    // re-show it when the pointer crosses into any other (non-area) window, since
+    // SDL_ShowCursor is application-global rather than per-window.
+    bool IsAreaPanelWindow(uint32_t winID) const;
+
     /**
      * Raise the SDL window to the foreground (above MFC windows)
      */

@@ -458,6 +458,19 @@ protected:
     // NOT owned by the dialog — caller keeps it alive.
     void SetCustomBackground(SDL_Surface* bg) { m_customBg = bg; }
 
+    // Usable interior geometry — the area below the title bar and inside the gold
+    // border. Layout code should anchor to these instead of guessing pixel offsets
+    // from m_x/m_y, so content never slides under the title bar (the border art
+    // height varies). LoadDialogArt() is idempotent; calling it here guarantees the
+    // metrics match what Render() uses even when OnInit runs before the first paint.
+    static const int kTitleBarH = 26;
+    int DlgBorderTop()  { LoadDialogArt(); return s_borderHorz ? s_borderHorz->h : 6; }
+    int DlgBorderSide() { LoadDialogArt(); return s_borderVert ? s_borderVert->w : 6; }
+    int ContentTop()    { return m_y + DlgBorderTop() + kTitleBarH; }
+    int ContentLeft()   { return m_x + DlgBorderSide(); }
+    int ContentRight()  { return m_x + m_width  - DlgBorderSide(); }
+    int ContentBottom() { return m_y + m_height - DlgBorderTop(); }
+
 public:
     // Load game art bitmaps (DLG_BKGND, DIB_GOLD, borders) for dialog rendering.
     // Called once after theBitmaps is initialized; all dialogs share the cached surfaces.
