@@ -299,13 +299,13 @@ const SDL2Terrain::Tile* SDL2Terrain::TileForHex( CHex* phex, int iDir )
     return ( it != s_byTypeVar.end() ) ? it->second : GetDefaultForType( typeName );
 }
 
-// T5: which terrain types feather (soft-blend) at their boundaries. Excludes
-// road / city / resources (engine CHex::Draw rules) and fields (farm plots stay
-// crisp — user). Excluding a type stops blending in BOTH directions.
+// T5: which terrain types feather (soft-blend) at their boundaries. Matches the
+// engine's CHex::Draw exclusions EXACTLY: road / city / resources never feather.
+// Everything else (incl. fields) feathers — verified against the original; the
+// original also feathers same-type/different-variant (INOUT) and coastline IN/OUT.
 static bool Featherable( int type )
 {
-    return type >= 0 && type != CHex::road && type != CHex::city &&
-           type != CHex::resources && type != CHex::fields;
+    return type >= 0 && type != CHex::road && type != CHex::city && type != CHex::resources;
 }
 
 void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
@@ -465,9 +465,11 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
                     if ( !pn ) continue;
                     CTerrainSprite* ns = pn->GetSprite( );
                     int ntype = ns ? ns->GetID( ) : -1;
-                    if ( !Featherable( ntype ) || ntype == type ) continue;
+                    if ( !Featherable( ntype ) ) continue;
                     const Tile* ntile = TileForHex( pn, aa.m_iDir );
-                    if ( !ntile || !ntile->tex[zoom] ) continue;
+                    // Blend whenever the neighbour's TILE differs (variant OR type)
+                    // — softens variant boundaries too, not just type boundaries.
+                    if ( !ntile || !ntile->tex[zoom] || ntile == tile ) continue;
 
                     int   c0 = e, c1 = ( e + 1 ) & 3;
                     Uint8 g0 = (Uint8)__min( 255, (int)( fog[c0] * 255.0f ) );
