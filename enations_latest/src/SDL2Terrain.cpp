@@ -3,6 +3,7 @@
 #include "base.h"      // CAnimAtr, CViewHexCoord, CHexCoord
 #include "terrain.h"   // CHex, theMap
 #include "terrain.inl"
+#include "player.h"    // theGame.GetFrame() — water wave animation clock
 
 #include <SDL.h>
 #include <vector>
@@ -291,6 +292,19 @@ static float TriBrightness( int z0, int z1, int z2, int z3, bool left )
     return b < 0.80f ? 0.80f : ( b > 1.40f ? 1.40f : b );
 }
 
+// Water wave animation: ocean/lake/coastline/river bake 8 frames (letters a-h),
+// swamp 5 (a-e). The engine animates water by drawing its terrain sprite as a
+// CSpriteView animation (DrawSimpleAnimation) that cycles those frames off the
+// game clock; the GPU path was rendering only frame 'a' (frozen). Cycle the
+// frame letter off theGame.GetFrame() so waves move again. kWaterHold = game
+// frames per wave frame (24 Hz sim → hold 3 ≈ one 8-frame cycle per second).
+static char WaterFrameLetter( int nFrames )
+{
+    const int kWaterHold = 3;
+    int f = ( (int)theGame.GetFrame( ) / kWaterHold ) % nFrames;
+    return (char)( 'a' + f );
+}
+
 const SDL2Terrain::Tile* SDL2Terrain::TileForHex( CHex* phex, int iDir )
 {
     if ( !phex )
@@ -318,10 +332,29 @@ const SDL2Terrain::Tile* SDL2Terrain::TileForHex( CHex* phex, int iDir )
     {
         int F = psprite->GetIndex( );
         if ( F < 0 || F > 38 ) F = 0;
-        int srcDir  = kCoastSrcDir[F];
-        int viewDir = ( ( iDir - kCoastRot[F] ) % 4 + 4 ) % 4;
-        const Tile* t = Get( "coastline", srcDir, std::string( kDirPrefix[viewDir] ) + "00a000" );
+        int  srcDir  = kCoastSrcDir[F];
+        // NOTE: coast uses (iDir + rot), not (iDir - rot). The water-side of rot-1
+        // and rot-3 tiles came out 180° wrong (water poking into land on NE/SE
+        // shores) with the minus sign; plus agrees with minus for rot 0/2 (which
+        // were already correct) and flips 1/3. (Asymmetry vs roads: straight roads
+        // are 180°-symmetric so the sign was invisible there.)
+        int  viewDir = ( ( iDir + kCoastRot[F] ) % 4 + 4 ) % 4;
+        char fr      = WaterFrameLetter( 8 );                       // animate foam
+        std::string stem = std::string( kDirPrefix[viewDir] ) + "00" + fr + "000";
+        const Tile* t = Get( "coastline", srcDir, stem );
+        if ( !t ) t = Get( "coastline", srcDir, std::string( kDirPrefix[viewDir] ) + "00a000" );
         return t ? t : GetDefaultForType( "coastline" );
+    }
+
+    // Open-water types: single direction (aa), animated frames a-h / a-e.
+    if ( type == CHex::ocean || type == CHex::lake || type == CHex::river || type == CHex::swamp )
+    {
+        int  variant = psprite->GetIndex( );
+        int  nFrames = ( type == CHex::swamp ) ? 5 : 8;
+        char fr      = WaterFrameLetter( nFrames );
+        const Tile* t = Get( typeName, variant, std::string( "aa00" ) + fr + "000" );
+        if ( !t ) t = Get( typeName, variant, "aa00a000" );        // static fallback
+        return t ? t : GetDefaultForType( typeName );
     }
 
     int  variant = psprite->GetIndex( );
@@ -336,6 +369,18 @@ const SDL2Terrain::Tile* SDL2Terrain::TileForHex( CHex* phex, int iDir )
 static bool Featherable( int type )
 {
     return type >= 0 && type != CHex::road && type != CHex::city && type != CHex::resources;
+}
+
+// Water types blend via a thin (1-2px) checkerboard DITHER in the original
+// (sprite.cpp terrain rasterizer), NOT a soft fade. A wide alpha gradient
+// between dark water and bright land produces a muddy halo, so the GPU
+// soft-feather pass skips any edge touching water — a crisp shoreline reads
+// like the original's fine dither at normal zoom. (A true per-pixel GPU dither
+// could restore the exact stipple later.)
+static bool IsWaterType( int type )
+{
+    return type == CHex::coastline || type == CHex::ocean || type == CHex::lake ||
+           type == CHex::river || type == CHex::swamp;
 }
 
 void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
@@ -363,6 +408,11 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
     // T5: edge-feather triangles (neighbour tiles bled into shared edges),
     // drawn in a 2nd pass over the opaque base so boundaries soft-blend.
     std::unordered_map<SDL_Texture*, std::vector<SDL_Vertex>> featherBatches;
+    // Building-placement footprint: per-hex cursor-mode overlay (white=buildable,
+    // black=road/land-exit, warn/bad/lousy=yellow/red/orange). The engine draws a
+    // ~50% checkerboard stipple of the cursor colour (sprite.cpp TerrainDrawQuad
+    // bHatch); the GPU analogue is a translucent untextured diamond on top.
+    std::vector<SDL_Vertex> hatchVerts;
 
     for ( int y = iTopY;; ++y )
     {
@@ -473,20 +523,48 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
             vB.color = grayCol( bR * fog[3] );
             vb.push_back( vT ); vb.push_back( vR ); vb.push_back( vB );
 
-            // T5 edge feather: for each diamond edge bordering a DIFFERENT
-            // featherable type, bleed the neighbour's tile in from that edge with
-            // a soft alpha gradient (≈half at the edge → 0 at the diamond centre).
-            // Both hexes do this mutually → a smooth INOUT-style blend, replacing
-            // the original checkerboard dither. road/city/resources never feather.
-            if ( Featherable( type ) )
+            // Building-placement footprint: if this hex carries a cursor mode,
+            // overlay a translucent diamond in the mode's colour (engine bHatch
+            // stipple analogue). ok=white buildable, land/sea-exit=black road,
+            // warn/bad/lousy = yellow/red/orange.
+            int cm = phex->GetCursorMode( );
+            if ( cm != CHex::no_cur )
+            {
+                SDL_Color hc;
+                switch ( cm )
+                {
+                    case CHex::ok_cur:        hc = { 255, 255, 255, 130 }; break;
+                    case CHex::land_exit_cur: hc = {   0,   0,   0, 140 }; break;
+                    case CHex::sea_exit_cur:  hc = {   0,   0,   0, 140 }; break;
+                    case CHex::warn_cur:      hc = { 235, 220,  45, 130 }; break;
+                    case CHex::bad_cur:       hc = { 220,  45,  45, 150 }; break;
+                    case CHex::lousy_cur:     hc = { 235, 140,  45, 140 }; break;
+                    default:                  hc = { 255, 255, 255, 130 }; break;
+                }
+                SDL_Vertex hL, hT, hR, hB;
+                hL.position = { (float)pts[0].x, (float)pts[0].y }; hL.tex_coord = { 0, 0 }; hL.color = hc;
+                hT.position = { (float)pts[1].x, (float)pts[1].y }; hT.tex_coord = { 0, 0 }; hT.color = hc;
+                hR.position = { (float)pts[2].x, (float)pts[2].y }; hR.tex_coord = { 0, 0 }; hR.color = hc;
+                hB.position = { (float)pts[3].x, (float)pts[3].y }; hB.tex_coord = { 0, 0 }; hB.color = hc;
+                hatchVerts.push_back( hL ); hatchVerts.push_back( hT ); hatchVerts.push_back( hB );
+                hatchVerts.push_back( hT ); hatchVerts.push_back( hR ); hatchVerts.push_back( hB );
+            }
+
+            // T5 edge feather: bleed a DIFFERING featherable neighbour's tile in
+            // along the shared diamond edge — a THIN, low-alpha band hugging the
+            // edge (apex pulled most of the way back to the edge), approximating
+            // the original's 1-2px edge dither. The earlier half-tile, 80%-alpha
+            // version washed whole tiles together (deserts/variant boundaries went
+            // to blocky mush). road/city/resources/water never soft-feather.
+            if ( Featherable( type ) && !IsWaterType( type ) )
             {
                 static const SDL_FPoint fuv[4] = { {0.f,0.5f}, {0.5f,0.f}, {1.f,0.5f}, {0.5f,1.f} };
                 static const int nbrDX[4] = { 0, 1, 0, -1 };
                 static const int nbrDY[4] = { -1, 0, 1, 0 };
-                const Uint8 kFeatherA = 205;                       // ~0.8 blend at the edge (strong)
+                const Uint8  kFeatherA = 135;    // visible but not a wash (205 was too strong, 70 too faint)
+                const float  kBand     = 0.38f;  // band depth: edge → 38% toward centre
                 float cxF = ( pts[0].x + pts[1].x + pts[2].x + pts[3].x ) * 0.25f;
                 float cyF = ( pts[0].y + pts[1].y + pts[2].y + pts[3].y ) * 0.25f;
-                Uint8 gc  = (Uint8)__min( 255, (int)( ( fog[0]+fog[1]+fog[2]+fog[3] ) * 0.25f * 255.0f ) );
 
                 for ( int e = 0; e < 4; ++e )
                 {
@@ -495,23 +573,34 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
                     if ( !pn ) continue;
                     CTerrainSprite* ns = pn->GetSprite( );
                     int ntype = ns ? ns->GetID( ) : -1;
-                    if ( !Featherable( ntype ) ) continue;
+                    if ( !Featherable( ntype ) || IsWaterType( ntype ) ) continue;
                     const Tile* ntile = TileForHex( pn, aa.m_iDir );
-                    // Blend whenever the neighbour's TILE differs (variant OR type)
-                    // — softens variant boundaries too, not just type boundaries.
                     if ( !ntile || !ntile->tex[zoom] || ntile == tile ) continue;
 
                     int   c0 = e, c1 = ( e + 1 ) & 3;
                     Uint8 g0 = (Uint8)__min( 255, (int)( fog[c0] * 255.0f ) );
                     Uint8 g1 = (Uint8)__min( 255, (int)( fog[c1] * 255.0f ) );
 
-                    SDL_Vertex fa, fb, fc;
-                    fa.position = { (float)pts[c0].x, (float)pts[c0].y }; fa.tex_coord = fuv[c0]; fa.color = { g0, g0, g0, kFeatherA };
-                    fb.position = { (float)pts[c1].x, (float)pts[c1].y }; fb.tex_coord = fuv[c1]; fb.color = { g1, g1, g1, kFeatherA };
-                    fc.position = { cxF, cyF };                          fc.tex_coord = { 0.5f, 0.5f }; fc.color = { gc, gc, gc, 0 };
+                    // Inset points: a short way from each edge endpoint toward the
+                    // tile centre. Edge endpoints full alpha → inset 0 → thin band.
+                    float i0x = pts[c0].x + kBand * ( cxF - pts[c0].x );
+                    float i0y = pts[c0].y + kBand * ( cyF - pts[c0].y );
+                    float i1x = pts[c1].x + kBand * ( cxF - pts[c1].x );
+                    float i1y = pts[c1].y + kBand * ( cyF - pts[c1].y );
+                    SDL_FPoint u0 = fuv[c0], u1 = fuv[c1];
+                    SDL_FPoint iu0 = { u0.x + kBand*(0.5f-u0.x), u0.y + kBand*(0.5f-u0.y) };
+                    SDL_FPoint iu1 = { u1.x + kBand*(0.5f-u1.x), u1.y + kBand*(0.5f-u1.y) };
+
+                    SDL_Vertex e0, e1, n0, n1;
+                    e0.position = { (float)pts[c0].x, (float)pts[c0].y }; e0.tex_coord = u0;  e0.color = { g0, g0, g0, kFeatherA };
+                    e1.position = { (float)pts[c1].x, (float)pts[c1].y }; e1.tex_coord = u1;  e1.color = { g1, g1, g1, kFeatherA };
+                    n0.position = { i0x, i0y };                          n0.tex_coord = iu0; n0.color = { g0, g0, g0, 0 };
+                    n1.position = { i1x, i1y };                          n1.tex_coord = iu1; n1.color = { g1, g1, g1, 0 };
 
                     std::vector<SDL_Vertex>& fvb = featherBatches[ntile->tex[zoom]];
-                    fvb.push_back( fa ); fvb.push_back( fb ); fvb.push_back( fc );
+                    // band quad = 2 tris: (e0,e1,n1) + (e0,n1,n0)
+                    fvb.push_back( e0 ); fvb.push_back( e1 ); fvb.push_back( n1 );
+                    fvb.push_back( e0 ); fvb.push_back( n1 ); fvb.push_back( n0 );
                 }
             }
         }
@@ -528,4 +617,10 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
     // T5: feather pass on top (textures are BLEND mode, vertex alpha gradient).
     for ( auto& b : featherBatches )
         SDL_RenderGeometry( r, b.first, b.second.data(), (int)b.second.size(), nullptr, 0 );
+    // Building-placement footprint overlay, last (untextured, translucent).
+    if ( !hatchVerts.empty() )
+    {
+        SDL_SetRenderDrawBlendMode( r, SDL_BLENDMODE_BLEND );
+        SDL_RenderGeometry( r, nullptr, hatchVerts.data(), (int)hatchVerts.size(), nullptr, 0 );
+    }
 }
