@@ -168,6 +168,14 @@ int SDL2Terrain::Load( SDL_Renderer* renderer )
     s_renderer = renderer;
     int files = 0;
 
+    // Tracks the stem currently chosen for each "type_variant" representative, so
+    // the choice is deterministic (lexicographically smallest = "aa00a000" = dir
+    // aa, letter a) rather than dependent on FindFirstFile enumeration order. The
+    // engine always draws view (xiDir, damage 0) for non-field terrain
+    // (terrain.cpp CHex::Draw), i.e. letter 'a'; multi-letter types reaching the
+    // general s_byTypeVar path (river/swamp) must resolve to that 'a' tile.
+    std::unordered_map<std::string, std::string> tvStem;
+
     WIN32_FIND_DATAA fd;
     HANDLE h = FindFirstFileA( ( dir + "\\*.png" ).c_str(), &fd );
     if ( h != INVALID_HANDLE_VALUE )
@@ -201,20 +209,19 @@ int SDL2Terrain::Load( SDL_Renderer* renderer )
             tile.transparent = TypeTransparent( type );
             if ( s_byType.find( type ) == s_byType.end() )
                 s_byType[type] = &tile;   // first-seen representative for first-light
-            // Per-(type,variant): prefer the "aa" base-direction tile (first shape).
-            // For single-tile-per-variant types this is the exact tile; for
-            // multi-shape types (coastline/road/river/swamp) it's the base shape.
+            // Per-(type,variant) representative: deterministically the tile with
+            // the lexicographically smallest stem ("aa00a000" — direction aa,
+            // letter a = the engine's damage-0 view). For single-tile types this
+            // is the exact tile; for multi-letter types on the general path
+            // (river/swamp) it pins the letter to 'a' regardless of scan order.
             if ( zoom == 0 )
             {
                 std::string tvKey = type + "_" + std::to_string( variant );
-                auto        tvIt  = s_byTypeVar.find( tvKey );
-                if ( tvIt == s_byTypeVar.end() ||
-                     ( tstem.rfind( "aa", 0 ) == 0 && tvIt->second->tex[0] &&
-                       /* prefer aa over a previously-stored non-aa */ true ) )
+                auto        stemIt = tvStem.find( tvKey );
+                if ( stemIt == tvStem.end() || tstem < stemIt->second )
                 {
-                    // store on first sight, or upgrade to an aa-dir tile
-                    if ( tvIt == s_byTypeVar.end() || tstem.rfind( "aa", 0 ) == 0 )
-                        s_byTypeVar[tvKey] = &tile;
+                    s_byTypeVar[tvKey] = &tile;
+                    tvStem[tvKey]      = tstem;
                 }
             }
             ++files;
