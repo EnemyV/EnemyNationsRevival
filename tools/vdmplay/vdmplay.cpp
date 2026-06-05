@@ -2323,10 +2323,14 @@ extern "C"
 
 
 
-            gLocalIni = FALSE;
+            // Default to local-directory ini so port/address writes from the
+            // game (WritePrivateProfileString "vdmplay.ini") and VDMPLAY reads
+            // land in the same file.  Overridable via [VDMPLAY] LocalIni=0 in
+            // the Windows-directory VDMPLAY.INI.
+            gLocalIni = TRUE;
             vpMakeIniFile( fName );
 
-            gLocalIni = GetPrivateProfileInt( "VDMPLAY", "LocalIni", 0, fName );
+            gLocalIni = GetPrivateProfileInt( "VDMPLAY", "LocalIni", 1, fName );
 
             vpMakeIniFile( fName );
 

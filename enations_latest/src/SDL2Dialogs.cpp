@@ -1017,7 +1017,7 @@ bool SDL2_RunCreateNetworkFlow(GameWindow* gameWindow) {
     EnWriteProfileInt("Create", "WorldType",     createDlg.m_iWorldType);
 
     std::string sPort = std::to_string(createDlg.m_iPort);
-    WritePrivateProfileString("TCP", "WellKnownPort", sPort.c_str(), "vdmplay.ini");
+    WritePrivateProfileString("TCP", "WellKnownPort", sPort.c_str(), ".\\vdmplay.ini");
 
     // Step 2: publish the session — pass CNetPublish so clients can read game
     // metadata (AI level, world size, etc.) from VP_SESSIONENUM callbacks.
@@ -1080,9 +1080,9 @@ bool SDL2_RunJoinNetworkFlow(GameWindow* gameWindow) {
     if (joinDlg.DoModal() != 1) return false;
 
     // Step 2: write TCP config for VDMPLAY
-    WritePrivateProfileString("TCP", "ServerAddress", joinDlg.m_serverAddr.c_str(), "vdmplay.ini");
+    WritePrivateProfileString("TCP", "ServerAddress", joinDlg.m_serverAddr.c_str(), ".\\vdmplay.ini");
     std::string sPort = std::to_string(joinDlg.m_iPort);
-    WritePrivateProfileString("TCP", "WellKnownPort", sPort.c_str(), "vdmplay.ini");
+    WritePrivateProfileString("TCP", "WellKnownPort", sPort.c_str(), ".\\vdmplay.ini");
 
     // Step 3: create orchestrator + initialise game state for a joining client
     ASSERT(theApp.m_pCreateGame == NULL);
@@ -1217,7 +1217,7 @@ bool SDL2_RunLoadNetworkFlow(GameWindow* gameWindow) {
     pCreate->m_sName     = hostDlg.m_playerName;
     pCreate->m_sGameName = theGame.m_sGameName;
     std::string sPort = std::to_string(hostDlg.m_iPort);
-    WritePrivateProfileString("TCP", "WellKnownPort", sPort.c_str(), "vdmplay.ini");
+    WritePrivateProfileString("TCP", "WellKnownPort", sPort.c_str(), ".\\vdmplay.ini");
 
     // Step 3: publish the loaded game session for clients to enumerate
     CNetPublish* pPub = CNetPublish::Alloc(pCreate);
