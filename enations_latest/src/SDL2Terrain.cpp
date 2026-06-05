@@ -31,6 +31,24 @@ static const char* const kTypeName[] = {
 };
 static const int kNumTypeNames = (int)( sizeof( kTypeName ) / sizeof( kTypeName[0] ) );
 
+// Integer-indexed [type][variant] → representative tile, mirroring s_byTypeVar but
+// without the per-lookup std::string construction + hash. The general (non-road/
+// coast/water) path in TileForHex is the hot loop (called for every hex AND its 4
+// feather neighbours); the string-keyed map made it ~15 us/hex. Built in Load().
+static std::vector<const SDL2Terrain::Tile*> s_typeVarPtr[kNumTypeNames];
+
+// Bumped on every (re)Load so the terrain mesh cache (keyed partly by this) is
+// invalidated when textures are recreated — otherwise a stale cache could
+// re-submit freed SDL_Texture* after loading a different game.
+static unsigned s_loadGen = 0;
+
+static int TypeNameToInt( const std::string& n )
+{
+    for ( int i = 0; i < kNumTypeNames; ++i )
+        if ( n == kTypeName[i] ) return i;
+    return -1;
+}
+
 // Road facing (CHex::r_*) → (base source-dir, rotation). MakeRotated permutes
 // the 4 direction views, so a rotated facing = the base road art shown from
 // view (m_iDir - rot) mod 4. Base road sprites load at engine indices 0,2,6,10,11
@@ -223,6 +241,13 @@ int SDL2Terrain::Load( SDL_Renderer* renderer )
                 {
                     s_byTypeVar[tvKey] = &tile;
                     tvStem[tvKey]      = tstem;
+                    int ti = TypeNameToInt( type );          // integer-indexed mirror
+                    if ( ti >= 0 )
+                    {
+                        if ( (int)s_typeVarPtr[ti].size() <= variant )
+                            s_typeVarPtr[ti].resize( variant + 1, nullptr );
+                        s_typeVarPtr[ti][variant] = &tile;
+                    }
                 }
             }
             ++files;
@@ -231,6 +256,7 @@ int SDL2Terrain::Load( SDL_Renderer* renderer )
     }
 
     s_loaded = true;
+    ++s_loadGen;   // invalidate the terrain mesh cache (textures were (re)created)
     LogTerrain( "Loaded " + std::to_string( s_tiles.size() ) + " tiles (" +
                 std::to_string( files ) + " PNGs)." );
     return (int)s_tiles.size();
@@ -244,6 +270,7 @@ void SDL2Terrain::Unload()
     s_tiles.clear();
     s_byType.clear();
     s_byTypeVar.clear();
+    for ( int i = 0; i < kNumTypeNames; ++i ) s_typeVarPtr[i].clear();
     s_renderer = nullptr;
     s_loaded   = false;
 }
@@ -300,7 +327,10 @@ static float TriBrightness( int z0, int z1, int z2, int z3, bool left )
 // frames per wave frame (24 Hz sim → hold 3 ≈ one 8-frame cycle per second).
 static char WaterFrameLetter( int nFrames )
 {
-    const int kWaterHold = 3;
+    // Match the engine: water sprites advance one frame every Time()=6 game-frames
+    // (read live from the ocean sprite's ANIM_FRONT_1; DrawSimpleAnimation uses
+    // nHold = GetAnim(FRONT_1,0)->Time()). 8 frames * 6 = ~2 s per ripple cycle.
+    const int kWaterHold = 6;
     int f = ( (int)theGame.GetFrame( ) / kWaterHold ) % nFrames;
     return (char)( 'a' + f );
 }
@@ -357,9 +387,11 @@ const SDL2Terrain::Tile* SDL2Terrain::TileForHex( CHex* phex, int iDir )
         return t ? t : GetDefaultForType( typeName );
     }
 
-    int  variant = psprite->GetIndex( );
-    auto it      = s_byTypeVar.find( std::string( typeName ) + "_" + std::to_string( variant ) );
-    return ( it != s_byTypeVar.end() ) ? it->second : GetDefaultForType( typeName );
+    int variant = psprite->GetIndex( );
+    if ( type >= 0 && type < kNumTypeNames && variant >= 0 &&
+         variant < (int)s_typeVarPtr[type].size() && s_typeVarPtr[type][variant] )
+        return s_typeVarPtr[type][variant];            // integer-indexed (no string alloc)
+    return GetDefaultForType( typeName );
 }
 
 // T5: which terrain types feather (soft-blend) at their boundaries. Matches the
@@ -371,15 +403,14 @@ static bool Featherable( int type )
     return type >= 0 && type != CHex::road && type != CHex::city && type != CHex::resources;
 }
 
-// Water types blend via a thin (1-2px) checkerboard DITHER in the original
-// (sprite.cpp terrain rasterizer), NOT a soft fade. A wide alpha gradient
-// between dark water and bright land produces a muddy halo, so the GPU
-// soft-feather pass skips any edge touching water — a crisp shoreline reads
-// like the original's fine dither at normal zoom. (A true per-pixel GPU dither
-// could restore the exact stipple later.)
-static bool IsWaterType( int type )
+// OPEN water (ocean/lake/river/swamp) never participates in the edge feather:
+// the coast should blend only on its TERRAIN side, not bleed into the water.
+// NOTE coastline is NOT open water — it's the land-side transition tile, so it
+// DOES feather toward its land neighbours (just not toward the ocean edge, which
+// this predicate excludes as a neighbour). Open water itself stays crisp.
+static bool IsOpenWater( int type )
 {
-    return type == CHex::coastline || type == CHex::ocean || type == CHex::lake ||
+    return type == CHex::ocean || type == CHex::lake ||
            type == CHex::river || type == CHex::swamp;
 }
 
@@ -403,11 +434,52 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
     const int iRightX = ptTR.x + 2;
     const int margin  = ( 64 << 3 ) >> zoom;           // tall-hex overscan (max alt)
 
-    // Batch quads by texture (SDL_RenderGeometry binds one texture per call).
-    std::unordered_map<SDL_Texture*, std::vector<SDL_Vertex>> batches;
-    // T5: edge-feather triangles (neighbour tiles bled into shared edges),
-    // drawn in a 2nd pass over the opaque base so boundaries soft-blend.
-    std::unordered_map<SDL_Texture*, std::vector<SDL_Vertex>> featherBatches;
+    // --- Terrain mesh CACHE -------------------------------------------------
+    // The per-hex rebuild is the whole cost (17 ms at zoom 1 .. 240 ms at full
+    // zoom-out); the GPU draws were never it (~2 ms). So build the vertex buffers
+    // only when the VIEW (scroll/zoom/dir), the water WAVE frame (zoomed in), or a
+    // refresh interval changes; every other render just re-submits the cached draw
+    // calls. Units/sprites are composited separately (RenderDetached), so they keep
+    // updating; terrain edits show within the refresh interval.
+    static std::vector<std::pair<SDL_Texture*, std::vector<SDL_Vertex>>> s_cache;
+    static uint64_t s_sig = ~0ull; static DWORD s_buildAt = 0;
+    uint64_t sig = (uint64_t)(uint32_t)iTopY
+                 ^ ( (uint64_t)(uint32_t)iLeftX  << 18 )
+                 ^ ( (uint64_t)(uint32_t)iRightX << 34 )
+                 ^ ( (uint64_t)( zoom & 7 )      << 50 )
+                 ^ ( (uint64_t)( aa.m_iDir & 3 ) << 53 )
+                 ^ ( (uint64_t)s_loadGen          << 58 );
+    if ( zoom <= 1 ) sig ^= ( (uint64_t)( theGame.GetFrame( ) / 6 ) << 55 );  // animate water
+    DWORD _nowT    = GetTickCount( );
+    // Zoomed in, the water wave-tick (in the sig) already rebuilds ~4x/s, which
+    // also picks up cursor/terrain edits; zoomed out (no wave-tick) a slow refresh
+    // catches edits. The point is to let MOST renders (units moving, view static)
+    // hit the cache.
+    DWORD _refresh = ( zoom <= 1 ) ? 2000u : 4000u;
+    if ( sig == s_sig && ( _nowT - s_buildAt ) < _refresh )
+    {
+        for ( auto& d : s_cache )
+            SDL_RenderGeometry( r, d.first, d.second.data(), (int)d.second.size(), nullptr, 0 );
+        return;
+    }
+    s_sig = sig; s_buildAt = _nowT; s_cache.clear();   // rebuild below
+
+    // Terrain is drawn ROW BY ROW, back-to-front, so a tall tile's altitude-raised
+    // diamond correctly occludes the lower tiles in rows behind it (global texture
+    // batching broke this — the ocean batch, drawn after the mountain batch, painted
+    // over a mountain in front of it). WITHIN a row, base + feather are batched by
+    // texture (rows don't overlap, so order inside a row is free) — that keeps the
+    // SDL_RenderGeometry call count low (per-hex drawing tanked the FPS when zoomed
+    // out). Each row: draw its base batches, then its feather batches, then advance.
+    std::unordered_map<SDL_Texture*, std::vector<SDL_Vertex>> rowBase;
+    std::unordered_map<SDL_Texture*, std::vector<SDL_Vertex>> rowFeather;
+    auto drawRow = [&]() {
+        // Record this row's batches into the cache (back-to-front order preserved).
+        for ( auto& b : rowBase )
+            if ( !b.second.empty() ) { s_cache.emplace_back( b.first, std::move( b.second ) ); b.second.clear(); }
+        for ( auto& b : rowFeather )
+            if ( !b.second.empty() ) { s_cache.emplace_back( b.first, std::move( b.second ) ); b.second.clear(); }
+    };
     // Building-placement footprint: per-hex cursor-mode overlay (white=buildable,
     // black=road/land-exit, warn/bad/lousy=yellow/red/orange). The engine draws a
     // ~50% checkerboard stipple of the cursor colour (sprite.cpp TerrainDrawQuad
@@ -453,7 +525,7 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
                 continue;
 
             SDL_Texture* tex = tile->tex[zoom];
-            std::vector<SDL_Vertex>& vb = batches[tex];
+            std::vector<SDL_Vertex>& vb = rowBase[tex];   // batched within this row
 
             // T4 slope shading: shaded land gets per-triangle slope brightness;
             // water/coast stay full colour. T6 fog is applied per-vertex below.
@@ -478,10 +550,21 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
             };
             float vS = visAt( 0, 0 );
             float fog[4];
-            fog[0] = kFogDim + ( 1.0f - kFogDim ) * ( vS + visAt(-1,0) + visAt(0,-1) + visAt(-1,-1) ) * 0.25f;
-            fog[1] = kFogDim + ( 1.0f - kFogDim ) * ( vS + visAt( 1,0) + visAt(0,-1) + visAt( 1,-1) ) * 0.25f;
-            fog[2] = kFogDim + ( 1.0f - kFogDim ) * ( vS + visAt( 1,0) + visAt(0, 1) + visAt( 1, 1) ) * 0.25f;
-            fog[3] = kFogDim + ( 1.0f - kFogDim ) * ( vS + visAt(-1,0) + visAt(0, 1) + visAt(-1, 1) ) * 0.25f;
+            if ( zoom >= 2 )
+            {
+                // Zoomed out: tiles are tiny, the soft per-corner fog gradient is
+                // invisible, and its 8 extra GetHex/hex dominate the frame. One
+                // visibility sample per hex (flat fog) instead of nine.
+                float fv = kFogDim + ( 1.0f - kFogDim ) * vS;
+                fog[0] = fog[1] = fog[2] = fog[3] = fv;
+            }
+            else
+            {
+                fog[0] = kFogDim + ( 1.0f - kFogDim ) * ( vS + visAt(-1,0) + visAt(0,-1) + visAt(-1,-1) ) * 0.25f;
+                fog[1] = kFogDim + ( 1.0f - kFogDim ) * ( vS + visAt( 1,0) + visAt(0,-1) + visAt( 1,-1) ) * 0.25f;
+                fog[2] = kFogDim + ( 1.0f - kFogDim ) * ( vS + visAt( 1,0) + visAt(0, 1) + visAt( 1, 1) ) * 0.25f;
+                fog[3] = kFogDim + ( 1.0f - kFogDim ) * ( vS + visAt(-1,0) + visAt(0, 1) + visAt(-1, 1) ) * 0.25f;
+            }
 
             auto grayCol = []( float b ) -> SDL_Color {
                 Uint8 g = (Uint8)__min( 255, (int)( b * 255.0f ) );
@@ -552,11 +635,16 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
 
             // T5 edge feather: bleed a DIFFERING featherable neighbour's tile in
             // along the shared diamond edge — a THIN, low-alpha band hugging the
-            // edge (apex pulled most of the way back to the edge), approximating
-            // the original's 1-2px edge dither. The earlier half-tile, 80%-alpha
-            // version washed whole tiles together (deserts/variant boundaries went
-            // to blocky mush). road/city/resources/water never soft-feather.
-            if ( Featherable( type ) && !IsWaterType( type ) )
+            // edge, approximating the original's 1-2px edge dither. Accumulated into
+            // this ROW's feather batch and drawn after the row's base (so it's in
+            // back-to-front order — a tall tile in a later row occludes it, instead
+            // of a back tile's blend painting over a mountain in front of it).
+            // road/city/resources never feather; OPEN water never feathers (coast
+            // blends on its land side only, not into the ocean).
+            // Skip the edge feather when zoomed out: the band is sub-pixel there,
+            // and its 4 neighbour lookups/hex (GetHex + TileForHex) dominate the
+            // frame when 20k+ hexes are visible.
+            if ( zoom < 2 && Featherable( type ) && !IsOpenWater( type ) )
             {
                 static const SDL_FPoint fuv[4] = { {0.f,0.5f}, {0.5f,0.f}, {1.f,0.5f}, {0.5f,1.f} };
                 static const int nbrDX[4] = { 0, 1, 0, -1 };
@@ -573,7 +661,13 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
                     if ( !pn ) continue;
                     CTerrainSprite* ns = pn->GetSprite( );
                     int ntype = ns ? ns->GetID( ) : -1;
-                    if ( !Featherable( ntype ) || IsWaterType( ntype ) ) continue;
+                    // Never bleed toward water OR onto the coastline transition tile
+                    // (which sits at the waterline) — that put rough/rock texture
+                    // over the shore. The coastline still feathers OUTWARD toward
+                    // land (coast keeps its land-side blend); land just doesn't
+                    // feather back onto it.
+                    if ( !Featherable( ntype ) || IsOpenWater( ntype ) || ntype == CHex::coastline )
+                        continue;
                     const Tile* ntile = TileForHex( pn, aa.m_iDir );
                     if ( !ntile || !ntile->tex[zoom] || ntile == tile ) continue;
 
@@ -591,19 +685,20 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
                     SDL_FPoint iu0 = { u0.x + kBand*(0.5f-u0.x), u0.y + kBand*(0.5f-u0.y) };
                     SDL_FPoint iu1 = { u1.x + kBand*(0.5f-u1.x), u1.y + kBand*(0.5f-u1.y) };
 
-                    SDL_Vertex e0, e1, n0, n1;
+                    SDL_Vertex e0, e1, n0, n1;   // band quad = 2 tris
                     e0.position = { (float)pts[c0].x, (float)pts[c0].y }; e0.tex_coord = u0;  e0.color = { g0, g0, g0, kFeatherA };
                     e1.position = { (float)pts[c1].x, (float)pts[c1].y }; e1.tex_coord = u1;  e1.color = { g1, g1, g1, kFeatherA };
                     n0.position = { i0x, i0y };                          n0.tex_coord = iu0; n0.color = { g0, g0, g0, 0 };
                     n1.position = { i1x, i1y };                          n1.tex_coord = iu1; n1.color = { g1, g1, g1, 0 };
 
-                    std::vector<SDL_Vertex>& fvb = featherBatches[ntile->tex[zoom]];
-                    // band quad = 2 tris: (e0,e1,n1) + (e0,n1,n0)
+                    std::vector<SDL_Vertex>& fvb = rowFeather[ntile->tex[zoom]];   // batched within this row
                     fvb.push_back( e0 ); fvb.push_back( e1 ); fvb.push_back( n1 );
                     fvb.push_back( e0 ); fvb.push_back( n1 ); fvb.push_back( n0 );
                 }
             }
         }
+
+        drawRow();   // flush this row's base then feather batches (back-to-front)
 
         // Stop once we're below the viewport and rows have gone empty.
         if ( !rowAny && y > iTopY + 3 )
@@ -612,15 +707,12 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
             break;  // hard safety bound
     }
 
-    for ( auto& b : batches )
-        SDL_RenderGeometry( r, b.first, b.second.data(), (int)b.second.size(), nullptr, 0 );
-    // T5: feather pass on top (textures are BLEND mode, vertex alpha gradient).
-    for ( auto& b : featherBatches )
-        SDL_RenderGeometry( r, b.first, b.second.data(), (int)b.second.size(), nullptr, 0 );
-    // Building-placement footprint overlay, last (untextured, translucent).
+    // Building-placement footprint overlay, recorded last (untextured, translucent).
     if ( !hatchVerts.empty() )
-    {
-        SDL_SetRenderDrawBlendMode( r, SDL_BLENDMODE_BLEND );
-        SDL_RenderGeometry( r, nullptr, hatchVerts.data(), (int)hatchVerts.size(), nullptr, 0 );
-    }
+        s_cache.emplace_back( (SDL_Texture*)nullptr, std::move( hatchVerts ) );
+
+    // Submit the freshly-built cache (re-used verbatim on subsequent cached frames).
+    SDL_SetRenderDrawBlendMode( r, SDL_BLENDMODE_BLEND );
+    for ( auto& d : s_cache )
+        SDL_RenderGeometry( r, d.first, d.second.data(), (int)d.second.size(), nullptr, 0 );
 }
