@@ -548,23 +548,17 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
                 CHex* h = theMap.GetHex( hc );
                 return ( h && h->GetVisibility( ) ) ? 1.0f : 0.0f;
             };
+            // Soft per-corner fog at ALL zooms (the mesh cache means this whole
+            // loop only runs on a rebuild — scroll/zoom/wave-tick — not every
+            // frame, so the 9 visibility samples/hex are affordable again and the
+            // smooth fog blur is back). The GPU Gouraud-interpolates fog[] across
+            // each diamond for free.
             float vS = visAt( 0, 0 );
             float fog[4];
-            if ( zoom >= 2 )
-            {
-                // Zoomed out: tiles are tiny, the soft per-corner fog gradient is
-                // invisible, and its 8 extra GetHex/hex dominate the frame. One
-                // visibility sample per hex (flat fog) instead of nine.
-                float fv = kFogDim + ( 1.0f - kFogDim ) * vS;
-                fog[0] = fog[1] = fog[2] = fog[3] = fv;
-            }
-            else
-            {
-                fog[0] = kFogDim + ( 1.0f - kFogDim ) * ( vS + visAt(-1,0) + visAt(0,-1) + visAt(-1,-1) ) * 0.25f;
-                fog[1] = kFogDim + ( 1.0f - kFogDim ) * ( vS + visAt( 1,0) + visAt(0,-1) + visAt( 1,-1) ) * 0.25f;
-                fog[2] = kFogDim + ( 1.0f - kFogDim ) * ( vS + visAt( 1,0) + visAt(0, 1) + visAt( 1, 1) ) * 0.25f;
-                fog[3] = kFogDim + ( 1.0f - kFogDim ) * ( vS + visAt(-1,0) + visAt(0, 1) + visAt(-1, 1) ) * 0.25f;
-            }
+            fog[0] = kFogDim + ( 1.0f - kFogDim ) * ( vS + visAt(-1,0) + visAt(0,-1) + visAt(-1,-1) ) * 0.25f;
+            fog[1] = kFogDim + ( 1.0f - kFogDim ) * ( vS + visAt( 1,0) + visAt(0,-1) + visAt( 1,-1) ) * 0.25f;
+            fog[2] = kFogDim + ( 1.0f - kFogDim ) * ( vS + visAt( 1,0) + visAt(0, 1) + visAt( 1, 1) ) * 0.25f;
+            fog[3] = kFogDim + ( 1.0f - kFogDim ) * ( vS + visAt(-1,0) + visAt(0, 1) + visAt(-1, 1) ) * 0.25f;
 
             auto grayCol = []( float b ) -> SDL_Color {
                 Uint8 g = (Uint8)__min( 255, (int)( b * 255.0f ) );
