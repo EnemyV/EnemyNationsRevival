@@ -7,6 +7,7 @@
 #include "lastplnt.h"      // For theDataFile, ptrthebltformat
 #include "bmbutton.h"      // Must precede bitmaps.h (provides CBmBtnData)
 #include "bitmaps.h"       // For DIB_GOLD, theBitmaps
+#include "player.h"        // theGame.GetFrame() — water-animation re-render tick
 
 #include <SDL.h>
 #include <algorithm>
@@ -270,8 +271,29 @@ void SDL2Compositor::Composite() {
     // which visibly drags the framerate down. SetDirty() is raised on content
     // change, resize, move, and EXPOSED/FOCUS_GAINED, so an uncovered window
     // still repaints correctly. RenderDetached() clears the flag.
+    // Animated water needs the GPU-terrain window re-rendered when its WAVE FRAME
+    // changes — but only THEN, not every frame. The wave advances every 6 game-
+    // frames (the engine's water Time()=6; see SDL2Terrain::WaterFrameLetter), so
+    // forcing a full mesh rebuild every frame (esp. zoomed out, ~20k hexes) tanked
+    // the FPS for no visible gain. Re-render at the wave rate (~4×/s) instead.
+    static unsigned s_lastWaterTick = ~0u;
+    const unsigned  kWaterHold = 6;
+    unsigned        waterTick  = (unsigned)( theGame.GetFrame() / kWaterHold );
+    bool            waterChanged = ( waterTick != s_lastWaterTick );
+    s_lastWaterTick = waterTick;
+
+    DWORD nowMs = GetTickCount();
     for (auto& p : m_panels) {
-        if (p->IsVisible() && p->IsDetached() && p->IsDirty()) {
+        if (!p->IsVisible() || !p->IsDetached())
+            continue;
+        if (p->HasGpuTerrain()) {
+            // Gameplay view: re-render on content change OR a water wave-tick.
+            if (p->IsDirty() || waterChanged)
+                p->RenderDetached();
+        } else if (p->IsDirty() && ( nowMs - p->GetLastRenderMs() ) >= 100) {
+            // Secondary windows (World Map/radar, vehicle/building lists) don't need
+            // a fast refresh — each owns a separate GPU window whose present is
+            // ~5-7 ms, so re-presenting every frame is pure overhead. Cap at ~10 fps.
             p->RenderDetached();
         }
     }

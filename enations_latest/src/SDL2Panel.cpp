@@ -1056,6 +1056,7 @@ void SDL2Panel::RenderDetached() {
     else
         SDL_UpdateWindowSurface(m_ownWindow);
     m_dirty = false;
+    m_lastRenderMs = GetTickCount();        // for the secondary-window present throttle
 }
 
 bool SDL2Panel::HandleDetachedEvent(SDL_Event& event, int localX, int localY) {

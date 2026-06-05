@@ -125,6 +125,13 @@ public:
     bool HasOwnRenderer() const { return m_ownRenderer != nullptr; }
     SDL_Window* GetOwnWindow() const { return m_ownWindow; }
 
+    // True for the GPU-terrain gameplay window (its own renderer + a terrain
+    // CAnimAtr). Such a panel must re-present EVERY frame so animated water keeps
+    // cycling even when the scene is otherwise static — the compositor's
+    // dirty-gate (which spares idle list windows) would otherwise freeze it.
+    bool HasGpuTerrain() const { return m_ownRenderer != nullptr && m_terrainAA != nullptr; }
+    DWORD GetLastRenderMs() const { return m_lastRenderMs; }
+
     // T2: the area panel hands us its CAnimAtr so PresentOwn can draw the GPU
     // terrain mesh for its window. nullptr = not a terrain window.
     void SetTerrainAnimAtr( const class CAnimAtr* aa ) { m_terrainAA = aa; }
@@ -246,6 +253,7 @@ private:
     struct SDL_Texture*  m_ownBackTex  = nullptr;   // streaming texture for m_ownBack
     int m_ownBackW = 0, m_ownBackH = 0;
     const class CAnimAtr* m_terrainAA = nullptr;  // T2: area-map view, else null
+    DWORD m_lastRenderMs = 0;                      // last RenderDetached time (throttle)
     void MaybeCreateOwnRenderer();   // called from Detach() if the flag is on
     void DestroyOwnRenderer();       // called from DestroyOwnWindow()
     SDL_Surface* EnsureOwnBack();    // (re)create m_ownBack to renderer output size
