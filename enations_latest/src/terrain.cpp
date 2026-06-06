@@ -3500,6 +3500,272 @@ void CGameMap::Update( CAnimAtr& aa )
 }
 
 //---------------------------------------------------------------------------
+// CGameMap::DiscoverSpritesGpu
+//
+// GPU split path (g_enSpriteSplitPass): the terrain is the GPU mesh and the
+// foundation raster is a no-op (CBuilding::DrawFoundation early-returns under
+// split), so the ONLY job of the per-frame pass is to DISCOVER world sprites and
+// hand them to the capture hook. The old full per-hex view walk projected every
+// visible hex (~134k at max zoom) just to find ~47 units + the forest — the
+// dominant zoomed-out cost. Here we instead:
+//   * object-iterate the sparse types (buildings, vehicles) — O(units), each
+//     drawn exactly once, no per-hex dedup or cull-correctness traps;
+//   * scan the contiguous hex array in MAP order for the per-hex types
+//     (bridge, forest/tree, projectile) — empty hexes are a pointer-increment +
+//     byte read, and only the few interesting hexes pay the view projection.
+// Z-order is owned by the GPU sprite layer (it sorts captured sprites by the
+// projected center published in CTileDrawInfo::Draw), so capture ORDER does not
+// matter — we can draw each pooled draw-info immediately instead of running the
+// CTileDraw row pipeline (which also sidesteps the 500-entry pool-wrap hazard,
+// since each draw-info is consumed before the next is allocated).
+//---------------------------------------------------------------------------
+void CGameMap::DiscoverSpritesGpu( CAnimAtr& aa, const CRect& rect )
+{
+    CDrawInfoPool drawinfopool;
+
+    // Reference hex at the viewport centre: torus-unwrap each object/hex to the
+    // representative nearest the centre so it projects to its on-screen position.
+    CHexCoord refHex( aa._WindowToHex(
+        CPoint( rect.left + rect.Width( ) / 2, rect.top + rect.Height( ) / 2 ) ) );
+
+    const int iMaxBuildingHeight = theStructures.GetTallestBuildingHeight( aa.m_iZoom );
+
+    // Generous cull rect (px). Over-inclusion is free — SDL2Sprites::Submit prunes
+    // off-screen sprites — but under-inclusion drops a visible sprite, so pad enough
+    // for tall sprites that poke up from a base hex below the viewport, plus a couple
+    // of hexes of footprint on the sides.
+    CRect rectCull( rect );
+    rectCull.InflateRect( MAX_HEX_HT * 2, iMaxBuildingHeight + MAX_HEX_HT );
+
+    // Sprites composite into the colour-keyed sprite buffer (capture hook diverts to
+    // the GPU list; m_dibSprite is only the CPU fall-back target).
+    CDIBWnd* xpdibwndSave = xpdibwnd;
+    xpdibwnd = (CDIBWnd*)&aa.m_dibSprite;
+
+    int hexCnt = 0, hitCnt = 0;
+
+    // ---- Buildings (object-iterated; each visible building drawn once) ----
+    {
+        POSITION pos = theBuildingMap.GetStartPosition( );
+        while ( pos != NULL )
+        {
+            DWORD      dwID;
+            CBuilding* pbuilding;
+            theBuildingMap.GetNextAssoc( pos, dwID, pbuilding );
+
+            if ( pbuilding == NULL || !pbuilding->IsVisible( ) )
+                continue;
+
+            CHexCoord hexBuilding = pbuilding->GetLeftHex( xiDir );
+            hexBuilding.ToNearestHex( refHex );
+
+            ++hitCnt;
+
+            if ( pbuilding->IsTwoPiece( ) )
+                drawinfopool.GetStructureDrawInfo( pbuilding, CTileDrawInfo::building, hexBuilding,
+                                                   pbuilding->GetMapLoc( ),
+                                                   CStructureSprite::BACKGROUND_LAYER )
+                    ->Draw( );
+
+            drawinfopool.GetStructureDrawInfo( pbuilding, CTileDrawInfo::building, hexBuilding,
+                                               pbuilding->GetMapLoc( ),
+                                               CStructureSprite::FOREGROUND_LAYER )
+                ->Draw( );
+        }
+    }
+
+    // ---- Vehicles (object-iterated) ----
+    {
+        POSITION pos = theVehicleMap.GetStartPosition( );
+        while ( pos != NULL )
+        {
+            DWORD     dwID;
+            CVehicle* pvehicle;
+            theVehicleMap.GetNextAssoc( pos, dwID, pvehicle );
+
+            if ( pvehicle == NULL || !pvehicle->IsVisible( ) || pvehicle->IsInBuilding( ) )
+                continue;
+
+            CHexCoord hexVeh( pvehicle->GetHexHead( ) );  // wrapped map hex
+            CHex*     phexVeh = GetHex( hexVeh );
+            if ( phexVeh == NULL || !phexVeh->GetVisibility( ) )
+                continue;
+
+            hexVeh.ToNearestHex( refHex );
+
+            ++hitCnt;
+            drawinfopool.GetVehicleDrawInfo( pvehicle, hexVeh )->Draw( );
+        }
+    }
+
+    // ---- Per-hex types: bridge / forest / projectile ----
+    //
+    // Iterate the viewport's bounding box in UNWRAPPED map-hex space, not the whole
+    // map: project the 4 view corners to map hexes (unwrapped near the centre), take
+    // their bbox + a hex margin for tall sprites that poke in from just outside. This
+    // keeps the per-frame cost O(viewport hexes) at every zoom (no whole-map scan, so
+    // no zoomed-in regression), while at max zoom the bbox naturally spans the map.
+    // Iterating unwrapped coords also means (ux,uy) is already the on-screen torus
+    // representative — no per-hex ToNearestHex — and WrapX/WrapY give the array hex.
+    const int kHexMargin = 8;   // hexes; > tallest sprite footprint+height, cull is exact below
+    CHexCoord cTL( aa._WindowToHex( CPoint( rect.left,      rect.top ) ) );
+    CHexCoord cTR( aa._WindowToHex( CPoint( rect.right - 1, rect.top ) ) );
+    CHexCoord cBL( aa._WindowToHex( CPoint( rect.left,      rect.bottom - 1 ) ) );
+    CHexCoord cBR( aa._WindowToHex( CPoint( rect.right - 1, rect.bottom - 1 ) ) );
+    cTL.ToNearestHex( refHex );
+    cTR.ToNearestHex( refHex );
+    cBL.ToNearestHex( refHex );
+    cBR.ToNearestHex( refHex );
+
+    int minX = __min( __min( cTL.X( ), cTR.X( ) ), __min( cBL.X( ), cBR.X( ) ) ) - kHexMargin;
+    int maxX = __max( __max( cTL.X( ), cTR.X( ) ), __max( cBL.X( ), cBR.X( ) ) ) + kHexMargin;
+    int minY = __min( __min( cTL.Y( ), cTR.Y( ) ), __min( cBL.Y( ), cBR.Y( ) ) ) - kHexMargin;
+    int maxY = __max( __max( cTL.Y( ), cTR.Y( ) ), __max( cBL.Y( ), cBR.Y( ) ) ) + kHexMargin;
+
+    // Never scan more than one full torus period in either axis (max-zoom guard).
+    if ( maxX - minX >= m_eX ) maxX = minX + m_eX - 1;
+    if ( maxY - minY >= m_eY ) maxY = minY + m_eY - 1;
+
+    for ( int uy = minY; uy <= maxY; ++uy )
+    {
+        for ( int ux = minX; ux <= maxX; ++ux )
+        {
+            int   wx   = WrapX( ux );
+            int   wy   = WrapY( uy );
+            CHex* phex = _GetHex( wx, wy );
+
+            BYTE byUnits = phex->GetUnits( );
+            BOOL bForest = ( CHex::forest == phex->GetType( ) );
+
+            // Cheap reject: only bridge/projectile flags or forest terrain carry a
+            // per-hex sprite here (buildings/vehicles handled above).
+            if ( !( byUnits & ( CHex::bridge | CHex::proj ) ) && !bForest )
+                continue;
+
+            ++hexCnt;
+
+            CHexCoord hexWrapped( wx, wy );    // map-frame (wrapped) for unit/proj lookups
+            CHexCoord hexcoord( ux, uy );      // unwrapped = on-screen representative
+
+            CRect rb;
+            if ( !aa.CalcWindowHexBound( hexcoord, rb ) )
+                continue;
+            if ( rb.right <= rectCull.left || rb.left >= rectCull.right ||
+                 rb.bottom <= rectCull.top || rb.top >= rectCull.bottom )
+                continue;
+
+            ++hitCnt;
+
+            // Bridge (per-hex CBridgeUnit; drawn whether or not the hex is lit).
+            if ( byUnits & CHex::bridge )
+            {
+                CMapLoc maploc( hexcoord );
+                maploc.x += 32;
+                maploc.y += 32;
+
+                CBridgeUnit* pbridge = theBridgeHex.GetBridge( hexWrapped );
+                ASSERT_VALID( pbridge );
+
+                if ( pbridge->IsTwoPiece( ) )
+                    drawinfopool.GetStructureDrawInfo( pbridge, CTileDrawInfo::bridge, hexcoord, maploc,
+                                                       CStructureSprite::BACKGROUND_LAYER )
+                        ->Draw( );
+
+                drawinfopool.GetStructureDrawInfo( pbridge, CTileDrawInfo::bridge, hexcoord, maploc,
+                                                   CStructureSprite::FOREGROUND_LAYER )
+                    ->Draw( );
+            }
+
+            // Trees (forest hex; drawn regardless of fog, mirroring the walk).
+            if ( bForest )
+            {
+                CMapLoc maplocCenter( hexcoord );
+                maplocCenter.x += MAX_HEX_HT >> 1;
+                maplocCenter.y += MAX_HEX_HT >> 1;
+
+                CMapLoc maplocRear( maplocCenter );
+                CMapLoc maplocFront( maplocCenter );
+
+                int iOffset = 3 * MAX_HEX_HT >> 3;
+
+                switch ( xiDir )
+                {
+                case 0:
+                    maplocRear.x += iOffset;
+                    maplocRear.y -= iOffset;
+                    maplocFront.x -= iOffset;
+                    maplocFront.y += iOffset;
+                    break;
+                case 1:
+                    maplocRear.x += iOffset;
+                    maplocRear.y += iOffset;
+                    maplocFront.x -= iOffset;
+                    maplocFront.y -= iOffset;
+                    break;
+                case 2:
+                    maplocRear.x -= iOffset;
+                    maplocRear.y += iOffset;
+                    maplocFront.x += iOffset;
+                    maplocFront.y -= iOffset;
+                    break;
+                case 3:
+                    maplocRear.x -= iOffset;
+                    maplocRear.y -= iOffset;
+                    maplocFront.x += iOffset;
+                    maplocFront.y += iOffset;
+                    break;
+                default:
+                    ASSERT( 0 );
+                }
+
+                CTree* ptree = theEffects.GetTree( phex->GetTree( ) );
+
+                drawinfopool.GetStructureDrawInfo( ptree, CTileDrawInfo::tree, hexcoord, maplocRear,
+                                                   CStructureSprite::BACKGROUND_LAYER )
+                    ->Draw( );
+                drawinfopool.GetStructureDrawInfo( ptree, CTileDrawInfo::tree, hexcoord, maplocFront,
+                                                   CStructureSprite::FOREGROUND_LAYER )
+                    ->Draw( );
+            }
+
+            // Projectiles / explosions (only on lit hexes).
+            if ( ( byUnits & CHex::proj ) && phex->GetVisibility( ) )
+            {
+                CProjBase* pprojbase = theProjMap.GetFirst( hexWrapped );
+
+                while ( pprojbase != NULL )
+                {
+                    ASSERT_STRICT_VALID( pprojbase );
+
+                    switch ( pprojbase->GetType( ) )
+                    {
+                    case CProjBase::explosion:
+                        drawinfopool.GetExplosionDrawInfo( pprojbase, hexcoord )->Draw( );
+                        break;
+
+                    case CProjBase::projectile:
+                        drawinfopool.GetTileDrawInfo( pprojbase, CTileDrawInfo::projectile, hexcoord,
+                                                      pprojbase->GetMapLoc( ) )
+                            ->Draw( );
+                        break;
+
+                    default:
+                        ASSERT( 0 );
+                    }
+                    pprojbase = theProjMap.GetNext( pprojbase );
+                }
+            }
+        }
+    }
+
+    xpdibwnd = xpdibwndSave;
+
+    // PROFILING: keep the walk.* counters comparable to the old per-hex walk.
+    Perf::CounterAdd( "walk.hexes", hexCnt );   // forest/bridge/proj hexes touched
+    Perf::CounterAdd( "walk.rows", hitCnt );    // sprites discovered (units + per-hex)
+}
+
+//---------------------------------------------------------------------------
 // CGameMap::UpdateRect
 //
 // GGFIXIT: Need to adjust unit maploc centers when crossing map edges?
@@ -3576,6 +3842,18 @@ void CGameMap::UpdateRect( CAnimAtr& aa, CRect rect, CDrawParms::UPDATE_MODE eMo
             SDL2Sprites::BeginFrame( aa.m_iZoom, aa.m_iDir,
                                      rect.left + ulSpr.x, rect.top + ulSpr.y,
                                      rect.Width( ), rect.Height( ) );
+        }
+
+        // GPU split path: replace the full per-hex view walk (which projected every
+        // visible hex just to find the sprites) with object/forest discovery. The
+        // foundation raster is a no-op under split, so this is rendering-equivalent.
+        if ( g_enSpriteSplitPass )
+        {
+            DiscoverSpritesGpu( aa, rect );
+
+            SDL2Sprites::EndFrame( );  // restore render target to the window
+            g_enSpriteSplitPass = false;
+            return;
         }
 
         CHexCoord hexTL( aa._WindowToHex( CPoint( rect.left, rect.top ) ) );

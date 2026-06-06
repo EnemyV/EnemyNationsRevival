@@ -19,6 +19,24 @@
 #include "icons.h"
 #include "player.h"
 
+// World generation presets chosen on the New Game screen. The selected value is
+// stored on CCreateBase/CGame (m_iWorldType) and sent to every client inside
+// CNetStart, so all machines run the seed-deterministic generator identically.
+// WORLD_DEFAULT == the legacy behavior (random ocean style, oceans only when >6
+// players). Keep this enum in sync with the dialog menu in SDL2Dialogs.cpp.
+enum EWorldType
+{
+	WORLD_DEFAULT = 0,    // random ocean, only with >6 players (legacy)
+	WORLD_BIG_OCEAN,      // ocean, grow style
+	WORLD_STRIP_OCEAN,    // ocean, stripe style
+	WORLD_SCATTER_OCEAN,  // ocean, scatter style
+	WORLD_ISLANDS,        // ocean, grow+island style
+	WORLD_MOUNTAIN,       // mountain-dominated planet
+	WORLD_BADLANDS,       // badlands-dominated planet
+	WORLD_DESERT,         // desert-dominated planet
+	WORLD_NUM
+};
+
 const int LOS_ALT = 4;		// alt difference needed to obscure
 
 const int CITY_DESTROYED_OFF = 0;
@@ -187,6 +205,12 @@ public:
 	BYTE		GetVisibleType ();
 	void		SetVisibleType ( int iType );
 
+	// Field crop-growth stage (0..3) for "fields grown around farms".
+	// Stored in the free CTile::m_byType bits 1-2; the logical GetType() (soil
+	// fertility) is left untouched so farm yield is unaffected.
+	int			GetGrowStage () const;
+	void		SetGrowStage ( int iStage );
+
 	CBuilding *GetVisibleBuilding( CHexCoord hexcoord ) const;
 
 	void 		Serialize (CArchive & ar);
@@ -307,7 +331,13 @@ public:
     void        GenerateMountainBlock( int _x, int iSideSize, int _y);
     void        GenerateBadlandsBlock( int _x, int iSideSize, int _y);
     void        SmoothBlockEdges( int iSideSize, int iSide );
-    void        GenerateOcean( int iNumBlks, int* piBlks, int iSide, int blockType, int& iOceansLeft, CGame& theGame );
+    // Region painter: fills blocks with 'blockType' (-1 ocean, -2 desert, -5 mountains,
+    // -6 badlands ...) using a spatial style. oceanStyle: 0 stripe, 1 scatter, 2 grow,
+    // 3 grow+island; pass -1 to pick one at random (legacy behavior). bDominant paints
+    // most of the map (planet themes) instead of a random fraction. Driven by the world
+    // type chosen in the New Game dialog and synced across the net (see EWorldType).
+    void        GenerateOcean( int iNumBlks, int* piBlks, int iSide, int blockType,
+                               int oceanStyle, bool bDominant, int& iOceansLeft, CGame& theGame );
 	void		InitSquare (int x1, int y1, int x2, int y2, int iTyp1, int iTyp2, int iTyp3, int iTyp4);
 	void		InitSquarePass2 (int x1, int y1, int x2, int y2, int iTyp1, int iTyp2, int iTyp3, int iTyp4);
 	int			DepositMinerals (int x, int y, int iTyp, int iNum);
@@ -320,9 +350,13 @@ public:
 	void		Close ();
 	void		Update (CAnimAtr & aa);
 	void		UpdateRect (CAnimAtr & aa, CRect, CDrawParms::UPDATE_MODE );
+	// GPU split path: object/forest sprite discovery (replaces the full per-hex view
+	// walk when g_enSpriteSplitPass is active). See terrain.cpp.
+	void		DiscoverSpritesGpu (CAnimAtr & aa, const CRect & rect);
 	CSize		GetSize () const {ASSERT_STRICT_VALID (this); return (CSize (m_eX, m_eY));}
 	int			Get_eX () const { return (m_eX); }	// do NOT put assert's in this
 	int			Get_eY () const { return (m_eY); }
+	long		GetHexOffPub (CHex const *pHex) const { return (pHex - m_pHex); }	// public GetHexOff (GPU field rotation)
 	int			GetSideSize () const { return (m_iSideSize); }
 	int			GetSideShift () const { return (m_iSideShift); }
 
@@ -345,6 +379,11 @@ public:
 	void		ClrBldgCur ();
 	int			IsBldgCurOk () const { return (m_iBldgCur); }
 	BOOL		HaveBldgCur () const { return (m_cxBldgCur > 0); }
+	// Footprint rect (UL hex + size) for the live GPU cursor-hatch overlay, which
+	// redraws every frame in window space (exits are m_pLandExit/m_pShipExit below).
+	BOOL		GetBldgCurRect (CHexCoord & hexUL, int & cx, int & cy) const
+				{ if (m_cxBldgCur <= 0) return FALSE;
+				  hexUL = m_hexBldgCur; cx = m_cxBldgCur; cy = m_cyBldgCur; return TRUE; }
 	CHex *		m_pLandExit = NULL;		// the hex with the land exit
 	int				m_iLandDir;			// the direction of the land exit
 	CHex *		m_pShipExit = NULL;		// the hex with the ship exit
