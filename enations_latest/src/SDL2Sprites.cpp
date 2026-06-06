@@ -91,6 +91,7 @@ namespace
     // while static trees/bridges keep their persistent g_sprites entries (skipped).
     std::vector<SprKey> g_dynKeys;
     bool                g_captureDynamic = false;   // mark captures into g_dynKeys
+    bool                g_captureWasFull = true;     // S2.4: full vs incremental EMIT
 
     void AccumDirty( int x, int y, int w, int h )
     {
@@ -204,6 +205,7 @@ namespace SDL2Sprites
         }
 
         g_dynKeys.clear( );   // full walk recaptures dynamic objects → repopulates this
+        g_captureWasFull = true;
 
         AccumDirty( dvx, dvy, dw, dh );   // this repaint's dirty region (view space)
 
@@ -251,6 +253,7 @@ namespace SDL2Sprites
             g_sprites.erase( k );
         g_dynKeys.clear( );
         g_dirty = true;     // dynamic objects will be re-captured + re-emitted
+        g_captureWasFull = false;
         g_inFrame = true;
     }
 
@@ -375,20 +378,11 @@ namespace SDL2Sprites
         return a->seq < b->seq;
     }
 
-    void Submit( SDL_Renderer* r, int ulX, int ulY, int vpW, int vpH )
+    // Build the z-sorted list of ALL on-screen sprites (and prune fully off-screen
+    // entries from the store). Used by the full-emit path.
+    static void BuildOrderAll( std::vector<const Sprite*>& order, int ulX, int ulY, int vpW, int vpH )
     {
-        if ( !r || vpW <= 0 || vpH <= 0 )
-            return;
-
-        // Draw the whole sprite layer DIRECTLY into the current target (the window;
-        // PresentOwn has already drawn terrain and set the content viewport) as ONE
-        // atlas-batched RenderGeometry. The old intermediate render-target (g_rt) +
-        // SetRenderTarget/clear/RenderCopy round-trip was ~4 extra GPU calls/frame —
-        // it existed for an incremental cache that never hits now that the full
-        // viewport is recaptured every frame, so it was pure overhead (and the
-        // debugger taxes every GPU call). Build the z-sorted visible list, prune
-        // fully off-screen entries, emit.
-        static std::vector<const Sprite*> order; order.clear( );
+        order.clear( );
         order.reserve( g_sprites.size( ) );
         for ( auto it = g_sprites.begin( ); it != g_sprites.end( ); )
         {
@@ -399,7 +393,97 @@ namespace SDL2Sprites
             order.push_back( &it->second ); ++it;
         }
         std::sort( order.begin( ), order.end( ), ZLess );
-        EmitOrder( r, order, ulX, ulY );
+    }
+
+    void Submit( SDL_Renderer* r, int ulX, int ulY, int vpW, int vpH )
+    {
+        if ( !r || vpW <= 0 || vpH <= 0 )
+            return;
+
+        // S2.4: render the sprite layer into a PERSISTENT RT (g_rt) and composite it onto
+        // the caller's target. A FULL capture (or a pan/resize) rebuilds the whole layer;
+        // an INCREMENTAL capture only clears + re-emits the dirty unit regions (cur ∪ prev),
+        // so the thousands of static trees are not re-sorted/re-emitted every frame — the
+        // rest of g_rt persists. g_sprites always holds every sprite (trees persist across
+        // incremental frames), so a full emit is always complete.
+        bool needNew = ( !g_rt || g_rtW != vpW || g_rtH != vpH );
+        if ( needNew )
+        {
+            if ( g_rt ) SDL_DestroyTexture( g_rt );
+            g_rt = SDL_CreateTexture( r, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET, vpW, vpH );
+            if ( g_rt ) SDL_SetTextureBlendMode( g_rt, SDL_BLENDMODE_BLEND );
+            g_rtW = vpW; g_rtH = vpH;
+        }
+
+        static std::vector<const Sprite*> order;
+        if ( !g_rt )   // alloc failed → fall back to direct emit onto the target
+        {
+            BuildOrderAll( order, ulX, ulY, vpW, vpH );
+            EmitOrder( r, order, ulX, ulY );
+            g_dirty = false; g_lastUlX = ulX; g_lastUlY = ulY; g_accumValid = false;
+            return;
+        }
+
+        bool full = g_captureWasFull || needNew || ulX != g_lastUlX || ulY != g_lastUlY;
+
+        SDL_Texture* prevTarget = SDL_GetRenderTarget( r );
+        SDL_Rect     savedVp; SDL_RenderGetViewport( r, &savedVp );
+        SDL_SetRenderTarget( r, g_rt );
+        SDL_RenderSetViewport( r, nullptr );
+
+        if ( full )
+        {
+            SDL_SetRenderDrawBlendMode( r, SDL_BLENDMODE_NONE );
+            SDL_SetRenderDrawColor( r, 0, 0, 0, 0 );
+            SDL_RenderClear( r );
+            BuildOrderAll( order, ulX, ulY, vpW, vpH );
+            SDL_SetRenderDrawBlendMode( r, SDL_BLENDMODE_BLEND );
+            EmitOrder( r, order, ulX, ulY );
+        }
+        else
+        {
+            // Coalesce the dirty unit regions (view → screen = -UL) into a few rects.
+            static std::vector<SDL_Rect> rects; rects.clear( );
+            auto addRect = [&]( const SDL_Rect& vr ) {
+                SDL_Rect sr = { vr.x - ulX, vr.y - ulY, vr.w, vr.h };
+                for ( SDL_Rect& e : rects )
+                    if ( RectsOverlap( sr.x, sr.y, sr.w, sr.h, e.x - 8, e.y - 8, e.w + 16, e.h + 16 ) )
+                    {
+                        int x1 = __max( e.x + e.w, sr.x + sr.w ), y1 = __max( e.y + e.h, sr.y + sr.h );
+                        e.x = __min( e.x, sr.x ); e.y = __min( e.y, sr.y );
+                        e.w = x1 - e.x; e.h = y1 - e.y;
+                        return;
+                    }
+                rects.push_back( sr );
+            };
+            for ( const SDL_Rect& vr : g_dirtyCur )  addRect( vr );
+            for ( const SDL_Rect& vr : g_dirtyPrev ) addRect( vr );
+
+            for ( const SDL_Rect& R : rects )
+            {
+                SDL_RenderSetClipRect( r, &R );
+                SDL_SetRenderDrawBlendMode( r, SDL_BLENDMODE_NONE );
+                SDL_SetRenderDrawColor( r, 0, 0, 0, 0 );
+                SDL_RenderFillRect( r, &R );          // clear the region (transparent)
+                // Re-emit ALL sprites overlapping R (z-sorted) so the local depth order
+                // (a unit between a tree's rear & front) stays exactly correct.
+                order.clear( );
+                for ( auto& kv : g_sprites )
+                {
+                    int bx, by, bw, bh; SprBox( kv.second, bx, by, bw, bh );
+                    if ( RectsOverlap( bx - ulX, by - ulY, bw, bh, R.x, R.y, R.w, R.h ) )
+                        order.push_back( &kv.second );
+                }
+                std::sort( order.begin( ), order.end( ), ZLess );
+                SDL_SetRenderDrawBlendMode( r, SDL_BLENDMODE_BLEND );
+                EmitOrder( r, order, ulX, ulY );      // GPU clips to R
+            }
+            SDL_RenderSetClipRect( r, nullptr );
+        }
+
+        SDL_SetRenderTarget( r, prevTarget );
+        SDL_RenderSetViewport( r, &savedVp );
+        SDL_RenderCopy( r, g_rt, nullptr, nullptr );   // composite the layer onto the target
 
         g_dirty = false; g_lastUlX = ulX; g_lastUlY = ulY; g_accumValid = false;
     }

@@ -703,6 +703,22 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
 
     const bool needRebuild = !( sig == s_sig && covered );
 
+    // MEASURE (why is the mesh rebuilding?): count rebuilds/interval and split the cause
+    // — a key change (zoom/dir/s_loadGen/terrain-edit) vs a pan past the margin. A high
+    // rebuild.edit during road-building/combat = terrain edits forcing a full re-mesh.
+    if ( needRebuild )
+    {
+        Perf::CounterAdd( "rebuild.cnt", 1 );
+        if ( sig != s_sig )
+        {
+            Perf::CounterAdd( "rebuild.key", 1 );
+            static uint64_t s_prevEditGen = 0;
+            if ( g_enTerrainEditGen != s_prevEditGen ) { Perf::CounterAdd( "rebuild.edit", 1 ); s_prevEditGen = g_enTerrainEditGen; }
+        }
+        else
+            Perf::CounterAdd( "rebuild.pan", 1 );
+    }
+
     // Build the mesh in TEXTURE space: positions are offset by +kMarginPx so the
     // margin band (hexes left/above the viewport) lands at texture x/y >= 0.
     const int offX = kMarginPx, offY = kMarginPx;
