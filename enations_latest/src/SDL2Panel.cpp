@@ -6,6 +6,7 @@
 #include "bmbutton.h"      // must precede bitmaps.h (provides CBmBtnData)
 #include "bitmaps.h"       // theBitmaps, DIB_GOLD, DIB_BORDER_HORZ/VERT
 #include "w22_settings.h"  // w22::GetProfileInt — [Advanced] Renderer flag (T0b)
+#include "RenderBackend.h"  // RenderBackendIsGpu() — 3-way backend selector
 #include "SDL2Sprites.h"   // GPU sprite layer (S1: trees)
 #include "SDL2Terrain.h"    // T2: load terrain tile textures on the area renderer
 #include "Perf.h"           // present sub-phase profiling counters
@@ -861,7 +862,7 @@ void SDL2Panel::Detach(SDL_Window* ownerWindow) {
 void SDL2Panel::MaybeCreateOwnRenderer() {
     if (m_ownRenderer || !m_ownWindow)
         return;
-    if (w22::GetProfileInt("Advanced", "Renderer", 0) == 0)
+    if (!RenderBackendIsGpu())
         return;  // software present (default) — unchanged behavior
     // No PRESENT_VSYNC (same rationale as the main window: present is called
     // per content-change, not from a single per-frame chokepoint yet).
@@ -885,6 +886,18 @@ void SDL2Panel::MaybeCreateOwnRenderer() {
     }
 }
 
+// Item 5 (GPU dirty-rects): runtime kill-switch. Default OFF — the staged dirty-rect
+// path is opt-in via env EN_DIRTY=1 until validated, then it becomes the default. Read
+// once; cached for the process.
+bool SDL2Panel::GpuDirtyEnabled() {
+    static int s_on = -1;
+    if (s_on < 0) {
+        const char* e = SDL_getenv("EN_DIRTY");
+        s_on = (e && *e && *e != '0') ? 1 : 0;
+    }
+    return s_on != 0;
+}
+
 void SDL2Panel::DestroyOwnRenderer() {
     // T2: terrain textures live on the area renderer — free them first.
     if (m_name.rfind("area", 0) == 0 && SDL2Terrain::IsLoaded())
@@ -894,6 +907,7 @@ void SDL2Panel::DestroyOwnRenderer() {
         SDL2Sprites::InvalidateTextures();
         SDL2Sprites::SetRenderer(nullptr);
     }
+    if (m_contentRT)  { SDL_DestroyTexture(m_contentRT);  m_contentRT = nullptr; }
     if (m_ownBackTex) { SDL_DestroyTexture(m_ownBackTex); m_ownBackTex = nullptr; }
     if (m_ownBack)    { SDL_FreeSurface(m_ownBack);       m_ownBack = nullptr; }
     if (m_ownRenderer){ SDL_DestroyRenderer(m_ownRenderer); m_ownRenderer = nullptr; }
@@ -911,6 +925,7 @@ SDL_Surface* SDL2Panel::EnsureOwnBack() {
         return m_ownBack;
     if (m_ownBackTex) { SDL_DestroyTexture(m_ownBackTex); m_ownBackTex = nullptr; }
     if (m_ownBack)    { SDL_FreeSurface(m_ownBack);       m_ownBack = nullptr; }
+    if (m_contentRT)  { SDL_DestroyTexture(m_contentRT);  m_contentRT = nullptr; }
     m_ownBack = SDL_CreateRGBSurfaceWithFormat(0, w, h, 32, SDL_PIXELFORMAT_ARGB8888);
     m_ownBackTex = SDL_CreateTexture(m_ownRenderer, SDL_PIXELFORMAT_ARGB8888,
                                      SDL_TEXTUREACCESS_STREAMING, w, h);
@@ -920,6 +935,14 @@ SDL_Surface* SDL2Panel::EnsureOwnBack() {
     }
     // BLEND so the T2.3 overlay's transparent content lets GPU terrain show through.
     SDL_SetTextureBlendMode(m_ownBackTex, SDL_BLENDMODE_BLEND);
+    // Item 5: persistent content RT (terrain+sprites). Lazily created only when the
+    // dirty-rect path is enabled; opaque (the terrain clears it each (re)build).
+    if (GpuDirtyEnabled()) {
+        m_contentRT = SDL_CreateTexture(m_ownRenderer, SDL_PIXELFORMAT_ARGB8888,
+                                        SDL_TEXTUREACCESS_TARGET, w, h);
+        if (m_contentRT)
+            SDL_SetTextureBlendMode(m_contentRT, SDL_BLENDMODE_NONE);
+    }
     m_ownBackW = w; m_ownBackH = h;
     return m_ownBack;
 }
@@ -932,11 +955,24 @@ void SDL2Panel::PresentOwn() {
     // then the transparent overlay (color-keyed sprite layer + chrome) on top.
     if (m_terrainAA && SDL2Terrain::IsLoaded()) {
         int tbH = GetTitleBarHeight();
+
+        // Item 5 Stage 0: route the terrain+sprite composite through a persistent RT
+        // instead of straight to the window backbuffer. Behaviour is identical here (we
+        // still full-redraw each frame, +1 RenderCopy), but it establishes the surface
+        // that later stages update incrementally (static content persists across frames).
+        bool useRT = GpuDirtyEnabled() && m_contentRT != nullptr;
+        SDL_Texture* prevTarget = nullptr;
+        if (useRT) {
+            prevTarget = SDL_GetRenderTarget(m_ownRenderer);
+            SDL_SetRenderTarget(m_ownRenderer, m_contentRT);
+        }
+
         SDL_SetRenderDrawColor(m_ownRenderer, 0, 0, 0, 255);
         SDL_RenderClear(m_ownRenderer);
 
         // Terrain mesh into the content area (below the title bar). The mesh
         // coords are content-relative, so a viewport offset by tbH places them.
+        // (When rendering to m_contentRT the same offset keeps content aligned.)
         SDL_Rect vp = { 0, tbH, m_width, m_height };
         SDL_RenderSetViewport(m_ownRenderer, &vp);
         { Perf::ScopeCounter _ct( "p.terrain" );
@@ -948,6 +984,12 @@ void SDL2Panel::PresentOwn() {
         { Perf::ScopeCounter _cs( "p.sprites" );
           SDL2Sprites::Submit(m_ownRenderer, ul.x, ul.y, m_width, m_height); }
         SDL_RenderSetViewport(m_ownRenderer, nullptr);
+
+        // Copy the persistent content RT to the window backbuffer before the overlay.
+        if (useRT) {
+            SDL_SetRenderTarget(m_ownRenderer, prevTarget);
+            SDL_RenderCopy(m_ownRenderer, m_contentRT, nullptr, nullptr);
+        }
 
         // Overlay: m_ownBack = sprites (opaque) + chrome (opaque), content
         // transparent → terrain shows through. m_ownBackTex is BLEND mode.

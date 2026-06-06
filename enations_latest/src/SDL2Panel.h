@@ -257,6 +257,11 @@ private:
     struct SDL_Renderer* m_ownRenderer = nullptr;
     struct SDL_Surface*  m_ownBack     = nullptr;   // offscreen frame buffer
     struct SDL_Texture*  m_ownBackTex  = nullptr;   // streaming texture for m_ownBack
+    // Item 5 (GPU dirty-rects): persistent composite target for terrain+sprites+fog.
+    // Unlike the window backbuffer it survives across frames, so static content can be
+    // left untouched and only changed regions redrawn. NULL unless g_enGpuDirty. Sized
+    // with m_ownBackW/H (renderer output) in EnsureOwnBack.
+    struct SDL_Texture*  m_contentRT   = nullptr;
     int m_ownBackW = 0, m_ownBackH = 0;
     const class CAnimAtr* m_terrainAA = nullptr;  // T2: area-map view, else null
     SDL2Panel*  m_bottomChromePanel = nullptr;    // area button bar, composited bottom
@@ -265,6 +270,7 @@ private:
     void DestroyOwnRenderer();       // called from DestroyOwnWindow()
     SDL_Surface* EnsureOwnBack();    // (re)create m_ownBack to renderer output size
     void PresentOwn();               // upload m_ownBack + RenderCopy + Present
+    static bool GpuDirtyEnabled();   // Item 5 kill-switch (env EN_DIRTY)
 
     // Manual detached-resize state
     bool m_dResizing   = false;
