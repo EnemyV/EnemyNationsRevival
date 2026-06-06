@@ -939,24 +939,31 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
 
             // T5 edge feather: bleed a DIFFERING featherable neighbour's tile in
             // along the shared diamond edge — a THIN, low-alpha band hugging the
-            // edge, approximating the original's 1-2px edge dither. Accumulated into
-            // this ROW's feather batch and drawn after the row's base (so it's in
-            // back-to-front order — a tall tile in a later row occludes it, instead
-            // of a back tile's blend painting over a mountain in front of it).
-            // road/city/resources never feather; OPEN water never feathers (coast
-            // blends on its land side only, not into the ocean). The COASTLINE tile
-            // itself does NOT receive bleeds either — otherwise a rough/rock neighbour
-            // bleeds stone onto the grassy shore ("rock over water"). Instead, the LAND
-            // tiles pull the coastline's grass IN along their water-facing edge (below),
-            // which softens every shore — including rough/hill, which used to meet the
-            // water with a hard boxy edge because it got no shore blend.
-            // Feather at ALL zooms: zoomed out it's what gives the terrain its soft,
-            // non-gridded look (without it the tile boundaries read as hard squares).
-            // Its 4 neighbour lookups/hex are affordable now because they run only on
-            // a mesh REBUILD, not on every scroll-frame (the pan path translates the
-            // cached verts instead of rebuilding).
+            // edge, approximating the original's 1-2px edge dither (terrain.cpp
+            // FEATHER_IN/OUT/INOUT). Accumulated into this ROW's feather batch and
+            // drawn after the row's base (back-to-front — a tall tile in a later row
+            // occludes it, instead of a back tile's blend painting over a mountain in
+            // front of it).
+            //
+            // Mirrors the ORIGINAL's model (terrain.cpp:2470): everything feathers
+            // EXCEPT road/city/resources. The COASTLINE (shore) tile feathers ITSELF
+            // into all its neighbours — the original's FEATHER_IN — so the shore
+            // softens into BOTH the land behind it AND the open water it sits on (this
+            // is the "feather the shore tile, not the ocean" goal). A non-coastline
+            // tile does NOT feather toward a coastline neighbour (the original's
+            // FEATHER_OUT — the coastline side already blends that seam), avoiding a
+            // double band. Land↔land is symmetric (INOUT), as before.
+            //
+            // OPEN water: only the COASTLINE may pull it in (shore→sea blend). A land
+            // tile still does NOT pull open water (bleeding ocean onto grass read as a
+            // smear). Water↔water (lake/river vs ocean) is NOT done here — those tiles
+            // are re-drawn in place every wave-tick, which would wipe a baked band; that
+            // case needs the wave re-draw path (separate change).
+            //
+            // Open water itself stays a non-receiver (excluded below) for the same
+            // wave-redraw reason. Feather runs at ALL zooms and only on a mesh REBUILD.
 
-            if ( Featherable( type ) && !IsOpenWater( type ) && type != CHex::coastline )
+            if ( Featherable( type ) && !IsOpenWater( type ) )
             {
                 static const SDL_FPoint fuv[4] = { {0.f,0.5f}, {0.5f,0.f}, {1.f,0.5f}, {0.5f,1.f} };
                 static const int nbrDX[4] = { 0, 1, 0, -1 };
@@ -981,12 +988,18 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
                     if ( !pn ) continue;
                     CTerrainSprite* ns = pn->GetSprite( );
                     int ntype = ns ? ns->GetID( ) : -1;
-                    // Never bleed toward OPEN water (bleeding ocean INTO a land edge
-                    // made the water visibly smear onto grass — wrong). The coastline IS
-                    // allowed as a source: pulling its grassy-shore texture into this
-                    // land tile's water-facing edge softens the shore. (Coastline itself
-                    // is excluded as a RECEIVER above, so rock can't bleed onto shore.)
-                    if ( !Featherable( ntype ) || IsOpenWater( ntype ) )
+                    if ( !Featherable( ntype ) )
+                        continue;
+                    // FEATHER_OUT coordination: a non-coastline tile does NOT feather
+                    // toward a coastline neighbour — the coastline tile feathers itself
+                    // into us (FEATHER_IN), so doing it from this side too would double
+                    // the band at the shore seam.
+                    if ( ntype == CHex::coastline && type != CHex::coastline )
+                        continue;
+                    // Only the coastline tile may pull OPEN water in (shore→sea blend);
+                    // a land tile pulling ocean read as a smear, and water-as-receiver
+                    // gets wiped by the wave re-draw.
+                    if ( IsOpenWater( ntype ) && type != CHex::coastline )
                         continue;
                     const Tile* ntile = TileForHex( pn, aa.m_iDir );
                     if ( !ntile || !ntile->tex[zoom] || ntile == tile ) continue;
@@ -1142,6 +1155,16 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
     if ( fogChanged && ( _nowT - s_fogUpdAt ) >= kFogThrottle && !s_fogVerts.empty( ) )
     {
         s_fogVisGenSeen = g_enFogVisGen;
+        // S3 incremental fog: re-sample all quads but collect ONLY the ones whose alpha
+        // actually CHANGED into a batch, and re-draw just those into the persistent
+        // s_fogRT. OVERWRITE blend replaces each changed diamond's pixels in place (the
+        // diamonds tessellate, so the unchanged neighbours' pixels stay valid) — no clear
+        // needed, and the cost is ∝ the moving fog frontier, not all ~50k diamonds. This
+        // works even when changes are scattered across the map (a clipped bbox would just
+        // cover the whole viewport then). Tall-tile altitude overlap can leave a tiny
+        // artifact at a mountain fog edge — acceptable (dim, rare) vs redrawing everything.
+        static std::vector<SDL_Vertex> s_fogBatch;
+        s_fogBatch.clear( );
         if ( !needRebuild )   // a rebuild already wrote current colours
         {
             const size_t nHex = s_fogHex.size( );
@@ -1150,6 +1173,7 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
                 s_fogVis[i] = ( s_fogHex[i] && s_fogHex[i]->GetVisibility( ) ) ? 1.0f : 0.0f;
             // Per-corner fog from self + precomputed neighbours (array lookups only).
             auto A = []( float f ) -> Uint8 { return (Uint8)__min( 255, (int)( ( 1.0f - f ) * 255.0f ) ); };
+            const int* fperm = kFogSlotInv[aa.m_iDir & 3];
             for ( size_t i = 0; i < nHex; ++i )
             {
                 const int* nb = &s_fogNbr[i * 8];
@@ -1161,32 +1185,47 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
                 float f2 = kFogDim + ( 1.0f - kFogDim ) * ( s + nv(1) + nv(3) + nv(6) ) * 0.25f;
                 float f3 = kFogDim + ( 1.0f - kFogDim ) * ( s + nv(0) + nv(3) + nv(7) ) * 0.25f;
                 // World-corner alphas → screen slots (same permutation as the build path).
-                float      fc[4]  = { f0, f1, f2, f3 };
-                const int* fperm  = kFogSlotInv[aa.m_iDir & 3];
-                float      sf0 = fc[fperm[0]], sf1 = fc[fperm[1]], sf2 = fc[fperm[2]], sf3 = fc[fperm[3]];
+                float fc[4] = { f0, f1, f2, f3 };
+                Uint8 a0 = A( fc[fperm[0]] ), a1 = A( fc[fperm[1]] ),
+                      a2 = A( fc[fperm[2]] ), a3 = A( fc[fperm[3]] );
                 SDL_Vertex* v = &s_fogVerts[i * 6];   // order L,T,B, T,R,B (slots 0,1,3,1,2,3)
-                v[0].color.a = A( sf0 ); v[1].color.a = A( sf1 ); v[2].color.a = A( sf3 );
-                v[3].color.a = A( sf1 ); v[4].color.a = A( sf2 ); v[5].color.a = A( sf3 );
+                bool changed = ( v[0].color.a != a0 || v[1].color.a != a1 ||
+                                 v[4].color.a != a2 || v[2].color.a != a3 );
+                v[0].color.a = a0; v[1].color.a = a1; v[2].color.a = a3;
+                v[3].color.a = a1; v[4].color.a = a2; v[5].color.a = a3;
+                if ( changed )
+                    for ( int k = 0; k < 6; ++k )
+                        s_fogBatch.push_back( v[k] );
             }
         }
         s_fogUpdAt = _nowT;
 
-        SDL_Texture* pt = SDL_GetRenderTarget( r );
-        SDL_Rect     vp; SDL_RenderGetViewport( r, &vp );
-        SDL_SetRenderTarget( r, s_fogRT );
-        SDL_RenderSetViewport( r, nullptr );
-        SDL_SetRenderDrawColor( r, 0, 0, 0, 0 );   // transparent = no dim
-        SDL_RenderClear( r );
-        // Draw the fog diamonds with OVERWRITE (no blend), NOT alpha-blend: the
-        // altitude-raised diamonds OVERLAP on tall mountains, and blending would
-        // ACCUMULATE their alpha into opaque-black wedges down the slopes. The build
-        // order is back-to-front (rows top→bottom), so overwrite = the front tile's
-        // fog wins each pixel — correct, and no stacking. The texture itself keeps
-        // BLENDMODE_BLEND so the final dim composites over the terrain.
-        SDL_SetRenderDrawBlendMode( r, SDL_BLENDMODE_NONE );
-        SDL_RenderGeometry( r, nullptr, s_fogVerts.data( ), (int)s_fogVerts.size( ), nullptr, 0 );
-        SDL_SetRenderTarget( r, pt );
-        SDL_RenderSetViewport( r, &vp );
+        // Re-render: a rebuild redraws the whole (new) mesh; otherwise only the changed
+        // diamonds (skip entirely when nothing changed — s_fogRT persists).
+        if ( needRebuild || !s_fogBatch.empty( ) )
+        {
+            SDL_Texture* pt = SDL_GetRenderTarget( r );
+            SDL_Rect     vp; SDL_RenderGetViewport( r, &vp );
+            SDL_SetRenderTarget( r, s_fogRT );
+            SDL_RenderSetViewport( r, nullptr );
+            // OVERWRITE (no blend), NOT alpha-blend: altitude-raised diamonds OVERLAP on
+            // tall mountains and blending would ACCUMULATE alpha into black wedges. Build
+            // order is back-to-front so overwrite = the front tile's fog wins. The texture
+            // keeps BLENDMODE_BLEND so the final dim composites over the terrain.
+            SDL_SetRenderDrawBlendMode( r, SDL_BLENDMODE_NONE );
+            if ( needRebuild )
+            {
+                SDL_SetRenderDrawColor( r, 0, 0, 0, 0 );   // transparent = no dim
+                SDL_RenderClear( r );
+                SDL_RenderGeometry( r, nullptr, s_fogVerts.data( ), (int)s_fogVerts.size( ), nullptr, 0 );
+            }
+            else
+            {
+                SDL_RenderGeometry( r, nullptr, s_fogBatch.data( ), (int)s_fogBatch.size( ), nullptr, 0 );
+            }
+            SDL_SetRenderTarget( r, pt );
+            SDL_RenderSetViewport( r, &vp );
+        }
     }
 
     // Composite at the current pan offset (one GPU copy each, ~1 µs): terrain tiles,

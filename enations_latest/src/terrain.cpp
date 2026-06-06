@@ -3840,7 +3840,10 @@ void CGameMap::DiscoverSpritesGpu( CAnimAtr& aa, const CRect& rect )
     Perf::CounterAdd( "walk.hexes", hexCnt );   // forest/bridge/proj hexes touched
     Perf::CounterAdd( "walk.rows", hitCnt );    // sprites discovered (units + per-hex)
     if ( bDirty )
+    {
         Perf::CounterAdd( "dirty.rects", SDL2Sprites::DirtyRectCount( ) );  // S2.1 probe
+        Perf::CounterAdd( "spr.count", SDL2Sprites::SpriteCount( ) );       // leak probe
+    }
 }
 
 //---------------------------------------------------------------------------

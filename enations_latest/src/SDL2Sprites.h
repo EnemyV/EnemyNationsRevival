@@ -66,6 +66,7 @@ namespace SDL2Sprites
     void DirtyNewFrame( );
     void DirtyAddRect( int vx, int vy, int w, int h );
     int  DirtyRectCount( );   // combined this+previous (probe / coalescing input)
+    int  SpriteCount( );      // live g_sprites size (leak probe)
 
     // S2.3 incremental capture. BeginIncremental() reuses the persistent sprite store
     // (static trees/bridges kept) and drops last frame's dynamic entries; the caller then

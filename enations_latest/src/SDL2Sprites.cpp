@@ -410,6 +410,8 @@ namespace SDL2Sprites
         g_dirtyCur.clear( );
     }
 
+    int SpriteCount( ) { return (int)g_sprites.size( ); }
+
     void DirtyAddRect( int vx, int vy, int w, int h )
     {
         if ( w > 0 && h > 0 )
