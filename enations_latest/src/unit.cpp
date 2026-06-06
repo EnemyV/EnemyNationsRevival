@@ -38,6 +38,8 @@ static char BASED_CODE THIS_FILE[] = __FILE__;
 #endif
 #define new DEBUG_NEW
 
+extern bool g_enSpriteSplitPass;   // GPU split: terrain is on the mesh, sprites on the atlas
+
 //------------------------------ I s o m e t r i c I n i t ------------------
 
 static BYTE GabyIsometricTable[128];
@@ -1723,7 +1725,17 @@ void CBuilding::DrawFoundation( const CHexCoord& hexcoord )
     int     cx = GetCX( );
     int     cy = GetCY( );
 
-    // Draw terrain under the foundation tiles, if foundation not finished
+    // Draw terrain under the foundation tiles, if foundation not finished.
+    //
+    // GPU split path: SKIP this. Terrain lives on the GPU mesh (already rendered
+    // correctly under the footprint), and this CPU raster targets m_dibSprite — the
+    // overlay that composites ON TOP of the GPU sprite atlas where the foundation
+    // sprite is drawn. Running it during the foundation stage paints opaque terrain
+    // over the partially-revealed foundation, hiding its bottom-up swype. (Skeleton/
+    // construction stages have m_iVisFoundPer == -1, so this never fired for them —
+    // which is exactly why their swype looked fine and only the foundation's broke.)
+    if ( g_enSpriteSplitPass )
+        return;
 
     CHexCoord hexcoordLeftMap = GetHex( );
 

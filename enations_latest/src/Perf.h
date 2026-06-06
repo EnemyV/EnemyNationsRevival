@@ -58,6 +58,16 @@ namespace Perf
         SEC_SIM,          // AI / sim tick (GraphicsEnginePump)
         SEC_RENDER,       // animate + draw
         SEC_PRESENT,      // compositor composite/present
+        // ---- GraphicsEnginePump sub-breakdown (all nested inside SEC_SIM) ----
+        // Decompose the opaque "logic" bucket (sim - render - present) so we can
+        // tell real per-unit work from the deliberate frame-pacing Sleep()s. The
+        // remainder (logic - msg - sleep - operB - operV - operP) is the once-a-
+        // second housekeeping + message-posting scans + animate.
+        SEC_MSG,          // ProcessAllMessages
+        SEC_SLEEP,        // deliberate frame-pacing Sleep() (NOT cpu work)
+        SEC_OPER_B,       // per-building Operate() loop
+        SEC_OPER_V,       // per-vehicle Operate() loop
+        SEC_OPER_P,       // per-projectile Operate() loop
         SEC_COUNT
     };
 
@@ -65,6 +75,11 @@ namespace Perf
     void CounterInc( const char* name, int64_t by = 1 );  // accumulator
     void CounterAdd( const char* name, int64_t v );       // accumulator
     void GaugeSet  ( const char* name, int64_t v );       // gauge (kept)
+
+    // Add elapsed MICROSECONDS (Now()-startTicks) into a named accumulator — for
+    // ad-hoc sub-phase profiling finer than the fixed Section slots. The counter
+    // then reads as µs/interval (÷1000 ≈ the ms/s render/present columns).
+    void CounterAddElapsedUs( const char* name, uint64_t startTicks );
 
     // RAII scoped timer for a fixed slot. Early-outs when disabled.
     struct ScopeSlot
@@ -80,6 +95,23 @@ namespace Perf
         ~ScopeSlot()
         {
             if ( m_active ) SectionEnd( m_slot, m_start );
+        }
+    };
+
+    // RAII timer that accumulates µs into a NAMED counter (sub-phase profiling).
+    struct ScopeCounter
+    {
+        const char* m_name;
+        uint64_t    m_start;
+        bool        m_active;
+        ScopeCounter( const char* name )
+        {
+            m_active = IsEnabled();
+            if ( m_active ) { m_name = name; m_start = Now(); }
+        }
+        ~ScopeCounter()
+        {
+            if ( m_active ) CounterAddElapsedUs( m_name, m_start );
         }
     };
 }

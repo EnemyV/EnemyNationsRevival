@@ -19,6 +19,8 @@
 #include "minerals.h"
 #include "stdafx.h"
 #include "SDL2Panel.h"
+#include "SDL2Sprites.h"  // GPU sprite layer (S1: trees)
+#include "Perf.h"         // sub-phase profiling counters
 #include "RenderingAdapter.h"
 #include <SDL.h>          // T1: SDL_FillRect/SDL_MapRGB on the sprite-layer CDIB
 #include "unit.inl"
@@ -37,6 +39,36 @@ static char BASED_CODE THIS_FILE[] = __FILE__;
 CGameMap         theMap;                   // the world (only one instance)
 CTerrain         theTerrain( "terrain" );  // data about the terrain types
 CTerrainShowStat tShowStat;
+
+// GPU sprite layer (SDL2Sprites). Set during the split sprite-layer pass so the
+// low-level sprite blits (CSpriteDIB::StructureDrawToDIB / VehicleDraw) divert the
+// whole world sprite layer to the GPU instead of CPU-compositing into m_dibSprite.
+//   g_enSpriteSplitPass = compositing into the GPU sprite layer right now.
+//   g_enSprCapture      = the current draw is a capturable world sprite (a tiledraw
+//                         entry: building/bridge/tree/vehicle/projectile/explosion).
+//                         Foundations etc. drawn outside the tiledraw flush stay CPU.
+//   g_enSprSortX/Y      = that sprite's z-order key (the engine's projected m_ptCenter),
+//                         scroll-invariant; the GPU list is y-sorted by it each present.
+bool g_enSpriteSplitPass = false;
+bool g_enSprCapture      = false;
+int  g_enSprSortX = 0, g_enSprSortY = 0;
+
+// Project a map location to the engine's sprite z-order key (m_ptCenter), mirroring
+// CTileDrawInfo::Init. Used to give a building's foundation the SAME key as the
+// building so it sorts at the building's depth (and, captured first, draws UNDER it).
+static void EnSprProjectCenter( const CMapLoc& maploc, int& cx, int& cy )
+{
+    CMapLoc3D m3d( maploc.x, maploc.y, 0 );
+    CMapLoc3D m( xpanimatr->WorldToCenterWorld( m3d ) );
+    switch ( xiDir )
+    {
+    case 0: cx =  m.y; cy =  m.y - m.x; break;
+    case 1: cx =  m.y; cy = -m.y - m.x; break;
+    case 2: cx = -m.y; cy = -m.y + m.x; break;
+    case 3: cx = -m.y; cy =  m.y + m.x; break;
+    default: cx = 0; cy = 0; break;
+    }
+}
 
 // Dead: TerrainStatusText had no callers. Removed.
 
@@ -591,8 +623,25 @@ void CAnimAtr::Render( )
     HDC  hdc = m_hwndOwner ? ::GetDC( m_hwndOwner ) : NULL;
     CDC* pdc = hdc ? CDC::FromHandle( hdc ) : NULL;
 
+    // GPU path: when this view renders through its own GPU renderer with the GPU
+    // sprite layer, do ONE full-viewport capture per frame instead of walking every
+    // dirty rect. The GPU re-presents the whole window each frame regardless, so the
+    // dirty-rect subdivision is pure overhead here — hundreds of tiny UpdateRect calls,
+    // each running BeginFrame's O(all-sprites) overlap scan (≈620×280 checks/frame).
+    // A single full walk is dramatically cheaper AND flicker-free (no stale/partial
+    // sprites from the incremental model). The software path keeps dirty rects.
+    bool bGpuFull = m_sdlPanel && UseSplitLayer( ) && SDL2Sprites::Enabled( );
+
     try
     {
+        if ( bGpuFull )
+        {
+            CSize ws = m_dibwnd.GetWinSize( );
+            CRect full( 0, 0, ws.cx, ws.cy );
+            m_dirtyrects.AddRect( &full, CDirtyRects::RECT_LIST::LIST_BLT );
+            theMap.UpdateRect( *this, full, CDrawParms::draw );
+        }
+        else
         for ( int i = 0; i < m_dirtyrects.m_nRectPaintCur; ++i )
             if ( m_dirtyrects.m_prectPaintCur[i].left != INT_MAX )
             {
@@ -622,7 +671,14 @@ void CAnimAtr::Render( )
     // Route rendered content to SDL2 panel (Phase 1) or legacy whole-window path
     if ( m_sdlPanel )
     {
-        RenderingAdapter::RenderToPanel( this, m_sdlPanel );
+        if ( bGpuFull )
+            // Full-GPU path: m_surface is never displayed (RenderDetached composites
+            // the GPU mesh + sprite-layer overlay directly), so the two full-screen
+            // RenderToPanel blits are pure waste. Just flag the panel so the compositor
+            // re-presents this frame.
+            m_sdlPanel->SetDirty( );
+        else
+            RenderingAdapter::RenderToPanel( this, m_sdlPanel );
     }
     else
     {
@@ -1202,8 +1258,18 @@ class CTileDrawInfo
     }
     const CHexCoord& GetHexCoord( ) const { return m_hexcoord; }
     const CMapLoc&   GetMapLoc( ) const { return m_maploc; }
+    const CPoint&    GetCenter( ) const { return m_ptCenter; }  // GPU sprite z-order key
 
-    virtual void Draw( ) { m_punittile->Draw( m_hexcoord ); }
+    virtual void Draw( )
+    {
+        // GPU sprite layer: flag this draw as a capturable world sprite + publish its
+        // z-order key, so the low-level blit can divert it to the GPU list. Covers the
+        // base path: vehicles, projectiles, explosions (CStructureDrawInfo overrides).
+        g_enSprCapture = true;
+        g_enSprSortX = m_ptCenter.x; g_enSprSortY = m_ptCenter.y;
+        m_punittile->Draw( m_hexcoord );
+        g_enSprCapture = false;
+    }
 
     TILE_TYPE GetTileType( ) const { return m_etiletype; }
 
@@ -1342,7 +1408,16 @@ class CStructureDrawInfo : public CTileDrawInfo
     BOOL operator<( const CTileDrawInfo& tiledrawinfo ) const;
     BOOL operator==( const CTileDrawInfo& tiledrawinfo ) const;
 
-    void Draw( ) { GetTile( )->DrawLayer( GetHexCoord( ), m_eLayer ); }
+    void Draw( )
+    {
+        // GPU sprite layer: divert this structure (building/bridge/tree) to the GPU
+        // list with its z-order key. Both BACKGROUND and FOREGROUND layers flow through
+        // here and are captured in the same y-sorted list.
+        g_enSprCapture = true;
+        g_enSprSortX = GetCenter( ).x; g_enSprSortY = GetCenter( ).y;
+        GetTile( )->DrawLayer( GetHexCoord( ), m_eLayer );
+        g_enSprCapture = false;
+    }
 
     CUnitTile* GetTile( ) const { return (CUnitTile*)CTileDrawInfo::GetTile( ); }
 
@@ -3488,6 +3563,21 @@ void CGameMap::UpdateRect( CAnimAtr& aa, CRect rect, CDrawParms::UPDATE_MODE eMo
                 bSplit = false;  // not SDL-backed → can't color-key; single buffer
         }
 
+        // GPU sprite layer (S1): when the split layer is active and GpuSprites is on,
+        // capturable tiles (trees) are diverted into the persistent sprite RT. Clear
+        // only this paint's dirty rect (mirrors the CPU layer's per-rect clear);
+        // g_enSpriteSplitPass gates the low-level blit hook.
+        g_enSpriteSplitPass = bSplit && SDL2Sprites::Enabled( );
+        if ( g_enSpriteSplitPass )
+        {
+            // Dirty rect in VIEW space (window rect + UL) so the per-rect refresh is
+            // scroll-invariant, matching the view-space tree positions captured below.
+            CPoint ulSpr = aa.GetUL( );
+            SDL2Sprites::BeginFrame( aa.m_iZoom, aa.m_iDir,
+                                     rect.left + ulSpr.x, rect.top + ulSpr.y,
+                                     rect.Width( ), rect.Height( ) );
+        }
+
         CHexCoord hexTL( aa._WindowToHex( CPoint( rect.left, rect.top ) ) );
         CHexCoord hexTR( aa._WindowToHex( CPoint( rect.right - 1, rect.top ) ) );
 
@@ -3508,8 +3598,11 @@ void CGameMap::UpdateRect( CAnimAtr& aa, CRect rect, CDrawParms::UPDATE_MODE eMo
         int           iMaxBuildingHeight = theStructures.GetTallestBuildingHeight( aa.m_iZoom );
         CDrawInfoPool drawinfopool;
 
+        int hexCnt = 0, rowCnt = 0;   // PROFILING: confirm the per-frame iteration count
+
         for ( int y = iTopY;; ++y )
         {
+            ++rowCnt;
             // Draw rows until all the terrain in view is drawn
             // Then draw n more rows to get the tops of buildings that start below the window
 
@@ -3521,8 +3614,25 @@ void CGameMap::UpdateRect( CAnimAtr& aa, CRect rect, CDrawParms::UPDATE_MODE eMo
 
             iRowTopY = INT_MAX;
 
+            if ( bSplit )
+            {
+                // GPU full-walk: the GPU mesh draws the terrain, so this walk only
+                // DISCOVERS sprites. Compute the row's stop reference ONCE (one
+                // projection at the row centre) instead of projecting every hex — the
+                // iMaxBuildingHeight margin below still reaches tall buildings whose
+                // base sits under the viewport. Eliminates ~40k per-hex projections
+                // per frame zoomed out (the dominant zoomed-out render cost).
+                CRect rbRow;
+                if ( aa.CalcWindowHexBound(
+                         CHexCoord( CViewHexCoord( ( iLeftX + iRightX ) / 2, y ), TRUE ), rbRow ) )
+                    iRowTopY = rbRow.top;
+                else
+                    iRowTopY = rect.bottom + iMaxBuildingHeight + 1;  // unprojectable → stop
+            }
+
             for ( int x = iLeftX; x <= iRightX; ++x )
             {
+                ++hexCnt;
                 CHexCoord hexcoord( CViewHexCoord( x, y ), TRUE );
                 CHexCoord hexcoordWrapped = hexcoord;
                 CHex*     phex            = theMap.GetHex( hexcoord );
@@ -3546,20 +3656,36 @@ void CGameMap::UpdateRect( CAnimAtr& aa, CRect rect, CDrawParms::UPDATE_MODE eMo
 
                     if ( !pbuilding->IsVisible( ) )
                     {
-                        rectHexBound = phex->Draw( hexcoord );
-
-                        iRowTopY = min( iRowTopY, rectHexBound.top );
+                        // bSplit: row-level iRowTopY already set; GPU mesh draws terrain.
+                        if ( !bSplit )
+                        {
+                            rectHexBound = phex->Draw( hexcoord );
+                            iRowTopY = min( iRowTopY, rectHexBound.top );
+                        }
                     }
                     else
                     {
-                        aa.CalcWindowHexBound( hexcoord, rectHexBound );
-
-                        iRowTopY = min( iRowTopY, rectHexBound.top );
+                        if ( !bSplit )
+                        {
+                            aa.CalcWindowHexBound( hexcoord, rectHexBound );
+                            iRowTopY = min( iRowTopY, rectHexBound.top );
+                        }
 
                         // Foundation is a sprite-layer element (sits over terrain,
-                        // under the building) → route to m_dibSprite when split.
+                        // under the building) → route to m_dibSprite when split. On the
+                        // GPU path, capture it with the BUILDING's z-order key so it
+                        // sorts at the building's depth; captured before the building's
+                        // tiledraw entries, its lower sequence draws it UNDER the
+                        // building (so an almost-complete building isn't covered by its
+                        // own foundation/scaffolding).
                         if ( bSplit ) xpdibwnd = (CDIBWnd*)&aa.m_dibSprite;
+                        if ( g_enSpriteSplitPass )
+                        {
+                            g_enSprCapture = true;
+                            EnSprProjectCenter( pbuilding->GetMapLoc( ), g_enSprSortX, g_enSprSortY );
+                        }
                         pbuilding->DrawFoundation( hexcoord );
+                        g_enSprCapture = false;
                         if ( bSplit ) xpdibwnd = (CDIBWnd*)&aa.m_dibwnd;
 
                         CHexCoord hexBuilding = pbuilding->GetLeftHex( xiDir );
@@ -3588,14 +3714,22 @@ void CGameMap::UpdateRect( CAnimAtr& aa, CRect rect, CDrawParms::UPDATE_MODE eMo
                     continue;
                 }
 
-                if ( !bExtraRows )
+                if ( bSplit )
                 {
+                    // GPU full-walk: nothing to do for an empty hex — terrain is the GPU
+                    // mesh and iRowTopY is computed once per row above. This is what makes
+                    // the zoomed-out walk O(sprites) instead of O(visible hexes).
+                }
+                else if ( !bExtraRows )
+                {
+                    // Software path: rasterize the terrain hex into m_dibwnd.
                     rectHexBound = phex->Draw( hexcoord );
 
                     iRowTopY = min( iRowTopY, rectHexBound.top );
                 }
                 else
                 {
+                    // Extra-row structure scan (software): only the hex bound is needed.
                     aa.CalcWindowHexBound( hexcoord, rectHexBound );
 
                     iRowTopY = min( iRowTopY, rectHexBound.top );
@@ -3823,14 +3957,28 @@ void CGameMap::UpdateRect( CAnimAtr& aa, CRect rect, CDrawParms::UPDATE_MODE eMo
 
         if ( bDraw )
         {
+            Perf::ScopeCounter _cf( "walk.flush" );   // tiledraw sort+draw (capture)
             if ( bSplit ) xpdibwnd = (CDIBWnd*)&aa.m_dibSprite;
             tiledraw.Flush( );
             if ( bSplit ) xpdibwnd = (CDIBWnd*)&aa.m_dibwnd;
         }
+
+        if ( bSplit )   // PROFILING: how many hexes/rows the GPU walk touched this frame
+        {
+            Perf::CounterAdd( "walk.hexes", hexCnt );
+            Perf::CounterAdd( "walk.rows", rowCnt );
+        }
+
+        if ( g_enSpriteSplitPass )
+            SDL2Sprites::EndFrame( );   // restore render target to the window
+        g_enSpriteSplitPass = false;
     }  // end try
 
     catch ( ... )
     {
+        if ( g_enSpriteSplitPass )
+            SDL2Sprites::EndFrame( );
+        g_enSpriteSplitPass = false;
         aa.MoveCenterPixels( 1, 1 );
     }
 }

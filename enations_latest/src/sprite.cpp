@@ -24,6 +24,15 @@
 #include "unit.inl"
 #include "building.inl"
 
+#include "SDL2Sprites.h"   // GPU sprite layer (S1): divert tree blits to GPU quads
+
+// Set in terrain.cpp (UpdateRect + the CTileDrawInfo::Draw variants). When the split
+// pass is active and the current draw is a capturable world sprite, the blits below
+// divert it to the GPU sprite list instead of compositing into m_dibSprite.
+extern bool g_enSpriteSplitPass;
+extern bool g_enSprCapture;
+extern int  g_enSprSortX, g_enSprSortY;
+
 #ifdef _DEBUG
 #undef THIS_FILE
 static char BASED_CODE THIS_FILE[] = __FILE__;
@@ -529,6 +538,32 @@ CSpriteDIB::StructureDrawToDIB(
         CRect const &rectClip) const    // Clipping rect in window client coords
 {
     CRect rectBound(ptDst, CSize(Width(), Height()));
+
+    // GPU sprite layer: divert this world sprite to the GPU list and skip the CPU
+    // blit. Store the VIEW-space position (screen + UL) so it stays valid as the map
+    // scrolls, plus the z-order key. If capture fails, fall through to the CPU path.
+    if (g_enSpriteSplitPass && g_enSprCapture) {
+        CPoint ul = xpanimatr->GetUL();
+        // Visible band = clip rect ∩ sprite bounds, in sprite-local coords. With the
+        // full-viewport GPU walk the clip rect is the WHOLE window (so this is the full
+        // sprite) EXCEPT during building construction, where CBuilding::Draw's DrawClip
+        // narrows the top to the revealed fraction — giving the bottom-up "swype" reveal
+        // for free. (rectBound uses ptDst, so multi-piece sprites clip correctly.)
+        CRect rectDraw = rectClip & rectBound;
+        int clw = rectDraw.right - rectDraw.left;
+        int clh = rectDraw.bottom - rectDraw.top;
+        if (clw > 0 && clh > 0) {
+            int clx = rectDraw.left - rectBound.left;
+            int cly = rectDraw.top  - rectBound.top;
+            if (SDL2Sprites::CaptureStructure(this, xiZoom,
+                                              ptDst.x + ul.x, ptDst.y + ul.y,
+                                              Width(), Height(),
+                                              clx, cly, clw, clh,
+                                              g_enSprSortX, g_enSprSortY))
+                return rectBound;
+        }
+    }
+
     CRect rectDraw = rectClip & rectBound;
 
     if (rectDraw.left >= rectDraw.right ||
@@ -579,6 +614,90 @@ CSpriteDIB::StructureDrawToDIB(
     }
 
     return rectBound;
+}
+
+//--------------------------------------------------------------------------
+// CSpriteDIB::DecodeToRGBA — GPU sprite layer (SDL2Sprites)
+//
+// Decode the current-zoom sprite frame into a W*H ARGB8888 buffer, transparent
+// where the sprite has no pixel. Same per-row run/skip RLE walk as
+// StructureDrawToDIB, but written into a sprite-local buffer (x from 0) instead of
+// the window DIB at a clipped dst offset. Source pixels are the DIB's native
+// 32-bit BGRX (true-color runtime); 24-bit BGR handled as a fallback.
+//--------------------------------------------------------------------------
+bool
+CSpriteDIB::DecodeToRGBA( unsigned *pDst ) const {
+    int W = Width();
+    int H = Height();
+    if (W <= 0 || H <= 0 || !pDst)
+        return false;
+
+    int bpp = m_iBytesPerPixel;
+    if (bpp != 4 && bpp != 3)
+        return false;   // only true-color sprite data
+
+    memset(pDst, 0, (size_t) W * H * 4);   // fully transparent
+
+    // VEHICLE sprites are stored as a FLAT (uncompressed) bitmap with a magenta
+    // color-key (index 253) for transparency — not the RLE skip/run that structures
+    // use (CSprite::ColorConvert: bCompressed excludes VEHICLE). Decode accordingly.
+    if (CSprite::VEHICLE == m_iType) {
+        BYTE const *pSrc = GetDIBPixels();
+        if (!pSrc)
+            return false;
+        BYTE *pbyMagenta = thePal.GetDeviceColor(253);
+        int srcWBytes = bpp * W;
+        for (int y = 0; y < H; ++y) {
+            unsigned *pRow = pDst + (size_t) y * W;
+            for (int x = 0; x < W; ++x) {
+                BYTE const *s = pSrc + (size_t) y * srcWBytes + (size_t) x * bpp;
+                if (0 == memcmp(s, pbyMagenta, bpp))
+                    continue;   // transparent
+                pRow[x] = 0xFF000000u | ((unsigned) s[2] << 16) |
+                          ((unsigned) s[1] << 8) | (unsigned) s[0];
+            }
+        }
+        return true;
+    }
+
+    BYTE const *pbyData = GetDIBPixels();
+    int const *piRowStartOffsets = 2 + (int const *) pbyData;
+    BYTE const *pbyPixels = (BYTE const *) (piRowStartOffsets + H);
+
+    for (int y = 0; y < H; ++y) {
+        BYTE const *pbySrc = pbyPixels + piRowStartOffsets[y];
+        unsigned *pRow = pDst + (size_t) y * W;
+        int iBytesX = 0;            // sprite-local x, in bytes
+
+        for (;;) {
+            iBytesX += *(int *) pbySrc;     // skip (transparent) run
+            pbySrc += sizeof(int);
+
+            int nDataBytes = *(int *) pbySrc;
+            pbySrc += sizeof(int);
+
+            if (0 == nDataBytes)
+                break;
+
+            int nPix = nDataBytes / bpp;
+            int x0 = iBytesX / bpp;
+
+            for (int i = 0; i < nPix; ++i) {
+                int x = x0 + i;
+                if (x >= 0 && x < W) {
+                    BYTE const *s = pbySrc + (size_t) i * bpp;
+                    // BGRX/BGR -> 0xAARRGGBB
+                    pRow[x] = 0xFF000000u | ((unsigned) s[2] << 16) |
+                              ((unsigned) s[1] << 8) | (unsigned) s[0];
+                }
+            }
+
+            iBytesX += nDataBytes;
+            pbySrc += nDataBytes;
+        }
+    }
+
+    return true;
 }
 
 //-----------------------------------------------------------------------
@@ -1414,6 +1533,18 @@ void CSpriteDIB::TerrainDrawQuadVert( int aiShadeIndex[2], CPoint aptHex[4], BOO
         CDIB *pdib = xpdibwnd->GetDIB();
 
         CRect rectBound = VehicleCalcBoundingRect(aptVertex);
+
+        // GPU sprite layer: divert this vehicle to the GPU list as a warped textured
+        // quad (the 4 view-space vertices), skipping the CPU affine raster below. The
+        // texture is the un-warped sprite frame (Width x Height); the quad does the
+        // warp on the GPU via SDL_RenderGeometry. Verts → view space (+UL) for scroll.
+        if (g_enSpriteSplitPass && g_enSprCapture) {
+            CPoint ul = xpanimatr->GetUL();
+            int vx[4], vy[4];
+            for (int i = 0; i < 4; ++i) { vx[i] = aptVertex[i].x + ul.x; vy[i] = aptVertex[i].y + ul.y; }
+            if (SDL2Sprites::CaptureVehicle(this, xiZoom, vx, vy, g_enSprSortX, g_enSprSortY))
+                return rectBound;
+        }
 
         // Scan the polygon edges into a buffer
 

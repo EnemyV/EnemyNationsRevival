@@ -530,14 +530,29 @@ void CConquerApp::_RenderScreens( )
         // the area map and radar override RendersEveryFrame() to stay smooth.
         // DecideRenderFrame() (called in the ReRender pass) records the choice
         // so the Draw pass skips the same windows.
-        const DWORD ANIM_THROTTLE_MS = 1000 / 7;  // 7 fps for throttled windows
+        DWORD ANIM_THROTTLE_MS = 1000 / 7;  // 7 fps for throttled windows
+        // While the user is dragging or resizing a window, render every window at
+        // the full frame rate so the move/resize tracks the cursor smoothly
+        // instead of stepping at the throttled ~7 fps.
+        if ( theApp.m_gameWindow )
+        {
+            SDL2Compositor* pc = theApp.m_gameWindow->GetCompositor();
+            if ( pc && pc->AnyPanelInteracting() )
+                ANIM_THROTTLE_MS = 0;
+        }
         DWORD dwAnimNow = timeGetTime( );
-        for ( CWndAnim* pWnd : theAnimList )
-            if ( pWnd->DecideRenderFrame( dwAnimNow, ANIM_THROTTLE_MS ) )
-                pWnd->ReRender( );
-        for ( CWndAnim* pWnd : theAnimList )
-            if ( pWnd->RenderingThisFrame( ) )
-                pWnd->Draw( );
+        {
+            Perf::ScopeCounter _ci( "r.inval" );   // invalidate pass (theMap.Update)
+            for ( CWndAnim* pWnd : theAnimList )
+                if ( pWnd->DecideRenderFrame( dwAnimNow, ANIM_THROTTLE_MS ) )
+                    pWnd->ReRender( );
+        }
+        {
+            Perf::ScopeCounter _cd( "r.draw" );    // draw pass (UpdateRect walk + capture)
+            for ( CWndAnim* pWnd : theAnimList )
+                if ( pWnd->RenderingThisFrame( ) )
+                    pWnd->Draw( );
+        }
 
         CHexCoord::ClearInvalidated( );  // Set terrain invalidated flags to FALSE
 
@@ -609,7 +624,7 @@ void CConquerApp::GraphicsEnginePump( )
 #endif
 
     // process messages
-    ProcessAllMessages( );
+    { Perf::ScopeSlot _perfMsg( Perf::SEC_MSG ); ProcessAllMessages( ); }
 
     theGame._SettimeGetTime( );
 
@@ -636,7 +651,7 @@ void CConquerApp::GraphicsEnginePump( )
             // was stopping here? why?
            // TRAP( dwSleep > 0 );
 
-            ::Sleep( __minmax( 10, 1000 / FRAME_RATE, dwSleep ) );
+            { Perf::ScopeSlot _perfSleep( Perf::SEC_SLEEP ); ::Sleep( __minmax( 10, 1000 / FRAME_RATE, dwSleep ) ); }
         }
         return;
     }
@@ -647,10 +662,11 @@ void CConquerApp::GraphicsEnginePump( )
         // if 1/12 of a second or better - give the AI half of it
         int iExtra =
             ( (int)( 2 * 1000 / FRAME_RATE ) - (int)( theGame.GettimeGetTime( ) - theGame.m_dwOperTimeLast ) ) / 2;
+        Perf::ScopeSlot _perfSleep( Perf::SEC_SLEEP );
         ::Sleep( __minmax( 10, 2 * 1000 / FRAME_RATE, iExtra ) );
     }
     else
-        ::Sleep( 10 );  // give network some time
+        { Perf::ScopeSlot _perfSleep( Perf::SEC_SLEEP ); ::Sleep( 10 ); }  // give network some time
 
     // animate if 1/24 of a second has passed
     div_t dtFrame             = div( theGame.GettimeGetTime( ) - theGame.m_dwOperTimeLast, 1000 / FRAME_RATE );
@@ -1053,6 +1069,8 @@ void CConquerApp::GraphicsEnginePump( )
         }
 
         // operate the buildings
+        {
+        Perf::ScopeSlot _perfOperB( Perf::SEC_OPER_B );
         pos = theBuildingMap.GetStartPosition( );
         while ( pos != NULL )
         {
@@ -1062,8 +1080,11 @@ void CConquerApp::GraphicsEnginePump( )
             ASSERT_STRICT_VALID( pBldg );
             pBldg->Operate( );
         }
+        }
 
         // operate the vehicles
+        {
+        Perf::ScopeSlot _perfOperV( Perf::SEC_OPER_V );   // dtor runs even on the goto below
         pos = theVehicleMap.GetStartPosition( );
         while ( pos != NULL )
         {
@@ -1092,8 +1113,11 @@ void CConquerApp::GraphicsEnginePump( )
                 }
             }
         }
+        }
 
         // operate the projectiles
+        {
+        Perf::ScopeSlot _perfOperP( Perf::SEC_OPER_P );
         pos = theProjMap.GetStartPosition( );
         while ( pos != NULL )
         {
@@ -1107,6 +1131,7 @@ void CConquerApp::GraphicsEnginePump( )
                 pPb->Operate( );
                 pPb = theProjMap.GetNext( pPb );
             }
+        }
         }
 
         // see if we need to render
@@ -2421,6 +2446,13 @@ void CFarmBuilding::BuildFarm( )
     ASSERT_STRICT( GetData( )->GetUnionType( ) == CStructureData::UTfarm );
     ASSERT_STRICT( ( m_unitFlags & ( stop | event ) ) == 0 );
     ASSERT_STRICT( m_iConstDone == -1 );
+
+    // "Fields grown around farms": paint the crop plots on the first operational
+    // tick (also rebuilds them after a load), then animate their growth. GrowFields
+    // / UpdateFieldStage no-op for lumber mills (food farms only).
+    if ( m_fieldHexes.empty( ) )
+        GrowFields( );
+    UpdateFieldStage( GetData( )->GetBldFarm( )->GetTimeToFarm( ) );
 
     // add in its power & people usuage
     GetOwner( )->AddPwrNeed( GetData( )->GetPower( ) );

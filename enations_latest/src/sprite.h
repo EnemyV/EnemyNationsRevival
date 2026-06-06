@@ -268,6 +268,12 @@ struct CSpriteDIB
 	CRect				 CalcBoundingRect()			const;
 	BOOL				 IsHit(	CPoint const & )	const;
 
+	// GPU sprite layer (SDL2Sprites): decode this frame at the current zoom into a
+	// W*H ARGB8888 buffer (W=Width(), H=Height()), transparent (alpha 0) where the
+	// sprite has no pixel (the RLE "skip" runs). Returns FALSE if empty. Mirrors the
+	// run/skip walk in StructureDrawToDIB.
+	bool				 DecodeToRGBA( unsigned * pDst ) const;
+
 	#ifdef _DEBUG
 	void	CheckValid() const;
 	#endif

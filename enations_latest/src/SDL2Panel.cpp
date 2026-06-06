@@ -6,7 +6,9 @@
 #include "bmbutton.h"      // must precede bitmaps.h (provides CBmBtnData)
 #include "bitmaps.h"       // theBitmaps, DIB_GOLD, DIB_BORDER_HORZ/VERT
 #include "w22_settings.h"  // w22::GetProfileInt — [Advanced] Renderer flag (T0b)
+#include "SDL2Sprites.h"   // GPU sprite layer (S1: trees)
 #include "SDL2Terrain.h"    // T2: load terrain tile textures on the area renderer
+#include "Perf.h"           // present sub-phase profiling counters
 #include "base.h"           // T2.3: CAnimAtr::GetSpriteLayerSurface for compositing
 
 #include <SDL.h>
@@ -878,6 +880,8 @@ void SDL2Panel::MaybeCreateOwnRenderer() {
     if (m_name.rfind("area", 0) == 0) {
         int n = SDL2Terrain::Load(m_ownRenderer);
         LogPanel("T2: loaded " + std::to_string(n) + " terrain tiles for '" + m_name + "'");
+        // GPU sprite layer (S1): trees draw on this same renderer.
+        SDL2Sprites::SetRenderer(m_ownRenderer);
     }
 }
 
@@ -885,6 +889,11 @@ void SDL2Panel::DestroyOwnRenderer() {
     // T2: terrain textures live on the area renderer — free them first.
     if (m_name.rfind("area", 0) == 0 && SDL2Terrain::IsLoaded())
         SDL2Terrain::Unload();
+    // GPU sprite layer (S1): drop the tree textures bound to this renderer.
+    if (m_name.rfind("area", 0) == 0) {
+        SDL2Sprites::InvalidateTextures();
+        SDL2Sprites::SetRenderer(nullptr);
+    }
     if (m_ownBackTex) { SDL_DestroyTexture(m_ownBackTex); m_ownBackTex = nullptr; }
     if (m_ownBack)    { SDL_FreeSurface(m_ownBack);       m_ownBack = nullptr; }
     if (m_ownRenderer){ SDL_DestroyRenderer(m_ownRenderer); m_ownRenderer = nullptr; }
@@ -930,14 +939,23 @@ void SDL2Panel::PresentOwn() {
         // coords are content-relative, so a viewport offset by tbH places them.
         SDL_Rect vp = { 0, tbH, m_width, m_height };
         SDL_RenderSetViewport(m_ownRenderer, &vp);
-        SDL2Terrain::Render(m_ownRenderer, *m_terrainAA);
+        { Perf::ScopeCounter _ct( "p.terrain" );
+          SDL2Terrain::Render(m_ownRenderer, *m_terrainAA); }
+        // GPU sprite layer (S1): trees over terrain, under the CPU sprite/chrome
+        // overlay. Re-project the view-space tree list to the current UL so they
+        // track the panning terrain; drawn in this content viewport (screen = pos-UL).
+        CPoint ul = m_terrainAA->GetUL();
+        { Perf::ScopeCounter _cs( "p.sprites" );
+          SDL2Sprites::Submit(m_ownRenderer, ul.x, ul.y, m_width, m_height); }
         SDL_RenderSetViewport(m_ownRenderer, nullptr);
 
         // Overlay: m_ownBack = sprites (opaque) + chrome (opaque), content
         // transparent → terrain shows through. m_ownBackTex is BLEND mode.
-        SDL_UpdateTexture(m_ownBackTex, nullptr, m_ownBack->pixels, m_ownBack->pitch);
-        SDL_RenderCopy(m_ownRenderer, m_ownBackTex, nullptr, nullptr);
-        SDL_RenderPresent(m_ownRenderer);
+        { Perf::ScopeCounter _co( "p.overlay" );
+          SDL_UpdateTexture(m_ownBackTex, nullptr, m_ownBack->pixels, m_ownBack->pitch);
+          SDL_RenderCopy(m_ownRenderer, m_ownBackTex, nullptr, nullptr); }
+        { Perf::ScopeCounter _cp( "p.present" );
+          SDL_RenderPresent(m_ownRenderer); }
         return;
     }
 
@@ -1029,6 +1047,22 @@ void SDL2Panel::RenderDetached() {
             SDL_SetColorKey(spriteSurf, SDL_TRUE,
                             SDL_MapRGB(spriteSurf->format, 255, 0, 255));
             SDL_BlitSurface(spriteSurf, nullptr, winSurf, &dstRect);  // sprites only
+        }
+
+        // Area button bar lives in the area panel's m_surface (it's blitted there
+        // in CWndArea::OnPaint), which the GPU path skips — so composite it here as
+        // opaque chrome along the bottom of the content. Without this the bar (build
+        // building / build road / zoom / rotate) vanishes once the area window is
+        // using the GPU terrain renderer.
+        if (m_bottomChromePanel) {
+            SDL_Surface* barSurf = m_bottomChromePanel->GetSurface();
+            if (barSurf) {
+                int barOffY = tbH + m_height - barSurf->h;
+                if (barOffY >= tbH) {
+                    SDL_Rect bd = { 0, barOffY, barSurf->w, barSurf->h };
+                    SDL_BlitSurface(barSurf, nullptr, winSurf, &bd);
+                }
+            }
         }
     } else {
         // Clear background, then the full CPU composite (terrain+sprites).

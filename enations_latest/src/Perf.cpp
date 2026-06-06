@@ -470,6 +470,18 @@ void CounterAdd( const char* name, int64_t v )
     LeaveCriticalSection( &g_counterCs );
 }
 
+void CounterAddElapsedUs( const char* name, uint64_t startTicks )
+{
+    if ( !g_enabled ) return;
+    LARGE_INTEGER c;
+    QueryPerformanceCounter( &c );
+    int64_t us = (int64_t)( ( (double)( (uint64_t)c.QuadPart - startTicks ) / g_perfFreq ) * 1000000.0 );
+    EnterCriticalSection( &g_counterCs );
+    Counter* cc = FindOrAdd( name, false );
+    if ( cc ) cc->value += us;
+    LeaveCriticalSection( &g_counterCs );
+}
+
 void GaugeSet( const char* name, int64_t v )
 {
     if ( !g_enabled ) return;
@@ -551,9 +563,11 @@ void FrameMark()
     if ( g_log )
     {
         fprintf( g_log,
-                 "t=%-6lu fps=%6.1f avg=%6.2f max=%7.2f | pump=%6.1f sim=%7.1f render=%7.1f present=%6.1f | ws=%7.1f priv=%7.1f",
+                 "t=%-6lu fps=%6.1f avg=%6.2f max=%7.2f | pump=%6.1f sim=%7.1f render=%7.1f present=%6.1f"
+                 " msg=%5.0f sleep=%6.0f operB=%5.0f operV=%6.0f operP=%5.0f | ws=%7.1f priv=%7.1f",
                  matchSec, fps, avgMs, g_frameMaxMs,
                  secMs[SEC_PUMP], secMs[SEC_SIM], secMs[SEC_RENDER], secMs[SEC_PRESENT],
+                 secMs[SEC_MSG], secMs[SEC_SLEEP], secMs[SEC_OPER_B], secMs[SEC_OPER_V], secMs[SEC_OPER_P],
                  wsMB, privMB );
 
         EnterCriticalSection( &g_counterCs );

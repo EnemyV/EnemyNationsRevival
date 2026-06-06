@@ -2480,6 +2480,12 @@ int CWndArea::OnCreate( LPCREATESTRUCT lpCreateStruct )
                 [pBar](SDL_Event& event, int localX, int localY) -> bool {
                     return pBar->HandleEvent(event, localX, localY);
                 });
+
+            // The area window presents through its own GPU-terrain renderer, whose
+            // overlay is built from the sprite layer only (not m_surface). Register
+            // the bar panel so RenderDetached composites it as bottom chrome —
+            // otherwise the bar disappears on the GPU path.
+            m_aa.m_sdlPanel->SetBottomChromePanel( m_WndStatic.m_sdlPanel );
         }
 
         // Give the area map its own borderless OS window (purple chrome drawn
@@ -2770,6 +2776,11 @@ void CWndArea::ResClicked( )
     static int aiRes[] = { -1, -1, 3, 3, -1, -1, 2, -1, 0, 1 };
 
     m_bShowRes = !m_bShowRes;
+
+    // Resource-view toggle swaps hex sprites to/from the minerals overlay directly
+    // (some paths set m_psprite without SetVisibleType) → invalidate the GPU terrain
+    // cache so the overlay appears/disappears without a view change.
+    { extern unsigned g_enTerrainEditGen; ++g_enTerrainEditGen; }
 
     BOOL bCopper = theGame.GetMe( )->CanCopper( );
 
@@ -5860,6 +5871,14 @@ void CWndArea::ClrRoadIcons( )
     m_phexRoadPath  = NULL;
     m_ppUnderSprite = NULL;
     m_iNumRoadHex   = 0;
+
+    // The road drag-preview swaps hex terrain sprites to the road sprite; on the GPU
+    // path the terrain is a cached texture that only re-bakes on a terrain-edit/view
+    // change, so the preview never showed. Bump the terrain-edit gen so the cache
+    // re-bakes with (or without) the preview tiles. This is the single choke point:
+    // SetRoadIcons calls ClrRoadIcons first, and it's also the preview teardown.
+    extern unsigned g_enTerrainEditGen;
+    ++g_enTerrainEditGen;
 }
 
 void CWndArea::SetRoadIcons( CHexCoord hexEnd )

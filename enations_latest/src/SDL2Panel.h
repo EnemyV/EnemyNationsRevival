@@ -137,6 +137,12 @@ public:
     void SetTerrainAnimAtr( const class CAnimAtr* aa ) { m_terrainAA = aa; }
     uint32_t    GetOwnWindowID() const { return m_ownWindowID; }
 
+    // Optional chrome panel composited along the bottom of this detached window
+    // (the area-map button bar). In the GPU-terrain path RenderDetached builds
+    // the overlay from the sprite-layer surface only, so the bar — which lives in
+    // m_surface — would otherwise be dropped. Drawn as opaque chrome each present.
+    void SetBottomChromePanel( SDL2Panel* p ) { m_bottomChromePanel = p; }
+
     // Render to own detached window (called by compositor for detached panels)
     void RenderDetached();
 
@@ -253,6 +259,7 @@ private:
     struct SDL_Texture*  m_ownBackTex  = nullptr;   // streaming texture for m_ownBack
     int m_ownBackW = 0, m_ownBackH = 0;
     const class CAnimAtr* m_terrainAA = nullptr;  // T2: area-map view, else null
+    SDL2Panel*  m_bottomChromePanel = nullptr;    // area button bar, composited bottom
     DWORD m_lastRenderMs = 0;                      // last RenderDetached time (throttle)
     void MaybeCreateOwnRenderer();   // called from Detach() if the flag is on
     void DestroyOwnRenderer();       // called from DestroyOwnWindow()

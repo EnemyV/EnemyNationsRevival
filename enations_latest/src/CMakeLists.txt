@@ -99,6 +99,7 @@ set(enations_sources
         SDL2Panel.cpp
         SDL2Compositor.cpp
         SDL2Terrain.cpp
+        SDL2Sprites.cpp
         SDL2AreaBar.cpp
         SDL2BuildStructure.cpp
         SDL2BuildTransport.cpp
