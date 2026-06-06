@@ -3556,6 +3556,15 @@ void CGameMap::DiscoverSpritesGpu( CAnimAtr& aa, const CRect& rect )
 
     int hexCnt = 0, hitCnt = 0;
 
+    // Item 5 (dirty-rects): when enabled, start this frame's changed-region list. The
+    // unit sweeps below record each moving/animating sprite's view-space bbox; the
+    // incremental capture/render (S2.3+) then touches only those (+ the carry-over).
+    const bool bDirty = SDL2Panel::GpuDirtyEnabled( );
+    if ( bDirty )
+        SDL2Sprites::DirtyNewFrame( );
+    CPoint    ulDirty = aa.GetUL( );
+    const int kDirtyPad = MAX_HEX_HT + iMaxBuildingHeight;  // generous; over-inclusion is safe
+
     // ---- Buildings (object-iterated; each visible building drawn once) ----
     {
         POSITION pos = theBuildingMap.GetStartPosition( );
@@ -3607,6 +3616,18 @@ void CGameMap::DiscoverSpritesGpu( CAnimAtr& aa, const CRect& rect )
 
             ++hitCnt;
             drawinfopool.GetVehicleDrawInfo( pvehicle, hexVeh )->Draw( );
+
+            // Vehicles move + animate every frame → always a dirty region. Use the hex
+            // bound (client) → view space (+UL), padded for the sprite footprint/height.
+            if ( bDirty )
+            {
+                CRect rb;
+                if ( aa.CalcWindowHexBound( hexVeh, rb ) )
+                    SDL2Sprites::DirtyAddRect( rb.left + ulDirty.x - kDirtyPad,
+                                               rb.top + ulDirty.y - kDirtyPad,
+                                               rb.Width( ) + 2 * kDirtyPad,
+                                               rb.Height( ) + 2 * kDirtyPad );
+            }
         }
     }
 
@@ -3775,6 +3796,8 @@ void CGameMap::DiscoverSpritesGpu( CAnimAtr& aa, const CRect& rect )
     // PROFILING: keep the walk.* counters comparable to the old per-hex walk.
     Perf::CounterAdd( "walk.hexes", hexCnt );   // forest/bridge/proj hexes touched
     Perf::CounterAdd( "walk.rows", hitCnt );    // sprites discovered (units + per-hex)
+    if ( bDirty )
+        Perf::CounterAdd( "dirty.rects", SDL2Sprites::DirtyRectCount( ) );  // S2.1 probe
 }
 
 //---------------------------------------------------------------------------

@@ -56,4 +56,14 @@ namespace SDL2Sprites
     void Submit( SDL_Renderer* r, int ulX, int ulY, int vpW, int vpH );
 
     void InvalidateTextures( );
+
+    // --- Item 5 (dirty-rects) ---
+    // Per-frame list of the regions that actually changed (moving/animating units), in
+    // VIEW space. DirtyNewFrame() rotates this frame's list to "previous" (the PAINT_BOTH
+    // carryover: a vacated spot must repaint one more frame) and starts a fresh list;
+    // DirtyAddRect() records a unit's view-space bbox. The combined (this+previous) set is
+    // what the incremental capture/render will touch — everything else persists.
+    void DirtyNewFrame( );
+    void DirtyAddRect( int vx, int vy, int w, int h );
+    int  DirtyRectCount( );   // combined this+previous (probe / coalescing input)
 }

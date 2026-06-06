@@ -124,6 +124,7 @@ public:
     // (the GPU present path). Used to gate the T1 terrain/sprite layer split.
     bool HasOwnRenderer() const { return m_ownRenderer != nullptr; }
     SDL_Window* GetOwnWindow() const { return m_ownWindow; }
+    static bool GpuDirtyEnabled();   // Item 5 kill-switch (env EN_DIRTY)
 
     // True for the GPU-terrain gameplay window (its own renderer + a terrain
     // CAnimAtr). Such a panel must re-present EVERY frame so animated water keeps
@@ -270,7 +271,6 @@ private:
     void DestroyOwnRenderer();       // called from DestroyOwnWindow()
     SDL_Surface* EnsureOwnBack();    // (re)create m_ownBack to renderer output size
     void PresentOwn();               // upload m_ownBack + RenderCopy + Present
-    static bool GpuDirtyEnabled();   // Item 5 kill-switch (env EN_DIRTY)
 
     // Manual detached-resize state
     bool m_dResizing   = false;

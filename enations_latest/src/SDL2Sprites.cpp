@@ -78,6 +78,12 @@ namespace
     bool g_accumValid = false;           // g_accum holds a dirty region this present
     int  g_accumX0, g_accumY0, g_accumX1, g_accumY1;   // accumulated dirty rect (VIEW space)
 
+    // Item 5 (dirty-rects): per-frame changed regions (moving/animating units), VIEW space.
+    // g_dirtyPrev is last frame's set, carried one more frame (PAINT_BOTH) so a vacated
+    // spot repaints. Combined (cur ∪ prev) = what the incremental path touches.
+    std::vector<SDL_Rect> g_dirtyCur;
+    std::vector<SDL_Rect> g_dirtyPrev;
+
     void AccumDirty( int x, int y, int w, int h )
     {
         if ( w <= 0 || h <= 0 ) return;
@@ -357,6 +363,23 @@ namespace SDL2Sprites
         EmitOrder( r, order, ulX, ulY );
 
         g_dirty = false; g_lastUlX = ulX; g_lastUlY = ulY; g_accumValid = false;
+    }
+
+    void DirtyNewFrame( )
+    {
+        g_dirtyPrev.swap( g_dirtyCur );   // last frame's rects carry one more frame
+        g_dirtyCur.clear( );
+    }
+
+    void DirtyAddRect( int vx, int vy, int w, int h )
+    {
+        if ( w > 0 && h > 0 )
+            g_dirtyCur.push_back( SDL_Rect{ vx, vy, w, h } );
+    }
+
+    int DirtyRectCount( )
+    {
+        return (int)( g_dirtyCur.size( ) + g_dirtyPrev.size( ) );
     }
 
     void InvalidateTextures( )
