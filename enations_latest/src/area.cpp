@@ -1465,26 +1465,34 @@ void CWndArea::ReRender( )
 
     bInvAmb = FALSE;
 
-    BOOL bSave;
-    if ( m_bUpdateAll )
+    // GPU full-redraw: the draw pass re-presents the whole viewport every frame and
+    // ignores dirty rects, so theMap.Update's invalidate walk (O(visible hexes), the
+    // old per-hex scan) is pure overhead here. Animation/ambients advance in the DRAW
+    // pass (CDrawParms::draw "Draw and update ambients"), not in the invalidate pass,
+    // so skipping it is safe. This was the #1 render cost at max zoom (r.inval).
+    if ( !m_aa.IsGpuFull( ) )
     {
-        bSave      = bForceDraw;
-        bForceDraw = TRUE;
-    }
+        BOOL bSave;
+        if ( m_bUpdateAll )
+        {
+            bSave      = bForceDraw;
+            bForceDraw = TRUE;
+        }
 
-    theMap.Update( m_aa );
+        theMap.Update( m_aa );
 
-    // Generate a paint message for each coalesced dirty rect
+        // Generate a paint message for each coalesced dirty rect
 
-    // Render each rect in the current dirty rect list and add it to
-    // the list of rects to be blitted
+        // Render each rect in the current dirty rect list and add it to
+        // the list of rects to be blitted
 
-    // GGTESTING m_aa.Render(  ); this creates crazy trails on vehicles
+        // GGTESTING m_aa.Render(  ); this creates crazy trails on vehicles
 
-    if ( m_bUpdateAll )
-    {
-        bForceDraw   = bSave;
-        m_bUpdateAll = FALSE;
+        if ( m_bUpdateAll )
+        {
+            bForceDraw   = bSave;
+            m_bUpdateAll = FALSE;
+        }
     }
 
     // unit may have moved under (or been created)

@@ -590,6 +590,11 @@ class CAnimAtr
     // underneath. Lazily sized to match m_dibwnd. Unused in the software path.
     CDIBWnd     m_dibSprite;
     bool        UseSplitLayer() const;  // defined in terrain.cpp (needs SDL2Panel)
+    // True when this view renders through its own GPU renderer + GPU sprite layer:
+    // the whole window is re-presented every frame, so dirty rects are unused and
+    // the invalidate pass is pure overhead. Defined in terrain.cpp (needs SDL2Panel
+    // + SDL2Sprites). == m_sdlPanel && UseSplitLayer() && SDL2Sprites::Enabled().
+    bool        IsGpuFull() const;
     // T2.3: the sprite-layer SDL surface (magenta-keyed) for GPU compositing
     // over the terrain mesh. nullptr if not split / not SDL-backed.
     struct SDL_Surface* GetSpriteLayerSurface() const;

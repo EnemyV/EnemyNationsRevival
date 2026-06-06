@@ -630,7 +630,7 @@ void CAnimAtr::Render( )
     // each running BeginFrame's O(all-sprites) overlap scan (≈620×280 checks/frame).
     // A single full walk is dramatically cheaper AND flicker-free (no stale/partial
     // sprites from the incremental model). The software path keeps dirty rects.
-    bool bGpuFull = m_sdlPanel && UseSplitLayer( ) && SDL2Sprites::Enabled( );
+    bool bGpuFull = IsGpuFull( );
 
     try
     {
@@ -776,6 +776,16 @@ void CAnimAtr::SetCurrent( ) const
 bool CAnimAtr::UseSplitLayer( ) const
 {
     return m_sdlPanel != nullptr && m_sdlPanel->HasOwnRenderer( );
+}
+
+//---------------------------------------------------------------------------
+// CAnimAtr::IsGpuFull - this view re-presents the whole window via its GPU
+// renderer + GPU sprite layer each frame, so dirty rects (and the invalidate
+// pass that produces them) are unused. Single source of truth for the gate.
+//---------------------------------------------------------------------------
+bool CAnimAtr::IsGpuFull( ) const
+{
+    return m_sdlPanel && UseSplitLayer( ) && SDL2Sprites::Enabled( );
 }
 
 // T2.3: the magenta-keyed sprite layer surface, for GPU compositing over the
