@@ -51,6 +51,19 @@ static unsigned s_loadGen = 0;
 // (CHex::SetType, CFarmBuilding::UpdateFieldStage) can bump it via a local extern.
 unsigned g_enTerrainEditGen = 0;
 
+// Item 5 (incremental terrain patch): the hexes edited since the last mesh build, so the
+// render can re-mesh ONLY those into the cached s_rt instead of a full ~50k-hex rebuild.
+// Packed (x<<16)|y (map is square, coords < 65536). Capped — past the cap a full rebuild
+// is cheaper (e.g. worldgen sets the whole map). Recorded by CHex::SetAlt/SetVisibleType.
+std::vector<unsigned> g_enEditedHexes;
+const size_t          kEditPatchCap = 1024;
+void g_enEditHex( int x, int y )
+{
+    ++g_enTerrainEditGen;   // keep the gen bumped for now (sig still rebuilds in Phase A)
+    if ( g_enEditedHexes.size( ) < kEditPatchCap )
+        g_enEditedHexes.push_back( ( (unsigned)( x & 0xFFFF ) << 16 ) | (unsigned)( y & 0xFFFF ) );
+}
+
 static int TypeNameToInt( const std::string& n )
 {
     for ( int i = 0; i < kNumTypeNames; ++i )
@@ -730,6 +743,7 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
     {
     Perf::ScopeCounter _cr( "t.rebuild" );   // full mesh rebuild (O visible hexes)
     s_sig = sig; dX = dY = 0;   // rebuilt at the current view → zero pan
+    g_enEditedHexes.clear( );   // a full rebuild absorbs all pending edits (Phase B patches these instead)
     s_fogVerts.clear(); s_fogHex.clear(); s_fogNbr.clear(); s_fogVis.clear(); s_shadeVerts.clear();
     s_waterHex.clear(); s_waterPos.clear();
 

@@ -235,7 +235,7 @@ inline void CHex::SetAlt( int iAlt ) {
     // Altitude changes the GPU terrain mesh geometry (corner Z) → invalidate the
     // cached terrain texture so the edit shows without a view change (bridges,
     // building leveling, terraform, network altitude updates).
-    extern unsigned g_enTerrainEditGen; ++g_enTerrainEditGen;
+    extern void g_enEditHex( int, int ); CHexCoord _ehc = GetHex( ); g_enEditHex( _ehc.X( ), _ehc.Y( ) );
 }
 
 inline int CHex::GetType() const {
@@ -271,7 +271,7 @@ inline void CHex::SetVisibleType( int iType ) {
     // ChangeToRoad, coastline, bridge revert) → invalidate the GPU terrain cache so
     // the new tile shows without needing a view change. Only called on real terrain
     // edits + worldgen (never on fog reveal), so this doesn't over-rebuild.
-    extern unsigned g_enTerrainEditGen; ++g_enTerrainEditGen;
+    extern void g_enEditHex( int, int ); CHexCoord _ehc = GetHex( ); g_enEditHex( _ehc.X( ), _ehc.Y( ) );
 }
 
 // Field growth stage lives in the two free bits (1-2) of CTile::m_byType.
