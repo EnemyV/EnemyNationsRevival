@@ -554,6 +554,11 @@ void CConquerApp::_RenderScreens( )
                     pWnd->Draw( );
         }
 
+        // Item 5 (dirty-rects) de-risk probe: how many hexes were invalidated this
+        // frame (sim moves + render-time marks). If this is O(moving-units) and not
+        // O(visible-hexes), the push-based dirty-rect source is viable.
+        Perf::CounterAdd( "inval.hexes", theMap.GetHexValidMatrix( )->GetDirtyCount( ) );
+
         CHexCoord::ClearInvalidated( );  // Set terrain invalidated flags to FALSE
 
         if ( theApp.m_wndBar.m_sdlPanel &&
@@ -2447,12 +2452,19 @@ void CFarmBuilding::BuildFarm( )
     ASSERT_STRICT( ( m_unitFlags & ( stop | event ) ) == 0 );
     ASSERT_STRICT( m_iConstDone == -1 );
 
+    // Harvest pacing: FARM_HARVEST_SLOW makes each harvest take that many times
+    // LONGER and yield that many times MORE → identical net food/material rate, but the
+    // harvest (and the crop-growth "season" tied to it) cycles slower with chunkier
+    // payouts. 2 = harvest half as often, double the yield.
+    const int FARM_HARVEST_SLOW = 2;
+
     // "Fields grown around farms": paint the crop plots on the first operational
     // tick (also rebuilds them after a load), then animate their growth. GrowFields
-    // / UpdateFieldStage no-op for lumber mills (food farms only).
+    // / UpdateFieldStage no-op for lumber mills (food farms only). Pass the SAME slowed
+    // period we harvest on so the crop spans exactly one (slowed) harvest cycle.
     if ( m_fieldHexes.empty( ) )
         GrowFields( );
-    UpdateFieldStage( GetData( )->GetBldFarm( )->GetTimeToFarm( ) );
+    UpdateFieldStage( FARM_HARVEST_SLOW * GetData( )->GetBldFarm( )->GetTimeToFarm( ) );
 
     // add in its power & people usuage
     GetOwner( )->AddPwrNeed( GetData( )->GetPower( ) );
@@ -2475,12 +2487,12 @@ void CFarmBuilding::BuildFarm( )
 
     m_iBuildDone += iInc;
 
-    if ( m_iBuildDone < pBf->GetTimeToFarm( ) )
+    if ( m_iBuildDone < FARM_HARVEST_SLOW * pBf->GetTimeToFarm( ) )
         return;
 
-    div_t dtRate = div( (int)m_iBuildDone, pBf->GetTimeToFarm( ) );
+    div_t dtRate = div( (int)m_iBuildDone, FARM_HARVEST_SLOW * pBf->GetTimeToFarm( ) );
     m_iBuildDone = dtRate.rem;
-    dtRate.quot *= pBf->GetQuantity( );
+    dtRate.quot *= FARM_HARVEST_SLOW * pBf->GetQuantity( );
 
     // we farmed some stuff - store it
     if ( pBf->GetTypeFarm( ) == CMaterialTypes::food )

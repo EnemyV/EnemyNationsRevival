@@ -13,6 +13,7 @@
 
 #include "ourlog.h"
 
+#include <vector>     // CHexValidMatrix dirty-hex list (item 5 dirty-rects)
 #include <dibwnd.h>
 #include <wndbase.h>  // CWndBase / CWndStub
 
@@ -145,13 +146,35 @@ class CHexValidMatrix : public CBitMatrix
   public:
     CHexValidMatrix( int cxPowerOf2, int cyPowerOf2 );
 
-    void SetInvalidated( int iX, int iY ) { Set( iX & m_iMaskX, iY & m_iMaskY ); }
+    // Item 5 (dirty-rects): besides setting the bit, record newly-invalidated hexes in
+    // a list so the dirty-rect pass can enumerate them in O(changed) instead of scanning
+    // the whole matrix. Dedup on the bit (a hex already invalidated this frame isn't
+    // re-listed). The list is cleared with the bits in Clear(). Packed (x<<16)|y.
+    void SetInvalidated( int iX, int iY )
+    {
+        int x = iX & m_iMaskX, y = iY & m_iMaskY;
+        if ( !Get( x, y ) )
+        {
+            Set( x, y );
+            m_dirty.push_back( ( (unsigned)x << 16 ) | (unsigned)( y & 0xFFFF ) );
+        }
+    }
 
     BOOL IsInvalidated( int iX, int iY ) const { return Get( iX & m_iMaskX, iY & m_iMaskY ); }
 
+    void Clear( )
+    {
+        m_dirty.clear( );
+        CBitMatrix::Clear( );
+    }
+
+    const std::vector<unsigned>& GetDirty( ) const { return m_dirty; }
+    int                          GetDirtyCount( ) const { return (int)m_dirty.size( ); }
+
   private:
-    int m_iMaskX;
-    int m_iMaskY;
+    int                   m_iMaskX;
+    int                   m_iMaskY;
+    std::vector<unsigned> m_dirty;   // hexes invalidated since last Clear (this frame)
 };
 
 /////////////////////////////////////////////////////////////////////////////
