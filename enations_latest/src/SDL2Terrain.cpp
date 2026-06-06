@@ -786,6 +786,7 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
     // so it animates and appears even on a static view (e.g. the rocket landing site).
 
     bool seenContent = false;
+    DWORD _gt = GetTickCount( );   // MEASURE: rebuild sub-phases (coarse ms → µs)
     for ( int y = iTopY;; ++y )
     {
         bool rowAny = false;
@@ -853,18 +854,13 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
             // (Gouraud) instead of hard diamond steps. The 9 visibility samples/hex
             // run only on a mesh REBUILD now (the pan path blits the cached texture),
             // so the smooth fog blur is affordable at every zoom.
-            int  hx = hexcoord.X( ), hy = hexcoord.Y( );
-            float fog[4];
-            auto visAt = [&]( int dx, int dy ) -> float {
-                CHexCoord hc( hx + dx, hy + dy ); hc.Wrap( );
-                CHex* h = theMap.GetHex( hc );
-                return ( h && h->GetVisibility( ) ) ? 1.0f : 0.0f;
-            };
-            float vS = visAt( 0, 0 );
-            fog[0] = kFogDim + ( 1.0f - kFogDim ) * ( vS + visAt(-1,0) + visAt(0,-1) + visAt(-1,-1) ) * 0.25f;
-            fog[1] = kFogDim + ( 1.0f - kFogDim ) * ( vS + visAt( 1,0) + visAt(0,-1) + visAt( 1,-1) ) * 0.25f;
-            fog[2] = kFogDim + ( 1.0f - kFogDim ) * ( vS + visAt( 1,0) + visAt(0, 1) + visAt( 1, 1) ) * 0.25f;
-            fog[3] = kFogDim + ( 1.0f - kFogDim ) * ( vS + visAt(-1,0) + visAt(0, 1) + visAt(-1, 1) ) * 0.25f;
+            int  hx = hexcoord.X( ), hy = hexcoord.Y( );   // (feather below uses these)
+            // PERF: the per-corner soft-fog alphas are filled by the throttle re-sample
+            // (fast, precomputed neighbours) on EVERY fog update — including this rebuild
+            // frame (the fog block below now re-samples on rebuild too). So skip the 9
+            // GetHex/hex sampling here; it was ~half the whole rebuild. Placeholder alphas
+            // (overwritten before the fog is drawn this frame).
+            float fog[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
 
             auto grayCol = []( float b ) -> SDL_Color {
                 Uint8 g = (Uint8)__min( 255, (int)( b * 255.0f ) );
@@ -1058,6 +1054,7 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
         if ( y > iTopY + 4 * ( ws.cy / __max( 1, ( 16 >> zoom ) ) + 8 ) + 64 )
             break;  // hard safety bound (extra for the bottom pan margin)
     }
+    Perf::CounterAdd( "reb.loop", (int)( ( GetTickCount( ) - _gt ) * 1000 ) ); _gt = GetTickCount( );
 
     // Precompute each fog hex's 8 neighbour indices (once, here), so the throttled
     // fog re-sample is 1 visibility read/hex + array lookups instead of 9 hashed
@@ -1068,12 +1065,17 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
         const size_t nHex = s_fogHex.size( );
         s_fogVis.assign( nHex, 0.0f );
         s_fogNbr.assign( nHex * 8, -1 );
-        std::unordered_map<uint64_t, int> idxMap;
-        idxMap.reserve( nHex * 2 );
+        // PERF: index hexes by map coord in a FLAT ARRAY (the map is square, hc.X()/Y()
+        // are in [0,eX)) instead of a 50k-entry std::unordered_map rebuilt every time —
+        // that hash map was ~22% of the whole rebuild in Debug. Reused static, cleared
+        // each rebuild (eX*eY int writes, cheap).
+        const int eX = theMap.Get_eX( ), eY = theMap.Get_eY( );
+        static std::vector<int> s_hexIdx;
+        s_hexIdx.assign( (size_t)eX * eY, -1 );
         for ( size_t i = 0; i < nHex; ++i )
         {
             CHexCoord hc = s_fogHex[i]->GetHex( );
-            idxMap[ ( (uint64_t)(uint32_t)hc.X( ) << 32 ) | (uint32_t)hc.Y( ) ] = (int)i;
+            s_hexIdx[ (size_t)hc.Y( ) * eX + hc.X( ) ] = (int)i;
         }
         static const int ndx[8] = { -1, 1, 0, 0, -1, 1, 1, -1 };
         static const int ndy[8] = {  0, 0, -1, 1, -1, -1, 1, 1 };
@@ -1084,11 +1086,11 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
             for ( int k = 0; k < 8; ++k )
             {
                 CHexCoord n( hx + ndx[k], hy + ndy[k] ); n.Wrap( );
-                auto it = idxMap.find( ( (uint64_t)(uint32_t)n.X( ) << 32 ) | (uint32_t)n.Y( ) );
-                if ( it != idxMap.end( ) ) s_fogNbr[i * 8 + k] = it->second;
+                s_fogNbr[i * 8 + k] = s_hexIdx[ (size_t)n.Y( ) * eX + n.X( ) ];
             }
         }
     }
+    Perf::CounterAdd( "reb.fognbr", (int)( ( GetTickCount( ) - _gt ) * 1000 ) ); _gt = GetTickCount( );
 
     // Draw the freshly-built mesh INTO the texture (target is still s_rt).
     SDL_SetRenderDrawBlendMode( r, SDL_BLENDMODE_BLEND );
@@ -1112,6 +1114,7 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
     SDL_RenderCopy( r, s_shadeRT, nullptr, nullptr );
     SDL_SetRenderTarget( r, s_shadeRT );
     SDL_RenderCopy( r, s_shadeHalf, nullptr, nullptr );
+    Perf::CounterAdd( "reb.gpu", (int)( ( GetTickCount( ) - _gt ) * 1000 ) );
 
     // Restore the window target/viewport. (The fog overlay is rendered in the common
     // tail below; the blit also happens there so the cached path shares it.)
@@ -1181,7 +1184,9 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
         // artifact at a mountain fog edge — acceptable (dim, rare) vs redrawing everything.
         static std::vector<SDL_Vertex> s_fogBatch;
         s_fogBatch.clear( );
-        if ( !needRebuild )   // a rebuild already wrote current colours
+        // Re-sample fog alphas EVERY update — on a rebuild too (the build now skips the
+        // 9-GetHex/hex sampling and pushes placeholder alphas, filled here via the fast
+        // precomputed neighbours). The change-batch is only consumed on the non-rebuild path.
         {
             const size_t nHex = s_fogHex.size( );
             // 1 visibility read per hex (cached CHex*, no GetHex/hash).
