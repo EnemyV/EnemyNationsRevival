@@ -310,6 +310,15 @@ const SDL2Terrain::Tile* SDL2Terrain::Get( const std::string& type, int variant,
 static const float kFogDim = 0.58f;   // invisible (out-of-sight) hexes — dim, but
                                       // between the old too-light and too-dark (darker side)
 
+// Camera-rotation corner permutation for the fog overlay. The per-corner fog alphas are
+// computed in WORLD-corner order (the map-neighbour averages are dir-independent), but
+// the verts are screen slots L/T/R/B (pts[]). This is the INVERSE of terrain.cpp's
+// kCornerSlot (world→screen): kFogSlotInv[dir][screenSlot] = world corner that lands
+// there. Without it the Gouraud blend disagrees across shared edges at dirs 1/2/3 and
+// the soft fog collapses to hard diamond steps (the feather code already does this).
+static const int kFogSlotInv[4][4] =
+    { { 0, 1, 2, 3 }, { 1, 2, 3, 0 }, { 2, 3, 0, 1 }, { 3, 0, 1, 2 } };
+
 static float TriBrightness( int z0, int z1, int z2, int z3, bool left )
 {
     const int SC = 14;
@@ -914,13 +923,16 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
                 Uint8 a = (Uint8)__min( 255, (int)( ( 1.0f - f ) * 255.0f ) );
                 v.color = { 0, 0, 0, a }; return v;
             };
+            // World-corner alphas → screen slots (L/T/R/B) for this camera rotation.
+            const int* fperm = kFogSlotInv[aa.m_iDir & 3];
+            float sf[4] = { fog[fperm[0]], fog[fperm[1]], fog[fperm[2]], fog[fperm[3]] };
             s_fogHex.push_back( phex );   // self visibility on re-sample (no GetHex)
-            s_fogVerts.push_back( fogV( pts[0], fog[0] ) );
-            s_fogVerts.push_back( fogV( pts[1], fog[1] ) );
-            s_fogVerts.push_back( fogV( pts[3], fog[3] ) );
-            s_fogVerts.push_back( fogV( pts[1], fog[1] ) );
-            s_fogVerts.push_back( fogV( pts[2], fog[2] ) );
-            s_fogVerts.push_back( fogV( pts[3], fog[3] ) );
+            s_fogVerts.push_back( fogV( pts[0], sf[0] ) );
+            s_fogVerts.push_back( fogV( pts[1], sf[1] ) );
+            s_fogVerts.push_back( fogV( pts[3], sf[3] ) );
+            s_fogVerts.push_back( fogV( pts[1], sf[1] ) );
+            s_fogVerts.push_back( fogV( pts[2], sf[2] ) );
+            s_fogVerts.push_back( fogV( pts[3], sf[3] ) );
 
             // (Cursor footprint hatch is drawn live in DrawBuildCursorOverlay, not
             // baked here — see note above.)
@@ -1148,9 +1160,13 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
                 float f1 = kFogDim + ( 1.0f - kFogDim ) * ( s + nv(1) + nv(2) + nv(5) ) * 0.25f;
                 float f2 = kFogDim + ( 1.0f - kFogDim ) * ( s + nv(1) + nv(3) + nv(6) ) * 0.25f;
                 float f3 = kFogDim + ( 1.0f - kFogDim ) * ( s + nv(0) + nv(3) + nv(7) ) * 0.25f;
-                SDL_Vertex* v = &s_fogVerts[i * 6];   // order L,T,B, T,R,B
-                v[0].color.a = A( f0 ); v[1].color.a = A( f1 ); v[2].color.a = A( f3 );
-                v[3].color.a = A( f1 ); v[4].color.a = A( f2 ); v[5].color.a = A( f3 );
+                // World-corner alphas → screen slots (same permutation as the build path).
+                float      fc[4]  = { f0, f1, f2, f3 };
+                const int* fperm  = kFogSlotInv[aa.m_iDir & 3];
+                float      sf0 = fc[fperm[0]], sf1 = fc[fperm[1]], sf2 = fc[fperm[2]], sf3 = fc[fperm[3]];
+                SDL_Vertex* v = &s_fogVerts[i * 6];   // order L,T,B, T,R,B (slots 0,1,3,1,2,3)
+                v[0].color.a = A( sf0 ); v[1].color.a = A( sf1 ); v[2].color.a = A( sf3 );
+                v[3].color.a = A( sf1 ); v[4].color.a = A( sf2 ); v[5].color.a = A( sf3 );
             }
         }
         s_fogUpdAt = _nowT;
