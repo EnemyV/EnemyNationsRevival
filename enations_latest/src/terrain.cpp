@@ -3556,14 +3556,39 @@ void CGameMap::DiscoverSpritesGpu( CAnimAtr& aa, const CRect& rect )
 
     int hexCnt = 0, hitCnt = 0;
 
-    // Item 5 (dirty-rects): when enabled, start this frame's changed-region list. The
-    // unit sweeps below record each moving/animating sprite's view-space bbox; the
-    // incremental capture/render (S2.3+) then touches only those (+ the carry-over).
-    const bool bDirty = SDL2Panel::GpuDirtyEnabled( );
+    // Item 5 (dirty-rects) S2.3: choose full vs INCREMENTAL capture. Incremental reuses
+    // the persistent sprite store — static trees/bridges stay, only the dynamic objects
+    // (buildings/vehicles/projectiles) are dropped + recaptured — so the expensive forest
+    // scan is skipped. Valid only on a STATIC view: a projection (zoom/dir) or pan (UL)
+    // change shifts which sprites are visible and where, so fall back to a full capture.
+    const bool bDirty   = SDL2Panel::GpuDirtyEnabled( );
+    CPoint     ulDirty  = aa.GetUL( );
+
+    static int  s_lastZoom = -999, s_lastDir = -999;
+    static int  s_lastUlX = INT_MIN, s_lastUlY = INT_MIN;
+    static bool s_haveStore = false;
+    bool projOrPan   = ( aa.m_iZoom != s_lastZoom ) || ( aa.m_iDir != s_lastDir ) ||
+                       ( ulDirty.x != s_lastUlX ) || ( ulDirty.y != s_lastUlY );
+    bool bIncremental = bDirty && s_haveStore && !projOrPan;
+    s_lastZoom = aa.m_iZoom; s_lastDir = aa.m_iDir;
+    s_lastUlX  = ulDirty.x;  s_lastUlY = ulDirty.y;
+    s_haveStore = true;   // after this frame the store is populated
+
+    if ( bIncremental )
+        SDL2Sprites::BeginIncremental( aa.m_iZoom, aa.m_iDir );
+    else
+        SDL2Sprites::BeginFrame( aa.m_iZoom, aa.m_iDir,
+                                 rect.left + ulDirty.x, rect.top + ulDirty.y,
+                                 rect.Width( ), rect.Height( ) );
+
     if ( bDirty )
         SDL2Sprites::DirtyNewFrame( );
-    CPoint    ulDirty = aa.GetUL( );
     const int kDirtyPad = MAX_HEX_HT + iMaxBuildingHeight;  // generous; over-inclusion is safe
+
+    // Buildings/vehicles/projectiles are DYNAMIC (can move or change sprite) → their keys
+    // are tracked so the next incremental frame can drop + refresh them. Trees/bridges are
+    // static (not marked), so they persist across incremental frames.
+    SDL2Sprites::SetCaptureDynamic( true );
 
     // ---- Buildings (object-iterated; each visible building drawn once) ----
     {
@@ -3631,6 +3656,10 @@ void CGameMap::DiscoverSpritesGpu( CAnimAtr& aa, const CRect& rect )
         }
     }
 
+    // Trees/bridges are static — stop tagging captures as dynamic so they PERSIST across
+    // incremental frames (the projectile branch re-enables it locally).
+    SDL2Sprites::SetCaptureDynamic( false );
+
     // ---- Per-hex types: bridge / forest / projectile ----
     //
     // Iterate the viewport's bounding box in UNWRAPPED map-hex space, not the whole
@@ -3671,8 +3700,15 @@ void CGameMap::DiscoverSpritesGpu( CAnimAtr& aa, const CRect& rect )
             BOOL bForest = ( CHex::forest == phex->GetType( ) );
 
             // Cheap reject: only bridge/projectile flags or forest terrain carry a
-            // per-hex sprite here (buildings/vehicles handled above).
-            if ( !( byUnits & ( CHex::bridge | CHex::proj ) ) && !bForest )
+            // per-hex sprite here (buildings/vehicles handled above). On an incremental
+            // frame trees + bridges are static (persist in the store) → only projectiles
+            // need refreshing, so skip everything else without projecting it.
+            if ( bIncremental )
+            {
+                if ( !( byUnits & CHex::proj ) )
+                    continue;
+            }
+            else if ( !( byUnits & ( CHex::bridge | CHex::proj ) ) && !bForest )
                 continue;
 
             ++hexCnt;
@@ -3689,8 +3725,9 @@ void CGameMap::DiscoverSpritesGpu( CAnimAtr& aa, const CRect& rect )
 
             ++hitCnt;
 
-            // Bridge (per-hex CBridgeUnit; drawn whether or not the hex is lit).
-            if ( byUnits & CHex::bridge )
+            // Bridge (per-hex CBridgeUnit; drawn whether or not the hex is lit). Static →
+            // skipped on incremental frames (persists in the store).
+            if ( !bIncremental && ( byUnits & CHex::bridge ) )
             {
                 CMapLoc maploc( hexcoord );
                 maploc.x += 32;
@@ -3709,8 +3746,9 @@ void CGameMap::DiscoverSpritesGpu( CAnimAtr& aa, const CRect& rect )
                     ->Draw( );
             }
 
-            // Trees (forest hex; drawn regardless of fog, mirroring the walk).
-            if ( bForest )
+            // Trees (forest hex; drawn regardless of fog, mirroring the walk). Static →
+            // skipped on incremental frames (persists in the store).
+            if ( !bIncremental && bForest )
             {
                 CMapLoc maplocCenter( hexcoord );
                 maplocCenter.x += MAX_HEX_HT >> 1;
@@ -3761,9 +3799,11 @@ void CGameMap::DiscoverSpritesGpu( CAnimAtr& aa, const CRect& rect )
                     ->Draw( );
             }
 
-            // Projectiles / explosions (only on lit hexes).
+            // Projectiles / explosions (only on lit hexes). Dynamic (move every frame) →
+            // tracked so the next incremental frame drops + refreshes them.
             if ( ( byUnits & CHex::proj ) && phex->GetVisibility( ) )
             {
+                SDL2Sprites::SetCaptureDynamic( true );
                 CProjBase* pprojbase = theProjMap.GetFirst( hexWrapped );
 
                 while ( pprojbase != NULL )
@@ -3787,9 +3827,12 @@ void CGameMap::DiscoverSpritesGpu( CAnimAtr& aa, const CRect& rect )
                     }
                     pprojbase = theProjMap.GetNext( pprojbase );
                 }
+                SDL2Sprites::SetCaptureDynamic( false );
             }
         }
     }
+
+    SDL2Sprites::SetCaptureDynamic( false );   // defensive reset
 
     xpdibwnd = xpdibwndSave;
 
@@ -3869,15 +3912,9 @@ void CGameMap::UpdateRect( CAnimAtr& aa, CRect rect, CDrawParms::UPDATE_MODE eMo
         // only this paint's dirty rect (mirrors the CPU layer's per-rect clear);
         // g_enSpriteSplitPass gates the low-level blit hook.
         g_enSpriteSplitPass = bSplit && SDL2Sprites::Enabled( );
-        if ( g_enSpriteSplitPass )
-        {
-            // Dirty rect in VIEW space (window rect + UL) so the per-rect refresh is
-            // scroll-invariant, matching the view-space tree positions captured below.
-            CPoint ulSpr = aa.GetUL( );
-            SDL2Sprites::BeginFrame( aa.m_iZoom, aa.m_iDir,
-                                     rect.left + ulSpr.x, rect.top + ulSpr.y,
-                                     rect.Width( ), rect.Height( ) );
-        }
+        // SDL2Sprites::BeginFrame / BeginIncremental is issued INSIDE DiscoverSpritesGpu,
+        // which chooses a full capture vs an incremental one (S2.3): on a static frame the
+        // forest scan is skipped and only the dynamic objects are recaptured.
 
         // GPU split path: replace the full per-hex view walk (which projected every
         // visible hex just to find the sprites) with object/forest discovery. The

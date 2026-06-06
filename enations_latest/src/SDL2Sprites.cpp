@@ -84,6 +84,14 @@ namespace
     std::vector<SDL_Rect> g_dirtyCur;
     std::vector<SDL_Rect> g_dirtyPrev;
 
+    // Item 5 S2.3 (incremental capture): the keys of the DYNAMIC sprites captured this
+    // frame (buildings/vehicles/projectiles — anything that can move or change). On an
+    // incremental frame BeginIncremental() removes last frame's set (so a moved unit's
+    // old-position entry doesn't linger) and the dynamic objects are recaptured fresh,
+    // while static trees/bridges keep their persistent g_sprites entries (skipped).
+    std::vector<SprKey> g_dynKeys;
+    bool                g_captureDynamic = false;   // mark captures into g_dynKeys
+
     void AccumDirty( int x, int y, int w, int h )
     {
         if ( w <= 0 || h <= 0 ) return;
@@ -195,6 +203,8 @@ namespace SDL2Sprites
             g_dirty = true;
         }
 
+        g_dynKeys.clear( );   // full walk recaptures dynamic objects → repopulates this
+
         AccumDirty( dvx, dvy, dw, dh );   // this repaint's dirty region (view space)
 
         if ( dw > 0 && dh > 0 )
@@ -221,6 +231,31 @@ namespace SDL2Sprites
         g_inFrame = true;
     }
 
+    // S2.3 incremental capture: begin a frame that REUSES the persistent g_sprites
+    // (static trees/bridges stay) and only refreshes the dynamic objects. Remove last
+    // frame's dynamic entries (a moved unit's old position would otherwise linger), then
+    // the caller recaptures buildings/vehicles/projectiles with SetCaptureDynamic(true).
+    // A projection change still forces a full clear (positions are invalid).
+    void BeginIncremental( int zoom, int dir )
+    {
+        g_inFrame = false;
+        if ( !Enabled( ) || !g_renderer )
+            return;
+        if ( zoom != g_zoom || dir != g_dir )
+        {
+            g_sprites.clear( );
+            g_zoom = zoom; g_dir = dir;
+            g_dirty = true;
+        }
+        for ( const SprKey& k : g_dynKeys )
+            g_sprites.erase( k );
+        g_dynKeys.clear( );
+        g_dirty = true;     // dynamic objects will be re-captured + re-emitted
+        g_inFrame = true;
+    }
+
+    void SetCaptureDynamic( bool b ) { g_captureDynamic = b; }
+
     bool CaptureStructure( const CSpriteDIB* dib, int zoom, int vx, int vy, int w, int h,
                            int clx, int cly, int clw, int clh,
                            int sortX, int sortY )
@@ -244,7 +279,9 @@ namespace SDL2Sprites
         s.cx = clx; s.cy = cly; s.cw = clw; s.ch = clh;
         // Key on the FULL sprite UL so the construction wipe (same UL, growing band)
         // overwrites in place each frame instead of leaving stale partial bands.
-        g_sprites[ { dib, vx, vy } ] = s;
+        SprKey key { dib, vx, vy };
+        g_sprites[ key ] = s;
+        if ( g_captureDynamic ) g_dynKeys.push_back( key );
         g_dirty = true;
         return true;
     }
@@ -262,7 +299,9 @@ namespace SDL2Sprites
         s.sortX = sortX; s.sortY = sortY; s.seq = ++g_seq; s.isVehicle = true;
         s.ax = loc.x; s.ay = loc.y; s.aw = loc.w; s.ah = loc.h;
         for ( int i = 0; i < 4; ++i ) { s.qx[i] = vx[i]; s.qy[i] = vy[i]; }
-        g_sprites[ { dib, vx[0], vy[0] } ] = s;
+        SprKey key { dib, vx[0], vy[0] };
+        g_sprites[ key ] = s;
+        if ( g_captureDynamic ) g_dynKeys.push_back( key );
         g_dirty = true;
         return true;
     }

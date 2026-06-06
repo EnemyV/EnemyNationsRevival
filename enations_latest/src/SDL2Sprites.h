@@ -66,4 +66,11 @@ namespace SDL2Sprites
     void DirtyNewFrame( );
     void DirtyAddRect( int vx, int vy, int w, int h );
     int  DirtyRectCount( );   // combined this+previous (probe / coalescing input)
+
+    // S2.3 incremental capture. BeginIncremental() reuses the persistent sprite store
+    // (static trees/bridges kept) and drops last frame's dynamic entries; the caller then
+    // recaptures only the dynamic objects (buildings/vehicles/projectiles) wrapped in
+    // SetCaptureDynamic(true) so their keys are tracked for next frame's removal.
+    void BeginIncremental( int zoom, int dir );
+    void SetCaptureDynamic( bool dynamic );
 }
