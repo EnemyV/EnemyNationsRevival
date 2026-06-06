@@ -3640,7 +3640,16 @@ void CMineBuilding::UpdateGround( )
 void CFarmBuilding::ctor( )
 {
 
-    m_iTerMult = 0;
+    m_iTerMult   = 0;
+    m_iFieldStage = -1;
+}
+
+CFarmBuilding::~CFarmBuilding( )
+{
+    // restore the soil under our crop plots before we go (only mid-game; on
+    // shutdown the map is being torn down anyway)
+    if ( theApp.AmInGame( ) )
+        RevertFields( );
 }
 
 static int fnFarmFromGround( CHex* pHex, CHexCoord, void* pData )
@@ -3688,6 +3697,154 @@ void CFarmBuilding::UpdateFarm( )
 {
 
     m_iTerMult = LandMult( m_hex, GetData( )->GetType( ), GetDir( ) );
+}
+
+// Record one hex of the ring as a crop plot, if it is farmable and unoccupied.
+// Does NOT touch the visible surface here - that is deferred to UpdateFieldStage
+// so plots stay hidden in fog of war until the player first sees the hex (like
+// roads). The logical terrain type (GetType / soil fertility) is never changed.
+static int fnCollectField( CHex* pHex, CHexCoord hex, void* pData )
+{
+    std::vector<DWORD>* pList = (std::vector<DWORD>*)pData;
+
+    // skip non-farmable soil: rocks, water, mountain, road, city all have FarmMult 0
+    if ( theTerrain.GetData( pHex->GetType( ) ).GetFarmMult( ) <= 0 )
+        return ( FALSE );
+
+    // skip occupied/built hexes
+    if ( pHex->GetUnits( ) & ( CHex::bldg | CHex::bridge ) )
+        return ( FALSE );
+
+    // Record the plot (including any already showing fields - they are within our
+    // own ring, so they are ours; this also re-adopts our plots after a load, where
+    // m_fieldHexes is rebuilt but the painted hexes persisted in the save).
+    pList->push_back( (unsigned long)hex );
+    return ( FALSE );
+}
+
+// (Re)build the field plots around an operational farm. Idempotent: clears the
+// list and re-scans the same footprint+1 ring that LandMult averages over.
+void CFarmBuilding::GrowFields( )
+{
+
+    // only operational farms grow fields (m_iConstDone == -1 means built)
+    if ( m_iConstDone != -1 )
+        return;
+
+    // only food farms get crop fields (lumber mills harvest forest)
+    CBuildFarm* pBf = GetData( )->GetBldFarm( );
+    if ( pBf == NULL || pBf->GetTypeFarm( ) != CMaterialTypes::food )
+        return;
+
+    // safety: if the field terrain art isn't loaded, do nothing (no crash)
+    if ( theTerrain.GetCount( CHex::fields ) <= 0 || theTerrain.GetSprite( CHex::fields, 0 ) == NULL )
+        return;
+
+    m_fieldHexes.clear( );
+
+    CStructureData const* pData = GetData( );
+    int                   cx    = GetDir( ) & 1 ? pData->GetCY( ) : pData->GetCX( );
+    int                   cy    = GetDir( ) & 1 ? pData->GetCX( ) : pData->GetCY( );
+
+    CHexCoord _hex( m_hex.X( ) - 1, m_hex.Y( ) - 1 );
+    _hex.Wrap( );
+    theMap.EnumHexes( _hex, cx + 2, cy + 2, fnCollectField, &m_fieldHexes );
+
+    m_iFieldStage = -1;  // force the next UpdateFieldStage to (re)apply
+}
+
+// Restore the original soil under our plots (used on teardown).
+void CFarmBuilding::RevertFields( )
+{
+
+    for ( size_t i = 0; i < m_fieldHexes.size( ); ++i )
+    {
+        CHexCoord hex( m_fieldHexes[i] );
+        CHex*     pHex = theMap._GetHex( hex );
+
+        if ( pHex->GetVisibleType( ) != CHex::fields )  // someone else changed it
+            continue;
+
+        int iSoil = pHex->GetType( );
+        pHex->SetVisibleType( iSoil );
+        pHex->SetGrowStage( 0 );
+        int iCount     = theTerrain.GetCount( iSoil );
+        pHex->m_psprite = theTerrain.GetSprite( iSoil, iCount <= 1 ? 0 : ( ( hex.X( ) * 2 + hex.Y( ) ) % iCount ) );
+        hex.SetInvalidated( );
+    }
+
+    m_fieldHexes.clear( );
+}
+
+// Drive the growth animation from harvest progress. Fertility already scales how
+// fast m_iBuildDone fills, so better soil advances the crop faster. One shared
+// stage for the whole farm.
+void CFarmBuilding::UpdateFieldStage( int iTimeToFarm )
+{
+
+    if ( m_fieldHexes.empty( ) || iTimeToFarm <= 0 )
+        return;
+
+    // Crop growth is tied to the farm's harvest cycle: m_iBuildDone runs 0 .. the
+    // (slowed) time-to-farm, so the field grows 0->1->2 then resets on harvest. The
+    // caller passes the SAME slowed period it harvests on (see CFarmBuilding::BuildFarm,
+    // FARM_HARVEST_SLOW) so the stage spans exactly one harvest cycle.
+    const int NUM_GROW_STAGES = 3;
+    int       iStage          = ( (int)m_iBuildDone * NUM_GROW_STAGES ) / iTimeToFarm;
+    if ( iStage < 0 )
+        iStage = 0;
+    if ( iStage > NUM_GROW_STAGES - 1 )
+        iStage = NUM_GROW_STAGES - 1;
+    m_iFieldStage = iStage;
+
+    BOOL bAny = FALSE;
+
+    for ( size_t i = 0; i < m_fieldHexes.size( ); ++i )
+    {
+        CHexCoord hex( m_fieldHexes[i] );
+        CHex*     pHex = theMap._GetHex( hex );
+
+        // Only touch hexes the player can currently see: plots stay hidden in fog
+        // of war until first sighted, then keep their last look once re-fogged.
+        if ( !pHex->GetVisibility( ) )
+            continue;
+        if ( pHex->GetUnits( ) & ( CHex::bldg | CHex::bridge ) )
+            continue;
+
+        BOOL bChanged = FALSE;
+
+        // first sighting of this plot - reveal the crop surface (soil left intact)
+        if ( pHex->GetVisibleType( ) != CHex::fields )
+        {
+            if ( theTerrain.GetData( pHex->GetType( ) ).GetFarmMult( ) <= 0 )
+                continue;  // soil changed under us (road/building) - no longer a plot
+            pHex->SetVisibleType( CHex::fields );
+            pHex->m_psprite = theTerrain.GetSprite( CHex::fields, 0 );
+            bChanged       = TRUE;
+        }
+
+        // advance the growth animation
+        if ( pHex->GetGrowStage( ) != iStage )
+        {
+            pHex->SetGrowStage( iStage );
+            bChanged = TRUE;
+        }
+
+        if ( bChanged )
+        {
+            hex.SetInvalidated( );
+            // The crop grow-stage is baked into the terrain tile, so the mesh must update
+            // to show growth — but only THIS plot hex changed. Record it so the GPU terrain
+            // PATCHES just it, instead of the bulk gen-bump below that forced a full ~50k
+            // rebuild every crop tick (a per-frame freeze zoomed out). Keeps the growth
+            // visual; just makes it cheap.
+            extern void g_enEditHex( int, int ); g_enEditHex( hex.X( ), hex.Y( ) );
+            bAny = TRUE;
+        }
+    }
+
+    if ( bAny )
+        theApp.m_wndWorld.NewMode( );   // gen bumped per changed hex above (patch, not rebuild)
 }
 
 

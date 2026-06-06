@@ -8,6 +8,7 @@
 
 #include <SDL.h>
 #include <vector>
+#include <mutex>      // g_enEditedHexes is touched by sim AND render threads
 #define STB_IMAGE_IMPLEMENTATION
 #define STBI_ONLY_PNG
 #include "thirdparty/stb_image.h"
@@ -56,12 +57,22 @@ unsigned g_enTerrainEditGen = 0;
 // Packed (x<<16)|y (map is square, coords < 65536). Capped — past the cap a full rebuild
 // is cheaper (e.g. worldgen sets the whole map). Recorded by CHex::SetAlt/SetVisibleType.
 std::vector<unsigned> g_enEditedHexes;
+std::mutex            g_enEditMutex;   // sim thread pushes; render thread reads/swaps
 const size_t          kEditPatchCap = 1024;
 void g_enEditHex( int x, int y )
 {
-    ++g_enTerrainEditGen;   // keep the gen bumped for now (sig still rebuilds in Phase A)
+    ++g_enTerrainEditGen;   // gen still bumped; with EN_TPATCH the render patches instead of rebuilding
+    std::lock_guard<std::mutex> lk( g_enEditMutex );
     if ( g_enEditedHexes.size( ) < kEditPatchCap )
         g_enEditedHexes.push_back( ( (unsigned)( x & 0xFFFF ) << 16 ) | (unsigned)( y & 0xFFFF ) );
+}
+
+// Item 5 (incremental terrain patch) kill-switch — opt-in until verified, then default on.
+static bool TerrainPatchEnabled( )
+{
+    static int s_on = -1;
+    if ( s_on < 0 ) { const char* e = SDL_getenv( "EN_TPATCH" ); s_on = ( e && *e && *e != '0' ) ? 1 : 0; }
+    return s_on != 0;
 }
 
 static int TypeNameToInt( const std::string& n )
@@ -645,6 +656,7 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
     static std::vector<CPoint> s_waterPos;   // 4 corner positions/hex (texture space)
     static unsigned s_waterTick = ~0u;
     static uint64_t  s_sig = ~0ull;
+    static unsigned  s_builtEditGen = 0;  // g_enTerrainEditGen baked into the current mesh
     static CHexCoord s_refHex;            // a fixed hex captured at build time
     static CPoint    s_refPx( 0, 0 );     // its window-screen pos at build time
     const int kMarginPx = 256;            // texture extends this far beyond viewport
@@ -702,8 +714,12 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
 
     // Pan delta of the cached textures = how far our reference hex has moved on
     // screen. Within ±kMarginPx the textures still cover the viewport → just blit.
+    // Compare the BASE signature (zoom/dir/loadgen) ignoring the terrain-edit gen, so a
+    // pure terrain edit can take the cheap PATCH path instead of a full rebuild.
+    uint64_t sigNoEdit  = sig   ^ ( (uint64_t)g_enTerrainEditGen << 40 );
+    uint64_t lastNoEdit = s_sig ^ ( (uint64_t)s_builtEditGen     << 40 );
     int dX = 0, dY = 0; bool covered = false;
-    if ( sig == s_sig )
+    if ( sigNoEdit == lastNoEdit )
     {
         CPoint rp[4];
         if ( aa.MapToWindowHex( s_refHex, rp ) )
@@ -714,7 +730,23 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
         }
     }
 
-    const bool needRebuild = !( sig == s_sig && covered );
+    // Edit-patch (Item 5): when only terrain EDITS changed (base unchanged, pan covered)
+    // and every edit since the last build was recorded (gen delta == list size) and the
+    // list is small, re-mesh ONLY those hexes into s_rt instead of the ~50k-hex rebuild.
+    bool baseSame  = ( sigNoEdit == lastNoEdit ) && covered;
+    bool editsPend = ( g_enTerrainEditGen != s_builtEditGen );
+    size_t editCount; { std::lock_guard<std::mutex> lk( g_enEditMutex ); editCount = g_enEditedHexes.size( ); }
+    bool editsOK   = editsPend && editCount > 0 && editCount <= kEditPatchCap
+                     && ( g_enTerrainEditGen - s_builtEditGen ) == (unsigned)editCount;
+    const bool doPatch     = TerrainPatchEnabled( ) && baseSame && editsOK;
+    const bool needRebuild = !baseSame || ( editsPend && !doPatch );
+    if ( editsPend )
+    {
+        Perf::CounterAdd( "ed.gendelta", (int)( g_enTerrainEditGen - s_builtEditGen ) );
+        Perf::CounterAdd( "ed.listsz",   (int)g_enEditedHexes.size( ) );
+        Perf::CounterAdd( "ed.basesame", baseSame ? 1 : 0 );
+        Perf::CounterAdd( "ed.patchen",  TerrainPatchEnabled( ) ? 1 : 0 );
+    }
 
     // MEASURE (why is the mesh rebuilding?): count rebuilds/interval and split the cause
     // — a key change (zoom/dir/s_loadGen/terrain-edit) vs a pan past the margin. A high
@@ -743,7 +775,8 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
     {
     Perf::ScopeCounter _cr( "t.rebuild" );   // full mesh rebuild (O visible hexes)
     s_sig = sig; dX = dY = 0;   // rebuilt at the current view → zero pan
-    g_enEditedHexes.clear( );   // a full rebuild absorbs all pending edits (Phase B patches these instead)
+    s_builtEditGen = g_enTerrainEditGen;   // this mesh now reflects all edits so far
+    { std::lock_guard<std::mutex> lk( g_enEditMutex ); g_enEditedHexes.clear( ); }   // rebuild absorbs all pending edits
     s_fogVerts.clear(); s_fogHex.clear(); s_fogNbr.clear(); s_fogVis.clear(); s_shadeVerts.clear();
     s_waterHex.clear(); s_waterPos.clear();
 
@@ -1137,6 +1170,49 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
     s_fogUpdAt = 0;       // force a fog (re)render of the fresh geometry this frame
     s_waterTick = curWaterTick;   // rebuild drew water at the current wave frame
     }   // end if ( needRebuild )
+
+    // --- Edit-patch (Item 5): re-mesh ONLY the edited hexes into s_rt instead of a full
+    // ~50k-hex rebuild. v1 draws the base tile (skips feather/shade — minor edge-softening
+    // / shade staleness on the few changed hexes; fog positions are stable + re-sampled
+    // separately). Texture pos = window pos - pan(dX,dY) + margin(offX,offY). This is what
+    // turns a combat-crater / road / building / rocket edit from an ~850ms freeze into ~ms.
+    if ( doPatch )
+    {
+        Perf::ScopeCounter _cp( "t.patch" );
+        SDL_Texture* pt = SDL_GetRenderTarget( r );
+        SDL_Rect     vp; SDL_RenderGetViewport( r, &vp );
+        SDL_SetRenderTarget( r, s_rt );
+        SDL_RenderSetViewport( r, nullptr );
+        SDL_SetRenderDrawBlendMode( r, SDL_BLENDMODE_BLEND );
+        const SDL_Color white = { 255, 255, 255, 255 };
+        const int       idx[6] = { 0, 1, 3, 1, 2, 3 };
+        // Swap the shared list into a local under the lock, then patch unlocked (the sim
+        // thread keeps pushing new edits into the now-empty shared list meanwhile).
+        std::vector<unsigned> edited;
+        { std::lock_guard<std::mutex> lk( g_enEditMutex ); edited.swap( g_enEditedHexes ); }
+        for ( unsigned packed : edited )
+        {
+            CHexCoord hc( (int)( packed >> 16 ), (int)( packed & 0xFFFF ) );
+            CPoint    pts[4];
+            if ( !aa.MapToWindowHex( hc, pts ) ) continue;
+            CHex* phex = theMap.GetHex( hc );
+            if ( !phex ) continue;
+            const Tile* tile = TileForHex( phex, aa.m_iDir );
+            if ( !tile || !tile->tex[zoom] ) continue;
+            for ( int i = 0; i < 4; ++i ) { pts[i].x += offX - dX; pts[i].y += offY - dY; }
+            SDL_Vertex v[4];
+            v[0].position = { (float)pts[0].x, (float)pts[0].y }; v[0].tex_coord = { 0.0f, 0.5f }; v[0].color = white;
+            v[1].position = { (float)pts[1].x, (float)pts[1].y }; v[1].tex_coord = { 0.5f, 0.0f }; v[1].color = white;
+            v[2].position = { (float)pts[2].x, (float)pts[2].y }; v[2].tex_coord = { 1.0f, 0.5f }; v[2].color = white;
+            v[3].position = { (float)pts[3].x, (float)pts[3].y }; v[3].tex_coord = { 0.5f, 1.0f }; v[3].color = white;
+            SDL_RenderGeometry( r, tile->tex[zoom], v, 4, idx, 6 );
+        }
+        SDL_SetRenderTarget( r, pt );
+        SDL_RenderSetViewport( r, &vp );
+        s_builtEditGen += (unsigned)edited.size( );   // account for exactly the patched edits
+        // (no clear — the swap already emptied the shared list; edits the sim pushed during
+        //  the patch stay there and are handled next frame)
+    }
 
     // --- Animated water: on a new wave-tick, re-draw the captured open-water tiles
     // (current frame) IN PLACE into s_rt — cheap (positions cached; ~1 draw per water
