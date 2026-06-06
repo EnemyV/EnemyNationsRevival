@@ -387,6 +387,32 @@ const SDL2Terrain::Tile* SDL2Terrain::TileForHex( CHex* phex, int iDir )
         return t ? t : GetDefaultForType( "coastline" );
     }
 
+    // Farm fields: the stored sprite is always (fields, variant 0); the visible
+    // furrow ROTATION and crop GROW STAGE are NOT in the sprite index — the engine
+    // derives them at draw time (CHex::Draw, terrain.cpp ~2517): furrow rotation =
+    // (X*2+Y)&3 (coord-based patchwork, NOT camera dir), grow stage = GetGrowStage().
+    // So the general integer-indexed path would freeze every plot at stage 0 / rot 0;
+    // rebuild the stem the same way the engine picks GetView(iViewDir, iViewDamage).
+    // Stem encoding (verified against source TGAs): first letter = stage (a/d/g =
+    // 0/1/2), second = direction (a/c/e/g = 0/1/2/3) — same dir convention as kDirPrefix.
+    if ( type == CHex::fields )
+    {
+        static const char kStageLetter[3] = { 'a', 'd', 'g' };
+        static const char kRotLetter[4]   = { 'a', 'c', 'e', 'g' };
+        int stage = phex->GetGrowStage( );
+        if ( stage < 0 ) stage = 0; else if ( stage > 2 ) stage = 2;
+        long off = theMap.GetHexOffPub( phex );
+        int  eX  = theMap.Get_eX( );
+        int  hx  = eX ? (int)( off % eX ) : 0;
+        int  hy  = eX ? (int)( off / eX ) : 0;
+        int  rot = ( hx * 2 + hy ) & 3;
+        int  variant = psprite->GetIndex( );
+        std::string stem; stem += kStageLetter[stage]; stem += kRotLetter[rot]; stem += "010000";
+        const Tile* t = Get( "fields", variant, stem );
+        if ( !t ) t = Get( "fields", variant, "aa010000" );    // fallback: stage 0 / rot 0
+        return t ? t : GetDefaultForType( "fields" );
+    }
+
     // Open-water types: single direction (aa), animated frames a-h / a-e.
     if ( type == CHex::ocean || type == CHex::lake || type == CHex::river || type == CHex::swamp )
     {
@@ -1091,8 +1117,19 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
     // terrain rebuild), so unit vision tracks within ~kFogThrottle ms while the
     // heavy terrain texture stays cached. Positions were captured during the build;
     // here we only rewrite per-corner alpha and redraw the small untextured mesh.
-    if ( ( _nowT - s_fogUpdAt ) >= kFogThrottle && !s_fogVerts.empty( ) )
+    // Skip the whole fog pass when fog-of-war hasn't changed since the last render
+    // (g_enFogVisGen): the persistent s_fogRT still composites the previous fog below,
+    // so a static view pays nothing here — this is the dominant zoomed-out cost when
+    // the fog mesh is ~all visible hexes. A rebuild always refreshes (new geometry); a
+    // 1 s force-refresh self-heals any cross-thread missed bump. The kFogThrottle still
+    // caps the rate when fog IS changing (active play).
+    static unsigned s_fogVisGenSeen = ~0u;
+    const DWORD     kFogForceMs     = 1000;
+    bool fogChanged = needRebuild || ( g_enFogVisGen != s_fogVisGenSeen ) ||
+                      ( _nowT - s_fogUpdAt ) >= kFogForceMs;
+    if ( fogChanged && ( _nowT - s_fogUpdAt ) >= kFogThrottle && !s_fogVerts.empty( ) )
     {
+        s_fogVisGenSeen = g_enFogVisGen;
         if ( !needRebuild )   // a rebuild already wrote current colours
         {
             const size_t nHex = s_fogHex.size( );

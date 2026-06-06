@@ -39,6 +39,13 @@ enum EWorldType
 
 const int LOS_ALT = 4;		// alt difference needed to obscure
 
+// Bumped whenever a hex crosses the visible<->invisible boundary (CHex::Inc/DecVisible),
+// i.e. when fog-of-war actually changes shape. The GPU terrain fog overlay skips its
+// per-hex re-sample + re-render when this hasn't changed since the last fog render
+// (huge win zoomed out, where the fog mesh is ~all visible hexes). Plain unsigned: a
+// torn cross-thread write only delays a fog update, and the 1 s force-refresh heals it.
+extern unsigned g_enFogVisGen;
+
 const int CITY_DESTROYED_OFF = 0;
 const int CITY_DESTROYED_NUM = 8;
 const int CITY_BUILD_OFF = 8;

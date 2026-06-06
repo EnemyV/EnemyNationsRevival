@@ -38,6 +38,8 @@ static char BASED_CODE THIS_FILE[] = __FILE__;
 
 CGameMap         theMap;                   // the world (only one instance)
 CTerrain         theTerrain( "terrain" );  // data about the terrain types
+
+unsigned         g_enFogVisGen = 0;        // fog-of-war change counter (see terrain.h)
 CTerrainShowStat tShowStat;
 
 // GPU sprite layer (SDL2Sprites). Set during the split sprite-layer pass so the
