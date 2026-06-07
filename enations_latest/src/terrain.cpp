@@ -3583,27 +3583,26 @@ void CGameMap::DiscoverSpritesGpu( CAnimAtr& aa, const CRect& rect )
 
     if ( bDirty )
         SDL2Sprites::DirtyNewFrame( );
-    // Pad a moving unit's dirty rect by ~its own sprite height (one hex tall is plenty for
-    // a vehicle), NOT by the tallest BUILDING height. The incremental emit redraws any
-    // sprite overlapping the rect CLIPPED to it (a tall tree/building's out-of-rect pixels
-    // persist untouched and stay correct), so the rect only needs to cover the unit itself.
-    // The old building-height pad made every vehicle rect a tall column that swept in
-    // thousands of static trees to re-rasterize each frame (the zoomed-out sprite cost).
-    const int kDirtyPad = MAX_HEX_HT;
 
     // Buildings/vehicles/projectiles are DYNAMIC (can move or change sprite) → their keys
     // are tracked so the next incremental frame can drop + refresh them. Trees/bridges are
     // static (not marked), so they persist across incremental frames.
     SDL2Sprites::SetCaptureDynamic( true );
 
-    // Run the BUILDING capture in draw|invalidate so the original animation-invalidation
-    // logic fires: smoke/flame ambients (CSpriteView::DrawUnitAnimation) self-register their
-    // dirty rect (LIST_PAINT_BOTH), and constructing/damaged buildings register theirs. The
-    // GPU path normally skips theMap.Update's invalidate pass, so these never got a dirty rect
-    // and the incremental emit never repainted them → smoke flickered on/off. Static/completed
-    // buildings are gated by IsInvalidated(), so they DON'T over-dirty. We harvest the
-    // registered rects into the GPU sprite dirty set just below, then return to draw-only.
-    CDrawParms::SetUpdateFlags( CDrawParms::draw | CDrawParms::invalidate );
+    // REUSE the original dirty-rect invalidation for the whole INCREMENTAL capture: run it
+    // in draw|invalidate so every animating/moving drawable self-registers its dirty rect
+    // via the existing IsInvalidateMode() AddRect calls — smoke/flame ambients (PAINT_BOTH),
+    // vehicles (PAINT_BOTH), projectiles + explosions (PAINT_BOTH), constructing/damaged
+    // buildings, invalidated hexes. The GPU path skips theMap.Update's invalidate pass, so
+    // without this they never got a dirty rect and the incremental emit froze them (smoke
+    // flickered, projectiles/explosions stuttered). We harvest the registered rects at the
+    // END of the capture (below) into the GPU sprite dirty set. Safe against over-dirty:
+    // completed buildings + hexes are gated by IsInvalidated(); CTree/CBridge::Draw don't
+    // register at all; and on an incremental frame the per-hex loop SKIPS trees/bridges
+    // entirely (only projectile hexes run). Full frames stay draw-only (everything re-emits
+    // anyway, and leaving stray registrations would flood the next frame via UpdateLists).
+    if ( bIncremental )
+        CDrawParms::SetUpdateFlags( CDrawParms::draw | CDrawParms::invalidate );
 
     // ---- Buildings (object-iterated; each visible building drawn once) ----
     {
@@ -3635,25 +3634,6 @@ void CGameMap::DiscoverSpritesGpu( CAnimAtr& aa, const CRect& rect )
         }
     }
 
-    // Back to draw-only for the rest of the capture (vehicles use their own DirtyAddRect;
-    // the forest/tree scan must NOT run in invalidate mode or static trees would re-dirty).
-    CDrawParms::SetUpdateFlags( CDrawParms::draw );
-
-    // Harvest the building-animation dirty rects (smoke/flame + constructing) that just
-    // self-registered into CDirtyRects, and feed them to the GPU sprite incremental emit
-    // (view space = client + UL). This is the original optimized dirty-rect data, reused.
-    if ( bIncremental )
-    {
-        CDirtyRects* pdr = aa.GetDirtyRects( );
-        for ( int i = 0; i < pdr->m_nRectPaintCur; ++i )
-        {
-            const CRect& rc = pdr->m_prectPaintCur[i];
-            if ( rc.left != INT_MAX )
-                SDL2Sprites::DirtyAddRect( rc.left + ulDirty.x, rc.top + ulDirty.y,
-                                           rc.Width( ), rc.Height( ) );
-        }
-    }
-
     // ---- Vehicles (object-iterated) ----
     {
         POSITION pos = theVehicleMap.GetStartPosition( );
@@ -3674,19 +3654,10 @@ void CGameMap::DiscoverSpritesGpu( CAnimAtr& aa, const CRect& rect )
             hexVeh.ToNearestHex( refHex );
 
             ++hitCnt;
+            // CVehicle::Draw self-registers its dirty rect (unit.cpp, LIST_PAINT_BOTH) in the
+            // invalidate mode we run the capture in — harvested below like every other moving
+            // sprite. No separate manual DirtyAddRect (that was the redundant second path).
             drawinfopool.GetVehicleDrawInfo( pvehicle, hexVeh )->Draw( );
-
-            // Vehicles move + animate every frame → always a dirty region. Use the hex
-            // bound (client) → view space (+UL), padded for the sprite footprint/height.
-            if ( bDirty )
-            {
-                CRect rb;
-                if ( aa.CalcWindowHexBound( hexVeh, rb ) )
-                    SDL2Sprites::DirtyAddRect( rb.left + ulDirty.x - kDirtyPad,
-                                               rb.top + ulDirty.y - kDirtyPad,
-                                               rb.Width( ) + 2 * kDirtyPad,
-                                               rb.Height( ) + 2 * kDirtyPad );
-            }
         }
     }
 
@@ -3878,6 +3849,24 @@ void CGameMap::DiscoverSpritesGpu( CAnimAtr& aa, const CRect& rect )
     }
 
     SDL2Sprites::SetCaptureDynamic( false );   // defensive reset
+
+    // Harvest the dirty rects that every animating/moving drawable self-registered into
+    // CDirtyRects during the (invalidate-mode) incremental capture above — smoke/flame,
+    // vehicles, projectiles, explosions, constructing buildings — and feed them to the GPU
+    // sprite incremental emit (view space = client + UL). Reuses the original optimized
+    // invalidation instead of per-type manual DirtyAddRect calls. Then return to draw-only.
+    if ( bIncremental )
+    {
+        CDrawParms::SetUpdateFlags( CDrawParms::draw );
+        CDirtyRects* pdr = aa.GetDirtyRects( );
+        for ( int i = 0; i < pdr->m_nRectPaintCur; ++i )
+        {
+            const CRect& rc = pdr->m_prectPaintCur[i];
+            if ( rc.left != INT_MAX )
+                SDL2Sprites::DirtyAddRect( rc.left + ulDirty.x, rc.top + ulDirty.y,
+                                           rc.Width( ), rc.Height( ) );
+        }
+    }
 
     xpdibwnd = xpdibwndSave;
 
