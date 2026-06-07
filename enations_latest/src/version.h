@@ -19,10 +19,14 @@ const char GameLogFile[] = "ENations.log";
 
 #define         VER_MAJOR       2
 #define         VER_MINOR       1
-#define         VER_RELEASE     2
+// Release bumped 2 -> 3 so saved games can carry the per-player "last research
+// discovered" field (CPlayer::m_iLastDiscovered). The save load check only rejects
+// on MAJOR/MINOR mismatch (CGame::Serialize), so release-2 saves still load — the
+// new field is read only when the loaded save's release is >= 3.
+#define         VER_RELEASE     3
 
-#define         VER_STRING                              "2.01.002"
-#define         RES_VER_STRING                          "2.01.002\0"
+#define         VER_STRING                              "2.01.003"
+#define         RES_VER_STRING                          "2.01.003\0"
 
 #ifdef _DEBUG
 	#define         VER_FLAGS         VS_FF_DEBUG | VS_FF_PRIVATEBUILD | VS_FF_PRERELEASE

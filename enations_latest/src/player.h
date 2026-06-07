@@ -409,6 +409,10 @@ class CPlayer : public CObject
     int           GetRsrchItem( ) const { return ( m_iRsrchItem ); }
     void          AddRsrch( int iNum ) { m_iRsrchHave += iNum; }
     void          SetRsrchItem( int iItem ) { m_iRsrchItem = iItem; }
+    // Most recently discovered topic — drives the research window's "Discovery"
+    // button and persists across save/load (serialized in save release 3+).
+    int           GetLastDiscovered( ) const { return ( m_iLastDiscovered ); }
+    void          SetLastDiscovered( int iItem ) { m_iLastDiscovered = iItem; }
     int           GetExists( int iIndex ) const { return m_piBldgExists[iIndex]; }
     void          AddExists( int iIndex, int iNum ) { m_piBldgExists[iIndex] += iNum; }
     CRsrchStatus& GetRsrch( int iInd ) { return ( m_aRsrch.ElementAt( iInd ) ); }
@@ -485,6 +489,7 @@ class CPlayer : public CObject
 
     LONG                                m_iRsrchHave;  // people working on R&D (reduced by damage)
     LONG                                m_iRsrchItem;  // item we are researching
+    LONG                                m_iLastDiscovered;  // most recent discovery (Discovery button; serialized)
     CArray<CRsrchStatus, CRsrchStatus*> m_aRsrch;
     LONG*                               m_piBldgExists;  // bldg presently exists
 

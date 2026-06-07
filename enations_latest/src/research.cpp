@@ -36,9 +36,13 @@ void ResearchDiscovered( int iItem )
     if ( iItem > 0 )
         theGame.GetMe( )->m_iNumDiscovered++;
 
-    // CDlgResearch removed (Phase 2d) — SDL2ResearchDialog is modal and re-reads
-    // discovered/choice state from theGame on each open. The SDL2DiscoverDialog
-    // (modal flash on item discovered) is launched separately from netapi handlers.
+    // Live-refresh the research window if it's open (non-modal). Mirrors the
+    // original ResearchDiscovered -> CDlgResearch::UpdateChoices( TRUE ): the
+    // just-discovered topic drops off the list, newly unlocked topics appear, and
+    // the stale "current research" marker clears. Without this the open window's
+    // list stays frozen until reopened, and arms the "Discovery" button to re-show
+    // this item's result text.
+    theApp.m_wndBar.RefreshResearch( iItem );
 
     // check and update the unit build dialogs
     POSITION pos = theBuildingMap.GetStartPosition( );

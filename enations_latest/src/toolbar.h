@@ -67,6 +67,11 @@ class CWndBar : public CWndAnim
     void CheckButtons( );
     void _GotoScience( BOOL bAlert = FALSE );
 
+    // Live-refresh the research window's list if it's open (called when a topic is
+    // discovered). No-op when the window isn't up. Defined in toolbar.cpp where the
+    // SDL2ResearchDialog full type is visible.
+    void RefreshResearch( int iDiscovered = 0 );
+
     void InvalidateStatus( void* pData );
     void EnableButton( int ID, BOOL bEnable );
 

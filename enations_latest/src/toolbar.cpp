@@ -940,6 +940,12 @@ void CWndBar::_GotoScience( BOOL bAlert )
     }
 }
 
+void CWndBar::RefreshResearch( int iDiscovered )
+{
+    if ( m_pSdlResearch && m_pSdlResearch->IsNonModalActive( ) )
+        m_pSdlResearch->NotifyDiscovered( iDiscovered );
+}
+
 void CWndBar::GotoFile( )
 {
     if ( theApp.m_gameWindow ) {

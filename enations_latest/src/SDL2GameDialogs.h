@@ -23,6 +23,14 @@ class SDL2ResearchDialog : public SDL2Dialog {
 public:
     SDL2ResearchDialog(GameWindow* gw);
     ~SDL2ResearchDialog();
+
+    // Re-sync the list from current research state, preserving the browse
+    // selection. Called when a topic is discovered so an open window updates live.
+    void Refresh();
+
+    // A topic was just discovered for the local player: re-sync the list and arm
+    // the "Discovery" button to (re)show that topic's result text.
+    void NotifyDiscovered(int iItem);
 protected:
     void OnInit() override;
 private:
@@ -30,6 +38,8 @@ private:
     void SelectItem(int idx);
     void OnStart();
     void OnDiscover();
+
+    int m_lastDiscovered = 0;   // topic the "Discovery" button re-shows (0 = none)
 
     struct RsrchEntry { int index; std::string name; bool available; };
     std::vector<RsrchEntry> m_items;
@@ -117,7 +127,6 @@ public:
 protected:
     void OnInit() override;
 private:
-    std::string m_discTitle;
     std::string m_discDesc;
 };
 

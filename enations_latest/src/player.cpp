@@ -110,6 +110,7 @@ void CPlayer::ctor( )
     m_iTheirRelations = m_iRelations = RELATIONS_NEUTRAL;
     m_iRsrchHave                     = 0;
     m_iRsrchItem                     = 0;
+    m_iLastDiscovered                = 0;
 
     m_iBldgsBuilt = 0;
     m_iVehsBuilt  = 0;
@@ -268,6 +269,7 @@ void CPlayer::StartGame( )
 
     m_iRsrchHave = 0;
     m_iRsrchItem = 0;
+    m_iLastDiscovered = 0;
 
     if ( m_piBldgExists != NULL )
         delete[] m_piBldgExists;
@@ -464,6 +466,7 @@ void CPlayer::Research( int iNumSec )
     // ok, we discovered something
     m_iRsrchHave       = 0;
     pRs->m_bDiscovered = TRUE;
+    m_iLastDiscovered  = m_iRsrchItem;  // remember for the Discovery button (persists in saves)
     if ( IsAI( ) )
     {
 #ifdef _LOGOUT
@@ -817,6 +820,10 @@ void CPlayer::Serialize( CArchive& ar )
         ar << m_iNumTrucks << m_iNumCranes;
 
         m_InitData.Serialize( ar );
+
+        // Save release 3+: most-recent discovery (for the research window's
+        // "Discovery" button). See version.h. Always written by this build.
+        ar << (LONG)m_iLastDiscovered;
     }
 
     else
@@ -921,6 +928,19 @@ void CPlayer::Serialize( CArchive& ar )
         ar >> m_iNumTrucks >> m_iNumCranes;
 
         m_InitData.Serialize( ar );
+
+        // Save release 3+ carries the most-recent discovery (Discovery button).
+        // Older saves (release 2) predate the field — leave it default (0) and do
+        // NOT read, or the stream would desync. theGame.m_dwVer holds the loaded
+        // save's release (read at the top of CGame::Serialize, before players).
+        if ( theGame.m_dwVer >= 3 )
+        {
+            LONG l;
+            ar >> l;
+            m_iLastDiscovered = l;
+        }
+        else
+            m_iLastDiscovered = 0;
 
         m_bState  = created;
         m_dwAiHdl = 0;

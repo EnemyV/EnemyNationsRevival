@@ -184,10 +184,12 @@ void SDL2ResearchDialog::OnInit() {
 
     m_btnDiscover = AddWidget<SDL2Button>(ox + 311, oy + 211, 116, 25, "Discovery",
         [this]() { OnDiscover(); });
-    // Enabled only when there's a freshly-discovered item to view. The MFC
-    // version flips it on via CDlgResearch::ItemDiscovered(). We don't have
-    // that hook yet — leave disabled for now so the button is visible-but-grey.
-    m_btnDiscover->SetEnabled(false);
+    // Re-shows the most recently discovered topic's result text. Seeded from the
+    // player's persisted last-discovery (serialized in saves, see CPlayer), so it
+    // works immediately after loading a game; NotifyDiscovered() re-arms it when a
+    // topic completes while the window is open. Disabled until there's one to show.
+    m_lastDiscovered = theGame.GetMe()->GetLastDiscovered();
+    m_btnDiscover->SetEnabled(m_lastDiscovered > 0);
     m_btnDiscover->SetTextColor(kBtnRed);
     if (m_btnSheet) m_btnDiscover->SetBtnSheet(m_btnSheet);
 
@@ -205,66 +207,106 @@ void SDL2ResearchDialog::OnInit() {
     }
 }
 
+void SDL2ResearchDialog::NotifyDiscovered(int iItem) {
+    // Arm the "Discovery" button to re-show this topic's result text (matches the
+    // original CDlgResearch::ItemDiscovered enabling m_btnDiscovery).
+    if (iItem > 0 && iItem < theRsrch.GetSize()) {
+        m_lastDiscovered = iItem;
+        if (m_btnDiscover) m_btnDiscover->SetEnabled(true);
+    }
+    Refresh();
+}
+
 void SDL2ResearchDialog::OnDiscover() {
-    // Placeholder — when ItemDiscovered hook is wired up this will open the
-    // discovery dialog. For now treat as no-op.
+    // Re-show the most recently discovered topic's result text, as a small
+    // non-modal popup (modal would freeze the running sim). No-op until a topic has
+    // been discovered while this window was open.
+    if (m_lastDiscovered <= 0 || m_lastDiscovered >= theRsrch.GetSize())
+        return;
+    CRsrchItem const& item = theRsrch[m_lastDiscovered];
+    auto* dlg = new SDL2DiscoverDialog(m_gameWindow, item.m_sName.c_str(),
+                                       item.m_sResult.c_str());
+    dlg->ShowNonModal();   // GameWindow owns deletion after it closes
 }
 
 void SDL2ResearchDialog::PopulateList() {
     m_items.clear();
     m_list->Clear();
 
+    CPlayer* pMe = theGame.GetMe();
+
     // The topic currently being researched gets a persistent green marker in the
     // list (separate from the blue browse-selection) so it stays identifiable even
     // while the player clicks other items to read their descriptions.
-    int curRsrch = theGame.GetMe()->GetRsrchItem();
+    int curRsrch = pMe->GetRsrchItem();
 
-    for (int i = 0; i < theRsrch.GetSize(); i++) {
+    // Use the engine's authoritative research state, NOT a points threshold:
+    //   discovered == CRsrchStatus::m_bDiscovered (set by CPlayer::Research)
+    //   available  == CPlayer::CanRsrch (prereqs discovered + buildings built +
+    //                 scenario gate + not already discovered)
+    // The old code tested m_iPtsDiscovered >= m_iPtsRequired, which is only the 50%
+    // mark of the probabilistic discovery window (CPlayer::Research keeps awarding
+    // points up to required*2 before the topic is actually flagged discovered). That
+    // made the topic being researched vanish from the list once it crossed 50%, and
+    // unlocked child topics early. Skip slot 0 (CRsrchArray::nothing).
+    for (int i = 1; i < theRsrch.GetSize(); i++) {
         CRsrchItem const& item = theRsrch[i];
 
-        // Check if prerequisites are met
-        bool available = true;
-        for (int r = 0; r < item.m_iNumRsrchRequired; r++) {
-            if (theGame.GetMe()->GetRsrch(item.m_piRsrchRequired[r]).m_iPtsDiscovered <
-                theRsrch[item.m_piRsrchRequired[r]].m_iPtsRequired)
-            {
-                available = false;
+        bool discovered = pMe->GetRsrch(i).m_bDiscovered;
+        bool available  = pMe->CanRsrch(i);   // CanRsrch is FALSE once discovered
+
+        // Show currently-researchable topics; already-discovered ones only when the
+        // "[Done]" view is on; locked topics (prereqs/scenario not met) are hidden,
+        // matching the original CDlgResearch::UpdateChoices.
+        if (!available && !(discovered && m_showDone))
+            continue;
+
+        RsrchEntry entry;
+        entry.index = i;
+        entry.name = item.m_sName.c_str();
+        entry.available = available;
+
+        std::string displayName = entry.name;
+        if (discovered) displayName += " [Done]";
+
+        if (i == curRsrch)
+            m_list->SetMarked((int)m_items.size());  // list index of the active topic
+
+        m_items.push_back(entry);
+        m_list->AddItem(displayName);
+    }
+}
+
+// Re-read research state into the list while preserving the player's browse
+// selection (by topic index, not list row). Called when a topic is discovered so
+// the open (non-modal) window updates live — completed topics drop off, newly
+// unlocked ones appear, and the stale "current research" marker clears — instead
+// of going stale until reopened (mirrors the original ResearchDiscovered ->
+// CDlgResearch::UpdateChoices refresh).
+void SDL2ResearchDialog::Refresh() {
+    if (!m_list) return;   // not initialized yet
+
+    int browseIdx = (m_selected >= 0 && m_selected < (int)m_items.size())
+                        ? m_items[m_selected].index : -1;
+
+    PopulateList();
+
+    m_selected = -1;
+    if (browseIdx > 0) {
+        for (int i = 0; i < (int)m_items.size(); i++)
+            if (m_items[i].index == browseIdx) {
+                m_list->SetSelected(i);
+                SelectItem(i);   // restores description + button state
                 break;
             }
-        }
+    }
 
-        // Check building prerequisites
-        if (available) {
-            for (int b = 0; b < item.m_iNumBldgsRequired; b++) {
-                if (!theGame.GetMe()->GetExists(item.m_piBldgsRequired[b])) {
-                    available = false;
-                    break;
-                }
-            }
-        }
-
-        // Already discovered?
-        bool discovered = theGame.GetMe()->GetRsrch(i).m_iPtsDiscovered >= item.m_iPtsRequired;
-
-        // "[Done]" items are hidden by default — skip them unless explicitly shown.
-        if (discovered && !m_showDone) continue;
-
-        if (available || discovered) {
-            RsrchEntry entry;
-            entry.index = i;
-            entry.name = item.m_sName.c_str();
-            entry.available = available && !discovered;
-
-            std::string displayName = entry.name;
-            if (discovered) displayName += " [Done]";
-            else if (!available) displayName += " [Locked]";
-
-            if (i == curRsrch)
-                m_list->SetMarked((int)m_items.size());  // list index of the active topic
-
-            m_items.push_back(entry);
-            m_list->AddItem(displayName);
-        }
+    // The browsed topic is gone (e.g. it was just discovered) — clear the detail
+    // panel so it doesn't describe a topic no longer in the list.
+    if (m_selected < 0) {
+        m_lblDesc->SetText("");
+        m_btnStart->SetEnabled(false);
+        m_btnStart->SetToggled(false);
     }
 }
 
@@ -594,21 +636,34 @@ void SDL2PauseDialog::OnInit() {
 // SDL2DiscoverDialog
 // ============================================================================
 
+// Standard EN dialog chrome (gold frame + title bar + parchment), like the
+// original CDlgDiscover (IDD_RSRCH_FOUND) and every other in-game dialog. The
+// research window's circuit-board art was tried as a background but scaled to this
+// small size it looked terrible, so we use the clean shared chrome instead. Compact
+// (300x190) — close to the original's 186x110 DLU, not the old 350x200 placeholder.
 SDL2DiscoverDialog::SDL2DiscoverDialog(GameWindow* gw,
     const std::string& title, const std::string& description)
-    : SDL2Dialog(gw, "Discovery!", 350, 200)
-    , m_discTitle(title)
+    // The tech name lives in the title bar (matches the original CDlgDiscover
+    // caption "Discovered - [<name>]"), not a floating body label.
+    : SDL2Dialog(gw, std::string("Discovered - [") + title + "]", 300, 190)
     , m_discDesc(description)
 {}
 
 void SDL2DiscoverDialog::OnInit() {
-    auto* lblTitle = AddWidget<SDL2Label>(m_x + 10, m_y + 36, 330, 28, m_discTitle);
-    lblTitle->SetCentered(true);
+    // No custom background — the base draws the gold frame, the title bar (carrying
+    // the tech name) and the parchment interior.
+    const int titleBot = 6 /*top border*/ + 26 /*title bar*/;
 
-    auto* lblDesc = AddWidget<SDL2Label>(m_x + 10, m_y + 68, 330, 80, m_discDesc);
+    // Result text: default dialog blue PALETTERGB(48,58,148) — readable on the
+    // parchment — wrapped and top-aligned (mirrors the original's read-only box).
+    auto* lblDesc = AddWidget<SDL2Label>(m_x + 14, m_y + titleBot + 8,
+                                         m_width - 28, m_height - titleBot - 8 - 44,
+                                         m_discDesc);
     lblDesc->SetWrapped(true);
+    lblDesc->SetTopAligned(true);
 
-    AddWidget<SDL2Button>(m_x + 130, m_y + 160, 90, 28, "OK",
+    // Standard centered OK button (matches the parchment chrome).
+    AddWidget<SDL2Button>(m_x + (m_width - 96) / 2, m_y + m_height - 40, 96, 28, "OK",
         [this]() { EndDialog(1); });
 }
 
