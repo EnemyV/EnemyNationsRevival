@@ -24,10 +24,12 @@ namespace
         int      sortX, sortY;   // engine m_ptCenter z-order key
         uint64_t seq;            // capture order — tiebreak for equal sort key
         bool     isVehicle;
+        bool     isStructure;    // building/bridge/tree — sorts UNDER the mobile/effect layer at a tie
         int      ax, ay, aw, ah; // atlas sub-rect (the FULL sprite's texture)
         int      vx, vy;         // structure UL (view space); FULL size == aw,ah
         int      cx, cy, cw, ch; // sprite-LOCAL visible band (construction wipe); full = 0,0,aw,ah
         int      qx[4], qy[4];   // vehicle quad verts (view space)
+        float    rot;            // structure-sprite rotation (radians, 0 = none); projectiles
     };
 
     // Keyed by (DIB, view-space pos) — see header rationale (dedup static re-captures;
@@ -121,6 +123,10 @@ namespace
     // One-shot shadow arm: set true before a unit's draw; the FIRST sprite captured then
     // emits a ground shadow and disarms it (so multi-piece/multi-layer units get one).
     bool g_captureShadow = false;
+
+    // Rotation (radians) applied to the next captured structure sprite — projectiles set
+    // this to their screen travel angle so the bullet faces where it flies. 0 = axis-aligned.
+    float g_captureRot = 0.0f;
 
     void AccumDirty( int x, int y, int w, int h )
     {
@@ -288,6 +294,7 @@ namespace SDL2Sprites
 
     void SetCaptureDynamic( bool b ) { g_captureDynamic = b; }
     void SetCaptureShadow( bool b ) { g_captureShadow = b; }
+    void SetCaptureRotation( float radians ) { g_captureRot = radians; }
 }
 
 namespace
@@ -310,6 +317,8 @@ namespace
     }
 }
 
+extern int g_enSprIsStruct;   // set by the engine draw path (terrain.cpp): 1=structure
+
 namespace SDL2Sprites
 {
     bool CaptureStructure( const CSpriteDIB* dib, int zoom, int vx, int vy, int w, int h,
@@ -331,9 +340,11 @@ namespace SDL2Sprites
         EmitShadowForBox( vx, vy, w, h );   // one-shot; no-op unless armed for this unit
         Sprite s { };
         s.sortX = sortX; s.sortY = sortY; s.seq = ++g_seq; s.isVehicle = false;
+        s.isStructure = ( g_enSprIsStruct != 0 );   // building/bridge/tree vs effect/projectile
         s.ax = loc.x; s.ay = loc.y; s.aw = loc.w; s.ah = loc.h;
         s.vx = vx; s.vy = vy;
         s.cx = clx; s.cy = cly; s.cw = clw; s.ch = clh;
+        s.rot = g_captureRot;
         // Key on the FULL sprite UL so the construction wipe (same UL, growing band)
         // overwrites in place each frame instead of leaving stale partial bands.
         SprKey key { dib, vx, vy };
@@ -364,6 +375,7 @@ namespace SDL2Sprites
         }
         Sprite s { };
         s.sortX = sortX; s.sortY = sortY; s.seq = ++g_seq; s.isVehicle = true;
+        s.isStructure = false;   // vehicles are the mobile layer (on top of structures at a tie)
         s.ax = loc.x; s.ay = loc.y; s.aw = loc.w; s.ah = loc.h;
         for ( int i = 0; i < 4; ++i ) { s.qx[i] = vx[i]; s.qy[i] = vy[i]; }
         SprKey key { dib, vx[0], vy[0] };
@@ -436,6 +448,20 @@ namespace SDL2Sprites
                 v[1].position = { x1, y0 }; v[1].tex_coord = { uR, uT };
                 v[2].position = { x1, y1 }; v[2].tex_coord = { uR, uB };
                 v[3].position = { x0, y1 }; v[3].tex_coord = { uL, uB };
+                // Optional rotation about the sprite centre (projectiles face their travel
+                // direction). Rotate the dest corners only; UVs stay put.
+                if ( s->rot != 0.0f )
+                {
+                    float ccx = (float)( s->vx + s->aw * 0.5f - ulX );
+                    float ccy = (float)( s->vy + s->ah * 0.5f - ulY );
+                    float sn = std::sin( s->rot ), cs = std::cos( s->rot );
+                    for ( int i = 0; i < 4; ++i )
+                    {
+                        float dx = v[i].position.x - ccx, dy = v[i].position.y - ccy;
+                        v[i].position.x = ccx + dx * cs - dy * sn;
+                        v[i].position.y = ccy + dx * sn + dy * cs;
+                    }
+                }
             }
             else
             {
@@ -586,6 +612,10 @@ namespace SDL2Sprites
     {
         if ( a->sortY != b->sortY ) return a->sortY < b->sortY;
         if ( a->sortX != b->sortX ) return a->sortX < b->sortX;
+        // Same z-order key: draw STRUCTURES (building/bridge/tree) UNDER the mobile/effect
+        // layer (vehicle/projectile/fire/smoke), so an animated effect on a re-captured
+        // (growing) building stays on top instead of z-fighting it via the unstable seq.
+        if ( a->isStructure != b->isStructure ) return a->isStructure;
         return a->seq < b->seq;
     }
 

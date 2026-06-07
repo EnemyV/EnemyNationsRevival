@@ -54,6 +54,11 @@ CTerrainShowStat tShowStat;
 bool g_enSpriteSplitPass = false;
 bool g_enSprCapture      = false;
 int  g_enSprSortX = 0, g_enSprSortY = 0;
+// 1 = the captured sprite is a STRUCTURE (building/bridge/tree), 0 = mobile/effect layer
+// (vehicle/projectile/explosion/fire). At an equal z-order key the GPU sprite sort draws
+// structures UNDER the mobile/effect layer — matching the original's pass order — so e.g.
+// fire/smoke on a (growing, re-captured) building stays on top instead of z-fighting it.
+int  g_enSprIsStruct = 0;
 
 // Project a map location to the engine's sprite z-order key (m_ptCenter), mirroring
 // CTileDrawInfo::Init. Used to give a building's foundation the SAME key as the
@@ -1279,6 +1284,7 @@ class CTileDrawInfo
         // base path: vehicles, projectiles, explosions (CStructureDrawInfo overrides).
         g_enSprCapture = true;
         g_enSprSortX = m_ptCenter.x; g_enSprSortY = m_ptCenter.y;
+        g_enSprIsStruct = 0;   // base path: vehicle/projectile/explosion/fire (mobile/effect layer)
         m_punittile->Draw( m_hexcoord );
         g_enSprCapture = false;
     }
@@ -1427,6 +1433,7 @@ class CStructureDrawInfo : public CTileDrawInfo
         // here and are captured in the same y-sorted list.
         g_enSprCapture = true;
         g_enSprSortX = GetCenter( ).x; g_enSprSortY = GetCenter( ).y;
+        g_enSprIsStruct = 1;   // structure: building/bridge/tree — sorts UNDER the mobile/effect layer
         GetTile( )->DrawLayer( GetHexCoord( ), m_eLayer );
         g_enSprCapture = false;
     }
