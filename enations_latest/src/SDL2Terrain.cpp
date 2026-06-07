@@ -61,8 +61,10 @@ std::mutex            g_enEditMutex;   // sim thread pushes; render thread reads
 const size_t          kEditPatchCap = 1024;
 void g_enEditHex( int x, int y )
 {
-    ++g_enTerrainEditGen;   // gen still bumped; with EN_TPATCH the render patches instead of rebuilding
+    // Bump the gen AND record under the same lock so the render can read them atomically
+    // (a gen ahead of the list looked like a non-recorded edit → spurious full rebuild).
     std::lock_guard<std::mutex> lk( g_enEditMutex );
+    ++g_enTerrainEditGen;
     if ( g_enEditedHexes.size( ) < kEditPatchCap )
         g_enEditedHexes.push_back( ( (unsigned)( x & 0xFFFF ) << 16 ) | (unsigned)( y & 0xFFFF ) );
 }
@@ -363,6 +365,13 @@ static float TriBrightness( int z0, int z1, int z2, int z3, bool left )
     return b < 0.80f ? 0.80f : ( b > 1.40f ? 1.40f : b );
 }
 
+// One water<->water feather band, computed once per rebuild and re-drawn LIVE each
+// frame with the NEIGHBOUR's current wave-frame texture — so lake/ocean/river seams
+// blend AND stay in sync, and the band is never clobbered. Positions are in s_rt
+// texture space; offset by the current pan at draw time.
+struct WaterBlendBand { CHex* nbr; CPoint p[4]; SDL_FPoint uv[4]; };  // p/uv order: e0,e1,n0,n1
+static const Uint8 kWaterFeatherA = 135;   // match the land feather strength
+
 // Water wave animation: ocean/lake/coastline/river bake 8 frames (letters a-h),
 // swamp 5 (a-e). The engine animates water by drawing its terrain sprite as a
 // CSpriteView animation (DrawSimpleAnimation) that cycles those frames off the
@@ -654,6 +663,7 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
     // the terrain texture only rebuilds on a view change).
     static std::vector<CHex*>  s_waterHex;   // open-water hexes (stable CHex*)
     static std::vector<CPoint> s_waterPos;   // 4 corner positions/hex (texture space)
+    static std::vector<WaterBlendBand> s_waterBlend;  // water<->water blend bands (texture space)
     static unsigned s_waterTick = ~0u;
     static uint64_t  s_sig = ~0ull;
     static unsigned  s_builtEditGen = 0;  // g_enTerrainEditGen baked into the current mesh
@@ -734,12 +744,17 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
     // and every edit since the last build was recorded (gen delta == list size) and the
     // list is small, re-mesh ONLY those hexes into s_rt instead of the ~50k-hex rebuild.
     bool baseSame  = ( sigNoEdit == lastNoEdit ) && covered;
-    bool editsPend = ( g_enTerrainEditGen != s_builtEditGen );
-    size_t editCount; { std::lock_guard<std::mutex> lk( g_enEditMutex ); editCount = g_enEditedHexes.size( ); }
+    // Read the gen AND the list size together under the lock so they're a consistent
+    // snapshot (else a concurrent edit between the two reads looks non-recorded → rebuild).
+    unsigned genSnap; size_t editCount;
+    { std::lock_guard<std::mutex> lk( g_enEditMutex ); genSnap = g_enTerrainEditGen; editCount = g_enEditedHexes.size( ); }
+    bool editsPend = ( genSnap != s_builtEditGen );
     bool editsOK   = editsPend && editCount > 0 && editCount <= kEditPatchCap
-                     && ( g_enTerrainEditGen - s_builtEditGen ) == (unsigned)editCount;
+                     && ( genSnap - s_builtEditGen ) == (unsigned)editCount;
     const bool doPatch     = TerrainPatchEnabled( ) && baseSame && editsOK;
     const bool needRebuild = !baseSame || ( editsPend && !doPatch );
+    if ( needRebuild )
+        Perf::CounterAdd( !baseSame ? "reb.base" : "reb.editmiss", 1 );
     if ( editsPend )
     {
         Perf::CounterAdd( "ed.gendelta", (int)( g_enTerrainEditGen - s_builtEditGen ) );
@@ -778,7 +793,7 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
     s_builtEditGen = g_enTerrainEditGen;   // this mesh now reflects all edits so far
     { std::lock_guard<std::mutex> lk( g_enEditMutex ); g_enEditedHexes.clear( ); }   // rebuild absorbs all pending edits
     s_fogVerts.clear(); s_fogHex.clear(); s_fogNbr.clear(); s_fogVis.clear(); s_shadeVerts.clear();
-    s_waterHex.clear(); s_waterPos.clear();
+    s_waterHex.clear(); s_waterPos.clear(); s_waterBlend.clear();
 
     // Extend the iteration region to fill the margin band. Estimate screen px per
     // view-hex step from two probe projections, then convert kMarginPx to hexes.
@@ -804,7 +819,10 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
     SDL_Rect savedVp; SDL_RenderGetViewport( r, &savedVp );
     SDL_SetRenderTarget( r, s_rt );
     SDL_RenderSetViewport( r, nullptr );
-    SDL_SetRenderDrawColor( r, 0, 0, 0, 255 );
+    // TRANSPARENT clear: open water is left as holes here and filled by the live water
+    // layer UNDER this texture at composite time. The torus map covers the whole
+    // viewport+margin, so no visible area is left uncovered by terrain+water.
+    SDL_SetRenderDrawColor( r, 0, 0, 0, 0 );
     SDL_RenderClear( r );
 
     // Terrain is drawn ROW BY ROW, back-to-front, so a tall tile's altitude-raised
@@ -945,17 +963,58 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
             // step, and lets fog re-sample without rebuilding the terrain texture.
             SDL_Color white = { 255, 255, 255, 255 };
             vL.color = white; vT.color = white; vR.color = white; vB.color = white;
-            vb.push_back( vL ); vb.push_back( vT ); vb.push_back( vB );
-            vb.push_back( vT ); vb.push_back( vR ); vb.push_back( vB );
+            // Open water is NOT baked into the cached texture — it's left as a
+            // transparent HOLE and filled by the live animated water layer UNDER this
+            // texture (composite below). That keeps all water on one shared wave frame
+            // (synced) while land in front still occludes it. Land/coast ARE baked.
+            if ( !IsOpenWater( type ) )
+            {
+                vb.push_back( vL ); vb.push_back( vT ); vb.push_back( vB );
+                vb.push_back( vT ); vb.push_back( vR ); vb.push_back( vB );
+            }
 
-            // Capture OPEN-WATER tiles so the wave can be re-drawn in place each
-            // wave-tick (animation) without rebuilding the whole mesh. Store the hex
-            // (to re-pick the current frame's tile) + its 4 corner positions.
+            // Capture OPEN-WATER tiles for the live layer: the hex (to re-pick the
+            // current frame) + its 4 corner positions (texture space). Also cache a
+            // water<->water blend band toward each DIFFERING open-water neighbour, drawn
+            // live (neighbour's current frame) so lake/ocean/river seams blend + sync.
             if ( IsOpenWater( type ) )
             {
                 s_waterHex.push_back( phex );
                 s_waterPos.push_back( pts[0] ); s_waterPos.push_back( pts[1] );
                 s_waterPos.push_back( pts[2] ); s_waterPos.push_back( pts[3] );
+
+                static const SDL_FPoint wfuv[4] = { {0.f,0.5f}, {0.5f,0.f}, {1.f,0.5f}, {0.5f,1.f} };
+                static const int wDX[4] = { 0, 1, 0, -1 };
+                static const int wDY[4] = { -1, 0, 1, 0 };
+                static const int wSlot[4][4] = { {0,1,2,3}, {3,0,1,2}, {2,3,0,1}, {1,2,3,0} };
+                const float kBandW = 0.38f;
+                float wcx = ( pts[0].x + pts[1].x + pts[2].x + pts[3].x ) * 0.25f;
+                float wcy = ( pts[0].y + pts[1].y + pts[2].y + pts[3].y ) * 0.25f;
+                for ( int e = 0; e < 4; ++e )
+                {
+                    CHexCoord wnhc( hx + wDX[e], hy + wDY[e] ); wnhc.Wrap( );
+                    CHex* wpn = theMap.GetHex( wnhc );
+                    if ( !wpn ) continue;
+                    CTerrainSprite* wns = wpn->GetSprite( );
+                    int wntype = wns ? wns->GetID( ) : -1;
+                    if ( !IsOpenWater( wntype ) ) continue;          // water<->water only
+                    const Tile* wntile = TileForHex( wpn, aa.m_iDir );
+                    if ( !wntile || !wntile->tex[zoom] || wntile == tile ) continue;
+                    int c0 = wSlot[aa.m_iDir & 3][e];
+                    int c1 = wSlot[aa.m_iDir & 3][( e + 1 ) & 3];
+                    float i0x = pts[c0].x + kBandW * ( wcx - pts[c0].x );
+                    float i0y = pts[c0].y + kBandW * ( wcy - pts[c0].y );
+                    float i1x = pts[c1].x + kBandW * ( wcx - pts[c1].x );
+                    float i1y = pts[c1].y + kBandW * ( wcy - pts[c1].y );
+                    SDL_FPoint u0 = wfuv[c0], u1 = wfuv[c1];
+                    WaterBlendBand wbnd;
+                    wbnd.nbr  = wpn;
+                    wbnd.p[0] = pts[c0];                       wbnd.uv[0] = u0;
+                    wbnd.p[1] = pts[c1];                       wbnd.uv[1] = u1;
+                    wbnd.p[2] = CPoint( (int)i0x, (int)i0y );  wbnd.uv[2] = { u0.x + kBandW*(0.5f-u0.x), u0.y + kBandW*(0.5f-u0.y) };
+                    wbnd.p[3] = CPoint( (int)i1x, (int)i1y );  wbnd.uv[3] = { u1.x + kBandW*(0.5f-u1.x), u1.y + kBandW*(0.5f-u1.y) };
+                    s_waterBlend.push_back( wbnd );
+                }
             }
 
             // Slope-shade overlay quad: grayscale brightness per triangle (bL/bR), same
@@ -1214,38 +1273,9 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
         //  the patch stay there and are handled next frame)
     }
 
-    // --- Animated water: on a new wave-tick, re-draw the captured open-water tiles
-    // (current frame) IN PLACE into s_rt — cheap (positions cached; ~1 draw per water
-    // texture) vs a full mesh rebuild, so the wave animates at ALL zooms.
-    if ( curWaterTick != s_waterTick && !s_waterHex.empty( ) )
-    {
-        s_waterTick = curWaterTick;
-        SDL_Texture* pt = SDL_GetRenderTarget( r );
-        SDL_Rect     vp; SDL_RenderGetViewport( r, &vp );
-        SDL_SetRenderTarget( r, s_rt );
-        SDL_RenderSetViewport( r, nullptr );
-        SDL_SetRenderDrawBlendMode( r, SDL_BLENDMODE_BLEND );
-        std::unordered_map<SDL_Texture*, std::vector<SDL_Vertex>> wb;
-        const size_t nW = s_waterHex.size( );
-        for ( size_t i = 0; i < nW; ++i )
-        {
-            const Tile* wt = TileForHex( s_waterHex[i], aa.m_iDir );
-            if ( !wt || !wt->tex[zoom] ) continue;
-            const CPoint* p = &s_waterPos[i * 4];
-            std::vector<SDL_Vertex>& wv = wb[wt->tex[zoom]];
-            SDL_Vertex a, b, c, d;
-            a.position = { (float)p[0].x, (float)p[0].y }; a.tex_coord = { 0.0f, 0.5f }; a.color = { 255, 255, 255, 255 };
-            b.position = { (float)p[1].x, (float)p[1].y }; b.tex_coord = { 0.5f, 0.0f }; b.color = { 255, 255, 255, 255 };
-            c.position = { (float)p[2].x, (float)p[2].y }; c.tex_coord = { 1.0f, 0.5f }; c.color = { 255, 255, 255, 255 };
-            d.position = { (float)p[3].x, (float)p[3].y }; d.tex_coord = { 0.5f, 1.0f }; d.color = { 255, 255, 255, 255 };
-            wv.push_back( a ); wv.push_back( b ); wv.push_back( d );
-            wv.push_back( b ); wv.push_back( c ); wv.push_back( d );
-        }
-        for ( auto& bch : wb )
-            SDL_RenderGeometry( r, bch.first, bch.second.data( ), (int)bch.second.size( ), nullptr, 0 );
-        SDL_SetRenderTarget( r, pt );
-        SDL_RenderSetViewport( r, &vp );
-    }
+    // (Water is no longer re-baked into s_rt — it's drawn as a live layer UNDER the
+    // cached terrain in the composite below, which keeps it synced + lets the
+    // water<->water blend animate without being clobbered.)
 
     // --- Fog overlay: re-sample + re-render on a fast throttle (NOT tied to the
     // terrain rebuild), so unit vision tracks within ~kFogThrottle ms while the
@@ -1343,6 +1373,51 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
     // then the blurred slope-shade (MOD = multiply), then fog (BLEND = dim). The
     // shade texture is flipped to MOD here (it stays NONE for its blur round-trip).
     SDL_Rect dst = { dX - kMarginPx, dY - kMarginPx, rtW, rtH };
+
+    // --- LIVE WATER LAYER (drawn UNDER the cached terrain): fill the water holes in
+    // s_rt with the CURRENT wave frame. Every water tile uses the same frame index
+    // (WaterFrameLetter off theGame.GetFrame()) → all water is perfectly synced. Then
+    // the cached water<->water blend bands (neighbour's current frame). Offset by the
+    // SAME pan as the s_rt blit so it lines up. Diamonds first (opaque), bands after.
+    if ( !s_waterHex.empty( ) )
+    {
+        const int ox = dX - kMarginPx, oy = dY - kMarginPx;
+        SDL_SetRenderDrawBlendMode( r, SDL_BLENDMODE_BLEND );
+        std::unordered_map<SDL_Texture*, std::vector<SDL_Vertex>> wdiam, wbandm;
+        const size_t nW = s_waterHex.size( );
+        for ( size_t i = 0; i < nW; ++i )
+        {
+            const Tile* wt = TileForHex( s_waterHex[i], aa.m_iDir );
+            if ( !wt || !wt->tex[zoom] ) continue;
+            const CPoint* p = &s_waterPos[i * 4];
+            std::vector<SDL_Vertex>& wv = wdiam[wt->tex[zoom]];
+            SDL_Vertex a, b, c, d;
+            a.position = { (float)( p[0].x + ox ), (float)( p[0].y + oy ) }; a.tex_coord = { 0.0f, 0.5f }; a.color = { 255,255,255,255 };
+            b.position = { (float)( p[1].x + ox ), (float)( p[1].y + oy ) }; b.tex_coord = { 0.5f, 0.0f }; b.color = { 255,255,255,255 };
+            c.position = { (float)( p[2].x + ox ), (float)( p[2].y + oy ) }; c.tex_coord = { 1.0f, 0.5f }; c.color = { 255,255,255,255 };
+            d.position = { (float)( p[3].x + ox ), (float)( p[3].y + oy ) }; d.tex_coord = { 0.5f, 1.0f }; d.color = { 255,255,255,255 };
+            wv.push_back( a ); wv.push_back( b ); wv.push_back( d );
+            wv.push_back( b ); wv.push_back( c ); wv.push_back( d );
+        }
+        for ( const WaterBlendBand& wbnd : s_waterBlend )
+        {
+            const Tile* nt = TileForHex( wbnd.nbr, aa.m_iDir );
+            if ( !nt || !nt->tex[zoom] ) continue;
+            std::vector<SDL_Vertex>& wv = wbandm[nt->tex[zoom]];
+            SDL_Vertex e0, e1, n0, n1;
+            e0.position = { (float)( wbnd.p[0].x + ox ), (float)( wbnd.p[0].y + oy ) }; e0.tex_coord = wbnd.uv[0]; e0.color = { 255,255,255,kWaterFeatherA };
+            e1.position = { (float)( wbnd.p[1].x + ox ), (float)( wbnd.p[1].y + oy ) }; e1.tex_coord = wbnd.uv[1]; e1.color = { 255,255,255,kWaterFeatherA };
+            n0.position = { (float)( wbnd.p[2].x + ox ), (float)( wbnd.p[2].y + oy ) }; n0.tex_coord = wbnd.uv[2]; n0.color = { 255,255,255,0 };
+            n1.position = { (float)( wbnd.p[3].x + ox ), (float)( wbnd.p[3].y + oy ) }; n1.tex_coord = wbnd.uv[3]; n1.color = { 255,255,255,0 };
+            wv.push_back( e0 ); wv.push_back( e1 ); wv.push_back( n1 );
+            wv.push_back( e0 ); wv.push_back( n1 ); wv.push_back( n0 );
+        }
+        for ( auto& bch : wdiam )    // opaque water first
+            SDL_RenderGeometry( r, bch.first, bch.second.data( ), (int)bch.second.size( ), nullptr, 0 );
+        for ( auto& bch : wbandm )   // then blend bands over them
+            SDL_RenderGeometry( r, bch.first, bch.second.data( ), (int)bch.second.size( ), nullptr, 0 );
+    }
+
     SDL_RenderCopy( r, s_rt, nullptr, &dst );
     SDL_SetTextureBlendMode( s_shadeRT, SDL_BLENDMODE_MOD );
     SDL_RenderCopy( r, s_shadeRT, nullptr, &dst );
