@@ -737,7 +737,10 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
     // anyway. Keep the full buffer zoomed in, where panning ranges far and hex counts are
     // low. Cuts ~25% of the hexes (hence ~25% off the rebuild) at z3 with negligible pan
     // loss. zoom is clamped to [0,NUM_ZOOMS) at the top of Render.
-    static const int kMarginByZoom[NUM_ZOOMS] = { 256, 256, 176, 112 };
+    // Trimmed further at z2/z3 (2026-06-07): incremental-pan (incPan) re-meshes only the
+    // edge STRIP on a pan, so a large pan buffer no longer saves rebuilds — it just inflates
+    // the off-screen overscan hex count on every zoom/rotate FULL rebuild (the 15 s wall).
+    static const int kMarginByZoom[NUM_ZOOMS] = { 256, 160, 80, 32 };
     const int kMarginPx = kMarginByZoom[zoom];
 
     // Fog overlay geometry, built FREE during the terrain pass (positions only), then
@@ -1168,6 +1171,12 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
     for ( int y = iTopY;; ++y )
     {
         bool rowAny = false;
+        // Per-row "last texture" cache for the base/feather vertex batches: runs of the
+        // same terrain type share a tile texture, so this skips the unordered_map hash on
+        // every hex/band (slow under Debug's checked iterators). unordered_map pointers to
+        // elements stay valid across inserts, so the cached vector pointer is safe.
+        SDL_Texture* lastBaseTex = nullptr; std::vector<SDL_Vertex>* lastBaseVb = nullptr;
+        SDL_Texture* lastFeatTex = nullptr; std::vector<SDL_Vertex>* lastFeatVb = nullptr;
         for ( int x = iLeftX; x <= iRightX; ++x )
         {
             CHexCoord hexcoord( CViewHexCoord( x, y ), TRUE );
@@ -1215,7 +1224,8 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
                 continue;
 
             SDL_Texture* tex = tile->tex[zoom];
-            std::vector<SDL_Vertex>& vb = rowBase[tex];   // batched within this row
+            if ( tex != lastBaseTex ) { lastBaseVb = &rowBase[tex]; lastBaseTex = tex; }
+            std::vector<SDL_Vertex>& vb = *lastBaseVb;   // batched within this row
 
             // T4 slope shading: shaded land gets per-triangle slope brightness;
             // water/coast stay full colour. T6 fog is applied per-vertex below.
@@ -1523,7 +1533,9 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
                         n0.position = { i0x, i0y };                          n0.tex_coord = iu0; n0.color = { g0, g0, g0, 0 };
                         n1.position = { i1x, i1y };                          n1.tex_coord = iu1; n1.color = { g1, g1, g1, 0 };
 
-                        std::vector<SDL_Vertex>& fvb = rowFeather[ntile->tex[zoom]];   // batched within this row
+                        SDL_Texture* ftex = ntile->tex[zoom];
+                        if ( ftex != lastFeatTex ) { lastFeatVb = &rowFeather[ftex]; lastFeatTex = ftex; }
+                        std::vector<SDL_Vertex>& fvb = *lastFeatVb;   // batched within this row
                         fvb.push_back( e0 ); fvb.push_back( e1 ); fvb.push_back( n1 );
                         fvb.push_back( e0 ); fvb.push_back( n1 ); fvb.push_back( n0 );
                     }
