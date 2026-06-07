@@ -197,9 +197,22 @@ void CProjectile::EmitTrail ()
     // Strong shots read as bigger/brighter: redder, thicker, LONGER, and more opaque.
     float	t = m_fStrength;
 
-    int		cr = 255;
-    int		cg = (int) ( 185 + ( 45 - 185 ) * t );    // green: 185 (yellow) -> 45 (red)
-    int		cb = (int) ( 35 + ( 10 - 35 ) * t );      // blue:  35 -> 10
+    // Colour ramp: yellow (weak) -> red (mid) -> purple (only the very strongest).
+    int		cr, cg, cb;
+    if ( t < 0.5f )
+        {
+        float u = t / 0.5f;                       // 0..1 across yellow -> red
+        cr = 255;
+        cg = (int) ( 185 + ( 45 - 185 ) * u );    // 185 -> 45
+        cb = (int) ( 35 + ( 10 - 35 ) * u );      // 35 -> 10
+        }
+    else
+        {
+        float u = ( t - 0.5f ) / 0.5f;            // 0..1 across red -> purple
+        cr = (int) ( 255 + ( 190 - 255 ) * u );   // 255 -> 190
+        cg = (int) ( 45 + ( 25 - 45 ) * u );      // 45 -> 25
+        cb = (int) ( 10 + ( 230 - 10 ) * u );     // 10 -> 230
+        }
     int		aHead = (int) ( 160 + ( 245 - 160 ) * t );// weak dimmer, strong much more visible
     double	wfac = 0.8 + ( 1.45 - 0.8 ) * t;          // weak thinner, strong thicker
     double	lfac = 1.0 + 0.7 * t;                     // strong streak runs longer
