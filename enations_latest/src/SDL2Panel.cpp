@@ -890,10 +890,15 @@ void SDL2Panel::MaybeCreateOwnRenderer() {
 // path is opt-in via env EN_DIRTY=1 until validated, then it becomes the default. Read
 // once; cached for the process.
 bool SDL2Panel::GpuDirtyEnabled() {
+    // Default ON: enables incremental GPU sprite capture (the static forest is captured
+    // once and kept; only dynamic objects are re-captured each frame) + the persistent
+    // content RT + dirty-rect harvest. With it OFF, DiscoverSpritesGpu re-scans the whole
+    // ~27k-tree forest and re-captures every sprite EVERY frame (spr.full every frame),
+    // which is the dominant zoomed-out CPU cost (~35ms in r.draw). Set EN_DIRTY=0 to disable.
     static int s_on = -1;
     if (s_on < 0) {
         const char* e = SDL_getenv("EN_DIRTY");
-        s_on = (e && *e && *e != '0') ? 1 : 0;
+        s_on = (e && *e && *e == '0') ? 0 : 1;
     }
     return s_on != 0;
 }
