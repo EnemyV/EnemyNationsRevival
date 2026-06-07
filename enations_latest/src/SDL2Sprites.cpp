@@ -10,6 +10,7 @@
 #include <unordered_map>
 #include <climits>
 #include <cmath>
+#include <cstdio>
 
 // GPU sprite layer with TEXTURE-ATLAS BATCHING. All sprite frames are packed into one
 // large atlas texture; the whole visible sprite layer is then drawn with a SINGLE
@@ -193,7 +194,24 @@ namespace
             g_shelfH = 0;
         }
         if ( g_shelfY + h + kPad > g_atlasH )          // atlas full → CPU fallback
+        {
+            // DIAGNOSTIC (atlas-capacity probe): the shelf packer never evicts, so over a
+            // long session / busy map the 4096² atlas can fill and every new frame past this
+            // point silently stops rendering (trees vanish, partial states look wrong). Count
+            // overflows + log occupancy ONCE so we can confirm this is the larger-map cause.
+            Perf::CounterAdd( "spr.atlasfull", 1 );
+            static bool s_logged = false;
+            if ( !s_logged )
+            {
+                s_logged = true;
+                char msg[160];
+                _snprintf_s( msg, sizeof( msg ), _TRUNCATE,
+                             "[ATLAS-FULL] entries=%zu atlas=%dx%d shelfY=%d reqWxH=%dx%d\n",
+                             g_atlasMap.size( ), g_atlasW, g_atlasH, g_shelfY, w, h );
+                OutputDebugStringA( msg );
+            }
             return { 0, 0, 0, 0 };
+        }
 
         AtlasLoc loc { g_shelfX, g_shelfY, w, h };
         g_shelfX += w + kPad;
@@ -224,6 +242,11 @@ namespace SDL2Sprites
         if ( r != g_renderer )
             InvalidateTextures( );
         g_renderer = r;
+    }
+
+    SDL_Renderer* CurrentRenderer( )
+    {
+        return g_renderer;
     }
 
     void BeginFrame( int zoom, int dir, int dvx, int dvy, int dw, int dh )
@@ -317,7 +340,8 @@ namespace
     }
 }
 
-extern int g_enSprIsStruct;   // set by the engine draw path (terrain.cpp): 1=structure
+extern int  g_enSprIsStruct;   // set by the engine draw path (terrain.cpp): 1=structure
+extern bool g_enViewScrolled;  // set by SDL2Terrain::Render: view scrolled this frame → full re-emit
 
 namespace SDL2Sprites
 {
@@ -668,7 +692,13 @@ namespace SDL2Sprites
             return;
         }
 
-        bool full = g_captureWasFull || needNew || ulX != g_lastUlX || ulY != g_lastUlY;
+        // g_enViewScrolled: the terrain blitted at a new pan offset this frame. g_rt is a
+        // persistent SCREEN-space layer, so a scroll invalidates all of it — the incremental
+        // per-rect clear (using the new UL) misses old sprite positions and leaves ghosts.
+        // Force a full re-emit on any visible scroll. (This is the authoritative pan signal;
+        // ulX != g_lastUlX can miss scrolls when the panel UL lags the terrain blit.)
+        bool full = g_captureWasFull || needNew || g_enViewScrolled ||
+                    ulX != g_lastUlX || ulY != g_lastUlY;
 
         SDL_Texture* prevTarget = SDL_GetRenderTarget( r );
         SDL_Rect     savedVp; SDL_RenderGetViewport( r, &savedVp );

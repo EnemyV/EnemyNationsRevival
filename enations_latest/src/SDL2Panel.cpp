@@ -2,6 +2,7 @@
 
 #include "SDL2Panel.h"
 #include "GameWindow.h"
+#include "SDL2CreateStatus.h"  // GetCreateStatus()->IsVisible() — defer panel show during load
 #include "SDL2MainMenu.h"  // CreateSurfaceFromDIB
 #include "bmbutton.h"      // must precede bitmaps.h (provides CBmBtnData)
 #include "bitmaps.h"       // theBitmaps, DIB_GOLD, DIB_BORDER_HORZ/VERT
@@ -753,6 +754,7 @@ static SDL_HitTestResult SDLCALL DetachedPanelHitTest(SDL_Window* /*win*/, const
 }
 
 void SDL2Panel::Detach(GameWindow* mainWin) {
+    m_detachOwner = mainWin;  // remembered so RenderDetached can see when the load finishes
     Detach(mainWin ? mainWin->GetWindow() : nullptr);
 }
 
@@ -773,12 +775,20 @@ void SDL2Panel::Detach(SDL_Window* ownerWindow) {
         globalY += wy;
     }
 
+    // If a load is in progress (the topmost loading dialog is up), create this
+    // window HIDDEN and reveal it on the first RenderDetached after the load
+    // finishes — otherwise the spawning window flashes over the background for a
+    // frame mid-load. Outside a load, create it shown as before.
+    m_deferShow = (m_detachOwner && m_detachOwner->GetCreateStatus()
+                   && m_detachOwner->GetCreateStatus()->IsVisible());
+
     // Borderless: we draw the Enemy-Nations purple chrome ourselves; the OS
     // only performs drag/resize via the hit-test callback below. SKIP_TASKBAR +
     // the owner-window relationship keep it floating above the background.
+    Uint32 winFlags = SDL_WINDOW_BORDERLESS | SDL_WINDOW_RESIZABLE | SDL_WINDOW_SKIP_TASKBAR;
+    if (!m_deferShow) winFlags |= SDL_WINDOW_SHOWN;
     m_ownWindow = GameWindow::CreateSDLWindow(
-        m_title.c_str(), globalX, globalY - tbH, m_width, m_height + tbH,
-        SDL_WINDOW_SHOWN | SDL_WINDOW_BORDERLESS | SDL_WINDOW_RESIZABLE | SDL_WINDOW_SKIP_TASKBAR);
+        m_title.c_str(), globalX, globalY - tbH, m_width, m_height + tbH, winFlags);
 
     if (!m_ownWindow) {
         LogPanel("ERROR: Failed to create detached window for '" + m_name + "': " + SDL_GetError());
@@ -847,7 +857,10 @@ void SDL2Panel::Detach(SDL_Window* ownerWindow) {
 
     MaybeCreateOwnRenderer();  // T0b: GPU present for this window if the flag is on
 
-    SDL_RaiseWindow(m_ownWindow);
+    // Don't raise a window we created hidden (deferred until load completes) —
+    // raising it would SetForegroundWindow and defeat the point.
+    if (!m_deferShow)
+        SDL_RaiseWindow(m_ownWindow);
     LogPanel("Detached panel '" + m_name + "' to own window (ID=" + std::to_string(m_ownWindowID) + ")");
     m_dirty = true;
     InvokeMoveCallback();  // sync the backing MFC window to the new screen pos
@@ -880,7 +893,9 @@ void SDL2Panel::MaybeCreateOwnRenderer() {
     // terrain tile textures onto its renderer so the GPU mesh (T2.3) can draw.
     if (m_name.rfind("area", 0) == 0) {
         int n = SDL2Terrain::Load(m_ownRenderer);
-        LogPanel("T2: loaded " + std::to_string(n) + " terrain tiles for '" + m_name + "'");
+        char rp[64]; sprintf(rp, "%p", (void*)m_ownRenderer);
+        LogPanel("[REN] area renderer CREATED " + std::string(rp) + " loaded " +
+                 std::to_string(n) + " tiles");
         // GPU sprite layer (S1): trees draw on this same renderer.
         SDL2Sprites::SetRenderer(m_ownRenderer);
     }
@@ -904,13 +919,26 @@ bool SDL2Panel::GpuDirtyEnabled() {
 }
 
 void SDL2Panel::DestroyOwnRenderer() {
-    // T2: terrain textures live on the area renderer — free them first.
-    if (m_name.rfind("area", 0) == 0 && SDL2Terrain::IsLoaded())
-        SDL2Terrain::Unload();
-    // GPU sprite layer (S1): drop the tree textures bound to this renderer.
+    // T2/S1: the GPU terrain tiles and sprite atlas are GLOBAL singletons bound to one
+    // renderer. During an in-game load the NEW area panel is created (and binds the
+    // global state to ITS renderer) BEFORE this OLD panel is destroyed — so only tear
+    // the global state down if it is still bound to THIS panel's renderer. Otherwise we
+    // would Unload the new panel's tiles / null its sprite renderer → black terrain +
+    // flickering trees after the load. (Main-menu load avoids the overlap; this is the
+    // in-game-load / new-game path.)
     if (m_name.rfind("area", 0) == 0) {
-        SDL2Sprites::InvalidateTextures();
-        SDL2Sprites::SetRenderer(nullptr);
+        char rp[64]; sprintf(rp, "%p", (void*)m_ownRenderer);
+        bool ownsTerrain = (SDL2Terrain::CurrentRenderer() == m_ownRenderer);
+        bool ownsSprites = (SDL2Sprites::CurrentRenderer() == m_ownRenderer);
+        LogPanel("[REN] area renderer DESTROYED " + std::string(rp) +
+                 " ownsTerrain=" + (ownsTerrain ? "1" : "0") +
+                 " ownsSprites=" + (ownsSprites ? "1" : "0"));
+        if (ownsTerrain && SDL2Terrain::IsLoaded())
+            SDL2Terrain::Unload();   // free terrain tiles bound to THIS renderer
+        if (ownsSprites) {
+            SDL2Sprites::InvalidateTextures();
+            SDL2Sprites::SetRenderer(nullptr);
+        }
     }
     if (m_contentRT)  { SDL_DestroyTexture(m_contentRT);  m_contentRT = nullptr; }
     if (m_ownBackTex) { SDL_DestroyTexture(m_ownBackTex); m_ownBackTex = nullptr; }
@@ -1139,6 +1167,19 @@ void SDL2Panel::RenderDetached() {
         SDL_UpdateWindowSurface(m_ownWindow);
     m_dirty = false;
     m_lastRenderMs = GetTickCount();        // for the secondary-window present throttle
+
+    // Reveal a deferred (load-time) window now that its content is drawn — but
+    // only once the load has actually finished, so it still can't flash mid-load.
+    // We're past the present, so the first visible frame already has full content.
+    if (m_deferShow) {
+        bool stillLoading = (m_detachOwner && m_detachOwner->GetCreateStatus()
+                             && m_detachOwner->GetCreateStatus()->IsVisible());
+        if (!stillLoading) {
+            SDL_ShowWindow(m_ownWindow);
+            SDL_RaiseWindow(m_ownWindow);
+            m_deferShow = false;
+        }
+    }
 }
 
 bool SDL2Panel::HandleDetachedEvent(SDL_Event& event, int localX, int localY) {

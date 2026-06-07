@@ -28,6 +28,11 @@ namespace SDL2Sprites
     bool Enabled( );
     void SetRenderer( SDL_Renderer* r );
 
+    // The renderer the sprite atlas/layer is currently bound to (null if none). The
+    // panel teardown checks this so an OLD area panel's destroy doesn't reset the
+    // global sprite renderer that a NEWER area panel already owns (in-game load).
+    SDL_Renderer* CurrentRenderer( );
+
     // Begin a capture pass for one world paint. zoom/dir detect a projection change
     // (clears the list). The dirty rect (VIEW coords = window rect + UL) drops the
     // entries it covers so moving sprites' stale positions don't linger.
@@ -70,6 +75,11 @@ namespace SDL2Sprites
     // captured emits a ground shadow under it, then disarms (so a multi-piece unit gets
     // one shadow). Wrap a single unit's draw with true/false.
     void SetCaptureShadow( bool on );
+
+    // Rotation (radians) for the NEXT captured structure sprite — projectiles set their
+    // screen travel angle so the bullet faces where it flies. Set before the draw, reset
+    // to 0 after. 0 = axis-aligned (the default for everything else).
+    void SetCaptureRotation( float radians );
 
     void EndFrame( );
 

@@ -41,6 +41,13 @@ public:
 
     static bool IsLoaded() { return s_loaded; }
 
+    // The renderer the tile textures are currently bound to (null if unloaded).
+    // Used by the panel teardown to avoid one area panel's destroy clobbering the
+    // global terrain state that a DIFFERENT (newer) area panel now owns — during an
+    // in-game load the new panel is created (and Load()s tiles) BEFORE the old panel
+    // is destroyed, so the old panel must not Unload() the new panel's tiles.
+    static SDL_Renderer* CurrentRenderer() { return s_renderer; }
+
     // Look up a tile by engine identity. type = CHex type name (plain, road,
     // coastline, ...); variant = CHex sprite index; stem = the source tile stem
     // (e.g. "aa00c000") whose first 2 chars are the view direction (aa/ac/ae/ag)

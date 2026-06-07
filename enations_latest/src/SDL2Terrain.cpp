@@ -69,6 +69,14 @@ void g_enEditHex( int x, int y )
         g_enEditedHexes.push_back( ( (unsigned)( x & 0xFFFF ) << 16 ) | (unsigned)( y & 0xFFFF ) );
 }
 
+// Set by SDL2Terrain::Render each frame: TRUE when the visible view scrolled since last
+// frame (the cached terrain blits at a different pan offset). The GPU sprite layer reads it
+// to force a FULL re-emit on pan — its render target (g_rt) is screen-space and persistent,
+// so a pan invalidates ALL of it; the incremental per-dirty-rect clear (which uses the new
+// UL) otherwise misses old sprite positions and leaves ghosts. Authoritative because it's the
+// terrain's actual blit delta, not the panel UL (which can lag the visible scroll).
+bool g_enViewScrolled = false;
+
 // Item 5 (incremental terrain patch) kill-switch — opt-in until verified, then default on.
 static bool TerrainPatchEnabled( )
 {
@@ -758,6 +766,36 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
     const int rtW = ws.cx + 2 * kMarginPx;
     const int rtH = ws.cy + margin + 2 * kMarginPx;
 
+    // RENDERER-CHANGE REBIND (root-cause probe for "black terrain after a map
+    // transition"): the per-frame render-target textures below are STATIC and were
+    // created against a specific SDL_Renderer. A map transition that recreates the area
+    // window's renderer (in-game Load, New Game) leaves them bound to a DESTROYED
+    // renderer → SDL draws nothing → black terrain. They were only ever recreated on a
+    // SIZE change, never a renderer change. Detect the change, drop all renderer-bound
+    // statics so the size-block below rebuilds them on the new renderer, force a full
+    // mesh rebuild, and resync the tile textures (Load() Unload+reloads on r change).
+    static SDL_Renderer* s_renderRenderer = nullptr;
+    if ( r != s_renderRenderer )
+    {
+        if ( s_renderRenderer != nullptr )   // not the first-ever bind — log the swap
+        {
+            char m[128];
+            sprintf( m, "[REN] terrain renderer changed %p -> %p (rebinding RTs)",
+                     (void*)s_renderRenderer, (void*)r );
+            LogTerrain( m );
+            // NULL (do NOT SDL_DestroyTexture) the renderer-bound statics: the old
+            // renderer may already have been destroyed by the panel teardown, which
+            // frees all its textures — destroying them again here is a use-after-free.
+            // The size-block below recreates them fresh on the new renderer.
+            s_rt = s_rtB = s_fogRT = s_shadeRT = s_shadeHalf = s_shadeB = s_waterRT = nullptr;
+            s_rtW = s_rtH = 0;        // also forces the size-block recreate path
+            s_sig = ~0ull;            // force a full mesh rebuild on the new renderer
+            s_waterRTtick = ~0u; s_waterTick = ~0u;
+            SDL2Terrain::Load( r );   // ensure tile textures are bound to the new renderer
+        }
+        s_renderRenderer = r;
+    }
+
     // (Re)create the textures when the viewport size (hence rtW/rtH) changes.
     if ( s_rt && ( s_rtW != rtW || s_rtH != rtH ) )
     {
@@ -1010,6 +1048,22 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
         int idx = (int)s_waterAnims.size( );
         s_waterAnims.push_back( wa );
         coastAnimKey[F] = idx;
+        return idx;
+    };
+
+    // A STATIC (non-animated) neighbour tile exposed as a 1-frame "anim", so the
+    // coastline's LAND-side feather can ride the SAME s_waterBlend -> s_waterRT pipeline
+    // as its water-side blend. The shore lives in the live layer (a hole in s_rt), so its
+    // feather must bake into s_waterRT OVER the opaque coast — not into the transparent-
+    // backed s_rt, where a partial-alpha band blends toward black (the "dark fringe").
+    std::unordered_map<const Tile*,int> staticAnimKey;
+    auto resolveStaticAnim = [&]( const Tile* t ) -> int {
+        auto it = staticAnimKey.find( t );
+        if ( it != staticAnimKey.end( ) ) return it->second;
+        WaterAnim wa; wa.nFrames = 1; wa.frame[0] = t;
+        int idx = (int)s_waterAnims.size( );
+        s_waterAnims.push_back( wa );
+        staticAnimKey[t] = idx;
         return idx;
     };
 
@@ -1412,24 +1466,22 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
                     int ntype = ns ? ns->GetID( ) : -1;
                     if ( !Featherable( ntype ) )
                         continue;
-                    // Coast feather split — mirrors the original (terrain.cpp:2499):
-                    //  - The COASTLINE tile feathers ONLY toward OPEN WATER (its water side),
-                    //    baked over the opaque animated coast in s_waterRT. It does NOT pull
-                    //    LAND onto itself: a coast tile is HALF WATER, so a land band insetting
-                    //    to its centre crosses the water half — and at a CONCAVE corner two such
-                    //    bands overlap there as a grass wedge over the sea (the inside-corner bug).
-                    //  - The shore<->land seam is instead softened from the LAND side (the
-                    //    original's FEATHER_OUT): a non-coast tile DOES feather toward a coast
-                    //    neighbour, its band sitting on an ALL-LAND tile (s_rt) where it can
-                    //    never cross water. The high-alpha edge samples the coast's land-facing
-                    //    pixels; the faded inner end (toward the coast centre = water) is ~invisible.
+                    // Coast feather model (b75d66c "coast land-side" + this session's water-side):
+                    //  - The COASTLINE tile feathers toward ALL its non-coast neighbours — LAND
+                    //    (its terrain-side shore blend) AND OPEN WATER (its water-side blend into
+                    //    the live sea). Its bands bake into s_waterRT, over the opaque animated
+                    //    coast (NOT s_rt, whose coast holes are transparent-black → dark fringe).
+                    //  - A NON-coast tile feathers land<->land only: never toward open water (the
+                    //    bright-land/dark-water seam reads as a muddy smear) and never ONTO a
+                    //    coastline neighbour (the coast feathers itself — avoids a double band and
+                    //    keeps rough/rock off the waterline).
                     if ( type == CHex::coastline )
                     {
-                        if ( !IsOpenWater( ntype ) )
-                            continue;                       // coast: water side only
+                        if ( ntype == CHex::coastline )
+                            continue;                       // coast<->coast: one continuous shore, no seam
                     }
-                    else if ( IsOpenWater( ntype ) )
-                        continue;                           // land never pulls open water (smear)
+                    else if ( IsOpenWater( ntype ) || ntype == CHex::coastline )
+                        continue;
                     const Tile* ntile = cachedTile( pn );   // memoized (computed once per hex/rebuild)
                     if ( !ntile || !ntile->tex[zoom] || ntile == tile ) continue;
 
@@ -1447,15 +1499,16 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
                     SDL_FPoint iu0 = { u0.x + kBand*(0.5f-u0.x), u0.y + kBand*(0.5f-u0.y) };
                     SDL_FPoint iu1 = { u1.x + kBand*(0.5f-u1.x), u1.y + kBand*(0.5f-u1.y) };
 
-                    // The SHORE's water-side feather rides the WATER layer (it bakes into
-                    // s_waterRT, over the opaque animated coast) — NOT s_rt, whose coast holes
-                    // are transparent-black and would darken this partial-alpha band into a
-                    // black fringe. Reuses the water-blend-band path so it blends with the LIVE
-                    // sea frame. The land side is handled by the non-coast branch below.
+                    // The SHORE's feather rides the WATER layer (bakes into s_waterRT, over the
+                    // opaque animated coast) — NOT s_rt, whose coast holes are transparent-black
+                    // and would darken this partial-alpha band into a black fringe. Reuses the
+                    // water-blend-band path: an OPEN-WATER neighbour blends with the LIVE sea
+                    // frame; a LAND neighbour via a 1-frame static "anim".
                     if ( type == CHex::coastline )
                     {
                         WaterBlendBand cb;
-                        cb.animIdx = resolveWaterAnim( ntype, ns->GetIndex( ) );   // ntype is open water here
+                        cb.animIdx = IsOpenWater( ntype ) ? resolveWaterAnim( ntype, ns->GetIndex( ) )
+                                                          : resolveStaticAnim( ntile );
                         cb.p[0] = pts[c0];                       cb.uv[0] = u0;
                         cb.p[1] = pts[c1];                       cb.uv[1] = u1;
                         cb.p[2] = CPoint( (int)i0x, (int)i0y );  cb.uv[2] = iu0;
@@ -1761,6 +1814,18 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
     // then the blurred slope-shade (MOD = multiply), then fog (BLEND = dim). The
     // shade texture is flipped to MOD here (it stays NONE for its blur round-trip).
     SDL_Rect dst = { dX - kMarginPx, dY - kMarginPx, rtW, rtH };
+    // Tell the GPU sprite layer whether the view moved since last frame, so it forces a full
+    // sprite re-emit and avoids screen-space ghosts in g_rt (fast vehicles leaving parts on
+    // pan). Two complementary signals — neither alone covers all cases:
+    //   * blit offset (dst): pixel-precise; catches ZOOMED-IN pans (which blit within the big
+    //     margin, so the camera centre barely moves in integer map coords). Resets on rebuild.
+    //   * camera centre: catches ZOOMED-OUT pans, which re-mesh every frame (dst stays put).
+    {
+        CMapLoc c = aa.GetCenter( );
+        static int s_lastDx = INT_MIN, s_lastDy = INT_MIN, s_lastCx = INT_MIN, s_lastCy = INT_MIN;
+        g_enViewScrolled = ( dst.x != s_lastDx || dst.y != s_lastDy || c.x != s_lastCx || c.y != s_lastCy );
+        s_lastDx = dst.x; s_lastDy = dst.y; s_lastCx = c.x; s_lastCy = c.y;
+    }
 
     // --- WATER (drawn UNDER the cached terrain): bake the animated water into s_waterRT
     // (texture space, like s_rt), but ONLY when the wave frame advanced (~4Hz) or the mesh
