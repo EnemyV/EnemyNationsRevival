@@ -80,6 +80,17 @@ static bool TerrainPatchEnabled( )
     return s_on != 0;
 }
 
+// Incremental pan ("strip rebuild"): when the view pans past the cached-texture margin
+// with the SAME zoom/dir, scroll the cached textures by the pan delta and mesh only the
+// newly-revealed edge strip instead of re-meshing the whole ~56k-hex view. Opt-in until
+// validated (default OFF). Set EN_PANSTRIP=1 to enable.
+static bool TerrainPanStripEnabled( )
+{
+    static int s_on = -1;
+    if ( s_on < 0 ) { const char* e = SDL_getenv( "EN_PANSTRIP" ); s_on = ( e && *e && *e != '0' ) ? 1 : 0; }
+    return s_on != 0;
+}
+
 static int TypeNameToInt( const std::string& n )
 {
     for ( int i = 0; i < kNumTypeNames; ++i )
@@ -661,6 +672,12 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
     static SDL_Texture* s_fogRT = nullptr;   // fog-of-war dim, decoupled overlay
     static SDL_Texture* s_shadeRT = nullptr; // slope shading, BLURRED so tile edges feather
     static SDL_Texture* s_shadeHalf = nullptr;  // half-res scratch for the blur round-trip
+    // Incremental-pan (EN_PANSTRIP) ping-pong scratch: the two texture-ACCUMULATED layers
+    // (terrain + slope-shade) are scrolled by copying old→scratch at the pan offset, then
+    // swapped, so a pan keeps the old content and only the edge strip is re-meshed. (Fog +
+    // water re-render from their vertex lists, so they need no ping-pong.)
+    static SDL_Texture* s_rtB = nullptr;
+    static SDL_Texture* s_shadeB = nullptr;
     static int       s_rtW = 0, s_rtH = 0;
     // Slope-shade overlay geometry (grayscale brightness per tile), built with the
     // terrain mesh; rendered to s_shadeRT then blurred so the per-tile flat shading
@@ -734,6 +751,8 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
         if ( s_shadeRT )  { SDL_DestroyTexture( s_shadeRT );  s_shadeRT = nullptr; }
         if ( s_shadeHalf ){ SDL_DestroyTexture( s_shadeHalf );s_shadeHalf = nullptr; }
         if ( s_waterRT )  { SDL_DestroyTexture( s_waterRT );  s_waterRT = nullptr; }
+        if ( s_rtB )      { SDL_DestroyTexture( s_rtB );      s_rtB = nullptr; }
+        if ( s_shadeB )   { SDL_DestroyTexture( s_shadeB );   s_shadeB = nullptr; }
     }
     if ( !s_rt )
     {
@@ -836,6 +855,15 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
         else
             Perf::CounterAdd( "rebuild.pan", 1 );
     }
+
+    // Incremental pan (strip rebuild): the rebuild was forced ONLY by a pan past the margin
+    // (same zoom/dir/loadgen, no pending edits) — so instead of re-meshing the whole view,
+    // SCROLL the cached textures by the pan delta and mesh just the newly-revealed edge.
+    // Requires the pan to still overlap the texture (else it's a teleport → full rebuild).
+    const bool panOnly = ( sigNoEdit == lastNoEdit ) && !covered && !editsPend && s_rt;
+    const bool incPan  = TerrainPanStripEnabled( ) && panOnly &&
+                         abs( dX ) < rtW - 8 && abs( dY ) < rtH - 8;
+    if ( incPan ) Perf::CounterAdd( "rebuild.incpan", 1 );
 
     // Build the mesh in TEXTURE space: positions are offset by +kMarginPx so the
     // margin band (hexes left/above the viewport) lands at texture x/y >= 0.
