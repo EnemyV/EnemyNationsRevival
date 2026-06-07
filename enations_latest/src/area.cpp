@@ -5864,14 +5864,27 @@ HBRUSH CWndArea::OnCtlColor( CDC* pDC, CWnd* pWnd, UINT nCtlColor )
 
 void CWndArea::ClrRoadIcons( )
 {
+    // No active road drag-preview → nothing to restore, and DO NOT touch the GPU terrain-edit
+    // gen. ClrRoadIcons is called at the top of OnLButtonUp on EVERY map click, so the old
+    // unconditional ++g_enTerrainEditGen made every click bump the gen without recording a hex
+    // (gendelta ran one ahead of the recorded list) -> reb.editmiss -> a full ~1.6s terrain
+    // re-mesh on every click (the zoomed-out stutter when selecting units).
+    if ( m_iNumRoadHex <= 0 )
+        return;
 
-    // reset sprites
+    extern void g_enEditHex( int, int );
+
+    // reset sprites — and RECORD each restored hex so the GPU terrain cache PATCHES just those
+    // few road-path hexes (cheap) instead of forcing a full rebuild. g_enEditHex bumps the gen
+    // AND records the hex, keeping gendelta == list size so the edit-patch path applies.
     CHexCoord* pHexOn     = m_phexRoadPath;
     CSprite**  ppSpriteOn = m_ppUnderSprite;
     while ( m_iNumRoadHex-- )
     {
         pHexOn->SetInvalidated( );
-        theMap._GetHex( *pHexOn++ )->m_psprite = *ppSpriteOn++;
+        theMap._GetHex( *pHexOn )->m_psprite = *ppSpriteOn++;
+        g_enEditHex( pHexOn->X( ), pHexOn->Y( ) );
+        ++pHexOn;
     }
 
     // free it up
@@ -5880,14 +5893,6 @@ void CWndArea::ClrRoadIcons( )
     m_phexRoadPath  = NULL;
     m_ppUnderSprite = NULL;
     m_iNumRoadHex   = 0;
-
-    // The road drag-preview swaps hex terrain sprites to the road sprite; on the GPU
-    // path the terrain is a cached texture that only re-bakes on a terrain-edit/view
-    // change, so the preview never showed. Bump the terrain-edit gen so the cache
-    // re-bakes with (or without) the preview tiles. This is the single choke point:
-    // SetRoadIcons calls ClrRoadIcons first, and it's also the preview teardown.
-    extern unsigned g_enTerrainEditGen;
-    ++g_enTerrainEditGen;
 }
 
 void CWndArea::SetRoadIcons( CHexCoord hexEnd )
@@ -5956,6 +5961,10 @@ void CWndArea::SetRoadIcons( CHexCoord hexEnd )
             m_iNumRoadHex++;
             pHex->m_psprite = pSprRoad;
             _hexOn.SetInvalidated( );
+            // Record the previewed hex so the GPU terrain cache PATCHES this road tile in
+            // (cheap) rather than the old full re-mesh; paired with ClrRoadIcons' restore.
+            extern void g_enEditHex( int, int );
+            g_enEditHex( _hexOn.X( ), _hexOn.Y( ) );
         }
 
         // check out span
