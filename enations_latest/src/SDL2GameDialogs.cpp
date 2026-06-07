@@ -525,9 +525,17 @@ void SDL2LoadTruckDialog::RefreshTotals() {
                            " / " + std::to_string(maxCargo));
 }
 
+void SDL2LoadTruckDialog::RefreshBldg() {
+    // The vehicle owns this dialog and closes it on death, so m_pVeh is valid here;
+    // the building, however, can be destroyed under us — re-derive it (or null) each
+    // time rather than trusting the pointer cached at construction.
+    m_pBldg = m_pVeh ? theBuildingHex._GetBuilding(m_pVeh->GetPtHead()) : nullptr;
+}
+
 void SDL2LoadTruckDialog::OnLoad() {
     // MFC OnTruckLoad: fill from combined truck+building stocks, scaling DOWN
     // proportionally if the total exceeds vehicle capacity.
+    RefreshBldg();
     if (!m_pBldg) return;
     int amounts[6];
     int total = 0;
@@ -548,6 +556,7 @@ void SDL2LoadTruckDialog::OnLoad() {
 
 void SDL2LoadTruckDialog::OnLoadBldg() {
     // 50/50 Steel / Lumber — construction load preset.
+    RefreshBldg();
     if (!m_pBldg) return;
     int maxCargo = m_pVeh->GetData()->GetMaxMaterials();
     int iSteel  = maxCargo / 2;
@@ -566,6 +575,7 @@ void SDL2LoadTruckDialog::OnLoadBldg() {
 
 void SDL2LoadTruckDialog::OnLoadVeh() {
     // 80/20 Steel / Copper — vehicle-factory load preset.
+    RefreshBldg();
     if (!m_pBldg) return;
     int maxCargo = m_pVeh->GetData()->GetMaxMaterials();
     int iSteel  = (maxCargo * 4) / 5;
@@ -585,6 +595,8 @@ void SDL2LoadTruckDialog::OnLoadVeh() {
 void SDL2LoadTruckDialog::OnOK() {
     // Transfer materials from sliders to vehicle/building, capping at the
     // combined truck+building total per material (matches MFC Transfer()).
+    RefreshBldg();
+    if (!m_pBldg) { EndDialog(0); return; }   // building gone — nothing to transfer
     for (int i = 0; i < 6; i++) {
         int iAmount = m_sliders[i]->GetValue();
         int iTotal = m_pVeh->GetStore(i) + m_pBldg->GetStore(i);
@@ -595,9 +607,7 @@ void SDL2LoadTruckDialog::OnOK() {
     m_pBldg->MaterialMessage();
     m_pBldg->EventOff();
     m_pVeh->ExitBuilding();
-    // (MFC's NullLoadWindow was a back-pointer cleanup on CVehicle->m_pDlgLoad —
-    // SDL2 path doesn't retain that back-pointer, so nothing to null.)
-    EndDialog(1);
+    EndDialog(1);   // onDone clears CVehicle::m_pSdlLoad
 }
 
 void SDL2LoadTruckDialog::OnCancel() {

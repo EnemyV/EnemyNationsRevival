@@ -20,6 +20,7 @@
 class CWndRoute;
 class SDL2RouteWindow;
 class SDL2BuildStructure;
+class SDL2LoadTruckDialog;
 class CTransportData;
 class CVehicle;
 class CBridgeUnit;
@@ -505,6 +506,7 @@ protected:
 
 		CDlgBuildStructure * 	m_pDlgStructure;
 	SDL2BuildStructure*     m_pSdlBuild = nullptr;  // SDL2 non-modal build dialog
+	SDL2LoadTruckDialog*    m_pSdlLoad  = nullptr;  // SDL2 non-modal load-cargo dialog
 
 		// travelling in another vehicle, carrying another vehicle
 		CVehicle *		m_pTransport;						// unit carrying us

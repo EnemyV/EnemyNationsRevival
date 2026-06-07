@@ -98,6 +98,11 @@ private:
     void OnOK();
     void OnCancel();
     void RefreshTotals();
+    // Re-derive m_pBldg from the (still-alive) vehicle's hex. Called at the top of
+    // each action handler so a cached building pointer can't dangle if the building
+    // is destroyed while this non-modal dialog is open (the vehicle owns the dialog
+    // and closes it on its own death, so m_pVeh stays valid).
+    void RefreshBldg();
 
     CVehicle*  m_pVeh;
     CBuilding* m_pBldg;

@@ -24,6 +24,7 @@ const int TOOLBAR_HT      = BAR_BTN_HT + BAR_TEXT_HT;
 
 
 class SDL2ResearchDialog;
+class SDL2RelationsDialog;
 
 typedef void ( *FNSTATUSLINE )( void* pData, CDC* pDc, CRect const& rDraw, CDIB* pDib, CPoint const& ptOff );
 
@@ -171,6 +172,10 @@ class CWndBar : public CWndAnim
     // (DoModal would freeze the simulation). Nulled by its onDone callback; the
     // GameWindow owns deletion. Guards against opening a second copy.
     SDL2ResearchDialog* m_pSdlResearch = nullptr;
+
+    // Non-modal diplomacy window — same rationale as research: it applies relation
+    // changes / unit gifts LIVE, so the sim must keep running while it's open.
+    SDL2RelationsDialog* m_pSdlRelations = nullptr;
 };
 
 

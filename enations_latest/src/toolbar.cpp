@@ -926,8 +926,16 @@ void CWndBar::GotoRelations( )
         return;
 
     if ( theApp.m_gameWindow ) {
-        SDL2RelationsDialog dlg( theApp.m_gameWindow.get() );
-        dlg.DoModal();
+        // Non-modal: diplomacy applies relation changes / unit gifts LIVE, so the
+        // game (and, in MP, the network loop) must keep running while it's open â€”
+        // DoModal froze the sim. Guard against a second copy; onDone clears the
+        // pointer and GameWindow deletes the object on its next cleanup pass.
+        if ( !m_pSdlRelations ) {
+            m_pSdlRelations = new SDL2RelationsDialog( theApp.m_gameWindow.get() );
+            m_pSdlRelations->ShowNonModal( [this]( int ) { m_pSdlRelations = nullptr; } );
+        } else {
+            m_pSdlRelations->RaiseAndAlert( );   // already open â†’ bring it forward
+        }
     }
 }
 

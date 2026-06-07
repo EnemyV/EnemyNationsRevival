@@ -1226,8 +1226,17 @@ void CVehicle::ShowLoadDialog() {
         return;
     }
 
-    SDL2LoadTruckDialog dlg(theApp.m_gameWindow.get(), this);
-    dlg.DoModal();
+    // Non-modal so the game (and, in MP, the network loop) keeps running while it's
+    // open — DoModal froze the simulation. Owned by this vehicle; closed on death via
+    // DestroyAllWindows; onDone clears the pointer and GameWindow deletes the object.
+    if (!theApp.m_gameWindow)
+        return;
+    if (!m_pSdlLoad) {
+        m_pSdlLoad = new SDL2LoadTruckDialog(theApp.m_gameWindow.get(), this);
+        m_pSdlLoad->ShowNonModal([this](int) { m_pSdlLoad = nullptr; });
+    } else {
+        m_pSdlLoad->RaiseAndAlert();   // already open → bring it forward
+    }
 }
 
 void CVehicle::SetBridgeHex(CHexCoord const &hexStart, CHexCoord const &hexEnd, DWORD dwID, int iAlt) {
@@ -1285,6 +1294,12 @@ void CVehicle::DestroyAllWindows() {
 
     DestroyRouteWindow();
     DestroyBuildWindow();
+
+    // Close the non-modal load-cargo dialog if open, so it can't outlive this
+    // vehicle (EndDialog destroys its window + triggers GameWindow cleanup; the
+    // onDone lambda nulls m_pSdlLoad).
+    if (m_pSdlLoad)
+        m_pSdlLoad->EndDialog(0);
 }
 
 // dump the contents of this truck in the nearest warehouse and give to auto router
