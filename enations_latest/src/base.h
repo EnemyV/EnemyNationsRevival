@@ -587,6 +587,14 @@ class CAnimAtr
 
     BOOL MapToWindowHex( const CHexCoord&, CPoint[4] ) const;
 
+    // CONTENT-space hex corners: WorldToView WITHOUT the >>m_iZoom and WITHOUT the
+    // -m_ptUL pan (i.e. the zoom-0, un-panned view coords, with the per-m_iDir corner
+    // reorder + altitude applied). The GPU "retained mesh" path builds geometry from
+    // these once, then derives any zoom/pan with screen = (content >> zoom) - m_ptUL.
+    // (window = (content >> m_iZoom) - m_ptUL, so this is the un-scaled, un-panned mesh.)
+    void   MapToContentHex( const CHexCoord&, CPoint[4] ) const;
+    CPoint WorldToViewContent( const CMapLoc3D& ) const;
+
     BOOL   WorldToWindowHex( CMapLoc3D[4], CPoint[4] ) const;
     CPoint WorldToWindow( CMapLoc3D maploc3d ) const { return ViewToWindow( WorldToView( maploc3d ) ); }
 
@@ -667,8 +675,8 @@ class CMaterialTypes
         lumber,  // lumber - goods must be 0-based
         steel,
         copper, // Xil
-        moly,   // idk, people?
-        goods,  // idk, electricity?
+        moly,   // molybdenum - manufactured material, currently unused (to be re-implemented)
+        goods,  // generic manufactured goods - currently unused (to be re-implemented)
 
         food,
         oil,

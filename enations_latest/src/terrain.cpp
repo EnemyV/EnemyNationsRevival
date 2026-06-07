@@ -2361,6 +2361,47 @@ CAnimAtr::WorldToView( const CMapLoc3D& maploc3d ) const
     return CPoint( iNewX >> m_iZoom, iNewY >> m_iZoom );
 }
 
+//--------------------------------------------------------------------------
+// CAnimAtr::WorldToViewContent - WorldToView WITHOUT the >>m_iZoom (zoom-0 view).
+// Used by the GPU retained-mesh path: build geometry in this zoom-independent space
+// once, then screen = (content >> zoom) - m_ptUL derives any zoom/pan cheaply.
+//--------------------------------------------------------------------------
+CPoint
+CAnimAtr::WorldToViewContent( const CMapLoc3D& maploc3d ) const
+{
+    int iNewX = 0, iNewY = 0;
+
+    switch ( m_iDir )
+    {
+    case 0: iNewX =  maploc3d.x + maploc3d.y; iNewY = ( -maploc3d.x + maploc3d.y ) >> 1; break;
+    case 1: iNewX = -maploc3d.x + maploc3d.y; iNewY = ( -maploc3d.x - maploc3d.y ) >> 1; break;
+    case 2: iNewX = -maploc3d.x - maploc3d.y; iNewY = (  maploc3d.x - maploc3d.y ) >> 1; break;
+    case 3: iNewX =  maploc3d.x - maploc3d.y; iNewY = (  maploc3d.x + maploc3d.y ) >> 1; break;
+    default: TRAP( );
+    }
+
+    Fixed fixY = maploc3d.m_fixZ << TERRAIN_HT_SHIFT;
+    iNewY -= fixY.Round( );
+
+    return CPoint( iNewX, iNewY );   // NO >> m_iZoom (zoom applied later as a scale)
+}
+
+//--------------------------------------------------------------------------
+// CAnimAtr::MapToContentHex - 4 hex corners in CONTENT space (zoom-0, un-panned),
+// with the same per-m_iDir corner reorder MapToWindowHex/WorldToWindowHex apply.
+//--------------------------------------------------------------------------
+void
+CAnimAtr::MapToContentHex( const CHexCoord& hexcoord, CPoint aptHex[4] ) const
+{
+    static int xaaiIndex[4][4] = { { 0, 1, 2, 3 }, { 3, 0, 1, 2 }, { 2, 3, 0, 1 }, { 1, 2, 3, 0 } };
+
+    CMapLoc3D amaploc3d[4];
+    hexcoord.GetWorldHex( amaploc3d );
+
+    int* pi = xaaiIndex[m_iDir];
+    for ( int i = 0; i < 4; ++i ) aptHex[*pi++] = WorldToViewContent( amaploc3d[i] );
+}
+
 #ifdef _DEBUG
 #ifdef BUGBUG
 void CHexCoord::AssertValid( ) const
@@ -3979,8 +4020,22 @@ void CGameMap::UpdateRect( CAnimAtr& aa, CRect rect, CDrawParms::UPDATE_MODE eMo
             if ( pSprSurf )
             {
                 Uint32 key = SDL_MapRGB( pSprSurf->format, 255, 0, 255 );
-                if ( bFresh )
-                    SDL_FillRect( pSprSurf, NULL, key );  // whole buffer once
+                // Fully wipe the CPU sprite overlay on a VIEW CHANGE (pan/zoom/rotate), not
+                // just on create/resize. The overlay is screen-space and otherwise only
+                // per-dirty-rect cleared; a view change reprojects everything, so a fast-
+                // moving CPU sprite's previous pixels fall outside this frame's dirty rects
+                // and linger as "parts left behind". After the wipe, this frame's full redraw
+                // repaints the overlay clean. Tracked once per change (statics).
+                static int s_lastUlX = INT_MIN, s_lastUlY = INT_MIN, s_lastZ = -999, s_lastD = -999;
+                CPoint ulNow = aa.GetUL( );
+                bool viewChg = ( ulNow.x != s_lastUlX || ulNow.y != s_lastUlY ||
+                                 aa.m_iZoom != s_lastZ || aa.m_iDir != s_lastD );
+                s_lastUlX = ulNow.x; s_lastUlY = ulNow.y; s_lastZ = aa.m_iZoom; s_lastD = aa.m_iDir;
+                if ( bFresh || viewChg )
+                {
+                    SDL_FillRect( pSprSurf, NULL, key );  // whole buffer
+                    Perf::CounterAdd( "dbg.ovlwipe", 1 );   // VERIFY this path runs in GPU mode
+                }
                 SDL_Rect clr = { rect.left, rect.top, rect.Width( ), rect.Height( ) };
                 SDL_FillRect( pSprSurf, &clr, key );
             }
