@@ -175,6 +175,7 @@ public:
 	bool		RendersEveryFrame () const override { return true; }
 	void		ReRender ();
 	void		DrawSelectionRect();
+	void		DrawSelectionRectGpu();   // GPU split path: draws into m_dibSprite, no save/restore
 	void		RestoreSelectionRect();
 	void		Draw();
 	void		UnitDying (CUnit * pUnit);
