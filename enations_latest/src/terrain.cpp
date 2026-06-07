@@ -3583,12 +3583,27 @@ void CGameMap::DiscoverSpritesGpu( CAnimAtr& aa, const CRect& rect )
 
     if ( bDirty )
         SDL2Sprites::DirtyNewFrame( );
-    const int kDirtyPad = MAX_HEX_HT + iMaxBuildingHeight;  // generous; over-inclusion is safe
+    // Pad a moving unit's dirty rect by ~its own sprite height (one hex tall is plenty for
+    // a vehicle), NOT by the tallest BUILDING height. The incremental emit redraws any
+    // sprite overlapping the rect CLIPPED to it (a tall tree/building's out-of-rect pixels
+    // persist untouched and stay correct), so the rect only needs to cover the unit itself.
+    // The old building-height pad made every vehicle rect a tall column that swept in
+    // thousands of static trees to re-rasterize each frame (the zoomed-out sprite cost).
+    const int kDirtyPad = MAX_HEX_HT;
 
     // Buildings/vehicles/projectiles are DYNAMIC (can move or change sprite) → their keys
     // are tracked so the next incremental frame can drop + refresh them. Trees/bridges are
     // static (not marked), so they persist across incremental frames.
     SDL2Sprites::SetCaptureDynamic( true );
+
+    // Run the BUILDING capture in draw|invalidate so the original animation-invalidation
+    // logic fires: smoke/flame ambients (CSpriteView::DrawUnitAnimation) self-register their
+    // dirty rect (LIST_PAINT_BOTH), and constructing/damaged buildings register theirs. The
+    // GPU path normally skips theMap.Update's invalidate pass, so these never got a dirty rect
+    // and the incremental emit never repainted them → smoke flickered on/off. Static/completed
+    // buildings are gated by IsInvalidated(), so they DON'T over-dirty. We harvest the
+    // registered rects into the GPU sprite dirty set just below, then return to draw-only.
+    CDrawParms::SetUpdateFlags( CDrawParms::draw | CDrawParms::invalidate );
 
     // ---- Buildings (object-iterated; each visible building drawn once) ----
     {
@@ -3617,6 +3632,25 @@ void CGameMap::DiscoverSpritesGpu( CAnimAtr& aa, const CRect& rect )
                                                pbuilding->GetMapLoc( ),
                                                CStructureSprite::FOREGROUND_LAYER )
                 ->Draw( );
+        }
+    }
+
+    // Back to draw-only for the rest of the capture (vehicles use their own DirtyAddRect;
+    // the forest/tree scan must NOT run in invalidate mode or static trees would re-dirty).
+    CDrawParms::SetUpdateFlags( CDrawParms::draw );
+
+    // Harvest the building-animation dirty rects (smoke/flame + constructing) that just
+    // self-registered into CDirtyRects, and feed them to the GPU sprite incremental emit
+    // (view space = client + UL). This is the original optimized dirty-rect data, reused.
+    if ( bIncremental )
+    {
+        CDirtyRects* pdr = aa.GetDirtyRects( );
+        for ( int i = 0; i < pdr->m_nRectPaintCur; ++i )
+        {
+            const CRect& rc = pdr->m_prectPaintCur[i];
+            if ( rc.left != INT_MAX )
+                SDL2Sprites::DirtyAddRect( rc.left + ulDirty.x, rc.top + ulDirty.y,
+                                           rc.Width( ), rc.Height( ) );
         }
     }
 
@@ -3789,14 +3823,25 @@ void CGameMap::DiscoverSpritesGpu( CAnimAtr& aa, const CRect& rect )
                     ASSERT( 0 );
                 }
 
-                CTree* ptree = theEffects.GetTree( phex->GetTree( ) );
+                // Guard the tree index: a forest hex can carry a stale/out-of-range tree
+                // index (phex->GetTree() >= m_nTrees), and theEffects.GetTree() would then
+                // return an out-of-bounds pointer that the Draw() below dereferences → AV.
+                // The ASSERT in GetTree is non-fatal (logged + ignored), so without this the
+                // capture walks straight into the bad read. Zoom-out makes MORE forest hexes
+                // visible per full capture, so it surfaces there. Skip the bad tree (one
+                // missing tree is invisible) instead of crashing.
+                int iTreeIdx = phex->GetTree( );
+                if ( iTreeIdx >= 0 && iTreeIdx < theEffects.TreeCount( ) )
+                {
+                    CTree* ptree = theEffects.GetTree( iTreeIdx );
 
-                drawinfopool.GetStructureDrawInfo( ptree, CTileDrawInfo::tree, hexcoord, maplocRear,
-                                                   CStructureSprite::BACKGROUND_LAYER )
-                    ->Draw( );
-                drawinfopool.GetStructureDrawInfo( ptree, CTileDrawInfo::tree, hexcoord, maplocFront,
-                                                   CStructureSprite::FOREGROUND_LAYER )
-                    ->Draw( );
+                    drawinfopool.GetStructureDrawInfo( ptree, CTileDrawInfo::tree, hexcoord, maplocRear,
+                                                       CStructureSprite::BACKGROUND_LAYER )
+                        ->Draw( );
+                    drawinfopool.GetStructureDrawInfo( ptree, CTileDrawInfo::tree, hexcoord, maplocFront,
+                                                       CStructureSprite::FOREGROUND_LAYER )
+                        ->Draw( );
+                }
             }
 
             // Projectiles / explosions (only on lit hexes). Dynamic (move every frame) →

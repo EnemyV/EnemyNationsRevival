@@ -2,6 +2,7 @@
 #include "SDL2Sprites.h"
 #include "sprite.h"          // CSpriteDIB::DecodeToRGBA, NUM_ZOOM_LEVELS
 #include "w22_settings.h"    // w22::GetProfileInt — [Advanced] GpuSprites flag
+#include "Perf.h"            // perf counters (EN_PERF)
 
 #include <SDL.h>
 #include <vector>
@@ -459,27 +460,75 @@ namespace SDL2Sprites
             for ( const SDL_Rect& vr : g_dirtyCur )  addRect( vr );
             for ( const SDL_Rect& vr : g_dirtyPrev ) addRect( vr );
 
+            // Tight dirty rects multiply the rect count, so a per-rect all-sprites scan would
+            // blow up. Bin every sprite into a screen-space uniform grid ONCE, then each rect
+            // queries only its overlapping cells. Result is identical to the brute scan (same
+            // overlapping set, z-sorted) — pure speedup, no visual change.
+            const int kCell = 96, kGM = 256;            // cell size / off-screen sprite margin
+            const int gnx = ( vpW + 2 * kGM ) / kCell + 1;
+            const int gny = ( vpH + 2 * kGM ) / kCell + 1;
+            static std::vector<std::vector<const Sprite*>> grid;
+            if ( (int)grid.size( ) < gnx * gny ) grid.resize( gnx * gny );
+            for ( int i = 0; i < gnx * gny; ++i ) grid[ i ].clear( );
+            {
+                Perf::ScopeCounter _cg( "spr.t.grid" );
+                for ( auto& kv : g_sprites )
+                {
+                    int bx, by, bw, bh; SprBox( kv.second, bx, by, bw, bh );
+                    int sx = bx - ulX + kGM, sy = by - ulY + kGM;
+                    int cx0 = sx / kCell, cx1 = ( sx + bw ) / kCell;
+                    int cy0 = sy / kCell, cy1 = ( sy + bh ) / kCell;
+                    if ( cx1 < 0 || cy1 < 0 || cx0 >= gnx || cy0 >= gny ) continue;
+                    cx0 = __max( 0, cx0 ); cy0 = __max( 0, cy0 );
+                    cx1 = __min( gnx - 1, cx1 ); cy1 = __min( gny - 1, cy1 );
+                    for ( int cy = cy0; cy <= cy1; ++cy )
+                        for ( int cx = cx0; cx <= cx1; ++cx )
+                            grid[ cy * gnx + cx ].push_back( &kv.second );
+                }
+            }
+
+            Perf::CounterAdd( "spr.full", 0 );
+            Perf::CounterAdd( "spr.rects", (int)rects.size( ) );
+            int dbgScan = 0, dbgEmit = 0;
             for ( const SDL_Rect& R : rects )
             {
                 SDL_RenderSetClipRect( r, &R );
                 SDL_SetRenderDrawBlendMode( r, SDL_BLENDMODE_NONE );
                 SDL_SetRenderDrawColor( r, 0, 0, 0, 0 );
                 SDL_RenderFillRect( r, &R );          // clear the region (transparent)
-                // Re-emit ALL sprites overlapping R (z-sorted) so the local depth order
-                // (a unit between a tree's rear & front) stays exactly correct.
+                // Gather sprites overlapping R from the grid cells it spans (z-sorted) so the
+                // local depth order (a unit between a tree's rear & front) stays exact.
                 order.clear( );
-                for ( auto& kv : g_sprites )
                 {
-                    int bx, by, bw, bh; SprBox( kv.second, bx, by, bw, bh );
-                    if ( RectsOverlap( bx - ulX, by - ulY, bw, bh, R.x, R.y, R.w, R.h ) )
-                        order.push_back( &kv.second );
+                    Perf::ScopeCounter _cs( "spr.t.scan" );
+                    int cx0 = ( R.x + kGM ) / kCell, cx1 = ( R.x + R.w + kGM ) / kCell;
+                    int cy0 = ( R.y + kGM ) / kCell, cy1 = ( R.y + R.h + kGM ) / kCell;
+                    cx0 = __max( 0, cx0 ); cy0 = __max( 0, cy0 );
+                    cx1 = __min( gnx - 1, cx1 ); cy1 = __min( gny - 1, cy1 );
+                    for ( int cy = cy0; cy <= cy1; ++cy )
+                        for ( int cx = cx0; cx <= cx1; ++cx )
+                        {
+                            for ( const Sprite* s : grid[ cy * gnx + cx ] )
+                            {
+                                int bx, by, bw, bh; SprBox( *s, bx, by, bw, bh );
+                                if ( RectsOverlap( bx - ulX, by - ulY, bw, bh, R.x, R.y, R.w, R.h ) )
+                                    order.push_back( s );
+                            }
+                            dbgScan += (int)grid[ cy * gnx + cx ].size( );
+                        }
+                    std::sort( order.begin( ), order.end( ), ZLess );
+                    order.erase( std::unique( order.begin( ), order.end( ) ), order.end( ) );  // dedup multi-cell
                 }
-                std::sort( order.begin( ), order.end( ), ZLess );
+                dbgEmit += (int)order.size( );
                 SDL_SetRenderDrawBlendMode( r, SDL_BLENDMODE_BLEND );
-                EmitOrder( r, order, ulX, ulY );      // GPU clips to R
+                { Perf::ScopeCounter _ce( "spr.t.emit" );
+                  EmitOrder( r, order, ulX, ulY ); }      // GPU clips to R
             }
             SDL_RenderSetClipRect( r, nullptr );
+            Perf::CounterAdd( "spr.scan", dbgScan );
+            Perf::CounterAdd( "spr.emit", dbgEmit );
         }
+        if ( full ) Perf::CounterAdd( "spr.full", 1 );
 
         SDL_SetRenderTarget( r, prevTarget );
         SDL_RenderSetViewport( r, &savedVp );
