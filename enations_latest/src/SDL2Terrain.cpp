@@ -1142,12 +1142,19 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
                 Uint8 g = (Uint8)__min( 255, (int)( b * 255.0f ) );
                 v.color = { g, g, g, 255 }; return v;
             };
-            s_shadeVerts.push_back( shadeV( pts[0], bL ) );  // L,T,B  (left tri)
-            s_shadeVerts.push_back( shadeV( pts[1], bL ) );
-            s_shadeVerts.push_back( shadeV( pts[3], bL ) );
-            s_shadeVerts.push_back( shadeV( pts[1], bR ) );  // T,R,B  (right tri)
-            s_shadeVerts.push_back( shadeV( pts[2], bR ) );
-            s_shadeVerts.push_back( shadeV( pts[3], bR ) );
+            // Only SHADED tiles need a shade diamond: s_shadeRT is cleared to white
+            // (MOD = ×1 = no darkening), and unshaded tiles have bL=bR=1.0, so their quad
+            // is an all-white no-op. Skipping them (water/coast, ~half the hexes at full
+            // zoom-out) is pixel-identical and saves 6 vert builds + pushes per such hex.
+            if ( tile->shade )
+            {
+                s_shadeVerts.push_back( shadeV( pts[0], bL ) );  // L,T,B  (left tri)
+                s_shadeVerts.push_back( shadeV( pts[1], bL ) );
+                s_shadeVerts.push_back( shadeV( pts[3], bL ) );
+                s_shadeVerts.push_back( shadeV( pts[1], bR ) );  // T,R,B  (right tri)
+                s_shadeVerts.push_back( shadeV( pts[2], bR ) );
+                s_shadeVerts.push_back( shadeV( pts[3], bR ) );
+            }
 
             // Fog overlay quad (built once per terrain rebuild; re-coloured cheaply on
             // the fog throttle). Black, per-corner alpha = (1-fog) → fogged = dark.
