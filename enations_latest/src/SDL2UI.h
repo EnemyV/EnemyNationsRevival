@@ -424,6 +424,14 @@ public:
     void EndDialog(int result);
 
 protected:
+    // Tear down a MODAL dialog's window IMMEDIATELY and stop it rendering again.
+    // EndDialog only flags DoModal's loop to exit — the window survives until the
+    // loop unwinds. A button handler that then runs a long NESTED flow (Load/Exit:
+    // world teardown + the main-menu load flow) blocks that unwind, so the dialog
+    // would otherwise linger on-screen through the whole flow (including the player
+    // pick). Call this instead of EndDialog when kicking off such a flow.
+    void DismissModalNow();
+
     // Override to initialize widgets
     virtual void OnInit() {}
 
@@ -513,6 +521,11 @@ private:
     // Dedicated SDL_Window for this dialog (ALWAYS_ON_TOP so it floats above
     // the Area View and World View detached panels).
     SDL_Window*  m_dlgWindow = nullptr;
+
+    // Set by DismissModalNow(): the window is gone and Render() must be a no-op
+    // (otherwise the final Render() in DoModal's loop would paint this dialog onto
+    // the MAIN window — see Render()'s m_dlgWindow==null fallback).
+    bool         m_dismissed = false;
 
     // Title-bar drag state. The dialog window is borderless, so we move it
     // ourselves when the user drags its title bar. m_x/m_y (render offset +

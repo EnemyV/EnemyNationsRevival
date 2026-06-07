@@ -107,7 +107,7 @@ void SDL2FileDialog::OnOK() {
 
 void SDL2FileDialog::OnSave() {
     ApplySettings();
-    EndDialog(1);
+    DismissModalNow();   // close this menu before the (modal) save file browser opens
 
     // Get filename via SDL2 file browser with full directory navigation
     std::string defaultName = theGame.m_sFileName;
@@ -152,7 +152,7 @@ void SDL2FileDialog::OnExit() {
     if (!confirm.WasConfirmed()) return;
 
     ApplySettings();
-    EndDialog(0);
+    DismissModalNow();   // vanish now; CloseWorld tears down to the main menu
     theApp.CloseWorld();
 }
 
@@ -182,7 +182,10 @@ void SDL2FileDialog::OnLoad() {
     if (!confirm.WasConfirmed()) return;
 
     ApplySettings();
-    EndDialog(1);
+    // Take this dialog's window down NOW — the load flow below runs a long nested
+    // loop (file picker + player pick) before DoModal can unwind, so a plain
+    // EndDialog would leave the Game Options menu on-screen through the whole flow.
+    DismissModalNow();
 
     // Tear down the current world (same path as Exit), then run the main-menu
     // load flow. CloseWorld → DestroyWorld + CreateMain, after which

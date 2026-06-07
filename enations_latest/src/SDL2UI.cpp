@@ -1153,7 +1153,21 @@ void SDL2Dialog::AddOKCancelButtons() {
                           [this]() { OnCancel(); });
 }
 
+void SDL2Dialog::DismissModalNow() {
+    m_running = false;        // let DoModal's loop exit when the nested flow returns
+    m_dismissed = true;       // and never render again in the meantime
+    if (m_dlgWindow) {
+        SDL_DestroyWindow(m_dlgWindow);
+        m_dlgWindow = nullptr;
+    }
+}
+
 void SDL2Dialog::Render() {
+    // Dismissed mid-handler (a teardown flow is starting): the window is destroyed
+    // and we must NOT fall through to the m_dlgWindow==null path, which would paint
+    // this dialog onto the main game window.
+    if (m_dismissed) return;
+
     // Lazy-load game art on first render
     if (!s_artLoaded) LoadDialogArt();
 
