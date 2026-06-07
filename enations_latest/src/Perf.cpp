@@ -63,7 +63,7 @@ namespace
     long         g_leakDumpAtSec = 0;
 
     // ---- named counters ----------------------------------------------------
-    const int  MAX_COUNTERS = 64;
+    const int  MAX_COUNTERS = 160;
     struct Counter
     {
         const char* name;

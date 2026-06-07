@@ -86,8 +86,13 @@ static bool TerrainPatchEnabled( )
 // validated (default OFF). Set EN_PANSTRIP=1 to enable.
 static bool TerrainPanStripEnabled( )
 {
+    // Default ON: when a pan crosses the cached-texture margin (same zoom/dir), scroll the
+    // cached terrain/shade textures by the pan delta and re-mesh only the newly-revealed edge
+    // strip instead of the whole ~56k-hex view — a small pan costs ~90ms vs ~640ms full.
+    // Set EN_PANSTRIP=0 to disable. KNOWN LIMITATION: AI terrain edits (roads) in the already-
+    // scrolled region are briefly stale until the next full rebuild (zoom/dir/large pan).
     static int s_on = -1;
-    if ( s_on < 0 ) { const char* e = SDL_getenv( "EN_PANSTRIP" ); s_on = ( e && *e && *e != '0' ) ? 1 : 0; }
+    if ( s_on < 0 ) { const char* e = SDL_getenv( "EN_PANSTRIP" ); s_on = ( e && *e && *e == '0' ) ? 0 : 1; }
     return s_on != 0;
 }
 
@@ -513,6 +518,16 @@ static bool IsOpenWater( int type )
            type == CHex::river || type == CHex::swamp;
 }
 
+// Tiles whose foam is ANIMATED and so must live in the live wave layer (a HOLE in
+// the cached s_rt, re-drawn into s_waterRT on each wave-tick) instead of being baked
+// statically. Open water plus the coastline (shore) tile — the latter is an opaque
+// directional tile whose foam cycles a-h just like the sea; baking it froze the foam
+// at one frame while the open ocean beside it kept moving.
+static bool IsAnimatedTile( int type )
+{
+    return IsOpenWater( type ) || type == CHex::coastline;
+}
+
 // --- Build-placement footprint: striped hatch (matches the original) -------
 // The original (sprite.cpp TerrainDrawQuad bHatch) fills each cursor hex with the
 // cursor COLOUR on 4px horizontal bands — a striped hatch on the ground, NOT a solid
@@ -860,9 +875,17 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
     // (same zoom/dir/loadgen, no pending edits) — so instead of re-meshing the whole view,
     // SCROLL the cached textures by the pan delta and mesh just the newly-revealed edge.
     // Requires the pan to still overlap the texture (else it's a teleport → full rebuild).
-    const bool panOnly = ( sigNoEdit == lastNoEdit ) && !covered && !editsPend && s_rt;
+    // NOTE: editsPend is NOT required false — the AI edits terrain (roads) almost every
+    // frame, so requiring no-pending-edits would block incPan during all normal play. The
+    // edited hexes are absorbed by the full rebuild's gen-advance below; in the covered
+    // region they're briefly stale until the next full rebuild (acceptable; refine later).
+    const bool panOnly = ( sigNoEdit == lastNoEdit ) && !covered && s_rt;
     const bool incPan  = TerrainPanStripEnabled( ) && panOnly &&
                          abs( dX ) < rtW - 8 && abs( dY ) < rtH - 8;
+    // Texture-space scroll = the pan delta (captured before dX/dY are zeroed at re-center):
+    // a world hex drawn at window (Tx + dX - kMarginPx) must, after re-centering to dX'=0,
+    // draw at the same window pos with new texture-local Tx' = Tx + dX. So content shifts +dX.
+    const int shiftX = dX, shiftY = dY;
     if ( incPan ) Perf::CounterAdd( "rebuild.incpan", 1 );
 
     // Build the mesh in TEXTURE space: positions are offset by +kMarginPx so the
@@ -874,13 +897,70 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
 
     if ( needRebuild )
     {
-    Perf::ScopeCounter _cr( "t.rebuild" );   // full mesh rebuild (O visible hexes)
-    s_sig = sig; dX = dY = 0;   // rebuilt at the current view → zero pan
+    Perf::ScopeCounter _cr( incPan ? "t.incpan" : "t.rebuild" );   // mesh (re)build cost
+    s_sig = sig; dX = dY = 0;   // (re)built at the current view → zero pan
     s_builtEditGen = g_enTerrainEditGen;   // this mesh now reflects all edits so far
     { std::lock_guard<std::mutex> lk( g_enEditMutex ); g_enEditedHexes.clear( ); }   // rebuild absorbs all pending edits
+    if ( incPan )
+    {
+        // --- INCREMENTAL PAN: scroll the two texture-accumulated layers (terrain + slope
+        // shade) by the pan delta into ping-pong scratch, then swap. Old content is kept;
+        // only the newly-revealed strip is re-meshed below (loop skips covered hexes). ---
+        auto shiftTex = [&]( SDL_Texture*& tex, SDL_Texture*& scratch,
+                             Uint8 cr, Uint8 cg, Uint8 cb, Uint8 ca, bool linear ) {
+            if ( !scratch )
+            {
+                scratch = SDL_CreateTexture( r, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET, rtW, rtH );
+                if ( scratch ) { SDL_SetTextureBlendMode( scratch, linear ? SDL_BLENDMODE_NONE : SDL_BLENDMODE_BLEND );
+                                 if ( linear ) SDL_SetTextureScaleMode( scratch, SDL_ScaleModeLinear ); }
+            }
+            if ( !scratch ) return;
+            SDL_SetRenderTarget( r, scratch );
+            SDL_RenderSetViewport( r, nullptr );
+            SDL_SetRenderDrawColor( r, cr, cg, cb, ca );
+            SDL_SetRenderDrawBlendMode( r, SDL_BLENDMODE_NONE );
+            SDL_RenderClear( r );
+            SDL_Rect dst = { shiftX, shiftY, rtW, rtH };   // old content slides by the pan delta
+            SDL_RenderCopy( r, tex, nullptr, &dst );
+            std::swap( tex, scratch );
+        };
+        SDL_Texture* _pt = SDL_GetRenderTarget( r ); SDL_Rect _vp; SDL_RenderGetViewport( r, &_vp );
+        shiftTex( s_rt,      s_rtB,    0,   0,   0,   0,   false );  // terrain: transparent fill
+        shiftTex( s_shadeRT, s_shadeB, 255, 255, 255, 255, true  );  // shade: white = no darkening
+        SDL_SetRenderTarget( r, _pt ); SDL_RenderSetViewport( r, &_vp );
+
+        // Compact the PERSISTENT per-hex lists (fog + water): shift each entry's positions by
+        // the pan delta and DROP entries that scrolled fully off-texture (clipped → dead). The
+        // loop appends the strip's new hexes below; a full rebuild later compacts any residue.
+        auto onTex = [&]( float x, float y ) { return x >= 0 && x < rtW && y >= 0 && y < rtH; };
+        { size_t w = 0, n = s_fogHex.size( );                       // fog: 6 verts + 1 CHex* per hex
+          for ( size_t i = 0; i < n; ++i ) {
+              SDL_Vertex* v = &s_fogVerts[i*6]; bool keep = false;
+              for ( int k = 0; k < 6; ++k ) { v[k].position.x += shiftX; v[k].position.y += shiftY;
+                                              if ( onTex( v[k].position.x, v[k].position.y ) ) keep = true; }
+              if ( keep ) { if ( w != i ) { s_fogHex[w] = s_fogHex[i]; for ( int k = 0; k < 6; ++k ) s_fogVerts[w*6+k] = s_fogVerts[i*6+k]; } ++w; } }
+          s_fogHex.resize( w ); s_fogVerts.resize( w*6 ); }
+        { size_t w = 0, n = s_waterHex.size( );                     // water diamonds: parallel arrays
+          for ( size_t i = 0; i < n; ++i ) {
+              CPoint* p = &s_waterPos[i*4]; bool keep = false;
+              for ( int k = 0; k < 4; ++k ) { p[k].x += shiftX; p[k].y += shiftY; if ( onTex( (float)p[k].x, (float)p[k].y ) ) keep = true; }
+              if ( keep ) { if ( w != i ) { s_waterHex[w] = s_waterHex[i]; s_waterAnimOf[w] = s_waterAnimOf[i]; for ( int k = 0; k < 4; ++k ) s_waterPos[w*4+k] = s_waterPos[i*4+k]; } ++w; } }
+          s_waterHex.resize( w ); s_waterAnimOf.resize( w ); s_waterPos.resize( w*4 ); }
+        { size_t w = 0, n = s_waterBlend.size( );                   // water blend bands
+          for ( size_t i = 0; i < n; ++i ) {
+              WaterBlendBand& b = s_waterBlend[i]; bool keep = false;
+              for ( int k = 0; k < 4; ++k ) { b.p[k].x += shiftX; b.p[k].y += shiftY; if ( onTex( (float)b.p[k].x, (float)b.p[k].y ) ) keep = true; }
+              if ( keep ) { if ( w != i ) s_waterBlend[w] = b; ++w; } }
+          s_waterBlend.resize( w ); }
+        s_shadeVerts.clear(); s_fogNbr.clear();   // shade is re-emitted strip-only; fog nbrs recomputed
+        // s_fogVerts/s_fogHex/s_water*/s_waterAnims kept (compacted above); strip appends to them.
+    }
+    else
+    {
     s_fogVerts.clear(); s_fogHex.clear(); s_fogNbr.clear(); s_fogVis.clear(); s_shadeVerts.clear();
     s_waterHex.clear(); s_waterPos.clear(); s_waterBlend.clear();
     s_waterAnimOf.clear(); s_waterAnims.clear();
+    }
     // (type<<8|variant) -> index into s_waterAnims for THIS rebuild; resolves each
     // water animation's frame textures once (string build + hash lookup happens here,
     // ~19 groups, not per-hex-per-frame).
@@ -902,6 +982,34 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
         int idx = (int)s_waterAnims.size( );
         s_waterAnims.push_back( wa );
         waterAnimKey[key] = idx;
+        return idx;
+    };
+
+    // Coastline anim resolver — same WaterAnim table, but the shore is DIRECTIONAL
+    // (per-hex facing index F 0-38) so it can't be keyed on (type,variant) like open
+    // water. The camera dir is fixed for the whole rebuild, so key on F alone and bake
+    // the 8 foam frames (a-h) for that orientation. Mirrors TileForHex's coastline arm
+    // (kCoastSrcDir / kCoastRot / viewDir = kCoastRot[F] - cameraDir). Entries land in
+    // the SAME s_waterAnims vector, so the per-tick bake animates them like the sea.
+    std::unordered_map<int,int> coastAnimKey;
+    auto resolveCoastAnim = [&]( int F ) -> int {
+        if ( F < 0 || F > 38 ) F = 0;
+        auto it = coastAnimKey.find( F );
+        if ( it != coastAnimKey.end( ) ) return it->second;
+        WaterAnim wa; wa.nFrames = 8;
+        int srcDir  = kCoastSrcDir[F];
+        int viewDir = ( ( kCoastRot[F] - ( aa.m_iDir & 3 ) ) % 4 + 4 ) % 4;
+        for ( int f = 0; f < 8; ++f )
+        {
+            char fr = (char)( 'a' + f );
+            std::string stem = std::string( kDirPrefix[viewDir] ) + "00" + fr + "000";
+            const Tile* t = Get( "coastline", srcDir, stem );
+            if ( !t ) t = Get( "coastline", srcDir, std::string( kDirPrefix[viewDir] ) + "00a000" );
+            wa.frame[f] = t;
+        }
+        int idx = (int)s_waterAnims.size( );
+        s_waterAnims.push_back( wa );
+        coastAnimKey[F] = idx;
         return idx;
     };
 
@@ -935,8 +1043,20 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
     // TRANSPARENT clear: open water is left as holes here and filled by the live water
     // layer UNDER this texture at composite time. The torus map covers the whole
     // viewport+margin, so no visible area is left uncovered by terrain+water.
-    SDL_SetRenderDrawColor( r, 0, 0, 0, 0 );
-    SDL_RenderClear( r );
+    // INCREMENTAL PAN: do NOT clear — s_rt already holds the scrolled old content; the strip
+    // draws onto it. Compute the still-COVERED texture rect (where the shifted old content
+    // landed) so the per-hex loop can skip hexes fully inside it (only the strip re-meshes).
+    int covX0 = 0, covX1 = rtW, covY0 = 0, covY1 = rtH;
+    if ( incPan )
+    {
+        covX0 = __max( 0, shiftX ); covX1 = rtW + __min( 0, shiftX );
+        covY0 = __max( 0, shiftY ); covY1 = rtH + __min( 0, shiftY );
+    }
+    else
+    {
+        SDL_SetRenderDrawColor( r, 0, 0, 0, 0 );
+        SDL_RenderClear( r );
+    }
 
     // Terrain is drawn ROW BY ROW, back-to-front, so a tall tile's altitude-raised
     // diamond correctly occludes the lower tiles in rows behind it (global texture
@@ -1021,6 +1141,10 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
                 minY = __min( minY, pts[i].y ); maxY = __max( maxY, pts[i].y );
             }
             if ( maxX < 0 || minX > rtW || maxY < 0 || minY > rtH )
+                continue;
+            // INCREMENTAL PAN: skip hexes whose footprint is fully inside the still-covered
+            // region (the scrolled old content already has them) — only the strip re-meshes.
+            if ( incPan && minX >= covX0 && maxX <= covX1 && minY >= covY0 && maxY <= covY1 )
                 continue;
             rowAny = true;
             ++_hexCnt;   // PROFILE: hexes actually emitted this rebuild
@@ -1108,11 +1232,13 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
             // step, and lets fog re-sample without rebuilding the terrain texture.
             SDL_Color white = { 255, 255, 255, 255 };
             vL.color = white; vT.color = white; vR.color = white; vB.color = white;
-            // Open water is NOT baked into the cached texture — it's left as a
-            // transparent HOLE and filled by the live animated water layer UNDER this
-            // texture (composite below). That keeps all water on one shared wave frame
-            // (synced) while land in front still occludes it. Land/coast ARE baked.
-            if ( !IsOpenWater( type ) )
+            // Animated water (open sea AND the coastline shore) is NOT baked into the
+            // cached texture — it's left as a transparent HOLE and filled by the live
+            // wave layer UNDER this texture (composite below). That keeps all water on
+            // one shared wave frame (synced) while land in front still occludes it, and
+            // — for the shore — lets its foam cycle instead of freezing at the frame the
+            // last mesh rebuild happened to capture. Land IS baked.
+            if ( !IsAnimatedTile( type ) )
             {
                 vb.push_back( vL ); vb.push_back( vT ); vb.push_back( vB );
                 vb.push_back( vT ); vb.push_back( vR ); vb.push_back( vB );
@@ -1168,6 +1294,22 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
                     wbnd.p[3] = CPoint( (int)i1x, (int)i1y );  wbnd.uv[3] = { u1.x + kBandW*(0.5f-u1.x), u1.y + kBandW*(0.5f-u1.y) };
                     s_waterBlend.push_back( wbnd );
                 }
+                QueryPerformanceCounter( &_pb ); _accWater += _pb.QuadPart - _pa.QuadPart;
+            }
+
+            // Capture the COASTLINE shore for the live layer too (so its foam animates).
+            // Reuses the open-water diamond machinery — same parallel arrays, same fixed
+            // diamond UVs in the geometry build — but resolves a DIRECTIONAL coast anim
+            // (keyed on the hex facing F). No water<->water blend band: the shore's
+            // softening into land/sea is the FEATHER pass below (which still runs for
+            // coastline, baking thin neighbour slivers into s_rt OVER this hole).
+            if ( type == CHex::coastline )
+            {
+                QueryPerformanceCounter( &_pa );
+                s_waterHex.push_back( phex );
+                s_waterPos.push_back( pts[0] ); s_waterPos.push_back( pts[1] );
+                s_waterPos.push_back( pts[2] ); s_waterPos.push_back( pts[3] );
+                s_waterAnimOf.push_back( resolveCoastAnim( psprite->GetIndex( ) ) );
                 QueryPerformanceCounter( &_pb ); _accWater += _pb.QuadPart - _pa.QuadPart;
             }
 
@@ -1270,17 +1412,24 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
                     int ntype = ns ? ns->GetID( ) : -1;
                     if ( !Featherable( ntype ) )
                         continue;
-                    // FEATHER_OUT coordination: a non-coastline tile does NOT feather
-                    // toward a coastline neighbour — the coastline tile feathers itself
-                    // into us (FEATHER_IN), so doing it from this side too would double
-                    // the band at the shore seam.
-                    if ( ntype == CHex::coastline && type != CHex::coastline )
-                        continue;
-                    // Only the coastline tile may pull OPEN water in (shore→sea blend);
-                    // a land tile pulling ocean read as a smear, and water-as-receiver
-                    // gets wiped by the wave re-draw.
-                    if ( IsOpenWater( ntype ) && type != CHex::coastline )
-                        continue;
+                    // Coast feather split — mirrors the original (terrain.cpp:2499):
+                    //  - The COASTLINE tile feathers ONLY toward OPEN WATER (its water side),
+                    //    baked over the opaque animated coast in s_waterRT. It does NOT pull
+                    //    LAND onto itself: a coast tile is HALF WATER, so a land band insetting
+                    //    to its centre crosses the water half — and at a CONCAVE corner two such
+                    //    bands overlap there as a grass wedge over the sea (the inside-corner bug).
+                    //  - The shore<->land seam is instead softened from the LAND side (the
+                    //    original's FEATHER_OUT): a non-coast tile DOES feather toward a coast
+                    //    neighbour, its band sitting on an ALL-LAND tile (s_rt) where it can
+                    //    never cross water. The high-alpha edge samples the coast's land-facing
+                    //    pixels; the faded inner end (toward the coast centre = water) is ~invisible.
+                    if ( type == CHex::coastline )
+                    {
+                        if ( !IsOpenWater( ntype ) )
+                            continue;                       // coast: water side only
+                    }
+                    else if ( IsOpenWater( ntype ) )
+                        continue;                           // land never pulls open water (smear)
                     const Tile* ntile = cachedTile( pn );   // memoized (computed once per hex/rebuild)
                     if ( !ntile || !ntile->tex[zoom] || ntile == tile ) continue;
 
@@ -1298,15 +1447,33 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
                     SDL_FPoint iu0 = { u0.x + kBand*(0.5f-u0.x), u0.y + kBand*(0.5f-u0.y) };
                     SDL_FPoint iu1 = { u1.x + kBand*(0.5f-u1.x), u1.y + kBand*(0.5f-u1.y) };
 
-                    SDL_Vertex e0, e1, n0, n1;   // band quad = 2 tris
-                    e0.position = { (float)pts[c0].x, (float)pts[c0].y }; e0.tex_coord = u0;  e0.color = { g0, g0, g0, kFeatherA };
-                    e1.position = { (float)pts[c1].x, (float)pts[c1].y }; e1.tex_coord = u1;  e1.color = { g1, g1, g1, kFeatherA };
-                    n0.position = { i0x, i0y };                          n0.tex_coord = iu0; n0.color = { g0, g0, g0, 0 };
-                    n1.position = { i1x, i1y };                          n1.tex_coord = iu1; n1.color = { g1, g1, g1, 0 };
+                    // The SHORE's water-side feather rides the WATER layer (it bakes into
+                    // s_waterRT, over the opaque animated coast) — NOT s_rt, whose coast holes
+                    // are transparent-black and would darken this partial-alpha band into a
+                    // black fringe. Reuses the water-blend-band path so it blends with the LIVE
+                    // sea frame. The land side is handled by the non-coast branch below.
+                    if ( type == CHex::coastline )
+                    {
+                        WaterBlendBand cb;
+                        cb.animIdx = resolveWaterAnim( ntype, ns->GetIndex( ) );   // ntype is open water here
+                        cb.p[0] = pts[c0];                       cb.uv[0] = u0;
+                        cb.p[1] = pts[c1];                       cb.uv[1] = u1;
+                        cb.p[2] = CPoint( (int)i0x, (int)i0y );  cb.uv[2] = iu0;
+                        cb.p[3] = CPoint( (int)i1x, (int)i1y );  cb.uv[3] = iu1;
+                        s_waterBlend.push_back( cb );
+                    }
+                    else
+                    {
+                        SDL_Vertex e0, e1, n0, n1;   // band quad = 2 tris
+                        e0.position = { (float)pts[c0].x, (float)pts[c0].y }; e0.tex_coord = u0;  e0.color = { g0, g0, g0, kFeatherA };
+                        e1.position = { (float)pts[c1].x, (float)pts[c1].y }; e1.tex_coord = u1;  e1.color = { g1, g1, g1, kFeatherA };
+                        n0.position = { i0x, i0y };                          n0.tex_coord = iu0; n0.color = { g0, g0, g0, 0 };
+                        n1.position = { i1x, i1y };                          n1.tex_coord = iu1; n1.color = { g1, g1, g1, 0 };
 
-                    std::vector<SDL_Vertex>& fvb = rowFeather[ntile->tex[zoom]];   // batched within this row
-                    fvb.push_back( e0 ); fvb.push_back( e1 ); fvb.push_back( n1 );
-                    fvb.push_back( e0 ); fvb.push_back( n1 ); fvb.push_back( n0 );
+                        std::vector<SDL_Vertex>& fvb = rowFeather[ntile->tex[zoom]];   // batched within this row
+                        fvb.push_back( e0 ); fvb.push_back( e1 ); fvb.push_back( n1 );
+                        fvb.push_back( e0 ); fvb.push_back( n1 ); fvb.push_back( n0 );
+                    }
                 }
             }
             QueryPerformanceCounter( &_pb ); _accFeath += _pb.QuadPart - _pa.QuadPart;
@@ -1378,8 +1545,13 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
     // diamonds don't multiply-darken.
     SDL_SetRenderTarget( r, s_shadeRT );
     SDL_RenderSetViewport( r, nullptr );
-    SDL_SetRenderDrawColor( r, 255, 255, 255, 255 );
-    SDL_RenderClear( r );
+    // INCREMENTAL PAN: s_shadeRT already holds the scrolled old shade (white = no darkening
+    // in the newly-exposed strip), so don't clear — just draw the strip's shade onto it.
+    if ( !incPan )
+    {
+        SDL_SetRenderDrawColor( r, 255, 255, 255, 255 );
+        SDL_RenderClear( r );
+    }
     SDL_SetRenderDrawBlendMode( r, SDL_BLENDMODE_NONE );
     if ( !s_shadeVerts.empty( ) )
         SDL_RenderGeometry( r, nullptr, s_shadeVerts.data( ), (int)s_shadeVerts.size( ), nullptr, 0 );
