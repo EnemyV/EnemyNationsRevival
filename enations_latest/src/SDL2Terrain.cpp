@@ -930,6 +930,7 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
     DWORD _gt = GetTickCount( );   // MEASURE: rebuild sub-phases (coarse ms → µs)
     LARGE_INTEGER _qpf; QueryPerformanceFrequency( &_qpf );   // PROFILE: per-hex phase split
     long long _accProj = 0, _accFeath = 0; LARGE_INTEGER _pa, _pb;
+    int _hexCnt = 0;   // PROFILE: count of hexes emitted (margin/zoom hex-count vs per-hex cost)
     for ( int y = iTopY;; ++y )
     {
         bool rowAny = false;
@@ -962,10 +963,7 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
             if ( maxX < 0 || minX > rtW || maxY < 0 || minY > rtH )
                 continue;
             rowAny = true;
-
-            // World-corner altitudes for slope shading (only for kept hexes now).
-            CMapLoc3D c3d[4];
-            hexcoord.GetWorldHex( c3d );
+            ++_hexCnt;   // PROFILE: hexes actually emitted this rebuild
 
             CTerrainSprite* psprite = phex->GetSprite( );
             int             type    = psprite ? psprite->GetID( ) : -1;
@@ -981,9 +979,14 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
 
             // T4 slope shading: shaded land gets per-triangle slope brightness;
             // water/coast stay full colour. T6 fog is applied per-vertex below.
+            // GetWorldHex (4 fixed-point corner altitudes) is only needed for the
+            // shade math, so fetch it lazily here — skips it for the ~27k unshaded
+            // water/coast hexes at full zoom-out (was called unconditionally).
             float bL = 1.0f, bR = 1.0f;
             if ( tile->shade )
             {
+                CMapLoc3D c3d[4];
+                hexcoord.GetWorldHex( c3d );
                 int z0 = c3d[0].m_fixZ.Round(), z1 = c3d[1].m_fixZ.Round();
                 int z2 = c3d[2].m_fixZ.Round(), z3 = c3d[3].m_fixZ.Round();
                 bL = TriBrightness( z0, z1, z2, z3, true );
@@ -1247,6 +1250,7 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
     Perf::CounterAdd( "reb.loop", (int)( ( GetTickCount( ) - _gt ) * 1000 ) ); _gt = GetTickCount( );
     Perf::CounterAdd( "rb.proj", (int)( _accProj * 1000000 / _qpf.QuadPart ) );      // PROFILE
     Perf::CounterAdd( "rb.feather", (int)( _accFeath * 1000000 / _qpf.QuadPart ) );  // PROFILE
+    Perf::CounterAdd( "rb.hexes", _hexCnt );                                         // PROFILE
 
     // Precompute each fog hex's 8 neighbour indices (once, here), so the throttled
     // fog re-sample is 1 visibility read/hex + array lookups instead of 9 hashed
