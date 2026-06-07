@@ -424,7 +424,13 @@ bool SDL2Compositor::RouteEventInner(SDL_Event& event) {
                         p->SetDirty();  // force a repaint of the detached window
                     }
                     else if (event.window.event == SDL_WINDOWEVENT_CLOSE) {
-                        p->Attach();  // re-dock on close
+                        // HIDE the view (don't re-dock, don't quit): the [X] just puts
+                        // it away. It reopens from its toolbar button / status bar, which
+                        // already call SetVisible(true) (GotoArea / GotoWorld /
+                        // ToggleUnitListPanel). Hiding keeps the detached window + its GPU
+                        // renderer alive, so reopening is instant and intact — whereas
+                        // Attach() destroyed the window+renderer and left a broken facade.
+                        p->SetVisible(false);
                     }
                     return true;
                 }

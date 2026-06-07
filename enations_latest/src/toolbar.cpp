@@ -842,10 +842,34 @@ static void ToggleUnitListPanel(SDL2UnitList*& pList, SDL2UnitList::ListType typ
     int screenW = theApp.m_gameWindow->GetWidth();
     int screenH = theApp.m_gameWindow->GetHeight();
     int panelW = 340, panelH = 400;
-    int panelX = (type == SDL2UnitList::VEHICLES) ? screenW - panelW - 10 : screenW - panelW * 2 - 20;
-    int panelY = SDL2Panel::TITLE_BAR_HT + 10;
 
-    SDL2Panel* panel = theApp.m_gameWindow->GetCompositor()->AddPanel(
+    // Default position: tuck UNDER the Radar / World-Map window — there's empty
+    // space there. The old top-right spot sat behind the (much larger) Area Map.
+    // The radar panel is "radar" once the player has a command center, else the
+    // World Map is "world". Stack Buildings below Vehicles so both stay visible.
+    SDL2Compositor* comp = theApp.m_gameWindow->GetCompositor();
+    SDL2Panel* refPanel = comp->FindPanel("radar");
+    if (!refPanel) refPanel = comp->FindPanel("world");
+    int panelX, panelY;
+    if (refPanel) {
+        const int tbH = SDL2Panel::TITLE_BAR_HT;
+        panelX = refPanel->GetX();
+        panelY = refPanel->GetY() + refPanel->GetHeight() + tbH + 8;  // below the radar (+ this list's title bar)
+        if (type == SDL2UnitList::BUILDINGS)
+            panelY += panelH + tbH + 8;                              // below the Vehicles list
+    } else {
+        // Fallback to the previous top-right placement if the radar isn't up yet.
+        panelX = (type == SDL2UnitList::VEHICLES) ? screenW - panelW - 10 : screenW - panelW * 2 - 20;
+        panelY = SDL2Panel::TITLE_BAR_HT + 10;
+    }
+    // Keep the panel on-screen.
+    if (panelX < SDL2Panel::RESIZE_BORDER)               panelX = SDL2Panel::RESIZE_BORDER;
+    if (panelX + panelW > screenW)                       panelX = screenW - panelW - 10;
+    if (panelY < SDL2Panel::TITLE_BAR_HT + SDL2Panel::RESIZE_BORDER)
+                                                         panelY = SDL2Panel::TITLE_BAR_HT + SDL2Panel::RESIZE_BORDER;
+    if (panelY + panelH > screenH)                       panelY = screenH - panelH - 10;
+
+    SDL2Panel* panel = comp->AddPanel(
         name, panelX, panelY, panelW, panelH, 25);
     panel->SetMovable(true);
     panel->SetResizable(true);
