@@ -33,6 +33,9 @@ extern bool g_enSpriteSplitPass;
 // CExplData::m_iTrailType; smoke trails are a future addition.)
 bool g_enProjTrails = true;
 
+// Master on/off for rotating projectiles to face their travel direction (GPU path).
+bool g_enProjRotate = true;
+
 
 #ifdef _DEBUG
 #undef THIS_FILE
@@ -100,7 +103,42 @@ CRect CProjectile::Draw( const CHexCoord &hexcoord )
 {
     ASSERT_STRICT_VALID (this);
 
+    // Rotate the bullet to face its travel direction (GPU split path only). The angle is
+    // computed in SCREEN space (projecting one step ahead), so the isometric view rotation
+    // is handled automatically. Skipped for directional-frame art (has_dir) and stationary
+    // projectiles; published to the sprite capture, then reset right after the draw.
+    bool bRot = false;
+    if ( g_enProjRotate && g_enSpriteSplitPass && SDL2Sprites::Enabled () &&
+         ( ( m_xAdd != 0 ) || ( m_yAdd != 0 ) ) &&
+         ( ( m_pEd == NULL ) || ! ( m_pEd->m_iFlags & CExplData::has_dir ) ) )
+        {
+        CMapLoc3D	p0( GetMapLoc().x,          GetMapLoc().y,          GetAlt() );
+        CMapLoc3D	p1( GetMapLoc().x + m_xAdd, GetMapLoc().y + m_yAdd, GetAlt() );
+        CPoint		s0( xpanimatr->WorldToWindow( xpanimatr->WorldToCenterWorld( p0 ) ) );
+        CPoint		s1( xpanimatr->WorldToWindow( xpanimatr->WorldToCenterWorld( p1 ) ) );
+        double		fx = s1.x - s0.x, fy = s1.y - s0.y;
+        double		len = sqrt( fx * fx + fy * fy );
+        if ( ( len > 0.5 ) && ( len < 256.0 ) )    // skip a torus-wrapped (bogus) step
+            {
+            // The bullet art is a horizontal streak (faces +x / "right"), so the
+            // travel-direction angle from atan2 aligns it directly — no offset. The
+            // previous +90deg ("faces up") rotated bullets perpendicular to travel.
+            const double PROJ_ART_OFFSET = 0.0;
+            SDL2Sprites::SetCaptureRotation( (float) ( atan2( fy, fx ) + PROJ_ART_OFFSET ) );
+            bRot = true;
+            }
+        }
+
     CRect	rectBound = CProjBase::Draw( hexcoord );
+
+    if ( bRot )
+        {
+        SDL2Sprites::SetCaptureRotation( 0.0f );
+        // A rotated quad's corners reach ~0.21*maxdim past the axis-aligned bound — pad the
+        // dirty rect so the cached sprite layer doesn't smear the rotated tips.
+        int pad = (int) ( 0.22 * __max( rectBound.Width(), rectBound.Height() ) ) + 1;
+        rectBound.InflateRect( pad, pad );
+        }
 
     xpanimatr->GetDirtyRects()->AddRect( &rectBound, CDirtyRects::RECT_LIST::LIST_PAINT_BOTH );
 
@@ -231,11 +269,17 @@ void CProjectile::EmitTrail ()
     if ( dLen < 1.0 )
         return;   // just launched — nothing to draw yet
 
+    // The trail draws additively OVER the sprite layer, so start it a small gap BEHIND the
+    // bullet (along the backward travel dir) — leaves the projectile sprite visible in front
+    // instead of buried under the bright head. (ddx,ddy)/len is the unit backward direction.
+    double	ux  = ddx / len, uy = ddy / len;
+    double	gap = (double) __max( 3, 8 >> xiZoom );
+
     CPoint	ul( xpanimatr->GetUL() );
-    float	hx = (float) ( ptHead.x + ul.x );
-    float	hy = (float) ( ptHead.y + ul.y );
-    float	tx = (float) ( ptHead.x + ( ddx / len ) * dLen + ul.x );
-    float	ty = (float) ( ptHead.y + ( ddy / len ) * dLen + ul.y );
+    float	hx = (float) ( ptHead.x + ux * gap + ul.x );
+    float	hy = (float) ( ptHead.y + uy * gap + ul.y );
+    float	tx = (float) ( ptHead.x + ux * ( gap + dLen ) + ul.x );
+    float	ty = (float) ( ptHead.y + uy * ( gap + dLen ) + ul.y );
 
     SDL2Sprites::CaptureTrail( hx, hy, tx, ty, (float) dHalfW, cr, cg, cb, aHead );
 }
@@ -316,7 +360,7 @@ CProjectile::CProjectile (CUnit const * pUnit, CMapLoc const & mlEnd, DWORD dwTa
     m_iStepMod = 0;
 
     // set the direction
-    if ( (m_pEd != NULL) && (m_pEd->m_iFlags && CExplData::has_dir) )
+    if ( (m_pEd != NULL) && (m_pEd->m_iFlags & CExplData::has_dir) )   // was '&&' (latent bug)
         {
         PauseAnimations ( TRUE );
         SetFrame ( CSpriteView::ANIM_FRONT_1, ( ( FastATan ( x, y ) + 8 ) / 16 - 1 ) & 0x07 );
@@ -1343,6 +1387,8 @@ void CUnit::Shoot (CUnit * pUnit, int iLOS)
     // get where it hits based on:
     //   turret/veh direction (vehicle only)
     //   accuracy
+    // (GetWorldPixels() is already the building footprint centre — see
+    // CBuilding::AssignToHex — so no special-casing is needed here.)
     CMapLoc mlTarget = pUnit->GetWorldPixels ();
 
     // now accuracy enters the picture

@@ -39,6 +39,7 @@ static char BASED_CODE THIS_FILE[] = __FILE__;
 #define new DEBUG_NEW
 
 extern bool g_enSpriteSplitPass;   // GPU split: terrain is on the mesh, sprites on the atlas
+extern int  g_enSprIsStruct;       // 1=structure (sorts UNDER), 0=mobile/effect layer (on top)
 
 //------------------------------ I s o m e t r i c I n i t ------------------
 
@@ -1829,6 +1830,16 @@ CRect CBuilding::Draw( const CHexCoord& hexcoord )
             }
         }
 
+        // Flag + smoke/flame are ON-TOP effects, not part of the structure. In the GPU
+        // sprite path the building captures with g_enSprIsStruct=1 (structures sort UNDER
+        // the mobile/effect layer at a tie). Flip to the effect layer (0) for the duration
+        // so the flag and damage smoke sort ON TOP of the building's own structure pieces
+        // — including the foreground piece of a two-piece building (bunker) where they'd
+        // otherwise z-fight behind it. They keep the building's center z-key (set by the
+        // caller), so they sort at the building's depth. Restore afterward.
+        int iSavedIsStruct = g_enSprIsStruct;
+        g_enSprIsStruct    = 0;
+
         // Flag
 
         if ( GetFlag( ) )
@@ -1850,6 +1861,8 @@ CRect CBuilding::Draw( const CHexCoord& hexcoord )
 
         if ( GetDamageDisplay( ) )
             GetDamageDisplay( )->Draw( *pspriteviewBldg, drawparms );  // Self-invalidating
+
+        g_enSprIsStruct = iSavedIsStruct;
 
         if ( CDrawParms::IsInvalidateMode( ) && IsInvalidated( ) )
             xpanimatr->GetDirtyRects( )->AddRect( &rect );
