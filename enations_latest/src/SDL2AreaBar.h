@@ -50,6 +50,7 @@ private:
         bool pressed;
         bool advancePos;  // true = move to next column after this button
         std::string label;
+        std::string helpText;   // IDH_* flyby help (shown in the bottom-right status line on hover)
     };
     BtnState m_btns[NUM_BUTTONS];
 
@@ -59,6 +60,7 @@ private:
     int m_totalW = 0;
 
     int m_pressedBtn = -1;
+    int m_hoverBtn = -1;   // index under the cursor (flyby-help debounce; -1 = none)
 
     std::string m_fontPath;
     std::unordered_map<int, TTF_Font*> m_fontCache;

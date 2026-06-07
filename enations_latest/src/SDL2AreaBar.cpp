@@ -12,6 +12,8 @@
 #include "bmbutton.h"
 #include "icons.h"
 #include "sfx.h"        // theMusicPlayer, SOUNDS, SFXPRIORITY (button click sound)
+#include "EnSettings.h" // EnLoadStdString (load the IDH_* flyby help strings)
+#include "resource.h"   // IDH_AREA_* / IDH_UNIT_* help-string IDs
 
 #include <SDL.h>
 
@@ -42,6 +44,26 @@ static const char* s_labels[17] = {
     "Stop", "Resume", "Build", "Cancel Build",
     "Route", "Unload", "Retreat", "Road", "Cancel Road",
     "Repair", "Cancel Repair"
+};
+
+// IDH_* flyby help-string IDs (from area.cpp abHelp[], same button order) — the
+// sentence-length descriptions the original showed in the status line on hover.
+static const int s_helpID[17] = {
+    IDH_AREA_COMBAT, IDH_AREA_CLOCK, IDH_AREA_COUNTER, IDH_AREA_ZOOM_IN, IDH_AREA_ZOOM_OUT, IDH_AREA_RES,
+    IDH_UNIT_STOP, IDH_UNIT_RESUME, IDH_UNIT_BUILD, IDH_UNIT_CANCEL_BUILD,
+    IDH_UNIT_ROUTE, IDH_UNIT_UNLOAD, IDH_UNIT_RETREAT, IDH_UNIT_ROAD, IDH_UNIT_CANCEL_ROAD,
+    IDH_UNIT_REPAIR, IDH_UNIT_CANCEL
+};
+
+// Keyboard shortcuts (same button order) — from the original area-map accelerator
+// table (IDA_OPPO/BUILD/ROUTE/UNLOAD/RETREAT, enlang17.rc) and the live key handler
+// in area.cpp's SDL callback (O/B/R/U/X). Shown in the help text like the main toolbar
+// does ("(Ctrl+A)  ..."). Empty = the command has no accelerator (zoom/rotate/etc.).
+static const char* s_shortcut[17] = {
+    "O", "", "", "+", "-", "",   // Last Combat, Rotate CW/CCW, Zoom In(+), Zoom Out(-), Resources
+    "", "", "B", "",             // Stop, Resume, Build, Cancel Build
+    "R", "U", "X", "", "",       // Route, Unload, Retreat, Road, Cancel Road
+    "", ""                       // Repair, Cancel Repair
 };
 
 SDL2AreaBar::SDL2AreaBar() {
@@ -102,6 +124,17 @@ void SDL2AreaBar::Init(SDL2Panel* panel, CWndArea* pArea, HWND hStaticWnd) {
             x += m_btnW + AREA_BTN_X_SKIP;
     }
     m_totalW = x;
+
+    // Load the flyby help strings now that the string table is available (in-game).
+    // These are the same IDH_* descriptions the original CMyButton showed on hover,
+    // prefixed with the keyboard shortcut like the main toolbar ("(B)  Build ...").
+    for (int i = 0; i < NUM_BUTTONS; i++) {
+        std::string h = EnLoadStdString(s_helpID[i]);
+        if (h.empty()) h = m_btns[i].label;
+        if (s_shortcut[i][0])
+            h = std::string("(") + s_shortcut[i] + ")  " + h;
+        m_btns[i].helpText = h;
+    }
 }
 
 void SDL2AreaBar::UpdateButtons() {
@@ -320,9 +353,24 @@ bool SDL2AreaBar::HandleEvent(SDL_Event& event, int localX, int localY) {
         }
         return true;
 
-    case SDL_MOUSEMOTION:
+    case SDL_MOUSEMOTION: {
         ::SetCursor(::LoadCursor(NULL, IDC_ARROW));
+        // Flyby help: show the hovered button's help text in the bottom-right status
+        // line (line 1) — the same line the main toolbar buttons use. Mirrors the
+        // original CMyButton -> WM_BUTTONMOUSEMOVE -> SetStatusText(1, GetHelp()).
+        int hovered = -1;
+        for (int i = 0; i < NUM_BUTTONS; i++) {
+            if (!m_btns[i].visible) continue;
+            BtnPos& bp = m_btnPos[i];
+            if (localX >= bp.x && localX < bp.x + bp.w &&
+                localY >= bp.y && localY < bp.y + bp.h) { hovered = i; break; }
+        }
+        if (hovered != m_hoverBtn) {
+            m_hoverBtn = hovered;
+            theApp.m_wndBar.SetStatusText(1, hovered >= 0 ? m_btns[hovered].helpText.c_str() : "");
+        }
         return true;
+    }
     }
     return false;
 }

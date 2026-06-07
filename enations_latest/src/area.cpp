@@ -232,11 +232,11 @@ const int SEL_WIDTH = 2;
 static std::vector<CPoint> s_linePath;
 
 // Press-and-hold trigger for line movement (alternative to holding Alt): if the LMB
-// is held ~1/3s WITHOUT having started a drag, the next drag becomes a line-move; a
-// quicker drag (well under 1/2s) stays a selection box.
+// is held ~0.22s WITHOUT having started a drag, the next drag becomes a line-move; a
+// quicker drag stays a selection box.
 static DWORD s_lmbDownTime  = 0;      // GetTickCount at LMB-down
 static bool  s_draggedEarly = false;  // crossed the drag threshold before the hold time
-const  DWORD LINE_HOLD_MS   = 333;    // hold this long (stationary) to arm line-move
+const  DWORD LINE_HOLD_MS   = 222;    // hold this long (stationary) to arm line-move
 
 // Total pixel length of the polyline.
 static float LinePathLength( )
@@ -2653,7 +2653,13 @@ int CWndArea::OnCreate( LPCREATESTRUCT lpCreateStruct )
                     return true;
 
                 case SDL_KEYDOWN: {
-                    UINT vk = SDLKeyToVK(event.key.keysym.scancode);
+                    SDL_Scancode sc = event.key.keysym.scancode;
+                    // Zoom hotkeys (new binding — the original zoomed via the wheel only):
+                    // + / = zooms in, - zooms out, on both the main row and the numpad.
+                    if (sc == SDL_SCANCODE_EQUALS || sc == SDL_SCANCODE_KP_PLUS)  { pThis->ZoomIn();  return true; }
+                    if (sc == SDL_SCANCODE_MINUS  || sc == SDL_SCANCODE_KP_MINUS) { pThis->ZoomOut(); return true; }
+
+                    UINT vk = SDLKeyToVK(sc);
                     if (!vk) return false;
 
                     // Simulate MFC accelerator commands that arrow keys
