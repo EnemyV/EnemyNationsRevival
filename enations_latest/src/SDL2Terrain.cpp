@@ -72,8 +72,11 @@ void g_enEditHex( int x, int y )
 // Item 5 (incremental terrain patch) kill-switch — opt-in until verified, then default on.
 static bool TerrainPatchEnabled( )
 {
+    // Default ON: incrementally re-mesh only the few edited hexes instead of a full
+    // ~1.6s rebuild. Without this, AI road-building edits ~10-50 hexes/frame and each
+    // edit forces a whole-map rebuild → ~0.5fps zoomed out. Set EN_TPATCH=0 to disable.
     static int s_on = -1;
-    if ( s_on < 0 ) { const char* e = SDL_getenv( "EN_TPATCH" ); s_on = ( e && *e && *e != '0' ) ? 1 : 0; }
+    if ( s_on < 0 ) { const char* e = SDL_getenv( "EN_TPATCH" ); s_on = ( e && *e && *e == '0' ) ? 0 : 1; }
     return s_on != 0;
 }
 
@@ -421,12 +424,13 @@ const SDL2Terrain::Tile* SDL2Terrain::TileForHex( CHex* phex, int iDir )
         int F = psprite->GetIndex( );
         if ( F < 0 || F > 38 ) F = 0;
         int  srcDir  = kCoastSrcDir[F];
-        // NOTE: coast uses (iDir + rot), not (iDir - rot). The water-side of rot-1
-        // and rot-3 tiles came out 180° wrong (water poking into land on NE/SE
-        // shores) with the minus sign; plus agrees with minus for rot 0/2 (which
-        // were already correct) and flips 1/3. (Asymmetry vs roads: straight roads
-        // are 180°-symmetric so the sign was invisible there.)
-        int  viewDir = ( ( iDir + kCoastRot[F] ) % 4 + 4 ) % 4;
+        // The CAMERA term must SUBTRACT iDir (the camera rotates the world the
+        // opposite way the sprite view index advances). With (+iDir) the shore came
+        // out 180° wrong at camera dirs 1 and 3 (0/2 are self-symmetric under iDir
+        // negation, so they looked fine) — i.e. dirs 1 and 3 were swapped. Coastline
+        // is not 180°-symmetric (water on one side), so unlike straight roads the
+        // camera sign is visible. kCoastRot keeps its (+) sign (tile-rotation term).
+        int  viewDir = ( ( kCoastRot[F] - iDir ) % 4 + 4 ) % 4;
         char fr      = WaterFrameLetter( 8 );                       // animate foam
         std::string stem = std::string( kDirPrefix[viewDir] ) + "00" + fr + "000";
         const Tile* t = Get( "coastline", srcDir, stem );
@@ -757,6 +761,12 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
             dY = rp[0].y - s_refPx.y;
             covered = ( abs( dX ) <= kMarginPx && abs( dY ) <= kMarginPx );
         }
+        else
+            // Can't measure the pan (ref hex projected off-window / culled). Rebuilding every
+            // frame because of this is catastrophic (~1.6s each → 0.5fps). The view didn't
+            // change (sig is unchanged), so the cached texture is almost certainly still valid
+            // — assume covered and keep blitting rather than re-meshing in a loop.
+            covered = true;
     }
 
     // Edit-patch (Item 5): when only terrain EDITS changed (base unchanged, pan covered)
@@ -872,9 +882,12 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
         iTopY   -= kMarginPx / pxY + 2;
     }
 
-    // Reference hex (top-centre of the visible span) + its window-screen pos (NO
-    // texture offset — pan tracking is in window space).
-    s_refHex = CHexCoord( CViewHexCoord( ( ptTL.x + ptTR.x ) / 2, __min( ptTL.y, ptTR.y ) ), TRUE );
+    // Reference hex for pan tracking + its window-screen pos (NO texture offset — pan tracking
+    // is in window space). Use the hex at the WINDOW CENTRE, not the top of the visible span:
+    // the top hex's projection can land just above the window and get CULLED by MapToWindowHex
+    // (returns false), which left `covered` permanently false at far zoom-out → a full ~1.6s
+    // mesh rebuild EVERY frame (0.5fps). A centre hex always projects inside the window.
+    s_refHex = aa._WindowToHex( CPoint( ws.cx / 2, ws.cy / 2 ) );
     { CPoint rp[4]; if ( aa.MapToWindowHex( s_refHex, rp ) ) s_refPx = rp[0]; else s_refPx = CPoint( 0, 0 ); }
 
     // Redirect rendering into the texture (save/restore target + viewport).
@@ -915,6 +928,8 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
 
     bool seenContent = false;
     DWORD _gt = GetTickCount( );   // MEASURE: rebuild sub-phases (coarse ms → µs)
+    LARGE_INTEGER _qpf; QueryPerformanceFrequency( &_qpf );   // PROFILE: per-hex phase split
+    long long _accProj = 0, _accFeath = 0; LARGE_INTEGER _pa, _pb;
     for ( int y = iTopY;; ++y )
     {
         bool rowAny = false;
@@ -928,7 +943,9 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
             // Screen positions of the 4 diamond vertices in (L,T,R,B) order
             // (MapToWindowHex applies the per-m_iDir corner reorder).
             CPoint pts[4];
+            QueryPerformanceCounter( &_pa );
             aa.MapToWindowHex( hexcoord, pts );   // pts[0]=Left 1=Top 2=Right 3=Bottom
+            QueryPerformanceCounter( &_pb ); _accProj += _pb.QuadPart - _pa.QuadPart;
             pts[0].x += offX; pts[0].y += offY;   // window → texture space
             pts[1].x += offX; pts[1].y += offY;
             pts[2].x += offX; pts[2].y += offY;
@@ -1146,6 +1163,7 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
             // Open water itself stays a non-receiver (excluded below) for the same
             // wave-redraw reason. Feather runs at ALL zooms and only on a mesh REBUILD.
 
+            QueryPerformanceCounter( &_pa );
             if ( Featherable( type ) && !IsOpenWater( type ) )
             {
                 static const SDL_FPoint fuv[4] = { {0.f,0.5f}, {0.5f,0.f}, {1.f,0.5f}, {0.5f,1.f} };
@@ -1212,6 +1230,7 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
                     fvb.push_back( e0 ); fvb.push_back( n1 ); fvb.push_back( n0 );
                 }
             }
+            QueryPerformanceCounter( &_pb ); _accFeath += _pb.QuadPart - _pa.QuadPart;
         }
 
         drawRow();   // flush this row's base then feather batches (back-to-front)
@@ -1226,6 +1245,8 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
             break;  // hard safety bound (extra for the bottom pan margin)
     }
     Perf::CounterAdd( "reb.loop", (int)( ( GetTickCount( ) - _gt ) * 1000 ) ); _gt = GetTickCount( );
+    Perf::CounterAdd( "rb.proj", (int)( _accProj * 1000000 / _qpf.QuadPart ) );      // PROFILE
+    Perf::CounterAdd( "rb.feather", (int)( _accFeath * 1000000 / _qpf.QuadPart ) );  // PROFILE
 
     // Precompute each fog hex's 8 neighbour indices (once, here), so the throttled
     // fog re-sample is 1 visibility read/hex + array lookups instead of 9 hashed
