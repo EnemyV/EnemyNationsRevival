@@ -689,7 +689,16 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
     static unsigned  s_builtEditGen = 0;  // g_enTerrainEditGen baked into the current mesh
     static CHexCoord s_refHex;            // a fixed hex captured at build time
     static CPoint    s_refPx( 0, 0 );     // its window-screen pos at build time
-    const int kMarginPx = 256;            // texture extends this far beyond viewport
+    // Pan-buffer margin: the cached texture extends this far beyond the viewport so the
+    // view can pan within it before a re-mesh. Shrink it when zoomed way out — there the
+    // tiles are tiny (z3 = 16x8 px), so a fixed 256px margin is DOZENS of off-screen hexes
+    // of pure rebuild cost (the margin band inflated the hex count ~70% at max zoom), AND
+    // the whole map nearly fits on screen so there's little room to pan into the margin
+    // anyway. Keep the full buffer zoomed in, where panning ranges far and hex counts are
+    // low. Cuts ~25% of the hexes (hence ~25% off the rebuild) at z3 with negligible pan
+    // loss. zoom is clamped to [0,NUM_ZOOMS) at the top of Render.
+    static const int kMarginByZoom[NUM_ZOOMS] = { 256, 256, 176, 112 };
+    const int kMarginPx = kMarginByZoom[zoom];
 
     // Fog overlay geometry, built FREE during the terrain pass (positions only), then
     // re-coloured on a fast throttle WITHOUT rebuilding terrain — so fog tracks unit
