@@ -12,6 +12,7 @@
 #include "world.h"
 #include "lastplnt.h"
 #include "error.h"
+#include "Perf.h"   // radar render profiling + O(units) minimap
 #include "area.h"
 #include "icons.h"
 #include "bitmaps.h"
@@ -1675,6 +1676,7 @@ void CWndWorld::ReRender( )
     // only repaint if dirty
     if ( !m_bUpdate )
         return;
+
     m_bUpdate = FALSE;
 
     ASSERT_STRICT_VALID( this );
@@ -1683,6 +1685,52 @@ void CWndWorld::ReRender( )
     if ( ( m_pdibGround0 == NULL ) || ( m_pWndArea == NULL ) )
         return;
 
+    Perf::ScopeCounter _crr( m_bIsRadar ? "rr.radar" : "rr.world" );
+
+    // RADAR root-cause perf fix. The minimap redraw below is a per-pixel CPU walk over the WHOLE
+    // map (~18ms in Debug) — but everything it draws except moving units (terrain/buildings/
+    // minerals/fog) is static or slow-changing. So:
+    //   * bake the UNIT-FREE background on a ~7fps throttle into m_pdibRadarStatic, and
+    //   * on every other frame DON'T re-walk and DON'T re-blit the whole DIB — instead keep the
+    //     window DIB as-is and only ERASE last frame's unit dots (restore those few pixels from
+    //     the cached background), then redraw the current dots. That's O(units), not O(map).
+    // Units are plotted LIVE below (object-iterated + projected), so they stay smooth at full
+    // rate while the heavy walk runs ~7fps. (Non-radar world map keeps the original full path.)
+    DWORD dwRadarNow = timeGetTime( );
+    bool  bRebuildBg = !m_bIsRadar || !m_pdibRadarStatic ||
+                       ( dwRadarNow - m_dwLastRadarDraw >= 140 );
+    Perf::CounterAdd( m_bIsRadar ? ( bRebuildBg ? "rr.bg" : "rr.fast" ) : "rr.world.n", 1 );
+
+    if ( m_bIsRadar && !bRebuildBg )
+    {
+        // FAST PATH: window DIB still holds (cached background + last frame's dots). Erase only
+        // the old dots by restoring their pixels from the unit-free cache; current dots drawn
+        // below. No whole-map walk, no whole-DIB blit.
+        Perf::ScopeCounter _ce( "rr.erase" );
+        CDIB* pwin = m_dibwnd.GetDIB( );
+        int   bpp  = pwin->GetBytesPerPixel( );
+        BYTE* pw   = pwin->GetBits( )              + pwin->GetOffset( 0, 0 );
+        BYTE* ps   = m_pdibRadarStatic->GetBits( ) + m_pdibRadarStatic->GetOffset( 0, 0 );
+        // Each DIB has its OWN pitch (and possibly orientation: top-down vs bottom-up → opposite
+        // pitch sign). Using the window's pitch to index the static buffer reads out of bounds
+        // → AV. Index every DIB with its own pitch.
+        int   pitW = pwin->GetDirPitch( );
+        int   pitS = m_pdibRadarStatic->GetDirPitch( );
+        for ( const CPoint& d : m_radarDots )
+        {
+            BYTE* w = pw + d.y * pitW + d.x * bpp;
+            BYTE* s = ps + d.y * pitS + d.x * bpp;
+            memcpy( w,           s,           bpp );   // centre + 4-neighbour plus (matches draw)
+            memcpy( w - bpp,     s - bpp,     bpp );
+            memcpy( w + bpp,     s + bpp,     bpp );
+            memcpy( w - pitW,    s - pitS,    bpp );
+            memcpy( w + pitW,    s + pitS,    bpp );
+        }
+        m_radarDots.clear( );
+    }
+    else
+    {
+
     // put up everything except vehicles & visibility
     m_pdibBase->BitBlt( m_dibwnd.GetDIB( ), m_pdibBase->GetRect( ), CPoint( 0, 0 ) );
 
@@ -1690,7 +1738,9 @@ void CWndWorld::ReRender( )
 
     // is it a radar or a map
     DWORD bRadar    = m_bIsRadar ? -1 : 0;
-    DWORD bdwRadUni = bRadar & bdwUnits;
+    // Radar vehicles are plotted LIVE below (object-iterated), NOT in this per-pixel walk, so
+    // the cached background stays unit-free. Force off here.
+    DWORD bdwRadUni = m_bIsRadar ? 0 : ( bRadar & bdwUnits );
 
     int iBytesPerPixel = m_dibwnd.GetDIB( )->GetBytesPerPixel( );
 
@@ -2068,6 +2118,91 @@ void CWndWorld::ReRender( )
 
     // when anyone zeros it'll get set again
     m_bBldgHit = NULL;
+
+    // Cache this freshly-built UNIT-FREE background; the window DIB now holds the clean bg, so
+    // there are no old dots to erase next frame.
+    if ( m_bIsRadar )
+    {
+        if ( !m_pdibRadarStatic )
+            m_pdibRadarStatic = new CDIB( ptrthebltformat->GetColorFormat( ), CBLTFormat::DIB_MEMORY,
+                                          CBLTFormat::DIR_TOPDOWN, m_cx, m_cy );
+        m_dibwnd.GetDIB( )->BitBlt( m_pdibRadarStatic, m_dibwnd.GetDIB( )->GetRect( ), CPoint( 0, 0 ) );
+        m_dwLastRadarDraw = dwRadarNow;
+        m_radarDots.clear( );
+    }
+    }   // end else (full whole-map background walk)
+
+    // --- LIVE radar unit dots: object-iterate vehicles and project each STRAIGHT to its radar
+    //     pixel (the inverse of OnLButtonUp's pixel->map map). O(units), drawn over the persistent
+    //     window DIB every frame; positions recorded so next frame can erase just these pixels. ---
+    if ( m_bIsRadar && ( m_iMode & ( my_units | other_units ) ) )
+    {
+        Perf::ScopeCounter _cv( "rr.veh" );
+        CDIB*    pwin  = m_dibwnd.GetDIB( );
+        int      bppV  = pwin->GetBytesPerPixel( );
+        BYTE*    baseV = pwin->GetBits( ) + pwin->GetOffset( 0, 0 );
+        int      pitchV = pwin->GetDirPitch( );
+        SETPIXEL fnSP  = bppV == 4 ? SetPixel4 : bppV == 3 ? SetPixel3 : bppV == 2 ? SetPixel2 : SetPixel1;
+
+        CAnimAtr& aaV  = m_pWndArea->GetAA( );
+        CMapLoc   cen  = aaV.GetCenter( );
+        int       dirV = aaV.m_iDir;
+        int       eX   = theMap.Get_eX( ), eY = theMap.Get_eY( );
+
+        POSITION pos = theVehicleMap.GetStartPosition( );
+        while ( pos != NULL )
+        {
+            DWORD     dwID;
+            CVehicle* pVeh;
+            theVehicleMap.GetNextAssoc( pos, dwID, pVeh );
+            if ( pVeh == NULL || pVeh->GetOwner( ) == NULL )
+                continue;
+            bool bMine = pVeh->GetOwner( )->IsMe( ) != 0;
+            if ( bMine ? !( m_iMode & my_units ) : !( m_iMode & other_units ) )
+                continue;
+            if ( !pVeh->IsVisible( ) )
+                continue;
+            // CHECKED hex lookup (GetHex, not _GetHex): a vehicle on an out-of-range/edge hex
+            // would otherwise return a bad pointer -> AV. Enemies only show on lit hexes.
+            CHex* pHexV = theMap.GetHex( CHexCoord( pVeh->GetPtHead( ) ) );
+            if ( pHexV == NULL )
+                continue;
+            if ( !bMine && !pHexV->GetVisible( ) )
+                continue;
+
+            // map loc -> radar pixel: subtract center, inverse-rotate by camera dir, scale.
+            CMapLoc ml( pVeh->GetPtHead( ) );
+            int X = ml.x - cen.x, Y = ml.y - cen.y, x, y;
+            switch ( dirV )
+            {
+            case 0:  x = ( X + Y ) / 2; y = ( Y - X ) / 2;  break;
+            case 1:  x = ( Y - X ) / 2; y = -( X + Y ) / 2; break;
+            case 2:  x = -( X + Y ) / 2; y = ( X - Y ) / 2; break;
+            default: x = ( X - Y ) / 2; y = ( X + Y ) / 2;  break;
+            }
+            int px = m_cx / 2 + ( eX ? ( x * m_cx ) / ( 64 * eX ) : 0 );
+            int py = m_cy / 2 + ( eY ? ( y * m_cy ) / ( 64 * eY ) : 0 );
+            if ( px < 1 || px >= m_cx - 1 || py < 1 || py >= m_cy - 1 )
+                continue;
+
+            DWORD clr;
+            if ( bMine && pVeh->m_iFrameHit != 0 )
+            {
+                pVeh->m_iFrameHit = __max( 0, pVeh->m_iFrameHit - (int)theGame.GetFramesElapsed( ) );
+                clr               = m_clrHit;
+            }
+            else
+                clr = pVeh->GetOwner( )->GetPalColor( );
+
+            BYTE* p = baseV + py * pitchV + px * bppV;
+            ( *fnSP )( p, clr );
+            ( *fnSP )( p - bppV, clr );
+            ( *fnSP )( p + bppV, clr );
+            ( *fnSP )( p - pitchV, clr );
+            ( *fnSP )( p + pitchV, clr );
+            m_radarDots.push_back( CPoint( px, py ) );   // for next-frame erase
+        }
+    }
 
     InvalidateRect(NULL, FALSE);
 }

@@ -1386,6 +1386,7 @@ void CWndArea::CurLeft( )
 
 void CWndArea::ReRender( )
 {
+    Perf::ScopeCounter _crr( "rr.area" );   // PROFILE: area-map ReRender cost (r.inval split)
 
     CDIB* pdib = m_aa.m_dibwnd.GetDIB( );
     CRect rect;

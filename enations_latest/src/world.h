@@ -10,6 +10,7 @@
 #define __WORLD_H__
 
 #include <wndbase.h>
+#include <vector>
 
 #include "bmbutton.h"
 #include "terrain.h"
@@ -157,6 +158,9 @@ protected:
 	BOOL					m_bUpdate;				// TRUE if need to update
 	BOOL					m_bBldgHit{};				// TRUE if need to render buildings again
 	BOOL					m_bIsRadar;				// TRUE if it's a radar unit
+	DWORD					m_dwLastRadarDraw{};	// last time the static minimap background was baked
+	CDIB*					m_pdibRadarStatic{};	// cached minimap background (no unit dots) — see ReRender
+	std::vector<CPoint>		m_radarDots;			// last frame's unit-dot pixels (for O(units) erase)
 
 	CPoint				m_ptRMB;
 
