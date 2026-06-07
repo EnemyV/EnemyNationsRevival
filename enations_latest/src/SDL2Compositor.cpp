@@ -8,6 +8,7 @@
 #include "bmbutton.h"      // Must precede bitmaps.h (provides CBmBtnData)
 #include "bitmaps.h"       // For DIB_GOLD, theBitmaps
 #include "player.h"        // theGame.GetFrame() — water-animation re-render tick
+#include "Perf.h"          // MEASURE: main-window composite cost
 
 #include <SDL.h>
 #include <algorithm>
@@ -224,6 +225,19 @@ void SDL2Compositor::ResetWindowLayout() {
     InvalidateAll();
 }
 
+// Full window-space footprint a non-detached panel's Render() touches: content rect
+// plus its optional title bar (above m_y) and 1px raised border, clamped to the window.
+// Used to upload only the changed strip instead of the whole 2560x1440 surface.
+static SDL_Rect PanelFootprint(SDL2Panel* p, SDL_Surface* ws) {
+    SDL_Rect r    = { p->GetX() - 1, p->GetTotalY() - 1,
+                      p->GetWidth() + 2, p->GetTotalHeight() + 2 };
+    SDL_Rect full = { 0, 0, ws->w, ws->h };
+    SDL_Rect out;
+    if (SDL_IntersectRect(&r, &full, &out) != SDL_TRUE)
+        out.x = out.y = out.w = out.h = 0;
+    return out;
+}
+
 void SDL2Compositor::Composite() {
     if (!m_window || !m_window->GetWindow())
         return;
@@ -249,19 +263,44 @@ void SDL2Compositor::Composite() {
     // Step 1: Re-sort panels (z-orders may have changed during Draw)
     SortPanels();
 
-    // Step 2: Render tiled wallpaper background
-    RenderWallpaper(windowSurface);
-    m_backgroundDirty = false;
-
-    // Step 3: Blit non-detached panels in z-order (sorted ascending)
-    for (auto& p : m_panels) {
-        if (p->IsVisible() && !p->IsDetached()) {
-            p->Render(windowSurface);
+    // Steps 2-4: composite the non-detached panels (toolbar/status chrome) onto the main
+    // window. The wallpaper + static panels rarely change; only the toolbar repaints every
+    // frame (it marks itself dirty for its live resource/status text). So when only panels
+    // changed (background NOT dirty), skip the full-window wallpaper re-tile + the full
+    // 2560x1440 GPU upload: re-blit only the dirty panels and upload just their bounding
+    // rect. The persistent back-texture keeps the rest. (Was ~12ms/frame, p.mainwin.)
+    if (m_backgroundDirty) {
+        Perf::ScopeCounter _cm( "p.mainwin" );
+        RenderWallpaper(windowSurface);
+        m_backgroundDirty = false;
+        for (auto& p : m_panels)
+            if (p->IsVisible() && !p->IsDetached())
+                p->Render(windowSurface);
+        m_window->PresentSurface();   // full upload (back-buffer may also be fresh)
+    } else {
+        // Incremental: only the dirty non-detached panels need re-blitting; the rest of the
+        // main window (wallpaper + unchanged panels) is already in the back-buffer/texture.
+        // Non-detached chrome (toolbar, status bar) doesn't overlap, so re-blitting only the
+        // dirty ones is safe.
+        SDL_Rect uni = { 0, 0, 0, 0 };
+        bool have = false;
+        for (auto& p : m_panels) {
+            if (p->IsVisible() && !p->IsDetached() && p->IsDirty()) {
+                SDL_Rect f = PanelFootprint(p.get(), windowSurface);
+                if (f.w > 0 && f.h > 0) {
+                    if (!have) { uni = f; have = true; }
+                    else SDL_UnionRect(&uni, &f, &uni);
+                }
+                p->Render(windowSurface);   // opaque blit over its own rect (clears m_dirty)
+            }
+        }
+        // If only a DETACHED panel changed (area map/radar — handled in step 5 below), the
+        // main window is unchanged, so skip its upload + present entirely.
+        if (have) {
+            Perf::ScopeCounter _cm( "p.mainwin" );
+            m_window->PresentSurface( &uni );
         }
     }
-
-    // Step 4: Present the main window
-    m_window->PresentSurface();
 
     // Step 5: Render detached panels to their own windows — but only the ones
     // whose own content actually changed. A detached panel lives in its own OS

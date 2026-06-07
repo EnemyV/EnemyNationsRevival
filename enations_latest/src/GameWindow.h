@@ -83,7 +83,12 @@ public:
 
     // Present whatever was drawn into GetPresentSurface() to the main window.
     // Software: SDL_UpdateWindowSurface. Renderer: upload + RenderCopy + Present.
-    void PresentSurface();
+    // `dirty` (optional): only the given rect of the back-buffer changed since the
+    // last present, so upload just that rect (the rest of the persistent back-texture
+    // is still valid) instead of the whole 2560x1440 surface. The GPU RenderCopy still
+    // draws the full texture, so the unchanged area is preserved. Ignored (full upload)
+    // right after the back-buffer was (re)created, since the texture is then garbage.
+    void PresentSurface(const SDL_Rect* dirty = nullptr);
 
     /**
      * Clear screen with color
@@ -289,6 +294,7 @@ private:
     struct SDL_Surface* m_backBuffer = nullptr;  // T0: offscreen draw target (renderer mode)
     struct SDL_Texture* m_backTex = nullptr;     // T0: streaming texture for the back-buffer
     int m_backW = 0, m_backH = 0;                // current back-buffer size
+    bool m_backBufferFresh = false;              // just (re)created → next present must be full upload
     // (Re)create the back-buffer surface + texture to match the renderer output
     // size. No-op if size unchanged. Renderer mode only.
     bool EnsureBackBuffer();

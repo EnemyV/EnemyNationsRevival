@@ -12,6 +12,7 @@
 #include "music.h"        // theMusicPlayer (pause/resume on app focus change)
 #include "Perf.h"         // GaugeSet — correlate window state with frame cost
 #include "w22_settings.h" // w22::GetProfileInt — [Advanced] Renderer flag (T0)
+#include "RenderBackend.h" // RenderBackendIsGpu() — 3-way backend selector
 #include "../rendering/SDLButtonManager.h"
 #include "../rendering/StatusBar.h"
 #include "../input/UIButtonListener.h"
@@ -339,7 +340,7 @@ bool GameWindow::InitializeSDL() {
     // T0: GPU present path. Read once at init — must happen BEFORE anything calls
     // SDL_GetWindowSurface on m_window, since SDL forbids a renderer on a window
     // that already has a framebuffer surface.
-    m_useRenderer = (w22::GetProfileInt("Advanced", "Renderer", 0) != 0);
+    m_useRenderer = RenderBackendIsGpu();
     if (m_useRenderer) {
         // NOTE: no PRESENT_VSYNC yet. Today's loop presents from several sites
         // per frame (RenderingAdapter + Compositor), so a vblank-blocking present
@@ -389,6 +390,7 @@ bool GameWindow::EnsureBackBuffer() {
         return false;
     }
     m_backW = w; m_backH = h;
+    m_backBufferFresh = true;   // texture is uninitialized → force a full upload next present
     return true;
 }
 
@@ -400,19 +402,41 @@ SDL_Surface* GameWindow::GetPresentSurface() {
     return m_window ? SDL_GetWindowSurface(m_window) : nullptr;
 }
 
-void GameWindow::PresentSurface() {
+void GameWindow::PresentSurface(const SDL_Rect* dirty) {
     if (!m_window)
         return;
+
+    // A freshly (re)created back-buffer's texture holds garbage everywhere except a
+    // dirty rect, so the first present after a (re)alloc must upload the whole surface.
+    bool fullUpload = m_backBufferFresh || !dirty || dirty->w <= 0 || dirty->h <= 0;
+
     if (m_useRenderer) {
         if (!m_backBuffer || !m_backTex)
             return;
-        SDL_UpdateTexture(m_backTex, nullptr, m_backBuffer->pixels, m_backBuffer->pitch);
+        if (fullUpload) {
+            SDL_UpdateTexture(m_backTex, nullptr, m_backBuffer->pixels, m_backBuffer->pitch);
+        } else {
+            // Clamp the dirty rect to the surface and upload only that sub-rect. The
+            // persistent texture keeps the rest; RenderCopy below still draws it all.
+            SDL_Rect r = *dirty, full = { 0, 0, m_backBuffer->w, m_backBuffer->h };
+            SDL_IntersectRect(&r, &full, &r);
+            if (r.w > 0 && r.h > 0) {
+                const Uint8* px = (const Uint8*)m_backBuffer->pixels
+                                + (size_t)r.y * m_backBuffer->pitch
+                                + (size_t)r.x * m_backBuffer->format->BytesPerPixel;
+                SDL_UpdateTexture(m_backTex, &r, px, m_backBuffer->pitch);
+            }
+        }
         SDL_RenderClear(m_renderer);
         SDL_RenderCopy(m_renderer, m_backTex, nullptr, nullptr);
         SDL_RenderPresent(m_renderer);
     } else {
-        SDL_UpdateWindowSurface(m_window);
+        if (fullUpload)
+            SDL_UpdateWindowSurface(m_window);
+        else
+            SDL_UpdateWindowSurfaceRects(m_window, dirty, 1);
     }
+    m_backBufferFresh = false;
 }
 
 void GameWindow::Cleanup() {
