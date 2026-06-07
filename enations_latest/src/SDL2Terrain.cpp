@@ -1184,16 +1184,23 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
             if ( !phex )
                 continue;
 
-            // Screen positions of the 4 diamond vertices in (L,T,R,B) order
-            // (MapToWindowHex applies the per-m_iDir corner reorder).
+            // Screen positions of the 4 diamond vertices in (L,T,R,B) order.
+            // Project to CONTENT space (zoom/pan-independent) then derive the texture-space
+            // screen corners: window = (content >> m_iZoom) - m_ptUL (integer-EXACT match to
+            // MapToWindowHex — see CAnimAtr::MapToContentHex), then + the texture offset. The
+            // content corners (cpts) are what the retained-mesh path will reuse to re-derive
+            // any zoom by re-scaling instead of rebuilding.
             CPoint pts[4];
+            CPoint cpts[4];
             QueryPerformanceCounter( &_pa );
-            aa.MapToWindowHex( hexcoord, pts );   // pts[0]=Left 1=Top 2=Right 3=Bottom
+            aa.MapToContentHex( hexcoord, cpts );   // cpts[0]=Left 1=Top 2=Right 3=Bottom
             QueryPerformanceCounter( &_pb ); _accProj += _pb.QuadPart - _pa.QuadPart;
-            pts[0].x += offX; pts[0].y += offY;   // window → texture space
-            pts[1].x += offX; pts[1].y += offY;
-            pts[2].x += offX; pts[2].y += offY;
-            pts[3].x += offX; pts[3].y += offY;
+            const int _uzx = aa.m_ptUL.x - offX, _uzy = aa.m_ptUL.y - offY;
+            for ( int k = 0; k < 4; ++k )
+            {
+                pts[k].x = ( cpts[k].x >> aa.m_iZoom ) - _uzx;
+                pts[k].y = ( cpts[k].y >> aa.m_iZoom ) - _uzy;
+            }
 
             // Cull to the texture bounds [0,rtW]x[0,rtH] (= viewport + kMarginPx all
             // round, in texture space). Hexes outside the margin band are dropped.
