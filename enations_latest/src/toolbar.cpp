@@ -189,9 +189,19 @@ void CWndBar::Create( )
 
         // Populate the sentence-length hover text from the legacy IDH_BAR_*
         // string resources (matches what the original MFC toolbar showed in
-        // the status strip when the cursor hovered a button).
+        // the status strip when the cursor hovered a button), prefixed with the
+        // keyboard shortcut from the IDR_ACCEL table (re-implemented in
+        // GameWindow::HandleGlobalShortcut). aID order: area, world, chat, advisor,
+        // vehicles, buildings, science, file. Empty = no accelerator.
+        static const char* const aShortcut[NUM_BAR_BTNS] = {
+            "Ctrl+A", "Ctrl+W", "Ctrl+M", "Ctrl+D", "Ctrl+V", "Ctrl+B", "Ctrl+R", "Ctrl+O" };
         for ( int i = 0; i < NUM_BAR_BTNS; i++ )
-            s_toolbar.SetButtonHelpText( i, EnLoadStdString( aHelp[ i ] ) );
+        {
+            std::string help = EnLoadStdString( aHelp[ i ] );
+            if ( aShortcut[ i ][ 0 ] )
+                help = std::string( "(" ) + aShortcut[ i ] + ")  " + help;
+            s_toolbar.SetButtonHelpText( i, help );
+        }
 
         if ( !theGame.IsNetGame() )
             s_toolbar.EnableButton(2, false);

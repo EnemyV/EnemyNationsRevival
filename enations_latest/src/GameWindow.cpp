@@ -708,28 +708,29 @@ bool GameWindow::HandleGlobalShortcut(SDL_Event& event) {
     if (event.type != SDL_KEYDOWN)
         return false;
 
-    // Only while actually in a game (toolbar exists). At the main menu the
-    // menu handles its own keys, and there's no m_wndMain command target.
-    if (!theApp.m_wndBar.IsCreated() || theApp.m_wndMain.m_hWnd == NULL)
+    // Only while actually in a game (toolbar exists). At the main menu the menu
+    // handles its own keys.
+    if (!theApp.m_wndBar.IsCreated())
         return false;
 
-    HWND hMain = theApp.m_wndMain.m_hWnd;
-    SDL_Keycode key = event.key.keysym.sym;
-    SDL_Keymod mod  = (SDL_Keymod)event.key.keysym.mod;
-    bool ctrl  = (mod & KMOD_CTRL)  != 0;
-
-    auto Post = [hMain](int cmd) {
-        ::PostMessage(hMain, WM_COMMAND, (WPARAM)cmd, 0);
-    };
+    // The window-switch commands call the SAME public CWndBar handlers the toolbar
+    // buttons use (CWndMain::On* just forward to these). The old path posted
+    // WM_COMMAND to m_wndMain, but that MFC window is stubbed in the SDL port so the
+    // messages were never dispatched — call the handlers directly instead.
+    CWndBar&    bar  = theApp.m_wndBar;
+    HWND        hMain = theApp.m_wndMain.m_hWnd;   // may be NULL (stub) in the SDL port
+    SDL_Keycode key  = event.key.keysym.sym;
+    SDL_Keymod  mod  = (SDL_Keymod)event.key.keysym.mod;
+    bool        ctrl = (mod & KMOD_CTRL) != 0;
 
     // Esc: back out of the current action if there is one, otherwise open the
-    // Game Options dialog. Letting it fall through (return false) when an area
-    // has a selection / non-normal mode preserves the original Esc = deselect.
+    // file/options dialog. Falling through (return false) when an area has a
+    // selection / non-normal mode preserves the original Esc = deselect.
     if (key == SDLK_ESCAPE && !ctrl) {
         CWndArea* pArea = theAreaList.GetTop();
         if (pArea && (pArea->GetMode() != CWndArea::normal || pArea->NumSelected() > 0))
             return false;  // area handler will deselect / cancel the mode
-        Post(IDA_OPTIONS);
+        bar.GotoFile();
         return true;
     }
 
@@ -739,23 +740,28 @@ bool GameWindow::HandleGlobalShortcut(SDL_Event& event) {
         SDL_OpenURL("https://github.com/EnemyV/EnemyNationsRevival/issues");
         return true;
     }
-    if (key == SDLK_F2) { Post(IDA_BOSS); return true; }
+    if (key == SDLK_F2) {
+        if (hMain) ::PostMessage(hMain, WM_COMMAND, (WPARAM)IDA_BOSS, 0);
+        return true;
+    }
 
     // Ctrl+letter accelerators (the IDR_ACCEL table).
     if (ctrl) {
         switch (key) {
-        case SDLK_a: Post(IDA_AREA);            return true;
-        case SDLK_w: Post(IDA_WORLD);           return true;
-        case SDLK_v: Post(IDA_VEHICLES);        return true;
-        case SDLK_b: Post(IDA_BUILDINGS);       return true;
-        case SDLK_m: Post(IDA_MAIL);            return true;
-        case SDLK_o: Post(IDA_OPTIONS);         return true;
-        case SDLK_r: Post(IDA_RESEARCH);        return true;
-        case SDLK_d: Post(IDA_DIPLOMAT);        return true;
-        case SDLK_p: Post(IDA_PAUSE);           return true;
-        case SDLK_s: Post(IDA_SAVE);            return true;
-        case SDLK_h: Post(IDA_HIDE_TOOLBAR);    return true;
-        case SDLK_u: Post(IDA_UNHIDE_TOOLBAR);  return true;
+        case SDLK_a: bar.GotoArea();              return true;
+        case SDLK_w: bar.GotoWorld();             return true;
+        case SDLK_v: bar.GotoVehicles();          return true;
+        case SDLK_b: bar.GotoBuildings();         return true;
+        case SDLK_m: bar.GotoChat();              return true;  // IDA_MAIL -> chat
+        case SDLK_o: bar.GotoFile();              return true;  // IDA_OPTIONS -> file/options
+        case SDLK_r: bar.GotoScience();           return true;
+        case SDLK_d: bar.GotoRelations();         return true;
+        case SDLK_h: bar.ShowWindow(SW_HIDE);     return true;  // hide toolbar
+        case SDLK_u: bar.ShowWindow(SW_SHOW);     return true;  // unhide toolbar
+        // Pause/save keep the MFC command route (server-side pause logic / SaveGame);
+        // no-op if the stubbed main window has no HWND.
+        case SDLK_p: if (hMain) ::PostMessage(hMain, WM_COMMAND, (WPARAM)IDA_PAUSE, 0); return true;
+        case SDLK_s: if (hMain) ::PostMessage(hMain, WM_COMMAND, (WPARAM)IDA_SAVE, 0);  return true;
         default: break;
         }
     }
