@@ -656,7 +656,19 @@ void CConquerApp::GraphicsEnginePump( )
             // was stopping here? why?
            // TRAP( dwSleep > 0 );
 
-            { Perf::ScopeSlot _perfSleep( Perf::SEC_SLEEP ); ::Sleep( __minmax( 10, 1000 / FRAME_RATE, dwSleep ) ); }
+            // Render/sim decouple: only PARK the thread when we're genuinely ahead of the
+            // next sim tick (dwSleep > 0) — then a short sleep paces us without spinning.
+            // When a single render overran the 1/24s sim period (dwSleep <= 0, i.e. we're
+            // render-bound and already behind), the old code still forced a 10ms floor here,
+            // throwing away ~10ms/frame for nothing and delaying the next render/sim. In that
+            // case just yield (Sleep(0)) so AI/network worker threads still get scheduled but
+            // we immediately loop back to render again. (The sim-tick path keeps its own
+            // explicit AI time slice below, so AI is not starved.)
+            Perf::ScopeSlot _perfSleep( Perf::SEC_SLEEP );
+            if ( dwSleep > 0 )
+                ::Sleep( __minmax( 1, 1000 / FRAME_RATE, dwSleep ) );
+            else
+                ::Sleep( 0 );   // render-bound: yield without the 10ms penalty
         }
         return;
     }
