@@ -810,18 +810,19 @@ void SDL2UnitList::OnClick(int itemIdx, bool dblClick) {
         else if (pUnit->GetUnitType() == CUnit::building)
             ((CBuilding*)pUnit)->ShowWindow();
 
-        // Select the unit and hand keyboard focus back to the map window. Clicking
-        // in this (detached) unit-list window moved OS keyboard focus here, so the
-        // arrow keys stopped scrolling the map. Re-fetch the top map (ShowWindow
-        // may have raised a different one) and focus its host window.
+        // Re-fetch the top map (ShowWindow may have raised a different one).
         CWndArea* pTop = theAreaList.GetTop();
         if (pTop) {
-            pTop->OnlySelectUnit(pUnit);
-            pTop->InvalidateWindow();
-
-            // A detached map owns its own SDL window; otherwise the map lives in
-            // the main game window. Raise whichever holds it so the keystrokes
-            // route to the area panel again.
+            // Hand keyboard focus back to the map window FIRST, THEN select.
+            // Clicking in this detached unit-list window moved OS focus here, so
+            // we raise/focus the map's SDL window to restore arrow-key scrolling.
+            // But that changes OS foreground, which sends WM_ACTIVATE(WA_INACTIVE)
+            // to the *separate* MFC area window — and CWndArea::OnActivate clears
+            // every unit's selected flag on deactivation (legacy single-window
+            // behavior). If we selected before this, that deselect would silently
+            // drop the selection box while leaving m_pUnit set (the unit still
+            // looks selected on the toolbar, but loses its rectangle on the map).
+            // Selecting AFTER the focus churn makes the selection stick.
             SDL_Window* mapWin = nullptr;
             if (SDL2Panel* p = pTop->GetAA().m_sdlPanel)
                 if (p->IsDetached())
@@ -832,6 +833,9 @@ void SDL2UnitList::OnClick(int itemIdx, bool dblClick) {
                 SDL_RaiseWindow(mapWin);
                 SDL_SetWindowInputFocus(mapWin);
             }
+
+            pTop->OnlySelectUnit(pUnit);
+            pTop->InvalidateWindow();
         }
     } else {
         if (pArea) {
