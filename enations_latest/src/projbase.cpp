@@ -22,6 +22,17 @@
 #include "building.inl"
 #include "vehicle.inl"
 
+#include "SDL2Sprites.h"   // GPU tracer streaks (CaptureTrail)
+
+// GPU split-layer pass flag (defined in terrain.cpp): TRUE while sprites are being
+// captured into the GPU layer. We only emit tracer geometry on that path.
+extern bool g_enSpriteSplitPass;
+
+// Master on/off for projectile tracer trails (client-local eye-candy). Flip to FALSE
+// to disable all trails regardless of per-type style. (Per-type style lives on
+// CExplData::m_iTrailType; smoke trails are a future addition.)
+bool g_enProjTrails = true;
+
 
 #ifdef _DEBUG
 #undef THIS_FILE
@@ -44,6 +55,11 @@ CExplData::CExplData ()
 
     m_pProjSprite = m_pExpSprite = NULL;
     m_iProjDelay = m_iExplSound = 0;
+
+    // Default every projectile to an orange tracer streak. Per-type overrides (e.g.
+    // trail_smoke for a rocket) can be set in CExplGrp::PostSpriteInit once we know
+    // which EXPL index is the rocket. Master on/off is g_enProjTrails below.
+    m_iTrailType = trail_tracer;
 }
 
 
@@ -88,7 +104,127 @@ CRect CProjectile::Draw( const CHexCoord &hexcoord )
 
     xpanimatr->GetDirtyRects()->AddRect( &rectBound, CDirtyRects::RECT_LIST::LIST_PAINT_BOTH );
 
+    EmitTrail ();
+
     return rectBound;
+}
+
+//---------------------------------------------------------------------------
+// ProjShooterStrength - normalise a shooter's primary attack to 0..1
+//
+// 0 = the weakest attacker in the game (e.g. infantry), 1 = the strongest
+// (e.g. the frigate). The min/max are scanned ONCE over every vehicle + building
+// type that can attack, so the gradient is procedural (no magic numbers) and
+// auto-adjusts if unit data changes. Uses the RAW (pre-R&D) attack so the colour
+// tracks unit TYPE, not how upgraded a particular player is.
+//---------------------------------------------------------------------------
+// Weighted firepower for the tracer gradient. attack[0] alone (soft/anti-personnel)
+// MISRANKS units: a howitzer's power is in the HARD slot, so by soft-attack alone it can
+// score below infantry. Hard attack is weighted heaviest (it's what the heavy/strong
+// units carry), so the gradient runs infantry (low) -> frigate (high) as intended.
+static int ProjAttackTotal (CUnitData const * pData)
+{
+    return pData->_GetAttack (0) + 3 * pData->_GetAttack (1) + pData->_GetAttack (2);
+}
+
+static float ProjShooterStrength (DWORD dwIDShooter)
+{
+    // Gradient endpoints anchored to specific unit TYPES rather than the global min/max:
+    // scanning all units let outliers (the Heavy Rover's experimental gun = hard 1500, the
+    // Fort = 3036) blow out the scale so the frigate only reached ~half. Anchoring to
+    // infantry..frigate gives the intended spread; anything stronger (Heavy Rover, Fort)
+    // simply clamps to the strong end.
+    static int s_iMin = -1, s_iMax = -1;
+    if ( s_iMin < 0 )
+        {
+        s_iMin = ProjAttackTotal (theTransports.GetData (CTransportData::infantry));
+        s_iMax = ProjAttackTotal (theTransports.GetData (CTransportData::cruiser));   // "Frigate"
+        if ( s_iMax <= s_iMin ) s_iMax = s_iMin + 1;   // guard divide-by-zero
+        }
+
+    CUnit * pShoot = GetUnit (dwIDShooter);
+    int a = ( pShoot != NULL ) ? ProjAttackTotal (pShoot->GetData ()) : s_iMin;
+    float t = (float) ( a - s_iMin ) / (float) ( s_iMax - s_iMin );
+    return __max (0.0f, __min (1.0f, t));
+}
+
+//---------------------------------------------------------------------------
+// CProjectile::EmitTrail - record a tracer streak behind the bullet (GPU only)
+//
+// Stretched-tracer eye-candy: an additive, alpha-faded streak trailing the
+// projectile along its (screen-projected) travel direction. Pure render-side,
+// client-local — it is NOT a sim object and never touches the netcode/pool, so
+// it can't desync and costs ~one quad per visible projectile. The software
+// renderer has no equivalent yet (palette/additive blits make it awkward); GPU
+// is the first-class path.
+//
+// Colour/width/opacity form a gradient over m_fStrength (0 = weakest shooter,
+// 1 = strongest): weak shots are thinner, yellower and dimmer; strong shots are
+// thicker, redder and brighter.
+//---------------------------------------------------------------------------
+void CProjectile::EmitTrail ()
+{
+
+    // master switch + per-projectile style; only on the GPU capture pass
+    if ( ! g_enProjTrails || ! g_enSpriteSplitPass || ! SDL2Sprites::Enabled () )
+        return;
+    if ( ( m_pEd == NULL ) || ( m_pEd->m_iTrailType != CExplData::trail_tracer ) )
+        return;
+    // a stationary projectile (arrived, or zero-length path) has no direction
+    if ( ( m_xAdd == 0 ) && ( m_yAdd == 0 ) )
+        return;
+
+    // Project the bullet and a point one sub-step BEHIND it. The screen delta is the
+    // streak direction; we then normalise and scale to a fixed on-screen length so the
+    // tracer reads the same regardless of speed (and shrinks when zoomed out). Working
+    // off the projected delta means the isometric view rotation is handled for free.
+    CMapLoc3D	head3d( GetMapLoc().x,          GetMapLoc().y,          GetAlt() );
+    CMapLoc3D	back3d( GetMapLoc().x - m_xAdd, GetMapLoc().y - m_yAdd, GetAlt() );
+
+    CPoint	ptHead( xpanimatr->WorldToWindow( xpanimatr->WorldToCenterWorld( head3d ) ) );
+    CPoint	ptBack( xpanimatr->WorldToWindow( xpanimatr->WorldToCenterWorld( back3d ) ) );
+
+    double	ddx = ptBack.x - ptHead.x;   // points backward (toward the tail), screen px
+    double	ddy = ptBack.y - ptHead.y;
+    double	len = sqrt( ddx * ddx + ddy * ddy );
+
+    // len ~0 => no motion this projection; len huge => the back point wrapped the torus
+    // edge (bogus direction) — skip both.
+    if ( ( len < 0.5 ) || ( len > 256.0 ) )
+        return;
+
+    // Gradient by shooter strength: t=0 weakest (infantry) .. t=1 strongest (frigate).
+    // Strong shots read as bigger/brighter: redder, thicker, LONGER, and more opaque.
+    float	t = m_fStrength;
+
+    int		cr = 255;
+    int		cg = (int) ( 185 + ( 45 - 185 ) * t );    // green: 185 (yellow) -> 45 (red)
+    int		cb = (int) ( 35 + ( 10 - 35 ) * t );      // blue:  35 -> 10
+    int		aHead = (int) ( 160 + ( 245 - 160 ) * t );// weak dimmer, strong much more visible
+    double	wfac = 0.8 + ( 1.45 - 0.8 ) * t;          // weak thinner, strong thicker
+    double	lfac = 1.0 + 0.7 * t;                     // strong streak runs longer
+
+    double	dLenMax = __max( 14, 48 >> xiZoom ) * lfac;           // max length, gradient-scaled
+    double	dHalfW  = __max( 0.5, ( 1.3 - xiZoom * 0.3 ) * wfac );// width, gradient-scaled
+
+    // Grow the trail from 0 at launch up to dLenMax: the tail is anchored to where the
+    // projectile started, until it has travelled far enough to reach full length (then it
+    // trails behind at dLenMax, comet-style). len is one step's screen distance, so
+    // (steps travelled) * len = screen distance covered — no map-edge wrap issues.
+    int		iStepsGone = m_iStepsStart - m_iSteps;
+    if ( iStepsGone < 0 )
+        iStepsGone = 0;
+    double	dLen = __min( dLenMax, iStepsGone * len );
+    if ( dLen < 1.0 )
+        return;   // just launched — nothing to draw yet
+
+    CPoint	ul( xpanimatr->GetUL() );
+    float	hx = (float) ( ptHead.x + ul.x );
+    float	hy = (float) ( ptHead.y + ul.y );
+    float	tx = (float) ( ptHead.x + ( ddx / len ) * dLen + ul.x );
+    float	ty = (float) ( ptHead.y + ( ddy / len ) * dLen + ul.y );
+
+    SDL2Sprites::CaptureTrail( hx, hy, tx, ty, (float) dHalfW, cr, cg, cb, aHead );
 }
 
 CProjectile::CProjectile (CUnit const * pUnit, CMapLoc const & mlEnd, DWORD dwTarget, int iNumShots) : CProjBase (projectile)
@@ -97,6 +233,10 @@ CProjectile::CProjectile (CUnit const * pUnit, CMapLoc const & mlEnd, DWORD dwTa
     m_dwIDTarget = dwTarget;
     m_dwIDShooter = pUnit->GetID ();
     m_iNumShots = iNumShots;
+
+    // cache the shooter's normalised strength for the tracer-colour gradient
+    m_fStrength = ProjShooterStrength (m_dwIDShooter);
+    m_iStepsStart = 0;   // set to flight-start step count below (trail length basis)
 
     // attach the sprite
     if (pUnit->GetData()->GetProjectile () == 0)
@@ -210,6 +350,10 @@ CProjectile::CProjectile (CUnit const * pUnit, CMapLoc const & mlEnd, DWORD dwTa
                 yDif = CHexCoord::Diff (hexOn.Y() - ((CBuilding*)pUnit)->GetHex().Y());
                 }
             }
+
+    // remember how many flight steps we begin with (post unit-exit) so the trail can
+    // grow from 0 to its max length as the projectile covers them
+    m_iStepsStart = m_iSteps;
 
     if (m_iSteps <= 0)
         {

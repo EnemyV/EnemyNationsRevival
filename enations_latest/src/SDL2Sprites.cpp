@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <unordered_map>
 #include <climits>
+#include <cmath>
 
 // GPU sprite layer with TEXTURE-ATLAS BATCHING. All sprite frames are packed into one
 // large atlas texture; the whole visible sprite layer is then drawn with a SINGLE
@@ -93,6 +94,17 @@ namespace
     std::vector<SprKey> g_dynKeys;
     bool                g_captureDynamic = false;   // mark captures into g_dynKeys
     bool                g_captureWasFull = true;     // S2.4: full vs incremental EMIT
+
+    // Projectile tracer streaks (eye-candy, client-local). A plain list rebuilt every
+    // capture pass and drawn as one additive batch in Submit, then cleared — they are
+    // NOT keyed/persisted like sprites (no atlas entry, no z-sort, drawn on top).
+    struct Trail
+    {
+        float hx, hy, tx, ty;   // head (bullet) → tail, VIEW space
+        float halfW;            // half-width (px)
+        Uint8 r, g, b, aHead;   // colour + head opacity (tail fades to 0)
+    };
+    std::vector<Trail> g_trails;
 
     void AccumDirty( int x, int y, int w, int h )
     {
@@ -310,6 +322,18 @@ namespace SDL2Sprites
         return true;
     }
 
+    void CaptureTrail( float headX, float headY, float tailX, float tailY,
+                       float halfWidth, int r, int g, int b, int headAlpha )
+    {
+        if ( !g_inFrame || !g_renderer )
+            return;
+        Trail t;
+        t.hx = headX; t.hy = headY; t.tx = tailX; t.ty = tailY;
+        t.halfW = halfWidth;
+        t.r = (Uint8)r; t.g = (Uint8)g; t.b = (Uint8)b; t.aHead = (Uint8)headAlpha;
+        g_trails.push_back( t );
+    }
+
     void EndFrame( ) { g_inFrame = false; }
 
     // Sprite view-space bounding box.
@@ -372,6 +396,59 @@ namespace SDL2Sprites
                                 idx.data( ), (int)idx.size( ) );
     }
 
+    // Draw the accumulated tracer streaks as ONE additive, untextured RenderGeometry
+    // batch onto the current target (called after the sprite layer is composited, so
+    // tracers glow on top). Each streak is a quad: full colour + opaque at the head
+    // (the bullet), same colour + zero alpha at the tail → an additive fade. Clears the
+    // list. ulX/ulY map VIEW space → the panel viewport (same as the sprite layer).
+    static void DrawTrails( SDL_Renderer* r, int ulX, int ulY )
+    {
+        if ( g_trails.empty( ) )
+            return;
+
+        static std::vector<SDL_Vertex> verts; static std::vector<int> idx;
+        verts.clear( ); idx.clear( );
+        verts.reserve( g_trails.size( ) * 4 ); idx.reserve( g_trails.size( ) * 6 );
+
+        for ( const Trail& t : g_trails )
+        {
+            float hx = t.hx - ulX, hy = t.hy - ulY;
+            float tx = t.tx - ulX, ty = t.ty - ulY;
+            float dx = tx - hx, dy = ty - hy;
+            float len = std::sqrt( dx * dx + dy * dy );
+            if ( len < 0.5f )
+                continue;
+            // Unit perpendicular × half-width gives the streak's two sides.
+            float px = -dy / len * t.halfW, py = dx / len * t.halfW;
+
+            int            base = (int)verts.size( );
+            // Head alpha (< 255) keeps the additive tracer from blowing out to white at
+            // the bullet; tail fades to fully transparent.
+            const SDL_Color head = { t.r, t.g, t.b, t.aHead };
+            const SDL_Color tail = { t.r, t.g, t.b, 0 };
+            SDL_Vertex      v[4];
+            v[0].position = { hx + px, hy + py }; v[0].color = head;
+            v[1].position = { hx - px, hy - py }; v[1].color = head;
+            v[2].position = { tx - px, ty - py }; v[2].color = tail;
+            v[3].position = { tx + px, ty + py }; v[3].color = tail;
+            for ( int i = 0; i < 4; ++i ) { v[i].tex_coord = { 0, 0 }; verts.push_back( v[i] ); }
+            idx.push_back( base + 0 ); idx.push_back( base + 1 ); idx.push_back( base + 2 );
+            idx.push_back( base + 0 ); idx.push_back( base + 2 ); idx.push_back( base + 3 );
+        }
+
+        if ( !verts.empty( ) )
+        {
+            SDL_BlendMode prev = SDL_BLENDMODE_BLEND;
+            SDL_GetRenderDrawBlendMode( r, &prev );
+            SDL_SetRenderDrawBlendMode( r, SDL_BLENDMODE_ADD );   // glow; untextured geometry
+            SDL_RenderGeometry( r, nullptr, verts.data( ), (int)verts.size( ),
+                                idx.data( ), (int)idx.size( ) );
+            SDL_SetRenderDrawBlendMode( r, prev );
+        }
+
+        g_trails.clear( );
+    }
+
     static bool ZLess( const Sprite* a, const Sprite* b )
     {
         if ( a->sortY != b->sortY ) return a->sortY < b->sortY;
@@ -421,6 +498,7 @@ namespace SDL2Sprites
         {
             BuildOrderAll( order, ulX, ulY, vpW, vpH );
             EmitOrder( r, order, ulX, ulY );
+            DrawTrails( r, ulX, ulY );   // tracers on top of the sprite layer
             g_dirty = false; g_lastUlX = ulX; g_lastUlY = ulY; g_accumValid = false;
             return;
         }
@@ -534,6 +612,8 @@ namespace SDL2Sprites
         SDL_RenderSetViewport( r, &savedVp );
         SDL_RenderCopy( r, g_rt, nullptr, nullptr );   // composite the layer onto the target
 
+        DrawTrails( r, ulX, ulY );   // tracers drawn fresh on top, never cached in g_rt
+
         g_dirty = false; g_lastUlX = ulX; g_lastUlY = ulY; g_accumValid = false;
     }
 
@@ -567,5 +647,6 @@ namespace SDL2Sprites
         g_dirty = true; g_lastUlX = g_lastUlY = INT_MIN;
         g_accumValid = false;
         g_inFrame = false;
+        g_trails.clear( );
     }
 }

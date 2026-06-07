@@ -747,6 +747,17 @@ class CExplData
     {
         has_dir = 0x01
     };
+
+    // Render-side projectile trail style (client-local eye-candy; not networked, not a
+    // sim object). Set in code (see CExplData ctor) — keyed by projectile type here so a
+    // future rocket entry can ask for trail_smoke without disturbing the data file.
+    enum TRAIL_TYPE
+    {
+        trail_none,
+        trail_tracer,  // stretched additive orange streak (bullets/shells)
+        trail_smoke    // TODO: drifting smoke puffs (rockets) — not implemented yet
+    };
+    int m_iTrailType;
 };
 
 class CExplGrp
@@ -839,6 +850,7 @@ class CProjectile : public CProjBase
     CProjectile( CUnit const* pUnit, CMapLoc const& end, DWORD dwIDTarget, int iNumShots );
     void  Operate( );
     CRect Draw( const CHexCoord& );
+    void  EmitTrail( );  // GPU tracer streak (see projbase.cpp)
 
     int              m_xAdd;        // added to m_maploc.x each step
     int              m_yAdd;        // added to .y
@@ -849,6 +861,8 @@ class CProjectile : public CProjBase
     CMapLoc          m_mlEnd;       // our destination
     int              m_iNumShots;   // num shots fired
     CExplData const* m_pEd;         // the explosion data
+    float            m_fStrength;   // shooter attack normalised 0..1 (tracer colour gradient)
+    int              m_iStepsStart; // steps at flight start (trail grows 0 -> max as it flies)
 };
 
 class CExplosion : public CProjBase

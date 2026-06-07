@@ -49,6 +49,18 @@ namespace SDL2Sprites
     bool CaptureVehicle( const CSpriteDIB* dib, int zoom, const int vx[4], const int vy[4],
                          int sortX, int sortY );
 
+    // Projectile TRACER STREAK (eye-candy, client-local — NOT a sim object). A stretched,
+    // additive, alpha-faded quad from (headX,headY) [the bullet, full colour] to
+    // (tailX,tailY) [transparent], halfWidth px to each side. Coords are VIEW space
+    // (window + UL) so they track the panning terrain like sprites. Recorded during the
+    // capture pass and drawn as ONE batch in Submit, over the composited sprite layer.
+    // Colour is 0-255 RGB; additive blending makes it read as a glow. headAlpha (0-255)
+    // is the opacity at the bullet end (tail always fades to 0) — lets the caller dim
+    // weaker shots. No texture/atlas entry — pure coloured geometry, so it never touches
+    // the persistent sprite store.
+    void CaptureTrail( float headX, float headY, float tailX, float tailY,
+                       float halfWidth, int r, int g, int b, int headAlpha );
+
     void EndFrame( );
 
     // Draw the whole layer over the terrain, y-sorted, re-projected to the current UL.

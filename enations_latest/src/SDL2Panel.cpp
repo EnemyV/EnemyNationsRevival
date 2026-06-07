@@ -1088,6 +1088,7 @@ void SDL2Panel::RenderDetached() {
 
     SDL_Rect dstRect = { 0, tbH, m_width, m_height };
     if (bGpuTerrain) {
+        Perf::ScopeCounter _cof( "p.ovlfill" );        // MEASURE: full-window CPU overlay fill+blit
         SDL_FillRect(winSurf, nullptr, 0x00000000);   // transparent
         SDL_Surface* spriteSurf = m_terrainAA->GetSpriteLayerSurface();
         if (spriteSurf) {
