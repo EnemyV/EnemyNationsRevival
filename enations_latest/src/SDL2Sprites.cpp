@@ -106,6 +106,22 @@ namespace
     };
     std::vector<Trail> g_trails;
 
+    // Soft radial discs (a triangle fan: bright/dark centre -> alpha-0 rim, no texture),
+    // VIEW space. Two per-frame lists like trails: g_flashes draw ADDITIVE on top (impact
+    // pops), g_shadows draw alpha-BLEND dark UNDER the sprite layer (drop shadows). Both
+    // refilled every capture pass and cleared after drawing.
+    struct Disc
+    {
+        float cx, cy, rx, ry;
+        Uint8 r, g, b, aCenter;
+    };
+    std::vector<Disc> g_flashes;
+    std::vector<Disc> g_shadows;
+
+    // One-shot shadow arm: set true before a unit's draw; the FIRST sprite captured then
+    // emits a ground shadow and disarms it (so multi-piece/multi-layer units get one).
+    bool g_captureShadow = false;
+
     void AccumDirty( int x, int y, int w, int h )
     {
         if ( w <= 0 || h <= 0 ) return;
@@ -271,7 +287,31 @@ namespace SDL2Sprites
     }
 
     void SetCaptureDynamic( bool b ) { g_captureDynamic = b; }
+    void SetCaptureShadow( bool b ) { g_captureShadow = b; }
+}
 
+namespace
+{
+    // Push a ground shadow ellipse under a sprite's view-space bounding box, then disarm
+    // the one-shot. Anchored at the bottom-centre, sized from the sprite width.
+    void EmitShadowForBox( int vx, int vy, int w, int h )
+    {
+        if ( !g_captureShadow )
+            return;
+        g_captureShadow = false;   // one shadow per unit (first piece wins)
+        Disc d;
+        d.rx = w * 0.42f;
+        d.ry = d.rx * 0.40f;
+        d.cx = vx + w * 0.5f;
+        d.cy = vy + h - d.ry * 0.8f;     // sit just above the sprite's bottom edge
+        d.r = d.g = d.b = 0;             // black
+        d.aCenter = 90;                  // soft; alpha-blended
+        g_shadows.push_back( d );
+    }
+}
+
+namespace SDL2Sprites
+{
     bool CaptureStructure( const CSpriteDIB* dib, int zoom, int vx, int vy, int w, int h,
                            int clx, int cly, int clw, int clh,
                            int sortX, int sortY )
@@ -288,6 +328,7 @@ namespace SDL2Sprites
         if ( cly + clh > h ) clh = h - cly;
         if ( clw <= 0 || clh <= 0 )
             return true;    // fully clipped away — nothing to draw, but skip CPU blit
+        EmitShadowForBox( vx, vy, w, h );   // one-shot; no-op unless armed for this unit
         Sprite s { };
         s.sortX = sortX; s.sortY = sortY; s.seq = ++g_seq; s.isVehicle = false;
         s.ax = loc.x; s.ay = loc.y; s.aw = loc.w; s.ah = loc.h;
@@ -311,6 +352,16 @@ namespace SDL2Sprites
         AtlasLoc loc = GetAtlasLoc( dib, zoom, w, h );
         if ( loc.w == 0 )
             return false;
+        if ( g_captureShadow )
+        {
+            int x0 = vx[0], x1 = vx[0], y0 = vy[0], y1 = vy[0];
+            for ( int i = 1; i < 4; ++i )
+            {
+                x0 = __min( x0, vx[i] ); x1 = __max( x1, vx[i] );
+                y0 = __min( y0, vy[i] ); y1 = __max( y1, vy[i] );
+            }
+            EmitShadowForBox( x0, y0, x1 - x0, y1 - y0 );
+        }
         Sprite s { };
         s.sortX = sortX; s.sortY = sortY; s.seq = ++g_seq; s.isVehicle = true;
         s.ax = loc.x; s.ay = loc.y; s.aw = loc.w; s.ah = loc.h;
@@ -332,6 +383,16 @@ namespace SDL2Sprites
         t.halfW = halfWidth;
         t.r = (Uint8)r; t.g = (Uint8)g; t.b = (Uint8)b; t.aHead = (Uint8)headAlpha;
         g_trails.push_back( t );
+    }
+
+    void CaptureFlash( float cx, float cy, float radius, int r, int g, int b, int centerAlpha )
+    {
+        if ( !g_inFrame || !g_renderer || radius < 1.0f || centerAlpha <= 0 )
+            return;
+        Disc d;
+        d.cx = cx; d.cy = cy; d.rx = radius; d.ry = radius;
+        d.r = (Uint8)r; d.g = (Uint8)g; d.b = (Uint8)b; d.aCenter = (Uint8)centerAlpha;
+        g_flashes.push_back( d );
     }
 
     void EndFrame( ) { g_inFrame = false; }
@@ -449,6 +510,78 @@ namespace SDL2Sprites
         g_trails.clear( );
     }
 
+    // Append a soft radial disc as a triangle fan: centre vertex at aCenter alpha, rim
+    // vertices at alpha 0 → a gradient falloff with no texture (same trick as the trail).
+    static void AppendDiscFan( std::vector<SDL_Vertex>& verts, std::vector<int>& idx,
+                               float cx, float cy, float rx, float ry,
+                               Uint8 r, Uint8 g, Uint8 b, Uint8 aCenter )
+    {
+        const int   SEG = 16;
+        const float TWO_PI = 6.2831853f;
+        int         base = (int)verts.size( );
+
+        SDL_Vertex c; c.position = { cx, cy }; c.tex_coord = { 0, 0 };
+        c.color = { r, g, b, aCenter };
+        verts.push_back( c );
+        for ( int i = 0; i < SEG; ++i )
+        {
+            float a = TWO_PI * i / SEG;
+            SDL_Vertex v; v.position = { cx + std::cos( a ) * rx, cy + std::sin( a ) * ry };
+            v.tex_coord = { 0, 0 }; v.color = { r, g, b, 0 };
+            verts.push_back( v );
+        }
+        for ( int i = 0; i < SEG; ++i )
+        {
+            idx.push_back( base );
+            idx.push_back( base + 1 + i );
+            idx.push_back( base + 1 + ( i + 1 ) % SEG );
+        }
+    }
+
+    // Impact flashes: additive soft discs drawn on top (over the sprite layer).
+    static void DrawFlashes( SDL_Renderer* r, int ulX, int ulY )
+    {
+        if ( g_flashes.empty( ) )
+            return;
+        static std::vector<SDL_Vertex> verts; static std::vector<int> idx;
+        verts.clear( ); idx.clear( );
+        for ( const Disc& d : g_flashes )
+            AppendDiscFan( verts, idx, d.cx - ulX, d.cy - ulY, d.rx, d.ry,
+                           d.r, d.g, d.b, d.aCenter );
+        if ( !verts.empty( ) )
+        {
+            SDL_BlendMode prev = SDL_BLENDMODE_BLEND;
+            SDL_GetRenderDrawBlendMode( r, &prev );
+            SDL_SetRenderDrawBlendMode( r, SDL_BLENDMODE_ADD );
+            SDL_RenderGeometry( r, nullptr, verts.data( ), (int)verts.size( ),
+                                idx.data( ), (int)idx.size( ) );
+            SDL_SetRenderDrawBlendMode( r, prev );
+        }
+        g_flashes.clear( );
+    }
+
+    // Drop shadows: alpha-blended dark soft discs drawn UNDER the sprite layer (over terrain).
+    static void DrawShadows( SDL_Renderer* r, int ulX, int ulY )
+    {
+        if ( g_shadows.empty( ) )
+            return;
+        static std::vector<SDL_Vertex> verts; static std::vector<int> idx;
+        verts.clear( ); idx.clear( );
+        for ( const Disc& d : g_shadows )
+            AppendDiscFan( verts, idx, d.cx - ulX, d.cy - ulY, d.rx, d.ry,
+                           d.r, d.g, d.b, d.aCenter );
+        if ( !verts.empty( ) )
+        {
+            SDL_BlendMode prev = SDL_BLENDMODE_BLEND;
+            SDL_GetRenderDrawBlendMode( r, &prev );
+            SDL_SetRenderDrawBlendMode( r, SDL_BLENDMODE_BLEND );
+            SDL_RenderGeometry( r, nullptr, verts.data( ), (int)verts.size( ),
+                                idx.data( ), (int)idx.size( ) );
+            SDL_SetRenderDrawBlendMode( r, prev );
+        }
+        g_shadows.clear( );
+    }
+
     static bool ZLess( const Sprite* a, const Sprite* b )
     {
         if ( a->sortY != b->sortY ) return a->sortY < b->sortY;
@@ -497,7 +630,9 @@ namespace SDL2Sprites
         if ( !g_rt )   // alloc failed → fall back to direct emit onto the target
         {
             BuildOrderAll( order, ulX, ulY, vpW, vpH );
+            DrawShadows( r, ulX, ulY );  // under the sprites (over terrain)
             EmitOrder( r, order, ulX, ulY );
+            DrawFlashes( r, ulX, ulY );  // impact pops, additive, on top
             DrawTrails( r, ulX, ulY );   // tracers on top of the sprite layer
             g_dirty = false; g_lastUlX = ulX; g_lastUlY = ulY; g_accumValid = false;
             return;
@@ -610,9 +745,12 @@ namespace SDL2Sprites
 
         SDL_SetRenderTarget( r, prevTarget );
         SDL_RenderSetViewport( r, &savedVp );
+
+        DrawShadows( r, ulX, ulY );   // under the sprite layer, over terrain (fresh each present)
         SDL_RenderCopy( r, g_rt, nullptr, nullptr );   // composite the layer onto the target
 
-        DrawTrails( r, ulX, ulY );   // tracers drawn fresh on top, never cached in g_rt
+        DrawFlashes( r, ulX, ulY );   // impact pops, additive, on top
+        DrawTrails( r, ulX, ulY );    // tracers drawn fresh on top, never cached in g_rt
 
         g_dirty = false; g_lastUlX = ulX; g_lastUlY = ulY; g_accumValid = false;
     }
@@ -648,5 +786,7 @@ namespace SDL2Sprites
         g_accumValid = false;
         g_inFrame = false;
         g_trails.clear( );
+        g_flashes.clear( );
+        g_shadows.clear( );
     }
 }

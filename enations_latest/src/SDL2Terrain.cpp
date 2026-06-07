@@ -929,8 +929,31 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
     bool seenContent = false;
     DWORD _gt = GetTickCount( );   // MEASURE: rebuild sub-phases (coarse ms → µs)
     LARGE_INTEGER _qpf; QueryPerformanceFrequency( &_qpf );   // PROFILE: per-hex phase split
-    long long _accProj = 0, _accFeath = 0; LARGE_INTEGER _pa, _pb;
+    long long _accProj = 0, _accFeath = 0, _accTile = 0, _accWater = 0; LARGE_INTEGER _pa, _pb;
     int _hexCnt = 0;   // PROFILE: count of hexes emitted (margin/zoom hex-count vs per-hex cost)
+
+    // Per-hex TileForHex memo for THIS rebuild. TileForHex(hex,dir) depends only on the
+    // hex + camera dir (constant per rebuild), but each hex is resolved once as the current
+    // hex AND up to 4× as a feather neighbour — so without a cache it runs ~5× per hex.
+    // Flat array keyed by map-hex coord (same indexing as the fog precompute below) with a
+    // generation stamp so there's no per-rebuild clear. Computes each hex's tile exactly once.
+    const int eXc = theMap.Get_eX( ), eYc = theMap.Get_eY( );
+    static std::vector<const Tile*> s_tileCache;
+    static std::vector<uint32_t>    s_tileGen;
+    static uint32_t                 s_tileGenCur = 0;
+    if ( (int)s_tileCache.size( ) != eXc * eYc )
+    { s_tileCache.assign( (size_t)eXc * eYc, nullptr ); s_tileGen.assign( (size_t)eXc * eYc, 0u ); s_tileGenCur = 0; }
+    if ( ++s_tileGenCur == 0 ) { std::fill( s_tileGen.begin( ), s_tileGen.end( ), 0u ); s_tileGenCur = 1; }
+    const int tcDir = aa.m_iDir;
+    auto cachedTile = [&]( CHex* ph ) -> const Tile* {
+        CHexCoord hc = ph->GetHex( );
+        size_t k = (size_t)hc.Y( ) * eXc + hc.X( );
+        if ( s_tileGen[k] == s_tileGenCur ) return s_tileCache[k];
+        const Tile* t = TileForHex( ph, tcDir );
+        s_tileCache[k] = t; s_tileGen[k] = s_tileGenCur;
+        return t;
+    };
+
     for ( int y = iTopY;; ++y )
     {
         bool rowAny = false;
@@ -970,7 +993,9 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
             if ( type < 0 || type >= kNumTypeNames )
                 continue;
 
-            const Tile* tile = TileForHex( phex, aa.m_iDir );  // forest/road/variant
+            QueryPerformanceCounter( &_pa );
+            const Tile* tile = cachedTile( phex );             // forest/road/variant (memoized)
+            QueryPerformanceCounter( &_pb ); _accTile += _pb.QuadPart - _pa.QuadPart;
             if ( !tile || !tile->tex[zoom] )
                 continue;
 
@@ -1062,10 +1087,12 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
             // live (neighbour's current frame) so lake/ocean/river seams blend + sync.
             if ( IsOpenWater( type ) )
             {
+                QueryPerformanceCounter( &_pa );
                 s_waterHex.push_back( phex );
                 s_waterPos.push_back( pts[0] ); s_waterPos.push_back( pts[1] );
                 s_waterPos.push_back( pts[2] ); s_waterPos.push_back( pts[3] );
-                s_waterAnimOf.push_back( resolveWaterAnim( type, psprite->GetIndex( ) ) );
+                int thisWaterAnim = resolveWaterAnim( type, psprite->GetIndex( ) );
+                s_waterAnimOf.push_back( thisWaterAnim );
 
                 static const SDL_FPoint wfuv[4] = { {0.f,0.5f}, {0.5f,0.f}, {1.f,0.5f}, {0.5f,1.f} };
                 static const int wDX[4] = { 0, 1, 0, -1 };
@@ -1082,9 +1109,13 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
                     CTerrainSprite* wns = wpn->GetSprite( );
                     int wntype = wns ? wns->GetID( ) : -1;
                     if ( !IsOpenWater( wntype ) ) continue;          // water<->water only
-                    const Tile* wntile = TileForHex( wpn, aa.m_iDir );
-                    if ( !wntile || !wntile->tex[zoom] || wntile == tile ) continue;
+                    // Skip the expensive per-neighbour TileForHex (it was ~50% of the whole
+                    // rebuild at max zoom-out): the seam-band only needs which water BODY the
+                    // neighbour is, i.e. its animation index. Same anim == same type+variant
+                    // == same tile == no seam to blend. resolveWaterAnim is a cached hash
+                    // lookup; TileForHex re-resolved road/coast/variant strings for nothing.
                     int wnAnim = resolveWaterAnim( wntype, wns->GetIndex( ) );
+                    if ( wnAnim == thisWaterAnim ) continue;   // same water body → no band
                     int c0 = wSlot[aa.m_iDir & 3][e];
                     int c1 = wSlot[aa.m_iDir & 3][( e + 1 ) & 3];
                     float i0x = pts[c0].x + kBandW * ( wcx - pts[c0].x );
@@ -1100,6 +1131,7 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
                     wbnd.p[3] = CPoint( (int)i1x, (int)i1y );  wbnd.uv[3] = { u1.x + kBandW*(0.5f-u1.x), u1.y + kBandW*(0.5f-u1.y) };
                     s_waterBlend.push_back( wbnd );
                 }
+                QueryPerformanceCounter( &_pb ); _accWater += _pb.QuadPart - _pa.QuadPart;
             }
 
             // Slope-shade overlay quad: grayscale brightness per triangle (bL/bR), same
@@ -1205,7 +1237,7 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
                     // gets wiped by the wave re-draw.
                     if ( IsOpenWater( ntype ) && type != CHex::coastline )
                         continue;
-                    const Tile* ntile = TileForHex( pn, aa.m_iDir );
+                    const Tile* ntile = cachedTile( pn );   // memoized (computed once per hex/rebuild)
                     if ( !ntile || !ntile->tex[zoom] || ntile == tile ) continue;
 
                     int   c0 = kCornerSlot[aa.m_iDir & 3][e];
@@ -1251,6 +1283,8 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
     Perf::CounterAdd( "rb.proj", (int)( _accProj * 1000000 / _qpf.QuadPart ) );      // PROFILE
     Perf::CounterAdd( "rb.feather", (int)( _accFeath * 1000000 / _qpf.QuadPart ) );  // PROFILE
     Perf::CounterAdd( "rb.hexes", _hexCnt );                                         // PROFILE
+    Perf::CounterAdd( "rb.tile",  (int)( _accTile  * 1000000 / _qpf.QuadPart ) );    // PROFILE: TileForHex
+    Perf::CounterAdd( "rb.water", (int)( _accWater * 1000000 / _qpf.QuadPart ) );    // PROFILE: water bands
 
     // Precompute each fog hex's 8 neighbour indices (once, here), so the throttled
     // fog re-sample is 1 visibility read/hex + array lookups instead of 9 hashed

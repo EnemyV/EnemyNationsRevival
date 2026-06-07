@@ -3511,6 +3511,33 @@ void CGameMap::Update( CAnimAtr& aa )
     }
 }
 
+// Hit flash: a SUBTLE additive white pop on a recently-damaged unit. Implemented as a
+// transient additive disc (not a sprite tint), so it lives outside the cached g_rt and
+// needs no dirty-rect handling at all — it's redrawn fresh each present like the tracers.
+// Driven by CUnit::m_dwHitFlash (set in DecDamagePoints for any damaged unit).
+static const DWORD EN_HIT_FLASH_MS = 180;
+static void EnEmitUnitHitFlash( CUnit* pUnit, CAnimAtr& aa, const CHexCoord& hex,
+                                const CPoint& ulDirty, float radiusScale )
+{
+    DWORD t0  = pUnit->m_dwHitFlash;
+    DWORD now = timeGetTime( );
+    if ( t0 == 0 || now - t0 >= EN_HIT_FLASH_MS )
+        return;
+
+    CRect rb;
+    if ( !aa.CalcWindowHexBound( hex, rb ) )
+        return;
+
+    float k       = 1.0f - (float)( now - t0 ) / (float)EN_HIT_FLASH_MS;   // 1 -> 0
+    float cx      = rb.left + rb.Width( ) * 0.5f + ulDirty.x;
+    float cy      = rb.top + rb.Height( ) * 0.45f + ulDirty.y;
+    float radius  = rb.Width( ) * radiusScale;
+    int   aCenter = (int)( 55.0f * k );    // additive, subtle
+
+    // ~80% red, 20% white: a red flash with a touch of white, not pure white.
+    SDL2Sprites::CaptureFlash( cx, cy, radius, 255, 51, 51, aCenter );
+}
+
 //---------------------------------------------------------------------------
 // CGameMap::DiscoverSpritesGpu
 //
@@ -3627,10 +3654,15 @@ void CGameMap::DiscoverSpritesGpu( CAnimAtr& aa, const CRect& rect )
                                                    CStructureSprite::BACKGROUND_LAYER )
                     ->Draw( );
 
+            SDL2Sprites::SetCaptureShadow( true );     // one ground shadow (foreground piece)
             drawinfopool.GetStructureDrawInfo( pbuilding, CTileDrawInfo::building, hexBuilding,
                                                pbuilding->GetMapLoc( ),
                                                CStructureSprite::FOREGROUND_LAYER )
                 ->Draw( );
+            SDL2Sprites::SetCaptureShadow( false );
+
+            // Subtle additive white hit flash (transient overlay; no g_rt / dirty-rect work)
+            EnEmitUnitHitFlash( pbuilding, aa, hexBuilding, ulDirty, 0.6f );
         }
     }
 
@@ -3657,7 +3689,12 @@ void CGameMap::DiscoverSpritesGpu( CAnimAtr& aa, const CRect& rect )
             // CVehicle::Draw self-registers its dirty rect (unit.cpp, LIST_PAINT_BOTH) in the
             // invalidate mode we run the capture in — harvested below like every other moving
             // sprite. No separate manual DirtyAddRect (that was the redundant second path).
+            SDL2Sprites::SetCaptureShadow( true );     // ground shadow under the vehicle
             drawinfopool.GetVehicleDrawInfo( pvehicle, hexVeh )->Draw( );
+            SDL2Sprites::SetCaptureShadow( false );
+
+            // Subtle additive white hit flash (transient overlay; no g_rt / dirty-rect work)
+            EnEmitUnitHitFlash( pvehicle, aa, hexVeh, ulDirty, 0.5f );
         }
     }
 

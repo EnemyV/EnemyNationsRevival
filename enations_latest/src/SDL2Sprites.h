@@ -61,6 +61,16 @@ namespace SDL2Sprites
     void CaptureTrail( float headX, float headY, float tailX, float tailY,
                        float halfWidth, int r, int g, int b, int headAlpha );
 
+    // Impact flash (explosions): an additive soft disc of `radius` px at VIEW-space
+    // (cx,cy), `centerAlpha` (0-255) at the centre fading to 0 at the rim. Drawn on top
+    // of the sprite layer, fresh each present. Keep centerAlpha modest — it's additive.
+    void CaptureFlash( float cx, float cy, float radius, int r, int g, int b, int centerAlpha );
+
+    // Drop-shadow control (units). SetCaptureShadow(true) arms a ONE-SHOT: the next sprite
+    // captured emits a ground shadow under it, then disarms (so a multi-piece unit gets
+    // one shadow). Wrap a single unit's draw with true/false.
+    void SetCaptureShadow( bool on );
+
     void EndFrame( );
 
     // Draw the whole layer over the terrain, y-sorted, re-projected to the current UL.

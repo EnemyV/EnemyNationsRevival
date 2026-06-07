@@ -1095,6 +1095,7 @@ CUnit::CUnit( ): m_ptTarget( 0, 0 ), m_ptUs( 0, 0 ), m_ptOppo( 0, 0 ), m_ptUsOpp
     memset( m_pdwPlyrsSee, 0, sizeof( DWORD ) * theGame.GetMaxPlyrNum( ) );
 
     m_iFrameHit     = 0;
+    m_dwHitFlash    = 0;
     m_iVoice        = -1;
     m_dwLastMatTime = 0;
     m_iUpdateMat    = 0;

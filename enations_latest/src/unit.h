@@ -646,6 +646,8 @@ class CUnit : public CUnitTile
 
     int m_iFrameHit;  // show it being hit in the world map
 
+    DWORD m_dwHitFlash;  // timeGetTime() of last damage taken; area-map hit-flash tint (0 = none)
+
     DWORD m_dwLastMatTime;  // last time it broadcast materials on hand
     char  m_iUpdateMat;     // 0 - no update
                             // 1 - update soon
@@ -872,6 +874,7 @@ class CExplosion : public CProjBase
     CExplosion( CUnit const* pTarget, CMapLoc const& ml, DWORD dwIDShooter );
     void  Operate( );
     CRect Draw( const CHexCoord& );
+    void  EmitFlash( const CPoint& ptCenter, int iSprW, int iSprH );  // additive impact pop
 
     int m_iKillFrame;  // on or after this frame kill the building
 };

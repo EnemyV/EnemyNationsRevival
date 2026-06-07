@@ -507,7 +507,8 @@ CExplosion::Draw(
 
     CMapLoc		maploc  ( hexcoord );
     CMapLoc3D	maploc3d( GetMapLoc().x, GetMapLoc().y, GetAlt() );
-    CPoint		ptOffset( xpanimatr->WorldToWindow( xpanimatr->WorldToCenterWorld( maploc3d )));
+    CPoint		ptCenter( xpanimatr->WorldToWindow( xpanimatr->WorldToCenterWorld( maploc3d )));
+    CPoint		ptOffset( ptCenter );
 
     // Assumes projectiles are 1-piece
 
@@ -519,13 +520,49 @@ CExplosion::Draw(
     ptOffset.x -= pspriteview->Width()  >> 1;
     ptOffset.y -= pspriteview->Height();
 
+    EmitFlash ( ptCenter, pspriteview->Width(), pspriteview->Height() );
+
     CDrawParms	drawparms( *this, ptOffset );
 
     return pspriteview->Draw( drawparms );
 }
 
+//---------------------------------------------------------------------------
+// CExplosion::EmitFlash - additive light pop at impact (GPU only)
+//
+// A brief, SUBTLE additive glow under the explosion sprite, brightest on the
+// first frame and gone within a couple — purely render-side eye-candy (no sim).
+//---------------------------------------------------------------------------
+void CExplosion::EmitFlash ( const CPoint & ptCenter, int iSprW, int iSprH )
+{
+
+    if ( ! g_enProjTrails || ! g_enSpriteSplitPass || ! SDL2Sprites::Enabled () )
+        return;
+
+    // Fade over the first few animation frames (brightest at frame 0).
+    const double FADE_FRAMES = 3.0;
+    int    iFrame = GetFrame ( CSpriteView::ANIM_FRONT_1 );
+    double fade   = 1.0 - iFrame / FADE_FRAMES;
+    if ( fade <= 0.0 )
+        return;
+
+    CPoint	ul( xpanimatr->GetUL() );
+    float	cx = (float) ( ptCenter.x + ul.x );
+    float	cy = (float) ( ptCenter.y - ( iSprH >> 1 ) + ul.y );   // middle of the blast
+    float	radius = (float) iSprW * 0.6f;
+    int		aCenter = (int) ( 110.0 * fade );    // additive + modest -> never blows out
+
+    SDL2Sprites::CaptureFlash ( cx, cy, radius, 255, 235, 190, aCenter );
+}
+
 void CUnit::DecDamagePoints (int iDamage, DWORD dwKiller)
 {
+
+    // render-side hit flash (area map): timestamp the hit for ANY unit (mine or enemy)
+    // so the sprite briefly tints red. DecDamagePoints runs on every client via the
+    // network damage handlers, so this fires for whatever the viewer can see.
+    if ( iDamage > 0 )
+        m_dwHitFlash = timeGetTime ();
 
     // mark it for red
     if ( (iDamage > 0) && (GetOwner()->IsMe ()) )
