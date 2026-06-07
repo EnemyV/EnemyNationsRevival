@@ -26,6 +26,9 @@ namespace
         uint64_t seq;            // capture order — tiebreak for equal sort key
         bool     isVehicle;
         bool     isStructure;    // building/bridge/tree — sorts UNDER the mobile/effect layer at a tie
+        bool     isDynamic;      // captured as a moving/changing object (unit/building/projectile)
+                                 // vs a STATIC tree/bridge. Static sprites are binned into the
+                                 // persistent spatial grid ONCE; dynamics are scanned per frame.
         int      ax, ay, aw, ah; // atlas sub-rect (the FULL sprite's texture)
         int      vx, vy;         // structure UL (view space); FULL size == aw,ah
         int      cx, cy, cw, ch; // sprite-LOCAL visible band (construction wipe); full = 0,0,aw,ah
@@ -97,6 +100,15 @@ namespace
     std::vector<SprKey> g_dynKeys;
     bool                g_captureDynamic = false;   // mark captures into g_dynKeys
     bool                g_captureWasFull = true;     // S2.4: full vs incremental EMIT
+
+    // Persistent STATIC sprite grid (perf): binning all ~100k sprites into the spatial
+    // grid EVERY incremental frame was the zoomed-out FPS wall (~90 ms/frame). The static
+    // trees don't move, so bin them ONCE and reuse the grid until the static set or the
+    // view origin changes; only the handful of DYNAMIC sprites are scanned per frame.
+    std::vector<std::vector<const Sprite*>> g_staticGrid;   // [cy*gnx+cx] -> static sprites
+    int  g_staticGridGnx = 0, g_staticGridGny = 0;          // grid dims it was built at
+    int  g_staticGridUlX = INT_MIN, g_staticGridUlY = INT_MIN;  // view origin it was built for
+    bool g_staticGridDirty = true;                          // static set changed → rebuild
 
     // Projectile tracer streaks (eye-candy, client-local). A plain list rebuilt every
     // capture pass and drawn as one additive batch in Submit, then cleared — they are
@@ -260,6 +272,7 @@ namespace SDL2Sprites
             g_sprites.clear( );
             g_zoom = zoom; g_dir = dir;
             g_dirty = true;
+            g_staticGridDirty = true;   // grid pointers into g_sprites are now stale
         }
 
         g_dynKeys.clear( );   // full walk recaptures dynamic objects → repopulates this
@@ -283,7 +296,8 @@ namespace SDL2Sprites
                     bw -= bx; bh -= by;
                 }
                 if ( RectsOverlap( bx, by, bw, bh, dvx, dvy, dw, dh ) )
-                    { it = g_sprites.erase( it ); g_dirty = true; }
+                    { bool wasStatic = !s.isDynamic; it = g_sprites.erase( it ); g_dirty = true;
+                      if ( wasStatic ) g_staticGridDirty = true; }   // drop its stale grid ptr
                 else
                     ++it;
             }
@@ -306,9 +320,10 @@ namespace SDL2Sprites
             g_sprites.clear( );
             g_zoom = zoom; g_dir = dir;
             g_dirty = true;
+            g_staticGridDirty = true;   // grid pointers into g_sprites are now stale
         }
         for ( const SprKey& k : g_dynKeys )
-            g_sprites.erase( k );
+            g_sprites.erase( k );   // dynamics only — not in the static grid
         g_dynKeys.clear( );
         g_dirty = true;     // dynamic objects will be re-captured + re-emitted
         g_captureWasFull = false;
@@ -365,6 +380,7 @@ namespace SDL2Sprites
         Sprite s { };
         s.sortX = sortX; s.sortY = sortY; s.seq = ++g_seq; s.isVehicle = false;
         s.isStructure = ( g_enSprIsStruct != 0 );   // building/bridge/tree vs effect/projectile
+        s.isDynamic = g_captureDynamic;              // static tree/bridge vs moving structure
         s.ax = loc.x; s.ay = loc.y; s.aw = loc.w; s.ah = loc.h;
         s.vx = vx; s.vy = vy;
         s.cx = clx; s.cy = cly; s.cw = clw; s.ch = clh;
@@ -374,6 +390,7 @@ namespace SDL2Sprites
         SprKey key { dib, vx, vy };
         g_sprites[ key ] = s;
         if ( g_captureDynamic ) g_dynKeys.push_back( key );
+        else g_staticGridDirty = true;   // a static sprite (re)appeared → rebin the cached grid
         g_dirty = true;
         return true;
     }
@@ -400,6 +417,7 @@ namespace SDL2Sprites
         Sprite s { };
         s.sortX = sortX; s.sortY = sortY; s.seq = ++g_seq; s.isVehicle = true;
         s.isStructure = false;   // vehicles are the mobile layer (on top of structures at a tie)
+        s.isDynamic = true;      // vehicles always move → never enter the static grid
         s.ax = loc.x; s.ay = loc.y; s.aw = loc.w; s.ah = loc.h;
         for ( int i = 0; i < 4; ++i ) { s.qx[i] = vx[i]; s.qy[i] = vy[i]; }
         SprKey key { dib, vx[0], vy[0] };
@@ -734,19 +752,24 @@ namespace SDL2Sprites
             for ( const SDL_Rect& vr : g_dirtyPrev ) addRect( vr );
 
             // Tight dirty rects multiply the rect count, so a per-rect all-sprites scan would
-            // blow up. Bin every sprite into a screen-space uniform grid ONCE, then each rect
-            // queries only its overlapping cells. Result is identical to the brute scan (same
-            // overlapping set, z-sorted) — pure speedup, no visual change.
+            // blow up. Bin sprites into a screen-space uniform grid, then each rect queries
+            // only its overlapping cells. The STATIC grid (trees/bridges — the ~100k majority)
+            // is binned ONCE and reused until the static set or view origin changes; only the
+            // handful of DYNAMIC sprites (units/buildings/projectiles) are gathered per frame.
+            // Binning all 100k EVERY frame was the zoomed-out FPS wall (~90 ms/frame).
             const int kCell = 96, kGM = 256;            // cell size / off-screen sprite margin
             const int gnx = ( vpW + 2 * kGM ) / kCell + 1;
             const int gny = ( vpH + 2 * kGM ) / kCell + 1;
-            static std::vector<std::vector<const Sprite*>> grid;
-            if ( (int)grid.size( ) < gnx * gny ) grid.resize( gnx * gny );
-            for ( int i = 0; i < gnx * gny; ++i ) grid[ i ].clear( );
+            bool gridStale = g_staticGridDirty || ulX != g_staticGridUlX || ulY != g_staticGridUlY
+                          || gnx != g_staticGridGnx || gny != g_staticGridGny;
+            if ( gridStale )
             {
                 Perf::ScopeCounter _cg( "spr.t.grid" );
+                if ( (int)g_staticGrid.size( ) < gnx * gny ) g_staticGrid.resize( gnx * gny );
+                for ( int i = 0; i < gnx * gny; ++i ) g_staticGrid[ i ].clear( );
                 for ( auto& kv : g_sprites )
                 {
+                    if ( kv.second.isDynamic ) continue;   // dynamics scanned per-frame below
                     int bx, by, bw, bh; SprBox( kv.second, bx, by, bw, bh );
                     int sx = bx - ulX + kGM, sy = by - ulY + kGM;
                     int cx0 = sx / kCell, cx1 = ( sx + bw ) / kCell;
@@ -756,8 +779,19 @@ namespace SDL2Sprites
                     cx1 = __min( gnx - 1, cx1 ); cy1 = __min( gny - 1, cy1 );
                     for ( int cy = cy0; cy <= cy1; ++cy )
                         for ( int cx = cx0; cx <= cx1; ++cx )
-                            grid[ cy * gnx + cx ].push_back( &kv.second );
+                            g_staticGrid[ cy * gnx + cx ].push_back( &kv.second );
                 }
+                g_staticGridDirty = false;
+                g_staticGridUlX = ulX; g_staticGridUlY = ulY;
+                g_staticGridGnx = gnx; g_staticGridGny = gny;
+            }
+
+            // DYNAMIC sprites this frame (few) — gathered fresh from g_dynKeys for the scan.
+            static std::vector<const Sprite*> dynList; dynList.clear( );
+            for ( const SprKey& k : g_dynKeys )
+            {
+                auto it = g_sprites.find( k );
+                if ( it != g_sprites.end( ) ) dynList.push_back( &it->second );
             }
 
             Perf::CounterAdd( "spr.full", 0 );
@@ -781,14 +815,22 @@ namespace SDL2Sprites
                     for ( int cy = cy0; cy <= cy1; ++cy )
                         for ( int cx = cx0; cx <= cx1; ++cx )
                         {
-                            for ( const Sprite* s : grid[ cy * gnx + cx ] )
+                            for ( const Sprite* s : g_staticGrid[ cy * gnx + cx ] )
                             {
                                 int bx, by, bw, bh; SprBox( *s, bx, by, bw, bh );
                                 if ( RectsOverlap( bx - ulX, by - ulY, bw, bh, R.x, R.y, R.w, R.h ) )
                                     order.push_back( s );
                             }
-                            dbgScan += (int)grid[ cy * gnx + cx ].size( );
+                            dbgScan += (int)g_staticGrid[ cy * gnx + cx ].size( );
                         }
+                    // Dynamic sprites (units etc.) are not in the cached grid — add the few
+                    // overlapping this rect by a direct scan.
+                    for ( const Sprite* s : dynList )
+                    {
+                        int bx, by, bw, bh; SprBox( *s, bx, by, bw, bh );
+                        if ( RectsOverlap( bx - ulX, by - ulY, bw, bh, R.x, R.y, R.w, R.h ) )
+                            order.push_back( s );
+                    }
                     std::sort( order.begin( ), order.end( ), ZLess );
                     order.erase( std::unique( order.begin( ), order.end( ) ), order.end( ) );  // dedup multi-cell
                 }
@@ -841,6 +883,8 @@ namespace SDL2Sprites
         g_atlasW = g_atlasH = 0;
         g_shelfX = g_shelfY = g_shelfH = 0;
         g_sprites.clear( );
+        g_staticGrid.clear( ); g_staticGridDirty = true;   // pointers into g_sprites are gone
+        g_staticGridUlX = g_staticGridUlY = INT_MIN;
         if ( g_rt ) { SDL_DestroyTexture( g_rt ); g_rt = nullptr; g_rtW = g_rtH = 0; }
         g_dirty = true; g_lastUlX = g_lastUlY = INT_MIN;
         g_accumValid = false;
