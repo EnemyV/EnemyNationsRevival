@@ -226,6 +226,80 @@ std::string CWndArea::sWndCls;
 
 const int SEL_WIDTH = 2;
 
+// Captured freeform path for line movement (drawn formation). Client-px points of
+// the current LMB drag, starting at m_selOrig. File-static (only one line-move drag
+// happens at a time) so CWndArea's layout doesn't change. Cleared on LMB-down.
+static std::vector<CPoint> s_linePath;
+
+// Press-and-hold trigger for line movement (alternative to holding Alt): if the LMB
+// is held ~1/3s WITHOUT having started a drag, the next drag becomes a line-move; a
+// quicker drag (well under 1/2s) stays a selection box.
+static DWORD s_lmbDownTime  = 0;      // GetTickCount at LMB-down
+static bool  s_draggedEarly = false;  // crossed the drag threshold before the hold time
+const  DWORD LINE_HOLD_MS   = 333;    // hold this long (stationary) to arm line-move
+
+// Total pixel length of the polyline.
+static float LinePathLength( )
+{
+    float total = 0;
+    for ( size_t i = 1; i < s_linePath.size( ); ++i )
+    {
+        float dx = (float)( s_linePath[i].x - s_linePath[i - 1].x );
+        float dy = (float)( s_linePath[i].y - s_linePath[i - 1].y );
+        total += sqrt( dx * dx + dy * dy );
+    }
+    return total;
+}
+
+// Point at arc-length s along the polyline (clamped to the ends).
+static CPoint LinePathAt( float s )
+{
+    if ( s_linePath.empty( ) )
+        return CPoint( 0, 0 );
+    if ( s <= 0 || s_linePath.size( ) == 1 )
+        return s_linePath.front( );
+    float acc = 0;
+    for ( size_t i = 1; i < s_linePath.size( ); ++i )
+    {
+        float dx  = (float)( s_linePath[i].x - s_linePath[i - 1].x );
+        float dy  = (float)( s_linePath[i].y - s_linePath[i - 1].y );
+        float seg = sqrt( dx * dx + dy * dy );
+        if ( acc + seg >= s )
+        {
+            float t = ( seg > 0 ) ? ( s - acc ) / seg : 0;
+            return CPoint( s_linePath[i - 1].x + (int)( dx * t ),
+                           s_linePath[i - 1].y + (int)( dy * t ) );
+        }
+        acc += seg;
+    }
+    return s_linePath.back( );
+}
+
+// Arc-length of the point on the polyline closest to p (for ordering units along a
+// curve so the formation doesn't cross over itself).
+static float LinePathClosestArc( CPoint p )
+{
+    float best = 1e18f, bestArc = 0, acc = 0;
+    for ( size_t i = 1; i < s_linePath.size( ); ++i )
+    {
+        float ax = (float)s_linePath[i - 1].x, ay = (float)s_linePath[i - 1].y;
+        float dx = (float)s_linePath[i].x - ax, dy = (float)s_linePath[i].y - ay;
+        float seg2 = dx * dx + dy * dy;
+        float t    = ( seg2 > 0 ) ? ( ( p.x - ax ) * dx + ( p.y - ay ) * dy ) / seg2 : 0;
+        if ( t < 0 ) t = 0;
+        if ( t > 1 ) t = 1;
+        float cx = ax + dx * t, cy = ay + dy * t;
+        float d  = ( p.x - cx ) * ( p.x - cx ) + ( p.y - cy ) * ( p.y - cy );
+        if ( d < best )
+        {
+            best    = d;
+            bestArc = acc + sqrt( seg2 ) * t;
+        }
+        acc += sqrt( seg2 );
+    }
+    return bestArc;
+}
+
 
 int     CWndArea::m_iCount = 0;
 std::string CWndArea::m_sHelp;
@@ -255,8 +329,9 @@ HCURSOR CWndArea::m_hCurUnload[4];
 HCURSOR CWndArea::m_hCurRepair;
 HCURSOR CWndArea::m_hCurNoRepair;
 
-static BOOL _bShowPos = 1;  // FIXME: Hack, temporary static variables to get rid of compile errors
-static BOOL _bClickAny = 1;
+// _bShowPos / _bClickAny are the registry-backed cheat globals (default FALSE),
+// defined in lastplnt.cpp and declared extern in lastplnt.h under _CHEAT.
+// (Removed local `static ... = 1` shadows that forced both cheats ON and hid the registry value.)
 
 // accumulator for mouse wheel deltas
 static int s_areaWheelAccum = 0;
@@ -1058,6 +1133,9 @@ CWndArea::CWndArea( )
     m_pSelUnder   = NULL;
     m_bScrollBars = FALSE;
 
+    m_bLineMove        = FALSE;
+    m_bDragStartOnUnit = FALSE;
+
     m_phexRoadPath  = NULL;
     m_ppUnderSprite = NULL;
     m_iNumRoadHex   = 0;
@@ -1589,12 +1667,44 @@ void CWndArea::OnMouseMove( UINT nFlags, CPoint point )
         return;
     }
 
-    // drawing selection box
+    // drawing selection box — or a freeform line-movement line
     if ( m_iMode == normal_select )
     {
-        m_selRect.SetRect( m_selOrig.x, m_selOrig.y, point.x, point.y );
-        m_selRect.NormalizeRect( );
-        m_selRect &= rect;
+        // Two ways to draw a movement line (drawn formation) for 2+ selected units:
+        //   1. hold ALT while dragging, or
+        //   2. press and hold ~1/3s WITHOUT dragging, then drag.
+        // A plain quick drag stays a selection box (the original behavior). Alt isn't
+        // in the mouse MK_ flags, so read it from the keyboard like Shift/Ctrl elsewhere.
+        BOOL bDragged = ( abs( point.x - m_ptLMB.x ) >= theMap.HexWid( m_aa.m_iZoom ) / 2 ) ||
+                        ( abs( point.y - m_ptLMB.y ) >= theMap.HexHt( m_aa.m_iZoom ) / 2 );
+        BOOL  bAlt = ( GetKeyState( VK_MENU ) & 0x8000 ) != 0;
+        DWORD held = GetTickCount( ) - s_lmbDownTime;
+
+        // If the drag threshold is crossed before the hold time, it's a normal
+        // box-select for the rest of the gesture (a quick drag, not a hold).
+        if ( bDragged && held < LINE_HOLD_MS )
+            s_draggedEarly = true;
+        BOOL bHoldArmed = !s_draggedEarly && ( held >= LINE_HOLD_MS );
+
+        m_bLineMove = bDragged && ( bAlt || bHoldArmed ) && ( m_lstUnits.GetCount( ) >= 2 );
+
+        if ( m_bLineMove )
+        {
+            // Record the freeform path the cursor traces (throttled), starting at the
+            // drag origin. DoLineMove distributes the units along this polyline.
+            if ( s_linePath.empty( ) )
+                s_linePath.push_back( m_selOrig );
+            CPoint last = s_linePath.back( );
+            if ( abs( point.x - last.x ) + abs( point.y - last.y ) >= 4 )
+                s_linePath.push_back( point );
+            m_lineEnd = point;
+        }
+        else
+        {
+            m_selRect.SetRect( m_selOrig.x, m_selOrig.y, point.x, point.y );
+            m_selRect.NormalizeRect( );
+            m_selRect &= rect;
+        }
     }
 
     // if RMB then we scroll
@@ -1816,18 +1926,26 @@ void CWndArea::Draw( )
 
     if ( m_iMode == normal_select )
     {
-        // GPU split path: m_dibwnd (terrain) is never presented — PresentOwn composites
-        // the GPU terrain mesh + the color-keyed sprite layer (m_dibSprite) directly. So
-        // the box has to go into m_dibSprite, and via a self-contained draw (no m_pSelUnder
-        // save buffer, which is sized for m_dibwnd's format and would overflow).
-        if ( m_aa.IsGpuFull( ) )
-            DrawSelectionRectGpu( );
+        if ( m_bLineMove )
+        {
+            // Drawn-formation preview: dotted line + per-unit destination dots.
+            DrawLineMove( );
+        }
         else
-            DrawSelectionRect( );
+        {
+            // GPU split path: m_dibwnd (terrain) is never presented — PresentOwn composites
+            // the GPU terrain mesh + the color-keyed sprite layer (m_dibSprite) directly. So
+            // the box has to go into m_dibSprite, and via a self-contained draw (no m_pSelUnder
+            // save buffer, which is sized for m_dibwnd's format and would overflow).
+            if ( m_aa.IsGpuFull( ) )
+                DrawSelectionRectGpu( );
+            else
+                DrawSelectionRect( );
 
-        // Add selection rectangle to the list of rects to get blted this frame
+            // Add selection rectangle to the list of rects to get blted this frame
 
-        m_aa.GetDirtyRects( )->AddRect( &m_selRect, CDirtyRects::RECT_LIST::LIST_BLT );
+            m_aa.GetDirtyRects( )->AddRect( &m_selRect, CDirtyRects::RECT_LIST::LIST_BLT );
+        }
     }
 
     // Blt the dirty rects to the screen
@@ -1878,7 +1996,8 @@ void CWndArea::Draw( )
 
     // Erase the selection rect (blted next frame)
 
-    if ( m_iMode == normal_select )
+    // (line-move draws into m_dibSprite/m_dibwnd and clears itself — see DrawLineMove)
+    if ( ( m_iMode == normal_select ) && !m_bLineMove )
     {
         // GPU split path: the rect was drawn into m_dibSprite, which is fully
         // cleared+regenerated by the next frame's Render() — so there is nothing to
@@ -1995,6 +2114,134 @@ void CWndArea::DrawSelectionRectGpu( )
         memcpy( pRow, pColor, iColBytes );
         if ( iRightOff > 0 )
             memcpy( pRow + iRightOff, pColor, iColBytes );
+    }
+}
+
+//---------------------------------------------------------------------------
+// CWndArea::DrawLineMove
+// Drawn-formation preview: a dotted line from the drag origin to the cursor, plus
+// a brighter dot at each selected vehicle's computed destination. Drawn into the
+// same layer as the selection box (m_dibSprite in GPU mode, m_dibwnd otherwise) so
+// it composites on top. GPU regenerates that layer every frame; the software path
+// is force-repainted (m_bUpdateAll) to erase the previous frame's line.
+//---------------------------------------------------------------------------
+void CWndArea::DrawLineMove( )
+{
+    bool  bGpu = m_aa.IsGpuFull( );
+    CDIB* pdib = bGpu ? m_aa.m_dibSprite.GetDIB( ) : m_aa.m_dibwnd.GetDIB( );
+    if ( pdib == NULL )
+        return;
+
+    int     iBpp = pdib->GetBytesPerPixel( );
+    CDIBits bits = pdib->GetBits( );
+    int     W    = pdib->GetWidth( );
+    int     H    = pdib->GetHeight( );
+
+    BYTE const* pColor = m_colorbuffer.GetBuffer( 8 );  // index-255 (white); >= max dot width
+
+    // plot a filled square of `sz` px centred at (cx,cy), clipped to the DIB
+    auto plot = [&]( int cx, int cy, int sz )
+    {
+        int x0 = cx - sz / 2, y0 = cy - sz / 2;
+        int x1 = Max( 0, x0 ), x2 = Min( W, x0 + sz );
+        if ( x2 <= x1 )
+            return;
+        int wBytes = ( x2 - x1 ) * iBpp;
+        for ( int yy = Max( 0, y0 ); yy < Min( H, y0 + sz ); ++yy )
+            memcpy( bits + pdib->GetOffset( x1, yy ), pColor, wBytes );
+    };
+
+    // dotted freeform line: walk the captured polyline by arc length
+    float total = LinePathLength( );
+    if ( total < 1 )
+        total = 1;
+    for ( float s = 0; s <= total; s += 7.0f )
+    {
+        CPoint p = LinePathAt( s );
+        plot( p.x, p.y, 2 );
+    }
+
+    // one destination dot per selected vehicle, evenly spaced ALONG the curve
+    int n = 0;
+    for ( POSITION pos = m_lstUnits.GetHeadPosition( ); pos != NULL; )
+        if ( m_lstUnits.GetNext( pos )->GetUnitType( ) == CUnit::vehicle )
+            ++n;
+    for ( int i = 0; i < n; ++i )
+    {
+        float s = ( n == 1 ) ? total : total * i / ( n - 1 );
+        CPoint p = LinePathAt( s );
+        plot( p.x, p.y, 5 );
+    }
+
+    if ( !bGpu )
+        m_bUpdateAll = TRUE;  // software path: clear this frame's line next frame
+}
+
+//---------------------------------------------------------------------------
+// CWndArea::DoLineMove
+// Distribute the selected vehicles evenly along the freeform drawn path (s_linePath)
+// and issue a move order to each. Units are ordered by where they project onto the
+// path (arc length) so the formation doesn't cross over itself. Each order goes
+// through SetDest (CMsgVehSetDest -> server), so this is multiplayer-safe.
+//---------------------------------------------------------------------------
+void CWndArea::DoLineMove( CPoint ptEnd )
+{
+    // make sure the path includes the final cursor point
+    if ( s_linePath.empty( ) )
+        s_linePath.push_back( m_selOrig );
+    if ( s_linePath.back( ) != ptEnd )
+        s_linePath.push_back( ptEnd );
+
+    // gather selected vehicles
+    std::vector<CVehicle*> vehs;
+    for ( POSITION pos = m_lstUnits.GetHeadPosition( ); pos != NULL; )
+    {
+        CUnit* pUnit = m_lstUnits.GetNext( pos );
+        if ( pUnit->GetUnitType( ) == CUnit::vehicle )
+            vehs.push_back( (CVehicle*)pUnit );
+    }
+    int n = (int)vehs.size( );
+    if ( n == 0 )
+        return;
+
+    float total = LinePathLength( );
+
+    // order units by where they project onto the path (arc length), so the start of
+    // the line gets the unit nearest the start and the formation doesn't cross.
+    std::vector<float> key( n );
+    for ( int i = 0; i < n; ++i )
+    {
+        CPoint sp = m_aa.WrapWorldToWindow( m_aa.WorldToCenterWorld( vehs[i]->GetWorldPixels( ) ) );
+        key[i] = LinePathClosestArc( sp );
+    }
+    for ( int i = 0; i < n - 1; ++i )  // selection sort (unit counts are small)
+    {
+        int iMin = i;
+        for ( int j = i + 1; j < n; ++j )
+            if ( key[j] < key[iMin] )
+                iMin = j;
+        if ( iMin != i )
+        {
+            float tk = key[i]; key[i] = key[iMin]; key[iMin] = tk;
+            CVehicle* tv = vehs[i]; vehs[i] = vehs[iMin]; vehs[iMin] = tv;
+        }
+    }
+
+    // emit one move per unit, spread evenly by arc length along the drawn path
+    for ( int i = 0; i < n; ++i )
+    {
+        float   s = ( n == 1 ) ? total : total * i / ( n - 1 );
+        CPoint  p = LinePathAt( s );
+
+        CSubHex sub = m_aa.WindowToSubHex( p );
+        sub.Wrap( );
+
+        CVehicle* pVeh = vehs[i];
+        pVeh->TempTargetOff( );
+        pVeh->SetEvent( CVehicle::none );
+        pVeh->ResumeUnit( );
+        SetDestAndSfx( pVeh, sub );
+        pVeh->_SetTarget( NULL );
     }
 }
 
@@ -2921,6 +3168,17 @@ void CWndArea::OnLButtonDown( UINT nFlags, CPoint point )
         m_selOrig = point;
         m_selRect.SetRectEmpty( );
 
+        // Line-movement disambiguation: a drag is only treated as a line-move when
+        // it does NOT start on a unit/building (starting on one keeps box-select).
+        m_bLineMove = FALSE;
+        s_linePath.clear( );
+        s_lmbDownTime  = GetTickCount( );
+        s_draggedEarly = false;
+        {
+            CHitInfo hit = m_aa.GetHit( point );
+            m_bDragStartOnUnit = ( hit.GetUnit( ) != NULL ) || ( hit.GetBridge( ) != NULL );
+        }
+
         break;
 
     // set these up so we know the down came from here
@@ -3144,6 +3402,26 @@ void CWndArea::OnLButtonUp( UINT nFlags, CPoint point )
     // selecting unit(s)
     case normal_select: {
         m_iMode = normal;
+
+        // Line movement (drawn formation): the drag was a line, not a box-select —
+        // distribute the selected units along it and keep them selected. Decided in
+        // OnMouseMove (2+ units, drag from open ground, no Alt/Shift).
+        if ( m_bLineMove )
+        {
+            DoLineMove( point );
+            m_bLineMove = FALSE;
+
+            // "moving" acknowledgement + UI refresh, mirroring a normal goto
+            if ( m_uFlags & crane )
+                theGame.MulEvent( MEVENT_GO_CRANE, m_pUnit );
+            else if ( m_uFlags & veh )
+                theGame.MulEvent( MEVENT_GO_COMBAT, m_pUnit );
+
+            SetButtonState( );
+            InvalidateStatus( );
+            InvalidateSound( );
+            return;
+        }
 
         CHitInfo     hitinfo = m_aa.GetHit( point );
         CUnit*       pUnitOn = hitinfo.GetUnit( );

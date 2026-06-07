@@ -177,6 +177,8 @@ public:
 	void		DrawSelectionRect();
 	void		DrawSelectionRectGpu();   // GPU split path: draws into m_dibSprite, no save/restore
 	void		RestoreSelectionRect();
+	void		DrawLineMove();           // preview of the drawn line + per-unit target dots
+	void		DoLineMove( CPoint ptEnd ); // distribute selected vehicles along the line
 	void		Draw();
 	void		UnitDying (CUnit * pUnit);
 	void		MaterialChange (CUnit const * pUnit);
@@ -294,11 +296,17 @@ protected:
 						destroying = 0x010000, can_stop = 0x020000, boat = 0x040000, lc_carryable = 0x080000 };
 
 	unsigned			m_uMouseMode;	// what a LMB will do
-							enum { lmb_normal, lmb_nothing, lmb_attack, lmb_goto, lmb_select, 
-										lmb_repair_bldg, lmb_repair_self, lmb_load, lmb_unload };
+							enum { lmb_normal, lmb_nothing, lmb_attack, lmb_goto, lmb_select,
+										lmb_repair_bldg, lmb_repair_self, lmb_load, lmb_unload, lmb_line };
 
 	CRect					m_selRect;
 	CPoint				m_selOrig;
+
+	// Line movement (drawn formations): LMB-drag from open ground with 2+ units
+	// selected distributes them along the drawn line. See OnMouseMove / OnLButtonUp.
+	BOOL					m_bLineMove;			// current drag is a line-move (not a box-select)
+	BOOL					m_bDragStartOnUnit;	// LMB-down landed on a unit/building (forces box-select)
+	CPoint				m_lineEnd;				// live end of the line during the drag (client px)
 	BOOL					m_bCapMouse;	// have we captured the mouse?
 	CWndInfo *		m_pWndInfo;		// tooltip window (MFC, legacy)
 	SDL2UnitInfoPanel* m_pSdlInfo;	// SDL2 tooltip replacement
