@@ -1097,7 +1097,8 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
     const bool zoomReplay = TerrainRetainEnabled( ) && needRebuild && !incPan && s_mirValid
                           && !s_baseCells.empty( ) && ( aa.m_iDir & 3 ) == s_mirDir
                           && s_loadGen == s_mirLoadGen && !meshOverflow && capCovers
-                          && zoom != s_mirZoom && zoom <= s_capMaxZoom;   // zoom-IN always a subset; zoom-OUT within the captured region
+                          && zoom != s_mirZoom && zoom <= s_capMaxZoom   // zoom-IN always a subset; zoom-OUT within the captured region
+                          && !( zoom <= 1 && s_mirZoom >= 2 );   // zoom INTO z0/z1 from a zoomed-out capture → re-capture (cheap, few hexes) to resolve feather
     const bool retainCap = TerrainRetainEnabled( ) && needRebuild && !incPan && !zoomReplay;
 
     if ( needRebuild )
@@ -1805,11 +1806,13 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
             // wave-redraw reason. Feather runs at ALL zooms and only on a mesh REBUILD.
 
             QueryPerformanceCounter( &_pa );
-            // Always CAPTURE land-feather cells (so a later zoom-IN replay always has them —
-            // otherwise feather was missing at z0 when the capture happened zoomed out). The
-            // EMIT is gated to z0/z1 (capture render below + replay emit) so the invisible
-            // zoomed-out band still costs nothing to draw.
-            if ( Featherable( type ) && !IsOpenWater( type ) )
+            // LAND feather only at z0/z1: it's invisible at z2/z3 (16-32px tiles) but its
+            // 4-neighbour resolution was ~3s of the max-zoom-out rebuild AND of pan strips
+            // (rb.feather). Coastline keeps feathering at all zooms (shore reads even small).
+            // Feather is still reliable when zoomed in: a zoom-IN into z0/z1 from a z2/z3
+            // capture is forced to re-capture (cheap, few hexes) by the zoomReplay gate, which
+            // resolves feather fresh at z0/z1.
+            if ( Featherable( type ) && !IsOpenWater( type ) && ( type == CHex::coastline || zoom <= 1 ) )
             {
                 static const SDL_FPoint fuv[4] = { {0.f,0.5f}, {0.5f,0.f}, {1.f,0.5f}, {0.5f,1.f} };
                 static const int nbrDX[4] = { 0, 1, 0, -1 };
