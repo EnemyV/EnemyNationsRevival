@@ -1793,12 +1793,11 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
             // wave-redraw reason. Feather runs at ALL zooms and only on a mesh REBUILD.
 
             QueryPerformanceCounter( &_pa );
-            // Skip LAND feather at the zoomed-OUT levels (z2/z3): the thin edge band is
-            // invisible at 16-32px tiles, but its 4-neighbour resolution was ~1.8s of the
-            // 6.5s max-zoom-out rebuild. Coastline (shore softening) keeps feathering — it
-            // reads even small. (So a capture at z2/z3 records no land-feather cells; a later
-            // zoom-IN re-adds them on the next z0/z1 rebuild.)
-            if ( Featherable( type ) && !IsOpenWater( type ) && ( type == CHex::coastline || zoom <= 1 ) )
+            // Always CAPTURE land-feather cells (so a later zoom-IN replay always has them —
+            // otherwise feather was missing at z0 when the capture happened zoomed out). The
+            // EMIT is gated to z0/z1 (capture render below + replay emit) so the invisible
+            // zoomed-out band still costs nothing to draw.
+            if ( Featherable( type ) && !IsOpenWater( type ) )
             {
                 static const SDL_FPoint fuv[4] = { {0.f,0.5f}, {0.5f,0.f}, {1.f,0.5f}, {0.5f,1.f} };
                 static const int nbrDX[4] = { 0, 1, 0, -1 };
