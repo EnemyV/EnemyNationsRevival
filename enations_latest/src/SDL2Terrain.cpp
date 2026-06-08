@@ -828,6 +828,10 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
     static std::vector<FogCell> s_fogCells;
     static int      s_mirZoom = -1, s_mirDir = -1;
     static int      s_capMaxZoom = -1;   // most-zoomed-OUT level the captured region covers (capZoom + zout budget)
+    // CONTENT-space bbox of all captured cells (= the capture viewport + margin). A zoom replay
+    // is only valid when the current (possibly panned) viewport's content lies inside this box;
+    // otherwise the uncovered part re-emits as nothing (BLACK) yet caches as valid. Set on capture.
+    static int      s_capCMinX = 0, s_capCMaxX = -1, s_capCMinY = 0, s_capCMaxY = -1;
     static unsigned s_mirEditGen = ~0u, s_mirLoadGen = ~0u;
     static bool     s_mirValid = false;
     static CHexCoord s_refHex;            // a fixed hex captured at build time
@@ -1054,9 +1058,33 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
     // Edits since the capture no longer block the replay: the replay rebuilds s_rt from the
     // (capture-state) cells, then re-applies every since-capture edit over it (g_enMeshEdits)
     // — UNLESS that list overflowed (too many to track → full rebuild is safer).
+    //
+    // COVERAGE: a zoom can also PAN the view (zoom-toward-cursor). If the panned viewport's
+    // content slides outside the captured cells' content bbox, the uncovered part re-emits as
+    // nothing (BLACK) and caches as valid → a persistent, variable-size black hole on rapid
+    // zoom/pan. So require the current viewport's 4 content corners to lie inside the captured
+    // bbox; otherwise fall through to a fresh capture (always correct).
+    bool capCovers = false;
+    if ( s_mirValid && s_capCMaxX >= s_capCMinX )
+    {
+        const CPoint _wc[4] = { CPoint( 0, 0 ), CPoint( ws.cx - 1, 0 ),
+                                CPoint( 0, ws.cy - 1 ), CPoint( ws.cx - 1, ws.cy - 1 ) };
+        int vMnX = 0x7FFFFFFF, vMxX = -0x7FFFFFFF, vMnY = 0x7FFFFFFF, vMxY = -0x7FFFFFFF;
+        for ( int i = 0; i < 4; ++i )
+        {
+            CPoint cc[4]; aa.MapToContentHex( aa._WindowToHex( _wc[i] ), cc );
+            for ( int k = 0; k < 4; ++k )
+            {
+                vMnX = __min( vMnX, cc[k].x ); vMxX = __max( vMxX, cc[k].x );
+                vMnY = __min( vMnY, cc[k].y ); vMxY = __max( vMxY, cc[k].y );
+            }
+        }
+        capCovers = ( vMnX >= s_capCMinX && vMxX <= s_capCMaxX &&
+                      vMnY >= s_capCMinY && vMxY <= s_capCMaxY );
+    }
     const bool zoomReplay = TerrainRetainEnabled( ) && needRebuild && !incPan && s_mirValid
                           && !s_baseCells.empty( ) && ( aa.m_iDir & 3 ) == s_mirDir
-                          && s_loadGen == s_mirLoadGen && !meshOverflow
+                          && s_loadGen == s_mirLoadGen && !meshOverflow && capCovers
                           && zoom != s_mirZoom && zoom <= s_capMaxZoom;   // zoom-IN always a subset; zoom-OUT within the captured region
     const bool retainCap = TerrainRetainEnabled( ) && needRebuild && !incPan && !zoomReplay;
 
@@ -1915,6 +1943,19 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
         s_capMaxZoom = zoom + s_zoutBudget;   // cells now cover down to this zoomed-out level
         s_mirEditGen = g_enTerrainEditGen; s_mirLoadGen = s_loadGen;
         s_mirValid = true;
+        // CONTENT bbox of the captured region (fog cells = every rendered hex). The replay
+        // coverage gate compares the viewport's content against this to avoid black holes.
+        if ( s_fogCells.empty( ) ) { s_capCMinX = 0; s_capCMaxX = -1; s_capCMinY = 0; s_capCMaxY = -1; }
+        else
+        {
+            s_capCMinX = s_capCMinY = 0x7FFFFFFF; s_capCMaxX = s_capCMaxY = -0x7FFFFFFF;
+            for ( const FogCell& fc : s_fogCells )
+                for ( int k = 0; k < 4; ++k )
+                {
+                    s_capCMinX = __min( s_capCMinX, fc.c[k].x ); s_capCMaxX = __max( s_capCMaxX, fc.c[k].x );
+                    s_capCMinY = __min( s_capCMinY, fc.c[k].y ); s_capCMaxY = __max( s_capCMaxY, fc.c[k].y );
+                }
+        }
     }
 
     // Precompute each fog hex's 8 neighbour indices (once, here), so the throttled
