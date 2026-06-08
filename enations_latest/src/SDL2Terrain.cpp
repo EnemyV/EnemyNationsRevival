@@ -1319,15 +1319,23 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
         {
             SDL_Texture* tex = bc.tile->tex[zoom];
             if ( !tex ) continue;
-            if ( tex != curTex ) { s_cache.emplace_back( tex, std::vector<SDL_Vertex>( ) ); cur = &s_cache.back( ).second; curTex = tex; }
             const SDL_FPoint* uv = bc.transpose ? uvT : uvN;
             SDL_Vertex v[4];
+            int mnx, mxx, mny, mxy;
             for ( int k = 0; k < 4; ++k )
             {
-                v[k].position.x = (float)( ( bc.c[k].x >> zoom ) - _uzx0 );
-                v[k].position.y = (float)( ( bc.c[k].y >> zoom ) - _uzy0 );
+                int px = ( bc.c[k].x >> zoom ) - _uzx0;
+                int py = ( bc.c[k].y >> zoom ) - _uzy0;
+                v[k].position.x = (float)px; v[k].position.y = (float)py;
                 v[k].tex_coord = uv[k]; v[k].color = white;
+                if ( k == 0 ) { mnx = mxx = px; mny = mxy = py; }
+                else { mnx = __min( mnx, px ); mxx = __max( mxx, px ); mny = __min( mny, py ); mxy = __max( mxy, py ); }
             }
+            // CULL off-texture cells: the captured region can be far larger than the current
+            // viewport (e.g. captured zoomed-out, now zoomed in), and re-emitting every cell
+            // built a huge off-screen mesh — the multi-second zoom. Skip cells fully outside s_rt.
+            if ( mxx < 0 || mnx > rtW || mxy < 0 || mny > rtH ) continue;
+            if ( tex != curTex ) { s_cache.emplace_back( tex, std::vector<SDL_Vertex>( ) ); cur = &s_cache.back( ).second; curTex = tex; }
             cur->push_back( v[0] ); cur->push_back( v[1] ); cur->push_back( v[3] );
             cur->push_back( v[1] ); cur->push_back( v[2] ); cur->push_back( v[3] );
             // SHADE: re-emit the per-triangle slope brightness from the cell (same diamond,
@@ -1349,10 +1357,18 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
         s_fogVerts.clear( ); s_fogHex.clear( ); s_fogNbr.clear( );
         for ( const FogCell& fc : s_fogCells )
         {
+            int px[4], py[4], mnx, mxx, mny, mxy;
+            for ( int k = 0; k < 4; ++k )
+            {
+                px[k] = ( fc.c[k].x >> zoom ) - _uzx0;
+                py[k] = ( fc.c[k].y >> zoom ) - _uzy0;
+                if ( k == 0 ) { mnx = mxx = px[k]; mny = mxy = py[k]; }
+                else { mnx = __min( mnx, px[k] ); mxx = __max( mxx, px[k] ); mny = __min( mny, py[k] ); mxy = __max( mxy, py[k] ); }
+            }
+            if ( mxx < 0 || mnx > rtW || mxy < 0 || mny > rtH ) continue;   // cull off-texture fog
             s_fogHex.push_back( fc.hex );
             auto fzv = [&]( int k ) -> SDL_Vertex {
-                SDL_Vertex v; v.position = { (float)( ( fc.c[k].x >> zoom ) - _uzx0 ),
-                                             (float)( ( fc.c[k].y >> zoom ) - _uzy0 ) };
+                SDL_Vertex v; v.position = { (float)px[k], (float)py[k] };
                 v.tex_coord = { 0, 0 }; v.color = { 0, 0, 0, 0 }; return v;
             };
             s_fogVerts.push_back( fzv( 0 ) ); s_fogVerts.push_back( fzv( 1 ) ); s_fogVerts.push_back( fzv( 3 ) );
@@ -1365,19 +1381,30 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
         s_waterHex.clear( ); s_waterPos.clear( ); s_waterAnimOf.clear( ); s_waterBlend.clear( );
         for ( const WaterCell& wc : s_waterCells )
         {
-            s_waterHex.push_back( wc.hex );
+            CPoint wp[4]; int mnx, mxx, mny, mxy;
             for ( int k = 0; k < 4; ++k )
-                s_waterPos.push_back( CPoint( ( wc.c[k].x >> zoom ) - _uzx0, ( wc.c[k].y >> zoom ) - _uzy0 ) );
+            {
+                wp[k] = CPoint( ( wc.c[k].x >> zoom ) - _uzx0, ( wc.c[k].y >> zoom ) - _uzy0 );
+                if ( k == 0 ) { mnx = mxx = wp[k].x; mny = mxy = wp[k].y; }
+                else { mnx = __min( mnx, wp[k].x ); mxx = __max( mxx, wp[k].x ); mny = __min( mny, wp[k].y ); mxy = __max( mxy, wp[k].y ); }
+            }
+            if ( mxx < 0 || mnx > rtW || mxy < 0 || mny > rtH ) continue;   // cull off-texture water
+            s_waterHex.push_back( wc.hex );
+            for ( int k = 0; k < 4; ++k ) s_waterPos.push_back( wp[k] );
             s_waterAnimOf.push_back( wc.animIdx );
         }
         for ( const WaterBandCell& bc : s_waterBandCells )
         {
             WaterBlendBand wb; wb.animIdx = bc.animIdx;
+            int mnx, mxx, mny, mxy;
             for ( int k = 0; k < 4; ++k )
             {
                 wb.p[k]  = CPoint( ( bc.c[k].x >> zoom ) - _uzx0, ( bc.c[k].y >> zoom ) - _uzy0 );
                 wb.uv[k] = bc.uv[k];
+                if ( k == 0 ) { mnx = mxx = wb.p[k].x; mny = mxy = wb.p[k].y; }
+                else { mnx = __min( mnx, wb.p[k].x ); mxx = __max( mxx, wb.p[k].x ); mny = __min( mny, wb.p[k].y ); mxy = __max( mxy, wb.p[k].y ); }
             }
+            if ( mxx < 0 || mnx > rtW || mxy < 0 || mny > rtH ) continue;   // cull off-texture band
             s_waterBlend.push_back( wb );
         }
         s_mirZoom = zoom;   // cells now also valid at this (zoomed-in) level
