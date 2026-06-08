@@ -1180,6 +1180,7 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
     // hexes a zoomed-OUT (by s_zoutBudget levels) viewport would show — those extra cells
     // let a later zoom-out replay instead of rebuild.
     int capExtraRows = 0;   // extra bottom rows to sweep when capturing the zoom-out region
+    int capPadX = 0, capPadY = 0;   // texture-space cull pad so the off-screen budget cells aren't culled
     {
         CPoint a[4], bx[4], by[4];
         aa.MapToWindowHex( CHexCoord( CViewHexCoord( iLeftX,     iTopY     ), TRUE ), a  );
@@ -1187,17 +1188,16 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
         aa.MapToWindowHex( CHexCoord( CViewHexCoord( iLeftX,     iTopY + 1 ), TRUE ), by );
         int pxX = __max( 1, abs( bx[0].x - a[0].x ) + abs( by[0].x - a[0].x ) );
         int pxY = __max( 1, abs( bx[0].y - a[0].y ) + abs( by[0].y - a[0].y ) );
-        int extraX = 0, extraY = 0;
         if ( retainCap && s_zoutBudget > 0 )
         {
             int f = ( 1 << s_zoutBudget ) - 1;   // a z+N viewport spans 2^N× the px; need (2^N-1)×half each side
-            extraX = f * ws.cx / 2;
-            extraY = f * ws.cy / 2;
-            capExtraRows = extraY / pxY;
+            capPadX = f * ws.cx / 2;
+            capPadY = f * ws.cy / 2;
+            capExtraRows = capPadY / pxY;
         }
-        iLeftX  -= ( kMarginPx + extraX ) / pxX + 2;
-        iRightX += ( kMarginPx + extraX ) / pxX + 2;
-        iTopY   -= ( kMarginPx + extraY ) / pxY + 2;
+        iLeftX  -= ( kMarginPx + capPadX ) / pxX + 2;
+        iRightX += ( kMarginPx + capPadX ) / pxX + 2;
+        iTopY   -= ( kMarginPx + capPadY ) / pxY + 2;
     }
 
     // Reference hex for pan tracking + its window-screen pos (NO texture offset — pan tracking
@@ -1403,13 +1403,17 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
 
             // Cull to the texture bounds [0,rtW]x[0,rtH] (= viewport + kMarginPx all
             // round, in texture space). Hexes outside the margin band are dropped.
+            // capPadX/Y widen this when CAPTURING a zoom-out budget: the budget cells
+            // project off-texture at capture zoom (they belong to a zoomed-OUT view), so
+            // without the pad they'd be culled here and never captured → black border on
+            // zoom-out. They still render clipped (SDL drops the off-target geometry).
             int minX = pts[0].x, maxX = pts[0].x, minY = pts[0].y, maxY = pts[0].y;
             for ( int i = 1; i < 4; ++i )
             {
                 minX = __min( minX, pts[i].x ); maxX = __max( maxX, pts[i].x );
                 minY = __min( minY, pts[i].y ); maxY = __max( maxY, pts[i].y );
             }
-            if ( maxX < 0 || minX > rtW || maxY < 0 || minY > rtH )
+            if ( maxX < -capPadX || minX > rtW + capPadX || maxY < -capPadY || minY > rtH + capPadY )
                 continue;
             // INCREMENTAL PAN: skip hexes whose footprint is fully inside the still-covered
             // region (the scrolled old content already has them) — only the strip re-meshes.
