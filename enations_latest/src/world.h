@@ -61,6 +61,12 @@ public:
 	// rate; the larger world overview repaints at the reduced rate like the
 	// other game windows.
 	bool		RendersEveryFrame () const override { return m_bIsRadar != FALSE; }
+	// The World Map overview is a full per-pixel O(window) re-walk (~117ms in Debug) and
+	// was ~85% of the render budget at 20 players (rr.world ~0.76s/interval, ~7×/sec). It
+	// shows only slow-changing territory/fog/resources (no live unit dots — those are
+	// radar-only), so cap it to ~3fps. Radar keeps the full rate (0). Safe: throttled in
+	// DecideRenderFrame, which skips both render passes cleanly.
+	DWORD		MinRenderIntervalMs () const override { return m_bIsRadar ? 0 : 333; }
 	void		ReRender ();										// mainloop - re-render the screen
 	void		Draw ();												// draw the rendered screen
 

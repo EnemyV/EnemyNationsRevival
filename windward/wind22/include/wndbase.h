@@ -127,8 +127,17 @@ public:
     // records whether this window paints this frame so the later Draw pass
     // makes the same decision. Returns TRUE if the window should render now.
     virtual bool  RendersEveryFrame() const { return false; }
+    // Per-window MINIMUM repaint interval (ms). Default 0 = use the global throttle.
+    // A window with slowly-changing content (the World Map overview) overrides this to
+    // a larger value so it repaints a few times/second instead of at the global rate —
+    // its full-window per-pixel re-walk is ~117ms in Debug and was ~85% of the render
+    // budget at 20 players. Applied via DecideRenderFrame, which skips BOTH the ReRender
+    // and Draw passes cleanly (unlike an early-return inside ReRender, which leaves the
+    // window flagged as rendering and faults the shared Draw loop).
+    virtual DWORD MinRenderIntervalMs() const { return 0; }
     bool DecideRenderFrame( DWORD dwNow, DWORD dwIntervalMs ) {
-        if ( RendersEveryFrame() || ( dwNow - m_dwLastRenderTick ) >= dwIntervalMs ) {
+        DWORD iv = dwIntervalMs > MinRenderIntervalMs() ? dwIntervalMs : MinRenderIntervalMs();
+        if ( RendersEveryFrame() || ( dwNow - m_dwLastRenderTick ) >= iv ) {
             m_dwLastRenderTick = dwNow;
             m_bRenderThisFrame = true;
         } else {

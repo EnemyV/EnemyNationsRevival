@@ -1697,11 +1697,24 @@ void CWndWorld::ReRender( )
     // Units are plotted LIVE below (object-iterated + projected), so they stay smooth at full
     // rate while the heavy walk runs ~7fps. (Non-radar world map keeps the original full path.)
     DWORD dwRadarNow = timeGetTime( );
-    bool  bRebuildBg = !m_bIsRadar || !m_pdibRadarStatic ||
-                       ( dwRadarNow - m_dwLastRadarDraw >= 140 );
-    Perf::CounterAdd( m_bIsRadar ? ( bRebuildBg ? "rr.bg" : "rr.fast" ) : "rr.world.n", 1 );
+    // Throttle the expensive per-pixel WALK for BOTH radar and the world map. The walk
+    // samples a map-sized source DIB, so on a 1024² map it's ~230ms (cache-miss bound) and
+    // was ~85% of the render budget at 20 players. Cache its output in m_pdibRadarStatic and
+    // re-walk only every N ms; between walks blit the cache (world map has no live unit dots,
+    // so a plain blit is a complete frame). Radar re-walks fast (140ms, units live); the
+    // world map overview changes slowly, so 800ms is imperceptible and ~3-4x cheaper.
+    const DWORD kWalkThrottle = m_bIsRadar ? 140u : 800u;
+    bool  bRebuildBg = !m_pdibRadarStatic ||
+                       ( dwRadarNow - m_dwLastRadarDraw >= kWalkThrottle );
+    Perf::CounterAdd( m_bIsRadar ? ( bRebuildBg ? "rr.bg" : "rr.fast" ) : ( bRebuildBg ? "rr.world.n" : "rr.world.blit" ), 1 );
 
-    if ( m_bIsRadar && !bRebuildBg )
+    if ( !m_bIsRadar && !bRebuildBg )
+    {
+        // WORLD-MAP FAST PATH: blit the cached unit-free background (no live dots to redraw).
+        Perf::ScopeCounter _cb( "rr.world.blitms" );
+        m_pdibRadarStatic->BitBlt( m_dibwnd.GetDIB( ), m_pdibRadarStatic->GetRect( ), CPoint( 0, 0 ) );
+    }
+    else if ( m_bIsRadar && !bRebuildBg )
     {
         // FAST PATH: window DIB still holds (cached background + last frame's dots). Erase only
         // the old dots by restoring their pixels from the unit-free cache; current dots drawn
@@ -2120,8 +2133,8 @@ void CWndWorld::ReRender( )
     m_bBldgHit = NULL;
 
     // Cache this freshly-built UNIT-FREE background; the window DIB now holds the clean bg, so
-    // there are no old dots to erase next frame.
-    if ( m_bIsRadar )
+    // there are no old dots to erase next frame. Done for the world map too now (its fast path
+    // blits this cache instead of re-walking) — not just the radar.
     {
         if ( !m_pdibRadarStatic )
             m_pdibRadarStatic = new CDIB( ptrthebltformat->GetColorFormat( ), CBLTFormat::DIB_MEMORY,
