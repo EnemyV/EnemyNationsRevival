@@ -808,6 +808,7 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
     struct FogCell { CHex* hex; CPoint c[4]; };
     static std::vector<FogCell> s_fogCells;
     static int      s_mirZoom = -1, s_mirDir = -1;
+    static int      s_capMaxZoom = -1;   // most-zoomed-OUT level the captured region covers (capZoom + zout budget)
     static unsigned s_mirEditGen = ~0u, s_mirLoadGen = ~0u;
     static bool     s_mirValid = false;
     static CHexCoord s_refHex;            // a fixed hex captured at build time
@@ -1024,10 +1025,17 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
     // area) → re-emit the base from cells instead of the per-hex loop. retainCap: a normal
     // full rebuild that should (re)capture the cells. content >> zoom - _uz0 = texture pos.
     const int  _uzx0 = aa.m_ptUL.x - offX, _uzy0 = aa.m_ptUL.y - offY;
+    // Zoom-out budget (EN_RETAIN_ZOUT, default 0 = zoom-IN replay only, exactly as validated).
+    // N>0 makes a CAPTURE also resolve N extra levels of zoom-OUT worth of hexes, so a later
+    // zoom-OUT up to s_capMaxZoom replays from those cells instead of a full rebuild. Bounded:
+    // each level roughly quadruples the captured hex count.
+    static int s_zoutBudget = -1;
+    if ( s_zoutBudget < 0 ) { const char* _zb = SDL_getenv( "EN_RETAIN_ZOUT" );
+        s_zoutBudget = _zb ? atoi( _zb ) : 0; if ( s_zoutBudget < 0 ) s_zoutBudget = 0; if ( s_zoutBudget > 3 ) s_zoutBudget = 3; }
     const bool zoomReplay = TerrainRetainEnabled( ) && needRebuild && !incPan && s_mirValid
                           && !s_baseCells.empty( ) && ( aa.m_iDir & 3 ) == s_mirDir
                           && s_loadGen == s_mirLoadGen && g_enTerrainEditGen == s_mirEditGen
-                          && zoom < s_mirZoom;   // zoom-IN only until whole-map capture lands
+                          && zoom != s_mirZoom && zoom <= s_capMaxZoom;   // zoom-IN always a subset; zoom-OUT within the captured region
     const bool retainCap = TerrainRetainEnabled( ) && needRebuild && !incPan && !zoomReplay;
 
     if ( needRebuild )
@@ -1168,6 +1176,10 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
 
     // Extend the iteration region to fill the margin band. Estimate screen px per
     // view-hex step from two probe projections, then convert kMarginPx to hexes.
+    // When CAPTURING with a zoom-out budget, extend the region further so it covers the
+    // hexes a zoomed-OUT (by s_zoutBudget levels) viewport would show — those extra cells
+    // let a later zoom-out replay instead of rebuild.
+    int capExtraRows = 0;   // extra bottom rows to sweep when capturing the zoom-out region
     {
         CPoint a[4], bx[4], by[4];
         aa.MapToWindowHex( CHexCoord( CViewHexCoord( iLeftX,     iTopY     ), TRUE ), a  );
@@ -1175,9 +1187,17 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
         aa.MapToWindowHex( CHexCoord( CViewHexCoord( iLeftX,     iTopY + 1 ), TRUE ), by );
         int pxX = __max( 1, abs( bx[0].x - a[0].x ) + abs( by[0].x - a[0].x ) );
         int pxY = __max( 1, abs( bx[0].y - a[0].y ) + abs( by[0].y - a[0].y ) );
-        iLeftX  -= kMarginPx / pxX + 2;
-        iRightX += kMarginPx / pxX + 2;
-        iTopY   -= kMarginPx / pxY + 2;
+        int extraX = 0, extraY = 0;
+        if ( retainCap && s_zoutBudget > 0 )
+        {
+            int f = ( 1 << s_zoutBudget ) - 1;   // a z+N viewport spans 2^N× the px; need (2^N-1)×half each side
+            extraX = f * ws.cx / 2;
+            extraY = f * ws.cy / 2;
+            capExtraRows = extraY / pxY;
+        }
+        iLeftX  -= ( kMarginPx + extraX ) / pxX + 2;
+        iRightX += ( kMarginPx + extraX ) / pxX + 2;
+        iTopY   -= ( kMarginPx + extraY ) / pxY + 2;
     }
 
     // Reference hex for pan tracking + its window-screen pos (NO texture offset — pan tracking
@@ -1775,8 +1795,8 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
         if ( rowAny ) seenContent = true;
         if ( seenContent && !rowAny )
             break;
-        if ( y > iTopY + 4 * ( ws.cy / __max( 1, ( 16 >> zoom ) ) + 8 ) + 64 )
-            break;  // hard safety bound (extra for the bottom pan margin)
+        if ( y > iTopY + 4 * ( ws.cy / __max( 1, ( 16 >> zoom ) ) + 8 ) + 64 + capExtraRows )
+            break;  // hard safety bound (+ the captured zoom-out region's extra rows)
     }
     Perf::CounterAdd( "reb.loop", (int)( ( GetTickCount( ) - _gt ) * 1000 ) ); _gt = GetTickCount( );
     Perf::CounterAdd( "rb.proj", (int)( _accProj * 1000000 / _qpf.QuadPart ) );      // PROFILE
@@ -1791,6 +1811,7 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
     if ( retainCap )
     {
         s_mirZoom = zoom; s_mirDir = aa.m_iDir & 3;
+        s_capMaxZoom = zoom + s_zoutBudget;   // cells now cover down to this zoomed-out level
         s_mirEditGen = g_enTerrainEditGen; s_mirLoadGen = s_loadGen;
         s_mirValid = true;
     }
