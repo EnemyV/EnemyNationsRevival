@@ -1515,7 +1515,14 @@ RepairDone:;
         }
 
         CBuildResearch* pBr  = GetData( )->GetBldResearch( );
-        float           fTmp = pBr->GetRate( ) * m_fDamPerfMult * GetOwner( )->GetPplMult( );
+        // Apply the per-player research productivity multiplier (m_fRsrchProd, from
+        // CRaceDef::research + the AI difficulty 0.8 scale). This was set/serialized but
+        // never consumed â€” the lone race attribute with no live consumer â€” so per-race
+        // research bonuses and the AI research handicap silently did nothing. Honoring it
+        // here (the productivity point) matches how mines/farms/etc. apply their own
+        // GetMineProd/GetFarmProd multipliers.
+        float           fTmp = pBr->GetRate( ) * m_fDamPerfMult * GetOwner( )->GetPplMult( ) *
+                               GetOwner( )->GetRsrchMult( );
         GetOwner( )->AddRsrch( (int)fTmp );
         break;
     }
