@@ -57,6 +57,13 @@ unsigned g_enTerrainEditGen = 0;
 // Packed (x<<16)|y (map is square, coords < 65536). Capped — past the cap a full rebuild
 // is cheaper (e.g. worldgen sets the whole map). Recorded by CHex::SetAlt/SetVisibleType.
 std::vector<unsigned> g_enEditedHexes;
+// Retained-mesh edit list: like g_enEditedHexes, but accumulates edits since the last FULL
+// retained-mesh CAPTURE (not consumed by the s_rt edit-patch, not cleared on a zoom replay)
+// so a zoom REPLAY — whose cells are at the capture's edit state — can re-apply every
+// since-capture edit over the stale cells. Cleared only on a capturing rebuild. Past the cap
+// we can't track them all, so g_enMeshEditOverflow forces a full rebuild instead of a replay.
+std::vector<unsigned> g_enMeshEdits;
+bool                  g_enMeshEditOverflow = false;
 std::mutex            g_enEditMutex;   // sim thread pushes; render thread reads/swaps
 const size_t          kEditPatchCap = 1024;
 void g_enEditHex( int x, int y )
@@ -65,8 +72,13 @@ void g_enEditHex( int x, int y )
     // (a gen ahead of the list looked like a non-recorded edit → spurious full rebuild).
     std::lock_guard<std::mutex> lk( g_enEditMutex );
     ++g_enTerrainEditGen;
+    unsigned packed = ( (unsigned)( x & 0xFFFF ) << 16 ) | (unsigned)( y & 0xFFFF );
     if ( g_enEditedHexes.size( ) < kEditPatchCap )
-        g_enEditedHexes.push_back( ( (unsigned)( x & 0xFFFF ) << 16 ) | (unsigned)( y & 0xFFFF ) );
+        g_enEditedHexes.push_back( packed );
+    if ( g_enMeshEdits.size( ) < kEditPatchCap )
+        g_enMeshEdits.push_back( packed );
+    else
+        g_enMeshEditOverflow = true;   // too many edits to re-apply on a replay → next zoom rebuilds
 }
 
 // Set by SDL2Terrain::Render each frame: TRUE when the visible view scrolled since last
@@ -943,8 +955,8 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
     bool baseSame  = ( sigNoEdit == lastNoEdit ) && covered;
     // Read the gen AND the list size together under the lock so they're a consistent
     // snapshot (else a concurrent edit between the two reads looks non-recorded → rebuild).
-    unsigned genSnap; size_t editCount;
-    { std::lock_guard<std::mutex> lk( g_enEditMutex ); genSnap = g_enTerrainEditGen; editCount = g_enEditedHexes.size( ); }
+    unsigned genSnap; size_t editCount; bool meshOverflow;
+    { std::lock_guard<std::mutex> lk( g_enEditMutex ); genSnap = g_enTerrainEditGen; editCount = g_enEditedHexes.size( ); meshOverflow = g_enMeshEditOverflow; }
     bool editsPend = ( genSnap != s_builtEditGen );
     bool editsOK   = editsPend && editCount > 0 && editCount <= kEditPatchCap
                      && ( genSnap - s_builtEditGen ) == (unsigned)editCount;
@@ -1032,9 +1044,12 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
     static int s_zoutBudget = -1;
     if ( s_zoutBudget < 0 ) { const char* _zb = SDL_getenv( "EN_RETAIN_ZOUT" );
         s_zoutBudget = _zb ? atoi( _zb ) : 0; if ( s_zoutBudget < 0 ) s_zoutBudget = 0; if ( s_zoutBudget > 3 ) s_zoutBudget = 3; }
+    // Edits since the capture no longer block the replay: the replay rebuilds s_rt from the
+    // (capture-state) cells, then re-applies every since-capture edit over it (g_enMeshEdits)
+    // — UNLESS that list overflowed (too many to track → full rebuild is safer).
     const bool zoomReplay = TerrainRetainEnabled( ) && needRebuild && !incPan && s_mirValid
                           && !s_baseCells.empty( ) && ( aa.m_iDir & 3 ) == s_mirDir
-                          && s_loadGen == s_mirLoadGen && g_enTerrainEditGen == s_mirEditGen
+                          && s_loadGen == s_mirLoadGen && !meshOverflow
                           && zoom != s_mirZoom && zoom <= s_capMaxZoom;   // zoom-IN always a subset; zoom-OUT within the captured region
     const bool retainCap = TerrainRetainEnabled( ) && needRebuild && !incPan && !zoomReplay;
 
@@ -1043,7 +1058,9 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
     Perf::ScopeCounter _cr( incPan ? "t.incpan" : "t.rebuild" );   // mesh (re)build cost
     s_sig = sig; dX = dY = 0;   // (re)built at the current view → zero pan
     s_builtEditGen = g_enTerrainEditGen;   // this mesh now reflects all edits so far
-    { std::lock_guard<std::mutex> lk( g_enEditMutex ); g_enEditedHexes.clear( ); }   // rebuild absorbs all pending edits
+    { std::lock_guard<std::mutex> lk( g_enEditMutex );
+      g_enEditedHexes.clear( );                                                      // rebuild absorbs all pending edits
+      if ( retainCap ) { g_enMeshEdits.clear( ); g_enMeshEditOverflow = false; } }   // a capture refreshes the cells → drop the replay re-apply list
     if ( retainCap ) { s_baseCells.clear( ); s_waterCells.clear( ); s_waterBandCells.clear( ); s_fogCells.clear( ); }   // capturing a fresh full mesh → drop old cells
     if ( incPan )
     {
@@ -1860,6 +1877,44 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
     SDL_SetRenderDrawBlendMode( r, SDL_BLENDMODE_BLEND );
     for ( auto& d : s_cache )
         SDL_RenderGeometry( r, d.first, d.second.data(), (int)d.second.size(), nullptr, 0 );
+
+    // RETAINED-MESH zoom replay: the cells are at the CAPTURE's edit state, so re-apply every
+    // edit made since the capture over the freshly-drawn (stale) base — the same base-only
+    // patch doPatch uses (feather/shade for those few hexes are briefly stale, as doPatch also
+    // accepts). g_enMeshEdits persists across replays (cleared only on a capture), so a busy
+    // game keeps replaying on zoom instead of forcing a full rebuild each time. (Target = s_rt.)
+    if ( zoomReplay )
+    {
+        std::vector<unsigned> meshEd;
+        { std::lock_guard<std::mutex> lk( g_enEditMutex ); meshEd = g_enMeshEdits; }   // COPY: keep the list for the next replay
+        if ( !meshEd.empty( ) )
+        {
+            const SDL_Color white = { 255, 255, 255, 255 };
+            const int       pidx[6] = { 0, 1, 3, 1, 2, 3 };
+            for ( unsigned packed : meshEd )
+            {
+                CHexCoord hc( (int)( packed >> 16 ), (int)( packed & 0xFFFF ) );
+                CPoint    pts[4];
+                if ( !aa.MapToWindowHex( hc, pts ) ) continue;
+                CHex* phex = theMap.GetHex( hc );
+                if ( !phex ) continue;
+                const Tile* tile = TileForHex( phex, aa.m_iDir );
+                if ( !tile || !tile->tex[zoom] ) continue;
+                for ( int i = 0; i < 4; ++i ) { pts[i].x += offX; pts[i].y += offY; }   // dX/dY are 0 on a (re)built view
+                CTerrainSprite* psp = phex->GetSprite( );
+                bool bTranspose = tile->drawVert && psp && psp->GetID( ) == CHex::road;
+                SDL_FPoint uvL, uvT, uvR, uvB;
+                if ( bTranspose ) { uvL = { 0.5f, 0.0f }; uvT = { 0.0f, 0.5f }; uvR = { 0.5f, 1.0f }; uvB = { 1.0f, 0.5f }; }
+                else              { uvL = { 0.0f, 0.5f }; uvT = { 0.5f, 0.0f }; uvR = { 1.0f, 0.5f }; uvB = { 0.5f, 1.0f }; }
+                SDL_Vertex v[4];
+                v[0].position = { (float)pts[0].x, (float)pts[0].y }; v[0].tex_coord = uvL; v[0].color = white;
+                v[1].position = { (float)pts[1].x, (float)pts[1].y }; v[1].tex_coord = uvT; v[1].color = white;
+                v[2].position = { (float)pts[2].x, (float)pts[2].y }; v[2].tex_coord = uvR; v[2].color = white;
+                v[3].position = { (float)pts[3].x, (float)pts[3].y }; v[3].tex_coord = uvB; v[3].color = white;
+                SDL_RenderGeometry( r, tile->tex[zoom], v, 4, pidx, 6 );
+            }
+        }
+    }
 
     // Slope-shade overlay → s_shadeRT, then BLUR it (down-/up-scale through a half-res
     // texture with bilinear filtering) so the per-tile flat shading feathers across
