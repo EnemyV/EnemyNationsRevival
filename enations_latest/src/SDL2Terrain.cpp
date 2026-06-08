@@ -96,6 +96,17 @@ static bool TerrainPatchEnabled( )
     return s_on != 0;
 }
 
+// RETAINED CONTENT-SPACE MESH (EN_RETAIN, default OFF until proven at parity). When on,
+// a full rebuild also captures each hex's tile + CONTENT-space corners; a later ZOOM-only
+// change then re-emits from those cells (screen = (content >> zoom) - UL, tex = tile->tex
+// [zoom]) instead of running the ~15s per-hex loop. Built up layer by layer (base first).
+static bool TerrainRetainEnabled( )
+{
+    static int s_on = -1;
+    if ( s_on < 0 ) { const char* e = SDL_getenv( "EN_RETAIN" ); s_on = ( e && *e && *e == '1' ) ? 1 : 0; }
+    return s_on != 0;
+}
+
 // Incremental pan ("strip rebuild"): when the view pans past the cached-texture margin
 // with the SAME zoom/dir, scroll the cached textures by the pan delta and mesh only the
 // newly-revealed edge strip instead of re-meshing the whole ~56k-hex view. Opt-in until
@@ -180,9 +191,42 @@ static std::string FindAssetDir()
         "enations_latest/data/terrain_gpu",
         "../src/enations_latest/data/terrain_gpu",
     };
+    const char* kProbe = "/plain_0_aa010000_z0.png";
+
+    // 1) Working-directory-relative (original behaviour: cwd = d:\Enemy Nations).
     for ( const char* c : candidates )
-        if ( FileExists( std::string( c ) + "/plain_0_aa010000_z0.png" ) )
+        if ( FileExists( std::string( c ) + kProbe ) )
             return c;
+
+    // 2) EXE-relative — robust to the launch working directory. The game is often
+    // started with cwd = the Debug\ exe folder (not the run dir), where none of the
+    // cwd-relative candidates resolve, so the baked terrain set wasn't found and the
+    // area map rendered black. Walk up from the exe directory trying the same
+    // candidates at each level so the assets are found regardless of cwd.
+    char exePath[MAX_PATH];
+    DWORD n = GetModuleFileNameA( NULL, exePath, MAX_PATH );
+    if ( n > 0 && n < MAX_PATH )
+    {
+        std::string dir( exePath, n );
+        size_t slash = dir.find_last_of( "\\/" );
+        if ( slash != std::string::npos )
+            dir = dir.substr( 0, slash );   // exe directory
+
+        for ( int up = 0; up < 8 && !dir.empty(); ++up )
+        {
+            for ( const char* c : candidates )
+            {
+                std::string cand = dir + "/" + c;
+                if ( FileExists( cand + kProbe ) )
+                    return cand;
+            }
+            size_t s = dir.find_last_of( "\\/" );
+            if ( s == std::string::npos )
+                break;
+            dir = dir.substr( 0, s );        // go up one directory
+        }
+    }
+
     return std::string();
 }
 
@@ -447,6 +491,11 @@ const SDL2Terrain::Tile* SDL2Terrain::TileForHex( CHex* phex, int iDir )
         if ( F < 0 || F > 11 ) F = CHex::r_x;
         int srcDir  = kRoadSrcDir[F];
         int viewDir = ( ( iDir - kRoadRot[F] ) % 4 + 4 ) % 4;
+        // The under-construction PREVIEW road (r_path) is a non-directional site overlay:
+        // only the dir-0 ("aa") variant is baked. Applying camera rotation made the rotated
+        // views miss it and fall back to GetDefaultForType — a COMPLETED road. Pin it to the
+        // dir-0 variant so the preview shows the construction graphic at every rotation.
+        if ( F == CHex::r_path ) viewDir = 0;
         const Tile* t = Get( "road", srcDir, std::string( kDirPrefix[viewDir] ) + "010000" );
         return t ? t : GetDefaultForType( "road" );
     }
@@ -735,6 +784,18 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
     static unsigned     s_waterRTtick = ~0u;      // wave-frame index baked into s_waterRT
     static uint64_t  s_sig = ~0ull;
     static unsigned  s_builtEditGen = 0;  // g_enTerrainEditGen baked into the current mesh
+
+    // RETAINED MESH (base layer, EN_RETAIN): each visible LAND hex's tile + CONTENT-space
+    // corners, captured on a full rebuild. A later zoom-only change re-emits the base from
+    // these (screen = (content >> newZoom) - newUL, tex = tile->tex[newZoom]) instead of the
+    // per-hex loop. s_mir* = the (zoom,dir,editGen,loadGen) the cells were captured at, to
+    // detect a pure zoom change (everything else identical → cells still valid).
+    struct BaseCell { const Tile* tile; CPoint c[4]; bool transpose;
+                      bool shade; float bL, bR; };   // + slope-shade (per-triangle brightness)
+    static std::vector<BaseCell> s_baseCells;
+    static int      s_mirZoom = -1, s_mirDir = -1;
+    static unsigned s_mirEditGen = ~0u, s_mirLoadGen = ~0u;
+    static bool     s_mirValid = false;
     static CHexCoord s_refHex;            // a fixed hex captured at build time
     static CPoint    s_refPx( 0, 0 );     // its window-screen pos at build time
     // Pan-buffer margin: the cached texture extends this far beyond the viewport so the
@@ -944,12 +1005,24 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
     // Per-build batch accumulator (texture, verts), drawn into s_rt then discarded.
     std::vector<std::pair<SDL_Texture*, std::vector<SDL_Vertex>>> s_cache;
 
+    // RETAINED-MESH decision (EN_RETAIN). zoomReplay: a pure ZOOM-IN change (dir/edit/loadgen
+    // identical, only zoom, AND zooming IN so the captured viewport-cells cover the smaller
+    // area) → re-emit the base from cells instead of the per-hex loop. retainCap: a normal
+    // full rebuild that should (re)capture the cells. content >> zoom - _uz0 = texture pos.
+    const int  _uzx0 = aa.m_ptUL.x - offX, _uzy0 = aa.m_ptUL.y - offY;
+    const bool zoomReplay = TerrainRetainEnabled( ) && needRebuild && !incPan && s_mirValid
+                          && !s_baseCells.empty( ) && ( aa.m_iDir & 3 ) == s_mirDir
+                          && s_loadGen == s_mirLoadGen && g_enTerrainEditGen == s_mirEditGen
+                          && zoom < s_mirZoom;   // zoom-IN only until whole-map capture lands
+    const bool retainCap = TerrainRetainEnabled( ) && needRebuild && !incPan && !zoomReplay;
+
     if ( needRebuild )
     {
     Perf::ScopeCounter _cr( incPan ? "t.incpan" : "t.rebuild" );   // mesh (re)build cost
     s_sig = sig; dX = dY = 0;   // (re)built at the current view → zero pan
     s_builtEditGen = g_enTerrainEditGen;   // this mesh now reflects all edits so far
     { std::lock_guard<std::mutex> lk( g_enEditMutex ); g_enEditedHexes.clear( ); }   // rebuild absorbs all pending edits
+    if ( retainCap ) s_baseCells.clear( );   // capturing a fresh full mesh → drop old cells
     if ( incPan )
     {
         // --- INCREMENTAL PAN: scroll the two texture-accumulated layers (terrain + slope
@@ -1152,6 +1225,8 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
     DWORD _gt = GetTickCount( );   // MEASURE: rebuild sub-phases (coarse ms → µs)
     LARGE_INTEGER _qpf; QueryPerformanceFrequency( &_qpf );   // PROFILE: per-hex phase split
     long long _accProj = 0, _accFeath = 0, _accTile = 0, _accWater = 0; LARGE_INTEGER _pa, _pb;
+    long long _accAsm = 0; LARGE_INTEGER _aa0, _aa1;   // MEASURE: pure base-vertex ASSEMBLY (the
+    // retained-mesh re-emit floor — what zoom-replay would still pay after skipping resolution).
     int _hexCnt = 0;   // PROFILE: count of hexes emitted (margin/zoom hex-count vs per-hex cost)
 
     // Per-hex TileForHex memo for THIS rebuild. TileForHex(hex,dir) depends only on the
@@ -1176,6 +1251,52 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
         return t;
     };
 
+    if ( zoomReplay )
+    {
+        // RETAINED-MESH ZOOM REPLAY (base layer): re-emit the captured land cells at the new
+        // zoom (tex = tile->tex[zoom], pos = (content >> zoom) - _uz0) — skipping the whole
+        // per-hex loop. Run-batch consecutive same-texture cells (cells are in row order, so
+        // batching within a run keeps back-to-front occlusion). Other layers stay empty this
+        // pass (feather/shade/water/fog not yet captured) → base tiles only.
+        static const SDL_FPoint uvN[4] = { {0.f,0.5f}, {0.5f,0.f}, {1.f,0.5f}, {0.5f,1.f} };
+        static const SDL_FPoint uvT[4] = { {0.5f,0.f}, {0.f,0.5f}, {0.5f,1.f}, {1.f,0.5f} };
+        const SDL_Color white = { 255, 255, 255, 255 };
+        s_shadeVerts.clear( );   // SHADE layer is now re-emitted from cells (below), not cleared
+        SDL_Texture* curTex = nullptr; std::vector<SDL_Vertex>* cur = nullptr;
+        for ( const BaseCell& bc : s_baseCells )
+        {
+            SDL_Texture* tex = bc.tile->tex[zoom];
+            if ( !tex ) continue;
+            if ( tex != curTex ) { s_cache.emplace_back( tex, std::vector<SDL_Vertex>( ) ); cur = &s_cache.back( ).second; curTex = tex; }
+            const SDL_FPoint* uv = bc.transpose ? uvT : uvN;
+            SDL_Vertex v[4];
+            for ( int k = 0; k < 4; ++k )
+            {
+                v[k].position.x = (float)( ( bc.c[k].x >> zoom ) - _uzx0 );
+                v[k].position.y = (float)( ( bc.c[k].y >> zoom ) - _uzy0 );
+                v[k].tex_coord = uv[k]; v[k].color = white;
+            }
+            cur->push_back( v[0] ); cur->push_back( v[1] ); cur->push_back( v[3] );
+            cur->push_back( v[1] ); cur->push_back( v[2] ); cur->push_back( v[3] );
+            // SHADE: re-emit the per-triangle slope brightness from the cell (same diamond,
+            // L,T,B = bL / T,R,B = bR), at the new zoom. Matches the per-hex loop's shadeV.
+            if ( bc.shade )
+            {
+                auto sv = [&]( int k, float b ) -> SDL_Vertex {
+                    SDL_Vertex s; s.position = v[k].position; s.tex_coord = { 0, 0 };
+                    Uint8 g = (Uint8)__min( 255, (int)( b * 255.0f ) ); s.color = { g, g, g, 255 }; return s;
+                };
+                s_shadeVerts.push_back( sv( 0, bc.bL ) ); s_shadeVerts.push_back( sv( 1, bc.bL ) ); s_shadeVerts.push_back( sv( 3, bc.bL ) );
+                s_shadeVerts.push_back( sv( 1, bc.bR ) ); s_shadeVerts.push_back( sv( 2, bc.bR ) ); s_shadeVerts.push_back( sv( 3, bc.bR ) );
+            }
+        }
+        s_fogVerts.clear( ); s_fogHex.clear( ); s_fogNbr.clear( );
+        s_waterHex.clear( ); s_waterPos.clear( ); s_waterBlend.clear( );
+        s_waterAnimOf.clear( ); s_waterAnims.clear( );
+        s_mirZoom = zoom;   // cells now also valid at this (zoomed-in) level
+        Perf::CounterAdd( "rebuild.zoomreplay", 1 );
+    }
+    else
     for ( int y = iTopY;; ++y )
     {
         bool rowAny = false;
@@ -1298,6 +1419,7 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
                 uvR = { 1.0f, 0.5f }; uvB = { 0.5f, 1.0f };
             }
 
+            QueryPerformanceCounter( &_aa0 );   // MEASURE: base-vertex assembly start
             SDL_Vertex vL, vT, vR, vB;
             vL.position = { (float)pts[0].x, (float)pts[0].y }; vL.tex_coord = uvL;  // Left
             vT.position = { (float)pts[1].x, (float)pts[1].y }; vT.tex_coord = uvT;  // Top
@@ -1321,7 +1443,14 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
             {
                 vb.push_back( vL ); vb.push_back( vT ); vb.push_back( vB );
                 vb.push_back( vT ); vb.push_back( vR ); vb.push_back( vB );
+                // RETAINED MESH: capture this land tile + its CONTENT corners so a zoom-only
+                // change can re-emit it scaled without re-running this loop. (Base layer only
+                // for now — feather/shade/water/fog still rebuild; built up next.)
+                if ( retainCap )
+                    s_baseCells.push_back( { tile, { cpts[0], cpts[1], cpts[2], cpts[3] },
+                                             bTranspose, tile->shade != 0, bL, bR } );
             }
+            QueryPerformanceCounter( &_aa1 ); _accAsm += _aa1.QuadPart - _aa0.QuadPart;   // MEASURE
 
             // Capture OPEN-WATER tiles for the live layer: the hex (to re-pick the
             // current frame) + its 4 corner positions (texture space). Also cache a
@@ -1576,6 +1705,16 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
     Perf::CounterAdd( "rb.hexes", _hexCnt );                                         // PROFILE
     Perf::CounterAdd( "rb.tile",  (int)( _accTile  * 1000000 / _qpf.QuadPart ) );    // PROFILE: TileForHex
     Perf::CounterAdd( "rb.water", (int)( _accWater * 1000000 / _qpf.QuadPart ) );    // PROFILE: water bands
+    Perf::CounterAdd( "rb.asm",   (int)( _accAsm   * 1000000 / _qpf.QuadPart ) );    // MEASURE: base-vert assembly (retained re-emit floor)
+
+    // RETAINED MESH: a full capturing rebuild just (re)built s_baseCells for the current
+    // (zoom,dir,editGen,loadGen) — mark the mirror valid so a later zoom-in can replay it.
+    if ( retainCap )
+    {
+        s_mirZoom = zoom; s_mirDir = aa.m_iDir & 3;
+        s_mirEditGen = g_enTerrainEditGen; s_mirLoadGen = s_loadGen;
+        s_mirValid = true;
+    }
 
     // Precompute each fog hex's 8 neighbour indices (once, here), so the throttled
     // fog re-sample is 1 visibility read/hex + array lookups instead of 9 hashed
@@ -1718,11 +1857,21 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
             const Tile* tile = TileForHex( phex, aa.m_iDir );
             if ( !tile || !tile->tex[zoom] ) continue;
             for ( int i = 0; i < 4; ++i ) { pts[i].x += offX - dX; pts[i].y += offY - dY; }
+            // Road tiles flagged drawVert sample the diamond TRANSPOSED (U/V swapped) for
+            // vertical-seam continuity — the full-rebuild base pass does this. The patch
+            // previously always used the upright UVs, so a freshly built road (especially
+            // L/T junctions) rendered 90° ROTATED until a rotate/zoom forced a full rebuild.
+            // Match the rebuild so the patch draws it right immediately.
+            CTerrainSprite* psp = phex->GetSprite( );
+            bool bTranspose = tile->drawVert && psp && psp->GetID( ) == CHex::road;
+            SDL_FPoint uvL, uvT, uvR, uvB;
+            if ( bTranspose ) { uvL = { 0.5f, 0.0f }; uvT = { 0.0f, 0.5f }; uvR = { 0.5f, 1.0f }; uvB = { 1.0f, 0.5f }; }
+            else              { uvL = { 0.0f, 0.5f }; uvT = { 0.5f, 0.0f }; uvR = { 1.0f, 0.5f }; uvB = { 0.5f, 1.0f }; }
             SDL_Vertex v[4];
-            v[0].position = { (float)pts[0].x, (float)pts[0].y }; v[0].tex_coord = { 0.0f, 0.5f }; v[0].color = white;
-            v[1].position = { (float)pts[1].x, (float)pts[1].y }; v[1].tex_coord = { 0.5f, 0.0f }; v[1].color = white;
-            v[2].position = { (float)pts[2].x, (float)pts[2].y }; v[2].tex_coord = { 1.0f, 0.5f }; v[2].color = white;
-            v[3].position = { (float)pts[3].x, (float)pts[3].y }; v[3].tex_coord = { 0.5f, 1.0f }; v[3].color = white;
+            v[0].position = { (float)pts[0].x, (float)pts[0].y }; v[0].tex_coord = uvL; v[0].color = white;
+            v[1].position = { (float)pts[1].x, (float)pts[1].y }; v[1].tex_coord = uvT; v[1].color = white;
+            v[2].position = { (float)pts[2].x, (float)pts[2].y }; v[2].tex_coord = uvR; v[2].color = white;
+            v[3].position = { (float)pts[3].x, (float)pts[3].y }; v[3].tex_coord = uvB; v[3].color = white;
             SDL_RenderGeometry( r, tile->tex[zoom], v, 4, idx, 6 );
         }
         SDL_SetRenderTarget( r, pt );

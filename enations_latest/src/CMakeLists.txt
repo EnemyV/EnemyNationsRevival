@@ -283,7 +283,15 @@ add_custom_command(TARGET enations POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${CMAKE_BINARY_DIR}/../tools/sdl2/SDL2_ttf-2.22.0/lib/${SDL2_ARCH}/SDL2_ttf.dll"
         $<TARGET_FILE_DIR:enations>
-    COMMENT "Copying SDL2.dll, SDL2_mixer.dll, SDL2_ttf.dll, and vdmplay.dll to output directory"
+    # Stage the baked GPU terrain PNG set next to the exe so the area map renders
+    # regardless of the launch working directory (and in a standalone deploy).
+    # The loader's first candidate is "data/terrain_gpu" relative to the exe.
+    # copy_directory_if_different only writes changed files, so it's cheap on
+    # incremental relinks.
+    COMMAND ${CMAKE_COMMAND} -E copy_directory_if_different
+        "${CMAKE_CURRENT_SOURCE_DIR}/../data/terrain_gpu"
+        "$<TARGET_FILE_DIR:enations>/data/terrain_gpu"
+    COMMENT "Copying runtime DLLs and baked terrain set (data/terrain_gpu) to output directory"
 )
 
 set_property(TARGET enations PROPERTY CXX_STANDARD 11)
