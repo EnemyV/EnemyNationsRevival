@@ -803,8 +803,15 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
     // per-hex loop. s_mir* = the (zoom,dir,editGen,loadGen) the cells were captured at, to
     // detect a pure zoom change (everything else identical → cells still valid).
     struct BaseCell { const Tile* tile; CPoint c[4]; bool transpose;
-                      bool shade; float bL, bR; };   // + slope-shade (per-triangle brightness)
+                      bool shade; float bL, bR;       // + slope-shade (per-triangle brightness)
+                      int fStart, fCount; };          // [fStart,fStart+fCount) into s_featherBands (land<->land edge softening)
     static std::vector<BaseCell> s_baseCells;
+    // FEATHER retained capture: a land<->land edge band bleeds a NEIGHBOUR's tile in along the
+    // shared diamond edge. Stored per OWNING base cell (range above) so the replay can emit each
+    // cell's bands right AFTER its base — preserving the per-row back-to-front occlusion (a front
+    // mountain still occludes a back tile's band). 4 content corners = edge c0,c1 + 2 insets.
+    struct FeatherBand { const Tile* tile; CPoint c[4]; SDL_FPoint uv[4]; };
+    static std::vector<FeatherBand> s_featherBands;
     // WATER retained capture: open-water + coast diamonds (a hole in the base — filled by
     // the live s_waterRT layer) and their blend bands, in CONTENT space. animIdx indexes
     // s_waterAnims (the per-(type,variant) frame tables), which is ZOOM-INDEPENDENT — so a
@@ -1061,7 +1068,7 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
     { std::lock_guard<std::mutex> lk( g_enEditMutex );
       g_enEditedHexes.clear( );                                                      // rebuild absorbs all pending edits
       if ( retainCap ) { g_enMeshEdits.clear( ); g_enMeshEditOverflow = false; } }   // a capture refreshes the cells → drop the replay re-apply list
-    if ( retainCap ) { s_baseCells.clear( ); s_waterCells.clear( ); s_waterBandCells.clear( ); s_fogCells.clear( ); }   // capturing a fresh full mesh → drop old cells
+    if ( retainCap ) { s_baseCells.clear( ); s_waterCells.clear( ); s_waterBandCells.clear( ); s_fogCells.clear( ); s_featherBands.clear( ); }   // capturing a fresh full mesh → drop old cells
     if ( incPan )
     {
         // --- INCREMENTAL PAN: scroll the two texture-accumulated layers (terrain + slope
@@ -1349,6 +1356,34 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
                 s_shadeVerts.push_back( sv( 0, bc.bL ) ); s_shadeVerts.push_back( sv( 1, bc.bL ) ); s_shadeVerts.push_back( sv( 3, bc.bL ) );
                 s_shadeVerts.push_back( sv( 1, bc.bR ) ); s_shadeVerts.push_back( sv( 2, bc.bR ) ); s_shadeVerts.push_back( sv( 3, bc.bR ) );
             }
+            // FEATHER: emit this cell's land<->land bands right after its base+shade, then break
+            // the base run (curTex=nullptr) so the bands layer over the base AND a later row's
+            // base (a fresh s_cache entry) still occludes them. Each band uses the NEIGHBOUR's
+            // texture; corners 0,1 = edge (opaque band), 2,3 = inset (transparent) → thin fade.
+            // Skipped at z2/z3 (invisible there) to keep the zoomed-out replay light.
+            for ( int fi = 0; zoom <= 1 && fi < bc.fCount; ++fi )
+            {
+                const FeatherBand& fb = s_featherBands[bc.fStart + fi];
+                SDL_Texture* ftex = fb.tile->tex[zoom];
+                if ( !ftex ) continue;
+                SDL_Vertex fv[4]; int fmnx, fmxx, fmny, fmxy;
+                for ( int k = 0; k < 4; ++k )
+                {
+                    int px = ( fb.c[k].x >> zoom ) - _uzx0;
+                    int py = ( fb.c[k].y >> zoom ) - _uzy0;
+                    fv[k].position = { (float)px, (float)py }; fv[k].tex_coord = fb.uv[k];
+                    Uint8 a = ( k < 2 ) ? (Uint8)135 : (Uint8)0;
+                    fv[k].color = { 255, 255, 255, a };
+                    if ( k == 0 ) { fmnx = fmxx = px; fmny = fmxy = py; }
+                    else { fmnx = __min( fmnx, px ); fmxx = __max( fmxx, px ); fmny = __min( fmny, py ); fmxy = __max( fmxy, py ); }
+                }
+                if ( fmxx < 0 || fmnx > rtW || fmxy < 0 || fmny > rtH ) continue;
+                s_cache.emplace_back( ftex, std::vector<SDL_Vertex>( ) );
+                std::vector<SDL_Vertex>& fcv = s_cache.back( ).second;
+                fcv.push_back( fv[0] ); fcv.push_back( fv[1] ); fcv.push_back( fv[3] );
+                fcv.push_back( fv[0] ); fcv.push_back( fv[3] ); fcv.push_back( fv[2] );
+                curTex = nullptr;   // bands broke the base run
+            }
         }
         // FOG: re-emit each hex's overlay quad at the new zoom (black, alpha=0 placeholder —
         // the unconditional precompute below rebuilds s_fogNbr/s_fogVis from s_fogHex and the
@@ -1566,7 +1601,8 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
                 // for now — feather/shade/water/fog still rebuild; built up next.)
                 if ( retainCap )
                     s_baseCells.push_back( { tile, { cpts[0], cpts[1], cpts[2], cpts[3] },
-                                             bTranspose, tile->shade != 0, bL, bR } );
+                                             bTranspose, tile->shade != 0, bL, bR,
+                                             (int)s_featherBands.size( ), 0 } );   // feather range filled below
             }
             QueryPerformanceCounter( &_aa1 ); _accAsm += _aa1.QuadPart - _aa0.QuadPart;   // MEASURE
 
@@ -1729,7 +1765,12 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
             // wave-redraw reason. Feather runs at ALL zooms and only on a mesh REBUILD.
 
             QueryPerformanceCounter( &_pa );
-            if ( Featherable( type ) && !IsOpenWater( type ) )
+            // Skip LAND feather at the zoomed-OUT levels (z2/z3): the thin edge band is
+            // invisible at 16-32px tiles, but its 4-neighbour resolution was ~1.8s of the
+            // 6.5s max-zoom-out rebuild. Coastline (shore softening) keeps feathering — it
+            // reads even small. (So a capture at z2/z3 records no land-feather cells; a later
+            // zoom-IN re-adds them on the next z0/z1 rebuild.)
+            if ( Featherable( type ) && !IsOpenWater( type ) && ( type == CHex::coastline || zoom <= 1 ) )
             {
                 static const SDL_FPoint fuv[4] = { {0.f,0.5f}, {0.5f,0.f}, {1.f,0.5f}, {0.5f,1.f} };
                 static const int nbrDX[4] = { 0, 1, 0, -1 };
@@ -1829,6 +1870,18 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
                         std::vector<SDL_Vertex>& fvb = *lastFeatVb;   // batched within this row
                         fvb.push_back( e0 ); fvb.push_back( e1 ); fvb.push_back( n1 );
                         fvb.push_back( e0 ); fvb.push_back( n1 ); fvb.push_back( n0 );
+                        if ( retainCap )   // capture the band in CONTENT space, attached to THIS hex's base cell
+                        {
+                            float fccx = ( cpts[0].x + cpts[1].x + cpts[2].x + cpts[3].x ) * 0.25f;
+                            float fccy = ( cpts[0].y + cpts[1].y + cpts[2].y + cpts[3].y ) * 0.25f;
+                            FeatherBand fb; fb.tile = ntile;
+                            fb.c[0] = cpts[c0]; fb.uv[0] = u0;
+                            fb.c[1] = cpts[c1]; fb.uv[1] = u1;
+                            fb.c[2] = CPoint( (int)( cpts[c0].x + kBand*( fccx - cpts[c0].x ) ), (int)( cpts[c0].y + kBand*( fccy - cpts[c0].y ) ) ); fb.uv[2] = iu0;
+                            fb.c[3] = CPoint( (int)( cpts[c1].x + kBand*( fccx - cpts[c1].x ) ), (int)( cpts[c1].y + kBand*( fccy - cpts[c1].y ) ) ); fb.uv[3] = iu1;
+                            s_featherBands.push_back( fb );
+                            if ( !s_baseCells.empty( ) ) s_baseCells.back( ).fCount++;
+                        }
                     }
                 }
             }
