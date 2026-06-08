@@ -8,6 +8,7 @@
 
 #include <SDL.h>
 #include <vector>
+#include <unordered_set>   // g_enMeshEditSet — dedup the retained-mesh edit list
 #include <mutex>      // g_enEditedHexes is touched by sim AND render threads
 #define STB_IMAGE_IMPLEMENTATION
 #define STBI_ONLY_PNG
@@ -63,9 +64,13 @@ std::vector<unsigned> g_enEditedHexes;
 // since-capture edit over the stale cells. Cleared only on a capturing rebuild. Past the cap
 // we can't track them all, so g_enMeshEditOverflow forces a full rebuild instead of a replay.
 std::vector<unsigned> g_enMeshEdits;
+std::unordered_set<unsigned> g_enMeshEditSet;   // DEDUP: a hex re-edited many times (e.g. crop
+                                                // grow stages, repeated alt sets) counts ONCE, so
+                                                // the list stays bounded by UNIQUE edited hexes.
 bool                  g_enMeshEditOverflow = false;
 std::mutex            g_enEditMutex;   // sim thread pushes; render thread reads/swaps
 const size_t          kEditPatchCap = 1024;
+const size_t          kMeshEditCap  = 16384;   // unique-hex ceiling for the replay re-apply list
 void g_enEditHex( int x, int y )
 {
     // Bump the gen AND record under the same lock so the render can read them atomically
@@ -75,10 +80,17 @@ void g_enEditHex( int x, int y )
     unsigned packed = ( (unsigned)( x & 0xFFFF ) << 16 ) | (unsigned)( y & 0xFFFF );
     if ( g_enEditedHexes.size( ) < kEditPatchCap )
         g_enEditedHexes.push_back( packed );
-    if ( g_enMeshEdits.size( ) < kEditPatchCap )
-        g_enMeshEdits.push_back( packed );
-    else
-        g_enMeshEditOverflow = true;   // too many edits to re-apply on a replay → next zoom rebuilds
+    // g_enMeshEdits: only push a hex the FIRST time it's edited since the last capture. Without
+    // this, repeated edits to the same hexes (crop stages, terraform passes) blew past the cap
+    // in seconds → g_enMeshEditOverflow → every zoom forced a full ~11s capture instead of a
+    // fast replay. Dedup keeps the list ~= the count of distinct changed hexes (small).
+    if ( g_enMeshEditSet.insert( packed ).second )
+    {
+        if ( g_enMeshEdits.size( ) < kMeshEditCap )
+            g_enMeshEdits.push_back( packed );
+        else
+            g_enMeshEditOverflow = true;   // too many DISTINCT edited hexes → next zoom rebuilds
+    }
 }
 
 // Set by SDL2Terrain::Render each frame: TRUE when the visible view scrolled since last
@@ -1095,7 +1107,7 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
     s_builtEditGen = g_enTerrainEditGen;   // this mesh now reflects all edits so far
     { std::lock_guard<std::mutex> lk( g_enEditMutex );
       g_enEditedHexes.clear( );                                                      // rebuild absorbs all pending edits
-      if ( retainCap ) { g_enMeshEdits.clear( ); g_enMeshEditOverflow = false; } }   // a capture refreshes the cells → drop the replay re-apply list
+      if ( retainCap ) { g_enMeshEdits.clear( ); g_enMeshEditSet.clear( ); g_enMeshEditOverflow = false; } }   // a capture refreshes the cells → drop the replay re-apply list
     if ( retainCap ) { s_baseCells.clear( ); s_waterCells.clear( ); s_waterBandCells.clear( ); s_fogCells.clear( ); s_featherBands.clear( ); }   // capturing a fresh full mesh → drop old cells
     if ( incPan )
     {
