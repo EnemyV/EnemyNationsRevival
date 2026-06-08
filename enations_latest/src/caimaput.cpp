@@ -16,6 +16,8 @@
 
 #include "logging.h"  // dave's logging system
 
+#include <vector>
+
 extern CAIData*         pGameData;   // pointer to API object for game data
 extern CException*      pException;  // standard exception for yielding
 extern CPathMap         thePathMap;  // the map pathfinding object (no yield)
@@ -24,6 +26,15 @@ extern CRITICAL_SECTION cs;          // used by threads
 
 #define new DEBUG_NEW
 #define MAX_MINERAL_DENSITY 128
+
+// DEBUG PLAYABILITY: force-optimize this file even in Debug. The AI map-utility
+// scans (FindCentralHex/FindStagingHex/placement) walk block- or map-sized loops
+// where every CHexCoord accessor + GetMapOffset is an un-inlined call under
+// /Od /Ob0 — that overhead dominates per-AI setup in Debug (it's inlined away in
+// Release anyway, so this only speeds Debug, making big-AI games playtestable).
+// /RTC must be off for #pragma optimize to take effect. No behaviour change.
+#pragma runtime_checks( "", off )
+#pragma optimize( "gt", on )
 
 CAIHex* CAIMapUtil::CreatePathPoints( int iSX, int iSY, int iEX, int iEY )
 {
@@ -308,7 +319,17 @@ void CAIMapUtil::FindCentralHex( CAIHex* pBaseHex, int iWidthX, int iWidthY, CHe
     int iNearDist = m_iMapSize;
     int iNearHex  = m_iMapSize;
 
-    CMinerals* pmn;
+    int yc = 0;   // yield-throttle counter for the per-hex scan loops
+
+    // Candidate list of open hexes found in pass 1. The original code re-scanned the
+    // entire block (iDeltaX*iDeltaY) FOUR more times after pass 1 to filter/rate, but
+    // every one of those passes skips hexes whose m_pwaWork[] is 0 — i.e. the vast
+    // majority. Collecting the open hexes once here lets the rating passes walk only
+    // the candidates. Identical result (same hexes, same ratings, same FindNth pick);
+    // it just removes the empty-hex iteration + GetMapOffset/Wrap traffic. Helps both
+    // Debug (un-inlined accessors) and Release (memory traffic over the big work map).
+    std::vector<int> candList;
+    candList.reserve( 512 );
 
     for ( int iy = 0; iy < iDeltaY; iy++ )
     {
@@ -317,10 +338,10 @@ void CAIMapUtil::FindCentralHex( CAIHex* pBaseHex, int iWidthX, int iWidthY, CHe
         for ( int ix = 0; ix < iDeltaX; ix++ )
         {
 #if THREADS_ENABLED
-            // BUGBUG this function must yield
-            myYieldThread( );
-            // if( myYieldThread() == TM_QUIT )
-            //	throw(ERR_CAI_TM_QUIT); // THROW( pException );
+            // Cooperative yield for the gameplay AI threads, throttled — calling
+            // it every hex was a syscall-grade cost over this block-sized scan.
+            if ( ( ++yc & 0xFF ) == 0 )
+                myYieldThread( );
 #endif
             hex.X( hex.Wrap( hcStart.X( ) + ix ) );
 
@@ -335,11 +356,10 @@ void CAIMapUtil::FindCentralHex( CAIHex* pBaseHex, int iWidthX, int iWidthY, CHe
             if ( i < 0 || i >= m_iMapSize )
                 continue;
 
+            // MSW_RESOURCE is set from theMinerals (ConvertStatus), so this already
+            // excludes mineral hexes — the explicit theMinerals.Lookup that used to
+            // follow was a redundant per-hex std::map probe.
             if ( m_pMap[i] & MSW_RESOURCE )
-                continue;
-
-            // check hex for material
-            if ( theMinerals.Lookup( hex, pmn ) )
                 continue;
 
             // use the game's opinion of building this building
@@ -375,6 +395,7 @@ void CAIMapUtil::FindCentralHex( CAIHex* pBaseHex, int iWidthX, int iWidthY, CHe
                 if ( i < m_iMapSize && i >= 0 )
                 {
                     m_pwaWork[i] = iDist;
+                    candList.push_back( i );
 
                     if ( iDist && iDist < iNearDist )
                     {
@@ -393,41 +414,32 @@ void CAIMapUtil::FindCentralHex( CAIHex* pBaseHex, int iWidthX, int iWidthY, CHe
     // double the iNearDist
     iNearDist <<= 1;
 
-    // reprocess limited array, this time clearing
-    // hexes with > nearest distance
-    for ( int iy = 0; iy < iDeltaY; iy++ )
+    // The four passes below walk only the candidate hexes collected in pass 1
+    // (instead of re-scanning the whole iDeltaX*iDeltaY block each time). Behaviour
+    // is identical: every original pass already skipped m_pwaWork[i]==0 hexes.
+
+    // reprocess, clearing hexes with > nearest distance, else store build multiplier
+    for ( size_t ci = 0; ci < candList.size( ); ++ci )
     {
-        hex.Y( hex.Wrap( hcStart.Y( ) + iy ) );
+        int i = candList[ci];
 
 #if THREADS_ENABLED
-        // BUGBUG this function must yield
-        myYieldThread( );
-        // if( myYieldThread() == TM_QUIT )
-        //	throw(ERR_CAI_TM_QUIT); // THROW( pException );
+        if ( ( ++yc & 0xFF ) == 0 )
+            myYieldThread( );
 #endif
-        for ( int ix = 0; ix < iDeltaX; ix++ )
+        if ( !m_pwaWork[i] )
+            continue;
+
+        // reset those hexes with higher ratings
+        if ( m_pwaWork[i] > iNearDist )
+            m_pwaWork[i] = 0;
+        else
         {
-            hex.X( hex.Wrap( hcStart.X( ) + ix ) );
-
-            // do not allow placing on 0,0
-            if ( !hex.X( ) && !hex.Y( ) )
-                continue;
-
-            int i = GetMapOffset( hex.X( ), hex.Y( ) );
-            if ( i < 0 || i >= m_iMapSize )
-                continue;
-
-            if ( !m_pwaWork[i] )
-                continue;
-
-            // reset those hexes with higher ratings
-            if ( m_pwaWork[i] > iNearDist )
-                m_pwaWork[i] = 0;
-            else
-            {
-                // get build multiplier
-                m_pwaWork[i] = GetMultiplier( hex, iWidthX, iWidthY, CStructureData::city );
-            }
+            // get build multiplier
+            OffsetToXY( i, &aiHex.m_iX, &aiHex.m_iY );
+            hex.X( aiHex.m_iX );
+            hex.Y( aiHex.m_iY );
+            m_pwaWork[i] = GetMultiplier( hex, iWidthX, iWidthY, CStructureData::city );
         }
     }
 
@@ -435,101 +447,55 @@ void CAIMapUtil::FindCentralHex( CAIHex* pBaseHex, int iWidthX, int iWidthY, CHe
     iNearDist = m_iMapSize;
     iNearHex  = m_iMapSize;
     // then process for the lowest building multiplier
-    for ( int iy = 0; iy < iDeltaY; iy++ )
+    for ( size_t ci = 0; ci < candList.size( ); ++ci )
     {
-        hex.Y( hex.Wrap( hcStart.Y( ) + iy ) );
+        int i = candList[ci];
 
 #if THREADS_ENABLED
-        // BUGBUG this function must yield
-        myYieldThread( );
-        // if( myYieldThread() == TM_QUIT )
-        //	throw(ERR_CAI_TM_QUIT); // THROW( pException );
+        if ( ( ++yc & 0xFF ) == 0 )
+            myYieldThread( );
 #endif
-        for ( int ix = 0; ix < iDeltaX; ix++ )
-        {
-            hex.X( hex.Wrap( hcStart.X( ) + ix ) );
+        if ( !m_pwaWork[i] )
+            continue;
 
-            // do not allow placing on 0,0
-            if ( !hex.X( ) && !hex.Y( ) )
-                continue;
-
-            int i = GetMapOffset( hex.X( ), hex.Y( ) );
-            if ( i < 0 || i >= m_iMapSize )
-                continue;
-
-            if ( !m_pwaWork[i] )
-                continue;
-
-            // looking for lowest building multiplier
-            if ( m_pwaWork[i] > 0 && m_pwaWork[i] < iNearDist )
-                iNearDist = m_pwaWork[i];
-        }
+        // looking for lowest building multiplier
+        if ( m_pwaWork[i] > 0 && m_pwaWork[i] < iNearDist )
+            iNearDist = m_pwaWork[i];
     }
 
-    // reprocess limited array, this time clearing
-    // hexes with > best building multiplier
-    for ( int iy = 0; iy < iDeltaY; iy++ )
+    // reprocess, clearing hexes with > best building multiplier
+    for ( size_t ci = 0; ci < candList.size( ); ++ci )
     {
-        hex.Y( hex.Wrap( hcStart.Y( ) + iy ) );
+        int i = candList[ci];
 
 #if THREADS_ENABLED
-        // BUGBUG this function must yield
-        myYieldThread( );
-        // if( myYieldThread() == TM_QUIT )
-        //	throw(ERR_CAI_TM_QUIT); // THROW( pException );
+        if ( ( ++yc & 0xFF ) == 0 )
+            myYieldThread( );
 #endif
-        for ( int ix = 0; ix < iDeltaX; ix++ )
-        {
-            hex.X( hex.Wrap( hcStart.X( ) + ix ) );
+        if ( !m_pwaWork[i] )
+            continue;
 
-            // do not allow placing on 0,0
-            if ( !hex.X( ) && !hex.Y( ) )
-                continue;
-
-            int i = GetMapOffset( hex.X( ), hex.Y( ) );
-            if ( i < 0 || i >= m_iMapSize )
-                continue;
-
-            if ( !m_pwaWork[i] )
-                continue;
-
-            // reset those hexes with higher ratings
-            if ( m_pwaWork[i] > iNearDist )
-                m_pwaWork[i] = 0;
-        }
+        // reset those hexes with higher ratings
+        if ( m_pwaWork[i] > iNearDist )
+            m_pwaWork[i] = 0;
     }
 
     // reset to count the nearest open hexes
     iCnt = 0;
 
     // count those who are <= nearest distance
-    for ( int iy = 0; iy < iDeltaY; iy++ )
+    for ( size_t ci = 0; ci < candList.size( ); ++ci )
     {
-        hex.Y( hex.Wrap( hcStart.Y( ) + iy ) );
+        int i = candList[ci];
 
 #if THREADS_ENABLED
-        // BUGBUG this function must yield
-        myYieldThread( );
-        // if( myYieldThread() == TM_QUIT )
-        //	throw(ERR_CAI_TM_QUIT); // THROW( pException );
+        if ( ( ++yc & 0xFF ) == 0 )
+            myYieldThread( );
 #endif
-        for ( int ix = 0; ix < iDeltaX; ix++ )
+        if ( m_pwaWork[i] )
         {
-            hex.X( hex.Wrap( hcStart.X( ) + ix ) );
-
-            // do not allow placing on 0,0
-            if ( !hex.X( ) && !hex.Y( ) )
-                continue;
-
-            int i = GetMapOffset( hex.X( ), hex.Y( ) );
-            if ( i < 0 || i >= m_iMapSize )
-                continue;
-
-            if ( m_pwaWork[i] )
-            {
-                iCnt++;
-                iNearHex = i;
-            }
+            iCnt++;
+            iNearHex = i;
         }
     }
 
@@ -562,10 +528,9 @@ void CAIMapUtil::FindCentralHex( CAIHex* pBaseHex, int iWidthX, int iWidthY, CHe
     for ( int i = 0; i < m_iMapSize; ++i )
     {
 #if THREADS_ENABLED
-        // BUGBUG this function must yield
-        myYieldThread( );
-        // if( myYieldThread() == TM_QUIT )
-        //	throw(ERR_CAI_TM_QUIT); // THROW( pException );
+        // throttled cooperative yield (see the block-scan loop above)
+        if ( ( ++yc & 0xFF ) == 0 )
+            myYieldThread( );
 #endif
         OffsetToXY( i, &aiHex.m_iX, &aiHex.m_iY );
 
