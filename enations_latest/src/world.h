@@ -186,12 +186,14 @@ protected:
 
 	// colors for painting the window
 	static DWORD		m_clrTerrain [CHex::num_types];		// same order as CHex m_bType
+	static DWORD		m_clrTerrainPaper [CHex::num_types];	// parchment "paper map" palette — WORLD MAP only (radar keeps m_clrTerrain)
 	static DWORD		m_clrResources [4];
 	static DWORD		m_clrResHigh [4];
 	static DWORD		m_clrLocation;
 	static DWORD		m_clrHit;
 
 	static COLORREF		m_rgbTerrain [CHex::num_types];		// same order as CHex m_bType
+	static COLORREF		m_rgbTerrainPaper [CHex::num_types];	// parchment tones, same order as m_bType
 	static COLORREF		m_rgbResources [4];
 	static COLORREF		m_rgbResHigh [4];
 	static COLORREF		m_rgbLocation;

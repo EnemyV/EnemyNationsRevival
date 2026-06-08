@@ -41,6 +41,7 @@ const int BTN_Y_OFF = 8;
 
 
 DWORD CWndWorld::m_clrTerrain[CHex::num_types];        // same order as CHex m_bType
+DWORD CWndWorld::m_clrTerrainPaper[CHex::num_types];   // parchment palette — world map only
 DWORD CWndWorld::m_clrResources[4];
 DWORD CWndWorld::m_clrResHigh[4];
 DWORD CWndWorld::m_clrLocation;
@@ -61,6 +62,25 @@ COLORREF CWndWorld::m_rgbTerrain[CHex::num_types] = {
         RGB (66, 108, 81),
         RGB (87, 83, 51),
         RGB (131, 98, 69)};
+// Parchment "paper navigation map" palette — used by the WORLD MAP only (the radar
+// keeps the satellite-style m_rgbTerrain above). Cream/tan land, ink-blue water,
+// sepia relief — order matches CHex m_bType (city, desert, forest, lake, hill,
+// mountain, ocean, plain, river, road, rough, swamp, coastline, fields).
+COLORREF CWndWorld::m_rgbTerrainPaper[CHex::num_types] = {
+        RGB (150, 122,  92),    // city      — darker sepia (built-up)
+        RGB (227, 207, 160),    // desert    — pale sand
+        RGB (158, 168, 120),    // forest    — muted sage-green
+        RGB (140, 165, 175),    // lake      — soft chart-blue
+        RGB (206, 178, 132),    // hill      — light tan
+        RGB (170, 136,  98),    // mountain  — relief brown
+        RGB (120, 150, 168),    // ocean     — ink-blue
+        RGB (224, 205, 158),    // plain     — cream
+        RGB (146, 170, 178),    // river     — chart-blue
+        RGB ( 96,  74,  52),    // road      — dark ink
+        RGB (196, 178, 140),    // rough     — weathered tan
+        RGB (150, 162, 128),    // swamp     — drab olive
+        RGB (188, 196, 178),    // coastline — pale shore
+        RGB (176, 184, 132)};   // fields    — light green-tan
 COLORREF CWndWorld::m_rgbResources[4] = {
         RGB (156, 153, 175),
         RGB (8, 9, 9),
@@ -160,8 +180,10 @@ void CWndWorld::ApplyColors(CDIB const *pDib) {
     if (pDib == NULL)
         return;
 
-    for (int iOn = 0; iOn < CHex::num_types; iOn++)
-        m_clrTerrain[iOn] = pDib->GetColorValue(m_rgbTerrain[iOn]);
+    for (int iOn = 0; iOn < CHex::num_types; iOn++) {
+        m_clrTerrain[iOn]      = pDib->GetColorValue(m_rgbTerrain[iOn]);
+        m_clrTerrainPaper[iOn] = pDib->GetColorValue(m_rgbTerrainPaper[iOn]);
+    }
     m_clrLocation = pDib->GetColorValue(m_rgbLocation);
     for (int iOn = 0; iOn < 4; iOn++) {
         m_clrResources[iOn] = pDib->GetColorValue(m_rgbResources[iOn]);
@@ -203,7 +225,10 @@ void CWndWorld::Create(BOOL bStart) {
     }
 
     // get min size
-    m_bIsRadar = theGame.GetMe()->GetExists(CStructureData::command_center);
+    // Radar mode BEFORE you land (rocket not yet placed) and again once you own a command
+    // center; the parchment world map shows only in between (landed, no command center yet).
+    m_bIsRadar = theGame.GetMe()->GetExists(CStructureData::command_center) ||
+                 !theGame.GetMe()->m_bPlacedRocket;
     std::string sTitle = strPrintf(
         EnLoadStdString(m_bIsRadar ? IDS_WORLD_TITLE_RADAR : IDS_WORLD_TITLE_MAP).c_str(),
         m_pWndArea == NULL ? "" : m_sDir[m_pWndArea->GetAA().m_iDir].c_str());
@@ -380,7 +405,10 @@ int CWndWorld::OnCreate(LPCREATESTRUCT lpCreateStruct) {
     m_sHelpBtnDis[pos_mine] = EnLoadStdString(IDH_WORLD_OWNER2);
     m_sHelpBtnDis[pos_units] = EnLoadStdString(IDH_WORLD_UNITS2);
 
-    m_bIsRadar = theGame.GetMe()->GetExists(CStructureData::command_center);
+    // Radar mode BEFORE you land (rocket not yet placed) and again once you own a command
+    // center; the parchment world map shows only in between (landed, no command center yet).
+    m_bIsRadar = theGame.GetMe()->GetExists(CStructureData::command_center) ||
+                 !theGame.GetMe()->m_bPlacedRocket;
     if (m_bIsRadar)
         m_sHelpFace = "";
     else
@@ -573,7 +601,10 @@ void CWndWorld::CommandCenterChange() {
 
     BOOL bOldRadar = m_bIsRadar;
 
-    m_bIsRadar = theGame.GetMe()->GetExists(CStructureData::command_center);
+    // Radar mode BEFORE you land (rocket not yet placed) and again once you own a command
+    // center; the parchment world map shows only in between (landed, no command center yet).
+    m_bIsRadar = theGame.GetMe()->GetExists(CStructureData::command_center) ||
+                 !theGame.GetMe()->m_bPlacedRocket;
     if (!m_bIsRadar)
         SetButtonState(1, disabled);
     else {
@@ -603,8 +634,14 @@ void CWndWorld::CommandCenterChange() {
         return;
     }
 
-    if (bOldRadar != m_bIsRadar)
+    if (bOldRadar != m_bIsRadar) {
         _OnSize();
+        // The throttled minimap cache (m_pdibRadarStatic) still holds the PREVIOUS mode's
+        // image — e.g. the parchment world map right after a command center is built. Force
+        // a full rebuild on the next ReRender so the radar never flashes the world-map
+        // palette (and vice-versa) during the throttle window.
+        m_dwLastRadarDraw = 0;
+    }
 
     if (iOldMode != m_iMode)
         NewMode();
@@ -1314,6 +1351,10 @@ void CWndWorld::_NewDir() {
     DWORD bdwRes = (m_iMode & resources) ? -1 : 0;
     DWORD bdwCopper = (bdwRes & theGame.GetMe()->CanCopper()) ? -1 : 0;
 
+    // The world map gets the parchment "paper navigation map" palette; the radar keeps
+    // the satellite-style colors. Both fill m_pdibGround0 here, so just pick the table.
+    const DWORD* pclrTerrain = m_bIsRadar ? m_clrTerrain : m_clrTerrainPaper;
+
     // TEMP DEBUG: resource-render diagnosis counters (feed the [_NewDir] readout below)
     int dbgFlagged = 0, dbgLookupOK = 0, dbgDrawn = 0;
 
@@ -1428,7 +1469,7 @@ void CWndWorld::_NewDir() {
 
             ShowTerrain:
             // show terrain
-            dwClr = m_clrTerrain[pHex->GetVisibleType()];
+            dwClr = pclrTerrain[pHex->GetVisibleType()];
 
             GotClr:
             (*fnSetPixel)(pDib, dwClr);

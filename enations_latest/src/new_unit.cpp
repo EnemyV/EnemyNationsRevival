@@ -3000,6 +3000,12 @@ CBuilding* CBuilding::Create( CHexCoord const& hex, int iBldg, int iBldgDir, CVe
         pBldg->GetOwner( )->m_iOfcCap += ROCKET_OFC_CAP;
         pBldg->GetOwner( )->m_bPlacedRocket = TRUE;
 
+        // The minimap shows radar until you land; now that the rocket has touched down
+        // (and there's no command center yet) flip it to the parchment world map. The
+        // radar comes back when a command center is built (see mainloop ConstComplete).
+        if ( pBldg->GetOwner( )->IsMe( ) )
+            theApp.m_wndWorld.CommandCenterChange( );
+
         // give it all materials
         if ( pBldg->GetOwner( )->IsLocal( ) )
         {
