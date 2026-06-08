@@ -801,6 +801,12 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
     struct WaterBandCell { int animIdx; CPoint c[4]; SDL_FPoint uv[4]; };
     static std::vector<WaterCell>     s_waterCells;
     static std::vector<WaterBandCell> s_waterBandCells;
+    // FOG retained capture: every visible hex has a fog overlay quad (black, per-corner
+    // alpha = 1-visibility). Alpha is re-sampled cheaply each fog tick from s_fogHex/s_fogNbr
+    // (rebuilt unconditionally below), so a zoom replay only needs to re-project the quad
+    // POSITIONS — capture the hex + its content corners.
+    struct FogCell { CHex* hex; CPoint c[4]; };
+    static std::vector<FogCell> s_fogCells;
     static int      s_mirZoom = -1, s_mirDir = -1;
     static unsigned s_mirEditGen = ~0u, s_mirLoadGen = ~0u;
     static bool     s_mirValid = false;
@@ -1030,7 +1036,7 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
     s_sig = sig; dX = dY = 0;   // (re)built at the current view → zero pan
     s_builtEditGen = g_enTerrainEditGen;   // this mesh now reflects all edits so far
     { std::lock_guard<std::mutex> lk( g_enEditMutex ); g_enEditedHexes.clear( ); }   // rebuild absorbs all pending edits
-    if ( retainCap ) { s_baseCells.clear( ); s_waterCells.clear( ); s_waterBandCells.clear( ); }   // capturing a fresh full mesh → drop old cells
+    if ( retainCap ) { s_baseCells.clear( ); s_waterCells.clear( ); s_waterBandCells.clear( ); s_fogCells.clear( ); }   // capturing a fresh full mesh → drop old cells
     if ( incPan )
     {
         // --- INCREMENTAL PAN: scroll the two texture-accumulated layers (terrain + slope
@@ -1299,7 +1305,22 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
                 s_shadeVerts.push_back( sv( 1, bc.bR ) ); s_shadeVerts.push_back( sv( 2, bc.bR ) ); s_shadeVerts.push_back( sv( 3, bc.bR ) );
             }
         }
-        s_fogVerts.clear( ); s_fogHex.clear( ); s_fogNbr.clear( );   // fog/feather not captured yet
+        // FOG: re-emit each hex's overlay quad at the new zoom (black, alpha=0 placeholder —
+        // the unconditional precompute below rebuilds s_fogNbr/s_fogVis from s_fogHex and the
+        // forced fog re-sample fills the real per-corner alpha this same frame). Feather not
+        // captured yet.
+        s_fogVerts.clear( ); s_fogHex.clear( ); s_fogNbr.clear( );
+        for ( const FogCell& fc : s_fogCells )
+        {
+            s_fogHex.push_back( fc.hex );
+            auto fzv = [&]( int k ) -> SDL_Vertex {
+                SDL_Vertex v; v.position = { (float)( ( fc.c[k].x >> zoom ) - _uzx0 ),
+                                             (float)( ( fc.c[k].y >> zoom ) - _uzy0 ) };
+                v.tex_coord = { 0, 0 }; v.color = { 0, 0, 0, 0 }; return v;
+            };
+            s_fogVerts.push_back( fzv( 0 ) ); s_fogVerts.push_back( fzv( 1 ) ); s_fogVerts.push_back( fzv( 3 ) );
+            s_fogVerts.push_back( fzv( 1 ) ); s_fogVerts.push_back( fzv( 2 ) ); s_fogVerts.push_back( fzv( 3 ) );
+        }
         // WATER: re-emit the captured open-water/coast diamonds + blend bands at the new
         // zoom. s_waterAnims (frame tables) is KEPT from the capture build (zoom-independent),
         // so the captured animIdx values stay valid; only positions re-project. The geom build
@@ -1607,6 +1628,8 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
             s_fogVerts.push_back( fogV( pts[1], sf[1] ) );
             s_fogVerts.push_back( fogV( pts[2], sf[2] ) );
             s_fogVerts.push_back( fogV( pts[3], sf[3] ) );
+            if ( retainCap )   // CONTENT corners for the zoom replay (alpha re-sampled each tick)
+                s_fogCells.push_back( { phex, { cpts[0], cpts[1], cpts[2], cpts[3] } } );
 
             // (Cursor footprint hatch is drawn live in DrawBuildCursorOverlay, not
             // baked here — see note above.)
