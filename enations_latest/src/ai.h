@@ -13,6 +13,19 @@ void AiDeletePlayer (DWORD_PTR dwID); // dwID is a CAIMgr* — pointer-width (x6
 void AiExit ();
 void WINAPI AiThread (AI_INIT *pAiI);
 void AiSetup (CPlayer * pPlr);
+// AiSetup split: AiSetupPre = start-hex + light lists (uses RNG); AiSetupHeavy =
+// map/manager build + initial unit placement. AiSetup runs both in order.
+void AiSetupPre (CPlayer * pPlr);
+void AiSetupHeavy (CPlayer * pPlr);
+
+// New-game create speed-up: snapshot the player-independent per-hex map data
+// once before the AI-setup loop, then free it after (before AI threads start).
+// While the cache is live, CAIData::GetCHexData serves from it instead of
+// re-scanning the locked game map for every AI. See caidata.cpp.
+void AiHexCacheBuild ();
+void AiHexCacheFree ();
+bool AiHexCacheActive ();   // TRUE while the setup snapshot is live (caidata.cpp)
+void AiMapBaseFree ();      // frees the shared per-AI base map snapshot (caimap.cpp)
 void AiMessage( DWORD_PTR dwID, CNetCmd const * pMsg, int iLen);   // dwID is a CAIMgr* — pointer-width
 void AiSaveGame( CArchive& ar );
 void AiLoadGame( CArchive& ar, BOOL bLocal );

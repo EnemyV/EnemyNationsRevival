@@ -28,7 +28,164 @@ extern CRITICAL_SECTION cs;  // used by threads
 
 extern CPathMap thePathMap;  // used by maps for pathing
 
+extern CAIData* pGameData;   // the game-data interface (this object, globally)
+
+void AiMapBaseFree( );       // caimap.cpp — frees the shared per-AI base map snapshot
+
 #define new DEBUG_NEW
+
+//---------------------------------------------------------------------------
+// AI per-hex map cache (new-game create speed-up).
+//
+// During game creation every AI builds its own private full-world map by
+// scanning every hex and calling GetCHexData() once per hex — which takes a
+// per-hex critical-section lock and looks up terrain/buildings/vehicles from
+// the shared game map. That data is PLAYER-INDEPENDENT, so with N AIs it is
+// recomputed N times identically (the "Tracking opponent colonies..." wait).
+//
+// We snapshot it ONCE into s_pHexCache before the AI-setup loop and serve
+// GetCHexData() from it. The cache is only alive during setup, which runs on
+// the main thread BEFORE any AI thread launches, so it is race-free; during
+// gameplay s_pHexCache is NULL and GetCHexData() takes the original live+locked
+// path that the AI threads rely on.
+//---------------------------------------------------------------------------
+namespace
+{
+    struct HexCacheEntry
+    {
+        DWORD m_dwUnitID;
+        int   m_iUnit;
+        BYTE  m_cTerrain;
+    };
+
+    HexCacheEntry* s_pHexCache = nullptr;
+    int            s_cacheW    = 0;
+    int            s_cacheH    = 0;
+
+    // Fill pHex from the live game map. Caller holds cs (or is the single-thread
+    // setup path). Mirrors the original GetCHexData body exactly.
+    void AiFillHexLiveNoLock( CAIHex* pHex )
+    {
+        pHex->m_iUnit    = 0xFFFF;
+        pHex->m_dwUnitID = (DWORD)0;
+        pHex->m_cTerrain = (BYTE)0xFF;
+
+        CHexCoord getHex( pHex->m_iX, pHex->m_iY );
+        CHex*     pGameHex = theMap.GetHex( getHex );
+
+        if ( pGameHex != NULL )
+        {
+            const int iType  = pGameHex->GetType( );
+            pHex->m_cTerrain = (BYTE)iType;
+
+            BYTE bUnits = pGameHex->GetUnits( );
+            if ( bUnits != 0 )
+            {
+                if ( bUnits & CHex::bldg )
+                {
+                    CBuilding* pBldg = theBuildingHex.GetBuilding( getHex );
+                    if ( pBldg != NULL )
+                    {
+                        pHex->m_iUnit    = pBldg->GetUnitType( );
+                        pHex->m_dwUnitID = pBldg->GetID( );
+                    }
+                }
+                else
+                {
+                    CSubHex   subHex( getHex.X( ), getHex.Y( ) );
+                    CVehicle* pVehicle = NULL;
+                    pHex->m_iUnit      = CUnit::vehicle;
+                    if ( bUnits & CHex::ul )
+                    {
+                        pVehicle = theVehicleHex.GetVehicle( subHex );
+                        if ( pVehicle != NULL )
+                            pHex->m_dwUnitID = pVehicle->GetID( );
+                    }
+                    if ( bUnits & CHex::ur )
+                    {
+                        subHex.x++;
+                        pVehicle = theVehicleHex.GetVehicle( subHex );
+                        if ( pVehicle != NULL )
+                            pHex->m_dwUnitID = pVehicle->GetID( );
+                    }
+                    subHex.y++;
+                    if ( bUnits & CHex::lr )
+                    {
+                        pVehicle = theVehicleHex.GetVehicle( subHex );
+                        if ( pVehicle != NULL )
+                            pHex->m_dwUnitID = pVehicle->GetID( );
+                    }
+                    if ( bUnits & CHex::ll )
+                    {
+                        subHex.x--;
+                        pVehicle = theVehicleHex.GetVehicle( subHex );
+                        if ( pVehicle != NULL )
+                            pHex->m_dwUnitID = pVehicle->GetID( );
+                    }
+                }
+            }
+        }
+    }
+}
+
+void AiHexCacheFree( );   // defined just below
+
+// Build the one-time per-hex snapshot. Call on the main thread, before the
+// AI-setup loop. Safe to call when pGameData/world size is unknown (no-ops).
+void AiHexCacheBuild( )
+{
+    AiHexCacheFree( );
+
+    if ( pGameData == NULL )
+        return;
+
+    int w = pGameData->m_iHexPerBlk * pGameData->m_iBlkPerSide;
+    int h = w;   // world is always square
+    if ( w <= 0 || h <= 0 )
+        return;
+
+    s_pHexCache = new ( std::nothrow ) HexCacheEntry[(size_t)w * (size_t)h];
+    if ( s_pHexCache == NULL )
+        return;   // out of memory → silently fall back to the live path
+
+    s_cacheW = w;
+    s_cacheH = h;
+
+    CAIHex aiHex( 0, 0 );
+    EnterCriticalSection( &cs );
+    for ( int y = 0; y < h; ++y )
+        for ( int x = 0; x < w; ++x )
+        {
+            aiHex.m_iX = x;
+            aiHex.m_iY = y;
+            AiFillHexLiveNoLock( &aiHex );
+
+            HexCacheEntry& e = s_pHexCache[(size_t)y * (size_t)w + (size_t)x];
+            e.m_cTerrain = aiHex.m_cTerrain;
+            e.m_iUnit    = aiHex.m_iUnit;
+            e.m_dwUnitID = aiHex.m_dwUnitID;
+        }
+    LeaveCriticalSection( &cs );
+}
+
+// Release the snapshot. Call after the AI-setup loop, before AI threads start
+// (and on any setup error path). NULLs the cache so gameplay uses live data.
+void AiHexCacheFree( )
+{
+    delete[] s_pHexCache;
+    s_pHexCache = nullptr;
+    s_cacheW    = 0;
+    s_cacheH    = 0;
+
+    AiMapBaseFree( );   // drop the shared per-AI base map snapshot too (caimap.cpp)
+}
+
+// TRUE while the setup-time hex snapshot is live (between Build and Free). The
+// CAIMap base-map fast path keys off this so it only fires during AI creation.
+bool AiHexCacheActive( )
+{
+    return s_pHexCache != nullptr;
+}
 
 
 //
@@ -91,85 +248,29 @@ int CAIData::GetCHexData( CAIHex* pHex )
 {
     ASSERT_VALID( this );
 
-    // mark the hex as unknown
-    pHex->m_iUnit    = 0xFFFF;
-    pHex->m_dwUnitID = (DWORD)0;
-    pHex->m_cTerrain = (BYTE)0xFF;
-    CHexCoord getHex( pHex->m_iX, pHex->m_iY );
-
-    // default the returned value to sloped terrain (can't build)
-    int iSlope = 0;
-
-    EnterCriticalSection( &cs );
-
-    CHex* pGameHex = theMap.GetHex( getHex );
-
-    // known hex means return is not NULL
-    if ( pGameHex != NULL )
+    // Setup-time fast path: serve the player-independent terrain/unit snapshot
+    // from the one-time cache (see AiHexCacheBuild). NULL during gameplay, so
+    // AI threads always fall through to the live+locked path below.
+    if ( s_pHexCache != NULL )
     {
-        // extract the terrain type from low nibble
-        const int iType  = pGameHex->GetType( );
-        pHex->m_cTerrain = (BYTE)iType;
-        // iSlope = pGameHex->GetSlope();
-
-        BYTE bUnits = pGameHex->GetUnits( );
-        // there may be units in this CHex
-        if ( bUnits != 0 )
+        const int x = pHex->m_iX, y = pHex->m_iY;
+        if ( x >= 0 && x < s_cacheW && y >= 0 && y < s_cacheH )
         {
-            // it is a hex of a building
-            if ( bUnits & CHex::bldg )
-            {
-                CBuilding* pBldg = theBuildingHex.GetBuilding( getHex );
-                if ( pBldg != NULL )
-                {
-                    // NOTE: this does not identify the type
-                    // of building/vehicle unit, but indicates
-                    // that the unit is a building or vehicle
-                    pHex->m_iUnit    = pBldg->GetUnitType( );
-                    pHex->m_dwUnitID = pBldg->GetID( );
-                }
-            }
-            else  // its probably a vehicle
-            {
-                CSubHex   subHex( getHex.X( ), getHex.Y( ) );
-                CVehicle* pVehicle = NULL;
-                pHex->m_iUnit      = CUnit::vehicle;
-                // BUGBUG right now there could be up to 4
-                // vehicles that are partially in this hex
-                // or one vehicle could be completely in this
-                // hex and 2 others partially in the hex
-                if ( bUnits & CHex::ul )
-                {
-                    pVehicle = theVehicleHex.GetVehicle( subHex );
-                    if ( pVehicle != NULL )
-                        pHex->m_dwUnitID = pVehicle->GetID( );
-                }
-                if ( bUnits & CHex::ur )
-                {
-                    subHex.x++;
-                    pVehicle = theVehicleHex.GetVehicle( subHex );
-                    if ( pVehicle != NULL )
-                        pHex->m_dwUnitID = pVehicle->GetID( );
-                }
-                subHex.y++;
-                if ( bUnits & CHex::lr )
-                {
-                    pVehicle = theVehicleHex.GetVehicle( subHex );
-                    if ( pVehicle != NULL )
-                        pHex->m_dwUnitID = pVehicle->GetID( );
-                }
-                if ( bUnits & CHex::ll )
-                {
-                    subHex.x--;
-                    pVehicle = theVehicleHex.GetVehicle( subHex );
-                    if ( pVehicle != NULL )
-                        pHex->m_dwUnitID = pVehicle->GetID( );
-                }
-            }
+            const HexCacheEntry& e = s_pHexCache[(size_t)y * (size_t)s_cacheW + (size_t)x];
+            pHex->m_cTerrain = e.m_cTerrain;
+            pHex->m_iUnit    = e.m_iUnit;
+            pHex->m_dwUnitID = e.m_dwUnitID;
+            return 0;
         }
     }
+
+    // Live path (unchanged behaviour): lock + read the shared game map.
+    EnterCriticalSection( &cs );
+    AiFillHexLiveNoLock( pHex );
     LeaveCriticalSection( &cs );
-    return ( iSlope );
+
+    // (slope was always returned as 0)
+    return 0;
 }
 
 //

@@ -39,6 +39,7 @@ CAIData* pGameData = NULL;
 // which is the central point for AI access by the game
 CAIMgrList* plAIMgrList = NULL;
 
+
 static int iPlyrNum = 1;
 
 void AiCityCenter( CHexCoord& /* _hex */ )
@@ -250,7 +251,9 @@ BOOL AiWorldSize( int iHexPerBlk, int iBlkPerSide )
     return ( FALSE );
 }
 
-void AiSetup( CPlayer* pPlr )
+// Serial (RNG-sensitive) part: PickStartHex draws from the shared game RNG, so
+// this must run in deterministic player order on the main thread.
+void AiSetupPre( CPlayer* pPlr )
 {
     CAIMgr* pAIMgr = (CAIMgr*)pPlr->GetAiHdl( );
     if ( pAIMgr == NULL )
@@ -261,11 +264,30 @@ void AiSetup( CPlayer* pPlr )
     int iX = pPlr->m_hexMapStart.X( );
     int iY = pPlr->m_hexMapStart.Y( );
 
+    try
+    {
+        pAIMgr->CreatePre( iX, iY );
+    }
+    catch ( CException* e )
+    {
+        throw( ERR_CAI_BAD_NEW );
+    }
+}
+
+// Heavy part: builds this AI's private map + managers and places its initial
+// units. Must follow AiSetupPre. CreateHeavy's CAIMap build copies the shared
+// base map (see AiHexCacheBuild) rather than re-scanning the locked game map.
+void AiSetupHeavy( CPlayer* pPlr )
+{
+    CAIMgr* pAIMgr = (CAIMgr*)pPlr->GetAiHdl( );
+    if ( pAIMgr == NULL )
+        return;
+
     // now the pAIMgr must create its CAIMap map, and
     // CAIUnits list and CAIGoalMgr and CAITaskMgr objects
     try
     {
-        pAIMgr->CreateData( iX, iY );
+        pAIMgr->CreateHeavy( );
         theApp.BaseYield( );
 
         pAIMgr->SetInitialPos( );
@@ -275,6 +297,13 @@ void AiSetup( CPlayer* pPlr )
     {
         throw( ERR_CAI_BAD_NEW );
     }
+}
+
+void AiSetup( CPlayer* pPlr )
+{
+    // Serial path = the original behaviour (Pre then Heavy).
+    AiSetupPre( pPlr );
+    AiSetupHeavy( pPlr );
 }
 
 //

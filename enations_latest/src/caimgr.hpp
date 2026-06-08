@@ -122,6 +122,8 @@ public:
 
 	void AssumeControl( int iBlockX, int iBlockY );
 	void CreateData( int iBlockX, int iBlockY );
+	void CreatePre( int iBlockX, int iBlockY );   // serial part (RNG: PickStartHex)
+	void CreateHeavy( void );                     // parallel part (RNG-free map build)
 	void CreateOpFors( void );
 	void ConvertHPUnits( void );
     void CreateCAUnits( void );

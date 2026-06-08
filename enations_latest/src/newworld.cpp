@@ -36,6 +36,10 @@
 #include "unit.inl"
 #include "minerals.inl"
 
+#include <vector>
+#include <thread>
+#include <atomic>
+
 extern CPathMgr thePathMgr;
 
 void InitColors();
@@ -50,6 +54,65 @@ static char BASED_CODE THIS_FILE[] = __FILE__;
 // CDlgAiPos removed (CHEAT-only AI position dialog)
 
 extern DWORD dwFrameCheck;
+
+//---------------------------------------------------------------------------
+// New-game create-flow profiler.
+//
+// One-shot high-resolution timing of the create phases, written to
+// CreateProfile.log in the run dir. Negligible cost (a QPC + fprintf per
+// phase boundary, only during world creation). CpReset() opens the log and
+// starts the clock; CpMark("phase") records the elapsed time since the last
+// mark (the phase that just finished) plus a running total.
+//---------------------------------------------------------------------------
+namespace
+{
+    LARGE_INTEGER g_cpFreq{ };
+    LARGE_INTEGER g_cpPhaseStart{ };
+    LARGE_INTEGER g_cpTotalStart{ };
+    FILE*         g_cpLog = nullptr;
+
+    void CpReset( const char* pszTitle )
+    {
+        QueryPerformanceFrequency( &g_cpFreq );
+        QueryPerformanceCounter( &g_cpTotalStart );
+        g_cpPhaseStart = g_cpTotalStart;
+        if ( g_cpLog )
+            fclose( g_cpLog );
+        g_cpLog = nullptr;
+        // Off by default; set EN_CREATEPROF=1 to write the create-phase timing log.
+        // All CpMark() calls no-op when g_cpLog is null.
+        if ( !getenv( "EN_CREATEPROF" ) )
+            return;
+        g_cpLog = fopen( "CreateProfile.log", "w" );
+        if ( g_cpLog )
+        {
+            SYSTEMTIME st;
+            GetLocalTime( &st );
+            fprintf( g_cpLog, "=== %s  %02d:%02d:%02d ===\n", pszTitle, st.wHour, st.wMinute, st.wSecond );
+            fflush( g_cpLog );
+        }
+    }
+
+    double CpMsBetween( const LARGE_INTEGER& a, const LARGE_INTEGER& b )
+    {
+        if ( g_cpFreq.QuadPart == 0 )
+            return 0.0;
+        return (double)( b.QuadPart - a.QuadPart ) * 1000.0 / (double)g_cpFreq.QuadPart;
+    }
+
+    void CpMark( const char* pszName )
+    {
+        if ( !g_cpLog )
+            return;
+        LARGE_INTEGER now;
+        QueryPerformanceCounter( &now );
+        double dMs    = CpMsBetween( g_cpPhaseStart, now );
+        double dTotal = CpMsBetween( g_cpTotalStart, now );
+        fprintf( g_cpLog, "  %-30s %9.1f ms   (t+%9.1f ms)\n", pszName, dMs, dTotal );
+        fflush( g_cpLog );
+        g_cpPhaseStart = now;
+    }
+}
 
 
 BOOL CConquerApp::LoadData() {
@@ -322,6 +385,8 @@ int GetPrime(int iMin) {
 }
 
 void CConquerApp::CreateNewWorld(unsigned uRand, AIinit *pAiData, int iSide, int iSideSize) {
+    OutputDebugStringA( "[REN] CreateNewWorld ENTRY\n" );
+    { FILE* _f = fopen( "SDL2Panel.log", "a" ); if ( _f ) { fputs( "[REN] CreateNewWorld ENTRY\n", _f ); fclose( _f ); } }
 
     ASSERT (m_pCreateGame->GetDlgStatus() != NULL);
     // ASSERT_VALID + m_hWnd check removed — SDL2CreateStatus is the replacement (Phase 2d) and is not a CObject/CWnd
@@ -331,6 +396,8 @@ void CConquerApp::CreateNewWorld(unsigned uRand, AIinit *pAiData, int iSide, int
 #endif
 
     dwFrameCheck = 2 * 1000 / FRAME_RATE;
+
+    CpReset( "CreateNewWorld" );
 
     theApp.Log("Create world");
 
@@ -369,6 +436,8 @@ void CConquerApp::CreateNewWorld(unsigned uRand, AIinit *pAiData, int iSide, int
     // we all have to build from the same seed
     theGame.SetSeed(uRand);
 
+    CpMark( "hash tables + seed" );
+
     theApp.Log( "Set seed " );
 
     // we do it here because of the initial paint
@@ -388,10 +457,17 @@ void CConquerApp::CreateNewWorld(unsigned uRand, AIinit *pAiData, int iSide, int
 
     // put up a creating window and hourglass
     m_wndMain.UpdateWindow();
+    // Make the progress window actually visible. LoadData() shows it on first
+    // data load, but the single-player create path comes straight here (skipping
+    // LoadData) and would otherwise SetPer() an invisible window — no progress
+    // bar after picking your race. ShowDlgStatus() creates/shows it if needed.
+    m_pCreateGame->ShowDlgStatus();
     m_pCreateGame->GetDlgStatus()->SetPer(PER_START);
 
     // get R&D data
     theRsrch.Open();
+
+    CpMark( "globals + InitColors + Rsrch.Open" );
 
     theApp.Log( "Loading terrain data" );
     // load the data (needed by AI)
@@ -402,6 +478,8 @@ void CConquerApp::CreateNewWorld(unsigned uRand, AIinit *pAiData, int iSide, int
     theTurrets.InitData();
     theFlashes.InitData();
     theExplGrp.InitData();
+
+    CpMark( "InitData (terrain/struct/etc)" );
 
     theApp.Log( "Setup AI" );
     // setup the AI
@@ -428,6 +506,8 @@ void CConquerApp::CreateNewWorld(unsigned uRand, AIinit *pAiData, int iSide, int
     // set rand
     MySrand(uRand);
 
+    CpMark( "AiInit + AiNewPlayer loop" );
+
     theApp.Log( "Call StartGame on players" );
     // get the players data ready
     POSITION pos;
@@ -436,6 +516,8 @@ void CConquerApp::CreateNewWorld(unsigned uRand, AIinit *pAiData, int iSide, int
         ASSERT_VALID (pPlr);
         pPlr->StartGame();
     }
+
+    CpMark( "StartGame on players" );
 
     // we save and reset the rand in case the below does something (it's server only)
     int iSaveRand = MyRand();
@@ -462,6 +544,8 @@ void CConquerApp::CreateNewWorld(unsigned uRand, AIinit *pAiData, int iSide, int
             return;
     }
 
+    CpMark( "world size + StartNewWorld" );
+
     theApp.Log("Init pathmap");
     // set up thePathMap
     int iSize = iSideSize * iSide;
@@ -469,24 +553,33 @@ void CConquerApp::CreateNewWorld(unsigned uRand, AIinit *pAiData, int iSide, int
     thePathMap.Init(iSize, iSize);
     theApp.BaseYield();
 
+    CpMark( "thePathMap.Init" );
+
     try {
         theApp.Log("Load sprites");
         // we now load the sprites themselves (after getting the others started)
         m_pCreateGame->GetDlgStatus()->SetMsg(IDS_LOAD_TERRAIN);
         theTerrain.InitSprites();
+        CpMark( "  theTerrain.InitSprites" );
         m_pCreateGame->GetDlgStatus()->SetMsg(IDS_LOAD_STRUCTURES);
         theStructures.InitSprites();
+        CpMark( "  theStructures.InitSprites" );
         theEffects.InitSprites();
+        CpMark( "  theEffects.InitSprites" );
         m_pCreateGame->GetDlgStatus()->SetMsg(IDS_LOAD_TRANSPORTS);
         theTransports.InitSprites();
+        CpMark( "  theTransports.InitSprites" );
 
         theApp.BaseYield();
         theFlashes.InitSprites();
+        CpMark( "  theFlashes.InitSprites" );
         theApp.BaseYield();
         theTurrets.InitSprites();
+        CpMark( "  theTurrets.InitSprites" );
         theApp.BaseYield();
 
         theExplGrp.PostSpriteInit();
+        CpMark( "  theExplGrp.PostSpriteInit" );
 
         CMaterialTypes::ctor();
 
@@ -500,10 +593,14 @@ void CConquerApp::CreateNewWorld(unsigned uRand, AIinit *pAiData, int iSide, int
         ASSERT_VALID (&theStructures);
         ASSERT_VALID (&theTransports);
 
+        CpMark( "  InitLang (3x)" );
+
         // load music
         theApp.Log("Load music");
         m_pCreateGame->GetDlgStatus()->SetMsg(IDS_LOAD_MUSIC);
         theMusicPlayer.LoadGroup(SFXGROUP::play);
+
+        CpMark( "LoadGroup (music/sfx)" );
     }
 
     catch (int iNum) {
@@ -532,6 +629,8 @@ void CConquerApp::CreateNewWorld(unsigned uRand, AIinit *pAiData, int iSide, int
     theMap.Init(iSide, iSideSize, m_pCreateGame->m_iTyp == CCreateBase::scenario);
     theApp.Log("Map created");
 
+    CpMark( "theMap.Init (WORLDGEN)" );
+
     // compare final seeds
     theGame.m_dwFinalRand = MyRand();
 
@@ -541,10 +640,17 @@ void CConquerApp::CreateNewWorld(unsigned uRand, AIinit *pAiData, int iSide, int
         return;
     }
 
+    CpMark( "thePathMgr.Init" );
+
     // create all the windows (in reverse order of importance)
     m_pCreateGame->GetDlgStatus()->SetMsg(IDS_CREATE_WINDOWS);
     m_pCreateGame->GetDlgStatus()->SetPer(PER_CREATE_WINDOWS);
 
+    {
+        char b[128];
+        sprintf_s( b, "[REN] NewGame window-create reached: HaveHP=%d\n", theGame.HaveHP() ? 1 : 0 );
+        OutputDebugStringA( b );
+    }
     if (theGame.HaveHP()) {
         m_wndBar.Create();    // must be first to set row3
         m_wndVehicles.Create();
@@ -585,6 +691,8 @@ void CConquerApp::CreateNewWorld(unsigned uRand, AIinit *pAiData, int iSide, int
         }
     }
 
+    CpMark( "Create windows" );
+
     // set up our routing
     if (theGame.HaveHP()) {
         theApp.Log("Create the HP router");
@@ -596,6 +704,8 @@ void CConquerApp::CreateNewWorld(unsigned uRand, AIinit *pAiData, int iSide, int
         }
         theApp.Log("HP router created");
     }
+
+    CpMark( "HP router" );
 
     // get rid of the creation dialogs
     if (!theGame.AmServer())
@@ -622,6 +732,10 @@ void CConquerApp::CreateNewWorld(unsigned uRand, AIinit *pAiData, int iSide, int
     theApp.Log( "IDS_READY_TO_GO" ); // Waiting for Others
     // tell player we are waiting on others
     m_pCreateGame->GetDlgStatus()->SetMsg(IDS_READY_TO_GO);
+
+    CpMark( "wait_AI / post-init" );
+    if ( g_cpLog )
+        fprintf( g_cpLog, "  --- CreateNewWorld returned; waiting for StartAi ---\n" );
 }
 
 void CConquerApp::StartAi() {
@@ -631,6 +745,10 @@ void CConquerApp::StartAi() {
 #endif
    // TRACE( "StartAi\n");
 
+
+    if ( g_cpLog )
+        fprintf( g_cpLog, "  --- StartAi entered ---\n" );
+    CpMark( "gap (CreateNewWorld -> StartAi)" );
 
     try {
         theGame.SetAI(TRUE);
@@ -652,16 +770,20 @@ void CConquerApp::StartAi() {
         int iNum = theGame.GetAi().GetCount() * 2;
         int iOn = 0;
 
-        POSITION pos;
-        // we tell the AI to set itself up.
-        for (pos = theGame.GetAi().GetHeadPosition(); pos != NULL;) {
-            CPlayer *pPlr = theGame.GetAi().GetNext(pos);
+        // Snapshot the player-independent per-hex map data ONCE so every AI's
+        // map build reads it lock-free instead of re-scanning the locked game
+        // map. Built on the main thread before any worker/AI thread starts.
+        AiHexCacheBuild();
+
+        // Tell each AI to set itself up (serial). Each AI's CreateMap copies the
+        // shared base map the first AI builds, instead of re-scanning the locked
+        // game map — see AiHexCacheBuild / the base-map cache in caimap.cpp.
+        POSITION posS;
+        for (posS = theGame.GetAi().GetHeadPosition(); posS != NULL;) {
+            CPlayer *pPlr = theGame.GetAi().GetNext(posS);
             ASSERT_VALID (pPlr);
             ASSERT (pPlr->IsAI());
 
-#ifdef LOGGINGON
-            OutputDebugStringA( "AiSetup\n" );
-#endif
 #ifdef _CHEAT
            if (!EnGetProfileInt("Debug", "NoThreads", 0))
 #endif
@@ -671,6 +793,11 @@ void CConquerApp::StartAi() {
             iOn++;
         }
 
+        // Done building every AI's map — drop the snapshot so gameplay (the AI
+        // threads launched just below) uses live, locked game-map reads.
+        AiHexCacheFree();
+
+        POSITION pos;
         // now we start each thread
 #ifdef LOGGINGON
         theApp.Log( "Start AI threads" );
@@ -697,6 +824,16 @@ void CConquerApp::StartAi() {
 #ifdef LOGGINGON
         theApp.Log( "AI threads started" );
 #endif
+
+        CpMark( "launch AI threads" );
+        if ( g_cpLog )
+        {
+            LARGE_INTEGER now;
+            QueryPerformanceCounter( &now );
+            fprintf( g_cpLog, "=== TOTAL create+AI: %.1f ms ===\n",
+                     CpMsBetween( g_cpTotalStart, now ) );
+            fflush( g_cpLog );
+        }
 
         // get rid of the creation dialogs
         m_pCreateGame->GetDlgStatus()->SetPer(PER_DONE, FALSE);
@@ -737,17 +874,20 @@ void CConquerApp::StartAi() {
     }
 
     catch (int iNum) {
+        AiHexCacheFree();   // never leave the setup snapshot live past setup
         CatchNum(iNum);
         theApp.CloseWorld();
         return;
     }
     catch (SE_Exception e) {
+        AiHexCacheFree();
         TRAP();
         CatchSE(e);
         theApp.CloseWorld();
         return;
     }
     catch (...) {
+        AiHexCacheFree();
         TRAP();
         CatchOther();
         theApp.CloseWorld();

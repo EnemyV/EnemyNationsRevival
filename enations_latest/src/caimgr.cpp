@@ -3390,15 +3390,12 @@ void CAIMgr::AssumeControl( int iBlockX, int iBlockY )
 #endif
 }
 
-void CAIMgr::CreateData( int iBlockX, int iBlockY )
+// Serial (RNG-sensitive) part of AI data creation: PickStartHex draws from the
+// shared game RNG, so this MUST run in deterministic player order on the main
+// thread. CreateOpFors/CreateCAUnits are trivial and just allocate empty lists.
+void CAIMgr::CreatePre( int iBlockX, int iBlockY )
 {
     ASSERT_VALID( this );
-
-    // BUGBUG need to evaluate start cell (iBlockX,iBlockY)
-    // and select the cell with the most m_iStructureSize
-    // blocks of cells in the region defined by start cell
-    // +/- m_iHexPerBlk/2
-
 
     CAIStart aStartUp( iBlockX, iBlockY );
     // BUGBUG this uses new start hex module
@@ -3407,12 +3404,27 @@ void CAIMgr::CreateData( int iBlockX, int iBlockY )
     m_iBlockY = aStartUp.m_iBlockY;
 
     CreateOpFors( );
-
     CreateCAUnits( );
+}
+
+// Heavy (RNG-free) part of AI data creation: builds this AI's private world map
+// + managers. Reads the shared game map read-only (lock-free via the GetCHexData
+// snapshot) and writes only this CAIMgr's own data, so it is safe to run for
+// different AIs concurrently. Must be preceded by CreatePre on the main thread.
+void CAIMgr::CreateHeavy( )
+{
+    ASSERT_VALID( this );
 
     CreateMap( );
-
     CreateManagers( );
+}
+
+void CAIMgr::CreateData( int iBlockX, int iBlockY )
+{
+    // Serial fallback: the original monolithic path (PickStartHex must precede
+    // the map build, which CreatePre guarantees).
+    CreatePre( iBlockX, iBlockY );
+    CreateHeavy( );
 }
 
 void CAIMgr::CreateOpFors( void )

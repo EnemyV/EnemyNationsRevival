@@ -16,6 +16,10 @@
 #include "CPathMap.h"
 
 #include "logging.h"	// dave's logging system
+#include "ai.h"			// AiHexCacheActive()
+
+#include <vector>
+#include <cstring>
 
 extern CAIData *pGameData;		// pointer to API object for game data
 extern CPathMap thePathMap;		// the map pathfinding object (no yield)
@@ -23,6 +27,36 @@ extern CException *pException;	// standard exception for yielding
 extern CRITICAL_SECTION cs;	// used by threads
 
 #define new DEBUG_NEW
+
+//---------------------------------------------------------------------------
+// Shared per-AI BASE map snapshot (new-game create speed-up).
+//
+// Every AI's CAIMap::UpdateMap(NULL) scans the whole world identically; the
+// only per-player difference is whether each BUILDING hex is mine vs theirs.
+// So the first AI of the game does the full scan and we save its result as a
+// base; every later AI just memcpy's the base and re-derives the handful of
+// building hexes for its own ownership. Built/used only while the setup hex
+// cache is live (AiHexCacheActive); freed in AiHexCacheFree -> AiMapBaseFree.
+// Setup runs on the main thread, so no locking is needed here.
+//---------------------------------------------------------------------------
+namespace
+{
+	WORD*            s_pAiBaseMap  = nullptr;
+	int              s_aiBaseSize  = 0;
+	int              s_aiBaseOcean = 0, s_aiBaseLand = 0, s_aiBaseLake = 0;
+	std::vector<int> s_aiBldgOffsets;   // map offsets that carry a building bit
+	bool             s_aiBaseValid = false;
+}
+
+void AiMapBaseFree( )
+{
+	delete[] s_pAiBaseMap;
+	s_pAiBaseMap  = nullptr;
+	s_aiBaseSize  = 0;
+	s_aiBaseValid = false;
+	s_aiBldgOffsets.clear();
+	s_aiBldgOffsets.shrink_to_fit();
+}
 
 //
 // this class maintains a block of locations, in start block size chunks
@@ -65,7 +99,7 @@ CAIMap::CAIMap( int iPlayer, CAIUnitList *pUnits,
 	m_iLand = 0;
 	
 	Initialize();
-	
+
 	m_pMapUtil = new CAIMapUtil( m_pwaMap, pUnits, m_iBaseX, m_iBaseY,
 		m_wBaseCol, m_wBaseRow, m_wCols, m_wRows, iPlayer );
 
@@ -278,16 +312,44 @@ void CAIMap::UpdateMap( CAIMsg *pMsg )
 
 #ifdef _LOGOUT
 	DWORD dwStart, dwEnd;
-	dwStart = timeGetTime(); 
+	dwStart = timeGetTime();
 #endif
 
 	// do a complete update of all hexes on the map
 	// create AI copy to use for hexes
 	CAIHex aiHex( 0, 0 );
+
+	// FAST PATH (AI create): the player-independent base map was already built
+	// by the first AI of this game — copy it, then re-derive ONLY the building
+	// hexes for THIS player's ownership (the sole per-player difference).
+	if( AiHexCacheActive() && s_aiBaseValid && s_aiBaseSize == m_iMapSize )
+	{
+		memcpy( m_pwaMap, s_pAiBaseMap, (size_t)m_iMapSize * sizeof( WORD ) );
+		m_iOcean = s_aiBaseOcean;
+		m_iLand  = s_aiBaseLand;
+		m_iLake  = s_aiBaseLake;
+
+		for( size_t k = 0; k < s_aiBldgOffsets.size(); ++k )
+		{
+			int i = s_aiBldgOffsets[k];
+			m_pMapUtil->OffsetToXY( i, &aiHex.m_iX, &aiHex.m_iY );
+			pGameData->GetCHexData( &aiHex );
+			// oldStatus 0 mirrors the original (each AI's m_pwaMap starts zeroed)
+			m_pwaMap[i] = m_pMapUtil->ConvertStatus( &aiHex, 0 );
+		}
+		return;
+	}
+
+	// SLOW PATH: full scan (first AI of the game, or outside setup). When in
+	// setup, capture the result as the shared base so the rest take the fast path.
+	bool bBuildBase = AiHexCacheActive() && !s_aiBaseValid;
+	if( bBuildBase )
+		s_aiBldgOffsets.clear();
+
 	m_iOcean = 0;
 	m_iLand = 0;
 	m_iLake = 0;
-	
+
 	for( int i=0; i<m_iMapSize; ++i )
 	{
 		// this throws an exception because it is executing
@@ -321,6 +383,28 @@ void CAIMap::UpdateMap( CAIMsg *pMsg )
 
 		// update map array with status
 		m_pwaMap[i] = wStatus;
+
+		if( bBuildBase && ( wStatus & ( MSW_AI_BUILDING | MSW_OPFOR_BUILDING ) ) )
+			s_aiBldgOffsets.push_back( i );
+	}
+
+	if( bBuildBase )
+	{
+		delete[] s_pAiBaseMap;
+		s_pAiBaseMap = new ( std::nothrow ) WORD[m_iMapSize];
+		if( s_pAiBaseMap != NULL )
+		{
+			memcpy( s_pAiBaseMap, m_pwaMap, (size_t)m_iMapSize * sizeof( WORD ) );
+			s_aiBaseSize  = m_iMapSize;
+			s_aiBaseOcean = m_iOcean;
+			s_aiBaseLand  = m_iLand;
+			s_aiBaseLake  = m_iLake;
+			s_aiBaseValid = true;
+		}
+		else
+		{
+			s_aiBldgOffsets.clear();   // OOM → just keep using the slow path
+		}
 	}
 
 #ifdef _LOGOUT
