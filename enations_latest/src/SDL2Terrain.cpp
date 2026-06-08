@@ -77,6 +77,14 @@ void g_enEditHex( int x, int y )
 // terrain's actual blit delta, not the panel UL (which can lag the visible scroll).
 bool g_enViewScrolled = false;
 
+// Set by the sim when a STATIC sprite is removed from a hex (e.g. a road built over a
+// forest hex clears its tree). Static sprites (trees/bridges) persist across incremental
+// sprite captures, so nothing would otherwise drop the now-gone tree until a zoom/dir
+// change. DiscoverSpritesGpu forces ONE full capture when this is set (re-scans the
+// viewport; the road hex no longer emits a tree) then clears it. Reload is unaffected —
+// the hex type is saved as `road`, so a fresh capture never emits the tree.
+bool g_enStaticDirty = false;
+
 // Item 5 (incremental terrain patch) kill-switch — opt-in until verified, then default on.
 static bool TerrainPatchEnabled( )
 {

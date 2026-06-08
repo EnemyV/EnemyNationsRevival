@@ -2622,6 +2622,11 @@ void CHex::ChangeToRoad( CHexCoord& hex, BOOL bCallNext, BOOL bForce )
 
     ASSERT_VALID( this );
 
+    // Was this a forest hex (i.e. does it carry a tree the road will clear below)?
+    // Captured BEFORE m_bType is overwritten, so the GPU sprite layer can be told to
+    // drop the now-removed static tree (see g_enStaticDirty at the end).
+    BOOL bWasForest = ( GetType( ) == CHex::forest );
+
     // if we don't see it yet, just mark it
     m_bType = CHex::road;
     if ( ( !GetVisibility( ) ) && ( !bForce ) && ( GetVisibleType( ) != road ) )
@@ -2758,6 +2763,26 @@ void CHex::ChangeToRoad( CHexCoord& hex, BOOL bCallNext, BOOL bForce )
 
     // invalidate it so it redraws
     hex.SetInvalidated( );
+
+    // GPU terrain edit-patch: this hex's road FACING was just (re)computed — record it
+    // so the incremental mesh patch re-meshes THIS tile. Essential for the recursive
+    // neighbour updates (bCallNext == FALSE): their type is already `road`, so the
+    // SetVisibleType(road) above is a no-op and never marked them, leaving junction
+    // tiles (L/T corners) rendered with a STALE facing until a full rebuild (rotate /
+    // zoom). ChangeToRoad runs once per affected hex, so this covers placed + neighbours.
+    extern void g_enEditHex( int, int );
+    g_enEditHex( hex.X( ), hex.Y( ) );
+
+    // If this hex was forest, its tree was just cleared (SetTree(0) above). Trees are
+    // STATIC GPU sprites that persist across incremental captures, so signal the sprite
+    // layer to take one full capture and drop the now-gone tree (otherwise it floats over
+    // the road until a zoom/dir change).
+    if ( bWasForest )
+    {
+        extern bool g_enStaticDirty;
+        g_enStaticDirty = true;
+    }
+
     theApp.m_wndWorld.NewMode( );
 }
 
@@ -3644,7 +3669,13 @@ void CGameMap::DiscoverSpritesGpu( CAnimAtr& aa, const CRect& rect )
     static bool s_haveStore = false;
     bool projOrPan   = ( aa.m_iZoom != s_lastZoom ) || ( aa.m_iDir != s_lastDir ) ||
                        ( ulDirty.x != s_lastUlX ) || ( ulDirty.y != s_lastUlY );
-    bool bIncremental = bDirty && s_haveStore && !projOrPan;
+    // A static sprite was removed (e.g. road built over forest cleared a tree) → force
+    // one FULL capture so the persistent static store re-scans and drops it; then clear
+    // the flag so we return to cheap incremental captures.
+    extern bool g_enStaticDirty;
+    bool bStaticDirty = g_enStaticDirty;
+    g_enStaticDirty = false;
+    bool bIncremental = bDirty && s_haveStore && !projOrPan && !bStaticDirty;
     s_lastZoom = aa.m_iZoom; s_lastDir = aa.m_iDir;
     s_lastUlX  = ulDirty.x;  s_lastUlY = ulDirty.y;
     s_haveStore = true;   // after this frame the store is populated
