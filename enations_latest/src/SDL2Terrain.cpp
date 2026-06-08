@@ -793,6 +793,14 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
     struct BaseCell { const Tile* tile; CPoint c[4]; bool transpose;
                       bool shade; float bL, bR; };   // + slope-shade (per-triangle brightness)
     static std::vector<BaseCell> s_baseCells;
+    // WATER retained capture: open-water + coast diamonds (a hole in the base — filled by
+    // the live s_waterRT layer) and their blend bands, in CONTENT space. animIdx indexes
+    // s_waterAnims (the per-(type,variant) frame tables), which is ZOOM-INDEPENDENT — so a
+    // zoom replay keeps s_waterAnims and only re-projects these positions to the new zoom.
+    struct WaterCell     { CHex* hex; CPoint c[4]; int animIdx; };
+    struct WaterBandCell { int animIdx; CPoint c[4]; SDL_FPoint uv[4]; };
+    static std::vector<WaterCell>     s_waterCells;
+    static std::vector<WaterBandCell> s_waterBandCells;
     static int      s_mirZoom = -1, s_mirDir = -1;
     static unsigned s_mirEditGen = ~0u, s_mirLoadGen = ~0u;
     static bool     s_mirValid = false;
@@ -1022,7 +1030,7 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
     s_sig = sig; dX = dY = 0;   // (re)built at the current view → zero pan
     s_builtEditGen = g_enTerrainEditGen;   // this mesh now reflects all edits so far
     { std::lock_guard<std::mutex> lk( g_enEditMutex ); g_enEditedHexes.clear( ); }   // rebuild absorbs all pending edits
-    if ( retainCap ) s_baseCells.clear( );   // capturing a fresh full mesh → drop old cells
+    if ( retainCap ) { s_baseCells.clear( ); s_waterCells.clear( ); s_waterBandCells.clear( ); }   // capturing a fresh full mesh → drop old cells
     if ( incPan )
     {
         // --- INCREMENTAL PAN: scroll the two texture-accumulated layers (terrain + slope
@@ -1081,7 +1089,8 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
     {
     s_fogVerts.clear(); s_fogHex.clear(); s_fogNbr.clear(); s_fogVis.clear(); s_shadeVerts.clear();
     s_waterHex.clear(); s_waterPos.clear(); s_waterBlend.clear();
-    s_waterAnimOf.clear(); s_waterAnims.clear();
+    s_waterAnimOf.clear();
+    if ( !zoomReplay ) s_waterAnims.clear();   // a zoom replay reuses the captured frame tables
     }
     // (type<<8|variant) -> index into s_waterAnims for THIS rebuild; resolves each
     // water animation's frame textures once (string build + hash lookup happens here,
@@ -1290,9 +1299,29 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
                 s_shadeVerts.push_back( sv( 1, bc.bR ) ); s_shadeVerts.push_back( sv( 2, bc.bR ) ); s_shadeVerts.push_back( sv( 3, bc.bR ) );
             }
         }
-        s_fogVerts.clear( ); s_fogHex.clear( ); s_fogNbr.clear( );
-        s_waterHex.clear( ); s_waterPos.clear( ); s_waterBlend.clear( );
-        s_waterAnimOf.clear( ); s_waterAnims.clear( );
+        s_fogVerts.clear( ); s_fogHex.clear( ); s_fogNbr.clear( );   // fog/feather not captured yet
+        // WATER: re-emit the captured open-water/coast diamonds + blend bands at the new
+        // zoom. s_waterAnims (frame tables) is KEPT from the capture build (zoom-independent),
+        // so the captured animIdx values stay valid; only positions re-project. The geom build
+        // (s_waterDiamGeom/s_waterBandGeom) below the loop then bakes s_waterRT as usual.
+        s_waterHex.clear( ); s_waterPos.clear( ); s_waterAnimOf.clear( ); s_waterBlend.clear( );
+        for ( const WaterCell& wc : s_waterCells )
+        {
+            s_waterHex.push_back( wc.hex );
+            for ( int k = 0; k < 4; ++k )
+                s_waterPos.push_back( CPoint( ( wc.c[k].x >> zoom ) - _uzx0, ( wc.c[k].y >> zoom ) - _uzy0 ) );
+            s_waterAnimOf.push_back( wc.animIdx );
+        }
+        for ( const WaterBandCell& bc : s_waterBandCells )
+        {
+            WaterBlendBand wb; wb.animIdx = bc.animIdx;
+            for ( int k = 0; k < 4; ++k )
+            {
+                wb.p[k]  = CPoint( ( bc.c[k].x >> zoom ) - _uzx0, ( bc.c[k].y >> zoom ) - _uzy0 );
+                wb.uv[k] = bc.uv[k];
+            }
+            s_waterBlend.push_back( wb );
+        }
         s_mirZoom = zoom;   // cells now also valid at this (zoomed-in) level
         Perf::CounterAdd( "rebuild.zoomreplay", 1 );
     }
@@ -1464,6 +1493,8 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
                 s_waterPos.push_back( pts[2] ); s_waterPos.push_back( pts[3] );
                 int thisWaterAnim = resolveWaterAnim( type, psprite->GetIndex( ) );
                 s_waterAnimOf.push_back( thisWaterAnim );
+                if ( retainCap )
+                    s_waterCells.push_back( { phex, { cpts[0], cpts[1], cpts[2], cpts[3] }, thisWaterAnim } );
 
                 static const SDL_FPoint wfuv[4] = { {0.f,0.5f}, {0.5f,0.f}, {1.f,0.5f}, {0.5f,1.f} };
                 static const int wDX[4] = { 0, 1, 0, -1 };
@@ -1501,6 +1532,17 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
                     wbnd.p[2] = CPoint( (int)i0x, (int)i0y );  wbnd.uv[2] = { u0.x + kBandW*(0.5f-u0.x), u0.y + kBandW*(0.5f-u0.y) };
                     wbnd.p[3] = CPoint( (int)i1x, (int)i1y );  wbnd.uv[3] = { u1.x + kBandW*(0.5f-u1.x), u1.y + kBandW*(0.5f-u1.y) };
                     s_waterBlend.push_back( wbnd );
+                    if ( retainCap )   // same band in CONTENT space (interior re-derived from content corners)
+                    {
+                        float wccx = ( cpts[0].x + cpts[1].x + cpts[2].x + cpts[3].x ) * 0.25f;
+                        float wccy = ( cpts[0].y + cpts[1].y + cpts[2].y + cpts[3].y ) * 0.25f;
+                        WaterBandCell bc; bc.animIdx = wnAnim;
+                        bc.c[0] = cpts[c0]; bc.uv[0] = wbnd.uv[0];
+                        bc.c[1] = cpts[c1]; bc.uv[1] = wbnd.uv[1];
+                        bc.c[2] = CPoint( (int)( cpts[c0].x + kBandW*( wccx - cpts[c0].x ) ), (int)( cpts[c0].y + kBandW*( wccy - cpts[c0].y ) ) ); bc.uv[2] = wbnd.uv[2];
+                        bc.c[3] = CPoint( (int)( cpts[c1].x + kBandW*( wccx - cpts[c1].x ) ), (int)( cpts[c1].y + kBandW*( wccy - cpts[c1].y ) ) ); bc.uv[3] = wbnd.uv[3];
+                        s_waterBandCells.push_back( bc );
+                    }
                 }
                 QueryPerformanceCounter( &_pb ); _accWater += _pb.QuadPart - _pa.QuadPart;
             }
@@ -1517,7 +1559,10 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
                 s_waterHex.push_back( phex );
                 s_waterPos.push_back( pts[0] ); s_waterPos.push_back( pts[1] );
                 s_waterPos.push_back( pts[2] ); s_waterPos.push_back( pts[3] );
-                s_waterAnimOf.push_back( resolveCoastAnim( psprite->GetIndex( ) ) );
+                int coastAnim = resolveCoastAnim( psprite->GetIndex( ) );
+                s_waterAnimOf.push_back( coastAnim );
+                if ( retainCap )
+                    s_waterCells.push_back( { phex, { cpts[0], cpts[1], cpts[2], cpts[3] }, coastAnim } );
                 QueryPerformanceCounter( &_pb ); _accWater += _pb.QuadPart - _pa.QuadPart;
             }
 
@@ -1668,6 +1713,17 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
                         cb.p[2] = CPoint( (int)i0x, (int)i0y );  cb.uv[2] = iu0;
                         cb.p[3] = CPoint( (int)i1x, (int)i1y );  cb.uv[3] = iu1;
                         s_waterBlend.push_back( cb );
+                        if ( retainCap )   // shore feather band in CONTENT space (interior re-derived)
+                        {
+                            float fccx = ( cpts[0].x + cpts[1].x + cpts[2].x + cpts[3].x ) * 0.25f;
+                            float fccy = ( cpts[0].y + cpts[1].y + cpts[2].y + cpts[3].y ) * 0.25f;
+                            WaterBandCell bc; bc.animIdx = cb.animIdx;
+                            bc.c[0] = cpts[c0]; bc.uv[0] = u0;
+                            bc.c[1] = cpts[c1]; bc.uv[1] = u1;
+                            bc.c[2] = CPoint( (int)( cpts[c0].x + kBand*( fccx - cpts[c0].x ) ), (int)( cpts[c0].y + kBand*( fccy - cpts[c0].y ) ) ); bc.uv[2] = iu0;
+                            bc.c[3] = CPoint( (int)( cpts[c1].x + kBand*( fccx - cpts[c1].x ) ), (int)( cpts[c1].y + kBand*( fccy - cpts[c1].y ) ) ); bc.uv[3] = iu1;
+                            s_waterBandCells.push_back( bc );
+                        }
                     }
                     else
                     {
