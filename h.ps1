@@ -65,9 +65,11 @@ switch ($cmd) {
   }
 
   'rotate' {
-    # rotate the view: '.' (OemPeriod) = one way, ',' (OemComma) = the other.
-    $k = if($a1 -eq 'ccw' -or $a1 -eq ','){ 'OemComma' } else { 'OemPeriod' }
-    & "$SC\keys.ps1" -Window map -Key $k 2>&1 | Select-Object -Last 1
+    # rotate the view by typing '.' / ',' to the map. NOTE: keyboard events route to SDL's
+    # FOCUS window, which the OS denies a background app — so this is unreliable unless the game
+    # is foreground. Zoom (mouse wheel) is the only input that drives reliably from the harness.
+    $t = if($a1 -eq 'ccw' -or $a1 -eq ','){ ',' } else { '.' }
+    & "$SC\keys.ps1" -Window map -Text $t 2>&1 | Select-Object -Last 1
   }
 
   'click' {
@@ -112,7 +114,9 @@ switch ($cmd) {
     Start-Sleep 6                                      # menu art must FULLY render or the click misses
     _click 'main' 1800 95                              # "Load Single Player Game"
     $n=0; while(-not (_has 'Load Game') -and $n -lt 15){ Start-Sleep 1; $n++ }
-    if(_has 'Load Game'){ Start-Sleep 3; _click 'Load Game' 110 132; Start-Sleep -Milliseconds 700; _click 'Load Game' 186 378 }  # settle (list must populate), select row3=Save7-Player, Open
+    # The FIRST click on a freshly-shown SDL dialog is eaten by window activation, so click the
+    # row twice (2nd = double-click that loads directly), then Open as a fallback.
+    if(_has 'Load Game'){ Start-Sleep 4; _click 'Load Game' 110 132; Start-Sleep -Milliseconds 300; _click 'Load Game' 110 132; Start-Sleep -Milliseconds 600; _click 'Load Game' 186 378 }  # row3=Save7-Player
     $n=0; while(-not (_has 'Pick Your Player') -and $n -lt 30){ Start-Sleep 1; $n++ }
     if(_has 'Pick Your Player'){ Start-Sleep 2; _click 'Pick Your Player' 110 222; Start-Sleep -Milliseconds 700; _click 'Pick Your Player' 235 470 }  # settle, select 'vter' row -> enable+click OK
     $n=0; while(-not (_has 'Area Map') -and (_running) -and $n -lt 120){ Start-Sleep 2; $n++ }
