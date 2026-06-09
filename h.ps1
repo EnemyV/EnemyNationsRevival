@@ -34,7 +34,9 @@ $WD  = 'd:\Enemy Nations'
 function _wins    { (& "$SC\screenshot.ps1" -ListWindows 2>&1 | Out-String) }
 function _has($t) { (_wins) -match [regex]::Escape($t) }
 function _running { [bool](Get-Process enations -ErrorAction SilentlyContinue) }
-function _click($win,$x,$y) { if($win){ & "$SC\click.ps1" -Window $win -X $x -Y $y 2>&1 | Out-Null } else { & "$SC\click.ps1" -X $x -Y $y 2>&1 | Out-Null } }
+# Tolerant click: click.ps1 throws if the target window vanished (common mid-transition, e.g. a
+# dialog closing while a retry loop is still aiming at it) -- swallow that so the flow continues.
+function _click($win,$x,$y) { try { if($win){ & "$SC\click.ps1" -Window $win -X $x -Y $y 2>&1 | Out-Null } else { & "$SC\click.ps1" -X $x -Y $y 2>&1 | Out-Null } } catch {} }
 
 # Jiggle the mouse a few px (relative) to keep the screensaver/monitor-sleep off — otherwise
 # -Screen captures come back all-black. -4 is passed as its uint32 two's-complement (PS has no
@@ -162,17 +164,19 @@ switch ($cmd) {
     $ok = _clickUntil 'main' 1800 95 { _has 'Load Game' } 6 1500
     if (-not $ok) { 'FAIL: Load dialog never opened'; break }
     Start-Sleep 2
-    # 2) select Save7-Player (row 3 @ 110,132) + Open (186,378), retry until Pick Player appears
-    $ok = $false
-    for ($i=0; $i -lt 10 -and -not (_has 'Pick Your Player'); $i++) {
+    # 2a) select Save7-Player (row 3 @ 110,132) + Open (186,378) until the Load dialog CLOSES
+    #     (= Open registered). Don't gate on Pick Player here -- loading the save then takes time.
+    for ($i=0; $i -lt 8 -and (_has 'Load Game'); $i++) {
         _click 'Load Game' 110 132; Start-Sleep -Milliseconds 500
-        _click 'Load Game' 186 378; Start-Sleep -Milliseconds 900
+        _click 'Load Game' 186 378; Start-Sleep -Milliseconds 1000
     }
-    if (-not (_has 'Pick Your Player')) { 'FAIL: save never loaded (Pick Player absent)'; break }
-    # 3) select the player row (110,222 enables OK) + OK (235,470), retry until the dialog closes
+    # 2b) now wait (generously) for the save to load -> Pick Player dialog
+    $n=0; while(-not (_has 'Pick Your Player') -and (_running) -and $n -lt 40){ Start-Sleep 2; $n++ }
+    if (-not (_has 'Pick Your Player')) { 'FAIL: Pick Player never appeared (save load?)'; break }
+    # 3) select the player row (110,222 enables OK) + OK (235,470) until the dialog closes
     for ($i=0; $i -lt 8 -and (_has 'Pick Your Player'); $i++) {
         _click 'Pick Your Player' 110 222; Start-Sleep -Milliseconds 500
-        _click 'Pick Your Player' 235 470; Start-Sleep -Milliseconds 900
+        _click 'Pick Your Player' 235 470; Start-Sleep -Milliseconds 1000
     }
     # 4) wait for the in-game Area Map
     $n=0; while(-not (_has 'Area Map') -and (_running) -and $n -lt 120){ Start-Sleep 2; $n++ }
