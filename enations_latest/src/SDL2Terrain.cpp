@@ -122,6 +122,23 @@ static inline void TileMemoInvalidate( int x, int y )   // drop hex (x,y) + its 
             s_tileGen[ (size_t)ny * s_tileCacheEX + nx ] = 0u; }   // 0 != s_tileGenCur(>=1) → recompute
 }
 
+// Shared static index buffer for QUAD batches (4 verts/quad -> 2 tris). Emitting 4 unique corner
+// vertices + 6 indices instead of 6 duplicated vertices cuts the per-hex vertex VOLUME (and
+// push_back count) by a third. The rebuild is memory-bandwidth bound under multi-AI load, so this
+// reduces both the work AND the bandwidth it contends for with the AI threads — helps Debug AND
+// Release. Index pattern {0,1,3, 1,2,3} matches the L,T,R,B corner order (tris L-T-B and T-R-B).
+static std::vector<int> s_quadIdx;
+static const int* QuadIndices( int nQuads )
+{
+    int have = (int)s_quadIdx.size( ) / 6;
+    if ( have < nQuads )
+        for ( int q = have; q < nQuads; ++q )
+        { int b = q * 4;
+          s_quadIdx.push_back( b + 0 ); s_quadIdx.push_back( b + 1 ); s_quadIdx.push_back( b + 3 );
+          s_quadIdx.push_back( b + 1 ); s_quadIdx.push_back( b + 2 ); s_quadIdx.push_back( b + 3 ); }
+    return s_quadIdx.data( );
+}
+
 // Set by SDL2Terrain::Render each frame: TRUE when the visible view scrolled since last
 // frame (the cached terrain blits at a different pan offset). The GPU sprite layer reads it
 // to force a FULL re-emit on pan — its render target (g_rt) is screen-space and persistent,
@@ -1693,8 +1710,7 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
             // last mesh rebuild happened to capture. Land IS baked.
             if ( !IsAnimatedTile( type ) )
             {
-                vb.push_back( vL ); vb.push_back( vT ); vb.push_back( vB );
-                vb.push_back( vT ); vb.push_back( vR ); vb.push_back( vB );
+                vb.push_back( vL ); vb.push_back( vT ); vb.push_back( vR ); vb.push_back( vB );   // 4 corners (L,T,R,B) — QuadIndices() expands to 2 tris
                 // RETAINED MESH: capture this land tile + its CONTENT corners so a zoom-only
                 // change can re-emit it scaled without re-running this loop. (Base layer only
                 // for now — feather/shade/water/fog still rebuild; built up next.)
@@ -1975,8 +1991,7 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
                         SDL_Texture* ftex = ntile->tex[zoom];
                         if ( ftex != lastFeatTex ) { lastFeatVb = &rowFeather[ftex]; lastFeatTex = ftex; }
                         std::vector<SDL_Vertex>& fvb = *lastFeatVb;   // batched within this row
-                        fvb.push_back( e0 ); fvb.push_back( e1 ); fvb.push_back( n1 );
-                        fvb.push_back( e0 ); fvb.push_back( n1 ); fvb.push_back( n0 );
+                        fvb.push_back( e0 ); fvb.push_back( e1 ); fvb.push_back( n1 ); fvb.push_back( n0 );   // 4 corners — QuadIndices() expands to 2 tris (same filled band)
                         if ( retainCap )   // capture the band in CONTENT space, attached to THIS hex's base cell
                         {
                             float fccx = ( cpts[0].x + cpts[1].x + cpts[2].x + cpts[3].x ) * 0.25f;
@@ -2077,8 +2092,18 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
 
     // Draw the freshly-built mesh INTO the texture (target is still s_rt).
     SDL_SetRenderDrawBlendMode( r, SDL_BLENDMODE_BLEND );
+    // The full-rebuild main loop emits 4-vertex QUADS (base + feather) -> draw indexed. The zoom
+    // REPLAY path still emits 6 raw verts/quad, so it draws non-indexed. (s_cache is filled by one
+    // path or the other per frame, never mixed: zoomReplay gates the replay, !zoomReplay the loop.)
+    const bool cacheQuad = !zoomReplay;
     for ( auto& d : s_cache )
-        SDL_RenderGeometry( r, d.first, d.second.data(), (int)d.second.size(), nullptr, 0 );
+    {
+        if ( cacheQuad )
+        { int nq = (int)d.second.size( ) / 4;
+          SDL_RenderGeometry( r, d.first, d.second.data( ), nq * 4, QuadIndices( nq ), nq * 6 ); }
+        else
+            SDL_RenderGeometry( r, d.first, d.second.data( ), (int)d.second.size( ), nullptr, 0 );
+    }
 
     // RETAINED-MESH zoom replay: the cells are at the CAPTURE's edit state, so re-apply every
     // edit made since the capture over the freshly-drawn (stale) base — the same base-only
