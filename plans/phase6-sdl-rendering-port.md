@@ -1,8 +1,13 @@
 # Phase 6 — Port wind22 rendering from DirectDraw/GDI to SDL2
 
-Status: **planning** — no code changes yet. Goal: get the game's
-in-engine rendering off DirectDraw + Win32 GDI so the binary can build
-and run on Linux/macOS.
+Status: **Stages 0–4 DONE** (DirectDraw removed; CDIB backed by
+`SDL_Surface` — `CalcBltMethod` returns `DIB_SDL_SURFACE`, no `ddraw.h`/
+`DDRAW.DLL`, see init.cpp:78 / blt.cpp:163). **Stage 5 (GDI removal) not
+started** — `dib.cpp` still has ~100 `BitBlt`/`HDC`/`GetDC` sites and the
+CDIB still keeps an HDC. Goal: get the game's in-engine rendering off
+DirectDraw + Win32 GDI so the binary can build and run on Linux/macOS.
+(Cross-platform build itself is scoped in
+[phase7-macos-arm64.md](phase7-macos-arm64.md).)
 
 Created 2026-05-24 after the gate-collapse pass landed. Supersedes the
 2026-03-22 "rendering rewrite" attempt (archived to
