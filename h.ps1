@@ -8,36 +8,67 @@
 #
 # Verbs:
 #   h.ps1 launch [0]              kill+relaunch x64 Debug under dbgcatch w/ profiling (0 = EN_RETAIN off)
-#   h.ps1 load [Save7-Player]     menu -> Load -> pick save -> pick player -> wait Area Map
-#   h.ps1 windows                 list game windows
+#   h.ps1 load [Save7-Player]     menu -> Load -> pick save -> pick player -> wait Area Map (retries dropped clicks)
+#   h.ps1 measure                 zoom IN then OUT, print recent full-z3 rebuild times (ms) + breakdown
+#   h.ps1 zoom <in|out> <n>       wheel-zoom the Area Map n notches (the only reliably-driveable input)
+#   h.ps1 shot [role]             wake screen, screen-grab a window (role: map/main/<title>) -> d:\tmp\h.png
+#   h.ps1 wake                    jiggle the mouse to defeat the screensaver (captures go black under it)
 #   h.ps1 status                  read-only: game alive? + memory + dbgcatch.log tail (crash markers)
 #   h.ps1 fresh                   read-only: is the exe newer than SDL2Terrain.cpp (did it compile)?
-#   h.ps1 shot [role]             screen-grab a window (role: map/main/<title>) -> d:\tmp\h.png
-#   h.ps1 zoom <in|out> <n>       wheel-zoom the Area Map n notches
-#   h.ps1 pan <left|right|up|down> [n]   scroll the Area Map a quarter-screen per press
+#   h.ps1 windows                 list game windows
+#   h.ps1 perf                    print key terrain rebuild counters from perf.log
+#   h.ps1 pan <left|right|up|down> [n]   scroll the Area Map (arrow keys; keyboard is focus-routed = flaky bg)
 #   h.ps1 click <x> <y> [role]    mouse-click client px on a window (default map)
-#   h.ps1 rotate [cw|ccw]         rotate the view ('.' / ',')
+#   h.ps1 rotate [cw|ccw]         rotate the view ('.' / ','; keyboard = flaky bg)
 #   h.ps1 newgame [race]          menu -> Create -> OK -> pick race -> OK -> wait Area Map
 #   h.ps1 waitmap [secs]          block until the Area Map (in-game) appears
-#   h.ps1 perf                    print key terrain rebuild counters from perf.log
 
 param([Parameter(Position=0)][string]$cmd='', [Parameter(Position=1)][string]$a1='', [Parameter(Position=2)][string]$a2='')
 $ErrorActionPreference = 'Continue'
 $SC  = 'd:\Enemy Nations\src'
 $WD  = 'd:\Enemy Nations'
 
-function _wins    { (tasklist /v /fi "imagename eq enations.exe" 2>$null | Out-String) }
+# IMPORTANT: the game's dialogs/panels (Area Map, Radar, Load Game, Pick Your Player) are each
+# their OWN child SDL window. tasklist /v only reports a process's MAIN window title, so it can't
+# see them -- use screenshot.ps1 -ListWindows, which enumerates every game window by title.
+function _wins    { (& "$SC\screenshot.ps1" -ListWindows 2>&1 | Out-String) }
 function _has($t) { (_wins) -match [regex]::Escape($t) }
 function _running { [bool](Get-Process enations -ErrorAction SilentlyContinue) }
 function _click($win,$x,$y) { if($win){ & "$SC\click.ps1" -Window $win -X $x -Y $y 2>&1 | Out-Null } else { & "$SC\click.ps1" -X $x -Y $y 2>&1 | Out-Null } }
+
+# Jiggle the mouse a few px (relative) to keep the screensaver/monitor-sleep off — otherwise
+# -Screen captures come back all-black. -4 is passed as its uint32 two's-complement (PS has no
+# signed overload). Harmless 0-net-displacement wiggle.
+function _wake {
+    if (-not ('WH.MM' -as [type])) {
+        Add-Type -Name MM -Namespace WH -MemberDefinition '[DllImport("user32.dll")]public static extern void mouse_event(uint f,uint x,uint y,uint d,int e);'
+    }
+    $neg = [uint32]4294967292   # -4 as uint32
+    for ($i=0; $i -lt 5; $i++) {
+        [WH.MM]::mouse_event(1, 4,    0, 0, 0); Start-Sleep -Milliseconds 70
+        [WH.MM]::mouse_event(1, $neg, 0, 0, 0); Start-Sleep -Milliseconds 70
+    }
+}
+
+# Click (win,x,y) repeatedly until $doneCond (scriptblock -> bool) is true, up to $tries.
+# Defeats the SDL quirk where the first click(s) on a freshly-shown dialog are eaten by
+# window activation. Returns $true if the condition was met.
+function _clickUntil($win,$x,$y,$doneCond,$tries,$gapMs=700) {
+    for ($i=0; $i -lt $tries; $i++) {
+        if (& $doneCond) { return $true }
+        _click $win $x $y
+        Start-Sleep -Milliseconds $gapMs
+    }
+    return (& $doneCond)
+}
 
 switch ($cmd) {
 
   'windows' { & "$SC\screenshot.ps1" -ListWindows 2>&1 | Select-Object -First 9 }
 
+  'wake' { _wake; 'awake' }
+
   'status' {
-    # Read-only health check: is the game alive (+ memory), and the last debugger-log lines
-    # (crash/ODS markers show here).  h.ps1 status
     $g = Get-Process enations -ErrorAction SilentlyContinue
     if ($g) { "ALIVE pid=$($g.Id) WS=$([math]::Round($g.WorkingSet64/1MB))MB Priv=$([math]::Round($g.PrivateMemorySize64/1MB))MB" }
     else    { "GAME NOT RUNNING" }
@@ -46,7 +77,6 @@ switch ($cmd) {
   }
 
   'fresh' {
-    # Read-only: is the built exe newer than the terrain source (did my edit get compiled+linked)?
     $src = Get-Item 'd:\Enemy Nations\src\enations_latest\src\SDL2Terrain.cpp' -ErrorAction SilentlyContinue
     $exe = Get-Item 'd:\Enemy Nations\src\cmakeBuild-x64\enations_latest\src\Debug\enations.exe' -ErrorAction SilentlyContinue
     if ($src -and $exe) { "exe newer than SDL2Terrain.cpp: $($exe.LastWriteTime -gt $src.LastWriteTime)  (exe $($exe.LastWriteTime), src $($src.LastWriteTime))" }
@@ -55,6 +85,7 @@ switch ($cmd) {
 
   'shot' {
     $role = if($a1){$a1}else{'map'}
+    _wake
     & "$SC\screenshot.ps1" -Window $role -Full -Screen -Out d:\tmp\h.png 2>&1 | Select-Object -Last 1
   }
 
@@ -64,25 +95,40 @@ switch ($cmd) {
     else              { & "$SC\zoom.ps1" -Out $n -Window map 2>&1 | Select-Object -Last 1 }
   }
 
+  'measure' {
+    # Force a fresh full warm rebuild: zoom IN to z0 then OUT to z3, then report the recent
+    # full-z3 rebuilds (zoomreplay=0). Reads the tail so it's fast on the multi-MB perf.log.
+    if (-not (_has 'Area Map')) { 'NOT IN-GAME (run: h.ps1 load)'; break }
+    & "$SC\zoom.ps1" -In  4 -Window map -DelayMs 900  2>&1 | Out-Null; Start-Sleep 2
+    & "$SC\zoom.ps1" -Out 4 -Window map -DelayMs 1300 2>&1 | Out-Null; Start-Sleep 3
+    $p = "$WD\perf.log"
+    if (-not (Test-Path $p)) { 'no perf.log'; break }
+    $lines = Get-Content $p -Tail 400 | Where-Object { $_ -match 'rebuild\.zoomreplay=0' -and $_ -match 'rb\.hexes=[1-9]' } | Select-Object -Last 6
+    if (-not $lines) { 'no full rebuild captured (try again, or zoom was a replay)'; break }
+    'recent full z3 rebuilds (most recent last):'
+    $lines | ForEach-Object {
+      $f=@{}; foreach($m in [regex]::Matches($_, '([\w.]+)=\s*([-\d.]+)')){ $f[$m.Groups[1].Value]=$m.Groups[2].Value }
+      "  t.rebuild={0,5}ms  hexes={1}  edit={2}  | asm={3} fog={4} water={5} tile={6} feather={7} (ms)" -f `
+        [int]([double]$f['t.rebuild']/1000), $f['rb.hexes'], $f['rebuild.edit'], `
+        [int]([double]$f['rb.asm']/1000),  [int]([double]$f['rb.fog']/1000), [int]([double]$f['rb.water']/1000), `
+        [int]([double]$f['rb.tile']/1000), [int]([double]$f['rb.feather']/1000)
+    }
+  }
+
   'rotate' {
     # rotate the view by typing '.' / ',' to the map. NOTE: keyboard events route to SDL's
-    # FOCUS window, which the OS denies a background app — so this is unreliable unless the game
-    # is foreground. Zoom (mouse wheel) is the only input that drives reliably from the harness.
+    # FOCUS window, which the OS denies a background app -> unreliable unless the game is foreground.
     $t = if($a1 -eq 'ccw' -or $a1 -eq ','){ ',' } else { '.' }
     & "$SC\keys.ps1" -Window map -Text $t 2>&1 | Select-Object -Last 1
   }
 
   'click' {
-    # mouse-click client px on a window (default map). Mouse events are window-targeted (no focus
-    # needed), so this is the reliable driver:  h.ps1 click <x> <y> [role]
     $cx = [int]$a1; $cy = [int]$a2
     $win = if($args.Count -ge 1){ $args[0] } else { 'map' }
     & "$SC\click.ps1" -Window $win -X $cx -Y $cy 2>&1 | Select-Object -Last 1
   }
 
   'pan' {
-    # scroll the Area Map a quarter-screen per press via arrow keys (CWndArea::CurLeft/etc.).
-    #   h.ps1 pan <left|right|up|down> [n]
     $dir = switch($a1){ 'right'{'Right'} 'up'{'Up'} 'down'{'Down'} default{'Left'} }
     $n = if($a2){[int]$a2}else{1}
     for($i=0;$i -lt $n;$i++){ & "$SC\keys.ps1" -Window map -Key $dir 2>&1 | Out-Null; Start-Sleep -Milliseconds 200 }
@@ -107,18 +153,28 @@ switch ($cmd) {
   }
 
   'load' {
-    # Assumes game launched + at main menu. Loads Save7-Player (the fixed perf map).
-    # Coords from SDL2Dialogs.cpp: PickPlayer OK = (235,470) client, disabled until a row is clicked.
-    $save = if($a1){$a1}else{'Save7-Player'}
+    # Menu -> Load Save7-Player -> pick player -> in-game. Every click step RETRIES until the UI
+    # actually advances, because the first click(s) on a freshly-shown SDL dialog are eaten by
+    # window activation (the long-standing flakiness). Coords from SDL2Dialogs.cpp.
     $n=0; while(-not (_has 'Game View') -and $n -lt 40){ Start-Sleep 2; $n++ }
-    Start-Sleep 6                                      # menu art must FULLY render or the click misses
-    _click 'main' 1800 95                              # "Load Single Player Game"
-    $n=0; while(-not (_has 'Load Game') -and $n -lt 15){ Start-Sleep 1; $n++ }
-    # The FIRST click on a freshly-shown SDL dialog is eaten by window activation, so click the
-    # row twice (2nd = double-click that loads directly), then Open as a fallback.
-    if(_has 'Load Game'){ Start-Sleep 4; _click 'Load Game' 110 132; Start-Sleep -Milliseconds 300; _click 'Load Game' 110 132; Start-Sleep -Milliseconds 600; _click 'Load Game' 186 378 }  # row3=Save7-Player
-    $n=0; while(-not (_has 'Pick Your Player') -and $n -lt 30){ Start-Sleep 1; $n++ }
-    if(_has 'Pick Your Player'){ Start-Sleep 2; _click 'Pick Your Player' 110 222; Start-Sleep -Milliseconds 700; _click 'Pick Your Player' 235 470 }  # settle, select 'vter' row -> enable+click OK
+    Start-Sleep 5
+    # 1) open the Load dialog (retry the menu button)
+    $ok = _clickUntil 'main' 1800 95 { _has 'Load Game' } 6 1500
+    if (-not $ok) { 'FAIL: Load dialog never opened'; break }
+    Start-Sleep 2
+    # 2) select Save7-Player (row 3 @ 110,132) + Open (186,378), retry until Pick Player appears
+    $ok = $false
+    for ($i=0; $i -lt 10 -and -not (_has 'Pick Your Player'); $i++) {
+        _click 'Load Game' 110 132; Start-Sleep -Milliseconds 500
+        _click 'Load Game' 186 378; Start-Sleep -Milliseconds 900
+    }
+    if (-not (_has 'Pick Your Player')) { 'FAIL: save never loaded (Pick Player absent)'; break }
+    # 3) select the player row (110,222 enables OK) + OK (235,470), retry until the dialog closes
+    for ($i=0; $i -lt 8 -and (_has 'Pick Your Player'); $i++) {
+        _click 'Pick Your Player' 110 222; Start-Sleep -Milliseconds 500
+        _click 'Pick Your Player' 235 470; Start-Sleep -Milliseconds 900
+    }
+    # 4) wait for the in-game Area Map
     $n=0; while(-not (_has 'Area Map') -and (_running) -and $n -lt 120){ Start-Sleep 2; $n++ }
     if(_has 'Area Map'){ 'INGAME' } elseif(_running){ 'LOAD-TIMEOUT' } else { 'PROCESS-GONE' }
   }
@@ -130,15 +186,12 @@ switch ($cmd) {
   }
 
   'newgame' {
-    # Assumes the game is launched and at the main menu (h.ps1 doesn't launch dbgcatch).
     $n=0; while(-not (_has 'Game View') -and $n -lt 40){ Start-Sleep 2; $n++ }
-    Start-Sleep 22                                   # let the menu art FULLY render (clicking too soon misses)
-    _click $null 666 749                             # "Create Single Player Game" (menu, full-screen client)
-    $n=0; while(-not (_has 'Create Single') -and $n -lt 10){ Start-Sleep 1; $n++ }   # wait for the dialog, don't click into the void
-    if(_has 'Create Single'){ Start-Sleep 2; _click 'Create' 185 470; Start-Sleep 3 }   # settle THEN OK (size remembered=Large). SDL2UI.cpp AddOKCancelButtons -> (185,470)
-    $n=0; while(-not (_has 'Pick Your Race') -and $n -lt 10){ Start-Sleep 1; $n++ }
-    if(_has 'Pick Your Race'){ Start-Sleep 2; _click 'Race' 40 92; Start-Sleep -Milliseconds 700; _click 'Race' 235 430 }  # settle, select Human, settle, OK (SDL2Dialogs.cpp:305 -> 235,430)
-    $n=0; while(-not (_has 'Area Map') -and (_running) -and $n -lt 240){ Start-Sleep 2; $n++ }   # worldgen can take >4min for a Large map
+    Start-Sleep 22
+    _click $null 666 749
+    $ok = _clickUntil 'Create' 185 470 { _has 'Pick Your Race' } 6 1500   # OK (size remembered=Large)
+    if (_has 'Pick Your Race'){ Start-Sleep 2; _click 'Race' 40 92; Start-Sleep -Milliseconds 700; _click 'Race' 235 430 }
+    $n=0; while(-not (_has 'Area Map') -and (_running) -and $n -lt 240){ Start-Sleep 2; $n++ }
     if(_has 'Area Map'){ 'INGAME' } elseif(_running){ 'NEWGAME-TIMEOUT (worldgen?)' } else { 'PROCESS-GONE' }
   }
 
@@ -148,11 +201,12 @@ switch ($cmd) {
     $lines = Get-Content $p -Tail 60 | Where-Object { $_ -match 'rb\.hexes=[1-9]' -or $_ -match 'rebuild\.zoomreplay=1' }
     if(-not $lines){ 'no recent rebuild in perf.log'; break }
     $lines | Select-Object -Last 4 | ForEach-Object {
-      $f=@{}; foreach($kv in ($_ -split '\|')){ if($kv -match '\s*([\w.]+)=\s*([-\d.]+)'){ $f[$matches[1]]=$matches[2] } }
-      "fps={0} hexes={1} feather={2} tile={3} water={4} asm={5} t.rebuild={6}us replay={7}" -f `
-        $f['fps'],$f['rb.hexes'],$f['rb.feather'],$f['rb.tile'],$f['rb.water'],$f['rb.asm'],$f['t.rebuild'],$f['rebuild.zoomreplay']
+      $f=@{}; foreach($m in [regex]::Matches($_, '([\w.]+)=\s*([-\d.]+)')){ $f[$m.Groups[1].Value]=$m.Groups[2].Value }
+      "t.rebuild={0}ms hexes={1} asm={2} fog={3} water={4} tile={5} feather={6} replay={7}" -f `
+        [int]([double]$f['t.rebuild']/1000),$f['rb.hexes'],[int]([double]$f['rb.asm']/1000),[int]([double]$f['rb.fog']/1000),`
+        [int]([double]$f['rb.water']/1000),[int]([double]$f['rb.tile']/1000),[int]([double]$f['rb.feather']/1000),$f['rebuild.zoomreplay']
     }
   }
 
-  default { "verbs: windows | shot [role] | zoom <in|out> N | rotate | newgame [race] | waitmap [secs] | perf" }
+  default { "verbs: launch | load | measure | zoom <in|out> N | shot [role] | wake | status | fresh | windows | perf | pan | click | rotate | newgame | waitmap" }
 }
