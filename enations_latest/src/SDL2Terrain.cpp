@@ -1669,7 +1669,12 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
                 const float kBandW = 0.38f;
                 float wcx = ( pts[0].x + pts[1].x + pts[2].x + pts[3].x ) * 0.25f;
                 float wcy = ( pts[0].y + pts[1].y + pts[2].y + pts[3].y ) * 0.25f;
-                for ( int e = 0; e < 4; ++e )
+                // Water<->water seam bands are a 1-2px softening between differing water bodies
+                // (lake vs ocean) — INVISIBLE at z2/z3 (16-32px tiles), yet each open-water hex
+                // does 4 GetHex neighbour walks into the huge map array to look for them. That's
+                // the bulk of rb.water on a Big-Ocean map (~160k cache-missing reads). Skip when
+                // zoomed out, exactly like land feather; a zoom-IN to z0/z1 re-captures (gate).
+                for ( int e = 0; zoom <= 1 && e < 4; ++e )
                 {
                     CHexCoord wnhc( hx + wDX[e], hy + wDY[e] ); wnhc.Wrap( );
                     CHex* wpn = theMap.GetHex( wnhc );
