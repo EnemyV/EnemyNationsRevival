@@ -93,6 +93,25 @@ void g_enEditHex( int x, int y )
     }
 }
 
+// Persistent terrain TILE memo: TileForHex(hex,dir) result per map hex, keyed by hex coord and
+// sized to the whole map. TileForHex depends only on hex content + camera dir (NOT zoom/pan), so
+// the memo PERSISTS across zoom/pan rebuilds — a zoom-out re-hits cached tiles instead of
+// recomputing ~48k (the largest single zoom-out cost). File scope so BOTH the full rebuild and the
+// fast edit-patch can invalidate it. Whole-memo invalidation = rotate/load; per-hex = terrain edit.
+static std::vector<const SDL2Terrain::Tile*> s_tileCache;
+static std::vector<uint32_t>                 s_tileGen;
+static uint32_t                              s_tileGenCur  = 0;
+static int                                   s_tileCacheEX = 0, s_tileCacheEY = 0;
+static inline void TileMemoInvalidate( int x, int y )   // drop hex (x,y) + its 8 neighbours
+{
+    if ( s_tileGen.empty( ) ) return;
+    for ( int dy = -1; dy <= 1; ++dy )
+      for ( int dx = -1; dx <= 1; ++dx )
+      { int nx = x + dx, ny = y + dy;
+        if ( (unsigned)nx < (unsigned)s_tileCacheEX && (unsigned)ny < (unsigned)s_tileCacheEY )
+            s_tileGen[ (size_t)ny * s_tileCacheEX + nx ] = 0u; }   // 0 != s_tileGenCur(>=1) → recompute
+}
+
 // Set by SDL2Terrain::Render each frame: TRUE when the visible view scrolled since last
 // frame (the cached terrain blits at a different pan offset). The GPU sprite layer reads it
 // to force a FULL re-emit on pan — its render target (g_rt) is screen-space and persistent,
@@ -1101,12 +1120,20 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
                           && !( zoom <= 1 && s_mirZoom >= 2 );   // zoom INTO z0/z1 from a zoomed-out capture → re-capture (cheap, few hexes) to resolve feather
     const bool retainCap = TerrainRetainEnabled( ) && needRebuild && !incPan && !zoomReplay;
 
+    static std::vector<unsigned> s_memoEditQ;            // hexes edited since last rebuild → per-hex tile-memo invalidation
+    static bool                  s_memoEditOverflow = false;
+
     if ( needRebuild )
     {
     Perf::ScopeCounter _cr( incPan ? "t.incpan" : "t.rebuild" );   // mesh (re)build cost
     s_sig = sig; dX = dY = 0;   // (re)built at the current view → zero pan
     s_builtEditGen = g_enTerrainEditGen;   // this mesh now reflects all edits so far
     { std::lock_guard<std::mutex> lk( g_enEditMutex );
+      // Queue the hexes edited since the last rebuild so the tile-memo (below) can drop just
+      // those entries instead of being wiped wholesale (one AI building must not invalidate
+      // ~48k cached tiles). If the patch list hit its cap, edits were dropped → wipe to stay safe.
+      if ( g_enEditedHexes.size( ) >= kEditPatchCap ) s_memoEditOverflow = true;
+      else s_memoEditQ.insert( s_memoEditQ.end( ), g_enEditedHexes.begin( ), g_enEditedHexes.end( ) );
       g_enEditedHexes.clear( );                                                      // rebuild absorbs all pending edits
       if ( retainCap ) { g_enMeshEdits.clear( ); g_enMeshEditSet.clear( ); g_enMeshEditOverflow = false; } }   // a capture refreshes the cells → drop the replay re-apply list
     if ( retainCap ) { s_baseCells.clear( ); s_waterCells.clear( ); s_waterBandCells.clear( ); s_fogCells.clear( ); s_featherBands.clear( ); }   // capturing a fresh full mesh → drop old cells
@@ -1325,6 +1352,7 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
     DWORD _gt = GetTickCount( );   // MEASURE: rebuild sub-phases (coarse ms → µs)
     LARGE_INTEGER _qpf; QueryPerformanceFrequency( &_qpf );   // PROFILE: per-hex phase split
     long long _accProj = 0, _accFeath = 0, _accTile = 0, _accWater = 0; LARGE_INTEGER _pa, _pb;
+    long long _accShade = 0, _accFog = 0; LARGE_INTEGER _sa, _sb, _fa, _fb;   // MEASURE: split the "other" bucket
     long long _accAsm = 0; LARGE_INTEGER _aa0, _aa1;   // MEASURE: pure base-vertex ASSEMBLY (the
     // retained-mesh re-emit floor — what zoom-replay would still pay after skipping resolution).
     int _hexCnt = 0;   // PROFILE: count of hexes emitted (margin/zoom hex-count vs per-hex cost)
@@ -1335,13 +1363,31 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
     // Flat array keyed by map-hex coord (same indexing as the fog precompute below) with a
     // generation stamp so there's no per-rebuild clear. Computes each hex's tile exactly once.
     const int eXc = theMap.Get_eX( ), eYc = theMap.Get_eY( );
-    static std::vector<const Tile*> s_tileCache;
-    static std::vector<uint32_t>    s_tileGen;
-    static uint32_t                 s_tileGenCur = 0;
+    static int      s_tileMemoDir     = -999;        // camera dir the memo was built under
+    static unsigned s_tileMemoLoadGen = 0xFFFFFFFFu; // s_loadGen "
     if ( (int)s_tileCache.size( ) != eXc * eYc )
-    { s_tileCache.assign( (size_t)eXc * eYc, nullptr ); s_tileGen.assign( (size_t)eXc * eYc, 0u ); s_tileGenCur = 0; }
-    if ( ++s_tileGenCur == 0 ) { std::fill( s_tileGen.begin( ), s_tileGen.end( ), 0u ); s_tileGenCur = 1; }
+    { s_tileCache.assign( (size_t)eXc * eYc, nullptr ); s_tileGen.assign( (size_t)eXc * eYc, 0u );
+      s_tileGenCur = 0; s_tileMemoDir = -999; s_tileCacheEX = eXc; s_tileCacheEY = eYc; }
     const int tcDir = aa.m_iDir;
+    // TileForHex(hex,dir) is INDEPENDENT of zoom and pan — so the whole-map memo can PERSIST
+    // across zoom-only / pan-only rebuilds (the common case), turning ~48k per-hex TileForHex
+    // calls into O(1) array hits. This is the single largest zoom-out cost (rb.tile ~1.1s @ z3).
+    // A camera DIRECTION change or fresh map LOAD invalidates the whole memo; individual terrain
+    // EDITS invalidate only the edited hexes + neighbours (below), so the rest stays cached.
+    if ( s_tileMemoDir != tcDir || s_tileMemoLoadGen != s_loadGen || s_memoEditOverflow )
+    {
+        if ( ++s_tileGenCur == 0 ) { std::fill( s_tileGen.begin( ), s_tileGen.end( ), 0u ); s_tileGenCur = 1; }
+        s_tileMemoDir = tcDir; s_tileMemoLoadGen = s_loadGen;
+        s_memoEditQ.clear( ); s_memoEditOverflow = false;       // full wipe supersedes pending per-hex edits
+    }
+    else if ( !s_memoEditQ.empty( ) )
+    {
+        // Drop just the edited hexes + their 8 neighbours (coast/road tiles depend on neighbour
+        // types) from the memo; everything else stays cached.
+        for ( unsigned packed : s_memoEditQ )
+            TileMemoInvalidate( (int)( packed >> 16 ), (int)( packed & 0xFFFF ) );
+        s_memoEditQ.clear( );
+    }
     auto cachedTile = [&]( CHex* ph ) -> const Tile* {
         CHexCoord hc = ph->GetHex( );
         size_t k = (size_t)hc.Y( ) * eXc + hc.X( );
@@ -1565,12 +1611,14 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
             float bL = 1.0f, bR = 1.0f;
             if ( tile->shade )
             {
+                QueryPerformanceCounter( &_sa );
                 CMapLoc3D c3d[4];
                 hexcoord.GetWorldHex( c3d );
                 int z0 = c3d[0].m_fixZ.Round(), z1 = c3d[1].m_fixZ.Round();
                 int z2 = c3d[2].m_fixZ.Round(), z3 = c3d[3].m_fixZ.Round();
                 bL = TriBrightness( z0, z1, z2, z3, true );
                 bR = TriBrightness( z0, z1, z2, z3, false );
+                QueryPerformanceCounter( &_sb ); _accShade += _sb.QuadPart - _sa.QuadPart;
             }
 
             // T6 SOFT fog-of-war: per-corner visibility = average of the nearby
@@ -1771,6 +1819,7 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
             // World-corner alphas → screen slots (L/T/R/B) for this camera rotation.
             const int* fperm = kFogSlotInv[aa.m_iDir & 3];
             float sf[4] = { fog[fperm[0]], fog[fperm[1]], fog[fperm[2]], fog[fperm[3]] };
+            QueryPerformanceCounter( &_fa );
             s_fogHex.push_back( phex );   // self visibility on re-sample (no GetHex)
             s_fogVerts.push_back( fogV( pts[0], sf[0] ) );
             s_fogVerts.push_back( fogV( pts[1], sf[1] ) );
@@ -1778,6 +1827,7 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
             s_fogVerts.push_back( fogV( pts[1], sf[1] ) );
             s_fogVerts.push_back( fogV( pts[2], sf[2] ) );
             s_fogVerts.push_back( fogV( pts[3], sf[3] ) );
+            QueryPerformanceCounter( &_fb ); _accFog += _fb.QuadPart - _fa.QuadPart;
             if ( retainCap )   // CONTENT corners for the zoom replay (alpha re-sampled each tick)
                 s_fogCells.push_back( { phex, { cpts[0], cpts[1], cpts[2], cpts[3] } } );
 
@@ -1949,6 +1999,8 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
     Perf::CounterAdd( "reb.loop", (int)( ( GetTickCount( ) - _gt ) * 1000 ) ); _gt = GetTickCount( );
     Perf::CounterAdd( "rb.proj", (int)( _accProj * 1000000 / _qpf.QuadPart ) );      // PROFILE
     Perf::CounterAdd( "rb.feather", (int)( _accFeath * 1000000 / _qpf.QuadPart ) );  // PROFILE
+    Perf::CounterAdd( "rb.shade", (int)( _accShade * 1000000 / _qpf.QuadPart ) );    // PROFILE: GetWorldHex+TriBrightness
+    Perf::CounterAdd( "rb.fog",   (int)( _accFog   * 1000000 / _qpf.QuadPart ) );    // PROFILE: fog vertex build (every hex)
     Perf::CounterAdd( "rb.hexes", _hexCnt );                                         // PROFILE
     Perf::CounterAdd( "rb.tile",  (int)( _accTile  * 1000000 / _qpf.QuadPart ) );    // PROFILE: TileForHex
     Perf::CounterAdd( "rb.water", (int)( _accWater * 1000000 / _qpf.QuadPart ) );    // PROFILE: water bands
@@ -2146,6 +2198,11 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
         // thread keeps pushing new edits into the now-empty shared list meanwhile).
         std::vector<unsigned> edited;
         { std::lock_guard<std::mutex> lk( g_enEditMutex ); edited.swap( g_enEditedHexes ); }
+        // Keep the persistent tile-memo coherent: this fast patch consumes the edits WITHOUT a
+        // full rebuild, so drop the edited hexes + neighbours from the memo or a later rebuild
+        // would re-bake their stale (pre-edit) tiles from the cache.
+        for ( unsigned packed : edited )
+            TileMemoInvalidate( (int)( packed >> 16 ), (int)( packed & 0xFFFF ) );
         for ( unsigned packed : edited )
         {
             CHexCoord hc( (int)( packed >> 16 ), (int)( packed & 0xFFFF ) );
