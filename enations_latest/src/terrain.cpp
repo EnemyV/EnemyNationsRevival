@@ -625,10 +625,19 @@ void CAnimAtr::Render( )
 {
     // Render each rect and add it to the list of rects to get blitted
 
-    // m_pwnd is a temp CWnd that MFC garbage-collects — don't dereference it.
-    // Get an HDC from the stable HWND and wrap as CDC* fresh each call.
-    HDC  hdc = m_hwndOwner ? ::GetDC( m_hwndOwner ) : NULL;
-    CDC* pdc = hdc ? CDC::FromHandle( hdc ) : NULL;
+    // Phase 6 Stage 5: the only per-frame Win32 GDI call in this loop used to
+    // be pdc->RectVisible() on a window HDC (::GetDC(m_hwndOwner)), gating each
+    // dirty rect on the window's visible region. Drawing now targets an
+    // OFF-SCREEN SDL surface that is composited later, so occlusion by other OS
+    // windows is irrelevant to this paint — the only meaningful cull is "does
+    // the rect lie within the window's client area." That's a plain integer
+    // AABB overlap against (0,0,winW,winH): strictly faster than the GDI region
+    // walk (no syscall, no user32/gdi32), and portable for the Linux/macOS
+    // build. GetWinSize() is a cached inline accessor. When the size isn't
+    // known yet (0×0), don't cull — paint everything, mirroring the old `!pdc`
+    // short-circuit.
+    CSize ws = m_dibwnd.GetWinSize( );
+    bool  bClip = ( ws.cx > 0 && ws.cy > 0 );
 
     // GPU path: when this view renders through its own GPU renderer with the GPU
     // sprite layer, do ONE full-viewport capture per frame instead of walking every
@@ -643,7 +652,6 @@ void CAnimAtr::Render( )
     {
         if ( bGpuFull )
         {
-            CSize ws = m_dibwnd.GetWinSize( );
             CRect full( 0, 0, ws.cx, ws.cy );
             m_dirtyrects.AddRect( &full, CDirtyRects::RECT_LIST::LIST_BLT );
             theMap.UpdateRect( *this, full, CDrawParms::draw );
@@ -654,7 +662,12 @@ void CAnimAtr::Render( )
             {
                 CRect rect = m_dirtyrects.m_prectPaintCur[i];
 
-                if ( !pdc || pdc->RectVisible( &rect ) )
+                // Rect-vs-window-bounds overlap (replaces RectVisible).
+                bool bVisible = !bClip ||
+                    ( rect.left   < ws.cx && rect.right  > 0 &&
+                      rect.top    < ws.cy && rect.bottom > 0 );
+
+                if ( bVisible )
                 {
                     m_dirtyrects.AddRect( &rect, CDirtyRects::RECT_LIST::LIST_BLT );
 
@@ -669,9 +682,6 @@ void CAnimAtr::Render( )
         TRAP( );
         MoveCenterPixels( 1, 1 );
     }
-
-    if ( pdc )
-        ::ReleaseDC( m_hwndOwner, hdc );
 
     m_dirtyrects.UpdateLists( );  // Cur rect list <- Next rect list
 

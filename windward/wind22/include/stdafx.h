@@ -71,7 +71,7 @@
 #include <io.h>
 //#include <ctl3d.h>
 
-#include <dsound.h>
+// <dsound.h> removed — audio is SDL_mixer, not DirectSound (no DS API used).
 //#include <dplay.h>
 //#include <wing.h>
 

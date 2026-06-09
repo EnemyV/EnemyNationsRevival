@@ -75,19 +75,10 @@ BOOL InitWindwardLib2() {
     // OS version checks removed — only running on modern Windows (Win7+)
     iWinType = WNT;
 
-    // Phase 6 Stage 4: DirectDraw removed entirely. DSound version check kept
-    // for now (Stage 5+ may revisit audio along with the GDI removal).
-    DWORD dwMS, dwLS;
-    if ( GetDllVersion( "dsound.dll", dwMS, dwLS ) )
-        if ( ( dwMS < 0x40000 ) || ( ( dwMS == 0x40000 ) && ( dwLS < 0x55B0001 ) ) ) {
-            char msg[512];
-            _snprintf_s( msg, sizeof(msg), _TRUNCATE,
-                "DirectSound version %u.%u.%u.%u is too old.",
-                HIWORD( dwMS ), LOWORD( dwMS ), HIWORD( dwLS ), LOWORD( dwLS ) );
-            CDlgMsg dlg;
-            if ( dlg.MsgBox( msg, MB_YESNO | MB_ICONSTOP | MB_TASKMODAL, "Warnings", "DirectSound" ) != IDYES )
-                return ( FALSE );
-        }
+    // Phase 6 Stage 4: DirectDraw removed entirely. The DirectSound version
+    // gate that used to live here is gone too — audio runs through SDL_mixer,
+    // not DirectSound, so the dsound.dll version no longer matters (and the
+    // check blocks a non-Windows build where dsound.dll doesn't exist).
 
 #ifdef _DEBUG
     // get assert flags here

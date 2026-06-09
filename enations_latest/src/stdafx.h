@@ -49,7 +49,7 @@
 //#include <ctl3d.h> // Unnecessary as of modern windows...
 #include <cctype>
 #include <clocale>
-#include <dsound.h>
+// <dsound.h> removed — audio is SDL_mixer, not DirectSound (no DS API used).
 #include <eh.h>
 //#include <dplay.h>
 // MSS32 removed - using SDL2 + SDL_mixer for audio
