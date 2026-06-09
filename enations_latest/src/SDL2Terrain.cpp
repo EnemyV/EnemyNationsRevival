@@ -21,6 +21,16 @@
 #include <windows.h>   // FindFirstFile / GetFileAttributes (project isn't C++17)
 #endif
 
+// PERF: this TU is the GPU-terrain hot path — the per-hex mesh rebuild dominates zoom-out time,
+// and in a Debug build (/Od /RTC1) it is CALL-OVERHEAD bound (per-hex helper calls + ~1M STL
+// push_backs), not memory-bandwidth bound. So optimize JUST this file; the rest of the game keeps
+// /Od /RTC1 for debuggability. (runtime_checks must be off to pair with optimization under /RTC1.)
+// Release/Profile are already /O2, where these pragmas are harmless no-ops.
+#if defined( _MSC_VER )
+#pragma runtime_checks( "", off )
+#pragma optimize( "gt", on )
+#endif
+
 std::unordered_map<std::string, SDL2Terrain::Tile> SDL2Terrain::s_tiles;
 std::unordered_map<std::string, const SDL2Terrain::Tile*> SDL2Terrain::s_byType;
 std::unordered_map<std::string, const SDL2Terrain::Tile*> SDL2Terrain::s_byTypeVar;

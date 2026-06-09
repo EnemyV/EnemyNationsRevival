@@ -10,6 +10,8 @@
 #   h.ps1 launch [0]              kill+relaunch x64 Debug under dbgcatch w/ profiling (0 = EN_RETAIN off)
 #   h.ps1 load [Save7-Player]     menu -> Load -> pick save -> pick player -> wait Area Map
 #   h.ps1 windows                 list game windows
+#   h.ps1 status                  read-only: game alive? + memory + dbgcatch.log tail (crash markers)
+#   h.ps1 fresh                   read-only: is the exe newer than SDL2Terrain.cpp (did it compile)?
 #   h.ps1 shot [role]             screen-grab a window (role: map/main/<title>) -> d:\tmp\h.png
 #   h.ps1 zoom <in|out> <n>       wheel-zoom the Area Map n notches
 #   h.ps1 pan <left|right|up|down> [n]   scroll the Area Map a quarter-screen per press
@@ -32,6 +34,24 @@ function _click($win,$x,$y) { if($win){ & "$SC\click.ps1" -Window $win -X $x -Y 
 switch ($cmd) {
 
   'windows' { & "$SC\screenshot.ps1" -ListWindows 2>&1 | Select-Object -First 9 }
+
+  'status' {
+    # Read-only health check: is the game alive (+ memory), and the last debugger-log lines
+    # (crash/ODS markers show here).  h.ps1 status
+    $g = Get-Process enations -ErrorAction SilentlyContinue
+    if ($g) { "ALIVE pid=$($g.Id) WS=$([math]::Round($g.WorkingSet64/1MB))MB Priv=$([math]::Round($g.PrivateMemorySize64/1MB))MB" }
+    else    { "GAME NOT RUNNING" }
+    "--- dbgcatch.log (tail) ---"
+    Get-Content 'd:\tmp\dbgcatch.log' -Tail 8 -ErrorAction SilentlyContinue
+  }
+
+  'fresh' {
+    # Read-only: is the built exe newer than the terrain source (did my edit get compiled+linked)?
+    $src = Get-Item 'd:\Enemy Nations\src\enations_latest\src\SDL2Terrain.cpp' -ErrorAction SilentlyContinue
+    $exe = Get-Item 'd:\Enemy Nations\src\cmakeBuild-x64\enations_latest\src\Debug\enations.exe' -ErrorAction SilentlyContinue
+    if ($src -and $exe) { "exe newer than SDL2Terrain.cpp: $($exe.LastWriteTime -gt $src.LastWriteTime)  (exe $($exe.LastWriteTime), src $($src.LastWriteTime))" }
+    else { 'src or exe missing' }
+  }
 
   'shot' {
     $role = if($a1){$a1}else{'map'}
