@@ -11,6 +11,7 @@
 
 #include "CAITMgr.hpp"
 
+#include "aisnap.h"  // Tier-B world snapshot (lock-free AI reads)
 #include "CAIData.hpp"
 #include "CPathMgr.h"
 #include "logging.h"  // dave's logging system
@@ -505,11 +506,12 @@ void CAITaskMgr::AssignUnits( void )
                     if ( pUnit->GetType( ) == CUnit::vehicle )
                     {
                         CHexCoord hexVeh( 0, 0 );
-                        EnterCriticalSection( &cs );
-                        CVehicle* pVehicle = theVehicleMap.GetVehicle( pUnit->GetID( ) );
-                        if ( pVehicle != NULL )
-                            hexVeh = pVehicle->GetHexHead( );
-                        LeaveCriticalSection( &cs );
+                        AiVehSnap snapV;
+                        if ( AiSnap::ReadVeh( pUnit->GetID( ), snapV ) )
+                        {
+                            hexVeh.X( snapV.iHeadX );
+                            hexVeh.Y( snapV.iHeadY );
+                        }
 #ifdef _LOGOUT
                         logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "CAITaskMgr::AssignTask unit %ld player %d at %d,%d ",
                                    pUnit->GetID( ), pUnit->GetOwner( ), hexVeh.X( ), hexVeh.Y( ) );
@@ -1571,20 +1573,22 @@ void CAITaskMgr::AssignTask( CAIUnit* pUnit )
         case CTransportData::med_scout:
         case CTransportData::heavy_scout:
         case CTransportData::infantry_carrier:
-        // case CTransportData::light_tank:
+        case CTransportData::light_tank:
         // case CTransportData::med_tank:
         case CTransportData::heavy_tank:
-        // case CTransportData::light_art:
+        case CTransportData::light_art:
         case CTransportData::med_art:
         case CTransportData::heavy_art:
         case CTransportData::infantry:
             // case CTransportData::rangers:
             AssignCombat( pUnit );
             break;
+        // amphibious assault (IDG_SEAINVADE) carries only med_tank + rangers,
+        // because only those board landing craft (see LoadCargo/LoadTroops).
+        // light_tank/light_art route to land combat above so they are never
+        // staged for an assault they cannot embark on.
         case CTransportData::rangers:
-        case CTransportData::light_tank:
         case CTransportData::med_tank:
-        case CTransportData::light_art:
         case CTransportData::gun_boat:
         case CTransportData::destroyer:
         case CTransportData::cruiser:
@@ -2231,14 +2235,14 @@ void CAITaskMgr::AttackUnit( CAIUnit* pUnit, CAITask* /* pTask */ )
     }
 
     CHexCoord hexDest, hexVeh, hexTarget;
-    EnterCriticalSection( &cs );
-    CVehicle* pVehicle = theVehicleMap.GetVehicle( pUnit->GetID( ) );
-    if ( pVehicle != NULL )
+    AiVehSnap snapV;
+    if ( AiSnap::ReadVeh( pUnit->GetID( ), snapV ) )
     {
-        hexVeh  = pVehicle->GetHexHead( );
-        hexDest = pVehicle->GetHexDest( );
+        hexVeh.X( snapV.iHeadX );
+        hexVeh.Y( snapV.iHeadY );
+        hexDest.X( snapV.iDestX );
+        hexDest.Y( snapV.iDestY );
     }
-    LeaveCriticalSection( &cs );
 
 #ifdef _LOGOUT
     logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC,
@@ -3134,11 +3138,11 @@ ErrRet:
 // 4 - how many "cruiser"
 // 5 - how many "destroyer"
 //
-// for IDG_SEAINVADE version of task
-// 4 - how many "gun_boat"
-// 5 - how many "marines"
-// 6 - how many "light_tank,med_tank,light_art"
-// 7 - how many "landing_craft"
+// for IDG_SEAINVADE version of task (CAI_TF_* slot layout, see cai.h)
+// CAI_TF_ARMOR   - 4 - how many "med_tank"
+// CAI_TF_LANDING - 5 - how many "landing_craft"
+// CAI_TF_SHIPS   - 6 - how many "gun_boat"
+// CAI_TF_MARINES - 7 - how many "rangers"
 //
 void CAITaskMgr::StageUnit( CAIUnit* pCbtVeh, CAITask* pTask )
 {
@@ -3206,19 +3210,16 @@ void CAITaskMgr::StageUnit( CAIUnit* pCbtVeh, CAITask* pTask )
     BOOL      bCarried = FALSE;
     CHexCoord hexVeh, hexDest;
     int       iSpotting;
-    EnterCriticalSection( &cs );
-    CVehicle* pVehicle = theVehicleMap.GetVehicle( pCbtVeh->GetID( ) );
-    if ( pVehicle == NULL )
-    {
-        LeaveCriticalSection( &cs );
+    AiVehSnap snapV;
+    if ( !AiSnap::ReadVeh( pCbtVeh->GetID( ), snapV ) )
         return;
-    }
-    hexVeh    = pVehicle->GetHexHead( );
-    hexDest   = pVehicle->GetHexDest( );
-    iSpotting = pVehicle->GetSpottingRange( );
-    if ( pVehicle->GetTransport( ) != NULL )
+    hexVeh.X( snapV.iHeadX );
+    hexVeh.Y( snapV.iHeadY );
+    hexDest.X( snapV.iDestX );
+    hexDest.Y( snapV.iDestY );
+    iSpotting = snapV.iSpotting;
+    if ( snapV.bCarried )
         bCarried = TRUE;
-    LeaveCriticalSection( &cs );
 
     CHexCoord hcStart( pTask->GetTaskParam( CAI_LOC_X ), pTask->GetTaskParam( CAI_LOC_Y ) );
     CHexCoord hcEnd( pTask->GetTaskParam( CAI_PREV_X ), pTask->GetTaskParam( CAI_PREV_Y ) );
@@ -3233,7 +3234,7 @@ void CAITaskMgr::StageUnit( CAIUnit* pCbtVeh, CAITask* pTask )
 
     // compensate for the bug that some carried vehicles have hex!=dest
     if ( bCarried && hexDest != hexVeh )
-        hexDest == hexVeh;
+        hexDest = hexVeh;
 
     // if pCbtVeh current location is within staging area
     // then just return, as vehicle is where it needs to be
@@ -3559,20 +3560,16 @@ void CAITaskMgr::PatrolArea( CAIUnit* pUnit, CAITask* pTask )
     int       iCntCarried = 0;
     BOOL      bCarried    = FALSE;
 
-    EnterCriticalSection( &cs );
-    CVehicle* pVehicle = theVehicleMap.GetVehicle( pUnit->GetID( ) );
-    if ( pVehicle == NULL )
-    {
-        LeaveCriticalSection( &cs );
+    AiVehSnap snapV;
+    if ( !AiSnap::ReadVeh( pUnit->GetID( ), snapV ) )
         return;
-    }
-    hexVeh      = pVehicle->GetHexHead( );
-    hexDest     = pVehicle->GetHexDest( );
-    iCntCarried = pVehicle->GetCargoCount( );
-    if ( pVehicle->GetTransport( ) != NULL )
+    hexVeh.X( snapV.iHeadX );
+    hexVeh.Y( snapV.iHeadY );
+    hexDest.X( snapV.iDestX );
+    hexDest.Y( snapV.iDestY );
+    iCntCarried = snapV.iCargoCount;
+    if ( snapV.bCarried )
         bCarried = TRUE;
-
-    LeaveCriticalSection( &cs );
 
     // bCarried at this point means an unit carried on a transport
     if ( bCarried )
@@ -3838,16 +3835,13 @@ BOOL CAITaskMgr::IsStagingCompete( CAITask* pTask, int iType /*=0*/ )
 
             if ( !iType )
             {
-                EnterCriticalSection( &cs );
-                CVehicle* pVehicle = theVehicleMap.GetVehicle( pUnit->GetID( ) );
-                if ( pVehicle == NULL )
-                {
-                    LeaveCriticalSection( &cs );
+                AiVehSnap snapV;
+                if ( !AiSnap::ReadVeh( pUnit->GetID( ), snapV ) )
                     continue;
-                }
-                hex     = pVehicle->GetHexHead( );
-                hexDest = pVehicle->GetHexDest( );
-                LeaveCriticalSection( &cs );
+                hex.X( snapV.iHeadX );
+                hex.Y( snapV.iHeadY );
+                hexDest.X( snapV.iDestX );
+                hexDest.Y( snapV.iDestY );
 
                 // the unit is awaiting a load or to be loaded
                 if ( pUnit->GetStatus( ) & CAI_IN_USE )
@@ -3914,9 +3908,7 @@ BOOL CAITaskMgr::IsStagingCompete( CAITask* pTask, int iType /*=0*/ )
             {
                 switch ( pUnit->GetTypeUnit( ) )
                 {
-                case CTransportData::light_tank:
                 case CTransportData::med_tank:
-                case CTransportData::med_art:
                     iCounts[0] += 1;
                     break;
                 case CTransportData::landing_craft:
@@ -3987,9 +3979,7 @@ BOOL CAITaskMgr::IsStagingCompete( CAITask* pTask, int iType /*=0*/ )
         {
             switch ( iType )
             {
-            case CTransportData::light_tank:
             case CTransportData::med_tank:
-            case CTransportData::med_art:
                 iTypeChecking = 0;
                 break;
             case CTransportData::landing_craft:
@@ -4130,9 +4120,7 @@ BOOL CAITaskMgr::ContinueStaging( CAIUnit* pStagingVeh, CAITask* pTask )
     {
         switch ( pStagingVeh->GetTypeUnit( ) )
         {
-        case CTransportData::light_tank:
         case CTransportData::med_tank:
-        case CTransportData::med_art:
             iStagingType = 0;
             break;
         case CTransportData::landing_craft:
@@ -4241,10 +4229,7 @@ BOOL CAITaskMgr::ContinueStaging( CAIUnit* pStagingVeh, CAITask* pTask )
             {
                 switch ( pUnit->GetTypeUnit( ) )
                 {
-                case CTransportData::light_tank:
                 case CTransportData::med_tank:
-                // case CTransportData::light_art:
-                case CTransportData::med_art:
                     iCounts[0] += 1;
                     break;
                 case CTransportData::landing_craft:
@@ -6157,19 +6142,17 @@ void CAITaskMgr::UnloadCargo( CAIUnit* pUnit )
 
     CHexCoord hexHead;
     BOOL      bIsLoaded = FALSE;
-    EnterCriticalSection( &cs );
 
-    CVehicle* pVehicle = theVehicleMap.GetVehicle( pUnit->GetID( ) );
-
-    // a valid vehicle and carrying?
-    if ( pVehicle != NULL )
+    // a valid vehicle and carrying? (snapshot read, lock-free)
+    AiVehSnap snapV;
+    if ( AiSnap::ReadVeh( pUnit->GetID( ), snapV ) )
     {
-        hexHead = pVehicle->GetHexHead( );
+        hexHead.X( snapV.iHeadX );
+        hexHead.Y( snapV.iHeadY );
         // there are vehicles loaded onboard
-        if ( pVehicle->GetCargoCount( ) )
+        if ( snapV.iCargoCount )
             bIsLoaded = TRUE;
     }
-    LeaveCriticalSection( &cs );
 
     if ( !bIsLoaded )
         return;

@@ -11,6 +11,7 @@
 
 #include "ai.h"
 
+#include "aisnap.h"  // Tier-B AI world snapshot (cleared on game exit)
 #include "caidata.hpp"
 #include "caimgr.hpp"
 #include "caisavld.hpp"
@@ -351,6 +352,9 @@ void AiDeletePlayer( DWORD_PTR dwID )
 // last call on game exit - shut everything down (program still running)
 void AiExit( )
 {
+    // drop the world snapshot: it holds pointers into the static type tables,
+    // which must not be served once the world is gone
+    AiSnap::Reset( );
 
     try
     {
@@ -421,11 +425,15 @@ void WINAPI AiThread( AI_INIT* pAiI )
 
     try
     {
-        // now fail into the endless loop yielding often
+        // Event-driven loop (Phase 1): block until a message arrives for this
+        // AI or the idle slice elapses, then run one Manage() pass. Replaces
+        // the old hot spin (Manage() called continuously with a Sleep(0)),
+        // which at N AIs burned N cores' worth of CPU mostly doing nothing.
+        // 100ms timeout bounds: idle-function cadence, SetDead/bEndThreads
+        // notice latency, and exit-path responsiveness.
         while ( 1 )
         {
-            if ( theGame.GetAi( ).GetCount( ) > 1 )
-                ::Sleep( 0 );  // give time to the other AIs
+            pAIMgr->WaitForWork( 100 );  // AI_IDLE_SLICE_MS (caimgr.cpp)
             pAIMgr->Manage( );
             myYieldThread( );
         }

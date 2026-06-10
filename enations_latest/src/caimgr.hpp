@@ -61,6 +61,13 @@ class CAIMgr : public CObject
 
 	CRITICAL_SECTION m_cs; // internal use only, for message input/update
 
+	// Phase-1 threading: counting semaphore tracking pending messages. The AI
+	// thread blocks on it in WaitForWork instead of hot-spinning Manage() (the
+	// old scheme spun ~AI_IDLE_LIMIT empty passes per idle function). One count
+	// is released per enqueued message (and on SetDead, so a dead AI wakes to
+	// exit promptly). Timeout-expiry drives the idle-function rotation.
+	HANDLE m_hWork;
+
 	int m_iPlayer;	// this player's id to the game
 	BOOL m_bIsAI;	// TRUE indicates the player is AI
 					// FALSE indicates the player is HP
@@ -105,6 +112,9 @@ public:
 	void SetAI( BOOL );
 	void SetDead( void );
     void Manage( void );
+	// Block until a message is pending or dwTimeoutMs elapses (idle slice).
+	// Called only by this AI's own thread (AiThread loop).
+	void WaitForWork( DWORD dwTimeoutMs );
 
 	void UpdateLocation( CAIMsg *pMsg );
 	void UpdatePlayer( CAIMsg *pMsg );

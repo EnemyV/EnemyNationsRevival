@@ -7,6 +7,7 @@
 
 
 #include "ai.h"
+#include "aisnap.h"  // Tier-B AI world snapshot (published here, read by AI threads)
 #include "area.h"
 #include "building.inl"
 #include "chproute.hpp"
@@ -1269,6 +1270,11 @@ void CConquerApp::GraphicsEnginePump( )
     }  // if operate
 
 NoOper:
+
+    // Tier-B AI snapshot: publish the world copy the AI threads read lock-free
+    // (self-throttled to ~tick cadence; takes `cs` briefly inside). Sits after
+    // both the operate and skip paths so it runs every loop iteration.
+    AiSnap::Publish( );
 
     // where we should render (if the above was fast)
     RenderScreens( );

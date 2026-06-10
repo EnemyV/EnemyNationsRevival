@@ -11,6 +11,7 @@
 
 #include "caimgr.hpp"
 
+#include "aisnap.h"  // Tier-B world snapshot (lock-free AI reads)
 #include "caidata.hpp"
 #include "caiinit.hpp"
 #include "caisavld.hpp"
@@ -23,7 +24,15 @@
 #include "Perf.h"  // lightweight runtime metrics (gated by EN_PERF)
 
 #define new DEBUG_NEW
-#define AI_IDLE_LIMIT 20000
+// Idle tuning (Phase-1 event-driven AI threads).
+// The AI thread now BLOCKS in WaitForWork (semaphore, AI_IDLE_SLICE_MS timeout)
+// instead of hot-spinning Manage(). m_iIdle therefore counts consecutive
+// ~100ms idle slices, not spin passes, so the old limit of 20000 spin passes
+// becomes 2 slices: an idle function runs after ~200ms of quiet, one per slice
+// after that (full 7-function rotation ~every 1.6s) — comparable cadence to the
+// original spin behaviour, at ~zero CPU for idle AIs.
+#define AI_IDLE_LIMIT    2
+#define AI_IDLE_SLICE_MS 100
 
 // Running total of CAIMsg objects enqueued but not yet processed, summed across
 // ALL AI managers/threads. Incremented in MessageArrived (enqueue), decremented
@@ -90,6 +99,9 @@ CAIMgr::CAIMgr( int iPlayer )
     // private critical section for accessing the message queue
     memset( &m_cs, 0, sizeof( m_cs ) );
     InitializeCriticalSection( &m_cs );
+
+    // work semaphore: one count per pending message (see WaitForWork)
+    m_hWork = CreateSemaphore( NULL, 0, LONG_MAX, NULL );
 
     // messages after prioritizing
     if ( m_plMsgQueue == NULL )
@@ -275,7 +287,9 @@ void CAIMgr::Manage( void )
         }
         else
         {
-            Sleep( pGameData->GetRandom( 100 ) + 70 );
+            // No Sleep here anymore: the AiThread loop now blocks in
+            // WaitForWork between passes, which IS the idle sleep (and unlike
+            // Sleep, a newly arrived message wakes it immediately).
 
             // reset this time and start over
             for ( int i = 0; i < MAX_IDLE_FUNCTIONS; ++i ) m_bIdleFunction[i] = TRUE;
@@ -521,9 +535,23 @@ void CAIMgr::Manage( void )
     }
 }
 
+// Block this AI's thread until a message is pending or the idle slice elapses.
+// Semaphore count == pending messages, so one wait consumes one message's
+// wake-up; a timeout return is an idle pass (drives the idle-function rotation
+// in Manage). NULL handle (creation failed) degrades to the old spin behaviour.
+void CAIMgr::WaitForWork( DWORD dwTimeoutMs )
+{
+    if ( m_hWork != NULL )
+        WaitForSingleObject( m_hWork, dwTimeoutMs );
+}
+
 void CAIMgr::SetDead( void )
 {
     m_bIsDead = TRUE;
+
+    // wake the AI thread so Manage() sees m_bIsDead promptly
+    if ( m_hWork != NULL )
+        ReleaseSemaphore( m_hWork, 1, NULL );
 
 #ifdef _LOGOUT
     logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "\nCAIMgr::The player %d is dead \n", m_iPlayer );
@@ -931,30 +959,28 @@ void CAIMgr::HandleStuckVehicles( void )
 
             bIsWorking = bIsCarried = FALSE;
 
-            // get current destination of vehicle
-            EnterCriticalSection( &cs );
-            CVehicle* pVeh = theVehicleMap.GetVehicle( pUnit->GetID( ) );
-            if ( pVeh == NULL )
+            // get current destination of vehicle (snapshot read, lock-free)
+            AiVehSnap snap;
+            if ( !AiSnap::ReadVeh( pUnit->GetID( ), snap ) )
             {
-                LeaveCriticalSection( &cs );
                 pUnit->SetParamDW( CAI_ROUTE_X, 0 );
                 continue;
             }
 
             // test to be sure vehicle is not already carried
-            if ( pVeh->GetTransport( ) != NULL )
+            if ( snap.bCarried )
                 bIsCarried = TRUE;
 
-            hexVeh  = pVeh->GetHexHead( );
-            hexDest = pVeh->GetHexDest( );
+            hexVeh.X( snap.iHeadX );
+            hexVeh.Y( snap.iHeadY );
+            hexDest.X( snap.iDestX );
+            hexDest.Y( snap.iDestY );
 
             if ( pUnit->GetTypeUnit( ) == CTransportData::construction )
             {
-                if ( pVeh->GetRouteMode( ) == CVehicle::run )
+                if ( snap.iRouteMode == CVehicle::run )
                     bIsWorking = TRUE;
             }
-
-            LeaveCriticalSection( &cs );
 
             if ( bIsCarried || bIsWorking )
                 continue;
@@ -2196,6 +2222,10 @@ void CAIMgr::MessageArrived( CNetCmd const* pNewMsg )
         EnterCriticalSection( &m_cs );
         m_plTmpQueue->AddTail( (CObject*)pMsg );
         LeaveCriticalSection( &m_cs );
+
+        // wake this AI's (possibly blocked) thread: one count per message
+        if ( m_hWork != NULL )
+            ReleaseSemaphore( m_hWork, 1, NULL );
 
         // metrics: one message entered the AI pipeline
         Perf::CounterInc( "ai.msg.enq" );
@@ -3637,6 +3667,12 @@ CAIMgr::~CAIMgr( )
     ASSERT_VALID( this );
 
     DeleteCriticalSection( &m_cs );
+
+    if ( m_hWork != NULL )
+    {
+        CloseHandle( m_hWork );
+        m_hWork = NULL;
+    }
 
     if ( m_pRouter != NULL )
     {

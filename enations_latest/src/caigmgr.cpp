@@ -7708,10 +7708,10 @@ void CAIGoalMgr::GetStagingArea( CAITask* pTask )
         }
     }
     // for IDG_SEAINVADE version of task
-    // CAI_TF_ARMOR   - 4 - how many "light_tank,med_tank,light_art"
+    // CAI_TF_ARMOR   - 4 - how many "med_tank" (only armor that boards a lander)
     // CAI_TF_LANDING - 5 - how many "landing_craft"
     // CAI_TF_SHIPS   - 6 - how many "cruiser,destroyer,gun_boat"
-    // CAI_TF_MARINES - 7 - how many "marines"
+    // CAI_TF_MARINES - 7 - how many "rangers"
     //
     if ( pTask->GetGoalID( ) == IDG_SEAINVADE )
     {
@@ -7736,12 +7736,8 @@ void CAIGoalMgr::GetStagingArea( CAITask* pTask )
         if ( iTotalUnits > 0 )
         {
             i = 0;
-            if ( CanBuildVehType( CTransportData::light_tank ) )
-                i = m_pwaVehGoals[CTransportData::light_tank];
             if ( CanBuildVehType( CTransportData::med_tank ) )
-                i += m_pwaVehGoals[CTransportData::med_tank];
-            if ( CanBuildVehType( CTransportData::med_art ) )
-                i += m_pwaVehGoals[CTransportData::med_art];
+                i = m_pwaVehGoals[CTransportData::med_tank];
             i /= NUM_DIFFICUTY_LEVELS;
             if ( i )
                 i += pGameData->m_iSmart;

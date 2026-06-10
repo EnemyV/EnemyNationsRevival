@@ -395,7 +395,6 @@ CAITask *CAITaskList::GetPatrolTask( int iType )
 					pPickedTask = pTask;
 					iPriority = (int)pTask->GetPriority();
 				}
-				break;
 			}
 		}
 	}
@@ -655,13 +654,13 @@ CAITask *CAITaskList::GetNavyTask( int iUnitType )
 
 	// some vehicles come into this, which are not naval vehicles
 	// and still need a navy task cause its an amphibious assault
+	// only med_tank + rangers can board a landing craft (see LoadCargo /
+	// LoadTroops), so only they are eligible for the amphibious assault task.
 	BOOL bAmphib = FALSE;
 	switch( iUnitType )
 	{
 		case CTransportData::rangers:
-		case CTransportData::light_tank:
 		case CTransportData::med_tank:
-		case CTransportData::light_art:
 			bAmphib = TRUE;
 		default:
 			break;

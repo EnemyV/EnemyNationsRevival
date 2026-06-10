@@ -111,7 +111,15 @@ public:
 	void Update( CBuilding *pData );
 	void Update( CVehicle *pData );
 
-	// critical section used
+	// Tier-B snapshot path (aisnap.h): fill the copy from the per-tick world
+	// snapshot instead of the live (cs-locked) game objects. ServeFromSnapshot
+	// returns FALSE when the snapshot can't serve the request (disabled, unit
+	// not in snapshot, or no production record) -> caller uses the locked path.
+	BOOL ServeFromSnapshot( int iType );
+	void UpdateFromSnap( const struct AiBldgSnap &snap );
+	void UpdateFromSnap( const struct AiVehSnap &snap );
+
+	// critical section used (legacy path; snapshot path is lock-free)
 	CAICopy *GetCopyData( int iType );
 	void RepairVehicle( void );
 	void RepairBuilding( void );

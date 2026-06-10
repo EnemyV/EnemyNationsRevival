@@ -11,6 +11,7 @@
 
 #include "cairoute.hpp"
 
+#include "aisnap.h"  // Tier-B world snapshot (lock-free AI reads)
 #include "caidata.hpp"
 #include "logging.h"  // dave's logging system
 #include "stdafx.h"
@@ -596,14 +597,14 @@ void CAIRouter::IdleTruckTask( int iMat, int iFromBldg, int iToBldg )
                 myYieldThread( );
 #endif
 
-                // this is a valid iFromBldg/iToBldg, so check how much iMat it has
-                EnterCriticalSection( &cs );
-                CBuilding* pBldg = theBuildingMap.GetBldg( pUnit->GetID( ) );
-                if ( pBldg != NULL )
+                // this is a valid iFromBldg/iToBldg, so check how much iMat it
+                // has (snapshot read, lock-free)
+                AiBldgSnap snapB;
+                if ( AiSnap::ReadBldg( pUnit->GetID( ), snapB ) )
                 {
                     if ( pUnit->GetTypeUnit( ) == iFromBldg )
                     {
-                        iExcess = pBldg->GetStore( iMat ) - EXCESS_IDLE_MATERIALS;
+                        iExcess = snapB.aiStore[iMat] - EXCESS_IDLE_MATERIALS;
                         if ( iExcess > 0 && iExcess > iBestFromExcess )
                         {
                             iBestFromExcess = iExcess;
@@ -612,7 +613,7 @@ void CAIRouter::IdleTruckTask( int iMat, int iFromBldg, int iToBldg )
                     }
                     else if ( pUnit->GetTypeUnit( ) == iToBldg )
                     {
-                        iExcess = pBldg->GetStore( iMat );
+                        iExcess = snapB.aiStore[iMat];
                         if ( iExcess > 0 && iExcess < iBestToExcess )
                         {
                             iBestToExcess = iExcess;
@@ -620,7 +621,6 @@ void CAIRouter::IdleTruckTask( int iMat, int iFromBldg, int iToBldg )
                         }
                     }
                 }
-                LeaveCriticalSection( &cs );
             }
 
             // possible multiple to building types
@@ -648,18 +648,17 @@ void CAIRouter::IdleTruckTask( int iMat, int iFromBldg, int iToBldg )
 #endif
 
                 // this is a valid iToBldg, so check how much iMat it has
-                EnterCriticalSection( &cs );
-                CBuilding* pBldg = theBuildingMap.GetBldg( pUnit->GetID( ) );
-                if ( pBldg != NULL )
+                // (snapshot read, lock-free)
+                AiBldgSnap snapTo;
+                if ( AiSnap::ReadBldg( pUnit->GetID( ), snapTo ) )
                 {
-                    iExcess = pBldg->GetStore( iMat );
+                    iExcess = snapTo.aiStore[iMat];
                     if ( iExcess > 0 && iExcess < iBestToExcess )
                     {
                         iBestToExcess = iExcess;
                         paiTo         = pUnit;
                     }
                 }
-                LeaveCriticalSection( &cs );
             }
         }
     }
@@ -681,15 +680,19 @@ void CAIRouter::IdleTruckTask( int iMat, int iFromBldg, int iToBldg )
     }
 
     // check to be sure truck can get to the to building from the from building
-    CHexCoord hexFrom( 0, 0 ), hexTo( 0, 0 );
-    EnterCriticalSection( &cs );
-    CBuilding* pBldg = theBuildingMap.GetBldg( paiFrom->GetID( ) );
-    if ( pBldg != NULL )
-        hexFrom = pBldg->GetExitHex( );
-    pBldg = theBuildingMap.GetBldg( paiTo->GetID( ) );
-    if ( pBldg != NULL )
-        hexTo = pBldg->GetExitHex( );
-    LeaveCriticalSection( &cs );
+    // (snapshot reads, lock-free)
+    CHexCoord  hexFrom( 0, 0 ), hexTo( 0, 0 );
+    AiBldgSnap snapEx;
+    if ( AiSnap::ReadBldg( paiFrom->GetID( ), snapEx ) )
+    {
+        hexFrom.X( snapEx.iExitX );
+        hexFrom.Y( snapEx.iExitY );
+    }
+    if ( AiSnap::ReadBldg( paiTo->GetID( ), snapEx ) )
+    {
+        hexTo.X( snapEx.iExitX );
+        hexTo.Y( snapEx.iExitY );
+    }
 
     if ( ( !hexFrom.X( ) && !hexFrom.Y( ) ) || ( !hexTo.X( ) && !hexTo.Y( ) ) )
         return;
@@ -825,13 +828,14 @@ BOOL CAIRouter::FindTransport( CAIUnit* pCAIBldg )
     pTruck->SetDataDW( pCAIBldg->GetID( ) );  // id of building needing
     pTruck->ClearParam( );
 
-    // get truck's location to help find source
+    // get truck's location to help find source (snapshot read, lock-free)
     CHexCoord hexTruck;
-    EnterCriticalSection( &cs );
-    CVehicle* pVehicle = theVehicleMap.GetVehicle( pTruck->GetID( ) );
-    if ( pVehicle != NULL )
-        hexTruck = pVehicle->GetHexHead( );
-    LeaveCriticalSection( &cs );
+    AiVehSnap snapTruck;
+    if ( AiSnap::ReadVeh( pTruck->GetID( ), snapTruck ) )
+    {
+        hexTruck.X( snapTruck.iHeadX );
+        hexTruck.Y( snapTruck.iHeadY );
+    }
 
 
     BOOL bAssigned    = FALSE;
@@ -1345,14 +1349,11 @@ CAIUnit* CAIRouter::GetNearestSource( int iMaterial, int iQtyNeeded, int* piDist
                 if ( pCopyCBuildMine == NULL )
                     continue;
 
-                // new feature of abandoned, added too late to incorporate
-                // into the CAICopy object so do a direct access
-                BOOL bIsDepleted = FALSE;
-                EnterCriticalSection( &cs );
-                CBuilding* pBldg = theBuildingMap.GetBldg( pUnit->GetID( ) );
-                if ( pBldg != NULL )
-                    bIsDepleted = pBldg->IsFlag( CUnit::abandoned );
-                LeaveCriticalSection( &cs );
+                // abandoned (depleted) flag — now carried in the snapshot
+                BOOL       bIsDepleted = FALSE;
+                AiBldgSnap snapMine;
+                if ( AiSnap::ReadBldg( pUnit->GetID( ), snapMine ) )
+                    bIsDepleted = snapMine.bAbandoned;
                 // is this an abandoned building and has none of the material needed
                 if ( bIsDepleted && !pCopyCBuilding->m_aiDataIn[iMaterial] )
                 {

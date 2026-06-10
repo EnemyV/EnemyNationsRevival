@@ -11,9 +11,12 @@
 
 #include "caiunit.hpp"
 
+#include "aisnap.h"  // Tier-B per-tick world snapshot (lock-free reads)
 #include "caidata.hpp"
 #include "logging.h"  // dave's logging system
 #include "stdafx.h"
+
+#include "Perf.h"  // ai.snap.hit/miss counters (gated by EN_PERF)
 
 
 #if THREADS_ENABLED
@@ -483,6 +486,238 @@ void CAIUnit::Update( CVehicle* pData )
     pCopy->m_aiDataOut[CAI_TYPEVEHICLE] = pData->GetData( )->GetType( );
 }
 //
+// Tier-B: fill the CBuilding copy from the per-tick snapshot.
+// Mirrors Update( CBuilding* ) field-for-field (see that function).
+//
+void CAIUnit::UpdateFromSnap( const AiBldgSnap& snap )
+{
+    ASSERT_VALID( this );
+    ASSERT_VALID( m_plCopyData );
+
+    CAICopy* pCopy = m_plCopyData->GetCopy( CAICopy::CBuilding );
+    if ( pCopy == NULL )
+    {
+        try
+        {
+            pCopy = new CAICopy( CAICopy::CBuilding );
+            m_plCopyData->AddTail( (CObject*)pCopy );
+        }
+        catch ( CException* e )
+        {
+            if ( pCopy != NULL )
+            {
+                delete pCopy;
+                pCopy = NULL;
+            }
+            throw( ERR_CAI_BAD_NEW );
+        }
+    }
+    for ( int i = 0; i < CAI_DATA_SLOTS; ++i )
+    {
+        pCopy->m_aiDataIn[i]  = 0;
+        pCopy->m_aiDataOut[i] = 0;
+    }
+
+    for ( int i = 0; i < CMaterialTypes::num_types; ++i ) pCopy->m_aiDataIn[i] = snap.aiStore[i];
+
+    pCopy->m_aiDataOut[CAI_LOC_X] = snap.iExitX;
+    pCopy->m_aiDataOut[CAI_LOC_Y] = snap.iExitY;
+
+    pCopy->m_aiDataOut[CAI_ISCONSTRUCTING] = snap.bConstructing;
+    pCopy->m_aiDataOut[CAI_ISPAUSED]       = snap.bPaused;
+    pCopy->m_aiDataOut[CAI_ISWAITING]      = snap.bWaiting;
+    pCopy->m_aiDataOut[CAI_PRODUCES]       = snap.iUnionType;
+
+    pCopy->m_aiDataOut[CAI_DAMAGE]    = snap.iDamagePer;
+    pCopy->m_aiDataOut[CAI_BUILDTYPE] = snap.iBldgType;
+    pCopy->m_aiDataOut[CAI_TYPEBUILD] = snap.iType;
+}
+
+//
+// Tier-B: fill the CVehicle copy from the per-tick snapshot.
+// Mirrors Update( CVehicle* ) field-for-field (see that function).
+//
+void CAIUnit::UpdateFromSnap( const AiVehSnap& snap )
+{
+    ASSERT_VALID( this );
+    ASSERT_VALID( m_plCopyData );
+
+    CAICopy* pCopy = m_plCopyData->GetCopy( CAICopy::CVehicle );
+    if ( pCopy == NULL )
+    {
+        try
+        {
+            pCopy = new CAICopy( CAICopy::CVehicle );
+            m_plCopyData->AddTail( (CObject*)pCopy );
+        }
+        catch ( CException* e )
+        {
+            if ( pCopy != NULL )
+            {
+                delete pCopy;
+                pCopy = NULL;
+            }
+            throw( ERR_CAI_BAD_NEW );
+        }
+    }
+    for ( int i = 0; i < CAI_DATA_SLOTS; ++i )
+    {
+        pCopy->m_aiDataIn[i]  = 0;
+        pCopy->m_aiDataOut[i] = 0;
+    }
+
+    for ( int i = 0; i < CMaterialTypes::num_types; ++i ) pCopy->m_aiDataIn[i] = snap.aiStore[i];
+
+    pCopy->m_aiDataOut[CAI_LOC_X]  = snap.iHeadX;
+    pCopy->m_aiDataOut[CAI_LOC_Y]  = snap.iHeadY;
+    pCopy->m_aiDataOut[CAI_DEST_X] = snap.iDestX;
+    pCopy->m_aiDataOut[CAI_DEST_Y] = snap.iDestY;
+
+    pCopy->m_aiDataOut[CAI_DAMAGE]      = snap.iDamagePer;
+    pCopy->m_aiDataOut[CAI_TYPEVEHICLE] = snap.iType;
+}
+
+//
+// Tier-B: try to satisfy a GetCopyData request from the per-tick snapshot,
+// without touching the global game lock. The snapshot entry also serves as a
+// lock-free liveness check (dead units fall out of it on the next publish),
+// preserving the legacy behaviour where a dead unit's refresh was skipped.
+// Static type data (CStructureData/CTransportData/CBuild*) is served from the
+// immutable type tables via the snapshotted type id — the same const objects
+// the legacy path reached through the live unit pointer.
+//
+BOOL CAIUnit::ServeFromSnapshot( int iType )
+{
+    if ( !AiSnap::Enabled( ) )
+        return FALSE;
+
+    if ( m_iType == CUnit::building )
+    {
+        AiBldgSnap snap;
+        if ( !AiSnap::CopyBldg( m_dwID, snap ) )
+        {
+            Perf::CounterInc( "ai.snap.miss" );
+            return FALSE;
+        }
+
+        // owner-validation parity with the legacy path: GetBuildingData
+        // (caidata.cpp) returns NULL on an owner mismatch (e.g. after a
+        // give_unit while our m_iOwner is stale), which skipped the refresh
+        // and served the stale copy. Fall back so that behaviour is kept.
+        if ( m_iOwner != CAI_OPFOR_UNIT && snap.iOwner != m_iOwner )
+        {
+            Perf::CounterInc( "ai.snap.miss" );
+            return FALSE;
+        }
+        Perf::CounterInc( "ai.snap.hit" );
+
+        switch ( iType )
+        {
+        case CAICopy::CBuilding:
+            UpdateFromSnap( snap );
+            return TRUE;
+
+        case CAICopy::CUnitData:
+        case CAICopy::CStructureData:
+        case CAICopy::CBuildMaterials:
+        case CAICopy::CBuildMine:
+        case CAICopy::CBuildFarm:
+        {
+            CStructureData const* pData = pGameData->GetStructureData( snap.iType );
+            if ( pData == NULL )
+                return FALSE;
+
+            if ( iType == CAICopy::CUnitData )
+                Update( (CUnitData const*)pData );
+            else if ( iType == CAICopy::CStructureData )
+                Update( pData );
+            else if ( iType == CAICopy::CBuildMaterials )
+            {
+                if ( pData->GetBldMaterials( ) == NULL )
+                    return FALSE;
+                Update( pData->GetBldMaterials( ) );
+            }
+            else if ( iType == CAICopy::CBuildMine )
+            {
+                if ( pData->GetBldMine( ) == NULL )
+                    return FALSE;
+                Update( pData->GetBldMine( ) );
+            }
+            else  // CAICopy::CBuildFarm
+            {
+                if ( pData->GetBldFarm( ) == NULL )
+                    return FALSE;
+                Update( pData->GetBldFarm( ) );
+            }
+            return TRUE;
+        }
+
+        case CAICopy::CBuildUnit:
+            // current production (vehicle factory) or repair record; both are
+            // stable static-table pointers captured at publish time
+            if ( snap.pProducing != NULL )
+            {
+                Update( snap.pProducing );
+                return TRUE;
+            }
+            if ( snap.pRepairing != NULL )
+            {
+                Update( snap.pRepairing );
+                return TRUE;
+            }
+            // not producing: let the legacy path decide (it allows a NULL
+            // copy return in this case)
+            return FALSE;
+
+        default:
+            return FALSE;
+        }
+    }
+    else if ( m_iType == CUnit::vehicle )
+    {
+        AiVehSnap snap;
+        if ( !AiSnap::CopyVeh( m_dwID, snap ) )
+        {
+            Perf::CounterInc( "ai.snap.miss" );
+            return FALSE;
+        }
+
+        // owner-validation parity (see building branch above)
+        if ( m_iOwner != CAI_OPFOR_UNIT && snap.iOwner != m_iOwner )
+        {
+            Perf::CounterInc( "ai.snap.miss" );
+            return FALSE;
+        }
+        Perf::CounterInc( "ai.snap.hit" );
+
+        switch ( iType )
+        {
+        case CAICopy::CVehicle:
+            UpdateFromSnap( snap );
+            return TRUE;
+
+        case CAICopy::CUnitData:
+        case CAICopy::CTransportData:
+        {
+            CTransportData const* pData = pGameData->GetTransportData( snap.iType );
+            if ( pData == NULL )
+                return FALSE;
+            if ( iType == CAICopy::CUnitData )
+                Update( (CUnitData const*)pData );
+            else
+                Update( pData );
+            return TRUE;
+        }
+
+        default:
+            return FALSE;
+        }
+    }
+
+    return FALSE;
+}
+
+//
 // get a current pointer to data copy based on
 // the type of data requested
 //
@@ -490,6 +725,13 @@ CAICopy* CAIUnit::GetCopyData( int iType )
 {
     ASSERT_VALID( this );
     ASSERT_VALID( m_plCopyData );
+
+    // Tier-B fast path: serve from the per-tick snapshot, no global lock.
+    // Falls through to the legacy locked path when the snapshot can't help
+    // (disabled via EN_AISNAP=0, unit not yet/no longer in the snapshot, or
+    // a request the snapshot doesn't carry).
+    if ( ServeFromSnapshot( iType ) )
+        return ( m_plCopyData->GetCopy( iType ) );
 
     CVehicle*  pVehicle = NULL;
     CBuilding* pBldg    = NULL;
