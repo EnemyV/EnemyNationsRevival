@@ -419,6 +419,19 @@ class CPlayer : public CObject
     BOOL          CanRsrch( int iIndex );
 
     BOOL CanBridge( ) { return ( GetRsrch( CRsrchArray::bridge ).m_bDiscovered ); }
+
+    // Max bridge span for this player: base MAX_SPAN plus 25% of the base per
+    // Bridges 2-5 tier discovered (7 -> 8 -> 10 -> 12 -> 14 hexes).
+    int GetMaxSpan( )
+    {
+        int iTiers = 0;
+        if ( m_aRsrch.GetSize( ) > CRsrchArray::bridge_5 )
+            for ( int iOn = CRsrchArray::bridge_2; iOn <= CRsrchArray::bridge_5; iOn++ )
+                if ( GetRsrch( iOn ).m_bDiscovered )
+                    iTiers++;
+        return ( ( MAX_SPAN * ( 100 + 25 * iTiers ) ) / 100 );
+    }
+
     BOOL CanMultiArea( ) { return ( GetRsrch( CRsrchArray::radio ).m_bDiscovered ); }
     BOOL CanDelayMail( ) { return ( GetRsrch( CRsrchArray::mail ).m_bDiscovered ); }
     BOOL CanEMail( ) { return ( GetRsrch( CRsrchArray::email ).m_bDiscovered ); }
@@ -840,6 +853,8 @@ class CGame : public CObject
     LONG    m_iAi;        // AI intelligence
     LONG    m_iSize;      // world size
     LONG    m_iPos;       // initial position
+    LONG    m_iWorldType; // world generation preset (EWorldType) - synced via CNetStart
+    LONG    m_iRivers;    // river density slider 0-100 (60 = baseline) - synced via CNetStart
     std::string m_sGameName;  // for create_net
     std::string m_sGameDesc;
 

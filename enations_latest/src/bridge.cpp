@@ -64,7 +64,7 @@ CBridge* CBridge::Create( CHexCoord const& hexStart, CHexCoord const& hexEnd, DW
     hexEnd.Flatten( iAlt );
 
     int iLen = 0;
-    while ( iLen <= MAX_SPAN + 1 )
+    while ( iLen <= MAX_SPAN_ULT + 1 )  // bound must fit the longest researched span
     {
         CBridgeUnit* pBu = new CBridgeUnit( _hexOn, pBrdg );
         pBu->m_hex.SetInvalidated( );

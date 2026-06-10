@@ -2571,6 +2571,15 @@ int CWndArea::OnCreate( LPCREATESTRUCT lpCreateStruct )
         rect.Width( ), rect.Height( ) );
 
     // Create SDL2 panel for this area window
+    {
+        char b[160];
+        sprintf_s( b, "[REN] CWndArea::OnCreate panel-create: gameWindow=%p compositor=%p existingPanel=%p\n",
+                   (void*)theApp.m_gameWindow.get( ),
+                   theApp.m_gameWindow ? (void*)theApp.m_gameWindow->GetCompositor( ) : nullptr,
+                   (void*)m_aa.m_sdlPanel );
+        OutputDebugStringA( b );
+        FILE* _f = fopen( "SDL2Panel.log", "a" ); if ( _f ) { fputs( b, _f ); fclose( _f ); }
+    }
     if ( theApp.m_gameWindow && theApp.m_gameWindow->GetCompositor() )
     {
         // Get screen position of this window's client area
@@ -6285,7 +6294,7 @@ void CWndArea::SetRoadIcons( CHexCoord hexEnd )
     m_iNumRoadHex   = 0;
     int x           = abs( CHexCoord::Diff( hexEnd.X( ) - m_hexRoadStart.X( ) ) );
     int y           = abs( CHexCoord::Diff( hexEnd.Y( ) - m_hexRoadStart.Y( ) ) );
-    int iSize       = __max( x, y ) + 3 + MAX_SPAN;
+    int iSize       = __max( x, y ) + 3 + MAX_SPAN_ULT;
     m_phexRoadPath  = new CHexCoord[iSize];
     m_ppUnderSprite = new CSprite*[iSize];
     iSize--;
@@ -6348,7 +6357,7 @@ void CWndArea::SetRoadIcons( CHexCoord hexEnd )
             if ( pHex->IsWater( ) )
             {
                 iSpan++;
-                if ( iSpan > MAX_SPAN )
+                if ( iSpan > theGame.GetMe( )->GetMaxSpan( ) )
                     return;
             }
             else

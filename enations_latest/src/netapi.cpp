@@ -518,7 +518,6 @@ static void OnMsgSessionClose( )
 
 static void OnMsgSessionEnum( LPCVPSESSIONINFO pSi )
 {
-
     if ( memcmp( &( pSi->gameId ), &( tlpGUID ), sizeof( VPGUID ) ) )
         return;
     if ( theApp.m_pCreateGame->m_iTyp != CCreateBase::join_net )
@@ -936,8 +935,21 @@ LRESULT CNetApi::OnNetMsg( WPARAM wParam, LPARAM lParam )
 
     case VP_READDATA: {
         if ( pVpMsg->userData == NULL )
-            theGame.AddToQueue( (CNetCmd*)( ( (char*)pVpMsg->u.data ) - sizeof( VPMsgHdr ) ),
-                                pVpMsg->dataLen + sizeof( VPMsgHdr ) );
+        {
+            CNetCmd* pCmd = (CNetCmd*)( ( (char*)pVpMsg->u.data ) - sizeof( VPMsgHdr ) );
+            // Chat is handled IMMEDIATELY (not queued) so it also works in the
+            // pre-game lobby, where the message queue isn't being drained. (The
+            // queued path still exists in ProcessMessage for safety.)
+            if ( pCmd->GetType( ) == CNetCmd::cmd_chat )
+            {
+                const CNetChat* pChat = (const CNetChat*)pCmd;
+                CPlayer* pSender = theGame._GetPlayer( pChat->m_iPlyrNetNum );
+                std::string from = pSender ? (const char*)pSender->GetName( ) : "?";
+                SDL2Chat_AddMessage( from + ": " + pChat->m_sMsg );
+            }
+            else
+                theGame.AddToQueue( pCmd, pVpMsg->dataLen + sizeof( VPMsgHdr ) );
+        }
         else
             TRAP( );
 
@@ -1382,13 +1394,48 @@ static void CmdPlayer( CNetPlayer* pNp )
         theGame._SetServer( pPlr );
 }
 
+// --- Deferred client start (multiplayer waiting-room lobby) ----------------
+// While a joining client sits in its waiting-room lobby, a CNetStart from the
+// host must NOT build the world immediately: that would run CreateNewWorld
+// nested inside the lobby's modal message loop and re-enter BaseYield. Instead
+// we stash the start params, let the lobby close, then build at the flow level.
+bool g_bClientLobbyWaiting  = false;
+bool g_bClientStartReceived = false;
+static char g_clientStartBuf[ sizeof( CNetStart ) ];
+
+static void CmdStart( CNetStart* pStrt );   // fwd
+
+void RunDeferredClientStart( )
+{
+    if ( g_bClientStartReceived )
+    {
+        g_bClientStartReceived = false;
+        CmdStart( (CNetStart*)g_clientStartBuf );
+    }
+}
+
 static void CmdStart( CNetStart* pStrt )
 {
+    if ( g_bClientLobbyWaiting )
+    {
+        memcpy( g_clientStartBuf, pStrt, sizeof( CNetStart ) );
+        g_bClientStartReceived = true;
+        return;   // lobby will close, then RunDeferredClientStart() builds the world
+    }
 
     try
     {
         // create the world
         theGame.IncTry( );
+        // adopt the host's world-generation preset + river density so our
+        // seed-deterministic generator paints the identical map (synced via CNetStart).
+        theGame.m_iWorldType = pStrt->m_iWorldType;
+        theGame.m_iRivers    = pStrt->m_iRivers;
+        if ( theApp.m_pCreateGame != NULL )
+        {
+            theApp.m_pCreateGame->m_iWorldType = pStrt->m_iWorldType;
+            theApp.m_pCreateGame->m_iRivers    = pStrt->m_iRivers;
+        }
         AIinit aiData( pStrt->m_iAi, pStrt->m_iNumAi, pStrt->m_iNumHp, pStrt->m_iStart );
         theApp.CreateNewWorld( pStrt->m_uRand, &aiData, pStrt->m_iSide, pStrt->m_iSideSize );
         theGame.DecTry( );
@@ -1692,6 +1739,9 @@ static void BuildBridge( CMsgBuildBridge* pMsg )
         return;
     }
 
+    // span limit depends on the requesting player's bridge research tier
+    int const iMaxSpan = theGame.GetPlayer( pMsg->m_iPlyrNum )->GetMaxSpan( );
+
     int   iLen = 0;
     CHex* pHex;
     goto StartIt;
@@ -1706,9 +1756,9 @@ static void BuildBridge( CMsgBuildBridge* pMsg )
         if ( pHex->IsWater( ) )
             iLen++;
 
-        if ( ( iLen > MAX_SPAN ) || ( pHex->GetUnits( ) & ( CHex::bldg | CHex::bridge ) ) )
+        if ( ( iLen > iMaxSpan ) || ( pHex->GetUnits( ) & ( CHex::bldg | CHex::bridge ) ) )
         {
-            ASSERT( iLen <= MAX_SPAN );
+            ASSERT( iLen <= iMaxSpan );
         EndIt:
             pMsg->ToErr( );
             theGame.PostToClient( pMsg->m_iPlyrNum, pMsg, sizeof( *pMsg ) );
@@ -3124,7 +3174,10 @@ void CGame::ProcessMessage(CNetCmd* pCmd )
     }
 
     case CNetCmd::ipc_msg:
-        theApp.m_wndChat.IncomingMessage( (CMsgIPC*)pCmd );
+        // Email/chat over the network. The old CWndComm::IncomingMessage was a
+        // stub (no-op) — route to the SDL2 mail subsystem instead so email
+        // actually lands in the inbox. (Modern chat uses CNetChat above.)
+        SDL2Mail_HandleIncoming( (CMsgIPC*)pCmd );
         break;
 
     case CNetCmd::attack:

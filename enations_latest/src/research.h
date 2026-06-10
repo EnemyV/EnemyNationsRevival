@@ -120,6 +120,15 @@ public:
 					acc_1,
 					acc_2,
 					acc_3,
+					// In-code topics (not in the DAT file) — appended by CRsrchArray::Open
+					// after the RSRH load. Each bridge tier doubles the points cost of the
+					// previous and extends the max bridge span by +25% of the base span
+					// (see CPlayer::GetMaxSpan). MUST stay last: CAIGoalMgr serializes its
+					// RDPath blob at the legacy pre-tier count (see RDPATH_SAVE_COUNT).
+					bridge_2,
+					bridge_3,
+					bridge_4,
+					bridge_5,
 					num_types	};
 
 	CRsrchArray () {}

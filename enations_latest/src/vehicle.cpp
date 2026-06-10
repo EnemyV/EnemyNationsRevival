@@ -651,8 +651,9 @@ void CVehicle::BuildRoad() {
     }
 
     CHexCoord _hexEnd(_hexNext);
+    int const iMaxSpan = GetOwner()->GetMaxSpan();   // bridge research tier
     int iLen = 0;
-    while (iLen < MAX_SPAN) {
+    while (iLen < iMaxSpan) {
         _hexEnd.X() += x;
         _hexEnd.Y() += y;
         _hexEnd.Wrap();
@@ -660,13 +661,13 @@ void CVehicle::BuildRoad() {
         // if we run into a bridge or building we're done
         CHex *pHexTest = theMap._GetHex(_hexEnd);
         if (pHexTest->GetUnits() & (CHex::bridge || CHex::bldg)) {
-            iLen = MAX_SPAN;
+            iLen = iMaxSpan;
             break;
         }
 
         if (pHexTest->IsWater()) {
             iLen++;
-            if (iLen > MAX_SPAN)
+            if (iLen > iMaxSpan)
                 break;
         } else {
             iLen = 0;
@@ -676,7 +677,7 @@ void CVehicle::BuildRoad() {
     }
 
     // if we failed - end it
-    if (iLen >= MAX_SPAN) {
+    if (iLen >= iMaxSpan) {
         if (GetOwner()->IsMe())
             theGame.Event(EVENT_ROAD_HALTED, EVENT_WARN, this);
         else {

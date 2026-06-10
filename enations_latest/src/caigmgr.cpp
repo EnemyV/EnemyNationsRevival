@@ -25,6 +25,12 @@ extern CException*      pException;  // standard exception for yielding
 extern CAIData*         pGameData;   // pointer to game data interface
 extern CRITICAL_SECTION cs;          // used by threads
 
+// On-disk size of the m_iRDPath blob in Load/Save. Frozen at the legacy topic
+// count (num_types BEFORE the in-code Bridges 2-5 tiers were appended) so old
+// saves stay byte-aligned. Do NOT grow this when adding research topics.
+const int RDPATH_SAVE_COUNT = CRsrchArray::bridge_2;
+static_assert( RDPATH_SAVE_COUNT == 53, "RDPath save blob must stay at the legacy topic count" );
+
 // pre-determine economic oriented research path - not used anymore
 //
 /*
@@ -10271,7 +10277,11 @@ void CAIGoalMgr::Load( CArchive& ar, CAIMap* pMap, CAIUnitList* plUnits, CAIOpFo
         ar.Read( (void*)m_pwaBldgGoals, ( sizeof( WORD ) * m_iNumBldgs ) );
         ar.Read( (void*)m_pwaVehGoals, ( sizeof( WORD ) * m_iNumUnits ) );
         ar.Read( (void*)m_pwaMatGoals, ( sizeof( WORD ) * m_iNumMats ) );
-        ar.Read( (void*)m_iRDPath, ( sizeof( int ) * CRsrchArray::num_types ) );
+        // RDPath blob is frozen at the legacy topic count (pre Bridges 2-5) so old
+        // saves stay aligned; the in-code tiers are never part of an AI path anyway.
+        ar.Read( (void*)m_iRDPath, ( sizeof( int ) * RDPATH_SAVE_COUNT ) );
+        memset( m_iRDPath + RDPATH_SAVE_COUNT, 0,
+                sizeof( int ) * ( CRsrchArray::num_types - RDPATH_SAVE_COUNT ) );
     }
     catch ( CFileException* /*theException*/ )
     {
@@ -10370,7 +10380,7 @@ void CAIGoalMgr::Save( CArchive& ar )
         ar.Write( (const void*)m_pwaBldgGoals, ( sizeof( WORD ) * m_iNumBldgs ) );
         ar.Write( (const void*)m_pwaVehGoals, ( sizeof( WORD ) * m_iNumUnits ) );
         ar.Write( (const void*)m_pwaMatGoals, ( sizeof( WORD ) * m_iNumMats ) );
-        ar.Write( (const void*)m_iRDPath, ( sizeof( int ) * CRsrchArray::num_types ) );
+        ar.Write( (const void*)m_iRDPath, ( sizeof( int ) * RDPATH_SAVE_COUNT ) );  // frozen legacy count
     }
     catch ( CFileException* /*theException*/ )
     {

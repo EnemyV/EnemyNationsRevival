@@ -2981,6 +2981,9 @@ BOOL CAIMapUtil::IsBridgeSpan( CHexCoord& hexRiverRoad, CAIUnit* pUnit )
     //
     hexBridge = hexRiverRoad;
     int iSpan = 2;
+    // AI planning keeps the base MAX_SPAN: the AI research paths never pick the
+    // Bridges 2-5 tiers, and planning shorter than a player's researched max is
+    // always safe (the server validates with the owner's real tier).
     while ( iSpan <= MAX_SPAN )
     {
         switch ( iDir )

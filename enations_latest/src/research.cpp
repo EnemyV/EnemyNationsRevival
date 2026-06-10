@@ -186,9 +186,9 @@ void CRsrchArray::Open( )
 
     pMmio->DescendChunk( 'N', 'U', 'M', 'I' );
     int iSize = pMmio->ReadShort( );
-    ASSERT( iSize + 1 == num_types );
+    ASSERT( iSize + 1 == bridge_2 );  // DAT topics end at acc_3; bridge_2..5 are in-code
     pMmio->AscendChunk( );
-    SetSize( iSize + 1 );
+    SetSize( num_types );
 
     // read in the per/item stuff
     // note - we make R&D level 0 discovered
@@ -237,6 +237,39 @@ void CRsrchArray::Open( )
     }
     pMmio->AscendList( );
     delete pMmio;
+
+    // In-code research topics: Bridges 2-5 (not in the DAT file). Each tier costs
+    // double the previous tier's points, requires the previous tier, and extends
+    // the max bridge span by +25% of the base span (see CPlayer::GetMaxSpan).
+    {
+        static char const* aszName[4] = { "Bridges 2", "Bridges 3", "Bridges 4", "Bridges 5" };
+        static char const* aszDesc[4] = {
+            "Improved trusses let bridges span 25% more water than the original design.",
+            "Bridges can span 50% more water than the original design.",
+            "Bridges can span 75% more water than the original design.",
+            "Bridges can span twice as much water as the original design." };
+        static char const* aszRslt[4] = {
+            "Our engineers can now build bridges 25% longer.",
+            "Our engineers can now build bridges 50% longer.",
+            "Our engineers can now build bridges 75% longer.",
+            "Our engineers can now build bridges twice as long." };
+
+        int iPts = ElementAt( bridge ).m_iPtsRequired;
+        for ( int iOn = 0; iOn < 4; iOn++ )
+        {
+            CRsrchItem* pRi = &ElementAt( bridge_2 + iOn );
+
+            iPts *= 2;
+            pRi->m_iPtsRequired       = iPts;
+            pRi->m_iScenarioReq       = ElementAt( bridge ).m_iScenarioReq;
+            pRi->m_iNumRsrchRequired  = 1;
+            pRi->m_piRsrchRequired    = new int[1];
+            pRi->m_piRsrchRequired[0] = ( 0 == iOn ) ? (int)bridge : (int)( bridge_2 + iOn - 1 );
+            pRi->m_sName              = aszName[iOn];
+            pRi->m_sDesc              = aszDesc[iOn];
+            pRi->m_sResult            = aszRslt[iOn];
+        }
+    }
 
 #ifdef _DEBUG
     theDataFile.DisableNegativeSeekChecking( );

@@ -55,7 +55,10 @@ const int MAX_DEF_MULT = 12;  // maximum terrain defense multiplier
 
 const int GAS_PER_ROAD = 5;  // amount of gas used to build 1 road tile
 
-const int MAX_SPAN  = 7;  // max span of a bridge including end pieces
+const int MAX_SPAN = 7;  // base max span of a bridge including end pieces — extended
+                         // +25% of this per Bridges 2-5 tier (CPlayer::GetMaxSpan)
+const int MAX_SPAN_ULT = ( MAX_SPAN * 200 ) / 100;  // = 14: span with all 4 tiers (+100%);
+                                                    // use for buffer sizing / loop bounds
 const int MAX_WATER = 5;  // maximum water it can span
 
 const int NUM_SPEEDS    = 17;
