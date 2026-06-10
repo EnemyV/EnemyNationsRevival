@@ -5,6 +5,7 @@
 class CVehicleBuilding;
 class CTransportData;
 class CBuildUnit;
+class CStatData;
 
 // Native SDL2 replacement for CDlgBuildTransport.
 // Opened when double-clicking a vehicle factory or shipyard.
@@ -17,6 +18,7 @@ public:
 protected:
     void OnInit() override;
     void OnCancel() override;
+    void OnFrame() override;   // live: advance the construction-progress strip + title
 
 private:
     void SelectVehicle(int idx);
@@ -24,6 +26,12 @@ private:
     void UpdateDescription();
     void RefreshQty();
     void OnQtyEdited(const std::string& text);
+    // Rebuild the construction-progress strip (the black box left of the quantity):
+    // replays the original CStatInst::DrawStatDone — ICON_BUILD_VEH icons filled
+    // left-to-right proportional to the build %.
+    void RebuildProgress(int per);
+    // Build a small blue up/down arrow glyph surface for the quantity spinner.
+    static SDL_Surface* MakeArrow(int w, int h, bool up);
 
     CVehicleBuilding* m_pBldg;
 
@@ -53,7 +61,13 @@ private:
     SDL2Label* m_lblNeedCol    = nullptr;   // deficit values (right-aligned, red if neg)
 
     SDL2Button*  m_btnBuild = nullptr;
-    SDL2EditBox* m_edtNum   = nullptr;   // editable quantity field (+/- also adjust it)
+    SDL2EditBox* m_edtNum   = nullptr;   // editable quantity field (spinner also adjusts it)
+
+    // --- Construction-progress strip (CStatInst parity) --------------------
+    CStatData*   m_pStatData  = nullptr; // ICON_BUILD_VEH stat metadata (icon dims/offsets)
+    SDL_Surface* m_iconStrip  = nullptr; // the build-vehicle icon bitmap (magenta-keyed)
+    SDL2Image*   m_imgProgress = nullptr;// the strip widget at rectTranStat (134,292,119,26)
+    int          m_lastPer    = -1;      // last % rendered (rebuild only when it changes)
 
     // Art (from theBitmaps — matches CDlgBuildTransport OnPaint / OnInitDialog)
     SDL_Surface* m_vehBkgnd     = nullptr;  // DIB_VEHICLE_BKGND — purple metallic bg

@@ -9,6 +9,7 @@
 #include "building.inl"
 #include "vehicle.inl"
 #include "bitmaps.h"
+#include "icons.h"      // CStatData / CIcons / theIcons — construction-progress strip
 #include "netcmd.h"
 
 // ============================================================================
@@ -49,6 +50,8 @@ SDL2BuildTransport::~SDL2BuildTransport() {
     if (m_okBtnSheet)   SDL_FreeSurface(m_okBtnSheet);
     if (m_vehBtnSheet)  SDL_FreeSurface(m_vehBtnSheet);
     if (m_vehIconSheet) SDL_FreeSurface(m_vehIconSheet);
+    if (m_iconStrip)    SDL_FreeSurface(m_iconStrip);
+    // m_imgProgress' surface is owned by the SDL2Image (takeOwnership=true).
 }
 
 void SDL2BuildTransport::OnInit() {
@@ -179,31 +182,131 @@ void SDL2BuildTransport::OnInit() {
     if (m_okBtnSheet) btnCancel->SetBtnSheet(m_okBtnSheet);
 
     // --- Quantity control --------------------------------------------------
-    // MFC had an editable number field + spinner spanning x=282..322 at y=295.
-    // We restore the typeable field (SDL2EditBox) and flank it with square -/+
-    // buttons, so you can either type a count or step it.
-    //   "-"  (258..280)  |  edit (282..322)  |  "+"  (324..346)
-    // Edit field at the MFC coords (282,295,40,22). The "-"/"+" steppers flank
-    // it; the 2px gaps keep the trio visually centered on that field.
-    const int qy = oy + 295, qBtn = 22, qEditW = 40;
+    // MFC: editable number field (282,295,40,22) + a vertical up/down spinner
+    // (msctls_updown32, 307,295,15,22) sitting on its right edge. We restore the
+    // typeable field at the original coords and put a 15px vertical up/down
+    // spinner immediately to its right (two stacked blue-arrow buttons).
+    const int qy = oy + 295, qH = 22, qEditW = 40;
     const int qEditX = ox + 282;
-    m_edtNum = AddWidget<SDL2EditBox>(qEditX, qy, qEditW, qBtn,
+    m_edtNum = AddWidget<SDL2EditBox>(qEditX, qy, qEditW, qH,
         std::to_string(m_buildNum),
         [this](const std::string& s) { OnQtyEdited(s); });
     // Black field with white text — fits the dark vehicle-build chrome far
     // better than the stock white box (the MFC original was a plain CEdit).
     m_edtNum->SetColors({ 0, 0, 0, 255 }, { 255, 255, 255, 255 });
 
-    AddWidget<SDL2Button>(qEditX - 2 - qBtn, qy, qBtn, qBtn, "-",
-        [this]() {
-            if (m_buildNum > 1) { m_buildNum--; RefreshQty(); }
-        });
-    AddWidget<SDL2Button>(qEditX + qEditW + 2, qy, qBtn, qBtn, "+",
+    // Vertical spinner to the right of the field: up arrow (top half) increments,
+    // down arrow (bottom half) decrements — the original IDC_BUILD_SPIN behaviour.
+    const int spX = qEditX + qEditW + 2, spW = 15, spH = qH / 2;
+    auto* btnUp = AddWidget<SDL2Button>(spX, qy, spW, spH, "",
         [this]() { m_buildNum++; RefreshQty(); });
+    auto* btnDn = AddWidget<SDL2Button>(spX, qy + spH, spW, spH, "",
+        [this]() { if (m_buildNum > 1) { m_buildNum--; RefreshQty(); } });
+    if (SDL_Surface* up = MakeArrow(spW, spH, true))
+        btnUp->SetIcon(up, { 0, 0, up->w, up->h });
+    if (SDL_Surface* dn = MakeArrow(spW, spH, false))
+        btnDn->SetIcon(dn, { 0, 0, dn->w, dn->h });
+
+    // --- Construction-progress strip ("black box" left of the quantity) -----
+    // MFC: m_statInst (CStatInst) at rectTranStat (134,292,253,318) drawing
+    // ICON_BUILD_VEH icons filled to GetBuildPer(). Load the icon metadata + its
+    // bitmap once; OnFrame advances the fill live.
+    m_pStatData = theIcons.GetByIndex(ICON_BUILD_VEH);
+    if (m_pStatData && m_pStatData->m_pcDib)
+        m_iconStrip = SDL2MainMenu::CreateSurfaceFromDIB(m_pStatData->m_pcDib);
+    m_imgProgress = AddWidget<SDL2Image>(ox + 134, oy + 292, 119, 26);
+    RebuildProgress(__max(0, m_pBldg->GetBuildPer()));
 
     // Auto-select first vehicle if available
     if (m_numVehs > 0)
         SelectVehicle(0);
+}
+
+// Replays CStatInst::DrawStatDone (icons.cpp): a row of ICON_BUILD_VEH icons,
+// vertically centred in the box, drawn left-to-right up to `per` percent. The
+// black box behind comes from the dialog's background art; we paint icons over
+// a transparent overlay so the recessed box still shows through where empty.
+void SDL2BuildTransport::RebuildProgress(int per) {
+    if (!m_imgProgress) return;
+    if (per < 0)   per = 0;
+    if (per > 100) per = 100;
+
+    const int boxW = 119, boxH = 26;
+    SDL_Surface* surf = SDL_CreateRGBSurfaceWithFormat(0, boxW, boxH, 32, SDL_PIXELFORMAT_RGBA32);
+    if (!surf) return;
+    SDL_FillRect(surf, nullptr, SDL_MapRGBA(surf->format, 0, 0, 0, 0));   // transparent
+
+    if (m_iconStrip && m_pStatData && m_pStatData->m_cxIcon > 0) {
+        const int cxIcon = m_pStatData->m_cxIcon;
+        const int cyIcon = m_pStatData->m_cyIcon;
+        // 0-based geometry, mirroring DrawStatDone exactly.
+        int top  = (boxH - cyIcon) / 2;
+        int left = m_pStatData->m_leftOff;
+        int right = boxW - m_pStatData->m_rightOff;
+        int iEnd = right;
+        if (per < 100)                       // last icon only lands at 100%
+            iEnd -= cxIcon / 2;
+        int iRight = ((right - left) * per) / 100;
+        if (per > 0)                         // at least 1px when non-zero
+            iRight = __max(left + 1, iRight);
+
+        SDL_SetSurfaceBlendMode(m_iconStrip, SDL_BLENDMODE_BLEND);
+        SDL_Rect src = { 0, 0, cxIcon, cyIcon };   // m_iBaseOn==0 (SetPerBase never called)
+        int x = left;
+        for (; x < iRight; x += cxIcon / 2) {
+            if (x + cxIcon > iEnd)
+                break;
+            SDL_Rect dst = { x, top, cxIcon, cyIcon };
+            SDL_BlitSurface(m_iconStrip, &src, surf, &dst);
+        }
+    }
+
+    m_imgProgress->SetSurface(surf, true);   // image takes ownership
+}
+
+void SDL2BuildTransport::OnFrame() {
+    // Poll the building's live build %; advance the strip + title only on change.
+    int per = __max(0, m_pBldg->GetBuildPer());
+    if (per == m_lastPer)
+        return;
+    m_lastPer = per;
+    RebuildProgress(per);
+
+    // Title: "Building <vehicle>..." while constructing, else the plain caption.
+    if (per != 0) {
+        CBuildUnit const* pBu = m_pBldg->GetBldUnt();
+        const char* pDesc = pBu ? theTransports.GetData(pBu->GetVehType())->GetDesc().c_str() : "";
+        m_title = strPrintf(EnLoadStdString(IDS_BUILD_UNIT).c_str(), pDesc);
+    } else {
+        m_title = EnLoadStdString(IDS_BUILD_VEHICLE);
+    }
+}
+
+// A small filled triangle (blue) on a transparent RGBA surface — up or down.
+SDL_Surface* SDL2BuildTransport::MakeArrow(int w, int h, bool up) {
+    SDL_Surface* s = SDL_CreateRGBSurfaceWithFormat(0, w, h, 32, SDL_PIXELFORMAT_RGBA32);
+    if (!s) return nullptr;
+    SDL_FillRect(s, nullptr, SDL_MapRGBA(s->format, 0, 0, 0, 0));
+    SDL_LockSurface(s);
+    Uint32* px = (Uint32*)s->pixels;
+    int pitch = s->pitch / 4;
+    const Uint32 blue = SDL_MapRGBA(s->format, 64, 132, 255, 255);
+    // 2px vertical padding so the glyph doesn't touch the button bevel.
+    int pad = 2, gh = h - 2 * pad;
+    if (gh < 1) gh = 1;
+    for (int row = 0; row < gh; row++) {
+        // up: widen toward the bottom; down: widen toward the top.
+        float t = up ? (float)row / (gh - 1 > 0 ? gh - 1 : 1)
+                     : 1.0f - (float)row / (gh - 1 > 0 ? gh - 1 : 1);
+        int half = (int)((w / 2) * t + 0.5f);
+        int cx = w / 2;
+        int y = pad + row;
+        for (int x = cx - half; x <= cx + half; x++)
+            if (x >= 0 && x < w && y >= 0 && y < h)
+                px[y * pitch + x] = blue;
+    }
+    SDL_UnlockSurface(s);
+    return s;
 }
 
 void SDL2BuildTransport::RefreshQty() {
