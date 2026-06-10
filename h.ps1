@@ -215,20 +215,28 @@ switch ($cmd) {
   }
 
   'load' {
-    # Menu -> Load Save7-Player -> pick player -> in-game. Every click step RETRIES until the UI
+    # Menu -> Load <save> -> pick player -> in-game. Every click step RETRIES until the UI
     # actually advances, because the first click(s) on a freshly-shown SDL dialog are eaten by
     # window activation (the long-standing flakiness). Coords from SDL2Dialogs.cpp.
+    #   h.ps1 load                 -> Save7-Player (default)
+    #   h.ps1 load Save13-Player   -> any save: TYPED into the Filename field (no row hunting)
+    $save = if($a1){$a1}else{'Save7-Player'}
+    if ($save -notmatch '\.en$') { $save += '.en' }
     $n=0; while(-not (_has 'Game View') -and $n -lt 40){ Start-Sleep 2; $n++ }
     Start-Sleep 5
     # 1) open the Load dialog (retry the menu button)
     $ok = _clickUntil 'main' 1800 95 { _has 'Load Game' } 6 1500
     if (-not $ok) { 'FAIL: Load dialog never opened'; break }
     Start-Sleep 2
-    # 2a) select Save7-Player (row 3 @ 110,132) + Open (186,378) until the Load dialog CLOSES
-    #     (= Open registered). Don't gate on Pick Player here -- loading the save then takes time.
+    # 2a) type the filename (field at y=345; clear leftovers first) + Open (135,377) until
+    #     the Load dialog CLOSES (= Open registered). Typing beats row-clicking: row position
+    #     depends on the directory listing, the filename field doesn't.
     for ($i=0; $i -lt 8 -and (_has 'Load Game'); $i++) {
-        _click 'Load Game' 110 132; Start-Sleep -Milliseconds 500
-        _click 'Load Game' 186 378; Start-Sleep -Milliseconds 1000
+        _click 'Load Game' 200 345; Start-Sleep -Milliseconds 300
+        & "$SC\keys.ps1" -Window 'Load Game' -Key Backspace -Times 40 -DelayMs 10 2>&1 | Out-Null
+        & "$SC\keys.ps1" -Window 'Load Game' -Text $save -DelayMs 15 2>&1 | Out-Null
+        Start-Sleep -Milliseconds 300
+        _click 'Load Game' 135 377; Start-Sleep -Milliseconds 1200
     }
     # 2b) now wait (generously) for the save to load -> Pick Player dialog
     $n=0; while(-not (_has 'Pick Your Player') -and (_running) -and $n -lt 40){ Start-Sleep 2; $n++ }

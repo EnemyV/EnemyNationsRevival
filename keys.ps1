@@ -123,12 +123,11 @@ function Send-NamedKey {
 
 function Send-TextChar {
     param([IntPtr]$Hwnd, [char]$Ch, [int]$DelayMs)
-    $upper = [char]::ToUpper($Ch)
-    $vk = [IntPtr][int]$upper
-    [void][GameWin32]::PostMessage($Hwnd, $WM_KEYDOWN, $vk, [IntPtr]0)
+    # WM_CHAR ONLY: SDL turns WM_CHAR into SDL_TEXTINPUT and WM_KEYDOWN into SDL_KEYDOWN,
+    # and the SDL2 text fields insert on BOTH — sending the pair double-typed every char
+    # ("rel1.en" arrived as "rrerelel111.1eenenn").
     [void][GameWin32]::PostMessage($Hwnd, $WM_CHAR, [IntPtr][int]$Ch, [IntPtr]0)
     Start-Sleep -Milliseconds $DelayMs
-    [void][GameWin32]::PostMessage($Hwnd, $WM_KEYUP, $vk, [IntPtr]0)
 }
 
 # Hold/release modifier keys (Ctrl/Shift/Alt) around the keystroke so combos like
