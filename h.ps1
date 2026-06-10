@@ -17,9 +17,9 @@
 #   h.ps1 fresh                   read-only: is the exe newer than SDL2Terrain.cpp (did it compile)?
 #   h.ps1 windows                 list game windows
 #   h.ps1 perf                    print key terrain rebuild counters from perf.log
-#   h.ps1 pan <left|right|up|down> [n]   scroll the Area Map (arrow keys; keyboard is focus-routed = flaky bg)
+#   h.ps1 pan <left|right|up|down> [n]   scroll the Area Map a quarter-screen per press (arrow keys)
 #   h.ps1 click <x> <y> [role]    mouse-click client px on a window (default map)
-#   h.ps1 rotate [cw|ccw]         rotate the view ('.' / ','; keyboard = flaky bg)
+#   h.ps1 rotate [cw|ccw] [n]     rotate the view ('.'=CW / ','=CCW in-game hotkeys, n times)
 #   h.ps1 newgame [race]          menu -> Create -> OK -> pick race -> OK -> wait Area Map
 #   h.ps1 waitmap [secs]          block until the Area Map (in-game) appears
 
@@ -101,8 +101,10 @@ switch ($cmd) {
     # Force a fresh full warm rebuild: zoom IN to z0 then OUT to z3, then report the recent
     # full-z3 rebuilds (zoomreplay=0). Reads the tail so it's fast on the multi-MB perf.log.
     if (-not (_has 'Area Map')) { 'NOT IN-GAME (run: h.ps1 load)'; break }
-    & "$SC\zoom.ps1" -In  4 -Window map -DelayMs 900  2>&1 | Out-Null; Start-Sleep 2
-    & "$SC\zoom.ps1" -Out 4 -Window map -DelayMs 1300 2>&1 | Out-Null; Start-Sleep 3
+    # Generous notch spacing: under heavy AI load a rebuild can outlast the gap and the next wheel
+    # notch is dropped, so the view never reaches max zoom-out. Over-zoom (6 notches) + long settle.
+    & "$SC\zoom.ps1" -In  6 -Window map -DelayMs 1500 2>&1 | Out-Null; Start-Sleep 3
+    & "$SC\zoom.ps1" -Out 6 -Window map -DelayMs 2500 2>&1 | Out-Null; Start-Sleep 4
     $p = "$WD\perf.log"
     if (-not (Test-Path $p)) { 'no perf.log'; break }
     $lines = Get-Content $p -Tail 400 | Where-Object { $_ -match 'rebuild\.zoomreplay=0' -and $_ -match 'rb\.hexes=[1-9]' } | Select-Object -Last 6
@@ -118,10 +120,12 @@ switch ($cmd) {
   }
 
   'rotate' {
-    # rotate the view by typing '.' / ',' to the map. NOTE: keyboard events route to SDL's
-    # FOCUS window, which the OS denies a background app -> unreliable unless the game is foreground.
-    $t = if($a1 -eq 'ccw' -or $a1 -eq ','){ ',' } else { '.' }
-    & "$SC\keys.ps1" -Window map -Text $t 2>&1 | Select-Object -Last 1
+    # View rotate: '.' = CW, ',' = CCW (keys.ps1 injects the scancode so these OEM hotkeys
+    # resolve in-game).  h.ps1 rotate [cw|ccw] [n]
+    $k = if($a1 -eq 'ccw'){ ',' } else { '.' }
+    $n = if($a2){[int]$a2}else{1}
+    for($i=0;$i -lt $n;$i++){ & "$SC\keys.ps1" -Window map -Key $k 2>&1 | Out-Null; Start-Sleep -Milliseconds 300 }
+    "rotated $k x$n"
   }
 
   'click' {
