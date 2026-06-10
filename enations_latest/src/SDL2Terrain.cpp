@@ -103,23 +103,27 @@ void g_enEditHex( int x, int y )
     }
 }
 
-// Persistent terrain TILE memo: TileForHex(hex,dir) result per map hex, keyed by hex coord and
-// sized to the whole map. TileForHex depends only on hex content + camera dir (NOT zoom/pan), so
-// the memo PERSISTS across zoom/pan rebuilds — a zoom-out re-hits cached tiles instead of
-// recomputing ~48k (the largest single zoom-out cost). File scope so BOTH the full rebuild and the
-// fast edit-patch can invalidate it. Whole-memo invalidation = rotate/load; per-hex = terrain edit.
-static std::vector<const SDL2Terrain::Tile*> s_tileCache;
-static std::vector<uint32_t>                 s_tileGen;
-static uint32_t                              s_tileGenCur  = 0;
+// Persistent terrain TILE memo: TileForHex(hex,dir) result per map hex, PER CAMERA DIRECTION
+// (4 slices). TileForHex depends only on hex content + camera dir (NOT zoom/pan), so each slice
+// PERSISTS across zoom/pan rebuilds — a zoom-out re-hits cached tiles instead of recomputing ~48k
+// (the largest single zoom-out cost) — and ROTATE just switches slices instead of wiping (each
+// direction stays warm once visited; ~8MB total on a 512x512 map). File scope so BOTH the full
+// rebuild and the fast edit-patch can invalidate it. Whole-memo invalidation = load/overflow;
+// per-hex in ALL 4 slices = terrain edit.
+static std::vector<const SDL2Terrain::Tile*> s_tileCache;     // eX*eY*4
+static std::vector<uint32_t>                 s_tileGen;       // eX*eY*4
+static uint32_t                              s_tileGenCur[4] = { 0, 0, 0, 0 };
 static int                                   s_tileCacheEX = 0, s_tileCacheEY = 0;
-static inline void TileMemoInvalidate( int x, int y )   // drop hex (x,y) + its 8 neighbours
+static inline void TileMemoInvalidate( int x, int y )   // drop hex (x,y) + its 8 neighbours, all 4 dirs
 {
     if ( s_tileGen.empty( ) ) return;
+    const size_t plane = (size_t)s_tileCacheEX * s_tileCacheEY;
     for ( int dy = -1; dy <= 1; ++dy )
       for ( int dx = -1; dx <= 1; ++dx )
       { int nx = x + dx, ny = y + dy;
         if ( (unsigned)nx < (unsigned)s_tileCacheEX && (unsigned)ny < (unsigned)s_tileCacheEY )
-            s_tileGen[ (size_t)ny * s_tileCacheEX + nx ] = 0u; }   // 0 != s_tileGenCur(>=1) → recompute
+            for ( int d = 0; d < 4; ++d )
+                s_tileGen[ plane * d + (size_t)ny * s_tileCacheEX + nx ] = 0u; }   // 0 != gen(>=1) → recompute
 }
 
 // Shared static index buffer for QUAD batches (4 verts/quad -> 2 tris). Emitting 4 unique corner
@@ -163,6 +167,18 @@ static bool TerrainPatchEnabled( )
     // edit forces a whole-map rebuild → ~0.5fps zoomed out. Set EN_TPATCH=0 to disable.
     static int s_on = -1;
     if ( s_on < 0 ) { const char* e = SDL_getenv( "EN_TPATCH" ); s_on = ( e && *e && *e == '0' ) ? 0 : 1; }
+    return s_on != 0;
+}
+
+// GESTURE PREVIEW + DEFERRED REBUILD (EN_PREVIEW, default ON). A zoom/rotate no longer
+// rebuilds the mesh synchronously on the frame it happens: the existing composite is presented
+// SCALED to the new zoom (instant response), and the real rebuild runs once the gesture has
+// settled (no view change for kSettleMs). Rapid multi-notch gestures thus COALESCE into one
+// rebuild instead of one per notch. Set EN_PREVIEW=0 to restore synchronous rebuilds.
+static bool TerrainPreviewEnabled( )
+{
+    static int s_on = -1;
+    if ( s_on < 0 ) { const char* e = SDL_getenv( "EN_PREVIEW" ); s_on = ( e && *e && *e == '0' ) ? 0 : 1; }
     return s_on != 0;
 }
 
@@ -964,8 +980,31 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
         s_renderRenderer = r;
     }
 
+    // --- GESTURE DEFER (EN_PREVIEW): when the view KEY changed (zoom/rotate — not edits, not
+    // load), don't rebuild this frame. Present the existing composite scaled to the new view
+    // (below) and wait for the gesture to SETTLE (kSettleMs since the last view change), so a
+    // rapid 4-notch zoom does ONE rebuild at the destination instead of four along the way.
+    // The texture-recreate block below is gated off during the defer — the old-size textures
+    // ARE the preview source; the settle frame recreates + rebuilds as usual.
+    static int      s_builtZoom = -1, s_builtDir = -1, s_builtMargin = 0;  // view the textures were built at
+    static unsigned s_builtLoadGen = ~0u;
+    static DWORD    s_viewChangedAt = 0;     // last time the view key changed (gesture clock)
+    static uint64_t s_lastViewSig = ~0ull;
+    static bool     s_deferActive = false;
+    const  DWORD    kSettleMs = 120;
+    {
+        uint64_t curNoEdit = sig   ^ ( (uint64_t)g_enTerrainEditGen << 40 );
+        uint64_t bltNoEdit = s_sig ^ ( (uint64_t)s_builtEditGen     << 40 );
+        bool viewKeyChanged = ( s_sig != ~0ull ) && ( curNoEdit != bltNoEdit );
+        if ( viewKeyChanged && s_lastViewSig != curNoEdit ) { s_viewChangedAt = _nowT; s_lastViewSig = curNoEdit; }
+        s_deferActive = TerrainPreviewEnabled( ) && viewKeyChanged && s_rt != nullptr
+                        && s_builtZoom >= 0 && s_builtLoadGen == s_loadGen
+                        && ( _nowT - s_viewChangedAt ) < kSettleMs;
+        if ( s_deferActive ) Perf::CounterAdd( "pv.defer", 1 );
+    }
+
     // (Re)create the textures when the viewport size (hence rtW/rtH) changes.
-    if ( s_rt && ( s_rtW != rtW || s_rtH != rtH ) )
+    if ( !s_deferActive && s_rt && ( s_rtW != rtW || s_rtH != rtH ) )
     {
         SDL_DestroyTexture( s_rt ); s_rt = nullptr;
         if ( s_fogRT )    { SDL_DestroyTexture( s_fogRT );    s_fogRT = nullptr; }
@@ -983,8 +1022,11 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
         if ( s_waterRT ) { SDL_SetTextureBlendMode( s_waterRT, SDL_BLENDMODE_BLEND ); s_waterRTtick = ~0u; }
         s_shadeRT = SDL_CreateTexture( r, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET, rtW, rtH );
         s_shadeHalf = SDL_CreateTexture( r, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET, rtW / 2, rtH / 2 );
-        if ( s_rt )    { SDL_SetTextureBlendMode( s_rt, SDL_BLENDMODE_BLEND ); s_rtW = rtW; s_rtH = rtH; }
-        if ( s_fogRT ) SDL_SetTextureBlendMode( s_fogRT, SDL_BLENDMODE_BLEND );
+        if ( s_rt )    { SDL_SetTextureBlendMode( s_rt, SDL_BLENDMODE_BLEND ); s_rtW = rtW; s_rtH = rtH;
+                         SDL_SetTextureScaleMode( s_rt, SDL_ScaleModeLinear ); }       // smooth gesture-preview scaling (no-op at 1:1)
+        if ( s_fogRT ) { SDL_SetTextureBlendMode( s_fogRT, SDL_BLENDMODE_BLEND );
+                         SDL_SetTextureScaleMode( s_fogRT, SDL_ScaleModeLinear ); }
+        if ( s_waterRT ) SDL_SetTextureScaleMode( s_waterRT, SDL_ScaleModeLinear );
         // s_shadeRT blend is NONE here so the blur copies overwrite cleanly; it's
         // flipped to MOD only for the final composite blit over the terrain.
         if ( s_shadeRT )   { SDL_SetTextureBlendMode( s_shadeRT, SDL_BLENDMODE_NONE ); SDL_SetTextureScaleMode( s_shadeRT, SDL_ScaleModeLinear ); }
@@ -1030,7 +1072,9 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
     bool editsOK   = editsPend && editCount > 0 && editCount <= kEditPatchCap
                      && ( genSnap - s_builtEditGen ) == (unsigned)editCount;
     const bool doPatch     = TerrainPatchEnabled( ) && baseSame && editsOK;
-    const bool needRebuild = !baseSame || ( editsPend && !doPatch );
+    // The gesture defer vetoes the rebuild: this frame presents the scaled preview instead.
+    // The settle frame re-evaluates with s_deferActive false and rebuilds normally.
+    const bool needRebuild = ( !baseSame || ( editsPend && !doPatch ) ) && !s_deferActive;
     if ( needRebuild )
         Perf::CounterAdd( !baseSame ? "reb.base" : "reb.editmiss", 1 );
     // DIAGNOSE reb.base: split into signature-change vs pan-not-covered, and when the
@@ -1326,6 +1370,9 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
     // mesh rebuild EVERY frame (0.5fps). A centre hex always projects inside the window.
     s_refHex = aa._WindowToHex( CPoint( ws.cx / 2, ws.cy / 2 ) );
     { CPoint rp[4]; if ( aa.MapToWindowHex( s_refHex, rp ) ) s_refPx = rp[0]; else s_refPx = CPoint( 0, 0 ); }
+    // Record the view these textures are being built at — the gesture preview uses this to
+    // scale-place the old composite when the live view's zoom departs from the built zoom.
+    s_builtZoom = zoom; s_builtDir = ( aa.m_iDir & 3 ); s_builtMargin = kMarginPx; s_builtLoadGen = s_loadGen;
 
     // Redirect rendering into the texture (save/restore target + viewport).
     SDL_Texture* prevTarget = SDL_GetRenderTarget( r );
@@ -1390,21 +1437,22 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
     // Flat array keyed by map-hex coord (same indexing as the fog precompute below) with a
     // generation stamp so there's no per-rebuild clear. Computes each hex's tile exactly once.
     const int eXc = theMap.Get_eX( ), eYc = theMap.Get_eY( );
-    static int      s_tileMemoDir     = -999;        // camera dir the memo was built under
-    static unsigned s_tileMemoLoadGen = 0xFFFFFFFFu; // s_loadGen "
-    if ( (int)s_tileCache.size( ) != eXc * eYc )
-    { s_tileCache.assign( (size_t)eXc * eYc, nullptr ); s_tileGen.assign( (size_t)eXc * eYc, 0u );
-      s_tileGenCur = 0; s_tileMemoDir = -999; s_tileCacheEX = eXc; s_tileCacheEY = eYc; }
+    static unsigned s_tileMemoLoadGen = 0xFFFFFFFFu; // s_loadGen the memo was built under
+    if ( (int)s_tileCache.size( ) != eXc * eYc * 4 )
+    { s_tileCache.assign( (size_t)eXc * eYc * 4, nullptr ); s_tileGen.assign( (size_t)eXc * eYc * 4, 0u );
+      for ( int d = 0; d < 4; ++d ) s_tileGenCur[d] = 0;
+      s_tileCacheEX = eXc; s_tileCacheEY = eYc; }
     const int tcDir = aa.m_iDir;
-    // TileForHex(hex,dir) is INDEPENDENT of zoom and pan — so the whole-map memo can PERSIST
-    // across zoom-only / pan-only rebuilds (the common case), turning ~48k per-hex TileForHex
-    // calls into O(1) array hits. This is the single largest zoom-out cost (rb.tile ~1.1s @ z3).
-    // A camera DIRECTION change or fresh map LOAD invalidates the whole memo; individual terrain
-    // EDITS invalidate only the edited hexes + neighbours (below), so the rest stays cached.
-    if ( s_tileMemoDir != tcDir || s_tileMemoLoadGen != s_loadGen || s_memoEditOverflow )
+    // TileForHex(hex,dir) is INDEPENDENT of zoom and pan — and the memo keeps a slice PER CAMERA
+    // DIRECTION — so zoom/pan/rotate all hit warm caches (rotate just switches slices). Only a
+    // fresh map LOAD (or edit-list overflow) wipes; individual terrain EDITS invalidate just the
+    // edited hexes + neighbours in all 4 slices (below), so the rest stays cached.
+    if ( s_tileMemoLoadGen != s_loadGen || s_memoEditOverflow )
     {
-        if ( ++s_tileGenCur == 0 ) { std::fill( s_tileGen.begin( ), s_tileGen.end( ), 0u ); s_tileGenCur = 1; }
-        s_tileMemoDir = tcDir; s_tileMemoLoadGen = s_loadGen;
+        for ( int d = 0; d < 4; ++d )
+            if ( ++s_tileGenCur[d] == 0 ) { std::fill( s_tileGen.begin( ), s_tileGen.end( ), 0u );
+                                            for ( int j = 0; j < 4; ++j ) s_tileGenCur[j] = 1; break; }
+        s_tileMemoLoadGen = s_loadGen;
         s_memoEditQ.clear( ); s_memoEditOverflow = false;       // full wipe supersedes pending per-hex edits
     }
     else if ( !s_memoEditQ.empty( ) )
@@ -1415,12 +1463,14 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
             TileMemoInvalidate( (int)( packed >> 16 ), (int)( packed & 0xFFFF ) );
         s_memoEditQ.clear( );
     }
+    const size_t   tcPlane = (size_t)eXc * eYc * ( tcDir & 3 );
+    const uint32_t tcGen   = s_tileGenCur[tcDir & 3];
     auto cachedTile = [&]( CHex* ph ) -> const Tile* {
         CHexCoord hc = ph->GetHex( );
-        size_t k = (size_t)hc.Y( ) * eXc + hc.X( );
-        if ( s_tileGen[k] == s_tileGenCur ) return s_tileCache[k];
+        size_t k = tcPlane + (size_t)hc.Y( ) * eXc + hc.X( );
+        if ( s_tileGen[k] == tcGen ) return s_tileCache[k];
         const Tile* t = TileForHex( ph, tcDir );
-        s_tileCache[k] = t; s_tileGen[k] = s_tileGenCur;
+        s_tileCache[k] = t; s_tileGen[k] = tcGen;
         return t;
     };
 
@@ -2381,6 +2431,34 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
     // then the blurred slope-shade (MOD = multiply), then fog (BLEND = dim). The
     // shade texture is flipped to MOD here (it stays NONE for its blur round-trip).
     SDL_Rect dst = { dX - kMarginPx, dY - kMarginPx, rtW, rtH };
+    // GESTURE PREVIEW: while a rebuild is deferred, place the old composite under the NEW view.
+    // Anchor = the built ref hex: every built-texture pixel t maps to window (t - tRef)*f + refNow,
+    // where f = 2^(builtZoom - zoom) and refNow is the anchor's projection in the current view.
+    // A rotate (dir change) can't be expressed as a scale — hold the previous placement instead
+    // (stale view for the settle window, then the single coalesced rebuild snaps it correct).
+    static int s_prevDstX = INT_MIN, s_prevDstY = INT_MIN;
+    SDL_FRect dstF = { 0, 0, 0, 0 }; bool fPreview = false;
+    if ( s_deferActive )
+    {
+        CPoint rp[4];
+        if ( s_builtDir == ( aa.m_iDir & 3 ) && aa.MapToWindowHex( s_refHex, rp ) )
+        {
+            float f = ldexpf( 1.0f, s_builtZoom - zoom );   // <1 zooming out, >1 zooming in
+            dstF.x = (float)rp[0].x - ( (float)s_refPx.x + (float)s_builtMargin ) * f;
+            dstF.y = (float)rp[0].y - ( (float)s_refPx.y + (float)s_builtMargin ) * f;
+            dstF.w = (float)s_rtW * f; dstF.h = (float)s_rtH * f;
+        }
+        else
+        {
+            dstF.x = (float)( s_prevDstX != INT_MIN ? s_prevDstX : dst.x );
+            dstF.y = (float)( s_prevDstY != INT_MIN ? s_prevDstY : dst.y );
+            dstF.w = (float)s_rtW; dstF.h = (float)s_rtH;
+        }
+        fPreview = true;
+        Perf::CounterAdd( "pv.frame", 1 );
+    }
+    if ( fPreview ) { dst.x = (int)dstF.x; dst.y = (int)dstF.y; }   // scroll signal below sees the live origin
+    s_prevDstX = dst.x; s_prevDstY = dst.y;
     // Tell the GPU sprite layer whether the view moved since last frame, so it forces a full
     // sprite re-emit and avoids screen-space ghosts in g_rt (fast vehicles leaving parts on
     // pan). Two complementary signals — neither alone covers all cases:
@@ -2414,14 +2492,17 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
             SDL_SetRenderDrawColor( r, 0, 0, 0, 0 );   // transparent: only water hexes get filled
             SDL_RenderClear( r );
             SDL_SetRenderDrawBlendMode( r, SDL_BLENDMODE_BLEND );
+            // Use the BUILT zoom's tile art: the cached water geometry is in built-texture space,
+            // and during a gesture defer the live `zoom` has already moved on.
+            const int wz = ( s_builtZoom >= 0 ) ? s_builtZoom : zoom;
             for ( size_t ai = 0; ai < s_waterDiamGeom.size( ); ++ai )   // opaque water diamonds
             {
                 std::vector<SDL_Vertex>& wv = s_waterDiamGeom[ai];
                 if ( wv.empty( ) ) continue;
                 const WaterAnim& wa = s_waterAnims[ai];
                 const Tile* wt = wa.nFrames > 0 ? wa.frame[ wbase % wa.nFrames ] : nullptr;
-                if ( !wt || !wt->tex[zoom] ) continue;
-                SDL_RenderGeometry( r, wt->tex[zoom], wv.data( ), (int)wv.size( ), nullptr, 0 );
+                if ( !wt || !wt->tex[wz] ) continue;
+                SDL_RenderGeometry( r, wt->tex[wz], wv.data( ), (int)wv.size( ), nullptr, 0 );
             }
             for ( size_t ai = 0; ai < s_waterBandGeom.size( ); ++ai )   // then water<->water blend bands
             {
@@ -2429,8 +2510,8 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
                 if ( wv.empty( ) ) continue;
                 const WaterAnim& wa = s_waterAnims[ai];
                 const Tile* nt = wa.nFrames > 0 ? wa.frame[ wbase % wa.nFrames ] : nullptr;
-                if ( !nt || !nt->tex[zoom] ) continue;
-                SDL_RenderGeometry( r, nt->tex[zoom], wv.data( ), (int)wv.size( ), nullptr, 0 );
+                if ( !nt || !nt->tex[wz] ) continue;
+                SDL_RenderGeometry( r, nt->tex[wz], wv.data( ), (int)wv.size( ), nullptr, 0 );
             }
             SDL_SetRenderTarget( r, pt );
             SDL_RenderSetViewport( r, &vp );
@@ -2439,13 +2520,32 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
     }
 
     { Perf::ScopeCounter _cc( "p.compose" );   // MEASURE: 4 full-screen RT blits
+    if ( fPreview )
+    {
+        // Transient gesture frame: black backdrop (the scaled texture may not cover the whole
+        // viewport when zooming out), then the same 4 layers scale-blitted into place.
+        SDL_SetRenderDrawBlendMode( r, SDL_BLENDMODE_NONE );
+        SDL_SetRenderDrawColor( r, 0, 0, 0, 255 );
+        SDL_RenderFillRect( r, nullptr );
+        SDL_SetRenderDrawBlendMode( r, SDL_BLENDMODE_BLEND );
+        if ( s_waterRT && !s_waterHex.empty( ) )
+            SDL_RenderCopyF( r, s_waterRT, nullptr, &dstF );
+        SDL_RenderCopyF( r, s_rt, nullptr, &dstF );
+        SDL_SetTextureBlendMode( s_shadeRT, SDL_BLENDMODE_MOD );
+        SDL_RenderCopyF( r, s_shadeRT, nullptr, &dstF );
+        SDL_SetTextureBlendMode( s_shadeRT, SDL_BLENDMODE_NONE );
+        SDL_RenderCopyF( r, s_fogRT, nullptr, &dstF );
+    }
+    else
+    {
     if ( s_waterRT && !s_waterHex.empty( ) )   // water UNDER terrain (shows through s_rt's holes)
         SDL_RenderCopy( r, s_waterRT, nullptr, &dst );
     SDL_RenderCopy( r, s_rt, nullptr, &dst );
     SDL_SetTextureBlendMode( s_shadeRT, SDL_BLENDMODE_MOD );
     SDL_RenderCopy( r, s_shadeRT, nullptr, &dst );
     SDL_SetTextureBlendMode( s_shadeRT, SDL_BLENDMODE_NONE );
-    SDL_RenderCopy( r, s_fogRT, nullptr, &dst ); }
+    SDL_RenderCopy( r, s_fogRT, nullptr, &dst );
+    } }
 
     // Cursor footprint hatch — live overlay, every frame (animated; shows on a static
     // view). Cheap no-op when not placing a building/rocket.

@@ -119,6 +119,45 @@ switch ($cmd) {
     }
   }
 
+  'fps' {
+    # Average fps + worst frame over the last N perf lines (1 line/sec).  h.ps1 fps [secs]
+    $secs = if($a1){[int]$a1}else{10}
+    $p = "$WD\perf.log"
+    if(-not (Test-Path $p)){ 'no perf.log'; break }
+    $rows = Get-Content $p -Tail $secs | ForEach-Object {
+      $f=@{}; foreach($m in [regex]::Matches($_, '([\w.]+)=\s*([-\d.]+)')){ $f[$m.Groups[1].Value]=$m.Groups[2].Value }; $f }
+    $fpsVals = $rows | ForEach-Object { [double]$_['fps'] } | Where-Object { $_ -gt 0 }
+    if(-not $fpsVals){ 'no fps samples'; break }
+    $avg = ($fpsVals | Measure-Object -Average).Average
+    $min = ($fpsVals | Measure-Object -Minimum).Minimum
+    $worst = ($rows | ForEach-Object { [double]$_['max'] } | Measure-Object -Maximum).Maximum
+    "fps over last $($fpsVals.Count)s: avg={0:N1} min={1:N1}  worst-frame={2:N0}ms" -f $avg, $min, $worst
+  }
+
+  'gesture' {
+    # Fire a RAPID multi-notch zoom gesture (like a user flicking the wheel), then report how
+    # many full rebuilds it cost (coalescing => 1) and the preview/defer counters.
+    #   h.ps1 gesture [out|in] [notches]
+    if (-not (_has 'Area Map')) { 'NOT IN-GAME (run: h.ps1 load)'; break }
+    $dirIn = ($a1 -eq 'in')
+    $n = if($a2){[int]$a2}else{4}
+    $p = "$WD\perf.log"
+    $before = if(Test-Path $p){ (Get-Content $p -Tail 1 | ForEach-Object { if($_ -match '^t=(\d+)'){ [int]$matches[1] } }) } else { 0 }
+    # 60ms notch spacing = a real wheel flick (the settle window is 120ms, so notches must
+    # arrive faster than that to coalesce -- they do for any human flick).
+    if($dirIn){ & "$SC\zoom.ps1" -In $n -Window map -DelayMs 60 2>&1 | Out-Null }
+    else      { & "$SC\zoom.ps1" -Out $n -Window map -DelayMs 60 2>&1 | Out-Null }
+    Start-Sleep 6   # let the settle-rebuild land and a perf line flush
+    $rows = Get-Content $p -Tail 30 | ForEach-Object {
+      $f=@{}; foreach($m in [regex]::Matches($_, '([\w.]+)=\s*([-\d.]+)')){ $f[$m.Groups[1].Value]=$m.Groups[2].Value }; $f } |
+      Where-Object { [int]$_['t'] -gt $before }
+    $rebuilds = ($rows | ForEach-Object { [int]$_['rebuild.cnt'] } | Measure-Object -Sum).Sum
+    $defers   = ($rows | ForEach-Object { [int]$_['pv.defer'] }    | Measure-Object -Sum).Sum
+    $rbTimes  = $rows | Where-Object { [int]$_['t.rebuild'] -gt 0 } | ForEach-Object { [int]([double]$_['t.rebuild']/1000) }
+    $worst    = ($rows | ForEach-Object { [double]$_['max'] } | Measure-Object -Maximum).Maximum
+    "gesture: $n notches $(if($dirIn){'IN'}else{'OUT'}) | full-rebuilds=$rebuilds (want 1) | defer-frames=$defers | rebuild-times(ms)=$($rbTimes -join ',') | worst-frame={0:N0}ms" -f $worst
+  }
+
   'rotate' {
     # View rotate: '.' = CW, ',' = CCW (keys.ps1 injects the scancode so these OEM hotkeys
     # resolve in-game).  h.ps1 rotate [cw|ccw] [n]
