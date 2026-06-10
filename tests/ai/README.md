@@ -52,20 +52,29 @@ just the static tables. Scenarios:
 It is a faithful model of the algorithm, not the live game loop (which needs the
 world singletons + threads); see "What it does NOT cover".
 
-## Latent bug found
+## SEAWAR sizer gap: RETRACTED after data verification (2026-06-09)
 
-The sizer/counter invariant test surfaced a real inconsistency:
-`IsStagingCompete` and `ContinueStaging` both classify units for `IDG_SEAWAR`
-(grouped with `IDG_PIRATE`), but `GetStagingArea` sizes only `IDG_PIRATE`
-([caigmgr.cpp:7679](../../enations_latest/src/caigmgr.cpp#L7679)). A `SEAWAR`
-staging task thus gets a staging area but zero unit requirements, and
-`IsStagingCompete`'s `iTaskCnt==0` early-out reports "complete" -> an **empty
-sea-war assault launches**. Reachability is data-gated (whether `stdgta.dat`
-attaches `IDT_PREPAREWAR` to `IDG_SEAWAR`), but the code inconsistency is real.
+An earlier revision recorded a `KNOWN_BUG`: "`GetStagingArea` sizes only
+`IDG_PIRATE` while the completion counters also classify `IDG_SEAWAR` -> a
+SEAWAR staging task gets zero requirements -> empty launch." Before fixing it,
+**parsing the shipped `stdgta.dat`** (40 goals / 75 tasks; format per
+`CAISavLd::LoadBinaryData`) disproved the premise:
 
-It is recorded as a `KNOWN_BUG` (xfail): the suite stays green while the bug
-exists and **auto-fails the moment the bug is fixed**, prompting promotion to a
-hard `CHECK`. Fix: make caigmgr.cpp:7679 `== IDG_PIRATE || == IDG_SEAWAR`.
+- `IDT_PREPAREWAR` (2325) is attached to exactly **{LANDWAR 1018,
+  ADVDEFENSE 1022, SEAINVADE 1033, PIRATE 1034}** — precisely the goals
+  `GetStagingArea` sizes.
+- **`IDG_SEAWAR` (1019) owns no staging task** (its list: make-gunship /
+  shipyard / cruiser / destroyer / seek-at-sea / patrol / escort), so a SEAWAR
+  `IDT_PREPAREWAR` task cannot exist and nothing was missing. The counters'
+  `PIRATE || SEAWAR` grouping is dead-defensive code; the *"only 2 ocean based
+  staging tasks"* comment (caigmgr.cpp:7529) matches the data.
+
+The suite now asserts the data-grounded invariant instead
+(`test_sizer_covers_data_staging_goals`): every goal the data attaches
+`IDT_PREPAREWAR` to must be handled by both the sizer and the counters —
+which **passes**. Lesson recorded: verify task/goal reachability against the
+data file before declaring a code-path bug; the proposed "fix" would have
+added support for a pairing that never occurs.
 
 ## Dead / unimplemented code (documented, not testable in isolation)
 

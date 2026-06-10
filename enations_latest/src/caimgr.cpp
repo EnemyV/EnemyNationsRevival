@@ -3349,6 +3349,20 @@ void CAIMgr::Load( CArchive& ar )
             m_plTmpQueue->AddTail( (CObject*)pMsg );
         }
     }
+
+    // Messages restored above bypassed MessageArrived, so neither the backlog
+    // gauge nor the Phase-1 work semaphore saw them. Without this, ai.q.depth
+    // goes negative by the restored count when they are popped, and the AI
+    // thread only drains them on idle-timeout slices instead of waking
+    // immediately. Account for them here (load runs on the main thread).
+    int iRestored = m_plMsgQueue->GetCount( ) + m_plTmpQueue->GetCount( );
+    if ( iRestored > 0 )
+    {
+        LONG lNew = InterlockedExchangeAdd( &g_aiMsgBacklog, (LONG)iRestored ) + (LONG)iRestored;
+        Perf::GaugeSet( "ai.q.depth", lNew );
+        if ( m_hWork != NULL )
+            ReleaseSemaphore( m_hWork, (LONG)iRestored, NULL );
+    }
 }
 
 //
@@ -3919,6 +3933,10 @@ void CAIMgr::SumUpMaterialOnHand( void )
 
 CAIMgrList::CAIMgrList( )
 {
+    // fresh game/load: clear backlog residue from a previous game (messages
+    // still queued at exit are deleted in ~CAIMgr without decrementing)
+    InterlockedExchange( &g_aiMsgBacklog, 0 );
+
     LoadStandardData( );
 }
 

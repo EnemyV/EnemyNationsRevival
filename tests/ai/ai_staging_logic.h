@@ -141,6 +141,20 @@ inline bool CounterHandlesGoal(int g) {
            g == goal::PIRATE || g == goal::SEAWAR || g == goal::SEAINVADE;
 }
 
+// Which goals the SHIPPED DATA (stdgta.dat) attaches IDT_PREPAREWAR (2325) to.
+// Verified 2026-06-09 by parsing the binary (40 goals / 75 tasks): exactly
+// {LANDWAR 1018, ADVDEFENSE 1022, SEAINVADE 1033, PIRATE 1034}. Notably,
+// IDG_SEAWAR (1019) does NOT own a staging task -- its list is make-ships /
+// seek-at-sea / patrol / escort -- so the counters' SEAWAR grouping is
+// dead-defensive code, unreachable with shipped data, and GetStagingArea's
+// PIRATE-only ocean sizing matches both the data and the "only 2 ocean based
+// staging tasks" comment (caigmgr.cpp:7529). SYNC: re-verify if stdgta.dat is
+// ever regenerated/modded.
+inline bool DataAttachesPrepareWar(int g) {
+    return g == goal::LANDWAR || g == goal::ADVDEFENSE ||
+           g == goal::SEAINVADE || g == goal::PIRATE;
+}
+
 // Canonical staging bucket for (goal, unit type), or -1 if not a staging unit of
 // that goal. This single table is what ALL FOUR production switches must equal:
 //   caitmgr.cpp IsStagingCompete count switch (~3873)

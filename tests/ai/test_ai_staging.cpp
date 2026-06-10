@@ -139,32 +139,28 @@ static void test_material_slots() {
 // but zero unit requirements, and IsStagingCompete's iTaskCnt==0 early-out
 // returns "complete" => an empty assault launches.
 // ---------------------------------------------------------------------------
-static void test_sizer_counter_goalset() {
+// RETRACTION (2026-06-09): an earlier revision flagged "GetStagingArea omits
+// IDG_SEAWAR" as a latent empty-launch bug. Parsing stdgta.dat disproved the
+// premise: the data never attaches IDT_PREPAREWAR to IDG_SEAWAR, so a SEAWAR
+// staging task cannot exist and the sizer is not missing anything. The real,
+// data-grounded invariant is the one below: every goal the DATA gives a
+// staging task to must be sized by GetStagingArea. The counters being a
+// superset (their PIRATE||SEAWAR grouping) is harmless dead-defensive code.
+static void test_sizer_covers_data_staging_goals() {
     const int goals[] = { goal::ADVDEFENSE, goal::LANDWAR, goal::PIRATE,
                           goal::SEAWAR, goal::SEAINVADE };
     for (int gi = 0; gi < (int)(sizeof(goals) / sizeof(goals[0])); ++gi) {
         int g = goals[gi];
-        if (!CounterHandlesGoal(g))
-            continue;
 
-        if (g == goal::SEAWAR) {
-            // LATENT BUG (found by this test): IsStagingCompete and
-            // ContinueStaging both classify units for IDG_SEAWAR (grouped with
-            // IDG_PIRATE: cruiser/destroyer buckets), but GetStagingArea's naval
-            // branch is `== IDG_PIRATE` only (caigmgr.cpp:7679) -- it never sizes
-            // IDG_SEAWAR. A SEAWAR IDT_PREPAREWAR task therefore gets a staging
-            // area but zero unit requirements; IsStagingCompete's iTaskCnt==0
-            // early-out then returns "complete" and an EMPTY sea-war assault
-            // launches. Reachability is data-gated (whether stdgta.dat attaches
-            // IDT_PREPAREWAR to IDG_SEAWAR), but the code inconsistency is real.
-            // FIX: make caigmgr.cpp:7679 `== IDG_PIRATE || == IDG_SEAWAR` (the
-            // cruiser/destroyer sizing already fits SEAWAR). Then this promotes
-            // to a CHECK automatically.
-            KNOWN_BUG(SizerHandlesGoal(g),
-                      "GetStagingArea omits IDG_SEAWAR (caigmgr.cpp:7679) -> empty SEAWAR assault");
-        } else {
+        // any goal that can actually own an IDT_PREPAREWAR task must be sized
+        // (zero-requirement tasks "complete" instantly -> empty launch)
+        if (DataAttachesPrepareWar(g))
             CHECK(SizerHandlesGoal(g));
-        }
+
+        // and a data staging goal the counters can't classify would stage
+        // units it can never count -- require counter coverage too
+        if (DataAttachesPrepareWar(g))
+            CHECK(CounterHandlesGoal(g));
     }
 }
 
@@ -243,7 +239,7 @@ int main() {
     test_slot_alignment();
     test_bucket_bounds();
     test_material_slots();
-    test_sizer_counter_goalset();
+    test_sizer_covers_data_staging_goals();
 
     test_sim_seainvade_completes();
     test_sim_oversupply_ok();
