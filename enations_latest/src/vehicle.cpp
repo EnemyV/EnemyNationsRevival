@@ -660,7 +660,7 @@ void CVehicle::BuildRoad() {
 
         // if we run into a bridge or building we're done
         CHex *pHexTest = theMap._GetHex(_hexEnd);
-        if (pHexTest->GetUnits() & (CHex::bridge || CHex::bldg)) {
+        if (pHexTest->GetUnits() & (CHex::bridge | CHex::bldg)) {
             iLen = iMaxSpan;
             break;
         }
