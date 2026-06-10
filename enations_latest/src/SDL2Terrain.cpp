@@ -822,7 +822,11 @@ static void BuildMapUnderlay( SDL_Renderer* r, const CAnimAtr& aa, unsigned load
         SDL_SetRenderTarget( r, s_mapRT[dir] );
         SDL_RenderSetViewport( r, nullptr );
         SDL_SetRenderDrawBlendMode( r, SDL_BLENDMODE_NONE );
-        SDL_SetRenderDrawColor( r, 0, 0, 0, 255 );
+        // TRANSPARENT clear, NOT opaque black: the map is a DIAMOND inside this rect, and
+        // the 3x3 wrap copies draw over each other — an opaque corner from one copy was
+        // painting black OVER the neighbouring copy's terrain, which is exactly the black
+        // the underlay exists to remove (user: "still happening when you zoom out rapidly").
+        SDL_SetRenderDrawColor( r, 0, 0, 0, 0 );
         SDL_RenderClear( r );
         SDL_SetRenderTarget( r, pt ); SDL_RenderSetViewport( r, &vp );
     }
