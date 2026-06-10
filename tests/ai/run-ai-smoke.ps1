@@ -17,7 +17,7 @@
 # Exit codes: 0 all pass, 1 a check failed, 2 environment problem.
 
 param(
-    [string]$Save        = '5-3',
+    [string]$Save        = 'savegame-3-1',   # substring match against the save list
     [int]   $Seconds     = 60,
     [int]   $PickDelaySec = 8,
     [string]$Exe         = 'd:\Enemy Nations\src\cmakeBuild-x64\enations_latest\src\Debug\enations.exe',
@@ -49,8 +49,8 @@ $env:EN_PERF = '1'
 $dbgSeconds  = $Seconds + 120   # cover menu + load + window + teardown
 $dbgcatch    = Join-Path $repoRoot 'dbgcatch.ps1'
 $dbgProc = Start-Process powershell -ArgumentList @(
-    '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $dbgcatch,
-    '-Seconds', $dbgSeconds, '-Exe', $Exe, '-WorkDir', $RunDir
+    '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$dbgcatch`"",
+    '-Seconds', $dbgSeconds, '-Exe', "`"$Exe`"", '-WorkDir', "`"$RunDir`""
 ) -RedirectStandardOutput $dbgLog -PassThru -WindowStyle Hidden
 
 Note "launched under dbgcatch (pid $($dbgProc.Id)), waiting for menu..."
