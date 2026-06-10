@@ -143,6 +143,16 @@ static const int* QuadIndices( int nQuads )
     return s_quadIdx.data( );
 }
 
+// FAR SNAPSHOT: flattened copy of the terrain composite from the last wide (zoom>=2) full
+// rebuild. During a zoom-OUT gesture preview the crisp texture only covers the old (narrower)
+// view; this snapshot underlays the rest of the window — slightly stale, blurrier terrain
+// instead of black "uninitialized" border. Valid only for the direction it was captured at.
+static SDL_Texture* s_farRT = nullptr;
+static int       s_farZoom = -1, s_farDir = -1, s_farMargin = 0, s_farW = 0, s_farH = 0;
+static unsigned  s_farLoadGen = ~0u;
+static CHexCoord s_farRefHex;          // anchor hex + its window px at snapshot time
+static CPoint    s_farRefPx( 0, 0 );
+
 // Set by SDL2Terrain::Render each frame: TRUE when the visible view scrolled since last
 // frame (the cached terrain blits at a different pan offset). The GPU sprite layer reads it
 // to force a FULL re-emit on pan — its render target (g_rt) is screen-space and persistent,
@@ -972,6 +982,7 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
             // frees all its textures — destroying them again here is a use-after-free.
             // The size-block below recreates them fresh on the new renderer.
             s_rt = s_rtB = s_fogRT = s_shadeRT = s_shadeHalf = s_shadeB = s_waterRT = nullptr;
+            s_farRT = nullptr; s_farZoom = -1;   // far snapshot was bound to the dead renderer too
             s_rtW = s_rtH = 0;        // also forces the size-block recreate path
             s_sig = ~0ull;            // force a full mesh rebuild on the new renderer
             s_waterRTtick = ~0u; s_waterTick = ~0u;
@@ -997,8 +1008,14 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
         uint64_t bltNoEdit = s_sig ^ ( (uint64_t)s_builtEditGen     << 40 );
         bool viewKeyChanged = ( s_sig != ~0ull ) && ( curNoEdit != bltNoEdit );
         if ( viewKeyChanged && s_lastViewSig != curNoEdit ) { s_viewChangedAt = _nowT; s_lastViewSig = curNoEdit; }
+        // Pure ROTATE (dir change) is NOT deferred: the preview can't rotate the old texture
+        // (not affine in this projection), so holding it left old-orientation terrain under
+        // already-rotated sprites — the "terrain lags the buildings" artifact. Rotate taps are
+        // slower than the settle window anyway (no coalescing value), and the per-direction
+        // tile memo makes the synchronous rebuild cheap. Zoom-only changes keep the preview.
         s_deferActive = TerrainPreviewEnabled( ) && viewKeyChanged && s_rt != nullptr
                         && s_builtZoom >= 0 && s_builtLoadGen == s_loadGen
+                        && s_builtDir == ( aa.m_iDir & 3 )
                         && ( _nowT - s_viewChangedAt ) < kSettleMs;
         if ( s_deferActive ) Perf::CounterAdd( "pv.defer", 1 );
     }
@@ -2537,11 +2554,26 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
     if ( fPreview )
     {
         // Transient gesture frame: black backdrop (the scaled texture may not cover the whole
-        // viewport when zooming out), then the same 4 layers scale-blitted into place.
+        // viewport when zooming out), then the FAR SNAPSHOT (stale wide view, if one matches)
+        // under the crisp layers — so the uncovered ring shows old terrain instead of black.
         SDL_SetRenderDrawBlendMode( r, SDL_BLENDMODE_NONE );
         SDL_SetRenderDrawColor( r, 0, 0, 0, 255 );
         SDL_RenderFillRect( r, nullptr );
         SDL_SetRenderDrawBlendMode( r, SDL_BLENDMODE_BLEND );
+        if ( s_farRT && s_farDir == ( aa.m_iDir & 3 ) && s_farLoadGen == s_loadGen
+             && s_farZoom > s_builtZoom )   // only useful when WIDER than the crisp texture
+        {
+            CPoint rpF[4];
+            if ( aa.MapToWindowHex( s_farRefHex, rpF ) )
+            {
+                float f2 = ldexpf( 1.0f, s_farZoom - zoom );
+                SDL_FRect dstFar;
+                dstFar.x = (float)rpF[0].x - ( (float)s_farRefPx.x + (float)s_farMargin ) * f2;
+                dstFar.y = (float)rpF[0].y - ( (float)s_farRefPx.y + (float)s_farMargin ) * f2;
+                dstFar.w = (float)s_farW * f2; dstFar.h = (float)s_farH * f2;
+                SDL_RenderCopyF( r, s_farRT, nullptr, &dstFar );
+            }
+        }
         if ( s_waterRT && !s_waterHex.empty( ) )
             SDL_RenderCopyF( r, s_waterRT, nullptr, &dstF );
         SDL_RenderCopyF( r, s_rt, nullptr, &dstF );
@@ -2560,6 +2592,45 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
     SDL_SetTextureBlendMode( s_shadeRT, SDL_BLENDMODE_NONE );
     SDL_RenderCopy( r, s_fogRT, nullptr, &dst );
     } }
+
+    // FAR-SNAPSHOT capture: after a wide (zoom>=2) full rebuild, flatten the composite
+    // (water+terrain+shade+fog, 1:1) into s_farRT for the zoom-out preview underlay.
+    // Keep the WIDEST snapshot per direction (a z2 build doesn't evict a z3 one), but
+    // any dir/load change or same-zoom rebuild refreshes it.
+    if ( needRebuild && !incPan && zoom >= 2 &&
+         ( zoom >= s_farZoom || s_farDir != ( aa.m_iDir & 3 ) || s_farLoadGen != s_loadGen ) )
+    {
+        if ( s_farRT && ( s_farW != rtW || s_farH != rtH ) ) { SDL_DestroyTexture( s_farRT ); s_farRT = nullptr; }
+        if ( !s_farRT )
+        {
+            s_farRT = SDL_CreateTexture( r, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET, rtW, rtH );
+            if ( s_farRT ) { SDL_SetTextureBlendMode( s_farRT, SDL_BLENDMODE_BLEND );
+                             SDL_SetTextureScaleMode( s_farRT, SDL_ScaleModeLinear ); }
+        }
+        if ( s_farRT )
+        {
+            SDL_Texture* pt = SDL_GetRenderTarget( r );
+            SDL_Rect     vp; SDL_RenderGetViewport( r, &vp );
+            SDL_SetRenderTarget( r, s_farRT );
+            SDL_RenderSetViewport( r, nullptr );
+            SDL_SetRenderDrawBlendMode( r, SDL_BLENDMODE_NONE );
+            SDL_SetRenderDrawColor( r, 0, 0, 0, 255 );
+            SDL_RenderClear( r );
+            SDL_SetRenderDrawBlendMode( r, SDL_BLENDMODE_BLEND );
+            if ( s_waterRT && !s_waterHex.empty( ) ) SDL_RenderCopy( r, s_waterRT, nullptr, nullptr );
+            SDL_RenderCopy( r, s_rt, nullptr, nullptr );
+            SDL_SetTextureBlendMode( s_shadeRT, SDL_BLENDMODE_MOD );
+            SDL_RenderCopy( r, s_shadeRT, nullptr, nullptr );
+            SDL_SetTextureBlendMode( s_shadeRT, SDL_BLENDMODE_NONE );
+            SDL_RenderCopy( r, s_fogRT, nullptr, nullptr );
+            SDL_SetRenderTarget( r, pt );
+            SDL_RenderSetViewport( r, &vp );
+            s_farZoom = zoom; s_farDir = ( aa.m_iDir & 3 ); s_farMargin = kMarginPx;
+            s_farW = rtW; s_farH = rtH; s_farLoadGen = s_loadGen;
+            s_farRefHex = s_refHex; s_farRefPx = s_refPx;
+            Perf::CounterAdd( "pv.farsnap", 1 );
+        }
+    }
 
     // Cursor footprint hatch — live overlay, every frame (animated; shows on a static
     // view). Cheap no-op when not placing a building/rocket.
