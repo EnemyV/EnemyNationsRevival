@@ -19,6 +19,11 @@
 #   h.ps1 perf                    print key terrain rebuild counters from perf.log
 #   h.ps1 log [name] [n]          tail a known log (perf|dbg|terrain|list). list = paths+ages
 #   h.ps1 grep <pattern> [name] [n]   regex-search a known log's tail (default perf, 400 lines)
+#   h.ps1 pvshot [n]              hold the zoom-gesture PREVIEW open (out/in notch stream in a
+#                                 background job; each notch resets the 120ms settle) and grab n
+#                                 mid-preview screenshots -> d:\tmp\pv<i>.png. Verifies via pv.frame.
+#   h.ps1 share [file] [ttl]      upload a capture to litterbox.catbox.moe (temp host) -> URL
+#                                 default d:\tmp\h.png, ttl 12h (1h|12h|24h|72h)
 #   h.ps1 pan <left|right|up|down> [n]   scroll the Area Map a quarter-screen per press (arrow keys)
 #   h.ps1 click <x> <y> [role]    mouse-click client px on a window (default map)
 #   h.ps1 rotate [cw|ccw] [n]     rotate the view ('.'=CW / ','=CCW in-game hotkeys, n times)
@@ -287,6 +292,60 @@ switch ($cmd) {
     if (-not (Test-Path $p)) { "no $name log at $p"; break }
     $hits = Get-Content $p -Tail $n | Select-String -Pattern $a1
     if ($hits) { $hits | Select-Object -Last 12 | ForEach-Object { $_.Line } } else { "no match for '$a1' in last $n lines of $name" }
+  }
+
+  'pvshot' {
+    # Capture the TRANSIENT gesture-preview frames (the ones a normal shot always misses
+    # because the settle rebuild lands first). A background job streams alternating out/in
+    # notches with 80ms gaps -- each notch resets the 120ms settle window, so the preview
+    # stays up for the whole stream -- while the foreground takes screenshots mid-stream.
+    if (-not (_has 'Area Map')) { 'NOT IN-GAME (run: h.ps1 load)'; break }
+    $n = if($a1){[int]$a1}else{2}
+    $p = "$WD\perf.log"
+    # t-stamp of the last flushed line BEFORE the stream; the check below sums pv.frame
+    # over lines NEWER than this (a before/after sliding-window sum mis-verified: by the
+    # time the after-sum ran, the before-lines had scrolled out of the window).
+    $tStart = 0
+    if (Test-Path $p) {
+      $tv = @(Get-Content $p -Tail 2 | ForEach-Object { if($_ -match '^t=(\d+)'){ [int]$matches[1] } }) | Select-Object -Last 1
+      if ($tv) { $tStart = [int]$tv }
+    }
+    # ONE zoom.ps1 process alternating out/in at 80ms (-Wiggle) — separate single-notch
+    # invocations pay ~1s startup each and never hold the 120ms settle window open.
+    $job = Start-Job -ScriptBlock {
+      & 'd:\Enemy Nations\src\zoom.ps1' -Wiggle 60 -DelayMs 80 -Window map 2>$null | Out-Null
+    }
+    _wake                            # -Screen captures go black under the screensaver
+    Start-Sleep -Milliseconds 1500   # job spin-up + the stream begins
+    for ($i = 1; $i -le $n; $i++) {
+      & "$SC\screenshot.ps1" -Window map -Full -Screen -Out "d:\tmp\pv$i.png" 2>&1 | Select-Object -Last 1
+      Start-Sleep -Milliseconds 400
+    }
+    Wait-Job $job -Timeout 20 | Out-Null; Remove-Job $job -Force
+    Start-Sleep 4   # perf.log flushes ~1 line/sec with buffering lag — don't race it
+    $pvSum = 0; $zoomSum = 0
+    if (Test-Path $p) {
+      Get-Content $p -Tail 60 | ForEach-Object {
+        if ($_ -match '^t=(\d+)' -and [int]$matches[1] -gt $tStart) {
+          if ($_ -match 'pv\.frame=(\d+)')   { $pvSum   += [int]$matches[1] }
+          if ($_ -match 'rb\.zoomchg=(\d+)') { $zoomSum += [int]$matches[1] }
+        }
+      }
+    }
+    if ($pvSum -gt 0) { "preview frames during stream: $pvSum (zoom changes: $zoomSum) -- shots are MID-PREVIEW candidates" }
+    else { "WARNING: no preview frames during stream (zoom changes: $zoomSum) -- shots are settled frames" }
+  }
+
+  'share' {
+    # Upload a screenshot (or any file) to litterbox.catbox.moe (1h temp host) and print
+    # the URL — so the user can SEE a capture without being at the machine.
+    #   h.ps1 share                -> uploads d:\tmp\h.png (the default shot target)
+    #   h.ps1 share d:\tmp\pv1.png [24h]
+    $f = if($a1){$a1}else{'d:\tmp\h.png'}
+    if (-not (Test-Path $f)) { "no file: $f"; break }
+    $ttl = if($a2 -and @('1h','12h','24h','72h') -contains $a2){$a2}else{'12h'}
+    $url = & curl.exe -s -F "reqtype=fileupload" -F "time=$ttl" -F "fileToUpload=@$f" https://litterbox.catbox.moe/resources/internals/api.php
+    if ($url -match '^https://') { "$url  (expires $ttl)" } else { "upload failed: $url" }
   }
 
   'perf' {
