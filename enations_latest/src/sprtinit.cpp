@@ -1788,6 +1788,22 @@ CStructureSprite::CStructureSprite( CSpriteParms const &spriteparms ):
 #endif
 #endif
 
+    // BUGBUG (data): bridge sprites ship BOTH a one-piece view (iLayerType 0) and a
+    // two-piece FORE view (iLayerType 1) with no BACK view — violating the one-piece-
+    // XOR-two-piece invariant the (compiled-out) _GG ASSERT above checks. The one-piece
+    // view is really the back piece (the road deck); since types 0 and 1 share a slot
+    // (iLayerType >> 1), the railing used to clobber the deck and the bridge surface
+    // never rendered. Re-route the one-piece view to the BACK slot so both layers draw.
+    for (iDir = 0; iDir < NUM_BLDG_DIRECTIONS; ++iDir)
+        for (iStage = 0; iStage < NUM_BLDG_STAGES; ++iStage)
+            for (iDamage = 0; iDamage < NUM_BLDG_DAMAGE; ++iDamage)
+                if (-1 != aiIndex[iDir][iStage][0][iDamage] &&
+                    -1 != aiIndex[iDir][iStage][1][iDamage] &&
+                    -1 == aiIndex[iDir][iStage][2][iDamage]) {
+                    aiIndex[iDir][iStage][2][iDamage] = aiIndex[iDir][iStage][0][iDamage];
+                    aiIndex[iDir][iStage][0][iDamage] = -1;
+                }
+
     for (iDir = 0; iDir < NUM_BLDG_DIRECTIONS; ++iDir)
         for (iStage = 0; iStage < NUM_BLDG_STAGES; ++iStage)
             for (iLayerType = 0; iLayerType < 3; ++iLayerType)
