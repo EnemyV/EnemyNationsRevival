@@ -109,7 +109,10 @@ Drive the running game yourself instead of asking the user what they see. **Just
 & '.\screenshot.ps1' -ListWindows          # list the game's SDL windows + roles
 & '.\screenshot.ps1' -Out d:\tmp\s.png      # 50% shot of the auto-target window
 & '.\click.ps1' -X 1850 -Y 145              # click client-px coords (read from the PNG)
+& '.\click.ps1' -Window map -X 800 -Y 600 -Right -Ctrl   # Ctrl+RMB (rotate a building being placed)
 & '.\keys.ps1'  -Key Enter                  # named key; -Text "foo" types; -ListKeys
+& '.\keys.ps1'  -Window map -Key "."         # in-game hotkey: OEM punctuation , . [ ] = - now work
+& '.\keys.ps1'  -Window map -Key A -Ctrl     # modifier combos: -Ctrl/-Shift/-Alt
 ```
 
 **The game is multi-window** — target by role, not "the big window." In-game the main "Game View" window is only toolbar/chrome; the **map, radar, detached panels, and dialogs are each their own child `SDL_app` window** (SDL routes input by windowID, and `PrintWindow` on the parent can't capture a child's GL surface — you get blank blue). Pick the window with `-Window`:
@@ -125,6 +128,21 @@ Drive the running game yourself instead of asking the user what they see. **Just
 - Shared resolver is [harness-common.ps1](harness-common.ps1); HWNDs change on reload so it re-resolves by class+title each call. `dbgshot.ps1` = token-cheap wrapper (33% + JPEG).
 - **Coords are client px of the target window**, at native res. Read at `-Full` to pick exact coords (small dialogs have ~19px rows — unforgiving). Screenshots are **50% by default** to save vision-tokens (`-Scale N`, `-Full`; each shot prints a token estimate).
 - `PostMessage`-based: **no focus needed**, runs in background. **No modifier combos** (Ctrl/Shift+key). **Escape on the main menu quits the game.** `-Screen` is the fallback if PrintWindow returns black.
+
+### One-shot load (`load-game.ps1`)
+
+Get in-game without screenshotting the menu — fixed button coords, encodes the whole flow:
+
+```powershell
+& '.\load-game.ps1' -Save 5-3               # launch (if needed) -> Load -> pick save -> wait 5s -> click OK to confirm player
+& '.\load-game.ps1' -Save 5-3 -PickDelaySec 8   # longer settle if the save loads slowly
+& '.\load-game.ps1' -Save 5-3 -PickDelaySec 0   # stop at the player-select screen (no auto-confirm)
+& '.\load-game.ps1' -NoLaunch               # game already at menu; don't relaunch
+```
+
+Flow: main menu **Load Single Player Game** (1850,145) → **Load Game** dialog → double-click the save row (substring match on `-Save`) → after `-PickDelaySec` seconds, confirm the auto-selected player on the **Pick Your Player** dialog via a **click-OK (235,470) → Enter → click-OK** chain, then prints `Player confirmed; in-game.` (or warns if the dialog is still up). Saves the list shot to `d:\tmp\savelist.png`. **Launches the x64 Debug exe but WITHOUT profiling env vars** — for `perf.log`/leak data, set `EN_PERF=1` (and `EN_PERF_ALLOC=64`) and launch the exe yourself first, then `./load-game.ps1 -NoLaunch -Save 5-3`.
+
+> **Harness gotcha — keyboard vs. focus on SDL dialogs.** SDL delivers *mouse* events to the window a message targets (so `click.ps1` works on any child/dialog), but routes *keyboard* events to its keyboard-**focus** window. A modal dialog now grabs keyboard focus on open via `SDL_SetWindowInputFocus` ([SDL2UI.cpp DoModal](enations_latest/src/SDL2UI.cpp)), so Enter=OK / Esc=Cancel work by default — **but** that (like `SDL_RaiseWindow`) calls `SetForegroundWindow` on Windows, which the OS **blocks for a background app**. So a `keys.ps1 -Key Enter` can still be dropped when the game is driven in the background. **Guaranteed path: click the button** (mouse events are window-targeted, focus-independent). `load-game.ps1` confirms the player with a click-OK → Enter → click-OK chain for exactly this reason.
 
 ## Don't do
 

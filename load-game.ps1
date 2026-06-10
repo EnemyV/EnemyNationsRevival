@@ -14,7 +14,13 @@
 param(
     [string]$Save,
     [switch]$NoLaunch,
-    [string]$ListShot = 'd:\tmp\savelist.png'
+    [string]$ListShot = 'd:\tmp\savelist.png',
+    [int]$PickDelaySec = 5,   # after load, wait this long then confirm the
+                             # auto-selected player on the "Pick Your Player" screen
+    [int]$PickOkX = 235,      # OK-button center (window-local px) on the 580x500 Pick
+    [int]$PickOkY = 470       # dialog: btn = (m_width/2-100, m_height-45, 90, 30)
+                              # -> center ((580/2-100)+45, (500-45)+15) = (235, 470)
+                              # (SDL2PickPlayerDialog::OnInit, SDL2Dialogs.cpp)
 )
 
 $ErrorActionPreference = 'Stop'
@@ -94,5 +100,40 @@ if ($Save) {
         Write-Output "Clicked Open."
     }
     Write-Output "Load issued for '$($names[$idx])'."
+
+    # ---- 6. confirm the auto-selected player ------------------------------
+    # Loading a save lands on the "Pick Your Player" dialog with a player already
+    # selected. Confirm it with a robust click-OK -> Enter -> click-OK chain:
+    #   * SDL routes KEYBOARD events to its focus window, and the harness posts via
+    #     PostMessage WITHOUT activating the (borderless) dialog -> a raw Enter is
+    #     dropped. But a MOUSE click IS delivered to the targeted window AND gives
+    #     it SDL keyboard focus.
+    #   * So: click OK first (confirms directly, same path as the save-list click);
+    #     if the dialog is still up the click only focused it, so NOW Enter routes
+    #     (Enter is bound to OK in SDL2Dialog::HandleEvent); final OK click as
+    #     last resort. Whichever lands first, the rest are harmless no-ops.
+    if ($PickDelaySec -gt 0) {
+        Write-Output "Waiting ${PickDelaySec}s for load to settle, then confirming player..."
+        Start-Sleep -Seconds $PickDelaySec
+
+        & (Join-Path $PSScriptRoot 'click.ps1') -Window pick -X $PickOkX -Y $PickOkY | Out-Null
+        Start-Sleep -Milliseconds 400
+
+        if (Wait-Window -Title 'Pick Your Player' -TimeoutMs 1200) {
+            # click only focused it -> Enter now reaches the (focused) dialog
+            & (Join-Path $PSScriptRoot 'keys.ps1') -Window pick -Key Enter | Out-Null
+            Start-Sleep -Milliseconds 400
+            if (Wait-Window -Title 'Pick Your Player' -TimeoutMs 1000) {
+                & (Join-Path $PSScriptRoot 'click.ps1') -Window pick -X $PickOkX -Y $PickOkY | Out-Null
+                Start-Sleep -Milliseconds 400
+            }
+        }
+
+        if (Wait-Window -Title 'Pick Your Player' -TimeoutMs 500) {
+            Write-Warning "Pick-Your-Player dialog still open after OK+Enter+OK — confirm manually."
+        } else {
+            Write-Output "Player confirmed; in-game."
+        }
+    }
 }
 exit 0

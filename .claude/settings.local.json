@@ -3,7 +3,36 @@
     "allow": [
       "Bash(git diff:*)",
       "Bash(find 'd:\\\\Enemy Nations\\\\src\\\\tools\\\\lib' -type f -exec file {})",
-      "Bash(2)"
+      "Bash(2)",
+      "PowerShell(./load-game.ps1*)",
+      "PowerShell(./zoom.ps1*)",
+      "PowerShell(./build.ps1*)",
+      "PowerShell(./screenshot.ps1*)",
+      "PowerShell(./click.ps1*)",
+      "PowerShell(./keys.ps1*)",
+      "PowerShell(./dbgshot.ps1*)",
+      "PowerShell(Get-Process enations*)",
+      "PowerShell($errs = $null; [System.Management.Automation.Language.Parser]::ParseFile\\(\"d:\\\\Enemy Nations\\\\src\\\\click.ps1\", [ref]$null, [ref]$errs\\); if \\($errs\\) { $errs | ForEach-Object { $_.Message } } else { \"click.ps1 parses OK\" }; [System.Management.Automation.Language.Parser]::ParseFile\\(\"d:\\\\Enemy Nations\\\\src\\\\keys.ps1\", [ref]$null, [ref]$errs\\); if \\($errs\\) { $errs | ForEach-Object { $_.Message } } else { \"keys.ps1 parses OK\" })",
+      "PowerShell(foreach \\($f in 'click.ps1','keys.ps1','harness-common.ps1','load-game.ps1'\\) { $e=$null; $null=[System.Management.Automation.Language.Parser]::ParseFile\\(\"d:\\\\Enemy Nations\\\\src\\\\$f\",[ref]$null,[ref]$e\\); if\\($e\\){ \"$f : $\\($e.Count\\) errors\"; $e|%{$_.Message} } else { \"$f : OK\" } })",
+      "PowerShell(& \"d:\\\\Enemy Nations\\\\src\\\\screenshot.ps1\"*)",
+      "PowerShell(& \"d:\\\\Enemy Nations\\\\src\\\\click.ps1\"*)",
+      "PowerShell(& \"d:\\\\Enemy Nations\\\\src\\\\keys.ps1\"*)",
+      "PowerShell(& \"d:\\\\Enemy Nations\\\\src\\\\load-game.ps1\"*)",
+      "PowerShell(& \"d:\\\\Enemy Nations\\\\src\\\\build.ps1\"*)",
+      "PowerShell(& \"d:\\\\Enemy Nations\\\\src\\\\dbgshot.ps1\"*)",
+      "PowerShell(& \"d:\\\\Enemy Nations\\\\src\\\\h.ps1\" launch)",
+      "PowerShell(& \"d:\\\\Enemy Nations\\\\src\\\\h.ps1\" load)",
+      "PowerShell(& \"d:\\\\Enemy Nations\\\\src\\\\keys.ps1\" -Window map -Key Esc 2>&1)",
+      "PowerShell(& \"d:\\\\Enemy Nations\\\\src\\\\h.ps1\" windows)",
+      "PowerShell(& \"d:\\\\Enemy Nations\\\\src\\\\build.ps1\" -x64)",
+      "PowerShell(& \"d:\\\\Enemy Nations\\\\src\\\\h.ps1\" rotate cw 1; Start-Sleep 4; cd \"d:\\\\Enemy Nations\"; $hit = Get-Content perf.log -Tail 8 | Select-String \"rb.dirchg=[1-9]\"; if\\($hit\\){ \"ROTATE REGISTERED\"; [regex]::Matches\\($hit[-1].Line, 'rb\\\\.hexes=\\\\d+|t\\\\.rebuild=\\\\d+|rb\\\\.tile=\\\\d+|pv\\\\.defer=\\\\d+'\\) | ForEach-Object { $_.Value } } else { \"not registered\" })",
+      "PowerShell(./build.ps1 -x64 -File caimgr.cpp -Quiet)",
+      "PowerShell(& \"d:\\\\Enemy Nations\\\\src\\\\h.ps1\" status)",
+      "PowerShell(& \"d:\\\\Enemy Nations\\\\src\\\\screenshot.ps1\" -Window map -Full -Screen -Out d:\\\\tmp\\\\rot_before.png 2>&1 | Out-Null; & \"d:\\\\Enemy Nations\\\\src\\\\h.ps1\" rotate cw 1; Start-Sleep 5; & \"d:\\\\Enemy Nations\\\\src\\\\screenshot.ps1\" -Window map -Full -Screen -Out d:\\\\tmp\\\\rot_after.png 2>&1 | Out-Null; cd \"d:\\\\Enemy Nations\"; $hit = Get-Content perf.log -Tail 8 | Select-String \"rb.dirchg=[1-9]\"; if\\($hit\\){ \"DIRCHG REGISTERED\" } else { \"no dirchg counter\" }; $g=Get-Process enations -ErrorAction SilentlyContinue; \"alive: $\\([bool]$g\\)\")",
+      "PowerShell(git add tests/ai)",
+      "PowerShell(Start-Sleep 3; cd \"d:\\\\Enemy Nations\"; $l = \\(Get-Content perf.log -Tail 12 | Select-String \"rb.dirchg=[1-9]\" | Select-Object -Last 1\\).Line; if\\($l\\){ \"rotate ok: \" + \\(\\([regex]::Matches\\($l, 't\\\\.rebuild=\\\\d+|pv\\\\.defer=\\\\d+|rb\\\\.hexes=\\\\d+'\\) | ForEach-Object { $_.Value }\\) -join ' '\\) } else { \"still no dirchg in last 12s\" })",
+      "PowerShell(& '.\\\\tests\\\\ai\\\\run-ai-tests.ps1'; \"exit=$LASTEXITCODE\"; ./build.ps1 -x64 -Quiet)",
+      "Bash(awk -F: '$1 > 790 && $1 < 1000')"
     ]
   }
 }

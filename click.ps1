@@ -12,6 +12,8 @@
 #   ./click.ps1 -Window map -X 800 -Y 600    # click the Area Map child
 #   ./click.ps1 -Window radar -X 100 -Y 100  # click the radar window
 #   ./click.ps1 -X 100 -Y 50 -Right          # right click
+#   ./click.ps1 -X 100 -Y 50 -Right -Ctrl    # Ctrl+RMB (e.g. rotate a building being placed)
+#   ./click.ps1 -X 100 -Y 50 -Shift          # Shift+click (e.g. add to selection)
 #   ./click.ps1 -X 100 -Y 50 -Double         # double-click
 #   ./click.ps1 -X 100 -Y 50 -NoMove         # skip the WM_MOUSEMOVE before click
 #   ./click.ps1 -X 100 -Y 50 -Hwnd 12345     # target a specific HWND
@@ -34,6 +36,8 @@ param(
     [switch]$Right,
     [switch]$Middle,
     [switch]$Double,
+    [switch]$Ctrl,
+    [switch]$Shift,
     [switch]$NoMove,
     [switch]$NoCursor,
     [int]$DelayMs = 40
@@ -56,6 +60,7 @@ $WM_LBUTTONDOWN = 0x0201; $WM_LBUTTONUP = 0x0202
 $WM_RBUTTONDOWN = 0x0204; $WM_RBUTTONUP = 0x0205
 $WM_MBUTTONDOWN = 0x0207; $WM_MBUTTONUP = 0x0208
 $MK_LBUTTON = 0x0001; $MK_RBUTTON = 0x0002; $MK_MBUTTON = 0x0010
+$MK_SHIFT = 0x0004; $MK_CONTROL = 0x0008
 
 if ($Right) {
     $downMsg = $WM_RBUTTONDOWN; $upMsg = $WM_RBUTTONUP; $mkButton = $MK_RBUTTON; $btnName = 'right'
@@ -64,6 +69,13 @@ if ($Right) {
 } else {
     $downMsg = $WM_LBUTTONDOWN; $upMsg = $WM_LBUTTONUP; $mkButton = $MK_LBUTTON; $btnName = 'left'
 }
+
+# Modifier bits OR'd into every mouse message's wParam — SDL reads MK_CONTROL/
+# MK_SHIFT from the button message (e.g. Ctrl+RMB rotates a building being placed).
+$mkMods = 0
+if ($Ctrl)  { $mkMods = $mkMods -bor $MK_CONTROL }
+if ($Shift) { $mkMods = $mkMods -bor $MK_SHIFT }
+$btnName = (@(if($Ctrl){'Ctrl'}; if($Shift){'Shift'}) + $btnName) -join '+'
 
 # Pack X (low word) and Y (high word) into LPARAM
 $lparam = [IntPtr](($Y -shl 16) -bor ($X -band 0xFFFF))
@@ -80,19 +92,19 @@ if (-not $NoCursor) {
 }
 
 if (-not $NoMove) {
-    [void][GameWin32]::PostMessage($hwndTarget, $WM_MOUSEMOVE, [IntPtr]0, $lparam)
+    [void][GameWin32]::PostMessage($hwndTarget, $WM_MOUSEMOVE, [IntPtr]$mkMods, $lparam)
     Start-Sleep -Milliseconds $DelayMs
 }
 
-[void][GameWin32]::PostMessage($hwndTarget, $downMsg, [IntPtr]$mkButton, $lparam)
+[void][GameWin32]::PostMessage($hwndTarget, $downMsg, [IntPtr]($mkButton -bor $mkMods), $lparam)
 Start-Sleep -Milliseconds $DelayMs
-[void][GameWin32]::PostMessage($hwndTarget, $upMsg, [IntPtr]0, $lparam)
+[void][GameWin32]::PostMessage($hwndTarget, $upMsg, [IntPtr]$mkMods, $lparam)
 
 if ($Double) {
     Start-Sleep -Milliseconds $DelayMs
-    [void][GameWin32]::PostMessage($hwndTarget, $downMsg, [IntPtr]$mkButton, $lparam)
+    [void][GameWin32]::PostMessage($hwndTarget, $downMsg, [IntPtr]($mkButton -bor $mkMods), $lparam)
     Start-Sleep -Milliseconds $DelayMs
-    [void][GameWin32]::PostMessage($hwndTarget, $upMsg, [IntPtr]0, $lparam)
+    [void][GameWin32]::PostMessage($hwndTarget, $upMsg, [IntPtr]$mkMods, $lparam)
 }
 
 $kind = if ($Double) { "$btnName double-click" } else { "$btnName click" }
