@@ -162,8 +162,18 @@ are out of scope for a standalone tester.
 | `microtest.h` | `CHECK` / `CHECK_EQ` / `KNOWN_BUG` harness, no dependencies. |
 | `test_ai_staging.cpp` | Pure logic + simulation test cases. |
 | `test_ai_concurrency.cpp` | Threaded concurrency model tests (real `std::thread`). |
-| `run-ai-tests.ps1` | Compiles & runs the fast pure/sim suite. |
+| `test_ai_data.cpp` | Parses the SHIPPED `stdgta.dat`; asserts integrity + mirror agreement. |
+| `run-ai-tests.ps1` | Compiles & runs the pure/sim suite + the data suite. |
 | `run-ai-concurrency.ps1` | Compiles & runs the threaded suite. |
+| `run-ai-smoke.ps1` | **Runtime smoke gate**: launches the real game under dbgcatch with `EN_PERF=1`, loads a save, asserts AI-health invariants from perf.log (queue gauge >= 0, queue drains, snapshot miss < 5%, no AVs, no crash). |
+
+## Data semantics learned from the data suite
+
+Duplicate task ids within a goal's task list are **intentional — they encode
+quantity** (each listed id becomes one assignable task instance). Shipped data:
+`IDG_BASICFEED` lists `IDT_BUILDFARM` x3 (= build three farms), `IDG_CARGOSHIP`
+lists `IDT_MAKELCARGOSHIP` x3. The data suite asserts multiplicity only appears
+on ORDER-type tasks.
 
 ## Keeping it in sync
 
