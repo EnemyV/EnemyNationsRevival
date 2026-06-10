@@ -4410,10 +4410,10 @@ void CAITaskMgr::ConsiderPatrols( CAITask* pTask )
                 }
                 else if ( pTask->GetGoalID( ) == IDG_SEAINVADE )
                 {
-                    // CAI_TF_ARMOR   - 4 - how many "light_tank,med_tank,light_art"
+                    // CAI_TF_ARMOR   - 4 - how many "med_tank" (canonical set)
                     // CAI_TF_LANDING - 5 - how many "landing_craft"
                     // CAI_TF_SHIPS   - 6 - how many "cruiser,destroyer,gun_boat"
-                    // CAI_TF_MARINES - 7 - how many "marines"
+                    // CAI_TF_MARINES - 7 - how many "rangers"
                     if ( !pTask->GetTaskParam( CAI_TF_SHIPS ) )
                     {
                         if ( pUnit->GetTypeUnit( ) == CTransportData::gun_boat )
@@ -4425,18 +4425,23 @@ void CAITaskMgr::ConsiderPatrols( CAITask* pTask )
                             continue;
                     }
 
+                    // light_tank/light_art/med_art cannot board a landing
+                    // craft (canonical amphib set is med_tank + rangers), so
+                    // never pull them off patrol for a sea invade -- staged
+                    // but unloadable units were the original stranding bug
+                    switch ( pUnit->GetTypeUnit( ) )
+                    {
+                    case CTransportData::light_tank:
+                    case CTransportData::light_art:
+                    case CTransportData::med_art:
+                        continue;
+                    default:
+                        break;
+                    }
                     if ( !pTask->GetTaskParam( CAI_TF_ARMOR ) )
                     {
-                        switch ( pUnit->GetTypeUnit( ) )
-                        {
-                        case CTransportData::light_tank:
-                        case CTransportData::med_tank:
-                        // case CTransportData::light_art:
-                        case CTransportData::med_art:
+                        if ( pUnit->GetTypeUnit( ) == CTransportData::med_tank )
                             continue;
-                        default:
-                            break;  // all other unit types go to next test
-                        }
                     }
                     if ( !pTask->GetTaskParam( CAI_TF_LANDING ) &&
                          pUnit->GetTypeUnit( ) == CTransportData::landing_craft )

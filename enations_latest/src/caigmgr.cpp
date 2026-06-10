@@ -7746,7 +7746,13 @@ void CAIGoalMgr::GetStagingArea( CAITask* pTask )
 
             pTask->SetTaskParam( CAI_TF_ARMOR, pGameData->GetRandom( i ) );
             if ( !pTask->GetTaskParam( CAI_TF_ARMOR ) )
-                pTask->SetTaskParam( CAI_TF_ARMOR, 1 );
+            {
+                // gate the min-1 on buildability (same idiom as MARINES above):
+                // an unbuildable required type would stall staging forever,
+                // since the armor bucket accepts only med_tank now
+                if ( CanBuildVehType( CTransportData::med_tank ) )
+                    pTask->SetTaskParam( CAI_TF_ARMOR, 1 );
+            }
 
             // sanity check, match armor with marines
             if ( pTask->GetTaskParam( CAI_TF_ARMOR ) > pTask->GetTaskParam( CAI_TF_MARINES ) )
