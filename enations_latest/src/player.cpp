@@ -946,6 +946,14 @@ void CPlayer::Serialize( CArchive& ar )
         m_dwAiHdl = 0;
         m_iNetNum = 0;
 
+        // m_bPlacedRocket isn't serialized, so it would deserialize as FALSE (its
+        // ctor value). Any saved game is post-landing (you can't save during the
+        // initial rocket placement), so force it TRUE here. Without this the minimap
+        // mode test (CWndWorld m_bIsRadar = has-command-center || !placed-rocket)
+        // sees "rocket not placed" and forces RADAR on every loaded game, and the
+        // building-count base (mainloop ConstComplete recount) is off by one.
+        m_bPlacedRocket = TRUE;
+
         // in case color depth changes
         SetPlyrNum( m_iPlyrNum );
     }
