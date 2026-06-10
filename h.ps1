@@ -144,7 +144,13 @@ switch ($cmd) {
     $dirIn = ($a1 -eq 'in')
     $n = if($a2){[int]$a2}else{4}
     $p = "$WD\perf.log"
-    $before = if(Test-Path $p){ (Get-Content $p -Tail 1 | ForEach-Object { if($_ -match '^t=(\d+)'){ [int]$matches[1] } }) } else { 0 }
+    # -Tail 1 can race a log write and return 2 lines -> $before becomes an array and every
+    # later [int] comparison throws. Keep only the LAST t= value, coerced scalar.
+    $before = 0
+    if (Test-Path $p) {
+      $bv = @(Get-Content $p -Tail 2 | ForEach-Object { if($_ -match '^t=(\d+)'){ [int]$matches[1] } }) | Select-Object -Last 1
+      if ($bv) { $before = [int]$bv }
+    }
     # 60ms notch spacing = a real wheel flick (the settle window is 120ms, so notches must
     # arrive faster than that to coalesce -- they do for any human flick).
     if($dirIn){ & "$SC\zoom.ps1" -In $n -Window map -DelayMs 60 2>&1 | Out-Null }
@@ -153,11 +159,15 @@ switch ($cmd) {
     $rows = Get-Content $p -Tail 30 | ForEach-Object {
       $f=@{}; foreach($m in [regex]::Matches($_, '([\w.]+)=\s*([-\d.]+)')){ $f[$m.Groups[1].Value]=$m.Groups[2].Value }; $f } |
       Where-Object { [int]$_['t'] -gt $before }
-    $rebuilds = ($rows | ForEach-Object { [int]$_['rebuild.cnt'] } | Measure-Object -Sum).Sum
+    # rebuild.key = rebuilds caused by a view-key (zoom/dir) change — what the gesture costs.
+    # rebuild.cnt also counts pan/edge-scroll incremental rebuilds (mouse near a screen edge
+    # auto-scrolls the map), which used to inflate this to "5 rebuilds" for a 1-notch zoom.
+    $rebuilds = ($rows | ForEach-Object { [int]$_['rebuild.key'] } | Measure-Object -Sum).Sum
+    $panRebs  = ($rows | ForEach-Object { [int]$_['rebuild.pan'] } | Measure-Object -Sum).Sum
     $defers   = ($rows | ForEach-Object { [int]$_['pv.defer'] }    | Measure-Object -Sum).Sum
     $rbTimes  = $rows | Where-Object { [int]$_['t.rebuild'] -gt 0 } | ForEach-Object { [int]([double]$_['t.rebuild']/1000) }
     $worst    = ($rows | ForEach-Object { [double]$_['max'] } | Measure-Object -Maximum).Maximum
-    "gesture: $n notches $(if($dirIn){'IN'}else{'OUT'}) | full-rebuilds=$rebuilds (want 1) | defer-frames=$defers | rebuild-times(ms)=$($rbTimes -join ',') | worst-frame={0:N0}ms" -f $worst
+    "gesture: $n notches $(if($dirIn){'IN'}else{'OUT'}) | key-rebuilds=$rebuilds (want 1) | pan-rebuilds=$panRebs | defer-frames=$defers | rebuild-times(ms)=$($rbTimes -join ',') | worst-frame={0:N0}ms" -f $worst
   }
 
   'rotate' {

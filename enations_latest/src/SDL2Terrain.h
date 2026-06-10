@@ -65,6 +65,12 @@ public:
     // the first-light render until the exact MakeRotated mapping lands.
     static const Tile* GetDefaultForType( const std::string& type );
 
+    // Resolve the tile a hex should draw (forest→plain, road facing+rotation,
+    // else variant). Shared by the main pass, the T5 edge-feather pass, and the
+    // whole-map far-underlay builder (a file-scope helper in the .cpp — which is
+    // why this is public).
+    static const Tile* TileForHex( CHex* phex, int iDir );
+
 private:
     static std::unordered_map<std::string, Tile> s_tiles;  // key: type_variant_stem
     static std::unordered_map<std::string, const Tile*> s_byType;       // type → representative
@@ -74,8 +80,4 @@ private:
 
     static std::string MakeKey( const std::string& type, int variant,
                                 const std::string& stem );
-
-    // Resolve the tile a hex should draw (forest→plain, road facing+rotation,
-    // else variant). Shared by the main pass and the T5 edge-feather pass.
-    static const Tile* TileForHex( CHex* phex, int iDir );
 };
