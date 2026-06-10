@@ -131,6 +131,23 @@ static inline void TileMemoInvalidate( int x, int y )   // drop hex (x,y) + its 
 // push_back count) by a third. The rebuild is memory-bandwidth bound under multi-AI load, so this
 // reduces both the work AND the bandwidth it contends for with the AI threads — helps Debug AND
 // Release. Index pattern {0,1,3, 1,2,3} matches the L,T,R,B corner order (tris L-T-B and T-R-B).
+// Vertex-buffer capacity pool. The per-row batch maps (rowBase/rowFeather) and s_cache are
+// LOCALS rebuilt from empty every mesh rebuild — in a Debug build (/MDd heap) the realloc
+// churn of thousands of tiny growing vectors dominated the zoomed-in rebuild (rb.asm was
+// ~27x more per hex at z0 than z3, where long same-texture runs amortize the growth).
+// Recycle the buffers' CAPACITY across rebuilds instead.
+static std::vector<std::vector<SDL_Vertex>> s_vbPool;
+static inline void VbAcquire( std::vector<SDL_Vertex>& vb, size_t reserveN )
+{
+    if ( vb.capacity( ) ) return;
+    if ( !s_vbPool.empty( ) ) { vb.swap( s_vbPool.back( ) ); s_vbPool.pop_back( ); vb.clear( ); }
+    else vb.reserve( reserveN );
+}
+static inline void VbRecycle( std::vector<SDL_Vertex>& vb )
+{
+    if ( s_vbPool.size( ) < 96 && vb.capacity( ) ) { vb.clear( ); s_vbPool.push_back( std::move( vb ) ); }
+}
+
 static std::vector<int> s_quadIdx;
 static const int* QuadIndices( int nQuads )
 {
@@ -937,7 +954,7 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
     // Fog overlay geometry, built FREE during the terrain pass (positions only), then
     // re-coloured on a fast throttle WITHOUT rebuilding terrain — so fog tracks unit
     // vision in ~150 ms while the heavy terrain mesh rebuilds only on a view change.
-    static std::vector<SDL_Vertex> s_fogVerts;   // 6 per hex (2 tris), black, per-corner alpha
+    static std::vector<SDL_Vertex> s_fogVerts;   // 4 per hex (indexed quad, L/T/R/B), black, per-corner alpha
     static std::vector<CHex*>      s_fogHex;     // hex per fog quad (self visibility, no GetHex)
     static std::vector<int>        s_fogNbr;     // 8 neighbour fog-indices per hex (-1 = none)
     static std::vector<float>      s_fogVis;     // per-hex visibility, re-sampled each throttle
@@ -1257,13 +1274,13 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
         // the pan delta and DROP entries that scrolled fully off-texture (clipped → dead). The
         // loop appends the strip's new hexes below; a full rebuild later compacts any residue.
         auto onTex = [&]( float x, float y ) { return x >= 0 && x < rtW && y >= 0 && y < rtH; };
-        { size_t w = 0, n = s_fogHex.size( );                       // fog: 6 verts + 1 CHex* per hex
+        { size_t w = 0, n = s_fogHex.size( );                       // fog: 4 verts + 1 CHex* per hex
           for ( size_t i = 0; i < n; ++i ) {
-              SDL_Vertex* v = &s_fogVerts[i*6]; bool keep = false;
-              for ( int k = 0; k < 6; ++k ) { v[k].position.x += shiftX; v[k].position.y += shiftY;
+              SDL_Vertex* v = &s_fogVerts[i*4]; bool keep = false;
+              for ( int k = 0; k < 4; ++k ) { v[k].position.x += shiftX; v[k].position.y += shiftY;
                                               if ( onTex( v[k].position.x, v[k].position.y ) ) keep = true; }
-              if ( keep ) { if ( w != i ) { s_fogHex[w] = s_fogHex[i]; for ( int k = 0; k < 6; ++k ) s_fogVerts[w*6+k] = s_fogVerts[i*6+k]; } ++w; } }
-          s_fogHex.resize( w ); s_fogVerts.resize( w*6 ); }
+              if ( keep ) { if ( w != i ) { s_fogHex[w] = s_fogHex[i]; for ( int k = 0; k < 4; ++k ) s_fogVerts[w*4+k] = s_fogVerts[i*4+k]; } ++w; } }
+          s_fogHex.resize( w ); s_fogVerts.resize( w*4 ); }
         { size_t w = 0, n = s_waterHex.size( );                     // water diamonds: parallel arrays
           for ( size_t i = 0; i < n; ++i ) {
               CPoint* p = &s_waterPos[i*4]; bool keep = false;
@@ -1421,8 +1438,19 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
     // texture (rows don't overlap, so order inside a row is free) — that keeps the
     // SDL_RenderGeometry call count low (per-hex drawing tanked the FPS when zoomed
     // out). Each row: draw its base batches, then its feather batches, then advance.
-    std::unordered_map<SDL_Texture*, std::vector<SDL_Vertex>> rowBase;
-    std::unordered_map<SDL_Texture*, std::vector<SDL_Vertex>> rowFeather;
+    // Per-row batch buckets. FLAT vectors, not unordered_map: a row holds only a handful of
+    // distinct textures, and at z0 the texture changes nearly EVERY hex (terrain variety), so
+    // the per-switch map lookup (Debug hash+bucket walk, ~15us) dominated the zoomed-in rebuild
+    // (rb.asm was ~20us/hex at z0 vs 0.2us at z3 where long same-texture runs amortized it).
+    // A linear scan of <=16 entries is faster in any build and trivial in Debug.
+    std::vector<std::pair<SDL_Texture*, std::vector<SDL_Vertex>>> rowBase;
+    std::vector<std::pair<SDL_Texture*, std::vector<SDL_Vertex>>> rowFeather;
+    auto rowBucket = []( std::vector<std::pair<SDL_Texture*, std::vector<SDL_Vertex>>>& row,
+                         SDL_Texture* tex ) -> std::vector<SDL_Vertex>* {
+        for ( auto& b : row ) if ( b.first == tex ) return &b.second;
+        row.emplace_back( tex, std::vector<SDL_Vertex>( ) );
+        return &row.back( ).second;
+    };
     // Per-row flush keeps back-to-front order so a tall (mountain) tile occludes
     // lower tiles AND feather bands behind it. (An earlier global-batch optimization
     // flushed all base then all feather across the whole frame to cut draw calls —
@@ -1587,8 +1615,8 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
                 SDL_Vertex v; v.position = { (float)px[k], (float)py[k] };
                 v.tex_coord = { 0, 0 }; v.color = { 0, 0, 0, 0 }; return v;
             };
-            s_fogVerts.push_back( fzv( 0 ) ); s_fogVerts.push_back( fzv( 1 ) ); s_fogVerts.push_back( fzv( 3 ) );
-            s_fogVerts.push_back( fzv( 1 ) ); s_fogVerts.push_back( fzv( 2 ) ); s_fogVerts.push_back( fzv( 3 ) );
+            s_fogVerts.push_back( fzv( 0 ) ); s_fogVerts.push_back( fzv( 1 ) );   // 4 corners L,T,R,B —
+            s_fogVerts.push_back( fzv( 2 ) ); s_fogVerts.push_back( fzv( 3 ) );  // drawn with QuadIndices()
         }
         // WATER: re-emit the captured open-water/coast diamonds + blend bands at the new
         // zoom. s_waterAnims (frame tables) is KEPT from the capture build (zoom-independent),
@@ -1694,8 +1722,9 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
                 continue;
 
             SDL_Texture* tex = tile->tex[zoom];
-            if ( tex != lastBaseTex ) { lastBaseVb = &rowBase[tex]; lastBaseTex = tex; }
+            if ( tex != lastBaseTex ) { lastBaseVb = rowBucket( rowBase, tex ); lastBaseTex = tex; }
             std::vector<SDL_Vertex>& vb = *lastBaseVb;   // batched within this row
+            if ( !vb.capacity( ) ) VbAcquire( vb, 256 ); // pooled capacity (drawRow moves the buffer out each row)
 
             // T4 slope shading: shaded land gets per-triangle slope brightness;
             // water/coast stay full colour. T6 fog is applied per-vertex below.
@@ -1914,12 +1943,10 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
             float sf[4] = { fog[fperm[0]], fog[fperm[1]], fog[fperm[2]], fog[fperm[3]] };
             QueryPerformanceCounter( &_fa );
             s_fogHex.push_back( phex );   // self visibility on re-sample (no GetHex)
-            s_fogVerts.push_back( fogV( pts[0], sf[0] ) );
-            s_fogVerts.push_back( fogV( pts[1], sf[1] ) );
-            s_fogVerts.push_back( fogV( pts[3], sf[3] ) );
-            s_fogVerts.push_back( fogV( pts[1], sf[1] ) );
-            s_fogVerts.push_back( fogV( pts[2], sf[2] ) );
-            s_fogVerts.push_back( fogV( pts[3], sf[3] ) );
+            s_fogVerts.push_back( fogV( pts[0], sf[0] ) );   // 4 corners L,T,R,B (was 6 duplicated
+            s_fogVerts.push_back( fogV( pts[1], sf[1] ) );   // verts) — drawn with QuadIndices(),
+            s_fogVerts.push_back( fogV( pts[2], sf[2] ) );   // and the throttle re-sample rewrites
+            s_fogVerts.push_back( fogV( pts[3], sf[3] ) );   // alphas by direct corner slot below.
             QueryPerformanceCounter( &_fb ); _accFog += _fb.QuadPart - _fa.QuadPart;
             if ( retainCap )   // CONTENT corners for the zoom replay (alpha re-sampled each tick)
                 s_fogCells.push_back( { phex, { cpts[0], cpts[1], cpts[2], cpts[3] } } );
@@ -2056,8 +2083,9 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
                         n1.position = { i1x, i1y };                          n1.tex_coord = iu1; n1.color = { g1, g1, g1, 0 };
 
                         SDL_Texture* ftex = ntile->tex[zoom];
-                        if ( ftex != lastFeatTex ) { lastFeatVb = &rowFeather[ftex]; lastFeatTex = ftex; }
+                        if ( ftex != lastFeatTex ) { lastFeatVb = rowBucket( rowFeather, ftex ); lastFeatTex = ftex; }
                         std::vector<SDL_Vertex>& fvb = *lastFeatVb;   // batched within this row
+                        if ( !fvb.capacity( ) ) VbAcquire( fvb, 256 );  // pooled capacity
                         fvb.push_back( e0 ); fvb.push_back( e1 ); fvb.push_back( n1 ); fvb.push_back( n0 );   // 4 corners — QuadIndices() expands to 2 tris (same filled band)
                         if ( retainCap )   // capture the band in CONTENT space, attached to THIS hex's base cell
                         {
@@ -2170,6 +2198,7 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
           SDL_RenderGeometry( r, d.first, d.second.data( ), nq * 4, QuadIndices( nq ), nq * 6 ); }
         else
             SDL_RenderGeometry( r, d.first, d.second.data( ), (int)d.second.size( ), nullptr, 0 );
+        VbRecycle( d.second );   // return the buffer's capacity to the pool for the next rebuild
     }
 
     // RETAINED-MESH zoom replay: the cells are at the CAPTURE's edit state, so re-apply every
@@ -2410,13 +2439,12 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
                 float fc[4] = { f0, f1, f2, f3 };
                 Uint8 a0 = A( fc[fperm[0]] ), a1 = A( fc[fperm[1]] ),
                       a2 = A( fc[fperm[2]] ), a3 = A( fc[fperm[3]] );
-                SDL_Vertex* v = &s_fogVerts[i * 6];   // order L,T,B, T,R,B (slots 0,1,3,1,2,3)
+                SDL_Vertex* v = &s_fogVerts[i * 4];   // 4 corners, screen slots L,T,R,B = 0..3
                 bool changed = ( v[0].color.a != a0 || v[1].color.a != a1 ||
-                                 v[4].color.a != a2 || v[2].color.a != a3 );
-                v[0].color.a = a0; v[1].color.a = a1; v[2].color.a = a3;
-                v[3].color.a = a1; v[4].color.a = a2; v[5].color.a = a3;
+                                 v[2].color.a != a2 || v[3].color.a != a3 );
+                v[0].color.a = a0; v[1].color.a = a1; v[2].color.a = a2; v[3].color.a = a3;
                 if ( changed )
-                    for ( int k = 0; k < 6; ++k )
+                    for ( int k = 0; k < 4; ++k )
                         s_fogBatch.push_back( v[k] );
             }
         }
@@ -2439,11 +2467,13 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
             {
                 SDL_SetRenderDrawColor( r, 0, 0, 0, 0 );   // transparent = no dim
                 SDL_RenderClear( r );
-                SDL_RenderGeometry( r, nullptr, s_fogVerts.data( ), (int)s_fogVerts.size( ), nullptr, 0 );
+                int nq = (int)s_fogVerts.size( ) / 4;
+                SDL_RenderGeometry( r, nullptr, s_fogVerts.data( ), nq * 4, QuadIndices( nq ), nq * 6 );
             }
             else
             {
-                SDL_RenderGeometry( r, nullptr, s_fogBatch.data( ), (int)s_fogBatch.size( ), nullptr, 0 );
+                int nq = (int)s_fogBatch.size( ) / 4;
+                SDL_RenderGeometry( r, nullptr, s_fogBatch.data( ), nq * 4, QuadIndices( nq ), nq * 6 );
             }
             SDL_SetRenderTarget( r, pt );
             SDL_RenderSetViewport( r, &vp );
