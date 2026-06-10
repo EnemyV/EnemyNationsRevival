@@ -17,13 +17,15 @@
 #   h.ps1 fresh                   read-only: is the exe newer than SDL2Terrain.cpp (did it compile)?
 #   h.ps1 windows                 list game windows
 #   h.ps1 perf                    print key terrain rebuild counters from perf.log
+#   h.ps1 log [name] [n]          tail a known log (perf|dbg|terrain|list). list = paths+ages
+#   h.ps1 grep <pattern> [name] [n]   regex-search a known log's tail (default perf, 400 lines)
 #   h.ps1 pan <left|right|up|down> [n]   scroll the Area Map a quarter-screen per press (arrow keys)
 #   h.ps1 click <x> <y> [role]    mouse-click client px on a window (default map)
 #   h.ps1 rotate [cw|ccw] [n]     rotate the view ('.'=CW / ','=CCW in-game hotkeys, n times)
 #   h.ps1 newgame [race]          menu -> Create -> OK -> pick race -> OK -> wait Area Map
 #   h.ps1 waitmap [secs]          block until the Area Map (in-game) appears
 
-param([Parameter(Position=0)][string]$cmd='', [Parameter(Position=1)][string]$a1='', [Parameter(Position=2)][string]$a2='')
+param([Parameter(Position=0)][string]$cmd='', [Parameter(Position=1)][string]$a1='', [Parameter(Position=2)][string]$a2='', [Parameter(Position=3)][string]$a3='')
 $ErrorActionPreference = 'Continue'
 $SC  = 'd:\Enemy Nations\src'
 $WD  = 'd:\Enemy Nations'
@@ -242,6 +244,41 @@ switch ($cmd) {
     if(_has 'Area Map'){ 'INGAME' } elseif(_running){ 'NEWGAME-TIMEOUT (worldgen?)' } else { 'PROCESS-GONE' }
   }
 
+  'log' {
+    # Tail a known game log by short name — no path hunting, allow-listable.
+    #   h.ps1 log              -> same as 'log list'
+    #   h.ps1 log perf 20      -> last 20 lines of perf.log
+    $logs = [ordered]@{
+      perf    = "$WD\perf.log"
+      dbg     = 'd:\tmp\dbgcatch.log'
+      terrain = "$WD\SDL2Terrain.log"
+      leaks   = "$WD\leakstacks.txt"
+    }
+    if (-not $a1 -or $a1 -eq 'list') {
+      foreach ($k in $logs.Keys) {
+        $f = Get-Item $logs[$k] -ErrorAction SilentlyContinue
+        if ($f) { "{0,-8} {1}  {2:N0} KB  {3}" -f $k, $f.FullName, ($f.Length/1KB), $f.LastWriteTime }
+        else    { "{0,-8} {1}  (missing)" -f $k, $logs[$k] }
+      }
+      break
+    }
+    if (-not $logs.Contains($a1)) { "unknown log '$a1' (use: $($logs.Keys -join ' | ') | list)"; break }
+    $n = if($a2){[int]$a2}else{15}
+    Get-Content $logs[$a1] -Tail $n -ErrorAction SilentlyContinue
+  }
+
+  'grep' {
+    # Regex-search the tail of a known log.  h.ps1 grep <pattern> [perf|dbg|terrain|leaks] [tailN]
+    if (-not $a1) { 'usage: h.ps1 grep <pattern> [perf|dbg|terrain|leaks] [tailN]'; break }
+    $logs = @{ perf = "$WD\perf.log"; dbg = 'd:\tmp\dbgcatch.log'; terrain = "$WD\SDL2Terrain.log"; leaks = "$WD\leakstacks.txt" }
+    $name = if($a2 -and $logs.ContainsKey($a2)){ $a2 } else { 'perf' }
+    $n = if($a3){[int]$a3} elseif($a2 -and -not $logs.ContainsKey($a2)){[int]$a2} else {400}
+    $p = $logs[$name]
+    if (-not (Test-Path $p)) { "no $name log at $p"; break }
+    $hits = Get-Content $p -Tail $n | Select-String -Pattern $a1
+    if ($hits) { $hits | Select-Object -Last 12 | ForEach-Object { $_.Line } } else { "no match for '$a1' in last $n lines of $name" }
+  }
+
   'perf' {
     $p = "$WD\perf.log"
     if(-not (Test-Path $p)){ 'no perf.log'; break }
@@ -255,5 +292,5 @@ switch ($cmd) {
     }
   }
 
-  default { "verbs: launch | load | measure | zoom <in|out> N | shot [role] | wake | status | fresh | windows | perf | pan | click | rotate | newgame | waitmap" }
+  default { "verbs: launch | load | measure | zoom <in|out> N | shot [role] | wake | status | fresh | windows | perf | log [name] [n] | grep <pat> [name] | pan | click | rotate | newgame | waitmap" }
 }

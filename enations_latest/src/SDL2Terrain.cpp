@@ -148,6 +148,19 @@ static inline void VbRecycle( std::vector<SDL_Vertex>& vb )
     if ( s_vbPool.size( ) < 96 && vb.capacity( ) ) { vb.clear( ); s_vbPool.push_back( std::move( vb ) ); }
 }
 
+// Missing-mip fallback: the diamond UVs are relative (0 / 0.5 / 1), so ANY zoom level
+// of the same art renders correctly — SDL just scales it. A missing/failed baked PNG at
+// one zoom must not drop the hex: that was the "black diamond" bug (the hex was culled
+// from BOTH the cached terrain texture and the live water layer, leaving the backdrop —
+// black — showing through a diamond-shaped hole).
+static inline SDL_Texture* TileTexAnyZoom( const SDL2Terrain::Tile* t, int zoom )
+{
+    if ( !t ) return nullptr;
+    SDL_Texture* tex = t->tex[zoom];
+    for ( int z = 0; !tex && z < SDL2Terrain::NUM_ZOOMS; ++z ) tex = t->tex[z];
+    return tex;
+}
+
 static std::vector<int> s_quadIdx;
 static const int* QuadIndices( int nQuads )
 {
@@ -629,6 +642,12 @@ const SDL2Terrain::Tile* SDL2Terrain::TileForHex( CHex* phex, int iDir )
         std::string stem = std::string( kDirPrefix[viewDir] ) + "00" + fr + "000";
         const Tile* t = Get( "coastline", srcDir, stem );
         if ( !t ) t = Get( "coastline", srcDir, std::string( kDirPrefix[viewDir] ) + "00a000" );
+        // ROTATION-SYMMETRIC variants (3/7/11 — single F index, no MakeRotated gaps in
+        // the table above) ship only the "aa" view: the original draws that one view at
+        // every camera dir. Without this fallback a rotated camera (viewDir != 0) found
+        // no art at all and fell to the variant-0 default — a wrong-shaped shore.
+        if ( !t ) t = Get( "coastline", srcDir, std::string( "aa00" ) + fr + "000" );
+        if ( !t ) t = Get( "coastline", srcDir, "aa00a000" );
         return t ? t : GetDefaultForType( "coastline" );
     }
 
@@ -1314,12 +1333,24 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
         WaterAnim wa;
         wa.nFrames = ( wtype == CHex::swamp ) ? 5 : 8;
         const char* tn = ( wtype >= 0 && wtype < kNumTypeNames ) ? kTypeName[wtype] : "ocean";
+        int wMiss = 0;
         for ( int f = 0; f < wa.nFrames; ++f )
         {
             char fr = (char)( 'a' + f );
             const Tile* t = Get( tn, wvar, std::string( "aa00" ) + fr + "000" );
             if ( !t ) t = Get( tn, wvar, "aa00a000" );
+            if ( !t ) ++wMiss;
             wa.frame[f] = t;
+        }
+        // DIAGNOSTIC (shore/water data bugs): a variant with NO art points at bad map data
+        // (e.g. worldgen writing an out-of-range variant index). The bake falls back so it
+        // still renders, but log what was asked for so the generation bug can be chased.
+        if ( wMiss )
+        {
+            Perf::CounterAdd( "rb.watermiss", wMiss );
+            static int s_wLogged = 0;
+            if ( s_wLogged < 8 )
+            { char b[160]; sprintf_s( b, "water anim miss: type=%s variant=%d nullFrames=%d/%d", tn, wvar, wMiss, wa.nFrames ); LogTerrain( b ); ++s_wLogged; }
         }
         int idx = (int)s_waterAnims.size( );
         s_waterAnims.push_back( wa );
@@ -1335,19 +1366,38 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
     // the SAME s_waterAnims vector, so the per-tick bake animates them like the sea.
     std::unordered_map<int,int> coastAnimKey;
     auto resolveCoastAnim = [&]( int F ) -> int {
-        if ( F < 0 || F > 38 ) F = 0;
+        bool clamped = ( F < 0 || F > 38 );   // out-of-range facing = bad SHORE data (worldgen/placement)
+        if ( clamped ) F = 0;
         auto it = coastAnimKey.find( F );
-        if ( it != coastAnimKey.end( ) ) return it->second;
+        if ( it != coastAnimKey.end( ) ) { if ( clamped ) Perf::CounterAdd( "rb.coastclamp", 1 ); return it->second; }
         WaterAnim wa; wa.nFrames = 8;
         int srcDir  = kCoastSrcDir[F];
         int viewDir = ( ( kCoastRot[F] - ( aa.m_iDir & 3 ) ) % 4 + 4 ) % 4;
+        int cMiss = 0;
         for ( int f = 0; f < 8; ++f )
         {
             char fr = (char)( 'a' + f );
             std::string stem = std::string( kDirPrefix[viewDir] ) + "00" + fr + "000";
             const Tile* t = Get( "coastline", srcDir, stem );
             if ( !t ) t = Get( "coastline", srcDir, std::string( kDirPrefix[viewDir] ) + "00a000" );
+            // Rotation-symmetric variants (3/7/11) ship only the "aa" view — the original
+            // draws it at every camera dir. Without this, a rotated camera resolved an
+            // ALL-NULL anim for these shores → the hex's hole in s_rt had nothing under it
+            // (the "black diamond in shallow water" bug; post-wFall, a wrong open-sea fill).
+            if ( !t ) t = Get( "coastline", srcDir, std::string( "aa00" ) + fr + "000" );
+            if ( !t ) t = Get( "coastline", srcDir, "aa00a000" );
+            if ( !t ) ++cMiss;
             wa.frame[f] = t;
+        }
+        // DIAGNOSTIC (shore generation/placement bugs): a facing whose art doesn't exist
+        // means the map data asked for a shore orientation the tile set doesn't have.
+        // Rendering falls back (frame 0 → open sea), but log the request for the data fix.
+        if ( cMiss || clamped )
+        {
+            Perf::CounterAdd( "rb.coastmiss", __max( cMiss, 1 ) );
+            static int s_cLogged = 0;
+            if ( s_cLogged < 8 )
+            { char b[160]; sprintf_s( b, "coast anim miss: F=%d%s srcDir=%d viewDir=%d nullFrames=%d/8", F, clamped ? " (CLAMPED out-of-range)" : "", srcDir, viewDir, cMiss ); LogTerrain( b ); ++s_cLogged; }
         }
         int idx = (int)s_waterAnims.size( );
         s_waterAnims.push_back( wa );
@@ -1533,7 +1583,7 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
         SDL_Texture* curTex = nullptr; std::vector<SDL_Vertex>* cur = nullptr;
         for ( const BaseCell& bc : s_baseCells )
         {
-            SDL_Texture* tex = bc.tile->tex[zoom];
+            SDL_Texture* tex = TileTexAnyZoom( bc.tile, zoom );   // mip fallback (see helper)
             if ( !tex ) continue;
             const SDL_FPoint* uv = bc.transpose ? uvT : uvN;
             SDL_Vertex v[4];
@@ -1573,7 +1623,7 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
             for ( int fi = 0; zoom <= 1 && fi < bc.fCount; ++fi )
             {
                 const FeatherBand& fb = s_featherBands[bc.fStart + fi];
-                SDL_Texture* ftex = fb.tile->tex[zoom];
+                SDL_Texture* ftex = TileTexAnyZoom( fb.tile, zoom );   // mip fallback
                 if ( !ftex ) continue;
                 SDL_Vertex fv[4]; int fmnx, fmxx, fmny, fmxy;
                 for ( int k = 0; k < 4; ++k )
@@ -1718,13 +1768,18 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
             QueryPerformanceCounter( &_pa );
             const Tile* tile = cachedTile( phex );             // forest/road/variant (memoized)
             QueryPerformanceCounter( &_pb ); _accTile += _pb.QuadPart - _pa.QuadPart;
-            if ( !tile || !tile->tex[zoom] )
+            // BLACK-DIAMOND guard. The old `!tile->tex[zoom] → continue` culled the hex from
+            // EVERYTHING below — including the open-water/coast capture, which never draws the
+            // static tile at all (those hexes are holes in s_rt filled by the live water layer).
+            // One missing baked PNG at this zoom = a permanent black diamond. Instead:
+            //  - land: fall back to any other zoom's texture (UVs are relative — scales fine);
+            //  - animated water/coast: proceed regardless — the live layer is what fills them.
+            SDL_Texture* tex = TileTexAnyZoom( tile, zoom );
+            if ( !tex && !IsAnimatedTile( type ) )
+            {
+                Perf::CounterAdd( "rb.notile", 1 );   // land hex with no art at ANY zoom (diagnostic)
                 continue;
-
-            SDL_Texture* tex = tile->tex[zoom];
-            if ( tex != lastBaseTex ) { lastBaseVb = rowBucket( rowBase, tex ); lastBaseTex = tex; }
-            std::vector<SDL_Vertex>& vb = *lastBaseVb;   // batched within this row
-            if ( !vb.capacity( ) ) VbAcquire( vb, 256 ); // pooled capacity (drawRow moves the buffer out each row)
+            }
 
             // T4 slope shading: shaded land gets per-triangle slope brightness;
             // water/coast stay full colour. T6 fog is applied per-vertex below.
@@ -1732,7 +1787,7 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
             // shade math, so fetch it lazily here — skips it for the ~27k unshaded
             // water/coast hexes at full zoom-out (was called unconditionally).
             float bL = 1.0f, bR = 1.0f;
-            if ( tile->shade )
+            if ( tile && tile->shade )
             {
                 QueryPerformanceCounter( &_sa );
                 CMapLoc3D c3d[4];
@@ -1771,7 +1826,7 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
             // Top). road transposes U/V (bDrawVert / TerrainDrawQuadVert, for
             // vertical-seam continuity); resources are a single upright icon that
             // maps directly (transposing it rotates the cart sideways).
-            bool bTranspose = tile->drawVert && type == CHex::road;
+            bool bTranspose = tile && tile->drawVert && type == CHex::road;
             SDL_FPoint uvL, uvT, uvR, uvB;
             if ( bTranspose )
             {
@@ -1806,6 +1861,11 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
             // last mesh rebuild happened to capture. Land IS baked.
             if ( !IsAnimatedTile( type ) )
             {
+                // tex is guaranteed non-null here (null land tex bailed above) — bucket lazily
+                // so water/coast hexes (which never bake their tile) don't open empty buckets.
+                if ( tex != lastBaseTex ) { lastBaseVb = rowBucket( rowBase, tex ); lastBaseTex = tex; }
+                std::vector<SDL_Vertex>& vb = *lastBaseVb;   // batched within this row
+                if ( !vb.capacity( ) ) VbAcquire( vb, 256 ); // pooled capacity (drawRow moves the buffer out each row)
                 vb.push_back( vL ); vb.push_back( vT ); vb.push_back( vR ); vb.push_back( vB );   // 4 corners (L,T,R,B) — QuadIndices() expands to 2 tris
                 // RETAINED MESH: capture this land tile + its CONTENT corners so a zoom-only
                 // change can re-emit it scaled without re-running this loop. (Base layer only
@@ -1919,7 +1979,7 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
             // (MOD = ×1 = no darkening), and unshaded tiles have bL=bR=1.0, so their quad
             // is an all-white no-op. Skipping them (water/coast, ~half the hexes at full
             // zoom-out) is pixel-identical and saves 6 vert builds + pushes per such hex.
-            if ( tile->shade )
+            if ( tile && tile->shade )
             {
                 s_shadeVerts.push_back( shadeV( pts[0], bL ) );  // L,T,B  (left tri)
                 s_shadeVerts.push_back( shadeV( pts[1], bL ) );
@@ -2031,7 +2091,8 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
                     else if ( IsOpenWater( ntype ) || ntype == CHex::coastline )
                         continue;
                     const Tile* ntile = cachedTile( pn );   // memoized (computed once per hex/rebuild)
-                    if ( !ntile || !ntile->tex[zoom] || ntile == tile ) continue;
+                    SDL_Texture* nftex = TileTexAnyZoom( ntile, zoom );   // mip fallback (see helper)
+                    if ( !ntile || !nftex || ntile == tile ) continue;
 
                     int   c0 = kCornerSlot[aa.m_iDir & 3][e];
                     int   c1 = kCornerSlot[aa.m_iDir & 3][( e + 1 ) & 3];
@@ -2082,7 +2143,7 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
                         n0.position = { i0x, i0y };                          n0.tex_coord = iu0; n0.color = { g0, g0, g0, 0 };
                         n1.position = { i1x, i1y };                          n1.tex_coord = iu1; n1.color = { g1, g1, g1, 0 };
 
-                        SDL_Texture* ftex = ntile->tex[zoom];
+                        SDL_Texture* ftex = nftex;
                         if ( ftex != lastFeatTex ) { lastFeatVb = rowBucket( rowFeather, ftex ); lastFeatTex = ftex; }
                         std::vector<SDL_Vertex>& fvb = *lastFeatVb;   // batched within this row
                         if ( !fvb.capacity( ) ) VbAcquire( fvb, 256 );  // pooled capacity
@@ -2222,7 +2283,8 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
                 CHex* phex = theMap.GetHex( hc );
                 if ( !phex ) continue;
                 const Tile* tile = TileForHex( phex, aa.m_iDir );
-                if ( !tile || !tile->tex[zoom] ) continue;
+                SDL_Texture* ptex = TileTexAnyZoom( tile, zoom );   // mip fallback (see helper)
+                if ( !tile || !ptex ) continue;
                 for ( int i = 0; i < 4; ++i ) { pts[i].x += offX; pts[i].y += offY; }   // dX/dY are 0 on a (re)built view
                 CTerrainSprite* psp = phex->GetSprite( );
                 bool bTranspose = tile->drawVert && psp && psp->GetID( ) == CHex::road;
@@ -2234,7 +2296,7 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
                 v[1].position = { (float)pts[1].x, (float)pts[1].y }; v[1].tex_coord = uvT; v[1].color = white;
                 v[2].position = { (float)pts[2].x, (float)pts[2].y }; v[2].tex_coord = uvR; v[2].color = white;
                 v[3].position = { (float)pts[3].x, (float)pts[3].y }; v[3].tex_coord = uvB; v[3].color = white;
-                SDL_RenderGeometry( r, tile->tex[zoom], v, 4, pidx, 6 );
+                SDL_RenderGeometry( r, ptex, v, 4, pidx, 6 );
             }
         }
     }
@@ -2348,7 +2410,8 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
             CHex* phex = theMap.GetHex( hc );
             if ( !phex ) continue;
             const Tile* tile = TileForHex( phex, aa.m_iDir );
-            if ( !tile || !tile->tex[zoom] ) continue;
+            SDL_Texture* ptex = TileTexAnyZoom( tile, zoom );   // mip fallback (see helper)
+            if ( !tile || !ptex ) continue;
             for ( int i = 0; i < 4; ++i ) { pts[i].x += offX - dX; pts[i].y += offY - dY; }
             // Road tiles flagged drawVert sample the diamond TRANSPOSED (U/V swapped) for
             // vertical-seam continuity — the full-rebuild base pass does this. The patch
@@ -2365,7 +2428,7 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
             v[1].position = { (float)pts[1].x, (float)pts[1].y }; v[1].tex_coord = uvT; v[1].color = white;
             v[2].position = { (float)pts[2].x, (float)pts[2].y }; v[2].tex_coord = uvR; v[2].color = white;
             v[3].position = { (float)pts[3].x, (float)pts[3].y }; v[3].tex_coord = uvB; v[3].color = white;
-            SDL_RenderGeometry( r, tile->tex[zoom], v, 4, idx, 6 );
+            SDL_RenderGeometry( r, ptex, v, 4, idx, 6 );
         }
         SDL_SetRenderTarget( r, pt );
         SDL_RenderSetViewport( r, &vp );
@@ -2553,14 +2616,18 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
             // leaving a permanent black hole in the bake.
             SDL_Texture* wFall = nullptr;
             for ( const WaterAnim& wa2 : s_waterAnims )
-                if ( wa2.nFrames > 0 && wa2.frame[0] && wa2.frame[0]->tex[wz] ) { wFall = wa2.frame[0]->tex[wz]; break; }
+                if ( wa2.nFrames > 0 && wa2.frame[0] && TileTexAnyZoom( wa2.frame[0], wz ) ) { wFall = TileTexAnyZoom( wa2.frame[0], wz ); break; }
             for ( size_t ai = 0; ai < s_waterDiamGeom.size( ); ++ai )   // opaque water diamonds
             {
                 std::vector<SDL_Vertex>& wv = s_waterDiamGeom[ai];
                 if ( wv.empty( ) ) continue;
                 const WaterAnim& wa = s_waterAnims[ai];
+                // Frame fallback ladder: this frame (any mip) → frame 0 (any mip) → global
+                // fallback. A missing/odd frame must downgrade gracefully, never to a hole.
                 const Tile* wt = wa.nFrames > 0 ? wa.frame[ wbase % wa.nFrames ] : nullptr;
-                SDL_Texture* wtex = ( wt && wt->tex[wz] ) ? wt->tex[wz] : wFall;
+                SDL_Texture* wtex = TileTexAnyZoom( wt, wz );
+                if ( !wtex && wa.nFrames > 0 ) wtex = TileTexAnyZoom( wa.frame[0], wz );
+                if ( !wtex ) { wtex = wFall; Perf::CounterAdd( "rb.animmiss", 1 ); }
                 if ( !wtex ) continue;
                 SDL_RenderGeometry( r, wtex, wv.data( ), (int)wv.size( ), nullptr, 0 );
             }
@@ -2570,7 +2637,9 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
                 if ( wv.empty( ) ) continue;
                 const WaterAnim& wa = s_waterAnims[ai];
                 const Tile* nt = wa.nFrames > 0 ? wa.frame[ wbase % wa.nFrames ] : nullptr;
-                SDL_Texture* ntex = ( nt && nt->tex[wz] ) ? nt->tex[wz] : wFall;
+                SDL_Texture* ntex = TileTexAnyZoom( nt, wz );
+                if ( !ntex && wa.nFrames > 0 ) ntex = TileTexAnyZoom( wa.frame[0], wz );
+                if ( !ntex ) ntex = wFall;
                 if ( !ntex ) continue;
                 SDL_RenderGeometry( r, ntex, wv.data( ), (int)wv.size( ), nullptr, 0 );
             }
