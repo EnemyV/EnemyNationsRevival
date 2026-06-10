@@ -484,6 +484,34 @@ bool SDL2Compositor::RouteEventInner(SDL_Event& event) {
 
         return true;
     }
+
+    // GLOBAL GAME-HOTKEY FALLBACK (restores the original's app-wide accelerators).
+    // SDL stamps keyboard events with its keyboard-FOCUS window — not the window the
+    // Win32 message targeted — so when focus sits on a window with no key bindings
+    // (radar/world map, the main Game View chrome) or on no window at all (the game
+    // driven from the background by the test harness), the gameplay keys would die in
+    // the windowID routing above and never reach the Area Map. Deliver any key event
+    // nothing else consumed to the TOPMOST visible area panel (pan/rotate/zoom/unit
+    // hotkeys). Full chain, in pump order: non-modal dialogs (GameWindow::PollEvents)
+    // → app-wide accelerators (HandleGlobalShortcut: Esc/F1/F2/Ctrl+letter — the main
+    // window's bottom-toolbar commands) → the focused window (routing above) → area
+    // map (here). The radar's 4 buttons are mouse-only today; if they ever get
+    // hotkeys, handle them in its callback BEFORE this fallback fires.
+    if (event.type == SDL_KEYDOWN || event.type == SDL_KEYUP) {
+        SDL2Panel* area = nullptr;
+        for (auto& p : m_panels) {
+            // Map panels are named "area_<index>" (area.cpp OnCreate). NOTE: "area_bar" (the
+            // button bar INSIDE the map window, z = map+1, mouse-only) must not match, or the
+            // fallback hands the key to a panel that ignores it and the map never sees it.
+            const std::string& nm = p->GetName();
+            if (p->IsVisible() && nm.size() >= 6 && nm.rfind("area_", 0) == 0 &&
+                nm[5] >= '0' && nm[5] <= '9' &&
+                (!area || p->GetZOrder() > area->GetZOrder()))
+                area = p.get();
+        }
+        if (area && area->HandleEvent(event))   // HandleEvent forwards keys straight to the content callback
+            return true;
+    }
     return false;
 }
 

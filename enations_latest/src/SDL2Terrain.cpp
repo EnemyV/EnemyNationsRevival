@@ -2237,7 +2237,13 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
         for ( size_t i = 0; i < nWGeom; ++i )
         {
             int ai = s_waterAnimOf[i];
-            if ( ai < 0 || ai >= (int)s_waterDiamGeom.size( ) ) continue;
+            // Anim resolve can fail for odd variants (missing art / unmapped index). Skipping
+            // left the hex as a PERMANENT transparent hole in both s_rt and s_waterRT — showing
+            // whatever was behind (black after a gesture-preview frame painted the backdrop).
+            // Fall back to anim 0 (open sea) so every water hex gets SOME diamond.
+            if ( ai < 0 || ai >= (int)s_waterDiamGeom.size( ) )
+                ai = s_waterDiamGeom.empty( ) ? -1 : 0;
+            if ( ai < 0 ) continue;
             std::vector<SDL_Vertex>& wv = s_waterDiamGeom[ai];
             const CPoint* p = &s_waterPos[i * 4];
             SDL_Vertex a, b, c, d;
@@ -2495,14 +2501,21 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
             // Use the BUILT zoom's tile art: the cached water geometry is in built-texture space,
             // and during a gesture defer the live `zoom` has already moved on.
             const int wz = ( s_builtZoom >= 0 ) ? s_builtZoom : zoom;
+            // Fallback texture for groups whose anim has no usable frame (missing art):
+            // the first valid frame of any anim — drawing the WRONG water frame beats
+            // leaving a permanent black hole in the bake.
+            SDL_Texture* wFall = nullptr;
+            for ( const WaterAnim& wa2 : s_waterAnims )
+                if ( wa2.nFrames > 0 && wa2.frame[0] && wa2.frame[0]->tex[wz] ) { wFall = wa2.frame[0]->tex[wz]; break; }
             for ( size_t ai = 0; ai < s_waterDiamGeom.size( ); ++ai )   // opaque water diamonds
             {
                 std::vector<SDL_Vertex>& wv = s_waterDiamGeom[ai];
                 if ( wv.empty( ) ) continue;
                 const WaterAnim& wa = s_waterAnims[ai];
                 const Tile* wt = wa.nFrames > 0 ? wa.frame[ wbase % wa.nFrames ] : nullptr;
-                if ( !wt || !wt->tex[wz] ) continue;
-                SDL_RenderGeometry( r, wt->tex[wz], wv.data( ), (int)wv.size( ), nullptr, 0 );
+                SDL_Texture* wtex = ( wt && wt->tex[wz] ) ? wt->tex[wz] : wFall;
+                if ( !wtex ) continue;
+                SDL_RenderGeometry( r, wtex, wv.data( ), (int)wv.size( ), nullptr, 0 );
             }
             for ( size_t ai = 0; ai < s_waterBandGeom.size( ); ++ai )   // then water<->water blend bands
             {
@@ -2510,8 +2523,9 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
                 if ( wv.empty( ) ) continue;
                 const WaterAnim& wa = s_waterAnims[ai];
                 const Tile* nt = wa.nFrames > 0 ? wa.frame[ wbase % wa.nFrames ] : nullptr;
-                if ( !nt || !nt->tex[wz] ) continue;
-                SDL_RenderGeometry( r, nt->tex[wz], wv.data( ), (int)wv.size( ), nullptr, 0 );
+                SDL_Texture* ntex = ( nt && nt->tex[wz] ) ? nt->tex[wz] : wFall;
+                if ( !ntex ) continue;
+                SDL_RenderGeometry( r, ntex, wv.data( ), (int)wv.size( ), nullptr, 0 );
             }
             SDL_SetRenderTarget( r, pt );
             SDL_RenderSetViewport( r, &vp );
