@@ -60,7 +60,7 @@ static const int s_helpID[17] = {
 // in area.cpp's SDL callback (O/B/R/U/X). Shown in the help text like the main toolbar
 // does ("(Ctrl+A)  ..."). Empty = the command has no accelerator (zoom/rotate/etc.).
 static const char* s_shortcut[17] = {
-    "O", "", "", "+", "-", "",   // Last Combat, Rotate CW/CCW, Zoom In(+), Zoom Out(-), Resources
+    "O", ".", ",", "+", "-", "",   // Last Combat, Rotate CW(.), Rotate CCW(,), Zoom In(+), Zoom Out(-), Resources
     "", "", "B", "",             // Stop, Resume, Build, Cancel Build
     "R", "U", "X", "", "",       // Route, Unload, Retreat, Road, Cancel Road
     "", ""                       // Repair, Cancel Repair

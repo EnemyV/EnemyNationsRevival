@@ -242,6 +242,10 @@ protected:
 	afx_msg void ZoomOut ();
 	afx_msg void TurnClock ();
 	afx_msg void TurnCounter ();
+	// Rotate the building/rocket footprint being planned by iStep (+1 = CW, -1 = CCW)
+	// and refresh the placement preview. No-op outside build_ready/rocket_ready.
+	// Backs the [ / ] hotkeys; Ctrl+RMB (OnRButtonDown) still rotates too.
+	void RotateBuildDir ( int iStep );
 	afx_msg void ResClicked ();
 	afx_msg void StopUnit ();
 	afx_msg void ResumeUnit ();

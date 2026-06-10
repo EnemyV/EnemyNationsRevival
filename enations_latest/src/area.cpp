@@ -2659,6 +2659,17 @@ int CWndArea::OnCreate( LPCREATESTRUCT lpCreateStruct )
                     if (sc == SDL_SCANCODE_EQUALS || sc == SDL_SCANCODE_KP_PLUS)  { pThis->ZoomIn();  return true; }
                     if (sc == SDL_SCANCODE_MINUS  || sc == SDL_SCANCODE_KP_MINUS) { pThis->ZoomOut(); return true; }
 
+                    // View rotation (new binding — was button-only): , / < turns the
+                    // view counter-clockwise, . / > turns it clockwise.
+                    if (sc == SDL_SCANCODE_COMMA)  { pThis->TurnCounter(); return true; }
+                    if (sc == SDL_SCANCODE_PERIOD) { pThis->TurnClock();   return true; }
+
+                    // Building-placement rotation (new binding — alongside Ctrl+RMB):
+                    // [ rotates the footprint CCW, ] rotates it CW. Only acts while
+                    // planning a placement; RotateBuildDir no-ops otherwise.
+                    if (sc == SDL_SCANCODE_LEFTBRACKET)  { pThis->RotateBuildDir(-1); return true; }
+                    if (sc == SDL_SCANCODE_RIGHTBRACKET) { pThis->RotateBuildDir(+1); return true; }
+
                     UINT vk = SDLKeyToVK(sc);
                     if (!vk) return false;
 
@@ -3094,6 +3105,23 @@ void CWndArea::TurnCounter( )
     theApp.m_wndWorld.NewDir( );
     InvalidateWindow ();
     InvalidateSound( );
+}
+
+void CWndArea::RotateBuildDir( int iStep )
+{
+    // Only meaningful while planning a building/rocket placement.
+    if ( ( m_iMode != build_ready ) && ( m_iMode != rocket_ready ) )
+        return;
+
+    m_iBuildDir = ( m_iBuildDir + iStep ) & 0x03;
+
+    // Refresh the placement preview at the current cursor (mirrors the Ctrl+RMB
+    // path in OnRButtonDown, which has the click point in hand).
+    SetMouseState( );
+    CPoint pt;
+    ::GetCursorPos( &pt );
+    ScreenToClient( &pt );
+    OnMouseMove( 0, pt );
 }
 
 void CWndArea::ResClicked( )
