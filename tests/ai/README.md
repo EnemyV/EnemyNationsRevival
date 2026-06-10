@@ -163,6 +163,7 @@ are out of scope for a standalone tester.
 | `test_ai_staging.cpp` | Pure logic + simulation test cases. |
 | `test_ai_concurrency.cpp` | Threaded concurrency model tests (real `std::thread`). |
 | `test_ai_data.cpp` | Parses the SHIPPED `stdgta.dat`; asserts integrity + mirror agreement. |
+| `test_ai_paths.cpp` | Source-lint of the 4 research-path arrays in caigmgr.cpp: no duplicate topics, tier chains complete (`range_1/2/3`), `landing_craft` present. Caught + now guards the 30-year `range_2`-missing bug. |
 | `run-ai-tests.ps1` | Compiles & runs the pure/sim suite + the data suite. |
 | `run-ai-concurrency.ps1` | Compiles & runs the threaded suite. |
 | `run-ai-smoke.ps1` | **Runtime smoke gate**: launches the real game under dbgcatch with `EN_PERF=1`, loads a save, asserts AI-health invariants from perf.log (queue gauge >= 0, queue drains, snapshot miss < 5%, no AVs, no crash). |

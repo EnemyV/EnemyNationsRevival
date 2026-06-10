@@ -38,11 +38,15 @@ if (-not $DataFile) {
 
 $srcLogic = Join-Path $here 'test_ai_staging.cpp'
 $srcData  = Join-Path $here 'test_ai_data.cpp'
+$srcPaths = Join-Path $here 'test_ai_paths.cpp'
 $exeLogic = Join-Path $outDir 'ai_tests.exe'
 $exeData  = Join-Path $outDir 'ai_data_tests.exe'
+$exePaths = Join-Path $outDir 'ai_path_tests.exe'
+$caigmgr  = Join-Path $here '..\..\enations_latest\src\caigmgr.cpp'
 
 $clLogic = "cl /nologo /EHsc /std:c++17 /W4 `"$srcLogic`" /Fo`"$outDir\ai_tests.obj`" /Fe`"$exeLogic`""
 $clData  = "cl /nologo /EHsc /std:c++17 /W4 `"$srcData`" /Fo`"$outDir\ai_data.obj`" /Fe`"$exeData`""
+$clPaths = "cl /nologo /EHsc /std:c++17 /W4 `"$srcPaths`" /Fo`"$outDir\ai_paths.obj`" /Fe`"$exePaths`""
 
 # compile + run logic suite
 cmd /c "`"$vcvars`" >nul 2>&1 && $clLogic && `"$exeLogic`""
@@ -61,5 +65,17 @@ if (Test-Path $DataFile) {
     Write-Host "[ai_data] SKIP (no data file at $DataFile)"
 }
 
-if ($logicExit -ne 0 -or $dataExit -ne 0) { exit 1 }
+# compile + run research-path source lint (skip cleanly if source absent)
+$pathsExit = 0
+cmd /c "`"$vcvars`" >nul 2>&1 && $clPaths"
+if ($LASTEXITCODE -ne 0) { exit 2 }
+if (Test-Path $caigmgr) {
+    & $exePaths (Resolve-Path $caigmgr).Path
+    $pathsExit = $LASTEXITCODE
+    if ($pathsExit -eq 2) { Write-Host "[ai_paths] SKIP (cannot open $caigmgr)"; $pathsExit = 0 }
+} else {
+    Write-Host "[ai_paths] SKIP (no source at $caigmgr)"
+}
+
+if ($logicExit -ne 0 -or $dataExit -ne 0 -or $pathsExit -ne 0) { exit 1 }
 exit 0

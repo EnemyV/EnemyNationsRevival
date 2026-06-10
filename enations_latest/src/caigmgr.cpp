@@ -74,7 +74,7 @@ static int aiCbtPath[CRsrchArray::num_types] = { CRsrchArray::fire_control,
                                                  CRsrchArray::acc_1,
                                                  CRsrchArray::spot_1,
                                                  CRsrchArray::spot_2,
-                                                 CRsrchArray::range_1,
+                                                 CRsrchArray::range_2,  // was a duplicate range_1; range_2 was missing
                                                  CRsrchArray::atk_2,
                                                  CRsrchArray::def_2,
                                                  CRsrchArray::acc_2,
@@ -130,7 +130,7 @@ static int aiEricPath[CRsrchArray::num_types] = { CRsrchArray::armored_vehicle,
                                                   CRsrchArray::acc_1,
                                                   CRsrchArray::spot_1,
                                                   CRsrchArray::spot_2,
-                                                  CRsrchArray::range_1,
+                                                  CRsrchArray::range_2,  // was a duplicate range_1; range_2 was missing
                                                   CRsrchArray::atk_2,
                                                   CRsrchArray::def_2,
                                                   CRsrchArray::acc_2,
@@ -191,7 +191,7 @@ static int aiStevePath[CRsrchArray::num_types] = { CRsrchArray::armored_vehicle,
                                                    CRsrchArray::acc_1,
                                                    CRsrchArray::spot_1,
                                                    CRsrchArray::spot_2,
-                                                   CRsrchArray::range_1,
+                                                   CRsrchArray::range_2,  // was a duplicate range_1; range_2 was missing
                                                    CRsrchArray::atk_2,
                                                    CRsrchArray::def_2,
                                                    CRsrchArray::acc_2,
@@ -242,7 +242,7 @@ static int aiKeithPath[CRsrchArray::num_types] = { CRsrchArray::fire_control,
                                                    CRsrchArray::acc_1,
                                                    CRsrchArray::spot_1,
                                                    CRsrchArray::spot_2,
-                                                   CRsrchArray::range_1,
+                                                   CRsrchArray::range_2,  // was a duplicate range_1; range_2 was missing
                                                    CRsrchArray::atk_2,
                                                    CRsrchArray::def_2,
                                                    CRsrchArray::acc_2,
@@ -6393,6 +6393,31 @@ void CAIGoalMgr::LaunchAssault( CAITask* pTask )
                            "CAIGoalMgr::LaunchAssault() player %d goal %d task %d can't reach target ", m_iPlayer,
                            pTask->GetGoalID( ), pTask->GetID( ) );
 #endif
+                // ISLAND ESCALATION: a LAND assault that cannot reach its
+                // target will never succeed by itself (see comment below).
+                // If sea travel is possible on this world, escalate to
+                // IDG_SEAINVADE so the war can be prosecuted amphibiously --
+                // its data tasks (stdgta.dat goal 1033) spin up landing-craft
+                // + rangers production and the staging task. Without this,
+                // the AI restages land forces on the shore forever: the only
+                // SEAINVADE trigger was spotting an enemy seaport/shipyard,
+                // which a navy-less island player never provides.
+                if ( ( m_bOceanWorld || m_bLakeWorld ) &&
+                     ( pTask->GetGoalID( ) == IDG_LANDWAR || pTask->GetGoalID( ) == IDG_ADVDEFENSE ) )
+                {
+                    CAIGoal* pGoalInv = m_plGoalList->GetGoal( IDG_SEAINVADE );
+                    if ( pGoalInv == NULL )
+                    {
+                        AddGoal( IDG_SEAINVADE );
+                        m_bGoalChange = TRUE;
+#ifdef _LOGOUT
+                        logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC,
+                                   "CAIGoalMgr::LaunchAssault() player %d target unreachable by land -> "
+                                   "escalating to IDG_SEAINVADE ", m_iPlayer );
+#endif
+                    }
+                }
+
                 // must do something with the units assigned to this
                 // this assault, because not being able to reach the
                 // target will not change by itself
