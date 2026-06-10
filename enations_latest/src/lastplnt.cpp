@@ -1297,14 +1297,10 @@ BOOL CConquerApp::InitInstance( )
 
             delete pMmio;
 
-            // Load wallpaper into SDL2 compositor now that theBitmaps is available
-            if ( m_gameWindow && m_gameWindow->GetCompositor() )
-            {
-                if ( m_gameWindow->GetCompositor()->LoadWallpaper() )
-                    Log( "SDL2 compositor: wallpaper loaded" );
-                else
-                    Log( "SDL2 compositor: wallpaper load failed" );
-            }
+            // (Compositor wallpaper load moved below, after GameWindow::Create —
+            // m_gameWindow doesn't exist yet here, so a load at this point always
+            // silently skipped and the load-game flow flashed the dark-gold
+            // null-wallpaper fallback.)
 
 // time the CD // we dont have a cd anymore
             m_iCdSpeed = 100; // assume fast CD drive
@@ -1420,6 +1416,21 @@ BOOL CConquerApp::InitInstance( )
             m_gameWindow = GameWindow::Create("Enemy Nations - Game View", m_iScrnX, m_iScrnY);
         } catch (...) {
             // Non-fatal: fall back to MFC rendering
+        }
+
+        // Load the compositor's WL tile wallpaper NOW that the window exists. The
+        // earlier attempt (right after theBitmaps.Init above) is guarded by
+        // m_gameWindow — which is only created HERE, so it always silently skipped
+        // and the compositor's wallpaper stayed null. RenderWallpaper's null
+        // fallback is a solid dark-gold fill, which is what flashed during the
+        // load-game flow (status dialog repaints the background every frame) until
+        // DestroyMain transferred the menu's tile mid-load.
+        if ( m_gameWindow && m_gameWindow->GetCompositor() )
+        {
+            if ( m_gameWindow->GetCompositor()->LoadWallpaper() )
+                Log( "SDL2 compositor: wallpaper loaded (post window create)" );
+            else
+                Log( "SDL2 compositor: wallpaper load failed (post window create)" );
         }
 
         // Phase 6 hotfix: make the legacy Win32 main window (EnemyNations-
