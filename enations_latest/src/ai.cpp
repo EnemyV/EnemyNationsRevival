@@ -537,7 +537,14 @@ BOOL AiMessageWanted( CPlayer* pPlr, CNetCmd const* pMsg )
         return ( ( (CMsgVehLoc const*)pMsg )->m_iPlyrNum == iPlyr );
 
     case CNetCmd::veh_dest:  // owner: task-step critical, always deliver.
-    {                        // non-owner: map-freshness only -> sampled.
+    {
+        // CORRECTION (2026-06-11): veh_dest is currently sent POINT-TO-POINT
+        // to the owner only (vehmove.cpp PostArrivedOrBlocked ->
+        // PostToClient(GetOwner())), so the non-owner sampling below is DORMANT
+        // -- the owner test always matches. The measured 78%-of-traffic is all
+        // legitimate owner arrivals (~1500 vehicles' task steps), NOT fan-out
+        // redundancy. The sampler stays as a guard in case a broadcast path is
+        // ever added; the backlog fix lives on the PROCESSING side instead.
         if ( ( (CMsgVehDest const*)pMsg )->m_iPlyrNum == iPlyr )
             return TRUE;
         int iN = VehDestSampleN( );
