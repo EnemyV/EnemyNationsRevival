@@ -634,6 +634,19 @@ void CConquerApp::GraphicsEnginePump( )
 
     theGame._SettimeGetTime( );
 
+    // OP-CLOCK SANITY: m_dwOperTimeLast/m_dwFrameTimeLast are SERIALIZED into saves as
+    // raw timeGetTime() values — milliseconds since the SAVING session's boot. Loading a
+    // save from a different boot epoch (machine rebooted since, or just a different
+    // uptime) can restore a value in the FUTURE of this session's clock; the tick gate
+    // below then rejects every frame: rendering runs normally while units never move
+    // (user repro on Save13-Player, 2026-06-11). In-session writers only ever move the
+    // clocks backward-or-equal to "now", so future values are always stale loads (or the
+    // 49.7-day timeGetTime wrap) — clamp them to now and the sim resumes immediately.
+    if ( theGame.m_dwOperTimeLast > theGame.GettimeGetTime( ) )
+        theGame.m_dwOperTimeLast = theGame.GettimeGetTime( );
+    if ( theGame.m_dwFrameTimeLast > theGame.GettimeGetTime( ) )
+        theGame.m_dwFrameTimeLast = theGame.GettimeGetTime( );
+
     // if we haven't used up 1/24 of a second - leave
     if ( theGame.GettimeGetTime( ) < theGame.m_dwOperTimeLast + 1000 / FRAME_RATE )
     {
