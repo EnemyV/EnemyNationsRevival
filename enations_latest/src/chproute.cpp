@@ -33,6 +33,38 @@ extern CPathMap         thePathMap;  // the map pathfinding object (no yield)
 extern CPathMgr         thePathMgr;  // the actual pathfinding object
 extern CAIData*         pGameData;   // pointer to game data interface
 
+//
+// HP-router diagnostic log: set EN_HPLOG=1 and the router appends every
+// assignment / wait / block / load / unload / pump action to hprouter.log
+// in the run directory.  (The original _LOGOUT tracing is compiled out.)
+//
+static BOOL HpLogOn( )
+{
+    static int s_iOn = -1;
+    if ( s_iOn < 0 )
+    {
+        char szBuf[8];
+        s_iOn = ( GetEnvironmentVariableA( "EN_HPLOG", szBuf, sizeof( szBuf ) ) > 0 && szBuf[0] != '0' ) ? 1 : 0;
+    }
+    return s_iOn;
+}
+
+static void HpLog( char const* pFrmt, ... )
+{
+    if ( !HpLogOn( ) )
+        return;
+    FILE* pFile = fopen( "hprouter.log", "a" );
+    if ( pFile == NULL )
+        return;
+    fprintf( pFile, "[%9lu] ", (unsigned long)GetTickCount( ) );
+    va_list args;
+    va_start( args, pFrmt );
+    vfprintf( pFile, pFrmt, args );
+    va_end( args );
+    fputc( '\n', pFile );
+    fclose( pFile );
+}
+
 void CHPRouter::MsgNewBldg( CBuilding const* pBldg )
 {
     if ( this == NULL )
@@ -766,6 +798,10 @@ void CHPRouter::VehicleErrorResponse( CAIMsg* pMsg )
             return;
         if ( hexAt != hexVeh || hexGo != hexDest )
             return;
+
+        HpLog( "BLOCKED: %s %ld at %d,%d going to %d,%d status=0x%X - staging (Pump will retry)",
+               IsShip( pUnit->GetID( ) ) ? "ship" : "veh", pUnit->GetID( ), hexAt.X( ), hexAt.Y( ), hexGo.X( ),
+               hexGo.Y( ), (unsigned)pUnit->GetStatus( ) );
 
         if ( GetStagingHex( pUnit, NULL, hexDest ) )
             SetDestination( pUnit->GetID( ), hexDest );
@@ -2758,10 +2794,17 @@ BOOL CHPRouter::ConsiderLandWater( CAIUnit* pUnit, CAIHex* pHex )
     GetVehicleHex( pTruck->GetID( ), hexTruck );
     GetBldgExit( pSeaport->GetID( ), hexSeaport );
 
-    // and determine if truck is at the seaport
+    // and determine if truck is at (or next to) the seaport door
     // and if it is not then leave, but force wait with TRUE
-    if ( hexTruck != hexSeaport )
+    // (was exact-hex equality, which deadlocked the rendezvous whenever the
+    // door hex was occupied and the truck had to stop one hex short)
+    if ( abs( CHexCoord::Diff( hexTruck.X( ) - hexSeaport.X( ) ) ) > 1 ||
+         abs( CHexCoord::Diff( hexTruck.Y( ) - hexSeaport.Y( ) ) ) > 1 )
+    {
+        HpLog( "WAIT: truck %ld at %d,%d not at port %ld door %d,%d", pTruck->GetID( ), hexTruck.X( ), hexTruck.Y( ),
+               pSeaport->GetID( ), hexSeaport.X( ), hexSeaport.Y( ) );
         return TRUE;
+    }
 
     // get current location of ship
     CHexCoord hexShip;
@@ -2770,10 +2813,15 @@ BOOL CHPRouter::ConsiderLandWater( CAIUnit* pUnit, CAIHex* pHex )
     // get ship exit location of the seaport
     GetShipHex( pSeaport->GetID( ), hexSeaport );
 
-    // and determine if ship is at the seaport
+    // and determine if ship is at (or next to) the dock
     // and if it is not then leave, but force wait with TRUE
-    if ( hexShip != hexSeaport )
+    if ( abs( CHexCoord::Diff( hexShip.X( ) - hexSeaport.X( ) ) ) > 1 ||
+         abs( CHexCoord::Diff( hexShip.Y( ) - hexSeaport.Y( ) ) ) > 1 )
+    {
+        HpLog( "WAIT: ship %ld at %d,%d not at port %ld dock %d,%d", pShip->GetID( ), hexShip.X( ), hexShip.Y( ),
+               pSeaport->GetID( ), hexSeaport.X( ), hexSeaport.Y( ) );
         return TRUE;
+    }
 
 #ifdef _LOGOUT
     logPrintf( LOG_PRI_ALWAYS, LOG_HP_ROUTER, "CHPRouter::ConsiderLandWater() player %d truck %ld and ship %ld ",
@@ -3126,7 +3174,9 @@ void CHPRouter::GetShipsAvailable( void )
             if ( IsVehicleCargo( pUnit->GetID( ) ) )
                 continue;
 
-            m_plShipsAvailable->AddTail( (CObject*)pUnit );
+            // consider ship may already be in list, if not, add it
+            if ( m_plShipsAvailable->GetUnitNY( pUnit->GetID( ) ) == NULL )
+                m_plShipsAvailable->AddTail( (CObject*)pUnit );
         }
     }
 }
@@ -3931,10 +3981,180 @@ BOOL CHPRouter::TrucksAreEnroute( CAIUnit* pBldg )
 //
 void CHPRouter::UnAssignShip( CAIUnit* pShip )
 {
+    HpLog( "UNASSIGN: ship %ld", pShip->GetID( ) );
     pShip->ClearParam( );
     pShip->SetStatus( 0 );
     pShip->SetDataDW( 0 );
-    m_plShipsAvailable->AddTail( (CObject*)pShip );
+    // consider ship may already be in list, if not, add it
+    if ( m_plShipsAvailable->GetUnitNY( pShip->GetID( ) ) == NULL )
+        m_plShipsAvailable->AddTail( (CObject*)pShip );
+}
+
+//
+// periodic unstick pass, called once per game second from the main loop.
+//
+// The original router is purely event-driven: every state transition of the
+// truck/ship rendezvous happens inside a veh_dest arrival handler, arrivals
+// are only reported on an EXACT destination match, and the err_veh_goto
+// handler just stages the vehicle without clearing or retrying its
+// assignment.  Any blocked or missed arrival therefore left ships parked
+// CAI_IN_USE forever and trucks waiting on the port door — the classic
+// "seaport jammed full of trucks and ships" failure.
+//
+// This pass re-derives stuck state from the live game every few seconds:
+//   - assigned ships whose truck is gone        -> unassigned, freed
+//   - assigned ships stalled off their port     -> destination re-issued
+//   - assigned ships sitting at their port      -> missed arrival re-armed
+//                                                  (load or unload step run)
+//   - trucks waiting for a ship                 -> assignment retried
+//   - trucks disgorged but still flagged cargo  -> flag cleared, re-routed
+//
+void CHPRouter::Pump( void )
+{
+    if ( this == NULL )
+        return;
+    if ( m_plUnits == NULL )
+        return;
+
+    // called once per game second; act every few seconds
+    static int s_iTick = 0;
+    if ( ++s_iTick < 5 )
+        return;
+    s_iTick = 0;
+
+    POSITION pos = m_plUnits->GetHeadPosition( );
+    while ( pos != NULL )
+    {
+        CAIUnit* pUnit = (CAIUnit*)m_plUnits->GetNext( pos );
+        if ( pUnit == NULL )
+            continue;
+
+        ASSERT_VALID( pUnit );
+
+        if ( pUnit->GetOwner( ) != m_iPlayer )
+            continue;
+        if ( pUnit->GetType( ) == CUnit::building )
+            continue;
+
+        // ------------------------- stuck assigned ships -------------------------
+        if ( IsShip( pUnit->GetID( ) ) && ( pUnit->GetStatus( ) & CAI_IN_USE ) )
+        {
+            // the truck this ship was serving must still exist
+            CAIUnit* pTruck = m_plUnits->GetUnitNY( pUnit->GetParamDW( CAI_LOC_X ) );
+            if ( pTruck == NULL )
+            {
+                HpLog( "PUMP: ship %ld assigned to dead truck %lu - unassigning", pUnit->GetID( ),
+                       pUnit->GetParamDW( CAI_LOC_X ) );
+                UnAssignShip( pUnit );
+                continue;
+            }
+
+            // which leg is it on: unload (DEST set) or pickup (PREV only)?
+            BOOL  bUnloadLeg = pUnit->GetParamDW( CAI_DEST_X ) != 0;
+            DWORD dwPort     = bUnloadLeg ? pUnit->GetParamDW( CAI_DEST_X ) : pUnit->GetParamDW( CAI_PREV_X );
+
+            CHexCoord hexDock;
+            if ( dwPort == 0 || !GetShipHex( dwPort, hexDock ) )
+            {
+                // no port recorded, or the port was destroyed
+                HpLog( "PUMP: ship %ld IN_USE with no/dead port %lu - unassigning", pUnit->GetID( ), dwPort );
+                UnAssignShip( pUnit );
+                continue;
+            }
+
+            CHexCoord hexShip;
+            if ( !GetVehicleHex( pUnit->GetID( ), hexShip ) )
+                continue;
+
+            if ( hexShip == hexDock ||
+                 ( !bUnloadLeg && abs( CHexCoord::Diff( hexShip.X( ) - hexDock.X( ) ) ) <= 1 &&
+                   abs( CHexCoord::Diff( hexShip.Y( ) - hexDock.Y( ) ) ) <= 1 ) )
+            {
+                // ship is at its port but the arrival step never ran - re-arm it
+                if ( bUnloadLeg )
+                {
+                    // mirror of DestinationResponse's unload-at-destination step
+                    HpLog( "PUMP: ship %ld parked at dest port %lu - unloading", pUnit->GetID( ), dwPort );
+                    UnloadCargo( pUnit->GetID( ) );
+                    CAIUnit* pPort = m_plUnits->GetUnitNY( dwPort );
+                    UnAssignShip( pUnit );
+                    CHexCoord hexStage;
+                    if ( pPort != NULL && GetStagingHex( pUnit, pPort, hexStage ) )
+                        SetDestination( pUnit->GetID( ), hexStage );
+                }
+                else
+                {
+                    // pickup leg: retrigger the rendezvous/load check
+                    CAIHex aiHex( hexDock.X( ), hexDock.Y( ) );
+                    GetCHexData( &aiHex );
+                    if ( aiHex.m_iUnit == CUnit::building )
+                    {
+                        HpLog( "PUMP: ship %ld docked at port %lu - re-arming rendezvous with truck %ld",
+                               pUnit->GetID( ), dwPort, pTruck->GetID( ) );
+                        ConsiderLandWater( pTruck, &aiHex );
+                    }
+                }
+            }
+            else
+            {
+                // ship is stalled away from its port (blocked then staged,
+                // or its goto was lost) - re-issue the leg's destination
+                HpLog( "PUMP: ship %ld at %d,%d re-routed to port %lu dock %d,%d (%s leg)", pUnit->GetID( ),
+                       hexShip.X( ), hexShip.Y( ), dwPort, hexDock.X( ), hexDock.Y( ),
+                       bUnloadLeg ? "unload" : "pickup" );
+                SetDestination( pUnit->GetID( ), hexDock );
+            }
+            continue;
+        }
+
+        // --------------------- waiting / stranded trucks ------------------------
+        if ( IsTruck( pUnit->GetID( ) ) )
+        {
+            WORD wStatus = pUnit->GetStatus( );
+
+            // riding a ship - the ship's pump handles it
+            if ( IsVehicleCargo( pUnit->GetID( ) ) )
+                continue;
+
+            // disgorged from a ship but the arrival that clears the cargo
+            // flag (and stages the truck out of the port) never ran
+            BOOL bStaleCargo = ( wStatus & CAI_IS_CARGO ) != 0;
+
+            if ( !bStaleCargo && !( wStatus & CAI_TRUCK_WAITING ) )
+                continue;
+
+            CHexCoord hexDest( pUnit->GetParam( CAI_ROUTE_X ), pUnit->GetParam( CAI_ROUTE_Y ) );
+
+            if ( bStaleCargo )
+            {
+                HpLog( "PUMP: truck %ld disgorged but still flagged cargo - clearing", pUnit->GetID( ) );
+                wStatus ^= CAI_IS_CARGO;
+                pUnit->SetStatus( wStatus );
+            }
+
+            if ( !hexDest.X( ) && !hexDest.Y( ) )
+            {
+                // no destination memo - release the truck back to the pool
+                HpLog( "PUMP: truck %ld waiting with no route - releasing", pUnit->GetID( ) );
+                pUnit->SetDataDW( 0 );
+                pUnit->ClearParam( );
+                pUnit->SetStatus( 0 );
+                if ( m_plTrucksAvailable->GetUnitNY( pUnit->GetID( ) ) == NULL )
+                    m_plTrucksAvailable->AddTail( (CObject*)pUnit );
+                continue;
+            }
+
+            // retry the whole land/water/land assignment; ConsiderLandWater
+            // re-finds a ship (or re-uses the one already assigned to us),
+            // rewrites hexDest to the rendezvous door, and re-flags WAITING
+            // if there is still no ship to be had
+            HpLog( "PUMP: truck %ld (status 0x%X) retrying route to %d,%d", pUnit->GetID( ), (unsigned)wStatus,
+                   hexDest.X( ), hexDest.Y( ) );
+            pUnit->SetStatus( (WORD)( wStatus & ~CAI_TRUCK_WAITING ) );
+            ConsiderLandWater( pUnit, hexDest );
+            SetDestination( pUnit->GetID( ), hexDest );
+        }
+    }
 }
 
 //
@@ -6348,6 +6568,7 @@ void CHPRouter::LoadUnit( DWORD dwCarrier, DWORD dwCargo )
         DWORD		m_dwIDCarrier;		// unit carrying it
     };
     */
+    HpLog( "LOAD: truck %ld onto ship %ld", dwCargo, dwCarrier );
     CMsgLoadCarrier msg;
     msg.m_dwIDCargo   = dwCargo;
     msg.m_dwIDCarrier = dwCarrier;
@@ -6359,6 +6580,7 @@ void CHPRouter::LoadUnit( DWORD dwCarrier, DWORD dwCargo )
 //
 void CHPRouter::UnloadCargo( DWORD dwCarrier )
 {
+    HpLog( "UNLOAD: ship %ld disgorging cargo", dwCarrier );
     CMsgUnloadCarrier msg;
     msg.m_dwID = dwCarrier;
 

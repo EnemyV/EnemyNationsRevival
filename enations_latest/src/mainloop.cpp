@@ -738,6 +738,10 @@ void CConquerApp::GraphicsEnginePump( )
                 }
             }
 
+            // unstick the HP material router's truck/ship rendezvous
+            // (event-driven state machine; blocked arrivals need a retry pass)
+            theGame.m_pHpRtr->Pump( );
+
             // update the time
             if ( theGame.IsNetGame( ) && theGame.AmServer( ) )
             {
