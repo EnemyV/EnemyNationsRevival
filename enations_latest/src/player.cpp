@@ -1016,6 +1016,8 @@ void CGame::ctor( )
 {
 
     m_iAi = m_iSize = m_iPos = 0;
+    m_iWorldType = WORLD_DEFAULT;
+    m_iRivers    = 60;  // river density slider baseline
     m_sFileName              = "";
 
     m_iTryCount = 0;
@@ -1369,7 +1371,8 @@ void CGame::StartNewWorld( unsigned uRand, int iSide, int iSideSize )
     OutputDebugStringA( "CNetStart msg create\n" );
 #endif
     CNetStart msg( uRand, iSide, iSideSize, theApp.m_pCreateGame->m_iAi, theApp.m_pCreateGame->m_iNumAi,
-                   theGame.GetAll( ).GetCount( ) - theApp.m_pCreateGame->m_iNumAi, theApp.m_pCreateGame->m_iSize );
+                   theGame.GetAll( ).GetCount( ) - theApp.m_pCreateGame->m_iNumAi, theApp.m_pCreateGame->m_iSize,
+                   theApp.m_pCreateGame->m_iWorldType, theApp.m_pCreateGame->m_iRivers );
 
     POSITION pos;
     for ( pos = m_lstAll.GetHeadPosition( ); pos != NULL; )
@@ -3077,6 +3080,22 @@ void CGame::AssertValid( ) const
 // no-ops in Release; the plain ASSERT(...) invariants stay live (and logged).
 BOOL TestEverything( )
 {
+    // THROTTLE (2026-06-10): this is an O(every unit + every hex-ownership)
+    // validation sweep, and the HP router ASSERTs it on EVERY routed message
+    // (6 sites in chproute.cpp), including synchronously from the building
+    // operate pass (BuildMaterials -> MsgOutMat). In a large game (~700 bldgs
+    // + ~1700 vehs) an out-of-materials message storm turned this into
+    // seconds of main-thread validation per second -- fps fell to ~0.5 with
+    // sim=1.3-2.6 s/s, and dbgstack showed the operate pass parked under
+    // CBuilding::AssertValid -> CBuildingHex::GetBuilding -> CMap::Lookup.
+    // Run the full sweep at most once per 2s; callers ASSERT the return
+    // value, so the skip must return TRUE. All call sites are main-thread
+    // (HP router, init, cutscene), so a plain static is safe.
+    static DWORD s_dwLastSweep = 0;
+    DWORD        dwNowSweep    = timeGetTime( );
+    if ( s_dwLastSweep != 0 && ( dwNowSweep - s_dwLastSweep ) < 2000 )
+        return TRUE;
+    s_dwLastSweep = dwNowSweep;
 
     ASSERT_VALID( &theTerrain );
     ASSERT_VALID( &theStructures );
