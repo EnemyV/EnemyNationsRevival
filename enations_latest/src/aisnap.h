@@ -105,6 +105,17 @@ BOOL CopyVeh( DWORD dwID, AiVehSnap& out );
 BOOL ReadVeh( DWORD dwID, AiVehSnap& out );
 BOOL ReadBldg( DWORD dwID, AiBldgSnap& out );
 
+// --- minerals presence cache --------------------------------------------
+// theMinerals is near-static (placed at worldgen; entries are removed only on
+// depletion, at a single site in new_unit.cpp). CAIMap::UpdateMap's full-map
+// rescan did a guarded hash Lookup PER HEX per AI per idle rotation (65k+
+// lookups/pass — 7 AI threads were profiled inside it simultaneously). The
+// bitmap is built once per game by Publish (main thread, under cs) and read
+// lock-free by the AI threads; depletion clears the bit.
+BOOL MineralsReady( void );              // TRUE once the bitmap is valid
+BOOL MineralsHas( int iX, int iY );      // only meaningful when MineralsReady
+void MineralsRemoved( int iX, int iY );  // main thread (the depletion site)
+
 // Clear both buffers (game teardown / world unload — static-table pointers in
 // the snapshot must not outlive the game data they point into).
 void Reset( void );

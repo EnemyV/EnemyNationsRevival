@@ -13,6 +13,7 @@
 #include "CAIMapUt.hpp"
 #include "CAIData.hpp"
 #include "CPathMap.h"
+#include "aisnap.h"  // lock-free minerals presence bitmap (ConvertStatus)
 
 #include "logging.h"  // dave's logging system
 
@@ -8751,11 +8752,21 @@ WORD CAIMapUtil::ConvertStatus( CAIHex* pHex, WORD wOldStatus )
     if ( wOldStatus & MSW_KNOWN )
         wStatus |= MSW_KNOWN;
 
-    // consider materials in this hex
-    CHexCoord  hcHex( pHex->m_iX, pHex->m_iY );
-    CMinerals* pmn;
-    if ( theMinerals.Lookup( hcHex, pmn ) )
-        wStatus |= MSW_RESOURCE;
+    // consider materials in this hex. The lock-free bitmap replaces a guarded
+    // hash Lookup that ran PER HEX in UpdateMap's full rescan (65k+ per pass,
+    // per AI, per idle rotation — profiled with 7 AI threads inside it).
+    if ( AiSnap::MineralsReady( ) )
+    {
+        if ( AiSnap::MineralsHas( pHex->m_iX, pHex->m_iY ) )
+            wStatus |= MSW_RESOURCE;
+    }
+    else  // bitmap not built yet (or map too large): legacy lookup
+    {
+        CHexCoord  hcHex( pHex->m_iX, pHex->m_iY );
+        CMinerals* pmn;
+        if ( theMinerals.Lookup( hcHex, pmn ) )
+            wStatus |= MSW_RESOURCE;
+    }
 
     // CAIUnit::CAIUnit( DWORD dwID, int iOwner, int iType, int iTypeUnit )
     // CAIUnit aiUnit(0,0,0,0);

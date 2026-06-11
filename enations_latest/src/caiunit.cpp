@@ -1667,44 +1667,64 @@ CAIUnit* CAIUnitList::GetClosest( int iPlayer, int iBldg, CHexCoord& hex )
 //
 // return a pointer to the CAIUnit object matching the id passed
 //
+//
+// shadowed CObList mutators: keep the O(1) id index exact. See the class
+// comment in caiunit.hpp -- ALL list mutation in this codebase goes through
+// these four (the internal helpers below route through them too).
+//
+POSITION CAIUnitList::AddTail( CObject* pObj )
+{
+    CAIUnit* pUnit = (CAIUnit*)pObj;
+    if ( pUnit != NULL )
+        m_index[pUnit->GetID( )] = pUnit;
+    return CObList::AddTail( pObj );
+}
+
+void CAIUnitList::RemoveAt( POSITION pos )
+{
+    CAIUnit* pUnit = (CAIUnit*)GetAt( pos );
+    if ( pUnit != NULL )
+    {
+        std::unordered_map<DWORD, CAIUnit*>::iterator it = m_index.find( pUnit->GetID( ) );
+        if ( it != m_index.end( ) && it->second == pUnit )
+            m_index.erase( it );
+    }
+    CObList::RemoveAt( pos );
+}
+
+CObject* CAIUnitList::RemoveHead( void )
+{
+    CObject* pObj  = CObList::RemoveHead( );
+    CAIUnit* pUnit = (CAIUnit*)pObj;
+    if ( pUnit != NULL )
+    {
+        std::unordered_map<DWORD, CAIUnit*>::iterator it = m_index.find( pUnit->GetID( ) );
+        if ( it != m_index.end( ) && it->second == pUnit )
+            m_index.erase( it );
+    }
+    return pObj;
+}
+
+void CAIUnitList::RemoveAll( void )
+{
+    m_index.clear( );
+    CObList::RemoveAll( );
+}
+
 CAIUnit* CAIUnitList::GetUnitNY( DWORD dwId )
 {
-    ASSERT_VALID( this );
-
-    POSITION pos = GetHeadPosition( );
-    while ( pos != NULL )
-    {
-        CAIUnit* pUnit = (CAIUnit*)GetNext( pos );
-        if ( pUnit != NULL )
-        {
-            ASSERT_VALID( pUnit );
-
-            if ( pUnit->GetID( ) == dwId )
-                return ( pUnit );
-        }
-    }
-    return ( NULL );
+    // O(1) via the id index (was an O(n) walk over the whole list)
+    std::unordered_map<DWORD, CAIUnit*>::const_iterator it = m_index.find( dwId );
+    return ( it != m_index.end( ) ) ? it->second : NULL;
 }
 //
 // return a pointer to the CAIUnit object matching the id passed
 //
 CAIUnit* CAIUnitList::GetUnit( DWORD dwId )
 {
-    ASSERT_VALID( this );
-
-    POSITION pos = GetHeadPosition( );
-    while ( pos != NULL )
-    {
-        CAIUnit* pUnit = (CAIUnit*)GetNext( pos );
-        if ( pUnit != NULL )
-        {
-            ASSERT_VALID( pUnit );
-
-            if ( pUnit->GetID( ) == dwId )
-                return ( pUnit );
-        }
-    }
-    return ( NULL );
+    // O(1) via the id index (was an O(n) walk over the whole list)
+    std::unordered_map<DWORD, CAIUnit*>::const_iterator it = m_index.find( dwId );
+    return ( it != m_index.end( ) ) ? it->second : NULL;
 }
 
 //

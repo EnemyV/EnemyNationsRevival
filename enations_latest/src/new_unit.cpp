@@ -20,6 +20,7 @@
 #include "error.h"
 #include "chproute.hpp"
 #include "ai.h"
+#include "aisnap.h"  // minerals-bitmap invalidation on depletion
 #include "icons.h"
 #include "bitmaps.h"
 #include "area.h"
@@ -3613,6 +3614,8 @@ static int fnMineToGround( CHex*, CHexCoord hex, void* pData )
             // all gone - kill it
             delete pMn;
             theMinerals.RemoveKey( hex );
+            // keep the AI's lock-free minerals bitmap exact (aisnap.h)
+            AiSnap::MineralsRemoved( hex.X( ), hex.Y( ) );
         }
     }
     return ( FALSE );

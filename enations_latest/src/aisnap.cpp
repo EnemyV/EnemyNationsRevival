@@ -11,6 +11,7 @@
 
 #include "building.inl"  // CBuilding/theBuildingMap (+ CVehicleBuilding/CRepairBuilding)
 #include "lastplnt.h"    // theGame (AI-count early-out)
+#include "minerals.inl"  // theMinerals (presence bitmap)
 #include "vehicle.inl"   // CVehicle/theVehicleMap
 
 #include <unordered_map>
@@ -37,6 +38,16 @@ DWORD s_dwLastPublish = 0;  // self-throttle (main thread only)
 // publish cadence: the sim runs at 24Hz (~42ms); publishing faster than the
 // tick gains nothing (the world only changes inside ticks).
 const DWORD kPublishMs = 40;
+
+// minerals presence bitmap: 1 byte per hex, 512x512 max (CHexCoord packs
+// coords as (X<<16)|Y with WORD parts; current maps are <=512 per side).
+// s_minReady: 0 = not built yet, 1 = valid, -1 = map too large (permanent
+// legacy-Lookup fallback). Built by Publish under cs; bytes cleared by the
+// single depletion site (main thread); AI reads are lock-free (benign race:
+// one stale pass at worst).
+const int     kMinDim = 512;
+BYTE          s_minMap[kMinDim * kMinDim];
+volatile LONG s_minReady = 0;
 
 int SnapEnabled( void )
 {
@@ -165,6 +176,27 @@ void AiSnap::Publish( void )
         return;
     }
 
+    // build the minerals presence bitmap once per game (we already hold cs)
+    if ( s_minReady == 0 )
+    {
+        memset( (void*)s_minMap, 0, sizeof( s_minMap ) );
+        BOOL     bFit  = TRUE;
+        POSITION posMn = theMinerals.GetStartPosition( );
+        while ( posMn != NULL )
+        {
+            DWORD      dwKey;
+            CMinerals* pMn;
+            theMinerals.GetNextAssoc( posMn, dwKey, pMn );
+            int iX = (int)( dwKey >> 16 );
+            int iY = (int)( dwKey & 0xFFFF );
+            if ( iX < kMinDim && iY < kMinDim )
+                s_minMap[( iX << 9 ) | iY] = 1;
+            else
+                bFit = FALSE;
+        }
+        InterlockedExchange( &s_minReady, bFit ? 1 : -1 );
+    }
+
     POSITION pos = theBuildingMap.GetStartPosition( );
     while ( pos != NULL )
     {
@@ -271,6 +303,26 @@ BOOL AiSnap::ReadBldg( DWORD dwID, AiBldgSnap& out )
     return bFound;
 }
 
+BOOL AiSnap::MineralsReady( void )
+{
+    return ( s_minReady == 1 ) ? TRUE : FALSE;
+}
+
+BOOL AiSnap::MineralsHas( int iX, int iY )
+{
+    if ( s_minReady != 1 )
+        return FALSE;
+    if ( iX < 0 || iX >= kMinDim || iY < 0 || iY >= kMinDim )
+        return FALSE;
+    return s_minMap[( iX << 9 ) | iY] ? TRUE : FALSE;
+}
+
+void AiSnap::MineralsRemoved( int iX, int iY )
+{
+    if ( iX >= 0 && iX < kMinDim && iY >= 0 && iY < kMinDim )
+        s_minMap[( iX << 9 ) | iY] = 0;
+}
+
 void AiSnap::Reset( void )
 {
     AcquireSRWLockExclusive( &s_swapLock );
@@ -279,5 +331,6 @@ void AiSnap::Reset( void )
     s_mapVeh[0].clear( );
     s_mapVeh[1].clear( );
     s_dwLastPublish = 0;
+    InterlockedExchange( &s_minReady, 0 );  // rebuilt on next Publish
     ReleaseSRWLockExclusive( &s_swapLock );
 }

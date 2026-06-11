@@ -16,6 +16,8 @@
 
 #include "CAICopy.hpp"
 
+#include <unordered_map>  // CAIUnitList O(1) id index
+
 #ifndef __CAIUNIT_HPP__
 #define __CAIUNIT_HPP__
 
@@ -138,9 +140,25 @@ public:
 
 class CAIUnitList : public CObList
 {
+	// O(1) id -> unit index (2026-06-11). GetUnit/GetUnitNY were O(n) list
+	// walks and dominated per-message AI cost in large games (~2300 units,
+	// mfc.iterpos ~2M/s profiled). The index is kept exact by shadowing the
+	// only CObList mutators used on unit lists (AddTail / RemoveAt /
+	// RemoveHead / RemoveAll) -- every internal helper (AddUnit, RemoveUnit,
+	// RemoveUnits, DeleteList, Load) routes through them, and every call site
+	// uses a CAIUnitList-typed pointer, so non-virtual name hiding applies.
+	// Each list is touched by a single thread (its AI's), so no locking.
+	std::unordered_map<DWORD, class CAIUnit*> m_index;
+
 public:
 	CAIUnitList() {};
 	~CAIUnitList();
+
+	// shadowed CObList mutators -- keep m_index exact (see comment above)
+	POSITION AddTail( CObject *pObj );
+	void RemoveAt( POSITION pos );
+	CObject *RemoveHead( void );
+	void RemoveAll( void );
 
 	CAIUnit *GetUnitNY( DWORD dwId );
 	CAIUnit *GetUnit( DWORD dwID );
