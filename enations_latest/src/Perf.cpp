@@ -80,6 +80,19 @@ namespace
 
     Counter* FindOrAdd( const char* name, bool gauge )
     {
+        // Reject junk names (perf.log was filling with 0xCC-fill garbage): callers
+        // must pass short printable identifiers. A stack-temporary that died still
+        // registers ONCE below (copied), but unprintable trash is dropped outright —
+        // it would otherwise also burn one of the MAX_COUNTERS slots forever.
+        if ( !name || !name[0] )
+            return NULL;
+        int len = 0;
+        for ( ; name[len]; ++len )
+        {
+            if ( len >= 48 ) return NULL;                          // not a counter id
+            unsigned char ch = (unsigned char)name[len];
+            if ( ch < 0x20 || ch > 0x7E ) return NULL;             // unprintable = trash
+        }
         for ( int i = 0; i < g_numCounters; ++i )
             if ( g_counters[i].name == name ||
                  ( g_counters[i].name && strcmp( g_counters[i].name, name ) == 0 ) )
@@ -87,7 +100,11 @@ namespace
         if ( g_numCounters >= MAX_COUNTERS )
             return NULL;
         Counter* c = &g_counters[g_numCounters++];
-        c->name    = name;
+        // COPY the name (never freed — process-lifetime registry, <=160 x 48 bytes).
+        // Storing the caller's pointer let stack-temporary names rot into garbage in
+        // the log AND let a RECYCLED stack address pointer-match the wrong counter,
+        // silently corrupting unrelated counts.
+        c->name    = _strdup( name );
         c->value   = 0;
         c->isGauge = gauge;
         return c;
