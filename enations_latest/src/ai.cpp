@@ -22,6 +22,8 @@
 #include "stdafx.h"
 #include "threads.h"
 
+#include "Perf.h"  // ai.msg.vdsamp counter (veh_dest sampling)
+
 extern CRITICAL_SECTION cs;
 extern CPathMap         thePathMap;  // the map pathfinding object (no yield)
 
@@ -501,6 +503,28 @@ void AiMessage( DWORD_PTR dwID, CNetCmd const* pMsg, int )
 // err_veh_goto/traffic, unit_loaded, give_unit, plyr_dying, scenario,
 // cmd_play. Default is deliver.
 //
+// Layer-2 sampling divisor for non-owner veh_dest (EN_AIVDS):
+//   4 (default) = deliver 1 in 4;  1 = deliver all (legacy);  0 = owner-only.
+// veh_dest is 78% of all AI arrivals (measured 13-player game) and its ONLY
+// non-owner effect is a ~9-hex map-freshness touch (UpdateAdjacentHexes) plus
+// a task-priority refresh flag -- verified: UpdateUnits has no veh_dest case,
+// opfor positions are fetched live, threat detection rides see_unit (which is
+// never filtered). Sampling keeps that intel flowing at reduced rate; the idle
+// full-map rescan remains the authoritative refresh. The sampler uses a local
+// counter, NOT the shared game RNG (which deterministic logic also consumes).
+static int VehDestSampleN( void )
+{
+    static int s_iN = -1;
+    if ( s_iN < 0 )
+    {
+        const char* p = SDL_getenv( "EN_AIVDS" );
+        s_iN          = ( p != NULL ) ? atoi( p ) : 4;
+        if ( s_iN < 0 )
+            s_iN = 4;
+    }
+    return s_iN;
+}
+
 BOOL AiMessageWanted( CPlayer* pPlr, CNetCmd const* pMsg )
 {
     int iPlyr = pPlr->GetPlyrNum( );
@@ -511,6 +535,28 @@ BOOL AiMessageWanted( CPlayer* pPlr, CNetCmd const* pMsg )
     // message is discarded after a full queue round-trip.
     case CNetCmd::veh_loc:  // m_bLocChanged -> UpdateLoc (own vehicles only)
         return ( ( (CMsgVehLoc const*)pMsg )->m_iPlyrNum == iPlyr );
+
+    case CNetCmd::veh_dest:  // owner: task-step critical, always deliver.
+    {                        // non-owner: map-freshness only -> sampled.
+        if ( ( (CMsgVehDest const*)pMsg )->m_iPlyrNum == iPlyr )
+            return TRUE;
+        int iN = VehDestSampleN( );
+        if ( iN == 1 )
+            return TRUE;   // sampling disabled
+        if ( iN == 0 )
+            return FALSE;  // owner-only mode
+        static unsigned s_uCtr = 0;  // main-thread only (all dispatch sites)
+        if ( ( ++s_uCtr % (unsigned)iN ) == 0 )
+            return TRUE;
+        Perf::CounterInc( "ai.msg.vdsamp" );  // sampled-out (subset of skip)
+        return FALSE;
+    }
+
+    case CNetCmd::bldg_stat:  // non-owner is pure waste: every consumer is
+                              // owner-gated (PlanRoads, DoRouting, TaskMgr) or
+                              // a message-free own-state heuristic; opfor bldg
+                              // intel comes from bldg_new, never bldg_stat.
+        return ( ( (CMsgBldgStat const*)pMsg )->m_iPlyrNum == iPlyr );
 
     case CNetCmd::build_civ:  // m_bPlaceBldg (owner-gated)
         return ( ( (CMsgBuildCiv const*)pMsg )->m_iPlyrNum == iPlyr );
