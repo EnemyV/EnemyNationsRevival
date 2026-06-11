@@ -723,12 +723,14 @@ CCell* CPathMap::GetLowestCost( void )
     // advance m_iLowestBoth past empty buckets (cached for future calls)
     while ( m_iLowestBoth < MAX_BOTH_INDEX && m_acBoth[m_iLowestBoth] == NULL ) m_iLowestBoth++;
 
-    // no valid bucket found
+    // No valid bucket found: every remaining open cell has m_iBoth > MAX_BOTH_INDEX
+    // (out-of-bucket by design — see cpathmgr.h; routine for long paths on big maps).
+    // The linear fallback below is correct for them. This carried a TRAP() from
+    // development, which on a 1024x1024 map fired CONSTANTLY during AI assault
+    // pathing (every int3 = a debugger stack-walk; the storm froze the session).
+    // Investigated 2026-06-10: benign designed-for fallback, not an invariant break.
     if ( m_iLowestBoth >= MAX_BOTH_INDEX )
-    {
-        TRAP( );
         return xGetLowestCost( );
-    }
 
     // all cells in this bucket have the same m_iBoth value (cost + distance),
     // so returning the head is correct - they're all equally "lowest"

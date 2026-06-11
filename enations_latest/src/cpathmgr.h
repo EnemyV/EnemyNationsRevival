@@ -12,7 +12,14 @@
 //
 ////////////////////////////////////////////////////////////////////////////
 
-const int MAX_BOTH_INDEX = 600;
+// Bucket bound for the path open-list's cost+distance (m_iBoth) index. Cells whose
+// m_iBoth exceeds this can't live in the O(1) bucket array and fall back to the O(n)
+// linear scan (xGetLowestCost). 600 was sized for 1996 map sizes: on a 1024x1024 map a
+// cross-map path's cost+heuristic exceeds it ROUTINELY, so 12-AI assault pathing
+// degraded to permanent linear scans (and tripped the "no bucket found" TRAP storm in
+// CPathMap::GetLowestCost). 4096 covers 1024-map diagonals with terrain multipliers;
+// the array is pointers (32KB/instance) and the per-search clear is a ~3us memset.
+const int MAX_BOTH_INDEX = 4096;
 
 #define CELLSAROUND 		8
 #define HEADINGS			3
