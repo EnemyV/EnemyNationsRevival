@@ -876,6 +876,19 @@ public:
     {
         CMapReadGuard g( m_srw );   // begin()/end() register checked iterators (proxy mutation)
         if ( m_map.empty() ) return nullptr;
+#if defined(_ITERATOR_DEBUG_LEVEL) && _ITERATOR_DEBUG_LEVEL == 0
+        // POSITION packs the unchecked iterator DIRECTLY (at IDL=0 it is one node
+        // pointer): no heap wrapper, no pool, no atomic counter — and nothing to leak
+        // when a caller breaks out of a walk early. The abandoned-IterPos leak grew
+        // ~5k wrappers/s on the 13-player save (1.8M live within minutes); this path
+        // makes a CMap walk allocation-free end to end.
+        UncheckedIt it = m_map.begin()._Unwrapped();
+        static_assert( sizeof( UncheckedIt ) <= sizeof( POSITION ),
+                       "IDL=0 unchecked iterator must be pointer-sized to pack into POSITION" );
+        POSITION pos = nullptr;
+        memcpy( &pos, &it, sizeof( it ) );
+        return pos;
+#else
         IterPos* pos = AcquireIterPos();
         // Unwrap ONCE per walk: the two checked iterators here are the walk's only
         // _Lockit traffic; every GetNextAssoc advance after this is lock-free.
@@ -884,6 +897,7 @@ public:
         pos->map = &m_map;
         InterlockedIncrement( &g_mfcIterPosLive );
         return (POSITION)pos;
+#endif
     }
 
     void GetNextAssoc( POSITION& rNextPosition, KEY& rKey, VALUE& rValue ) const
@@ -899,6 +913,19 @@ public:
         // "13-player at 1 fps" collapse, 2026-06-10). Unchecked advance = plain pointer
         // chase, no lock. Walk-vs-writer safety is unchanged: the caller must hold the
         // game lock across a walk (same contract as the original MFC CMap).
+#if defined(_ITERATOR_DEBUG_LEVEL) && _ITERATOR_DEBUG_LEVEL == 0
+        // Pointer-packed POSITION (see GetStartPosition): unpack, read, advance,
+        // repack — a pure pointer chase, allocation- and lock-free.
+        if ( !rNextPosition ) return;
+        UncheckedIt it;
+        memcpy( &it, &rNextPosition, sizeof( it ) );
+        rKey   = it->first;
+        rValue = it->second;
+        ++it;
+        UncheckedIt itEnd = m_map.end()._Unwrapped();   // trivial at IDL=0 (no proxy, no lock)
+        if ( it == itEnd ) rNextPosition = nullptr;
+        else               memcpy( &rNextPosition, &it, sizeof( it ) );
+#else
         IterPos* p = (IterPos*)rNextPosition;
         if ( !p ) return;
         rKey   = p->it->first;
@@ -919,6 +946,7 @@ public:
             rNextPosition = nullptr;
         }
         // else: rNextPosition unchanged — same pointer, nothing allocated.
+#endif
     }
 
     // No-op Serialize: the gate-on save format doesn't round-trip MFC
