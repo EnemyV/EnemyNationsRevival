@@ -2232,11 +2232,20 @@ void CAIMgr::MessageArrived( CNetCmd const* pNewMsg )
         Perf::GaugeSet( "ai.q.depth", InterlockedIncrement( &g_aiMsgBacklog ) );
 
         // per-type arrival histogram: names the redundancy targets empirically
-        // (which types dominate the queue) before any further filtering
+        // (which types dominate the queue) before any further filtering.
+        // KEYS MUST BE STATIC: Perf::FindOrAdd stores the name POINTER without
+        // copying, so a stack buffer would dangle (and its printout read freed
+        // memory). One static slot per type id; first-fill race across AI
+        // threads is benign (identical bytes).
         {
-            char szKey[24];
-            sprintf_s( szKey, sizeof( szKey ), "ai.mt.%02d", pNewMsg->GetType( ) );
-            Perf::CounterInc( szKey );
+            int t = pNewMsg->GetType( );
+            if ( t >= 0 && t < 128 )
+            {
+                static char s_aszMtKey[128][12];
+                if ( !s_aszMtKey[t][0] )
+                    sprintf_s( s_aszMtKey[t], sizeof( s_aszMtKey[t] ), "ai.mt.%02d", t );
+                Perf::CounterInc( s_aszMtKey[t] );
+            }
         }
     }
 }

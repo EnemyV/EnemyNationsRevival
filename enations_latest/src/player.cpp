@@ -1449,7 +1449,15 @@ void CGame::PostToClient( CPlayer* pPlyr, CNetCmd const* pMsg, int iLen )
     if ( m_bServer )
     {
         if ( pPlyr->IsAI( ) )
-            AiMessage( pPlyr->GetAiHdl( ), pMsg, iLen );
+        {
+            // redundancy filter: this is the HOT per-player AI delivery path
+            // (broadcasts fan out through here per player); skip types this
+            // AI provably ignores. Server-local; cannot affect client sync.
+            if ( AiMessageWanted( pPlyr, pMsg ) )
+                AiMessage( pPlyr->GetAiHdl( ), pMsg, iLen );
+            else
+                Perf::CounterInc( "ai.msg.skip" );
+        }
         else
         {
             if ( pPlyr == _GetMe( ) )
@@ -1496,7 +1504,13 @@ void CGame::PostClientToClient( CPlayer* pPlyr, CNetCmd const* pMsg, int iLen )
     if ( m_bServer )
     {
         if ( pPlyr->IsAI( ) )
-            AiMessage( pPlyr->GetAiHdl( ), pMsg, iLen );
+        {
+            // redundancy filter (see PostToClient above)
+            if ( AiMessageWanted( pPlyr, pMsg ) )
+                AiMessage( pPlyr->GetAiHdl( ), pMsg, iLen );
+            else
+                Perf::CounterInc( "ai.msg.skip" );
+        }
         else
             theNet.Send( pPlyr->GetNetNum( ), pMsg, iLen );
     }
