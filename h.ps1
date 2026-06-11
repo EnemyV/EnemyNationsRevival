@@ -24,6 +24,13 @@
 #                                 mid-preview screenshots -> d:\tmp\pv<i>.png. Verifies via pv.frame.
 #   h.ps1 share [file] [ttl]      upload a capture to litterbox.catbox.moe (temp host) -> URL
 #                                 default d:\tmp\h.png, ttl 12h (1h|12h|24h|72h)
+#   h.ps1 save [name]             save the running game (Ctrl+O -> Save Game -> type -> Save).
+#                                 NOTE: silently impossible during the rocket phase (by design).
+#   h.ps1 land [x] [y]            land the starting rocket via the REAL mouse (the build cursor
+#                                 only follows real WM_MOUSEMOVE; PostMessage clicks can't move it)
+#   h.ps1 mouse <x> <y> [role]    REAL-mouse click at client coords (SetCursorPos+SendInput) —
+#                                 for the few paths PostMessage can't drive (build cursor etc.)
+#   h.ps1 saves                   list save files (exe dir + run dir), newest first
 #   h.ps1 pan <left|right|up|down> [n]   scroll the Area Map a quarter-screen per press (arrow keys)
 #   h.ps1 click <x> <y> [role]    mouse-click client px on a window (default map)
 #   h.ps1 rotate [cw|ccw] [n]     rotate the view ('.'=CW / ','=CCW in-game hotkeys, n times)
@@ -261,7 +268,9 @@ switch ($cmd) {
     $n=0; while(-not (_has 'Game View') -and $n -lt 40){ Start-Sleep 2; $n++ }
     Start-Sleep 22
     _click $null 666 749
-    $ok = _clickUntil 'Create' 185 470 { _has 'Pick Your Race' } 6 1500   # OK (size remembered=Large)
+    # Create dialog (480x530): OK is at (176,494) — settings (AI count/size/world type)
+    # are REMEMBERED from the registry (Create\AiOpponents etc.), set them beforehand.
+    $ok = _clickUntil 'Create' 176 494 { _has 'Pick Your Race' } 6 1500
     if (_has 'Pick Your Race'){ Start-Sleep 2; _click 'Race' 40 92; Start-Sleep -Milliseconds 700; _click 'Race' 235 430 }
     $n=0; while(-not (_has 'Area Map') -and (_running) -and $n -lt 240){ Start-Sleep 2; $n++ }
     if(_has 'Area Map'){ 'INGAME' } elseif(_running){ 'NEWGAME-TIMEOUT (worldgen?)' } else { 'PROCESS-GONE' }
@@ -344,6 +353,70 @@ switch ($cmd) {
     else { "WARNING: no preview frames during stream (zoom changes: $zoomSum) -- shots are settled frames" }
   }
 
+  'mouse' {
+    # REAL mouse click (cursor actually moves): needed where the game reads true cursor
+    # position / WM_MOUSEMOVE (the build/landing cursor) — PostMessage clicks can't move it.
+    # Safe only when nobody is at the machine (it steals the pointer briefly).
+    if (-not $a1 -or -not $a2) { 'usage: h.ps1 mouse <x> <y> [role]'; break }
+    $role = if($a3){$a3}else{'map'}
+    . (Join-Path $SC 'harness-common.ps1')
+    $info = Resolve-GameTarget -Window $role
+    if (-not ('HXM.RM' -as [type])) {
+      Add-Type -Name RM -Namespace HXM -MemberDefinition '[DllImport("user32.dll")]public static extern bool SetCursorPos(int x, int y); [DllImport("user32.dll")]public static extern void mouse_event(uint f, uint x, uint y, uint d, int e); [DllImport("user32.dll")]public static extern bool ClientToScreen(IntPtr h, ref HXM.PT p); [DllImport("user32.dll")]public static extern bool SetForegroundWindow(IntPtr h); public struct PT { public int X; public int Y; }'
+    }
+    $p = New-Object HXM.PT; $p.X = [int]$a1; $p.Y = [int]$a2
+    [void][HXM.RM]::ClientToScreen($info.Hwnd, [ref]$p)
+    [void][HXM.RM]::SetForegroundWindow($info.Hwnd)
+    Start-Sleep -Milliseconds 300
+    [void][HXM.RM]::SetCursorPos($p.X - 25, $p.Y - 25)   # approach move so a MOUSEMOVE fires
+    Start-Sleep -Milliseconds 200
+    [void][HXM.RM]::SetCursorPos($p.X, $p.Y)
+    Start-Sleep -Milliseconds 400
+    [HXM.RM]::mouse_event(2, 0, 0, 0, 0)   # LEFTDOWN
+    Start-Sleep -Milliseconds 120
+    [HXM.RM]::mouse_event(4, 0, 0, 0, 0)   # LEFTUP
+    "real-mouse click at client ($a1,$a2) of '$($info.Title)'"
+  }
+
+  'land' {
+    # Land the starting rocket: real-mouse move+click on the Area Map (the landing cursor
+    # follows only the real pointer). Defaults to just left of window centre (the initial
+    # cursor spot is centre; moving off then clicking validates fresh foundation state).
+    $lx = if($a1){[int]$a1}else{1000}
+    $ly = if($a2){[int]$a2}else{650}
+    & $PSCommandPath mouse $lx $ly map
+    Start-Sleep 4
+    'landed (verify with: h.ps1 shot map)'
+  }
+
+  'save' {
+    # Save the running game. Flow: Ctrl+O (Game Options) -> Save Game (button 100,184) ->
+    # focus filename (200,345) -> clear -> type -> Save (185,376). Verifies the file.
+    # SaveGame silently refuses during the rocket phase (rocket_ready/pos/wait) - land first.
+    $name = if($a1){$a1}else{'savegame'}
+    if (-not (_has 'Area Map')) { 'NOT IN-GAME'; break }
+    & "$SC\keys.ps1" -Window main -Key O -Ctrl 2>&1 | Out-Null
+    Start-Sleep 2
+    _click 'Game Options' 100 184; Start-Sleep 2
+    if (-not (_has 'Save Game')) { 'FAIL: Save dialog never opened'; break }
+    _click 'Save Game' 200 345; Start-Sleep -Milliseconds 300
+    & "$SC\keys.ps1" -Window 'Save Game' -Key Backspace -Times 30 -DelayMs 10 2>&1 | Out-Null
+    & "$SC\keys.ps1" -Window 'Save Game' -Text $name -DelayMs 20 2>&1 | Out-Null
+    Start-Sleep -Milliseconds 300
+    _click 'Save Game' 185 376
+    Start-Sleep 12
+    $f = Get-Item "D:\Enemy Nations\src\cmakeBuild-x64\enations_latest\src\Debug\$name.en" -ErrorAction SilentlyContinue
+    if ($f) { "SAVED $($f.Name) ($([math]::Round($f.Length/1MB,2)) MB)" }
+    else { 'SAVE NOT WRITTEN (rocket phase? dialog flow broke?) - check h.ps1 shot main' }
+  }
+
+  'saves' {
+    # List save files in the two locations the game uses, newest first.
+    Get-ChildItem 'D:\Enemy Nations\src\cmakeBuild-x64\enations_latest\src\Debug\*.en','d:\Enemy Nations\*.en' -ErrorAction SilentlyContinue |
+      Sort-Object LastWriteTime -Descending | Select-Object -First 12 |
+      ForEach-Object { '{0,-28} {1,8:N0} KB  {2}' -f $_.Name, ($_.Length/1KB), $_.LastWriteTime }
+  }
+
   'share' {
     # Upload a screenshot (or any file) to litterbox.catbox.moe (1h temp host) and print
     # the URL — so the user can SEE a capture without being at the machine.
@@ -369,5 +442,5 @@ switch ($cmd) {
     }
   }
 
-  default { "verbs: launch | load | measure | zoom <in|out> N | shot [role] | wake | status | fresh | windows | perf | log [name] [n] | grep <pat> [name] | pan | click | rotate | newgame | waitmap" }
+  default { "verbs: launch | load [save] | save [name] | saves | land [x y] | mouse <x y> [role] | newgame | measure | zoom <in|out> N | pvshot [n] | shot [role] | share [file] | wake | status | fresh | windows | perf | log [name] [n] | grep <pat> [name] | pan | click | rotate | waitmap" }
 }
