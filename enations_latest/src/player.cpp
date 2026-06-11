@@ -13,6 +13,7 @@
 #include "player.h"
 
 #include "ai.h"
+#include "Perf.h"  // ai.msg.skip counter (fan-out filter)
 #include "area.h"
 #include "bridge.h"
 #include "GameWindow.h"
@@ -1538,6 +1539,16 @@ void CGame::PostToAllAi( CNetCmd const* pMsg, int iLen )
         CPlayer* pPlr = m_lstAi.GetPrev( pos );
         ASSERT_VALID( pPlr );
         ASSERT( pPlr->IsAI( ) );
+
+        // redundancy filter: skip deliveries this AI provably ignores
+        // (owner-gated types; see AiMessageWanted in ai.cpp). Server-local,
+        // cannot affect client sync.
+        if ( !AiMessageWanted( pPlr, pMsg ) )
+        {
+            Perf::CounterInc( "ai.msg.skip" );
+            continue;
+        }
+
         AiMessage( pPlr->GetAiHdl( ), pMsg, iLen );
     }
 }

@@ -2230,6 +2230,14 @@ void CAIMgr::MessageArrived( CNetCmd const* pNewMsg )
         // metrics: one message entered the AI pipeline
         Perf::CounterInc( "ai.msg.enq" );
         Perf::GaugeSet( "ai.q.depth", InterlockedIncrement( &g_aiMsgBacklog ) );
+
+        // per-type arrival histogram: names the redundancy targets empirically
+        // (which types dominate the queue) before any further filtering
+        {
+            char szKey[24];
+            sprintf_s( szKey, sizeof( szKey ), "ai.mt.%02d", pNewMsg->GetType( ) );
+            Perf::CounterInc( szKey );
+        }
     }
 }
 

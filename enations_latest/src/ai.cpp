@@ -486,6 +486,57 @@ void AiMessage( DWORD_PTR dwID, CNetCmd const* pMsg, int )
         pAIMgr->MessageArrived( pMsg );
 }
 
+//
+// Fan-out redundancy filter (called per AI from CGame::PostToAllAi).
+//
+// Returns FALSE only for message types whose EVERY consumer in the AI is
+// owner-gated (verified against CAIMgr::ProcessMessage's flag switch and the
+// flag consumers in Manage): the non-owner AI would pay alloc + enqueue +
+// semaphore wake + a Manage pass just to discard the message. With N AIs that
+// is N-1 wasted deliveries per event.
+//
+// Deliberately NOT filtered (intel-bearing or unaudited): bldg_new, veh_new,
+// delete_unit, see_unit, unit_attacked, unit_damage (the war-attitude trigger
+// reads it), bldg_stat, veh_dest (sets m_bMapChanged for ALL players),
+// err_veh_goto/traffic, unit_loaded, give_unit, plyr_dying, scenario,
+// cmd_play. Default is deliver.
+//
+BOOL AiMessageWanted( CPlayer* pPlr, CNetCmd const* pMsg )
+{
+    int iPlyr = pPlr->GetPlyrNum( );
+
+    switch ( pMsg->GetType( ) )
+    {
+    // ProcessMessage: flag set only when m_idata3 == m_iPlayer, else the
+    // message is discarded after a full queue round-trip.
+    case CNetCmd::veh_loc:  // m_bLocChanged -> UpdateLoc (own vehicles only)
+        return ( ( (CMsgVehLoc const*)pMsg )->m_iPlyrNum == iPlyr );
+
+    case CNetCmd::build_civ:  // m_bPlaceBldg (owner-gated)
+        return ( ( (CMsgBuildCiv const*)pMsg )->m_iPlyrNum == iPlyr );
+
+    case CNetCmd::scenario_atk:  // m_bAttackUnit (owner-gated)
+        return ( ( (CMsgScenarioAtk const*)pMsg )->m_iPlyrAi == iPlyr );
+
+    case CNetCmd::out_of_LOS:  // m_bOutLOS (gated on attacker == me)
+        return ( ( (CMsgOutOfLos const*)pMsg )->m_iPlyrAttacker == iPlyr );
+
+    case CNetCmd::err_place_bldg:  // m_bPlaceRocket (owner + rocket)
+        return ( ( (CMsgPlaceBldg const*)pMsg )->m_iPlyrNum == iPlyr );
+
+    case CNetCmd::road_done:  // m_bMapChanged (owner-gated; others' roads are
+                              // learned from the map rescan, not the message)
+        return ( ( (CMsgRoadDone const*)pMsg )->m_iPlyrNum == iPlyr );
+
+    case CNetCmd::road_new:
+    case CNetCmd::err_build_road:  // same struct, owner-gated
+        return ( ( (CMsgRoadNew const*)pMsg )->m_iPlyrNum == iPlyr );
+
+    default:
+        return TRUE;  // conservative: deliver anything unaudited
+    }
+}
+
 void AiSaveGame( CArchive& ar )
 {
 

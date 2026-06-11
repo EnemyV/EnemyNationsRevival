@@ -27,6 +27,13 @@ void AiHexCacheFree ();
 bool AiHexCacheActive ();   // TRUE while the setup snapshot is live (caidata.cpp)
 void AiMapBaseFree ();      // frees the shared per-AI base map snapshot (caimap.cpp)
 void AiMessage( DWORD_PTR dwID, CNetCmd const * pMsg, int iLen);   // dwID is a CAIMgr* — pointer-width
+
+// Fan-out filter (CGame::PostToAllAi): FALSE = this AI provably ignores this
+// message (every consumer is owner-gated), so skip the alloc+enqueue+wake.
+// Conservative: unknown/intel-bearing types always return TRUE. AI-inbound
+// delivery is server-local (AiMessage runs only on the server), so filtering
+// cannot desync clients -- AI influence travels via normal net commands.
+BOOL AiMessageWanted( CPlayer* pPlr, CNetCmd const* pMsg );
 void AiSaveGame( CArchive& ar );
 void AiLoadGame( CArchive& ar, BOOL bLocal );
 void AiLoadComplete( void );
