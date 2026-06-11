@@ -65,6 +65,12 @@ public:
     // the first-light render until the exact MakeRotated mapping lands.
     static const Tile* GetDefaultForType( const std::string& type );
 
+    // GPU device-lost (SDL_RENDER_TARGETS_RESET / SDL_RENDER_DEVICE_RESET): render-
+    // target textures keep their handles but lose their CONTENTS. Marks every cached
+    // texture (terrain composite, water, shade, fog, far snapshot, whole-map underlay)
+    // for a full re-render on the next frame. Called from the event pump.
+    static void NotifyTargetsLost();
+
     // Resolve the tile a hex should draw (forest→plain, road facing+rotation,
     // else variant). Shared by the main pass, the T5 edge-feather pass, and the
     // whole-map far-underlay builder (a file-scope helper in the .cpp — which is

@@ -12,6 +12,7 @@
 #include "music.h"        // theMusicPlayer (pause/resume on app focus change)
 #include "Perf.h"         // GaugeSet — correlate window state with frame cost
 #include "w22_settings.h" // w22::GetProfileInt — [Advanced] Renderer flag (T0)
+#include "SDL2Terrain.h"  // NotifyTargetsLost — rebuild cached RTs after GPU device-lost
 #include "RenderBackend.h" // RenderBackendIsGpu() — 3-way backend selector
 #include "../rendering/SDLButtonManager.h"
 #include "../rendering/StatusBar.h"
@@ -489,6 +490,18 @@ bool GameWindow::PollEvents() {
             LogToFile("SDL_QUIT received");
             m_pollingEvents = false;
             return true;
+        }
+
+        // GPU device-lost (monitor power-off/on, driver reset, fullscreen transitions):
+        // render-TARGET textures lose their CONTENTS while remaining valid objects, so
+        // the terrain's cached composite/water/fog/underlay textures go black while the
+        // per-frame sprite layer keeps working (user-reported: "turned my screen off
+        // then on, terrain is black, sprites still work"). Tell the terrain to rebuild
+        // everything it caches.
+        if (event.type == SDL_RENDER_TARGETS_RESET || event.type == SDL_RENDER_DEVICE_RESET) {
+            LogToFile(event.type == SDL_RENDER_DEVICE_RESET ? "SDL_RENDER_DEVICE_RESET"
+                                                            : "SDL_RENDER_TARGETS_RESET");
+            SDL2Terrain::NotifyTargetsLost();
         }
 
         // The area map hides the OS cursor while placing a building/rocket (it

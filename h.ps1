@@ -31,6 +31,7 @@
 #   h.ps1 mouse <x> <y> [role]    REAL-mouse click at client coords (SetCursorPos+SendInput) —
 #                                 for the few paths PostMessage can't drive (build cursor etc.)
 #   h.ps1 saves                   list save files (exe dir + run dir), newest first
+#   h.ps1 profile [n]             n dbgstack samples (~3s apart) -> top-frame histogram
 #   h.ps1 pan <left|right|up|down> [n]   scroll the Area Map a quarter-screen per press (arrow keys)
 #   h.ps1 click <x> <y> [role]    mouse-click client px on a window (default map)
 #   h.ps1 rotate [cw|ccw] [n]     rotate the view ('.'=CW / ','=CCW in-game hotkeys, n times)
@@ -408,6 +409,24 @@ switch ($cmd) {
     $f = Get-Item "D:\Enemy Nations\src\cmakeBuild-x64\enations_latest\src\Debug\$name.en" -ErrorAction SilentlyContinue
     if ($f) { "SAVED $($f.Name) ($([math]::Round($f.Length/1MB,2)) MB)" }
     else { 'SAVE NOT WRITTEN (rocket phase? dialog flow broke?) - check h.ps1 shot main' }
+  }
+
+  'profile' {
+    # Poor-man's CPU profiler: N dbgstack samples (default 6, ~3s apart) -> histogram of
+    # the top-of-stack frames (game modules only), plus the raw samples in d:\tmp\prof-*.txt.
+    #   h.ps1 profile [samples]
+    $n = if($a1){[int]$a1}else{6}
+    Remove-Item 'd:\tmp\prof-*.txt' -ErrorAction SilentlyContinue
+    for ($i = 1; $i -le $n; $i++) {
+      & "$SC\dbgstack.ps1" 2>&1 | Out-File "d:\tmp\prof-$i.txt"
+      if ($i -lt $n) { Start-Sleep 3 }
+    }
+    "== top-frame histogram over $n samples (frames [0]-[2], game code only) =="
+    Select-String -Path 'd:\tmp\prof-*.txt' -Pattern '^\s+\[\s*[012]\]' | ForEach-Object {
+      if ($_.Line -match '\]\s+0x[0-9A-Fa-f]+\s+(.+?)(\s+\(|$)') { $matches[1].Trim() }
+    } | Group-Object | Sort-Object Count -Descending | Select-Object -First 14 |
+      ForEach-Object { '{0,3}x  {1}' -f $_.Count, $_.Name }
+    "(full stacks: d:\tmp\prof-1..$n.txt)"
   }
 
   'saves' {

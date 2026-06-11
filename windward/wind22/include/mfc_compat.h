@@ -874,10 +874,13 @@ public:
 
     POSITION GetStartPosition() const
     {
-        CMapReadGuard g( m_srw );   // begin() registers a checked iterator (proxy mutation)
+        CMapReadGuard g( m_srw );   // begin()/end() register checked iterators (proxy mutation)
         if ( m_map.empty() ) return nullptr;
         IterPos* pos = AcquireIterPos();
-        pos->it  = m_map.begin();
+        // Unwrap ONCE per walk: the two checked iterators here are the walk's only
+        // _Lockit traffic; every GetNextAssoc advance after this is lock-free.
+        pos->it    = m_map.begin()._Unwrapped();
+        pos->itEnd = m_map.end()._Unwrapped();
         pos->map = &m_map;
         InterlockedIncrement( &g_mfcIterPosLive );
         return (POSITION)pos;
@@ -885,10 +888,17 @@ public:
 
     void GetNextAssoc( POSITION& rNextPosition, KEY& rKey, VALUE& rValue ) const
     {
-        // Per-call guard: protects the checked-iterator proxy ops against concurrent
-        // CMap traffic on other threads. (A WALK spanning calls still needs the caller
-        // to hold the game lock against writers — same contract as the original.)
-        CMapReadGuard g( m_srw );
+        // NOTE: NO checked iterators in here. The walk uses MSVC's UNCHECKED iterator
+        // (captured by GetStartPosition via _Unwrapped()), because under
+        // _ITERATOR_DEBUG_LEVEL=2 every checked-iterator construct/copy/destroy takes
+        // std::_Lockit — ONE GLOBAL critical section for the whole process. The sim
+        // walks theVehicleMap per tick (1,473 vehicles on the 13-player save) at ~4
+        // checked-iterator ops per advance, while 12 AI threads contend the same global
+        // lock with their own STL traffic: stack-sampling showed the main thread parked
+        // in _Adopt_locked/_Orphan_me_locked via this function in 6/6 samples (the
+        // "13-player at 1 fps" collapse, 2026-06-10). Unchecked advance = plain pointer
+        // chase, no lock. Walk-vs-writer safety is unchanged: the caller must hold the
+        // game lock across a walk (same contract as the original MFC CMap).
         IterPos* p = (IterPos*)rNextPosition;
         if ( !p ) return;
         rKey   = p->it->first;
@@ -903,7 +913,7 @@ public:
         // full walk now leaks 0; an early `break` abandons a single IterPos
         // (was: one per element visited).
         ++p->it;
-        if ( p->it == m_map.end() ) {
+        if ( p->it == p->itEnd ) {
             ReleaseIterPos( p );
             InterlockedDecrement( &g_mfcIterPosLive );
             rNextPosition = nullptr;
@@ -928,8 +938,12 @@ private:
     // CString typedef is never instantiated, so no std::hash<CString> is needed.
     typedef std::unordered_map<KEY, VALUE, std::hash<KEY>, std::equal_to<KEY>, NODEALLOC> MapT;
     CMapSrw m_srw;   // see CMapSrw: cross-thread guard (exclusive reads under IDL>0)
+    // UNCHECKED iterator type (MSVC _Unwrapped()): advancing it takes no std::_Lockit
+    // global lock — see the GetNextAssoc comment. Works at any _ITERATOR_DEBUG_LEVEL.
+    typedef decltype( std::declval<typename MapT::const_iterator>( )._Unwrapped( ) ) UncheckedIt;
     struct IterPos {
-        typename MapT::const_iterator it;
+        UncheckedIt it;      // current element (unchecked — lock-free advance)
+        UncheckedIt itEnd;   // end sentinel captured at GetStartPosition
         const MapT* map;
         IterPos*    poolNext;   // freelist link (thread-local pool below)
     };

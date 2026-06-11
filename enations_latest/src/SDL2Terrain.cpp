@@ -173,6 +173,12 @@ static const int* QuadIndices( int nQuads )
     return s_quadIdx.data( );
 }
 
+// GPU device-lost flag (SDL_RENDER_TARGETS_RESET / SDL_RENDER_DEVICE_RESET, set from the
+// event pump via SDL2Terrain::NotifyTargetsLost): target textures survive as objects but
+// their CONTENTS are gone — every cached layer must re-render or it presents black.
+static bool s_targetsLost = false;
+void SDL2Terrain::NotifyTargetsLost() { s_targetsLost = true; }
+
 // FAR SNAPSHOT: flattened copy of the terrain composite from the last wide (zoom>=2) full
 // rebuild. During a zoom-OUT gesture preview the crisp texture only covers the old (narrower)
 // view; this snapshot underlays the rest of the window — slightly stale, blurrier terrain
@@ -1224,6 +1230,22 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
                         && s_builtDir == ( aa.m_iDir & 3 )
                         && ( _nowT - s_viewChangedAt ) < kSettleMs;
         if ( s_deferActive ) Perf::CounterAdd( "pv.defer", 1 );
+    }
+
+    // GPU device-lost (screen power-off/on, driver reset): the cached target textures
+    // are valid objects with DEAD contents. Invalidate every cached layer so this frame
+    // rebuilds them all — terrain mesh (s_sig), water bake, far snapshot, whole-map
+    // underlay. Without this the composite blits black while sprites (re-emitted every
+    // frame) keep working — the user-reported "terrain black after monitor off/on".
+    if ( s_targetsLost )
+    {
+        s_targetsLost = false;
+        s_sig         = ~0ull;   // full mesh re-render into s_rt/shade/fog
+        s_waterRTtick = ~0u; s_waterTick = ~0u;          // water re-bake
+        if ( s_farRT ) { SDL_DestroyTexture( s_farRT ); s_farRT = nullptr; }
+        s_farZoom = -1;
+        for ( int d = 0; d < 4; ++d ) { s_mapLoadGen[d] = ~0u; s_mapRow[d] = 0; }
+        LogTerrain( "[REN] render targets reset — rebuilding cached layers" );
     }
 
     // (Re)create the textures when the viewport size (hence rtW/rtH) changes.
