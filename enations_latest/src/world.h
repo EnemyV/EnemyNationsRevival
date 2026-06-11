@@ -166,6 +166,7 @@ protected:
 	BOOL					m_bIsRadar;				// TRUE if it's a radar unit
 	DWORD					m_dwLastRadarDraw{};	// last time the static minimap background was baked
 	CDIB*					m_pdibRadarStatic{};	// cached minimap background (no unit dots) — see ReRender
+	unsigned long long		m_qwLastWalkSig{};		// inputs signature of the last bake (skip-gate, see ReRender)
 	std::vector<CPoint>		m_radarDots;			// last frame's unit-dot pixels (for O(units) erase)
 
 	CPoint				m_ptRMB;

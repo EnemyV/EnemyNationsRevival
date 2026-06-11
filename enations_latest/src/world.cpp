@@ -1744,9 +1744,32 @@ void CWndWorld::ReRender( )
     // re-walk only every N ms; between walks blit the cache (world map has no live unit dots,
     // so a plain blit is a complete frame). Radar re-walks fast (140ms, units live); the
     // world map overview changes slowly, so 800ms is imperceptible and ~3-4x cheaper.
-    const DWORD kWalkThrottle = m_bIsRadar ? 140u : 800u;
+    const DWORD kWalkThrottle = m_bIsRadar ? 320u : 1500u;
+    // INPUT-GATED on top of the throttle: the walk renders ground (m_pdibBase) +
+    // buildings + minerals + fog-of-war + the resource-highlight cycle. Hash everything
+    // those depend on; if NOTHING changed since the last bake, skip the walk entirely —
+    // the cached background + live unit dots are still a complete, correct frame. On a
+    // calm view this takes the radar's O(window-pixels) map sampling from ~3/s to ~0;
+    // during exploration the fog generation counter naturally re-enables it. Unit dots
+    // are NOT part of the bake (drawn live every frame), so they never gate.
+    unsigned long long walkSig = 0;
+    if ( m_bIsRadar && m_pWndArea != NULL )
+    {
+        extern unsigned g_enTerrainEditGen;   // defined in SDL2Terrain.cpp (runtime terrain edits)
+        CMapLoc ctr = m_pWndArea->GetAA( ).GetCenter( );
+        walkSig = ( (unsigned long long)g_enFogVisGen << 32 )
+                ^ (unsigned long long)g_enTerrainEditGen
+                ^ ( (unsigned long long)theBuildingMap.GetCount( ) << 12 )
+                ^ ( (unsigned long long)(unsigned)m_iResOn << 24 )
+                ^ ( (unsigned long long)(unsigned)ctr.x << 40 )
+                ^ ( (unsigned long long)(unsigned)ctr.y << 52 )
+                ^ ( (unsigned long long)( m_pWndArea->GetAA( ).m_iDir & 3 ) << 60 )
+                ^ 0x9E3779B97F4A7C15ull;   // non-zero so a fresh member (0) never matches
+    }
     bool  bRebuildBg = !m_pdibRadarStatic ||
-                       ( dwRadarNow - m_dwLastRadarDraw >= kWalkThrottle );
+                       ( ( dwRadarNow - m_dwLastRadarDraw >= kWalkThrottle ) &&
+                         // hit-flash animation must keep re-baking while active
+                         ( !m_bIsRadar || walkSig != m_qwLastWalkSig || m_bBldgHit ) );
     Perf::CounterAdd( m_bIsRadar ? ( bRebuildBg ? "rr.bg" : "rr.fast" ) : ( bRebuildBg ? "rr.world.n" : "rr.world.blit" ), 1 );
 
     if ( !m_bIsRadar && !bRebuildBg )
@@ -2182,6 +2205,7 @@ void CWndWorld::ReRender( )
                                           CBLTFormat::DIR_TOPDOWN, m_cx, m_cy );
         m_dibwnd.GetDIB( )->BitBlt( m_pdibRadarStatic, m_dibwnd.GetDIB( )->GetRect( ), CPoint( 0, 0 ) );
         m_dwLastRadarDraw = dwRadarNow;
+        m_qwLastWalkSig   = walkSig;   // inputs this bake rendered (skip-gate, see above)
         m_radarDots.clear( );
     }
     }   // end else (full whole-map background walk)
