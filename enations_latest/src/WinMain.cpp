@@ -86,6 +86,18 @@ extern "C" int APIENTRY WinMain( HINSTANCE hInstance,
     SetUnhandledExceptionFilter( EnWriteFullDump );
 
 #if defined( _DEBUG )
+    // CRT debug asserts (checked-iterator "list iterators incompatible", _ASSERTE,
+    // heap checks) default to a MODAL Abort/Retry/Ignore dialog — which silently
+    // freezes unattended test sessions until someone clicks it (and blocks ALL
+    // game input, looking like a hang). Route them to OutputDebugString instead
+    // (dbgcatch.ps1 captures it) and CONTINUE — the same "log + keep going" policy
+    // en_assert.h applies to the game's own ASSERTs. Real faults still crash and
+    // produce a full dump via the filter above.
+    _CrtSetReportMode( _CRT_ASSERT, _CRTDBG_MODE_DEBUG );
+    _CrtSetReportMode( _CRT_ERROR,  _CRTDBG_MODE_DEBUG );
+#endif
+
+#if defined( _DEBUG )
     // Heap-corruption hunt. Two combat crashes landed in unrelated places
     // (recalloc_dbg via CVehicle::DeletePath, and msctf via the msg pump) — the
     // classic signature of a wild write that detonates later somewhere random.

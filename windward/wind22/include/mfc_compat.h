@@ -15,6 +15,7 @@
 
 #include <windows.h>
 #include "mfc_compat_text.h"  // Phase 6 Stage 5 Phase C: SDL_ttf text helpers
+#include "en_gdi_audit.h"     // Phase 6 Stage 5a: TEMP GDI liveness instrumentation
 #include <algorithm>
 #include <cctype>
 #include <cstdarg>
@@ -722,7 +723,34 @@ struct EnPoolAllocator
     EnPoolAllocator() noexcept {}
     template<class U> EnPoolAllocator( const EnPoolAllocator<U>& ) noexcept {}
 
-    static void*& FreeHead() { thread_local void* head = nullptr; return head; }
+    // The pooled blocks must be returned to the heap when the owning thread
+    // exits, or they leak: AI worker threads are created per game and destroyed
+    // on teardown (myThreadClose), and each had built up a thread-local pool of
+    // freed A*-search nodes (ClearArray -> m_mapCell.RemoveAll runs on the AI
+    // thread). A bare `thread_local void* head` has no destructor, so that whole
+    // chain was orphaned every game (~MB/cycle). Wrap the head in a small RAII
+    // type whose destructor walks and frees the chain at thread exit. Only the
+    // exit path changes; allocate/deallocate below are untouched. Per-thread
+    // isolation (FreeHead is always the current thread's list) means no other
+    // thread can touch this Head while its destructor runs.
+    static void*& FreeHead()
+    {
+        struct Head
+        {
+            void* p = nullptr;
+            ~Head()
+            {
+                while ( p )
+                {
+                    void* next = *reinterpret_cast<void**>( p );
+                    ::operator delete( p );
+                    p = next;
+                }
+            }
+        };
+        thread_local Head h;
+        return h.p;
+    }
 
     T* allocate( std::size_t n )
     {
@@ -756,6 +784,58 @@ struct EnPoolAllocator
     template<class U> bool operator!=( const EnPoolAllocator<U>& ) const noexcept { return false; }
 };
 
+// Cross-thread guard for the CMap compat container. The original's CMaps were
+// shared under 1996 cooperative scheduling; the port runs REAL preemptive AI
+// threads that still hit shared maps directly (e.g. caidata's theVehicleMap
+// lookups) while the UI thread walks them (AiSnap::Publish). In a Debug build
+// the MSVC checked-iterator proxies are mutated by EVERY operation — including
+// const find() — so even read/read concurrency corrupts the proxy chain
+// ("list iterators incompatible", popped under 12 AI threads). Readers thus
+// lock EXCLUSIVE under iterator debugging, SHARED otherwise. Release keeps
+// shared reads (only writer-vs-anything excludes; a rehash during a concurrent
+// find is genuine UB there too, so this is not a Debug-only crutch).
+// Uncontended SRW ops are ~tens of ns — noise next to the map work itself.
+class CMapSrw
+{
+public:
+    CMapSrw() { InitializeSRWLock( &m_l ); }
+    CMapSrw( const CMapSrw& ) { InitializeSRWLock( &m_l ); }            // fresh lock on copy
+    CMapSrw& operator=( const CMapSrw& ) { return *this; }              // never copy lock state
+    void ReadAcquire() const
+    {
+#if defined(_ITERATOR_DEBUG_LEVEL) && _ITERATOR_DEBUG_LEVEL > 0
+        AcquireSRWLockExclusive( &m_l );
+#else
+        AcquireSRWLockShared( &m_l );
+#endif
+    }
+    void ReadRelease() const
+    {
+#if defined(_ITERATOR_DEBUG_LEVEL) && _ITERATOR_DEBUG_LEVEL > 0
+        ReleaseSRWLockExclusive( &m_l );
+#else
+        ReleaseSRWLockShared( &m_l );
+#endif
+    }
+    void WriteAcquire() const { AcquireSRWLockExclusive( &m_l ); }
+    void WriteRelease() const { ReleaseSRWLockExclusive( &m_l ); }
+
+private:
+    mutable SRWLOCK m_l;
+};
+struct CMapReadGuard
+{
+    const CMapSrw& s;
+    explicit CMapReadGuard( const CMapSrw& srw ) : s( srw ) { s.ReadAcquire(); }
+    ~CMapReadGuard() { s.ReadRelease(); }
+};
+struct CMapWriteGuard
+{
+    const CMapSrw& s;
+    explicit CMapWriteGuard( const CMapSrw& srw ) : s( srw ) { s.WriteAcquire(); }
+    ~CMapWriteGuard() { s.WriteRelease(); }
+};
+
 template<class KEY, class ARG_KEY, class VALUE, class ARG_VALUE,
          class NODEALLOC = std::allocator<std::pair<const KEY, VALUE>>>
 class CMap
@@ -764,27 +844,29 @@ public:
     CMap() {}
     ~CMap() {}
 
-    UINT GetCount() const  { return (UINT)m_map.size(); }
-    BOOL IsEmpty()  const  { return m_map.empty() ? TRUE : FALSE; }
+    UINT GetCount() const  { CMapReadGuard g( m_srw ); return (UINT)m_map.size(); }
+    BOOL IsEmpty()  const  { CMapReadGuard g( m_srw ); return m_map.empty() ? TRUE : FALSE; }
 
     BOOL Lookup( ARG_KEY key, VALUE& rValue ) const
     {
+        CMapReadGuard g( m_srw );
         auto it = m_map.find( key );
         if ( it == m_map.end() ) return FALSE;
         rValue = it->second;
         return TRUE;
     }
 
-    VALUE& operator[]( ARG_KEY key ) { return m_map[key]; }
+    VALUE& operator[]( ARG_KEY key ) { CMapWriteGuard g( m_srw ); return m_map[key]; }
 
-    void SetAt( ARG_KEY key, ARG_VALUE newValue ) { m_map[key] = newValue; }
+    void SetAt( ARG_KEY key, ARG_VALUE newValue ) { CMapWriteGuard g( m_srw ); m_map[key] = newValue; }
 
     BOOL RemoveKey( ARG_KEY key )
     {
+        CMapWriteGuard g( m_srw );
         return m_map.erase( key ) ? TRUE : FALSE;
     }
 
-    void RemoveAll() { m_map.clear(); }
+    void RemoveAll() { CMapWriteGuard g( m_srw ); m_map.clear(); }
 
     // MFC's hash-map tuning hooks. NOP under std::map backing.
     void InitHashTable( UINT /*nHashSize*/, BOOL /*bAllocNow*/ = TRUE ) {}
@@ -792,6 +874,7 @@ public:
 
     POSITION GetStartPosition() const
     {
+        CMapReadGuard g( m_srw );   // begin() registers a checked iterator (proxy mutation)
         if ( m_map.empty() ) return nullptr;
         IterPos* pos = AcquireIterPos();
         pos->it  = m_map.begin();
@@ -802,6 +885,10 @@ public:
 
     void GetNextAssoc( POSITION& rNextPosition, KEY& rKey, VALUE& rValue ) const
     {
+        // Per-call guard: protects the checked-iterator proxy ops against concurrent
+        // CMap traffic on other threads. (A WALK spanning calls still needs the caller
+        // to hold the game lock against writers — same contract as the original.)
+        CMapReadGuard g( m_srw );
         IterPos* p = (IterPos*)rNextPosition;
         if ( !p ) return;
         rKey   = p->it->first;
@@ -840,6 +927,7 @@ private:
     // original never had). All live keys are DWORD/void* (hashable); the unused
     // CString typedef is never instantiated, so no std::hash<CString> is needed.
     typedef std::unordered_map<KEY, VALUE, std::hash<KEY>, std::equal_to<KEY>, NODEALLOC> MapT;
+    CMapSrw m_srw;   // see CMapSrw: cross-thread guard (exclusive reads under IDL>0)
     struct IterPos {
         typename MapT::const_iterator it;
         const MapT* map;
@@ -854,9 +942,29 @@ private:
     // CRT heap. Thread-local => no lock of our own. An early `break` abandons its
     // node (the MFC POSITION API has no close hook), exactly as before — not
     // worsened; g_mfcIterPosLive still surfaces that as an outstanding count.
-    // (Pool nodes are intentionally not freed at thread exit: bounded to the max
-    // concurrent walks per thread per map type — a handful — so it's negligible.)
-    static IterPos*& FreeHead() { thread_local IterPos* head = nullptr; return head; }
+    // Pool nodes are bounded to the max concurrent walks per thread per map type
+    // (a handful), but they must still be freed at thread exit or they leak with
+    // every per-game AI thread — same RAII-head pattern as EnPoolAllocator. The
+    // chain links through IterPos::poolNext; nodes were `new IterPos`, so delete
+    // them. Per-thread isolation makes the destructor race-free.
+    static IterPos*& FreeHead()
+    {
+        struct Head
+        {
+            IterPos* p = nullptr;
+            ~Head()
+            {
+                while ( p )
+                {
+                    IterPos* next = p->poolNext;
+                    delete p;
+                    p = next;
+                }
+            }
+        };
+        thread_local Head h;
+        return h.p;
+    }
     static IterPos*  AcquireIterPos()
     {
         IterPos*& head = FreeHead();
@@ -1487,18 +1595,22 @@ public:
 
     BOOL TextOut( int x, int y, LPCSTR psz, int n ) {
         if ( Wind22_SDLTextOut( m_hDC, x, y, psz, n ) ) return TRUE;
+        EN_GDI_PROBE( "text-fallback:TextOut" );
         return ::TextOutA( m_hDC, x, y, psz, n );
     }
     BOOL TextOut( int x, int y, const CString& s )  {
         if ( Wind22_SDLTextOut( m_hDC, x, y, (LPCSTR)s, s.GetLength() ) ) return TRUE;
+        EN_GDI_PROBE( "text-fallback:TextOut(CString)" );
         return ::TextOutA( m_hDC, x, y, (LPCSTR)s, s.GetLength() );
     }
     BOOL DrawText( LPCSTR psz, int n, LPRECT pr, UINT uFormat ) {
         if ( Wind22_SDLDrawText( m_hDC, psz, n, pr, uFormat ) ) return TRUE;
+        EN_GDI_PROBE( "text-fallback:DrawText" );
         return ::DrawTextA( m_hDC, psz, n, pr, uFormat );
     }
     BOOL DrawText( const CString& s, LPRECT pr, UINT uFormat )  {
         if ( Wind22_SDLDrawText( m_hDC, (LPCSTR)s, s.GetLength(), pr, uFormat ) ) return TRUE;
+        EN_GDI_PROBE( "text-fallback:DrawText(CString)" );
         return ::DrawTextA( m_hDC, (LPCSTR)s, s.GetLength(), pr, uFormat );
     }
     BOOL ExtTextOut( int x, int y, UINT u, LPCRECT pr, LPCSTR psz, UINT cb, const int* lpDx )
@@ -1506,25 +1618,28 @@ public:
         // ExtTextOut is currently only used by FillSolidRect below (with empty
         // text and ETO_OPAQUE) — no SDL path needed for that pattern. Real
         // text via ExtTextOut would need its own helper if it shows up.
+        EN_GDI_PROBE( "cdc:ExtTextOut" );
         return ::ExtTextOutA( m_hDC, x, y, u, pr, psz, cb, lpDx );
     }
 
-    int  FillRect( LPCRECT pr, CBrush* pBr )  { return ::FillRect( m_hDC, pr, pBr ? (HBRUSH)pBr->m_hObject : NULL ); }
-    BOOL FillRgn( CRgn* pRgn, CBrush* pBr )   { return ::FillRgn( m_hDC, pRgn ? (HRGN)pRgn->m_hObject : NULL, pBr ? (HBRUSH)pBr->m_hObject : NULL ); }
+    int  FillRect( LPCRECT pr, CBrush* pBr )  { EN_GDI_PROBE( "cdc:FillRect" ); return ::FillRect( m_hDC, pr, pBr ? (HBRUSH)pBr->m_hObject : NULL ); }
+    BOOL FillRgn( CRgn* pRgn, CBrush* pBr )   { EN_GDI_PROBE( "cdc:FillRgn" ); return ::FillRgn( m_hDC, pRgn ? (HRGN)pRgn->m_hObject : NULL, pBr ? (HBRUSH)pBr->m_hObject : NULL ); }
     BOOL FillSolidRect( LPCRECT pr, COLORREF cr )
     {
+        EN_GDI_PROBE( "cdc:FillSolidRect" );
         ::SetBkColor( m_hDC, cr );
         return ::ExtTextOutA( m_hDC, 0, 0, ETO_OPAQUE, pr, "", 0, NULL );
     }
-    BOOL Rectangle( int l, int t, int r, int b ) { return ::Rectangle( m_hDC, l, t, r, b ); }
-    BOOL RoundRect( int l, int t, int r, int b, int w, int h ) { return ::RoundRect( m_hDC, l, t, r, b, w, h ); }
-    BOOL RoundRect( LPCRECT pr, POINT pt ) { return ::RoundRect( m_hDC, pr->left, pr->top, pr->right, pr->bottom, pt.x, pt.y ); }
+    BOOL Rectangle( int l, int t, int r, int b ) { EN_GDI_PROBE( "cdc:Rectangle" ); return ::Rectangle( m_hDC, l, t, r, b ); }
+    BOOL RoundRect( int l, int t, int r, int b, int w, int h ) { EN_GDI_PROBE( "cdc:RoundRect" ); return ::RoundRect( m_hDC, l, t, r, b, w, h ); }
+    BOOL RoundRect( LPCRECT pr, POINT pt ) { EN_GDI_PROBE( "cdc:RoundRect(rc)" ); return ::RoundRect( m_hDC, pr->left, pr->top, pr->right, pr->bottom, pt.x, pt.y ); }
     BOOL MoveTo( int x, int y, LPPOINT pOld = NULL ) { return ::MoveToEx( m_hDC, x, y, pOld ); }
-    BOOL LineTo( int x, int y ) { return ::LineTo( m_hDC, x, y ); }
+    BOOL LineTo( int x, int y ) { EN_GDI_PROBE( "cdc:LineTo" ); return ::LineTo( m_hDC, x, y ); }
     CSize GetTextExtent( LPCSTR psz, int n ) const {
         int cx = 0, cy = 0;
         if ( Wind22_SDLTextExtent( m_hDC, psz, n, &cx, &cy ) )
             return CSize( cx, cy );
+        EN_GDI_PROBE( "text-fallback:GetTextExtent" );
         SIZE sz = {0,0};
         ::GetTextExtentPoint32A( m_hDC, psz, n, &sz );
         return CSize( sz.cx, sz.cy );
@@ -1535,6 +1650,7 @@ public:
 
     BOOL BitBlt( int x, int y, int w, int h, CDC* pSrc, int xSrc, int ySrc, DWORD rop )
     {
+        EN_GDI_PROBE( "cdc:BitBlt" );
         return ::BitBlt( m_hDC, x, y, w, h, pSrc ? pSrc->m_hDC : NULL, xSrc, ySrc, rop );
     }
 
