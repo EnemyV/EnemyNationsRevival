@@ -430,7 +430,23 @@ CProjectile::CProjectile (CUnit const * pUnit, CMapLoc const & mlEnd, DWORD dwTa
         }
 
     ASSERT ((0 <= m_iSteps) && (m_iSteps < 160));
-    TRAP (! ((0 <= m_iSteps) && (m_iSteps < 320)));
+    // WAS: TRAP(!(0 <= m_iSteps && m_iSteps < 320)). On the 1024x1024 13-player save
+    // this fired in STORMS during combat — every int3 costs a debugger stack-walk and
+    // the flood killed two sessions (2026-06-12). Suspected root: a shot whose target
+    // sits across the torus seam computes the LONG-way distance (unwrapped delta) and
+    // gets a huge step count. Log the evidence for the sim-side wrap fix and CLAMP —
+    // a clamped projectile merely arrives sooner; the session survives.
+    if (! ((0 <= m_iSteps) && (m_iSteps < 320)))
+    {
+        static long s_iLogged = 0;
+        if (InterlockedIncrement (&s_iLogged) <= 8)
+        {
+            char b[128];
+            sprintf_s (b, sizeof (b), "[PROJ-STEPS] m_iSteps=%d (clamped; torus-seam distance suspected)\n", m_iSteps);
+            OutputDebugStringA (b);
+        }
+        m_iSteps = __minmax (0, 319, m_iSteps);
+    }
 }
 
 CExplosion::CExplosion (CProjectile const * pProj, CUnit * pTarget) : CProjBase (explosion)
