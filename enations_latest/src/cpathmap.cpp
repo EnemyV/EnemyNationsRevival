@@ -83,6 +83,10 @@ CHexCoord *CPathMap::_GetRoadPath(
 	m_iLast = 0;
 	m_iNextSlot = 0;
 	m_iLowestBoth = 0;
+	// belt-and-suspenders vs ClearArray-at-exit: even if a prior search
+	// leaked registrations past its ClearArray, a fresh generation here
+	// guarantees this search can never see them
+	NewSearchGen( );
 
 	m_hexFrom = hexFrom;
 	m_hexTo = hexTo;
@@ -337,6 +341,10 @@ BOOL CPathMap::_GetPath( CHexCoord& hexFrom, CHexCoord& hexTo,
 	m_iLast = 0;
 	m_iNextSlot = 0;
 	m_iLowestBoth = 0;
+	// belt-and-suspenders vs ClearArray-at-exit: even if a prior search
+	// leaked registrations past its ClearArray, a fresh generation here
+	// guarantees this search can never see them
+	NewSearchGen( );
 
 	m_hexFrom = hexFrom;
 	m_hexTo = hexTo;
@@ -850,35 +858,19 @@ void CPathMap::NewBoth ( CCell * pTest )
 
 CCell *CPathMap::GetCellAt( int iX, int iY )
 {
-	if( iX > m_iMapEX ||
+	if( iX < 0 || iY < 0 ||
+		iX > m_iMapEX ||
 		iY > m_iMapEY )
 		return( NULL );
 
-	DWORD dwKey = ( iX & 0xFFFF) | ( ( iY & 0xFFFF ) << 16 );
-	CCell * pCellFind = NULL;
+	// flat-grid lookup; an entry is ours only if stamped by THIS search
+	int i = ( m_iWidth * iY ) + iX;
+	if( i < 0 || i >= m_iNumOfMapCells )
+		return( NULL );
+	if( m_pwCellGen[i] != m_wSearchGen )
+		return( NULL );
 
-	// do we have it?
-	if ( m_mapCell.Lookup ( dwKey, pCellFind ) == 0 )
-		pCellFind = NULL;
-	else
-		{
-		// only need to look if more than 1
-		while ( pCellFind->m_pCellNext != NULL )
-			{
-			TRAP ();
-			if ( ( pCellFind->m_iX == iX ) && ( pCellFind->m_iY == iY ) )
-				{
-                TRAP( );
-				break;
-				}
-                TRAP( );
-                pCellFind = pCellFind->m_pCellNext;
-			}
-#ifdef TEST_RESULT2
-		TRAP ( ( pCellFind->m_iX != iX ) || ( pCellFind->m_iY != iY ) );
-#endif
-		}
-
+	CCell * pCellFind = &m_paCells[ m_pwCellSlot[i] ];
 
 #ifdef TEST_RESULT1
 
@@ -915,43 +907,39 @@ int CPathMap::GetOffset( int iX, int iY )
 	return( j );
 }
 
-// BUGBUG: identical implementation to CPathMgr::AddCellToArray!
+// (was: identical implementation to CPathMgr::AddCellToArray — now gen-grid)
 CCell * CPathMap::AddCellToArray( CCell *pCell )
 {
 
 	if( m_iNextSlot >= m_iNumOfCells )
 		return (NULL) ;
 
-	CCell *pNewCell = &m_paCells[m_iNextSlot++];
+	CCell *pNewCell = &m_paCells[m_iNextSlot];
 	pNewCell->m_iX = pCell->m_iX;
 	pNewCell->m_iY = pCell->m_iY;
 	pNewCell->m_iCost = pCell->m_iCost;
 	pNewCell->m_iDist = pCell->m_iDist;
 	pNewCell->m_iBoth = pCell->m_iBoth;
 	pNewCell->m_pCellFrom = pCell->m_pCellFrom;
+	// recycled slots are no longer pre-cleared by ClearArray — reset the
+	// intrusive-list state BEFORE NewBoth reads m_iBothIn/m_pcPrevBoth
+	pNewCell->m_pCellNext = NULL;
+	pNewCell->m_pcNextBoth = NULL;
+	pNewCell->m_pcPrevBoth = NULL;
+	pNewCell->m_iBothIn = 0;
 	NewBoth ( pNewCell );
 
-	DWORD dwKey = ( pCell->m_iX & 0xFFFF) | ( ( pCell->m_iY & 0xFFFF ) << 16 );
-	CCell * pCellFind;
-	// add first element to hash table
-	if ( m_mapCell.Lookup ( dwKey, pCellFind ) == 0 )
+	// register in the coord->cell grid for this search
+	if( pCell->m_iX >= 0 && pCell->m_iY >= 0 )
+	{
+		int i = ( m_iWidth * pCell->m_iY ) + pCell->m_iX;
+		if( i >= 0 && i < m_iNumOfMapCells )
 		{
-		m_mapCell.SetAt ( dwKey, pNewCell );
-		pNewCell->m_pCellNext = NULL;
+			m_pwCellGen[i] = m_wSearchGen;
+			m_pwCellSlot[i] = (WORD)m_iNextSlot;
 		}
-
-	// add another element to a hash element
-	else
-		{
-		TRAP ();
-		while ( pCellFind->m_pCellNext != NULL )
-			{
-			TRAP ();
-			pCellFind = pCellFind->m_pCellNext;
-			}
-		TRAP ();
-		pCellFind->m_pCellNext = pNewCell;
-		}
+	}
+	m_iNextSlot++;
 
 	return pNewCell;
 }
@@ -961,29 +949,28 @@ CCell * CPathMap::AddCellToArray( CCell *pCell )
 //
 void CPathMap::ClearArray( void )
 {
-	const int iVal = 0xFFFE;
-	const int iZero = 0;
-	int iEnd = min( m_iNextSlot, m_iNumOfCells );
-
-	m_mapCell.RemoveAll ();
-
-	CCell *pCell = &m_paCells[0];
-	for( int i=0; i<iEnd; ++i, pCell++ )
-	{
-		pCell->m_iX = iZero;
-		pCell->m_iY = iZero;
-		pCell->m_iCost = iVal;
-		pCell->m_iDist = iVal;
-		pCell->m_iBoth = iVal;
-		pCell->m_pCellFrom = NULL;
-		pCell->m_pCellNext = NULL;
-		pCell->m_pcNextBoth = NULL;
-		pCell->m_pcPrevBoth = NULL;
-		pCell->m_iBothIn = 0;
-	}
+	// Cells are invalidated wholesale by bumping the search generation —
+	// the old per-cell reinit loop and the hash-map RemoveAll are gone
+	// (recycled slots are fully re-initialized in AddCellToArray instead).
+	NewSearchGen( );
 
 	m_iLowestBoth = 0;
 	memset ( m_acBoth , 0, sizeof (m_acBoth) );
+}
+
+//
+// start a new search generation: O(1) "clear" of the coord->cell lookup.
+// On WORD wrap (every 65535 searches) do one real grid clear so stamps
+// from 65535 searches ago can't read as current.
+//
+void CPathMap::NewSearchGen( void )
+{
+	if ( ++m_wSearchGen == 0 )
+	{
+		if ( m_pwCellGen != NULL )
+			memset( m_pwCellGen, 0, m_iNumOfMapCells * sizeof( WORD ) );
+		m_wSearchGen = 1;
+	}
 }
 
 CHexCoord *CPathMap::CreateHexPath( int& iPathLen, CCell *pDestCell )
@@ -1106,10 +1093,21 @@ BOOL CPathMap::Init( int iMapEX, int iMapEY )
 	if( m_paCells != NULL )
 		delete [] m_paCells;
 
+	// slot indices live in a WORD grid — clamp the arena if a giant map ever
+	// pushes (W+H)*4 past what a WORD can index (none of our maps do)
+	TRAP( m_iNumOfCells > 0xFFFF );
+	if( m_iNumOfCells > 0xFFFF )
+		m_iNumOfCells = 0xFFFF;
+
 	m_paCells = new CCell[m_iNumOfCells];
 
-	m_mapCell.RemoveAll ();
-	m_mapCell.InitHashTable ( GetPrime ( m_iNumOfCells * 2 ) );
+	// (re)build the coord->cell lookup grids; gen 0 == "never touched"
+	delete [] m_pwCellGen;
+	delete [] m_pwCellSlot;
+	m_pwCellGen  = new WORD[m_iNumOfMapCells];
+	m_pwCellSlot = new WORD[m_iNumOfMapCells];
+	memset( m_pwCellGen, 0, m_iNumOfMapCells * sizeof( WORD ) );
+	m_wSearchGen = 0;
 
 	m_tdWheel = theTransports.GetData( CTransportData::construction );
 	m_tdTrack = theTransports.GetData( CTransportData::infantry_carrier );
@@ -1152,7 +1150,9 @@ CPathMap::CPathMap( void )
 	m_tdFoot  = NULL;
 	m_pTD = NULL;
 
-	m_mapCell.InitHashTable ( GetPrime ( 256 ) );
+	m_pwCellGen = NULL;
+	m_pwCellSlot = NULL;
+	m_wSearchGen = 0;
 
 	memset ( m_acBoth , 0, sizeof (m_acBoth) );
 	m_iLowestBoth = 0;
@@ -1174,14 +1174,18 @@ CPathMap::~CPathMap()
 	}
 
 	delete [] m_paCells;
-	m_mapCell.RemoveAll ();
+	delete [] m_pwCellGen;
+	delete [] m_pwCellSlot;
 }
 
 void CPathMap::Close ()
 {
 	delete [] m_paCells;
 	m_paCells = NULL;
-	m_mapCell.RemoveAll ();
+	delete [] m_pwCellGen;
+	m_pwCellGen = NULL;
+	delete [] m_pwCellSlot;
+	m_pwCellSlot = NULL;
 
 	if ( m_bCsInited )
 	{

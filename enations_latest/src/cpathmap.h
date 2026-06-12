@@ -22,10 +22,19 @@ class CPathMap
 	// these are used only if the array of cells is used
 	CCell *m_paCells;	// array version
 
-	// this is to find elements in CCell faster
-    // Pooled node allocator: this map fills+clears thousands of nodes per A*
-    // search; pooling kills the CRT-heap churn (and heap-lock contention at scale).
-    CMap<DWORD, DWORD, CCell*, CCell*, EnPoolAllocator<std::pair<const DWORD, CCell*>>> m_mapCell;
+	// O(1) coord->cell lookup: flat per-hex grids + generation stamps. This
+	// replaces the per-search hash map (m_mapCell) the profiler showed as the
+	// scratch bottleneck (~1.2M cells/s created at 2-3 hash ops each, plus a
+	// RemoveAll + full-arena reinit per search). A grid entry is valid only if
+	// its gen stamp equals the current search's; "clearing" between searches
+	// is ++m_wSearchGen (O(1)). On WORD wrap (every 65535 searches) the gen
+	// grid is memset once. Slots fit a WORD because the arena is (W+H)*4
+	// cells (8192 on a 1024 map); Init() clamps if that ever exceeds 0xFFFF.
+	WORD *m_pwCellGen;   // per-hex generation stamp     [m_iNumOfMapCells]
+	WORD *m_pwCellSlot;  // per-hex slot into m_paCells  [m_iNumOfMapCells]
+	WORD m_wSearchGen;   // current search's generation
+
+	void NewSearchGen( void );	// O(1) lookup reset (real clear on wrap)
 
 	int m_iWidth;		// size of MAP in width and height
 	int m_iHeight;
@@ -126,10 +135,10 @@ public:
 	CHexCoord *CreateHexPath( int& iPathLen, CCell *pDestCell );
 	int GetPathCount( CCell *pDestCell );
 
-	// Diagnostic: exact live node count of the per-path CCell scratch map.
-	// Should hover near 0 between paths (ClearArray empties it); a steadily
-	// rising value would mean a path exit is skipping the clear.
-	int GetMapCellCount() const { return (int)m_mapCell.GetCount(); }
+	// Diagnostic: cells created by the current/most recent search. (The hash
+	// map this used to count is gone; the arena recycles via gen stamps, so
+	// there is no longer a per-node container that CAN leak.)
+	int GetMapCellCount() const { return m_iNextSlot; }
 };
 
 extern CPathMap thePathMap;
