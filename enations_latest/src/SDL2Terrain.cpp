@@ -1464,6 +1464,16 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
     Perf::ScopeCounter _cr( incPan ? "t.incpan" : "t.rebuild" );   // mesh (re)build cost
     s_sig = sig; dX = dY = 0;   // (re)built at the current view → zero pan
     s_builtUL = ulSnap;         // the origin this mesh is coherent with
+    // A strip-pan moved the viewport beyond the captured margin. The retained
+    // zoom-replay cells still exist (content-space), but the replay's coverage gate
+    // tests the panned viewport against the capture's content AABB — and the REAL
+    // captured region is a rotated parallelogram, so a viewport in an AABB corner
+    // passes the gate with NO CELLS there → black diamond/sawtooth bands on the next
+    // zoom-in replay (user-reported, persisted after the clipped-edge fix). Pans
+    // invalidate the mirror; the next zoom change does a full capture (~100ms at
+    // z0/z1) instead of a holed replay.
+    if ( incPan )
+        s_mirValid = false;
     s_builtEditGen = g_enTerrainEditGen;   // this mesh now reflects all edits so far
     { std::lock_guard<std::mutex> lk( g_enEditMutex );
       // Queue the hexes edited since the last rebuild so the tile-memo (below) can drop just

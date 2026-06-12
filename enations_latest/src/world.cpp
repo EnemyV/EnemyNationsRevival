@@ -1813,10 +1813,19 @@ void CWndWorld::ReRender( )
                 ^ (unsigned long long)g_enTerrainEditGen
                 ^ ( (unsigned long long)theBuildingMap.GetCount( ) << 12 )
                 ^ ( (unsigned long long)(unsigned)m_iResOn << 24 )
+                ^ ( (unsigned long long)(unsigned)m_iMode << 16 )                       // mode BUTTONS change what the bake draws
+                ^ ( (unsigned long long)( m_pWndArea->GetAA( ).m_iZoom & 3 ) << 56 )    // zoom changes the view-rect box size
                 ^ ( (unsigned long long)(unsigned)ctr.x << 40 )
                 ^ ( (unsigned long long)(unsigned)ctr.y << 52 )
                 ^ ( (unsigned long long)( m_pWndArea->GetAA( ).m_iDir & 3 ) << 60 )
                 ^ 0x9E3779B97F4A7C15ull;   // non-zero so a fresh member (0) never matches
+        // Mode-button presses and zoom changes must reflect IMMEDIATELY (user: "when I
+        // press buttons it takes a long time to update... the black viewbox takes too
+        // long"): they were missing from the sig entirely (skipped until an unrelated
+        // input changed), and even in the sig they'd wait out the throttle. Treat them
+        // like a moving centre: fast path.
+        if ( !bCtrMoved && walkSig != m_qwLastWalkSig )
+            bCtrMoved = true;   // any input delta -> 140ms cadence; the gate still skips no-change frames
     }
     // SCROLL-FOLLOW vs in-place throttle. The radar image is anchored to the area-view
     // CENTRE: scrolling shifts the whole background, but the LIVE unit dots are drawn at
