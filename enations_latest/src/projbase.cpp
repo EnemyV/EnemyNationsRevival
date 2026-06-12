@@ -1398,10 +1398,15 @@ void CUnit::Shoot (CUnit * pUnit, int iLOS)
         int iHexDist = theMap.GetRangeDistance (this, pUnit);
         if ( iHexDist > GetRange () + 2 )
         {
-            char szOor[160];
+            // world-pixel positions give the full geometry (seam-adjacent vs
+            // genuinely far) from a single occurrence — no repro chase needed
+            CMapLoc mlMe  = GetWorldPixels ();
+            CMapLoc mlHim = pUnit->GetWorldPixels ();
+            char szOor[224];
             sprintf_s (szOor, sizeof (szOor),
-                "[SHOOT-OOR] shooter=%lu type=%d target=%lu dist=%d range=%d LOS=%d\n",
-                GetID (), GetUnitType (), pUnit->GetID (), iHexDist, GetRange (), iLOS);
+                "[SHOOT-OOR] shooter=%lu type=%d at(%d,%d) target=%lu at(%d,%d) dist=%d range=%d LOS=%d\n",
+                GetID (), GetUnitType (), mlMe.x, mlMe.y,
+                pUnit->GetID (), mlHim.x, mlHim.y, iHexDist, GetRange (), iLOS);
             OutputDebugStringA (szOor);
             Perf::CounterInc ("shoot.oor");
         }
