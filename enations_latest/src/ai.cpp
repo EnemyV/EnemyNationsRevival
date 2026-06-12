@@ -431,11 +431,20 @@ void WINAPI AiThread( AI_INIT* pAiI )
         // AI or the idle slice elapses, then run one Manage() pass. Replaces
         // the old hot spin (Manage() called continuously with a Sleep(0)),
         // which at N AIs burned N cores' worth of CPU mostly doing nothing.
-        // 100ms timeout bounds: idle-function cadence, SetDead/bEndThreads
-        // notice latency, and exit-path responsiveness.
-        while ( 1 )
+        //
+        // bEndThreads (2026-06-11): the original quit signal travelled through
+        // myYieldThread()/TM_QUIT, a no-op in the port — so this loop never
+        // exited, myThreadClose()'s 3s join always timed out, and teardown
+        // proceeded under 13 live workers (every quit AV'd: AiFillHexLiveNoLock
+        // reading a freed world / myThreadClose entering a wedged cs). Checking
+        // the flag both before and after the wait bounds exit latency to
+        // ~100ms + one Manage() pass, letting the join actually succeed.
+        extern volatile BOOL bEndThreads;  // wind22/threads.cpp (set by myThreadClose)
+        while ( !bEndThreads )
         {
             pAIMgr->WaitForWork( 100 );  // AI_IDLE_SLICE_MS (caimgr.cpp)
+            if ( bEndThreads )           // quit signalled during the wait:
+                break;                   // skip the final Manage() pass
             pAIMgr->Manage( );
             myYieldThread( );
         }

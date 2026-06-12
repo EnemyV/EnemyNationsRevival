@@ -31,7 +31,9 @@ struct _CsAutoInit {
     _CsAutoInit()  { InitializeCriticalSection( &cs ); }
     ~_CsAutoInit() { DeleteCriticalSection( &cs ); }
 } _csAutoInit;
-BOOL bEndThreads = FALSE;
+// volatile: read in AI worker loops (ai.cpp AiThread while-condition) that the
+// /O2 fast-debug build could otherwise hoist out of the loop.
+volatile BOOL bEndThreads = FALSE;
 CObList lstThrds;
 
 

@@ -1726,6 +1726,11 @@ void CConquerApp::CreateMain( )
         m_gameWindow->Show();
         m_gameWindow->SetMainMenu( m_sdlMainMenu.get() );
         m_gameWindow->Raise();
+        // Restore a visible arrow cursor. Cancelling a game mid-creation returns
+        // here while the area map (rocket placement) had hidden the OS cursor via
+        // the app-global SDL_ShowCursor(DISABLE); without this the menu has no
+        // cursor (no window-enter event fires when the pointer is already over us).
+        m_gameWindow->SetArrowCursor();
         Log( "Using SDL2 main menu" );
     }
 
@@ -1832,6 +1837,13 @@ int CConquerApp::ExitInstance( )
 
     CGlobalSubClass::UnSubClass( );
 
+    // Stop and join the AI worker threads FIRST — before ANY game data is
+    // torn down. They scan the live world (GetCHexData/AiFillHexLiveNoLock,
+    // pathing) right up until they exit; closing sprites/terrain/world under
+    // them was the exit-time 0xC0000005 on every quit (2026-06-11). With the
+    // AiThread bEndThreads check this join completes in ~100ms per worker.
+    myThreadClose( (THREADEXITFUNC)AiExit );
+
     // close out sprites
     theTransports.Close( );
     theTurrets.Close( );
@@ -1847,8 +1859,6 @@ int CConquerApp::ExitInstance( )
     theIcons.Close( );
 
     theMusicPlayer.Close( );
-
-    myThreadClose( (THREADEXITFUNC)AiExit );
 
     delete m_pdlgPause;
     m_pdlgPause = NULL;
