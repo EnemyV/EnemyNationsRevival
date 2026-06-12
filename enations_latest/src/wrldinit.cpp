@@ -18,6 +18,11 @@
 #include "stdafx.h"
 #include "terrain.inl"
 
+// for MakeRiversFlow (flow-accumulation river generation)
+// NOTE: must be included before the DEBUG_NEW macro below redefines `new`
+#include <queue>
+#include <vector>
+
 
 #ifdef _DEBUG
 #undef THIS_FILE
@@ -56,8 +61,23 @@ void CHex::SetType( int iType )
 
     ASSERT_STRICT( ( 0 <= iType ) && ( iType < CHex::num_types ) );
 
+    // NOTE: do NOT bump g_enTerrainEditGen here. Every path out of SetType calls
+    // SetVisibleType (line ~72 for water/city/road, line ~119 for land), and
+    // SetVisibleType already routes through g_enEditHex(x,y) — which both bumps the
+    // gen AND records the hex for the incremental patch. Bumping here too added a
+    // second, UN-recorded gen tick per hex (gendelta > listsz), which defeated the
+    // edit-patch and forced a full ~850ms mesh rebuild on every terrain-type change.
+
     // if not land - just do it
-    if ( ( iType == city ) || ( iType == road ) || IsWater( ) )
+    // coastline is a water-EDGE type: force-store it like city/road, never run the
+    // altitude/slope re-derivation below (which would turn a steep coastal hill/
+    // mountain BACK into hill/mountain, defeating AddCoastlines pass-2's corner fill
+    // and leaving rock against the water with no shore). [shore-fix]
+    // river/lake: same trap — worldgen converting LAND to water must stick, or
+    // channels get silent mountain/hill gaps on slope>8 hexes (the hex isn't water
+    // yet, so the IsWater() escape below doesn't catch it). [river-fix]
+    if ( ( iType == city ) || ( iType == road ) || ( iType == coastline ) ||
+         ( iType == river ) || ( iType == lake ) || IsWater( ) )
     {
         SetVisibleType( iType );
         m_bType = (BYTE)( ( m_bType & 0xF0 ) | ( iType & 0x0F ) );
@@ -285,6 +305,38 @@ static int fnEnumIncVis( CHex* pHex, CHexCoord, void* )
     return ( FALSE );
 }
 
+// Resolve a world-type preset (EWorldType, chosen on the New Game screen and synced
+// via CNetStart) into the parameters the region generator + terrain filler use.
+//   fillType   - tile painted by GenerateOcean (-1 ocean, -2 desert, -5 mtn, -6 badlands)
+//   oceanStyle - 0 stripe / 1 scatter / 2 grow / 3 island; -1 = random (legacy)
+//   bForce     - paint even with <=6 players (an explicit pick always takes effect)
+//   bDominant  - cover most of the map (planet themes) vs a random fraction
+//   fillerType - bias for leftover blocks in SetRandomTerrainBlock; 0 = default random
+struct WorldTypeGen
+{
+    int  fillType;
+    int  oceanStyle;
+    bool bForce;
+    bool bDominant;
+    int  fillerType;
+};
+
+static WorldTypeGen GetWorldTypeGen( int wt )
+{
+    switch ( wt )
+    {
+    case WORLD_BIG_OCEAN:     return {  -1, 2, true,  false,  0 };
+    case WORLD_STRIP_OCEAN:   return {  -1, 0, true,  false,  0 };
+    case WORLD_SCATTER_OCEAN: return {  -1, 1, true,  false,  0 };
+    case WORLD_ISLANDS:       return {  -1, 3, true,  false,  0 };
+    case WORLD_MOUNTAIN:      return {  -5, 2, true,  true,  -5 };
+    case WORLD_BADLANDS:      return {  -6, 2, true,  true,  -6 };
+    case WORLD_DESERT:        return {  -2, 2, true,  true,  -2 };
+    case WORLD_DEFAULT:
+    default:                  return {  -1, -1, false, false, 0 };
+    }
+}
+
 void CGameMap::Init( int iSide, int iSideSize, int iScenario )
 {
     theApp.m_pCreateGame->GetDlgStatus( )->SetMsg( IDS_ALLOC_MAP );
@@ -364,14 +416,13 @@ void CGameMap::Init( int iSide, int iSideSize, int iScenario )
     DWORD seed = theGame.GetSeed();
     int   seedInt = static_cast<int>( seed );
 
-    // Generate ocean here
-    // Big maps are too dry, this puts a gigantic ocean in!
-    // lets have a little bit of fun here
-    int blockType = -1; // -1/-2/-3/-4/-5 = ocean/desert/swamp/plains/mountains templates   
-
-    // only generate big oceans if >6 players
-    if ( theGame.GetAll( ).GetCount( ) > 6 )
-        GenerateOcean( iNumBlks, piBlks, iSide, blockType, iOceansLeft, theGame );
+    // Generate the dominant terrain regions (ocean by default). The world-type preset
+    // chosen on the New Game screen decides WHICH tile gets painted and in WHAT shape;
+    // "ocean is just a tile type that can be swapped out". WORLD_DEFAULT keeps the
+    // legacy behavior: a random ocean style, and only when there are >6 players.
+    WorldTypeGen wtg = GetWorldTypeGen( theGame.m_iWorldType );
+    if ( wtg.bForce || theGame.GetAll( ).GetCount( ) > 6 )
+        GenerateOcean( iNumBlks, piBlks, iSide, wtg.fillType, wtg.oceanStyle, wtg.bDominant, iOceansLeft, theGame );
 
     theApp.m_pCreateGame->GetDlgStatus( )->SetPer( PER_WORLD_BLKS );
 
@@ -383,23 +434,42 @@ void CGameMap::Init( int iSide, int iSideSize, int iScenario )
     int iPlyrsLeft = theGame.GetAll( ).GetCount( );
     for ( pos = theGame.GetAll( ).GetHeadPosition( ); pos != NULL; )
     {
-        if ( iInd > iNumBlks )
-            break;
-
-        // skip to the next blk
-        while (piBlks[iInd] != 0 )
+        // skip to the next blk. Bounds-guarded: iInd can arrive here == iNumBlks
+        // from the previous player's increments — don't read piBlks[iNumBlks]
+        // (the original checked the bound BEFORE incrementing; a port-era reorder
+        // read one past the array). The scarcity break below can leave iInd on an
+        // ASSIGNED block — the recovery that follows handles that case too.
+        while ( ( iInd < iNumBlks ) && ( piBlks[iInd] != 0 ) )
         {
-            iInd++;
             if ( iInd >= iNumBlks - iPlyrsLeft )
                 break;
+            iInd++;
         }
 
-        // if we are out of blks - find one!!!
-        if ( iInd >= iNumBlks )
+        // out of blocks, or the scarcity break left us on an assigned block.
+        // Find a real one instead of overwriting it — overwriting could give two
+        // players the same start block (likely with dominant planet themes that
+        // pre-fill most of the map, or high player counts).
+        if ( ( iInd >= iNumBlks ) || ( piBlks[iInd] != 0 ) )
         {
-            iInd = iNumBlks - 1;
-            // find a free one
-            while ( ( iInd > 0 ) && ( piBlks[iInd] > 0 ) ) iInd--;
+            int iFree = -1;
+            // prefer a truly empty block anywhere on the map
+            for ( int i = iNumBlks - 1; i >= 0; i-- )
+                if ( piBlks[i] == 0 )
+                {
+                    iFree = i;
+                    break;
+                }
+            // nothing empty: take any non-player block (ocean/theme terrain)
+            if ( iFree < 0 )
+                for ( int i = iNumBlks - 1; i >= 0; i-- )
+                    if ( piBlks[i] <= 0 )
+                    {
+                        iFree = i;
+                        break;
+                    }
+            // worst case (more players than blocks) keep the old clamp behavior
+            iInd        = ( iFree >= 0 ) ? iFree : ( iNumBlks - 1 );
             iOceansLeft = 0;
         }
 
@@ -422,8 +492,9 @@ void CGameMap::Init( int iSide, int iSideSize, int iScenario )
                         piBlks[iInd++] = -1;
                         iOceansLeft--;
 
-                        // skip any possible assigned tiles
-                        while ( piBlks[iInd] != 0 )
+                        // skip any possible assigned tiles (bounds-guarded like the
+                        // main skip loop — iInd can be iNumBlks after the ++ above)
+                        while ( ( iInd < iNumBlks ) && ( piBlks[iInd] != 0 ) )
                         {
                             if ( iInd >= iNumBlks - iPlyrsLeft )
                             {
@@ -432,6 +503,8 @@ void CGameMap::Init( int iSide, int iSideSize, int iScenario )
                             }
                             iInd++;
                         }
+                        if ( iInd >= iNumBlks )  // ran off the end: same fallback
+                            iInd = iOldInd;
                     }
             }
 
@@ -966,7 +1039,26 @@ void CGameMap::Init( int iSide, int iSideSize, int iScenario )
             break;
         }
 
-        case -2:    // deserts are the same as swamps for resource generation
+        case -2: {  // desert - arid sand/rough, oil & copper hidden under the dunes
+            int x = _x * iSideSize + 8 + RandNum( iSideSize - 16 );
+            int y = _y * iSideSize + 8 + RandNum( iSideSize - 16 );
+            MakeTerrain( x, y, CHex::desert, iSideSize );
+            x = _x * iSideSize + 8 + RandNum( iSideSize - 16 );
+            y = _y * iSideSize + 8 + RandNum( iSideSize - 16 );
+            MakeTerrain( x, y, CHex::desert, iSideSize );
+            x = _x * iSideSize + 8 + RandNum( iSideSize - 16 );
+            y = _y * iSideSize + 8 + RandNum( iSideSize - 16 );
+            MakeTerrain( x, y, CHex::rough, iSideSize );
+
+            MakeMineral( _x * iSideSize + 4 + RandNum( iSideSize - 8 ), _y * iSideSize + 4 + RandNum( iSideSize - 8 ),
+                         CMaterialTypes::oil, iSideSize );
+            MakeMineral( _x * iSideSize + 4 + RandNum( iSideSize - 8 ), _y * iSideSize + 4 + RandNum( iSideSize - 8 ),
+                         CMaterialTypes::copper, iSideSize / 4 );
+            MakeMineral( _x * iSideSize + 4 + RandNum( iSideSize - 8 ), _y * iSideSize + 4 + RandNum( iSideSize - 8 ),
+                         CMaterialTypes::oil, iSideSize );
+            break;
+        }
+
         case -3: {  // swamp
             int x = _x * iSideSize + 8 + RandNum( iSideSize - 16 );
             int y = _y * iSideSize + 8 + RandNum( iSideSize - 16 );
@@ -1449,44 +1541,45 @@ void CGameMap::Init( int iSide, int iSideSize, int iScenario )
     // check ocean before smoothing to get better results
     CheckOcean( );
 
-    // put rivers down the peaks
-    _x = 8; 
-    _y = 0;
-    for ( iInd = 0; iInd < iNumBlks; iInd++ )
+    // put rivers down: random maps use flow-accumulation hydrology (dendritic
+    // networks that always reach the sea); scenarios keep the legacy forced
+    // seed-and-descend walk so existing scenario layouts stay recognizable.
+    if ( !iScenario )
+        MakeRiversFlow( piBlks, iSide, iSideSize );
+    else
     {
-        CHex* pHexOn = GetHex( CHexCoord( _x, _y ) );
-        if ( ( pHexOn->GetType( ) != CHex::ocean ) && ( pHexOn->GetType( ) != CHex::river ) &&
-             ( piBlks[IndNext( iInd, iSide )] > 0 ) )
+        _x = 8;
+        _y = 0;
+        for ( iInd = 0; iInd < iNumBlks; iInd++ )
         {
-            // do a river?
-            int iRiver = ( MyRand( ) >> 12 );
-            if ( ( iScenario ) || ( iRiver & 0x01 ) )
+            CHex* pHexOn = GetHex( CHexCoord( _x, _y ) );
+            if ( ( pHexOn->GetType( ) != CHex::ocean ) && ( pHexOn->GetType( ) != CHex::river ) &&
+                 ( piBlks[IndNext( iInd, iSide )] > 0 ) )
             {
-                BOOL bFound = FALSE;
-                MakeRiver( _x + RandNum( 2 ) - 1, _y + 2 + RandNum( 4 ), bFound );
-            }
-            if ( ( iScenario ) || ( iRiver & 0x02 ) )
-            {
-                BOOL bFound = FALSE;
-                MakeRiver( _x - 2 - RandNum( 4 ), _y + RandNum( 2 ) - 1, bFound );
-            }
-            if ( ( iScenario ) || ( iRiver & 0x04 ) )
-            {
-                BOOL bFound = FALSE;
-                MakeRiver( _x + 2 + RandNum( 4 ), _y + RandNum( 2 ) - 1, bFound );
-            }
-            if ( ( iScenario ) || ( iRiver & 0x08 ) )
-            {
-                BOOL bFound = FALSE;
-                MakeRiver( _x + RandNum( 2 ) - 1, _y - 2 - RandNum( 4 ), bFound );
-            }
-        }  // if ! water
+                {
+                    BOOL bFound = FALSE;
+                    MakeRiver( _x + RandNum( 2 ) - 1, _y + 2 + RandNum( 4 ), bFound );
+                }
+                {
+                    BOOL bFound = FALSE;
+                    MakeRiver( _x - 2 - RandNum( 4 ), _y + RandNum( 2 ) - 1, bFound );
+                }
+                {
+                    BOOL bFound = FALSE;
+                    MakeRiver( _x + 2 + RandNum( 4 ), _y + RandNum( 2 ) - 1, bFound );
+                }
+                {
+                    BOOL bFound = FALSE;
+                    MakeRiver( _x + RandNum( 2 ) - 1, _y - 2 - RandNum( 4 ), bFound );
+                }
+            }  // if ! water
 
-        _y += iSideSize;
-        if ( _y >= m_eY )
-        {
-            _x += iSideSize;
-            _y = 0;
+            _y += iSideSize;
+            if ( _y >= m_eY )
+            {
+                _x += iSideSize;
+                _y = 0;
+            }
         }
     }
 
@@ -1704,6 +1797,18 @@ void CGameMap::Init( int iSide, int iSideSize, int iScenario )
 // Get a random int to specify what to use for 'Generate random block', get random block to generate
 void CGameMap::SetRandomTerrainBlock( int* piBlks, int iInd )
 {
+    // Planet themes (Mountain/Badlands/Desert) bias the leftover land toward the theme
+    // terrain so the whole world reads as that type, while still leaving some variety.
+    int themeFill = GetWorldTypeGen( theGame.m_iWorldType ).fillerType;
+    if ( themeFill != 0 )
+    {
+        if ( ( MyRand( ) >> 11 ) % 4 != 0 )  // ~75% theme terrain, 25% random variety
+        {
+            piBlks[iInd] = themeFill;
+            return;
+        }
+    }
+
     int iRtn = ( MyRand( ) >> 11 ) % 5;  // 0�4
     if ( iRtn == 0 )
     {
@@ -2003,10 +2108,337 @@ int CGameMap::MakeMineral( int x, int y, int iTyp, int iSideSize, int multiplier
     return ( iTotal );
 }
 
+// MakeRiversFlow - flow-accumulation river generation (replaces the old
+// seed-at-a-block-corner + greedy-descent MakeRiver walk for random maps;
+// scenarios keep the legacy path).
+//
+// 1. Priority-flood (Barnes) from every ocean hex outward: each land hex gets a
+//    "filled" altitude = the water level needed to drain to the ocean. This kills
+//    dead-end pits — every hex has a monotonic non-climbing path to the sea.
+// 2. While flooding, record each hex's downstream neighbor (the hex that pulled
+//    it out of the queue) = D4 flow direction. Flats and basins resolve toward
+//    their spill point automatically via pop order.
+// 3. Rain 1 unit on every land hex and accumulate downstream (reverse pop order).
+// 4. Hexes whose catchment >= threshold T become river — this yields dendritic
+//    networks where tributaries merge into trunks, always reaching the ocean.
+// 5. Every player block is guaranteed a stream: trace its best drainage line
+//    downstream to the network/ocean.
+// 6. Where the network crosses a depression, flood the basin to its spill level
+//    -> a lake the river flows through (big pools = lake type, puddles = river).
+// 7. Bridge diagonal-only water contacts so the land/water X-crossing fix that
+//    runs later doesn't sever channels.
+//
+// Deterministic (no floats, ties broken by hex index) so networked clients
+// generate identical maps. All-integer; O(N log N) in the flood.
+void CGameMap::MakeRiversFlow( int* piBlks, int iSide, int iSideSize )
+{
+    const int N = m_eX * m_eY;
+
+    // Rivers slider (New Game screen, 0-100, synced via CNetStart): 60 = the
+    // baseline threshold below, 0 = no rivers at all. Applied to iThreshold
+    // quadratically further down so the top half of the slider is meaningful.
+    int iRivers = __minmax( 0, 100, (int)theGame.m_iRivers );
+    if ( iRivers == 0 )
+        return;
+
+    theApp.BaseYield( );
+
+    std::vector<int>  filled( N, 0 );
+    std::vector<int>  flow( N, -1 );   // downstream hex index, -1 = ocean/none
+    std::vector<int>  acc( N, 1 );     // catchment (rain) accumulation
+    std::vector<int>  order;           // pop order: ocean-outward, rising filled alt
+    std::vector<BYTE> done( N, 0 );
+    std::vector<BYTE> mark( N, 0 );    // 1 = river channel, 2 = pool (flooded basin)
+    order.reserve( N );
+
+    // min-heap keyed (filled alt | FIFO counter | hex index) — deterministic.
+    // The FIFO tie-break matters: equal-altitude cells pop in insertion order, so
+    // the flood crosses flats as a true BFS wavefront. With a hex-index tie-break
+    // the CheckAlt-clamped ==sea_level coastal flats popped in row-major order,
+    // chaining flow ALONG the shore — accumulation then concentrated into ugly
+    // shore-parallel rivers sitting cliff-high against the ocean. BFS makes flats
+    // drain perpendicular to the shore / toward the basin spill instead.
+    // [bit budget: 7 (alt) + 24 (counter) + 24 (index), N <= 2^20]
+    std::priority_queue<long long, std::vector<long long>, std::greater<long long> > pq;
+    long long llPushed = 0;
+
+    // seed: every ocean hex at the sea surface
+    for ( int i = 0; i < N; i++ )
+    {
+        CHex* pHex = m_pHex + i;
+        if ( pHex->GetType( ) == CHex::ocean )
+        {
+            filled[i] = CHex::sea_level;
+            done[i]   = 1;
+            pq.push( ( (long long)filled[i] << 48 ) | ( llPushed++ << 24 ) | i );
+        }
+    }
+    if ( pq.empty( ) )  // all-land map: nothing to drain to
+        return;
+
+    static const int aDx[4] = { 0, -1, +1, 0 };
+    static const int aDy[4] = { -1, 0, 0, +1 };
+
+    // 1+2: priority-flood, recording flow directions
+    while ( !pq.empty( ) )
+    {
+        long long llKey = pq.top( );
+        pq.pop( );
+        int i = (int)( llKey & 0xFFFFFF );
+        order.push_back( i );
+
+        int x = i & m_iHexMask;
+        int y = i >> m_iSideShift;
+        for ( int d = 0; d < 4; d++ )
+        {
+            int nx = ( x + aDx[d] ) & m_iHexMask;  // torus wrap (m_eX == m_eY, pow2)
+            int ny = ( y + aDy[d] ) & m_iHexMask;
+            int n  = ( ny << m_iSideShift ) | nx;
+            if ( done[n] )
+                continue;
+            done[n]   = 1;
+            filled[n] = __max( ( m_pHex + n )->GetAlt( ), filled[i] );
+            flow[n]   = i;
+            pq.push( ( (long long)filled[n] << 48 ) | ( llPushed++ << 24 ) | n );
+        }
+    }
+
+    // 3: accumulate rain downstream (upstream hexes popped later, so walk reversed)
+    for ( int j = (int)order.size( ) - 1; j >= 0; j-- )
+    {
+        int i = order[j];
+        if ( flow[i] >= 0 )
+            acc[flow[i]] += acc[i];
+    }
+
+    theApp.BaseYield( );
+
+    // 4: threshold — catchment area that spawns a river. Scales with block area so
+    // density stays roughly constant across world sizes, then by the Rivers slider:
+    // T *= 3600/s² (s=60 → 1x baseline, 100 → ~0.36x ≈ 3x denser, 20 → 9x sparser).
+    int iThreshold = __max( 48, ( iSideSize * iSideSize ) / 8 );
+    iThreshold     = __max( 8, (int)( (long long)iThreshold * 3600 / ( iRivers * iRivers ) ) );
+#ifdef _CHEAT
+    iThreshold = EnGetProfileInt( "Cheat", "RiverThreshold", iThreshold );
+#endif
+
+    for ( int i = 0; i < N; i++ )
+        if ( ( acc[i] >= iThreshold ) && ( ( m_pHex + i )->GetType( ) != CHex::ocean ) )
+            mark[i] = 1;
+
+    // 5: guarantee each player block a stream — its best drainage line, traced to
+    // the network/ocean (mirrors the old code's rivers-near-players intent)
+    int iNumBlks = iSide * iSide;
+    for ( int iInd = 0; iInd < iNumBlks; iInd++ )
+    {
+        if ( piBlks[iInd] <= 0 )
+            continue;
+        int  bx = ( iInd / iSide ) * iSideSize;
+        int  by = ( iInd % iSide ) * iSideSize;
+        int  iBest = -1;
+        BOOL bHasRiver = FALSE;
+        for ( int y = by; y < by + iSideSize; y++ )
+            for ( int x = bx; x < bx + iSideSize; x++ )
+            {
+                int i = ( y << m_iSideShift ) | x;
+                if ( mark[i] )
+                    bHasRiver = TRUE;
+                else if ( ( ( m_pHex + i )->GetType( ) != CHex::ocean ) &&
+                          ( ( iBest < 0 ) || ( acc[i] > acc[iBest] ) ) )
+                    iBest = i;
+            }
+        if ( bHasRiver || ( iBest < 0 ) || ( acc[iBest] < 8 ) )
+            continue;
+        for ( int c = iBest; c >= 0; c = flow[c] )
+        {
+            if ( mark[c] || ( ( m_pHex + c )->GetType( ) == CHex::ocean ) )
+                break;
+            mark[c] = 1;
+        }
+    }
+
+    // widen the big trunks to 2 hexes (lowest-filled unmarked land neighbor)
+    for ( int i = 0; i < N; i++ )
+    {
+        if ( ( mark[i] != 1 ) || ( acc[i] < iThreshold * 6 ) )
+            continue;
+        int x = i & m_iHexMask;
+        int y = i >> m_iSideShift;
+        int iSide2 = -1;
+        for ( int d = 0; d < 4; d++ )
+        {
+            int n = ( ( ( y + aDy[d] ) & m_iHexMask ) << m_iSideShift ) | ( ( x + aDx[d] ) & m_iHexMask );
+            if ( mark[n] || ( ( m_pHex + n )->GetType( ) == CHex::ocean ) )
+                continue;
+            if ( ( iSide2 < 0 ) || ( filled[n] < filled[iSide2] ) )
+                iSide2 = n;
+        }
+        if ( iSide2 >= 0 )
+            mark[iSide2] = 1;
+    }
+
+    // 6: flood depressions the network passes through up to their spill level.
+    // every submerged basin hex has filled == spill (> its own alt), so a simple
+    // BFS over that equality flood-fills exactly one pool.
+    int iPoolCap = ( iSideSize * iSideSize ) / 2;  // same cap MakeLakes uses
+    std::vector<int>  aCluster;
+    std::vector<BYTE> aPrevMark;  // pre-pool marks, to restore if the basin is too big
+    int iNumPools = 0;
+    for ( int i = 0; i < N; i++ )
+    {
+        if ( ( mark[i] != 1 ) || ( filled[i] <= ( m_pHex + i )->GetAlt( ) ) )
+            continue;
+        int iSpill = filled[i];
+        aCluster.clear( );
+        aPrevMark.clear( );
+        aCluster.push_back( i );
+        aPrevMark.push_back( mark[i] );
+        mark[i] = 2;
+        for ( size_t iOn = 0; iOn < aCluster.size( ) && (int)aCluster.size( ) <= iPoolCap; iOn++ )
+        {
+            int cx = aCluster[iOn] & m_iHexMask;
+            int cy = aCluster[iOn] >> m_iSideShift;
+            for ( int d = 0; d < 4; d++ )
+            {
+                int n = ( ( ( cy + aDy[d] ) & m_iHexMask ) << m_iSideShift ) | ( ( cx + aDx[d] ) & m_iHexMask );
+                if ( ( mark[n] == 2 ) || ( filled[n] != iSpill ) ||
+                     ( ( m_pHex + n )->GetAlt( ) >= iSpill ) ||
+                     ( ( m_pHex + n )->GetType( ) == CHex::ocean ) )
+                    continue;
+                aCluster.push_back( n );
+                aPrevMark.push_back( mark[n] );
+                mark[n] = 2;
+            }
+        }
+        if ( (int)aCluster.size( ) > iPoolCap )
+        {
+            // monster basin: don't flood it, restore and run the channel through
+            for ( size_t iOn = 0; iOn < aCluster.size( ); iOn++ )
+                mark[aCluster[iOn]] = aPrevMark[iOn];
+            continue;
+        }
+        // flatten the pool to its spill level. Type by size: wide-river pools stay
+        // river (a tiny "lake" wart beside a channel reads wrong — only basins
+        // bigger than a trunk get lake art). Sea-level pools touching the ocean
+        // are just bays — type them ocean so they merge with the sea (and pick up
+        // ocean-style shores) instead of becoming lakes glued to the coast.
+        int iPoolType = ( aCluster.size( ) <= 12 ) ? CHex::river : CHex::lake;
+        if ( iSpill == CHex::sea_level )
+            for ( size_t iOn = 0; iOn < aCluster.size( ) && iPoolType != CHex::ocean; iOn++ )
+            {
+                int cx = aCluster[iOn] & m_iHexMask;
+                int cy = aCluster[iOn] >> m_iSideShift;
+                for ( int d = 0; d < 4; d++ )
+                {
+                    int n = ( ( ( cy + aDy[d] ) & m_iHexMask ) << m_iSideShift ) | ( ( cx + aDx[d] ) & m_iHexMask );
+                    if ( ( m_pHex + n )->GetType( ) == CHex::ocean )
+                    {
+                        iPoolType = CHex::ocean;
+                        break;
+                    }
+                }
+            }
+        for ( size_t iOn = 0; iOn < aCluster.size( ); iOn++ )
+        {
+            CHex* pHex = m_pHex + aCluster[iOn];
+            pHex->SetAlt( iSpill );
+            pHex->SetType( iPoolType );
+        }
+        iNumPools++;
+    }
+
+    // 7: bridge diagonal-only water contacts (two channels touching corner-to-
+    // corner with land on the anti-diagonal) — the X-crossing fix later would
+    // sever one of them. Converting the lower anti-diagonal hex joins them
+    // instead. Two sweeps since a fix can create a new contact.
+    for ( int iPass = 0; iPass < 2; iPass++ )
+        for ( int i = 0; i < N; i++ )
+        {
+            if ( !mark[i] )
+                continue;
+            int x = i & m_iHexMask;
+            int y = i >> m_iSideShift;
+            // forward diagonals only (SE, NE) so each pair is tested once
+            for ( int dyDiag = -1; dyDiag <= 1; dyDiag += 2 )
+            {
+                int iDiag = ( ( ( y + dyDiag ) & m_iHexMask ) << m_iSideShift ) | ( ( x + 1 ) & m_iHexMask );
+                if ( !mark[iDiag] && ( ( m_pHex + iDiag )->GetType( ) != CHex::ocean ) )
+                    continue;
+                int iAnti1 = ( y << m_iSideShift ) | ( ( x + 1 ) & m_iHexMask );
+                int iAnti2 = ( ( ( y + dyDiag ) & m_iHexMask ) << m_iSideShift ) | x;
+                BOOL bWater1 = mark[iAnti1] || ( ( m_pHex + iAnti1 )->GetType( ) == CHex::ocean );
+                BOOL bWater2 = mark[iAnti2] || ( ( m_pHex + iAnti2 )->GetType( ) == CHex::ocean );
+                if ( bWater1 || bWater2 )
+                    continue;
+                mark[( filled[iAnti1] <= filled[iAnti2] ) ? iAnti1 : iAnti2] = 1;
+            }
+        }
+
+    // write the channels (pools already typed above). SetType(river) force-stores
+    // now [river-fix], so steep hexes become waterfalls instead of channel gaps.
+    int iNumRiver = 0;
+    for ( int i = 0; i < N; i++ )
+        if ( mark[i] == 1 )
+        {
+            ( m_pHex + i )->SetType( CHex::river );
+            iNumRiver++;
+        }
+
+    // 8: relax river altitude toward adjacent water (<= 2 alt units/hex rise,
+    // floored at sea_level). A channel carries its land altitude right up to the
+    // ocean/lake it enters, so a river meeting the sea off a coastal bluff sat as
+    // a wall of water beside sea_level ocean — the "downward spike in the sea"
+    // glitch. Four sweeps pull the last few hexes of each channel down into a
+    // gradient; upstream of that, levels are untouched (waterfalls stay).
+    int iNumRelaxed = 0;
+    for ( int iPass = 0; iPass < 4; iPass++ )
+        for ( int i = 0; i < N; i++ )
+        {
+            CHex* pHex = m_pHex + i;
+            if ( pHex->GetType( ) != CHex::river )
+                continue;
+            int x = i & m_iHexMask;
+            int y = i >> m_iSideShift;
+            int iLowest = INT_MAX;
+            for ( int d = 0; d < 4; d++ )
+            {
+                int   n  = ( ( ( y + aDy[d] ) & m_iHexMask ) << m_iSideShift ) | ( ( x + aDx[d] ) & m_iHexMask );
+                CHex* pN = m_pHex + n;
+                if ( pN->GetType( ) == CHex::ocean )
+                    iLowest = __min( iLowest, (int)CHex::sea_level );
+                else if ( pN->IsWater( ) )
+                    iLowest = __min( iLowest, pN->GetAlt( ) );
+            }
+            if ( iLowest == INT_MAX )
+                continue;
+            int iTarget = __max( (int)CHex::sea_level, iLowest + 2 );
+            if ( pHex->GetAlt( ) > iTarget )
+            {
+                pHex->SetAlt( iTarget );
+                iNumRelaxed++;
+            }
+        }
+
+    char szBuf[128];
+    sprintf_s( szBuf, "MakeRiversFlow: T=%d river=%d pools=%d relaxed=%d\n", iThreshold, iNumRiver, iNumPools, iNumRelaxed );
+    OutputDebugStringA( szBuf );
+}
+
 void CGameMap::MakeRiver( int x, int y, BOOL& bFound )
 {
-    static int aAlt[4][3] = { 0, -1, 0, -1, 0, 0, +1, 0, 0, 0, +1, 0 };
-    int        iInd, iLowest, iLevel, iFound;
+    // NOTE: was a single static array holding offsets AND the altitude scratch —
+    // the recursive branch calls below clobbered the caller's scratch, corrupting
+    // the remaining equal-lowest comparisons after a branch. Offsets stay shared
+    // (const), scratch is now per-invocation.
+    static const int aOff[4][2] = { 0, -1, -1, 0, +1, 0, 0, +1 };
+    int              aAlt[4][3];
+    int              iInd, iLowest, iLevel, iFound;
+    for ( iInd = 0; iInd < 4; iInd++ )
+    {
+        aAlt[iInd][0] = aOff[iInd][0];
+        aAlt[iInd][1] = aOff[iInd][1];
+        aAlt[iInd][2] = 0;
+    }
 
     x = theMap.WrapX( x );
     y = theMap.WrapY( y );
@@ -2455,8 +2887,11 @@ void CGameMap::AddCoastlines( )
                     pHex->SetAlt( pHex->GetAlt( ) - 1 );
 
             // above
+            // NOTE: these guards tested pHex (the river hex, which never gets the
+            // lr flag) instead of pHexTest — so a bank hex bordering N river hexes
+            // was lowered up to 3 times, notching the banks. Test the bank hex.
             CHex* pHexTest = theMap.GetHex( _hex.X( ), _hex.Y( ) - 1 );
-            if ( ( !pHexTest->IsWater( ) ) && ( !( pHex->GetUnits( ) & CHex::lr ) ) )
+            if ( ( !pHexTest->IsWater( ) ) && ( !( pHexTest->GetUnits( ) & CHex::lr ) ) )
                 if ( pHexTest->GetAlt( ) > CHex::sea_level + 1 )
                 {
                     pHexTest->SetAlt( pHexTest->GetAlt( ) - 1 );
@@ -2465,7 +2900,7 @@ void CGameMap::AddCoastlines( )
 
             // upper right
             pHexTest = theMap.GetHex( _hex.X( ) + 1, _hex.Y( ) - 1 );
-            if ( ( !pHexTest->IsWater( ) ) && ( !( pHex->GetUnits( ) & CHex::lr ) ) )
+            if ( ( !pHexTest->IsWater( ) ) && ( !( pHexTest->GetUnits( ) & CHex::lr ) ) )
                 if ( pHexTest->GetAlt( ) > CHex::sea_level + 1 )
                 {
                     pHexTest->SetAlt( pHexTest->GetAlt( ) - 1 );
@@ -2474,7 +2909,7 @@ void CGameMap::AddCoastlines( )
 
             // right
             pHexTest = theMap.GetHex( _hex.X( ) + 1, _hex.Y( ) );
-            if ( ( !pHexTest->IsWater( ) ) && ( !( pHex->GetUnits( ) & CHex::lr ) ) )
+            if ( ( !pHexTest->IsWater( ) ) && ( !( pHexTest->GetUnits( ) & CHex::lr ) ) )
                 if ( pHexTest->GetAlt( ) > CHex::sea_level + 1 )
                 {
                     pHexTest->SetAlt( pHexTest->GetAlt( ) - 1 );
@@ -2499,6 +2934,15 @@ void CGameMap::AddCoastlines( )
         pHex++;
     }
 
+    // ORIGIN TRACKING for the facing pass below: in a tight corner (1-wide channel,
+    // narrow mouth) EVERY water hex of the passage becomes coastline, so the facing
+    // pass sees no IsWater() neighbor at all and falls into the inside-corner
+    // (mostly-land) fallback table — painting land art over what is really a water
+    // channel, and "island" for the straits it declares impossible. Remember which
+    // coastline hexes started as WATER so the facing pass can treat them as wet.
+    unsigned char* pbWasWater = new unsigned char[lTotal];
+    memset( pbWasWater, 0, lTotal );
+
     // set coastlines
     _hex = CHexCoord( 0, 0 );
     pHex = m_pHex;
@@ -2506,6 +2950,22 @@ void CGameMap::AddCoastlines( )
     {
         // oceans (and lakes) we convert the edge water
         if ( pHex->GetType( ) == CHex::ocean )
+        {
+            // River/lake MOUTH: an ocean hex that touches another water body must stay
+            // open water. At a narrow mouth the banks' land sits diagonally beside every
+            // ocean hex in the gap, so the land test below would convert the whole gap to
+            // coastline — a shore WALL between the river and the sea ("there shouldn't be
+            // shores between river/ocean"). The river's own banks (river rule below)
+            // already carry the land-side shore art at the mouth.
+            BOOL bMouth = FALSE;
+            for ( int x = -1; x <= 1 && !bMouth; x++ )
+                for ( int y = -1; y <= 1 && !bMouth; y++ )
+                {
+                    int iNType = theMap.GetHex( _hex.X( ) + x, _hex.Y( ) + y )->GetType( );
+                    if ( iNType == CHex::river || iNType == CHex::lake )
+                        bMouth = TRUE;
+                }
+            if ( !bMouth )
             for ( int x = -1; x <= 1; x++ )
                 for ( int y = -1; y <= 1; y++ )
                 {
@@ -2513,12 +2973,16 @@ void CGameMap::AddCoastlines( )
                     if ( ( !pHexTest->IsWater( ) ) && ( pHexTest->GetType( ) != CHex::coastline ) )
                     {
                         pHex->SetType( CHex::coastline );
+                        pbWasWater[lOn] = 1;
                         goto IsCoast;
                     }
                 }
+        }
 
         // rivers we put riverbanks around the outside of water
-        if ( pHex->GetType( ) == CHex::river )
+        // (lakes too: MakeRiversFlow creates lake hexes BEFORE this pass, unlike
+        // MakeLakes' ocean->lake relabel which inherits ocean's coastline)
+        if ( ( pHex->GetType( ) == CHex::river ) || ( pHex->GetType( ) == CHex::lake ) )
             for ( int x = -1; x <= 1; x++ )
                 for ( int y = -1; y <= 1; y++ )
                 {
@@ -2620,6 +3084,14 @@ void CGameMap::AddCoastlines( )
     }
 
     // now assign sprites
+    // "wet" = real water OR a coastline hex that was water before conversion.
+    // Without the latter, the hexes of a tight passage (all converted to coastline)
+    // read as land on every side and pick inside-corner art — grass painted over
+    // the channel (the tight-corner shore bug).
+    auto wet = [&]( CHex* p ) -> bool {
+        return p->IsWater( ) ||
+               ( p->GetType( ) == CHex::coastline && pbWasWater[theMap.GetHexOffPub( p )] );
+    };
     _hex = CHexCoord( 0, 0 );
     pHex = m_pHex;
     for ( int lOn = 0; lOn < lTotal; lOn++ )
@@ -2631,7 +3103,7 @@ void CGameMap::AddCoastlines( )
 
             // above
             CHex* pHexTest = theMap.GetHex( _hex.X( ), _hex.Y( ) - 1 );
-            if ( pHexTest->IsWater( ) )
+            if ( wet( pHexTest ) )
             {
                 if ( pHexTest->GetType( ) == CHex::river )
                     iTyp = RIVER_COAST_OFF;
@@ -2642,7 +3114,7 @@ void CGameMap::AddCoastlines( )
 
             // right
             pHexTest = theMap.GetHex( _hex.X( ) + 1, _hex.Y( ) );
-            if ( pHexTest->IsWater( ) )
+            if ( wet( pHexTest ) )
             {
                 if ( pHexTest->GetType( ) == CHex::river )
                     iTyp = RIVER_COAST_OFF;
@@ -2653,7 +3125,7 @@ void CGameMap::AddCoastlines( )
 
             // bottom
             pHexTest = theMap.GetHex( _hex.X( ), _hex.Y( ) + 1 );
-            if ( pHexTest->IsWater( ) )
+            if ( wet( pHexTest ) )
             {
                 if ( pHexTest->GetType( ) == CHex::river )
                     iTyp = RIVER_COAST_OFF;
@@ -2664,7 +3136,7 @@ void CGameMap::AddCoastlines( )
 
             // left
             pHexTest = theMap.GetHex( _hex.X( ) - 1, _hex.Y( ) );
-            if ( pHexTest->IsWater( ) )
+            if ( wet( pHexTest ) )
             {
                 if ( pHexTest->GetType( ) == CHex::river )
                     iTyp = RIVER_COAST_OFF;
@@ -2702,14 +3174,46 @@ void CGameMap::AddCoastlines( )
                 iIndex = CHex::land_ur;
                 break;
 
-            case 5:   // water above & below (impossible)
-            case 7:   // water above, right, & below (impossible)
-            case 10:  // water left & right (impossible)
-            case 11:  // water above, right, & left (impossible)
-            case 13:  // water above, below, & left (impossible)
-            case 14:  // water right, below, & left (impossible)
-            case 15:  // island
+            // 1996 declared these masks "impossible" and stamped island art on all
+            // of them — but a 1-wide channel produces exactly these (water on
+            // opposite sides). No strait art exists, so show the bank transition
+            // toward the land side(s); the seam to the far bank feathers at render.
+            case 5:   // water above & below — land left & right (strait)
+                iIndex = CHex::land_rt;
+                break;
+            case 7:   // water above, right, & below — land LEFT only
+                iIndex = CHex::land_lf;
+                break;
+            case 10:  // water left & right — land above & below (strait)
+                iIndex = CHex::land_up;
+                break;
+            case 11:  // water above, right, & left — land BELOW only
+                iIndex = CHex::land_dn;
+                break;
+            case 13:  // water above, below, & left — land RIGHT only
+                iIndex = CHex::land_rt;
+                break;
+            case 14:  // water right, below, & left — land ABOVE only
+                iIndex = CHex::land_up;
+                break;
+
+            case 15:  // wet on all 4 sides
+                // A land-origin hex here is a true 1-hex island. A WATER-origin hex
+                // only borders land diagonally — island art would drop a land blob
+                // into open water; kiss that corner with quarter-land art instead.
                 iIndex = CHex::island;
+                if ( pbWasWater[lOn] )
+                {
+                    CHex* pDiag = theMap.GetHex( _hex.X( ) - 1, _hex.Y( ) - 1 );
+                    if ( !wet( pDiag ) )
+                        iIndex = CHex::land_ul;
+                    else if ( !wet( theMap.GetHex( _hex.X( ) + 1, _hex.Y( ) - 1 ) ) )
+                        iIndex = CHex::land_ur;
+                    else if ( !wet( theMap.GetHex( _hex.X( ) + 1, _hex.Y( ) + 1 ) ) )
+                        iIndex = CHex::land_lr;
+                    else if ( !wet( theMap.GetHex( _hex.X( ) - 1, _hex.Y( ) + 1 ) ) )
+                        iIndex = CHex::land_ll;
+                }
                 break;
 
             // if no water touching it's an inside corner
@@ -2775,6 +3279,8 @@ void CGameMap::AddCoastlines( )
             _hex.Y( ) += 1;
         }
     }
+
+    delete[] pbWasWater;
 }
 
 
@@ -2819,6 +3325,10 @@ void CGameMap::EliminateSingles( )
                 // are we a finger?
                 if ( iNumMe == 1 )
             {
+                // river headwaters are legitimate fingers — eating them shortens
+                // every source by a hex per pass (and the TRAP below is fatal)
+                if ( pHex->GetType( ) == CHex::river )
+                    goto NextHex;
                 int iOtherType = -1;
                 for ( int iTest = 0; iTest < 4; iTest++ )
                     if ( apHex[iTest]->GetType( ) != pHex->GetType( ) )
