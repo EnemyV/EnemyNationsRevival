@@ -1739,8 +1739,16 @@ static void BuildBridge( CMsgBuildBridge* pMsg )
         return;
     }
 
-    // span limit depends on the requesting player's bridge research tier
-    int const iMaxSpan = theGame.GetPlayer( pMsg->m_iPlyrNum )->GetMaxSpan( );
+    // span limit depends on the requesting player's bridge research tier.
+    // m_iPlyrNum is a PLAYER number (senders fill it from GetPlyrNum /
+    // CAIUnit::GetOwner) so look up by plyr num — GetPlayer matches NET
+    // numbers and returns NULL on a miss (caught 2026-06-11: NULL->GetMaxSpan
+    // AV in a 13-player game). The player can also be gone by the time a
+    // queued command is processed, so a miss is survivable: drop the command.
+    CPlayer* pPlyrSpan = theGame.GetPlayerByPlyr( pMsg->m_iPlyrNum );
+    if ( pPlyrSpan == NULL )
+        return;
+    int const iMaxSpan = pPlyrSpan->GetMaxSpan( );
 
     int   iLen = 0;
     CHex* pHex;

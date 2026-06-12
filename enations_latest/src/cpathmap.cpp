@@ -15,6 +15,7 @@
 
 #include "CAIData.hpp"
 #include "logging.h"	// dave's logging system
+#include "perf.h"		// EN_PERF counters (path volume/cost split)
 
 
 //#define TEST_RESULT1		// test GetAt improvement
@@ -33,9 +34,16 @@ CHexCoord *CPathMap::GetRoadPath(
 	CHexCoord& hexFrom, CHexCoord& hexTo, int& iPathLen, WORD *pMap, 
 	BOOL bAllowWater /*=FALSE*/, BOOL bRiverCrossing /*=TRUE*/ )
 {
+	// EN_PERF: time the whole call (incl. m_cs wait) + count searches/nodes.
+	// Per-SEARCH counter ops only — CounterInc takes a global CS, so a
+	// per-node counter in AddCellToArray would serialize the AI threads.
+	Perf::ScopeCounter _t( "pathr.us" );
 	EnterCriticalSection (&m_cs);
+	m_iNextSlot = 0;	// early-outs skip the in-search reset; don't re-count
 	CHexCoord *phcPath = _GetRoadPath( hexFrom, hexTo, iPathLen,
 		pMap, bAllowWater, bRiverCrossing );
+	Perf::CounterInc( "pathr.calls" );
+	Perf::CounterAdd( "pathr.nodes", m_iNextSlot );	// cells created this search
 	LeaveCriticalSection (&m_cs);
 	return( phcPath );
 }
@@ -269,9 +277,17 @@ BOOL CPathMap::GetPath( CHexCoord& hexFrom, CHexCoord& hexTo,
 	BOOL bLongHang /*=FALSE*/ )
 {
 	// this is a long expensive function that blocks everybody...
+	// EN_PERF: per-search counters (see GetRoadPath note — never per-node).
+	// path.us/path.calls vs path.nodes splits the verdict: volume-bound
+	// (many calls, few nodes) -> cache quantization; node-bound (few calls,
+	// many nodes) -> scratch/world-read structure work.
+	Perf::ScopeCounter _t( "path.us" );
 	EnterCriticalSection (&m_cs);
+	m_iNextSlot = 0;	// early-outs skip the in-search reset; don't re-count
 	BOOL bPath = _GetPath( hexFrom, hexTo,
 		iBaseX, iBaseY, pMap, iVehType, bLongHang );
+	Perf::CounterInc( "path.calls" );
+	Perf::CounterAdd( "path.nodes", m_iNextSlot );	// cells created this search
 	LeaveCriticalSection (&m_cs);
 	return( bPath );
 }
