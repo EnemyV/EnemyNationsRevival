@@ -1421,7 +1421,7 @@ void CBuilding::MakeBldgVisible( )
 
     SetInvalidated( );
 
-    theApp.m_wndWorld.NewMode( );
+    theApp.m_wndWorld.BuildingsChanged( );
 }
 
 static int fnEnumSetAlt( CHex* pHex, CHexCoord, void* pData )
@@ -2295,7 +2295,7 @@ CBuilding::~CBuilding( )
 
     // remove from world map
     if ( theApp.AmInGame( ) )
-        theApp.m_wndWorld.NewMode( );
+        theApp.m_wndWorld.BuildingsChanged( );
 }
 
 void CBuilding::RemoveUnit( )
@@ -2398,7 +2398,7 @@ void CBuilding::RemoveUnit( )
         theGame.m_pHpRtr->MsgDeleteUnit( this );
 
     // remove from world map
-    theApp.m_wndWorld.NewMode( );
+    theApp.m_wndWorld.BuildingsChanged( );
 }
 
 // make an instance of a building
@@ -3164,7 +3164,7 @@ IsVis:
 
     // world map
     if ( pBldg->IsVisible( ) )
-        theApp.m_wndWorld.NewMode( );
+        theApp.m_wndWorld.BuildingsChanged( );
 
     // if visible start the sound
     CWndArea* pAreaWnd = theAreaList.GetTop( );
@@ -3721,6 +3721,24 @@ static int fnCollectField( CHex* pHex, CHexCoord hex, void* pData )
     if ( theTerrain.GetData( pHex->GetType( ) ).GetFarmMult( ) <= 0 )
         return ( FALSE );
 
+    // Forest IS farmable in the terrain data (it counts toward LandMult yield, and
+    // we leave that alone) — but crop rows painted UNDER the tree sprites look
+    // broken, so keep the yield and skip the art. Also heal hexes an earlier
+    // session already painted under trees (the paint persists in saves).
+    if ( pHex->GetType( ) == CHex::forest )
+    {
+        if ( pHex->GetVisibleType( ) == CHex::fields )
+        {
+            int iSoil = pHex->GetType( );
+            pHex->SetVisibleType( iSoil );
+            pHex->SetGrowStage( 0 );
+            int iCount      = theTerrain.GetCount( iSoil );
+            pHex->m_psprite = theTerrain.GetSprite( iSoil, iCount <= 1 ? 0 : ( ( hex.X( ) * 2 + hex.Y( ) ) % iCount ) );
+            hex.SetInvalidated( );
+        }
+        return ( FALSE );
+    }
+
     // skip occupied/built hexes
     if ( pHex->GetUnits( ) & ( CHex::bldg | CHex::bridge ) )
         return ( FALSE );
@@ -3854,7 +3872,7 @@ void CFarmBuilding::UpdateFieldStage( int iTimeToFarm )
     }
 
     if ( bAny )
-        theApp.m_wndWorld.NewMode( );   // gen bumped per changed hex above (patch, not rebuild)
+        theApp.m_wndWorld.BuildingsChanged( );   // gen bumped per changed hex above (patch, not rebuild)
 }
 
 
