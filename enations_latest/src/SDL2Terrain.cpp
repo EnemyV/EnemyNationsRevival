@@ -1695,8 +1695,19 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
     int covX0 = 0, covX1 = rtW, covY0 = 0, covY1 = rtH;
     if ( incPan )
     {
-        covX0 = __max( 0, shiftX ); covX1 = rtW + __min( 0, shiftX );
-        covY0 = __max( 0, shiftY ); covY1 = rtH + __min( 0, shiftY );
+        // INSET the covered region: hexes at the OLD texture's edges were drawn CLIPPED
+        // (SDL clips geometry to the target), and tall terrain near the old TOP edge had
+        // its altitude-lifted upper pixels cut off entirely. Treating those border bands
+        // as "covered" after the shift made the missing pixels PERMANENT — a black
+        // sawtooth band slicing across mountain tops after a zoom-out + pan (user
+        // screenshot, 2026-06-12). Re-mesh one tile of border all round, plus the full
+        // altitude lift below the top edge (mountains draw upward from their base row).
+        const int tileW   = 128 >> zoom, tileH = 64 >> zoom;
+        const int altLift = ( 64 << 3 ) >> zoom;
+        covX0 = __max( 0, shiftX ) + tileW;
+        covX1 = rtW + __min( 0, shiftX ) - tileW;
+        covY0 = __max( 0, shiftY ) + tileH + altLift;
+        covY1 = rtH + __min( 0, shiftY ) - tileH;
     }
     else
     {

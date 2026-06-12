@@ -184,6 +184,8 @@ protected:
 	unsigned long long		m_qwLastWalkSig{};		// inputs signature of the last bake (skip-gate, see ReRender)
 	DWORD					m_dwDirBakePending{};	// !=0: building change awaits a coalesced _NewDir
 	DWORD					m_dwLastDirBake{};		// last _NewDir time (coalescing clock)
+	CPoint					m_ptLastBakeCtr{};		// area-view centre the last bake was anchored to
+													// (scroll-follow: moving centre = fast re-bake cadence)
 	std::vector<CPoint>		m_radarDots;			// last frame's unit-dot pixels (for O(units) erase)
 
 	CPoint				m_ptRMB;

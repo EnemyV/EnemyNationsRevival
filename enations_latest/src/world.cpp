@@ -1795,7 +1795,6 @@ void CWndWorld::ReRender( )
     // re-walk only every N ms; between walks blit the cache (world map has no live unit dots,
     // so a plain blit is a complete frame). Radar re-walks fast (140ms, units live); the
     // world map overview changes slowly, so 800ms is imperceptible and ~3-4x cheaper.
-    const DWORD kWalkThrottle = m_bIsRadar ? 320u : 1500u;
     // INPUT-GATED on top of the throttle: the walk renders ground (m_pdibBase) +
     // buildings + minerals + fog-of-war + the resource-highlight cycle. Hash everything
     // those depend on; if NOTHING changed since the last bake, skip the walk entirely —
@@ -1804,10 +1803,12 @@ void CWndWorld::ReRender( )
     // during exploration the fog generation counter naturally re-enables it. Unit dots
     // are NOT part of the bake (drawn live every frame), so they never gate.
     unsigned long long walkSig = 0;
+    bool bCtrMoved = false;
     if ( m_bIsRadar && m_pWndArea != NULL )
     {
         extern unsigned g_enTerrainEditGen;   // defined in SDL2Terrain.cpp (runtime terrain edits)
         CMapLoc ctr = m_pWndArea->GetAA( ).GetCenter( );
+        bCtrMoved = ( ctr.x != m_ptLastBakeCtr.x || ctr.y != m_ptLastBakeCtr.y );
         walkSig = ( (unsigned long long)g_enFogVisGen << 32 )
                 ^ (unsigned long long)g_enTerrainEditGen
                 ^ ( (unsigned long long)theBuildingMap.GetCount( ) << 12 )
@@ -1817,6 +1818,14 @@ void CWndWorld::ReRender( )
                 ^ ( (unsigned long long)( m_pWndArea->GetAA( ).m_iDir & 3 ) << 60 )
                 ^ 0x9E3779B97F4A7C15ull;   // non-zero so a fresh member (0) never matches
     }
+    // SCROLL-FOLLOW vs in-place throttle. The radar image is anchored to the area-view
+    // CENTRE: scrolling shifts the whole background, but the LIVE unit dots are drawn at
+    // CURRENT positions every frame — any bake latency makes the player's dots slide
+    // against a stale background (user-reported; enemies/resources are IN the bake so
+    // they stay coherent with it). While the centre is moving, re-bake at the original
+    // 140ms cadence (never user-visible pre-gate); only IN-PLACE changes (fog ticks,
+    // building count, highlight cycle) use the longer 320ms throttle.
+    const DWORD kWalkThrottle = m_bIsRadar ? ( bCtrMoved ? 140u : 320u ) : 1500u;
     bool  bRebuildBg = !m_pdibRadarStatic ||
                        ( ( dwRadarNow - m_dwLastRadarDraw >= kWalkThrottle ) &&
                          // hit-flash animation must keep re-baking while active
@@ -2257,6 +2266,11 @@ void CWndWorld::ReRender( )
         m_dibwnd.GetDIB( )->BitBlt( m_pdibRadarStatic, m_dibwnd.GetDIB( )->GetRect( ), CPoint( 0, 0 ) );
         m_dwLastRadarDraw = dwRadarNow;
         m_qwLastWalkSig   = walkSig;   // inputs this bake rendered (skip-gate, see above)
+        if ( m_pWndArea != NULL )      // centre this bake is anchored to (scroll-follow)
+        {
+            CMapLoc c = m_pWndArea->GetAA( ).GetCenter( );
+            m_ptLastBakeCtr = CPoint( c.x, c.y );
+        }
         m_radarDots.clear( );
     }
     }   // end else (full whole-map background walk)

@@ -545,8 +545,18 @@ void CConquerApp::_RenderScreens( )
         {
             Perf::ScopeCounter _ci( "r.inval" );   // invalidate pass (theMap.Update)
             for ( CWndAnim* pWnd : theAnimList )
-                if ( pWnd->DecideRenderFrame( dwAnimNow, ANIM_THROTTLE_MS ) )
-                    pWnd->ReRender( );
+            {
+                // SPLIT (2026-06-11): r.inval read 118-224ms/s but the per-window
+                // ReRender counters (rr.area + rr.radar) only accounted for ~40ms —
+                // attribute the rest: the decide step vs the un-counted ReRender
+                // prologues (everything before the rr.* scopes inside ReRender).
+                bool bGo;
+                { Perf::ScopeCounter _cd( "ri.decide" );
+                  bGo = pWnd->DecideRenderFrame( dwAnimNow, ANIM_THROTTLE_MS ); }
+                if ( bGo )
+                { Perf::ScopeCounter _cr( "ri.rerender" );
+                  pWnd->ReRender( ); }
+            }
         }
         {
             Perf::ScopeCounter _cd( "r.draw" );    // draw pass (UpdateRect walk + capture)
