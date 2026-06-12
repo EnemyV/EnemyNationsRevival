@@ -23,6 +23,7 @@
 #include "vehicle.inl"
 
 #include "SDL2Sprites.h"   // GPU tracer streaks (CaptureTrail)
+#include "perf.h"          // shoot.oor out-of-range-fire probe
 
 // GPU split-layer pass flag (defined in terrain.cpp): TRUE while sprites are being
 // captured into the GPU layer. We only emit tracer geometry on that path.
@@ -1385,6 +1386,26 @@ void CUnit::Shoot (CUnit * pUnit, int iLOS)
 {
 
     ASSERT_STRICT (GetOwner()->IsLocal ());
+
+    // DIAGNOSTIC (2026-06-11, user report: "unit fired from across the map").
+    // Every fire path funnels through here. All four fire gates check wrap-
+    // aware torus distance, so an "impossibly long" shot is either (a) a
+    // LEGAL across-the-wrap-seam shot that only LOOKS cross-map on the flat
+    // view, or (b) a real out-of-range fire via transient position corruption
+    // (the AssertValidAndLoc y==y2 family). This probe decides: it re-derives
+    // the torus distance at the moment of fire and flags only true violations.
+    {
+        int iHexDist = theMap.GetRangeDistance (this, pUnit);
+        if ( iHexDist > GetRange () + 2 )
+        {
+            char szOor[160];
+            sprintf_s (szOor, sizeof (szOor),
+                "[SHOOT-OOR] shooter=%lu type=%d target=%lu dist=%d range=%d LOS=%d\n",
+                GetID (), GetUnitType (), pUnit->GetID (), iHexDist, GetRange (), iLOS);
+            OutputDebugStringA (szOor);
+            Perf::CounterInc ("shoot.oor");
+        }
+    }
 
     // figure the number of shots
 
