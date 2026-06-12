@@ -13,6 +13,7 @@
 #include "building.inl"
 #include "vehicle.inl"
 #include "unit.inl"
+#include "terrain.inl"  // CHexCoord/CMapLoc inlines (needed at /Ob2)
 
 #include <SDL.h>
 #include <SDL_ttf.h>
@@ -79,7 +80,7 @@ void SDL2UnitList::Init(SDL2Panel* panel, GameWindow* gw) {
     if (pSprites)
         m_unitSprites = SDL2MainMenu::CreateSurfaceFromDIB(pSprites);
 
-    // Load background texture — top half is normal, bottom half is selected
+    // Load background texture ??? top half is normal, bottom half is selected
     // Original uses StretchBlt to stretch this to fit each item
     CDIB* pBg = theBitmaps.GetByIndex(DIB_LIST_UNIT_BACK);
     if (pBg) {
@@ -195,7 +196,7 @@ void SDL2UnitList::Render() {
     // Throttle: only actually redraw on a fixed interval (or when forced by an
     // interaction). On skipped frames we leave the panel's surface and dirty flag
     // untouched, so the compositor's present-gate skips re-presenting our detached
-    // window — that's what keeps an open list from dragging the game's framerate.
+    // window ??? that's what keeps an open list from dragging the game's framerate.
     DWORD nowTick = ::timeGetTime();
     if (!m_forceDraw && (nowTick - m_lastDrawMs) < DRAW_INTERVAL_MS)
         return;
@@ -222,11 +223,22 @@ void SDL2UnitList::Render() {
     // Content width excludes scrollbar (always reserved)
     int contentW = w - SB_WIDTH;
 
+    // Highlight whichever item matches the area map's current selection, rather
+    // than a stored index. This keeps the list in sync with the map: selecting a
+    // unit on the map highlights it here, and ??? importantly ??? when the map clears
+    // its selection (e.g. after a crane is given a build order, area.cpp build_loc
+    // does RemoveAllUnits/SelectOff) the highlight clears here too instead of
+    // lingering.
+    CUnit* pSelUnit = nullptr;
+    if (CWndArea* pTop = theAreaList.GetTop())
+        pSelUnit = pTop->GetUnit();
+
     // Render visible items (within content area, not overlapping scrollbar)
     int y = -m_scrollY;
     for (int i = 0; i < (int)m_items.size(); i++) {
         if (y + ITEM_HT > 0 && y < h) {
-            RenderItem(dst, i, 0, y, contentW, i == m_selectedIdx);
+            bool selected = (pSelUnit != nullptr && m_items[i].pUnit == pSelUnit);
+            RenderItem(dst, i, 0, y, contentW, selected);
         }
         y += ITEM_HT;
     }
@@ -244,14 +256,14 @@ void SDL2UnitList::Render() {
         FillU(dst, {contentW, sbY, SB_WIDTH, 1}, {130, 140, 135, 255});
         FillU(dst, {contentW, sbY + sbH - 1, SB_WIDTH, 1}, {60, 65, 62, 255});
     } else {
-        // Content fits — show full-height disabled thumb
+        // Content fits ??? show full-height disabled thumb
         FillU(dst, {contentW, 0, SB_WIDTH, h}, {50, 55, 52, 255});
     }
 
     m_panel->SetDirty();
 }
 
-// Render shadow text (black at +1,+1, white on top — matching original)
+// Render shadow text (black at +1,+1, white on top ??? matching original)
 void SDL2UnitList::RenderShadowText(SDL_Surface* dst, TTF_Font* font, const char* text,
                                      int x, int y, int maxW, SDL_Color fg, SDL_Color shadow) {
     if (!font || !text || !text[0]) return;
@@ -294,12 +306,12 @@ void SDL2UnitList::RenderItem(SDL_Surface* dst, int idx, int x, int y, int w, bo
     // The original kept rows in sync by removing them on death; here we instead
     // re-resolve the cached pointer against the live map by ID every draw and
     // skip the row if the unit is gone. (Refresh item.pUnit so the rest of this
-    // function — GetData(), status bars, etc. — uses the live object.)
+    // function ??? GetData(), status bars, etc. ??? uses the live object.)
     CUnit* pLive = (m_type == VEHICLES)
                        ? (CUnit*)theVehicleMap.GetVehicle( item.dwID )
                        : (CUnit*)theBuildingMap.GetBldg( item.dwID );
     if ( pLive == NULL )
-        return;            // unit died since the last Rebuild() — don't draw a stale row
+        return;            // unit died since the last Rebuild() ??? don't draw a stale row
     item.pUnit = pLive;
 
     // --- Background: STRETCH to fill entire item (matching original StretchBlt) ---
@@ -463,7 +475,7 @@ void SDL2UnitList::Render3PieceBg(SDL_Surface* dst, int iconIdx, int x, int y, i
 }
 
 // DrawStatDone: tiles the stat icon sprite (e.g. the construction wrench / road /
-// build-vehicle tool) across `percent`% of the bar — matching the original
+// build-vehicle tool) across `percent`% of the bar ??? matching the original
 // CStatInst::DrawStatDone. The previous version drew a flat colour block, which
 // is why crane/build progress showed a solid bar instead of tool icons.
 void SDL2UnitList::RenderIconDone(SDL_Surface* dst, int iconIdx, int percent,
@@ -556,7 +568,7 @@ void SDL2UnitList::RenderIconText(SDL_Surface* dst, int iconIdx, const char* tex
     IconData& icon = m_iconData[iconIdx];
     if (!text || !text[0]) return;
 
-    // Status text (e.g. "Auto: Idle") — 9pt was too small to read; 11 matches the
+    // Status text (e.g. "Auto: Idle") ??? 9pt was too small to read; 11 matches the
     // item-name font and still fits the bar height.
     TTF_Font* font = GetFont(11);
     if (!font) return;
@@ -594,13 +606,20 @@ void SDL2UnitList::RenderIconBar(SDL_Surface* dst, int iconIdx, int percent,
     int fillW = (barW * percent) / 100;
     if (fillW <= 0) return;
 
-    // Fill the FULL box height. Drawing only cyIcon tall and centering left a thin
-    // black strip at the top/bottom of the health bar; the original gradient fills
-    // the bar interior, so stretch it to the box height instead.
+    // Draw the gradient at its NATIVE height (cyIcon), vertically centered in the
+    // box ??? exactly CStatInst::DrawStatBar (icons.cpp): rDest.top += (H - cyIcon)/2;
+    // rDest.bottom = top + cyIcon. The 3-piece background drawn above is taller
+    // (cyBack), so its carved gold frame shows as a clean border above/below the
+    // bar. The previous fabricated vInset (cyBack/8) made the fill SHORTER than
+    // cyIcon, so the dark box interior peeked out as black strips top and bottom.
+    int fillH = icon.cyIcon;
+    int fillY = y + (h - icon.cyIcon) / 2;
+    if (fillH < 1) fillH = 1;
+
     int srcW = (icon.cxIcon * percent) / 100;
     if (srcW <= 0) srcW = 1;
     SDL_Rect sr = {0, 0, srcW, icon.cyIcon};
-    SDL_Rect dr = {barLeft, y, fillW, h};
+    SDL_Rect dr = {barLeft, fillY, fillW, fillH};
     StretchBlit(icon.sheet, sr, dst, dr);
 }
 
@@ -780,7 +799,7 @@ void SDL2UnitList::RenderStatusBars(SDL_Surface* dst, CUnit* pUnit, int x, int y
             CBuilding* pBldg = (CBuilding*)pUnit;
 
             if (iOn == 0) {
-                // Damage/health — gradient 'bar' icon (see vehicle note above).
+                // Damage/health ??? gradient 'bar' icon (see vehicle note above).
                 int dmg = std::max(1, pBldg->GetDamagePer());
                 RenderIconBar(dst, ICON_DAMAGE, dmg, renderX, y, renderW, barH);
             } else if (iOn == 1) {
@@ -803,7 +822,7 @@ void SDL2UnitList::OnClick(int itemIdx, bool dblClick) {
 
     if (dblClick) {
         // ShowWindow() brings the relevant area map to the top of the list and
-        // centers it on the unit. (Multiple area maps are supported — BringToTop
+        // centers it on the unit. (Multiple area maps are supported ??? BringToTop
         // picks the right one.)
         if (pUnit->GetUnitType() == CUnit::vehicle)
             ((CVehicle*)pUnit)->ShowWindow();
@@ -817,7 +836,7 @@ void SDL2UnitList::OnClick(int itemIdx, bool dblClick) {
             // Clicking in this detached unit-list window moved OS focus here, so
             // we raise/focus the map's SDL window to restore arrow-key scrolling.
             // But that changes OS foreground, which sends WM_ACTIVATE(WA_INACTIVE)
-            // to the *separate* MFC area window — and CWndArea::OnActivate clears
+            // to the *separate* MFC area window ??? and CWndArea::OnActivate clears
             // every unit's selected flag on deactivation (legacy single-window
             // behavior). If we selected before this, that deselect would silently
             // drop the selection box while leaving m_pUnit set (the unit still
@@ -872,7 +891,7 @@ bool SDL2UnitList::HandleEvent(SDL_Event& event, int localX, int localY) {
                     m_sbDragging = true;
                     m_sbDragOffset = localY - sbY;
                 } else {
-                    // Click above/below thumb — page up/down
+                    // Click above/below thumb ??? page up/down
                     if (localY < sbY)
                         m_scrollY = std::max(0, m_scrollY - h);
                     else

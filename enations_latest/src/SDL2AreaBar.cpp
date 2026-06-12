@@ -8,6 +8,7 @@
 #include "area.h"
 #include "building.h"
 #include "building.inl"   // CBuilding::IsConstructing, CVehicleBuilding::GetBldUnt (inline)
+#include "unit.inl"       // CUnit::GetUnitType/IsPaused inlines (needed at /Ob2)
 #include "bitmaps.h"
 #include "bmbutton.h"
 #include "icons.h"

@@ -15,6 +15,7 @@
 #include "building.inl"
 #include "vehicle.inl"
 #include "unit.inl"
+#include "terrain.inl"  // CHexCoord/CMapLoc inlines (needed at /Ob2)
 
 #include <SDL.h>
 #include <SDL_ttf.h>
@@ -129,7 +130,7 @@ void SDL2Toolbar::SetStatusText(int line, const std::string& text, int importanc
     m_statusUnit[line] = nullptr;  // setting text reverts the line from icons
     // Persist the caller's value. For line 1 the hover poll in Render() may
     // override this while the cursor sits on the toolbar, but the override
-    // is transient — the moment the cursor leaves the toolbar we fall back
+    // is transient ??? the moment the cursor leaves the toolbar we fall back
     // to this value so the area-map hover info from CWndArea stays visible.
     m_externalText[line] = text;
     m_statusText[line]   = text;
@@ -197,12 +198,12 @@ void SDL2Toolbar::Render() {
     }
     int afterBtns = btnGap + NUM_BUTTONS * (btnW + btnGap) + btnGap;
 
-    // Clock — fixed width on far right
+    // Clock ??? fixed width on far right
     int clockW = 75;
     int clockX = w - clockW - btnGap;
     RenderClock(dst, clockX, 2, clockW, BTN_ROW_HT - 4);
 
-    // Resource bars — fill space between buttons and clock, divided into 4
+    // Resource bars ??? fill space between buttons and clock, divided into 4
     int statSpace = clockX - afterBtns;
     int statW = statSpace / NUM_STATS;
 
@@ -218,7 +219,7 @@ void SDL2Toolbar::Render() {
     // While the cursor is on the toolbar we override line 1 with the
     // toolbar's own hover string (resource bar / button). As soon as the
     // cursor leaves the toolbar we restore line 1 to whatever the game
-    // last set via SetStatusText(1, ...) — that's the area-map hover info
+    // last set via SetStatusText(1, ...) ??? that's the area-map hover info
     // (unit / terrain descriptions) sent from CWndArea::OnMouseMove.
     {
         // Use GetCursorPos (Windows API) instead of SDL_GetMouseState
@@ -233,7 +234,7 @@ void SDL2Toolbar::Render() {
         m_statusText[1] = m_externalText[1];
 
         if (lx >= 0 && lx < w && ly >= 0 && ly < h) {
-            // Cursor is on the toolbar — temporarily clear so the resource
+            // Cursor is on the toolbar ??? temporarily clear so the resource
             // bar / button hover blocks below can populate. If neither
             // matches, the empty line is appropriate (cursor over dead toolbar
             // space, not over the world).
@@ -254,7 +255,7 @@ void SDL2Toolbar::Render() {
                         m_statusText[1] = buf;
                     }
                 }
-                // Check button hover — prefer the long helpText (the MFC
+                // Check button hover ??? prefer the long helpText (the MFC
                 // sentence-length IDH_BAR_* string) and fall back to the
                 // short label only if no help text was provided.
                 if (m_statusText[1].empty()) {
@@ -407,13 +408,13 @@ void SDL2Toolbar::RenderStatBar(SDL_Surface* dst, int idx, int x, int y, int w, 
         int iDone;
         int needSrcX;
         if (have < need && need > 0) {
-            // Not enough — have icons fill (have/need)%, need icons fill the rest
+            // Not enough ??? have icons fill (have/need)%, need icons fill the rest
             iDone = (have * 100) / need;
             // Animated "need" icon (flashing warning)
             int animFrame = (icon.nNeedIcon > 0) ? (m_animFrame % icon.nNeedIcon) : 0;
             needSrcX = icon.cxIcon * (2 + animFrame);
         } else {
-            // Enough or excess — need icons fill (need/have)%, have icons fill the rest
+            // Enough or excess ??? need icons fill (need/have)%, have icons fill the rest
             if (have <= 0 || need <= 0)
                 iDone = 100;
             else {
@@ -430,7 +431,7 @@ void SDL2Toolbar::RenderStatBar(SDL_Surface* dst, int idx, int x, int y, int w, 
 
         // ONE cursor advances across the whole bar by iStep; the "need" (red) run
         // CONTINUES from where the "have" (green) run left off, staying on the same
-        // half-icon grid — exactly like the original CStatInst::DrawStatHave single
+        // half-icon grid ??? exactly like the original CStatInst::DrawStatHave single
         // rIcon cursor. (Restarting the red run at splitX, an off-grid x, shifted
         // the red icons off the green grid and overlapped the seam icon, which read
         // as the reported misalignment + doubled icon.)
@@ -594,7 +595,7 @@ bool SDL2Toolbar::HandleEvent(SDL_Event& event, int localX, int localY) {
 
     case SDL_MOUSEMOTION:
         ::SetCursor(::LoadCursor(NULL, IDC_ARROW));
-        // Hover text is handled by the poll in Render() — no duplicate logic here
+        // Hover text is handled by the poll in Render() ??? no duplicate logic here
         return true;
     }
     return false;
@@ -628,6 +629,21 @@ int SDL2Toolbar::GetNumStatusBars(CUnit* pUnit) {
         CBuilding* pBldg = (CBuilding*)pUnit;
         if (pBldg->IsConstructing())
             return 3;  // damage + materials + construction progress
+        // Apartments/offices show damage + a population (occupancy) bar, matching
+        // CHousingBuilding::GetNumStatusBars/PaintStatusBars in the original. This
+        // takes priority over the materials bar.
+        int bt = pBldg->GetData()->GetBldgType();
+        if (bt == CStructureData::apartment || bt == CStructureData::office)
+            return 2;  // damage + population
+        // Completed vehicle plants (factory/barracks/shipyard) always show 3 bars:
+        // damage + materials + the vehicle being built. CVehicleBuilding::
+        // GetNumStatusBars returns 3 unconditionally. Gate on UNION TYPE ??? that's
+        // what CBuilding::Create dispatches the class on (UTvehicle/UTshipyard ->
+        // CVehicleBuilding/CShipyardBuilding), so the cast in RenderStatusBars is
+        // guaranteed safe even if data gives another building a vehicle list.
+        int ut = pBldg->GetData()->GetUnionType();
+        if (ut == CStructureData::UTvehicle || ut == CStructureData::UTshipyard)
+            return 3;
         if (pBldg->GetTotalStore() > 0)
             return 2;  // damage + materials
         return 1;      // damage only
@@ -740,7 +756,7 @@ void SDL2Toolbar::RenderIconText(SDL_Surface* dst, int iconIdx, const char* text
     IconData& icon = m_iconData[iconIdx];
     if (!text || !text[0]) return;
 
-    // 16pt for the hovered unit's name / route text — slightly larger than the
+    // 16pt for the hovered unit's name / route text ??? slightly larger than the
     // main status line (15pt) so it reads clearly in the status bar.
     TTF_Font* font = GetFont(16);
     if (!font) return;
@@ -928,15 +944,79 @@ void SDL2Toolbar::RenderStatusBars(SDL_Surface* dst, CUnit* pUnit, int x, int y,
             }
         } else if (pUnit->GetUnitType() == CUnit::building) {
             CBuilding* pBldg = (CBuilding*)pUnit;
+            int bt = pBldg->GetData()->GetBldgType();
+            bool isHousing = !pBldg->IsConstructing() &&
+                             (bt == CStructureData::apartment || bt == CStructureData::office);
 
             if (iOn == 0) {
                 int dmg = std::max(1, pBldg->GetDamagePer());
                 RenderIconBar(dst, ICON_DAMAGE, dmg, renderX, y, renderW, barH);
+            } else if (isHousing && iOn == 1) {
+                // Population/occupancy bar (mirrors CHousingBuilding::PaintStatusBars):
+                // apartments show the player's total population vs apartment capacity,
+                // offices show working population vs office capacity. Drawn with the
+                // "done" fill style (RenderIconDone), like the original.
+                CPlayer* pMe = theGame.GetMe();
+                int per = 0;
+                if (pMe) {
+                    if (bt == CStructureData::apartment) {
+                        if (pMe->m_iAptCap > 0)
+                            per = (int)((pMe->GetPplTotal() * 100) / pMe->m_iAptCap);
+                    } else {
+                        if (pMe->m_iOfcCap > 0)
+                            per = (int)((pMe->GetPplBldg() * 100) / pMe->m_iOfcCap);
+                    }
+                }
+                RenderIconDone(dst, ICON_PEOPLE, std::min(100, std::max(0, per)),
+                               renderX, y, renderW, barH);
             } else if (iOn == 1) {
                 RenderMaterialsBar(dst, pBldg, ICON_MATERIALS, renderX, y, renderW, barH);
             } else if (iOn == 2) {
-                int per = std::max(1, pBldg->GetBuildPer());
-                RenderIconDone(dst, ICON_CONSTRUCTION, per, renderX, y, renderW, barH);
+                int ut = pBldg->GetData()->GetUnionType();
+                if (pBldg->IsConstructing()) {
+                    int per = std::max(1, pBldg->GetBuildPer());
+                    RenderIconDone(dst, ICON_CONSTRUCTION, per, renderX, y, renderW, barH);
+                } else if (ut == CStructureData::UTvehicle || ut == CStructureData::UTshipyard) {
+                    // Completed vehicle plant: show the vehicle being built and its
+                    // progress ??? mirrors CVehicleBuilding::PaintStatusBars (the
+                    // ICON_BUILD_VEH strip with the vehicle's name centered over it).
+                    // Gate on UNION TYPE, not GetBldVehicle(): the union type is what
+                    // CBuilding::Create dispatches the class on (UTvehicle/UTshipyard
+                    // -> CVehicleBuilding/CShipyardBuilding), so this cast is safe
+                    // even if data gives another building type a vehicle list.
+                    CVehicleBuilding* pVb = (CVehicleBuilding*)pBldg;
+                    CBuildUnit const* pBu = pVb->GetBldUnt();
+                    if (pBu == NULL) {
+                        // idle plant: empty strip background (SetPer(0) + DrawIcon)
+                        RenderIconDone(dst, ICON_BUILD_VEH, 0, renderX, y, renderW, barH);
+                    } else {
+                        RenderIconDone(dst, ICON_BUILD_VEH, std::max(1, pVb->GetBuildPer()),
+                                       renderX, y, renderW, barH);
+                        // Vehicle name on top (original drew CLR_CONST white text).
+                        // Validate the type FIRST: the sim thread can finish/cancel the
+                        // build between GetBldUnt() and here, leaving GetVehType() == -1
+                        // ??? the unguarded GetData(-1)->GetDesc() was a crash (AV reading
+                        // a garbage string in RenderStatusBars).
+                        int vehType = pBu->GetVehType();
+                        std::string name;
+                        if (vehType >= 0 && vehType < theTransports.GetNumTransports())
+                            name = theTransports.GetData(vehType)->GetDesc();
+                        TTF_Font* font = GetFont(14);
+                        if (font && !name.empty()) {
+                            SDL_Color white = {255, 255, 255, 255};
+                            SDL_Surface* ts = TTF_RenderText_Blended(font, name.c_str(), white);
+                            if (ts) {
+                                // Clip to the bar width (long names would otherwise
+                                // bleed into the neighbouring bar / off the toolbar).
+                                SDL_Rect sr = { 0, 0, std::min(ts->w, renderW), ts->h };
+                                SDL_Rect dr = { renderX + std::max(0, (renderW - ts->w) / 2),
+                                                y + (barH - ts->h) / 2, sr.w, sr.h };
+                                SDL_BlitSurface(ts, &sr, dst, &dr);
+                                SDL_FreeSurface(ts);
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -948,14 +1028,14 @@ void SDL2Toolbar::RenderUnitStatus(SDL_Surface* dst, CUnit* pUnit, int x, int y,
     int barH = (m_statBarHt > 0 && m_statBarHt <= h) ? m_statBarHt : h;
     int barY = y + (h - barH) / 2;
 
-    // Description (unit name) in an ICON_BAR_TEXT bar — left portion, capped at
+    // Description (unit name) in an ICON_BAR_TEXT bar ??? left portion, capped at
     // ~14 chars, matching the original _UnitShowStatus.
     IconData& bt = m_iconData[ICON_BAR_TEXT];
     int descMax = 14 * 8 + bt.leftOff + bt.rightOff;
     int descW = std::min(w / 2, descMax);
     if (descW < 1) descW = w / 2;
     // Pass the full row height (y, h) so the 14pt name centers in the whole row
-    // rather than the shorter stat-bar height — the background sprite draws at
+    // rather than the shorter stat-bar height ??? the background sprite draws at
     // its own native height either way.
     RenderIconText(dst, ICON_BAR_TEXT, pUnit->GetData()->GetDesc().c_str(), x, y, descW, h);
 

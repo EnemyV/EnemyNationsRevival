@@ -41,9 +41,15 @@ add_library(wind22 STATIC ${wind22_sources})
 # according to wind22.mak this should be MD
 # but maybe it was changed to MT in later versions?
 # i still think win22 is older or incomplete somehow
-target_compile_options(wind22 PUBLIC    
+# Fast-debug (2026-06-11): same flag surgery as enations_latest — keep
+# _DEBUG/asserts/symbols/debug-CRT, drop /Od /Ob0 /RTC1 + checked iterators.
+# /RTC1 rides in on CMake's default debug flags and conflicts with /O2.
+string(REPLACE "/RTC1" "" CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG}")
+string(REPLACE "/Ob0" "" CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG}")
+string(REPLACE "/Od" "" CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG}")
+target_compile_options(wind22 PUBLIC
     $<$<CONFIG:Sanitize>:/MDd /EHsc /Od /Ob0 /fsanitize=address>
-    $<$<CONFIG:Debug>:/MDd /EHsc /Od /Ob0> # ZI
+    $<$<CONFIG:Debug>:/MDd /EHsc /O2 /Ob2> # ZI
     $<$<CONFIG:Profile>:/MD /EHsc /Od /Ob0> # ZI
     $<$<CONFIG:Release>:/MD /EHsc /O2 /Ob2 /Oi /GL /Gy /Gw /Ot /GF /arch:AVX2 /fp:fast /Zi>
 )
@@ -78,6 +84,10 @@ target_compile_definitions(wind22 PUBLIC
     $<$<CONFIG:Release>:NDEBUG>
     $<$<CONFIG:Profile>:NDEBUG>
     $<$<CONFIG:Debug>:_DEBUG>
+    # Fast-debug: no checked iterators in Debug. PUBLIC so every dependent
+    # (enations) sees the same std container layouts — mixing IDL levels
+    # across the link is an ODR violation.
+    $<$<CONFIG:Debug>:_ITERATOR_DEBUG_LEVEL=0>
     $<$<CONFIG:Sanitize>:_DEBUG>
 )
 

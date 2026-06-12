@@ -12,6 +12,9 @@
 #include "building.inl"  // CBuilding/theBuildingMap (+ CVehicleBuilding/CRepairBuilding)
 #include "lastplnt.h"    // theGame (AI-count early-out)
 #include "minerals.inl"  // theMinerals (presence bitmap)
+#include "terrain.inl"   // CHexCoord ctor/Wrap inlines (needed at /Ob2: no
+                         // other TU emits out-of-line COMDAT copies anymore)
+#include "unit.inl"      // CUnit accessor inlines (GetOwner/GetStore/...)
 #include "vehicle.inl"   // CVehicle/theVehicleMap
 
 #include <unordered_map>

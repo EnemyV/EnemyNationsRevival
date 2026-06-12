@@ -13,17 +13,20 @@
 #include "building.inl"
 #include "vehicle.inl"
 #include "unit.inl"
+#include "terrain.inl"  // CHexCoord/CMapLoc inlines (needed at /Ob2)
 #include "area.h"
 #include "netcmd.h"
+#include "ipcmsg.hpp"   // CMsgIPC ??? email/chat network message (wire format)
+#include "event.h"      // EVENT_HAVE_MAIL / EVENT_NOTIFY ??? "you have mail" cue
 #include "base.h"
-#include "icons.h"      // theIcons / ICON_RESEARCH — flask progress sprite
+#include "icons.h"      // theIcons / ICON_RESEARCH ??? flask progress sprite
 
 #include <SDL_ttf.h>
 #include <vector>
 #include <string>
 
 // ---------------------------------------------------------------------------
-// Chat message store — receives incoming cmd_chat network messages.
+// Chat message store ??? receives incoming cmd_chat network messages.
 // SDL2Chat_AddMessage() is called from netapi.cpp; SDL2ChatWindow reads it.
 // ---------------------------------------------------------------------------
 static std::vector<std::string> g_chatMessages;
@@ -35,8 +38,128 @@ void SDL2Chat_AddMessage(const std::string& line) {
         g_chatMessages.erase(g_chatMessages.begin());
 }
 
+int SDL2Chat_Count() { return (int)g_chatMessages.size(); }
+
+std::string SDL2Chat_Line(int i) {
+    return (i >= 0 && i < (int)g_chatMessages.size()) ? g_chatMessages[i] : std::string();
+}
+
+void SDL2Chat_Send(const std::string& text) {
+    if (text.empty()) return;
+    CPlayer* pMe = theGame.GetMe();
+    std::string from = pMe ? (const char*)pMe->GetName() : "Me";
+
+    if (theGame.IsNetGame() && theGame.GetMyNetNum() != 0 && pMe) {
+        // Broadcast to the other players only (Broadcast doesn't loop back to us,
+        // PostToAll adds the local copy separately) and echo locally ??? so chat
+        // works even pre-game where the message queue isn't being drained.
+        CNetChat* pMsg = CNetChat::Alloc(pMe, text.c_str());
+        theNet.Broadcast(pMsg, pMsg->m_iLen, TRUE);
+        delete[] pMsg;
+    }
+    SDL2Chat_AddMessage(from + ": " + text);
+}
+
+// ---------------------------------------------------------------------------
+// Mail inbox ??? received email messages. Replaces CWndComm's CEMsgList; the
+// SDL2MailDialog reads it. SDL2Mail_HandleIncoming() is called from netapi.cpp
+// when an ipc_msg network command arrives.
+// ---------------------------------------------------------------------------
+struct SDL2MailMsg {
+    int         fromPlyr = -1;
+    std::string fromName;
+    std::string subject;
+    std::string body;
+    bool        read = false;
+};
+static std::vector<SDL2MailMsg> g_mailInbox;
+
+int SDL2Mail_UnreadCount() {
+    int n = 0;
+    for (const auto& m : g_mailInbox) if (!m.read) n++;
+    return n;
+}
+
+void SDL2Mail_HandleIncoming(CMsgIPC* pMsg) {
+    if (!pMsg) return;
+
+    // The wire buffer is laid out by CMsgIPC::ToBuf as:
+    //   [ sizeof(CMsgIPC) bytes of the struct ][ message\0 ][ subject\0 ]
+    // The scalar header fields (m_iType/m_iFrom/m_iTo) are valid in place; the
+    // CString members in the header are garbage pointers and must NOT be touched
+    // ??? the actual text lives in the appended tail.
+    int type = pMsg->m_iType;
+    int from = pMsg->m_iFrom;
+    int to   = pMsg->m_iTo;
+
+    const char* tail   = reinterpret_cast<const char*>(pMsg) + sizeof(CMsgIPC);
+    std::string message = tail;
+    std::string subject = tail + message.size() + 1;
+
+    // Only process mail actually addressed to us.
+    CPlayer* pMe = theGame.GetMe();
+    if (pMe && to != pMe->GetPlyrNum())
+        return;
+
+    CPlayer* pFrom = theGame.GetPlayerByPlyr(from);
+    std::string fromName = pFrom ? (const char*)pFrom->GetName() : "Unknown";
+
+    if (type == CMsgIPC::email) {
+        SDL2MailMsg m;
+        m.fromPlyr = from;
+        m.fromName = fromName;
+        m.subject  = subject;
+        m.body     = message;
+        m.read     = false;
+        g_mailInbox.push_back(m);
+        // Same "you have new mail" cue the MFC CWndComm::ProcessEmail fired.
+        theGame.Event(EVENT_HAVE_MAIL, EVENT_NOTIFY);
+    } else if (type == CMsgIPC::chat) {
+        // Legacy CMsgIPC chat path (modern chat uses CNetChat) ??? fold into the log.
+        SDL2Chat_AddMessage(fromName + ": " + message);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Non-modal comms windows. The game must keep running (and keep processing
+// network messages) while you read/write mail or chat ??? DoModal ran its own
+// loop and froze the local client, which on a network game means stalling and
+// catch-up. Each window is a single live instance; re-opening raises it. The
+// onDone callback nulls the pointer and GameWindow deletes the object.
+// ---------------------------------------------------------------------------
+static SDL2ChatWindow*    g_pChatWin    = nullptr;
+static SDL2MailDialog*    g_pMailWin    = nullptr;
+static SDL2ComposeDialog* g_pComposeWin = nullptr;
+
+void SDL2Comms_OpenChat(GameWindow* gw) {
+    if (g_pChatWin) { g_pChatWin->RaiseAndAlert(); return; }
+    g_pChatWin = new SDL2ChatWindow(gw);
+    g_pChatWin->ShowNonModal([](int) { g_pChatWin = nullptr; });
+}
+
+void SDL2Comms_OpenMail(GameWindow* gw) {
+    if (g_pMailWin) { g_pMailWin->RaiseAndAlert(); return; }
+    g_pMailWin = new SDL2MailDialog(gw);
+    g_pMailWin->ShowNonModal([](int) { g_pMailWin = nullptr; });
+}
+
+void SDL2Comms_OpenCompose(GameWindow* gw, int toPlyr,
+                           const std::string& subject, const std::string& body) {
+    if (g_pComposeWin) { g_pComposeWin->RaiseAndAlert(); return; }
+    g_pComposeWin = new SDL2ComposeDialog(gw, toPlyr, subject, body);
+    g_pComposeWin->ShowNonModal([](int) { g_pComposeWin = nullptr; });
+}
+
+void SDL2Comms_CloseAll() {
+    // EndDialog on a non-modal dialog destroys its window now and fires onDone
+    // (which nulls the pointer); null defensively in case it's mid-teardown.
+    if (g_pComposeWin) { g_pComposeWin->EndDialog(0); g_pComposeWin = nullptr; }
+    if (g_pMailWin)    { g_pMailWin->EndDialog(0);    g_pMailWin    = nullptr; }
+    if (g_pChatWin)    { g_pChatWin->EndDialog(0);    g_pChatWin    = nullptr; }
+}
+
 // ----------------------------------------------------------------------------
-// ResearchFlaskBar — the light-bulb/flask progress strip from CDlgResearch.
+// ResearchFlaskBar ??? the light-bulb/flask progress strip from CDlgResearch.
 // The original painted ICON_RESEARCH via CStatInst::DrawStatDone: the flask
 // sprite tiled (overlapping by half its width) across `percent`% of the strip.
 // We mirror that here, querying the live percent each frame so the strip fills
@@ -100,16 +223,16 @@ static int ResearchCurrentPercent() {
 }
 
 // ============================================================================
-// SDL2ResearchDialog — matches CDlgResearch layout from the original MFC dialog
+// SDL2ResearchDialog ??? matches CDlgResearch layout from the original MFC dialog
 //
 // MFC client area was 447x291. Layout from CDlgResearch::OnInitDialog:
-//   list      (18,  35) 155x198    — listbox of researchable items
-//   desc text (192, 37) → (420,156) — rectText, green PALETTERGB(41,255,8)
-//   IDOK     (188, 170) 116x25     — "Research" button
-//   IDCANCEL (311, 170) 116x25     — "Close" button
-//   Discovery(311, 211) 116x25     — "Discovery" button (enabled when there's
+//   list      (18,  35) 155x198    ??? listbox of researchable items
+//   desc text (192, 37) ??? (420,156) ??? rectText, green PALETTERGB(41,255,8)
+//   IDOK     (188, 170) 116x25     ??? "Research" button
+//   IDCANCEL (311, 170) 116x25     ??? "Close" button
+//   Discovery(311, 211) 116x25     ??? "Discovery" button (enabled when there's
 //                                     a new discovery to view)
-//   bulbs    (17, 248) → (425,272) — light-bulb progress strip (DIB+ICON_RESEARCH)
+//   bulbs    (17, 248) ??? (425,272) ??? light-bulb progress strip (DIB+ICON_RESEARCH)
 // ============================================================================
 
 SDL2ResearchDialog::SDL2ResearchDialog(GameWindow* gw)
@@ -139,7 +262,7 @@ void SDL2ResearchDialog::OnInit() {
     int ox = m_x + bdrSide;
     int oy = m_y + bdrTop + titleH;
 
-    // List: matches CDlgResearch::OnDrawItem — red text PALETTERGB(255,33,8) on a
+    // List: matches CDlgResearch::OnDrawItem ??? red text PALETTERGB(255,33,8) on a
     // white row, inverted to red-on-black when selected.
     // Double-click starts researching the item (matches CDlgResearch::OnDblclkRsrchList).
     m_list = AddWidget<SDL2Listbox>(ox + 18, oy + 35, 155, 198,
@@ -150,13 +273,13 @@ void SDL2ResearchDialog::OnInit() {
                       /*text*/kRsrchRed, /*selText*/kRsrchRed);
 
     // Description text: green PALETTERGB(41,255,8), top-aligned, wrapped.
-    // MFC rectText(192, 37, 420, 156) → x=192,y=37, w=228, h=119
+    // MFC rectText(192, 37, 420, 156) ??? x=192,y=37, w=228, h=119
     m_lblDesc = AddWidget<SDL2Label>(ox + 192, oy + 37, 228, 119, "");
     m_lblDesc->SetWrapped(true);
     m_lblDesc->SetTopAligned(true);
     m_lblDesc->SetColor({41, 255, 8, 255});
 
-    // Light-bulb/flask progress strip (MFC rect 17,248,425,272 — ICON_RESEARCH).
+    // Light-bulb/flask progress strip (MFC rect 17,248,425,272 ??? ICON_RESEARCH).
     // Renders live each frame so it fills as the current research advances.
     {
         CStatData* pSd = theIcons.GetByIndex(ICON_RESEARCH);
@@ -168,7 +291,7 @@ void SDL2ResearchDialog::OnInit() {
         }
     }
 
-    // Buttons — use the 3-state research button sheet (circuit art) with red text
+    // Buttons ??? use the 3-state research button sheet (circuit art) with red text
     // PALETTERGB(255,33,8), matching CDlgResearch::OnDrawItem.
     const SDL_Color kBtnRed = { 255, 33, 8, 255 };
     m_btnStart = AddWidget<SDL2Button>(ox + 188, oy + 170, 116, 25, "Research",
@@ -279,8 +402,8 @@ void SDL2ResearchDialog::PopulateList() {
 
 // Re-read research state into the list while preserving the player's browse
 // selection (by topic index, not list row). Called when a topic is discovered so
-// the open (non-modal) window updates live — completed topics drop off, newly
-// unlocked ones appear, and the stale "current research" marker clears — instead
+// the open (non-modal) window updates live ??? completed topics drop off, newly
+// unlocked ones appear, and the stale "current research" marker clears ??? instead
 // of going stale until reopened (mirrors the original ResearchDiscovered ->
 // CDlgResearch::UpdateChoices refresh).
 void SDL2ResearchDialog::Refresh() {
@@ -301,7 +424,7 @@ void SDL2ResearchDialog::Refresh() {
             }
     }
 
-    // The browsed topic is gone (e.g. it was just discovered) — clear the detail
+    // The browsed topic is gone (e.g. it was just discovered) ??? clear the detail
     // panel so it doesn't describe a topic no longer in the list.
     if (m_selected < 0) {
         m_lblDesc->SetText("");
@@ -332,7 +455,7 @@ void SDL2ResearchDialog::OnStart() {
     int iSel = m_items[m_selected].index;
 
     // Switching away from another in-progress topic costs it 10% of its points,
-    // matching CDlgResearch::OnOK. Then set the new topic — but DON'T close the
+    // matching CDlgResearch::OnOK. Then set the new topic ??? but DON'T close the
     // window (the original stayed open and just updated its title/progress).
     int iOn = theGame.GetMe()->GetRsrchItem();
     if (iOn > 0 && iOn != iSel) {
@@ -373,7 +496,7 @@ void SDL2RelationsDialog::OnInit() {
         0, [this](int sel) { SetRelation(sel); });
     for (int r = 0; r < 4; r++) m_radRelations->SetEnabled(r, false);
 
-    // Give button — hands selected area-map units to the chosen player.
+    // Give button ??? hands selected area-map units to the chosen player.
     // Enabled when there's both a selected non-self player AND at least one
     // giveable unit selected on the area map (matches CDlgRelations).
     m_btnGive = AddWidget<SDL2Button>(m_x + 10, m_y + 220, 100, 28, "Give Units",
@@ -404,7 +527,7 @@ void SDL2RelationsDialog::SelectPlayer(int idx) {
 
     m_lblInfo->SetText(m_players[idx].name);
 
-    // Enable all relation radios — but disable Alliance for AI players
+    // Enable all relation radios ??? but disable Alliance for AI players
     // (matches MFC GetDlgItem(IDC_PLYR_ALLIANCE)->EnableWindow(!pPlr->IsAI())).
     // Indices: 0=War, 1=Neutral, 2=Peace, 3=Alliance.
     for (int r = 0; r < 4; r++) m_radRelations->SetEnabled(r, true);
@@ -481,7 +604,7 @@ void SDL2LoadTruckDialog::OnInit() {
         y += 28;
     }
 
-    // Capacity readout — total/cap below the material rows
+    // Capacity readout ??? total/cap below the material rows
     y += 8;
     int maxCargo = m_pVeh->GetData()->GetMaxMaterials();
     m_lblCapacity = AddWidget<SDL2Label>(m_x + 10, y, 340, 20,
@@ -490,7 +613,7 @@ void SDL2LoadTruckDialog::OnInit() {
     y += 26;
 
     // Preset buttons row 1: Load (proportional), Load Bldg (50/50 steel/lumber),
-    // Load Veh (80/20 steel/copper) — same presets the MFC dialog offered.
+    // Load Veh (80/20 steel/copper) ??? same presets the MFC dialog offered.
     int btnW = 105, btnH = 26, btnGap = 6;
     AddWidget<SDL2Button>(m_x + 10, y, btnW, btnH, "Load",
         [this]() { OnLoad(); });
@@ -527,7 +650,7 @@ void SDL2LoadTruckDialog::RefreshTotals() {
 
 void SDL2LoadTruckDialog::RefreshBldg() {
     // The vehicle owns this dialog and closes it on death, so m_pVeh is valid here;
-    // the building, however, can be destroyed under us — re-derive it (or null) each
+    // the building, however, can be destroyed under us ??? re-derive it (or null) each
     // time rather than trusting the pointer cached at construction.
     m_pBldg = m_pVeh ? theBuildingHex._GetBuilding(m_pVeh->GetPtHead()) : nullptr;
 }
@@ -555,7 +678,7 @@ void SDL2LoadTruckDialog::OnLoad() {
 }
 
 void SDL2LoadTruckDialog::OnLoadBldg() {
-    // 50/50 Steel / Lumber — construction load preset.
+    // 50/50 Steel / Lumber ??? construction load preset.
     RefreshBldg();
     if (!m_pBldg) return;
     int maxCargo = m_pVeh->GetData()->GetMaxMaterials();
@@ -574,7 +697,7 @@ void SDL2LoadTruckDialog::OnLoadBldg() {
 }
 
 void SDL2LoadTruckDialog::OnLoadVeh() {
-    // 80/20 Steel / Copper — vehicle-factory load preset.
+    // 80/20 Steel / Copper ??? vehicle-factory load preset.
     RefreshBldg();
     if (!m_pBldg) return;
     int maxCargo = m_pVeh->GetData()->GetMaxMaterials();
@@ -596,7 +719,7 @@ void SDL2LoadTruckDialog::OnOK() {
     // Transfer materials from sliders to vehicle/building, capping at the
     // combined truck+building total per material (matches MFC Transfer()).
     RefreshBldg();
-    if (!m_pBldg) { EndDialog(0); return; }   // building gone — nothing to transfer
+    if (!m_pBldg) { EndDialog(0); return; }   // building gone ??? nothing to transfer
     for (int i = 0; i < 6; i++) {
         int iAmount = m_sliders[i]->GetValue();
         int iTotal = m_pVeh->GetStore(i) + m_pBldg->GetStore(i);
@@ -650,7 +773,7 @@ void SDL2PauseDialog::OnInit() {
 // original CDlgDiscover (IDD_RSRCH_FOUND) and every other in-game dialog. The
 // research window's circuit-board art was tried as a background but scaled to this
 // small size it looked terrible, so we use the clean shared chrome instead. Compact
-// (300x190) — close to the original's 186x110 DLU, not the old 350x200 placeholder.
+// (300x190) ??? close to the original's 186x110 DLU, not the old 350x200 placeholder.
 SDL2DiscoverDialog::SDL2DiscoverDialog(GameWindow* gw,
     const std::string& title, const std::string& description)
     // The tech name lives in the title bar (matches the original CDlgDiscover
@@ -660,12 +783,12 @@ SDL2DiscoverDialog::SDL2DiscoverDialog(GameWindow* gw,
 {}
 
 void SDL2DiscoverDialog::OnInit() {
-    // No custom background — the base draws the gold frame, the title bar (carrying
+    // No custom background ??? the base draws the gold frame, the title bar (carrying
     // the tech name) and the parchment interior.
     const int titleBot = 6 /*top border*/ + 26 /*title bar*/;
 
-    // Result text: default dialog blue PALETTERGB(48,58,148) — readable on the
-    // parchment — wrapped and top-aligned (mirrors the original's read-only box).
+    // Result text: default dialog blue PALETTERGB(48,58,148) ??? readable on the
+    // parchment ??? wrapped and top-aligned (mirrors the original's read-only box).
     auto* lblDesc = AddWidget<SDL2Label>(m_x + 14, m_y + titleBot + 8,
                                          m_width - 28, m_height - titleBot - 8 - 44,
                                          m_discDesc);
@@ -717,7 +840,7 @@ void SDL2MessageBox::OnInit() {
 }
 
 // ============================================================================
-// SDL2UnitInfoPanel — right-click unit tooltip
+// SDL2UnitInfoPanel ??? right-click unit tooltip
 // ============================================================================
 
 SDL2UnitInfoPanel::SDL2UnitInfoPanel() {
@@ -752,7 +875,7 @@ void SDL2UnitInfoPanel::LoadArt() {
     CDIB* pV = theBitmaps.GetByIndex(DIB_BORDER_VERT);
     if (pV) m_borderV = SDL2MainMenu::CreateSurfaceFromDIB(pV);
 
-    // Material icons (barrel/log/etc.) — the original drew these in the unit info
+    // Material icons (barrel/log/etc.) ??? the original drew these in the unit info
     // box instead of spelling out the material name. The ICON_MATERIALS strip holds
     // one icon per material type, laid out left-to-right at srcX = type * m_cxIcon
     // (see CUnit::PaintStatusMaterials in the legacy new_unit.cpp).
@@ -967,7 +1090,7 @@ void SDL2UnitInfoPanel::Render() {
     for (auto& line : m_lines) {
         if (line.text.empty()) { y += LINE_HT; continue; }
 
-        // Material lines lead with the resource icon (barrel, log, …) in place of
+        // Material lines lead with the resource icon (barrel, log, ???) in place of
         // the name; the text following it is just the quantity. Reserve a fixed
         // icon-width gutter so the numbers line up across rows.
         int lineTextX = textX;
@@ -983,14 +1106,14 @@ void SDL2UnitInfoPanel::Render() {
         SDL_Color shadow = {128, 128, 128, 255};
         SDL_Color fg = line.red ? SDL_Color{255, 50, 27, 255} : SDL_Color{0, 0, 0, 255};
 
-        SDL_Surface* ts = TTF_RenderText_Blended(font, line.text.c_str(), shadow);
+        SDL_Surface* ts = TTF_RenderUTF8_Blended(font, line.text.c_str(), shadow);
         if (ts) {
             SDL_Rect sr = {0, 0, __min(ts->w, lineMaxW), ts->h};
             SDL_Rect dr = {lineTextX + 1, y + 1, sr.w, sr.h};
             SDL_BlitSurface(ts, &sr, dst, &dr);
             SDL_FreeSurface(ts);
         }
-        ts = TTF_RenderText_Blended(font, line.text.c_str(), fg);
+        ts = TTF_RenderUTF8_Blended(font, line.text.c_str(), fg);
         if (ts) {
             SDL_Rect sr = {0, 0, __min(ts->w, lineMaxW), ts->h};
             SDL_Rect dr = {lineTextX, y, sr.w, sr.h};
@@ -1004,7 +1127,7 @@ void SDL2UnitInfoPanel::Render() {
 }
 
 // ============================================================================
-// SDL2ChatWindow — multiplayer chat
+// SDL2ChatWindow ??? multiplayer chat
 // ============================================================================
 
 SDL2ChatWindow::SDL2ChatWindow(GameWindow* gw)
@@ -1022,7 +1145,14 @@ void SDL2ChatWindow::OnInit() {
     AddWidget<SDL2Button>(m_x + m_width - 60, m_y + 240, 50, 24, "Send",
         [this]() { OnSend(); });
 
-    AddWidget<SDL2Button>(m_x + m_width / 2 - 40, m_y + m_height - 36, 80, 28, "Close",
+    // Mail hub (compose / inbox) ??? the comms window is the entry point for both
+    // chat and email, matching the original CWndComm. Show the unread count.
+    int unread = SDL2Mail_UnreadCount();
+    std::string mailLabel = unread > 0 ? ("Mail (" + std::to_string(unread) + ")") : "Mail";
+    AddWidget<SDL2Button>(m_x + m_width / 2 - 90, m_y + m_height - 36, 80, 28, mailLabel.c_str(),
+        [this]() { SDL2Comms_OpenMail(m_gameWindow); });
+
+    AddWidget<SDL2Button>(m_x + m_width / 2 + 10, m_y + m_height - 36, 80, 28, "Close",
         [this]() { EndDialog(0); });
 
     RefreshMessages();
@@ -1037,15 +1167,18 @@ void SDL2ChatWindow::OnSend() {
     std::string text = m_editMsg->GetText();
     if (text.empty()) return;
 
-    if (theGame.IsNetGame() && theGame.GetMyNetNum() != 0) {
-        CNetChat* pMsg = CNetChat::Alloc(theGame.GetMe(), text.c_str());
-        theGame.PostToAll(pMsg, pMsg->m_iLen, FALSE);
-        delete[] pMsg;
-    } else {
-        // Single player or not yet in-game — show locally only
-        std::string from = theGame.GetMe() ? theGame.GetMe()->GetName() : "Me";
-        SDL2Chat_AddMessage(from + ": " + text);
+    // Research gating: in-game chat requires Telephone research (parity with the
+    // original ??? CPlayer::CanChat()). The pre-game lobby chat is a separate path
+    // and stays ungated.
+    CPlayer* pMe = theGame.GetMe();
+    if (pMe && !pMe->CanChat()) {
+        SDL2Chat_AddMessage("(Chat requires Telephone research)");
+        m_editMsg->SetText("");
+        RefreshMessages();
+        return;
     }
+
+    SDL2Chat_Send(text);   // broadcast to others + local echo (shared helper)
 
     m_editMsg->SetText("");
     RefreshMessages();
@@ -1068,7 +1201,7 @@ void SDL2ChatWindow::RefreshMessages() {
 }
 
 // ============================================================================
-// SDL2PlayerListDialog — in-game player list
+// SDL2PlayerListDialog ??? in-game player list
 // ============================================================================
 
 SDL2PlayerListDialog::SDL2PlayerListDialog(GameWindow* gw)
@@ -1112,11 +1245,19 @@ void SDL2PlayerListDialog::PopulateList() {
 }
 
 // ============================================================================
-// SDL2ComposeDialog — multiplayer message compose
+// SDL2ComposeDialog ??? multiplayer message compose
 // ============================================================================
 
 SDL2ComposeDialog::SDL2ComposeDialog(GameWindow* gw)
-    : SDL2Dialog(gw, "Compose Message", 380, 340)
+    : SDL2Dialog(gw, "Compose Message", 400, 430)
+{}
+
+SDL2ComposeDialog::SDL2ComposeDialog(GameWindow* gw, int toPlyr,
+                                     const std::string& subject, const std::string& body)
+    : SDL2Dialog(gw, "Compose Message", 400, 430)
+    , m_preToPlyr(toPlyr)
+    , m_preSubject(subject)
+    , m_preBody(body)
 {}
 
 void SDL2ComposeDialog::OnInit() {
@@ -1127,87 +1268,326 @@ void SDL2ComposeDialog::OnInit() {
     AddWidget<SDL2Label>(lx, y, 80, 20, "To:");
     m_recipientList = AddWidget<SDL2Listbox>(lx + 30, y, w - 30, 80);
 
-    // Populate recipients
+    // Populate recipients ??? human opponents only (you can't email AI/yourself).
+    // Track each row's plyr num so OnSend can address the message.
+    int preselectRow = -1;
     POSITION pos = theGame.GetAll().GetHeadPosition();
     while (pos != NULL) {
         CPlayer* pPlr = theGame.GetAll().GetNext(pos);
-        if (pPlr && !pPlr->IsMe() && !pPlr->IsAI())
+        if (pPlr && !pPlr->IsMe() && !pPlr->IsAI()) {
+            if (m_preToPlyr >= 0 && pPlr->GetPlyrNum() == m_preToPlyr)
+                preselectRow = (int)m_recipientPlyrs.size();
+            m_recipientPlyrs.push_back(pPlr->GetPlyrNum());
             m_recipientList->AddItem((const char*)pPlr->GetName());
+        }
     }
+    if (preselectRow >= 0)
+        m_recipientList->SetSelected(preselectRow);
+    else if (m_recipientPlyrs.size() == 1)
+        m_recipientList->SetSelected(0);   // only one possible recipient ??? preselect it
 
     y += 90;
     AddWidget<SDL2Label>(lx, y, 80, 20, "Subject:");
-    m_editSubject = AddWidget<SDL2EditBox>(lx + 60, y, w - 60, 22);
+    m_editSubject = AddWidget<SDL2EditBox>(lx + 60, y, w - 60, 22, m_preSubject);
 
     y += 30;
     AddWidget<SDL2Label>(lx, y, 80, 20, "Message:");
-    m_editBody = AddWidget<SDL2EditBox>(lx, y + 22, w, 80);
+    m_editBody = AddWidget<SDL2EditBox>(lx, y + 22, w, 150, m_preBody);
+    m_editBody->SetMultiline(true);   // Enter inserts newlines; body can be paragraphs
 
-    y += 110;
-    int btnW = 80, btnH = 28;
-    AddWidget<SDL2Button>(m_x + m_width / 2 - btnW - 10, y, btnW, btnH, "Send",
+    int btnW = 80, btnH = 28, by = m_y + m_height - 40;
+    AddWidget<SDL2Button>(m_x + m_width / 2 - btnW - 10, by, btnW, btnH, "Send",
         [this]() { OnSend(); });
-    AddWidget<SDL2Button>(m_x + m_width / 2 + 10, y, btnW, btnH, "Cancel",
+    AddWidget<SDL2Button>(m_x + m_width / 2 + 10, by, btnW, btnH, "Cancel",
         [this]() { EndDialog(0); });
 }
 
+void SDL2ComposeDialog::OnOK() {
+    // Enter from the (single-line) Subject field sends; the multi-line Message
+    // field consumes Enter itself (newline) and never reaches here.
+    OnSend();
+}
+
 void SDL2ComposeDialog::OnSend() {
-    // Send message via the MFC chat system
-    if (m_editBody && theGame.IsNetGame() && theApp.m_wndChat.m_hWnd != NULL) {
-        theApp.m_wndChat.PostMessage(WM_COMMAND, MAKEWPARAM(IDOK, BN_CLICKED), 0);
+    CPlayer* pMe = theGame.GetMe();
+    if (!pMe || !m_recipientList || !m_editBody) { EndDialog(0); return; }
+
+    if (!theGame.IsNetGame()) {
+        EnMessageBox("Email can only be sent in a network game.", MB_OK);
+        return;
     }
+
+    // Research gating (parity): sending mail needs Mail or E-Mail research.
+    if (!pMe->CanEMail() && !pMe->CanDelayMail()) {
+        EnMessageBox("Research Mail or E-Mail before sending messages.", MB_OK | MB_ICONINFORMATION);
+        return;
+    }
+
+    int row = m_recipientList->GetSelected();
+    if (row < 0 || row >= (int)m_recipientPlyrs.size()) {
+        EnMessageBox("Select a recipient first.", MB_OK);
+        return;   // keep the dialog open so the user can pick someone
+    }
+
+    // Build the email and hand it to the same network path the original used
+    // (CMsgIPC::PostToClient serializes subject+body and PostClientToClient's it
+    // to the recipient). Receipt is handled by SDL2Mail_HandleIncoming.
+    CMsgIPC msg(CMsgIPC::email);
+    msg.m_iFrom    = pMe->GetPlyrNum();
+    msg.m_iTo      = m_recipientPlyrs[row];
+    msg.m_sSubject = m_editSubject ? m_editSubject->GetText().c_str() : "";
+    msg.m_sMessage = m_editBody->GetText().c_str();
+    msg.PostToClient();
+
     EndDialog(1);
 }
 
 // ============================================================================
-// SDL2CutSceneDialog — win/lose/scenario text screen
+// SDL2MailDialog ??? inbox + reader (replaces CWndComm mail hub + CWndMailRead)
 // ============================================================================
 
+SDL2MailDialog::SDL2MailDialog(GameWindow* gw)
+    : SDL2Dialog(gw, "Mail", 560, 400)
+{}
+
+void SDL2MailDialog::OnInit() {
+    int lx = m_x + 12, y = m_y + 40;
+    int listW = 200;
+    int bottomY = m_y + m_height - 50;
+    int listH = bottomY - y;
+
+    m_list = AddWidget<SDL2Listbox>(lx, y, listW, listH,
+        [this](int idx) { m_sel = idx; ShowSelected(); },
+        nullptr);
+
+    int rx = lx + listW + 14;
+    int rw = m_x + m_width - 12 - rx;
+    SDL_Color blue{ 48, 58, 148, 255 };
+    m_lblFrom    = AddWidget<SDL2Label>(rx, y,      rw, 20, "", blue);
+    m_lblSubject = AddWidget<SDL2Label>(rx, y + 24, rw, 20, "", blue);
+    m_lblBody    = AddWidget<SDL2Label>(rx, y + 52, rw, listH - 56, "", blue);
+    m_lblBody->SetWrapped(true);
+    m_lblBody->SetTopAligned(true);
+
+    // Action buttons along the bottom ??? Compose / Reply / Forward / Delete / Close.
+    int by = m_y + m_height - 42, bw = 86, bh = 28, gap = 6, bx = lx;
+    AddWidget<SDL2Button>(bx, by, bw, bh, "Compose", [this] { OnCompose(); }); bx += bw + gap;
+    AddWidget<SDL2Button>(bx, by, bw, bh, "Reply",   [this] { OnReply();   }); bx += bw + gap;
+    AddWidget<SDL2Button>(bx, by, bw, bh, "Forward", [this] { OnForward(); }); bx += bw + gap;
+    AddWidget<SDL2Button>(bx, by, bw, bh, "Delete",  [this] { OnDelete();  }); bx += bw + gap;
+    AddWidget<SDL2Button>(bx, by, bw, bh, "Close",   [this] { EndDialog(0); });
+
+    RefreshList();
+}
+
+void SDL2MailDialog::RefreshList() {
+    if (!m_list) return;
+    m_list->Clear();
+    for (const auto& m : g_mailInbox) {
+        // Unread messages get a leading marker, matching the inbox read-state idea.
+        std::string label = (m.read ? "   " : ">  ") + m.subject + "  (" + m.fromName + ")";
+        m_list->AddItem(label);
+    }
+    if (m_sel >= 0 && m_sel < (int)g_mailInbox.size())
+        m_list->SetSelected(m_sel);
+    ShowSelected();
+}
+
+void SDL2MailDialog::ShowSelected() {
+    if (m_sel < 0 || m_sel >= (int)g_mailInbox.size()) {
+        if (m_lblFrom)    m_lblFrom->SetText("");
+        if (m_lblSubject) m_lblSubject->SetText("");
+        if (m_lblBody)    m_lblBody->SetText(g_mailInbox.empty() ? "(no messages)" : "");
+        return;
+    }
+    SDL2MailMsg& m = g_mailInbox[m_sel];
+    m.read = true;   // viewing marks it read
+    if (m_lblFrom)    m_lblFrom->SetText("From: " + m.fromName);
+    if (m_lblSubject) m_lblSubject->SetText("Subject: " + m.subject);
+    if (m_lblBody)    m_lblBody->SetText(m.body);
+}
+
+void SDL2MailDialog::OnFrame() {
+    // New mail can arrive (SDL2Mail_HandleIncoming) while this window is open ???
+    // refresh the list when the inbox size changes.
+    if ((int)g_mailInbox.size() != m_lastInboxCount) {
+        m_lastInboxCount = (int)g_mailInbox.size();
+        RefreshList();
+    }
+}
+
+void SDL2MailDialog::OnCompose() {
+    SDL2Comms_OpenCompose(m_gameWindow, -1, "", "");
+}
+
+void SDL2MailDialog::OnReply() {
+    if (m_sel < 0 || m_sel >= (int)g_mailInbox.size()) return;
+    SDL2MailMsg& m = g_mailInbox[m_sel];
+    std::string subj = (m.subject.rfind("Re:", 0) == 0) ? m.subject : ("Re: " + m.subject);
+    std::string quoted = "\n\n--- " + m.fromName + " wrote ---\n" + m.body;
+    SDL2Comms_OpenCompose(m_gameWindow, m.fromPlyr, subj, quoted);
+}
+
+void SDL2MailDialog::OnForward() {
+    if (m_sel < 0 || m_sel >= (int)g_mailInbox.size()) return;
+    SDL2MailMsg& m = g_mailInbox[m_sel];
+    std::string subj = (m.subject.rfind("Fwd:", 0) == 0) ? m.subject : ("Fwd: " + m.subject);
+    std::string fwd  = "--- Forwarded from " + m.fromName + " ---\n" + m.body;
+    SDL2Comms_OpenCompose(m_gameWindow, -1, subj, fwd);
+}
+
+void SDL2MailDialog::OnDelete() {
+    if (m_sel < 0 || m_sel >= (int)g_mailInbox.size()) return;
+    g_mailInbox.erase(g_mailInbox.begin() + m_sel);
+    if (m_sel >= (int)g_mailInbox.size())
+        m_sel = (int)g_mailInbox.size() - 1;
+    RefreshList();
+}
+
+// ============================================================================
+// SDL2CutSceneDialog ??? win/lose/scenario text screen
+// ============================================================================
+
+// cut=0, repeat=1, scenario_end=2, win=3, lose=4
+static bool CutIsEndScreen(int typ) { return typ == 2 || typ == 3 || typ == 4; }
+
 SDL2CutSceneDialog::SDL2CutSceneDialog(GameWindow* gw, int typ, const std::string& text, int scenario)
-    : SDL2Dialog(gw, "", 600, 400)
+    : SDL2Dialog(gw, "", gw->GetWidth(), gw->GetHeight())
     , m_typ(typ)
     , m_text(text)
     , m_scenario(scenario)
 {
-    // No title bar text — the content IS the message
+    // No title bar text ??? the content IS the message. EVERY cut scene renders
+    // full-screen + chromeless: a full-screen painting with text over it. End screens
+    // use the WN/LS/DN paintings (OnInitEndScreen); the scenario INTRO uses the CS
+    // painting (OnInitIntro) ??? restoring the original CWndCutScene look.
+}
+
+SDL_Surface* SDL2CutSceneDialog::LoadEndArt(int typ) {
+    // Pick the painting chunk that CWndCutScene::OnCreate uses (CUTSCENE.CPP):
+    //   WN=win, LS=lose, DN="done"/scenario-end, CS=scenario INTRO (cut/repeat).
+    // Each is keyed by the current bit depth ("08"/"24"); if that mode's chunk is
+    // missing, fall back to the tiled WL wallpaper.
+    const char* tag = (typ == 3) ? "WN" : (typ == 4) ? "LS" : (typ == 2) ? "DN" : "CS";
+
+    CMmio* pMmio = nullptr;
+    SDL_Surface* surf = nullptr;
+    try {
+        pMmio = theDataFile.OpenAsMMIO("misc", "MISC");
+        if (!pMmio) return nullptr;
+        pMmio->DescendRiff('M', 'I', 'S', 'C');
+        try {
+            pMmio->DescendList(tag[0], tag[1], theApp.m_szOtherBPS[0], theApp.m_szOtherBPS[1]);
+            pMmio->DescendChunk('D', 'A', 'T', 'A');
+        } catch (...) {
+            delete pMmio;
+            pMmio = theDataFile.OpenAsMMIO("misc", "MISC");
+            pMmio->DescendRiff('M', 'I', 'S', 'C');
+            pMmio->DescendList('W', 'L', theApp.m_szOtherBPS[0], theApp.m_szOtherBPS[1]);
+            pMmio->DescendChunk('D', 'A', 'T', 'A');
+        }
+
+        CDIB* pDib = new CDIB(ptrthebltformat->GetColorFormat(), CBLTFormat::DIB_MEMORY,
+                              ptrthebltformat->GetMemDirection());
+        pDib->Load(*pMmio);
+        surf = SDL2MainMenu::CreateSurfaceFromDIB(pDib);
+        delete pDib;
+    } catch (...) {
+        surf = nullptr;
+    }
+    delete pMmio;
+    return surf;
+}
+
+void SDL2CutSceneDialog::OnInitEndScreen() {
+    // Full-screen painting behind the message (mirrors CWndCutScene::OnCreate +
+    // OnPaint). If the art can't load we fall back to a black background.
+    if (SDL_Surface* bg = LoadEndArt(m_typ))
+        SetFullscreenBackground(bg, true);
+
+    // High-contrast title. The original's muted two-tone palette (e.g. lose =
+    // dark-red 57,0,0 over brown) was nearly illegible on a busy painting, so use
+    // a BRIGHT fill with a solid BLACK outline halo instead ??? readable over anything.
+    SDL_Color fg = (m_typ == 4) ? SDL_Color{255,  80,  70, 255}   // lose: bright red
+                                : SDL_Color{255, 226, 110, 255};  // win/scenario: bright gold
+    SDL_Color outline = {0, 0, 0, 255};
+
+    // Single-line title, auto-shrunk to ~85% of the screen width (the original
+    // auto-sized the Milford font the same way).
+    int fontSize = m_height / 11;
+    while (fontSize > 16) {
+        TTF_Font* f = GetFont(fontSize);
+        int tw = 0, th = 0;
+        if (f) TTF_SizeUTF8(f, m_text.c_str(), &tw, &th);
+        if (!f || tw <= (m_width * 85) / 100) break;
+        fontSize -= 2;
+    }
+
+    // Centered at the top quarter. Draw the text 8 times in black around the centre
+    // (a 3px outline) so it stays readable on any background, then the bright fill on top.
+    int topY = m_y + m_height / 4;
+    int rowH = fontSize * 2;
+    const int o = 3;
+    const int dx[8] = { -o, -o, -o,  0,  0,  o,  o,  o };
+    const int dy[8] = { -o,  0,  o, -o,  o, -o,  0,  o };
+    for (int k = 0; k < 8; k++) {
+        SDL2Label* s = AddWidget<SDL2Label>(m_x + dx[k], topY + dy[k], m_width, rowH, m_text, outline);
+        s->SetCentered(true); s->SetTopAligned(true); s->SetFontSize(fontSize);
+    }
+    SDL2Label* hi = AddWidget<SDL2Label>(m_x, topY, m_width, rowH, m_text, fg);
+    hi->SetCentered(true); hi->SetTopAligned(true); hi->SetFontSize(fontSize);
+
+    // Continue button, lower-right ??? much larger than the original tiny 150x40 (per
+    // user: 2-4x bigger) with a font to match, anchored off the bottom edge.
+    int btnW = 380, btnH = 120;
+    int btnX = m_x + m_width - btnW - m_width / 12;
+    int btnY = m_y + m_height - btnH - m_height / 10;
+    auto* btn = AddWidget<SDL2Button>(btnX, btnY, btnW, btnH, "Continue", [this]() { OnOK(); });
+    btn->SetFontSize(40);
 }
 
 void SDL2CutSceneDialog::OnInit() {
-    // Large text area — most of the dialog
-    int textH = m_height - 100;
-    SDL2Label* lbl = AddWidget<SDL2Label>(m_x + 20, m_y + 20, m_width - 40, textH, m_text,
-                                          SDL_Color{220, 200, 160, 255});
-    lbl->SetWrapped(true);
+    if (CutIsEndScreen(m_typ))
+        OnInitEndScreen();
+    else
+        OnInitIntro();
+}
 
-    // Buttons at the bottom
-    int btnY = m_y + m_height - 46;
-    int btnW = 90, btnH = 32;
+// Scenario INTRO (cut / repeat) ??? full-screen CS painting with the briefing text on
+// the right third and OK/Cancel/Save along the lower-left. Mirrors the original
+// CWndCutScene::OnCreateCut / OnPaintCut layout.
+void SDL2CutSceneDialog::OnInitIntro() {
+    // Full-screen scenario painting (MISC 'CS' chunk) behind the text. Black fallback.
+    if (SDL_Surface* bg = LoadEndArt(m_typ))
+        SetFullscreenBackground(bg, true);
 
-    // cut=0, repeat=1, scenario_end=2, win=3, lose=4
-    bool isEndScreen = (m_typ == 2 || m_typ == 3 || m_typ == 4);
-    bool canCancel   = (m_typ == 0);  // cut (not repeat, not end screens)
-    bool canSave     = (m_typ == 0) && (m_scenario > 0);  // first scenario has no save
+    // Briefing text in the RIGHT THIRD (original: x from w*2/3 to w*95/100), word-
+    // wrapped, drawn yellow over a black drop-shadow (original drew black then yellow
+    // offset by 2px). Font auto-scaled like the original's ~28*h/1280 Milford.
+    const int textX = m_x + (m_width * 2) / 3;
+    const int textR = m_x + (m_width * 95) / 100;
+    const int textW = textR - textX;
+    const int textY = m_y + m_height / 8;
+    const int textH = (m_height * 3) / 4 - m_height / 8;
+    const int fontSize = __max(14, (28 * m_height) / 1280);
 
-    if (isEndScreen) {
-        // Just a Continue button centred
-        AddWidget<SDL2Button>(m_x + m_width/2 - btnW/2, btnY, btnW, btnH, "Continue",
-            [this]() { OnOK(); });
-    } else {
-        int bx = m_x + 20;
-        AddWidget<SDL2Button>(bx, btnY, btnW, btnH, "OK",
-            [this]() { OnOK(); });
-        bx += btnW + 10;
+    SDL_Color black  = {  0,   0,   0, 255};
+    SDL_Color yellow = {255, 251, 120, 255};
+    SDL2Label* sh = AddWidget<SDL2Label>(textX, textY, textW, textH, m_text, black);
+    sh->SetWrapped(true); sh->SetTopAligned(true); sh->SetFontSize(fontSize);
+    SDL2Label* hi = AddWidget<SDL2Label>(textX - 2, textY - 2, textW, textH, m_text, yellow);
+    hi->SetWrapped(true); hi->SetTopAligned(true); hi->SetFontSize(fontSize);
 
-        if (canCancel) {
-            AddWidget<SDL2Button>(bx, btnY, btnW, btnH, "Cancel",
-                [this]() { OnCancel(); });
-            bx += btnW + 10;
-        }
-        if (canSave) {
-            AddWidget<SDL2Button>(bx, btnY, btnW, btnH, "Save",
-                [this]() { OnSave(); });
-        }
-    }
+    // Buttons along the lower-left (original placed OK/Cancel/Save there). Repeat scenes
+    // get OK only; the first scenario (0) has no Save (matches OnCreateCut).
+    const bool canCancel = (m_typ == 0);
+    const bool canSave   = (m_typ == 0) && (m_scenario > 0);
+    const int btnW = 160, btnH = 44, gap = 18;
+    int bx = m_x + m_width / 18;
+    const int by = m_y + (m_height * 72) / 100;
+    AddWidget<SDL2Button>(bx, by, btnW, btnH, "OK", [this]() { OnOK(); }); bx += btnW + gap;
+    if (canCancel) { AddWidget<SDL2Button>(bx, by, btnW, btnH, "Cancel", [this]() { OnCancel(); }); bx += btnW + gap; }
+    if (canSave)   { AddWidget<SDL2Button>(bx, by, btnW, btnH, "Save",   [this]() { OnSave(); }); }
 }
 
 void SDL2CutSceneDialog::OnOK() {

@@ -130,10 +130,20 @@ add_executable(enations WIN32 ${enations_sources})
 # should be /Zi for release (no it shouldn't?)')
 # /Z7 for profiling
 # BUGBUGTODO change back to /Zi
+# Fast-debug (2026-06-11): Debug keeps _DEBUG/asserts/symbols/debug-CRT but
+# drops the pure perf-tax knobs — /Od (no-opt), /Ob0 (no inlining at all;
+# brutal in this accessor-heavy codebase), /RTC1 (stack checks, seen live in
+# profile stacks), and checked iterators (_ITERATOR_DEBUG_LEVEL=0 below).
+# Live 13-player profiling showed operV=729ms/s at 16us per CVehicle::Operate
+# under the old flags. /RTC1 comes from CMake's default debug flags and is
+# incompatible with /O2 — strip it (and the /Od;/Ob0 defaults ours override).
+string(REPLACE "/RTC1" "" CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG}")
+string(REPLACE "/Ob0" "" CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG}")
+string(REPLACE "/Od" "" CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG}")
 target_compile_options(enations PRIVATE
     $<$<CONFIG:Release>:/MD;/EHsc;/O2;/Ob2;/Oi;/GL;/Gy;/Gw;/Ot;/GF;/arch:AVX2;/fp:fast;/Zi>
     $<$<CONFIG:Profile>:/MD;/EHsc;/O2;/Ob2;/Oi;/GL;/Gy;/Gw;/Ot;/GF;/arch:AVX2;/fp:fast;/Zi>
-    $<$<CONFIG:Debug>:/MDd;/EHsc;/Zi;/Od;/Ob0>
+    $<$<CONFIG:Debug>:/MDd;/EHsc;/Zi;/O2;/Ob2>
     $<$<CONFIG:Sanitize>:/MDd;/EHsc;/Zi;/Od;/Ob0;/fsanitize=address>
 )
 
@@ -189,6 +199,9 @@ target_compile_definitions(enations PUBLIC
         $<$<CONFIG:Release>:NDEBUG>
         $<$<CONFIG:Profile>:NDEBUG>
         $<$<CONFIG:Debug>:_DEBUG>
+        # Fast-debug: no checked iterators in Debug. MUST match wind22 (std
+        # container layouts change with this) — both targets define it.
+        $<$<CONFIG:Debug>:_ITERATOR_DEBUG_LEVEL=0>
         $<$<CONFIG:Sanitize>:_DEBUG>
         )
 

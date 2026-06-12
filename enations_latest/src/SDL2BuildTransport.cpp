@@ -7,6 +7,7 @@
 #include "player.h"
 #include "building.h"
 #include "building.inl"
+#include "unit.inl"     // CUnit::GetStore / CUnitData::GetDesc/GetText (needed at /Ob2)
 #include "vehicle.inl"
 #include "bitmaps.h"
 #include "icons.h"      // CStatData / CIcons / theIcons — construction-progress strip
@@ -195,12 +196,16 @@ void SDL2BuildTransport::OnInit() {
     // better than the stock white box (the MFC original was a plain CEdit).
     m_edtNum->SetColors({ 0, 0, 0, 255 }, { 255, 255, 255, 255 });
 
-    // Vertical spinner to the right of the field: up arrow (top half) increments,
-    // down arrow (bottom half) decrements — the original IDC_BUILD_SPIN behaviour.
-    const int spX = qEditX + qEditW + 2, spW = 15, spH = qH / 2;
-    auto* btnUp = AddWidget<SDL2Button>(spX, qy, spW, spH, "",
+    // Vertical spinner: up arrow (top half) increments, down arrow (bottom half)
+    // decrements — the original IDC_BUILD_SPIN behaviour. Placed on the arrow
+    // widget PAINTED INTO the background art: measured in veh_bknd.png the blue
+    // up/down triangles sit at x≈346..368, y≈292..318 (NOT at the MFC control
+    // rect 307,295 — that spot is the black edit box in the art). The live
+    // buttons must cover the painted pair, or a second dead pair shows.
+    const int spX = ox + 346, spY = oy + 292, spW = 22, spH = 13;
+    auto* btnUp = AddWidget<SDL2Button>(spX, spY, spW, spH, "",
         [this]() { m_buildNum++; RefreshQty(); });
-    auto* btnDn = AddWidget<SDL2Button>(spX, qy + spH, spW, spH, "",
+    auto* btnDn = AddWidget<SDL2Button>(spX, spY + spH, spW, spH, "",
         [this]() { if (m_buildNum > 1) { m_buildNum--; RefreshQty(); } });
     if (SDL_Surface* up = MakeArrow(spW, spH, true))
         btnUp->SetIcon(up, { 0, 0, up->w, up->h });
@@ -272,11 +277,15 @@ void SDL2BuildTransport::OnFrame() {
     m_lastPer = per;
     RebuildProgress(per);
 
-    // Title: "Building <vehicle>..." while constructing, else the plain caption.
+    // Title: "Building <vehicle>..." while constructing, else the plain caption —
+    // barracks say "Build People", everything else "Build Vehicle" (mirrors
+    // CDlgBuildTransport::UpdateStatus / OnInitDialog).
     if (per != 0) {
         CBuildUnit const* pBu = m_pBldg->GetBldUnt();
         const char* pDesc = pBu ? theTransports.GetData(pBu->GetVehType())->GetDesc().c_str() : "";
         m_title = strPrintf(EnLoadStdString(IDS_BUILD_UNIT).c_str(), pDesc);
+    } else if (m_pBldg->GetData()->GetBldgType() == CStructureData::barracks) {
+        m_title = EnLoadStdString(IDS_BUILD_PEOPLE);
     } else {
         m_title = EnLoadStdString(IDS_BUILD_VEHICLE);
     }
