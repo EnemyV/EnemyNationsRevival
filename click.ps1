@@ -18,6 +18,11 @@
 #   ./click.ps1 -X 100 -Y 50 -NoMove         # skip the WM_MOUSEMOVE before click
 #   ./click.ps1 -X 100 -Y 50 -Hwnd 12345     # target a specific HWND
 #
+# Drags (hold the button from X,Y to ToX,ToY with interpolated moves):
+#   ./click.ps1 -Window map -X 600 -Y 400 -ToX 900 -ToY 600           # LMB drag = selection box
+#   ./click.ps1 -Window map -X 600 -Y 400 -ToX 900 -ToY 600 -Right    # RMB drag = line move (2+ units)
+#   ./click.ps1 -Window map -X 800 -Y 500 -ToX 500 -ToY 500 -Middle   # MMB drag = pan the map
+#
 # Window roles: main/menu, map/area, radar, vehicles, buildings, research,
 # pick/player — or any substring of a window title.
 #
@@ -40,7 +45,12 @@ param(
     [switch]$Shift,
     [switch]$NoMove,
     [switch]$NoCursor,
-    [int]$DelayMs = 40
+    [int]$DelayMs = 40,
+    # Drag: hold the button from (X,Y) to (ToX,ToY) with interpolated mouse moves.
+    [int]$ToX = [int]::MinValue,
+    [int]$ToY = [int]::MinValue,
+    [int]$Steps = 12,
+    [int]$StepDelayMs = 20
 )
 
 $ErrorActionPreference = 'Stop'
@@ -94,6 +104,36 @@ if (-not $NoCursor) {
 if (-not $NoMove) {
     [void][GameWin32]::PostMessage($hwndTarget, $WM_MOUSEMOVE, [IntPtr]$mkMods, $lparam)
     Start-Sleep -Milliseconds $DelayMs
+}
+
+$isDrag = ($ToX -ne [int]::MinValue) -and ($ToY -ne [int]::MinValue)
+
+if ($isDrag) {
+    # press at the start point, walk interpolated WM_MOUSEMOVEs (button bit held
+    # in wParam) to the end point, release there. The physical cursor is moved
+    # along too — SDL takes a button event's position from the live cursor.
+    [void][GameWin32]::PostMessage($hwndTarget, $downMsg, [IntPtr]($mkButton -bor $mkMods), $lparam)
+    Start-Sleep -Milliseconds $DelayMs
+
+    for ($i = 1; $i -le $Steps; $i++) {
+        $px = [int]($X + ($ToX - $X) * $i / $Steps)
+        $py = [int]($Y + ($ToY - $Y) * $i / $Steps)
+        if (-not $NoCursor) {
+            $dp = New-Object GameWin32+POINT; $dp.X = $px; $dp.Y = $py
+            [void][GameWin32]::ClientToScreen($hwndTarget, [ref]$dp)
+            [void][GameWin32]::SetCursorPos($dp.X, $dp.Y)
+        }
+        $lpStep = [IntPtr](($py -shl 16) -bor ($px -band 0xFFFF))
+        [void][GameWin32]::PostMessage($hwndTarget, $WM_MOUSEMOVE, [IntPtr]($mkButton -bor $mkMods), $lpStep)
+        Start-Sleep -Milliseconds $StepDelayMs
+    }
+
+    $lpEnd = [IntPtr](($ToY -shl 16) -bor ($ToX -band 0xFFFF))
+    [void][GameWin32]::PostMessage($hwndTarget, $upMsg, [IntPtr]$mkMods, $lpEnd)
+
+    Write-Output ("Sent {0} drag ({1},{2})->({3},{4}) to '{5}' [HWND {6}]" -f `
+        $btnName, $X, $Y, $ToX, $ToY, $info.Title, $hwndTarget.ToInt64())
+    exit 0
 }
 
 [void][GameWin32]::PostMessage($hwndTarget, $downMsg, [IntPtr]($mkButton -bor $mkMods), $lparam)

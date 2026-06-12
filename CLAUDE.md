@@ -110,6 +110,7 @@ Drive the running game yourself instead of asking the user what they see. **Just
 & '.\screenshot.ps1' -Out d:\tmp\s.png      # 50% shot of the auto-target window
 & '.\click.ps1' -X 1850 -Y 145              # click client-px coords (read from the PNG)
 & '.\click.ps1' -Window map -X 800 -Y 600 -Right -Ctrl   # Ctrl+RMB (rotate a building being placed)
+& '.\click.ps1' -Window map -X 1000 -Y 600 -ToX 600 -ToY 400 -Middle  # DRAG (here: MMB pan; -Right drag = line move, LMB drag = box select)
 & '.\keys.ps1'  -Key Enter                  # named key; -Text "foo" types; -ListKeys
 & '.\keys.ps1'  -Window map -Key "."         # in-game hotkey: OEM punctuation , . [ ] = - now work
 & '.\keys.ps1'  -Window map -Key A -Ctrl     # modifier combos: -Ctrl/-Shift/-Alt
