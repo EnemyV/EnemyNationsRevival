@@ -362,6 +362,18 @@ int CWndBar::OnCreate( LPCREATESTRUCT lpCS )
         s_toolbar.SetButtonHandler(6, [pThis]() { pThis->GotoScience(); });
         s_toolbar.SetButtonHandler(7, [pThis]() { pThis->GotoFile(); });
 
+        // Hover help (same as the collapsed-panel init path above): the IDH_BAR_*
+        // sentence strings prefixed with the accelerator, so every icon has a tooltip.
+        static const char* const aShortcut2[NUM_BAR_BTNS] = {
+            "Ctrl+A", "Ctrl+W", "Ctrl+M", "Ctrl+D", "Ctrl+V", "Ctrl+B", "Ctrl+R", "Ctrl+O" };
+        for ( int i = 0; i < NUM_BAR_BTNS; i++ )
+        {
+            std::string help = EnLoadStdString( aHelp[ i ] );
+            if ( aShortcut2[ i ][ 0 ] )
+                help = std::string( "(" ) + aShortcut2[ i ] + ")  " + help;
+            s_toolbar.SetButtonHelpText( i, help );
+        }
+
         // Disable chat if not net play
         if ( !theGame.IsNetGame() )
             s_toolbar.EnableButton(2, false);

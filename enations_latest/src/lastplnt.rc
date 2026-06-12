@@ -1255,12 +1255,12 @@ END
 
 STRINGTABLE DISCARDABLE 
 BEGIN
-    IDH_AREA_WIN            "Click unit to select, double click for unit window, RMB drag to move"
+    IDH_AREA_WIN            "Left click selects (drag a box), right click moves/attacks (drag a line move), middle button drag scrolls"
     IDH_AREA_WIN_BUILD      "Click on hex for bottom corner of location for building you wish to build"
     IDH_AREA_WIN_MOVE       "Click on the location you wish to have the selected vehicle(s) move to"
     IDS_CREATE_CHOOSE       "Choose Race >>"
     IDS_CREATE_CREATE       "Create Game >>"
-    IDH_WORLD_WIN           "LMB click to send selected units, RMB drag to move"
+    IDH_WORLD_WIN           "Left click looks at a location, right click sends the selected units there, middle button drag scrolls"
     IDS_CREATE_PUBLISH      "Publish Game >>"
     IDS_JOIN_PUBLISH        "Publish >>"
     IDS_JOIN_JOIN           "Join >>"
@@ -1308,10 +1308,10 @@ BEGIN
     IDS_INIT_MAP            "Building the world..."
     IDS_CHECK_MAP           "Checking the world..."
     IDS_ASSIGN_TILES        "Determining terrain..."
-    IDH_AREA_WIN_RMB        "Move the mouse with the RMB down to scroll in that direction"
+    IDH_AREA_WIN_RMB        "Drag with the middle button down to scroll the map (push to a window edge to keep scrolling)"
     IDS_TIME_OUT            "This is the shareware version of Second Chance which has\na play limit. You must end this game now. You can save this\ngame and continue playing with the retail version of Second Chance.\nDo you wish to save?"
     IDS_MULT_INST           "You are already running a copy of Second Chance.\nDo you wish to switch to the running game (Yes)?\n(Or start a second copy of the game (No).)"
-    IDH_WORLD_WIN_RMB       "Move the mouse with the RMB down to scroll in that direction"
+    IDH_WORLD_WIN_RMB       "Drag with the middle button down to scroll the view"
     IDS_LOAD_FILE           "Loading the file..."
 END
 

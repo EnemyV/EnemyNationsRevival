@@ -227,16 +227,9 @@ std::string CWndArea::sWndCls;
 const int SEL_WIDTH = 2;
 
 // Captured freeform path for line movement (drawn formation). Client-px points of
-// the current LMB drag, starting at m_selOrig. File-static (only one line-move drag
-// happens at a time) so CWndArea's layout doesn't change. Cleared on LMB-down.
+// the current RMB drag, starting at m_ptRMDN. File-static (only one line-move drag
+// happens at a time) so CWndArea's layout doesn't change. Cleared on RMB-down.
 static std::vector<CPoint> s_linePath;
-
-// Press-and-hold trigger for line movement (alternative to holding Alt): if the LMB
-// is held ~0.22s WITHOUT having started a drag, the next drag becomes a line-move; a
-// quicker drag stays a selection box.
-static DWORD s_lmbDownTime  = 0;      // GetTickCount at LMB-down
-static bool  s_draggedEarly = false;  // crossed the drag threshold before the hold time
-const  DWORD LINE_HOLD_MS   = 222;    // hold this long (stationary) to arm line-move
 
 // Total pixel length of the polyline.
 static float LinePathLength( )
@@ -1121,7 +1114,8 @@ CWndArea::CWndArea( )
     m_iFound      = 0;
     m_iBuild      = -1;
     m_iMode       = normal;
-    m_bRBtnDown   = FALSE;
+    m_bPanBtnDown = FALSE;
+    m_bRmbCmdDown = FALSE;
     m_bCapMouse   = FALSE;
     m_pWndInfo    = NULL;
     m_pSdlInfo    = NULL;
@@ -1133,8 +1127,7 @@ CWndArea::CWndArea( )
     m_pSelUnder   = NULL;
     m_bScrollBars = FALSE;
 
-    m_bLineMove        = FALSE;
-    m_bDragStartOnUnit = FALSE;
+    m_bLineMove = FALSE;
 
     m_phexRoadPath  = NULL;
     m_ppUnderSprite = NULL;
@@ -1470,8 +1463,8 @@ void CWndArea::ReRender( )
     CRect rect;
     GetClientRect( &rect );
 
-    // if RMB & near the edge then we continuously scroll
-    if ( m_bRBtnDown )
+    // if the pan button (MMB) is held & near the edge then we continuously scroll
+    if ( m_bPanBtnDown )
     {
         CPoint pt;
         ::GetCursorPos( &pt );
@@ -1667,59 +1660,47 @@ void CWndArea::OnMouseMove( UINT nFlags, CPoint point )
         return;
     }
 
-    // drawing selection box — or a freeform line-movement line
+    // drawing the selection box (LMB drag is always a box-select now — line
+    // movement lives on the RMB drag below)
     if ( m_iMode == normal_select )
     {
-        // Two ways to draw a movement line (drawn formation) for 2+ selected units:
-        //   1. hold ALT while dragging, or
-        //   2. press and hold ~1/3s WITHOUT dragging, then drag.
-        // A plain quick drag stays a selection box (the original behavior). Alt isn't
-        // in the mouse MK_ flags, so read it from the keyboard like Shift/Ctrl elsewhere.
-        BOOL bDragged = ( abs( point.x - m_ptLMB.x ) >= theMap.HexWid( m_aa.m_iZoom ) / 2 ) ||
-                        ( abs( point.y - m_ptLMB.y ) >= theMap.HexHt( m_aa.m_iZoom ) / 2 );
-        BOOL  bAlt = ( GetKeyState( VK_MENU ) & 0x8000 ) != 0;
-        DWORD held = GetTickCount( ) - s_lmbDownTime;
+        m_selRect.SetRect( m_selOrig.x, m_selOrig.y, point.x, point.y );
+        m_selRect.NormalizeRect( );
+        m_selRect &= rect;
+    }
 
-        // If the drag threshold is crossed before the hold time, it's a normal
-        // box-select for the rest of the gesture (a quick drag, not a hold).
-        if ( bDragged && held < LINE_HOLD_MS )
-            s_draggedEarly = true;
-        BOOL bHoldArmed = !s_draggedEarly && ( held >= LINE_HOLD_MS );
-
-        m_bLineMove = bDragged && ( bAlt || bHoldArmed ) && ( m_lstUnits.GetCount( ) >= 2 );
+    // RMB drag with 2+ units selected = line movement (drawn formation). A plain
+    // right-click (no drag) stays a command — DoCommandAt fires on RMB-up.
+    if ( m_bRmbCmdDown && ( m_iMode == normal ) )
+    {
+        BOOL bDragged = ( abs( point.x - m_ptRMDN.x ) >= theMap.HexWid( m_aa.m_iZoom ) / 2 ) ||
+                        ( abs( point.y - m_ptRMDN.y ) >= theMap.HexHt( m_aa.m_iZoom ) / 2 );
+        if ( bDragged && ( m_lstUnits.GetCount( ) >= 2 ) )
+            m_bLineMove = TRUE;
 
         if ( m_bLineMove )
         {
             // Record the freeform path the cursor traces (throttled), starting at the
             // drag origin. DoLineMove distributes the units along this polyline.
             if ( s_linePath.empty( ) )
-                s_linePath.push_back( m_selOrig );
+                s_linePath.push_back( m_ptRMDN );
             CPoint last = s_linePath.back( );
             if ( abs( point.x - last.x ) + abs( point.y - last.y ) >= 4 )
                 s_linePath.push_back( point );
             m_lineEnd = point;
         }
-        else
-        {
-            m_selRect.SetRect( m_selOrig.x, m_selOrig.y, point.x, point.y );
-            m_selRect.NormalizeRect( );
-            m_selRect &= rect;
-        }
     }
 
-    // if RMB then we scroll
-    //   if in the NC area we continuously scroll (in update)
-    if ( m_bRBtnDown )
+    // if the pan button (MMB) is held we scroll: drag-pan ("grab the map") here,
+    // plus the original continuous edge-band scroll in ReRender.
+    if ( m_bPanBtnDown )
     {
         ASSERT_STRICT_VALID_STRUCT( &m_aa );
 
-#ifdef BUGBUG
-        // not needed?
-        m_aa.MoveCenterPixels( point.x - m_ptRMB.x, point.y - m_ptRMB.y );
+        // grab-style: the content follows the cursor, so the view center moves
+        // opposite to the mouse delta
+        m_aa.MoveCenterPixels( m_ptRMB.x - point.x, m_ptRMB.y - point.y );
 
-        // paint it
-        // GGTESTING InvalidateWindow ();
-#endif
         m_ptRMB = point;
         theApp.m_wndWorld.NewLocation( );
         CWndBase::OnMouseMove( nFlags, point );
@@ -1924,28 +1905,25 @@ void CWndArea::Draw( )
 
     // Draw new selection rect (note: doesn't force render of interior)
 
-    if ( m_iMode == normal_select )
+    if ( m_bLineMove )
     {
-        if ( m_bLineMove )
-        {
-            // Drawn-formation preview: dotted line + per-unit destination dots.
-            DrawLineMove( );
-        }
+        // Drawn-formation preview (RMB drag): dotted line + per-unit destination dots.
+        DrawLineMove( );
+    }
+    else if ( m_iMode == normal_select )
+    {
+        // GPU split path: m_dibwnd (terrain) is never presented — PresentOwn composites
+        // the GPU terrain mesh + the color-keyed sprite layer (m_dibSprite) directly. So
+        // the box has to go into m_dibSprite, and via a self-contained draw (no m_pSelUnder
+        // save buffer, which is sized for m_dibwnd's format and would overflow).
+        if ( m_aa.IsGpuFull( ) )
+            DrawSelectionRectGpu( );
         else
-        {
-            // GPU split path: m_dibwnd (terrain) is never presented — PresentOwn composites
-            // the GPU terrain mesh + the color-keyed sprite layer (m_dibSprite) directly. So
-            // the box has to go into m_dibSprite, and via a self-contained draw (no m_pSelUnder
-            // save buffer, which is sized for m_dibwnd's format and would overflow).
-            if ( m_aa.IsGpuFull( ) )
-                DrawSelectionRectGpu( );
-            else
-                DrawSelectionRect( );
+            DrawSelectionRect( );
 
-            // Add selection rectangle to the list of rects to get blted this frame
+        // Add selection rectangle to the list of rects to get blted this frame
 
-            m_aa.GetDirtyRects( )->AddRect( &m_selRect, CDirtyRects::RECT_LIST::LIST_BLT );
-        }
+        m_aa.GetDirtyRects( )->AddRect( &m_selRect, CDirtyRects::RECT_LIST::LIST_BLT );
     }
 
     // Blt the dirty rects to the screen
@@ -2188,7 +2166,7 @@ void CWndArea::DoLineMove( CPoint ptEnd )
 {
     // make sure the path includes the final cursor point
     if ( s_linePath.empty( ) )
-        s_linePath.push_back( m_selOrig );
+        s_linePath.push_back( m_ptRMDN );
     if ( s_linePath.back( ) != ptEnd )
         s_linePath.push_back( ptEnd );
 
@@ -2637,6 +2615,9 @@ int CWndArea::OnCreate( LPCREATESTRUCT lpCreateStruct )
                             pThis->OnRButtonDblClk(flags, pt);
                         else
                             pThis->OnRButtonDown(flags, pt);
+                    } else if (event.button.button == SDL_BUTTON_MIDDLE) {
+                        // MMB held = pan (modern binding; RMB is the command button)
+                        pThis->OnMButtonDown(flags, pt);
                     }
                     return true;
 
@@ -2645,6 +2626,8 @@ int CWndArea::OnCreate( LPCREATESTRUCT lpCreateStruct )
                         pThis->OnLButtonUp(flags, pt);
                     else if (event.button.button == SDL_BUTTON_RIGHT)
                         pThis->OnRButtonUp(flags, pt);
+                    else if (event.button.button == SDL_BUTTON_MIDDLE)
+                        pThis->OnMButtonUp(flags, pt);
                     return true;
 
                 case SDL_MOUSEMOTION:
@@ -3204,24 +3187,20 @@ void CWndArea::OnLButtonDown( UINT nFlags, CPoint point )
     switch ( m_iMode )
     {
     case normal:
+        // pressing LMB during an RMB drag cancels the pending command/line-move
+        if ( m_bRmbCmdDown )
+        {
+            m_bRmbCmdDown = FALSE;
+            m_bLineMove   = FALSE;
+            s_linePath.clear( );
+        }
+
         m_ptLMB = point;
         m_iMode = normal_select;
 
         CaptureMouse( );
         m_selOrig = point;
         m_selRect.SetRectEmpty( );
-
-        // Line-movement disambiguation: a drag is only treated as a line-move when
-        // it does NOT start on a unit/building (starting on one keeps box-select).
-        m_bLineMove = FALSE;
-        s_linePath.clear( );
-        s_lmbDownTime  = GetTickCount( );
-        s_draggedEarly = false;
-        {
-            CHitInfo hit = m_aa.GetHit( point );
-            m_bDragStartOnUnit = ( hit.GetUnit( ) != NULL ) || ( hit.GetBridge( ) != NULL );
-        }
-
         break;
 
     // set these up so we know the down came from here
@@ -3442,46 +3421,23 @@ void CWndArea::OnLButtonUp( UINT nFlags, CPoint point )
         return;
     }
 
-    // selecting unit(s)
+    // selecting unit(s) — the LMB is selection ONLY now: the command half
+    // (move/attack/load/unload/repair) lives on the right button (DoCommandAt).
     case normal_select: {
         m_iMode = normal;
 
-        // Line movement (drawn formation): the drag was a line, not a box-select —
-        // distribute the selected units along it and keep them selected. Decided in
-        // OnMouseMove (2+ units, drag from open ground, no Alt/Shift).
-        if ( m_bLineMove )
-        {
-            DoLineMove( point );
-            m_bLineMove = FALSE;
-
-            // "moving" acknowledgement + UI refresh, mirroring a normal goto
-            if ( m_uFlags & crane )
-                theGame.MulEvent( MEVENT_GO_CRANE, m_pUnit );
-            else if ( m_uFlags & veh )
-                theGame.MulEvent( MEVENT_GO_COMBAT, m_pUnit );
-
-            SetButtonState( );
-            InvalidateStatus( );
-            InvalidateSound( );
-            return;
-        }
-
-        CHitInfo     hitinfo = m_aa.GetHit( point );
-        CUnit*       pUnitOn = hitinfo.GetUnit( );
-        CBridgeUnit* pBu     = hitinfo.GetBridge( );
+        CHitInfo hitinfo = m_aa.GetHit( point );
+        CUnit*   pUnitOn = hitinfo.GetUnit( );
         // if not visible then it's not there
         if ( pUnitOn != NULL )
             if ( !pUnitOn->IsVisible( ) )
                 pUnitOn = NULL;
 
-        CUnit* pPrevSel = m_pUnit;
-
         ASSERT_STRICT_VALID_OR_NULL( pUnitOn );
         BOOL bSelected = FALSE;
 
-        // step 1 - if ours & not shift or ctrl - deselect all
-        //   and not loading on a carrier or repairing
-        if ( ( ( nFlags & ( MK_CONTROL | MK_SHIFT ) ) == 0 ) && ( m_uMouseMode == lmb_select ) )
+        // step 1 - no ctrl/shift -> the click starts a fresh selection
+        if ( ( nFlags & ( MK_CONTROL | MK_SHIFT ) ) == 0 )
         {
             m_lstUnits.RemoveAllUnits( TRUE );
             m_pUnit = NULL;
@@ -3541,333 +3497,16 @@ void CWndArea::OnLButtonUp( UINT nFlags, CPoint point )
                 pUnitOn = NULL;
         }
 
-        // step 3 - if ours and not force - toggle it's selection
-        //   OR un/load carrier /or/ send to repair facility
-        if ( ( pBu != NULL ) ||
-             ( ( pUnitOn != NULL ) && ( pUnitOn->GetOwner( )->IsMe( ) ) && ( !( nFlags & MK_CONTROL ) ) ) )
+        // step 3 - clicked one of ours -> toggle its selection (shift/ctrl extend;
+        // a plain click already started fresh in step 1). The carrier/repair
+        // special actions that used to live here are RMB commands now.
+        if ( ( pUnitOn != NULL ) && ( pUnitOn->GetOwner( )->IsMe( ) ) )
         {
-            // if we have SHIFT down we just select - none of the special stuff
-            if ( ( nFlags & ( MK_CONTROL | MK_SHIFT ) ) == 0 )
-            {
-                // repair bldg?
-                if ( ( m_uMouseMode == lmb_repair_bldg ) &&
-                     ( ( pBu != NULL ) || ( pUnitOn->GetUnitType( ) == CUnit::building ) ) )
-                {
-                    CHexCoord _hexDest;
-                    if ( pBu != NULL )
-                        _hexDest = pBu->GetHex( );
-                    else
-                        _hexDest = ( (CBuilding*)pUnitOn )->GetExitHex( );
-                    POSITION pos;
-                    for ( pos = m_lstUnits.GetHeadPosition( ); pos != NULL; )
-                    {
-                        POSITION prev_pos = pos;
-                        CUnit*   pUnit    = m_lstUnits.GetNext( pos );
-                        ASSERT_STRICT_VALID( pUnit );
-                        if ( ( pUnit->GetUnitType( ) == CUnit::vehicle ) &&
-                             ( ( (CVehicle*)pUnit )->GetData( )->IsCrane( ) ) )
-                        {
-                            pUnit->ResumeUnit( );
-                            ( (CVehicle*)pUnit )->SetEvent( CVehicle::repair_bldg );
-                            SetDestAndSfx( (CVehicle*)pUnit, _hexDest );
-
-                            // deselect it if it's going to be repaired
-                            pUnit->SetUnselected( TRUE );
-                            m_lstUnits.RemoveAt( prev_pos );
-                        }
-                    }
-                    goto done_step_3;
-                }
-
-                // repair self?
-                if ( ( m_uMouseMode == lmb_repair_self ) && ( pUnitOn->GetUnitType( ) == CUnit::building ) )
-                {
-                    POSITION pos;
-                    for ( pos = m_lstUnits.GetHeadPosition( ); pos != NULL; )
-                    {
-                        POSITION prev_pos = pos;
-                        CUnit*   pUnit    = m_lstUnits.GetNext( pos );
-                        ASSERT_STRICT_VALID( pUnit );
-                        if ( ( pUnit->GetUnitType( ) == CUnit::vehicle ) &&
-                             ( ( (CVehicle*)pUnit )->GetData( )->IsRepairable( ) ) )
-                        {
-                            pUnit->ResumeUnit( );
-                            ( (CVehicle*)pUnit )->SetEvent( CVehicle::repair_self );
-                            if ( ( (CVehicle*)pUnit )->GetData( )->IsBoat( ) )
-                                SetDestAndSfx( (CVehicle*)pUnit, ( (CBuilding*)pUnitOn )->GetShipHex( ) );
-                            else
-                                SetDestAndSfx( (CVehicle*)pUnit, ( (CBuilding*)pUnitOn )->GetExitHex( ) );
-
-                            // deselect it if it's going to be repaired
-                            pUnit->SetUnselected( TRUE );
-                            m_lstUnits.RemoveAt( prev_pos );
-                        }
-                    }
-                    goto done_step_3;
-                }
-
-                // load?
-                if ( ( m_uMouseMode == lmb_load ) && ( ( (CVehicle*)pUnitOn )->GetData( )->IsCarrier( ) ) )
-                {
-                    CSubHex _sub;
-                    if ( ( (CVehicle*)pUnitOn )->GetData( )->GetVehFlags( ) & CTransportData::FLload_front )
-                        _sub = ( (CVehicle*)pUnitOn )->GetPtHead( );
-                    else
-                        _sub = ( (CVehicle*)pUnitOn )->GetPtTail( );
-
-                    POSITION pos;
-                    for ( pos = m_lstUnits.GetHeadPosition( ); pos != NULL; )
-                    {
-                        CUnit* pUnit = m_lstUnits.GetNext( pos );
-                        ASSERT_STRICT_VALID( pUnit );
-                        if ( ( ( pUnit->GetUnitType( ) == CUnit::vehicle ) &&
-                               ( ( (CVehicle*)pUnit )->GetData( )->IsCarryable( ) ) ) ||
-                             ( ( ( (CVehicle*)pUnitOn )->GetData( )->IsBoat( ) ) &&
-                               ( ( (CVehicle*)pUnit )->GetData( )->IsLcCarryable( ) ) ) )
-                        {
-                            pUnit->ResumeUnit( );
-                            ( (CVehicle*)pUnit )->SetEvent( CVehicle::load );
-                            SetDestAndSfx( (CVehicle*)pUnit, _sub );
-                            ( (CVehicle*)pUnit )->SetLoadOn( (CVehicle*)pUnitOn );
-
-                            // deselect it
-                            m_lstUnits.RemoveUnit( pUnit );
-                        }
-                    }
-                    goto done_step_3;
-                }
-
-                // unload?
-                if ( ( m_uMouseMode == lmb_unload ) && ( pPrevSel ) && ( pPrevSel->GetUnitType( ) == CUnit::vehicle ) &&
-                     ( ( (CVehicle*)pPrevSel )->GetCargoCount( ) > 0 ) )
-                {
-                    CMsgUnloadCarrier _msg( (CVehicle*)pUnitOn );
-                    theGame.PostToClient( theGame.GetMe( ), &_msg, sizeof( _msg ) );
-                    goto done_step_3;
-                }
-            }  // (CONTROL | SHIFT) == 0
-
-            // regular command
-            if ( m_uMouseMode == lmb_select )
-            {
-                bSelected = TRUE;
-                if ( pUnitOn->GetFlags( ) & CUnit::selected )
-                    m_lstUnits.RemoveUnit( pUnitOn );
-                else
-                    m_lstUnits.AddUnit( pUnitOn, TRUE );
-            }
-        }
-    done_step_3:;
-
-        // we want to spread out the vehicles dest if there are a lot of them
-        //   (unless we're going to a unit)
-        int     iDestRand = 0;
-        CSubHex _subDest( _sub );
-        // see if going to a bridge
-        if ( pBu != NULL )
-            _subDest = pBu->GetHex( );
-
-        if ( ( pUnitOn == NULL ) && ( m_lstUnits.GetCount( ) > 2 ) )
-        {
-            iDestRand = (int)sqrt( (float)m_lstUnits.GetCount( ) ) + 1;
-            _subDest.x -= iDestRand;
-            _subDest.y -= iDestRand;
-            _subDest.Wrap( );
-            iDestRand *= 2;
-        }
-
-        // have to have units selected to do something
-        if ( ( !bSelected ) && ( m_uMouseMode == lmb_attack ) && ( pUnitOn != NULL ) )
-        {
-            ASSERT( ( !bSelected ) && ( m_lstUnits.GetCount( ) > 0 ) );
-            ASSERT( ( ( nFlags & ( MK_CONTROL | MK_SHIFT ) ) == ( MK_CONTROL | MK_SHIFT ) ) ||
-                    ( ( pUnitOn != NULL ) && ( pUnitOn->GetOwner( )->GetRelations( ) >= RELATIONS_NEUTRAL ) ) );
-            POSITION pos;
-            for ( pos = m_lstUnits.GetHeadPosition( ); pos != NULL; )
-            {
-                CUnit* pUnit = m_lstUnits.GetNext( pos );
-                ASSERT_STRICT_VALID( pUnit );
-                pUnit->ResumeUnit( );
-
-                // if it can attack we set it to attack. Otherwise we set it to go there
-                if ( pUnit->GetData( )->_GetFireRate( ) > 0 )
-                {
-                    // get it going if too far away or dest not visible
-                    if ( pUnit->GetUnitType( ) == CUnit::vehicle )
-                    {
-                        CVehicle* pVeh = ( (CVehicle*)pUnit );
-                        pVeh->TempTargetOff( );
-                        CSubHex _subAtk;
-                        // get closest point
-                        if ( pUnitOn->GetUnitType( ) == CUnit::vehicle )
-                            _subAtk = ( (CVehicle*)pUnitOn )->GetPtHead( );
-                        else if ( pUnitOn->GetUnitType( ) == CUnit::building )
-                        {
-                            CHexCoord _hex;
-                            _hex = pVeh->GetPtHead( );
-
-                            CBuilding* pBldg = (CBuilding*)pUnitOn;
-                            if ( _hex.X( ) < pBldg->GetHex( ).X( ) )
-                                _hex.X( ) = pBldg->GetHex( ).X( ) - 1;
-                            else if ( _hex.X( ) > pBldg->GetHex( ).X( ) + pBldg->GetCX( ) )
-                                _hex.X( ) = pBldg->GetHex( ).X( ) + pBldg->GetCX( );
-                            if ( _hex.Y( ) < pBldg->GetHex( ).Y( ) )
-                                _hex.Y( ) = pBldg->GetHex( ).Y( ) - 1;
-                            else if ( _hex.Y( ) > pBldg->GetHex( ).Y( ) + pBldg->GetCY( ) )
-                                _hex.Y( ) = pBldg->GetHex( ).Y( ) + pBldg->GetCY( );
-                            _hex.Wrap( );
-                            _subAtk = _hex;
-                        }
-
-                        // if not visible - go toward it
-                        if ( theMap._GetHex( _subAtk )->GetVisible( ) == 0 )
-                            SetDestAndSfx( pVeh, _subAtk );
-                        else
-                        {
-                            // too far away - go for it
-                            int iLOS = theMap.LineOfSight( pVeh, pUnitOn );
-                            if ( ( ( iLOS < 0 ) &&
-                                   ( pVeh->GetData( )->GetBaseType( ) != CTransportData::artillery ) ) ||
-                                 ( abs( iLOS ) > pVeh->GetRange( ) - 1 ) )
-                                SetDestAndSfx( pVeh, _subAtk );
-                        }
-                    }
-
-                    pUnit->MsgSetTarget( pUnitOn );
-                    NewRelations( pUnitOn->GetOwner( ), RELATIONS_WAR );
-                }
-
-                else if ( pUnit->GetUnitType( ) == CUnit::vehicle )
-                {
-                    CVehicle* pVeh = ( (CVehicle*)pUnit );
-                    pVeh->SetEvent( CVehicle::none );
-                    CSubHex _subVeh( _subDest.x + RandNum( iDestRand ), _subDest.y + RandNum( iDestRand ) );
-                    _subVeh.Wrap( );
-                    int iCost = theMap.GetTerrainCost( _subVeh, _subVeh, 0, pVeh->GetData( )->GetWheelType( ) );
-                    if ( ( iCost == 0 ) ||
-                         ( iCost > theMap.GetTerrainCost( _sub, _sub, 0, pVeh->GetData( )->GetWheelType( ) ) * 2 ) )
-                        _subVeh = _sub;
-                    SetDestAndSfx( pVeh, _subVeh );
-                }
-            }
-        }
-
-        // step 5 - a goto?
-        else if ( ( !bSelected ) && ( m_uMouseMode == lmb_goto ) )
-        {
-#ifndef _GG
-            ASSERT( ( ( nFlags & ( MK_CONTROL | MK_SHIFT ) ) == MK_CONTROL ) || ( pUnitOn == NULL ) ||
-                    ( pUnitOn->GetOwner( )->IsMe( ) ) );
-#endif
-
-            // if we have 1 unit or are going to a building - send them direct
-            BOOL bDestIsBldg = theBuildingHex._GetBuilding( _sub ) != NULL;
-            if ( ( m_lstUnits.GetCount( ) <= 1 ) || bDestIsBldg )
-            {
-                POSITION pos;
-                for ( pos = m_lstUnits.GetHeadPosition( ); pos != NULL; )
-                {
-                    CUnit* pUnit = m_lstUnits.GetNext( pos );
-                    ASSERT_STRICT_VALID( pUnit );
-                    if ( pUnit->GetUnitType( ) == CUnit::vehicle )
-                    {
-                        CVehicle* pVeh = ( (CVehicle*)pUnit );
-
-                        // send it
-                        pVeh->TempTargetOff( );
-                        pVeh->SetEvent( CVehicle::none );
-                        pVeh->ResumeUnit( );
-                        SetDestAndSfx( pVeh, _sub );
-                        pVeh->_SetTarget( NULL );
-
-                        // goto building to pick up goods
-                        if ( ( pVeh->GetData( )->IsTransport( ) ) && bDestIsBldg )
-                        {
-                            if ( !pVeh->IsHpControl( ) )
-                            {
-                                theGame.m_pHpRtr->MsgTakeVeh( (CVehicle*)pUnit );
-                                pVeh->HpControlOn( );
-                            }
-                        }
-                    }
-                }
-            }
+            bSelected = TRUE;
+            if ( pUnitOn->GetFlags( ) & CUnit::selected )
+                m_lstUnits.RemoveUnit( pUnitOn );
             else
-
-            // we want to hold formation but maybe bring it in and add some randomnesses
-            {
-                // so first we find the center of where we are
-                int      x = 0, y = 0;
-                POSITION pos;
-                for ( pos = m_lstUnits.GetHeadPosition( ); pos != NULL; )
-                {
-                    CUnit* pUnit = m_lstUnits.GetNext( pos );
-                    ASSERT_STRICT_VALID( pUnit );
-                    x += pUnit->GetWorldPixels( ).x;
-                    y += pUnit->GetWorldPixels( ).y;
-                }
-                CSubHex _subSrc( CMapLoc( x / m_lstUnits.GetCount( ), y / m_lstUnits.GetCount( ) ) );
-
-                // now we find the furthest away from that center (for proportional dist at dest)
-                int xMaxDist = 1, yMaxDist = 1;
-                for ( pos = m_lstUnits.GetHeadPosition( ); pos != NULL; )
-                {
-                    CUnit* pUnit = m_lstUnits.GetNext( pos );
-                    if ( pUnit->GetUnitType( ) == CUnit::vehicle )
-                    {
-                        CVehicle* pVeh  = ( (CVehicle*)pUnit );
-                        int       iDist = abs( _subSrc.x - pVeh->GetPtHead( ).x );
-                        xMaxDist        = __max( xMaxDist, iDist );
-                        iDist           = abs( _subSrc.y - pVeh->GetPtHead( ).y );
-                        yMaxDist        = __max( yMaxDist, iDist );
-                    }
-                }
-
-                // and the furthest we want them apart is
-                int iDestDist = (int)sqrt( (float)m_lstUnits.GetCount( ) ) + 1;
-                iDestDist += iDestDist / 2;
-                int iRandDist = iDestDist / 4;
-
-                for ( pos = m_lstUnits.GetHeadPosition( ); pos != NULL; )
-                {
-                    CUnit* pUnit = m_lstUnits.GetNext( pos );
-                    ASSERT_STRICT_VALID( pUnit );
-                    if ( pUnit->GetUnitType( ) == CUnit::vehicle )
-                    {
-                        CVehicle* pVeh = ( (CVehicle*)pUnit );
-
-                        CSubHex _subVeh;
-                        _subVeh.x = _sub.x +
-                                    ( ( pVeh->GetPtHead( ).x - _subSrc.x ) * iDestDist + xMaxDist / 2 ) / xMaxDist +
-                                    RandNum( iRandDist ) - iRandDist / 2;
-                        _subVeh.y = _sub.y +
-                                    ( ( pVeh->GetPtHead( ).y - _subSrc.y ) * iDestDist + yMaxDist / 2 ) / yMaxDist +
-                                    RandNum( iRandDist ) - iRandDist / 2;
-                        _subVeh.Wrap( );
-                        int iCost    = theMap.GetTerrainCost( _subVeh, _subVeh, 0, pVeh->GetData( )->GetWheelType( ) );
-                        int iMaxCost = 3 * theMap.GetTerrainCost( _sub, _sub, 0, pVeh->GetData( )->GetWheelType( ) );
-                        if ( ( iCost == 0 ) || ( iCost > iMaxCost ) )
-                            _subVeh = _sub;
-
-                        // send it
-                        pVeh->TempTargetOff( );
-                        pVeh->SetEvent( CVehicle::none );
-                        pVeh->ResumeUnit( );
-                        SetDestAndSfx( pVeh, _subVeh );
-                        pVeh->_SetTarget( NULL );
-
-                        // goto building to pick up goods
-                        if ( ( pVeh->GetData( )->IsTransport( ) ) && bDestIsBldg )
-                        {
-                            if ( !pVeh->IsHpControl( ) )
-                            {
-                                theGame.m_pHpRtr->MsgTakeVeh( pVeh );
-                                pVeh->HpControlOn( );
-                            }
-                        }
-                    }
-                }
-            }
+                m_lstUnits.AddUnit( pUnitOn, TRUE );
         }
 
         // if just one select it
@@ -3884,16 +3523,8 @@ void CWndArea::OnLButtonUp( UINT nFlags, CPoint point )
         InvalidateStatus( );
         InvalidateSound( );
 
-        // voices?
-        // say ok
-        if ( ( !bSelected ) && ( ( m_uMouseMode == lmb_attack ) || ( m_uMouseMode == lmb_goto ) ) )
-        {
-            if ( m_uFlags & crane )
-                theGame.MulEvent( MEVENT_GO_CRANE, m_pUnit );
-            else if ( m_uFlags & veh )
-                theGame.MulEvent( MEVENT_GO_COMBAT, m_pUnit );
-        }
-        else if ( ( bSelected ) && ( m_lstUnits.GetCount( ) > 0 ) )
+        // voices? say ok
+        if ( ( bSelected ) && ( m_lstUnits.GetCount( ) > 0 ) )
         {
             if ( m_uFlags & crane )
                 theGame.MulEvent( MEVENT_SELECT_CRANE, m_pUnit );
@@ -4267,7 +3898,9 @@ void CWndArea::OnRButtonDown( UINT nFlags, CPoint point )
 {
 
     // if its CTRL & a building we change it's facing
-    if ( nFlags & MK_CONTROL )
+    // (Ctrl+Shift falls through: that's the force-attack modifier — SetMouseState
+    // sets lmb_attack for it — so it must reach the command dispatch below)
+    if ( ( nFlags & MK_CONTROL ) && !( nFlags & MK_SHIFT ) )
     {
         if ( ( m_iMode == build_ready ) || ( m_iMode == rocket_ready ) )
         {
@@ -4278,7 +3911,7 @@ void CWndArea::OnRButtonDown( UINT nFlags, CPoint point )
         return;
     }
 
-    if ( nFlags & MK_SHIFT )
+    if ( ( nFlags & MK_SHIFT ) && !( nFlags & MK_CONTROL ) )
     {
         CHitInfo hitinfo = m_aa.GetHit( point );
         CUnit*   pUnitOn = hitinfo.GetUnit( );
@@ -4293,6 +3926,9 @@ void CWndArea::OnRButtonDown( UINT nFlags, CPoint point )
             if ( ( !pUnitOn->GetOwner( )->IsMe( ) ) &&
                  ( pUnitOn->GetOwner( )->GetTheirRelations( ) != RELATIONS_ALLIANCE ) )
                 return;
+
+        // the info panel dismisses when the cursor moves >4px from here (OnMouseMove)
+        m_ptRMDN = point;
 
         // SDL2 unit info tooltip
         if ( theApp.m_gameWindow ) {
@@ -4326,9 +3962,109 @@ void CWndArea::OnRButtonDown( UINT nFlags, CPoint point )
         return;
     }
 
-    // we are moving the window
-    m_bRBtnDown = TRUE;
-    m_ptRMB = m_ptRMDN = point;
+    // Modern RTS: a plain right-click during a pending placement cancels it.
+    // Rocket placement is mandatory (Escape can't cancel it either — see
+    // OnDeselect), so only the normal build placement cancels.
+    if ( ( m_iMode == build_ready ) || ( m_iMode == build_loc ) )
+    {
+        CancelBuildUnit( );  // same path as the area-bar Cancel Build button
+        return;
+    }
+    // ...and cancels a pending road / building-repair targeting mode.
+    if ( ( m_iMode == road_begin ) || ( m_iMode == road_set ) )
+    {
+        CancelRoadUnit( );
+        return;
+    }
+    if ( m_iMode == repair_bldg )
+    {
+        CancelRepairUnit( );
+        return;
+    }
+
+    // RMB = command button: arm a click-command / line-move drag. The decision
+    // happens in OnMouseMove (drag with 2+ units = line move) and the dispatch
+    // on OnRButtonUp (DoCommandAt).
+    if ( m_iMode != normal )
+        return;
+
+    m_bRmbCmdDown = TRUE;
+    m_ptRMDN      = point;
+    m_bLineMove   = FALSE;
+    s_linePath.clear( );
+    m_lineEnd = point;
+    CaptureMouse( );
+}
+
+void CWndArea::OnRButtonUp( UINT nFlags, CPoint point )
+{
+
+    if ( !m_bRmbCmdDown )
+        return;
+    m_bRmbCmdDown = FALSE;
+    ReleaseMouse( );
+
+    // drag was a line move: distribute the selected units along the drawn line
+    if ( m_bLineMove )
+    {
+        DoLineMove( point );
+        m_bLineMove = FALSE;
+
+        // "moving" acknowledgement + UI refresh, mirroring a normal goto
+        if ( m_uFlags & crane )
+            theGame.MulEvent( MEVENT_GO_CRANE, m_pUnit );
+        else if ( m_uFlags & veh )
+            theGame.MulEvent( MEVENT_GO_COMBAT, m_pUnit );
+
+        SetButtonState( );
+        InvalidateStatus( );
+        InvalidateSound( );
+        return;
+    }
+
+    // plain right-click: issue the context command (move/attack/load/repair)
+    if ( m_iMode == normal )
+        DoCommandAt( nFlags, point );
+}
+
+// RMB double-click: with units selected the clicks are commands (handled by
+// OnRButtonDown/Up); with nothing selected keep the original center-on-location.
+void CWndArea::OnRButtonDblClk( UINT nFlags, CPoint pt )
+{
+
+    // if we're modifying we don't do this
+    if ( nFlags & ( MK_CONTROL | MK_SHIFT ) )
+    {
+        OnRButtonDown( nFlags, pt );
+        return;
+    }
+
+    if ( m_lstUnits.GetCount( ) > 0 )
+    {
+        OnRButtonDown( nFlags, pt );
+        return;
+    }
+
+    m_bRmbCmdDown = FALSE;
+    ReleaseMouse( );
+
+    CHexCoord hexcoord = m_aa.WindowToHex( pt );
+
+    Center( CMapLoc( hexcoord ) );
+
+    ASSERT_STRICT_VALID( &theMap );
+    // GGTESTING	InvalidateWindow ();
+
+    m_bNewPos = TRUE;
+}
+
+// MMB held = pan: drag-pan in OnMouseMove plus the original continuous
+// edge-band scroll in ReRender (this was the RMB behavior pre-2026).
+void CWndArea::OnMButtonDown( UINT /*nFlags*/, CPoint point )
+{
+
+    m_bPanBtnDown = TRUE;
+    m_ptRMB       = point;
 
     CaptureMouse( );
     theApp.m_wndBar.SetStatusText( 1, m_sHelpRMB.c_str( ) );
@@ -4407,10 +4143,10 @@ void CWndArea::OnRButtonDown( UINT nFlags, CPoint point )
     }
 }
 
-void CWndArea::OnRButtonUp( UINT, CPoint )
+void CWndArea::OnMButtonUp( UINT, CPoint )
 {
 
-    m_bRBtnDown = FALSE;
+    m_bPanBtnDown = FALSE;
     ::ClipCursor( NULL );
     ReleaseMouse( );
     theApp.m_wndWorld.NewLocation( );
@@ -4421,37 +4157,381 @@ void CWndArea::OnRButtonUp( UINT, CPoint )
     theApp.m_wndBar.SetStatusText( 1, m_sHelp.c_str( ) );
 }
 
-// center on this location on the screen
-void CWndArea::OnRButtonDblClk( UINT nFlags, CPoint pt )
+//---------------------------------------------------------------------------
+// CWndArea::DoCommandAt
+// Issue the context command for the current selection at `point` — the action
+// half of the original (1996) OnLButtonUp normal_select case, now driven by
+// the right button. Dispatches on m_uMouseMode, which SetMouseState keeps
+// current from the hover position (it also drives the cursor, so the cursor
+// always previews what this will do).
+//---------------------------------------------------------------------------
+void CWndArea::DoCommandAt( UINT nFlags, CPoint point )
 {
 
-    // if we're modifying we don't do this
-    if ( nFlags & ( MK_CONTROL | MK_SHIFT ) )
+    ASSERT_STRICT_VALID( this );
+
+    // no selection = nothing to command
+    if ( m_lstUnits.GetCount( ) == 0 )
+        return;
+
+    CSubHex _sub = m_aa.WindowToSubHex( point );
+    _sub.Wrap( );
+
+    CHitInfo     hitinfo = m_aa.GetHit( point );
+    CUnit*       pUnitOn = hitinfo.GetUnit( );
+    CBridgeUnit* pBu     = hitinfo.GetBridge( );
+    // if not visible then it's not there
+    if ( pUnitOn != NULL )
+        if ( !pUnitOn->IsVisible( ) )
+            pUnitOn = NULL;
+    ASSERT_STRICT_VALID_OR_NULL( pUnitOn );
+
+    BOOL bMoveAck = FALSE;  // play the "moving" voice at the end
+
+    switch ( m_uMouseMode )
     {
-        OnRButtonDown( nFlags, pt );
+    // send the selected crane(s) to repair the building / bridge under the cursor
+    case lmb_repair_bldg: {
+        if ( ( pBu == NULL ) && ( ( pUnitOn == NULL ) || ( pUnitOn->GetUnitType( ) != CUnit::building ) ) )
+            return;
+
+        CHexCoord _hexDest;
+        if ( pBu != NULL )
+            _hexDest = pBu->GetHex( );
+        else
+            _hexDest = ( (CBuilding*)pUnitOn )->GetExitHex( );
+        POSITION pos;
+        for ( pos = m_lstUnits.GetHeadPosition( ); pos != NULL; )
+        {
+            POSITION prev_pos = pos;
+            CUnit*   pUnit    = m_lstUnits.GetNext( pos );
+            ASSERT_STRICT_VALID( pUnit );
+            if ( ( pUnit->GetUnitType( ) == CUnit::vehicle ) &&
+                 ( ( (CVehicle*)pUnit )->GetData( )->IsCrane( ) ) )
+            {
+                pUnit->ResumeUnit( );
+                ( (CVehicle*)pUnit )->SetEvent( CVehicle::repair_bldg );
+                SetDestAndSfx( (CVehicle*)pUnit, _hexDest );
+
+                // deselect it if it's going to be repaired
+                pUnit->SetUnselected( TRUE );
+                m_lstUnits.RemoveAt( prev_pos );
+            }
+        }
+        break;
+    }
+
+    // send the selected damaged unit(s) to the repair facility under the cursor
+    case lmb_repair_self: {
+        if ( ( pUnitOn == NULL ) || ( pUnitOn->GetUnitType( ) != CUnit::building ) )
+            return;
+
+        POSITION pos;
+        for ( pos = m_lstUnits.GetHeadPosition( ); pos != NULL; )
+        {
+            POSITION prev_pos = pos;
+            CUnit*   pUnit    = m_lstUnits.GetNext( pos );
+            ASSERT_STRICT_VALID( pUnit );
+            if ( ( pUnit->GetUnitType( ) == CUnit::vehicle ) &&
+                 ( ( (CVehicle*)pUnit )->GetData( )->IsRepairable( ) ) )
+            {
+                pUnit->ResumeUnit( );
+                ( (CVehicle*)pUnit )->SetEvent( CVehicle::repair_self );
+                if ( ( (CVehicle*)pUnit )->GetData( )->IsBoat( ) )
+                    SetDestAndSfx( (CVehicle*)pUnit, ( (CBuilding*)pUnitOn )->GetShipHex( ) );
+                else
+                    SetDestAndSfx( (CVehicle*)pUnit, ( (CBuilding*)pUnitOn )->GetExitHex( ) );
+
+                // deselect it if it's going to be repaired
+                pUnit->SetUnselected( TRUE );
+                m_lstUnits.RemoveAt( prev_pos );
+            }
+        }
+        break;
+    }
+
+    // load the selected carryable unit(s) onto the carrier under the cursor
+    case lmb_load: {
+        if ( ( pUnitOn == NULL ) || ( pUnitOn->GetUnitType( ) != CUnit::vehicle ) ||
+             ( !( (CVehicle*)pUnitOn )->GetData( )->IsCarrier( ) ) )
+            return;
+
+        CSubHex _subLoad;
+        if ( ( (CVehicle*)pUnitOn )->GetData( )->GetVehFlags( ) & CTransportData::FLload_front )
+            _subLoad = ( (CVehicle*)pUnitOn )->GetPtHead( );
+        else
+            _subLoad = ( (CVehicle*)pUnitOn )->GetPtTail( );
+
+        POSITION pos;
+        for ( pos = m_lstUnits.GetHeadPosition( ); pos != NULL; )
+        {
+            CUnit* pUnit = m_lstUnits.GetNext( pos );
+            ASSERT_STRICT_VALID( pUnit );
+            if ( ( ( pUnit->GetUnitType( ) == CUnit::vehicle ) &&
+                   ( ( (CVehicle*)pUnit )->GetData( )->IsCarryable( ) ) ) ||
+                 ( ( ( (CVehicle*)pUnitOn )->GetData( )->IsBoat( ) ) &&
+                   ( ( (CVehicle*)pUnit )->GetData( )->IsLcCarryable( ) ) ) )
+            {
+                pUnit->ResumeUnit( );
+                ( (CVehicle*)pUnit )->SetEvent( CVehicle::load );
+                SetDestAndSfx( (CVehicle*)pUnit, _subLoad );
+                ( (CVehicle*)pUnit )->SetLoadOn( (CVehicle*)pUnitOn );
+
+                // deselect it
+                m_lstUnits.RemoveUnit( pUnit );
+            }
+        }
+        break;
+    }
+
+    // unload the selected carrier (it is the unit under the cursor)
+    case lmb_unload: {
+        if ( ( pUnitOn == NULL ) || ( m_pUnit == NULL ) || ( m_pUnit->GetUnitType( ) != CUnit::vehicle ) ||
+             ( ( (CVehicle*)m_pUnit )->GetCargoCount( ) <= 0 ) )
+            return;
+
+        CMsgUnloadCarrier _msg( (CVehicle*)pUnitOn );
+        theGame.PostToClient( theGame.GetMe( ), &_msg, sizeof( _msg ) );
+        break;
+    }
+
+    // attack the unit under the cursor
+    case lmb_attack: {
+        if ( pUnitOn == NULL )
+            return;
+        bMoveAck = TRUE;
+
+        // we want to spread out the vehicles dest if there are a lot of them
+        //   (unless we're going to a unit)
+        int     iDestRand = 0;
+        CSubHex _subDest( _sub );
+        // see if going to a bridge
+        if ( pBu != NULL )
+            _subDest = pBu->GetHex( );
+
+        POSITION pos;
+        for ( pos = m_lstUnits.GetHeadPosition( ); pos != NULL; )
+        {
+            CUnit* pUnit = m_lstUnits.GetNext( pos );
+            ASSERT_STRICT_VALID( pUnit );
+            pUnit->ResumeUnit( );
+
+            // if it can attack we set it to attack. Otherwise we set it to go there
+            if ( pUnit->GetData( )->_GetFireRate( ) > 0 )
+            {
+                // get it going if too far away or dest not visible
+                if ( pUnit->GetUnitType( ) == CUnit::vehicle )
+                {
+                    CVehicle* pVeh = ( (CVehicle*)pUnit );
+                    pVeh->TempTargetOff( );
+                    CSubHex _subAtk;
+                    // get closest point
+                    if ( pUnitOn->GetUnitType( ) == CUnit::vehicle )
+                        _subAtk = ( (CVehicle*)pUnitOn )->GetPtHead( );
+                    else if ( pUnitOn->GetUnitType( ) == CUnit::building )
+                    {
+                        CHexCoord _hex;
+                        _hex = pVeh->GetPtHead( );
+
+                        CBuilding* pBldg = (CBuilding*)pUnitOn;
+                        if ( _hex.X( ) < pBldg->GetHex( ).X( ) )
+                            _hex.X( ) = pBldg->GetHex( ).X( ) - 1;
+                        else if ( _hex.X( ) > pBldg->GetHex( ).X( ) + pBldg->GetCX( ) )
+                            _hex.X( ) = pBldg->GetHex( ).X( ) + pBldg->GetCX( );
+                        if ( _hex.Y( ) < pBldg->GetHex( ).Y( ) )
+                            _hex.Y( ) = pBldg->GetHex( ).Y( ) - 1;
+                        else if ( _hex.Y( ) > pBldg->GetHex( ).Y( ) + pBldg->GetCY( ) )
+                            _hex.Y( ) = pBldg->GetHex( ).Y( ) + pBldg->GetCY( );
+                        _hex.Wrap( );
+                        _subAtk = _hex;
+                    }
+
+                    // if not visible - go toward it
+                    if ( theMap._GetHex( _subAtk )->GetVisible( ) == 0 )
+                        SetDestAndSfx( pVeh, _subAtk );
+                    else
+                    {
+                        // too far away - go for it
+                        int iLOS = theMap.LineOfSight( pVeh, pUnitOn );
+                        if ( ( ( iLOS < 0 ) &&
+                               ( pVeh->GetData( )->GetBaseType( ) != CTransportData::artillery ) ) ||
+                             ( abs( iLOS ) > pVeh->GetRange( ) - 1 ) )
+                            SetDestAndSfx( pVeh, _subAtk );
+                    }
+                }
+
+                pUnit->MsgSetTarget( pUnitOn );
+                NewRelations( pUnitOn->GetOwner( ), RELATIONS_WAR );
+            }
+
+            else if ( pUnit->GetUnitType( ) == CUnit::vehicle )
+            {
+                CVehicle* pVeh = ( (CVehicle*)pUnit );
+                pVeh->SetEvent( CVehicle::none );
+                CSubHex _subVeh( _subDest.x + RandNum( iDestRand ), _subDest.y + RandNum( iDestRand ) );
+                _subVeh.Wrap( );
+                int iCost = theMap.GetTerrainCost( _subVeh, _subVeh, 0, pVeh->GetData( )->GetWheelType( ) );
+                if ( ( iCost == 0 ) ||
+                     ( iCost > theMap.GetTerrainCost( _sub, _sub, 0, pVeh->GetData( )->GetWheelType( ) ) * 2 ) )
+                    _subVeh = _sub;
+                SetDestAndSfx( pVeh, _subVeh );
+            }
+        }
+        break;
+    }
+
+    // a goto. lmb_select = right-clicked one of our own units: treat it as a
+    // move-to as well (the selection role of that hover lives on the LMB now).
+    case lmb_select:
+    case lmb_goto: {
+        bMoveAck = TRUE;
+
+        // if we have 1 unit or are going to a building - send them direct
+        BOOL bDestIsBldg = theBuildingHex._GetBuilding( _sub ) != NULL;
+        if ( ( m_lstUnits.GetCount( ) <= 1 ) || bDestIsBldg )
+        {
+            POSITION pos;
+            for ( pos = m_lstUnits.GetHeadPosition( ); pos != NULL; )
+            {
+                CUnit* pUnit = m_lstUnits.GetNext( pos );
+                ASSERT_STRICT_VALID( pUnit );
+                if ( pUnit->GetUnitType( ) == CUnit::vehicle )
+                {
+                    CVehicle* pVeh = ( (CVehicle*)pUnit );
+
+                    // send it
+                    pVeh->TempTargetOff( );
+                    pVeh->SetEvent( CVehicle::none );
+                    pVeh->ResumeUnit( );
+                    SetDestAndSfx( pVeh, _sub );
+                    pVeh->_SetTarget( NULL );
+
+                    // goto building to pick up goods
+                    if ( ( pVeh->GetData( )->IsTransport( ) ) && bDestIsBldg )
+                    {
+                        if ( !pVeh->IsHpControl( ) )
+                        {
+                            theGame.m_pHpRtr->MsgTakeVeh( (CVehicle*)pUnit );
+                            pVeh->HpControlOn( );
+                        }
+                    }
+                }
+            }
+        }
+        else
+
+        // we want to hold formation but maybe bring it in and add some randomnesses
+        {
+            // so first we find the center of where we are
+            int      x = 0, y = 0;
+            POSITION pos;
+            for ( pos = m_lstUnits.GetHeadPosition( ); pos != NULL; )
+            {
+                CUnit* pUnit = m_lstUnits.GetNext( pos );
+                ASSERT_STRICT_VALID( pUnit );
+                x += pUnit->GetWorldPixels( ).x;
+                y += pUnit->GetWorldPixels( ).y;
+            }
+            CSubHex _subSrc( CMapLoc( x / m_lstUnits.GetCount( ), y / m_lstUnits.GetCount( ) ) );
+
+            // now we find the furthest away from that center (for proportional dist at dest)
+            int xMaxDist = 1, yMaxDist = 1;
+            for ( pos = m_lstUnits.GetHeadPosition( ); pos != NULL; )
+            {
+                CUnit* pUnit = m_lstUnits.GetNext( pos );
+                if ( pUnit->GetUnitType( ) == CUnit::vehicle )
+                {
+                    CVehicle* pVeh  = ( (CVehicle*)pUnit );
+                    int       iDist = abs( _subSrc.x - pVeh->GetPtHead( ).x );
+                    xMaxDist        = __max( xMaxDist, iDist );
+                    iDist           = abs( _subSrc.y - pVeh->GetPtHead( ).y );
+                    yMaxDist        = __max( yMaxDist, iDist );
+                }
+            }
+
+            // and the furthest we want them apart is
+            int iDestDist = (int)sqrt( (float)m_lstUnits.GetCount( ) ) + 1;
+            iDestDist += iDestDist / 2;
+            int iRandDist = iDestDist / 4;
+
+            for ( pos = m_lstUnits.GetHeadPosition( ); pos != NULL; )
+            {
+                CUnit* pUnit = m_lstUnits.GetNext( pos );
+                ASSERT_STRICT_VALID( pUnit );
+                if ( pUnit->GetUnitType( ) == CUnit::vehicle )
+                {
+                    CVehicle* pVeh = ( (CVehicle*)pUnit );
+
+                    CSubHex _subVeh;
+                    _subVeh.x = _sub.x +
+                                ( ( pVeh->GetPtHead( ).x - _subSrc.x ) * iDestDist + xMaxDist / 2 ) / xMaxDist +
+                                RandNum( iRandDist ) - iRandDist / 2;
+                    _subVeh.y = _sub.y +
+                                ( ( pVeh->GetPtHead( ).y - _subSrc.y ) * iDestDist + yMaxDist / 2 ) / yMaxDist +
+                                RandNum( iRandDist ) - iRandDist / 2;
+                    _subVeh.Wrap( );
+                    int iCost    = theMap.GetTerrainCost( _subVeh, _subVeh, 0, pVeh->GetData( )->GetWheelType( ) );
+                    int iMaxCost = 3 * theMap.GetTerrainCost( _sub, _sub, 0, pVeh->GetData( )->GetWheelType( ) );
+                    if ( ( iCost == 0 ) || ( iCost > iMaxCost ) )
+                        _subVeh = _sub;
+
+                    // send it
+                    pVeh->TempTargetOff( );
+                    pVeh->SetEvent( CVehicle::none );
+                    pVeh->ResumeUnit( );
+                    SetDestAndSfx( pVeh, _subVeh );
+                    pVeh->_SetTarget( NULL );
+
+                    // goto building to pick up goods
+                    if ( ( pVeh->GetData( )->IsTransport( ) ) && bDestIsBldg )
+                    {
+                        if ( !pVeh->IsHpControl( ) )
+                        {
+                            theGame.m_pHpRtr->MsgTakeVeh( pVeh );
+                            pVeh->HpControlOn( );
+                        }
+                    }
+                }
+            }
+        }
+        break;
+    }
+
+    default:
+        // lmb_nothing (or a mode with no command meaning here)
         return;
     }
 
-    m_bRBtnDown = FALSE;
-    ::ClipCursor( NULL );
-    ReleaseMouse( );
+    // selection bookkeeping (the repair/load commands deselect dispatched units)
+    if ( m_lstUnits.GetCount( ) == 1 )
+        m_pUnit = m_lstUnits.GetHead( );
+    else
+        m_pUnit = NULL;
 
-    CHexCoord hexcoord = m_aa.WindowToHex( pt );
+    // set button states
+    SetButtonState( );
 
-    Center( CMapLoc( hexcoord ) );
+    // repaint it
+    InvalidateStatus( );
+    InvalidateSound( );
 
-    ASSERT_STRICT_VALID( &theMap );
-    // GGTESTING	InvalidateWindow ();
-
-    m_bNewPos = TRUE;
+    // voices? say ok
+    if ( bMoveAck )
+    {
+        if ( m_uFlags & crane )
+            theGame.MulEvent( MEVENT_GO_CRANE, m_pUnit );
+        else if ( m_uFlags & veh )
+            theGame.MulEvent( MEVENT_GO_COMBAT, m_pUnit );
+    }
 }
 
 void CWndArea::OnActivate( UINT nState, CWnd* pWndOther, BOOL bMinimized )
 {
 
-    // on loosing activation we give up the cursor
-    if ( m_bRBtnDown )
-        m_bRBtnDown = FALSE;
+    // on loosing activation we give up the cursor and any pending drag gesture
+    m_bPanBtnDown = FALSE;
+    m_bRmbCmdDown = FALSE;
+    m_bLineMove   = FALSE;
     ReleaseMouse( );
     ::ClipCursor( NULL );
 
@@ -4595,7 +4675,7 @@ void CWndArea::InvalidateWindow( RECT* )
 
     m_aa.GetDirtyRects( )->AddRect( NULL );
 
-    if ( !m_bRBtnDown )
+    if ( !m_bPanBtnDown )
         InvalidateSound( );
 
     theApp.m_wndWorld.NewLocation( );
@@ -5148,8 +5228,8 @@ void CWndArea::SetMouseState( )
 
     m_uMouseMode = lmb_nothing;
 
-    // if RMB down its move
-    if ( m_bRBtnDown )
+    // if the pan button (MMB) is down we are scrolling
+    if ( m_bPanBtnDown )
     {
         AreaApplyCursor( m_hCurMove[m_iMoveCur] );
         return;
@@ -5214,7 +5294,9 @@ void CWndArea::SetMouseState( )
             return;
         }
 
-    // see if flags force it
+    // see if flags force it: Ctrl+Shift = force attack (dispatched by RMB).
+    // (The old Ctrl-alone force-goto is gone — RMB on an own unit is already a
+    // goto, so Ctrl no longer changes what the command button does.)
     if ( m_lstUnits.GetCount( ) > 0 )
     {
         int iShift = GetKeyState( VK_SHIFT ) & ~1;
@@ -5231,12 +5313,6 @@ void CWndArea::SetMouseState( )
                 AreaApplyCursor( m_hCurReg );
                 m_uMouseMode = lmb_nothing;
             }
-            return;
-        }
-        if ( ( iCtrl ) && ( ( m_pUnit == NULL ) || ( m_pUnit->GetUnitType( ) == CUnit::vehicle ) ) )
-        {
-            AreaApplyCursor( m_hCurGoto[m_aa.m_iZoom] );
-            m_uMouseMode = lmb_goto;
             return;
         }
     }

@@ -108,6 +108,7 @@ CWndWorld::CWndWorld() {
 
     m_bRBtnDown = FALSE;
     m_bLBtnDown = FALSE;
+    m_bRCmdDown = FALSE;
     m_bCapMouse = FALSE;
     m_bNewDir = TRUE;
     m_bNewMode = TRUE;
@@ -209,6 +210,7 @@ void CWndWorld::Create(BOOL bStart) {
 
     m_bRBtnDown = FALSE;
     m_bLBtnDown = FALSE;
+    m_bRCmdDown = FALSE;
     m_bCapMouse = FALSE;
 
     // the area window must already exist
@@ -550,12 +552,16 @@ int CWndWorld::OnCreate(LPCREATESTRUCT lpCreateStruct) {
                         pThis->OnLButtonDown(flags, pt);
                     else if (event.button.button == SDL_BUTTON_RIGHT)
                         pThis->OnRButtonDown(flags, pt);
+                    else if (event.button.button == SDL_BUTTON_MIDDLE)
+                        pThis->OnMButtonDown(flags, pt);
                     return true;
                 case SDL_MOUSEBUTTONUP:
                     if (event.button.button == SDL_BUTTON_LEFT)
                         pThis->OnLButtonUp(flags, pt);
                     else if (event.button.button == SDL_BUTTON_RIGHT)
                         pThis->OnRButtonUp(flags, pt);
+                    else if (event.button.button == SDL_BUTTON_MIDDLE)
+                        pThis->OnMButtonUp(flags, pt);
                     return true;
                 case SDL_MOUSEMOTION:
                     pThis->OnMouseMove(flags, pt);
@@ -854,6 +860,25 @@ void CWndWorld::OnLButtonUp(UINT nFlags, CPoint pt) {
         return;
     }
 
+    // it's the map: left click = look there (center the area view) — the
+    // send-units command moved to the right button (SendUnitsTo), matching
+    // the area map's select-left / command-right split.
+    if (m_pWndArea == NULL)
+        return;
+
+    int xc = ((pt.x - m_cx / 2) << theMap.GetSideShift()) / m_cx;
+    int yc = ((pt.y - m_cy / 2) << theMap.GetSideShift()) / m_cy;
+
+    m_pWndArea->GetAA().MoveCenterHexes(xc, yc);
+    m_pWndArea->InvalidateWindow();
+    NewLocation();
+}
+
+// send the area map's selected units to the map location under `pt` (attack if
+// it lands on an enemy) — the command half of the original (1996) OnLButtonUp,
+// now driven by the right button.
+void CWndWorld::SendUnitsTo(UINT nFlags, CPoint pt) {
+
     // get the area window
     if (m_pWndArea == NULL)
         return;
@@ -954,16 +979,34 @@ void CWndWorld::OnLButtonUp(UINT nFlags, CPoint pt) {
     }
 }
 
-void CWndWorld::OnRButtonDown(UINT, CPoint pt) {
-    if (m_pWndArea == NULL)
+// RMB = command: send the selected units to the clicked map location (on RMB-up,
+// like a normal click). The old RMB drag-scroll moved to the middle button.
+void CWndWorld::OnRButtonDown(UINT, CPoint) {
+
+    m_bRCmdDown = TRUE;
+}
+
+void CWndWorld::OnRButtonUp(UINT nFlags, CPoint pt) {
+
+    if (!m_bRCmdDown)
+        return;
+    m_bRCmdDown = FALSE;
+
+    // sometimes the point is outside the window
+    if ((pt.x < 0) || (pt.y < 0) || (pt.x >= m_cx) || (pt.y >= m_cy))
         return;
 
-    int x = ((pt.x - m_cx / 2) << theMap.GetSideShift()) / m_cx;
-    int y = ((pt.y - m_cy / 2) << theMap.GetSideShift()) / m_cy;
+    // only the map area takes commands (not the corner buttons / radar chrome)
+    if (ButtonOn(pt) != -1)
+        return;
 
-    m_pWndArea->GetAA().MoveCenterHexes(x, y);
+    SendUnitsTo(nFlags, pt);
+}
 
-    m_pWndArea->InvalidateWindow();
+// MMB held = drag-scroll the area view (this was the RMB behavior pre-2026)
+void CWndWorld::OnMButtonDown(UINT, CPoint pt) {
+    if (m_pWndArea == NULL)
+        return;
 
     m_bRBtnDown = TRUE;
     m_ptRMB = pt;
@@ -977,7 +1020,7 @@ void CWndWorld::OnRButtonDown(UINT, CPoint pt) {
     NewLocation();
 }
 
-void CWndWorld::OnRButtonUp(UINT, CPoint) {
+void CWndWorld::OnMButtonUp(UINT, CPoint) {
 
     m_bRBtnDown = FALSE;
     if (m_bCapMouse)
@@ -1667,14 +1710,22 @@ void CWndWorld::_NewLocation( )
 void CWndWorld::ReRender( )
 {
     // redraw whatever needs to be redrawn
+    // (each split-counted: ri.rerender showed ~70ms/s unattributed under load — these
+    // prologue redraws run BEFORE the rr.radar/rr.world scopes below)
     if ( m_bNewMode )
-        _NewMode( );
+    { Perf::ScopeCounter _cm( "rr.nmode" ); _NewMode( ); }
 
-    if ( m_bNewDir )
+    if ( m_bNewDir ||
+         ( m_dwDirBakePending != 0 && timeGetTime( ) - m_dwLastDirBake >= 1500 ) )
+    {
+        Perf::ScopeCounter _cd( "rr.ndir" );
+        m_dwDirBakePending = 0;
+        m_dwLastDirBake    = timeGetTime( );
         _NewDir( );
+    }
 
     if ( m_bNewLocation )
-        _NewLocation( );
+    { Perf::ScopeCounter _cl( "rr.nloc" ); _NewLocation( ); }
 
     // unit may have moved under (or been created)
     CPoint pt;

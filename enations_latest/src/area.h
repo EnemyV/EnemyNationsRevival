@@ -270,6 +270,14 @@ protected:
 	afx_msg void OnRButtonDown(UINT nFlags, CPoint point);
 	afx_msg void OnRButtonUp(UINT nFlags, CPoint point);
 	afx_msg void OnRButtonDblClk(UINT nFlags, CPoint point);
+	// Modern bindings (2026): MMB held = pan (drag + edge scroll). RMB = command.
+	void OnMButtonDown(UINT nFlags, CPoint point);
+	void OnMButtonUp(UINT nFlags, CPoint point);
+	// Issue the context command (move/attack/load/unload/repair) for the current
+	// selection at `point` — the action half of the original OnLButtonUp, now
+	// driven by the right button. Dispatches on m_uMouseMode (kept current by
+	// SetMouseState on every mouse-move).
+	void DoCommandAt(UINT nFlags, CPoint point);
 	afx_msg void OnActivate(UINT nState, CWnd* pWndOther, BOOL bMinimized);
 	afx_msg void OnLButtonDblClk(UINT nFlags, CPoint point);
 	afx_msg void OnLButtonUp(UINT nFlags, CPoint point);
@@ -306,10 +314,9 @@ protected:
 	CRect					m_selRect;
 	CPoint				m_selOrig;
 
-	// Line movement (drawn formations): LMB-drag from open ground with 2+ units
-	// selected distributes them along the drawn line. See OnMouseMove / OnLButtonUp.
-	BOOL					m_bLineMove;			// current drag is a line-move (not a box-select)
-	BOOL					m_bDragStartOnUnit;	// LMB-down landed on a unit/building (forces box-select)
+	// Line movement (drawn formations): RMB-drag with 2+ units selected
+	// distributes them along the drawn line. See OnMouseMove / OnRButtonUp.
+	BOOL					m_bLineMove;			// current RMB drag is a line-move (not a click command)
 	CPoint				m_lineEnd;				// live end of the line during the drag (client px)
 	BOOL					m_bCapMouse;	// have we captured the mouse?
 	CWndInfo *		m_pWndInfo;		// tooltip window (MFC, legacy)
@@ -336,10 +343,11 @@ protected:
 	BOOL					m_bUpdateAll;
 	BOOL					m_bNewSound;
 
-	BOOL					m_bRBtnDown;	// TRUE if RMB down
+	BOOL					m_bPanBtnDown;	// TRUE while the pan button (MMB) is held
+	BOOL					m_bRmbCmdDown;	// TRUE while the RMB is held arming a command/line-move
 	BOOL					m_bNewPos;
-	CPoint				m_ptRMDN;			// point RMB was pressed at
-	CPoint				m_ptRMB;			// point moved from with RMB
+	CPoint				m_ptRMDN;			// point RMB was pressed at (command/line-move origin)
+	CPoint				m_ptRMB;			// last pan point (MMB drag-pan delta basis)
 	CPoint				m_ptLMB;			// point moved from with LMB
 	int						m_iMoveCur;		// which move cur
 

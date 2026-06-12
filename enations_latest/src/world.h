@@ -38,7 +38,15 @@ public:
 	void		PaletteChange ();
 
 	void		NewDir () { m_bNewDir = TRUE; }							// new direction (called by OnSize)
-	void		NewMode () { m_bNewMode = TRUE; }						// button pressed or building built/destroyed
+	void		NewMode () { m_bNewMode = TRUE; }						// mode button pressed (immediate)
+	// Building built/destroyed/captured: the minimap needs a ground re-bake (buildings
+	// are baked into m_pdibGround0), but NOT an immediate one — AI economies fire this
+	// 1-2x/s and each _NewDir is an O(window px) whole-map sampling walk (~70ms in
+	// Debug on a 1024 map; rr.ndir measured 32-146ms/s STEADY in a 13-player game).
+	// Coalesced in ReRender to at most one re-bake per ~1.5s; a building appearing on
+	// the minimap up to 1.5s late is imperceptible. User actions (mode buttons,
+	// rotation, resize) keep the immediate NewMode()/NewDir() paths.
+	void		BuildingsChanged () { m_dwDirBakePending = timeGetTime (); }
 	void		NewLocation () { m_bNewLocation = TRUE; }		// area map moved
 	void		NewAreaMap (CWndArea * pWnd);								// different area map on top (calls NewLocation)
 
@@ -90,6 +98,12 @@ protected:
 	afx_msg void OnLButtonUp(UINT nFlags, CPoint point);
 	afx_msg void OnRButtonDown(UINT nFlags, CPoint point);
 	afx_msg void OnRButtonUp(UINT nFlags, CPoint point);
+	// Modern bindings (2026): MMB held = drag-scroll (was RMB). RMB = send units.
+	void OnMButtonDown(UINT nFlags, CPoint point);
+	void OnMButtonUp(UINT nFlags, CPoint point);
+	// send the area map's selected units to the map location under `pt`
+	// (attack if it's an enemy) — the command half of the old OnLButtonUp
+	void SendUnitsTo(UINT nFlags, CPoint pt);
 	afx_msg void OnMouseMove(UINT nFlags, CPoint point);
 	afx_msg BOOL OnSetCursor(CWnd* pWnd, UINT nHitTest, UINT message);
 	afx_msg BOOL OnEraseBkgnd(CDC* pDC);
@@ -155,7 +169,8 @@ protected:
 	int						m_iFrameOn;
 
 	BOOL					m_bLBtnDown;
-	BOOL					m_bRBtnDown;
+	BOOL					m_bRBtnDown;	// pan button (MMB) held — drag-scrolls the area view
+	BOOL					m_bRCmdDown;	// RMB held — send-units command pending on RMB-up
 	BOOL					m_bCapMouse;
 
 	BOOL					m_bNewDir;				// TRUE if need to render for new dir
@@ -167,6 +182,8 @@ protected:
 	DWORD					m_dwLastRadarDraw{};	// last time the static minimap background was baked
 	CDIB*					m_pdibRadarStatic{};	// cached minimap background (no unit dots) — see ReRender
 	unsigned long long		m_qwLastWalkSig{};		// inputs signature of the last bake (skip-gate, see ReRender)
+	DWORD					m_dwDirBakePending{};	// !=0: building change awaits a coalesced _NewDir
+	DWORD					m_dwLastDirBake{};		// last _NewDir time (coalescing clock)
 	std::vector<CPoint>		m_radarDots;			// last frame's unit-dot pixels (for O(units) erase)
 
 	CPoint				m_ptRMB;
