@@ -115,10 +115,13 @@ private:
 
     // Unit whose status is drawn as icon bars on each line (nullptr = text).
     // Set by SetUnitStatus when the cursor hovers a unit on the map; cleared
-    // by SetStatusText / SetUnitStatus(nullptr). The pointer's lifetime is
-    // managed by CWndBar: ClearStatusFunc() (called on unit death and when the
-    // cursor leaves the map) clears it before the CUnit is destroyed.
+    // by SetStatusText / SetUnitStatus(nullptr). The ClearStatusFunc()
+    // death-path contract does NOT always hold (live AV 2026-06-11: cursor
+    // parked over a unit that died in combat -> RenderUnitStatus deref'd the
+    // freed CUnit), so Render() re-validates the pointer each frame via
+    // _GetUnit(m_statusUnitId) and drops the line if the unit is gone.
     CUnit* m_statusUnit[2] = { nullptr, nullptr };
+    DWORD  m_statusUnitId[2] = { 0, 0 };  // ID captured while alive, for re-validation
 
     // Status text.
     //   m_statusText[]    — what RenderTextLine actually draws each frame.

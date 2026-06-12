@@ -128,6 +128,7 @@ void SDL2Toolbar::Init(SDL2Panel* panel, GameWindow* gw) {
 void SDL2Toolbar::SetStatusText(int line, const std::string& text, int importance) {
     if (line < 0 || line > 1) return;
     m_statusUnit[line] = nullptr;  // setting text reverts the line from icons
+    m_statusUnitId[line] = 0;
     // Persist the caller's value. For line 1 the hover poll in Render() may
     // override this while the cursor sits on the toolbar, but the override
     // is transient ??? the moment the cursor leaves the toolbar we fall back
@@ -140,6 +141,8 @@ void SDL2Toolbar::SetStatusText(int line, const std::string& text, int importanc
 void SDL2Toolbar::SetUnitStatus(int line, CUnit* pUnit) {
     if (line < 0 || line > 1) return;
     m_statusUnit[line] = pUnit;
+    // capture the ID while the unit is alive — Render() re-validates with it
+    m_statusUnitId[line] = pUnit ? pUnit->GetID() : 0;
     if (pUnit) {
         // Icon bars replace any text previously set on this line.
         m_externalText[line].clear();
@@ -290,6 +293,13 @@ void SDL2Toolbar::Render() {
         int lx2 = cp.x - m_panel->GetX();
         int ly2 = cp.y - m_panel->GetY();
         cursorOnToolbar = (lx2 >= 0 && lx2 < w && ly2 >= 0 && ly2 < h);
+    }
+    // Liveness check: m_statusUnit is a raw hover-time pointer and the unit
+    // can die while the cursor sits still (combat). Re-resolve by ID and
+    // require the SAME object back (guards against ID reuse) before deref.
+    if (m_statusUnit[1] && ::_GetUnit(m_statusUnitId[1]) != m_statusUnit[1]) {
+        m_statusUnit[1]   = nullptr;
+        m_statusUnitId[1] = 0;
     }
     if (m_statusUnit[1] && !cursorOnToolbar)
         RenderUnitStatus(dst, m_statusUnit[1], halfW + 4, textY, halfW - 8, TEXT_ROW_HT - 4);
