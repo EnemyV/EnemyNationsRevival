@@ -255,42 +255,81 @@ CTcpNet::CTcpNet(CTDLogger* log, u_short streamPort, u_short dgPort, u_short wel
  if (!m_serverAddress)
   m_serverAddress = INADDR_BROADCAST;
 
-#if 1
- char hname[256];
-
-
- if (SOCKET_ERROR == gethostname(hname, sizeof(hname)))
- {
-  DWORD err = WSAGetLastError();
-  VPTRACE(("gethostname returns error %d", err));  
-  Log("CTcpNet::CTcpNet gethostname returns error");
-  SetError(VPNET_ERR_INIT,err);
-  return;
- }   
-
-
- LPHOSTENT  he = gethostbyname(hname);
- 
- Log("CTcpNet::CTcpNet After gethostbyname");
- 
- if (!he)
- {
-  DWORD wsErr = WSAGetLastError();
-  Log("CTcpNet::CTcpNet gethostbyname returns error");
-
-  SetError(VPNET_ERR_INIT, wsErr);
-  return;
- }
-
  int aIndex = vpFetchInt("TCP", "AddressIndex", 0);
 
- selectAddress(&m_address.m_stationAddress, he, aIndex);
+ // Determine our local station address (for advertising to clients). The legacy
+ // path here was gethostname() + gethostbyname(), which on a VPN/NAT machine can
+ // STALL FOR SECONDS in the DNS resolver (suffix devolution, dead DNS servers) —
+ // and it was paid on EVERY OpenServer/OpenClient, so "Starting network game..."
+ // hung. We now resolve once, cache it process-wide, and use a DNS-free fast path
+ // (ask the routing table which local IPv4 it would use). gethostbyname remains a
+ // fallback and is still used when AddressIndex != 0 (explicit NIC selection).
+ static u_long s_cachedStation = 0;
 
+ if ( s_cachedStation != 0 && aIndex == 0 )
+ {
+  m_address.m_stationAddress.s_addr = s_cachedStation;
+ }
+ else
+ {
+  u_long fast = 0;
 
+  if ( aIndex == 0 )
+  {
+   // No DNS: "connect" a UDP socket to a dummy off-link address and read back
+   // the local endpoint the OS picked. No packets are sent for a UDP connect.
+   SOCKET us = socket( AF_INET, SOCK_DGRAM, 0 );
+   if ( us != INVALID_SOCKET )
+   {
+    sockaddr_in probe;
+    probe.sin_family = AF_INET;
+    probe.sin_port = htons( 53 );
+    probe.sin_addr.s_addr = inet_addr( "8.8.8.8" );
+    if ( connect( us, (sockaddr*)&probe, sizeof( probe ) ) == 0 )
+    {
+     sockaddr_in local;
+     int len = sizeof( local );
+     if ( getsockname( us, (sockaddr*)&local, &len ) == 0 &&
+          local.sin_addr.s_addr != 0 &&
+          local.sin_addr.s_addr != htonl( INADDR_LOOPBACK ) )
+      fast = local.sin_addr.s_addr;
+    }
+    closesocket( us );
+   }
+  }
 
-#else
- m_address.m_stationAddress.s_addr = INADDR_ANY;
-#endif
+  if ( fast != 0 )
+  {
+   m_address.m_stationAddress.s_addr = fast;
+  }
+  else
+  {
+   // Fallback: legacy DNS path (honours AddressIndex, or if the fast path failed).
+   char hname[256];
+   if ( SOCKET_ERROR == gethostname( hname, sizeof( hname ) ) )
+   {
+    DWORD err = WSAGetLastError();
+    VPTRACE( ( "gethostname returns error %d", err ) );
+    Log( "CTcpNet::CTcpNet gethostname returns error" );
+    SetError( VPNET_ERR_INIT, err );
+    return;
+   }
+
+   LPHOSTENT he = gethostbyname( hname );
+   Log( "CTcpNet::CTcpNet After gethostbyname" );
+   if ( !he )
+   {
+    DWORD wsErr = WSAGetLastError();
+    Log( "CTcpNet::CTcpNet gethostbyname returns error" );
+    SetError( VPNET_ERR_INIT, wsErr );
+    return;
+   }
+   selectAddress( &m_address.m_stationAddress, he, aIndex );
+  }
+
+  if ( aIndex == 0 )
+   s_cachedStation = m_address.m_stationAddress.s_addr;
+ }
 
  char* p = inet_ntoa(m_address.m_stationAddress);
 
@@ -390,6 +429,14 @@ BOOL CTcpNet::TCPAddress::TranslateAddressString(tcpaddress_s &addr, LPCSTR addr
  if (validLen == strlen(addrString))
  {
   addr.m_stationAddress.s_addr = inet_addr(hostpart);
+ }
+ else if (lstrcmpi(hostpart, "localhost") == 0)
+ {
+  // Resolve "localhost" to loopback WITHOUT the DNS resolver. On VPN/NAT boxes
+  // gethostbyname can stall for seconds (DNS suffix devolution / dead servers),
+  // even for localhost — which made "Starting network game" and "Searching for
+  // games" hang. inet_addr/loopback is instant.
+  addr.m_stationAddress.s_addr = htonl(INADDR_LOOPBACK);
  }
  else
  {
@@ -637,7 +684,7 @@ BOOL CTcpNet::Listen(BOOL streamListen, BOOL serverMode)
 {
 
  m_dgLink = (CTCPLink*) MakeUnsafeLink();
- 
+
  if (!m_dgLink)
   return FALSE;
 
@@ -648,8 +695,17 @@ BOOL CTcpNet::Listen(BOOL streamListen, BOOL serverMode)
  if (serverMode)
   m_address.m_dgPort = m_wellKnownPort;
 
+ // Bind the discovery (datagram) and stream-listen sockets to INADDR_ANY so the
+ // host is reachable on EVERY local interface — loopback (localhost / 127.0.0.1),
+ // LAN, and same-router/NAT addresses — not just the single LAN IP gethostbyname
+ // happened to return. Previously these bound to m_stationAddress, so a client
+ // connecting to "localhost" never reached a host bound to its LAN IP.
+ // We keep m_stationAddress as the real IP below (for advertising to clients),
+ // rather than the 0.0.0.0 that getsockname() reports for an INADDR_ANY bind.
+ in_addr realStation = m_address.m_stationAddress;
+
  sin.sin_family = AF_INET;
- sin.sin_addr = m_address.m_stationAddress;
+ sin.sin_addr.s_addr = INADDR_ANY;
  sin.sin_port = m_address.m_dgPort;
 
 
@@ -665,7 +721,8 @@ BOOL CTcpNet::Listen(BOOL streamListen, BOOL serverMode)
   if (!m_listenLink)
    goto nonwsaerr;
 
-  sin.sin_port = 0;  
+  sin.sin_addr.s_addr = INADDR_ANY;
+  sin.sin_port = 0;
   if (bind(m_listenLink->m_socket, (sockaddr*) &sin, sizeof(sin)))
    goto handleerr;
 
@@ -682,7 +739,9 @@ BOOL CTcpNet::Listen(BOOL streamListen, BOOL serverMode)
   goto handleerr;
 
    m_address.m_dgPort = sin.sin_port;
- m_address.m_stationAddress = sin.sin_addr;
+ // Keep the real station address for advertising — NOT the 0.0.0.0 an
+ // INADDR_ANY bind reports.
+ m_address.m_stationAddress = realStation;
 
 
  return TRUE;

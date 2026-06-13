@@ -580,7 +580,11 @@ class CVdmErrorLogger:public CTDLogger {
 public:
     CVdmErrorLogger( CVdmPlay* vdmplay, BOOL visible = FALSE ): m_vdmPlay( vdmplay ), m_file( NULL ) {
         if ( gUseLogfile ) {
-            m_file = fopen( "vdmplay.log", "wt" );
+            // Per-process filename so two instances on the same machine (host +
+            // client localhost test) don't truncate each other's log.
+            char logName[64];
+            wsprintf( logName, "vdmplay_%lu.log", (unsigned long)GetCurrentProcessId() );
+            m_file = fopen( logName, "wt" );
         }
 
     }
@@ -1638,10 +1642,21 @@ extern "C"
     DWORD VPAPI vpSupportedTransports() {
         DWORD result = 0;
 
+        // TCP/IP ONLY. We deliberately report only the TCP transport:
+        //  - Multiplayer is TCP/IP only by design.
+        //  - The NetBIOS probe (CNbNet::Supported -> GetLanas -> NCBASTAT) corrupts
+        //    the stack on x64 (the custom NCB struct in nbnet doesn't match the
+        //    Windows SDK NCB the OS Netbios() writes back), which fired the /RTC
+        //    "Debug Error" crash when hosting/joining a network game.
+        //  - Reporting a single transport also removes the spurious "multiple
+        //    protocols will cause issues" warning.
+        // The old IPX / TAPI / DirectPlay / COMM / NetBIOS probes are left here
+        // (disabled) for reference.
         if ( CWinTcpNet::Supported() )
             result |= 1 << VPT_TCP;
 
-#ifdef WIN32  
+#if 0  // non-TCP transports disabled — see note above
+#ifdef WIN32
         if ( CWinIpxNet::Supported() )
             result |= 1 << VPT_IPX;
 
@@ -1664,8 +1679,7 @@ extern "C"
 
         if ( CNbNet::Supported() )
             result |= 1 << VPT_NETBIOS;
-
-        // result |= VPT_COMM;
+#endif  // 0
 
         return result;
     }
@@ -2416,14 +2430,19 @@ extern "C"
 
 
 
-        gLocalIni = FALSE;
+        // Default to the local-directory ini so the WellKnownPort/ServerAddress
+        // the game writes to ".\vdmplay.ini" are actually read (otherwise this
+        // read the Windows-dir VDMPLAY.INI and silently fell back to defaults,
+        // e.g. the old 1707 port -> host/client port mismatch -> no discovery).
+        gLocalIni = TRUE;
         vpMakeIniFile( fName );
 
-        gLocalIni = GetPrivateProfileInt( "VDMPLAY", "LocalIni", 0, fName );
+        gLocalIni = GetPrivateProfileInt( "VDMPLAY", "LocalIni", 1, fName );
 
         gBreakOnAssert = GetPrivateProfileInt( "VDMPLAY", "BreakOnAssert", 0, fName );
 
         gUseLogfile = GetPrivateProfileInt( "VDMPLAY", "UseLogFile", 0, fName );
+        gLogWinsock = GetPrivateProfileInt( "VDMPLAY", "LogWinsock", 0, fName );
         return TRUE;
 
     }

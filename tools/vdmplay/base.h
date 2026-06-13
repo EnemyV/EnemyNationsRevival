@@ -5,7 +5,12 @@
 
 static LPCSTR protoName[] = { "TCP", "IPX", "NETBIOS", "COMM", "MODEM", "TAPI", "DP" };
 
-const int DEF_TCP_PORT = 1707;
+// Default well-known TCP port. Must match the port the game's network dialogs
+// use (2346) so that if vdmplay can't read the written WellKnownPort from the
+// ini (e.g. gLocalIni resolves to the Windows-dir ini), host and client still
+// fall back to the SAME port and can find each other. Was 1707 (the original
+// vdmplay default), which silently mismatched the game's 2346 -> no discovery.
+const int DEF_TCP_PORT = 2346;
 const int DEF_IPX_PORT = 1707;
 const int DEF_NETBIOS_LANA = 255;
 const char DEF_COMM_PORT [] = "COM1";
