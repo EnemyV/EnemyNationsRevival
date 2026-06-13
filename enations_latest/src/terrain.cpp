@@ -59,6 +59,17 @@ int  g_enSprSortX = 0, g_enSprSortY = 0;
 // structures UNDER the mobile/effect layer — matching the original's pass order — so e.g.
 // fire/smoke on a (growing, re-captured) building stays on top instead of z-fighting it.
 int  g_enSprIsStruct = 0;
+// Sort-key FLOOR for effects on a building hex (INT_MIN = off). The CPU painter's
+// CExplosionDrawInfo::operator< drew an explosion inside a building's footprint ABOVE
+// that building regardless of center-y; the flat (y,x) GPU sort loses that rule, so
+// hits on a building's back half sank under its sprite. The GPU proj-capture walk sets
+// this to the under-building's key; CTileDrawInfo::Draw raises the effect's key to it
+// (equal keys → the isStruct tie-break puts the effect on top).
+int  g_enSprSortFloorX = INT_MIN, g_enSprSortFloorY = INT_MIN;
+// [BRG] bridge render probe (2026-06-12): completed bridges flash for 1 frame on zoom
+// then go invisible. Armed around the bridge draws in DiscoverSpritesGpu so the blit/
+// capture/store layers can tag their logs. Remove once the bug is fixed.
+bool g_enSprBridgeProbe = false;
 
 // Project a map location to the engine's sprite z-order key (m_ptCenter), mirroring
 // CTileDrawInfo::Init. Used to give a building's foundation the SAME key as the
@@ -1294,6 +1305,15 @@ class CTileDrawInfo
         // base path: vehicles, projectiles, explosions (CStructureDrawInfo overrides).
         g_enSprCapture = true;
         g_enSprSortX = m_ptCenter.x; g_enSprSortY = m_ptCenter.y;
+        // Effect on a building hex: raise its key to the building's (footprint-column
+        // rule — see g_enSprSortFloorX above) so the hit draws over the sprite.
+        if ( g_enSprSortFloorY != INT_MIN &&
+             ( g_enSprSortY < g_enSprSortFloorY ||
+               ( g_enSprSortY == g_enSprSortFloorY && g_enSprSortX < g_enSprSortFloorX ) ) )
+        {
+            g_enSprSortX = g_enSprSortFloorX;
+            g_enSprSortY = g_enSprSortFloorY;
+        }
         g_enSprIsStruct = 0;   // base path: vehicle/projectile/explosion/fire (mobile/effect layer)
         m_punittile->Draw( m_hexcoord );
         g_enSprCapture = false;
@@ -3836,7 +3856,9 @@ void CGameMap::DiscoverSpritesGpu( CAnimAtr& aa, const CRect& rect )
             // need refreshing, so skip everything else without projecting it.
             if ( bIncremental )
             {
-                if ( !( byUnits & CHex::proj ) )
+                // bridge hexes pass too: an UNDER-CONSTRUCTION bridge re-captures
+                // every frame (see the bridge branch below)
+                if ( !( byUnits & ( CHex::proj | CHex::bridge ) ) )
                     continue;
             }
             else if ( !( byUnits & ( CHex::bridge | CHex::proj ) ) && !bForest )
@@ -3856,25 +3878,51 @@ void CGameMap::DiscoverSpritesGpu( CAnimAtr& aa, const CRect& rect )
 
             ++hitCnt;
 
-            // Bridge (per-hex CBridgeUnit; drawn whether or not the hex is lit). Static →
-            // skipped on incremental frames (persists in the store).
-            if ( !bIncremental && ( byUnits & CHex::bridge ) )
+            // Bridge (per-hex CBridgeUnit; drawn whether or not the hex is lit).
+            // A COMPLETED bridge is STATIC: captured on full walks only, persists in
+            // the store across incremental frames. An UNDER-CONSTRUCTION bridge changes
+            // every tick (the build band grows with GetPer()), so it re-captures as
+            // DYNAMIC every frame — its construction Draw self-registers the dirty rect
+            // (bridge.cpp AddRect) that makes the incremental emit repaint its region.
+            // (Without this, construction progress only showed after a zoom/pan forced
+            // a full capture.) Completion sets g_enStaticDirty (bridge.cpp __SetPer) so
+            // one full capture re-files the finished bridge as a static.
+            if ( byUnits & CHex::bridge )
             {
-                CMapLoc maploc( hexcoord );
-                maploc.x += 32;
-                maploc.y += 32;
-
                 CBridgeUnit* pbridge = theBridgeHex.GetBridge( hexWrapped );
                 ASSERT_VALID( pbridge );
+                bool bConstructing = !pbridge->IsBuilt( );
 
-                if ( pbridge->IsTwoPiece( ) )
+                if ( !bIncremental || bConstructing )
+                {
+                    CMapLoc maploc( hexcoord );
+                    maploc.x += 32;
+                    maploc.y += 32;
+
+                    if ( !bIncremental )
+                    {   // [BRG] probe: log full-walk visits (not the 24Hz dynamic recapture)
+                        char b[160];
+                        sprintf( b, "[BRG] walk hex=%d,%d built=%d two=%d\n",
+                                 wx, wy, (int)pbridge->IsBuilt( ), (int)pbridge->IsTwoPiece( ) );
+                        OutputDebugStringA( b );
+                    }
+                    g_enSprBridgeProbe = !bIncremental;   // probe logs full walks only (no 24Hz spam)
+                    if ( bConstructing )
+                        SDL2Sprites::SetCaptureDynamic( true );
+
+                    if ( pbridge->IsTwoPiece( ) )
+                        drawinfopool.GetStructureDrawInfo( pbridge, CTileDrawInfo::bridge, hexcoord, maploc,
+                                                           CStructureSprite::BACKGROUND_LAYER )
+                            ->Draw( );
+
                     drawinfopool.GetStructureDrawInfo( pbridge, CTileDrawInfo::bridge, hexcoord, maploc,
-                                                       CStructureSprite::BACKGROUND_LAYER )
+                                                       CStructureSprite::FOREGROUND_LAYER )
                         ->Draw( );
 
-                drawinfopool.GetStructureDrawInfo( pbridge, CTileDrawInfo::bridge, hexcoord, maploc,
-                                                   CStructureSprite::FOREGROUND_LAYER )
-                    ->Draw( );
+                    if ( bConstructing )
+                        SDL2Sprites::SetCaptureDynamic( false );
+                    g_enSprBridgeProbe = false;
+                }
             }
 
             // Trees (forest hex; drawn regardless of fog, mirroring the walk). Static →
@@ -3946,6 +3994,18 @@ void CGameMap::DiscoverSpritesGpu( CAnimAtr& aa, const CRect& rect )
             if ( ( byUnits & CHex::proj ) && phex->GetVisibility( ) )
             {
                 SDL2Sprites::SetCaptureDynamic( true );
+
+                // Effects on a building's footprint must draw ABOVE that building (the
+                // CPU painter's CExplosionDrawInfo footprint-column rule). Publish the
+                // building's z-key as a floor for this hex's effect captures.
+                if ( byUnits & CHex::bldg )
+                {
+                    CBuilding* pbldgUnder = theBuildingHex._GetBuilding( hexWrapped );
+                    if ( pbldgUnder != NULL )
+                        EnSprProjectCenter( pbldgUnder->GetMapLoc( ),
+                                            g_enSprSortFloorX, g_enSprSortFloorY );
+                }
+
                 CProjBase* pprojbase = theProjMap.GetFirst( hexWrapped );
 
                 while ( pprojbase != NULL )
@@ -3969,6 +4029,7 @@ void CGameMap::DiscoverSpritesGpu( CAnimAtr& aa, const CRect& rect )
                     }
                     pprojbase = theProjMap.GetNext( pprojbase );
                 }
+                g_enSprSortFloorX = g_enSprSortFloorY = INT_MIN;   // floor is per-hex
                 SDL2Sprites::SetCaptureDynamic( false );
             }
         }
@@ -4681,6 +4742,11 @@ void CGameMap::Serialize( CArchive& ar )
         }
 
         m_ptrhexvalidmatrix = new CHexValidMatrix( m_iSideShift - 1, m_iSideShift - 1 );
+
+        // saves bake the coast facings chosen at worldgen — re-derive them so
+        // maps generated before the tight-corner facing fix render correct
+        // shores (visual only; EN_COASTREFIT=0 disables)
+        RefitCoastFacings( );
     }
 }
 

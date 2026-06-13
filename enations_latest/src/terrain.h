@@ -351,6 +351,10 @@ public:
     int         MakeMineral( int x, int y, int iTyp, int iSideSize, int multiplier  = 1);
 	void		CheckAlt ();
 	void		AddCoastlines ();
+	// coastline facing assignment, shared by worldgen + the on-load refit
+	// (see wrldinit.cpp for the three-tier decision notes)
+	int 		AssignCoastFacings (const unsigned char * pbWasWater, BOOL bKeepGroup);
+	void		RefitCoastFacings ();
 	void		EliminateSingles ();
 	void		MakeLakes ();
 
@@ -444,6 +448,7 @@ protected:
 	int			CheckIt (CSpriteView const *pSv, int x, int y) const;
 	BOOL		MakePeak (int xOk, int yOk, int xTest, int yTest, int iSidesize, BOOL bEasy = FALSE);
 	void		MakeRiver (int x, int y, BOOL & bFound);
+	void		MakeRiversFlow (int * piBlks, int iSide, int iSideSize);	// flow-accumulation rivers (random maps)
 	void		MakeTerrain (int x, int y, int iTyp, int iSideSize);
 
 	void		CheckOcean();
