@@ -759,6 +759,13 @@ void SDL2Panel::Detach(GameWindow* mainWin) {
 }
 
 void SDL2Panel::Detach(SDL_Window* ownerWindow) {
+    {
+        char b[160];
+        sprintf(b, "[REN] Detach '%s' ownWindow=%p ownRenderer=%p (earlyReturn=%d)",
+                m_name.c_str(), (void*)m_ownWindow, (void*)m_ownRenderer, m_ownWindow ? 1 : 0);
+        LogPanel(b);
+        OutputDebugStringA(b); OutputDebugStringA("\n");
+    }
     if (m_ownWindow)
         return;  // already detached
 
@@ -873,6 +880,14 @@ void SDL2Panel::Detach(SDL_Window* ownerWindow) {
 // mesh (T2) will render into; for T0b it just re-presents today's composite, so
 // the result is pixel-parity with the software path.
 void SDL2Panel::MaybeCreateOwnRenderer() {
+    // DIAG (black-area-map race): log every entry + which gate it hits, so a black game
+    // shows exactly where the area renderer setup stops (already-have / no-window / not-GPU).
+    {
+        char b[160];
+        sprintf(b, "[REN] MaybeCreateOwnRenderer '%s' ownRenderer=%p ownWindow=%p gpu=%d",
+                m_name.c_str(), (void*)m_ownRenderer, (void*)m_ownWindow, RenderBackendIsGpu() ? 1 : 0);
+        LogPanel(b);
+    }
     if (m_ownRenderer || !m_ownWindow)
         return;
     if (!RenderBackendIsGpu())

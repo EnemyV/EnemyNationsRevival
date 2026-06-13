@@ -55,6 +55,11 @@ public:
 private:
     TTF_Font* GetFont(int size);
     void RenderProgressBar(SDL_Surface* dst, SDL_Rect rect, int percent);
+    // Also paint the loading message onto the GAME WINDOW's present surface. The
+    // own-window above is an always-on-top GDI window that the host's GPU-presented
+    // game window paints over (DWM airspace), so on a network-host world-create it's
+    // invisible — this puts the "Creating World..." text where it's actually seen.
+    void RenderToGameWindow();
 
     GameWindow* m_gameWindow;
     bool        m_visible;
@@ -71,6 +76,12 @@ private:
 
     // Own ALWAYS_ON_TOP window — created in Show(), destroyed in Hide()
     SDL_Window* m_ownWindow = nullptr;
+
+    // Visual-redraw throttle timestamp. PER-INSTANCE (reset to 0 in Show) so a
+    // freshly shown window always paints its first frame — a process-wide static
+    // here let a recent render from a prior/short-lived instance throttle the new
+    // window's first paint away, leaving it blank.
+    DWORD m_lastRenderMs = 0;
 
     // Font cache
     std::string m_fontPath;

@@ -663,7 +663,11 @@ void CWndMain::OnActivateApp(BOOL bActive, DWORD hTask)
 		{
 		if ( theGame.HaveHP () )
 			{
-			if ((theGame.ShouldOperate() ) && theApp.m_bPauseOnAct )
+			// Auto-pause on focus loss (alt-tab) only in SINGLE player. In a net
+			// game the pause is shared — the server pausing freezes the client too —
+			// so alt-tabbing shouldn't pause it; the game only pauses on an explicit
+			// request (Esc / options menu). Mirrors the original's net behavior.
+			if ((theGame.ShouldOperate() ) && theApp.m_bPauseOnAct && !theGame.IsNetGame() )
 				{
 				m_bPauseOnActive = TRUE;
 				_OnPause ( TRUE );

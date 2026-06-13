@@ -155,12 +155,21 @@ void SDL2CreateStatus::Show() {
                 | SDL_WINDOW_SKIP_TASKBAR);
 
         LogStatus(m_ownWindow ? "Created own window" : "Failed to create own window");
-        if (m_ownWindow)
-            SDL_RaiseWindow(m_ownWindow);
     }
 
     m_visible = true;
+
+    // Always bring to front — NOT just when the window is first created. In the
+    // create flow the window already exists (ToWorld showed it) when our later
+    // ShowDlgStatus runs *after* DestroyMain raised the game window over us. A
+    // z-order-only SetWindowPos(TOPMOST) (the per-frame pin) leaves us painted
+    // over by the GPU-rendered game window; an activating SDL_RaiseWindow forces
+    // the window (and DWM compositing) to actually bring us to the foreground.
+    if (m_ownWindow)
+        SDL_RaiseWindow(m_ownWindow);
+
     LogStatus("Show");
+    m_lastRenderMs = 0;      // ensure the first frame after Show paints (no throttle)
 }
 
 void SDL2CreateStatus::Hide() {
@@ -226,38 +235,60 @@ void SDL2CreateStatus::Render() {
     if (!m_visible || !m_gameWindow || !m_gameWindow->GetWindow())
         return;
 
-    // Throttle rendering to ~15fps to avoid slowing down world creation.
-    // BaseYield() calls this hundreds of times during loading.
-    static DWORD s_lastRender = 0;
-    DWORD now = ::timeGetTime();
-    if (now - s_lastRender < 66)  // ~15fps
-        return;
-    s_lastRender = now;
-
-    // Render into our own ALWAYS_ON_TOP window
-    SDL_Surface* winSurface = m_ownWindow ? SDL_GetWindowSurface(m_ownWindow) : nullptr;
-    if (!winSurface) return;
-
-    // Keep the loading window on top during world generation — but WITHOUT
-    // stealing OS focus. The old per-frame SDL_RaiseWindow() called
-    // SetForegroundWindow() ~60x/sec (couldn't alt-tab away during gen); simply
-    // relying on the ALWAYS_ON_TOP flag, however, let the main window cover it so
-    // the dialog never appeared. Instead bump z-order with SWP_NOACTIVATE, and
-    // only while our own process is foreground (so we never fight another app the
-    // user switched to mid-generation).
+    // Maintain z-order EVERY frame — BEFORE the visual throttle below. The
+    // drawing is throttled to ~15fps so it doesn't slow world creation, but the
+    // throttle must NOT gate z-order: during the multi-second load the game
+    // creates/raises other windows (detached panels, dialogs) ~60x/sec, and if we
+    // only re-pin on the throttled redraws, a window wedges between the background
+    // and this loading dialog in the gaps — a visible flicker, with the
+    // background appearing "sent far back". Keep this loading window topmost and
+    // the main background pinned directly beneath it on every single frame.
+    //
+    // WITHOUT stealing OS focus: the old per-frame SDL_RaiseWindow() called
+    // SetForegroundWindow() ~60x/sec (couldn't alt-tab away during gen). Instead
+    // bump z-order with SWP_NOACTIVATE, and only while our own process is
+    // foreground (so we never fight another app the user switched to mid-load).
 #ifdef _WIN32
-    {
+    if (m_ownWindow) {
         SDL_SysWMinfo wm; SDL_VERSION(&wm.version);
         if (SDL_GetWindowWMInfo(m_ownWindow, &wm)) {
             HWND h = wm.info.win.window;
             DWORD forePid = 0;
             ::GetWindowThreadProcessId(::GetForegroundWindow(), &forePid);
-            if (forePid == ::GetCurrentProcessId())
+            bool mineFg = (forePid == ::GetCurrentProcessId());
+
+            if (mineFg) {
+                // Keep this dialog topmost...
                 ::SetWindowPos(h, HWND_TOPMOST, 0, 0, 0, 0,
                                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+
+                // ...and pin the main background to the top of the NON-topmost
+                // band with HWND_TOP: forward enough that a foreign window can't
+                // sandwich between it and this dialog (the load-flow symptom when
+                // this was removed), but below this topmost dialog. The main window
+                // is non-topmost, so HWND_TOP doesn't change its topmost state — no
+                // per-frame topmost bounce, no flicker.
+                SDL_Window* mainWin = m_gameWindow->GetWindow();
+                SDL_SysWMinfo mw; SDL_VERSION(&mw.version);
+                if (mainWin && SDL_GetWindowWMInfo(mainWin, &mw))
+                    ::SetWindowPos(mw.info.win.window, HWND_TOP, 0, 0, 0, 0,
+                                   SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+            }
         }
     }
 #endif
+
+    // Throttle the VISUAL redraw to ~15fps to avoid slowing down world creation.
+    // BaseYield() calls this hundreds of times during loading. PER-INSTANCE timer
+    // (reset in Show) so a newly shown window paints its first frame immediately.
+    DWORD now = ::timeGetTime();
+    if (m_lastRenderMs != 0 && now - m_lastRenderMs < 66)  // ~15fps
+        return;
+    m_lastRenderMs = now;
+
+    // Render into our own always-on-top window
+    SDL_Surface* winSurface = m_ownWindow ? SDL_GetWindowSurface(m_ownWindow) : nullptr;
+    if (!winSurface) return;
 
     // Ensure dialog art is loaded
     SDL2Dialog::LoadDialogArt();
@@ -362,6 +393,41 @@ void SDL2CreateStatus::Render() {
     }
 
     SDL_UpdateWindowSurface(m_ownWindow);
+
+    // ...and also onto the game window itself, so it's visible on a GPU host where
+    // the own-window above is hidden by the airspace problem.
+    RenderToGameWindow();
+}
+
+void SDL2CreateStatus::RenderToGameWindow() {
+    if (!m_gameWindow) return;
+    SDL2Compositor* comp = m_gameWindow->GetCompositor();
+    SDL_Surface*    surf = m_gameWindow->GetPresentSurface();
+    if (!comp || !surf) return;
+
+    // Clean background each frame (the wallpaper) so changing messages don't smear.
+    comp->RenderWallpaper(surf);
+
+    int winW = surf->w, winH = surf->h;
+    SDL_Color gold  = { 225, 182, 55, 255 };
+    SDL_Color shade = {  20,  16, 40, 255 };
+
+    TTF_Font* big = GetFont(34);
+    if (big && !m_message.empty()) {
+        // 1px drop-shadow for readability over the tiled wallpaper.
+        SDL_Rect sh = { winW / 4 + 2, winH / 2 - 44 + 2, winW / 2, 44 };
+        RenderTextC(surf, big, m_message.c_str(), sh, shade, true, true);
+        SDL_Rect r  = { winW / 4,     winH / 2 - 44,     winW / 2, 44 };
+        RenderTextC(surf, big, m_message.c_str(), r, gold, true, true);
+    }
+    TTF_Font* med = GetFont(24);
+    if (med && m_percent >= 0) {
+        char buf[16]; sprintf_s(buf, "%d%%", m_percent);
+        SDL_Rect r = { winW / 4, winH / 2 + 10, winW / 2, 32 };
+        RenderTextC(surf, med, buf, r, gold, true, true);
+    }
+
+    m_gameWindow->PresentSurface();
 }
 
 bool SDL2CreateStatus::HandleEvent(const SDL_Event& event) {

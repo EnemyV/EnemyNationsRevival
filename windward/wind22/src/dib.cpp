@@ -13,6 +13,7 @@
 
 #include "dib.h"
 #include "mfc_compat_text.h"  // Phase 6 Stage 5 Phase C: GetDC/ReleaseDC register
+#include "en_gdi_audit.h"     // Phase 6 Stage 5a: TEMP GDI liveness instrumentation
 
 #include <SDL.h>  // Phase 6 Stage 0: DIB_SDL_SURFACE backing
 
@@ -84,6 +85,7 @@ CDIB::CDIB(
     case CBLTFormat::DIB_DIBSECTION:
     case CBLTFormat::DIB_MEMORY:
 
+        EN_GDI_PROBE( "dib:ctor-CreateCompatibleDC" );
         m_hDCDib = CreateCompatibleDC( NULL );
 
         break;
@@ -591,6 +593,7 @@ CDIB::NewPalette(
 //-------------------------------------------------------------------------
 int CDIB::BitBlt( HDC hdcDst, CRect const& rectDst, CPoint const& ptSrc ) {
     ASSERT_STRICT_VALID( this );
+    EN_GDI_PROBE( "dib:CDIB->HDC-BitBlt" );
 
     CDIBits bits = GetBits();
 
@@ -651,8 +654,9 @@ int CDIB::BitBlt( HDC hdcDst, CRect const& rectDst, CPoint const& ptSrc ) {
 //-------------------------------------------------------------------------
 // CDIB::StretchBlt
 //-------------------------------------------------------------------------
-int CDIB::StretchBlt( HDC hdcDst, CRect const& rectDst, CRect const& rectSrc ) { 
+int CDIB::StretchBlt( HDC hdcDst, CRect const& rectDst, CRect const& rectSrc ) {
     ASSERT_STRICT_VALID( this );
+    EN_GDI_PROBE( "dib:CDIB->HDC-StretchBlt" );
 
     CDIBits bits = GetBits();
 
@@ -1500,6 +1504,7 @@ HDC CDIB::GetDC() {
     switch ( GetType() ) {
     case CBLTFormat::DIB_MEMORY:
     {
+        EN_GDI_PROBE( "dib:DIBMEM-GetDC" );
 
         CDIBits dibits = GetBits();
 

@@ -2336,7 +2336,10 @@ BOOL CHPRouter::NeedsTransport( CAIUnit* pTruck, CHexCoord& hex )
             hexGame.Y( pHex->Y( ) );
             pGameHex = theMap.GetHex( hexGame );
             // if( pGameHex->IsWater() )
-            if ( pGameHex->GetType( ) == CHex::ocean || pGameHex->GetType( ) == CHex::lake )
+            // a hex carrying a bridge is a land route even though it keeps its
+            // water terrain type (CBridgeHex::GrabHex never retypes the hex)
+            if ( ( pGameHex->GetType( ) == CHex::ocean || pGameHex->GetType( ) == CHex::lake ) &&
+                 !( pGameHex->GetUnits( ) & CHex::bridge ) )
             {
                 bNeedShip = TRUE;
                 break;

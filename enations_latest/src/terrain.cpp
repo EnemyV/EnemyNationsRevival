@@ -3705,7 +3705,14 @@ void CGameMap::DiscoverSpritesGpu( CAnimAtr& aa, const CRect& rect )
     extern bool g_enStaticDirty;
     bool bStaticDirty = g_enStaticDirty;
     g_enStaticDirty = false;
-    bool bIncremental = bDirty && s_haveStore && !projOrPan && !bStaticDirty;
+    // Atlas overflow self-heal: if the append-only sprite atlas filled last frame, blow the
+    // whole sprite layer away and repack from scratch this frame — the atlas then holds only
+    // the current on-screen working set, not every (frame×zoom) ever seen. Forces this frame
+    // FULL (the store was just cleared). One re-pack frame, then back to incremental.
+    bool bAtlasReset = SDL2Sprites::TakeAtlasOverflow( );
+    if ( bAtlasReset )
+        SDL2Sprites::InvalidateTextures( );
+    bool bIncremental = bDirty && s_haveStore && !projOrPan && !bStaticDirty && !bAtlasReset;
     s_lastZoom = aa.m_iZoom; s_lastDir = aa.m_iDir;
     s_lastUlX  = ulDirty.x;  s_lastUlY = ulDirty.y;
     s_haveStore = true;   // after this frame the store is populated
@@ -3879,50 +3886,40 @@ void CGameMap::DiscoverSpritesGpu( CAnimAtr& aa, const CRect& rect )
             ++hitCnt;
 
             // Bridge (per-hex CBridgeUnit; drawn whether or not the hex is lit).
-            // A COMPLETED bridge is STATIC: captured on full walks only, persists in
-            // the store across incremental frames. An UNDER-CONSTRUCTION bridge changes
-            // every tick (the build band grows with GetPer()), so it re-captures as
-            // DYNAMIC every frame — its construction Draw self-registers the dirty rect
-            // (bridge.cpp AddRect) that makes the incremental emit repaint its region.
-            // (Without this, construction progress only showed after a zoom/pan forced
-            // a full capture.) Completion sets g_enStaticDirty (bridge.cpp __SetPer) so
-            // one full capture re-files the finished bridge as a static.
+            // Bridges are captured DYNAMIC and re-walked EVERY frame (full and
+            // incremental) — like buildings/vehicles, NOT like static trees. This is the
+            // race-free design: a bridge that transitions constructing->completed never
+            // changes its capture class, so it can never be orphaned (the old "static
+            // when built" path lost the bridge on the completion frame — its stale
+            // dynamic key was erased by BeginIncremental and the static-only walk never
+            // re-added it, so it vanished until a zoom forced a full capture).
+            //
+            // Cost is negligible: a bridge is a handful of hexes, far rarer than the
+            // buildings already re-captured every frame. Both the constructing and the
+            // built path of CBridgeUnit::Draw self-register a dirty rect (in invalidate
+            // mode) so the incremental emit repaints the bridge's region every frame —
+            // the constructing band grows, the finished deck shows immediately.
             if ( byUnits & CHex::bridge )
             {
                 CBridgeUnit* pbridge = theBridgeHex.GetBridge( hexWrapped );
                 ASSERT_VALID( pbridge );
-                bool bConstructing = !pbridge->IsBuilt( );
 
-                if ( !bIncremental || bConstructing )
-                {
-                    CMapLoc maploc( hexcoord );
-                    maploc.x += 32;
-                    maploc.y += 32;
+                CMapLoc maploc( hexcoord );
+                maploc.x += 32;
+                maploc.y += 32;
 
-                    if ( !bIncremental )
-                    {   // [BRG] probe: log full-walk visits (not the 24Hz dynamic recapture)
-                        char b[160];
-                        sprintf( b, "[BRG] walk hex=%d,%d built=%d two=%d\n",
-                                 wx, wy, (int)pbridge->IsBuilt( ), (int)pbridge->IsTwoPiece( ) );
-                        OutputDebugStringA( b );
-                    }
-                    g_enSprBridgeProbe = !bIncremental;   // probe logs full walks only (no 24Hz spam)
-                    if ( bConstructing )
-                        SDL2Sprites::SetCaptureDynamic( true );
+                SDL2Sprites::SetCaptureDynamic( true );
 
-                    if ( pbridge->IsTwoPiece( ) )
-                        drawinfopool.GetStructureDrawInfo( pbridge, CTileDrawInfo::bridge, hexcoord, maploc,
-                                                           CStructureSprite::BACKGROUND_LAYER )
-                            ->Draw( );
-
+                if ( pbridge->IsTwoPiece( ) )
                     drawinfopool.GetStructureDrawInfo( pbridge, CTileDrawInfo::bridge, hexcoord, maploc,
-                                                       CStructureSprite::FOREGROUND_LAYER )
+                                                       CStructureSprite::BACKGROUND_LAYER )
                         ->Draw( );
 
-                    if ( bConstructing )
-                        SDL2Sprites::SetCaptureDynamic( false );
-                    g_enSprBridgeProbe = false;
-                }
+                drawinfopool.GetStructureDrawInfo( pbridge, CTileDrawInfo::bridge, hexcoord, maploc,
+                                                   CStructureSprite::FOREGROUND_LAYER )
+                    ->Draw( );
+
+                SDL2Sprites::SetCaptureDynamic( false );
             }
 
             // Trees (forest hex; drawn regardless of fog, mirroring the walk). Static →

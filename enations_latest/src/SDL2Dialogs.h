@@ -32,6 +32,7 @@ private:
     SDL2Checkbox* m_chkPause = nullptr;
     SDL2Checkbox* m_chkNoIntro = nullptr;
     SDL2RadioGroup* m_radZoom = nullptr;
+    SDL2RadioGroup* m_radRenderer = nullptr;
 };
 
 // ============================================================================
@@ -47,14 +48,19 @@ private:
     SDL2RadioGroup* m_radAiLevel = nullptr;
     SDL2RadioGroup* m_radWorldSize = nullptr;
     SDL2RadioGroup* m_radStartPos = nullptr;
+    SDL2Listbox* m_lstWorldType = nullptr;
     SDL2EditBox* m_edtNumAi = nullptr;
+    SDL2Slider* m_sldRivers = nullptr;
+    SDL2Label* m_lblRivers = nullptr;   // live "Rivers: N%" readout
 
     // Results stored for the caller
 public:
     int m_iAiLevel = 0;
     int m_iWorldSize = 1;
     int m_iStartPos = 1;
+    int m_iWorldType = 0;   // EWorldType preset
     int m_iNumAi = 2;
+    int m_iRivers = 60;     // river density 0-100 (60 = baseline)
 };
 
 // ============================================================================
@@ -109,13 +115,15 @@ public:
 class SDL2PickPlayerDialog : public SDL2Dialog {
 public:
     SDL2PickPlayerDialog(GameWindow* gameWindow);
+    ~SDL2PickPlayerDialog();
 protected:
     void OnInit() override;
     void OnOK() override;
 private:
     SDL2Listbox* m_lstPlayers = nullptr;
-    SDL2EditBox* m_edtName = nullptr;
+    SDL2Label* m_lblName = nullptr;   // saved player's name — read-only when loading
     SDL2Label* m_lblDesc = nullptr;
+    SDL2Image* m_imgPicture = nullptr;
     SDL2Button* m_btnOK = nullptr;
 
     struct PlayerInfo {
@@ -123,6 +131,7 @@ private:
         bool available;
         int numBldgs;
         int numVeh;
+        int raceIdx;          // race this player chose (-1 if unknown)
         std::string name;
         // Stored resources (material name + amount, only those > 0) so the
         // description can list them like the original CDlgPickPlayer did.
@@ -131,8 +140,10 @@ private:
     };
     std::vector<PlayerInfo> m_players;
 
+    // Race portrait surfaces, indexed by race (converted from CDIB, owned by us).
+    std::vector<SDL_Surface*> m_racePictures;
+
     void OnPlayerSelected(int index);
-    void OnNameChanged(const std::string& name);
     void UpdateOKButton();
 
 public:
@@ -154,15 +165,20 @@ private:
     SDL2RadioGroup* m_radAiLevel = nullptr;
     SDL2RadioGroup* m_radWorldSize = nullptr;
     SDL2RadioGroup* m_radStartPos = nullptr;
+    SDL2Listbox* m_lstWorldType = nullptr;
     SDL2EditBox* m_edtNumAi = nullptr;
     SDL2EditBox* m_edtGameName = nullptr;
     SDL2EditBox* m_edtPlayerName = nullptr;
     SDL2EditBox* m_edtPort = nullptr;
+    SDL2Slider* m_sldRivers = nullptr;
+    SDL2Label* m_lblRivers = nullptr;   // live "Rivers: N%" readout
 public:
     int m_iAiLevel = 0;
     int m_iWorldSize = 1;
     int m_iStartPos = 1;
+    int m_iWorldType = 0;   // EWorldType preset
     int m_iNumAi = 2;
+    int m_iRivers = 60;     // river density 0-100 (60 = baseline)
     std::string m_gameName;
     std::string m_playerName;
     int m_iPort = 0;
@@ -221,11 +237,42 @@ protected:
 private:
     void OnStart();
     void UpdatePlayerList();
+    void RefreshChat();
+    void SendChat();
 
     std::string  m_gameName;
     SDL2Listbox* m_lstPlayers = nullptr;
     SDL2Label*   m_lblStatus  = nullptr;
+    SDL2Listbox* m_lstChat    = nullptr;
+    SDL2EditBox* m_edtChat    = nullptr;
     int          m_lastCount  = -1;
+    int          m_chatCount  = -1;
+    std::string  m_lastSig;   // name|race signature, rebuild list only when it changes
+};
+
+// ============================================================================
+// SDL2ClientLobbyDialog — joining player's waiting room. Shown after the client
+// joins + picks a race, while it waits for the host to click Start. Closes with
+// result 1 when the host starts (CNetStart, deferred) so the flow can build the
+// world; result 0 if the player leaves.
+// ============================================================================
+class SDL2ClientLobbyDialog : public SDL2Dialog {
+public:
+    SDL2ClientLobbyDialog(GameWindow* gw, const std::string& gameName);
+protected:
+    void OnInit() override;
+    void OnFrame() override;
+private:
+    void UpdatePlayerList();
+    void RefreshChat();
+    void SendChat();
+    std::string  m_gameName;
+    SDL2Listbox* m_lstPlayers = nullptr;
+    SDL2Label*   m_lblStatus  = nullptr;
+    SDL2Listbox* m_lstChat    = nullptr;
+    SDL2EditBox* m_edtChat    = nullptr;
+    int          m_chatCount  = -1;
+    std::string  m_lastSig;
 };
 
 // ============================================================================
@@ -245,16 +292,25 @@ private:
     void UpdateList();
     void SelectIndex(int idx);
 
+    void OnSearch();   // re-target the client to the edited address/port and re-enum
+
     CJoinMulti*  m_pJoin;
     SDL2Listbox* m_lstSessions = nullptr;
     SDL2Label*   m_lblInfo     = nullptr;
     SDL2Button*  m_btnJoin     = nullptr;
+    SDL2EditBox* m_edtAddr     = nullptr;
+    SDL2EditBox* m_edtPort     = nullptr;
 
     int m_lastCount  = -1;
     int m_selectedIdx = -1;
 
 public:
     int m_chosenIdx = -1;   // index into m_pJoin->m_sessions on OK
+    // On Search the dialog closes with result 3 and the join flow re-targets the
+    // client to these (re-opening the transport OUTSIDE the modal loop, since
+    // OpenClient blocks + pumps messages and would re-enter the loop -> hang).
+    std::string m_searchAddr;
+    int         m_searchPort = 2346;
 };
 
 // ============================================================================

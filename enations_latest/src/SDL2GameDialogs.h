@@ -9,6 +9,34 @@
 // Called from netapi.cpp when a cmd_chat network message arrives.
 void SDL2Chat_AddMessage(const std::string& line);
 
+// Shared chat log accessors so any UI (in-game chat window OR the pre-game
+// lobbies) can render the same message history.
+int         SDL2Chat_Count();
+std::string SDL2Chat_Line(int i);
+
+// Send a chat line: broadcasts to the other players (net game) and echoes it
+// locally. Usable pre-game (lobby) and in-game.
+void SDL2Chat_Send(const std::string& text);
+
+// Called from netapi.cpp when an ipc_msg (email/chat) network message arrives.
+// Reconstructs the message from the wire buffer and routes it to the inbox
+// (email) or the chat log (chat). Replaces the old CWndComm::IncomingMessage.
+void SDL2Mail_HandleIncoming(class CMsgIPC* pMsg);
+// Number of unread messages currently in the inbox.
+int  SDL2Mail_UnreadCount();
+
+// Non-modal comms openers. Each keeps a single live instance (re-opening just
+// raises the existing one) so the game keeps running while comms are up — the
+// original CWndComm/CWndMailRead were modeless for exactly this reason. The
+// GameWindow owns the dialog lifetime once shown.
+class GameWindow;
+void SDL2Comms_OpenChat(GameWindow* gw);
+void SDL2Comms_OpenMail(GameWindow* gw);
+void SDL2Comms_OpenCompose(GameWindow* gw, int toPlyr,
+                           const std::string& subject, const std::string& body);
+// Close any open comms windows (called from CWndBar::OnDestroy on quit-to-menu).
+void SDL2Comms_CloseAll();
+
 class CVehicle;
 class CBuilding;
 class CPlayer;
@@ -237,13 +265,49 @@ private:
 class SDL2ComposeDialog : public SDL2Dialog {
 public:
     SDL2ComposeDialog(GameWindow* gw);
+    // Pre-filled compose for Reply/Forward: preselect a recipient (plyr num, -1
+    // = none) and seed the subject/body.
+    SDL2ComposeDialog(GameWindow* gw, int toPlyr,
+                      const std::string& subject, const std::string& body);
 protected:
     void OnInit() override;
+    void OnOK() override;   // Enter from a single-line field (e.g. Subject) sends
 private:
     void OnSend();
     SDL2Listbox* m_recipientList = nullptr;
     SDL2EditBox* m_editSubject = nullptr;
     SDL2EditBox* m_editBody = nullptr;
+    std::vector<int> m_recipientPlyrs;   // plyr num for each recipient list row
+    int          m_preToPlyr = -1;       // preselected recipient (reply/forward)
+    std::string  m_preSubject;
+    std::string  m_preBody;
+};
+
+// ============================================================================
+// SDL2MailDialog — inbox + reader. Replaces the CWndComm mail hub and
+// CWndMailRead: a message list on the left, the selected message on the right,
+// with Compose / Reply / Forward / Delete actions.
+// ============================================================================
+class SDL2MailDialog : public SDL2Dialog {
+public:
+    SDL2MailDialog(GameWindow* gw);
+protected:
+    void OnInit() override;
+    void OnFrame() override;   // refresh the list when new mail arrives while open
+private:
+    void RefreshList();
+    int  m_lastInboxCount = -1;
+    void ShowSelected();
+    void OnCompose();
+    void OnReply();
+    void OnForward();
+    void OnDelete();
+
+    SDL2Listbox* m_list = nullptr;
+    SDL2Label*   m_lblFrom = nullptr;
+    SDL2Label*   m_lblSubject = nullptr;
+    SDL2Label*   m_lblBody = nullptr;
+    int          m_sel = -1;
 };
 
 // ============================================================================
@@ -262,6 +326,13 @@ private:
     void OnOK();
     void OnCancel();
     void OnSave();
+
+    // Full-screen win/lose/scenario-end layout (mirrors CWndCutScene::OnPaintWin/Lose).
+    void OnInitEndScreen();
+    // Full-screen scenario INTRO layout: CS painting + briefing text (CWndCutScene::OnPaintCut).
+    void OnInitIntro();
+    // Load the CS/WN/LS/DN full-screen painting from misc.mif (WL wallpaper fallback).
+    static SDL_Surface* LoadEndArt(int typ);
 
     int m_typ;
     std::string m_text;

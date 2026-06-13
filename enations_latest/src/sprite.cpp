@@ -566,6 +566,20 @@ CSpriteDIB::StructureDrawToDIB(
 
     CRect rectDraw = rectClip & rectBound;
 
+    // [BRG] probe: a bridge draw reaching the CPU blit means it was NOT GPU-captured
+    // (split pass off, capture flag unset, or CaptureStructure declined) → it lands in
+    // m_dibSprite and flashes for one frame. Log which gate failed.
+    {
+        extern bool g_enSprBridgeProbe;
+        if (g_enSprBridgeProbe) {
+            char b[160];
+            sprintf(b, "[BRG] CPU-fallback blit: splitPass=%d capture=%d clipWH=%dx%d\n",
+                    (int)g_enSpriteSplitPass, (int)g_enSprCapture,
+                    rectDraw.right - rectDraw.left, rectDraw.bottom - rectDraw.top);
+            OutputDebugStringA(b);
+        }
+    }
+
     if (rectDraw.left >= rectDraw.right ||
         rectDraw.top >= rectDraw.bottom)
         return CRect(0, 0, 0, 0);

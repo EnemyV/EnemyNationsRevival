@@ -1176,10 +1176,17 @@ public:
 									CFarmBuilding () { ctor (); }
 									CFarmBuilding (int iBldg, int iBldgDir, int iOwner=0, DWORD ID = 0) : 
 																	CBuilding (iBldg, iBldgDir, iOwner, ID) { ctor (); }
+								~CFarmBuilding ();
 
 		static int		LandMult (CHexCoord _hex, int iTyp, int iDir);
 		void					BuildFarm ();
 		void					UpdateFarm ();
+
+		// "Fields grown around farms": paint the farmable ring as crop fields,
+		// animate them through growth stages, and restore the soil on teardown.
+		void					GrowFields ();          // (re)build & paint the plots
+		void					RevertFields ();        // restore plots to their soil
+		void					UpdateFieldStage ( int iTimeToFarm );  // advance growth anim
 
 		// lumber for mill, production rate for farm
 		int						GetNumStatusBars () const;
@@ -1195,6 +1202,11 @@ protected:
 
 		CList <CLandUse *, CLandUse *>	m_landUse;		// surrounding tiles we are using
 		LONG					m_iTimeToNext;									// time to next change
+
+		// Field plots painted around this farm. Transient - not serialized; rebuilt
+		// on the first operational tick (and after load) by GrowFields().
+		std::vector<DWORD>	m_fieldHexes;									// packed CHexCoord of plots
+		int					m_iFieldStage;									// last growth stage applied (-1 = none)
 
 #ifdef _DEBUG
 public:

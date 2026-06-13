@@ -825,8 +825,20 @@ void CWndBar::GotoChat( )
     if ( !theGame.IsNetGame( ) )
         return;
 
-    SDL2ChatWindow dlg( theApp.m_gameWindow.get() );
-    dlg.DoModal();
+    // Research gating (parity with the original tech progression): comms are
+    // unlocked by research — mail / e-mail / telephone(chat). With none of them
+    // researched there is nothing to do here, so tell the player what to research.
+    CPlayer* pMe = theGame.GetMe( );
+    if ( pMe && !pMe->CanChat( ) && !pMe->CanEMail( ) && !pMe->CanDelayMail( ) )
+    {
+        EnMessageBox( "Research Mail, E-Mail, or Telephone to communicate with other players.",
+                      MB_OK | MB_ICONINFORMATION );
+        return;
+    }
+
+    // Non-modal so the game (and network processing) keep running while comms
+    // are open — see SDL2Comms_OpenChat. The chat window is the entry to mail too.
+    SDL2Comms_OpenChat( theApp.m_gameWindow.get() );
 }
 
 // (moved to top of file)
@@ -939,14 +951,14 @@ void CWndBar::GotoRelations( )
 
     if ( theApp.m_gameWindow ) {
         // Non-modal: diplomacy applies relation changes / unit gifts LIVE, so the
-        // game (and, in MP, the network loop) must keep running while it's open â€”
+        // game (and, in MP, the network loop) must keep running while it's open —
         // DoModal froze the sim. Guard against a second copy; onDone clears the
         // pointer and GameWindow deletes the object on its next cleanup pass.
         if ( !m_pSdlRelations ) {
             m_pSdlRelations = new SDL2RelationsDialog( theApp.m_gameWindow.get() );
             m_pSdlRelations->ShowNonModal( [this]( int ) { m_pSdlRelations = nullptr; } );
         } else {
-            m_pSdlRelations->RaiseAndAlert( );   // already open â†’ bring it forward
+            m_pSdlRelations->RaiseAndAlert( );   // already open → bring it forward
         }
     }
 }
@@ -1224,6 +1236,9 @@ void CWndBar::OnDestroy( )
         m_pSdlResearch->EndDialog( 0 );
         m_pSdlResearch = nullptr;
     }
+
+    // Close any open chat / mail / compose windows (non-modal) on quit-to-menu.
+    SDL2Comms_CloseAll();
 
     if ( m_sdlPanel && theApp.m_gameWindow && theApp.m_gameWindow->GetCompositor() )
     {

@@ -78,7 +78,10 @@ static void FillGradientSymH(SDL_Surface* dst, SDL_Rect r, SDL_Color edge, SDL_C
 static void RenderText(SDL_Surface* dst, TTF_Font* font, const char* text,
                        SDL_Rect rect, SDL_Color color, bool centerH = true, bool centerV = true) {
     if (!font || !text || !text[0]) return;
-    SDL_Surface* surf = TTF_RenderText_Blended(font, text, color);
+    // UTF8 variant: dialog labels/titles embed UTF-8 punctuation (em-dash etc.).
+    // The Latin-1 TTF_RenderText_* path renders each byte as its own glyph, so a
+    // 3-byte em-dash shows up as garbage "text artifacts".
+    SDL_Surface* surf = TTF_RenderUTF8_Blended(font, text, color);
     if (!surf) return;
 
     // Clip source rect to not exceed destination rect bounds
@@ -106,7 +109,7 @@ static void RenderTextWrapped(SDL_Surface* dst, TTF_Font* font, const char* text
     else if (centerH)
         TTF_SetFontWrappedAlign(font, TTF_WRAPPED_ALIGN_CENTER);
 
-    SDL_Surface* surf = TTF_RenderText_Blended_Wrapped(font, text, color, rect.w);
+    SDL_Surface* surf = TTF_RenderUTF8_Blended_Wrapped(font, text, color, rect.w);
 
     // Restore original alignment
     TTF_SetFontWrappedAlign(font, oldAlign);
@@ -161,10 +164,10 @@ void SDL2Label::Render(SDL_Surface* dst, TTF_Font* font) {
             int oldAlign = TTF_GetFontWrappedAlign(font);
             if (m_rightAligned)    TTF_SetFontWrappedAlign(font, TTF_WRAPPED_ALIGN_RIGHT);
             else if (m_centered)   TTF_SetFontWrappedAlign(font, TTF_WRAPPED_ALIGN_CENTER);
-            m_cache = TTF_RenderText_Blended_Wrapped(font, m_text.c_str(), color, m_rect.w);
+            m_cache = TTF_RenderUTF8_Blended_Wrapped(font, m_text.c_str(), color, m_rect.w);
             TTF_SetFontWrappedAlign(font, oldAlign);
         } else {
-            m_cache = TTF_RenderText_Blended(font, m_text.c_str(), color);
+            m_cache = TTF_RenderUTF8_Blended(font, m_text.c_str(), color);
         }
         m_cacheText    = m_text;
         m_cacheColor   = color;
@@ -746,6 +749,53 @@ void SDL2EditBox::DeleteSelection() {
     if (m_onChange) m_onChange(m_text);
 }
 
+// ---- Multi-line helpers (used only when m_multiline) ----
+
+int SDL2EditBox::LineHeight() const {
+    return m_cachedFont ? TTF_FontLineSkip(m_cachedFont) : 16;
+}
+
+void SDL2EditBox::ComputeLineStarts(std::vector<int>& starts) const {
+    starts.clear();
+    starts.push_back(0);
+    for (int i = 0; i < (int)m_text.size(); i++)
+        if (m_text[i] == '\n') starts.push_back(i + 1);
+}
+
+void SDL2EditBox::IndexToLineCol(int index, int& line, int& col) const {
+    if (index > (int)m_text.size()) index = (int)m_text.size();
+    line = 0;
+    int lineStart = 0;
+    for (int i = 0; i < index; i++)
+        if (m_text[i] == '\n') { line++; lineStart = i + 1; }
+    col = index - lineStart;
+}
+
+int SDL2EditBox::XYToCharIndex(int px, int py) const {
+    if (m_text.empty() || !m_cachedFont) return 0;
+    std::vector<int> starts;
+    ComputeLineStarts(starts);
+    int lh = LineHeight();
+    int line = (lh > 0) ? (py - (m_rect.y + 2)) / lh : 0;
+    line = std::max(0, std::min(line, (int)starts.size() - 1));
+
+    int start = starts[line];
+    int end = (line + 1 < (int)starts.size()) ? starts[line + 1] - 1 : (int)m_text.size();
+
+    // Find the column within this line by measuring growing substrings.
+    int textX = m_rect.x + 4;
+    int col = end - start;   // default: end of line
+    int prevTw = 0;
+    for (int c = 1; c <= end - start; c++) {
+        int tw, th;
+        TTF_SizeText(m_cachedFont, m_text.substr(start, c).c_str(), &tw, &th);
+        int charMid = textX + prevTw + (tw - prevTw) / 2;
+        if (px < charMid) { col = c - 1; break; }
+        prevTw = tw;
+    }
+    return start + col;
+}
+
 void SDL2EditBox::Render(SDL_Surface* dst, TTF_Font* font) {
     if (!m_visible) return;
     m_cachedFont = font;  // Cache for hit-testing in HandleEvent
@@ -755,6 +805,54 @@ void SDL2EditBox::Render(SDL_Surface* dst, TTF_Font* font) {
     SDL_Color text = m_customColors ? m_textColor : UIColors::LabelText;
     FillRect(dst, m_rect, bg);
     DrawBevel(dst, m_rect, 1, UIColors::BtnDark, UIColors::BtnLight);
+
+    if (m_multiline && font) {
+        std::vector<int> starts;
+        ComputeLineStarts(starts);
+        int lh = LineHeight();
+        int selLo = SelMin(), selHi = SelMax();
+        bool hasSel = m_focused && HasSelection();
+
+        for (int i = 0; i < (int)starts.size(); i++) {
+            int start = starts[i];
+            int end = (i + 1 < (int)starts.size()) ? starts[i + 1] - 1 : (int)m_text.size();
+            int ly = m_rect.y + 2 + i * lh;
+            if (ly >= m_rect.y + m_rect.h) break;   // clip; no scrolling
+
+            // Per-line selection highlight
+            if (hasSel) {
+                int lo = std::max(selLo, start);
+                int hi = std::min(selHi, end);
+                if (hi > lo) {
+                    int tw, th, x0 = m_rect.x + 4, x1 = m_rect.x + 4;
+                    TTF_SizeText(font, m_text.substr(start, lo - start).c_str(), &tw, &th); x0 += tw;
+                    TTF_SizeText(font, m_text.substr(start, hi - start).c_str(), &tw, &th); x1 += tw;
+                    SDL_Rect sr = { x0, ly, x1 - x0, lh };
+                    FillRect(dst, sr, { 80, 120, 160, 255 });
+                }
+            }
+
+            if (end > start) {
+                SDL_Rect lr = { m_rect.x + 4, ly, m_rect.w - 8, lh };
+                RenderText(dst, font, m_text.substr(start, end - start).c_str(), lr,
+                           m_enabled ? text : UIColors::Disabled, false, false);
+            }
+        }
+
+        // Cursor (2D)
+        if (m_focused && !HasSelection() && ((SDL_GetTicks() / 500) % 2 == 0)) {
+            int line, col;
+            IndexToLineCol(m_cursorPos, line, col);
+            int cx = m_rect.x + 4, tw, th;
+            TTF_SizeText(font, m_text.substr(starts[line], col).c_str(), &tw, &th); cx += tw;
+            int cy = m_rect.y + 3 + line * lh;
+            bool darkBg = (bg.r + bg.g + bg.b) < 256;
+            if (cy + lh - 4 <= m_rect.y + m_rect.h)   // don't draw a caret past the box (no scroll)
+                FillRect(dst, { cx, cy, 1, lh - 4 },
+                         darkBg ? SDL_Color{ 230, 230, 230, 255 } : SDL_Color{ 30, 30, 30, 255 });
+        }
+        return;
+    }
 
     // Selection highlight
     if (m_focused && HasSelection() && font) {
@@ -790,9 +888,13 @@ bool SDL2EditBox::HandleEvent(const SDL_Event& event) {
     if (m_focused && s_activeEdit != this) {
         SDL_StartTextInput();
         s_activeEdit = this;
-        // Select all on initial focus so typing replaces existing text
-        m_selStart = 0;
-        m_selEnd = m_cursorPos = (int)m_text.size();
+        // Select all on initial focus so typing replaces existing text — but only
+        // for single-line fields. A multi-line body (e.g. a reply/forward with a
+        // quoted message) keeps its content and the cursor where it was clicked.
+        if (!m_multiline) {
+            m_selStart = 0;
+            m_selEnd = m_cursorPos = (int)m_text.size();
+        }
     } else if (!m_focused && s_activeEdit == this) {
         SDL_StopTextInput();
         s_activeEdit = nullptr;
@@ -801,7 +903,8 @@ bool SDL2EditBox::HandleEvent(const SDL_Event& event) {
     // Mouse down — click to position cursor, start drag
     if (event.type == SDL_MOUSEBUTTONDOWN && event.button.button == SDL_BUTTON_LEFT) {
         if (PointInRect(event.button.x, event.button.y, m_rect)) {
-            m_cursorPos = XToCharIndex(event.button.x);
+            m_cursorPos = m_multiline ? XYToCharIndex(event.button.x, event.button.y)
+                                      : XToCharIndex(event.button.x);
             m_selStart = m_selEnd = m_cursorPos;
             m_dragging = true;
             return true;
@@ -810,7 +913,8 @@ bool SDL2EditBox::HandleEvent(const SDL_Event& event) {
 
     // Mouse motion — extend selection while dragging
     if (event.type == SDL_MOUSEMOTION && m_dragging) {
-        m_cursorPos = XToCharIndex(event.motion.x);
+        m_cursorPos = m_multiline ? XYToCharIndex(event.motion.x, event.motion.y)
+                                  : XToCharIndex(event.motion.x);
         m_selEnd = m_cursorPos;
         return true;
     }
@@ -819,7 +923,8 @@ bool SDL2EditBox::HandleEvent(const SDL_Event& event) {
     if (event.type == SDL_MOUSEBUTTONUP && event.button.button == SDL_BUTTON_LEFT) {
         if (m_dragging) {
             m_dragging = false;
-            m_cursorPos = XToCharIndex(event.button.x);
+            m_cursorPos = m_multiline ? XYToCharIndex(event.button.x, event.button.y)
+                                      : XToCharIndex(event.button.x);
             m_selEnd = m_cursorPos;
             return true;
         }
@@ -907,13 +1012,73 @@ bool SDL2EditBox::HandleEvent(const SDL_Event& event) {
                 if (shift) m_selEnd = m_cursorPos;
                 else ClearSelection();
                 return true;
+            case SDLK_RETURN:
+            case SDLK_KP_ENTER:
+                // Multi-line: insert a newline. Single-line: don't consume, so the
+                // dialog still treats Enter as OK/Send.
+                if (m_multiline) {
+                    if (HasSelection()) DeleteSelection();
+                    m_text.insert(m_cursorPos, "\n");
+                    m_cursorPos++;
+                    ClearSelection();
+                    if (m_onChange) m_onChange(m_text);
+                    return true;
+                }
+                return false;
+            case SDLK_UP:
+                if (m_multiline) {
+                    int line, col;
+                    IndexToLineCol(m_cursorPos, line, col);
+                    if (line > 0) {
+                        std::vector<int> starts;
+                        ComputeLineStarts(starts);
+                        int ps = starts[line - 1], pe = starts[line] - 1;
+                        m_cursorPos = ps + std::min(col, pe - ps);
+                    }
+                    if (shift) m_selEnd = m_cursorPos; else ClearSelection();
+                    return true;
+                }
+                return false;
+            case SDLK_DOWN:
+                if (m_multiline) {
+                    std::vector<int> starts;
+                    ComputeLineStarts(starts);
+                    int line, col;
+                    IndexToLineCol(m_cursorPos, line, col);
+                    if (line + 1 < (int)starts.size()) {
+                        int ns = starts[line + 1];
+                        int ne = (line + 2 < (int)starts.size()) ? starts[line + 2] - 1
+                                                                 : (int)m_text.size();
+                        m_cursorPos = ns + std::min(col, ne - ns);
+                    }
+                    if (shift) m_selEnd = m_cursorPos; else ClearSelection();
+                    return true;
+                }
+                return false;
             case SDLK_HOME:
-                m_cursorPos = 0;
+                if (m_multiline) {
+                    std::vector<int> starts;
+                    ComputeLineStarts(starts);
+                    int line, col;
+                    IndexToLineCol(m_cursorPos, line, col);
+                    m_cursorPos = starts[line];
+                } else {
+                    m_cursorPos = 0;
+                }
                 if (shift) m_selEnd = m_cursorPos;
                 else ClearSelection();
                 return true;
             case SDLK_END:
-                m_cursorPos = (int)m_text.size();
+                if (m_multiline) {
+                    std::vector<int> starts;
+                    ComputeLineStarts(starts);
+                    int line, col;
+                    IndexToLineCol(m_cursorPos, line, col);
+                    m_cursorPos = (line + 1 < (int)starts.size()) ? starts[line + 1] - 1
+                                                                  : (int)m_text.size();
+                } else {
+                    m_cursorPos = (int)m_text.size();
+                }
                 if (shift) m_selEnd = m_cursorPos;
                 else ClearSelection();
                 return true;
@@ -1092,6 +1257,7 @@ SDL2Dialog::~SDL2Dialog() {
         m_dlgWindow = nullptr;
     }
     if (m_background) SDL_FreeSurface(m_background);
+    if (m_fullscreenBg && m_ownFullscreenBg) SDL_FreeSurface(m_fullscreenBg);
     for (auto& pair : m_fontCache)
         if (pair.second) TTF_CloseFont(pair.second);
 }
@@ -1187,7 +1353,14 @@ void SDL2Dialog::Render() {
 
     const int titleBarH = 26;
 
-    if (s_artLoaded && (s_dlgGold || s_borderHorz)) {
+    if (m_chromeless) {
+        // Full-screen end-game screen: stretch the painting over the whole rect,
+        // no gold frame or title bar (mirrors CWndCutScene's full-screen popup).
+        if (m_fullscreenBg)
+            SDL_BlitScaled(m_fullscreenBg, nullptr, mainSurface, &dlgRect);
+        else
+            FillRect(mainSurface, dlgRect, SDL_Color{0, 0, 0, 255});
+    } else if (s_artLoaded && (s_dlgGold || s_borderHorz)) {
         PaintGameBorder(mainSurface, dlgRect);
 
         SDL_Rect interior = {
@@ -1209,14 +1382,16 @@ void SDL2Dialog::Render() {
         DrawBevel(mainSurface, dlgRect, 3, UIColors::DialogFrame, UIColors::DialogDark);
     }
 
-    SDL_Rect titleRect = { m_x + borderSide, m_y + borderTop, m_width - 2 * borderSide, titleBarH };
-    FillRect(mainSurface, titleRect, UIColors::TitleBg);
+    if (!m_chromeless) {
+        SDL_Rect titleRect = { m_x + borderSide, m_y + borderTop, m_width - 2 * borderSide, titleBarH };
+        FillRect(mainSurface, titleRect, UIColors::TitleBg);
 
-    TTF_Font* titleFont = GetFont(16);
-    if (titleFont) {
-        SDL_Rect titleTextRect = { titleRect.x + 6, titleRect.y, titleRect.w - 12, titleRect.h };
-        RenderText(mainSurface, titleFont, m_title.c_str(), titleTextRect,
-                   UIColors::TitleText, false, true);
+        TTF_Font* titleFont = GetFont(16);
+        if (titleFont) {
+            SDL_Rect titleTextRect = { titleRect.x + 6, titleRect.y, titleRect.w - 12, titleRect.h };
+            RenderText(mainSurface, titleFont, m_title.c_str(), titleTextRect,
+                       UIColors::TitleText, false, true);
+        }
     }
 
     TTF_Font* widgetFont = GetFont(13);
@@ -1414,13 +1589,24 @@ bool SDL2Dialog::HandleEvent(SDL_Event& event) {
         OnCancel();
         return true;
     }
-    // ENTER = OK (unless an editbox has focus — let it handle enter)
-    if (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_RETURN) {
-        // If focused widget is a button, activate it
+    // ENTER handling. Order matters and is deliberately narrow so existing
+    // dialogs are unaffected: only a focused MULTI-LINE edit box turns Enter into
+    // a newline; a focused button activates (as before); everything else (single-
+    // line fields, list boxes, etc.) still means OK. (Routing Enter to *any*
+    // focused widget would let a focused list box swallow it via its dbl-click
+    // handler and suppress OK.)
+    if (event.type == SDL_KEYDOWN &&
+        (event.key.keysym.sym == SDLK_RETURN || event.key.keysym.sym == SDLK_KP_ENTER)) {
         if (m_focusIndex >= 0 && m_focusIndex < (int)m_widgets.size()) {
-            SDL2Button* btn = dynamic_cast<SDL2Button*>(m_widgets[m_focusIndex].get());
+            SDL2Widget* fw = m_widgets[m_focusIndex].get();
+            SDL2EditBox* edit = dynamic_cast<SDL2EditBox*>(fw);
+            if (edit && edit->IsMultiline()) {
+                edit->HandleEvent(event);   // insert newline
+                return true;
+            }
+            SDL2Button* btn = dynamic_cast<SDL2Button*>(fw);
             if (btn && btn->IsEnabled()) {
-                btn->HandleEvent(event);  // let button handle it
+                btn->HandleEvent(event);    // activate
                 return true;
             }
         }
@@ -1511,6 +1697,14 @@ int SDL2Dialog::DoModal() {
         }
 #endif
         SDL_RaiseWindow(m_dlgWindow);
+        // Grab KEYBOARD focus too, not just z-order. SDL routes key events to its
+        // focus window; SDL_RaiseWindow alone (-> SetForegroundWindow on Windows)
+        // gives focus only when the app is already foreground, so Enter/Esc worked
+        // when a human played but was silently dropped when the game was driven in
+        // the background (harness/script). Explicit SetWindowInputFocus makes the
+        // modal dialog accept Enter=OK / Esc=Cancel by default. (Same pairing as
+        // the Area-Map focus grab in SDL2UnitList.cpp.)
+        SDL_SetWindowInputFocus(m_dlgWindow);
     }
 
     OnInit();

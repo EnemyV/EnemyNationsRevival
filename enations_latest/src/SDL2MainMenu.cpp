@@ -16,6 +16,8 @@
 #include <SDL.h>
 #include <SDL_ttf.h>
 #include <fstream>
+#include <string>
+#include <vector>
 
 static void LogMenu(const std::string& msg) {
     std::ofstream log("SDL2MainMenu.log", std::ios::app);
@@ -329,32 +331,78 @@ void SDL2MainMenu::RenderTextShadowed(SDL_Surface* dst, TTF_Font* font, const ch
                                        bool center) {
     if (!font || !text || !text[0] || !dst) return;
 
-    // Render foreground text (to measure)
-    SDL_Surface* textSurf = TTF_RenderText_Blended_Wrapped(font, text, fg, dstRect.w);
-    if (!textSurf) return;
+    // Greedy word-wrap into lines that fit dstRect.w. We do the wrapping here
+    // (rather than via TTF_RenderText_Blended_Wrapped) so we can measure the
+    // true block width — the widest line — and center the whole block while the
+    // individual lines stay LEFT-aligned. The built-in wrapped renderer pads its
+    // surface toward the wrap width, which defeats horizontal centering and made
+    // the 2-line "Load Single Player Game" label hug the left edge.
+    std::vector<std::string> lines;
+    {
+        std::string src(text);
+        std::string line;
+        size_t pos = 0;
+        while (pos < src.size()) {
+            // Pull the next word (including any leading spaces collapsed to one).
+            size_t sp = src.find(' ', pos);
+            std::string word = (sp == std::string::npos)
+                                   ? src.substr(pos)
+                                   : src.substr(pos, sp - pos);
+            std::string candidate = line.empty() ? word : line + " " + word;
+            int w = 0, h = 0;
+            TTF_SizeUTF8(font, candidate.c_str(), &w, &h);
+            if (w > dstRect.w && !line.empty()) {
+                lines.push_back(line);
+                line = word;
+            } else {
+                line = candidate;
+            }
+            pos = (sp == std::string::npos) ? src.size() : sp + 1;
+        }
+        if (!line.empty()) lines.push_back(line);
+    }
+    if (lines.empty()) return;
 
-    // Center text within the dest rect
-    SDL_Rect actualRect = dstRect;
+    // Measure the block: width = widest line, height = lineSkip per line.
+    int lineSkip = TTF_FontLineSkip(font);
+    int blockW = 0;
+    std::vector<int> lineW(lines.size(), 0);
+    for (size_t i = 0; i < lines.size(); i++) {
+        int w = 0, h = 0;
+        TTF_SizeUTF8(font, lines[i].c_str(), &w, &h);
+        lineW[i] = w;
+        if (w > blockW) blockW = w;
+    }
+    int blockH = lineSkip * (int)lines.size();
+
+    // Origin of the block, centered within dstRect when requested.
+    int originX = dstRect.x;
+    int originY = dstRect.y;
     if (center) {
-        if (textSurf->w < dstRect.w)
-            actualRect.x += (dstRect.w - textSurf->w) / 2;
-        if (textSurf->h < dstRect.h)
-            actualRect.y += (dstRect.h - textSurf->h) / 2;
+        if (blockW < dstRect.w) originX += (dstRect.w - blockW) / 2;
+        if (blockH < dstRect.h) originY += (dstRect.h - blockH) / 2;
+        // Nudge the block down a hair — pure vertical centering sat a touch high.
+        originY += dstRect.h / 16;
     }
 
-    // Render shadow first (offset by 1-2 pixels)
-    SDL_Surface* shadowSurf = TTF_RenderText_Blended_Wrapped(font, text, shadow, dstRect.w);
-    if (shadowSurf) {
-        SDL_Rect shadowRect = actualRect;
-        shadowRect.x += 2;
-        shadowRect.y += 2;
-        SDL_BlitSurface(shadowSurf, nullptr, dst, &shadowRect);
-        SDL_FreeSurface(shadowSurf);
-    }
+    // Render each line left-aligned at the block's left edge (originX).
+    for (size_t i = 0; i < lines.size(); i++) {
+        int y = originY + (int)i * lineSkip;
 
-    // Blit foreground
-    SDL_BlitSurface(textSurf, nullptr, dst, &actualRect);
-    SDL_FreeSurface(textSurf);
+        SDL_Surface* shadowSurf = TTF_RenderUTF8_Blended(font, lines[i].c_str(), shadow);
+        if (shadowSurf) {
+            SDL_Rect shadowRect = { originX + 2, y + 2, 0, 0 };
+            SDL_BlitSurface(shadowSurf, nullptr, dst, &shadowRect);
+            SDL_FreeSurface(shadowSurf);
+        }
+
+        SDL_Surface* lineSurf = TTF_RenderUTF8_Blended(font, lines[i].c_str(), fg);
+        if (lineSurf) {
+            SDL_Rect lineRect = { originX, y, 0, 0 };
+            SDL_BlitSurface(lineSurf, nullptr, dst, &lineRect);
+            SDL_FreeSurface(lineSurf);
+        }
+    }
 }
 
 void SDL2MainMenu::ScreenToWallpaper(int screenX, int screenY, int& wallX, int& wallY) {
@@ -420,6 +468,34 @@ void SDL2MainMenu::RenderWallpaperOnly() {
     // Tile the WL24 wallpaper, matching MFC CDlgMain behavior when m_bTile is TRUE.
     // This is what shows behind dialogs during new game creation.
     TileWallpaper(winSurface);
+
+    m_gameWindow->PresentSurface();
+}
+
+void SDL2MainMenu::RenderWallpaperWithMessage(const char* msg) {
+    if (!m_initialized || !m_gameWindow) return;
+
+    SDL_Surface* winSurface = m_gameWindow->GetPresentSurface();
+    if (!winSurface) return;
+
+    TileWallpaper(winSurface);
+
+    if (msg && msg[0]) {
+        int winW = m_gameWindow->GetWidth();
+        int winH = m_gameWindow->GetHeight();
+        // Size the status font to the window so it reads at any resolution.
+        TTF_Font* font = GetCachedFont(__max(18, winH / 28));
+        if (font) {
+            SDL_Color fg     = { 230, 215, 170, 255 };  // warm gold, matches menu text
+            SDL_Color shadow = {  20,  20,  20, 255 };
+            SDL_Rect box = { winW / 4, (winH - winH / 12) / 2, winW / 2, winH / 12 };
+            RenderTextShadowed(winSurface, font, msg, box, fg, shadow, true);
+        }
+    }
+
+    // Pin the main window forward (same reason as RenderWallpaperOnly's raise).
+    if (m_gameWindow->GetWindow())
+        SDL_RaiseWindow(m_gameWindow->GetWindow());
 
     m_gameWindow->PresentSurface();
 }

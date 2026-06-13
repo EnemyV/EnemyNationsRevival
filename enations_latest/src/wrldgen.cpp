@@ -99,7 +99,8 @@ static float BlockEdgeFactor( int x, int y, int _x, int _y, int iSideSize )
     return t * t * ( 3.0f - 2.0f * t );
 }
 
-void CGameMap::GenerateOcean( int iNumBlks, int* piBlks, int iSide, int blockType, int& iOceansLeft, CGame& theGame )
+void CGameMap::GenerateOcean( int iNumBlks, int* piBlks, int iSide, int blockType,
+                              int oceanStyle, bool bDominant, int& iOceansLeft, CGame& theGame )
 {
     // figure out max ocean blocks
     int   count = theGame.GetAll( ).GetCount( );  // get player count
@@ -122,10 +123,18 @@ void CGameMap::GenerateOcean( int iNumBlks, int* piBlks, int iSide, int blockTyp
     if ( maxOceanTileCount > 0 )
     {
 
-        // somewhere between no ocean, and a huge ocean, but try to keep ~20% + player starts of it free
-        int totalCount = MyRand( ) % ( maxOceanTileCount );
+        // How many blocks to paint. Planet themes (bDominant) cover most of the map;
+        // the default ocean pass keeps ~20% + player starts free.
+        int totalCount;
+        if ( bDominant )
+            totalCount = maxOceanTileCount - ( MyRand( ) % ( 1 + maxOceanTileCount / 4 ) );
+        else
+            totalCount = MyRand( ) % ( maxOceanTileCount );
 
-        int oceanStyle = MyRand( ) % 4;  // 0 = stripe, 1 = scatter, 2 grow, grow+island
+        // oceanStyle < 0 -> pick at random (legacy WORLD_DEFAULT behavior).
+        // 0 = stripe, 1 = scatter, 2 = grow, 3 = grow+island
+        if ( oceanStyle < 0 )
+            oceanStyle = MyRand( ) % 4;
 
         if ( oceanStyle == 3 )
         {
@@ -731,19 +740,8 @@ void CGameMap::GenerateBadlandsBlock( int _x, int iSideSize, int _y)
 
     int boost = 2 + RandNum( 5 );
 
-#ifdef _DEBUG
-    // save original alts
-    int** originalAlts = new int*[iSideSize];
-    for ( int i = 0; i < iSideSize; i++ )
-    {
-        originalAlts[i] = new int[iSideSize];
-        for ( int j = 0; j < iSideSize; j++ )
-        {
-            CHex* pHex         = GetHex( CHexCoord( _x * iSideSize + i, _y * iSideSize + j ) );
-            originalAlts[i][j] = pHex->GetAlt( );
-        }
-    }
-#endif
+    // (a _DEBUG-only "save original alts" snapshot lived here; it was never read
+    // and never freed — ~66KB leaked per badlands block per worldgen. Removed.)
 
     // Calculate how much that boost is worth in "Real Altitude Units"
     // We subtract sea_level at the end to get JUST the change amount
@@ -1248,7 +1246,12 @@ void CGameMap::GenerateBadlandsBlock( int _x, int iSideSize, int _y)
         }
     }
 
-    return;
+    // (a stray `return;` used to sit here, making the slope-limit pass below
+    // unreachable. Briefly resurrected 2026-06-10, then re-disabled on review:
+    // spiky badlands are the desired look, and the pass is broken anyway —
+    // ConvertAlt(5,...) is below sea_level so maxSlope comes out NEGATIVE,
+    // which makes the clamp fire on every hex and invert terrain around the
+    // local average instead of limiting it. Kept under #if 0 below.)
 
     /*
     // Soft smoothing pass to blend mesas and erosion
@@ -1353,6 +1356,7 @@ void CGameMap::GenerateBadlandsBlock( int _x, int iSideSize, int _y)
     */
 
 
+#if 0  // disabled: spikes are the badlands look, and maxSlope is negative (see note above)
     // Limit per-hex slope to avoid spiky badlands while keeping bold features
     {
         int baseX = _x * iSideSize;
@@ -1408,7 +1412,8 @@ void CGameMap::GenerateBadlandsBlock( int _x, int iSideSize, int _y)
             }
         }
     }
-    
+#endif
+
 }
 
 // Gaussian-like blend weight calculation

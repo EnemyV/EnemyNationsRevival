@@ -147,17 +147,20 @@ CNetChat* CNetChat::Alloc( const CPlayer* pPlyr, const char* psMsg )
     return ( pRtn );
 }
 
-CNetStart::CNetStart( unsigned uRand, int iSide, int iSideSize, int iAiDiff, int iNumAi, int iNumHp, int iStart )
+CNetStart::CNetStart( unsigned uRand, int iSide, int iSideSize, int iAiDiff, int iNumAi, int iNumHp, int iStart,
+                      int iWorldType, int iRivers )
     : CNetCmd( cmd_start )
 {
 
-    m_uRand     = uRand;
-    m_iSide     = iSide;
-    m_iSideSize = iSideSize;
-    m_iAi       = iAiDiff;
-    m_iNumAi    = iNumAi;
-    m_iNumHp    = iNumHp;
-    m_iStart    = iStart;
+    m_uRand      = uRand;
+    m_iSide      = iSide;
+    m_iSideSize  = iSideSize;
+    m_iAi        = iAiDiff;
+    m_iNumAi     = iNumAi;
+    m_iNumHp     = iNumHp;
+    m_iStart     = iStart;
+    m_iWorldType = iWorldType;
+    m_iRivers    = iRivers;
     ASSERT_CMD( this );
 }
 
@@ -1184,7 +1187,13 @@ void CMsgBldgStat::AssertValid( ) const
     ASSERT( m_bMsg == bldg_stat );
     if ( theGame.AmServer( ) )
         ASSERT( ( 0 < m_dwID ) && ( m_dwID < theGame.GetNextID( ) ) );
-    ASSERT( m_iPlyrNum == theBuildingMap.GetBldg( m_dwID )->GetOwner( )->GetPlyrNum( ) );
+    // The building may not exist on this side YET — its create message can still
+    // be queued ahead of this stat update — so guard the lookup (matches the
+    // ==NULL|| pattern the sibling AssertValid methods use). Dereferencing the
+    // missing building here turned a debug sanity check into a hard crash at the
+    // start of a network game.
+    ASSERT( ( theBuildingMap.GetBldg( m_dwID ) == NULL ) ||
+            ( m_iPlyrNum == theBuildingMap.GetBldg( m_dwID )->GetOwner( )->GetPlyrNum( ) ) );
     ASSERT( ( 0 <= m_iBuilt ) && ( m_iBuilt <= 100 ) );
 }
 

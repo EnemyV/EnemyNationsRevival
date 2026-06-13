@@ -92,6 +92,14 @@ void CJoinMulti::OnSessionEnum( LPCVPSESSIONINFO pSi )
 #ifdef _DEBUG
     wTst |= CNetPublish::fdebug;
 #endif
+    // MUST mirror CNetPublish::Alloc (netapi.cpp), which sets fcheat under the
+    // same guard. This block was missing, so in a _CHEAT build the host
+    // advertised fcheat (flags 0x03) but the client expected 0x01 -> every
+    // session was rejected as a version mismatch ("no games found").
+#ifdef _CHEAT
+    wTst |= CNetPublish::fcheat;
+#endif
+
     if ( pPub->m_iGameID != TLP_GAME_ID ||
          pPub->m_cVerMajor != VER_MAJOR  ||
          pPub->m_cVerMinor != VER_MINOR  ||

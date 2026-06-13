@@ -98,6 +98,8 @@ CCreateBase::CCreateBase(int iTyp) {
     m_iNet = -1;
     m_iJoinUntil = 0;
     m_iNumPlayers = 0;
+    m_iWorldType = 0;  // WORLD_DEFAULT (EWorldType in terrain.h)
+    m_iRivers = 60;    // river density slider baseline
     m_pAdvNet = NULL;
 
     memset(&m_ID, 0, sizeof(m_ID));

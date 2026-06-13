@@ -18,6 +18,7 @@ static char BASED_CODE THIS_FILE[] = __FILE__;
 #define new DEBUG_NEW
 
 #include "blt.h"
+#include "en_gdi_audit.h"     // Phase 6 Stage 5a: TEMP GDI liveness instrumentation
 
 typedef HDC     ( WINGAPI* WINGCREATEDC_FUNC )           ();
 typedef BOOL    ( WINGAPI* WINGRECOMMENDDIBFORMAT_FUNC ) ( BITMAPINFO* );
@@ -374,6 +375,7 @@ void CColorFormat::CalcBytesPerPixel() {
 // CColorFormat::CalcScreenFormat
 //-------------------------------------------------------------------------
 void CColorFormat::CalcScreenFormat() {
+    EN_GDI_PROBE( "blt:CalcScreenFormat" );
     HDC hdc = GetDC( NULL );
 
     if ( !hdc ) {

@@ -26,6 +26,8 @@ namespace
         uint64_t seq;            // capture order — tiebreak for equal sort key
         bool     isVehicle;
         bool     isStructure;    // building/bridge/tree — sorts UNDER the mobile/effect layer at a tie
+        bool     isBridge;       // [BRG] probe: tagged by the bridge walk (terrain.cpp) so the
+                                 // store/prune paths can log what happens to bridge entries
         bool     isDynamic;      // captured as a moving/changing object (unit/building/projectile)
                                  // vs a STATIC tree/bridge. Static sprites are binned into the
                                  // persistent spatial grid ONCE; dynamics are scanned per frame.
@@ -61,6 +63,7 @@ namespace
     SDL_Texture* g_atlas = nullptr;
     int g_atlasW = 0, g_atlasH = 0;
     int g_shelfX = 0, g_shelfY = 0, g_shelfH = 0;        // shelf packer cursor
+    bool g_atlasFull = false;                            // overflowed since last reset (see TakeAtlasOverflow)
     const int kPad = 1;                                  // 1px gutter (no neighbour bleed)
 
     static uint64_t AtlasKey( const CSpriteDIB* dib, int zoom )
@@ -207,21 +210,14 @@ namespace
         }
         if ( g_shelfY + h + kPad > g_atlasH )          // atlas full → CPU fallback
         {
-            // DIAGNOSTIC (atlas-capacity probe): the shelf packer never evicts, so over a
-            // long session / busy map the 4096² atlas can fill and every new frame past this
-            // point silently stops rendering (trees vanish, partial states look wrong). Count
-            // overflows + log occupancy ONCE so we can confirm this is the larger-map cause.
+            // Atlas full. The shelf packer never evicts, so over a long session the 4096²
+            // atlas accumulates every (frame×zoom) ever seen — not just the on-screen
+            // working set — and fills. Flag it: next frame TakeAtlasOverflow() drives a full
+            // reset + repack from the current working set (terrain.cpp DiscoverSpritesGpu),
+            // so it self-heals instead of permanently dropping new sprites to the
+            // (GPU-invisible) CPU fallback. This frame the overflowing sprite CPU-falls-back.
+            g_atlasFull = true;
             Perf::CounterAdd( "spr.atlasfull", 1 );
-            static bool s_logged = false;
-            if ( !s_logged )
-            {
-                s_logged = true;
-                char msg[160];
-                _snprintf_s( msg, sizeof( msg ), _TRUNCATE,
-                             "[ATLAS-FULL] entries=%zu atlas=%dx%d shelfY=%d reqWxH=%dx%d\n",
-                             g_atlasMap.size( ), g_atlasW, g_atlasH, g_shelfY, w, h );
-                OutputDebugStringA( msg );
-            }
             return { 0, 0, 0, 0 };
         }
 
@@ -230,7 +226,37 @@ namespace
         if ( h > g_shelfH ) g_shelfH = h;
 
         std::vector<unsigned> rgba( (size_t)w * h );
-        if ( !dib->DecodeToRGBA( rgba.data( ) ) )      // structure-RLE vs vehicle-flat
+        bool decodeOK = dib->DecodeToRGBA( rgba.data( ) );   // structure-RLE vs vehicle-flat
+
+        // [TREEBUG] probe (EN_TREEBUG=1): the black-box/wrong-texture tree bug survives
+        // pan+zoom, so the bad data is baked into THIS cached atlas tile. Catch the bad bake
+        // as it happens: log decode failures and the black-box signature (a tile that is
+        // ~fully opaque but ~all-black RGB — i.e. a sprite-shaped opaque-black quad). One
+        // line per freshly-baked tile (cache hits return above), so volume stays low.
+        {
+            static int s_treebug = -1;
+            if ( s_treebug < 0 ) { const char* e = SDL_getenv( "EN_TREEBUG" ); s_treebug = ( e && *e && *e != '0' ) ? 1 : 0; }
+            if ( s_treebug )
+            {
+                size_t n = (size_t)w * h, opaque = 0, blackOpaque = 0, colored = 0;
+                for ( size_t i = 0; i < n; ++i )
+                {
+                    unsigned px = rgba[ i ];
+                    if ( ( px >> 24 ) >= 0xF0 ) { ++opaque; if ( ( px & 0x00FFFFFF ) <= 0x080808 ) ++blackOpaque; else ++colored; }
+                }
+                // suspicious = decode failed, OR a structure tile that is mostly opaque-black
+                bool blackBox = ( n > 0 ) && ( blackOpaque * 4 >= n ) && ( colored * 20 < n );
+                if ( !decodeOK || blackBox )
+                {
+                    char b[224];
+                    sprintf( b, "[TREEBUG] BAD BAKE dib=%p zoom=%d %dx%d decodeOK=%d opaque=%zu blackOpaque=%zu colored=%zu xiZoom=%d -> atlas(%d,%d)\n",
+                             (const void*)dib, zoom, w, h, (int)decodeOK, opaque, blackOpaque, colored, (int)xiZoom, loc.x, loc.y );
+                    OutputDebugStringA( b );
+                }
+            }
+        }
+
+        if ( !decodeOK )
             return { 0, 0, 0, 0 };
         SDL_Rect dst = { loc.x, loc.y, w, h };
         SDL_UpdateTexture( g_atlas, &dst, rgba.data( ), w * 4 );
@@ -296,7 +322,10 @@ namespace SDL2Sprites
                     bw -= bx; bh -= by;
                 }
                 if ( RectsOverlap( bx, by, bw, bh, dvx, dvy, dw, dh ) )
-                    { bool wasStatic = !s.isDynamic; it = g_sprites.erase( it ); g_dirty = true;
+                    { bool wasStatic = !s.isDynamic;
+                      if ( s.isBridge )
+                          OutputDebugStringA( "[BRG] erased by BeginFrame dirty rect (full frame; re-emit expected)\n" );
+                      it = g_sprites.erase( it ); g_dirty = true;
                       if ( wasStatic ) g_staticGridDirty = true; }   // drop its stale grid ptr
                 else
                     ++it;
@@ -323,7 +352,14 @@ namespace SDL2Sprites
             g_staticGridDirty = true;   // grid pointers into g_sprites are now stale
         }
         for ( const SprKey& k : g_dynKeys )
-            g_sprites.erase( k );   // dynamics only — not in the static grid
+        {
+            auto it = g_sprites.find( k );
+            if ( it == g_sprites.end( ) )
+                continue;
+            if ( it->second.isBridge )
+                OutputDebugStringA( "[BRG] dropped by BeginIncremental: bridge was captured DYNAMIC (walk skips re-capture -> vanishes)\n" );
+            g_sprites.erase( it );   // dynamics only — not in the static grid
+        }
         g_dynKeys.clear( );
         g_dirty = true;     // dynamic objects will be re-captured + re-emitted
         g_captureWasFull = false;
@@ -357,6 +393,7 @@ namespace
 
 extern int  g_enSprIsStruct;   // set by the engine draw path (terrain.cpp): 1=structure
 extern bool g_enViewScrolled;  // set by SDL2Terrain::Render: view scrolled this frame → full re-emit
+extern bool g_enSprBridgeProbe; // [BRG] terrain.cpp sets this around bridge draws (diagnosis)
 
 namespace SDL2Sprites
 {
@@ -365,21 +402,38 @@ namespace SDL2Sprites
                            int sortX, int sortY )
     {
         if ( !g_inFrame || !g_renderer )
+        {
+            if ( g_enSprBridgeProbe )
+                OutputDebugStringA( "[BRG] capture FAIL: not in frame / no renderer\n" );
             return false;
+        }
         AtlasLoc loc = GetAtlasLoc( dib, zoom, w, h );
         if ( loc.w == 0 )
+        {
+            if ( g_enSprBridgeProbe )
+                OutputDebugStringA( "[BRG] capture FAIL: atlas full -> CPU fallback\n" );
             return false;   // atlas full → CPU fallback
+        }
         // Clamp the visible band to the sprite (defensive).
         if ( clx < 0 ) { clw += clx; clx = 0; }
         if ( cly < 0 ) { clh += cly; cly = 0; }
         if ( clx + clw > w ) clw = w - clx;
         if ( cly + clh > h ) clh = h - cly;
         if ( clw <= 0 || clh <= 0 )
+        {
+            if ( g_enSprBridgeProbe )
+            {
+                char b[128];
+                sprintf( b, "[BRG] capture SWALLOWED: clipped away clw=%d clh=%d (w=%d h=%d)\n", clw, clh, w, h );
+                OutputDebugStringA( b );
+            }
             return true;    // fully clipped away — nothing to draw, but skip CPU blit
+        }
         EmitShadowForBox( vx, vy, w, h );   // one-shot; no-op unless armed for this unit
         Sprite s { };
         s.sortX = sortX; s.sortY = sortY; s.seq = ++g_seq; s.isVehicle = false;
         s.isStructure = ( g_enSprIsStruct != 0 );   // building/bridge/tree vs effect/projectile
+        s.isBridge = g_enSprBridgeProbe;             // [BRG] tag for store/prune logging
         s.isDynamic = g_captureDynamic;              // static tree/bridge vs moving structure
         s.ax = loc.x; s.ay = loc.y; s.aw = loc.w; s.ah = loc.h;
         s.vx = vx; s.vy = vy;
@@ -392,6 +446,13 @@ namespace SDL2Sprites
         if ( g_captureDynamic ) g_dynKeys.push_back( key );
         else g_staticGridDirty = true;   // a static sprite (re)appeared → rebin the cached grid
         g_dirty = true;
+        if ( g_enSprBridgeProbe )
+        {
+            char b[160];
+            sprintf( b, "[BRG] captured vx=%d vy=%d %dx%d clip=%d,%d %dx%d dyn=%d full=%d\n",
+                     vx, vy, w, h, clx, cly, clw, clh, (int)g_captureDynamic, (int)g_captureWasFull );
+            OutputDebugStringA( b );
+        }
         return true;
     }
 
@@ -672,7 +733,16 @@ namespace SDL2Sprites
             int bx, by, bw, bh; SprBox( it->second, bx, by, bw, bh );
             int sx = bx - ulX, sy = by - ulY;
             if ( sx + bw < -64 || sx > vpW + 64 || sy + bh < -64 || sy > vpH + 64 )
-                { it = g_sprites.erase( it ); continue; }
+                {
+                    if ( it->second.isBridge )
+                    {
+                        char b[160];
+                        sprintf( b, "[BRG] PRUNED off-screen: box=%d,%d %dx%d ul=%d,%d vp=%dx%d\n",
+                                 bx, by, bw, bh, ulX, ulY, vpW, vpH );
+                        OutputDebugStringA( b );
+                    }
+                    it = g_sprites.erase( it ); continue;
+                }
             order.push_back( &it->second ); ++it;
         }
         std::sort( order.begin( ), order.end( ), ZLess );
@@ -717,6 +787,20 @@ namespace SDL2Sprites
         // ulX != g_lastUlX can miss scrolls when the panel UL lags the terrain blit.)
         bool full = g_captureWasFull || needNew || g_enViewScrolled ||
                     ulX != g_lastUlX || ulY != g_lastUlY;
+
+        // DIRTY-RECT OVERFLOW → full re-emit. With ~1.5k vehicles active the incremental
+        // path was fed ~470 dirty rects PER FRAME: the O(n²) coalescer plus a static-grid
+        // query per coalesced rect cost more than just redrawing the layer once
+        // (spr.t.scan alone was ~95ms/s ≈ 4ms/frame at a quiet 23fps — the largest single
+        // render item). Past the threshold, one BuildOrderAll+EmitOrder is strictly
+        // cheaper. Guarded by total sprite count so the zoomed-out 100k-tree views (where
+        // a full walk IS the expensive case the grid was built for) keep the grid path.
+        if ( !full && g_sprites.size( ) < 20000 &&
+             ( g_dirtyCur.size( ) + g_dirtyPrev.size( ) ) > 96 )
+        {
+            full = true;
+            Perf::CounterAdd( "spr.fullsw", 1 );   // overflow switches this interval
+        }
 
         SDL_Texture* prevTarget = SDL_GetRenderTarget( r );
         SDL_Rect     savedVp; SDL_RenderGetViewport( r, &savedVp );
@@ -876,12 +960,23 @@ namespace SDL2Sprites
         return (int)( g_dirtyCur.size( ) + g_dirtyPrev.size( ) );
     }
 
+    // Did the atlas overflow since the last reset? Consumes the flag. The caller
+    // (terrain.cpp DiscoverSpritesGpu) responds by InvalidateTextures()+full repack so
+    // the atlas re-fills with only the current working set. See GetAtlasLoc overflow.
+    bool TakeAtlasOverflow( )
+    {
+        bool b = g_atlasFull;
+        g_atlasFull = false;
+        return b;
+    }
+
     void InvalidateTextures( )
     {
         if ( g_atlas ) { SDL_DestroyTexture( g_atlas ); g_atlas = nullptr; }
         g_atlasMap.clear( );
         g_atlasW = g_atlasH = 0;
         g_shelfX = g_shelfY = g_shelfH = 0;
+        g_atlasFull = false;
         g_sprites.clear( );
         g_staticGrid.clear( ); g_staticGridDirty = true;   // pointers into g_sprites are gone
         g_staticGridUlX = g_staticGridUlY = INT_MIN;

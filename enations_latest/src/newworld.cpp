@@ -79,8 +79,8 @@ namespace
         if ( g_cpLog )
             fclose( g_cpLog );
         g_cpLog = nullptr;
-        // Off by default; set EN_CREATEPROF=1 to write the create-phase timing log.
-        // All CpMark() calls no-op when g_cpLog is null.
+        // Off by default; set EN_CREATEPROF=1 to write the create-phase timing log
+        // (CreateProfile.log in the run dir). All CpMark() calls no-op when null.
         if ( !getenv( "EN_CREATEPROF" ) )
             return;
         g_cpLog = fopen( "CreateProfile.log", "w" );
@@ -314,6 +314,15 @@ void CConquerApp::ReadyToCreate() {
 }
 
 void CConquerApp::StartCreateWorld() {
+
+    // Guard against DOUBLE world creation. Both the host's Start (ReadyToCreate)
+    // and the client-ready auto-start (CmdReady) call StartCreateWorld; the second
+    // fires RE-ENTRANTLY from inside the first CreateNewWorld's BaseYield message
+    // pump, building the world twice -> AV in World::Create (duplicate area/world
+    // windows). The first call flips the net mode to 'starting' (below), so any
+    // later/nested call bails here.
+    if (theNet.GetMode() == CNetApi::starting)
+        return;
 
     ASSERT_VALID (this);
     ASSERT (theGame.GetMe()->GetNetNum() > 0);
@@ -796,6 +805,10 @@ void CConquerApp::StartAi() {
         // Done building every AI's map — drop the snapshot so gameplay (the AI
         // threads launched just below) uses live, locked game-map reads.
         AiHexCacheFree();
+
+        if ( g_cpLog )
+            fprintf( g_cpLog, "  (AI count = %d)\n", theGame.GetAi().GetCount() );
+        CpMark( "AI setup (all AIs, serial)" );
 
         POSITION pos;
         // now we start each thread

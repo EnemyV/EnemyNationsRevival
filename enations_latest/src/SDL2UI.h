@@ -38,11 +38,17 @@ public:
     SDL_Rect GetRect() const { return m_rect; }
     void SetRect(int x, int y, int w, int h) { m_rect = {x, y, w, h}; }
 
+    // Per-widget font size override (in points). 0 = use the dialog's default
+    // widget font. SDL2Dialog::Render() resolves this to a cached TTF_Font.
+    void SetFontSize(int pt) { m_fontOverride = pt; }
+    int  GetFontSize() const { return m_fontOverride; }
+
 protected:
     SDL_Rect m_rect;
     bool m_visible = true;
     bool m_enabled = true;
     bool m_focused = false;
+    int  m_fontOverride = 0;
 };
 
 // ============================================================================
@@ -292,11 +298,22 @@ public:
         m_bgColor = bg; m_textColor = text; m_customColors = true;
     }
 
+    // Multi-line mode: Enter inserts a newline (instead of triggering the dialog's
+    // OK), text renders on multiple rows, and the cursor moves in 2D. Used by the
+    // email-compose body field.
+    void SetMultiline(bool m) { m_multiline = m; }
+    bool IsMultiline() const { return m_multiline; }
+
 private:
     // Map a pixel X coordinate to a character index in m_text
     int XToCharIndex(int pixelX) const;
     // Get pixel X offset for a character index
     int CharIndexToX(int index) const;
+    // --- Multi-line helpers (used only when m_multiline) ---
+    void ComputeLineStarts(std::vector<int>& starts) const;  // text index of each line start
+    void IndexToLineCol(int index, int& line, int& col) const;
+    int  XYToCharIndex(int px, int py) const;                 // pixel -> flat index
+    int  LineHeight() const;                                  // one row's pixel height
     // Delete the selected text range, leaving cursor at selection start
     void DeleteSelection();
     // Return true if there is an active selection
@@ -318,6 +335,8 @@ private:
     bool m_customColors = false;
     SDL_Color m_bgColor   = { 255, 255, 255, 255 };
     SDL_Color m_textColor = {  48,  58, 148, 255 };
+
+    bool m_multiline = false;  // Enter inserts newline; 2D cursor (email-compose body)
 };
 
 // ============================================================================
@@ -406,7 +425,18 @@ public:
     uint32_t GetSDLWindowID() const;
 
     // Called by GameWindow each frame for active non-modal dialogs
-    void ProcessEventNonModal(SDL_Event& event) { m_forceFrame = true; HandleEvent(event); }
+    void ProcessEventNonModal(SDL_Event& event) {
+        HandleEvent(event);
+        // Force an immediate repaint for meaningful interaction (clicks, keys,
+        // text, wheel) and for a live title-bar drag, so input stays responsive.
+        // Plain hover MOTION is intentionally left to the fixed-interval throttle:
+        // otherwise moving the mouse across the dialog re-renders + re-presents its
+        // window at full rate, and that per-frame present visibly drags the gameplay
+        // framerate (e.g. lag while the build-structure menu is open). The hover
+        // state still updates immediately above; only the repaint is throttled.
+        if (event.type != SDL_MOUSEMOTION || m_dlgDragging)
+            m_forceFrame = true;
+    }
     // Throttle the per-frame repaint: a non-modal dialog renders into its own
     // window and presents it every game frame, which steals frames from the game.
     // Repaint on a fixed interval (enough for the research flask animation) and
@@ -417,6 +447,8 @@ public:
             return;
         m_lastFrameMs = now;
         m_forceFrame = false;
+        OnFrame();   // per-frame logic (e.g. chat/mail live-refresh) — modal got
+                     // this from DoModal; the non-modal path needs it too.
         Render();
     }
 
@@ -465,6 +497,16 @@ protected:
     // Used by specialized dialogs like Build Structure that have their own background art.
     // NOT owned by the dialog — caller keeps it alive.
     void SetCustomBackground(SDL_Surface* bg) { m_customBg = bg; }
+
+    // Full-bleed background: fills the ENTIRE dialog rect — no gold border, no title
+    // bar — with this surface, stretched to fit. Used by the full-screen end-game
+    // (win/lose/scenario) screens that mirror CWndCutScene's full-screen painting.
+    // If takeOwnership is true the dialog frees the surface on destruction.
+    void SetFullscreenBackground(SDL_Surface* surf, bool takeOwnership) {
+        m_fullscreenBg = surf;
+        m_ownFullscreenBg = takeOwnership;
+        m_chromeless = true;
+    }
 
     // Usable interior geometry — the area below the title bar and inside the gold
     // border. Layout code should anchor to these instead of guessing pixel offsets
@@ -553,6 +595,13 @@ private:
 
     // Custom interior background (stretched instead of tiled DLG_BKGND)
     SDL_Surface* m_customBg = nullptr;
+
+    // Full-screen chromeless background (see SetFullscreenBackground). When set,
+    // Render() skips the gold border + title bar and stretches this over the whole
+    // dialog rect, then draws the widgets on top.
+    SDL_Surface* m_fullscreenBg = nullptr;
+    bool m_ownFullscreenBg = false;
+    bool m_chromeless = false;
 
     // Shared game art surfaces (loaded once from theBitmaps)
     static SDL_Surface* s_dlgBkgnd;      // DLG_BKGND — dialog background texture

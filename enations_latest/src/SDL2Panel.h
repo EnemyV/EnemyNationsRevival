@@ -251,6 +251,14 @@ private:
     uint32_t    m_ownWindowID = 0;
     bool        m_suppressSync = false;  // skip SDL_SetWindowPos/Size during temp swaps
 
+    // When a panel detaches WHILE a load is in progress (loading dialog up), its
+    // own window is created hidden and shown on the first post-load RenderDetached
+    // — otherwise the freshly-spawned window flashes over the background for a
+    // frame before the game finishes loading. m_detachOwner lets RenderDetached
+    // re-query whether the load has finished.
+    bool                m_deferShow   = false;
+    class GameWindow*   m_detachOwner = nullptr;
+
     // T0b: optional GPU present for the detached window (gated by [Advanced]
     // Renderer). When set, RenderDetached composites the frame into m_ownBack
     // and presents it via m_ownRenderer instead of SDL_GetWindowSurface — this

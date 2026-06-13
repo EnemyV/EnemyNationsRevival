@@ -60,6 +60,9 @@ public:
     // Game Options dialog.
     void ResetWindowLayout();
 
+    // True if any panel is currently being dragged or resized by the user.
+    bool AnyPanelInteracting() const;
+
     // Composite all panels to the window surface and present.
     // Call this once per frame after all game rendering is complete.
     void Composite();

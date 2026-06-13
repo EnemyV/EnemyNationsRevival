@@ -89,6 +89,12 @@ namespace SDL2Sprites
 
     void InvalidateTextures( );
 
+    // Atlas overflow self-heal: the append-only packer can fill over a long session.
+    // GetAtlasLoc flags it; the render orchestrator consumes the flag once per frame and,
+    // when set, does a full InvalidateTextures()+repack so the atlas holds only the current
+    // on-screen working set rather than every (frame×zoom) ever seen. Returns+clears the flag.
+    bool TakeAtlasOverflow( );
+
     // --- Item 5 (dirty-rects) ---
     // Per-frame list of the regions that actually changed (moving/animating units), in
     // VIEW space. DirtyNewFrame() rotates this frame's list to "previous" (the PAINT_BOTH

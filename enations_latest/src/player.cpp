@@ -2298,6 +2298,21 @@ int CGame::StartGame( BOOL bReplace )
                         pHexOn->m_psprite = theTerrain.GetSprite( iType, iNum <= 1 ? 0 : RandNum( iNum - 1 ) );
                     }
                 }
+
+                // farm plots are "hidden until seen" like roads: the save carries the
+                // SAVER's view, where their own plots are always painted. Re-disguise
+                // as the underlying soil (mirrors CFarmBuilding::RevertFields); the
+                // farm's next BuildFarm tick repaints any plot we can currently see.
+                else if ( pHexOn->GetVisibleType( ) == CHex::fields )
+                {
+                    int iSoil = pHexOn->GetType( );
+                    pHexOn->SetVisibleType( iSoil );
+                    pHexOn->SetGrowStage( 0 );
+                    CHexCoord _hex( pHexOn->GetHex( ) );
+                    int iCount        = theTerrain.GetCount( iSoil );
+                    pHexOn->m_psprite = theTerrain.GetSprite(
+                        iSoil, iCount <= 1 ? 0 : ( ( _hex.X( ) * 2 + _hex.Y( ) ) % iCount ) );
+                }
                 pHexOn++;
             }
         }

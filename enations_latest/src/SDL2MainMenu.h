@@ -34,6 +34,11 @@ public:
     // Render only the wallpaper background (no buttons, no title) - used behind dialogs.
     void RenderWallpaperOnly();
 
+    // Render the wallpaper plus a centered status message, then present one frame.
+    // Used to give feedback during blocking network calls (OpenServer / OpenClient /
+    // gethostbyname) that would otherwise sit on a bare wallpaper with no indicator.
+    void RenderWallpaperWithMessage(const char* msg);
+
     // Handle an SDL event. Returns true if the event was consumed.
     bool HandleEvent(const SDL_Event& event);
 
