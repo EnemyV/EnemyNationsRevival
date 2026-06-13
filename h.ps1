@@ -363,9 +363,11 @@ switch ($cmd) {
     . (Join-Path $SC 'harness-common.ps1')
     $info = Resolve-GameTarget -Window $role
     if (-not ('HXM.RM' -as [type])) {
-      Add-Type -Name RM -Namespace HXM -MemberDefinition '[DllImport("user32.dll")]public static extern bool SetCursorPos(int x, int y); [DllImport("user32.dll")]public static extern void mouse_event(uint f, uint x, uint y, uint d, int e); [DllImport("user32.dll")]public static extern bool ClientToScreen(IntPtr h, ref HXM.PT p); [DllImport("user32.dll")]public static extern bool SetForegroundWindow(IntPtr h); public struct PT { public int X; public int Y; }'
+      # NOTE: the struct must be referenced UNQUALIFIED (ref PT, not ref HXM.PT) — the
+      # namespace doesn't exist yet while this very definition is being compiled.
+      Add-Type -Name RM -Namespace HXM -MemberDefinition '[DllImport("user32.dll")]public static extern bool SetCursorPos(int x, int y); [DllImport("user32.dll")]public static extern void mouse_event(uint f, uint x, uint y, uint d, int e); [DllImport("user32.dll")]public static extern bool ClientToScreen(IntPtr h, ref PT p); [DllImport("user32.dll")]public static extern bool SetForegroundWindow(IntPtr h); public struct PT { public int X; public int Y; }'
     }
-    $p = New-Object HXM.PT; $p.X = [int]$a1; $p.Y = [int]$a2
+    $p = New-Object HXM.RM+PT; $p.X = [int]$a1; $p.Y = [int]$a2
     [void][HXM.RM]::ClientToScreen($info.Hwnd, [ref]$p)
     [void][HXM.RM]::SetForegroundWindow($info.Hwnd)
     Start-Sleep -Milliseconds 300

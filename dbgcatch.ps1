@@ -1,6 +1,6 @@
 param(
     [int]$Seconds = 25,
-    [string]$Exe = 'd:\Enemy Nations\src\cmakeBuild\enations_latest\src\Debug\enations.exe',
+    [string]$Exe = 'd:\Enemy Nations\src\cmakeBuild-x64\enations_latest\src\Debug\enations.exe',
     [string]$WorkDir = 'd:\Enemy Nations'
 )
 $src = @"

@@ -38,7 +38,7 @@ through a single accessor at a single chokepoint:
 | Mining | `m_fMineProd` | `GetMineProd()` | [mainloop.cpp:2416](../enations_latest/src/mainloop.cpp#L2416) |
 | Farming | `m_fFarmProd` | `GetFarmProd()` | [mainloop.cpp:2486](../enations_latest/src/mainloop.cpp#L2486) |
 | Manufacturing | `m_fManfProd` | `GetManfProd()` | [mainloop.cpp:1826](../enations_latest/src/mainloop.cpp#L1826) |
-| Materials (smelt/refine) | `m_fMtrlsProd` | `GetMtrlsProd()` | [mainloop.cpp:2225](../enations_latest/src/mainloop.cpp#L2225) |
+| Materials (smelt/refine) | `m_fMtrlsProd` | `GetMtrlsProd()` | [mainloop.cpp:2232](../enations_latest/src/mainloop.cpp#L2232) (in `BuildMaterials`, fn starts :2220) |
 | Population growth | `m_fPopGrowth` | `GetPopGrowth()` | [player.cpp:653](../enations_latest/src/player.cpp#L653) |
 | Food consumption rate | `m_fEatingRate` | `GetEatingRate()` | [player.cpp:585](../enations_latest/src/player.cpp#L585), [:588](../enations_latest/src/player.cpp#L588) |
 | Combat attack/defense | `m_fAttack` / `m_fDefense` | `GetAttackMult()` / `GetDefenseMult()` | [new_unit.cpp:1181](../enations_latest/src/new_unit.cpp#L1181), [:1185](../enations_latest/src/new_unit.cpp#L1185) |
@@ -213,8 +213,8 @@ call it on toggle and after load.
 | `netcmd.h/.cpp` | `edict_toggle` enum + `CNetEdictToggle` class |
 | `netapi.cpp` | dispatch case for `edict_toggle` |
 | `SDL2GameDialogs.h/.cpp` | new `SDL2EdictsDialog` (checkbox list + live upkeep readout) |
-| `toolbar.cpp` | open hook gated on the access building, guard-pointer like `_GotoScience` |
-| an entry-point UI | a button on the office/command-center info panel or toolbar |
+| `area.cpp` | **access hook**: add `UTcommand` + `UThousing` cases to the `OnLButtonDblClk` union-type switch ([area.cpp:4538](../enations_latest/src/area.cpp#L4538)) → open the edict dialog non-modally (mirrors the `UTresearch`/`UTembassy` cases). Differentiate office vs apartment by `GetBldgType()`. |
+| `SDL2GameDialogs.*` | `OpenEdicts(category)` helper + guard-pointer like `m_pSdlResearch`/`_GotoScience` |
 
 ## 4. Verified assumptions
 
@@ -357,3 +357,304 @@ call it on toggle and after load.
 The expensive infrastructure (multipliers, demand tracking, serialization, dialog
 framework, checkbox widget, net-command pattern) **already exists**. New work is mostly
 wiring + one data table + one dialog + one net message + a few serialize lines.
+
+---
+
+# Part B — Expanded edict catalog & research gating
+
+> Added 2026-06-07. **PLAN STATE ONLY — do not implement.** Lots of prerequisites
+> (Part A v1, the new engine levers in §11, and the research-table work in §10) come first.
+> This section catalogs the full proposed edict set and classifies each by how much *new*
+> engine work it needs, so we can sequence them.
+
+## 9. Edict catalog & per-edict feasibility
+
+Feasibility tiers:
+- 🟢 **Easy** — reuses an existing per-player multiplier; fold the edict factor into the
+  accessor (the Part A pattern). No new engine mechanism.
+- 🟡 **Moderate** — needs *scoped* application at an existing production hook
+  (by building type / material / unit type), i.e. the "Fortify the Border = forts only"
+  pattern (§2.3). Repeatable but per-case.
+- 🔴 **Novel** — needs an engine mechanism that does **not** exist yet (see §11). Must be
+  investigated/built before the edict is possible.
+
+### Core set (Part A)
+| Edict | Effects | Cost | Tier | Hook |
+|---|---|---|---|---|
+| Fortify the Border | +50% fort construction | +20% energy | 🟡 | type-scope `ConstructBuilding` on `fort` |
+| Nutritional Plenitude | +20% pop growth | +50% food | 🟢 | `m_fPopGrowth`, `m_fEatingRate` |
+| Mining Subsidies | +25% mine output | +50% mine energy, +25% mine workforce | 🟢 | `m_fMineProd` + upkeep |
+| Research Subsidies | +25% research | +50% rsrch energy, +25% rsrch workforce | 🟢 | `GetRsrchMult()` (now wired) + upkeep |
+
+### Logistics & Transportation
+| Edict | Effects | Cost | Tier | Notes |
+|---|---|---|---|---|
+| **High-Octane Routing** | +25% truck speed *(drop "collision avoidance" — no engine knob)* | +25% global gas use | 🟡 | truck-speed lever resolved → inject at [vehmove.cpp:69](../enations_latest/src/vehmove.cpp#L69), scoped to trucks (RG-10). Gas-use side 🟢. |
+| **Overloaded Axles** | +25% truck cargo capacity, −15% truck speed | none | 🟡 | capacity = scale `GetParam(i)` at router fill ([chproute.cpp:5430](../enations_latest/src/chproute.cpp#L5430)); speed = vehmove.cpp:69 (RG-10). Thematic gate: `cargo_handling` research. |
+
+### Industrial Output
+| Edict | Effects | Cost | Tier | Notes |
+|---|---|---|---|---|
+| **Fossil Fuel Overdrive** | +30% output from fossil power plants | +30% coal & gas burn at those plants | 🟡 | fossil test resolved: `GetBldPower()->GetInput() >= 0` (RG-8). Scale output `pBp->GetPower()` + burn `iNum` in `BuildPower` ([mainloop.cpp:2333](../enations_latest/src/mainloop.cpp#L2333)). |
+| **Just-In-Time Manufacturing** | buildings halt when local store >25% full | none | 🔴 | needs conditional production gate in `Operate` keyed on local `m_aiStore` fullness (§11.5). |
+| **Furnace Subsidies** | +25% steel/iron refinery output | +50% power at those refineries | 🟡 | scope `BuildMaterials` ([mainloop.cpp:2232](../enations_latest/src/mainloop.cpp#L2232)) by **building type `smelter`** (NOT union type — `UTmaterials` also covers the oil→gas refinery; verified there are exactly 2 converters, smelter #41 + refinery #29, see [[project_resource_system_overview]]) + per-building power add. |
+| **Strip Mining Protocols** | +40% coal/iron extraction | −20% deposit lifespan | 🟡/🔴 | mineral-scope `BuildMine` on coal/iron (🟡) **+** a deposit depletion-rate lever in `CMinerals` (🔴, §11.6). |
+
+### Population & Sustenance
+| Edict | Effects | Cost | Tier | Notes |
+|---|---|---|---|---|
+| **Synthetic Rations** | −30% food consumption, −10% worker efficiency | +10% global electricity | 🟢/🟡 | `m_fEatingRate` (🟢) + global power upkeep (🟢) + global worker-efficiency mult (🟡, §11.1). |
+| **Mandatory Overtime** | +15% global production, −15% pop growth | +10% global food | 🟢 | all existing levers: global prod mult (§11.1), `m_fPopGrowth`, `m_fEatingRate`. |
+| **Automated Draft** | +50% infantry build speed, −20% worker efficiency | none | 🟡 | unit-type-scope barracks/manf build on infantry + global worker-efficiency mult (§11.1). |
+
+## 10. Research gating (edicts unlocked by research)
+
+**Most edicts should be locked behind research.** The research system already supports this:
+- Topics are a fixed-index enum `CRsrchArray` ([research.h:70-123](../enations_latest/src/research.h#L70-L123)),
+  loaded from ENATIONS.DAT, with `CRsrchItem` carrying prerequisites
+  (`m_piRsrchRequired`, `m_piBldgsRequired`, `m_iScenarioReq`,
+  [research.h:50-55](../enations_latest/src/research.h#L50-L55)) and name/desc/result strings.
+- Discovery fires `UpdateRacialAttributes(topic)` ([player.cpp:498](../enations_latest/src/player.cpp#L498)).
+  **Edict-unlock topics need no case there** — they're inert "unlock flags"; the edict itself
+  applies the modifier. The dialog just checks `GetMe()->GetRsrch(topic).m_bDiscovered`.
+- **Save-friendly:** research status is serialized with a dynamic count
+  ([player.cpp:767-768](../enations_latest/src/player.cpp#L767-L768)), not a fixed-size array —
+  so growing the topic list is *less* save-breaking than the material/building fixed arrays
+  (verify, RG-9).
+
+**Two gating paths:**
+- **(A) Reuse existing topics** (zero data-file work). Several map thematically:
+  `fortification` → Fortify the Border; `cargo_handling` → Overloaded Axles;
+  `gas_turbine`/`nuclear` → Fossil Fuel Overdrive; `mine_2` → Strip Mining;
+  `large_facilities`/`advanced_facilities` → Furnace Subsidies / industrial edicts.
+- **(B) Add new dedicated "Edicts" research topics** — grow the `CRsrchArray` enum + the
+  ENATIONS.DAT research LIST. This is the **same fixed-index data-file debt** as adding
+  materials/buildings, and it is **enforced**: `CRsrchArray::Open` reads a `NUMI` count from the
+  .DAT and asserts `iSize + 1 == num_types` ([research.cpp:189](../enations_latest/src/research.cpp#L189)),
+  so the enum and the .DAT must grow together or load aborts. (Topics also carry
+  `m_piRsrchRequired`/`m_piBldgsRequired` prereqs read from the same chunk, :201-211.)
+  See [[project_new_resources_plan]] and [[project_resource_system_overview]]. Bundle this with
+  the new-resources .DAT work.
+
+**Recommendation:** v1 uses path (A) — gate the first edicts on existing topics, no .DAT
+changes. Add a dedicated edict research branch (path B) later, once the research-table .DAT
+growth is tackled.
+
+## 11. New engine levers required (TODO — investigate before building)
+
+These don't exist yet. Each is a prerequisite for the 🟡/🔴 edicts above.
+
+1. **Global production multiplier** `m_fEdictGlobalProdMult` — folded into *all* `Get*Prod()`
+   accessors. Enables "global production speed" and "worker efficiency" effects (Mandatory
+   Overtime, Synthetic Rations, Automated Draft). **Easy** — same pattern as Part A §2.1.
+2. **Repeatable type-scoped production** — generalize the fort pattern (§2.3) into a tidy helper
+   so scoping by building type (smelter), union type, mined material (coal/iron), or built-unit
+   type (infantry) is uniform. **Moderate.**
+3. **Truck speed & cargo-capacity multipliers — RESOLVED (was Novel, now 🟡).** Speed injects at
+   the single consumption site [vehmove.cpp:69](../enations_latest/src/vehmove.cpp#L69)
+   (`m_fVehMove += … GetData()->GetSpeed() …`), scoped to truck/transport unit type; MP-safe
+   (deterministic accumulation + net-synced edict). Capacity scales the per-material fill cap
+   `GetParam(i)` at the router fill site ([chproute.cpp:5430](../enations_latest/src/chproute.cpp#L5430)).
+   Drop the "collision avoidance" sub-effect (no scalar knob).
+4. **Per-power-plant-type output + fuel-burn scaling — RESOLVED (was Novel, now 🟡).** Fossil test
+   is `GetBldPower()->GetInput() >= 0` ([mainloop.cpp:2343](../enations_latest/src/mainloop.cpp#L2343));
+   scale output `pBp->GetPower()` (:2354) and burn `iNum` (:2387) inside `CPowerBuilding::BuildPower`.
+   No need to enumerate `power_1/2/3` — the fuel-input branch is the discriminator.
+5. **Conditional production gate on local store fullness** — add a check in `CBuilding::Operate`
+   that halts output when the building's `m_aiStore` for its product exceeds a % of capacity.
+   Needed by Just-In-Time Manufacturing. **Novel** (also a balance question: interacts with the
+   CHPRouter truck dispatch logic).
+6. **Mineral-deposit depletion-rate multiplier** — a knob on `CMinerals` quantity drain so
+   Strip Mining can trade deposit lifespan for extraction rate. **Novel.**
+7. **"Collision avoidance" (High-Octane Routing)** — no clean engine knob; pathing behavior is
+   not a simple scalar. **Recommend dropping this sub-effect or re-spec'ing** the edict to
+   speed + gas-cost only.
+
+## 12. Investigations — RESOLVED (2026-06-07)
+
+All Part B open questions were investigated and resolved against source.
+
+- **RG-2 — access point. RESOLVED → gate on `command_center`, not "office".**
+  - The human starts with only a crane + trucks from race **supplies**
+    ([wrldinit.cpp](../enations_latest/src/wrldinit.cpp), `GetSupplies`); there is **no
+    `command_center` in the supplies list**, so the player *builds* everything including the CC.
+  - The human **does** own offices — the SDL info panel draws office occupancy bars via
+    `GetBldgType()==office` ([SDL2Toolbar.cpp:635,939](../enations_latest/src/SDL2Toolbar.cpp#L635)).
+    ("only placed by computer" means the game auto-picks the *variant*, not that the AI owns them.)
+  - **But `GetExists(CStructureData::office)` is unreliable:** `AddExists` is keyed on the
+    *specific* type `GetData()->GetType()` ([mainloop.cpp:1628](../enations_latest/src/mainloop.cpp#L1628),
+    new_unit.cpp:1957/3259), and `office == office_2_1`, so it counts only one of the 5 office
+    variants. To gate on "any office" you must **sum `GetExists` over the office variant indices**
+    or iterate buildings by `GetBldgType()`.
+  - **`command_center` is a single building type** → `GetExists(command_center)` is reliable, and
+    "edicts from your command center" is the cleaner metaphor. **Use it.** (The legacy
+    `BLDG_DLG_GRP` build-group enum is dead in the SDL port, so build-menu availability is a UI
+    detail, not a gating concern.)
+- **RG-8 — fossil power plants. RESOLVED.** `CPowerBuilding::BuildPower`
+  ([mainloop.cpp:2343-2354](../enations_latest/src/mainloop.cpp#L2343)) branches on
+  `pBp->GetInput()`: **`GetInput() < 0` = non-fossil** (free power, no fuel); **`GetInput() >= 0`
+  = fossil**, burning the stored input material (coal/gas) whose index *is* `GetInput()`. So Fossil
+  Fuel Overdrive scopes on `GetBldPower()->GetInput() >= 0` and scales output `pBp->GetPower()`
+  (:2354) + burn `iNum` (:2387-2388), all in one function. **Upgrades 🔴 → 🟡.**
+- **RG-9 — research-table growth. RESOLVED, favorable.** Saves **auto-migrate**: on load, if
+  `m_aRsrch.GetSize() < theRsrch.GetSize()` the array is resized up and new topics default to
+  undiscovered ([player.cpp:857-866](../enations_latest/src/player.cpp#L857-L866)). So adding
+  edict-unlock topics does **not** break old saves. The only hard constraint is the
+  enum/.DAT match assert ([research.cpp:189](../enations_latest/src/research.cpp#L189)) — the RSRH
+  chunk's `NUMI` + per-item `DATA` chunks must be regenerated to match the grown enum (same .DAT
+  tooling as the new-resources work). Net discovery is per-index (`CNetRsrchDisc`), fine across a
+  shared build.
+- **RG-10 — truck speed injection. RESOLVED.** Vehicle data-speed is consumed at a single site,
+  [vehmove.cpp:69](../enations_latest/src/vehmove.cpp#L69):
+  `m_fVehMove += (m_fDamPerfMult * 0.9 * GetOpersElapsed() * GetData()->GetSpeed()) / …`. A
+  per-player truck-speed multiplier (scoped to truck/transport unit type) injects there; it's
+  MP-safe (deterministic accumulation, net-synced edict bit). **Upgrades truck-speed 🔴 → 🟡.**
+  Truck **capacity** (Overloaded Axles) scales the per-material fill cap `GetParam(i)` at the
+  router fill site ([chproute.cpp:5430](../enations_latest/src/chproute.cpp#L5430)) — 🟡.
+  *"Collision avoidance" has no engine knob — drop it.*
+- **RG-11 — JIT vs CHPRouter. RESOLVED, no conflict.** The router is **demand/pull-driven** —
+  producers fire `MsgOutMat` only when an *input* store crosses the "1-minute" threshold
+  ([mainloop.cpp:2266-2281](../enations_latest/src/mainloop.cpp#L2266)); output pickup is driven by
+  *consumers'* needs (`GetNextMinuteMat`, chproute.cpp:4335+). Halting a producer when its **output**
+  store exceeds 25% of `GetCapacity()` is a clean soft-pause added at the top of the `Build*`
+  operate path — it doesn't fight routing (trucks still pull existing stock). **Still 🔴 (new
+  behavior) but architecturally unblocked.**
+
+## 13. Verification log (2026-06-07)
+
+Full audit of every claim/approach in this plan against the current source.
+
+**Confirmed correct (load-bearing):**
+- Production multipliers + single-chokepoint accessors: `GetConstProd` ([vehicle.cpp:938](../enations_latest/src/vehicle.cpp#L938)),
+  `GetMineProd`/`GetMtrlsProd` ([mainloop.cpp:2423](../enations_latest/src/mainloop.cpp#L2423)/[:2232](../enations_latest/src/mainloop.cpp#L2232)),
+  `GetManfProd` (:1826), `GetFarmProd` (:2486). Folding an edict factor into the accessor reaches all consumers. ✔
+- `GetProd`/`GetFrameProd` wrappers compose power/people/damage throttles ([building.inl:253-276](../enations_latest/src/building.inl#L253-L276)). ✔
+- Upkeep hooks: `m_iPwrNeed`/`m_iPplNeedBldg` cleared at [player.cpp:424-427](../enations_latest/src/player.cpp#L424-L427) then re-accumulated per building; food drained in `PeopleAndFood`. ✔
+- `GetBldgType()` **collapses** `fort_1/2/3`→`fort`, offices→`office`, plants→`power` ([unit.cpp:2274-2285](../enations_latest/src/unit.cpp#L2274-L2285)) — §2.3 Fortify scoping is valid. ✔
+- Net path: `theGame.PostToAll(CNetCmd const*, int, BOOL)` ([player.h:621](../enations_latest/src/player.h#L621)); dispatch switch + `CNetRsrchDisc` template (netapi.cpp:3439, netcmd.h:1466). ✔
+- **Research gating pattern already exists**: `GetRsrch(CRsrchArray::X).m_bDiscovered` is exactly how `CanBridge`/`CanCopper`/… work ([player.h:421-426](../enations_latest/src/player.h#L421-L426)). ✔
+- Levers for the novel edicts exist as fields: `m_iMinerals` deposit lifespan ([building.h:1149](../enations_latest/src/building.h#L1149)), `GetCapacity` store cap ([building.h:421](../enations_latest/src/building.h#L421)) for JIT, vehicle speed/cargo (above). ✔
+- `SDL2Checkbox` widget + non-modal dialog pattern. ✔
+- Research bug (RG-1) fixed + committed (8322ccb); race data verified balanced (Part A §RG-1). ✔
+
+**Corrected during this audit:**
+- §11.4 `BuildPower` is `CPowerBuilding::BuildPower` at **mainloop.cpp:2333**, not ~1478 (1478 is the rocket free-power line). Fixed.
+- §2.1 `GetMtrlsProd` consumer is **:2232** (call site), not :2225 (an assert). Fixed.
+- §9 Furnace Subsidies must scope by **building type `smelter`**, not the `UTmaterials` union type (which also includes the oil→gas refinery). Fixed.
+- §9/§11.4 Fossil distinction can't use `GetBldgType()` (collapses to `power`) — must read fuel input. Clarified (RG-8).
+- §10 path-B debt is **assert-enforced** at research.cpp:189. Strengthened.
+
+**Follow-up investigations (RG-2, RG-8, RG-9, RG-10, RG-11): all RESOLVED — see §12.**
+- RG-2 → gate on `command_center` (single type; `GetExists(office)` only counts one variant).
+- RG-8 → fossil = `GetBldPower()->GetInput() >= 0`. RG-10 → truck speed at vehmove.cpp:69.
+  RG-9 → saves auto-migrate research topics. RG-11 → JIT is a soft-pause, no router conflict.
+- Net effect: Fossil Fuel Overdrive, High-Octane Routing, Overloaded Axles all dropped from
+  🔴 to 🟡. Only **Just-In-Time Manufacturing** remains 🔴 (genuinely new behavior, but unblocked).
+
+**Overall:** every Part A approach is verified buildable, and after the §12 investigations
+**all but one Part B edict (JIT) are 🟢/🟡** with concrete injection sites identified. The plan is
+fully grounded in the current source.
+
+---
+
+# Part C — Theorized edict expansion, organized by host building
+
+> Added 2026-06-08. **PLAN STATE / brainstorm.** Per design direction, edicts are hosted at
+> **three** administrative buildings, each with a thematic category. This both fits the
+> buildings' real roles and spreads the unlocks across the tech/build tree.
+
+## 14. Host-building architecture
+
+| Host building | Theme | Why it fits |
+|---|---|---|
+| **Command Center** | Military / strategic / global directives | the HQ; single building type → reliable `GetExists(command_center)` gate |
+| **Office** | Economy / industry / production / logistics | offices = white-collar workplaces; the production-tuning edicts live here |
+| **Apartments** | Population / sustenance / workforce / civil | apartments = housing; population & food edicts live here |
+
+**Dialog/access — double-click the building (VERIFIED hook).** Per design direction, the edict
+dialog opens on **double-clicking the host building on the map**, exactly like double-clicking a
+factory opens build-unit or a crane opens build-building. The dispatch point is
+`CWndArea::OnLButtonDblClk` ([area.cpp:4538](../enations_latest/src/area.cpp#L4538)), which already
+switches on the building's **union type** and opens non-build dialogs for two cases — a direct
+precedent:
+```cpp
+switch (GetData()->GetUnionType()) {
+case UTvehicle: case UTshipyard: ((CVehicleBuilding*)punit)->GetDlgBuild(); return; // factory
+case UTresearch: theApp.m_wndBar._GotoScience(); return;   // research dialog (non-modal)
+case UTembassy:  theApp.m_wndBar.GotoRelations(); return;  // diplomacy dialog
+// --- NEW ---
+case UTcommand:  OpenEdicts(EDICT_CAT_MILITARY);   return; // command center
+case UThousing:                                            // office + apartment share UThousing
+    OpenEdicts( GetBldgType()==office ? EDICT_CAT_ECONOMY : EDICT_CAT_POPULATION );
+    return;
+}
+```
+- `command_center` → `UTcommand`; `office`/`apartment` → `UThousing`
+  (differentiate by `GetBldgType()`). **Both `UTcommand` and `UThousing` are currently unhandled
+  in that switch**, so adding cases is non-invasive (the only `UThousing` fall-through today is the
+  truck-load check, which doesn't apply to housing).
+- The handler already requires the building be **visible, owned by me, and the selected unit**
+  (area.cpp:4502-4529) — exactly the right guard. Open **non-modal** (like `_GotoScience`), so the
+  sim keeps running. Ownership/research gating is enforced inside `OpenEdicts` (and by graying
+  checkboxes), so no extra build-menu wiring is needed.
+
+**Gating reliability (from RG-2):** `command_center` is a single type — `GetExists` works directly.
+`office` and `apartment` are multi-variant (`office_2_1…`, `apartment_1_1…`) and `GetExists(office)`
+counts only the first variant, so ownership must be tested by **summing `GetExists` over the
+variant indices** or iterating buildings by `GetBldgType()` (the SDL panel already uses
+`GetBldgType()==office`/`==apartment`). Add a small helper `OwnsBldgFamily(BLDG_TYPE)`.
+
+## 15. Command Center edicts (military / strategic)
+
+| Edict | Effects | Cost | Tier | Hook |
+|---|---|---|---|---|
+| **Fortify the Border** *(Part A)* | +50% fort construction | +20% energy | 🟡 | type-scope `ConstructBuilding` on `fort` |
+| **Total Surveillance** *(your radar idea)* | +20% unit/building vision | +flat energy (units use gas not power → add to `m_iPwrNeed`) | 🟡 | scale `m_iSpottingRange` at [new_unit.cpp:1176](../enations_latest/src/new_unit.cpp#L1176); **cap at `MAX_SPOTTING=15`** (hardcoded arrays, [base.h:84](../enations_latest/src/base.h#L84)); force per-unit recompute on toggle |
+| **War Footing** | +15% attack & +15% defense | +food + workforce | 🟢 | `m_fAttack`/`m_fDefense` (`GetAttackMult`/`GetDefenseMult`, consumed [new_unit.cpp:1181-1185](../enations_latest/src/new_unit.cpp#L1181)) |
+| **Forced March** | +20% military move speed | +gas | 🟡 | same lever as truck speed — [vehmove.cpp:69](../enations_latest/src/vehmove.cpp#L69), scoped to combat units |
+| **Conscription** *(= Automated Draft)* | +50% infantry build speed | −20% global worker efficiency | 🟡 | unit-type-scope barracks build + global prod mult (§11.1) |
+| **Defensive Doctrine** | +25% defense | +energy | 🟢 | `m_fDefense` only (cheaper, defensive counterpart to War Footing) |
+
+## 16. Office edicts (economy / industry / logistics)
+
+Hosts the Part A subsidies + all of Part B's industrial/logistics set. Additional ideas:
+
+| Edict | Effects | Cost | Tier | Hook |
+|---|---|---|---|---|
+| **Mining / Research / Furnace Subsidies** *(A/B)* | +25% that sector | sector energy + workforce | 🟢/🟡 | `m_fMineProd` / `GetRsrchMult` / smelter-scoped `BuildMaterials` |
+| **Fossil Fuel Overdrive, JIT, Strip Mining, High-Octane Routing, Overloaded Axles** *(B)* | — | — | 🟡/🔴 | see §9, §12 |
+| **Assembly Line** | +25% vehicle manufacturing | +energy + materials drain | 🟢 | `m_fManfProd` (mainloop.cpp:1826) |
+| **Lean Operations** | −20% building power *consumption* | −10% global production | 🟡 | scale `AddPwrNeed` amount globally + global prod mult; lets a power-starved economy trade output for grid headroom |
+| **Materials Stockpiling** | +25% building store capacity | +energy | 🟡 | scale `GetCapacity` (m_iCapacity) read; pairs with JIT |
+
+## 17. Apartment edicts (population / sustenance)
+
+Hosts the Part A/B population set + civil-life ideas:
+
+| Edict | Effects | Cost | Tier | Hook |
+|---|---|---|---|---|
+| **Nutritional Plenitude, Mandatory Overtime, Synthetic Rations** *(A/B)* | — | — | 🟢 | `m_fPopGrowth`/`m_fEatingRate` + global prod mult |
+| **Baby Boom** | +30% population growth | +food consumption | 🟢 | `m_fPopGrowth`, `m_fEatingRate` |
+| **Rationing** | −25% food consumption | −10% pop growth, −5% worker efficiency | 🟢 | `m_fEatingRate`, `m_fPopGrowth`, global prod mult |
+| **High-Density Housing** | +25% housing capacity | +energy | 🟡 | scale where `m_iAptCap`/`m_iOfcCap` are accumulated ([player.h:443-444](../enations_latest/src/player.h#L443)); *verify the accumulation site* |
+| **Public Health** | −pop death rate (fewer starvation/overcrowding deaths) | +food | 🟢 | `m_fPopDeath` (`GetPopDeath`, [player.h:333](../enations_latest/src/player.h#L333)) |
+
+## 18. New levers introduced by Part C (beyond §11)
+
+1. **Vision multiplier at `new_unit.cpp:1176`** — scale `m_iSpottingRange`; **must clamp to
+   `MAX_SPOTTING=15`** and recompute on toggle (spotting is computed per-unit, not read live).
+   🟡 — *verify when this line runs and how to trigger a re-scan after a toggle (RG-12).*
+2. **Global building-power-consumption multiplier** (Lean Operations) — scale every `AddPwrNeed`
+   amount. Distinct from the upkeep-*adds* in §2.2. 🟡.
+3. **Store-capacity multiplier** (Materials Stockpiling) — scale `GetCapacity()` reads. 🟡.
+4. **Housing-capacity multiplier** (High-Density Housing) — scale `m_iAptCap`/`m_iOfcCap`
+   accumulation. 🟡 — *verify accumulation site (RG-13).*
+
+## 19. Part C open questions
+- **RG-12 — vision recompute.** Where/when is `m_iSpottingRange` (new_unit.cpp:1176) computed, and
+  what forces a re-scan so a toggled radar edict affects already-built units immediately?
+- **RG-13 — housing-cap accumulation site.** Confirm where `m_iAptCap`/`m_iOfcCap` are summed from
+  apartment/office buildings (analogous to `AddPwrHave`) before speccing High-Density Housing.
+- **Balance — vision cap.** With `MAX_SPOTTING=15`, a +20% radar edict only helps units whose base
+  spotting × multiplier stays ≤ 15; high-base units clamp. Confirm that's acceptable (it is, given
+  the engine's own ceiling).
