@@ -71,7 +71,12 @@
 
 #include <cassert>
 #include <limits.h>
+#ifdef __APPLE__
+#include <stdlib.h>     // macOS has no <malloc.h>; malloc/alloca live here
+#include <alloca.h>
+#else
 #include <malloc.h>
+#endif
 #include <math.h>
 #include <strstream>
 #ifdef _WIN32

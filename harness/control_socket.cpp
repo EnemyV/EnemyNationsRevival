@@ -19,6 +19,8 @@
 #include <SDL.h>
 
 #include <atomic>
+#include <cerrno>
+#include <csignal>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -42,10 +44,14 @@ SDL_Renderer* g_renderer = nullptr;
 // a screenshot. So prefer the focused window only when it's reasonably sized,
 // otherwise fall back to the LARGEST visible window (the map/main view). SDL has
 // no window enumeration, but window IDs are small ints — scan a low range.
+// IDs are monotonic and never reused, so after many game reloads (each spawns
+// and destroys child windows) live IDs climb; keep the cap well above the
+// handful of windows ever shown at once.
+static const Uint32 kMaxWindowId = 256;
 SDL_Window* largest_window() {
     SDL_Window* best = g_window; int bestArea = 0;
     if (g_window) { int w,h; SDL_GetWindowSize(g_window,&w,&h); bestArea = w*h; }
-    for (Uint32 id = 1; id <= 64; ++id) {
+    for (Uint32 id = 1; id <= kMaxWindowId; ++id) {
         SDL_Window* win = SDL_GetWindowFromID(id);
         if (!win) continue;
         if ((SDL_GetWindowFlags(win) & SDL_WINDOW_SHOWN) == 0) continue;
@@ -75,7 +81,10 @@ std::atomic<Uint32>    g_shotWinId{0};   // 0 = use active_window(); else this w
 std::atomic<bool>      g_shotPending{false};
 std::atomic<bool>      g_shotDone{false};
 std::atomic<bool>      g_shotOK{false};
-int                    g_shotW = 0, g_shotH = 0;
+// Written by the render thread in EnHarness_Service, read by the socket thread;
+// atomic to avoid a data race. g_shotDone (stored last / read first) is the
+// release/acquire fence that publishes these together with g_shotOK.
+std::atomic<int>       g_shotW{0}, g_shotH{0};
 
 void push_mouse_button(int x, int y, Uint8 button, bool down, Uint32 winId = 0, Uint8 clicks = 1) {
     SDL_Event e; SDL_zero(e);
@@ -125,7 +134,7 @@ void handle_command(const std::string& line, int conn) {
         g_shotDone = false; g_shotOK = false; g_shotPending = true;
         // wait (up to ~2s) for the render thread to service it
         for (int i = 0; i < 400 && !g_shotDone.load(); ++i) { struct timespec ts={0,5000000}; nanosleep(&ts,nullptr); }
-        snprintf(reply, sizeof(reply), g_shotOK.load() ? "ok %d %d %s\n" : "err shot failed\n", g_shotW, g_shotH, path);
+        snprintf(reply, sizeof(reply), g_shotOK.load() ? "ok %d %d %s\n" : "err shot failed\n", g_shotW.load(), g_shotH.load(), path);
     } else if (strcmp(cmd, "click") == 0) {
         int x=0,y=0; char rb[16]={0};
         sscanf(line.c_str(), "%*s %d %d %15s", &x, &y, rb);
@@ -161,7 +170,7 @@ void handle_command(const std::string& line, int conn) {
         SDL_PushEvent(&e);
     } else if (strcmp(cmd, "raise") == 0) {
         // Bring all app windows forward (un-bury borderless detached panels).
-        for (Uint32 id = 1; id <= 64; ++id) {
+        for (Uint32 id = 1; id <= kMaxWindowId; ++id) {
             SDL_Window* w = SDL_GetWindowFromID(id);
             if (w && (SDL_GetWindowFlags(w) & SDL_WINDOW_SHOWN)) SDL_RaiseWindow(w);
         }
@@ -170,7 +179,7 @@ void handle_command(const std::string& line, int conn) {
     } else if (strcmp(cmd, "wins") == 0) {
         // Enumerate windows (id:WxH shown title) so the driver can pick the view.
         std::string out;
-        for (Uint32 id = 1; id <= 64; ++id) {
+        for (Uint32 id = 1; id <= kMaxWindowId; ++id) {
             SDL_Window* win = SDL_GetWindowFromID(id);
             if (!win) continue;
             int w=0,h=0; SDL_GetWindowSize(win,&w,&h);
@@ -190,6 +199,9 @@ void handle_command(const std::string& line, int conn) {
 }
 
 void* server_thread(void*) {
+    // A client that disconnects mid-reply would otherwise SIGPIPE-kill the game;
+    // ignore it so a stray write() just fails with EPIPE.
+    signal(SIGPIPE, SIG_IGN);
     int port = 7070;
     if (const char* p = getenv("EN_HARNESS_PORT")) { int v = atoi(p); if (v > 0) port = v; }
     int srv = socket(AF_INET, SOCK_STREAM, 0);
@@ -202,9 +214,21 @@ void* server_thread(void*) {
     fprintf(stderr, "[harness] listening on 127.0.0.1:%d\n", port);
     for (;;) {
         int conn = accept(srv, nullptr, nullptr);
-        if (conn < 0) continue;
-        char buf[2048]; ssize_t n = read(conn, buf, sizeof(buf)-1);
-        if (n > 0) { buf[n] = 0; handle_command(std::string(buf), conn); }
+        if (conn < 0) {
+            if (errno == EINTR) continue;
+            struct timespec ts = {0, 10000000}; nanosleep(&ts, nullptr);  // avoid busy-spin on persistent error
+            continue;
+        }
+        // Read one newline-terminated command. Loop because a command can arrive
+        // split across TCP segments; cap total size to bound a misbehaving client.
+        std::string line; char buf[2048];
+        for (;;) {
+            ssize_t n = read(conn, buf, sizeof(buf));
+            if (n <= 0) break;
+            line.append(buf, (size_t)n);
+            if (line.find('\n') != std::string::npos || line.size() > 64 * 1024) break;
+        }
+        if (!line.empty()) handle_command(line, conn);
         close(conn);
     }
     return nullptr;

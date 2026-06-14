@@ -4,8 +4,12 @@ if (${CMAKE_VERSION} VERSION_LESS 3.12)
     cmake_policy(VERSION ${CMAKE_MAJOR_VERSION}.${CMAKE_MINOR_VERSION})
 endif ()
 
-find_program(CCACHE_PROGRAM ccache
-        PATHS D:\\ccache-4.8.1-windows-x86_64)
+# On Windows look in the bundled ccache dir; elsewhere just use PATH.
+if (WIN32)
+    find_program(CCACHE_PROGRAM ccache PATHS D:\\ccache-4.8.1-windows-x86_64)
+else ()
+    find_program(CCACHE_PROGRAM ccache)
+endif ()
 if (CCACHE_PROGRAM)
     message(STATUS "Found ccache: ${CCACHE_PROGRAM}")
     set(CMAKE_CXX_COMPILER_LAUNCHER ${CCACHE_PROGRAM})

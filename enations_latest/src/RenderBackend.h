@@ -33,8 +33,10 @@ inline RenderBackend GetRenderBackend()
     // the flicker-free full-walk sprite layer (the software path's incremental
     // dirty-rect model drops moving vehicles). EN_SOFTWARE forces the legacy
     // software path for debugging; an explicit [Advanced]Renderer=0 also honors it.
-    if ( getenv( "EN_SOFTWARE" ) )
-        return RenderBackend::Software;
+    // A value of "0" or empty means "not set" (so EN_SOFTWARE=0 doesn't force it).
+    if ( const char* e = getenv( "EN_SOFTWARE" ) )
+        if ( e[0] && e[0] != '0' )
+            return RenderBackend::Software;
     int v = w22::GetProfileInt( "Advanced", "Renderer", 1 );  // default SDL2 on Linux
     if ( v == 0 )
         return RenderBackend::Software;

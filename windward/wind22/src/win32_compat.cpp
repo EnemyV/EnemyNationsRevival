@@ -353,7 +353,7 @@ extern "C" UINT timeEndPeriod(UINT)   { return 0; }
 namespace {
 struct MMTimer {
     LPTIMECALLBACK cb; DWORD_PTR user; UINT delay; bool periodic; UINT flags;
-    std::atomic<bool> stop; pthread_t tid; UINT id;
+    std::atomic<bool> stop; UINT id;
 };
 std::mutex g_mmMutex;
 std::map<UINT, MMTimer*> g_mmTimers;
@@ -375,6 +375,12 @@ void* mm_timer_thread(void* arg) {
             if (t->cb) t->cb(t->id, 0, t->user, 0, 0);
         }
     } while (t->periodic && !t->stop.load());
+    // The thread owns the timer once started: drop it from the registry and
+    // free it here (covers both one-shot self-completion and timeKillEvent).
+    // Done under the lock so a concurrent timeKillEvent either still finds us
+    // (and just sets stop) or misses us entirely — never a use-after-free.
+    { std::lock_guard<std::mutex> lk(g_mmMutex); g_mmTimers.erase(t->id); }
+    delete t;
     return nullptr;
 }
 } // namespace
@@ -384,19 +390,29 @@ extern "C" UINT timeSetEvent(UINT delay, UINT, LPTIMECALLBACK cb, DWORD_PTR user
     t->cb = cb; t->user = user; t->delay = delay ? delay : 1; t->flags = flags;
     t->periodic = (flags & 0x0001u) != 0;   // TIME_PERIODIC
     t->stop.store(false);
-    { std::lock_guard<std::mutex> lk(g_mmMutex); t->id = g_mmNextId++; g_mmTimers[t->id] = t; }
-    if (pthread_create(&t->tid, nullptr, mm_timer_thread, t) != 0) {
-        std::lock_guard<std::mutex> lk(g_mmMutex); g_mmTimers.erase(t->id); delete t; return 0;
+    UINT myid;
+    { std::lock_guard<std::mutex> lk(g_mmMutex); myid = t->id = g_mmNextId++; g_mmTimers[t->id] = t; }
+    // Detached from birth: the timer thread frees itself on exit, so nothing
+    // joins it and the MMTimer's lifetime never depends on a stored pthread_t
+    // (which a fast one-shot could free before pthread_create even returned).
+    pthread_attr_t attr; pthread_attr_init(&attr);
+    pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
+    pthread_t th;
+    int rc = pthread_create(&th, &attr, mm_timer_thread, t);
+    pthread_attr_destroy(&attr);
+    if (rc != 0) {
+        std::lock_guard<std::mutex> lk(g_mmMutex); g_mmTimers.erase(myid); delete t; return 0;
     }
-    return t->id;
+    return myid;
 }
 extern "C" UINT timeKillEvent(UINT id) {
-    MMTimer* t = nullptr;
-    { std::lock_guard<std::mutex> lk(g_mmMutex); auto it = g_mmTimers.find(id); if (it != g_mmTimers.end()) { t = it->second; g_mmTimers.erase(it); } }
-    if (!t) return 0;
-    t->stop.store(true);
-    pthread_detach(t->tid);   // let it exit on its own; don't block the caller
-    return 0;
+    std::lock_guard<std::mutex> lk(g_mmMutex);
+    auto it = g_mmTimers.find(id);
+    if (it == g_mmTimers.end()) return 11;   // MMSYSERR_INVALPARAM (unknown timer id)
+    // Signal stop only; the timer thread removes itself from the map and frees
+    // its MMTimer when it next wakes (it was created detached — no join here).
+    it->second->stop.store(true);
+    return 0;                                 // TIMERR_NOERROR
 }
 static void fill_systemtime(SYSTEMTIME* st, const struct tm& tmv, long ms) {
     if (!st) return;
@@ -550,18 +566,32 @@ static void fill_find(WIN32_FIND_DATAA* d, const char* dirPath, struct dirent* d
     }
     strncpy(d->cFileName, de->d_name, MAX_PATH - 1);
 }
+// Win32 FindFirstFile and the CRT _findfirst are case-INSENSITIVE; emulate that
+// with FNM_CASEFOLD so asset/save enumeration behaves the same on case-sensitive
+// Linux/macOS filesystems. Fall back to case-sensitive if the platform lacks it.
+#ifndef FNM_CASEFOLD
+#define FNM_CASEFOLD 0
+#endif
+// Split a Win32-style glob into (dir, name), translating '\' separators to '/'
+// so a pattern like "saves\\*.SAV" opens the right directory on a POSIX host.
+namespace {
+void split_glob(const char* pattern, std::string& dir, std::string& glob) {
+    std::string pat(pattern);
+    for (char& c : pat) if (c == '\\') c = '/';
+    size_t slash = pat.find_last_of('/');
+    if (slash == std::string::npos) { dir = "."; glob = pat; }
+    else { dir = pat.substr(0, slash); glob = pat.substr(slash + 1); if (dir.empty()) dir = "/"; }
+}
+} // namespace
 extern "C" HANDLE FindFirstFileA(LPCSTR pattern, LPWIN32_FIND_DATAA data) {
     if (!pattern || !data) return INVALID_HANDLE_VALUE;
-    std::string pat(pattern);
-    std::string dir = ".", glob = pat;
-    size_t slash = pat.find_last_of("/\\");
-    if (slash != std::string::npos) { dir = pat.substr(0, slash); glob = pat.substr(slash + 1); }
+    std::string dir, glob; split_glob(pattern, dir, glob);
     DIR* dp = opendir(dir.c_str());
     if (!dp) { g_lastError = ERROR_FILE_NOT_FOUND; return INVALID_HANDLE_VALUE; }
     FindObj* f = new FindObj(); f->dir = dp; f->dirPath = dir; f->pattern = glob;
     struct dirent* de;
     while ((de = readdir(dp)) != nullptr) {
-        if (fnmatch(f->pattern.c_str(), de->d_name, 0) == 0) { fill_find(data, f->dirPath.c_str(), de); return f; }
+        if (fnmatch(f->pattern.c_str(), de->d_name, FNM_CASEFOLD) == 0) { fill_find(data, f->dirPath.c_str(), de); return f; }
     }
     closedir(dp); delete f; g_lastError = ERROR_FILE_NOT_FOUND; return INVALID_HANDLE_VALUE;
 }
@@ -571,7 +601,7 @@ extern "C" BOOL FindNextFileA(HANDLE h, LPWIN32_FIND_DATAA data) {
     FindObj* f = static_cast<FindObj*>(o);
     struct dirent* de;
     while ((de = readdir(f->dir)) != nullptr) {
-        if (fnmatch(f->pattern.c_str(), de->d_name, 0) == 0) { fill_find(data, f->dirPath.c_str(), de); return TRUE; }
+        if (fnmatch(f->pattern.c_str(), de->d_name, FNM_CASEFOLD) == 0) { fill_find(data, f->dirPath.c_str(), de); return TRUE; }
     }
     return FALSE;
 }
@@ -594,16 +624,13 @@ void fill_finddata(struct _finddata_t* d, const std::string& dirPath, struct dir
 } // namespace
 extern "C" intptr_t _findfirst(const char* spec, struct _finddata_t* data) {
     if (!spec || !data) return -1;
-    std::string s(spec), dir = ".", glob = s;
-    size_t slash = s.find_last_of("/\\");
-    if (slash != std::string::npos) { dir = s.substr(0, slash); glob = s.substr(slash + 1); }
-    if (dir.empty()) dir = ".";
+    std::string dir, glob; split_glob(spec, dir, glob);
     DIR* dp = opendir(dir.c_str());
     if (!dp) { g_lastError = ERROR_FILE_NOT_FOUND; return -1; }
     FindData* f = new FindData{ dp, dir, glob };
     struct dirent* de;
     while ((de = readdir(dp)) != nullptr) {
-        if (fnmatch(f->pattern.c_str(), de->d_name, 0) == 0) { fill_finddata(data, f->dirPath, de); return (intptr_t)f; }
+        if (fnmatch(f->pattern.c_str(), de->d_name, FNM_CASEFOLD) == 0) { fill_finddata(data, f->dirPath, de); return (intptr_t)f; }
     }
     closedir(dp); delete f; g_lastError = ERROR_FILE_NOT_FOUND; return -1;
 }
@@ -611,7 +638,7 @@ extern "C" int _findnext(intptr_t handle, struct _finddata_t* data) {
     FindData* f = (FindData*)handle; if (!f || !data) return -1;
     struct dirent* de;
     while ((de = readdir(f->dir)) != nullptr) {
-        if (fnmatch(f->pattern.c_str(), de->d_name, 0) == 0) { fill_finddata(data, f->dirPath, de); return 0; }
+        if (fnmatch(f->pattern.c_str(), de->d_name, FNM_CASEFOLD) == 0) { fill_finddata(data, f->dirPath, de); return 0; }
     }
     return -1;
 }
@@ -683,6 +710,39 @@ void save_registry() {
     fclose(fp);
 }
 
+// Values are stored as "<type>:<payload>" on a single line. REG_DWORD payloads
+// are decimal and REG_BINARY payloads are lowercase hex; every other type is the
+// raw string (kept human-readable). A string carrying bytes that would break the
+// line-oriented file (NUL/CR/LF) is promoted to REG_BINARY hex so it still
+// round-trips byte-for-byte. Type-prefixed (not mode-prefixed) so a value that
+// itself contains ':' — e.g. a Windows path — never needs escaping.
+std::string hex_encode(const unsigned char* d, size_t n) {
+    static const char* H = "0123456789abcdef";
+    std::string s; s.reserve(n * 2);
+    for (size_t i = 0; i < n; ++i) { s.push_back(H[d[i] >> 4]); s.push_back(H[d[i] & 0xF]); }
+    return s;
+}
+std::string hex_decode(const std::string& s) {
+    auto val = [](char c) -> int {
+        if (c >= '0' && c <= '9') return c - '0';
+        if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+        if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+        return -1;
+    };
+    std::string out; out.reserve(s.size() / 2);
+    for (size_t i = 0; i + 1 < s.size(); i += 2) {
+        int hi = val(s[i]), lo = val(s[i + 1]);
+        if (hi < 0 || lo < 0) break;
+        out.push_back((char)((hi << 4) | lo));
+    }
+    return out;
+}
+bool needs_hex(const unsigned char* d, size_t n) {
+    for (size_t i = 0; i < n; ++i)
+        if (d[i] == '\0' || d[i] == '\n' || d[i] == '\r') return true;
+    return false;
+}
+
 } // namespace
 
 extern "C" LONG RegOpenKeyExA(HKEY key, LPCSTR sub, DWORD, DWORD, PHKEY result) {
@@ -706,39 +766,64 @@ extern "C" LONG RegQueryValueExA(HKEY key, LPCSTR name, LPDWORD, LPDWORD type,
     std::string full = key_path(key) + "\\" + (name ? name : "");
     std::map<std::string,std::string>::iterator it = g_reg.find(full);
     if (it == g_reg.end()) return ERROR_FILE_NOT_FOUND;
-    // payload encoded "type:value"
+    // Decode "<type>:<payload>". The type drives how payload is read, so a value
+    // that itself contains ':' (e.g. a Windows path) stays intact: REG_DWORD is
+    // decimal, REG_BINARY is hex (embedded NUL/newline-safe), everything else is
+    // the raw string. A line with no ':' is treated as a bare REG_SZ string.
     const std::string& enc = it->second;
+    DWORD vtype = REG_SZ;
+    std::string payload = enc;
     size_t colon = enc.find(':');
-    DWORD vtype = REG_SZ; std::string payload = enc;
-    if (colon != std::string::npos) { vtype = (DWORD)atoi(enc.substr(0, colon).c_str()); payload = enc.substr(colon + 1); }
+    if (colon != std::string::npos) {
+        vtype = (DWORD)atoi(enc.substr(0, colon).c_str());
+        payload = enc.substr(colon + 1);
+    }
     if (type) *type = vtype;
     if (vtype == REG_DWORD) {
         DWORD v = (DWORD)strtoul(payload.c_str(), nullptr, 10);
         if (data && size && *size >= sizeof(DWORD)) memcpy(data, &v, sizeof(DWORD));
         if (size) *size = sizeof(DWORD);
-    } else {
-        // Win32 semantics: a size query (data==NULL) returns ERROR_SUCCESS with
-        // *size set — NOT ERROR_MORE_DATA (callers like EnGetProfileStdString
-        // size-query first and treat anything != ERROR_SUCCESS as "not found").
-        // ERROR_MORE_DATA is only for a NON-NULL buffer that's too small.
-        DWORD need = (DWORD)payload.size() + 1;
-        if (data && size && *size < need) { *size = need; return ERROR_MORE_DATA; }
-        if (data && size) memcpy(data, payload.c_str(), need);
-        if (size) *size = need;
+        return ERROR_SUCCESS;
     }
+    std::string raw = (vtype == REG_BINARY) ? hex_decode(payload) : payload;
+    // String types report length including the terminating NUL; binary does not.
+    bool isString = (vtype == REG_SZ || vtype == REG_EXPAND_SZ);
+    DWORD need = (DWORD)raw.size() + (isString ? 1u : 0u);
+    // Win32 semantics: a size query (data==NULL) returns ERROR_SUCCESS with
+    // *size set — NOT ERROR_MORE_DATA (callers like EnGetProfileStdString
+    // size-query first and treat anything != ERROR_SUCCESS as "not found").
+    // ERROR_MORE_DATA is only for a NON-NULL buffer that's too small.
+    if (data && size && *size < need) { *size = need; return ERROR_MORE_DATA; }
+    if (data && size) {
+        memcpy(data, raw.data(), raw.size());
+        if (isString) data[raw.size()] = '\0';
+    }
+    if (size) *size = need;
     return ERROR_SUCCESS;
 }
 extern "C" LONG RegSetValueExA(HKEY key, LPCSTR name, DWORD, DWORD type, const BYTE* data, DWORD size) {
     std::lock_guard<std::mutex> lk(g_regMutex);
     load_registry();
     std::string full = key_path(key) + "\\" + (name ? name : "");
-    char buf[64];
     if (type == REG_DWORD && data) {
         DWORD v = 0; memcpy(&v, data, sizeof(DWORD));
-        snprintf(buf, sizeof(buf), "%u:%u", REG_DWORD, v);
+        char buf[32]; snprintf(buf, sizeof(buf), "%u:%u", REG_DWORD, v);
         g_reg[full] = buf;
     } else if (data) {
-        g_reg[full] = std::string("1:") + std::string((const char*)data, size ? (size - (size>0?1:0)) : 0);
+        size_t n = size;
+        // Drop exactly one trailing NUL if the caller included it (Win32 string
+        // values are conventionally passed with the terminator counted in size).
+        if ((type == REG_SZ || type == REG_EXPAND_SZ) && n > 0 && data[n - 1] == '\0')
+            --n;
+        // Store readable text for normal strings; hex for true REG_BINARY or any
+        // value containing bytes that would break the line-oriented file (NUL/CR/LF).
+        if (type == REG_BINARY || needs_hex(data, n)) {
+            char tbuf[16]; snprintf(tbuf, sizeof(tbuf), "%u:", (unsigned)REG_BINARY);
+            g_reg[full] = std::string(tbuf) + hex_encode(data, n);
+        } else {
+            char tbuf[16]; snprintf(tbuf, sizeof(tbuf), "%u:", (unsigned)type);
+            g_reg[full] = std::string(tbuf) + std::string((const char*)data, n);
+        }
     }
     save_registry();
     return ERROR_SUCCESS;

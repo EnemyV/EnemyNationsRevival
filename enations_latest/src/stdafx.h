@@ -45,7 +45,12 @@
 #endif
 #include <climits>
 #include <cmath>
+#ifdef __APPLE__
+#include <stdlib.h>     // macOS has no <malloc.h>; malloc/alloca live here
+#include <alloca.h>
+#else
 #include <malloc.h>
+#endif
 #include <strstream>
 //#include <ctl3d.h> // Unnecessary as of modern windows...
 #include <cctype>
