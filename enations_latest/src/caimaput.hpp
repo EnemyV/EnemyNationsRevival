@@ -8,8 +8,8 @@
 //
 ////////////////////////////////////////////////////////////////////////////
 
-#include "CAIUnit.hpp"
-#include "CAIHex.hpp"
+#include "caiunit.hpp"
+#include "caihex.hpp"
 
 #ifndef __CAIMAPUT_HPP__
 #define __CAIMAPUT_HPP__

@@ -299,7 +299,7 @@ static TTF_Font* GetTitleFont() {
     if (s_tried) return s_font;
     s_tried = true;
     const char* paths[] = {
-        "C:\\Windows\\Fonts\\arial.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", "C:\\Windows\\Fonts\\arial.ttf",
         "C:\\Windows\\Fonts\\tahoma.ttf",
         "C:\\Windows\\Fonts\\segoeui.ttf",
         nullptr
@@ -793,6 +793,13 @@ void SDL2Panel::Detach(SDL_Window* ownerWindow) {
     // only performs drag/resize via the hit-test callback below. SKIP_TASKBAR +
     // the owner-window relationship keep it floating above the background.
     Uint32 winFlags = SDL_WINDOW_BORDERLESS | SDL_WINDOW_RESIZABLE | SDL_WINDOW_SKIP_TASKBAR;
+#ifndef _WIN32
+    // The owner-window (GWLP_HWNDPARENT) relationship below is Win32-only, so on
+    // Linux nothing keeps these floating panels above the (now full-screen) main
+    // window — clicking the background buried them. ALWAYS_ON_TOP keeps the map/
+    // radar/unit windows visible above the main game view.
+    winFlags |= SDL_WINDOW_ALWAYS_ON_TOP;
+#endif
     if (!m_deferShow) winFlags |= SDL_WINDOW_SHOWN;
     m_ownWindow = GameWindow::CreateSDLWindow(
         m_title.c_str(), globalX, globalY - tbH, m_width, m_height + tbH, winFlags);

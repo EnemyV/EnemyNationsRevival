@@ -38,7 +38,7 @@ SDL2MainMenu::ButtonDef SDL2MainMenu::s_buttonDefs[NUM_BTNS] = {
     { IDC_MAIN_LOAD_MUL, 776,  135, "Load Network Game",                   26, 17, 214, 87 },
     { IDC_MAIN_CREDITS,  1052, 138, "View Credits",                        30, 16, 211, 82 },
     { IDC_MAIN_CAMPAIGN, 100,  489, "Training Grounds",                    57, 12, 181, 110 },
-    { IDC_MAIN_SINGLE,   293,  490, "Create Single Player Game",           37, 12, 170, 112 },
+    { IDC_MAIN_SINGLE,   293,  490, "Create Single Player Game",           22, 12, 205, 112 },
     { IDC_MAIN_CREATE,   345,  632, "Create Network Game",                 25, 11, 140, 65 },
     { IDC_MAIN_JOIN,     326,  744, "Join Network Game",                   26, 14, 149, 78 },
     { IDC_MAIN_INTRO,    868,  407, "Replay Introduction",                 38, 38, 177, 93 },
@@ -50,7 +50,7 @@ SDL2MainMenu::ButtonDef SDL2MainMenu::s_buttonDefs[NUM_BTNS] = {
 static const char* FindFontPath() {
     // Try common Windows font paths
     static const char* candidates[] = {
-        "C:\\Windows\\Fonts\\BKANT.TTF",     // Book Antiqua
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", "C:\\Windows\\Fonts\\BKANT.TTF",     // Book Antiqua
         "C:\\Windows\\Fonts\\BOOKOS.TTF",    // Book Old Style
         "C:\\Windows\\Fonts\\PALBI.TTF",     // Palatino Bold Italic (similar serif)
         "C:\\Windows\\Fonts\\times.ttf",     // Times New Roman
@@ -546,28 +546,38 @@ void SDL2MainMenu::Render() {
             textRect.w = ((s_buttonDefs[i].textR - s_buttonDefs[i].textL) * dstRect.w) / frameW;
             textRect.h = ((s_buttonDefs[i].textB - s_buttonDefs[i].textT) * dstRect.h) / frameH;
 
-            // Start at rect height and shrink until text fits within the rect
+            // Start at rect height and shrink until text fits within the rect.
+            // Prefer a layout of at most 2 lines: with the wider DejaVu glyphs
+            // (vs the original Arial) the plain "largest font that fits the box"
+            // pick can land on 3-4 single-word lines (e.g. "Create Single Player
+            // Game" stacked vertically). We instead choose the largest font whose
+            // wrapped text fits in <= 2 lines, and only fall back to the raw
+            // best-fit (any line count) if nothing fits in two.
             int fontSize = textRect.h;
             if (fontSize > 40) fontSize = 40;
             TTF_Font* btnFont = nullptr;
+            TTF_Font* fallbackFont = nullptr;
             while (fontSize > 8) {
-                btnFont = GetCachedFont(fontSize);
-                if (btnFont) {
-                    // Measure wrapped text at this size
+                TTF_Font* f = GetCachedFont(fontSize);
+                if (f) {
                     int textW = 0, textH = 0;
-                    // Measure each line to check total height
-                    SDL_Surface* testSurf = TTF_RenderText_Blended_Wrapped(btnFont, s_buttonDefs[i].label,
+                    SDL_Surface* testSurf = TTF_RenderText_Blended_Wrapped(f, s_buttonDefs[i].label,
                                                                             {255,255,255,255}, textRect.w);
                     if (testSurf) {
                         textW = testSurf->w;
                         textH = testSurf->h;
                         SDL_FreeSurface(testSurf);
                     }
-                    if (textW <= textRect.w && textH <= textRect.h) break;
+                    if (textW <= textRect.w && textH <= textRect.h) {
+                        if (!fallbackFont) fallbackFont = f;   // largest that fits at all
+                        int lineSkip = TTF_FontLineSkip(f);
+                        int lines = (lineSkip > 0) ? (textH + lineSkip - 1) / lineSkip : 1;
+                        if (lines <= 2) { btnFont = f; break; }
+                    }
                 }
                 fontSize -= 1;
-                btnFont = nullptr;
             }
+            if (!btnFont) btnFont = fallbackFont;
 
             if (btnFont) {
                 SDL_Color fg = { 173, 156, 140, 255 };

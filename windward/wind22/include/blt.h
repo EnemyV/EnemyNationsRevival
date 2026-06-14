@@ -13,7 +13,12 @@
 #include "ptr.h"
 #include "thielen.h"
 
+#ifdef _WIN32
+// WinG is the legacy Windows blit path. On Linux it is dead (rendering is
+// SDL_Renderer) and wing.h is a Windows SDK header; CWinG's declarations below
+// only need BITMAPINFO/RGBQUAD, which the shim provides.
 #include <wing/INCLUDE/wing.h>
+#endif
 
 //------------------------------ C B L T B a s e ---------------------------
 

@@ -99,10 +99,19 @@ class CMmio
 
     CMmio & operator >> ( SHORT& s );
     CMmio & operator >> ( USHORT& s );
-    CMmio & operator >> ( LONG& l );
-    CMmio & operator >> ( ULONG& l );
     CMmio & operator >> ( INT& i );
     CMmio & operator >> ( UINT& i );
+#ifdef _WIN32
+    // On Win32 LONG/ULONG (long/unsigned long) are distinct from INT/UINT.
+    CMmio & operator >> ( LONG& l );
+    CMmio & operator >> ( ULONG& l );
+#else
+    // On Linux LP64, LONG==INT and ULONG==UINT (covered above), but a bare
+    // `long`/`unsigned long` is a DISTINCT 64-bit type that callers still use
+    // (e.g. dib.cpp). Read 4 bytes (the Windows on-disk width) and widen.
+    CMmio & operator >> ( long& l );
+    CMmio & operator >> ( unsigned long& l );
+#endif
     CMmio & operator >> ( CString& s );
 
     const char * GetFileName () const { return m_sFileName; }

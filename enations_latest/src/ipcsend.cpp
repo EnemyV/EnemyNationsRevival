@@ -18,7 +18,7 @@
 #include "stdafx.h"
 #include "player.h"
 #include "lastplnt.h"
-#include "IPCSend.h"
+#include "ipcsend.h"
 
 #ifdef _DEBUG
 #undef THIS_FILE

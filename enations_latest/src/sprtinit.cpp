@@ -2193,6 +2193,12 @@ BOOL CSpriteCollection::Read( CMmio &mmio, unsigned int uTime, int iPerStart, in
 
     CThreadParms threadparms(&mmio, uTime, iTypeOverride, iBitsPerPixel, m_nSprite);
     BOOL bReadThread = W32s != iWinType;
+#ifndef _WIN32
+    // Debug aid: EN_SINGLE_READ forces synchronous (main-thread) sprite reading so
+    // a failing CSpriteParms read throws inline with a full backtrace instead of
+    // being swallowed by the worker thread's catch(...) → g_bReadThreadError.
+    if ( getenv( "EN_SINGLE_READ" ) ) bReadThread = FALSE;
+#endif
     HANDLE hThread;
 
     if (bReadThread) {

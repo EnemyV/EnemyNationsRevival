@@ -9,11 +9,11 @@
 //
 ////////////////////////////////////////////////////////////////////////////
 
-#include "CAITMgr.hpp"
+#include "caitmgr.hpp"
 
 #include "aisnap.h"  // Tier-B world snapshot (lock-free AI reads)
-#include "CAIData.hpp"
-#include "CPathMgr.h"
+#include "caidata.hpp"
+#include "cpathmgr.h"
 #include "logging.h"  // dave's logging system
 #include "stdafx.h"
 

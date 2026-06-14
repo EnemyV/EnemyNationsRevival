@@ -227,8 +227,8 @@ public:
 
 protected:
 
-    friend CDIBits;
-    friend CDIBHDC;
+    friend class CDIBits;
+    friend class CDIBHDC;
 
     BYTE* GetDIBits() { return m_pBits; }
 

@@ -9,11 +9,11 @@
 //
 ////////////////////////////////////////////////////////////////////////////
 
-#include "CAIGoal.hpp"
-#include "CAITask.hpp"
-#include "CAIMap.hpp"
-#include "CAIUnit.hpp"
-#include "CAIOpFor.hpp"
+#include "caigoal.hpp"
+#include "caitask.hpp"
+#include "caimap.hpp"
+#include "caiunit.hpp"
+#include "caiopfor.hpp"
 
 #ifndef __CAIGMGR_HPP__
 #define __CAIGMGR_HPP__

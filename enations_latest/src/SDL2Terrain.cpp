@@ -1258,7 +1258,15 @@ int SDL2Terrain::Load( SDL_Renderer* renderer )
                 continue;
 
             int tw = 0, th = 0;
+            // stb_image's stbi_load() calls fopen() DIRECTLY (not through the Win32
+            // file shim that translates '\'→'/'), so a backslash join is a literal
+            // filename char on Linux and every tile load fails → 0 tiles → black GPU
+            // terrain. Use '/' off-Windows (Windows accepts either separator).
+#ifdef _WIN32
             SDL_Texture* tex = LoadPng( renderer, dir + "\\" + name, tw, th );
+#else
+            SDL_Texture* tex = LoadPng( renderer, dir + "/" + name, tw, th );
+#endif
             if ( !tex )
             {
                 LogTerrain( "WARN: failed to load " + name );

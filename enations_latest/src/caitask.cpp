@@ -9,10 +9,10 @@
 //
 ////////////////////////////////////////////////////////////////////////////
 
-#include "STDAFX.H"
-#include "CAI.h"
-#include "CAITask.hpp"
-#include "CAIData.hpp"
+#include "stdafx.h"
+#include "cai.h"
+#include "caitask.hpp"
+#include "caidata.hpp"
 
 #define new DEBUG_NEW
 

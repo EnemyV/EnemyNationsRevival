@@ -7,6 +7,9 @@
 
 #include "CdLoc.h"
 #include "GameWindow.h"
+#ifndef _WIN32
+#include "en_harness.h"   // in-process LLM-driving harness (Linux/Debug)
+#endif
 #include "SDL2Compositor.h"
 #include "SDL2Video.h"
 #include "SDL2MainMenu.h"
@@ -228,7 +231,7 @@ LRESULT CALLBACK RedTextProc( HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
         RECT rect;
         char sText[20];
         ::GetClientRect( hWnd, &rect );
-        ::GetWindowText( hWnd, sText, 19 );
+        ::GetWindowTextA( hWnd, sText, 19 );
         ::SetBkColor( ps.hdc, RGB( 192, 192, 192 ) );
         if ( sText[0] == '-' )
             ::SetTextColor( ps.hdc, RGB( 255, 0, 0 ) );
@@ -1081,7 +1084,13 @@ BOOL CConquerApp::InitInstance( )
     {
         m_hAccel = ::LoadAccelerators( m_hInstance, MAKEINTRESOURCE( IDR_ACCEL ) );
         if ( m_hAccel == NULL )
+#ifdef _WIN32
             ThrowError( ERR_RES_NO_ACCEL );
+#else
+            // Linux has no embedded accelerator resource; hotkeys come via SDL
+            // key events, so a null accel table is non-fatal here.
+            Log( "No accelerator table (Linux: no embedded resources) — continuing" );
+#endif
         Log( "Accelerators loaded" );
 
         // screen size, create button brushes
@@ -1417,6 +1426,13 @@ BOOL CConquerApp::InitInstance( )
         } catch (...) {
             // Non-fatal: fall back to MFC rendering
         }
+
+#ifndef _WIN32
+        // Start the in-process LLM-driving harness (screenshot/click/keys) once
+        // the SDL window exists. No-op unless EN_HARNESS is set in the env.
+        if ( m_gameWindow )
+            EnHarness_Start( m_gameWindow->GetWindow(), m_gameWindow->GetRenderer() );
+#endif
 
         // Load the compositor's WL tile wallpaper NOW that the window exists. The
         // earlier attempt (right after theBitmaps.Init above) is guarded by

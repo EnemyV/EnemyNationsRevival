@@ -307,21 +307,23 @@ CSpriteDIB::StructureIsHit(
     int xBytesCur = 0;
 
     for (;;) {
-        xBytesCur += *(long *) pbySrc;
+        // 32-bit length prefixes in the decompressed stream — LONG, not `long`
+        // (which is 8 bytes on Linux LP64 and would desync the walk).
+        xBytesCur += *(LONG *) pbySrc;
 
         if (xBytes < xBytesCur)
             return FALSE;
 
-        pbySrc += sizeof(long);
+        pbySrc += sizeof(LONG);
 
-        int iDataBytes = *(long *) pbySrc;
+        int iDataBytes = *(LONG *) pbySrc;
 
         xBytesCur += iDataBytes;
 
         if (xBytes < xBytesCur)
             return TRUE;
 
-        pbySrc += sizeof(long) + iDataBytes;
+        pbySrc += sizeof(LONG) + iDataBytes;
     }
 
     return FALSE;
@@ -2984,31 +2986,33 @@ SkipPixel1:
                         ASSERT(pbyDst + 3 < pbyDstEnd);
                         ASSERT(pbySrc + 3 < pbySrcEnd);
 
-                        // Convert the # of transparent bytes
-                        iSrcBytes = *(long *) pbySrc;
+                        // Convert the # of transparent bytes.
+                        // The compressed stream stores 32-bit length prefixes;
+                        // use LONG (4 bytes on Win + Linux) not `long` (8 on LP64).
+                        iSrcBytes = *(LONG *) pbySrc;
 
                         ASSERT(0 == iSrcBytes % 3);
 
-                        *(long *) pbyDst = m_iBytesPerPixel * iSrcBytes / 3;
+                        *(LONG *) pbyDst = m_iBytesPerPixel * iSrcBytes / 3;
 
-                        pbySrc += sizeof(long);
-                        pbyDst += sizeof(long);
+                        pbySrc += sizeof(LONG);
+                        pbyDst += sizeof(LONG);
 
                         ASSERT(pbyDst + 3 < pbyDstEnd);
                         ASSERT(pbySrc + 3 < pbySrcEnd);
 
-                        iSrcBytes = *(long *) pbySrc;
+                        iSrcBytes = *(LONG *) pbySrc;
                         iDstBytes = m_iBytesPerPixel * iSrcBytes / 3;
 
                         ASSERT(0 == iSrcBytes % 3);
 
                         // Convert the # of data bytes
-                        *(long *) pbyDst = iDstBytes;
+                        *(LONG *) pbyDst = iDstBytes;
 
-                        pbySrc += sizeof(long);
-                        pbyDst += sizeof(long);
+                        pbySrc += sizeof(LONG);
+                        pbyDst += sizeof(LONG);
 
-                        nCompressedBytes += 2 * sizeof(long) + iDstBytes;
+                        nCompressedBytes += 2 * sizeof(LONG) + iDstBytes;
 
                         if (0L == iDstBytes)    // End of the row reached
                             break;

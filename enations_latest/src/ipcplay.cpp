@@ -17,7 +17,7 @@
 #include "stdafx.h"
 #include "lastplnt.h"
 #include "player.h"
-#include "IPCPlay.h"
+#include "ipcplay.h"
 #include "SaveCompat.h"
 
 IMPLEMENT_SERIAL( CIPCPlayer, CObject, 0 );

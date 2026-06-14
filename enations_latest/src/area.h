@@ -38,7 +38,7 @@ class SDL2UnitInfoPanel;
 
 class CWndUnitStat : public CWndStatBar
 {
-friend CUnit;
+friend class CUnit;
 // Construction
 public:
 						CWndUnitStat ();
@@ -65,7 +65,7 @@ protected:
 
 class CWndAreaStatic : public CWndBase
 {
-friend CWndArea;
+friend class CWndArea;
 public:
 			CWndAreaStatic ();
 			~CWndAreaStatic ();
@@ -125,10 +125,10 @@ public:
 
 class CWndArea : public CWndAnim
 {
-friend CWndAreaStatic;
-friend CWndListUnits;
-friend CWndWorld;
-friend CAreaList;
+friend class CWndAreaStatic;
+friend class CWndListUnits;
+friend class CWndWorld;
+friend class CAreaList;
 friend class SDL2AreaBar;
 // Construction
 public:

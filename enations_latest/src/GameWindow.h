@@ -3,6 +3,7 @@
 #include <memory>
 #include <string>
 #include <vector>
+#include <SDL.h>
 #include "../input/InputHandler.h"
 
 union SDL_Event;

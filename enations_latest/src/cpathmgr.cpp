@@ -9,9 +9,9 @@
 //
 ////////////////////////////////////////////////////////////////////////////
 
-#include "CPathMgr.h"
+#include "cpathmgr.h"
 
-#include "STDAFX.H"
+#include "stdafx.h"
 #include "logging.h"  // dave's logging system
 
 //#define TEST_RESULT1		// test GetAt improvement
@@ -19,8 +19,8 @@
 //#define TEST_RESULT3			// anal level of testing
 
 // BUGBUG these are here for diagnostics only
-#include "CAIData.hpp"
-#include "CAIHex.hpp"
+#include "caidata.hpp"
+#include "caihex.hpp"
 
 extern CAIData* pGameData;  // pointer to API object for game data
 

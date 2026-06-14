@@ -237,19 +237,19 @@ class CMsgVehSetDest;
 class CVehicle : public CUnit
 {
 friend const CMsgVehCompLocElem CMsgVehCompLocElem::operator = ( CVehicle const & src );
-friend static void SetVehDest (CMsgVehSetDest * pMsg);
-friend static void LoadCarrier (CMsgLoadCarrier * pMsg);
-friend static void UnloadCarrier (CMsgUnloadCarrier * pMsg);
+friend void SetVehDest (CMsgVehSetDest * pMsg);
+friend void LoadCarrier (CMsgLoadCarrier * pMsg);
+friend void UnloadCarrier (CMsgUnloadCarrier * pMsg);
 friend void CTransport::InitData ();
 friend void CTransport::InitSprites ();
 friend void CTransport::InitLang ();
 friend void CTransport::Close ();
-friend CWndOrders;
-friend CMsgVehGoto;
-friend CMsgVehLoc;
-friend CMsgBlocked;
-friend CDlgBuildStructure;
-friend CWndRoute;
+friend class CWndOrders;
+friend class CMsgVehGoto;
+friend class CMsgVehLoc;
+friend class CMsgBlocked;
+friend class CDlgBuildStructure;
+friend class CWndRoute;
 
 public:
 		enum VEH_MODE { 	stop,				// m_iMode - vehicle is stopped
@@ -342,7 +342,7 @@ public:
 
 		static CVehicle * Create ( const CSubHex & ptHead, const CSubHex & ptTail, 
 											int iVeh, int iOwner = 0, DWORD ID = 0, VEH_MODE iRouteMode = stop, 
-											CHexCoord & hexDest = CHexCoord (0,0), DWORD dwIDBldg = 0, int iDelay = 0);
+											const CHexCoord & hexDest = CHexCoord (0,0), DWORD dwIDBldg = 0, int iDelay = 0);
 		static void				StopConstruction (CBuilding * pBldg);
 		static void				GetExitLoc (CBuilding const * pBldg, int iType, CSubHex & subNext, CSubHex & subHead, CSubHex & subTail);
 

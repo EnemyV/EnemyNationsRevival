@@ -8,8 +8,8 @@
 //
 ////////////////////////////////////////////////////////////////////////////
 
-#include "CAIGoal.hpp"
-#include "CAITask.hpp"
+#include "caigoal.hpp"
+#include "caitask.hpp"
 
 #include <string>
 

@@ -131,72 +131,80 @@
   #define END_MESSAGE_MAP() }; }
   // ON_WM_* and ON_MESSAGE / ON_COMMAND / ON_NOTIFY: emit harmless typedefs
   // inside the struct above.
-  #define ON_WM_CREATE()              typedef int   _wm_create_dummy_##__LINE__;
-  #define ON_WM_DESTROY()             typedef int   _wm_destroy_dummy_##__LINE__;
-  #define ON_WM_PAINT()               typedef int   _wm_paint_dummy_##__LINE__;
-  #define ON_WM_SIZE()                typedef int   _wm_size_dummy_##__LINE__;
-  #define ON_WM_ERASEBKGND()          typedef int   _wm_erasebkgnd_dummy_##__LINE__;
-  #define ON_WM_MOUSEMOVE()           typedef int   _wm_mousemove_dummy_##__LINE__;
-  #define ON_WM_LBUTTONDOWN()         typedef int   _wm_lbtndn_dummy_##__LINE__;
-  #define ON_WM_LBUTTONDBLCLK()       typedef int   _wm_lbtndbl_dummy_##__LINE__;
-  #define ON_WM_RBUTTONDOWN()         typedef int   _wm_rbtndn_dummy_##__LINE__;
-  #define ON_WM_MBUTTONDOWN()         typedef int   _wm_mbtndn_dummy_##__LINE__;
-  #define ON_WM_PALETTECHANGED()      typedef int   _wm_palchg_dummy_##__LINE__;
-  #define ON_WM_QUERYNEWPALETTE()     typedef int   _wm_qnewpal_dummy_##__LINE__;
-  #define ON_WM_KEYDOWN()             typedef int   _wm_keydn_dummy_##__LINE__;
-  #define ON_WM_CHAR()                typedef int   _wm_char_dummy_##__LINE__;
-  #define ON_WM_TIMER()               typedef int   _wm_timer_dummy_##__LINE__;
-  #define ON_WM_ACTIVATEAPP()         typedef int   _wm_actapp_dummy_##__LINE__;
-  #define ON_WM_QUERYENDSESSION()     typedef int   _wm_qend_dummy_##__LINE__;
-  #define ON_WM_CLOSE()               typedef int   _wm_close_dummy_##__LINE__;
-  #define ON_WM_SYSCOMMAND()          typedef int   _wm_syscmd_dummy_##__LINE__;
-  #define ON_WM_SETFOCUS()            typedef int   _wm_setfocus_dummy_##__LINE__;
-  #define ON_WM_KILLFOCUS()           typedef int   _wm_killfocus_dummy_##__LINE__;
-  #define ON_WM_MOVE()                typedef int   _wm_move_dummy_##__LINE__;
-  #define ON_WM_GETMINMAXINFO()       typedef int   _wm_getminmax_dummy_##__LINE__;
-  #define ON_WM_DRAWITEM()            typedef int   _wm_drawitem_dummy_##__LINE__;
-  #define ON_WM_HSCROLL()             typedef int   _wm_hscroll_dummy_##__LINE__;
-  #define ON_WM_VSCROLL()             typedef int   _wm_vscroll_dummy_##__LINE__;
-  #define ON_WM_LBUTTONUP()           typedef int   _wm_lbtnup_dummy_##__LINE__;
-  #define ON_WM_MBUTTONUP()           typedef int   _wm_mbtnup_dummy_##__LINE__;
-  #define ON_WM_RBUTTONUP()           typedef int   _wm_rbtnup_dummy_##__LINE__;
-  #define ON_WM_ACTIVATE()            typedef int   _wm_activate_dummy_##__LINE__;
-  #define ON_WM_NCLBUTTONDOWN()       typedef int   _wm_ncbtndn_dummy_##__LINE__;
-  #define ON_WM_NCMOUSEMOVE()         typedef int   _wm_ncmm_dummy_##__LINE__;
-  #define ON_WM_RBUTTONDBLCLK()       typedef int   _wm_rbtndbl_dummy_##__LINE__;
-  #define ON_WM_MBUTTONDBLCLK()       typedef int   _wm_mbtndbl_dummy_##__LINE__;
-  #define ON_WM_SETCURSOR()           typedef int   _wm_setcursor_dummy_##__LINE__;
-  #define ON_WM_KEYUP()               typedef int   _wm_keyup_dummy_##__LINE__;
-  #define ON_WM_CTLCOLOR()            typedef int   _wm_ctlcolor_dummy_##__LINE__;
-  #define ON_WM_MOUSEWHEEL()          typedef int   _wm_mousewheel_dummy_##__LINE__;
-  #define ON_WM_NOTIFY()              typedef int   _wm_notify_dummy_##__LINE__;
-  #define ON_WM_CONTEXTMENU()         typedef int   _wm_ctxmenu_dummy_##__LINE__;
-  #define ON_WM_INITDIALOG()          typedef int   _wm_initdlg_dummy_##__LINE__;
-  #define ON_WM_HELPINFO()            typedef int   _wm_helpinfo_dummy_##__LINE__;
-  #define ON_WM_RBUTTONDBLCLK_EX()    typedef int   _wm_rdblex_dummy_##__LINE__;
-  #define ON_WM_LBUTTONDBLCLK_EX()    typedef int   _wm_ldblex_dummy_##__LINE__;
-  #define ON_WM_MEASUREITEM()         typedef int   _wm_measureitem_dummy_##__LINE__;
-  #define ON_WM_COMPAREITEM()         typedef int   _wm_compareitem_dummy_##__LINE__;
-  #define ON_WM_DELETEITEM()          typedef int   _wm_deleteitem_dummy_##__LINE__;
-  #define ON_WM_PARENTNOTIFY()        typedef int   _wm_parentnotify_dummy_##__LINE__;
-  #define ON_WM_WINDOWPOSCHANGING()   typedef int   _wm_winposchg_dummy_##__LINE__;
-  #define ON_WM_WINDOWPOSCHANGED()    typedef int   _wm_winposchgd_dummy_##__LINE__;
-  #define ON_WM_SHOWWINDOW()          typedef int   _wm_showwindow_dummy_##__LINE__;
-  #define ON_WM_NCCALCSIZE()          typedef int   _wm_nccalcsize_dummy_##__LINE__;
-  #define ON_WM_NCHITTEST()           typedef int   _wm_nchittest_dummy_##__LINE__;
-  #define ON_WM_NCPAINT()             typedef int   _wm_ncpaint_dummy_##__LINE__;
-  #define ON_WM_VKEYTOITEM()          typedef int   _wm_vkeytoitem_dummy_##__LINE__;
-  #define ON_WM_CHARTOITEM()          typedef int   _wm_chartoitem_dummy_##__LINE__;
-  #define ON_MESSAGE(msg, fn)         typedef int   _on_msg_dummy_##__LINE__;
-  #define ON_COMMAND(id, fn)          typedef int   _on_cmd_dummy_##__LINE__;
-  #define ON_COMMAND_RANGE(lo, hi, fn) typedef int  _on_cmdrng_dummy_##__LINE__;
-  #define ON_NOTIFY(code, id, fn)     typedef int   _on_ntfy_dummy_##__LINE__;
-  #define ON_NOTIFY_RANGE(code, lo, hi, fn) typedef int _on_ntfyrng_dummy_##__LINE__;
-  #define ON_BN_CLICKED(id, fn)       typedef int   _on_bnclk_dummy_##__LINE__;
-  #define ON_EN_CHANGE(id, fn)        typedef int   _on_enchg_dummy_##__LINE__;
-  #define ON_LBN_SELCHANGE(id, fn)    typedef int   _on_lbnsc_dummy_##__LINE__;
-  #define ON_LBN_DBLCLK(id, fn)       typedef int   _on_lbndb_dummy_##__LINE__;
-  #define ON_CBN_SELCHANGE(id, fn)    typedef int   _on_cbnsc_dummy_##__LINE__;
+// gcc/standard preprocessors do NOT expand __LINE__ inside a direct `##` paste
+// (MSVC does, nonstandardly). Two-level indirection forces the expansion so each
+// message-map dummy typedef gets a unique per-line name (no redeclaration).
+#ifndef EN_LINEPASTE
+#define EN_LINEPASTE_(a,b) a##b
+#define EN_LINEPASTE2_(a,b) EN_LINEPASTE_(a,b)
+#define EN_LINEPASTE(pfx) EN_LINEPASTE2_(pfx, __LINE__)
+#endif
+  #define ON_WM_CREATE()              typedef int   EN_LINEPASTE(_wm_create_dummy_);
+  #define ON_WM_DESTROY()             typedef int   EN_LINEPASTE(_wm_destroy_dummy_);
+  #define ON_WM_PAINT()               typedef int   EN_LINEPASTE(_wm_paint_dummy_);
+  #define ON_WM_SIZE()                typedef int   EN_LINEPASTE(_wm_size_dummy_);
+  #define ON_WM_ERASEBKGND()          typedef int   EN_LINEPASTE(_wm_erasebkgnd_dummy_);
+  #define ON_WM_MOUSEMOVE()           typedef int   EN_LINEPASTE(_wm_mousemove_dummy_);
+  #define ON_WM_LBUTTONDOWN()         typedef int   EN_LINEPASTE(_wm_lbtndn_dummy_);
+  #define ON_WM_LBUTTONDBLCLK()       typedef int   EN_LINEPASTE(_wm_lbtndbl_dummy_);
+  #define ON_WM_RBUTTONDOWN()         typedef int   EN_LINEPASTE(_wm_rbtndn_dummy_);
+  #define ON_WM_MBUTTONDOWN()         typedef int   EN_LINEPASTE(_wm_mbtndn_dummy_);
+  #define ON_WM_PALETTECHANGED()      typedef int   EN_LINEPASTE(_wm_palchg_dummy_);
+  #define ON_WM_QUERYNEWPALETTE()     typedef int   EN_LINEPASTE(_wm_qnewpal_dummy_);
+  #define ON_WM_KEYDOWN()             typedef int   EN_LINEPASTE(_wm_keydn_dummy_);
+  #define ON_WM_CHAR()                typedef int   EN_LINEPASTE(_wm_char_dummy_);
+  #define ON_WM_TIMER()               typedef int   EN_LINEPASTE(_wm_timer_dummy_);
+  #define ON_WM_ACTIVATEAPP()         typedef int   EN_LINEPASTE(_wm_actapp_dummy_);
+  #define ON_WM_QUERYENDSESSION()     typedef int   EN_LINEPASTE(_wm_qend_dummy_);
+  #define ON_WM_CLOSE()               typedef int   EN_LINEPASTE(_wm_close_dummy_);
+  #define ON_WM_SYSCOMMAND()          typedef int   EN_LINEPASTE(_wm_syscmd_dummy_);
+  #define ON_WM_SETFOCUS()            typedef int   EN_LINEPASTE(_wm_setfocus_dummy_);
+  #define ON_WM_KILLFOCUS()           typedef int   EN_LINEPASTE(_wm_killfocus_dummy_);
+  #define ON_WM_MOVE()                typedef int   EN_LINEPASTE(_wm_move_dummy_);
+  #define ON_WM_GETMINMAXINFO()       typedef int   EN_LINEPASTE(_wm_getminmax_dummy_);
+  #define ON_WM_DRAWITEM()            typedef int   EN_LINEPASTE(_wm_drawitem_dummy_);
+  #define ON_WM_HSCROLL()             typedef int   EN_LINEPASTE(_wm_hscroll_dummy_);
+  #define ON_WM_VSCROLL()             typedef int   EN_LINEPASTE(_wm_vscroll_dummy_);
+  #define ON_WM_LBUTTONUP()           typedef int   EN_LINEPASTE(_wm_lbtnup_dummy_);
+  #define ON_WM_MBUTTONUP()           typedef int   EN_LINEPASTE(_wm_mbtnup_dummy_);
+  #define ON_WM_RBUTTONUP()           typedef int   EN_LINEPASTE(_wm_rbtnup_dummy_);
+  #define ON_WM_ACTIVATE()            typedef int   EN_LINEPASTE(_wm_activate_dummy_);
+  #define ON_WM_NCLBUTTONDOWN()       typedef int   EN_LINEPASTE(_wm_ncbtndn_dummy_);
+  #define ON_WM_NCMOUSEMOVE()         typedef int   EN_LINEPASTE(_wm_ncmm_dummy_);
+  #define ON_WM_RBUTTONDBLCLK()       typedef int   EN_LINEPASTE(_wm_rbtndbl_dummy_);
+  #define ON_WM_MBUTTONDBLCLK()       typedef int   EN_LINEPASTE(_wm_mbtndbl_dummy_);
+  #define ON_WM_SETCURSOR()           typedef int   EN_LINEPASTE(_wm_setcursor_dummy_);
+  #define ON_WM_KEYUP()               typedef int   EN_LINEPASTE(_wm_keyup_dummy_);
+  #define ON_WM_CTLCOLOR()            typedef int   EN_LINEPASTE(_wm_ctlcolor_dummy_);
+  #define ON_WM_MOUSEWHEEL()          typedef int   EN_LINEPASTE(_wm_mousewheel_dummy_);
+  #define ON_WM_NOTIFY()              typedef int   EN_LINEPASTE(_wm_notify_dummy_);
+  #define ON_WM_CONTEXTMENU()         typedef int   EN_LINEPASTE(_wm_ctxmenu_dummy_);
+  #define ON_WM_INITDIALOG()          typedef int   EN_LINEPASTE(_wm_initdlg_dummy_);
+  #define ON_WM_HELPINFO()            typedef int   EN_LINEPASTE(_wm_helpinfo_dummy_);
+  #define ON_WM_RBUTTONDBLCLK_EX()    typedef int   EN_LINEPASTE(_wm_rdblex_dummy_);
+  #define ON_WM_LBUTTONDBLCLK_EX()    typedef int   EN_LINEPASTE(_wm_ldblex_dummy_);
+  #define ON_WM_MEASUREITEM()         typedef int   EN_LINEPASTE(_wm_measureitem_dummy_);
+  #define ON_WM_COMPAREITEM()         typedef int   EN_LINEPASTE(_wm_compareitem_dummy_);
+  #define ON_WM_DELETEITEM()          typedef int   EN_LINEPASTE(_wm_deleteitem_dummy_);
+  #define ON_WM_PARENTNOTIFY()        typedef int   EN_LINEPASTE(_wm_parentnotify_dummy_);
+  #define ON_WM_WINDOWPOSCHANGING()   typedef int   EN_LINEPASTE(_wm_winposchg_dummy_);
+  #define ON_WM_WINDOWPOSCHANGED()    typedef int   EN_LINEPASTE(_wm_winposchgd_dummy_);
+  #define ON_WM_SHOWWINDOW()          typedef int   EN_LINEPASTE(_wm_showwindow_dummy_);
+  #define ON_WM_NCCALCSIZE()          typedef int   EN_LINEPASTE(_wm_nccalcsize_dummy_);
+  #define ON_WM_NCHITTEST()           typedef int   EN_LINEPASTE(_wm_nchittest_dummy_);
+  #define ON_WM_NCPAINT()             typedef int   EN_LINEPASTE(_wm_ncpaint_dummy_);
+  #define ON_WM_VKEYTOITEM()          typedef int   EN_LINEPASTE(_wm_vkeytoitem_dummy_);
+  #define ON_WM_CHARTOITEM()          typedef int   EN_LINEPASTE(_wm_chartoitem_dummy_);
+  #define ON_MESSAGE(msg, fn)         typedef int   EN_LINEPASTE(_on_msg_dummy_);
+  #define ON_COMMAND(id, fn)          typedef int   EN_LINEPASTE(_on_cmd_dummy_);
+  #define ON_COMMAND_RANGE(lo, hi, fn) typedef int  EN_LINEPASTE(_on_cmdrng_dummy_);
+  #define ON_NOTIFY(code, id, fn)     typedef int   EN_LINEPASTE(_on_ntfy_dummy_);
+  #define ON_NOTIFY_RANGE(code, lo, hi, fn) typedef int EN_LINEPASTE(_on_ntfyrng_dummy_);
+  #define ON_BN_CLICKED(id, fn)       typedef int   EN_LINEPASTE(_on_bnclk_dummy_);
+  #define ON_EN_CHANGE(id, fn)        typedef int   EN_LINEPASTE(_on_enchg_dummy_);
+  #define ON_LBN_SELCHANGE(id, fn)    typedef int   EN_LINEPASTE(_on_lbnsc_dummy_);
+  #define ON_LBN_DBLCLK(id, fn)       typedef int   EN_LINEPASTE(_on_lbndb_dummy_);
+  #define ON_CBN_SELCHANGE(id, fn)    typedef int   EN_LINEPASTE(_on_cbnsc_dummy_);
   // Also kill the AFX_MSG enclosure markers
   #ifdef afx_msg
     #undef afx_msg

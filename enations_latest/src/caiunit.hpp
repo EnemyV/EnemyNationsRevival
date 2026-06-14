@@ -14,7 +14,7 @@
 #include "netapi.h"
 #include "player.h"
 
-#include "CAICopy.hpp"
+#include "caicopy.hpp"
 
 #include <unordered_map>  // CAIUnitList O(1) id index
 

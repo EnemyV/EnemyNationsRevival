@@ -125,8 +125,121 @@ static UINT SDLKeyToVK(SDL_Scancode sc) {
 // ===========================================================================
 static std::unordered_map<HCURSOR, SDL_Cursor*> s_sdlCursorCache;
 
+#ifndef _WIN32
+// Linux: the Win32 GDI cursor pipeline (GetIconInfo/GetDIBits) is stubbed, so we
+// load the original .CUR resources directly. They're all 1-bpp 32x32 monochrome
+// (XOR color + AND transparency mask). Resource id → filename is the .rc CURSOR
+// table; the art lives in enations_latest/src/res/.
+static const char* CurFileForId( int id )
+{
+    switch ( id ) {
+    case 171: return "goto1.cur";    case 172: return "cur00006.cur";
+    case 168: return "cur00004.cur"; case 173: return "goto3.cur";
+    case 184: return "cur00007.cur"; case 232: return "move1.cur";
+    case 240: return "move2.cur";    case 237: return "move3.cur";
+    case 241: return "move4.cur";    case 238: return "move5.cur";
+    case 242: return "move6.cur";    case 239: return "move7.cur";
+    case 165: return "cur00002.cur"; case 178: return "target1.cur";
+    case 179: return "target2.cur";  case 180: return "target3.cur";
+    case 167: return "cur00003.cur"; case 181: return "select1.cur";
+    case 182: return "select2.cur";  case 183: return "select3.cur";
+    case 161: return "cursor1.cur";  case 217: return "cur00001.cur";
+    case 218: return "cur00012.cur"; case 219: return "cur00013.cur";
+    case 162: return "road_beg.cur"; case 220: return "cur00014.cur";
+    case 221: return "cur00015.cur"; case 222: return "road_set.cur";
+    case 170: return "cur00005.cur"; case 185: return "cur00008.cur";
+    case 191: return "cur00011.cur"; case 192: return "repair1.cur";
+    case 190: return "cur00010.cur"; case 226: return "unload1.cur";
+    case 227: return "unload2.cur";  case 228: return "unload3.cur";
+    case 236: return "load4.cur";    case 223: return "load1.cur";
+    case 224: return "load2.cur";    case 225: return "load3.cur";
+    default:  return nullptr;
+    }
+}
+static std::string FindCursorDir( )
+{
+    static std::string s_dir = "?";
+    if ( s_dir != "?" ) return s_dir;
+    const char* cands[] = { "res", "../../../enations_latest/src/res",
+                            "enations_latest/src/res", "../src/enations_latest/res", nullptr };
+    s_dir = "";
+    for ( int i = 0; cands[i]; ++i ) {
+        std::string p = cands[i];
+        if ( FILE* t = fopen( ( p + "/cursor1.cur" ).c_str(), "rb" ) ) { fclose( t ); s_dir = p; break; }
+    }
+    return s_dir;
+}
+static SDL_Cursor* LoadCurFromFile( const std::string& path )
+{
+    FILE* f = fopen( path.c_str(), "rb" );
+    if ( !f ) return nullptr;
+    fseek( f, 0, SEEK_END ); long sz = ftell( f ); fseek( f, 0, SEEK_SET );
+    if ( sz < 22 ) { fclose( f ); return nullptr; }
+    std::vector<unsigned char> b( (size_t)sz );
+    size_t got = fread( b.data(), 1, (size_t)sz, f );
+    fclose( f );
+    if ( got != (size_t)sz ) return nullptr;
+    auto r16 = [&]( size_t o ){ return (int)( b[o] | ( b[o+1] << 8 ) ); };
+    auto r32 = [&]( size_t o ){ return (uint32_t)( b[o] | ( b[o+1] << 8 ) | ( b[o+2] << 16 ) | ( (uint32_t)b[o+3] << 24 ) ); };
+    if ( r16( 4 ) < 1 ) return nullptr;                       // idCount
+    int      hotX = r16( 6 + 4 ), hotY = r16( 6 + 6 );        // ICONDIRENTRY hotspot
+    uint32_t off  = r32( 6 + 12 );                            // image offset
+    if ( off + 40 > b.size() ) return nullptr;
+    int W = (int)r32( off + 4 ), H = (int)r32( off + 8 ) / 2; // BIH width / (height/2)
+    int bpp = r16( off + 14 );
+    if ( W <= 0 || H <= 0 || bpp != 1 ) return nullptr;       // all game cursors are 1-bpp
+    size_t pal = off + 40;                                    // 2-entry color table
+    uint32_t col0 = ( b[pal+2] << 16 ) | ( b[pal+1] << 8 ) | b[pal];
+    uint32_t col1 = ( b[pal+6] << 16 ) | ( b[pal+5] << 8 ) | b[pal+4];
+    int    rowBytes = ( ( W + 31 ) / 32 ) * 4;                // 1-bpp DWORD-aligned
+    size_t xorOff = pal + 8, andOff = xorOff + (size_t)rowBytes * H;
+    if ( andOff + (size_t)rowBytes * H > b.size() ) return nullptr;
+    SDL_Surface* surf = SDL_CreateRGBSurfaceWithFormat( 0, W, H, 32, SDL_PIXELFORMAT_ARGB8888 );
+    if ( !surf ) return nullptr;
+    Uint32* px = (Uint32*)surf->pixels; int pitchPx = surf->pitch / 4;
+    for ( int y = 0; y < H; ++y ) {
+        int sr = H - 1 - y;                                   // BMP rows are bottom-up
+        const unsigned char* xr = &b[xorOff + (size_t)sr * rowBytes];
+        const unsigned char* ar = &b[andOff + (size_t)sr * rowBytes];
+        for ( int x = 0; x < W; ++x ) {
+            int xb = ( xr[x >> 3] >> ( 7 - ( x & 7 ) ) ) & 1;
+            int ab = ( ar[x >> 3] >> ( 7 - ( x & 7 ) ) ) & 1;
+            Uint32 p;
+            if ( ab ) p = xb ? 0xFF000000u : 0x00000000u;     // AND=1: XOR=1 invert→black, else transparent
+            else      p = 0xFF000000u | ( xb ? col1 : col0 ); // AND=0: opaque XOR color
+            px[(size_t)y * pitchPx + x] = p;
+        }
+    }
+    SDL_Cursor* c = SDL_CreateColorCursor( surf, hotX, hotY );
+    SDL_FreeSurface( surf );
+    return c;
+}
+static SDL_Cursor* SdlCursorFromResId( int id )
+{
+    // Win32 standard cursors (LoadStandardCursor) → SDL system cursors.
+    switch ( id ) {
+    case 32512: return SDL_CreateSystemCursor( SDL_SYSTEM_CURSOR_ARROW );      // IDC_ARROW
+    case 32514: return SDL_CreateSystemCursor( SDL_SYSTEM_CURSOR_WAIT );       // IDC_WAIT
+    case 32650: return SDL_CreateSystemCursor( SDL_SYSTEM_CURSOR_WAITARROW );  // IDC_APPSTARTING
+    case 32646: return SDL_CreateSystemCursor( SDL_SYSTEM_CURSOR_SIZEALL );    // IDC_SIZEALL
+    }
+    if ( const char* fn = CurFileForId( id ) ) {
+        std::string dir = FindCursorDir();
+        if ( !dir.empty() )
+            if ( SDL_Cursor* c = LoadCurFromFile( dir + "/" + fn ) )
+                return c;
+    }
+    static SDL_Cursor* s_arrow = SDL_CreateSystemCursor( SDL_SYSTEM_CURSOR_ARROW );
+    return s_arrow;
+}
+#endif // !_WIN32
+
 static SDL_Cursor* SdlCursorFromHCURSOR( HCURSOR hCur )
 {
+#ifndef _WIN32
+    // Linux: hCur is the resource id (the LoadCursor shim returns (HCURSOR)name).
+    return SdlCursorFromResId( (int)(intptr_t)hCur );
+#else
     ICONINFO ii = {};
     if ( !::GetIconInfo( hCur, &ii ) )
         return nullptr;
@@ -138,7 +251,7 @@ static SDL_Cursor* SdlCursorFromHCURSOR( HCURSOR hCur )
     if ( ii.hbmColor != NULL )
     {
         BITMAP bm = {};
-        ::GetObject( ii.hbmColor, sizeof( bm ), &bm );
+        ::GetObjectA( ii.hbmColor, sizeof( bm ), &bm );
         int w = bm.bmWidth;
         int h = bm.bmHeight;
         if ( ( w > 0 ) && ( h > 0 ) )
@@ -192,6 +305,7 @@ static SDL_Cursor* SdlCursorFromHCURSOR( HCURSOR hCur )
     if ( ii.hbmColor ) ::DeleteObject( ii.hbmColor );
     if ( ii.hbmMask )  ::DeleteObject( ii.hbmMask );
     return result;
+#endif // !_WIN32
 }
 
 static void AreaApplyCursor( HCURSOR hCur )
@@ -2840,6 +2954,12 @@ int CWndArea::OnCreate( LPCREATESTRUCT lpCreateStruct )
                     return true;
 
                 case SDL_MOUSEMOTION:
+#ifndef _WIN32
+                    // Feed the real client mouse pos so SetMouseState's
+                    // GetCursorPos()+ScreenToClient() finds the hovered unit/hex
+                    // (the stubs returned 0,0 → select/goto/target cursors never showed).
+                    en_SetCursorPos(pt.x, pt.y);
+#endif
                     pThis->OnMouseMove(flags, pt);
                     pThis->SetMouseState();  // Update cursor & m_uMouseMode (replaces WM_SETCURSOR)
                     // movie.cpp's intro playback calls Win32 ShowCursor(FALSE);
@@ -4239,11 +4359,16 @@ void CWndArea::OnRButtonDown( UINT nFlags, CPoint point )
             CPoint ptScreen = point;
             ClientToScreen( &ptScreen );
             // Convert to SDL window coords (relative to game window)
+            RECT sdlRect = {};
+#ifdef _WIN32
+            // Position the tooltip relative to the native HWND. On Linux the
+            // SDL_SysWMinfo union member differs (x11/wayland) and the shim's
+            // GetWindowRect is a stub, so leave sdlRect at {0} (top-left origin).
             SDL_SysWMinfo wmInfo;
             SDL_VERSION( &wmInfo.version );
-            RECT sdlRect = {};
             if ( SDL_GetWindowWMInfo( theApp.m_gameWindow->GetWindow(), &wmInfo ) )
                 ::GetWindowRect( wmInfo.info.win.window, &sdlRect );
+#endif
             int sx = ptScreen.x - sdlRect.left + 16;
             int sy = ptScreen.y - sdlRect.top + 16;
             m_pSdlInfo->Show( pUnitOn, sx, sy );

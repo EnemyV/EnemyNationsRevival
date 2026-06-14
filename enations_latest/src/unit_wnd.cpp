@@ -18,7 +18,7 @@
 #include "player.h"
 #include "error.h"
 #include "event.h"
-#include "CHPRoute.hpp"
+#include "chproute.hpp"
 #include "bitmaps.h"
 #include "area.h"
 #include "sfx.h"

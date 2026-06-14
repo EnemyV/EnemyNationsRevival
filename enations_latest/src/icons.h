@@ -78,7 +78,7 @@ protected:
 
 class CStatData
 {
-friend CIcons;
+friend class CIcons;
 public:
 						CStatData ();
 						~CStatData ();
@@ -139,7 +139,7 @@ protected:
 
 class CStatInst
 {
-friend CWndStatBar;
+friend class CWndStatBar;
 // Construction
 public:
 					CStatInst ();
@@ -200,7 +200,7 @@ protected:
 class CWndStatBar : public CWndBase
 {
 #ifdef _CHEAT
-friend CWndBar;
+friend class CWndBar;
 #endif
 // Construction
 public:

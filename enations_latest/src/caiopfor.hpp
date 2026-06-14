@@ -12,7 +12,7 @@
 // CObject comes from mfc_compat.h (via stdafx.h).
 #include <windows.h>
 
-#include "CAIMsg.hpp"
+#include "caimsg.hpp"
 
 #ifndef __CAIOPFOR_HPP__
 #define __CAIOPFOR_HPP__

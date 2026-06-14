@@ -10,7 +10,7 @@ class CInitData;
 
 class CRaceDef : public CObject
 {
-    friend CInitData;
+    friend class CInitData;
 
   public:
     CRaceDef( );

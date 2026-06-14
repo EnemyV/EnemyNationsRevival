@@ -10,7 +10,7 @@
 ////////////////////////////////////////////////////////////////////////////
 
 #include "stdafx.h"
-#include "CAICopy.hpp"
+#include "caicopy.hpp"
 
 #define new DEBUG_NEW
 

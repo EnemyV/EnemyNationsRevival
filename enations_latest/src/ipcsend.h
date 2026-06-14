@@ -28,7 +28,7 @@ class CDlgCompose;
 #if 0  // MFC_LEGACY_IPCSEND
 
 #include "resource.h"
-#include "IPCMsg.hpp"
+#include "ipcmsg.hpp"
 
 class CSendCombo : public CComboBox
 {

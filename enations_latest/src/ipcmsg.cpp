@@ -15,9 +15,9 @@
 //
 ////////////////////////////////////////////////////////////////////////////
 
-#include "STDAFX.H"
+#include "stdafx.h"
 #include "resource.h"
-#include "IPCMsg.hpp"
+#include "ipcmsg.hpp"
 #include "player.h"
 
 IMPLEMENT_SERIAL( CEMsg, CObject, 0 );

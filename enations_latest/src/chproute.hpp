@@ -9,11 +9,11 @@
 //
 ////////////////////////////////////////////////////////////////////////////
 
-#include "CAIMsg.hpp"
-#include "CAIData.hpp"
+#include "caimsg.hpp"
+#include "caidata.hpp"
 
-//#include "CAIUnit.hpp"
-//#include "CAIHex.hpp"
+//#include "caiunit.hpp"
+//#include "caihex.hpp"
 
 #ifndef __CHPROUTE_HPP__
 #define __CHPROUTE_HPP__

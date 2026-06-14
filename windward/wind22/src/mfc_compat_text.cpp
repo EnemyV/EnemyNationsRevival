@@ -67,7 +67,7 @@ const char* PickFontPath() {
         return s_path;
     s_tried = true;
     const char* paths[] = {
-        "C:\\Windows\\Fonts\\arial.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", "C:\\Windows\\Fonts\\arial.ttf",
         "C:\\Windows\\Fonts\\tahoma.ttf",
         "C:\\Windows\\Fonts\\segoeui.ttf",
         nullptr

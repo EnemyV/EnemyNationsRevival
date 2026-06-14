@@ -256,7 +256,7 @@ class CTerrainData
 #ifdef _DEBUG
 friend class CVehicle;
 #endif
-friend CTerrain;
+friend class CTerrain;
 public:
 							CTerrainData () {}
 

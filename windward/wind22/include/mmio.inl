@@ -121,10 +121,21 @@ _RELEASE_INLINE int CMmio::ReadInt() {
 }
 
 _RELEASE_INLINE long CMmio::ReadLong() {
-    long lRtn;
+#ifdef _WIN32
+    long lRtn;            // LLP64: long is 4 bytes, matches the on-disk width.
 
     Read( &lRtn, 4 );
     return ( lRtn );
+#else
+    // LP64: `long` is 8 bytes but the on-disk value is 4. Reading 4 bytes into an
+    // 8-byte local leaves the upper word as stack garbage (the DEBUG memset only
+    // clears the 4 bytes it's told to), producing a huge bogus value. Read the
+    // 4-byte on-disk word into a fixed-width int and sign-extend.
+    int32_t lRtn = 0;
+
+    Read( &lRtn, 4 );
+    return ( (long)lRtn );
+#endif
 }
 
 _RELEASE_INLINE float CMmio::ReadFloat() {
@@ -190,6 +201,7 @@ _RELEASE_INLINE CMmio& CMmio::operator >> ( USHORT& s ) {
     return *this;
 }
 
+#ifdef _WIN32
 _RELEASE_INLINE CMmio& CMmio::operator >> ( LONG& l ) {
     ASSERT_STRICT_VALID( this );
     Read( &l, sizeof( LONG ) );
@@ -201,6 +213,19 @@ _RELEASE_INLINE CMmio& CMmio::operator >> ( ULONG& l ) {
     Read( &l, sizeof( ULONG ) );
     return *this;
 }
+#else
+// Linux LP64: read the 4-byte on-disk value and widen into the 64-bit long.
+_RELEASE_INLINE CMmio& CMmio::operator >> ( long& l ) {
+    ASSERT_STRICT_VALID( this );
+    int32_t v = 0; Read( &v, sizeof( v ) ); l = v;
+    return *this;
+}
+_RELEASE_INLINE CMmio& CMmio::operator >> ( unsigned long& l ) {
+    ASSERT_STRICT_VALID( this );
+    uint32_t v = 0; Read( &v, sizeof( v ) ); l = v;
+    return *this;
+}
+#endif
 
 _RELEASE_INLINE CMmio& CMmio::operator >> ( INT& i ) {
     ASSERT_STRICT_VALID( this );

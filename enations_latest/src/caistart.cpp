@@ -9,7 +9,7 @@
 //
 ////////////////////////////////////////////////////////////////////////////
 
-#include "CAIStart.hpp"
+#include "caistart.hpp"
 
 #include "logging.h"  // dave's logging system
 #include "stdafx.h"

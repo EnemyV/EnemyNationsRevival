@@ -10,9 +10,9 @@
 ////////////////////////////////////////////////////////////////////////////
 
 #include "stdafx.h"
-#include "CAIMapUt.hpp"
-#include "CAIData.hpp"
-#include "CPathMap.h"
+#include "caimaput.hpp"
+#include "caidata.hpp"
+#include "cpathmap.h"
 #include "aisnap.h"  // lock-free minerals presence bitmap (ConvertStatus)
 
 #include "logging.h"  // dave's logging system

@@ -10,7 +10,7 @@
 ////////////////////////////////////////////////////////////////////////////
 
 #include "stdafx.h"
-#include "CAIHex.hpp"
+#include "caihex.hpp"
 
 #define new DEBUG_NEW
 

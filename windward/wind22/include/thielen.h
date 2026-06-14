@@ -59,22 +59,22 @@ inline int __minmax (int _low, int _hi, int _val)
     return (_val < _low ? _low : (_val > _hi ? _hi : _val));
 }
 
-template <class T>
-T Max( T const & t1, T const & t2 ) // Requires T to define an operator <
+// Two type params + common_type: callers mix types (e.g. Max((long)x, aLONG)),
+// which on Win32 were the same type (long==LONG) but on Linux LP64 differ
+// (long is 64-bit, LONG is 32-bit). common_type picks the right result type.
+#include <type_traits>
+template <class A, class B>
+typename std::common_type<A, B>::type Max( A const & t1, B const & t2 ) // Requires operator <
 {
-    if ( t1 < t2 )  // Not ?: - can cause construction of a temporary
-        return t2;
-
-    return t1;
+    typedef typename std::common_type<A, B>::type R;
+    return ( (R)t1 < (R)t2 ) ? (R)t2 : (R)t1;
 }
 
-template <class T>
-T Min( T const & t1, T const & t2 ) // Requires T to define an operator <
+template <class A, class B>
+typename std::common_type<A, B>::type Min( A const & t1, B const & t2 ) // Requires operator <
 {
-    if ( t1 < t2 )  // Not ?: - can cause construction of a temporary
-        return t1;
-
-    return t2;
+    typedef typename std::common_type<A, B>::type R;
+    return ( (R)t1 < (R)t2 ) ? (R)t1 : (R)t2;
 }
 
 #ifdef _DEBUG
@@ -161,11 +161,22 @@ int WINAPI ExtMsgBox (HWND hWndPar, const char *psText, const char *psTitle, UIN
 int WINAPI ExtMsgBox (CWnd *pWnd, const char *psText, int iRes, UINT uStyle, long lHelp = -1, const char *psButtons = NULL, LOOPPROC lpFn = NULL);
 #endif
 
+#ifndef _WIN32
+// EnableAllWindows is implemented in the (excluded) legacy msg_box.cpp. On Linux
+// modal-window enable/disable is handled by SDL; provide a no-op so callers link.
+inline void EnableAllWindows (HWND /*hWnd*/, BOOL /*bEnable*/) {}
+#endif
+
 
 /////////////////////////////////////////////////////////////////////////////
 // a wrapper for HGLOBAL
 
-#ifndef _WINDOWS
+// NOTE: the `#if 0` branch below is an incomplete "portable" CGlobal that
+// global.cpp never implemented (it implements only the full variant). Force the
+// full variant on every platform — identical to the prior Windows behavior
+// (where _WINDOWS was defined) and correct on Linux (GlobalAlloc/Lock/ReAlloc
+// are provided by the win32 shim).
+#if 0  // was: #ifndef _WINDOWS  (dead portable variant)
 
 class CGlobal
 {
@@ -244,7 +255,7 @@ private:
 class COStrStream final : public std::ostrstream {
 public:
     COStrStream() : ostrstream () {}
-    COStrStream(char *pch, int nLen, int nMode = std::ios::out) : ostrstream (pch, nLen, nMode) {}
+    COStrStream(char *pch, int nLen, std::ios_base::openmode nMode = std::ios::out) : ostrstream (pch, nLen, nMode) {}
 
     // free up the memory
     ~COStrStream() final {

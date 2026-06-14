@@ -9,8 +9,8 @@
 //
 ////////////////////////////////////////////////////////////////////////////
 
-#include "CAITMgr.hpp"
-#include "CAIRoute.hpp"
+#include "caitmgr.hpp"
+#include "cairoute.hpp"
 
 #ifndef __CAIMGR_HPP__
 #define __CAIMGR_HPP__

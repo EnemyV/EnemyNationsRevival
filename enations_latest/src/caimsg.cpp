@@ -10,8 +10,8 @@
 ////////////////////////////////////////////////////////////////////////////
 
 #include "stdafx.h"
-#include "CAIMsg.hpp"
-#include "CAIData.hpp"
+#include "caimsg.hpp"
+#include "caidata.hpp"
 
 IMPLEMENT_SERIAL( CAIMsg, CObject, 0 );
 

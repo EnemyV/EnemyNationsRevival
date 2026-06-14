@@ -5254,7 +5254,7 @@ void CVehicle::DestroyBuildWindow( )
 }
 
 CVehicle* CVehicle::Create( const CSubHex& ptHead, const CSubHex& ptTail, int iVeh, int iOwner, DWORD ID,
-                            VEH_MODE iRouteMode, CHexCoord& hexDest, DWORD dwIDBldg, int iDelay )
+                            VEH_MODE iRouteMode, const CHexCoord& hexDest, DWORD dwIDBldg, int iDelay )
 {
 
     ASSERT( ( iVeh != CTransportData::med_truck ) && ( iVeh != CTransportData::marines ) );

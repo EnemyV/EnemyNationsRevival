@@ -9,7 +9,7 @@
 //
 ////////////////////////////////////////////////////////////////////////////
 
-#include "CAIGMgr.hpp"
+#include "caigmgr.hpp"
 
 #ifndef __CAITMGR_HPP__
 #define __CAITMGR_HPP__

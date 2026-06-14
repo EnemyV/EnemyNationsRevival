@@ -423,8 +423,10 @@ class CMapLoc3D : public CMapLoc
 
     CMapLoc3D( const CHexCoord& rhexcoord );
 
-    long&       operator[]( int iIndex ) { return ( &x )[iIndex]; }
-    const long& operator[]( int iIndex ) const { return ( &x )[iIndex]; }
+    // Return LONG& (not long&): on Win32 LONG==long, but on Linux LP64 LONG==int
+    // and the (&x) members are LONG, so a `long&` (64-bit) can't bind to them.
+    LONG&       operator[]( int iIndex ) { return ( &x )[iIndex]; }
+    const LONG& operator[]( int iIndex ) const { return ( &x )[iIndex]; }
 
     Fixed m_fixZ;
 };

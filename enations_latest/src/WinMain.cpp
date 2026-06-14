@@ -34,6 +34,7 @@ extern CConquerApp theApp;
 // since the slowdown/crash bug lives in the AI sim. Dumps go to
 // %EN_DUMP_DIR% (default d:\tmp\crashdumps).
 // ---------------------------------------------------------------------------
+#ifdef _WIN32
 static LONG WINAPI EnWriteFullDump( EXCEPTION_POINTERS* ep )
 {
     const char* dir = getenv( "EN_DUMP_DIR" );
@@ -70,6 +71,7 @@ static LONG WINAPI EnWriteFullDump( EXCEPTION_POINTERS* ep )
     }
     return EXCEPTION_EXECUTE_HANDLER;   // let the process terminate after dumping
 }
+#endif // _WIN32 (Windows minidump crash handler; no dbghelp on Linux)
 
 extern "C" int APIENTRY WinMain( HINSTANCE hInstance,
                                  HINSTANCE hPrevInstance,
@@ -83,9 +85,11 @@ extern "C" int APIENTRY WinMain( HINSTANCE hInstance,
     // Install the full-memory crash dumper as early as possible so any later
     // fault (incl. assert/STATUS_BREAKPOINT and AI-thread faults) is captured
     // with complete stacks.
+#ifdef _WIN32
     SetUnhandledExceptionFilter( EnWriteFullDump );
+#endif
 
-#if defined( _DEBUG )
+#if defined( _DEBUG ) && defined( _WIN32 )
     // CRT debug asserts (checked-iterator "list iterators incompatible", _ASSERTE,
     // heap checks) default to a MODAL Abort/Retry/Ignore dialog — which silently
     // freezes unattended test sessions until someone clicks it (and blocks ALL
@@ -97,7 +101,7 @@ extern "C" int APIENTRY WinMain( HINSTANCE hInstance,
     _CrtSetReportMode( _CRT_ERROR,  _CRTDBG_MODE_DEBUG );
 #endif
 
-#if defined( _DEBUG )
+#if defined( _DEBUG ) && defined( _WIN32 )
     // Heap-corruption hunt. Two combat crashes landed in unrelated places
     // (recalloc_dbg via CVehicle::DeletePath, and msctf via the msg pump) — the
     // classic signature of a wild write that detonates later somewhere random.

@@ -22,7 +22,7 @@ SDL2RouteWindow::SDL2RouteWindow(GameWindow* gw, CVehicle* pVeh, SDL2Panel* area
     : m_gameWindow(gw), m_pVeh(pVeh) {
 
     // Find a font
-    const char* fonts[] = {"C:\\Windows\\Fonts\\arial.ttf",
+    const char* fonts[] = {"/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", "C:\\Windows\\Fonts\\arial.ttf",
                            "C:\\Windows\\Fonts\\tahoma.ttf", nullptr};
     for (int i = 0; fonts[i]; i++) {
         FILE* f = fopen(fonts[i], "rb");

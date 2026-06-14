@@ -9,9 +9,9 @@
 //
 ////////////////////////////////////////////////////////////////////////////
 
-#include "CAIData.hpp"
+#include "caidata.hpp"
 
-#include "CPathMap.h"
+#include "cpathmap.h"
 #include "stdafx.h"
 
 extern CException* pException;  // standard exception for yielding

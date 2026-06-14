@@ -15,7 +15,11 @@
 // (included by windward.h's wind22 stdafx.h chain) for CString / CFile /
 // CArchive / CMap / CDialog / CObject / CDC / CFont / CBrush / CPen /
 // CBitmap / CPalette / CList / CWinThread.
+#ifdef _WIN32
 #include <windows.h>
+#else
+#include "win32_compat.h"   // Win32-on-POSIX shim (Linux build)
+#endif
 #include <cassert>
 #include "en_assert.h"   // non-fatal, logged ASSERT (mirrors original MFC "Ignore")
 #ifndef ASSERT
@@ -42,18 +46,22 @@
 #include <climits>
 #include <cmath>
 #include <malloc.h>
-#include <mmreg.h>
-#include <mmsystem.h>
-#include <msacm.h>
 #include <strstream>
 //#include <ctl3d.h> // Unnecessary as of modern windows...
 #include <cctype>
 #include <clocale>
 // <dsound.h> removed — audio is SDL_mixer, not DirectSound (no DS API used).
+#ifdef _WIN32
+// Windows multimedia + WinG + SEH headers. On Linux these have no equivalent:
+// audio is SDL_mixer, the legacy WinG blit path is excluded, and there is no
+// SEH in the tree. The few types still referenced (WAVEFORMATEX etc.) live in
+// excluded TUs or are provided by the shim.
+#include <mmreg.h>
+#include <mmsystem.h>
+#include <msacm.h>
 #include <eh.h>
-//#include <dplay.h>
-// MSS32 removed - using SDL2 + SDL_mixer for audio
 #include <wing/INCLUDE/wing.h>
+#endif
 
 //#define MEM_DEBUG	1
 #include "vdmplay.h"

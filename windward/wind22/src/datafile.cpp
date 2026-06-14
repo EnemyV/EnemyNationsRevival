@@ -155,9 +155,12 @@ void CDataFile::_Init(const char *pFilename, const char *pPatchDir, int iRifVer)
 
         //  The two entries in the file should be the magic number of the file and the 
         //  size of the header in bytes.
+        // On-disk fields are 32-bit. Use LONG (==int32_t on Linux, ==long on
+        // Win32) NOT `long` — a bare `long` is 64-bit on Linux (LP64) and would
+        // make this header 16 bytes instead of the 8 the file actually has.
         struct {
             char aMagicNum[4];
-            long tableSize;
+            LONG tableSize;
         } dfHdr {};
         if (m_pDataFile->Read(&dfHdr, sizeof(dfHdr)) != sizeof(dfHdr)) {
             ThrowError(ERR_DATAFILE_READ);
@@ -178,17 +181,17 @@ void CDataFile::_Init(const char *pFilename, const char *pPatchDir, int iRifVer)
 
         char *pBuff = pFileTableBuff;
         while (pBuff < pFileTableBuff + dfHdr.tableSize) {
-            //  Get the string length
-            long stringLength = *(long *) pBuff;
-            pBuff += sizeof(long);
+            //  Get the string length (on-disk 32-bit: LONG, not long — LP64).
+            LONG stringLength = *(LONG *) pBuff;
+            pBuff += sizeof(LONG);
 
             //  Save a pointer to the string
             char *pStr = pBuff;
             pBuff += stringLength;
 
             //  Get the offset.
-            long fileOffset = *(long *) pBuff;
-            pBuff += sizeof(long);
+            LONG fileOffset = *(LONG *) pBuff;
+            pBuff += sizeof(LONG);
 
             //  Add the string/offset pair to the map.
             //  Can ThrowError CMemoryException.

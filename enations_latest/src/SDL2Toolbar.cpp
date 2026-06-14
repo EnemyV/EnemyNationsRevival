@@ -55,7 +55,7 @@ SDL2Toolbar::SDL2Toolbar() {
     for (int i = 0; i < NUM_BUTTONS; i++)
         m_buttons[i].label = s_btnLabels[i];
 
-    const char* fonts[] = {"C:\\Windows\\Fonts\\arial.ttf",
+    const char* fonts[] = {"/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", "C:\\Windows\\Fonts\\arial.ttf",
                            "C:\\Windows\\Fonts\\tahoma.ttf", nullptr};
     for (int i = 0; fonts[i]; i++) {
         FILE* f = fopen(fonts[i], "rb");

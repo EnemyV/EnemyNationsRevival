@@ -74,7 +74,7 @@ struct Fixed {
     double   AsDouble() const;
     Fixed    Fraction () const;
 
-    long &   Value();
+    int &    Value();
     void    Value( long lValue );
 
     friend Fixed operator +  ( Fixed, Fixed );
@@ -115,7 +115,14 @@ private:
 
     union
     {
-        long m_lFixed;
+        // MUST be exactly 32 bits: this is a 16.16 fixed-point value union'd with
+        // the {frac,whole} 16-bit halves below. `long` is 32-bit on Win32/Win64
+        // (LLP64) but 64-bit on Linux (LP64) — there the union grew to 8 bytes, so
+        // the struct-setting constructors (Fixed(short)/Fixed(int)) left the high
+        // 4 bytes UNINITIALIZED, and operator*/+ (which use m_lFixed) then computed
+        // garbage. That corrupted the rotated vehicle-sprite vertices → giant
+        // garbage quads. `int` is 32 bits on every target, matching the struct.
+        int m_lFixed;
 
         struct
         {
@@ -320,7 +327,7 @@ __inline void Fixed::operator /= ( int iSrc )
 //---------------------------------------------------------------------------
 __inline Fixed Fixed::operator << ( int iShift )
 {
-    return m_lFixed << iShift;
+    return (long)( m_lFixed << iShift );
 }
 
 //---------------------------------------------------------------------------
@@ -336,7 +343,7 @@ __inline void Fixed::operator <<= ( int iShift )
 //---------------------------------------------------------------------------
 __inline Fixed Fixed::operator >> ( int iShift )
 {
-    return m_lFixed >> iShift;
+    return (long)( m_lFixed >> iShift );
 }
 
 //---------------------------------------------------------------------------
@@ -406,7 +413,7 @@ __inline void Fixed::Value( long lValue )
 //---------------------------------------------------------------------------
 // Fixed::Value
 //---------------------------------------------------------------------------
-__inline long & Fixed::Value()
+__inline int & Fixed::Value()
 {
     return m_lFixed;
 }
@@ -431,24 +438,27 @@ __inline float Fixed::AsFloat() const
 // operator + () : Binary +
 //---------------------------------------------------------------------------
 __inline Fixed operator + ( Fixed fixL, Fixed fixR )
-{ 
-    return fixL.m_lFixed + fixR.m_lFixed; 
+{
+    // (long) cast selects the RAW Fixed(long) ctor, not the whole-number Fixed(int).
+    // With the 32-bit `int` member, int+int is `int` → would pick Fixed(int) (whole)
+    // and re-shift the value <<16 → garbage. Matches operator*/÷ which already cast.
+    return (long)( fixL.m_lFixed + fixR.m_lFixed );
 }
 
 //---------------------------------------------------------------------------
 // operator - () : Binary -
 //---------------------------------------------------------------------------
 __inline Fixed operator - ( Fixed fixL, Fixed fixR )
-{ 
-    return fixL.m_lFixed - fixR.m_lFixed; 
+{
+    return (long)( fixL.m_lFixed - fixR.m_lFixed );
 }
 
 //---------------------------------------------------------------------------
 // operator - () : Unary -
 //---------------------------------------------------------------------------
 __inline Fixed operator - ( Fixed fix )
-{ 
-    return -fix.m_lFixed;
+{
+    return (long)( -fix.m_lFixed );
 }
 
 //---------------------------------------------------------------------------

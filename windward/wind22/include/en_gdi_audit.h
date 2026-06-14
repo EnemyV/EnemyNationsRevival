@@ -15,7 +15,11 @@
 //---------------------------------------------------------------------------
 
 // Flip this to 0 (or delete) to make every probe a no-op.
+// Windows-only: the probe body uses _ReturnAddress/_snprintf_s/fopen_s and a
+// d:\tmp log path. On Linux the probes compile out to ((void)0).
+#ifdef _WIN32
 #define EN_GDI_AUDIT 1
+#endif
 
 #ifdef EN_GDI_AUDIT
 

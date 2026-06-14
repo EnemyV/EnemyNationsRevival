@@ -9,10 +9,10 @@
 //
 ////////////////////////////////////////////////////////////////////////////
 
-#include "CAIGMgr.hpp"
+#include "caigmgr.hpp"
 
-#include "CAIData.hpp"
-#include "CAITargt.h"
+#include "caidata.hpp"
+#include "caitargt.h"
 #include "logging.h"  // dave's logging system
 #include "stdafx.h"
 

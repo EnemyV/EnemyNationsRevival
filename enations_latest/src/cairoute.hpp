@@ -9,8 +9,8 @@
 //
 ////////////////////////////////////////////////////////////////////////////
 
-#include "CAIMsg.hpp"
-#include "CAIMap.hpp"
+#include "caimsg.hpp"
+#include "caimap.hpp"
 
 #ifndef __CAIROUTE_HPP__
 #define __CAIROUTE_HPP__

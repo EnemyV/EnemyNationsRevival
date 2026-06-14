@@ -87,7 +87,7 @@ public:
 
 	CDrawParms()	{}
 
-	CDrawParms( CTile & tile, CPoint & ptOffset )
+	CDrawParms( CTile & tile, const CPoint & ptOffset )
 		:
 			m_ptile   ( &tile        ),
 			m_ptOffset(  ptOffset    ),
@@ -192,8 +192,11 @@ public:
 
 struct CBlockInfo
 {
-	long	m_lOffset;
-	long	m_lLength;
+	// On-disk struct (read as a raw block in CSpriteParms). These MUST be 4 bytes
+	// to match the file layout. `long` is 4 bytes on Win32/Win64 (LLP64) but 8 on
+	// Linux (LP64), which would corrupt the layout — use the fixed-width LONG.
+	LONG	m_lOffset;
+	LONG	m_lLength;
 
 	#ifdef _DEBUG
 	void CheckValid() const;
@@ -327,7 +330,9 @@ private:
 	// on-disk "file image" below keeps its 32-bit offset and sizeof(CSpriteDIB)
 	// stays the array stride the data was written with. On x64 the 8-byte
 	// pointer fills the reserved area on its own; on x86 it's int + 4-byte ptr.
-#ifdef _WIN64
+#if defined(_WIN64) || defined(__LP64__)
+	// Any LP64/LLP64-with-8-byte-pointer target (Win64, Linux x64): the 8-byte
+	// pointer fills the reserved area exactly.
 	CSpriteView	 * m_pspriteview;			// 8 bytes — fills the reserved area
 #else
 	int				m_aiReserved[1];
@@ -439,6 +444,11 @@ typedef CViewCoord	CAnchor;
 
 class CUnitTile;
 class CSimpleTile;
+// Explicit forward declarations: CSpriteView only friend-declares these, and a
+// friend-only declaration is visible to ADL but NOT ordinary lookup (gcc strict;
+// MSVC lax), so `CSprite* m_psprite` etc. below need real forward decls.
+class CSprite;
+class CSpriteDIB;
 
 // pack(4): same reason as CSpriteDIB — CSpriteView overlays a 32-bit on-disk
 // record and is allocated/array-walked by its byte layout. Its pointer members
@@ -506,7 +516,7 @@ public:
 protected:
 
 	friend class CSprite;
-	friend CSpriteDIB;
+	friend class CSpriteDIB;
 
 	void	Init(	CSprite *, CSpriteDIBParms * );
 
@@ -533,8 +543,9 @@ private:
 	// The 8 pointers above are 4 bytes each on x86 and 8 on x64. m_aiReserved[8]
 	// (32 bytes) was sized to exactly absorb that 32-byte growth, keeping the
 	// on-disk "file image" below (m_anchor onward) and sizeof(CSpriteView) the
-	// same on both arches. So on x64 the pointers consume it and we drop it.
-#ifndef _WIN64
+	// same on both arches. So on any 8-byte-pointer target (Win64 or Linux LP64)
+	// the pointers consume it and we drop it.
+#if !defined(_WIN64) && !defined(__LP64__)
 	int				m_aiReserved[ 8 ];
 #endif
 
@@ -673,7 +684,7 @@ public:
 
 protected:
 
-	friend	CSpriteView;
+	friend	class CSpriteView;
 
 	int  const	* GetViewIndices			  () const { return m_piViewIndices; }
 	BYTE const	* GetDIBPixels	 			  ( int iSuperviewIndex, CDIBLayoutInfo const & );

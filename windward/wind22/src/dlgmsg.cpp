@@ -5,7 +5,7 @@
 
 #include "stdafx.h"
 #include "_windwrd.h"
-#include "DlgMsg.h"
+#include "dlgmsg.h"
 #include "w22_settings.h"
 
 #ifdef _DEBUG

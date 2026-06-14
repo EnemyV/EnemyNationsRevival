@@ -1,6 +1,12 @@
 #ifndef __ACMUTIL_H__
 #define __ACMUTIL_H__
 
+// ACM (Audio Compression Manager) is the legacy Windows audio-decode path.
+// On Linux audio is SDL_mixer and nothing references these CACM* types, so the
+// whole header is Windows-only (acmutil.cpp is also excluded from the Linux
+// build). This avoids pulling <MSAcm.h>/<mmreg.h> on Linux.
+#ifdef _WIN32
+
 #include "stdafx.h"
 
 #include "thielen.h"
@@ -152,6 +158,26 @@ private:
     CACMStream* m_stream;
 };
 
+#else  // !_WIN32 — Linux: no ACM. Provide a silent CADPCMtoPCMConvert stub so
+       // the legacy ADPCM decode path in music.cpp compiles. It produces no
+       // PCM (ResultSize()==0), i.e. music is silent — acceptable for bring-up;
+       // a real ADPCM->PCM decoder can replace this later if audio is wanted.
 
+#define ACM_STREAMCONVERTF_BLOCKALIGN 0x00000004
+#define ACM_STREAMCONVERTF_START      0x00000010
+#define ACM_STREAMCONVERTF_END        0x00000020
+
+class CADPCMtoPCMConvert {
+public:
+    CADPCMtoPCMConvert( int /*iChannels*/, int /*iBits*/, int /*Rate*/ ) {}
+    LPVOID ResultData()  { return NULL; }
+    DWORD  SrcSize()     { return 0; }
+    DWORD  ResultSize()  { return 0; }
+    void   ReleaseBuffer() {}
+    void   Convert( LPVOID /*inBuf*/, DWORD /*inSize*/, LPVOID /*outBuf*/ = NULL,
+                    DWORD /*outSize*/ = 0, DWORD /*dwFlags*/ = 0 ) {}
+};
+
+#endif // _WIN32
 
 #endif

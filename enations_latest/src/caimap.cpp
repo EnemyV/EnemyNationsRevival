@@ -11,9 +11,9 @@
 
 #include "stdafx.h"
 #include "netapi.h"
-#include "CAIMap.hpp"
-#include "CAIData.hpp"
-#include "CPathMap.h"
+#include "caimap.hpp"
+#include "caidata.hpp"
+#include "cpathmap.h"
 
 #include "logging.h"	// dave's logging system
 #include "ai.h"			// AiHexCacheActive()

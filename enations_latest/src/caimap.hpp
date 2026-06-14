@@ -9,8 +9,8 @@
 //
 ////////////////////////////////////////////////////////////////////////////
 
-#include "CAIMsg.hpp"
-#include "CAIMapUt.hpp"
+#include "caimsg.hpp"
+#include "caimaput.hpp"
 
 #ifndef __CAIMAP_HPP__
 #define __CAIMAP_HPP__

@@ -2,6 +2,7 @@
 
 #include <string>
 #include <memory>
+#include <SDL.h>
 
 struct SDL_Renderer;
 struct SDL_Texture;

@@ -1,5 +1,8 @@
 #include "stdafx.h"
 #include "GameWindow.h"
+#ifndef _WIN32
+#include "en_harness.h"   // EnHarness_Service() — services screenshots on the render thread
+#endif
 #include "SDL2UI.h"
 #include "lastplnt.h"
 #include "resource.h"
@@ -484,6 +487,10 @@ bool GameWindow::PollEvents() {
     }
     m_pollingEvents = true;
 
+#ifndef _WIN32
+    EnHarness_Service();   // service any pending harness screenshot on this (render) thread
+#endif
+
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
         if (event.type == SDL_QUIT) {
@@ -692,6 +699,25 @@ void GameWindow::HandleEvent(SDL_Event& event) {
                 m_width  = event.window.data1;
                 m_height = event.window.data2;
                 LogToFile("Window resized to " + std::to_string(m_width) + "x" + std::to_string(m_height));
+            }
+            else if (event.window.event == SDL_WINDOWEVENT_FOCUS_GAINED) {
+                // The detached map/radar windows are borderless + SKIP_TASKBAR, so
+                // after Alt-Tabbing away they can get buried with no way back. When
+                // any of our windows regains focus, raise the whole window group so
+                // they come forward together. Throttled because SDL_RaiseWindow can
+                // itself emit FOCUS_GAINED — without this it would raise-storm.
+                static DWORD s_lastRaise = 0;
+                DWORD now = timeGetTime();
+                if (now - s_lastRaise > 400) {
+                    s_lastRaise = now;
+                    // id order ascends: main (lowest id) first, detached panels last
+                    // → panels end up on top of the main game-view window.
+                    for (Uint32 id = 1; id <= 64; ++id) {
+                        SDL_Window* w = SDL_GetWindowFromID(id);
+                        if (w && (SDL_GetWindowFlags(w) & SDL_WINDOW_SHOWN))
+                            SDL_RaiseWindow(w);
+                    }
+                }
             }
             break;
 

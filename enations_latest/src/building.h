@@ -679,7 +679,7 @@ public:
 class CBuilding : public CUnit
 {
 friend class CGame;
-friend CWndOrders;
+friend class CWndOrders;
 friend void CUnit::DecDamagePoints (int iDamage, DWORD dwKiller);
 
 public:
@@ -909,7 +909,7 @@ public:
 
 class CVehicleBuilding : public CBuilding
 {
-friend CDlgBuildTransport;
+friend class CDlgBuildTransport;
 public:
 
 									CVehicleBuilding () { ctor (); }

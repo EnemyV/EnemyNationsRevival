@@ -79,7 +79,7 @@ SDL2AreaBar::SDL2AreaBar() {
         m_btns[i].label = s_labels[i];
     }
 
-    const char* fonts[] = {"C:\\Windows\\Fonts\\arial.ttf", nullptr};
+    const char* fonts[] = {"/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", "C:\\Windows\\Fonts\\arial.ttf", nullptr};
     for (int i = 0; fonts[i]; i++) {
         FILE* f = fopen(fonts[i], "rb");
         if (f) { fclose(f); m_fontPath = fonts[i]; break; }

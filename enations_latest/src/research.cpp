@@ -104,7 +104,12 @@ void CRsrchStatus::Serialize( CArchive& ar )
 void ConstructElements( CRsrchStatus* pNewElem, int iCount )
 {
 
-    for ( int i = 0; i < iCount; i++, pNewElem++ ) pNewElem->CRsrchStatus::CRsrchStatus( );
+    for ( int i = 0; i < iCount; i++, pNewElem++ )
+#ifdef _WIN32
+        pNewElem->CRsrchStatus::CRsrchStatus( );
+#else
+        new ( pNewElem ) CRsrchStatus( );
+#endif
 }
 
 void DestructElements( CRsrchStatus* pNewElem, int iCount )
@@ -143,7 +148,12 @@ CRsrchItem::~CRsrchItem( )
 void ConstructElements( CRsrchItem* pNewElem, int iCount )
 {
 
-    for ( int i = 0; i < iCount; i++, pNewElem++ ) pNewElem->CRsrchItem::CRsrchItem( );
+    for ( int i = 0; i < iCount; i++, pNewElem++ )
+#ifdef _WIN32
+        pNewElem->CRsrchItem::CRsrchItem( );
+#else
+        new ( pNewElem ) CRsrchItem( );
+#endif
 }
 
 void DestructElements( CRsrchItem* pNewElem, int iCount )

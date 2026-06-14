@@ -201,7 +201,7 @@ inline BOOL CHex::CanRoad() const { return ( ( GetType() != coastline ) && ( !Is
 
 inline int	CHex::GetAltDraw() const {
     ASSERT_STRICT_VALID( this );
-    return max( GetAlt(), sea_level );
+    return ::max( GetAlt(), sea_level );   // ::max — CHex has an inherited member named 'max'
 }
 
 // Bump g_enFogVisGen only on a visible<->invisible transition (0 <-> nonzero) — the

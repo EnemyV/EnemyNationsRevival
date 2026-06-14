@@ -13,7 +13,11 @@
 // whenever afx.h was included (current production path).
 //---------------------------------------------------------------------------
 
+#ifdef _WIN32
 #include <windows.h>
+#else
+#include "win32_compat.h"     // Win32-on-POSIX shim (Linux build)
+#endif
 #include "mfc_compat_text.h"  // Phase 6 Stage 5 Phase C: SDL_ttf text helpers
 #include "en_gdi_audit.h"     // Phase 6 Stage 5a: TEMP GDI liveness instrumentation
 #include <algorithm>
@@ -625,12 +629,20 @@ public:
     // any future BOOL (== int) overload.
     MFC_COMPAT_AR_OP( BYTE )
     MFC_COMPAT_AR_OP( WORD )
-    MFC_COMPAT_AR_OP( DWORD )
     MFC_COMPAT_AR_OP( char )
     MFC_COMPAT_AR_OP( short )
     MFC_COMPAT_AR_OP( int )
     MFC_COMPAT_AR_OP( UINT )
+#ifdef _WIN32
+    // On Win32, LONG (long) and DWORD (unsigned long) are types DISTINCT from
+    // int / UINT (unsigned int), so they need their own 32-bit overloads. On
+    // Linux LP64 they would be DUPLICATES: LONG==int and DWORD==unsigned int
+    // ==UINT (the int/UINT ops above bind for LONG/DWORD callers), while a bare
+    // `long`/`unsigned long` is 64-bit == LONGLONG/ULONGLONG (the ops below bind
+    // for those). So Linux needs neither extra overload.
+    MFC_COMPAT_AR_OP( DWORD )
     MFC_COMPAT_AR_OP( LONG )
+#endif
     MFC_COMPAT_AR_OP( LONGLONG )
     MFC_COMPAT_AR_OP( ULONGLONG )
     MFC_COMPAT_AR_OP( float )
@@ -689,7 +701,11 @@ typedef void* POSITION;
 // the CList GetNext/GetPrev/RemoveAt leak). Exact and atomic — not sampled.
 // EN_PERF surfaces it as the "mfc.iterpos" gauge. __declspec(selectany) lets
 // this live in a header (linker folds the duplicate definitions).
+#ifdef _WIN32
 __declspec(selectany) long g_mfcIterPosLive = 0;
+#else
+__attribute__(( weak )) long g_mfcIterPosLive = 0;   // gcc equivalent of selectany
+#endif
 
 // One global lock guarding every CList's IterPos pool. CList instances have no
 // internal locking, and some lists (e.g. the global player list) are iterated
@@ -892,8 +908,15 @@ public:
         IterPos* pos = AcquireIterPos();
         // Unwrap ONCE per walk: the two checked iterators here are the walk's only
         // _Lockit traffic; every GetNextAssoc advance after this is lock-free.
+        // (_Unwrapped() is MSVC-only; libstdc++ has no checked-iterator global lock,
+        // so on Linux the plain iterator already IS the unchecked one.)
+#ifdef _WIN32
         pos->it    = m_map.begin()._Unwrapped();
         pos->itEnd = m_map.end()._Unwrapped();
+#else
+        pos->it    = m_map.begin();
+        pos->itEnd = m_map.end();
+#endif
         pos->map = &m_map;
         InterlockedIncrement( &g_mfcIterPosLive );
         return (POSITION)pos;
@@ -968,7 +991,11 @@ private:
     CMapSrw m_srw;   // see CMapSrw: cross-thread guard (exclusive reads under IDL>0)
     // UNCHECKED iterator type (MSVC _Unwrapped()): advancing it takes no std::_Lockit
     // global lock — see the GetNextAssoc comment. Works at any _ITERATOR_DEBUG_LEVEL.
+#ifdef _WIN32
     typedef decltype( std::declval<typename MapT::const_iterator>( )._Unwrapped( ) ) UncheckedIt;
+#else
+    typedef typename MapT::const_iterator UncheckedIt;   // libstdc++: no checked-iterator proxy
+#endif
     struct IterPos {
         UncheckedIt it;      // current element (unchecked — lock-free advance)
         UncheckedIt itEnd;   // end sentinel captured at GetStartPosition
@@ -1242,6 +1269,12 @@ private:
 // called for new/removed tail elements, and unqualified-name lookup +
 // ADL pick up per-type overloads (e.g. music.cpp's CRawData overrides)
 // when present, falling back to the catch-all templates below.
+
+// Forward declarations: CArray's template methods call these, but the catch-all
+// definitions are far below. MSVC's lax two-phase lookup finds them anyway; gcc
+// needs them declared before use (game-type T won't find them via ADL).
+template<class T> void ConstructElements( T* pElements, int nCount );
+template<class T> void DestructElements( T* pElements, int nCount );
 
 template<class TYPE, class ARG_TYPE>
 class CArray

@@ -803,8 +803,8 @@ constexpr unsigned PROJ_POOL_BLOCK = 256;
 
 class CProjBase : public CEffectTile
 {
-    friend CProjMap;
-    friend CInitProjMem;
+    friend class CProjMap;
+    friend class CInitProjMem;
 
   public:
     enum TILE_TYPE

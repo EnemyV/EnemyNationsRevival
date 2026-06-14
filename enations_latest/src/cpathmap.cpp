@@ -9,13 +9,13 @@
 //
 ////////////////////////////////////////////////////////////////////////////
 
-#include "STDAFX.H"
+#include "stdafx.h"
 #include "cai.h"
-#include "CPathMap.h"
+#include "cpathmap.h"
 
-#include "CAIData.hpp"
+#include "caidata.hpp"
 #include "logging.h"	// dave's logging system
-#include "perf.h"		// EN_PERF counters (path volume/cost split)
+#include "Perf.h"		// EN_PERF counters (path volume/cost split)
 
 
 //#define TEST_RESULT1		// test GetAt improvement

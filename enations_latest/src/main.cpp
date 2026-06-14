@@ -26,7 +26,7 @@
 #include "sfx.h"
 #include "area.h"
 #include "bitmaps.h"
-#include "cdloc.h"
+#include "CdLoc.h"
 #include "toolbar.h"
 #include "msgs.h"
 #include "chat.h"

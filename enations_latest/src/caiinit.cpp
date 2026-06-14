@@ -9,9 +9,9 @@
 //
 ////////////////////////////////////////////////////////////////////////////
 
-#include "CAIInit.hpp"
+#include "caiinit.hpp"
 
-#include "CAIData.hpp"
+#include "caidata.hpp"
 #include "lastplnt.h"
 #include "logging.h"  // dave's logging system
 #include "stdafx.h"

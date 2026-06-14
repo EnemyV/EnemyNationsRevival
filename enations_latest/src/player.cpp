@@ -20,7 +20,7 @@
 #include "SDL2MFCPanel.h"
 #include "SDL2FileBrowser.h"
 #include "building.inl"
-#include "cdloc.h"
+#include "CdLoc.h"
 #include "chproute.hpp"
 #include "codec.h"
 #include "cpathmgr.h"

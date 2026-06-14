@@ -6,7 +6,7 @@
 
 #include "stdafx.h"
 #include "lastplnt.h"
-#include "License.h"
+#include "license.h"
 #include "GameWindow.h"
 #include "SDL2UI.h"
 
@@ -106,6 +106,11 @@ int CDlgLicense::DoModal()
     }
 
     GameWindow* gw = theApp.m_gameWindow ? theApp.m_gameWindow.get() : nullptr;
+    // The demo license is shown during early InitInstance, before the SDL game
+    // window exists (created much later). An SDL2Dialog needs a parent
+    // GameWindow, so with none yet we can't show it — accept by default.
+    if ( !gw )
+        return IDOK;
     LicenseDialog dlg( gw, strLicense, m_bOK != FALSE );
     return dlg.DoModal();
 }

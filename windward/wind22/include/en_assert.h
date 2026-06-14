@@ -23,7 +23,12 @@
 #include <cstdio>
 
 // Total number of assert firings this run (exposed as a perf gauge / for triage).
+// selectany folds the duplicate header definitions to one; gcc uses weak.
+#ifdef _WIN32
 extern "C" __declspec( selectany ) volatile long g_enAssertFires = 0;
+#else
+extern "C" __attribute__(( weak )) volatile long g_enAssertFires = 0;
+#endif
 
 inline void EnAssertFire( const char* expr, const char* file, int line )
 {

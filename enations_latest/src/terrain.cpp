@@ -42,6 +42,7 @@ CTerrain         theTerrain( "terrain" );  // data about the terrain types
 unsigned         g_enFogVisGen = 0;        // fog-of-war change counter (see terrain.h)
 CTerrainShowStat tShowStat;
 
+
 // GPU sprite layer (SDL2Sprites). Set during the split sprite-layer pass so the
 // low-level sprite blits (CSpriteDIB::StructureDrawToDIB / VehicleDraw) divert the
 // whole world sprite layer to the GPU instead of CPU-compositing into m_dibSprite.
@@ -659,9 +660,20 @@ void CAnimAtr::Render( )
     // sprites from the incremental model). The software path keeps dirty rects.
     bool bGpuFull = IsGpuFull( );
 
+    // The incremental dirty-rect model leaves stale/partial sprites — moving
+    // vehicles flicker / disappear (only their changed sub-rects get redrawn, and
+    // the detached window's double buffer alternates partial frames). The GPU path
+    // already avoids this with a full walk; on Linux (always the software path,
+    // since the GPU terrain mesh is disabled) do the same — redraw the whole view
+    // each frame so RenderToPanel always copies a complete, flicker-free frame.
+    bool bFullWalk = bGpuFull;
+#ifndef _WIN32
+    bFullWalk = true;
+#endif
+
     try
     {
-        if ( bGpuFull )
+        if ( bFullWalk )
         {
             CRect full( 0, 0, ws.cx, ws.cy );
             m_dirtyrects.AddRect( &full, CDirtyRects::RECT_LIST::LIST_BLT );

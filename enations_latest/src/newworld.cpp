@@ -20,7 +20,7 @@
 #include "relation.h"
 #include "ai.h"
 #include "ipccomm.h"
-#include "CPathMgr.h"
+#include "cpathmgr.h"
 #include "help.h"
 #include "research.h"
 #include "chproute.hpp"
@@ -29,7 +29,7 @@
 #include "cpathmap.h"
 #include "area.h"
 #include "bridge.h"
-#include "cdloc.h"
+#include "CdLoc.h"
 
 #include "terrain.inl"
 #include "ui.inl"

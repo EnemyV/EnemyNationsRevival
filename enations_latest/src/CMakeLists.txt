@@ -121,9 +121,29 @@ set(enations_sources
         ../../input/UIButtonListener.cpp
 )
 
+# ---------------------------------------------------------------------------
+# Linux source-list adjustments:
+#  - lastplnt.rc is an MFC .RC resource script; gcc/CMake cannot compile it.
+#    Drop it and provide its runtime STRINGTABLE via win32_resources_linux.cpp.
+#  - linux_main.cpp supplies main() -> WinMain (the Win32 entry has no main()).
+# ---------------------------------------------------------------------------
+if (NOT MSVC)
+    list(REMOVE_ITEM enations_sources lastplnt.rc)
+    list(APPEND enations_sources
+        linux_main.cpp
+        win32_resources_linux.cpp
+        vdmplay_stubs.cpp
+        ../../harness/control_socket.cpp   # in-process LLM-driving harness (Debug)
+    )
+endif ()
 
-set(CMAKE_GENERATOR_TOOLSET "host=x86")
+# MSVC-only host toolset selection (32-bit host tools for the VS generator).
+if (MSVC)
+    set(CMAKE_GENERATOR_TOOLSET "host=x86")
+endif ()
 
+# The WIN32 keyword is a no-op on non-Windows (CMake ignores it), so it is
+# harmless to leave for the Linux build.
 add_executable(enations WIN32 ${enations_sources})
 
 # according to enations.mak this should be MT
@@ -138,15 +158,28 @@ add_executable(enations WIN32 ${enations_sources})
 # Live 13-player profiling showed operV=729ms/s at 16us per CVehicle::Operate
 # under the old flags. /RTC1 comes from CMake's default debug flags and is
 # incompatible with /O2 — strip it (and the /Od;/Ob0 defaults ours override).
-string(REPLACE "/RTC1" "" CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG}")
-string(REPLACE "/Ob0" "" CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG}")
-string(REPLACE "/Od" "" CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG}")
-target_compile_options(enations PRIVATE
-    $<$<CONFIG:Release>:/MD;/EHsc;/O2;/Ob2;/Oi;/GL;/Gy;/Gw;/Ot;/GF;/arch:AVX2;/fp:fast;/Zi>
-    $<$<CONFIG:Profile>:/MD;/EHsc;/O2;/Ob2;/Oi;/GL;/Gy;/Gw;/Ot;/GF;/arch:AVX2;/fp:fast;/Zi>
-    $<$<CONFIG:Debug>:/MDd;/EHsc;/Zi;/O2;/Ob2>
-    $<$<CONFIG:Sanitize>:/MDd;/EHsc;/Zi;/Od;/Ob0;/fsanitize=address>
-)
+if (MSVC)
+    string(REPLACE "/RTC1" "" CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG}")
+    string(REPLACE "/Ob0" "" CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG}")
+    string(REPLACE "/Od" "" CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG}")
+    target_compile_options(enations PRIVATE
+        $<$<CONFIG:Release>:/MD;/EHsc;/O2;/Ob2;/Oi;/GL;/Gy;/Gw;/Ot;/GF;/arch:AVX2;/fp:fast;/Zi>
+        $<$<CONFIG:Profile>:/MD;/EHsc;/O2;/Ob2;/Oi;/GL;/Gy;/Gw;/Ot;/GF;/arch:AVX2;/fp:fast;/Zi>
+        $<$<CONFIG:Debug>:/MDd;/EHsc;/Zi;/O2;/Ob2>
+        $<$<CONFIG:Sanitize>:/MDd;/EHsc;/Zi;/Od;/Ob0;/fsanitize=address>
+    )
+else ()
+    # Linux/gcc. -fms-extensions + -fsigned-char match MSVC semantics the code
+    # relies on; -Wno-unknown-pragmas swallows #pragma warning/comment/intrinsic.
+    target_compile_options(enations PRIVATE
+        -g -fms-extensions -fsigned-char -fpermissive -Wno-unknown-pragmas -Wno-format -Wno-write-strings -Wno-narrowing
+        $<$<CONFIG:Release>:-O2>
+        $<$<CONFIG:Profile>:-O2>
+    )
+    # Force-include stdafx.h — mirrors MSVC's /Yu forced-PCH include so TUs that
+    # include game headers before stdafx.h still get the precompiled surface.
+    target_compile_options(enations PRIVATE -include stdafx.h)
+endif ()
 
 # Phase 1g step 1: drop CMAKE_MFC_FLAG. Our own WinMain (WinMain.cpp)
 # replaces MFC's auto-generated AfxWinMain entry shim. The MFC types from
@@ -168,29 +201,9 @@ add_compile_definitions(
 )
 
 
-# windows.h normally derives _X86_/_AMD64_ from the compiler's _M_* macros,
-# but this codebase defined _X86_ by hand (see HACK note below). Pick the macro
-# that matches the build platform so an x64 compile doesn't pull in the 32-bit
-# SDK definitions.
-if(CMAKE_GENERATOR_PLATFORM STREQUAL "x64" OR CMAKE_SIZEOF_VOID_P EQUAL 8)
-    set(EN_ARCH_DEFINE _AMD64_)
-else()
-    set(EN_ARCH_DEFINE _X86_)
-endif()
-
+# Cross-platform game-logic defines + per-config debug/release macros.
 target_compile_definitions(enations PUBLIC
-        # Phase 1g step 2 (2026-05-21): _AFXDLL no longer required —
-        # stdafx.h's afx*.h chain is gated out and mfc_compat.h provides
-        # the MFC type surface (CString/CFile/CArchive/CMap/CDialog/CWnd/
-        # CDC/CFont/CBrush/CPen/CBitmap/CList/CWinThread/CCriticalSection
-        # etc.). MFC not linked: verified via ./mfc-status.ps1.
-        # _AFXDLL
-        _WIN32
-        _WIN32_WINNT=_WIN32_WINNT_WIN7
-        _MBCS
-        ${EN_ARCH_DEFINE} # arch macro (_X86_ / _AMD64_), selected by platform above
-        WIN32
-        #LOGGINGON        
+        #LOGGINGON
         #_LOGOUT
         # STRICTER_ASSERTS ## these prob all need to be fixed
         AI_THREADS_ENABLED # here's hoping!!
@@ -200,18 +213,41 @@ target_compile_definitions(enations PUBLIC
         $<$<CONFIG:Release>:NDEBUG>
         $<$<CONFIG:Profile>:NDEBUG>
         $<$<CONFIG:Debug>:_DEBUG>
-        # Fast-debug: no checked iterators in Debug. MUST match wind22 (std
-        # container layouts change with this) — both targets define it.
-        $<$<CONFIG:Debug>:_ITERATOR_DEBUG_LEVEL=0>
         $<$<CONFIG:Sanitize>:_DEBUG>
         )
 
-target_precompile_headers(enations PRIVATE stdafx.h)
+if (MSVC)
+    # windows.h normally derives _X86_/_AMD64_ from the compiler's _M_* macros,
+    # but this codebase defined _X86_ by hand. Pick the macro that matches the
+    # build platform so an x64 compile doesn't pull in the 32-bit SDK defs.
+    if(CMAKE_GENERATOR_PLATFORM STREQUAL "x64" OR CMAKE_SIZEOF_VOID_P EQUAL 8)
+        set(EN_ARCH_DEFINE _AMD64_)
+    else()
+        set(EN_ARCH_DEFINE _X86_)
+    endif()
+
+    target_compile_definitions(enations PUBLIC
+            # mfc_compat.h provides the MFC type surface; MFC not linked.
+            _WIN32
+            _WIN32_WINNT=_WIN32_WINNT_WIN7
+            _MBCS
+            ${EN_ARCH_DEFINE} # arch macro (_X86_ / _AMD64_)
+            WIN32
+            # Fast-debug: no checked iterators in Debug. MUST match wind22 (std
+            # container layouts change with this) — both targets define it.
+            $<$<CONFIG:Debug>:_ITERATOR_DEBUG_LEVEL=0>
+            )
+
+    # PCH disabled on Linux for the bring-up (gcc PCH flag-matching masks errors).
+    target_precompile_headers(enations PRIVATE stdafx.h)
+endif ()
 
 
 get_target_property(cdefs enations COMPILE_DEFINITIONS)
 message("cdefs: ${cdefs}")
         
+# Project include dirs (cross-platform). SDL2/glew bundled headers are added
+# only for MSVC; Linux gets SDL2 headers transitively via EnLinuxSDL2.
 target_include_directories(enations PUBLIC
         ../../tools/
        ../../cmakeBuild/tools
@@ -219,28 +255,36 @@ target_include_directories(enations PUBLIC
        ../../windward/wind22/include
        ../../rendering/
        ../rendering/
-       ../../tools/sdl2/SDL2-2.30.12/include
-       ../../tools/sdl2/SDL2_ttf-2.22.0/include
-       ../../tools/sdl2/glew-2.2.0/include
+       ../../harness/
 )
 
+if (MSVC)
+    target_include_directories(enations PUBLIC
+           ../../tools/sdl2/SDL2-2.30.12/include
+           ../../tools/sdl2/SDL2_ttf-2.22.0/include
+           ../../tools/sdl2/glew-2.2.0/include
+    )
 
-target_link_libraries(enations PUBLIC
-        vdmplay
-        wind22
-        wing32.lib
-#        msvcrt.lib # was commented
-#        shdw32m.lib # was commented
-#        shlw32m.lib # was commented
-
-        vdmplay.lib
-        winmm.lib
-        vfw32.lib
-#        shmfc4m.lib # was commented
-        Netapi32.lib
-        version.lib
-        SDL2_ttf.lib
-        )
+    target_link_libraries(enations PUBLIC
+            vdmplay
+            wind22
+            wing32.lib
+            vdmplay.lib
+            winmm.lib
+            vfw32.lib
+            Netapi32.lib
+            version.lib
+            SDL2_ttf.lib
+            )
+else ()
+    # Linux: wind22 (carries EnLinuxSDL2 transitively) + system SDL2. vdmplay
+    # (VFW video) is not built on Linux — video playback is SDL2 — and NetBIOS
+    # multiplayer is stubbed, so neither vdmplay nor Netapi32 is linked.
+    target_link_libraries(enations PUBLIC
+            wind22
+            EnLinuxSDL2
+            )
+endif ()
 
 # Pick the SDL2 import-lib arch to match the build platform. VS sets
 # CMAKE_GENERATOR_PLATFORM (Win32/x64); fall back to pointer size otherwise.
@@ -250,30 +294,25 @@ else()
     set(SDL2_ARCH x86)
 endif()
 
+if (MSVC)
         # Disable SafeSEH for MSVC builds as some linked libraries do not support it.
         # SAFESEH is an x86-only concept; the x64 linker rejects the flag, so guard it.
-if(MSVC AND SDL2_ARCH STREQUAL "x86")
-    target_link_options(enations PRIVATE "/SAFESEH:NO")
-endif()
+    if(SDL2_ARCH STREQUAL "x86")
+        target_link_options(enations PRIVATE "/SAFESEH:NO")
+    endif()
 
-target_link_options(enations PUBLIC
-    
-    /NODEFAULTLIB:nafxcw.lib
-    /NODEFAULTLIB:libcmt.lib
-    
-    $<$<CONFIG:Sanitize>:/DEBUG:FULL /OPT:NOREF /OPT:NOICF /fsanitize=address /LARGEADDRESSAWARE>
+    target_link_options(enations PUBLIC
+        /NODEFAULTLIB:nafxcw.lib
+        /NODEFAULTLIB:libcmt.lib
 
-    $<$<CONFIG:Debug>:/DEBUG:FULL /OPT:NOREF /OPT:NOICF /LARGEADDRESSAWARE>
+        $<$<CONFIG:Sanitize>:/DEBUG:FULL /OPT:NOREF /OPT:NOICF /fsanitize=address /LARGEADDRESSAWARE>
+        $<$<CONFIG:Debug>:/DEBUG:FULL /OPT:NOREF /OPT:NOICF /LARGEADDRESSAWARE>
+        $<$<CONFIG:Profile>:/DEBUG:FULL /INCREMENTAL:NO /OPT:NOREF /OPT:NOICF /LARGEADDRESSAWARE>
+        $<$<CONFIG:Release>:/DEBUG:FASTLINK /INCREMENTAL:NO /OPT:REF /OPT:ICF /LTCG /LARGEADDRESSAWARE>
 
-    $<$<CONFIG:Profile>:/DEBUG:FULL /INCREMENTAL:NO /OPT:NOREF /OPT:NOICF /LARGEADDRESSAWARE>
-
-    $<$<CONFIG:Release>:/DEBUG:FASTLINK /INCREMENTAL:NO /OPT:REF /OPT:ICF /LTCG /LARGEADDRESSAWARE>
-
-    /DYNAMICBASE
-    /NXCOMPAT
-)
-
-        
+        /DYNAMICBASE
+        /NXCOMPAT
+    )
 
     target_link_directories(enations PUBLIC
         ../../tools/lib
@@ -284,29 +323,41 @@ target_link_options(enations PUBLIC
         ../../tools/sdl2/SDL2_ttf-2.22.0/lib/${SDL2_ARCH}
     )
 
-# Copy required DLLs to output directory
-add_custom_command(TARGET enations POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "${CMAKE_BINARY_DIR}/../tools/sdl2/SDL2-2.30.12/lib/${SDL2_ARCH}/SDL2.dll"
-        $<TARGET_FILE_DIR:enations>
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "${CMAKE_BINARY_DIR}/../tools/sdl2/SDL2_mixer-2.8.1/lib/${SDL2_ARCH}/SDL2_mixer.dll"
-        $<TARGET_FILE_DIR:enations>
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "${CMAKE_BINARY_DIR}/tools/vdmplay/$<CONFIG>/vdmplay.dll"
-        $<TARGET_FILE_DIR:enations>
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "${CMAKE_BINARY_DIR}/../tools/sdl2/SDL2_ttf-2.22.0/lib/${SDL2_ARCH}/SDL2_ttf.dll"
-        $<TARGET_FILE_DIR:enations>
-    # Stage the baked GPU terrain PNG set next to the exe so the area map renders
-    # regardless of the launch working directory (and in a standalone deploy).
-    # The loader's first candidate is "data/terrain_gpu" relative to the exe.
-    # copy_directory_if_different only writes changed files, so it's cheap on
-    # incremental relinks.
-    COMMAND ${CMAKE_COMMAND} -E copy_directory_if_different
-        "${CMAKE_CURRENT_SOURCE_DIR}/../data/terrain_gpu"
-        "$<TARGET_FILE_DIR:enations>/data/terrain_gpu"
-    COMMENT "Copying runtime DLLs and baked terrain set (data/terrain_gpu) to output directory"
-)
+    # Copy required DLLs to output directory (Windows only — Linux uses system .so).
+    add_custom_command(TARGET enations POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CMAKE_BINARY_DIR}/../tools/sdl2/SDL2-2.30.12/lib/${SDL2_ARCH}/SDL2.dll"
+            $<TARGET_FILE_DIR:enations>
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CMAKE_BINARY_DIR}/../tools/sdl2/SDL2_mixer-2.8.1/lib/${SDL2_ARCH}/SDL2_mixer.dll"
+            $<TARGET_FILE_DIR:enations>
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CMAKE_BINARY_DIR}/tools/vdmplay/$<CONFIG>/vdmplay.dll"
+            $<TARGET_FILE_DIR:enations>
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CMAKE_BINARY_DIR}/../tools/sdl2/SDL2_ttf-2.22.0/lib/${SDL2_ARCH}/SDL2_ttf.dll"
+            $<TARGET_FILE_DIR:enations>
+        COMMAND ${CMAKE_COMMAND} -E copy_directory_if_different
+            "${CMAKE_CURRENT_SOURCE_DIR}/../data/terrain_gpu"
+            "$<TARGET_FILE_DIR:enations>/data/terrain_gpu"
+        COMMENT "Copying runtime DLLs and baked terrain set (data/terrain_gpu) to output directory"
+    )
+else ()
+    # Linux: no DLLs to stage, but still place the baked GPU terrain PNG set next
+    # to the binary so the area map renders regardless of launch directory.
+    add_custom_command(TARGET enations POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory_if_different
+            "${CMAKE_CURRENT_SOURCE_DIR}/../data/terrain_gpu"
+            "$<TARGET_FILE_DIR:enations>/data/terrain_gpu"
+        COMMENT "Staging baked terrain set (data/terrain_gpu) next to the binary"
+    )
+endif ()
 
-set_property(TARGET enations PROPERTY CXX_STANDARD 11)
+# MSVC is lax about C++ standard (defaults to C++14+ even when 11 is requested),
+# so the codebase uses std::make_unique (C++14) and relaxed constexpr. gcc with
+# -std=c++11 rejects both — build Linux as C++17 (gcc 13's default anyway).
+if (MSVC)
+    set_property(TARGET enations PROPERTY CXX_STANDARD 11)
+else ()
+    set_property(TARGET enations PROPERTY CXX_STANDARD 17)
+endif ()

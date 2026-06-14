@@ -23,7 +23,7 @@
 #include "vehicle.inl"
 
 #include "SDL2Sprites.h"   // GPU tracer streaks (CaptureTrail)
-#include "perf.h"          // shoot.oor out-of-range-fire probe
+#include "Perf.h"          // shoot.oor out-of-range-fire probe
 
 // GPU split-layer pass flag (defined in terrain.cpp): TRUE while sprites are being
 // captured into the GPU layer. We only emit tracer geometry on that path.

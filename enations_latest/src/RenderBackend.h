@@ -17,6 +17,7 @@
 // the same key EnGetProfileInt/EnWriteProfileInt (the options dialog) writes.
 //---------------------------------------------------------------------------
 
+#include <cstdlib>
 #include "w22_settings.h"
 
 enum class RenderBackend { Software = 0, SDL2 = 1, OpenGL = 2 };
@@ -27,12 +28,27 @@ inline bool RenderBackendOpenGLAvailable() { return false; }
 
 inline RenderBackend GetRenderBackend()
 {
+#if !defined(_WIN32)
+    // SDL2 (GPU) is the DEFAULT backend on Linux: it has the 4-zoom GPU terrain and
+    // the flicker-free full-walk sprite layer (the software path's incremental
+    // dirty-rect model drops moving vehicles). EN_SOFTWARE forces the legacy
+    // software path for debugging; an explicit [Advanced]Renderer=0 also honors it.
+    if ( getenv( "EN_SOFTWARE" ) )
+        return RenderBackend::Software;
+    int v = w22::GetProfileInt( "Advanced", "Renderer", 1 );  // default SDL2 on Linux
+    if ( v == 0 )
+        return RenderBackend::Software;
+    if ( v == 2 && RenderBackendOpenGLAvailable() )
+        return RenderBackend::OpenGL;
+    return RenderBackend::SDL2;
+#else
     int v = w22::GetProfileInt( "Advanced", "Renderer", 0 );
     if ( v <= 0 )
         return RenderBackend::Software;
     if ( v == 2 && RenderBackendOpenGLAvailable() )
         return RenderBackend::OpenGL;
     return RenderBackend::SDL2;   // 1, or 2 before the GL backend lands → SDL2
+#endif
 }
 
 // True when a GPU present path is active (SDL2 today, OpenGL later) — i.e. NOT the

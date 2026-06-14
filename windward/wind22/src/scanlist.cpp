@@ -9,8 +9,8 @@
 // scanlist.cpp : class for row-by-row scan conversion
 //
 
-#include "STDAFX.H"
-#include "_WINDWRD.H"
+#include "stdafx.h"
+#include "_windwrd.h"
 
 #ifdef _DEBUG
 #undef THIS_FILE

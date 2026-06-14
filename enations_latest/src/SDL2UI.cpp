@@ -1,4 +1,7 @@
 #include "stdafx.h"
+#ifndef _WIN32
+#include "en_harness.h"
+#endif
 #include "SDL2UI.h"
 #include "GameWindow.h"
 #include "SDL2MainMenu.h"
@@ -12,6 +15,17 @@
 // Prevent Windows min/max macros from breaking std::min/std::max
 #undef min
 #undef max
+
+// Extra flag for dialog windows. On Linux the detached map/radar panels are
+// SDL_WINDOW_ALWAYS_ON_TOP (the Win32 owner-window relationship is unavailable),
+// so a normal dialog window opens BEHIND them. Make dialogs always-on-top too —
+// created/raised after the panels, they land above. On Windows the owner-window
+// relationship handles z-order, so no extra flag is needed.
+#ifdef _WIN32
+#define EN_DLG_ONTOP_FLAG 0u
+#else
+#define EN_DLG_ONTOP_FLAG SDL_WINDOW_ALWAYS_ON_TOP
+#endif
 #include <algorithm>
 #include <unordered_map>
 #include <string>
@@ -1333,14 +1347,22 @@ void SDL2ProgressBar::Render(SDL_Surface* dst, TTF_Font* font) {
 SDL2Dialog::SDL2Dialog(GameWindow* gameWindow, const std::string& title, int w, int h)
     : m_gameWindow(gameWindow), m_title(title), m_width(w), m_height(h) {
 
-    // Center on screen
-    int winW = gameWindow->GetWidth();
-    int winH = gameWindow->GetHeight();
+    // Center on screen. gameWindow may be null for dialogs shown before the SDL
+    // game window exists (e.g. the demo license at early InitInstance) — fall
+    // back to a default screen size rather than dereferencing null.
+    int winW = gameWindow ? gameWindow->GetWidth()  : 1920;
+    int winH = gameWindow ? gameWindow->GetHeight() : 1080;
     m_x = (winW - w) / 2;
     m_y = (winH - h) / 2;
 
     // Find font
     static const char* candidates[] = {
+        // Linux system fonts first (these exist on this platform).
+        "/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+        "/usr/share/fonts/truetype/freefont/FreeSerif.ttf",
         "C:\\Windows\\Fonts\\BKANT.TTF",
         "C:\\Windows\\Fonts\\BOOKOS.TTF",
         "C:\\Windows\\Fonts\\times.ttf",
@@ -1786,7 +1808,7 @@ int SDL2Dialog::DoModal() {
     m_dlgWindow = GameWindow::CreateSDLWindow(
         titleStr.c_str(),
         mainX + m_x, mainY + m_y, m_width, m_height,
-        SDL_WINDOW_SHOWN | SDL_WINDOW_BORDERLESS | SDL_WINDOW_SKIP_TASKBAR);
+        SDL_WINDOW_SHOWN | SDL_WINDOW_BORDERLESS | SDL_WINDOW_SKIP_TASKBAR | EN_DLG_ONTOP_FLAG);
 
     if (!m_dlgWindow) {
         // Fallback: render on the main window with a background snapshot
@@ -1819,6 +1841,9 @@ int SDL2Dialog::DoModal() {
 
     SDL_Event event;
     while (m_running) {
+#ifndef _WIN32
+        EnHarness_Service();   // service harness screenshots during modal dialogs too
+#endif
         while (SDL_PollEvent(&event)) {
             if (event.type == SDL_QUIT) {
                 m_running = false;
@@ -1882,7 +1907,7 @@ void SDL2Dialog::ShowNonModal(std::function<void(int)> onDone) {
     m_dlgWindow = GameWindow::CreateSDLWindow(
         titleStr.c_str(),
         mainX + m_x, mainY + m_y, m_width, m_height,
-        SDL_WINDOW_SHOWN | SDL_WINDOW_BORDERLESS | SDL_WINDOW_SKIP_TASKBAR);
+        SDL_WINDOW_SHOWN | SDL_WINDOW_BORDERLESS | SDL_WINDOW_SKIP_TASKBAR | EN_DLG_ONTOP_FLAG);
 
     if (!m_dlgWindow) {
         CaptureBackground();

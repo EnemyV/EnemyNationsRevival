@@ -364,7 +364,11 @@ void CRawData::Close() {
 void ConstructElements( CRawData* pNew, int nCount ) {
 
     for ( int i = 0; i < nCount; i++, pNew++ )
-        pNew->CRawData::CRawData();
+#ifdef _WIN32
+        pNew->CRawData::CRawData();      // MSVC: explicit ctor re-init
+#else
+        new ( pNew ) CRawData();         // portable placement-new equivalent
+#endif
 }
 
 void DestructElements( CRawData* pNew, int nCount ) {
@@ -939,7 +943,12 @@ void CMusicPlayer::InitData( MUSIC_MODE iMode, int iGrp ) {
         // MIDI section may not exist - that's fine
     }
 
-    // read the sfx (always use '2' = 16-bit format since we're wav_only)
+    // read the sfx (always use '2' = 16-bit format since we're wav_only).
+    // Wrapped in try/catch (like the MIDI section above): the demo data ships
+    // 8-bit SFX1 and no voice/LANG layout, so the retail 16-bit reads here can
+    // legitimately fail — missing/incompatible sound is non-fatal, the game just
+    // runs without (some of) the audio.
+    try {
     char bTyp = '2';
     pMmio->DescendList( 'S', 'F', 'X', bTyp );
     pMmio->DescendChunk( 'N', 'U', 'M', 'S' );
@@ -1008,6 +1017,9 @@ void CMusicPlayer::InitData( MUSIC_MODE iMode, int iGrp ) {
 #ifdef _DEBUG
     theDataFile.EnableNegativeSeekChecking();
 #endif
+    } catch ( ... ) {
+        OutputDebugString( "CMusicPlayer::InitData: sound data incomplete (demo layout?) - continuing without full audio\n" );
+    }
 }
 
 BOOL CMusicPlayer::IsGroupLoaded( int iGrp ) {

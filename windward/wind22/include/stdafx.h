@@ -18,7 +18,11 @@
 
 // Rely on windows.h + mfc_compat.h to provide all the MFC types we still
 // use. ASSERT/VERIFY/TRACE come from <cassert>.
+#ifdef _WIN32
 #include <windows.h>
+#else
+#include "win32_compat.h"   // Win32-on-POSIX shim (Linux build)
+#endif
 #include <cassert>
 #include "en_assert.h"   // non-fatal, logged ASSERT (mirrors original MFC "Ignore")
 #ifndef ASSERT
@@ -59,16 +63,20 @@
 
 #include "mfc_compat.h"
 
+#ifdef _WIN32
 #include <mmsystem.h>
 #include <mmreg.h>
 #include <MSAcm.h>
+#endif
 
 #include <cassert>
 #include <limits.h>
 #include <malloc.h>
 #include <math.h>
 #include <strstream>
-#include <io.h>
+#ifdef _WIN32
+#include <io.h>     // _findfirst/_findnext family — POSIX equivalents via shim
+#endif
 //#include <ctl3d.h>
 
 // <dsound.h> removed — audio is SDL_mixer, not DirectSound (no DS API used).

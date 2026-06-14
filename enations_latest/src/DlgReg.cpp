@@ -23,7 +23,7 @@ std::string GetDefaultApp ( char const *pExt, char const *pDef, char const *pCmd
 		return sRtn;
 
 	// read it in
-	unsigned long iLen = 256;
+	DWORD iLen = 256;
 	DWORD dwTyp;
 	if (RegQueryValueEx (key, "", NULL, &dwTyp, (BYTE*) cmd, &iLen) != ERROR_SUCCESS)
 		return sRtn;

@@ -154,7 +154,7 @@ namespace
     bool     g_dumpFileLatched = false;     // edge-detect the DUMP_NOW file
     __declspec(thread) int t_inAlloc = 0;   // reentrancy guard
 
-#if defined( _DEBUG )
+#if defined( _DEBUG ) && defined( _WIN32 )
     _CRT_ALLOC_HOOK g_prevAllocHook = NULL;
     int AllocHook( int nAllocType, void* pvData, size_t nSize, int nBlockUse,
                    long lRequest, const unsigned char* szFile, int nLine );
@@ -162,9 +162,9 @@ namespace
 
     void AllocProfInit()
     {
-#if !defined( _DEBUG )
+#if !defined( _DEBUG ) || !defined( _WIN32 )
         if ( getenv( "EN_PERF_ALLOC" ) )
-            OutputDebugStringA( "ENPERF: EN_PERF_ALLOC needs a _DEBUG build (CRT alloc hook); ignoring.\n" );
+            OutputDebugStringA( "ENPERF: EN_PERF_ALLOC needs a _DEBUG Windows build (CRT alloc hook); ignoring.\n" );
         return;
 #else
         const char* e = getenv( "EN_PERF_ALLOC" );
@@ -271,7 +271,7 @@ namespace
         t_inAlloc = 0;
     }
 
-#if defined( _DEBUG )
+#if defined( _DEBUG ) && defined( _WIN32 )
     // CRT allocation hook. The CRT performs the actual alloc/free; we only
     // observe. Must chain to any previous hook and must return TRUE so the CRT
     // proceeds. _CRT_BLOCK allocations are the CRT's own internal bookkeeping —
