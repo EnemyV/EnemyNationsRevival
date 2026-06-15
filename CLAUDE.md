@@ -86,9 +86,23 @@ Detailed porting guide: [MFC_TO_SDL_PORT_GUIDE.md](MFC_TO_SDL_PORT_GUIDE.md). **
 
 ## File landmarks
 
+> ⚠️ **Which source tree? There are duplicates — always edit `enations_latest/src/`.**
+> The same filenames (`terrain.cpp`, `area.cpp`, `world.cpp`, `unit.cpp`, …) exist in
+> **multiple** trees. A `Glob`/search for one of these will return several hits — the
+> wrong ones are dead snapshots. Only `enations_latest/src/` is compiled and live.
+>
+> - ✅ **`enations_latest/src/`** — the live, compiled game code. **Edit here.**
+> - ❌ `enations/src/` — old snapshot, read-only reference. **Never edit.**
+> - ❌ `enations/src/dave/` — even older per-dev snapshot. **Never edit.**
+>
+> Before editing any file with a generic name, confirm the path starts with
+> `enations_latest/src/`. The RenderingAdapter, `SDL2*` windows, and all working
+> SDL2/cursor/build-menu code live only in `enations_latest/src/`.
+
 - `enations_latest/src/` — **live game code (edit this)**
 - `enations_latest/src/SDL2*.cpp/h` — SDL2 toolkit + game UI replacements
 - `enations/src/` — old snapshot, do NOT edit (historical reference only)
+- `enations/src/dave/` — older per-dev snapshot, do NOT edit
 - `windward/wind22/` — support library (CDIB, CMmio, codecs, BTree). Keep, strip MFC.
 - `tools/sdl2/` — SDL2-2.30.12 + ttf + mixer + glew
 - `cmakeBuild/enations_latest/src/{Release,Debug}/enations.exe` — build outputs
