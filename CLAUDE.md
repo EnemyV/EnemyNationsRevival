@@ -15,6 +15,15 @@ Where we are now:
 
 So: **was MFC, is becoming SDL2-only, will be cross-platform.** The active goal is finishing the MFC removal; cross-platform is the longer-term payoff.
 
+> **macOS (Apple Silicon) — `mac-build` branch.** The game now builds and runs
+> natively on macOS ARM64: single-player starts and the menu, toolbar/UI, area
+> map (terrain + units), radar/minimap, build windows and zoom all render. Build
+> and — crucially — **how to drive/screenshot the running game from a shell**
+> (the Windows `*.ps1` harness does NOT work on macOS; use the in-process TCP
+> harness + `harness/harness_client.py` + `harness/bmp2png.py`) are documented in
+> **[MACOS_BUILD_AND_HARNESS.md](MACOS_BUILD_AND_HARNESS.md)** — read it before
+> doing macOS build/run/test work.
+
 ## The goal
 
 > Get *Enemy Nations* building and running in **SDL2 with no MFC**, then port to Linux/macOS.
