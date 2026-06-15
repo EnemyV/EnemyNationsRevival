@@ -64,7 +64,7 @@ static const int s_helpID[17] = {
 static const char* s_shortcut[17] = {
     "O", ">", "<", "+", "-", "",   // Last Combat, Rotate CW(.), Rotate CCW(,), Zoom In(+), Zoom Out(-), Resources
     "", "", "B", "",             // Stop, Resume, Build, Cancel Build
-    "R", "U", "X", "", "",       // Route, Unload, Retreat, Road, Cancel Road
+    "R", "U", "X", "R", "",      // Route, Unload, Retreat, Road, Cancel Road  (R is context: crane=Road, else=Route)
     "", ""                       // Repair, Cancel Repair
 };
 

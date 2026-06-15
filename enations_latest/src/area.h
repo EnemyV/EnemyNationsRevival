@@ -257,6 +257,7 @@ protected:
 	afx_msg void CurRight ();
 	afx_msg void CurDown ();
 	afx_msg void RoadUnit ();
+	void         RoadOrRoute ();   // 'R' hotkey: crane -> build road, else -> set route
 	afx_msg void CancelRoadUnit ();
 	afx_msg void BuildUnit ();
 	afx_msg void CancelBuildUnit ();

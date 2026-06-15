@@ -2677,7 +2677,7 @@ int CWndArea::OnCreate( LPCREATESTRUCT lpCreateStruct )
                     case VK_INSERT: pThis->StopDestroyUnit(); return true;
                     case 'B':       pThis->BuildUnit(); return true;
                     case 'O':       pThis->OppoUnit(); return true;
-                    case 'R':       pThis->RouteUnit(); return true;
+                    case 'R':       pThis->RoadOrRoute(); return true;  // crane: build road; else: route
                     case 'U':       pThis->UnloadUnit(); return true;
                     case 'X':       pThis->RetreatUnit(); return true;
                     default:
@@ -3425,6 +3425,25 @@ void CWndArea::OnLButtonUp( UINT nFlags, CPoint point )
     // (move/attack/load/unload/repair) lives on the right button (DoCommandAt).
     case normal_select: {
         m_iMode = normal;
+
+        // Crane over a damaged / under-construction building (or unfinished bridge):
+        // a LEFT click should COMMAND the repair/build, same as the right button —
+        // NOT deselect the crane. SetMouseState keeps m_uMouseMode == lmb_repair_bldg
+        // current from the hover (it's also what drives the repair cursor preview),
+        // and that mode is only set for crane + repairable/constructing target
+        // (see SetMouseState steps -2/-1). Gate on a click, not a drag-select.
+        {
+            BOOL bDragSel = ( abs( point.x - m_ptLMB.x ) >= theMap.HexWid( m_aa.m_iZoom ) / 2 ) ||
+                            ( abs( point.y - m_ptLMB.y ) >= theMap.HexHt( m_aa.m_iZoom ) / 2 );
+            if ( ( m_uMouseMode == lmb_repair_bldg ) && !bDragSel )
+            {
+                DoCommandAt( nFlags, point );   // dispatches the crane repair/build
+                SetButtonState( );
+                InvalidateStatus( );
+                InvalidateSound( );
+                return;
+            }
+        }
 
         CHitInfo hitinfo = m_aa.GetHit( point );
         CUnit*   pUnitOn = hitinfo.GetUnit( );
@@ -4788,6 +4807,21 @@ void CWndArea::RouteUnit( )
         pVeh->m_pSdlRoute->Show();
     }
     SetButtonState();
+}
+
+// 'R' hotkey dispatcher. A crane builds a road; any other vehicle sets a route.
+// The two are mutually exclusive per unit (a crane can't have a route, a route-
+// capable transport can't lay road), so this is purely additive — pressing R did
+// nothing for a selected crane before. The area-bar shows "(R)" on whichever of
+// the Road / Route buttons is visible for the current selection.
+void CWndArea::RoadOrRoute( )
+{
+
+    if ( ( m_pUnit != NULL ) && ( m_pUnit->GetUnitType( ) == CUnit::vehicle ) &&
+         ( ( (CVehicle*)m_pUnit )->GetData( )->IsCrane( ) ) )
+        RoadUnit( );
+    else
+        RouteUnit( );
 }
 
 void CWndArea::RoadUnit( )
