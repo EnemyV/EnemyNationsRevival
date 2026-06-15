@@ -1759,6 +1759,168 @@ void CGameMap::Init( int iSide, int iSideSize, int iScenario )
     theApp.BaseYield( );
     MakeLakes( );
 
+    // FLATTEN LAKES to a single surface level. A connected lake body must be level,
+    // but worldgen can leave sea-level (16) holes inside a basin flooded to its spill
+    // (e.g. 47): hexes the pool-flood skipped (they were ocean at the time) that
+    // MakeLakes then re-typed lake. The result is a lake with ~31-unit altitude holes
+    // that render as downward funnel-spikes (ground-truth WGSPIKE dump: t=3 alt=16
+    // hexes surrounded by t=3 alt=47). Flood-fill each connected lake component and
+    // snap every hex to the component's MODE altitude (the dominant surface), which
+    // fills the errant holes (and would lower a stray high hex), making the lake flat.
+    {
+        const int     NN = m_eX * m_eY;
+        std::vector<BYTE> seen( NN, 0 );
+        std::vector<int>  comp;
+        static const int dx4[4] = { 0, -1, 1, 0 }, dy4[4] = { -1, 0, 0, 1 };
+        for ( int i0 = 0; i0 < NN; i0++ )
+        {
+            if ( seen[i0] || ( m_pHex + i0 )->GetType( ) != CHex::lake )
+                continue;
+            comp.clear( );
+            comp.push_back( i0 );
+            seen[i0] = 1;
+            int freq[128];
+            memset( freq, 0, sizeof( freq ) );
+            for ( size_t k = 0; k < comp.size( ); k++ )
+            {
+                int i = comp[k];
+                freq[ ( m_pHex + i )->GetAlt( ) & 127 ]++;
+                int x = i & m_iHexMask, y = i >> m_iSideShift;
+                for ( int d = 0; d < 4; d++ )
+                {
+                    int nx = ( x + dx4[d] ) & m_iHexMask, ny = ( y + dy4[d] ) & m_iHexMask;
+                    int n  = ( ny << m_iSideShift ) | nx;
+                    if ( !seen[n] && ( m_pHex + n )->GetType( ) == CHex::lake )
+                    {
+                        seen[n] = 1;
+                        comp.push_back( n );
+                    }
+                }
+            }
+            int modeAlt = 0, modeCnt = -1;
+            for ( int a = 0; a < 128; a++ )
+                if ( freq[a] > modeCnt ) { modeCnt = freq[a]; modeAlt = a; }
+            for ( size_t k = 0; k < comp.size( ); k++ )
+                ( m_pHex + comp[k] )->SetAlt( modeAlt );
+        }
+    }
+
+    // CAP SHORE CLIFFS to <= 2 steps above the adjacent water. High coastal land (incl.
+    // coastline tiles) right beside flat water makes the WATER tile's shared corner spike
+    // up — "water climbing the hill" + jagged shores (ground truth: lake alt=40 with
+    // coastline neighbours at 56-66). The renderer draws <=2-step tiles fine; only >=3-step
+    // jumps spike. So clamp every NON-water hex that touches water to (lowest adjacent
+    // water level) + 2*map_step. Cliffs are PRESERVED — the big drop just moves one hex
+    // inland (water -> 2-step shore hex -> mountain), off the waterline. Deferred apply so
+    // each clamp reads original water levels.
+    {
+        const int NN  = m_eX * m_eY;
+        const int CAP = 2 * CHex::map_step;   // 2 steps = 16 alt units
+        static const int dx8[8] = { -1, 0, 1, -1, 1, -1, 0, 1 }, dy8[8] = { -1, -1, -1, 0, 0, 1, 1, 1 };
+        std::vector<int> newAlt( NN, -1 );
+        for ( int i = 0; i < NN; i++ )
+        {
+            CHex* h = m_pHex + i;
+            if ( h->IsWater( ) )
+                continue;
+            int x = i & m_iHexMask, y = i >> m_iSideShift;
+            int loWater = INT_MAX;
+            for ( int d = 0; d < 8; d++ )
+            {
+                int   n  = ( ( ( y + dy8[d] ) & m_iHexMask ) << m_iSideShift ) | ( ( x + dx8[d] ) & m_iHexMask );
+                CHex* pN = m_pHex + n;
+                if ( pN->GetType( ) == CHex::ocean )
+                    loWater = __min( loWater, (int)CHex::sea_level );
+                else if ( pN->IsWater( ) )
+                    loWater = __min( loWater, pN->GetAlt( ) );
+            }
+            if ( loWater == INT_MAX )
+                continue;   // not a shore hex
+            int cap = loWater + CAP;
+            if ( h->GetAlt( ) > cap )
+                newAlt[i] = cap;
+        }
+        for ( int i = 0; i < NN; i++ )
+            if ( newAlt[i] >= 0 )
+                ( m_pHex + i )->SetAlt( newAlt[i] );
+    }
+
+    // [WGAUDIT] (EN_WGAUDIT=1) measure the FINAL rendered altitudes to verify the
+    // "rivers on slopes / pits & spikes" diagnosis with real numbers, not assumptions.
+    if ( getenv( "EN_WGAUDIT" ) )
+    {
+        const int SL = CHex::sea_level, ST = CHex::map_step;
+        int nLand=0, nRiver=0, nLake=0, nOcean=0, nMtn=0, nHill=0;
+        int landAltMin=99999, landAltMax=-99999; long long landAltSum=0;
+        int nRiverRaised=0;                 // river GetAlt > sea_level+step (renders raised)
+        int rivSlope[5]={0,0,0,0,0};        // river max 8-neighbor GetAltDraw step-diff bucket
+        int nLakeRaised=0, nLakeFlat=0;     // lake GetAlt > sea_level vs <=
+        int nLakeSpikeEdge=0;               // lake hex w/ a land nbr >= 2 steps higher (edge spike)
+        int nMtnHillTouchWater=0;           // mountain/hill adjacent to water (the ring artifact)
+        int nWaterSteepJunc=0;              // water hex w/ a neighbor GetAltDraw diff > 1 step
+        static const int dx8[8]={-1,0,1,-1,1,-1,0,1}, dy8[8]={-1,-1,-1,0,0,1,1,1};
+        for ( int y=0; y<m_eY; y++ )
+          for ( int x=0; x<m_eX; x++ )
+          {
+            CHex* h = GetHex( CHexCoord(x,y) );
+            int t = h->GetType();
+            int ad = h->GetAltDraw();
+            BOOL water = h->IsWater();
+            if ( t==CHex::mountain ) nMtn++;
+            if ( t==CHex::hill ) nHill++;
+            int maxStepDiff=0; BOOL touchWater=FALSE, landNbrHi=FALSE;
+            for ( int d=0; d<8; d++ ) {
+              CHex* n = GetHex( CHexCoord(x+dx8[d], y+dy8[d]) );
+              int nd = n->GetAltDraw();
+              int sd = abs(ad-nd)/ST;
+              if ( sd>maxStepDiff ) maxStepDiff=sd;
+              if ( n->IsWater() ) touchWater=TRUE;
+              if ( water && !n->IsWater() && (nd-ad)>=2*ST ) landNbrHi=TRUE;
+            }
+            if ( !water ) {
+              nLand++; int a=h->GetAlt(); landAltSum+=a;
+              if(a<landAltMin)landAltMin=a; if(a>landAltMax)landAltMax=a;
+              if ( (t==CHex::mountain||t==CHex::hill) && touchWater ) nMtnHillTouchWater++;
+            }
+            if ( t==CHex::river ) {
+              nRiver++; if ( h->GetAlt() > SL+ST ) nRiverRaised++;
+              rivSlope[ __min(4,maxStepDiff) ]++; if ( maxStepDiff>1 ) nWaterSteepJunc++;
+            } else if ( t==CHex::lake ) {
+              nLake++; if ( h->GetAlt() > SL ) nLakeRaised++; else nLakeFlat++;
+              if ( landNbrHi ) nLakeSpikeEdge++; if ( maxStepDiff>1 ) nWaterSteepJunc++;
+            } else if ( t==CHex::ocean ) nOcean++;
+          }
+        char b[512];
+        sprintf_s(b,"[WGAUDIT] land=%d alt[min=%d max=%d avg=%d] | river=%d raised=%d slopeSteps{0:%d 1:%d 2:%d 3:%d 4+:%d} | lake=%d raised=%d flat=%d spikeEdge=%d | ocean=%d | mtn=%d hill=%d touchWater=%d | waterSteepJunc=%d\n",
+          nLand, landAltMin, landAltMax, nLand?(int)(landAltSum/nLand):0,
+          nRiver, nRiverRaised, rivSlope[0],rivSlope[1],rivSlope[2],rivSlope[3],rivSlope[4],
+          nLake, nLakeRaised, nLakeFlat, nLakeSpikeEdge, nOcean, nMtn, nHill, nMtnHillTouchWater, nWaterSteepJunc);
+        OutputDebugStringA(b);
+
+        // GROUND TRUTH: dump the worst water-surface spikes with full neighbor detail,
+        // so the chevron cause is read off real data, not inferred. type codes:
+        // lake=3 hill=4 mtn=5 ocean=6 plain=7 river=8 road=9 rough=10 swamp=11 coast=12.
+        // Each line: the spike water hex (type/alt/draw) + its 8 neighbors as type:alt:draw.
+        OutputDebugStringA("[WGSPIKE] legend type: lake=3 ocean=6 river=8 coast=12 (others=land); fields type:alt:draw\n");
+        int nDumped = 0;
+        for ( int y=0; y<m_eY && nDumped<20; y++ )
+          for ( int x=0; x<m_eX && nDumped<20; x++ )
+          {
+            CHex* h = GetHex( CHexCoord(x,y) );
+            if ( !h->IsWater() ) continue;
+            int ad = h->GetAltDraw();
+            int maxd = 0;
+            for ( int d=0; d<8; d++ ){ CHex* n=GetHex(CHexCoord(x+dx8[d],y+dy8[d])); int sd=abs(ad-n->GetAltDraw())/ST; if(sd>maxd)maxd=sd; }
+            if ( maxd < 3 ) continue;   // only the sharp ones (>= 3 steps = a hard cliff)
+            char sb[420]; int off=0;
+            off += sprintf_s(sb+off, sizeof(sb)-off, "[WGSPIKE] (%d,%d) t=%d alt=%d draw=%d nbrs ", x,y,h->GetType(),h->GetAlt(),ad);
+            for ( int d=0; d<8; d++ ){ CHex* n=GetHex(CHexCoord(x+dx8[d],y+dy8[d])); off += sprintf_s(sb+off,sizeof(sb)-off,"%d:%d:%d ", n->GetType(), n->GetAlt(), n->GetAltDraw()); }
+            sb[off++]='\n'; sb[off]=0;
+            OutputDebugStringA(sb);
+            nDumped++;
+          }
+    }
+
     // now set m_bVisible to 1 for our landing block (faster than testing above loop)
     if ( theGame.HaveHP( ) )
     {
@@ -2384,40 +2546,48 @@ void CGameMap::MakeRiversFlow( int* piBlks, int iSide, int iSideSize )
             iNumRiver++;
         }
 
-    // 8: relax river altitude toward adjacent water (<= 2 alt units/hex rise,
-    // floored at sea_level). A channel carries its land altitude right up to the
-    // ocean/lake it enters, so a river meeting the sea off a coastal bluff sat as
-    // a wall of water beside sea_level ocean — the "downward spike in the sea"
-    // glitch. Four sweeps pull the last few hexes of each channel down into a
-    // gradient; upstream of that, levels are untouched (waterfalls stay).
+    // 8: LEVEL the river surface to a smooth descent so a channel no longer carries
+    // its LAND altitude. The render makes each hex centre a mesh vertex at
+    // GetAltDraw()=max(alt,sea_level); a river typed onto high ground (a hill/mountain
+    // the flow crossed) therefore stuck UP as a spike/chevron jutting out of the
+    // surrounding water (the "river carved through the mountain but kept its height"
+    // bug). The old fix relaxed only ~4 hexes near a mouth (+2/hex), far too weak for
+    // a channel crossing high terrain.
+    //
+    // We now walk EVERY river hex in flood pop order (`order` is ocean-outward / rising
+    // fill, so a hex's downstream neighbour is always finalised first) and clamp it to
+    // at most +2 alt over its lowest already-set water neighbour, floored at sea_level.
+    // One O(N) pass yields a monotonic <=2/hex descent to the sea: spikes are pulled
+    // down (the land banks absorb the height), while gentle descents (already <=2/hex)
+    // are left untouched. Deterministic — same integer math + pop order on every client.
     int iNumRelaxed = 0;
-    for ( int iPass = 0; iPass < 4; iPass++ )
-        for ( int i = 0; i < N; i++ )
+    for ( size_t j = 0; j < order.size( ); j++ )
+    {
+        int   i    = order[j];
+        CHex* pHex = m_pHex + i;
+        if ( pHex->GetType( ) != CHex::river )
+            continue;
+        int x = i & m_iHexMask;
+        int y = i >> m_iSideShift;
+        int iLowest = INT_MAX;
+        for ( int d = 0; d < 4; d++ )
         {
-            CHex* pHex = m_pHex + i;
-            if ( pHex->GetType( ) != CHex::river )
-                continue;
-            int x = i & m_iHexMask;
-            int y = i >> m_iSideShift;
-            int iLowest = INT_MAX;
-            for ( int d = 0; d < 4; d++ )
-            {
-                int   n  = ( ( ( y + aDy[d] ) & m_iHexMask ) << m_iSideShift ) | ( ( x + aDx[d] ) & m_iHexMask );
-                CHex* pN = m_pHex + n;
-                if ( pN->GetType( ) == CHex::ocean )
-                    iLowest = __min( iLowest, (int)CHex::sea_level );
-                else if ( pN->IsWater( ) )
-                    iLowest = __min( iLowest, pN->GetAlt( ) );
-            }
-            if ( iLowest == INT_MAX )
-                continue;
-            int iTarget = __max( (int)CHex::sea_level, iLowest + 2 );
-            if ( pHex->GetAlt( ) > iTarget )
-            {
-                pHex->SetAlt( iTarget );
-                iNumRelaxed++;
-            }
+            int   n  = ( ( ( y + aDy[d] ) & m_iHexMask ) << m_iSideShift ) | ( ( x + aDx[d] ) & m_iHexMask );
+            CHex* pN = m_pHex + n;
+            if ( pN->GetType( ) == CHex::ocean )
+                iLowest = __min( iLowest, (int)CHex::sea_level );
+            else if ( pN->IsWater( ) )
+                iLowest = __min( iLowest, pN->GetAlt( ) );   // downstream already finalised
         }
+        if ( iLowest == INT_MAX )
+            continue;
+        int iTarget = __max( (int)CHex::sea_level, iLowest + 2 );
+        if ( pHex->GetAlt( ) > iTarget )
+        {
+            pHex->SetAlt( iTarget );
+            iNumRelaxed++;
+        }
+    }
 
     char szBuf[128];
     sprintf_s( szBuf, "MakeRiversFlow: T=%d river=%d pools=%d relaxed=%d\n", iThreshold, iNumRiver, iNumPools, iNumRelaxed );
