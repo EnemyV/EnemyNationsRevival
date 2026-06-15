@@ -162,11 +162,34 @@ static std::string FindCursorDir( )
     if ( s_dir != "?" ) return s_dir;
     const char* cands[] = { "res", "../../../enations_latest/src/res",
                             "enations_latest/src/res", "../src/enations_latest/res", nullptr };
+    auto probe = []( const std::string& p ) -> bool {
+        if ( FILE* t = fopen( ( p + "/cursor1.cur" ).c_str(), "rb" ) ) { fclose( t ); return true; }
+        return false;
+    };
     s_dir = "";
-    for ( int i = 0; cands[i]; ++i ) {
-        std::string p = cands[i];
-        if ( FILE* t = fopen( ( p + "/cursor1.cur" ).c_str(), "rb" ) ) { fclose( t ); s_dir = p; break; }
+    // 1) cwd-relative.
+    for ( int i = 0; cands[i]; ++i )
+        if ( probe( cands[i] ) ) { s_dir = cands[i]; return s_dir; }
+    // 2) EXE-relative — robust to the launch working directory (mirrors the baked
+    // terrain set's FindAssetDir). Walk up from the exe dir trying each candidate.
+    char exePath[MAX_PATH];
+    DWORD n = GetModuleFileNameA( NULL, exePath, MAX_PATH );
+    if ( n > 0 && n < MAX_PATH ) {
+        std::string dir( exePath, n );
+        size_t slash = dir.find_last_of( "\\/" );
+        if ( slash != std::string::npos ) dir = dir.substr( 0, slash );
+        for ( int up = 0; up < 8 && !dir.empty(); ++up ) {
+            for ( int i = 0; cands[i]; ++i ) {
+                std::string cand = dir + "/" + cands[i];
+                if ( probe( cand ) ) { s_dir = cand; return s_dir; }
+            }
+            size_t s = dir.find_last_of( "\\/" );
+            if ( s == std::string::npos ) break;
+            dir = dir.substr( 0, s );
+        }
     }
+    if ( getenv( "EN_DIAG" ) )
+        fprintf( stderr, "[DIAG] cursor dir = '%s'\n", s_dir.empty() ? "(not found)" : s_dir.c_str() );
     return s_dir;
 }
 static SDL_Cursor* LoadCurFromFile( const std::string& path )
