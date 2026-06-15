@@ -297,8 +297,46 @@ SDL_Surface* SDL2MainMenu::CreateSurfaceFromDIB(CDIB* pDib) {
     BYTE* pPixels = (BYTE*)(dibits);
     if (!pPixels) return nullptr;
 
+#ifndef _WIN32
+    if (getenv("EN_DIAG")) {
+        static int n = 0;
+        if (n++ < 4) {
+            size_t total = (size_t)pitch * height;
+            size_t white = 0, zero = 0; unsigned mn = 255, mx = 0;
+            for (size_t i = 0; i < total; ++i) {
+                BYTE b = pPixels[i];
+                if (b == 0xFF) ++white; if (b == 0) ++zero;
+                if (b < mn) mn = b; if (b > mx) mx = b;
+            }
+            fprintf(stderr, "[DIAG] DIB #%d %dx%d bpp=%d Bpp=%d pitch=%d  first12=%02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x  0xFF=%zu/%zu zero=%zu min=%u max=%u\n",
+                    n, width, height, bitsPerPixel, bytesPerPixel, pitch,
+                    pPixels[0],pPixels[1],pPixels[2],pPixels[3],pPixels[4],pPixels[5],
+                    pPixels[6],pPixels[7],pPixels[8],pPixels[9],pPixels[10],pPixels[11],
+                    white, total, zero, mn, mx);
+        }
+    }
+#endif
+
     SDL_Surface* tmpSurface = nullptr;
-    if (bytesPerPixel == 3 || bytesPerPixel == 4) {
+    if (bitsPerPixel == 8) {
+        // 8-bit palettized DIB (the menu wallpaper, toolbar, buttons, dialogs and
+        // most UI art are stored this way). Create an indexed surface over the
+        // index data and apply the DIB's OWN color table — without this the
+        // surface has no palette and SDL_ConvertSurfaceFormat yields all white.
+        tmpSurface = SDL_CreateRGBSurfaceFrom(pPixels, width, height, 8, pitch, 0, 0, 0, 0);
+        if (tmpSurface && tmpSurface->format->palette) {
+            BITMAPINFO256* bmi = pDib->GetBitmapInfo();
+            SDL_Color pal[256];
+            for (int i = 0; i < 256; ++i) {
+                // RGBQUAD is stored B,G,R,reserved.
+                pal[i].r = bmi->rgb[i].rgbRed;
+                pal[i].g = bmi->rgb[i].rgbGreen;
+                pal[i].b = bmi->rgb[i].rgbBlue;
+                pal[i].a = 255;
+            }
+            SDL_SetPaletteColors(tmpSurface->format->palette, pal, 0, 256);
+        }
+    } else if (bytesPerPixel == 3 || bytesPerPixel == 4) {
         Uint32 bmask = 0x000000FF;
         Uint32 gmask = 0x0000FF00;
         Uint32 rmask = 0x00FF0000;

@@ -189,6 +189,18 @@ void SDL2Toolbar::Render() {
         FillR(dst, {0, 0, w, h}, TBColors::Bg);
     }
 
+#ifndef _WIN32
+    if (getenv("EN_DIAG")) {
+        static int n = 0;
+        if (n++ < 1) {
+            fprintf(stderr, "[DIAG] toolbar Render w=%d h=%d bgTile=%p btnSheet=%p dstFmt=%u dstAlpha=%d\n",
+                    w, h, (void*)m_bgTile, (void*)m_btnSheet,
+                    dst->format->format, (int)(dst->format->Amask != 0));
+            SDL_SaveBMP(dst, "/tmp/toolbar_surf.bmp");
+        }
+    }
+#endif
+
     // Layout using actual button sprite sizes (matching CWndBar::OnCreate)
     int btnW = (m_btnSpriteW > 0) ? m_btnSpriteW : 50;
     int btnH = (m_btnSpriteH > 0) ? m_btnSpriteH : 30;

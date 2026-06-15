@@ -1652,6 +1652,17 @@ void CDIB::Copy( LPBITMAPINFO lpBmi, void const* pvBits ) {
         Resize( lpBmi->bmiHeader.biWidth, abs( lpBmi->bmiHeader.biHeight ) );
         SetBits( &lpBmi->bmiHeader, pvBits );
 
+        // Preserve the source color table for 8-bit DIBs. The Win32/WinG palette
+        // pipeline (thePal/SetDIBColorTable) is absent on the SDL2 build, so the
+        // indexed art is converted to RGB later (CreateSurfaceFromDIB) using this
+        // per-DIB table — without it every 8-bit bitmap renders blank.
+        if ( lpBmi->bmiHeader.biBitCount == 8 ) {
+            int nClr = (int)lpBmi->bmiHeader.biClrUsed;
+            if ( nClr <= 0 || nClr > 256 ) nClr = 256;
+            memcpy( m_bmi.rgb, lpBmi->bmiColors, nClr * sizeof( RGBQUAD ) );
+            m_bmi.hdr.biClrUsed = nClr;
+        }
+
         return;
     }
 
