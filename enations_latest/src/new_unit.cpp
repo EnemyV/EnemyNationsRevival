@@ -1377,6 +1377,17 @@ static int fnEnumHex( CHex* pHex, CHexCoord hex, void* pData )
         pHex->SetType( CHex::city );
         pHex->SetVisibleType( CHex::city );
         pHex->m_psprite = theTerrain.GetSprite( CHex::city, CITY_BUILD_OFF + RandNum( CITY_BUILD_NUM - 1 ) );
+#ifndef _WIN32
+        // SDL2/GPU terrain: record the hex so the area map re-meshes this footprint
+        // tile incrementally (otherwise the ground/vertex land only updates on the
+        // next full rebuild — e.g. a zoom). And a building on a forest hex removes
+        // its static tree sprite, so flag the static-sprite layer for re-capture
+        // (trees persist across incremental captures otherwise).
+        extern void g_enEditHex( int, int );
+        extern bool g_enStaticDirty;
+        g_enEditHex( hex.X( ), hex.Y( ) );
+        g_enStaticDirty = true;
+#endif
     }
 
     return ( FALSE );
@@ -2059,6 +2070,13 @@ int fnEnumHex2( CHex* pHex, CHexCoord _hex, void* )
         pHex->SetType( CHex::city );
         pHex->SetVisibleType( CHex::city );
         pHex->m_psprite = theTerrain.GetSprite( CHex::city, CITY_DESTROYED_OFF + RandNum( CITY_DESTROYED_NUM - 1 ) );
+#ifndef _WIN32
+        // SDL2/GPU terrain: re-mesh this hex + re-capture static sprites (see fnEnumHex).
+        extern void g_enEditHex( int, int );
+        extern bool g_enStaticDirty;
+        g_enEditHex( _hex.X( ), _hex.Y( ) );
+        g_enStaticDirty = true;
+#endif
     }
 
     pHex->ClrUnitDir( );
