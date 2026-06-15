@@ -1834,6 +1834,16 @@ void CConquerApp::CloseDlgChat( )
 
 int CConquerApp::ExitInstance( )
 {
+    // Idempotent: ExitInstance is reached from TWO paths on quit — the message
+    // loop calls it on WM_QUIT (mainloop.cpp `return ExitInstance()`), then WinMain
+    // calls it again unconditionally after Run() returns. Running the full teardown
+    // twice re-entered myThreadClose() with the global thread-lock `cs` already
+    // torn down by the first pass -> EnterCriticalSection on a zeroed CS -> exit-time
+    // 0xC0000005 on every quit. Tear down exactly once; later calls are no-ops.
+    static bool s_bExited = false;
+    if ( s_bExited )
+        return 0;
+    s_bExited = true;
 
     CGlobalSubClass::UnSubClass( );
 
