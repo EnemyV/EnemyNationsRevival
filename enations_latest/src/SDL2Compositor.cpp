@@ -264,6 +264,20 @@ void SDL2Compositor::Composite() {
     // Step 1: Re-sort panels (z-orders may have changed during Draw)
     SortPanels();
 
+#ifndef _WIN32
+    if (getenv("EN_DIAG")) {
+        static int s_diagN = 0;
+        if (s_diagN++ < 3) {
+            fprintf(stderr, "[DIAG] Composite win=%p surf=%dx%d panels=%zu bgDirty=%d\n",
+                    (void*)m_window, windowSurface->w, windowSurface->h, m_panels.size(), (int)m_backgroundDirty);
+            for (auto& p : m_panels)
+                fprintf(stderr, "[DIAG]   panel '%s' xywh=%d,%d,%d,%d vis=%d det=%d dirty=%d surf=%p\n",
+                        p->GetName().c_str(), p->GetX(), p->GetY(), p->GetWidth(), p->GetHeight(),
+                        (int)p->IsVisible(), (int)p->IsDetached(), (int)p->IsDirty(), (void*)p->GetSurface());
+        }
+    }
+#endif
+
     // Steps 2-4: composite the non-detached panels (toolbar/status chrome) onto the main
     // window. The wallpaper + static panels rarely change; only the toolbar repaints every
     // frame (it marks itself dirty for its live resource/status text). So when only panels
