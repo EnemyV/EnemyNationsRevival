@@ -5,7 +5,11 @@
 
 #ifndef _WINDOWS
 #ifndef _INC_MALLOC
+#ifdef __APPLE__
+#include <malloc/malloc.h>   // macOS has no <malloc.h>
+#else
 #include <malloc.h>
+#endif
 #endif
 #endif
 

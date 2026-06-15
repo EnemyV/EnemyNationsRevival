@@ -50,7 +50,16 @@ SDL2MainMenu::ButtonDef SDL2MainMenu::s_buttonDefs[NUM_BTNS] = {
 static const char* FindFontPath() {
     // Try common Windows font paths
     static const char* candidates[] = {
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", "C:\\Windows\\Fonts\\BKANT.TTF",     // Book Antiqua
+        // macOS (serif first to match the original Book Antiqua look, then Arial)
+        "/System/Library/Fonts/Supplemental/Times New Roman.ttf",
+        "/System/Library/Fonts/Supplemental/Georgia.ttf",
+        "/System/Library/Fonts/Supplemental/Arial.ttf",
+        "/Library/Fonts/Arial Unicode.ttf",
+        "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
+        // Linux
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        // Windows
+        "C:\\Windows\\Fonts\\BKANT.TTF",     // Book Antiqua
         "C:\\Windows\\Fonts\\BOOKOS.TTF",    // Book Old Style
         "C:\\Windows\\Fonts\\PALBI.TTF",     // Palatino Bold Italic (similar serif)
         "C:\\Windows\\Fonts\\times.ttf",     // Times New Roman

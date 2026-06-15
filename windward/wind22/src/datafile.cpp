@@ -144,8 +144,16 @@ void CDataFile::_Init(const char *pFilename, const char *pPatchDir, int iRifVer)
             ThrowError(ERR_OUT_OF_MEMORY);
         }
         if (m_pDataFile->Open(pFilename, CFile::modeRead | CFile::shareDenyWrite | CFile::typeBinary) == FALSE) {
-            ThrowError(ERR_DATAFILE_OPEN);
-        }
+            // Master archive (e.g. ENations.dat) absent — the cross-platform
+            // builds ship only the loose, extracted data/ tree. Fall back to
+            // patch-dir-only mode: OpenAsMMIO checks the patch dir first and
+            // never needs the master when the loose set is complete. Skip the
+            // master parse and continue to the patch-dir setup below.
+            delete m_pDataFile;
+            m_pDataFile = NULL;
+            OutputDebugString("CDataFile::_Init: master data file not found; "
+                              "running patch-dir-only (loose data/)\n");
+        } else {
         m_sFileName = pFilename;
 
         m_pFileMap = new CMapStringToPtr;
@@ -202,6 +210,7 @@ void CDataFile::_Init(const char *pFilename, const char *pPatchDir, int iRifVer)
         //  Delete the file table buffer, which is no longer
         //  needed.
         delete[] pFileTableBuff;
+        } // end else (master archive opened successfully)
     }
 
     if (pPatchDir) {

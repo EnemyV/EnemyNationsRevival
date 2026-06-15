@@ -99,7 +99,7 @@ SDL2CreateStatus::SDL2CreateStatus(GameWindow* gameWindow)
 
     // Find a font
     const char* candidates[] = {
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", "C:\\Windows\\Fonts\\BKANT.TTF",
+        "/System/Library/Fonts/Supplemental/Arial.ttf", "/System/Library/Fonts/Supplemental/Times New Roman.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", "C:\\Windows\\Fonts\\BKANT.TTF",
         "C:\\Windows\\Fonts\\times.ttf",
         "C:\\Windows\\Fonts\\arial.ttf",
         nullptr

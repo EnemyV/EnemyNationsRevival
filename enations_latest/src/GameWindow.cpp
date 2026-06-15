@@ -401,9 +401,20 @@ bool GameWindow::EnsureBackBuffer() {
 SDL_Surface* GameWindow::GetPresentSurface() {
     if (m_useRenderer) {
         EnsureBackBuffer();
+#ifndef _WIN32
+        // Expose the CPU back-buffer to the harness so `shot` can dump the real
+        // composited frame even when GPU read-back is blank / there is no display.
+        EnHarness_SetMainSurface(m_backBuffer);
+#endif
         return m_backBuffer;
     }
+#ifndef _WIN32
+    SDL_Surface* ws = m_window ? SDL_GetWindowSurface(m_window) : nullptr;
+    EnHarness_SetMainSurface(ws);
+    return ws;
+#else
     return m_window ? SDL_GetWindowSurface(m_window) : nullptr;
+#endif
 }
 
 void GameWindow::PresentSurface(const SDL_Rect* dirty) {

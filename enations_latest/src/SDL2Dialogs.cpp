@@ -1788,7 +1788,7 @@ void SDL2_RunCredits(GameWindow* gameWindow) {
 
     int baseHt = std::max(8, winW / 120);
     TTF_Font* fonts[3] = {};
-    static const char* fc[] = { "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", "C:\\Windows\\Fonts\\BKANT.TTF", "C:\\Windows\\Fonts\\BOOKOS.TTF",
+    static const char* fc[] = { "/System/Library/Fonts/Supplemental/Arial.ttf", "/System/Library/Fonts/Supplemental/Times New Roman.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", "C:\\Windows\\Fonts\\BKANT.TTF", "C:\\Windows\\Fonts\\BOOKOS.TTF",
                                 "C:\\Windows\\Fonts\\times.ttf", nullptr };
     const char* fp = nullptr;
     for (int i = 0; fc[i]; i++) { FILE* f = fopen(fc[i], "rb"); if (f) { fclose(f); fp = fc[i]; break; } }

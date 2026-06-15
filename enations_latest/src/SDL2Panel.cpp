@@ -299,7 +299,7 @@ static TTF_Font* GetTitleFont() {
     if (s_tried) return s_font;
     s_tried = true;
     const char* paths[] = {
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", "C:\\Windows\\Fonts\\arial.ttf",
+        "/System/Library/Fonts/Supplemental/Arial.ttf", "/System/Library/Fonts/Supplemental/Times New Roman.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", "C:\\Windows\\Fonts\\arial.ttf",
         "C:\\Windows\\Fonts\\tahoma.ttf",
         "C:\\Windows\\Fonts\\segoeui.ttf",
         nullptr

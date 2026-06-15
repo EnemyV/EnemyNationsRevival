@@ -105,10 +105,16 @@ typedef float               FLOAT;
 typedef int64_t             LONGLONG;
 typedef uint64_t            ULONGLONG;
 typedef uint64_t            DWORDLONG;
+// MSVC spells these as built-in keywords; clang under -fms-extensions ALSO
+// treats __int64/__int32/__int16/__int8 as builtin type keywords, so typedef'ing
+// them collides ("cannot combine with previous type-name"). gcc does not, so it
+// still needs the typedefs. Guard the clang case out.
+#ifndef __clang__
 typedef int64_t             __int64;        // some sources still spell it this way
 typedef int32_t             __int32;
 typedef int16_t             __int16;
 typedef int8_t              __int8;
+#endif
 typedef uint32_t            DWORD32;
 typedef uint64_t            DWORD64;
 typedef uint8_t             BOOLEAN;
@@ -1286,7 +1292,19 @@ inline int     SetBkMode(HDC, int) { return 0; }
 inline COLORREF SetTextColor(HDC, COLORREF) { return 0; }
 inline COLORREF GetTextColor(HDC) { return 0; }
 inline COLORREF GetNearestColor(HDC, COLORREF c) { return c; }
-inline int     GetDeviceCaps(HDC, int) { return 0; }
+// Report a 32-bpp truecolor display. Returning 0 for everything (the old stub)
+// made CColorFormat::CalcScreenFormat compute 0 bits-per-pixel, which pushed the
+// engine onto degraded 8-bit/low-detail asset paths (e.g. the menu loading the
+// 96x96 WL tile + MN08 instead of the full MN24 background, and the wrong
+// bytes-per-pixel for the terrain/sprite blits). 32 bpp / 1 plane selects the
+// 24-bit asset variants the data file ships.
+inline int     GetDeviceCaps(HDC, int index) {
+    switch (index) {
+        case BITSPIXEL: return 32;   // 12: bits per pixel
+        case PLANES:    return 1;    // 14: colour planes
+        default:        return 0;
+    }
+}
 inline BOOL    BitBlt(HDC, int, int, int, int, HDC, int, int, DWORD) { return TRUE; }
 inline BOOL    TextOutA(HDC, int, int, LPCSTR, int) { return TRUE; }
 inline BOOL    ExtTextOutA(HDC, int, int, UINT, const RECT*, LPCSTR, UINT, const INT*) { return TRUE; }

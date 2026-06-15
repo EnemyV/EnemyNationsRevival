@@ -60,9 +60,17 @@ if (NOT MSVC)
     pkg_check_modules(SDL2_MIXER REQUIRED IMPORTED_TARGET SDL2_mixer)
 
     add_library(EnLinuxSDL2 INTERFACE)
-    target_link_libraries(EnLinuxSDL2 INTERFACE
-        PkgConfig::SDL2 PkgConfig::SDL2_TTF PkgConfig::SDL2_MIXER
-        pthread dl m rt)
+    # librt is Linux-only (clock/timer funcs are in libSystem on macOS); link it
+    # only on non-Apple. pthread/dl/m exist on both.
+    if (APPLE)
+        target_link_libraries(EnLinuxSDL2 INTERFACE
+            PkgConfig::SDL2 PkgConfig::SDL2_TTF PkgConfig::SDL2_MIXER
+            pthread dl m)
+    else ()
+        target_link_libraries(EnLinuxSDL2 INTERFACE
+            PkgConfig::SDL2 PkgConfig::SDL2_TTF PkgConfig::SDL2_MIXER
+            pthread dl m rt)
+    endif ()
     # Linux-only shim dir: maps <windows.h>/<windef.h>/<windowsx.h>/... to the
     # Win32-on-POSIX shim, so the ~17 headers that include the SDK umbrella
     # headers compile unchanged. Carried transitively to wind22 and enations.

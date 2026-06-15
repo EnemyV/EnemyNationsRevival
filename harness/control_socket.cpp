@@ -36,6 +36,7 @@ namespace {
 
 SDL_Window*   g_window   = nullptr;
 SDL_Renderer* g_renderer = nullptr;
+SDL_Surface*  g_mainSurface = nullptr;   // main window CPU back-buffer (see EnHarness_SetMainSurface)
 
 // The active window changes as modal dialogs open/close. Target whatever has
 // keyboard/mouse focus so screenshots and input follow the on-top window.
@@ -242,6 +243,10 @@ void EnHarness_Start(SDL_Window* window, SDL_Renderer* renderer) {
     pthread_t tid; pthread_create(&tid, nullptr, server_thread, nullptr); pthread_detach(tid);
 }
 
+void EnHarness_SetMainSurface(SDL_Surface* surface) {
+    g_mainSurface = surface;
+}
+
 void EnHarness_Service() {
     if (!g_shotPending.exchange(false)) return;
     std::string path; { std::lock_guard<std::mutex> lk(g_shotMutex); path = g_shotPath; }
@@ -250,6 +255,18 @@ void EnHarness_Service() {
     SDL_Window* win = wantId ? SDL_GetWindowFromID(wantId) : active_window();
     if (!win) win = active_window();
     SDL_Renderer* rend = (win == g_window) ? g_renderer : SDL_GetRenderer(win);
+    // Preferred path for the main window: dump its CPU back-buffer directly. The
+    // compositor draws the full frame into it every present, so it holds the real
+    // image even when SDL_RenderReadPixels reads back blank (macOS Metal/GL) or
+    // there is no on-screen drawable (headless session). We run on the render
+    // thread synchronously with compositing, so the surface is not being written.
+    if (win == g_window && g_mainSurface) {
+        SDL_GetWindowSize(win, &w, &h);
+        ok = (SDL_SaveBMP(g_mainSurface, path.c_str()) == 0);
+        if (ok) { w = g_mainSurface->w; h = g_mainSurface->h; }
+        g_shotW = w; g_shotH = h; g_shotOK = ok; g_shotDone = true;
+        return;
+    }
     if (win) {
         SDL_GetWindowSize(win, &w, &h);
         if (rend) {

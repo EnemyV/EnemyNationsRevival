@@ -12,6 +12,7 @@
 
 struct SDL_Window;
 struct SDL_Renderer;
+struct SDL_Surface;
 
 // Start the control server if the EN_HARNESS env var is set. Safe to call once
 // after the game window exists. Port comes from EN_HARNESS_PORT (default 7070).
@@ -20,5 +21,13 @@ void EnHarness_Start(SDL_Window* window, SDL_Renderer* renderer);
 // Call every frame on the main thread (e.g. from GameWindow::PollEvents). Services
 // pending screenshot requests, which must touch SDL on the render thread.
 void EnHarness_Service();
+
+// Register the main window's CPU back-buffer (GameWindow::GetPresentSurface in
+// renderer mode). When set, `shot` of the main window dumps this surface directly
+// instead of SDL_RenderReadPixels — needed on macOS, where the Metal/GL render
+// target reads back blank, and on headless sessions with no on-screen drawable.
+// The compositor draws the full frame into this surface every present, so it
+// always holds the real composited image. Pass nullptr to clear.
+void EnHarness_SetMainSurface(SDL_Surface* surface);
 
 #endif // EN_HARNESS_H

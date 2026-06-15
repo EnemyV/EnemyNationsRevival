@@ -91,8 +91,12 @@ else ()
     target_compile_options(wind22 PRIVATE -include stdafx.h)
     # scanlist.cpp uses AVX2 intrinsics (_mm256_*). MSVC emits them without
     # /arch; gcc requires -mavx2 to use the intrinsics. Per-file so the rest of
-    # the library stays baseline-ISA.
-    set_source_files_properties(src/scanlist.cpp PROPERTIES COMPILE_OPTIONS "-mavx2;-mfma")
+    # the library stays baseline-ISA. ARM (Apple Silicon) has no AVX2 — the file
+    # guards the intrinsics behind __AVX2__ and falls back to scalar, so only add
+    # the x86 flags on x86 targets.
+    if (CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|i686|i386")
+        set_source_files_properties(src/scanlist.cpp PROPERTIES COMPILE_OPTIONS "-mavx2;-mfma")
+    endif ()
 endif ()
 
 # Phase 1g experiment: drop CMAKE_MFC_FLAG. CMAKE_MFC_FLAG=2 auto-links

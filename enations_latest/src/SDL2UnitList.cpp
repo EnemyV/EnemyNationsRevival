@@ -44,7 +44,7 @@ static void StretchBlit(SDL_Surface* src, SDL_Rect sr, SDL_Surface* dst, SDL_Rec
 SDL2UnitList::SDL2UnitList(ListType type)
     : m_type(type)
 {
-    const char* fonts[] = {"/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", "C:\\Windows\\Fonts\\arial.ttf", nullptr};
+    const char* fonts[] = {"/System/Library/Fonts/Supplemental/Arial.ttf", "/System/Library/Fonts/Supplemental/Times New Roman.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", "C:\\Windows\\Fonts\\arial.ttf", nullptr};
     for (int i = 0; fonts[i]; i++) {
         FILE* f = fopen(fonts[i], "rb");
         if (f) { fclose(f); m_fontPath = fonts[i]; break; }

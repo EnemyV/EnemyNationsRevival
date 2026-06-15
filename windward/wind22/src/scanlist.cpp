@@ -24,6 +24,13 @@ static char BASED_CODE THIS_FILE[] = __FILE__;
 #error scanlist.h not imported
 #endif
 
+// The scan-fill loops below have an AVX2 fast path (x86) and a scalar fallback.
+// On non-AVX2 targets (e.g. Apple Silicon / ARM) the intrinsics don't exist, so
+// compile only the scalar path. __AVX2__ is defined by the compiler under -mavx2.
+#if defined(__AVX2__)
+#include <immintrin.h>
+#endif
+
 //---------------------------- S c a n L i s t ------------------------------
 
 //--------------------------------------------------------------------------
@@ -246,9 +253,9 @@ void ScanList::ScanPolyNew( CPoint const apt[], int iCount )
         if ( iDelX == 0 )
         {
             // Vertical edge - AVX2 can blast 8 ints at once
+            int k = 0;
+#if defined(__AVX2__)
             const __m256i vx = _mm256_set1_epi32( ptTop.x );
-            int           k  = 0;
-
             for ( ; k + 8 <= iLineCount; k += 8 )
             {
                 _mm256_storeu_si256( reinterpret_cast<__m256i*>( pi + k ), vx );
@@ -259,7 +266,8 @@ void ScanList::ScanPolyNew( CPoint const apt[], int iCount )
                 _mm_storeu_si128( reinterpret_cast<__m128i*>( pi + k ), _mm256_castsi256_si128( vx ) );
                 k += 4;
             }
-            // Scalar remainder
+#endif
+            // Scalar remainder (handles everything when AVX2 is unavailable)
             for ( ; k < iLineCount; ++k )
             {
                 pi[k] = ptTop.x;
@@ -275,6 +283,7 @@ void ScanList::ScanPolyNew( CPoint const apt[], int iCount )
 
             int k = 0;
 
+#if defined(__AVX2__)
             // AVX2: process 8 at a time
             if ( iLineCount >= 8 )
             {
@@ -299,8 +308,9 @@ void ScanList::ScanPolyNew( CPoint const apt[], int iCount )
                     fixedX += delta8;
                 }
             }
+#endif // __AVX2__
 
-            // Scalar remainder
+            // Scalar remainder (handles everything when AVX2 is unavailable)
             for ( ; k < iLineCount; ++k )
             {
                 pi[k] = static_cast<int>( fixedX >> 32 );

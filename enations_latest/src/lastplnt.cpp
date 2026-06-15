@@ -970,7 +970,12 @@ BOOL CConquerApp::InitInstance( )
 
             unsigned long iLen = 256;
             DWORD         dwTyp, dwLen = sizeof( DWORD );
-            time_t        dwTime;
+            // The registry value is a REG_DWORD (4 bytes). It MUST be read into a
+            // 32-bit variable: on LP64 (macOS/Linux) `time_t` is 8 bytes, so
+            // reading 4 bytes into a time_t leaves the high half uninitialized and
+            // `dwTime == 41` / the date math below operate on garbage. (On the
+            // original 32-bit Windows build time_t happened to be 4 bytes.)
+            DWORD         dwTime = 0;
             if ( RegQueryValueEx( key, "CD-ROM", NULL, &dwTyp, (unsigned char*)&dwTime, &dwLen ) != ERROR_SUCCESS )
             {
                 TRAP( );

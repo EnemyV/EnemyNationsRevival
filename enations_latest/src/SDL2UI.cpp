@@ -1358,7 +1358,7 @@ SDL2Dialog::SDL2Dialog(GameWindow* gameWindow, const std::string& title, int w, 
     // Find font
     static const char* candidates[] = {
         // Linux system fonts first (these exist on this platform).
-        "/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf",
+        "/System/Library/Fonts/Supplemental/Arial.ttf", "/System/Library/Fonts/Supplemental/Times New Roman.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf",
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
         "/usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf",
         "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",

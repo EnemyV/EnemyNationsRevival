@@ -5,8 +5,10 @@
 #include <vector>
 #include <functional>
 
-struct _TTF_Font;
-typedef struct _TTF_Font TTF_Font;
+// Include SDL_ttf for the TTF_Font type. (Older SDL_ttf used an opaque
+// `struct _TTF_Font`; SDL_ttf 2.24+ renamed the tag to `TTF_Font`, so a manual
+// forward declaration conflicts depending on the installed version.)
+#include <SDL_ttf.h>
 
 class CVehicle;
 class CWndArea;

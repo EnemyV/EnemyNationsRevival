@@ -36,6 +36,10 @@
 #include <time.h>
 #include <unistd.h>
 
+#ifdef __APPLE__
+#include <mach-o/dyld.h>   // _NSGetExecutablePath (no /proc on macOS)
+#endif
+
 //===========================================================================
 // Last-error (per-thread).
 //===========================================================================
@@ -448,10 +452,17 @@ extern "C" HMODULE GetModuleHandleA(LPCSTR name) {
 }
 extern "C" DWORD GetModuleFileNameA(HMODULE, LPSTR buf, DWORD size) {
     if (!buf || size == 0) return 0;
+#ifdef __APPLE__
+    // macOS has no /proc; ask dyld for the executable path.
+    uint32_t bufsize = (uint32_t)size;
+    if (_NSGetExecutablePath(buf, &bufsize) != 0) { buf[0] = 0; return 0; }
+    return (DWORD)strlen(buf);
+#else
     ssize_t n = readlink("/proc/self/exe", buf, size - 1);
     if (n < 0) { buf[0] = 0; return 0; }
     buf[n] = 0;
     return (DWORD)n;
+#endif
 }
 extern "C" HMODULE LoadLibraryA(LPCSTR name)        { return (HMODULE)dlopen(name, RTLD_NOW); }
 extern "C" BOOL    FreeLibrary(HMODULE m)           { return (m && dlclose(m) == 0) ? TRUE : FALSE; }
@@ -877,10 +888,18 @@ extern "C" HMMIO mmioOpen(char* filename, LPMMIOINFO info, DWORD /*flags*/) {
         // work — it shares the offset.
         int borrowed = file_fd((HANDLE)info->adwInfo[0]);
         if (borrowed < 0) { if (info) info->wErrorRet = 1; return NULL; }
-        char proc[64], path[4096];
+        char path[4096];
+#ifdef __APPLE__
+        // macOS has no /proc/self/fd; recover the path with fcntl(F_GETPATH).
+        if (::fcntl(borrowed, F_GETPATH, path) != -1) {
+            fd = ::open(path, O_RDONLY); owns = (fd >= 0);
+        }
+#else
+        char proc[64];
         snprintf(proc, sizeof(proc), "/proc/self/fd/%d", borrowed);
         ssize_t n = ::readlink(proc, path, sizeof(path) - 1);
         if (n > 0) { path[n] = 0; fd = ::open(path, O_RDONLY); owns = (fd >= 0); }
+#endif
         if (fd < 0) { fd = borrowed; owns = false; }   // fallback: share (last resort)
     } else {
         return NULL;

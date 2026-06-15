@@ -50,3 +50,7 @@
 /enations/music/LOSEGAME.WAV
 /enations/music/WINGAME.WAV
 /enations/data/building/BLDGS.ZIP
+
+# macOS port build + run dirs (local)
+/build-mac/
+/run-mac/
