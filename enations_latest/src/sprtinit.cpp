@@ -1521,6 +1521,14 @@ CSprite::CSprite( CSpriteParms const &spriteparms):
 
     memset(m_anHotSpots, 0, sizeof(m_anHotSpots));
 
+    // Zero the decompressed-superview pointer table up front. They are assigned only
+    // after the (yielding) decompression loop finishes, and zoom levels below
+    // GetFirstZoom() are never assigned at all. Without this they hold garbage, so a
+    // paint that runs during a BaseYield() mid-load would deref a wild pointer (or bake
+    // a black/garbage tile into the GPU atlas). NULL lets GetDIBPixels() return NULL and
+    // the draw/decode paths skip cleanly until the art is ready.
+    memset(m_apbyDecompressedSuperviews, 0, sizeof(m_apbyDecompressedSuperviews));
+
     m_ptrspritehdr = spriteparms.m_ptrspritehdr;
 
     if (!m_ptrspritehdr.Value())

@@ -298,6 +298,8 @@ CSpriteDIB::StructureIsHit(
         return TRUE;
 
     BYTE const *pbyData = GetDIBPixels();
+    if (!pbyData)               // superview not decompressed yet (load race) — no hit
+        return FALSE;
     int const *piRowStartOffsets = 2 + (int const *) pbyData;
     BYTE const *pbyPixels = (BYTE const *) (piRowStartOffsets + Height());
     BYTE const *pbySrc = pbyPixels + piRowStartOffsets[y];
@@ -593,6 +595,8 @@ CSpriteDIB::StructureDrawToDIB(
     int iDirPitch = pdib->GetDirPitch();
 
     BYTE const *pbyData = GetDIBPixels();
+    if (!pbyData)               // superview not decompressed yet (load race) — skip the blit
+        return CRect(0, 0, 0, 0);
     int const *piRowStartOffsets = 2 + (int const *) pbyData;
     BYTE const *pbyPixels = (BYTE const *) (piRowStartOffsets + Height());
     BYTE const *pbySrc = pbyPixels + piRowStartOffsets[iTopSrcY];
@@ -675,6 +679,8 @@ CSpriteDIB::DecodeToRGBA( unsigned *pDst ) const {
     }
 
     BYTE const *pbyData = GetDIBPixels();
+    if (!pbyData)               // superview not decompressed yet (load race): bail so the
+        return false;           // atlas does NOT cache a black/garbage tile (the tree-box bug)
     int const *piRowStartOffsets = 2 + (int const *) pbyData;
     BYTE const *pbyPixels = (BYTE const *) (piRowStartOffsets + H);
 
