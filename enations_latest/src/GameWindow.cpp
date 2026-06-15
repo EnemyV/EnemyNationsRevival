@@ -293,15 +293,31 @@ bool GameWindow::InitializeSDL() {
     // Install temporary CBT hook to prevent MFC from subclassing the SDL window.
     // Hooks are LIFO, so ours fires first and blocks MFC from seeing the creation.
     s_sdlCbtHook = ::SetWindowsHookEx(WH_CBT, SdlCbtFilterHook, NULL, ::GetCurrentThreadId());
+#else
+    // macOS: run fullscreen-desktop by default (EN_FULLSCREEN=0 to stay windowed).
+    // The engine already renders at the desktop resolution (en_SetScreenMetrics
+    // from linux_main), so fullscreen-desktop matches the back-buffer with no
+    // scaling. Disable macOS fullscreen "Spaces" so the detached map/radar/panel
+    // windows (ALWAYS_ON_TOP) still overlay the main window instead of being
+    // hidden behind a separate fullscreen Space — essential for the multi-window
+    // / multi-monitor model.
+    const char* enFs = getenv("EN_FULLSCREEN");
+    bool wantFullscreen = !(enFs && enFs[0] == '0');
+    if (wantFullscreen)
+        SDL_SetHint(SDL_HINT_VIDEO_MAC_FULLSCREEN_SPACES, "0");
 #endif
 
-    // Create SDL window — borderless, not resizable (background behind everything)
+    // Create SDL window — borderless, positioned at the primary-display origin so
+    // it fills the screen (and is a known anchor for the floating panels).
+    Uint32 winFlags = SDL_WINDOW_SHOWN | SDL_WINDOW_BORDERLESS;
+#ifndef _WIN32
+    if (wantFullscreen) winFlags |= SDL_WINDOW_FULLSCREEN_DESKTOP;
+#endif
     m_window = SDL_CreateWindow(
         m_title.c_str(),
-        SDL_WINDOWPOS_UNDEFINED,
-        SDL_WINDOWPOS_UNDEFINED,
+        0, 0,
         m_width, m_height,
-        SDL_WINDOW_SHOWN | SDL_WINDOW_BORDERLESS
+        winFlags
     );
 
 #ifdef _WIN32
