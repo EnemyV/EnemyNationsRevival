@@ -69,6 +69,7 @@ EN_HARNESS=1 EN_HARNESS_PORT=7070 SDL_RENDER_DRIVER=opengl \
 | `EN_HARNESS=1` | start the in-process TCP control server (screenshot/click/keys) |
 | `EN_HARNESS_PORT=N` | harness port (default 7070) |
 | `SDL_RENDER_DRIVER=opengl` | use the GL renderer. **Needed for harness read-back of the GPU area-map window** — SDL's Metal renderer reads back blank |
+| `EN_FULLSCREEN=0` | stay windowed (default is borderless fullscreen-desktop) |
 | `EN_SOFTWARE=1` | force the legacy software (window-surface) render path |
 | `EN_SINGLEWIN=1` | suppress panel detaching — composite every panel into the main window (debug; the game's real model is multi-window) |
 | `EN_DIAG=1` | gated stderr diagnostics (compositor panel dump, DIB/format info, cursor-dir resolution) |
@@ -142,6 +143,28 @@ $H dblclickid 5 410 340         # 1st click only focuses the window; 2nd places
 
 (The dialog windows are their own SDL windows; grab one with `shot` first to read
 its current id, or just click the auto-targeted window which is the open dialog.)
+
+---
+
+## 4b. Full-screen & multi-monitor
+
+The engine already renders at the desktop resolution (`en_SetScreenMetrics` from
+`linux_main`), so the main game view opens as a **borderless fullscreen-desktop**
+window at the display origin (set `EN_FULLSCREEN=0` to stay windowed). macOS
+fullscreen **Spaces are disabled** (`SDL_HINT_VIDEO_MAC_FULLSCREEN_SPACES=0`) so
+the detached map/radar/panel windows still overlay it — without that, a fullscreen
+Space would hide every other window.
+
+Multi-monitor is inherent to the design and needs no per-display mode switch:
+- Detached panels are top-level `ALWAYS_ON_TOP` SDL windows, dragged by their
+  title bar via **global** mouse coordinates with no monitor clamping, so they can
+  be moved to any display.
+- Initial placement is display-aware (`SDL_GetWindowDisplayIndex` +
+  `SDL_GetDisplayUsableBounds`), so a panel is clamped to the monitor it spawns
+  on, not the primary.
+
+(Multi-monitor can't be exercised in a single-display VM — verify on a real
+multi-display host.)
 
 ---
 
