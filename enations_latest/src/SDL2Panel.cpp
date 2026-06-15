@@ -943,17 +943,14 @@ void SDL2Panel::DestroyOwnRenderer() {
     // in-game-load / new-game path.)
     if (m_name.rfind("area", 0) == 0) {
         char rp[64]; sprintf(rp, "%p", (void*)m_ownRenderer);
-        bool ownsTerrain = (SDL2Terrain::CurrentRenderer() == m_ownRenderer);
-        bool ownsSprites = (SDL2Sprites::CurrentRenderer() == m_ownRenderer);
-        LogPanel("[REN] area renderer DESTROYED " + std::string(rp) +
-                 " ownsTerrain=" + (ownsTerrain ? "1" : "0") +
-                 " ownsSprites=" + (ownsSprites ? "1" : "0"));
-        if (ownsTerrain && SDL2Terrain::IsLoaded())
-            SDL2Terrain::Unload();   // free terrain tiles bound to THIS renderer
-        if (ownsSprites) {
-            SDL2Sprites::InvalidateTextures();
-            SDL2Sprites::SetRenderer(nullptr);
-        }
+        LogPanel("[REN] area renderer DESTROYED " + std::string(rp));
+        // Terrain AND sprites are per-renderer now: free ONLY this renderer's context
+        // (terrain tile textures + RT cache; sprite atlas + composite RT); any OTHER
+        // live area map keeps its own, untouched. Must run BEFORE SDL_DestroyRenderer
+        // below. Replaces the old "only tear down if we still own the single global
+        // state" dance — there is no shared global state anymore.
+        SDL2Terrain::ReleaseRenderer(m_ownRenderer);
+        SDL2Sprites::ReleaseRenderer(m_ownRenderer);
     }
     if (m_contentRT)  { SDL_DestroyTexture(m_contentRT);  m_contentRT = nullptr; }
     if (m_ownBackTex) { SDL_DestroyTexture(m_ownBackTex); m_ownBackTex = nullptr; }

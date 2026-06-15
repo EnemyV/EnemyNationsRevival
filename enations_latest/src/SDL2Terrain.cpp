@@ -8,6 +8,8 @@
 
 #include <SDL.h>
 #include <vector>
+#include <map>             // s_rctx — per-renderer terrain context registry
+#include <utility>         // std::swap (incl. the array overload)
 #include <unordered_set>   // g_enMeshEditSet — dedup the retained-mesh edit list
 #include <mutex>      // g_enEditedHexes is touched by sim AND render threads
 #define STB_IMAGE_IMPLEMENTATION
@@ -36,6 +38,7 @@ std::unordered_map<std::string, const SDL2Terrain::Tile*> SDL2Terrain::s_byType;
 std::unordered_map<std::string, const SDL2Terrain::Tile*> SDL2Terrain::s_byTypeVar;
 SDL_Renderer* SDL2Terrain::s_renderer = nullptr;
 bool          SDL2Terrain::s_loaded   = false;
+bool          SDL2Terrain::s_anyLoaded = false;
 
 // CHex terrain-type enum (terrain.h) → baked tile type name. forest has no
 // terrain art (trees are sprites) → empty = no tile.
@@ -414,102 +417,6 @@ static SDL_Texture* LoadPng( SDL_Renderer* r, const std::string& path, int& outW
     stbi_image_free( px );
     return tex;
 }
-
-int SDL2Terrain::Load( SDL_Renderer* renderer )
-{
-    if ( !renderer )
-        return 0;
-    if ( s_loaded && s_renderer == renderer )
-        return (int)s_tiles.size();
-    if ( s_loaded )
-        Unload();  // renderer changed — rebuild
-
-    std::string dir = FindAssetDir();
-    if ( dir.empty() )
-    {
-        LogTerrain( "ERROR: baked terrain PNG set not found (looked for data/terrain_gpu etc.)" );
-        return 0;
-    }
-    LogTerrain( "Loading terrain tiles from: " + dir );
-
-    s_renderer = renderer;
-    int files = 0;
-
-    // Tracks the stem currently chosen for each "type_variant" representative, so
-    // the choice is deterministic (lexicographically smallest = "aa00a000" = dir
-    // aa, letter a) rather than dependent on FindFirstFile enumeration order. The
-    // engine always draws view (xiDir, damage 0) for non-field terrain
-    // (terrain.cpp CHex::Draw), i.e. letter 'a'; multi-letter types reaching the
-    // general s_byTypeVar path (river/swamp) must resolve to that 'a' tile.
-    std::unordered_map<std::string, std::string> tvStem;
-
-    WIN32_FIND_DATAA fd;
-    HANDLE h = FindFirstFileA( ( dir + "\\*.png" ).c_str(), &fd );
-    if ( h != INVALID_HANDLE_VALUE )
-    {
-        do
-        {
-            if ( fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY )
-                continue;
-
-            std::string name     = fd.cFileName;    // e.g. coastline_0_ac00h000_z2.png
-            std::string baseName = name.substr( 0, name.find_last_of( '.' ) );
-
-            std::string type, tstem;
-            int variant = 0, zoom = 0;
-            if ( !ParseName( baseName, type, variant, tstem, zoom ) )
-                continue;
-
-            int tw = 0, th = 0;
-            SDL_Texture* tex = LoadPng( renderer, dir + "\\" + name, tw, th );
-            if ( !tex )
-            {
-                LogTerrain( "WARN: failed to load " + name );
-                continue;
-            }
-
-            Tile& tile = s_tiles[MakeKey( type, variant, tstem )];
-            tile.tex[zoom] = tex;
-            if ( zoom == 0 ) { tile.w = tw; tile.h = th; }
-            tile.shade       = TypeShade( type );
-            tile.drawVert    = TypeDrawVert( type );
-            tile.transparent = TypeTransparent( type );
-            if ( s_byType.find( type ) == s_byType.end() )
-                s_byType[type] = &tile;   // first-seen representative for first-light
-            // Per-(type,variant) representative: deterministically the tile with
-            // the lexicographically smallest stem ("aa00a000" — direction aa,
-            // letter a = the engine's damage-0 view). For single-tile types this
-            // is the exact tile; for multi-letter types on the general path
-            // (river/swamp) it pins the letter to 'a' regardless of scan order.
-            if ( zoom == 0 )
-            {
-                std::string tvKey = type + "_" + std::to_string( variant );
-                auto        stemIt = tvStem.find( tvKey );
-                if ( stemIt == tvStem.end() || tstem < stemIt->second )
-                {
-                    s_byTypeVar[tvKey] = &tile;
-                    tvStem[tvKey]      = tstem;
-                    int ti = TypeNameToInt( type );          // integer-indexed mirror
-                    if ( ti >= 0 )
-                    {
-                        if ( (int)s_typeVarPtr[ti].size() <= variant )
-                            s_typeVarPtr[ti].resize( variant + 1, nullptr );
-                        s_typeVarPtr[ti][variant] = &tile;
-                    }
-                }
-            }
-            ++files;
-        } while ( FindNextFileA( h, &fd ) );
-        FindClose( h );
-    }
-
-    s_loaded = true;
-    ++s_loadGen;   // invalidate the terrain mesh cache (textures were (re)created)
-    LogTerrain( "Loaded " + std::to_string( s_tiles.size() ) + " tiles (" +
-                std::to_string( files ) + " PNGs)." );
-    return (int)s_tiles.size();
-}
-
 void SDL2Terrain::Unload()
 {
     for ( auto& kv : s_tiles )
@@ -1102,8 +1009,312 @@ static void DrawBuildCursorOverlay( SDL_Renderer* r, const CAnimAtr& aa )
     SDL_RenderGeometry( r, nullptr, verts.data( ), (int)verts.size( ), nullptr, 0 );
 }
 
+//==========================================================================
+// PER-RENDERER TERRAIN CONTEXT
+//
+// Each detached area-map window has its OWN SDL_Renderer (SDL2Panel), and GPU
+// textures can't be shared across renderers. Originally all of SDL2Terrain's
+// state — the tile asset set AND Render()'s ~40 cache statics — was a single
+// global instance, so two area maps fought over one set: the second showed only
+// untextured foundations and both thrashed the cache into a full rebuild every
+// frame (the "VERY laggy" multi-area map). RCtx gives each renderer an
+// independent copy.
+//
+// Two storage strategies, by who needs the state:
+//  * FILE-STATE (assets, tile memo, whole-map underlay, far snapshot) is read by
+//    file-scope helpers OUTSIDE Render (Load, TileForHex, MemoTile,
+//    BuildMapUnderlay). Those keep using the existing globals, so we SWAP the
+//    active renderer's copy into the globals around each Render/Load call
+//    (swapFileState + TerrainCtxScope) and swap it back out on return.
+//  * RENDER-STATE (the render-target textures + mesh/water/fog caches) is touched
+//    only inside Render. Those former `static` locals are now ALIASED by
+//    reference to RCtx members (see the top of Render) — no swap needed; the
+//    alias just retargets each name at the current renderer's storage.
+//==========================================================================
+
+// Retained-mesh capture record types (were local to Render; hoisted so RCtx can
+// hold std::vector<> of them).
+struct BaseCell { const SDL2Terrain::Tile* tile; CPoint c[4]; bool transpose;
+                  bool shade; float bL, bR;       // + slope-shade (per-triangle brightness)
+                  int fStart, fCount; };          // [fStart,fStart+fCount) into featherBands
+struct FeatherBand { const SDL2Terrain::Tile* tile; CPoint c[4]; SDL_FPoint uv[4]; };
+struct WaterCell     { CHex* hex; CPoint c[4]; int animIdx; };
+struct WaterBandCell { int animIdx; CPoint c[4]; SDL_FPoint uv[4]; };
+struct FogCell { CHex* hex; CPoint c[4]; };
+
+struct SDL2TerrainRCtx
+{
+    // ---- FILE-STATE (swapped with the globals around Render/Load) ----
+    std::unordered_map<std::string, SDL2Terrain::Tile>        tiles;
+    std::unordered_map<std::string, const SDL2Terrain::Tile*> byType;
+    std::unordered_map<std::string, const SDL2Terrain::Tile*> byTypeVar;
+    std::vector<const SDL2Terrain::Tile*> typeVarPtr[kNumTypeNames];
+    SDL_Renderer* renderer = nullptr;
+    bool          loaded   = false;
+    unsigned      loadGen  = 0;
+    std::vector<const SDL2Terrain::Tile*> tileCache;
+    std::vector<uint32_t>                 tileGen;
+    uint32_t      tileGenCur[4] = { 0, 0, 0, 0 };
+    int           tileCacheEX = 0, tileCacheEY = 0;
+    SDL_Texture*  farRT = nullptr;
+    int           farZoom = -1, farDir = -1, farMargin = 0, farW = 0, farH = 0;
+    unsigned      farLoadGen = ~0u;
+    CHexCoord     farRefHex;
+    CPoint        farRefPx{ 0, 0 };
+    SDL_Texture*  mapRT[4]      = { nullptr, nullptr, nullptr, nullptr };
+    unsigned      mapLoadGen[4] = { ~0u, ~0u, ~0u, ~0u };
+    int           mapRow[4]     = { 0, 0, 0, 0 };
+    CPoint        mapOrg[4];
+    float         mapScale[4]   = { 0, 0, 0, 0 };
+    int           mapTexW[4]    = { 0, 0, 0, 0 };
+    int           mapTexH[4]    = { 0, 0, 0, 0 };
+    CPoint        mapPerX[4];
+    CPoint        mapPerY[4];
+
+    // ---- RENDER-STATE (aliased by reference inside Render; not swapped) ----
+    SDL_Texture *rt = nullptr, *fogRT = nullptr, *shadeRT = nullptr,
+                *shadeHalf = nullptr, *rtB = nullptr, *shadeB = nullptr, *waterRT = nullptr;
+    int rtW = 0, rtH = 0;
+    std::vector<SDL_Vertex>     shadeVerts;
+    std::vector<CHex*>          waterHex;
+    std::vector<CPoint>         waterPos;
+    std::vector<int>            waterAnimOf;
+    std::vector<WaterAnim>      waterAnims;
+    std::vector<WaterBlendBand> waterBlend;
+    unsigned waterTick = ~0u;
+    std::vector<std::vector<SDL_Vertex>> waterDiamGeom, waterBandGeom;
+    unsigned waterRTtick = ~0u;
+    uint64_t sig = ~0ull;
+    unsigned builtEditGen = 0;
+    std::vector<BaseCell>      baseCells;
+    std::vector<FeatherBand>   featherBands;
+    std::vector<WaterCell>     waterCells;
+    std::vector<WaterBandCell> waterBandCells;
+    std::vector<FogCell>       fogCells;
+    int mirZoom = -1, mirDir = -1, capMaxZoom = -1;
+    int capCMinX = 0, capCMaxX = -1, capCMinY = 0, capCMaxY = -1;
+    unsigned mirEditGen = ~0u, mirLoadGen = ~0u;
+    bool mirValid = false;
+    CHexCoord refHex;
+    CPoint    refPx{ 0, 0 };
+    CPoint    builtUL{ 0, 0 };
+    std::vector<SDL_Vertex> fogVerts;
+    std::vector<CHex*>      fogHex;
+    std::vector<int>        fogNbr;
+    std::vector<float>      fogVis;
+    DWORD fogUpdAt = 0;
+    SDL_Renderer* renderRenderer = nullptr;
+    int builtZoom = -1, builtDir = -1, builtMargin = 0;
+    unsigned builtLoadGen = ~0u;
+    DWORD viewChangedAt = 0;
+    uint64_t lastViewSig = ~0ull;
+    bool deferActive = false;
+    int zoutBudget = -1;
+    std::vector<unsigned> memoEditQ;
+    bool memoEditOverflow = false;
+    unsigned tileMemoLoadGen = 0xFFFFFFFFu;
+    unsigned fogVisGenSeen = ~0u;
+    int prevDstX = INT_MIN, prevDstY = INT_MIN;
+    int lastDx = INT_MIN, lastDy = INT_MIN, lastCx = INT_MIN, lastCy = INT_MIN;
+
+    void swapFileState();   // exchange the file-state members above with the globals
+};
+
+void SDL2TerrainRCtx::swapFileState()
+{
+    using std::swap;
+    swap( tiles,       SDL2Terrain::s_tiles );
+    swap( byType,      SDL2Terrain::s_byType );
+    swap( byTypeVar,   SDL2Terrain::s_byTypeVar );
+    for ( int i = 0; i < kNumTypeNames; ++i ) swap( typeVarPtr[i], s_typeVarPtr[i] );
+    swap( renderer,    SDL2Terrain::s_renderer );
+    swap( loaded,      SDL2Terrain::s_loaded );
+    swap( loadGen,     s_loadGen );
+    swap( tileCache,   s_tileCache );
+    swap( tileGen,     s_tileGen );
+    swap( tileGenCur,  s_tileGenCur );          // array overload
+    swap( tileCacheEX, s_tileCacheEX );
+    swap( tileCacheEY, s_tileCacheEY );
+    swap( farRT,       s_farRT );
+    swap( farZoom,     s_farZoom );
+    swap( farDir,      s_farDir );
+    swap( farMargin,   s_farMargin );
+    swap( farW,        s_farW );
+    swap( farH,        s_farH );
+    swap( farLoadGen,  s_farLoadGen );
+    swap( farRefHex,   s_farRefHex );
+    swap( farRefPx,    s_farRefPx );
+    swap( mapRT,       s_mapRT );
+    swap( mapLoadGen,  s_mapLoadGen );
+    swap( mapRow,      s_mapRow );
+    swap( mapOrg,      s_mapOrg );
+    swap( mapScale,    s_mapScale );
+    swap( mapTexW,     s_mapTexW );
+    swap( mapTexH,     s_mapTexH );
+    swap( mapPerX,     s_mapPerX );
+    swap( mapPerY,     s_mapPerY );
+}
+
+// Per-renderer registry + which context's file-state currently sits in the globals.
+static std::map<SDL_Renderer*, SDL2TerrainRCtx> s_rctx;
+static SDL2TerrainRCtx* s_activeFileCtx = nullptr;
+
+// RAII: swap a context's file-state into the globals for the duration of a call,
+// and restore on exit. Nesting the SAME context (Render → Load) is a no-op so the
+// file-state isn't double-swapped.
+struct TerrainCtxScope
+{
+    SDL2TerrainRCtx* prev; SDL2TerrainRCtx* mine; bool did;
+    explicit TerrainCtxScope( SDL2TerrainRCtx& c )
+    {
+        mine = &c;
+        if ( s_activeFileCtx == mine ) { did = false; prev = mine; return; }
+        prev = s_activeFileCtx;
+        if ( prev ) prev->swapFileState();   // current context out
+        mine->swapFileState();               // this context in
+        s_activeFileCtx = mine; did = true;
+    }
+    ~TerrainCtxScope()
+    {
+        if ( !did ) return;
+        mine->swapFileState();               // this context out
+        if ( prev ) prev->swapFileState();   // previous context back in
+        s_activeFileCtx = prev;
+    }
+};
+
+void SDL2Terrain::ReleaseRenderer( SDL_Renderer* r )
+{
+    auto it = s_rctx.find( r );
+    if ( it == s_rctx.end() ) return;
+    SDL2TerrainRCtx& C = it->second;
+    // If this context is currently swapped into the globals, pull its data back
+    // into the members first so the frees below see it (defensive — teardown
+    // normally runs with no Render on the stack).
+    if ( s_activeFileCtx == &C ) { C.swapFileState(); s_activeFileCtx = nullptr; }
+    // Render-target textures (always live in the members — never swapped).
+    SDL_Texture** rts[] = { &C.rt, &C.fogRT, &C.shadeRT, &C.shadeHalf,
+                            &C.rtB, &C.shadeB, &C.waterRT, &C.farRT };
+    for ( SDL_Texture** pp : rts ) if ( *pp ) { SDL_DestroyTexture( *pp ); *pp = nullptr; }
+    for ( int d = 0; d < 4; ++d ) if ( C.mapRT[d] ) { SDL_DestroyTexture( C.mapRT[d] ); C.mapRT[d] = nullptr; }
+    // Tile asset textures bound to this renderer.
+    for ( auto& kv : C.tiles )
+        for ( SDL_Texture* t : kv.second.tex )
+            if ( t ) SDL_DestroyTexture( t );
+    s_rctx.erase( it );
+    char m[96]; sprintf( m, "[REN] terrain context released for renderer %p (now %d live)",
+                         (void*)r, (int)s_rctx.size() );
+    LogTerrain( m );
+}
+
+int SDL2Terrain::Load( SDL_Renderer* renderer )
+{
+    if ( !renderer )
+        return 0;
+    // Per-renderer assets: swap THIS renderer's context into the globals for the
+    // load. Each renderer gets its own tile-texture set (textures can't cross
+    // renderers); a second area-map window no longer Unload()s the first one's tiles.
+    SDL2TerrainRCtx& C = s_rctx[renderer];
+    TerrainCtxScope _ctxScope( C );
+    if ( s_loaded && s_renderer == renderer )
+        return (int)s_tiles.size();
+    if ( s_loaded )
+        Unload();  // (per-ctx this can't happen — each context owns one renderer)
+
+    std::string dir = FindAssetDir();
+    if ( dir.empty() )
+    {
+        LogTerrain( "ERROR: baked terrain PNG set not found (looked for data/terrain_gpu etc.)" );
+        return 0;
+    }
+    LogTerrain( "Loading terrain tiles from: " + dir );
+
+    s_renderer = renderer;
+    int files = 0;
+
+    // Tracks the stem currently chosen for each "type_variant" representative, so
+    // the choice is deterministic (lexicographically smallest = "aa00a000" = dir
+    // aa, letter a) rather than dependent on FindFirstFile enumeration order. The
+    // engine always draws view (xiDir, damage 0) for non-field terrain
+    // (terrain.cpp CHex::Draw), i.e. letter 'a'; multi-letter types reaching the
+    // general s_byTypeVar path (river/swamp) must resolve to that 'a' tile.
+    std::unordered_map<std::string, std::string> tvStem;
+
+    WIN32_FIND_DATAA fd;
+    HANDLE h = FindFirstFileA( ( dir + "\\*.png" ).c_str(), &fd );
+    if ( h != INVALID_HANDLE_VALUE )
+    {
+        do
+        {
+            if ( fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY )
+                continue;
+
+            std::string name     = fd.cFileName;    // e.g. coastline_0_ac00h000_z2.png
+            std::string baseName = name.substr( 0, name.find_last_of( '.' ) );
+
+            std::string type, tstem;
+            int variant = 0, zoom = 0;
+            if ( !ParseName( baseName, type, variant, tstem, zoom ) )
+                continue;
+
+            int tw = 0, th = 0;
+            SDL_Texture* tex = LoadPng( renderer, dir + "\\" + name, tw, th );
+            if ( !tex )
+            {
+                LogTerrain( "WARN: failed to load " + name );
+                continue;
+            }
+
+            Tile& tile = s_tiles[MakeKey( type, variant, tstem )];
+            tile.tex[zoom] = tex;
+            if ( zoom == 0 ) { tile.w = tw; tile.h = th; }
+            tile.shade       = TypeShade( type );
+            tile.drawVert    = TypeDrawVert( type );
+            tile.transparent = TypeTransparent( type );
+            if ( s_byType.find( type ) == s_byType.end() )
+                s_byType[type] = &tile;   // first-seen representative for first-light
+            // Per-(type,variant) representative: deterministically the tile with
+            // the lexicographically smallest stem ("aa00a000" — direction aa,
+            // letter a = the engine's damage-0 view). For single-tile types this
+            // is the exact tile; for multi-letter types on the general path
+            // (river/swamp) it pins the letter to 'a' regardless of scan order.
+            if ( zoom == 0 )
+            {
+                std::string tvKey = type + "_" + std::to_string( variant );
+                auto        stemIt = tvStem.find( tvKey );
+                if ( stemIt == tvStem.end() || tstem < stemIt->second )
+                {
+                    s_byTypeVar[tvKey] = &tile;
+                    tvStem[tvKey]      = tstem;
+                    int ti = TypeNameToInt( type );          // integer-indexed mirror
+                    if ( ti >= 0 )
+                    {
+                        if ( (int)s_typeVarPtr[ti].size() <= variant )
+                            s_typeVarPtr[ti].resize( variant + 1, nullptr );
+                        s_typeVarPtr[ti][variant] = &tile;
+                    }
+                }
+            }
+            ++files;
+        } while ( FindNextFileA( h, &fd ) );
+        FindClose( h );
+    }
+
+    s_loaded = true;
+    s_anyLoaded = true;   // renderer-agnostic gate (IsLoaded)
+    ++s_loadGen;   // invalidate the terrain mesh cache (textures were (re)created)
+    LogTerrain( "Loaded " + std::to_string( s_tiles.size() ) + " tiles (" +
+                std::to_string( files ) + " PNGs)." );
+    return (int)s_tiles.size();
+}
+
 void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
 {
+    // Per-renderer context: file-state swapped into the globals for this call;
+    // render-state reached via the reference aliases declared below (s_rt → C.rt …).
+    if ( !r ) return;
+    SDL2TerrainRCtx& C = s_rctx[r];
+    TerrainCtxScope _ctxScope( C );
     if ( !s_loaded || !r )
         return;
 
@@ -1132,83 +1343,65 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
     // scrolling crawl. The fog/feather per-hex work runs only on a rebuild (key
     // change, pan past the margin, or a refresh interval), so smooth fog + feather
     // are affordable at all zooms.
-    static SDL_Texture* s_rt = nullptr;      // terrain tiles + feather (full bright, NO shade/fog)
-    static SDL_Texture* s_fogRT = nullptr;   // fog-of-war dim, decoupled overlay
-    static SDL_Texture* s_shadeRT = nullptr; // slope shading, BLURRED so tile edges feather
-    static SDL_Texture* s_shadeHalf = nullptr;  // half-res scratch for the blur round-trip
+    SDL_Texture*& s_rt        = C.rt;        // terrain tiles + feather (full bright, NO shade/fog)
+    SDL_Texture*& s_fogRT      = C.fogRT;     // fog-of-war dim, decoupled overlay
+    SDL_Texture*& s_shadeRT    = C.shadeRT;   // slope shading, BLURRED so tile edges feather
+    SDL_Texture*& s_shadeHalf  = C.shadeHalf; // half-res scratch for the blur round-trip
     // Incremental-pan (EN_PANSTRIP) ping-pong scratch: the two texture-ACCUMULATED layers
     // (terrain + slope-shade) are scrolled by copying old→scratch at the pan offset, then
     // swapped, so a pan keeps the old content and only the edge strip is re-meshed. (Fog +
     // water re-render from their vertex lists, so they need no ping-pong.)
-    static SDL_Texture* s_rtB = nullptr;
-    static SDL_Texture* s_shadeB = nullptr;
-    static int       s_rtW = 0, s_rtH = 0;
+    SDL_Texture*& s_rtB        = C.rtB;
+    SDL_Texture*& s_shadeB     = C.shadeB;
+    int& s_rtW = C.rtW; int& s_rtH = C.rtH;
     // Slope-shade overlay geometry (grayscale brightness per tile), built with the
     // terrain mesh; rendered to s_shadeRT then blurred so the per-tile flat shading
     // blends across boundaries (the original feathered this; a sharp step looks bad).
-    static std::vector<SDL_Vertex> s_shadeVerts;
+    std::vector<SDL_Vertex>& s_shadeVerts = C.shadeVerts;
     // Animated open-water: captured during the build so the wave can be re-drawn IN
     // PLACE into s_rt on each wave-tick (cheap) instead of rebuilding the whole mesh —
     // that's what lets water animate at ALL zooms (it was frozen zoomed out because
     // the terrain texture only rebuilds on a view change).
-    static std::vector<CHex*>  s_waterHex;   // open-water hexes (stable CHex*)
-    static std::vector<CPoint> s_waterPos;   // 4 corner positions/hex (texture space)
-    static std::vector<int>    s_waterAnimOf;   // per water hex: index into s_waterAnims
-    static std::vector<WaterAnim> s_waterAnims; // distinct (type,variant) frame tables
-    static std::vector<WaterBlendBand> s_waterBlend;  // water<->water blend bands (texture space)
-    static unsigned s_waterTick = ~0u;
+    std::vector<CHex*>&  s_waterHex    = C.waterHex;    // open-water hexes (stable CHex*)
+    std::vector<CPoint>& s_waterPos    = C.waterPos;    // 4 corner positions/hex (texture space)
+    std::vector<int>&    s_waterAnimOf = C.waterAnimOf; // per water hex: index into s_waterAnims
+    std::vector<WaterAnim>& s_waterAnims = C.waterAnims; // distinct (type,variant) frame tables
+    std::vector<WaterBlendBand>& s_waterBlend = C.waterBlend; // water<->water blend bands (texture space)
+    unsigned& s_waterTick = C.waterTick;
     // Water cache (perf): the live water layer used to re-submit ~30k hex diamonds EVERY
     // frame (~85ms in Debug → the zoomed-out FPS wall). Instead, pre-group the diamond/band
     // vertices by animation index ONCE per rebuild (positions are static in texture space —
     // only the frame texture changes), bake them into s_waterRT only when the wave frame
     // advances (~4Hz), and blit that texture (1 GPU copy) under the terrain each frame.
-    static std::vector<std::vector<SDL_Vertex>> s_waterDiamGeom;  // per animIdx: diamond verts (tex space)
-    static std::vector<std::vector<SDL_Vertex>> s_waterBandGeom;  // per animIdx: blend-band verts (tex space)
-    static SDL_Texture* s_waterRT     = nullptr;  // baked animated water, blitted under s_rt
-    static unsigned     s_waterRTtick = ~0u;      // wave-frame index baked into s_waterRT
-    static uint64_t  s_sig = ~0ull;
-    static unsigned  s_builtEditGen = 0;  // g_enTerrainEditGen baked into the current mesh
+    std::vector<std::vector<SDL_Vertex>>& s_waterDiamGeom = C.waterDiamGeom;  // per animIdx: diamond verts (tex space)
+    std::vector<std::vector<SDL_Vertex>>& s_waterBandGeom = C.waterBandGeom;  // per animIdx: blend-band verts (tex space)
+    SDL_Texture*& s_waterRT     = C.waterRT;    // baked animated water, blitted under s_rt
+    unsigned&     s_waterRTtick = C.waterRTtick; // wave-frame index baked into s_waterRT
+    uint64_t& s_sig          = C.sig;
+    unsigned& s_builtEditGen = C.builtEditGen;  // g_enTerrainEditGen baked into the current mesh
 
     // RETAINED MESH (base layer, EN_RETAIN): each visible LAND hex's tile + CONTENT-space
     // corners, captured on a full rebuild. A later zoom-only change re-emits the base from
     // these (screen = (content >> newZoom) - newUL, tex = tile->tex[newZoom]) instead of the
     // per-hex loop. s_mir* = the (zoom,dir,editGen,loadGen) the cells were captured at, to
-    // detect a pure zoom change (everything else identical → cells still valid).
-    struct BaseCell { const Tile* tile; CPoint c[4]; bool transpose;
-                      bool shade; float bL, bR;       // + slope-shade (per-triangle brightness)
-                      int fStart, fCount; };          // [fStart,fStart+fCount) into s_featherBands (land<->land edge softening)
-    static std::vector<BaseCell> s_baseCells;
-    // FEATHER retained capture: a land<->land edge band bleeds a NEIGHBOUR's tile in along the
-    // shared diamond edge. Stored per OWNING base cell (range above) so the replay can emit each
-    // cell's bands right AFTER its base — preserving the per-row back-to-front occlusion (a front
-    // mountain still occludes a back tile's band). 4 content corners = edge c0,c1 + 2 insets.
-    struct FeatherBand { const Tile* tile; CPoint c[4]; SDL_FPoint uv[4]; };
-    static std::vector<FeatherBand> s_featherBands;
-    // WATER retained capture: open-water + coast diamonds (a hole in the base — filled by
-    // the live s_waterRT layer) and their blend bands, in CONTENT space. animIdx indexes
-    // s_waterAnims (the per-(type,variant) frame tables), which is ZOOM-INDEPENDENT — so a
-    // zoom replay keeps s_waterAnims and only re-projects these positions to the new zoom.
-    struct WaterCell     { CHex* hex; CPoint c[4]; int animIdx; };
-    struct WaterBandCell { int animIdx; CPoint c[4]; SDL_FPoint uv[4]; };
-    static std::vector<WaterCell>     s_waterCells;
-    static std::vector<WaterBandCell> s_waterBandCells;
-    // FOG retained capture: every visible hex has a fog overlay quad (black, per-corner
-    // alpha = 1-visibility). Alpha is re-sampled cheaply each fog tick from s_fogHex/s_fogNbr
-    // (rebuilt unconditionally below), so a zoom replay only needs to re-project the quad
-    // POSITIONS — capture the hex + its content corners.
-    struct FogCell { CHex* hex; CPoint c[4]; };
-    static std::vector<FogCell> s_fogCells;
-    static int      s_mirZoom = -1, s_mirDir = -1;
-    static int      s_capMaxZoom = -1;   // most-zoomed-OUT level the captured region covers (capZoom + zout budget)
+    // detect a pure zoom change (everything else identical → cells still valid). (BaseCell /
+    // FeatherBand / WaterCell / WaterBandCell / FogCell are now file-scope, above RCtx.)
+    std::vector<BaseCell>& s_baseCells = C.baseCells;
+    std::vector<FeatherBand>& s_featherBands = C.featherBands;
+    std::vector<WaterCell>&     s_waterCells     = C.waterCells;
+    std::vector<WaterBandCell>& s_waterBandCells = C.waterBandCells;
+    std::vector<FogCell>& s_fogCells = C.fogCells;
+    int& s_mirZoom = C.mirZoom; int& s_mirDir = C.mirDir;
+    int& s_capMaxZoom = C.capMaxZoom;   // most-zoomed-OUT level the captured region covers (capZoom + zout budget)
     // CONTENT-space bbox of all captured cells (= the capture viewport + margin). A zoom replay
     // is only valid when the current (possibly panned) viewport's content lies inside this box;
     // otherwise the uncovered part re-emits as nothing (BLACK) yet caches as valid. Set on capture.
-    static int      s_capCMinX = 0, s_capCMaxX = -1, s_capCMinY = 0, s_capCMaxY = -1;
-    static unsigned s_mirEditGen = ~0u, s_mirLoadGen = ~0u;
-    static bool     s_mirValid = false;
-    static CHexCoord s_refHex;            // a fixed hex captured at build time
-    static CPoint    s_refPx( 0, 0 );     // its window-screen pos at build time
-    static CPoint    s_builtUL( 0, 0 );   // ulSnap the cached mesh was built against (edit
+    int& s_capCMinX = C.capCMinX; int& s_capCMaxX = C.capCMaxX; int& s_capCMinY = C.capCMinY; int& s_capCMaxY = C.capCMaxY;
+    unsigned& s_mirEditGen = C.mirEditGen; unsigned& s_mirLoadGen = C.mirLoadGen;
+    bool& s_mirValid = C.mirValid;
+    CHexCoord& s_refHex = C.refHex;       // a fixed hex captured at build time
+    CPoint&    s_refPx  = C.refPx;        // its window-screen pos at build time
+    CPoint&    s_builtUL = C.builtUL;     // ulSnap the cached mesh was built against (edit
                                           // patches project content->texture with THIS, not
                                           // the live UL — pan-race coherence)
     // Pan-buffer margin: the cached texture extends this far beyond the viewport so the
@@ -1228,11 +1421,11 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
     // Fog overlay geometry, built FREE during the terrain pass (positions only), then
     // re-coloured on a fast throttle WITHOUT rebuilding terrain — so fog tracks unit
     // vision in ~150 ms while the heavy terrain mesh rebuilds only on a view change.
-    static std::vector<SDL_Vertex> s_fogVerts;   // 4 per hex (indexed quad, L/T/R/B), black, per-corner alpha
-    static std::vector<CHex*>      s_fogHex;     // hex per fog quad (self visibility, no GetHex)
-    static std::vector<int>        s_fogNbr;     // 8 neighbour fog-indices per hex (-1 = none)
-    static std::vector<float>      s_fogVis;     // per-hex visibility, re-sampled each throttle
-    static DWORD s_fogUpdAt = 0;
+    std::vector<SDL_Vertex>& s_fogVerts = C.fogVerts; // 4 per hex (indexed quad, L/T/R/B), black, per-corner alpha
+    std::vector<CHex*>&      s_fogHex   = C.fogHex;   // hex per fog quad (self visibility, no GetHex)
+    std::vector<int>&        s_fogNbr   = C.fogNbr;   // 8 neighbour fog-indices per hex (-1 = none)
+    std::vector<float>&      s_fogVis   = C.fogVis;   // per-hex visibility, re-sampled each throttle
+    DWORD& s_fogUpdAt = C.fogUpdAt;
     const DWORD kFogThrottle = 150;
 
     // Terrain mesh is keyed on zoom/dir/wave/loadGen — NOT scroll, and NO time
@@ -1259,7 +1452,7 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
     // SIZE change, never a renderer change. Detect the change, drop all renderer-bound
     // statics so the size-block below rebuilds them on the new renderer, force a full
     // mesh rebuild, and resync the tile textures (Load() Unload+reloads on r change).
-    static SDL_Renderer* s_renderRenderer = nullptr;
+    SDL_Renderer*& s_renderRenderer = C.renderRenderer;
     if ( r != s_renderRenderer )
     {
         if ( s_renderRenderer != nullptr )   // not the first-ever bind — log the swap
@@ -1289,11 +1482,11 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
     // rapid 4-notch zoom does ONE rebuild at the destination instead of four along the way.
     // The texture-recreate block below is gated off during the defer — the old-size textures
     // ARE the preview source; the settle frame recreates + rebuilds as usual.
-    static int      s_builtZoom = -1, s_builtDir = -1, s_builtMargin = 0;  // view the textures were built at
-    static unsigned s_builtLoadGen = ~0u;
-    static DWORD    s_viewChangedAt = 0;     // last time the view key changed (gesture clock)
-    static uint64_t s_lastViewSig = ~0ull;
-    static bool     s_deferActive = false;
+    int& s_builtZoom = C.builtZoom; int& s_builtDir = C.builtDir; int& s_builtMargin = C.builtMargin;  // view the textures were built at
+    unsigned& s_builtLoadGen = C.builtLoadGen;
+    DWORD&    s_viewChangedAt = C.viewChangedAt;     // last time the view key changed (gesture clock)
+    uint64_t& s_lastViewSig = C.lastViewSig;
+    bool&     s_deferActive = C.deferActive;
     const  DWORD    kSettleMs = 120;
     {
         uint64_t curNoEdit = sig   ^ ( (uint64_t)g_enTerrainEditGen << 40 );
@@ -1536,8 +1729,8 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
                           && !( zoom <= 1 && s_mirZoom >= 2 );   // zoom INTO z0/z1 from a zoomed-out capture → re-capture (cheap, few hexes) to resolve feather
     const bool retainCap = TerrainRetainEnabled( ) && needRebuild && !incPan && !zoomReplay;
 
-    static std::vector<unsigned> s_memoEditQ;            // hexes edited since last rebuild → per-hex tile-memo invalidation
-    static bool                  s_memoEditOverflow = false;
+    std::vector<unsigned>& s_memoEditQ = C.memoEditQ;     // hexes edited since last rebuild → per-hex tile-memo invalidation
+    bool&                  s_memoEditOverflow = C.memoEditOverflow;
 
     if ( needRebuild )
     {
@@ -1857,7 +2050,7 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
     // Flat array keyed by map-hex coord (same indexing as the fog precompute below) with a
     // generation stamp so there's no per-rebuild clear. Computes each hex's tile exactly once.
     const int eXc = theMap.Get_eX( ), eYc = theMap.Get_eY( );
-    static unsigned s_tileMemoLoadGen = 0xFFFFFFFFu; // s_loadGen the memo was built under
+    unsigned& s_tileMemoLoadGen = C.tileMemoLoadGen; // s_loadGen the memo was built under
     if ( (int)s_tileCache.size( ) != eXc * eYc * 4 )
     { s_tileCache.assign( (size_t)eXc * eYc * 4, nullptr ); s_tileGen.assign( (size_t)eXc * eYc * 4, 0u );
       for ( int d = 0; d < 4; ++d ) s_tileGenCur[d] = 0;
@@ -2857,7 +3050,7 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
     // the fog mesh is ~all visible hexes. A rebuild always refreshes (new geometry); a
     // 1 s force-refresh self-heals any cross-thread missed bump. The kFogThrottle still
     // caps the rate when fog IS changing (active play).
-    static unsigned s_fogVisGenSeen = ~0u;
+    unsigned& s_fogVisGenSeen = C.fogVisGenSeen;
     const DWORD     kFogForceMs     = 1000;
     bool fogChanged = needRebuild || ( g_enFogVisGen != s_fogVisGenSeen ) ||
                       ( _nowT - s_fogUpdAt ) >= kFogForceMs;
@@ -2949,7 +3142,7 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
     // where f = 2^(builtZoom - zoom) and refNow is the anchor's projection in the current view.
     // A rotate (dir change) can't be expressed as a scale — hold the previous placement instead
     // (stale view for the settle window, then the single coalesced rebuild snaps it correct).
-    static int s_prevDstX = INT_MIN, s_prevDstY = INT_MIN;
+    int& s_prevDstX = C.prevDstX; int& s_prevDstY = C.prevDstY;
     SDL_FRect dstF = { 0, 0, 0, 0 }; bool fPreview = false;
     if ( s_deferActive )
     {
@@ -2980,7 +3173,7 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
     //   * camera centre: catches ZOOMED-OUT pans, which re-mesh every frame (dst stays put).
     {
         CMapLoc c = aa.GetCenter( );
-        static int s_lastDx = INT_MIN, s_lastDy = INT_MIN, s_lastCx = INT_MIN, s_lastCy = INT_MIN;
+        int& s_lastDx = C.lastDx; int& s_lastDy = C.lastDy; int& s_lastCx = C.lastCx; int& s_lastCy = C.lastCy;
         g_enViewScrolled = ( dst.x != s_lastDx || dst.y != s_lastDy || c.x != s_lastCx || c.y != s_lastCy );
         s_lastDx = dst.x; s_lastDy = dst.y; s_lastCx = c.x; s_lastCy = c.y;
     }

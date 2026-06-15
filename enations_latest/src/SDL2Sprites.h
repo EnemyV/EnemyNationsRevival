@@ -26,7 +26,15 @@ struct CSpriteDIB;
 namespace SDL2Sprites
 {
     bool Enabled( );
+
+    // Activate the per-renderer sprite context for `r` (cheap state swap; each area-map
+    // renderer keeps its own atlas/RT/cache). Called at panel creation, at the start of
+    // each capture pass (DiscoverSpritesGpu, from the view's panel) and by Submit.
     void SetRenderer( SDL_Renderer* r );
+
+    // Free a renderer's sprite context. Call from the area panel teardown BEFORE
+    // SDL_DestroyRenderer; other live area maps' contexts are untouched.
+    void ReleaseRenderer( SDL_Renderer* r );
 
     // The renderer the sprite atlas/layer is currently bound to (null if none). The
     // panel teardown checks this so an OLD area panel's destroy doesn't reset the

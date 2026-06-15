@@ -16,8 +16,15 @@ struct SDL_Texture;
 class  CAnimAtr;
 class  CHex;
 
+// Per-renderer terrain state (assets + render-target cache). Defined in the .cpp;
+// befriended so its swap can touch SDL2Terrain's private asset statics. Lets two
+// area-map windows (each with its own SDL_Renderer) keep independent terrain caches
+// instead of thrashing one shared set (the multi-area-map lag / "only foundations").
+struct SDL2TerrainRCtx;
+
 class SDL2Terrain
 {
+    friend struct SDL2TerrainRCtx;
 public:
     static const int NUM_ZOOMS = 4;   // z0=128x64 .. z3=16x8 (per terrainbake)
 
@@ -39,7 +46,16 @@ public:
     // Free all textures (call before destroying the renderer).
     static void Unload();
 
-    static bool IsLoaded() { return s_loaded; }
+    // Free the per-renderer terrain context (textures + caches) for THIS renderer,
+    // and drop it from the registry. Call from the area panel's teardown BEFORE
+    // SDL_DestroyRenderer, so each closing area map frees only its own GPU state and
+    // leaves any other live area map's context untouched.
+    static void ReleaseRenderer( SDL_Renderer* r );
+
+    // "Terrain assets are available" — renderer-agnostic (true once any renderer has
+    // loaded the tile set). Used as the GPU-terrain gate; do NOT tie this to the
+    // currently-swapped-in context (that is only valid during a Render/Load call).
+    static bool IsLoaded() { return s_anyLoaded; }
 
     // The renderer the tile textures are currently bound to (null if unloaded).
     // Used by the panel teardown to avoid one area panel's destroy clobbering the
@@ -83,6 +99,7 @@ private:
     static std::unordered_map<std::string, const Tile*> s_byTypeVar;    // "type_variant" → tile (prefers aa dir)
     static SDL_Renderer*                          s_renderer;
     static bool                                   s_loaded;
+    static bool                                   s_anyLoaded;   // any renderer ever loaded (renderer-agnostic gate)
 
     static std::string MakeKey( const std::string& type, int variant,
                                 const std::string& stem );

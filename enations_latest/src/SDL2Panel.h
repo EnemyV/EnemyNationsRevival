@@ -123,6 +123,7 @@ public:
     // T0b/T1: true when this detached window presents via its own SDL_Renderer
     // (the GPU present path). Used to gate the T1 terrain/sprite layer split.
     bool HasOwnRenderer() const { return m_ownRenderer != nullptr; }
+    SDL_Renderer* GetOwnRenderer() const { return m_ownRenderer; }   // for per-renderer terrain/sprite ctx select
     SDL_Window* GetOwnWindow() const { return m_ownWindow; }
     static bool GpuDirtyEnabled();   // Item 5 kill-switch (env EN_DIRTY)
 

@@ -3672,6 +3672,12 @@ static void EnEmitUnitHitFlash( CUnit* pUnit, CAnimAtr& aa, const CHexCoord& hex
 //---------------------------------------------------------------------------
 void CGameMap::DiscoverSpritesGpu( CAnimAtr& aa, const CRect& rect )
 {
+    // Per-renderer sprite context: capture into THIS view's panel renderer's context
+    // (each area map has its own atlas/RT/cache). Without this, two area maps would
+    // capture into one shared sprite store and the second map would show no sprites.
+    if ( aa.m_sdlPanel && aa.m_sdlPanel->GetOwnRenderer() )
+        SDL2Sprites::SetRenderer( aa.m_sdlPanel->GetOwnRenderer() );
+
     CDrawInfoPool drawinfopool;
 
     // Reference hex at the viewport centre: torus-unwrap each object/hex to the

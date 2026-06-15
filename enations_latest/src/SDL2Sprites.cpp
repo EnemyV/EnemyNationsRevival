@@ -8,9 +8,12 @@
 #include <vector>
 #include <algorithm>
 #include <unordered_map>
+#include <map>             // s_sctx — per-renderer sprite context registry
+#include <utility>         // std::swap
 #include <climits>
 #include <cmath>
 #include <cstdio>
+#include "SDL2Panel.h"     // CAnimAtr::m_sdlPanel->GetOwnRenderer() — capture-side ctx select
 
 // GPU sprite layer with TEXTURE-ATLAS BATCHING. All sprite frames are packed into one
 // large atlas texture; the whole visible sprite layer is then drawn with a SINGLE
@@ -144,6 +147,72 @@ namespace
     // this to their screen travel angle so the bullet faces where it flies. 0 = axis-aligned.
     float g_captureRot = 0.0f;
 
+    //======================================================================
+    // PER-RENDERER SPRITE CONTEXT
+    //
+    // Like SDL2Terrain, each area-map window has its own SDL_Renderer and GPU
+    // textures (atlas + composite RT) can't cross renderers. All the mutable g_*
+    // state above is ONE instance, so two area maps fought over it (second map
+    // showed no sprites; closing one blanked the other). SpritesRCtx holds a copy
+    // per renderer; the ACTIVE one is swapped into the g_* globals (SetRenderer is
+    // the activator) so every function keeps using the globals unchanged. The
+    // capture pass selects its context from the view's panel (DiscoverSpritesGpu),
+    // and Submit re-selects its renderer's context before drawing.
+    //======================================================================
+    struct SpritesRCtx
+    {
+        std::unordered_map<SprKey, Sprite, SprKeyHash> sprites;
+        std::unordered_map<uint64_t, AtlasLoc>         atlasMap;
+        SDL_Texture* atlas = nullptr;
+        int atlasW = 0, atlasH = 0, shelfX = 0, shelfY = 0, shelfH = 0;
+        bool atlasFull = false;
+        int zoom = -1, dir = -1;
+        bool inFrame = false;
+        uint64_t seq = 0;
+        SDL_Texture* rt = nullptr;
+        int rtW = 0, rtH = 0;
+        bool dirty = true;
+        int lastUlX = INT_MIN, lastUlY = INT_MIN;
+        bool accumValid = false;
+        int accumX0 = 0, accumY0 = 0, accumX1 = 0, accumY1 = 0;
+        std::vector<SDL_Rect> dirtyCur, dirtyPrev;
+        std::vector<SprKey> dynKeys;
+        bool captureDynamic = false;
+        bool captureWasFull = true;
+        std::vector<std::vector<const Sprite*>> staticGrid;
+        int staticGridGnx = 0, staticGridGny = 0;
+        int staticGridUlX = INT_MIN, staticGridUlY = INT_MIN;
+        bool staticGridDirty = true;
+        std::vector<Trail> trails;
+        std::vector<Disc>  flashes;
+        std::vector<Disc>  shadows;
+        bool captureShadow = false;
+        float captureRot = 0.0f;
+    };
+
+    std::map<SDL_Renderer*, SpritesRCtx> s_sctx;
+    SpritesRCtx* g_activeCtx = nullptr;   // whose state is currently in the g_* globals
+
+    // Exchange a context's state with the g_* globals (symmetric). g_renderer/g_enabled
+    // are NOT swapped (g_renderer is the active identity; g_enabled is process config).
+    void SwapSpritesCtx( SpritesRCtx& c )
+    {
+        using std::swap;
+        #define SW(x) swap( c.x, g_##x )
+        SW(sprites); SW(atlasMap); SW(atlas); SW(atlasW); SW(atlasH);
+        SW(shelfX); SW(shelfY); SW(shelfH); SW(atlasFull);
+        SW(zoom); SW(dir); SW(inFrame); SW(seq);
+        SW(rt); SW(rtW); SW(rtH); SW(dirty); SW(lastUlX); SW(lastUlY);
+        SW(accumValid); SW(accumX0); SW(accumY0); SW(accumX1); SW(accumY1);
+        SW(dirtyCur); SW(dirtyPrev);
+        SW(dynKeys); SW(captureDynamic); SW(captureWasFull);
+        SW(staticGrid); SW(staticGridGnx); SW(staticGridGny);
+        SW(staticGridUlX); SW(staticGridUlY); SW(staticGridDirty);
+        SW(trails); SW(flashes); SW(shadows);
+        SW(captureShadow); SW(captureRot);
+        #undef SW
+    }
+
     void AccumDirty( int x, int y, int w, int h )
     {
         if ( w <= 0 || h <= 0 ) return;
@@ -275,16 +344,35 @@ namespace SDL2Sprites
         return g_enabled != 0;
     }
 
+    // Activate the per-renderer sprite context for `r` (swap its state into the g_*
+    // globals). NOT an invalidate anymore — each renderer keeps its own atlas/RT/cache,
+    // so switching between two area maps is a cheap O(1) state swap, not a rebuild.
     void SetRenderer( SDL_Renderer* r )
     {
-        if ( r != g_renderer )
-            InvalidateTextures( );
+        if ( r == g_renderer ) return;
+        if ( g_activeCtx ) { SwapSpritesCtx( *g_activeCtx ); g_activeCtx = nullptr; }  // current out
         g_renderer = r;
+        if ( r ) { SpritesRCtx& c = s_sctx[r]; SwapSpritesCtx( c ); g_activeCtx = &c; }  // new in
     }
 
     SDL_Renderer* CurrentRenderer( )
     {
         return g_renderer;
+    }
+
+    // Free a renderer's sprite context (atlas + composite RT textures) and drop it.
+    // Call from the area panel teardown BEFORE SDL_DestroyRenderer; any other live
+    // area map keeps its own context untouched.
+    void ReleaseRenderer( SDL_Renderer* r )
+    {
+        if ( !r ) return;
+        if ( g_renderer == r )
+            SetRenderer( nullptr );   // swap this context's live state back into its member storage
+        auto it = s_sctx.find( r );
+        if ( it == s_sctx.end() ) return;
+        if ( it->second.atlas ) SDL_DestroyTexture( it->second.atlas );
+        if ( it->second.rt )    SDL_DestroyTexture( it->second.rt );
+        s_sctx.erase( it );
     }
 
     void BeginFrame( int zoom, int dir, int dvx, int dvy, int dw, int dh )
@@ -752,6 +840,7 @@ namespace SDL2Sprites
     {
         if ( !r || vpW <= 0 || vpH <= 0 )
             return;
+        SetRenderer( r );   // draw THIS renderer's context (a different view may have captured last)
 
         // S2.4: render the sprite layer into a PERSISTENT RT (g_rt) and composite it onto
         // the caller's target. A FULL capture (or a pan/resize) rebuilds the whole layer;
