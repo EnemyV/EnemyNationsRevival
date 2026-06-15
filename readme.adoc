@@ -60,6 +60,18 @@ Currently, I am working on getting everything to compile with relatively minimal
 
 == Getting Started
 
+=== Game data file (required)
+
+The game data file `ENations.dat` (~516 MB) is *not* included in this repository
+because of its size. Download it separately:
+
+https://drive.google.com/file/d/16y40cxiC0dcmfB2vwZXU5VATqGD6fe_p/view?usp=sharing
+
+Place `ENations.dat` in the working directory the game runs from (next to the
+executable). The game looks for `.\ENations.dat` by default; the path is stored
+in the `Game\DataFile` setting (Windows registry, or
+`~/.config/enations/registry.ini` on Linux).
+
 Prerequisites
 ----
 ccache-4.8.1
