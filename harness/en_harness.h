@@ -30,4 +30,10 @@ void EnHarness_Service();
 // always holds the real composited image. Pass nullptr to clear.
 void EnHarness_SetMainSurface(SDL_Surface* surface);
 
+// Register a detached panel's CPU back-surface by its SDL window id, so `shotid`
+// can dump it directly (reliable on macOS, where GPU read-back of child windows
+// is blank/garbage). Call each frame from the panel's render. Pass nullptr to
+// clear (e.g. on panel destroy).
+void EnHarness_RegisterWindowSurface(unsigned int windowId, SDL_Surface* surface);
+
 #endif // EN_HARNESS_H

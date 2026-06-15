@@ -24,6 +24,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <map>
 #include <mutex>
 #include <string>
 #include <pthread.h>
@@ -37,6 +38,8 @@ namespace {
 SDL_Window*   g_window   = nullptr;
 SDL_Renderer* g_renderer = nullptr;
 SDL_Surface*  g_mainSurface = nullptr;   // main window CPU back-buffer (see EnHarness_SetMainSurface)
+std::mutex    g_winSurfMutex;
+std::map<Uint32, SDL_Surface*> g_winSurfaces;   // detached panel window id -> CPU back-surface
 
 // The active window changes as modal dialogs open/close. Target whatever has
 // keyboard/mouse focus so screenshots and input follow the on-top window.
@@ -247,6 +250,12 @@ void EnHarness_SetMainSurface(SDL_Surface* surface) {
     g_mainSurface = surface;
 }
 
+void EnHarness_RegisterWindowSurface(unsigned int windowId, SDL_Surface* surface) {
+    std::lock_guard<std::mutex> lk(g_winSurfMutex);
+    if (surface) g_winSurfaces[(Uint32)windowId] = surface;
+    else         g_winSurfaces.erase((Uint32)windowId);
+}
+
 void EnHarness_Service() {
     if (!g_shotPending.exchange(false)) return;
     std::string path; { std::lock_guard<std::mutex> lk(g_shotMutex); path = g_shotPath; }
@@ -266,6 +275,19 @@ void EnHarness_Service() {
         if (ok) { w = g_mainSurface->w; h = g_mainSurface->h; }
         g_shotW = w; g_shotH = h; g_shotOK = ok; g_shotDone = true;
         return;
+    }
+    // Detached panel with a registered CPU back-surface: dump it directly
+    // (reliable; GPU read-back of child windows is blank on macOS).
+    if (win) {
+        Uint32 wid = SDL_GetWindowID(win);
+        SDL_Surface* reg = nullptr;
+        { std::lock_guard<std::mutex> lk(g_winSurfMutex);
+          auto it = g_winSurfaces.find(wid); if (it != g_winSurfaces.end()) reg = it->second; }
+        if (reg) {
+            ok = (SDL_SaveBMP(reg, path.c_str()) == 0);
+            g_shotW = reg->w; g_shotH = reg->h; g_shotOK = ok; g_shotDone = true;
+            return;
+        }
     }
     if (win) {
         SDL_GetWindowSize(win, &w, &h);

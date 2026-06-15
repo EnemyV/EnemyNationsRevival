@@ -2,6 +2,9 @@
 
 #include "SDL2Panel.h"
 #include "GameWindow.h"
+#ifndef _WIN32
+#include "en_harness.h"   // EnHarness_RegisterWindowSurface — harness capture of detached panels
+#endif
 #include "SDL2CreateStatus.h"  // GetCreateStatus()->IsVisible() — defer panel show during load
 #include "SDL2MainMenu.h"  // CreateSurfaceFromDIB
 #include "bmbutton.h"      // must precede bitmaps.h (provides CBmBtnData)
@@ -759,6 +762,15 @@ void SDL2Panel::Detach(GameWindow* mainWin) {
 }
 
 void SDL2Panel::Detach(SDL_Window* ownerWindow) {
+    // Single-window mode (macOS full-screen app): keep every panel composited
+    // into the main window instead of spawning a separate top-level SDL window.
+    // On macOS each SDL window is an independent floating window (no Win32 child
+    // nesting), which scattered the UI/map/radar. EN_SINGLEWIN keeps them in the
+    // main compositor so the whole game renders in one full-screen window.
+    if (getenv("EN_SINGLEWIN")) {
+        LogPanel("[REN] Detach suppressed (EN_SINGLEWIN): '" + m_name + "'");
+        return;
+    }
     {
         char b[160];
         sprintf(b, "[REN] Detach '%s' ownWindow=%p ownRenderer=%p (earlyReturn=%d)",
@@ -1179,6 +1191,14 @@ void SDL2Panel::RenderDetached() {
         DrawGoldFrame(winSurf, 0, 0, W, H);
     else
         DrawRaisedBorder(winSurf, 0, 0, W, H, 4);
+
+#ifndef _WIN32
+    // Reliable harness capture: register this panel's CPU back-surface (full
+    // window content incl. chrome) by window id. Terrain panels composite the GPU
+    // mesh UNDER this overlay in PresentOwn, so their complete image lives only on
+    // the renderer — leave those to RenderReadPixels and register the rest.
+    if (!bGpuTerrain) EnHarness_RegisterWindowSurface(m_ownWindowID, winSurf);
+#endif
 
     if (m_ownRenderer)
         PresentOwn();                       // T0b: upload back-buffer + present via GPU
