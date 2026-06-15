@@ -698,6 +698,17 @@ void CWndWorld::Draw() {
                     SDL_Surface* panelSurface = m_sdlPanel->GetSurface();
                     if ( panelSurface )
                     {
+#ifndef _WIN32
+                        if ( getenv("EN_DIAG") ) {
+                            static int n=0;
+                            if (n++<2) {
+                                size_t tot=(size_t)pitch*dibHeight, nz=0; unsigned mx=0;
+                                for (size_t i=0;i<tot;++i){ if(pPixels[i]){++nz; if(pPixels[i]>mx)mx=pPixels[i];} }
+                                fprintf(stderr,"[DIAG] radar/world DIB %dx%d bpp=%d Bpp=%d pitch=%d nonzero=%zu/%zu maxByte=%u radar=%d\n",
+                                        dibWidth,dibHeight,bitsPerPixel,bytesPerPixel,pitch,nz,tot,mx,(int)m_bIsRadar);
+                            }
+                        }
+#endif
                         Uint32 rmask = 0x00FF0000, gmask = 0x0000FF00, bmask = 0x000000FF, amask = 0;
                         SDL_Surface* dibSurf = SDL_CreateRGBSurfaceFrom(
                             pPixels, dibWidth, dibHeight, bitsPerPixel, pitch,

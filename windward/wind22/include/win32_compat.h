@@ -1702,7 +1702,25 @@ inline LPVOID  VirtualAlloc(LPVOID, SIZE_T n, DWORD, DWORD) { return malloc(n); 
 inline BOOL    VirtualFree(LPVOID p, SIZE_T, DWORD) { free(p); return TRUE; }
 inline BOOL    ScrollWindow(HWND, int, int, const RECT*, const RECT*) { return TRUE; }
 inline HHOOK   SetWindowsHookEx(int, HOOKPROC, HINSTANCE, DWORD) { return NULL; }
-inline void    GlobalMemoryStatus(LPMEMORYSTATUS s) { if (s) { memset(s, 0, sizeof(*s)); s->dwLength = sizeof(*s); } }
+// Report ample memory (~2 GB across every field; capped under 2 GiB so any 32-bit
+// cast stays positive). The old all-zero stub made the engine think it had 0 MB,
+// which forced 8-bit colour mode (m_bUse8Bit) — that in turn makes every CPU
+// render target (world map / radar minimap) a paletted DIB, and with no Win32
+// palette pipeline on this build they render blank. Real values keep the engine
+// on the 32-bit render path.
+inline void    GlobalMemoryStatus(LPMEMORYSTATUS s) {
+    if (!s) return;
+    memset(s, 0, sizeof(*s));
+    s->dwLength        = sizeof(*s);
+    s->dwMemoryLoad    = 25;
+    const SIZE_T kAmple = (SIZE_T)0x7FF00000;   // ~2 GB
+    s->dwTotalPhys     = kAmple;
+    s->dwAvailPhys     = kAmple;
+    s->dwTotalPageFile = kAmple;
+    s->dwAvailPageFile = kAmple;
+    s->dwTotalVirtual  = kAmple;
+    s->dwAvailVirtual  = kAmple;
+}
 inline BOOL    GetVersionExA(OSVERSIONINFOA* p) { if (p) { p->dwMajorVersion = 6; p->dwMinorVersion = 2; p->dwPlatformId = VER_PLATFORM_WIN32_NT; p->szCSDVersion[0] = 0; } return TRUE; }
 inline LONG    ChangeDisplaySettingsA(DEVMODEA*, DWORD) { return DISP_CHANGE_SUCCESSFUL; }
 inline LONG    ChangeDisplaySettingsExA(LPCSTR, DEVMODEA*, HWND, DWORD, LPVOID) { return DISP_CHANGE_SUCCESSFUL; }
