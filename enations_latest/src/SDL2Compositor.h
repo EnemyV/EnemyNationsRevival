@@ -70,6 +70,11 @@ public:
     // Force a full redraw next frame (all panels + background)
     void InvalidateAll();
 
+    // Repaint the main-window background + composited panels next frame WITHOUT
+    // dirtying the detached panels (so e.g. dragging a panel restores the area it
+    // vacated, without forcing the GPU Area Map to re-render every mouse-move).
+    void MarkBackgroundDirty() { m_backgroundDirty = true; }
+
     // Route an SDL event through the panel stack (top-down by z-order).
     // Returns true if a panel consumed the event.
     bool RouteEvent(SDL_Event& event);
@@ -83,15 +88,16 @@ public:
     // Tile the wallpaper across a surface (public for status dialog background)
     void RenderWallpaper(SDL_Surface* windowSurface);
 
+    // Bring a panel to front (reassign z-orders to keep them bounded). Public so a
+    // window can raise itself programmatically on open, not only via a click.
+    void BringToFront(SDL2Panel* panel);
+
 private:
 
     bool RouteEventInner(SDL_Event& event);
 
     // Sort panels by z-order (called when panels are added/removed)
     void SortPanels();
-
-    // Bring a panel to front (reassign z-orders to keep them bounded)
-    void BringToFront(SDL2Panel* panel);
 
     GameWindow*  m_window;
     SDL_Surface* m_wallpaper;       // Tiled wallpaper source (not owned)

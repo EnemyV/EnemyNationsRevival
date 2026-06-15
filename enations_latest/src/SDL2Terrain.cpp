@@ -949,14 +949,9 @@ static void AppendHatchBands( const CPoint pts[4], SDL_Color col, int phase,
         { (float)pts[2].x, (float)pts[2].y }, { (float)pts[3].x, (float)pts[3].y } };
     const int band = 4;
 
-    for ( int yb = ( yTop / band ) * band; yb < yBot; yb += band )
-    {
-        if ( ( ( yb + phase ) & band ) != 0 )   // "off" band → skip (matches (y+iFrame)&0x04)
-            continue;
-        float y0 = (float)__max( yb, yTop );
-        float y1 = (float)__min( yb + band, yBot );
-        if ( y1 <= y0 ) continue;
-
+    // Emit the diamond clipped to the horizontal slab [y0,y1] (fan-triangulated).
+    auto emitSlab = [&]( float y0, float y1 ) {
+        if ( y1 <= y0 ) return;
         SDL_FPoint poly[8];
         int np = ClipQuadToSlab( quad, 4, y0, y1, poly );
         for ( int i = 1; i + 1 < np; ++i )      // fan-triangulate the convex slice
@@ -967,7 +962,27 @@ static void AppendHatchBands( const CPoint pts[4], SDL_Color col, int phase,
             c.position = poly[i + 1]; c.tex_coord = { 0, 0 }; c.color = col;
             verts.push_back( a ); verts.push_back( b ); verts.push_back( c );
         }
+    };
+
+    bool any = false;
+    for ( int yb = ( yTop / band ) * band; yb < yBot; yb += band )
+    {
+        if ( ( ( yb + phase ) & band ) != 0 )   // "off" band → skip (matches (y+iFrame)&0x04)
+            continue;
+        float y0 = (float)__max( yb, yTop );
+        float y1 = (float)__min( yb + band, yBot );
+        if ( y1 <= y0 ) continue;
+        emitSlab( y0, y1 );
+        any = true;
     }
+
+    // VISIBILITY GUARANTEE: a hex shorter than the 4px stripe — or one whose single band
+    // lands on the "off" parity (which shifts with altitude/pan/zoom) — would otherwise
+    // emit NOTHING and the cursor would silently vanish on that hex (the "disappears over
+    // water / on hills / when zoomed out" bug). If the parity walk produced no band, draw
+    // one guaranteed slab so every cursor hex always shows. Big hexes are unaffected.
+    if ( !any )
+        emitSlab( (float)yTop, (float)__min( yTop + band, yBot ) );
 }
 
 // Draw the build/rocket placement footprint LIVE, every frame, in window space —
@@ -984,10 +999,61 @@ static void DrawBuildCursorOverlay( SDL_Renderer* r, const CAnimAtr& aa )
     if ( !theMap.GetBldgCurRect( hexUL, cx, cy ) )
         return;
 
-    const int               phase = (int)theGame.GetFrame( );   // advances every frame → bands scroll
+    // Hatch animation phase — the original formula (sprite.cpp): advance one step per
+    // game frame so the stripe parity flips every 4 frames. (An earlier attempt to slow
+    // this down backfired: a slower phase lengthens the "off" parity window, so a small
+    // or off-aligned hex stays INVISIBLE for longer instead of blinking imperceptibly.
+    // AppendHatchBands now guarantees a visible band regardless of parity, so speed and
+    // visibility are independent again.)
+    const int               phase = (int)theGame.GetFrame( );
     std::vector<SDL_Vertex> verts;
 
-    auto addHex = [&]( CHex* phex, CHexCoord hc ) {
+    // --- TORUS-SEAM wrap correction --------------------------------------------------
+    // The footprint can straddle the map's wrap seam (the SW-NE line where the world
+    // repeats). Two failure modes, both fixed here:
+    //   (1) projecting a hex's CANONICAL (wrapped) coord throws a seam-crossing hex a full
+    //       world-width away -> off-screen -> the hatch is cut along the seam. FIX: project
+    //       the UN-wrapped coord (hcProj below). GetWorldHex extends LINEARLY for out-of-
+    //       range coords (see BuildMapUnderlay's CHexCoord(eX,0) wrap-period probe), so a
+    //       seam-crossing footprint stays contiguous.
+    //   (2) when the mouse is over a hex shown via the wrapped (torus-tiled) copy, the
+    //       anchor's OWN canonical projection is a full map off-screen and the whole
+    //       footprint vanishes. FIX: if the anchor projects well outside the window, shift
+    //       the entire footprint by an integer number of world-wrap PERIODS onto the
+    //       visible copy. Away from the seam the anchor is on-screen -> shift == 0 ->
+    //       behaviour is byte-identical to before.
+    const CSize wsz = aa.m_dibwnd.GetWinSize( );
+    CPoint shift( 0, 0 );
+    {
+        CPoint pa[4]; aa.MapToWindowHex( hexUL, pa );
+        bool anchorOff = pa[0].x < -wsz.cx || pa[0].x > 2 * wsz.cx ||
+                         pa[0].y < -wsz.cy || pa[0].y > 2 * wsz.cy;
+        if ( anchorOff )
+        {
+            CPoint p0[4], pX[4], pY[4];
+            aa.MapToWindowHex( CHexCoord( 0, 0 ),                p0 );
+            aa.MapToWindowHex( CHexCoord( theMap.Get_eX( ), 0 ), pX );  // one full X-wrap (extends linearly)
+            aa.MapToWindowHex( CHexCoord( 0, theMap.Get_eY( ) ), pY );  // one full Y-wrap
+            double ex = pX[0].x - p0[0].x, ey = pX[0].y - p0[0].y;
+            double fx = pY[0].x - p0[0].x, fy = pY[0].y - p0[0].y;
+            double det = ex * fy - ey * fx;
+            if ( det > 1e-6 || det < -1e-6 )
+            {
+                double dx = wsz.cx * 0.5 - pa[0].x;
+                double dy = wsz.cy * 0.5 - pa[0].y;
+                double a  = ( dx * fy - dy * fx ) / det;     // periods to shift in X / Y
+                double b  = ( ex * dy - ey * dx ) / det;
+                long   ai = (long)( a >= 0 ? a + 0.5 : a - 0.5 );
+                long   bi = (long)( b >= 0 ? b + 0.5 : b - 0.5 );
+                shift.x = (int)( ai * ex + bi * fx );
+                shift.y = (int)( ai * ey + bi * fy );
+            }
+        }
+    }
+
+    // `hcProj` is the PROJECTION coord (NOT torus-wrapped, per the note above); `phex`
+    // (the wrapped hex) supplies the terrain data / cursor mode.
+    auto addHex = [&]( CHex* phex, CHexCoord hcProj ) {
         if ( !phex ) return;
         int cm = phex->GetCursorMode( );
         if ( cm == CHex::no_cur ) return;
@@ -1003,18 +1069,32 @@ static void DrawBuildCursorOverlay( SDL_Renderer* r, const CAnimAtr& aa )
             default:                  col = { 255, 255, 255, 215 }; break;
         }
         CPoint pts[4];
-        if ( !aa.MapToWindowHex( hc, pts ) ) return;
+        // Project the UN-wrapped coord, then apply the seam shift. Corners are used
+        // unconditionally — MapToWindowHex's RETURN is only a front/back-FACING test
+        // (false on steep hexes); the 4 corners are valid and AppendHatchBands clips any order.
+        aa.MapToWindowHex( hcProj, pts );
+        for ( int k = 0; k < 4; ++k ) { pts[k].x += shift.x; pts[k].y += shift.y; }
         AppendHatchBands( pts, col, phase, verts );
     };
 
     for ( int j = 0; j < cy; ++j )
         for ( int i = 0; i < cx; ++i )
         {
-            CHexCoord hc( hexUL.X( ) + i, hexUL.Y( ) + j ); hc.Wrap( );
-            addHex( theMap.GetHex( hc ), hc );
+            CHexCoord hcProj( hexUL.X( ) + i, hexUL.Y( ) + j );   // un-wrapped: seam-continuous projection
+            CHexCoord hcData = hcProj; hcData.Wrap( );            // wrapped: terrain-data lookup
+            addHex( theMap.GetHex( hcData ), hcProj );
         }
-    if ( theMap.m_pLandExit ) addHex( theMap.m_pLandExit, theMap.m_pLandExit->GetHex( ) );
-    if ( theMap.m_pShipExit ) addHex( theMap.m_pShipExit, theMap.m_pShipExit->GetHex( ) );
+    // Exits (the dark entrance tile) must also project from a footprint-contiguous,
+    // UN-wrapped coord, or they drop at the seam just like the footprint did. CHexCoord::Diff
+    // gives the shortest signed delta across the wrap, so hexUL + delta is the exit's
+    // un-wrapped position next to the building.
+    auto exitProj = [&]( CHex* pExit ) -> CHexCoord {
+        CHexCoord ec = pExit->GetHex( );
+        return CHexCoord( hexUL.X( ) + CHexCoord::Diff( ec.X( ) - hexUL.X( ) ),
+                          hexUL.Y( ) + CHexCoord::Diff( ec.Y( ) - hexUL.Y( ) ) );
+    };
+    if ( theMap.m_pLandExit ) addHex( theMap.m_pLandExit, exitProj( theMap.m_pLandExit ) );
+    if ( theMap.m_pShipExit ) addHex( theMap.m_pShipExit, exitProj( theMap.m_pShipExit ) );
 
     if ( verts.empty( ) )
         return;
@@ -2675,6 +2755,19 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
         // would re-bake their stale (pre-edit) tiles from the cache.
         for ( unsigned packed : edited )
             TileMemoInvalidate( (int)( packed >> 16 ), (int)( packed & 0xFFFF ) );
+        // Torus-seam wrap periods (texture px). An edited hex on the WRAPPED side of the
+        // seam projects (canonically) a full map-width off the cached texture, so its stamp
+        // was skipped below and the edit (road preview / new foundation) never appeared until
+        // a full rebuild. Below: if the canonical stamp lands off-texture, shift it by ±1
+        // wrap period to find the copy that lies on s_rt.
+        CPoint cs0[4], csX[4], csY[4];
+        aa.MapToContentHex( CHexCoord( 0, 0 ),                cs0 );
+        aa.MapToContentHex( CHexCoord( theMap.Get_eX( ), 0 ), csX );
+        aa.MapToContentHex( CHexCoord( 0, theMap.Get_eY( ) ), csY );
+        const int perXx = ( csX[0].x >> zoom ) - ( cs0[0].x >> zoom );
+        const int perXy = ( csX[0].y >> zoom ) - ( cs0[0].y >> zoom );
+        const int perYx = ( csY[0].x >> zoom ) - ( cs0[0].x >> zoom );
+        const int perYy = ( csY[0].y >> zoom ) - ( cs0[0].y >> zoom );
         for ( unsigned packed : edited )
         {
             CHexCoord hc( (int)( packed >> 16 ), (int)( packed & 0xFFFF ) );
@@ -2696,7 +2789,27 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
                 mnx = __min( mnx, pts[i].x ); mxx = __max( mxx, pts[i].x );
                 mny = __min( mny, pts[i].y ); mxy = __max( mxy, pts[i].y );
             }
-            if ( mxx < 0 || mnx > rtW || mxy < 0 || mny > rtH ) continue;   // off-texture
+            if ( mxx < 0 || mnx > rtW || mxy < 0 || mny > rtH )
+            {
+                // Canonical stamp is off the cached texture — try the ±1 wrap copies so an
+                // edit on the wrapped side of the seam still patches in (s_rt is ~one
+                // viewport, so at most one period crosses it).
+                bool placed = false;
+                for ( int b = -1; b <= 1 && !placed; ++b )
+                  for ( int a = -1; a <= 1 && !placed; ++a )
+                  {
+                      if ( a == 0 && b == 0 ) continue;
+                      int sx = a * perXx + b * perYx, sy = a * perXy + b * perYy;
+                      int qmnx = INT_MAX, qmny = INT_MAX, qmxx = INT_MIN, qmxy = INT_MIN;
+                      for ( int i = 0; i < 4; ++i )
+                      { int X = pts[i].x + sx, Y = pts[i].y + sy;
+                        qmnx = __min( qmnx, X ); qmxx = __max( qmxx, X );
+                        qmny = __min( qmny, Y ); qmxy = __max( qmxy, Y ); }
+                      if ( !( qmxx < 0 || qmnx > rtW || qmxy < 0 || qmny > rtH ) )
+                      { for ( int i = 0; i < 4; ++i ) { pts[i].x += sx; pts[i].y += sy; } placed = true; }
+                  }
+                if ( !placed ) continue;   // genuinely off-texture
+            }
             // Road tiles flagged drawVert sample the diamond TRANSPOSED (U/V swapped) for
             // vertical-seam continuity — the full-rebuild base pass does this. The patch
             // previously always used the upright UVs, so a freshly built road (especially

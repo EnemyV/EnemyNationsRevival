@@ -684,12 +684,24 @@ CSpriteDIB::DecodeToRGBA( unsigned *pDst ) const {
     int const *piRowStartOffsets = 2 + (int const *) pbyData;
     BYTE const *pbyPixels = (BYTE const *) (piRowStartOffsets + H);
 
+    // Bound every read to the decompressed block. A malformed / truncated RLE
+    // stream (or a bad row offset) otherwise walks pbySrc past the buffer and
+    // faults — the intermittent structure/tree sprite-decode crash. On overrun
+    // we stop decoding (a partial tile beats an access violation).
+    BYTE const *pbyEnd = pbyData + Length();
+
     for (int y = 0; y < H; ++y) {
+        // the row-offset int itself must be readable
+        if ( (BYTE const *) ( piRowStartOffsets + y ) + sizeof(int) > pbyEnd )
+            break;
         BYTE const *pbySrc = pbyPixels + piRowStartOffsets[y];
         unsigned *pRow = pDst + (size_t) y * W;
         int iBytesX = 0;            // sprite-local x, in bytes
 
         for (;;) {
+            // need two ints (skip-run + data-len) within the buffer
+            if (pbySrc < pbyData || pbySrc + 2 * (int) sizeof(int) > pbyEnd)
+                break;
             iBytesX += *(int *) pbySrc;     // skip (transparent) run
             pbySrc += sizeof(int);
 
@@ -698,6 +710,8 @@ CSpriteDIB::DecodeToRGBA( unsigned *pDst ) const {
 
             if (0 == nDataBytes)
                 break;
+            if (nDataBytes < 0 || pbySrc + nDataBytes > pbyEnd)
+                break;                      // run extends past the buffer
 
             int nPix = nDataBytes / bpp;
             int x0 = iBytesX / bpp;

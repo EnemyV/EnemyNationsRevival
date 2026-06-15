@@ -22,6 +22,11 @@ void SDL2SaveDialog::OnInit() {
         [this]() { EndDialog(0); });
 }
 
+void SDL2SaveDialog::OnOK() {
+    // Enter confirms the save, exactly like clicking the Save button.
+    OnSave();
+}
+
 void SDL2SaveDialog::OnSave() {
     if (m_editName) {
         m_filename = m_editName->GetText();

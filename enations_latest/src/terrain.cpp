@@ -1602,30 +1602,19 @@ BOOL CVehicleDrawInfo::operator<( const CTileDrawInfo& tiledrawinfo ) const
     {
     case bridge:
 
-        // If the vehicle is under the bridge, return TRUE.
-        // If it's on the bridge,
-        // 	return FALSE if bridge back layer,
-        // 	return TRUE if bridge front layer.
-        // Otherwise, do default comparison
+        // Simple, robust rule matching the original game's intent:
+        //   a BOAT passes UNDER the deck → the bridge always draws over it;
+        //   a LAND vehicle crosses ON the deck → it always draws over the bridge.
+        // Keyed off the WHEEL TYPE — not the transient IsOnWater() flag (which could be
+        // momentarily false under a span, so the boat flashed over the road) and not an
+        // exact hex match (a vehicle whose center mapped to an adjacent deck hex fell
+        // through to the plain Y-sort, so the boat drew over / the crane drew under).
         {
-            CVehicle*    pvehicle = (CVehicle*)GetTile( );
-            CBridgeUnit* pbridge  = (CBridgeUnit*)tiledrawinfo.GetTile( );
-
-            CHexCoord hexcoordVehicle = GetMapLoc( );
-            CHexCoord hexcoordBridge  = pbridge->GetHex( );
-
-            if ( hexcoordVehicle == hexcoordBridge )
-            {
-                CVehicle* pvehicle = (CVehicle*)GetTile( );
-
-                if ( !pvehicle->IsOnWater( ) )
-                    return CStructureSprite::FOREGROUND_LAYER == ( (CStructureDrawInfo*)&tiledrawinfo )->GetLayer( );
-                else
-                    return TRUE;
-            }
+            CVehicle* pvehicle = (CVehicle*)GetTile( );
+            if ( pvehicle->GetData( )->GetWheelType( ) == CWheelTypes::water )
+                return ( TRUE );    // boat → behind the bridge (deck renders on top)
+            return ( FALSE );       // land vehicle → in front of the bridge (on top of the deck)
         }
-
-        break;
 
     case explosion:
 
@@ -3184,7 +3173,14 @@ int CGameMap::_GetTerrainCost( CHex const* pHex, CHex const* pHexDest, int iDir,
     if ( pHexDest->GetUnits( ) & CHex::bldg )
         iTyp = CHex::city;
     else if ( pHexDest->GetUnits( ) & CHex::bridge )
-        iTyp = CHex::road;
+    {
+        // boats pass UNDER a bridge: a water vehicle is costed by the terrain beneath
+        // the deck (river/lake/ocean/coastline → navigable via the cases below; land →
+        // 0/impassable, correctly — no boating onto a bridge abutment). Note coastline
+        // matters here: a bridge at a river mouth spans coastline, which IsWater()
+        // excludes. Land units travel the deck itself (road).
+        iTyp = ( iWheel == CWheelTypes::water ) ? pHexDest->GetType( ) : CHex::road;
+    }
     else
         iTyp = pHexDest->GetType( );
 
@@ -3200,7 +3196,20 @@ int CGameMap::_GetTerrainCost( CHex const* pHex, CHex const* pHexDest, int iDir,
             if ( ( pBldg != NULL ) && ( pBldg->GetData( )->HasShipExit( ) ) )
                 return ( 1 );
         }
-        return ( 0 );
+        // small boats (gunboat / landing craft — CanTravelHex already filters which
+        // boats reach here) can navigate rivers and cross coastline shores, but the
+        // terrain data gives both a 0 water-mult, which the pathfinder treats as
+        // impassable. Borrow the open-water mult so rivers are pathable; the altitude
+        // term below makes steep (sloped) stretches costlier but still passable.
+        if ( ( iWheel == CWheelTypes::water ) && ( iTyp == CHex::river ) )
+            iRtn = theTerrain.GetData( CHex::ocean ).GetWheelMult( iWheel );
+        // coastline is passable but DEAR for boats: keep it open so they can reach
+        // rivers/lakes through their mouths, but make it ~8x open water so they prefer
+        // deep water and stop skimming/hugging the shore the whole way.
+        else if ( ( iWheel == CWheelTypes::water ) && ( iTyp == CHex::coastline ) )
+            iRtn = theTerrain.GetData( CHex::ocean ).GetWheelMult( iWheel ) * 8;
+        if ( iRtn == 0 )
+            return ( 0 );
     }
 
     // take diaganol into account
@@ -3791,7 +3800,10 @@ void CGameMap::DiscoverSpritesGpu( CAnimAtr& aa, const CRect& rect )
             CVehicle* pvehicle;
             theVehicleMap.GetNextAssoc( pos, dwID, pvehicle );
 
-            if ( pvehicle == NULL || !pvehicle->IsVisible( ) || pvehicle->IsInBuilding( ) )
+            // GetTransport() != NULL: the vehicle is loaded inside a carrier (cargo
+            // ship / landing craft / troop transport) — hide it, like the original.
+            if ( pvehicle == NULL || !pvehicle->IsVisible( ) || pvehicle->IsInBuilding( ) ||
+                 pvehicle->GetTransport( ) != NULL )
                 continue;
 
             CHexCoord hexVeh( pvehicle->GetHexHead( ) );  // wrapped map hex
@@ -4361,7 +4373,7 @@ void CGameMap::UpdateRect( CAnimAtr& aa, CRect rect, CDrawParms::UPDATE_MODE eMo
                         {
                             pvehicle = theVehicleHex.GetVehicle( subhex );
 
-                            if ( pvehicle && pvehicle->IsVisible( ) && !pvehicle->IsInBuilding( ) )
+                            if ( pvehicle && pvehicle->IsVisible( ) && !pvehicle->IsInBuilding( ) && pvehicle->GetTransport( ) == NULL )
                                 if ( bDraw )
                                     tiledraw.AddTile( drawinfopool.GetVehicleDrawInfo( pvehicle, hexcoord ) );
                                 else
@@ -4374,7 +4386,7 @@ void CGameMap::UpdateRect( CAnimAtr& aa, CRect rect, CDrawParms::UPDATE_MODE eMo
                         {
                             pvehicle = theVehicleHex.GetVehicle( subhex );
 
-                            if ( pvehicle && pvehicle->IsVisible( ) && !pvehicle->IsInBuilding( ) )
+                            if ( pvehicle && pvehicle->IsVisible( ) && !pvehicle->IsInBuilding( ) && pvehicle->GetTransport( ) == NULL )
                                 if ( bDraw )
                                     tiledraw.AddTile( drawinfopool.GetVehicleDrawInfo( pvehicle, hexcoord ) );
                                 else
@@ -4387,7 +4399,7 @@ void CGameMap::UpdateRect( CAnimAtr& aa, CRect rect, CDrawParms::UPDATE_MODE eMo
                         {
                             pvehicle = theVehicleHex.GetVehicle( subhex );
 
-                            if ( pvehicle && pvehicle->IsVisible( ) && !pvehicle->IsInBuilding( ) )
+                            if ( pvehicle && pvehicle->IsVisible( ) && !pvehicle->IsInBuilding( ) && pvehicle->GetTransport( ) == NULL )
                                 if ( bDraw )
                                     tiledraw.AddTile( drawinfopool.GetVehicleDrawInfo( pvehicle, hexcoord ) );
                                 else
@@ -4400,7 +4412,7 @@ void CGameMap::UpdateRect( CAnimAtr& aa, CRect rect, CDrawParms::UPDATE_MODE eMo
                         {
                             pvehicle = theVehicleHex.GetVehicle( subhex );
 
-                            if ( pvehicle && pvehicle->IsVisible( ) && !pvehicle->IsInBuilding( ) )
+                            if ( pvehicle && pvehicle->IsVisible( ) && !pvehicle->IsInBuilding( ) && pvehicle->GetTransport( ) == NULL )
                                 if ( bDraw )
                                     tiledraw.AddTile( drawinfopool.GetVehicleDrawInfo( pvehicle, hexcoord ) );
                                 else

@@ -182,6 +182,18 @@ void SDL2BuildTransport::OnInit() {
         [this]() { OnCancel(); });
     if (m_okBtnSheet) btnCancel->SetBtnSheet(m_okBtnSheet);
 
+    // --- Info (i) button ---------------------------------------------------
+    // Top-right of the CLIENT area, just under the title bar. (It can't live in the
+    // title bar itself — that strip is the window-drag region and swallows clicks.)
+    // Opens the same read-only status window the other buildings use — inputs + the
+    // weapon widget for this factory — and asks it to float ON TOP of this dialog
+    // (which otherwise bumps itself to front each frame). Double-click here is taken
+    // by this build interface, so the (I) is the only path to it.
+    auto* btnInfo = AddWidget<SDL2Button>(ox + 380 - 25, oy + 2, 22, 22, "",
+        [this]() { if (m_pBldg) m_pBldg->ShowInfoWindow( true ); });
+    if (SDL_Surface* g = MakeInfoGlyph(22))
+        btnInfo->SetIcon(g, { 0, 0, g->w, g->h });
+
     // --- Quantity control --------------------------------------------------
     // MFC: editable number field (282,295,40,22) + a vertical up/down spinner
     // (msctls_updown32, 307,295,15,22) sitting on its right edge. We restore the
@@ -314,6 +326,47 @@ SDL_Surface* SDL2BuildTransport::MakeArrow(int w, int h, bool up) {
             if (x >= 0 && x < w && y >= 0 && y < h)
                 px[y * pitch + x] = blue;
     }
+    SDL_UnlockSurface(s);
+    return s;
+}
+
+// A small circled-"i": a gold disc with a darker rim and a blue "i" (dot + stem),
+// tying the info button to the blue section headers of the status window it opens.
+SDL_Surface* SDL2BuildTransport::MakeInfoGlyph(int d) {
+    SDL_Surface* s = SDL_CreateRGBSurfaceWithFormat(0, d, d, 32, SDL_PIXELFORMAT_RGBA32);
+    if (!s) return nullptr;
+    SDL_FillRect(s, nullptr, SDL_MapRGBA(s->format, 0, 0, 0, 0));
+    SDL_LockSurface(s);
+    Uint32* px = (Uint32*)s->pixels;
+    int pitch = s->pitch / 4;
+    const Uint32 gold   = SDL_MapRGBA(s->format, 214, 184, 112, 255);
+    const Uint32 border = SDL_MapRGBA(s->format,  70,  54,  28, 255);
+    const Uint32 blue   = SDL_MapRGBA(s->format,  40,  60, 150, 255);
+
+    float cx = (d - 1) / 2.0f, cy = (d - 1) / 2.0f;
+    float r  = d / 2.0f - 0.5f;
+    float r2 = r * r;
+    float inner = r - 1.4f; float inner2 = ( inner > 0 ) ? inner * inner : 0;
+    for (int y = 0; y < d; y++)
+        for (int x = 0; x < d; x++) {
+            float dx = x - cx, dy = y - cy;
+            float dd = dx * dx + dy * dy;
+            if (dd > r2) continue;
+            px[y * pitch + x] = ( dd > inner2 ) ? border : gold;
+        }
+
+    // the "i": a dot near the top and a stem below, both blue, centred.
+    int icx  = d / 2;
+    int dotT = (int)(d * 0.26f), dotB = dotT + ( ( d / 8 > 1 ) ? d / 8 : 1 );
+    int stemT = (int)(d * 0.44f), stemB = (int)(d * 0.74f);
+    auto vbar = [&](int y0, int y1) {
+        for (int yy = y0; yy <= y1; yy++)
+            for (int xx = icx - 1; xx <= icx; xx++)
+                if (xx >= 0 && xx < d && yy >= 0 && yy < d) px[yy * pitch + xx] = blue;
+    };
+    vbar(dotT, dotB);
+    vbar(stemT, stemB);
+
     SDL_UnlockSurface(s);
     return s;
 }

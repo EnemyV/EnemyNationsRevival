@@ -125,6 +125,9 @@ private:
     void OnAuto();        // Hand back to auto-router
     void OnOK();
     void OnCancel();
+    // Slider drag handler: clamp this slider so the COMBINED load across all six
+    // materials never exceeds the vehicle's cargo capacity (GetMaxMaterials).
+    void OnSliderChanged(int idx, int val);
     void RefreshTotals();
     // Re-derive m_pBldg from the (still-alive) vehicle's hex. Called at the top of
     // each action handler so a cached building pointer can't dangle if the building
@@ -212,17 +215,26 @@ private:
     SDL_Surface* m_matIcons = nullptr;  // ICON_MATERIALS strip (one icon per material type)
     int m_matIconW = 0;                 // width of each material icon in the strip
     int m_matIconH = 0;                 // height of each material icon
+    SDL_Surface* m_vehIcons = nullptr;  // DIB_LIST_UNIT_VEHICLES strip (vertical, one 64px tile per vehType)
+    int m_vehTileW = 0;                 // tile width in the vehicle strip (= sheet width)
+    int m_vehTileH = 0;                 // tile height in the vehicle strip (64)
     bool m_artLoaded = false;
     void LoadArt();
 
     struct TextLine {
         std::string text;
         bool red;
-        int matIdx = -1;  // material type index → draw ICON_MATERIALS icon before text; -1 = none
+        int matIdx = -1;   // material type index → draw ICON_MATERIALS icon before text; -1 = none
+        int vehIcon = -1;  // vehType → draw DIB_LIST_UNIT_VEHICLES icon before text; -1 = none
     };
     std::vector<TextLine> m_lines;
     static const int LINE_HT = 16;
+    // Contained-vehicle rows are taller so the unit icon is legible.
+    static const int VEH_ROW_HT = 30;
+    static const int VEH_ICON_SZ = 26;  // square box the vehicle icon is scaled into
     static const int PAD = 6;
+    // Height of a single content row (taller for vehicle-icon rows).
+    int LineHeight(const TextLine& l) const { return l.vehIcon >= 0 ? VEH_ROW_HT : LINE_HT; }
 };
 
 // ============================================================================

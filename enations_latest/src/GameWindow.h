@@ -264,6 +264,15 @@ public:
      */
     void UnregisterDialog(SDL2Dialog* dlg);
 
+    /**
+     * Close and delete every active non-modal dialog immediately.
+     * Called from CConquerApp::DestroyWorld so dialogs that point at per-game
+     * state (e.g. the Relations/diplomacy window) don't outlive the level —
+     * an orphaned dialog keeps rendering and bumping itself on top every frame,
+     * which looked "stuck on top" and dragged the framerate.
+     */
+    void CloseActiveDialogs();
+
 private:
 
     bool InitializeSDL();

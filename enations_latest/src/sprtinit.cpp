@@ -737,6 +737,7 @@ void CTransport::InitData() {
                 CTransportData::m_iMaxDraft = iDraft;
         }
 
+
         if (pTd->_GetSpottingRange() > CVehicle::m_iMaxRange)
             CVehicle::m_iMaxRange = pTd->_GetSpottingRange();
         if (pTd->_GetRange() > CVehicle::m_iMaxRange)

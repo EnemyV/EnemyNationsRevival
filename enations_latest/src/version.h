@@ -23,7 +23,11 @@ const char GameLogFile[] = "ENations.log";
 // discovered" field (CPlayer::m_iLastDiscovered). The save load check only rejects
 // on MAJOR/MINOR mismatch (CGame::Serialize), so release-2 saves still load — the
 // new field is read only when the loaded save's release is >= 3.
-#define         VER_RELEASE     3
+// Release bumped 3 -> 4 so saves can carry the per-player colony-stat HISTORY ring
+// buffers (population / housing / power over time) for the building-info windows'
+// graphs. Same rule: older saves still load; the history block is read only when the
+// loaded save's release is >= 4.
+#define         VER_RELEASE     4
 
 #define         VER_STRING                              "2.01.003"
 #define         RES_VER_STRING                          "2.01.003\0"

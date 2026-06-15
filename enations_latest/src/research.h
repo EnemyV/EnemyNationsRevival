@@ -129,6 +129,52 @@ public:
 					bridge_3,
 					bridge_4,
 					bridge_5,
+					// Cargo Handling line 2-4 (in-code, mirroring the bridge tiers): each
+					// doubles the previous tier's cost and adds +10% truck cargo capacity over
+					// the base cargo_handling research (see CPlayer::GetCargoPct). Named
+					// Servo-Loaders / Modular Cargo Pods / Grav-Assisted Hauling in research.cpp.
+					// Appended AFTER the bridge tiers so bridge_2 keeps its index
+					// (RDPATH_SAVE_COUNT==53).
+					cargo_handling_2,
+					cargo_handling_3,
+					cargo_handling_4,
+					// Fuel Efficiency 1-10 (in-code, unlocked after gas_turbine): a 10-level
+					// repeatable line, each level costing double the previous in points and
+					// cutting gas consumption by 5% of what remains (diminishing; see
+					// CPlayer::GetFuelPct). Named in research.cpp. Appended last so all the
+					// earlier indices (incl. bridge_2 / RDPATH_SAVE_COUNT==53) stay put.
+					fuel_efficiency_1,
+					fuel_efficiency_2,
+					fuel_efficiency_3,
+					fuel_efficiency_4,
+					fuel_efficiency_5,
+					fuel_efficiency_6,
+					fuel_efficiency_7,
+					fuel_efficiency_8,
+					fuel_efficiency_9,
+					fuel_efficiency_10,
+					// Pontoon Bridges (in-code): an EARLY, cheap bridge tech that unlocks
+					// bridge building at HALF the span of the full Bridges tech. Kept
+					// INDEPENDENT of (not a prereq of) the base bridge tech, so the AI's
+					// frozen research path can still reach full Bridges. See
+					// CPlayer::CanBridge / GetMaxSpan. Appended last to keep earlier
+					// indices (incl. bridge_2 / RDPATH_SAVE_COUNT==53) put.
+					bridge_short,
+					// Vehicle Speed 1-10 (in-code): a 10-level line that boosts vehicle
+					// movement +2% per level (see CPlayer::GetSpeedPct). Gated off the Fuel
+					// Efficiency line: level 1 needs the first two fuel-efficiency techs, and
+					// each later level needs the previous speed level plus the next fuel
+					// level. Appended last to keep earlier indices put.
+					vehicle_speed_1,
+					vehicle_speed_2,
+					vehicle_speed_3,
+					vehicle_speed_4,
+					vehicle_speed_5,
+					vehicle_speed_6,
+					vehicle_speed_7,
+					vehicle_speed_8,
+					vehicle_speed_9,
+					vehicle_speed_10,
 					num_types	};
 
 	CRsrchArray () {}

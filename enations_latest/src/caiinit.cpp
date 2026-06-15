@@ -682,7 +682,7 @@ void CAIInitPos::GetVehInitPosHex( int iVeh, CHexCoord& hexPlace )
     case CTransportData::med_scout:
         // hexPlace = m_hexRocket;
         // m_pMap->GetStagingHex( m_hexRocket, 3, 3, iVeh, hexPlace, FALSE );
-        m_pMap->GetStartHex( m_hexStart, m_hexEnd, hexPlace, iVeh );
+        m_pMap->GetStartHex( m_hexStart, m_hexEnd, hexPlace, iVeh, &m_hexRocket );
         break;
         // place a IDIP_JEEP adjacent to the IDIP_FARM location
         // place a IDIP_JEEP adjacent to the IDIP_LOGCAMP location
@@ -696,7 +696,7 @@ void CAIInitPos::GetVehInitPosHex( int iVeh, CHexCoord& hexPlace )
     case CTransportData::heavy_truck:   // VEHICLE_TRUCK:
         // hexPlace = m_hexRocket;
         // m_pMap->GetStagingHex( m_hexRocket, 2, 2, iVeh, hexPlace, FALSE );
-        m_pMap->GetStartHex( m_hexStart, m_hexEnd, hexPlace, iVeh );
+        m_pMap->GetStartHex( m_hexStart, m_hexEnd, hexPlace, iVeh, &m_hexRocket );
         break;
         // place 2 IDIP_TRUCK adjacent to each IDIP_FARM and IDIP_LOGCAMP
         // place remaining IDIP_TRUCK adjacent to IDIP_FOODPROC and
@@ -712,14 +712,14 @@ void CAIInitPos::GetVehInitPosHex( int iVeh, CHexCoord& hexPlace )
         // now ask map to do the work and find a place to stage
         // hexPlace = m_hexRocket;
         // m_pMap->GetStagingHex( m_hexRocket, 3, 3, iVeh, hexPlace, FALSE );
-        m_pMap->GetStartHex( m_hexStart, m_hexEnd, hexPlace, iVeh );
+        m_pMap->GetStartHex( m_hexStart, m_hexEnd, hexPlace, iVeh, &m_hexRocket );
         break;
     case CTransportData::infantry:
     case CTransportData::infantry_carrier:
     default:
         // hexPlace = m_hexRocket;
         // m_pMap->GetStagingHex( m_hexRocket, 2, 2, iVeh, hexPlace, FALSE );
-        m_pMap->GetStartHex( m_hexStart, m_hexEnd, hexPlace, iVeh );
+        m_pMap->GetStartHex( m_hexStart, m_hexEnd, hexPlace, iVeh, &m_hexRocket );
         break;
     }
 }

@@ -8,6 +8,7 @@
 #include "bmbutton.h"      // Must precede bitmaps.h (provides CBmBtnData)
 #include "bitmaps.h"       // For DIB_GOLD, theBitmaps
 #include "player.h"        // theGame.GetFrame() — water-animation re-render tick
+#include "terrain.h"       // theMap.HaveBldgCur() — keep the live build-cursor overlay animating
 #include "Perf.h"          // MEASURE: main-window composite cost
 
 #include <SDL.h>
@@ -326,8 +327,16 @@ void SDL2Compositor::Composite() {
         if (!p->IsVisible() || !p->IsDetached())
             continue;
         if (p->HasGpuTerrain()) {
-            // Gameplay view: re-render on content change OR a water wave-tick.
-            if (p->IsDirty() || waterChanged)
+            // Gameplay view: re-render on content change, a water wave-tick, OR while a
+            // build/rocket placement cursor is active. That cursor's striped hatch is a
+            // LIVE per-frame overlay (DrawBuildCursorOverlay) — if we stop re-rendering
+            // while the mouse is held still, it freezes on whatever animation phase the
+            // last frame happened to draw. For a small / zoomed-out footprint that phase
+            // can be an all-"off" band parity, so the cursor "disappears until you move
+            // the mouse" (and winks out as altitude/pan shift the footprint's screen Y).
+            // The 1996 game redrew the cursor area every frame; mirror that here. Cheap:
+            // a static view takes the cached-blit path, only the overlay is re-emitted.
+            if (p->IsDirty() || waterChanged || theMap.HaveBldgCur())
                 p->RenderDetached();
         } else if (p->IsDirty() && ( nowMs - p->GetLastRenderMs() ) >= 100) {
             // Secondary windows (World Map/radar, vehicle/building lists) don't need

@@ -129,9 +129,9 @@ public:
 		int iWidth, int iHeight );
 	void FlagStagingArea( BOOL bFlag,
 		int iSX, int iSY, int iEX, int iEY );
-	void FindStagingHex( int iSX, int iSY, 
-		int iEX, int iEY, CHexCoord& hexDest, int iVehType, 
-		BOOL bFindPath=FALSE );
+	void FindStagingHex( int iSX, int iSY,
+		int iEX, int iEY, CHexCoord& hexDest, int iVehType,
+		BOOL bFindPath=FALSE, CHexCoord* phexRocket=NULL );
 	void FindStagingHex( CHexCoord& hexNearBy, 
 		int iWidth, int iHeight, int iVehType, 
 		CHexCoord& hexDest, BOOL bExclude=TRUE );

@@ -41,6 +41,7 @@ SDL2RouteWindow::SDL2RouteWindow(GameWindow* gw, CVehicle* pVeh, SDL2Panel* area
     m_panel = comp->AddPanel("route", panelX, panelY, PANEL_W, PANEL_H, 35);
     if (m_panel) {
         m_panel->SetMovable(true);
+        m_panel->SetResizable(true);   // CWndRoute was resizable (WS_THICKFRAME, ui.h)
         m_panel->SetTitle("Vehicle Route");
         m_panel->SetVisible(false);
         m_panel->SetClosable(true);
@@ -51,38 +52,66 @@ SDL2RouteWindow::SDL2RouteWindow(GameWindow* gw, CVehicle* pVeh, SDL2Panel* area
                 return HandleEvent(event, lx, ly);
             });
 
-        // Stay composited inside the main game window as a movable panel
-        // (like the research / vehicle-list windows). Do NOT Detach() to a
-        // separate OS window — that produced the "double-wrapped" floating
-        // window the area/world maps used to have before their Detach() calls
-        // were removed.
+        // Re-flow buttons + list rows when the user resizes the window.
+        m_panel->SetResizeCallback([this](int, int) { Layout(); Render(); });
+
+        // When dragged, repaint the background the window vacated — otherwise the
+        // compositor's incremental redraw leaves a trail of the old positions (the
+        // "snaking cascade"). Marks only the background dirty (not detached panels).
+        m_panel->SetMoveCallback([this](int, int, int, int) {
+            if (m_gameWindow)
+                if (SDL2Compositor* c = m_gameWindow->GetCompositor())
+                    c->MarkBackgroundDirty();
+        });
+
+        // Give the route window its OWN top-level OS window (same mechanism the Area Map
+        // uses: SDL2Panel::Detach). A COMPOSITED panel lives inside the main game window and
+        // therefore renders BEHIND the detached Area Map / Radar OS windows — that's why it
+        // could never come to the front. Detached, it's its own always-raisable window.
+        // RenderDetached blits our m_surface into the own window; the old "double-wrapped
+        // frame" concern is handled in RenderBackground (we skip our own gold border when
+        // detached, since the detached chrome draws the title bar + frame).
+        m_panel->Detach( m_gameWindow );
         (void)areaPanel;
     }
 
-    // Create buttons
-    int btnW = 70, gap = 4;
-    int btnY1 = PANEL_H - BTN_H * 2 - gap * 3;
-    int btnY2 = PANEL_H - BTN_H - gap;
+    // Create buttons (label / enabled / onClick); their rects are positioned by Layout()
+    // so they re-flow on resize. Row 1 = Waypoint/Unload/Load, Row 2 = Goto/Delete/Start/Auto/Close.
+    bool isTransport = m_pVeh->GetData()->IsTransport() ? true : false;
+    SDL_Rect z = { 0, 0, 0, 0 };
+    m_buttons.push_back({ z, "Waypoint", true,        false, [this]() { OnWaypoint(); } });
+    m_buttons.push_back({ z, "Unload",   isTransport, false, [this]() { OnUnload();   } });
+    m_buttons.push_back({ z, "Load",     isTransport, false, [this]() { OnLoad();     } });
+    m_buttons.push_back({ z, "Goto",     false,       false, [this]() { OnGoto();     } });
+    m_buttons.push_back({ z, "Delete",   false,       false, [this]() { OnDelete();   } });
+    m_buttons.push_back({ z, "Start",    true,        false, [this]() { OnStart();    } });
+    m_buttons.push_back({ z, "Auto",     true,        false, [this]() { OnAuto();     } });
+    m_buttons.push_back({ z, "Close",    true,        false, [this]() { OnClose();    } });
+
+    Layout();
+}
+
+// (Re)position the two button rows and recompute how many list rows fit, for the CURRENT
+// panel size. Called once at construction and again from the resize callback.
+void SDL2RouteWindow::Layout() {
+    int w = m_panel ? m_panel->GetWidth()  : PANEL_W;
+    int h = m_panel ? m_panel->GetHeight() : PANEL_H;
+    const int gap = 4;
+    int btnY1 = h - BTN_H * 2 - gap * 3;
+    int btnY2 = h - BTN_H - gap;
     int startX = LIST_MARGIN;
 
-    bool isTransport = m_pVeh->GetData()->IsTransport() ? true : false;
+    const int btnW1 = 70;   // row 1: 3 wide buttons
+    for (int i = 0; i < 3 && i < (int)m_buttons.size(); ++i)
+        m_buttons[i].rect = { startX + i * (btnW1 + gap), btnY1, btnW1, BTN_H };
 
-    // Row 1: Waypoint, Unload, Load
-    m_buttons.push_back({{startX, btnY1, btnW, BTN_H}, "Waypoint", true, false, [this]() { OnWaypoint(); }});
-    m_buttons.push_back({{startX + btnW + gap, btnY1, btnW, BTN_H}, "Unload",
-                         isTransport, false, [this]() { OnUnload(); }});
-    m_buttons.push_back({{startX + 2*(btnW+gap), btnY1, btnW, BTN_H}, "Load",
-                         isTransport, false, [this]() { OnLoad(); }});
-
-    // Row 2: Goto, Delete, Start, Auto, Close
-    btnW = 52;
-    m_buttons.push_back({{startX, btnY2, btnW, BTN_H}, "Goto", false, false, [this]() { OnGoto(); }});
-    m_buttons.push_back({{startX + (btnW+gap), btnY2, btnW, BTN_H}, "Delete", false, false, [this]() { OnDelete(); }});
-    m_buttons.push_back({{startX + 2*(btnW+gap), btnY2, btnW, BTN_H}, "Start", true, false, [this]() { OnStart(); }});
-    m_buttons.push_back({{startX + 3*(btnW+gap), btnY2, btnW, BTN_H}, "Auto", true, false, [this]() { OnAuto(); }});
-    m_buttons.push_back({{startX + 4*(btnW+gap), btnY2, btnW, BTN_H}, "Close", true, false, [this]() { OnClose(); }});
+    const int btnW2 = 52;   // row 2: 5 narrower buttons
+    for (int i = 3; i < 8 && i < (int)m_buttons.size(); ++i)
+        m_buttons[i].rect = { startX + (i - 3) * (btnW2 + gap), btnY2, btnW2, BTN_H };
 
     m_visibleRows = (btnY1 - gap - LIST_Y) / ROW_H;
+    if (m_visibleRows < 1) m_visibleRows = 1;
+    (void)w;
 }
 
 SDL2RouteWindow::~SDL2RouteWindow() {
@@ -126,8 +155,11 @@ void SDL2RouteWindow::RenderBackground(SDL_Surface* dst) {
         SDL_FillRect(dst, nullptr, SDL_MapRGB(dst->format, 160, 140, 90));
     }
 
-    // Carved-gold frame (shared corner-correct routine — fills the corners).
-    SDL2MainMenu::DrawGoldBorder(dst, 0, 0, w, h, m_borderH, m_borderV);
+    // Carved-gold frame (shared corner-correct routine — fills the corners). Skipped when
+    // detached: SDL2Panel::RenderDetached already draws the title bar + carved-gold frame
+    // around the whole OS window, so drawing our own here would double-wrap it.
+    if ( !( m_panel && m_panel->IsDetached() ) )
+        SDL2MainMenu::DrawGoldBorder(dst, 0, 0, w, h, m_borderH, m_borderV);
 }
 
 TTF_Font* SDL2RouteWindow::GetFont(int size) {
@@ -141,6 +173,12 @@ void SDL2RouteWindow::Show() {
         std::string sTitle = strPrintf(EnLoadStdString(IDS_ROUTE_TITLE).c_str(),
                                        m_pVeh->GetData()->GetDesc().c_str());
         m_panel->SetTitle(sTitle);
+        // Raise above the other composited panels on open — the compositor only
+        // brings a panel to front on a click, so a freshly shown window would
+        // otherwise keep its add-order z and could sit behind another panel.
+        SDL2Compositor* comp = m_gameWindow ? m_gameWindow->GetCompositor() : nullptr;
+        if (comp)
+            comp->BringToFront(m_panel);
     }
     RebuildList();
     Render();
@@ -243,6 +281,31 @@ void SDL2RouteWindow::Render() {
     int insetX = brdV + 4;
     int insetW = surf->w - insetX * 2;
 
+    // F1: "Loop" checkbox in the top margin (above the list). Checked = the route loops
+    // (legacy behaviour); unchecked = one-shot (stop at the last stop).
+    {
+        const int cbSz = 13, cbY = 5;
+        m_loopRect = { insetX, cbY, cbSz, cbSz };
+        SDL_FillRect(surf, &m_loopRect, SDL_MapRGB(surf->format, 30, 25, 18));
+        Uint32 dk = SDL_MapRGB(surf->format, 60, 50, 35);
+        Uint32 lt = SDL_MapRGB(surf->format, 190, 170, 120);
+        SDL_Rect e;
+        e = { m_loopRect.x, m_loopRect.y, cbSz, 1 };               SDL_FillRect(surf, &e, dk);
+        e = { m_loopRect.x, m_loopRect.y, 1, cbSz };               SDL_FillRect(surf, &e, dk);
+        e = { m_loopRect.x, m_loopRect.y + cbSz - 1, cbSz, 1 };    SDL_FillRect(surf, &e, lt);
+        e = { m_loopRect.x + cbSz - 1, m_loopRect.y, 1, cbSz };    SDL_FillRect(surf, &e, lt);
+        if (m_pVeh && m_pVeh->GetRouteLoop()) {
+            SDL_Rect chk = { m_loopRect.x + 3, m_loopRect.y + 3, cbSz - 6, cbSz - 6 };
+            SDL_FillRect(surf, &chk, SDL_MapRGB(surf->format, 255, 220, 100));
+        }
+        SDL_Surface* lbl = TTF_RenderText_Blended(font, "Loop", SDL_Color{ 220, 210, 180, 255 });
+        if (lbl) {
+            SDL_Rect d = { insetX + cbSz + 5, cbY - 1, 0, 0 };
+            SDL_BlitSurface(lbl, NULL, surf, &d);
+            SDL_FreeSurface(lbl);
+        }
+    }
+
     // List area — dark inset panel for the route list
     int listX = insetX;
     int listW = insetW;
@@ -259,8 +322,16 @@ void SDL2RouteWindow::Render() {
     bdr = {listX, LIST_Y + listH - 1, listW, 1}; SDL_FillRect(surf, &bdr, lightBrd);
     bdr = {listX + listW - 1, LIST_Y, 1, listH}; SDL_FillRect(surf, &bdr, lightBrd);
 
+    // Capture geometry for hit-testing (the inset is border-art-relative, not LIST_MARGIN)
+    // and clamp the scroll offset to the current contents.
+    m_listRect = { listX, LIST_Y, listW, listH };
+    int entryCount = (int)m_entries.size();
+    int maxScroll  = (entryCount > m_visibleRows) ? (entryCount - m_visibleRows) : 0;
+    if (m_scrollOffset > maxScroll) m_scrollOffset = maxScroll;
+    if (m_scrollOffset < 0)         m_scrollOffset = 0;
+
     // Draw entries
-    for (int i = 0; i < m_visibleRows && (i + m_scrollOffset) < (int)m_entries.size(); i++) {
+    for (int i = 0; i < m_visibleRows && (i + m_scrollOffset) < entryCount; i++) {
         int idx = i + m_scrollOffset;
         const auto& entry = m_entries[idx];
         int rowY = LIST_Y + i * ROW_H;
@@ -283,18 +354,21 @@ void SDL2RouteWindow::Render() {
         }
     }
 
-    // Scrollbar if needed
-    int entryCount = (int)m_entries.size();
-    if (entryCount > m_visibleRows) {
-        int sbX = listX + listW - 8;
-        int maxScroll = entryCount - m_visibleRows;
+    // Scrollbar (interactive — see HandleEvent). Reserve a fixed column on the right;
+    // m_listInnerW excludes it so row hit-testing doesn't overlap the bar.
+    m_hasScrollbar = (entryCount > m_visibleRows);
+    m_listInnerW   = m_hasScrollbar ? (listW - SB_COL_W) : listW;
+    if (m_hasScrollbar) {
+        int sbX = listX + listW - SB_COL_W;
         int sbH = listH * m_visibleRows / entryCount;
         if (sbH < 10) sbH = 10;
         int sbY = LIST_Y;
         if (maxScroll > 0)
             sbY = LIST_Y + (listH - sbH) * m_scrollOffset / maxScroll;
-        SDL_Rect sbRect = {sbX, sbY, 6, sbH};
-        SDL_FillRect(surf, &sbRect, SDL_MapRGB(surf->format, 140, 120, 80));
+        m_sbThumb = { sbX, sbY, 6, sbH };
+        SDL_Rect trough = { sbX, LIST_Y, SB_COL_W, listH };
+        SDL_FillRect(surf, &trough,   SDL_MapRGB(surf->format, 50, 42, 28));
+        SDL_FillRect(surf, &m_sbThumb, SDL_MapRGB(surf->format, 140, 120, 80));
     }
 
     // Draw buttons — beveled style matching game aesthetic
@@ -340,27 +414,55 @@ void SDL2RouteWindow::Render() {
 bool SDL2RouteWindow::HandleEvent(SDL_Event& event, int localX, int localY) {
     if (!m_panel || !m_panel->IsVisible()) return false;
 
+    int maxScroll = (int)m_entries.size() - m_visibleRows;
+    if (maxScroll < 0) maxScroll = 0;
+
     switch (event.type) {
         case SDL_MOUSEBUTTONDOWN:
             if (event.button.button == SDL_BUTTON_LEFT) {
-                // Check list click
-                int listW = PANEL_W - LIST_MARGIN * 2;
-                int listH = m_visibleRows * ROW_H;
-                if (localX >= LIST_MARGIN && localX < LIST_MARGIN + listW &&
-                    localY >= LIST_Y && localY < LIST_Y + listH) {
-                    int row = (localY - LIST_Y) / ROW_H + m_scrollOffset;
+                // F1: Loop checkbox (box + "Loop" label hit area).
+                if (m_pVeh &&
+                    localX >= m_loopRect.x && localX < m_loopRect.x + m_loopRect.w + 42 &&
+                    localY >= m_loopRect.y && localY < m_loopRect.y + m_loopRect.h) {
+                    m_pVeh->SetRouteLoop(!m_pVeh->GetRouteLoop());
+                    Render();
+                    return true;
+                }
+
+                // Scrollbar column: drag the thumb, or page on a trough click.
+                if (m_hasScrollbar &&
+                    localX >= m_listRect.x + m_listInnerW &&
+                    localX <  m_listRect.x + m_listRect.w &&
+                    localY >= m_listRect.y && localY < m_listRect.y + m_listRect.h) {
+                    if (localY >= m_sbThumb.y && localY < m_sbThumb.y + m_sbThumb.h) {
+                        m_sbDragging   = true;
+                        m_sbDragOffset = localY - m_sbThumb.y;
+                    } else {
+                        m_scrollOffset += (localY < m_sbThumb.y) ? -m_visibleRows : m_visibleRows;
+                        if (m_scrollOffset < 0)         m_scrollOffset = 0;
+                        if (m_scrollOffset > maxScroll) m_scrollOffset = maxScroll;
+                        Render();
+                    }
+                    return true;
+                }
+
+                // List rows: use the rendered list rect (minus the scrollbar column),
+                // so the clickable area matches exactly what's drawn.
+                if (localX >= m_listRect.x && localX < m_listRect.x + m_listInnerW &&
+                    localY >= m_listRect.y && localY < m_listRect.y + m_listRect.h) {
+                    int row = (localY - m_listRect.y) / ROW_H + m_scrollOffset;
                     if (row >= 0 && row < (int)m_entries.size()) {
                         m_selectedIndex = row;
                         if (m_buttons.size() > 4) {
-                            m_buttons[3].enabled = true;
-                            m_buttons[4].enabled = true;
+                            m_buttons[3].enabled = true;   // Goto
+                            m_buttons[4].enabled = true;   // Delete
                         }
                         Render();
                     }
                     return true;
                 }
 
-                // Check button clicks
+                // Buttons.
                 for (auto& btn : m_buttons) {
                     if (btn.enabled &&
                         localX >= btn.rect.x && localX < btn.rect.x + btn.rect.w &&
@@ -375,13 +477,14 @@ bool SDL2RouteWindow::HandleEvent(SDL_Event& event, int localX, int localY) {
 
         case SDL_MOUSEBUTTONUP:
             if (event.button.button == SDL_BUTTON_LEFT) {
+                m_sbDragging = false;
                 for (auto& btn : m_buttons) {
                     if (btn.pressed) {
                         btn.pressed = false;
                         if (btn.enabled &&
                             localX >= btn.rect.x && localX < btn.rect.x + btn.rect.w &&
                             localY >= btn.rect.y && localY < btn.rect.y + btn.rect.h) {
-                            if (btn.onClick) btn.onClick();
+                            if (btn.onClick) btn.onClick();   // NB: Close/Start/Auto delete `this`
                             return true;
                         }
                         Render();
@@ -395,14 +498,23 @@ bool SDL2RouteWindow::HandleEvent(SDL_Event& event, int localX, int localY) {
             if (event.wheel.y > 0 && m_scrollOffset > 0) {
                 m_scrollOffset--;
                 Render();
-            } else if (event.wheel.y < 0 &&
-                       m_scrollOffset < (int)m_entries.size() - m_visibleRows) {
+            } else if (event.wheel.y < 0 && m_scrollOffset < maxScroll) {
                 m_scrollOffset++;
                 Render();
             }
             return true;
 
         case SDL_MOUSEMOTION:
+            if (m_sbDragging && m_hasScrollbar) {
+                int trackH = m_listRect.h - m_sbThumb.h;
+                if (trackH > 0 && maxScroll > 0) {
+                    int newY = localY - m_sbDragOffset;
+                    m_scrollOffset = (newY - m_listRect.y) * maxScroll / trackH;
+                    if (m_scrollOffset < 0)         m_scrollOffset = 0;
+                    if (m_scrollOffset > maxScroll) m_scrollOffset = maxScroll;
+                    Render();
+                }
+            }
             return true;
     }
 

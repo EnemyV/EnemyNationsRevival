@@ -134,6 +134,15 @@ void CPlayer::ctor( )
     m_iNumTrucks = m_iNumCranes = 0;
     m_dwIDRocket                = 0;
 
+    // colony stat history (graphs) starts empty
+    m_iHistHead = m_iHistCount = 0;
+    memset( m_aHistPwrHave,  0, sizeof( m_aHistPwrHave ) );
+    memset( m_aHistPwrNeed,  0, sizeof( m_aHistPwrNeed ) );
+    memset( m_aHistPplTotal, 0, sizeof( m_aHistPplTotal ) );
+    memset( m_aHistPplBldg,  0, sizeof( m_aHistPplBldg ) );
+    memset( m_aHistAptCap,   0, sizeof( m_aHistAptCap ) );
+    memset( m_aHistOfcCap,   0, sizeof( m_aHistOfcCap ) );
+
     m_iGameSpeed     = NUM_SPEEDS / 2;
     m_iNumDiscovered = 0;
 
@@ -408,17 +417,25 @@ void CPlayer::StartLoop( )
         else
         {
             div_t dtRate = div( (int)m_iGasUsed, GAS_USUAGE );
-            if ( m_iGas > dtRate.quot )
-                m_iGas -= dtRate.quot;
+            // fuel_efficiency research lowers how much gas the same travel burns
+            // (GetFuelPct() = 100 down to ~60 at 10 levels; see CPlayer::GetFuelPct).
+            int iBurn = ( dtRate.quot * GetFuelPct( ) ) / 100;
+            if ( m_iGas > iBurn )
+                m_iGas -= iBurn;
             else
                 m_iGas = 0;
             m_iGasUsed = dtRate.rem;
 
-            m_iGasNeed = ( dtRate.quot * 12 * 5 * 24 * AVG_SPEED_MUL ) / m_iGasTurn;
+            m_iGasNeed = ( iBurn * 12 * 5 * 24 * AVG_SPEED_MUL ) / m_iGasTurn;
             m_iGasNeed = __max( m_iGasNeed, MIN_GAS_NEED );
         }
 
         m_iGasTurn = 0;
+
+        // This per-period boundary (~once per game-minute) is also our history
+        // sampling tick. m_iPwrHave / m_iPwrNeed are still the finalized totals from
+        // the just-finished accumulation cycle (they aren't cleared until below).
+        SampleHistory( );
     }
 
     // clear for next count
@@ -428,6 +445,22 @@ void CPlayer::StartLoop( )
     m_iFoodProd    = 0;
 
     m_iRsrchHave = 0;
+}
+
+// Append one colony-stat sample to the ring buffer (called once per period from
+// StartLoop). Feeds the building-info windows' history graphs.
+void CPlayer::SampleHistory( )
+{
+    m_aHistPwrHave[m_iHistHead]  = m_iPwrHave;
+    m_aHistPwrNeed[m_iHistHead]  = m_iPwrNeed;
+    m_aHistPplTotal[m_iHistHead] = GetPplTotal( );
+    m_aHistPplBldg[m_iHistHead]  = m_iPplBldg;
+    m_aHistAptCap[m_iHistHead]   = m_iAptCap;
+    m_aHistOfcCap[m_iHistHead]   = m_iOfcCap;
+
+    m_iHistHead = ( m_iHistHead + 1 ) % HIST_LEN;
+    if ( m_iHistCount < HIST_LEN )
+        m_iHistCount++;
 }
 
 void CPlayer::Research( int iNumSec )
@@ -825,6 +858,12 @@ void CPlayer::Serialize( CArchive& ar )
         // Save release 3+: most-recent discovery (for the research window's
         // "Discovery" button). See version.h. Always written by this build.
         ar << (LONG)m_iLastDiscovered;
+
+        // Save release 4+: colony stat history ring buffers (graphs). Always written.
+        ar << (LONG)m_iHistHead << (LONG)m_iHistCount;
+        for ( int i = 0; i < HIST_LEN; i++ )
+            ar << m_aHistPwrHave[i] << m_aHistPwrNeed[i] << m_aHistPplTotal[i]
+               << m_aHistPplBldg[i] << m_aHistAptCap[i] << m_aHistOfcCap[i];
     }
 
     else
@@ -939,6 +978,19 @@ void CPlayer::Serialize( CArchive& ar )
             LONG l;
             ar >> l;
             m_iLastDiscovered = l;
+        }
+
+        // Save release 4+ carries the colony stat history. Older saves predate it,
+        // so the arrays stay at their init (empty) and we do NOT read.
+        if ( theGame.m_dwVer >= 4 )
+        {
+            LONG lHead, lCount;
+            ar >> lHead >> lCount;
+            m_iHistHead  = (int)lHead;
+            m_iHistCount = (int)lCount;
+            for ( int i = 0; i < HIST_LEN; i++ )
+                ar >> m_aHistPwrHave[i] >> m_aHistPwrNeed[i] >> m_aHistPplTotal[i]
+                   >> m_aHistPplBldg[i] >> m_aHistAptCap[i] >> m_aHistOfcCap[i];
         }
         else
             m_iLastDiscovered = 0;

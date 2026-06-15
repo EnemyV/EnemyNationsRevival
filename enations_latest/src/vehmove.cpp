@@ -14,6 +14,7 @@
 #include "player.h"
 #include "area.h"
 #include "bridge.h"
+#include "SDL2RouteWindow.h"   // refresh the route window as the queue progresses/consumes
 
 #include "terrain.inl"
 #include "vehicle.inl"
@@ -65,8 +66,10 @@ void CVehicle::Move() {
     CHexCoord _hexHead(m_ptHead);
     BOOL bVis = IsVisible();
 
-    // operations this turn
-    m_fVehMove += (m_fDamPerfMult * 0.9 * (float) (theGame.GetOpersElapsed() * GetData()->GetSpeed())) /
+    // operations this turn. vehicle_speed research scales the base move rate
+    // (GetSpeedPct: 100% + 2% per level), so the owner's teched vehicles move faster.
+    float fSpeedMul = (float) GetOwner()->GetSpeedPct() / 100.0f;
+    m_fVehMove += (m_fDamPerfMult * 0.9 * (float) (theGame.GetOpersElapsed() * GetData()->GetSpeed()) * fSpeedMul) /
                   (float) AVG_SPEED_MUL;
 
     // moving toward the next hex
@@ -332,14 +335,30 @@ void CVehicle::ArrivedDest() {
                 }
             }
 
-            // next dest
-            if (m_pos == NULL)
-                m_pos = m_route.GetHeadPosition();
-            else {
-                m_route.GetNext(m_pos);
+            // advance to the next stop
+            if (m_bRouteLoop) {
+                // looping: cycle the position, keep every stop in the list
                 if (m_pos == NULL)
                     m_pos = m_route.GetHeadPosition();
+                else {
+                    m_route.GetNext(m_pos);
+                    if (m_pos == NULL)
+                        m_pos = m_route.GetHeadPosition();   // loop back to the start
+                }
+            } else {
+                // (F1) one-shot: CONSUME the stop we just reached — remove it so the queue
+                // shrinks as the vehicle progresses, then move on to the new head.
+                if (m_pos != NULL) {
+                    CRoute *pReached = m_route.GetAt(m_pos);
+                    m_route.RemoveAt(m_pos);
+                    delete pReached;
+                }
+                m_pos = m_route.GetHeadPosition();
             }
+
+            // reflect the progression / consumption in an open route window
+            if (m_pSdlRoute != NULL)
+                m_pSdlRoute->RefreshRoute();
 
             // go on to the next dest
             if (m_pos != NULL) {
@@ -355,6 +374,10 @@ void CVehicle::ArrivedDest() {
                     else
                         ExitBuilding();
                 }
+            } else {
+                // one-shot route complete (queue empty) — halt here.
+                SetRoutePos(NULL);
+                m_iEvent = none;
             }
             break;
         }
@@ -421,8 +444,11 @@ void CVehicle::ArrivedDest() {
                     DWORD dwID;
                     CVehicle *pVeh;
                     theVehicleMap.GetNextAssoc(pos, dwID, pVeh);
-                    // it's ours, it's in a building, and it's stopped (not unloading/deploying, etc)
+                    // it's ours, it's in a building, and it's stopped (not unloading/deploying, etc).
+                    // Skip other boats: a cargo ship must never load another ship (cargo ship,
+                    // gunboat, ...) — that nests carriers and gets them stuck. Boats carry land cargo only.
                     if ((pVeh != this) && (pVeh->GetTransport() == NULL) && (pVeh->GetOwner()->IsMe()) &&
+                        (!pVeh->GetData()->IsBoat()) &&
                         (!pVeh->GetHexOwnership()) && (pVeh->GetRouteMode() == CVehicle::stop))
                         if (pBldgDest == theBuildingHex._GetBuilding(pVeh->GetPtHead())) {
                             int iSize;

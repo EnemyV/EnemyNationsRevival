@@ -665,7 +665,7 @@ void SDL2UnitList::RenderMaterialsBar(SDL_Surface* dst, CUnit* pUnit, int iconId
     // Match original: for vehicles use max capacity, for buildings use at least 500 per icon
     int maxStore = total;
     if (pUnit->GetUnitType() == CUnit::vehicle) {
-        int maxMat = ((CVehicle*)pUnit)->GetData()->GetMaxMaterials();
+        int maxMat = ((CVehicle*)pUnit)->GetMaxMaterials();
         if (maxMat > total) maxStore = maxMat;
     } else {
         int iStep = std::max(1, icon.cxIcon / 2);

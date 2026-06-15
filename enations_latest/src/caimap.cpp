@@ -1217,8 +1217,8 @@ void CAIMap::PlaceBuilding( CAIMsg *pMsg, CAIUnitList *plUnits )
 
 }
 
-void CAIMap::GetStartHex( CHexCoord& hexStart, CHexCoord& hexEnd, 
-	CHexCoord& hexPlace, int iVehType )
+void CAIMap::GetStartHex( CHexCoord& hexStart, CHexCoord& hexEnd,
+	CHexCoord& hexPlace, int iVehType, CHexCoord* phexRocket /*=NULL*/ )
 {
 	int iOffset = pGameData->m_iHexPerBlk / 4;
 	CHexCoord hcStart;
@@ -1228,8 +1228,10 @@ void CAIMap::GetStartHex( CHexCoord& hexStart, CHexCoord& hexEnd,
 	hcEnd.X( hcEnd.Wrap( hexEnd.X() - iOffset ));
 	hcEnd.Y( hcEnd.Wrap( hexEnd.Y() - iOffset ));
 
-	m_pMapUtil->FindStagingHex( hcStart.X(), hcStart.Y(), 
-		hcEnd.X(), hcEnd.Y(), hexPlace, iVehType );
+	// phexRocket non-NULL => initial AI vehicle placement: reject water hexes
+	// for land vehicles and require a path back to the rocket (see FindStagingHex)
+	m_pMapUtil->FindStagingHex( hcStart.X(), hcStart.Y(),
+		hcEnd.X(), hcEnd.Y(), hexPlace, iVehType, FALSE, phexRocket );
 }
 
 // now ask map to do the work and find a place to stage

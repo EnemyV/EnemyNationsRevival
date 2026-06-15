@@ -693,6 +693,14 @@ void CVehicle::BuildRoad() {
     theGame.PostToServer(&msg, sizeof(msg));
 }
 
+// Effective cargo capacity = base (per-type data) scaled by the owner's
+// cargo_handling research (+10% per level, CPlayer::GetCargoPct). Routed through
+// here so auto/route AND hand-loaded trucks share the same teched limit, and the
+// over-capacity TRAP (CUnit::GetTotalStore) checks the correct value.
+int CVehicle::GetMaxMaterials() const {
+    return ( GetData()->GetMaxMaterials() * GetOwner()->GetCargoPct() ) / 100;
+}
+
 void CVehicle::Load() {
 
     ASSERT_STRICT (GetOwner()->IsLocal());
@@ -705,7 +713,7 @@ void CVehicle::Load() {
     ASSERT_STRICT_VALID (pBldg);
 
     // see if full
-    int iLeft = GetData()->GetMaxMaterials() - GetTotalStore();
+    int iLeft = GetMaxMaterials() - GetTotalStore();
     if (iLeft <= 0)
         return;
 

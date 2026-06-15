@@ -326,6 +326,12 @@ public:
 
 		CTransportData const *	GetData () const;
 
+		// Effective cargo capacity: base (per-type data) scaled by the owner's
+		// cargo_handling research (CPlayer::GetCargoPct). Use THIS, not
+		// GetData()->GetMaxMaterials(), wherever capacity matters (load caps, UI,
+		// the over-capacity TRAP) so the tech applies to every truck.
+		int						GetMaxMaterials () const;
+
 		void					DestroyRouteWindow ();
 		void					DestroyBuildWindow ();
 		void					DestroyAllWindows ();
@@ -376,6 +382,11 @@ public:
 		void					DeletePath ();
 		void					SetLocation (CHexCoord & hex, POSITION pos, int iType);
 		CList <CRoute *, CRoute *> &	GetRouteList () { ASSERT_STRICT_VALID (this); return (m_route); }
+		// Looping vs one-shot route. TRUE (default) = the legacy behavior (cycle back to
+		// the first stop at the end); FALSE = stop at the last stop. Runtime-only (not
+		// serialized — defaults to looping on load to preserve save compatibility).
+		BOOL				GetRouteLoop () const { return (m_bRouteLoop); }
+		void				SetRouteLoop (BOOL b) { m_bRouteLoop = b; }
 		POSITION			GetRoutePos () const { ASSERT_STRICT_VALID (this); return (m_pos); }
 		VEH_MODE			GetRouteMode () const;
 		void					SetRoutePos (POSITION pos);
@@ -516,6 +527,7 @@ protected:
 
 		// where we are going
 		CList <CRoute *, CRoute *> m_route;		// route its travelling
+		BOOL				m_bRouteLoop;						// TRUE = loop the route (legacy); FALSE = stop at the end
 		POSITION			m_pos;									// element we are travelling to
 		CSubHex				m_ptDest;								// final sub-hex we are going to
 		CHexCoord			m_hexDest;							// final hex we are going to

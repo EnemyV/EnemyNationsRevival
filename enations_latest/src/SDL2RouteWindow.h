@@ -36,6 +36,7 @@ public:
 
 private:
     void RebuildList();
+    void Layout();   // (re)position buttons + list rows for the current panel size
     bool HandleEvent(SDL_Event& event, int localX, int localY);
     TTF_Font* GetFont(int size);
 
@@ -76,6 +77,17 @@ private:
     int m_selectedIndex = -1;
     int m_scrollOffset = 0;
     int m_visibleRows = 8;
+
+    // Geometry captured by Render() so HandleEvent hit-tests exactly match what's drawn
+    // (the list inset is border-art-relative, not the fixed LIST_MARGIN).
+    SDL_Rect m_listRect    = { 0, 0, 0, 0 };  // drawn list area (full width)
+    int      m_listInnerW  = 0;               // list width excluding the scrollbar column
+    bool     m_hasScrollbar = false;
+    SDL_Rect m_sbThumb     = { 0, 0, 0, 0 };  // scrollbar thumb rect (when present)
+    bool     m_sbDragging  = false;
+    int      m_sbDragOffset = 0;
+    static const int SB_COL_W = 8;            // scrollbar column width
+    SDL_Rect m_loopRect    = { 0, 0, 0, 0 };  // "Loop" checkbox hit-rect (F1)
 
     // Game art surfaces
     SDL_Surface* m_bgGold = nullptr;

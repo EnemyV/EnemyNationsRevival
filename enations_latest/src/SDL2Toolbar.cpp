@@ -652,11 +652,22 @@ int SDL2Toolbar::GetNumStatusBars(CUnit* pUnit) {
         // CVehicleBuilding/CShipyardBuilding), so the cast in RenderStatusBars is
         // guaranteed safe even if data gives another building a vehicle list.
         int ut = pBldg->GetData()->GetUnionType();
+        int base;
         if (ut == CStructureData::UTvehicle || ut == CStructureData::UTshipyard)
-            return 3;
-        if (pBldg->GetTotalStore() > 0)
-            return 2;  // damage + materials
-        return 1;      // damage only
+            base = 3;
+        else if (ut == CStructureData::UTfarm)
+            // Mirror CFarmBuilding::GetNumStatusBars: a farm shows damage + fertility
+            // (the green ICON_DENSITY "X" bar); a lumber mill adds a materials bar.
+            base = (pBldg->GetData()->GetType() == CStructureData::farm) ? 2 : 3;
+        else if (pBldg->GetTotalStore() > 0)
+            base = 2;  // damage + materials
+        else
+            base = 1;  // damage only
+        // One extra bar when units are parked inside (e.g. ships in a seaport),
+        // showing their icons — see RenderContainedUnits.
+        if (CountContainedUnits(pBldg) > 0)
+            base++;
+        return base;
     }
 
     return 1;
@@ -819,6 +830,58 @@ void SDL2Toolbar::RenderCarrierCargo(SDL_Surface* dst, CVehicle* pVeh, int iconI
     }
 }
 
+// Count the friendly vehicles currently parked inside a building. A vehicle is
+// "inside" when it owns no hex (it's tucked in the building, not on the map) and
+// the building under its head hex is this one. Mirrors the same test the unit-info
+// popup uses (SDL2UnitInfoPanel::BuildContent). 0 for non-buildings.
+int SDL2Toolbar::CountContainedUnits(CUnit* pUnit) {
+    if (!pUnit || pUnit->GetUnitType() != CUnit::building) return 0;
+    int n = 0;
+    auto pos = theVehicleMap.GetStartPosition();
+    while (pos != NULL) {
+        DWORD dwID; CVehicle* pVeh;
+        theVehicleMap.GetNextAssoc(pos, dwID, pVeh);
+        if (pVeh->GetOwner()->IsMe() && !pVeh->GetHexOwnership() &&
+            theBuildingHex._GetBuilding(pVeh->GetPtHead()) == pUnit)
+            n++;
+    }
+    return n;
+}
+
+// Draw the icons of the vehicles parked inside a building, left to right, the same
+// way RenderCarrierCargo draws a carrier's cargo (ICON_VEHICLES sheet, one tile per
+// vehicle type at srcX = GetType()*cxIcon). This is what reveals, on hover, what's
+// sitting in a seaport / factory.
+void SDL2Toolbar::RenderContainedUnits(SDL_Surface* dst, CBuilding* pBldg, int iconIdx,
+                                       int x, int y, int w, int h) {
+    Render3PieceBg(dst, iconIdx, x, y, w);
+
+    IconData& icon = m_iconData[iconIdx];
+    if (!icon.sheet || icon.cxIcon <= 0 || icon.cyIcon <= 0) return;
+
+    int iconY = y + (h - icon.cyIcon) / 2;
+    int drawX = x + icon.leftOff;
+    int rightLimit = x + w - icon.rightOff;
+
+    auto pos = theVehicleMap.GetStartPosition();
+    while (pos != NULL) {
+        DWORD dwID; CVehicle* pVeh;
+        theVehicleMap.GetNextAssoc(pos, dwID, pVeh);
+        if (!pVeh->GetOwner()->IsMe() || pVeh->GetHexOwnership()) continue;
+        if (theBuildingHex._GetBuilding(pVeh->GetPtHead()) != pBldg) continue;
+        if (drawX + icon.cxIcon > rightLimit) break;
+
+        int srcX = pVeh->GetData()->GetType() * icon.cxIcon;
+        if (srcX + icon.cxIcon <= icon.sheet->w) {
+            SDL_Rect sr = {srcX, 0, icon.cxIcon, icon.cyIcon};
+            SDL_Rect dr = {drawX, iconY, icon.cxIcon, icon.cyIcon};
+            SDL_SetSurfaceBlendMode(icon.sheet, SDL_BLENDMODE_BLEND);
+            SDL_BlitSurface(icon.sheet, &sr, dst, &dr);
+        }
+        drawX += icon.cxIcon;
+    }
+}
+
 // Render materials using ICON_MATERIALS sprites
 void SDL2Toolbar::RenderMaterialsBar(SDL_Surface* dst, CUnit* pUnit, int iconIdx,
                                      int x, int y, int w, int h) {
@@ -832,7 +895,7 @@ void SDL2Toolbar::RenderMaterialsBar(SDL_Surface* dst, CUnit* pUnit, int iconIdx
 
     int maxStore = total;
     if (pUnit->GetUnitType() == CUnit::vehicle) {
-        int maxMat = ((CVehicle*)pUnit)->GetData()->GetMaxMaterials();
+        int maxMat = ((CVehicle*)pUnit)->GetMaxMaterials();
         if (maxMat > total) maxStore = maxMat;
     } else {
         int iStep = std::max(1, icon.cxIcon / 2);
@@ -898,6 +961,12 @@ void SDL2Toolbar::RenderStatusBars(SDL_Surface* dst, CUnit* pUnit, int x, int y,
     int barH = (m_statBarHt > 0) ? m_statBarHt
              : (m_iconData[ICON_DAMAGE].cyBack > 0 ? m_iconData[ICON_DAMAGE].cyBack : 16);
 
+    // When a building has units parked inside, GetNumStatusBars added one trailing
+    // bar for them — this is its slot index (last bar). -1 when there's none.
+    int containedSlot = -1;
+    if (pUnit->GetUnitType() == CUnit::building && CountContainedUnits(pUnit) > 0)
+        containedSlot = numBars - 1;
+
     for (int iOn = 0; iOn < numBars; iOn++) {
         int barW = (w - usedW) / (numBars - iOn);
         int barX = x + usedW;
@@ -958,7 +1027,10 @@ void SDL2Toolbar::RenderStatusBars(SDL_Surface* dst, CUnit* pUnit, int x, int y,
             bool isHousing = !pBldg->IsConstructing() &&
                              (bt == CStructureData::apartment || bt == CStructureData::office);
 
-            if (iOn == 0) {
+            if (iOn == containedSlot) {
+                // Trailing bar: the units currently parked inside this building.
+                RenderContainedUnits(dst, pBldg, ICON_VEHICLES, renderX, y, renderW, barH);
+            } else if (iOn == 0) {
                 int dmg = std::max(1, pBldg->GetDamagePer());
                 RenderIconBar(dst, ICON_DAMAGE, dmg, renderX, y, renderW, barH);
             } else if (isHousing && iOn == 1) {
@@ -980,12 +1052,25 @@ void SDL2Toolbar::RenderStatusBars(SDL_Surface* dst, CUnit* pUnit, int x, int y,
                 RenderIconDone(dst, ICON_PEOPLE, std::min(100, std::max(0, per)),
                                renderX, y, renderW, barH);
             } else if (iOn == 1) {
-                RenderMaterialsBar(dst, pBldg, ICON_MATERIALS, renderX, y, renderW, barH);
+                // A farm's second bar is fertility (green ICON_DENSITY "X"s), not
+                // materials — mirrors CFarmBuilding::PaintStatusBars. Lumber mills
+                // keep the materials bar here (their fertility is the 3rd bar).
+                if (pBldg->GetData()->GetUnionType() == CStructureData::UTfarm &&
+                    pBldg->GetData()->GetType() == CStructureData::farm) {
+                    int per = std::min(100, std::max(0, ((CFarmBuilding*)pBldg)->GetTerMult() * 10));
+                    RenderIconDone(dst, ICON_DENSITY, per, renderX, y, renderW, barH);
+                } else {
+                    RenderMaterialsBar(dst, pBldg, ICON_MATERIALS, renderX, y, renderW, barH);
+                }
             } else if (iOn == 2) {
                 int ut = pBldg->GetData()->GetUnionType();
                 if (pBldg->IsConstructing()) {
                     int per = std::max(1, pBldg->GetBuildPer());
                     RenderIconDone(dst, ICON_CONSTRUCTION, per, renderX, y, renderW, barH);
+                } else if (ut == CStructureData::UTfarm) {
+                    // Lumber mill's productivity bar (forest density), same green art.
+                    int per = std::min(100, std::max(0, ((CFarmBuilding*)pBldg)->GetTerMult() * 10));
+                    RenderIconDone(dst, ICON_DENSITY, per, renderX, y, renderW, barH);
                 } else if (ut == CStructureData::UTvehicle || ut == CStructureData::UTshipyard) {
                     // Completed vehicle plant: show the vehicle being built and its
                     // progress ??? mirrors CVehicleBuilding::PaintStatusBars (the

@@ -869,8 +869,11 @@ void CPathMgr::GetCellCosts( int iPos, CCell* pFromCell, CCell* pToCell )
     // unless its the dest
     if ( pDestHex->GetType( ) == CHex::coastline )
     {
-        // except of course, inf/outriders can travel coastline anytime
+        // except of course, inf/outriders can travel coastline anytime — and small
+        // boats (motorboat/gun_boat, landing craft) must cross coastline shores to
+        // reach rivers / lakes through their mouths.
         if ( m_pTD->GetWheelType( ) != CWheelTypes::walk && m_pTD->GetWheelType( ) != CWheelTypes::hover &&
+             m_pTD->GetType( ) != CTransportData::gun_boat && m_pTD->GetType( ) != CTransportData::landing_craft &&
              hexDest != m_hexTo )
         {
             // but any vehicle on a bridge
@@ -893,10 +896,13 @@ void CPathMgr::GetCellCosts( int iPos, CCell* pFromCell, CCell* pToCell )
     // if there is bridge hex involved, we must do another test
     if ( pDestHex->GetUnits( ) & CHex::bridge || pFromHex->GetUnits( ) & CHex::bridge )
     {
-        // we don't know the unit here so we figure if the from hex is water & not a bridge
-        // it is on the water, otherwise it is land/bridge.
-        // this does stop moving along a bridge under it
-        BOOL bOnWater = pFromHex->IsWater( ) & ( ( pFromHex->GetUnits( ) & CHex::bridge ) == 0 );
+        // figure if we're on the water (vs land/bridge-deck): a from-hex that is water
+        // & not a bridge means on water. A WATER vehicle is ALWAYS on the water — it
+        // passes UNDER bridges, never on the deck — so force on-water for it; otherwise
+        // exiting a bridge-over-water hex hits CanEnterHex's bridge-deck direction
+        // checks and a boat can't traverse the span.
+        BOOL bOnWater = ( m_pTD->GetWheelType( ) == CWheelTypes::water ) ||
+                        ( pFromHex->IsWater( ) & ( ( pFromHex->GetUnits( ) & CHex::bridge ) == 0 ) );
         if ( !m_pTD->CanEnterHex( hexFrom, hexDest, bOnWater ) )
             return;
         // if( !m_pTD->CanEnterHex(hexFrom, hexDest, pFromHex->IsWater()) )

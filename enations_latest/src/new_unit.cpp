@@ -12,6 +12,7 @@
 #include "stdafx.h"
 #include "SDL2BuildStructure.h"
 #include "SDL2BuildTransport.h"
+#include "SDL2BuildingWindow.h"
 #include "event.h"
 #include "lastplnt.h"
 #include "player.h"
@@ -154,6 +155,34 @@ void CMaterialBuilding::ShowStatusText( std::string& str )
     itoa( iNum, sNum, 10 );
 
     str = strPrintf( EnLoadStdString( IDS_STAT_MATERIAL ).c_str(), pDesc, sNum );
+}
+
+// Production progress 0..100 toward the next output batch. Producers accumulate
+// m_iBuildDone toward a per-type threshold, emit a batch, and reset (see
+// CBuilding::BuildMaterials / CMineBuilding::BuildMine / CFarmBuilding::BuildFarm).
+int CMaterialBuilding::GetProductionPer( ) const
+{
+    int iTime = GetData( )->GetBldMaterials( )->GetTime( );
+    if ( iTime <= 0 ) return ( -1 );
+    int iPer = (int)( ( (long long)m_iBuildDone * 100 ) / iTime );
+    return ( iPer > 100 ? 100 : iPer );
+}
+
+int CMineBuilding::GetProductionPer( ) const
+{
+    if ( m_iMinerals <= 0 ) return ( 0 );   // exhausted
+    int iTime = GetData( )->GetBldMine( )->GetTimeToMine( );
+    if ( iTime <= 0 ) return ( -1 );
+    int iPer = (int)( ( (long long)m_iBuildDone * 100 ) / iTime );
+    return ( iPer > 100 ? 100 : iPer );
+}
+
+int CFarmBuilding::GetProductionPer( ) const
+{
+    int iTime = 2 * GetData( )->GetBldFarm( )->GetTimeToFarm( );   // FARM_HARVEST_SLOW = 2
+    if ( iTime <= 0 ) return ( -1 );
+    int iPer = (int)( ( (long long)m_iBuildDone * 100 ) / iTime );
+    return ( iPer > 100 ? 100 : iPer );
 }
 
 void CVehicleBuilding::ShowStatusText( std::string& str )
@@ -478,8 +507,8 @@ void CUnit::PaintStatusMaterials( CStatInst* pSi, CDC* pDc ) const
         // this way we leave it part empty for vehicles that are not full
         if ( GetUnitType( ) == CUnit::vehicle )
         {
-            if ( iTotal < ( (CVehicle*)this )->GetData( )->GetMaxMaterials( ) )
-                iTotal = ( (CVehicle*)this )->GetData( )->GetMaxMaterials( );
+            if ( iTotal < ( (CVehicle*)this )->GetMaxMaterials( ) )
+                iTotal = ( (CVehicle*)this )->GetMaxMaterials( );
         }
         else
             // this leaves it part empty for small amounts
@@ -1433,7 +1462,7 @@ static int fnEnumSetAlt( CHex* pHex, CHexCoord, void* pData )
 }
 
 // we pass in the upper left corner in the CTerrain coordinate space
-void CBuilding::AssignToHex( CHexCoord hex, int iAlt )
+void CBuilding::AssignToHex( CHexCoord hex, int iAlt, BOOL bSetAlt /*=TRUE*/ )
 {
 
     ASSERT_STRICT_VALID_STRUCT( &hex );
@@ -1448,9 +1477,18 @@ void CBuilding::AssignToHex( CHexCoord hex, int iAlt )
 
     theBuildingHex.GrabHex( this );
 
-    // set the altitude (all 4 vertices of each hex)
-    CHexCoord _hex( hex );
-    theMap.EnumHexes( _hex, GetCX( ) + 1, GetCY( ) + 1, fnEnumSetAlt, &iAlt );
+    // set the altitude (all 4 vertices of each hex) — flattens the footprint to
+    // the building level. Skipped on LOAD (bSetAlt=FALSE): the map already
+    // restored every hex's saved altitude, and re-flattening here would clobber
+    // terrain modified after build — notably the deep ship channel dug by
+    // FindChannel around part-water naval buildings (which is NOT re-dug on load),
+    // leaving the dock too shallow for boats to deploy. This footprint+1 sweep
+    // reaches the ship-exit water, so re-running it strands every boat in the dock.
+    if ( bSetAlt )
+    {
+        CHexCoord _hex( hex );
+        theMap.EnumHexes( _hex, GetCX( ) + 1, GetCY( ) + 1, fnEnumSetAlt, &iAlt );
+    }
 
     theMap._GetHex( hex )->ClrUnitDir( );  // TESTING
 
@@ -2037,6 +2075,12 @@ CBuilding::~CBuilding( )
 #ifdef _DEBUG
     m_Initialized = FALSE;
 #endif
+
+    // Close our read-only info window if it's open (EndDialog fires the onDone that
+    // clears m_pSdlInfoWin); after this the window won't render again, so its now-dead
+    // building pointer is never dereferenced.
+    if ( m_pSdlInfoWin )
+        m_pSdlInfoWin->EndDialog( 0 );
 
     // if the game is over we don't have to track this stuff
     if ( theApp.AmInGame( ) )
@@ -3434,6 +3478,26 @@ void CVehicleBuilding::ctor( )
     m_iNum = 1;
 }
 
+// Open (or re-focus) this building's read-only info window. Mirrors the lifecycle
+// of GetDlgBuild: lazily create a non-modal window, clear the pointer in onDone, and
+// the destructor closes it on building death.
+void CBuilding::ShowInfoWindow( bool bOnTop )
+{
+    if ( !theApp.m_gameWindow )
+        return;
+    if ( m_pSdlInfoWin ) {
+        m_pSdlInfoWin->RaiseAndAlert( );      // already open -> bring it forward
+        return;
+    }
+    // When opened from the build dialog's (I) button, the build window bumps itself
+    // to the top every frame — so the info window must keep-on-top too (set via the
+    // constructor) and be raised once to sit above it.
+    m_pSdlInfoWin = new SDL2BuildingWindow( theApp.m_gameWindow.get(), this, bOnTop );
+    m_pSdlInfoWin->ShowNonModal( [this]( int ) { m_pSdlInfoWin = nullptr; } );
+    if ( bOnTop )
+        m_pSdlInfoWin->RaiseAndAlert( );
+}
+
 CDlgBuildTransport* CVehicleBuilding::GetDlgBuild( )
 {
     // Use native SDL2 build transport dialog if available (non-modal — no blocking loop)
@@ -3884,6 +3948,17 @@ void CRepairBuilding::ctor( )
 
     m_pVehRepairing = NULL;
     m_pBldUnt       = NULL;
+}
+
+// Read-only indexed access into the waiting queue, for the repair info window.
+CVehicle* CRepairBuilding::GetRepairQueueAt( int idx ) const
+{
+    if ( ( idx < 0 ) || ( idx >= (int)m_lstNext.GetCount( ) ) )
+        return ( NULL );
+    POSITION pos = m_lstNext.GetHeadPosition( );
+    for ( int i = 0; ( i < idx ) && ( pos != NULL ); i++ )
+        m_lstNext.GetNext( pos );
+    return ( ( pos != NULL ) ? m_lstNext.GetAt( pos ) : NULL );
 }
 
 CRepairBuilding::~CRepairBuilding( )
@@ -4658,6 +4733,7 @@ void CVehicle::ctor( )
     m_iEvent   = none;
     m_cMode    = stop;
     m_pos      = NULL;
+    m_bRouteLoop = TRUE;   // legacy default; F1 lets the player set one-shot routes
     m_phexPath = NULL;
     m_iPathOff = 0;
     m_iPathLen = 0;
@@ -5663,7 +5739,9 @@ void CBuilding::Serialize( CArchive& ar )
 
         ar >> m_cx >> m_cy;
 
-        AssignToHex( m_hex, theMap.GetHex( m_hex )->GetAlt( ) );
+        // LOAD: do occupancy/draw bookkeeping but DON'T re-set hex altitudes —
+        // CGameMap::Serialize already restored them (incl. the deep ship channel).
+        AssignToHex( m_hex, theMap.GetHex( m_hex )->GetAlt( ), FALSE );
         theBuildingMap.Add( this );
     }
 }
@@ -5977,7 +6055,11 @@ void CVehicle::Serialize( CArchive& ar )
         ar >> dw;
         m_pTransport = (CVehicle*)dw;
         ar >> dw;
-        m_iCargoSize = dw;
+        // Ignore the saved cargo size — it's rebuilt in FixUp from the cargo back-links
+        // (the only authoritative source; m_lstCargo isn't serialized). Trusting the
+        // saved value let a stale/doubled size persist, leaving carriers stuck "full"
+        // after unloading. Rebuilding from 0 heals those saves and stops double-counts.
+        m_iCargoSize = 0;
         ar >> dw;
         m_pVehLoadOn = (CVehicle*)dw;
 
@@ -6035,6 +6117,11 @@ void CVehicle::FixUp( )
             m_pTransport = NULL;
         if ( m_pTransport != NULL )
         {
+            // Rebuild the carrier's cargo from the back-links (pointers can't serialize).
+            // Serialize zeroes every vehicle's m_iCargoSize on load, so re-adding here
+            // makes the carrier's size the TRUE sum of its current cargo — this both
+            // avoids the old double-count AND heals saves whose stored size was wrong
+            // (a carrier stuck "full" after unloading on a loaded game).
             m_pTransport->m_lstCargo.AddTail( this );
             if ( GetData( )->IsPeople( ) )
                 m_pTransport->m_iCargoSize += 1;

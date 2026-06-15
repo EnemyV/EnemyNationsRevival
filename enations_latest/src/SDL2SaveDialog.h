@@ -14,6 +14,7 @@ public:
 
 protected:
     void OnInit() override;
+    void OnOK() override;   // Enter -> Save (not the base EndDialog(1), which skips the save)
 
 private:
     void OnSave();

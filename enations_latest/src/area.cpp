@@ -491,6 +491,7 @@ void CAreaList::AddWindow( CWndArea* pWnd )
     ASSERT_VALID( pWnd );
 
     AddTail( pWnd );
+    m_pTopArea = pWnd;  // newest opened window becomes the top
 }
 
 void CAreaList::DestroyAllWindows( )
@@ -528,10 +529,17 @@ CWndArea* CAreaList::GetTop( )
     if ( GetCount( ) == 1 )
         return ( GetHead( ) );
 
-    if ( CWndArea::sWndCls.empty( ) )
-        return ( NULL );
-
-    return ( (CWndArea*)CWndBase::FindWindow( CWndArea::sWndCls.c_str( ), NULL ) );
+    // SDL2: the old MFC path cast FindWindow()'s HWND straight to CWndArea* and
+    // dereferenced it — garbage that crashed once multi-area (radio) was enabled.
+    // Return the last-focused area window if it is still open, else the head.
+    if ( m_pTopArea != NULL )
+    {
+        POSITION pos = GetHeadPosition( );
+        while ( pos != NULL )
+            if ( GetNext( pos ) == m_pTopArea )
+                return ( m_pTopArea );
+    }
+    return ( GetHead( ) );
 }
 
 CWndArea* CAreaList::BringToTop( )
@@ -1256,12 +1264,19 @@ void CWndArea::Create( CMapLoc const& ml, CUnit* pUnit, BOOL bFirst )
                       EnGetProfileInt( theApp.m_sResIni.c_str(), "AreaEY", theApp.m_iRow3 ) );
     else
     {
-        pPrev->GetWindowRect( &rect );
-        CRect rectClient;
-        pPrev->GetClientRect( &rectClient );
-        pPrev->ClientToScreen( &rectClient );
-        rect.left = rectClient.left;
-        rect.top  = rectClient.top;
+        // Additional area maps (radio multi-window) open SMALL and cascaded — the
+        // original game used a small secondary window, and a full-window second map
+        // doubles the GPU terrain/sprite render every frame (heavy lag). A small view
+        // draws far fewer hexes, cutting that cost. ~45% of the main area, offset so it
+        // doesn't bury the first.
+        int iFullW = theApp.m_iScrnX - theApp.m_iCol1;
+        int iFullH = theApp.m_iRow3;
+        int iW = __max( 360, iFullW * 45 / 100 );
+        int iH = __max( 280, iFullH * 45 / 100 );
+        int iN = theAreaList.GetCount( );          // existing windows → cascade offset
+        int iX = theApp.m_iCol1 + 40 + ( iN * 32 );
+        int iY = 40 + ( iN * 32 );
+        rect.SetRect( iX, iY, iX + iW, iY + iH );
 
         // set to the same dir & zoom
         m_aa.m_iDir  = pPrev->m_aa.m_iDir;
@@ -1903,6 +1918,9 @@ void CWndArea::Draw( )
 
     // Draw any overlays here
 
+    // Subtle dotted lines through selected vehicles' queued routes (only while Shift held).
+    DrawRouteWaypoints( );
+
     // Draw new selection rect (note: doesn't force render of interior)
 
     if ( m_bLineMove )
@@ -1925,6 +1943,10 @@ void CWndArea::Draw( )
 
         m_aa.GetDirtyRects( )->AddRect( &m_selRect, CDirtyRects::RECT_LIST::LIST_BLT );
     }
+
+    // Weapon-range overlay (toggled from the building-info window).
+    if ( s_dwShowRangeID != 0 )
+        DrawRangeCircle( );
 
     // Blt the dirty rects to the screen
 
@@ -2156,6 +2178,84 @@ void CWndArea::DrawLineMove( )
 }
 
 //---------------------------------------------------------------------------
+// CWndArea::DrawRouteWaypoints
+// While Shift is held, draw a SUBTLE dotted line through each selected vehicle's queued
+// route (vehicle -> wp1 -> wp2 -> ...) so the player sees the order being built. Drawn into
+// the same overlay layer as DrawLineMove (m_dibSprite in GPU mode), regenerated each frame.
+//---------------------------------------------------------------------------
+void CWndArea::DrawRouteWaypoints( )
+{
+    if ( !( GetKeyState( VK_SHIFT ) & ~1 ) )   // only while Shift is held
+        return;
+    if ( m_lstUnits.GetCount( ) == 0 )
+        return;
+
+    bool  bGpu = m_aa.IsGpuFull( );
+    CDIB* pdib = bGpu ? m_aa.m_dibSprite.GetDIB( ) : m_aa.m_dibwnd.GetDIB( );
+    if ( pdib == NULL )
+        return;
+
+    int     iBpp = pdib->GetBytesPerPixel( );
+    CDIBits bits = pdib->GetBits( );
+    int     W    = pdib->GetWidth( );
+    int     H    = pdib->GetHeight( );
+
+    BYTE const* pColor = m_colorbuffer.GetBuffer( 4 );   // white; subtlety from sparse 1px dots
+
+    auto plot = [&]( int cx, int cy, int sz )
+    {
+        int x0 = cx - sz / 2, y0 = cy - sz / 2;
+        int x1 = Max( 0, x0 ), x2 = Min( W, x0 + sz );
+        if ( x2 <= x1 ) return;
+        int wBytes = ( x2 - x1 ) * iBpp;
+        for ( int yy = Max( 0, y0 ); yy < Min( H, y0 + sz ); ++yy )
+            memcpy( bits + pdib->GetOffset( x1, yy ), pColor, wBytes );
+    };
+
+    // dotted segment between two window points — subtle: 1px dots ~8px apart, no sqrt
+    auto seg = [&]( CPoint a, CPoint b )
+    {
+        int dx = b.x - a.x, dy = b.y - a.y;
+        int steps = Max( Max( abs( dx ), abs( dy ) ) / 8, 1 );
+        for ( int i = 0; i <= steps; ++i )
+            plot( a.x + dx * i / steps, a.y + dy * i / steps, 1 );
+    };
+
+    // project a hex to its window-space centre (average of the 4 corners)
+    auto hexWin = [&]( CHexCoord hc ) -> CPoint
+    {
+        CPoint p[4];
+        m_aa.MapToWindowHex( hc, p );
+        return CPoint( ( p[0].x + p[1].x + p[2].x + p[3].x ) / 4,
+                       ( p[0].y + p[1].y + p[2].y + p[3].y ) / 4 );
+    };
+
+    for ( POSITION pos = m_lstUnits.GetHeadPosition( ); pos != NULL; )
+    {
+        CUnit* pUnit = m_lstUnits.GetNext( pos );
+        if ( pUnit->GetUnitType( ) != CUnit::vehicle )
+            continue;
+        CVehicle* pVeh = (CVehicle*)pUnit;
+        if ( pVeh->GetRouteList( ).GetCount( ) == 0 )
+            continue;
+
+        // start at the vehicle's current screen position
+        CPoint prev = m_aa.WrapWorldToWindow( m_aa.WorldToCenterWorld( pVeh->GetWorldPixels( ) ) );
+        for ( POSITION rp = pVeh->GetRouteList( ).GetHeadPosition( ); rp != NULL; )
+        {
+            CRoute* pR = pVeh->GetRouteList( ).GetNext( rp );
+            CPoint  wp = hexWin( pR->GetCoord( ) );
+            seg( prev, wp );
+            plot( wp.x, wp.y, 3 );   // a slightly bigger dot marks each waypoint
+            prev = wp;
+        }
+    }
+
+    if ( !bGpu )
+        m_bUpdateAll = TRUE;
+}
+
+//---------------------------------------------------------------------------
 // CWndArea::DoLineMove
 // Distribute the selected vehicles evenly along the freeform drawn path (s_linePath)
 // and issue a move order to each. Units are ordered by where they project onto the
@@ -2221,6 +2321,113 @@ void CWndArea::DoLineMove( CPoint ptEnd )
         SetDestAndSfx( pVeh, sub );
         pVeh->_SetTarget( NULL );
     }
+}
+
+// Red circle around the building whose range is being visualized (s_dwShowRangeID).
+// Drawn into the same layer as the other overlays (m_dibSprite in GPU mode, m_dibwnd
+// otherwise). Radius = weapon range (hexes) * hex width (pixels) at the current zoom.
+DWORD CWndArea::s_dwShowRangeID = 0;
+
+void CWndArea::DrawRangeCircle( )
+{
+    CBuilding* pBldg = theBuildingMap.GetBldg( s_dwShowRangeID );
+    if ( ( pBldg == NULL ) || ( !pBldg->IsVisible( ) ) || ( pBldg->GetRange( ) <= 0 ) )
+    {
+        s_dwShowRangeID = 0;   // gone / no weapon -> stop showing
+        return;
+    }
+
+    bool  bGpu = m_aa.IsGpuFull( );
+    CDIB* pdib = bGpu ? m_aa.m_dibSprite.GetDIB( ) : m_aa.m_dibwnd.GetDIB( );
+    if ( pdib == NULL )
+        return;
+
+    int     iBpp = pdib->GetBytesPerPixel( );
+    CDIBits bits = pdib->GetBits( );
+    int     W    = pdib->GetWidth( );
+    int     H    = pdib->GetHeight( );
+
+    CPoint c   = m_aa.WrapWorldToWindow( m_aa.WorldToCenterWorld( pBldg->GetWorldPixels( ) ) );
+    int    rad = pBldg->GetRange( ) * theMap.HexWid( m_aa.m_iZoom );
+    if ( rad < 1 )
+        return;
+
+    // Draw the range as the EDGE OF A SHOCKWAVE: a WIDE band that is brightest at the
+    // true range and fades INWARD over a long thickness. The overlay layer composites
+    // with a color key (no per-pixel alpha), so the fade can't be true blending — it's
+    // faked two ways at once: a dim red shade that lightens toward the edge, AND a fine
+    // 8x8 ordered (Bayer) dither that drops more and more pixels toward the inside, so
+    // the map shows through like a smooth gradient. Only the annulus is touched.
+    int T = rad / 3;                       // wide, soft band
+    if ( T < 20 ) T = 20;
+    if ( T > 40 ) T = 40;
+    int innerR = rad - T;
+    if ( innerR < 0 ) innerR = 0;
+    double outerR2 = (double)rad * rad;
+    double innerR2 = (double)innerR * innerR;
+
+    // Dim red ramp (kept well below full brightness so it reads as a soft glow, not a
+    // hard line). 1 palette lookup per step.
+    const int NSHADE = 8;
+    DWORD shade[NSHADE];
+    for ( int k = 0; k < NSHADE; k++ ) {
+        int r = 36 + ( 120 * k ) / ( NSHADE - 1 );   // 36 .. 156, intentionally muted
+        int g = ( r * 20 ) / 255;
+        shade[k] = thePal.GetColorValue( PALETTERGB( r, g, g ), iBpp * 8 );
+    }
+    static const int kBayer8[8][8] = {
+        {  0, 32,  8, 40,  2, 34, 10, 42 }, { 48, 16, 56, 24, 50, 18, 58, 26 },
+        { 12, 44,  4, 36, 14, 46,  6, 38 }, { 60, 28, 52, 20, 62, 30, 54, 22 },
+        {  3, 35, 11, 43,  1, 33,  9, 41 }, { 51, 19, 59, 27, 49, 17, 57, 25 },
+        { 15, 47,  7, 39, 13, 45,  5, 37 }, { 63, 31, 55, 23, 61, 29, 53, 21 },
+    };
+
+    int x0 = c.x - rad, x1 = c.x + rad;
+    int y0 = c.y - rad, y1 = c.y + rad;
+    if ( x0 < 0 ) x0 = 0;  if ( x1 >= W ) x1 = W - 1;
+    if ( y0 < 0 ) y0 = 0;  if ( y1 >= H ) y1 = H - 1;
+
+    for ( int y = y0; y <= y1; y++ )
+    {
+        double dy = (double)( y - c.y );
+        for ( int x = x0; x <= x1; x++ )
+        {
+            double dx = (double)( x - c.x );
+            double d2 = dx * dx + dy * dy;
+            if ( d2 > outerR2 || d2 < innerR2 ) continue;
+            double dist = sqrt( d2 );
+            float  t    = (float)( ( dist - innerR ) / ( T > 0 ? T : 1 ) );   // 0 inner .. 1 edge
+            if ( t < 0 ) t = 0; if ( t > 1 ) t = 1;
+            float thr = ( kBayer8[y & 7][x & 7] + 0.5f ) / 64.0f;
+            if ( t < thr ) continue;   // dither: sparser (more map showing) toward the inside
+            int k = (int)( t * ( NSHADE - 1 ) + 0.5f );
+            if ( k < 0 ) k = 0; if ( k >= NSHADE ) k = NSHADE - 1;
+            memcpy( bits + pdib->GetOffset( x, y ), &shade[k], iBpp );
+        }
+    }
+
+    // A crisp 1px edge ring at the exact range anchors the soft glow so it reads as a
+    // deliberate boundary rather than noise. Kept medium (not full) brightness.
+    {
+        DWORD edge = thePal.GetColorValue( PALETTERGB( 175, 32, 32 ), iBpp * 8 );
+        auto put = [&]( int px, int py ) {
+            if ( px < 0 || px >= W || py < 0 || py >= H ) return;
+            memcpy( bits + pdib->GetOffset( px, py ), &edge, iBpp );
+        };
+        int ex = rad, ey = 0, eerr = 0;
+        while ( ex >= ey ) {
+            put( c.x + ex, c.y + ey ); put( c.x + ey, c.y + ex );
+            put( c.x - ey, c.y + ex ); put( c.x - ex, c.y + ey );
+            put( c.x - ex, c.y - ey ); put( c.x - ey, c.y - ex );
+            put( c.x + ey, c.y - ex ); put( c.x + ex, c.y - ey );
+            ey++;
+            eerr += 1 + 2 * ey;
+            if ( 2 * ( eerr - ex ) + 1 > 0 ) { ex--; eerr += 1 - 2 * ex; }
+        }
+    }
+
+    if ( !bGpu )
+        m_bUpdateAll = TRUE;   // software path: erase this frame's circle next frame
 }
 
 void CWndArea::DrawSelectionRect( )
@@ -2605,6 +2812,8 @@ int CWndArea::OnCreate( LPCREATESTRUCT lpCreateStruct )
 
                 switch (event.type) {
                 case SDL_MOUSEBUTTONDOWN:
+                    // clicking an area window makes it the focused/top one (GetTop)
+                    theAreaList.SetTopArea(pThis);
                     if (event.button.button == SDL_BUTTON_LEFT) {
                         if (event.button.clicks >= 2)
                             pThis->OnLButtonDblClk(flags, pt);
@@ -3123,9 +3332,11 @@ void CWndArea::ResClicked( )
     m_bShowRes = !m_bShowRes;
 
     // Resource-view toggle swaps hex sprites to/from the minerals overlay directly
-    // (some paths set m_psprite without SetVisibleType) → invalidate the GPU terrain
-    // cache so the overlay appears/disappears without a view change.
-    { extern unsigned g_enTerrainEditGen; ++g_enTerrainEditGen; }
+    // (m_psprite, bypassing SetVisibleType). A raw ++g_enTerrainEditGen does NOT
+    // invalidate the per-hex GPU tile memo, so the rebuild re-used the cached
+    // pre-overlay tiles and nothing appeared. Record each mineral hex via
+    // g_enEditHex (below) so its tile is re-baked from the new sprite.
+    extern void g_enEditHex( int x, int y );
 
     BOOL bCopper = theGame.GetMe( )->CanCopper( );
 
@@ -3170,6 +3381,10 @@ void CWndArea::ResClicked( )
                     break;
                 }
             }
+
+            // re-bake this hex's GPU tile from the just-changed sprite (records the
+            // hex so the per-hex tile memo is invalidated, not just the gen)
+            g_enEditHex( _hex.X( ), _hex.Y( ) );
         }
     }
 
@@ -3297,6 +3512,70 @@ void CWndArea::SetDestAndSfx( CVehicle* pVeh, CSubHex const& sub )
     }
 
     pVeh->SetDest( sub );
+}
+
+// F2: append a movement waypoint to a vehicle's route instead of replacing its order.
+// The first Shift-click on an unrouted vehicle starts a fresh ONE-SHOT (non-looping) queue;
+// subsequent Shift-clicks append to the tail. Mirrors SDL2RouteWindow's Start sequence so
+// the queue actually runs (route event + HP control + kick the first leg).
+void CWndArea::ShiftQueueMove( CVehicle* pVeh, CSubHex const& sub )
+{
+    ASSERT_STRICT_VALID( pVeh );
+
+    pVeh->ResumeUnit( );
+    pVeh->TempTargetOff( );
+    pVeh->_SetTarget( NULL );
+
+    BOOL bFresh = ( pVeh->GetEvent( ) != CVehicle::route );
+    if ( bFresh )
+    {
+        // start a fresh one-shot queue — clear any stale route first
+        POSITION pos = pVeh->GetRouteList( ).GetHeadPosition( );
+        while ( pos != NULL )
+            delete pVeh->GetRouteList( ).GetNext( pos );
+        pVeh->GetRouteList( ).RemoveAll( );
+        pVeh->SetRoutePos( NULL );
+        pVeh->SetRouteLoop( FALSE );   // Shift-queued routes are one-shot
+    }
+
+    // append the waypoint at the tail (SetLocation resolves building entrances + wrap)
+    CHexCoord hexWp( sub );
+    POSITION posTail = pVeh->GetRouteList( ).GetTailPosition( );
+    pVeh->SetLocation( hexWp, posTail, CRoute::waypoint );
+
+    if ( bFresh )
+    {
+        pVeh->SetEvent( CVehicle::route );
+        theGame.m_pHpRtr->MsgTakeVeh( pVeh );
+        pVeh->HpControlOn( );
+        POSITION rp = pVeh->GetRoutePos( );
+        if ( rp != NULL )
+        {
+            CRoute* pR = pVeh->GetRouteList( ).GetAt( rp );
+            if ( pR != NULL )
+                pVeh->SetDest( pR->GetCoord( ) );
+        }
+    }
+
+    if ( pVeh->m_pSdlRoute != NULL )
+        pVeh->m_pSdlRoute->RefreshRoute( );
+}
+
+// A normal (non-Shift) command overrides a one-shot Shift-queue: clear the queued waypoints
+// so the vehicle doesn't resume them. LOOP routes are left intact (only !GetRouteLoop is a
+// one-shot queue). Resets the flag back to the looping default afterward.
+void CWndArea::ClearOneShotRoute( CVehicle* pVeh )
+{
+    if ( pVeh->GetRouteLoop( ) )
+        return;
+    POSITION p = pVeh->GetRouteList( ).GetHeadPosition( );
+    while ( p != NULL )
+        delete pVeh->GetRouteList( ).GetNext( p );
+    pVeh->GetRouteList( ).RemoveAll( );
+    pVeh->SetRoutePos( NULL );
+    pVeh->SetRouteLoop( TRUE );
+    if ( pVeh->m_pSdlRoute != NULL )
+        pVeh->m_pSdlRoute->RefreshRoute( );
 }
 
 void CWndArea::OnLButtonUp( UINT nFlags, CPoint point )
@@ -3935,8 +4214,10 @@ void CWndArea::OnRButtonDown( UINT nFlags, CPoint point )
         CHitInfo hitinfo = m_aa.GetHit( point );
         CUnit*   pUnitOn = hitinfo.GetUnit( );
         ASSERT_STRICT_VALID_OR_NULL( pUnitOn );
-        if ( pUnitOn == NULL )
-            return;
+        // F2: Shift+RMB on a UNIT shows the info tooltip (existing). On EMPTY GROUND it
+        // queues a movement waypoint immediately (handled right after this block).
+        if ( pUnitOn != NULL )
+        {
 
 #ifdef _CHEAT
         if ( !_bClickAny )
@@ -3978,6 +4259,15 @@ void CWndArea::OnRButtonDown( UINT nFlags, CPoint point )
 
         m_pWndInfo->ShowWindow( SW_SHOW );
         m_pWndInfo->UpdateWindow( );
+        return;
+        }   // end if ( pUnitOn != NULL )
+
+        // F2: empty ground + Shift -> queue a movement waypoint NOW, on the PRESS (Shift is
+        // guaranteed held here). Dispatching on RMB-UP instead was inconsistent: Shift could
+        // be released between press and release, so DoCommandAt saw no MK_SHIFT and did a
+        // normal (replace) move. Firing here samples Shift+RMB together at press time.
+        if ( m_iMode == normal )
+            DoCommandAt( nFlags, point );
         return;
     }
 
@@ -4193,6 +4483,18 @@ void CWndArea::DoCommandAt( UINT nFlags, CPoint point )
     if ( m_lstUnits.GetCount( ) == 0 )
         return;
 
+    const BOOL bShift = ( nFlags & MK_SHIFT ) != 0;   // F2: queue instead of replace
+
+    // A normal (non-Shift) command overrides a one-shot Shift-queue — clear it so the
+    // vehicle doesn't keep running queued waypoints. (Loop routes are preserved.)
+    if ( !bShift )
+        for ( POSITION pos = m_lstUnits.GetHeadPosition( ); pos != NULL; )
+        {
+            CUnit* pUnit = m_lstUnits.GetNext( pos );
+            if ( pUnit->GetUnitType( ) == CUnit::vehicle )
+                ClearOneShotRoute( (CVehicle*)pUnit );
+        }
+
     CSubHex _sub = m_aa.WindowToSubHex( point );
     _sub.Wrap( );
 
@@ -4405,6 +4707,20 @@ void CWndArea::DoCommandAt( UINT nFlags, CPoint point )
     case lmb_goto: {
         bMoveAck = TRUE;
 
+        // F2: Shift-click queues a movement waypoint (one-shot route) on every selected
+        // vehicle instead of replacing its order. Bypasses the formation-move path below.
+        if ( bShift )
+        {
+            for ( POSITION pos = m_lstUnits.GetHeadPosition( ); pos != NULL; )
+            {
+                CUnit* pUnit = m_lstUnits.GetNext( pos );
+                ASSERT_STRICT_VALID( pUnit );
+                if ( pUnit->GetUnitType( ) == CUnit::vehicle )
+                    ShiftQueueMove( (CVehicle*)pUnit, _sub );
+            }
+            break;
+        }
+
         // if we have 1 unit or are going to a building - send them direct
         BOOL bDestIsBldg = theBuildingHex._GetBuilding( _sub ) != NULL;
         if ( ( m_lstUnits.GetCount( ) <= 1 ) || bDestIsBldg )
@@ -4607,8 +4923,12 @@ void CWndArea::OnLButtonDblClk( UINT nFlags, CPoint point )
     // if ctrl is down we bring up a new window
     if ( nFlags & MK_CONTROL )
     {
-        // Multi-area windows require MFC HWND; not supported in SDL2 mode (Phase 3)
-        if ( !theApp.m_gameWindow && theGame.GetMe( )->CanMultiArea( ) )
+        // Radio research unlocks additional area-map windows (original behavior).
+        // The SDL2 panel for an area window is built by CWndArea::OnCreate, which
+        // already indexes panels ("area_N") and supports multiple instances — the
+        // same new-CWndArea-then-Create path CWndBar::GotoArea uses. The old
+        // !m_gameWindow guard disabled this entirely in SDL2 mode; drop it.
+        if ( theGame.GetMe( )->CanMultiArea( ) )
         {
             CWndArea* pWndArea = new CWndArea( );
             pWndArea->Create( hitinfo._GetHexCoord( ), punit, FALSE );
@@ -4645,6 +4965,20 @@ void CWndArea::OnLButtonDblClk( UINT nFlags, CPoint point )
             return;
         case CStructureData::UTembassy:
             theApp.m_wndBar.GotoRelations( );
+            return;
+        // Warehouse / rocket (storage), power plants, housing, and resource producers
+        // (mines / farms / smelters / refineries) open the read-only building-info
+        // window (the rocket shows storage + power + housing + turret).
+        case CStructureData::UTwarehouse:
+        case CStructureData::UTpower:
+        case CStructureData::UThousing:
+        case CStructureData::UTmaterials:
+        case CStructureData::UTmine:
+        case CStructureData::UTfarm:
+        case CStructureData::UTfort:        // pillboxes / bunkers / forts (weapon widget)
+        case CStructureData::UTcommand:     // command center (military summary + turret)
+        case CStructureData::UTrepair:      // repair building (live repair queue)
+            ( (CBuilding*)punit )->ShowInfoWindow( );
             return;
         }
 

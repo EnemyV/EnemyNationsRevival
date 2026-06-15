@@ -629,6 +629,12 @@ void CHPRouter::DoRouting( CAIMsg* pMsg )
 
             // remove it from m_plTrucksAvailable
             m_plTrucksAvailable->RemoveUnit( pMsg->m_dwID, FALSE );
+
+            // ...and from m_plShipsAvailable. m_plUnits owns/frees the CAIUnit
+            // below (RemoveUnit TRUE); leaving a destroyed ship in the borrowed
+            // ships list leaves a dangling pointer that GetNearestShip() then
+            // dereferences -> AV. Latent until cargo ships actually route.
+            m_plShipsAvailable->RemoveUnit( pMsg->m_dwID, FALSE );
         }
 
         // determine if this a special building of this player
@@ -3122,13 +3128,13 @@ int CHPRouter::GetMaterialCapacity( CAIUnit* paiUnit )
         CVehicle* pVehicle = theVehicleMap.GetVehicle( paiUnit->GetID( ) );
         if ( pVehicle != NULL )
         {
-            iQty = pVehicle->GetData( )->GetMaxMaterials( ) - pVehicle->GetTotalStore( );
+            iQty = pVehicle->GetMaxMaterials( ) - pVehicle->GetTotalStore( );
             if ( iQty < 0 )
                 iQty = 0;
             else
             {
-                if ( iQty > pVehicle->GetData( )->GetMaxMaterials( ) )
-                    iQty = pVehicle->GetData( )->GetMaxMaterials( );
+                if ( iQty > pVehicle->GetMaxMaterials( ) )
+                    iQty = pVehicle->GetMaxMaterials( );
             }
         }
     }
@@ -6324,7 +6330,12 @@ BOOL CHPRouter::GetStagingHex( CAIUnit* paiTruck, CAIUnit* paiBldg, CHexCoord& h
             LeaveCriticalSection( &cs );
             return ( FALSE );
         }
-        hexNearBy = pBldg->GetExitHex( );
+        // Stage a SHIP out toward the building's WATER (ship) exit, not its land
+        // vehicle exit — otherwise the spiral search below starts on the land side
+        // and never reaches travelable water, so GetStagingHex returns FALSE, no
+        // exit destination is issued, and the ship sits parked in the seaport
+        // after dropping its cargo instead of leaving.
+        hexNearBy = IsShip( paiTruck->GetID( ) ) ? pBldg->GetShipHex( ) : pBldg->GetExitHex( );
         // get building size
         iWidth  = pBldg->GetData( )->GetCX( );
         iHeight = pBldg->GetData( )->GetCY( );

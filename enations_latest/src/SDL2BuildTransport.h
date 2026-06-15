@@ -32,6 +32,8 @@ private:
     void RebuildProgress(int per);
     // Build a small blue up/down arrow glyph surface for the quantity spinner.
     static SDL_Surface* MakeArrow(int w, int h, bool up);
+    // Build a circled-"i" info glyph (gold disc, blue "i") for the info button.
+    static SDL_Surface* MakeInfoGlyph(int d);
 
     CVehicleBuilding* m_pBldg;
 

@@ -438,6 +438,21 @@ BOOL CTransportData::CanTravelHex( CHex const* pHex ) const
         }
     }
 
+    // small boats — the motorboat (gun_boat) and the landing craft — are shallow-draft
+    // enough to navigate ALL water: rivers, lakes, ocean, and across the coastline
+    // shores at river mouths / junctions between water bodies (even sloped). Deeper-draft
+    // ships (cargo ship, destroyer, cruiser) fall through to the depth/carrier rules
+    // below, so they still can't use rivers or cross shallow water.
+    if ( ( GetType( ) == gun_boat ) || ( GetType( ) == landing_craft ) )
+        switch ( pHex->GetType( ) )
+        {
+        case CHex::river:
+        case CHex::lake:
+        case CHex::ocean:
+        case CHex::coastline:
+            return ( TRUE );
+        }
+
     //   not water - we can travel on coastline tiles
     if ( ( pHex->GetType( ) != CHex::lake ) && ( pHex->GetType( ) != CHex::ocean ) )
     {
@@ -1313,8 +1328,16 @@ int CUnit::GetTotalStore( ) const
 
     if ( GetUnitType( ) == CUnit::vehicle )
     {
-        TRAP( iTotal > ( (CVehicle*)this )->GetData( )->GetMaxMaterials( ) );
-        iTotal = __min( iTotal, ( (CVehicle*)this )->GetData( )->GetMaxMaterials( ) );
+        int iMax = ( (CVehicle*)this )->GetMaxMaterials( );
+        // Over-capacity is a legitimate transient state now: a balance change that
+        // LOWERS cargo capacity (e.g. the cargo_handling nerf to +10%/level), or
+        // loading a save made under a higher cap, can leave a vehicle holding more
+        // than its current GetMaxMaterials(). The bare TRAP() here __debugbreak'd and
+        // killed the debug build the moment such a truck was touched. Clamp the
+        // reported total as before; log the site once instead of halting.
+        if ( iTotal > iMax )
+            EN_TRAP_REMOVED( "vehicle over cargo capacity (clamped)" );
+        iTotal = __min( iTotal, iMax );
     }
 
     iTotal = __max( 0, iTotal );

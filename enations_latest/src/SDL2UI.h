@@ -68,6 +68,9 @@ public:
     void SetWrapped(bool w) { m_wrapped = w; }
     void SetTopAligned(bool t) { m_topAligned = t; }
     void SetRightAligned(bool r) { m_rightAligned = r; }
+    // Faux-bold: render the glyphs a second time shifted 1px (no font-style mutation,
+    // so it can't affect other labels sharing the cached font). Default off.
+    void SetBold(bool b) { m_bold = b; }
 
 private:
     std::string m_text;
@@ -76,6 +79,7 @@ private:
     bool m_wrapped = false;
     bool m_topAligned = false;
     bool m_rightAligned = false;
+    bool m_bold = false;
 
     // Cached rasterized text. Re-rendering TTF every frame (especially the wrapped
     // multi-line variant) is expensive enough to visibly drop the game's framerate
@@ -160,11 +164,17 @@ public:
     int GetValue() const { return m_value; }
     void SetValue(int v);
     void SetOnChange(ChangeCallback cb) { m_onChange = cb; }
+    // Hide the slider's built-in value number (drawn just right of the track).
+    // Callers that render their own readout next to the slider (e.g. the Load
+    // Truck dialog's "loaded/available" column) turn this off to avoid a second,
+    // overlapping number.
+    void SetShowValue(bool s) { m_showValue = s; }
 
 private:
     int m_minVal, m_maxVal, m_value;
     ChangeCallback m_onChange;
     bool m_dragging = false;
+    bool m_showValue = true;
 
     int ThumbX() const;
     int ValueFromX(int x) const;
@@ -498,6 +508,15 @@ protected:
     // NOT owned by the dialog — caller keeps it alive.
     void SetCustomBackground(SDL_Surface* bg) { m_customBg = bg; }
 
+    // Opt out of the per-frame HWND_TOP bump (see m_keepOnTop). A non-modal dialog
+    // that calls this can be tucked behind the area map instead of floating on top.
+    void SetKeepOnTop(bool v) { m_keepOnTop = v; }
+
+    // Override the default 13pt widget font for this dialog's labels/buttons. Lets
+    // a specific window (e.g. the building-info windows) run slightly larger text
+    // without changing every other dialog. A per-widget SetFontSize still wins.
+    void SetWidgetFontSize(int pt) { m_widgetFontSize = pt; }
+
     // Full-bleed background: fills the ENTIRE dialog rect — no gold border, no title
     // bar — with this surface, stretched to fit. Used by the full-screen end-game
     // (win/lose/scenario) screens that mirror CWndCutScene's full-screen painting.
@@ -550,10 +569,18 @@ private:
     int m_focusIndex = -1;  // Index of currently focused widget, -1 = none
     int m_result = 0;
     bool m_running = false;
+    int m_widgetFontSize = 13;  // default widget text size (see SetWidgetFontSize)
 
     // Non-modal state
     bool m_nonModal = false;
     std::function<void(int)> m_onDone;
+
+    // Per-frame z-order: modal dialogs always re-assert HWND_TOP each frame so they
+    // float above the detached Area/World map windows. Non-modal dialogs do too by
+    // default (keeps the build menu visible over the map), but a dialog can opt out
+    // via SetKeepOnTop(false) so the user can tuck it behind the map — e.g. the
+    // Relations window, which otherwise felt "stuck on top".
+    bool m_keepOnTop = true;
 
     // Per-frame repaint throttle for the non-modal path (see RenderFrameNonModal).
     Uint32 m_lastFrameMs = 0;

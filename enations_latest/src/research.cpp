@@ -238,21 +238,70 @@ void CRsrchArray::Open( )
     pMmio->AscendList( );
     delete pMmio;
 
+    // In-code research topic: Pontoon Bridges (not in the DAT file). An EARLY, cheap
+    // bridge tech that unlocks bridge building at HALF the span of the full Bridges
+    // tech (see CPlayer::GetMaxSpan). Its gate mirrors Mid-sized Buildings (the entry
+    // of the building line): same scenario + same BUILDING prerequisites, and no
+    // research prerequisite. The full Bridges tech is then gated BEHIND Pontoon (we
+    // append it to Bridges' prereqs below). The AI can still reach Pontoon via its
+    // randomized research fallback (CAIGoalMgr::NextResearchTopic), so gating Bridges
+    // behind a tech the frozen RDPath can't see no longer locks the AI out.
+    {
+        CRsrchItem* pRi   = &ElementAt( bridge_short );
+        CRsrchItem* pFull = &ElementAt( bridge );
+        CRsrchItem* pMid  = &ElementAt( medium_facilities );   // "Mid-sized Buildings"
+
+        pRi->m_iPtsRequired      = __max( 1, pFull->m_iPtsRequired / 2 );  // half of Bridge Building
+        pRi->m_iScenarioReq      = pMid->m_iScenarioReq;                   // same gate as Mid-sized Buildings
+        pRi->m_iNumRsrchRequired = 0;                                      // no research prereq
+
+        // Same BUILDING prerequisites as Mid-sized Buildings.
+        pRi->m_iNumBldgsRequired = pMid->m_iNumBldgsRequired;
+        if ( pMid->m_iNumBldgsRequired > 0 )
+        {
+            pRi->m_piBldgsRequired = new int[pMid->m_iNumBldgsRequired];
+            for ( int i = 0; i < pMid->m_iNumBldgsRequired; i++ )
+                pRi->m_piBldgsRequired[i] = pMid->m_piBldgsRequired[i];
+        }
+
+        pRi->m_sName   = "Pontoon Bridges";
+        pRi->m_sDesc   = "Light floating pontoon spans let our engineers bridge narrow water early, at half the reach of full bridge engineering.";
+        pRi->m_sResult = "Pontoon bridges are ready. Our engineers can now bridge short stretches of water.";
+
+        // Gate full Bridge Building behind Pontoon Bridges: append bridge_short to its
+        // existing prerequisites (the one existing tech we modify, per the bridge
+        // exception). Keeps the old prereqs (e.g. Mid-sized Buildings) and adds ours.
+        int  iOldN = pFull->m_iNumRsrchRequired;
+        int* piNew = new int[iOldN + 1];
+        for ( int i = 0; i < iOldN; i++ )
+            piNew[i] = pFull->m_piRsrchRequired[i];
+        piNew[iOldN] = (int)bridge_short;
+        delete[] pFull->m_piRsrchRequired;
+        pFull->m_piRsrchRequired   = piNew;
+        pFull->m_iNumRsrchRequired = iOldN + 1;
+    }
+
     // In-code research topics: Bridges 2-5 (not in the DAT file). Each tier costs
     // double the previous tier's points, requires the previous tier, and extends
     // the max bridge span by +25% of the base span (see CPlayer::GetMaxSpan).
     {
-        static char const* aszName[4] = { "Bridges 2", "Bridges 3", "Bridges 4", "Bridges 5" };
+        static char const* aszName[4] = { "Composite Trusses", "Tensile Spans", "Suspension Lattice", "Monofilament Spans" };
         static char const* aszDesc[4] = {
-            "Improved trusses let bridges span 25% more water than the original design.",
-            "Bridges can span 50% more water than the original design.",
-            "Bridges can span 75% more water than the original design.",
-            "Bridges can span twice as much water as the original design." };
+            "Lightweight composite trusses let our bridges span 25% more water than the original design.",
+            "High-tension tensile members reach 50% farther across the water than the original design.",
+            "A self-bracing suspension lattice carries bridges 75% farther than the original design.",
+            "Monofilament cabling, stronger than steel at a fraction of the weight, lets a single bridge span twice as much water as the original design." };
         static char const* aszRslt[4] = {
-            "Our engineers can now build bridges 25% longer.",
-            "Our engineers can now build bridges 50% longer.",
-            "Our engineers can now build bridges 75% longer.",
-            "Our engineers can now build bridges twice as long." };
+            "Composite trusses approved. Our engineers can now build bridges 25% longer.",
+            "Tensile spans mastered. Our engineers can now build bridges 50% longer.",
+            "The suspension lattice is field-ready. Our engineers can now build bridges 75% longer.",
+            "Monofilament spans perfected. Our engineers can now build bridges twice as long." };
+
+        // Extra (cross-line) prereq per tier, on top of the previous tier. -1 = none.
+        // Composites lean on manufacturing; longer spans on heavier construction;
+        // monofilament on advanced (nuclear-era) materials science.
+        static const int aiExtra[4] = {
+            (int)manf_1, (int)const_2, (int)const_3, (int)nuclear };
 
         int iPts = ElementAt( bridge ).m_iPtsRequired;
         for ( int iOn = 0; iOn < 4; iOn++ )
@@ -262,12 +311,208 @@ void CRsrchArray::Open( )
             iPts *= 2;
             pRi->m_iPtsRequired       = iPts;
             pRi->m_iScenarioReq       = ElementAt( bridge ).m_iScenarioReq;
-            pRi->m_iNumRsrchRequired  = 1;
-            pRi->m_piRsrchRequired    = new int[1];
-            pRi->m_piRsrchRequired[0] = ( 0 == iOn ) ? (int)bridge : (int)( bridge_2 + iOn - 1 );
+
+            int iChain = ( 0 == iOn ) ? (int)bridge : (int)( bridge_2 + iOn - 1 );
+            int nReq   = 1 + ( aiExtra[iOn] >= 0 ? 1 : 0 );
+            pRi->m_iNumRsrchRequired  = nReq;
+            pRi->m_piRsrchRequired    = new int[nReq];
+            pRi->m_piRsrchRequired[0] = iChain;
+            if ( aiExtra[iOn] >= 0 )
+                pRi->m_piRsrchRequired[1] = aiExtra[iOn];
+
             pRi->m_sName              = aszName[iOn];
             pRi->m_sDesc              = aszDesc[iOn];
             pRi->m_sResult            = aszRslt[iOn];
+        }
+    }
+
+    // In-code research topics: the Cargo Handling line (not in the DAT file). Mirrors
+    // the bridge tiers; each costs double the previous tier's points and requires the
+    // previous tier. Each level adds +10% truck cargo capacity over the base; with the
+    // base cargo_handling research (+10%) the four levels run 110%..140% of stock
+    // capacity (see CPlayer::GetCargoPct).
+    {
+        static char const* aszName[3] = { "Servo-Loaders", "Modular Cargo Pods", "Grav-Assisted Hauling" };
+        static char const* aszDesc[3] = {
+            "Powered servo arms load and stow freight with no wasted space, letting trucks carry 20% more than a stock vehicle.",
+            "Sealed modular pods lock together and stack tighter, raising truck capacity to 30% over stock.",
+            "Gravitic load compensators let trucks bear far denser cargo, 40% over stock." };
+        static char const* aszRslt[3] = {
+            "Servo-loaders are online. Our trucks now haul 20% more cargo.",
+            "Modular cargo pods are in service. Our trucks now haul 30% more cargo.",
+            "Grav-assisted hauling is operational. Our trucks now haul 40% more cargo." };
+
+        // Extra (cross-line) prereq per tier, on top of the previous tier. -1 = none.
+        // Servo-loaders and modular pods need manufacturing to build; grav-assisted
+        // hauling needs advanced (nuclear-era) physics.
+        static const int aiExtra[3] = {
+            (int)manf_1, (int)manf_2, (int)nuclear };
+
+        int iPts = ElementAt( cargo_handling ).m_iPtsRequired;
+        for ( int iOn = 0; iOn < 3; iOn++ )
+        {
+            CRsrchItem* pRi = &ElementAt( cargo_handling_2 + iOn );
+
+            iPts *= 2;
+            pRi->m_iPtsRequired       = iPts;
+            pRi->m_iScenarioReq       = ElementAt( cargo_handling ).m_iScenarioReq;
+
+            int iChain = ( 0 == iOn ) ? (int)cargo_handling : (int)( cargo_handling_2 + iOn - 1 );
+            int nReq   = 1 + ( aiExtra[iOn] >= 0 ? 1 : 0 );
+            pRi->m_iNumRsrchRequired  = nReq;
+            pRi->m_piRsrchRequired    = new int[nReq];
+            pRi->m_piRsrchRequired[0] = iChain;
+            if ( aiExtra[iOn] >= 0 )
+                pRi->m_piRsrchRequired[1] = aiExtra[iOn];
+
+            pRi->m_sName              = aszName[iOn];
+            pRi->m_sDesc              = aszDesc[iOn];
+            pRi->m_sResult            = aszRslt[iOn];
+        }
+    }
+
+    // In-code research topics: the Fuel Efficiency line (not in the DAT file). A 10-
+    // level repeatable line unlocked after Gas Turbines; level 1 requires gas_turbine,
+    // each later level requires the previous. Each level costs DOUBLE the previous in
+    // points, and cuts gas consumption by 5% of what remains (diminishing; the engine
+    // applies 0.95^level via CPlayer::GetFuelPct). Names run grounded -> sci-fi.
+    {
+        static char const* aszName[10] = {
+            "Fuel Injection",      "Lean-Burn Mapping",   "Turbo Compounding",
+            "Regenerative Drive",  "Thermal Recovery",    "Plasma Ignition",
+            "Catalytic Reclamation","Synthetic Lubricants","Ion Scavenging",
+            "Zero-Loss Cycle" };
+        static char const* aszDesc[10] = {
+            "Precision fuel injection meters every drop, trimming gas burn by 5%.",
+            "Lean-burn engine mapping squeezes more travel from less gas, saving another 5%.",
+            "Turbo-compounding recovers exhaust energy back into the drivetrain for a further 5%.",
+            "Regenerative drives recapture braking energy, cutting gas burn another 5%.",
+            "Thermal recovery loops harvest waste engine heat, burning 5% less gas.",
+            "Plasma ignition burns fuel cleaner and more completely, saving a further 5%.",
+            "Catalytic reclamation refines spent fuel back into the tank for another 5%.",
+            "Synthetic lubricants slash friction losses across the drivetrain, saving 5%.",
+            "Ion scavengers strip the last usable energy from the exhaust stream, another 5%.",
+            "A near-closed-loop drive cycle wastes almost nothing, shaving a final 5%." };
+        static char const* aszRslt[10] = {
+            "Fuel injection is fielded. Our vehicles burn 5% less gas.",
+            "Lean-burn mapping is live. Our vehicles burn less gas still.",
+            "Turbo compounding is online. Gas consumption drops again.",
+            "Regenerative drives are installed. Our fleet sips even less gas.",
+            "Thermal recovery is running. Gas burn falls further.",
+            "Plasma ignition is operational. Cleaner burn, less gas used.",
+            "Catalytic reclamation is online. Our vehicles stretch every tank further.",
+            "Synthetic lubricants are in service. Friction losses cut, gas saved.",
+            "Ion scavenging is active. Almost nothing leaves the exhaust unused.",
+            "The zero-loss cycle is perfected. Our vehicles burn the least gas possible." };
+
+        // Extra (cross-line) prereq per level, on top of the previous level. -1 = none.
+        // Turbo compounding leans on manufacturing; plasma ignition needs nuclear-era
+        // physics. Levels above each gate inherit it through the chain, so we only
+        // pin it once where it first becomes necessary.
+        static const int aiExtra[10] = {
+            -1, -1, (int)manf_1, -1, -1, (int)nuclear, -1, -1, -1, -1 };
+
+        int iPts = ElementAt( gas_turbine ).m_iPtsRequired;
+        for ( int iOn = 0; iOn < 10; iOn++ )
+        {
+            CRsrchItem* pRi = &ElementAt( fuel_efficiency_1 + iOn );
+
+            pRi->m_iPtsRequired       = iPts;   // level 1 = gas_turbine cost; doubles each level
+            pRi->m_iScenarioReq       = ElementAt( gas_turbine ).m_iScenarioReq;
+
+            int iChain = ( 0 == iOn ) ? (int)gas_turbine : (int)( fuel_efficiency_1 + iOn - 1 );
+            int nReq   = 1 + ( aiExtra[iOn] >= 0 ? 1 : 0 );
+            pRi->m_iNumRsrchRequired  = nReq;
+            pRi->m_piRsrchRequired    = new int[nReq];
+            pRi->m_piRsrchRequired[0] = iChain;
+            if ( aiExtra[iOn] >= 0 )
+                pRi->m_piRsrchRequired[1] = aiExtra[iOn];
+
+            pRi->m_sName              = aszName[iOn];
+            pRi->m_sDesc              = aszDesc[iOn];
+            pRi->m_sResult            = aszRslt[iOn];
+
+            iPts *= 2;   // each level costs twice as much as the previous
+        }
+    }
+
+    // In-code research topics: Vehicle Speed 1-10 (not in the DAT file). Each level
+    // adds +2% vehicle movement speed (see CPlayer::GetSpeedPct). Gated off the Fuel
+    // Efficiency line: level 1 requires the first TWO fuel-efficiency techs, and each
+    // later level requires the previous speed level plus the NEXT fuel-efficiency level
+    // (so it climbs in lock-step with fuel economy). Level 10 has no higher fuel level
+    // to gate on, so it just requires speed level 9. The AI reaches these via its
+    // randomized research fallback.
+    {
+        static char const* aszName[10] = {
+            "Tuned Drivetrains",  "High-Torque Gearing", "Lightweight Frames",
+            "Active Suspension",  "Variable Transmission","Aerodynamic Profiling",
+            "Magnetic Bearings",  "Composite Drivetrains","Vectored Thrust",
+            "Inertial Dampeners" };
+        static char const* aszDesc[10] = {
+            "Tuned drivetrains deliver power more efficiently, moving every vehicle 2% faster.",
+            "High-torque gearing puts more of the engine to the wheels and tracks, adding 2% speed.",
+            "Lighter structural frames cut dead weight, adding another 2% to vehicle speed.",
+            "Active suspension keeps wheels and tracks planted over rough ground, adding 2% speed.",
+            "A variable transmission keeps engines in their power band, adding 2% speed.",
+            "Aerodynamic profiling trims drag across the fleet, adding 2% speed.",
+            "Frictionless magnetic bearings cut drivetrain losses, adding 2% speed.",
+            "Composite drivetrains shed weight and friction together, adding 2% speed.",
+            "Vectored thrust adds a push where wheels and tracks cannot, adding 2% speed.",
+            "Inertial dampeners shrug off acceleration losses, adding a final 2% speed." };
+        static char const* aszRslt[10] = {
+            "Tuned drivetrains are fielded. Our vehicles move 2% faster.",
+            "High-torque gearing is installed. Our vehicles move faster still.",
+            "Lightweight frames are in service. Our vehicles pick up more speed.",
+            "Active suspension is online. Our vehicles move faster over any terrain.",
+            "Variable transmissions are fielded. Our vehicles gain more speed.",
+            "Aerodynamic profiling is complete. Our vehicles move faster.",
+            "Magnetic bearings are running. Our vehicles gain still more speed.",
+            "Composite drivetrains are in service. Our vehicles move faster.",
+            "Vectored thrust is operational. Our vehicles surge ahead.",
+            "Inertial dampeners are perfected. Our vehicles reach their top speed." };
+
+        // Extra (cross-line) prereq per level, on top of the chain + fuel prereqs.
+        // -1 = none. Aerodynamic Profiling (level 6) also needs Fuel-Air Explosive
+        // (atk_3, the top shell-damage tech) — aerodynamics + warhead crossover.
+        static const int aiExtra[10] = {
+            -1, -1, -1, -1, -1, (int)atk_3, -1, -1, -1, -1 };
+
+        for ( int iOn = 0; iOn < 10; iOn++ )
+        {
+            CRsrchItem* pRi = &ElementAt( vehicle_speed_1 + iOn );
+
+            pRi->m_iPtsRequired      = 50000 + 25000 * iOn;                       // modest, gating does the pacing
+            pRi->m_iScenarioReq      = ElementAt( gas_turbine ).m_iScenarioReq;   // fuel line's campaign gate
+            pRi->m_iNumBldgsRequired = 0;
+
+            // Build the prereq list: level 1 = first two fuel-efficiency techs; levels
+            // 2-9 = previous speed level + the next fuel-efficiency level; level 10 =
+            // previous speed level only (fuel line exhausted). Plus any per-level extra.
+            int aiReq[4];
+            int nReq = 0;
+            if ( iOn == 0 )
+            {
+                aiReq[nReq++] = (int)fuel_efficiency_1;
+                aiReq[nReq++] = (int)fuel_efficiency_2;
+            }
+            else
+            {
+                aiReq[nReq++] = (int)( vehicle_speed_1 + iOn - 1 );
+                if ( iOn < 9 )
+                    aiReq[nReq++] = (int)( fuel_efficiency_1 + iOn + 1 );   // fuel level (iOn+2)
+            }
+            if ( aiExtra[iOn] >= 0 )
+                aiReq[nReq++] = aiExtra[iOn];
+
+            pRi->m_iNumRsrchRequired = nReq;
+            pRi->m_piRsrchRequired   = new int[nReq];
+            for ( int k = 0; k < nReq; k++ )
+                pRi->m_piRsrchRequired[k] = aiReq[k];
+
+            pRi->m_sName   = aszName[iOn];
+            pRi->m_sDesc   = aszDesc[iOn];
+            pRi->m_sResult = aszRslt[iOn];
         }
     }
 

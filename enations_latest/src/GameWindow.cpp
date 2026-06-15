@@ -661,6 +661,22 @@ void GameWindow::UnregisterDialog(SDL2Dialog* dlg) {
     (void)dlg;
 }
 
+void GameWindow::CloseActiveDialogs() {
+    // EndDialog(0) tears down each dialog's OS window immediately and fires its
+    // onDone (which clears the owner's pointer, e.g. CWndBar::m_pSdlRelations).
+    // We then delete and clear right here rather than waiting for the PollEvents
+    // cleanup pass, because the caller (DestroyWorld) is about to free the game
+    // state these dialogs reference. Swap first so an onDone callback that somehow
+    // re-enters can't mutate the vector we're iterating.
+    std::vector<SDL2Dialog*> dialogs;
+    dialogs.swap(m_activeDialogs);
+    for (SDL2Dialog* dlg : dialogs) {
+        if (dlg->IsNonModalActive())
+            dlg->EndDialog(0);
+        delete dlg;
+    }
+}
+
 void GameWindow::HandleEvent(SDL_Event& event) {
     switch (event.type) {
         case SDL_WINDOWEVENT:

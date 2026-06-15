@@ -6394,7 +6394,7 @@ void CAIMapUtil::FlagStagingArea( BOOL bFlag, int iSX, int iSY, int iEX, int iEY
 // used to stage a taskforce, but only on land!
 //
 void CAIMapUtil::FindStagingHex( int iSX, int iSY, int iEX, int iEY, CHexCoord& hexDest, int iVehType,
-                                 BOOL bFindPath /*=FALSE*/ )
+                                 BOOL bFindPath /*=FALSE*/, CHexCoord* phexRocket /*=NULL*/ )
 {
     // get pointer to vehicle type data
     CTransportData const* pVehData = pGameData->GetTransportData( iVehType );
@@ -6480,6 +6480,16 @@ void CAIMapUtil::FindStagingHex( int iSX, int iSY, int iEX, int iEY, CHexCoord& 
             if ( !IsLandingArea( hex ) )
                 continue;
         }
+        // initial AI vehicle placement (phexRocket non-NULL): never strand a
+        // land vehicle on a water hex, and require it can path to the rocket so
+        // a lone starting crane/truck can actually reach and build the base
+        if ( phexRocket != NULL )
+        {
+            if ( ( pVehData->GetWheelType( ) != CWheelTypes::water ) && pGameHex->IsWater( ) )
+                continue;
+            if ( !GetPathRating( hex, *phexRocket, iVehType ) )
+                continue;
+        }
         if ( bFindPath )
         {
             if ( !GetPathRating( hexVeh, hex, iVehType ) )
@@ -6556,6 +6566,17 @@ void CAIMapUtil::FindStagingHex( int iSX, int iSY, int iEX, int iEY, CHexCoord& 
                 if ( pGameHex->GetType( ) != CHex::coastline )
                     continue;
                 if ( !IsLandingArea( hex ) )
+                    continue;
+            }
+
+            // initial AI vehicle placement fallback (phexRocket non-NULL): this
+            // exhaustive sweep is the guaranteed last resort, so only enforce the
+            // hard rule (never strand a land vehicle on water). The path-to-rocket
+            // preference is applied by the random loop above; requiring it here too
+            // could leave the AI with zero starting vehicles if pathing is flaky.
+            if ( phexRocket != NULL )
+            {
+                if ( ( pVehData->GetWheelType( ) != CWheelTypes::water ) && pGameHex->IsWater( ) )
                     continue;
             }
 

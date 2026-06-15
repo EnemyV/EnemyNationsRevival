@@ -301,6 +301,28 @@ static int aiDavePath[CRsrchArray::num_types] =
 };
 */
 
+// The static AI research paths above were authored before Pontoon Bridges existed,
+// and a loaded game's RDPath is frozen at the legacy size — so none of them list it.
+// Inject bridge_short into the in-memory path right before full Bridge Building (which
+// now REQUIRES it), so the AI researches Pontoon on schedule instead of waiting for the
+// random fallback. Idempotent; only shifts trailing padding.
+static void InjectPontoonIntoPath( int* piPath )
+{
+    int iBridge = -1;
+    for ( int i = 0; i < CRsrchArray::num_types; ++i )
+    {
+        if ( piPath[i] == CRsrchArray::bridge_short )
+            return;                                   // already present
+        if ( ( piPath[i] == CRsrchArray::bridge ) && ( iBridge < 0 ) )
+            iBridge = i;
+    }
+    if ( iBridge < 0 )
+        return;                                       // this path never researches bridges
+    for ( int i = CRsrchArray::num_types - 1; i > iBridge; --i )
+        piPath[i] = piPath[i - 1];
+    piPath[iBridge] = CRsrchArray::bridge_short;       // sits immediately before bridge
+}
+
 CAIGoalMgr::CAIGoalMgr( BOOL bRestart, int iPlayer, CAIMap* pMap, CAIUnitList* plUnits, CAIOpForList* plOpFors )
 {
     m_iPlayer  = iPlayer;
@@ -442,6 +464,7 @@ void CAIGoalMgr::Assess( CAIMsg* pMsg )
 
             // load naval biased research path
             for ( int i = 0; i < CRsrchArray::num_types; ++i ) m_iRDPath[i] = aiStevePath[i];
+            InjectPontoonIntoPath( m_iRDPath );
 
             // BUGBUG for testing
             // pGoal = m_plGoalList->GetGoal(IDG_SEAINVADE);
@@ -1888,18 +1911,27 @@ int CAIGoalMgr::NextResearchTopic( CPlayer* pPlayer )
         }
     }
 
-    // DNT - now try all topics in order in case missed one in the array
-    for ( int i = 0; i < CRsrchArray::num_types; ++i )
-    {
-        // this assumes that topic is discovered test occurs too
+    // Fallback: the AI's guided path (m_iRDPath) had nothing researchable right now —
+    // either it finished its authored tree, or the next path topic is gated behind a
+    // tech we ADDED after the path was frozen (the RDPath can't reference indices past
+    // RDPATH_SAVE_COUNT, so any new in-code tech is invisible to it). Pick a RANDOM
+    // available topic so the AI still researches those newer techs (Pontoon Bridges,
+    // the repeatable tiers, fuel efficiency, ...) instead of stalling on them.
+    // GetRandom is the game's deterministic RNG, so this stays multiplayer-safe.
+    int aiAvail[CRsrchArray::num_types];
+    int nAvail = 0;
+    for ( int i = 1; i < CRsrchArray::num_types; ++i )
         if ( pPlayer->CanRsrch( i ) )
-        {
-#ifdef _LOGOUT
-            logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "CAIGoalMgr::NextResearchTopic() for %d is %d \n", m_iPlayer, i );
-#endif
+            aiAvail[nAvail++] = i;
 
-            return ( i );
-        }
+    if ( nAvail > 0 )
+    {
+        int iTopic = aiAvail[ pGameData->GetRandom( nAvail ) ];
+#ifdef _LOGOUT
+        logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC,
+                   "CAIGoalMgr::NextResearchTopic() for %d random-fallback %d \n", m_iPlayer, iTopic );
+#endif
+        return ( iTopic );
     }
 
     return ( 0 );
@@ -5710,6 +5742,7 @@ void CAIGoalMgr::InitPlayer( void )
         piPath = aiEricPath;
 
     for ( int i = 0; i < CRsrchArray::num_types; ++i ) m_iRDPath[i] = piPath[i];
+    InjectPontoonIntoPath( m_iRDPath );
 }
 
 //
@@ -10282,6 +10315,8 @@ void CAIGoalMgr::Load( CArchive& ar, CAIMap* pMap, CAIUnitList* plUnits, CAIOpFo
         ar.Read( (void*)m_iRDPath, ( sizeof( int ) * RDPATH_SAVE_COUNT ) );
         memset( m_iRDPath + RDPATH_SAVE_COUNT, 0,
                 sizeof( int ) * ( CRsrchArray::num_types - RDPATH_SAVE_COUNT ) );
+        // Saved paths predate Pontoon Bridges — inject it so loaded AIs research it too.
+        InjectPontoonIntoPath( m_iRDPath );
     }
     catch ( CFileException* /*theException*/ )
     {

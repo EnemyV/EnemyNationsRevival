@@ -1226,6 +1226,13 @@ void CConquerApp::DestroyWorld() {
     theGame.SetShouldOperate(FALSE);
     theGame.EmptyQueue();
 
+    // Close any open SDL2 non-modal dialogs (Relations/diplomacy, build menus, …)
+    // before we tear down the windows and game state they reference. Otherwise an
+    // orphaned dialog survives the level, keeps rendering + bumping itself on top
+    // every frame, and dangles a pointer into freed game data.
+    if (m_gameWindow)
+        m_gameWindow->CloseActiveDialogs();
+
     // we may not be in the game yet
     if (m_pCreateGame != NULL) {
         delete m_pCreateGame;

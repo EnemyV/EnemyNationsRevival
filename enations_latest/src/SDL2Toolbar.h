@@ -77,6 +77,12 @@ private:
     void RenderIconText(SDL_Surface* dst, int iconIdx, const char* text, int x, int y, int w, int h);
     void RenderMaterialsBar(SDL_Surface* dst, CUnit* pUnit, int iconIdx, int x, int y, int w, int h);
     void RenderCarrierCargo(SDL_Surface* dst, CVehicle* pVeh, int iconIdx, int x, int y, int w, int h);
+    // Units parked INSIDE a building (e.g. ships docked in a seaport, trucks in a
+    // factory): count them / draw their icons in the status line, the same way
+    // RenderCarrierCargo shows a carrier's cargo. Adds a trailing status bar so a
+    // hovered building reveals what's currently in it.
+    int  CountContainedUnits(CUnit* pUnit);
+    void RenderContainedUnits(SDL_Surface* dst, CBuilding* pBldg, int iconIdx, int x, int y, int w, int h);
 
     SDL2Panel*   m_panel = nullptr;
     GameWindow*  m_gw = nullptr;

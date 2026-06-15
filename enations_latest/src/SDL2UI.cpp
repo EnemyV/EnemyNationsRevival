@@ -13,6 +13,8 @@
 #undef min
 #undef max
 #include <algorithm>
+#include <unordered_map>
+#include <string>
 
 // Static game art surfaces shared by all dialogs
 SDL_Surface* SDL2Dialog::s_dlgBkgnd   = nullptr;
@@ -76,13 +78,33 @@ static void FillGradientSymH(SDL_Surface* dst, SDL_Rect r, SDL_Color edge, SDL_C
 
 // Helper: render text (single line, clipped to rect)
 static void RenderText(SDL_Surface* dst, TTF_Font* font, const char* text,
-                       SDL_Rect rect, SDL_Color color, bool centerH = true, bool centerV = true) {
+                       SDL_Rect rect, SDL_Color color, bool centerH = true, bool centerV = true,
+                       bool shrinkToFit = false) {
     if (!font || !text || !text[0]) return;
     // UTF8 variant: dialog labels/titles embed UTF-8 punctuation (em-dash etc.).
     // The Latin-1 TTF_RenderText_* path renders each byte as its own glyph, so a
     // 3-byte em-dash shows up as garbage "text artifacts".
     SDL_Surface* surf = TTF_RenderUTF8_Blended(font, text, color);
     if (!surf) return;
+
+    // Shrink-to-fit: when the text is wider than the slot, scale it DOWN
+    // proportionally so it all fits instead of being clipped mid-word (mirrors the
+    // original game shrinking long names like "Adv. Manufacturing" to fit a row).
+    if (shrinkToFit && rect.w > 0 && rect.h > 0 && surf->w > rect.w) {
+        int dw = rect.w;
+        int dh = surf->h * rect.w / surf->w;
+        if (dh > rect.h) { dh = rect.h; dw = surf->w * rect.h / surf->h; }  // also respect height
+        SDL_Rect srcRect = { 0, 0, surf->w, surf->h };
+        SDL_Rect dstRect = rect;
+        if (centerH && dw < rect.w) dstRect.x += (rect.w - dw) / 2;
+        if (centerV && dh < rect.h) dstRect.y += (rect.h - dh) / 2;
+        dstRect.w = dw;
+        dstRect.h = dh;
+        SDL_SetSurfaceBlendMode(surf, SDL_BLENDMODE_BLEND);
+        SDL_BlitScaled(surf, &srcRect, dst, &dstRect);
+        SDL_FreeSurface(surf);
+        return;
+    }
 
     // Clip source rect to not exceed destination rect bounds
     SDL_Rect srcRect = { 0, 0, std::min(surf->w, rect.w), std::min(surf->h, rect.h) };
@@ -132,6 +154,57 @@ static void RenderTextWrapped(SDL_Surface* dst, TTF_Font* font, const char* text
 
 static bool PointInRect(int x, int y, SDL_Rect r) {
     return x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h;
+}
+
+// Shared UI font cache (same faces the dialogs pick), keyed by point size. Lets a
+// widget re-render text at a smaller CRISP size instead of bitmap-scaling a large
+// glyph down (which looks mushy) — used to shrink long listbox names readably.
+static TTF_Font* GetUiFont(int pt) {
+    if (pt < 6) pt = 6;
+    static std::string s_path;
+    static std::unordered_map<int, TTF_Font*> s_cache;
+    if (s_path.empty()) {
+        static const char* cands[] = {
+            "C:\\Windows\\Fonts\\BKANT.TTF", "C:\\Windows\\Fonts\\BOOKOS.TTF",
+            "C:\\Windows\\Fonts\\times.ttf", "C:\\Windows\\Fonts\\georgia.ttf",
+            "C:\\Windows\\Fonts\\arial.ttf", nullptr };
+        for (int i = 0; cands[i]; i++) {
+            FILE* f = fopen(cands[i], "rb");
+            if (f) { fclose(f); s_path = cands[i]; break; }
+        }
+        if (s_path.empty()) s_path = "?";   // mark as "searched, none found"
+    }
+    if (s_path == "?") return nullptr;
+    auto it = s_cache.find(pt);
+    if (it != s_cache.end()) return it->second;
+    TTF_Font* f = TTF_OpenFont(s_path.c_str(), pt);
+    s_cache[pt] = f;
+    return f;
+}
+
+// Render one row of text, shrinking to a smaller CRISP font size when it's too wide
+// (re-rasterized at the smaller pt, not bitmap-scaled). basePt is the row's normal
+// size; we step down to the largest size that fits, floored so it stays legible.
+static void RenderTextShrinkFont(SDL_Surface* dst, TTF_Font* fallback, int basePt,
+                                 const char* text, SDL_Rect rect, SDL_Color color) {
+    if (!text || !text[0]) return;
+    TTF_Font* base = GetUiFont(basePt);
+    if (!base) {
+        // No shared font available — fall back to the passed font with bitmap shrink.
+        RenderText(dst, fallback, text, rect, color, false, true, true);
+        return;
+    }
+    int tw = 0, th = 0;
+    TTF_SizeUTF8(base, text, &tw, &th);
+    TTF_Font* use = base;
+    if (tw > rect.w && rect.w > 0 && tw > 0) {
+        int fitPt = basePt * rect.w / tw;
+        if (fitPt < 7) fitPt = 7;          // legibility floor
+        if (fitPt > basePt) fitPt = basePt;
+        TTF_Font* fit = GetUiFont(fitPt);   // NB: 'small' is a Windows SDK macro (rpcndr.h)
+        if (fit) use = fit;
+    }
+    RenderText(dst, use, text, rect, color, false, true);
 }
 
 // ============================================================================
@@ -195,6 +268,11 @@ void SDL2Label::Render(SDL_Surface* dst, TTF_Font* font) {
     dstRect.w = srcRect.w;
     dstRect.h = srcRect.h;
     SDL_BlitSurface(surf, &srcRect, dst, &dstRect);
+    if (m_bold) {
+        // second pass shifted +1px in x = faux bold (local; no shared-font mutation)
+        SDL_Rect dr2 = dstRect; dr2.x += 1;
+        SDL_BlitSurface(surf, &srcRect, dst, &dr2);
+    }
 }
 
 // ============================================================================
@@ -376,11 +454,13 @@ void SDL2Slider::Render(SDL_Surface* dst, TTF_Font* font) {
     FillRect(dst, thumbRect, UIColors::SliderThumb);
     DrawBevel(dst, thumbRect, 2, UIColors::BtnLight, UIColors::BtnDark);
 
-    // Value text
-    std::string valStr = std::to_string(m_value);
-    SDL_Rect valRect = { m_rect.x + m_rect.w + 8, m_rect.y, 40, m_rect.h };
-    RenderText(dst, font, valStr.c_str(), valRect,
-               m_enabled ? UIColors::LabelText : UIColors::Disabled, false, true);
+    // Value text (unless the caller renders its own readout — see SetShowValue)
+    if (m_showValue) {
+        std::string valStr = std::to_string(m_value);
+        SDL_Rect valRect = { m_rect.x + m_rect.w + 8, m_rect.y, 40, m_rect.h };
+        RenderText(dst, font, valStr.c_str(), valRect,
+                   m_enabled ? UIColors::LabelText : UIColors::Disabled, false, true);
+    }
 }
 
 bool SDL2Slider::HandleEvent(const SDL_Event& event) {
@@ -617,7 +697,10 @@ void SDL2Listbox::Render(SDL_Surface* dst, TTF_Font* font) {
                               : marked   ? kMarkText
                                          : m_colText;
         SDL_Rect textRect = { m_rect.x + 6, iy, m_rect.w - 12, m_itemHeight };
-        RenderText(dst, font, m_items[idx].text.c_str(), textRect, textColor, false, true);
+        // Shrink long names to fit the row instead of clipping them, but by
+        // re-rendering at a smaller CRISP font size (not bitmap-scaling, which was
+        // mushy) — matching the original game. 13pt is the dialog's widget size.
+        RenderTextShrinkFont(dst, font, 13, m_items[idx].text.c_str(), textRect, textColor);
     }
 }
 
@@ -1215,12 +1298,32 @@ void SDL2ProgressBar::Render(SDL_Surface* dst, TTF_Font* font) {
         FillGradientSymH(dst, fr, {24, 40, 120, 255}, {72, 104, 224, 255});
     }
 
-    // "NN%" overlay, centered. Dark navy reads well on the light track (the
-    // bar's state at the start of a save) and stays legible on the blue fill.
+    // "NN%" overlay, centered. The text is split at the fill boundary: dark navy
+    // over the light track (readable on grey) and white over the blue fill (readable
+    // on blue) — same trick as the world-creation loading bar. Two clipped passes of
+    // the SAME centered text so the glyphs line up exactly across the seam.
     if (m_showText && font) {
         char buf[16];
         snprintf(buf, sizeof(buf), "%d%%", m_pct);
+
+        int fillRight = r.x + 2 + fillW;   // x where the blue fill ends
+
+        SDL_Rect oldClip;
+        SDL_GetClipRect(dst, &oldClip);
+
+        // Filled (left) part: white text on the blue fill.
+        SDL_Rect leftClip = { r.x, r.y, fillRight - r.x, r.h };
+        SDL_IntersectRect(&leftClip, &oldClip, &leftClip);
+        SDL_SetClipRect(dst, &leftClip);
+        RenderText(dst, font, buf, r, {255, 255, 255, 255}, true, true);
+
+        // Unfilled (right) part: dark navy text on the light track.
+        SDL_Rect rightClip = { fillRight, r.y, (r.x + r.w) - fillRight, r.h };
+        SDL_IntersectRect(&rightClip, &oldClip, &rightClip);
+        SDL_SetClipRect(dst, &rightClip);
         RenderText(dst, font, buf, r, {20, 24, 60, 255}, true, true);
+
+        SDL_SetClipRect(dst, &oldClip);
     }
 }
 
@@ -1394,7 +1497,7 @@ void SDL2Dialog::Render() {
         }
     }
 
-    TTF_Font* widgetFont = GetFont(13);
+    TTF_Font* widgetFont = GetFont(m_widgetFontSize);
     for (auto& widget : m_widgets) {
         // Honour a per-widget font-size override (e.g. larger race-pick text),
         // falling back to the shared 13pt widget font.
@@ -1433,6 +1536,10 @@ void SDL2Dialog::Render() {
         // path — calling SDL_RaiseWindow() per frame re-runs SetForegroundWindow()
         // ~60x/sec, which yanked OS focus back and stopped the user from alt-tabbing
         // away or interacting with other windows while the Game Options dialog was up.
+        // Dialogs that opted out (SetKeepOnTop(false), e.g. Relations) are left at
+        // whatever z-order the user puts them at, so they can be tucked behind the
+        // map instead of floating on top every frame.
+        if (m_keepOnTop) {
 #ifdef _WIN32
         SDL_SysWMinfo wm; SDL_VERSION(&wm.version);
         if (SDL_GetWindowWMInfo(m_dlgWindow, &wm)) {
@@ -1446,6 +1553,7 @@ void SDL2Dialog::Render() {
 #else
         SDL_RaiseWindow(m_dlgWindow);
 #endif
+        }
 
         // If the window has moved to a different monitor, SDL's cached window
         // framebuffer surface is stale (it's only rebuilt on resize). Destroy

@@ -102,6 +102,7 @@ set(enations_sources
         SDL2Terrain.cpp
         SDL2Sprites.cpp
         SDL2AreaBar.cpp
+        SDL2BuildingWindow.cpp
         SDL2BuildStructure.cpp
         SDL2BuildTransport.cpp
         SDL2CreateStatus.cpp

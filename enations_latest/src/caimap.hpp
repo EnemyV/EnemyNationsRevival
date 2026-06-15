@@ -99,8 +99,8 @@ public:
 
 	//CAIHex *GetPatrolPoints( CHexCoord& hexNearBy );
 
-	void GetStartHex( CHexCoord& hexStart, CHexCoord& hexEnd, 
-		CHexCoord& hexPlace, int iVehType );
+	void GetStartHex( CHexCoord& hexStart, CHexCoord& hexEnd,
+		CHexCoord& hexPlace, int iVehType, CHexCoord* phexRocket=NULL );
 
 	void GetStagingHex( CHexCoord& hexNearBy, 
 		int iWidth, int iHeight, int iVehType, 

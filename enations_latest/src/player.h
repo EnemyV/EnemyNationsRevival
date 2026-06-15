@@ -418,18 +418,82 @@ class CPlayer : public CObject
     CRsrchStatus& GetRsrch( int iInd ) { return ( m_aRsrch.ElementAt( iInd ) ); }
     BOOL          CanRsrch( int iIndex );
 
-    BOOL CanBridge( ) { return ( GetRsrch( CRsrchArray::bridge ).m_bDiscovered ); }
+    // Bridge building is unlocked by EITHER the full Bridges tech or the early
+    // Pontoon Bridges tech (which only reaches half the span; see GetMaxSpan).
+    BOOL CanBridge( )
+    {
+        if ( GetRsrch( CRsrchArray::bridge ).m_bDiscovered )
+            return ( TRUE );
+        if ( ( m_aRsrch.GetSize( ) > CRsrchArray::bridge_short ) &&
+             GetRsrch( CRsrchArray::bridge_short ).m_bDiscovered )
+            return ( TRUE );
+        return ( FALSE );
+    }
 
-    // Max bridge span for this player: base MAX_SPAN plus 25% of the base per
-    // Bridges 2-5 tier discovered (7 -> 8 -> 10 -> 12 -> 14 hexes).
+    // Max bridge span for this player. Full Bridges tech: base MAX_SPAN plus 25% of
+    // the base per Bridges 2-5 tier discovered (7 -> 8 -> 10 -> 12 -> 14 hexes). With
+    // only the early Pontoon Bridges tech: half the base span (short bridges).
     int GetMaxSpan( )
     {
-        int iTiers = 0;
-        if ( m_aRsrch.GetSize( ) > CRsrchArray::bridge_5 )
-            for ( int iOn = CRsrchArray::bridge_2; iOn <= CRsrchArray::bridge_5; iOn++ )
+        if ( GetRsrch( CRsrchArray::bridge ).m_bDiscovered )
+        {
+            int iTiers = 0;
+            if ( m_aRsrch.GetSize( ) > CRsrchArray::bridge_5 )
+                for ( int iOn = CRsrchArray::bridge_2; iOn <= CRsrchArray::bridge_5; iOn++ )
+                    if ( GetRsrch( iOn ).m_bDiscovered )
+                        iTiers++;
+            return ( ( MAX_SPAN * ( 100 + 25 * iTiers ) ) / 100 );
+        }
+        if ( ( m_aRsrch.GetSize( ) > CRsrchArray::bridge_short ) &&
+             GetRsrch( CRsrchArray::bridge_short ).m_bDiscovered )
+            return ( ( MAX_SPAN + 1 ) / 2 );   // half span, rounded up
+        return ( 0 );
+    }
+
+    // Truck cargo capacity as a percent of base: +10% per cargo_handling level
+    // discovered (base cargo_handling + Cargo Handling 2-4 tiers). 100% (none) to
+    // 140% (all four). Used by CVehicle::GetMaxMaterials so it applies to every
+    // truck — auto/route AND hand-loaded.
+    int GetCargoPct( )
+    {
+        int iLevels = 0;
+        if ( GetRsrch( CRsrchArray::cargo_handling ).m_bDiscovered )
+            iLevels++;
+        if ( m_aRsrch.GetSize( ) > CRsrchArray::cargo_handling_4 )
+            for ( int iOn = CRsrchArray::cargo_handling_2; iOn <= CRsrchArray::cargo_handling_4; iOn++ )
                 if ( GetRsrch( iOn ).m_bDiscovered )
-                    iTiers++;
-        return ( ( MAX_SPAN * ( 100 + 25 * iTiers ) ) / 100 );
+                    iLevels++;
+        return ( 100 + 10 * iLevels );
+    }
+
+    // Gas consumption as a percent of base: each fuel_efficiency level cuts burn by
+    // 5% of what remains (diminishing), i.e. 100 * 0.95^levels. 10 levels run from
+    // 100% (none) down to ~60%. Unlocked after gas_turbine; see CPlayer::Operate's
+    // gas deduction. Lower = burns less gas for the same travel.
+    int GetFuelPct( )
+    {
+        int iLevels = 0;
+        if ( m_aRsrch.GetSize( ) > CRsrchArray::fuel_efficiency_10 )
+            for ( int iOn = CRsrchArray::fuel_efficiency_1; iOn <= CRsrchArray::fuel_efficiency_10; iOn++ )
+                if ( GetRsrch( iOn ).m_bDiscovered )
+                    iLevels++;
+        double dMult = 1.0;
+        for ( int i = 0; i < iLevels; i++ )
+            dMult *= 0.95;
+        return ( (int)( dMult * 100.0 + 0.5 ) );
+    }
+
+    // Vehicle movement speed as a percent of base: +2% per vehicle_speed level
+    // discovered (10 levels). 100% (none) to 120% (all ten). Applied to the base move
+    // rate in CVehicle::Move, so it speeds up every vehicle this player owns.
+    int GetSpeedPct( )
+    {
+        int iLevels = 0;
+        if ( m_aRsrch.GetSize( ) > CRsrchArray::vehicle_speed_10 )
+            for ( int iOn = CRsrchArray::vehicle_speed_1; iOn <= CRsrchArray::vehicle_speed_10; iOn++ )
+                if ( GetRsrch( iOn ).m_bDiscovered )
+                    iLevels++;
+        return ( 100 + 2 * iLevels );
     }
 
     BOOL CanMultiArea( ) { return ( GetRsrch( CRsrchArray::radio ).m_bDiscovered ); }
@@ -474,7 +538,38 @@ class CPlayer : public CObject
     int  m_iBuiltBldgsHave;
     BOOL m_bPlacedRocket;
 
+    // --- Colony stat history (for the building-info windows' graphs) ----------
+    // A ring buffer of periodic samples taken in StartLoop (~once per game-minute);
+    // serialized when the save release is >= 4. GetHist*() returns sample i where
+    // i==0 is the OLDEST kept sample and i==GetHistCount()-1 is the newest.
+    static const int HIST_LEN = 120;
+    void SampleHistory( );                          // append one sample (StartLoop)
+    int  GetHistCount( ) const { return ( m_iHistCount ); }
+    LONG GetHistPwrHave( int i )  const { return ( HistAt( m_aHistPwrHave,  i ) ); }
+    LONG GetHistPwrNeed( int i )  const { return ( HistAt( m_aHistPwrNeed,  i ) ); }
+    LONG GetHistPplTotal( int i ) const { return ( HistAt( m_aHistPplTotal, i ) ); }
+    LONG GetHistPplBldg( int i )  const { return ( HistAt( m_aHistPplBldg,  i ) ); }
+    LONG GetHistAptCap( int i )   const { return ( HistAt( m_aHistAptCap,   i ) ); }
+    LONG GetHistOfcCap( int i )   const { return ( HistAt( m_aHistOfcCap,   i ) ); }
+
+    LONG m_aHistPwrHave[HIST_LEN];
+    LONG m_aHistPwrNeed[HIST_LEN];
+    LONG m_aHistPplTotal[HIST_LEN];
+    LONG m_aHistPplBldg[HIST_LEN];
+    LONG m_aHistAptCap[HIST_LEN];
+    LONG m_aHistOfcCap[HIST_LEN];
+    int  m_iHistHead;    // index of the next slot to write
+    int  m_iHistCount;   // number of valid samples (<= HIST_LEN)
+
   protected:
+    // Ring-buffer read: map logical sample i (0 = oldest) to the physical slot.
+    LONG HistAt( const LONG* a, int i ) const
+    {
+        if ( ( i < 0 ) || ( i >= m_iHistCount ) ) return ( 0 );
+        int idx = ( m_iHistHead - m_iHistCount + i + 2 * HIST_LEN ) % HIST_LEN;
+        return ( a[idx] );
+    }
+
     BOOL BuildCcBldg( int iBldg );
     BOOL InitialRoad( );
     BOOL TryRoad( CCitCon* pCc );

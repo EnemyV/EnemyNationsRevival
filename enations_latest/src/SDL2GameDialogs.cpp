@@ -482,7 +482,11 @@ void SDL2ResearchDialog::OnStart() {
 
 SDL2RelationsDialog::SDL2RelationsDialog(GameWindow* gw)
     : SDL2Dialog(gw, "Relations", 350, 280)
-{}
+{
+    // Don't force this window above the map every frame — the player should be able
+    // to tuck it behind the area map instead of having it permanently on top.
+    SetKeepOnTop(false);
+}
 
 void SDL2RelationsDialog::OnInit() {
     m_list = AddWidget<SDL2Listbox>(m_x + 10, m_y + 34, 150, 180,
@@ -490,10 +494,12 @@ void SDL2RelationsDialog::OnInit() {
 
     m_lblInfo = AddWidget<SDL2Label>(m_x + 170, m_y + 34, 170, 40, "");
 
-    // Radio buttons for relation level
+    // Radio buttons for relation level. Start with NO selection (-1) — nothing is
+    // checked until a player is picked from the list; otherwise "War" (index 0)
+    // showed as selected even though no player was chosen.
     std::vector<std::string> options = {"War", "Neutral", "Peace", "Alliance"};
     m_radRelations = AddWidget<SDL2RadioGroup>(m_x + 170, m_y + 80, 160, 120, options,
-        0, [this](int sel) { SetRelation(sel); });
+        -1, [this](int sel) { SetRelation(sel); });
     for (int r = 0; r < 4; r++) m_radRelations->SetEnabled(r, false);
 
     // Give button ??? hands selected area-map units to the chosen player.
@@ -564,6 +570,27 @@ void SDL2RelationsDialog::OnGive() {
 // SDL2LoadTruckDialog
 // ============================================================================
 
+namespace {
+    // The six transportable materials shown in the Load Truck dialog, in the
+    // same order/labels as the original IDD_TRUCK template. Row index -> the
+    // CMaterialTypes enum value. The enum is NOT contiguous across these
+    // (moly/goods/food/gas sit in between), so every slider <-> store access must
+    // map through this table — using the row index as a material id (the old bug)
+    // mislabeled every row AND made real coal/iron/oil unreachable.
+    const int kTruckMat[6] = {
+        CMaterialTypes::lumber,
+        CMaterialTypes::steel,
+        CMaterialTypes::copper,   // shown as "Xilitium" (matches IDD_TRUCK)
+        CMaterialTypes::coal,
+        CMaterialTypes::iron,
+        CMaterialTypes::oil,
+    };
+    // Dialog ROW indices (positions within kTruckMat) for presets that target
+    // specific materials by name.
+    enum { ROW_LUMBER = 0, ROW_STEEL = 1, ROW_XIL = 2, ROW_COAL = 3, ROW_IRON = 4, ROW_OIL = 5 };
+    const char* const kTruckMatName[6] = { "Lumber", "Steel", "Xilitium", "Coal", "Iron", "Oil" };
+}
+
 SDL2LoadTruckDialog::SDL2LoadTruckDialog(GameWindow* gw, CVehicle* pVeh)
     // Dynamic title: "Load Freighter" for boats, otherwise "Load Truck - [Bldg]"
     // (matches CDlgLoadTruck::OnInitDialog using IDS_LOAD_FREIGHTER / IDS_LOAD_TRUCK)
@@ -589,24 +616,29 @@ void SDL2LoadTruckDialog::OnInit() {
         return;
     }
 
-    const char* matNames[] = {"Coal", "Iron", "Lumber", "Oil", "Steel", "Copper"};
     int y = m_y + 36;
 
     for (int i = 0; i < 6; i++) {
-        int vehHas = m_pVeh->GetStore(i);
-        int bldgHas = m_pBldg->GetStore(i);
+        int mat = kTruckMat[i];
+        int vehHas = m_pVeh->GetStore(mat);
+        int bldgHas = m_pBldg->GetStore(mat);
         int maxVal = vehHas + bldgHas;
 
-        AddWidget<SDL2Label>(m_x + 10, y, 70, 20, matNames[i]);
-        m_sliders[i] = AddWidget<SDL2Slider>(m_x + 85, y, 180, 20, 0, maxVal, vehHas);
-        m_lblAmounts[i] = AddWidget<SDL2Label>(m_x + 275, y, 70, 20,
+        AddWidget<SDL2Label>(m_x + 12, y, 62, 20, kTruckMatName[i]);
+        m_sliders[i] = AddWidget<SDL2Slider>(m_x + 78, y, 172, 20, 0, maxVal, vehHas,
+            [this, i](int v) { OnSliderChanged(i, v); });
+        m_sliders[i]->SetShowValue(false);   // we draw our own "loaded/available" column
+        // Right-align the "have/max" readout against the content edge so the
+        // numbers line up in a column and never clip off the right of the window.
+        m_lblAmounts[i] = AddWidget<SDL2Label>(m_x + 254, y, 96, 20,
             std::to_string(vehHas) + "/" + std::to_string(maxVal));
+        m_lblAmounts[i]->SetRightAligned(true);
         y += 28;
     }
 
     // Capacity readout ??? total/cap below the material rows
     y += 8;
-    int maxCargo = m_pVeh->GetData()->GetMaxMaterials();
+    int maxCargo = m_pVeh->GetMaxMaterials();
     m_lblCapacity = AddWidget<SDL2Label>(m_x + 10, y, 340, 20,
         "Capacity: 0 / " + std::to_string(maxCargo));
     m_lblCapacity->SetCentered(true);
@@ -639,11 +671,41 @@ void SDL2LoadTruckDialog::OnInit() {
     RefreshTotals();
 }
 
+void SDL2LoadTruckDialog::OnSliderChanged(int idx, int val) {
+    // Enforce the vehicle's total cargo cap. Each slider is already bounded to its
+    // own material's available stock, but the SUM across all six could still exceed
+    // GetMaxMaterials() — so dragging one up would overload the truck. If this change
+    // pushes the total over, trim THIS slider back to whatever room is left.
+    // Use the vehicle's TECHED capacity (GetMaxMaterials applies cargo research),
+    // not GetData()->GetMaxMaterials() (the base) — otherwise the drag cap sits at
+    // the un-teched limit (e.g. 2100) while the readout shows the real cap (2310).
+    int maxCargo = m_pVeh->GetMaxMaterials();
+    int others = 0;
+    for (int i = 0; i < 6; i++)
+        if (i != idx) others += m_sliders[i]->GetValue();
+    int allowed = maxCargo - others;
+    if (allowed < 0) allowed = 0;
+    if (val > allowed)
+        m_sliders[idx]->SetValue(allowed);   // SetValue does not re-fire onChange
+    RefreshTotals();
+}
+
 void SDL2LoadTruckDialog::RefreshTotals() {
     if (!m_lblCapacity) return;
     int total = 0;
-    for (int i = 0; i < 6; i++) total += m_sliders[i]->GetValue();
-    int maxCargo = m_pVeh->GetData()->GetMaxMaterials();
+    for (int i = 0; i < 6; i++) {
+        int v = m_sliders[i]->GetValue();
+        total += v;
+        // Keep each row's "loaded/available" readout in sync with its slider
+        // (the available total is fixed while the dialog is open: truck + building
+        // stock for that material — recomputed here so it tracks any preset/drag).
+        if (m_lblAmounts[i]) {
+            int mat = kTruckMat[i];
+            int maxVal = m_pVeh->GetStore(mat) + (m_pBldg ? m_pBldg->GetStore(mat) : 0);
+            m_lblAmounts[i]->SetText(std::to_string(v) + "/" + std::to_string(maxVal));
+        }
+    }
+    int maxCargo = m_pVeh->GetMaxMaterials();
     m_lblCapacity->SetText("Capacity: " + std::to_string(total) +
                            " / " + std::to_string(maxCargo));
 }
@@ -663,10 +725,11 @@ void SDL2LoadTruckDialog::OnLoad() {
     int amounts[6];
     int total = 0;
     for (int i = 0; i < 6; i++) {
-        amounts[i] = m_pVeh->GetStore(i) + m_pBldg->GetStore(i);
+        int mat = kTruckMat[i];
+        amounts[i] = m_pVeh->GetStore(mat) + m_pBldg->GetStore(mat);
         total += amounts[i];
     }
-    int maxCargo = m_pVeh->GetData()->GetMaxMaterials();
+    int maxCargo = m_pVeh->GetMaxMaterials();
     if (total > maxCargo && total > 0) {
         // Leave one slot of headroom (matching MFC's max-1 trick)
         float fMul = (float)(maxCargo - 1) / (float)total;
@@ -681,7 +744,7 @@ void SDL2LoadTruckDialog::OnLoadBldg() {
     // 50/50 Steel / Lumber ??? construction load preset.
     RefreshBldg();
     if (!m_pBldg) return;
-    int maxCargo = m_pVeh->GetData()->GetMaxMaterials();
+    int maxCargo = m_pVeh->GetMaxMaterials();
     int iSteel  = maxCargo / 2;
     int iLumber = maxCargo / 2;
 
@@ -691,8 +754,8 @@ void SDL2LoadTruckDialog::OnLoadBldg() {
     if (iLumber > lumberCap) { iLumber = lumberCap; }
 
     for (int i = 0; i < 6; i++) m_sliders[i]->SetValue(0);
-    m_sliders[CMaterialTypes::steel]->SetValue(iSteel);
-    m_sliders[CMaterialTypes::lumber]->SetValue(iLumber);
+    m_sliders[ROW_STEEL]->SetValue(iSteel);
+    m_sliders[ROW_LUMBER]->SetValue(iLumber);
     RefreshTotals();
 }
 
@@ -700,7 +763,7 @@ void SDL2LoadTruckDialog::OnLoadVeh() {
     // 80/20 Steel / Copper ??? vehicle-factory load preset.
     RefreshBldg();
     if (!m_pBldg) return;
-    int maxCargo = m_pVeh->GetData()->GetMaxMaterials();
+    int maxCargo = m_pVeh->GetMaxMaterials();
     int iSteel  = (maxCargo * 4) / 5;
     int iCopper = maxCargo / 5;
 
@@ -710,8 +773,8 @@ void SDL2LoadTruckDialog::OnLoadVeh() {
     if (iCopper > copperCap) { iCopper = copperCap; }
 
     for (int i = 0; i < 6; i++) m_sliders[i]->SetValue(0);
-    m_sliders[CMaterialTypes::steel]->SetValue(iSteel);
-    m_sliders[CMaterialTypes::copper]->SetValue(iCopper);
+    m_sliders[ROW_STEEL]->SetValue(iSteel);
+    m_sliders[ROW_XIL]->SetValue(iCopper);
     RefreshTotals();
 }
 
@@ -721,11 +784,12 @@ void SDL2LoadTruckDialog::OnOK() {
     RefreshBldg();
     if (!m_pBldg) { EndDialog(0); return; }   // building gone ??? nothing to transfer
     for (int i = 0; i < 6; i++) {
+        int mat = kTruckMat[i];
         int iAmount = m_sliders[i]->GetValue();
-        int iTotal = m_pVeh->GetStore(i) + m_pBldg->GetStore(i);
+        int iTotal = m_pVeh->GetStore(mat) + m_pBldg->GetStore(mat);
         if (iAmount > iTotal) iAmount = iTotal;
-        m_pBldg->SetStore(i, iTotal - iAmount);
-        m_pVeh->SetStore(i, iAmount);
+        m_pBldg->SetStore(mat, iTotal - iAmount);
+        m_pVeh->SetStore(mat, iAmount);
     }
     m_pBldg->MaterialMessage();
     m_pBldg->EventOff();
@@ -857,6 +921,7 @@ SDL2UnitInfoPanel::~SDL2UnitInfoPanel() {
     if (m_borderH) SDL_FreeSurface(m_borderH);
     if (m_borderV) SDL_FreeSurface(m_borderV);
     if (m_matIcons) SDL_FreeSurface(m_matIcons);
+    if (m_vehIcons) SDL_FreeSurface(m_vehIcons);
     for (auto& p : m_fontCache)
         if (p.second) TTF_CloseFont(p.second);
 }
@@ -885,6 +950,17 @@ void SDL2UnitInfoPanel::LoadArt() {
         m_matIconW = pMat->m_cxIcon;
         m_matIconH = pMat->m_cyIcon;
     }
+
+    // Vehicle icons — DIB_LIST_UNIT_VEHICLES is a vertical strip of 64px tiles,
+    // one per CTransportData::TRANS_TYPE (srcY = vehType * 64). Used to draw the
+    // little unit icons for vehicles parked inside a building (seaport/factory),
+    // matching the original game's hover display.
+    CDIB* pVeh = theBitmaps.GetByIndex(DIB_LIST_UNIT_VEHICLES);
+    if (pVeh) {
+        m_vehIcons = SDL2MainMenu::CreateSurfaceFromDIB(pVeh);
+        m_vehTileW = m_vehIcons ? m_vehIcons->w : 0;
+        m_vehTileH = 64;
+    }
 }
 
 TTF_Font* SDL2UnitInfoPanel::GetFont(int size) {
@@ -907,7 +983,8 @@ void SDL2UnitInfoPanel::Show(CUnit* pUnit, int screenX, int screenY) {
     int borderH = m_borderH ? m_borderH->h : 3;
     int borderV = m_borderV ? m_borderV->w : 3;
     int w = 240;
-    int h = borderH * 2 + 8 + (int)m_lines.size() * LINE_HT;
+    int h = borderH * 2 + 8;
+    for (auto& line : m_lines) h += LineHeight(line);
 
     // Clamp to screen
     int scrW = theApp.m_gameWindow->GetWidth();
@@ -1051,8 +1128,13 @@ void SDL2UnitInfoPanel::BuildContent() {
             CVehicle* pVeh;
             theVehicleMap.GetNextAssoc(pos, dwID, pVeh);
             if (pVeh->GetOwner()->IsMe() && !pVeh->GetHexOwnership() &&
-                theBuildingHex._GetBuilding(pVeh->GetPtHead()) == m_pUnit)
-                m_lines.push_back({pVeh->GetData()->GetDesc().c_str(), false});
+                theBuildingHex._GetBuilding(pVeh->GetPtHead()) == m_pUnit) {
+                // Lead the line with the vehicle's icon (DIB_LIST_UNIT_VEHICLES row
+                // = vehType) when the sheet is available, matching the original
+                // game's hover display; fall back to text-only if art is missing.
+                int vt = m_vehIcons ? (int)pVeh->GetData()->GetType() : -1;
+                m_lines.push_back({pVeh->GetData()->GetDesc().c_str(), false, -1, vt});
+            }
         }
     }
 }
@@ -1088,7 +1170,11 @@ void SDL2UnitInfoPanel::Render() {
     int fontH = TTF_FontHeight(font);
 
     for (auto& line : m_lines) {
-        if (line.text.empty()) { y += LINE_HT; continue; }
+        int rowHt = LineHeight(line);
+        if (line.text.empty()) { y += rowHt; continue; }
+
+        // Baseline so text is vertically centered within the (possibly taller) row.
+        int textY = y + (rowHt - fontH) / 2;
 
         // Material lines lead with the resource icon (barrel, log, ???) in place of
         // the name; the text following it is just the quantity. Reserve a fixed
@@ -1096,10 +1182,24 @@ void SDL2UnitInfoPanel::Render() {
         int lineTextX = textX;
         if (line.matIdx >= 0 && m_matIcons && m_matIconW > 0) {
             SDL_Rect isr = {line.matIdx * m_matIconW, 0, m_matIconW, m_matIconH};
-            SDL_Rect idr = {textX, y + (fontH - m_matIconH) / 2, m_matIconW, m_matIconH};
+            SDL_Rect idr = {textX, textY + (fontH - m_matIconH) / 2, m_matIconW, m_matIconH};
             SDL_SetSurfaceBlendMode(m_matIcons, SDL_BLENDMODE_BLEND);
             SDL_BlitSurface(m_matIcons, &isr, dst, &idr);
             lineTextX = textX + m_matIconW + 4;
+        } else if (line.vehIcon >= 0 && m_vehIcons && m_vehTileW > 0) {
+            // Vehicle icon: scale the 64px tile down into a square box, preserving
+            // aspect, and vertically center it in the taller row.
+            int srcY = line.vehIcon * m_vehTileH;
+            if (srcY + m_vehTileH <= m_vehIcons->h) {
+                int dh = VEH_ICON_SZ;
+                int dw = m_vehTileW * dh / m_vehTileH;
+                if (dw > VEH_ICON_SZ) { dw = VEH_ICON_SZ; dh = m_vehTileH * dw / m_vehTileW; }
+                SDL_Rect isr = {0, srcY, m_vehTileW, m_vehTileH};
+                SDL_Rect idr = {textX + (VEH_ICON_SZ - dw) / 2, y + (rowHt - dh) / 2, dw, dh};
+                SDL_SetSurfaceBlendMode(m_vehIcons, SDL_BLENDMODE_BLEND);
+                SDL_BlitScaled(m_vehIcons, &isr, dst, &idr);
+            }
+            lineTextX = textX + VEH_ICON_SZ + 4;
         }
         int lineMaxW = w - lineTextX - (borderV + 4);
 
@@ -1109,18 +1209,18 @@ void SDL2UnitInfoPanel::Render() {
         SDL_Surface* ts = TTF_RenderUTF8_Blended(font, line.text.c_str(), shadow);
         if (ts) {
             SDL_Rect sr = {0, 0, __min(ts->w, lineMaxW), ts->h};
-            SDL_Rect dr = {lineTextX + 1, y + 1, sr.w, sr.h};
+            SDL_Rect dr = {lineTextX + 1, textY + 1, sr.w, sr.h};
             SDL_BlitSurface(ts, &sr, dst, &dr);
             SDL_FreeSurface(ts);
         }
         ts = TTF_RenderUTF8_Blended(font, line.text.c_str(), fg);
         if (ts) {
             SDL_Rect sr = {0, 0, __min(ts->w, lineMaxW), ts->h};
-            SDL_Rect dr = {lineTextX, y, sr.w, sr.h};
+            SDL_Rect dr = {lineTextX, textY, sr.w, sr.h};
             SDL_BlitSurface(ts, &sr, dst, &dr);
             SDL_FreeSurface(ts);
         }
-        y += LINE_HT;
+        y += rowHt;
     }
 
     m_panel->SetDirty();

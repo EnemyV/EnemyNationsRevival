@@ -178,7 +178,16 @@ public:
 	void		DrawSelectionRectGpu();   // GPU split path: draws into m_dibSprite, no save/restore
 	void		RestoreSelectionRect();
 	void		DrawLineMove();           // preview of the drawn line + per-unit target dots
+	void		DrawRouteWaypoints();     // subtle dotted lines through selected vehicles' queued route (Shift held)
 	void		DoLineMove( CPoint ptEnd ); // distribute selected vehicles along the line
+
+	// Weapon-range overlay: when set (by the building-info window's "Show Range"
+	// toggle), the area map draws a red circle around that building each frame.
+	static DWORD	s_dwShowRangeID;
+	static void		SetShowRange( DWORD dwID ) { s_dwShowRangeID = dwID; }
+	static DWORD	GetShowRange() { return s_dwShowRangeID; }
+	void		DrawRangeCircle();        // red range circle for s_dwShowRangeID
+
 	void		Draw();
 	void		UnitDying (CUnit * pUnit);
 	void		MaterialChange (CUnit const * pUnit);
@@ -279,6 +288,8 @@ protected:
 	// driven by the right button. Dispatches on m_uMouseMode (kept current by
 	// SetMouseState on every mouse-move).
 	void DoCommandAt(UINT nFlags, CPoint point);
+	void ShiftQueueMove(CVehicle* pVeh, CSubHex const& sub);   // F2: Shift = append a one-shot route waypoint
+	void ClearOneShotRoute(CVehicle* pVeh);                   // a normal command clears a one-shot (non-loop) queue
 	afx_msg void OnActivate(UINT nState, CWnd* pWndOther, BOOL bMinimized);
 	afx_msg void OnLButtonDblClk(UINT nFlags, CPoint point);
 	afx_msg void OnLButtonUp(UINT nFlags, CPoint point);
@@ -415,6 +426,7 @@ public:
 	int						GetNumWindows ();
 	CWndArea *		BringToTop ();
 	CWndArea *		GetTop ();
+	void					SetTopArea (CWndArea * p) { m_pTopArea = p; }	// SDL2: track focused area window
 	void					MoveSizeToNew ( int xOld, int yOld );
 
 	void					UnitDying (CUnit * pUnit);
@@ -429,6 +441,7 @@ public:
 protected:
 	CHexCoord			m_hexLastCombat;
 	BOOL					m_bLcSet;
+	CWndArea *		m_pTopArea = nullptr;	// SDL2: last-focused area window (GetTop)
 };
 
 
