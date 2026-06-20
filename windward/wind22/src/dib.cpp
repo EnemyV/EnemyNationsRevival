@@ -1657,8 +1657,17 @@ void CDIB::Copy( LPBITMAPINFO lpBmi, void const* pvBits ) {
         // indexed art is converted to RGB later (CreateSurfaceFromDIB) using this
         // per-DIB table — without it every 8-bit bitmap renders blank.
         if ( lpBmi->bmiHeader.biBitCount == 8 ) {
+            // Copy ONLY the entries the source declares (biClrUsed). Per the BMP
+            // spec, biClrUsed==0 on an 8bpp DIB means "all 256" — EN's datafile
+            // bitmaps carry a full 256-entry table in that case, so 256 is the
+            // correct (and only) read. We zero-fill the destination first so any
+            // entries the source doesn't supply are defined rather than stale, and
+            // clamp to [0,256] so a garbage biClrUsed can never over-run m_bmi.rgb
+            // (a fixed 256-entry array) — i.e. the destination is always in-bounds.
             int nClr = (int)lpBmi->bmiHeader.biClrUsed;
-            if ( nClr <= 0 || nClr > 256 ) nClr = 256;
+            if ( nClr < 0 || nClr > 256 ) nClr = 256;
+            if ( nClr == 0 ) nClr = 256;   // 8bpp + biClrUsed==0 ⇒ 256 (BMP spec)
+            memset( m_bmi.rgb, 0, sizeof( m_bmi.rgb ) );
             memcpy( m_bmi.rgb, lpBmi->bmiColors, nClr * sizeof( RGBQUAD ) );
             m_bmi.hdr.biClrUsed = nClr;
         }
