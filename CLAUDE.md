@@ -32,6 +32,20 @@ re-evaluates** — two-against-one means rethink, don't override. Default to con
 And **"green" on the build-status board means *verified running* (eyes-on or a real
 smoke test), not merely *compiled*** — don't mark green on a heuristic.
 
+**Avoid churn & code rot (serious risks).** Do **not** make speculative fixes for bugs you
+cannot **reproduce** and **verify** — especially in fragile areas (render/terrain/fog cache,
+serialization). **Repro first; if you can't repro it, park it, don't touch it.** Prefer
+parking/reverting over piling changes on; keep every edit scoped and verifiable. A change you
+can't confirm helped is churn at best and a regression at worst.
+
+**Verify fixes twice over — static + dynamic, by more than one agent.** A fix is "done" only
+when it's verified by **(1) static analysis** (read the diff, reason about correctness) **and
+(2) actually running it** (the original failure is reproducibly gone) — and confirmed by the
+**implementor *and* at least one other agent** (a different platform for cross-platform fixes).
+Independent eyes catch false "green." **Idle time → improve your harness** (faster/leaner/more
+reliable game-driving + capture); share harness improvements on the board only if genuinely
+useful to others (signal, not noise).
+
 ## What this project is
 
 *Enemy Nations* is a 1996 RTS by **Windward Studios**. The original was a 16-bit-era Windows game built on **MFC + DirectDraw/DirectSound + VFW (Indeo .avi)**. We've been porting it to **SDL2** so it can eventually run on Linux and macOS.
