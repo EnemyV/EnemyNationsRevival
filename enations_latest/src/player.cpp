@@ -469,6 +469,17 @@ void CPlayer::Research( int iNumSec )
     if ( ( m_iRsrchHave <= 0 ) || ( m_iRsrchItem <= 0 ) )
         return;
 
+    // Upper-bound guard: m_iRsrchItem can go out of range (suspected AiNextRsrch
+    // returning an OOB index), and ElementAt() is an unchecked raw-pointer index on
+    // every platform (MSVC CArray + the POSIX mfc_compat shim) -> ACCESS VIOLATION at
+    // the :ASSERT deref below. The pre-existing guard only checks the lower bound, so
+    // cap the upper bound the same idiomatic way player.h already does (GetSize()).
+    // NOTE: this converts the crash into a safe skip; it does NOT explain why the index
+    // goes out of range -- that root cause stays open (repro-first, win-owned).
+    if ( ( m_iRsrchItem >= theRsrch.GetSize( ) ) ||
+         ( m_iRsrchItem >= m_aRsrch.GetSize( ) ) )
+        return;
+
     BOOL          bFoundIt = FALSE;
     CRsrchItem*   pRi      = &theRsrch.ElementAt( m_iRsrchItem );
     CRsrchStatus* pRs      = &GetRsrch( GetRsrchItem( ) );
