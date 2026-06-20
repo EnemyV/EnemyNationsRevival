@@ -3245,49 +3245,98 @@ void CGameMap::AddCoastlines( )
         }
     }
 
-    // Connect water bodies separated by a 1-hex coastline NECK. After the corner
-    // fill, a `coastline` hex with open water on two OPPOSITE sides of DIFFERENT
-    // types is a shore WALL through the water (debugger's river|coastline|lake
-    // repro — the ocean loop's bMouth prevents this for oceans, the river/lake
-    // bank loop + corner-fill did not; that's why rivers >> lakes >> ocean≈never).
-    // Merge the bodies: convert the neck to water (grow a lake if either flank is
-    // lake, else a river) at sea level so it renders flat. SetType(river|lake)
-    // force-stores (see top of file) so there's no slope re-derivation. Same-type
-    // flanks (ocean strait, river U-bend) are left alone — only mixed junctions wall.
-    _hex = CHexCoord( 0, 0 );
-    pHex = m_pHex;
-    for ( int lOn = 0; lOn < lTotal; lOn++ )
+    // [shore v3] Worldgen pass: DETECT + heal coastline WALLS through water — a
+    // `coastline` hex that splits two WATER areas instead of separating water from
+    // land (operator repro: lake|coastline|river AND lake|coastline|lake). The ocean
+    // loop's bMouth handles ocean mouths; the river/lake bank loop + corner-fill leave
+    // these. We look ONLY at the 4 ORTHOGONAL neighbours (counting DIAGONALS turned a
+    // normal river bank next to a diagonal lake into water and marched the lake up the
+    // river — reverted), and MARK-then-APPLY in one sweep (a converted wall can't
+    // cascade into a neighbouring bank). A coastline hex is a wall if:
+    //   (a) its orthogonal neighbours hold >=2 DIFFERENT open-water types (lake/river/
+    //       ocean junction — catches OPPOSITE and CORNER), OR
+    //   (b) LAKE on an OPPOSITE pair (above&below, or left&right) — a same-body lake
+    //       neck. Deliberately LAKE-only (same test on OCEAN would eat ocean coves/
+    //       straits — a prior regression) and OPPOSITE-pairs-only (spares concave
+    //       lake-bay corners, which are perpendicular, not opposite).
+    // Heal: convert to water (lake if any lake nbr, else river) at sea level so it
+    // draws flat; SetType(river|lake) force-stores. NO re-shore (embedding land-height
+    // tiles in water caused altitude-spike chevrons — reverted).
     {
-        if ( pHex->GetType( ) == CHex::coastline )
-        {
-            CHex* pAbove = theMap.GetHex( _hex.X( ),     _hex.Y( ) - 1 );
-            CHex* pBelow = theMap.GetHex( _hex.X( ),     _hex.Y( ) + 1 );
-            CHex* pLeft  = theMap.GetHex( _hex.X( ) - 1, _hex.Y( )     );
-            CHex* pRight = theMap.GetHex( _hex.X( ) + 1, _hex.Y( )     );
+        unsigned char* pbWall = new unsigned char[lTotal];
+        memset( pbWall, 0, lTotal );
 
-            BOOL bVert = pAbove->IsWater( ) && pBelow->IsWater( ) &&
-                         ( pAbove->GetType( ) != pBelow->GetType( ) );
-            BOOL bHorz = pLeft->IsWater( )  && pRight->IsWater( )  &&
-                         ( pLeft->GetType( )  != pRight->GetType( ) );
-            if ( bVert || bHorz )
+        _hex = CHexCoord( 0, 0 );
+        pHex = m_pHex;
+        for ( int lOn = 0; lOn < lTotal; lOn++ )
+        {
+            if ( pHex->GetType( ) == CHex::coastline )
             {
-                BOOL bLake = ( pAbove->GetType( ) == CHex::lake ) ||
-                             ( pBelow->GetType( ) == CHex::lake ) ||
-                             ( pLeft->GetType( )  == CHex::lake ) ||
-                             ( pRight->GetType( ) == CHex::lake );
+                CHex* pAbove = theMap.GetHex( _hex.X( ),     _hex.Y( ) - 1 );
+                CHex* pBelow = theMap.GetHex( _hex.X( ),     _hex.Y( ) + 1 );
+                CHex* pLeft  = theMap.GetHex( _hex.X( ) - 1, _hex.Y( )     );
+                CHex* pRight = theMap.GetHex( _hex.X( ) + 1, _hex.Y( )     );
+                CHex* aOrtho[4] = { pAbove, pBelow, pLeft, pRight };
+
+                // (a) >=2 distinct open-water types among the 4 orthogonal neighbours
+                int  iWaterType = -1;
+                BOOL bTwoTypes  = FALSE;
+                for ( int n = 0; n < 4; n++ )
+                {
+                    if ( !aOrtho[n]->IsWater( ) )
+                        continue;
+                    int iType = aOrtho[n]->GetType( );
+                    if ( iWaterType < 0 )
+                        iWaterType = iType;
+                    else if ( iType != iWaterType )
+                        bTwoTypes = TRUE;
+                }
+
+                // (b) same-type LAKE neck: lake on an opposite orthogonal pair
+                BOOL bLakeNeck =
+                    ( ( pAbove->GetType( ) == CHex::lake ) && ( pBelow->GetType( ) == CHex::lake ) ) ||
+                    ( ( pLeft->GetType( )  == CHex::lake ) && ( pRight->GetType( ) == CHex::lake ) );
+
+                if ( bTwoTypes || bLakeNeck )
+                    pbWall[lOn] = 1;
+            }
+
+            pHex++;
+            _hex.X( ) += 1;
+            if ( _hex.X( ) >= m_eX )
+            {
+                _hex.X( ) = 0;
+                _hex.Y( ) += 1;
+            }
+        }
+
+        // apply (separate sweep -> decisions used ORIGINAL types, no cascade)
+        _hex = CHexCoord( 0, 0 );
+        pHex = m_pHex;
+        for ( int lOn = 0; lOn < lTotal; lOn++ )
+        {
+            if ( pbWall[lOn] )
+            {
+                BOOL bLake = FALSE;
+                for ( int dy = -1; dy <= 1; dy++ )
+                    for ( int dx = -1; dx <= 1; dx++ )
+                        if ( theMap.GetHex( _hex.X( ) + dx, _hex.Y( ) + dy )->GetType( ) == CHex::lake )
+                            bLake = TRUE;
                 pHex->SetType( bLake ? CHex::lake : CHex::river );
                 if ( pHex->GetAlt( ) > CHex::sea_level )
                     pHex->SetAlt( CHex::sea_level );   // draw flat as water
             }
+
+            pHex++;
+            _hex.X( ) += 1;
+            if ( _hex.X( ) >= m_eX )
+            {
+                _hex.X( ) = 0;
+                _hex.Y( ) += 1;
+            }
         }
 
-        pHex++;
-        _hex.X( ) += 1;
-        if ( _hex.X( ) >= m_eX )
-        {
-            _hex.X( ) = 0;
-            _hex.Y( ) += 1;
-        }
+        delete[] pbWall;
     }
 
     // one last time through changing. We can have coastline tiles that don't touch
