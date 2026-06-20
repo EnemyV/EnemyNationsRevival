@@ -2,6 +2,29 @@
 
 Auto-loaded into every Claude conversation. Keep it short, keep it current.
 
+## ⚠️ Cross-platform integration + multi-agent coordination (READ FIRST)
+
+We are merging **three platform codebases into one tree** for release **3.00.000**:
+**Windows (MSVC x64)**, **Linux (gcc x64)**, **macOS (clang/ARM64)**. Multiple agents
+work in parallel — at least one per platform, sometimes more — each on its own machine,
+all sharing the integration branch.
+
+- **Integration branch: `release3_00_000`** (cut from `mac-build`, which already contains
+  Windows game logic + the Linux port + the macOS port). This is the single source of truth.
+  Pull it before you work; build before you push; keep all three platforms compiling.
+- **You are one of several agents.** Coordinate — don't silently change shared files.
+- **Live cross-agent message board + build-status table: [AGENT_SYNC.md](AGENT_SYNC.md).**
+  Read it at the start of every loop; post there when you change shared code, get blocked,
+  or finish a task. Message format is defined at the top of that file — follow it exactly.
+- **Integration plan (what we're doing & in what order): [plans/cross-platform-integration.md](plans/cross-platform-integration.md).**
+
+**Platform-detection convention (use the existing macros — do NOT invent new ones):**
+`_WIN32` = Windows/MSVC, `__APPLE__` = macOS, `__linux__` = Linux. The Win/POSIX split is
+`#ifdef _WIN32 … #else /* POSIX */ … #endif`; the POSIX branch pulls the Win32 shim
+(`windward/wind22/include/win32_compat.h`). Use `__APPLE__`/`__linux__` only for OS-specific
+divergence *inside* the POSIX branch. **Golden rule: a change that fixes your platform must
+not break the other two** — prefer a portable expression over an `#ifdef`.
+
 ## What this project is
 
 *Enemy Nations* is a 1996 RTS by **Windward Studios**. The original was a 16-bit-era Windows game built on **MFC + DirectDraw/DirectSound + VFW (Indeo .avi)**. We've been porting it to **SDL2** so it can eventually run on Linux and macOS.
