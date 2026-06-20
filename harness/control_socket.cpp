@@ -89,6 +89,33 @@ std::atomic<bool>      g_shotOK{false};
 // atomic to avoid a data race. g_shotDone (stored last / read first) is the
 // release/acquire fence that publishes these together with g_shotOK.
 std::atomic<int>       g_shotW{0}, g_shotH{0};
+// GPU-panel readback (RenderReadPixels) can race the present and return a blank
+// (cleared) frame — a GPU-terrain detached panel has no CPU back-surface to dump.
+// Instead of making the client retry, retry server-side: on a blank read, re-arm
+// and re-read on the next compositor frame (the panel redraws between frames), up
+// to a cap. One `shotid` => one good frame for the client.
+std::atomic<int>       g_shotRetry{0};
+static const int       kMaxShotRetry = 24;   // ~0.4s @ 60fps; client waits up to ~2s
+
+// True if a freshly read-back surface is essentially blank (all near-black) — the
+// signature of a cleared GPU buffer grabbed mid-present. Samples a sparse grid so
+// it stays cheap on a 1400x1000 surface.
+static bool surface_is_blank(SDL_Surface* s) {
+    if (!s || !s->pixels) return false;
+    if (SDL_MUSTLOCK(s)) SDL_LockSurface(s);
+    bool blank = true;
+    const int step = 16;
+    for (int y = 0; y < s->h && blank; y += step) {
+        const Uint8* row = (const Uint8*)s->pixels + (size_t)y * s->pitch;
+        for (int x = 0; x < s->w; x += step) {
+            Uint32 px = *(const Uint32*)(row + (size_t)x * s->format->BytesPerPixel);
+            Uint8 r, g, b, a; SDL_GetRGBA(px, s->format, &r, &g, &b, &a);
+            if (r > 16 || g > 16 || b > 16) { blank = false; break; }
+        }
+    }
+    if (SDL_MUSTLOCK(s)) SDL_UnlockSurface(s);
+    return blank;
+}
 
 void push_mouse_button(int x, int y, Uint8 button, bool down, Uint32 winId = 0, Uint8 clicks = 1) {
     SDL_Event e; SDL_zero(e);
@@ -140,7 +167,7 @@ void handle_command(const std::string& line, int conn) {
         if (!path[0]) std::strcpy(path, "/tmp/enshot.bmp");
         { std::lock_guard<std::mutex> lk(g_shotMutex); g_shotPath = path; }
         g_shotWinId = winId;
-        g_shotDone = false; g_shotOK = false; g_shotPending = true;
+        g_shotDone = false; g_shotOK = false; g_shotRetry = 0; g_shotPending = true;
         // wait (up to ~2s) for the render thread to service it
         for (int i = 0; i < 400 && !g_shotDone.load(); ++i) { struct timespec ts={0,5000000}; nanosleep(&ts,nullptr); }
         snprintf(reply, sizeof(reply), g_shotOK.load() ? "ok %d %d %s\n" : "err shot failed\n", g_shotW.load(), g_shotH.load(), path);
@@ -323,6 +350,15 @@ void EnHarness_Service() {
             int rw = w, rh = h; SDL_GetRendererOutputSize(rend, &rw, &rh);
             SDL_Surface* surf = SDL_CreateRGBSurfaceWithFormat(0, rw, rh, 32, SDL_PIXELFORMAT_ARGB8888);
             if (surf && SDL_RenderReadPixels(rend, nullptr, SDL_PIXELFORMAT_ARGB8888, surf->pixels, surf->pitch) == 0) {
+                // Blank read = cleared GPU buffer grabbed mid-present. Re-arm and
+                // re-read on the next compositor frame (the panel redraws between
+                // frames), up to the cap — so a single shotid returns one good
+                // frame instead of the client having to retry-til-non-black.
+                if (surface_is_blank(surf) && g_shotRetry.fetch_add(1) < kMaxShotRetry) {
+                    SDL_FreeSurface(surf);
+                    g_shotPending = true;   // service again next frame; leave g_shotDone false
+                    return;
+                }
                 ok = (SDL_SaveBMP(surf, path.c_str()) == 0); w = rw; h = rh;
             }
             if (surf) SDL_FreeSurface(surf);
