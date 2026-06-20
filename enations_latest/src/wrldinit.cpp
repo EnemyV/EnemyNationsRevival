@@ -3245,80 +3245,49 @@ void CGameMap::AddCoastlines( )
         }
     }
 
-    // Connect water bodies separated by a coastline WALL where two DIFFERENT water
-    // types meet [ea958c86 widened; debugger's river|coastline|lake repro]. The ocean
-    // loop's bMouth prevents this for ocean mouths; the river/lake bank loop +
-    // corner-fill don't, so a coastline tile is left walling the two waters apart.
-    // We merge them: convert that junction coastline to water (lake if a lake
-    // neighbour, else river) at sea level so it draws flat; SetType(river|lake)
-    // force-stores (top of file). Detection + the no-regression / no-spike reasoning
-    // is documented at the junction test below. Iterate until a full sweep changes
-    // nothing; AssignCoastFacings (further below) re-faces the existing banks against
-    // the newly merged water.
-    for ( ;; )
+    // Connect water bodies separated by a 1-hex coastline NECK. After the corner
+    // fill, a `coastline` hex with open water on two OPPOSITE sides of DIFFERENT
+    // types is a shore WALL through the water (debugger's river|coastline|lake
+    // repro — the ocean loop's bMouth prevents this for oceans, the river/lake
+    // bank loop + corner-fill did not; that's why rivers >> lakes >> ocean≈never).
+    // Merge the bodies: convert the neck to water (grow a lake if either flank is
+    // lake, else a river) at sea level so it renders flat. SetType(river|lake)
+    // force-stores (see top of file) so there's no slope re-derivation. Same-type
+    // flanks (ocean strait, river U-bend) are left alone — only mixed junctions wall.
+    _hex = CHexCoord( 0, 0 );
+    pHex = m_pHex;
+    for ( int lOn = 0; lOn < lTotal; lOn++ )
     {
-        int iMerged = 0;
-        _hex = CHexCoord( 0, 0 );
-        pHex = m_pHex;
-        for ( int lOn = 0; lOn < lTotal; lOn++ )
+        if ( pHex->GetType( ) == CHex::coastline )
         {
-            if ( pHex->GetType( ) == CHex::coastline )
-            {
-                CHex* aN8[8] = {
-                    theMap.GetHex( _hex.X( ),     _hex.Y( ) - 1 ),   // 0 above
-                    theMap.GetHex( _hex.X( ),     _hex.Y( ) + 1 ),   // 1 below
-                    theMap.GetHex( _hex.X( ) - 1, _hex.Y( )     ),   // 2 left
-                    theMap.GetHex( _hex.X( ) + 1, _hex.Y( )     ),   // 3 right
-                    theMap.GetHex( _hex.X( ) - 1, _hex.Y( ) - 1 ),   // 4 UL
-                    theMap.GetHex( _hex.X( ) + 1, _hex.Y( ) + 1 ),   // 5 LR
-                    theMap.GetHex( _hex.X( ) + 1, _hex.Y( ) - 1 ),   // 6 UR
-                    theMap.GetHex( _hex.X( ) - 1, _hex.Y( ) + 1 ) }; // 7 LL
-                // A coastline hex is a different-water JUNCTION (a shore wall between
-                // two bodies) iff its 8 neighbours include >=2 DISTINCT open-water
-                // types. This catches EVERY geometry — opposite, perpendicular AND
-                // diagonal — where an opposite-pair-only test left the wall standing at
-                // corner junctions. It also self-limits with no regressions:
-                //   - a normal shore / ocean cove / peninsula borders ONE water type ->
-                //     never fires (so ocean stays ocean — no river bleed into the coast);
-                //   - same-type lake<->lake reads as one type -> left alone (minor).
-                // Only EXISTING coastline converts (no re-shore -> no land-height tiles
-                // embedded in water -> no altitude-spike chevrons); iterate-til-stable
-                // erodes 2-hex necks (the far hex gains the 2nd type once the near one
-                // merges) but can't reach a normal shore (it never sees a 2nd type).
-                BOOL bLake      = FALSE;
-                int  iWaterType = -1;
-                BOOL bNeck      = FALSE;
-                for ( int n = 0; n < 8; n++ )
-                {
-                    if ( aN8[n]->GetType( ) == CHex::lake )
-                        bLake = TRUE;
-                    if ( !aN8[n]->IsWater( ) )
-                        continue;
-                    int iType = aN8[n]->GetType( );
-                    if ( iWaterType < 0 )
-                        iWaterType = iType;
-                    else if ( iType != iWaterType )
-                        bNeck = TRUE;
-                }
-                if ( bNeck )
-                {
-                    pHex->SetType( bLake ? CHex::lake : CHex::river );
-                    if ( pHex->GetAlt( ) > CHex::sea_level )
-                        pHex->SetAlt( CHex::sea_level );   // draw flat as water
-                    iMerged++;
-                }
-            }
+            CHex* pAbove = theMap.GetHex( _hex.X( ),     _hex.Y( ) - 1 );
+            CHex* pBelow = theMap.GetHex( _hex.X( ),     _hex.Y( ) + 1 );
+            CHex* pLeft  = theMap.GetHex( _hex.X( ) - 1, _hex.Y( )     );
+            CHex* pRight = theMap.GetHex( _hex.X( ) + 1, _hex.Y( )     );
 
-            pHex++;
-            _hex.X( ) += 1;
-            if ( _hex.X( ) >= m_eX )
+            BOOL bVert = pAbove->IsWater( ) && pBelow->IsWater( ) &&
+                         ( pAbove->GetType( ) != pBelow->GetType( ) );
+            BOOL bHorz = pLeft->IsWater( )  && pRight->IsWater( )  &&
+                         ( pLeft->GetType( )  != pRight->GetType( ) );
+            if ( bVert || bHorz )
             {
-                _hex.X( ) = 0;
-                _hex.Y( ) += 1;
+                BOOL bLake = ( pAbove->GetType( ) == CHex::lake ) ||
+                             ( pBelow->GetType( ) == CHex::lake ) ||
+                             ( pLeft->GetType( )  == CHex::lake ) ||
+                             ( pRight->GetType( ) == CHex::lake );
+                pHex->SetType( bLake ? CHex::lake : CHex::river );
+                if ( pHex->GetAlt( ) > CHex::sea_level )
+                    pHex->SetAlt( CHex::sea_level );   // draw flat as water
             }
         }
-        if ( iMerged == 0 )
-            break;   // converged — no necks left
+
+        pHex++;
+        _hex.X( ) += 1;
+        if ( _hex.X( ) >= m_eX )
+        {
+            _hex.X( ) = 0;
+            _hex.Y( ) += 1;
+        }
     }
 
     // one last time through changing. We can have coastline tiles that don't touch
