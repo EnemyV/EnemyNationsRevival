@@ -1855,6 +1855,18 @@ void CWndArea::OnMouseMove( UINT nFlags, CPoint point )
 
         m_ptRMB = point;
         theApp.m_wndWorld.NewLocation( );
+        // Keep the road drag-preview in sync while grab-panning. OnMouseMove returns early
+        // here for an MMB pan, so without this the previewed road tiles (swapped into the hex
+        // sprites + baked into the GPU terrain cache by SetRoadIcons) are never re-laid or
+        // cleared as the view scrolls -> the preview STICKS in the cached terrain (ghost road
+        // segments left behind in the trees). Re-lay it at the hex now under the cursor; the
+        // ClrRoadIcons at the top of SetRoadIcons restores the previous (now stale) path.
+        if ( m_iMode == road_set )
+        {
+            CHexCoord hcPan( m_aa.GetHit( point )._GetHexCoord( ) );
+            hcPan.Wrap( );
+            SetRoadIcons( hcPan );
+        }
         CWndBase::OnMouseMove( nFlags, point );
         m_bNewPos = TRUE;
 
