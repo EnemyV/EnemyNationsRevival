@@ -302,6 +302,8 @@ CSpriteDIB::StructureIsHit(
         return FALSE;
     int const *piRowStartOffsets = 2 + (int const *) pbyData;
     BYTE const *pbyPixels = (BYTE const *) (piRowStartOffsets + Height());
+    // Bound every RLE read to the decompressed block — same guard as DecodeToRGBA.
+    BYTE const *pbyEnd = pbyData + Length();
     BYTE const *pbySrc = pbyPixels + piRowStartOffsets[y];
     int xBytes = x * m_iBytesPerPixel;
     int xBytesCur = 0;
@@ -309,6 +311,8 @@ CSpriteDIB::StructureIsHit(
     for (;;) {
         // 32-bit length prefixes in the decompressed stream — LONG, not `long`
         // (which is 8 bytes on Linux LP64 and would desync the walk).
+        if (pbySrc < pbyData || pbySrc + (int) sizeof(LONG) > pbyEnd)
+            return FALSE;                       // skip-run prefix past the buffer
         xBytesCur += *(LONG *) pbySrc;
 
         if (xBytes < xBytesCur)
@@ -316,12 +320,17 @@ CSpriteDIB::StructureIsHit(
 
         pbySrc += sizeof(LONG);
 
+        if (pbySrc + (int) sizeof(LONG) > pbyEnd)
+            return FALSE;                       // data-len prefix past the buffer
         int iDataBytes = *(LONG *) pbySrc;
 
         xBytesCur += iDataBytes;
 
         if (xBytes < xBytesCur)
             return TRUE;
+
+        if (iDataBytes < 0 || pbySrc + sizeof(LONG) + iDataBytes > pbyEnd)
+            return FALSE;                       // data run past the buffer
 
         pbySrc += sizeof(LONG) + iDataBytes;
     }
@@ -601,6 +610,10 @@ CSpriteDIB::StructureDrawToDIB(
         return CRect(0, 0, 0, 0);
     int const *piRowStartOffsets = 2 + (int const *) pbyData;
     BYTE const *pbyPixels = (BYTE const *) (piRowStartOffsets + Height());
+    // Bound every RLE read to the decompressed block — same guard as DecodeToRGBA.
+    // A malformed/truncated stream (or bad row offset, e.g. the 24/32bpp sprite
+    // variant on a non-x86 build) otherwise walks pbySrc past the buffer and faults.
+    BYTE const *pbyEnd = pbyData + Length();
     BYTE const *pbySrc = pbyPixels + piRowStartOffsets[iTopSrcY];
     CDIBits dibits = pdib->GetBits();
     BYTE *pbyDst = dibits + pdib->GetOffset(0, iTopDstY);
@@ -609,6 +622,9 @@ CSpriteDIB::StructureDrawToDIB(
         int iBytesX = iLeftBytesX;
 
         for (;;) {
+            // both length prefixes (skip-run + data-len) must be in the buffer
+            if (pbySrc < pbyData || pbySrc + 2 * (int) sizeof(int) > pbyEnd)
+                break;
             iBytesX += *(int *) pbySrc;
             pbySrc += sizeof(int);
 
@@ -618,6 +634,8 @@ CSpriteDIB::StructureDrawToDIB(
 
             if (0 == nDataBytes)
                 break;
+            if (nDataBytes < 0 || pbySrc + nDataBytes > pbyEnd)
+                break;          // run extends past the buffer
 
             int iLeftBytesX = Max(iLeftBytesClipX, iBytesX);
             int iRightBytesX = Min(iRightBytesClipX, iBytesX + nDataBytes);
