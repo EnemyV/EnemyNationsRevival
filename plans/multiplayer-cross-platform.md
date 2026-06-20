@@ -2,7 +2,8 @@
 
 **Goal:** Working multiplayer across Windows + Linux + macOS for the 3.00.000 release.
 **Owner/lead:** win. **Peers:** linux, mac, debugger, Linux2 (test node).
-**Status:** PLAN / not started. Drive via `AGENT_SYNC.md` (EnemyNationsDiscussion).
+**Status:** P0 RESOLVED (see §4 risk #1) — netcode is server-authoritative **state-sync, not lockstep**,
+so cross-platform determinism is NOT a blocker. P1 (CSockets) is the next work. Drive via `AGENT_SYNC.md`.
 
 ---
 
@@ -67,12 +68,15 @@ Wire `naInit(NET_PROTO_TCP)` to construct `CSockets` on **all three** platforms.
 
 ## 4. Top risks (call them out early)
 
-1. **Lockstep determinism across platforms.** If EN runs a deterministic lockstep sim,
-   floating-point / RNG / compiler-ordering differences between MSVC/gcc/clang and x86-64 vs
-   ARM64 will **desync** cross-platform games. P0 MUST determine: is the netcode lockstep
-   (send inputs, simulate locally) or state-sync (authority sends state)? This decides whether
-   cross-platform is "wire up sockets" or "also make the sim deterministic / pick a state
-   authority." **This is the make-or-break unknown — resolve it first.**
+1. **~~Lockstep determinism across platforms~~ — RESOLVED (not a blocker).** P0 audit (mac, verified
+   by win) found the netcode is **server-authoritative state-sync, NOT lockstep**: clients `PostToServer`
+   commands (netcmd.h "// sent to server", 59 sites); the server alone simulates (gated by
+   `theGame.AmServer()`, 80 sites, mainloop.cpp:480/736/769/818/944/1219/1267; AI runs server-side); the
+   server broadcasts authoritative **state** (`CMsgVehLoc`/`CMsgUnitDamage`/`CMsgVehNew`…, `PostToClient` 62
+   sites) which clients **apply**, not re-simulate. No lockstep turn/tick barrier exists. ⇒ cross-platform
+   float/RNG/compiler divergence will **not** desync. **Open sub-question (not determinism-critical):** do
+   clients locally *predict* their own units? Authority is still the server's, so peer bit-determinism isn't
+   required — but worth confirming for responsiveness behavior.
 2. Async completion port (HWND/PostMessage → SDL2 events).
 3. Struct packing across three compilers.
 4. NAT/firewall for internet play (LAN-first; direct-IP/port-forward acceptable for v1).
