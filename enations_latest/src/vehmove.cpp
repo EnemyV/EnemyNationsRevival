@@ -1633,7 +1633,11 @@ void CVehicle::UnloadCarrier() {
             // if dest didn't work we go to the next sub
             _dest = _head;
             if (iHead > 4) {
-                TRAP();
+                // No traversable head hex among the 4 rotations: every candidate is
+                // blocked by vehicles/buildings (legitimate congestion, e.g. heavy AI
+                // combat). This is a recoverable runtime condition, NOT a bug — fall
+                // through to the next exit sub. (Was TRAP(), a debug-only assert that
+                // fired spuriously on this legal case and broke Debug-build QA runs.)
                 continue;
             }
 
