@@ -16,7 +16,7 @@ all sharing the integration branch.
 - **Live cross-agent message board + build-status table: [AGENT_SYNC.md](AGENT_SYNC.md).**
   Read it at the start of every loop; post there when you change shared code, get blocked,
   or finish a task. Message format is defined at the top of that file — follow it exactly.
-- **Integration plan (what we're doing & in what order): [plans/cross-platform-integration.md](plans/cross-platform-integration.md).**
+- **Plans, design & investigation docs now live in the private discussion repo `EnemyV/EnemyNationsDiscussion` under `docs/`** (e.g. `docs/plans/cross-platform-integration.md`, `docs/plans/multiplayer-cross-platform.md`, `docs/design/`, `docs/investigations/`). **Put new plans/ideas/design notes there, not in this repo.**
 
 **Platform-detection convention (use the existing macros — do NOT invent new ones):**
 `_WIN32` = Windows/MSVC, `__APPLE__` = macOS, `__linux__` = Linux. The Win/POSIX split is
@@ -128,7 +128,7 @@ Why: the `.RC` dialog templates and source files capture original layouts and be
 Next: continue dialog porting, then start abstracting the remaining Win32 APIs in `mfc_compat.h` toward a cross-platform layer.
 
 Full plan: `C:\Users\tyboy\.claude\plans\hidden-waddling-petal.md`.
-Detailed porting guide: [MFC_TO_SDL_PORT_GUIDE.md](MFC_TO_SDL_PORT_GUIDE.md). **Read this before doing significant porting work.**
+Detailed porting guide: `docs/design/MFC_TO_SDL_PORT_GUIDE.md` in the discussion repo (`EnemyV/EnemyNationsDiscussion`). **Read this before doing significant porting work.**
 
 ## User preferences (durable)
 
@@ -160,7 +160,7 @@ Detailed porting guide: [MFC_TO_SDL_PORT_GUIDE.md](MFC_TO_SDL_PORT_GUIDE.md). **
 - `tools/sdl2/` — SDL2-2.30.12 + ttf + mixer + glew
 - `cmakeBuild/enations_latest/src/{Release,Debug}/enations.exe` — build outputs
 - `dbgcatch.ps1` — custom P/Invoke debugger for runtime crashes (catches OutputDebugString, exceptions, walks stacks)
-- `plans/` — design docs, plans, audits
+- design docs / plans / audits / investigations → moved to the discussion repo `EnemyV/EnemyNationsDiscussion` under `docs/` (kept out of this repo to keep it lean)
 
 ## Runtime testing
 
