@@ -190,3 +190,65 @@ Captured here so the next person doesn't re-derive them. All on `mac-build`:
   AVX2), `<malloc/malloc.h>`, `_NSGetExecutablePath` / `fcntl(F_GETPATH)` for the
   `/proc`-less shim, `GetDeviceCaps` reports 32bpp, Apple-Silicon CPU-speed via
   sysctl, clang `__intN` typedef + access-declaration fixes.
+
+## Debugging a crash on macOS (runbook)
+
+If the game crashes, **do not guess — get a stack first, then fix the function it
+names.** Windows and Linux currently run, so a macOS-only crash is almost always
+macOS-specific code or latent UB that only bites on clang/ARM64. Process:
+
+### 1. Reproduce deterministically (from a terminal, NOT the harness first)
+Run it by hand so you SEE stdout/stderr and the OS crash message:
+```
+cd run-mac
+SDL_RENDER_DRIVER=opengl ../build-mac/enations_latest/src/enations
+```
+Drive the minimal flow and note the EXACT step it dies at:
+launch → main menu → Create/Load single player → race/player pick → world-gen → in-game.
+Run it 3× the same way: is it the **same step every time** (deterministic) or random
+(intermittent → likely a memory/race bug)? Write down the last log line before it dies.
+
+### 2. Get a backtrace with lldb (the key skill)
+```
+cd run-mac
+lldb -- ../build-mac/enations_latest/src/enations
+(lldb) settings set target.env-vars SDL_RENDER_DRIVER=opengl
+(lldb) run
+        # reproduce the crash; when lldb stops at the fault:
+(lldb) bt                     # backtrace of the crashing thread
+(lldb) thread backtrace all   # ALL threads — this game runs AI worker threads
+(lldb) frame variable         # locals in the crashing frame
+(lldb) quit
+```
+Copy the top ~20 frames of `bt` (the symbolized `file:line` ones) — that's the report.
+
+### 3. Or read the OS crash report (if it died outside lldb)
+macOS writes a full symbolized crash log per crash:
+```
+ls -t ~/Library/Logs/DiagnosticReports/ | head
+# open the newest enations-*.ips
+```
+Read **Exception Type** (`EXC_BAD_ACCESS` = null/dangling deref; `SIGABRT` = assert/abort)
+and the **"Thread N Crashed"** backtrace + faulting address.
+
+### 4. For memory bugs (intermittent, EXC_BAD_ACCESS, heap corruption) → AddressSanitizer
+Highest-signal tool — prints the exact bad access + allocation site, symbolized:
+```
+cmake -S . -B build-mac-asan -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Debug \
+  -DCMAKE_CXX_FLAGS="-fsanitize=address -fno-omit-frame-pointer" \
+  -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address"
+cmake --build build-mac-asan --target enations -j8
+cd run-mac && SDL_RENDER_DRIVER=opengl ../build-mac-asan/enations_latest/src/enations
+```
+
+### 5. Report back on AGENT_SYNC.md
+Post: the **crashing function `file:line`** (from the stack), the **exception type**,
+whether it's **deterministic** + the repro step, and the top frames. THEN we (or you)
+fix that specific spot. A one-line "it crashed" is not actionable — a stack is.
+
+### Likely suspect areas (only after the stack points near them)
+- macOS window/init (fullscreen-desktop creation), the GL renderer path.
+- 8-bit DIB / palette paths (`CDIB::Copy`, `CreateSurfaceFromDIB`) — a null palette on
+  some art path.
+- Unaligned / struct-packing reads of `ENations.dat` records (clang/ARM64 is stricter).
+- The POSIX shim (`win32_compat.cpp`) returning something a caller didn't expect.

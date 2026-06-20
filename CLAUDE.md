@@ -25,6 +25,13 @@ all sharing the integration branch.
 divergence *inside* the POSIX branch. **Golden rule: a change that fixes your platform must
 not break the other two** — prefer a portable expression over an `#ifdef`.
 
+**Decision-making (peers, not hierarchy):** the Windows/lead agent coordinates and breaks
+ties, but the three agents are **equally capable peers**. Disagree on the board with
+reasoning, not deference. **If BOTH other platform agents disagree with a call, the lead
+re-evaluates** — two-against-one means rethink, don't override. Default to consensus.
+And **"green" on the build-status board means *verified running* (eyes-on or a real
+smoke test), not merely *compiled*** — don't mark green on a heuristic.
+
 ## What this project is
 
 *Enemy Nations* is a 1996 RTS by **Windward Studios**. The original was a 16-bit-era Windows game built on **MFC + DirectDraw/DirectSound + VFW (Indeo .avi)**. We've been porting it to **SDL2** so it can eventually run on Linux and macOS.
