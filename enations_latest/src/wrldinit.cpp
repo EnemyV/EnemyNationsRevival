@@ -3245,6 +3245,51 @@ void CGameMap::AddCoastlines( )
         }
     }
 
+    // Connect water bodies separated by a 1-hex coastline NECK. After the corner
+    // fill, a `coastline` hex with open water on two OPPOSITE sides of DIFFERENT
+    // types is a shore WALL through the water (debugger's river|coastline|lake
+    // repro — the ocean loop's bMouth prevents this for oceans, the river/lake
+    // bank loop + corner-fill did not; that's why rivers >> lakes >> ocean≈never).
+    // Merge the bodies: convert the neck to water (grow a lake if either flank is
+    // lake, else a river) at sea level so it renders flat. SetType(river|lake)
+    // force-stores (see top of file) so there's no slope re-derivation. Same-type
+    // flanks (ocean strait, river U-bend) are left alone — only mixed junctions wall.
+    _hex = CHexCoord( 0, 0 );
+    pHex = m_pHex;
+    for ( int lOn = 0; lOn < lTotal; lOn++ )
+    {
+        if ( pHex->GetType( ) == CHex::coastline )
+        {
+            CHex* pAbove = theMap.GetHex( _hex.X( ),     _hex.Y( ) - 1 );
+            CHex* pBelow = theMap.GetHex( _hex.X( ),     _hex.Y( ) + 1 );
+            CHex* pLeft  = theMap.GetHex( _hex.X( ) - 1, _hex.Y( )     );
+            CHex* pRight = theMap.GetHex( _hex.X( ) + 1, _hex.Y( )     );
+
+            BOOL bVert = pAbove->IsWater( ) && pBelow->IsWater( ) &&
+                         ( pAbove->GetType( ) != pBelow->GetType( ) );
+            BOOL bHorz = pLeft->IsWater( )  && pRight->IsWater( )  &&
+                         ( pLeft->GetType( )  != pRight->GetType( ) );
+            if ( bVert || bHorz )
+            {
+                BOOL bLake = ( pAbove->GetType( ) == CHex::lake ) ||
+                             ( pBelow->GetType( ) == CHex::lake ) ||
+                             ( pLeft->GetType( )  == CHex::lake ) ||
+                             ( pRight->GetType( ) == CHex::lake );
+                pHex->SetType( bLake ? CHex::lake : CHex::river );
+                if ( pHex->GetAlt( ) > CHex::sea_level )
+                    pHex->SetAlt( CHex::sea_level );   // draw flat as water
+            }
+        }
+
+        pHex++;
+        _hex.X( ) += 1;
+        if ( _hex.X( ) >= m_eX )
+        {
+            _hex.X( ) = 0;
+            _hex.Y( ) += 1;
+        }
+    }
+
     // one last time through changing. We can have coastline tiles that don't touch
     // water even on a diaganol. This we turn back to plains
     _hex = CHexCoord( 0, 0 );
