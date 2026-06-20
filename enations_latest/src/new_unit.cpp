@@ -2323,7 +2323,16 @@ CBuilding::~CBuilding( )
             DecrementSpotting( );
     }  // in game
 
-    theMap.EnumHexes( m_hex, m_cx, m_cy, fnEnumHex2, NULL );
+    // Re-skin the footprint to city/rubble (fnEnumHex2 -> CHex::SetType(city) ->
+    // theTerrain.GetSprite) ONLY while a game is live — this is the "demolished
+    // building leaves rubble" visual. At world teardown (CConquerApp::DestroyWorld
+    // clears m_bInGame before deleting the building map) it is pointless AND
+    // crashes: the sprite-store Ptr<CSprite> backing GetSprite is being torn down,
+    // so resolving it faults (observed on macOS: SIGSEGV in Ptr<CSprite>::Value()
+    // via ~CWarehouseBuilding -> EnumHexes -> SetType -> GetSprite). The
+    // teardown-essential hex/map removal below still runs unconditionally.
+    if ( theApp.AmInGame( ) )
+        theMap.EnumHexes( m_hex, m_cx, m_cy, fnEnumHex2, NULL );
     theBuildingHex.ReleaseHex( this );
     theBuildingMap.Remove( this );
 

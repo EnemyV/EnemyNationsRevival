@@ -359,8 +359,20 @@ struct MMTimer {
     LPTIMECALLBACK cb; DWORD_PTR user; UINT delay; bool periodic; UINT flags;
     std::atomic<bool> stop; UINT id;
 };
-std::mutex g_mmMutex;
-std::map<UINT, MMTimer*> g_mmTimers;
+// Leaked on purpose (never destroyed). Timers are created PTHREAD_CREATE_DETACHED,
+// so a periodic timer thread can still be alive at process exit. If static
+// destruction destroyed these first, the thread's next lock would hit a destroyed
+// std::mutex -> std::mutex::lock() throws std::system_error -> std::terminate ->
+// SIGABRT (observed at shutdown via mm_timer_thread). A never-destroyed heap
+// singleton outlives every thread, so the lock is always valid.
+static std::mutex& g_mmMutex() {
+    static std::mutex* m = new std::mutex();
+    return *m;
+}
+static std::map<UINT, MMTimer*>& g_mmTimers() {
+    static std::map<UINT, MMTimer*>* m = new std::map<UINT, MMTimer*>();
+    return *m;
+}
 UINT g_mmNextId = 1;
 void* mm_timer_thread(void* arg) {
     MMTimer* t = static_cast<MMTimer*>(arg);
@@ -383,7 +395,7 @@ void* mm_timer_thread(void* arg) {
     // free it here (covers both one-shot self-completion and timeKillEvent).
     // Done under the lock so a concurrent timeKillEvent either still finds us
     // (and just sets stop) or misses us entirely — never a use-after-free.
-    { std::lock_guard<std::mutex> lk(g_mmMutex); g_mmTimers.erase(t->id); }
+    { std::lock_guard<std::mutex> lk(g_mmMutex()); g_mmTimers().erase(t->id); }
     delete t;
     return nullptr;
 }
@@ -395,7 +407,7 @@ extern "C" UINT timeSetEvent(UINT delay, UINT, LPTIMECALLBACK cb, DWORD_PTR user
     t->periodic = (flags & 0x0001u) != 0;   // TIME_PERIODIC
     t->stop.store(false);
     UINT myid;
-    { std::lock_guard<std::mutex> lk(g_mmMutex); myid = t->id = g_mmNextId++; g_mmTimers[t->id] = t; }
+    { std::lock_guard<std::mutex> lk(g_mmMutex()); myid = t->id = g_mmNextId++; g_mmTimers()[t->id] = t; }
     // Detached from birth: the timer thread frees itself on exit, so nothing
     // joins it and the MMTimer's lifetime never depends on a stored pthread_t
     // (which a fast one-shot could free before pthread_create even returned).
@@ -405,14 +417,14 @@ extern "C" UINT timeSetEvent(UINT delay, UINT, LPTIMECALLBACK cb, DWORD_PTR user
     int rc = pthread_create(&th, &attr, mm_timer_thread, t);
     pthread_attr_destroy(&attr);
     if (rc != 0) {
-        std::lock_guard<std::mutex> lk(g_mmMutex); g_mmTimers.erase(myid); delete t; return 0;
+        std::lock_guard<std::mutex> lk(g_mmMutex()); g_mmTimers().erase(myid); delete t; return 0;
     }
     return myid;
 }
 extern "C" UINT timeKillEvent(UINT id) {
-    std::lock_guard<std::mutex> lk(g_mmMutex);
-    auto it = g_mmTimers.find(id);
-    if (it == g_mmTimers.end()) return 11;   // MMSYSERR_INVALPARAM (unknown timer id)
+    std::lock_guard<std::mutex> lk(g_mmMutex());
+    auto it = g_mmTimers().find(id);
+    if (it == g_mmTimers().end()) return 11;   // MMSYSERR_INVALPARAM (unknown timer id)
     // Signal stop only; the timer thread removes itself from the map and frees
     // its MMTimer when it next wakes (it was created detached — no join here).
     it->second->stop.store(true);

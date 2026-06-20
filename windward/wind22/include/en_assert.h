@@ -21,6 +21,11 @@
 
 #include <windows.h>
 #include <cstdio>
+#include <cstddef>
+#include <type_traits>
+#ifndef _WIN32
+#include <dlfcn.h>
+#endif
 
 // Total number of assert firings this run (exposed as a perf gauge / for triage).
 // selectany folds the duplicate header definitions to one; gcc uses weak.
@@ -64,6 +69,84 @@ inline void EnAssertFire( const char* expr, const char* file, int line )
 
 // Evaluates expr exactly once; non-fatal. Usable in statement context.
 #define EN_ASSERT_NONFATAL( expr ) ( ( expr ) ? (void)0 : EnAssertFire( #expr, __FILE__, __LINE__ ) )
+
+// Is `vptr` a real C++ vtable pointer (i.e. does it point into a loaded image's
+// read-only data, where vtables live — never the heap/stack)? Used to keep the
+// AssertValid() integrity sweep (TestEverything) non-fatal when it walks a
+// dangling/freed object: the port's simplified ASSERT_VALID dispatched the
+// virtual AssertValid() straight through the object's vtable, so a freed object
+// (zeroed or garbage vtable) faulted — observed as SIGSEGV at 0x18 (the
+// AssertValid vtable slot) and, on arm64e, as a pointer-authentication failure,
+// via CUnit::AssertValid <- CMaterialBuilding/CWarehouseBuilding from
+// DestroyWorld/TestEverything on a building with a garbage m_pUnitData.
+//
+// dladdr() answers this precisely (mincore() only proves the page is *mapped*,
+// which a freed heap object still is), but dladdr walks the loaded images and is
+// FAR too slow to call on every ASSERT_VALID — worldgen's CTerrain::AssertValid
+// validates every terrain tile, and a dladdr per call pinned the main thread at
+// 100% CPU. So cache validated vtables: there is one per class, so the working
+// set is tiny and bounded, and the hot loops reuse the same handful. Garbage
+// vtables are all different and never in an image, so they never cache — they
+// always fall through to the dladdr reject. Windows keeps the historical
+// non-null behavior (== AfxIsValidAddress) so the MSVC build is unchanged.
+inline bool EnVtableInImage( const void* vptr )
+{
+    if ( vptr == nullptr )
+        return false;
+#ifdef _WIN32
+    return true;
+#else
+    static const void* s_lastGood = nullptr;   // hottest path: same vtable repeated
+    if ( vptr == s_lastGood )
+        return true;
+
+    enum { NCACHE = 1024 };
+    static const void* s_good[NCACHE] = {};
+    static int         s_count = 0;
+    for ( int i = 0; i < s_count; ++i )
+        if ( s_good[i] == vptr )
+        {
+            s_lastGood = vptr;
+            return true;
+        }
+
+    Dl_info dli;
+    if ( ::dladdr( vptr, &dli ) == 0 )
+        return false;                          // not in any loaded image => garbage
+
+    if ( s_count < NCACHE )
+        s_good[s_count++] = vptr;
+    s_lastGood = vptr;
+    return true;
+#endif
+}
+
+// Non-fatal ASSERT_VALID core: for polymorphic types, validate the object's
+// vtable points into a loaded image before the virtual AssertValid() dispatch.
+// A null / dangling / freed object is LOGGED via EnAssertFire instead of crashing
+// — mirrors this header's "Ignore, don't kill" philosophy and original MFC's
+// AfxAssertValidObject. The trap signal is preserved (logged with the call site),
+// so a real lifetime bug still shows up in the log; it just no longer hard-kills.
+template <class T>
+inline void EnAssertValidObj( T* pOb, const char* file, int line )
+{
+    if ( pOb == nullptr )
+    {
+        EnAssertFire( "ASSERT_VALID: null", file, line );
+        return;
+    }
+    if ( std::is_polymorphic<typename std::remove_const<T>::type>::value )
+    {
+        // vtable pointer lives at offset 0 (Itanium / MSVC single-inheritance).
+        const void* vptr = *reinterpret_cast<const void* const*>( pOb );
+        if ( !EnVtableInImage( vptr ) )
+        {
+            EnAssertFire( "ASSERT_VALID: freed/garbage object (bad vtable)", file, line );
+            return;
+        }
+    }
+    pOb->AssertValid();
+}
 
 // Replacement for a TRAP() we've DELIBERATELY removed after confirming the
 // guarded condition is benign and already handled (e.g. a normal RTS outcome).

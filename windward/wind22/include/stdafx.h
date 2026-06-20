@@ -54,9 +54,11 @@
 #undef ASSERT_VALID
 #endif
 #ifdef _DEBUG
-// Non-fatal + null-safe: a null pOb logs instead of dereferencing into an AV,
-// and AssertValid()'s own ASSERTs are now non-fatal too.
-#define ASSERT_VALID(pOb) ( (pOb) ? (void)(pOb)->AssertValid() : EnAssertFire( "ASSERT_VALID: null", __FILE__, __LINE__ ) )
+// Non-fatal + null-safe + dangling-safe: null/unreadable/freed objects log via
+// EnAssertFire instead of faulting (a freed object's zeroed vtable used to crash
+// the virtual AssertValid() dispatch — see EnAssertValidObj in en_assert.h).
+// AssertValid()'s own ASSERTs are non-fatal too.
+#define ASSERT_VALID(pOb) EnAssertValidObj( pOb, __FILE__, __LINE__ )
 #else
 #define ASSERT_VALID(pOb) ((void)0)
 #endif
