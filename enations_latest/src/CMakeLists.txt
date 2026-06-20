@@ -230,6 +230,12 @@ if (MSVC)
             # mfc_compat.h provides the MFC type surface; MFC not linked.
             _WIN32
             _WIN32_WINNT=_WIN32_WINNT_WIN7
+            # NOMINMAX: stop <windows.h> defining max/min as textual MACROS. The
+            # cross-platform port uses ::max(...)/::min(...) (binds to the global
+            # templates in stdafx.h, mirroring the Linux win32_compat.h design); the
+            # macros would expand ::max(a,b) -> ::(...) and break the build. Legacy
+            # unqualified max(a,b)/min(a,b) sites bind to those templates instead.
+            NOMINMAX
             _MBCS
             ${EN_ARCH_DEFINE} # arch macro (_X86_ / _AMD64_)
             WIN32
@@ -320,7 +326,9 @@ if (MSVC)
         ../../cmakeBuild/windward/wind22/$<CONFIG>
         ./cmakeBuild/tools/vdmplay/$<CONFIG>
         ./cmakeBuild/windward/wind22/$<CONFIG>
+        ../../tools/sdl2/SDL2-2.30.12/lib/${SDL2_ARCH}        # SDL2.lib (pulled via SDL2_ttf/_mixer /DEFAULTLIB)
         ../../tools/sdl2/SDL2_ttf-2.22.0/lib/${SDL2_ARCH}
+        ../../tools/sdl2/SDL2_mixer-2.8.1/lib/${SDL2_ARCH}    # SDL2_mixer.lib
     )
 
     # Copy required DLLs to output directory (Windows only — Linux uses system .so).
