@@ -3037,6 +3037,17 @@ void CGameMap::CheckAlt( )
     }
 }
 
+// Shore-SUPPRESSION test: which neighbours must NOT be converted to coastline.
+// IsWater() is river|ocean|lake and EXCLUDES swamp — but swamp is a water-like
+// type, so the bank loops treat it as land and paint a shore band right through
+// it at river/lake↔swamp borders (the "shore between two waters" bug; rivers >>
+// lakes because they meander through swampy lowlands). Treat swamp as water for
+// the don't-shore decision only (global IsWater / CanRoad are unchanged).
+static inline BOOL IsShoreWater( const CHex* h )
+{
+    return h->IsWater( ) || ( h->GetType( ) == CHex::swamp );
+}
+
 // For oceans (& lakes) we use the water tiles so it stays flat.
 // For rivers we surround the existing tiles and lower the river altitude
 void CGameMap::AddCoastlines( )
@@ -3144,7 +3155,7 @@ void CGameMap::AddCoastlines( )
                     for ( int y = -1; y <= 1; y++ )
                     {
                         CHex* pHexTest = theMap.GetHex( _hex.X( ) + x, _hex.Y( ) + y );
-                        if ( ( !pHexTest->IsWater( ) ) && ( pHexTest->GetType( ) != CHex::coastline ) )
+                        if ( ( !IsShoreWater( pHexTest ) ) && ( pHexTest->GetType( ) != CHex::coastline ) )
                             pHexTest->SetType( CHex::coastline );
                     }
             }
@@ -3153,7 +3164,7 @@ void CGameMap::AddCoastlines( )
                 for ( int y = -1; y <= 1; y++ )
                 {
                     CHex* pHexTest = theMap.GetHex( _hex.X( ) + x, _hex.Y( ) + y );
-                    if ( ( !pHexTest->IsWater( ) ) && ( pHexTest->GetType( ) != CHex::coastline ) )
+                    if ( ( !IsShoreWater( pHexTest ) ) && ( pHexTest->GetType( ) != CHex::coastline ) )
                     {
                         pHex->SetType( CHex::coastline );
                         pbWasWater[lOn] = 1;
@@ -3170,7 +3181,7 @@ void CGameMap::AddCoastlines( )
                 for ( int y = -1; y <= 1; y++ )
                 {
                     CHex* pHexTest = theMap.GetHex( _hex.X( ) + x, _hex.Y( ) + y );
-                    if ( ( !pHexTest->IsWater( ) ) && ( pHexTest->GetType( ) != CHex::coastline ) )
+                    if ( ( !IsShoreWater( pHexTest ) ) && ( pHexTest->GetType( ) != CHex::coastline ) )
                         pHexTest->SetType( CHex::coastline );
                 }
 
@@ -3207,9 +3218,9 @@ void CGameMap::AddCoastlines( )
                 if ( ( pHexAbove->IsWater( ) ) || ( pHexBelow->IsWater( ) ) )
                 {
                     // check left and right
-                    if ( !pHexLeft->IsWater( ) )
+                    if ( !IsShoreWater( pHexLeft ) )
                         pHexLeft->SetType( CHex::coastline );
-                    if ( !pHexRight->IsWater( ) )
+                    if ( !IsShoreWater( pHexRight ) )
                         pHexRight->SetType( CHex::coastline );
                 }
 
@@ -3217,9 +3228,9 @@ void CGameMap::AddCoastlines( )
                 if ( ( pHexLeft->IsWater( ) ) || ( pHexRight->IsWater( ) ) )
                 {
                     // check left and right
-                    if ( !pHexAbove->IsWater( ) )
+                    if ( !IsShoreWater( pHexAbove ) )
                         pHexAbove->SetType( CHex::coastline );
-                    if ( !pHexBelow->IsWater( ) )
+                    if ( !IsShoreWater( pHexBelow ) )
                         pHexBelow->SetType( CHex::coastline );
                 }
             }
