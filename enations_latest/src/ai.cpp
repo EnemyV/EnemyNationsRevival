@@ -20,6 +20,9 @@
 #include "player.h"
 #include "racedata.h"
 #include "stdafx.h"
+#ifdef __linux__
+#include <cxxabi.h>   // abi::__forced_unwind (libstdc++) — let pthread_cancel unwind past catch(...)
+#endif
 #include "threads.h"
 
 #include "Perf.h"  // ai.msg.vdsamp counter (veh_dest sampling)
@@ -452,6 +455,18 @@ void WINAPI AiThread( AI_INIT* pAiI )
         logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "AiThread() player %d terminated ", pAIMgr->GetPlayer( ) );
 #endif
     }
+#ifdef __linux__
+    // A pthread_cancel (the POSIX shim's TerminateThread) at shutdown force-unwinds
+    // this thread with a special exception; the catch(...) below would swallow it and
+    // libstdc++ aborts ("FATAL: exception not rethrown") — the Linux clean-quit crash.
+    // Rethrow so the thread cancels cleanly. Linux/libstdc++ only: Win32's real
+    // TerminateThread kills without unwinding, and macOS/libc++ exits clean already
+    // (and may not expose abi::__forced_unwind).
+    catch ( abi::__forced_unwind& )
+    {
+        throw;
+    }
+#endif
     catch ( ... )
     {
 
