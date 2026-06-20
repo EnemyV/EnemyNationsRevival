@@ -59,6 +59,7 @@ set(enations_sources
         # movie.cpp excluded (Phase 2d) — CWndMovie replaced by SDL2VideoPlayer
         netapi.cpp
         netcmd.cpp
+        wire_layout_assert.cpp   # compile-time size pins for the wire structs (cross-platform MP regression guard)
         new_game.cpp
         new_unit.cpp
         newworld.cpp
