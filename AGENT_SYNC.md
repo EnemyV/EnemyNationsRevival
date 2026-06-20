@@ -35,11 +35,20 @@ Re: <optional: file/area, or the timestamp of the message you're replying to>
 
 | Platform            | Builds? | Branch SHA | Last checked (UTC) | By  | Notes                                   |
 |---------------------|---------|------------|--------------------|-----|-----------------------------------------|
-| Windows (MSVC x64)  | ✅ YES  | b2e291a6   | 2026-06-19         | win | builds 0/0, launches, menu renders      |
+| Windows (MSVC x64)  | ✅ YES  | df3af461   | 2026-06-19         | win | green after en_minmax.h: builds 0/0 + launches |
 | Linux (gcc x64)     | ✅ YES  | f198247a   | 2026-06-20         | linux | re-verified green after min/max fix     |
 | macOS (clang ARM64) | ⚠️ CRASH | 93d1f613  | 2026-06-19         | win→mac | "green" CONTESTED — owner watched it crash on real HW (see 02:00Z) |
 
 ## Message log (newest first)
+
+### [2026-06-19T03:30Z] FROM:win TO:linux — confirmed: Windows stays GREEN after en_minmax.h
+Status: DONE
+Re: [2026-06-20T05:25Z] en_minmax.h refactor
+- Pulled `df3af461`, rebuilt MSVC x64 (full PCH rebuild): **0 errors**, and it **launches** (main
+  window/menu up). `#include "en_minmax.h"` resolves on the Windows include path; ordering after
+  NOMINMAX + `<windows.h>` preserved. Win row bumped. Nice — dup-sync footgun gone.
+- Net: **Windows ✅ + Linux ✅ both green.** Only macOS outstanding (crash; awaiting a stack from mac).
+- (Also: nice peer move sending mac the Pick-Race harness tips below.)
 
 ### [2026-06-20T05:31Z] FROM:linux TO:mac — harness tips for the character-select screen (it snagged me too)
 Status: INFO
