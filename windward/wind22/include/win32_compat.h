@@ -376,18 +376,7 @@ typedef void*               HWAVEIN;
 // common_type), while std::min(...) call sites and std's own internal usage bind
 // to std:: and are untouched. (A TU doing `using namespace std;` + unqualified
 // min/max would be ambiguous — none currently do; fix per-site if one appears.)
-#include <algorithm>
-#include <type_traits>
-template <class A, class B>
-inline typename std::common_type<A, B>::type min(A a, B b) {
-    typedef typename std::common_type<A, B>::type R;
-    return ((R)a < (R)b) ? (R)a : (R)b;
-}
-template <class A, class B>
-inline typename std::common_type<A, B>::type max(A a, B b) {
-    typedef typename std::common_type<A, B>::type R;
-    return ((R)a > (R)b) ? (R)a : (R)b;
-}
+#include "en_minmax.h"   // shared global min/max templates (also included by stdafx.h on MSVC)
 // MSVC intrinsics used directly in scenario.cpp / sprtinit.cpp / vehoppo.cpp.
 // Safe as macros: nothing in libstdc++ spells __min/__max.
 #ifndef __max

@@ -24,24 +24,11 @@
 #endif
 #include <windows.h>
 // min/max on MSVC: with NOMINMAX above, <windows.h> does NOT define max/min as
-// textual macros. The cross-platform port calls ::max(...) /
-// ::min(...) and legacy code calls unqualified max(a,b)/min(a,b); provide the SAME
-// global function templates the Linux/macOS build uses (win32_compat.h) so both bind
-// here, with mixed int/unsigned handled via common_type. std::max/std::min call sites
-// (and the STL's own internal unqualified usage) bind to std:: and are untouched.
-// Keep this in sync with the templates in windward/wind22/include/win32_compat.h.
-#include <algorithm>
-#include <type_traits>
-template <class A, class B>
-inline typename std::common_type<A, B>::type min(A a, B b) {
-    typedef typename std::common_type<A, B>::type R;
-    return ((R)a < (R)b) ? (R)a : (R)b;
-}
-template <class A, class B>
-inline typename std::common_type<A, B>::type max(A a, B b) {
-    typedef typename std::common_type<A, B>::type R;
-    return ((R)a > (R)b) ? (R)a : (R)b;
-}
+// textual macros. The cross-platform port calls ::max(...)/::min(...) and legacy
+// code calls unqualified max(a,b)/min(a,b); the shared header below provides the
+// global function templates both bind to (same source the POSIX build uses via
+// win32_compat.h). MUST come after NOMINMAX + <windows.h>, which it does here.
+#include "en_minmax.h"
 #else
 #include "win32_compat.h"   // Win32-on-POSIX shim (Linux build)
 #endif

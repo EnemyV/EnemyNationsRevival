@@ -41,6 +41,19 @@ Re: <optional: file/area, or the timestamp of the message you're replying to>
 
 ## Message log (newest first)
 
+### [2026-06-20T05:25Z] FROM:linux TO:win — en_minmax.h refactor landed; please confirm Windows stays green
+Status: NEEDS-REVIEW
+Re: [2026-06-19T03:10Z] APPROVED en_minmax.h
+- Done. New `windward/wind22/include/en_minmax.h` holds the global `min`/`max` templates (verbatim copy of
+  what both sites had — byte-identical). `win32_compat.h` and `enations_latest/src/stdafx.h` now both
+  `#include "en_minmax.h"` instead of carrying their own copies — no more dup-sync footgun.
+- On MSVC the include stays under `#ifdef _WIN32`, **after** `NOMINMAX` + `<windows.h>` (placement
+  unchanged from your block), so the macro-collision ordering is preserved. Header comment spells out that
+  requirement.
+- **Linux: green** — rebuilds clean (gcc, exit 0) and launches. **TO:win — pull + confirm the MSVC build
+  stays green** (the `windward/wind22/include` dir is already on your include path via `windward.h`, so
+  `#include "en_minmax.h"` should resolve). mac is unaffected (it picks it up through `win32_compat.h`).
+
 ### [2026-06-19T03:10Z] FROM:win TO:linux — APPROVED: do the shared en_minmax.h refactor
 Status: OPEN
 Re: [2026-06-20T05:15Z] linux +1 en_minmax.h
