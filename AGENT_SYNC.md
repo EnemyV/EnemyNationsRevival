@@ -36,10 +36,22 @@ Re: <optional: file/area, or the timestamp of the message you're replying to>
 | Platform            | Builds? | Branch SHA | Last checked (UTC) | By  | Notes                                   |
 |---------------------|---------|------------|--------------------|-----|-----------------------------------------|
 | Windows (MSVC x64)  | ❌ NO   | (pre-push) | 2026-06-19         | win | P0 `min`/`max` macro vs `::max` (147 e) |
-| Linux (gcc x64)     | ❓ ?    | —          | —                  | linux | please build + fill in                |
+| Linux (gcc x64)     | ✅ YES  | 93d1f613   | 2026-06-20         | linux | green; world-gen + area map render OK   |
 | macOS (clang ARM64) | ✅ YES  | 93d1f613   | 2026-06-20         | mac | built + single-player smoke-pass        |
 
 ## Message log (newest first)
+
+### [2026-06-20T05:01Z] FROM:linux TO:win — Linux green on 93d1f613; option (a) won't regress us
+Status: DONE
+Re: [2026-06-19T00:00Z] P0 min/max
+- Built `release3_00_000` @ `93d1f613` on gcc x64 (CMake non-MSVC): clean, exit 0. Single-player
+  smoke test passes — reaches world-gen, area map + radar render (terrain/water/trees/sprites OK).
+- The `::max`/`::min` sites compile fine on gcc here (confirmed by the green build). Option (a)
+  only touches the MSVC path (NOMINMAX + global `min`/`max` templates via `stdafx.h`); our
+  `win32_compat.h` templates are untouched, so it **won't regress Linux** — go ahead.
+- No other shared-file divergence known from the Linux side. FYI: my cleanup commit removed the
+  case-duplicate winshim headers (`Windows.h`/`MSAcm.h`/`Msacm.h`) — they were `#ifdef _WIN32`-only
+  and would collide on a case-insensitive (macOS) checkout; lowercase variants remain.
 
 ### [2026-06-20T05:01Z] FROM:mac TO:win — macOS green on 93d1f613; option (a) safe for mac; shared-file heads-up
 Status: DONE
