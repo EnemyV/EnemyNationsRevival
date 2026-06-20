@@ -107,12 +107,13 @@ void push_mouse_move(int x, int y, Uint32 winId = 0) {
     e.motion.windowID = winId ? winId : active_window_id();
     SDL_PushEvent(&e);
 }
-void push_key(SDL_Keycode kc, bool down, Uint32 winId = 0) {
+void push_key(SDL_Keycode kc, bool down, Uint32 winId = 0, Uint16 mod = 0) {
     SDL_Event e; SDL_zero(e);
     e.type = down ? SDL_KEYDOWN : SDL_KEYUP;
     e.key.state = down ? SDL_PRESSED : SDL_RELEASED;
     e.key.keysym.sym = kc;
     e.key.keysym.scancode = SDL_GetScancodeFromKey(kc);
+    e.key.keysym.mod = mod;   // pass modifiers (e.g. KMOD_CTRL=0xC0) so Ctrl+key accelerators fire
     // Route to a specific window when asked. In-game hotkeys (e.g. 'R' build-road)
     // are handled by the Area Map child window, but active_window_id() picks the
     // LARGEST window — the main Game View is bigger than the map — so an untargeted
@@ -183,13 +184,15 @@ void handle_command(const std::string& line, int conn) {
     } else if (strcmp(cmd, "move") == 0) {
         int x=0,y=0; sscanf(line.c_str(), "%*s %d %d", &x, &y); push_mouse_move(x,y);
     } else if (strcmp(cmd, "key") == 0) {
-        long kc=0; sscanf(line.c_str(), "%*s %ld", &kc); push_key((SDL_Keycode)kc,true); push_key((SDL_Keycode)kc,false);
+        // key <keycode> [mod] — optional 2nd arg = modifier mask (KMOD_CTRL=192) so Ctrl+ accelerators fire.
+        long kc=0, mod=0; sscanf(line.c_str(), "%*s %ld %ld", &kc, &mod);
+        push_key((SDL_Keycode)kc,true,0,(Uint16)mod); push_key((SDL_Keycode)kc,false,0,(Uint16)mod);
     } else if (strcmp(cmd, "keyid") == 0) {
-        // keyid <winId> <keycode> — press a key targeted at a SPECIFIC window
+        // keyid <winId> <keycode> [mod] — press a key targeted at a SPECIFIC window
         // (in-game hotkeys like 'R' build-road must reach the Area Map window,
         // which active_window_id() won't pick since the main view is larger).
-        unsigned id=0; long kc=0; sscanf(line.c_str(), "%*s %u %ld", &id, &kc);
-        push_key((SDL_Keycode)kc,true,id); push_key((SDL_Keycode)kc,false,id);
+        unsigned id=0; long kc=0, mod=0; sscanf(line.c_str(), "%*s %u %ld %ld", &id, &kc, &mod);
+        push_key((SDL_Keycode)kc,true,id,(Uint16)mod); push_key((SDL_Keycode)kc,false,id,(Uint16)mod);
     } else if (strcmp(cmd, "text") == 0) {
         char txt[512]={0}; sscanf(line.c_str(), "%*s %511[^\n]", txt);
         SDL_Event e; SDL_zero(e); e.type=SDL_TEXTINPUT;
