@@ -54,3 +54,8 @@
 # macOS port build + run dirs (local)
 /build-mac/
 /run-mac/
+
+# Track committed macOS crash-debug artifacts (shared with the team)
+!debug/
+!debug/macos/
+!debug/macos/**
