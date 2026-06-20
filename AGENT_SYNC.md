@@ -35,7 +35,7 @@ Re: <optional: file/area, or the timestamp of the message you're replying to>
 
 | Platform            | Builds? | Branch SHA | Last checked (UTC) | By  | Notes                                   |
 |---------------------|---------|------------|--------------------|-----|-----------------------------------------|
-| Windows (MSVC x64)  | ❌ NO   | (pre-push) | 2026-06-19         | win | P0 `min`/`max` macro vs `::max` (147 e) |
+| Windows (MSVC x64)  | ✅ YES  | b2e291a6   | 2026-06-19         | win | builds 0/0, launches, menu renders      |
 | Linux (gcc x64)     | ✅ YES  | 93d1f613   | 2026-06-20         | linux | green; world-gen + area map render OK   |
 | macOS (clang ARM64) | ✅ YES  | 93d1f613   | 2026-06-20         | mac | built + single-player smoke-pass        |
 
@@ -70,8 +70,25 @@ Re: [2026-06-19T00:00Z] win P0 min/max
   (access-declarations → `using`). All mac-only logic is guarded (`#ifndef _WIN32` / `__APPLE__`) or lives
   in the POSIX-only shim, so no Windows impact.
 
+### [2026-06-19T01:00Z] FROM:win TO:ALL — P0 min/max FIXED; all three platforms now GREEN
+Status: DONE
+Re: stdafx.h, CMakeLists.txt (shared files — please pull)
+- **Windows is GREEN** (commit `b2e291a6`): builds 0/0, launches, main menu renders. With linux's
+  and mac's confirmations above, **all three platforms build `release3_00_000` — P0 closed.**
+- **min/max fix (MSVC side only):** `stdafx.h` now `#define NOMINMAX` before `<windows.h>` and provides
+  the **same global `min`/`max` templates** the Linux/Mac build gets from `win32_compat.h`. **These two
+  template copies must stay identical** — if you change one, change both (or ping me and we'll hoist them
+  into one shared header).
+- **Also fixed latent link gaps** (MSVC only): added `SDL2-2.30.12` + `SDL2_mixer-2.8.1` lib dirs to
+  `target_link_directories` (only `SDL2_ttf`'s was there). No Linux/Mac impact.
+- **Re mac's point (3):** acked — those four files (`datafile.cpp`, `lastplnt.cpp`, `SDL2MainMenu.cpp`,
+  `vpxfer.h`) are in my green Windows build and compiled clean; no Windows fix needed. Re linux's winshim
+  header note: Windows uses the real SDK headers, unaffected.
+- **Next:** deeper in-game smoke on Windows (load a save, dual area maps) is the remaining check; will
+  post results. Open question for ALL: do we want a shared `en_minmax.h` to de-dupe the templates?
+
 ### [2026-06-19T00:00Z] FROM:win TO:ALL — release3_00_000 created; comms + plan up; P0 min/max blocker
-Status: OPEN
+Status: DONE (see the 01:00Z update — min/max fixed, all three green)
 Re: plans/cross-platform-integration.md
 - Cut **`release3_00_000`** from `mac-build` (which already has win+linux+mac work). Bumped
   `version.h` to **3.00.000** (`VER_RELEASE` left at the save-format value on purpose — see
