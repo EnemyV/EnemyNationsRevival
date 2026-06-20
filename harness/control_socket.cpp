@@ -107,13 +107,17 @@ void push_mouse_move(int x, int y, Uint32 winId = 0) {
     e.motion.windowID = winId ? winId : active_window_id();
     SDL_PushEvent(&e);
 }
-void push_key(SDL_Keycode kc, bool down) {
+void push_key(SDL_Keycode kc, bool down, Uint32 winId = 0) {
     SDL_Event e; SDL_zero(e);
     e.type = down ? SDL_KEYDOWN : SDL_KEYUP;
     e.key.state = down ? SDL_PRESSED : SDL_RELEASED;
     e.key.keysym.sym = kc;
     e.key.keysym.scancode = SDL_GetScancodeFromKey(kc);
-    e.key.windowID = active_window_id();
+    // Route to a specific window when asked. In-game hotkeys (e.g. 'R' build-road)
+    // are handled by the Area Map child window, but active_window_id() picks the
+    // LARGEST window — the main Game View is bigger than the map — so an untargeted
+    // key never reaches the map. keyid lets the driver name the target window.
+    e.key.windowID = winId ? winId : active_window_id();
     SDL_PushEvent(&e);
 }
 
@@ -160,12 +164,32 @@ void handle_command(const std::string& line, int conn) {
         push_mouse_move(x,y,id);
         push_mouse_button(x,y,SDL_BUTTON_LEFT,true,id,1);  push_mouse_button(x,y,SDL_BUTTON_LEFT,false,id,1);
         push_mouse_button(x,y,SDL_BUTTON_LEFT,true,id,2);  push_mouse_button(x,y,SDL_BUTTON_LEFT,false,id,2);
+    } else if (strcmp(cmd, "dragid") == 0) {
+        // dragid <winId> <x1> <y1> <x2> <y2> [right] — press at (x1,y1), drag to
+        // (x2,y2), release. Needed for gestures the game reads as a drag: crane
+        // road-build (press 'R', then drag start->end), box-select, and the
+        // right-drag line-move. The game CaptureMouse()s on press, so the move +
+        // release route to the captured window regardless of the move's target.
+        unsigned id=0; int x1=0,y1=0,x2=0,y2=0; char rb[16]={0};
+        sscanf(line.c_str(), "%*s %u %d %d %d %d %15s", &id, &x1,&y1,&x2,&y2, rb);
+        Uint8 btn = (rb[0]=='r') ? SDL_BUTTON_RIGHT : SDL_BUTTON_LEFT;
+        push_mouse_move(x1,y1,id);
+        push_mouse_button(x1,y1,btn,true,id);
+        for (int s=1; s<=4; ++s)   // interpolate so the game tracks the drag path
+            push_mouse_move(x1+(x2-x1)*s/4, y1+(y2-y1)*s/4, id);
+        push_mouse_button(x2,y2,btn,false,id);
     } else if (strcmp(cmd, "moveid") == 0) {
         unsigned id=0; int x=0,y=0; sscanf(line.c_str(), "%*s %u %d %d", &id, &x, &y); push_mouse_move(x,y,id);
     } else if (strcmp(cmd, "move") == 0) {
         int x=0,y=0; sscanf(line.c_str(), "%*s %d %d", &x, &y); push_mouse_move(x,y);
     } else if (strcmp(cmd, "key") == 0) {
         long kc=0; sscanf(line.c_str(), "%*s %ld", &kc); push_key((SDL_Keycode)kc,true); push_key((SDL_Keycode)kc,false);
+    } else if (strcmp(cmd, "keyid") == 0) {
+        // keyid <winId> <keycode> — press a key targeted at a SPECIFIC window
+        // (in-game hotkeys like 'R' build-road must reach the Area Map window,
+        // which active_window_id() won't pick since the main view is larger).
+        unsigned id=0; long kc=0; sscanf(line.c_str(), "%*s %u %ld", &id, &kc);
+        push_key((SDL_Keycode)kc,true,id); push_key((SDL_Keycode)kc,false,id);
     } else if (strcmp(cmd, "text") == 0) {
         char txt[512]={0}; sscanf(line.c_str(), "%*s %511[^\n]", txt);
         SDL_Event e; SDL_zero(e); e.type=SDL_TEXTINPUT;
