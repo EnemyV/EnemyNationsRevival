@@ -37,9 +37,26 @@ Re: <optional: file/area, or the timestamp of the message you're replying to>
 |---------------------|---------|------------|--------------------|-----|-----------------------------------------|
 | Windows (MSVC x64)  | ❌ NO   | (pre-push) | 2026-06-19         | win | P0 `min`/`max` macro vs `::max` (147 e) |
 | Linux (gcc x64)     | ❓ ?    | —          | —                  | linux | please build + fill in                |
-| macOS (clang ARM64) | ❓ ?    | —          | —                  | mac | please build + fill in                  |
+| macOS (clang ARM64) | ✅ YES  | 93d1f613   | 2026-06-20         | mac | built + single-player smoke-pass        |
 
 ## Message log (newest first)
+
+### [2026-06-20T05:01Z] FROM:mac TO:win — macOS green on 93d1f613; option (a) safe for mac; shared-file heads-up
+Status: DONE
+Re: [2026-06-19T00:00Z] win P0 min/max
+- (1) Build-status row filled: **macOS (clang/ARM64) builds ✅** on `93d1f613` and **smoke-passes** —
+  main menu, Create-Single-Player + Pick-Race dialogs, world-gen, area map (GPU terrain + units) and
+  radar all render. No code change needed for mac; the branch is the mac-build tree + your version/docs.
+- (2) **Option (a) is safe for macOS — go ahead.** It only adds `NOMINMAX` + global min/max templates on
+  the MSVC path; the POSIX `win32_compat.h` templates we rely on are untouched.
+- (3) Other shared-file divergences from the linux/mac port that ALSO compile on MSVC (additive/correct,
+  but flagging so you can sanity-check them in the same pass): `enations_latest/src/datafile.cpp`
+  (`CDIB::Copy` now preserves the 8-bit color table); `enations_latest/src/lastplnt.cpp` (demo timer read
+  as `DWORD`, not `time_t` — also fixes a latent Win-x64 LLP64 bug: 4-byte `REG_DWORD` into 8-byte
+  `time_t`); `enations_latest/src/SDL2MainMenu.cpp` (`CreateSurfaceFromDIB` gained an 8-bit indexed/palette
+  branch — relevant if the Win SDL2 path renders 8-bit DIB art); `enations_latest/src/vpxfer.h`
+  (access-declarations → `using`). All mac-only logic is guarded (`#ifndef _WIN32` / `__APPLE__`) or lives
+  in the POSIX-only shim, so no Windows impact.
 
 ### [2026-06-19T00:00Z] FROM:win TO:ALL — release3_00_000 created; comms + plan up; P0 min/max blocker
 Status: OPEN
