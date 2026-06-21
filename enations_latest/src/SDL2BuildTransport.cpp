@@ -232,7 +232,10 @@ void SDL2BuildTransport::OnInit() {
     if (m_pStatData && m_pStatData->m_pcDib)
         m_iconStrip = SDL2MainMenu::CreateSurfaceFromDIB(m_pStatData->m_pcDib);
     m_imgProgress = AddWidget<SDL2Image>(ox + 134, oy + 292, 119, 26);
-    RebuildProgress(__max(0, m_pBldg->GetBuildPer()));
+    // Only show progress when a vehicle is actually being built. GetBuildPer() returns
+    // a STALE m_iLastPer when idle, which drew phantom progress cars on open (bug:
+    // window shows build progress with nothing queued). GetBldUnt()==NULL means idle.
+    RebuildProgress( m_pBldg->GetBldUnt() ? __max(0, m_pBldg->GetBuildPer()) : 0 );
 
     // Auto-select first vehicle if available
     if (m_numVehs > 0)
@@ -283,7 +286,8 @@ void SDL2BuildTransport::RebuildProgress(int per) {
 
 void SDL2BuildTransport::OnFrame() {
     // Poll the building's live build %; advance the strip + title only on change.
-    int per = __max(0, m_pBldg->GetBuildPer());
+    // Idle (no vehicle queued) -> 0, so the stale m_iLastPer never shows phantom cars.
+    int per = m_pBldg->GetBldUnt() ? __max(0, m_pBldg->GetBuildPer()) : 0;
     if (per == m_lastPer)
         return;
     m_lastPer = per;
