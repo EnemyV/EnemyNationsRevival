@@ -1,7 +1,12 @@
+#ifdef _WIN32
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#endif
 #include "stdafx.h"
 #include "resource.h"
 #include "version.h"
 #include "_davenet.h"
+#include "sockets.h"
 
 // HINSTANCE NEAR afxCurrentInstanceHandle = 0;
 // HINSTANCE NEAR afxCurrentResourceHandle = 0;
@@ -35,8 +40,12 @@ DAVENETAPI BOOL naHave (int ID)
 
 	switch (ID)
 		{
+		case NET_PROTO_TCP :
+			return (CSockets::Have ());
+#ifdef ENABLE_NETBIOS
 		case NET_PROTO_NETBIOS :
 			return (CNetbios::Have ());
+#endif
 		}
 
 	return (FALSE);
@@ -75,9 +84,14 @@ DAVENETAPI void * naInit (int ID, HINSTANCE hInst, HWND hWnd)
 	CProtocol *pRtn;
 	switch (ID)
 		{
+		case NET_PROTO_TCP :
+			pRtn = new CSockets (hInst, hWnd);
+			break;
+#ifdef ENABLE_NETBIOS
 		case NET_PROTO_NETBIOS :
 			pRtn = new CNetbios (hInst, hWnd);
 			break;
+#endif
 		default:
 			pRtn = NULL;
 			break;

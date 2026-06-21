@@ -7,6 +7,10 @@
 // exists so the network layer compiles + links into the build on all 3 platforms
 // for the first time, with naInit(NET_PROTO_TCP) constructing a CSockets.
 
+#ifdef _WIN32
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#endif
 #include "stdafx.h"
 #include "sockets.h"
 

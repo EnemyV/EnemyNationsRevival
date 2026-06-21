@@ -2,7 +2,7 @@
 #define __DAVENET_H__
 
 
-#define DAVENETAPI __declspec (dllexport)
+#define DAVENETAPI
 
 const int WM_NET_COMPLETE = 0x7000;
 

@@ -3,6 +3,7 @@
 
 #include "davenet.h"
 
+#ifdef _WIN32  // NetBIOS NCB bits are Windows-only (POSIX uses CSockets)
 #define _FP_SEG(fp) (*((unsigned __far *)&(fp)+1))
 
 typedef struct _MYNCB         /* NetBIOS command block */
@@ -10,6 +11,7 @@ typedef struct _MYNCB         /* NetBIOS command block */
     NCB			ncb;
 		NETMSG	msg;
 } MYNCB;
+#endif  // _WIN32 NetBIOS NCB
 
 
 class CProtocol {
@@ -43,6 +45,7 @@ protected:
 		BYTE				m_ID;
 };
 
+#ifdef _WIN32  // CNetbios = Windows NetBIOS transport
 const int NUM_NCBS = 62;
 class CNetbios : public CProtocol {
 public:
@@ -78,4 +81,5 @@ protected:
 		HGLOBAL			m_hMem;
 };
 
+#endif  // _WIN32 CNetbios
 #endif

@@ -120,6 +120,8 @@ set(enations_sources
         ../../rendering/StatusBar.cpp
         ../../input/InputHandler.cpp
         ../../input/UIButtonListener.cpp
+        network/davenet.cpp
+        network/sockets.cpp
 )
 
 # ---------------------------------------------------------------------------
@@ -146,6 +148,13 @@ endif ()
 # The WIN32 keyword is a no-op on non-Windows (CMake ignores it), so it is
 # harmless to leave for the Linux build.
 add_executable(enations WIN32 ${enations_sources})
+
+# network/ TUs do winsock2-before-windows.h ordering themselves; skip the
+# force-included PCH (stdafx.h->windows.h pulls winsock1 and breaks ws2tcpip.h).
+set_source_files_properties(
+    network/davenet.cpp
+    network/sockets.cpp
+    PROPERTIES SKIP_PRECOMPILE_HEADERS ON)
 
 # according to enations.mak this should be MT
 # but i think it used to be MD?
@@ -280,6 +289,7 @@ if (MSVC)
             winmm.lib
             vfw32.lib
             Netapi32.lib
+            ws2_32.lib
             version.lib
             SDL2_ttf.lib
             )
