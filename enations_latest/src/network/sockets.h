@@ -81,9 +81,10 @@ public:
         BOOL PopCompletion ( NETMSG * pOut );
 
         // Loopback smoke test (plan P1 gate "unit-smoke: loopback send/recv"). Spins up a
-        // server+client CSockets pair on 127.0.0.1, exercises Listen/Call/Send/Receive and
-        // the completion drain, and verifies the round-trip. Returns TRUE on success.
-        // Self-contained (no game wiring); safe to call from a test driver on any platform.
+        // server+client CSockets pair on 127.0.0.1, exercises Listen/Call/Send/Receive AND
+        // the UDP SendDatagram/ReceiveDatagram path, draining completions to verify both
+        // round-trips. Returns TRUE on success. Self-contained (no game wiring); safe to
+        // call from a test driver on any platform.
         static BOOL SelfTest ();
 
 protected:
@@ -104,9 +105,17 @@ protected:
         en_socket_t              m_listen = EN_INVALID_SOCKET;   // TCP accept socket
         en_socket_t              m_udp    = EN_INVALID_SOCKET;   // UDP datagram/discovery
         unsigned short           m_listenPort = 0;               // bound TCP port (ephemeral)
+        unsigned short           m_udpPort    = 0;               // bound UDP port (ephemeral)
         Session                  m_sess[SOCK_MAX_SESSIONS];
         std::deque<PendingListen> m_listens;                     // posted listens awaiting accept
         std::string              m_localName;                    // our AddName
+
+        // UDP datagram receive state (datagrams aren't session-bound; one logical inbox).
+        // A datagram on the wire is [NET_NAME_MAX src-name][payload]; the name is delivered
+        // back in NETMSG.sName and the payload in pData (mirrors NetBIOS DGRECV).
+        bool                     m_dgPending = false;            // a ReceiveDatagram() is posted
+        void *                   m_dgUser    = nullptr;          // pUser to echo on the datagram completion
+        std::deque<std::pair<std::string,std::string>> m_dgQueue; // (srcName, payload) awaiting ReceiveDatagram
 
         // background net thread + thread-safe completion queue
         std::thread              m_netThread;
@@ -120,8 +129,10 @@ protected:
         void EnsureNetThread ();                                 // start the net thread on first use
         int  AllocSession ( en_socket_t s );                    // claim a session slot for socket s (-1 if full)
         BOOL EnsureListenSocket ();                             // create+bind+listen m_listen (ephemeral port)
-        BOOL ResolveName ( LPCSTR pName, struct sockaddr_in * pAddr ); // name/registry/"ip[:port]" -> address
+        BOOL EnsureUdpSocket ();                                // create+bind m_udp (ephemeral port) for datagrams
+        BOOL ResolveName ( LPCSTR pName, struct sockaddr_in * pAddr, bool bUdp ); // name/registry/"ip[:port]" -> address
         void HandleReadable ( int iSess );                      // net thread: drain a session socket, frame, deliver
+        void HandleUdpReadable ();                             // net thread: recvfrom the UDP socket, deliver datagram
         static BOOL InitSocketLib ();                            // WSAStartup on win, no-op POSIX
 };
 

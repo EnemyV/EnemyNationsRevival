@@ -22,6 +22,8 @@
 #include <cstring>
 #include <cstdlib>
 #include <chrono>
+#include <utility>
+#include <vector>
 
 #ifndef _WIN32
   #include <cerrno>
@@ -63,10 +65,12 @@ static bool en_would_block ()
 #endif
 }
 
-// ---- process-global logical-name registry (name -> loopback TCP port) -------
-// Lets same-host peers / the self-test resolve a name without UDP discovery yet.
+// ---- process-global logical-name registry (name -> loopback TCP/UDP ports) --
+// Lets same-host peers / the self-test resolve a name to a concrete endpoint
+// without LAN broadcast discovery yet (cross-host discovery is the UDP path).
+struct EnNameEntry { unsigned short tcp = 0, udp = 0; };
 static std::mutex                              s_regLock;
-static std::map<std::string, unsigned short>   s_nameReg;
+static std::map<std::string, EnNameEntry>     s_nameReg;
 
 static std::string en_namekey ( LPCSTR pName )
 {
@@ -137,6 +141,11 @@ void CSockets::Close ()
             m_sess[i].recvPending = false;
         }
         m_listens.clear ();
+        m_dgPending = false;
+        m_dgUser    = nullptr;
+        m_dgQueue.clear ();
+        m_listenPort = 0;
+        m_udpPort    = 0;
     }
 
     // drop our registry name so a re-Listen rebinds cleanly
@@ -208,7 +217,7 @@ BOOL CSockets::EnsureListenSocket ()
     return ( TRUE );
 }
 
-BOOL CSockets::ResolveName ( LPCSTR pName, sockaddr_in * pAddr )
+BOOL CSockets::ResolveName ( LPCSTR pName, sockaddr_in * pAddr, bool bUdp )
 {
     if ( !pName || !pAddr )
         return ( FALSE );
@@ -218,19 +227,31 @@ BOOL CSockets::ResolveName ( LPCSTR pName, sockaddr_in * pAddr )
 
     std::string key = en_namekey ( pName );
 
-    // 1) logical name registered by a local Listen (same-host / self-test).
+    // "*" / "BROADCAST" -> UDP LAN broadcast to the well-known discovery port (host advertise).
+    if ( bUdp && ( key == "*" || key == "BROADCAST" || key.empty () ) )
+    {
+        pAddr->sin_addr.s_addr = htonl ( INADDR_BROADCAST );
+        pAddr->sin_port        = htons ( SOCK_DISCOVERY_PORT );
+        return ( TRUE );
+    }
+
+    // 1) logical name registered by a local Listen / ReceiveDatagram (same-host / self-test).
     {
         std::lock_guard<std::mutex> lk ( s_regLock );
         auto it = s_nameReg.find ( key );
         if ( it != s_nameReg.end () )
         {
-            pAddr->sin_port        = htons ( it->second );
-            pAddr->sin_addr.s_addr = htonl ( INADDR_LOOPBACK );
-            return ( TRUE );
+            unsigned short port = bUdp ? it->second.udp : it->second.tcp;
+            if ( port != 0 )
+            {
+                pAddr->sin_port        = htons ( port );
+                pAddr->sin_addr.s_addr = htonl ( INADDR_LOOPBACK );
+                return ( TRUE );
+            }
         }
     }
 
-    // 2) "a.b.c.d[:port]" direct-IP form.
+    // 2) "a.b.c.d[:port]" direct-IP form (default port = discovery port).
     std::string host = key;
     unsigned short port = SOCK_DISCOVERY_PORT;
     size_t colon = host.find ( ':' );
@@ -248,6 +269,42 @@ BOOL CSockets::ResolveName ( LPCSTR pName, sockaddr_in * pAddr )
     }
 
     return ( FALSE );
+}
+
+// create + bind the UDP socket (ephemeral port), register our name->udp for resolution
+BOOL CSockets::EnsureUdpSocket ()
+{
+    if ( m_udp != EN_INVALID_SOCKET )
+        return ( TRUE );
+
+    en_socket_t s = socket ( AF_INET, SOCK_DGRAM, 0 );
+    if ( s == EN_INVALID_SOCKET )
+        return ( FALSE );
+
+    int yes = 1;
+    setsockopt ( s, SOL_SOCKET, SO_REUSEADDR, (const char *) &yes, sizeof ( yes ) );
+    setsockopt ( s, SOL_SOCKET, SO_BROADCAST, (const char *) &yes, sizeof ( yes ) ); // for LAN discovery sends
+
+    sockaddr_in addr;
+    memset ( &addr, 0, sizeof ( addr ) );
+    addr.sin_family      = AF_INET;
+    addr.sin_addr.s_addr = htonl ( INADDR_ANY );
+    addr.sin_port        = 0;                       // ephemeral (fixed discovery-port bind comes with LAN wiring)
+    if ( bind ( s, (sockaddr *) &addr, sizeof ( addr ) ) != 0 ) { en_closesock ( s ); return ( FALSE ); }
+
+    socklen_t len = sizeof ( addr );
+    if ( getsockname ( s, (sockaddr *) &addr, &len ) == 0 )
+        m_udpPort = ntohs ( addr.sin_port );
+
+    en_setnonblock ( s );
+    m_udp = s;
+
+    if ( !m_localName.empty () )
+    {
+        std::lock_guard<std::mutex> lk ( s_regLock );
+        s_nameReg[m_localName].udp = m_udpPort;
+    }
+    return ( TRUE );
 }
 
 // ---- completion delivery (drained by the main loop; replaces WM_NET_COMPLETE) ----
@@ -354,18 +411,79 @@ void CSockets::HandleReadable ( int i )
     }
 }
 
+void CSockets::HandleUdpReadable ()
+{
+    // drain all queued datagrams; each = [NET_NAME_MAX src-name][payload]
+    char buf[2048];
+    std::vector<std::pair<std::string,std::string>> got;
+    for ( ;; )
+    {
+        sockaddr_in from;
+        socklen_t   flen = sizeof ( from );
+        int n = (int) recvfrom ( m_udp, buf, sizeof ( buf ), 0, (sockaddr *) &from, &flen );
+        if ( n < 0 )
+            break;                       // EWOULDBLOCK or error -> done
+        std::string src, payload;
+        if ( n >= NET_NAME_MAX )
+        {
+            int nl = 0;
+            while ( nl < NET_NAME_MAX && buf[nl] && buf[nl] != ' ' )
+                ++nl;
+            src.assign ( buf, nl );
+            payload.assign ( buf + NET_NAME_MAX, n - NET_NAME_MAX );
+        }
+        else
+        {
+            payload.assign ( buf, n );   // unframed (shouldn't happen from us)
+        }
+        got.emplace_back ( std::move ( src ), std::move ( payload ) );
+    }
+    if ( got.empty () )
+        return;
+
+    NETMSG ready; memset ( &ready, 0, sizeof ( ready ) );
+    bool deliver = false;
+    {
+        std::lock_guard<std::mutex> lk ( m_sessLock );
+        for ( auto & g : got )
+            m_dgQueue.push_back ( std::move ( g ) );
+        if ( m_dgPending && !m_dgQueue.empty () )
+        {
+            std::pair<std::string,std::string> d = std::move ( m_dgQueue.front () );
+            m_dgQueue.pop_front ();
+            void * p = malloc ( d.second.size () ? d.second.size () : 1 );
+            if ( p )
+                memcpy ( p, d.second.data (), d.second.size () );
+            ready.bInUse = TRUE;
+            ready.bCmd   = NET_MSG_RECEIVE_DATAGRAM;
+            ready.bErr   = NET_ERR_NONE;
+            ready.pUser  = m_dgUser;
+            ready.pData  = p;
+            ready.iLen   = (short int) d.second.size ();
+            size_t cn = d.first.size () > NET_NAME_MAX ? NET_NAME_MAX : d.first.size ();
+            memcpy ( ready.sName, d.first.data (), cn );
+            m_dgPending = false;
+            deliver = true;
+        }
+    }
+    if ( deliver )
+        PushCompletion ( ready );
+}
+
 void CSockets::NetThreadProc ()
 {
     while ( m_run )
     {
         // snapshot the sockets to watch (don't hold m_sessLock across select)
         en_socket_t listenSock;
+        en_socket_t udpSock;
         en_socket_t socks[SOCK_MAX_SESSIONS];
         int         idx[SOCK_MAX_SESSIONS];
         int         nSock = 0;
         {
             std::lock_guard<std::mutex> lk ( m_sessLock );
             listenSock = m_listen;
+            udpSock    = m_udp;
             for ( int i = 0; i < SOCK_MAX_SESSIONS; ++i )
                 if ( m_sess[i].inUse && m_sess[i].sock != EN_INVALID_SOCKET )
                 {
@@ -383,6 +501,12 @@ void CSockets::NetThreadProc ()
             FD_SET ( listenSock, &rfds );
             maxfd = (int) listenSock;
         }
+        if ( udpSock != EN_INVALID_SOCKET )
+        {
+            FD_SET ( udpSock, &rfds );
+            if ( (int) udpSock > maxfd )
+                maxfd = (int) udpSock;
+        }
         for ( int k = 0; k < nSock; ++k )
         {
             FD_SET ( socks[k], &rfds );
@@ -396,6 +520,10 @@ void CSockets::NetThreadProc ()
         int r = select ( maxfd + 1, &rfds, NULL, NULL, &tv );
         if ( r <= 0 )
             continue;
+
+        // inbound UDP datagram
+        if ( udpSock != EN_INVALID_SOCKET && FD_ISSET ( udpSock, &rfds ) )
+            HandleUdpReadable ();
 
         // inbound connection -> new session, complete a pending Listen
         if ( listenSock != EN_INVALID_SOCKET && FD_ISSET ( listenSock, &rfds ) )
@@ -451,7 +579,12 @@ void CSockets::ErrMsgBox ( NETMSG * /*pMsg*/ )            {}
 BOOL CSockets::AddName ( LPCSTR pName, LPCVOID )          { if ( pName ) m_localName = en_namekey ( pName ); return ( TRUE ); }
 BOOL CSockets::AddGroupName ( LPCSTR, LPCVOID )           { return ( TRUE ); }
 BOOL CSockets::DeleteName ( LPCSTR, LPCVOID )             { return ( TRUE ); }
-void CSockets::CancelReceiveDatagram ( int )             {}
+
+void CSockets::CancelReceiveDatagram ( int )
+{
+    std::lock_guard<std::mutex> lk ( m_sessLock );
+    m_dgPending = false;
+}
 
 void CSockets::CancelReceive ( int iNum )
 {
@@ -468,7 +601,7 @@ BOOL CSockets::Call ( LPCSTR pLocal, LPCSTR pRemote, LPCVOID pUser )
         m_localName = en_namekey ( pLocal );
 
     sockaddr_in addr;
-    if ( !ResolveName ( pRemote, &addr ) )
+    if ( !ResolveName ( pRemote, &addr, false ) )
         return ( FALSE );
 
     en_socket_t s = socket ( AF_INET, SOCK_STREAM, 0 );
@@ -510,7 +643,7 @@ BOOL CSockets::Listen ( LPCSTR pLocal, LPCSTR pRemote, LPCVOID pUser )
     {
         m_localName = key;
         std::lock_guard<std::mutex> lk ( s_regLock );
-        s_nameReg[key] = m_listenPort;
+        s_nameReg[key].tcp = m_listenPort;
     }
 
     PendingListen pl;
@@ -630,9 +763,84 @@ BOOL CSockets::HangUp ( int iNum, LPCVOID pUser )
     return ( TRUE );
 }
 
-// UDP datagrams + LAN discovery — next increment.
-BOOL CSockets::ReceiveDatagram ( int, LPCVOID )                    { return ( FALSE ); }
-BOOL CSockets::SendDatagram ( int, LPCSTR, LPCVOID, int, LPCVOID ) { return ( FALSE ); }
+// ---- UDP datagrams (+ LAN broadcast for host discovery) ---------------------
+BOOL CSockets::ReceiveDatagram ( int /*iNum*/, LPCVOID pUser )
+{
+    EnsureNetThread ();
+    if ( !EnsureUdpSocket () )
+        return ( FALSE );
+
+    NETMSG ready; memset ( &ready, 0, sizeof ( ready ) );
+    bool deliver = false;
+    {
+        std::lock_guard<std::mutex> lk ( m_sessLock );
+        m_dgPending = true;
+        m_dgUser    = (void *) pUser;
+        if ( !m_dgQueue.empty () )      // a datagram already arrived before this post
+        {
+            std::pair<std::string,std::string> d = std::move ( m_dgQueue.front () );
+            m_dgQueue.pop_front ();
+            void * p = malloc ( d.second.size () ? d.second.size () : 1 );
+            if ( p )
+                memcpy ( p, d.second.data (), d.second.size () );
+            ready.bInUse = TRUE;
+            ready.bCmd   = NET_MSG_RECEIVE_DATAGRAM;
+            ready.bErr   = NET_ERR_NONE;
+            ready.pUser  = (void *) pUser;
+            ready.pData  = p;
+            ready.iLen   = (short int) d.second.size ();
+            size_t cn = d.first.size () > NET_NAME_MAX ? NET_NAME_MAX : d.first.size ();
+            memcpy ( ready.sName, d.first.data (), cn );
+            m_dgPending = false;
+            deliver = true;
+        }
+    }
+    if ( deliver )
+        PushCompletion ( ready );
+    return ( TRUE );
+}
+
+BOOL CSockets::SendDatagram ( int /*iNum*/, LPCSTR pName, LPCVOID pData, int iLen, LPCVOID pUser )
+{
+    if ( iLen < 0 )
+        return ( FALSE );
+    if ( iLen > 1024 )
+        iLen = 1024;                    // keep datagrams comfortably under the UDP MTU
+
+    EnsureNetThread ();
+    if ( !EnsureUdpSocket () )
+        return ( FALSE );
+
+    sockaddr_in addr;
+    if ( !ResolveName ( pName, &addr, true ) )   // "*"/"BROADCAST" -> LAN broadcast
+        return ( FALSE );
+
+    // frame = [NET_NAME_MAX src-name (space-padded)][payload] so the receiver gets sName
+    char nm[NET_NAME_MAX];
+    memset ( nm, ' ', NET_NAME_MAX );
+    {
+        size_t cn = m_localName.size () > NET_NAME_MAX ? NET_NAME_MAX : m_localName.size ();
+        memcpy ( nm, m_localName.data (), cn );
+    }
+    std::string frame;
+    frame.append ( nm, NET_NAME_MAX );
+    if ( iLen > 0 && pData )
+        frame.append ( (const char *) pData, iLen );
+
+    int s = (int) sendto ( m_udp, frame.data (), (int) frame.size (), 0,
+                           (sockaddr *) &addr, sizeof ( addr ) );
+    if ( s < 0 )
+        return ( FALSE );
+
+    NETMSG msg; memset ( &msg, 0, sizeof ( msg ) );
+    msg.bInUse = TRUE;
+    msg.bCmd   = NET_MSG_SEND_DATAGRAM;
+    msg.bErr   = NET_ERR_NONE;
+    msg.pUser  = (void *) pUser;
+    msg.iLen   = (short int) iLen;
+    PushCompletion ( msg );
+    return ( TRUE );
+}
 
 // ---- loopback self-test (plan P1 "unit-smoke: loopback send/recv") -----------
 BOOL CSockets::SelfTest ()
@@ -676,8 +884,8 @@ BOOL CSockets::SelfTest ()
     if ( !cli.Send ( cliSess, payload, plen, (LPCVOID) 0x4444 ) )
         return ( FALSE );
 
-    BOOL ok = FALSE;
-    for ( int i = 0; i < 300 && !ok; ++i )
+    BOOL tcpOk = FALSE;
+    for ( int i = 0; i < 300 && !tcpOk; ++i )
     {
         while ( srv.PopCompletion ( &m ) )
         {
@@ -685,7 +893,34 @@ BOOL CSockets::SelfTest ()
             {
                 if ( m.iLen == plen && m.pData && memcmp ( m.pData, payload, plen ) == 0
                      && m.pUser == (void *) 0x3333 )
-                    ok = TRUE;
+                    tcpOk = TRUE;
+            }
+            if ( m.pData )
+                free ( m.pData );
+        }
+        while ( cli.PopCompletion ( &m ) ) { if ( m.pData ) free ( m.pData ); }
+        std::this_thread::sleep_for ( std::chrono::milliseconds ( 5 ) );
+    }
+
+    // ---- UDP datagram round-trip (host-discovery transport) ----
+    // server posts a datagram receive (binds+registers its UDP port), client sends to it by name
+    const char * dgram = "EN-DISCOVER?";
+    int          dlen  = (int) strlen ( dgram );
+    srv.ReceiveDatagram ( 0, (LPCVOID) 0x5555 );
+    if ( !cli.SendDatagram ( 0, "EN_SELFTEST_SRV", dgram, dlen, (LPCVOID) 0x6666 ) )
+        return ( FALSE );
+
+    BOOL udpOk = FALSE;
+    for ( int i = 0; i < 300 && !udpOk; ++i )
+    {
+        while ( srv.PopCompletion ( &m ) )
+        {
+            if ( m.bCmd == NET_MSG_RECEIVE_DATAGRAM && m.bErr == NET_ERR_NONE )
+            {
+                if ( m.iLen == dlen && m.pData && memcmp ( m.pData, dgram, dlen ) == 0
+                     && m.pUser == (void *) 0x5555
+                     && strncmp ( m.sName, "EN_SELFTEST_CLI", NET_NAME_MAX ) == 0 )
+                    udpOk = TRUE;
             }
             if ( m.pData )
                 free ( m.pData );
@@ -696,5 +931,5 @@ BOOL CSockets::SelfTest ()
 
     srv.Close ();
     cli.Close ();
-    return ( ok );
+    return ( tcpOk && udpOk );
 }
