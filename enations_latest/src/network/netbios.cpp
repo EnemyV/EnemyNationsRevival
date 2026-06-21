@@ -409,13 +409,13 @@ MYNCB *	CNetbios::GetNcb ()
 void CNetbios::SetName (PUCHAR pDest, LPCSTR pSrc)
 {
 
-	int iLeft = NAME_MAX;
+	int iLeft = NET_NAME_MAX;
 	while ((*pSrc) && (iLeft > 0))
 		{
 		*pDest++ = *pSrc++;
 		iLeft--;
 		}
-	iLeft += NCBNAMSZ - NAME_MAX;
+	iLeft += NCBNAMSZ - NET_NAME_MAX;
 	while (iLeft > 0)
 		{
 		*pDest++ = ' ';
@@ -752,7 +752,7 @@ BOOL CNetbios::ReceiveDatagram (int iNum, LPCVOID pUser)
 		{
 		pNcb->msg.bErr = NET_ERR_NONE;
 		pNcb->msg.iLen = pNcb->ncb.ncb_length;
-		memcpy (pNcb->msg.sName, pNcb->ncb.ncb_callname, NAME_MAX);
+		memcpy (pNcb->msg.sName, pNcb->ncb.ncb_callname, NET_NAME_MAX);
 		PostMessage (m_hWnd, WM_NET_COMPLETE, 0, (LPARAM) &(pNcb->msg));
 		return (TRUE);
 		}

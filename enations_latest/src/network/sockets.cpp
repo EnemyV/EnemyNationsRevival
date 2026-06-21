@@ -72,7 +72,7 @@ static std::string en_namekey ( LPCSTR pName )
 {
     std::string k;
     if ( pName )
-        for ( int i = 0; i < NAME_MAX && pName[i] && pName[i] != ' '; ++i )
+        for ( int i = 0; i < NET_NAME_MAX && pName[i] && pName[i] != ' '; ++i )
             k.push_back ( pName[i] );
     return ( k );
 }

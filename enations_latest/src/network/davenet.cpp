@@ -15,6 +15,8 @@
 
 HINSTANCE hInst = NULL;
 
+#ifdef _WIN32   // DLL entry point — only meaningful on Windows; network/ is compiled
+                // straight into the exe on POSIX, so no DllMain there.
 extern "C" int APIENTRY
 DllMain(HINSTANCE hinstDLL, DWORD dwReason, LPVOID)
 {
@@ -28,6 +30,7 @@ DllMain(HINSTANCE hinstDLL, DWORD dwReason, LPVOID)
 
 	return (TRUE);
 }
+#endif  // _WIN32
 
 DAVENETAPI long naVersion ()
 {
