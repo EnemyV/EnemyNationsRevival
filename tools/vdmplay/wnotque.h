@@ -2,7 +2,9 @@
 #define __WNOTQUE_H__
 
 
-#include <timeapi.h>
+#ifdef _WIN32
+#include <timeapi.h>   // timeGetTime — win32_compat provides it on POSIX
+#endif
 #include "stdafx.h"
 
 struct NTLink : public CVPLink {

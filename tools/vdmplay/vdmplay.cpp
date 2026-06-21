@@ -2,7 +2,7 @@
 #define VPSYSTEM
 #endif
 
-#ifndef NOMFC
+#if !defined(NOMFC) && defined(_WIN32)
 #include <afxwin.h>         // MFC core and standard components
 #include <afxext.h>         // MFC extensions
 #if defined(_AFXDLL) && !defined(_USRDLL)
@@ -23,7 +23,9 @@
 #include "vpparam.h"
 #include "vpwinsk.h"
 #include "wnotque.h"
-#include <mmsystem.h>
+#ifdef _WIN32
+#include <mmsystem.h>   // timeGetTime etc. — win32_compat provides these on POSIX
+#endif
 #include <stdio.h>
 
 #ifndef WIN32
@@ -53,9 +55,9 @@ extern "C"
 #include "datagram.h"
 #include "tcpnet.h"
 
-#ifdef WIN32
+#ifdef _WIN32
 # include "wsipxnet.h"
-#else
+#elif defined(_WIN16)
 #define NWWIN
 #ifdef socket
 #undef socket
@@ -63,6 +65,7 @@ extern "C"
 #include <nwipxspx.h>
 # include "ipx16net.h"
 #endif
+// POSIX (§7b): IPX/SPX transport dropped — TCP only. No IPX includes.
 
 #include "nbnet.h"
 
