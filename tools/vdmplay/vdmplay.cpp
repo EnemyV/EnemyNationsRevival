@@ -252,8 +252,8 @@ public:
 
     void KeekNotifications( SOCKET s );
 
-    void ConfigureSocket( SOCKET s, u_long flags ) {
-        u_long on = 1;
+    void ConfigureSocket( SOCKET s, DWORD flags ) {   // DWORD not u_long: on LP64 they differ, so
+        u_long on = 1;                                 // u_long broke the override of the base pure-virtual (POSIX)
         int bufSize = 2048 * 4;
         int bvLen = sizeof( int );
 
@@ -460,8 +460,8 @@ public:
 
 
 
-    void ConfigureSocket( SOCKET s, u_long flags ) {
-        u_long on = 1;
+    void ConfigureSocket( SOCKET s, DWORD flags ) {   // DWORD not u_long: on LP64 they differ, so
+        u_long on = 1;                                 // u_long broke the override of the base pure-virtual (POSIX)
         int bufSize = 2048 * 4;
         int bvLen = sizeof( int );
 
