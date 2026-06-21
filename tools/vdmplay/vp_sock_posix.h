@@ -43,14 +43,38 @@ typedef int SOCKET;
 static inline int  vp_closesocket(SOCKET s)            { return ::close(s); }
 static inline int  vp_WSAGetLastError(void)            { return errno; }
 static inline void vp_WSASetLastError(int e)           { errno = e; }
-static inline int  vp_ioctlsocket(SOCKET s, long cmd, unsigned long* argp)
+// void* arg: engine passes DWORD*(=unsigned int*) for FIONREAD/FIONBIO; on LP64 that is
+// not unsigned long*, and ioctl's 3rd arg is variadic, so accept any pointer.
+static inline int  vp_ioctlsocket(SOCKET s, long cmd, void* argp)
                                                        { return ::ioctl(s, (unsigned long)cmd, argp); }
 
 // WSAStartup/WSACleanup: no-op on POSIX (no library to init).
 typedef struct { unsigned short wVersion; unsigned short wHighVersion; } VP_WSADATA;
-typedef VP_WSADATA* LPWSADATA_POSIX;
+typedef VP_WSADATA  WSADATA;
+typedef WSADATA*    LPWSADATA;
 static inline int vp_WSAStartup(unsigned short ver, void* data) { (void)ver; (void)data; return 0; }
 static inline int vp_WSACleanup(void)                           { return 0; }
+
+// ---- winsock types/error-codes used by the engine -> BSD --------------------
+typedef struct hostent*    LPHOSTENT;
+typedef struct sockaddr_in SOCKADDR_IN;
+typedef struct sockaddr    SOCKADDR;
+#ifndef WSAEWOULDBLOCK
+#define WSAEWOULDBLOCK   EWOULDBLOCK
+#define WSAEINPROGRESS   EINPROGRESS
+#define WSAEISCONN       EISCONN
+#define WSAEALREADY      EALREADY
+#define WSAECONNRESET    ECONNRESET
+#define WSANOTINITIALISED (-1)   // no winsock-init concept on POSIX; sentinel (never matches errno)
+#endif
+// ultoa() is a Windows CRT-ism; win32_compat provides _ultoa.
+#ifndef ultoa
+#define ultoa _ultoa
+#endif
+// lstrcmpi (Win32 case-insensitive compare) -> strcasecmp.
+#ifndef lstrcmpi
+#define lstrcmpi strcasecmp
+#endif
 
 #define closesocket(s)        vp_closesocket(s)
 #define WSAGetLastError()     vp_WSAGetLastError()
