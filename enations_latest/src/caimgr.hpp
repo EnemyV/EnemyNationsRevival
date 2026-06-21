@@ -11,6 +11,7 @@
 
 #include "caitmgr.hpp"
 #include "cairoute.hpp"
+#include <unordered_set>
 
 #ifndef __CAIMGR_HPP__
 #define __CAIMGR_HPP__
@@ -94,6 +95,15 @@ private:
 	CAIMap *m_pMap;	// view of the world for this player
 	CObList *m_plMsgQueue;	// a queue of messages for this manager
 	CObList *m_plTmpQueue;	// messages as arrived
+
+	// [attack-dedup] DedupKey()s (type|id|id2) of high-volume idempotent alerts currently in
+	// the queue (unit_attacked, out_of_LOS — see IsDedupAlert/DedupKey in caimgr.cpp).
+	// MessageArrived skips enqueuing a duplicate while one is still pending; Manage erases
+	// the key when the alert leaves the queue. Bounds the AI message backlog under sustained
+	// melee, where these were posted per-shot / per-LOS-flicker (thousands of identical
+	// pairs); their handlers no-op on duplicates, so dropping a redundant *pending* copy
+	// changes no AI behavior. Guarded by m_cs. Cleared on Load (queues emptied).
+	std::unordered_set<unsigned long long> m_setPendingAttack;
 
 	// NOTE may want to switch to this type of container
 	//CList<CAIMsg *,CAIMsg *> *m_plMsgQueue;

@@ -41,6 +41,24 @@
 // per-player AI worker threads. Instrumentation only — does not affect AI logic.
 static volatile LONG g_aiMsgBacklog = 0;
 
+// [attack-dedup] High-volume, IDEMPOTENT AI messages that are safe to de-duplicate while
+// an identical one for the same (m_dwID,m_dwID2) pair is still queued. Under heavy combat
+// these were posted per-shot / per-LOS-flicker (thousands of identical pairs), exploding
+// ai.q.depth unbounded. Their handlers no-op on a duplicate (AttackAlert only acts when the
+// attacker changed; OutLOSResponse just re-clears an already-cleared target), so dropping a
+// redundant *pending* copy changes no AI behavior. Keyed with the type so the two don't
+// collide. (unit_attacked: id=target,id2=attacker. out_of_LOS: id=attacker,id2=target.)
+static inline bool IsDedupAlert( int iMsg )
+{
+    return iMsg == CNetCmd::unit_attacked || iMsg == CNetCmd::out_of_LOS;
+}
+static inline unsigned long long DedupKey( const CAIMsg* p )
+{
+    return ( ( (unsigned long long)( p->m_iMsg & 0x7F ) ) << 48 )
+         | ( ( (unsigned long long)( p->m_dwID & 0xFFFFFF ) ) << 24 )
+         | ( (unsigned long long)( p->m_dwID2 & 0xFFFFFF ) );
+}
+
 
 extern CAITaskList* plTaskList;  // standard CAITask list
 extern CAIGoalList* plGoalList;  // standard CAIGoal list
@@ -168,6 +186,10 @@ void CAIMgr::Manage( void )
     {
         EnterCriticalSection( &m_cs );
         pMsg = (CAIMsg*)m_plMsgQueue->RemoveHead( );
+        // [attack-dedup] this alert is leaving the queue → allow the next identical
+        // (id,id2) one of this type to enqueue again.
+        if ( pMsg != NULL && IsDedupAlert( pMsg->m_iMsg ) )
+            m_setPendingAttack.erase( DedupKey( pMsg ) );
         LeaveCriticalSection( &m_cs );
         m_iIdle = 0;
 
@@ -2220,6 +2242,20 @@ void CAIMgr::MessageArrived( CNetCmd const* pNewMsg )
             throw( ERR_CAI_BAD_NEW );
         }
         EnterCriticalSection( &m_cs );
+        // [attack-dedup] skip a high-volume idempotent alert (unit_attacked / out_of_LOS)
+        // if an identical (id,id2) one is already queued — it would be a no-op in its
+        // handler but otherwise clogs the backlog. Stops the per-shot / per-LOS-flicker
+        // melee flood from growing ai.q.depth without bound. Erased in Manage on dequeue.
+        if ( IsDedupAlert( pMsg->m_iMsg ) )
+        {
+            if ( !m_setPendingAttack.insert( DedupKey( pMsg ) ).second )
+            {
+                LeaveCriticalSection( &m_cs );
+                delete pMsg;
+                Perf::CounterInc( "ai.msg.drop" );   // redundant pending alert dropped
+                return;
+            }
+        }
         m_plTmpQueue->AddTail( (CObject*)pMsg );
         LeaveCriticalSection( &m_cs );
 
@@ -3240,6 +3276,10 @@ void CAIMgr::Load( CArchive& ar )
     }
     else
         m_plTmpQueue->RemoveAll( );
+
+    // [attack-dedup] queues just emptied for load → drop stale pending-alert keys so a
+    // post-load (target,attacker) pair is never permanently suppressed.
+    m_setPendingAttack.clear( );
 
     int iCnt;
     try
