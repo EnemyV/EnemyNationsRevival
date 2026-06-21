@@ -950,6 +950,7 @@ class CGame : public CObject
     LONG    m_iPos;       // initial position
     LONG    m_iWorldType; // world generation preset (EWorldType) - synced via CNetStart
     LONG    m_iRivers;    // river density slider 0-100 (60 = baseline) - synced via CNetStart
+    LONG    m_iOcean;     // ocean size slider 0-100 (50 = baseline ~= current avg); MP-sync via CNetStart is a follow-up
     std::string m_sGameName;  // for create_net
     std::string m_sGameDesc;
 

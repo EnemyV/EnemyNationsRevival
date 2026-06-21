@@ -240,6 +240,16 @@ void SDL2CreateSingleDialog::OnInit() {
     m_lblRivers = AddWidget<SDL2Label>(lx, rvY, 110, rowH, "Rivers: " + std::to_string(savedRivers) + "%");
     m_sldRivers = AddWidget<SDL2Slider>(lx + 115, rvY, m_width - 40 - 115, rowH, 0, 100, savedRivers,
         [this](int v) { if (m_lblRivers) m_lblRivers->SetText("Rivers: " + std::to_string(v) + "%"); });
+    if (m_sldRivers) m_sldRivers->SetShowValue(false);  // label shows the value; slider's own readout overflows the dialog
+
+    // Ocean — size slider (0 = none, 50 = baseline ~= current average, 100 = lots).
+    // Value biases GenerateOcean's random block count; keeps randomness.
+    int ocY = rvY + rowH + 6;
+    int savedOcean = std::max(0, std::min(100, (int)EnGetProfileInt("Create", "Ocean", 50)));
+    m_lblOcean = AddWidget<SDL2Label>(lx, ocY, 110, rowH, "Ocean: " + std::to_string(savedOcean) + "%");
+    m_sldOcean = AddWidget<SDL2Slider>(lx + 115, ocY, m_width - 40 - 115, rowH, 0, 100, savedOcean,
+        [this](int v) { if (m_lblOcean) m_lblOcean->SetText("Ocean: " + std::to_string(v) + "%"); });
+    if (m_sldOcean) m_sldOcean->SetShowValue(false);  // label shows the value; slider's own readout overflows the dialog
 
     AddOKCancelButtons();
 }
@@ -250,6 +260,7 @@ void SDL2CreateSingleDialog::OnOK() {
     m_iStartPos = m_radStartPos->GetSelected();
     m_iWorldType = m_lstWorldType ? std::max(0, m_lstWorldType->GetSelected()) : 0;
     m_iRivers = m_sldRivers ? m_sldRivers->GetValue() : 60;
+    m_iOcean = m_sldOcean ? m_sldOcean->GetValue() : 50;
     m_iNumAi = atoi(m_edtNumAi->GetText().c_str());
     if (m_iNumAi <= 0) m_iNumAi = 1;
     EndDialog(1);
@@ -452,6 +463,7 @@ bool SDL2_RunCreateSinglePlayerFlow(GameWindow* gameWindow) {
     theGame.m_iPos = pCreate->m_iPos = createDlg.m_iStartPos;
     theGame.m_iWorldType = pCreate->m_iWorldType = createDlg.m_iWorldType;
     theGame.m_iRivers = pCreate->m_iRivers = createDlg.m_iRivers;
+    theGame.m_iOcean = pCreate->m_iOcean = createDlg.m_iOcean;
     pCreate->m_iNumAi = createDlg.m_iNumAi;
     pCreate->m_iNet = -1;
 
@@ -461,6 +473,7 @@ bool SDL2_RunCreateSinglePlayerFlow(GameWindow* gameWindow) {
     EnWriteProfileInt("Create", "StartPosition", createDlg.m_iStartPos);
     EnWriteProfileInt("Create", "WorldType", createDlg.m_iWorldType);
     EnWriteProfileInt("Create", "Rivers", createDlg.m_iRivers);
+    EnWriteProfileInt("Create", "Ocean", createDlg.m_iOcean);
 
     // Step 4: Set player race (same as CDlgPickRace::OnOK)
     CRaceDef* pRace = &ptheRaces[raceDlg.m_iSelectedRace];

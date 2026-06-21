@@ -88,6 +88,7 @@ public:
 		int						m_iPos;				// initial position
 		int						m_iWorldType;	// world generation preset (EWorldType)
 		int						m_iRivers;		// river density 0-100 (60 = baseline)
+		int						m_iOcean;		// ocean size 0-100 (50 = baseline ~= current average)
 		int						m_iJoinUntil;	// can join until
 		int						m_iNumPlayers;				// for loading/in-process games - how many total positions there are
 

@@ -125,11 +125,20 @@ void CGameMap::GenerateOcean( int iNumBlks, int* piBlks, int iSide, int blockTyp
 
         // How many blocks to paint. Planet themes (bDominant) cover most of the map;
         // the default ocean pass keeps ~20% + player starts free.
+        // Ocean-size slider (theGame.m_iOcean 0-100, 50 = baseline): bias the random
+        // block count toward the slider while keeping randomness. 50 reproduces the old
+        // average (MyRand()%max ~= max/2); 0 ~= no ocean, 100 ~= max. Planet themes
+        // (bDominant) keep their intentional near-full coverage.
         int totalCount;
         if ( bDominant )
             totalCount = maxOceanTileCount - ( MyRand( ) % ( 1 + maxOceanTileCount / 4 ) );
         else
-            totalCount = MyRand( ) % ( maxOceanTileCount );
+        {
+            int iOcean = __minmax( 0, 100, (int)theGame.m_iOcean );
+            int spread = 1 + maxOceanTileCount;
+            totalCount = ( maxOceanTileCount * iOcean / 100 ) + ( MyRand( ) % spread ) - spread / 2;
+            totalCount = __minmax( 0, maxOceanTileCount, totalCount );
+        }
 
         // oceanStyle < 0 -> pick at random (legacy WORLD_DEFAULT behavior).
         // 0 = stripe, 1 = scatter, 2 = grow, 3 = grow+island

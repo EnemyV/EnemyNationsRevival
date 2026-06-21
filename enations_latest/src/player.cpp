@@ -1082,6 +1082,7 @@ void CGame::ctor( )
     m_iAi = m_iSize = m_iPos = 0;
     m_iWorldType = WORLD_DEFAULT;
     m_iRivers    = 60;  // river density slider baseline
+    m_iOcean     = 50;  // ocean size slider baseline (~= current average)
     m_sFileName              = "";
 
     m_iTryCount = 0;
