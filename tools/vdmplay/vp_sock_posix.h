@@ -84,6 +84,15 @@ typedef struct sockaddr    SOCKADDR;
 #define WSAGETSELECTEVENT(l) LOWORD(l)
 #define WSAGETSELECTERROR(l) HIWORD(l)
 #endif
+// Win16 global-memory thunk APIs (vpint.h's UT/universal-thunk notify queue) — obsolete
+// 16-bit cruft; no-ops on flat memory. (The modern path uses CWinNotifyQueue, not the UT one.)
+#ifndef GlobalFix
+#define GlobalFix(h)   ((void)0)
+#define GlobalUnfix(h) ((void)0)
+#endif
+#ifndef SELECTOROF
+#define SELECTOROF(p)  (p)
+#endif
 
 #define closesocket(s)        vp_closesocket(s)
 #define WSAGetLastError()     vp_WSAGetLastError()
