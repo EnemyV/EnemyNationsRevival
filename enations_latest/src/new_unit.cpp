@@ -1377,17 +1377,18 @@ static int fnEnumHex( CHex* pHex, CHexCoord hex, void* pData )
         pHex->SetType( CHex::city );
         pHex->SetVisibleType( CHex::city );
         pHex->m_psprite = theTerrain.GetSprite( CHex::city, CITY_BUILD_OFF + RandNum( CITY_BUILD_NUM - 1 ) );
-#ifndef _WIN32
-        // SDL2/GPU terrain: record the hex so the area map re-meshes this footprint
-        // tile incrementally (otherwise the ground/vertex land only updates on the
-        // next full rebuild — e.g. a zoom). And a building on a forest hex removes
+        // SDL2/GPU terrain (ALL platforms incl. Windows — the area map renders through
+        // SDL2Terrain everywhere now): record the hex so the area map re-meshes this
+        // footprint tile incrementally (otherwise the ground/vertex land only updates on
+        // the next full rebuild — e.g. a zoom). And a building on a forest hex removes
         // its static tree sprite, so flag the static-sprite layer for re-capture
-        // (trees persist across incremental captures otherwise).
+        // (trees persist across incremental captures otherwise). Was #ifndef _WIN32 —
+        // wrong: it left Windows-placed buildings showing trees on the foundation until
+        // the next rebuild. Roads (terrain.cpp) already call these unconditionally.
         extern void g_enEditHex( int, int );
         extern bool g_enStaticDirty;
         g_enEditHex( hex.X( ), hex.Y( ) );
         g_enStaticDirty = true;
-#endif
     }
 
     return ( FALSE );
@@ -2070,13 +2071,12 @@ int fnEnumHex2( CHex* pHex, CHexCoord _hex, void* )
         pHex->SetType( CHex::city );
         pHex->SetVisibleType( CHex::city );
         pHex->m_psprite = theTerrain.GetSprite( CHex::city, CITY_DESTROYED_OFF + RandNum( CITY_DESTROYED_NUM - 1 ) );
-#ifndef _WIN32
-        // SDL2/GPU terrain: re-mesh this hex + re-capture static sprites (see fnEnumHex).
+        // SDL2/GPU terrain (all platforms): re-mesh this hex + re-capture static sprites
+        // (see fnEnumHex). Was #ifndef _WIN32 — same Windows tree-persist bug.
         extern void g_enEditHex( int, int );
         extern bool g_enStaticDirty;
         g_enEditHex( _hex.X( ), _hex.Y( ) );
         g_enStaticDirty = true;
-#endif
     }
 
     pHex->ClrUnitDir( );
