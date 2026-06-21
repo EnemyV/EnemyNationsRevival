@@ -1064,7 +1064,16 @@ void SDL2BuildingWindow::Refresh() {
         DrawMatIcons( m_imgOutputs, m_outputMats, m_nOutputMats );
         for ( int i = 0; i < m_nOutputMats; i++ )
             if ( m_lblOutputCount[i] )
-                m_lblOutputCount[i]->SetText( FmtNum( m_pBldg->GetStore( m_outputMats[i] ) ) );
+            {
+                // Gas is a COLONY-WIDE resource — it isn't stored per-building, so
+                // GetStore() is always 0 for it (e.g. the refinery's gas output read 0).
+                // Show the colony's gas-on-hand instead. (Fuller have/usage + history
+                // graph treatment, like power/apt, is the follow-up.)
+                int amt = ( m_outputMats[i] == CMaterialTypes::gas )
+                              ? m_pBldg->GetOwner()->GetGasHave()
+                              : m_pBldg->GetStore( m_outputMats[i] );
+                m_lblOutputCount[i]->SetText( FmtNum( amt ) );
+            }
     }
 
     if ( m_bUnits ) {
