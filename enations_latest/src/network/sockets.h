@@ -39,9 +39,11 @@
 #include <deque>
 #include <vector>
 #include <string>
+#include <map>
 
 const int SOCK_MAX_SESSIONS = 62;     // match NUM_NCBS so callers' assumptions hold
 const int SOCK_NAME_MAX     = NAME_MAX; // davenet.h NAME_MAX (14)
+const unsigned short SOCK_DISCOVERY_PORT = 0xE4E4; // 58596 — UDP LAN host-discovery (next increment)
 
 class CSockets : public CProtocol {
 public:
@@ -68,29 +70,58 @@ public:
 
         // Completion delivery (the rebuilt WM_NET_COMPLETE path). The main loop calls
         // this each frame; it pops completed NETMSGs and dispatches them to the game's
-        // net handler. Returns the number dispatched.
+        // net handler. Returns the number dispatched. NOTE: for NET_MSG_RECEIVE /
+        // NET_MSG_RECEIVE_DATAGRAM completions, NETMSG.pData is a malloc'd buffer of
+        // iLen bytes that the consumer must free() after handling (mirrors the original
+        // NCB buffer lifetime, but heap-owned per message for the queued model).
         int  DrainCompletions ();
+
+        // Pop a single completed NETMSG (FALSE if none). Used by DrainCompletions and the
+        // loopback self-test; lets callers drive completions without a game handler wired yet.
+        BOOL PopCompletion ( NETMSG * pOut );
+
+        // Loopback smoke test (plan P1 gate "unit-smoke: loopback send/recv"). Spins up a
+        // server+client CSockets pair on 127.0.0.1, exercises Listen/Call/Send/Receive and
+        // the completion drain, and verifies the round-trip. Returns TRUE on success.
+        // Self-contained (no game wiring); safe to call from a test driver on any platform.
+        static BOOL SelfTest ();
 
 protected:
         struct Session {
-            en_socket_t sock = EN_INVALID_SOCKET;
-            bool        inUse = false;
-            // length-prefixed receive framing state, pending Receive() user ptr, etc.
+            en_socket_t              sock        = EN_INVALID_SOCKET;
+            bool                     inUse       = false;
+            std::string              rxbuf;                     // raw bytes accumulated off the stream
+            std::deque<std::string>  rxmsgs;                    // complete length-framed messages awaiting Receive()
+            bool                     recvPending = false;       // a Receive() is posted for this session
+            void *                   recvUser    = nullptr;     // pUser to echo back on the Receive completion
+        };
+
+        struct PendingListen {                                  // a posted Listen() awaiting an inbound connection
+            std::string local, remote;
+            void *      user = nullptr;
         };
 
         en_socket_t              m_listen = EN_INVALID_SOCKET;   // TCP accept socket
         en_socket_t              m_udp    = EN_INVALID_SOCKET;   // UDP datagram/discovery
+        unsigned short           m_listenPort = 0;               // bound TCP port (ephemeral)
         Session                  m_sess[SOCK_MAX_SESSIONS];
+        std::deque<PendingListen> m_listens;                     // posted listens awaiting accept
         std::string              m_localName;                    // our AddName
 
         // background net thread + thread-safe completion queue
         std::thread              m_netThread;
         std::atomic<bool>        m_run{false};
-        std::mutex               m_qLock;
+        std::mutex               m_qLock;                        // guards m_completions
+        std::mutex               m_sessLock;                     // guards m_sess / m_listens (net thread vs caller)
         std::deque<NETMSG>       m_completions;                  // filled by net thread, drained by main loop
 
         void NetThreadProc ();                                   // select() loop
-        void PushCompletion (const NETMSG & msg);                // net thread -> queue
+        void PushCompletion ( const NETMSG & msg );             // net thread -> queue
+        void EnsureNetThread ();                                 // start the net thread on first use
+        int  AllocSession ( en_socket_t s );                    // claim a session slot for socket s (-1 if full)
+        BOOL EnsureListenSocket ();                             // create+bind+listen m_listen (ephemeral port)
+        BOOL ResolveName ( LPCSTR pName, struct sockaddr_in * pAddr ); // name/registry/"ip[:port]" -> address
+        void HandleReadable ( int iSess );                      // net thread: drain a session socket, frame, deliver
         static BOOL InitSocketLib ();                            // WSAStartup on win, no-op POSIX
 };
 
