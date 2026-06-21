@@ -1,5 +1,7 @@
 #include "vpengine.h"
-#include "mmsystem.h"
+#ifdef _WIN32
+#include "mmsystem.h"   // timeGetTime etc. — Windows multimedia; win32_compat provides these on POSIX
+#endif
 #include "smap.h"
 #include "stdafx.h"
 #include "tdlog.h"

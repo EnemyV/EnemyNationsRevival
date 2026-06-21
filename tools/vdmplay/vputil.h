@@ -4,7 +4,11 @@
 
 
 //#include "stdafx.h"
-#include "afxmt.h"
+#ifdef _WIN32
+#include "afxmt.h"   // MFC sync header — boilerplate; vputil's own CMutex uses CRITICAL_SECTION
+#endif
+// POSIX: CRITICAL_SECTION + Initialize/Enter/Leave/DeleteCriticalSection come from
+// win32_compat.h (pulled via stdafx.h). vputil.h defines its own CMutex over those.
 
 // For multithreading, will be implemented later 
 #if 0 // REMOVED
@@ -29,6 +33,20 @@ private:
 #endif
 };
 #endif // REMOVED
+
+#ifndef _WIN32
+// POSIX MP port (§7b): provide CMutex (Windows pulls MFC's from afxmt.h). The Win32
+// CRITICAL_SECTION API below is shimmed by win32_compat.h (recursive_mutex-backed).
+class CMutex {
+public:
+    CMutex()  { InitializeCriticalSection( &m_cs ); }
+    ~CMutex() { DeleteCriticalSection( &m_cs ); }
+    BOOL Lock()   { EnterCriticalSection( &m_cs ); return TRUE; }
+    BOOL Unlock() { LeaveCriticalSection( &m_cs ); return TRUE; }
+private:
+    CRITICAL_SECTION m_cs;
+};
+#endif
 
 // Lock/Unlock the mutex
 class CMxLock {

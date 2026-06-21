@@ -12,16 +12,24 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdarg.h>
+#ifdef _WIN32
 #include <afxwin.h> // used to be windows.h
+#else
+// POSIX MP port (§7b): the engine logic is 0-MFC; afxwin.h here is DLL boilerplate.
+// Pull the Win32-on-POSIX shim instead so the vp* TCP engine compiles on gcc/clang.
+#include "win32_compat.h"
+#endif
 #undef STRICT
 #ifndef CONST
 #define CONST const
-#endif 
+#endif
 #define IN
 #define OUT
 #define INOUT
 
-#ifndef WIN32
+// (Legacy Win16-only block. On POSIX, APIENTRY/USHORT/MAKEWORD come from win32_compat.h;
+// the old `#ifndef WIN32 ... __export` path is dead 16-bit cruft — never on modern builds.)
+#if defined(_WIN16)
 # define USHORT unsigned short
 # define APIENTRY FAR PASCAL __export
 # define GWL_USERDATA 0
@@ -48,11 +56,16 @@
 #include "vplist.h"
 #include "vpnet.h"
 
-#ifdef WIN32
+#ifndef _fmemcpy
 #define _fmemcpy memcpy
-#endif 
+#endif
 
+#ifdef _WIN32
 #include "winsock.h"
+#else
+// POSIX: BSD sockets come via vpwinsk.h -> vp_sock_posix.h where the engine needs them.
+#include "vp_sock_posix.h"
+#endif
 
 //////////////////////
 // generic.h stuff
