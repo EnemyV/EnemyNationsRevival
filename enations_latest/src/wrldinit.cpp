@@ -76,8 +76,14 @@ void CHex::SetType( int iType )
     // river/lake: same trap — worldgen converting LAND to water must stick, or
     // channels get silent mountain/hill gaps on slope>8 hexes (the hex isn't water
     // yet, so the IsWater() escape below doesn't catch it). [river-fix]
+    // ocean: SAME trap, and was the one missing — a would-be-ocean hex beside a
+    // mountain has a steep slope, so SetType(ocean) fell into the slope re-derivation
+    // and got retyped to mountain/hill/rough = flat land, overriding the ocean (big
+    // flat dirt areas inside mountain-adjacent water). Latent until c599ca90 turned
+    // the slope retype lines from dead no-op comparisons into live assignments. Force-
+    // store ocean too so it sticks. [ocean-fix]
     if ( ( iType == city ) || ( iType == road ) || ( iType == coastline ) ||
-         ( iType == river ) || ( iType == lake ) || IsWater( ) )
+         ( iType == river ) || ( iType == lake ) || ( iType == ocean ) || IsWater( ) )
     {
         SetVisibleType( iType );
         m_bType = (BYTE)( ( m_bType & 0xF0 ) | ( iType & 0x0F ) );
@@ -2901,43 +2907,28 @@ void CGameMap::CheckOcean( )
 
             if ( CHex::ocean == phex->GetType( ) )
             {
-                // only if it's "low" enough
-                if (( phex->GetAlt( ) - CHex::sea_level) > 12 )
-                {
-                    CHex* pHexUR    = GetHex( CHexCoord( x + 1, y - 1 ) );
-                    CHex* pHexTop   = GetHex( CHexCoord( x, y - 1 ) );
-                    CHex* pHexRight = GetHex( CHexCoord( x + 1, y ) );
+                // [ocean-flat] The ocean MUST render flat at sea_level. Earlier this had a
+                // ">12 above sea_level -> retype to mountain/hill/rough" branch (added by
+                // 5925eeea, the tall-mountain refactor). That converted near-mountain ocean
+                // hexes -- which CheckAlt's anti-cliff smoothing had raised toward the
+                // adjacent peaks -- into SLOPED LAND fingers sitting in the water (operator:
+                // "the mountain edges... notice the slopes"; "oceans and lakes should be
+                // flat"). It also DEFEATED the "ocean bleeds into the mountain" effect:
+                // because corners are SHARED, clamping the ocean hex's corners to sea_level
+                // also pulls the neighbouring mountain's shore corner down to the waterline.
+                // So ALWAYS flatten -- never retype. The CAP-SHORE-CLIFFS pass (later in
+                // Init) still eases the mountain band behind the waterline to a 2-step shore.
+                if ( GetHex( x, y )->GetAlt( ) > CHex::sea_level )
+                    GetHex( x, y )->SetAlt( CHex::sea_level );
 
-                    // just.. texture it differently. its too high up.
-                    int iSlope  = abs( phex->GetAlt( ) - pHexTop->GetAlt( ) );
-                    int iSlope2 = abs( phex->GetAlt( ) - pHexRight->GetAlt( ) );
-                    iSlope      = __max( iSlope, iSlope2 );
-                    iSlope2     = abs( phex->GetAlt( ) - pHexUR->GetAlt( ) );
-                    iSlope      = __max( iSlope, iSlope2 );
+                if ( GetHex( x + 1, y )->GetAlt( ) > CHex::sea_level )
+                    GetHex( x + 1, y )->SetAlt( CHex::sea_level );
 
-                    if ( iSlope > 15 )
-                        phex->SetType( CHex::mountain );
-                    else if ( iSlope > 8 )
-                        phex->SetType( CHex::hill );
-                    else
-                        phex->SetType( CHex::rough );
+                if ( GetHex( x + 1, y + 1 )->GetAlt( ) > CHex::sea_level )
+                    GetHex( x + 1, y + 1 )->SetAlt( CHex::sea_level );
 
-                }
-                else
-                {
-
-                    if ( GetHex( x, y )->GetAlt( ) > CHex::sea_level )
-                        GetHex( x, y )->SetAlt( CHex::sea_level );
-
-                    if ( GetHex( x + 1, y )->GetAlt( ) > CHex::sea_level )
-                        GetHex( x + 1, y )->SetAlt( CHex::sea_level );
-
-                    if ( GetHex( x + 1, y + 1 )->GetAlt( ) > CHex::sea_level )
-                        GetHex( x + 1, y + 1 )->SetAlt( CHex::sea_level );
-
-                    if ( GetHex( x, y + 1 )->GetAlt( ) > CHex::sea_level )
-                        GetHex( x, y + 1 )->SetAlt( CHex::sea_level );
-                }
+                if ( GetHex( x, y + 1 )->GetAlt( ) > CHex::sea_level )
+                    GetHex( x, y + 1 )->SetAlt( CHex::sea_level );
             }
         }
 }
@@ -3418,6 +3409,7 @@ int CGameMap::AssignCoastFacings( const unsigned char* pbWasWater, BOOL bKeepGro
         {
             // we now get a 4-bit number (0 - 15) for water & coastline neighbors
             int iWater = 0, iWet = 0, iCoast = 0, iTyp = OCEAN_COAST_OFF;
+            BOOL bAnyRiver = FALSE, bAnyOpen = FALSE;   // [shore-arttype] see below
 
             CHex* apN[4];
             apN[0] = theMap.GetHex( _hex.X( ), _hex.Y( ) - 1 );    // above (bit 1)
@@ -3429,7 +3421,9 @@ int CGameMap::AssignCoastFacings( const unsigned char* pbWasWater, BOOL bKeepGro
                 if ( apN[iN]->IsWater( ) )
                 {
                     if ( apN[iN]->GetType( ) == CHex::river )
-                        iTyp = RIVER_COAST_OFF;
+                        bAnyRiver = TRUE;
+                    else                                   // ocean or lake = "open" water
+                        bAnyOpen = TRUE;
                     iWater |= 1 << iN;
                     iWet   |= 1 << iN;
                 }
@@ -3440,6 +3434,18 @@ int CGameMap::AssignCoastFacings( const unsigned char* pbWasWater, BOOL bKeepGro
                         iWet |= 1 << iN;
                 }
             }
+
+            // [shore-arttype] Pick the coast ART GROUP from the OPEN water it borders,
+            // not "any river neighbour wins". A coastline that orthogonally touches
+            // ocean/lake must wear OPEN-water shore art even when a river also feeds the
+            // same junction; only use river-bank art when river is the ONLY water type
+            // bordering. Previously a river mouth flowing into the sea painted river-bank
+            // art against open ocean (operator: river->ocean junction renders the wrong
+            // shore). The facing (iWater) was already type-agnostic; only the texture
+            // group discriminated by type. (Lake coasts are relabelled later by MakeLakes
+            // and preserved on refit via bKeepGroup, so leaving them as ocean here is safe.)
+            if ( bAnyRiver && !bAnyOpen )
+                iTyp = RIVER_COAST_OFF;
 
             // TIER 1: if we have REAL water on any border then water decides
             int iIndex = CHex::island;
