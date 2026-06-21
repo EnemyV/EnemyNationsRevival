@@ -2428,14 +2428,16 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
                 const float kBandW = 0.38f;
                 float wcx = ( pts[0].x + pts[1].x + pts[2].x + pts[3].x ) * 0.25f;
                 float wcy = ( pts[0].y + pts[1].y + pts[2].y + pts[3].y ) * 0.25f;
-                // Water<->water seam bands at z0/z1 only. (They were briefly enabled at all
-                // zooms with the land-feather parity fix, but the user's "no blending zoomed
-                // out" complaint was about LAND tile seams — a water<->water blend band is a
-                // 1-2px softening between two dark water bodies, invisible at 16-32px tiles —
-                // and the 4 GetHex neighbour walks per open-water hex cost ~250ms of a 1.1s
-                // z3 rebuild on a 1024 map under 12-AI memory contention. Land feather keeps
-                // running at all zooms below.)
-                for ( int e = 0; zoom <= 1 && e < 4; ++e )
+                // Water<->water seam bands at ALL zooms (Bug #21). The earlier z0/z1-only
+                // gate assumed the operator's "no blending zoomed out" complaint was about
+                // LAND seams (those already feather at all zooms below) — but it was
+                // re-reported (#21, operator twice) specifically about WATER: river/ocean/
+                // lake seams must blend when zoomed OUT too, else the SAME spot blends in but
+                // not out. The cost is the 4 GetHex neighbour walks per open-water hex at
+                // REBUILD time (~250ms on a 1024 map at z3) — one-time per zoom/dir gesture,
+                // NOT per-frame, so it doesn't touch the static-frame fps goal; resolveWaterAnim
+                // is a cached lookup (no TileForHex re-resolve). Accepted for blend consistency.
+                for ( int e = 0; e < 4; ++e )
                 {
                     CHexCoord wnhc( hx + wDX[e], hy + wDY[e] ); wnhc.Wrap( );
                     CHex* wpn = theMap.GetHex( wnhc );
