@@ -2420,7 +2420,7 @@ static void LoadCarrier( CMsgLoadCarrier* pMsg )
 
     // can we do it
     if ( ( !pVehCarrier->GetData( )->IsCarrier( ) ) ||
-         ( pVehCarrier->m_iCargoSize + iAdd > pVehCarrier->GetData( )->GetPeopleCarry( ) ) )
+         ( pVehCarrier->m_iCargoSize + iAdd > pVehCarrier->GetEffPeopleCarry( ) ) )
     {
         ASSERT( FALSE );
         return;
@@ -2449,7 +2449,7 @@ static void LoadCarrier( CMsgLoadCarrier* pMsg )
     pVehCargo->SetTransport( pVehCarrier );
 
     ASSERT( ( pVehCarrier->GetData( )->IsBoat( ) && pVehCargo->GetData( )->IsTransport( ) ) ||
-            ( pVehCarrier->m_iCargoSize <= pVehCarrier->GetData( )->GetPeopleCarry( ) ) );
+            ( pVehCarrier->m_iCargoSize <= pVehCarrier->GetEffPeopleCarry( ) ) );
 
     if ( pVehCargo->GetOwner( )->IsLocal( ) )
     {

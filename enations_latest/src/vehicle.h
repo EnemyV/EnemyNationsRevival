@@ -453,6 +453,7 @@ public:
 		void					SetTransport ( CVehicle * pCarrier );
 		void					SetLoadOn ( CVehicle * pCarrier );
 		int						GetCargoSize () const { return m_iCargoSize; }
+		int						GetEffPeopleCarry ();	// base unit hold + owner's Landing Craft tech bonus (landing craft only)
 		int						GetCargoCount () const { return m_lstCargo.GetCount (); }
 		POSITION			GetCargoHeadPosition () { return m_lstCargo.GetHeadPosition (); }
 		CVehicle *		GetCargoNext (POSITION & pos) { return m_lstCargo.GetNext (pos); }

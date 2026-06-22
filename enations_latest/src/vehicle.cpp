@@ -705,6 +705,18 @@ int CVehicle::GetMaxMaterials() const {
     return ( GetData()->GetMaxMaterials() * GetOwner()->GetCargoPct() ) / 100;
 }
 
+// Effective unit-hold capacity = base (per-type data GetPeopleCarry) plus the owner's
+// Landing Craft 2/3 research (+1 each), applied ONLY to a landing craft (a boat that
+// carries units — IsBoat && IsCarrier; cargo ships are IsBoat && IsTransport). Routed
+// through here so EVERY capacity gate (auto-load, the net load handler + its assert,
+// and the UI) agrees on the teched limit.
+int CVehicle::GetEffPeopleCarry() {
+    int iBase = GetData()->GetPeopleCarry();
+    if ( GetData()->IsBoat() && GetData()->IsCarrier() && GetOwner() )
+        iBase += GetOwner()->GetLandingCraftBonus();
+    return iBase;
+}
+
 void CVehicle::Load() {
 
     ASSERT_STRICT (GetOwner()->IsLocal());
@@ -1280,7 +1292,7 @@ void CVehicle::SetTransport(CVehicle *pVehCarrier) {
         iSize = 1;
     else
         iSize = MAX_CARGO;
-    if (pVehCarrier->m_iCargoSize + iSize > pVehCarrier->GetData()->GetPeopleCarry()) {
+    if (pVehCarrier->m_iCargoSize + iSize > pVehCarrier->GetEffPeopleCarry()) {
         TRAP();
         return;
     }

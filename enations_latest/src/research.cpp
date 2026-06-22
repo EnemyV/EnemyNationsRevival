@@ -554,6 +554,36 @@ void CRsrchArray::Open( )
         }
     }
 
+    // Landing Craft capacity tiers 2-3 (in-code) — each adds +1 to the landing craft's
+    // unit hold (base 2 -> 3 -> 4). Fairly expensive: 4x then 8x the base landing_craft
+    // tech's points. Chain off it (lc_2 <- landing_craft, lc_3 <- lc_2). Capacity bonus
+    // applied in CVehicle::GetEffPeopleCarry via CPlayer::GetLandingCraftBonus. The AI's
+    // frozen research path doesn't pursue these (optional human tiers).
+    {
+        static const char* aszLcName[2] = { "Expanded Landing Bay", "Reinforced Landing Bay" };
+        static const char* aszLcDesc[2] = {
+            "Reworked internal bracing lets a landing craft ferry a third unit.",
+            "A fully reinforced hold lets a landing craft ferry a fourth unit." };
+        static const char* aszLcRslt[2] = {
+            "Expanded Landing Bay online. Landing craft now carry three units.",
+            "Reinforced Landing Bay online. Landing craft now carry four units." };
+        int aiLcPrev[2] = { (int)landing_craft, (int)landing_craft_2 };
+        int aiLcMul[2]  = { 4, 8 };   // fairly expensive vs the base landing_craft tech
+        for ( int iOn = 0; iOn < 2; iOn++ )
+        {
+            CRsrchItem* pRi = &ElementAt( landing_craft_2 + iOn );
+            pRi->m_iPtsRequired       = ElementAt( landing_craft ).m_iPtsRequired * aiLcMul[iOn];
+            pRi->m_iScenarioReq       = ElementAt( landing_craft ).m_iScenarioReq;
+            pRi->m_iNumBldgsRequired  = 0;
+            pRi->m_iNumRsrchRequired  = 1;
+            pRi->m_piRsrchRequired    = new int[1];
+            pRi->m_piRsrchRequired[0] = aiLcPrev[iOn];
+            pRi->m_sName   = aszLcName[iOn];
+            pRi->m_sDesc   = aszLcDesc[iOn];
+            pRi->m_sResult = aszLcRslt[iOn];
+        }
+    }
+
 #ifdef _DEBUG
     theDataFile.DisableNegativeSeekChecking( );
     theDataFile.EnableNegativeSeekChecking( );

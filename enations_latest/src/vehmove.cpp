@@ -456,14 +456,14 @@ void CVehicle::ArrivedDest() {
                                 iSize = 1;
                             else
                                 iSize = MAX_CARGO;
-                            if (m_iCargoSize + iSize > GetData()->GetPeopleCarry())
+                            if (m_iCargoSize + iSize > GetEffPeopleCarry())
                                 continue;
 
                             // put it on the boat
                             pVeh->SetTransport(this);
 
                             // see if we're full
-                            if (m_iCargoSize >= GetData()->GetPeopleCarry())
+                            if (m_iCargoSize >= GetEffPeopleCarry())
                                 break;
                         }
                 }
@@ -508,7 +508,7 @@ void CVehicle::ArrivedDest() {
 
             // not carrier OR no room
             if ((!m_pVehLoadOn->GetData()->IsCarrier()) ||
-                (m_pVehLoadOn->m_iCargoSize + iAdd > m_pVehLoadOn->GetData()->GetPeopleCarry())) {
+                (m_pVehLoadOn->m_iCargoSize + iAdd > m_pVehLoadOn->GetEffPeopleCarry())) {
                 SetEvent(none);
                 break;
             }

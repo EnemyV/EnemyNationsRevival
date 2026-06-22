@@ -466,6 +466,21 @@ class CPlayer : public CObject
         return ( 100 + 10 * iLevels );
     }
 
+    // Extra landing-craft unit-hold capacity from the Landing Craft 2/3 techs (each
+    // +1 over the base 2-unit hold): 0, +1, or +2. Applied in CVehicle::GetEffPeopleCarry
+    // for boat carriers (landing craft). Guarded for older saves whose m_aRsrch predates
+    // these in-code tiers.
+    int GetLandingCraftBonus( )
+    {
+        int iBonus = 0;
+        if ( m_aRsrch.GetSize( ) > CRsrchArray::landing_craft_3 )
+        {
+            if ( GetRsrch( CRsrchArray::landing_craft_2 ).m_bDiscovered ) iBonus++;
+            if ( GetRsrch( CRsrchArray::landing_craft_3 ).m_bDiscovered ) iBonus++;
+        }
+        return ( iBonus );
+    }
+
     // Gas consumption as a percent of base: each fuel_efficiency level cuts burn by
     // 5% of what remains (diminishing), i.e. 100 * 0.95^levels. 10 levels run from
     // 100% (none) down to ~60%. Unlocked after gas_turbine; see CPlayer::Operate's

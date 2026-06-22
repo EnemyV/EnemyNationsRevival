@@ -5939,7 +5939,7 @@ void CWndArea::SetMouseState( )
 
         // if it can be loaded on
         if ( ( bCarrier ) &&
-             ( ( (CVehicle*)pUnitOn )->GetCargoSize( ) < ( (CVehicle*)pUnitOn )->GetData( )->GetPeopleCarry( ) ) )
+             ( ( (CVehicle*)pUnitOn )->GetCargoSize( ) < ( (CVehicle*)pUnitOn )->GetEffPeopleCarry( ) ) )
             if ( ( m_uFlags & carryable ) || ( ( bLcCarrier ) && ( m_uFlags & lc_carryable ) ) )
             {
                 AreaApplyCursor( m_hCurLoad[m_aa.m_iZoom] );

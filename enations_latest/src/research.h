@@ -181,6 +181,13 @@ public:
 					// Per-level sight bonus is applied in CUnit::AssignData (spot_4 ~+62.5%, spot_5 ~+68.75%).
 					spot_4,
 					spot_5,
+					// Landing Craft capacity tiers 2-3 (in-code) — each adds +1 to the landing
+					// craft's unit hold over the base 2 (so 2 -> 3 -> 4). Fairly expensive;
+					// chain off the base landing_craft tech (lc_2<-landing_craft, lc_3<-lc_2).
+					// Bonus applied in CVehicle::GetEffPeopleCarry via CPlayer::GetLandingCraftBonus.
+					// Appended LAST so all earlier indices (incl. bridge_2 / RDPATH_SAVE_COUNT==53) stay put.
+					landing_craft_2,
+					landing_craft_3,
 					num_types	};
 
 	CRsrchArray () {}
