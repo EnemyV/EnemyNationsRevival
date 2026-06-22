@@ -54,8 +54,14 @@ void* CRemoteWS::operator new( size_t s ) {
 }
 
 void CRemoteWS::operator delete( void* p ) {
-    if ( !rwsPool )
+    if ( !rwsPool ) {
         delete[]( char* ) p;
+        return;                 // was missing: same bug as CNetAddress::operator delete.
+                                // CleanPool() nulls rwsPool then `delete`s every pooled WS,
+                                // so without the return this fell through to
+                                // rwsPool->Insert() with rwsPool==NULL -> SEGV on session
+                                // teardown (hit on the POSIX Join/enum-session cleanup path).
+    }
 
     rwsPool->Insert( (CRemoteWS*)p );
 }
