@@ -78,6 +78,9 @@ typedef struct sockaddr    SOCKADDR;
 #ifndef lstrlen
 #define lstrlen  strlen
 #endif
+#ifndef lstrcpy
+#define lstrcpy  strcpy
+#endif
 // WSAAsyncSelect lParam accessors (used by the FD_* event handler; step 5 select loop
 // will feed the same handler). LOWORD/HIWORD come from win32_compat.h.
 #ifndef WSAGETSELECTEVENT

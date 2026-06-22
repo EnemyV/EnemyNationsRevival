@@ -69,7 +69,9 @@ extern "C"
 
 #include "nbnet.h"
 
-#define WITH_COMM 
+#ifdef _WIN32
+#define WITH_COMM    // COMM/modem/TAPI transport — Windows only (dropped on POSIX, §7b TCP-only)
+#endif
 #ifdef WITH_COMM
 #include "commnet.h"
 #include "commport.h"
@@ -449,7 +451,7 @@ LRESULT CWinTcpNet::OnMessage( HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPara
 }
 
 
-#ifdef WIN32
+#ifdef _WIN32
 class CWinIpxNet: public CWSIpxNet {
 
 
@@ -545,7 +547,7 @@ LRESULT CWinIpxNet::OnMessage( HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPara
     return TRUE;
 }
 
-#else
+#elif defined(_WIN16)   // POSIX: IPX dropped (§7b TCP-only) — build neither IPX class
 
 class CWinIpx16Net: public CIpx16Net {
 
@@ -892,6 +894,7 @@ LRESULT APIENTRY CVdmPlay::WinProc( HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM 
 
 
 BOOL CVdmPlay::InitWindowsStuff() {
+#ifdef _WIN32
     static BOOL classReady = FALSE;
     WNDCLASS vdmPlayClass = { 0, WinProc, 0, sizeof( void* ),
              NULL, NULL, NULL, NULL,
@@ -941,6 +944,13 @@ BOOL CVdmPlay::InitWindowsStuff() {
     }
 
     return TRUE;
+#else
+    // POSIX: no hidden WSAAsyncSelect msg-window. The step-5 select() loop drives socket
+    // events and the engine timer (OnTimer) runs from the main-loop drain (step 6).
+    m_window = NULL;
+    m_timer  = 0;
+    return TRUE;
+#endif
 }
 
 
@@ -1021,6 +1031,7 @@ BOOL CVdmPlay::InitTcp( LPCVOID data ) {
 }
 
 BOOL CVdmPlay::InitIpx( LPCVOID data ) {
+#ifdef _WIN32
     UINT ipxPort = 0;
     LPCVPIPXDATA ipxData = (LPCVPIPXDATA)data;
 #ifdef WIN32
@@ -1095,6 +1106,9 @@ BOOL CVdmPlay::InitIpx( LPCVOID data ) {
         m_net->SetRegistrationAddress( srvAddrStr );
 
     return TRUE;
+#else
+    (void)data; return FALSE;   // §7b: IPX transport dropped on POSIX (TCP only)
+#endif
 }
 
 
@@ -1805,8 +1819,8 @@ extern "C"
 
         vp->m_log = new CVdmErrorLogger( vp );
 
-#ifndef WIN32
-        SetMessageQueue( 64 );
+#ifdef _WIN16
+        SetMessageQueue( 64 );   // Win16 only — enlarge msg queue (n/a on Win32/POSIX)
 #endif
 
         vp->Startup( version, guid, sessionDataSize, playerDataSize, protocol, protocolData );

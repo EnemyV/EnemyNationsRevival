@@ -123,7 +123,7 @@ BOOL vpWaitLoop( BOOL( *waitDone )( LPVOID ), LPVOID testContext, LPDWORD reentr
 
 int vpFindFreePort( LPSTR pName ) {
     int iPort;
-#ifdef WIN32
+#ifdef _WIN32
     for ( iPort = 1; iPort < 255; iPort++ ) {
         char sBuf[10];
         strcpy( sBuf, "COM" );
@@ -136,7 +136,7 @@ int vpFindFreePort( LPSTR pName ) {
             return iPort;
         }
     }
-#else
+#elif defined(_WIN16)   // POSIX: COMM/modem dropped (§7b) — fall through to return 0 (no COM port)
     for ( iPort = 1; iPort < 255; iPort++ ) {
         char sBuf[10];
         strcpy( sBuf, "COM" );
