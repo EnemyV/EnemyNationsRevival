@@ -40,7 +40,14 @@ typedef int SOCKET;
 // functions (arpa/inet.h, netdb.h) — used by name, no redirect needed.
 
 // ---- winsock-only calls -> BSD equivalents ---------------------------------
-static inline int  vp_closesocket(SOCKET s)            { return ::close(s); }
+// Drop the socket from the select() pump's registry on close — Windows'
+// closesocket implicitly cancels its WSAAsyncSelect registration, so the POSIX
+// shim must cancel ours too. Without this a reused fd number would inherit a
+// stale entry (old mask + a possibly-freed net pointer) and the pump could
+// dispatch to garbage. Defined in vp_netpump_posix.cpp; the decl is harmless to
+// the few TUs that close sockets but never register (it just no-ops on a miss).
+void vpNetSelectClear(SOCKET s);
+static inline int  vp_closesocket(SOCKET s)            { vpNetSelectClear(s); return ::close(s); }
 static inline int  vp_WSAGetLastError(void)            { return errno; }
 static inline void vp_WSASetLastError(int e)           { errno = e; }
 // void* arg: engine passes DWORD*(=unsigned int*) for FIONREAD/FIONBIO; on LP64 that is
