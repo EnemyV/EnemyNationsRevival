@@ -30,6 +30,16 @@
 #include <unordered_map>
 #include <string>
 
+#ifndef _WIN32
+// MP POSIX port: drive the vp* select() pump from inside modal dialog loops too.
+// DoModal runs its own SDL_PollEvent loop and deliberately does NOT pump MFC
+// messages (BaseYield, where vpPumpNet normally runs) — so without this, the MP
+// "Waiting for Players" lobby (a DoModal) never services the network: incoming
+// joins aren't accepted and discovery datagrams pile up unread. vpPumpNet is a
+// no-op when no MP sockets are armed, so single-player modals are unaffected.
+extern "C" int vpPumpNet( int timeout_ms );
+#endif
+
 // Static game art surfaces shared by all dialogs
 SDL_Surface* SDL2Dialog::s_dlgBkgnd   = nullptr;
 SDL_Surface* SDL2Dialog::s_dlgGold    = nullptr;
@@ -1843,6 +1853,7 @@ int SDL2Dialog::DoModal() {
     while (m_running) {
 #ifndef _WIN32
         EnHarness_Service();   // service harness screenshots during modal dialogs too
+        vpPumpNet( 0 );        // service the MP network (accept joins, read data) while modal
 #endif
         while (SDL_PollEvent(&event)) {
             if (event.type == SDL_QUIT) {
