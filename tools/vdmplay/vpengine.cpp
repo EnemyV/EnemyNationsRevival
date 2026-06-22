@@ -80,7 +80,14 @@ void CRemoteWS::CleanPool() {
 
 
     while ( NULL != ( ws = (CRemoteWS*)list->RemoveFirst() ) )
-        delete ws;
+        // Pool entries are ALREADY-DESTRUCTED raw blocks: a CRemoteWS only enters
+        // the pool via operator delete, which (per C++) runs AFTER ~CRemoteWS. So
+        // `delete ws` here would run ~CRemoteWS a SECOND time on dead memory — its
+        // m_safeLink/m_unsafeLink/m_address/m_info->Unref() then derefs links that
+        // the first destruct already released (use-after-free, the SEGV linux2 saw
+        // at vpengine.cpp:2067 on the enum-session teardown). Free the raw buffer
+        // directly (matches operator new's `new char[s]`) — no second destruct.
+        delete[]( char* ) ws;
 }
 
 
