@@ -1255,6 +1255,7 @@ BOOL CVdmPlay::InitTapi( LPCVOID data ) {
 
 
 BOOL CVdmPlay::InitNetbios( LPCVOID data ) {
+#ifdef _WIN32
     char stationName[NCBNAMSZ + 1];
     static char groupName[NCBNAMSZ + 1] = "VDMPLAY         ";
     WORD  lana = 255;
@@ -1296,6 +1297,9 @@ BOOL CVdmPlay::InitNetbios( LPCVOID data ) {
     m_net = net;
 
     return TRUE;
+#else
+    (void)data; return FALSE;   // §7b: NetBIOS transport dropped on POSIX (TCP only)
+#endif
 }
 
 
