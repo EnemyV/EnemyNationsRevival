@@ -1885,6 +1885,19 @@ void CRemoteSession::OnUnsafeData( CNetLink* link ) {
 BOOL CRemoteSession::ConnectToServer( LPCVPNETADDRESS addr, LPVOID userData ) {
     CNetAddress* nA = m_net->MakeAddress( addr );
     CNetLink* link = m_net->MakeSafeLink( nA, userData );
+
+    // MakeSafeLink returns NULL when the TCP socket/connect setup fails (an
+    // unreachable or bad server address). The original code then still built a WS
+    // around the NULL safe link and dereferenced it at `link->Unref()` below ->
+    // SEGV (the join crash linux2 hit at vpengine.cpp:1893). Bail cleanly instead.
+    if ( !link ) {
+        Log( "CRemoteSession::ConnectToServer - MakeSafeLink failed (bad/unreachable addr)" );
+        if ( nA )
+            nA->Unref();
+        m_serverWS = NULL;
+        return FALSE;
+    }
+
     m_serverWS = MakeRemoteWS( nA, link, NULL );
 
     if ( m_serverWS ) {
