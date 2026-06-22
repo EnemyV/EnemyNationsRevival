@@ -185,7 +185,22 @@ if (NOT MSVC)
     # Bind the engine's own internal refs to its own definitions (don't let the
     # exe's same-named symbols interpose at load time) and ship the .so next to
     # the binary ($ORIGIN rpath) so it's found without LD_LIBRARY_PATH.
-    target_link_options(vdmplay_posix PRIVATE -Wl,-Bsymbolic)
+    # -Bsymbolic is GNU ld only; the macOS linker (ld64) rejects it as an unknown
+    # option ("ld: unknown options: -Bsymbolic"). On macOS the same isolation is
+    # the default: two-level namespace binds each dylib's refs to its own defs and
+    # prevents the exe's same-named symbols from interposing — so no flag needed.
+    if (APPLE)
+        # macOS: the vp* engine references win32_compat shim symbols (Critical-
+        # Section, GetTickCount, PostMessage, …) that live in the main exe. ELF
+        # resolves such .so->exe refs at load by default; the macOS linker does
+        # not — it needs -undefined dynamic_lookup to defer them to load-time
+        # lookup in the host process (where the exe's default-visibility shim
+        # symbols satisfy them). -fvisibility=hidden still keeps the dylib's own
+        # CPlayer/CSession internals private, so no collision with the exe.
+        target_link_options(vdmplay_posix PRIVATE -undefined dynamic_lookup)
+    else ()
+        target_link_options(vdmplay_posix PRIVATE -Wl,-Bsymbolic)
+    endif ()
     set_target_properties(vdmplay_posix PROPERTIES
         LIBRARY_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 endif ()
