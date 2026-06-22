@@ -29,9 +29,15 @@
 #endif
 #else
 #ifndef VPSYSTEM
-#define VPAPI FAR PASCAL
+// Game side (imports): the vp* symbols come from libvdmplay_posix.so at load
+// time. No attribute needed — plain extern decls resolve against the .so.
+#define VPAPI
 #else
-#define VPAPI APIENTRY
+// Engine side (exports): the vp* lib is built -fvisibility=hidden so its
+// internal C++ classes (CPlayer/CSession/…) stay private to the .so and don't
+// collide with the game's same-named classes — mirroring the old vdmplay.dll
+// boundary. The public extern "C" vp* API is forced visible so the game links.
+#define VPAPI __attribute__((visibility("default")))
 #endif
 
 typedef const void FAR *LPCVOID;

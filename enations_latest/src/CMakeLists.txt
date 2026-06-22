@@ -135,9 +135,58 @@ if (NOT MSVC)
     list(APPEND enations_sources
         linux_main.cpp
         win32_resources_linux.cpp
-        vdmplay_stubs.cpp
         ../../harness/control_socket.cpp   # in-process LLM-driving harness (Debug)
     )
+
+    # -----------------------------------------------------------------------
+    # MP POSIX port (plan §7b): the proven vp* (VDMPLAY) TCP engine, ported
+    # winsock->BSD via tools/vdmplay/vp_sock_posix.h. Built as ITS OWN static
+    # lib (not folded into enations_sources) so it does NOT inherit the game's
+    # force-included stdafx.h (-include stdafx.h, line ~191) — the vp* TUs carry
+    # their own tools/vdmplay/stdafx.h, which pulls win32_compat.h + the BSD
+    # socket shim on the POSIX branch. Replaces the 45-line vdmplay_stubs.cpp
+    # once the real vp* exports link. IPX/NetBIOS/COMM/modem/Win16 transports
+    # are #ifdef'd out on POSIX (TCP only).
+    set(vdmplay_posix_sources
+        ../../tools/vdmplay/vdmplay.cpp
+        ../../tools/vdmplay/vpengine.cpp
+        ../../tools/vdmplay/tcpnet.cpp
+        ../../tools/vdmplay/vpwinsk.cpp
+        ../../tools/vdmplay/smap.cpp
+        ../../tools/vdmplay/vputil.cpp
+        ../../tools/vdmplay/vpnet.cpp
+    )
+    # SHARED (not STATIC): the vp* engine has C++ classes (CPlayer/CSession/…)
+    # whose names collide with the game's same-named classes. The old Windows
+    # build isolated them behind the vdmplay.dll boundary; we reproduce that with
+    # a .so built -fvisibility=hidden — only the extern "C" vp* API (VPAPI ->
+    # visibility default) is exported; the internal classes stay private, so no
+    # multiple-definition clash at the exe link.
+    add_library(vdmplay_posix SHARED ${vdmplay_posix_sources})
+    target_include_directories(vdmplay_posix PRIVATE
+        ../../tools/vdmplay
+        ../../windward/wind22/include
+        ../../windward/wind22/include/winshim
+        ../../tools/
+        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_CURRENT_SOURCE_DIR}/network
+    )
+    target_compile_definitions(vdmplay_posix PRIVATE VPSYSTEM)
+    target_compile_options(vdmplay_posix PRIVATE
+        -g -fms-extensions -fsigned-char -fpermissive
+        -fvisibility=hidden -fvisibility-inlines-hidden
+        -Wno-unknown-pragmas -Wno-format -Wno-write-strings -Wno-narrowing)
+    # Mirror MSVC's PCH: every vp* TU gets stdafx.h (-> win32_compat.h + BSD
+    # socket shim) force-included, so TUs that include vputil.h/etc. before
+    # stdafx.h (e.g. vputil.cpp) still see BOOL/LPCSTR/CRITICAL_SECTION. The
+    # tools/vdmplay include dir is first, so this resolves to the vp* stdafx.h.
+    target_compile_options(vdmplay_posix PRIVATE -include stdafx.h)
+    # Bind the engine's own internal refs to its own definitions (don't let the
+    # exe's same-named symbols interpose at load time) and ship the .so next to
+    # the binary ($ORIGIN rpath) so it's found without LD_LIBRARY_PATH.
+    target_link_options(vdmplay_posix PRIVATE -Wl,-Bsymbolic)
+    set_target_properties(vdmplay_posix PROPERTIES
+        LIBRARY_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 endif ()
 
 # MSVC-only host toolset selection (32-bit host tools for the VS generator).
@@ -299,8 +348,14 @@ else ()
     # multiplayer is stubbed, so neither vdmplay nor Netapi32 is linked.
     target_link_libraries(enations PUBLIC
             wind22
+            vdmplay_posix   # ported vp* TCP MP engine (replaces vdmplay_stubs.cpp)
             EnLinuxSDL2
             )
+    # libvdmplay_posix.so sits next to the enations binary; $ORIGIN lets the
+    # loader find it without LD_LIBRARY_PATH.
+    set_target_properties(enations PROPERTIES
+        BUILD_RPATH "$ORIGIN"
+        INSTALL_RPATH "$ORIGIN")
 endif ()
 
 # Pick the SDL2 import-lib arch to match the build platform. VS sets

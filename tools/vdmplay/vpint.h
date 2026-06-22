@@ -3,7 +3,7 @@
 
 class CVdmPlay;
 
-#ifndef WIN32
+#ifdef _WIN16   // Universal-Thunk notify queue — Win16/Win32s only (n/a on Win32/POSIX; was bare `#ifndef WIN32`, wrong on gcc)
 // Notifocation queue used tp end notifications to the Win32 client calling us through UT
 // The original notification messages are copied to the structures allocated from GlobalFixed pool
 // The message address and containing pointers are translated to the FLAT form before posting them

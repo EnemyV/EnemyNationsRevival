@@ -154,7 +154,15 @@ class CDbDataLogger: public CDataLogger {
 };
 
 CDataLogger* vpMakeDataLogger() {
+#ifdef _WIN32
     return new CDialogLogger();
+#else
+    // POSIX: CDialogLogger is an MFC GUI comm-log window (datalog.cpp, not built
+    // here). The engine treats a NULL data logger as "logging off" — every
+    // m_dataLog dereference (CNetInterface/CDataLink) is null-guarded, and the
+    // TCP path (tcpnet.cpp) never touches it. So no UI logger on POSIX.
+    return NULL;
+#endif
 }
 
 #if 0
@@ -628,7 +636,7 @@ protected:
 };
 
 
-#ifndef WIN32
+#ifdef _WIN16   // Universal-Thunk CVdmPlay subclass — Win16/Win32s only (n/a on Win32/POSIX)
 class CUtVdmPlay: public CVdmPlay {
 public:
 
@@ -1388,7 +1396,7 @@ CWinNotifyQueue* CVdmPlay::MakeNotifyQueue( HWND wnd, UINT msg ) {
     return q;
 }
 
-#ifndef WIN32
+#ifdef _WIN16   // Universal-Thunk notify-queue factory — Win16/Win32s only (n/a on Win32/POSIX)
 CWinNotifyQueue* CUtVdmPlay::MakeNotifyQueue( HWND wnd, UINT msg ) {
     CUtNotifyQueue* q = new CUtNotifyQueue( msg, wnd );
 
@@ -2285,8 +2293,15 @@ extern "C"
     void InitMfcStuff();
 
     void VPAPI vpAdvDialog( HWND hWnd, int iProtocol, BOOL bServer ) {
+#ifdef _WIN32
         InitMfcStuff();
         doAdvDialog( hWnd, iProtocol, bServer );
+#else
+        // POSIX MP port: the advanced TCP/IP-settings dialog is MFC GUI
+        // (advdlg.cpp/advanced.cpp, not built on POSIX). The SDL2 UI drives MP
+        // setup, so this exported entry is a no-op here.
+        (void)hWnd; (void)iProtocol; (void)bServer;
+#endif
     }
 
 
