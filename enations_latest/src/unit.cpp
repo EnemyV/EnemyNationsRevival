@@ -3159,7 +3159,7 @@ void CVehicle::GetPath( BOOL bNoOcc )
 
 #ifdef _DEBUG
     ASSERT_VALID( this );
-    ASSERT( GetOwner( )->IsLocal( ) );
+    ASSERT( theGame.IsNetGame( ) || GetOwner( )->IsLocal( ) );  // MP: client simulates remote units (Task#14)
 #endif
 
     CHexCoord _dest;
@@ -3624,7 +3624,7 @@ void CVehicle::ReleaseOwnership( )
 {
 
     ASSERT_VALID( this );
-    ASSERT( GetOwner( )->IsLocal( ) );
+    ASSERT( theGame.IsNetGame( ) || GetOwner( )->IsLocal( ) );  // MP: client simulates remote units (Task#14)
 
     if ( m_cOwn )
     {

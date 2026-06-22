@@ -210,7 +210,7 @@ void CVehicle::ArrivedNextHex() {
 #endif
 
     ASSERT_VALID (this);
-    ASSERT (GetOwner()->IsLocal());
+    ASSERT (theGame.IsNetGame() || GetOwner()->IsLocal());  // MP: client legitimately simulates remote units (Task#14)
 #ifndef _GG
     ASSERT (m_ptNext != m_ptHead);
 #endif
@@ -711,7 +711,7 @@ void CVehicle::SetMoveParams(BOOL bFixTurret) {
 BOOL CVehicle::GetNextHex(BOOL bNew) {
 
     ASSERT_VALID (this);
-    ASSERT (GetOwner()->IsLocal());
+    ASSERT (theGame.IsNetGame() || GetOwner()->IsLocal());  // MP: client legitimately simulates remote units (Task#14)
     ASSERT (m_cMode == moving);
 
     SetLoc(bNew);

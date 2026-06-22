@@ -446,7 +446,7 @@ void CVehicle::Operate() {
 
             MaterialChange();
 
-            ASSERT (GetOwner()->IsLocal());
+            ASSERT (theGame.IsNetGame() || GetOwner()->IsLocal());  // MP: remote units (Task#14)
             ASSERT (m_cOwn);
             ASSERT_VALID_LOC (this);
 #ifdef _LOGOUT
