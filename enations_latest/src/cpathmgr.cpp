@@ -146,8 +146,13 @@ CHexCoord* CPathMgr::_GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord
     for ( int t = CHex::city; t < CHex::num_types; ++t )
     {
         int iRtn = theTerrain.GetData( t ).GetWheelMult( m_pTD->GetWheelType( ) );
-        // iRtn *= 2;
-        iRtn <<= 1;
+        // #27 (weighted-A*): m_iDistFactor is the MIN per-hex move cost; the old `<<=1`
+        // (x2) made the distance heuristic dist*2*min overestimate the true floor
+        // dist*min by 2x -> inadmissible -> A* went greedy-by-fewest-hexes and skipped
+        // the cheaper road. Use x1.5 (win's call @02:50): still > admissible so node
+        // count stays bounded (no perf regression on normal/short orders), but the
+        // smaller overestimate lets A* compare + prefer the longer road route.
+        iRtn = ( iRtn * 3 ) / 2;
 
         if ( iRtn && iRtn < m_iDistFactor )
             m_iDistFactor = iRtn;
