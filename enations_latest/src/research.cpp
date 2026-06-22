@@ -584,6 +584,113 @@ void CRsrchArray::Open( )
         }
     }
 
+    // In-code research topics: Fracking 1-5 (#23, not in the DAT file). Exhausted oil
+    // wells trickle oil when fracking is toggled ON (consumed in the mine production hook
+    // via CPlayer::GetFrackOilPerMin), at +50% well energy. Each tier costs DOUBLE the
+    // previous and chains the prior tier; T1 needs gas_turbine, later tiers also a
+    // Fuel-Efficiency level. The AI's frozen research path doesn't pursue these (optional
+    // human tiers). Point/gate values are easy to retune — operator to balance in-game.
+    {
+        static const char* aszFrName[5] = {
+            "Hydraulic Fracturing", "Horizontal Drilling", "Proppant Injection",
+            "Microseismic Mapping", "Supercritical Extraction" };
+        static const char* aszFrDesc[5] = {
+            "High-pressure fluid fractures spent rock, coaxing a 10/min oil trickle from exhausted wells.",
+            "Horizontal bores reach untapped pockets, lifting the trickle to 15/min.",
+            "Engineered proppants hold fractures open longer, raising recovery to 20/min.",
+            "Microseismic mapping targets the richest seams, yielding 25/min.",
+            "Supercritical solvents strip the last bound oil from dead rock, 30/min." };
+        static const char* aszFrRslt[5] = {
+            "Hydraulic fracturing online. Exhausted wells now trickle oil (toggle per well).",
+            "Horizontal drilling fielded. Fracked wells yield more oil.",
+            "Proppant injection in service. Fracked-well oil rises again.",
+            "Microseismic mapping operational. Fracked wells reach deeper pockets.",
+            "Supercritical extraction perfected. Maximum oil from spent wells." };
+        // Extra (cross-line) prereq per tier, on top of the previous tier. -1 = none.
+        static const int aiFrExtra[5] = {
+            -1, (int)fuel_efficiency_1, (int)fuel_efficiency_3, (int)fuel_efficiency_5, (int)fuel_efficiency_8 };
+
+        int iPts = ElementAt( gas_turbine ).m_iPtsRequired;
+        for ( int iOn = 0; iOn < 5; iOn++ )
+        {
+            CRsrchItem* pRi = &ElementAt( fracking_1 + iOn );
+
+            iPts *= 2;
+            pRi->m_iPtsRequired       = iPts;
+            pRi->m_iScenarioReq       = ElementAt( gas_turbine ).m_iScenarioReq;
+            pRi->m_iNumBldgsRequired  = 0;
+
+            int iChain = ( 0 == iOn ) ? (int)gas_turbine : (int)( fracking_1 + iOn - 1 );
+            int nReq   = 1 + ( aiFrExtra[iOn] >= 0 ? 1 : 0 );
+            pRi->m_iNumRsrchRequired  = nReq;
+            pRi->m_piRsrchRequired    = new int[nReq];
+            pRi->m_piRsrchRequired[0] = iChain;
+            if ( aiFrExtra[iOn] >= 0 )
+                pRi->m_piRsrchRequired[1] = aiFrExtra[iOn];
+
+            pRi->m_sName   = aszFrName[iOn];
+            pRi->m_sDesc   = aszFrDesc[iOn];
+            pRi->m_sResult = aszFrRslt[iOn];
+        }
+    }
+
+    // In-code research topics: BioFuel 1-6 (#33, not in the DAT file). Farms also produce
+    // oil (the existing `oil` resource; "Bio Oil" label in the farm UI only) when toggled
+    // ON, as a % of food output (consumed in the farm production hook via
+    // CPlayer::GetBioOilPct). Each tier costs DOUBLE the previous and chains the prior
+    // tier; T1 is a heavy multi-line gate (farming + gas turbines + some fuel efficiency +
+    // vehicle speed), no energy cost. The AI's frozen research path doesn't pursue these.
+    {
+        static const char* aszBfName[6] = {
+            "Biomass Digestion", "Algae Bioreactors", "Enzymatic Cracking",
+            "Cellulosic Synthesis", "Gene-Tuned Oilseed", "Closed-Loop Biorefinery" };
+        static const char* aszBfDesc[6] = {
+            "Anaerobic digesters render crop waste into oil at 10% of a farm's food output.",
+            "Algae bioreactors bloom oil-rich strains beside the crops, 12% of food output.",
+            "Enzymatic cracking breaks plant matter down into fuel oil, 14% of food output.",
+            "Cellulosic synthesis converts tough stalks and husks too, 16% of food output.",
+            "Gene-tuned oilseed crops pour out fuel oil at 18% of food output.",
+            "A closed-loop biorefinery wastes nothing, yielding oil at 20% of food output." };
+        static const char* aszBfRslt[6] = {
+            "Biomass digestion online. Farms now also produce Bio Oil (toggle per farm).",
+            "Algae bioreactors fielded. Bio Oil output rises.",
+            "Enzymatic cracking in service. More Bio Oil per harvest.",
+            "Cellulosic synthesis operational. Bio Oil yield climbs again.",
+            "Gene-tuned oilseed is sown. Bio Oil output rises further.",
+            "Closed-loop biorefinery perfected. Maximum Bio Oil from every farm." };
+
+        int iPts = ElementAt( farm_1 ).m_iPtsRequired;
+        for ( int iOn = 0; iOn < 6; iOn++ )
+        {
+            CRsrchItem* pRi = &ElementAt( biofuel_1 + iOn );
+
+            iPts *= 2;
+            pRi->m_iPtsRequired       = iPts;
+            pRi->m_iScenarioReq       = ElementAt( farm_1 ).m_iScenarioReq;
+            pRi->m_iNumBldgsRequired  = 0;
+
+            if ( 0 == iOn )
+            {
+                // Heavy multi-line entry gate.
+                static const int aiBf1[4] = {
+                    (int)farm_1, (int)gas_turbine, (int)fuel_efficiency_2, (int)vehicle_speed_2 };
+                pRi->m_iNumRsrchRequired  = 4;
+                pRi->m_piRsrchRequired    = new int[4];
+                for ( int k = 0; k < 4; k++ ) pRi->m_piRsrchRequired[k] = aiBf1[k];
+            }
+            else
+            {
+                pRi->m_iNumRsrchRequired  = 1;
+                pRi->m_piRsrchRequired    = new int[1];
+                pRi->m_piRsrchRequired[0] = (int)( biofuel_1 + iOn - 1 );
+            }
+
+            pRi->m_sName   = aszBfName[iOn];
+            pRi->m_sDesc   = aszBfDesc[iOn];
+            pRi->m_sResult = aszBfRslt[iOn];
+        }
+    }
+
 #ifdef _DEBUG
     theDataFile.DisableNegativeSeekChecking( );
     theDataFile.EnableNegativeSeekChecking( );

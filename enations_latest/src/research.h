@@ -188,6 +188,28 @@ public:
 					// Appended LAST so all earlier indices (incl. bridge_2 / RDPATH_SAVE_COUNT==53) stay put.
 					landing_craft_2,
 					landing_craft_3,
+					// Fracking (#23, in-code) — 5 tiers. EXHAUSTED oil wells trickle oil when
+					// fracking is toggled ON (at +50% well energy). Flat oil/min by tier
+					// (10/15/20/25/30) via CPlayer::GetFrackOilPerMin. T1<-gas_turbine, T2-5 chain
+					// the prev tier + a Fuel-Efficiency level. Appended LAST so earlier indices
+					// (incl. bridge_2 / RDPATH_SAVE_COUNT==53) stay put; old saves load via the
+					// count-prefixed research-status read (player.cpp ~910) + auto-resize.
+					fracking_1,
+					fracking_2,
+					fracking_3,
+					fracking_4,
+					fracking_5,
+					// BioFuel (#33, in-code) — 6 tiers. Farms also produce oil (the existing
+					// `oil` resource; "Bio Oil" label in farm UI only) when toggled ON, as a % of
+					// food output (10/12/14/16/18/20%) via CPlayer::GetBioOilPct. T1 gated on
+					// farming + gas_turbine + some Fuel-Efficiency + Vehicle-Speed; T2-6 chain the
+					// prev tier. Appended LAST (same save-parity reason as above).
+					biofuel_1,
+					biofuel_2,
+					biofuel_3,
+					biofuel_4,
+					biofuel_5,
+					biofuel_6,
 					num_types	};
 
 	CRsrchArray () {}

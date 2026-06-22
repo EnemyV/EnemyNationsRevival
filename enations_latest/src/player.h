@@ -511,6 +511,40 @@ class CPlayer : public CObject
         return ( 100 + 2 * iLevels );
     }
 
+    // Flat oil/minute an EXHAUSTED oil well trickles when its Fracking toggle is ON, by
+    // the highest Fracking tier researched: 0 / 10 / 15 / 20 / 25 / 30. Consumed in the
+    // mine production hook (exhausted wells only; at +50% that well's energy). Guarded for
+    // older saves whose m_aRsrch predates these in-code tiers. See Fracking (#23).
+    int GetFrackOilPerMin( )
+    {
+        int iTier = 0;
+        if ( m_aRsrch.GetSize( ) > CRsrchArray::fracking_5 )
+            for ( int iOn = CRsrchArray::fracking_1; iOn <= CRsrchArray::fracking_5; iOn++ )
+                if ( GetRsrch( iOn ).m_bDiscovered )
+                    iTier = iOn - CRsrchArray::fracking_1 + 1;   // highest discovered (tiers chain)
+        static const int aiOil[6] = { 0, 10, 15, 20, 25, 30 };
+        return ( aiOil[iTier] );
+    }
+
+    // Bio Oil output as a percent of a farm's food output when its BioFuel toggle is ON,
+    // by the highest BioFuel tier researched: 0 / 10 / 12 / 14 / 16 / 18 / 20. Additional
+    // oil (does not reduce food). Consumed in the farm production hook. Guarded for older
+    // saves. See BioFuel (#33).
+    int GetBioOilPct( )
+    {
+        int iTier = 0;
+        if ( m_aRsrch.GetSize( ) > CRsrchArray::biofuel_6 )
+            for ( int iOn = CRsrchArray::biofuel_1; iOn <= CRsrchArray::biofuel_6; iOn++ )
+                if ( GetRsrch( iOn ).m_bDiscovered )
+                    iTier = iOn - CRsrchArray::biofuel_1 + 1;   // highest discovered (tiers chain)
+        static const int aiPct[7] = { 0, 10, 12, 14, 16, 18, 20 };
+        return ( aiPct[iTier] );
+    }
+
+    // T1 researched? Gates whether the per-building Fracking / BioFuel toggle button shows.
+    BOOL CanFrack( )   { return ( m_aRsrch.GetSize( ) > CRsrchArray::fracking_1 && GetRsrch( CRsrchArray::fracking_1 ).m_bDiscovered ); }
+    BOOL CanBioFuel( ) { return ( m_aRsrch.GetSize( ) > CRsrchArray::biofuel_1 && GetRsrch( CRsrchArray::biofuel_1 ).m_bDiscovered ); }
+
     BOOL CanMultiArea( ) { return ( GetRsrch( CRsrchArray::radio ).m_bDiscovered ); }
     BOOL CanDelayMail( ) { return ( GetRsrch( CRsrchArray::mail ).m_bDiscovered ); }
     BOOL CanEMail( ) { return ( GetRsrch( CRsrchArray::email ).m_bDiscovered ); }
