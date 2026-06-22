@@ -567,10 +567,27 @@ CHexCoord* CPathMgr::_GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord
 void CPathMgr::AdjustDestination( void )
 {
     int iRange = theMap.GetRangeDistance( m_hexFrom, m_hexTo );
-    if ( iRange <= m_iMaxPath )
+
+    // #25 long-haul fix: the flat MAX_PATH_RANGE (80) clamp below halved any order
+    // beyond ~80 hexes down to a near midpoint, so long hauls only pathed partway
+    // ("short-path breakout"). Scale the clamp to THIS order's straight-line range
+    // (m_hexTo is still the original destination here, pre-ChangeDestination), capped
+    // at the map span (m_iWidth+m_iHeight) so it stays bounded. SHORT orders
+    // (iRange <= m_iMaxPath) keep today's early return unchanged -> the common case is
+    // unaffected (operator's no-regress gate). Long orders run the full search; iHang
+    // (FindPath L215-219) already scales the node budget with range and early-exits, so
+    // an over-budget search still terminates with best-so-far heading the right way.
+    int iLimit = m_iMaxPath;
+    if ( iRange > iLimit )
+    {
+        int iCap = m_iWidth + m_iHeight;            // map span = max meaningful range
+        iLimit   = ( iRange < iCap ) ? iRange : iCap;
+    }
+
+    if ( iRange <= iLimit )
         return;
 
-    while ( iRange > m_iMaxPath )
+    while ( iRange > iLimit )
     {
         ChangeDestination( );
 
@@ -584,7 +601,7 @@ void CPathMgr::AdjustDestination( void )
                        m_hexFrom.X( ), m_hexFrom.Y( ), m_hexTo.X( ), m_hexTo.Y( ), iRange );
 #endif
 #endif
-            iRange = m_iMaxPath;
+            iRange = iLimit;
             continue;
         }
 
@@ -598,7 +615,7 @@ void CPathMgr::AdjustDestination( void )
             continue;
         // new destination is not passible so stay in the loop
         if ( !m_pTD->CanTravelHex( pGameHex ) )
-            iRange = m_iMaxPath;
+            iRange = iLimit;
     }
 
 #if 0  // PATH_TIMING
