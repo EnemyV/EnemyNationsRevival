@@ -20,8 +20,14 @@ void *CNetAddress::operator new(size_t s) {
 }
 
 void CNetAddress::operator delete(void *p) {
-    if (!m_pool)
+    if (!m_pool) {
         delete[] (char *) p;
+        return;                 // was missing: fell through to m_pool->Insert with
+                                // m_pool==NULL -> SEGV. ResetPool() nulls m_pool then
+                                // `delete a`s every pooled address, so this path runs on
+                                // every net teardown when the pool is non-empty (the POSIX
+                                // join/enum populates it; Windows happened to hit it empty).
+    }
 
     m_pool->Insert((CNetAddress *) p);
 }
