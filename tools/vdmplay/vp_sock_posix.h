@@ -81,6 +81,11 @@ typedef struct sockaddr    SOCKADDR;
 #ifndef lstrcpy
 #define lstrcpy  strcpy
 #endif
+// wvsprintf (Win32 va_list sprintf) -> vsprintf. Same signature
+// (LPSTR, LPCSTR, va_list); mirrors the lstr* shims above.
+#ifndef wvsprintf
+#define wvsprintf vsprintf
+#endif
 // WSAAsyncSelect lParam accessors (used by the FD_* event handler; step 5 select loop
 // will feed the same handler). LOWORD/HIWORD come from win32_compat.h.
 #ifndef WSAGETSELECTEVENT

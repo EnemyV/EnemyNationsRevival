@@ -5,6 +5,16 @@
 #include "vpwinsk.h"
 #include <ctype.h>
 
+// Address-length out-param type for getsockname/getpeername/recvfrom. POSIX
+// requires socklen_t*; Win32 winsock 1.1 uses int*. Portable typedef so the
+// same call sites compile on all three platforms — clang (unlike gcc's
+// -fpermissive) hard-errors on int*/socklen_t* mismatch.
+#ifdef _WIN32
+typedef int       vp_socklen_t;
+#else
+typedef socklen_t vp_socklen_t;
+#endif
+
 static int netCount = 0;
 static int gSimulateFrags = FALSE;
 static int gMaxSends = 5;
@@ -288,7 +298,7 @@ CTcpNet::CTcpNet(CTDLogger* log, u_short streamPort, u_short dgPort, u_short wel
     if ( connect( us, (sockaddr*)&probe, sizeof( probe ) ) == 0 )
     {
      sockaddr_in local;
-     int len = sizeof( local );
+     vp_socklen_t len = sizeof( local );
      if ( getsockname( us, (sockaddr*)&local, &len ) == 0 &&
           local.sin_addr.s_addr != 0 &&
           local.sin_addr.s_addr != htonl( INADDR_LOOPBACK ) )
@@ -690,7 +700,7 @@ BOOL CTcpNet::Listen(BOOL streamListen, BOOL serverMode)
 
 
  sockaddr_in sin;
- int namelen = sizeof(sin);
+ vp_socklen_t namelen = sizeof(sin);
 
  if (serverMode)
   m_address.m_dgPort = m_wellKnownPort;
@@ -904,7 +914,7 @@ CNetAddress* CTcpNet::CTCPLink::GetRemoteAddress()
   return NULL;
 
     sockaddr_in   sin;
- int  namelen = sizeof(sin);
+ vp_socklen_t  namelen = sizeof(sin);
  
  int err = getpeername(m_socket, (sockaddr*) &sin, &namelen);
 
@@ -1309,7 +1319,7 @@ DWORD CTcpNet::CTCPLink::ReceiveFrom(LPVOID data, DWORD dataSize, CNetAddress& n
 {
  VPASSERT(m_state == DG);
     sockaddr_in sin;
- int namelen = sizeof(sin);
+ vp_socklen_t namelen = sizeof(sin);
 
  int s = recvfrom(m_socket, (LPSTR) data, (size_t)dataSize, 0, (sockaddr*) &sin, &namelen);
  DWORD err;
