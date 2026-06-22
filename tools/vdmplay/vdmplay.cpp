@@ -1747,7 +1747,7 @@ extern "C"
     }
 
 
-#ifndef WIN32
+#ifdef _WIN16   // Win16/Win32s Universal-Thunk machinery (vpUtStartup + CUtNotifyQueue) — n/a on Win32/POSIX
 
     CUtNotifyQueue::PostMessage( WPARAM wParam, LPARAM lParam ) {
         LPUTMSG utMsg = m_freeList;

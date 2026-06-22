@@ -447,7 +447,7 @@ BOOL CVpSession::KnockOutPlayer( VPPLAYERID id, plrInfoMsg* msg, CRemoteWS* ws )
 
 BOOL CVpSession::KillPlayer( VPPLAYERID id ) {
     LogV( m_log, "CVpSession::KillPlayer(%s) %u",
-          (DWORD)( IsLocal() ? "Local" : "Remote" ), id );
+          ( IsLocal() ? "Local" : "Remote" ), id );   // %s wants char* — dropped (DWORD) cast (LP64-truncated the ptr)
 
     if ( !IsLocal() ) {
         SetError( VP_ERR_REMOTE_SESSION );
@@ -846,7 +846,7 @@ BOOL SimulateLeave( CPlayer* p, LPVOID ctx ) {
 
 void CLocalSession::OnDisconnect( CNetLink* link ) {
     LogV( m_log, "ClocalSession::OnDisconnect for link %08lx\n",
-          (DWORD)link );
+          (DWORD)(uintptr_t)link );   // LP64: cast via uintptr_t (ptr->DWORD direct is a clang error)
 
     if ( m_broadcastLink == link ) {
         HandleNetDown();
@@ -1664,7 +1664,7 @@ void CRemoteSession::OnAccept( CNetLink* link ) {
 
 void CRemoteSession::OnDisconnect( CNetLink* link ) {
     VPENTER( CRemoteSession::OnDisconnect );
-    LogV( m_log, "RemoteSession::OnDisconnect link %08lx", (DWORD)link );
+    LogV( m_log, "RemoteSession::OnDisconnect link %08lx", (DWORD)(uintptr_t)link );   // LP64-safe cast
 
     if ( m_broadcastLink == link ) {
         m_connected = FALSE;
