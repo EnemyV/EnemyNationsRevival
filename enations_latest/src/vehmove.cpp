@@ -1296,7 +1296,16 @@ BOOL CVehicle::IsPassable(CSubHex const &_sub, BOOL bStrict) {
     if (!CanEnterBldg(theBuildingHex._GetBuilding(_sub)))
         return (FALSE);
 
-    return (GetData()->CanEnterHex(m_ptHead, _sub, IsOnWater(), bStrict));
+    // A WATER vehicle is ALWAYS on the water — it passes UNDER bridges, never on the
+    // deck. The A* path gates (CPathMgr::CanEnterBridge / GetCellCosts) already force
+    // on-water from the wheel type so a boat can route under a span; mirror that here at
+    // runtime. The mutable on_water FLAG is unreliable at a bridge-over-water hex (it
+    // gets cleared as the boat steps onto the span), which left CanEnterHex re-imposing
+    // the bridge deck-direction checks and stalling the boat at the bridge. Wheel type
+    // is authoritative. CanEnterHex still calls CanTravelHex, so a boat is never let onto
+    // land/onto an out-of-water bridge support by this.
+    BOOL bOnWater = IsOnWater() || ( GetData()->GetWheelType() == CWheelTypes::water );
+    return (GetData()->CanEnterHex(m_ptHead, _sub, bOnWater, bStrict));
 }
 
 // return TRUE if can enter sub-hex

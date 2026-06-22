@@ -366,7 +366,16 @@ void SDL2BuildingWindow::OnInit() {
     Refresh();
 }
 
-void SDL2BuildingWindow::OnFrame() { Refresh(); }
+void SDL2BuildingWindow::OnFrame() {
+    // [bw-throttle] cap Refresh() to ~6.7Hz instead of every frame — the live numbers
+    // (build %, material/gas counts, contained-unit count) look identical to the user but
+    // stop the per-frame SetText/texture/vehicle-map-scan work that tanked fps with a
+    // building window open. Lossless: same data, sane cadence.
+    Uint64 now = SDL_GetTicks64();
+    if ( now < m_nextRefreshMs ) return;
+    m_nextRefreshMs = now + 150;   // ms
+    Refresh();
+}
 
 // ----------------------------------------------------------------------------
 // chrome

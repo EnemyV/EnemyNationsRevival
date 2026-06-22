@@ -41,6 +41,11 @@ private:
     CBuilding* m_pBldg;
     DWORD      m_bldgID = 0;       // for clearing the range overlay on close
     bool       m_bShowRange = false;
+    // [bw-throttle] OnFrame() ran the full Refresh() (label SetText churn, material-icon
+    // texture redraws, a whole theVehicleMap scan) EVERY frame → fps cratered with any
+    // building window open (build-veh worst). Live numbers don't need 60Hz; gate Refresh
+    // to this interval. Per-instance so each window throttles independently.
+    unsigned long long m_nextRefreshMs = 0;   // SDL_GetTicks64() ms of next allowed Refresh
 
     bool m_bStorage    = false;
     bool m_bPower      = false;

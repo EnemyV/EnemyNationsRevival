@@ -309,6 +309,7 @@ public static class DebugRun {
                 uint tid = (uint)Marshal.ReadInt32(buf, 8);
                 uint cont = DBG_CONTINUE;
 
+                try {
                 switch (code) {
                     case OUTPUT_DEBUG_STRING_EVENT: {
                         IntPtr pStr = Marshal.ReadIntPtr(buf, 16);
@@ -379,6 +380,9 @@ public static class DebugRun {
                         CloseHandle(pi.hProcess); CloseHandle(pi.hThread);
                         return (int)exitCode;
                     }
+                }
+                } catch (Exception _dbgEx) {
+                    Console.WriteLine("[dbgcatch] event-handler exception (continuing): " + _dbgEx.Message);
                 }
                 ContinueDebugEvent(pid, tid, cont);
             }

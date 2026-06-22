@@ -2206,6 +2206,10 @@ int CGame::LoadGame( CWnd* pPar, BOOL bReplace )
         theApp.m_pCreateGame = NULL;
         CatchNum( iNum );
         theApp.CloseWorld( );
+        // LoadGame disabled all windows at entry (EnableAllWindows FALSE); the
+        // dialog-cancel paths re-enable, but the load-failure catches forgot to —
+        // leaving the main menu dead after e.g. a save version-mismatch. Re-enable.
+        EnableAllWindows( NULL, TRUE );
         return ( IDCANCEL );
     }
     catch ( SE_Exception e )
@@ -2216,6 +2220,7 @@ int CGame::LoadGame( CWnd* pPar, BOOL bReplace )
         theApp.m_pCreateGame = NULL;
         CatchSE( e );
         theApp.CloseWorld( );
+        EnableAllWindows( NULL, TRUE );
         return ( IDCANCEL );
     }
     catch ( ... )
@@ -2226,6 +2231,7 @@ int CGame::LoadGame( CWnd* pPar, BOOL bReplace )
         theApp.m_pCreateGame = NULL;
         CatchOther( );
         theApp.CloseWorld( );
+        EnableAllWindows( NULL, TRUE );
         return ( IDCANCEL );
     }
 
