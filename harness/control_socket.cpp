@@ -226,6 +226,18 @@ void handle_command(const std::string& line, int conn) {
         std::strncpy(e.text.text, txt, sizeof(e.text.text)-1);
         if (g_window) e.text.windowID = SDL_GetWindowID(g_window);
         SDL_PushEvent(&e);
+    } else if (strcmp(cmd, "textid") == 0) {
+        // textid <winId> <string> — SDL_TEXTINPUT targeted at a SPECIFIC window's
+        // focused editbox. Modal child dialogs (Join Network Game server-address,
+        // Pick-Your-Race name, ...) are their own SDL windows that plain `text`
+        // (hardcoded to g_window/main) can't reach. Click the field first to focus
+        // it, then textid the string. Mirrors clickid/keyid.
+        unsigned id=0; char txt[512]={0};
+        sscanf(line.c_str(), "%*s %u %511[^\n]", &id, txt);
+        SDL_Event e; SDL_zero(e); e.type=SDL_TEXTINPUT;
+        std::strncpy(e.text.text, txt, sizeof(e.text.text)-1);
+        e.text.windowID = id ? id : (g_window ? SDL_GetWindowID(g_window) : 0);
+        SDL_PushEvent(&e);
     } else if (strcmp(cmd, "raise") == 0) {
         // Bring all app windows forward (un-bury borderless detached panels).
         for (Uint32 id = 1; id <= kMaxWindowId; ++id) {
