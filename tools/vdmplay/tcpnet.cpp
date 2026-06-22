@@ -547,9 +547,15 @@ CNetLink* CTcpNet::MakeSafeLink(CNetAddress* addr, LPVOID userData)
  if (r == SOCKET_ERROR)
  {
   
-  if ((err = WSAGetLastError()) != WSAEWOULDBLOCK)
+  // A non-blocking connect() reports "in progress" differently per stack: Win
+  // winsock returns WSAEWOULDBLOCK, but POSIX/BSD returns EINPROGRESS (== our
+  // WSAEINPROGRESS, a DIFFERENT value from EWOULDBLOCK). The original check only
+  // accepted WSAEWOULDBLOCK, so on POSIX the normal in-progress connect was
+  // treated as a hard error -> MakeSafeLink returned NULL -> m_serverWS NULL ->
+  // the 2-VM join couldn't send (linux2's gdb). Accept both.
+  if ((err = WSAGetLastError()) != WSAEWOULDBLOCK && err != WSAEINPROGRESS)
   {
-   VPTRACE(("connect error %d on %08x", err, s)); 
+   VPTRACE(("connect error %d on %08x", err, s));
    Log("CTcpNet::MakesafeLink - error connecting socket");
    SetError(VPNET_ERR_WSOCK, err);
    closesocket(s);
