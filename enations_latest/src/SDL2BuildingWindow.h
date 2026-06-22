@@ -147,6 +147,8 @@ private:
     SDL2Label*  m_lblTurretReload = nullptr;
     SDL2Label*  m_lblTurretDps    = nullptr;
     SDL2Button* m_btnShowRange     = nullptr;
+    // BioFuel (#33) per-farm "Bio Oil" toggle button (own farms, once researched).
+    SDL2Button* m_btnAltOil        = nullptr;
 
     SDL2Label*       m_lblProduction  = nullptr;
     SDL2ProgressBar* m_progProduction = nullptr;
