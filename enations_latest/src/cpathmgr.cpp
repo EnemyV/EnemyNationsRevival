@@ -836,14 +836,15 @@ BOOL CPathMgr::CanEnterBridge( CCell* pFromCell, CCell* pToCell )
     // if there is bridge hex involved, we must do another test
     if ( pDestHex->GetUnits( ) & CHex::bridge || pFromHex->GetUnits( ) & CHex::bridge )
     {
-        // we don't know the unit here so we figure if the from hex is water & not a bridge
-        // it is on the water, otherwise it is land/bridge.
-        // this does stop moving along a bridge under it
-        BOOL bOnWater = pFromHex->IsWater( ) & ( ( pFromHex->GetUnits( ) & CHex::bridge ) == 0 );
+        // A WATER vehicle is ALWAYS on the water — it passes UNDER bridges, never on
+        // the deck — so force on-water for it; otherwise exiting a bridge-over-water
+        // hex hits CanEnterHex's bridge-deck direction checks and a boat (e.g. cargo
+        // ship) can't traverse under the span. Keep this in sync with GetCellCosts,
+        // the other A* gate, which already has this fix.
+        BOOL bOnWater = ( m_pTD->GetWheelType( ) == CWheelTypes::water ) ||
+                        ( pFromHex->IsWater( ) & ( ( pFromHex->GetUnits( ) & CHex::bridge ) == 0 ) );
         if ( !m_pTD->CanEnterHex( hexFrom, hexDest, bOnWater ) )
             return FALSE;
-        // if( !m_pTD->CanEnterHex(hexFrom, hexDest, pFromHex->IsWater()) )
-        //	return FALSE;
     }
     return TRUE;
 }
