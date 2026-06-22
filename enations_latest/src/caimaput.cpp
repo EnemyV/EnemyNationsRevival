@@ -2833,8 +2833,10 @@ void CAIMapUtil::FindBridgeHex( CHexCoord& hexSite, CAIUnit* pUnit )
         hcTo.X( hexBridge.Wrap( hexBase.X( ) + iStep ) );
         hcTo.Y( hexBridge.Wrap( hexBase.Y( ) + iStep ) );
 
-        int iDeltax = hexBridge.Wrap( hcTo.X( ) - hcFrom.X( ) );
-        int iDeltay = hexBridge.Wrap( hcTo.Y( ) - hcFrom.Y( ) );
+        // + 1 so the scan reaches the hcTo edge of the ring (matches FindRoadHex);
+        // without it only the hcFrom edges were ever visited (bug #29).
+        int iDeltax = hexBridge.Wrap( hcTo.X( ) - hcFrom.X( ) ) + 1;
+        int iDeltay = hexBridge.Wrap( hcTo.Y( ) - hcFrom.Y( ) ) + 1;
 
         for ( iY = 0; iY < iDeltay; ++iY )
         {
@@ -2883,6 +2885,7 @@ void CAIMapUtil::FindBridgeHex( CHexCoord& hexSite, CAIUnit* pUnit )
                 }
             }
         }
+        ++iStep;   // was missing -> spun forever on the iStep==1 ring (bug #29 hang); matches FindRoadHex
     }
 }
 

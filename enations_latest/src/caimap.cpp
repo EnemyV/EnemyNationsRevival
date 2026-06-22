@@ -882,7 +882,7 @@ void CAIMap::GetBridgingHexes( CHexCoord& hexSite, CAIUnit *pUnit )
 	EnterCriticalSection( &cs );
 	CPlayer *pPlayer = pGameData->GetPlayerData(m_iPlayer);
 	if( pPlayer != NULL )
-		pPlayer->CanBridge();
+		bCanBridge = pPlayer->CanBridge();   // was discarded -> bCanBridge stayed FALSE -> always returned early (bug #29)
 	LeaveCriticalSection( &cs );
 	if( !bCanBridge )
 		return;

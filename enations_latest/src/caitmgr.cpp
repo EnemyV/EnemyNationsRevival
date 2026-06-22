@@ -5019,33 +5019,30 @@ void CAITaskMgr::BuildRoad( CAIUnit* pUnit, CAITask* pTask )
         if ( hexSite.X( ) == hexVeh.X( ) && hexSite.Y( ) == hexVeh.Y( ) )
         {
 
-            // see if there is a bridge that needs to be built
-            //
-            // BUGBUG turned off
-#if 0
+            // see if there is a bridge that needs to be built (bug #29: re-enabled
+            // after fixing GetBridgingHexes/FindBridgeHex, which never worked --
+            // GetBridgingHexes always returned early and FindBridgeHex could hang).
 #ifdef _LOGOUT
-logPrintf(LOG_PRI_ALWAYS, LOG_AI_MISC, 
-"RoadBuilding() looking for bridge to build " );
+            logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "RoadBuilding() looking for bridge to build " );
 #endif
-			m_pGoalMgr->m_pMap->GetBridgingHexes( hexSite, pUnit );
+            m_pGoalMgr->m_pMap->GetBridgingHexes( hexSite, pUnit );
 
-			// a different hex returned means we found a bridge site
-			// and its start/end are stored in pUnit->GetParam()
-			if( hexSite.X() != hexVeh.X() ||
-				hexSite.Y() != hexVeh.Y() )
-			{
-				// send truck to build site for one end
-				pUnit->SetDestination( hexSite );
-				// flag unit to send message to build a bridge
-				pUnit->SetParam(CAI_FUEL,CNetCmd::build_bridge);
+            // a different hex returned means we found a bridge site
+            // and its start/end are stored in pUnit->GetParam()
+            if ( hexSite.X( ) != hexVeh.X( ) ||
+                 hexSite.Y( ) != hexVeh.Y( ) )
+            {
+                // send truck to build site for one end
+                pUnit->SetDestination( hexSite );
+                // flag unit to send message to build a bridge
+                pUnit->SetParam( CAI_FUEL, CNetCmd::build_bridge );
 
 #ifdef _LOGOUT
-logPrintf(LOG_PRI_ALWAYS, LOG_AI_MISC, 
-"BridgeBuilding() go to %d,%d ", hexSite.X(), hexSite.Y() );
+                logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "BridgeBuilding() go to %d,%d ", hexSite.X( ),
+                           hexSite.Y( ) );
 #endif
-				return;
-			}
-#endif
+                return;
+            }
 
             // if still here, there ain't nothing to do so
             pTask->SetStatus( UNASSIGNED_TASK );
