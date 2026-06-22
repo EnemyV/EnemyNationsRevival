@@ -1206,6 +1206,10 @@ typedef struct tagVS_FIXEDFILEINFO {
 LRESULT SendMessageA(HWND, UINT, WPARAM, LPARAM);
 LRESULT SendMessage(HWND, UINT, WPARAM, LPARAM);
 BOOL    PostMessageA(HWND, UINT, WPARAM, LPARAM);
+// Deliver only queued vp* network messages (WM_VPNOTIFY/WM_VPFLOW*) to their window
+// proc — used by SDL2Dialog::DoModal so MP modals (lobby / Available-Games) process
+// incoming-network notifications without the full (re-entrant) message pump.
+extern "C" void EnPumpNetMessages();
 BOOL    PostMessage(HWND, UINT, WPARAM, LPARAM);
 LRESULT DefWindowProc(HWND, UINT, WPARAM, LPARAM);
 inline BOOL    ShowWindow(HWND, int) { return TRUE; }

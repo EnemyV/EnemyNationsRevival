@@ -1240,6 +1240,42 @@ BOOL GetMessage(LPMSG msg, HWND hw, UINT a, UINT b) {
 BOOL TranslateMessage(const MSG*) { return FALSE; }
 LRESULT DispatchMessage(const MSG* m) { return m ? SendMessageA(m->hwnd, m->message, m->wParam, m->lParam) : 0; }
 
+// Dispatch ONLY the vp* network messages (WM_VPNOTIFY/WM_VPFLOWON/WM_VPFLOWOFF)
+// from the queue to their window proc, leaving every other message queued. Used by
+// SDL2Dialog::DoModal (POSIX MP port): a modal dialog — the MP "Waiting for Players"
+// lobby and the "Available Games" search — runs its own SDL loop that does NOT pump
+// MFC messages (that would fire WM_KICKIDLE->OnIdle->nested DoModal). But the vp*
+// engine delivers discovered-session / joined-player events as WM_VPNOTIFY posted to
+// the game window (-> CNetApi::OnNetMsg). vpPumpNet(0) services the sockets and
+// PRODUCES those notifications; this DELIVERS them, so the modal sees the network
+// without the full pump. Net messages only -> no WM_KICKIDLE re-entrancy.
+extern "C" void EnPumpNetMessages() {
+    const UINT WM_VPNOTIFY  = WM_USER + 1000;
+    const UINT WM_VPFLOWOFF = WM_USER + 1001;
+    const UINT WM_VPFLOWON  = WM_USER + 1002;
+
+    std::deque<PostedMsg> net;
+    {
+        std::lock_guard<std::mutex> lk(g_msgMutex);
+        std::deque<PostedMsg> rest;
+        while (!g_msgQueue.empty()) {
+            PostedMsg pm = g_msgQueue.front();
+            g_msgQueue.pop_front();
+            if (pm.message == WM_VPNOTIFY || pm.message == WM_VPFLOWOFF || pm.message == WM_VPFLOWON)
+                net.push_back(pm);
+            else
+                rest.push_back(pm);
+        }
+        g_msgQueue.swap(rest);
+    }
+    // Dispatch outside the lock — the window proc (OnNetMsg) may PostMessage again.
+    while (!net.empty()) {
+        PostedMsg pm = net.front();
+        net.pop_front();
+        SendMessageA(pm.hwnd, pm.message, pm.wParam, pm.lParam);
+    }
+}
+
 //===========================================================================
 // Misc UI.
 //===========================================================================
