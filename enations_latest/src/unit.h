@@ -496,7 +496,13 @@ class CUnit : public CUnitTile
         abandoned       = 0x80,
         dead            = 0x100,
         unit_set_damage = 0x200,
-        show_bldg       = 0x0400
+        show_bldg       = 0x0400,
+        // Per-building "alternate oil" toggle for the oil techs: ON = a farm also makes
+        // Bio Oil (#33) / an exhausted oil well fracks (#23). RUNTIME-ONLY for now — not
+        // serialized (m_unitFlags isn't), so it resets to OFF on load, like the F1 route-
+        // loop flag; save persistence is a deliberate follow-up. Gated on CanBioFuel()/
+        // CanFrack(); set via the building info-window toggle.
+        alt_oil         = 0x0800
     };
     void         SetFlag( UNIT_FLAGS fl ) { m_unitFlags = (UNIT_FLAGS)( (int)m_unitFlags | (int)fl ); }
     void         ClrFlag( UNIT_FLAGS fl ) { m_unitFlags = (UNIT_FLAGS)( (int)m_unitFlags & ~(int)fl ); }

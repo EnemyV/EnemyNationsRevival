@@ -2565,7 +2565,26 @@ void CFarmBuilding::BuildFarm( )
 
     // we farmed some stuff - store it
     if ( pBf->GetTypeFarm( ) == CMaterialTypes::food )
+    {
         GetOwner( )->AddFood( dtRate.quot );
+
+        // BioFuel (#33): when this farm's toggle (alt_oil) is ON and the BioFuel tech is
+        // researched, it ALSO produces oil ("Bio Oil" in the UI) = a percent of the food
+        // just harvested. Additional output — the food yield above is unchanged. The oil
+        // lands in the farm's store and is hauled out like any material. Toggle is
+        // runtime-only for now (see UNIT_FLAGS::alt_oil); in-game balance/verify by operator.
+        int iBioPct = GetOwner( )->GetBioOilPct( );
+        if ( ( m_unitFlags & alt_oil ) && ( iBioPct > 0 ) )
+        {
+            int iOil = ( dtRate.quot * iBioPct ) / 100;
+            if ( iOil > 0 )
+            {
+                AddToStore( CMaterialTypes::oil, iOil );
+                GetOwner( )->IncMaterialMade( CMaterialTypes::oil, iOil );
+                GetOwner( )->IncMaterialHave( CMaterialTypes::oil, iOil );
+            }
+        }
+    }
     else
     {
         AddToStore( pBf->GetTypeFarm( ), dtRate.quot );
