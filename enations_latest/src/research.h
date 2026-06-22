@@ -175,6 +175,12 @@ public:
 					vehicle_speed_8,
 					vehicle_speed_9,
 					vehicle_speed_10,
+					// Radar/Spotting tiers 4-5 (in-code) — extend the DAT spot_1..3 line with two
+					// diminishing-return levels; each 2x the previous tier's research cost. Appended
+					// LAST so all earlier indices (incl. bridge_2 / RDPATH_SAVE_COUNT==53) stay put.
+					// Per-level sight bonus is applied in CUnit::AssignData (spot_4 ~+62.5%, spot_5 ~+68.75%).
+					spot_4,
+					spot_5,
 					num_types	};
 
 	CRsrchArray () {}

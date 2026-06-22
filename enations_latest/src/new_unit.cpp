@@ -1203,8 +1203,18 @@ void CUnit::AssignData( CUnitData const* pData )
     m_pUnitData = pData;
 
     // this brings in the R&D multipliers
-    m_iSpottingRange = GetData( )->_GetSpottingRange( ) +
-                       ( GetData( )->_GetSpottingRange( ) >> ( 4 - GetOwner( )->GetSpottingLevel( ) ) );
+    // Radar/spotting bonus DOUBLES per level for spot_1..3 (>>3,>>2,>>1) then DIMINISHES at
+    // spot_4/5 (the >>(4-lvl) form would be a negative shift / UB at lvl>=4). Clamp the result
+    // to MAX_SPOTTING — the effective range indexes the spotting bitmask (see DrawSpotting).
+    {
+        int spB = GetData( )->_GetSpottingRange( );
+        int spL = GetOwner( )->GetSpottingLevel( );
+        int spBonus;
+        if ( spL <= 3 )      spBonus = spB >> ( 4 - spL );                          // none..spot_3: /16 /8 /4 /2
+        else if ( spL == 4 ) spBonus = ( spB >> 1 ) + ( spB >> 3 );                 // spot_4: +62.5%
+        else                 spBonus = ( spB >> 1 ) + ( spB >> 3 ) + ( spB >> 4 );  // spot_5: +68.75%
+        m_iSpottingRange = __min( MAX_SPOTTING, spB + spBonus );
+    }
     m_iRange = GetData( )->_GetRange( ) + ( GetData( )->_GetRange( ) >> ( 4 - GetOwner( )->GetRangeLevel( ) ) );
     for ( int iInd = 0; iInd < CUnitData::num_attacks; iInd++ )
         m_iAttack[iInd] =

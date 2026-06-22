@@ -526,6 +526,34 @@ void CRsrchArray::Open( )
         }
     }
 
+    // Radar/Spotting tiers 4-5 (in-code) — extend the DAT spot_1..3 line. Each tier costs
+    // 2x the previous tier's points and chains off it (spot_4<-spot_3, spot_5<-spot_4).
+    // Per-level sight bonus (diminishing) is in CUnit::AssignData. The AI's frozen research
+    // path doesn't pursue these (optional human tiers), like the other in-code lines.
+    {
+        static const char* aszSpotName[2] = { "Enhanced Sensors", "Deep-Scan Array" };
+        static const char* aszSpotDesc[2] = {
+            "Refined sensor arrays extend our units' sight a little further.",
+            "Deep-scanning sensors push our sight range to its practical limit." };
+        static const char* aszSpotRslt[2] = {
+            "Enhanced Sensors online. Our units see a bit further.",
+            "Deep-Scan Array online. Our units see as far as the hardware allows." };
+        int aiSpotPrev[2] = { (int)spot_3, (int)spot_4 };   // spot_5 reads spot_4 after it's set below
+        for ( int iOn = 0; iOn < 2; iOn++ )
+        {
+            CRsrchItem* pRi = &ElementAt( spot_4 + iOn );
+            pRi->m_iPtsRequired       = ElementAt( aiSpotPrev[iOn] ).m_iPtsRequired * 2;   // 2x the previous tier
+            pRi->m_iScenarioReq       = ElementAt( spot_3 ).m_iScenarioReq;
+            pRi->m_iNumBldgsRequired  = 0;
+            pRi->m_iNumRsrchRequired  = 1;
+            pRi->m_piRsrchRequired    = new int[1];
+            pRi->m_piRsrchRequired[0] = aiSpotPrev[iOn];
+            pRi->m_sName   = aszSpotName[iOn];
+            pRi->m_sDesc   = aszSpotDesc[iOn];
+            pRi->m_sResult = aszSpotRslt[iOn];
+        }
+    }
+
 #ifdef _DEBUG
     theDataFile.DisableNegativeSeekChecking( );
     theDataFile.EnableNegativeSeekChecking( );
