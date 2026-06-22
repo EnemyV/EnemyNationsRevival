@@ -446,8 +446,13 @@ BOOL CVpSession::KnockOutPlayer( VPPLAYERID id, plrInfoMsg* msg, CRemoteWS* ws )
 }
 
 BOOL CVpSession::KillPlayer( VPPLAYERID id ) {
-    LogV( m_log, "CVpSession::KillPlayer(%s) %u",
-          ( IsLocal() ? "Local" : "Remote" ), id );   // %s wants char* — dropped (DWORD) cast (LP64-truncated the ptr)
+    // LogV's varargs are fixed DWORDs (wsprintf p1..p4), so a %s pointer can't
+    // ride a DWORD on ANY 64-bit target (Win64 LLP64 *and* Linux LP64) — the old
+    // (DWORD) cast truncated the ptr on LP64 and fails to compile on MSVC x64.
+    // Fold the Local/Remote literal into the format string so only the numeric
+    // id is passed. Portable, identical message on all three platforms (win's fix).
+    LogV( m_log, IsLocal() ? "CVpSession::KillPlayer(Local) %u"
+                           : "CVpSession::KillPlayer(Remote) %u", id );
 
     if ( !IsLocal() ) {
         SetError( VP_ERR_REMOTE_SESSION );
