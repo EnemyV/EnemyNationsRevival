@@ -155,6 +155,7 @@ if (NOT MSVC)
         ../../tools/vdmplay/smap.cpp
         ../../tools/vdmplay/vputil.cpp
         ../../tools/vdmplay/vpnet.cpp
+        ../../tools/vdmplay/vp_netpump_posix.cpp   # step 5: select() pump (WSAAsyncSelect repl.)
     )
     # SHARED (not STATIC): the vp* engine has C++ classes (CPlayer/CSession/…)
     # whose names collide with the game's same-named classes. The old Windows

@@ -91,6 +91,10 @@ extern "C"
 
 #include "vpint.h"
 
+#ifndef _WIN32
+#include "vp_netpump_posix.h"   // step 5: select() pump replacing WSAAsyncSelect
+#endif
+
 #ifdef WIN32
 #ifdef _DEBUG
 #undef THIS_FILE
@@ -102,6 +106,16 @@ static char BASED_CODE THIS_FILE[] = __FILE__;
 #define VDMPLAYCLASS "VdmPlayClass"
 #define WM_WINSOCK (WM_USER+1000)
 #define WM_ABORTWAIT (WM_USER+1001)
+
+#ifndef _WIN32
+// Bridge the select() pump's FD_* callback back to the engine's existing
+// dispatch: CNetInterface::OnMessage(hWnd, WM_WINSOCK, socket, MAKELONG(ev,err)).
+// Stored ctx is the CNetInterface* (the net object) registered by ConfigureSocket.
+static long vpTcpSelectThunk( void* ctx, SOCKET s, void* hWnd, long lParam ) {
+    return (long)( (CNetInterface*)ctx )->OnMessage(
+        (HWND)hWnd, WM_WINSOCK, (WPARAM)s, (LPARAM)lParam );
+}
+#endif
 
 HINSTANCE vphInst;
 HWND   vphWnd;
@@ -274,7 +288,14 @@ public:
         bufSize = (int)m_sockBufSize;
         setsockopt( s, SOL_SOCKET, SO_SNDBUF, (LPCSTR)&bufSize, bvLen );
 
+#ifdef _WIN32
         WSAAsyncSelect( s, m_window, WM_WINSOCK, flags );
+#else
+        // POSIX (step 5): record the requested FD_* mask for the select() pump,
+        // which synthesizes the same WM_WINSOCK/OnMessage dispatch. `this` is the
+        // CNetInterface* the thunk calls OnMessage on. flags==0 deregisters.
+        vpNetSelectSet( s, vpTcpSelectThunk, (CNetInterface*)this, m_window, (long)flags );
+#endif
 
     }
 
