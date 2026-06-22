@@ -322,7 +322,15 @@ class CVdmPlay
 {
 public:
 
+#ifdef _WIN32
  virtual BOOL Ok() const { return m_window != NULL && NULL != m_net; }
+#else
+ // POSIX: there is no hidden WSAAsyncSelect message window (InitWindowsStuff
+ // leaves m_window NULL — the select() pump replaces it), so engine readiness
+ // is just "the net interface is up". Requiring m_window here made vpStartup
+ // return NULL and broke every MP host/join.
+ virtual BOOL Ok() const { return NULL != m_net; }
+#endif
 
  BOOL GotFatalError() const { return m_fatalError; }
  virtual BOOL Startup(IN DWORD version, 

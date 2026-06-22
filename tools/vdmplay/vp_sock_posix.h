@@ -59,7 +59,18 @@ static inline int  vp_ioctlsocket(SOCKET s, long cmd, void* argp)
 typedef struct { unsigned short wVersion; unsigned short wHighVersion; } VP_WSADATA;
 typedef VP_WSADATA  WSADATA;
 typedef WSADATA*    LPWSADATA;
-static inline int vp_WSAStartup(unsigned short ver, void* data) { (void)ver; (void)data; return 0; }
+// Real WSAStartup echoes back the negotiated version in WSADATA.wVersion. The
+// engine's CTcpNet ctor REQUIRES this — it rejects the net (SetError ->
+// vpStartup returns NULL -> every MP host/join fails) unless
+// LOBYTE/HIBYTE(wVersion)==1. A bare no-op left wVersion uninitialized, so MUST
+// populate it (to the requested version) here, not just return 0.
+static inline int vp_WSAStartup(unsigned short ver, void* data) {
+    if (data) {
+        VP_WSADATA* w = (VP_WSADATA*)data;
+        w->wVersion = ver; w->wHighVersion = ver;
+    }
+    return 0;
+}
 static inline int vp_WSACleanup(void)                           { return 0; }
 
 // ---- winsock types/error-codes used by the engine -> BSD --------------------
