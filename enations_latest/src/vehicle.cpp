@@ -653,7 +653,11 @@ void CVehicle::BuildRoad() {
     CHexCoord _hexEnd(_hexNext);
     int const iMaxSpan = GetOwner()->GetMaxSpan();   // bridge research tier
     int iLen = 0;
-    while (iLen < iMaxSpan) {
+    // <= (not <): placement allows a span of exactly iMaxSpan, so the scan must
+    // step across iMaxSpan water hexes to reach the far-bank land hex. Stopping at
+    // iLen<iMaxSpan aborted every max-span bridge one hex short of the far bank
+    // (short bridges, span<iMaxSpan, were unaffected). See bug #37.
+    while (iLen <= iMaxSpan) {
         _hexEnd.X() += x;
         _hexEnd.Y() += y;
         _hexEnd.Wrap();
