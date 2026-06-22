@@ -536,6 +536,13 @@ const SDL2Terrain::Tile* SDL2Terrain::TileForHex( CHex* phex, int iDir )
         // dir-0 variant so the preview shows the construction graphic at every rotation.
         if ( F == CHex::r_path ) viewDir = 0;
         const Tile* t = Get( "road", srcDir, std::string( kDirPrefix[viewDir] ) + "010000" );
+        // Rotation-symmetric road shapes — the 4-way junction (r_x, srcDir 3) and the
+        // r_path preview (srcDir 4) — bake ONLY the "aa" view. A rotated camera
+        // (viewDir 1-3) finds no ac/ae/ag art and would fall through to the generic
+        // default road tile (the dotted-preview look) — so the 4-way junction only
+        // rendered correctly at camera dir 0. Fall back to this shape's own "aa" view
+        // first (same pattern as the coastline lookup below).
+        if ( !t ) t = Get( "road", srcDir, "aa010000" );
         return t ? t : GetDefaultForType( "road" );
     }
 
