@@ -42,6 +42,8 @@ static const int GRAPH_H = 72;
 static const int SEC_PAD = 8;
 static const int BOX_PAD = 6;    // inner padding inside a section's outline box
 static const int CLOSE_H = 40;
+static const int COL_GAP      = 12;    // gap between the two columns when split
+static const int TWO_COL_MAX_H = 560;  // stacked body taller than this -> go 2-column (rocket et al.)
 
 static const int STORAGE_H    = BOX_PAD + HDR_H + SDL2BuildingWindow::kNumStoreMats * ROW_H + BOX_PAD;
 static const int POWERLIKE_H  = BOX_PAD + HDR_H + GRAPH_H + BOX_PAD;   // power / office / apartment
@@ -202,23 +204,81 @@ static bool secBuilding(CBuilding* b) {
     return ( ut == CStructureData::UTvehicle ) || ( ut == CStructureData::UTshipyard );
 }
 
-static int computeHeight(CBuilding* b) {
-    int h = FIRST_Y + HEADER_H;   // title bar + portrait/flavor/status band
-    if ( secStorage(b)    ) h += STORAGE_H    + SEC_PAD;
-    if ( secProduction(b) ) h += PRODUCTION_H + SEC_PAD;
-    if ( secFertility(b)  ) h += FERTILITY_H  + SEC_PAD;
-    if ( secBuilding(b)   ) h += BUILDING_H   + SEC_PAD;
-    if ( secInputs(b)     ) h += inputsHeight(b)  + SEC_PAD;
-    if ( secOutputs(b)    ) h += outputsHeight(b) + SEC_PAD;
-    if ( secUnits(b)      ) h += UNITS_H      + SEC_PAD;
-    if ( secRepair(b)     ) h += REPAIR_H     + SEC_PAD;
-    if ( secMilitary(b)   ) h += MILITARY_H   + SEC_PAD;
-    if ( secPower(b)      ) h += POWERLIKE_H  + SEC_PAD;
-    if ( secOfc(b)        ) h += POWERLIKE_H  + SEC_PAD;
-    if ( secApt(b)        ) h += POWERLIKE_H  + SEC_PAD;
-    if ( secTurret(b)     ) h += TURRET_H     + SEC_PAD;
-    return h + CLOSE_H;
+// ----------------------------------------------------------------------------
+// Section layout. Multi-role buildings (above all the rocket) enable so many
+// sections that a single stacked column runs off the bottom of the screen. When
+// the stacked body would exceed TWO_COL_MAX_H we split the sections into two
+// side-by-side columns, each exactly WIN_W wide so section internals are
+// unchanged. computeWidth/computeHeight/OnInit all derive their geometry from
+// computeLayout() so they stay in lock-step.
+// ----------------------------------------------------------------------------
+enum {
+    SEC_STORAGE, SEC_PRODUCTION, SEC_BUILDING, SEC_FERTILITY, SEC_INPUTS,
+    SEC_OUTPUTS, SEC_UNITS, SEC_REPAIR, SEC_MILITARY, SEC_POWER, SEC_OFFICE,
+    SEC_APT, SEC_TURRET
+};
+
+struct SecRec { int id; int h; };
+
+struct BldgLayout {
+    SecRec secs[16];
+    int    n         = 0;
+    int    colOf[16] = {};     // 0 = left column, 1 = right column
+    bool   twoCol    = false;
+    int    bodyH     = 0;      // height of the tallest column (incl. SEC_PAD)
+    int    width     = WIN_W;
+    int    height    = 0;
+};
+
+static BldgLayout computeLayout(CBuilding* b) {
+    BldgLayout L;
+    int& n = L.n;
+    // Order here is the display order; must match BuildSection's dispatch.
+    if ( secStorage(b)    ) L.secs[n++] = { SEC_STORAGE,    STORAGE_H };
+    if ( secProduction(b) ) L.secs[n++] = { SEC_PRODUCTION, PRODUCTION_H };
+    if ( secBuilding(b)   ) L.secs[n++] = { SEC_BUILDING,   BUILDING_H };
+    if ( secFertility(b)  ) L.secs[n++] = { SEC_FERTILITY,  FERTILITY_H };
+    if ( secInputs(b)     ) L.secs[n++] = { SEC_INPUTS,     inputsHeight(b) };
+    if ( secOutputs(b)    ) L.secs[n++] = { SEC_OUTPUTS,    outputsHeight(b) };
+    if ( secUnits(b)      ) L.secs[n++] = { SEC_UNITS,      UNITS_H };
+    if ( secRepair(b)     ) L.secs[n++] = { SEC_REPAIR,     REPAIR_H };
+    if ( secMilitary(b)   ) L.secs[n++] = { SEC_MILITARY,   MILITARY_H };
+    if ( secPower(b)      ) L.secs[n++] = { SEC_POWER,      POWERLIKE_H };
+    if ( secOfc(b)        ) L.secs[n++] = { SEC_OFFICE,     POWERLIKE_H };
+    if ( secApt(b)        ) L.secs[n++] = { SEC_APT,        POWERLIKE_H };
+    if ( secTurret(b)     ) L.secs[n++] = { SEC_TURRET,     TURRET_H };
+
+    int total = 0;
+    for ( int i = 0; i < n; i++ ) total += L.secs[i].h + SEC_PAD;
+
+    if ( total <= TWO_COL_MAX_H || n < 4 ) {
+        // single column (the common case)
+        L.twoCol = false;
+        L.bodyH  = total;
+        L.width  = WIN_W;
+    } else {
+        // two columns, preserving display order: col0 = leading sections up to
+        // ~half the stack, col1 = the rest.
+        int half = total / 2, run = 0, split = n;
+        for ( int i = 0; i < n; i++ ) {
+            run += L.secs[i].h + SEC_PAD;
+            if ( run >= half ) { split = i + 1; break; }
+        }
+        int h0 = 0, h1 = 0;
+        for ( int i = 0; i < n; i++ ) {
+            if ( i < split ) { L.colOf[i] = 0; h0 += L.secs[i].h + SEC_PAD; }
+            else             { L.colOf[i] = 1; h1 += L.secs[i].h + SEC_PAD; }
+        }
+        L.twoCol = true;
+        L.bodyH  = std::max( h0, h1 );
+        L.width  = 2 * WIN_W + COL_GAP;
+    }
+    L.height = FIRST_Y + HEADER_H + L.bodyH + CLOSE_H;
+    return L;
 }
+
+static int computeWidth(CBuilding* b)  { return computeLayout(b).width; }
+static int computeHeight(CBuilding* b) { return computeLayout(b).height; }
 
 static std::string makeTitle(CBuilding* b) {
     return std::string( b->GetData()->GetDesc().c_str() );
@@ -242,7 +302,7 @@ static void lineOnSurface(SDL_Surface* s, int x0, int y0, int x1, int y1, Uint32
 
 // ============================================================================
 SDL2BuildingWindow::SDL2BuildingWindow(GameWindow* gw, CBuilding* pBldg, bool bOnTop)
-    : SDL2Dialog(gw, makeTitle(pBldg), WIN_W, computeHeight(pBldg))
+    : SDL2Dialog(gw, makeTitle(pBldg), computeWidth(pBldg), computeHeight(pBldg))
     , m_pBldg(pBldg)
 {
     // Tuckable behind the map by default (like Relations); but when launched from a
@@ -336,27 +396,27 @@ SDL_Surface* SDL2BuildingWindow::HdrIcon(int idx) {
 void SDL2BuildingWindow::OnInit() {
     LoadIcons();
 
-    int x = m_x + 10;
-    int w = m_width - 20;
-    int y = m_y + FIRST_Y;
+    BldgLayout L = computeLayout( m_pBldg );
 
-    y = BuildHeaderBand( x, y, w );
+    // Identity band (portrait/name/flavor/status) spans the full width on top.
+    int fullW = m_width - 20;
+    int yTop  = BuildHeaderBand( m_x + 10, m_y + FIRST_Y, fullW );
 
-    if ( m_bStorage    ) y = BuildStorage   (x, y, w);
-    if ( m_bProduction ) y = BuildProduction(x, y, w);
-    if ( m_bBuilding   ) y = BuildBuilding  (x, y, w);
-    if ( m_bFertility  ) y = BuildFertility (x, y, w);
-    if ( m_bInputs     ) y = BuildInputs    (x, y, w);
-    if ( m_bOutputs    ) y = BuildOutputs   (x, y, w);
-    if ( m_bUnits      ) y = BuildUnits     (x, y, w);
-    if ( m_bRepair     ) y = BuildRepair    (x, y, w);
-    if ( m_bMilitary   ) y = BuildMilitary  (x, y, w);
-    if ( m_bPower      ) y = BuildPower     (x, y, w);
-    if ( m_bOffice     ) y = BuildOffice    (x, y, w);
-    if ( m_bApt        ) y = BuildApt       (x, y, w);
-    if ( m_bTurret     ) y = BuildTurret    (x, y, w);
+    // One column (fullW) normally; two WIN_W-wide columns when the stack is tall.
+    int colW = L.twoCol ? ( WIN_W - 20 ) : fullW;
+    int x0   = m_x + 10;
+    int x1   = m_x + 10 + WIN_W + COL_GAP;
+    int y0   = yTop, y1 = yTop;
 
-    AddWidget<SDL2Button>(m_x + m_width / 2 - 45, y + 2, 90, 28, "Close",
+    for ( int i = 0; i < L.n; i++ ) {
+        bool right = ( L.colOf[i] == 1 );
+        int  cx    = right ? x1 : x0;
+        int& cy    = right ? y1 : y0;
+        cy = BuildSection( L.secs[i].id, cx, cy, colW );
+    }
+
+    int yClose = std::max( y0, y1 );
+    AddWidget<SDL2Button>(m_x + m_width / 2 - 45, yClose + 2, 90, 28, "Close",
         [this]() {
             if ( CWndArea::GetShowRange() == m_bldgID )   // stop the range overlay now
                 CWndArea::SetShowRange( 0 );
@@ -364,6 +424,26 @@ void SDL2BuildingWindow::OnInit() {
         });
 
     Refresh();
+}
+
+// Dispatch a section id to its builder. Order of ids matches computeLayout().
+int SDL2BuildingWindow::BuildSection(int id, int x, int y, int w) {
+    switch ( id ) {
+        case SEC_STORAGE:    return BuildStorage   (x, y, w);
+        case SEC_PRODUCTION: return BuildProduction(x, y, w);
+        case SEC_BUILDING:   return BuildBuilding  (x, y, w);
+        case SEC_FERTILITY:  return BuildFertility (x, y, w);
+        case SEC_INPUTS:     return BuildInputs    (x, y, w);
+        case SEC_OUTPUTS:    return BuildOutputs   (x, y, w);
+        case SEC_UNITS:      return BuildUnits     (x, y, w);
+        case SEC_REPAIR:     return BuildRepair    (x, y, w);
+        case SEC_MILITARY:   return BuildMilitary  (x, y, w);
+        case SEC_POWER:      return BuildPower     (x, y, w);
+        case SEC_OFFICE:     return BuildOffice    (x, y, w);
+        case SEC_APT:        return BuildApt       (x, y, w);
+        case SEC_TURRET:     return BuildTurret    (x, y, w);
+    }
+    return y;
 }
 
 void SDL2BuildingWindow::OnFrame() {

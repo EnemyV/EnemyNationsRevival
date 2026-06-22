@@ -71,6 +71,7 @@ private:
                 int iconIdx = -1, int iconFrame = 0);
     // Build the portrait + name + flavor text + status-line band under the title bar.
     int  BuildHeaderBand(int x, int y, int w);
+    int  BuildSection(int id, int x, int y, int w);   // dispatch one section by id (2-column layout)
     // Lazily load + cache a status-bar icon (theIcons) as a surface for header glyphs.
     SDL_Surface* HdrIcon(int idx);
 
