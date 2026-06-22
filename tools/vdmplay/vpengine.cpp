@@ -1334,6 +1334,19 @@ BOOL CRemoteSession::SendData( VPPLAYERID toId,
         pHdr->msgTo = toId;
         pHdr->msgKind = UDataREQ;
     }
+
+    // Guard: a send to the server while m_serverWS is NULL (server WS not yet
+    // established, or torn down) would deref NULL here — the post-join SEGV linux2
+    // hit at vpengine.cpp:1337 on the first player-data send. Fail the send cleanly
+    // instead of crashing. (CNetApi::Send only treats a send failure as fatal if
+    // the target player is already registered; during the early join handshake the
+    // server player isn't, so this returns gracefully rather than aborting.)
+    if ( !m_serverWS ) {
+        Log( "CRemoteSession::SendData - no server WS (send to server before connect WS ready)" );
+        VPTRACE( ( "CRemoteSession::SendData: m_serverWS NULL, dropping send to server" ) );
+        return FALSE;
+    }
+
     return m_serverWS->SendData( info );
 
 }
