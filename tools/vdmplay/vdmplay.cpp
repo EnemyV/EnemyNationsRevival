@@ -1687,6 +1687,18 @@ extern "C"
         return ( MAKELONG( VER_RELEASE, MAKEWORD( VER_MINOR, VER_MAJOR ) ) );
     }
 
+#ifndef _WIN32
+    // POSIX MP pump (step a): the game's main loop calls this each idle pass to
+    // drive the select() pump that replaces WSAAsyncSelect (on Windows the hidden
+    // message window did this implicitly). FD_* events become OnMessage calls
+    // whose notifications are PostMessage'd as WM_VPNOTIFY and drained by the same
+    // loop -> CNetApi::OnNetMsg. Returns the number of events dispatched; a no-op
+    // (returns 0) when no MP sockets are armed, so single-player pays nothing.
+    int VPAPI vpPumpNet( int timeout_ms ) {
+        return vpNetPumpPosix( timeout_ms );
+    }
+#endif
+
 
 
     DWORD VPAPI vpSupportedTransports() {

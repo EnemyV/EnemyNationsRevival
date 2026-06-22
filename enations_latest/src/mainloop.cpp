@@ -76,6 +76,12 @@ DWORD       dwFrameCheck = 2 * 1000 / FRAME_RATE;
 
 
 /////////////////////////////////////////////////////////////////////////////
+#ifndef _WIN32
+// POSIX MP port (step a): exported from libvdmplay_posix.so — drives the vp*
+// select() pump that replaces WSAAsyncSelect. Called from BaseYield each pass.
+extern "C" int vpPumpNet( int timeout_ms );
+#endif
+
 // CConquerApp::Run - main running routine until application exits
 
 int CConquerApp::Run( )
@@ -273,6 +279,17 @@ BOOL CConquerApp::BaseYield( )
 {
 
     ASSERT_STRICT_VALID( this );
+
+#ifndef _WIN32
+    // POSIX (MP port, step a): drive the vp* select() pump before draining the
+    // message queue. On Windows a hidden message window converted socket events
+    // to WM_WINSOCK messages inside this same PeekMessage loop; there is no such
+    // window on POSIX, so we poll the armed sockets here. Any notifications the
+    // pump produces are PostMessage'd as WM_VPNOTIFY and dispatched to
+    // CNetApi::OnNetMsg by the drain loop below, in this same pass. No-op (cheap
+    // empty-registry check) when no MP sockets are armed, so SP/menus pay nothing.
+    vpPumpNet( 0 );
+#endif
 
     // for tracking the idle time state
     static BOOL bIdle      = TRUE;
