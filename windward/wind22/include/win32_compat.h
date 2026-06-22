@@ -1389,14 +1389,79 @@ inline int     TranslateAcceleratorA(HWND, HACCEL, LPMSG) { return 0; }
 inline int     MapWindowPoints(HWND, HWND, LPPOINT, UINT) { return 0; }
 inline HACCEL  LoadAcceleratorsA(HINSTANCE, LPCSTR) { return NULL; }
 inline HWND    ChildWindowFromPointEx(HWND, POINT, UINT) { return NULL; }
-// Profile (.ini) APIs — the game uses its own EnWriteProfile*; these raw forms
-// still appear and are stubbed (no real .ini I/O on the Linux bring-up).
-inline BOOL WritePrivateProfileStringA(LPCSTR, LPCSTR, LPCSTR, LPCSTR) { return TRUE; }
-inline UINT GetPrivateProfileIntA(LPCSTR, LPCSTR, INT def, LPCSTR) { return (UINT)def; }
-inline DWORD GetPrivateProfileStringA(LPCSTR, LPCSTR, LPCSTR def, LPSTR buf, DWORD n, LPCSTR) {
-    const char* d = def ? def : ""; DWORD len = (DWORD)strlen(d);
-    if (buf && n) { if (len > n - 1) len = n - 1; memcpy(buf, d, len); buf[len] = 0; }
+// Profile (.ini) APIs. These were no-op stubs ("no real .ini I/O on the Linux
+// bring-up") — but MP host/join rides them: the join dialog WRITES
+// [TCP]ServerAddress/WellKnownPort and the vp* engine's discovery READS them back,
+// so the stub made every read return the default ("localhost") and 2-VM discovery
+// always queried localhost. Implement real minimal .ini I/O (POSIX). Header-inline
+// so the exe and the vdmplay .so each get a copy and share the on-disk file (same
+// cwd). Normalizes Windows '\' in the path (callers pass ".\\vdmplay.ini").
+inline void en__iniPath(LPCSTR in, char* out, size_t n) {
+    size_t i = 0; for (; in && in[i] && i + 1 < n; ++i) out[i] = (in[i] == '\\') ? '/' : in[i];
+    out[i] = 0;
+}
+inline DWORD GetPrivateProfileStringA(LPCSTR section, LPCSTR key, LPCSTR def, LPSTR buf, DWORD n, LPCSTR file) {
+    char val[256] = {0}; bool got = false;
+    char path[512]; en__iniPath(file, path, sizeof(path));
+    FILE* f = (section && key) ? fopen(path, "r") : NULL;
+    if (f) {
+        char want[160]; snprintf(want, sizeof(want), "[%s]", section);
+        char line[512]; bool inSec = false;
+        while (fgets(line, sizeof(line), f)) {
+            char* p = line; while (*p == ' ' || *p == '\t') ++p;
+            size_t L = strlen(p); while (L && (p[L-1]=='\n'||p[L-1]=='\r'||p[L-1]==' '||p[L-1]=='\t')) p[--L] = 0;
+            if (p[0] == '[') { inSec = (strcasecmp(p, want) == 0); continue; }
+            if (!inSec || !p[0] || p[0] == ';') continue;
+            char* eq = strchr(p, '='); if (!eq) continue;
+            *eq = 0; size_t kl = strlen(p); while (kl && (p[kl-1]==' '||p[kl-1]=='\t')) p[--kl] = 0;
+            if (strcasecmp(p, key) == 0) { char* v = eq + 1; while (*v==' '||*v=='\t') ++v; strncpy(val, v, sizeof(val)-1); got = true; break; }
+        }
+        fclose(f);
+    }
+    const char* s = got ? val : (def ? def : "");
+    DWORD len = (DWORD)strlen(s);
+    if (buf && n) { if (len > n - 1) len = n - 1; memcpy(buf, s, len); buf[len] = 0; }
     return len;
+}
+inline UINT GetPrivateProfileIntA(LPCSTR section, LPCSTR key, INT def, LPCSTR file) {
+    char b[64], ds[24]; snprintf(ds, sizeof(ds), "%d", def);
+    GetPrivateProfileStringA(section, key, ds, b, sizeof(b), file);
+    return (UINT)atoi(b);
+}
+inline BOOL WritePrivateProfileStringA(LPCSTR section, LPCSTR key, LPCSTR val, LPCSTR file) {
+    if (!section || !key || !file) return FALSE;
+    char path[512]; en__iniPath(file, path, sizeof(path));
+    enum { CAP = 32768 };
+    char* in = (char*)malloc(CAP); if (!in) return FALSE; in[0] = 0;
+    { FILE* f = fopen(path, "r"); if (f) { size_t r = fread(in, 1, CAP - 1, f); in[r] = 0; fclose(f); } }
+    char* out = (char*)malloc(CAP + 512); if (!out) { free(in); return FALSE; }
+    int o = 0;
+    char want[160]; snprintf(want, sizeof(want), "[%s]", section);
+    bool inSec = false, wrote = false, secSeen = false;
+    char* p = in;
+    while (*p) {
+        char* e = strchr(p, '\n'); size_t llen = e ? (size_t)(e - p) : strlen(p);
+        char t[512]; size_t tl = llen < sizeof(t)-1 ? llen : sizeof(t)-1; memcpy(t, p, tl); t[tl] = 0;
+        char* tp = t; while (*tp==' '||*tp=='\t') ++tp;
+        size_t TL = strlen(tp); while (TL && (tp[TL-1]=='\r'||tp[TL-1]==' '||tp[TL-1]=='\t')) tp[--TL] = 0;
+        bool isHdr = (tp[0] == '[');
+        if (isHdr && inSec && !wrote) { if (val) o += snprintf(out+o, 480, "%s=%s\n", key, val); wrote = true; }
+        if (isHdr) { inSec = (strcasecmp(tp, want) == 0); if (inSec) secSeen = true; }
+        bool replaced = false;
+        if (inSec && !isHdr) {
+            char* eq = strchr(tp, '='); if (eq) { *eq = 0; size_t kl = strlen(tp); while (kl && (tp[kl-1]==' '||tp[kl-1]=='\t')) tp[--kl] = 0;
+                if (strcasecmp(tp, key) == 0) { if (val) o += snprintf(out+o, 480, "%s=%s\n", key, val); wrote = true; replaced = true; } }
+        }
+        if (!replaced) { memcpy(out+o, p, llen); o += (int)llen; out[o++] = '\n'; }
+        p = e ? e + 1 : p + llen;
+    }
+    if (inSec && !wrote && val) { o += snprintf(out+o, 480, "%s=%s\n", key, val); wrote = true; }
+    if (!secSeen && val) { o += snprintf(out+o, 480, "%s\n%s=%s\n", want, key, val); }
+    out[o] = 0;
+    BOOL ok = FALSE;
+    { FILE* f = fopen(path, "w"); if (f) { fwrite(out, 1, o, f); fclose(f); ok = TRUE; } }
+    free(in); free(out);
+    return ok;
 }
 inline int    fopen_s(FILE** pf, const char* name, const char* mode) { if (!pf) return 22; *pf = fopen(name, mode); return *pf ? 0 : 1; }
 // (CreateSemaphoreA/ReleaseSemaphore are defined after the extern "C" block —
