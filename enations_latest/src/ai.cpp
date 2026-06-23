@@ -664,7 +664,15 @@ void AiSaveGame( CArchive& ar )
         while ( pos != NULL )
         {
             CAIMgr* pMgr = (CAIMgr*)plAIMgrList->GetNext( pos );
-            if ( pMgr != NULL )
+            // Save ONLY AI managers. The keystone fix (@c3540c06) AddTails the
+            // HUMAN player's CAIMgr to plAIMgrList (via AiNewPlayer(GetMe())), but
+            // that mgr is SetAI(FALSE) and never Manage()'d, so its goal/task state
+            // is uninitialised and CAIMgr::SaveGame derefs null -> SIGSEGV. It also
+            // must not be in the stream: AiLoadGame recreates managers ONLY for
+            // theGame.GetAll() players where IsAI() (it does NOT read a human mgr),
+            // so the save side must match or the stream desyncs on load. Skipping
+            // the human mgr keeps the .en format byte-identical to pre-keystone.
+            if ( pMgr != NULL && pMgr->IsAI( ) )
             {
                 ASSERT_VALID( pMgr );
 
