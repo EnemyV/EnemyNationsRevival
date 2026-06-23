@@ -510,6 +510,15 @@ void CConquerApp::CreateNewWorld(unsigned uRand, AIinit *pAiData, int iSide, int
                 if (AiNewPlayer(pPlr))
                     return;
         }
+
+        // The loop above is AI-only, but CAIInitPos::DoIt (driven by the AI-init
+        // path) is the ONLY code that places ANY player's starting loadout — so
+        // the human needs a CAIMgr too, else it gets 0 starting units (all-platform
+        // bug: IsMe()-gated box-select / HOME-center / crane Build then all fail).
+        // AiNewPlayer sets SetAI(FALSE) for the human (its CAIMgr stays non-AI),
+        // and StartAi() never spins an AiThread for it, so it is never AI-driven.
+        if (theGame.GetMe() != NULL && !theGame.GetMe()->IsAI())
+            AiNewPlayer(theGame.GetMe());
     }
 
     // set rand
@@ -801,6 +810,17 @@ void CConquerApp::StartAi() {
             m_pCreateGame->GetDlgStatus()->SetPer(PER_START_AI + (iOn * PER_NUM_START_AI) / iNum);
             iOn++;
         }
+
+        // Place the HUMAN's starting units too (see the AiNewPlayer note above).
+        // AiSetup builds the per-player AI map that CAIInitPos::DoIt needs and then
+        // calls SetInitialPos→DoIt to deal the loadout. The goal/task managers it
+        // also builds stay dormant: StartAi() spins AiThreads for GetAi() players
+        // only, so the human's CAIMgr is never Manage()'d. (If we later want to
+        // skip building those managers for the human, split CreateHeavy into
+        // CreateMap+CreateManagers and call only CreateMap here.)
+        if (theGame.GetMe() != NULL && !theGame.GetMe()->IsAI()
+            && theGame.GetMe()->GetAiHdl() != NULL)
+            AiSetup(theGame.GetMe());
 
         // Done building every AI's map — drop the snapshot so gameplay (the AI
         // threads launched just below) uses live, locked game-map reads.
