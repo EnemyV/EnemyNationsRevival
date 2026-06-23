@@ -15,11 +15,14 @@
 #endif
 
 namespace {
-    bool        s_init    = false;
-    bool        s_enabled = false;
-    int         s_seq     = 0;
-    int         s_max     = 600;          // ~10s @60fps; guardrail so it can't fill the disk
-    std::string s_dir     = "framecap";
+    bool        s_init      = false;
+    bool        s_enabled   = false;
+    int         s_seq       = 0;
+    int         s_max       = 600;            // frame budget (~15MB/frame at native res = ~8GB)
+    int         s_timeoutMs = 5 * 60 * 1000;  // HARD 5-min wall-clock backstop so a forgotten
+                                              // capture can't run all session and fill the disk
+    Uint64      s_startMs    = 0;             // when the current capture session began
+    std::string s_dir       = "framecap";
 
     void EnsureDir() { FC_MKDIR( s_dir.c_str() ); }   // ignore "already exists"
 
@@ -32,15 +35,26 @@ namespace {
         if ( m && atoi( m ) > 0 ) s_max = atoi( m );
         const char* d = getenv( "EN_FRAMECAP_DIR" );
         if ( d && d[0] ) s_dir = d;
-        if ( s_enabled ) { EnsureDir(); SDL_Log( "FRAMECAP: ON (env) dir=%s max=%d", s_dir.c_str(), s_max ); }
+        const char* secs = getenv( "EN_FRAMECAP_SECS" );
+        if ( secs && atoi( secs ) > 0 ) s_timeoutMs = atoi( secs ) * 1000;
+        if ( s_enabled ) {
+            s_startMs = SDL_GetTicks64();
+            EnsureDir();
+            SDL_Log( "FRAMECAP: ON (env) dir=%s max=%d frames, %ds timeout", s_dir.c_str(), s_max, s_timeoutMs / 1000 );
+        }
     }
 }
 
 void FrameCap::Capture( SDL_Renderer* r, const char* tag ) {
     EnsureInit();
     if ( !s_enabled || !r ) return;
-    if ( s_seq >= s_max ) {                    // hit the budget -> stop, don't fill the disk
+    if ( s_seq >= s_max ) {                    // hit the frame budget -> stop, don't fill the disk
         SDL_Log( "FRAMECAP: hit cap %d frames, stopping", s_max );
+        s_enabled = false;
+        return;
+    }
+    if ( SDL_GetTicks64() - s_startMs > (Uint64)s_timeoutMs ) {   // hard wall-clock backstop
+        SDL_Log( "FRAMECAP: hit %ds timeout after %d frames, stopping", s_timeoutMs / 1000, s_seq );
         s_enabled = false;
         return;
     }
@@ -62,7 +76,8 @@ void FrameCap::Capture( SDL_Renderer* r, const char* tag ) {
 void FrameCap::Toggle() {
     EnsureInit();
     s_enabled = !s_enabled;
-    if ( s_enabled ) { s_seq = 0; EnsureDir(); SDL_Log( "FRAMECAP: ON (toggle) dir=%s max=%d", s_dir.c_str(), s_max ); }
+    if ( s_enabled ) { s_seq = 0; s_startMs = SDL_GetTicks64(); EnsureDir();
+                       SDL_Log( "FRAMECAP: ON (toggle) dir=%s max=%d frames, %ds timeout", s_dir.c_str(), s_max, s_timeoutMs / 1000 ); }
     else             { SDL_Log( "FRAMECAP: OFF (toggle) after %d frames", s_seq ); }
 }
 
