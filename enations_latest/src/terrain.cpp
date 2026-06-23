@@ -4160,11 +4160,16 @@ void CGameMap::UpdateRect( CAnimAtr& aa, CRect rect, CDrawParms::UPDATE_MODE eMo
                 bool viewChg = ( ulNow.x != s_lastUlX || ulNow.y != s_lastUlY ||
                                  aa.m_iZoom != s_lastZ || aa.m_iDir != s_lastD );
                 s_lastUlX = ulNow.x; s_lastUlY = ulNow.y; s_lastZ = aa.m_iZoom; s_lastD = aa.m_iDir;
-                if ( bFresh || viewChg )
+                // m_bOverlayDirty: a box-select marquee ended without a following
+                // view change, so viewChg won't catch the stale overlay — force the
+                // full wipe here. This whole block is bSplit-gated (split-layer/GPU),
+                // so the Windows blit path never reaches it (win's guard constraint).
+                if ( bFresh || viewChg || aa.m_bOverlayDirty )
                 {
                     SDL_FillRect( pSprSurf, NULL, key );  // whole buffer
-                    Perf::CounterAdd( "dbg.ovlwipe", 1 );   // VERIFY this path runs in GPU mode
+                    Perf::CounterAdd( "dbg.ovlwipe", 1 );
                 }
+                aa.m_bOverlayDirty = FALSE;   // consumed
                 SDL_Rect clr = { rect.left, rect.top, rect.Width( ), rect.Height( ) };
                 SDL_FillRect( pSprSurf, &clr, key );
             }

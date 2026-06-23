@@ -625,6 +625,13 @@ class CAnimAtr
     // here while terrain stays in m_dibwnd, so GPU terrain (T2) can composite
     // underneath. Lazily sized to match m_dibwnd. Unused in the software path.
     CDIBWnd     m_dibSprite;
+    // GPU/split-layer path only: when set, the next draw fully wipes m_dibSprite
+    // (not just the per-frame dirty rect) even with no view change. A box-select
+    // marquee (DrawSelectionRectGpu) drawn at a zoomed level and then ended without
+    // a subsequent pan/zoom would otherwise linger as a stale striped overlay,
+    // because m_dibSprite is only fully cleared on a detected view change
+    // (terrain.cpp). Honored under IsGpuFull() only — inert on the Windows blit path.
+    BOOL        m_bOverlayDirty = FALSE;
     bool        UseSplitLayer() const;  // defined in terrain.cpp (needs SDL2Panel)
     // True when this view renders through its own GPU renderer + GPU sprite layer:
     // the whole window is re-presented every frame, so dirty rects are unused and

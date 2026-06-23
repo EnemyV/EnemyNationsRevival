@@ -3863,6 +3863,14 @@ void CWndArea::OnLButtonUp( UINT nFlags, CPoint point )
     case normal_select: {
         m_iMode = normal;
 
+        // The box-select marquee (GPU/split path) is drawn into m_dibSprite while
+        // m_iMode==normal_select. Now that the drag has ended it won't be redrawn,
+        // so force a full sprite-overlay wipe next frame — otherwise, if no pan/zoom
+        // follows, the marquee bands linger as a stale striped diamond (the overlay
+        // is only fully cleared on a detected view change). Inert on the Windows path
+        // (m_bOverlayDirty is honored only under IsGpuFull()).
+        m_aa.m_bOverlayDirty = TRUE;
+
         // Crane over a damaged / under-construction building (or unfinished bridge):
         // a LEFT click should COMMAND the repair/build, same as the right button —
         // NOT deselect the crane. SetMouseState keeps m_uMouseMode == lmb_repair_bldg
