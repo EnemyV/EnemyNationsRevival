@@ -168,14 +168,15 @@ class CPlayer : public CObject
 
     void UpdateRacialAttributes( int iRsrch );
 
-    // DEV/harness only (SP): mark every research topic discovered + apply its effect,
-    // so research-gated buildings/features (AltOutput toggles, fort/seaport/shipyard,
-    // edicts) are reachable instantly without the multi-hour grind. Mirrors the init
-    // KnowItAll loop (player.cpp:294-300) + the per-topic UpdateRacialAttributes that
-    // Research() runs on completion. Cross-platform (the Windows F12 hotkey + a POSIX
-    // control_socket cmd can both call it). MP would desync (local-only mutation), so
-    // every caller must guard to single-player.
+#ifdef _CHEAT
+    // DEV cheat (SP): mark every research topic discovered + apply its effect, so the
+    // research-gated tail (AltOutput toggles, fort/seaport/shipyard, edicts) is reachable
+    // instantly without the multi-hour grind. Mirrors the init KnowItAll loop + the
+    // per-topic UpdateRacialAttributes + ResearchDiscovered that Research() runs on
+    // completion. _CHEAT-gated (Debug/Sanitize only — NOT Release); callers also check the
+    // [Cheat] opt-in flag + guard to single-player (MP would desync on a local mutation).
     void DebugDiscoverAllResearch( );
+#endif
 
     // used during initialization only
     CInitData m_InitData;
