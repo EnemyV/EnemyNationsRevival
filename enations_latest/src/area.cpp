@@ -3045,6 +3045,29 @@ int CWndArea::OnCreate( LPCREATESTRUCT lpCreateStruct )
                         OutputDebugStringA( "[HUNITS-END]\n" );
                         return true;
                     }
+                    // F10: center the area view on my first OWNED crane so it sits at
+                    // view-center (clickable) — F9's reported xy is sprite-offset/wrapped,
+                    // so the crane-dblclick needs the unit centered first. Arg-less mirror
+                    // of control_socket's `center <id>`. Logs id+result to OutputDebugString.
+                    if (sc == SDL_SCANCODE_F10) {
+                        unsigned long id = 0;
+                        POSITION pos = theVehicleMap.GetStartPosition( );
+                        while ( pos != NULL ) {
+                            DWORD dwID = 0; CVehicle* pVeh = NULL;
+                            theVehicleMap.GetNextAssoc( pos, dwID, pVeh );
+                            if ( pVeh && pVeh->GetOwner( ) && pVeh->GetOwner( )->IsMe( )
+                                 && pVeh->GetData( ) && pVeh->GetData( )->IsCrane( ) ) { id = dwID; break; }
+                        }
+                        char msg[96];
+                        if ( id ) {
+                            bool ok = HarnessCenterUnit( id );
+                            snprintf( msg, sizeof( msg ), "[HCENTER] crane id=%lu centered=%d\n", id, ok ? 1 : 0 );
+                        } else {
+                            snprintf( msg, sizeof( msg ), "[HCENTER] no owned crane found\n" );
+                        }
+                        OutputDebugStringA( msg );
+                        return true;
+                    }
 #endif
 
                     UINT vk = SDLKeyToVK(sc);
