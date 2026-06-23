@@ -540,12 +540,14 @@ void CPlayer::Research( int iNumSec )
     }
 }
 
-// DEV/harness (SP only): discover every research topic + apply its effect. Lets the
-// research-gated tail (AltOutput toggles, fort/seaport/shipyard/embassy, edicts) be
-// verified instantly instead of a multi-hour grind. Mirrors the init KnowItAll loop
-// + the per-topic UpdateRacialAttributes that Research() runs on completion.
-// Cross-platform: the Windows F12 hotkey (area.cpp) and a POSIX control_socket cmd
-// can both call it. Caller must guard to single-player (MP would desync).
+#ifdef _CHEAT
+// DEV cheat (SP only): discover every research topic + apply its effect + refresh UI. Lets
+// the research-gated tail (AltOutput toggles, fort/seaport/shipyard/embassy, edicts) be
+// verified instantly instead of a multi-hour grind. Per topic, mirrors Research()'s
+// completion path: set m_bDiscovered (opens the gates) + UpdateRacialAttributes (applies the
+// effect) + ResearchDiscovered (count + live research/build-dialog refresh). _CHEAT-gated
+// (Debug/Sanitize only — NOT Release); callers also opt-in via [Cheat] registry + SP-guard.
+// Cross-platform: the Windows F12 hotkey and a POSIX control_socket cmd both call it.
 void CPlayer::DebugDiscoverAllResearch( )
 {
     for ( int iOn = 0; iOn < m_aRsrch.GetSize( ); iOn++ )
@@ -554,9 +556,11 @@ void CPlayer::DebugDiscoverAllResearch( )
         {
             m_aRsrch.ElementAt( iOn ).m_bDiscovered = TRUE;
             UpdateRacialAttributes( iOn );
+            ResearchDiscovered( iOn );
         }
     }
 }
+#endif
 
 // we may have to update some flags
 void CPlayer::UpdateRacialAttributes( int iRsrch )

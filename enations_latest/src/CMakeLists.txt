@@ -287,7 +287,11 @@ target_compile_definitions(enations PUBLIC
         AI_THREADS_ENABLED # here's hoping!!
         OPTIMIZE_BLIT_ORDER
         # AI_SPECTATE
-        # _CHEAT
+        # _CHEAT enables the dev cheat system (KnowItAll, GrantResearch, AiCranes, _bShowPos...)
+        # — Debug/Sanitize ONLY (compiled OUT of Release), and each cheat is still opt-in via the
+        # [Cheat] registry section (EnGetProfileInt(...,0) = off by default). Safe by construction.
+        $<$<CONFIG:Debug>:_CHEAT>
+        $<$<CONFIG:Sanitize>:_CHEAT>
         $<$<CONFIG:Release>:NDEBUG>
         $<$<CONFIG:Profile>:NDEBUG>
         $<$<CONFIG:Debug>:_DEBUG>
