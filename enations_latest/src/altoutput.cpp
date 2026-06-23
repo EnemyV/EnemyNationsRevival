@@ -45,13 +45,31 @@ namespace
         return ( pBf && ( pBf->GetTypeFarm( ) == CMaterialTypes::lumber ) );
     }
 
+    // An EXHAUSTED oil well: a mine (UTmine) that pumps oil whose deposit has run dry
+    // (m_iMinerals <= 0, so it has SetFlag(stopped|abandoned) and would normally produce
+    // nothing). Fracking revives exactly this state into a flat oil trickle. A still-
+    // producing oil well is NOT matched, so normal wells are byte-identical to before.
+    bool IsExhaustedOilWell( CBuilding* b )
+    {
+        if ( b->GetData( )->GetUnionType( ) != CStructureData::UTmine )
+            return ( false );
+        CMineBuilding* pMine = (CMineBuilding*)b;
+        return ( pMine->IsOilWell( ) && pMine->IsExhausted( ) );
+    }
+
     // ---- Tech-gate predicates (thin adapters over the CPlayer accessors) ---------------
     bool TechBioFuel( CPlayer* p ) { return ( p->CanBioFuel( ) != FALSE ); }
     bool TechCoalLiq( CPlayer* p ) { return ( p->CanCoalLiq( ) != FALSE ); }
     bool TechCharcoal( CPlayer* p ) { return ( p->CanCharcoal( ) != FALSE ); }
+    bool TechFrack( CPlayer* p ) { return ( p->CanFrack( ) != FALSE ); }
 
     // ---- Per-tier percent accessors (ePctAdditive only) -------------------------------
     int PctBioOil( CPlayer* p ) { return ( p->GetBioOilPct( ) ); }
+
+    // ---- Per-tier flat-rate accessors (eFlatTrickle only) -----------------------------
+    // Oil/min an exhausted, fracked well trickles by the owner's highest Fracking tier
+    // (0/10/15/20/25/30). Convert() scales this per-minute rate by the opers elapsed.
+    int FlatFrackOil( CPlayer* p ) { return ( p->GetFrackOilPerMin( ) ); }
 
     // ---- The config table -------------------------------------------------------------
     // Add Charcoal and Fracking here exactly like these two (see notes at the bottom).
@@ -69,8 +87,9 @@ namespace
             CMaterialTypes::food,        // notional input (not consumed in ePctAdditive)
             CMaterialTypes::oil,
             AltOutput::ePctAdditive,
-            &PctBioOil,
-            0,
+            &PctBioOil,                  // m_pfnPct
+            nullptr,                     // m_pfnFlat
+            0,                           // m_iRatioIn
             1.0f
         },
 
@@ -83,7 +102,8 @@ namespace
             CMaterialTypes::coal,
             CMaterialTypes::oil,
             AltOutput::eRatioConsume,
-            nullptr,
+            nullptr,                     // m_pfnPct
+            nullptr,                     // m_pfnFlat
             2,                            // 2 coal per 1 oil
             1.0f
         },
@@ -102,16 +122,31 @@ namespace
             CMaterialTypes::lumber,
             CMaterialTypes::coal,
             AltOutput::eRatioConsume,
-            nullptr,
+            nullptr,                     // m_pfnPct
+            nullptr,                     // m_pfnFlat
             2,                            // 2 lumber per 1 coal
             1.0f
         },
 
-        // --- FUTURE config entries (slot in the same way; do not need new mechanism) ----
-        // 4) Fracking -- an EXHAUSTED oil mine trickles oil. Add an IsExhaustedOilWell
-        //    predicate, the existing CanFrack() gate, and either ePctAdditive over the
-        //    well's production or eRatioConsume; the flat-per-min #23 numbers map to a
-        //    pct/ratio. Both reuse this table + Convert() + the generic toggle button.
+        // 4) Fracking (NEW) -- an EXHAUSTED oil well (its deposit run dry, so it is
+        //    stopped/abandoned and normally idle) trickles a flat oil rate when toggled
+        //    ON. eFlatTrickle: credit FlatFrackOil() units/min (per-tier 10/15/20/25/30),
+        //    no input consumed -- it is neither a pct-of-production (the well produces
+        //    nothing) nor an input-consume, so it uses the third mode added for this
+        //    feature. The +50% well energy is applied at the production hook
+        //    (CMineBuilding::FrackTick), not here.
+        {
+            "Fracking",
+            &IsExhaustedOilWell,
+            &TechFrack,
+            CMaterialTypes::oil,         // notional input (not consumed in eFlatTrickle)
+            CMaterialTypes::oil,
+            AltOutput::eFlatTrickle,
+            nullptr,                     // m_pfnPct
+            &FlatFrackOil,               // m_pfnFlat (oil/min by tier)
+            0,                           // m_iRatioIn
+            1.0f
+        },
     };
 
     const int s_nDefs = (int)( sizeof( s_aDefs ) / sizeof( s_aDefs[0] ) );
@@ -172,6 +207,27 @@ namespace AltOutput
                 iOut = ( iAmount * iPct ) / 100;
             else
                 iOut = (int)( ( (float)iAmount * (float)iPct * pDef->m_fEnergyMult ) / 100.0f );
+        }
+        else if ( pDef->m_eMode == eFlatTrickle )
+        {
+            // Flat trickle: credit m_pfnFlat(owner) units PER IN-GAME MINUTE, scaled by the
+            // opers elapsed this call (passed as iAmount). No input is consumed. The float
+            // accumulator carries the sub-unit remainder so a slow trickle isn't lost to
+            // truncation. Game time runs at OPERS_PER_MINUTE opers/min (m_dwElapsedTime is
+            // in 24ths-of-a-second << 4 => 24*16=384 opers/sec => 23040 opers/min; see
+            // CPlayer::GetElapsedSeconds).
+            const float OPERS_PER_MINUTE = 384.0f * 60.0f;   // = 23040
+            int iRate = pDef->m_pfnFlat ? pDef->m_pfnFlat( pOwner ) : 0;
+            if ( iRate <= 0 )
+                return;
+
+            fAccum += ( (float)iRate * (float)iAmount ) / OPERS_PER_MINUTE;
+            int iWantOut = (int)fAccum;
+            if ( iWantOut <= 0 )
+                return;
+
+            fAccum -= (float)iWantOut;   // keep the un-emitted fraction for next call
+            iOut = iWantOut;
         }
         else // eRatioConsume
         {

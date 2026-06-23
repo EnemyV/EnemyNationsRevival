@@ -1154,10 +1154,21 @@ public:
 		virtual BOOL	IsOperating () const
 												{ if ( ! CBuilding::IsOperating () ) return FALSE;
 													return m_iMinerals > 0; }
+
+		// Fracking (#23): a deposit-exhausted well/mine has nothing left to mine. The
+		// minerals counter is protected, so expose read-only predicates for the AltOutput
+		// fracking def (an EXHAUSTED OIL WELL trickles oil). IsOilWell() = a mine whose
+		// output material is oil.
+		bool			IsExhausted () const { return ( m_iMinerals <= 0 ); }
+		bool			IsOilWell () const
+												{ CBuildMine* pBm = GetData ()->GetBldMine ();
+													return ( pBm && ( pBm->GetTypeMines () == CMaterialTypes::oil ) ); }
+
 		static int		TotalQuantity (CHexCoord const & hex, int iTyp, int iDir);
 		static int		TotalDensity (CHexCoord const & hex, int iTyp, int iDir);
 		virtual int		GetProductionPer () const;
 		void					BuildMine ();
+		void					FrackTick ();		// Fracking (#23): exhausted-well oil trickle + energy
 		void					UpdateMine ();		// copy ground data to mine
 		void					UpdateGround ();	// copy mine data to ground
 

@@ -16,13 +16,18 @@
 // researched the gating tech; only then does the generic toggle button appear and only
 // then does Convert() do anything.
 //
-// Two production modes cover the four features:
+// Three production modes cover the family:
 //   ePctAdditive   -- output = pct% of the per-call production amount; the input is NOT
 //                     consumed (the building's primary output is unchanged). pct comes
 //                     from a per-tier player accessor. This is BioFuel (oil = % of food).
 //   eRatioConsume  -- consume m_iRatioIn units of the input material from the building's
 //                     store and credit 1 unit of output, scaled by the per-call amount.
-//                     This is Coal Liquefaction (2 coal -> 1 oil).
+//                     This is Coal Liquefaction (2 coal -> 1 oil) and Charcoal.
+//   eFlatTrickle   -- credit a FLAT per-minute amount (m_pfnFlat, a per-tier player
+//                     accessor returning units/min), independent of any primary output and
+//                     consuming no input. The caller passes the game-OPERS elapsed this
+//                     call as iAmount; Convert() scales the rate by opers/minute. This is
+//                     Fracking: an otherwise-stopped (exhausted) oil well trickles oil.
 //
 // Both credit output the same way BioFuel always has: AddToStore + IncMaterialMade +
 // IncMaterialHave, with a runtime fractional accumulator so sub-unit yields aren't lost.
@@ -35,7 +40,8 @@ namespace AltOutput
     enum EMode
     {
         ePctAdditive,    // output = m_pfnPct(owner)% of amount; input not consumed (BioFuel)
-        eRatioConsume    // consume m_iRatioIn input from store -> 1 output (Coal Liquefaction)
+        eRatioConsume,   // consume m_iRatioIn input from store -> 1 output (Coal Liquefaction)
+        eFlatTrickle     // credit m_pfnFlat(owner) units/min, scaled by opers elapsed (Fracking)
     };
 
     struct AltOutputDef
@@ -47,6 +53,7 @@ namespace AltOutput
         int         m_iOutputMat;                // CMaterialTypes output
         EMode       m_eMode;
         int         (*m_pfnPct)(CPlayer*);       // ePctAdditive: output percent of amount (else nullptr)
+        int         (*m_pfnFlat)(CPlayer*);      // eFlatTrickle: flat output units/min      (else nullptr)
         int         m_iRatioIn;                  // eRatioConsume: input units per 1 output (else 0)
         float       m_fEnergyMult;               // optional output multiplier (1.0f = none)
     };
@@ -61,7 +68,8 @@ namespace AltOutput
 
     // Shared production helper. Call from a building's production loop with the amount of
     // primary production this call represents (food harvested for a farm, input burned for
-    // a power plant, etc.). If the building's alt-output toggle is ON and a def is
+    // a power plant, etc.; or the game-OPERS elapsed this call for an eFlatTrickle def
+    // like Fracking). If the building's alt-output toggle is ON and a def is
     // Available(), produce the secondary output per the def's mode and credit it. No-op
     // otherwise. fAccum is a per-building runtime fractional accumulator (carries the
     // leftover sub-unit yield between calls); pass the building's own accumulator field.

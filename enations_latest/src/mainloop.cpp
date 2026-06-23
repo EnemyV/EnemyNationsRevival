@@ -1445,6 +1445,22 @@ void CBuilding::Operate( )
     // if paused, return
     if ( m_unitFlags & ( stopped | abandoned ) )
     {
+        // Fracking (#23): an EXHAUSTED oil well is stopped+abandoned and so would idle
+        // here. If its per-well alt-output toggle (alt_oil) is ON and the owner has
+        // researched Fracking, instead of idling it draws power and trickles oil. The
+        // AltOutput "Fracking" def (eFlatTrickle) matches exactly this state; FrackTick()
+        // applies the +50% well energy and credits the trickle via AltOutput::Convert.
+        // Toggle OFF / no tech / non-oil-well => this is a no-op and the well idles
+        // exactly as before (byte-identical), falling through to the normal stopped path.
+        if ( ( m_iConstDone == -1 )
+             && IsFlag( CUnit::alt_oil )
+             && ( GetData( )->GetUnionType( ) == CStructureData::UTmine )
+             && AltOutput::Available( this ) )
+        {
+            ( (CMineBuilding*)this )->FrackTick( );
+            return;
+        }
+
         // if stopped we only need half the people & power
         if ( ( m_iConstDone == -1 ) && ( !( m_unitFlags & abandoned ) ) )
         {
@@ -2520,6 +2536,28 @@ void CMineBuilding::BuildMine( )
 
     // update the %
     MaterialChange( );
+}
+
+// Fracking (#23): production tick for an EXHAUSTED oil well whose alt-output toggle is ON
+// and whose owner has researched Fracking. Called from the per-building update's
+// stopped/abandoned branch (the well is normally idle there). Draws the well's full power
+// plus +50% (the energy cost of fracking) and trickles a flat per-tier oil rate via the
+// reusable AltOutput system (eFlatTrickle). Caller has already verified alt_oil + the tech
+// gate via AltOutput::Available, so a non-oil-well / un-teched / toggle-OFF well never
+// reaches here and idles exactly as before.
+void CMineBuilding::FrackTick( )
+{
+    ASSERT_STRICT( GetData( )->GetUnionType( ) == CStructureData::UTmine );
+
+    // Full operating power + 50% surcharge for fracking (1.5x the well's normal draw),
+    // plus the building's people. (A normal stopped building draws only half power; a
+    // fracked well runs hot.)
+    GetOwner( )->AddPwrNeed( ( GetData( )->GetPower( ) * 3 ) / 2 );
+    GetOwner( )->AddPplNeedBldg( GetData( )->GetPeople( ) );
+
+    // Credit the flat oil trickle. eFlatTrickle scales the per-minute rate by the opers
+    // elapsed this call; the building's m_fAltAccum carries the sub-unit remainder.
+    AltOutput::Convert( this, (int)theGame.GetOpersElapsed( ), m_fAltAccum );
 }
 
 void CFarmBuilding::BuildFarm( )
