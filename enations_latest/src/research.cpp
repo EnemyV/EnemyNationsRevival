@@ -713,6 +713,50 @@ void CRsrchArray::Open( )
         pRi->m_sResult = "Coal liquefaction online. Coal power plants can convert coal to oil (toggle per plant).";
     }
 
+    // In-code research topic: Charcoal (4 tiers, not in the DAT file). A lumber MILL (the
+    // sawmill -- UTfarm whose GetTypeFarm() == lumber), once a Charcoal tier is researched
+    // and its per-building alt-output toggle is ON, runs a kiln: it converts harvested
+    // lumber into coal ("Charcoal" label only) at a fixed 2 lumber -> 1 coal via the shared
+    // AltOutput system (eRatioConsume), MODE-SWITCH (lumber output stops while the kiln
+    // runs). The 2:1 ratio is fixed; the THROUGHPUT is tier-scaled by CPlayer::GetCharcoalPct
+    // (T1 = VERY LOW per operator spec, T2-4 raise it). No energy cost. T1 chained off Gas
+    // Turbines; T2-4 chain the prior tier (mirrors the BioFuel line). Cost doubles each tier.
+    // Appended LAST in the enum so save indices don't shift. The AI's frozen research path
+    // doesn't pursue these.
+    {
+        static const char* aszChName[4] = {
+            "Charcoal Kiln", "Retort Kiln", "Continuous Carbonization", "Pyrolysis Refinery" };
+        static const char* aszChDesc[4] = {
+            "A simple wood kiln chars lumber into coal: a toggled sawmill converts 2 lumber into 1 coal at a very low rate.",
+            "Sealed retort kilns char lumber more efficiently, raising the sawmill's charcoal output.",
+            "Continuous carbonization lines keep the kiln running, raising charcoal output again.",
+            "A full pyrolysis refinery wrings the most charcoal from every log." };
+        static const char* aszChRslt[4] = {
+            "Charcoal kiln online. Sawmills can convert lumber into coal (toggle per mill).",
+            "Retort kilns fielded. Sawmill charcoal output rises.",
+            "Continuous carbonization in service. More charcoal per log.",
+            "Pyrolysis refinery perfected. Maximum charcoal from every sawmill." };
+
+        int iPts = ElementAt( gas_turbine ).m_iPtsRequired;
+        for ( int iOn = 0; iOn < 4; iOn++ )
+        {
+            CRsrchItem* pRi = &ElementAt( charcoal_1 + iOn );
+
+            iPts *= 2;
+            pRi->m_iPtsRequired       = iPts;
+            pRi->m_iScenarioReq       = ElementAt( gas_turbine ).m_iScenarioReq;
+            pRi->m_iNumBldgsRequired  = 0;
+
+            pRi->m_iNumRsrchRequired  = 1;
+            pRi->m_piRsrchRequired    = new int[1];
+            pRi->m_piRsrchRequired[0] = ( 0 == iOn ) ? (int)gas_turbine : (int)( charcoal_1 + iOn - 1 );
+
+            pRi->m_sName   = aszChName[iOn];
+            pRi->m_sDesc   = aszChDesc[iOn];
+            pRi->m_sResult = aszChRslt[iOn];
+        }
+    }
+
 #ifdef _DEBUG
     theDataFile.DisableNegativeSeekChecking( );
     theDataFile.EnableNegativeSeekChecking( );

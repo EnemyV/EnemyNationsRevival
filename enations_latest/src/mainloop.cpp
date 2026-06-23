@@ -2584,9 +2584,37 @@ void CFarmBuilding::BuildFarm( )
     }
     else
     {
-        AddToStore( pBf->GetTypeFarm( ), dtRate.quot );
-        GetOwner( )->IncMaterialMade( pBf->GetTypeFarm( ), dtRate.quot );
-        GetOwner( )->IncMaterialHave( pBf->GetTypeFarm( ), dtRate.quot );
+        // Charcoal (#44), via the reusable AltOutput system: when this is a LUMBER MILL (the
+        // sawmill) whose alt-output toggle (alt_oil) is ON and the Charcoal tech is
+        // researched, it runs a kiln that converts harvested lumber into coal ("Charcoal")
+        // at a fixed 2 lumber -> 1 coal (eRatioConsume). MODE-SWITCH: while the kiln runs,
+        // normal lumber output STOPS -- we feed only a TIER-SCALED slice of the harvest into
+        // the mill's store as kiln fuel (GetCharcoalPct; T1 very low) and credit no player
+        // lumber, so the 2:1 ratio stays fixed while throughput scales with research.
+        if ( pBf->GetTypeFarm( ) == CMaterialTypes::lumber
+             && IsFlag( CUnit::alt_oil )
+             && AltOutput::Available( this ) )
+        {
+            int iPct  = GetOwner( )->GetCharcoalPct( );
+            int iFeed = ( dtRate.quot * iPct ) / 100;   // tier-scaled lumber into the kiln
+            if ( iFeed > 0 )
+            {
+                // Stage the kiln feed in BOTH the mill store and the player have-total so it
+                // matches Convert's eRatioConsume bookkeeping (it decrements both by the lumber
+                // it consumes). Net player lumber change is ~zero (mode-switch) and coal is
+                // credited by Convert. We do NOT IncMaterialMade the lumber -- it becomes coal,
+                // and Convert already records the coal as made.
+                AddToStore( pBf->GetTypeFarm( ), iFeed );
+                GetOwner( )->IncMaterialHave( pBf->GetTypeFarm( ), iFeed );
+                AltOutput::Convert( this, iFeed, m_fAltAccum );
+            }
+        }
+        else
+        {
+            AddToStore( pBf->GetTypeFarm( ), dtRate.quot );
+            GetOwner( )->IncMaterialMade( pBf->GetTypeFarm( ), dtRate.quot );
+            GetOwner( )->IncMaterialHave( pBf->GetTypeFarm( ), dtRate.quot );
+        }
     }
 
     // update the %

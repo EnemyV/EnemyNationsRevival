@@ -216,6 +216,19 @@ public:
 					// the gas_turbine tech, chained off gas_turbine. Appended LAST so all
 					// earlier indices (incl. bridge_2 / RDPATH_SAVE_COUNT==53) stay put.
 					coal_liquefaction,
+					// Charcoal (in-code) -- 4 tiers. A lumber MILL (UTfarm whose GetTypeFarm()
+					// == lumber, i.e. the sawmill), once charcoal_1 is researched and its
+					// alt-output toggle is ON, runs a kiln: harvested lumber is converted into
+					// coal ("Charcoal" label only) at a fixed 2 lumber -> 1 coal (AltOutput
+					// eRatioConsume), MODE-SWITCH (lumber output stops while the kiln runs). The
+					// THROUGHPUT is tier-scaled: T1 enables it at a VERY LOW rate; T2-4 raise it
+					// (CPlayer::GetCharcoalPct). T1 chained off gas_turbine; T2-4 chain the prior
+					// tier. No energy cost. Appended LAST so all earlier indices (incl. bridge_2 /
+					// RDPATH_SAVE_COUNT==53) stay put.
+					charcoal_1,
+					charcoal_2,
+					charcoal_3,
+					charcoal_4,
 					num_types	};
 
 	CRsrchArray () {}

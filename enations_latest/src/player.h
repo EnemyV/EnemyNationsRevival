@@ -547,6 +547,27 @@ class CPlayer : public CObject
     // Coal Liquefaction researched? Gates the coal power-plant alt-output toggle (2 coal -> 1 oil).
     BOOL CanCoalLiq( ) { return ( m_aRsrch.GetSize( ) > CRsrchArray::coal_liquefaction && GetRsrch( CRsrchArray::coal_liquefaction ).m_bDiscovered ); }
 
+    // Charcoal kiln researched? Gates whether the per-building Charcoal alt-output toggle
+    // shows on a lumber mill (the sawmill) and whether its kiln runs. See Charcoal (#44).
+    BOOL CanCharcoal( ) { return ( m_aRsrch.GetSize( ) > CRsrchArray::charcoal_1 && GetRsrch( CRsrchArray::charcoal_1 ).m_bDiscovered ); }
+
+    // Charcoal kiln THROUGHPUT, as a percent of the lumber a sawmill harvests that is fed
+    // into the kiln (then converted at a fixed 2 lumber -> 1 coal), by the highest Charcoal
+    // tier researched: 0 / 5 / 10 / 15 / 20. T1 is deliberately VERY LOW (operator spec);
+    // higher tiers raise it. The 2:1 ratio is fixed (the per-conversion cost); only the rate
+    // scales. Placeholder numbers -- balance is operator-tuned (QUESTIONS_FOR_OPERATOR #3).
+    // Guarded for older/short save research arrays. See Charcoal (#44).
+    int GetCharcoalPct( )
+    {
+        int iTier = 0;
+        if ( m_aRsrch.GetSize( ) > CRsrchArray::charcoal_4 )
+            for ( int iOn = CRsrchArray::charcoal_1; iOn <= CRsrchArray::charcoal_4; iOn++ )
+                if ( GetRsrch( iOn ).m_bDiscovered )
+                    iTier = iOn - CRsrchArray::charcoal_1 + 1;   // highest discovered (tiers chain)
+        static const int aiPct[5] = { 0, 5, 10, 15, 20 };
+        return ( aiPct[iTier] );
+    }
+
     BOOL CanMultiArea( ) { return ( GetRsrch( CRsrchArray::radio ).m_bDiscovered ); }
     BOOL CanDelayMail( ) { return ( GetRsrch( CRsrchArray::mail ).m_bDiscovered ); }
     BOOL CanEMail( ) { return ( GetRsrch( CRsrchArray::email ).m_bDiscovered ); }

@@ -36,9 +36,19 @@ namespace
         return ( pBp && ( pBp->GetInput( ) == CMaterialTypes::coal ) );
     }
 
+    // A lumber mill (the sawmill): a farm building whose harvest output is lumber.
+    bool IsLumberMill( CBuilding* b )
+    {
+        if ( b->GetData( )->GetUnionType( ) != CStructureData::UTfarm )
+            return ( false );
+        CBuildFarm* pBf = b->GetData( )->GetBldFarm( );
+        return ( pBf && ( pBf->GetTypeFarm( ) == CMaterialTypes::lumber ) );
+    }
+
     // ---- Tech-gate predicates (thin adapters over the CPlayer accessors) ---------------
     bool TechBioFuel( CPlayer* p ) { return ( p->CanBioFuel( ) != FALSE ); }
     bool TechCoalLiq( CPlayer* p ) { return ( p->CanCoalLiq( ) != FALSE ); }
+    bool TechCharcoal( CPlayer* p ) { return ( p->CanCharcoal( ) != FALSE ); }
 
     // ---- Per-tier percent accessors (ePctAdditive only) -------------------------------
     int PctBioOil( CPlayer* p ) { return ( p->GetBioOilPct( ) ); }
@@ -78,11 +88,26 @@ namespace
             1.0f
         },
 
+        // 3) Charcoal (NEW) -- a lumber mill (the sawmill: UTfarm with lumber output) runs a
+        //    kiln that converts harvested lumber into coal ("Charcoal" label only) at a fixed
+        //    2 lumber -> 1 coal. eRatioConsume: pulls lumber from the mill's own store and
+        //    credits coal. MODE-SWITCH: the production hook (CFarmBuilding::BuildFarm lumber
+        //    branch) diverts the harvest into the kiln instead of crediting player lumber, and
+        //    feeds Convert() a TIER-SCALED amount (CPlayer::GetCharcoalPct; T1 very low) so the
+        //    2:1 ratio stays fixed while throughput scales with research. No energy cost.
+        {
+            "Charcoal",
+            &IsLumberMill,
+            &TechCharcoal,
+            CMaterialTypes::lumber,
+            CMaterialTypes::coal,
+            AltOutput::eRatioConsume,
+            nullptr,
+            2,                            // 2 lumber per 1 coal
+            1.0f
+        },
+
         // --- FUTURE config entries (slot in the same way; do not need new mechanism) ----
-        // 3) Charcoal -- a lumber mill (UTfarm with lumber output) also makes coal from
-        //    wood. Add a type predicate (UTfarm && GetBldFarm()->GetTypeFarm()==lumber), a
-        //    CanCharcoal() gate + charcoal_* research tiers, input=lumber, output=coal,
-        //    eRatioConsume with the chosen ratio (or ePctAdditive + a PctCharcoal accessor).
         // 4) Fracking -- an EXHAUSTED oil mine trickles oil. Add an IsExhaustedOilWell
         //    predicate, the existing CanFrack() gate, and either ePctAdditive over the
         //    well's production or eRatioConsume; the flat-per-min #23 numbers map to a
