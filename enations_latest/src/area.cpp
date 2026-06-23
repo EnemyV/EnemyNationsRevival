@@ -7219,7 +7219,12 @@ static CPoint HarnessHexToWindow( CAnimAtr& aa, const CHexCoord& hex )
 // and project each to its area-window pixel, so a headless driver can locate &
 // click the crane (or any unit) deterministically instead of blind-sweeping.
 // Declared in en_harness.h. Called on the game/render thread (reads live state).
-// One line per unit: "<id> <screenX> <screenY> <kind>\n".
+// One line per unit:
+//   vehicle:  "<id> <screenX> <screenY> <kind> <me|other>\n"
+//   building: "<id> <screenX> <screenY> building <me|other> <constructing|operational>\n"
+// The building build-state is an appended 6th field (backward-compatible — older
+// parsers read fields 1-5); poll it for "operational" to know the info window
+// will open (a foundation/constructing building's info window stays closed).
 //---------------------------------------------------------------------------
 void HarnessDumpUnits( std::string& out )
 {
@@ -7285,8 +7290,14 @@ void HarnessDumpUnits( std::string& out )
             ++iBldgMine;
 
         CPoint pt = HarnessHexToWindow( aa, pBldg->GetHex( ) );
-        snprintf( line, sizeof( line ), "%lu %d %d building %s\n",
-                  (unsigned long) dwID, (int) pt.x, (int) pt.y, bMine ? "me" : "other" );
+        // Build-state (appended, backward-compatible 6th field): lets a headless
+        // driver poll "is it done?" deterministically instead of guessing the
+        // construction wait — a freshly-placed building is a foundation and its
+        // info window won't open until the crane finishes it. "operational" = the
+        // info window will open; "constructing" = still a foundation/being built.
+        const char* bstate = pBldg->IsConstructing( ) ? "constructing" : "operational";
+        snprintf( line, sizeof( line ), "%lu %d %d building %s %s\n",
+                  (unsigned long) dwID, (int) pt.x, (int) pt.y, bMine ? "me" : "other", bstate );
         body += line;
     }
 
