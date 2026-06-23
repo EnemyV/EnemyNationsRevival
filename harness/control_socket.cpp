@@ -93,6 +93,15 @@ std::atomic<bool>      g_centerPending{false};
 std::atomic<bool>      g_centerDone{false};
 std::atomic<bool>      g_centerOK{false};
 
+// Pending `raise` request, serviced on the render thread. SDL_RaiseWindow is a
+// window/Cocoa operation that MUST run on the main thread on macOS — calling it
+// from the socket thread SIGTRAPs the process (reproducible: `raise` while a
+// detached child dialog like the Rocket Ship / Build-Vehicle window is open →
+// exit 133). X11 tolerated the off-thread call, so this only bit on mac. Defer
+// to EnHarness_Service like center/units/shot.
+std::atomic<bool>      g_raisePending{false};
+std::atomic<bool>      g_raiseDone{false};
+
 // Pending screenshot request, serviced on the render thread.
 std::mutex              g_shotMutex;
 std::string            g_shotPath;
@@ -310,10 +319,11 @@ void handle_command(const std::string& line, int conn) {
         SDL_PushEvent(&e);
     } else if (strcmp(cmd, "raise") == 0) {
         // Bring all app windows forward (un-bury borderless detached panels).
-        for (Uint32 id = 1; id <= kMaxWindowId; ++id) {
-            SDL_Window* w = SDL_GetWindowFromID(id);
-            if (w && (SDL_GetWindowFlags(w) & SDL_WINDOW_SHOWN)) SDL_RaiseWindow(w);
-        }
+        // Deferred to the render/main thread — SDL_RaiseWindow off the main thread
+        // SIGTRAPs on macOS (see g_raisePending). Same handshake as center/units.
+        g_raiseDone = false; g_raisePending = true;
+        for (int i = 0; i < 400 && !g_raiseDone.load(); ++i) { struct timespec ts={0,5000000}; nanosleep(&ts,nullptr); }
+        std::strcpy(reply, g_raiseDone.load() ? "ok raised\n" : "err raise timeout\n");
     } else if (strcmp(cmd, "quit") == 0) {
         SDL_Event e; SDL_zero(e); e.type=SDL_QUIT; SDL_PushEvent(&e);
     } else if (strcmp(cmd, "wins") == 0) {
@@ -405,6 +415,15 @@ void EnHarness_Service() {
     if (g_centerPending.exchange(false)) {
         g_centerOK = HarnessCenterUnit(g_centerId.load());
         g_centerDone = true;
+        return;
+    }
+    if (g_raisePending.exchange(false)) {
+        // On the main thread: safe to raise windows (Cocoa requirement on mac).
+        for (Uint32 id = 1; id <= kMaxWindowId; ++id) {
+            SDL_Window* w = SDL_GetWindowFromID(id);
+            if (w && (SDL_GetWindowFlags(w) & SDL_WINDOW_SHOWN)) SDL_RaiseWindow(w);
+        }
+        g_raiseDone = true;
         return;
     }
     if (!g_shotPending.exchange(false)) return;
