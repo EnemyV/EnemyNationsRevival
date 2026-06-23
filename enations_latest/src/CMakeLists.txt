@@ -92,6 +92,8 @@ set(enations_sources
         Perf.cpp
         Perf.h
         GameWindow.cpp
+        framecap.cpp
+        framecap.h
         RenderingAdapter.cpp
         SDL2MainMenu.cpp
         SDL2UI.cpp

@@ -1,5 +1,6 @@
 #include "stdafx.h"
 #include "GameWindow.h"
+#include "framecap.h"   // #45 frame-capture debug mode
 #ifndef _WIN32
 #include "en_harness.h"   // EnHarness_Service() — services screenshots on the render thread
 #endif
@@ -460,6 +461,7 @@ void GameWindow::PresentSurface(const SDL_Rect* dirty) {
         }
         SDL_RenderClear(m_renderer);
         SDL_RenderCopy(m_renderer, m_backTex, nullptr, nullptr);
+        FrameCap::Capture(m_renderer, "main");   // #45: no-op unless EN_FRAMECAP/toggle on
         SDL_RenderPresent(m_renderer);
     } else {
         if (fullUpload)

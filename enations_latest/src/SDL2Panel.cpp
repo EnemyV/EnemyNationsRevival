@@ -1,6 +1,7 @@
 #include "stdafx.h"
 
 #include "SDL2Panel.h"
+#include "framecap.h"   // #45 frame-capture debug mode
 #include "GameWindow.h"
 #ifndef _WIN32
 #include "en_harness.h"   // EnHarness_RegisterWindowSurface — harness capture of detached panels
@@ -1061,6 +1062,7 @@ void SDL2Panel::PresentOwn() {
           SDL_UpdateTexture(m_ownBackTex, nullptr, m_ownBack->pixels, m_ownBack->pitch);
           SDL_RenderCopy(m_ownRenderer, m_ownBackTex, nullptr, nullptr); }
         { Perf::ScopeCounter _cp( "p.present" );
+          FrameCap::Capture(m_ownRenderer, "map");   // #45: terrain/area-map frame (no-op unless on)
           SDL_RenderPresent(m_ownRenderer); }
         return;
     }
@@ -1068,6 +1070,7 @@ void SDL2Panel::PresentOwn() {
     SDL_UpdateTexture(m_ownBackTex, nullptr, m_ownBack->pixels, m_ownBack->pitch);
     SDL_RenderClear(m_ownRenderer);
     SDL_RenderCopy(m_ownRenderer, m_ownBackTex, nullptr, nullptr);
+    FrameCap::Capture(m_ownRenderer, "map");   // #45 (no-op unless on)
     SDL_RenderPresent(m_ownRenderer);
 }
 
