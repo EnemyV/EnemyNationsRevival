@@ -138,6 +138,10 @@ public:
 	CWndArea ();
 	~CWndArea ();
 
+	// Harness: the view transform, so a free function (HarnessDumpUnits) can
+	// project owned-unit world positions to area-window pixels.
+	CAnimAtr&	GetAnimAtr () { return m_aa; }
+
 	BOOL		PreCreateWindow (CREATESTRUCT & cs);
 	BOOL		OnCommand (WPARAM wParam, LPARAM lParam);
 	void		GetClientRect( LPRECT lpRect ) const;

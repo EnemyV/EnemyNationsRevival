@@ -78,6 +78,14 @@ Uint32 active_window_id() {
     return w ? SDL_GetWindowID(w) : 0;
 }
 
+// Pending `units` request (HarnessDumpUnits), serviced on the render thread —
+// it reads live game state (theVehicleMap/theAreaList), which must not race the
+// game loop. Same defer-to-render-thread handshake as screenshots.
+std::mutex              g_unitsMutex;
+std::string            g_unitsResult;
+std::atomic<bool>      g_unitsPending{false};
+std::atomic<bool>      g_unitsDone{false};
+
 // Pending screenshot request, serviced on the render thread.
 std::mutex              g_shotMutex;
 std::string            g_shotPath;
@@ -185,6 +193,16 @@ void handle_command(const std::string& line, int conn) {
         // wait (up to ~2s) for the render thread to service it
         for (int i = 0; i < 400 && !g_shotDone.load(); ++i) { struct timespec ts={0,5000000}; nanosleep(&ts,nullptr); }
         snprintf(reply, sizeof(reply), g_shotOK.load() ? "ok %d %d %s\n" : "err shot failed\n", g_shotW.load(), g_shotH.load(), path);
+    } else if (strcmp(cmd, "units") == 0) {
+        // Enumerate the local player's units (HarnessDumpUnits) on the render
+        // thread, then return the lines. Deterministic crane/unit location.
+        g_unitsDone = false; g_unitsPending = true;
+        for (int i = 0; i < 400 && !g_unitsDone.load(); ++i) { struct timespec ts={0,5000000}; nanosleep(&ts,nullptr); }
+        std::string out;
+        { std::lock_guard<std::mutex> lk(g_unitsMutex); out = g_unitsResult; }
+        if (!g_unitsDone.load()) out = "err units timeout (not in-game?)\n";
+        write(conn, out.c_str(), out.size());
+        return;
     } else if (strcmp(cmd, "click") == 0) {
         int x=0,y=0; char rb[16]={0};
         sscanf(line.c_str(), "%*s %d %d %15s", &x, &y, rb);
@@ -360,6 +378,15 @@ void EnHarness_RegisterWindowSurface(unsigned int windowId, SDL_Surface* surface
 }
 
 void EnHarness_Service() {
+    // Service a pending `units` request on the render thread (reads live game
+    // state safely, in sync with the game loop). One request per frame.
+    if (g_unitsPending.exchange(false)) {
+        std::string out;
+        HarnessDumpUnits(out);
+        { std::lock_guard<std::mutex> lk(g_unitsMutex); g_unitsResult = out; }
+        g_unitsDone = true;
+        return;
+    }
     if (!g_shotPending.exchange(false)) return;
     std::string path; { std::lock_guard<std::mutex> lk(g_shotMutex); path = g_shotPath; }
     bool ok = false; int w = 0, h = 0;

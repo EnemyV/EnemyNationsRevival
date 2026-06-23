@@ -22,6 +22,7 @@
 #include "minerals.inl"
 #include "player.h"
 #include "relation.h"
+#include "en_harness.h"   // HarnessDumpUnits (defined at end of file)
 #include "sfx.h"
 #include "sprite.h"
 #include "stdafx.h"
@@ -7153,4 +7154,86 @@ int CWndArea::NumGiveable( ) const
     }
 
     return ( iCount );
+}
+
+//---------------------------------------------------------------------------
+// HarnessDumpUnits — enumerate the LOCAL PLAYER's units (vehicles + buildings)
+// and project each to its area-window pixel, so a headless driver can locate &
+// click the crane (or any unit) deterministically instead of blind-sweeping.
+// Declared in en_harness.h. Called on the game/render thread (reads live state).
+// One line per unit: "<id> <screenX> <screenY> <kind>\n".
+//---------------------------------------------------------------------------
+void HarnessDumpUnits( std::string& out )
+{
+    out.clear( );
+
+    CWndArea* a = theAreaList.GetTop( );
+    if ( a == NULL )
+    {
+        out = "err no-area-window\n";
+        return;
+    }
+    CAnimAtr& aa = a->GetAnimAtr( );
+    char line[160];
+    int  iVehTotal = 0, iVehMine = 0, iBldgTotal = 0, iBldgMine = 0;
+    std::string body;
+
+    // Vehicles (the crane lives here). Owner==me OR no-owner-filter fallback:
+    // some headless SP states leave m_bMe momentarily unset, so if NObody is
+    // flagged "me" we fall back to listing all vehicles (still useful to locate).
+    POSITION pos = theVehicleMap.GetStartPosition( );
+    while ( pos != NULL )
+    {
+        DWORD     dwID = 0;
+        CVehicle* pVeh = NULL;
+        theVehicleMap.GetNextAssoc( pos, dwID, pVeh );
+        if ( pVeh == NULL )
+            continue;
+        ++iVehTotal;
+        bool bMine = ( pVeh->GetOwner( ) != NULL && pVeh->GetOwner( )->IsMe( ) );
+        if ( bMine )
+            ++iVehMine;
+
+        CPoint pt = aa.WrapWorldToWindow( aa.WorldToCenterWorld( pVeh->GetWorldPixels( ) ) );
+
+        const char*           kind  = "vehicle";
+        CTransportData const* pData = pVeh->GetData( );
+        if ( pData != NULL )
+        {
+            if ( pData->IsCrane( ) )          kind = "crane";
+            else if ( pData->IsTransport( ) ) kind = "transport";
+            else if ( pData->IsCarrier( ) )   kind = "carrier";
+            else if ( pData->IsPeople( ) )    kind = "infantry";
+        }
+
+        snprintf( line, sizeof( line ), "%lu %d %d %s %s\n",
+                  (unsigned long) dwID, (int) pt.x, (int) pt.y, kind,
+                  bMine ? "me" : "other" );
+        body += line;
+    }
+
+    // Buildings (for the building-info screenshot sweep).
+    pos = theBuildingMap.GetStartPosition( );
+    while ( pos != NULL )
+    {
+        DWORD      dwID  = 0;
+        CBuilding* pBldg = NULL;
+        theBuildingMap.GetNextAssoc( pos, dwID, pBldg );
+        if ( pBldg == NULL )
+            continue;
+        ++iBldgTotal;
+        bool bMine = ( pBldg->GetOwner( ) != NULL && pBldg->GetOwner( )->IsMe( ) );
+        if ( bMine )
+            ++iBldgMine;
+
+        CPoint pt = aa.WrapWorldToWindow( aa.WorldToCenterWorld( pBldg->GetWorldPixels( ) ) );
+        snprintf( line, sizeof( line ), "%lu %d %d building %s\n",
+                  (unsigned long) dwID, (int) pt.x, (int) pt.y, bMine ? "me" : "other" );
+        body += line;
+    }
+
+    snprintf( line, sizeof( line ), "# veh %d/%d mine, bldg %d/%d mine\n",
+              iVehMine, iVehTotal, iBldgMine, iBldgTotal );
+    out  = line;
+    out += body;
 }

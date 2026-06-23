@@ -10,6 +10,8 @@
 #ifndef EN_HARNESS_H
 #define EN_HARNESS_H
 
+#include <string>
+
 struct SDL_Window;
 struct SDL_Renderer;
 struct SDL_Surface;
@@ -35,5 +37,14 @@ void EnHarness_SetMainSurface(SDL_Surface* surface);
 // is blank/garbage). Call each frame from the panel's render. Pass nullptr to
 // clear (e.g. on panel destroy).
 void EnHarness_RegisterWindowSurface(unsigned int windowId, SDL_Surface* surface);
+
+// Game-side unit enumerator (implemented in area.cpp — needs theVehicleMap/
+// theBuildingMap/CWndArea, which the harness TU can't see). Appends one line per
+// unit OWNED BY the local player to `out`:  "<id> <screenX> <screenY> <kind>\n"
+// where screenX/Y are area-window pixels (feed clickid/dblclickid) and kind is
+// crane|transport|vehicle|building. Used by the `units` control_socket command
+// (Linux/mac) and a Windows debug hotkey (same fn) to make crane/unit location
+// deterministic instead of a blind dblclick-sweep. Call on the game/render thread.
+void HarnessDumpUnits(std::string& out);
 
 #endif // EN_HARNESS_H
