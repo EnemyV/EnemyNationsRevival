@@ -3069,6 +3069,20 @@ int CWndArea::OnCreate( LPCREATESTRUCT lpCreateStruct )
                         OutputDebugStringA( msg );
                         return true;
                     }
+                    // F12: DEV/harness — discover ALL research for the local player so the
+                    // research-gated tail (AltOutput toggles, fort/seaport/shipyard/embassy,
+                    // edicts) is verifiable instantly (no multi-hour grind). SP-only guard
+                    // (GetNetNum()==0) — granting research locally would desync a net game.
+                    if (sc == SDL_SCANCODE_F12) {
+                        CPlayer* me = theGame.GetMe( );
+                        if ( me != NULL && me->GetNetNum( ) == 0 ) {
+                            me->DebugDiscoverAllResearch( );
+                            OutputDebugStringA( "[HRESEARCH] discovered ALL research for local player (SP)\n" );
+                        } else {
+                            OutputDebugStringA( "[HRESEARCH] skipped (no local player / net game)\n" );
+                        }
+                        return true;
+                    }
 #endif
 
                     UINT vk = SDLKeyToVK(sc);

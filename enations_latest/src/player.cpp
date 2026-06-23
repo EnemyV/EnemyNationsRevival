@@ -540,6 +540,24 @@ void CPlayer::Research( int iNumSec )
     }
 }
 
+#ifdef _WIN32
+// DEV/harness (SP only): discover every research topic + apply its effect. Lets the
+// research-gated tail (AltOutput toggles, fort/seaport/shipyard/embassy, edicts) be
+// verified instantly instead of a multi-hour grind. Mirrors the init KnowItAll loop
+// + the per-topic UpdateRacialAttributes that Research() runs on completion.
+void CPlayer::DebugDiscoverAllResearch( )
+{
+    for ( int iOn = 0; iOn < m_aRsrch.GetSize( ); iOn++ )
+    {
+        if ( !m_aRsrch.ElementAt( iOn ).m_bDiscovered )
+        {
+            m_aRsrch.ElementAt( iOn ).m_bDiscovered = TRUE;
+            UpdateRacialAttributes( iOn );
+        }
+    }
+}
+#endif
+
 // we may have to update some flags
 void CPlayer::UpdateRacialAttributes( int iRsrch )
 {

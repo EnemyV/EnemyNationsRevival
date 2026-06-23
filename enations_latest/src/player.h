@@ -168,6 +168,16 @@ class CPlayer : public CObject
 
     void UpdateRacialAttributes( int iRsrch );
 
+#ifdef _WIN32
+    // DEV/harness only (SP): mark every research topic discovered + apply its effect,
+    // so research-gated buildings/features (AltOutput toggles, fort/seaport/shipyard,
+    // edicts) are reachable instantly without the multi-hour grind. Mirrors the init
+    // KnowItAll loop (player.cpp:294-300) + the per-topic UpdateRacialAttributes that
+    // Research() runs on completion. Driven by the F12 area-window debug hotkey. MP
+    // would desync (local-only mutation), so the caller guards to single-player.
+    void DebugDiscoverAllResearch( );
+#endif
+
     // used during initialization only
     CInitData m_InitData;
 
