@@ -7255,3 +7255,33 @@ void HarnessDumpUnits( std::string& out )
     out  = line;
     out += body;
 }
+
+//---------------------------------------------------------------------------
+// HarnessCenterUnit — center the focused area view on the unit with `id`
+// (vehicle or building), so a headless driver can then click view-center to
+// select it. Declared in en_harness.h. Called on the game/render thread.
+//---------------------------------------------------------------------------
+bool HarnessCenterUnit( unsigned long id )
+{
+    CWndArea* a = theAreaList.GetTop( );
+    if ( a == NULL )
+        return false;
+
+    DWORD dwID = (DWORD) id;
+
+    CVehicle* pVeh = NULL;
+    if ( theVehicleMap.Lookup( dwID, pVeh ) && pVeh != NULL )
+    {
+        a->Center( (CUnit*) pVeh );
+        return true;
+    }
+
+    CBuilding* pBldg = NULL;
+    if ( theBuildingMap.Lookup( dwID, pBldg ) && pBldg != NULL )
+    {
+        a->Center( (CUnit*) pBldg );
+        return true;
+    }
+
+    return false;
+}

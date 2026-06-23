@@ -47,4 +47,13 @@ void EnHarness_RegisterWindowSurface(unsigned int windowId, SDL_Surface* surface
 // deterministic instead of a blind dblclick-sweep. Call on the game/render thread.
 void HarnessDumpUnits(std::string& out);
 
+// Center the focused area view on the unit with this id (vehicle or building),
+// so a headless driver can then click view-center to select it — sidesteps the
+// view-relative/wrapped screen coords from HarnessDumpUnits. Returns false if no
+// area window or no unit with that id. Call on the game/render thread (mutates
+// the view). Backs the `center <id>` control_socket command + (future) a Windows
+// trigger. Pairs with `units`:  units -> pick a crane id -> center <id> ->
+// clickid <area> <center> -> keyid <area> 98 (Build).
+bool HarnessCenterUnit(unsigned long id);
+
 #endif // EN_HARNESS_H

@@ -86,6 +86,13 @@ std::string            g_unitsResult;
 std::atomic<bool>      g_unitsPending{false};
 std::atomic<bool>      g_unitsDone{false};
 
+// Pending `center <id>` request (HarnessCenterUnit), serviced on the render
+// thread (mutates the area view). Same defer handshake.
+std::atomic<unsigned long> g_centerId{0};
+std::atomic<bool>      g_centerPending{false};
+std::atomic<bool>      g_centerDone{false};
+std::atomic<bool>      g_centerOK{false};
+
 // Pending screenshot request, serviced on the render thread.
 std::mutex              g_shotMutex;
 std::string            g_shotPath;
@@ -203,6 +210,14 @@ void handle_command(const std::string& line, int conn) {
         if (!g_unitsDone.load()) out = "err units timeout (not in-game?)\n";
         write(conn, out.c_str(), out.size());
         return;
+    } else if (strcmp(cmd, "center") == 0) {
+        // center <id> — center the area view on that unit (then click view-center
+        // to select it). Serviced on the render thread (mutates the view).
+        unsigned long id = 0;
+        if (sscanf(line.c_str(), "%*s %lu", &id) != 1) { write(conn, "err usage: center <id>\n", 23); return; }
+        g_centerId = id; g_centerDone = false; g_centerOK = false; g_centerPending = true;
+        for (int i = 0; i < 400 && !g_centerDone.load(); ++i) { struct timespec ts={0,5000000}; nanosleep(&ts,nullptr); }
+        snprintf(reply, sizeof(reply), !g_centerDone.load() ? "err center timeout\n" : (g_centerOK.load() ? "ok centered %lu\n" : "err no unit %lu\n"), id);
     } else if (strcmp(cmd, "click") == 0) {
         int x=0,y=0; char rb[16]={0};
         sscanf(line.c_str(), "%*s %d %d %15s", &x, &y, rb);
@@ -385,6 +400,11 @@ void EnHarness_Service() {
         HarnessDumpUnits(out);
         { std::lock_guard<std::mutex> lk(g_unitsMutex); g_unitsResult = out; }
         g_unitsDone = true;
+        return;
+    }
+    if (g_centerPending.exchange(false)) {
+        g_centerOK = HarnessCenterUnit(g_centerId.load());
+        g_centerDone = true;
         return;
     }
     if (!g_shotPending.exchange(false)) return;
