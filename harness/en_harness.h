@@ -24,6 +24,12 @@ void EnHarness_Start(SDL_Window* window, SDL_Renderer* renderer);
 // pending screenshot requests, which must touch SDL on the render thread.
 void EnHarness_Service();
 
+// Call once per main-loop iteration from the TOP of the loop (CConquerApp::Run),
+// BEFORE event-pumping/render. Services harness ops that themselves pump the event
+// loop (currently `save` — CGame::SaveGame re-pumps via BaseYield + shows a
+// progress dialog), which must NOT run re-entrantly from the render/PollEvents path.
+void EnHarness_ServiceMainLoop();
+
 // Register the main window's CPU back-buffer (GameWindow::GetPresentSurface in
 // renderer mode). When set, `shot` of the main window dumps this surface directly
 // instead of SDL_RenderReadPixels — needed on macOS, where the Metal/GL render
@@ -55,5 +61,13 @@ void HarnessDumpUnits(std::string& out);
 // trigger. Pairs with `units`:  units -> pick a crane id -> center <id> ->
 // clickid <area> <center> -> keyid <area> 98 (Build).
 bool HarnessCenterUnit(unsigned long id);
+
+// Save the current in-game state to <path> (a .en save file) headlessly — no
+// file-browser modal (CGame::SaveGame skips it when the filename is pre-set).
+// Lets a headless driver snapshot a DEVELOPED/researched game so it can be shared
+// (one such save unblocks research-gated work team-wide). Returns true on a
+// written save; false if not in-game. Call on the game/render thread (touches UI +
+// game state). Backs the `save <path>` control_socket command.
+bool HarnessSaveGame(const char* path);
 
 #endif // EN_HARNESS_H

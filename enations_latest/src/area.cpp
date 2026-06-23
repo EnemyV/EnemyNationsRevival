@@ -7336,3 +7336,25 @@ bool HarnessCenterUnit( unsigned long id )
 
     return false;
 }
+
+//---------------------------------------------------------------------------
+// HarnessSaveGame — save the current game to <path> headlessly so a developed/
+// researched game can be snapshotted and SHARED (one such save unblocks all the
+// research-gated work team-wide: gated buildings, AltOutput in-game verify, late-
+// game feature tests). CGame::SaveGame skips its file-browser modal when
+// m_gameWindow is set AND m_sFileName is pre-filled, so we just set the path and
+// call it. Must run on the render/main thread (touches UI + game state) — call
+// from EnHarness_Service, never the socket thread. Returns true on a written save.
+// Declared in en_harness.h.
+//---------------------------------------------------------------------------
+bool HarnessSaveGame( const char* path )
+{
+    if ( path == NULL || path[0] == '\0' )
+        return false;
+    // SaveGame returns IDCANCEL unless we're in-game (area window live, rocket
+    // already placed) — guard so a menu-time save just reports failure.
+    if ( theAreaList.GetTop( ) == NULL )
+        return false;
+    theGame.m_sFileName = path;            // pre-fill => SaveGame skips the browser
+    return ( theGame.SaveGame( (CWnd*) NULL ) == IDOK );
+}

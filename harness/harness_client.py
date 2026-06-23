@@ -54,4 +54,8 @@ def cmd(args, port=None, timeout=15):
 if __name__ == "__main__":
     if len(sys.argv) < 2:
         print(__doc__); sys.exit(2)
-    print(cmd(sys.argv[1:]))
+    # save/load do heavy serialize+compress+disk work and can take well over the
+    # default 15s; give them a long client socket timeout so the client doesn't
+    # bail before the server replies.
+    _timeout = 120 if sys.argv[1] in ("save", "load") else 15
+    print(cmd(sys.argv[1:], timeout=_timeout))

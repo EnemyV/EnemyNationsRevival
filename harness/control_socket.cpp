@@ -102,6 +102,15 @@ std::atomic<bool>      g_centerOK{false};
 std::atomic<bool>      g_raisePending{false};
 std::atomic<bool>      g_raiseDone{false};
 
+// Pending `save <path>` request, serviced on the render thread (writes the .en
+// save file + touches UI). Lets a developed/researched game be snapshotted and
+// shared to unblock research-gated work team-wide. Same defer handshake.
+std::mutex             g_saveMutex;
+std::string            g_savePath;
+std::atomic<bool>      g_savePending{false};
+std::atomic<bool>      g_saveDone{false};
+std::atomic<bool>      g_saveOK{false};
+
 // Pending screenshot request, serviced on the render thread.
 std::mutex              g_shotMutex;
 std::string            g_shotPath;
@@ -324,6 +333,24 @@ void handle_command(const std::string& line, int conn) {
         g_raiseDone = false; g_raisePending = true;
         for (int i = 0; i < 400 && !g_raiseDone.load(); ++i) { struct timespec ts={0,5000000}; nanosleep(&ts,nullptr); }
         std::strcpy(reply, g_raiseDone.load() ? "ok raised\n" : "err raise timeout\n");
+    } else if (strcmp(cmd, "save") == 0) {
+        // save <path> — snapshot the current in-game state to a .en save file,
+        // headlessly (no file-browser modal). Enables capturing a DEVELOPED/
+        // researched game so it can be shared — one such save unblocks all the
+        // research-gated work team-wide. Deferred to the render/main thread (writes
+        // the file + touches UI); generous timeout (serialize+compress can be slow).
+        char p[400] = {0};
+        if (sscanf(line.c_str(), "%*s %399[^\n]", p) != 1 || p[0] == '\0') {
+            std::strcpy(reply, "err usage: save <path>\n");
+        } else {
+            { std::lock_guard<std::mutex> lk(g_saveMutex); g_savePath = p; }
+            g_saveDone = false; g_saveOK = false; g_savePending = true;
+            // Generous wait (~100s, under the client's 120s): SaveGame's AI-pause
+            // Sleep loop + serialize + BPE compress can take many seconds.
+            for (int i = 0; i < 20000 && !g_saveDone.load(); ++i) { struct timespec ts={0,5000000}; nanosleep(&ts,nullptr); }
+            std::strcpy(reply, !g_saveDone.load() ? "err save timeout\n"
+                              : (g_saveOK.load() ? "ok saved\n" : "err save failed (not in-game?)\n"));
+        }
     } else if (strcmp(cmd, "quit") == 0) {
         SDL_Event e; SDL_zero(e); e.type=SDL_QUIT; SDL_PushEvent(&e);
     } else if (strcmp(cmd, "wins") == 0) {
@@ -400,6 +427,22 @@ void EnHarness_RegisterWindowSurface(unsigned int windowId, SDL_Surface* surface
     std::lock_guard<std::mutex> lk(g_winSurfMutex);
     if (surface) g_winSurfaces[(Uint32)windowId] = surface;
     else         g_winSurfaces.erase((Uint32)windowId);
+}
+
+// Serviced from the TOP of the main game loop (CConquerApp::Run), NOT the
+// render/pump path — for harness ops that themselves pump the event loop and so
+// must not run re-entrantly inside PollEvents/render. `save` is the case:
+// CGame::SaveGame calls BaseYield()/ProcessAllMessages() (re-pumps SDL events) +
+// shows a progress dialog; invoking it from the render-path EnHarness_Service
+// re-entered the pump and exited the game mid-save. From the loop top it runs in
+// the context SaveGame expects.
+void EnHarness_ServiceMainLoop() {
+    if (g_savePending.exchange(false)) {
+        std::string path;
+        { std::lock_guard<std::mutex> lk(g_saveMutex); path = g_savePath; }
+        g_saveOK = HarnessSaveGame(path.c_str());
+        g_saveDone = true;
+    }
 }
 
 void EnHarness_Service() {
