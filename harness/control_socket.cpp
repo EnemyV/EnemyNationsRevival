@@ -119,6 +119,12 @@ std::atomic<bool>      g_loadPending{false};
 std::atomic<bool>      g_loadDone{false};
 std::atomic<bool>      g_loadOK{false};
 
+// Pending `research` request (DEV/SP): discover all research instantly. Serviced on
+// the render thread (mutates game state, doesn't re-pump) like units/center.
+std::atomic<bool>      g_researchPending{false};
+std::atomic<bool>      g_researchDone{false};
+std::atomic<bool>      g_researchOK{false};
+
 // Pending screenshot request, serviced on the render thread.
 std::mutex              g_shotMutex;
 std::string            g_shotPath;
@@ -375,6 +381,16 @@ void handle_command(const std::string& line, int conn) {
             std::strcpy(reply, !g_loadDone.load() ? "err load timeout\n"
                               : (g_loadOK.load() ? "ok loaded\n" : "err load failed (at menu? bad path?)\n"));
         }
+    } else if (strcmp(cmd, "research") == 0) {
+        // research — DEV/SP: discover ALL research for the local player instantly
+        // (CPlayer::DebugDiscoverAllResearch via HarnessGrantResearch). POSIX analogue
+        // of win's Windows F12 hotkey; unblocks the research-gated tail (AltOutput
+        // toggles, fort/seaport/shipyard/heavy-factory/embassy, edicts) with no grind.
+        // Must be in-game + single-player. Serviced on the render thread (like center).
+        g_researchDone = false; g_researchOK = false; g_researchPending = true;
+        for (int i = 0; i < 600 && !g_researchDone.load(); ++i) { struct timespec ts={0,5000000}; nanosleep(&ts,nullptr); }
+        std::strcpy(reply, !g_researchDone.load() ? "err research timeout\n"
+                          : (g_researchOK.load() ? "ok research granted\n" : "err research failed (in-game SP?)\n"));
     } else if (strcmp(cmd, "quit") == 0) {
         SDL_Event e; SDL_zero(e); e.type=SDL_QUIT; SDL_PushEvent(&e);
     } else if (strcmp(cmd, "wins") == 0) {
@@ -488,6 +504,11 @@ void EnHarness_Service() {
     if (g_centerPending.exchange(false)) {
         g_centerOK = HarnessCenterUnit(g_centerId.load());
         g_centerDone = true;
+        return;
+    }
+    if (g_researchPending.exchange(false)) {
+        g_researchOK = HarnessGrantResearch();
+        g_researchDone = true;
         return;
     }
     if (g_raisePending.exchange(false)) {

@@ -7404,3 +7404,19 @@ bool HarnessLoadGame( const char* path )
     g_harnessLoadPath.clear( );                        // disarm (also on failure)
     return bOk;
 }
+
+//---------------------------------------------------------------------------
+// HarnessGrantResearch — POSIX analogue of win's Windows F12 hotkey: discover ALL
+// research for the local human instantly so the research-gated tail is reachable
+// without the multi-hour grind. SP-only (GetNetNum()==0) — MP would desync from a
+// local-only mutation. Mirrors win's F12 guard. Returns false if not in-game / not
+// single-player. Call on the game/render thread. Declared in en_harness.h.
+//---------------------------------------------------------------------------
+bool HarnessGrantResearch( void )
+{
+    CPlayer* me = theGame.GetMe( );
+    if ( me == NULL || me->GetNetNum( ) != 0 )
+        return false;
+    me->DebugDiscoverAllResearch( );
+    return true;
+}

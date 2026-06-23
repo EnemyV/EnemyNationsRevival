@@ -84,4 +84,11 @@ bool HarnessLoadGame(const char* path);
 // (no-modal) path. Always nullptr during a normal menu-driven load (unaffected).
 const char* HarnessPendingLoadPath(void);
 
+// DEV/harness (SP only): discover ALL research for the local human player instantly
+// (CPlayer::DebugDiscoverAllResearch) — unblocks the research-gated tail (AltOutput
+// toggles, fort/seaport/shipyard/heavy-factory/embassy, edicts) without the multi-
+// hour grind. POSIX analogue of win's Windows F12 hotkey. Returns false if not
+// in-game or not single-player (MP would desync). Backs the `research` cmd.
+bool HarnessGrantResearch(void);
+
 #endif // EN_HARNESS_H
