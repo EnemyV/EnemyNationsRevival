@@ -7198,6 +7198,23 @@ int CWndArea::NumGiveable( ) const
 }
 
 //---------------------------------------------------------------------------
+// HarnessHexToWindow — project a hex tile to its CENTER pixel in the area
+// window via the LIVE view transform. MapToWindowHex returns the hex's 4 corner
+// points in window px (its BOOL return is a front/back-facing cull we ignore);
+// the centroid is the unit's ground/select point — i.e. exactly the pixel you
+// click to select the unit. This replaces the older
+// WrapWorldToWindow(WorldToCenterWorld(GetWorldPixels())) path, which was offset
+// from the rendered sprite by ~the cluster spacing and made click-targeting miss.
+//---------------------------------------------------------------------------
+static CPoint HarnessHexToWindow( CAnimAtr& aa, const CHexCoord& hex )
+{
+    CPoint p[4];
+    aa.MapToWindowHex( hex, p );
+    return CPoint( ( p[0].x + p[1].x + p[2].x + p[3].x ) / 4,
+                   ( p[0].y + p[1].y + p[2].y + p[3].y ) / 4 );
+}
+
+//---------------------------------------------------------------------------
 // HarnessDumpUnits — enumerate the LOCAL PLAYER's units (vehicles + buildings)
 // and project each to its area-window pixel, so a headless driver can locate &
 // click the crane (or any unit) deterministically instead of blind-sweeping.
@@ -7235,7 +7252,7 @@ void HarnessDumpUnits( std::string& out )
         if ( bMine )
             ++iVehMine;
 
-        CPoint pt = aa.WrapWorldToWindow( aa.WorldToCenterWorld( pVeh->GetWorldPixels( ) ) );
+        CPoint pt = HarnessHexToWindow( aa, pVeh->GetHexHead( ) );
 
         const char*           kind  = "vehicle";
         CTransportData const* pData = pVeh->GetData( );
@@ -7267,7 +7284,7 @@ void HarnessDumpUnits( std::string& out )
         if ( bMine )
             ++iBldgMine;
 
-        CPoint pt = aa.WrapWorldToWindow( aa.WorldToCenterWorld( pBldg->GetWorldPixels( ) ) );
+        CPoint pt = HarnessHexToWindow( aa, pBldg->GetHex( ) );
         snprintf( line, sizeof( line ), "%lu %d %d building %s\n",
                   (unsigned long) dwID, (int) pt.x, (int) pt.y, bMine ? "me" : "other" );
         body += line;
