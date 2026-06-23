@@ -134,6 +134,20 @@ void push_mouse_move(int x, int y, Uint32 winId = 0) {
     e.motion.windowID = winId ? winId : active_window_id();
     SDL_PushEvent(&e);
 }
+void push_mouse_wheel(int dy, Uint32 winId = 0) {
+    // Synthesize a vertical mouse-wheel notch. The Area Map reads event.wheel.y
+    // (area.cpp: zDelta = wheel.y * WHEEL_DELTA) and needs 2*WHEEL_DELTA to step
+    // zoom — so dy=+2 zooms in one level, dy=-2 zooms out. Routed by windowID
+    // (GameWindow dispatches SDL_MOUSEWHEEL by event.wheel.windowID), so target
+    // the Area Map (window 5) directly — the untargeted active window is the
+    // larger main Game View, which ignores the wheel.
+    SDL_Event e; SDL_zero(e);
+    e.type = SDL_MOUSEWHEEL;
+    e.wheel.y = dy;
+    e.wheel.direction = SDL_MOUSEWHEEL_NORMAL;
+    e.wheel.windowID = winId ? winId : active_window_id();
+    SDL_PushEvent(&e);
+}
 void push_key(SDL_Keycode kc, bool down, Uint32 winId = 0, Uint16 mod = 0) {
     SDL_Event e; SDL_zero(e);
     e.type = down ? SDL_KEYDOWN : SDL_KEYUP;
@@ -210,6 +224,29 @@ void handle_command(const std::string& line, int conn) {
         unsigned id=0; int x=0,y=0; sscanf(line.c_str(), "%*s %u %d %d", &id, &x, &y); push_mouse_move(x,y,id);
     } else if (strcmp(cmd, "move") == 0) {
         int x=0,y=0; sscanf(line.c_str(), "%*s %d %d", &x, &y); push_mouse_move(x,y);
+    } else if (strcmp(cmd, "scroll") == 0 || strcmp(cmd, "wheel") == 0) {
+        // scroll <winId> <dy> [x y] — synthesize a mouse-wheel notch at the named
+        // window. The Area Map (window 5) zooms with the wheel: dy=+2 zooms IN one
+        // level, dy=-2 zooms OUT (needs 2*WHEEL_DELTA per step). This makes units
+        // big enough to click — at the default zoom (z0) starting units are
+        // sub-click-precision and missed clicks recenter the view.
+        //
+        // KEY DETAIL: the detached Area Map panel routes wheel events by the REAL
+        // cursor position (SDL2Panel::HandleEvent uses SDL_GetMouseState for
+        // SDL_MOUSEWHEEL, then bounds-checks "inContent"). Headless, the OS cursor
+        // isn't over the panel, so the wheel is dropped. So we first warp the SDL
+        // mouse into the target window's content (default = window center, which is
+        // below the title bar) — that updates SDL's internal mouse state so the
+        // wheel lands in-content and reaches CWndArea::OnMouseWheel -> ZoomIn/Out.
+        unsigned id=0; int dy=0, wx=-1, wy=-1;
+        sscanf(line.c_str(), "%*s %u %d %d %d", &id, &dy, &wx, &wy);
+        if (dy == 0) dy = 2;   // default: one zoom-in step
+        SDL_Window* w = id ? SDL_GetWindowFromID(id) : nullptr;
+        if (w) {
+            if (wx < 0 || wy < 0) { int ww=0,wh=0; SDL_GetWindowSize(w,&ww,&wh); wx=ww/2; wy=wh/2; }
+            SDL_WarpMouseInWindow(w, wx, wy);
+        }
+        push_mouse_wheel(dy, id);
     } else if (strcmp(cmd, "key") == 0) {
         // key <keycode> [mod] — optional 2nd arg = modifier mask (KMOD_CTRL=192) so Ctrl+ accelerators fire.
         long kc=0, mod=0; sscanf(line.c_str(), "%*s %ld %ld", &kc, &mod);
