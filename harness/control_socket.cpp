@@ -111,6 +111,14 @@ std::atomic<bool>      g_savePending{false};
 std::atomic<bool>      g_saveDone{false};
 std::atomic<bool>      g_saveOK{false};
 
+// Pending `load <path>` request, serviced from the main loop (the load flow re-pumps
+// events + runs from the menu). Lets a headless driver consume a shared .en save.
+std::mutex             g_loadMutex;
+std::string            g_loadPath;
+std::atomic<bool>      g_loadPending{false};
+std::atomic<bool>      g_loadDone{false};
+std::atomic<bool>      g_loadOK{false};
+
 // Pending screenshot request, serviced on the render thread.
 std::mutex              g_shotMutex;
 std::string            g_shotPath;
@@ -351,6 +359,22 @@ void handle_command(const std::string& line, int conn) {
             std::strcpy(reply, !g_saveDone.load() ? "err save timeout\n"
                               : (g_saveOK.load() ? "ok saved\n" : "err save failed (not in-game?)\n"));
         }
+    } else if (strcmp(cmd, "load") == 0) {
+        // load <path> — load a .en save headlessly FROM THE MAIN MENU (no file-browser
+        // and no pick-player modal). Lets a headless driver consume a shared developed
+        // save (the POSIX menu file-browser isn't harness-drivable). Send it at the menu
+        // (e.g. just after launch). Deferred to the main loop (the load flow re-pumps
+        // events + runs StartGame); generous timeout (worldgen/AI-startup is slow).
+        char p[400] = {0};
+        if (sscanf(line.c_str(), "%*s %399[^\n]", p) != 1 || p[0] == '\0') {
+            std::strcpy(reply, "err usage: load <path>\n");
+        } else {
+            { std::lock_guard<std::mutex> lk(g_loadMutex); g_loadPath = p; }
+            g_loadDone = false; g_loadOK = false; g_loadPending = true;
+            for (int i = 0; i < 20000 && !g_loadDone.load(); ++i) { struct timespec ts={0,5000000}; nanosleep(&ts,nullptr); }
+            std::strcpy(reply, !g_loadDone.load() ? "err load timeout\n"
+                              : (g_loadOK.load() ? "ok loaded\n" : "err load failed (at menu? bad path?)\n"));
+        }
     } else if (strcmp(cmd, "quit") == 0) {
         SDL_Event e; SDL_zero(e); e.type=SDL_QUIT; SDL_PushEvent(&e);
     } else if (strcmp(cmd, "wins") == 0) {
@@ -442,6 +466,12 @@ void EnHarness_ServiceMainLoop() {
         { std::lock_guard<std::mutex> lk(g_saveMutex); path = g_savePath; }
         g_saveOK = HarnessSaveGame(path.c_str());
         g_saveDone = true;
+    }
+    if (g_loadPending.exchange(false)) {
+        std::string path;
+        { std::lock_guard<std::mutex> lk(g_loadMutex); path = g_loadPath; }
+        g_loadOK = HarnessLoadGame(path.c_str());
+        g_loadDone = true;
     }
 }
 

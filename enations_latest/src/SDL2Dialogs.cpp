@@ -4,6 +4,7 @@
 #include "SDL2MainMenu.h"
 #include "GameWindow.h"
 #include "SDL2CreateStatus.h"   // GetCreateStatus()->Hide() before the pick-player dialog
+#include "en_harness.h"   // HarnessPendingLoadPath (headless load skips the pick-player modal)
 #include "lastplnt.h"
 #include "sfx.h"
 #include "player.h"
@@ -871,17 +872,28 @@ bool SDL2_RunLoadSinglePlayerFlow(GameWindow* gameWindow) {
     if (gameWindow->GetCreateStatus())
         gameWindow->GetCreateStatus()->Hide();
 
-    ShowWallpaperBackground(gameWindow);
-    SDL2PickPlayerDialog pickDlg(gameWindow);
-    if (pickDlg.DoModal() != 1) {
-        theGame.Close();
-        delete theApp.m_pCreateGame;
-        theApp.m_pCreateGame = NULL;
-        return false;
+    // Headless harness load (HarnessLoadGame): skip the modal pick-player dialog and
+    // auto-select the human — theGame._GetMe(), which the dialog itself defaults its
+    // selection to. nullptr for any normal menu load, so the dialog runs as before.
+    CPlayer* pPlr = NULL;
+    std::string sPickName;
+    if (HarnessPendingLoadPath()) {
+        pPlr = theGame._GetMe();
+        if (!pPlr) { theGame.Close(); delete theApp.m_pCreateGame; theApp.m_pCreateGame = NULL; return false; }
+        sPickName = pPlr->GetName() ? pPlr->GetName() : "";   // keep the loaded name
+    } else {
+        ShowWallpaperBackground(gameWindow);
+        SDL2PickPlayerDialog pickDlg(gameWindow);
+        if (pickDlg.DoModal() != 1) {
+            theGame.Close();
+            delete theApp.m_pCreateGame;
+            theApp.m_pCreateGame = NULL;
+            return false;
+        }
+        pPlr = theGame.GetPlayerByPlyr(pickDlg.m_iSelectedPlyrNum);
+        if (!pPlr) { theGame.Close(); delete theApp.m_pCreateGame; theApp.m_pCreateGame = NULL; return false; }
+        sPickName = pickDlg.m_playerName;
     }
-
-    CPlayer* pPlr = theGame.GetPlayerByPlyr(pickDlg.m_iSelectedPlyrNum);
-    if (!pPlr) { theGame.Close(); delete theApp.m_pCreateGame; theApp.m_pCreateGame = NULL; return false; }
 
     theGame.SetHP(TRUE); theGame.SetScenario(-1);
     if (pPlr != theGame._GetMe()) {
@@ -889,7 +901,7 @@ bool SDL2_RunLoadSinglePlayerFlow(GameWindow* gameWindow) {
         if (theGame.AmServer()) theGame._SetServer(pPlr);
     }
     pPlr->SetState(CPlayer::ready);
-    pPlr->SetName(pickDlg.m_playerName.c_str());
+    pPlr->SetName(sPickName.c_str());
 
     POSITION pos;
     for (pos = theGame.GetAll().GetHeadPosition(); pos != NULL;) {

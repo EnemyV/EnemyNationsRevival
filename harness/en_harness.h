@@ -70,4 +70,18 @@ bool HarnessCenterUnit(unsigned long id);
 // game state). Backs the `save <path>` control_socket command.
 bool HarnessSaveGame(const char* path);
 
+// Load a .en save <path> headlessly from the MAIN MENU — runs the normal single-
+// player load flow (SDL2_RunLoadSinglePlayerFlow) but skips its two modals: the
+// file-browser (uses <path> directly) and the pick-player dialog (auto-selects the
+// human, theGame._GetMe(), which that dialog already defaults to). Lets a headless
+// driver CONSUME a shared developed save (the menu file-browser isn't harness-
+// drivable on POSIX). Returns true on a loaded+started game. Call from the main
+// loop (it re-pumps events like save). Backs the `load <path>` control_socket cmd.
+bool HarnessLoadGame(const char* path);
+
+// While a headless load is in progress, returns the target .en path; else nullptr.
+// CGame::LoadGame and SDL2_RunLoadSinglePlayerFlow check this to take the headless
+// (no-modal) path. Always nullptr during a normal menu-driven load (unaffected).
+const char* HarnessPendingLoadPath(void);
+
 #endif // EN_HARNESS_H

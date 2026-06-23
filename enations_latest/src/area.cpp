@@ -38,6 +38,7 @@
 #include "SDL2RouteWindow.h"
 #include "Perf.h"
 #include "SDL2GameDialogs.h"
+#include "SDL2Dialogs.h"   // SDL2_RunLoadSinglePlayerFlow (HarnessLoadGame)
 #include <SDL.h>
 #include <SDL_syswm.h>
 #include <unordered_map>
@@ -7357,4 +7358,35 @@ bool HarnessSaveGame( const char* path )
         return false;
     theGame.m_sFileName = path;            // pre-fill => SaveGame skips the browser
     return ( theGame.SaveGame( (CWnd*) NULL ) == IDOK );
+}
+
+//---------------------------------------------------------------------------
+// HarnessLoadGame — load a .en save headlessly from the MAIN MENU. Runs the normal
+// SP load flow (SDL2_RunLoadSinglePlayerFlow) but, while g_harnessLoadPath is set,
+// CGame::LoadGame skips the file-browser (uses the path) and
+// SDL2_RunLoadSinglePlayerFlow skips the pick-player modal (auto-selects _GetMe()).
+// Lets a headless driver consume a shared developed save (the POSIX menu file-
+// browser isn't harness-drivable). Must run from the main loop (the flow re-pumps
+// events). Returns true on a loaded+started game. Declared in en_harness.h.
+//---------------------------------------------------------------------------
+static std::string g_harnessLoadPath;   // non-empty only during a headless load
+
+const char* HarnessPendingLoadPath( void )
+{
+    return g_harnessLoadPath.empty( ) ? NULL : g_harnessLoadPath.c_str( );
+}
+
+bool HarnessLoadGame( const char* path )
+{
+    if ( path == NULL || path[0] == '\0' )
+        return false;
+    // Only valid from the menu (no game in progress) — mirror the menu's guard.
+    if ( theApp.m_pCreateGame != NULL )
+        return false;
+    g_harnessLoadPath = path;                          // arms the headless skips
+    bool bOk = false;
+    try { bOk = SDL2_RunLoadSinglePlayerFlow( theApp.m_gameWindow.get( ) ); }
+    catch ( ... ) { bOk = false; }
+    g_harnessLoadPath.clear( );                        // disarm (also on failure)
+    return bOk;
 }

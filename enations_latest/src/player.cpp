@@ -17,6 +17,7 @@
 #include "area.h"
 #include "bridge.h"
 #include "GameWindow.h"
+#include "en_harness.h"   // HarnessPendingLoadPath (headless load skips the browser)
 #include "SDL2MFCPanel.h"
 #include "SDL2FileBrowser.h"
 #include "building.inl"
@@ -2117,8 +2118,16 @@ int CGame::LoadGame( CWnd* pPar, BOOL bReplace )
 
     EnableAllWindows( NULL, FALSE );
 
+    // Headless harness load (HarnessLoadGame): the .en path is pre-supplied, so skip
+    // the file-browser modal entirely (the POSIX SDL2FileBrowser isn't harness-
+    // drivable). Mirrors SaveGame's pre-set-filename skip. nullptr for any normal
+    // menu-driven load, so that path is unchanged.
+    if ( HarnessPendingLoadPath( ) )
+    {
+        theGame.m_sFileName = HarnessPendingLoadPath( );
+    }
     // Use SDL2 file browser if the SDL2 window is active, else fall back to MFC
-    if ( theApp.m_gameWindow )
+    else if ( theApp.m_gameWindow )
     {
         SDL2FileBrowser browser( theApp.m_gameWindow.get(), SDL2FileBrowser::Open,
                                  "Load Game", "", "", ".en" );
