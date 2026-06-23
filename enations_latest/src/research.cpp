@@ -691,6 +691,28 @@ void CRsrchArray::Open( )
         }
     }
 
+    // In-code research topic: Coal Liquefaction (1 tier, not in the DAT file). A coal
+    // POWER PLANT, once this is researched and its per-building alt-output toggle is ON,
+    // also converts coal into oil (2 coal -> 1 oil) via the shared AltOutput system
+    // (eRatioConsume). Single tech, chained off Gas Turbines; cost ~4x the gas_turbine
+    // tech (a few x, easy to retune -- operator balances in-game). Appended LAST in the
+    // enum so save indices don't shift.
+    {
+        CRsrchItem* pRi = &ElementAt( coal_liquefaction );
+
+        pRi->m_iPtsRequired      = ElementAt( gas_turbine ).m_iPtsRequired * 4;
+        pRi->m_iScenarioReq      = ElementAt( gas_turbine ).m_iScenarioReq;
+        pRi->m_iNumBldgsRequired = 0;
+
+        pRi->m_iNumRsrchRequired = 1;
+        pRi->m_piRsrchRequired   = new int[1];
+        pRi->m_piRsrchRequired[0] = (int)gas_turbine;
+
+        pRi->m_sName   = "Coal Liquefaction";
+        pRi->m_sDesc   = "Fischer-Tropsch synthesis cracks coal into liquid fuel: a toggled coal power plant turns 2 coal into 1 oil.";
+        pRi->m_sResult = "Coal liquefaction online. Coal power plants can convert coal to oil (toggle per plant).";
+    }
+
 #ifdef _DEBUG
     theDataFile.DisableNegativeSeekChecking( );
     theDataFile.EnableNegativeSeekChecking( );

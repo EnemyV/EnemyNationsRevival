@@ -847,6 +847,11 @@ protected:
 		// remainder from last operate loop
 		float					m_fOperMod;					// apply to next operate
 
+		// AltOutput (alt-output toggle) runtime fractional accumulator -- carries the
+		// sub-unit secondary-output remainder between production calls so small yields
+		// aren't lost. Runtime-only, NOT serialized (like the alt_oil toggle itself).
+		float					m_fAltAccum = 0.0f;
+
 		// construction vars
 		LONG					m_iConstDone;						// -1 == done, else time building so far
 		LONG					m_iFoundTime;						// extra time for foundation on non-plain terrain

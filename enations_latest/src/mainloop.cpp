@@ -7,6 +7,7 @@
 
 
 #include "ai.h"
+#include "altoutput.h"
 #include "aisnap.h"  // Tier-B AI world snapshot (published here, read by AI threads)
 #include "area.h"
 #include "building.inl"
@@ -2443,6 +2444,13 @@ void CPowerBuilding::BuildPower( )
         if ( GetOwner( )->IsMe( ) )
             theGame.m_pHpRtr->MsgOutMat( this );
 
+    // Coal Liquefaction (reusable AltOutput system): when this is a coal power plant whose
+    // alt-output toggle is ON and the tech is researched, convert additional coal from the
+    // plant's store into oil at 2:1 (eRatioConsume), scaled by the fuel burned this batch.
+    // No-op for non-coal plants / toggle OFF / un-researched. (Charcoal & Fracking would
+    // hook their own production loops the same way -- one shared helper.)
+    AltOutput::Convert( this, iNum, m_fAltAccum );
+
     // update the %
     MaterialChange( );
 }
@@ -2568,22 +2576,11 @@ void CFarmBuilding::BuildFarm( )
     {
         GetOwner( )->AddFood( dtRate.quot );
 
-        // BioFuel (#33): when this farm's toggle (alt_oil) is ON and the BioFuel tech is
-        // researched, it ALSO produces oil ("Bio Oil" in the UI) = a percent of the food
-        // just harvested. Additional output — the food yield above is unchanged. The oil
-        // lands in the farm's store and is hauled out like any material. Toggle is
-        // runtime-only for now (see UNIT_FLAGS::alt_oil); in-game balance/verify by operator.
-        int iBioPct = GetOwner( )->GetBioOilPct( );
-        if ( ( m_unitFlags & alt_oil ) && ( iBioPct > 0 ) )
-        {
-            int iOil = ( dtRate.quot * iBioPct ) / 100;
-            if ( iOil > 0 )
-            {
-                AddToStore( CMaterialTypes::oil, iOil );
-                GetOwner( )->IncMaterialMade( CMaterialTypes::oil, iOil );
-                GetOwner( )->IncMaterialHave( CMaterialTypes::oil, iOil );
-            }
-        }
+        // BioFuel (#33), now via the reusable AltOutput system: when this farm's toggle
+        // (alt_oil) is ON and the BioFuel tech is researched, it ALSO produces oil ("Bio
+        // Oil") = a percent of the food just harvested (ePctAdditive -- additional output,
+        // the food yield above is unchanged). Behaviour is identical to the original hook.
+        AltOutput::Convert( this, dtRate.quot, m_fAltAccum );
     }
     else
     {

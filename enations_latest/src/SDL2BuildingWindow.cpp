@@ -4,6 +4,7 @@
 #include "lastplnt.h"
 #include "player.h"
 #include "building.h"
+#include "altoutput.h"
 #include "vehicle.h"
 #include "base.h"
 #include "icons.h"
@@ -423,22 +424,26 @@ void SDL2BuildingWindow::OnInit() {
             EndDialog(0);
         });
 
-    // BioFuel (#33): per-farm "Bio Oil" toggle, shown only on the LOCAL player's own farm
-    // once BioFuel (T1) is researched. Placed in the full-width Close row (left of Close)
-    // so it does NOT perturb the 2-column section layout / computeLayout heights. Flips the
-    // building's runtime-only alt_oil flag, which the farm production hook reads to also
-    // output Bio Oil. (Fracking's well toggle will reuse this once its production lands.)
-    if ( secFertility( m_pBldg ) && m_pBldg->GetOwner( ) &&
-         m_pBldg->GetOwner( )->IsMe( ) && m_pBldg->GetOwner( )->CanBioFuel( ) )
+    // Generic AltOutput toggle: shown only on the LOCAL player's own building when an
+    // AltOutput def applies to it AND the gating tech is researched (BioFuel on a farm,
+    // Coal Liquefaction on a coal power plant, future Charcoal/Fracking, ...). Label comes
+    // from the def. Placed in the full-width Close row (left of Close) so it does NOT
+    // perturb the 2-column section layout / computeLayout heights. Flips the building's
+    // runtime-only alt_oil flag, which the shared AltOutput::Convert production hook reads.
+    if ( m_pBldg->GetOwner( ) && m_pBldg->GetOwner( )->IsMe( ) )
     {
-        m_btnAltOil = AddWidget<SDL2Button>( m_x + 14, yClose + 2, 150, 28, "Bio Oil",
-            [this]( ) {
-                bool on = !m_pBldg->IsFlag( CUnit::alt_oil );
-                if ( on ) m_pBldg->SetFlag( CUnit::alt_oil );
-                else      m_pBldg->ClrFlag( CUnit::alt_oil );
-                m_btnAltOil->SetToggled( on );
-            } );
-        m_btnAltOil->SetToggled( m_pBldg->IsFlag( CUnit::alt_oil ) );
+        const AltOutput::AltOutputDef* pDef = AltOutput::Available( m_pBldg );
+        if ( pDef )
+        {
+            m_btnAltOut = AddWidget<SDL2Button>( m_x + 14, yClose + 2, 150, 28, pDef->m_szLabel,
+                [this]( ) {
+                    bool on = !m_pBldg->IsFlag( CUnit::alt_oil );
+                    if ( on ) m_pBldg->SetFlag( CUnit::alt_oil );
+                    else      m_pBldg->ClrFlag( CUnit::alt_oil );
+                    m_btnAltOut->SetToggled( on );
+                } );
+            m_btnAltOut->SetToggled( m_pBldg->IsFlag( CUnit::alt_oil ) );
+        }
     }
 
     Refresh();

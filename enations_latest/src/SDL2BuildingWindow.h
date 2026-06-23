@@ -147,8 +147,11 @@ private:
     SDL2Label*  m_lblTurretReload = nullptr;
     SDL2Label*  m_lblTurretDps    = nullptr;
     SDL2Button* m_btnShowRange     = nullptr;
-    // BioFuel (#33) per-farm "Bio Oil" toggle button (own farms, once researched).
-    SDL2Button* m_btnAltOil        = nullptr;
+    // Generic AltOutput (alt-output toggle) button -- shown on any building that has an
+    // available AltOutput def (BioFuel farm, Coal-Liquefaction coal plant, ...). Flips the
+    // building's runtime-only alt_oil flag; label comes from the def. Replaces the old
+    // bespoke per-feature "Bio Oil" button.
+    SDL2Button* m_btnAltOut        = nullptr;
 
     SDL2Label*       m_lblProduction  = nullptr;
     SDL2ProgressBar* m_progProduction = nullptr;

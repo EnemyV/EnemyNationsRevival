@@ -210,6 +210,12 @@ public:
 					biofuel_4,
 					biofuel_5,
 					biofuel_6,
+					// Coal Liquefaction (in-code) -- 1 tier. A coal POWER PLANT, when its
+					// alt-output toggle is ON, also converts 2 coal -> 1 oil (the AltOutput
+					// system, eRatioConsume mode). Gated on this single tech; cost ~ a few x
+					// the gas_turbine tech, chained off gas_turbine. Appended LAST so all
+					// earlier indices (incl. bridge_2 / RDPATH_SAVE_COUNT==53) stay put.
+					coal_liquefaction,
 					num_types	};
 
 	CRsrchArray () {}

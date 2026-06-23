@@ -4,6 +4,7 @@ set(enations_sources
 #        advanced.cpp
         ai.cpp
         aisnap.cpp   # Tier-B AI world snapshot (lock-free AI reads)
+        altoutput.cpp   # reusable alternate-output toggle system (BioFuel, Coal Liquefaction, ...)
         area.cpp
         bmbutton.cpp
         bridge.cpp

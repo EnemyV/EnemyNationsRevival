@@ -544,6 +544,8 @@ class CPlayer : public CObject
     // T1 researched? Gates whether the per-building Fracking / BioFuel toggle button shows.
     BOOL CanFrack( )   { return ( m_aRsrch.GetSize( ) > CRsrchArray::fracking_1 && GetRsrch( CRsrchArray::fracking_1 ).m_bDiscovered ); }
     BOOL CanBioFuel( ) { return ( m_aRsrch.GetSize( ) > CRsrchArray::biofuel_1 && GetRsrch( CRsrchArray::biofuel_1 ).m_bDiscovered ); }
+    // Coal Liquefaction researched? Gates the coal power-plant alt-output toggle (2 coal -> 1 oil).
+    BOOL CanCoalLiq( ) { return ( m_aRsrch.GetSize( ) > CRsrchArray::coal_liquefaction && GetRsrch( CRsrchArray::coal_liquefaction ).m_bDiscovered ); }
 
     BOOL CanMultiArea( ) { return ( GetRsrch( CRsrchArray::radio ).m_bDiscovered ); }
     BOOL CanDelayMail( ) { return ( GetRsrch( CRsrchArray::mail ).m_bDiscovered ); }

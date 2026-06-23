@@ -1941,6 +1941,7 @@ void CBuilding::ctor( )
     m_iUnitType = CUnit::building;
 
     m_fOperMod          = 0.0f;
+    m_fAltAccum         = 0.0f;
     m_iBldgDir          = 0;
     m_iConstDone        = 0;
     m_iBuildDone        = 0;
