@@ -3029,6 +3029,24 @@ int CWndArea::OnCreate( LPCREATESTRUCT lpCreateStruct )
                     if (sc == SDL_SCANCODE_LEFTBRACKET)  { pThis->RotateBuildDir(-1); return true; }
                     if (sc == SDL_SCANCODE_RIGHTBRACKET) { pThis->RotateBuildDir(+1); return true; }
 
+#ifdef _WIN32
+                    // Harness (Windows transport): F9 dumps the local player's units via
+                    // HarnessDumpUnits (en_harness.h) to OutputDebugString, which dbgcatch
+                    // captures — giving the PostMessage/.ps1 harness deterministic unit
+                    // screen-xy + crane ID instead of blind pixel-sweeping. Linux/mac use the
+                    // control_socket `units` command (non-MSVC) over the SAME shared fn; this
+                    // is just the Windows transport. BEGIN/END markers bracket the dump so it
+                    // is trivially grep-able in the dbgcatch log.
+                    if (sc == SDL_SCANCODE_F9) {
+                        std::string dump;
+                        HarnessDumpUnits( dump );
+                        OutputDebugStringA( "[HUNITS-BEGIN]\n" );
+                        OutputDebugStringA( dump.c_str( ) );
+                        OutputDebugStringA( "[HUNITS-END]\n" );
+                        return true;
+                    }
+#endif
+
                     UINT vk = SDLKeyToVK(sc);
                     if (!vk) return false;
 
