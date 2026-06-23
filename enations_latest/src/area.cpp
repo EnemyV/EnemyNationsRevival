@@ -7413,15 +7413,24 @@ bool HarnessLoadGame( const char* path )
 //---------------------------------------------------------------------------
 // HarnessGrantResearch — POSIX analogue of win's Windows F12 hotkey: discover ALL
 // research for the local human instantly so the research-gated tail is reachable
-// without the multi-hour grind. SP-only (GetNetNum()==0) — MP would desync from a
-// local-only mutation. Mirrors win's F12 guard. Returns false if not in-game / not
-// single-player. Call on the game/render thread. Declared in en_harness.h.
+// without the multi-hour grind. Cheat-gated to the game's convention (win @e79a75ae):
+//   - #ifdef _CHEAT  → compiled OUT of Release (DebugDiscoverAllResearch is _CHEAT-only)
+//   - [Cheat]/GrantResearch registry flag (default 0) → opt-in even in Debug
+//   - GetNetNum()==0 → single-player only (MP would desync on a local mutation)
+// Returns false (no-op) in Release, or if not opted-in / not in-game-SP.
+// Call on the game/render thread. Declared in en_harness.h.
 //---------------------------------------------------------------------------
 bool HarnessGrantResearch( void )
 {
+#ifdef _CHEAT
+    if ( !EnGetProfileInt( "Cheat", "GrantResearch", 0 ) )
+        return false;                                   // opt-in only
     CPlayer* me = theGame.GetMe( );
     if ( me == NULL || me->GetNetNum( ) != 0 )
-        return false;
+        return false;                                   // in-game + single-player only
     me->DebugDiscoverAllResearch( );
     return true;
+#else
+    return false;                                       // cheat compiled out of Release
+#endif
 }
