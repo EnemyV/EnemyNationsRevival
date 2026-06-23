@@ -78,6 +78,8 @@ static UINT SDLKeyToVK(SDL_Scancode sc) {
     case SDL_SCANCODE_RETURN: return VK_RETURN;
     case SDL_SCANCODE_TAB:    return VK_TAB;
     case SDL_SCANCODE_DELETE: return VK_DELETE;
+    case SDL_SCANCODE_INSERT: return VK_INSERT;   // IDA_STOP_DESTROY (was unmapped -> key dropped)
+    case SDL_SCANCODE_HOME:   return VK_HOME;     // IDA_CENTER: center on selection/rocket (was unmapped)
     case SDL_SCANCODE_LEFT:   return VK_LEFT;
     case SDL_SCANCODE_RIGHT:  return VK_RIGHT;
     case SDL_SCANCODE_UP:     return VK_UP;
@@ -3037,6 +3039,7 @@ int CWndArea::OnCreate( LPCREATESTRUCT lpCreateStruct )
                     case VK_UP:     pThis->CurUp(); return true;
                     case VK_DOWN:   pThis->CurDown(); return true;
                     case VK_ESCAPE: pThis->OnDeselect(); return true;
+                    case VK_HOME:   pThis->CenterUnit(); return true;   // IDA_CENTER: center on selection, or rocket if none
                     case VK_DELETE: pThis->DestroyUnit(); return true;
                     case VK_INSERT: pThis->StopDestroyUnit(); return true;
                     case 'B':       pThis->BuildUnit(); return true;
