@@ -1363,6 +1363,23 @@ void SDL2SessionBrowseDialog::OnRefresh() {
     theNet.StartEnum();
 }
 
+// P5 — optional ISERVE registration server (cross-platform headless discovery).
+// If vdmplay.ini [vdmplay]RegistrationServerAddr is set, a HOST writes it to
+// [TCP]RegistrationAddress so the engine registers its session there (InitTcp ->
+// SetRegistrationAddress -> the host SendTo(m_registrationAddress) path), letting
+// clients on other subnets find it via the iserve daemon instead of LAN broadcast.
+// UNSET => RegistrationAddress stays empty => no registration => unchanged behavior
+// (LAN broadcast + direct Join). Registration port (1707) stays distinct from the
+// game-session port (2346). Clients point at the same server via the Join dialog's
+// Server Address field (already written to [TCP]ServerAddress).
+static void ApplyOptionalRegistrationServer() {
+    char regSrv[80] = {0};
+    GetPrivateProfileString("vdmplay", "RegistrationServerAddr", "",
+                            regSrv, sizeof(regSrv), ".\\vdmplay.ini");
+    if (regSrv[0])
+        WritePrivateProfileString("TCP", "RegistrationAddress", regSrv, ".\\vdmplay.ini");
+}
+
 // ============================================================================
 // Create Network Game flow (TCP/IP only)
 // ============================================================================
@@ -1397,6 +1414,7 @@ bool SDL2_RunCreateNetworkFlow(GameWindow* gameWindow) {
 
     std::string sPort = std::to_string(createDlg.m_iPort);
     WritePrivateProfileString("TCP", "WellKnownPort", sPort.c_str(), ".\\vdmplay.ini");
+    ApplyOptionalRegistrationServer();   // P5: register with iserve if configured
 
     // Step 2: publish the session - pass CNetPublish so clients can read game
     // metadata (AI level, world size, etc.) from VP_SESSIONENUM callbacks.
@@ -1688,6 +1706,7 @@ bool SDL2_RunLoadNetworkFlow(GameWindow* gameWindow) {
     pCreate->m_sGameName = theGame.m_sGameName;
     std::string sPort = std::to_string(hostDlg.m_iPort);
     WritePrivateProfileString("TCP", "WellKnownPort", sPort.c_str(), ".\\vdmplay.ini");
+    ApplyOptionalRegistrationServer();   // P5: register with iserve if configured
 
     // Step 3: publish the loaded game session for clients to enumerate.
     // OpenServer blocks (vpStartup -> gethostbyname + Listen); show a status frame.
