@@ -93,6 +93,15 @@ std::atomic<bool>      g_centerPending{false};
 std::atomic<bool>      g_centerDone{false};
 std::atomic<bool>      g_centerOK{false};
 
+// Pending `hexinfo <areaWin> <x> <y>` request (HarnessHexInfo) — reads the map hex
+// under an area-window client pixel on the render thread (read-only). Same handshake.
+std::mutex             g_hexInfoMutex;
+std::string            g_hexInfoResult;
+std::atomic<int>       g_hexInfoX{0};
+std::atomic<int>       g_hexInfoY{0};
+std::atomic<bool>      g_hexInfoPending{false};
+std::atomic<bool>      g_hexInfoDone{false};
+
 // Pending `raise` request, serviced on the render thread. SDL_RaiseWindow is a
 // window/Cocoa operation that MUST run on the main thread on macOS — calling it
 // from the socket thread SIGTRAPs the process (reproducible: `raise` while a
@@ -250,6 +259,23 @@ void handle_command(const std::string& line, int conn) {
         g_centerId = id; g_centerDone = false; g_centerOK = false; g_centerPending = true;
         for (int i = 0; i < 400 && !g_centerDone.load(); ++i) { struct timespec ts={0,5000000}; nanosleep(&ts,nullptr); }
         snprintf(reply, sizeof(reply), !g_centerDone.load() ? "err center timeout\n" : (g_centerOK.load() ? "ok centered %lu\n" : "err no unit %lu\n"), id);
+    } else if (strcmp(cmd, "hexinfo") == 0) {
+        // hexinfo <areaWin> <x> <y> — report the map hex (coords/alt/visible/unit)
+        // under an area-window client pixel (same coords you'd give clickid). Read-
+        // only; serviced on the render thread. areaWin is accepted for clickid-style
+        // symmetry; the query uses the focused area view (theAreaList.GetTop).
+        int aw=0,x=0,y=0;
+        if (sscanf(line.c_str(), "%*s %d %d %d", &aw, &x, &y) != 3) {
+            const char* u = "err usage: hexinfo <areaWin> <x> <y>\n";
+            write(conn, u, strlen(u)); return;
+        }
+        g_hexInfoX = x; g_hexInfoY = y; g_hexInfoDone = false; g_hexInfoPending = true;
+        for (int i = 0; i < 400 && !g_hexInfoDone.load(); ++i) { struct timespec ts={0,5000000}; nanosleep(&ts,nullptr); }
+        std::string out;
+        { std::lock_guard<std::mutex> lk(g_hexInfoMutex); out = g_hexInfoResult; }
+        if (!g_hexInfoDone.load()) out = "err hexinfo timeout (not in-game?)\n";
+        write(conn, out.c_str(), out.size());
+        return;
     } else if (strcmp(cmd, "click") == 0) {
         int x=0,y=0; char rb[16]={0};
         sscanf(line.c_str(), "%*s %d %d %15s", &x, &y, rb);
@@ -504,6 +530,13 @@ void EnHarness_Service() {
     if (g_centerPending.exchange(false)) {
         g_centerOK = HarnessCenterUnit(g_centerId.load());
         g_centerDone = true;
+        return;
+    }
+    if (g_hexInfoPending.exchange(false)) {
+        std::string out;
+        HarnessHexInfo(g_hexInfoX.load(), g_hexInfoY.load(), out);
+        { std::lock_guard<std::mutex> lk(g_hexInfoMutex); g_hexInfoResult = out; }
+        g_hexInfoDone = true;
         return;
     }
     if (g_researchPending.exchange(false)) {

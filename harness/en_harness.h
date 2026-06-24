@@ -62,6 +62,14 @@ void HarnessDumpUnits(std::string& out);
 // clickid <area> <center> -> keyid <area> 98 (Build).
 bool HarnessCenterUnit(unsigned long id);
 
+// Report the map hex under an area-window client pixel (same coords as clickid):
+// appends "hex <hx> <hy> alt <n> vis <0|1> unit <0|1>\n" to `out` (or "err ...").
+// READ-ONLY (no game/view mutation). Lets a headless driver find a flat buildable
+// hex (matching alts, no unit) or a slope (adjacent hexes with differing alt)
+// deterministically instead of eyeballing the placement OK/no-build cursor sprite
+// in a screenshot. Backs the `hexinfo <areaWin> <x> <y>` cmd. Render thread only.
+void HarnessHexInfo(int x, int y, std::string& out);
+
 // Save the current in-game state to <path> (a .en save file) headlessly — no
 // file-browser modal (CGame::SaveGame skips it when the filename is pre-set).
 // Lets a headless driver snapshot a DEVELOPED/researched game so it can be shared

@@ -7358,6 +7358,37 @@ bool HarnessCenterUnit( unsigned long id )
 }
 
 //---------------------------------------------------------------------------
+// HarnessHexInfo — report the map hex under an area-window client pixel: its hex
+// coords, altitude, visibility, and whether a unit occupies it. READ-ONLY (no game
+// or view mutation). Lets a headless driver find a FLAT buildable spot (scan a few
+// points, pick where alts match with no unit) or a SLOPE (adjacent hexes whose alt
+// differs) deterministically, instead of eyeballing the placement cursor's OK/
+// no-build sprite (iCurType, ~area.cpp:1964) in a downscaled screenshot. Mirrors the
+// screen->hex path in CWndArea::OnMouseMove (GetAA().GetHit -> _GetHexCoord ->
+// theMap._GetHex). Pass the same area-window client px you'd give clickid/dblclickid.
+// Call on the render thread (reads the view + map). Backs the `hexinfo <areaWin> <x>
+// <y>` control_socket command. Declared in en_harness.h.
+//---------------------------------------------------------------------------
+void HarnessHexInfo( int x, int y, std::string& out )
+{
+    CWndArea* a = theAreaList.GetTop( );
+    if ( a == NULL ) { out = "err no-area\n"; return; }
+
+    CPoint    point( x, y );
+    CHitInfo  hitinfo = a->GetAA( ).GetHit( point );
+    CHexCoord hexcoord( hitinfo._GetHexCoord( ) );
+    hexcoord.Wrap( );
+    CHex* pHex = theMap._GetHex( hexcoord );
+    if ( pHex == NULL ) { out = "err no-hex\n"; return; }
+
+    out  = "hex " + IntToStr( hexcoord.X( ) ) + " " + IntToStr( hexcoord.Y( ) );
+    out += " alt " + IntToStr( pHex->GetAlt( ) );
+    out += " vis " + std::string( pHex->GetVisible( ) ? "1" : "0" );
+    out += " unit " + std::string( hitinfo.GetUnit( ) != NULL ? "1" : "0" );
+    out += "\n";
+}
+
+//---------------------------------------------------------------------------
 // HarnessSaveGame — save the current game to <path> headlessly so a developed/
 // researched game can be snapshotted and SHARED (one such save unblocks all the
 // research-gated work team-wide: gated buildings, AltOutput in-game verify, late-
