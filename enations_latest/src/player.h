@@ -984,7 +984,11 @@ class CGame : public CObject
     {
         ASSERT( !m_bServer );
         ASSERT_STRICT_VALID( this );
-        ASSERT( m_pServer != NULL );
+        // NB: m_pServer is legitimately NULL after a host-drop / SessionClose, and
+        // every caller null-checks this return (netcmd.cpp:46, netapi.cpp:472/505,
+        // player.cpp:1445/1948). The old ASSERT(m_pServer!=NULL) here fired on a
+        // normal disconnect (debugger's non-fatal #43 host-drop assert) — null IS
+        // the contract on teardown, so don't assert it. (Release was unaffected.)
         return ( m_pServer );
     }
     void _SetMe( CPlayer* pPlyr ) { m_pMe = pPlyr; }
