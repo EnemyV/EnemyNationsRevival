@@ -129,7 +129,14 @@ if (MSVC)
     add_subdirectory(tools/vdmplay)
 
     ###############################
-    # ISERVE.exe
+    # ISERVE.exe (legacy 32-bit MFC GUI — frozen)
     ###############################
     add_subdirectory(tools/vdmplay/iserve)
+
+    ###############################
+    # iserve_headless.exe (Windows headless registration server — no MFC, console)
+    # Cross-platform headless ISERVE, Windows half (POSIX half = if(NOT MSVC) iserve
+    # target in enations_latest/src). Added after tools/vdmplay so `vdmplay` exists.
+    ###############################
+    add_subdirectory(tools/vdmplay/iserve_headless)
 endif ()
