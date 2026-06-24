@@ -1243,7 +1243,17 @@ bool SDL2Panel::HandleDetachedResize(SDL_Event& event) {
     if (m_dResizing) {
         if (event.type == SDL_MOUSEMOTION) {
             int gx = 0, gy = 0;
-            SDL_GetGlobalMouseState(&gx, &gy);
+            Uint32 btns = SDL_GetGlobalMouseState(&gx, &gy);
+            if (!(btns & SDL_BUTTON_LMASK)) {   // #46 self-heal: missed button-up. Apply the
+                if (m_dPendValid) {             // pending size, then drop the resize latch +
+                    SDL_SetWindowPosition(m_ownWindow, m_dPendWX, m_dPendWY);  // mouse capture.
+                    SDL_SetWindowSize(m_ownWindow, m_dPendWW, m_dPendWH);
+                    m_dPendValid = false;
+                }
+                m_dResizing = false;
+                SDL_CaptureMouse(SDL_FALSE);
+                return true;
+            }
             int dx = gx - m_dStartMX, dy = gy - m_dStartMY;
             int nx = m_dStartWX, ny = m_dStartWY, nw = m_dStartWW, nh = m_dStartWH;
             if (m_dResizeEdge & 2) nw = m_dStartWW + dx;                        // right
@@ -1343,7 +1353,12 @@ bool SDL2Panel::HandleDetachedDrag(SDL_Event& event) {
     if (m_dDragging) {
         if (event.type == SDL_MOUSEMOTION) {
             int gx = 0, gy = 0;
-            SDL_GetGlobalMouseState(&gx, &gy);
+            Uint32 btns = SDL_GetGlobalMouseState(&gx, &gy);
+            if (!(btns & SDL_BUTTON_LMASK)) {   // #46 self-heal: missed button-up left the
+                m_dDragging = false;            // drag latched + mouse captured (swallows
+                SDL_CaptureMouse(SDL_FALSE);    // Cmd-Tab). Clear it on the next motion.
+                return true;
+            }
             SDL_SetWindowPosition(m_ownWindow,
                                   m_dDragStartWX + (gx - m_dDragStartMX),
                                   m_dDragStartWY + (gy - m_dDragStartMY));

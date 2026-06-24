@@ -1678,7 +1678,12 @@ bool SDL2Dialog::HandleEvent(SDL_Event& event) {
         }
         if (event.type == SDL_MOUSEMOTION && m_dlgDragging) {
             int gx, gy;
-            SDL_GetGlobalMouseState(&gx, &gy);
+            Uint32 btns = SDL_GetGlobalMouseState(&gx, &gy);
+            if (!(btns & SDL_BUTTON_LMASK)) {   // #46 self-heal: a missed button-up left the
+                m_dlgDragging = false;          // drag latched + mouse captured (which swallows
+                SDL_CaptureMouse(SDL_FALSE);    // Cmd-Tab). Clear it on the next motion.
+                return true;
+            }
             SDL_SetWindowPosition(m_dlgWindow,
                                   m_dlgDragWinX + (gx - m_dlgDragMouseX),
                                   m_dlgDragWinY + (gy - m_dlgDragMouseY));
