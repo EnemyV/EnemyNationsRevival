@@ -44,6 +44,9 @@
 const int SOCK_MAX_SESSIONS = 62;     // match NUM_NCBS so callers' assumptions hold
 const int SOCK_NAME_MAX     = NET_NAME_MAX; // davenet.h NET_NAME_MAX (14)
 const unsigned short SOCK_DISCOVERY_PORT = 0xE4E4; // 58596 — UDP LAN host-discovery (next increment)
+const unsigned short SOCK_SESSION_PORT   = 2346;   // well-known TCP session port (== DEF_TCP_PORT, base.h) —
+                                                   // host binds it so a cross-machine joiner can direct-`Call <ip>`
+                                                   // with no broadcast dependency; falls back to ephemeral if taken.
 
 class CSockets : public CProtocol {
 public:

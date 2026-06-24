@@ -204,8 +204,16 @@ BOOL CSockets::EnsureListenSocket ()
     memset ( &addr, 0, sizeof ( addr ) );
     addr.sin_family      = AF_INET;
     addr.sin_addr.s_addr = htonl ( INADDR_ANY );
-    addr.sin_port        = 0;                       // ephemeral
-    if ( bind ( s, (sockaddr *) &addr, sizeof ( addr ) ) != 0 ) { en_closesock ( s ); return ( FALSE ); }
+    // Prefer the well-known session port so a cross-machine joiner can direct-`Call <ip>`
+    // (no broadcast/discovery dependency — the #43 cross-platform connect path). Fall back
+    // to an ephemeral port if it's already in use (e.g. a 2nd same-host instance or the
+    // loopback self-test) so we never fail to listen; the actual port is read back below.
+    addr.sin_port        = htons ( SOCK_SESSION_PORT );
+    if ( bind ( s, (sockaddr *) &addr, sizeof ( addr ) ) != 0 )
+    {
+        addr.sin_port    = 0;                       // ephemeral fallback
+        if ( bind ( s, (sockaddr *) &addr, sizeof ( addr ) ) != 0 ) { en_closesock ( s ); return ( FALSE ); }
+    }
     if ( listen ( s, 8 ) != 0 )                    { en_closesock ( s ); return ( FALSE ); }
 
     socklen_t len = sizeof ( addr );
@@ -251,9 +259,11 @@ BOOL CSockets::ResolveName ( LPCSTR pName, sockaddr_in * pAddr, bool bUdp )
         }
     }
 
-    // 2) "a.b.c.d[:port]" direct-IP form (default port = discovery port).
+    // 2) "a.b.c.d[:port]" direct-IP form. Default a bare TCP `Call <host>` to the well-known
+    // TCP SESSION port (the host binds the same port) — the broadcast-free #43 cross-machine
+    // connect; UDP datagrams keep defaulting to the discovery port. ":<port>" overrides either.
     std::string host = key;
-    unsigned short port = SOCK_DISCOVERY_PORT;
+    unsigned short port = bUdp ? SOCK_DISCOVERY_PORT : SOCK_SESSION_PORT;
     size_t colon = host.find ( ':' );
     if ( colon != std::string::npos )
     {
