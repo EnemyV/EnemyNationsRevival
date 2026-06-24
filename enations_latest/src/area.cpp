@@ -7385,6 +7385,12 @@ void HarnessHexInfo( int x, int y, std::string& out )
     out += " alt " + IntToStr( pHex->GetAlt( ) );
     out += " vis " + std::string( pHex->GetVisible( ) ? "1" : "0" );
     out += " unit " + std::string( hitinfo.GetUnit( ) != NULL ? "1" : "0" );
+    // water + tree block building but are NOT "units" — without these a flat, clear-of-
+    // units, visible hex still fails FoundationCost (trees/water), which is exactly what
+    // bit the placement captures. A buildable spot = water 0, tree 0, flat (matching
+    // neighbour alts), vis 1, unit 0.
+    out += " water " + std::string( pHex->IsWater( ) ? "1" : "0" );
+    out += " tree " + IntToStr( pHex->GetTree( ) );
     out += "\n";
 }
 

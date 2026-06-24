@@ -63,11 +63,14 @@ void HarnessDumpUnits(std::string& out);
 bool HarnessCenterUnit(unsigned long id);
 
 // Report the map hex under an area-window client pixel (same coords as clickid):
-// appends "hex <hx> <hy> alt <n> vis <0|1> unit <0|1>\n" to `out` (or "err ...").
-// READ-ONLY (no game/view mutation). Lets a headless driver find a flat buildable
-// hex (matching alts, no unit) or a slope (adjacent hexes with differing alt)
-// deterministically instead of eyeballing the placement OK/no-build cursor sprite
-// in a screenshot. Backs the `hexinfo <areaWin> <x> <y>` cmd. Render thread only.
+// appends "hex <hx> <hy> alt <n> vis <0|1> unit <0|1> water <0|1> tree <n>\n" to
+// `out` (or "err ..."). READ-ONLY (no game/view mutation). Lets a headless driver
+// find a BUILDABLE footprint (water 0, tree 0, matching neighbour alts = flat, vis 1,
+// unit 0) or a slope (adjacent hexes with differing alt) deterministically instead of
+// eyeballing the placement OK/no-build cursor sprite. NOTE water/tree matter: a flat,
+// unit-free, visible hex still fails FoundationCost if it's water or trees (trees are
+// not "units") — that was the hidden placement-capture blocker. Backs the
+// `hexinfo <areaWin> <x> <y>` cmd. Render thread only.
 void HarnessHexInfo(int x, int y, std::string& out);
 
 // Save the current in-game state to <path> (a .en save file) headlessly — no
