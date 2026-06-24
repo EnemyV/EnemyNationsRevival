@@ -206,6 +206,38 @@ if (NOT MSVC)
     endif ()
     set_target_properties(vdmplay_posix PROPERTIES
         LIBRARY_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+
+    # ---- ISERVE headless registration server (cross-platform, no MFC) ----------
+    # Standalone CLI daemon: hosts register their game, clients SenumREQ the list
+    # (VDMPLAY registration server, TCP 1707). OPTIONAL — the game works with or
+    # without it (broadcast + direct Join unchanged). Linux-verified listening on
+    # 1707. win32_compat.cpp is compiled IN so the vdmplay_posix .so's shim refs
+    # (PostMessage/CRITICAL_SECTION/timeGetTime/…) resolve from this exe at load
+    # (--export-dynamic). The legacy MFC GUI (tools/vdmplay/ISERVE/) stays frozen.
+    add_executable(iserve
+        ../../tools/vdmplay/iserve_headless/iserve_core.cpp
+        ../../tools/vdmplay/iserve_headless/iserve_main.cpp
+        ../../windward/wind22/src/win32_compat.cpp)
+    target_include_directories(iserve PRIVATE
+        ../../tools/vdmplay
+        ../../windward/wind22/include
+        ../../windward/wind22/include/winshim
+        ../../tools/)
+    target_compile_options(iserve PRIVATE
+        -g -fms-extensions -fsigned-char -fpermissive
+        -Wno-unknown-pragmas -Wno-format -Wno-write-strings -Wno-narrowing)
+    target_link_libraries(iserve PRIVATE vdmplay_posix pthread ${CMAKE_DL_LIBS})
+    if (APPLE)
+        target_link_options(iserve PRIVATE -Wl,-export_dynamic)
+    else ()
+        target_link_libraries(iserve PRIVATE rt)
+        target_link_options(iserve PRIVATE -Wl,--export-dynamic)
+    endif ()
+    # Co-locate with libvdmplay_posix.so + find it via $ORIGIN (no LD_LIBRARY_PATH).
+    set_target_properties(iserve PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+        BUILD_RPATH   "$ORIGIN"
+        INSTALL_RPATH "$ORIGIN")
 endif ()
 
 # MSVC-only host toolset selection (32-bit host tools for the VS generator).
