@@ -23,8 +23,9 @@ public:
     // Start the registration server. protocol = VPT_TCP (default) or VPT_IPX.
     // port is the registration listen port — HEADLESS DEFAULT 1707 (DEF_IPX_PORT),
     // deliberately NOT the legacy [TCP]WellKnownPort default of 2346 (== the
-    // game-session port DEF_TCP_PORT). Returns true on success.
-    bool Start(unsigned protocol, int port);
+    // game-session port DEF_TCP_PORT). gameId = the VDMPLAY game GUID the server
+    // keys sessions by — must match the game's GUID. Returns true on success.
+    bool Start(unsigned protocol, int port, const char* gameId);
 
     // Service the server once: drains ready sockets (accept registrations, answer
     // SenumREQ) via the vdmplay POSIX select() pump. Call in a loop.

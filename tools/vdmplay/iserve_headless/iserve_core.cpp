@@ -17,29 +17,20 @@ extern "C" int vpPumpNet(int timeout_ms);
 CIserveCore::CIserveCore() : m_vpH(nullptr), m_protocol(VPT_TCP), m_port(DEF_IPX_PORT) {}
 CIserveCore::~CIserveCore() { Stop(); }
 
-// Write the minimal vdmplay.ini this process needs (in the cwd, the path the
-// engine reads). We set the registration port EXPLICITLY so we never inherit the
-// legacy [TCP]WellKnownPort default of 2346 (== the game-session port). The
-// engine reads [TCP]/[IPX] WellKnownPort + [ISERVE] GUID/InfoSizes from here.
-static void WriteIni(unsigned protocol, int port) {
-    FILE* f = fopen("vdmplay.ini", "w");
-    if (!f) return;
-    fprintf(f, "[TCP]\nWellKnownPort=%d\n\n", protocol == VPT_TCP ? port : DEF_TCP_PORT);
-    fprintf(f, "[IPX]\nWellKnownPort=%d\n\n", protocol == VPT_IPX ? port : DEF_IPX_PORT);
-    fprintf(f, "[ISERVE]\nGUID=TESTGAME\nSessionInfoSize=32\nPlayerInfoSize=32\n");
-    fclose(f);
-}
-
-bool CIserveCore::Start(unsigned protocol, int port) {
+bool CIserveCore::Start(unsigned protocol, int port, const char* gameId) {
     if (m_vpH) return true;  // already running
     m_protocol = protocol;
     m_port     = port;
 
-    WriteIni(protocol, port);
-
+    // The registration server keys sessions by game GUID — it must match the GUID
+    // the game registers/enumerates with, else the host's session is never served
+    // to a client. Default = Enemy Nations' tlpGUID (netapi.h); override via --guid
+    // for a different game. We do NOT touch vdmplay.ini (port/sizes are passed
+    // explicitly below) so iserve can share a directory with the game without
+    // clobbering its config.
     VPGUID guid;
     memset(&guid, 0, sizeof(guid));
-    strncpy(guid.buf, "TESTGAME", sizeof(guid.buf) - 1);
+    strncpy(guid.buf, gameId, sizeof(guid.buf) - 1);
 
     // Pass the registration port EXPLICITLY via protocolData so the engine binds it
     // directly — NOT via the legacy [TCP]WellKnownPort ini lookup, which defaults to
