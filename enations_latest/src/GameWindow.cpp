@@ -311,12 +311,36 @@ bool GameWindow::InitializeSDL() {
     // Create SDL window — borderless, positioned at the primary-display origin so
     // it fills the screen (and is a known anchor for the floating panels).
     Uint32 winFlags = SDL_WINDOW_SHOWN | SDL_WINDOW_BORDERLESS;
+    int winX = 0, winY = 0;
 #ifndef _WIN32
-    if (wantFullscreen) winFlags |= SDL_WINDOW_FULLSCREEN_DESKTOP;
+#ifdef __APPLE__
+    // #47 symptom-5 (opt-in, default OFF): EN_MAC_USABLE_FULLSCREEN makes the game a
+    // borderless window sized+positioned to the display's USABLE bounds (which exclude
+    // the Dock + menu bar) instead of a true FULLSCREEN_DESKTOP window. A borderless
+    // fullscreen-desktop window with Spaces disabled covers the Dock's screen rect, but
+    // the Dock (a higher-level system element) draws ON TOP of the game's bottom edge,
+    // and the fullscreen style can swallow Cmd-Tab. A usable-bounds window leaves the
+    // Dock/menu-bar untouched (no overlap), stays a normal window (Cmd-Tab works), and —
+    // not being a fullscreen Space — still lets the ALWAYS_ON_TOP panels overlay. The
+    // matching engine render size is set in linux_main.cpp under the SAME env flag, so
+    // metrics/window/back-buffer stay consistent (no terrain-rasterizer mismatch).
+    const char* usableFs = getenv("EN_MAC_USABLE_FULLSCREEN");
+    const bool usableMode = wantFullscreen && usableFs && usableFs[0] && usableFs[0] != '0';
+    if (usableMode) {
+        SDL_Rect usable;
+        if (SDL_GetDisplayUsableBounds(0, &usable) == 0 && usable.w > 0 && usable.h > 0) {
+            winX = usable.x;
+            winY = usable.y;
+        }
+    }
+#else
+    const bool usableMode = false;
+#endif
+    if (wantFullscreen && !usableMode) winFlags |= SDL_WINDOW_FULLSCREEN_DESKTOP;
 #endif
     m_window = SDL_CreateWindow(
         m_title.c_str(),
-        0, 0,
+        winX, winY,
         m_width, m_height,
         winFlags
     );
