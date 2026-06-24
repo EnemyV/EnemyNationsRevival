@@ -516,6 +516,26 @@ bool GameWindow::PollEvents() {
     }
     m_pollingEvents = true;
 
+    // #47 / Cluster-A global capture safety net (mac2) — complements the per-drag-site
+    // local heal in SDL2UI.cpp/SDL2Panel.cpp (@c49873f7). A missed SDL_MOUSEBUTTONUP can
+    // leave an OS mouse-capture (SDL_CaptureMouse(TRUE), set by a title-bar/panel drag)
+    // latched ON. If that happens with NO follow-up mouse motion — e.g. the user Cmd-Tabs
+    // away the instant the drag ends — the motion-driven local heal never fires and the
+    // stuck capture routes all input to the game (Cmd-Tab is swallowed; the macOS focus
+    // bug, symptom #47-4). Frame-level invariant: a drag requires a button held, so if NO
+    // mouse button is physically down there can be no live drag → the OS capture must not
+    // outlive it. This releases ONLY the OS capture; it does NOT touch the per-widget drag
+    // flags (m_dlgDragging/m_dResizing/m_dDragging) — those are owned by the drag-site
+    // local heal, so the two patches stay disjoint (no double-patch; mac [00:42Z] split).
+    // Portable by design: on Windows/Linux button-up is delivered reliably, so during a
+    // real drag a button is down (net skips) and when idle nothing is captured (no-op) —
+    // it also hardens those platforms against a focus-loss/alt-tab missed-up.
+    {
+        Uint32 mouseButtons = SDL_GetGlobalMouseState(nullptr, nullptr);
+        if (!(mouseButtons & (SDL_BUTTON_LMASK | SDL_BUTTON_MMASK | SDL_BUTTON_RMASK)))
+            SDL_CaptureMouse(SDL_FALSE);
+    }
+
 #ifndef _WIN32
     EnHarness_Service();   // service any pending harness screenshot on this (render) thread
 #endif
