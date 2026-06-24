@@ -351,13 +351,17 @@ void SDL2BuildingWindow::LoadIcons() {
         m_matIconH = pMat->m_cyIcon;
     }
     if ( m_bFertility && !m_densIcon ) {
-        // Wheat/food icon (not the green density "X") — a farm's fertility maps to
-        // how much food it can grow, so the food sheaf reads more naturally here.
-        CStatData* pFood = theIcons.GetByIndex( ICON_FOOD );
-        if ( pFood && pFood->m_pcDib ) {
-            m_densIcon  = SDL2MainMenu::CreateSurfaceFromDIB( pFood->m_pcDib );
-            m_densIconW = pFood->m_cxIcon;
-            m_densIconH = pFood->m_cyIcon;
+        // A FOOD farm's fertility maps to how much food it can grow, so the wheat
+        // sheaf (ICON_FOOD) reads naturally. A LUMBER MILL's "fertility" is really
+        // tree density, so the food sheaf is misleading there — use the green
+        // density "X" (ICON_DENSITY), the same art the original status bar used.
+        auto* pBf = m_pBldg->GetData()->GetBldFarm();
+        bool bLumber = ( pBf && pBf->GetTypeFarm() == CMaterialTypes::lumber );
+        CStatData* pIco = theIcons.GetByIndex( bLumber ? ICON_DENSITY : ICON_FOOD );
+        if ( pIco && pIco->m_pcDib ) {
+            m_densIcon  = SDL2MainMenu::CreateSurfaceFromDIB( pIco->m_pcDib );
+            m_densIconW = pIco->m_cxIcon;
+            m_densIconH = pIco->m_cyIcon;
         }
     }
     if ( m_bUnits && !m_unitIcons ) {
@@ -834,7 +838,14 @@ void SDL2BuildingWindow::DrawBuildBar(SDL2Image* img, int per) {
 // the original status bar used) plus a "NN%" readout on the right.
 int SDL2BuildingWindow::BuildFertility(int x, int y, int w) {
     AddOutline(x, y, w, FERTILITY_H);
-    int yh = Header(x + BOX_PAD, y + BOX_PAD, w - 2 * BOX_PAD, "Fertility", kAccentGrn, ICON_FOOD);
+    // Lumber-mill "fertility" = tree density -> green density "X"; food farm -> wheat sheaf.
+    bool bLumber = false;
+    if ( m_pBldg ) {
+        auto* pBf = m_pBldg->GetData()->GetBldFarm();
+        bLumber = ( pBf && pBf->GetTypeFarm() == CMaterialTypes::lumber );
+    }
+    int yh = Header(x + BOX_PAD, y + BOX_PAD, w - 2 * BOX_PAD, "Fertility", kAccentGrn,
+                    bLumber ? ICON_DENSITY : ICON_FOOD);
 
     int countW = 48;
     int iconsX = x + BOX_PAD + 4;
