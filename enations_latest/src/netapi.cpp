@@ -3520,6 +3520,13 @@ void CGame::ProcessMessage(CNetCmd* pCmd )
     case CNetCmd::edict_toggle: {
         CNetEdictToggle* pMsg = (CNetEdictToggle*)pCmd;
         CPlayer*         pPlr = theGame._GetPlayerByPlyr( pMsg->m_iPlyrNum );
+        // Optional MP-sync runtime-test log (env EN_EDICT_LOG=1, default off → no
+        // impact). Confirms a remote client RECEIVED + APPLIED a peer's civ-edict
+        // toggle (the CNetEdictToggle wire path) — the edict-MP-sync gate.
+        { static int el=-1; if(el<0) el=getenv("EN_EDICT_LOG")?1:0;
+          if(el) fprintf(stderr,"[edict-mp] RX edict_toggle plyr=%d edict=%d on=%d -> %s\n",
+                         (int)pMsg->m_iPlyrNum,(int)pMsg->m_iEdict,(int)pMsg->m_bOn,
+                         (pPlr==NULL)?"(no player)":(pPlr->IsLocal()?"local-skip":"APPLIED")); }
         if ( pPlr == NULL )
             break;
         if ( !pPlr->IsLocal( ) )
