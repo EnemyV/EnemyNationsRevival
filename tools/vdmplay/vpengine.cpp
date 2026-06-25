@@ -1284,6 +1284,13 @@ BOOL CRemoteSession::LookForServer( LPVOID data ) {
         if ( !lookupA )
             return FALSE;
 
+        // TCP-discovery diagnostic (env EN_NETTRACE=1): show the DIRECTED server-lookup
+        // address the client sends its sEnumREQ to — confirms whether the directed query
+        // actually targets the registration server (vs falling back to broadcast).
+        { static int nt=-1; if(nt<0) nt=getenv("EN_NETTRACE")?1:0;
+          if(nt){ char ab[128]={0}; lookupA->GetPrintForm(ab,sizeof(ab));
+                  fprintf(stderr,"[nettrace] enum sEnumREQ -> server-lookup addr=%s\n", ab); } }
+
         if ( !m_broadcastLink->SendTo( *lookupA,
                                        msg->Data(), msg->Size(), 0 ) ) {
             Log( "CremoteSession failed to send to lookup address" );

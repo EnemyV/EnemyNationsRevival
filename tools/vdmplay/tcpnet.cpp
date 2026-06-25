@@ -265,6 +265,10 @@ CTcpNet::CTcpNet(CTDLogger* log, u_short streamPort, u_short dgPort, u_short wel
  if (!m_serverAddress)
   m_serverAddress = INADDR_BROADCAST;
 
+ { static int nt=-1; if(nt<0) nt=getenv("EN_NETTRACE")?1:0;
+   if(nt) fprintf(stderr,"[nettrace] CTcpNet ctor: serverAddr_param=0x%lx srvAddrStr=%s -> m_serverAddress=0x%lx m_serverPort=%u\n",
+                  (unsigned long)serverAddr,(srvAddrStr?srvAddrStr:"(null)"),(unsigned long)m_serverAddress,(unsigned)ntohs(m_serverPort)); }
+
  int aIndex = vpFetchInt("TCP", "AddressIndex", 0);
 
  // Determine our local station address (for advertising to clients). The legacy
