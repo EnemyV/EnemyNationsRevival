@@ -81,6 +81,7 @@ private:
     int BuildOffice    (int x, int y, int w);
     int BuildApt       (int x, int y, int w);
     int BuildTurret    (int x, int y, int w);
+    int BuildEdicts    (int x, int y, int w);   // Edicts v1: civ-wide policy toggles (host buildings)
     int BuildProduction(int x, int y, int w);
     int BuildMilitary  (int x, int y, int w);
     int BuildRepair    (int x, int y, int w);

@@ -9,6 +9,7 @@
 #include "base.h"
 #include "icons.h"
 #include "bitmaps.h"      // theIcons, ICON_MATERIALS
+#include "edicts.h"       // Edicts v1: civ-wide edict catalog for the Edicts section
 #include "SDL2MainMenu.h"
 #include "area.h"         // CWndArea::SetShowRange (weapon-range overlay)
 
@@ -111,6 +112,25 @@ static bool secApt(CBuilding* b) {
     if ( b->GetData()->GetType() == CStructureData::rocket ) return true;
     return ( b->GetData()->GetUnionType() == CStructureData::UThousing ) &&
            ( b->GetData()->GetBldgType()  == CStructureData::apartment );
+}
+// Edicts v1: how many CIV-WIDE edicts are hosted at this building's type?
+// (Building-scoped edicts live in AltOutput, not here.)
+static int nCivEdictsFor(CBuilding* b) {
+    // Match the edict's host either by GetBldgType() (normalised: apartment/office) OR
+    // GetType() (per-instance: rocket/command_center) — the rocket only matches via GetType.
+    CStructureData::BLDG_TYPE bt = b->GetData()->GetBldgType();
+    CStructureData::BLDG_TYPE gt = b->GetData()->GetType();
+    int n = 0;
+    for ( int id = 0; id < EDICT_COUNT; ++id ) {
+        if ( g_aEdicts[id].scope != EDICT_CIVWIDE ) continue;
+        CStructureData::BLDG_TYPE host = g_aEdicts[id].hostBuilding;
+        if ( host == bt || host == gt ) ++n;
+    }
+    return n;
+}
+// Show the Edicts section only on an edict-host building that I own.
+static bool secEdicts(CBuilding* b) {
+    return ( b->GetOwner() && b->GetOwner()->IsMe() ) && ( nCivEdictsFor(b) > 0 );
 }
 static bool secOfc(CBuilding* b) {
     if ( b->GetData()->GetType() == CStructureData::rocket ) return true;
@@ -216,7 +236,7 @@ static bool secBuilding(CBuilding* b) {
 enum {
     SEC_STORAGE, SEC_PRODUCTION, SEC_BUILDING, SEC_FERTILITY, SEC_INPUTS,
     SEC_OUTPUTS, SEC_UNITS, SEC_REPAIR, SEC_MILITARY, SEC_POWER, SEC_OFFICE,
-    SEC_APT, SEC_TURRET
+    SEC_APT, SEC_TURRET, SEC_EDICTS
 };
 
 struct SecRec { int id; int h; };
@@ -248,6 +268,7 @@ static BldgLayout computeLayout(CBuilding* b) {
     if ( secOfc(b)        ) L.secs[n++] = { SEC_OFFICE,     POWERLIKE_H };
     if ( secApt(b)        ) L.secs[n++] = { SEC_APT,        POWERLIKE_H };
     if ( secTurret(b)     ) L.secs[n++] = { SEC_TURRET,     TURRET_H };
+    if ( secEdicts(b)     ) L.secs[n++] = { SEC_EDICTS,     BOX_PAD + HDR_H + nCivEdictsFor(b) * ROW_H + BOX_PAD };
 
     int total = 0;
     for ( int i = 0; i < n; i++ ) total += L.secs[i].h + SEC_PAD;
@@ -454,6 +475,33 @@ void SDL2BuildingWindow::OnInit() {
 }
 
 // Dispatch a section id to its builder. Order of ids matches computeLayout().
+// Edicts v1 — civ-wide policy toggles hosted at this building (rocket/command-center/embassy).
+// One SDL2Checkbox per edict; toggling calls CPlayer::ToggleEdict (applies bonus + upkeep
+// immediately via RecomputeEdictMults). NOTE: direct toggle is SP-correct; MP net-sync
+// (CNetEdictToggle) is the next phase — until then this is single-player only.
+int SDL2BuildingWindow::BuildEdicts(int x, int y, int w) {
+    int n = nCivEdictsFor(m_pBldg);
+    int H = BOX_PAD + HDR_H + n * ROW_H + BOX_PAD;
+    AddOutline(x, y, w, H);
+    int yh = Header(x + BOX_PAD, y + BOX_PAD, w - 2 * BOX_PAD, "Edicts", kAccentGold);
+    CStructureData::BLDG_TYPE bt = m_pBldg->GetData()->GetBldgType();
+    CStructureData::BLDG_TYPE gt = m_pBldg->GetData()->GetType();
+    CPlayer* me = m_pBldg->GetOwner();
+    int cy = yh;
+    for ( int id = 0; id < EDICT_COUNT; ++id ) {
+        const EdictDef& e = g_aEdicts[id];
+        if ( e.scope != EDICT_CIVWIDE || ( e.hostBuilding != bt && e.hostBuilding != gt ) )
+            continue;
+        bool checked = me->IsEdictActive(id);
+        int  eid     = id;   // capture by value for the callback
+        AddWidget<SDL2Checkbox>( x + BOX_PAD + 4, cy, w - 2 * BOX_PAD - 8, ROW_H,
+                                 e.name, checked,
+                                 [me, eid]( bool on ){ me->ToggleEdict( eid, on ); } );
+        cy += ROW_H;
+    }
+    return y + H + SEC_PAD;
+}
+
 int SDL2BuildingWindow::BuildSection(int id, int x, int y, int w) {
     switch ( id ) {
         case SEC_STORAGE:    return BuildStorage   (x, y, w);
@@ -469,6 +517,7 @@ int SDL2BuildingWindow::BuildSection(int id, int x, int y, int w) {
         case SEC_OFFICE:     return BuildOffice    (x, y, w);
         case SEC_APT:        return BuildApt       (x, y, w);
         case SEC_TURRET:     return BuildTurret    (x, y, w);
+        case SEC_EDICTS:     return BuildEdicts    (x, y, w);
     }
     return y;
 }
