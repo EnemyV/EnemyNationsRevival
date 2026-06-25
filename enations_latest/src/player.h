@@ -313,7 +313,7 @@ class CPlayer : public CObject
     float GetConstProd( ) const
     {
         ASSERT_STRICT_VALID( this );
-        return ( m_fConstProd );
+        return ( m_fConstProd * m_fEdictConstMult );   // civ-wide edict bonus (Edicts v1)
     }
     float GetMtrlsProd( ) const
     {
@@ -328,7 +328,7 @@ class CPlayer : public CObject
     float GetMineProd( ) const
     {
         ASSERT_STRICT_VALID( this );
-        return ( m_fMineProd );
+        return ( m_fMineProd * m_fEdictMineMult );   // civ-wide edict bonus (Edicts v1)
     }
     float GetFarmProd( ) const
     {
@@ -338,7 +338,7 @@ class CPlayer : public CObject
     float GetPopGrowth( ) const
     {
         ASSERT_STRICT_VALID( this );
-        return ( m_fPopGrowth );
+        return ( m_fPopGrowth * m_fEdictPopGrowthMult );   // civ-wide edict bonus (Edicts v1)
     }
     float GetPopDeath( ) const
     {
@@ -353,8 +353,14 @@ class CPlayer : public CObject
     float GetRsrchMult( ) const
     {
         ASSERT_STRICT_VALID( this );
-        return ( m_fRsrchProd );
+        return ( m_fRsrchProd * m_fEdictRsrchMult );   // civ-wide edict bonus (Edicts v1; RG-1: also wire Research())
     }
+    // --- Edicts v1 (civ-wide policy toggles; see edicts.h / RecomputeEdictMults) ---
+    bool  IsEdictActive( int edictId ) const { return ( m_dwEdicts & ( 1u << edictId ) ) != 0; }
+    DWORD GetEdicts( ) const { return ( m_dwEdicts ); }
+    float GetEdictFortBuildMult( ) const { return ( m_fEdictFortBuildMult ); }
+    void  ToggleEdict( int edictId, bool bOn );   // flips the bit, then RecomputeEdictMults
+    void  RecomputeEdictMults( );                 // fold active edicts (g_aEdicts) into cached mults
     float GetAttackMult( ) const
     {
         ASSERT_STRICT_VALID( this );
@@ -697,6 +703,19 @@ class CPlayer : public CObject
     float m_fRsrchProd;   // research productivity
     float m_fAttack;      // attack multiplier
     float m_fDefense;     // defense multiplier
+
+    // --- Edicts v1 (civ-wide policy toggles; see edicts.h) ---
+    // m_dwEdicts: bitmask of active CIV-WIDE edicts (bit i == EdictId i). Building-scoped
+    // edicts use the AltOutput family instead (operator: "building edicts ARE AltOutput").
+    // The cached mults are recomputed from g_aEdicts whenever m_dwEdicts changes
+    // (RecomputeEdictMults), then folded into the Get*Prod() accessors above. Default 1.0
+    // (no edict → no change). NOT serialized in v1 (operator deferred persistence).
+    DWORD m_dwEdicts;
+    float m_fEdictConstMult;       // → GetConstProd
+    float m_fEdictMineMult;        // → GetMineProd
+    float m_fEdictRsrchMult;       // → GetRsrchMult
+    float m_fEdictPopGrowthMult;   // → GetPopGrowth
+    float m_fEdictFortBuildMult;   // fort-only construction (vehicle.cpp ConstructBuilding)
 
     // relations the human player on this machine has with this player
     LONG m_iRelations;

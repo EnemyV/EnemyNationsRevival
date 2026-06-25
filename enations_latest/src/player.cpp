@@ -11,6 +11,7 @@
 
 #include <algorithm> // for the memory pool
 #include "player.h"
+#include "edicts.h"   // Edicts v1: g_aEdicts catalog for RecomputeEdictMults
 
 #include "ai.h"
 #include "Perf.h"  // ai.msg.skip counter (fan-out filter)
@@ -104,6 +105,13 @@ void CPlayer::ctor( )
     m_fPopGrowth      = 0.001;
     m_fPopDeath       = 0.0005;
     m_fEatingRate     = 0.01;
+    // Edicts v1 (civ-wide): no edicts active, all mults neutral (see RecomputeEdictMults).
+    m_dwEdicts            = 0;
+    m_fEdictConstMult     = 1.0f;
+    m_fEdictMineMult      = 1.0f;
+    m_fEdictRsrchMult     = 1.0f;
+    m_fEdictPopGrowthMult = 1.0f;
+    m_fEdictFortBuildMult = 1.0f;
     m_fAttack         = 1.0;
     m_fDefense        = 1.0;
     m_fPopMod         = 0.0;
@@ -191,6 +199,46 @@ CPlayer::~CPlayer( )
         if ( pos != NULL )
             theGame.m_lstLoad.RemoveAt( pos );
     }
+}
+
+//---------------------------------------------------------------------------
+// Edicts v1 — civ-wide policy multipliers. RecomputeEdictMults folds the active
+// CIV-WIDE edicts (g_aEdicts) into the cached mult floats, which the Get*Prod()
+// accessors then apply. Call on toggle (and after load once persistence lands).
+// Building-scoped edicts use the AltOutput family, so only EDICT_CIVWIDE entries
+// contribute here. Mults reset to 1.0 (neutral) each recompute.
+//---------------------------------------------------------------------------
+void CPlayer::RecomputeEdictMults( )
+{
+    m_fEdictConstMult     = 1.0f;
+    m_fEdictMineMult      = 1.0f;
+    m_fEdictRsrchMult     = 1.0f;
+    m_fEdictPopGrowthMult = 1.0f;
+    m_fEdictFortBuildMult = 1.0f;
+
+    for ( int id = 0; id < EDICT_COUNT; ++id )
+    {
+        if ( ( m_dwEdicts & ( 1u << id ) ) == 0 )
+            continue;
+        if ( g_aEdicts[id].scope != EDICT_CIVWIDE )
+            continue;   // building-scoped edicts live in AltOutput, not the player bitmask
+        const EdictDef& e = g_aEdicts[id];
+        m_fEdictConstMult     *= e.fConstMult;
+        m_fEdictMineMult      *= e.fMineMult;
+        m_fEdictRsrchMult     *= e.fRsrchMult;
+        m_fEdictPopGrowthMult *= e.fPopGrowthMult;
+        m_fEdictFortBuildMult *= e.fFortConstMult;
+    }
+}
+
+void CPlayer::ToggleEdict( int edictId, bool bOn )
+{
+    if ( edictId < 0 || edictId >= EDICT_COUNT )
+        return;
+    DWORD bit = ( 1u << edictId );
+    if ( bOn ) m_dwEdicts |= bit;
+    else       m_dwEdicts &= ~bit;
+    RecomputeEdictMults( );
 }
 
 void CPlayer::Close( )
