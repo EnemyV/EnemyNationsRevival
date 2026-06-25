@@ -490,8 +490,17 @@ void CTcpNet::SetRegistrationAddress(LPCSTR addr)
  }
  TCPAddress* ta = (TCPAddress*) MakeAddressFromString(addr);
  m_regAddr = ta;
+ // A portless registration address must default to the REGISTRATION well-known port
+ // (1707, the legacy reg port iserve listens on) — NOT the host's TCP SESSION port
+ // (m_wellKnownPort, 2346). The ini reader strips the ":1707" suffix, so a configured
+ // RegistrationAddress=<ip>:1707 always arrives here portless; defaulting to the session
+ // port made the host register to its own :2346 (where no reg server listens) while iserve
+ // on :1707 saw nothing -> "serving 0". Confirmed via EN_ISERVE_LOG host traces (linux2
+ // loopback @2c5c2397, 2026-06-25): read='127.0.0.1' -> m_registrationAddress=...:2346.
+ // 1707 == DEF_IPX_PORT (base.h); kept as a literal here to avoid dragging base.h->MFC on MSVC.
+ static const unsigned short REG_WELLKNOWN_PORT = 1707;
  if (ta && !ta->m_addr.m_dgPort)
-  ta->m_addr.m_dgPort = m_wellKnownPort;
+  ta->m_addr.m_dgPort = htons(REG_WELLKNOWN_PORT);
 
  if (ta)
  {
