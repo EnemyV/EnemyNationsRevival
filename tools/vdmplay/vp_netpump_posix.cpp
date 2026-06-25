@@ -154,10 +154,25 @@ int vpNetPumpPosix(int timeout_ms)
             }
 
             if (isE) {
+                // Drain the pending socket error in BOTH cases so the exception can't
+                // re-fire on the next pump (busy-loop / spurious late close).
                 int soerr = 0; socklen_t sl = sizeof(soerr);
                 getsockopt(s, SOL_SOCKET, SO_ERROR, &soerr, &sl);
-                emit(FD_CLOSE, soerr);
-                continue;
+
+                // Only treat exceptfds as a CLOSE when there's nothing readable. Linux
+                // reports a UDP socket's async error (e.g. ICMP port-unreachable from a
+                // prior send to a closed port) in exceptfds *while a valid datagram is
+                // still queued readable*; macOS/BSD do not. The old code emitted FD_CLOSE
+                // and `continue`d unconditionally, so the `continue` skipped the FD_READ
+                // dispatch below -> the iserve registration datagram was consumed in this
+                // test and never reached OnUnsafeData -> "serving 0" on Linux ONLY (mac
+                // received fine). A datagram socket has no connection to close anyway.
+                // When readable, fall through to the readability test, which emits FD_READ
+                // (data) — a genuine peer close still surfaces there as MSG_PEEK == 0.
+                if (!isR) {
+                    emit(FD_CLOSE, soerr);
+                    continue;
+                }
             }
 
             if (isR) {
