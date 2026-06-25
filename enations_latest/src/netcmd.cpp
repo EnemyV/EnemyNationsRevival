@@ -957,6 +957,13 @@ CNetRsrchDisc::CNetRsrchDisc( CPlayer const* pPlyr, int iRsrch ): CNetCmd( resea
     m_iRsrch   = pPlyr->GetRsrchItem( );
 }
 
+CNetEdictToggle::CNetEdictToggle( CPlayer const* pPlyr, int iEdict, bool bOn ): CNetCmd( edict_toggle )
+{
+    m_iPlyrNum = pPlyr->GetPlyrNum( );
+    m_iEdict   = iEdict;
+    m_bOn      = bOn ? 1 : 0;
+}
+
 CNetNeedSaveInfo::CNetNeedSaveInfo( CPlayer const* pPlyr ): CNetCmd( need_save_info )
 {
 

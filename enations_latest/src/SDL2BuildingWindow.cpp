@@ -476,9 +476,9 @@ void SDL2BuildingWindow::OnInit() {
 
 // Dispatch a section id to its builder. Order of ids matches computeLayout().
 // Edicts v1 — civ-wide policy toggles hosted at this building (rocket/command-center/embassy).
-// One SDL2Checkbox per edict; toggling calls CPlayer::ToggleEdict (applies bonus + upkeep
-// immediately via RecomputeEdictMults). NOTE: direct toggle is SP-correct; MP net-sync
-// (CNetEdictToggle) is the next phase — until then this is single-player only.
+// One SDL2Checkbox per edict; toggling calls CPlayer::ToggleEdictNet, which applies the
+// bonus+upkeep locally (RecomputeEdictMults) and, in a net game, broadcasts CNetEdictToggle
+// so every client converges deterministically.
 int SDL2BuildingWindow::BuildEdicts(int x, int y, int w) {
     int n = nCivEdictsFor(m_pBldg);
     int H = BOX_PAD + HDR_H + n * ROW_H + BOX_PAD;
@@ -496,7 +496,7 @@ int SDL2BuildingWindow::BuildEdicts(int x, int y, int w) {
         int  eid     = id;   // capture by value for the callback
         AddWidget<SDL2Checkbox>( x + BOX_PAD + 4, cy, w - 2 * BOX_PAD - 8, ROW_H,
                                  e.name, checked,
-                                 [me, eid]( bool on ){ me->ToggleEdict( eid, on ); } );
+                                 [me, eid]( bool on ){ me->ToggleEdictNet( eid, on ); } );
         cy += ROW_H;
     }
     return y + H + SEC_PAD;

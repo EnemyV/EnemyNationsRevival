@@ -3515,6 +3515,18 @@ void CGame::ProcessMessage(CNetCmd* pCmd )
         break;
     }
 
+    // Edicts v1: replicate a civ-wide edict toggle. The originating client already applied
+    // it locally (UI), so apply only on the OTHER clients for that player → all converge.
+    case CNetCmd::edict_toggle: {
+        CNetEdictToggle* pMsg = (CNetEdictToggle*)pCmd;
+        CPlayer*         pPlr = theGame._GetPlayerByPlyr( pMsg->m_iPlyrNum );
+        if ( pPlr == NULL )
+            break;
+        if ( !pPlr->IsLocal( ) )
+            pPlr->ToggleEdict( pMsg->m_iEdict, pMsg->m_bOn != 0 );
+        break;
+    }
+
 #ifdef _DEBUG
 
     // we couldn't handle the message!!

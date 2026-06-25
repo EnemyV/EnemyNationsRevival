@@ -251,6 +251,19 @@ void CPlayer::ToggleEdict( int edictId, bool bOn )
     RecomputeEdictMults( );
 }
 
+// User-initiated edict toggle (from the building info window): apply locally now, and in a
+// net game broadcast so every other client applies the same change for this player (the
+// edict_toggle dispatch in netapi.cpp). Keeps a single deterministic mutation per client.
+void CPlayer::ToggleEdictNet( int edictId, bool bOn )
+{
+    ToggleEdict( edictId, bOn );
+    if ( theGame.IsNetGame( ) )
+    {
+        CNetEdictToggle msg( this, edictId, bOn );
+        theNet.Broadcast( &msg, sizeof( msg ), TRUE );
+    }
+}
+
 void CPlayer::Close( )
 {
 

@@ -359,7 +359,8 @@ class CPlayer : public CObject
     bool  IsEdictActive( int edictId ) const { return ( m_dwEdicts & ( 1u << edictId ) ) != 0; }
     DWORD GetEdicts( ) const { return ( m_dwEdicts ); }
     float GetEdictFortBuildMult( ) const { return ( m_fEdictFortBuildMult ); }
-    void  ToggleEdict( int edictId, bool bOn );   // flips the bit, then RecomputeEdictMults
+    void  ToggleEdict( int edictId, bool bOn );   // flips the bit, then RecomputeEdictMults (local only)
+    void  ToggleEdictNet( int edictId, bool bOn );// user-initiated toggle: local + broadcast (MP sync)
     void  RecomputeEdictMults( );                 // fold active edicts (g_aEdicts) into cached mults
     float GetAttackMult( ) const
     {

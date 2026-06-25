@@ -153,6 +153,7 @@ class CNetCmd : public VPMsgHdr
         need_save_info,  // tell all players to send save game info
         save_info,       // base save info
         research_disc,   // player has discovered research
+        edict_toggle,    // player toggled a civ-wide edict (Edicts v1)
 
         last_message  // used for ASSERT
     };
@@ -1470,6 +1471,17 @@ class CNetRsrchDisc : public CNetCmd
     CNetRsrchDisc( CPlayer const* pPlyr, int iRsrch );
     int m_iPlyrNum;
     int m_iRsrch;
+};
+
+// Edicts v1: replicate a civ-wide edict toggle so all clients mutate the same player's
+// m_dwEdicts deterministically (single mutation point on receive). Mirrors CNetRsrchDisc.
+class CNetEdictToggle : public CNetCmd
+{
+  public:
+    CNetEdictToggle( CPlayer const* pPlyr, int iEdict, bool bOn );
+    int m_iPlyrNum;
+    int m_iEdict;
+    int m_bOn;       // 0/1 (int for fixed-size serialization)
 };
 
 class CNetNeedSaveInfo : public CNetCmd
