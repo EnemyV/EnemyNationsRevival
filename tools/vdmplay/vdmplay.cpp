@@ -1015,24 +1015,33 @@ BOOL CVdmPlay::InitTcp( LPCVOID data ) {
     srvAddrStr[0] = 0;
 
     if ( needAddrString ) {
+        char nt_sa[160]={0}, nt_ra[160]={0}, nt_path[256]={0}; int nt_src=0;
         LoadDefault( VPT_TCP, "ServerAddress", "", srvAddrStr, sizeof( srvAddrStr ) );
+        strncpy(nt_sa, srvAddrStr, sizeof(nt_sa)-1);
         if ( lstrlen( srvAddrStr ) ) {
             pSrvAddr = srvAddrStr;
             serverAddress = 0;
+            nt_src=1;
         } else {
             LoadDefault( VPT_TCP, "RegistrationAddress", "", srvAddrStr, sizeof( srvAddrStr ) );
+            strncpy(nt_ra, srvAddrStr, sizeof(nt_ra)-1);
             if ( lstrlen( srvAddrStr ) ) {
                 pSrvAddr = srvAddrStr;
                 serverAddress = 0;
+                nt_src=2;
             } else {
                 strcpy( srvAddrStr, DEF_IP_REG_SERVER );
                 pSrvAddr = srvAddrStr;
                 serverAddress = 0;
+                nt_src=3;
             }
 
         }
-
-
+        { static int nt=-1; if(nt<0) nt=getenv("EN_NETTRACE")?1:0;
+          if(nt){ vpMakeIniFile(nt_path);
+                  fprintf(stderr,"[nettrace] InitTcp read iniPath='%s' ServerAddress='%s' RegistrationAddress='%s' -> pSrvAddr='%s' src=%s\n",
+                          nt_path, nt_sa, nt_ra, pSrvAddr?pSrvAddr:"(null)",
+                          nt_src==1?"ServerAddress":nt_src==2?"RegistrationAddress":"DEF_IP_REG_SERVER(dead)"); } }
     }
 
 

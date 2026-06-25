@@ -54,7 +54,12 @@ typedef const void FAR *LPCVOID;
 
 #define VP_PSEUDOSIZE 2
 
-#define VDMPLAY_INIFILE "VDMPLAY.INI"
+#define VDMPLAY_INIFILE "vdmplay.ini"   // lowercase: POSIX is case-sensitive and the game
+                                        // writes "vdmplay.ini" (WritePrivateProfileString); the
+                                        // engine's reads (vpMakeIniFile) must hit the SAME file or
+                                        // ServerAddress/RegistrationAddress read empty -> the directed
+                                        // TCP discovery query falls to the dead DEF_IP_REG_SERVER ->
+                                        // broadcast. Harmless on case-insensitive Windows.
 
 
 #define VPAPIVERSION_MAJOR  0x00
