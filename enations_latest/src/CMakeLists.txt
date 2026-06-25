@@ -7,6 +7,7 @@ set(enations_sources
         altoutput.cpp   # reusable alternate-output toggle system (BioFuel, Coal Liquefaction, ...)
         area.cpp
         bmbutton.cpp
+        edicts.cpp   # Edicts v1 static catalog (data model; see docs/plans/edicts-feature-plan.md)
         bridge.cpp
         caicopy.cpp
         caidata.cpp
