@@ -254,7 +254,13 @@ CTcpNet::CTcpNet(CTDLogger* log, u_short streamPort, u_short dgPort, u_short wel
    m_serverAddress = addr.m_stationAddress.s_addr;
     m_serverPort = addr.m_dgPort;
    if (!m_serverPort)
-    m_serverPort = m_wellKnownPort;
+    // Symmetric to the host-register fix: the server-LOOKUP target (sEnumREQ to iserve,
+    // MakeServerLookupAddress) must default a portless ServerAddress to the REGISTRATION
+    // well-known port 1707, NOT the host's TCP session port (m_wellKnownPort=2346). The ini
+    // strips ":1707", so ServerAddress always arrives portless; defaulting to 2346 made the
+    // client query iserve on the wrong port (a registered game would never be found via iserve).
+    // 1707 == DEF_IPX_PORT (base.h); literal here to avoid base.h->MFC drag on MSVC.
+    m_serverPort = htons(1707);
   }
 
   Log("CTcpNet::CTcpNet After TranslateStringAddress");

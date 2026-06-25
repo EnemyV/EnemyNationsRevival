@@ -1246,7 +1246,8 @@ BOOL CLocalSession::BroadcastSessionData() {
                                      m_info->Data(), m_info->Size(), 0 );
             m_lastRegTime = GetCurrentTime();
             if ( IserveLogOn() )
-                fprintf( stderr, "[iserve-host] BroadcastSessionData -> sent session registration to reg server\n" );
+                fprintf( stderr, "[iserve-host] BroadcastSessionData -> sent registration to reg server (msgKind=%d; reg server only registers SenumREP=%d)\n",
+                         (int)m_info->hdr.msgKind, (int)SenumREP );
         } else if ( IserveLogOn() ) {
             fprintf( stderr, "[iserve-host] BroadcastSessionData: m_registrationAddress NULL -> NOT registering\n" );
         }
@@ -1881,6 +1882,14 @@ void CRemoteSession::OnUnsafeData( CNetLink* link ) {
         return;
     }
 
+    // iserve receive diagnostic (EN_ISERVE_LOG): the reg server uses this handler. Shows
+    // whether the host's registration datagram ARRIVES here and with what msgKind — the reg
+    // server only registers SenumREP. If this never logs, the datagram isn't reaching the
+    // reg server's UDP link (bind/route); if it logs a non-SenumREP kind, the host is sending
+    // the wrong message type for directed registration.
+    if ( IserveLogOn() )
+        fprintf( stderr, "[iserve] OnUnsafeData RX datagram msgKind=%d size=%lu (SenumREP=%d SenumREQ=%d)\n",
+                 (int)msg->hdr.msgKind, (unsigned long)count, (int)SenumREP, (int)SenumREQ );
 
     switch ( msg->hdr.msgKind ) {
     case  UDataREQ:
@@ -1915,6 +1924,9 @@ void CRemoteSession::OnUnsafeData( CNetLink* link ) {
 
 
         OnSenumREP( siMsg, ws );
+        if ( IserveLogOn() )
+            fprintf( stderr, "[iserve] SenumREP processed (host registration) -> registry now %d session(s)\n",
+                     (int)m_wsMap->Count() );
         ws->Unref();
         break;
     }
