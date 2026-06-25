@@ -112,6 +112,9 @@ void CPlayer::ctor( )
     m_fEdictRsrchMult     = 1.0f;
     m_fEdictPopGrowthMult = 1.0f;
     m_fEdictFortBuildMult = 1.0f;
+    m_fEdictEnergyUpkeepPct    = 0.0f;
+    m_fEdictWorkforceUpkeepPct = 0.0f;
+    m_fEdictFoodUpkeepPct      = 0.0f;
     m_fAttack         = 1.0;
     m_fDefense        = 1.0;
     m_fPopMod         = 0.0;
@@ -215,6 +218,9 @@ void CPlayer::RecomputeEdictMults( )
     m_fEdictRsrchMult     = 1.0f;
     m_fEdictPopGrowthMult = 1.0f;
     m_fEdictFortBuildMult = 1.0f;
+    m_fEdictEnergyUpkeepPct    = 0.0f;
+    m_fEdictWorkforceUpkeepPct = 0.0f;
+    m_fEdictFoodUpkeepPct      = 0.0f;
 
     for ( int id = 0; id < EDICT_COUNT; ++id )
     {
@@ -228,6 +234,10 @@ void CPlayer::RecomputeEdictMults( )
         m_fEdictRsrchMult     *= e.fRsrchMult;
         m_fEdictPopGrowthMult *= e.fPopGrowthMult;
         m_fEdictFortBuildMult *= e.fFortConstMult;
+        // Upkeep is additive across active edicts (a pct of the relevant per-loop demand).
+        m_fEdictEnergyUpkeepPct    += e.fEnergyUpkeepPct;
+        m_fEdictWorkforceUpkeepPct += e.fWorkforceUpkeepPct;
+        m_fEdictFoodUpkeepPct      += e.fFoodUpkeepPct;
     }
 }
 
@@ -448,6 +458,12 @@ void CPlayer::StartLoop( )
 
     const int GAS_USUAGE   = 3;  // was 4
     const int MIN_GAS_NEED = 1;
+
+    // Edict upkeep (Edicts v1): active civ-wide edicts add recurring energy/workforce
+    // demand as a pct of the accumulated base, applied here — BEFORE the throttle below —
+    // so an unaffordable edict correctly drags m_fPwrMult/m_fPplMult down (the cost half).
+    if ( m_fEdictEnergyUpkeepPct    > 0.0f ) m_iPwrNeed     += (int)( m_iPwrNeed     * m_fEdictEnergyUpkeepPct );
+    if ( m_fEdictWorkforceUpkeepPct > 0.0f ) m_iPplNeedBldg += (int)( m_iPplNeedBldg * m_fEdictWorkforceUpkeepPct );
 
     if ( m_iPplBldg < m_iPplNeedBldg )
         m_fPplMult = float( m_iPplBldg ) / float( m_iPplNeedBldg );
@@ -710,6 +726,9 @@ void CPlayer::PeopleAndFood( int iNumSec )
 
     // track what we need for a minute
     m_iFoodNeed = float( iPplTotal * 60 ) * m_fEatingRate;
+    // Edict upkeep (Edicts v1): active civ-wide edicts add extra food demand (pct of base).
+    if ( m_fEdictFoodUpkeepPct > 0.0f )
+        m_iFoodNeed += (int)( m_iFoodNeed * m_fEdictFoodUpkeepPct );
 
     // do we need to eat?
     if ( m_fFoodMod >= 1 )

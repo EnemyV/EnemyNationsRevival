@@ -716,6 +716,10 @@ class CPlayer : public CObject
     float m_fEdictRsrchMult;       // → GetRsrchMult
     float m_fEdictPopGrowthMult;   // → GetPopGrowth
     float m_fEdictFortBuildMult;   // fort-only construction (vehicle.cpp ConstructBuilding)
+    // Upkeep — recurring cost (sum of active edicts' pct), applied as extra per-loop demand:
+    float m_fEdictEnergyUpkeepPct;     // added to m_iPwrNeed in StartLoop (pre-throttle)
+    float m_fEdictWorkforceUpkeepPct;  // added to m_iPplNeedBldg in StartLoop (pre-throttle)
+    float m_fEdictFoodUpkeepPct;       // added to m_iFoodNeed in PeopleAndFood
 
     // relations the human player on this machine has with this player
     LONG m_iRelations;

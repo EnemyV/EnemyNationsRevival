@@ -961,6 +961,10 @@ void CVehicle::ConstructBuilding() {
 
     // get change based on everything
     int iInc = GetProd(GetOwner()->GetConstProd());
+    // Edicts v1: "Fortify Border" (civ-wide) speeds construction of FORTS specifically.
+    if (GetOwner()->GetEdictFortBuildMult() != 1.0f
+        && m_pBldg->GetData()->GetBldgType() == CStructureData::fort)
+        iInc = (int)(iInc * GetOwner()->GetEdictFortBuildMult());
     if (iInc <= 0)
         return;
 
