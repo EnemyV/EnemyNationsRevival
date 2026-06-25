@@ -1870,6 +1870,14 @@ void CRemoteSession::OnUnsafeData( CNetLink* link ) {
     DWORD count = link->ReceiveFrom( msg->Data(), maxReadSize, *addr );
     BOOL unexpected = FALSE;
 
+    // iserve receive diagnostic (EN_ISERVE_LOG): proves the POSIX pump is actually
+    // delivering datagram FD_READ events to the reg server's handler at all. If this
+    // never logs while a datagram is sent to the bound :1707 socket, the socket isn't
+    // being selected-for-read (pump/registration), NOT a parse/dispatch issue downstream.
+    if ( IserveLogOn() )
+        fprintf( stderr, "[iserve] OnUnsafeData ENTER (pump delivered a datagram FD_READ) count=%lu\n",
+                 (unsigned long)count );
+
     if ( count < sizeof( VPMSGHDR ) ) {
         msg->Unref();
         return;
