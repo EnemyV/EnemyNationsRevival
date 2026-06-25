@@ -986,6 +986,11 @@ void CPlayer::Serialize( CArchive& ar )
         for ( int i = 0; i < HIST_LEN; i++ )
             ar << m_aHistPwrHave[i] << m_aHistPwrNeed[i] << m_aHistPplTotal[i]
                << m_aHistPplBldg[i] << m_aHistAptCap[i] << m_aHistOfcCap[i];
+
+        // Save release 5+: active EDICTS bitmask (CPlayer::m_dwEdicts). Always written.
+        // The derived multipliers/upkeeps are NOT serialized — they are recomputed
+        // from the bitmask on load via RecomputeEdictMults().
+        ar << (DWORD)m_dwEdicts;
     }
 
     else
@@ -1116,6 +1121,18 @@ void CPlayer::Serialize( CArchive& ar )
         }
         else
             m_iLastDiscovered = 0;
+
+        // Save release 5+ carries the active EDICTS bitmask. Older saves predate it,
+        // so m_dwEdicts stays at its ctor default (0 = no edicts) and we do NOT read.
+        // After restoring the bits, rebuild the derived multipliers/upkeeps (those are
+        // not serialized) so the loaded edicts immediately apply to the sim.
+        if ( theGame.m_dwVer >= 5 )
+        {
+            DWORD dwEd;
+            ar >> dwEd;
+            m_dwEdicts = dwEd;
+            RecomputeEdictMults( );
+        }
 
         m_bState  = created;
         m_dwAiHdl = 0;
