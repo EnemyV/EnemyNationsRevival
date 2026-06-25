@@ -24,6 +24,18 @@ static void LogV( CTDLogger* log, const char* fmt,
 
 static WSList* rwsPool = 0;
 
+// Optional iserve transaction log (env EN_ISERVE_LOG=1). Lets the headless
+// registration server show it actually fielded a host registration / client
+// query — proving cross-subnet discovery went THROUGH iserve, not LAN broadcast
+// (the client sends sEnumREQ to BOTH the server-lookup addr and broadcast, so
+// only the server side can prove which served it). Cached so the env lookup is
+// not paid per-message. Default off => zero impact on the game.
+static int IserveLogOn() {
+    static int on = -1;
+    if ( on < 0 ) on = getenv( "EN_ISERVE_LOG" ) ? 1 : 0;
+    return on;
+}
+
 DWORD vpMsgTime() {
     DWORD  msgTime;
 #ifdef WIN32
@@ -829,6 +841,9 @@ void CLocalSession::OnAccept( CNetLink* link ) {
         }
 
         m_wsMap->Register( ws );
+        if ( IserveLogOn() )
+            fprintf( stderr, "[iserve] host session REGISTERED -> %d session(s) now in registry\n",
+                     (int)m_wsMap->Count() );
     }
 
     // Reply with session info
@@ -1994,6 +2009,10 @@ int CRegisterySession::ReplyServerInfo( CWS* ws, LPVOID data ) {
 
 
 BOOL CRegisterySession::OnSenumREQ( genericMsg* msg, CRemoteWS* ws ) {
+
+    if ( IserveLogOn() )
+        fprintf( stderr, "[iserve] sEnumREQ from a client -> serving %d registered session(s)\n",
+                 (int)m_wsMap->Count() );
 
     if ( !m_wsMap->Count() ) {
         // send a dummy reply so the client will see something coming
