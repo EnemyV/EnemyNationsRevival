@@ -1065,6 +1065,14 @@ BOOL CVdmPlay::InitTcp( LPCVOID data ) {
     if ( lstrlen( srvAddrStr ) )
         net->SetRegistrationAddress( srvAddrStr );
 
+    // iserve host-register diagnostic (env EN_ISERVE_LOG=1; off => zero impact).
+    // Logs the [TCP]RegistrationAddress the HOST read here (distinct from the client's
+    // ServerAddress read above) + whether SetRegistrationAddress fired — the first link
+    // in the host->iserve register chain. Pairs with the [iserve-host] traces in vpengine.
+    { static int il=-1; if(il<0) il=getenv("EN_ISERVE_LOG")?1:0;
+      if(il) fprintf(stderr,"[iserve-host] InitTcp [TCP]RegistrationAddress read='%s' -> SetRegistrationAddress %s\n",
+                     srvAddrStr, lstrlen(srvAddrStr)?"CALLED":"SKIPPED(empty)"); }
+
     return TRUE;
 }
 

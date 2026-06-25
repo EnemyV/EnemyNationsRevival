@@ -204,6 +204,19 @@ BOOL CVpSession::InitNetwork( BOOL streamListen ) {
 
     m_registrationAddress = m_net->MakeRegistrationAddress();
 
+    // iserve host-register diagnostic: did the reg address survive into the session?
+    // If NULL here the host CANNOT register (SendTo blocks below are skipped) even with
+    // a correct [TCP]RegistrationAddress — points at SetRegistrationAddress timing/parse.
+    if ( IserveLogOn() ) {
+        if ( m_registrationAddress ) {
+            char rb[160] = {0};
+            m_registrationAddress->GetPrintForm( rb, sizeof( rb ) );
+            fprintf( stderr, "[iserve-host] InitNetwork m_registrationAddress=%s (will register here)\n", rb );
+        } else {
+            fprintf( stderr, "[iserve-host] InitNetwork m_registrationAddress=NULL -> host will NOT register\n" );
+        }
+    }
+
     m_broadcastLink = m_net->MakeUnsafeLink();
     if ( !m_broadcastLink ) {
         Log( "CVpSession::InitNetwork Can't Get broadcast Link" );
@@ -1232,6 +1245,10 @@ BOOL CLocalSession::BroadcastSessionData() {
             m_broadcastLink->SendTo( *m_registrationAddress,
                                      m_info->Data(), m_info->Size(), 0 );
             m_lastRegTime = GetCurrentTime();
+            if ( IserveLogOn() )
+                fprintf( stderr, "[iserve-host] BroadcastSessionData -> sent session registration to reg server\n" );
+        } else if ( IserveLogOn() ) {
+            fprintf( stderr, "[iserve-host] BroadcastSessionData: m_registrationAddress NULL -> NOT registering\n" );
         }
     }
 
@@ -1251,6 +1268,18 @@ void CLocalSession::OnTimer() {
             m_broadcastLink->SendTo( *m_registrationAddress,
                                      m_info->Data(), m_info->Size(), 0 );
             m_lastRegTime = GetCurrentTime();
+            if ( IserveLogOn() )
+                fprintf( stderr, "[iserve-host] OnTimer -> periodic re-register sent to reg server\n" );
+        }
+    } else if ( IserveLogOn() ) {
+        // Throttled: which gate is blocking the periodic re-register? (NULL regAddr,
+        // not visible, or already got an enum REQ.) Tells us if OnTimer even runs on POSIX.
+        static DWORD lastWhine = 0;
+        DWORD t = GetCurrentTime();
+        if ( t - lastWhine > 5000 ) {
+            fprintf( stderr, "[iserve-host] OnTimer NOT registering: visible=%d regAddr=%p gotsEnumREQ=%d\n",
+                     (int)m_visible, (void*)m_registrationAddress, (int)m_gotsEnumREQ );
+            lastWhine = t;
         }
     }
 }
