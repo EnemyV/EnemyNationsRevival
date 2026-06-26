@@ -254,6 +254,9 @@ public:
 
     BOOL Listen(BOOL streamListen = TRUE, BOOL serverMode = FALSE);
 
+    // TCP-enum (phase-1): TCP listener on the well-known port for the reg server.
+    BOOL EnableStreamEnumListener();
+
     void BecomeDeef();
 
     //+ Stop all networking activity

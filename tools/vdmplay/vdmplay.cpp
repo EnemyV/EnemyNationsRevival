@@ -1559,6 +1559,15 @@ CWinRegSession* CVdmPlay::MakeRegSession( HWND wnd ) {
         return NULL;
     }
 
+    // TCP-enum (phase-1): ALSO accept enum/queries over TCP on the well-known port,
+    // so clients behind UDP-blocking routers / tunnels can reach the reg server.
+    // Best-effort + additive — the UDP datagram enum (set up in InitNetwork) stays the
+    // default; if the TCP listener can't bind we log and continue (UDP still serves).
+    if ( !m_net->EnableStreamEnumListener() ) {
+        if ( m_log )
+            m_log->Log( "MakeRegSession: TCP-enum listener not enabled (UDP enum still active)" );
+    }
+
     ses->m_vdmPlay = this;
 
     return ses;

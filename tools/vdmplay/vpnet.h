@@ -161,6 +161,12 @@ public:
     //+ Start listening for incoming connections and datagrams
     virtual BOOL Listen(BOOL streamListen = TRUE, BOOL serverMode = FALSE) = 0;
 
+    //+ TCP-enum (phase-1): make a reg server ALSO accept enum/queries over a TCP
+    // connection on the well-known port (vs the UDP datagram path), for UDP-blocked
+    // routers / tunnels. Base = no-op success (non-TCP nets have nothing to add);
+    // CTcpNet overrides with a real TCP listener. Additive — never replaces UDP enum.
+    virtual BOOL EnableStreamEnumListener() { return TRUE; }
+
     //+ Become deef to incoming data
     virtual void BecomeDeef() = 0;
 

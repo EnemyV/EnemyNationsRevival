@@ -793,11 +793,55 @@ nonwsaerr:
  
  if (m_listenLink)
   m_listenLink->Unref();
- 
+
  m_listenLink = NULL;
  return FALSE;
 
 
+}
+
+
+// TCP-enum (phase-1, mac 2026-06-26): give a reg server a TCP listener on the
+// well-known port (1707) so a client's directed enum/query can arrive over a TCP
+// connection — CRegisterySession::ProcessSafeData dispatches it (SenumREQ -> OnSenumREQ,
+// reply over the same TCP link). Bound to the KNOWN well-known port (NOT the ephemeral
+// :0 the streamListen path uses for game hosts, whose session port is advertised via
+// enum) so a client can reach it. Reuses MakeListenLink (SOCK_STREAM + FD_ACCEPT), so
+// accepts flow through the existing AcceptLink -> OnAccept -> ProcessSafeData path.
+// ADDITIVE: the UDP datagram enum socket (bound in Listen) is untouched and stays the
+// default; this only ADDS a parallel TCP acceptor on the same port.
+BOOL CTcpNet::EnableStreamEnumListener()
+{
+ if (m_listenLink)            // already have a stream listener — nothing to do
+  return TRUE;
+
+ m_listenLink = MakeListenLink();   // SOCK_STREAM socket + ConfigureSocket(FD_ACCEPT)
+ if (!m_listenLink)
+  return FALSE;
+
+ sockaddr_in sin;
+ memset(&sin, 0, sizeof(sin));
+ sin.sin_family      = AF_INET;
+ sin.sin_addr.s_addr = INADDR_ANY;
+ sin.sin_port        = m_wellKnownPort;   // network order, the reg well-known port (:1707)
+
+ if (bind(m_listenLink->m_socket, (sockaddr*) &sin, sizeof(sin)))
+ {
+  SetError(VPNET_ERR_WSOCK, WSAGetLastError());
+  m_listenLink->Unref();
+  m_listenLink = NULL;
+  return FALSE;
+ }
+
+ if (listen(m_listenLink->m_socket, 5))
+ {
+  SetError(VPNET_ERR_WSOCK, WSAGetLastError());
+  m_listenLink->Unref();
+  m_listenLink = NULL;
+  return FALSE;
+ }
+
+ return TRUE;
 }
 
 
