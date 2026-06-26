@@ -1292,7 +1292,8 @@ CRemoteSession::CRemoteSession( CTDLogger* log,
                                 CPlayerMap* players,
                                 CWSMap* wsMap, DWORD maxAge ):
     CVpSession( log, net, players, wsMap ), m_serverWS( NULL ), m_pendingJoin( NULL ),
-    m_initialJoin( TRUE ), m_serverEnumData( NULL ), m_maxServerAge( maxAge ), m_connected( FALSE ) {}
+    m_initialJoin( TRUE ), m_serverEnumData( NULL ), m_maxServerAge( maxAge ), m_connected( FALSE ),
+    m_enumUdpPolls( 0 ), m_tcpEnumTried( FALSE ) {}
 
 
 BOOL CRemoteSession::LookForServer( LPVOID data ) {
@@ -1344,7 +1345,68 @@ BOOL CRemoteSession::LookForServer( LPVOID data ) {
     msg->Unref();
     AgeServerList();
 
+    // TCP-enum (phase-3): UDP is always tried first (above). If the DIRECTED reg server
+    // still hasn't answered over UDP after a couple of poll periods, auto-fall-back to a
+    // one-shot TCP query (for UDP-blocking routers / tunnels). Additive — never disturbs
+    // the UDP path; fires at most once; no-op on broadcast-only LANs (no directed server).
+    if ( ++m_enumUdpPolls >= 2 )
+        TryTcpEnumFallback();
+
     return TRUE;
+}
+
+
+// TCP-enum (phase-3, mac 2026-06-26): the client's UDP->TCP enum auto-fallback. Called
+// from LookForServer once the directed UDP query has gone unanswered for ~2 poll periods.
+// Trigger is clean vs "serving 0": iserve replies DummyREQ even with 0 hosts, which sets
+// m_serverSeen (MatchAddress) — so !IsServerSeen() means UDP genuinely didn't reach the
+// reg server, NOT that it's empty. Connects TCP to the reg server's well-known port and
+// sends a SenumREQ over the stream (queued + flushed on FD_CONNECT via SendWaitingData,
+// exactly like the join flow); the reply arrives via ProcessSafeData's SenumREP case.
+// Reuses m_serverWS — safe because the ENUM session is a distinct object from the JOIN
+// session (MakeSessionEnum vs JoinSession) and is torn down at StopEnumSessions.
+void CRemoteSession::TryTcpEnumFallback() {
+    if ( m_tcpEnumTried || m_connected || m_serverWS )
+        return;
+
+    // Already heard from the directed reg server over UDP? Then UDP works — don't fall back.
+    VPNETADDRESS seen;
+    memset( &seen, 0, sizeof( seen ) );
+    if ( m_net->IsServerSeen( &seen ) )
+        return;
+
+    // No directed reg server configured (broadcast-only LAN) / non-TCP net => no fallback.
+    CNetAddress* sa = m_net->MakeServerStreamAddress();
+    if ( !sa )
+        return;
+
+    m_tcpEnumTried = TRUE;
+
+    { static int nt = -1; if ( nt < 0 ) nt = getenv( "EN_NETTRACE" ) ? 1 : 0;
+      if ( nt ) {
+          char ab[128] = {0}; sa->GetPrintForm( ab, sizeof( ab ) );
+          fprintf( stderr, "[nettrace] enum: no UDP reply from reg server -> TCP-enum fallback connect to %s\n", ab ); } }
+
+    CNetLink* link = m_net->MakeSafeLink( sa, NULL );
+    if ( !link ) {
+        sa->Unref();
+        return;
+    }
+
+    m_serverWS = MakeRemoteWS( sa, link, NULL );
+    if ( m_serverWS ) {
+        m_wsMap->Register( m_serverWS );
+        link->Unref();
+
+        // Send the SenumREQ over the (async-connecting) TCP link; it queues and flushes
+        // on FD_CONNECT (SendWaitingData), same as the join flow's JoinREQ.
+        genericMsg* req = new( 0 ) genericMsg( SenumREQ, 0 );
+        sendDataInfo info( req->Data(), req->Size(), VP_MUSTDELIVER, NULL, this );
+        m_serverWS->SendData( info );
+        req->Unref();
+    }
+
+    sa->Unref();
 }
 
 

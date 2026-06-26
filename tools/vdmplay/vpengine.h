@@ -1188,6 +1188,13 @@ protected:
 
 public:
     CRemoteWS *m_serverWS;   // game server WS
+
+    // TCP-enum (phase-3): UDP->TCP enum fallback state. m_enumUdpPolls counts directed
+    // UDP enum polls; if the reg server hasn't answered over UDP after a couple, we try
+    // a one-shot TCP query (m_tcpEnumTried). TryTcpEnumFallback() does the connect+send.
+    int  m_enumUdpPolls;
+    BOOL m_tcpEnumTried;
+    void TryTcpEnumFallback();
     CLocalJoin *m_pendingJoin;
     BOOL m_connected;
     BOOL m_initialJoin;

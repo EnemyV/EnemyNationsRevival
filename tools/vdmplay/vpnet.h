@@ -158,6 +158,11 @@ public:
     //+ Create a NetAddress object used for server lookup
     virtual CNetAddress *MakeServerLookupAddress() = 0;
 
+    //+ TCP-enum (phase-3): the directed reg server's address with the well-known port
+    // as the STREAM (TCP-connect) port, for the client's UDP->TCP enum fallback. Returns
+    // NULL when there is no directed reg server (broadcast-only LAN) or the net is non-TCP.
+    virtual CNetAddress *MakeServerStreamAddress() { return NULL; }
+
     //+ Start listening for incoming connections and datagrams
     virtual BOOL Listen(BOOL streamListen = TRUE, BOOL serverMode = FALSE) = 0;
 
