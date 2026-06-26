@@ -25,9 +25,9 @@
 #include "wnotque.h"
 #ifdef _WIN32
 #include <mmsystem.h>   // timeGetTime etc. — win32_compat provides these on POSIX
+#endif
 #ifndef _WIN32
 #include <csignal>      // signal(SIGPIPE, SIG_IGN) in vpStartup (POSIX-only)
-#endif
 #endif
 #include <stdio.h>
 
