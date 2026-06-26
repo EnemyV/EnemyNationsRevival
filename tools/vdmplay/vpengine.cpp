@@ -1680,17 +1680,26 @@ void CRemoteSession::AgeServerList() {
 
     while ( NULL != ( wsl = p.list.RemoveFirst() ) ) {
 
-        CServerDownNotification* n = new CServerDownNotification(
-            (CRemoteWS*)( wsl->m_data ),
-            m_serverEnumData );
+        CRemoteWS* aged = (CRemoteWS*)( wsl->m_data );
 
-        if ( !n ) {
-            SetError( VP_ERR_NOMEM );
-            return;
+        // Only post a "server down" for a ws that actually reported a discovered server,
+        // i.e. has session Info(). A ws with NULL Info() never got a SenumREP — e.g. a
+        // TCP-enum probe connection (TryTcpEnumFallback) to a reg server that didn't reply,
+        // or any ws aged before its first reply — and CServerDownNotification's ctor derefs
+        // ws->Info()->Contents()/ContentSize() -> SIGSEGV on NULL. (Surfaced only once the
+        // POSIX OnTimer-drive @7ed73b9b started actually running AgeServerList.) Just
+        // deregister the info-less ws; there's no discovered server to notify "down".
+        if ( aged->Info() ) {
+            CServerDownNotification* n = new CServerDownNotification( aged, m_serverEnumData );
+
+            if ( !n ) {
+                SetError( VP_ERR_NOMEM );
+                return;
+            }
+
+            PostNotification( n );
         }
 
-
-        PostNotification( n );
         m_wsMap->Deregister( wsl->m_data );
         delete wsl;
     }
