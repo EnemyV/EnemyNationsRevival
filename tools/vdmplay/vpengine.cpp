@@ -2119,8 +2119,14 @@ int CRegisterySession::ReplyServerInfo( CWS* ws, LPVOID data ) {
 
         msg->hdr.msgId = p.msgId;
 
-
-        sendDataInfo info( msg->Data(), msg->Size(), 0, NULL, p.session );
+        // TCP-enum reply-leg (linux1 root-cause 2026-06-26): reply over the SAME link the
+        // query arrived on. If the querying WS reached us over TCP (m_safeLink set — a
+        // TCP-enum query), send the SenumREP back over that TCP stream (VP_MUSTDELIVER ->
+        // CRemoteWS::SendData uses the safe link); a UDP-arriving query (m_safeLink NULL)
+        // keeps the datagram reply. The old unconditional flags=0 always replied over UDP,
+        // so a TCP-enum query under a UDP block never got its reply -> empty browser.
+        DWORD replyFlags = ( p.ws->m_safeLink ) ? VP_MUSTDELIVER : 0;
+        sendDataInfo info( msg->Data(), msg->Size(), replyFlags, NULL, p.session );
 
         p.ws->SendData( info );
     }
@@ -2137,9 +2143,11 @@ BOOL CRegisterySession::OnSenumREQ( genericMsg* msg, CRemoteWS* ws ) {
 
     if ( !m_wsMap->Count() ) {
         // send a dummy reply so the client will see something coming
-        // from us;
+        // from us; reply over the query's own link (TCP if it arrived over TCP, else UDP)
+        // — same reason as the real SenumREP above.
         genericMsg msg( DummyREQ, 0 );
-        sendDataInfo info( msg.Data(), msg.Size(), 0, NULL, NULL );
+        DWORD replyFlags = ( ws->m_safeLink ) ? VP_MUSTDELIVER : 0;
+        sendDataInfo info( msg.Data(), msg.Size(), replyFlags, NULL, this );
         ws->SendData( info );
         return TRUE;
 
