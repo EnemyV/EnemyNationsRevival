@@ -333,7 +333,14 @@ public:
 #endif
 
  BOOL GotFatalError() const { return m_fatalError; }
- virtual BOOL Startup(IN DWORD version, 
+
+ // Run the periodic engine timers (notify-queue retry + net/enum/session OnTimer).
+ // On Windows this is driven by a 250ms WM_TIMER; on POSIX it is driven from vpPumpNet
+ // (no WM_TIMER there). Drives enum re-poll, host re-registration, server-list aging,
+ // and the notify-queue retry that delivers enum replies to the app.
+ void DriveTimers();
+
+ virtual BOOL Startup(IN DWORD version,
                    IN LPCVPGUID guid, 
        IN DWORD sessionDataSize,
        IN DWORD playerDataSize,

@@ -887,21 +887,7 @@ LRESULT APIENTRY CVdmPlay::WinProc( HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM 
 
 
     if ( uMsg == WM_TIMER ) {
-        if ( vp->m_queue )
-            vp->m_queue->RetryPosting();
-
-        if ( vp->m_net )
-            vp->m_net->OnTimer();
-
-        if ( vp->m_sEnum )
-            vp->m_sEnum->OnTimer();
-
-        if ( vp->m_pEnum )
-            vp->m_pEnum->OnTimer();
-
-        if ( vp->m_session )
-            vp->m_session->OnTimer();
-
+        vp->DriveTimers();
         return TRUE;
     }
 
@@ -1574,6 +1560,22 @@ CWinRegSession* CVdmPlay::MakeRegSession( HWND wnd ) {
 }
 
 
+// Periodic engine-timer drive (see vpint.h). Called from the 250ms WM_TIMER on Windows
+// and from vpPumpNet on POSIX (which has no WM_TIMER). Same sequence either way.
+void CVdmPlay::DriveTimers() {
+    if ( m_queue )
+        m_queue->RetryPosting();
+    if ( m_net )
+        m_net->OnTimer();
+    if ( m_sEnum )
+        m_sEnum->OnTimer();
+    if ( m_pEnum )
+        m_pEnum->OnTimer();
+    if ( m_session )
+        m_session->OnTimer();
+}
+
+
 CSessionEnum* CVdmPlay::MakeSessionEnum( HWND wnd, LPVOID userData ) {
     CWinRemoteSession* ses = MakeRemoteSession( wnd, TRUE );
 
@@ -1720,8 +1722,34 @@ extern "C"
     // whose notifications are PostMessage'd as WM_VPNOTIFY and drained by the same
     // loop -> CNetApi::OnNetMsg. Returns the number of events dispatched; a no-op
     // (returns 0) when no MP sockets are armed, so single-player pays nothing.
+    // POSIX engine-timer drive. On Windows the engine OnTimers (enum re-poll, host
+    // periodic re-registration, server-list aging, notify-queue retry that delivers enum
+    // replies to the app) run off a 250ms WM_TIMER. POSIX has no message window / WM_TIMER
+    // (SetTimer is a no-op stub, m_window==NULL), so those NEVER fired on Linux/mac —
+    // breaking enum re-poll, re-register, aging, AND enum-reply delivery (linux1 root-cause
+    // 2026-06-26). Fix: a tiny registry of live CVdmPlay handles, throttle-driven from
+    // vpPumpNet (the game's net-service entry) on the same ~250ms cadence. Additive.
+    static CVdmPlay* g_vpActive[8] = { 0 };
+    static void vpRegisterActive( CVdmPlay* vp ) {
+        for ( int i = 0; i < 8; ++i ) if ( !g_vpActive[i] ) { g_vpActive[i] = vp; return; }
+    }
+    static void vpUnregisterActive( CVdmPlay* vp ) {
+        for ( int i = 0; i < 8; ++i ) if ( g_vpActive[i] == vp ) { g_vpActive[i] = 0; return; }
+    }
+
     int VPAPI vpPumpNet( int timeout_ms ) {
-        return vpNetPumpPosix( timeout_ms );
+        int n = vpNetPumpPosix( timeout_ms );
+
+        // Drive the engine timers on a ~250ms cadence (POSIX has no WM_TIMER to do it).
+        static DWORD lastDrive = 0;
+        DWORD now = GetCurrentTime();
+        if ( now - lastDrive >= 250 ) {
+            lastDrive = now;
+            for ( int i = 0; i < 8; ++i )
+                if ( g_vpActive[i] )
+                    g_vpActive[i]->DriveTimers();
+        }
+        return n;
     }
 #endif
 
@@ -1809,6 +1837,9 @@ extern "C"
             return NULL;
         }
 
+#ifndef _WIN32
+        vpRegisterActive( vp );   // so vpPumpNet drives its engine timers (no WM_TIMER on POSIX)
+#endif
 
         return (VPHANDLE)vp;
     }
@@ -1919,6 +1950,9 @@ extern "C"
 
         if ( pHdl ) {
             CVdmPlay* vp = (CVdmPlay*)pHdl;
+#ifndef _WIN32
+            vpUnregisterActive( vp );
+#endif
             vp->Cleanup();
             delete vp;
         }
