@@ -234,11 +234,15 @@ if (NOT MSVC)
         target_link_libraries(iserve PRIVATE rt)
         target_link_options(iserve PRIVATE -Wl,--export-dynamic)
     endif ()
-    # Co-locate with libvdmplay_posix.so + find it via $ORIGIN (no LD_LIBRARY_PATH).
+    # Co-locate libvdmplay_posix.{dylib,so} next to the binary and find it via the
+    # platform's co-located-rpath token: $ORIGIN on ELF/Linux, @loader_path on macOS.
+    # ($ORIGIN is INERT on Darwin — dyld does not expand it — so a portable mac build
+    # needs @loader_path, else @rpath/libvdmplay_posix.dylib only resolves via the abs
+    # build path and breaks once the build is relocated/shipped. mac2, 2026-06-26.)
     set_target_properties(iserve PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
-        BUILD_RPATH   "$ORIGIN"
-        INSTALL_RPATH "$ORIGIN")
+        BUILD_RPATH   "$<IF:$<PLATFORM_ID:Darwin>,@loader_path,$ORIGIN>"
+        INSTALL_RPATH "$<IF:$<PLATFORM_ID:Darwin>,@loader_path,$ORIGIN>")
 endif ()
 
 # MSVC-only host toolset selection (32-bit host tools for the VS generator).
@@ -407,11 +411,12 @@ else ()
             vdmplay_posix   # ported vp* TCP MP engine (replaces vdmplay_stubs.cpp)
             EnLinuxSDL2
             )
-    # libvdmplay_posix.so sits next to the enations binary; $ORIGIN lets the
-    # loader find it without LD_LIBRARY_PATH.
+    # libvdmplay_posix.{dylib,so} sits next to the enations binary; the loader finds
+    # it via the platform's co-located-rpath token: $ORIGIN on ELF/Linux, @loader_path
+    # on macOS ($ORIGIN is inert on Darwin — see the iserve rpath note above).
     set_target_properties(enations PROPERTIES
-        BUILD_RPATH "$ORIGIN"
-        INSTALL_RPATH "$ORIGIN")
+        BUILD_RPATH "$<IF:$<PLATFORM_ID:Darwin>,@loader_path,$ORIGIN>"
+        INSTALL_RPATH "$<IF:$<PLATFORM_ID:Darwin>,@loader_path,$ORIGIN>")
 endif ()
 
 # Pick the SDL2 import-lib arch to match the build platform. VS sets
