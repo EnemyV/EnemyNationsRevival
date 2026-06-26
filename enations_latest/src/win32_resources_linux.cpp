@@ -17,15 +17,23 @@
 #endif
 
 #include "win32_compat.h"
+#include "resource.h"   // IDS_* ids (plain #defines; no Win32/MFC pulls)
 
 #include <unordered_map>
 #include <string>
 
 namespace {
-// id -> string. Populate from lastplnt.rc STRINGTABLE as runtime needs surface.
+// id -> string. Populated from lastplnt.rc's STRINGTABLE as runtime needs surface.
+// MP-network error strings (IDS_VP*_FAILED, 230-234) surfaced EMPTY on Linux during the
+// discover/create/join flow (EnMessageBox in netapi.cpp) — e.g. a failed join showed a
+// blank message box. Text copied verbatim from lastplnt.rc's STRINGTABLE.
 const std::unordered_map<UINT, std::string>& string_table() {
     static const std::unordered_map<UINT, std::string> t = {
-        // { IDS_FOO, "Foo" },
+        { IDS_VPSTARTUP_FAILED, "The Network layer could not initialize.\nYou may want to try a different network connection type." },
+        { IDS_VPCREATE_FAILED,  "The network layer could not create a communication channel.\nYou might want to try closing another network application\nyou are running and then try again." },
+        { IDS_VPENUM_FAILED,    "The network layer could not ask for a list of games.\nYou may want to try a different network connection type." },
+        { IDS_VPJOIN_FAILED,    "The network layer could not connect to the requested game.\nThe game may have already started." },
+        { IDS_VPSEND_FAILED,    "The network layer could not talk to one of the other player's computers.\nYou may want to try to reconnect." },
     };
     return t;
 }
