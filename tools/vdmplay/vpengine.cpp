@@ -218,6 +218,9 @@ BOOL CVpSession::InitNetwork( BOOL streamListen ) {
 
     if ( !m_net->Listen( streamListen, IsServerMode() ) ) {
         Log( "CVpSession::Net->Listen failed\n" );
+        if ( JoinAddrLogOn() )
+            fprintf( stderr, "[join-addr] InitNetwork: Listen(streamListen=%d,serverMode=%d) FAILED -> MakeRemoteSession returns NULL -> vpJoinSession NULL (no host dial). This is the upstream-of-connect bail linux1's strace saw.\n",
+                     (int)streamListen, (int)IsServerMode() );
         return FALSE;
     }
 
@@ -1609,6 +1612,12 @@ BOOL CRemoteSession::AddLocalPlayer( LPCSTR playerName,
 
 
     CLocalPlayer* p = MakeLocalPlayer( playerName, playerFlags );
+
+    if ( JoinAddrLogOn() )
+        fprintf( stderr, "[join-addr] AddLocalPlayer: m_serverWS=%s -> %s\n",
+                 m_serverWS ? "ALREADY-SET" : "NULL",
+                 m_serverWS ? "SKIP ConnectToServer (reuse existing ws — if it's the enum's :1707 reg-server ws, the host session is never dialed)"
+                            : "will ConnectToServer(host session)" );
 
     if ( !m_serverWS ) {
         m_initialJoin = TRUE;

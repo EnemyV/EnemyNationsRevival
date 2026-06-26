@@ -15,6 +15,16 @@ typedef int       vp_socklen_t;
 typedef socklen_t vp_socklen_t;
 #endif
 
+// Join-leg diagnostics gate (mirrors vpengine.cpp's JoinAddrLogOn): getenv-gated
+// fprintf(stderr) so Listen()'s silent failure path surfaces on a POSIX Release
+// build (the session Log() logger doesn't reach stderr there). Cached; default
+// off => zero ship impact. Rides EN_NETTRACE so it shows in existing trace runs.
+static int JoinAddrLogOn() {
+    static int on = -1;
+    if ( on < 0 ) on = ( getenv( "EN_JOINADDR" ) || getenv( "EN_NETTRACE" ) ) ? 1 : 0;
+    return on;
+}
+
 static int netCount = 0;
 static int gSimulateFrags = FALSE;
 static int gMaxSends = 5;
@@ -717,11 +727,22 @@ CTcpNet::CTCPLink* CTcpNet::MakeListenLink()
 
 BOOL CTcpNet::Listen(BOOL streamListen, BOOL serverMode)
 {
+ // Join-leg diag: which step of Listen() fails (the silent path behind a NULL
+ // MakeRemoteSession / vpJoinSession). EADDRINUSE on the dg-bind would confirm
+ // the join session re-binds the enum's still-open datagram port (m_net/CTcpNet
+ // is shared enum<->join, and the enum's Listen left m_address.m_dgPort = its
+ // bound ephemeral port). Gated by EN_JOINADDR/EN_NETTRACE => zero ship impact.
+ const char* failStep = "?";
+ (void) failStep;
 
  m_dgLink = (CTCPLink*) MakeUnsafeLink();
 
  if (!m_dgLink)
+ {
+  if (JoinAddrLogOn())
+   fprintf(stderr,"[join-addr] CTcpNet::Listen FAILED at MakeUnsafeLink(dg) (streamListen=%d,serverMode=%d)\n",(int)streamListen,(int)serverMode);
   return FALSE;
+ }
 
 
  sockaddr_in sin;
@@ -745,7 +766,7 @@ BOOL CTcpNet::Listen(BOOL streamListen, BOOL serverMode)
 
 
  if (bind(m_dgLink->m_socket, (sockaddr*) &sin, sizeof(sin)))
-  goto handleerr;
+  { failStep = "bind(dg)"; goto handleerr; }
 
 // ConfigureSocket(m_dgLink->m_socket, FD_READ|FD_WRITE);
 
@@ -754,24 +775,24 @@ BOOL CTcpNet::Listen(BOOL streamListen, BOOL serverMode)
   m_listenLink = MakeListenLink();
 
   if (!m_listenLink)
-   goto nonwsaerr;
+   { failStep = "MakeListenLink(stream)"; goto nonwsaerr; }
 
   sin.sin_addr.s_addr = INADDR_ANY;
   sin.sin_port = 0;
   if (bind(m_listenLink->m_socket, (sockaddr*) &sin, sizeof(sin)))
-   goto handleerr;
+   { failStep = "bind(stream)"; goto handleerr; }
 
   if (listen(m_listenLink->m_socket, 5))
-   goto handleerr;
+   { failStep = "listen(stream)"; goto handleerr; }
 
   if (getsockname(m_listenLink->m_socket, (sockaddr*) &sin, &namelen))
-   goto handleerr;
+   { failStep = "getsockname(stream)"; goto handleerr; }
 
     m_address.m_streamPort = sin.sin_port;
   }
 
  if (getsockname(m_dgLink->m_socket, (sockaddr*) &sin, &namelen))
-  goto handleerr;
+  { failStep = "getsockname(dg)"; goto handleerr; }
 
    m_address.m_dgPort = sin.sin_port;
  // Keep the real station address for advertising — NOT the 0.0.0.0 an
@@ -786,6 +807,10 @@ handleerr:
  SetError(VPNET_ERR_WSOCK, WSAGetLastError());
 
 nonwsaerr:
+ if (JoinAddrLogOn())
+  fprintf(stderr,"[join-addr] CTcpNet::Listen FAILED at %s err=%d dgPort=%u streamListen=%d serverMode=%d (EADDRINUSE here ⇒ join re-binds the enum's still-open dg port)\n",
+          failStep, (int)WSAGetLastError(), (unsigned)ntohs(m_address.m_dgPort), (int)streamListen, (int)serverMode);
+
  if(m_dgLink)
   m_dgLink->Unref();
  

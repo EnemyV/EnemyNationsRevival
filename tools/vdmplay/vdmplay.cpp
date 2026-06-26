@@ -827,7 +827,10 @@ VPSESSIONHANDLE CVdmPlay::JoinSession( IN HWND hWnd,
 
     m_session = MakeRemoteSession( hWnd );
 
-
+    { static int ja=-1; if(ja<0) ja=(getenv("EN_JOINADDR")||getenv("EN_NETTRACE"))?1:0;
+      if(ja) fprintf(stderr,"[join-addr] vpJoinSession: MakeRemoteSession -> %s\n",
+                     m_session ? "ok (proceeding to SetSessionId/AddLocalPlayer)"
+                               : "NULL -> vpJoinSession returns NULL (this IS the upstream-of-dial bail linux1's strace saw; see the InitNetwork/Listen [join-addr] line above for why)"); }
 
     if ( !m_session )
         return NULL;
