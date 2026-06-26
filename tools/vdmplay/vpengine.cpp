@@ -1885,6 +1885,25 @@ void CRemoteSession::OnDisconnect( CNetLink* link ) {
         VPTRACE( ( "CRemoteSession::OnDisconnect - link to server broken" ) );
         m_connected = FALSE;
 
+        // ROOT FIX (iserve/TCP-discovered join bail): m_tcpEnumTried means THIS is the
+        // ENUM/discovery session and m_serverWS is the TCP-enum fallback probe to the
+        // REG SERVER (TryTcpEnumFallback) — NOT a joined game host. When that probe link
+        // drops (iserve exits after serving, or StopEnum tears the enum down), posting
+        // VP_SESSIONCLOSE makes the app's OnMsgSessionClose (netapi.cpp:490) think the
+        // joined game closed; since "me" is NULL mid-browse it calls theNet.Close(TRUE),
+        // whose deferred vpCleanup DESTROYS the SHARED vp handle the subsequent Join needs
+        // -> vpJoinSession(NULL) -> IDS_VPJOIN_FAILED. Functionally pinned by linux2's
+        // m_vpHdl lifecycle trace @028bc7fc (Close(delay=1)->cleanup nulled the handle,
+        // FatalError tracer 0 => VP_SESSIONCLOSE path, not VP_NETDOWN). A discovery-probe
+        // teardown is benign — drop it quietly; never post a session-close for it. Real
+        // join sessions (m_tcpEnumTried==FALSE; separate object) keep the notification.
+        if ( m_tcpEnumTried ) {
+            if ( JoinAddrLogOn() )
+                fprintf( stderr, "[join-addr] OnDisconnect: enum TCP-fallback probe link dropped — suppressing VP_SESSIONCLOSE (it was destroying the shared join handle)\n" );
+            VPEXIT();
+            return;
+        }
+
         CNotification* n = new CNotification( VP_SESSIONCLOSE, 0, 0, 0 );
         if ( !n ) {
             FatalError( VP_ERR_NOMEM );
