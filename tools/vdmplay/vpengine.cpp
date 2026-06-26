@@ -2203,6 +2203,17 @@ int CRegisterySession::ReplyServerInfo( CWS* ws, LPVOID data ) {
         CRemoteWS* rws = (CRemoteWS*)ws;
         sesInfoMsg* msg = rws->m_info;
 
+        // NULL-guard (linux2 gdb bt 2026-06-26 — the iserve post-serve SIGSEGV at
+        // vpengine.cpp:2206). m_wsMap can hold a bare transport ws with no registered
+        // session info: a client's own TCP-enum query connection, or a half-open probe
+        // that hasn't sent its SenumREP yet. Enum() hits it while serving a client query
+        // and the msg->hdr deref below dereferences NULL -> SIGSEGV (crashes iserve after
+        // it served, an iserve-on-VPS availability bug). It has nothing to relay, so skip
+        // it and continue the enumeration. Parallel to the AgeServerList NULL-Info guard
+        // @b4fef157; game<->game play is unaffected (already proven), this hardens iserve.
+        if ( !msg )
+            return TRUE;
+
         msg->hdr.msgId = p.msgId;
 
         // TCP-enum reply-leg (linux1 root-cause 2026-06-26): reply over the SAME link the
