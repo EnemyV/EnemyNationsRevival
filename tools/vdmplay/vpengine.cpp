@@ -22,6 +22,20 @@ static void LogV( CTDLogger* log, const char* fmt,
     }
 }
 
+// Render a VPNETADDRESS/VPSESSIONID into a printable "ip:streamPort/dgPort" for
+// join-path diagnostics. The 28-byte machineAddress overlays tcpaddress_s:
+// 4-byte IP then 2-byte stream port then 2-byte datagram port, all in NETWORK
+// byte order. Read byte-wise so it's self-contained (no socket headers) and
+// endian-correct on win/mac/linux alike. Used only behind Log() (logger off in
+// normal play => zero ship impact) to nail the iserve/TCP-discovered join leg:
+// is the addr B dials the host's SESSION (:33561) or the reg server (:1707)?
+static void FormatVpAddr( char* out, int outSz, LPCVPNETADDRESS a ) {
+    const unsigned char* b = (const unsigned char*)a->machineAddress;
+    unsigned sPort = (unsigned)( ( b[4] << 8 ) | b[5] );
+    unsigned dPort = (unsigned)( ( b[6] << 8 ) | b[7] );
+    snprintf( out, outSz, "%u.%u.%u.%u:%u/%u(stream/dg)", b[0], b[1], b[2], b[3], sPort, dPort );
+}
+
 static WSList* rwsPool = 0;
 
 // Optional iserve transaction log (env EN_ISERVE_LOG=1). Lets the headless
@@ -1709,6 +1723,14 @@ void CRemoteSession::AgeServerList() {
 BOOL CRemoteSession::OnSenumREP( sesInfoMsg* msg, CRemoteWS* ws ) {
     VPENTER( CRemoteSession::OnSenumREP );
 
+    if ( msg ) {
+        char abuf[64];
+        char lbuf[128];
+        FormatVpAddr( abuf, sizeof( abuf ), &msg->data.sessionId );
+        snprintf( lbuf, sizeof( lbuf ), "[join-addr] OnSenumREP relayed sessionId=%s", abuf );
+        Log( lbuf );
+    }
+
     if ( m_connected ) {
         // we've just established the connection to the server
         // and the server responds with SenumREP
@@ -2041,6 +2063,13 @@ void CRemoteSession::OnUnsafeData( CNetLink* link ) {
 
 
 BOOL CRemoteSession::ConnectToServer( LPCVPNETADDRESS addr, LPVOID userData ) {
+    if ( addr ) {
+        char abuf[64];
+        char lbuf[128];
+        FormatVpAddr( abuf, sizeof( abuf ), addr );
+        snprintf( lbuf, sizeof( lbuf ), "[join-addr] ConnectToServer dialing %s", abuf );
+        Log( lbuf );
+    }
     CNetAddress* nA = m_net->MakeAddress( addr );
     CNetLink* link = m_net->MakeSafeLink( nA, userData );
 
