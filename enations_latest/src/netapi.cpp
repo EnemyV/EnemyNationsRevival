@@ -47,6 +47,17 @@ CNetApi theNet;
 
 static void BldgNew( CMsgBldgNew* pMsg );
 
+// Trace m_vpHdl's lifecycle to find WHERE it goes NULL between OpenClient and
+// Join on the iserve/TCP-discovered path (linux2 @518e7da2: vpJoinSession sees
+// hdl=(nil), and the fatal-latch was ruled out — FatalError never fired, so
+// HandleNetDown is NOT the cause). getenv-gated fprintf (Log() is silent on a
+// POSIX Release build); default off => zero ship impact.
+static int JoinAddrLogOn() {
+    static int on = -1;
+    if ( on < 0 ) on = ( getenv( "EN_JOINADDR" ) || getenv( "EN_NETTRACE" ) ) ? 1 : 0;
+    return on;
+}
+
 
 /////////////////////////////////////////////////////////////////////////////
 // CNetApi
@@ -147,6 +158,9 @@ BOOL CNetApi::OpenClient( int iProtocol, HWND hWnd, void const* pPrtcl )
         return ( TRUE );
     }
 
+    if ( JoinAddrLogOn() )
+        fprintf( stderr, "[join-addr] OpenClient: m_vpHdl SET = %p\n", (void*)m_vpHdl );
+
     // create a session
     m_hWnd = hWnd;
     if ( !vpEnumSessions( m_vpHdl, hWnd, TRUE, NULL ) )
@@ -176,6 +190,10 @@ BOOL CNetApi::Join( LPCVPSESSIONID id, CNetJoin const* pJn )
 {
 
     ASSERT( m_iType == client );
+
+    if ( JoinAddrLogOn() )
+        fprintf( stderr, "[join-addr] CNetApi::Join: m_vpHdl=%p m_iType=%d (if hdl=nil here, something nulled it between OpenClient and now)\n",
+                 (void*)m_vpHdl, m_iType );
 
     m_iMode = joined;
     if ( ( m_vpSession = vpJoinSession( m_vpHdl, m_hWnd, id, (LPCSTR)pJn, 0, (LPVOID)TRUE ) ) == NULL )
@@ -253,6 +271,10 @@ void CNetApi::SessionClose( )
 
 void CNetApi::Close( BOOL bDelayClose )
 {
+
+    if ( JoinAddrLogOn() )
+        fprintf( stderr, "[join-addr] CNetApi::Close(delay=%d) ENTER: m_vpHdl=%p (will vpCleanup->NULL it unless delayed) — who called Close between OpenClient and Join?\n",
+                 (int)bDelayClose, (void*)m_vpHdl );
 
     m_iMode = closed;
     m_iType = closed;
@@ -1051,6 +1073,9 @@ LRESULT CNetApi::OnNetMsg( WPARAM wParam, LPARAM lParam )
             // kill the connection
             if ( theNet.m_cFlags & cleanup )
             {
+                if ( JoinAddrLogOn() )
+                    fprintf( stderr, "[join-addr] OnNetMsg cleanup-flag path: vpCleanup DESTROYING m_vpHdl=%p (this is the VP_NETDOWN/cleanup route that nulls the handle mid-join)\n",
+                             (void*)theNet.m_vpHdl );
                 vpCleanup( theNet.m_vpHdl );
                 theNet.m_vpHdl = NULL;
                 theNet.m_hWnd  = NULL;
