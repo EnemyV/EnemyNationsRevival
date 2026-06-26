@@ -154,6 +154,15 @@ void CVpSession::FatalError( DWORD error, DWORD errInfo ) {
     m_error = error;
     m_errInfo = errInfo;
 
+    // The latch behind the join bail: SetFatalError sets m_vdmPlay->m_fatalError
+    // (vdmplay.cpp:654) and NOTHING clears it, so any fatal raised on the enum /
+    // TCP-fallback path makes every later vpJoinSession return NULL. Log which
+    // error code latches it (VP_ERR_NET_DOWN=fallback-link teardown is the prime
+    // suspect) + timing, so one rerun pins gate + root. Gated; zero ship impact.
+    if ( JoinAddrLogOn() )
+        fprintf( stderr, "[join-addr] CVpSession::FatalError LATCHING m_fatalError: error=%lu errInfo=%lu (this blocks all later joins until handle reopen)\n",
+                 (unsigned long)error, (unsigned long)errInfo );
+
     if ( m_log )
         m_log->SetFatalError( error, errInfo );
 

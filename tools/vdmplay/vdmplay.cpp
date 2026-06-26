@@ -2130,6 +2130,15 @@ extern "C"
                                          IN LPCSTR playerName,
                                          IN DWORD  playerFlags,
                                          IN LPCVOID userData ) {
+        // Pin WHY the wrapper bails before CVdmPlay::JoinSession is reached
+        // (linux2 [12:01Z]: JoinSession never entered): reentrancy guard, null
+        // handle, or a LATCHED fatal error (GotFatalError -> m_fatalError). A
+        // fatal latched on the enum/TCP-fallback path would block every later
+        // join. Gated; zero ship impact.
+        { static int ja=-1; if(ja<0) ja=(getenv("EN_JOINADDR")||getenv("EN_NETTRACE"))?1:0;
+          if(ja) fprintf(stderr,"[join-addr] vpJoinSession wrapper: reentrancy=%lu hdl=%p fatal=%d\n",
+                         (unsigned long)vpReentrancyCounter, (void*)pHdl,
+                         pHdl ? (int)((CVdmPlay*)pHdl)->GotFatalError() : -1); }
         if ( vpReentrancyCounter )
             return NULL;
         if ( pHdl ) {
