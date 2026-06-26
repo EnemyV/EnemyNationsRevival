@@ -1293,7 +1293,7 @@ CRemoteSession::CRemoteSession( CTDLogger* log,
                                 CWSMap* wsMap, DWORD maxAge ):
     CVpSession( log, net, players, wsMap ), m_serverWS( NULL ), m_pendingJoin( NULL ),
     m_initialJoin( TRUE ), m_serverEnumData( NULL ), m_maxServerAge( maxAge ), m_connected( FALSE ),
-    m_enumUdpPolls( 0 ), m_tcpEnumTried( FALSE ) {}
+    m_tcpEnumTried( FALSE ) {}
 
 
 BOOL CRemoteSession::LookForServer( LPVOID data ) {
@@ -1345,12 +1345,15 @@ BOOL CRemoteSession::LookForServer( LPVOID data ) {
     msg->Unref();
     AgeServerList();
 
-    // TCP-enum (phase-3): UDP is always tried first (above). If the DIRECTED reg server
-    // still hasn't answered over UDP after a couple of poll periods, auto-fall-back to a
-    // one-shot TCP query (for UDP-blocking routers / tunnels). Additive — never disturbs
-    // the UDP path; fires at most once; no-op on broadcast-only LANs (no directed server).
-    if ( ++m_enumUdpPolls >= 2 )
-        TryTcpEnumFallback();
+    // TCP-enum (phase-3): UDP is always tried first (above). Then, for a DIRECTED reg
+    // server, also fire a one-shot TCP query in PARALLEL ("happy-eyeballs", per win) —
+    // because the enum's WM_TIMER re-poll does NOT fire on POSIX, so a Search yields only
+    // ONE LookForServer call (linux2 [08:10Z]) — we can't wait for "no reply after N
+    // polls". The reg server answers whichever (UDP or TCP) reaches it; replies dedup in
+    // m_wsMap. When UDP :1707 is blocked, only the TCP probe gets through -> discovery
+    // still works. Additive: the UDP path is untouched; fires at most once per enum
+    // session; no-op on broadcast-only LANs (MakeServerStreamAddress == NULL).
+    TryTcpEnumFallback();
 
     return TRUE;
 }
