@@ -25,6 +25,9 @@
 #include "wnotque.h"
 #ifdef _WIN32
 #include <mmsystem.h>   // timeGetTime etc. — win32_compat provides these on POSIX
+#ifndef _WIN32
+#include <csignal>      // signal(SIGPIPE, SIG_IGN) in vpStartup (POSIX-only)
+#endif
 #endif
 #include <stdio.h>
 
@@ -1814,6 +1817,15 @@ extern "C"
 
         if ( vpReentrancyCounter )
             return NULL;
+
+#ifndef _WIN32
+        // POSIX: ignore SIGPIPE so a socket send() to a closed/refused/RST peer returns
+        // -1/EPIPE (handled by the SOCKET_ERROR checks + closesocket cleanup) instead of
+        // killing the process with the default-fatal SIGPIPE. Covers every vp send/sendto
+        // (tcpnet.cpp has several flags=0 sends). Surfaced by the TCP-enum fallback hitting
+        // a dead reg server (linux2 SIGPIPE repro 2026-06-26); Windows has no SIGPIPE.
+        signal( SIGPIPE, SIG_IGN );
+#endif
 
         vpMemPoolInit();
         CVdmPlay* vp = new CVdmPlay;
