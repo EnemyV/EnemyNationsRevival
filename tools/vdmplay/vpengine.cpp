@@ -50,6 +50,19 @@ static int IserveLogOn() {
     return on;
 }
 
+// Join-path address diagnostics gate. Routes the two `[join-addr]` lines via
+// getenv+fprintf(stderr) like the [iserve-host]/[nettrace] diags — because the
+// session Log() logger is silent on a POSIX Release build (CVdmErrorLogger::Write
+// only writes a gated logfile; its OutputDebugString fallback is NDEBUG-gated out
+// in Release — two-node confirmed by linux1/linux2). Rides on EN_NETTRACE too so
+// it surfaces in the Linux nodes' existing trace runs with no extra env. Cached;
+// default off => zero ship impact.
+static int JoinAddrLogOn() {
+    static int on = -1;
+    if ( on < 0 ) on = ( getenv( "EN_JOINADDR" ) || getenv( "EN_NETTRACE" ) ) ? 1 : 0;
+    return on;
+}
+
 DWORD vpMsgTime() {
     DWORD  msgTime;
 #ifdef WIN32
@@ -1723,12 +1736,10 @@ void CRemoteSession::AgeServerList() {
 BOOL CRemoteSession::OnSenumREP( sesInfoMsg* msg, CRemoteWS* ws ) {
     VPENTER( CRemoteSession::OnSenumREP );
 
-    if ( msg ) {
+    if ( msg && JoinAddrLogOn() ) {
         char abuf[64];
-        char lbuf[128];
         FormatVpAddr( abuf, sizeof( abuf ), &msg->data.sessionId );
-        snprintf( lbuf, sizeof( lbuf ), "[join-addr] OnSenumREP relayed sessionId=%s", abuf );
-        Log( lbuf );
+        fprintf( stderr, "[join-addr] OnSenumREP relayed sessionId=%s\n", abuf );
     }
 
     if ( m_connected ) {
@@ -2063,12 +2074,10 @@ void CRemoteSession::OnUnsafeData( CNetLink* link ) {
 
 
 BOOL CRemoteSession::ConnectToServer( LPCVPNETADDRESS addr, LPVOID userData ) {
-    if ( addr ) {
+    if ( addr && JoinAddrLogOn() ) {
         char abuf[64];
-        char lbuf[128];
         FormatVpAddr( abuf, sizeof( abuf ), addr );
-        snprintf( lbuf, sizeof( lbuf ), "[join-addr] ConnectToServer dialing %s", abuf );
-        Log( lbuf );
+        fprintf( stderr, "[join-addr] ConnectToServer dialing %s\n", abuf );
     }
     CNetAddress* nA = m_net->MakeAddress( addr );
     CNetLink* link = m_net->MakeSafeLink( nA, userData );
@@ -2079,6 +2088,8 @@ BOOL CRemoteSession::ConnectToServer( LPCVPNETADDRESS addr, LPVOID userData ) {
     // SEGV (the join crash linux2 hit at vpengine.cpp:1893). Bail cleanly instead.
     if ( !link ) {
         Log( "CRemoteSession::ConnectToServer - MakeSafeLink failed (bad/unreachable addr)" );
+        if ( JoinAddrLogOn() )
+            fprintf( stderr, "[join-addr] ConnectToServer - MakeSafeLink FAILED (bad/unreachable addr) -> IDS_VPJOIN_FAILED\n" );
         if ( nA )
             nA->Unref();
         m_serverWS = NULL;
