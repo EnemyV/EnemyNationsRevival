@@ -1214,6 +1214,13 @@ public:
 
     virtual BOOL LookForServer(LPVOID data);
 
+    // TCP-enum (phase-1): dispatch a client's SenumREQ that arrives over a TCP
+    // connection (vs the UDP datagram path). The base CRemoteSession::ProcessSafeData
+    // has no SenumREQ case (a game client never RECEIVES a query — its OnSenumREQ is
+    // IMPOSSIBLE()), so the reg server overrides it here; all other kinds delegate to
+    // the base. Additive — inert until the reg server gets a TCP-enum listener.
+    virtual void ProcessSafeData(CNetLink *link, genericMsg *msg);
+
     BOOL IsServerMode() const { return TRUE; }
 
 protected:

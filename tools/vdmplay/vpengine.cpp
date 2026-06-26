@@ -2095,6 +2095,24 @@ BOOL CRegisterySession::OnSenumREQ( genericMsg* msg, CRemoteWS* ws ) {
 }
 
 
+// TCP-enum (phase-1, mac 2026-06-26): the reg server's safe-link (TCP) dispatch.
+// Today enum rides UDP (OnUnsafeData); this lets a client's directed SenumREQ arrive
+// over a TCP connection instead (for UDP-blocked routers / tunnels). The reply rides
+// back over the same TCP link (OnSenumREQ -> ws->SendData is link-agnostic). All other
+// safe-link kinds (host-register SenumREP, etc.) delegate to the base. Additive: this
+// only fires once a TCP-enum listener exists (step-2 of phase-1) — the UDP enum path
+// is unchanged and remains the default.
+void CRegisterySession::ProcessSafeData( CNetLink* link, genericMsg* msg ) {
+    if ( msg->hdr.msgKind == SenumREQ ) {
+        CRemoteWS* ws = (CRemoteWS*)m_wsMap->FindBySafeLink( link );
+        if ( ws )
+            OnSenumREQ( msg, ws );
+        return;
+    }
+    CRemoteSession::ProcessSafeData( link, msg );
+}
+
+
 
 
 
