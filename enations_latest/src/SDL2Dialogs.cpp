@@ -1578,6 +1578,11 @@ bool SDL2_RunJoinNetworkFlow(GameWindow* gameWindow) {
 
     theGame.GetMe()->SetName(joinDlg.m_playerName.c_str());
     CNetJoin* pJn = CNetJoin::Alloc(theGame.GetMe(), FALSE);
+    // theGame.ctor()/Open(TRUE) above re-default theNet's mode to closed; OpenClient had
+    // set it to client. Re-assert client right before Join so netapi.cpp:178's
+    // ASSERT(m_iType==client) holds (the vp handle survives, so no re-open needed). Fixes
+    // the iserve/TCP-enum-discovered Join hitting the assert. [linux2 datapoint 2026-06-26]
+    theNet.SetClientType();
     BOOL bJoinErr = theNet.Join(&pJoin->m_ID, pJn);
     delete[] pJn;
     if (bJoinErr) {

@@ -62,6 +62,14 @@ static		void OnNetFlowOff ();
 		int			GetMode () const { return (m_iMode); }
 		int			GetType () const { return (m_iType); }
 
+		// Re-assert client mode on the discovered-session Join path. OpenClient sets
+		// m_iType=client, but the SDL2 Join dialog runs theGame.ctor()/Open() between the
+		// browse-open and Join, which re-defaults theNet's m_iType to closed (the vp handle
+		// survives — linux2 datapoint 2026-06-26). Call this right before Join() so the
+		// :178 ASSERT(m_iType==client) holds without weakening it. (Win MP join via :160
+		// is unaffected; calling this when already client is a harmless no-op.)
+		void		SetClientType () { m_iType = client; }
+
 		void		SetMode (int iMode) { ASSERT ((0 <= iMode) && (iMode <= num_modes)); m_iMode = iMode; }
 						enum		{ closed,		// totally closed down
 											opened,		// connected to net, no session
