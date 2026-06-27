@@ -701,12 +701,12 @@ static void BuildMapUnderlay( SDL_Renderer* r, const CAnimAtr& aa, unsigned load
 
     Perf::ScopeCounter _cm( "map.build" );
 
-    // (Re)start: size the texture from the map's content bbox. The iso projection is
-    // affine in hex coords, so the 4 corner hexes bound the parallelogram; a one-tile
-    // pad absorbs altitude offsets and tile overhang. A fog-only change reuses this same
-    // proven full-rebuild path (realloc + transparent clear + re-mesh) — no separate
-    // re-bake path — so the dim is re-baked cleanly with no bright-over-dim edge halo.
-    if ( s_mapLoadGen[dir] != loadGen || s_mapFogGen[dir] != fogGen )
+    // LOAD-gen (re)start ONLY: size the texture from the map's content bbox + realloc +
+    // transparent-clear. The iso projection is affine in hex coords, so the 4 corner hexes
+    // bound the parallelogram; a one-tile pad absorbs altitude offsets and tile overhang.
+    // (A FOG-only change does NOT come through here — see the else-branch below: it re-meshes
+    // in place so a fast zoom-out mid-rebuild shows last-good terrain, not a cleared/black one.)
+    if ( s_mapLoadGen[dir] != loadGen )
     {
         long mnx = LONG_MAX, mny = LONG_MAX, mxx = LONG_MIN, mxy = LONG_MIN;
         const int cxs[4] = { 0, eX - 1, 0, eX - 1 }, cys[4] = { 0, 0, eY - 1, eY - 1 };
@@ -758,6 +758,18 @@ static void BuildMapUnderlay( SDL_Renderer* r, const CAnimAtr& aa, unsigned load
         SDL_SetRenderDrawColor( r, 0, 0, 0, 0 );
         SDL_RenderClear( r );
         SDL_SetRenderTarget( r, pt ); SDL_RenderSetViewport( r, &vp );
+    }
+    else if ( s_mapFogGen[dir] != fogGen )
+    {
+        // FOG-only change (same map + geometry, a visibility reveal bumped g_enFogVisGen):
+        // re-mesh the EXISTING underlay IN PLACE — do NOT realloc or transparent-clear it.
+        // The row sweep below repaints every hex with the new fog dim over the last-good
+        // bake (geometry unchanged → the in-place repaint is exact), so a FAST zoom-out
+        // caught mid-rebuild shows the previous terrain (briefly with mixed old/new fog)
+        // instead of an empty/BLACK underlay (operator Note 1/2 → BUGS #9 regression). Keeps
+        // #9's stale-fog fix (the dim still re-bakes); only the clear-induced black flash is
+        // removed. realloc + clear stay gated on a loadGen change above.
+        s_mapRow[dir] = 0; s_mapFogGen[dir] = fogGen;
     }
 
     const int kMapRowsSlice = 16;              // ~8k hexes/frame on a 512-wide map
