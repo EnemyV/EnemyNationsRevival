@@ -567,6 +567,49 @@ bool SDL2Checkbox::HandleEvent(const SDL_Event& event) {
 }
 
 // ============================================================================
+// SDL2InfoIcon
+// ============================================================================
+SDL2InfoIcon::SDL2InfoIcon(int x, int y, int w, int h, const std::string& tip)
+    : SDL2Widget(x, y, w, h), m_tip(tip) {}
+
+void SDL2InfoIcon::Render(SDL_Surface* dst, TTF_Font* font) {
+    if (!m_visible) return;
+    // A gold-rimmed dark chip with a lowercase "i"; the rim brightens on hover so
+    // the player can tell it's interactive.
+    SDL_Color rim  = m_hovered ? SDL_Color{255, 226, 120, 255}
+                               : SDL_Color{200, 165,  70, 255};
+    FillRect(dst, m_rect, SDL_Color{40, 46, 92, 255});
+    DrawBevel(dst, m_rect, 1, rim, rim);
+    RenderText(dst, font, "i", m_rect, rim, true, true);
+}
+
+void SDL2InfoIcon::RenderOverlay(SDL_Surface* dst, TTF_Font* font) {
+    if (!m_visible || !m_hovered || m_tip.empty() || !font || !dst) return;
+    int tw = 0, th = 0;
+    TTF_SizeUTF8(font, m_tip.c_str(), &tw, &th);
+    const int padX = 6, padY = 4;
+    SDL_Rect box = { m_rect.x + m_rect.w + 4, m_rect.y - 2, tw + 2 * padX, th + 2 * padY };
+    // Keep the box on-surface: flip it left of the icon if it would run off the
+    // right edge, then clamp into the visible area.
+    if (box.x + box.w > dst->w) box.x = m_rect.x - box.w - 4;
+    if (box.x < 0)              box.x = 0;
+    if (box.y + box.h > dst->h) box.y = dst->h - box.h;
+    if (box.y < 0)              box.y = 0;
+    FillRect(dst, box, SDL_Color{20, 24, 40, 255});
+    DrawBevel(dst, box, 1, SDL_Color{200, 165, 70, 255}, SDL_Color{200, 165, 70, 255});
+    SDL_Rect tr = { box.x + padX, box.y + padY, tw, th };
+    RenderText(dst, font, m_tip.c_str(), tr, SDL_Color{235, 235, 220, 255}, false, true);
+}
+
+bool SDL2InfoIcon::HandleEvent(const SDL_Event& event) {
+    // Passive: track hover, never consume (so it can't swallow clicks meant for
+    // the checkbox sharing the row).
+    if (event.type == SDL_MOUSEMOTION)
+        m_hovered = m_visible && PointInRect(event.motion.x, event.motion.y, m_rect);
+    return false;
+}
+
+// ============================================================================
 // SDL2RadioGroup
 // ============================================================================
 SDL2RadioGroup::SDL2RadioGroup(int x, int y, int w, int h,
@@ -1549,6 +1592,17 @@ void SDL2Dialog::Render() {
             r.x -= 2; r.y -= 2; r.w += 4; r.h += 4;
             DrawBevel(mainSurface, r, 1, {180, 200, 220, 255}, {180, 200, 220, 255});
         }
+    }
+    // Overlay pass (after focus): hover popups such as tooltips paint last so they
+    // float above every sibling widget and the focus box, never clipped by a
+    // later-added neighbour. Most widgets' RenderOverlay is a no-op.
+    for (auto& widget : m_widgets) {
+        TTF_Font* wf = widgetFont;
+        if (widget->GetFontSize() > 0) {
+            TTF_Font* ov = GetFont(widget->GetFontSize());
+            if (ov) wf = ov;
+        }
+        widget->RenderOverlay(mainSurface, wf);
     }
 
     if (m_dlgWindow) {

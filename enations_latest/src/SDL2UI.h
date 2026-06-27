@@ -23,6 +23,10 @@ public:
     virtual ~SDL2Widget() = default;
 
     virtual void Render(SDL_Surface* dst, TTF_Font* font) = 0;
+    // Optional second-pass paint, drawn AFTER every widget's Render() (like the
+    // focus-highlight pass) so a hover popup such as a tooltip floats above all
+    // sibling widgets regardless of add order. Default: draws nothing.
+    virtual void RenderOverlay(SDL_Surface* dst, TTF_Font* font) {}
     virtual bool HandleEvent(const SDL_Event& event) { return false; }
 
     void SetVisible(bool v) { m_visible = v; }
@@ -201,6 +205,25 @@ private:
     std::string m_text;
     bool m_checked;
     ChangeCallback m_onChange;
+};
+
+// ============================================================================
+// SDL2InfoIcon - small "(i)" glyph that reveals a text tooltip while hovered.
+// Passive (never consumes events). The tooltip is painted in the dialog's
+// overlay pass (RenderOverlay) so it floats above sibling widgets. Used for the
+// edict rows' effect descriptions (bug #3) but generic to any row needing help.
+// ============================================================================
+class SDL2InfoIcon : public SDL2Widget {
+public:
+    SDL2InfoIcon(int x, int y, int w, int h, const std::string& tip);
+
+    void Render(SDL_Surface* dst, TTF_Font* font) override;
+    void RenderOverlay(SDL_Surface* dst, TTF_Font* font) override;
+    bool HandleEvent(const SDL_Event& event) override;
+
+private:
+    std::string m_tip;
+    bool m_hovered = false;
 };
 
 // ============================================================================

@@ -501,9 +501,17 @@ int SDL2BuildingWindow::BuildEdicts(int x, int y, int w) {
             continue;
         bool checked = me->IsEdictActive(id);
         int  eid     = id;   // capture by value for the callback
-        AddWidget<SDL2Checkbox>( x + BOX_PAD + 4, cy, w - 2 * BOX_PAD - 8, ROW_H,
+        // Reserve the row's right edge for an (i) info icon (bug #3) so the
+        // checkbox label never runs under it.
+        const int kInfoSz = 14;
+        int cbX = x + BOX_PAD + 4;
+        int cbW = w - 2 * BOX_PAD - 8 - ( kInfoSz + 4 );
+        AddWidget<SDL2Checkbox>( cbX, cy, cbW, ROW_H,
                                  e.name, checked,
                                  [me, eid]( bool on ){ me->ToggleEdictNet( eid, on ); } );
+        // (i) info icon — hover reveals the edict's effect text (EdictDef::desc).
+        AddWidget<SDL2InfoIcon>( cbX + cbW + 4, cy + ( ROW_H - kInfoSz ) / 2,
+                                 kInfoSz, kInfoSz, e.desc ? e.desc : "" );
         cy += ROW_H;
     }
     return y + H + SEC_PAD;
