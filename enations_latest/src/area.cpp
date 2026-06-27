@@ -5246,11 +5246,12 @@ void CWndArea::OnLButtonDblClk( UINT nFlags, CPoint point )
         case CStructureData::UTfort:        // pillboxes / bunkers / forts (weapon widget)
         case CStructureData::UTcommand:     // command center (military summary + turret)
         case CStructureData::UTrepair:      // repair building (live repair queue)
-            // bug #31 / Note 26: open on-top so the read-only info window (and its
-            // edict (i) tooltips) float above the ALWAYS_ON_TOP area-map window
-            // instead of being tucked behind it — otherwise the edict effect text
-            // (e.g. Mining Subsidy) renders behind the map and can't be read.
-            ( (CBuilding*)punit )->ShowInfoWindow( true );
+            // Note 26 (edict (i) tooltip behind the map) is handled at the
+            // SDL2BuildingWindow ctor level (keep-on-top = bOnTop || secEdicts,
+            // @3cdca984) so edict-host windows float above the map regardless of
+            // open path; non-edict windows stay tuckable-by-design — so this
+            // area-map open stays bOnTop=false (default).
+            ( (CBuilding*)punit )->ShowInfoWindow( );
             return;
         }
 
