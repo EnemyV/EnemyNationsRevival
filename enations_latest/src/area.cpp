@@ -2399,7 +2399,7 @@ void CWndArea::DrawRouteWaypoints( )
         // moves, not only queued routes.)
         if ( pVeh->GetRouteList( ).GetCount( ) == 0 )
         {
-            if ( pVeh->GetEvent( ) == CVehicle::moving )
+            if ( pVeh->GetRouteMode( ) == CVehicle::moving )   // VEH_MODE — codebase idiom (area.cpp:6479, caitmgr, projbase)
             {
                 CPoint wp = hexWin( pVeh->GetHexDest( ) );
                 seg( prev, wp );
