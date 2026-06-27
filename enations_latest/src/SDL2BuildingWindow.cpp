@@ -332,14 +332,8 @@ SDL2BuildingWindow::SDL2BuildingWindow(GameWindow* gw, CBuilding* pBldg, bool bO
     , m_pBldg(pBldg)
 {
     // Tuckable behind the map by default (like Relations); but when launched from a
-    // build dialog's (I) button it must float on top of that dialog. Note 26 (operator,
-    // root-caused by mac2): ALSO float when this window shows interactable EDICTS —
-    // otherwise the edict (i)-icon tooltip is occluded by the ALWAYS_ON_TOP area-map
-    // window and the effect text is unreadable ("renders behind the area map, only +").
-    // secEdicts() is true exactly when an edict row (+ its (i) tooltip) is present, so
-    // this targets edict-hosting windows only; non-edict building windows stay
-    // tuckable-by-design (no blanket keep-on-top).
-    SetKeepOnTop(bOnTop || secEdicts(pBldg));
+    // build dialog's (I) button it must float on top of that dialog.
+    SetKeepOnTop(bOnTop);
     SetWidgetFontSize(15); // slightly larger than the 13pt default for readability
 
     m_bldgID      = pBldg->GetID();
