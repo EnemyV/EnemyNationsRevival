@@ -438,7 +438,13 @@ void SDL2ResearchDialog::SelectItem(int idx) {
     m_selected = idx;
 
     CRsrchItem const& item = theRsrch[m_items[idx].index];
-    m_lblDesc->SetText(item.m_sDesc.c_str());
+    // Show the description plus the topic's point cost (Note 11 / BUGS #19): the
+    // operator wants the research-points-to-discover figure visible in the detail
+    // box (which has room below the wrapped description text).
+    std::string desc = item.m_sDesc;
+    if (!desc.empty()) desc += "\n\n";
+    desc += "Cost: " + std::to_string(item.m_iPtsRequired) + " research points";
+    m_lblDesc->SetText(desc.c_str());
 
     // The Research button stays "down" (pressed sprite) while the selected item is
     // the topic currently being researched; for any other item it's an enabled
