@@ -22,13 +22,6 @@
 // see SDL2Panel.cpp). The call site is likewise #if defined(__linux__).
 #if defined(__linux__)
 
-// X11 is the LINUX windowing system here; macOS (Aqua) has no X11 and doesn't need
-// WM_TRANSIENT_FOR. Confine the X11 impl to __linux__ and stub it elsewhere (POSIX-but-
-// not-Linux = macOS) so EnSetX11TransientFor still links. (Was guarded only by
-// `#ifndef _WIN32`, which pulled the X11 code into the mac/clang build → the X11 header/
-// symbols aren't there → `Undefined symbols: EnSetX11TransientFor` link failure on arm64.)
-#ifdef __linux__
-
 #ifndef SDL_VIDEO_DRIVER_X11
 #define SDL_VIDEO_DRIVER_X11 1
 #endif
@@ -58,13 +51,5 @@ void EnSetX11TransientFor(SDL_Window* panel, SDL_Window* owner)
         XFlush(panelInfo.info.x11.display);   // ensure the WM sees the hint promptly
     }
 }
-
-#else  // POSIX but not Linux (macOS): no X11 → no-op stub so the symbol links
-
-#include <SDL.h>
-// macOS uses native (Aqua) window management; there is no X11 WM_TRANSIENT_FOR to set.
-void EnSetX11TransientFor(SDL_Window*, SDL_Window*) { }
-
-#endif // __linux__
 
 #endif // !_WIN32
