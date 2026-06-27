@@ -1815,7 +1815,13 @@ void CWndWorld::ReRender( )
     // are NOT part of the bake (drawn live every frame), so they never gate.
     unsigned long long walkSig = 0;
     bool bCtrMoved = false;
-    if ( m_bIsRadar && m_pWndArea != NULL )
+    // #4 (minimap/world-map lag on pan/zoom): the world map was EXCLUDED from this
+    // input-detection by the radar-only gate, so it never noticed a center/zoom/dir
+    // change and only re-walked on the blind 1500ms timer = the reported 1-2s lag.
+    // Run the detection for the world map too so an input delta fast-paths its re-bake
+    // (the m_pdibRadarStatic cache + bake-state bookkeeping below is ALREADY maintained
+    // for the world map). Radar branch is unchanged.
+    if ( m_pWndArea != NULL )
     {
         extern unsigned g_enTerrainEditGen;   // defined in SDL2Terrain.cpp (runtime terrain edits)
         CMapLoc ctr = m_pWndArea->GetAA( ).GetCenter( );
@@ -1845,7 +1851,12 @@ void CWndWorld::ReRender( )
     // they stay coherent with it). While the centre is moving, re-bake at the original
     // 140ms cadence (never user-visible pre-gate); only IN-PLACE changes (fog ticks,
     // building count, highlight cycle) use the longer 320ms throttle.
-    const DWORD kWalkThrottle = m_bIsRadar ? ( bCtrMoved ? 140u : 320u ) : 1500u;
+    // World map: re-bake fast (140ms) WHILE the user is actively panning/zooming
+    // (bCtrMoved = any center/zoom/dir/mode delta, set above), else the cheap 1500ms
+    // idle cadence — the same responsive-on-input / cheap-when-idle split the radar uses
+    // (#4). Bounds the expensive whole-map walk to the active-interaction window.
+    const DWORD kWalkThrottle = m_bIsRadar ? ( bCtrMoved ? 140u : 320u )
+                                           : ( bCtrMoved ? 140u : 1500u );
     bool  bRebuildBg = !m_pdibRadarStatic ||
                        ( ( dwRadarNow - m_dwLastRadarDraw >= kWalkThrottle ) &&
                          // hit-flash animation must keep re-baking while active
