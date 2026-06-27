@@ -511,21 +511,14 @@ void CConquerApp::CreateNewWorld(unsigned uRand, AIinit *pAiData, int iSide, int
                     return;
         }
 
-        // The loop above is AI-only, but CAIInitPos::DoIt (driven by the AI-init
-        // path) is the ONLY code that places ANY player's starting loadout — so
-        // every human needs a CAIMgr too, else it gets 0 starting units (all-platform
-        // bug: IsMe()-gated box-select / HOME-center / crane Build then all fail).
-        // AiNewPlayer sets SetAI(FALSE) for the human (its CAIMgr stays non-AI),
-        // and StartAi() never spins an AiThread for it, so it is never AI-driven.
-        // MP: loop over ALL non-AI players (GetMe AND any JOINED humans), not just
-        // GetMe — a joined player is neither GetMe nor IsAI, so a GetMe-only call
-        // left the joiner with 0 units (MP analog of the keystone single-player bug).
-        for (pos = theGame.GetAll().GetHeadPosition(); pos != NULL;) {
-            CPlayer *pPlr = theGame.GetAll().GetNext(pos);
-            ASSERT_VALID (pPlr);
-            if (!pPlr->IsAI())
-                AiNewPlayer(pPlr);
-        }
+        // SP-start fix (revert @c3540c06 + @8de2cff2): do NOT route non-AI (human)
+        // players through the AI init path. Those commits added a non-AI AiNewPlayer
+        // loop here on the false premise "the human needs a CAIMgr or box-select /
+        // HOME-center / crane-Build fail". Verified false on gcc: kept out of the AI
+        // path the human starts with 0 placed units and lands its rocket
+        // (CWndArea::SetupStart), which disgorges its chosen loadout — and box-select
+        // / HOME / crane-Build all work without a human CAIMgr, as in the original
+        // game. The loop above stays AI-only (pre-regression behaviour).
     }
 
     // set rand
@@ -818,22 +811,11 @@ void CConquerApp::StartAi() {
             iOn++;
         }
 
-        // Place EVERY human's starting units too (see the AiNewPlayer note above).
-        // AiSetup builds the per-player AI map that CAIInitPos::DoIt needs and then
-        // calls SetInitialPos→DoIt to deal the loadout. The goal/task managers it
-        // also builds stay dormant: StartAi() spins AiThreads for GetAi() players
-        // only, so a human's CAIMgr is never Manage()'d. (If we later want to
-        // skip building those managers for the human, split CreateHeavy into
-        // CreateMap+CreateManagers and call only CreateMap here.)
-        // MP: loop over ALL non-AI players (GetMe AND any JOINED humans) — a joined
-        // player is not in GetAi() and is not GetMe, so a GetMe-only AiSetup left
-        // the joiner with no loadout (MP analog of the keystone single-player bug).
-        for (posS = theGame.GetAll().GetHeadPosition(); posS != NULL;) {
-            CPlayer *pPlr = theGame.GetAll().GetNext(posS);
-            ASSERT_VALID (pPlr);
-            if (!pPlr->IsAI() && pPlr->GetAiHdl() != NULL)
-                AiSetup(pPlr);
-        }
+        // SP-start fix (paired with the AiNewPlayer revert above): do NOT AiSetup
+        // non-AI players. @c3540c06/@8de2cff2 ran the human through AiSetup ->
+        // CAIInitPos::DoIt -> PlaceRocket()+disgorge, which pre-empted the human's
+        // real start (land-your-rocket) by auto-landing the rocket with a placed
+        // loadout. AI-only loop above is the pre-regression behaviour.
 
         // Done building every AI's map — drop the snapshot so gameplay (the AI
         // threads launched just below) uses live, locked game-map reads.
