@@ -51,7 +51,7 @@ static const int STORAGE_H    = BOX_PAD + HDR_H + SDL2BuildingWindow::kNumStoreM
 static const int POWERLIKE_H  = BOX_PAD + HDR_H + GRAPH_H + BOX_PAD;   // power / office / apartment
 static const int TURRET_H     = BOX_PAD + HDR_H + 2 * ROW_H + 34 + BOX_PAD;   // 2x2 stats + Show-Range
 static const int PRODUCTION_H = BOX_PAD + HDR_H + 2 * ROW_H + 6 + 16 + BOX_PAD;   // text + progress bar
-static const int MILITARY_H   = BOX_PAD + HDR_H + 3 * ROW_H + BOX_PAD;   // strength + infantry + vehicles
+static const int MILITARY_H   = BOX_PAD + HDR_H + 4 * ROW_H + BOX_PAD;   // strength + infantry + vehicles + energy-need (#39)
 static const int FERTILITY_H  = BOX_PAD + HDR_H + ROW_H + BOX_PAD;       // one row: green-X bar + %
 static const int UNITS_ROW_H  = 30;                                      // tall enough for unit icons
 static const int UNITS_H      = BOX_PAD + HDR_H + UNITS_ROW_H + BOX_PAD; // seaport: docked-units strip
@@ -784,6 +784,12 @@ int SDL2BuildingWindow::BuildMilitary(int x, int y, int w) {
     m_lblMilStrength = AddWidget<SDL2Label>(x + BOX_PAD + 4, yh,             tw, ROW_H, "Strength: 0");
     m_lblInfantry    = AddWidget<SDL2Label>(x + BOX_PAD + 4, yh + ROW_H,     tw, ROW_H, "Infantry: 0");
     m_lblVehicles    = AddWidget<SDL2Label>(x + BOX_PAD + 4, yh + 2 * ROW_H, tw, ROW_H, "Vehicles: 0");
+    // Energy demand (#39): colony power NEED — the figure a +energy-upkeep edict
+    // (e.g. Fortify Border, hosted here on the Command Center) raises. The Command
+    // Center has no Power section, so without this row the +20%-energy-upkeep bump
+    // is invisible in the very window that toggles the edict (the ENERGY sibling of
+    // the #37 "Workforce Need" row in the Office section).
+    m_lblMilEnergy   = AddWidget<SDL2Label>(x + BOX_PAD + 4, yh + 3 * ROW_H, tw, ROW_H, "Energy Need: 0");
     return y + MILITARY_H + SEC_PAD;
 }
 
@@ -1364,6 +1370,9 @@ void SDL2BuildingWindow::Refresh() {
         if ( m_lblMilStrength ) m_lblMilStrength->SetText( "Strength: " + FmtNum( m_iMilStrength ) );
         if ( m_lblInfantry )    m_lblInfantry->SetText(    "Infantry: " + FmtNum( m_iInfantry ) );
         if ( m_lblVehicles )    m_lblVehicles->SetText(    "Vehicles: " + FmtNum( m_iVehicles ) );
+        // #39: colony power demand (includes any +energy-upkeep edict bump applied in
+        // CPlayer::StartLoop). Toggling Fortify Border here now visibly moves this number.
+        if ( m_lblMilEnergy )   m_lblMilEnergy->SetText(   "Energy Need: " + FmtNum( (int)p->GetPwrNeed() ) );
     }
 
     if ( m_bRepair ) {

@@ -162,6 +162,7 @@ private:
     SDL2Label* m_lblMilStrength = nullptr;
     SDL2Label* m_lblInfantry    = nullptr;
     SDL2Label* m_lblVehicles    = nullptr;
+    SDL2Label* m_lblMilEnergy   = nullptr;   // colony energy NEED (#39: surfaces +energy-upkeep edicts)
     int m_iMilTick     = 0;     // frame counter for throttling the recount
     int m_iMilStrength = 0;
     int m_iInfantry    = 0;
