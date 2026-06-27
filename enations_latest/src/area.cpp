@@ -5246,7 +5246,11 @@ void CWndArea::OnLButtonDblClk( UINT nFlags, CPoint point )
         case CStructureData::UTfort:        // pillboxes / bunkers / forts (weapon widget)
         case CStructureData::UTcommand:     // command center (military summary + turret)
         case CStructureData::UTrepair:      // repair building (live repair queue)
-            ( (CBuilding*)punit )->ShowInfoWindow( );
+            // bug #31 / Note 26: open on-top so the read-only info window (and its
+            // edict (i) tooltips) float above the ALWAYS_ON_TOP area-map window
+            // instead of being tucked behind it — otherwise the edict effect text
+            // (e.g. Mining Subsidy) renders behind the map and can't be read.
+            ( (CBuilding*)punit )->ShowInfoWindow( true );
             return;
         }
 
