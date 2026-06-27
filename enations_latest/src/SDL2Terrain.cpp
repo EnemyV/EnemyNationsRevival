@@ -647,6 +647,7 @@ static bool IsOpenWater( int type )
 // transient backdrop; it refreshes on the next load/dir (re)build.
 static SDL_Texture* s_mapRT[4]      = { nullptr, nullptr, nullptr, nullptr };
 static unsigned     s_mapLoadGen[4] = { ~0u, ~0u, ~0u, ~0u };
+static unsigned     s_mapFogGen[4]  = { ~0u, ~0u, ~0u, ~0u };   // g_enFogVisGen baked into this dir's underlay
 static int          s_mapRow[4]     = { 0, 0, 0, 0 };   // next map row to mesh; >= eY = done
 static CPoint       s_mapOrg[4];                        // content(z0) bbox origin (after pad)
 static float        s_mapScale[4]   = { 0, 0, 0, 0 };   // content-z3 px -> texture px
@@ -685,19 +686,27 @@ static bool IsAnimatedTile( int type )
 // burst=true sweeps every remaining row this call (load-time prewarm); else only
 // kMapRowsSlice rows per frame. Safe to call every frame — returns immediately once the
 // dir's texture is complete for this load generation.
-static void BuildMapUnderlay( SDL_Renderer* r, const CAnimAtr& aa, unsigned loadGen, bool burst )
+static void BuildMapUnderlay( SDL_Renderer* r, const CAnimAtr& aa, unsigned loadGen, unsigned fogGen, bool burst )
 {
     const int dir = aa.m_iDir & 3;
     const int eX = theMap.Get_eX( ), eY = theMap.Get_eY( );
     if ( !r || !eX || !eY ) return;
-    if ( s_mapLoadGen[dir] == loadGen && s_mapRow[dir] >= eY ) return;   // complete
+    // Freshness key = (loadGen, fogGen). loadGen covers texture (re)creation; fogGen
+    // covers the per-hex GetVisibility() dim baked into the vertex colour below. The
+    // underlay bakes fog (unlike the live s_fogRT overlay, which self-heals on the fog
+    // dirty-gen), so a reveal — e.g. rocket-land disgorging units → CHex::IncVisible →
+    // ++g_enFogVisGen — must force a rebuild here too, else the zoom-out backdrop shows
+    // stale fog over the newly-revealed base until the next load/rotate (bug #9).
+    if ( s_mapLoadGen[dir] == loadGen && s_mapFogGen[dir] == fogGen && s_mapRow[dir] >= eY ) return;   // complete
 
     Perf::ScopeCounter _cm( "map.build" );
 
     // (Re)start: size the texture from the map's content bbox. The iso projection is
     // affine in hex coords, so the 4 corner hexes bound the parallelogram; a one-tile
-    // pad absorbs altitude offsets and tile overhang.
-    if ( s_mapLoadGen[dir] != loadGen )
+    // pad absorbs altitude offsets and tile overhang. A fog-only change reuses this same
+    // proven full-rebuild path (realloc + transparent clear + re-mesh) — no separate
+    // re-bake path — so the dim is re-baked cleanly with no bright-over-dim edge halo.
+    if ( s_mapLoadGen[dir] != loadGen || s_mapFogGen[dir] != fogGen )
     {
         long mnx = LONG_MAX, mny = LONG_MAX, mxx = LONG_MIN, mxy = LONG_MIN;
         const int cxs[4] = { 0, eX - 1, 0, eX - 1 }, cys[4] = { 0, 0, eY - 1, eY - 1 };
@@ -723,7 +732,7 @@ static void BuildMapUnderlay( SDL_Renderer* r, const CAnimAtr& aa, unsigned load
         SDL_SetTextureScaleMode( s_mapRT[dir], SDL_ScaleModeLinear );
         s_mapOrg[dir]   = CPoint( (int)mnx, (int)mny );
         s_mapScale[dir] = sc; s_mapTexW[dir] = tw; s_mapTexH[dir] = th;
-        s_mapRow[dir] = 0; s_mapLoadGen[dir] = loadGen;
+        s_mapRow[dir] = 0; s_mapLoadGen[dir] = loadGen; s_mapFogGen[dir] = fogGen;
         // TORUS WRAP periods: the map repeats; stepping all of hex-X (or hex-Y) shifts the
         // content image by a constant vector (the projection is affine and CHexCoord is NOT
         // wrapped here — GetWorldHex extends linearly). The preview tiles the underlay at
@@ -3424,7 +3433,7 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
     {
         bool anyCur = false;
         for ( int d = 0; d < 4; ++d ) anyCur |= ( s_mapLoadGen[d] == s_loadGen && s_mapRow[d] > 0 );
-        BuildMapUnderlay( r, aa, s_loadGen, !anyCur );
+        BuildMapUnderlay( r, aa, s_loadGen, g_enFogVisGen, !anyCur );
     }
 
     // Cursor footprint hatch — live overlay, every frame (animated; shows on a static
