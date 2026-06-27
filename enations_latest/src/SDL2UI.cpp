@@ -388,10 +388,31 @@ void SDL2Button::Render(SDL_Surface* dst, TTF_Font* font) {
     if (m_rect.h >= 32 && font) {
         int textW = 0, textH = 0;
         TTF_SizeText(font, m_text.c_str(), &textW, &textH);
-        if (textW > textRect.w)
-            RenderTextWrapped(dst, font, m_text.c_str(), textRect, actualColor, true);
-        else
+        if (textW > textRect.w) {
+            // Too wide. Wrapping only helps if every WORD fits the button width; a
+            // single word wider than the button (e.g. "Manufacturing" in the Linux
+            // UI font) would wrap MID-WORD ("Manufacturin" / "g" — operator-reported).
+            // In that case shrink-to-fit on one line instead (the original game shrank
+            // long names too). Multi-word labels that wrap cleanly at spaces still wrap.
+            int widestWord = 0;
+            for (size_t s = 0; s <= m_text.size(); ) {
+                size_t sp = m_text.find(' ', s);
+                size_t len = (sp == std::string::npos) ? std::string::npos : sp - s;
+                std::string w = m_text.substr(s, len);
+                if (!w.empty()) {
+                    int ww = 0, wh = 0; TTF_SizeText(font, w.c_str(), &ww, &wh);
+                    if (ww > widestWord) widestWord = ww;
+                }
+                if (sp == std::string::npos) break;
+                s = sp + 1;
+            }
+            if (widestWord <= textRect.w)
+                RenderTextWrapped(dst, font, m_text.c_str(), textRect, actualColor, true);
+            else
+                RenderText(dst, font, m_text.c_str(), textRect, actualColor, true, true, true);
+        } else {
             RenderText(dst, font, m_text.c_str(), textRect, actualColor, true, true);
+        }
     } else {
         RenderText(dst, font, m_text.c_str(), textRect, actualColor, true, true);
     }
