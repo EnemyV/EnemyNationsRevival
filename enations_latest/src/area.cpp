@@ -2471,6 +2471,7 @@ void CWndArea::DoLineMove( CPoint ptEnd )
         pVeh->TempTargetOff( );
         pVeh->SetEvent( CVehicle::none );
         pVeh->ResumeUnit( );
+        StopRoute( pVeh );   // #6: a manual line-move stops/overrides any active route (incl. loop/haul)
         SetDestAndSfx( pVeh, sub );
         pVeh->_SetTarget( NULL );
     }
@@ -3781,13 +3782,19 @@ void CWndArea::ShiftQueueMove( CVehicle* pVeh, CSubHex const& sub )
         pVeh->m_pSdlRoute->RefreshRoute( );
 }
 
-// A normal (non-Shift) command overrides a one-shot Shift-queue: clear the queued waypoints
-// so the vehicle doesn't resume them. LOOP routes are left intact (only !GetRouteLoop is a
-// one-shot queue). Resets the flag back to the looping default afterward.
-void CWndArea::ClearOneShotRoute( CVehicle* pVeh )
+// A manual move command (normal click OR line-move) STOPS / overrides ANY active route the
+// vehicle is on — including LOOP/haul routes (operator 2026-06-27, BUGS.md #6: "normal and
+// line should stop/override routing"). Previously loop routes were deliberately preserved;
+// the operator wants a move to interrupt them. If the vehicle is auto-router-controlled (a
+// loop/haul route) release it from the router first, then clear the route list and reset the
+// loop flag to the default.
+void CWndArea::StopRoute( CVehicle* pVeh )
 {
-    if ( pVeh->GetRouteLoop( ) )
-        return;
+    if ( pVeh->IsHpControl( ) )          // on an auto-router (loop/haul) route — release it
+    {
+        pVeh->HpControlOff( );
+        theGame.m_pHpRtr->MsgGiveVeh( pVeh );
+    }
     POSITION p = pVeh->GetRouteList( ).GetHeadPosition( );
     while ( p != NULL )
         delete pVeh->GetRouteList( ).GetNext( p );
@@ -4725,7 +4732,7 @@ void CWndArea::DoCommandAt( UINT nFlags, CPoint point )
         {
             CUnit* pUnit = m_lstUnits.GetNext( pos );
             if ( pUnit->GetUnitType( ) == CUnit::vehicle )
-                ClearOneShotRoute( (CVehicle*)pUnit );
+                StopRoute( (CVehicle*)pUnit );
         }
 
     CSubHex _sub = m_aa.WindowToSubHex( point );

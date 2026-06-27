@@ -293,7 +293,7 @@ protected:
 	// SetMouseState on every mouse-move).
 	void DoCommandAt(UINT nFlags, CPoint point);
 	void ShiftQueueMove(CVehicle* pVeh, CSubHex const& sub);   // F2: Shift = append a one-shot route waypoint
-	void ClearOneShotRoute(CVehicle* pVeh);                   // a normal command clears a one-shot (non-loop) queue
+	void StopRoute(CVehicle* pVeh);                          // manual move (normal/line) stops/overrides ANY route incl. loop/haul (BUGS.md #6)
 	afx_msg void OnActivate(UINT nState, CWnd* pWndOther, BOOL bMinimized);
 	afx_msg void OnLButtonDblClk(UINT nFlags, CPoint point);
 	afx_msg void OnLButtonUp(UINT nFlags, CPoint point);
