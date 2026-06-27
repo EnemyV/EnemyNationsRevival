@@ -6,6 +6,7 @@
 #include "lastplnt.h"
 #include "area.h"
 #include "player.h"
+#include "research.h"   // CRsrchArray (Note 9: gate largest apt/office on Large Buildings)
 #include "building.inl"
 #include "bitmaps.h"
 #include "unit.inl"
@@ -79,13 +80,30 @@ bool SDL2BuildStructure::CanBuild(int iCat, const CStructureData* pSd) {
     if (pSd->GetBldgType() == CStructureData::apartment ||
         pSd->GetBldgType() == CStructureData::office) {
 
+        // Note 9 (operator playtest): "Mid-sized Buildings" unlocks SEVERAL apartment/
+        // office tiers at once — including the LARGEST (apartment_2_4 / office_3_1, =
+        // base+max-1) — so the top-anchored window drops the intermediate tiers off the
+        // bottom ("skipped", never selectable). Gate that top tier behind LARGE Buildings
+        // research (large_facilities, already exists) so it appears as its own step and
+        // the intermediates surface. Code-side gate mirroring the edicts/AltOutput
+        // GetRsrch pattern — NO ENATIONS.DAT change. (num_apartments/num_offices already
+        // exclude the obsolete _3_x tiers, so base+max-1 is the largest LIVE tier.)
+        CPlayer* meRsrch = theGame.GetMe();
+        bool bLargeBldgs = meRsrch &&
+            meRsrch->GetRsrch( CRsrchArray::large_facilities ).m_bDiscovered;
+
         // Number of discovered tiers of each type. (Research unlocks them in order
-        // from the base, so the discovered set is the contiguous low-index run.)
-        auto countDisc = [](int base, int max) {
+        // from the base, so the discovered set is the contiguous low-index run.) The
+        // largest tier (base+max-1) is additionally gated on Large Buildings (Note 9).
+        auto countDisc = [bLargeBldgs](int base, int max) {
             int n = 0;
-            for (int iOn = base; iOn < base + max; iOn++)
-                if (theStructures.GetData(iOn)->IsDiscovered())
-                    n++;
+            for (int iOn = base; iOn < base + max; iOn++) {
+                if (!theStructures.GetData(iOn)->IsDiscovered())
+                    continue;
+                if (iOn == base + max - 1 && !bLargeBldgs)   // largest tier needs Large Buildings
+                    continue;
+                n++;
+            }
             return n;
         };
 
