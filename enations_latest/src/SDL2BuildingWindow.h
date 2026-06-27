@@ -82,6 +82,7 @@ private:
     int BuildApt       (int x, int y, int w);
     int BuildTurret    (int x, int y, int w);
     int BuildEdicts    (int x, int y, int w);   // Edicts v1: civ-wide policy toggles (host buildings)
+    int BuildAltOutput (int x, int y, int w);   // #40: building-scoped AltOutput toggle (checkbox + scope)
     int BuildProduction(int x, int y, int w);
     int BuildMilitary  (int x, int y, int w);
     int BuildRepair    (int x, int y, int w);
@@ -149,11 +150,14 @@ private:
     SDL2Label*  m_lblTurretReload = nullptr;
     SDL2Label*  m_lblTurretDps    = nullptr;
     SDL2Button* m_btnShowRange     = nullptr;
-    // Generic AltOutput (alt-output toggle) button -- shown on any building that has an
-    // available AltOutput def (BioFuel farm, Coal-Liquefaction coal plant, ...). Flips the
-    // building's runtime-only alt_oil flag; label comes from the def. Replaces the old
-    // bespoke per-feature "Bio Oil" button.
-    SDL2Button* m_btnAltOut        = nullptr;
+    // Generic AltOutput (alt-output toggle) -- shown on any building that has an available
+    // AltOutput def (BioFuel farm, Coal-Liquefaction coal plant, Charcoal lumber mill,
+    // Fracking exhausted oil well). Rendered as a CHECKBOX (bug #40 — was a button that
+    // overlapped Close + didn't toggle) in its own "Production Mode" section, mirroring the
+    // civ-wide Edicts checkbox pattern. Flips the building's runtime-only alt_oil flag (which
+    // the shared AltOutput::Convert production hook reads); label comes from the def. Scope
+    // ("This building only") is shown via an adjacent SDL2InfoIcon (#36).
+    SDL2Checkbox* m_chkAltOut      = nullptr;
 
     SDL2Label*       m_lblProduction  = nullptr;
     SDL2ProgressBar* m_progProduction = nullptr;

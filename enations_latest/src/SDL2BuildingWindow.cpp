@@ -136,6 +136,13 @@ static int nCivEdictsFor(CBuilding* b) {
 static bool secEdicts(CBuilding* b) {
     return ( b->GetOwner() && b->GetOwner()->IsMe() ) && ( nCivEdictsFor(b) > 0 );
 }
+// Show the building-scoped AltOutput toggle (the "Production Mode" section: BioFuel /
+// Coal-Liquefaction / Charcoal / Fracking) only on a building I own that has an available
+// (matched + tech-researched) AltOutput def. Mirrors secEdicts so the toggle lives in the
+// section layout (height-reserved) instead of overlapping the Close row — bug #40.
+static bool secAltOutput(CBuilding* b) {
+    return ( b->GetOwner() && b->GetOwner()->IsMe() ) && ( AltOutput::Available( b ) != nullptr );
+}
 static bool secOfc(CBuilding* b) {
     if ( b->GetData()->GetType() == CStructureData::rocket ) return true;
     return ( b->GetData()->GetUnionType() == CStructureData::UThousing ) &&
@@ -240,8 +247,12 @@ static bool secBuilding(CBuilding* b) {
 enum {
     SEC_STORAGE, SEC_PRODUCTION, SEC_BUILDING, SEC_FERTILITY, SEC_INPUTS,
     SEC_OUTPUTS, SEC_UNITS, SEC_REPAIR, SEC_MILITARY, SEC_POWER, SEC_OFFICE,
-    SEC_APT, SEC_TURRET, SEC_EDICTS
+    SEC_APT, SEC_TURRET, SEC_EDICTS, SEC_ALTOUTPUT
 };
+
+// AltOutput "Production Mode" section: one outlined box with a single checkbox row
+// (+ scope (i) icon), same geometry as a 1-edict Edicts box.
+static const int ALTOUTPUT_H = BOX_PAD + HDR_H + ROW_H + BOX_PAD;
 
 struct SecRec { int id; int h; };
 
@@ -273,6 +284,7 @@ static BldgLayout computeLayout(CBuilding* b) {
     if ( secApt(b)        ) L.secs[n++] = { SEC_APT,        POWERLIKE_H };
     if ( secTurret(b)     ) L.secs[n++] = { SEC_TURRET,     TURRET_H };
     if ( secEdicts(b)     ) L.secs[n++] = { SEC_EDICTS,     BOX_PAD + HDR_H + nCivEdictsFor(b) * ROW_H + BOX_PAD };
+    if ( secAltOutput(b)  ) L.secs[n++] = { SEC_ALTOUTPUT,  ALTOUTPUT_H };
 
     int total = 0;
     for ( int i = 0; i < n; i++ ) total += L.secs[i].h + SEC_PAD;
@@ -459,29 +471,56 @@ void SDL2BuildingWindow::OnInit() {
             EndDialog(0);
         });
 
-    // Generic AltOutput toggle: shown only on the LOCAL player's own building when an
-    // AltOutput def applies to it AND the gating tech is researched (BioFuel on a farm,
-    // Coal Liquefaction on a coal power plant, future Charcoal/Fracking, ...). Label comes
-    // from the def. Placed in the full-width Close row (left of Close) so it does NOT
-    // perturb the 2-column section layout / computeLayout heights. Flips the building's
-    // runtime-only alt_oil flag, which the shared AltOutput::Convert production hook reads.
-    if ( m_pBldg->GetOwner( ) && m_pBldg->GetOwner( )->IsMe( ) )
-    {
-        const AltOutput::AltOutputDef* pDef = AltOutput::Available( m_pBldg );
-        if ( pDef )
-        {
-            m_btnAltOut = AddWidget<SDL2Button>( m_x + 14, yClose + 2, 150, 28, pDef->m_szLabel,
-                [this]( ) {
-                    bool on = !m_pBldg->IsFlag( CUnit::alt_oil );
-                    if ( on ) m_pBldg->SetFlag( CUnit::alt_oil );
-                    else      m_pBldg->ClrFlag( CUnit::alt_oil );
-                    m_btnAltOut->SetToggled( on );
-                } );
-            m_btnAltOut->SetToggled( m_pBldg->IsFlag( CUnit::alt_oil ) );
-        }
-    }
+    // NB the building-scoped AltOutput toggle (BioFuel / Coal-Liquefaction / Charcoal /
+    // Fracking) is NOT placed here anymore. It used to be a 150px-wide SDL2Button squeezed
+    // into this Close row at (m_x+14) — which overlapped the centred Close button at narrow
+    // (single-column) widths, so clicks hit Close (and there was no checkbox affordance or
+    // scope shown). It is now a proper SDL2Checkbox in the SEC_ALTOUTPUT "Production Mode"
+    // section (BuildAltOutput), height-reserved by computeLayout so it can never collide
+    // with Close. See bug #40.
 
     Refresh();
+}
+
+// #40: building-scoped AltOutput "Production Mode" toggle. Renders like a civ-wide edict
+// (BuildEdicts) — an SDL2Checkbox reflecting the building's current alt_oil state plus an
+// (i) icon whose tooltip leads with the SCOPE ("This building only") — but lives in its own
+// outlined section so it never overlaps the Close button. Toggling flips CUnit::alt_oil,
+// the exact flag the shared AltOutput::Convert production hook reads (mainloop.cpp), so the
+// effect (BioFuel oil / Coal-Liq oil / Charcoal coal / Fracking oil) applies immediately.
+int SDL2BuildingWindow::BuildAltOutput(int x, int y, int w) {
+    const AltOutput::AltOutputDef* pDef = AltOutput::Available( m_pBldg );
+    if ( !pDef )                       // detector already gated this, but stay defensive
+        return y;
+
+    int H  = BOX_PAD + HDR_H + ROW_H + BOX_PAD;
+    AddOutline( x, y, w, H );
+    int yh = Header( x + BOX_PAD, y + BOX_PAD, w - 2 * BOX_PAD, "Production Mode", kAccentGold );
+
+    // Reserve the row's right edge for the (i) scope icon so the checkbox label never runs
+    // under it — identical spacing to the Edicts rows.
+    const int kInfoSz = 14;
+    int cbX = x + BOX_PAD + 4;
+    int cbW = w - 2 * BOX_PAD - 8 - ( kInfoSz + 4 );
+
+    bool checked = m_pBldg->IsFlag( CUnit::alt_oil );
+    CBuilding* pBldg = m_pBldg;        // capture by value for the callback
+    m_chkAltOut = AddWidget<SDL2Checkbox>(
+        cbX, yh, cbW, ROW_H, pDef->m_szLabel, checked,
+        [pBldg]( bool on ) {
+            // Flip the runtime-only alt_oil flag; the production hooks (BioFuel/Coal-Liq/
+            // Charcoal/Fracking, all in mainloop.cpp) read it via IsFlag(alt_oil).
+            if ( on ) pBldg->SetFlag( CUnit::alt_oil );
+            else      pBldg->ClrFlag( CUnit::alt_oil );
+        } );
+
+    // (i) icon — tooltip leads with the building-only scope (#36), then names the effect.
+    std::string tip = "This building only";
+    if ( pDef->m_szLabel && pDef->m_szLabel[0] ) { tip += "\n"; tip += pDef->m_szLabel; }
+    AddWidget<SDL2InfoIcon>( cbX + cbW + 4, yh + ( ROW_H - kInfoSz ) / 2,
+                             kInfoSz, kInfoSz, tip );
+
+    return y + H + SEC_PAD;
 }
 
 // Dispatch a section id to its builder. Order of ids matches computeLayout().
@@ -543,6 +582,7 @@ int SDL2BuildingWindow::BuildSection(int id, int x, int y, int w) {
         case SEC_APT:        return BuildApt       (x, y, w);
         case SEC_TURRET:     return BuildTurret    (x, y, w);
         case SEC_EDICTS:     return BuildEdicts    (x, y, w);
+        case SEC_ALTOUTPUT:  return BuildAltOutput (x, y, w);
     }
     return y;
 }
