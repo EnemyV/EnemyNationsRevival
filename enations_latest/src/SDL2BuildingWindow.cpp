@@ -515,9 +515,13 @@ int SDL2BuildingWindow::BuildEdicts(int x, int y, int w) {
         AddWidget<SDL2Checkbox>( cbX, cy, cbW, ROW_H,
                                  e.name, checked,
                                  [me, eid]( bool on ){ me->ToggleEdictNet( eid, on ); } );
-        // (i) info icon — hover reveals the edict's effect text (EdictDef::desc).
+        // (i) info icon — hover reveals the edict's scope (#36) then its effect
+        // text (EdictDef::desc), one per line.
+        std::string tip = ( e.scope == EDICT_CIVWIDE ) ? "Civilization-wide"
+                                                        : "This building only";
+        if ( e.desc && e.desc[0] ) { tip += "\n"; tip += e.desc; }
         AddWidget<SDL2InfoIcon>( cbX + cbW + 4, cy + ( ROW_H - kInfoSz ) / 2,
-                                 kInfoSz, kInfoSz, e.desc ? e.desc : "" );
+                                 kInfoSz, kInfoSz, tip );
         cy += ROW_H;
     }
     return y + H + SEC_PAD;
@@ -723,8 +727,11 @@ int SDL2BuildingWindow::BuildOffice(int x, int y, int w) {
     int yh = Header(x + BOX_PAD, y + BOX_PAD, w - 2 * BOX_PAD, "Offices", kAccentGrn, ICON_PEOPLE);
     int graphW = 168, graphX = x + w - graphW - BOX_PAD;
     int textW  = graphX - ( x + BOX_PAD + 4 ) - 6;
-    m_lblOfcBldg   = AddWidget<SDL2Label>(x + BOX_PAD + 4, yh + 6,         textW, ROW_H, "This building: 0");
-    m_lblOfcColony = AddWidget<SDL2Label>(x + BOX_PAD + 4, yh + 6 + ROW_H, textW, ROW_H, "Colony: 0 / 0");
+    m_lblOfcBldg   = AddWidget<SDL2Label>(x + BOX_PAD + 4, yh + 6,             textW, ROW_H, "This building: 0");
+    m_lblOfcColony = AddWidget<SDL2Label>(x + BOX_PAD + 4, yh + 6 + ROW_H,     textW, ROW_H, "Colony: 0 / 0");
+    // Workforce demand (#37): people needed by all buildings — the figure a
+    // +workforce-upkeep edict (e.g. Austerity) raises, so toggling it shows here.
+    m_lblOfcNeed   = AddWidget<SDL2Label>(x + BOX_PAD + 4, yh + 6 + 2 * ROW_H, textW, ROW_H, "Workforce Need: 0");
     m_imgOfcGraph  = AddWidget<SDL2Image>(graphX, yh, graphW, GRAPH_H);
     return y + POWERLIKE_H + SEC_PAD;
 }
@@ -1328,6 +1335,8 @@ void SDL2BuildingWindow::Refresh() {
         m_lblOfcBldg->SetText( "This building: " + FmtNum( PerBldgOfcCap() ) + " desks" );
         m_lblOfcColony->SetText( "Colony: " + FmtNum( (int)p->GetPplBldg() ) +
                                  " / " + FmtNum( (int)p->m_iOfcCap ) );
+        if ( m_lblOfcNeed )
+            m_lblOfcNeed->SetText( "Workforce Need: " + FmtNum( (int)p->GetPplNeedBldg() ) );
         DrawGraph( m_imgOfcGraph, kOfcCap, kPplBldg );
     }
 

@@ -606,8 +606,26 @@ void SDL2InfoIcon::Render(SDL_Surface* dst, TTF_Font* font) {
 
 void SDL2InfoIcon::RenderOverlay(SDL_Surface* dst, TTF_Font* font, const SDL_Rect& dlgRect) {
     if (!m_visible || !m_hovered || m_tip.empty() || !font || !dst) return;
+    // The tip may carry embedded newlines (e.g. an edict's scope line above its
+    // effect text, #36). TTF_SizeUTF8 only measures the first line, so size the
+    // box from the widest line and the line count, then render wrapped.
     int tw = 0, th = 0;
-    TTF_SizeUTF8(font, m_tip.c_str(), &tw, &th);
+    {
+        int lineH = TTF_FontHeight(font);
+        int nLines = 1;
+        size_t start = 0, nl;
+        while ((nl = m_tip.find('\n', start)) != std::string::npos) {
+            int lw = 0, lh = 0;
+            TTF_SizeUTF8(font, m_tip.substr(start, nl - start).c_str(), &lw, &lh);
+            if (lw > tw) tw = lw;
+            ++nLines;
+            start = nl + 1;
+        }
+        int lw = 0, lh = 0;
+        TTF_SizeUTF8(font, m_tip.substr(start).c_str(), &lw, &lh);
+        if (lw > tw) tw = lw;
+        th = nLines * lineH;
+    }
     const int padX = 6, padY = 4;
     SDL_Rect box = { m_rect.x + m_rect.w + 4, m_rect.y - 2, tw + 2 * padX, th + 2 * padY };
     // Keep the box inside the DIALOG's content rect, not just the screen: the
@@ -622,7 +640,9 @@ void SDL2InfoIcon::RenderOverlay(SDL_Surface* dst, TTF_Font* font, const SDL_Rec
     FillRect(dst, box, SDL_Color{20, 24, 40, 255});
     DrawBevel(dst, box, 1, SDL_Color{200, 165, 70, 255}, SDL_Color{200, 165, 70, 255});
     SDL_Rect tr = { box.x + padX, box.y + padY, tw, th };
-    RenderText(dst, font, m_tip.c_str(), tr, SDL_Color{235, 235, 220, 255}, false, true);
+    // Wrapped renderer so embedded newlines split into rows (single-line RenderText
+    // would draw only the first line); top-aligned to match the box we sized above.
+    RenderTextWrapped(dst, font, m_tip.c_str(), tr, SDL_Color{235, 235, 220, 255}, false, true);
 }
 
 bool SDL2InfoIcon::HandleEvent(const SDL_Event& event) {

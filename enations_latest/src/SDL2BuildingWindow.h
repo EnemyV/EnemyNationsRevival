@@ -137,6 +137,7 @@ private:
 
     SDL2Label* m_lblOfcBldg     = nullptr;
     SDL2Label* m_lblOfcColony   = nullptr;
+    SDL2Label* m_lblOfcNeed     = nullptr;
     SDL2Image* m_imgOfcGraph    = nullptr;
 
     SDL2Label* m_lblAptBldg     = nullptr;
