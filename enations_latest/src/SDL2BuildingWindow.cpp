@@ -120,11 +120,15 @@ static int nCivEdictsFor(CBuilding* b) {
     // GetType() (per-instance: rocket/command_center) — the rocket only matches via GetType.
     CStructureData::BLDG_TYPE bt = b->GetData()->GetBldgType();
     CStructureData::BLDG_TYPE gt = b->GetData()->GetType();
+    CPlayer* o = b->GetOwner();
     int n = 0;
     for ( int id = 0; id < EDICT_COUNT; ++id ) {
         if ( g_aEdicts[id].scope != EDICT_CIVWIDE ) continue;
         CStructureData::BLDG_TYPE host = g_aEdicts[id].hostBuilding;
-        if ( host == bt || host == gt ) ++n;
+        if ( host != bt && host != gt ) continue;
+        // Research-gate (#2, §10): edict hidden until its topic is discovered.
+        if ( o && !o->GetRsrch( g_aEdicts[id].researchTopic ).m_bDiscovered ) continue;
+        ++n;
     }
     return n;
 }
@@ -491,6 +495,9 @@ int SDL2BuildingWindow::BuildEdicts(int x, int y, int w) {
     for ( int id = 0; id < EDICT_COUNT; ++id ) {
         const EdictDef& e = g_aEdicts[id];
         if ( e.scope != EDICT_CIVWIDE || ( e.hostBuilding != bt && e.hostBuilding != gt ) )
+            continue;
+        // Research-gate (#2, §10): hide the edict until its topic is discovered (matches nCivEdictsFor).
+        if ( me && !me->GetRsrch( e.researchTopic ).m_bDiscovered )
             continue;
         bool checked = me->IsEdictActive(id);
         int  eid     = id;   // capture by value for the callback

@@ -44,6 +44,8 @@ struct EdictDef
     const char*           desc;          // one-line tooltip / effect summary
     CStructureData::BLDG_TYPE   hostBuilding;  // which building's info window hosts the toggle (§25)
     EdictScope            scope;         // civ-wide vs building-scoped (§26)
+    int                   researchTopic; // CRsrchArray topic gating this edict (#2, §10): the
+                                         // edict row is hidden until GetRsrch(researchTopic).m_bDiscovered
 
     // Bonus multipliers — 1.0 == no change. Folded into the matching Get*Prod()/
     // construction chokepoints when the edict is active (Phase 2).
