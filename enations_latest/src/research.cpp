@@ -620,7 +620,10 @@ void CRsrchArray::Open( )
             pRi->m_iScenarioReq       = ElementAt( gas_turbine ).m_iScenarioReq;
             pRi->m_iNumBldgsRequired  = 0;
 
-            int iChain = ( 0 == iOn ) ? (int)gas_turbine : (int)( fracking_1 + iOn - 1 );
+            // #23 (operator Note 17): fracking should be LATE-game ("especially fracking").
+            // T1 prereq gas_turbine -> nuclear (a late gate, later than coal-liq's Adv-Mfg).
+            // mac1's pick; @linux2/@win adjust the exact tech if balance wants different.
+            int iChain = ( 0 == iOn ) ? (int)nuclear : (int)( fracking_1 + iOn - 1 );
             int nReq   = 1 + ( aiFrExtra[iOn] >= 0 ? 1 : 0 );
             pRi->m_iNumRsrchRequired  = nReq;
             pRi->m_piRsrchRequired    = new int[nReq];
@@ -706,7 +709,10 @@ void CRsrchArray::Open( )
 
         pRi->m_iNumRsrchRequired = 1;
         pRi->m_piRsrchRequired   = new int[1];
-        pRi->m_piRsrchRequired[0] = (int)gas_turbine;
+        // #28 (operator Note 23): gate Coal Liquefaction behind ADVANCED MANUFACTURING
+        // (manf_3) — it appeared too early off gas_turbine. (Cost basis left as-is;
+        // operator retunes in-game.)
+        pRi->m_piRsrchRequired[0] = (int)manf_3;
 
         pRi->m_sName   = "Coal Liquefaction";
         pRi->m_sDesc   = "Fischer-Tropsch synthesis cracks coal into liquid fuel: a toggled coal power plant turns 2 coal into 1 oil.";
