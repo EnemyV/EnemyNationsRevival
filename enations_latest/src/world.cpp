@@ -1232,6 +1232,17 @@ void CWndWorld::_OnSize() {
     delete[] m_piRadarEdges;
     delete m_pdibButtons;
 
+    // m_pdibRadarStatic (the throttled minimap/radar bake cache) is size-dependent like the
+    // DIBs above, but was MISSING from this resize-invalidation list. On a window resize it
+    // kept its OLD dimensions while the window DIB grew, so ReRender's unit-dot erase fast
+    // path indexed the stale-sized cache with new-size coords -> out-of-bounds memcpy -> AV
+    // crash (BUGS #16: operator hit it resizing the minimap). Free + NULL it so the next bake
+    // reallocates it at the new size (and bRebuildBg fires meanwhile, skipping the fast path
+    // until the cache matches the window again). It's lazily reallocated (not new'd here), so
+    // it MUST be NULLed, not just deleted.
+    delete m_pdibRadarStatic;
+    m_pdibRadarStatic = NULL;
+
     int iBytesPerPixel = m_dibwnd.GetDIB()->GetBytesPerPixel();
 
     m_cx = __max (1, right);
