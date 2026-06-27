@@ -495,9 +495,14 @@ void SDL2RelationsDialog::OnInit() {
     m_lblInfo = AddWidget<SDL2Label>(m_x + 170, m_y + 34, 170, 40, "");
 
     // Radio buttons for relation level. Start with NO selection (-1) — nothing is
-    // checked until a player is picked from the list; otherwise "War" (index 0)
+    // checked until a player is picked from the list; otherwise index 0
     // showed as selected even though no player was chosen.
-    std::vector<std::string> options = {"War", "Neutral", "Peace", "Alliance"};
+    // BUGS.md #5: option order MUST match the RELATIONS_* enum (player.h) so the radio
+    // index == the relation value passed to NewRelations / returned by GetRelations.
+    // enum: RELATIONS_ALLIANCE=0, RELATIONS_PEACE=1, RELATIONS_NEUTRAL=2, RELATIONS_WAR=3.
+    // (Was {War,Neutral,Peace,Alliance} with the raw index passed unmapped → every
+    // diplomacy choice did the OPPOSITE of its label, and the display was reversed too.)
+    std::vector<std::string> options = {"Alliance", "Peace", "Neutral", "War"};
     m_radRelations = AddWidget<SDL2RadioGroup>(m_x + 170, m_y + 80, 160, 120, options,
         -1, [this](int sel) { SetRelation(sel); });
     for (int r = 0; r < 4; r++) m_radRelations->SetEnabled(r, false);
@@ -535,10 +540,10 @@ void SDL2RelationsDialog::SelectPlayer(int idx) {
 
     // Enable all relation radios ??? but disable Alliance for AI players
     // (matches MFC GetDlgItem(IDC_PLYR_ALLIANCE)->EnableWindow(!pPlr->IsAI())).
-    // Indices: 0=War, 1=Neutral, 2=Peace, 3=Alliance.
+    // Indices now match the enum: 0=Alliance, 1=Peace, 2=Neutral, 3=War (BUGS.md #5).
     for (int r = 0; r < 4; r++) m_radRelations->SetEnabled(r, true);
     if (pPlr->IsAI())
-        m_radRelations->SetEnabled(3, false);
+        m_radRelations->SetEnabled(RELATIONS_ALLIANCE, false);   // index 0 = Alliance
     m_radRelations->SetSelected(pPlr->GetRelations());
 
     // Update Give button state from area-map selection
