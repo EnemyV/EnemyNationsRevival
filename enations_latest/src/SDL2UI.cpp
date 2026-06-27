@@ -583,18 +583,21 @@ void SDL2InfoIcon::Render(SDL_Surface* dst, TTF_Font* font) {
     RenderText(dst, font, "i", m_rect, rim, true, true);
 }
 
-void SDL2InfoIcon::RenderOverlay(SDL_Surface* dst, TTF_Font* font) {
+void SDL2InfoIcon::RenderOverlay(SDL_Surface* dst, TTF_Font* font, const SDL_Rect& dlgRect) {
     if (!m_visible || !m_hovered || m_tip.empty() || !font || !dst) return;
     int tw = 0, th = 0;
     TTF_SizeUTF8(font, m_tip.c_str(), &tw, &th);
     const int padX = 6, padY = 4;
     SDL_Rect box = { m_rect.x + m_rect.w + 4, m_rect.y - 2, tw + 2 * padX, th + 2 * padY };
-    // Keep the box on-surface: flip it left of the icon if it would run off the
-    // right edge, then clamp into the visible area.
-    if (box.x + box.w > dst->w) box.x = m_rect.x - box.w - 4;
-    if (box.x < 0)              box.x = 0;
-    if (box.y + box.h > dst->h) box.y = dst->h - box.h;
-    if (box.y < 0)              box.y = 0;
+    // Keep the box inside the DIALOG's content rect, not just the screen: the
+    // dialog blits only dlgRect into its own window, so a tooltip painted past
+    // the dialog's right edge (the (i) icon is pinned there) is never copied
+    // across and stays invisible even though it's on-screen. Flip it left of the
+    // icon if it would overrun the dialog's right edge, then clamp into the rect.
+    if (box.x + box.w > dlgRect.x + dlgRect.w) box.x = m_rect.x - box.w - 4;
+    if (box.x < dlgRect.x)                     box.x = dlgRect.x;
+    if (box.y + box.h > dlgRect.y + dlgRect.h) box.y = dlgRect.y + dlgRect.h - box.h;
+    if (box.y < dlgRect.y)                     box.y = dlgRect.y;
     FillRect(dst, box, SDL_Color{20, 24, 40, 255});
     DrawBevel(dst, box, 1, SDL_Color{200, 165, 70, 255}, SDL_Color{200, 165, 70, 255});
     SDL_Rect tr = { box.x + padX, box.y + padY, tw, th };
@@ -1596,13 +1599,14 @@ void SDL2Dialog::Render() {
     // Overlay pass (after focus): hover popups such as tooltips paint last so they
     // float above every sibling widget and the focus box, never clipped by a
     // later-added neighbour. Most widgets' RenderOverlay is a no-op.
+    SDL_Rect dlgContentRect = { m_x, m_y, m_width, m_height };
     for (auto& widget : m_widgets) {
         TTF_Font* wf = widgetFont;
         if (widget->GetFontSize() > 0) {
             TTF_Font* ov = GetFont(widget->GetFontSize());
             if (ov) wf = ov;
         }
-        widget->RenderOverlay(mainSurface, wf);
+        widget->RenderOverlay(mainSurface, wf, dlgContentRect);
     }
 
     if (m_dlgWindow) {

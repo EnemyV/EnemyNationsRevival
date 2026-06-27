@@ -26,7 +26,11 @@ public:
     // Optional second-pass paint, drawn AFTER every widget's Render() (like the
     // focus-highlight pass) so a hover popup such as a tooltip floats above all
     // sibling widgets regardless of add order. Default: draws nothing.
-    virtual void RenderOverlay(SDL_Surface* dst, TTF_Font* font) {}
+    // dlgRect is the dialog's content rectangle (the region the dialog actually
+    // blits into its window); overlays must clamp/flip themselves to stay inside
+    // it, otherwise a popup painted past the dialog's edge is never copied across
+    // and is invisible even though it's on-screen.
+    virtual void RenderOverlay(SDL_Surface* dst, TTF_Font* font, const SDL_Rect& dlgRect) {}
     virtual bool HandleEvent(const SDL_Event& event) { return false; }
 
     void SetVisible(bool v) { m_visible = v; }
@@ -218,7 +222,7 @@ public:
     SDL2InfoIcon(int x, int y, int w, int h, const std::string& tip);
 
     void Render(SDL_Surface* dst, TTF_Font* font) override;
-    void RenderOverlay(SDL_Surface* dst, TTF_Font* font) override;
+    void RenderOverlay(SDL_Surface* dst, TTF_Font* font, const SDL_Rect& dlgRect) override;
     bool HandleEvent(const SDL_Event& event) override;
 
 private:
