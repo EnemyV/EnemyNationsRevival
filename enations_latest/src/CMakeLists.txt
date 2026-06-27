@@ -139,6 +139,7 @@ if (NOT MSVC)
     list(APPEND enations_sources
         linux_main.cpp
         win32_resources_linux.cpp
+        x11_transient_linux.cpp            # X11 WM_TRANSIENT_FOR owner relationship for detached panels (replaces ALWAYS_ON_TOP)
         ../../harness/control_socket.cpp   # in-process LLM-driving harness (Debug)
     )
 
@@ -411,6 +412,12 @@ else ()
             vdmplay_posix   # ported vp* TCP MP engine (replaces vdmplay_stubs.cpp)
             EnLinuxSDL2
             )
+    if (NOT APPLE)
+        # libX11 for the X11 WM_TRANSIENT_FOR owner relationship used by
+        # x11_transient_linux.cpp (panels owned-by, not above-everything). Linux only.
+        find_package(X11 REQUIRED)
+        target_link_libraries(enations PUBLIC ${X11_LIBRARIES})
+    endif ()
     # libvdmplay_posix.{dylib,so} sits next to the enations binary; the loader finds
     # it via the platform's co-located-rpath token: $ORIGIN on ELF/Linux, @loader_path
     # on macOS ($ORIGIN is inert on Darwin — see the iserve rpath note above).

@@ -806,13 +806,12 @@ void SDL2Panel::Detach(SDL_Window* ownerWindow) {
     // only performs drag/resize via the hit-test callback below. SKIP_TASKBAR +
     // the owner-window relationship keep it floating above the background.
     Uint32 winFlags = SDL_WINDOW_BORDERLESS | SDL_WINDOW_RESIZABLE | SDL_WINDOW_SKIP_TASKBAR;
-#ifndef _WIN32
-    // The owner-window (GWLP_HWNDPARENT) relationship below is Win32-only, so on
-    // Linux nothing keeps these floating panels above the (now full-screen) main
-    // window — clicking the background buried them. ALWAYS_ON_TOP keeps the map/
-    // radar/unit windows visible above the main game view.
-    winFlags |= SDL_WINDOW_ALWAYS_ON_TOP;
-#endif
+    // NOTE: do NOT use SDL_WINDOW_ALWAYS_ON_TOP on Linux. On X11 it pins the panel
+    // above the WHOLE desktop (it floated over the user's other apps, e.g. the
+    // terminal — operator-reported). Instead we set the X11 owner relationship
+    // (WM_TRANSIENT_FOR) AFTER creation (see the #ifndef _WIN32 block below), the
+    // X11 equivalent of the Win32 GWLP_HWNDPARENT owner: the panel stays above its
+    // OWNER (the main game window) while other apps can still come forward.
     if (!m_deferShow) winFlags |= SDL_WINDOW_SHOWN;
     m_ownWindow = GameWindow::CreateSDLWindow(
         m_title.c_str(), globalX, globalY - tbH, m_width, m_height + tbH, winFlags);
@@ -837,6 +836,17 @@ void SDL2Panel::Detach(SDL_Window* ownerWindow) {
                                (LONG_PTR)ownerInfo.info.win.window);
         }
     }
+#endif
+#ifndef _WIN32
+    // Linux/X11 owner relationship — the X11 equivalent of the Win32 GWLP_HWNDPARENT
+    // owner above. Implemented in a dedicated TU (x11_transient_linux.cpp) so Xlib's
+    // headers/macros stay isolated from this file. WM_TRANSIENT_FOR keeps the panel
+    // above its OWNER (the main game window) while OTHER apps (e.g. the user's terminal)
+    // can still come forward — unlike SDL_WINDOW_ALWAYS_ON_TOP, which on X11 pinned it
+    // above the whole desktop (operator-reported: the area map covered the terminal).
+    extern void EnSetX11TransientFor(SDL_Window* panel, SDL_Window* owner);
+    if (ownerWindow)
+        EnSetX11TransientFor(m_ownWindow, ownerWindow);
 #endif
 
     // If this window has been opened (and moved/sized) before, reopen it in the
