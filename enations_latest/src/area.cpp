@@ -2389,11 +2389,25 @@ void CWndArea::DrawRouteWaypoints( )
         if ( pUnit->GetUnitType( ) != CUnit::vehicle )
             continue;
         CVehicle* pVeh = (CVehicle*)pUnit;
-        if ( pVeh->GetRouteList( ).GetCount( ) == 0 )
-            continue;
 
         // start at the vehicle's current screen position
         CPoint prev = m_aa.WrapWorldToWindow( m_aa.WorldToCenterWorld( pVeh->GetWorldPixels( ) ) );
+
+        // No queued route? If the vehicle is moving to a DIRECT destination (a normal
+        // right-click or a line-move — these use SetDest, not a route), preview that single
+        // leg veh -> dest. (#7 / operator Note 20: the Shift-preview must also show direct
+        // moves, not only queued routes.)
+        if ( pVeh->GetRouteList( ).GetCount( ) == 0 )
+        {
+            if ( pVeh->GetEvent( ) == CVehicle::moving )
+            {
+                CPoint wp = hexWin( pVeh->GetHexDest( ) );
+                seg( prev, wp );
+                plot( wp.x, wp.y, 3 );
+            }
+            continue;
+        }
+
         for ( POSITION rp = pVeh->GetRouteList( ).GetHeadPosition( ); rp != NULL; )
         {
             CRoute* pR = pVeh->GetRouteList( ).GetNext( rp );
@@ -2458,6 +2472,13 @@ void CWndArea::DoLineMove( CPoint ptEnd )
         }
     }
 
+    // Shift held? a line-move then APPENDS to each unit's order queue (one-shot route)
+    // instead of replacing its orders — mirrors the single-point Shift-queue
+    // (ShiftQueueMove). (operator Note 27: Shift must queue line-moves too, not only
+    // single-point moves.) GetKeyState&~1 = "held" (masks the toggle bit), as in
+    // DrawRouteWaypoints.
+    const bool bShiftQueue = ( GetKeyState( VK_SHIFT ) & ~1 ) != 0;
+
     // emit one move per unit, spread evenly by arc length along the drawn path
     for ( int i = 0; i < n; ++i )
     {
@@ -2468,12 +2489,19 @@ void CWndArea::DoLineMove( CPoint ptEnd )
         sub.Wrap( );
 
         CVehicle* pVeh = vehs[i];
-        pVeh->TempTargetOff( );
-        pVeh->SetEvent( CVehicle::none );
-        pVeh->ResumeUnit( );
-        StopRoute( pVeh );   // #6: a manual line-move stops/overrides any active route (incl. loop/haul)
-        SetDestAndSfx( pVeh, sub );
-        pVeh->_SetTarget( NULL );
+        if ( bShiftQueue )
+        {
+            ShiftQueueMove( pVeh, sub );   // Note 27: append this unit's line dest to its queue
+        }
+        else
+        {
+            pVeh->TempTargetOff( );
+            pVeh->SetEvent( CVehicle::none );
+            pVeh->ResumeUnit( );
+            StopRoute( pVeh );   // #6: a manual line-move stops/overrides any active route (incl. loop/haul)
+            SetDestAndSfx( pVeh, sub );
+            pVeh->_SetTarget( NULL );
+        }
     }
 }
 
