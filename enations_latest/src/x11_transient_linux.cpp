@@ -16,7 +16,11 @@
 // above only its OWNER (the main game window) — the X11 analogue of the Win32
 // GWLP_HWNDPARENT owner relationship — so other apps can still be raised over it.
 //---------------------------------------------------------------------------
-#ifndef _WIN32
+// X11-only: guard on __linux__, NOT !_WIN32 — macOS is also !_WIN32 but has no
+// libX11, so building this TU there fails to link (XFlush/XSetTransientForHint).
+// On macOS this compiles to an empty translation unit (panels use ALWAYS_ON_TOP;
+// see SDL2Panel.cpp). The call site is likewise #if defined(__linux__).
+#if defined(__linux__)
 
 #ifndef SDL_VIDEO_DRIVER_X11
 #define SDL_VIDEO_DRIVER_X11 1
