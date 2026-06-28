@@ -3105,9 +3105,14 @@ void CGame::Serialize( CArchive& ar )
 
             BOOL wrongMajorVersion     = ( m_dwMaj != VER_MAJOR );
             BOOL wrongMinorVersion     = ( m_dwMin != VER_MINOR );
+            // VER_RELEASE is the SAVE-FORMAT counter (version.h) but was never gated here, so
+            // appended per-building fields (warehouse reject-mask/restock-levels, Tier A) would
+            // mis-deserialize on a pre-bump save. Gate it: bumping VER_RELEASE now rejects older
+            // save formats cleanly (the documented intent of m_dwVer).
+            BOOL wrongSaveFormat       = ( m_dwVer != VER_RELEASE );
             BOOL debugCheatMissmatched = ( m_wDbg != _wDebug ) || ( m_wCht != _wCheat );
 
-            if ( wrongMajorVersion || wrongMinorVersion || debugCheatMissmatched )
+            if ( wrongMajorVersion || wrongMinorVersion || wrongSaveFormat || debugCheatMissmatched )
             {
                 std::string sVer1 = GetVerText( m_dwMaj, m_dwMin, m_dwVer, m_wDbg, m_wCht );
                 std::string sVer2 = GetVerText( VER_MAJOR, VER_MINOR, VER_RELEASE, _wDebug, _wCheat );

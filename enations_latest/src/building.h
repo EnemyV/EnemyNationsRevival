@@ -1112,6 +1112,7 @@ public:
 																	CBuilding (iBldg, iBldgDir, iOwner, ID) { }
 
 		virtual void GetAccepts (int * pVals) const;
+		virtual void Serialize (CArchive & ar);   // persist reject-mask + restock-levels (Tier A; gated by VER_RELEASE bump)
 
 		// Per-warehouse ACCEPT-FILTER (warehouse logistics, mac1 @03:00): a bitmask of
 		// material types this warehouse REJECTS from auto-haul (1 bit per CMaterialTypes id;

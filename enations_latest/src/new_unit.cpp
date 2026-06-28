@@ -5839,6 +5839,29 @@ void CFarmBuilding::Serialize( CArchive& ar )
         ar >> m_iTerMult;
 }
 
+// Warehouse persistence (Tier A save-format, linux1 @15:48): append the accept-filter
+// reject-mask (#warehouse) + the #47 per-material restock targets after the base. Fixed-width
+// (DWORD=4B + int=4B, per the LP64 rule). Old saves never reach this -- the VER_RELEASE bump +
+// load guard reject pre-bump saves cleanly. Balanced read/write so a same-build save round-trips.
+void CWarehouseBuilding::Serialize( CArchive& ar )
+{
+    CBuilding::Serialize( ar );
+
+    if ( ar.IsStoring( ) )
+    {
+        ASSERT_STRICT_VALID( this );
+        ar << m_dwRejectMat;
+        for ( int iOn = 0; iOn < CMaterialTypes::num_types; iOn++ )
+            ar << m_aiDesiredLevel[iOn];
+    }
+    else
+    {
+        ar >> m_dwRejectMat;
+        for ( int iOn = 0; iOn < CMaterialTypes::num_types; iOn++ )
+            ar >> m_aiDesiredLevel[iOn];
+    }
+}
+
 void CVehicleBuilding::Serialize( CArchive& ar )
 {
 
