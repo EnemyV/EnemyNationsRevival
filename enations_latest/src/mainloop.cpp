@@ -2304,49 +2304,6 @@ void CBuilding::BuildMaterials( )
     GetOwner( )->AddPwrNeed( GetData( )->GetPower( ) );
     GetOwner( )->AddPplNeedBldg( GetData( )->GetPeople( ) );
 
-    // BioFuel REFINERY edict (#9/#26 redesign, operator design call via win @04:25): when
-    // this is a REFINERY whose alt-output toggle (alt_oil) is ON and BioFuel is researched,
-    // it STOPS producing gas and instead digests the player's GLOBAL food into OIL at a slow
-    // BIOFUEL_FOOD_PER_OIL:1 ratio (biomass path). This mirrors Coal-Liq's stop-power/make-oil
-    // mode-switch (BuildPower). We branch out BEFORE the normal oil->gas path and return, so
-    // no gas is made and no oil-for-gas is consumed while the toggle is on. Non-refinery /
-    // toggle-off / un-researched skip this and fall through to the normal production below.
-    if ( GetData( )->GetType( ) == CStructureData::refinery
-         && IsFlag( CUnit::alt_oil )
-         && GetOwner( )->CanBioFuel( ) )
-    {
-        CBuildMaterials const* pBmBio = GetData( )->GetBldMaterials( );
-        int iIncBio = GetProd( GetOwner( )->GetMtrlsProd( ) );
-        if ( iIncBio < 1 )
-            return;
-        m_iBuildDone += iIncBio;
-        if ( m_iBuildDone < pBmBio->GetTime( ) )
-            return;
-
-        int iNumBio = m_iBuildDone / pBmBio->GetTime( );
-        m_iBuildDone -= pBmBio->GetTime( ) * iNumBio;
-
-        // BIOFUEL_FOOD_PER_OIL -- operator to confirm exact ratio; default SLOW (5 food -> 1 oil).
-        const int BIOFUEL_FOOD_PER_OIL = 5;
-        int iOilMade   = iNumBio;                              // 1 oil per production batch
-        int iFoodTake  = iOilMade * BIOFUEL_FOOD_PER_OIL;
-        if ( iFoodTake > GetOwner( )->GetFood( ) )            // clamp to global food on hand
-        {
-            iOilMade  = GetOwner( )->GetFood( ) / BIOFUEL_FOOD_PER_OIL;
-            iFoodTake = iOilMade * BIOFUEL_FOOD_PER_OIL;
-        }
-        if ( iOilMade > 0 )
-        {
-            GetOwner( )->ConsumeFood( iFoodTake );            // global food debit (no made-stat)
-            AddToStore( CMaterialTypes::oil, iOilMade );
-            GetOwner( )->IncMaterialMade( CMaterialTypes::oil, iOilMade );
-            GetOwner( )->IncMaterialHave( CMaterialTypes::oil, iOilMade );
-        }
-
-        MaterialChange( );
-        return;                                               // suppress normal oil->gas
-    }
-
     // get change based on everything
     int iInc = GetProd( GetOwner( )->GetMtrlsProd( ) );
     if ( iInc < 1 )

@@ -36,15 +36,6 @@ namespace
         return ( pBp && ( pBp->GetInput( ) == CMaterialTypes::coal ) );
     }
 
-    // An oil REFINERY: the UTmaterials building that normally converts oil -> gas. The
-    // BioFuel edict (#9/#26 redesign) re-hosts "Bio Oil" here (off farms): when toggled it
-    // stops making gas and digests the player's global FOOD into OIL. Matched by structure
-    // type so only the refinery (not other UTmaterials buildings) shows the toggle.
-    bool IsRefinery( CBuilding* b )
-    {
-        return ( b->GetData( )->GetType( ) == CStructureData::refinery );
-    }
-
     // A lumber mill (the sawmill): a farm building whose harvest output is lumber.
     bool IsLumberMill( CBuilding* b )
     {
@@ -73,9 +64,7 @@ namespace
     bool TechFrack( CPlayer* p ) { return ( p->CanFrack( ) != FALSE ); }
 
     // ---- Per-tier percent accessors (ePctAdditive only) -------------------------------
-    // Retained (BioFuel's per-tier pct) though the redesigned refinery Bio Oil def no longer
-    // wires it -- kept for the info-window readout / a future tiered food->oil rate.
-    [[maybe_unused]] int PctBioOil( CPlayer* p ) { return ( p->GetBioOilPct( ) ); }
+    int PctBioOil( CPlayer* p ) { return ( p->GetBioOilPct( ) ); }
 
     // ---- Per-tier flat-rate accessors (eFlatTrickle only) -----------------------------
     // Oil/min an exhausted, fracked well trickles by the owner's highest Fracking tier
@@ -86,26 +75,21 @@ namespace
     // Add Charcoal and Fracking here exactly like these two (see notes at the bottom).
     const AltOutputDef s_aDefs[] =
     {
-        // 1) BioFuel ("Bio Oil") -- REDESIGNED (#9/#26, operator design call relayed by
-        //    win @04:25): NO LONGER on farms. It is now a REFINERY edict. Normally a refinery
-        //    converts oil->gas; with Bio Oil ON it STOPS making gas and instead digests the
-        //    player's GLOBAL food into OIL at BIOFUEL_FOOD_PER_OIL:1 (slow). The actual
-        //    conversion + gas-suppression is custom in CBuilding::BuildMaterials (it consumes
-        //    a GLOBAL resource, which the generic store-based AltOutput::Convert modes can't
-        //    express), mirroring the Coal-Liq stop-power/make-oil mode-switch. This def exists
-        //    so the toggle shows on refineries + the info-window readout reports food->oil.
-        //    Moving the predicate off &IsFarm also fixes #10 (a lumber mill, also a UTfarm,
-        //    was matching Bio Oil first and showing it instead of Charcoal).
+        // 1) BioFuel -- food farm also makes oil ("Bio Oil"), output = pct% of food
+        //    harvested, input NOT consumed. Migrated verbatim from the #33 one-off:
+        //    PctBioOil drives the exact same 10/12/.../20% tiers, and ePctAdditive uses
+        //    the same integer (amount*pct)/100 math (no remainder carry), so behaviour is
+        //    identical to the original farm hook.
         {
             "Bio Oil",
-            &IsRefinery,
+            &IsFarm,
             &TechBioFuel,
-            CMaterialTypes::food,        // consumed GLOBALLY in BuildMaterials (not the bldg store)
+            CMaterialTypes::food,        // notional input (not consumed in ePctAdditive)
             CMaterialTypes::oil,
-            AltOutput::eRatioConsume,    // metadata for the readout; refinery production is custom (no Convert call)
-            nullptr,                     // m_pfnPct
+            AltOutput::ePctAdditive,
+            &PctBioOil,                  // m_pfnPct
             nullptr,                     // m_pfnFlat
-            5,                           // BIOFUEL_FOOD_PER_OIL (operator to confirm; default slow 5 food -> 1 oil)
+            0,                           // m_iRatioIn
             1.0f
         },
 

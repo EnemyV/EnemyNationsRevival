@@ -257,17 +257,6 @@ class CPlayer : public CObject
         return ( m_iFood );
     }
     void AddFood( int iNum );
-    // BioFuel REFINERY edict (#9/#26 redesign): digest global food into oil. Debits
-    // food-on-hand directly (clamped at 0), mirroring the eating path's `m_iFood -= iFood`
-    // -- deliberately does NOT touch the made-stat (unlike AddFood, which credits food
-    // production). Used by CBuilding::BuildMaterials when a refinery's BioFuel toggle is on.
-    void ConsumeFood( int iNum )
-    {
-        ASSERT_STRICT_VALID( this );
-        m_iFood -= iNum;
-        if ( m_iFood < 0 )
-            m_iFood = 0;
-    }
     void AddFoodProd( int iNum )
     {
         ASSERT_STRICT_VALID( this );
