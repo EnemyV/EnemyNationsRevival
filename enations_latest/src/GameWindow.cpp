@@ -393,35 +393,16 @@ bool GameWindow::InitializeSDL() {
         // violating the decoupled-loop rule. VSync gets enabled once present is
         // funneled to a single per-frame chokepoint (decoupled-loop follow-up).
         // For T0 this matches the non-VSync software present (parity, no throttle).
-        // Renderer flag: ACCELERATED (GL) by default. But the whole SDL2 render
-        // path (terrain/sprites) is built on SDL_Renderer (SDL_RenderCopy), so it
-        // also works on SDL's SOFTWARE renderer. On a box with NO hardware GL —
-        // e.g. a VM where Mesa falls back to llvmpipe/softpipe or VMware's SVGA3D is
-        // backed by LLVM — the "accelerated" GL renderer is actually the GL pipeline
-        // EMULATED on the CPU, which is far SLOWER than SDL's direct software blitter
-        // (operator-reported hard lag). So: create ACCELERATED, then if the GL turns
-        // out to be software, recreate as SOFTWARE. EN_RENDER_SW forces software,
-        // EN_RENDER_HW forces accelerated (escape hatches).
+        // Renderer flag: ACCELERATED (GL) by DEFAULT — this is the proper SDL2 render
+        // path with full blending / fog / move-preview-overlay support, matching the
+        // Windows and macOS builds. EN_RENDER_SW opts into SDL's SOFTWARE renderer:
+        // it's faster on a box with NO hardware GL (a VM where GL is CPU-emulated via
+        // Mesa llvmpipe / VMware SVGA3D-LLVM), BUT its render-target compositing does
+        // NOT reproduce the GL backend's blending faithfully — fog, alpha blends, and
+        // the Shift move-preview overlay render wrong/missing — so it is OPT-IN, never
+        // the default. (The real fix for software-GL lag is the VM's 3D acceleration.)
         Uint32 rflags = getenv("EN_RENDER_SW") ? SDL_RENDERER_SOFTWARE : SDL_RENDERER_ACCELERATED;
         m_renderer = SDL_CreateRenderer(m_window, -1, rflags);
-        if (m_renderer && rflags == SDL_RENDERER_ACCELERATED && !getenv("EN_RENDER_HW")) {
-            typedef const unsigned char* (*GlGetStr)(unsigned);
-            GlGetStr glGetStr = (GlGetStr)SDL_GL_GetProcAddress("glGetString");
-            std::string gr;
-            if (glGetStr) { const unsigned char* s = glGetStr(0x1F01u /*GL_RENDERER*/); if (s) gr = (const char*)s; }
-            std::string lr = gr;
-            for (char& c : lr) c = (char)tolower((unsigned char)c);
-            bool swGL = !lr.empty() && ( lr.find("llvmpipe") != std::string::npos ||
-                                         lr.find("softpipe") != std::string::npos ||
-                                         lr.find("swrast")   != std::string::npos ||
-                                         lr.find("software") != std::string::npos ||
-                                         (lr.find("svga3d") != std::string::npos && lr.find("llvm") != std::string::npos) );
-            if (swGL) {
-                LogToFile("GL renderer is SOFTWARE (" + gr + ") — switching to SDL software renderer (CPU blits) for speed");
-                SDL_DestroyRenderer(m_renderer);
-                m_renderer = SDL_CreateRenderer(m_window, -1, SDL_RENDERER_SOFTWARE);
-            }
-        }
         if (!m_renderer) {
             // Fall back to software present rather than failing the whole window.
             LogToFile(std::string("WARN: SDL_CreateRenderer failed, falling back to "
