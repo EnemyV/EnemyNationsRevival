@@ -35,10 +35,10 @@ const EdictDef g_aEdicts[EDICT_COUNT] =
 
     // EDICT_MINING_SUBSIDY — Office-hosted, civ-wide economy policy. Folds
     // m_fEdictMineMult into GetMineProd() (the plan's vertical-slice edict, §6).
-    { "Mining Subsidy", "Civ-wide: +25% output from all mines.\nCost: +20% power use, +15% food use.",
+    { "Mining Subsidy", "Civ-wide: +25% output from all mines.\nCost: +25% power use, +15% more workers.",
       CStructureData::office, EDICT_CIVWIDE, CRsrchArray::mine_1,
       1.0f, 1.0f, 1.25f, 1.0f, 1.0f,
-      0.20f, 0.0f, 0.15f },
+      0.25f, 0.15f, 0.0f },
 
     // EDICT_RESEARCH_SUBSIDY — Office-hosted, civ-wide economy policy. Folds
     // m_fEdictRsrchMult into GetRsrchMult() (plan §2.1; pairs with the RG-1 lever).
