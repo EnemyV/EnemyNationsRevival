@@ -1702,9 +1702,19 @@ void CHPRouter::SecondaryStocking( int iMat, int iFromBldg, int iToBldg )
 
                         iExcess = pBldg->GetStore( iMat );
 
-                        // if this building already has qty > EXCESS_MATERIALS
+                        // #47: a WAREHOUSE may set a per-material restock target that replaces
+                        // the global EXCESS_MATERIALS fill threshold for itself (0 = use the
+                        // global default). Other building types keep EXCESS_MATERIALS.
+                        int iToTarget = EXCESS_MATERIALS;
+                        if ( pBldg->GetData( )->GetUnionType( ) == CStructureData::UTwarehouse )
+                        {
+                            int iWant = ( (CWarehouseBuilding*)pBldg )->GetDesiredLevel( iMat );
+                            if ( iWant > 0 ) iToTarget = iWant;
+                        }
+
+                        // if this building already has qty > its target
                         // of the material, then skip this building for consideration
-                        if ( iExcess < EXCESS_MATERIALS )
+                        if ( iExcess < iToTarget )
                         {
                             // this criteria uses:
                             // selecting the to building with the least
@@ -1750,10 +1760,16 @@ void CHPRouter::SecondaryStocking( int iMat, int iFromBldg, int iToBldg )
                         continue;
                     }
 
-                    // if this building already has qty > EXCESS_MATERIALS
-                    // of the material, then skip this building for consideration
+                    // if this building already has qty > its target (#47: warehouses may set a
+                    // per-material restock target; others use the global EXCESS_MATERIALS)
                     iExcess = pBldg->GetStore( iMat );
-                    if ( iExcess < EXCESS_MATERIALS )
+                    int iToTarget = EXCESS_MATERIALS;
+                    if ( pBldg->GetData( )->GetUnionType( ) == CStructureData::UTwarehouse )
+                    {
+                        int iWant = ( (CWarehouseBuilding*)pBldg )->GetDesiredLevel( iMat );
+                        if ( iWant > 0 ) iToTarget = iWant;
+                    }
+                    if ( iExcess < iToTarget )
                     {
                         iVehCount = GetVehicleCount( pBldg );
                         if ( iVehCount > iBestVehCount )

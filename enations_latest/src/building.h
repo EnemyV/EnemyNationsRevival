@@ -1129,9 +1129,19 @@ public:
 		DWORD		GetRejectMask () const { return ( m_dwRejectMat ); }
 		void		SetRejectMask (DWORD dwMask) { m_dwRejectMat = dwMask; }
 
+		// Per-warehouse RESTOCK-TO-LEVEL (#47, operator): a per-material target stock the
+		// auto-haul (CHpRouter) maintains for THIS warehouse, replacing the global
+		// EXCESS_MATERIALS default. 0 = unset => use the global default (a fresh warehouse is
+		// unchanged). Set per-resource from the warehouse info window. RUNTIME-ONLY (not
+		// serialized -- same version-less-save constraint as the reject mask above; resets on
+		// load until a save-format-version field lands, per linux1's call).
+		int			GetDesiredLevel (int iMat) const { return ( m_aiDesiredLevel[iMat] ); }
+		void		SetDesiredLevel (int iMat, int iLvl) { m_aiDesiredLevel[iMat] = ( iLvl < 0 ? 0 : iLvl ); }
+
 protected:
 
 		DWORD		m_dwRejectMat = 0;   // accept-filter: bit set => reject that material (default 0 = accept all)
+		int			m_aiDesiredLevel[CMaterialTypes::num_types] = {0};   // #47: per-material restock target (0 = use global default)
 
 #ifdef _DEBUG
 public:
