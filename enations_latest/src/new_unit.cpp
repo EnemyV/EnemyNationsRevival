@@ -184,7 +184,16 @@ int CMaterialBuilding::GetProductionPer( ) const
 
 int CMineBuilding::GetProductionPer( ) const
 {
-    if ( m_iMinerals <= 0 ) return ( 0 );   // exhausted
+    if ( m_iMinerals <= 0 )
+    {
+        // Exhausted well. If Fracking is ON it still trickles oil — show the conversion
+        // accumulator's progress toward the next oil unit so the bar ADVANCES (operator H3),
+        // instead of a frozen 0%. Otherwise it really is idle (0%).
+        CBuilding* self = (CBuilding*)this;   // IsFlag / AltOutput::Available are non-const
+        if ( self->IsFlag( CUnit::alt_oil ) && AltOutput::Available( self ) )
+            return ( GetAltProgressPer( ) );
+        return ( 0 );
+    }
     int iTime = GetData( )->GetBldMine( )->GetTimeToMine( );
     if ( iTime <= 0 ) return ( -1 );
     int iPer = (int)( ( (long long)m_iBuildDone * 100 ) / iTime );

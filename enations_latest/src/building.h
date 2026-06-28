@@ -755,6 +755,15 @@ public:
 
 		int						GetBuildPer () const { return m_iLastPer; }
 
+		// AltOutput conversion progress 0..100 toward the next secondary-output unit (the runtime
+		// fractional accumulator). Lets the info window show a live progress bar for modes whose
+		// host has no normal production cycle — Fracking (exhausted well, H3) and Coal-Liquefaction
+		// (the power plant in oil mode, C4).
+		int						GetAltProgressPer () const {
+			int p = (int)( m_fAltAccum * 100.0f );
+			return ( p < 0 ) ? 0 : ( p > 100 ? 100 : p );
+		}
+
 		void					AssignToHex (CHexCoord hex, int iAlt, BOOL bSetAlt = TRUE);
 		CHexCoord &		GetHex ();
 		CHexCoord const &		GetHex () const;
