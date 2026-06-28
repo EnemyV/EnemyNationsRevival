@@ -2505,7 +2505,7 @@ void CWndArea::DoLineMove( CPoint ptEnd )
     // (ShiftQueueMove). (operator Note 27: Shift must queue line-moves too, not only
     // single-point moves.) GetKeyState&~1 = "held" (masks the toggle bit), as in
     // DrawRouteWaypoints.
-    const bool bShiftQueue = ( GetKeyState( VK_SHIFT ) & ~1 ) != 0;
+    const bool bShiftQueue = ( m_bRmbShift != FALSE );   // Shift captured at RMB-press (set by OnRButtonDown)
 
     // emit one move per unit, spread evenly by arc length along the drawn path
     for ( int i = 0; i < n; ++i )
@@ -4605,12 +4605,22 @@ void CWndArea::OnRButtonDown( UINT nFlags, CPoint point )
         return;
         }   // end if ( pUnitOn != NULL )
 
-        // F2: empty ground + Shift -> queue a movement waypoint NOW, on the PRESS (Shift is
-        // guaranteed held here). Dispatching on RMB-UP instead was inconsistent: Shift could
-        // be released between press and release, so DoCommandAt saw no MK_SHIFT and did a
-        // normal (replace) move. Firing here samples Shift+RMB together at press time.
+        // empty ground + Shift: CAPTURE Shift at press (it may be released before button-up)
+        // and ARM a command/line-move drag — exactly like the non-Shift path below, so a
+        // Shift+DRAG becomes a QUEUED line-move and a Shift+click (no drag) queues a single
+        // waypoint. Dispatch is on OnRButtonUp using the captured m_bRmbShift. (Was: fired a
+        // single-point queue on the PRESS, which made Shift+line-movement impossible — the
+        // operator wants to queue line moves with Shift held.)
         if ( m_iMode == normal )
-            DoCommandAt( nFlags, point );
+        {
+            m_bRmbShift   = TRUE;
+            m_bRmbCmdDown = TRUE;
+            m_ptRMDN      = point;
+            m_bLineMove   = FALSE;
+            s_linePath.clear( );
+            m_lineEnd     = point;
+            CaptureMouse( );
+        }
         return;
     }
 
@@ -4640,6 +4650,7 @@ void CWndArea::OnRButtonDown( UINT nFlags, CPoint point )
     if ( m_iMode != normal )
         return;
 
+    m_bRmbShift   = FALSE;   // plain (non-Shift) RMB command/line-move
     m_bRmbCmdDown = TRUE;
     m_ptRMDN      = point;
     m_bLineMove   = FALSE;
@@ -4656,11 +4667,17 @@ void CWndArea::OnRButtonUp( UINT nFlags, CPoint point )
     m_bRmbCmdDown = FALSE;
     ReleaseMouse( );
 
+    // Re-inject the Shift captured at PRESS so the queue-vs-replace decision survives a Shift
+    // release during the drag (DoCommandAt reads MK_SHIFT; DoLineMove reads m_bRmbShift).
+    if ( m_bRmbShift )
+        nFlags |= MK_SHIFT;
+
     // drag was a line move: distribute the selected units along the drawn line
     if ( m_bLineMove )
     {
-        DoLineMove( point );
+        DoLineMove( point );        // Shift-at-press -> QUEUES the line move (reads m_bRmbShift)
         m_bLineMove = FALSE;
+        m_bRmbShift = FALSE;
 
         // "moving" acknowledgement + UI refresh, mirroring a normal goto
         if ( m_uFlags & crane )
@@ -4674,7 +4691,9 @@ void CWndArea::OnRButtonUp( UINT nFlags, CPoint point )
         return;
     }
 
-    // plain right-click: issue the context command (move/attack/load/repair)
+    // plain right-click (no drag): issue the context command. With Shift (captured at press,
+    // re-injected above) DoCommandAt QUEUES a single waypoint; without it, replaces.
+    m_bRmbShift = FALSE;
     if ( m_iMode == normal )
         DoCommandAt( nFlags, point );
 }

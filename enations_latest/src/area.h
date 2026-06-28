@@ -361,6 +361,7 @@ protected:
 
 	BOOL					m_bPanBtnDown;	// TRUE while the pan button (MMB) is held
 	BOOL					m_bRmbCmdDown;	// TRUE while the RMB is held arming a command/line-move
+	BOOL					m_bRmbShift;	// Shift state captured at RMB-PRESS (queue vs replace; survives a Shift release before button-up) — lets Shift+drag be a QUEUED line-move
 	BOOL					m_bNewPos;
 	CPoint				m_ptRMDN;			// point RMB was pressed at (command/line-move origin)
 	CPoint				m_ptRMB;			// last pan point (MMB drag-pan delta basis)
