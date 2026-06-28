@@ -1615,6 +1615,19 @@ RepairDone:;
         break;
     }
 
+    // #2 (operator): an AltOutput mode that is more labor-intensive than the base building
+    // (e.g. the charcoal kiln vs. just cutting) draws EXTRA workforce while toggled ON. The
+    // per-def m_iWorkforcePct (% of the building's base GetPeople) is applied centrally here,
+    // after the per-type tick, so it covers every AltOutput host regardless of which Build*
+    // ran. No-op when the toggle is off, the def has no workforce cost (default 0), or no def
+    // applies -> byte-identical to before for all non-AltOutput buildings.
+    if ( IsFlag( CUnit::alt_oil ) )
+    {
+        const AltOutput::AltOutputDef* pAo = AltOutput::Available( this );
+        if ( pAo && pAo->m_iWorkforcePct > 0 )
+            GetOwner( )->AddPplNeedBldg( ( GetData( )->GetPeople( ) * pAo->m_iWorkforcePct ) / 100 );
+    }
+
     ASSERT_STRICT_VALID( this );
 }
 

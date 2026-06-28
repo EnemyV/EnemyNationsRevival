@@ -65,6 +65,9 @@ namespace AltOutput
         int         (*m_pfnFlat)(CPlayer*);      // eFlatTrickle: flat output units/min      (else nullptr)
         int         m_iRatioIn;                  // eRatioConsume: input units per 1 output (else 0)
         float       m_fEnergyMult;               // optional output multiplier (1.0f = none)
+        int         m_iWorkforcePct;             // #2: extra workforce drawn while this mode is ON,
+                                                 // as a percent of the building's base GetPeople()
+                                                 // (0 = none). Applied centrally in CBuilding::Operate.
     };
 
     // The matching def for this building's type, or nullptr. Type-only -- does NOT check the

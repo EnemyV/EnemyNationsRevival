@@ -97,7 +97,8 @@ namespace
             nullptr,                     // m_pfnPct
             nullptr,                     // m_pfnFlat
             BIOFUEL_FOOD_PER_OIL,        // food per 1 oil (operator-tunable, default 5)
-            1.0f
+            1.0f,
+            0                            // m_iWorkforcePct (no extra labor; operator-tunable)
         },
 
         // 2) Coal Liquefaction (NEW) -- a coal power plant converts 2 coal -> 1 oil when
@@ -113,7 +114,8 @@ namespace
             nullptr,                     // m_pfnPct
             nullptr,                     // m_pfnFlat
             3,                            // 3 coal per 1 oil (nerfed from 2 per operator)
-            1.0f
+            1.0f,
+            0                            // m_iWorkforcePct (no extra labor; operator-tunable)
         },
 
         // 3) Charcoal (NEW) -- a lumber mill (the sawmill: UTfarm with lumber output) runs a
@@ -134,7 +136,8 @@ namespace
             nullptr,                     // m_pfnPct
             nullptr,                     // m_pfnFlat
             2,                            // 2 lumber per 1 coal
-            1.0f
+            1.0f,
+            50                           // m_iWorkforcePct (#2: kiln = extra labor vs cutting; operator-tunable placeholder)
         },
 
         // 4) Fracking (NEW) -- an EXHAUSTED oil well (its deposit run dry, so it is
@@ -155,7 +158,8 @@ namespace
             nullptr,                     // m_pfnPct
             &FlatFrackOil,               // m_pfnFlat (oil/min by tier)
             0,                           // m_iRatioIn
-            1.0f
+            1.0f,
+            0                            // m_iWorkforcePct (no extra labor; operator-tunable)
         },
     };
 
