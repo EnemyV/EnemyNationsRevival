@@ -3804,6 +3804,43 @@ void CWndArea::ShiftQueueMove( CVehicle* pVeh, CSubHex const& sub )
     pVeh->_SetTarget( NULL );
 
     BOOL bFresh = ( pVeh->GetEvent( ) != CVehicle::route );
+
+    // Shift-click on an EXISTING queued waypoint DELETES it (toggle-off) instead of
+    // appending a duplicate. (operator feature.) Only when already routing; match by hex.
+    if ( !bFresh )
+    {
+        auto&    rl = pVeh->GetRouteList( );
+        POSITION p  = rl.GetHeadPosition( );
+        while ( p != NULL )
+        {
+            POSITION cur = p;
+            CRoute*  pR  = rl.GetNext( p );   // advances p past cur to the next node
+            if ( pR != NULL && pR->GetCoord( ) == CHexCoord( sub ) )
+            {
+                bool     bWasCurrent = ( cur == pVeh->GetRoutePos( ) );
+                POSITION pNext       = p;     // node AFTER the deleted one (NULL if tail)
+                delete pR;
+                rl.RemoveAt( cur );
+                if ( rl.GetCount( ) == 0 )
+                {
+                    StopRoute( pVeh );        // removed the last waypoint -> stop here
+                }
+                else if ( bWasCurrent )
+                {
+                    // deleted the leg we were driving -> retarget the next remaining waypoint
+                    POSITION np = ( pNext != NULL ) ? pNext : rl.GetHeadPosition( );
+                    pVeh->SetRoutePos( np );
+                    CRoute* pN = rl.GetAt( np );
+                    if ( pN != NULL ) pVeh->SetDest( pN->GetCoord( ) );
+                }
+                // (deleted a NON-current waypoint -> route pos unchanged, keep driving)
+                if ( pVeh->m_pSdlRoute != NULL )
+                    pVeh->m_pSdlRoute->RefreshRoute( );
+                return;
+            }
+        }
+    }
+
     if ( bFresh )
     {
         // start a fresh one-shot queue — clear any stale route first
