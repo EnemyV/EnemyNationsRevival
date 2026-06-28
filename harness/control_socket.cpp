@@ -119,6 +119,13 @@ std::atomic<bool>      g_setAltPending{false};
 std::atomic<bool>      g_setAltDone{false};
 std::atomic<bool>      g_setAltOK{false};
 
+// Pending `setedict <edictid> <0|1>` request (HarnessSetEdict) — toggle a civ-wide edict directly.
+std::atomic<int>       g_setEdictId{0};
+std::atomic<bool>      g_setEdictOn{false};
+std::atomic<bool>      g_setEdictPending{false};
+std::atomic<bool>      g_setEdictDone{false};
+std::atomic<bool>      g_setEdictOK{false};
+
 // Pending `hexinfo <areaWin> <x> <y>` request (HarnessHexInfo) — reads the map hex
 // under an area-window client pixel on the render thread (read-only). Same handshake.
 std::mutex             g_hexInfoMutex;
@@ -330,6 +337,14 @@ void handle_command(const std::string& line, int conn) {
         g_setAltId = id; g_setAltOn = (on != 0); g_setAltDone = false; g_setAltOK = false; g_setAltPending = true;
         for (int i = 0; i < 400 && !g_setAltDone.load(); ++i) { struct timespec ts={0,5000000}; nanosleep(&ts,nullptr); }
         snprintf(reply, sizeof(reply), !g_setAltDone.load() ? "err setalt timeout\n" : (g_setAltOK.load() ? "ok setalt %lu=%d\n" : "err no building %lu\n"), id, on);
+    } else if (strcmp(cmd, "setedict") == 0) {
+        // setedict <edictid> <0|1> — toggle a civ-wide edict directly (QA verify of edict
+        // DOWNSIDE deltas via pstats, bypassing per-window checkbox coords). Render thread.
+        int eid = -1; int on = -1;
+        if (sscanf(line.c_str(), "%*s %d %d", &eid, &on) != 2 || (on != 0 && on != 1)) { const char* u = "err usage: setedict <edictid> <0|1>\n"; write(conn, u, strlen(u)); return; }
+        g_setEdictId = eid; g_setEdictOn = (on != 0); g_setEdictDone = false; g_setEdictOK = false; g_setEdictPending = true;
+        for (int i = 0; i < 400 && !g_setEdictDone.load(); ++i) { struct timespec ts={0,5000000}; nanosleep(&ts,nullptr); }
+        snprintf(reply, sizeof(reply), !g_setEdictDone.load() ? "err setedict timeout\n" : (g_setEdictOK.load() ? "ok setedict %d=%d\n" : "err bad edict %d\n"), eid, on);
     } else if (strcmp(cmd, "hexinfo") == 0) {
         // hexinfo <areaWin> <x> <y> — report the map hex (coords/alt/visible/unit)
         // under an area-window client pixel (same coords you'd give clickid). Read-
@@ -641,6 +656,11 @@ void EnHarness_Service() {
     if (g_setAltPending.exchange(false)) {
         g_setAltOK = HarnessSetAltOil(g_setAltId.load(), g_setAltOn.load());
         g_setAltDone = true;
+        return;
+    }
+    if (g_setEdictPending.exchange(false)) {
+        g_setEdictOK = HarnessSetEdict(g_setEdictId.load(), g_setEdictOn.load());
+        g_setEdictDone = true;
         return;
     }
     if (g_hexInfoPending.exchange(false)) {

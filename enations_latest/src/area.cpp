@@ -7664,6 +7664,25 @@ bool HarnessSetAltOil( unsigned long id, bool on )
 }
 
 //---------------------------------------------------------------------------
+// HarnessSetEdict — set/clear a civ-wide edict for the local player directly by edict id,
+// bypassing the info-window checkbox. QA-only: lets a driver verify edict DOWNSIDE deltas
+// (workforce/power/food upkeep) via pstats without hunting per-window checkbox click-coords
+// or ambiguity over which row flipped. Routes through ToggleEdictNet — the exact path the
+// BuildEdicts checkbox onChange takes (ToggleEdict + RecomputeEdictMults; broadcasts only in
+// a net game) — so the effect is identical to a real click. Render/game thread only. Backs
+// `setedict`. Declared in en_harness.h.
+//---------------------------------------------------------------------------
+bool HarnessSetEdict( int edictId, bool on )
+{
+    if ( theAreaList.GetTop( ) == NULL ) return false;   // not in-game
+    if ( edictId < 0 || edictId >= EDICT_COUNT ) return false;
+    CPlayer* me = theGame.GetMe( );
+    if ( me == NULL ) return false;
+    me->ToggleEdictNet( edictId, on );
+    return true;
+}
+
+//---------------------------------------------------------------------------
 // HarnessSaveGame — save the current game to <path> headlessly so a developed/
 // researched game can be snapshotted and SHARED (one such save unblocks all the
 // research-gated work team-wide: gated buildings, AltOutput in-game verify, late-

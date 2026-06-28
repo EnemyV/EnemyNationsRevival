@@ -83,6 +83,12 @@ bool HarnessShowInfoWindow(unsigned long id);
 // Render/game thread only.
 bool HarnessSetAltOil(unsigned long id, bool on);
 
+// Set/clear a civ-wide edict for the local player directly by edict id (0..EDICT_COUNT-1),
+// bypassing the info-window checkbox — deterministic QA of edict-downside deltas (workforce/
+// power/food upkeep) via pstats, no per-window click-coord hunting. Routes through the real
+// ToggleEdictNet path (ToggleEdict + RecomputeEdictMults). Backs `setedict`. Render/game thread.
+bool HarnessSetEdict(int edictId, bool on);
+
 // Report the map hex under an area-window client pixel (same coords as clickid):
 // appends "hex <hx> <hy> alt <n> vis <0|1> unit <0|1> water <0|1> tree <n>\n" to
 // `out` (or "err ..."). READ-ONLY (no game/view mutation). Lets a headless driver
