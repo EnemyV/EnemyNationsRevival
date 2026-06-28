@@ -1482,8 +1482,8 @@ BOOL CConquerApp::InitInstance( )
 
             if ( m_gameWindow )
             {
-                SDL2VideoPlayer::PlayVideo( m_gameWindow.get(), "assets\\videos\\logo.mpg" );
-                SDL2VideoPlayer::PlayVideo( m_gameWindow.get(), "assets\\videos\\intro.mpg" );
+                SDL2VideoPlayer::PlayVideo( m_gameWindow.get(), "assets/videos/logo.mpg" );
+                SDL2VideoPlayer::PlayVideo( m_gameWindow.get(), "assets/videos/intro.mpg" );
             }
 
             if ( tempAudio )

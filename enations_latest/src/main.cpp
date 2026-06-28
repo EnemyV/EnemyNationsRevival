@@ -1146,8 +1146,8 @@ void CWndMain::EndLicense ()
 				SetProgPos ( CWndMain::movie );
 				UpdateWindow ();
 
-				SDL2VideoPlayer::PlayVideo( theApp.m_gameWindow.get(), "assets\\videos\\logo.mpg" );
-				SDL2VideoPlayer::PlayVideo( theApp.m_gameWindow.get(), "assets\\videos\\intro.mpg" );
+				SDL2VideoPlayer::PlayVideo( theApp.m_gameWindow.get(), "assets/videos/logo.mpg" );
+				SDL2VideoPlayer::PlayVideo( theApp.m_gameWindow.get(), "assets/videos/intro.mpg" );
 				}
 			catch (...)
 				{

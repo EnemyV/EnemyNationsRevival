@@ -769,7 +769,7 @@ void SDL2MainMenu::OnButtonClick(int buttonIndex) {
             break;
 
         case IDC_MAIN_INTRO:
-            SDL2VideoPlayer::PlayVideo(m_gameWindow, "assets\\videos\\intro.mpg");
+            SDL2VideoPlayer::PlayVideo(m_gameWindow, "assets/videos/intro.mpg");
             break;
 
         case IDCANCEL:
