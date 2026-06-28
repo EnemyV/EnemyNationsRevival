@@ -773,20 +773,23 @@ void SDL2Panel::Detach(SDL_Window* ownerWindow) {
     // them in the main compositor so the whole game renders in one full-screen
     // window.
     //
-    // LINUX DEFAULT = single-window. On GNOME/Wayland (game on XWayland) the
-    // detached panels are separate managed windows, which has TWO operator-
-    // reported problems that are impossible to fix together while they are
-    // separate OS windows: (1) Mutter clamps them out of the reserved work-area
-    // strip (_NET_WORKAREA, e.g. 66,32 = top bar + left dock) so the radar/area
-    // map "can't be dragged to the top-left"; and (2) per-frame SDL_SetWindowPosition
-    // window-moves are choppy under XWayland (mac's WM moves are smooth). Escaping
-    // the clamp would require always-on-top, which re-creates the earlier
-    // "panels float over my terminal" bug. Compositing them into the one
-    // (already full-screen) window sidesteps both: app-positioned panels reach the
-    // top-left, drag is app-rendered, and nothing floats over other apps.
-    // Override with EN_MULTIWIN=1 to force the old detached-window behavior.
+    // LINUX default depends on MONITOR COUNT. On GNOME/Wayland (game on XWayland)
+    // the detached panels are separate managed windows, which has two operator-
+    // reported problems that can't both be fixed while they're separate OS windows:
+    // (1) Mutter clamps them out of the reserved work-area strip (_NET_WORKAREA,
+    // e.g. 66,32 = top bar + left dock) so the radar/area map "can't be dragged to
+    // the top-left"; (2) per-frame SDL_SetWindowPosition moves are choppy under
+    // XWayland. Compositing into the one full-screen window sidesteps both. BUT a
+    // single window can only live on ONE monitor, and MULTI-MONITOR (dragging panels
+    // to another screen) is a FIRST-CLASS feature — so only default to single-window
+    // when there is exactly ONE display; with multiple monitors keep detached
+    // windows. Explicit overrides: EN_SINGLEWIN=1 forces composite, EN_MULTIWIN=1
+    // forces detached.
 #if defined(__linux__)
-    const bool singleWin = (getenv("EN_MULTIWIN") == nullptr);
+    bool singleWin;
+    if      (getenv("EN_MULTIWIN"))  singleWin = false;
+    else if (getenv("EN_SINGLEWIN")) singleWin = true;
+    else                             singleWin = (SDL_GetNumVideoDisplays() <= 1);
 #else
     const bool singleWin = (getenv("EN_SINGLEWIN") != nullptr);
 #endif
