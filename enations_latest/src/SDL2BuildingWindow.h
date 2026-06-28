@@ -148,6 +148,12 @@ private:
     SDL2Label* m_lblPowerOilHdr = nullptr;   // "Converting coal to oil" status row
     SDL2Label* m_lblPowerOil    = nullptr;   // this building's oil produced (store)
     SDL2Label* m_lblPowerOilCol = nullptr;   // colony oil (have / made)
+    // operator C4: oil-mode conversion progress bar (coal plant is manufacturing in liq mode) —
+    // shown where the power graph sits (graph hidden in oil mode), driven by GetAltProgressPer().
+    SDL2ProgressBar* m_progPowerOil = nullptr;
+    // operator C5: the plant's fuel INPUT shown in NORMAL/power mode (a coal plant burns coal for
+    // power, so coal is its input even when not liquefying) — was "no input at all".
+    SDL2Label* m_lblPowerFuel = nullptr;
 
     SDL2Label* m_lblOfcBldg     = nullptr;
     SDL2Label* m_lblOfcColony   = nullptr;

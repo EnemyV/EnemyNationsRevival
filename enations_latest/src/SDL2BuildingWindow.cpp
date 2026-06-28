@@ -943,6 +943,11 @@ int SDL2BuildingWindow::BuildPower(int x, int y, int w) {
     m_lblPowerOilHdr = AddWidget<SDL2Label>(x + BOX_PAD + 4, yh,             oilW, ROW_H, "Converting coal to oil");
     m_lblPowerOil    = AddWidget<SDL2Label>(x + BOX_PAD + 4, yh + ROW_H,     oilW, ROW_H, "This building: 0");
     m_lblPowerOilCol = AddWidget<SDL2Label>(x + BOX_PAD + 4, yh + 2 * ROW_H, oilW, ROW_H, "Colony: 0 / 0");
+    // C4: oil-mode conversion progress bar — placed where the power graph sits (hidden in oil mode),
+    // so the manufacturing progress (coal->oil) is visible like any producer. Shown only in oil mode.
+    m_progPowerOil   = AddWidget<SDL2ProgressBar>(graphX, yh + 3 * ROW_H + 2, graphW, 14);
+    // C5: fuel-input line shown in NORMAL/power mode (3rd left-column row; GRAPH_H=72 fits 3 rows).
+    m_lblPowerFuel   = AddWidget<SDL2Label>(x + BOX_PAD + 4, yh + 6 + 2 * ROW_H, textW, ROW_H, "");
     return y + POWERLIKE_H + SEC_PAD;
 }
 
@@ -1633,6 +1638,8 @@ void SDL2BuildingWindow::Refresh() {
         if ( m_lblPowerOilHdr ) m_lblPowerOilHdr->SetVisible( bOil );
         if ( m_lblPowerOil )    m_lblPowerOil->SetVisible( bOil );
         if ( m_lblPowerOilCol ) m_lblPowerOilCol->SetVisible( bOil );
+        if ( m_progPowerOil )   m_progPowerOil->SetVisible( bOil );    // C4: oil-mode progress bar
+        if ( m_lblPowerFuel )   m_lblPowerFuel->SetVisible( !bOil );   // C5: fuel input in power mode
 
         if ( bOil ) {
             int oilHere = m_pBldg->GetStore( CMaterialTypes::oil );
@@ -1650,6 +1657,8 @@ void SDL2BuildingWindow::Refresh() {
             if ( m_lblPowerOil )    m_lblPowerOil->SetText( "Input - Coal: " + FmtNum( coalHere ) );
             if ( m_lblPowerOilCol ) m_lblPowerOilCol->SetText( "Output - Oil: " + FmtNum( oilHere ) +
                                                                "  (colony " + FmtNum( oilHave ) + ")" );
+            // C4: conversion progress toward the next oil unit (the AltOutput accumulator).
+            if ( m_progPowerOil ) m_progPowerOil->SetProgress( m_pBldg->GetAltProgressPer() );
         } else {
             int bldg  = PerBldgPower();
             int total = (int)p->GetPwrHave();
@@ -1659,6 +1668,17 @@ void SDL2BuildingWindow::Refresh() {
             m_lblPowerColony->SetText( "Colony: " + FmtNum( total ) +
                                        " / " + FmtNum( (int)p->GetPwrNeed() ) );
             DrawGraph( m_imgPowerGraph, kPwrHave, kPwrNeed );
+            // C5: a fuel-burning plant (coal plant) shows its fuel INPUT even in power mode — the
+            // operator's "there's no input at all". Show the plant's input material + on-hand store.
+            if ( m_lblPowerFuel ) {
+                CBuildPower* pBp = m_pBldg->GetData()->GetBldPower();
+                int iFuel = pBp ? pBp->GetInput() : -1;
+                if ( iFuel >= 0 )
+                    m_lblPowerFuel->SetText( "Input - " + std::string( CMaterialTypes::GetDesc( iFuel ).c_str() ) +
+                                             ": " + FmtNum( m_pBldg->GetStore( iFuel ) ) );
+                else
+                    m_lblPowerFuel->SetText( "" );
+            }
         }
     }
 
