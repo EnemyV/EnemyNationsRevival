@@ -48,7 +48,11 @@ static const int COL_GAP      = 12;    // gap between the two columns when split
 static const int TWO_COL_MAX_H = 560;  // stacked body taller than this -> go 2-column (rocket et al.)
 
 static const int STORAGE_H    = BOX_PAD + HDR_H + SDL2BuildingWindow::kNumStoreMats * ROW_H + BOX_PAD;
-static const int POWERLIKE_H  = BOX_PAD + HDR_H + GRAPH_H + BOX_PAD;   // power / office / apartment
+static const int POWERLIKE_H  = BOX_PAD + HDR_H + GRAPH_H + BOX_PAD;   // power / apartment (<=3 text rows, graph-bound)
+// Office has 4 text rows now (This building / Colony / Workforce Need / Energy Need #37/#39),
+// which is TALLER than the graph (6 + 4*ROW_H = 86 > GRAPH_H 72) — POWERLIKE_H clipped the
+// last row below the box (operator: "Energy Need text outside the box"). Size to the rows.
+static const int OFFICE_H     = BOX_PAD + HDR_H + ( 6 + 4 * ROW_H ) + BOX_PAD;
 static const int TURRET_H     = BOX_PAD + HDR_H + 2 * ROW_H + 34 + BOX_PAD;   // 2x2 stats + Show-Range
 static const int PRODUCTION_H = BOX_PAD + HDR_H + 2 * ROW_H + 6 + 16 + BOX_PAD;   // text + progress bar
 static const int MILITARY_H   = BOX_PAD + HDR_H + 4 * ROW_H + BOX_PAD;   // strength + infantry + vehicles + energy-need (#39)
@@ -293,7 +297,7 @@ static BldgLayout computeLayout(CBuilding* b) {
     if ( secRepair(b)     ) L.secs[n++] = { SEC_REPAIR,     REPAIR_H };
     if ( secMilitary(b)   ) L.secs[n++] = { SEC_MILITARY,   MILITARY_H };
     if ( secPower(b)      ) L.secs[n++] = { SEC_POWER,      POWERLIKE_H };
-    if ( secOfc(b)        ) L.secs[n++] = { SEC_OFFICE,     POWERLIKE_H };
+    if ( secOfc(b)        ) L.secs[n++] = { SEC_OFFICE,     OFFICE_H };
     if ( secApt(b)        ) L.secs[n++] = { SEC_APT,        POWERLIKE_H };
     if ( secTurret(b)     ) L.secs[n++] = { SEC_TURRET,     TURRET_H };
     if ( secEdicts(b)     ) L.secs[n++] = { SEC_EDICTS,     BOX_PAD + HDR_H + nCivEdictsFor(b) * ROW_H + BOX_PAD };
@@ -803,7 +807,7 @@ int SDL2BuildingWindow::BuildPower(int x, int y, int w) {
 }
 
 int SDL2BuildingWindow::BuildOffice(int x, int y, int w) {
-    AddOutline(x, y, w, POWERLIKE_H);
+    AddOutline(x, y, w, OFFICE_H);
     int yh = Header(x + BOX_PAD, y + BOX_PAD, w - 2 * BOX_PAD, "Offices", kAccentGrn, ICON_PEOPLE);
     int graphW = 168, graphX = x + w - graphW - BOX_PAD;
     int textW  = graphX - ( x + BOX_PAD + 4 ) - 6;
@@ -817,7 +821,7 @@ int SDL2BuildingWindow::BuildOffice(int x, int y, int w) {
     // invisible in the very window that toggles it (mirrors the Command Center's #39 row).
     m_lblOfcEnergy = AddWidget<SDL2Label>(x + BOX_PAD + 4, yh + 6 + 3 * ROW_H, textW, ROW_H, "Energy Need: 0");
     m_imgOfcGraph  = AddWidget<SDL2Image>(graphX, yh, graphW, GRAPH_H);
-    return y + POWERLIKE_H + SEC_PAD;
+    return y + OFFICE_H + SEC_PAD;
 }
 
 int SDL2BuildingWindow::BuildApt(int x, int y, int w) {
