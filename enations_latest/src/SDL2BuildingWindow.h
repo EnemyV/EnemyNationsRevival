@@ -47,6 +47,10 @@ private:
     // to this interval. Per-instance so each window throttles independently.
     unsigned long long m_nextRefreshMs = 0;   // SDL_GetTicks64() ms of next allowed Refresh
 
+    // C6: set by the coal-liq checkbox callback; OnFrame consumes it to Rebuild() the body next
+    // frame (deferred so we don't free the checkbox mid-callback).
+    bool m_bNeedRelayout = false;
+
     bool m_bStorage    = false;
     bool m_bPower      = false;
     bool m_bOffice     = false;
@@ -77,6 +81,15 @@ private:
     // Build the portrait + name + flavor text + status-line band under the title bar.
     int  BuildHeaderBand(int x, int y, int w);
     int  BuildSection(int id, int x, int y, int w);   // dispatch one section by id (2-column layout)
+    // C6 (coal-liq restructure): the body builder + relayout machinery. RecomputeSections re-derives
+    // the m_b* section flags from the building's current mode; BuildBody lays out the header+sections
+    // +Close; Rebuild does ClearWidgets→NullSectionWidgets→RecomputeSections→BuildBody→Refresh on a
+    // deferred (OnFrame) basis when the coal-liq toggle changed the section set; NullSectionWidgets
+    // clears every cached widget pointer so none dangles after ClearWidgets.
+    void RecomputeSections();
+    void NullSectionWidgets();
+    void BuildBody();
+    void Rebuild();
     // Lazily load + cache a status-bar icon (theIcons) as a surface for header glyphs.
     SDL_Surface* HdrIcon(int idx);
 

@@ -108,7 +108,12 @@ static const char* const kStoreNames[SDL2BuildingWindow::kNumStoreMats] = {
 static bool secStorage(CBuilding* b) {
     return ( b->GetData()->GetUnionType() == CStructureData::UTwarehouse );   // warehouse + rocket
 }
+static bool secCoalLiqActive(CBuilding* b);   // fwd (defined below; used to gate secPower for C6)
 static bool secPower(CBuilding* b) {
+    // C6: a coal plant in Coal-Liquefaction mode is shown as a PRODUCER (Production/Inputs/Outputs),
+    // not as a Power section — so suppress Power when liq is active. (The rocket always has Power.)
+    if ( ( b->GetData()->GetUnionType() == CStructureData::UTpower ) && secCoalLiqActive( b ) )
+        return false;
     return ( b->GetData()->GetType() == CStructureData::rocket ) ||
            ( b->GetData()->GetUnionType() == CStructureData::UTpower );
 }
@@ -117,8 +122,26 @@ static bool secPower(CBuilding* b) {
 // In this mode the plant stops generating power and converts coal->oil, so the Power section
 // switches to an oil readout. (Returns false for BioFuel/Charcoal/Fracking — those don't host
 // a Power section — and for any plant with the toggle OFF.)
+// C6 (operator): the coal-liq window must render the SAME Production/Inputs/Outputs sections as a
+// refinery (not the repurposed Power section). Because the section SET differs between liq-on and
+// liq-off, computeLayout must be able to size the window for BOTH modes without mutating the real
+// game flag. This override lets the layout math force "coal-liq on/off" for height calc only:
+//   -1 = read the live alt_oil flag (normal);  0/1 = force off/on (set+restored synchronously).
+static int s_coalLiqLayoutOverride = -1;
+
 static bool secCoalLiqActive(CBuilding* b) {
-    if ( !b->IsFlag( CUnit::alt_oil ) ) return false;
+    bool altOn = ( s_coalLiqLayoutOverride >= 0 ) ? ( s_coalLiqLayoutOverride != 0 )
+                                                  : b->IsFlag( CUnit::alt_oil );
+    if ( !altOn ) return false;
+    const AltOutput::AltOutputDef* pDef = AltOutput::Available( b );
+    return ( pDef != nullptr ) && ( pDef->m_eMode == AltOutput::eRatioConsume )
+           && ( pDef->m_iInputMat == CMaterialTypes::coal )
+           && ( pDef->m_iOutputMat == CMaterialTypes::oil );
+}
+// C6: can this plant do coal-liq AT ALL (regardless of the current toggle)? Such a plant's window
+// flips its section SET on toggle, so it gets the max-of-both-modes frame + the relayout-on-toggle.
+static bool coalLiqCapable(CBuilding* b) {
+    if ( b->GetData()->GetUnionType() != CStructureData::UTpower ) return false;
     const AltOutput::AltOutputDef* pDef = AltOutput::Available( b );
     return ( pDef != nullptr ) && ( pDef->m_eMode == AltOutput::eRatioConsume )
            && ( pDef->m_iInputMat == CMaterialTypes::coal )
@@ -248,6 +271,9 @@ static bool secTurret(CBuilding* b) {
 }
 static bool secProduction(CBuilding* b) {
     int ut = b->GetData()->GetUnionType();
+    // C6: a coal-liq-active power plant is a producer (coal -> oil), so it gets the Production
+    // section + bar like a refinery instead of the Power section.
+    if ( ( ut == CStructureData::UTpower ) && secCoalLiqActive( b ) ) return true;
     return ( ut == CStructureData::UTmaterials ) || ( ut == CStructureData::UTmine ) ||
            ( ut == CStructureData::UTfarm );
 }
@@ -264,6 +290,15 @@ static bool secRepair(CBuilding* b) {
 // Collect the material types this building consumes (GetInputs > 0), e.g. oil for a
 // refinery, iron + coal for a smelter. Returns how many were written to outMats.
 static int collectInputMats(CBuilding* b, int* outMats, int maxOut) {
+    // C6: a coal-liq-active power plant consumes coal (the def's input mat) -> oil. Its GetInputs()
+    // doesn't list a material (power "input" is fuel, tracked on CBuildPower), so name coal directly
+    // from the def so the Inputs section shows "Coal" like a refinery's "Oil".
+    if ( ( b->GetData()->GetUnionType() == CStructureData::UTpower ) && secCoalLiqActive( b ) ) {
+        if ( const AltOutput::AltOutputDef* pDef = AltOutput::Available( b ) ) {
+            if ( maxOut > 0 ) { outMats[0] = pDef->m_iInputMat; return 1; }
+        }
+        return 0;
+    }
     int vals[CMaterialTypes::num_types] = {};
     b->GetInputs( vals );
     int n = 0;
@@ -302,6 +337,13 @@ static int inputsHeight(CBuilding* b) {
 static int collectOutputMats(CBuilding* b, int* outMats, int maxOut) {
     int n = 0;
     int ut = b->GetData()->GetUnionType();
+    // C6: a coal-liq-active power plant outputs oil (the def's output mat) — show it as the Output
+    // section like a refinery, so the window reads coal IN / oil OUT.
+    if ( ( ut == CStructureData::UTpower ) && secCoalLiqActive( b ) ) {
+        if ( const AltOutput::AltOutputDef* pDef = AltOutput::Available( b ) )
+            if ( maxOut > 0 ) { outMats[0] = pDef->m_iOutputMat; return 1; }
+        return 0;
+    }
     if ( ut == CStructureData::UTmaterials ) {
         CBuildMaterials* pm = b->GetData()->GetBldMaterials();
         if ( pm )
@@ -460,8 +502,26 @@ static BldgLayout computeLayout(CBuilding* b) {
     return L;
 }
 
-static int computeWidth(CBuilding* b)  { return computeLayout(b).width; }
-static int computeHeight(CBuilding* b) { return computeLayout(b).height; }
+// C6: a coal-liq-capable plant has DIFFERENT section sets (hence sizes) in liq-on vs liq-off mode.
+// Size the window for the MAX of both so the on-toggle relayout never needs an SDL window resize —
+// the smaller mode just leaves slack at the bottom. Computed via the layout override so the real
+// alt_oil flag is never touched. (Restored even though callers always pass -1, for safety.)
+static void coalLiqMaxDims(CBuilding* b, int& wMax, int& hMax) {
+    int save = s_coalLiqLayoutOverride;
+    s_coalLiqLayoutOverride = 1; BldgLayout on  = computeLayout(b);
+    s_coalLiqLayoutOverride = 0; BldgLayout off = computeLayout(b);
+    s_coalLiqLayoutOverride = save;
+    wMax = __max(on.width,  off.width);
+    hMax = __max(on.height, off.height);
+}
+static int computeWidth(CBuilding* b) {
+    if ( coalLiqCapable(b) ) { int w, h; coalLiqMaxDims(b, w, h); return w; }
+    return computeLayout(b).width;
+}
+static int computeHeight(CBuilding* b) {
+    if ( coalLiqCapable(b) ) { int w, h; coalLiqMaxDims(b, w, h); return h; }
+    return computeLayout(b).height;
+}
 
 static std::string makeTitle(CBuilding* b) {
     return std::string( b->GetData()->GetDesc().c_str() );
@@ -500,21 +560,60 @@ SDL2BuildingWindow::SDL2BuildingWindow(GameWindow* gw, CBuilding* pBldg, bool bO
     SetWidgetFontSize(15); // slightly larger than the 13pt default for readability
 
     m_bldgID      = pBldg->GetID();
-    m_bStorage    = secStorage(pBldg);
-    m_bProduction = secProduction(pBldg);
-    m_nInputMats  = collectInputMats(pBldg, m_inputMats, kMaxInputs);
-    m_bInputs     = secInputs(pBldg);
-    m_nOutputMats = collectOutputMats(pBldg, m_outputMats, kMaxInputs);
+    RecomputeSections();
+}
+
+// C6: (re)derive which sections this building shows from its CURRENT state. Called at construction
+// and again on a coal-liq relayout (the toggle changes the section SET: Power <-> Production/Inputs/
+// Outputs). Keep in lock-step with computeLayout()'s predicate list.
+void SDL2BuildingWindow::RecomputeSections() {
+    m_bStorage    = secStorage(m_pBldg);
+    m_bProduction = secProduction(m_pBldg);
+    m_nInputMats  = collectInputMats(m_pBldg, m_inputMats, kMaxInputs);
+    m_bInputs     = secInputs(m_pBldg);
+    m_nOutputMats = collectOutputMats(m_pBldg, m_outputMats, kMaxInputs);
     m_bOutputs    = ( m_nOutputMats > 0 );
-    m_bFertility  = secFertility(pBldg);
-    m_bUnits      = secUnits(pBldg);
-    m_bBuilding   = secBuilding(pBldg);
-    m_bRepair     = secRepair(pBldg);
-    m_bMilitary   = secMilitary(pBldg);
-    m_bPower      = secPower(pBldg);
-    m_bOffice     = secOfc(pBldg);
-    m_bApt        = secApt(pBldg);
-    m_bTurret     = secTurret(pBldg);
+    m_bFertility  = secFertility(m_pBldg);
+    m_bUnits      = secUnits(m_pBldg);
+    m_bBuilding   = secBuilding(m_pBldg);
+    m_bRepair     = secRepair(m_pBldg);
+    m_bMilitary   = secMilitary(m_pBldg);
+    m_bPower      = secPower(m_pBldg);
+    m_bOffice     = secOfc(m_pBldg);
+    m_bApt        = secApt(m_pBldg);
+    m_bTurret     = secTurret(m_pBldg);
+}
+
+// C6: after ClearWidgets() frees every widget, null ALL cached raw widget pointers so a stale one
+// can never be dereferenced before BuildBody re-creates it. Belt-and-suspenders on top of Refresh's
+// per-section flag gating. Keep complete — one missed pointer is a dangling deref on relayout.
+void SDL2BuildingWindow::NullSectionWidgets() {
+    m_imgFertility = nullptr; m_lblFertility = nullptr;
+    m_imgStorage = nullptr;
+    for ( int i = 0; i < kNumStoreMats; i++ ) { m_lblStoreName[i] = nullptr; m_lblStoreCount[i] = nullptr; }
+    m_lblPowerHdr = nullptr; m_imgPowerHdrIcon = nullptr; m_lblPowerBldg = nullptr;
+    m_lblPowerColony = nullptr; m_imgPowerGraph = nullptr;
+    m_lblPowerOilHdr = nullptr; m_lblPowerOil = nullptr; m_lblPowerOilCol = nullptr;
+    m_progPowerOil = nullptr; m_lblPowerFuel = nullptr;
+    m_lblOfcBldg = nullptr; m_lblOfcColony = nullptr; m_lblOfcNeed = nullptr;
+    m_lblOfcEnergy = nullptr; m_imgOfcGraph = nullptr;
+    m_lblAptBldg = nullptr; m_lblAptColony = nullptr; m_lblAptNeed = nullptr; m_imgAptGraph = nullptr;
+    m_lblTurretRange = nullptr; m_lblTurretDmg = nullptr; m_lblTurretReload = nullptr;
+    m_lblTurretDps = nullptr; m_btnShowRange = nullptr;
+    m_chkAltOut = nullptr;
+    m_lblProduction = nullptr; m_progProduction = nullptr;
+    m_lblMilStrength = nullptr; m_lblInfantry = nullptr; m_lblVehicles = nullptr; m_lblMilEnergy = nullptr;
+    for ( int i = 0; i < kRepairRows; i++ ) m_lblRepair[i] = nullptr;
+    m_progRepair = nullptr;
+    m_imgInputs = nullptr; m_imgInputHdrIcon = nullptr; m_imgOutputHdrIcon = nullptr;
+    for ( int i = 0; i < kMaxInputs; i++ ) {
+        m_lblInputName[i] = nullptr;  m_lblInputCount[i] = nullptr;
+        m_lblOutputName[i] = nullptr; m_lblOutputCount[i] = nullptr;
+    }
+    m_imgOutputs = nullptr;
+    m_imgUnits = nullptr; m_lblUnits = nullptr;
+    m_imgBuildBar = nullptr; m_lblBuildName = nullptr;
+    m_lblStatus = nullptr; m_imgHealth = nullptr;
 }
 
 SDL2BuildingWindow::~SDL2BuildingWindow() {
@@ -588,7 +687,16 @@ SDL_Surface* SDL2BuildingWindow::HdrIcon(int idx) {
 
 void SDL2BuildingWindow::OnInit() {
     LoadIcons();
+    BuildBody();
+    Refresh();
+}
 
+// Build the header band + every active section + the Close button into the (already-sized) window.
+// Factored out of OnInit so Rebuild() can re-run it after a coal-liq relayout. Uses the LIVE layout
+// (override = -1), i.e. the sections for the building's current mode; the window FRAME was sized for
+// the max of both coal-liq modes (computeWidth/Height) so a smaller mode just leaves slack at the
+// bottom and the toggle never needs an SDL window resize.
+void SDL2BuildingWindow::BuildBody() {
     BldgLayout L = computeLayout( m_pBldg );
 
     // Identity band (portrait/name/flavor/status) spans the full width on top.
@@ -623,7 +731,19 @@ void SDL2BuildingWindow::OnInit() {
     // scope shown). It is now a proper SDL2Checkbox in the SEC_ALTOUTPUT "Production Mode"
     // section (BuildAltOutput), height-reserved by computeLayout so it can never collide
     // with Close. See bug #40.
+}
 
+// C6: rebuild the window body in place after the coal-liq toggle changed the section SET
+// (Power <-> Production/Inputs/Outputs). MUST be called from OnFrame (NOT the checkbox callback) —
+// ClearWidgets frees the checkbox whose lambda would still be on the stack. Every cached raw widget
+// pointer is freed by ClearWidgets, so null them all first; RecomputeSections + BuildBody re-create
+// the ones the new mode needs, and Refresh (flag-gated) only touches those. The window FRAME size is
+// unchanged (sized for the max of both modes), so no SDL resize.
+void SDL2BuildingWindow::Rebuild() {
+    ClearWidgets();
+    NullSectionWidgets();
+    RecomputeSections();
+    BuildBody();
     Refresh();
 }
 
@@ -650,13 +770,19 @@ int SDL2BuildingWindow::BuildAltOutput(int x, int y, int w) {
 
     bool checked = m_pBldg->IsFlag( CUnit::alt_oil );
     CBuilding* pBldg = m_pBldg;        // capture by value for the callback
+    // C6: a coal-liq plant's toggle changes the section SET (Power <-> Production/Inputs/Outputs),
+    // so it needs a window relayout — but NOT here (clearing widgets mid-callback frees this very
+    // checkbox). Just request it; OnFrame does the rebuild next frame. Other alt hosts (charcoal/
+    // bio-oil/fracking) keep the same sections, so they only need the existing live-Refresh swap.
+    bool bRelayout = coalLiqCapable( m_pBldg );
     m_chkAltOut = AddWidget<SDL2Checkbox>(
         cbX, yh, cbW, ROW_H, pDef->m_szLabel, checked,
-        [pBldg]( bool on ) {
+        [this, pBldg, bRelayout]( bool on ) {
             // Flip the runtime-only alt_oil flag; the production hooks (BioFuel/Coal-Liq/
             // Charcoal/Fracking, all in mainloop.cpp) read it via IsFlag(alt_oil).
             if ( on ) pBldg->SetFlag( CUnit::alt_oil );
             else      pBldg->ClrFlag( CUnit::alt_oil );
+            if ( bRelayout ) m_bNeedRelayout = true;
         } );
 
     // (i) icon — tooltip leads with the building-only scope (#36), then names the effect, then
@@ -739,6 +865,16 @@ int SDL2BuildingWindow::BuildSection(int id, int x, int y, int w) {
 }
 
 void SDL2BuildingWindow::OnFrame() {
+    // C6: a pending coal-liq relayout (the checkbox flipped the section SET) is performed HERE,
+    // not in the checkbox callback — Rebuild() clears widgets, which would free the live checkbox
+    // mid-callback. Doing it at frame top means the callback has fully returned. Rebuild() re-runs
+    // Refresh itself, so reset the throttle and return for this frame.
+    if ( m_bNeedRelayout ) {
+        m_bNeedRelayout = false;
+        Rebuild();
+        m_nextRefreshMs = SDL_GetTicks64() + 150;
+        return;
+    }
     // [bw-throttle] cap Refresh() to ~6.7Hz instead of every frame — the live numbers
     // (build %, material/gas counts, contained-unit count) look identical to the user but
     // stop the per-frame SetText/texture/vehicle-map-scan work that tanked fps with a
@@ -1497,10 +1633,16 @@ void SDL2BuildingWindow::Refresh() {
         // Coal-liq is excluded (its power-plant host has no Production section; it shows oil in
         // the Power section).
         const AltOutput::AltOutputDef* pAlt = AltOutput::Available( m_pBldg );
-        bool bAlt = ( pAlt != nullptr ) && m_pBldg->IsFlag( CUnit::alt_oil )
-                    && !secCoalLiqActive( m_pBldg );
+        // C6: a coal-liq-active power plant is now rendered HERE as a producer (coal -> oil), so it
+        // gets a real Production status + bar instead of the old repurposed Power section.
+        bool bCoalLiq = secCoalLiqActive( m_pBldg );
+        bool bAlt = ( pAlt != nullptr ) && m_pBldg->IsFlag( CUnit::alt_oil ) && !bCoalLiq;
         std::string str;
-        if ( bAlt ) {
+        if ( bCoalLiq ) {
+            // Name the oil product ("Producing Oil"); the bar below shows the conversion progress.
+            int oilMat = pAlt ? pAlt->m_iOutputMat : CMaterialTypes::oil;
+            str = std::string( "Producing " ) + CMaterialTypes::GetDesc( oilMat ).c_str();
+        } else if ( bAlt ) {
             str = AltProductionStatus( m_pBldg, pAlt );
         } else {
             m_pBldg->ShowStatusText( str );
@@ -1516,7 +1658,9 @@ void SDL2BuildingWindow::Refresh() {
             // Operator (H2): the Production widget must ALWAYS keep its progress bar — hiding it
             // for a flat-trickle alt mode (Fracking) was a regression. Keep the bar visible; show
             // the real cycle progress when there is one, else 0 (the bar stays present).
-            int per = m_pBldg->GetProductionPer();
+            // C6: the coal-liq plant has no GetProductionPer cycle, so drive it from the conversion
+            // accumulator (GetAltProgressPer, the same source as the old C4 power-section bar).
+            int per = bCoalLiq ? m_pBldg->GetAltProgressPer() : m_pBldg->GetProductionPer();
             m_progProduction->SetVisible( true );
             m_progProduction->SetProgress( per < 0 ? 0 : per );
         }

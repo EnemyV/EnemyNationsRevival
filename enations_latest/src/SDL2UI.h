@@ -525,6 +525,15 @@ protected:
         return ptr;
     }
 
+    // Remove every widget (e.g. to rebuild the dialog body in place). Resets the focus
+    // index so it can't dangle. CALLER MUST null any cached raw widget pointers it holds
+    // and NOT call this from within HandleEvent/widget-callback (it would free the widget
+    // whose callback is on the stack) — defer to OnFrame. See SDL2BuildingWindow::Rebuild.
+    void ClearWidgets() {
+        m_widgets.clear();
+        m_focusIndex = -1;
+    }
+
     // Convenience: add OK and Cancel buttons at the bottom
     void AddOKCancelButtons();
 
