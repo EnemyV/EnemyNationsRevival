@@ -2594,14 +2594,19 @@ void CWndArea::DrawRangeCircle( )
         { 15, 47,  7, 39, 13, 45,  5, 37 }, { 63, 31, 55, 23, 61, 29, 53, 21 },
     };
 
-    int x0 = c.x - rad, x1 = c.x + rad;
-    int y0 = c.y - rad, y1 = c.y + rad;
+    // Hexes are 2:1 in pixels (HexWid = 2*HexHt, terrain.h:80-81; horiz pitch HexWid vs
+    // vert pitch HexHt, terrain.cpp:982). GetRange() hexes is `rad` px wide but only `rad/2`
+    // px tall, so draw an ELLIPSE (vertical radius rad/2) — an isotropic circle reached
+    // GetRange()*HexWid vertically = ~2x the real range = "show range too large" (G1).
+    int radY = ( rad + 1 ) / 2;
+    int x0 = c.x - rad,  x1 = c.x + rad;
+    int y0 = c.y - radY, y1 = c.y + radY;
     if ( x0 < 0 ) x0 = 0;  if ( x1 >= W ) x1 = W - 1;
     if ( y0 < 0 ) y0 = 0;  if ( y1 >= H ) y1 = H - 1;
 
     for ( int y = y0; y <= y1; y++ )
     {
-        double dy = (double)( y - c.y );
+        double dy = (double)( y - c.y ) * 2.0;   // compress vertical to the 2:1 hex aspect (G1)
         for ( int x = x0; x <= x1; x++ )
         {
             double dx = (double)( x - c.x );
