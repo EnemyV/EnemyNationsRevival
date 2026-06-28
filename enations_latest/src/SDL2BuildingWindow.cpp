@@ -172,11 +172,11 @@ static std::string AltProductionStatus(CBuilding* b, const AltOutput::AltOutputD
     std::string matName = CMaterialTypes::GetDesc( pDef->m_iOutputMat ).c_str();
     if ( pDef->m_eMode == AltOutput::ePctAdditive ) {
         int pct = pDef->m_pfnPct ? pDef->m_pfnPct( p ) : 0;
-        return matName + ": " + std::to_string( pct ) + "% of output";
+        return "Producing " + matName + ": " + std::to_string( pct ) + "% of output";
     }
     if ( pDef->m_eMode == AltOutput::eFlatTrickle ) {
         int rate = pDef->m_pfnFlat ? pDef->m_pfnFlat( p ) : 0;
-        return matName + ": " + FmtNum( rate ) + " / min";
+        return "Producing " + matName + ": " + FmtNum( rate ) + " / min";
     }
     // eRatioConsume / eGlobalConsume: a conversion. Show the OUTPUT RATE (units/min) using the
     // rebranded display label, computed from the building's primary throughput exactly as the
@@ -199,8 +199,8 @@ static std::string AltProductionStatus(CBuilding* b, const AltOutput::AltOutputD
         }
     }
     if ( rate >= 0 )
-        return label + ": " + FmtNum( rate ) + " / min";
-    return label;   // producing but rate unavailable — never fall back to the ratio sentence
+        return "Producing " + label + ": " + FmtNum( rate ) + " / min";
+    return "Producing " + label;   // producing but rate unavailable — never fall back to the ratio sentence
 }
 static bool secApt(CBuilding* b) {
     if ( b->GetData()->GetType() == CStructureData::rocket ) return true;
@@ -350,7 +350,7 @@ static std::string PrimaryProductionStatus(CBuilding* b) {
     // bare name when the building genuinely has no production rate (e.g. an idle/exhausted mine).
     int rate = primaryRatePerMin( b );
     if ( rate >= 0 )
-        return std::string( CMaterialTypes::GetDesc( mat ).c_str() ) + ": " + FmtNum( rate ) + " / min";
+        return std::string( "Producing " ) + CMaterialTypes::GetDesc( mat ).c_str() + ": " + FmtNum( rate ) + " / min";
     return std::string( "Producing " ) + CMaterialTypes::GetDesc( mat ).c_str();
 }
 
