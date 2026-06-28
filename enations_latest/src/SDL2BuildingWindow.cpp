@@ -1441,7 +1441,13 @@ void SDL2BuildingWindow::Refresh() {
             int oilHere = m_pBldg->GetStore( CMaterialTypes::oil );
             int oilHave = p->GetMaterialHave( CMaterialTypes::oil );
             int oilMade = p->GetMaterialMade( CMaterialTypes::oil );
-            if ( m_lblPowerOilHdr ) m_lblPowerOilHdr->SetText( "Converting coal to oil (2 coal -> 1 oil)" );
+            // Derive the ratio from the live AltOutput def (m_iRatioIn) so the readout never
+            // goes stale after a balance change (was hardcoded "2 coal -> 1 oil"; def is now 3:1).
+            int coalPerOil = 2;
+            if ( const AltOutput::AltOutputDef* pDefCl = AltOutput::Available( m_pBldg ) )
+                if ( pDefCl->m_iRatioIn > 0 ) coalPerOil = pDefCl->m_iRatioIn;
+            if ( m_lblPowerOilHdr ) m_lblPowerOilHdr->SetText(
+                "Converting coal to oil (" + std::to_string( coalPerOil ) + " coal -> 1 oil)" );
             if ( m_lblPowerOil )    m_lblPowerOil->SetText( "This building: " + FmtNum( oilHere ) + " oil" );
             if ( m_lblPowerOilCol ) m_lblPowerOilCol->SetText( "Colony oil: " + FmtNum( oilHave ) +
                                                                " (made " + FmtNum( oilMade ) + ")" );
