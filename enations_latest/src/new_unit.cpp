@@ -258,8 +258,12 @@ void CPowerBuilding::ShowStatusText( std::string& str )
     }
 
     CBuildPower* pBp = GetData( )->GetBldPower( );
-    if ( pBp->GetInput( ) >= 0 )
-        if ( GetStore( pBp->GetInput( ) ) <= 0 )
+    int iFuel = pBp ? pBp->GetInput( ) : -1;
+    // CRASH-HARDEN (newwin, sibling of the #51 C5 crash mac2 found): GetInput() returns the raw
+    // m_iInput, which for a fuel-less plant can be a sentinel/garbage index >= num_types (not just
+    // -1). GetStore() only ASSERT_STRICTs the range (ignored in this build) -> OOB read. Bound it.
+    if ( iFuel >= 0 && iFuel < CMaterialTypes::GetNumTypes( ) )
+        if ( GetStore( iFuel ) <= 0 )
         {
             str = EnLoadStdString( IDS_STAT_IDLE );
             return;
