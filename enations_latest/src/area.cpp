@@ -23,6 +23,7 @@
 #include "player.h"
 #include "relation.h"
 #include "edicts.h"       // g_aEdicts / EDICT_COUNT (HarnessDumpEdicts)
+#include "altoutput.h"    // AltOutput::Available / AltOutputDef (HarnessDumpAltBuildings)
 #include "en_harness.h"   // HarnessDumpUnits (defined at end of file)
 #include "sfx.h"
 #include "sprite.h"
@@ -7611,6 +7612,42 @@ void HarnessDumpEdicts( std::string& out )
              + std::string( e.name ? e.name : "?" )
              + " active " + std::string( me->IsEdictActive( id ) ? "1" : "0" ) + "\n";
     }
+}
+
+//---------------------------------------------------------------------------
+// HarnessDumpAltBuildings — list every AltOutput-capable building OWNED BY the local
+// player (one line: id, alt_oil on/off, mode, label) so a headless QA driver can FIND a
+// coal plant / BioFuel / charcoal / fracking building by id without a 500-window showinfo
+// scan (each showinfo opens a new stacking window — impractical). Mirrors the building loop
+// in HarnessDumpUnits + the AltOutput::Available filter (the exact predicate secAltOutput
+// uses). Backs `altbldgs`. Render/game thread only. Declared in en_harness.h.
+//---------------------------------------------------------------------------
+void HarnessDumpAltBuildings( std::string& out )
+{
+    if ( theAreaList.GetTop( ) == NULL ) { out = "err not in-game\n"; return; }
+    char line[256];
+    POSITION pos = theBuildingMap.GetStartPosition( );
+    while ( pos != NULL )
+    {
+        DWORD      dwID  = 0;
+        CBuilding* pBldg = NULL;
+        theBuildingMap.GetNextAssoc( pos, dwID, pBldg );
+        if ( pBldg == NULL )
+            continue;
+        if ( pBldg->GetOwner( ) == NULL || !pBldg->GetOwner( )->IsMe( ) )
+            continue;
+        const AltOutput::AltOutputDef* pDef = AltOutput::Available( pBldg );
+        if ( pDef == NULL )
+            continue;
+        snprintf( line, sizeof( line ), "altbldg %lu on %d mode %d label \"%s\"\n",
+                  (unsigned long) dwID,
+                  pBldg->IsFlag( CUnit::alt_oil ) ? 1 : 0,
+                  (int) pDef->m_eMode,
+                  pDef->m_szLabel ? pDef->m_szLabel : "?" );
+        out += line;
+    }
+    if ( out.empty( ) )
+        out = "# no AltOutput-capable buildings owned by me\n";
 }
 
 //---------------------------------------------------------------------------

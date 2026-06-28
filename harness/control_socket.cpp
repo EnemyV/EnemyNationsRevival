@@ -92,6 +92,12 @@ std::string            g_edictsResult;
 std::atomic<bool>      g_edictsPending{false};
 std::atomic<bool>      g_edictsDone{false};
 
+// Pending `altbldgs` request (HarnessDumpAltBuildings) — list AltOutput-capable buildings.
+std::mutex              g_altBldgsMutex;
+std::string            g_altBldgsResult;
+std::atomic<bool>      g_altBldgsPending{false};
+std::atomic<bool>      g_altBldgsDone{false};
+
 // Pending `pstats` request (HarnessDumpPlayerStats) — exact colony workforce/power/food.
 std::mutex              g_pstatsMutex;
 std::string            g_pstatsResult;
@@ -301,6 +307,16 @@ void handle_command(const std::string& line, int conn) {
         std::string out;
         { std::lock_guard<std::mutex> lk(g_edictsMutex); out = g_edictsResult; }
         if (!g_edictsDone.load()) out = "err edicts timeout (not in-game?)\n";
+        write(conn, out.c_str(), out.size());
+        return;
+    } else if (strcmp(cmd, "altbldgs") == 0) {
+        // List AltOutput-capable buildings (HarnessDumpAltBuildings) on the render thread —
+        // find a coal plant / BioFuel / charcoal / fracking host by id (for #51 repro/verify).
+        g_altBldgsDone = false; g_altBldgsPending = true;
+        for (int i = 0; i < 400 && !g_altBldgsDone.load(); ++i) { struct timespec ts={0,5000000}; nanosleep(&ts,nullptr); }
+        std::string out;
+        { std::lock_guard<std::mutex> lk(g_altBldgsMutex); out = g_altBldgsResult; }
+        if (!g_altBldgsDone.load()) out = "err altbldgs timeout (not in-game?)\n";
         write(conn, out.c_str(), out.size());
         return;
     } else if (strcmp(cmd, "pstats") == 0) {
@@ -634,6 +650,13 @@ void EnHarness_Service() {
         HarnessDumpEdicts(out);
         { std::lock_guard<std::mutex> lk(g_edictsMutex); g_edictsResult = out; }
         g_edictsDone = true;
+        return;
+    }
+    if (g_altBldgsPending.exchange(false)) {
+        std::string out;
+        HarnessDumpAltBuildings(out);
+        { std::lock_guard<std::mutex> lk(g_altBldgsMutex); g_altBldgsResult = out; }
+        g_altBldgsDone = true;
         return;
     }
     if (g_pstatsPending.exchange(false)) {

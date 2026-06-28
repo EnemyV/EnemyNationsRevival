@@ -58,6 +58,12 @@ void HarnessDumpUnits(std::string& out);
 // Backs `edicts`. Render/game thread only.
 void HarnessDumpEdicts(std::string& out);
 
+// List every AltOutput-capable building owned by the local player (id, alt_oil on/off, mode,
+// label) so a headless driver can find a coal plant / BioFuel / charcoal / fracking building
+// by id directly — a 500+ stacking-window showinfo scan is impractical. Backs `altbldgs`.
+// Render/game thread only.
+void HarnessDumpAltBuildings(std::string& out);
+
 // Dump the local player's live colony stats (workforce/power/food need+have) so a QA
 // driver can read an EXACT before/after delta that the in-game readouts clip (e.g. the
 // Office "Workforce Need" 4th digit is hidden behind the history graph). Backs `pstats`.
