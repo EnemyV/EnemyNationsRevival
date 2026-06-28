@@ -213,6 +213,16 @@ static int collectInputMats(CBuilding* b, int* outMats, int maxOut) {
     int n = 0;
     for ( int i = 0; ( i < CMaterialTypes::GetNumTypes() ) && ( n < maxOut ); i++ )
         if ( vals[i] > 0 ) outMats[n++] = i;
+    // #51 follow-up (gap 1): an alt-capable host with NO primary input (the charcoal lumber mill)
+    // still consumes the alt input when its mode is on — reserve a slot so the Inputs section exists
+    // (the refresh fills it with the alt input). Only when there's no primary input, so the refinery
+    // (oil input, swapped to food by the refresh) keeps its single slot.
+    if ( n == 0 ) {
+        const AltOutput::AltOutputDef* pa = AltOutput::Available( b );
+        if ( pa && ( pa->m_eMode == AltOutput::eRatioConsume ||
+                     pa->m_eMode == AltOutput::eGlobalConsume ) && n < maxOut )
+            outMats[n++] = pa->m_iInputMat;
+    }
     return n;
 }
 
@@ -249,6 +259,14 @@ static int collectOutputMats(CBuilding* b, int* outMats, int maxOut) {
     } else if ( ut == CStructureData::UTmine ) {
         CBuildMine* pmn = b->GetData()->GetBldMine();
         if ( pmn ) { int m = pmn->GetTypeMines(); if ( ( m >= 0 ) && ( n < maxOut ) ) outMats[n++] = m; }
+    }
+    // #51 follow-up (gap 1): a UTfarm alt host (the charcoal lumber mill) isn't covered above.
+    // Reserve its primary product slot (lumber) so the Output section exists; the refresh swaps it
+    // to the alt output (coal) when the mode is on. Scoped to alt-capable so plain farms (food is a
+    // colony resource, deliberately skipped) stay unaffected.
+    if ( n == 0 && AltOutput::Available( b ) && ut == CStructureData::UTfarm ) {
+        CBuildFarm* pf = b->GetData()->GetBldFarm();
+        if ( pf && n < maxOut ) outMats[n++] = pf->GetTypeFarm();
     }
     return n;
 }
