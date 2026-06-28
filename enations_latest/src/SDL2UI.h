@@ -208,6 +208,7 @@ public:
 private:
     std::string m_text;
     bool m_checked;
+    bool m_pressed = false;   // press-tracking so the toggle fires on BUTTON-UP (like SDL2Button)
     ChangeCallback m_onChange;
 };
 

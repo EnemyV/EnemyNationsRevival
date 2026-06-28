@@ -577,10 +577,24 @@ bool SDL2Checkbox::HandleEvent(const SDL_Event& event) {
         return true;
     }
 
+    // Toggle on BUTTON-UP (with press tracking), mirroring SDL2Button. Toggling on the
+    // DOWN was missed by background/synthetic input paths whose DOWN gets consumed before
+    // it reaches the checkbox (the edict/AltOutput-checkbox harness gap: buttons, which fire
+    // on UP, worked via the same path while the checkbox did not). UP-based activation is
+    // also the standard UX (press, drag off to cancel). A real foreground mouse is unaffected.
     if (event.type == SDL_MOUSEBUTTONDOWN && event.button.button == SDL_BUTTON_LEFT) {
         if (PointInRect(event.button.x, event.button.y, m_rect)) {
-            m_checked = !m_checked;
-            if (m_onChange) m_onChange(m_checked);
+            m_pressed = true;
+            return true;
+        }
+    }
+    if (event.type == SDL_MOUSEBUTTONUP && event.button.button == SDL_BUTTON_LEFT) {
+        if (m_pressed) {
+            m_pressed = false;
+            if (PointInRect(event.button.x, event.button.y, m_rect)) {
+                m_checked = !m_checked;
+                if (m_onChange) m_onChange(m_checked);
+            }
             return true;
         }
     }
