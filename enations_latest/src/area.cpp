@@ -2383,6 +2383,34 @@ void CWndArea::DrawRouteWaypoints( )
                        ( p[0].y + p[1].y + p[2].y + p[3].y ) / 4 );
     };
 
+    // TORUS WRAP: the map repeats, so a destination hex has many valid window positions
+    // (one per wrap period). Stepping a full map width/height shifts the projection by a
+    // constant vector (the iso transform is affine; CHexCoord extends linearly past the
+    // edge). Compute those period vectors in window px, then snap each segment endpoint to
+    // the COPY nearest the start — so a seam-crossing move draws the SHORT path over the
+    // wrap, not a line clear across the planet. (operator: shift-preview ignored wrapping.)
+    const int    eX   = theMap.Get_eX( ), eY = theMap.Get_eY( );
+    const CPoint perO = hexWin( CHexCoord( 0,  0  ) );
+    const CPoint perPX= hexWin( CHexCoord( eX, 0  ) );
+    const CPoint perPY= hexWin( CHexCoord( 0,  eY ) );
+    const int    perXx = perPX.x - perO.x, perXy = perPX.y - perO.y;
+    const int    perYx = perPY.x - perO.x, perYy = perPY.y - perO.y;
+    auto wrapNear = [&]( CPoint wp, CPoint ref ) -> CPoint
+    {
+        CPoint best = wp;
+        long   bestD = (long)( wp.x - ref.x ) * ( wp.x - ref.x ) + (long)( wp.y - ref.y ) * ( wp.y - ref.y );
+        for ( int a = -2; a <= 2; ++a )
+            for ( int b = -2; b <= 2; ++b )
+            {
+                if ( a == 0 && b == 0 ) continue;
+                long x = (long)wp.x + (long)a * perXx + (long)b * perYx;
+                long y = (long)wp.y + (long)a * perXy + (long)b * perYy;
+                long dx = x - ref.x, dy = y - ref.y, d = dx * dx + dy * dy;
+                if ( d < bestD ) { bestD = d; best = CPoint( (int)x, (int)y ); }
+            }
+        return best;
+    };
+
     for ( POSITION pos = m_lstUnits.GetHeadPosition( ); pos != NULL; )
     {
         CUnit* pUnit = m_lstUnits.GetNext( pos );
@@ -2401,7 +2429,7 @@ void CWndArea::DrawRouteWaypoints( )
         {
             if ( pVeh->GetRouteMode( ) == CVehicle::moving )   // VEH_MODE — codebase idiom (area.cpp:6479, caitmgr, projbase)
             {
-                CPoint wp = hexWin( pVeh->GetHexDest( ) );
+                CPoint wp = wrapNear( hexWin( pVeh->GetHexDest( ) ), prev );   // torus: short path
                 seg( prev, wp );
                 plot( wp.x, wp.y, 3 );
             }
@@ -2411,7 +2439,7 @@ void CWndArea::DrawRouteWaypoints( )
         for ( POSITION rp = pVeh->GetRouteList( ).GetHeadPosition( ); rp != NULL; )
         {
             CRoute* pR = pVeh->GetRouteList( ).GetNext( rp );
-            CPoint  wp = hexWin( pR->GetCoord( ) );
+            CPoint  wp = wrapNear( hexWin( pR->GetCoord( ) ), prev );   // torus: short path over the seam
             seg( prev, wp );
             plot( wp.x, wp.y, 3 );   // a slightly bigger dot marks each waypoint
             prev = wp;
