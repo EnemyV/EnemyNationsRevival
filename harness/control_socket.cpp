@@ -99,6 +99,13 @@ std::atomic<bool>      g_centerPending{false};
 std::atomic<bool>      g_centerDone{false};
 std::atomic<bool>      g_centerOK{false};
 
+// Pending `showinfo <bldgid>` request (HarnessShowInfoWindow) — open a building's
+// info window by id, serviced on the render thread (creates a non-modal dialog).
+std::atomic<unsigned long> g_showInfoId{0};
+std::atomic<bool>      g_showInfoPending{false};
+std::atomic<bool>      g_showInfoDone{false};
+std::atomic<bool>      g_showInfoOK{false};
+
 // Pending `hexinfo <areaWin> <x> <y>` request (HarnessHexInfo) — reads the map hex
 // under an area-window client pixel on the render thread (read-only). Same handshake.
 std::mutex             g_hexInfoMutex;
@@ -284,6 +291,14 @@ void handle_command(const std::string& line, int conn) {
         g_centerId = id; g_centerDone = false; g_centerOK = false; g_centerPending = true;
         for (int i = 0; i < 400 && !g_centerDone.load(); ++i) { struct timespec ts={0,5000000}; nanosleep(&ts,nullptr); }
         snprintf(reply, sizeof(reply), !g_centerDone.load() ? "err center timeout\n" : (g_centerOK.load() ? "ok centered %lu\n" : "err no unit %lu\n"), id);
+    } else if (strcmp(cmd, "showinfo") == 0) {
+        // showinfo <bldgid> — open that building's read-only info window (deterministic
+        // building open for QA, e.g. to clickid an edict checkbox). Render thread.
+        unsigned long id = 0;
+        if (sscanf(line.c_str(), "%*s %lu", &id) != 1) { write(conn, "err usage: showinfo <bldgid>\n", 29); return; }
+        g_showInfoId = id; g_showInfoDone = false; g_showInfoOK = false; g_showInfoPending = true;
+        for (int i = 0; i < 400 && !g_showInfoDone.load(); ++i) { struct timespec ts={0,5000000}; nanosleep(&ts,nullptr); }
+        snprintf(reply, sizeof(reply), !g_showInfoDone.load() ? "err showinfo timeout\n" : (g_showInfoOK.load() ? "ok showinfo %lu\n" : "err no building %lu\n"), id);
     } else if (strcmp(cmd, "hexinfo") == 0) {
         // hexinfo <areaWin> <x> <y> — report the map hex (coords/alt/visible/unit)
         // under an area-window client pixel (same coords you'd give clickid). Read-
@@ -578,6 +593,11 @@ void EnHarness_Service() {
     if (g_centerPending.exchange(false)) {
         g_centerOK = HarnessCenterUnit(g_centerId.load());
         g_centerDone = true;
+        return;
+    }
+    if (g_showInfoPending.exchange(false)) {
+        g_showInfoOK = HarnessShowInfoWindow(g_showInfoId.load());
+        g_showInfoDone = true;
         return;
     }
     if (g_hexInfoPending.exchange(false)) {

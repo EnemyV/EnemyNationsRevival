@@ -7614,6 +7614,22 @@ void HarnessDumpEdicts( std::string& out )
 }
 
 //---------------------------------------------------------------------------
+// HarnessShowInfoWindow — open a building's read-only info window by unit id (same
+// window a map double-click opens via CBuilding::ShowInfoWindow). Lets a QA driver
+// deterministically open a SPECIFIC building (e.g. an edict-host office/command/
+// apartment) without screen-coord clicking, then clickid its edict checkbox. Render
+// thread only (creates a non-modal dialog). Backs `showinfo <bldgid>`. en_harness.h.
+//---------------------------------------------------------------------------
+bool HarnessShowInfoWindow( unsigned long id )
+{
+    if ( theAreaList.GetTop( ) == NULL ) return false;   // not in-game
+    CBuilding* pBldg = theBuildingMap.GetBldg( (DWORD) id );
+    if ( pBldg == NULL ) return false;
+    pBldg->ShowInfoWindow( );
+    return true;
+}
+
+//---------------------------------------------------------------------------
 // HarnessSaveGame — save the current game to <path> headlessly so a developed/
 // researched game can be snapshotted and SHARED (one such save unblocks all the
 // research-gated work team-wide: gated buildings, AltOutput in-game verify, late-

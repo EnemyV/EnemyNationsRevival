@@ -67,6 +67,11 @@ void HarnessDumpEdicts(std::string& out);
 // clickid <area> <center> -> keyid <area> 98 (Build).
 bool HarnessCenterUnit(unsigned long id);
 
+// Open a building's read-only info window by unit id (CBuilding::ShowInfoWindow) so
+// a QA driver can deterministically open a specific building (e.g. an edict host)
+// and clickid its widgets. Backs `showinfo <bldgid>`. Render thread only.
+bool HarnessShowInfoWindow(unsigned long id);
+
 // Report the map hex under an area-window client pixel (same coords as clickid):
 // appends "hex <hx> <hy> alt <n> vis <0|1> unit <0|1> water <0|1> tree <n>\n" to
 // `out` (or "err ..."). READ-ONLY (no game/view mutation). Lets a headless driver
