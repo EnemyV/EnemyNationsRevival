@@ -53,6 +53,11 @@ void EnHarness_RegisterWindowSurface(unsigned int windowId, SDL_Surface* surface
 // deterministic instead of a blind dblclick-sweep. Call on the game/render thread.
 void HarnessDumpUnits(std::string& out);
 
+// List every civ-wide edict + whether it's active for the local player, so a QA
+// driver can verify an edict toggle (read state, click the checkbox, read again).
+// Backs `edicts`. Render/game thread only.
+void HarnessDumpEdicts(std::string& out);
+
 // Center the focused area view on the unit with this id (vehicle or building),
 // so a headless driver can then click view-center to select it — sidesteps the
 // view-relative/wrapped screen coords from HarnessDumpUnits. Returns false if no

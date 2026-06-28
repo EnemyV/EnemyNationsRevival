@@ -86,6 +86,12 @@ std::string            g_unitsResult;
 std::atomic<bool>      g_unitsPending{false};
 std::atomic<bool>      g_unitsDone{false};
 
+// Pending `edicts` request (HarnessDumpEdicts) — list edicts + active state.
+std::mutex              g_edictsMutex;
+std::string            g_edictsResult;
+std::atomic<bool>      g_edictsPending{false};
+std::atomic<bool>      g_edictsDone{false};
+
 // Pending `center <id>` request (HarnessCenterUnit), serviced on the render
 // thread (mutates the area view). Same defer handshake.
 std::atomic<unsigned long> g_centerId{0};
@@ -258,6 +264,16 @@ void handle_command(const std::string& line, int conn) {
         std::string out;
         { std::lock_guard<std::mutex> lk(g_unitsMutex); out = g_unitsResult; }
         if (!g_unitsDone.load()) out = "err units timeout (not in-game?)\n";
+        write(conn, out.c_str(), out.size());
+        return;
+    } else if (strcmp(cmd, "edicts") == 0) {
+        // List edicts + active state (HarnessDumpEdicts) on the render thread —
+        // for verifying an edict toggle (read, clickid checkbox, read again).
+        g_edictsDone = false; g_edictsPending = true;
+        for (int i = 0; i < 400 && !g_edictsDone.load(); ++i) { struct timespec ts={0,5000000}; nanosleep(&ts,nullptr); }
+        std::string out;
+        { std::lock_guard<std::mutex> lk(g_edictsMutex); out = g_edictsResult; }
+        if (!g_edictsDone.load()) out = "err edicts timeout (not in-game?)\n";
         write(conn, out.c_str(), out.size());
         return;
     } else if (strcmp(cmd, "center") == 0) {
@@ -550,6 +566,13 @@ void EnHarness_Service() {
         HarnessDumpUnits(out);
         { std::lock_guard<std::mutex> lk(g_unitsMutex); g_unitsResult = out; }
         g_unitsDone = true;
+        return;
+    }
+    if (g_edictsPending.exchange(false)) {
+        std::string out;
+        HarnessDumpEdicts(out);
+        { std::lock_guard<std::mutex> lk(g_edictsMutex); g_edictsResult = out; }
+        g_edictsDone = true;
         return;
     }
     if (g_centerPending.exchange(false)) {

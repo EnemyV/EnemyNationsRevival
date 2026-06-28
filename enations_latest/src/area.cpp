@@ -22,6 +22,7 @@
 #include "minerals.inl"
 #include "player.h"
 #include "relation.h"
+#include "edicts.h"       // g_aEdicts / EDICT_COUNT (HarnessDumpEdicts)
 #include "en_harness.h"   // HarnessDumpUnits (defined at end of file)
 #include "sfx.h"
 #include "sprite.h"
@@ -7591,6 +7592,25 @@ void HarnessFindTerrain( int id, int adjId, std::string& out )
     out = "notfound terr " + IntToStr( id );
     if ( adjId >= 0 ) out += " adj " + IntToStr( adjId );
     out += "\n";
+}
+
+//---------------------------------------------------------------------------
+// HarnessDumpEdicts — list every civ-wide edict and whether it's currently active
+// for the local player (CPlayer::IsEdictActive). Lets a headless QA driver verify an
+// edict TOGGLE: read state, clickid the checkbox, read state again. Backs `edicts`.
+// Render/game thread only (reads live player state). Declared in en_harness.h.
+//---------------------------------------------------------------------------
+void HarnessDumpEdicts( std::string& out )
+{
+    CPlayer* me = theGame.GetMe( );
+    if ( me == NULL ) { out = "err no-player (not in-game?)\n"; return; }
+    for ( int id = 0; id < EDICT_COUNT; ++id )
+    {
+        const EdictDef& e = g_aEdicts[id];
+        out += "edict " + IntToStr( id ) + " "
+             + std::string( e.name ? e.name : "?" )
+             + " active " + std::string( me->IsEdictActive( id ) ? "1" : "0" ) + "\n";
+    }
 }
 
 //---------------------------------------------------------------------------
