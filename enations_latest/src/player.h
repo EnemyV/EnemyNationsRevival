@@ -190,7 +190,12 @@ class CPlayer : public CObject
     int GetPwrNeed( ) const
     {
         ASSERT_STRICT_VALID( this );
-        return ( m_iPwrNeed );
+        // Civ-wide edict energy upkeep (Edicts v1): fold the recurring +pct into the
+        // REPORTED need so toolbar/building-info "Energy Need" reflects an active edict's
+        // cost (e.g. Mining Subsidy +20% power). StartLoop applies the same pct to the raw
+        // member transiently for the m_fPwrMult drag, but resets it before render — so
+        // without this the displayed need never moved. See player.cpp StartLoop.
+        return ( m_iPwrNeed + (int)( m_iPwrNeed * m_fEdictEnergyUpkeepPct ) );
     }
     int GetPwrHave( ) const
     {
@@ -206,7 +211,11 @@ class CPlayer : public CObject
     int GetPplNeedBldg( ) const
     {
         ASSERT_STRICT_VALID( this );
-        return ( m_iPplNeedBldg );
+        // Civ-wide edict workforce upkeep (Edicts v1): fold into the reported need so
+        // "Workforce Need" reflects an active edict (Austerity / Research Subsidy +15%
+        // staffing). Mirror of GetPwrNeed — StartLoop's transient mutation drives the
+        // m_fPplMult drag but is reset before render, so the display needs this too.
+        return ( m_iPplNeedBldg + (int)( m_iPplNeedBldg * m_fEdictWorkforceUpkeepPct ) );
     }
     int GetPplBldg( ) const
     {
