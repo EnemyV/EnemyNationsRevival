@@ -172,9 +172,6 @@ private:
     // hosts — they have no Power section, so without this enabling the toggle showed no output.
     // Created always; shown only when the toggle is ON and the def is NOT the coal-liq one (which
     // already shows its readout in the Power section). Reflects the def's real output material.
-    SDL2Label* m_lblAltOutHdr   = nullptr;   // "Producing oil / coal ..." status row
-    SDL2Label* m_lblAltOutBldg  = nullptr;   // this building's output store
-    SDL2Label* m_lblAltOutCol   = nullptr;   // colony output (have / made)
 
     SDL2Label*       m_lblProduction  = nullptr;
     SDL2ProgressBar* m_progProduction = nullptr;

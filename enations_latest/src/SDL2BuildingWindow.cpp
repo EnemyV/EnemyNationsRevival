@@ -396,7 +396,7 @@ enum {
 // AltOutput "Production Mode" section: one outlined box with a checkbox row (+ scope (i)
 // icon) plus a 3-row mode-aware OUTPUT readout (#43-audit item 2) below it, sized so the
 // readout (shown when the toggle is ON) never overflows the box.
-static const int ALTOUTPUT_H = BOX_PAD + HDR_H + ROW_H + 3 * ROW_H + BOX_PAD;
+static const int ALTOUTPUT_H = BOX_PAD + HDR_H + ROW_H + BOX_PAD;
 
 struct SecRec { int id; int h; };
 
@@ -669,13 +669,6 @@ int SDL2BuildingWindow::BuildAltOutput(int x, int y, int w) {
     // Mode-aware OUTPUT readout (#43-audit item 2). The coal-liq host shows its conversion in
     // the Power section; the BioFuel / Charcoal / Fracking hosts have no Power section, so mirror
     // that readout here: a status row + this-building store + colony have/made for the def's
-    // output material. Created always (full-width, below the checkbox); Refresh() toggles
-    // visibility so a live checkbox toggle needs no window rebuild.
-    int outW = w - 2 * BOX_PAD - 8;
-    int oy   = yh + ROW_H;
-    m_lblAltOutHdr  = AddWidget<SDL2Label>( x + BOX_PAD + 4, oy,             outW, ROW_H, "" );
-    m_lblAltOutBldg = AddWidget<SDL2Label>( x + BOX_PAD + 4, oy + ROW_H,     outW, ROW_H, "" );
-    m_lblAltOutCol  = AddWidget<SDL2Label>( x + BOX_PAD + 4, oy + 2 * ROW_H, outW, ROW_H, "" );
 
     return y + H + SEC_PAD;
 }
@@ -1672,49 +1665,7 @@ void SDL2BuildingWindow::Refresh() {
     // Charcoal lumber mill -> coal, Fracking exhausted well -> oil). Shown only when the toggle is
     // ON and the def is NOT the coal-liq one (that one already shows its readout in the Power
     // section). Uses the def's real conversion values so enabling the toggle visibly shows output.
-    if ( m_lblAltOutHdr && m_lblAltOutBldg && m_lblAltOutCol ) {
-        const AltOutput::AltOutputDef* pDef = AltOutput::Available( m_pBldg );
-        bool bOn   = pDef && m_pBldg->IsFlag( CUnit::alt_oil );
-        bool bCoal = bOn && secCoalLiqActive( m_pBldg );   // coal-liq uses the Power section instead
-        bool bShow = bOn && !bCoal;
-        m_lblAltOutHdr->SetVisible( bShow );
-        m_lblAltOutBldg->SetVisible( bShow );
-        m_lblAltOutCol->SetVisible( bShow );
-        if ( bShow ) {
-            int outMat = pDef->m_iOutputMat;
-            std::string matName = CMaterialTypes::GetDesc( outMat ).c_str();
-
-            std::string hdr;
-            if ( pDef->m_eMode == AltOutput::ePctAdditive ) {
-                int pct = pDef->m_pfnPct ? pDef->m_pfnPct( p ) : 0;
-                hdr = "Producing " + matName + ": " + std::to_string( pct ) +
-                      "% of food output";
-            } else if ( pDef->m_eMode == AltOutput::eFlatTrickle ) {
-                int rate = pDef->m_pfnFlat ? pDef->m_pfnFlat( p ) : 0;
-                hdr = "Trickling " + matName + ": " + FmtNum( rate ) + " / min";
-            } else { // eRatioConsume / eGlobalConsume (BioFuel: 5 food -> 1 oil; gas stopped)
-                std::string inName = CMaterialTypes::GetDesc( pDef->m_iInputMat ).c_str();
-                hdr = "Converting " + inName + " to " + matName + " (" +
-                      std::to_string( pDef->m_iRatioIn ) + " " + inName + " -> 1 " + matName + ")";
-            }
-
-            int here = m_pBldg->GetStore( outMat );
-            int have = p->GetMaterialHave( outMat );
-            int made = p->GetMaterialMade( outMat );
-            m_lblAltOutHdr->SetText( hdr );
-            m_lblAltOutBldg->SetText( "This building: " + FmtNum( here ) + " " + matName );
-            if ( pDef->m_eMode == AltOutput::eGlobalConsume ) {
-                // BioFuel burns the player's GLOBAL food pool -- show it (and the colony oil
-                // made) so enabling the toggle visibly draws food down and oil up.
-                std::string foodName = CMaterialTypes::GetDesc( pDef->m_iInputMat ).c_str();
-                m_lblAltOutCol->SetText( "Colony " + foodName + ": " + FmtNum( p->GetFood() ) +
-                                         "  ->  " + matName + " made " + FmtNum( made ) );
-            } else {
-                m_lblAltOutCol->SetText( "Colony " + matName + ": " + FmtNum( have ) +
-                                         " (made " + FmtNum( made ) + ")" );
-            }
-        }
-    }
+    // #51 (half-b): the duplicate production readout inside the toggle box (m_lblAltOut*) is removed — toggle box = checkbox + (i) only; production results live in the Production/Inputs/Outputs widgets.
 
     if ( m_bTurret && m_lblTurretRange && m_lblTurretDps ) {
         int range = m_pBldg->GetRange();
