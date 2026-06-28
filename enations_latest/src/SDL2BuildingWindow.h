@@ -68,7 +68,11 @@ private:
     // (iconIdx is an ICON_* index, -1 for none; iconFrame picks a frame within a
     // multi-frame strip, e.g. a specific material). Returns the y below.
     int  Header(int x, int y, int w, const char* text, SDL_Color color,
-                int iconIdx = -1, int iconFrame = 0, SDL2Label** ppLabelOut = nullptr);
+                int iconIdx = -1, int iconFrame = 0, SDL2Label** ppLabelOut = nullptr,
+                SDL2Image** ppIconOut = nullptr);
+    // #51 C1: (re)build a header icon's glyph surface in place, so the coal-liq Power<->Oil header
+    // icon can swap LIVE in Refresh (not just at window-build). Safe on a null img.
+    void SetHdrIcon(SDL2Image* img, int iconIdx, int iconFrame);
     // Build the portrait + name + flavor text + status-line band under the title bar.
     int  BuildHeaderBand(int x, int y, int w);
     int  BuildSection(int id, int x, int y, int w);   // dispatch one section by id (2-column layout)
@@ -133,6 +137,7 @@ private:
     SDL2Label* m_lblStoreCount[kNumStoreMats] = {};
 
     SDL2Label* m_lblPowerHdr    = nullptr;   // #6: section header, swapped Oil<->Power live in Refresh
+    SDL2Image* m_imgPowerHdrIcon = nullptr;  // #51 C1: the Power/Oil header glyph, swapped live in Refresh
     SDL2Label* m_lblPowerBldg   = nullptr;
     SDL2Label* m_lblPowerColony = nullptr;
     SDL2Image* m_imgPowerGraph  = nullptr;

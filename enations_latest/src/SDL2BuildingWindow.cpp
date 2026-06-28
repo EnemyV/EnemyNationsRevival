@@ -771,15 +771,15 @@ void SDL2BuildingWindow::AddOutline(int x, int y, int w, int h) {
 }
 
 int SDL2BuildingWindow::Header(int x, int y, int w, const char* text, SDL_Color color,
-                               int iconIdx, int iconFrame, SDL2Label** ppLabelOut) {
+                               int iconIdx, int iconFrame, SDL2Label** ppLabelOut,
+                               SDL2Image** ppIconOut) {
     int textX = x;
 
     // Category glyph: blit ONE frame of the icon strip (status sprites are multi-
     // frame; iconFrame picks which) into its own surface, scaled up to fill the
     // header height so it reads clearly next to the bold text.
-    SDL_Surface* ico = ( iconIdx >= 0 ) ? HdrIcon( iconIdx ) : nullptr;
-    CStatData*   pSd = ( iconIdx >= 0 ) ? theIcons.GetByIndex( iconIdx ) : nullptr;
-    if ( ico && pSd && pSd->m_cxIcon > 0 && pSd->m_cyIcon > 0 ) {
+    CStatData* pSd = ( iconIdx >= 0 ) ? theIcons.GetByIndex( iconIdx ) : nullptr;
+    if ( pSd && pSd->m_cxIcon > 0 && pSd->m_cyIcon > 0 ) {
         int fw = pSd->m_cxIcon, fh = pSd->m_cyIcon;
         // Some status icons (ICON_DAMAGE, ICON_CONSTRUCTION) are WIDE bar sprites;
         // scaled by height alone they'd stretch into a long bar that overruns the
@@ -789,18 +789,8 @@ int SDL2BuildingWindow::Header(int x, int y, int w, const char* text, SDL_Color 
         int gh = HDR_H - 2;
         int gw = ( fh > 0 ) ? ( cropW * gh / fh ) : cropW;
         auto* img = AddWidget<SDL2Image>( x, y + 1, gw, gh );
-        SDL_Surface* s = SDL_CreateRGBSurface( 0, cropW, fh, 32,
-                                               0x00FF0000, 0x0000FF00, 0x000000FF, 0xFF000000 );
-        if ( s ) {
-            SDL_FillRect( s, nullptr, SDL_MapRGBA( s->format, 0, 0, 0, 0 ) );
-            SDL_SetSurfaceBlendMode( ico, SDL_BLENDMODE_BLEND );
-            int srcX = iconFrame * fw;
-            if ( srcX + cropW > ico->w ) srcX = 0;     // frame out of range -> first frame
-            SDL_Rect sr = { srcX, 0, cropW, fh };
-            SDL_BlitSurface( ico, &sr, s, nullptr );
-            SDL_SetSurfaceBlendMode( s, SDL_BLENDMODE_BLEND );
-            img->SetSurface( s, true );
-        }
+        SetHdrIcon( img, iconIdx, iconFrame );   // #51 C1: blit the glyph (factored so Refresh can re-blit live)
+        if ( ppIconOut ) *ppIconOut = img;       // hand the caller the icon for a live swap
         textX = x + gw + 6;
     }
 
@@ -809,6 +799,29 @@ int SDL2BuildingWindow::Header(int x, int y, int w, const char* text, SDL_Color 
     h->SetBold( true );
     if ( ppLabelOut ) *ppLabelOut = h;   // let the caller live-update the header text (#6 Oil<->Power)
     return y + HDR_H;
+}
+
+// #51 C1: (re)build a header icon's glyph surface and set it on `img`. Factored out of Header()
+// so Refresh can swap the coal-liq plant's header icon LIVE (power bulb <-> oil) when the toggle
+// flips while the window is open — mirroring the live header-TEXT swap. No-op on a null img/icon.
+void SDL2BuildingWindow::SetHdrIcon(SDL2Image* img, int iconIdx, int iconFrame) {
+    if ( !img ) return;
+    SDL_Surface* ico = ( iconIdx >= 0 ) ? HdrIcon( iconIdx ) : nullptr;
+    CStatData*   pSd = ( iconIdx >= 0 ) ? theIcons.GetByIndex( iconIdx ) : nullptr;
+    if ( !ico || !pSd || pSd->m_cxIcon <= 0 || pSd->m_cyIcon <= 0 ) return;
+    int fw = pSd->m_cxIcon, fh = pSd->m_cyIcon;
+    int cropW = ( fw > fh ) ? fh : fw;
+    SDL_Surface* s = SDL_CreateRGBSurface( 0, cropW, fh, 32,
+                                           0x00FF0000, 0x0000FF00, 0x000000FF, 0xFF000000 );
+    if ( !s ) return;
+    SDL_FillRect( s, nullptr, SDL_MapRGBA( s->format, 0, 0, 0, 0 ) );
+    SDL_SetSurfaceBlendMode( ico, SDL_BLENDMODE_BLEND );
+    int srcX = iconFrame * fw;
+    if ( srcX + cropW > ico->w ) srcX = 0;     // frame out of range -> first frame
+    SDL_Rect sr = { srcX, 0, cropW, fh };
+    SDL_BlitSurface( ico, &sr, s, nullptr );
+    SDL_SetSurfaceBlendMode( s, SDL_BLENDMODE_BLEND );
+    img->SetSurface( s, true );
 }
 
 // The band under the title bar: the building's portrait on the left, its name (bold)
@@ -915,7 +928,7 @@ int SDL2BuildingWindow::BuildPower(int x, int y, int w) {
     int yh = Header(x + BOX_PAD, y + BOX_PAD, w - 2 * BOX_PAD,
                     bOil ? "Oil" : "Power", kHeaderBlue,
                     bOil ? ICON_MATERIALS : ICON_POWER, bOil ? CMaterialTypes::oil : 0,
-                    &m_lblPowerHdr);
+                    &m_lblPowerHdr, &m_imgPowerHdrIcon);
     int graphW = 168, graphX = x + w - graphW - BOX_PAD;
     int textW  = graphX - ( x + BOX_PAD + 4 ) - 6;
     // Power readout (shown when NOT in coal-liq mode): "This building / Colony" + graph.
@@ -1588,6 +1601,10 @@ void SDL2BuildingWindow::Refresh() {
         // #6: swap the section HEADER text live too (was fixed at build → showed the open-time
         // mode even after toggling). Mirrors the row-visibility swap below.
         if ( m_lblPowerHdr )    m_lblPowerHdr->SetText( bOil ? "Oil" : "Power" );
+        // operator C1 (live): swap the header ICON in lockstep with the text — toggling coal-liq
+        // while the window is open now updates the glyph (oil <-> power bulb), not just the label.
+        if ( m_imgPowerHdrIcon )
+            SetHdrIcon( m_imgPowerHdrIcon, bOil ? ICON_MATERIALS : ICON_POWER, bOil ? CMaterialTypes::oil : 0 );
         if ( m_lblPowerBldg )   m_lblPowerBldg->SetVisible( !bOil );
         if ( m_lblPowerColony ) m_lblPowerColony->SetVisible( !bOil );
         if ( m_imgPowerGraph )  m_imgPowerGraph->SetVisible( !bOil );
