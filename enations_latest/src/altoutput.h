@@ -47,6 +47,7 @@ namespace AltOutput
     struct AltOutputDef
     {
         const char* m_szLabel;                   // UI button / info-window label
+        const char* m_szDesc;                    // one-line effect blurb for the (i) tooltip (#36)
         bool        (*m_pfnMatches)(CBuilding*); // does this def apply to this building's type?
         bool        (*m_pfnHasTech)(CPlayer*);   // has the owner researched the gating tech?
         int         m_iInputMat;                 // CMaterialTypes input  (consumed only in eRatioConsume)

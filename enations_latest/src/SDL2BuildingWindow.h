@@ -145,10 +145,12 @@ private:
     SDL2Label* m_lblOfcBldg     = nullptr;
     SDL2Label* m_lblOfcColony   = nullptr;
     SDL2Label* m_lblOfcNeed     = nullptr;
+    SDL2Label* m_lblOfcEnergy   = nullptr;   // colony energy NEED (#37/#39: surfaces Mining Subsidy's +20% energy)
     SDL2Image* m_imgOfcGraph    = nullptr;
 
     SDL2Label* m_lblAptBldg     = nullptr;
     SDL2Label* m_lblAptColony   = nullptr;
+    SDL2Label* m_lblAptNeed     = nullptr;   // colony food NEED (#37/#39: surfaces Nutrition's +20% food)
     SDL2Image* m_imgAptGraph    = nullptr;
 
     SDL2Label*  m_lblTurretRange  = nullptr;   // 2x2 grid: range / damage / reload / dps
@@ -164,6 +166,14 @@ private:
     // the shared AltOutput::Convert production hook reads); label comes from the def. Scope
     // ("This building only") is shown via an adjacent SDL2InfoIcon (#36).
     SDL2Checkbox* m_chkAltOut      = nullptr;
+    // #43-audit item 2: a mode-aware OUTPUT readout in the "Production Mode" section, mirroring
+    // the coal-liq Power-section swap for the BioFuel (oil) / Charcoal (coal) / Fracking (oil)
+    // hosts — they have no Power section, so without this enabling the toggle showed no output.
+    // Created always; shown only when the toggle is ON and the def is NOT the coal-liq one (which
+    // already shows its readout in the Power section). Reflects the def's real output material.
+    SDL2Label* m_lblAltOutHdr   = nullptr;   // "Producing oil / coal ..." status row
+    SDL2Label* m_lblAltOutBldg  = nullptr;   // this building's output store
+    SDL2Label* m_lblAltOutCol   = nullptr;   // colony output (have / made)
 
     SDL2Label*       m_lblProduction  = nullptr;
     SDL2ProgressBar* m_progProduction = nullptr;

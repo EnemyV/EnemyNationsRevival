@@ -806,7 +806,7 @@ void CPlayer::PeopleAndFood( int iNumSec )
         // do we need more babies?
         if ( (int)fMaxPpl >= iPplTotal )
         {
-            float fAdd = fPplTtlSec * m_fPopGrowth;
+            float fAdd = fPplTtlSec * GetPopGrowth( );   // use accessor so the Nutrition edict's +pop-growth (m_fEdictPopGrowthMult) applies
             if ( iPplTotal > m_iAptCap )             // slow down if crowded
                 fAdd /= 2.0;
             else if ( m_iPplBldg < m_iPplNeedBldg )  // speed up if serious need

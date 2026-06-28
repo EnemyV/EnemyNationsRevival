@@ -82,6 +82,7 @@ namespace
         //    identical to the original farm hook.
         {
             "Bio Oil",
+            "Also converts part of this farm's food output into oil (food output is unchanged)",
             &IsFarm,
             &TechBioFuel,
             CMaterialTypes::food,        // notional input (not consumed in ePctAdditive)
@@ -97,6 +98,7 @@ namespace
         //    toggled. eRatioConsume: pulls coal from the plant's own store and credits oil.
         {
             "Coal Liquefaction",
+            "Stops power generation; converts 2 coal -> 1 oil",
             &IsCoalPowerPlant,
             &TechCoalLiq,
             CMaterialTypes::coal,
@@ -117,6 +119,7 @@ namespace
         //    2:1 ratio stays fixed while throughput scales with research. No energy cost.
         {
             "Charcoal",
+            "Burns this mill's lumber into coal (2 lumber -> 1 coal)",
             &IsLumberMill,
             &TechCharcoal,
             CMaterialTypes::lumber,
@@ -137,6 +140,7 @@ namespace
         //    (CMineBuilding::FrackTick), not here.
         {
             "Fracking",
+            "Revives this exhausted oil well to trickle oil, at +50% power cost",
             &IsExhaustedOilWell,
             &TechFrack,
             CMaterialTypes::oil,         // notional input (not consumed in eFlatTrickle)

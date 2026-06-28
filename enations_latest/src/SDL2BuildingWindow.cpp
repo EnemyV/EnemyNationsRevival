@@ -262,9 +262,10 @@ enum {
     SEC_APT, SEC_TURRET, SEC_EDICTS, SEC_ALTOUTPUT
 };
 
-// AltOutput "Production Mode" section: one outlined box with a single checkbox row
-// (+ scope (i) icon), same geometry as a 1-edict Edicts box.
-static const int ALTOUTPUT_H = BOX_PAD + HDR_H + ROW_H + BOX_PAD;
+// AltOutput "Production Mode" section: one outlined box with a checkbox row (+ scope (i)
+// icon) plus a 3-row mode-aware OUTPUT readout (#43-audit item 2) below it, sized so the
+// readout (shown when the toggle is ON) never overflows the box.
+static const int ALTOUTPUT_H = BOX_PAD + HDR_H + ROW_H + 3 * ROW_H + BOX_PAD;
 
 struct SecRec { int id; int h; };
 
@@ -505,7 +506,7 @@ int SDL2BuildingWindow::BuildAltOutput(int x, int y, int w) {
     if ( !pDef )                       // detector already gated this, but stay defensive
         return y;
 
-    int H  = BOX_PAD + HDR_H + ROW_H + BOX_PAD;
+    int H  = ALTOUTPUT_H;
     AddOutline( x, y, w, H );
     int yh = Header( x + BOX_PAD, y + BOX_PAD, w - 2 * BOX_PAD, "Production Mode", kAccentGold );
 
@@ -526,11 +527,24 @@ int SDL2BuildingWindow::BuildAltOutput(int x, int y, int w) {
             else      pBldg->ClrFlag( CUnit::alt_oil );
         } );
 
-    // (i) icon — tooltip leads with the building-only scope (#36), then names the effect.
+    // (i) icon — tooltip leads with the building-only scope (#36), then names the effect, then
+    // describes what the toggle actually does (the desc fixes the previously-empty (i) — #43 audit).
     std::string tip = "This building only";
     if ( pDef->m_szLabel && pDef->m_szLabel[0] ) { tip += "\n"; tip += pDef->m_szLabel; }
+    if ( pDef->m_szDesc  && pDef->m_szDesc[0]  ) { tip += "\n"; tip += pDef->m_szDesc; }
     AddWidget<SDL2InfoIcon>( cbX + cbW + 4, yh + ( ROW_H - kInfoSz ) / 2,
                              kInfoSz, kInfoSz, tip );
+
+    // Mode-aware OUTPUT readout (#43-audit item 2). The coal-liq host shows its conversion in
+    // the Power section; the BioFuel / Charcoal / Fracking hosts have no Power section, so mirror
+    // that readout here: a status row + this-building store + colony have/made for the def's
+    // output material. Created always (full-width, below the checkbox); Refresh() toggles
+    // visibility so a live checkbox toggle needs no window rebuild.
+    int outW = w - 2 * BOX_PAD - 8;
+    int oy   = yh + ROW_H;
+    m_lblAltOutHdr  = AddWidget<SDL2Label>( x + BOX_PAD + 4, oy,             outW, ROW_H, "" );
+    m_lblAltOutBldg = AddWidget<SDL2Label>( x + BOX_PAD + 4, oy + ROW_H,     outW, ROW_H, "" );
+    m_lblAltOutCol  = AddWidget<SDL2Label>( x + BOX_PAD + 4, oy + 2 * ROW_H, outW, ROW_H, "" );
 
     return y + H + SEC_PAD;
 }
@@ -798,6 +812,10 @@ int SDL2BuildingWindow::BuildOffice(int x, int y, int w) {
     // Workforce demand (#37): people needed by all buildings — the figure a
     // +workforce-upkeep edict (e.g. Austerity) raises, so toggling it shows here.
     m_lblOfcNeed   = AddWidget<SDL2Label>(x + BOX_PAD + 4, yh + 6 + 2 * ROW_H, textW, ROW_H, "Workforce Need: 0");
+    // Energy demand (#37/#39): colony power NEED — the figure Mining Subsidy's +20%-energy
+    // upkeep raises. That edict is hosted on the Office, so without this row the bump is
+    // invisible in the very window that toggles it (mirrors the Command Center's #39 row).
+    m_lblOfcEnergy = AddWidget<SDL2Label>(x + BOX_PAD + 4, yh + 6 + 3 * ROW_H, textW, ROW_H, "Energy Need: 0");
     m_imgOfcGraph  = AddWidget<SDL2Image>(graphX, yh, graphW, GRAPH_H);
     return y + POWERLIKE_H + SEC_PAD;
 }
@@ -809,6 +827,10 @@ int SDL2BuildingWindow::BuildApt(int x, int y, int w) {
     int textW  = graphX - ( x + BOX_PAD + 4 ) - 6;
     m_lblAptBldg   = AddWidget<SDL2Label>(x + BOX_PAD + 4, yh + 6,         textW, ROW_H, "This building: 0");
     m_lblAptColony = AddWidget<SDL2Label>(x + BOX_PAD + 4, yh + 6 + ROW_H, textW, ROW_H, "Colony: 0 / 0");
+    // Food demand (#37/#39): colony food NEED — the figure Nutrition's +20%-food upkeep raises.
+    // Nutrition is hosted on the apartment, so without this row the bump is invisible in the
+    // window that toggles it (the FOOD sibling of the Office's Workforce/Energy need rows).
+    m_lblAptNeed   = AddWidget<SDL2Label>(x + BOX_PAD + 4, yh + 6 + 2 * ROW_H, textW, ROW_H, "Food Need: 0");
     m_imgAptGraph  = AddWidget<SDL2Image>(graphX, yh, graphW, GRAPH_H);
     return y + POWERLIKE_H + SEC_PAD;
 }
@@ -1433,6 +1455,8 @@ void SDL2BuildingWindow::Refresh() {
                                  " / " + FmtNum( (int)p->m_iOfcCap ) );
         if ( m_lblOfcNeed )
             m_lblOfcNeed->SetText( "Workforce Need: " + FmtNum( (int)p->GetPplNeedBldg() ) );
+        if ( m_lblOfcEnergy )
+            m_lblOfcEnergy->SetText( "Energy Need: " + FmtNum( (int)p->GetPwrNeed() ) );
         DrawGraph( m_imgOfcGraph, kOfcCap, kPplBldg );
     }
 
@@ -1440,7 +1464,50 @@ void SDL2BuildingWindow::Refresh() {
         m_lblAptBldg->SetText( "This building: " + FmtNum( PerBldgAptCap() ) + " beds" );
         m_lblAptColony->SetText( "Colony: " + FmtNum( (int)p->GetPplTotal() ) +
                                  " / " + FmtNum( (int)p->m_iAptCap ) );
+        if ( m_lblAptNeed )
+            m_lblAptNeed->SetText( "Food Need: " + FmtNum( (int)p->GetFoodNeed() ) );
         DrawGraph( m_imgAptGraph, kAptCap, kPplTotal );
+    }
+
+    // #43-audit item 2: mode-aware OUTPUT readout in the "Production Mode" section, mirroring the
+    // coal-liq Power-section swap for the hosts that lack a Power section (BioFuel farm -> oil,
+    // Charcoal lumber mill -> coal, Fracking exhausted well -> oil). Shown only when the toggle is
+    // ON and the def is NOT the coal-liq one (that one already shows its readout in the Power
+    // section). Uses the def's real conversion values so enabling the toggle visibly shows output.
+    if ( m_lblAltOutHdr && m_lblAltOutBldg && m_lblAltOutCol ) {
+        const AltOutput::AltOutputDef* pDef = AltOutput::Available( m_pBldg );
+        bool bOn   = pDef && m_pBldg->IsFlag( CUnit::alt_oil );
+        bool bCoal = bOn && secCoalLiqActive( m_pBldg );   // coal-liq uses the Power section instead
+        bool bShow = bOn && !bCoal;
+        m_lblAltOutHdr->SetVisible( bShow );
+        m_lblAltOutBldg->SetVisible( bShow );
+        m_lblAltOutCol->SetVisible( bShow );
+        if ( bShow ) {
+            int outMat = pDef->m_iOutputMat;
+            std::string matName = CMaterialTypes::GetDesc( outMat ).c_str();
+
+            std::string hdr;
+            if ( pDef->m_eMode == AltOutput::ePctAdditive ) {
+                int pct = pDef->m_pfnPct ? pDef->m_pfnPct( p ) : 0;
+                hdr = "Producing " + matName + ": " + std::to_string( pct ) +
+                      "% of food output";
+            } else if ( pDef->m_eMode == AltOutput::eFlatTrickle ) {
+                int rate = pDef->m_pfnFlat ? pDef->m_pfnFlat( p ) : 0;
+                hdr = "Trickling " + matName + ": " + FmtNum( rate ) + " / min";
+            } else { // eRatioConsume (Charcoal: 2 lumber -> 1 coal)
+                std::string inName = CMaterialTypes::GetDesc( pDef->m_iInputMat ).c_str();
+                hdr = "Converting " + inName + " to " + matName + " (" +
+                      std::to_string( pDef->m_iRatioIn ) + " " + inName + " -> 1 " + matName + ")";
+            }
+
+            int here = m_pBldg->GetStore( outMat );
+            int have = p->GetMaterialHave( outMat );
+            int made = p->GetMaterialMade( outMat );
+            m_lblAltOutHdr->SetText( hdr );
+            m_lblAltOutBldg->SetText( "This building: " + FmtNum( here ) + " " + matName );
+            m_lblAltOutCol->SetText( "Colony " + matName + ": " + FmtNum( have ) +
+                                     " (made " + FmtNum( made ) + ")" );
+        }
     }
 
     if ( m_bTurret && m_lblTurretRange && m_lblTurretDps ) {

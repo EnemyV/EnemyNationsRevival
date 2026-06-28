@@ -535,10 +535,16 @@ class CPlayer : public CObject
     int GetFrackOilPerMin( )
     {
         int iTier = 0;
-        if ( m_aRsrch.GetSize( ) > CRsrchArray::fracking_5 )
-            for ( int iOn = CRsrchArray::fracking_1; iOn <= CRsrchArray::fracking_5; iOn++ )
-                if ( GetRsrch( iOn ).m_bDiscovered )
-                    iTier = iOn - CRsrchArray::fracking_1 + 1;   // highest discovered (tiers chain)
+        // Tier-gate alignment (audit): CanFrack only requires the array to reach fracking_1, so
+        // a player who has just fracking_1 must get the tier-1 trickle, not a silent 0. Clamp the
+        // scan to the tiers the array actually holds (ElementAt is unchecked, so never read past
+        // GetSize()) instead of demanding the full fracking_5 span up front.
+        int iTop = CRsrchArray::fracking_5;
+        if ( m_aRsrch.GetSize( ) <= iTop )
+            iTop = m_aRsrch.GetSize( ) - 1;
+        for ( int iOn = CRsrchArray::fracking_1; iOn <= iTop; iOn++ )
+            if ( GetRsrch( iOn ).m_bDiscovered )
+                iTier = iOn - CRsrchArray::fracking_1 + 1;   // highest discovered (tiers chain)
         static const int aiOil[6] = { 0, 10, 15, 20, 25, 30 };
         return ( aiOil[iTier] );
     }
@@ -577,10 +583,16 @@ class CPlayer : public CObject
     int GetCharcoalPct( )
     {
         int iTier = 0;
-        if ( m_aRsrch.GetSize( ) > CRsrchArray::charcoal_4 )
-            for ( int iOn = CRsrchArray::charcoal_1; iOn <= CRsrchArray::charcoal_4; iOn++ )
-                if ( GetRsrch( iOn ).m_bDiscovered )
-                    iTier = iOn - CRsrchArray::charcoal_1 + 1;   // highest discovered (tiers chain)
+        // Tier-gate alignment (audit): CanCharcoal only requires the array to reach charcoal_1, so
+        // a player who has just charcoal_1 must get the tier-1 throughput, not a silent 0. Clamp the
+        // scan to the tiers the array actually holds (ElementAt is unchecked, so never read past
+        // GetSize()) instead of demanding the full charcoal_4 span up front.
+        int iTop = CRsrchArray::charcoal_4;
+        if ( m_aRsrch.GetSize( ) <= iTop )
+            iTop = m_aRsrch.GetSize( ) - 1;
+        for ( int iOn = CRsrchArray::charcoal_1; iOn <= iTop; iOn++ )
+            if ( GetRsrch( iOn ).m_bDiscovered )
+                iTier = iOn - CRsrchArray::charcoal_1 + 1;   // highest discovered (tiers chain)
         static const int aiPct[5] = { 0, 5, 10, 15, 20 };
         return ( aiPct[iTier] );
     }
