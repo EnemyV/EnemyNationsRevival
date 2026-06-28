@@ -2522,7 +2522,7 @@ void CWarehouseBuilding::GetAccepts( int* pVals ) const
 
     for ( int iOn = 0; iOn < CMaterialTypes::GetNumTypes( ); iOn++ )
         if ( ( iOn != CMaterialTypes::food ) && ( iOn != CMaterialTypes::gas ) && ( iOn != CMaterialTypes::moly ) &&
-             ( iOn != CMaterialTypes::goods ) )
+             ( iOn != CMaterialTypes::goods ) && !IsMatRejected( iOn ) )   // accept-filter: skip rejected materials
             *pVals++ = 1;
         else
             *pVals++ = 0;

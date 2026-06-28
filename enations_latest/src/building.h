@@ -1108,12 +1108,30 @@ class CWarehouseBuilding : public CBuilding
 public:
 
 									CWarehouseBuilding () { }
-									CWarehouseBuilding (int iBldg, int iBldgDir, int iOwner=0, DWORD ID = 0) : 
+									CWarehouseBuilding (int iBldg, int iBldgDir, int iOwner=0, DWORD ID = 0) :
 																	CBuilding (iBldg, iBldgDir, iOwner, ID) { }
 
 		virtual void GetAccepts (int * pVals) const;
 
+		// Per-warehouse ACCEPT-FILTER (warehouse logistics, mac1 @03:00): a bitmask of
+		// material types this warehouse REJECTS from auto-haul (1 bit per CMaterialTypes id;
+		// num_types==10, fits a DWORD). Default 0 = accept everything, so a fresh
+		// warehouse is byte-for-byte identical to the prior behavior. GetAccepts() ANDs it
+		// out, and every haul consumer (CHpRouter / vehicle auto-load) reads GetAccepts, so
+		// no router change is needed. Toggled per-resource from the warehouse info window.
+		// NOTE: NOT yet serialized -- appending a field to the version-less building save
+		// stream desyncs/segfaults old saves (the rocket is a CWarehouseBuilding). Persisting
+		// this needs a coordinated save-format version bump (flagged to win); resets to 0 on
+		// load until then.
+		bool		IsMatRejected (int iMat) const { return ( ( m_dwRejectMat & ( 1u << iMat ) ) != 0 ); }
+		void		SetMatRejected (int iMat, bool bReject)
+						{ if ( bReject ) m_dwRejectMat |= ( 1u << iMat ); else m_dwRejectMat &= ~( 1u << iMat ); }
+		DWORD		GetRejectMask () const { return ( m_dwRejectMat ); }
+		void		SetRejectMask (DWORD dwMask) { m_dwRejectMat = dwMask; }
+
 protected:
+
+		DWORD		m_dwRejectMat = 0;   // accept-filter: bit set => reject that material (default 0 = accept all)
 
 #ifdef _DEBUG
 public:
