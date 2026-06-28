@@ -278,6 +278,15 @@ static std::string PrimaryProductionStatus(CBuilding* b) {
     if ( mat < 0 ) return std::string();
     return std::string( "Producing " ) + CMaterialTypes::GetDesc( mat ).c_str();
 }
+
+// #51 follow-up: amount of a material to show in the Inputs/Outputs sections. Global resources
+// (gas, food) aren't stocked per-building (GetStore == 0) so show the colony total, like the
+// existing gas readout; everything else is the building's own stock.
+static int matAmount(CBuilding* b, int mat) {
+    if ( mat == CMaterialTypes::gas )  return (int)b->GetOwner()->GetGasHave();
+    if ( mat == CMaterialTypes::food ) return (int)b->GetOwner()->GetFood();
+    return b->GetStore( mat );
+}
 static int outputsHeight(CBuilding* b) {
     int tmp[SDL2BuildingWindow::kMaxInputs];
     int n = collectOutputMats(b, tmp, SDL2BuildingWindow::kMaxInputs);
@@ -1409,33 +1418,47 @@ void SDL2BuildingWindow::Refresh() {
         }
         m_lblProduction->SetText( str );
         if ( m_progProduction ) {
-            int per = m_pBldg->GetProductionPer();
-            if ( per >= 0 ) { m_progProduction->SetVisible( true ); m_progProduction->SetProgress( per ); }
-            else            { m_progProduction->SetVisible( false ); }
+            // #51 follow-up (gap 3): a flat-trickle alt mode (Fracking on an exhausted well) has
+            // no production batch to fill, so GetProductionPer() sits at 0 and the bar looked
+            // "stuck at 0%". A trickle is continuous — hide the bar rather than show a fake 0%.
+            bool bTrickle = bAlt && ( pAlt->m_eMode == AltOutput::eFlatTrickle );
+            int  per      = m_pBldg->GetProductionPer();
+            if ( bTrickle || per < 0 ) { m_progProduction->SetVisible( false ); }
+            else { m_progProduction->SetVisible( true ); m_progProduction->SetProgress( per ); }
         }
     }
 
+    // #51 follow-up (gap 2): when an AltOutput conversion is ON, the Inputs/Outputs sections show
+    // the ALT chain's materials (bio-oil refinery: food in -> oil out) instead of the static primary
+    // chain (oil in -> gas out) — the operator's "inputs/outputs still show the oil->gas chain". The
+    // alt input/output is a single material each, so we swap slot 0; other slots (multi-input smelter,
+    // which isn't alt-capable) are untouched. Coal-liq is excluded (shows in the Power section).
+    const AltOutput::AltOutputDef* pIO = AltOutput::Available( m_pBldg );
+    bool bAltIO = ( pIO != nullptr ) && m_pBldg->IsFlag( CUnit::alt_oil ) && !secCoalLiqActive( m_pBldg );
+    int altInMat  = ( bAltIO && ( pIO->m_eMode == AltOutput::eRatioConsume ||
+                                  pIO->m_eMode == AltOutput::eGlobalConsume ) ) ? pIO->m_iInputMat : -1;
+    int altOutMat = bAltIO ? pIO->m_iOutputMat : -1;
+
     if ( m_bInputs ) {
-        DrawMatIcons( m_imgInputs, m_inputMats, m_nInputMats );
-        for ( int i = 0; i < m_nInputMats; i++ )
-            if ( m_lblInputCount[i] )
-                m_lblInputCount[i]->SetText( FmtNum( m_pBldg->GetStore( m_inputMats[i] ) ) );
+        int inMats[kMaxInputs];
+        for ( int i = 0; i < m_nInputMats; i++ ) inMats[i] = m_inputMats[i];
+        if ( altInMat >= 0 && m_nInputMats > 0 ) inMats[0] = altInMat;
+        DrawMatIcons( m_imgInputs, inMats, m_nInputMats );
+        for ( int i = 0; i < m_nInputMats; i++ ) {
+            if ( m_lblInputName[i]  ) m_lblInputName[i]->SetText( CMaterialTypes::GetDesc( inMats[i] ).c_str() );
+            if ( m_lblInputCount[i] ) m_lblInputCount[i]->SetText( FmtNum( matAmount( m_pBldg, inMats[i] ) ) );
+        }
     }
 
     if ( m_bOutputs ) {
-        DrawMatIcons( m_imgOutputs, m_outputMats, m_nOutputMats );
-        for ( int i = 0; i < m_nOutputMats; i++ )
-            if ( m_lblOutputCount[i] )
-            {
-                // Gas is a COLONY-WIDE resource — it isn't stored per-building, so
-                // GetStore() is always 0 for it (e.g. the refinery's gas output read 0).
-                // Show the colony's gas-on-hand instead. (Fuller have/usage + history
-                // graph treatment, like power/apt, is the follow-up.)
-                int amt = ( m_outputMats[i] == CMaterialTypes::gas )
-                              ? m_pBldg->GetOwner()->GetGasHave()
-                              : m_pBldg->GetStore( m_outputMats[i] );
-                m_lblOutputCount[i]->SetText( FmtNum( amt ) );
-            }
+        int outMats[kMaxInputs];
+        for ( int i = 0; i < m_nOutputMats; i++ ) outMats[i] = m_outputMats[i];
+        if ( altOutMat >= 0 && m_nOutputMats > 0 ) outMats[0] = altOutMat;
+        DrawMatIcons( m_imgOutputs, outMats, m_nOutputMats );
+        for ( int i = 0; i < m_nOutputMats; i++ ) {
+            if ( m_lblOutputName[i]  ) m_lblOutputName[i]->SetText( CMaterialTypes::GetDesc( outMats[i] ).c_str() );
+            if ( m_lblOutputCount[i] ) m_lblOutputCount[i]->SetText( FmtNum( matAmount( m_pBldg, outMats[i] ) ) );
+        }
     }
 
     if ( m_bUnits ) {
