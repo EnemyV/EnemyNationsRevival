@@ -1712,8 +1712,15 @@ void CConquerApp::InitCustomUI( )
 
 void CConquerApp::Minimize( )
 {
-
+#ifdef _WIN32
     m_pMainWnd->ShowWindow( SW_MINIMIZE );
+#else
+    // SDL port: m_pMainWnd is a stubbed MFC window whose ShowWindow() is a no-op, so the
+    // main-menu / file-dialog "Minimize" button did nothing (operator-reported on mac).
+    // Minimize the real SDL window instead.
+    if ( m_gameWindow && m_gameWindow->GetWindow( ) )
+        SDL_MinimizeWindow( m_gameWindow->GetWindow( ) );
+#endif
 }
 
 void CConquerApp::CreateMain( )
