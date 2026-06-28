@@ -124,12 +124,43 @@ static bool secCoalLiqActive(CBuilding* b) {
            && ( pDef->m_iInputMat == CMaterialTypes::coal )
            && ( pDef->m_iOutputMat == CMaterialTypes::oil );
 }
+// #51: the building's PRIMARY output rate, per in-game minute — the exact figure the info
+// window's status line shows for a normal producer. Mirrors the per-class ShowStatusText math
+// (CFarmBuilding / CMaterialBuilding, new_unit.cpp) so the alt-mode and fallback readouts stay
+// in sync with the stock "<resource>: <N>/min" line. Returns -1 when the building has no
+// per-minute rate (idle / non-producer) so callers can fall back to a plain label.
+static int primaryRatePerMin(CBuilding* b) {
+    int ut = b->GetData()->GetUnionType();
+    if ( ut == CStructureData::UTfarm ) {
+        CBuildFarm* pf = b->GetData()->GetBldFarm();
+        if ( !pf || pf->GetTimeToFarm() <= 0 ) return -1;
+        float fRate = b->GetOwner()->GetFarmProd() * (float)( (CFarmBuilding*)b )->GetTerMult()
+                      * float( 24 * 60 * pf->GetQuantity() ) / float( pf->GetTimeToFarm() );
+        return (int)b->GetFrameProd( fRate );
+    }
+    if ( ut == CStructureData::UTmaterials ) {
+        CBuildMaterials const* pm = b->GetData()->GetBldMaterials();
+        if ( !pm || pm->GetTime() <= 0 ) return -1;
+        int iTyp = -1;
+        for ( int i = 0; i < CMaterialTypes::GetNumTypes(); i++ )
+            if ( pm->GetOutput( i ) > 0 ) { iTyp = i; break; }
+        if ( iTyp < 0 ) return -1;
+        float fRate = b->GetOwner()->GetMtrlsProd() * float( 24 * 60 * pm->GetOutput( iTyp ) )
+                      / float( pm->GetTime() );
+        return (int)b->GetFrameProd( fRate );
+    }
+    return -1;
+}
+
 // #51: status line for the Production widget when an AltOutput mode is ACTIVE, so the widget
 // shows the ALT resource (charcoal coal / bio-oil / fracking oil) instead of the building's
-// primary output (lumber/gas). Mirrors the rate phrasing of CMaterialBuilding::ShowStatusText
-// ("<resource>: <N> / min") and the Production-Mode text section (kept in sync). Coal-liq is
-// excluded (its host is a power plant with no Production section — it shows oil in the Power
-// section). Caller guarantees pDef != null and the alt flag is ON.
+// primary output (lumber/gas). Emits the same "<resource>: <N> / min" RATE phrasing as the
+// stock CMaterialBuilding::ShowStatusText (reuse, not replace) — the operator's blocker was the
+// alt mode dropping the rate for a conversion-ratio sentence. The rebranded conversion outputs
+// use the def's display label ("Charcoal"/"Bio Oil") per docs/plans/charcoal-sawmill-tech.md;
+// Fracking keeps the plain resource name (it just revives an oil well). Coal-liq is excluded
+// (its host is a power plant with no Production section — it shows oil in the Power section).
+// Caller guarantees pDef != null and the alt flag is ON.
 static std::string AltProductionStatus(CBuilding* b, const AltOutput::AltOutputDef* pDef) {
     CPlayer*    p       = b->GetOwner();
     std::string matName = CMaterialTypes::GetDesc( pDef->m_iOutputMat ).c_str();
@@ -141,10 +172,29 @@ static std::string AltProductionStatus(CBuilding* b, const AltOutput::AltOutputD
         int rate = pDef->m_pfnFlat ? pDef->m_pfnFlat( p ) : 0;
         return matName + ": " + FmtNum( rate ) + " / min";
     }
-    // eRatioConsume / eGlobalConsume: a conversion — name the resource + the ratio.
-    std::string inName = CMaterialTypes::GetDesc( pDef->m_iInputMat ).c_str();
-    return matName + " (from " + inName + ", " + std::to_string( pDef->m_iRatioIn ) +
-           " " + inName + " -> 1 " + matName + ")";
+    // eRatioConsume / eGlobalConsume: a conversion. Show the OUTPUT RATE (units/min) using the
+    // rebranded display label, computed from the building's primary throughput exactly as the
+    // production hook (mainloop.cpp) feeds Convert():
+    //   Charcoal (lumber mill): a GetCharcoalPct% slice of the lumber harvest -> coal at ratio:1.
+    //   Bio Oil  (refinery)   : each production batch -> 1/ratio oil (food burned at ratio:1).
+    std::string label = pDef->m_szLabel;   // "Charcoal" / "Bio Oil" (UI label, not the raw mat)
+    int rate = -1;
+    int ut   = b->GetData()->GetUnionType();
+    if ( ut == CStructureData::UTfarm ) {
+        int lumber = primaryRatePerMin( b );   // lumber/min the mill harvests (then diverts to kiln)
+        if ( lumber > 0 && pDef->m_iRatioIn > 0 )
+            rate = ( lumber * p->GetCharcoalPct() ) / ( 100 * pDef->m_iRatioIn );
+    } else if ( ut == CStructureData::UTmaterials ) {
+        CBuildMaterials const* pm = b->GetData()->GetBldMaterials();
+        if ( pm && pm->GetTime() > 0 && pDef->m_iRatioIn > 0 ) {
+            int batches = (int)b->GetFrameProd( p->GetMtrlsProd() * float( 24 * 60 )
+                                                / float( pm->GetTime() ) );
+            rate = batches / pDef->m_iRatioIn;
+        }
+    }
+    if ( rate >= 0 )
+        return label + ": " + FmtNum( rate ) + " / min";
+    return label;   // producing but rate unavailable — never fall back to the ratio sentence
 }
 static bool secApt(CBuilding* b) {
     if ( b->GetData()->GetType() == CStructureData::rocket ) return true;
@@ -294,6 +344,12 @@ static std::string PrimaryProductionStatus(CBuilding* b) {
         if ( pf ) mat = pf->GetTypeFarm();
     }
     if ( mat < 0 ) return std::string();
+    // #51: prefer the per-minute RATE (the figure ShowStatusText shows) so the fallback never
+    // strands a rateless "Producing gas" — that was the operator's regression. Only drop to the
+    // bare name when the building genuinely has no production rate (e.g. an idle/exhausted mine).
+    int rate = primaryRatePerMin( b );
+    if ( rate >= 0 )
+        return std::string( CMaterialTypes::GetDesc( mat ).c_str() ) + ": " + FmtNum( rate ) + " / min";
     return std::string( "Producing " ) + CMaterialTypes::GetDesc( mat ).c_str();
 }
 
