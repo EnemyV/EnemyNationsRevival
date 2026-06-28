@@ -19,7 +19,7 @@
 const EdictDef g_aEdicts[EDICT_COUNT] =
 {
     // EDICT_FORTIFY_BORDER — Command Center, civ-wide combat policy.
-    { "Fortify Border", "+50% fort construction speed; +20% energy upkeep",
+    { "Fortify Border", "Civ-wide: +50% fortification build speed.\nCost: +20% power use.",
       CStructureData::command_center, EDICT_CIVWIDE, CRsrchArray::fortification,
       1.0f, 1.5f, 1.0f, 1.0f, 1.0f,   /*bonus*/
       0.20f, 0.0f, 0.0f },            /*upkeep*/
@@ -28,27 +28,27 @@ const EdictDef g_aEdicts[EDICT_COUNT] =
     // m_fEdictPopGrowthMult into GetPopGrowth() per plan §2.1/§3.2 (a global
     // production multiplier; the earlier EDICT_BLDG_SCOPED tag left it inert —
     // RecomputeEdictMults only folds civ-wide edicts).
-    { "Nutrition Program", "+30% population growth; +20% food upkeep",
+    { "Nutrition Program", "Civ-wide: +30% population growth.\nCost: +20% food use.",
       CStructureData::apartment, EDICT_CIVWIDE, CRsrchArray::farm_1,
       1.0f, 1.0f, 1.0f, 1.0f, 1.30f,
       0.0f, 0.0f, 0.20f },
 
     // EDICT_MINING_SUBSIDY — Office-hosted, civ-wide economy policy. Folds
     // m_fEdictMineMult into GetMineProd() (the plan's vertical-slice edict, §6).
-    { "Mining Subsidy", "+25% mine output; +20% energy upkeep",
+    { "Mining Subsidy", "Civ-wide: +25% output from all mines.\nCost: +20% power use.",
       CStructureData::office, EDICT_CIVWIDE, CRsrchArray::mine_1,
       1.0f, 1.0f, 1.25f, 1.0f, 1.0f,
       0.20f, 0.0f, 0.0f },
 
     // EDICT_RESEARCH_SUBSIDY — Office-hosted, civ-wide economy policy. Folds
     // m_fEdictRsrchMult into GetRsrchMult() (plan §2.1; pairs with the RG-1 lever).
-    { "Research Subsidy", "+30% research speed; +15% workforce upkeep",
+    { "Research Subsidy", "Civ-wide: +30% research speed.\nCost: +15% more workers to staff buildings.",
       CStructureData::office, EDICT_CIVWIDE, CRsrchArray::advanced_facilities,
       1.0f, 1.0f, 1.0f, 1.30f, 1.0f,
       0.0f, 0.15f, 0.0f },
 
     // EDICT_AUSTERITY — Rocket, civ-wide (lost if the rocket is destroyed, §29).
-    { "Austerity Drive", "+20% construction speed; +15% workforce upkeep",
+    { "Austerity Drive", "Civ-wide: +20% build speed (all buildings).\nCost: +15% more workers to staff buildings.\nLost if rocket destroyed.",
       CStructureData::rocket, EDICT_CIVWIDE, CRsrchArray::const_1,
       1.20f, 1.0f, 1.0f, 1.0f, 1.0f,
       0.0f, 0.15f, 0.0f },
