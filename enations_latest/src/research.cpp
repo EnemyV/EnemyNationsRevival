@@ -637,30 +637,30 @@ void CRsrchArray::Open( )
         }
     }
 
-    // In-code research topics: BioFuel 1-6 (#33, not in the DAT file). Farms also produce
-    // oil (the existing `oil` resource; "Bio Oil" label in the farm UI only) when toggled
-    // ON, as a % of food output (consumed in the farm production hook via
-    // CPlayer::GetBioOilPct). Each tier costs DOUBLE the previous and chains the prior
-    // tier; T1 is a heavy multi-line gate (farming + gas turbines + some fuel efficiency +
-    // vehicle speed), no energy cost. The AI's frozen research path doesn't pursue these.
+    // In-code research topics: BioFuel 1-6 (#33, not in the DAT file). Unlocks a refinery
+    // mode toggle: a refinery switched to Bio Oil stops converting oil into gas and instead
+    // converts global FOOD into oil (~5 food -> 1 oil), consumed in the refinery production
+    // hook. Each tier costs DOUBLE the previous and chains the prior tier; T1 is a heavy
+    // multi-line gate (farming + gas turbines + some fuel efficiency + vehicle speed), no
+    // energy cost. The AI's frozen research path doesn't pursue these.
     {
         static const char* aszBfName[6] = {
             "Biomass Digestion", "Algae Bioreactors", "Enzymatic Cracking",
             "Cellulosic Synthesis", "Gene-Tuned Oilseed", "Closed-Loop Biorefinery" };
         static const char* aszBfDesc[6] = {
-            "Anaerobic digesters render crop waste into oil at 10% of a farm's food output.",
-            "Algae bioreactors bloom oil-rich strains beside the crops, 12% of food output.",
-            "Enzymatic cracking breaks plant matter down into fuel oil, 14% of food output.",
-            "Cellulosic synthesis converts tough stalks and husks too, 16% of food output.",
-            "Gene-tuned oilseed crops pour out fuel oil at 18% of food output.",
-            "A closed-loop biorefinery wastes nothing, yielding oil at 20% of food output." };
+            "Lets a refinery convert food into oil instead of oil into gas, rendering surplus food down to fuel oil.",
+            "Algae bioreactors enrich the refinery's food-to-oil conversion, lifting its oil yield.",
+            "Enzymatic cracking breaks food stock down more completely, raising the food-to-oil yield again.",
+            "Cellulosic synthesis wrings oil from tougher food matter, improving the conversion further.",
+            "Gene-tuned oilseed feedstock pushes the refinery's food-to-oil yield higher still.",
+            "A closed-loop biorefinery wastes nothing, maximizing the oil drawn from each unit of food." };
         static const char* aszBfRslt[6] = {
-            "Biomass digestion online. Farms now also produce Bio Oil (toggle per farm).",
-            "Algae bioreactors fielded. Bio Oil output rises.",
-            "Enzymatic cracking in service. More Bio Oil per harvest.",
-            "Cellulosic synthesis operational. Bio Oil yield climbs again.",
-            "Gene-tuned oilseed is sown. Bio Oil output rises further.",
-            "Closed-loop biorefinery perfected. Maximum Bio Oil from every farm." };
+            "Biomass digestion online. Refineries can now be toggled to convert food into oil instead of oil into gas.",
+            "Algae bioreactors fielded. The refinery food-to-oil conversion yields more oil.",
+            "Enzymatic cracking in service. More oil from the same food.",
+            "Cellulosic synthesis operational. Refinery food-to-oil yield climbs again.",
+            "Gene-tuned oilseed adopted. Refinery food-to-oil yield rises further.",
+            "Closed-loop biorefinery perfected. Maximum oil from every unit of food converted." };
 
         int iPts = ElementAt( farm_1 ).m_iPtsRequired;
         for ( int iOn = 0; iOn < 6; iOn++ )
