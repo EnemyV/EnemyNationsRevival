@@ -19,10 +19,10 @@
 const EdictDef g_aEdicts[EDICT_COUNT] =
 {
     // EDICT_FORTIFY_BORDER — Command Center, civ-wide combat policy.
-    { "Fortify Border", "Civ-wide: +50% fortification build speed.\nCost: +20% power use, +10% more workers.",
+    { "Fortify Border", "Civ-wide: +50% fortification build speed.\nCost: +20% power use, +15% more workers.",
       CStructureData::command_center, EDICT_CIVWIDE, CRsrchArray::fortification,
       1.0f, 1.5f, 1.0f, 1.0f, 1.0f,   /*bonus*/
-      0.20f, 0.10f, 0.0f },           /*upkeep: energy, workforce, food*/
+      0.20f, 0.15f, 0.0f },           /*upkeep: energy, workforce, food*/
 
     // EDICT_NUTRITION — Apartment-hosted, civ-wide population policy. Folds
     // m_fEdictPopGrowthMult into GetPopGrowth() per plan §2.1/§3.2 (a global
@@ -48,10 +48,10 @@ const EdictDef g_aEdicts[EDICT_COUNT] =
       0.25f, 0.15f, 0.0f },   // energy magnitude operator-tunable (catalog values are placeholders)
 
     // EDICT_AUSTERITY — Rocket, civ-wide (lost if the rocket is destroyed, §29).
-    { "Austerity Drive", "Civ-wide: +20% build speed (all buildings).\nCost: every building needs +15% more workers.\nLost if rocket destroyed.",
+    { "Austerity Drive", "Civ-wide: +20% build speed (all buildings).\nCost: every building needs +30% more workers.\nLost if rocket destroyed.",
       CStructureData::rocket, EDICT_CIVWIDE, CRsrchArray::const_1,
       1.20f, 1.0f, 1.0f, 1.0f, 1.0f,
-      0.0f, 0.15f, 0.0f },
+      0.0f, 0.30f, 0.0f },
 };
 
 bool EdictHostHasEdicts( CStructureData::BLDG_TYPE bldgType )
