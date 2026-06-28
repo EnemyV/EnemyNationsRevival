@@ -23,6 +23,9 @@
 
 #include <SDL_ttf.h>
 #include <vector>
+#include <sstream>
+#include <locale>
+#include <iomanip>
 #include <string>
 
 // ---------------------------------------------------------------------------
@@ -433,6 +436,29 @@ void SDL2ResearchDialog::Refresh() {
     }
 }
 
+// Format a research-point cost compactly + locale-aware (operator request):
+//   < 10,000      -> full number, locale-grouped (e.g. "9,125")
+//   10k .. < 1m   -> "Nk"   (e.g. 248000 -> "248k", rounded to nearest thousand)
+//   >= 1,000,000  -> "Nm"   (e.g. 2000000 -> "2m"; fractional -> 1 dp, e.g. "2.5m")
+// The system locale ("") drives the thousands/decimal separators; falls back to the
+// classic "C" locale if the system locale is unavailable.
+static std::string FmtPoints(long long v) {
+    if (v < 0) return "-" + FmtPoints(-v);
+    std::ostringstream ss;
+    try { ss.imbue(std::locale("")); } catch (...) { /* keep classic locale */ }
+    if (v < 10000) {
+        ss << v;                                     // full number, grouped per locale
+    } else if (v < 1000000) {
+        long long k = (v + 500) / 1000;              // round to nearest thousand
+        if (k >= 1000) ss << "1m"; else ss << k << "k";
+    } else if (v % 1000000 == 0) {
+        ss << (v / 1000000) << "m";                  // whole millions -> "2m"
+    } else {
+        ss << std::fixed << std::setprecision(1) << (v / 1000000.0) << "m";  // "2.5m"
+    }
+    return ss.str();
+}
+
 void SDL2ResearchDialog::SelectItem(int idx) {
     if (idx < 0 || idx >= (int)m_items.size()) return;
     m_selected = idx;
@@ -440,10 +466,11 @@ void SDL2ResearchDialog::SelectItem(int idx) {
     CRsrchItem const& item = theRsrch[m_items[idx].index];
     // Show the description plus the topic's point cost (Note 11 / BUGS #19): the
     // operator wants the research-points-to-discover figure visible in the detail
-    // box (which has room below the wrapped description text).
+    // box (which has room below the wrapped description text). Cost is formatted
+    // compactly + locale-aware (operator request) — see FmtPoints above.
     std::string desc = item.m_sDesc;
     if (!desc.empty()) desc += "\n\n";
-    desc += "Cost: " + std::to_string(item.m_iPtsRequired) + " research points";
+    desc += "Cost: " + FmtPoints(item.m_iPtsRequired) + " research points";
     m_lblDesc->SetText(desc.c_str());
 
     // The Research button stays "down" (pressed sprite) while the selected item is
