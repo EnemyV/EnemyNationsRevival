@@ -495,6 +495,22 @@ else ()
     )
 endif ()
 
+# Stage the intro/logo videos the menu's PlayVideo loads at runtime (assets/videos/*.mpg).
+# NOT in ENATIONS.DAT — PlayVideo reads loose files (CWD then exe dir) and silently no-ops if
+# missing, which was bug #53 "Replay Introduction does nothing". The real clips are the *_44k.mpg
+# in enations/disk/avi (the bare intro.mpg/logo.mpg there are 0-byte stubs). copy_if_different so
+# the 18MB intro only copies once. Cross-platform (POSIX needs them too once paths are forward-slash).
+add_custom_command(TARGET enations POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:enations>/assets/videos"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_CURRENT_SOURCE_DIR}/../../enations/disk/avi/intro_44k.mpg"
+        "$<TARGET_FILE_DIR:enations>/assets/videos/intro.mpg"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_CURRENT_SOURCE_DIR}/../../enations/disk/avi/logo_44k.mpg"
+        "$<TARGET_FILE_DIR:enations>/assets/videos/logo.mpg"
+    COMMENT "Staging intro/logo videos to assets/videos (PlayVideo runtime assets, bug #53)"
+)
+
 # MSVC is lax about C++ standard (defaults to C++14+ even when 11 is requested),
 # so the codebase uses std::make_unique (C++14) and relaxed constexpr. gcc with
 # -std=c++11 rejects both — build Linux as C++17 (gcc 13's default anyway).
