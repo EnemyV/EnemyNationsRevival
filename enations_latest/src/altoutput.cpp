@@ -104,7 +104,7 @@ namespace
         //    toggled. eRatioConsume: pulls coal from the plant's own store and credits oil.
         {
             "Coal Liquefaction",
-            "Stops power generation; converts 2 coal -> 1 oil",
+            "Stops power generation; converts 3 coal -> 1 oil",
             &IsCoalPowerPlant,
             &TechCoalLiq,
             CMaterialTypes::coal,
@@ -112,7 +112,7 @@ namespace
             AltOutput::eRatioConsume,
             nullptr,                     // m_pfnPct
             nullptr,                     // m_pfnFlat
-            2,                            // 2 coal per 1 oil
+            3,                            // 3 coal per 1 oil (nerfed from 2 per operator)
             1.0f
         },
 

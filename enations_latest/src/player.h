@@ -584,12 +584,12 @@ class CPlayer : public CObject
     BOOL CanCharcoal( ) { return ( m_aRsrch.GetSize( ) > CRsrchArray::charcoal_1 && GetRsrch( CRsrchArray::charcoal_1 ).m_bDiscovered ); }
 
     // Charcoal kiln THROUGHPUT -- the percent of harvested lumber fed into the kiln, then
-    // converted at the fixed 2 lumber -> 1 coal. Operator spec (2026-06-28): BASE rate is
-    // 20 harvested lumber -> 1 coal (= 5% coal output) at the first Charcoal tech, +2% coal
-    // per further tech. coal% = feed%/2 (the 2:1 kiln halves the feed), so feed
-    // { 0, 10, 14, 18, 22 }% by highest tier -> coal output { 0, 5, 7, 9, 11 }% of harvest
-    // (effective 20:1 / 14:1 / 11:1 / 9:1 lumber-per-coal). The 2:1 kiln ratio is fixed; only
-    // throughput scales with research.
+    // converted at the fixed 2 lumber -> 1 coal. Operator steer (2026-06-28): charcoal is
+    // "free coal" (lumber is harvested for free), so keep it deliberately INEFFICIENT. Base
+    // ~30:1 (33 lumber -> 1 coal) at the first Charcoal tech, easing toward ~17:1 at max tech.
+    // coal% = feed%/2 (the 2:1 kiln halves the feed), so feed { 0, 6, 8, 10, 12 }% by highest
+    // tier -> coal output { 0, 3, 4, 5, 6 }% of harvest (effective 33:1 / 25:1 / 20:1 / 16.7:1
+    // lumber-per-coal). The 2:1 kiln ratio is fixed; only throughput scales with research.
     // Guarded for older/short save research arrays. See Charcoal (#44).
     int GetCharcoalPct( )
     {
@@ -604,7 +604,7 @@ class CPlayer : public CObject
         for ( int iOn = CRsrchArray::charcoal_1; iOn <= iTop; iOn++ )
             if ( GetRsrch( iOn ).m_bDiscovered )
                 iTier = iOn - CRsrchArray::charcoal_1 + 1;   // highest discovered (tiers chain)
-        static const int aiPct[5] = { 0, 10, 14, 18, 22 };   // coal output 5/7/9/11% (base 20 lumber:1 coal, +2%/tech)
+        static const int aiPct[5] = { 0, 6, 8, 10, 12 };   // coal output 3/4/5/6% (base ~33 lumber:1 coal; free coal = stingy)
         return ( aiPct[iTier] );
     }
 
