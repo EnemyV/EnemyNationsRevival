@@ -247,6 +247,20 @@ void SDL2Compositor::Composite() {
     if (!windowSurface)
         return;
 
+    // While a COMPOSITED (non-detached) panel is being dragged/resized it moves
+    // every frame. The incremental path below only re-blits a panel's NEW
+    // footprint, so the region it vacated keeps stale pixels ("trails", operator-
+    // reported in single-window mode — like the Win95 solitaire win animation).
+    // Force a full wallpaper re-tile + re-render of all panels for the duration of
+    // the drag so the vacated area is repainted. Scoped to non-detached panels so
+    // multi-window detached-drag (panel in its own OS window) is unaffected.
+    for (auto& p : m_panels) {
+        if (p && !p->IsDetached() && p->IsInteracting()) {
+            m_backgroundDirty = true;
+            break;
+        }
+    }
+
     // Check if any panel is dirty
     bool anyDirty = m_backgroundDirty;
     if (!anyDirty) {

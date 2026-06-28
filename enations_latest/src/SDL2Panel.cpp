@@ -278,19 +278,24 @@ void SDL2Panel::Render(SDL_Surface* windowSurface) {
     SDL_Rect dstRect = { m_x, m_y, m_width, m_height };
     SDL_BlitSurface(m_surface, nullptr, windowSurface, &dstRect);
 
-    // Draw border if movable/resizable
+    // Draw border if movable/resizable. Use the ornate Enemy Nations GOLD frame
+    // — the SAME art the detached panels draw (RenderOwn ~line 1229) — so the
+    // single-window composited panels keep their border art instead of a plain
+    // 1px frame (operator-reported "lost their gold borders" in single-window
+    // mode). Falls back to the simple raised border if the gold art is missing.
     if (m_movable || m_resizable) {
         int totalY = GetTotalY();
         int totalH = GetTotalHeight();
-        SDL_Rect borderRect = { m_x - 1, totalY - 1, m_width + 2, totalH + 2 };
-        // Top
-        FillRectP(windowSurface, {borderRect.x, borderRect.y, borderRect.w, 1}, BorderLight);
-        // Left
-        FillRectP(windowSurface, {borderRect.x, borderRect.y, 1, borderRect.h}, BorderLight);
-        // Bottom
-        FillRectP(windowSurface, {borderRect.x, borderRect.y + borderRect.h - 1, borderRect.w, 1}, BorderDark);
-        // Right
-        FillRectP(windowSurface, {borderRect.x + borderRect.w - 1, borderRect.y, 1, borderRect.h}, BorderDark);
+        EnsureGoldArt();
+        if (s_borderH || s_borderV) {
+            DrawGoldFrame(windowSurface, m_x, totalY, m_width, totalH);
+        } else {
+            SDL_Rect borderRect = { m_x - 1, totalY - 1, m_width + 2, totalH + 2 };
+            FillRectP(windowSurface, {borderRect.x, borderRect.y, borderRect.w, 1}, BorderLight);
+            FillRectP(windowSurface, {borderRect.x, borderRect.y, 1, borderRect.h}, BorderLight);
+            FillRectP(windowSurface, {borderRect.x, borderRect.y + borderRect.h - 1, borderRect.w, 1}, BorderDark);
+            FillRectP(windowSurface, {borderRect.x + borderRect.w - 1, borderRect.y, 1, borderRect.h}, BorderDark);
+        }
     }
 
     m_dirty = false;
@@ -763,13 +768,30 @@ void SDL2Panel::Detach(GameWindow* mainWin) {
 }
 
 void SDL2Panel::Detach(SDL_Window* ownerWindow) {
-    // Single-window mode (macOS full-screen app): keep every panel composited
-    // into the main window instead of spawning a separate top-level SDL window.
-    // On macOS each SDL window is an independent floating window (no Win32 child
-    // nesting), which scattered the UI/map/radar. EN_SINGLEWIN keeps them in the
-    // main compositor so the whole game renders in one full-screen window.
-    if (getenv("EN_SINGLEWIN")) {
-        LogPanel("[REN] Detach suppressed (EN_SINGLEWIN): '" + m_name + "'");
+    // Single-window mode: keep every panel composited into the main window
+    // instead of spawning a separate top-level SDL window. EN_SINGLEWIN keeps
+    // them in the main compositor so the whole game renders in one full-screen
+    // window.
+    //
+    // LINUX DEFAULT = single-window. On GNOME/Wayland (game on XWayland) the
+    // detached panels are separate managed windows, which has TWO operator-
+    // reported problems that are impossible to fix together while they are
+    // separate OS windows: (1) Mutter clamps them out of the reserved work-area
+    // strip (_NET_WORKAREA, e.g. 66,32 = top bar + left dock) so the radar/area
+    // map "can't be dragged to the top-left"; and (2) per-frame SDL_SetWindowPosition
+    // window-moves are choppy under XWayland (mac's WM moves are smooth). Escaping
+    // the clamp would require always-on-top, which re-creates the earlier
+    // "panels float over my terminal" bug. Compositing them into the one
+    // (already full-screen) window sidesteps both: app-positioned panels reach the
+    // top-left, drag is app-rendered, and nothing floats over other apps.
+    // Override with EN_MULTIWIN=1 to force the old detached-window behavior.
+#if defined(__linux__)
+    const bool singleWin = (getenv("EN_MULTIWIN") == nullptr);
+#else
+    const bool singleWin = (getenv("EN_SINGLEWIN") != nullptr);
+#endif
+    if (singleWin) {
+        LogPanel("[REN] Detach suppressed (single-window): '" + m_name + "'");
         return;
     }
     {

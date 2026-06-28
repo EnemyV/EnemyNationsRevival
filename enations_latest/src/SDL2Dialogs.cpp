@@ -188,8 +188,16 @@ void SDL2AdvOptionsDialog::OnOK() {
     check("Advanced", "Scroll", m_chkScroll->IsChecked() ? 1 : 0, 0);
     check("Advanced", "Pause", m_chkPause->IsChecked() ? 1 : 0, 1);
     check("Game", "NoIntro", m_chkNoIntro->IsChecked() ? 1 : 0, 0);
+    // Parent the message box to THIS dialog's window (not nullptr): with a null
+    // parent the OS box opened UNDECORATED-and-unfocusable BEHIND the fullscreen
+    // game window on Linux/XWayland/Mutter, so it could never be clicked — the game
+    // blocked forever in SDL_ShowSimpleMessageBox and looked HUNG (operator-reported
+    // after changing an Advanced setting). Transient-for the dialog window stacks it
+    // ABOVE the fullscreen game (same as the panels' transient-above-fullscreen) so
+    // it's visible and dismissable.
     if (bWarn) SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_INFORMATION, "Second Chance",
-        "You need to exit and restart Second Chance for these changes to take effect", nullptr);
+        "You need to exit and restart Second Chance for these changes to take effect",
+        m_gameWindow ? m_gameWindow->GetWindow() : nullptr);
     EndDialog(1);
 }
 
