@@ -812,10 +812,16 @@ BOOL CConquerApp::InitInstance( )
         break;
     }
 
+    // Zoom Levels (SDL2 Advanced Options dialog): 0 = "All 4 levels" (enable the closest zoom,
+    // m_iFirstZoom=0), 1 = "3 levels", 2 = "2 levels" (both start at zoom 1). The legacy MFC dialog
+    // used DIFFERENT values (1 = "force zoom 0"); that dialog is gone, so honor the SDL2 dialog's
+    // semantics directly — this is why picking a zoom level "wasn't respected". "All 4" still respects
+    // the per-bit-depth memory budget (bUse0) so a genuinely low-memory box gracefully drops to 3. The
+    // obsolete P/200 CPU gate is dropped (no modern machine trips it; Linux CPU-speed detect is flaky).
     switch ( EnGetProfileInt( "Advanced", "Zoom", 0 ) )
     {
-    case 1:
-        m_bUseZoom0 = TRUE;
+    case 0:   // All 4 levels
+        m_bUseZoom0 = bUse0;
         if ( !bUse0 )
         {
             if ( EnMessageBoxOnce( IDS_ERROR_LOW_ZOOM, MB_YESNO | MB_ICONSTOP | MB_TASKMODAL, "Warnings", "LessThanZoom" ) ==
@@ -823,24 +829,9 @@ BOOL CConquerApp::InitInstance( )
                 m_bUseZoom0 = FALSE;
             m_wndMain.UpdateWindow( );
         }
-        else if ( m_iCpuSpeed <= 200 )
-        {
-            if ( EnMessageBoxOnce( IDS_ERROR_LOW_ZOOM2, MB_YESNO | MB_ICONSTOP | MB_TASKMODAL, "Warnings", "LessThanZoom" ) ==
-                 IDYES )
-                m_bUseZoom0 = FALSE;
-            m_wndMain.UpdateWindow( );
-        }
         break;
 
-    case 0:
-        // if a P/200 or less stay at no zoom 0
-        if ( m_iCpuSpeed <= 200 )
-            m_bUseZoom0 = FALSE;
-        else
-            m_bUseZoom0 = bUse0;
-        break;
-
-    default:
+    default:  // "3 levels" / "2 levels" -> start at zoom 1
         m_bUseZoom0 = FALSE;
         break;
     }

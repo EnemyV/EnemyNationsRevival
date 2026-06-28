@@ -151,7 +151,7 @@ void SDL2AdvOptionsDialog::OnInit() {
     AddWidget<SDL2Label>(lx, y, 120, rowH, "Zoom Levels:");
     m_radZoom = AddWidget<SDL2RadioGroup>(lx + 130, y, 200, rowH * 3,
         std::vector<std::string>{"All 4 levels", "3 levels", "2 levels"},
-        EnGetProfileInt("Advanced", "Zoom", 2));
+        EnGetProfileInt("Advanced", "Zoom", 0));   // default: All 4 levels (matches the engine's auto-zoom default)
     if (theApp.GetFirstZoom() == 1) {
         m_radZoom->SetEnabled(0, false); m_radZoom->SetEnabled(1, false); m_radZoom->SetSelected(2);
     }
@@ -164,7 +164,7 @@ void SDL2AdvOptionsDialog::OnInit() {
     AddWidget<SDL2Label>(lx, y, 120, rowH, "Renderer:");
     m_radRenderer = AddWidget<SDL2RadioGroup>(lx + 130, y, 200, rowH * 3,
         std::vector<std::string>{"Software", "SDL2 (GPU)", "OpenGL"},
-        std::max(0, std::min(2, (int)EnGetProfileInt("Advanced", "Renderer", 0))));
+        std::max(0, std::min(2, (int)GetRenderBackend())));   // show the engine's ACTUAL backend (SDL2 by default on Linux/mac), not a hardcoded Software
     if (!RenderBackendOpenGLAvailable())
         m_radRenderer->SetEnabled(2, false);   // OpenGL not implemented yet
     y += rowH * 3 + 8;
@@ -183,8 +183,8 @@ void SDL2AdvOptionsDialog::OnOK() {
     auto check = [&](const char* sec, const char* key, int val, int def) {
         if ((int)EnGetProfileInt(sec, key, def) != val) { EnWriteProfileInt(sec, key, val); bWarn = TRUE; }
     };
-    check("Advanced", "Zoom", m_radZoom->GetSelected(), 2);
-    check("Advanced", "Renderer", m_radRenderer->GetSelected(), 0);
+    check("Advanced", "Zoom", m_radZoom->GetSelected(), 0);
+    check("Advanced", "Renderer", m_radRenderer->GetSelected(), (int)GetRenderBackend());
     check("Advanced", "Scroll", m_chkScroll->IsChecked() ? 1 : 0, 0);
     check("Advanced", "Pause", m_chkPause->IsChecked() ? 1 : 0, 1);
     check("Game", "NoIntro", m_chkNoIntro->IsChecked() ? 1 : 0, 0);
