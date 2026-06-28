@@ -263,16 +263,11 @@ static int collectInputMats(CBuilding* b, int* outMats, int maxOut) {
     int n = 0;
     for ( int i = 0; ( i < CMaterialTypes::GetNumTypes() ) && ( n < maxOut ); i++ )
         if ( vals[i] > 0 ) outMats[n++] = i;
-    // #51 follow-up (gap 1): an alt-capable host with NO primary input (the charcoal lumber mill)
-    // still consumes the alt input when its mode is on — reserve a slot so the Inputs section exists
-    // (the refresh fills it with the alt input). Only when there's no primary input, so the refinery
-    // (oil input, swapped to food by the refresh) keeps its single slot.
-    if ( n == 0 ) {
-        const AltOutput::AltOutputDef* pa = AltOutput::Available( b );
-        if ( pa && ( pa->m_eMode == AltOutput::eRatioConsume ||
-                     pa->m_eMode == AltOutput::eGlobalConsume ) && n < maxOut )
-            outMats[n++] = pa->m_iInputMat;
-    }
+    // operator B2/B3/B4 (2026-06-28): do NOT synthesize a material Inputs widget for an alt host
+    // that has no real material input. The lumber mill is OUTPUT-ONLY — its "input" is fertility
+    // (terrain), and Charcoal mode just SWAPS the output (lumber->coal), it doesn't consume lumber
+    // as a material. So a UTfarm charcoal host shows NO Inputs section. (The refinery has a genuine
+    // oil/food input -> n>0 already -> its Inputs section is real and the refresh swaps it.)
     return n;
 }
 
