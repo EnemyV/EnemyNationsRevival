@@ -2304,6 +2304,14 @@ void CBuilding::BuildMaterials( )
     GetOwner( )->AddPwrNeed( GetData( )->GetPower( ) );
     GetOwner( )->AddPplNeedBldg( GetData( )->GetPeople( ) );
 
+    // BioFuel mode (the INTENDED design): when this refinery's alt-output toggle is ON and the
+    // BioFuel tech is researched, it STOPS producing gas and instead burns the player's GLOBAL
+    // food into oil (the conversion runs below via AltOutput::Convert, eGlobalConsume). So while
+    // the toggle is active we suppress the gas output -- the refinery makes oil, not gas. Mirrors
+    // the coal plant's Coal-Liquefaction stop-power/make-oil mode. (No-op for non-refineries /
+    // toggle OFF / un-researched: bBioFuel stays false and gas production is byte-identical.)
+    const bool bBioFuel = IsFlag( CUnit::alt_oil ) && ( AltOutput::Available( this ) != nullptr );
+
     // get change based on everything
     int iInc = GetProd( GetOwner( )->GetMtrlsProd( ) );
     if ( iInc < 1 )
@@ -2319,6 +2327,22 @@ void CBuilding::BuildMaterials( )
 
     int iNum = m_iBuildDone / pBm->GetTime( );
     m_iBuildDone -= pBm->GetTime( ) * iNum;
+
+    // BioFuel mode-switch: a refinery in BioFuel mode does NOT consume its normal inputs (oil)
+    // and is NOT gated by them -- it burns the player's GLOBAL food into oil instead. So when
+    // bBioFuel, skip the input-availability clamp and the input-consumption pass below, and run
+    // the food->oil conversion off the raw per-batch rate. (Normal materials buildings are
+    // byte-identical: bBioFuel is false for every non-refinery and for a refinery toggled OFF.)
+    if ( bBioFuel )
+    {
+        // Convert player food -> oil at the def's ratio (eGlobalConsume), scaled by this batch.
+        // m_fAltAccum carries the sub-unit remainder. No gas, no oil-input consumption.
+        AltOutput::Convert( this, iNum, m_fAltAccum );
+
+        // update the % and leave -- the gas-production path below is intentionally skipped.
+        MaterialChange( );
+        return;
+    }
 
     // materials to build it?
     BOOL bOut = FALSE;
@@ -2635,11 +2659,9 @@ void CFarmBuilding::BuildFarm( )
     {
         GetOwner( )->AddFood( dtRate.quot );
 
-        // BioFuel (#33), now via the reusable AltOutput system: when this farm's toggle
-        // (alt_oil) is ON and the BioFuel tech is researched, it ALSO produces oil ("Bio
-        // Oil") = a percent of the food just harvested (ePctAdditive -- additional output,
-        // the food yield above is unchanged). Behaviour is identical to the original hook.
-        AltOutput::Convert( this, dtRate.quot, m_fAltAccum );
+        // BioFuel was REMOVED from farms: the INTENDED design hosts Bio Oil on the REFINERY
+        // (it stops gas and burns global food into oil -- see CBuilding::BuildMaterials and
+        // the AltOutput table). A food farm no longer shows or runs the toggle.
     }
     else
     {

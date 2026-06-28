@@ -21,10 +21,18 @@ namespace
 {
     using AltOutput::AltOutputDef;
 
+    // ---- Tunable ratios ---------------------------------------------------------------
+    // BIOFUEL_FOOD_PER_OIL -- operator to confirm. Global player FOOD consumed per 1 oil
+    // produced while a refinery runs in BioFuel mode. DEFAULT 5 food -> 1 oil (placeholder;
+    // change this single value when the operator confirms the exact rate).
+    const int BIOFUEL_FOOD_PER_OIL = 5;
+
     // ---- Type predicates --------------------------------------------------------------
-    bool IsFarm( CBuilding* b )
+    // The oil refinery: a materials building (UTmaterials) of the refinery type. Normally
+    // converts oil -> gas; BioFuel re-hosts here (stops gas, burns global food into oil).
+    bool IsRefinery( CBuilding* b )
     {
-        return ( b->GetData( )->GetUnionType( ) == CStructureData::UTfarm );
+        return ( b->GetData( )->GetType( ) == CStructureData::refinery );
     }
 
     // A coal-burning power plant: a power building whose input fuel is coal.
@@ -63,9 +71,6 @@ namespace
     bool TechCharcoal( CPlayer* p ) { return ( p->CanCharcoal( ) != FALSE ); }
     bool TechFrack( CPlayer* p ) { return ( p->CanFrack( ) != FALSE ); }
 
-    // ---- Per-tier percent accessors (ePctAdditive only) -------------------------------
-    int PctBioOil( CPlayer* p ) { return ( p->GetBioOilPct( ) ); }
-
     // ---- Per-tier flat-rate accessors (eFlatTrickle only) -----------------------------
     // Oil/min an exhausted, fracked well trickles by the owner's highest Fracking tier
     // (0/10/15/20/25/30). Convert() scales this per-minute rate by the opers elapsed.
@@ -75,22 +80,23 @@ namespace
     // Add Charcoal and Fracking here exactly like these two (see notes at the bottom).
     const AltOutputDef s_aDefs[] =
     {
-        // 1) BioFuel -- food farm also makes oil ("Bio Oil"), output = pct% of food
-        //    harvested, input NOT consumed. Migrated verbatim from the #33 one-off:
-        //    PctBioOil drives the exact same 10/12/.../20% tiers, and ePctAdditive uses
-        //    the same integer (amount*pct)/100 math (no remainder carry), so behaviour is
-        //    identical to the original farm hook.
+        // 1) BioFuel -- the INTENDED design (RELEASE fix): hosted on the REFINERY, not farms.
+        //    The refinery normally converts oil -> gas; with Bio Oil ON it STOPS producing gas
+        //    and instead burns the player's GLOBAL food into oil. Same mode-switch shape as
+        //    Coal Liquefaction (the coal plant stops power, makes oil). eGlobalConsume: pulls
+        //    BIOFUEL_FOOD_PER_OIL food from the owner's global food pool per 1 oil. The
+        //    gas-suppression lives in the production hook (CBuilding::BuildMaterials).
         {
             "Bio Oil",
-            "Also converts part of this farm's food output into oil (food output is unchanged)",
-            &IsFarm,
+            "Stops gas production; converts food into oil",
+            &IsRefinery,
             &TechBioFuel,
-            CMaterialTypes::food,        // notional input (not consumed in ePctAdditive)
+            CMaterialTypes::food,        // GLOBAL player resource consumed (eGlobalConsume)
             CMaterialTypes::oil,
-            AltOutput::ePctAdditive,
-            &PctBioOil,                  // m_pfnPct
+            AltOutput::eGlobalConsume,
+            nullptr,                     // m_pfnPct
             nullptr,                     // m_pfnFlat
-            0,                           // m_iRatioIn
+            BIOFUEL_FOOD_PER_OIL,        // food per 1 oil (operator-tunable, default 5)
             1.0f
         },
 
@@ -233,7 +239,7 @@ namespace AltOutput
             fAccum -= (float)iWantOut;   // keep the un-emitted fraction for next call
             iOut = iWantOut;
         }
-        else // eRatioConsume
+        else if ( pDef->m_eMode == eRatioConsume )
         {
             // Consume m_iRatioIn input units from the building's store per 1 output unit,
             // scaled by the per-call amount. A runtime fractional accumulator carries the
@@ -258,6 +264,35 @@ namespace AltOutput
             int iConsume = iWantOut * pDef->m_iRatioIn;
             pBldg->AddToStore( pDef->m_iInputMat, -iConsume );
             pOwner->IncMaterialHave( pDef->m_iInputMat, -iConsume );
+
+            fAccum -= (float)iWantOut;   // keep the un-emitted fraction for next call
+            iOut = iWantOut;
+        }
+        else // eGlobalConsume (BioFuel: refinery burns GLOBAL player food -> oil)
+        {
+            // Like eRatioConsume but the input (food) is the player's GLOBAL pool, not the
+            // building's store. Consume m_iRatioIn food per 1 oil, scaled by the per-call
+            // amount; the accumulator carries the sub-unit remainder. The caller has already
+            // suppressed the refinery's normal gas output for this batch.
+            if ( pDef->m_iRatioIn <= 0 )
+                return;
+
+            float fWant = ( (float)iAmount * pDef->m_fEnergyMult ) / (float)pDef->m_iRatioIn;
+            fAccum += fWant;
+            int iWantOut = (int)fAccum;
+            if ( iWantOut <= 0 )
+                return;
+
+            // Clamp to the GLOBAL food actually on hand (whole-unit conversions only).
+            int iHave   = pOwner->GetFood( );
+            int iMaxOut = iHave / pDef->m_iRatioIn;
+            if ( iWantOut > iMaxOut )
+                iWantOut = iMaxOut;
+            if ( iWantOut <= 0 )
+                return;
+
+            int iConsume = iWantOut * pDef->m_iRatioIn;
+            pOwner->AddFood( -iConsume );   // decrement the global food pool (see new_unit.cpp)
 
             fAccum -= (float)iWantOut;   // keep the un-emitted fraction for next call
             iOut = iWantOut;

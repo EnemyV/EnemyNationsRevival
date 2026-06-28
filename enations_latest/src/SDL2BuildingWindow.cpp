@@ -1502,7 +1502,7 @@ void SDL2BuildingWindow::Refresh() {
             } else if ( pDef->m_eMode == AltOutput::eFlatTrickle ) {
                 int rate = pDef->m_pfnFlat ? pDef->m_pfnFlat( p ) : 0;
                 hdr = "Trickling " + matName + ": " + FmtNum( rate ) + " / min";
-            } else { // eRatioConsume (Charcoal: 2 lumber -> 1 coal)
+            } else { // eRatioConsume / eGlobalConsume (BioFuel: 5 food -> 1 oil; gas stopped)
                 std::string inName = CMaterialTypes::GetDesc( pDef->m_iInputMat ).c_str();
                 hdr = "Converting " + inName + " to " + matName + " (" +
                       std::to_string( pDef->m_iRatioIn ) + " " + inName + " -> 1 " + matName + ")";
@@ -1513,8 +1513,16 @@ void SDL2BuildingWindow::Refresh() {
             int made = p->GetMaterialMade( outMat );
             m_lblAltOutHdr->SetText( hdr );
             m_lblAltOutBldg->SetText( "This building: " + FmtNum( here ) + " " + matName );
-            m_lblAltOutCol->SetText( "Colony " + matName + ": " + FmtNum( have ) +
-                                     " (made " + FmtNum( made ) + ")" );
+            if ( pDef->m_eMode == AltOutput::eGlobalConsume ) {
+                // BioFuel burns the player's GLOBAL food pool -- show it (and the colony oil
+                // made) so enabling the toggle visibly draws food down and oil up.
+                std::string foodName = CMaterialTypes::GetDesc( pDef->m_iInputMat ).c_str();
+                m_lblAltOutCol->SetText( "Colony " + foodName + ": " + FmtNum( p->GetFood() ) +
+                                         "  ->  " + matName + " made " + FmtNum( made ) );
+            } else {
+                m_lblAltOutCol->SetText( "Colony " + matName + ": " + FmtNum( have ) +
+                                         " (made " + FmtNum( made ) + ")" );
+            }
         }
     }
 

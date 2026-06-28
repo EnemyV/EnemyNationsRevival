@@ -28,6 +28,13 @@
 //                     consuming no input. The caller passes the game-OPERS elapsed this
 //                     call as iAmount; Convert() scales the rate by opers/minute. This is
 //                     Fracking: an otherwise-stopped (exhausted) oil well trickles oil.
+//   eGlobalConsume -- like eRatioConsume but the input is a GLOBAL player resource (food),
+//                     not the building's own store: consume m_iRatioIn units of the owner's
+//                     global food per 1 output unit and credit the output (oil), scaled by
+//                     the per-call amount. This is BioFuel: a refinery STOPS making gas and
+//                     instead burns the player's global food into oil. The gas-suppression
+//                     itself lives in the production hook (CBuilding::BuildMaterials); this
+//                     mode just does the food->oil accounting.
 //
 // Both credit output the same way BioFuel always has: AddToStore + IncMaterialMade +
 // IncMaterialHave, with a runtime fractional accumulator so sub-unit yields aren't lost.
@@ -39,9 +46,10 @@ namespace AltOutput
 {
     enum EMode
     {
-        ePctAdditive,    // output = m_pfnPct(owner)% of amount; input not consumed (BioFuel)
+        ePctAdditive,    // output = m_pfnPct(owner)% of amount; input not consumed
         eRatioConsume,   // consume m_iRatioIn input from store -> 1 output (Coal Liquefaction)
-        eFlatTrickle     // credit m_pfnFlat(owner) units/min, scaled by opers elapsed (Fracking)
+        eFlatTrickle,    // credit m_pfnFlat(owner) units/min, scaled by opers elapsed (Fracking)
+        eGlobalConsume   // consume m_iRatioIn GLOBAL player food from owner -> 1 output (BioFuel)
     };
 
     struct AltOutputDef
