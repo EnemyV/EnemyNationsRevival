@@ -68,7 +68,7 @@ private:
     // (iconIdx is an ICON_* index, -1 for none; iconFrame picks a frame within a
     // multi-frame strip, e.g. a specific material). Returns the y below.
     int  Header(int x, int y, int w, const char* text, SDL_Color color,
-                int iconIdx = -1, int iconFrame = 0);
+                int iconIdx = -1, int iconFrame = 0, SDL2Label** ppLabelOut = nullptr);
     // Build the portrait + name + flavor text + status-line band under the title bar.
     int  BuildHeaderBand(int x, int y, int w);
     int  BuildSection(int id, int x, int y, int w);   // dispatch one section by id (2-column layout)
@@ -132,6 +132,7 @@ private:
     SDL2Label* m_lblStoreName[kNumStoreMats] = {};
     SDL2Label* m_lblStoreCount[kNumStoreMats] = {};
 
+    SDL2Label* m_lblPowerHdr    = nullptr;   // #6: section header, swapped Oil<->Power live in Refresh
     SDL2Label* m_lblPowerBldg   = nullptr;
     SDL2Label* m_lblPowerColony = nullptr;
     SDL2Image* m_imgPowerGraph  = nullptr;

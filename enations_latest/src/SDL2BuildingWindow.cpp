@@ -650,7 +650,7 @@ void SDL2BuildingWindow::AddOutline(int x, int y, int w, int h) {
 }
 
 int SDL2BuildingWindow::Header(int x, int y, int w, const char* text, SDL_Color color,
-                               int iconIdx, int iconFrame) {
+                               int iconIdx, int iconFrame, SDL2Label** ppLabelOut) {
     int textX = x;
 
     // Category glyph: blit ONE frame of the icon strip (status sprites are multi-
@@ -686,6 +686,7 @@ int SDL2BuildingWindow::Header(int x, int y, int w, const char* text, SDL_Color 
     auto* h = AddWidget<SDL2Label>( textX, y, w - ( textX - x ), HDR_H, text );
     h->SetColor( color );
     h->SetBold( true );
+    if ( ppLabelOut ) *ppLabelOut = h;   // let the caller live-update the header text (#6 Oil<->Power)
     return y + HDR_H;
 }
 
@@ -783,12 +784,12 @@ int SDL2BuildingWindow::BuildProduction(int x, int y, int w) {
 // the right.
 int SDL2BuildingWindow::BuildPower(int x, int y, int w) {
     AddOutline(x, y, w, POWERLIKE_H);
-    // #43: header reflects the mode the window opened in — "Oil" when this coal plant is
-    // liquefying coal, else "Power". (Live toggles after open are reflected in the rows by
-    // Refresh(); the header text is fixed at build time, refreshed on the next open.)
+    // #43/#6: header reflects the live mode — "Oil" when this coal plant is liquefying coal,
+    // else "Power". Captured into m_lblPowerHdr so Refresh() swaps the header text in lockstep
+    // with the body rows when coal-liq is toggled while the window is open (was build-time-only).
     bool bOil = secCoalLiqActive( m_pBldg );
     int yh = Header(x + BOX_PAD, y + BOX_PAD, w - 2 * BOX_PAD,
-                    bOil ? "Oil" : "Power", kHeaderBlue, ICON_POWER);
+                    bOil ? "Oil" : "Power", kHeaderBlue, ICON_POWER, 0, &m_lblPowerHdr);
     int graphW = 168, graphX = x + w - graphW - BOX_PAD;
     int textW  = graphX - ( x + BOX_PAD + 4 ) - 6;
     // Power readout (shown when NOT in coal-liq mode): "This building / Colony" + graph.
@@ -1426,6 +1427,9 @@ void SDL2BuildingWindow::Refresh() {
         // visibility so a live checkbox toggle needs no window rebuild.)
         bool bOil = secCoalLiqActive( m_pBldg );
 
+        // #6: swap the section HEADER text live too (was fixed at build → showed the open-time
+        // mode even after toggling). Mirrors the row-visibility swap below.
+        if ( m_lblPowerHdr )    m_lblPowerHdr->SetText( bOil ? "Oil" : "Power" );
         if ( m_lblPowerBldg )   m_lblPowerBldg->SetVisible( !bOil );
         if ( m_lblPowerColony ) m_lblPowerColony->SetVisible( !bOil );
         if ( m_imgPowerGraph )  m_imgPowerGraph->SetVisible( !bOil );
