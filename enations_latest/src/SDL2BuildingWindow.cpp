@@ -624,6 +624,28 @@ int SDL2BuildingWindow::BuildAltOutput(int x, int y, int w) {
     return y + H + SEC_PAD;
 }
 
+// Compact active-cost summary for an edict, generated from its upkeep fields so the
+// DOWNSIDE is visible on the row itself — not only in the (i) hover-tooltip. The operator
+// repeatedly reported the edict "description shows the +bonus but no downside"; surfacing
+// the cost inline on the row (his ask: show "+75% food" next to the edict) is the fix that
+// holds regardless of whether he's reading the (i) tooltip or a data-driven name string.
+// e.g. " (+75% food)" / " (+25% power, +15% workers)".
+static std::string EdictCostSuffix( const EdictDef& e )
+{
+    std::string parts;
+    auto add = [&]( float pct, const char* what )
+    {
+        if ( pct <= 0.0f ) return;
+        if ( !parts.empty() ) parts += ", ";
+        parts += "+" + std::to_string( (int)( pct * 100.0f + 0.5f ) ) + "% " + what;
+    };
+    add( e.fFoodUpkeepPct,      "food"    );
+    add( e.fEnergyUpkeepPct,    "power"   );
+    add( e.fWorkforceUpkeepPct, "workers" );
+    if ( parts.empty() ) return std::string();
+    return " (" + parts + ")";
+}
+
 // Dispatch a section id to its builder. Order of ids matches computeLayout().
 // Edicts v1 — civ-wide policy toggles hosted at this building (rocket/command-center/embassy).
 // One SDL2Checkbox per edict; toggling calls CPlayer::ToggleEdictNet, which applies the
@@ -652,8 +674,10 @@ int SDL2BuildingWindow::BuildEdicts(int x, int y, int w) {
         const int kInfoSz = 14;
         int cbX = x + BOX_PAD + 4;
         int cbW = w - 2 * BOX_PAD - 8 - ( kInfoSz + 4 );
+        // Show the active-cost (downside) inline on the row, not just in the (i) tooltip.
+        std::string edictLabel = std::string( e.name ) + EdictCostSuffix( e );
         AddWidget<SDL2Checkbox>( cbX, cy, cbW, ROW_H,
-                                 e.name, checked,
+                                 edictLabel, checked,
                                  [me, eid]( bool on ){ me->ToggleEdictNet( eid, on ); } );
         // (i) info icon — hover reveals the edict's scope (#36) then its effect
         // text (EdictDef::desc), one per line.
