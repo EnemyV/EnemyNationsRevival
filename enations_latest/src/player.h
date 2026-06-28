@@ -583,11 +583,12 @@ class CPlayer : public CObject
     // shows on a lumber mill (the sawmill) and whether its kiln runs. See Charcoal (#44).
     BOOL CanCharcoal( ) { return ( m_aRsrch.GetSize( ) > CRsrchArray::charcoal_1 && GetRsrch( CRsrchArray::charcoal_1 ).m_bDiscovered ); }
 
-    // Charcoal kiln THROUGHPUT, as a percent of the lumber a sawmill harvests that is fed
-    // into the kiln (then converted at a fixed 2 lumber -> 1 coal), by the highest Charcoal
-    // tier researched: 0 / 5 / 10 / 15 / 20. T1 is deliberately VERY LOW (operator spec);
-    // higher tiers raise it. The 2:1 ratio is fixed (the per-conversion cost); only the rate
-    // scales. Placeholder numbers -- balance is operator-tuned (QUESTIONS_FOR_OPERATOR #3).
+    // Charcoal kiln THROUGHPUT -- the percent of harvested lumber fed into the kiln, then
+    // converted at the fixed 2 lumber -> 1 coal. Operator spec (2026-06-28): NET COAL OUTPUT
+    // = 10% of the lumber the mill would otherwise make, +2% per Charcoal tech. Since the 2:1
+    // kiln halves the feed, we feed 2x the target coal%: { 0, 20, 24, 28, 32 }% by highest
+    // tier -> coal output { 0, 10, 12, 14, 16 }% of harvest. The 2:1 ratio is fixed (the
+    // per-conversion cost); only the rate scales with research.
     // Guarded for older/short save research arrays. See Charcoal (#44).
     int GetCharcoalPct( )
     {
@@ -602,7 +603,7 @@ class CPlayer : public CObject
         for ( int iOn = CRsrchArray::charcoal_1; iOn <= iTop; iOn++ )
             if ( GetRsrch( iOn ).m_bDiscovered )
                 iTier = iOn - CRsrchArray::charcoal_1 + 1;   // highest discovered (tiers chain)
-        static const int aiPct[5] = { 0, 5, 10, 15, 20 };
+        static const int aiPct[5] = { 0, 20, 24, 28, 32 };   // feed% -> coal output 10/12/14/16% (+2%/tech)
         return ( aiPct[iTier] );
     }
 

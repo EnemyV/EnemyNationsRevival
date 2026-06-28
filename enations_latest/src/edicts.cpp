@@ -19,10 +19,10 @@
 const EdictDef g_aEdicts[EDICT_COUNT] =
 {
     // EDICT_FORTIFY_BORDER — Command Center, civ-wide combat policy.
-    { "Fortify Border", "Civ-wide: +50% fortification build speed.\nCost: +20% power use.",
+    { "Fortify Border", "Civ-wide: +50% fortification build speed.\nCost: +20% power use, +10% more workers.",
       CStructureData::command_center, EDICT_CIVWIDE, CRsrchArray::fortification,
       1.0f, 1.5f, 1.0f, 1.0f, 1.0f,   /*bonus*/
-      0.20f, 0.0f, 0.0f },            /*upkeep*/
+      0.20f, 0.10f, 0.0f },           /*upkeep: energy, workforce, food*/
 
     // EDICT_NUTRITION — Apartment-hosted, civ-wide population policy. Folds
     // m_fEdictPopGrowthMult into GetPopGrowth() per plan §2.1/§3.2 (a global
@@ -35,10 +35,10 @@ const EdictDef g_aEdicts[EDICT_COUNT] =
 
     // EDICT_MINING_SUBSIDY — Office-hosted, civ-wide economy policy. Folds
     // m_fEdictMineMult into GetMineProd() (the plan's vertical-slice edict, §6).
-    { "Mining Subsidy", "Civ-wide: +25% output from all mines.\nCost: +20% power use.",
+    { "Mining Subsidy", "Civ-wide: +25% output from all mines.\nCost: +20% power use, +15% food use.",
       CStructureData::office, EDICT_CIVWIDE, CRsrchArray::mine_1,
       1.0f, 1.0f, 1.25f, 1.0f, 1.0f,
-      0.20f, 0.0f, 0.0f },
+      0.20f, 0.0f, 0.15f },
 
     // EDICT_RESEARCH_SUBSIDY — Office-hosted, civ-wide economy policy. Folds
     // m_fEdictRsrchMult into GetRsrchMult() (plan §2.1; pairs with the RG-1 lever).
