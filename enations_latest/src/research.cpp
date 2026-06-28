@@ -715,7 +715,7 @@ void CRsrchArray::Open( )
         pRi->m_piRsrchRequired[0] = (int)manf_3;
 
         pRi->m_sName   = "Coal Liquefaction";
-        pRi->m_sDesc   = "Fischer-Tropsch synthesis cracks coal into liquid fuel: a toggled coal power plant turns 2 coal into 1 oil.";
+        pRi->m_sDesc   = "Fischer-Tropsch synthesis cracks coal into liquid fuel: a toggled coal power plant turns 3 coal into 1 oil.";
         pRi->m_sResult = "Coal liquefaction online. Coal power plants can convert coal to oil (toggle per plant).";
     }
 
