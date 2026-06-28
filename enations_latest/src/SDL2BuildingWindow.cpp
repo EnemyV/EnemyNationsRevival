@@ -124,6 +124,28 @@ static bool secCoalLiqActive(CBuilding* b) {
            && ( pDef->m_iInputMat == CMaterialTypes::coal )
            && ( pDef->m_iOutputMat == CMaterialTypes::oil );
 }
+// #51: status line for the Production widget when an AltOutput mode is ACTIVE, so the widget
+// shows the ALT resource (charcoal coal / bio-oil / fracking oil) instead of the building's
+// primary output (lumber/gas). Mirrors the rate phrasing of CMaterialBuilding::ShowStatusText
+// ("<resource>: <N> / min") and the Production-Mode text section (kept in sync). Coal-liq is
+// excluded (its host is a power plant with no Production section — it shows oil in the Power
+// section). Caller guarantees pDef != null and the alt flag is ON.
+static std::string AltProductionStatus(CBuilding* b, const AltOutput::AltOutputDef* pDef) {
+    CPlayer*    p       = b->GetOwner();
+    std::string matName = CMaterialTypes::GetDesc( pDef->m_iOutputMat ).c_str();
+    if ( pDef->m_eMode == AltOutput::ePctAdditive ) {
+        int pct = pDef->m_pfnPct ? pDef->m_pfnPct( p ) : 0;
+        return matName + ": " + std::to_string( pct ) + "% of output";
+    }
+    if ( pDef->m_eMode == AltOutput::eFlatTrickle ) {
+        int rate = pDef->m_pfnFlat ? pDef->m_pfnFlat( p ) : 0;
+        return matName + ": " + FmtNum( rate ) + " / min";
+    }
+    // eRatioConsume / eGlobalConsume: a conversion — name the resource + the ratio.
+    std::string inName = CMaterialTypes::GetDesc( pDef->m_iInputMat ).c_str();
+    return matName + " (from " + inName + ", " + std::to_string( pDef->m_iRatioIn ) +
+           " " + inName + " -> 1 " + matName + ")";
+}
 static bool secApt(CBuilding* b) {
     if ( b->GetData()->GetType() == CStructureData::rocket ) return true;
     return ( b->GetData()->GetUnionType() == CStructureData::UThousing ) &&
@@ -233,6 +255,28 @@ static int collectOutputMats(CBuilding* b, int* outMats, int maxOut) {
 static bool secOutputs(CBuilding* b) {
     int tmp[SDL2BuildingWindow::kMaxInputs];
     return ( collectOutputMats(b, tmp, SDL2BuildingWindow::kMaxInputs) > 0 );
+}
+// #51: primary-output status line for the Production widget when NO AltOutput mode is active.
+// CBuilding::ShowStatusText returns EMPTY for several producers on this build, which left the
+// Production label blank — and an empty SDL2Label early-returns in Render (SDL2UI.cpp) without
+// clearing, so the PRIOR alt glyph lingered on the window surface = the operator's "still shows
+// food->oil after toggling Bio-fuel OFF" / "doesn't say wood when Charcoal is off". Naming the
+// building's first output material keeps the label non-empty so it always shows the real product
+// and never strands a stale glyph. Empty only for non-material producers (caller keeps the
+// ShowStatusText text in that case, e.g. the rocket's own status).
+static std::string PrimaryProductionStatus(CBuilding* b) {
+    int outMats[SDL2BuildingWindow::kMaxInputs];
+    int n   = collectOutputMats( b, outMats, SDL2BuildingWindow::kMaxInputs );
+    int mat = ( n > 0 ) ? outMats[0] : -1;
+    // UTfarm (farms + lumber mills) isn't covered by collectOutputMats (its output isn't a
+    // CBuildMaterials list) — its product is CBuildFarm::GetTypeFarm() (food / lumber). This is
+    // the charcoal-host case the operator hit: a lumber mill whose status went blank when off.
+    if ( mat < 0 && b->GetData()->GetUnionType() == CStructureData::UTfarm ) {
+        CBuildFarm* pf = b->GetData()->GetBldFarm();
+        if ( pf ) mat = pf->GetTypeFarm();
+    }
+    if ( mat < 0 ) return std::string();
+    return std::string( "Producing " ) + CMaterialTypes::GetDesc( mat ).c_str();
 }
 static int outputsHeight(CBuilding* b) {
     int tmp[SDL2BuildingWindow::kMaxInputs];
@@ -1342,8 +1386,27 @@ void SDL2BuildingWindow::Refresh() {
     }
 
     if ( m_bProduction && m_lblProduction ) {
+        // #51: when an AltOutput mode is ON (charcoal/bio-oil/fracking), the Production widget
+        // must show the ALT resource, not the primary output — the operator's #1 blocker was a
+        // charcoal-ON lumber mill still reading "~486 lumber/min" here. ShowStatusText returns
+        // ONLY the primary output (not AltOutput-aware), so override it for the active mode.
+        // Coal-liq is excluded (its power-plant host has no Production section; it shows oil in
+        // the Power section).
+        const AltOutput::AltOutputDef* pAlt = AltOutput::Available( m_pBldg );
+        bool bAlt = ( pAlt != nullptr ) && m_pBldg->IsFlag( CUnit::alt_oil )
+                    && !secCoalLiqActive( m_pBldg );
         std::string str;
-        m_pBldg->ShowStatusText( str );
+        if ( bAlt ) {
+            str = AltProductionStatus( m_pBldg, pAlt );
+        } else {
+            m_pBldg->ShowStatusText( str );
+            // #51: ShowStatusText is empty for several producers on this build -> the label went
+            // blank (and an empty SDL2Label leaves the prior alt glyph on screen). Fall back to
+            // naming the primary output so toggling a mode OFF reliably reverts to the real
+            // product instead of blank-or-stale-alt-text.
+            if ( str.empty() )
+                str = PrimaryProductionStatus( m_pBldg );
+        }
         m_lblProduction->SetText( str );
         if ( m_progProduction ) {
             int per = m_pBldg->GetProductionPer();
