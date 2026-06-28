@@ -58,6 +58,12 @@ void HarnessDumpUnits(std::string& out);
 // Backs `edicts`. Render/game thread only.
 void HarnessDumpEdicts(std::string& out);
 
+// Dump the local player's live colony stats (workforce/power/food need+have) so a QA
+// driver can read an EXACT before/after delta that the in-game readouts clip (e.g. the
+// Office "Workforce Need" 4th digit is hidden behind the history graph). Backs `pstats`.
+// Render/game thread only.
+void HarnessDumpPlayerStats(std::string& out);
+
 // Center the focused area view on the unit with this id (vehicle or building),
 // so a headless driver can then click view-center to select it — sidesteps the
 // view-relative/wrapped screen coords from HarnessDumpUnits. Returns false if no

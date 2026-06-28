@@ -92,6 +92,12 @@ std::string            g_edictsResult;
 std::atomic<bool>      g_edictsPending{false};
 std::atomic<bool>      g_edictsDone{false};
 
+// Pending `pstats` request (HarnessDumpPlayerStats) — exact colony workforce/power/food.
+std::mutex              g_pstatsMutex;
+std::string            g_pstatsResult;
+std::atomic<bool>      g_pstatsPending{false};
+std::atomic<bool>      g_pstatsDone{false};
+
 // Pending `center <id>` request (HarnessCenterUnit), serviced on the render
 // thread (mutates the area view). Same defer handshake.
 std::atomic<unsigned long> g_centerId{0};
@@ -281,6 +287,16 @@ void handle_command(const std::string& line, int conn) {
         std::string out;
         { std::lock_guard<std::mutex> lk(g_edictsMutex); out = g_edictsResult; }
         if (!g_edictsDone.load()) out = "err edicts timeout (not in-game?)\n";
+        write(conn, out.c_str(), out.size());
+        return;
+    } else if (strcmp(cmd, "pstats") == 0) {
+        // Exact colony stats (HarnessDumpPlayerStats) on the render thread — read a precise
+        // before/after delta the clipped in-game readouts can't show (e.g. #2 workforce, #1 Austerity).
+        g_pstatsDone = false; g_pstatsPending = true;
+        for (int i = 0; i < 400 && !g_pstatsDone.load(); ++i) { struct timespec ts={0,5000000}; nanosleep(&ts,nullptr); }
+        std::string out;
+        { std::lock_guard<std::mutex> lk(g_pstatsMutex); out = g_pstatsResult; }
+        if (!g_pstatsDone.load()) out = "err pstats timeout (not in-game?)\n";
         write(conn, out.c_str(), out.size());
         return;
     } else if (strcmp(cmd, "center") == 0) {
@@ -588,6 +604,13 @@ void EnHarness_Service() {
         HarnessDumpEdicts(out);
         { std::lock_guard<std::mutex> lk(g_edictsMutex); g_edictsResult = out; }
         g_edictsDone = true;
+        return;
+    }
+    if (g_pstatsPending.exchange(false)) {
+        std::string out;
+        HarnessDumpPlayerStats(out);
+        { std::lock_guard<std::mutex> lk(g_pstatsMutex); g_pstatsResult = out; }
+        g_pstatsDone = true;
         return;
     }
     if (g_centerPending.exchange(false)) {

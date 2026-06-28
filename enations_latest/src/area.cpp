@@ -7614,6 +7614,23 @@ void HarnessDumpEdicts( std::string& out )
 }
 
 //---------------------------------------------------------------------------
+// HarnessDumpPlayerStats — exact colony stats for the local player, so a QA driver can read
+// a precise before/after delta (the in-game Office/Apartment readouts clip the 4th digit
+// behind the history graph). Backs `pstats`. Render/game thread only.
+//---------------------------------------------------------------------------
+void HarnessDumpPlayerStats( std::string& out )
+{
+    CPlayer* me = theGame.GetMe( );
+    if ( me == NULL ) { out = "err no-player (not in-game?)\n"; return; }
+    out += "pplneedbldg " + IntToStr( me->GetPplNeedBldg( ) ) + "\n";   // workforce NEED (edict + #2 workforce hooks land here)
+    out += "pplbldg "     + IntToStr( me->GetPplBldg( ) )     + "\n";   // workforce ON HAND
+    out += "pwrneed "     + IntToStr( me->GetPwrNeed( ) )     + "\n";   // power NEED (Mining-Subsidy upkeep lands here)
+    out += "pwrhave "     + IntToStr( me->GetPwrHave( ) )     + "\n";
+    out += "food "        + IntToStr( me->GetFood( ) )        + "\n";
+    out += "foodneed "    + IntToStr( me->GetFoodNeed( ) )    + "\n";
+}
+
+//---------------------------------------------------------------------------
 // HarnessShowInfoWindow — open a building's read-only info window by unit id (same
 // window a map double-click opens via CBuilding::ShowInfoWindow). Lets a QA driver
 // deterministically open a SPECIFIC building (e.g. an edict-host office/command/
