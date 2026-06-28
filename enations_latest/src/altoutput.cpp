@@ -109,13 +109,12 @@ namespace
         },
 
         // 3) Charcoal (NEW) -- a lumber mill (the sawmill: UTfarm with lumber output) runs a
-        //    kiln that converts harvested lumber into coal ("Charcoal" label only) at a base
-        //    5 lumber -> 1 coal (#38 operator spec). eRatioConsume: pulls lumber from the
-        //    mill's own store and credits coal. MODE-SWITCH: the production hook
-        //    (CFarmBuilding::BuildFarm lumber branch) diverts the FULL harvest into the kiln
-        //    (no lossy slice/discard) and credits a +10%-per-charcoal-tier RATE bonus on the
-        //    coal produced (tiers 1.0/1.1/1.2/1.3/1.4), so research improves the rate, not the
-        //    throughput share. No energy cost.
+        //    kiln that converts harvested lumber into coal ("Charcoal" label only) at a fixed
+        //    2 lumber -> 1 coal. eRatioConsume: pulls lumber from the mill's own store and
+        //    credits coal. MODE-SWITCH: the production hook (CFarmBuilding::BuildFarm lumber
+        //    branch) diverts the harvest into the kiln instead of crediting player lumber, and
+        //    feeds Convert() a TIER-SCALED amount (CPlayer::GetCharcoalPct; T1 very low) so the
+        //    2:1 ratio stays fixed while throughput scales with research. No energy cost.
         {
             "Charcoal",
             &IsLumberMill,
@@ -125,7 +124,7 @@ namespace
             AltOutput::eRatioConsume,
             nullptr,                     // m_pfnPct
             nullptr,                     // m_pfnFlat
-            5,                            // base 5 lumber per 1 coal (#38; tier bonus added in the mainloop kiln hook)
+            2,                            // 2 lumber per 1 coal
             1.0f
         },
 

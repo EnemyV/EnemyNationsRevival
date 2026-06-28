@@ -2634,38 +2634,26 @@ void CFarmBuilding::BuildFarm( )
         // Charcoal (#44), via the reusable AltOutput system: when this is a LUMBER MILL (the
         // sawmill) whose alt-output toggle (alt_oil) is ON and the Charcoal tech is
         // researched, it runs a kiln that converts harvested lumber into coal ("Charcoal")
-        // at a base 5 lumber -> 1 coal (eRatioConsume, m_iRatioIn=5). MODE-SWITCH: while the
-        // kiln runs, normal lumber output STOPS -- we feed the ENTIRE harvest into the kiln
-        // (#38: NO lossy slice/discard; the old GetCharcoalPct-slice fed only a tier-% and
-        // discarded the rest, netting ~40 logs/coal). Tiering is now a +10%-PER-CHARCOAL-TIER
-        // RATE bonus on the coal produced (operator spec: base 5:1, +10%/tier, no discard).
+        // at a fixed 2 lumber -> 1 coal (eRatioConsume). MODE-SWITCH: while the kiln runs,
+        // normal lumber output STOPS -- we feed only a TIER-SCALED slice of the harvest into
+        // the mill's store as kiln fuel (GetCharcoalPct; T1 very low) and credit no player
+        // lumber, so the 2:1 ratio stays fixed while throughput scales with research.
         if ( pBf->GetTypeFarm( ) == CMaterialTypes::lumber
              && IsFlag( CUnit::alt_oil )
              && AltOutput::Available( this ) )
         {
-            int iFeed = dtRate.quot;   // the FULL harvest goes into the kiln (no discard)
+            int iPct  = GetOwner( )->GetCharcoalPct( );
+            int iFeed = ( dtRate.quot * iPct ) / 100;   // tier-scaled lumber into the kiln
             if ( iFeed > 0 )
             {
                 // Stage the kiln feed in BOTH the mill store and the player have-total so it
                 // matches Convert's eRatioConsume bookkeeping (it decrements both by the lumber
                 // it consumes). Net player lumber change is ~zero (mode-switch) and coal is
-                // credited by Convert. We do NOT IncMaterialMade the lumber -- it becomes coal.
+                // credited by Convert. We do NOT IncMaterialMade the lumber -- it becomes coal,
+                // and Convert already records the coal as made.
                 AddToStore( pBf->GetTypeFarm( ), iFeed );
                 GetOwner( )->IncMaterialHave( pBf->GetTypeFarm( ), iFeed );
-                // Base 5:1 conversion (Convert credits coal to this building's store). Measure
-                // the coal it made via the store delta so Convert stays untouched (shared with
-                // Coal-Liquefaction), then add the per-tier rate bonus on top.
-                int iCoalBefore = GetStore( CMaterialTypes::coal );
                 AltOutput::Convert( this, iFeed, m_fAltAccum );
-                int iCoalMade   = GetStore( CMaterialTypes::coal ) - iCoalBefore;
-                int iTier  = GetOwner( )->GetCharcoalPct( ) / 5;   // 0..4 (GetCharcoalPct=0/5/10/15/20)
-                int iBonus = ( iCoalMade * iTier ) / 10;           // +10% rate per charcoal tier
-                if ( iBonus > 0 )
-                {
-                    AddToStore( CMaterialTypes::coal, iBonus );
-                    GetOwner( )->IncMaterialMade( CMaterialTypes::coal, iBonus );
-                    GetOwner( )->IncMaterialHave( CMaterialTypes::coal, iBonus );
-                }
             }
         }
         else
