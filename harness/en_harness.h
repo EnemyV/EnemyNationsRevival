@@ -78,6 +78,11 @@ bool HarnessCenterUnit(unsigned long id);
 // and clickid its widgets. Backs `showinfo <bldgid>`. Render thread only.
 bool HarnessShowInfoWindow(unsigned long id);
 
+// Set/clear a building's alt_oil (AltOutput) flag directly by unit id, bypassing the
+// info-window checkbox — QA verification of AltOutput effects via pstats. Backs `setalt`.
+// Render/game thread only.
+bool HarnessSetAltOil(unsigned long id, bool on);
+
 // Report the map hex under an area-window client pixel (same coords as clickid):
 // appends "hex <hx> <hy> alt <n> vis <0|1> unit <0|1> water <0|1> tree <n>\n" to
 // `out` (or "err ..."). READ-ONLY (no game/view mutation). Lets a headless driver

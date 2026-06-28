@@ -7647,6 +7647,23 @@ bool HarnessShowInfoWindow( unsigned long id )
 }
 
 //---------------------------------------------------------------------------
+// HarnessSetAltOil — set/clear a building's alt_oil (AltOutput) flag directly by unit id,
+// bypassing the info-window checkbox. QA-only: lets a driver verify AltOutput effects
+// (BioFuel/Coal-Liq/Charcoal/Fracking + the #2 kiln workforce cost) via pstats without
+// fighting checkbox click-coords. Mirrors the BuildAltOutput onChange (SetFlag/ClrFlag).
+// Render/game thread only. Backs `setalt`.
+//---------------------------------------------------------------------------
+bool HarnessSetAltOil( unsigned long id, bool on )
+{
+    if ( theAreaList.GetTop( ) == NULL ) return false;   // not in-game
+    CBuilding* pBldg = theBuildingMap.GetBldg( (DWORD) id );
+    if ( pBldg == NULL ) return false;
+    if ( on ) pBldg->SetFlag( CUnit::alt_oil );
+    else      pBldg->ClrFlag( CUnit::alt_oil );
+    return true;
+}
+
+//---------------------------------------------------------------------------
 // HarnessSaveGame — save the current game to <path> headlessly so a developed/
 // researched game can be snapshotted and SHARED (one such save unblocks all the
 // research-gated work team-wide: gated buildings, AltOutput in-game verify, late-

@@ -112,6 +112,13 @@ std::atomic<bool>      g_showInfoPending{false};
 std::atomic<bool>      g_showInfoDone{false};
 std::atomic<bool>      g_showInfoOK{false};
 
+// Pending `setalt <id> <0|1>` request (HarnessSetAltOil) — set alt_oil flag directly.
+std::atomic<unsigned long> g_setAltId{0};
+std::atomic<bool>      g_setAltOn{false};
+std::atomic<bool>      g_setAltPending{false};
+std::atomic<bool>      g_setAltDone{false};
+std::atomic<bool>      g_setAltOK{false};
+
 // Pending `hexinfo <areaWin> <x> <y>` request (HarnessHexInfo) — reads the map hex
 // under an area-window client pixel on the render thread (read-only). Same handshake.
 std::mutex             g_hexInfoMutex;
@@ -315,6 +322,14 @@ void handle_command(const std::string& line, int conn) {
         g_showInfoId = id; g_showInfoDone = false; g_showInfoOK = false; g_showInfoPending = true;
         for (int i = 0; i < 400 && !g_showInfoDone.load(); ++i) { struct timespec ts={0,5000000}; nanosleep(&ts,nullptr); }
         snprintf(reply, sizeof(reply), !g_showInfoDone.load() ? "err showinfo timeout\n" : (g_showInfoOK.load() ? "ok showinfo %lu\n" : "err no building %lu\n"), id);
+    } else if (strcmp(cmd, "setalt") == 0) {
+        // setalt <unitid> <0|1> — set/clear that building's alt_oil flag directly (QA
+        // verify of AltOutput effects via pstats, bypassing the checkbox). Render thread.
+        unsigned long id = 0; int on = -1;
+        if (sscanf(line.c_str(), "%*s %lu %d", &id, &on) != 2 || (on != 0 && on != 1)) { write(conn, "err usage: setalt <unitid> <0|1>\n", 33); return; }
+        g_setAltId = id; g_setAltOn = (on != 0); g_setAltDone = false; g_setAltOK = false; g_setAltPending = true;
+        for (int i = 0; i < 400 && !g_setAltDone.load(); ++i) { struct timespec ts={0,5000000}; nanosleep(&ts,nullptr); }
+        snprintf(reply, sizeof(reply), !g_setAltDone.load() ? "err setalt timeout\n" : (g_setAltOK.load() ? "ok setalt %lu=%d\n" : "err no building %lu\n"), id, on);
     } else if (strcmp(cmd, "hexinfo") == 0) {
         // hexinfo <areaWin> <x> <y> — report the map hex (coords/alt/visible/unit)
         // under an area-window client pixel (same coords you'd give clickid). Read-
@@ -621,6 +636,11 @@ void EnHarness_Service() {
     if (g_showInfoPending.exchange(false)) {
         g_showInfoOK = HarnessShowInfoWindow(g_showInfoId.load());
         g_showInfoDone = true;
+        return;
+    }
+    if (g_setAltPending.exchange(false)) {
+        g_setAltOK = HarnessSetAltOil(g_setAltId.load(), g_setAltOn.load());
+        g_setAltDone = true;
         return;
     }
     if (g_hexInfoPending.exchange(false)) {
