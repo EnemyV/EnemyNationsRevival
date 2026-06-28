@@ -802,8 +802,8 @@ int SDL2BuildingWindow::Header(int x, int y, int w, const char* text, SDL_Color 
 }
 
 // #51 C1: (re)build a header icon's glyph surface and set it on `img`. Factored out of Header()
-// so Refresh can swap the coal-liq plant's header icon LIVE (power bulb <-> oil) when the toggle
-// flips while the window is open — mirroring the live header-TEXT swap. No-op on a null img/icon.
+// so Refresh can swap a header icon LIVE — the coal-liq plant's power-bulb<->oil (C1) AND the
+// Inputs/Outputs material chip when an AltOutput mode flips (operator B5/J4). No-op on null img/icon.
 void SDL2BuildingWindow::SetHdrIcon(SDL2Image* img, int iconIdx, int iconFrame) {
     if ( !img ) return;
     SDL_Surface* ico = ( iconIdx >= 0 ) ? HdrIcon( iconIdx ) : nullptr;
@@ -817,7 +817,7 @@ void SDL2BuildingWindow::SetHdrIcon(SDL2Image* img, int iconIdx, int iconFrame) 
     SDL_FillRect( s, nullptr, SDL_MapRGBA( s->format, 0, 0, 0, 0 ) );
     SDL_SetSurfaceBlendMode( ico, SDL_BLENDMODE_BLEND );
     int srcX = iconFrame * fw;
-    if ( srcX + cropW > ico->w ) srcX = 0;     // frame out of range -> first frame
+    if ( srcX < 0 || srcX + cropW > ico->w ) srcX = 0;     // frame out of range -> first frame
     SDL_Rect sr = { srcX, 0, cropW, fh };
     SDL_BlitSurface( ico, &sr, s, nullptr );
     SDL_SetSurfaceBlendMode( s, SDL_BLENDMODE_BLEND );
@@ -1044,7 +1044,9 @@ int SDL2BuildingWindow::BuildInputs(int x, int y, int w) {
     int sectH = BOX_PAD + HDR_H + m_nInputMats * ROW_H + BOX_PAD;
     AddOutline(x, y, w, sectH);
     int yh = Header(x + BOX_PAD, y + BOX_PAD, w - 2 * BOX_PAD, "Inputs", kAccentGold,
-                    ICON_MATERIALS, ( m_nInputMats > 0 ) ? m_inputMats[0] : 0);
+                    ICON_MATERIALS, ( m_nInputMats > 0 ) ? m_inputMats[0] : 0,
+                    nullptr, &m_imgInputHdrIcon);
+    m_inputGlyphMat = ( m_nInputMats > 0 ) ? m_inputMats[0] : -1;
 
     int nameW  = 80;
     int countW = 48;
@@ -1068,7 +1070,9 @@ int SDL2BuildingWindow::BuildOutputs(int x, int y, int w) {
     int sectH = BOX_PAD + HDR_H + m_nOutputMats * ROW_H + BOX_PAD;
     AddOutline(x, y, w, sectH);
     int yh = Header(x + BOX_PAD, y + BOX_PAD, w - 2 * BOX_PAD, "Output", kAccentGold,
-                    ICON_MATERIALS, ( m_nOutputMats > 0 ) ? m_outputMats[0] : 0);
+                    ICON_MATERIALS, ( m_nOutputMats > 0 ) ? m_outputMats[0] : 0,
+                    nullptr, &m_imgOutputHdrIcon);
+    m_outputGlyphMat = ( m_nOutputMats > 0 ) ? m_outputMats[0] : -1;
 
     int nameW  = 80;
     int countW = 48;
@@ -1528,6 +1532,11 @@ void SDL2BuildingWindow::Refresh() {
         int inMats[kMaxInputs];
         for ( int i = 0; i < m_nInputMats; i++ ) inMats[i] = m_inputMats[i];
         if ( altInMat >= 0 && m_nInputMats > 0 ) inMats[0] = altInMat;
+        // operator B5/J4: swap the section-HEADER glyph to the active input material (bio-oil: oil→food)
+        if ( m_nInputMats > 0 && inMats[0] != m_inputGlyphMat ) {
+            SetHdrIcon( m_imgInputHdrIcon, ICON_MATERIALS, inMats[0] );
+            m_inputGlyphMat = inMats[0];
+        }
         DrawMatIcons( m_imgInputs, inMats, m_nInputMats );
         for ( int i = 0; i < m_nInputMats; i++ ) {
             if ( m_lblInputName[i]  ) m_lblInputName[i]->SetText( CMaterialTypes::GetDesc( inMats[i] ).c_str() );
@@ -1539,9 +1548,22 @@ void SDL2BuildingWindow::Refresh() {
         int outMats[kMaxInputs];
         for ( int i = 0; i < m_nOutputMats; i++ ) outMats[i] = m_outputMats[i];
         if ( altOutMat >= 0 && m_nOutputMats > 0 ) outMats[0] = altOutMat;
+        // operator B5/J4: swap the section-HEADER glyph to the active output material
+        // (bio-oil: gas→oil; charcoal: lumber→coal) so the chip matches the real product.
+        if ( m_nOutputMats > 0 && outMats[0] != m_outputGlyphMat ) {
+            SetHdrIcon( m_imgOutputHdrIcon, ICON_MATERIALS, outMats[0] );
+            m_outputGlyphMat = outMats[0];
+        }
         DrawMatIcons( m_imgOutputs, outMats, m_nOutputMats );
         for ( int i = 0; i < m_nOutputMats; i++ ) {
-            if ( m_lblOutputName[i]  ) m_lblOutputName[i]->SetText( CMaterialTypes::GetDesc( outMats[i] ).c_str() );
+            // operator B6: a rebranded conversion output uses the def's display LABEL
+            // ("Charcoal"/"Bio Oil"), not the raw material name ("Coal"/"Oil"). eFlatTrickle
+            // (Fracking → plain oil) and coal-liq (excluded) keep the real resource name.
+            std::string oname = CMaterialTypes::GetDesc( outMats[i] ).c_str();
+            if ( i == 0 && altOutMat >= 0 && pIO && pIO->m_szLabel &&
+                 pIO->m_eMode != AltOutput::eFlatTrickle )
+                oname = pIO->m_szLabel;
+            if ( m_lblOutputName[i]  ) m_lblOutputName[i]->SetText( oname );
             if ( m_lblOutputCount[i] ) m_lblOutputCount[i]->SetText( FmtNum( matAmount( m_pBldg, outMats[i] ) ) );
         }
     }

@@ -70,8 +70,9 @@ private:
     int  Header(int x, int y, int w, const char* text, SDL_Color color,
                 int iconIdx = -1, int iconFrame = 0, SDL2Label** ppLabelOut = nullptr,
                 SDL2Image** ppIconOut = nullptr);
-    // #51 C1: (re)build a header icon's glyph surface in place, so the coal-liq Power<->Oil header
-    // icon can swap LIVE in Refresh (not just at window-build). Safe on a null img.
+    // #51 C1: (re)build a header icon's glyph surface in place, so a header icon can swap LIVE in
+    // Refresh (not just at window-build) — the coal-liq Power<->Oil chip AND the Inputs/Outputs
+    // material chip on an AltOutput mode flip (operator B5/J4). Safe on a null img.
     void SetHdrIcon(SDL2Image* img, int iconIdx, int iconFrame);
     // Build the portrait + name + flavor text + status-line band under the title bar.
     int  BuildHeaderBand(int x, int y, int w);
@@ -201,6 +202,13 @@ private:
     SDL2Image* m_imgInputs = nullptr;
     SDL2Label* m_lblInputName[kMaxInputs]  = {};
     SDL2Label* m_lblInputCount[kMaxInputs] = {};
+    // Inputs/Outputs section-HEADER material glyph (the chip next to "Inputs"/"Output"). Stored so
+    // it can be re-blitted to the ALT material when a mode toggles (bio-oil: oil-in→food, gas-out→oil;
+    // charcoal: lumber-out→coal) — operator B5/J4: the glyph used to be fixed at build = wrong icon.
+    SDL2Image* m_imgInputHdrIcon  = nullptr;
+    SDL2Image* m_imgOutputHdrIcon = nullptr;
+    int        m_inputGlyphMat  = -1;   // material the input header glyph currently shows (-1 = none)
+    int        m_outputGlyphMat = -1;
 
     // Production-building output stocks (steel for a smelter, ore for a mine).
     int        m_outputMats[kMaxInputs] = {};
