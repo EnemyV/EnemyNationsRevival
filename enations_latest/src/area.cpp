@@ -7525,6 +7525,14 @@ void HarnessHexInfo( int x, int y, std::string& out )
     // neighbour alts), vis 1, unit 0.
     out += " water " + std::string( pHex->IsWater( ) ? "1" : "0" );
     out += " tree " + IntToStr( pHex->GetTree( ) );
+    // Terrain sprite type id + variant index. Lets a headless QA driver LOCATE
+    // terrain-blend boundaries deterministically — e.g. a river hex (terr=CHex::river)
+    // adjacent to a lake hex (terr=CHex::lake), which are BOTH water=1 and so were
+    // previously indistinguishable here. Needed to repro the #8 river<->lake blend
+    // (and the badlands<->ocean / swamp<->rough blend family).
+    CTerrainSprite* spr = pHex->GetSprite( );
+    out += " terr " + IntToStr( spr ? spr->GetID( ) : -1 );
+    out += " tidx " + IntToStr( spr ? spr->GetIndex( ) : -1 );
     out += "\n";
 }
 
