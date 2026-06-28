@@ -1673,7 +1673,11 @@ void SDL2BuildingWindow::Refresh() {
             if ( m_lblPowerFuel ) {
                 CBuildPower* pBp = m_pBldg->GetData()->GetBldPower();
                 int iFuel = pBp ? pBp->GetInput() : -1;
-                if ( iFuel >= 0 )
+                // CRASH FIX (mac2 23:22): GetInput() returns the raw m_iInput, which for a fuel-less
+                // plant can be a sentinel/garbage index >= num_types (not just -1). GetDesc()/GetStore()
+                // only ASSERT_STRICT the range — ignored in this build — so an OOB iFuel indexed
+                // m_saDesc[] out of bounds -> garbage std::string -> .c_str() segfault. Bound BOTH ends.
+                if ( iFuel >= 0 && iFuel < CMaterialTypes::GetNumTypes() )
                     m_lblPowerFuel->SetText( "Input - " + std::string( CMaterialTypes::GetDesc( iFuel ).c_str() ) +
                                              ": " + FmtNum( m_pBldg->GetStore( iFuel ) ) );
                 else
