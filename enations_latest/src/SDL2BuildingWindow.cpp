@@ -1480,13 +1480,12 @@ void SDL2BuildingWindow::Refresh() {
         }
         m_lblProduction->SetText( str );
         if ( m_progProduction ) {
-            // #51 follow-up (gap 3): a flat-trickle alt mode (Fracking on an exhausted well) has
-            // no production batch to fill, so GetProductionPer() sits at 0 and the bar looked
-            // "stuck at 0%". A trickle is continuous — hide the bar rather than show a fake 0%.
-            bool bTrickle = bAlt && ( pAlt->m_eMode == AltOutput::eFlatTrickle );
-            int  per      = m_pBldg->GetProductionPer();
-            if ( bTrickle || per < 0 ) { m_progProduction->SetVisible( false ); }
-            else { m_progProduction->SetVisible( true ); m_progProduction->SetProgress( per ); }
+            // Operator (H2): the Production widget must ALWAYS keep its progress bar — hiding it
+            // for a flat-trickle alt mode (Fracking) was a regression. Keep the bar visible; show
+            // the real cycle progress when there is one, else 0 (the bar stays present).
+            int per = m_pBldg->GetProductionPer();
+            m_progProduction->SetVisible( true );
+            m_progProduction->SetProgress( per < 0 ? 0 : per );
         }
     }
 
