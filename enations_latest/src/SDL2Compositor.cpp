@@ -412,6 +412,20 @@ bool SDL2Compositor::RouteEventInner(SDL_Event& event) {
     if (eventWindowID) {
         for (auto& p : m_panels) {
             if (p->IsDetached() && p->GetOwnWindowID() == eventWindowID) {
+                // Linux/XWayland: clicking a detached panel must RAISE it. Under
+                // Mutter (GNOME-on-Wayland, game on XWayland) these borderless
+                // SKIP_TASKBAR panels do not auto-raise on click, so a buried
+                // area-map/radar could not be brought to the top (operator-reported
+                // "can no longer be put into the top"). Raise on any button-press so
+                // the panel comes forward BEFORE drag/content handling (also makes
+                // a title-bar grab on a buried panel act on the now-top window).
+                // Win (GWLP_HWNDPARENT) / mac (ALWAYS_ON_TOP) already raise via their
+                // own WM owner relationship, so this is Linux-only.
+#if defined(__linux__)
+                if (event.type == SDL_MOUSEBUTTONDOWN && p->GetOwnWindow())
+                    SDL_RaiseWindow(p->GetOwnWindow());
+#endif
+
                 // Manual edge/corner resize takes priority over content + drag.
                 if ((event.type == SDL_MOUSEMOTION || event.type == SDL_MOUSEBUTTONDOWN) &&
                     p->HandleDetachedResize(event))
