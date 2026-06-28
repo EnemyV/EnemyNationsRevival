@@ -3785,6 +3785,16 @@ void CWndArea::ShiftQueueMove( CVehicle* pVeh, CSubHex const& sub )
         pVeh->GetRouteList( ).RemoveAll( );
         pVeh->SetRoutePos( NULL );
         pVeh->SetRouteLoop( FALSE );   // Shift-queued routes are one-shot
+
+        // #42: if the vehicle is already moving to a DIRECT destination (a prior non-shift
+        // right-click move), SEED the new route with that destination as waypoint #1 — so the
+        // first Shift-click APPENDS (forming a 2-stop route) instead of OVERWRITING the
+        // existing move. (Was: the fresh-queue clear dropped the in-flight dest entirely.)
+        if ( pVeh->GetRouteMode( ) == CVehicle::moving )
+        {
+            CHexCoord hexCur = pVeh->GetHexDest( );
+            pVeh->SetLocation( hexCur, pVeh->GetRouteList( ).GetTailPosition( ), CRoute::waypoint );
+        }
     }
 
     // append the waypoint at the tail (SetLocation resolves building entrances + wrap)
