@@ -42,10 +42,10 @@ const EdictDef g_aEdicts[EDICT_COUNT] =
 
     // EDICT_RESEARCH_SUBSIDY — Office-hosted, civ-wide economy policy. Folds
     // m_fEdictRsrchMult into GetRsrchMult() (plan §2.1; pairs with the RG-1 lever).
-    { "Research Subsidy", "Civ-wide: +30% research speed.\nCost: every building needs +15% more workers.",
+    { "Research Subsidy", "Civ-wide: +30% research speed.\nCost: +25% power use, +15% more workers.",
       CStructureData::office, EDICT_CIVWIDE, CRsrchArray::advanced_facilities,
       1.0f, 1.0f, 1.0f, 1.30f, 1.0f,
-      0.0f, 0.15f, 0.0f },
+      0.25f, 0.15f, 0.0f },   // energy magnitude operator-tunable (catalog values are placeholders)
 
     // EDICT_AUSTERITY — Rocket, civ-wide (lost if the rocket is destroyed, §29).
     { "Austerity Drive", "Civ-wide: +20% build speed (all buildings).\nCost: every building needs +15% more workers.\nLost if rocket destroyed.",
