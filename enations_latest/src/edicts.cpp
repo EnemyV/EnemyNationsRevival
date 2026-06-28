@@ -28,10 +28,10 @@ const EdictDef g_aEdicts[EDICT_COUNT] =
     // m_fEdictPopGrowthMult into GetPopGrowth() per plan §2.1/§3.2 (a global
     // production multiplier; the earlier EDICT_BLDG_SCOPED tag left it inert —
     // RecomputeEdictMults only folds civ-wide edicts).
-    { "Nutrition Program", "Civ-wide: +30% population growth.\nCost: +20% food use.",
+    { "Nutrition Program", "Civ-wide: +30% population growth.\nCost: +75% food consumption.",
       CStructureData::apartment, EDICT_CIVWIDE, CRsrchArray::farm_1,
       1.0f, 1.0f, 1.0f, 1.0f, 1.30f,
-      0.0f, 0.0f, 0.20f },
+      0.0f, 0.0f, 0.75f },
 
     // EDICT_MINING_SUBSIDY — Office-hosted, civ-wide economy policy. Folds
     // m_fEdictMineMult into GetMineProd() (the plan's vertical-slice edict, §6).

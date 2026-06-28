@@ -735,11 +735,19 @@ void CPlayer::PeopleAndFood( int iNumSec )
     // time to eat
     int   iPplTotal  = m_iPplBldg + m_iPplVeh;
     float fPplTtlSec = float( iPplTotal * iNumSec ) / float( AVG_SPEED_MUL );
-    m_fFoodMod += fPplTtlSec * m_fEatingRate;
+    // Edict food upkeep (Edicts v1): active civ-wide edicts (Nutrition) make the colony
+    // actually EAT more food — apply the pct to REAL consumption here, not just the readout
+    // below. (Was readout-only = a no-op "cost": the displayed Food Need rose but food never
+    // actually drained faster, so the edict had no real downside. Operator-reported.)
+    {
+        float fEat = fPplTtlSec * m_fEatingRate;
+        if ( m_fEdictFoodUpkeepPct > 0.0f )
+            fEat *= ( 1.0f + m_fEdictFoodUpkeepPct );
+        m_fFoodMod += fEat;
+    }
 
-    // track what we need for a minute
+    // track what we need for a minute (mirror the same upkeep so the readout matches consumption)
     m_iFoodNeed = float( iPplTotal * 60 ) * m_fEatingRate;
-    // Edict upkeep (Edicts v1): active civ-wide edicts add extra food demand (pct of base).
     if ( m_fEdictFoodUpkeepPct > 0.0f )
         m_iFoodNeed += (int)( m_iFoodNeed * m_fEdictFoodUpkeepPct );
 
