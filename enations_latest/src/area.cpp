@@ -7537,6 +7537,63 @@ void HarnessHexInfo( int x, int y, std::string& out )
 }
 
 //---------------------------------------------------------------------------
+// HarnessFindTerrain — scan the whole map for the first hex of terrain type `id`
+// (CHex terrain enum: lake=3, ocean=6, river=8, swamp=11, ...); if adjId>=0 also
+// require a 4-neighbour of type adjId (e.g. river next to lake = the #8 river<->lake
+// blend boundary). On a hit, center the focused area view on that hex so a headless
+// driver can `shotid 5` the area window right at the boundary — the missing piece
+// for terrain-blend repro (the harness `center` only centers on a UNIT, and devsaves
+// open on the all-land base). READ-ONLY of the map; mutates only the view. Render
+// thread only. Declared in en_harness.h.
+//---------------------------------------------------------------------------
+void HarnessFindTerrain( int id, int adjId, std::string& out )
+{
+    CWndArea* a = theAreaList.GetTop( );
+    if ( a == NULL ) { out = "err no-area\n"; return; }
+
+    CSize sz = theMap.GetSize( );
+    static const int dx[4] = { 0, 1, 0, -1 };
+    static const int dy[4] = { -1, 0, 1, 0 };
+    for ( int y = 0; y < sz.cy; ++y )
+    {
+        for ( int x = 0; x < sz.cx; ++x )
+        {
+            CHex* h = theMap.GetHex( x, y );
+            if ( h == NULL ) continue;
+            CTerrainSprite* s = h->GetSprite( );
+            if ( s == NULL || s->GetID( ) != id ) continue;
+
+            int ax = -1, ay = -1;
+            if ( adjId >= 0 )
+            {
+                bool adj = false;
+                for ( int e = 0; e < 4; ++e )
+                {
+                    CHexCoord nc( x + dx[e], y + dy[e] ); nc.Wrap( );
+                    CHex* n = theMap.GetHex( nc );
+                    if ( n && n->GetSprite( ) && n->GetSprite( )->GetID( ) == adjId )
+                    { adj = true; ax = nc.X( ); ay = nc.Y( ); break; }
+                }
+                if ( !adj ) continue;
+            }
+
+            CHexCoord hc( x, y );
+            CMapLoc   ml( hc );
+            a->Center( ml );   // move the view to the found hex (then caller shotid 5)
+
+            out  = "found " + IntToStr( x ) + " " + IntToStr( y );
+            out += " terr " + IntToStr( id );
+            if ( adjId >= 0 ) out += " adj " + IntToStr( adjId ) + " at " + IntToStr( ax ) + " " + IntToStr( ay );
+            out += " (view centered)\n";
+            return;
+        }
+    }
+    out = "notfound terr " + IntToStr( id );
+    if ( adjId >= 0 ) out += " adj " + IntToStr( adjId );
+    out += "\n";
+}
+
+//---------------------------------------------------------------------------
 // HarnessSaveGame — save the current game to <path> headlessly so a developed/
 // researched game can be snapshotted and SHARED (one such save unblocks all the
 // research-gated work team-wide: gated buildings, AltOutput in-game verify, late-

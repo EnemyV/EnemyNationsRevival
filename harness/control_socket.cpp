@@ -102,6 +102,15 @@ std::atomic<int>       g_hexInfoY{0};
 std::atomic<bool>      g_hexInfoPending{false};
 std::atomic<bool>      g_hexInfoDone{false};
 
+// Pending `findterr <id> [adjId]` request (HarnessFindTerrain) — scans the map for a
+// terrain type (optionally adjacent to another), centers the view, returns coords.
+std::mutex             g_findMutex;
+std::string            g_findResult;
+std::atomic<int>       g_findId{0};
+std::atomic<int>       g_findAdjId{-1};
+std::atomic<bool>      g_findPending{false};
+std::atomic<bool>      g_findDone{false};
+
 // Pending `raise` request, serviced on the render thread. SDL_RaiseWindow is a
 // window/Cocoa operation that MUST run on the main thread on macOS — calling it
 // from the socket thread SIGTRAPs the process (reproducible: `raise` while a
@@ -274,6 +283,22 @@ void handle_command(const std::string& line, int conn) {
         std::string out;
         { std::lock_guard<std::mutex> lk(g_hexInfoMutex); out = g_hexInfoResult; }
         if (!g_hexInfoDone.load()) out = "err hexinfo timeout (not in-game?)\n";
+        write(conn, out.c_str(), out.size());
+        return;
+    } else if (strcmp(cmd, "findterr") == 0) {
+        // findterr <id> [adjId] — scan the map for terrain type <id> (lake=3 ocean=6
+        // river=8 swamp=11 ...), optionally adjacent to <adjId>; center the area view
+        // on it. Serviced on the render thread (reads map + mutates view).
+        int id = -1, adj = -1;
+        if (sscanf(line.c_str(), "%*s %d %d", &id, &adj) < 1 || id < 0) {
+            const char* u = "err usage: findterr <id> [adjId]\n";
+            write(conn, u, strlen(u)); return;
+        }
+        g_findId = id; g_findAdjId = adj; g_findDone = false; g_findPending = true;
+        for (int i = 0; i < 2000 && !g_findDone.load(); ++i) { struct timespec ts={0,5000000}; nanosleep(&ts,nullptr); }
+        std::string out;
+        { std::lock_guard<std::mutex> lk(g_findMutex); out = g_findResult; }
+        if (!g_findDone.load()) out = "err findterr timeout (not in-game?)\n";
         write(conn, out.c_str(), out.size());
         return;
     } else if (strcmp(cmd, "click") == 0) {
@@ -537,6 +562,13 @@ void EnHarness_Service() {
         HarnessHexInfo(g_hexInfoX.load(), g_hexInfoY.load(), out);
         { std::lock_guard<std::mutex> lk(g_hexInfoMutex); g_hexInfoResult = out; }
         g_hexInfoDone = true;
+        return;
+    }
+    if (g_findPending.exchange(false)) {
+        std::string out;
+        HarnessFindTerrain(g_findId.load(), g_findAdjId.load(), out);
+        { std::lock_guard<std::mutex> lk(g_findMutex); g_findResult = out; }
+        g_findDone = true;
         return;
     }
     if (g_researchPending.exchange(false)) {

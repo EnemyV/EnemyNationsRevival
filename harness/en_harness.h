@@ -73,6 +73,13 @@ bool HarnessCenterUnit(unsigned long id);
 // `hexinfo <areaWin> <x> <y>` cmd. Render thread only.
 void HarnessHexInfo(int x, int y, std::string& out);
 
+// Scan the map for the first hex of terrain type <id> (CHex terrain enum: lake=3,
+// ocean=6, river=8, swamp=11, ...); if adjId>=0 require a 4-neighbour of that type
+// (e.g. river adjacent to lake = the #8 blend boundary). Centers the focused area
+// view on the found hex so the caller can shotid the area window. Backs `findterr
+// <id> [adjId]`. Render thread only (reads map + mutates the view).
+void HarnessFindTerrain(int id, int adjId, std::string& out);
+
 // Save the current in-game state to <path> (a .en save file) headlessly — no
 // file-browser modal (CGame::SaveGame skips it when the filename is pre-set).
 // Lets a headless driver snapshot a DEVELOPED/researched game so it can be shared
