@@ -138,6 +138,19 @@ void CMaterialBuilding::ShowStatusText( std::string& str )
 
     // show creating rate
     CBuildMaterials const* pBm  = GetData( )->GetBldMaterials( );
+
+    // I1 (operator): if a required input material's store is empty the converter can't
+    // produce — show "Idle" instead of the misleading theoretical-max rate ("816 steel/min"
+    // with no iron/coal). Mirrors CPowerBuilding's input gate above + the runtime
+    // BuildMaterials check (mainloop.cpp:2361). Mines/farms are separate classes (no
+    // material input here), so this only affects true converters (smelter, etc.).
+    for ( int iIn = 0; iIn < CMaterialTypes::GetNumTypes( ); iIn++ )
+        if ( pBm->GetInput( iIn ) > 0 && GetStore( iIn ) <= 0 )
+        {
+            str = EnLoadStdString( IDS_STAT_IDLE );
+            return;
+        }
+
     int                    iTyp = 0;
     for ( int iInd = 0; iInd < CMaterialTypes::GetNumTypes( ); iInd++ )
     {

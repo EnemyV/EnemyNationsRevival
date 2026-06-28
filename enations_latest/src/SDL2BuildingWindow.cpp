@@ -141,6 +141,12 @@ static int primaryRatePerMin(CBuilding* b) {
     if ( ut == CStructureData::UTmaterials ) {
         CBuildMaterials const* pm = b->GetData()->GetBldMaterials();
         if ( !pm || pm->GetTime() <= 0 ) return -1;
+        // I1 (operator): a converter with an empty required-input store produces NOTHING —
+        // show 0/min, not the theoretical max. Mirrors the runtime BuildMaterials gate
+        // (mainloop.cpp:2361) and the Inputs-widget "missing" check (GetStore(input)<=0).
+        for ( int iIn = 0; iIn < CMaterialTypes::GetNumTypes(); iIn++ )
+            if ( pm->GetInput( iIn ) > 0 && b->GetStore( iIn ) <= 0 )
+                return 0;
         int iTyp = -1;
         for ( int i = 0; i < CMaterialTypes::GetNumTypes(); i++ )
             if ( pm->GetOutput( i ) > 0 ) { iTyp = i; break; }
