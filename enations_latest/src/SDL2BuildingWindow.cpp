@@ -909,8 +909,13 @@ int SDL2BuildingWindow::BuildPower(int x, int y, int w) {
     // else "Power". Captured into m_lblPowerHdr so Refresh() swaps the header text in lockstep
     // with the body rows when coal-liq is toggled while the window is open (was build-time-only).
     bool bOil = secCoalLiqActive( m_pBldg );
+    // operator C1/C3 (2026-06-28): in oil (coal-liq) mode show the OIL material icon, NOT the power
+    // bulb — the plant produces oil, not power. (Header icon is build-time = correct when the window
+    // opens with coal-liq already ON, the operator's case.)
     int yh = Header(x + BOX_PAD, y + BOX_PAD, w - 2 * BOX_PAD,
-                    bOil ? "Oil" : "Power", kHeaderBlue, ICON_POWER, 0, &m_lblPowerHdr);
+                    bOil ? "Oil" : "Power", kHeaderBlue,
+                    bOil ? ICON_MATERIALS : ICON_POWER, bOil ? CMaterialTypes::oil : 0,
+                    &m_lblPowerHdr);
     int graphW = 168, graphX = x + w - graphW - BOX_PAD;
     int textW  = graphX - ( x + BOX_PAD + 4 ) - 6;
     // Power readout (shown when NOT in coal-liq mode): "This building / Colony" + graph.
@@ -1593,17 +1598,19 @@ void SDL2BuildingWindow::Refresh() {
         if ( bOil ) {
             int oilHere = m_pBldg->GetStore( CMaterialTypes::oil );
             int oilHave = p->GetMaterialHave( CMaterialTypes::oil );
-            int oilMade = p->GetMaterialMade( CMaterialTypes::oil );
             // Derive the ratio from the live AltOutput def (m_iRatioIn) so the readout never
             // goes stale after a balance change (was hardcoded "2 coal -> 1 oil"; def is now 3:1).
             int coalPerOil = 2;
             if ( const AltOutput::AltOutputDef* pDefCl = AltOutput::Available( m_pBldg ) )
                 if ( pDefCl->m_iRatioIn > 0 ) coalPerOil = pDefCl->m_iRatioIn;
+            // operator C2 (2026-06-28): a coal plant in oil mode is a PRODUCTION building — show the
+            // conversion as INPUT (coal consumed from its store) -> OUTPUT (oil), not just an oil total.
+            int coalHere = m_pBldg->GetStore( CMaterialTypes::coal );
             if ( m_lblPowerOilHdr ) m_lblPowerOilHdr->SetText(
-                "Converting coal to oil (" + std::to_string( coalPerOil ) + " coal -> 1 oil)" );
-            if ( m_lblPowerOil )    m_lblPowerOil->SetText( "This building: " + FmtNum( oilHere ) + " oil" );
-            if ( m_lblPowerOilCol ) m_lblPowerOilCol->SetText( "Colony oil: " + FmtNum( oilHave ) +
-                                                               " (made " + FmtNum( oilMade ) + ")" );
+                "Converting coal -> oil (" + std::to_string( coalPerOil ) + " coal : 1 oil)" );
+            if ( m_lblPowerOil )    m_lblPowerOil->SetText( "Input - Coal: " + FmtNum( coalHere ) );
+            if ( m_lblPowerOilCol ) m_lblPowerOilCol->SetText( "Output - Oil: " + FmtNum( oilHere ) +
+                                                               "  (colony " + FmtNum( oilHave ) + ")" );
         } else {
             int bldg  = PerBldgPower();
             int total = (int)p->GetPwrHave();
