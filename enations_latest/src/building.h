@@ -726,12 +726,6 @@ public:
 		// "no production cycle" (most buildings). Shown as a bar in the info window.
 		virtual int				GetProductionPer () const { return ( -1 ); }
 
-		// #51 H3: the AltOutput trickle accumulator (0..1 = fraction toward the next output unit;
-		// AltOutput::Convert advances it each tick, resets on emit). Lets the info window's progress
-		// bar ADVANCE in a flat-trickle mode (Fracking) where GetProductionPer is frozen at 0 (the
-		// exhausted well has no mineral cycle).
-		float					GetAltAccum () const { return m_fAltAccum; }
-
 		void					DrawStatusPer (CDC *pDc, CRect *pRect) const;
 		virtual int		GetNumStatusBars () const;
 		virtual void	PaintStatusBars (CStatInst * pSi, int iNum, CDC * pDc) const;

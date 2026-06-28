@@ -1508,19 +1508,12 @@ void SDL2BuildingWindow::Refresh() {
         }
         m_lblProduction->SetText( str );
         if ( m_progProduction ) {
-            // Operator (H2): the Production widget must ALWAYS keep its progress bar. (H3, per newwin)
-            // For a flat-trickle alt mode (Fracking) the exhausted well's GetProductionPer is frozen
-            // at 0 (no mineral cycle), so the bar never moved — drive it from the trickle accumulator
-            // m_fAltAccum (0..1 = fraction toward the next oil unit), which fills 0->100% each ~6s (at
-            // 10 oil/min) then resets = a real ADVANCING bar.
-            bool bTrickle = bAlt && pAlt && ( pAlt->m_eMode == AltOutput::eFlatTrickle );
+            // Operator (H2): the Production widget must ALWAYS keep its progress bar — hiding it
+            // for a flat-trickle alt mode (Fracking) was a regression. Keep the bar visible; show
+            // the real cycle progress when there is one, else 0 (the bar stays present).
+            int per = m_pBldg->GetProductionPer();
             m_progProduction->SetVisible( true );
-            if ( bTrickle ) {
-                m_progProduction->SetProgress( __min( 100, (int)( m_pBldg->GetAltAccum() * 100.0f ) ) );
-            } else {
-                int per = m_pBldg->GetProductionPer();
-                m_progProduction->SetProgress( per < 0 ? 0 : per );
-            }
+            m_progProduction->SetProgress( per < 0 ? 0 : per );
         }
     }
 
