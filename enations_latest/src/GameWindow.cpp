@@ -774,21 +774,32 @@ void GameWindow::HandleEvent(SDL_Event& event) {
                 LogToFile("Window resized to " + std::to_string(m_width) + "x" + std::to_string(m_height));
             }
             else if (event.window.event == SDL_WINDOWEVENT_FOCUS_GAINED) {
-                // The detached map/radar windows are borderless + SKIP_TASKBAR, so
-                // after Alt-Tabbing away they can get buried with no way back. When
-                // any of our windows regains focus, raise the whole window group so
-                // they come forward together. Throttled because SDL_RaiseWindow can
-                // itself emit FOCUS_GAINED — without this it would raise-storm.
+                // The detached map/radar/unit windows are borderless + SKIP_TASKBAR
+                // and (Linux) WM_TRANSIENT_FOR-owned by the main window, so Alt-Tabbing
+                // away can leave them buried OR — on WMs that minimize/unmap transient
+                // children with their parent — HIDDEN, with no way back (operator-
+                // reported: "alt-tab → windows disappear"). On regaining focus, bring
+                // the whole group back: raise the main window, then for every LOGICALLY
+                // OPEN detached panel (IsVisible()), re-SHOW it if the WM cleared its
+                // SHOWN flag, and raise it above the main window. Re-showing only
+                // IsVisible() panels avoids un-hiding ones the user/game deliberately
+                // closed. Throttled — Show/RaiseWindow can re-emit FOCUS_GAINED.
                 static DWORD s_lastRaise = 0;
                 DWORD now = timeGetTime();
                 if (now - s_lastRaise > 400) {
                     s_lastRaise = now;
-                    // id order ascends: main (lowest id) first, detached panels last
-                    // → panels end up on top of the main game-view window.
-                    for (Uint32 id = 1; id <= 64; ++id) {
-                        SDL_Window* w = SDL_GetWindowFromID(id);
-                        if (w && (SDL_GetWindowFlags(w) & SDL_WINDOW_SHOWN))
+                    if (m_window) SDL_RaiseWindow(m_window);
+                    if (m_compositor) {
+                        for (int i = 0; i < m_compositor->GetPanelCount(); ++i) {
+                            SDL2Panel* panel = m_compositor->GetPanel(i);
+                            if (!panel || !panel->IsDetached() || !panel->IsVisible())
+                                continue;
+                            SDL_Window* w = panel->GetOwnWindow();
+                            if (!w) continue;
+                            if (!(SDL_GetWindowFlags(w) & SDL_WINDOW_SHOWN))
+                                SDL_ShowWindow(w);   // WM hid it on alt-tab → restore
                             SDL_RaiseWindow(w);
+                        }
                     }
                 }
             }
