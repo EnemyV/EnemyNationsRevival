@@ -108,6 +108,18 @@ static bool secPower(CBuilding* b) {
     return ( b->GetData()->GetType() == CStructureData::rocket ) ||
            ( b->GetData()->GetUnionType() == CStructureData::UTpower );
 }
+// #43: is this building actively in Coal Liquefaction mode? i.e. its AltOutput toggle is ON,
+// the def is available (researched), AND it's the coal-liq def (oil output via consuming coal).
+// In this mode the plant stops generating power and converts coal->oil, so the Power section
+// switches to an oil readout. (Returns false for BioFuel/Charcoal/Fracking — those don't host
+// a Power section — and for any plant with the toggle OFF.)
+static bool secCoalLiqActive(CBuilding* b) {
+    if ( !b->IsFlag( CUnit::alt_oil ) ) return false;
+    const AltOutput::AltOutputDef* pDef = AltOutput::Available( b );
+    return ( pDef != nullptr ) && ( pDef->m_eMode == AltOutput::eRatioConsume )
+           && ( pDef->m_iInputMat == CMaterialTypes::coal )
+           && ( pDef->m_iOutputMat == CMaterialTypes::oil );
+}
 static bool secApt(CBuilding* b) {
     if ( b->GetData()->GetType() == CStructureData::rocket ) return true;
     return ( b->GetData()->GetUnionType() == CStructureData::UThousing ) &&
@@ -753,12 +765,26 @@ int SDL2BuildingWindow::BuildProduction(int x, int y, int w) {
 // the right.
 int SDL2BuildingWindow::BuildPower(int x, int y, int w) {
     AddOutline(x, y, w, POWERLIKE_H);
-    int yh = Header(x + BOX_PAD, y + BOX_PAD, w - 2 * BOX_PAD, "Power", kHeaderBlue, ICON_POWER);
+    // #43: header reflects the mode the window opened in — "Oil" when this coal plant is
+    // liquefying coal, else "Power". (Live toggles after open are reflected in the rows by
+    // Refresh(); the header text is fixed at build time, refreshed on the next open.)
+    bool bOil = secCoalLiqActive( m_pBldg );
+    int yh = Header(x + BOX_PAD, y + BOX_PAD, w - 2 * BOX_PAD,
+                    bOil ? "Oil" : "Power", kHeaderBlue, ICON_POWER);
     int graphW = 168, graphX = x + w - graphW - BOX_PAD;
     int textW  = graphX - ( x + BOX_PAD + 4 ) - 6;
+    // Power readout (shown when NOT in coal-liq mode): "This building / Colony" + graph.
     m_lblPowerBldg   = AddWidget<SDL2Label>(x + BOX_PAD + 4, yh + 6,         textW, ROW_H, "This building: 0");
     m_lblPowerColony = AddWidget<SDL2Label>(x + BOX_PAD + 4, yh + 6 + ROW_H, textW, ROW_H, "Colony: 0 / 0");
     m_imgPowerGraph  = AddWidget<SDL2Image>(graphX, yh, graphW, GRAPH_H);
+    // Oil readout (shown INSTEAD when in coal-liq mode): a status row + this-building / colony
+    // oil totals, mirroring the power rows' two-line "This building / Colony" style. Created
+    // always so a live toggle can swap visibility without rebuilding the window; the full-width
+    // textW spans where the power graph sits (the graph is hidden in oil mode).
+    int oilW = w - 2 * BOX_PAD - 8;
+    m_lblPowerOilHdr = AddWidget<SDL2Label>(x + BOX_PAD + 4, yh,             oilW, ROW_H, "Converting coal to oil");
+    m_lblPowerOil    = AddWidget<SDL2Label>(x + BOX_PAD + 4, yh + ROW_H,     oilW, ROW_H, "This building: 0");
+    m_lblPowerOilCol = AddWidget<SDL2Label>(x + BOX_PAD + 4, yh + 2 * ROW_H, oilW, ROW_H, "Colony: 0 / 0");
     return y + POWERLIKE_H + SEC_PAD;
 }
 
@@ -1367,14 +1393,38 @@ void SDL2BuildingWindow::Refresh() {
     }
 
     if ( m_bPower ) {
-        int bldg  = PerBldgPower();
-        int total = (int)p->GetPwrHave();
-        int pct   = ( total > 0 ) ? ( bldg * 100 / total ) : 0;
-        m_lblPowerBldg->SetText( "This building: " + FmtNum( bldg ) +
-                                 " (" + std::to_string( pct ) + "%)" );
-        m_lblPowerColony->SetText( "Colony: " + FmtNum( total ) +
-                                   " / " + FmtNum( (int)p->GetPwrNeed() ) );
-        DrawGraph( m_imgPowerGraph, kPwrHave, kPwrNeed );
+        // #43: a coal plant in Coal-Liquefaction mode produces OIL, not power — so swap the
+        // section's readout live. In oil mode: hide the power rows + graph, show the oil rows
+        // (status + this-building store + colony have/made). Otherwise: the normal power
+        // readout, oil rows hidden. (Both row sets exist from BuildPower; we just toggle
+        // visibility so a live checkbox toggle needs no window rebuild.)
+        bool bOil = secCoalLiqActive( m_pBldg );
+
+        if ( m_lblPowerBldg )   m_lblPowerBldg->SetVisible( !bOil );
+        if ( m_lblPowerColony ) m_lblPowerColony->SetVisible( !bOil );
+        if ( m_imgPowerGraph )  m_imgPowerGraph->SetVisible( !bOil );
+        if ( m_lblPowerOilHdr ) m_lblPowerOilHdr->SetVisible( bOil );
+        if ( m_lblPowerOil )    m_lblPowerOil->SetVisible( bOil );
+        if ( m_lblPowerOilCol ) m_lblPowerOilCol->SetVisible( bOil );
+
+        if ( bOil ) {
+            int oilHere = m_pBldg->GetStore( CMaterialTypes::oil );
+            int oilHave = p->GetMaterialHave( CMaterialTypes::oil );
+            int oilMade = p->GetMaterialMade( CMaterialTypes::oil );
+            if ( m_lblPowerOilHdr ) m_lblPowerOilHdr->SetText( "Converting coal to oil (2 coal -> 1 oil)" );
+            if ( m_lblPowerOil )    m_lblPowerOil->SetText( "This building: " + FmtNum( oilHere ) + " oil" );
+            if ( m_lblPowerOilCol ) m_lblPowerOilCol->SetText( "Colony oil: " + FmtNum( oilHave ) +
+                                                               " (made " + FmtNum( oilMade ) + ")" );
+        } else {
+            int bldg  = PerBldgPower();
+            int total = (int)p->GetPwrHave();
+            int pct   = ( total > 0 ) ? ( bldg * 100 / total ) : 0;
+            m_lblPowerBldg->SetText( "This building: " + FmtNum( bldg ) +
+                                     " (" + std::to_string( pct ) + "%)" );
+            m_lblPowerColony->SetText( "Colony: " + FmtNum( total ) +
+                                       " / " + FmtNum( (int)p->GetPwrNeed() ) );
+            DrawGraph( m_imgPowerGraph, kPwrHave, kPwrNeed );
+        }
     }
 
     if ( m_bOffice ) {

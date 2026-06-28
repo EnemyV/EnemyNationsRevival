@@ -2416,8 +2416,18 @@ void CPowerBuilding::BuildPower( )
 
     float fPower = GetFrameProd( 1 );
 
+    // Coal Liquefaction mode (bug #43): when this coal plant's alt-output toggle is ON and
+    // the tech is researched, it STOPS feeding the colony power grid and instead converts
+    // its coal into oil (the conversion runs below via AltOutput::Convert). So while the
+    // toggle is active we suppress the AddPwrHave() calls -- the plant produces oil, not
+    // power. (No-op for non-coal plants / toggle OFF / un-researched: bCoalLiq stays false
+    // and power generation is byte-identical to before.)
+    const bool bCoalLiq = IsFlag( CUnit::alt_oil ) && ( AltOutput::Available( this ) != nullptr );
+
     if ( pBp->GetInput( ) < 0 )
     {
+        // No-fuel plant (solar/rocket): can't liquefy coal it doesn't burn, so it always
+        // generates power normally regardless of the toggle.
         GetOwner( )->AddPwrHave( (int)( (float)pBp->GetPower( ) * fPower ) );
         return;
     }
@@ -2426,8 +2436,10 @@ void CPowerBuilding::BuildPower( )
     if ( GetStore( pBp->GetInput( ) ) <= 0 )
         return;
 
-    // add in our power if we have any input materials left
-    GetOwner( )->AddPwrHave( (int)( (float)pBp->GetPower( ) * fPower ) );
+    // add in our power if we have any input materials left -- UNLESS we're in coal-liq mode,
+    // in which case the burned coal becomes oil instead of power.
+    if ( !bCoalLiq )
+        GetOwner( )->AddPwrHave( (int)( (float)pBp->GetPower( ) * fPower ) );
 
     int iInc = GetProd( 1 );
     if ( iInc <= 0 )

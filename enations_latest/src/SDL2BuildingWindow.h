@@ -135,6 +135,12 @@ private:
     SDL2Label* m_lblPowerBldg   = nullptr;
     SDL2Label* m_lblPowerColony = nullptr;
     SDL2Image* m_imgPowerGraph  = nullptr;
+    // #43: Coal Liquefaction mode-awareness. When a coal power plant has its Coal-Liq
+    // toggle ON it STOPS generating power and converts coal->oil, so the Power section
+    // hides the power readout/graph above and shows these oil rows instead.
+    SDL2Label* m_lblPowerOilHdr = nullptr;   // "Converting coal to oil" status row
+    SDL2Label* m_lblPowerOil    = nullptr;   // this building's oil produced (store)
+    SDL2Label* m_lblPowerOilCol = nullptr;   // colony oil (have / made)
 
     SDL2Label* m_lblOfcBldg     = nullptr;
     SDL2Label* m_lblOfcColony   = nullptr;

@@ -13,6 +13,7 @@
 #include "SDL2BuildStructure.h"
 #include "SDL2BuildTransport.h"
 #include "SDL2BuildingWindow.h"
+#include "altoutput.h"   // Coal-Liq mode-aware power-plant status text (#43)
 #include "event.h"
 #include "lastplnt.h"
 #include "player.h"
@@ -241,6 +242,16 @@ void CPowerBuilding::ShowStatusText( std::string& str )
             str = EnLoadStdString( IDS_STAT_IDLE );
             return;
         }
+
+    // Coal Liquefaction mode (#43): when the alt-output toggle is ON (and the tech is
+    // researched), this coal plant converts coal -> oil instead of generating power
+    // (BuildPower suppresses AddPwrHave in this mode). Reflect that in the status text
+    // rather than the misleading "Generating N units power" line.
+    if ( IsFlag( CUnit::alt_oil ) && ( AltOutput::Available( this ) != nullptr ) )
+    {
+        str = "Converting coal to oil";
+        return;
+    }
 
     std::string sNum  = IntToStr( (int)( GetFrameProd( 1 ) * (float)GetData( )->GetBldPower( )->GetPower( ) ) );
     std::string sNum2 = IntToStr( GetData( )->GetBldPower( )->GetPower( ) );
