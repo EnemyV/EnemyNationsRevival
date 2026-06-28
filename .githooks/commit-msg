@@ -1,0 +1,21 @@
+#!/bin/sh
+# commit-msg hook — enforce SINGLE-LINE commit messages (subject only, no body).
+# Operator directive: keep commit messages to one line.
+#
+# Counts message lines that are not blank and not comments (git commentChar '#').
+# More than one content line  -> reject.  Install per clone with:
+#   git config core.hooksPath .githooks
+msgfile="$1"
+[ -f "$msgfile" ] || exit 0
+
+n=$(grep -vE '^[[:space:]]*(#|$)' "$msgfile" | wc -l)
+
+if [ "$n" -gt 1 ]; then
+    echo "------------------------------------------------------------" >&2
+    echo "commit-msg: commit message must be ONE line (subject only)." >&2
+    echo "  got $n content lines; a body is not allowed." >&2
+    echo "  use:  git commit -m \"your concise one-line message\"" >&2
+    echo "------------------------------------------------------------" >&2
+    exit 1
+fi
+exit 0
