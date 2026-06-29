@@ -2560,7 +2560,10 @@ void CWndArea::DrawRangeCircle( )
     int     H    = pdib->GetHeight( );
 
     CPoint c   = m_aa.WrapWorldToWindow( m_aa.WorldToCenterWorld( pBldg->GetWorldPixels( ) ) );
-    int    rad = pBldg->GetRange( ) * theMap.HexWid( m_aa.m_iZoom );
+    // #61 (operator): scale the drawn radius to 80% (20% smaller). The raw GetRange()*HexWid read
+    // as too large in-game across repeated checks; this matches the operator's eye. Whole ellipse
+    // (glow band + edge ring below) derives from `rad`, so it shrinks uniformly.
+    int    rad = ( pBldg->GetRange( ) * theMap.HexWid( m_aa.m_iZoom ) * 4 ) / 5;
     if ( rad < 1 )
         return;
 
