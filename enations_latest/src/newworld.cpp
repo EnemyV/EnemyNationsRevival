@@ -1118,6 +1118,17 @@ void CConquerApp::NewWorld() {
     theMusicPlayer.SoundsOff();
 //BUGBUG	theMusicPlayer.PlayExclusiveMusic (MUSIC::GetID (MUSIC::create_game));
 
+    // LOAD-while-in-game CRASH FIX (mac2 2/2 repro; newwin root-cause): if we are loading a
+    // save while ALREADY in a game, the AI worker threads are still scanning the live world
+    // (CAIMap::UpdateMap / CAIMapUtil::OffsetToXY / pathing). The RemoveAll() teardown below
+    // frees that map state out from under them -> AI thread derefs freed memory -> SIGSEGV.
+    // Stop+join the AI threads FIRST, exactly as ClearWorld() (the bReplace=TRUE path,
+    // newworld.cpp:1409) and ExitInstance() (the quit path) already do. Guarded on m_bInGame
+    // because the normal from-menu NewWorld (m_bInGame==FALSE) has no AI threads running yet;
+    // the subsequent load restarts them via StartAi(), same as the ClearWorld path.
+    if ( m_bInGame )
+        myThreadClose( (THREADEXITFUNC)AiExit );
+
     // make sure cleared out
     theBridgeMap.RemoveAll();
     theBridgeHex.RemoveAll();
