@@ -7766,8 +7766,13 @@ bool HarnessLoadGame( const char* path )
 {
     if ( path == NULL || path[0] == '\0' )
         return false;
-    // Only valid from the menu (no game in progress) — mirror the menu's guard.
-    if ( theApp.m_pCreateGame != NULL )
+    // Only valid from the menu (no game in progress). m_pCreateGame catches an
+    // in-flight create/load flow, but it is NULL during normal play — so on its
+    // own it does NOT reject an in-game `load`, which then tears the world down
+    // before the menu-only flow fails, leaving a zombie (chrome window only, no
+    // area map). AmInGame() is the "a game is already running" signal; reject
+    // cleanly here, before any teardown. [linux2 regression find 2026-06-29]
+    if ( theApp.m_pCreateGame != NULL || theApp.AmInGame( ) )
         return false;
     g_harnessLoadPath = path;                          // arms the headless skips
     bool bOk = false;
