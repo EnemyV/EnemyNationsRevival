@@ -1129,6 +1129,18 @@ void CConquerApp::NewWorld() {
     if ( m_bInGame )
         myThreadClose( (THREADEXITFUNC)AiExit );
 
+    // LOAD-crash UI-half (newwin's option-B; mac2 loadcrash3 + 4th-path audit): the open game-data
+    // dialogs (SDL2BuildingWindow, SDL2BuildTransport, SDL2BuildStructure, unit/building-info dialogs)
+    // each hold a CBuilding*/CVehicle*/CUnit* and Refresh it every frame. The RemoveAll() below frees
+    // those units WITHOUT nulling the dialogs' pointers -> their next OnFrame derefs a DANGLING ptr ->
+    // SIGSEGV (mac2's OnFrame->GetPplTotal stack + the unguarded SDL2BuildTransport::OnFrame). Close
+    // them FIRST, exactly as DestroyWorld() already does (newworld.cpp:1260, GameWindow::
+    // CloseActiveDialogs). This is signal-INDEPENDENT (no AmInGame timing assumption — verified that
+    // AmInGame()==TRUE here) and covers the WHOLE dialog family in one place. The load/status dialog
+    // (SDL2CreateStatus) is NOT a registered SDL2Dialog, so it is untouched and keeps driving the load.
+    if ( m_bInGame && m_gameWindow )
+        m_gameWindow->CloseActiveDialogs();
+
     // make sure cleared out
     theBridgeMap.RemoveAll();
     theBridgeHex.RemoveAll();
