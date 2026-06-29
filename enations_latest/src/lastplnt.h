@@ -282,6 +282,13 @@ class CConquerApp : public CConquerAppSuper
     void Minimize( );
     void CloseApp( );
     BOOL AmInGame( ) { return ( m_bInGame ); }
+    // LOAD-while-in-game crash #2 (mac2): TRUE only while CGame::LoadGame is tearing down +
+    // rebuilding the world. During that window the hex/unit maps are RemoveAll'd/half-rebuilt,
+    // so game-panel input events (CWndArea::OnMouseMove -> GetHit -> GetVisibleBuilding ->
+    // IsVisible) must NOT be dispatched or they deref freed/dangling map state -> SIGSEGV.
+    // AmInGame() stays TRUE through teardown (proven), so it can't gate this; this flag does.
+    BOOL IsWorldTearingDown( ) { return ( m_bWorldTearingDown ); }
+    void SetWorldTearingDown( BOOL b ) { m_bWorldTearingDown = b; }
 
     void PostIntro( );  // called when movie is over
     void InitCustomUI( );
@@ -470,6 +477,7 @@ class CConquerApp : public CConquerAppSuper
     HFONT m_FntCost = NULL;              // cost font (descriptions in dialogs)
 
     BOOL                     m_bInGame;  // we're in a game
+    BOOL                     m_bWorldTearingDown;  // in CGame::LoadGame teardown+rebuild (gates game-panel events)
     BOOL                     m_bTimeLimit;
     CMusicPlayer::MUSIC_MODE m_mMode;    // music mode
 

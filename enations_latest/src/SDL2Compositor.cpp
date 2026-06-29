@@ -395,6 +395,14 @@ bool SDL2Compositor::RouteEvent(SDL_Event& event) {
 }
 
 bool SDL2Compositor::RouteEventInner(SDL_Event& event) {
+    // LOAD-while-in-game crash #2 (mac2): while CGame::LoadGame is tearing down + rebuilding the
+    // world, the hex/unit maps are RemoveAll'd/half-rebuilt. Dispatching a game-panel input event
+    // now (CWndArea::OnMouseMove -> GetHit -> GetVisibleBuilding -> CUnit::IsVisible) derefs freed/
+    // dangling map state -> SIGSEGV. Swallow game-panel events during teardown (the modal file
+    // browser + menu/load dialogs run their own loops, not this compositor, so they are unaffected).
+    if ( theApp.IsWorldTearingDown( ) )
+        return true;
+
     // Check if this event targets a detached panel's own window.
     uint32_t eventWindowID = 0;
     switch (event.type) {

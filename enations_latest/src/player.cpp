@@ -2243,6 +2243,19 @@ int CGame::LoadGame( CWnd* pPar, BOOL bReplace )
     OutputDebugStringA( "CGame::LoadGame\n" );
 #endif
 
+    // LOAD-while-in-game crash #2 (mac2 repro): NewWorld() below RemoveAll's the hex/unit maps and
+    // then rebuilds, during which BaseYield() pumps SDL events. A mouse-move/click dispatched to a
+    // game panel (CWndArea::OnMouseMove -> GetHit -> GetVisibleBuilding -> CUnit::IsVisible) in that
+    // window derefs freed/dangling map state -> SIGSEGV. AmInGame() stays TRUE here (proven), so we
+    // use a dedicated teardown flag, gated in SDL2Compositor::RouteEventInner. RAII so it ALWAYS
+    // resets on every return path (can't leave the game event-dead). Scoped to LoadGame only =
+    // new-game-from-menu (CreateNewWorld, no LoadGame) is unaffected; the modal file browser runs
+    // its own event loop, not the compositor, so it is unaffected too.
+    struct WorldTearGuard {
+        WorldTearGuard( )  { theApp.SetWorldTearingDown( TRUE ); }
+        ~WorldTearGuard( ) { theApp.SetWorldTearingDown( FALSE ); }
+    } _worldTearGuard;
+
     EnableAllWindows( NULL, FALSE );
 
     // Headless harness load (HarnessLoadGame): the .en path is pre-supplied, so skip
