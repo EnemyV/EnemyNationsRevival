@@ -1401,13 +1401,7 @@ void CWndArea::Create( CMapLoc const& ml, CUnit* pUnit, BOOL bFirst )
     CRect     rect;
     CWndArea* pPrev = theAreaList.GetTop( );
     if ( pPrev == NULL )
-        // The MAIN area map fills the FULL screen width (x=0), with the world/radar
-        // minimap + unit lists overlaying its left edge — the original Enemy Nations
-        // arrangement. Previously it defaulted to x=m_iCol1 (screen/5), reserving a
-        // left column that showed the wallpaper as a "gap at the top and left" when
-        // the unit lists were closed (operator-reported, repeatedly). AreaX default
-        // 0 (was m_iCol1) closes that gap; the radar/list windows still draw on top.
-        rect.SetRect( EnGetProfileInt( theApp.m_sResIni.c_str(), "AreaX", 0 ),
+        rect.SetRect( EnGetProfileInt( theApp.m_sResIni.c_str(), "AreaX", theApp.m_iCol1 ),
                       EnGetProfileInt( theApp.m_sResIni.c_str(), "AreaY", 0 ),
                       EnGetProfileInt( theApp.m_sResIni.c_str(), "AreaEX", theApp.m_iScrnX ),
                       EnGetProfileInt( theApp.m_sResIni.c_str(), "AreaEY", theApp.m_iRow3 ) );
