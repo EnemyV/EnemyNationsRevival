@@ -768,31 +768,19 @@ void SDL2Panel::Detach(GameWindow* mainWin) {
 }
 
 void SDL2Panel::Detach(SDL_Window* ownerWindow) {
-    // Single-window mode: keep every panel composited into the main window
-    // instead of spawning a separate top-level SDL window. EN_SINGLEWIN keeps
-    // them in the main compositor so the whole game renders in one full-screen
-    // window.
+    // Single-window mode (EN_SINGLEWIN=1): keep every panel composited into the main
+    // window instead of spawning a separate top-level SDL window.
     //
-    // LINUX default depends on MONITOR COUNT. On GNOME/Wayland (game on XWayland)
-    // the detached panels are separate managed windows, which has two operator-
-    // reported problems that can't both be fixed while they're separate OS windows:
-    // (1) Mutter clamps them out of the reserved work-area strip (_NET_WORKAREA,
-    // e.g. 66,32 = top bar + left dock) so the radar/area map "can't be dragged to
-    // the top-left"; (2) per-frame SDL_SetWindowPosition moves are choppy under
-    // XWayland. Compositing into the one full-screen window sidesteps both. BUT a
-    // single window can only live on ONE monitor, and MULTI-MONITOR (dragging panels
-    // to another screen) is a FIRST-CLASS feature — so only default to single-window
-    // when there is exactly ONE display; with multiple monitors keep detached
-    // windows. Explicit overrides: EN_SINGLEWIN=1 forces composite, EN_MULTIWIN=1
-    // forces detached.
-#if defined(__linux__)
-    bool singleWin;
-    if      (getenv("EN_MULTIWIN"))  singleWin = false;
-    else if (getenv("EN_SINGLEWIN")) singleWin = true;
-    else                             singleWin = (SDL_GetNumVideoDisplays() <= 1);
-#else
+    // It is OPT-IN ONLY, on every platform — NOT a good default. The new SDL2 GPU
+    // terrain (alpha-blended fog, the zoom cache, the flicker-free sprite layer) is
+    // rendered ONLY for DETACHED panels: the compositor gates it on IsDetached()
+    // (SDL2Compositor "step 5"). Composited into one window, the area map falls back
+    // to the OLD CDIB software path — hatched/feathered fog, no zoom cache — which an
+    // experienced eye spots immediately (operator-reported on Linux). Detached windows
+    // also keep MULTI-MONITOR (drag a panel to another screen), a first-class feature.
+    // The GNOME/Mutter top-left work-area clamp + choppy XWayland window-moves are a
+    // separate, lesser problem to handle WITHOUT sacrificing the renderer.
     const bool singleWin = (getenv("EN_SINGLEWIN") != nullptr);
-#endif
     if (singleWin) {
         LogPanel("[REN] Detach suppressed (single-window): '" + m_name + "'");
         return;
