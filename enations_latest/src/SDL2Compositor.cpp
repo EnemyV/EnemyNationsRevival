@@ -395,6 +395,20 @@ bool SDL2Compositor::RouteEvent(SDL_Event& event) {
 }
 
 bool SDL2Compositor::RouteEventInner(SDL_Event& event) {
+    // LOAD-crash UI-half (newwin 01:00 root-cause + mac2's OnMouseMove 2/2 repro): when a save is
+    // loaded WHILE in-game, the world (hex/unit/building maps) is RemoveAll'd mid-load, but mouse/
+    // click events still reach the area panel's CWndArea handlers — OnMouseMove (area.cpp:1883),
+    // OnLButtonDown/OnRButtonDown/OnMButtonDown, the pan path — which all deref theMap._GetHex /
+    // m_aa.GetHit on the now-freed world → SIGSEGV @near-null. f9905f9d fixed the AI-thread half
+    // (stop threads before teardown); this is the UI-thread half. Gate the whole family at the
+    // ONE dispatch chokepoint: suppress game-panel event routing whenever we're not in a live game.
+    // AmInGame() reads m_bInGame (FALSE during the teardown/reload window — mac2/newwin confirmed),
+    // so normal gameplay is unaffected (AmInGame==TRUE → events flow), and the main menu / create-
+    // status dialogs route through GameWindow/their own handlers (not the compositor), so menu input
+    // is unaffected. Returns false (not consumed) so any non-panel handler still sees the event.
+    if ( !theApp.AmInGame() )
+        return false;
+
     // Check if this event targets a detached panel's own window.
     uint32_t eventWindowID = 0;
     switch (event.type) {
