@@ -7469,6 +7469,58 @@ void HarnessDumpUnits( std::string& out )
 }
 
 //---------------------------------------------------------------------------
+// HarnessDumpBldgState — enumerate ALL buildings (mine AND AI/other) with their
+// combat/construction state, so a headless driver can verify fire-control fixes
+// (e.g. #60 option-(a): a FINISHED+stopped armed camp must compute fireRate>0)
+// without driving live combat. Reads only public accessors; called on the game/
+// render thread. One line per building:
+//   "<id> t<type> <me|other> cd<constDone> stop<0|1> bfr<baseFR> fr<fireRate>\n"
+// where type=BLDG_TYPE (0=city 1=rocket 16=barracks_2/camp), constDone=-1 means
+// finished, baseFR=_GetFireRate() (>0 ⇒ armed), fr=GetFireRate() (>0 ⇒ will fire).
+// Declared in en_harness.h.
+//---------------------------------------------------------------------------
+void HarnessDumpBldgState( std::string& out )
+{
+    out.clear( );
+    int iTotal = 0, iArmed = 0, iArmedSilent = 0;
+    std::string body;
+    char line[160];
+
+    POSITION pos = theBuildingMap.GetStartPosition( );
+    while ( pos != NULL )
+    {
+        DWORD      dwID  = 0;
+        CBuilding* pBldg = NULL;
+        theBuildingMap.GetNextAssoc( pos, dwID, pBldg );
+        if ( pBldg == NULL )
+            continue;
+        ++iTotal;
+        bool bMine    = ( pBldg->GetOwner( ) != NULL && pBldg->GetOwner( )->IsMe( ) );
+        CStructureData const* pData = pBldg->GetData( );
+        int  iType    = ( pData != NULL ) ? (int) pData->GetType( )      : -1;
+        int  iConst   = pBldg->GetConstDone( );
+        int  iStopped = ( pBldg->GetFlags( ) & CUnit::stopped ) ? 1 : 0;
+        int  iBaseFR  = ( pData != NULL ) ? pData->_GetFireRate( )       : 0;  // >0 ⇒ armed (the :1429 gate)
+        int  iFireRt  = pBldg->GetFireRate( );       // live computed (>0 ⇒ fires)
+        if ( iBaseFR > 0 )
+        {
+            ++iArmed;
+            if ( iFireRt == 0 )
+                ++iArmedSilent;                       // armed but won't fire (#60 symptom)
+        }
+        snprintf( line, sizeof( line ), "%lu t%d %s cd%d stop%d bfr%d fr%d\n",
+                  (unsigned long) dwID, iType, bMine ? "me" : "other",
+                  iConst, iStopped, iBaseFR, iFireRt );
+        body += line;
+    }
+
+    snprintf( line, sizeof( line ), "# bldg %d total, armed %d, armed-but-silent %d\n",
+              iTotal, iArmed, iArmedSilent );
+    out  = line;
+    out += body;
+}
+
+//---------------------------------------------------------------------------
 // HarnessCenterUnit — center the focused area view on the unit with `id`
 // (vehicle or building), so a headless driver can then click view-center to
 // select it. Declared in en_harness.h. Called on the game/render thread.

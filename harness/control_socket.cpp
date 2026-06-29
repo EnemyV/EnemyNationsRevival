@@ -86,6 +86,11 @@ std::string            g_unitsResult;
 std::atomic<bool>      g_unitsPending{false};
 std::atomic<bool>      g_unitsDone{false};
 
+std::mutex              g_bldgStateMutex;
+std::string            g_bldgStateResult;
+std::atomic<bool>      g_bldgStatePending{false};
+std::atomic<bool>      g_bldgStateDone{false};
+
 // Pending `edicts` request (HarnessDumpEdicts) — list edicts + active state.
 std::mutex              g_edictsMutex;
 std::string            g_edictsResult;
@@ -297,6 +302,16 @@ void handle_command(const std::string& line, int conn) {
         std::string out;
         { std::lock_guard<std::mutex> lk(g_unitsMutex); out = g_unitsResult; }
         if (!g_unitsDone.load()) out = "err units timeout (not in-game?)\n";
+        write(conn, out.c_str(), out.size());
+        return;
+    } else if (strcmp(cmd, "bldgstate") == 0) {
+        // Dump ALL buildings (mine + AI) with combat/construction state on the
+        // render thread — verify fire-control fixes (#60) without live combat.
+        g_bldgStateDone = false; g_bldgStatePending = true;
+        for (int i = 0; i < 400 && !g_bldgStateDone.load(); ++i) { struct timespec ts={0,5000000}; nanosleep(&ts,nullptr); }
+        std::string out;
+        { std::lock_guard<std::mutex> lk(g_bldgStateMutex); out = g_bldgStateResult; }
+        if (!g_bldgStateDone.load()) out = "err bldgstate timeout (not in-game?)\n";
         write(conn, out.c_str(), out.size());
         return;
     } else if (strcmp(cmd, "edicts") == 0) {
@@ -643,6 +658,13 @@ void EnHarness_Service() {
         HarnessDumpUnits(out);
         { std::lock_guard<std::mutex> lk(g_unitsMutex); g_unitsResult = out; }
         g_unitsDone = true;
+        return;
+    }
+    if (g_bldgStatePending.exchange(false)) {
+        std::string out;
+        HarnessDumpBldgState(out);
+        { std::lock_guard<std::mutex> lk(g_bldgStateMutex); g_bldgStateResult = out; }
+        g_bldgStateDone = true;
         return;
     }
     if (g_edictsPending.exchange(false)) {

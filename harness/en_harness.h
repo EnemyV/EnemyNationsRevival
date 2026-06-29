@@ -53,6 +53,12 @@ void EnHarness_RegisterWindowSurface(unsigned int windowId, SDL_Surface* surface
 // deterministic instead of a blind dblclick-sweep. Call on the game/render thread.
 void HarnessDumpUnits(std::string& out);
 
+// Dump ALL buildings (mine + AI) with combat/construction state, so a headless
+// driver can verify fire-control fixes (e.g. #60: a finished+stopped armed camp
+// must compute fireRate>0) without driving live combat. Backs `bldgstate`.
+// Render/game thread only.
+void HarnessDumpBldgState(std::string& out);
+
 // List every civ-wide edict + whether it's active for the local player, so a QA
 // driver can verify an edict toggle (read state, click the checkbox, read again).
 // Backs `edicts`. Render/game thread only.
