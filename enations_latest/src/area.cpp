@@ -2631,15 +2631,33 @@ void CWndArea::DrawRangeCircle( )
             if ( px < 0 || px >= W || py < 0 || py >= H ) return;
             memcpy( bits + pdib->GetOffset( px, py ), &edge, iBpp );
         };
-        int ex = rad, ey = 0, eerr = 0;
-        while ( ex >= ey ) {
-            put( c.x + ex, c.y + ey ); put( c.x + ey, c.y + ex );
-            put( c.x - ey, c.y + ex ); put( c.x - ex, c.y + ey );
-            put( c.x - ex, c.y - ey ); put( c.x - ey, c.y - ex );
-            put( c.x + ey, c.y - ex ); put( c.x + ex, c.y - ey );
-            ey++;
-            eerr += 1 + 2 * ey;
-            if ( 2 * ( eerr - ex ) + 1 > 0 ) { ex--; eerr += 1 - 2 * ex; }
+        // #61/G1: draw the crisp edge as a midpoint ELLIPSE (x-radius rad, y-radius radY) so it
+        // matches the 2:1 hex aspect of the soft glow band above. The old code here was a plain
+        // Bresenham CIRCLE (radius rad in BOTH axes), so the ring sat at full `rad` vertically
+        // (~2x the real range) = the operator's "thin outer circle that's mostly wrong" sitting
+        // outside the correct (compressed) glow ellipse. An ellipse at radY coincides with the
+        // glow's outer edge ((x)^2 + (2y)^2 = rad^2), leaving a single correct boundary.
+        long rx2 = (long)rad * rad, ry2 = (long)radY * radY;
+        long ex = 0, ey = radY;
+        long dx = 0, dy = 2 * rx2 * ey;
+        auto put4 = [&]( long ix, long iy ) {
+            put( c.x + (int)ix, c.y + (int)iy ); put( c.x - (int)ix, c.y + (int)iy );
+            put( c.x + (int)ix, c.y - (int)iy ); put( c.x - (int)ix, c.y - (int)iy );
+        };
+        double p1 = (double)ry2 - (double)rx2 * radY + 0.25 * rx2;   // region 1 (|slope| < 1)
+        while ( dx < dy ) {
+            put4( ex, ey );
+            ex++; dx += 2 * ry2;
+            if ( p1 < 0 ) p1 += ry2 + dx;
+            else { ey--; dy -= 2 * rx2; p1 += ry2 + dx - dy; }
+        }
+        double p2 = (double)ry2 * ( ex + 0.5 ) * ( ex + 0.5 )
+                    + (double)rx2 * ( ey - 1 ) * ( ey - 1 ) - (double)rx2 * ry2;   // region 2
+        while ( ey >= 0 ) {
+            put4( ex, ey );
+            ey--; dy -= 2 * rx2;
+            if ( p2 > 0 ) p2 += rx2 - dy;
+            else { ex++; dx += 2 * ry2; p2 += rx2 - dy + dx; }
         }
     }
 
