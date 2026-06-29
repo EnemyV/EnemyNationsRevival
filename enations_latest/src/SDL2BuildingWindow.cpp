@@ -1657,8 +1657,14 @@ void SDL2BuildingWindow::Refresh() {
             CBuildPower* pBp     = m_pBldg->GetData()->GetBldPower();
             int          ratioIn = pAlt ? pAlt->m_iRatioIn : 3;
             if ( pBp && pBp->GetRate() > 0 && ratioIn > 0 ) {
-                int oilPerMin = (int)( m_pBldg->GetFrameProd( float( 24 * 60 ) / (float)pBp->GetRate() )
-                                       / (float)ratioIn );
+                // Reflect ACTUAL production, like the other producers: an empty coal store means the
+                // plant converts NOTHING -> show 0/min, not the theoretical max. Mirrors the I1 fix
+                // in primaryRatePerMin (empty input -> 0) and the runtime BuildPower gate
+                // (mainloop.cpp:2476: GetStore(input)<=0 -> no burn, no oil).
+                int inMat     = pAlt ? pAlt->m_iInputMat : CMaterialTypes::coal;
+                int oilPerMin = ( m_pBldg->GetStore( inMat ) <= 0 ) ? 0
+                                : (int)( m_pBldg->GetFrameProd( float( 24 * 60 ) / (float)pBp->GetRate() )
+                                         / (float)ratioIn );
                 str += ": " + FmtNum( oilPerMin ) + " / min";
             }
         } else if ( bAlt ) {
