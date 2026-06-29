@@ -571,20 +571,15 @@ BOOL CAIGoalMgr::AutoFire( int iPlayer )
     // a known opfor
     if ( pOpFor != NULL )
     {
-        // on the highest difficulty AI players have auto-alliance
-        if ( pOpFor->IsAI( ) && pGameData->m_iSmart > 1 )
-        {
-            // except for on MODERATE level, leave a chance that
-            // the AI will shoot another AI player
-            /*
-            if( pGameData->m_iSmart == 1 )
-            {
-                if( !pGameData->GetRandom(NUM_DIFFICUTY_LEVELS) )
-                    return( TRUE );
-            }
-            */
-            return ( FALSE );
-        }
+        // OPERATOR DIRECTIVE (#2, AI-vs-AI war) — 2nd half (newwin spec): the high-difficulty
+        // AI-vs-AI auto-alliance override that used to live here (`if ( pOpFor->IsAI() &&
+        // pGameData->m_iSmart > 1 ) return FALSE;`) made AIs NEVER auto-fire on each other on
+        // high diff — even when at war (it short-circuited before the `return pOpFor->AtWar()`
+        // below). Paired with the CAIOpFor::SetRelations override removal (@8ade1040), this is
+        // removed so AIs fire on each other when their attitude-driven relations reach WAR.
+        // Deterministic (the moderate-level GetRandom fuzz was already commented out, so no
+        // RandNum/MP-desync). High-diff AIs still ally when attitude is high (they just no
+        // longer force not-firing).
 
         // highest level of difficult always fires back
         if ( !pOpFor->IsAI( ) && pGameData->m_iSmart )
