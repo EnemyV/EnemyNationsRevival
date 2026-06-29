@@ -1430,7 +1430,12 @@ void CBuilding::Operate( )
     // we handle building fire rates here because it depends on power & people
     if ( GetData( )->_GetFireRate( ) > 0 )
     {
-        if ( ( m_iConstDone != -1 ) || ( m_unitFlags & stopped ) )
+        // #60: a FINISHED armed building still defends even if production is `stopped` (operator:
+        // enemy buildings should fire when visible + in-range + at-war, same as the player's).
+        // Under-construction (m_iConstDone != -1) buildings still can't fire. The `stopped` term
+        // was silencing 15 finished enemy camps (barracks_2) persisted `stopped` in saved games.
+        // Reads only network-synced state (no RandNum/time) → MP-deterministic. newwin-concurred.
+        if ( m_iConstDone != -1 )
             m_iFireRate = 0;
         else
         {
