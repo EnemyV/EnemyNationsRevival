@@ -1646,9 +1646,21 @@ void SDL2BuildingWindow::Refresh() {
         bool bAlt = ( pAlt != nullptr ) && m_pBldg->IsFlag( CUnit::alt_oil ) && !bCoalLiq;
         std::string str;
         if ( bCoalLiq ) {
-            // Name the oil product ("Producing Oil"); the bar below shows the conversion progress.
+            // Name the oil product and show its per-minute rate so it matches every other producer
+            // widget ("Producing Oil: N / min"), per the operator. The coal plant burns coal at
+            // GetRate() build-units per coal (BuildPower) and Convert credits 1 oil per m_iRatioIn
+            // coal (eRatioConsume). Effective oil/min = GetFrameProd(framesPerMin / GetRate()) /
+            // ratioIn — the SAME GetFrameProd(speed * 24*60 * out / batchTime) form the materials
+            // status uses (new_unit.cpp:167), with power's prod basis of 1.
             int oilMat = pAlt ? pAlt->m_iOutputMat : CMaterialTypes::oil;
             str = std::string( "Producing " ) + CMaterialTypes::GetDesc( oilMat ).c_str();
+            CBuildPower* pBp     = m_pBldg->GetData()->GetBldPower();
+            int          ratioIn = pAlt ? pAlt->m_iRatioIn : 3;
+            if ( pBp && pBp->GetRate() > 0 && ratioIn > 0 ) {
+                int oilPerMin = (int)( m_pBldg->GetFrameProd( float( 24 * 60 ) / (float)pBp->GetRate() )
+                                       / (float)ratioIn );
+                str += ": " + FmtNum( oilPerMin ) + " / min";
+            }
         } else if ( bAlt ) {
             str = AltProductionStatus( m_pBldg, pAlt );
         } else {
