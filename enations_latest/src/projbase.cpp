@@ -1217,6 +1217,16 @@ void CVehicle::HandleCombat ()
                                 m_iOppoLOS = theMap.LineOfSight (this, m_pUnitOppo);
                             }
 
+                // SHOOT-OOR fix (newwin's land-ready diff): re-derive the oppo range EVERY fire tick.
+                // The change-detection refresh above misses a stationary shooter vs a (building) oppo,
+                // leaving m_iOppoLOS frozen "in range" so it keeps mis-firing out-of-range (401x in the
+                // operator's save). Recomputing here makes the gate see the FRESH distance → OOR drops
+                // through to bOkTurret=FALSE → the give-up path clears the stale oppo. (Shoot already
+                // calls GetRangeDistance, so ~no extra cost.)
+                m_iOppoLOS = theMap.GetRangeDistance( this, m_pUnitOppo );
+                if ( m_iOppoLOS <= GetRange () )
+                    m_iOppoLOS = theMap.LineOfSight( this, m_pUnitOppo );
+
                 if ( (abs (m_iOppoLOS) <= GetRange ()) &&
                                 ((m_iOppoLOS >= 0) || (GetData()->GetBaseType () == CTransportData::artillery)))
                     Shoot (m_pUnitOppo, m_iOppoLOS);
