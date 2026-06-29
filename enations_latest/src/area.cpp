@@ -1401,7 +1401,13 @@ void CWndArea::Create( CMapLoc const& ml, CUnit* pUnit, BOOL bFirst )
     CRect     rect;
     CWndArea* pPrev = theAreaList.GetTop( );
     if ( pPrev == NULL )
-        rect.SetRect( EnGetProfileInt( theApp.m_sResIni.c_str(), "AreaX", theApp.m_iCol1 ),
+        // Main area map fills the FULL screen width (x=0) — matches the Windows
+        // reference layout (operator-confirmed: radar/minimap + unit-list windows
+        // overlay the area map, which fills the background). Default x was m_iScrnX/5,
+        // which reserved a left column that showed as a wallpaper "gap". The area map
+        // stays a DETACHED, movable/resizable window (draggable off-screen / to other
+        // monitors — multi-monitor is first-class); it just defaults to full width.
+        rect.SetRect( EnGetProfileInt( theApp.m_sResIni.c_str(), "AreaX", 0 ),
                       EnGetProfileInt( theApp.m_sResIni.c_str(), "AreaY", 0 ),
                       EnGetProfileInt( theApp.m_sResIni.c_str(), "AreaEX", theApp.m_iScrnX ),
                       EnGetProfileInt( theApp.m_sResIni.c_str(), "AreaEY", theApp.m_iRow3 ) );
