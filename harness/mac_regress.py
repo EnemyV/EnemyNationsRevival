@@ -11,11 +11,12 @@ Usage (game already up on 127.0.0.1:7070):
   python3 harness/mac_regress.py
   python3 harness/mac_regress.py --saves coalliq_diag,mac2_ck6_developed
   python3 harness/mac_regress.py --shots /tmp/regress   # also save PNGs
+  python3 harness/mac_regress.py --launch               # launch+wait+sweep+KILL (one-shot)
 
 Exit code 0 = clean (no crash), 1 = a crash/.ips appeared. Each step prints
 [ok]/[CRASH]. Designed for the mac2 idle-loop: one command per regression tick.
 """
-import os, sys, glob, time, socket, subprocess
+import os, sys, glob, time, socket, subprocess, signal
 
 PORT = int(os.environ.get("EN_HARNESS_PORT", "7070"))
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -48,14 +49,28 @@ def newest_ips_mtime():
 def alive():
     return cmd(["pstats"]) not in ("ERR_NO_SOCKET",)
 
+def launch_game():
+    # Launch the harness build from run-mac, wait for the socket, return the pid.
+    run = os.path.join(os.path.dirname(HERE), "run-mac")
+    env = dict(os.environ, EN_HARNESS="1", SDL_RENDER_DRIVER="opengl")
+    log = open("/tmp/mac_regress_game.log", "w")
+    p = subprocess.Popen(["./enations"], cwd=run, env=env, stdout=log, stderr=subprocess.STDOUT)
+    for _ in range(120):  # up to ~30s
+        if cmd(["pstats"]) != "ERR_NO_SOCKET": return p.pid
+        if p.poll() is not None: print("game died before socket; see /tmp/mac_regress_game.log"); sys.exit(2)
+        time.sleep(0.25)
+    print("socket never came up"); sys.exit(2)
+
 def main():
     saves = ["coalliq_diag", "mac2_ck6_developed"]
-    shots = None
+    shots = None; do_launch = False
     a = sys.argv[1:]
     for i, x in enumerate(a):
         if x == "--saves" and i+1 < len(a): saves = a[i+1].split(",")
         if x == "--shots" and i+1 < len(a): shots = a[i+1]
+        if x == "--launch": do_launch = True
     if shots: os.makedirs(shots, exist_ok=True)
+    launched_pid = launch_game() if do_launch else None
 
     base_ips = newest_ips_mtime()
     crashes = 0
@@ -104,6 +119,12 @@ def main():
         step("back-to-back reload (load-crash path)")
 
     print(f"=== regression sweep: {'CLEAN — 0 crashes' if crashes == 0 else str(crashes)+' CRASH(es)'} ===")
+    if launched_pid:
+        cmd(["quit"]); time.sleep(1)
+        try: os.kill(launched_pid, signal.SIGKILL)
+        except OSError: pass
+        subprocess.run(["pkill", "-9", "-f", "enations"], capture_output=True)
+        print("[launch] game KILLed")
     sys.exit(1 if crashes else 0)
 
 if __name__ == "__main__":
