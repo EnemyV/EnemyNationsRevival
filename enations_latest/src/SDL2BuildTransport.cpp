@@ -285,6 +285,11 @@ void SDL2BuildTransport::RebuildProgress(int per) {
 }
 
 void SDL2BuildTransport::OnFrame() {
+    // LOAD-while-in-game crash (mac2): skip per-frame refresh while CGame::LoadGame tears down the
+    // world — m_pBldg (a CVehicleBuilding*) is freed by NewWorld's RemoveAll, but LoadGame
+    // BaseYield()s before the dialogs close, so this deref crashes. Same flag/family as
+    // SDL2BuildingWindow::OnFrame. (newwin's 4th-path audit.)
+    if ( theApp.IsWorldTearingDown( ) ) return;
     // Poll the building's live build %; advance the strip + title only on change.
     // Idle (no vehicle queued) -> 0, so the stale m_iLastPer never shows phantom cars.
     int per = m_pBldg->GetBldUnt() ? __max(0, m_pBldg->GetBuildPer()) : 0;

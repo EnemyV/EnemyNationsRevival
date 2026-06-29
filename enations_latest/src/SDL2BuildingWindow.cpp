@@ -865,6 +865,13 @@ int SDL2BuildingWindow::BuildSection(int id, int x, int y, int w) {
 }
 
 void SDL2BuildingWindow::OnFrame() {
+    // LOAD-while-in-game crash #3 (mac2 mac_regress repro): skip the per-frame refresh while
+    // CGame::LoadGame is tearing down/rebuilding the world — LoadGame BaseYield()s (renders this
+    // OnFrame) BEFORE NewWorld's CloseActiveDialogs runs, so Refresh()->ShowStatusText->
+    // CPlayer::GetPplTotal (and the C6 Rebuild) deref m_pBldg/the player on a freed/half-loaded
+    // world -> SIGSEGV. m_bWorldTearingDown is set for all of LoadGame (events gated in
+    // SDL2Compositor::RouteEventInner; OnFrame gated here).
+    if ( theApp.IsWorldTearingDown( ) ) return;
     // C6: a pending coal-liq relayout (the checkbox flipped the section SET) is performed HERE,
     // not in the checkbox callback — Rebuild() clears widgets, which would free the live checkbox
     // mid-callback. Doing it at frame top means the callback has fully returned. Rebuild() re-runs
