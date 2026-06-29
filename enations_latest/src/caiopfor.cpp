@@ -535,11 +535,14 @@ void CAIOpFor::SetRelations( void )
     else
         m_bAtWar = FALSE;
 
-    if ( m_bIsAI && pGameData->m_iSmart >= 2 )
-    {
-        m_bAtWar     = FALSE;
-        m_cRelations = ALLIANCE;
-    }
+    // OPERATOR DIRECTIVE (#2, AI-vs-AI war): the auto-alliance override that used to live here
+    // (`if ( m_bIsAI && pGameData->m_iSmart >= 2 ) { m_bAtWar = FALSE; m_cRelations = ALLIANCE; }`)
+    // unconditionally forced EVERY AI opfor to permanent ALLIANCE on high difficulty, discarding the
+    // attitude-driven relations computed just above. The operator wants AIs to ALSO go to war at high
+    // difficulty (not always ally), so the override is removed — relations now follow m_iAttitude for
+    // all difficulties (attitude still yields ALLIANCE when high, so allies still happen; they're just
+    // no longer forced, allowing war/hostile when attitude warrants). Deterministic (no RandNum), so
+    // no MP-desync risk. (newwin root-cause; combat-node to verify AI-vs-AI war emerges in-game.)
 }
 
 BYTE CAIOpFor::GetRelations( void )
