@@ -1326,7 +1326,9 @@ inline HLOCAL  LocalFree(HLOCAL h) { free((void*)h); return NULL; }
 inline HGDIOBJ GetStockObject(int) { return NULL; }
 inline int     GetDIBits(HDC, HBITMAP, UINT, UINT, LPVOID, BITMAPINFO*, UINT) { return 0; }
 inline int     SetDIBitsToDevice(HDC, int, int, DWORD, DWORD, int, int, UINT, UINT, const void*, const BITMAPINFO*, UINT) { return 0; }
-inline SHORT   GetKeyState(int) { return 0; }
+SHORT          GetKeyState(int vk);   // real impl in win32_compat.cpp via SDL_GetModState;
+                                      // the old 0-stub broke every shift/ctrl modifier check
+                                      // on POSIX (e.g. #59 Shift move-preview never drew).
 inline SHORT   GetAsyncKeyState(int) { return 0; }
 // Resource API (legacy CResource/CGlobal::LoadResource path — no module resources on Linux).
 inline HRSRC   FindResourceA(HMODULE, LPCSTR, LPCSTR) { return NULL; }

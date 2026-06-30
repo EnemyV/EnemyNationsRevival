@@ -40,12 +40,35 @@
 #include <mach-o/dyld.h>   // _NSGetExecutablePath (no /proc on macOS)
 #endif
 
+#include <SDL_keyboard.h>  // SDL_GetModState / SDL_GetKeyboardState for GetKeyState()
+
 //===========================================================================
 // Last-error (per-thread).
 //===========================================================================
 static thread_local DWORD g_lastError = 0;
 extern "C" DWORD GetLastError(void)            { return g_lastError; }
 extern "C" void  SetLastError(DWORD err)       { g_lastError = err; }
+
+//===========================================================================
+// GetKeyState — live modifier/key state via SDL. The win32_compat.h fallback
+// was a 0-stub, which made EVERY shift/ctrl check on POSIX read "not held":
+// the Shift move-preview (#59, area.cpp:2343) never drew, shift/ctrl multi-
+// select (area.cpp:6044, world.cpp:2500) was dead, etc. Win32 semantics: the
+// 0x8000 high bit = "pressed now"; the 0x0001 low bit = toggle (Caps Lock).
+// Must be called on the SDL/main thread (it is — the area-map render + input
+// run there). Unmapped VKs return 0, matching the old behavior.
+//===========================================================================
+SHORT GetKeyState(int vk)
+{
+    SDL_Keymod mod = SDL_GetModState();
+    switch (vk) {
+    case VK_SHIFT:   return (mod & KMOD_SHIFT) ? (SHORT)0x8000 : (SHORT)0;
+    case VK_CONTROL: return (mod & KMOD_CTRL)  ? (SHORT)0x8000 : (SHORT)0;
+    case VK_MENU:    return (mod & KMOD_ALT)   ? (SHORT)0x8000 : (SHORT)0;
+    case VK_CAPITAL: return (mod & KMOD_CAPS)  ? (SHORT)0x0001 : (SHORT)0;
+    default:         return (SHORT)0;
+    }
+}
 
 //===========================================================================
 // Rect / point geometry (pure math).
