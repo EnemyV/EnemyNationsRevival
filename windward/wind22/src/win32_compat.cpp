@@ -203,6 +203,15 @@ extern "C" DWORD WaitForSingleObject(HANDLE h, DWORD ms) {
         case EnObject::K_EVENT: {
             EventObj* e = static_cast<EventObj*>(o);
             std::unique_lock<std::mutex> lk(e->m);
+            // ms==0 is a NON-BLOCKING poll (Win32: return immediately with current
+            // state). Must NOT touch the condvar — cv.wait_for(0ms) still does a full
+            // pthread_cond_timedwait syscall (~0.5ms/call here), and CheckYield polls
+            // this ~1600x/s from the sim loop (was ~790ms/s = the FPS killer).
+            if (ms == 0) {
+                if (!e->signaled) return WAIT_TIMEOUT;
+                if (!e->manual) e->signaled = false;   // auto-reset
+                return WAIT_OBJECT_0;
+            }
             if (ms == INFINITE) {
                 e->cv.wait(lk, [e]{ return e->signaled; });
             } else if (!e->cv.wait_for(lk, std::chrono::milliseconds(ms), [e]{ return e->signaled; })) {
