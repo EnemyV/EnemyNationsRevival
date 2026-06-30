@@ -289,6 +289,20 @@ void SDL2Label::Render(SDL_Surface* dst, TTF_Font* font) {
         if (m_centered && surf->w < m_rect.w) dstRect.x += (m_rect.w - surf->w) / 2;
         if (!m_topAligned && surf->h < m_rect.h) dstRect.y += (m_rect.h - surf->h) / 2;
     }
+    // Generic overflow guard (all info windows / dialogs use SDL2Label): a single-line
+    // label whose rendered text is WIDER than its widget used to clip at the right edge —
+    // large late-game numbers ran out of their field ("114.3k" storage, "9,480" colony
+    // pop) and words got cut ("desks"->"desk"). Condense the glyphs horizontally to fit
+    // the field instead of clipping/overflowing. Labels that already fit take the normal
+    // 1:1 path below (no scaling, no quality change).
+    if (!m_wrapped && surf->w > m_rect.w) {
+        SDL_Rect full = { 0, 0, surf->w, std::min(surf->h, m_rect.h) };
+        SDL_Rect fit  = m_rect; fit.w = m_rect.w; fit.h = full.h;
+        if (!m_topAligned && full.h < m_rect.h) fit.y += (m_rect.h - full.h) / 2;
+        SDL_BlitScaled(surf, &full, dst, &fit);
+        if (m_bold) { SDL_Rect f2 = fit; f2.x += 1; SDL_BlitScaled(surf, &full, dst, &f2); }
+        return;
+    }
     dstRect.w = srcRect.w;
     dstRect.h = srcRect.h;
     SDL_BlitSurface(surf, &srcRect, dst, &dstRect);
