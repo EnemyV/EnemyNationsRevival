@@ -768,19 +768,37 @@ void SDL2Panel::Detach(GameWindow* mainWin) {
 }
 
 void SDL2Panel::Detach(SDL_Window* ownerWindow) {
-    // Single-window mode (EN_SINGLEWIN=1): keep every panel composited into the main
-    // window instead of spawning a separate top-level SDL window.
+    // Single-window mode: keep every panel composited INTO the fullscreen main window
+    // instead of spawning a separate top-level SDL window.
     //
-    // It is OPT-IN ONLY, on every platform — NOT a good default. The new SDL2 GPU
-    // terrain (alpha-blended fog, the zoom cache, the flicker-free sprite layer) is
-    // rendered ONLY for DETACHED panels: the compositor gates it on IsDetached()
-    // (SDL2Compositor "step 5"). Composited into one window, the area map falls back
-    // to the OLD CDIB software path — hatched/feathered fog, no zoom cache — which an
-    // experienced eye spots immediately (operator-reported on Linux). Detached windows
-    // also keep MULTI-MONITOR (drag a panel to another screen), a first-class feature.
-    // The GNOME/Mutter top-left work-area clamp + choppy XWayland window-moves are a
-    // separate, lesser problem to handle WITHOUT sacrificing the renderer.
+    // WHY this is the default in SOFTWARE mode: separate top-level panels are managed
+    // windows, so GNOME/Mutter clamps them OUT of the top-left work-area strut (dock 66 +
+    // top-bar 32) → the radar/area-map can't reach the corner (the "gap at the top and
+    // left" the operator reported repeatedly) and can't be dragged there. The MAIN window
+    // is borderless-fullscreen and DOES cover 0,0, so compositing the panels into it lets
+    // them sit in the corner AND be dragged anywhere with no WM clamp — matching Windows.
+    //
+    // It is gated to software mode because the SDL2 GPU terrain (alpha fog, zoom cache,
+    // sprite layer) renders ONLY for DETACHED panels (SDL2Compositor "step 5" IsDetached()
+    // gate); composited, the area map falls back to the CDIB path — which is EXACTLY the
+    // path software mode already uses, so nothing is lost. In GPU (SDL2) mode we stay
+    // DETACHED to keep that GPU terrain + MULTI-MONITOR (drag a panel to another screen).
+    // EN_SINGLEWIN forces composited; EN_MULTIWIN forces detached (overrides both).
+#if defined(__linux__)
+    // Linux: single-window (composited) is the DEFAULT in SOFTWARE mode — it closes the
+    // GNOME top-left strut "gap" (the radar/panels reach the corner inside the fullscreen
+    // main window, which separate top-level windows can't because Mutter clamps them to the
+    // 66x32 work-area origin) AND keeps z-order correct (panels are drawn over the
+    // background, so clicking the background can't bury them). GPU mode stays DETACHED to
+    // keep the SDL2 GPU terrain (renders for detached panels only) + multi-monitor.
+    // EN_SINGLEWIN forces composited; EN_MULTIWIN forces detached (overrides both).
+    const bool singleWin = (getenv("EN_MULTIWIN") == nullptr) &&
+                           ( getenv("EN_SINGLEWIN") != nullptr || !RenderBackendIsGpu() );
+#else
+    // Win/macOS: no GNOME work-area strut clamp, so detached panels work fine — keep
+    // single-window strictly opt-in (unchanged behavior).
     const bool singleWin = (getenv("EN_SINGLEWIN") != nullptr);
+#endif
     if (singleWin) {
         LogPanel("[REN] Detach suppressed (single-window): '" + m_name + "'");
         return;
@@ -1427,6 +1445,23 @@ bool SDL2Panel::HandleDetachedDrag(SDL_Event& event) {
             return false;  // on a caption button — let the click reach HandleEvent
     }
 
+#if defined(__linux__)
+    // Linux/X11: hand the drag to the window manager (Mutter) via _NET_WM_MOVERESIZE
+    // instead of driving it ourselves. A borderless SDL window + SDL_SetWindowPosition
+    // gets CLAMPED by Mutter to the work area, so a near-fullscreen area map can't be
+    // dragged off-screen / into the top-left strut / onto another monitor (#55). The WM's
+    // interactive move positions freely (matches Windows). Mutter drives until button-up;
+    // we resync on the resulting SDL_WINDOWEVENT_MOVED (OnOwnWindowMoved). Falls through to
+    // the manual drag if the WM move can't start (non-X11 / older WM).
+    // Default ON; EN_WM_MOVE=0 forces the legacy manual (clamped) drag as a fallback.
+    if (!(getenv("EN_WM_MOVE") && getenv("EN_WM_MOVE")[0] == '0')) {
+        int gx = 0, gy = 0;
+        SDL_GetGlobalMouseState(&gx, &gy);
+        extern bool EnStartX11WindowMove(SDL_Window*, int, int);
+        if (EnStartX11WindowMove(m_ownWindow, gx, gy))
+            return true;
+    }
+#endif
     SDL_GetGlobalMouseState(&m_dDragStartMX, &m_dDragStartMY);
     SDL_GetWindowPosition(m_ownWindow, &m_dDragStartWX, &m_dDragStartWY);
     m_dDragging = true;

@@ -29,6 +29,7 @@
 #include <SDL.h>
 #include <SDL_syswm.h>
 #include <X11/Xlib.h>
+#include <string.h>   // memset
 
 // Declared (extern) at the call site in SDL2Panel.cpp.
 void EnSetX11TransientFor(SDL_Window* panel, SDL_Window* owner)
@@ -50,6 +51,68 @@ void EnSetX11TransientFor(SDL_Window* panel, SDL_Window* owner)
                              ownerInfo.info.x11.window);
         XFlush(panelInfo.info.x11.display);   // ensure the WM sees the hint promptly
     }
+}
+
+//---------------------------------------------------------------------------
+// EnStartX11WindowMove — hand an in-progress title-bar drag to the window manager
+// via the EWMH _NET_WM_MOVERESIZE protocol (the WM's own interactive move).
+//
+// Why: our detached panels are BORDERLESS SDL windows (no server-side titlebar), so
+// the user can't WM-drag them; we drive the move ourselves with SDL_SetWindowPosition.
+// But Mutter (GNOME/Wayland's XWayland WM) CLAMPS programmatic moves (ConfigureRequest)
+// to the work area — a near-fullscreen area map then can't be dragged off-screen, to the
+// top-left strut, or onto another monitor (operator-reported #55: "windows can't be put
+// into the top / dragged right / off screen"). An INTERACTIVE move via _NET_WM_MOVERESIZE
+// is positioned by Mutter without that clamp (it follows the pointer anywhere, incl.
+// off-screen / cross-monitor) — matching how the windows behave on Windows.
+//
+// Unlike the Win32 modal SC_MOVE loop (which froze our rendering, the reason we drive the
+// move manually elsewhere), _NET_WM_MOVERESIZE on X11 is ASYNC: Mutter grabs the pointer
+// and moves the window while our render loop keeps running. On button-release Mutter ends
+// the move and SDL delivers SDL_WINDOWEVENT_MOVED, which OnOwnWindowMoved() resyncs.
+//
+// Returns true if the WM move was initiated (caller then skips its manual drag).
+bool EnStartX11WindowMove(SDL_Window* win, int xRoot, int yRoot)
+{
+    if (win == NULL)
+        return false;
+
+    SDL_SysWMinfo info;
+    SDL_VERSION(&info.version);
+    if (!SDL_GetWindowWMInfo(win, &info) || info.subsystem != SDL_SYSWM_X11)
+        return false;
+
+    Display* dpy  = info.info.x11.display;
+    Window   w    = info.info.x11.window;
+    Window   root = DefaultRootWindow(dpy);
+
+    Atom moveresize = XInternAtom(dpy, "_NET_WM_MOVERESIZE", False);
+    if (moveresize == None)
+        return false;
+
+    // Release the implicit pointer grab from the ButtonPress so Mutter can take the
+    // pointer for the interactive move (harmless if there is none).
+    XUngrabPointer(dpy, CurrentTime);
+    XFlush(dpy);
+
+    XClientMessageEvent ev;
+    memset(&ev, 0, sizeof(ev));
+    ev.type         = ClientMessage;
+    ev.display      = dpy;
+    ev.window       = w;
+    ev.message_type = moveresize;
+    ev.format       = 32;
+    ev.data.l[0]    = (long)xRoot;   // pointer absolute (root) X at drag start
+    ev.data.l[1]    = (long)yRoot;   // pointer absolute (root) Y at drag start
+    ev.data.l[2]    = 8;             // _NET_WM_MOVERESIZE_MOVE
+    ev.data.l[3]    = Button1;       // the button driving the move
+    ev.data.l[4]    = 1;             // source indication: normal application
+
+    XSendEvent(dpy, root, False,
+               SubstructureRedirectMask | SubstructureNotifyMask,
+               (XEvent*)&ev);
+    XFlush(dpy);
+    return true;
 }
 
 #endif // !_WIN32
