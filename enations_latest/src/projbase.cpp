@@ -130,7 +130,19 @@ CRect CProjectile::Draw( const CHexCoord &hexcoord )
             }
         }
 
-    CRect	rectBound = CProjBase::Draw( hexcoord );
+    CRect	rectBound;
+    if ( m_psprite != NULL )
+        rectBound = CProjBase::Draw( hexcoord );
+    else
+        {
+        // Trail-only projectile (weapon has no bullet sprite, e.g. camp guns): nothing to blit,
+        // but still fly + trail. CProjBase::Draw derefs the sprite view, so skip it and synthesize
+        // a small dirty bound at the bullet's screen position (the tracer itself is drawn fresh each
+        // present in the GPU sprite Submit pass, so it needs no dirty-rect coverage of its own).
+        CMapLoc3D	m3d( GetMapLoc().x, GetMapLoc().y, GetAlt() );
+        CPoint		pt( xpanimatr->WorldToWindow( xpanimatr->WorldToCenterWorld( m3d ) ) );
+        rectBound.SetRect( pt.x - 3, pt.y - 3, pt.x + 3, pt.y + 3 );
+        }
 
     if ( bRot )
         {
@@ -203,7 +215,6 @@ static float ProjShooterStrength (DWORD dwIDShooter)
 //---------------------------------------------------------------------------
 void CProjectile::EmitTrail ()
 {
-
     // master switch + per-projectile style; only on the GPU capture pass
     if ( ! g_enProjTrails || ! g_enSpriteSplitPass || ! SDL2Sprites::Enabled () )
         return;
@@ -252,12 +263,12 @@ void CProjectile::EmitTrail ()
         cg = (int) ( 45 + ( 25 - 45 ) * u );      // 45 -> 25
         cb = (int) ( 10 + ( 230 - 10 ) * u );     // 10 -> 230
         }
-    int		aHead = (int) ( 160 + ( 245 - 160 ) * t );// weak dimmer, strong much more visible
-    double	wfac = 0.8 + ( 1.45 - 0.8 ) * t;          // weak thinner, strong thicker
+    int		aHead = (int) ( 205 + ( 250 - 205 ) * t );// weak still bright (was 160 -> too dim to notice)
+    double	wfac = 1.0 + ( 1.6 - 1.0 ) * t;           // weak no longer razor-thin (was 0.8)
     double	lfac = 1.0 + 0.7 * t;                     // strong streak runs longer
 
     double	dLenMax = __max( 30, 96 >> xiZoom ) * lfac;           // max length, gradient-scaled (operator: longer)
-    double	dHalfW  = __max( 0.5, ( 1.3 - xiZoom * 0.3 ) * wfac );// width, gradient-scaled
+    double	dHalfW  = __max( 1.4, ( 1.6 - xiZoom * 0.3 ) * wfac );// width, gradient-scaled (raised floor: visible)
 
     // Grow the trail from launch up to dLenMax: the tail is anchored to where the projectile
     // started, until it has travelled far enough to reach full length (then it trails behind at
@@ -270,7 +281,10 @@ void CProjectile::EmitTrail ()
     // Operator: don't start at 0. A short/point-blank shot (e.g. a camp firing an adjacent unit,
     // now given a 2-step visible flight) covers too little before it lands to grow a visible trail,
     // so it drew NOTHING. Floor the length so every shot shows a streak the instant it spawns.
-    double	dLenMin = __max( 9.0, dLenMax * 0.40 );
+    // Floor the length generously so even a weak, short, point-blank shot (a camp firing an
+    // adjacent unit) reads as a clear streak the instant it spawns (operator: "start with length",
+    // and camp tracers were too subtle to notice). Raised from 9 -> so short shots are unmissable.
+    double	dLenMin = __max( 22.0, dLenMax * 0.50 );
     if ( dLen < dLenMin )
         dLen = dLenMin;
 
@@ -323,19 +337,16 @@ CProjectile::CProjectile (CUnit const * pUnit, CMapLoc const & mlEnd, DWORD dwTa
         m_iProjDelay = 0;
 //BUGBUG - can't hide it		m_iProjDelay = m_pEd->m_iProjDelay;
         }
-    if (m_pEd != NULL)
-        {
-        // if no projectile set it to fire the explosion
-        if ( (m_psprite = m_pEd->m_pProjSprite) == NULL)
-            {
-            m_mlEnd = mlEnd;
-            m_mlEnd.Wrap ();
-            m_maploc = m_mlEnd;
-            m_xAdd = m_yAdd = m_iSteps = 0;
-            m_iStepMod = AVG_SPEED_MUL;
-            return;
-            }
-        }
+    m_psprite = ( m_pEd != NULL ) ? m_pEd->m_pProjSprite : NULL;
+    // A weapon whose projectile art has NO bullet sprite (m_psprite == NULL) used to early-return
+    // here as a ZERO-step instant explosion -> no flying projectile, so no tracer TRAIL. That's why
+    // enemy camp guns (which fire exactly such a spriteless projArt) were invisible: you took damage
+    // but saw no bullet and no trail (operator's #1 combat-visibility bug). Now we FALL THROUGH and
+    // compute a normal flight path so a spriteless shot flies and emits a trail like any other; the
+    // trail is pure GPU geometry and needs no sprite. CProjectile::Draw skips the (absent) sprite
+    // blit but still calls EmitTrail. Damage is unaffected (it's applied on the separate damage
+    // message, not this visual path), so this is a visual-only change. A truly zero-distance shot
+    // (x==0 && y==0) still resolves instantly below.
 
     m_maploc = pUnit->GetMapLoc ();
     m_maploc.Wrap ();
@@ -460,6 +471,33 @@ CProjectile::CProjectile (CUnit const * pUnit, CMapLoc const & mlEnd, DWORD dwTa
         if (fEndAlt >= m_fixAlt)
             m_faAdd += 1;
         m_faAdd /= m_iSteps;
+        }
+
+    // --- point-blank / short building (camp) shot: subdivide so it is DRAWN (and trails) ---
+    // A camp firing a nearby unit flies very few steps (often 1 after the footprint walk) and can
+    // arrive + despawn within a SINGLE sim tick, before the renderer ever draws it once -> the
+    // tracer trail is never emitted, so the shot is invisible (operator: enemy camps looked like
+    // they weren't firing). Split a short building shot into more, smaller sub-steps: the flight
+    // then spans several frames (each draw emits the tracer -> a visible growing streak) and still
+    // lands on the SAME target (total travel = steps * delta is preserved). Damage is applied on
+    // the separate damage message, so this is a visual-only change.
+    if ( ( pUnit->GetUnitType () == CUnit::building ) && ( ( m_xAdd != 0 ) || ( m_yAdd != 0 ) ) )
+        {
+        const int MIN_VIS_STEPS = 6;
+        if ( ( m_iSteps > 0 ) && ( m_iSteps < MIN_VIS_STEPS ) )
+            {
+            int mul   = ( MIN_VIS_STEPS + m_iSteps - 1 ) / m_iSteps;   // ceil(MIN_VIS_STEPS / steps)
+            int nxAdd = m_xAdd / mul;
+            int nyAdd = m_yAdd / mul;
+            if ( ( nxAdd == 0 ) && ( nyAdd == 0 ) )                    // never stall a diagonal shot
+                { if ( abs (m_xAdd) >= abs (m_yAdd) ) nxAdd = ( m_xAdd > 0 ? 1 : -1 );
+                  else                                nyAdd = ( m_yAdd > 0 ? 1 : -1 ); }
+            m_xAdd        = nxAdd;
+            m_yAdd        = nyAdd;
+            m_iSteps     *= mul;
+            m_iStepsStart = m_iSteps;
+            m_faAdd      /= mul;                                       // keep total altitude change ~constant
+            }
         }
 
     ASSERT ((0 <= m_iSteps) && (m_iSteps < 160));

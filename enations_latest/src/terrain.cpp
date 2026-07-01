@@ -4018,7 +4018,27 @@ void CGameMap::DiscoverSpritesGpu( CAnimAtr& aa, const CRect& rect )
 
             // Projectiles / explosions (only on lit hexes). Dynamic (move every frame) →
             // tracked so the next incremental frame drops + refreshes them.
-            if ( ( byUnits & CHex::proj ) && phex->GetVisibility( ) )
+            // Normally projectiles draw only on lit hexes (fog rule). BUT a shot fired AT or BY the
+            // local player must draw even on an unlit hex: enemy fire aimed at your units flies
+            // through hexes near the (unlit) enemy, so the lit-hex rule hid the bullet AND its trail
+            // entirely -> enemy camps looked like they weren't firing even while dealing damage
+            // (operator). Buildings use an explored/IsVisible rule (so the camp itself shows), which
+            // is exactly why the camp was visible but its bullets were not. Reveal only shots the
+            // local player is involved in; every other projectile keeps the fog rule.
+            bool bProjHex  = ( byUnits & CHex::proj ) != 0;
+            bool bDrawProj = bProjHex && ( phex->GetVisibility( ) != 0 );
+            if ( bProjHex && !bDrawProj )
+            {
+                for ( CProjBase* pp = theProjMap.GetFirst( hexWrapped ); pp != NULL; pp = theProjMap.GetNext( pp ) )
+                {
+                    CUnit* pShoot = ::GetUnit( pp->m_dwIDShooter );
+                    CUnit* pTarg  = ::GetUnit( pp->m_dwIDTarget );
+                    if ( ( pShoot != NULL && pShoot->GetOwner( ) != NULL && pShoot->GetOwner( )->IsMe( ) ) ||
+                         ( pTarg  != NULL && pTarg->GetOwner( )  != NULL && pTarg->GetOwner( )->IsMe( ) ) )
+                    { bDrawProj = true; break; }
+                }
+            }
+            if ( bDrawProj )
             {
                 SDL2Sprites::SetCaptureDynamic( true );
 
