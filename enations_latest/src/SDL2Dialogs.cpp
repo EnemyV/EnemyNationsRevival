@@ -809,11 +809,27 @@ void SDL2CreateNetDialog::OnOK() {
     EndDialog(1);
 }
 
+// Pre-fill the Join "Server Address" from the configured iServe / discovery server
+// (vdmplay.ini [vdmplay]RegistrationServerAddr — the registration daemon) so the user doesn't have
+// to know the INI. This restores the original game's intent of defaulting the join target to the
+// registration server; the original's built-in default (DEF_IP_REG_SERVER = "iserve.windward.net")
+// is long dead, so we use the operator-configured one instead. Host-only: the registration port
+// (1707) is engine-fixed and separate from this dialog's game Port (2346), so strip any :port.
+// Empty config -> "localhost".
+static std::string RegistrationDefaultAddr() {
+    char buf[128] = {0};
+    GetPrivateProfileString("vdmplay", "RegistrationServerAddr", "", buf, sizeof(buf), ".\\vdmplay.ini");
+    std::string s = (buf[0] ? buf : "localhost");
+    std::string::size_type c = s.find(':');
+    if (c != std::string::npos) s = s.substr(0, c);
+    return s;
+}
+
 // ============================================================================
 // SDL2JoinNetDialog
 // ============================================================================
 SDL2JoinNetDialog::SDL2JoinNetDialog(GameWindow* gameWindow)
-    : SDL2Dialog(gameWindow, "Join Network Game (TCP/IP)", 420, 240) {}
+    : SDL2Dialog(gameWindow, "Join Network Game (TCP/IP)", 420, 260) {}
 
 void SDL2JoinNetDialog::OnInit() {
     int lx = m_x + 20, y = m_y + 45, w = m_width - 40, rowH = 28;
@@ -822,10 +838,17 @@ void SDL2JoinNetDialog::OnInit() {
     m_edtPlayerName = AddWidget<SDL2EditBox>(lx + 115, y, w - 115, 24, savedName);
     y += rowH + 4;
     AddWidget<SDL2Label>(lx, y, 110, rowH, "Server Address:");
-    m_edtServerAddr = AddWidget<SDL2EditBox>(lx + 115, y, w - 115, 24, "localhost");
+    // Pre-filled from the configured iServe/discovery server (see RegistrationDefaultAddr).
+    m_edtServerAddr = AddWidget<SDL2EditBox>(lx + 115, y, w - 115, 24, RegistrationDefaultAddr());
     y += rowH + 4;
     AddWidget<SDL2Label>(lx, y, 110, rowH, "Port:");
     m_edtPort = AddWidget<SDL2EditBox>(lx + 115, y, 80, 24, "2346");
+    y += rowH + 2;
+    // UX hint: clarify the field accepts the iServe discovery server OR a direct host.
+    SDL2Label* hint = AddWidget<SDL2Label>(lx, y, w, rowH * 2,
+        "Server = your iServe discovery server (finds games), or a direct host IP. "
+        "Port is the game port (2346).");
+    if (hint) hint->SetWrapped(true);
     AddOKCancelButtons();
 }
 
@@ -1277,7 +1300,10 @@ void SDL2SessionBrowseDialog::OnInit() {
     // Editable address + port, pre-filled from the ini the join flow wrote. The
     // user can change these and hit Search to re-target without backing out.
     char srvAddr[128] = {0};
-    GetPrivateProfileString("TCP", "ServerAddress", "localhost",
+    // Default to the configured iServe/discovery server (not "localhost") when the join flow
+    // hasn't already written [TCP]ServerAddress — so the browse query targets iserve by default.
+    std::string regDef = RegistrationDefaultAddr();
+    GetPrivateProfileString("TCP", "ServerAddress", regDef.c_str(),
                             srvAddr, sizeof(srvAddr), ".\\vdmplay.ini");
     int port = GetPrivateProfileInt("TCP", "WellKnownPort", 2346, ".\\vdmplay.ini");
 
