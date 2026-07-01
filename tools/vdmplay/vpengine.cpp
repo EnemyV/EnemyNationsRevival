@@ -1301,7 +1301,15 @@ BOOL CLocalSession::BroadcastSessionData() {
 
 
 void CLocalSession::OnTimer() {
-    if ( m_visible && m_registrationAddress && !m_gotsEnumREQ ) {
+    // Do NOT gate the reg-server heartbeat on !m_gotsEnumREQ. That flag trips on the
+    // first DIRECT SenumREQ from any client — and a joiner's LookForServer sends one —
+    // which permanently silenced the periodic re-register, so the reg server aged the
+    // session out and later clients saw an empty list ("host vanishes from iserve once
+    // the first player joins"). The flag's design assumed a reg server that RELAYS enum
+    // queries to hosts (whose replies then refresh the registration — see OnSenumREQ's
+    // m_lastRegTime touch); ours answers from its own registry and never relays, so the
+    // heartbeat must run for as long as the session is visible and reg-configured.
+    if ( m_visible && m_registrationAddress ) {
         DWORD t = GetCurrentTime();
 
         if ( t - m_lastRegTime > 2000 ) {
@@ -2232,13 +2240,28 @@ int CRegisterySession::ReplyServerInfo( CWS* ws, LPVOID data ) {
 }
 
 
+// Count only genuinely REGISTERED sessions: ws entries carrying session info (an
+// SenumREP landed). m_wsMap also holds bare transport entries — every enum REQUESTER
+// gets a MakeRemoteWS before OnSenumREQ, plus TCP probes (see the ReplyServerInfo
+// NULL-guard) — so raw Count() inflates with each browsing client, and a map holding
+// only such phantoms skipped the no-sessions dummy reply below, leaving the client
+// with no answer at all.
+static int CountRegisteredSession( CWS* ws, LPVOID data ) {
+    if ( ws->IsRemote() && ( (CRemoteWS*)ws )->m_info )
+        ++*(int*)data;
+    return TRUE;
+}
+
 BOOL CRegisterySession::OnSenumREQ( genericMsg* msg, CRemoteWS* ws ) {
 
-    if ( IserveLogOn() )
-        fprintf( stderr, "[iserve] sEnumREQ from a client -> serving %d registered session(s)\n",
-                 (int)m_wsMap->Count() );
+    int nRegistered = 0;
+    m_wsMap->Enum( CountRegisteredSession, &nRegistered );
 
-    if ( !m_wsMap->Count() ) {
+    if ( IserveLogOn() )
+        fprintf( stderr, "[iserve] sEnumREQ from a client -> serving %d registered session(s) (%d map entries)\n",
+                 nRegistered, (int)m_wsMap->Count() );
+
+    if ( !nRegistered ) {
         // send a dummy reply so the client will see something coming
         // from us; reply over the query's own link (TCP if it arrived over TCP, else UDP)
         // — same reason as the real SenumREP above.
