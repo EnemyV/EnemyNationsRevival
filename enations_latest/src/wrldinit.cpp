@@ -2710,7 +2710,9 @@ static int RandDist( int iDist )
     if ( iDist < 1 )
         return ( 0 );
 
-    int iVal = ( ( iDist + 1 ) * ( iDist + 1 ) * MyRand( ) ) / ( RAND_MAX + 1 );
+    // EN_MYRAND_MAX, not stdlib RAND_MAX: MyRand is 15-bit on all platforms now
+    // (glibc RAND_MAX+1 also overflowed INT_MAX here, making iVal's sign UB).
+    int iVal = ( ( iDist + 1 ) * ( iDist + 1 ) * MyRand( ) ) / ( EN_MYRAND_MAX + 1 );
     iVal     = iDist - (int)sqrt( (float)abs( iVal ) );
     ASSERT( ( 0 <= iVal ) && ( iVal <= iDist ) );
     if ( MyRand( ) & 0x1000 )
