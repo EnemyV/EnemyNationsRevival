@@ -1082,6 +1082,14 @@ void SDL2LobbyDialog::SendChat() {
     RefreshChat();
 }
 
+void SDL2LobbyDialog::OnOK() {
+    // Enter's default action is EndDialog(1), which would start the game the
+    // instant the user hits Enter to send a chat message (skipping OnStart's
+    // opponent-count check). Route to Send when the chat box has focus.
+    if (m_edtChat && m_edtChat->HasFocus()) { SendChat(); return; }
+    OnStart();
+}
+
 void SDL2LobbyDialog::OnStart() {
     // Don't allow starting an online game with no opponents: 0 AI players AND no
     // other human has joined (only the host). The game needs someone to fight.
@@ -1177,6 +1185,14 @@ void SDL2ClientLobbyDialog::OnInit() {
     m_edtChat = AddWidget<SDL2EditBox>(lx, y, w - sendW - 6, rowH, "");
     AddWidget<SDL2Button>(lx + w - sendW, y, sendW, rowH, "Send",
         [this]() { SendChat(); });
+}
+
+void SDL2ClientLobbyDialog::OnOK() {
+    // Enter's default action is EndDialog(1), which this dialog's caller reads as
+    // "the host started the game" (see class comment) — hitting Enter to send a
+    // chat message must not trigger that. There's no other Enter-triggered action
+    // here (only the explicit Leave button), so swallow it when chat isn't focused.
+    if (m_edtChat && m_edtChat->HasFocus()) SendChat();
 }
 
 void SDL2ClientLobbyDialog::RefreshChat() {

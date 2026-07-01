@@ -237,6 +237,7 @@ public:
 protected:
     void OnInit() override;
     void OnFrame() override;
+    void OnOK() override;   // Enter in the chat box must Send, not fall through to Start
 private:
     void OnStart();
     void UpdatePlayerList();
@@ -265,6 +266,7 @@ public:
 protected:
     void OnInit() override;
     void OnFrame() override;
+    void OnOK() override;   // Enter in the chat box must Send, not close the dialog (result 1 = host started)
 private:
     void UpdatePlayerList();
     void RefreshChat();
