@@ -52,6 +52,15 @@ const std::unordered_map<UINT, std::string>& string_table() {
         { IDS_MSG_NET_GOODBYE,  "Player %1 has disconnected from the game" },
         { IDS_MSG_JOIN_FAILED,  "You cannot join game%1.\nThe network returned error %2." },
         { IDS_JOIN_LOAD_FILE,   "Receiving game..." },
+        // World/minimap window title (CWndWorld::CommandCenterChange) surfaced EMPTY on
+        // Linux — the panel title bar went blank once the rocket landed. Title + the
+        // facing-direction %1 args, verbatim from lastplnt.rc.
+        { IDS_WORLD_TITLE_MAP,   "World Map (%1)" },
+        { IDS_WORLD_TITLE_RADAR, "Radar (%1)" },
+        { IDS_WORLD_NE,          "NE" },
+        { IDS_WORLD_SE,          "SE" },
+        { IDS_WORLD_SW,          "SW" },
+        { IDS_WORLD_NW,          "NW" },
     };
     return t;
 }
