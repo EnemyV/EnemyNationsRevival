@@ -2234,13 +2234,21 @@ extern "C"
     }
 
 
-    // this should be called after processing the WM_VPNOTIFY message 
+    // this should be called after processing the WM_VPNOTIFY message
     BOOL VPAPI vpAcknowledge( IN VPHANDLE pHdl, LPCVPMESSAGE pMsg ) {
-        if ( vpReentrancyCounter )
+        if ( vpReentrancyCounter ) {
+            // Ack SKIPPED: the notification is neither Completed nor deleted here.
+            // Rare + suspicious in the UAF hunt — log unconditionally (cheap).
+            fprintf( stderr, "[vpnq] ack-SKIPPED (reentrancy=%d) vpmsg=%p\n",
+                     (int)vpReentrancyCounter, (const void*)pMsg );
             return FALSE;
+        }
         if ( pHdl && pMsg ) {
             CVdmPlay* vp = (CVdmPlay*)pHdl;
             CNotification* notification = vp->m_queue->RecoverNotification( pMsg );
+            if ( CWinNotifyQueue::VpnqLogOn() )
+                fprintf( stderr, "[vpnq] ack-delete n=%p vpmsg=%p\n",
+                         (void*)notification, (const void*)pMsg );
             notification->Complete();
 
 

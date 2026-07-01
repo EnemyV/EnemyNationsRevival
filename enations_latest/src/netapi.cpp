@@ -888,6 +888,15 @@ LRESULT CNetApi::OnNetMsg( WPARAM wParam, LPARAM lParam )
 
     LPVPMESSAGE pVpMsg = (LPVPMESSAGE)lParam;
 
+    // EN_VPNQ=1 lifecycle trace (see wnotque.h): dispatch leg. A vpmsg pointer
+    // appearing here AFTER its [vpnq] ack-delete line = the UAF we're hunting.
+    {
+        static int s_vpnq = -1;
+        if ( s_vpnq < 0 ) { const char* e = getenv( "EN_VPNQ" ); s_vpnq = ( e && *e && *e != '0' ) ? 1 : 0; }
+        if ( s_vpnq )
+            fprintf( stderr, "[vpnq] dispatch vpmsg=%p code=%u\n", (void*)pVpMsg, (unsigned)wParam );
+    }
+
     DWORD dwProc = timeGetTime( );
 
     // see if receiving a file

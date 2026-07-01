@@ -65,9 +65,23 @@ public:
 
     }
 
+    // EN_VPNQ=1: notification-lifecycle trace (post / dispatch / ack-delete) —
+    // diffing the three streams exposes a UAF as dispatch-after-delete or a
+    // double-dispatch of one pointer (mac SIGSEGV hunt, 2026-07-01, 8 crashes).
+    static bool VpnqLogOn() {
+        static int on = -1;
+        if (on < 0) { const char* e = getenv("EN_VPNQ"); on = (e && *e && *e != '0') ? 1 : 0; }
+        return on == 1;
+    }
+
     void PostNotification(CNotification *n) {
+        if (VpnqLogOn())
+            fprintf(stderr, "[vpnq] post   n=%p vpmsg=%p code=%u\n",
+                    (void*)n, (void*)&n->m_vpmsg, (unsigned)n->m_vpmsg.notificationCode);
         if (!m_window) // no window to send the notification so simulate its completion
         {
+            if (VpnqLogOn())
+                fprintf(stderr, "[vpnq] nowin-complete-delete n=%p\n", (void*)n);
             n->Complete();
             delete n;
             return;
