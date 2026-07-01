@@ -29,7 +29,9 @@
 #include <SDL.h>
 #include <SDL_syswm.h>
 #include <X11/Xlib.h>
+#include <X11/Xatom.h>   // XA_CARDINAL
 #include <string.h>   // memset
+#include <stdio.h>    // fprintf diagnostics
 
 // Declared (extern) at the call site in SDL2Panel.cpp.
 void EnSetX11TransientFor(SDL_Window* panel, SDL_Window* owner)
@@ -51,6 +53,71 @@ void EnSetX11TransientFor(SDL_Window* panel, SDL_Window* owner)
                              ownerInfo.info.x11.window);
         XFlush(panelInfo.info.x11.display);   // ensure the WM sees the hint promptly
     }
+}
+
+//---------------------------------------------------------------------------
+// EnSetX11FakeTopExtent — let a detached panel be dragged ALL THE WAY to the top
+// of the screen (under the gnome-shell top bar), closing the last gap in #55.
+//
+// Mutter constrains even an INTERACTIVE move (_NET_WM_MOVERESIZE below) so the
+// window's top edge stays below the work-area top (the 32px gnome-shell panel
+// strut) — native GNOME apps share the limit. But the constraint applies to the
+// window's VISIBLE rect: for client-decorated windows that is the frame minus
+// _GTK_FRAME_EXTENTS (margins the client declares as invisible shadow). Declaring
+// a fake top extent equal to the strut height makes Mutter's math allow the real
+// top edge to ride up to y=0, matching Windows where panels reach the screen top.
+// Verified live on GNOME 48/Wayland (XWayland): extent 36 → area map dragged to
+// y=6, impossible before. Visually inert — the WM draws nothing for borderless
+// windows, and the game draws no shadow; only the constraint arithmetic changes.
+//
+// Trade-off (accepted): dragged to the extreme, the panel's own title bar sits
+// UNDER the shell bar (clicks there go to gnome-shell), so it can't be grabbed
+// again until moved programmatically (layout reset / restart restore). The strut
+// height is read from _NET_WORKAREA; no top strut → property not set → no-op.
+void EnSetX11FakeTopExtent(SDL_Window* panel)
+{
+    if (panel == NULL)
+        return;
+
+    SDL_SysWMinfo info;
+    SDL_VERSION(&info.version);
+    if (!SDL_GetWindowWMInfo(panel, &info) || info.subsystem != SDL_SYSWM_X11) {
+        fprintf(stderr, "[TOPEXT] WMInfo failed or not X11 (subsystem=%d) err=%s\n",
+                (int)info.subsystem, SDL_GetError());
+        return;
+    }
+
+    Display* dpy = info.info.x11.display;
+
+    long top = 0;   // work-area top = height of the shell's top strut
+    {
+        Atom workarea = XInternAtom(dpy, "_NET_WORKAREA", False);
+        Atom type; int fmt; unsigned long n, left; unsigned char* data = NULL;
+        if (workarea != None &&
+            XGetWindowProperty(dpy, DefaultRootWindow(dpy), workarea, 0, 4, False,
+                               XA_CARDINAL, &type, &fmt, &n, &left, &data) == Success &&
+            data != NULL)
+        {
+            if (type == XA_CARDINAL && fmt == 32 && n >= 2)
+                top = ((long*)data)[1];   // workarea = x, y, w, h — y IS the strut
+            XFree(data);
+        }
+    }
+    if (top <= 0) {
+        fprintf(stderr, "[TOPEXT] no top strut (workarea top=%ld) — skipping\n", top);
+        return;
+    }
+
+    Atom extents = XInternAtom(dpy, "_GTK_FRAME_EXTENTS", False);
+    if (extents == None)
+        return;
+
+    long ext[4] = { 0, 0, top, 0 };   // left, right, TOP, bottom
+    XChangeProperty(dpy, info.info.x11.window, extents, XA_CARDINAL, 32,
+                    PropModeReplace, (unsigned char*)ext, 4);
+    XFlush(dpy);
+    fprintf(stderr, "[TOPEXT] set _GTK_FRAME_EXTENTS top=%ld on X11 win 0x%lx\n",
+            top, (unsigned long)info.info.x11.window);
 }
 
 //---------------------------------------------------------------------------
