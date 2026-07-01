@@ -79,6 +79,16 @@ public:
         {
             Add(n);
             RetryPosting();
+            // DO NOT fall through (2026-07-01): RetryPosting may already have posted n's
+            // m_vpmsg to the window; falling through posted it a SECOND time. The app
+            // acknowledges the first delivery (vpAcknowledge -> Complete + DELETE the
+            // notification, Unref'ing the genericMsg), so the second WM_VPNOTIFY dispatch
+            // handed the app a FREED m_vpmsg/data buffer -> use-after-free garbage decoded
+            // as a game command. Cross-platform: killed mac clients 6/6 (SIGSEGV in
+            // CMsgVehNew::AssertValid, always during notification bursts = right after a
+            // SenumREP broadcast made the queue momentarily non-empty) AND the Windows
+            // host (same site, AV 0xC0000005) in the first 3-platform MP game.
+            return;
         }
 
         n->m_vpmsg.postTime = timeGetTime();
