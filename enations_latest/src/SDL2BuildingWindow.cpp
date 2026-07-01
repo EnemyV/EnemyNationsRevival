@@ -48,11 +48,15 @@ static const int COL_GAP      = 12;    // gap between the two columns when split
 static const int TWO_COL_MAX_H = 560;  // stacked body taller than this -> go 2-column (rocket et al.)
 
 static const int STORAGE_H    = BOX_PAD + HDR_H + SDL2BuildingWindow::kNumStoreMats * ROW_H + BOX_PAD;
-static const int POWERLIKE_H  = BOX_PAD + HDR_H + GRAPH_H + BOX_PAD;   // power / apartment (<=3 text rows, graph-bound)
+// graph + the tiny time-range button row underneath it
+static const int RANGE_ROW_H  = 15;   // height of the tiny 10m/1h/6h/24h/7d button row
+static const int GRAPHAREA_H  = GRAPH_H + RANGE_ROW_H + 2;
+static const int POWERLIKE_H  = BOX_PAD + HDR_H + GRAPHAREA_H + BOX_PAD;   // power / apartment (graph + range row)
 // Office has 4 text rows now (This building / Colony / Workforce Need / Energy Need #37/#39),
 // which is TALLER than the graph (6 + 4*ROW_H = 86 > GRAPH_H 72) — POWERLIKE_H clipped the
-// last row below the box (operator: "Energy Need text outside the box"). Size to the rows.
-static const int OFFICE_H     = BOX_PAD + HDR_H + ( 6 + 4 * ROW_H ) + BOX_PAD;
+// last row below the box (operator: "Energy Need text outside the box"). Size to the taller of
+// the text rows vs the graph+range-row area.
+static const int OFFICE_H     = BOX_PAD + HDR_H + __max( 6 + 4 * ROW_H, GRAPHAREA_H ) + BOX_PAD;
 static const int TURRET_H     = BOX_PAD + HDR_H + 2 * ROW_H + 34 + BOX_PAD;   // 2x2 stats + Show-Range
 static const int PRODUCTION_H = BOX_PAD + HDR_H + 2 * ROW_H + 6 + 16 + BOX_PAD;   // text + progress bar
 static const int MILITARY_H   = BOX_PAD + HDR_H + 4 * ROW_H + BOX_PAD;   // strength + infantry + vehicles + energy-need (#39)
@@ -598,6 +602,7 @@ void SDL2BuildingWindow::NullSectionWidgets() {
     m_lblOfcBldg = nullptr; m_lblOfcColony = nullptr; m_lblOfcNeed = nullptr;
     m_lblOfcEnergy = nullptr; m_imgOfcGraph = nullptr;
     m_lblAptBldg = nullptr; m_lblAptColony = nullptr; m_lblAptNeed = nullptr; m_imgAptGraph = nullptr;
+    m_rangeBtns.clear();   // buttons are owned by the widget list (cleared on rebuild); drop stale ptrs
     m_lblTurretRange = nullptr; m_lblTurretDmg = nullptr; m_lblTurretReload = nullptr;
     m_lblTurretDps = nullptr; m_btnShowRange = nullptr;
     m_chkAltOut = nullptr;
@@ -1078,6 +1083,7 @@ int SDL2BuildingWindow::BuildPower(int x, int y, int w) {
     m_lblPowerBldg   = AddWidget<SDL2Label>(x + BOX_PAD + 4, yh + 6,         textW, ROW_H, "This building: 0");
     m_lblPowerColony = AddWidget<SDL2Label>(x + BOX_PAD + 4, yh + 6 + ROW_H, textW, ROW_H, "Colony: 0 / 0");
     m_imgPowerGraph  = AddWidget<SDL2Image>(graphX, yh, graphW, GRAPH_H);
+    AddGraphRangeRow(graphX, yh + GRAPH_H + 2, graphW);
     // Oil readout (shown INSTEAD when in coal-liq mode): a status row + this-building / colony
     // oil totals, mirroring the power rows' two-line "This building / Colony" style. Created
     // always so a live toggle can swap visibility without rebuilding the window; the full-width
@@ -1109,6 +1115,7 @@ int SDL2BuildingWindow::BuildOffice(int x, int y, int w) {
     // invisible in the very window that toggles it (mirrors the Command Center's #39 row).
     m_lblOfcEnergy = AddWidget<SDL2Label>(x + BOX_PAD + 4, yh + 6 + 3 * ROW_H, textW, ROW_H, "Energy Need: 0");
     m_imgOfcGraph  = AddWidget<SDL2Image>(graphX, yh, graphW, GRAPH_H);
+    AddGraphRangeRow(graphX, yh + GRAPH_H + 2, graphW);
     return y + OFFICE_H + SEC_PAD;
 }
 
@@ -1124,6 +1131,7 @@ int SDL2BuildingWindow::BuildApt(int x, int y, int w) {
     // window that toggles it (the FOOD sibling of the Office's Workforce/Energy need rows).
     m_lblAptNeed   = AddWidget<SDL2Label>(x + BOX_PAD + 4, yh + 6 + 2 * ROW_H, textW, ROW_H, "Food Need: 0");
     m_imgAptGraph  = AddWidget<SDL2Image>(graphX, yh, graphW, GRAPH_H);
+    AddGraphRangeRow(graphX, yh + GRAPH_H + 2, graphW);
     return y + POWERLIKE_H + SEC_PAD;
 }
 
@@ -1508,6 +1516,28 @@ void SDL2BuildingWindow::DrawHealthBar() {
 // ----------------------------------------------------------------------------
 // History graph
 // ----------------------------------------------------------------------------
+// A tiny row of 5 range buttons placed under a graph. Subtle, ~33px each; all
+// rows in the window share m_iGraphRange, so clicking any one rescales every graph.
+void SDL2BuildingWindow::AddGraphRangeRow(int x, int y, int w) {
+    static const char* kLbl[5] = { "10m", "1h", "6h", "24h", "7d" };
+    int bw = w / 5;
+    for ( int r = 0; r < 5; r++ ) {
+        SDL2Button* b = AddWidget<SDL2Button>( x + r * bw, y, bw - 2, RANGE_ROW_H, kLbl[r],
+            [this, r]() { SetGraphRange( r ); } );
+        b->SetToggled( r == m_iGraphRange );
+        m_rangeBtns.push_back( b );
+    }
+}
+
+// Click handler: switch the time range, re-highlight every range button, redraw graphs.
+void SDL2BuildingWindow::SetGraphRange(int range) {
+    if ( range < 0 || range > 4 ) return;
+    m_iGraphRange = range;
+    for ( size_t i = 0; i < m_rangeBtns.size(); i++ )
+        m_rangeBtns[i]->SetToggled( (int)( i % 5 ) == range );
+    Refresh();   // re-runs the DrawGraph calls with the new range
+}
+
 void SDL2BuildingWindow::DrawGraph(SDL2Image* img, HistSeries a, HistSeries b) {
     if ( !img || !m_pBldg ) return;
     CPlayer* p = m_pBldg->GetOwner();
@@ -1527,19 +1557,40 @@ void SDL2BuildingWindow::DrawGraph(SDL2Image* img, HistSeries a, HistSeries b) {
     SDL_FillRect(s, &top, frame); SDL_FillRect(s, &bot, frame);
     SDL_FillRect(s, &lft, frame); SDL_FillRect(s, &rgt, frame);
 
-    auto valOf = [&](HistSeries hs, int i) -> long {
-        switch (hs) {
-            case kPwrHave:  return p->GetHistPwrHave(i);
-            case kPwrNeed:  return p->GetHistPwrNeed(i);
-            case kPplTotal: return p->GetHistPplTotal(i);
-            case kPplBldg:  return p->GetHistPplBldg(i);
-            case kAptCap:   return p->GetHistAptCap(i);
-            case kOfcCap:   return p->GetHistOfcCap(i);
-            default:        return 0;
+    // Selected time-range -> data source. 10m/1h read the EXISTING serialized
+    // per-minute buffer (so a freshly-loaded save shows its saved ~2h of history
+    // immediately) — last 10 / last 60 samples. 6h/24h/7d read the runtime rings
+    // 0/1/2 (3/12/84-min cadence), which fill in as the game is played.
+    int gr = ( m_iGraphRange >= 0 && m_iGraphRange < 5 ) ? m_iGraphRange : 1;
+    int ring, cnt, nShow, off;
+    if ( gr <= 1 ) {                              // 10m / 1h -> saved per-minute buffer
+        ring  = -1;
+        cnt   = p->GetHistCount();
+        nShow = __min( cnt, gr == 0 ? 10 : 60 );
+    } else {                                      // 6h / 24h / 7d -> runtime rings
+        ring  = gr - 2;
+        cnt   = p->GetHRCount( ring );
+        nShow = __min( cnt, 120 );
+    }
+    off = cnt - nShow;                            // plot the LAST nShow samples
+    auto valOf = [&]( HistSeries hs, int i ) -> long {
+        int s = (int)hs - (int)kPwrHave;         // kPwrHave->0 ... kOfcCap->5
+        if ( s < 0 || s > 5 ) return 0;
+        if ( ring < 0 ) {                        // saved per-minute buffer
+            switch ( hs ) {
+                case kPwrHave:  return p->GetHistPwrHave ( off + i );
+                case kPwrNeed:  return p->GetHistPwrNeed ( off + i );
+                case kPplTotal: return p->GetHistPplTotal( off + i );
+                case kPplBldg:  return p->GetHistPplBldg ( off + i );
+                case kAptCap:   return p->GetHistAptCap  ( off + i );
+                case kOfcCap:   return p->GetHistOfcCap  ( off + i );
+                default:        return 0;
+            }
         }
+        return p->GetHR( ring, s, off + i );
     };
 
-    int n = p->GetHistCount();
+    int n = nShow;
     if ( n >= 2 ) {
         long maxV = 1;
         for ( int i = 0; i < n; i++ ) {

@@ -155,6 +155,17 @@ void CPlayer::ctor( )
     memset( m_aHistAptCap,   0, sizeof( m_aHistAptCap ) );
     memset( m_aHistOfcCap,   0, sizeof( m_aHistOfcCap ) );
 
+    // multi-resolution graph rings (runtime-only). Prime each ring's tick so the
+    // very first SampleHistory pushes a sample to every ring (graphs aren't empty).
+    {
+        static const int _hrCad[HR_RINGS] = { 3, 12, 84 };
+        memset( m_aHR, 0, sizeof( m_aHR ) );
+        for ( int r = 0; r < HR_RINGS; r++ ) {
+            m_iHRHead[r] = m_iHRCount[r] = 0;
+            m_iHRTick[r] = _hrCad[r] - 1;
+        }
+    }
+
     m_iGameSpeed     = NUM_SPEEDS / 2;
     m_iNumDiscovered = 0;
 
@@ -539,6 +550,21 @@ void CPlayer::SampleHistory( )
     m_iHistHead = ( m_iHistHead + 1 ) % HIST_LEN;
     if ( m_iHistCount < HIST_LEN )
         m_iHistCount++;
+
+    // Feed the multi-resolution rings (runtime-only) that back the graph
+    // time-range buttons: each ring keeps a sample every N game-minutes.
+    static const int _hrCad[HR_RINGS] = { 3, 12, 84 };
+    LONG hv[6] = { m_iPwrHave, m_iPwrNeed, GetPplTotal( ), m_iPplBldg, m_iAptCap, m_iOfcCap };
+    for ( int r = 0; r < HR_RINGS; r++ ) {
+        if ( ++m_iHRTick[r] >= _hrCad[r] ) {
+            m_iHRTick[r] = 0;
+            int h = m_iHRHead[r];
+            for ( int s = 0; s < 6; s++ ) m_aHR[r][s][h] = hv[s];
+            m_iHRHead[r] = ( h + 1 ) % HIST_LEN;
+            if ( m_iHRCount[r] < HIST_LEN )
+                m_iHRCount[r]++;
+        }
+    }
 }
 
 void CPlayer::Research( int iNumSec )

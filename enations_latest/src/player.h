@@ -673,6 +673,26 @@ class CPlayer : public CObject
     int  m_iHistHead;    // index of the next slot to write
     int  m_iHistCount;   // number of valid samples (<= HIST_LEN)
 
+    // --- Multi-resolution history (RUNTIME-ONLY, not serialized) — feeds the
+    // graph 6h/24h/7d ranges (the 10m/1h ranges read the serialized per-minute
+    // buffer above, so a loaded save shows history immediately). 3 rings sampled
+    // at 3/12/84 game-minutes from SampleHistory => 120-sample spans of 6h/24h/7d.
+    // Series index 0..5 = PwrHave,PwrNeed,PplTotal,PplBldg,AptCap,OfcCap.
+    // Not saved: these longer ranges simply fill in as the game is played.
+    static const int HR_RINGS = 3;
+    LONG m_aHR[HR_RINGS][6][HIST_LEN];   // [ring][series][slot]
+    int  m_iHRHead[HR_RINGS];
+    int  m_iHRCount[HR_RINGS];
+    int  m_iHRTick[HR_RINGS];            // game-minutes elapsed since this ring last sampled
+    int  GetHRCount( int ring ) const { return ( ( ring >= 0 && ring < HR_RINGS ) ? m_iHRCount[ring] : 0 ); }
+    LONG GetHR( int ring, int series, int i ) const
+    {
+        if ( ring < 0 || ring >= HR_RINGS || series < 0 || series > 5 ) return ( 0 );
+        if ( i < 0 || i >= m_iHRCount[ring] ) return ( 0 );
+        int idx = ( m_iHRHead[ring] - m_iHRCount[ring] + i + 2 * HIST_LEN ) % HIST_LEN;
+        return ( m_aHR[ring][series][idx] );
+    }
+
   protected:
     // Ring-buffer read: map logical sample i (0 = oldest) to the physical slot.
     LONG HistAt( const LONG* a, int i ) const

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "SDL2UI.h"
+#include <vector>
 
 class CBuilding;
 struct SDL_Surface;
@@ -125,6 +126,11 @@ private:
 
     enum HistSeries { kNone, kPwrHave, kPwrNeed, kPplTotal, kPplBldg, kAptCap, kOfcCap };
     void DrawGraph(SDL2Image* img, HistSeries a, HistSeries b);
+    // Graph time-range selector: a tiny row of 5 buttons (10m/1h/6h/24h/7d) that
+    // rescale ALL of this window's graphs. Placed under each graph; all share
+    // m_iGraphRange. SetGraphRange() re-highlights the buttons + redraws graphs.
+    void AddGraphRangeRow(int x, int y, int w);
+    void SetGraphRange(int range);
     // Draw stacked material icons (~250/icon per row) into img for the given
     // material-type list. Shared by the storage and input widgets.
     void DrawMatIcons(SDL2Image* img, const int* mats, int n);
@@ -184,6 +190,9 @@ private:
     SDL2Label*  m_lblTurretReload = nullptr;
     SDL2Label*  m_lblTurretDps    = nullptr;
     SDL2Button* m_btnShowRange     = nullptr;
+    // Graph time-range selection. 0=10min 1=1h 2=6h 3=24h 4=7d (default 1h).
+    int                      m_iGraphRange = 1;
+    std::vector<SDL2Button*> m_rangeBtns;   // all range buttons (any row); index%5 = its range
     // Generic AltOutput (alt-output toggle) -- shown on any building that has an available
     // AltOutput def (BioFuel farm, Coal-Liquefaction coal plant, Charcoal lumber mill,
     // Fracking exhausted oil well). Rendered as a CHECKBOX (bug #40 — was a button that
