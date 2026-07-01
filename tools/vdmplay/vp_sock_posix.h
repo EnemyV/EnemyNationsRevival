@@ -47,6 +47,10 @@ typedef int SOCKET;
 // dispatch to garbage. Defined in vp_netpump_posix.cpp; the decl is harmless to
 // the few TUs that close sockets but never register (it just no-ops on a miss).
 void vpNetSelectClear(SOCKET s);
+// Purge every registration dispatching into the given object (see the pump's
+// definition) — ~CNetInterface backstop for teardown paths that delete the net
+// object while one of its sockets is still registered.
+void vpNetSelectClearCtx(void* ctx);
 static inline int  vp_closesocket(SOCKET s)            { vpNetSelectClear(s); return ::close(s); }
 static inline int  vp_WSAGetLastError(void)            { return errno; }
 static inline void vp_WSASetLastError(int e)           { errno = e; }

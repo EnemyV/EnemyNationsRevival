@@ -81,6 +81,18 @@ void vpNetSelectClear(SOCKET s)
     g_reg.erase(s);
 }
 
+// Purge every registration whose dispatch ctx is the given object. Called from
+// ~CNetInterface: teardown paths exist that delete the net object while one of
+// its sockets is still registered (seen live: game-start error -> vpCleanup ->
+// next pump dispatched FD_READ into the freed interface). Socket-by-socket
+// closesocket() cleanup covers the normal paths; this backstops the leaks.
+void vpNetSelectClearCtx(void* ctx)
+{
+    std::lock_guard<std::mutex> lk(g_mtx);
+    for (auto it = g_reg.begin(); it != g_reg.end(); )
+        it = (it->second.ctx == ctx) ? g_reg.erase(it) : std::next(it);
+}
+
 int vpNetPumpPosix(int timeout_ms)
 {
     fd_set rfds, wfds, efds;
