@@ -888,10 +888,26 @@ void SDL2Panel::Detach(SDL_Window* ownerWindow) {
     // Keep the new window fully on its monitor — a detached map can inherit a
     // near-fullscreen placement from the old composited layout and hang off the
     // screen edges otherwise.
+    int desiredX, desiredY, desiredW, desiredH;   // final intended window geometry
+    SDL_GetWindowPosition(m_ownWindow, &desiredX, &desiredY);
+    SDL_GetWindowSize(m_ownWindow, &desiredW, &desiredH);
     {
         int di = SDL_GetWindowDisplayIndex(m_ownWindow);
         SDL_Rect ub;
         if (di >= 0 && SDL_GetDisplayUsableBounds(di, &ub) == 0) {
+            // Left floor: on Linux the usable bounds start at the GNOME dock strut
+            // (x=66), which pushed panels the game lays out at the left edge (the
+            // radar, Windows-parity x=0) over to the dock edge. Managed windows CAN
+            // sit under the dock, so floor x at the full display bounds instead.
+            // The y floor stays at the work-area top so the panel's title bar starts
+            // below the shell top bar (= still grabbable); dragging it higher is the
+            // user's call (the _GTK_FRAME_EXTENTS hint below allows it).
+            int minX = ub.x;
+#if defined(__linux__)
+            SDL_Rect db;
+            if (SDL_GetDisplayBounds(di, &db) == 0)
+                minX = db.x;
+#endif
             int wx, wy, ww, wh;
             SDL_GetWindowPosition(m_ownWindow, &wx, &wy);
             SDL_GetWindowSize(m_ownWindow, &ww, &wh);
@@ -900,7 +916,7 @@ void SDL2Panel::Detach(SDL_Window* ownerWindow) {
             if (wh > ub.h) { wh = ub.h; resized = true; }
             if (wx + ww > ub.x + ub.w) wx = ub.x + ub.w - ww;
             if (wy + wh > ub.y + ub.h) wy = ub.y + ub.h - wh;
-            if (wx < ub.x) wx = ub.x;
+            if (wx < minX) wx = minX;
             if (wy < ub.y) wy = ub.y;
             SDL_SetWindowPosition(m_ownWindow, wx, wy);
             if (resized) {
@@ -910,6 +926,7 @@ void SDL2Panel::Detach(SDL_Window* ownerWindow) {
                 CreateSurface();
                 InvokeResizeCallback(m_width, m_height);
             }
+            desiredX = wx; desiredY = wy; desiredW = ww; desiredH = wh;
         }
     }
 
@@ -945,6 +962,17 @@ void SDL2Panel::Detach(SDL_Window* ownerWindow) {
     // gnome-shell strut even during an interactive move) — see the impl comment.
     extern void EnSetX11FakeTopExtent(SDL_Window* panel);
     EnSetX11FakeTopExtent(m_ownWindow);
+    // Re-assert the intended geometry now that the extents are in place: Mutter
+    // clamps the initial MAP to the work area (ignoring our floor above) and
+    // "compensates" a post-map extents change by keeping the old visible rect —
+    // shifting the client up and GROWING it by the extent (the radar was gaining
+    // +32px per game, compounding through the remembered placement). A post-map,
+    // post-extents configure sticks at exactly the requested rect.
+    SDL_SetWindowSize(m_ownWindow, desiredW, desiredH);
+    SDL_SetWindowPosition(m_ownWindow, desiredX, desiredY);
+    LogPanel("Reasserted '" + m_name + "' geometry " + std::to_string(desiredW) + "x" +
+             std::to_string(desiredH) + "+" + std::to_string(desiredX) + "+" +
+             std::to_string(desiredY));
 #endif
 
     // Don't raise a window we created hidden (deferred until load completes) —
