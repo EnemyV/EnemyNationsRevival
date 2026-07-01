@@ -654,6 +654,33 @@ static void OnMsgServerDown( LPCVPSESSIONINFO pSi )
     theApp.m_pCreateGame->OnSessionClose( pSi );
 }
 
+#if defined( _DEBUG ) && defined( _WIN32 )
+// SEH wrapper: AssertMsgValid on a garbage message can FAULT while validating
+// through garbage fields (2026-07-01 MP test: killed the Windows HOST too — AV at
+// netcmd.cpp:1023 — after the size and m_iType guards both passed, so the guards
+// can't enumerate every hostile shape). Capture the bytes and drop instead of dying.
+static BOOL SafeAssertMsgValid( CNetCmd const* pCmd, int iLen )
+{
+    __try
+    {
+        pCmd->AssertMsgValid( );
+        return TRUE;
+    }
+    __except ( EXCEPTION_EXECUTE_HANDLER )
+    {
+        char sHex[3 * 32 + 1] = { 0 };
+        const unsigned char* pb = (const unsigned char*)pCmd;
+        int nDump = ( iLen < 32 ) ? iLen : 32;
+        for ( int i = 0; i < nDump; i++ )
+            sprintf( sHex + 3 * i, "%02X ", pb[i] );
+        fprintf( stderr, "[net-guard] AssertMsgValid FAULTED on msg type %d len=%d - message dropped; bytes: %s\n",
+                 pCmd->GetType( ), iLen, sHex );
+        OutputDebugStringA( "[net-guard] AssertMsgValid FAULTED - message dropped\n" );
+        return FALSE;
+    }
+}
+#endif
+
 void CGame::AddToQueue( CNetCmd const* pCmd, int iLen )
 {
 #ifdef LOGGINGON
@@ -686,7 +713,12 @@ void CGame::AddToQueue( CNetCmd const* pCmd, int iLen )
     }
 
 #ifdef _DEBUG
+#ifdef _WIN32
+    if ( !SafeAssertMsgValid( pCmd, iLen ) )
+        return;   // hostile/garbage message — bytes captured to stderr, do not queue
+#else
     pCmd->AssertMsgValid( );
+#endif
 #endif
     // can't do - previous messages may need to be processed first	ASSERT_CMD (pCmd);
 
