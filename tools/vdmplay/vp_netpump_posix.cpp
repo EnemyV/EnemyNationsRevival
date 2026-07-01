@@ -171,6 +171,12 @@ int vpNetPumpPosix(int timeout_ms)
                 // (data) — a genuine peer close still surfaces there as MSG_PEEK == 0.
                 if (!isR) {
                     emit(FD_CLOSE, soerr);
+                    // Edge-emulate FD_CLOSE like FD_WRITE (fire ONCE): a closed peer
+                    // stays "readable" forever under level-triggered select(), so
+                    // without this the pump re-emits FD_CLOSE every tick with zero
+                    // backoff (measured 1.3M dispatches/2min on a failed join),
+                    // starving the SDL event loop — the window looks frozen/vanished.
+                    r.mask &= ~(FD_READ | FD_CLOSE);
                     continue;
                 }
             }
@@ -183,10 +189,12 @@ int vpNetPumpPosix(int timeout_ms)
                     ssize_t pk = recv(s, &b, 1, MSG_PEEK);
                     if (pk == 0) {
                         emit(FD_CLOSE, 0);
+                        r.mask &= ~(FD_READ | FD_CLOSE);   // edge: FD_CLOSE fires once
                     } else if (pk > 0) {
                         if (r.mask & FD_READ) emit(FD_READ, 0);
                     } else if (errno != EWOULDBLOCK && errno != EAGAIN) {
                         emit(FD_CLOSE, errno);
+                        r.mask &= ~(FD_READ | FD_CLOSE);   // edge: FD_CLOSE fires once
                     }
                 }
             }
@@ -199,10 +207,25 @@ int vpNetPumpPosix(int timeout_ms)
     }
 
     // Dispatch outside the lock — handlers may re-enter vpNetSelectSet/Clear.
-    for (const Pending& p : out)
+    // A handler may also close ANOTHER pending socket and destroy its ctx (the
+    // join browser's enum poll: a SenumREP handler triggers CNetApi::Close ->
+    // vpCleanup deletes the CNetInterface while its TCP-enum socket still has a
+    // queued event in `out`), so re-validate each entry against the registry
+    // right before firing and drop ones whose registration vanished or changed
+    // — dispatching a stale entry is a use-after-free in vpTcpSelectThunk.
+    int fired = 0;
+    for (const Pending& p : out) {
+        {
+            std::lock_guard<std::mutex> lk(g_mtx);
+            auto it = g_reg.find(p.s);
+            if (it == g_reg.end() || it->second.ctx != p.ctx || it->second.fn != p.fn)
+                continue;   // unregistered (or re-registered) by an earlier handler
+        }
         p.fn(p.ctx, p.s, p.hWnd, p.lParam);
+        ++fired;
+    }
 
-    return (int)out.size();
+    return fired;
 }
 
 //---------------------------------------------------------------------------

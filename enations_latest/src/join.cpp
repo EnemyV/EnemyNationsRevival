@@ -87,6 +87,12 @@ void CJoinMulti::OnSessionEnum( LPCVPSESSIONINFO pSi )
 {
     const CNetPublish* pPub = (const CNetPublish*)( pSi->sessionName );
 
+    // EN_ISERVE_LOG diagnostic: this filter rejects silently, which reads as
+    // "No games found" in the browser even though enum replies arrived — log
+    // every candidate with the exact accept/reject reason.
+    static int s_log = -1;
+    if ( s_log < 0 ) s_log = getenv( "EN_ISERVE_LOG" ) ? 1 : 0;
+
     // Version + game-ID guard (mirrors original CDlgJoinGame::OnSessionEnum)
     WORD wTst = 0;
 #ifdef _DEBUG
@@ -100,15 +106,27 @@ void CJoinMulti::OnSessionEnum( LPCVPSESSIONINFO pSi )
     wTst |= CNetPublish::fcheat;
 #endif
 
+    if ( s_log )
+        fprintf( stderr, "[join-enum] candidate game='%s' id=%d(want %d) ver=%d.%d(want %d.%d) flags=0x%02x(want dbg/cheat 0x%02x)\n",
+                 pPub->GetGameName(), (int)pPub->m_iGameID, (int)TLP_GAME_ID,
+                 (int)pPub->m_cVerMajor, (int)pPub->m_cVerMinor, (int)VER_MAJOR, (int)VER_MINOR,
+                 (unsigned)pPub->m_cFlags, (unsigned)wTst );
+
     if ( pPub->m_iGameID != TLP_GAME_ID ||
          pPub->m_cVerMajor != VER_MAJOR  ||
          pPub->m_cVerMinor != VER_MINOR  ||
-         ( pPub->m_cFlags & ( CNetPublish::fdebug | CNetPublish::fcheat ) ) != wTst )
+         ( pPub->m_cFlags & ( CNetPublish::fdebug | CNetPublish::fcheat ) ) != wTst ) {
+        if ( s_log )
+            fprintf( stderr, "[join-enum] REJECTED '%s' (game-id/version/debug-cheat-flags mismatch)\n", pPub->GetGameName() );
         return;
+    }
 
     // Skip in-progress games (not joinable from lobby)
-    if ( pPub->m_cFlags & CNetPublish::finprogress )
+    if ( pPub->m_cFlags & CNetPublish::finprogress ) {
+        if ( s_log )
+            fprintf( stderr, "[join-enum] REJECTED '%s' (game already in progress)\n", pPub->GetGameName() );
         return;
+    }
 
     const char* pGame = pPub->GetGameName();
 

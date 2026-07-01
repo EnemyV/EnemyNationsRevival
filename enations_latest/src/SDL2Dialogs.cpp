@@ -286,12 +286,22 @@ SDL2PickRaceDialog::~SDL2PickRaceDialog() {
         if (surf) SDL_FreeSurface(surf);
 }
 
+// Player name used to pre-fill the name edit boxes: the last name saved to the
+// profile, else the OS login name so first-run dialogs aren't blank, else "Player".
+static std::string DefaultPlayerName() {
+    std::string s = EnGetProfileStdString("Create", "Name", "");
+    if (!s.empty()) return s;
+    const char* u = getenv("USER");
+    if (!u || !*u) u = getenv("USERNAME");
+    return (u && *u) ? std::string(u) : std::string("Player");
+}
+
 void SDL2PickRaceDialog::OnInit() {
     int lx = m_x + 20, y = m_y + 45, w = m_width - 40;
 
     // Player name
     AddWidget<SDL2Label>(lx, y, 60, 24, "Name:");
-    std::string savedName = EnGetProfileStdString("Create", "Name", "");
+    std::string savedName = DefaultPlayerName();
     m_edtName = AddWidget<SDL2EditBox>(lx + 65, y, w - 65, 24, savedName,
         [this](const std::string& name) { OnNameChanged(name); });
     y += 34;
@@ -750,7 +760,7 @@ void SDL2CreateNetDialog::OnInit() {
     m_edtGameName = AddWidget<SDL2EditBox>(lx + 105, y, colW - 105, rowH, "My Game");
     y += rowH + 4;
     AddWidget<SDL2Label>(lx, y, 100, rowH, "Your Name:");
-    std::string savedName = EnGetProfileStdString("Create", "Name", "");
+    std::string savedName = DefaultPlayerName();
     m_edtPlayerName = AddWidget<SDL2EditBox>(lx + 105, y, colW - 105, rowH, savedName);
     AddWidget<SDL2Label>(rx, m_y + 45, 50, rowH, "Port:");
     m_edtPort = AddWidget<SDL2EditBox>(rx + 55, m_y + 45, 80, rowH, "2346");
@@ -834,7 +844,7 @@ SDL2JoinNetDialog::SDL2JoinNetDialog(GameWindow* gameWindow)
 void SDL2JoinNetDialog::OnInit() {
     int lx = m_x + 20, y = m_y + 45, w = m_width - 40, rowH = 28;
     AddWidget<SDL2Label>(lx, y, 110, rowH, "Your Name:");
-    std::string savedName = EnGetProfileStdString("Create", "Name", "");
+    std::string savedName = DefaultPlayerName();
     m_edtPlayerName = AddWidget<SDL2EditBox>(lx + 115, y, w - 115, 24, savedName);
     y += rowH + 4;
     AddWidget<SDL2Label>(lx, y, 110, rowH, "Server Address:");
@@ -856,6 +866,8 @@ void SDL2JoinNetDialog::OnOK() {
     m_playerName = m_edtPlayerName->GetText();
     m_serverAddr = m_edtServerAddr->GetText();
     if (m_playerName.empty() || m_serverAddr.empty()) return;
+    // Persist the name so it pre-fills next time (same profile key OnInit reads).
+    EnWriteProfileString("Create", "Name", m_playerName.c_str());
     m_iPort = atoi(m_edtPort->GetText().c_str());
     if (m_iPort <= 0) m_iPort = 2346;
     EndDialog(1);
@@ -987,7 +999,7 @@ void SDL2HostLoadedDialog::OnInit() {
     y += rowH + 4;
 
     AddWidget<SDL2Label>(lx, y, 110, rowH, "Your Name:");
-    std::string savedName = EnGetProfileStdString("Create", "Name", "");
+    std::string savedName = DefaultPlayerName();
     m_edtPlayerName = AddWidget<SDL2EditBox>(lx + 115, y, w - 115, 24, savedName);
     y += rowH + 4;
 
@@ -1000,6 +1012,8 @@ void SDL2HostLoadedDialog::OnInit() {
 void SDL2HostLoadedDialog::OnOK() {
     m_playerName = m_edtPlayerName ? m_edtPlayerName->GetText() : "";
     if (m_playerName.empty()) return;
+    // Persist the name so it pre-fills next time (same profile key OnInit reads).
+    EnWriteProfileString("Create", "Name", m_playerName.c_str());
     m_iPort = m_edtPort ? atoi(m_edtPort->GetText().c_str()) : 2346;
     if (m_iPort <= 0) m_iPort = 2346;
     EndDialog(1);
@@ -1397,6 +1411,8 @@ void SDL2SessionBrowseDialog::UpdateList() {
 
     if (count == 0 && m_lblInfo)
         m_lblInfo->SetText("No games found - check the server address and port, then Refresh.");
+    else if (count > 0 && m_lblInfo && newSel < 0)
+        m_lblInfo->SetText("");   // clear a stale "No games found" once games arrive
 }
 
 void SDL2SessionBrowseDialog::OnJoin() {
