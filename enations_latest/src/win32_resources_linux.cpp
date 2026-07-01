@@ -37,11 +37,13 @@ const std::unordered_map<UINT, std::string>& string_table() {
         // MP session-close / game-start strings: these surfaced as BLANK message
         // boxes during the live Win-host↔Linux-client test (the rand-mismatch
         // disconnect showed an empty box — undiagnosable from the operator's
-        // seat). %1 (MFC FormatMessage placeholder) converted to %s: the port's
-        // call sites format these with strPrintf (printf-style), not FormatMessage.
+        // seat). Keep the %1 placeholder VERBATIM from lastplnt.rc: this port's
+        // strPrintf/EnLoadStdString path uses MFC FormatMessage-style %1/%2
+        // positional args, NOT printf %s (a live disconnect printed literal
+        // "The game %s" when I wrongly used %s here).
         { IDS_RAND_MISMATCH,    "Did not generate identical world to server.\nYou have been disconnected from the game.\nYou can rejoin the game and it will then copy the world to\nyou (much slower but a guaranteed match)." },
-        { IDS_JOIN_UNJOIN,      "The game %s\nhas disconnected from the net." },
-        { IDS_SAVE_CLOSE,       "The game %s\nhas disconnected from the net.\nDo you wish to save the existing game?" },
+        { IDS_JOIN_UNJOIN,      "The game %1\nhas disconnected from the net." },
+        { IDS_SAVE_CLOSE,       "The game %1\nhas disconnected from the net.\nDo you wish to save the existing game?" },
         { IDS_JOIN_FILE_ERROR,  "Could not receive game from server" },
         { IDS_UNKNOWN,          "{unknown}" },
     };
