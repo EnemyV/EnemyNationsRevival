@@ -668,14 +668,16 @@ static BOOL SafeAssertMsgValid( CNetCmd const* pCmd, int iLen )
     }
     __except ( EXCEPTION_EXECUTE_HANDLER )
     {
-        char sHex[3 * 32 + 1] = { 0 };
+        char sLine[256] = { 0 };
         const unsigned char* pb = (const unsigned char*)pCmd;
         int nDump = ( iLen < 32 ) ? iLen : 32;
+        int nOff = sprintf( sLine, "[net-guard] AssertMsgValid FAULTED type=%d len=%d bytes: ",
+                            pCmd->GetType( ), iLen );
         for ( int i = 0; i < nDump; i++ )
-            sprintf( sHex + 3 * i, "%02X ", pb[i] );
-        fprintf( stderr, "[net-guard] AssertMsgValid FAULTED on msg type %d len=%d - message dropped; bytes: %s\n",
-                 pCmd->GetType( ), iLen, sHex );
-        OutputDebugStringA( "[net-guard] AssertMsgValid FAULTED - message dropped\n" );
+            nOff += sprintf( sLine + nOff, "%02X ", pb[i] );
+        sLine[nOff] = '\n';
+        fprintf( stderr, "%s", sLine );
+        OutputDebugStringA( sLine );   // dbgcatch records ODS, not stderr — hex must ride here
         return FALSE;
     }
 }
