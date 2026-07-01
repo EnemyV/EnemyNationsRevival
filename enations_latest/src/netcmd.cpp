@@ -1483,10 +1483,76 @@ void CNetCmd::AssertMsgValid( ) const
        char buf[64];
        sprintf( buf, "Unhandled event! %d\n", value );
        OutputDebugStringA( buf );
-       
+
 #endif
         break;
     }
 }
 
 #endif
+
+// TRUE if a cbAvail-byte buffer is big enough to be read as this message type.
+// Per-type minimum = sizeof of the concrete struct (variable-tail messages like
+// CNetPlayer/the comp_* groups still need at least their base struct). Types not
+// listed only ever get read as the base CNetCmd here. NOT _DEBUG-gated: Release
+// handlers do the same struct reads.
+//
+// Why (2026-07-01, first 3-platform MP game): a short non-game datagram whose
+// first payload byte decoded as veh_new reached CGame::AddToQueue, where
+// AssertMsgValid read a full CMsgVehNew from a ~10-byte buffer -> OOB read ->
+// SIGSEGV that killed the mac and linux clients mid-game (Windows' allocator
+// happened to tolerate the same read). 3/3 reproducible, same faulting address.
+BOOL CNetCmd::FitsBuffer( int cbAvail ) const
+{
+    int cbNeed;
+
+    switch ( m_bMsg )
+    {
+    case cmd_ready:            cbNeed = sizeof( CNetReady ); break;
+    case cmd_you_are:          cbNeed = sizeof( CNetYouAre ); break;
+    case cmd_player:           cbNeed = sizeof( CNetPlayer ); break;
+    case cmd_start:            cbNeed = sizeof( CNetStart ); break;
+    case cmd_chat:             cbNeed = sizeof( CNetChat ); break;
+
+    case place_veh:            cbNeed = sizeof( CMsgPlaceVeh ); break;
+    case veh_new:              cbNeed = sizeof( CMsgVehNew ); break;
+    case bldg_new:             cbNeed = sizeof( CMsgBldgNew ); break;
+    case place_bldg:
+    case err_place_bldg:       cbNeed = sizeof( CMsgPlaceBldg ); break;
+    case build_bldg:
+    case err_build_bldg:       cbNeed = sizeof( CMsgBuildBldg ); break;
+    case build_veh:
+    case err_build_veh:        cbNeed = sizeof( CMsgBuildVeh ); break;
+    case veh_loc:              cbNeed = sizeof( CMsgVehLoc ); break;
+    case veh_goto:
+    case err_veh_goto:
+    case err_veh_traffic:      cbNeed = sizeof( CMsgVehGoto ); break;
+    case trans_mat:            cbNeed = sizeof( CMsgTransMat ); break;
+    case bldg_stat:            cbNeed = sizeof( CMsgBldgStat ); break;
+    case veh_stat:             cbNeed = sizeof( CMsgVehStat ); break;
+    case veh_dest:             cbNeed = sizeof( CMsgVehDest ); break;
+    case veh_set_dest:         cbNeed = sizeof( CMsgVehSetDest ); break;
+    case build_road:
+    case err_build_road:       cbNeed = sizeof( CMsgBuildRoad ); break;
+    case road_new:             cbNeed = sizeof( CMsgRoadNew ); break;
+    case road_done:            cbNeed = sizeof( CMsgRoadDone ); break;
+    case unit_damage:          cbNeed = sizeof( CMsgUnitDamage ); break;
+    case unit_set_damage:      cbNeed = sizeof( CMsgUnitSetDamage ); break;
+    case destroy_unit:
+    case unit_destroying:
+    case stop_destroy_unit:
+    case stop_unit_destroying: cbNeed = sizeof( CMsgDestroyUnit ); break;
+    case delete_unit:          cbNeed = sizeof( CMsgDeleteUnit ); break;
+    case attack:               cbNeed = sizeof( CMsgAttack ); break;
+    case unit_attacked:        cbNeed = sizeof( CMsgUnitAttacked ); break;
+    case see_unit:             cbNeed = sizeof( CMsgSeeUnit ); break;
+
+    case veh_comp_loc:         cbNeed = sizeof( CMsgVehCompLoc ); break;
+    case comp_unit_damage:     cbNeed = sizeof( CMsgCompUnitDamage ); break;
+    case comp_unit_set_damage: cbNeed = sizeof( CMsgCompUnitSetDamage ); break;
+
+    default:                   cbNeed = sizeof( CNetCmd ); break;
+    }
+
+    return cbAvail >= cbNeed;
+}

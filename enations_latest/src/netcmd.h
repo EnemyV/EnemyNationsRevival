@@ -176,6 +176,12 @@ class CNetCmd : public VPMsgHdr
     DWORD dwPostTime;
 #endif
 
+    // TRUE if a buffer of cbAvail bytes is big enough to be read as this message
+    // type (per-type minimum = sizeof of the concrete struct, mirroring
+    // AssertMsgValid's casts). Guards the receive path against short/misrouted
+    // datagrams being validated/processed as full game commands (OOB reads).
+    BOOL FitsBuffer( int cbAvail ) const;
+
 #ifdef _DEBUG
   public:
     void AssertMsgValid( ) const;

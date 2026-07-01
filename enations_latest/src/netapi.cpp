@@ -669,18 +669,26 @@ void CGame::AddToQueue( CNetCmd const* pCmd, int iLen )
 
     ASSERT_VALID( this );
 
-#ifdef _DEBUG
-    pCmd->AssertMsgValid( );
-#endif
-    // can't do - previous messages may need to be processed first	ASSERT_CMD (pCmd);
-
-    // check if the command id is too high:
+    // Sanity BEFORE any typed read of the buffer (AssertMsgValid casts to the
+    // concrete msg struct — on a short/misrouted datagram that's an OOB read,
+    // the SIGSEGV that killed the POSIX clients in the 2026-07-01 MP test).
     int msgType = pCmd->GetType( );
     if ( msgType < 0 || msgType >= CNetCmd::last_message )
     {
         TRACE( "ProcessMessage: Invalid message type %d (corrupted message?)\n", msgType );
         return;  // Skip corrupted messages instead of asserting
     }
+    if ( !pCmd->FitsBuffer( iLen ) )
+    {
+        fprintf( stderr, "[net-guard] dropped %d-byte buffer decoding as msg type %d - too short, corrupt/misrouted datagram\n",
+                 iLen, msgType );
+        return;
+    }
+
+#ifdef _DEBUG
+    pCmd->AssertMsgValid( );
+#endif
+    // can't do - previous messages may need to be processed first	ASSERT_CMD (pCmd);
 
 #ifdef _LOG_LAG
     ( (CNetCmd*)pCmd )->dwPostTime = timeGetTime( );
@@ -959,10 +967,19 @@ LRESULT CNetApi::OnNetMsg( WPARAM wParam, LPARAM lParam )
         if ( pVpMsg->userData == NULL )
         {
             CNetCmd* pCmd = (CNetCmd*)( ( (char*)pVpMsg->u.data ) - sizeof( VPMsgHdr ) );
+            int cbTotal = (int)( pVpMsg->dataLen + sizeof( VPMsgHdr ) );
+            // Guard the immediate-chat read the same way AddToQueue guards the
+            // queued path: a short/misrouted datagram must not be read as a
+            // full message struct (see FitsBuffer in netcmd.cpp).
+            if ( !pCmd->FitsBuffer( cbTotal ) )
+            {
+                fprintf( stderr, "[net-guard] dropped %d-byte VP_READDATA decoding as msg type %d - too short, corrupt/misrouted datagram\n",
+                         cbTotal, pCmd->GetType( ) );
+            }
             // Chat is handled IMMEDIATELY (not queued) so it also works in the
             // pre-game lobby, where the message queue isn't being drained. (The
             // queued path still exists in ProcessMessage for safety.)
-            if ( pCmd->GetType( ) == CNetCmd::cmd_chat )
+            else if ( pCmd->GetType( ) == CNetCmd::cmd_chat )
             {
                 const CNetChat* pChat = (const CNetChat*)pCmd;
                 CPlayer* pSender = theGame._GetPlayer( pChat->m_iPlyrNetNum );
@@ -970,7 +987,7 @@ LRESULT CNetApi::OnNetMsg( WPARAM wParam, LPARAM lParam )
                 SDL2Chat_AddMessage( from + ": " + pChat->m_sMsg );
             }
             else
-                theGame.AddToQueue( pCmd, pVpMsg->dataLen + sizeof( VPMsgHdr ) );
+                theGame.AddToQueue( pCmd, cbTotal );
         }
         else
             TRAP( );
