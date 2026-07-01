@@ -89,7 +89,8 @@ void EnSetX11FakeTopExtent(SDL_Window* panel)
 
     Display* dpy = info.info.x11.display;
 
-    long top = 0;   // work-area top = height of the shell's top strut
+    long lft = 0;   // work-area left = width of the shell's dock strut
+    long top = 0;   // work-area top  = height of the shell's top-bar strut
     {
         Atom workarea = XInternAtom(dpy, "_NET_WORKAREA", False);
         Atom type; int fmt; unsigned long n, left; unsigned char* data = NULL;
@@ -98,26 +99,30 @@ void EnSetX11FakeTopExtent(SDL_Window* panel)
                                XA_CARDINAL, &type, &fmt, &n, &left, &data) == Success &&
             data != NULL)
         {
-            if (type == XA_CARDINAL && fmt == 32 && n >= 2)
-                top = ((long*)data)[1];   // workarea = x, y, w, h — y IS the strut
+            if (type == XA_CARDINAL && fmt == 32 && n >= 2) {
+                lft = ((long*)data)[0];   // workarea = x, y, w, h — x/y ARE the struts
+                top = ((long*)data)[1];
+            }
             XFree(data);
         }
     }
-    if (top <= 0) {
-        fprintf(stderr, "[TOPEXT] no top strut (workarea top=%ld) — skipping\n", top);
+    if (top <= 0 && lft <= 0) {
+        fprintf(stderr, "[TOPEXT] no struts (workarea x=%ld y=%ld) — skipping\n", lft, top);
         return;
     }
+    if (lft < 0) lft = 0;
+    if (top < 0) top = 0;
 
     Atom extents = XInternAtom(dpy, "_GTK_FRAME_EXTENTS", False);
     if (extents == None)
         return;
 
-    long ext[4] = { 0, 0, top, 0 };   // left, right, TOP, bottom
+    long ext[4] = { lft, 0, top, 0 };   // LEFT, right, TOP, bottom
     XChangeProperty(dpy, info.info.x11.window, extents, XA_CARDINAL, 32,
                     PropModeReplace, (unsigned char*)ext, 4);
     XFlush(dpy);
-    fprintf(stderr, "[TOPEXT] set _GTK_FRAME_EXTENTS top=%ld on X11 win 0x%lx\n",
-            top, (unsigned long)info.info.x11.window);
+    fprintf(stderr, "[TOPEXT] set _GTK_FRAME_EXTENTS left=%ld top=%ld on X11 win 0x%lx\n",
+            lft, top, (unsigned long)info.info.x11.window);
 }
 
 //---------------------------------------------------------------------------
