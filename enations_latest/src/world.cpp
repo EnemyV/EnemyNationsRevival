@@ -665,6 +665,11 @@ void CWndWorld::CommandCenterChange() {
     sTitle = strPrintf(sTitle.c_str(), pArg);
 
     SetWindowText(sTitle.c_str());
+    // The SDL2 panel title bar doesn't hear SetWindowText — push the mode change
+    // (Radar <-> World Map, with facing direction) to it too, or the panel keeps
+    // whatever title it was created with (e.g. "Radar" after the rocket lands).
+    if (m_sdlPanel)
+        m_sdlPanel->SetTitle(sTitle.c_str());
     // BUGBUG - if change black it & do noise
 }
 
