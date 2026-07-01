@@ -1432,15 +1432,22 @@ static void CmdStart( CNetStart* pStrt );   // fwd
 
 void RunDeferredClientStart( )
 {
+    fprintf( stderr, "[mp-start] RunDeferredClientStart (startReceived=%d) -> building world\n",
+             (int)g_bClientStartReceived );
     if ( g_bClientStartReceived )
     {
         g_bClientStartReceived = false;
         CmdStart( (CNetStart*)g_clientStartBuf );
+        fprintf( stderr, "[mp-start] deferred CmdStart returned (world build done or caught)\n" );
     }
 }
 
 static void CmdStart( CNetStart* pStrt )
 {
+    // [mp-start] stderr breadcrumbs: the 3-client join test (2026-07-01) had POSIX
+    // clients silently bounce to the main menu when the host started; these mark
+    // exactly how far the client start path got. Keep until MP start is stable.
+    fprintf( stderr, "[mp-start] CNetStart received (lobbyWaiting=%d)\n", (int)g_bClientLobbyWaiting );
     if ( g_bClientLobbyWaiting )
     {
         memcpy( g_clientStartBuf, pStrt, sizeof( CNetStart ) );

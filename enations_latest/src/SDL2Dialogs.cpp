@@ -1254,8 +1254,10 @@ void SDL2ClientLobbyDialog::OnFrame() {
     RefreshChat();
 
     extern bool g_bClientStartReceived;
-    if (g_bClientStartReceived)
+    if (g_bClientStartReceived) {
+        fprintf(stderr, "[mp-start] client lobby saw start flag -> EndDialog(1)\n");
         EndDialog(1);   // host started -> flow builds the world outside this loop
+    }
 }
 
 void SDL2ClientLobbyDialog::UpdatePlayerList() {
@@ -1701,6 +1703,8 @@ bool SDL2_RunJoinNetworkFlow(GameWindow* gameWindow) {
         lobbyResult = clientLobby.DoModal();
     }
     g_bClientLobbyWaiting = false;
+    fprintf(stderr, "[mp-start] client lobby closed, result=%d (1=host started, else back to menu)\n",
+            lobbyResult);
 
     if (lobbyResult != 1) {
         // Player left the waiting room before the game started. ReadyToJoin tore
