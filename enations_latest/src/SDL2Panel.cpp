@@ -875,18 +875,10 @@ void SDL2Panel::Detach(SDL_Window* ownerWindow) {
         }
     }
 #endif
-#if defined(__linux__)
-    // Linux/X11 owner relationship — the X11 equivalent of the Win32 GWLP_HWNDPARENT
-    // owner above. Implemented in a dedicated TU (x11_transient_linux.cpp) so Xlib's
-    // headers/macros stay isolated from this file. WM_TRANSIENT_FOR keeps the panel
-    // above its OWNER (the main game window) while OTHER apps (e.g. the user's terminal)
-    // can still come forward — unlike SDL_WINDOW_ALWAYS_ON_TOP, which on X11 pinned it
-    // above the whole desktop (operator-reported: the area map covered the terminal).
-    // Linux-ONLY: macOS uses ALWAYS_ON_TOP above (no X11), Windows uses GWLP_HWNDPARENT.
-    extern void EnSetX11TransientFor(SDL_Window* panel, SDL_Window* owner);
-    if (ownerWindow)
-        EnSetX11TransientFor(m_ownWindow, ownerWindow);
-#endif
+    // NOTE (Linux/X11): do NOT set X11 window hints (WM_TRANSIENT_FOR, frame
+    // extents) here — MaybeCreateOwnRenderer() below can make SDL RECREATE the
+    // underlying X11 window for the GL visual, silently wiping any properties
+    // set on the original one. They are applied after it instead.
 
     // If this window has been opened (and moved/sized) before, reopen it in the
     // same spot. Done before the on-monitor clamp below so a restored rect is
@@ -932,6 +924,28 @@ void SDL2Panel::Detach(SDL_Window* ownerWindow) {
     }
 
     MaybeCreateOwnRenderer();  // T0b: GPU present for this window if the flag is on
+
+#if defined(__linux__)
+    // Linux/X11 window hints — applied AFTER MaybeCreateOwnRenderer because creating
+    // the GPU renderer can make SDL recreate the underlying X11 window (new GL visual),
+    // which drops any properties set on the old one.
+    //
+    // (1) Owner relationship — the X11 equivalent of the Win32 GWLP_HWNDPARENT owner
+    // above; implemented in a dedicated TU (x11_transient_linux.cpp) so Xlib's
+    // headers/macros stay isolated from this file. WM_TRANSIENT_FOR keeps the panel
+    // above its OWNER (the main game window) while OTHER apps (e.g. the user's terminal)
+    // can still come forward — unlike SDL_WINDOW_ALWAYS_ON_TOP, which on X11 pinned it
+    // above the whole desktop (operator-reported: the area map covered the terminal).
+    // Linux-ONLY: macOS uses ALWAYS_ON_TOP (no X11), Windows uses GWLP_HWNDPARENT.
+    extern void EnSetX11TransientFor(SDL_Window* panel, SDL_Window* owner);
+    if (ownerWindow)
+        EnSetX11TransientFor(m_ownWindow, ownerWindow);
+    // (2) Fake _GTK_FRAME_EXTENTS top margin so the WM lets the panel be dragged all
+    // the way to the screen top (Mutter otherwise clamps the top edge at the
+    // gnome-shell strut even during an interactive move) — see the impl comment.
+    extern void EnSetX11FakeTopExtent(SDL_Window* panel);
+    EnSetX11FakeTopExtent(m_ownWindow);
+#endif
 
     // Don't raise a window we created hidden (deferred until load completes) —
     // raising it would SetForegroundWindow and defeat the point.
