@@ -3474,7 +3474,14 @@ void CGame::ProcessMessage(CNetCmd* pCmd )
             // if any player says pause - we pause
             if ( pPlr->m_bPauseMsgs )
             {
-                TRAP( );
+                // NOT a fault (was TRAP): with several clients, pause windows overlap
+                // routinely — e.g. game start, where every joiner pauses while it builds
+                // the world and unpauses as it finishes. First unpause arriving while a
+                // slower client is still paused lands here by design: stay paused and
+                // wait for the rest. (The TRAP froze the host in the debugger mid-start
+                // of the first 3-client MP game, 2026-07-01.)
+                if ( theApp.m_pLogFile != NULL )
+                    theApp.Log( "Pause: staying paused, another player still paused" );
                 return;
             }
         }
