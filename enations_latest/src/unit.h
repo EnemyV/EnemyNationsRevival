@@ -804,8 +804,10 @@ class CInitProjMem;
 // generous constant guarded by a static_assert below (after the classes are
 // complete). The original hardcoded 188 was sized for the 32-bit build; on x64
 // the wider pointers/vtable pushed sizeof(CProjectile) past 188, so every fired
-// projectile overran its pool block -> combat heap corruption.
-constexpr unsigned PROJ_POOL_BLOCK = 256;
+// projectile overran its pool block -> combat heap corruption. Bumped 256->320
+// when the projectile-trail fix (4d5b959e) added m_fStrength/m_iStepsStart/
+// m_iTrailTeamR,G,B to CProjectile, pushing it back past the old block size.
+constexpr unsigned PROJ_POOL_BLOCK = 320;
 
 class CProjBase : public CEffectTile
 {
