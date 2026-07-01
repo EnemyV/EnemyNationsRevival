@@ -57,9 +57,22 @@ struct Pending {
 
 } // namespace
 
+// EN_NETTRACE diagnostic: the pump's registration lifecycle decides whether a
+// socket is ever heard from again — a wrongly cleared mask/registration turns a
+// live MP session into a silently-growing Recv-Q (client looks frozen to the
+// host). Trace every mutation so that failure mode is attributable post-hoc.
+static bool PumpTraceOn()
+{
+    static int on = -1;
+    if (on < 0) on = getenv("EN_NETTRACE") ? 1 : 0;
+    return on == 1;
+}
+
 void vpNetSelectSet(SOCKET s, vpSelectDispatchFn fn, void* ctx, void* hWnd, long mask)
 {
     std::lock_guard<std::mutex> lk(g_mtx);
+    if (PumpTraceOn())
+        fprintf(stderr, "[pump] SelectSet fd=%d mask=0x%lx ctx=%p\n", (int)s, mask, ctx);
     if (mask == 0) {                 // WSAAsyncSelect(s,...,0) cancels notifications
         g_reg.erase(s);
         return;
@@ -78,6 +91,8 @@ void vpNetSelectSet(SOCKET s, vpSelectDispatchFn fn, void* ctx, void* hWnd, long
 void vpNetSelectClear(SOCKET s)
 {
     std::lock_guard<std::mutex> lk(g_mtx);
+    if (PumpTraceOn() && g_reg.count(s))
+        fprintf(stderr, "[pump] SelectClear fd=%d (closesocket)\n", (int)s);
     g_reg.erase(s);
 }
 
@@ -89,8 +104,16 @@ void vpNetSelectClear(SOCKET s)
 void vpNetSelectClearCtx(void* ctx)
 {
     std::lock_guard<std::mutex> lk(g_mtx);
-    for (auto it = g_reg.begin(); it != g_reg.end(); )
-        it = (it->second.ctx == ctx) ? g_reg.erase(it) : std::next(it);
+    for (auto it = g_reg.begin(); it != g_reg.end(); ) {
+        if (it->second.ctx == ctx) {
+            if (PumpTraceOn())
+                fprintf(stderr, "[pump] ClearCtx PURGING fd=%d (its CNetInterface %p is being destroyed - if this fd is the live game socket, the session just went deaf)\n",
+                        (int)it->first, ctx);
+            it = g_reg.erase(it);
+        } else {
+            ++it;
+        }
+    }
 }
 
 int vpNetPumpPosix(int timeout_ms)
@@ -189,6 +212,8 @@ int vpNetPumpPosix(int timeout_ms)
                     // backoff (measured 1.3M dispatches/2min on a failed join),
                     // starving the SDL event loop — the window looks frozen/vanished.
                     r.mask &= ~(FD_READ | FD_CLOSE);
+                    if (PumpTraceOn())
+                        fprintf(stderr, "[pump] FD_CLOSE(except) fd=%d soerr=%d -> mask cleared (deaf now)\n", (int)s, soerr);
                     continue;
                 }
             }
@@ -202,11 +227,15 @@ int vpNetPumpPosix(int timeout_ms)
                     if (pk == 0) {
                         emit(FD_CLOSE, 0);
                         r.mask &= ~(FD_READ | FD_CLOSE);   // edge: FD_CLOSE fires once
+                        if (PumpTraceOn())
+                            fprintf(stderr, "[pump] FD_CLOSE(EOF) fd=%d -> mask cleared (deaf now)\n", (int)s);
                     } else if (pk > 0) {
                         if (r.mask & FD_READ) emit(FD_READ, 0);
                     } else if (errno != EWOULDBLOCK && errno != EAGAIN) {
                         emit(FD_CLOSE, errno);
                         r.mask &= ~(FD_READ | FD_CLOSE);   // edge: FD_CLOSE fires once
+                        if (PumpTraceOn())
+                            fprintf(stderr, "[pump] FD_CLOSE(err) fd=%d errno=%d -> mask cleared (deaf now)\n", (int)s, errno);
                     }
                 }
             }
