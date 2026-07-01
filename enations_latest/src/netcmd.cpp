@@ -1547,9 +1547,48 @@ BOOL CNetCmd::FitsBuffer( int cbAvail ) const
     case unit_attacked:        cbNeed = sizeof( CMsgUnitAttacked ); break;
     case see_unit:             cbNeed = sizeof( CMsgSeeUnit ); break;
 
-    case veh_comp_loc:         cbNeed = sizeof( CMsgVehCompLoc ); break;
-    case comp_unit_damage:     cbNeed = sizeof( CMsgCompUnitDamage ); break;
-    case comp_unit_set_damage: cbNeed = sizeof( CMsgCompUnitSetDamage ); break;
+    // Compound (variable-length) messages are sent at SendSize() = header +
+    // m_iNumMsgs*elem, NOT the full struct. Checking against sizeof(the whole
+    // struct) — which embeds the MAX element array (~VP_MAXSENDDATA) — rejected
+    // EVERY real compound message (a few-vehicle veh_comp_loc is ~54 bytes vs a
+    // ~kB max struct): the "type-85 too-short" drops seen live on the Win host
+    // AND the Linux client at game start, and a source of client desync (dropped
+    // unit-location/damage batches). Validate the declared count instead: header
+    // must fit, count must be in range, then exactly count elements must fit.
+    case veh_comp_loc: {
+        int hdr = sizeof( CNetCmd ) + sizeof( int );
+        if ( cbAvail < hdr ) return FALSE;
+        int n = ( (const CMsgVehCompLoc*)this )->m_iNumMsgs;
+        if ( n < 0 || n > NUM_LOC_ELEM ) return FALSE;
+        cbNeed = hdr + n * (int)sizeof( CMsgVehCompLocElem );
+        break;
+    }
+    case comp_unit_damage: {
+        int hdr = sizeof( CNetCmd ) + sizeof( int );
+        if ( cbAvail < hdr ) return FALSE;
+        int n = ( (const CMsgCompUnitDamage*)this )->m_iNumMsgs;
+        if ( n < 0 || n > NUM_UNIT_DAMAGE_ELEM ) return FALSE;
+        cbNeed = hdr + n * (int)sizeof( CMsgCompUnitDamageElem );
+        break;
+    }
+    case comp_unit_set_damage: {
+        int hdr = sizeof( CNetCmd ) + sizeof( int );
+        if ( cbAvail < hdr ) return FALSE;
+        int n = ( (const CMsgCompUnitSetDamage*)this )->m_iNumMsgs;
+        if ( n < 0 || n > NUM_UNIT_SET_DAMAGE_ELEM ) return FALSE;
+        cbNeed = hdr + n * (int)sizeof( CMsgCompUnitDamageElem );
+        break;
+    }
+    case shoot_gun: {
+        // Also compound; previously fell through to the lenient default (sizeof
+        // CNetCmd) so a truncated shoot could reach element indexing. Same guard.
+        int hdr = sizeof( CNetCmd ) + sizeof( int );
+        if ( cbAvail < hdr ) return FALSE;
+        int n = ( (const CMsgShoot*)this )->m_iNumMsgs;
+        if ( n < 0 || n > NUM_SHOOT_ELEM ) return FALSE;
+        cbNeed = hdr + n * (int)sizeof( CMsgShootElem );
+        break;
+    }
 
     default:                   cbNeed = sizeof( CNetCmd ); break;
     }

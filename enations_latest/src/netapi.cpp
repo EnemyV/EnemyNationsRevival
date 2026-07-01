@@ -1007,8 +1007,14 @@ LRESULT CNetApi::OnNetMsg( WPARAM wParam, LPARAM lParam )
             // full message struct (see FitsBuffer in netcmd.cpp).
             if ( !pCmd->FitsBuffer( cbTotal ) )
             {
-                fprintf( stderr, "[net-guard] dropped %d-byte VP_READDATA decoding as msg type %d - too short, corrupt/misrouted datagram\n",
-                         cbTotal, pCmd->GetType( ) );
+                char sHex[3 * 24 + 1] = { 0 };
+                const unsigned char* pb = (const unsigned char*)pCmd;
+                int nDump = ( cbTotal < 24 ) ? cbTotal : 24;
+                if ( nDump < 0 ) nDump = 0;
+                for ( int i = 0; i < nDump; i++ )
+                    sprintf( sHex + 3 * i, "%02X ", pb[i] );
+                fprintf( stderr, "[net-guard] dropped %d-byte VP_READDATA decoding as msg type %d sender=%u - too short, corrupt/misrouted; bytes: %s\n",
+                         cbTotal, pCmd->GetType( ), (unsigned)pVpMsg->senderId, sHex );
             }
             // Content guard + provenance capture for the cross-platform garbage
             // veh_new (mac2 5/5 SIGSEGV: size-plausible message, out-of-range
