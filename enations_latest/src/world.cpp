@@ -472,7 +472,11 @@ int CWndWorld::OnCreate(LPCREATESTRUCT lpCreateStruct) {
             rect.Width(), rect.Height(), 20 );  // z=20, above area maps
         m_sdlPanel->SetMovable(true);
         m_sdlPanel->SetResizable(true);
-        m_sdlPanel->SetTitle(m_bIsRadar ? "Radar" : "World Map");
+        // Same localized title (mode + facing direction) as CommandCenterChange, which
+        // already ran during Init — before this panel existed to receive it.
+        m_sdlPanel->SetTitle(strPrintf(
+            EnLoadStdString(m_bIsRadar ? IDS_WORLD_TITLE_RADAR : IDS_WORLD_TITLE_MAP).c_str(),
+            m_pWndArea == NULL ? "" : m_sDir[m_pWndArea->GetAA().m_iDir].c_str()).c_str());
 
         // When panel is resized, update the world's DIB and internal data
         CWndWorld* pResize = this;

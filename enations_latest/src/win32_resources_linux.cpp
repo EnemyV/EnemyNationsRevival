@@ -34,6 +34,15 @@ const std::unordered_map<UINT, std::string>& string_table() {
         { IDS_VPENUM_FAILED,    "The network layer could not ask for a list of games.\nYou may want to try a different network connection type." },
         { IDS_VPJOIN_FAILED,    "The network layer could not connect to the requested game.\nThe game may have already started." },
         { IDS_VPSEND_FAILED,    "The network layer could not talk to one of the other player's computers.\nYou may want to try to reconnect." },
+        // World/minimap window title (CWndWorld::CommandCenterChange) surfaced EMPTY on
+        // Linux — the panel title bar went blank once the rocket landed. Title + the
+        // facing-direction %1 args, verbatim from lastplnt.rc.
+        { IDS_WORLD_TITLE_MAP,   "World Map (%1)" },
+        { IDS_WORLD_TITLE_RADAR, "Radar (%1)" },
+        { IDS_WORLD_NE,          "NE" },
+        { IDS_WORLD_SE,          "SE" },
+        { IDS_WORLD_SW,          "SW" },
+        { IDS_WORLD_NW,          "NW" },
     };
     return t;
 }
