@@ -976,6 +976,25 @@ LRESULT CNetApi::OnNetMsg( WPARAM wParam, LPARAM lParam )
                 fprintf( stderr, "[net-guard] dropped %d-byte VP_READDATA decoding as msg type %d - too short, corrupt/misrouted datagram\n",
                          cbTotal, pCmd->GetType( ) );
             }
+            // Content guard + provenance capture for the cross-platform garbage
+            // veh_new (mac2 5/5 SIGSEGV: size-plausible message, out-of-range
+            // m_iType, always right after an OnSenumREP). Plain field reads within
+            // the FitsBuffer-verified span are safe; validating here (instead of
+            // letting AssertValid index arrays with garbage) turns the crash into
+            // a hex capture that identifies the sender and the actual bytes.
+            else if ( pCmd->GetType( ) == CNetCmd::veh_new &&
+                      ( ( (_CMsgVeh*)pCmd )->m_iType < 0 ||
+                        ( (_CMsgVeh*)pCmd )->m_iType >= theTransports.GetNumTransports( ) ) )
+            {
+                char sHex[3 * 24 + 1] = { 0 };
+                const unsigned char* pb = (const unsigned char*)pCmd;
+                int nDump = ( cbTotal < 24 ) ? cbTotal : 24;
+                for ( int i = 0; i < nDump; i++ )
+                    sprintf( sHex + 3 * i, "%02X ", pb[i] );
+                fprintf( stderr, "[net-guard] dropped veh_new with garbage m_iType=%d (max %d) sender=%u len=%d bytes: %s\n",
+                         ( (_CMsgVeh*)pCmd )->m_iType, theTransports.GetNumTransports( ),
+                         (unsigned)pVpMsg->senderId, cbTotal, sHex );
+            }
             // Chat is handled IMMEDIATELY (not queued) so it also works in the
             // pre-game lobby, where the message queue isn't being drained. (The
             // queued path still exists in ProcessMessage for safety.)
