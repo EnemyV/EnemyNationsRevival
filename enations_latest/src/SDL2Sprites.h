@@ -71,8 +71,11 @@ namespace SDL2Sprites
     // is the opacity at the bullet end (tail always fades to 0) — lets the caller dim
     // weaker shots. No texture/atlas entry — pure coloured geometry, so it never touches
     // the persistent sprite store.
+    // outlineR/G/B = the shooter's TEAM colour, drawn as a wider additive halo under the core
+    // tracer so trails are player-distinguishable (operator).
     void CaptureTrail( float headX, float headY, float tailX, float tailY,
-                       float halfWidth, int r, int g, int b, int headAlpha );
+                       float halfWidth, int r, int g, int b, int headAlpha,
+                       int outlineR, int outlineG, int outlineB );
 
     // Impact flash (explosions): an additive soft disc of `radius` px at VIEW-space
     // (cx,cy), `centerAlpha` (0-255) at the centre fading to 0 at the rim. Drawn on top

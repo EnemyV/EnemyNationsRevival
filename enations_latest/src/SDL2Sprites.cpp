@@ -124,6 +124,7 @@ namespace
         float hx, hy, tx, ty;   // head (bullet) → tail, VIEW space
         float halfW;            // half-width (px)
         Uint8 r, g, b, aHead;   // colour + head opacity (tail fades to 0)
+        Uint8 oR, oG, oB;       // shooter team colour (wider additive outline halo)
     };
     std::vector<Trail> g_trails;
 
@@ -577,7 +578,8 @@ namespace SDL2Sprites
     }
 
     void CaptureTrail( float headX, float headY, float tailX, float tailY,
-                       float halfWidth, int r, int g, int b, int headAlpha )
+                       float halfWidth, int r, int g, int b, int headAlpha,
+                       int outlineR, int outlineG, int outlineB )
     {
         if ( !g_inFrame || !g_renderer )
             return;
@@ -585,6 +587,7 @@ namespace SDL2Sprites
         t.hx = headX; t.hy = headY; t.tx = tailX; t.ty = tailY;
         t.halfW = halfWidth;
         t.r = (Uint8)r; t.g = (Uint8)g; t.b = (Uint8)b; t.aHead = (Uint8)headAlpha;
+        t.oR = (Uint8)outlineR; t.oG = (Uint8)outlineG; t.oB = (Uint8)outlineB;
         g_trails.push_back( t );
     }
 
@@ -697,21 +700,36 @@ namespace SDL2Sprites
             if ( len < 0.5f )
                 continue;
             // Unit perpendicular × half-width gives the streak's two sides.
-            float px = -dy / len * t.halfW, py = dx / len * t.halfW;
+            float ux = dx / len, uy = dy / len;   // unit along head->tail
+            float hwOut = t.halfW * 1.8f;          // operator: thicker team-colour outline
+            if ( hwOut < 3.0f ) hwOut = 3.0f;
+            hwOut += t.halfW;                      // outline half-width = core + halo pad
 
-            int            base = (int)verts.size( );
-            // Head alpha (< 255) keeps the additive tracer from blowing out to white at
-            // the bullet; tail fades to fully transparent.
-            const SDL_Color head = { t.r, t.g, t.b, t.aHead };
-            const SDL_Color tail = { t.r, t.g, t.b, 0 };
-            SDL_Vertex      v[4];
-            v[0].position = { hx + px, hy + py }; v[0].color = head;
-            v[1].position = { hx - px, hy - py }; v[1].color = head;
-            v[2].position = { tx - px, ty - py }; v[2].color = tail;
-            v[3].position = { tx + px, ty + py }; v[3].color = tail;
-            for ( int i = 0; i < 4; ++i ) { v[i].tex_coord = { 0, 0 }; verts.push_back( v[i] ); }
-            idx.push_back( base + 0 ); idx.push_back( base + 1 ); idx.push_back( base + 2 );
-            idx.push_back( base + 0 ); idx.push_back( base + 2 ); idx.push_back( base + 3 );
+            // Pass 0 = team-colour OUTLINE halo (wider, dimmer); pass 1 = core strength-graded
+            // tracer. Additive blend is order-independent so both share the batch. Edges read as
+            // the shooter's team colour (operator: distinguish players); centre stays the tracer.
+            // Head alpha (< 255) keeps additive blending from blowing out to white at the bullet;
+            // tail fades to fully transparent.
+            for ( int pass = 0; pass < 2; ++pass )
+            {
+                float hw = ( pass == 0 ) ? hwOut : t.halfW;
+                Uint8 cr = ( pass == 0 ) ? t.oR : t.r;
+                Uint8 cg = ( pass == 0 ) ? t.oG : t.g;
+                Uint8 cb = ( pass == 0 ) ? t.oB : t.b;
+                Uint8 ca = ( pass == 0 ) ? (Uint8)( ( t.aHead * 3 ) / 4 ) : t.aHead;
+                float px = -uy * hw, py = ux * hw;
+                int   base = (int)verts.size( );
+                const SDL_Color head = { cr, cg, cb, ca };
+                const SDL_Color tail = { cr, cg, cb, 0 };
+                SDL_Vertex      v[4];
+                v[0].position = { hx + px, hy + py }; v[0].color = head;
+                v[1].position = { hx - px, hy - py }; v[1].color = head;
+                v[2].position = { tx - px, ty - py }; v[2].color = tail;
+                v[3].position = { tx + px, ty + py }; v[3].color = tail;
+                for ( int i = 0; i < 4; ++i ) { v[i].tex_coord = { 0, 0 }; verts.push_back( v[i] ); }
+                idx.push_back( base + 0 ); idx.push_back( base + 1 ); idx.push_back( base + 2 );
+                idx.push_back( base + 0 ); idx.push_back( base + 2 ); idx.push_back( base + 3 );
+            }
         }
 
         if ( !verts.empty( ) )

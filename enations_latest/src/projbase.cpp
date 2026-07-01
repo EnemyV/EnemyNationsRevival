@@ -256,19 +256,23 @@ void CProjectile::EmitTrail ()
     double	wfac = 0.8 + ( 1.45 - 0.8 ) * t;          // weak thinner, strong thicker
     double	lfac = 1.0 + 0.7 * t;                     // strong streak runs longer
 
-    double	dLenMax = __max( 14, 48 >> xiZoom ) * lfac;           // max length, gradient-scaled
+    double	dLenMax = __max( 30, 96 >> xiZoom ) * lfac;           // max length, gradient-scaled (operator: longer)
     double	dHalfW  = __max( 0.5, ( 1.3 - xiZoom * 0.3 ) * wfac );// width, gradient-scaled
 
-    // Grow the trail from 0 at launch up to dLenMax: the tail is anchored to where the
-    // projectile started, until it has travelled far enough to reach full length (then it
-    // trails behind at dLenMax, comet-style). len is one step's screen distance, so
-    // (steps travelled) * len = screen distance covered — no map-edge wrap issues.
+    // Grow the trail from launch up to dLenMax: the tail is anchored to where the projectile
+    // started, until it has travelled far enough to reach full length (then it trails behind at
+    // dLenMax, comet-style). len is one step's screen distance, so (steps travelled) * len =
+    // screen distance covered — no map-edge wrap issues.
     int		iStepsGone = m_iStepsStart - m_iSteps;
     if ( iStepsGone < 0 )
         iStepsGone = 0;
     double	dLen = __min( dLenMax, iStepsGone * len );
-    if ( dLen < 1.0 )
-        return;   // just launched — nothing to draw yet
+    // Operator: don't start at 0. A short/point-blank shot (e.g. a camp firing an adjacent unit,
+    // now given a 2-step visible flight) covers too little before it lands to grow a visible trail,
+    // so it drew NOTHING. Floor the length so every shot shows a streak the instant it spawns.
+    double	dLenMin = __max( 9.0, dLenMax * 0.40 );
+    if ( dLen < dLenMin )
+        dLen = dLenMin;
 
     // The trail draws additively OVER the sprite layer, so start it a small gap BEHIND the
     // bullet (along the backward travel dir) — leaves the projectile sprite visible in front
@@ -282,7 +286,8 @@ void CProjectile::EmitTrail ()
     float	tx = (float) ( ptHead.x + ux * ( gap + dLen ) + ul.x );
     float	ty = (float) ( ptHead.y + uy * ( gap + dLen ) + ul.y );
 
-    SDL2Sprites::CaptureTrail( hx, hy, tx, ty, (float) dHalfW, cr, cg, cb, aHead );
+    SDL2Sprites::CaptureTrail( hx, hy, tx, ty, (float) dHalfW, cr, cg, cb, aHead,
+                               m_iTrailTeamR, m_iTrailTeamG, m_iTrailTeamB );
 }
 
 CProjectile::CProjectile (CUnit const * pUnit, CMapLoc const & mlEnd, DWORD dwTarget, int iNumShots) : CProjBase (projectile)
@@ -295,6 +300,15 @@ CProjectile::CProjectile (CUnit const * pUnit, CMapLoc const & mlEnd, DWORD dwTa
     // cache the shooter's normalised strength for the tracer-colour gradient
     m_fStrength = ProjShooterStrength (m_dwIDShooter);
     m_iStepsStart = 0;   // set to flight-start step count below (trail length basis)
+
+    // cache the shooter's TEAM colour for the trail outline (player-distinguishing + flavour).
+    // Captured here (not in EmitTrail) so it survives even if the shooter dies mid-flight.
+    {
+        COLORREF rgbTeam = pUnit->GetOwner ()->GetRGBColor ();
+        m_iTrailTeamR = GetRValue (rgbTeam);
+        m_iTrailTeamG = GetGValue (rgbTeam);
+        m_iTrailTeamB = GetBValue (rgbTeam);
+    }
 
     // attach the sprite
     if (pUnit->GetData()->GetProjectile () == 0)
@@ -415,10 +429,28 @@ CProjectile::CProjectile (CUnit const * pUnit, CMapLoc const & mlEnd, DWORD dwTa
 
     if (m_iSteps <= 0)
         {
-        m_iSteps = 0;
-        m_iProjDelay = 0;
-        m_faAdd = 0;
-        m_iStepMod = AVG_SPEED_MUL;
+        // A building firing a target within/at its own footprint edge (point-blank) has had ALL its
+        // flight steps consumed exiting the footprint above -> a zero-flight shot, which the creation
+        // site turns into an INSTANT hit with NO flying bullet, so it renders no projectile and no
+        // trail (operator: enemy camps' point-blank bullets were invisible, so the camps looked like
+        // they weren't firing). Give a DIRECTIONAL point-blank shot a minimal visible flight so it
+        // spawns a real flying bullet + trail, the same as a vehicle's shot. Damage + the explosion
+        // still resolve at m_mlEnd (the target) on arrival, so this is visual-only + a ~2-substep
+        // delay. A no-direction shot (m_xAdd==m_yAdd==0) stays instant (there's nothing to fly).
+        if ( ( m_xAdd != 0 ) || ( m_yAdd != 0 ) )
+            {
+            m_iSteps      = 2;      // minimal visible flight; arrival/damage still land at m_mlEnd
+            m_iStepsStart = m_iSteps;
+            m_iStepMod    = 0;      // fly immediately, as a normal ranged shot does (see :361)
+            m_faAdd       = 0;      // flat over ~2 substeps (altitude interp isn't meaningful here)
+            }
+        else
+            {
+            m_iSteps = 0;
+            m_iProjDelay = 0;
+            m_faAdd = 0;
+            m_iStepMod = AVG_SPEED_MUL;
+            }
         }
     else
         // handle the altitude

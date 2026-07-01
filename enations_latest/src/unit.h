@@ -871,6 +871,7 @@ class CProjectile : public CProjBase
     CExplData const* m_pEd;         // the explosion data
     float            m_fStrength;   // shooter attack normalised 0..1 (tracer colour gradient)
     int              m_iStepsStart; // steps at flight start (trail grows 0 -> max as it flies)
+    int              m_iTrailTeamR, m_iTrailTeamG, m_iTrailTeamB; // shooter team colour (trail outline)
 };
 
 class CExplosion : public CProjBase
