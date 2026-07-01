@@ -1577,6 +1577,11 @@ static void CmdPlay( CNetPlay* pMsg )
     // if our rand doesn't match we drop out
     if ( theGame.m_dwFinalRand != pMsg->m_uRand )
     {
+        // Always log: this is the cross-platform world-gen desync gate (the
+        // operator-visible "client disconnects when the host starts"), and the
+        // two values are the only evidence of HOW far the PRNG streams diverged.
+        fprintf( stderr, "[mp-start] RAND MISMATCH: client m_dwFinalRand=%08lx host m_uRand=%08lx -> world-gen diverged, dropping out (CmdPlay)\n",
+                 (unsigned long)theGame.m_dwFinalRand, (unsigned long)pMsg->m_uRand );
         ASSERT( !theGame.AmServer( ) );
         theGame.Close( );
         theNet.Close( TRUE );
