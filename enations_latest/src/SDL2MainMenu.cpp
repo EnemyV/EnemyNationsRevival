@@ -676,6 +676,31 @@ void SDL2MainMenu::Render() {
 bool SDL2MainMenu::HandleEvent(const SDL_Event& event) {
     if (!m_initialized) return false;
 
+    // HARD GATE: the menu only owns input while the app is actually AT the main
+    // menu (CGame::main). The menu object can still be registered while a game
+    // is up, and stray in-game clicks hit-tested against menu rects have
+    // triggered "Exit" and killed live sessions (seen twice on Linux).
+    if (theGame.GetState() != CGame::main)
+        return false;
+
+    // Only react to mouse events targeting the MAIN window. The menu object can
+    // still be registered while a game is up (paths that start a game without
+    // DestroyMain), and mouse coords are WINDOW-LOCAL — a click in a detached
+    // panel (vehicles/radar/area) hit-tested here maps onto arbitrary menu
+    // buttons ("Exit" killed a live session mid-click on Linux).
+    if (m_gameWindow && m_gameWindow->GetWindow()) {
+        Uint32 mainID = SDL_GetWindowID(m_gameWindow->GetWindow());
+        Uint32 evID = 0;
+        switch (event.type) {
+            case SDL_MOUSEMOTION:     evID = event.motion.windowID; break;
+            case SDL_MOUSEBUTTONDOWN:
+            case SDL_MOUSEBUTTONUP:   evID = event.button.windowID; break;
+            default: break;
+        }
+        if (evID != 0 && evID != mainID)
+            return false;
+    }
+
     switch (event.type) {
         case SDL_MOUSEMOTION: {
             int btn = HitTestButton(event.motion.x, event.motion.y);
@@ -700,6 +725,13 @@ bool SDL2MainMenu::HandleEvent(const SDL_Event& event) {
                 int pressed = m_pressedButton;
                 m_pressedButton = -1;
                 if (btn == pressed) {
+                    // Keep a forensic trail: which click (window + local coords)
+                    // resolved to this button. In-game "ghost" menu clicks have
+                    // quit the app; if it recurs, this pins the source event.
+                    LogMenu("Button hit: idx=" + std::to_string(btn) +
+                            " win=" + std::to_string(event.button.windowID) +
+                            " at " + std::to_string(event.button.x) + "," +
+                            std::to_string(event.button.y));
                     OnButtonClick(btn);
                     return true;
                 }
