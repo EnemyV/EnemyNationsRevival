@@ -271,6 +271,50 @@ SDL_Window* GameWindow::CreateSDLWindow(const char* title, int x, int y, int w, 
     return win;
 }
 
+#ifdef __APPLE__
+// Set the Dock icon at runtime: the game ships as a bare Mach-O binary (no
+// .app bundle), so macOS shows the generic executable icon when running or
+// minimized (operator-reported). Loads the classic 32x32 game icon staged at
+// assets/appicon.png (converted from res/main.ico). objc runtime declared by
+// hand — the objc headers' BOOL collides with the Win32 shim's — and AppKit
+// is already loaded via SDL.
+extern "C" {
+    void* objc_getClass(const char* name);
+    void* sel_registerName(const char* name);
+    void  objc_msgSend(void);
+}
+static void SetMacDockIcon() {
+    // Resolve like PlayVideo: CWD first, then the exe's directory.
+    std::string path = "assets/appicon.png";
+    FILE* f = fopen(path.c_str(), "rb");
+    if (!f) {
+        char exePath[MAX_PATH] = {};
+        GetModuleFileNameA(NULL, exePath, MAX_PATH);
+        std::string dir(exePath);
+        size_t slash = dir.find_last_of("\\/");
+        if (slash == std::string::npos) return;
+        path = dir.substr(0, slash + 1) + "assets/appicon.png";
+        f = fopen(path.c_str(), "rb");
+        if (!f) return;
+    }
+    fclose(f);
+
+    // Exact-prototype casts — objc_msgSend must NOT be called through a
+    // variadic signature on arm64 (different argument-passing convention).
+    auto cls   = [](const char* n) { return objc_getClass(n); };
+    auto sel   = [](const char* n) { return sel_registerName(n); };
+    auto send0 = (void* (*)(void*, void*))objc_msgSend;
+    auto send1 = (void* (*)(void*, void*, const void*))objc_msgSend;
+
+    void* nsPath = send1(cls("NSString"), sel("stringWithUTF8String:"), path.c_str());
+    if (!nsPath) return;
+    void* img = send1(send0(cls("NSImage"), sel("alloc")), sel("initWithContentsOfFile:"), nsPath);
+    if (!img) return;
+    void* app = send0(cls("NSApplication"), sel("sharedApplication"));
+    send1(app, sel("setApplicationIconImage:"), img);
+}
+#endif
+
 bool GameWindow::InitializeSDL() {
     LogToFile("Initializing SDL...");
 
@@ -296,6 +340,9 @@ bool GameWindow::InitializeSDL() {
     // Hooks are LIFO, so ours fires first and blocks MFC from seeing the creation.
     s_sdlCbtHook = ::SetWindowsHookEx(WH_CBT, SdlCbtFilterHook, NULL, ::GetCurrentThreadId());
 #else
+#ifdef __APPLE__
+    SetMacDockIcon();
+#endif
     // macOS: run fullscreen-desktop by default (EN_FULLSCREEN=0 to stay windowed).
     // The engine already renders at the desktop resolution (en_SetScreenMetrics
     // from linux_main), so fullscreen-desktop matches the back-buffer with no
@@ -846,6 +893,33 @@ void GameWindow::CloseActiveDialogs() {
     }
 }
 
+void GameWindow::MinimizeAll() {
+    // In-game the visible screen is mostly the detached ALWAYS_ON_TOP panel
+    // windows (Area Map, Radar, unit lists), not the main window — minimizing
+    // only the main window leaves them all up, which made the options-dialog
+    // Minimize button look dead (operator-reported on mac). Hide the panel
+    // windows first (their logical IsVisible() state is untouched), then
+    // minimize the main window. Restoring is free: un-minimizing fires
+    // FOCUS_GAINED, whose group-restore path below re-shows and raises every
+    // logically open panel (the same recovery used for alt-tab).
+    int hidden = 0;
+    if (m_compositor) {
+        for (int i = 0; i < m_compositor->GetPanelCount(); ++i) {
+            SDL2Panel* panel = m_compositor->GetPanel(i);
+            if (panel && panel->IsDetached() && panel->GetOwnWindow()) {
+                SDL_HideWindow(panel->GetOwnWindow());
+                ++hidden;
+            }
+        }
+    }
+    // Stand the FOCUS_GAINED group-restore down long enough for the options
+    // dialog's teardown focus shuffle to pass (it would de-miniaturize us).
+    m_suppressGroupRestoreMs = timeGetTime() + 2000;
+    if (m_window)
+        SDL_MinimizeWindow(m_window);
+    LogToFile("MinimizeAll: hid " + std::to_string(hidden) + " panels");
+}
+
 void GameWindow::HandleEvent(SDL_Event& event) {
     switch (event.type) {
         case SDL_WINDOWEVENT:
@@ -873,6 +947,29 @@ void GameWindow::HandleEvent(SDL_Event& event) {
                 // SHOWN flag, and raise it above the main window. Re-showing only
                 // IsVisible() panels avoids un-hiding ones the user/game deliberately
                 // closed. Throttled — Show/RaiseWindow can re-emit FOCUS_GAINED.
+                // Not while the create-status (loading) dialog is up: raising the
+                // main window here buries that dialog — and the dialog's own
+                // periodic raise re-triggers THIS handler via the focus flip, so
+                // the two fight and the dialog only ever flashes (the mac
+                // "no creating-world dialog" bug). During a load the dialog owns
+                // the screen; the group-restore resumes once it hides.
+                if (m_createStatus && m_createStatus->IsVisible())
+                    break;
+                // Not while the main window is deliberately minimized either:
+                // MinimizeAll runs from the modal options dialog, whose teardown
+                // fires a focus event — SDL_RaiseWindow here would de-miniaturize
+                // the game we just minimized and re-show every panel (operator:
+                // "in-game minimize didn't work, game stayed up"). The MINIMIZED
+                // flag alone races (it's set by a queued event that may arrive
+                // AFTER the teardown focus event), so MinimizeAll also arms a
+                // short stand-down deadline. When the user restores from the
+                // Dock, macOS clears MINIMIZED first, so the next focus gain
+                // (past the deadline) runs the group-restore and brings the
+                // panels back as intended.
+                if (m_window && (SDL_GetWindowFlags(m_window) & SDL_WINDOW_MINIMIZED))
+                    break;
+                if (timeGetTime() < m_suppressGroupRestoreMs)
+                    break;
                 static DWORD s_lastRaise = 0;
                 DWORD now = timeGetTime();
                 if (now - s_lastRaise > 400) {

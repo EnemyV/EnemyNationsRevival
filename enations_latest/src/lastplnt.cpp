@@ -1711,9 +1711,11 @@ void CConquerApp::Minimize( )
 #else
     // SDL port: m_pMainWnd is a stubbed MFC window whose ShowWindow() is a no-op, so the
     // main-menu / file-dialog "Minimize" button did nothing (operator-reported on mac).
-    // Minimize the real SDL window instead.
-    if ( m_gameWindow && m_gameWindow->GetWindow( ) )
-        SDL_MinimizeWindow( m_gameWindow->GetWindow( ) );
+    // Minimize the real SDL window instead — the whole group: in-game the
+    // detached ALWAYS_ON_TOP panels cover the screen, so minimizing only the
+    // main window looks like a no-op (operator-reported on mac).
+    if ( m_gameWindow )
+        m_gameWindow->MinimizeAll( );
 #endif
 }
 

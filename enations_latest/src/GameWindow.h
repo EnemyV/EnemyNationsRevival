@@ -200,6 +200,19 @@ public:
     void SetCreateStatus(class SDL2CreateStatus* status) { m_createStatus = status; }
     class SDL2CreateStatus* GetCreateStatus() const { return m_createStatus; }
 
+    // Minimize the whole window group: hide the detached panel windows, then
+    // minimize the main window (they're re-shown by the FOCUS_GAINED group
+    // restore on un-minimize). Minimizing only the main window leaves the
+    // ALWAYS_ON_TOP panels covering the screen.
+    void MinimizeAll();
+
+    // Deadline (timeGetTime) until which the FOCUS_GAINED group-restore must
+    // stand down after MinimizeAll: the modal options dialog tears down right
+    // after minimizing and its focus shuffle would de-miniaturize the game
+    // (SDL_WINDOW_MINIMIZED isn't set yet when that event arrives, so a flag
+    // check alone races).
+    DWORD m_suppressGroupRestoreMs = 0;
+
     // Native SDL2 toolbar (replaces CWndBar PrintWindow capture)
     class SDL2Toolbar* GetSDL2Toolbar() const { return m_sdl2Toolbar; }
     void SetSDL2Toolbar(class SDL2Toolbar* tb) { m_sdl2Toolbar = tb; }

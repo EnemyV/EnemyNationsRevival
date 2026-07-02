@@ -39,6 +39,23 @@ static const std::vector<std::string>& WorldTypeLabels() {
     return labels;
 }
 
+// Player name to pre-fill in the create/join dialogs: the remembered profile
+// value, else the OS username on a fresh profile (operator-reported: the name
+// box came up empty the first time the game was ever run).
+static std::string DefaultPlayerName() {
+    std::string name = EnGetProfileStdString("Create", "Name", "");
+    if (!name.empty())
+        return name;
+#ifdef _WIN32
+    const char* u = getenv("USERNAME");   // avoids an advapi32 GetUserNameA dependency
+#else
+    const char* u = getenv("USER");
+#endif
+    if (u && *u)
+        return u;
+    return "Player";
+}
+
 // Fill a (freshly created) World Type listbox and preselect the saved choice.
 static void PopulateWorldTypeList(SDL2Listbox* lst) {
     for (const auto& s : WorldTypeLabels())

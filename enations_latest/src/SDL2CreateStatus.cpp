@@ -29,6 +29,29 @@ static void LogStatus(const std::string& msg) {
     }
 }
 
+#ifdef __APPLE__
+// macOS only commits window/layer updates to the screen when the main runloop
+// reaches its idle (before-waiting) phase — which a busy world-generation loop
+// never does, even though it pumps SDL events. So every paint of this dialog
+// (and of the main window) piled up uncommitted and the whole app appeared
+// frozen until the load finished (operator: "no progress dialog, it freezes,
+// then the dialog flashes at the end"). Explicitly flushing CoreAnimation's
+// implicit transaction after each visual paint pushes the frames to the glass.
+// The objc runtime is declared by hand: <objc/message.h> can't be included in
+// this TU (its BOOL typedef collides with the Win32 shim's), and QuartzCore is
+// already loaded via SDL's Metal backend so the class resolves at runtime.
+extern "C" {
+    void* objc_getClass(const char* name);
+    void* sel_registerName(const char* name);
+    void  objc_msgSend(void);
+}
+static void FlushCoreAnimation() {
+    void* ca = objc_getClass("CATransaction");
+    if (ca)
+        ((void (*)(void*, void*))objc_msgSend)(ca, sel_registerName("flush"));
+}
+#endif
+
 // UI color constants — matching the game dialog style (dark purple title, gold bg, blue text)
 namespace StatusColors {
     const SDL_Color DialogBg    = { 60,  65,  62,  255 };   // fallback bg
@@ -276,6 +299,22 @@ void SDL2CreateStatus::Render() {
             }
         }
     }
+#elif defined(__APPLE__)
+    // macOS needs the same z-order maintenance the Windows block above does:
+    // the in-game windows (Area Map, Radar, panels) are ALWAYS_ON_TOP on mac and
+    // anything created/raised during the load would order above this (equally
+    // always-on-top but earlier) dialog. SDL has no raise-without-activate, so
+    // re-raise at a gentle ~2Hz instead of per frame (SDL_RaiseWindow takes key
+    // focus on macOS), and only while THIS app holds input focus so we never
+    // fight a foreground app the user switched to mid-load. (Linux panels are
+    // WM_TRANSIENT_FOR-owned, not always-on-top — it needs none of this.)
+    if (m_ownWindow && SDL_GetKeyboardFocus() != nullptr) {
+        DWORD nowRaise = ::timeGetTime();
+        if (nowRaise - m_lastRaiseMs >= 500) {
+            m_lastRaiseMs = nowRaise;
+            SDL_RaiseWindow(m_ownWindow);
+        }
+    }
 #endif
 
     // Throttle the VISUAL redraw to ~15fps to avoid slowing down world creation.
@@ -397,6 +436,10 @@ void SDL2CreateStatus::Render() {
     // ...and also onto the game window itself, so it's visible on a GPU host where
     // the own-window above is hidden by the airspace problem.
     RenderToGameWindow();
+
+#ifdef __APPLE__
+    FlushCoreAnimation();   // push this frame to the screen despite the busy loop
+#endif
 }
 
 void SDL2CreateStatus::RenderToGameWindow() {
