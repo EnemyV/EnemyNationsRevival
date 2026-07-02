@@ -222,7 +222,9 @@ void SDL2FileDialog::OnResetWindows() {
 void SDL2FileDialog::OnMinimize() {
     ApplySettings();
     EndDialog(1);
-    // Minimize the SDL window
-    if (m_gameWindow && m_gameWindow->GetWindow())
-        SDL_MinimizeWindow(m_gameWindow->GetWindow());
+    // Minimize the whole window group — in-game the detached ALWAYS_ON_TOP
+    // panels (area map, radar, ...) cover the screen, so minimizing only the
+    // main window looked like the button did nothing (operator-reported, mac).
+    if (m_gameWindow)
+        m_gameWindow->MinimizeAll();
 }

@@ -846,6 +846,26 @@ void GameWindow::CloseActiveDialogs() {
     }
 }
 
+void GameWindow::MinimizeAll() {
+    // In-game the visible screen is mostly the detached ALWAYS_ON_TOP panel
+    // windows (Area Map, Radar, unit lists), not the main window — minimizing
+    // only the main window leaves them all up, which made the options-dialog
+    // Minimize button look dead (operator-reported on mac). Hide the panel
+    // windows first (their logical IsVisible() state is untouched), then
+    // minimize the main window. Restoring is free: un-minimizing fires
+    // FOCUS_GAINED, whose group-restore path below re-shows and raises every
+    // logically open panel (the same recovery used for alt-tab).
+    if (m_compositor) {
+        for (int i = 0; i < m_compositor->GetPanelCount(); ++i) {
+            SDL2Panel* panel = m_compositor->GetPanel(i);
+            if (panel && panel->IsDetached() && panel->GetOwnWindow())
+                SDL_HideWindow(panel->GetOwnWindow());
+        }
+    }
+    if (m_window)
+        SDL_MinimizeWindow(m_window);
+}
+
 void GameWindow::HandleEvent(SDL_Event& event) {
     switch (event.type) {
         case SDL_WINDOWEVENT:
@@ -873,6 +893,14 @@ void GameWindow::HandleEvent(SDL_Event& event) {
                 // SHOWN flag, and raise it above the main window. Re-showing only
                 // IsVisible() panels avoids un-hiding ones the user/game deliberately
                 // closed. Throttled — Show/RaiseWindow can re-emit FOCUS_GAINED.
+                // Not while the create-status (loading) dialog is up: raising the
+                // main window here buries that dialog — and the dialog's own
+                // periodic raise re-triggers THIS handler via the focus flip, so
+                // the two fight and the dialog only ever flashes (the mac
+                // "no creating-world dialog" bug). During a load the dialog owns
+                // the screen; the group-restore resumes once it hides.
+                if (m_createStatus && m_createStatus->IsVisible())
+                    break;
                 static DWORD s_lastRaise = 0;
                 DWORD now = timeGetTime();
                 if (now - s_lastRaise > 400) {
