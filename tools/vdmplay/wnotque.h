@@ -76,8 +76,9 @@ public:
 
     void PostNotification(CNotification *n) {
         if (VpnqLogOn())
-            fprintf(stderr, "[vpnq] post   n=%p vpmsg=%p code=%u\n",
-                    (void*)n, (void*)&n->m_vpmsg, (unsigned)n->m_vpmsg.notificationCode);
+            fprintf(stderr, "[vpnq] post   n=%p vpmsg=%p code=%u u.data=%p\n",
+                    (void*)n, (void*)&n->m_vpmsg, (unsigned)n->m_vpmsg.notificationCode,
+                    (void*)n->m_vpmsg.u.data);
         if (!m_window) // no window to send the notification so simulate its completion
         {
             if (VpnqLogOn())
