@@ -118,6 +118,86 @@ void EnSetX11FakeTopExtent(SDL_Window* panel)
 }
 
 //---------------------------------------------------------------------------
+// EnSetX11UserTimeNow — stamp _NET_WM_USER_TIME (current X server time) on a
+// window (BUGS #33: gnome-shell popped a "window is ready" notification for
+// every new game window).
+//
+// Mutter's focus-stealing prevention denies focus to a freshly mapped window
+// with no _NET_WM_USER_TIME (SDL only stamps windows on later input events),
+// flags it DEMANDS_ATTENTION and toasts "<title> is ready" instead. Our
+// dialogs/panels are all opened by an in-game user action, so declaring "the
+// user interacted just now" is the EWMH-honest fix and Mutter focuses the
+// window silently.
+//
+// Current server time is obtained with the standard idiom: a zero-length
+// property append on a private InputOnly helper window triggers a
+// PropertyNotify carrying the server timestamp. XIfEvent removes ONLY the
+// matching event, so SDL's event stream is untouched (the helper window is
+// ours, SDL never selects on it).
+namespace {
+struct EnTimeProbeMatch { Window w; };
+Bool EnTimeProbePred(Display*, XEvent* ev, XPointer arg) {
+    return ev->type == PropertyNotify &&
+           ev->xproperty.window == ((EnTimeProbeMatch*)arg)->w;
+}
+} // namespace
+
+void EnSetX11UserTimeNow(SDL_Window* win)
+{
+    if (win == NULL)
+        return;
+
+    SDL_SysWMinfo info;
+    SDL_VERSION(&info.version);
+    if (!SDL_GetWindowWMInfo(win, &info) || info.subsystem != SDL_SYSWM_X11)
+        return;
+
+    Display* dpy = info.info.x11.display;
+
+    // Server-time probe on a throwaway InputOnly window.
+    XSetWindowAttributes swa;
+    memset(&swa, 0, sizeof(swa));
+    swa.event_mask = PropertyChangeMask;
+    Window probe = XCreateWindow(dpy, DefaultRootWindow(dpy), -1, -1, 1, 1, 0, 0,
+                                 InputOnly, CopyFromParent, CWEventMask, &swa);
+    if (probe == None)
+        return;
+    Atom probeAtom = XInternAtom(dpy, "_EN_TIME_PROBE", False);
+    XChangeProperty(dpy, probe, probeAtom, XA_STRING, 8, PropModeAppend, NULL, 0);
+    XEvent ev;
+    EnTimeProbeMatch m = { probe };
+    XIfEvent(dpy, &ev, EnTimeProbePred, (XPointer)&m);   // blocks only for our own round-trip
+    Time now = ev.xproperty.time;
+    XDestroyWindow(dpy, probe);
+
+    Atom userTime = XInternAtom(dpy, "_NET_WM_USER_TIME", False);
+    long t = (long)now;
+    XChangeProperty(dpy, info.info.x11.window, userTime, XA_CARDINAL, 32,
+                    PropModeReplace, (unsigned char*)&t, 1);
+    XFlush(dpy);
+}
+
+//---------------------------------------------------------------------------
+// EnRaiseX11WindowNoActivate — restack a window to the top WITHOUT requesting
+// activation. SDL_RaiseWindow sends _NET_ACTIVE_WINDOW (a focus request) with
+// the window's last-input timestamp; when that is older than the current focus
+// Mutter refuses, sets DEMANDS_ATTENTION and gnome-shell toasts "window is
+// ready" (BUGS #33). Callers that only care about z-order use this instead.
+void EnRaiseX11WindowNoActivate(SDL_Window* win)
+{
+    if (win == NULL)
+        return;
+
+    SDL_SysWMinfo info;
+    SDL_VERSION(&info.version);
+    if (!SDL_GetWindowWMInfo(win, &info) || info.subsystem != SDL_SYSWM_X11)
+        return;
+
+    XRaiseWindow(info.info.x11.display, info.info.x11.window);
+    XFlush(info.info.x11.display);
+}
+
+//---------------------------------------------------------------------------
 // EnStartX11WindowMove — hand an in-progress title-bar drag to the window manager
 // via the EWMH _NET_WM_MOVERESIZE protocol (the WM's own interactive move).
 //

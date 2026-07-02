@@ -49,7 +49,7 @@ static const int TWO_COL_MAX_H = 560;  // stacked body taller than this -> go 2-
 
 static const int STORAGE_H    = BOX_PAD + HDR_H + SDL2BuildingWindow::kNumStoreMats * ROW_H + BOX_PAD;
 // graph + the tiny time-range button row underneath it
-static const int RANGE_ROW_H  = 15;   // height of the tiny 10m/1h/6h/24h/7d button row
+static const int RANGE_ROW_H  = 18;   // height of the tiny 10m/1h/6h/24h/7d button row (fits a ~12pt crisp label)
 static const int GRAPHAREA_H  = GRAPH_H + RANGE_ROW_H + 2;
 static const int POWERLIKE_H  = BOX_PAD + HDR_H + GRAPHAREA_H + BOX_PAD;   // power / apartment (graph + range row)
 // Office has 4 text rows now (This building / Colony / Workforce Need / Energy Need #37/#39),

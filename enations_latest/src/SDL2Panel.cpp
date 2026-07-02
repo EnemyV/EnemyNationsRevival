@@ -850,7 +850,17 @@ void SDL2Panel::Detach(SDL_Window* ownerWindow) {
     // WM_TRANSIENT_FOR). The X11 "covers the whole desktop" problem doesn't apply here.
     winFlags |= SDL_WINDOW_ALWAYS_ON_TOP;
 #endif
+#if defined(__linux__)
+    // Create HIDDEN even when not deferring: SDL_CreateRenderer below RECREATES
+    // the X11 window (GL visual) and maps it immediately — before the transient/
+    // extents/user-time hints are applied — so Mutter judged the map with no
+    // credentials: focus denied, DEMANDS_ATTENTION set, "window is ready" toast
+    // (BUGS #33). Mapping only AFTER the hint block gives Mutter the full
+    // picture on first map. (m_deferShow windows are shown later by their
+    // caller, same as before.)
+#else
     if (!m_deferShow) winFlags |= SDL_WINDOW_SHOWN;
+#endif
     m_ownWindow = GameWindow::CreateSDLWindow(
         m_title.c_str(), globalX, globalY - tbH, m_width, m_height + tbH, winFlags);
 
@@ -966,6 +976,11 @@ void SDL2Panel::Detach(SDL_Window* ownerWindow) {
     // gnome-shell strut even during an interactive move) — see the impl comment.
     extern void EnSetX11FakeTopExtent(SDL_Window* panel);
     EnSetX11FakeTopExtent(m_ownWindow);
+    // (3) Re-stamp _NET_WM_USER_TIME — the CreateSDLWindow stamp died with the
+    // original X11 window if MaybeCreateOwnRenderer recreated it; without it
+    // Mutter toasts "window is ready" instead of focusing (BUGS #33).
+    extern void EnSetX11UserTimeNow(SDL_Window* win);
+    EnSetX11UserTimeNow(m_ownWindow);
     // Re-assert the intended geometry now that the extents are in place: Mutter
     // clamps the initial MAP to the work area (ignoring our floor above) and
     // "compensates" a post-map extents change by keeping the old visible rect —
@@ -977,6 +992,12 @@ void SDL2Panel::Detach(SDL_Window* ownerWindow) {
     LogPanel("Reasserted '" + m_name + "' geometry " + std::to_string(desiredW) + "x" +
              std::to_string(desiredH) + "+" + std::to_string(desiredX) + "+" +
              std::to_string(desiredY));
+
+    // First map, now that transient/extents/user-time are all in place (see the
+    // HIDDEN-create note at winFlags). Deferred windows keep their contract:
+    // the caller shows them when loading finishes.
+    if (!m_deferShow)
+        SDL_ShowWindow(m_ownWindow);
 #endif
 
     // Don't raise a window we created hidden (deferred until load completes) —

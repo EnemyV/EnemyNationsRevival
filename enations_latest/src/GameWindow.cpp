@@ -244,6 +244,14 @@ SDL_Window* GameWindow::CreateSDLWindow(const char* title, int x, int y, int w, 
     HHOOK hook = ::SetWindowsHookEx(WH_CBT, SdlCbtFilterHook, NULL, ::GetCurrentThreadId());
 #endif
     SDL_Window* win = SDL_CreateWindow(title, x, y, w, h, flags);
+#if defined(__linux__)
+    // Every game window is opened by a user action; stamp _NET_WM_USER_TIME so
+    // Mutter focuses it instead of toasting "<title> is ready" (BUGS #33).
+    // Windows whose X11 window gets RECREATED later (GPU panels) re-stamp after.
+    extern void EnSetX11UserTimeNow(SDL_Window* win);
+    if (win)
+        EnSetX11UserTimeNow(win);
+#endif
 #ifdef _WIN32
     if (hook) {
         ::UnhookWindowsHookEx(hook);
@@ -458,6 +466,14 @@ bool GameWindow::InitializeSDL() {
             m_useRenderer = false;
         } else {
             SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "1");  // linear when scaling
+#if defined(__linux__)
+            // Creating the renderer can RECREATE the X11 window (GL visual),
+            // wiping the _NET_WM_USER_TIME stamped in CreateSDLWindow — without
+            // it a later Raise() gets denied by Mutter and toasts "window is
+            // ready" (BUGS #33). Re-stamp the (possibly new) X11 window.
+            extern void EnSetX11UserTimeNow(SDL_Window* win);
+            EnSetX11UserTimeNow(m_window);
+#endif
             EnsureBackBuffer();
             SDL_RendererInfo info;
             if (SDL_GetRendererInfo(m_renderer, &info) == 0)
@@ -1099,7 +1115,20 @@ bool GameWindow::HandleGlobalShortcut(SDL_Event& event) {
 void GameWindow::Raise() {
     if (m_window) {
         SDL_ShowWindow(m_window);
+#if defined(__linux__)
+        // Restack WITHOUT activating: SDL_RaiseWindow sends _NET_ACTIVE_WINDOW
+        // with this window's (stale) last-input timestamp; once a detached panel
+        // holds newer focus Mutter denies the activation, flags the main window
+        // DEMANDS_ATTENTION and gnome-shell toasts "window is ready" (BUGS #33,
+        // last case — fired on every game start). Raise() is about z-order, not
+        // focus (the panels are re-raised above us right after, and the area map
+        // keeping keyboard focus is desired), so a plain XRaiseWindow does the
+        // job with no activation request for Mutter to refuse.
+        extern void EnRaiseX11WindowNoActivate(SDL_Window* win);
+        EnRaiseX11WindowNoActivate(m_window);
+#else
         SDL_RaiseWindow(m_window);
+#endif
     }
     // Re-raise all detached panels (Area View, World View) so they remain
     // visible above the background window after it is raised.
