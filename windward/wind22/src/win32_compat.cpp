@@ -331,14 +331,25 @@ extern "C" DWORD ResumeThread(HANDLE h) {
 }
 
 extern "C" DWORD SuspendThread(HANDLE h) {
-    // True preemptive suspension of a running thread has no portable pthreads
-    // equivalent. We honor it only for the not-yet-started (CREATE_SUSPENDED)
-    // case; once running, this is a counted no-op (logged once).
+    // True preemptive suspension of ANOTHER running thread has no portable
+    // pthreads equivalent — that case stays a counted no-op (myPauseThread).
+    // SELF-suspend, however, IS portable and must really block: music.cpp's
+    // read-ahead worker parks itself with SuspendThread(self) and relies on
+    // BackgroundRead's ResumeThread to hand it the next request. With the
+    // no-op it never parked — it spun, re-reading the same request and
+    // re-decoding into the buffer the mixer was playing (audible stutter /
+    // "off-beat" music, POSIX sibling of the 9cfb701e Windows race). Block
+    // on the same gate condvar the CREATE_SUSPENDED trampoline uses until
+    // ResumeThread drops the count back to 0; increment and wait share one
+    // lock hold so a concurrent resume can't slip between them.
     EnObject* o = static_cast<EnObject*>(h);
     if (!o || o->kind != EnObject::K_THREAD) return (DWORD)-1;
     ThreadObj* t = static_cast<ThreadObj*>(o);
-    DWORD prev;
-    { std::lock_guard<std::mutex> lk(t->gm); prev = (DWORD)t->suspendCount; t->suspendCount++; }
+    std::unique_lock<std::mutex> lk(t->gm);
+    DWORD prev = (DWORD)t->suspendCount;
+    t->suspendCount++;
+    if (pthread_equal(t->tid, pthread_self()))
+        t->gcv.wait(lk, [t]{ return t->suspendCount <= 0; });
     return prev;
 }
 

@@ -119,6 +119,13 @@ void HarnessHexInfo(int x, int y, std::string& out);
 // <id> [adjId]`. Render thread only (reads map + mutates the view).
 void HarnessFindTerrain(int id, int adjId, std::string& out);
 
+// Scroll the focused area view by a pixel delta (grab-style: positive dx/dy move
+// the view center right/down). Drives the same PanByPixels path as the macOS
+// trackpad two-finger pan, so a headless driver can verify the scroll mechanic
+// (arrow-key scroll doesn't reach the area map through the offscreen focus path).
+// Backs `pan <dx> <dy>`. Render/game thread only (mutates the view).
+bool HarnessPan(int dxPix, int dyPix);
+
 // Save the current in-game state to <path> (a .en save file) headlessly — no
 // file-browser modal (CGame::SaveGame skips it when the filename is pre-set).
 // Lets a headless driver snapshot a DEVELOPED/researched game so it can be shared

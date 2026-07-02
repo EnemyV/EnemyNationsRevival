@@ -137,6 +137,14 @@ std::atomic<bool>      g_setEdictPending{false};
 std::atomic<bool>      g_setEdictDone{false};
 std::atomic<bool>      g_setEdictOK{false};
 
+// Pending `pan <dx> <dy>` request (HarnessPan) — scroll the focused area view by a
+// pixel delta, driving the same PanByPixels path as the macOS trackpad two-finger pan.
+std::atomic<int>       g_panDx{0};
+std::atomic<int>       g_panDy{0};
+std::atomic<bool>      g_panPending{false};
+std::atomic<bool>      g_panDone{false};
+std::atomic<bool>      g_panOK{false};
+
 // Pending `hexinfo <areaWin> <x> <y>` request (HarnessHexInfo) — reads the map hex
 // under an area-window client pixel on the render thread (read-only). Same handshake.
 std::mutex             g_hexInfoMutex;
@@ -376,6 +384,15 @@ void handle_command(const std::string& line, int conn) {
         g_setEdictId = eid; g_setEdictOn = (on != 0); g_setEdictDone = false; g_setEdictOK = false; g_setEdictPending = true;
         for (int i = 0; i < 400 && !g_setEdictDone.load(); ++i) { struct timespec ts={0,5000000}; nanosleep(&ts,nullptr); }
         snprintf(reply, sizeof(reply), !g_setEdictDone.load() ? "err setedict timeout\n" : (g_setEdictOK.load() ? "ok setedict %d=%d\n" : "err bad edict %d\n"), eid, on);
+    } else if (strcmp(cmd, "pan") == 0) {
+        // pan <dx> <dy> — scroll the focused area view by a pixel delta (grab-style:
+        // positive dx/dy move the view center right/down). Drives PanByPixels, the
+        // same path as the macOS trackpad two-finger pan. Render thread.
+        int dx = 0, dy = 0;
+        if (sscanf(line.c_str(), "%*s %d %d", &dx, &dy) != 2) { const char* u = "err usage: pan <dx> <dy>\n"; write(conn, u, strlen(u)); return; }
+        g_panDx = dx; g_panDy = dy; g_panDone = false; g_panOK = false; g_panPending = true;
+        for (int i = 0; i < 400 && !g_panDone.load(); ++i) { struct timespec ts={0,5000000}; nanosleep(&ts,nullptr); }
+        snprintf(reply, sizeof(reply), !g_panDone.load() ? "err pan timeout\n" : (g_panOK.load() ? "ok pan %d %d\n" : "err pan (not in-game?)\n"), dx, dy);
     } else if (strcmp(cmd, "hexinfo") == 0) {
         // hexinfo <areaWin> <x> <y> — report the map hex (coords/alt/visible/unit)
         // under an area-window client pixel (same coords you'd give clickid). Read-
@@ -706,6 +723,11 @@ void EnHarness_Service() {
     if (g_setEdictPending.exchange(false)) {
         g_setEdictOK = HarnessSetEdict(g_setEdictId.load(), g_setEdictOn.load());
         g_setEdictDone = true;
+        return;
+    }
+    if (g_panPending.exchange(false)) {
+        g_panOK = HarnessPan(g_panDx.load(), g_panDy.load());
+        g_panDone = true;
         return;
     }
     if (g_hexInfoPending.exchange(false)) {
