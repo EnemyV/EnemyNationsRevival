@@ -417,6 +417,10 @@ else ()
         # x11_transient_linux.cpp (panels owned-by, not above-everything). Linux only.
         find_package(X11 REQUIRED)
         target_link_libraries(enations PUBLIC ${X11_LIBRARIES})
+    else ()
+        # libobjc for the CoreAnimation transaction flush in SDL2CreateStatus.cpp
+        # (keeps the creating-world dialog painting while the load loop is busy).
+        target_link_libraries(enations PUBLIC objc)
     endif ()
     # libvdmplay_posix.{dylib,so} sits next to the enations binary; the loader finds
     # it via the platform's co-located-rpath token: $ORIGIN on ELF/Linux, @loader_path

@@ -83,6 +83,11 @@ private:
     // window's first paint away, leaving it blank.
     DWORD m_lastRenderMs = 0;
 
+    // POSIX re-raise throttle (macOS/Linux z-order maintenance in Render): the
+    // in-game ALWAYS_ON_TOP windows created mid-generation stack above this
+    // dialog, and SDL_RaiseWindow activates, so re-raise at ~2Hz, not per frame.
+    DWORD m_lastRaiseMs = 0;
+
     // Font cache
     std::string m_fontPath;
     std::unordered_map<int, TTF_Font*> m_fontCache;
