@@ -347,6 +347,27 @@ BOOL CNetApi::Broadcast( LPCVPMSGHDR pData, int iLen, BOOL bLocal )
     return ( TRUE );
 }
 
+// [mp-plyr] diagnostics: player-identity / leave / AI-takeover tracing for the MP
+// client auto-place bug (client's rocket placed without the player choosing; the
+// leading suspect chain is spurious-leave -> replace -> AiTakeOverPlayer -> AI
+// PlaceRocket -> bldg_new(rocket) matching the client's plyrnum). stderr for the
+// POSIX clients + OutputDebugString for the Win host (dbgcatch records ODS, not
+// stderr). Cheap and rare - stays on until the MP start path is stable.
+void EnMpDiagLog( const char* fmt, ... )
+{
+    char buf[512];
+    va_list args;
+    va_start( args, fmt );
+    vsnprintf( buf, sizeof( buf ), fmt, args );
+    va_end( args );
+    fprintf( stderr, "[mp-plyr] %s\n", buf );
+#ifdef _WIN32
+    char ods[560];
+    sprintf_s( ods, "[mp-plyr] %s\n", buf );
+    OutputDebugStringA( ods );
+#endif
+}
+
 static void OnMsgLeave( VPPLAYERID id )
 {
 
@@ -357,6 +378,10 @@ static void OnMsgLeave( VPPLAYERID id )
 
     ASSERT_VALID( pPlr );
     ASSERT( ( !theGame.HaveHP( ) ) || ( id != theGame.GetMe( )->GetPlyrNum( ) ) );
+
+    EnMpDiagLog( "OnMsgLeave: netid=%d plyr=%d name='%s' plrState=%d gameState=%d netMode=%d",
+                 (int)id, pPlr->GetPlyrNum( ), pPlr->GetName( ), (int)pPlr->GetState( ),
+                 (int)theGame.GetState( ), theNet.GetMode( ) );
 
     // if it was the server fix it
     if ( pPlr == theGame.GetServer( ) )
@@ -443,6 +468,8 @@ static void OnMsgLeave( VPPLAYERID id )
             if ( theGame.GetState( ) < CGame::AI_done )
             {
                 pPlr->SetState( CPlayer::replace );
+                EnMpDiagLog( "OnMsgLeave: plyr=%d name='%s' marked REPLACE during setup -> AI takes over at StartAi",
+                             pPlr->GetPlyrNum( ), pPlr->GetName( ) );
 
                 if ( theGame.GetState( ) == CGame::wait_AI )
                 {
@@ -1401,6 +1428,10 @@ static void CmdGetFile( CNetGetFile* pCmd )
 static void CmdYouAre( int iPlyrNum, int iSrvrNum )
 {
 
+    EnMpDiagLog( "cmd_you_are: host says I am plyr=%d (server plyr=%d); my plyr was %d",
+                 iPlyrNum, iSrvrNum,
+                 ( theGame._GetMe( ) != NULL ) ? theGame.GetMe( )->GetPlyrNum( ) : -1 );
+
     ASSERT( !theGame.AmServer( ) );
     ASSERT( theGame.GetAll( ).GetCount( ) == 2 );
     ASSERT( theGame.GetMe( )->GetNetNum( ) > 0 );
@@ -1417,6 +1448,7 @@ static void CmdYouAre( int iPlyrNum, int iSrvrNum )
     catch ( int iNum )
     {
         TRAP( );
+        EnMpDiagLog( "cmd_you_are: EXCEPTION (num %d) in status update - CloseWorld, my plyrnum NOT set!", iNum );
         CatchNum( iNum );
         theApp.CloseWorld( );
         return;
@@ -1424,6 +1456,7 @@ static void CmdYouAre( int iPlyrNum, int iSrvrNum )
     catch ( SE_Exception e )
     {
         TRAP( );
+        EnMpDiagLog( "cmd_you_are: SEH EXCEPTION in status update - CloseWorld, my plyrnum NOT set!" );
         CatchSE( e );
         theApp.CloseWorld( );
         return;
@@ -1431,6 +1464,7 @@ static void CmdYouAre( int iPlyrNum, int iSrvrNum )
     catch ( ... )
     {
         TRAP( );
+        EnMpDiagLog( "cmd_you_are: EXCEPTION in status update - CloseWorld, my plyrnum NOT set!" );
         CatchOther( );
         theApp.CloseWorld( );
         return;
@@ -1503,6 +1537,11 @@ static void CmdPlayer( CNetPlayer* pNp )
 
     if ( pNp->m_bServer )
         theGame._SetServer( pPlr );
+
+    EnMpDiagLog( "cmd_player: netnum=%d plyr=%d local=%d ai=%d server=%d name='%s'%s",
+                 pNp->m_iNetNum, pNp->m_iPlyrNum, (int)pNp->m_bLocal, (int)pNp->m_bAI,
+                 (int)pNp->m_bServer, pPlr->GetName( ),
+                 ( theGame._GetMe( ) == pPlr ) ? " (THIS IS ME)" : "" );
 }
 
 // --- Deferred client start (multiplayer waiting-room lobby) ----------------
@@ -2088,6 +2127,11 @@ static void BldgNew( CMsgBldgNew* pMsg )
         theGame.Event( EVENT_CONST_START, EVENT_NOTIFY, pBldg );
 
     // check for all done
+    if ( theGame.HaveHP( ) && ( pMsg->m_iType == CStructureData::rocket ) )
+        EnMpDiagLog( "bldg_new ROCKET: plyr=%d me=%d%s", pMsg->m_iPlyrNum,
+                     theGame.GetMe( )->GetPlyrNum( ),
+                     ( pMsg->m_iPlyrNum == theGame.GetMe( )->GetPlyrNum( ) )
+                         ? " -> completes MY placement (SetupDone)" : "" );
     if ( theGame.HaveHP( ) )
         if ( ( pMsg->m_iType == CStructureData::rocket ) && ( pMsg->m_iPlyrNum == theGame.GetMe( )->GetPlyrNum( ) ) )
         {
@@ -3060,6 +3104,10 @@ void CGame::ProcessMessage(CNetCmd* pCmd )
             TRAP( );
             break;
         }
+
+        EnMpDiagLog( "cmd_to_ai: plyr=%d name='%s' netnum=%d isMe=%d amServer=%d",
+                     pPlr->GetPlyrNum( ), pPlr->GetName( ), pPlr->GetNetNum( ),
+                     ( theGame._GetMe( ) == pPlr ) ? 1 : 0, (int)theGame.AmServer( ) );
 
         // if it was the server fix it
         if ( pPlr == theGame.GetServer( ) )

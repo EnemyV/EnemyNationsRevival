@@ -887,6 +887,11 @@ void CConquerApp::StartAi() {
             ASSERT_VALID (pPlr);
             if (pPlr->GetState() == CPlayer::replace) {
                 TRAP(); // check number of threads in 20 seconds
+                {
+                    extern void EnMpDiagLog( const char* fmt, ... );   // [mp-plyr] trace (netapi.cpp)
+                    EnMpDiagLog( "StartAi: plyr=%d name='%s' state=replace -> AI takeover + cmd_to_ai broadcast",
+                                 pPlr->GetPlyrNum(), pPlr->GetName() );
+                }
                 theGame.AiTakeOverPlayer(pPlr, TRUE);
 
                 // tell the world

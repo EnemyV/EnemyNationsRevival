@@ -4339,6 +4339,8 @@ void BuildBldgDest( CVehicle* pVeh, int iBldg, int iDir, CHexCoord& hex )
     hex = ch.hexClosest;
 }
 
+extern void EnMpDiagLog( const char* fmt, ... );   // [mp-plyr] trace (netapi.cpp)
+
 void CWndArea::SetupStart( )
 {
 
@@ -4349,6 +4351,7 @@ void CWndArea::SetupStart( )
     { static int on=-1; if(on<0) on=getenv("EN_ROCKET_LOG")?1:0;
       if(on) fprintf(stderr,"[rocket] SetupStart -> rocket_ready ARMED (AmServer=%d IsNetGame=%d myNet=%d)\n",
                      theGame.AmServer()?1:0, theGame.IsNetGame()?1:0, (int)theGame.GetMyNetNum()); }
+    EnMpDiagLog( "CWndArea::SetupStart - interactive rocket placement ON" );
 
     m_iMode     = rocket_ready;
     m_iBuild    = CStructureData::rocket;
@@ -4368,6 +4371,8 @@ void CWndArea::SetupDone( )
 {
 
     ASSERT_STRICT_VALID( this );
+
+    EnMpDiagLog( "CWndArea::SetupDone - rocket placement mode ENDED (mode was %d)", m_iMode );
 
     BldgCurOff( );
     std::string sMsg = EnLoadStdString( IDS_MSG_ROCKET_DONE );
