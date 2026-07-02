@@ -1112,7 +1112,9 @@ void SDL2LobbyDialog::RefreshChat() {
     m_lstChat->Clear();
     for (int i = 0; i < n; i++)
         m_lstChat->AddItem(SDL2Chat_Line(i));
-    if (n > 0) m_lstChat->SetSelected(n - 1);   // scroll to newest
+    // Auto-scroll to newest: SetSelected only moves the highlight, EnsureVisible
+    // scrolls the view so a full chat box doesn't stay pinned at the top.
+    if (n > 0) { m_lstChat->SetSelected(n - 1); m_lstChat->EnsureVisible(n - 1); }
 }
 
 void SDL2LobbyDialog::SendChat() {
@@ -1245,7 +1247,8 @@ void SDL2ClientLobbyDialog::RefreshChat() {
     m_lstChat->Clear();
     for (int i = 0; i < n; i++)
         m_lstChat->AddItem(SDL2Chat_Line(i));
-    if (n > 0) m_lstChat->SetSelected(n - 1);
+    // Auto-scroll to newest (SetSelected alone doesn't move the scroll view).
+    if (n > 0) { m_lstChat->SetSelected(n - 1); m_lstChat->EnsureVisible(n - 1); }
 }
 
 void SDL2ClientLobbyDialog::SendChat() {
