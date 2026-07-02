@@ -3115,6 +3115,13 @@ CBuilding* CBuilding::Create( CHexCoord const& hex, int iBldg, int iBldgDir, CVe
     switch ( iBldg )
     {
     case CStructureData::rocket:
+        // [rocket] diag: WHO placed a rocket and via what path? (auto-place regression
+        // on MP clients). If this fires on the client WITHOUT a prior manual land, the
+        // rocket was placed programmatically / via a synced message.
+        { static int on=-1; if(on<0) on=getenv("EN_ROCKET_LOG")?1:0;
+          if(on) fprintf(stderr,"[rocket] rocket PLACED plyr=%d IsMe=%d IsLocal=%d IsAI=%d AmServer=%d\n",
+                         (int)pBldg->GetOwner()->GetPlyrNum(), pBldg->GetOwner()->IsMe()?1:0,
+                         pBldg->GetOwner()->IsLocal()?1:0, pBldg->GetOwner()->IsAI()?1:0, theGame.AmServer()?1:0); }
         // people live on it
         pBldg->GetOwner( )->m_iAptCap += ROCKET_APT_CAP;
         pBldg->GetOwner( )->m_iOfcCap += ROCKET_OFC_CAP;

@@ -4344,6 +4344,12 @@ void CWndArea::SetupStart( )
 
     ASSERT_STRICT_VALID( this );
 
+    // [rocket] diag: does the CLIENT arm manual rocket placement? (operator: MP
+    // clients get an AUTO-placed rocket + no deploy; host/SP place manually OK).
+    { static int on=-1; if(on<0) on=getenv("EN_ROCKET_LOG")?1:0;
+      if(on) fprintf(stderr,"[rocket] SetupStart -> rocket_ready ARMED (AmServer=%d IsNetGame=%d myNet=%d)\n",
+                     theGame.AmServer()?1:0, theGame.IsNetGame()?1:0, (int)theGame.GetMyNetNum()); }
+
     m_iMode     = rocket_ready;
     m_iBuild    = CStructureData::rocket;
     m_iBuildDir = ( theStructures.GetData( CStructureData::rocket )->GetExitDir( ) - 2 ) & 0x03;
