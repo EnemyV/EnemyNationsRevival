@@ -981,6 +981,8 @@ void SDL2Panel::Detach(SDL_Window* ownerWindow) {
     // Mutter toasts "window is ready" instead of focusing (BUGS #33).
     extern void EnSetX11UserTimeNow(SDL_Window* win);
     EnSetX11UserTimeNow(m_ownWindow);
+    // (4) Re-apply the app icon (_NET_WM_ICON) — wiped by the same recreation.
+    GameWindow::ApplyAppIcon(m_ownWindow);
     // Re-assert the intended geometry now that the extents are in place: Mutter
     // clamps the initial MAP to the work area (ignoring our floor above) and
     // "compensates" a post-map extents change by keeping the old visible rect —

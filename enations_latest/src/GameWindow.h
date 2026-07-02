@@ -267,6 +267,14 @@ public:
     static SDL_Window* CreateSDLWindow(const char* title, int x, int y, int w, int h, Uint32 flags);
 
     /**
+     * (Re)apply the embedded app icon to a window (_NET_WM_ICON on X11).
+     * Call again after anything that RECREATES the underlying OS window
+     * (SDL_CreateRenderer with a new GL visual) — the property dies with it.
+     * No-op on Windows (icon comes from the .rc resources).
+     */
+    static void ApplyAppIcon(SDL_Window* win);
+
+    /**
      * Register a non-modal SDL2Dialog for per-frame event routing and rendering.
      * The dialog must be heap-allocated. GameWindow deletes it when it closes.
      */
