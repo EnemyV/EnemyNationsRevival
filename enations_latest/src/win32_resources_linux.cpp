@@ -46,6 +46,12 @@ const std::unordered_map<UINT, std::string>& string_table() {
         { IDS_SAVE_CLOSE,       "The game %1\nhas disconnected from the net.\nDo you wish to save the existing game?" },
         { IDS_JOIN_FILE_ERROR,  "Could not receive game from server" },
         { IDS_UNKNOWN,          "{unknown}" },
+        // MP player-notify popups (CDlgModelessMsg): missing → the recurring
+        // BLANK-body "Enemy Nations" dialog seen at every live game start
+        // (IDS_MSG_NET_GOODBYE fired empty). %1/%2 positional (strPrintf), not %s.
+        { IDS_MSG_NET_GOODBYE,  "Player %1 has disconnected from the game" },
+        { IDS_MSG_JOIN_FAILED,  "You cannot join game%1.\nThe network returned error %2." },
+        { IDS_JOIN_LOAD_FILE,   "Receiving game..." },
     };
     return t;
 }
