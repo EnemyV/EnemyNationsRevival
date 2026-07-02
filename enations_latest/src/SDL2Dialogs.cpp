@@ -757,7 +757,10 @@ void SDL2CreateNetDialog::OnInit() {
     int lx = m_x + 20, y = m_y + 45, rowH = 24, colW = (m_width - 60) / 2, rx = lx + colW + 20;
 
     AddWidget<SDL2Label>(lx, y, 100, rowH, "Game Name:");
-    m_edtGameName = AddWidget<SDL2EditBox>(lx + 105, y, colW - 105, rowH, "My Game");
+    // Persist the game name across games/sessions (mirrors the player-name field),
+    // defaulting to "My Game" the first time.
+    std::string savedGameName = EnGetProfileStdString("Create", "GameName", "My Game");
+    m_edtGameName = AddWidget<SDL2EditBox>(lx + 105, y, colW - 105, rowH, savedGameName);
     y += rowH + 4;
     AddWidget<SDL2Label>(lx, y, 100, rowH, "Your Name:");
     std::string savedName = DefaultPlayerName();
@@ -807,6 +810,8 @@ void SDL2CreateNetDialog::OnOK() {
     // Persist the name so the race picker (which pre-fills from this profile) shows
     // the name just entered here instead of reverting to the previously saved one.
     EnWriteProfileString("Create", "Name", m_playerName.c_str());
+    // Persist the game name too so it survives across games/sessions.
+    EnWriteProfileString("Create", "GameName", m_gameName.c_str());
     m_iAiLevel = m_radAiLevel->GetSelected();
     m_iWorldSize = m_radWorldSize->GetSelected();
     m_iStartPos = m_radStartPos->GetSelected();
