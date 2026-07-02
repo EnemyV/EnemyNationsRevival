@@ -40,7 +40,15 @@
 #include <mach-o/dyld.h>   // _NSGetExecutablePath (no /proc on macOS)
 #endif
 
-#include <SDL_keyboard.h>  // SDL_GetModState / SDL_GetKeyboardState for GetKeyState()
+// SDL_GetModState for GetKeyState(). Guarded: this file is also compiled into
+// SDL-less binaries (the iserve headless daemon has no SDL include/link path),
+// which keep the 0-stub — a daemon has no keyboard.
+#if defined(__has_include)
+#  if __has_include(<SDL_keyboard.h>)
+#    include <SDL_keyboard.h>
+#    define EN_HAVE_SDL_KEYSTATE 1
+#  endif
+#endif
 
 //===========================================================================
 // Last-error (per-thread).
@@ -60,6 +68,7 @@ extern "C" void  SetLastError(DWORD err)       { g_lastError = err; }
 //===========================================================================
 SHORT GetKeyState(int vk)
 {
+#ifdef EN_HAVE_SDL_KEYSTATE
     SDL_Keymod mod = SDL_GetModState();
     switch (vk) {
     case VK_SHIFT:   return (mod & KMOD_SHIFT) ? (SHORT)0x8000 : (SHORT)0;
@@ -68,6 +77,10 @@ SHORT GetKeyState(int vk)
     case VK_CAPITAL: return (mod & KMOD_CAPS)  ? (SHORT)0x0001 : (SHORT)0;
     default:         return (SHORT)0;
     }
+#else
+    (void)vk;
+    return 0;
+#endif
 }
 
 //===========================================================================
