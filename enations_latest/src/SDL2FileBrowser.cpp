@@ -188,7 +188,13 @@ void SDL2FileBrowser::PopulateList() {
         m_listFiles->Clear();
 
     // Use Win32 _findfirst / _findnext to enumerate directory contents.
-    std::string searchPath = m_currentDir + "\\*";
+    // '/' (not '\\'): the POSIX _findfirst shim translates '\\'->'/' for its own
+    // opendir() call, but entry.fullPath below and OnConfirm()'s path build feed
+    // straight into stat() (POSIX _stat==stat), which does NOT treat '\\' as a
+    // separator — a literal backslash landed in the filename and stat() always
+    // missed, so Open/Load silently no-op'd on macOS/Linux. '/' is valid on
+    // Windows too, so one separator works for both.
+    std::string searchPath = m_currentDir + "/*";
 
     struct _finddata_t fd;
     intptr_t hFind = _findfirst(searchPath.c_str(), &fd);
@@ -203,7 +209,7 @@ void SDL2FileBrowser::PopulateList() {
 
         FileEntry entry;
         entry.name = name;
-        entry.fullPath = m_currentDir + "\\" + name;
+        entry.fullPath = m_currentDir + "/" + name;
         entry.isDir = (fd.attrib & _A_SUBDIR) != 0;
 
         if (entry.isDir) {
@@ -278,7 +284,7 @@ void SDL2FileBrowser::OnConfirm() {
     // If the filename has no path separator, prepend current directory
     if (filename.find('\\') == std::string::npos &&
         filename.find('/') == std::string::npos) {
-        filename = m_currentDir + "\\" + filename;
+        filename = m_currentDir + "/" + filename;
     }
 
     // In Save mode, add extension if missing

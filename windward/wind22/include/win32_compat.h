@@ -1341,8 +1341,12 @@ inline DWORD   SizeofResource(HMODULE, HRSRC) { return 0; }
 inline DWORD   GetFileVersionInfoSizeA(LPCSTR, LPDWORD h) { if (h) *h = 0; return 0; }
 inline BOOL    GetFileVersionInfoA(LPCSTR, DWORD, DWORD, LPVOID) { return FALSE; }
 inline BOOL    VerQueryValueA(LPCVOID, LPCSTR, LPVOID* p, PUINT n) { if (p) *p = NULL; if (n) *n = 0; return FALSE; }
-// Wave-out device query (audio is SDL_mixer; report no legacy wave devices).
-inline UINT    waveOutGetNumDevs(void) { return 0; }
+// Wave-out device query. CMusicPlayer::OpenDigital gates Mix_OpenAudio on
+// this ("does the machine have an audio output device?"), so returning 0
+// left ALL sound/music dead on POSIX. Report one device and let SDL_mixer
+// do the real detection at open time — its failure path already handles a
+// truly device-less machine, same as Windows.
+inline UINT    waveOutGetNumDevs(void) { return 1; }
 // More GDI (legacy DIB/DC path — dead on SDL_Renderer).
 inline HDC     CreateCompatibleDC(HDC) { return NULL; }
 inline BOOL    DeleteDC(HDC) { return TRUE; }
