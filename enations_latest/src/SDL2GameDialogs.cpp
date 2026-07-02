@@ -1333,9 +1333,15 @@ void SDL2ChatWindow::RefreshMessages() {
     int start = __max(0, count - 50);
     for (int i = start; i < count; i++)
         m_msgList->AddItem(g_chatMessages[i]);
-    // Scroll to bottom: select last item
-    if (count > 0)
-        m_msgList->SetSelected(m_msgList->GetCount() - 1);
+    // Auto-scroll to the newest line: select the last item AND scroll the view
+    // to it. SetSelected alone only moves the highlight — it does not move the
+    // scroll window, so a full listbox stayed pinned at the top on each new
+    // message. EnsureVisible scrolls the newest line into view.
+    if (count > 0) {
+        int last = m_msgList->GetCount() - 1;
+        m_msgList->SetSelected(last);
+        m_msgList->EnsureVisible(last);
+    }
 }
 
 // ============================================================================
