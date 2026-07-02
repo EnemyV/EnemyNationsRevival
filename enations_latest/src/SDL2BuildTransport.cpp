@@ -128,7 +128,7 @@ void SDL2BuildTransport::OnInit() {
     m_lblHaveColHdr->SetRightAligned(true);
     m_lblHaveColHdr->SetColor({41, 255, 8, 255});
 
-    m_lblNeedColHdr = AddWidget<SDL2Label>(ox + 318, oy + 142, 42, 16, "need");
+    m_lblNeedColHdr = AddWidget<SDL2Label>(ox + 308, oy + 142, 52, 16, "need");
     m_lblNeedColHdr->SetTopAligned(true);
     m_lblNeedColHdr->SetRightAligned(true);
     m_lblNeedColHdr->SetColor({41, 255, 8, 255});
@@ -150,27 +150,50 @@ void SDL2BuildTransport::OnInit() {
     // --- Cost name column (Time, Lumber, …, Colonists) ---------------------
     m_lblCosts = AddWidget<SDL2Label>(ox + 136, oy + 164, 72, 90, "");
     m_lblCosts->SetWrapped(true);
+    m_lblCosts->SetWrapNewlineOnly(true);  // table column: never width-wrap (#22 row shear)
     m_lblCosts->SetTopAligned(true);
     m_lblCosts->SetColor({41, 255, 8, 255});
 
     // --- Value columns (right-aligned numbers) -----------------------------
     m_lblCostCol = AddWidget<SDL2Label>(ox + 228, oy + 164, 42, 90, "");
     m_lblCostCol->SetWrapped(true);
+    m_lblCostCol->SetWrapNewlineOnly(true);  // table column: never width-wrap (#22 row shear)
     m_lblCostCol->SetTopAligned(true);
     m_lblCostCol->SetRightAligned(true);
     m_lblCostCol->SetColor({41, 255, 8, 255});
 
     m_lblHaveCol = AddWidget<SDL2Label>(ox + 273, oy + 164, 42, 90, "");
     m_lblHaveCol->SetWrapped(true);
+    m_lblHaveCol->SetWrapNewlineOnly(true);  // table column: never width-wrap (#22 row shear)
     m_lblHaveCol->SetTopAligned(true);
     m_lblHaveCol->SetRightAligned(true);
     m_lblHaveCol->SetColor({41, 255, 8, 255});
 
-    m_lblNeedCol = AddWidget<SDL2Label>(ox + 318, oy + 164, 42, 90, "");
+    // 52px wide (not 42 like cost/have): big deficits like -1710 word-wrapped
+    // at 42px, pushing every following line down a row and breaking the 1:1
+    // row alignment with the name column (showed as the deficit sitting next
+    // to the Colonists row).
+    m_lblNeedCol = AddWidget<SDL2Label>(ox + 308, oy + 164, 52, 90, "");
     m_lblNeedCol->SetWrapped(true);
+    m_lblNeedCol->SetWrapNewlineOnly(true);  // table column: never width-wrap (#22 row shear)
     m_lblNeedCol->SetTopAligned(true);
     m_lblNeedCol->SetRightAligned(true);
     m_lblNeedCol->SetColor({255, 41, 8, 255});  // red — only shows when deficit
+
+    // --- Blue operating row: "Colonists" (vehicle crew) ---------------------
+    // Vehicles need people to operate, same as buildings — operator-reported
+    // that this window never showed the population requirement. Same blue
+    // operating-row style as SDL2BuildStructure (a standing need, not a
+    // consumed material). Y is repositioned under the last cost row in
+    // UpdateDescription.
+    m_lblOperNames = AddWidget<SDL2Label>(ox + 136, oy + 238, 72, 16, "");
+    m_lblOperNames->SetTopAligned(true);
+    m_lblOperNames->SetColor({71, 71, 225, 255});
+
+    m_lblOperVals = AddWidget<SDL2Label>(ox + 228, oy + 238, 42, 16, "");
+    m_lblOperVals->SetTopAligned(true);
+    m_lblOperVals->SetRightAligned(true);
+    m_lblOperVals->SetColor({71, 71, 225, 255});
 
     // --- Build / Cancel buttons --------------------------------------------
     m_btnBuild = AddWidget<SDL2Button>(ox + 133, oy + 258, 84, 23, "Build",
@@ -417,6 +440,8 @@ void SDL2BuildTransport::UpdateDescription() {
         m_lblCostCol->SetText("");
         m_lblHaveCol->SetText("");
         m_lblNeedCol->SetText("");
+        m_lblOperNames->SetText("");
+        m_lblOperVals->SetText("");
         return;
     }
 
@@ -430,6 +455,7 @@ void SDL2BuildTransport::UpdateDescription() {
     std::string haves    = "\n";   // No "have" for time
     std::string deficits = "\n";
 
+    int rows = 1;  // the "Time" row
     for (int i = 0; i < CMaterialTypes::GetNumBuildTypes(); i++) {
         int need = m_pBu->GetInput(i) * m_buildNum;
         if (need > 0) {
@@ -438,8 +464,11 @@ void SDL2BuildTransport::UpdateDescription() {
             names += "\n";
             costs += std::to_string(need) + "\n";
             haves += std::to_string(have) + "\n";
+            // No parens around the deficit — matches SDL2BuildStructure, and the
+            // extra 2 chars made big values wrap the narrow column (row shear).
             int deficit = have - need;
-            deficits += (deficit < 0 ? "(" + std::to_string(deficit) + ")" : "") + "\n";
+            deficits += (deficit < 0 ? std::to_string(deficit) : "") + "\n";
+            rows++;
         }
     }
 
@@ -447,6 +476,22 @@ void SDL2BuildTransport::UpdateDescription() {
     m_lblCostCol->SetText(costs);
     m_lblHaveCol->SetText(haves);
     m_lblNeedCol->SetText(deficits);
+
+    // Colonists (crew) — population needed to operate the vehicle(s), scaled by
+    // quantity like the costs. Placed directly under the last cost row with a
+    // half-row gap (SDL2BuildStructure's dynamic stacking), clamped so it can
+    // never reach the Build button row even with many materials.
+    const int lineH = 16;
+    int costTop = m_lblCosts->GetRect().y;
+    int operTop = costTop + rows * lineH + lineH / 2;
+    const int maxTop = costTop + 90 - lineH;   // grid area is 90px tall
+    if (operTop > maxTop) operTop = maxTop;
+    SDL_Rect rN = m_lblOperNames->GetRect();
+    SDL_Rect rV = m_lblOperVals->GetRect();
+    m_lblOperNames->SetRect(rN.x, operTop, rN.w, rN.h);
+    m_lblOperVals->SetRect(rV.x, operTop, rV.w, rV.h);
+    m_lblOperNames->SetText("Colonists");
+    m_lblOperVals->SetText(std::to_string(m_pTd->GetPeople() * m_buildNum));
 }
 
 void SDL2BuildTransport::OnBuild() {

@@ -251,8 +251,20 @@ void SDL2CreateStatus::SetPer(int percent, BOOL bYield) {
 
     m_percent = (percent == -1) ? 0 : percent;
 
-    if (m_percent >= PER_DONE)
+    if (m_percent >= PER_DONE) {
         Hide();
+        return;
+    }
+
+    // Paint the update NOW (throttled to ~15fps inside Render). Several load
+    // phases call the non-yielding SetPer from loops that never reach
+    // PollEvents — StartGame's AI-start loop is one — so without this the
+    // dialog was shown but never painted a single frame there: the operator
+    // saw a frozen screen through the whole post-pick-player hang. Render is
+    // display-only (no event pumping / message processing), so it's safe from
+    // any game-logic phase on the main thread.
+    if (!bYield && m_visible)
+        Render();
 }
 
 void SDL2CreateStatus::SetStatus() {

@@ -1012,9 +1012,15 @@ void CConquerApp::LetsGo() {
         delete[] pMsg;
     }
 
-    delete m_pCreateGame;
-    m_pCreateGame = NULL;
-    DestroyExceptMain();
+    // NOTE: DestroyExceptMain (which deletes m_pCreateGame and with it the
+    // loading dialog) now runs at the END of LetsGo, not here — the tail below
+    // (message pumps + Sleep(500*AI count) TWICE + window ordering + the area
+    // map's first draw) is the multi-second "hangs at the game screen" stretch
+    // the operator kept reporting: the dialog died here, so the whole tail ran
+    // against a frozen wallpaper. Kept visible (with the % milestones below
+    // painting via SetPer's direct render), it covers the tail, and the
+    // deferred detached panels bake their first frame while still hidden and
+    // reveal fully-formed after it closes.
 
     // chat off if not multi-HP
     if ((theGame.GetMyNetNum() == 0) ||
@@ -1057,11 +1063,17 @@ void CConquerApp::LetsGo() {
 
     // we turn the game on, process all messages, sleep, etc so the windows are ready to GO
     // when we activate them.
+    if (m_pCreateGame && m_pCreateGame->GetDlgStatus())
+        m_pCreateGame->GetDlgStatus()->SetPer(97);
+    theGame.ProcessAllMessages();
+    ::Sleep(500 * theGame.GetAi().GetCount());
+    if (m_pCreateGame && m_pCreateGame->GetDlgStatus())
+        m_pCreateGame->GetDlgStatus()->SetPer(98);
     theGame.ProcessAllMessages();
     ::Sleep(500 * theGame.GetAi().GetCount());
     theGame.ProcessAllMessages();
-    ::Sleep(500 * theGame.GetAi().GetCount());
-    theGame.ProcessAllMessages();
+    if (m_pCreateGame && m_pCreateGame->GetDlgStatus())
+        m_pCreateGame->GetDlgStatus()->SetPer(99);
 
     // if we allow join in process restart enums
     if ((theGame.AmServer()) && (theGame.GetNetJoin() == CGame::any) &&
@@ -1113,6 +1125,12 @@ void CConquerApp::LetsGo() {
         // and make us force frames less often so we process messages
         dwFrameCheck = 4 * 1000 / FRAME_RATE;
     }
+
+    // NOW the load is really over — DestroyExceptMain deletes m_pCreateGame,
+    // which hides + destroys the loading dialog: that is the deferred detached
+    // panels' signal to reveal (first RenderDetached after this shows them).
+    // Also tears down the pause/cutscene leftovers it always handled.
+    DestroyExceptMain();
 
     ASSERT (TestEverything());
 }

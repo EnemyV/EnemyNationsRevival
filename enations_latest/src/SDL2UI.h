@@ -74,6 +74,11 @@ public:
     void SetColor(SDL_Color c) { m_color = c; }
     void SetCentered(bool c) { m_centered = c; }
     void SetWrapped(bool w) { m_wrapped = w; }
+    // Wrapped labels: break ONLY on '\n', never by width. For multi-line TABLE
+    // COLUMNS (cost/have/need grids) whose row alignment depends on a 1:1 line
+    // count across labels: width-wrap of one big number sheared every following
+    // row down a line (BUGS #22). Over-wide lines condense horizontally instead.
+    void SetWrapNewlineOnly(bool n) { m_wrapNewlineOnly = n; }
     void SetTopAligned(bool t) { m_topAligned = t; }
     void SetRightAligned(bool r) { m_rightAligned = r; }
     // Faux-bold: render the glyphs a second time shifted 1px (no font-style mutation,
@@ -85,6 +90,7 @@ private:
     SDL_Color m_color;
     bool m_centered = false;
     bool m_wrapped = false;
+    bool m_wrapNewlineOnly = false;
     bool m_topAligned = false;
     bool m_rightAligned = false;
     bool m_bold = false;
@@ -99,6 +105,7 @@ private:
     TTF_Font*    m_cacheFont = nullptr;
     int          m_cacheWrapW = -1;     // rect.w used for the cached wrap, or -1
     bool         m_cacheWrapped = false;
+    bool         m_cacheWrapNL = false;
     bool         m_cacheEnabled = true;
 };
 

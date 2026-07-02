@@ -2329,9 +2329,10 @@ int CGame::LoadGame( CWnd* pPar, BOOL bReplace )
         theGame.m_sFileName = (LPCSTR)dlg.GetPathName( );
     }
 
-    // Extract just the filename for the status message
+    // Extract just the filename for the status message ('/' too — on POSIX the
+    // full path was shown because only '\\' was treated as a separator)
     std::string sFileTitle = theGame.m_sFileName;
-    size_t iSlash = sFileTitle.find_last_of( '\\' );
+    size_t iSlash = sFileTitle.find_last_of( "\\/" );
     if ( iSlash != std::string::npos ) sFileTitle = sFileTitle.substr( iSlash + 1 );
 
     // put up a message to say we are loading
