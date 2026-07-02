@@ -1613,6 +1613,21 @@ void CWndArea::CurLeft( )
     // GGTESTING	InvalidateWindow();
 }
 
+// Free-form scroll by an arbitrary pixel delta. Same scroll path as the Cur*
+// keyboard scrolls (MoveCenterPixels + NewLocation + full redraw), but with a
+// caller-supplied delta so a macOS trackpad two-finger drag can pan the map the
+// way the middle-mouse "grab" pan does on Windows. Positive dx/dy move the view
+// center right/down (caller applies grab-style sign).
+void CWndArea::PanByPixels( int dxPix, int dyPix )
+{
+    if ( dxPix == 0 && dyPix == 0 )
+        return;
+
+    m_aa.MoveCenterPixels( dxPix, dyPix );
+    theApp.m_wndWorld.NewLocation( );
+    m_bUpdateAll = TRUE;
+}
+
 void CWndArea::ReRender( )
 {
     Perf::ScopeCounter _crr( "rr.area" );   // PROFILE: area-map ReRender cost (r.inval split)
@@ -7794,6 +7809,22 @@ bool HarnessSetEdict( int edictId, bool on )
     CPlayer* me = theGame.GetMe( );
     if ( me == NULL ) return false;
     me->ToggleEdictNet( edictId, on );
+    return true;
+}
+
+//---------------------------------------------------------------------------
+// HarnessPan — scroll the focused area view by a pixel delta, driving the exact
+// PanByPixels path the macOS trackpad two-finger pan uses. QA-only: lets a driver
+// verify the pan/scroll mechanic headlessly (keyboard-arrow scroll doesn't reach
+// the area map through the offscreen focus path, so this is the only way to
+// exercise the scroll without a real trackpad). Render/game thread only. Backs
+// `pan`. Declared in en_harness.h.
+//---------------------------------------------------------------------------
+bool HarnessPan( int dxPix, int dyPix )
+{
+    CWndArea* pTop = theAreaList.GetTop( );
+    if ( pTop == NULL ) return false;   // not in-game
+    pTop->PanByPixels( dxPix, dyPix );
     return true;
 }
 

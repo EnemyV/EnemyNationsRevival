@@ -24,6 +24,7 @@
 #include <iostream>
 #include <fstream>
 #include <cstdlib>
+#include <cmath>         // lround — trackpad pan delta rounding
 #ifdef _WIN32
 #include <windows.h>
 #include <windowsx.h>  // GET_X_LPARAM, GET_Y_LPARAM
@@ -532,6 +533,77 @@ void GameWindow::Cleanup() {
     // SDL_Quit() should only be called at final application shutdown
 }
 
+#if defined(__APPLE__)
+// macOS trackpad multi-finger drag -> pan the area map, mirroring the Windows
+// middle-mouse "grab" pan. Accepts a 2- OR 3-finger drag (numFingers >= 2): SDL
+// synthesizes SDL_MULTIGESTURE from the trackpad, where mgesture.x/y is the
+// normalized (0..1) finger centroid and numFingers the count. We track the
+// centroid frame-to-frame and scroll the map by the delta. A finger up/down
+// re-baselines the next sample so adding/lifting a finger (2<->3) never jumps the
+// view. Gesture events carry no windowID, so the compositor's per-window routing
+// drops them -> we handle them here, ahead of that routing. macOS-only;
+// Windows/Linux are untouched (keeps the cross-platform golden rule).
+// NOTE: macOS may reserve 3-finger swipes for Mission Control / app-spaces at the
+// WindowServer level; if so those never reach SDL. 2-finger is always delivered.
+static bool HandleTrackpadPan(SDL_Event& event, SDL_Window* win)
+{
+    static bool  s_active = false;
+    static float s_lastX  = 0.0f, s_lastY = 0.0f;
+    static int   s_logged = 0;
+
+    // A change in finger count invalidates the running centroid baseline.
+    if (event.type == SDL_FINGERDOWN || event.type == SDL_FINGERUP) {
+        s_active = false;
+        return false;   // don't consume — no other touch handling, but stay neutral
+    }
+
+    if (event.type != SDL_MULTIGESTURE)
+        return false;
+
+    if (s_logged < 8) {   // one-time visibility that gestures actually arrive in this build/VM
+        LogToFile("trackpad MULTIGESTURE fingers=" + std::to_string(event.mgesture.numFingers) +
+                  " x=" + std::to_string(event.mgesture.x) +
+                  " y=" + std::to_string(event.mgesture.y));
+        ++s_logged;
+    }
+
+    if (event.mgesture.numFingers < 2)
+        return false;
+
+    float cx = event.mgesture.x, cy = event.mgesture.y;
+    if (!s_active) {          // first sample of a gesture only sets the baseline
+        s_active = true;
+        s_lastX  = cx;
+        s_lastY  = cy;
+        return true;
+    }
+
+    float ndx = cx - s_lastX;
+    float ndy = cy - s_lastY;
+    s_lastX = cx;
+    s_lastY = cy;
+
+    CWndArea* pTop = theAreaList.GetTop();
+    if (!pTop)
+        return false;        // not in-game / no area map to pan
+
+    int w = 1024, h = 768;
+    if (win)
+        SDL_GetWindowSize(win, &w, &h);
+
+    // Normalized centroid delta -> pixels. kGain tunes pan speed; a comfortable
+    // trackpad swipe should move the map a proportional distance.
+    const float kGain = 2.0f;
+    int dxPix = (int)lround((double)ndx * w * kGain);
+    int dyPix = (int)lround((double)ndy * h * kGain);
+
+    // Grab-style, like the middle-mouse pan: the map follows the fingers, so the
+    // view center moves opposite to the finger motion.
+    pTop->PanByPixels(-dxPix, -dyPix);
+    return true;
+}
+#endif  // __APPLE__
+
 bool GameWindow::PollEvents() {
     // Guard against re-entrancy: DoModal's PeekMessage pump can trigger
     // BaseYield() → PollEvents() while a dialog event loop is already active.
@@ -657,6 +729,14 @@ bool GameWindow::PollEvents() {
         // Ctrl-modified accelerators. Only consumes keys it actually maps.
         if (HandleGlobalShortcut(event))
             continue;
+
+#if defined(__APPLE__)
+        // macOS trackpad two-finger drag pans the area map (Windows middle-mouse
+        // "grab" equivalent). Handled before compositor routing because gesture
+        // events carry no windowID for the compositor to route on.
+        if (HandleTrackpadPan(event, m_window))
+            continue;
+#endif
 
         // Route through compositor panels (top-down z-order)
         if (m_compositor && m_compositor->RouteEvent(event))

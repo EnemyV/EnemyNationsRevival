@@ -216,6 +216,8 @@ public:
 	void		Center (CUnit *pUnit);
 	CAnimAtr &	GetAA () { return (m_aa); }
 
+	void		PanByPixels (int dxPix, int dyPix);   // free-form scroll by a pixel delta (macOS trackpad two-finger pan)
+
 	void		ReCenter ();
 	void		InvalidateStatus ();
 	CWnd *	GetExpand ();
