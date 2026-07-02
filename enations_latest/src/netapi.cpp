@@ -1240,12 +1240,20 @@ static void CmdReady( CNetReady* pMsg )
     CPlayer* pPlr = theGame.GetPlayer( pMsg->m_iPlyrNum );
     if ( pPlr == NULL )
     {
+        // [mp-plyr] the joined player's race arrives here (CNetReady.m_InitData).
+        // If we can't find the player by netnum, the race is DROPPED -> the host
+        // lobby shows the default (Human) race for that player. Log the miss.
+        EnMpDiagLog( "CmdReady: NO PLAYER for netnum=%d -> race DROPPED (lobby will show default/Human)",
+                     pMsg->m_iPlyrNum );
         ASSERT( FALSE );
         return;
     }
     ASSERT_VALID( pPlr );
     pPlr->m_InitData = pMsg->m_InitData;
     pPlr->SetState( CPlayer::ready );
+    EnMpDiagLog( "CmdReady: applied race to plyr=%d name='%s' netnum=%d (race[0]=%.3f)",
+                 pPlr->GetPlyrNum( ), pPlr->GetName( ), pMsg->m_iPlyrNum,
+                 pMsg->m_InitData.GetRace( 0 ) );
     if ( theApp.m_pCreateGame != NULL )
         theApp.m_pCreateGame->UpdateBtns( );
 

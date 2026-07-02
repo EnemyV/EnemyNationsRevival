@@ -1696,6 +1696,13 @@ bool SDL2_RunJoinNetworkFlow(GameWindow* gameWindow) {
 
     // Send race selection to server (mirrors original CDlgPickRace::OnOK join path)
     CNetReady readyMsg(&theGame.GetMe()->m_InitData);
+    // [mp-plyr] diagnostic for the "lobby shows joined players as Human" bug: log
+    // the netnum we stamp + the server netnum we send to. If myNet=0 or srvNet=0
+    // the CNetReady never lands and the host keeps our default (Human) race.
+    { extern void EnMpDiagLog(const char*, ...);
+      EnMpDiagLog("CNetReady SEND: myNetNum=%d -> serverNetNum=%d race='%s' race[0]=%.3f",
+                  (int)theGame.GetMe()->GetNetNum(), (int)theGame.GetServerNetNum(),
+                  pRace->GetLine(), theGame.GetMe()->m_InitData.GetRace(0)); }
     theNet.Send(theGame.GetServerNetNum(), &readyMsg, sizeof(readyMsg));
 
     if (gameWindow->GetWindow())
