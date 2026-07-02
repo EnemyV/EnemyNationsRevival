@@ -85,7 +85,15 @@ void SDL2FileDialog::OnInit() {
 void SDL2FileDialog::ApplySettings() {
     if (m_sldSpeed) {
         int speed = m_sldSpeed->GetValue();
-        theGame.SetGameMul(speed);
+        if (theGame.IsNetGame() && theGame.GetMyNetNum() != 0) {
+            // Net game: negotiate via the server (GameSpeed, netapi.cpp) instead
+            // of setting only our local sim rate — otherwise host/client run at
+            // different speeds (speed desync). Consensus returns via broadcast.
+            CMsgGameSpeed msg(speed);
+            theGame.PostToServer(&msg, sizeof(msg));
+        } else {
+            theGame.SetGameMul(speed);
+        }
         EnWriteProfileInt("Game", "Speed", speed);
     }
     if (m_sldSound) {

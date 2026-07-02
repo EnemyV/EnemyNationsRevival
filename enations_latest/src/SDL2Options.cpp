@@ -65,7 +65,17 @@ void SDL2OptionsDialog::OnOK() {
 
     ASSERT((0 <= iSpeed) && (iSpeed < NUM_SPEEDS));
     EnWriteProfileInt("Game", "Speed", iSpeed);
-    theGame.SetGameMul(iSpeed);
+    if (theGame.IsNetGame() && theGame.GetMyNetNum() != 0) {
+        // Net game: route the change through the server's speed negotiation
+        // (GameSpeed, netapi.cpp) so every player converges on a consensus rate.
+        // Calling SetGameMul locally only changes OUR sim tick rate = a speed
+        // desync (host and client running at different speeds). The negotiated
+        // result comes back via a broadcast CMsgGameSpeed.
+        CMsgGameSpeed msg(iSpeed);
+        theGame.PostToServer(&msg, sizeof(msg));
+    } else {
+        theGame.SetGameMul(iSpeed);
+    }
 
     EnWriteProfileInt("Game", "Sound", iSound);
     theMusicPlayer.SetSoundVolume(iSound);
