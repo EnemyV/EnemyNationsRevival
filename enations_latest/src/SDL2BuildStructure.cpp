@@ -230,12 +230,14 @@ void SDL2BuildStructure::OnInit() {
     // Cost name column (e.g. "Time", "Gold", "Wood")
     m_lblCosts = AddWidget<SDL2Label>(ox + 255, oy + 175, 72, 95, "");
     m_lblCosts->SetWrapped(true);
+    m_lblCosts->SetWrapNewlineOnly(true);  // table column: never width-wrap (#22 row shear)
     m_lblCosts->SetTopAligned(true);
     m_lblCosts->SetColor({41, 255, 8, 255});
 
     // Cost value column (right-aligned numbers)
     m_lblCostCol = AddWidget<SDL2Label>(ox + 332, oy + 175, 42, 95, "");
     m_lblCostCol->SetWrapped(true);
+    m_lblCostCol->SetWrapNewlineOnly(true);  // table column: never width-wrap (#22 row shear)
     m_lblCostCol->SetTopAligned(true);
     m_lblCostCol->SetRightAligned(true);
     m_lblCostCol->SetColor({41, 255, 8, 255});
@@ -243,6 +245,7 @@ void SDL2BuildStructure::OnInit() {
     // Have value column
     m_lblHaveCol = AddWidget<SDL2Label>(ox + 377, oy + 175, 38, 95, "");
     m_lblHaveCol->SetWrapped(true);
+    m_lblHaveCol->SetWrapNewlineOnly(true);  // table column: never width-wrap (#22 row shear)
     m_lblHaveCol->SetTopAligned(true);
     m_lblHaveCol->SetRightAligned(true);
     m_lblHaveCol->SetColor({41, 255, 8, 255});
@@ -250,6 +253,7 @@ void SDL2BuildStructure::OnInit() {
     // Need/deficit column
     m_lblNeedCol = AddWidget<SDL2Label>(ox + 417, oy + 175, 35, 95, "");
     m_lblNeedCol->SetWrapped(true);
+    m_lblNeedCol->SetWrapNewlineOnly(true);  // table column: never width-wrap (#22 row shear)
     m_lblNeedCol->SetTopAligned(true);
     m_lblNeedCol->SetRightAligned(true);
     m_lblNeedCol->SetColor({41, 255, 8, 255});
@@ -262,6 +266,7 @@ void SDL2BuildStructure::OnInit() {
     // last material row; oy+240 leaves room for 3 materials + half-row gap.
     m_lblOperNames = AddWidget<SDL2Label>(ox + 255, oy + 240, 72, 50, "");
     m_lblOperNames->SetWrapped(true);
+    m_lblOperNames->SetWrapNewlineOnly(true);  // table column: never width-wrap (#22 row shear)
     m_lblOperNames->SetTopAligned(true);
     m_lblOperNames->SetColor({71, 71, 225, 255});
 
@@ -270,6 +275,7 @@ void SDL2BuildStructure::OnInit() {
     // the green "cost" header. MFC draws all values right-aligned at x=366.
     m_lblOperVals = AddWidget<SDL2Label>(ox + 332, oy + 240, 42, 50, "");
     m_lblOperVals->SetWrapped(true);
+    m_lblOperVals->SetWrapNewlineOnly(true);  // table column: never width-wrap (#22 row shear)
     m_lblOperVals->SetTopAligned(true);
     m_lblOperVals->SetRightAligned(true);
     m_lblOperVals->SetColor({71, 71, 225, 255});

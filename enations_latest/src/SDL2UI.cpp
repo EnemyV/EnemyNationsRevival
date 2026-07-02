@@ -260,6 +260,7 @@ void SDL2Label::Render(SDL_Surface* dst, TTF_Font* font) {
                          color.b != m_cacheColor.b || color.a != m_cacheColor.a);
     bool needRegen = !m_cache || m_cacheText != m_text || m_cacheFont != font ||
                      m_cacheWrapped != m_wrapped || m_cacheEnabled != m_enabled ||
+                     m_cacheWrapNL != m_wrapNewlineOnly ||
                      colorChanged || (m_wrapped && m_cacheWrapW != m_rect.w);
 
     if (needRegen) {
@@ -268,7 +269,10 @@ void SDL2Label::Render(SDL_Surface* dst, TTF_Font* font) {
             int oldAlign = TTF_GetFontWrappedAlign(font);
             if (m_rightAligned)    TTF_SetFontWrappedAlign(font, TTF_WRAPPED_ALIGN_RIGHT);
             else if (m_centered)   TTF_SetFontWrappedAlign(font, TTF_WRAPPED_ALIGN_CENTER);
-            m_cache = TTF_RenderUTF8_Blended_Wrapped(font, m_text.c_str(), color, m_rect.w);
+            // wrapLength 0 = break on '\n' only (SDL_ttf contract) — table
+            // columns must never width-wrap or their 1:1 row alignment shears.
+            m_cache = TTF_RenderUTF8_Blended_Wrapped(font, m_text.c_str(), color,
+                                                     m_wrapNewlineOnly ? 0 : m_rect.w);
             TTF_SetFontWrappedAlign(font, oldAlign);
         } else {
             m_cache = TTF_RenderUTF8_Blended(font, m_text.c_str(), color);
@@ -277,6 +281,7 @@ void SDL2Label::Render(SDL_Surface* dst, TTF_Font* font) {
         m_cacheColor   = color;
         m_cacheFont    = font;
         m_cacheWrapped = m_wrapped;
+        m_cacheWrapNL  = m_wrapNewlineOnly;
         m_cacheEnabled = m_enabled;
         m_cacheWrapW   = m_wrapped ? m_rect.w : -1;
     }
@@ -311,6 +316,28 @@ void SDL2Label::Render(SDL_Surface* dst, TTF_Font* font) {
         SDL_SetSurfaceBlendMode(surf, SDL_BLENDMODE_BLEND);
         SDL_BlitScaled(surf, &srcAll, dst, &dr);
         if (m_bold) { SDL_Rect dr2 = dr; dr2.x += 1; SDL_BlitScaled(surf, &srcAll, dst, &dr2); }
+        return;
+    }
+
+    // Newline-only wrapped labels can be WIDER than their rect (nothing width-
+    // wraps them by design). Condense horizontally to fit — same treatment as
+    // the single-line guard below — honoring right/center alignment when the
+    // surface does fit.
+    if (m_wrapped && m_wrapNewlineOnly) {
+        SDL_Rect full = { 0, 0, surf->w, std::min(surf->h, m_rect.h) };
+        SDL_Rect dr = m_rect;
+        dr.h = full.h;
+        if (!m_topAligned && full.h < m_rect.h) dr.y += (m_rect.h - full.h) / 2;
+        if (surf->w > m_rect.w) {
+            dr.w = m_rect.w;                       // condense to the column width
+        } else {
+            dr.w = surf->w;
+            if (m_rightAligned)  dr.x += (m_rect.w - surf->w);
+            else if (m_centered) dr.x += (m_rect.w - surf->w) / 2;
+        }
+        SDL_SetSurfaceBlendMode(surf, SDL_BLENDMODE_BLEND);
+        SDL_BlitScaled(surf, &full, dst, &dr);
+        if (m_bold) { SDL_Rect d2 = dr; d2.x += 1; SDL_BlitScaled(surf, &full, dst, &d2); }
         return;
     }
 

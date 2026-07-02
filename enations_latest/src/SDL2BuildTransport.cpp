@@ -150,18 +150,21 @@ void SDL2BuildTransport::OnInit() {
     // --- Cost name column (Time, Lumber, …, Colonists) ---------------------
     m_lblCosts = AddWidget<SDL2Label>(ox + 136, oy + 164, 72, 90, "");
     m_lblCosts->SetWrapped(true);
+    m_lblCosts->SetWrapNewlineOnly(true);  // table column: never width-wrap (#22 row shear)
     m_lblCosts->SetTopAligned(true);
     m_lblCosts->SetColor({41, 255, 8, 255});
 
     // --- Value columns (right-aligned numbers) -----------------------------
     m_lblCostCol = AddWidget<SDL2Label>(ox + 228, oy + 164, 42, 90, "");
     m_lblCostCol->SetWrapped(true);
+    m_lblCostCol->SetWrapNewlineOnly(true);  // table column: never width-wrap (#22 row shear)
     m_lblCostCol->SetTopAligned(true);
     m_lblCostCol->SetRightAligned(true);
     m_lblCostCol->SetColor({41, 255, 8, 255});
 
     m_lblHaveCol = AddWidget<SDL2Label>(ox + 273, oy + 164, 42, 90, "");
     m_lblHaveCol->SetWrapped(true);
+    m_lblHaveCol->SetWrapNewlineOnly(true);  // table column: never width-wrap (#22 row shear)
     m_lblHaveCol->SetTopAligned(true);
     m_lblHaveCol->SetRightAligned(true);
     m_lblHaveCol->SetColor({41, 255, 8, 255});
@@ -172,6 +175,7 @@ void SDL2BuildTransport::OnInit() {
     // to the Colonists row).
     m_lblNeedCol = AddWidget<SDL2Label>(ox + 308, oy + 164, 52, 90, "");
     m_lblNeedCol->SetWrapped(true);
+    m_lblNeedCol->SetWrapNewlineOnly(true);  // table column: never width-wrap (#22 row shear)
     m_lblNeedCol->SetTopAligned(true);
     m_lblNeedCol->SetRightAligned(true);
     m_lblNeedCol->SetColor({255, 41, 8, 255});  // red — only shows when deficit
