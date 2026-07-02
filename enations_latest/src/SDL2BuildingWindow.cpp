@@ -1035,8 +1035,11 @@ int SDL2BuildingWindow::BuildStorage(int x, int y, int w) {
                     ICON_MATERIALS, CMaterialTypes::steel);
 
     // each row: name (left) | icon stack (middle) | amount (right)
+    // countW fits a fully comma-grouped 7-digit value ("9,999,999") at the 15pt
+    // widget font so big stockpiles aren't clipped; the flexible icon strip yields
+    // the space (it already truncates to whole icons, never a half icon).
     int nameW  = 64;
-    int countW = 48;
+    int countW = 72;
     int iconsX = x + BOX_PAD + nameW + 4;
     int iconsW = ( x + w - BOX_PAD - countW - 4 ) - iconsX;
 
@@ -1205,7 +1208,7 @@ int SDL2BuildingWindow::BuildInputs(int x, int y, int w) {
     m_inputGlyphMat = ( m_nInputMats > 0 ) ? m_inputMats[0] : -1;
 
     int nameW  = 80;
-    int countW = 48;
+    int countW = 72;   // fit big amounts ("9,999,999"); icon strip yields the space
     int iconsX = x + BOX_PAD + nameW + 4;
     int iconsW = ( x + w - BOX_PAD - countW - 4 ) - iconsX;
 
@@ -1231,7 +1234,7 @@ int SDL2BuildingWindow::BuildOutputs(int x, int y, int w) {
     m_outputGlyphMat = ( m_nOutputMats > 0 ) ? m_outputMats[0] : -1;
 
     int nameW  = 80;
-    int countW = 48;
+    int countW = 72;   // fit big amounts ("9,999,999"); icon strip yields the space
     int iconsX = x + BOX_PAD + nameW + 4;
     int iconsW = ( x + w - BOX_PAD - countW - 4 ) - iconsX;
 

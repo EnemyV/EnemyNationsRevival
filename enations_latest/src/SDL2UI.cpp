@@ -277,6 +277,29 @@ void SDL2Label::Render(SDL_Surface* dst, TTF_Font* font) {
     if (!m_cache) return;
     SDL_Surface* surf = m_cache;
 
+    // Overflow: a single-line label whose rendered text is wider than its slot.
+    // The non-wrapped path below clips the END of the string (right-align only
+    // shifts when the text FITS), so e.g. a 6-digit resource count "200,000"
+    // would lose its last digit, and long values could spill over a neighbor.
+    // Scale the glyphs down proportionally so the WHOLE value stays readable and
+    // inside the rect, honoring the label's alignment. (Wrapped labels handle
+    // their width via word-wrap, so this only covers the single-line case.)
+    if (!m_wrapped && m_rect.w > 0 && m_rect.h > 0 && surf->w > m_rect.w) {
+        int dw = m_rect.w;
+        int dh = surf->h * m_rect.w / surf->w;
+        if (dh > m_rect.h) { dh = m_rect.h; dw = surf->w * m_rect.h / surf->h; }
+        SDL_Rect srcAll = { 0, 0, surf->w, surf->h };
+        SDL_Rect dr = m_rect;
+        if (m_rightAligned)  dr.x += (m_rect.w - dw);
+        else if (m_centered) dr.x += (m_rect.w - dw) / 2;
+        if (!m_topAligned)   dr.y += (m_rect.h - dh) / 2;
+        dr.w = dw; dr.h = dh;
+        SDL_SetSurfaceBlendMode(surf, SDL_BLENDMODE_BLEND);
+        SDL_BlitScaled(surf, &srcAll, dst, &dr);
+        if (m_bold) { SDL_Rect dr2 = dr; dr2.x += 1; SDL_BlitScaled(surf, &srcAll, dst, &dr2); }
+        return;
+    }
+
     // Positioning mirrors the original RenderText / RenderTextWrapped helpers.
     SDL_Rect srcRect = { 0, 0, std::min(surf->w, m_rect.w), std::min(surf->h, m_rect.h) };
     SDL_Rect dstRect = m_rect;
