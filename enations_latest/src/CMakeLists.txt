@@ -287,8 +287,11 @@ if (MSVC)
 else ()
     # Linux/gcc. -fms-extensions + -fsigned-char match MSVC semantics the code
     # relies on; -Wno-unknown-pragmas swallows #pragma warning/comment/intrinsic.
+    # -ffp-contract=off: no FMA fusing — MP world-gen parity requires float
+    # expressions to round identically everywhere; clang on Apple ARM64 fuses
+    # a*b+c by default (x86 SSE2 and MSVC don't), silently diverging mac maps.
     target_compile_options(enations PRIVATE
-        -g -fms-extensions -fsigned-char -fpermissive -Wno-unknown-pragmas -Wno-format -Wno-write-strings -Wno-narrowing
+        -g -fms-extensions -fsigned-char -fpermissive -ffp-contract=off -Wno-unknown-pragmas -Wno-format -Wno-write-strings -Wno-narrowing
         $<$<CONFIG:Release>:-O2>
         $<$<CONFIG:Profile>:-O2>
     )

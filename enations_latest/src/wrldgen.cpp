@@ -69,6 +69,43 @@ static int ConvertAlt( int iAlt, int iSideSize )
     return val;
 }
 
+// Deterministic integer sine/cosine, Q15 (result = sin*32768). World-gen must
+// be bit-identical on every platform, and libm sin/cos are NOT — MSVC ucrt,
+// glibc and Apple libm differ by ULPs, and one flipped (int) cast on a trig
+// result diverges the whole map -> CmdPlay RAND MISMATCH drops every
+// cross-platform joiner (3/3 repro on themed worlds, 2026-07-02). Quarter-wave
+// table, whole degrees; plenty for terrain shaping (max error <1% of radius).
+static const short aSinQ15[91] = {
+    0, 572, 1144, 1715, 2286, 2856, 3425, 3993, 4560, 5126,
+    5690, 6252, 6813, 7371, 7927, 8481, 9032, 9580, 10126, 10668,
+    11207, 11743, 12275, 12803, 13328, 13848, 14365, 14876, 15384, 15886,
+    16384, 16877, 17364, 17847, 18324, 18795, 19261, 19720, 20174, 20622,
+    21063, 21498, 21926, 22348, 22763, 23170, 23571, 23965, 24351, 24730,
+    25102, 25466, 25822, 26170, 26510, 26842, 27166, 27482, 27789, 28088,
+    28378, 28660, 28932, 29197, 29452, 29698, 29935, 30163, 30382, 30592,
+    30792, 30983, 31164, 31336, 31499, 31651, 31795, 31928, 32052, 32166,
+    32270, 32365, 32449, 32524, 32588, 32643, 32688, 32723, 32748, 32763,
+    32767 };
+
+static int EnSinDeg( int deg )
+{
+    deg %= 360;
+    if ( deg < 0 )
+        deg += 360;
+    if ( deg <= 90 )
+        return ( aSinQ15[deg] );
+    if ( deg <= 180 )
+        return ( aSinQ15[180 - deg] );
+    if ( deg <= 270 )
+        return ( -aSinQ15[deg - 180] );
+    return ( -aSinQ15[360 - deg] );
+}
+
+static int EnCosDeg( int deg )
+{
+    return ( EnSinDeg( deg + 90 ) );
+}
+
 /// <summary>
 /// Returns how close you are to the edge.
 /// </summary>
@@ -495,11 +532,11 @@ void CGameMap::GenerateMountainBlock( int _x, int iSideSize, int _y)
                     // Draw a ring around the peak
                     for ( int angle = 0; angle < 360; angle += 15 )
                     {
-                        float rad    = angle * 3.14159f / 180.0f;
-                        // Add jaggedness to the ring
+                        // Add jaggedness to the ring. Integer Q15 trig — libm
+                        // sin/cos here diverged the map across platforms.
                         int   jitter = RandNum( 3 ) - 1;
-                        int   rx     = xPeak + (int)( ( radius + jitter ) * cos( rad ) );
-                        int   ry     = yPeak + (int)( ( radius + jitter ) * sin( rad ) );
+                        int   rx     = xPeak + ( ( radius + jitter ) * EnCosDeg( angle ) ) / 32768;
+                        int   ry     = yPeak + ( ( radius + jitter ) * EnSinDeg( angle ) ) / 32768;
 
                         CHex* pHex = GetHex( CHexCoord( rx, ry ) );
                         if ( !pHex->IsWater( ) )
@@ -661,16 +698,19 @@ void CGameMap::GenerateMountainBlock( int _x, int iSideSize, int _y)
             {
                 float t = (float)step / (float)pathSteps;
 
-                // Gentle meander (glaciers don't wind as much as rivers)
-                float meander = sin( t * 4.0f ) * ( iSideSize / 20.0f );
+                // Gentle meander (glaciers don't wind as much as rivers).
+                // Integer Q15 trig — t*4.0 rad == t*229.18 deg; libm sin here
+                // diverged the map across platforms.
+                int meanderDeg = (int)( ( (long long)step * 229183 ) / ( (long long)pathSteps * 1000 ) );
+                int meander    = ( EnSinDeg( meanderDeg ) * ( iSideSize / 20 ) ) / 32768;
 
                 int baseX = vx1 + (int)( ( vx2 - vx1 ) * t );
                 int baseY = vy1 + (int)( ( vy2 - vy1 ) * t );
 
                 if ( bHorizontal )
-                    baseY += (int)meander;
+                    baseY += meander;
                 else
-                    baseX += (int)meander;
+                    baseX += meander;
 
                 // U-shaped profile: flat bottom, steep walls
                 for ( int w = -valleyWidth - 2; w <= valleyWidth + 2; w++ )
