@@ -895,18 +895,22 @@ void SDL2Panel::Detach(SDL_Window* ownerWindow) {
         int di = SDL_GetWindowDisplayIndex(m_ownWindow);
         SDL_Rect ub;
         if (di >= 0 && SDL_GetDisplayUsableBounds(di, &ub) == 0) {
-            // Left floor: on Linux the usable bounds start at the GNOME dock strut
-            // (x=66), which pushed panels the game lays out at the left edge (the
-            // radar, Windows-parity x=0) over to the dock edge. Managed windows CAN
-            // sit under the dock, so floor x at the full display bounds instead.
-            // The y floor stays at the work-area top so the panel's title bar starts
-            // below the shell top bar (= still grabbable); dragging it higher is the
-            // user's call (the _GTK_FRAME_EXTENTS hint below allows it).
+            // Left/top floor: on Linux the usable bounds start at the GNOME dock
+            // strut (x=66) and shell top bar (y=32), which pushed panels the game
+            // lays out at the screen edges (radar/area map, Windows-parity 0)
+            // inward — the operator sees a dead gap above the default layout
+            // (BUGS #32). The fullscreen game window covers the shell bar anyway,
+            // so floor BOTH axes at the full display bounds; the fake
+            // _GTK_FRAME_EXTENTS + post-extents re-assert below make the
+            // work-area-defeating position stick.
             int minX = ub.x;
+            int minY = ub.y;
 #if defined(__linux__)
             SDL_Rect db;
-            if (SDL_GetDisplayBounds(di, &db) == 0)
+            if (SDL_GetDisplayBounds(di, &db) == 0) {
                 minX = db.x;
+                minY = db.y;
+            }
 #endif
             int wx, wy, ww, wh;
             SDL_GetWindowPosition(m_ownWindow, &wx, &wy);
@@ -917,7 +921,7 @@ void SDL2Panel::Detach(SDL_Window* ownerWindow) {
             if (wx + ww > ub.x + ub.w) wx = ub.x + ub.w - ww;
             if (wy + wh > ub.y + ub.h) wy = ub.y + ub.h - wh;
             if (wx < minX) wx = minX;
-            if (wy < ub.y) wy = ub.y;
+            if (wy < minY) wy = minY;
             SDL_SetWindowPosition(m_ownWindow, wx, wy);
             if (resized) {
                 SDL_SetWindowSize(m_ownWindow, ww, wh);
