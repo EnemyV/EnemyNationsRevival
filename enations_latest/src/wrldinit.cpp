@@ -611,7 +611,15 @@ void CGameMap::Init( int iSide, int iSideSize, int iScenario )
                         iIndWrapped = blk - iIndWrapped;
 
                     // we put an ocean below if there is a below AND there is no ocean to the left
-                    if ( ( piBlks[iInd] == 0 ) && ( iInd % iSide != 0 ) && ( piBlks[IndLeft( iInd, iSide )] != -1 ) )
+                    // iInd < iNumBlks guard (ASan-caught): when this player took the LAST
+                    // block, iInd is one past the array — the old code READ heap garbage
+                    // here (world layout became nondeterministic = cross-platform world
+                    // divergence candidate) and, if that garbage was 0, WROTE -1 out of
+                    // bounds (heap-metadata corruption; matches a malloc_consolidate abort
+                    // seen once in CreateNewWorld). Past the end there IS no "below" block,
+                    // so fall through to the wrap-around IndRight branch like the in-bounds
+                    // no-below case always did.
+                    if ( ( iInd < iNumBlks ) && ( piBlks[iInd] == 0 ) && ( iInd % iSide != 0 ) && ( piBlks[IndLeft( iInd, iSide )] != -1 ) )
                     {
                         ASSERT( iInd < iNumBlks );
                         piBlks[iInd++] = -1;  // below

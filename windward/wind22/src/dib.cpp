@@ -1624,7 +1624,12 @@ void CDIB::Load( CMmio& mmio ) {
         if ( dwLen > sizeof( BITMAPFILEHEADER ) + sizeof( BITMAPINFO ) + sizeof( long ) ) {
             dwLen -= ( sizeof( BITMAPFILEHEADER ) + sizeof( long ) );
 
-            lp = ( LPBITMAPINFO ) new BYTE[dwLen];
+            // +4 zeroed pad bytes: the datafile stores 24-bpp bitmaps WITHOUT the
+            // final row's DWORD padding, so SetBits24's last-pixel read (pbySrc[2])
+            // runs up to 2 bytes past the chunk data (ASan-caught heap-buffer-
+            // overflow on the very first CWndMain::LoadData bitmap). Padding the
+            // allocation keeps the read in bounds and deterministic.
+            lp = ( LPBITMAPINFO ) new BYTE[dwLen + 4]();
 
             mmio.Read( &bmfh, sizeof( BITMAPFILEHEADER ) );
 
