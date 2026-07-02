@@ -7568,6 +7568,62 @@ void HarnessDumpBldgState( std::string& out )
 }
 
 //---------------------------------------------------------------------------
+// HarnessDumpAIStates — per-player economy/population snapshot for the T-0068
+// AI-stall investigation. READ-ONLY (reads public accessors + walks the building
+// map; mutates nothing). One line per player:
+//   "player <p> <me|ai> pop<n> wkforce<have>/<need> mult<f> | apt<n> ofc<n> camp<n> refin<n> oil<n> econ7_<n>/7 wantApt<0|1>"
+// wantApt mirrors CAIGoalMgr::CheckPlayer's m_iNeedApt test (1.5*AptCap <= PplTotal),
+// using apartment-count as an AptCap proxy (apt==0 ⇒ AptCap 0). mult<<1 ⇒ understaffed.
+// Declared in en_harness.h. Called on the game/render thread via EnHarness_Service.
+//---------------------------------------------------------------------------
+void HarnessDumpAIStates( std::string& out )
+{
+    out.clear( );
+    char line[256];
+    for ( int iPlyr = 0; iPlyr < 16; ++iPlyr )
+    {
+        CPlayer* p = theGame._GetPlayerByPlyr( iPlyr );
+        if ( p == NULL )
+            continue;
+        int  apt = 0, ofc = 0, camp = 0, refin = 0, oil = 0;
+        bool has[CStructureData::num_types] = { false };
+        POSITION pos = theBuildingMap.GetStartPosition( );
+        while ( pos != NULL )
+        {
+            DWORD dwID = 0; CBuilding* pB = NULL;
+            theBuildingMap.GetNextAssoc( pos, dwID, pB );
+            if ( pB == NULL || pB->GetOwner( ) != p )
+                continue;
+            CStructureData const* pd = pB->GetData( );
+            if ( pd == NULL )
+                continue;
+            int t = (int) pd->GetType( );
+            if ( t >= 0 && t < CStructureData::num_types )
+                has[t] = true;
+            if      ( t >= CStructureData::apartment_1_1 && t <= CStructureData::apartment_3_2 ) apt++;
+            else if ( t >= CStructureData::office_2_1     && t <= CStructureData::office_3_2 )   ofc++;
+            else if ( t == CStructureData::barracks_2 )  camp++;
+            else if ( t == CStructureData::refinery )    refin++;
+            else if ( t == CStructureData::oil_well )    oil++;
+        }
+        static const int gate[7] = { CStructureData::power_1, CStructureData::lumber,
+            CStructureData::smelter, CStructureData::farm, CStructureData::refinery,
+            CStructureData::coal, CStructureData::iron };
+        int econ7 = 0;
+        for ( int g = 0; g < 7; ++g ) if ( has[gate[g]] ) econ7++;
+        int pop = p->GetPplTotal( );
+        int wantApt = ( ( apt + ( apt >> 1 ) ) <= pop ) ? 1 : 0;  // mirror caigmgr 1.5*AptCap<=PplTotal
+        snprintf( line, sizeof( line ),
+                  "player %d %s pop%d wkforce%d/%d mult%.2f | apt%d ofc%d camp%d refin%d oil%d econ7_%d/7 wantApt%d\n",
+                  iPlyr, p->IsMe( ) ? "me" : "ai", pop, p->GetPplBldg( ), p->GetPplNeedBldg( ),
+                  p->GetPplMult( ), apt, ofc, camp, refin, oil, econ7, wantApt );
+        out += line;
+    }
+    if ( out.empty( ) )
+        out = "# no players (not in-game?)\n";
+}
+
+//---------------------------------------------------------------------------
 // HarnessCenterUnit — center the focused area view on the unit with `id`
 // (vehicle or building), so a headless driver can then click view-center to
 // select it. Declared in en_harness.h. Called on the game/render thread.

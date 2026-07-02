@@ -91,6 +91,12 @@ std::string            g_bldgStateResult;
 std::atomic<bool>      g_bldgStatePending{false};
 std::atomic<bool>      g_bldgStateDone{false};
 
+// Pending `aistate` request (HarnessDumpAIStates) — per-player economy probe, T-0068 (read-only).
+std::mutex              g_aiStateMutex;
+std::string            g_aiStateResult;
+std::atomic<bool>      g_aiStatePending{false};
+std::atomic<bool>      g_aiStateDone{false};
+
 // Pending `edicts` request (HarnessDumpEdicts) — list edicts + active state.
 std::mutex              g_edictsMutex;
 std::string            g_edictsResult;
@@ -320,6 +326,15 @@ void handle_command(const std::string& line, int conn) {
         std::string out;
         { std::lock_guard<std::mutex> lk(g_bldgStateMutex); out = g_bldgStateResult; }
         if (!g_bldgStateDone.load()) out = "err bldgstate timeout (not in-game?)\n";
+        write(conn, out.c_str(), out.size());
+        return;
+    } else if (strcmp(cmd, "aistate") == 0) {
+        // Per-player economy/population probe (read-only) — T-0068 AI-stall investigation.
+        g_aiStateDone = false; g_aiStatePending = true;
+        for (int i = 0; i < 400 && !g_aiStateDone.load(); ++i) { struct timespec ts={0,5000000}; nanosleep(&ts,nullptr); }
+        std::string out;
+        { std::lock_guard<std::mutex> lk(g_aiStateMutex); out = g_aiStateResult; }
+        if (!g_aiStateDone.load()) out = "err aistate timeout (not in-game?)\n";
         write(conn, out.c_str(), out.size());
         return;
     } else if (strcmp(cmd, "edicts") == 0) {
@@ -682,6 +697,13 @@ void EnHarness_Service() {
         HarnessDumpBldgState(out);
         { std::lock_guard<std::mutex> lk(g_bldgStateMutex); g_bldgStateResult = out; }
         g_bldgStateDone = true;
+        return;
+    }
+    if (g_aiStatePending.exchange(false)) {
+        std::string out;
+        HarnessDumpAIStates(out);
+        { std::lock_guard<std::mutex> lk(g_aiStateMutex); g_aiStateResult = out; }
+        g_aiStateDone = true;
         return;
     }
     if (g_edictsPending.exchange(false)) {
