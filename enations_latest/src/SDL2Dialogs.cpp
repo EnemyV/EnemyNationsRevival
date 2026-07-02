@@ -39,6 +39,23 @@ static const std::vector<std::string>& WorldTypeLabels() {
     return labels;
 }
 
+// Player name to pre-fill in the create/join dialogs: the remembered profile
+// value, else the OS username on a fresh profile (operator-reported: the name
+// box came up empty the first time the game was ever run).
+static std::string DefaultPlayerName() {
+    std::string name = EnGetProfileStdString("Create", "Name", "");
+    if (!name.empty())
+        return name;
+#ifdef _WIN32
+    const char* u = getenv("USERNAME");   // avoids an advapi32 GetUserNameA dependency
+#else
+    const char* u = getenv("USER");
+#endif
+    if (u && *u)
+        return u;
+    return "Player";
+}
+
 // Fill a (freshly created) World Type listbox and preselect the saved choice.
 static void PopulateWorldTypeList(SDL2Listbox* lst) {
     for (const auto& s : WorldTypeLabels())
@@ -291,7 +308,7 @@ void SDL2PickRaceDialog::OnInit() {
 
     // Player name
     AddWidget<SDL2Label>(lx, y, 60, 24, "Name:");
-    std::string savedName = EnGetProfileStdString("Create", "Name", "");
+    std::string savedName = DefaultPlayerName();
     m_edtName = AddWidget<SDL2EditBox>(lx + 65, y, w - 65, 24, savedName,
         [this](const std::string& name) { OnNameChanged(name); });
     y += 34;
@@ -750,7 +767,7 @@ void SDL2CreateNetDialog::OnInit() {
     m_edtGameName = AddWidget<SDL2EditBox>(lx + 105, y, colW - 105, rowH, "My Game");
     y += rowH + 4;
     AddWidget<SDL2Label>(lx, y, 100, rowH, "Your Name:");
-    std::string savedName = EnGetProfileStdString("Create", "Name", "");
+    std::string savedName = DefaultPlayerName();
     m_edtPlayerName = AddWidget<SDL2EditBox>(lx + 105, y, colW - 105, rowH, savedName);
     AddWidget<SDL2Label>(rx, m_y + 45, 50, rowH, "Port:");
     m_edtPort = AddWidget<SDL2EditBox>(rx + 55, m_y + 45, 80, rowH, "2346");
@@ -818,7 +835,7 @@ SDL2JoinNetDialog::SDL2JoinNetDialog(GameWindow* gameWindow)
 void SDL2JoinNetDialog::OnInit() {
     int lx = m_x + 20, y = m_y + 45, w = m_width - 40, rowH = 28;
     AddWidget<SDL2Label>(lx, y, 110, rowH, "Your Name:");
-    std::string savedName = EnGetProfileStdString("Create", "Name", "");
+    std::string savedName = DefaultPlayerName();
     m_edtPlayerName = AddWidget<SDL2EditBox>(lx + 115, y, w - 115, 24, savedName);
     y += rowH + 4;
     AddWidget<SDL2Label>(lx, y, 110, rowH, "Server Address:");
@@ -964,7 +981,7 @@ void SDL2HostLoadedDialog::OnInit() {
     y += rowH + 4;
 
     AddWidget<SDL2Label>(lx, y, 110, rowH, "Your Name:");
-    std::string savedName = EnGetProfileStdString("Create", "Name", "");
+    std::string savedName = DefaultPlayerName();
     m_edtPlayerName = AddWidget<SDL2EditBox>(lx + 115, y, w - 115, 24, savedName);
     y += rowH + 4;
 
