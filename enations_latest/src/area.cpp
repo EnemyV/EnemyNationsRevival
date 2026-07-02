@@ -198,7 +198,7 @@ static std::string FindCursorDir( )
         fprintf( stderr, "[DIAG] cursor dir = '%s'\n", s_dir.empty() ? "(not found)" : s_dir.c_str() );
     return s_dir;
 }
-static SDL_Cursor* LoadCurFromFile( const std::string& path )
+static SDL_Cursor* LoadCurFromFile( const std::string& path, Uint32 tintRGB = 0 )
 {
     FILE* f = fopen( path.c_str(), "rb" );
     if ( !f ) return nullptr;
@@ -220,6 +220,13 @@ static SDL_Cursor* LoadCurFromFile( const std::string& path )
     size_t pal = off + 40;                                    // 2-entry color table
     uint32_t col0 = ( b[pal+2] << 16 ) | ( b[pal+1] << 8 ) | b[pal];
     uint32_t col1 = ( b[pal+6] << 16 ) | ( b[pal+5] << 8 ) | b[pal+4];
+    // Optional tint (BUGS #34): the fire/attack TARGET cursors ship as all-BLACK
+    // 1-bpp art but are meant to read RED in-game (operator). Recolor the dark
+    // plane; a light plane (white outline) stays untouched.
+    if ( tintRGB != 0 ) {
+        if ( col0 == 0 ) col0 = tintRGB;
+        if ( col1 == 0 ) col1 = tintRGB;
+    }
     int    rowBytes = ( ( W + 31 ) / 32 ) * 4;                // 1-bpp DWORD-aligned
     size_t xorOff = pal + 8, andOff = xorOff + (size_t)rowBytes * H;
     if ( andOff + (size_t)rowBytes * H > b.size() ) return nullptr;
@@ -254,8 +261,13 @@ static SDL_Cursor* SdlCursorFromResId( int id )
     }
     if ( const char* fn = CurFileForId( id ) ) {
         std::string dir = FindCursorDir();
+        // Fire/attack target cursors (IDC_TARGET0..3): draw the crosshair RED.
+        // The .cur art is all-black (palette black/white, no invert plane), so
+        // without this the attack cursor reads as a plain black crosshair.
+        Uint32 tint = ( id == 165 || id == 178 || id == 179 || id == 180 )
+                          ? 0x00DC1414u : 0u;   // red (220,20,20)
         if ( !dir.empty() )
-            if ( SDL_Cursor* c = LoadCurFromFile( dir + "/" + fn ) )
+            if ( SDL_Cursor* c = LoadCurFromFile( dir + "/" + fn, tint ) )
                 return c;
     }
     static SDL_Cursor* s_arrow = SDL_CreateSystemCursor( SDL_SYSTEM_CURSOR_ARROW );
