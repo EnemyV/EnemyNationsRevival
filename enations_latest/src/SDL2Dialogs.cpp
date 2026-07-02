@@ -303,16 +303,6 @@ SDL2PickRaceDialog::~SDL2PickRaceDialog() {
         if (surf) SDL_FreeSurface(surf);
 }
 
-// Player name used to pre-fill the name edit boxes: the last name saved to the
-// profile, else the OS login name so first-run dialogs aren't blank, else "Player".
-static std::string DefaultPlayerName() {
-    std::string s = EnGetProfileStdString("Create", "Name", "");
-    if (!s.empty()) return s;
-    const char* u = getenv("USER");
-    if (!u || !*u) u = getenv("USERNAME");
-    return (u && *u) ? std::string(u) : std::string("Player");
-}
-
 void SDL2PickRaceDialog::OnInit() {
     int lx = m_x + 20, y = m_y + 45, w = m_width - 40;
 
