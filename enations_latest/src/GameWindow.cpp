@@ -25,6 +25,9 @@
 #include <fstream>
 #include <cstdlib>
 #include <cmath>         // lround — trackpad pan delta rounding
+#ifndef _WIN32
+#include "appicon_data.h"  // embedded 32x32 RGBA taskbar/dock icon
+#endif
 #ifdef _WIN32
 #include <windows.h>
 #include <windowsx.h>  // GET_X_LPARAM, GET_Y_LPARAM
@@ -43,6 +46,25 @@ static void LogToFile(const std::string& message) {
         log << message << std::endl;
         log.close();
     }
+}
+
+// Taskbar/alt-tab/dock icon (_NET_WM_ICON on X11): without it a minimized game
+// window shows the generic SDL icon on Linux (operator-reported). Embedded RGBA
+// pixels — no image-loading dependency; Windows keeps its .rc resource icon.
+void GameWindow::ApplyAppIcon(SDL_Window* win) {
+#ifndef _WIN32
+    if (!win)
+        return;
+    static SDL_Surface* s_icon = nullptr;
+    if (!s_icon)
+        s_icon = SDL_CreateRGBSurfaceWithFormatFrom(
+            (void*)kAppIconRGBA, kAppIconW, kAppIconH, 32, kAppIconW * 4,
+            SDL_PIXELFORMAT_RGBA32);
+    if (s_icon)
+        SDL_SetWindowIcon(win, s_icon);
+#else
+    (void)win;
+#endif
 }
 
 GameWindow::GameWindow(const std::string& title, int width, int height)
@@ -252,6 +274,7 @@ SDL_Window* GameWindow::CreateSDLWindow(const char* title, int x, int y, int w, 
     if (win)
         EnSetX11UserTimeNow(win);
 #endif
+    ApplyAppIcon(win);
 #ifdef _WIN32
     if (hook) {
         ::UnhookWindowsHookEx(hook);
@@ -474,6 +497,7 @@ bool GameWindow::InitializeSDL() {
             extern void EnSetX11UserTimeNow(SDL_Window* win);
             EnSetX11UserTimeNow(m_window);
 #endif
+            ApplyAppIcon(m_window);   // recreation also wiped _NET_WM_ICON
             EnsureBackBuffer();
             SDL_RendererInfo info;
             if (SDL_GetRendererInfo(m_renderer, &info) == 0)
