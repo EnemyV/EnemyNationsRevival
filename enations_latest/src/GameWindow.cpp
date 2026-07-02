@@ -855,15 +855,22 @@ void GameWindow::MinimizeAll() {
     // minimize the main window. Restoring is free: un-minimizing fires
     // FOCUS_GAINED, whose group-restore path below re-shows and raises every
     // logically open panel (the same recovery used for alt-tab).
+    int hidden = 0;
     if (m_compositor) {
         for (int i = 0; i < m_compositor->GetPanelCount(); ++i) {
             SDL2Panel* panel = m_compositor->GetPanel(i);
-            if (panel && panel->IsDetached() && panel->GetOwnWindow())
+            if (panel && panel->IsDetached() && panel->GetOwnWindow()) {
                 SDL_HideWindow(panel->GetOwnWindow());
+                ++hidden;
+            }
         }
     }
+    // Stand the FOCUS_GAINED group-restore down long enough for the options
+    // dialog's teardown focus shuffle to pass (it would de-miniaturize us).
+    m_suppressGroupRestoreMs = timeGetTime() + 2000;
     if (m_window)
         SDL_MinimizeWindow(m_window);
+    LogToFile("MinimizeAll: hid " + std::to_string(hidden) + " panels");
 }
 
 void GameWindow::HandleEvent(SDL_Event& event) {
@@ -900,6 +907,21 @@ void GameWindow::HandleEvent(SDL_Event& event) {
                 // "no creating-world dialog" bug). During a load the dialog owns
                 // the screen; the group-restore resumes once it hides.
                 if (m_createStatus && m_createStatus->IsVisible())
+                    break;
+                // Not while the main window is deliberately minimized either:
+                // MinimizeAll runs from the modal options dialog, whose teardown
+                // fires a focus event — SDL_RaiseWindow here would de-miniaturize
+                // the game we just minimized and re-show every panel (operator:
+                // "in-game minimize didn't work, game stayed up"). The MINIMIZED
+                // flag alone races (it's set by a queued event that may arrive
+                // AFTER the teardown focus event), so MinimizeAll also arms a
+                // short stand-down deadline. When the user restores from the
+                // Dock, macOS clears MINIMIZED first, so the next focus gain
+                // (past the deadline) runs the group-restore and brings the
+                // panels back as intended.
+                if (m_window && (SDL_GetWindowFlags(m_window) & SDL_WINDOW_MINIMIZED))
+                    break;
+                if (timeGetTime() < m_suppressGroupRestoreMs)
                     break;
                 static DWORD s_lastRaise = 0;
                 DWORD now = timeGetTime();
