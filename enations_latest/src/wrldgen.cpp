@@ -834,8 +834,15 @@ void CGameMap::GenerateBadlandsBlock( int _x, int iSideSize, int _y)
             if ( !avoidChangingWater || !pHex->IsWater( ) )
             {
                 float edgeFactor = BlockEdgeFactor( x, y, _x, _y, iSideSize );
-                float waveX       = sin( (float)x * 0.06f ) * 3.0f;
-                float waveY       = cos( (float)y * 0.05f ) * 3.0f;
+                // Integer Q15 trig — libm sin/cos here diverged the map across
+                // platforms (Apple libm != ucrt/glibc, 1-ULP flip -> (int) alt shift
+                // -> RAND MISMATCH; win+linux agreed, mac dropped). Map the radian args
+                // to whole degrees (x*0.06 rad => x*3.437747 deg, y*0.05 => y*2.864789)
+                // and scale the table result (sin*32768) back to the original *3.0 range.
+                int   degX        = (int)( (float)x * 3.437747f );
+                int   degY        = (int)( (float)y * 2.864789f );
+                float waveX       = EnSinDeg( degX ) * ( 3.0f / 32768.0f );
+                float waveY       = EnCosDeg( degY ) * ( 3.0f / 32768.0f );
                 int   waveDelta   = (int)( ( waveX + waveY ) * edgeFactor );
                 pHex->SetAlt( pHex->GetAlt( ) + waveDelta );
             }
@@ -952,9 +959,11 @@ void CGameMap::GenerateBadlandsBlock( int _x, int iSideSize, int _y)
 
                 for ( int angle = 0; angle < 360; angle += 15 )
                 {
-                    float rad = angle * 3.14159f / 180.0f;
-                    int   rx  = xS + (int)( radius * cos( rad ) );
-                    int   ry  = yS + (int)( radius * sin( rad ) );
+                    // Integer Q15 trig — libm cos/sin here diverged the map across
+                    // platforms; angle is whole degrees already (matches the mountain
+                    // ring builder's EnCosDeg/EnSinDeg conversion @22868ce4).
+                    int   rx  = xS + ( radius * EnCosDeg( angle ) ) / 32768;
+                    int   ry  = yS + ( radius * EnSinDeg( angle ) ) / 32768;
 
                     CHex* pHex = GetHex( CHexCoord( rx, ry ) );
                     if ( !avoidChangingWater || !pHex->IsWater( ) )
