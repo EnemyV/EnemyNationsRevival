@@ -271,6 +271,50 @@ SDL_Window* GameWindow::CreateSDLWindow(const char* title, int x, int y, int w, 
     return win;
 }
 
+#ifdef __APPLE__
+// Set the Dock icon at runtime: the game ships as a bare Mach-O binary (no
+// .app bundle), so macOS shows the generic executable icon when running or
+// minimized (operator-reported). Loads the classic 32x32 game icon staged at
+// assets/appicon.png (converted from res/main.ico). objc runtime declared by
+// hand — the objc headers' BOOL collides with the Win32 shim's — and AppKit
+// is already loaded via SDL.
+extern "C" {
+    void* objc_getClass(const char* name);
+    void* sel_registerName(const char* name);
+    void  objc_msgSend(void);
+}
+static void SetMacDockIcon() {
+    // Resolve like PlayVideo: CWD first, then the exe's directory.
+    std::string path = "assets/appicon.png";
+    FILE* f = fopen(path.c_str(), "rb");
+    if (!f) {
+        char exePath[MAX_PATH] = {};
+        GetModuleFileNameA(NULL, exePath, MAX_PATH);
+        std::string dir(exePath);
+        size_t slash = dir.find_last_of("\\/");
+        if (slash == std::string::npos) return;
+        path = dir.substr(0, slash + 1) + "assets/appicon.png";
+        f = fopen(path.c_str(), "rb");
+        if (!f) return;
+    }
+    fclose(f);
+
+    // Exact-prototype casts — objc_msgSend must NOT be called through a
+    // variadic signature on arm64 (different argument-passing convention).
+    auto cls   = [](const char* n) { return objc_getClass(n); };
+    auto sel   = [](const char* n) { return sel_registerName(n); };
+    auto send0 = (void* (*)(void*, void*))objc_msgSend;
+    auto send1 = (void* (*)(void*, void*, const void*))objc_msgSend;
+
+    void* nsPath = send1(cls("NSString"), sel("stringWithUTF8String:"), path.c_str());
+    if (!nsPath) return;
+    void* img = send1(send0(cls("NSImage"), sel("alloc")), sel("initWithContentsOfFile:"), nsPath);
+    if (!img) return;
+    void* app = send0(cls("NSApplication"), sel("sharedApplication"));
+    send1(app, sel("setApplicationIconImage:"), img);
+}
+#endif
+
 bool GameWindow::InitializeSDL() {
     LogToFile("Initializing SDL...");
 
@@ -296,6 +340,9 @@ bool GameWindow::InitializeSDL() {
     // Hooks are LIFO, so ours fires first and blocks MFC from seeing the creation.
     s_sdlCbtHook = ::SetWindowsHookEx(WH_CBT, SdlCbtFilterHook, NULL, ::GetCurrentThreadId());
 #else
+#ifdef __APPLE__
+    SetMacDockIcon();
+#endif
     // macOS: run fullscreen-desktop by default (EN_FULLSCREEN=0 to stay windowed).
     // The engine already renders at the desktop resolution (en_SetScreenMetrics
     // from linux_main), so fullscreen-desktop matches the back-buffer with no

@@ -512,6 +512,12 @@ add_custom_command(TARGET enations POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${CMAKE_CURRENT_SOURCE_DIR}/../../enations/disk/avi/logo_44k.mpg"
         "$<TARGET_FILE_DIR:enations>/assets/videos/logo.mpg"
+    # App icon for the macOS Dock (res/main.ico's 32x32 converted to PNG; a bare
+    # Mach-O binary otherwise gets the generic exec icon — GameWindow sets it at
+    # runtime via NSApplication). Harmless on other platforms.
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_CURRENT_SOURCE_DIR}/res/appicon.png"
+        "$<TARGET_FILE_DIR:enations>/assets/appicon.png"
     COMMENT "Staging intro/logo videos to assets/videos (PlayVideo runtime assets, bug #53)"
 )
 
