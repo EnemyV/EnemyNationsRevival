@@ -373,6 +373,18 @@ void SDL2Button::Render(SDL_Surface* dst, TTF_Font* font) {
         SDL_Rect src = { frameIdx * frameW, 0, frameW, frameH };
         SDL_Rect dstR = m_rect;
         SDL_BlitScaled(m_btnSheet, &src, dst, &dstR);
+    } else if (m_rect.h < 32) {
+        // SMALL buttons (e.g. the 10m/1h/6h/24h/7d graph-range row): the
+        // symmetric gradient's bright center overpowers a short face and reads
+        // as a glare stripe behind the tiny label (operator). Flat face + 1px
+        // bevel instead.
+        SDL_Color fc = showPressed ? UIColors::BtnPressed : UIColors::BtnFace;
+        SDL_Rect fr = m_rect;
+        SDL_FillRect(dst, &fr, SDL_MapRGB(dst->format, fc.r, fc.g, fc.b));
+        if (showPressed)
+            DrawBevel(dst, m_rect, 1, UIColors::BtnDark, UIColors::BtnLight);
+        else
+            DrawBevel(dst, m_rect, 1, UIColors::BtnLight, UIColors::BtnDark);
     } else {
         // Gradient: symmetric dark edges → lighter center (matching original game style)
         if (showPressed) {
