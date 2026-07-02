@@ -31,7 +31,6 @@
 #include <X11/Xlib.h>
 #include <X11/Xatom.h>   // XA_CARDINAL
 #include <string.h>   // memset
-#include <stdio.h>    // fprintf diagnostics
 
 // Declared (extern) at the call site in SDL2Panel.cpp.
 void EnSetX11TransientFor(SDL_Window* panel, SDL_Window* owner)
@@ -81,11 +80,8 @@ void EnSetX11FakeTopExtent(SDL_Window* panel)
 
     SDL_SysWMinfo info;
     SDL_VERSION(&info.version);
-    if (!SDL_GetWindowWMInfo(panel, &info) || info.subsystem != SDL_SYSWM_X11) {
-        fprintf(stderr, "[TOPEXT] WMInfo failed or not X11 (subsystem=%d) err=%s\n",
-                (int)info.subsystem, SDL_GetError());
+    if (!SDL_GetWindowWMInfo(panel, &info) || info.subsystem != SDL_SYSWM_X11)
         return;
-    }
 
     Display* dpy = info.info.x11.display;
 
@@ -106,10 +102,8 @@ void EnSetX11FakeTopExtent(SDL_Window* panel)
             XFree(data);
         }
     }
-    if (top <= 0 && lft <= 0) {
-        fprintf(stderr, "[TOPEXT] no struts (workarea x=%ld y=%ld) — skipping\n", lft, top);
+    if (top <= 0 && lft <= 0)
         return;
-    }
     if (lft < 0) lft = 0;
     if (top < 0) top = 0;
 
@@ -121,8 +115,6 @@ void EnSetX11FakeTopExtent(SDL_Window* panel)
     XChangeProperty(dpy, info.info.x11.window, extents, XA_CARDINAL, 32,
                     PropModeReplace, (unsigned char*)ext, 4);
     XFlush(dpy);
-    fprintf(stderr, "[TOPEXT] set _GTK_FRAME_EXTENTS left=%ld top=%ld on X11 win 0x%lx\n",
-            lft, top, (unsigned long)info.info.x11.window);
 }
 
 //---------------------------------------------------------------------------

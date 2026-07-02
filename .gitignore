@@ -8,6 +8,8 @@
 /cmake-build-release/
 /cmakeBuild/
 /build-linux/
+/build-linux-release/
+__pycache__/
 /Debug/
 /Release/
 /windward/.vs/*
