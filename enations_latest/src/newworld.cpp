@@ -301,6 +301,13 @@ void CConquerApp::ReadyToCreate() {
 
         // (cheat seed-override dialog removed — Debug:SetRand was its only use)
 
+        // TEST HOOK (env-guarded, SP-only): EN_WG_SEED forces the world-gen seed so
+        // run-to-run and cross-platform [wg] traces are directly comparable — a
+        // determinism check for the ocean-OOB / cross-platform RAND MISMATCH hunt.
+        // No effect unless EN_WG_SEED is set; does not touch the MP (host-seeded) path.
+        if ( const char* szSeed = getenv( "EN_WG_SEED" ) )
+            uRand = (unsigned) strtoul( szSeed, nullptr, 0 );
+
         AIinit aiData(m_pCreateGame->m_iAi, m_pCreateGame->m_iNumAi,
                       theGame.GetAll().GetCount() - m_pCreateGame->m_iNumAi, m_pCreateGame->m_iSize);
         theApp.CreateNewWorld(uRand, &aiData, 2, 32);
