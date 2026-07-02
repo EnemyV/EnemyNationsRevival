@@ -568,6 +568,8 @@ void CGameMap::GenerateMountainBlock( int _x, int iSideSize, int _y)
             }
         }
 
+        WgTrace( "m_peak" );  // [wg] bisect (temp): after peaks/rings section
+
         // Create sharp ridgelines connecting peaks
         for ( int iRidge = 0; iRidge < iNumPeaks - 1 && iRidge < 9; iRidge++ )
         {
@@ -630,6 +632,8 @@ void CGameMap::GenerateMountainBlock( int _x, int iSideSize, int _y)
                 }
             }
         }
+
+        WgTrace( "m_ridge" );  // [wg] bisect (temp): after ridgelines section
 
         // Create U-shaped glacial valleys between peaks
         for ( int iValley = 0; iValley < iNumPeaks - 1 && iValley < 9; iValley++ )
@@ -779,6 +783,8 @@ void CGameMap::GenerateMountainBlock( int _x, int iSideSize, int _y)
                 }
             }
         }
+
+        WgTrace( "m_valley" );  // [wg] bisect (temp): after valleys/cirque/meander section
     }
 }
 
