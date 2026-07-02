@@ -3931,25 +3931,34 @@ void CGameMap::DiscoverSpritesGpu( CAnimAtr& aa, const CRect& rect )
             // the constructing band grows, the finished deck shows immediately.
             if ( byUnits & CHex::bridge )
             {
-                CBridgeUnit* pbridge = theBridgeHex.GetBridge( hexWrapped );
-                ASSERT_VALID( pbridge );
+                // Fog (BUGS #30): a bridge on a never-explored hex must not leak map
+                // info. Once its hex has been lit at least once we latch the hex's
+                // persistent IsBridge display bit (serialized) so the bridge stays
+                // shown afterwards — the road "seen once" semantics.
+                if ( phex->GetVisibility( ) )
+                    phex->SetBridge( );
+                if ( phex->GetVisibility( ) || phex->IsBridge( ) )
+                {
+                    CBridgeUnit* pbridge = theBridgeHex.GetBridge( hexWrapped );
+                    ASSERT_VALID( pbridge );
 
-                CMapLoc maploc( hexcoord );
-                maploc.x += 32;
-                maploc.y += 32;
+                    CMapLoc maploc( hexcoord );
+                    maploc.x += 32;
+                    maploc.y += 32;
 
-                SDL2Sprites::SetCaptureDynamic( true );
+                    SDL2Sprites::SetCaptureDynamic( true );
 
-                if ( pbridge->IsTwoPiece( ) )
+                    if ( pbridge->IsTwoPiece( ) )
+                        drawinfopool.GetStructureDrawInfo( pbridge, CTileDrawInfo::bridge, hexcoord, maploc,
+                                                           CStructureSprite::BACKGROUND_LAYER )
+                            ->Draw( );
+
                     drawinfopool.GetStructureDrawInfo( pbridge, CTileDrawInfo::bridge, hexcoord, maploc,
-                                                       CStructureSprite::BACKGROUND_LAYER )
+                                                       CStructureSprite::FOREGROUND_LAYER )
                         ->Draw( );
 
-                drawinfopool.GetStructureDrawInfo( pbridge, CTileDrawInfo::bridge, hexcoord, maploc,
-                                                   CStructureSprite::FOREGROUND_LAYER )
-                    ->Draw( );
-
-                SDL2Sprites::SetCaptureDynamic( false );
+                    SDL2Sprites::SetCaptureDynamic( false );
+                }
             }
 
             // Trees (forest hex; drawn regardless of fog, mirroring the walk). Static →
@@ -4379,6 +4388,12 @@ void CGameMap::UpdateRect( CAnimAtr& aa, CRect rect, CDrawParms::UPDATE_MODE eMo
 
                 if ( byUnits & CHex::bridge )
                 {
+                    // Fog (BUGS #30): same seen-once gate as the GPU walk — an
+                    // unexplored bridge must not draw; once lit it latches IsBridge.
+                    if ( phex->GetVisibility( ) )
+                        phex->SetBridge( );
+                    if ( phex->GetVisibility( ) || phex->IsBridge( ) )
+                    {
                     CMapLoc maploc( hexcoord );
 
                     maploc.x += 32;
@@ -4401,6 +4416,7 @@ void CGameMap::UpdateRect( CAnimAtr& aa, CRect rect, CDrawParms::UPDATE_MODE eMo
                             pbridge, CTileDrawInfo::bridge, hexcoord, maploc, CStructureSprite::FOREGROUND_LAYER ) );
                     else
                         pbridge->DrawLayer( hexcoord, CStructureSprite::FOREGROUND_LAYER );
+                    }
                 }
 
                 if ( bExtraRows )  // Just looking for structures

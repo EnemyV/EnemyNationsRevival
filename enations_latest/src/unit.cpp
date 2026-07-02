@@ -1049,6 +1049,21 @@ void CUnit::IncrementSpotting( CHexCoord const& hex )
                         if ( ( pHex->GetType( ) == CHex::road ) && ( pHex->GetVisibleType( ) != CHex::road ) )
                             pHex->ChangeToRoad( _hex );
 
+                        // Bridge fog reveal (BUGS #30): mark the bridge as seen (the
+                        // persistent IsBridge display bit — road semantics: seen once,
+                        // stays shown) and reveal the flattened forest under it that
+                        // GrabHex deferred while the hex was unlit.
+                        if ( ( pHex->GetUnits( ) & CHex::bridge ) && ( !pHex->IsBridge( ) ) )
+                        {
+                            pHex->SetBridge( );
+                            if ( pHex->GetVisibleType( ) != pHex->GetType( ) )
+                            {
+                                pHex->SetVisibleType( pHex->GetType( ) );
+                                extern void g_enEditHex( int, int );
+                                g_enEditHex( _hex.X( ), _hex.Y( ) );
+                            }
+                        }
+
                         if ( pHex->GetUnits( ) & CHex::bldg )
                         {
                             CBuilding* pBldg = theBuildingHex._GetBuilding( _hex );
