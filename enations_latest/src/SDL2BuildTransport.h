@@ -61,6 +61,8 @@ private:
     SDL2Label* m_lblCostCol    = nullptr;   // cost values (right-aligned)
     SDL2Label* m_lblHaveCol    = nullptr;   // have values (right-aligned)
     SDL2Label* m_lblNeedCol    = nullptr;   // deficit values (right-aligned, red if neg)
+    SDL2Label* m_lblOperNames  = nullptr;   // blue operating row: "Colonists" (crew)
+    SDL2Label* m_lblOperVals   = nullptr;   // blue operating value (right-aligned)
 
     SDL2Button*  m_btnBuild = nullptr;
     SDL2EditBox* m_edtNum   = nullptr;   // editable quantity field (spinner also adjusts it)
