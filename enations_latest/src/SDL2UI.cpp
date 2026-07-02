@@ -111,13 +111,20 @@ static void RenderText(SDL_Surface* dst, TTF_Font* font, const char* text,
     SDL_Surface* surf = TTF_RenderUTF8_Blended(font, text, color);
     if (!surf) return;
 
-    // Shrink-to-fit: when the text is wider than the slot, scale it DOWN
-    // proportionally so it all fits instead of being clipped mid-word (mirrors the
-    // original game shrinking long names like "Adv. Manufacturing" to fit a row).
-    if (shrinkToFit && rect.w > 0 && rect.h > 0 && surf->w > rect.w) {
-        int dw = rect.w;
-        int dh = surf->h * rect.w / surf->w;
-        if (dh > rect.h) { dh = rect.h; dw = surf->w * rect.h / surf->h; }  // also respect height
+    // Shrink-to-fit: when the text is wider OR TALLER than the slot, scale it
+    // DOWN proportionally so it all fits instead of being clipped (mirrors the
+    // original game shrinking long names like "Adv. Manufacturing" to fit a row;
+    // the height case covers short widgets like the 10m/1h/6h/24h/7d graph
+    // buttons whose 15px row is smaller than the UI font — operator-reported
+    // clipped labels).
+    if (shrinkToFit && rect.w > 0 && rect.h > 0 && (surf->w > rect.w || surf->h > rect.h)) {
+        // Uniform downscale to fit BOTH axes (never upscale).
+        double sc = std::min((double)rect.w / surf->w, (double)rect.h / surf->h);
+        if (sc > 1.0) sc = 1.0;
+        int dw = (int)(surf->w * sc);
+        int dh = (int)(surf->h * sc);
+        if (dw < 1) dw = 1;
+        if (dh < 1) dh = 1;
         SDL_Rect srcRect = { 0, 0, surf->w, surf->h };
         SDL_Rect dstRect = rect;
         if (centerH && dw < rect.w) dstRect.x += (rect.w - dw) / 2;
@@ -284,10 +291,17 @@ void SDL2Label::Render(SDL_Surface* dst, TTF_Font* font) {
     // Scale the glyphs down proportionally so the WHOLE value stays readable and
     // inside the rect, honoring the label's alignment. (Wrapped labels handle
     // their width via word-wrap, so this only covers the single-line case.)
-    if (!m_wrapped && m_rect.w > 0 && m_rect.h > 0 && surf->w > m_rect.w) {
-        int dw = m_rect.w;
-        int dh = surf->h * m_rect.w / surf->w;
-        if (dh > m_rect.h) { dh = m_rect.h; dw = surf->w * m_rect.h / surf->h; }
+    // Also triggers on HEIGHT overflow: the 15pt widget font rasterizes ~22px
+    // tall, so a 20px ROW_H label lost the bottom of every line (operator:
+    // "the bottom of other text is cut off too") — scale down instead.
+    if (!m_wrapped && m_rect.w > 0 && m_rect.h > 0 &&
+        (surf->w > m_rect.w || surf->h > m_rect.h)) {
+        double sc = std::min((double)m_rect.w / surf->w, (double)m_rect.h / surf->h);
+        if (sc > 1.0) sc = 1.0;
+        int dw = (int)(surf->w * sc);
+        int dh = (int)(surf->h * sc);
+        if (dw < 1) dw = 1;
+        if (dh < 1) dh = 1;
         SDL_Rect srcAll = { 0, 0, surf->w, surf->h };
         SDL_Rect dr = m_rect;
         if (m_rightAligned)  dr.x += (m_rect.w - dw);
@@ -448,10 +462,13 @@ void SDL2Button::Render(SDL_Surface* dst, TTF_Font* font) {
             else
                 RenderText(dst, font, m_text.c_str(), textRect, actualColor, true, true, true);
         } else {
-            RenderText(dst, font, m_text.c_str(), textRect, actualColor, true, true);
+            RenderText(dst, font, m_text.c_str(), textRect, actualColor, true, true, true);
         }
     } else {
-        RenderText(dst, font, m_text.c_str(), textRect, actualColor, true, true);
+        // Shrink-to-fit here too: SMALL buttons (h < 32, e.g. the 15px-high
+        // graph time-range row) are shorter than the UI font, which clipped
+        // the label glyphs top+bottom (operator-reported "10m/1h/6h/24h").
+        RenderText(dst, font, m_text.c_str(), textRect, actualColor, true, true, true);
     }
 }
 
@@ -1676,6 +1693,23 @@ void SDL2Dialog::Render() {
             TTF_Font* ov = GetFont(widget->GetFontSize());
             if (ov) wf = ov;
         }
+        // Crisp height-fit: when the font is TALLER than the widget's row (the
+        // 15pt widget font is ~23px vs 20px label rows / 18px graph-range
+        // buttons), re-pick the largest pt that fits instead of letting the
+        // widget bitmap-shrink its rasterized text — downscaled glyphs read
+        // fuzzy and too small (operator). Floor at 7pt for legibility.
+        {
+            int wh = widget->GetRect().h;
+            if (wf && wh > 0 && TTF_FontHeight(wf) > wh) {
+                int pt = (widget->GetFontSize() > 0) ? widget->GetFontSize() : m_widgetFontSize;
+                for (int p = pt - 1; p >= 7; p--) {
+                    TTF_Font* f2 = GetFont(p);
+                    if (!f2) break;
+                    wf = f2;
+                    if (TTF_FontHeight(f2) <= wh) break;
+                }
+            }
+        }
         widget->Render(mainSurface, wf);
     }
     // Focus highlight in a SECOND pass, after all widgets are drawn — otherwise a
@@ -1990,6 +2024,13 @@ int SDL2Dialog::DoModal() {
                 ::SetWindowLongPtr(dlgInfo.info.win.window, GWLP_HWNDPARENT,
                                    (LONG_PTR)mainInfo.info.win.window);
         }
+#elif defined(__linux__)
+        // X11 owner relationship (Win32 GWLP_HWNDPARENT equivalent): keeps the
+        // dialog above the game only, and marks it a transient of the focused
+        // app so Mutter focuses it instead of toasting "window is ready" (#33).
+        extern void EnSetX11TransientFor(SDL_Window* panel, SDL_Window* owner);
+        if (m_gameWindow->GetWindow())
+            EnSetX11TransientFor(m_dlgWindow, m_gameWindow->GetWindow());
 #endif
         SDL_RaiseWindow(m_dlgWindow);
         // Grab KEYBOARD focus too, not just z-order. SDL routes key events to its
@@ -2090,6 +2131,12 @@ void SDL2Dialog::ShowNonModal(std::function<void(int)> onDone) {
                 ::SetWindowLongPtr(dlgInfo.info.win.window, GWLP_HWNDPARENT,
                                    (LONG_PTR)mainInfo.info.win.window);
         }
+#elif defined(__linux__)
+        // Same as the modal path above: transient-for the game window so Mutter
+        // focuses the dialog silently instead of a "window is ready" toast (#33).
+        extern void EnSetX11TransientFor(SDL_Window* panel, SDL_Window* owner);
+        if (m_gameWindow->GetWindow())
+            EnSetX11TransientFor(m_dlgWindow, m_gameWindow->GetWindow());
 #endif
         SDL_RaiseWindow(m_dlgWindow);
     }

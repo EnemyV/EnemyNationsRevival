@@ -178,6 +178,13 @@ void SDL2CreateStatus::Show() {
                 | SDL_WINDOW_SKIP_TASKBAR);
 
         LogStatus(m_ownWindow ? "Created own window" : "Failed to create own window");
+#if defined(__linux__)
+        // Transient-for the game window: Mutter focuses it silently instead of a
+        // "window is ready" toast (#33) and it stacks above the game only.
+        extern void EnSetX11TransientFor(SDL_Window* panel, SDL_Window* owner);
+        if (m_ownWindow && m_gameWindow->GetWindow())
+            EnSetX11TransientFor(m_ownWindow, m_gameWindow->GetWindow());
+#endif
     }
 
     m_visible = true;
