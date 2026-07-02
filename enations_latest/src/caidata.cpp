@@ -70,6 +70,19 @@ namespace
         pHex->m_dwUnitID = (DWORD)0;
         pHex->m_cTerrain = (BYTE)0xFF;
 
+        // theMap.GetHex() NEVER returns NULL — it wraps the coords and returns
+        // an offset from m_pHex — so a NULL check can't protect this deref.
+        // What CAN happen (BUGS #65): an AI thread that outraces world teardown
+        // reads the map after CGameMap::Close() freed m_pHex and zeroed the
+        // dims, or mid-reload before the new hex array exists. Validate the
+        // raw coords against the CURRENT dims and bail to the 0xFF defaults —
+        // eX<=0 is exactly the post-Close state.
+        const int eX = theMap.Get_eX( );
+        const int eY = theMap.Get_eY( );
+        if ( ( eX <= 0 ) || ( pHex->m_iX < 0 ) || ( pHex->m_iX >= eX ) ||
+             ( pHex->m_iY < 0 ) || ( pHex->m_iY >= eY ) )
+            return;
+
         CHexCoord getHex( pHex->m_iX, pHex->m_iY );
         CHex*     pGameHex = theMap.GetHex( getHex );
 

@@ -151,7 +151,27 @@ void myThreadClose( THREADEXITFUNC fnExit ) {
         }
     }
 
+    // Straggler window: a worker deep in a long AI Manage() pass can miss the
+    // 3s grace above. fnExit() below frees the structures the workers execute
+    // on (pGameData / plAIMgrList), and theMap is torn down right after this
+    // returns — so give stragglers one long, real chance to reach a yield
+    // point and self-terminate (myYieldThread sees bEndThreads). Runs OUTSIDE
+    // cs (a worker needs cs to exit via myThreadTerminate). Still never
+    // TerminateThread — see the heap-lock note below.
+    if ( iThrdsLeft > 0 ) {
+        dwEnd = timeGetTime() + 10000;
+        while ( ( iThrdsLeft > 0 ) && ( timeGetTime() < dwEnd ) ) {
+            ::Sleep( 10 );
+            MSG msg;
+            while ( PeekMessage( &msg, NULL, 0, 0, PM_REMOVE ) ) {
+                TranslateMessage( &msg );
+                DispatchMessage( &msg );
+            }
+        }
+    }
+
     // see if anyone didn't make it
+    int iLeaked = 0;
     if ( iWinType == W32s ) {
         TRAP();
         EnterCriticalSection( &cs );
@@ -178,8 +198,10 @@ void myThreadClose( THREADEXITFUNC fnExit ) {
                         // deadlock on cs (a stuck worker can't exit while we hold it).
                         if ( WaitForSingleObject( pThrd->m_hThread, 0 ) == WAIT_OBJECT_0 )
                             delete pThrd;   // confirmed gone -> safe to free
-                        // else: leak it (no terminate, no delete) -- a tiny one-time
-                        // leak beats freezing the game on return to the menu.
+                        else
+                            iLeaked++;      // leak it (no terminate, no delete) -- a tiny
+                                            // one-time leak beats a heap deadlock; counted
+                                            // so bEndThreads stays armed below
                         iThrdsLeft--;
                     }
         }
@@ -189,7 +211,14 @@ void myThreadClose( THREADEXITFUNC fnExit ) {
 
     // last call ever for the AI
     fnExit();
-    bEndThreads = FALSE;
+    // Only disarm the quit flag when every worker actually exited. A leaked
+    // straggler is still running its loop: resetting bEndThreads here re-armed
+    // it as a ZOMBIE that outlived theMap.Close() and AV'd dereferencing the
+    // freed hex array (BUGS #65, AiFillHexLiveNoLock). Leaving the flag TRUE
+    // makes the straggler self-terminate at its next check/yield; the next
+    // game's threads are unaffected — myStartThread() resets it to FALSE.
+    if ( iLeaked == 0 )
+        bEndThreads = FALSE;
     iRecurse--;
 }
 

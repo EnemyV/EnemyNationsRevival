@@ -526,6 +526,12 @@ void CBridgeHex::GrabHex( CBridgeUnit* pBrdg )
     if ( pHex->GetType( ) == CHex::forest )
     {
         pHex->SetType( CHex::plain );
-        pHex->SetVisibleType( CHex::plain );
+        // Display half only when the hex is currently lit — otherwise the
+        // flattened forest leaks through unexplored fog on the area map AND
+        // the minimap (BUGS #30); the spotting code reveals it (alongside the
+        // bridge itself) when the hex is first seen. Same rule ChangeToRoad
+        // uses for roads built under fog.
+        if ( pHex->GetVisibility( ) )
+            pHex->SetVisibleType( CHex::plain );
     }
 }
