@@ -1447,6 +1447,14 @@ static int fnEnumInv( CHex*, CHexCoord hex, void* )
 
     hex.SetInvalidated( );
 
+    // GPU terrain: a baked tile depends on its 8 neighbours (type transitions,
+    // feathering, slope shade), and the footprint flatten/re-type changes all
+    // of that for the RING around the building — but only footprint hexes were
+    // reaching the edit list, so the ring stayed stale until the next full
+    // rebuild (a zoom). Record the ring too, same as roads do (BUGS #34).
+    extern void g_enEditHex( int, int );
+    g_enEditHex( hex.X( ), hex.Y( ) );
+
     return ( FALSE );
 }
 
@@ -1489,10 +1497,13 @@ void CBuilding::MakeBldgVisible( )
     // set all the hexes to this unit
     theMap.EnumHexes( m_hex, GetCX( ), GetCY( ), fnEnumHex, this );
 
-    // invalidate surrounding hexes too (altitude change)
+    // invalidate surrounding hexes too (altitude change). +3 not +2: starting
+    // at m_hex-1 the rect must span -1..CX/-1..CY inclusive to cover every hex
+    // whose rendered tile reads a flattened vertex or borders a re-typed
+    // footprint hex on EITHER side (the +X/+Y edge was one short — BUGS #34).
     CHexCoord _hex( m_hex.X( ) - 1, m_hex.Y( ) - 1 );
     _hex.Wrap( );
-    theMap.EnumHexes( _hex, GetCX( ) + 2, GetCY( ) + 2, fnEnumInv, this );
+    theMap.EnumHexes( _hex, GetCX( ) + 3, GetCY( ) + 3, fnEnumInv, this );
 
     IncVisible( );
 
