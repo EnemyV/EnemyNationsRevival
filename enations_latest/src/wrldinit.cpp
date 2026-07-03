@@ -1047,14 +1047,17 @@ void CGameMap::Init( int iSide, int iSideSize, int iScenario )
         case -1: {  
             const int iTry[] = { CHex::rough, CHex::plain, CHex::hill, CHex::swamp, CHex::desert };
 
-            MakeTerrain( _x * iSideSize + 4 + RandNum( iSideSize - 8 ), _y * iSideSize + 4 + RandNum( iSideSize - 8 ),
-                         iTry[RandNum( 3 )], iSideSize );
-            MakeTerrain( _x * iSideSize + 4 + RandNum( iSideSize - 8 ), _y * iSideSize + 4 + RandNum( iSideSize - 8 ),
-                         iTry[RandNum( 3 )], iSideSize );
+            { // sequenced draws: arg-eval order is unspecified C++ (gcc right-to-left vs clang/MSVC differ)
+              const int iWgDraw1 = RandNum( iSideSize - 8 ), iWgDraw2 = RandNum( iSideSize - 8 ), iWgDraw3 = RandNum( 3 );
+              MakeTerrain( _x * iSideSize + 4 + iWgDraw1, _y * iSideSize + 4 + iWgDraw2, iTry[iWgDraw3], iSideSize ); }
+            { // sequenced draws: arg-eval order is unspecified C++ (gcc right-to-left vs clang/MSVC differ)
+              const int iWgDraw1 = RandNum( iSideSize - 8 ), iWgDraw2 = RandNum( iSideSize - 8 ), iWgDraw3 = RandNum( 3 );
+              MakeTerrain( _x * iSideSize + 4 + iWgDraw1, _y * iSideSize + 4 + iWgDraw2, iTry[iWgDraw3], iSideSize ); }
 
             // make forest
-            MakeTerrain( _x * iSideSize + 4 + RandNum( iSideSize - 8 ), _y * iSideSize + 4 + RandNum( iSideSize - 8 ),
-                         CHex::forest, iSideSize * 2 );
+            { // sequenced draws: arg-eval order is unspecified C++ (gcc right-to-left vs clang/MSVC differ)
+              const int iWgDraw1 = RandNum( iSideSize - 8 ), iWgDraw2 = RandNum( iSideSize - 8 );
+              MakeTerrain( _x * iSideSize + 4 + iWgDraw1, _y * iSideSize + 4 + iWgDraw2, CHex::forest, iSideSize * 2 ); }
 
             if ( RandNum( 5 ) != 0 )  // make most islands the regular old xil oil islands
             {
@@ -1104,12 +1107,15 @@ void CGameMap::Init( int iSide, int iSideSize, int iScenario )
             y = _y * iSideSize + 8 + RandNum( iSideSize - 16 );
             MakeTerrain( x, y, CHex::rough, iSideSize );
 
-            MakeMineral( _x * iSideSize + 4 + RandNum( iSideSize - 8 ), _y * iSideSize + 4 + RandNum( iSideSize - 8 ),
-                         CMaterialTypes::oil, iSideSize );
-            MakeMineral( _x * iSideSize + 4 + RandNum( iSideSize - 8 ), _y * iSideSize + 4 + RandNum( iSideSize - 8 ),
-                         CMaterialTypes::copper, iSideSize / 4 );
-            MakeMineral( _x * iSideSize + 4 + RandNum( iSideSize - 8 ), _y * iSideSize + 4 + RandNum( iSideSize - 8 ),
-                         CMaterialTypes::oil, iSideSize );
+            { // sequenced draws: arg-eval order is unspecified C++ (gcc right-to-left vs clang/MSVC differ)
+              const int iWgDraw1 = RandNum( iSideSize - 8 ), iWgDraw2 = RandNum( iSideSize - 8 );
+              MakeMineral( _x * iSideSize + 4 + iWgDraw1, _y * iSideSize + 4 + iWgDraw2, CMaterialTypes::oil, iSideSize ); }
+            { // sequenced draws: arg-eval order is unspecified C++ (gcc right-to-left vs clang/MSVC differ)
+              const int iWgDraw1 = RandNum( iSideSize - 8 ), iWgDraw2 = RandNum( iSideSize - 8 );
+              MakeMineral( _x * iSideSize + 4 + iWgDraw1, _y * iSideSize + 4 + iWgDraw2, CMaterialTypes::copper, iSideSize / 4 ); }
+            { // sequenced draws: arg-eval order is unspecified C++ (gcc right-to-left vs clang/MSVC differ)
+              const int iWgDraw1 = RandNum( iSideSize - 8 ), iWgDraw2 = RandNum( iSideSize - 8 );
+              MakeMineral( _x * iSideSize + 4 + iWgDraw1, _y * iSideSize + 4 + iWgDraw2, CMaterialTypes::oil, iSideSize ); }
             break;
         }
 
@@ -1121,14 +1127,18 @@ void CGameMap::Init( int iSide, int iSideSize, int iScenario )
             y = _y * iSideSize + 8 + RandNum( iSideSize - 16 );
             MakeTerrain( x, y, CHex::rough, iSideSize );
 
-            MakeMineral( _x * iSideSize + 4 + RandNum( iSideSize - 8 ), _y * iSideSize + 4 + RandNum( iSideSize - 8 ),
-                         CMaterialTypes::oil, iSideSize );
-            MakeMineral( _x * iSideSize + 4 + RandNum( iSideSize - 8 ), _y * iSideSize + 4 + RandNum( iSideSize - 8 ),
-                         CMaterialTypes::copper, iSideSize / 4 );
-            MakeMineral( _x * iSideSize + 4 + RandNum( iSideSize - 8 ), _y * iSideSize + 4 + RandNum( iSideSize - 8 ),
-                         CMaterialTypes::oil, iSideSize );
-            MakeMineral( _x * iSideSize + 4 + RandNum( iSideSize - 8 ), _y * iSideSize + 4 + RandNum( iSideSize - 8 ),
-                         CMaterialTypes::copper, iSideSize / 4 );
+            { // sequenced draws: arg-eval order is unspecified C++ (gcc right-to-left vs clang/MSVC differ)
+              const int iWgDraw1 = RandNum( iSideSize - 8 ), iWgDraw2 = RandNum( iSideSize - 8 );
+              MakeMineral( _x * iSideSize + 4 + iWgDraw1, _y * iSideSize + 4 + iWgDraw2, CMaterialTypes::oil, iSideSize ); }
+            { // sequenced draws: arg-eval order is unspecified C++ (gcc right-to-left vs clang/MSVC differ)
+              const int iWgDraw1 = RandNum( iSideSize - 8 ), iWgDraw2 = RandNum( iSideSize - 8 );
+              MakeMineral( _x * iSideSize + 4 + iWgDraw1, _y * iSideSize + 4 + iWgDraw2, CMaterialTypes::copper, iSideSize / 4 ); }
+            { // sequenced draws: arg-eval order is unspecified C++ (gcc right-to-left vs clang/MSVC differ)
+              const int iWgDraw1 = RandNum( iSideSize - 8 ), iWgDraw2 = RandNum( iSideSize - 8 );
+              MakeMineral( _x * iSideSize + 4 + iWgDraw1, _y * iSideSize + 4 + iWgDraw2, CMaterialTypes::oil, iSideSize ); }
+            { // sequenced draws: arg-eval order is unspecified C++ (gcc right-to-left vs clang/MSVC differ)
+              const int iWgDraw1 = RandNum( iSideSize - 8 ), iWgDraw2 = RandNum( iSideSize - 8 );
+              MakeMineral( _x * iSideSize + 4 + iWgDraw1, _y * iSideSize + 4 + iWgDraw2, CMaterialTypes::copper, iSideSize / 4 ); }
             break;
         }
 
@@ -1136,10 +1146,12 @@ void CGameMap::Init( int iSide, int iSideSize, int iScenario )
             int xDrop = _x * iSideSize + 8 + RandNum( iSideSize - 16 );
             int yDrop = _y * iSideSize + 8 + RandNum( iSideSize - 16 );
             MakeTerrain( xDrop, yDrop, CHex::forest, iSideSize * 2 );
-            MakeMineral( _x * iSideSize + 4 + RandNum( iSideSize - 8 ), _y * iSideSize + 4 + RandNum( iSideSize - 8 ),
-                         CMaterialTypes::coal, iSideSize );
-            MakeMineral( _x * iSideSize + 4 + RandNum( iSideSize - 8 ), _y * iSideSize + 4 + RandNum( iSideSize - 8 ),
-                         CMaterialTypes::iron, iSideSize / 4 );
+            { // sequenced draws: arg-eval order is unspecified C++ (gcc right-to-left vs clang/MSVC differ)
+              const int iWgDraw1 = RandNum( iSideSize - 8 ), iWgDraw2 = RandNum( iSideSize - 8 );
+              MakeMineral( _x * iSideSize + 4 + iWgDraw1, _y * iSideSize + 4 + iWgDraw2, CMaterialTypes::coal, iSideSize ); }
+            { // sequenced draws: arg-eval order is unspecified C++ (gcc right-to-left vs clang/MSVC differ)
+              const int iWgDraw1 = RandNum( iSideSize - 8 ), iWgDraw2 = RandNum( iSideSize - 8 );
+              MakeMineral( _x * iSideSize + 4 + iWgDraw1, _y * iSideSize + 4 + iWgDraw2, CMaterialTypes::iron, iSideSize / 4 ); }
             xDrop = _x * iSideSize + 8 + RandNum( iSideSize - 16 );
             yDrop = _y * iSideSize + 8 + RandNum( iSideSize - 16 );
             MakeTerrain( xDrop, yDrop, iTry2[RandNum( 8 )], iSideSize );
@@ -1170,10 +1182,12 @@ void CGameMap::Init( int iSide, int iSideSize, int iScenario )
             }
 
             // Add minerals scattered throughout
-            MakeMineral( _x * iSideSize + 4 + RandNum( iSideSize - 8 ), _y * iSideSize + 1 + RandNum( iSideSize - 8 ),
-                         CMaterialTypes::coal, iSideSize );
-            MakeMineral( _x * iSideSize + 4 + RandNum( iSideSize - 8 ), _y * iSideSize + 1 + RandNum( iSideSize - 8 ),
-                         CMaterialTypes::iron, iSideSize / 2 );
+            { // sequenced draws: arg-eval order is unspecified C++ (gcc right-to-left vs clang/MSVC differ)
+              const int iWgDraw1 = RandNum( iSideSize - 8 ), iWgDraw2 = RandNum( iSideSize - 8 );
+              MakeMineral( _x * iSideSize + 4 + iWgDraw1, _y * iSideSize + 1 + iWgDraw2, CMaterialTypes::coal, iSideSize ); }
+            { // sequenced draws: arg-eval order is unspecified C++ (gcc right-to-left vs clang/MSVC differ)
+              const int iWgDraw1 = RandNum( iSideSize - 8 ), iWgDraw2 = RandNum( iSideSize - 8 );
+              MakeMineral( _x * iSideSize + 4 + iWgDraw1, _y * iSideSize + 1 + iWgDraw2, CMaterialTypes::iron, iSideSize / 2 ); }
 
             // Add varied terrain in lower areas
             xDrop = _x * iSideSize + 8 + RandNum( iSideSize - 16 );
@@ -1188,31 +1202,32 @@ void CGameMap::Init( int iSide, int iSideSize, int iScenario )
 
             // Mineral deposits in badlands
             // Coal x2 multiplier deposit
-            MakeMineral( _x * iSideSize + 10 + RandNum( iSideSize - 20 ),
-                         _y * iSideSize + 10 + RandNum( iSideSize - 20 ), CMaterialTypes::coal, iSideSize / 3, 2 );
+            { // sequenced draws: arg-eval order is unspecified C++ (gcc right-to-left vs clang/MSVC differ)
+              const int iWgDraw1 = RandNum( iSideSize - 20 ), iWgDraw2 = RandNum( iSideSize - 20 );
+              MakeMineral( _x * iSideSize + 10 + iWgDraw1, _y * iSideSize + 10 + iWgDraw2, CMaterialTypes::coal, iSideSize / 3, 2 ); }
 
             // Small x5 oil deposit (3-4 hex only)
             if ( RandNum( 3 ) == 0 )
             {
-                MakeMineral( _x * iSideSize + 20 + RandNum( iSideSize - 40 ),
-                             _y * iSideSize + 20 + RandNum( iSideSize - 40 ), CMaterialTypes::oil, 3 + RandNum( 2 ),
-                             5 );
+                { // sequenced draws: arg-eval order is unspecified C++ (gcc right-to-left vs clang/MSVC differ)
+                  const int iWgDraw1 = RandNum( iSideSize - 40 ), iWgDraw2 = RandNum( iSideSize - 40 ), iWgDraw3 = RandNum( 2 );
+                  MakeMineral( _x * iSideSize + 20 + iWgDraw1, _y * iSideSize + 20 + iWgDraw2, CMaterialTypes::oil, 3 + iWgDraw3, 5 ); }
             }
 
             // Small x2-4 coal deposit
             if ( RandNum( 4 ) == 0 )
             {
-                MakeMineral( _x * iSideSize + 20 + RandNum( iSideSize - 40 ),
-                             _y * iSideSize + 20 + RandNum( iSideSize - 40 ), CMaterialTypes::coal, 3 + RandNum( 2 ),
-                             2 + RandNum( 3 ) );
+                { // sequenced draws: arg-eval order is unspecified C++ (gcc right-to-left vs clang/MSVC differ)
+                  const int iWgDraw1 = RandNum( iSideSize - 40 ), iWgDraw2 = RandNum( iSideSize - 40 ), iWgDraw3 = RandNum( 2 ), iWgDraw4 = RandNum( 3 );
+                  MakeMineral( _x * iSideSize + 20 + iWgDraw1, _y * iSideSize + 20 + iWgDraw2, CMaterialTypes::coal, 3 + iWgDraw3, 2 + iWgDraw4 ); }
             }
 
             // Small x2-4 iron deposit
             if ( RandNum( 5 ) == 0 )
             {
-                MakeMineral( _x * iSideSize + 20 + RandNum( iSideSize - 40 ),
-                             _y * iSideSize + 20 + RandNum( iSideSize - 40 ), CMaterialTypes::iron, 3 + RandNum( 2 ),
-                             2 + RandNum( 3 ) );
+                { // sequenced draws: arg-eval order is unspecified C++ (gcc right-to-left vs clang/MSVC differ)
+                  const int iWgDraw1 = RandNum( iSideSize - 40 ), iWgDraw2 = RandNum( iSideSize - 40 ), iWgDraw3 = RandNum( 2 ), iWgDraw4 = RandNum( 3 );
+                  MakeMineral( _x * iSideSize + 20 + iWgDraw1, _y * iSideSize + 20 + iWgDraw2, CMaterialTypes::iron, 3 + iWgDraw3, 2 + iWgDraw4 ); }
             }
 
             for ( int x = _x * iSideSize; x < ( _x + 1 ) * iSideSize; x++ )
@@ -1617,19 +1632,27 @@ void CGameMap::Init( int iSide, int iSideSize, int iScenario )
             {
                 {
                     BOOL bFound = FALSE;
-                    MakeRiver( _x + RandNum( 2 ) - 1, _y + 2 + RandNum( 4 ), bFound );
+                    { // sequenced draws: arg-eval order is unspecified C++ (gcc right-to-left vs clang/MSVC differ)
+                      const int iWgDraw1 = RandNum( 2 ), iWgDraw2 = RandNum( 4 );
+                      MakeRiver( _x + iWgDraw1 - 1, _y + 2 + iWgDraw2, bFound ); }
                 }
                 {
                     BOOL bFound = FALSE;
-                    MakeRiver( _x - 2 - RandNum( 4 ), _y + RandNum( 2 ) - 1, bFound );
+                    { // sequenced draws: arg-eval order is unspecified C++ (gcc right-to-left vs clang/MSVC differ)
+                      const int iWgDraw1 = RandNum( 4 ), iWgDraw2 = RandNum( 2 );
+                      MakeRiver( _x - 2 - iWgDraw1, _y + iWgDraw2 - 1, bFound ); }
                 }
                 {
                     BOOL bFound = FALSE;
-                    MakeRiver( _x + 2 + RandNum( 4 ), _y + RandNum( 2 ) - 1, bFound );
+                    { // sequenced draws: arg-eval order is unspecified C++ (gcc right-to-left vs clang/MSVC differ)
+                      const int iWgDraw1 = RandNum( 4 ), iWgDraw2 = RandNum( 2 );
+                      MakeRiver( _x + 2 + iWgDraw1, _y + iWgDraw2 - 1, bFound ); }
                 }
                 {
                     BOOL bFound = FALSE;
-                    MakeRiver( _x + RandNum( 2 ) - 1, _y - 2 - RandNum( 4 ), bFound );
+                    { // sequenced draws: arg-eval order is unspecified C++ (gcc right-to-left vs clang/MSVC differ)
+                      const int iWgDraw1 = RandNum( 2 ), iWgDraw2 = RandNum( 4 );
+                      MakeRiver( _x + iWgDraw1 - 1, _y - 2 - iWgDraw2, bFound ); }
                 }
             }  // if ! water
 
