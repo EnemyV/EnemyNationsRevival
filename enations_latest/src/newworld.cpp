@@ -870,8 +870,19 @@ void CConquerApp::StartAi() {
             fflush( g_cpLog );
         }
 
-        // get rid of the creation dialogs
-        m_pCreateGame->GetDlgStatus()->SetPer(PER_DONE, FALSE);
+        // get rid of the creation dialogs — NET GAMES ONLY. The early hide is
+        // deliberate there (it reveals the create_net lobby while the host
+        // waits for clients). In single-player there is no lobby underneath:
+        // PER_DONE here (a) Hide()s the dialog and (b) latches m_percent=100,
+        // whose don't-go-backward rule turns LetsGo's 97/98/99 milestones into
+        // no-ops — so the whole LetsGo tail (2x Sleep(500*AI-count) + window
+        // ordering, ~8-10s at 8+ AIs, main thread blocked) ran against a bare
+        // frozen game view: the operator's "loading got fast but the game view
+        // lags before you can play" regression. Keep the dialog up in SP; it
+        // paints through the tail and DestroyExceptMain (end of LetsGo) tears
+        // it down — the dtor handles a never-Hidden window (SDL2CreateStatus).
+        if (theGame.IsNetGame())
+            m_pCreateGame->GetDlgStatus()->SetPer(PER_DONE, FALSE);
 
         // tell the AI
         // BUGBUG - need % update here
