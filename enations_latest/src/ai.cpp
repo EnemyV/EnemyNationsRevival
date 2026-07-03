@@ -442,12 +442,16 @@ void WINAPI AiThread( AI_INIT* pAiI )
         // reading a freed world / myThreadClose entering a wedged cs). Checking
         // the flag both before and after the wait bounds exit latency to
         // ~100ms + one Manage() pass, letting the join actually succeed.
-        extern volatile BOOL bEndThreads;  // wind22/threads.cpp (set by myThreadClose)
-        while ( !bEndThreads )
+        // Generation capture (#65 follow-up): if this worker is leaked by a
+        // myThreadClose() join timeout and a new game's myStartThread() then
+        // resets bEndThreads, the flag alone would re-arm it as a zombie.
+        // The close bumps dwThreadGen, so the mismatch still kills it here.
+        DWORD dwGenAtStart = myThreadGen( );
+        while ( !myThreadShouldExit( dwGenAtStart ) )
         {
             pAIMgr->WaitForWork( 100 );  // AI_IDLE_SLICE_MS (caimgr.cpp)
-            if ( bEndThreads )           // quit signalled during the wait:
-                break;                   // skip the final Manage() pass
+            if ( myThreadShouldExit( dwGenAtStart ) )  // quit signalled during the wait:
+                break;                                 // skip the final Manage() pass
             pAIMgr->Manage( );
             myYieldThread( );
         }

@@ -57,9 +57,27 @@ struct Pending {
 
 } // namespace
 
+// EN_NETTRACE diagnostic: the pump's registration lifecycle decides whether a
+// socket is ever heard from again — a wrongly cleared mask/registration turns a
+// live MP session into a silently-growing Recv-Q (client looks frozen to the
+// host). Trace every mutation so that failure mode is attributable post-hoc.
+static bool PumpTraceOn()
+{
+    static int on = -1;
+    if (on < 0) {
+        // treat EN_NETTRACE=0 / empty as OFF, matching the other env gates
+        // (the old bare getenv() check turned tracing ON for =0)
+        const char* e = getenv("EN_NETTRACE");
+        on = (e != NULL && *e != '\0' && *e != '0') ? 1 : 0;
+    }
+    return on == 1;
+}
+
 void vpNetSelectSet(SOCKET s, vpSelectDispatchFn fn, void* ctx, void* hWnd, long mask)
 {
     std::lock_guard<std::mutex> lk(g_mtx);
+    if (PumpTraceOn())
+        fprintf(stderr, "[pump] SelectSet fd=%d mask=0x%lx ctx=%p\n", (int)s, mask, ctx);
     if (mask == 0) {                 // WSAAsyncSelect(s,...,0) cancels notifications
         g_reg.erase(s);
         return;
@@ -78,7 +96,29 @@ void vpNetSelectSet(SOCKET s, vpSelectDispatchFn fn, void* ctx, void* hWnd, long
 void vpNetSelectClear(SOCKET s)
 {
     std::lock_guard<std::mutex> lk(g_mtx);
+    if (PumpTraceOn() && g_reg.count(s))
+        fprintf(stderr, "[pump] SelectClear fd=%d (closesocket)\n", (int)s);
     g_reg.erase(s);
+}
+
+// Purge every registration whose dispatch ctx is the given object. Called from
+// ~CNetInterface: teardown paths exist that delete the net object while one of
+// its sockets is still registered (seen live: game-start error -> vpCleanup ->
+// next pump dispatched FD_READ into the freed interface). Socket-by-socket
+// closesocket() cleanup covers the normal paths; this backstops the leaks.
+void vpNetSelectClearCtx(void* ctx)
+{
+    std::lock_guard<std::mutex> lk(g_mtx);
+    for (auto it = g_reg.begin(); it != g_reg.end(); ) {
+        if (it->second.ctx == ctx) {
+            if (PumpTraceOn())
+                fprintf(stderr, "[pump] ClearCtx PURGING fd=%d (its CNetInterface %p is being destroyed - if this fd is the live game socket, the session just went deaf)\n",
+                        (int)it->first, ctx);
+            it = g_reg.erase(it);
+        } else {
+            ++it;
+        }
+    }
 }
 
 int vpNetPumpPosix(int timeout_ms)
@@ -171,6 +211,14 @@ int vpNetPumpPosix(int timeout_ms)
                 // (data) — a genuine peer close still surfaces there as MSG_PEEK == 0.
                 if (!isR) {
                     emit(FD_CLOSE, soerr);
+                    // Edge-emulate FD_CLOSE like FD_WRITE (fire ONCE): a closed peer
+                    // stays "readable" forever under level-triggered select(), so
+                    // without this the pump re-emits FD_CLOSE every tick with zero
+                    // backoff (measured 1.3M dispatches/2min on a failed join),
+                    // starving the SDL event loop — the window looks frozen/vanished.
+                    r.mask &= ~(FD_READ | FD_CLOSE);
+                    if (PumpTraceOn())
+                        fprintf(stderr, "[pump] FD_CLOSE(except) fd=%d soerr=%d -> mask cleared (deaf now)\n", (int)s, soerr);
                     continue;
                 }
             }
@@ -183,10 +231,16 @@ int vpNetPumpPosix(int timeout_ms)
                     ssize_t pk = recv(s, &b, 1, MSG_PEEK);
                     if (pk == 0) {
                         emit(FD_CLOSE, 0);
+                        r.mask &= ~(FD_READ | FD_CLOSE);   // edge: FD_CLOSE fires once
+                        if (PumpTraceOn())
+                            fprintf(stderr, "[pump] FD_CLOSE(EOF) fd=%d -> mask cleared (deaf now)\n", (int)s);
                     } else if (pk > 0) {
                         if (r.mask & FD_READ) emit(FD_READ, 0);
                     } else if (errno != EWOULDBLOCK && errno != EAGAIN) {
                         emit(FD_CLOSE, errno);
+                        r.mask &= ~(FD_READ | FD_CLOSE);   // edge: FD_CLOSE fires once
+                        if (PumpTraceOn())
+                            fprintf(stderr, "[pump] FD_CLOSE(err) fd=%d errno=%d -> mask cleared (deaf now)\n", (int)s, errno);
                     }
                 }
             }
@@ -199,10 +253,25 @@ int vpNetPumpPosix(int timeout_ms)
     }
 
     // Dispatch outside the lock — handlers may re-enter vpNetSelectSet/Clear.
-    for (const Pending& p : out)
+    // A handler may also close ANOTHER pending socket and destroy its ctx (the
+    // join browser's enum poll: a SenumREP handler triggers CNetApi::Close ->
+    // vpCleanup deletes the CNetInterface while its TCP-enum socket still has a
+    // queued event in `out`), so re-validate each entry against the registry
+    // right before firing and drop ones whose registration vanished or changed
+    // — dispatching a stale entry is a use-after-free in vpTcpSelectThunk.
+    int fired = 0;
+    for (const Pending& p : out) {
+        {
+            std::lock_guard<std::mutex> lk(g_mtx);
+            auto it = g_reg.find(p.s);
+            if (it == g_reg.end() || it->second.ctx != p.ctx || it->second.fn != p.fn)
+                continue;   // unregistered (or re-registered) by an earlier handler
+        }
         p.fn(p.ctx, p.s, p.hWnd, p.lParam);
+        ++fired;
+    }
 
-    return (int)out.size();
+    return fired;
 }
 
 //---------------------------------------------------------------------------

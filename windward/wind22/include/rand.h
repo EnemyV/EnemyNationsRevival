@@ -13,6 +13,7 @@
 DWORD MySeed ();
 int MyRand ();
 void MySrand (DWORD dwSeed);
+DWORD MyRandFP ();		// full-generator-state fingerprint ([wg] world-gen parity trace)
 int RandNum (int iMax);
 
 

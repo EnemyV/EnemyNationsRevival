@@ -65,9 +65,24 @@ public:
 
     }
 
+    // EN_VPNQ=1: notification-lifecycle trace (post / dispatch / ack-delete) —
+    // diffing the three streams exposes a UAF as dispatch-after-delete or a
+    // double-dispatch of one pointer (mac SIGSEGV hunt, 2026-07-01, 8 crashes).
+    static bool VpnqLogOn() {
+        static int on = -1;
+        if (on < 0) { const char* e = getenv("EN_VPNQ"); on = (e && *e && *e != '0') ? 1 : 0; }
+        return on == 1;
+    }
+
     void PostNotification(CNotification *n) {
+        if (VpnqLogOn())
+            fprintf(stderr, "[vpnq] post   n=%p vpmsg=%p code=%u u.data=%p\n",
+                    (void*)n, (void*)&n->m_vpmsg, (unsigned)n->m_vpmsg.notificationCode,
+                    (void*)n->m_vpmsg.u.data);
         if (!m_window) // no window to send the notification so simulate its completion
         {
+            if (VpnqLogOn())
+                fprintf(stderr, "[vpnq] nowin-complete-delete n=%p\n", (void*)n);
             n->Complete();
             delete n;
             return;
@@ -79,6 +94,16 @@ public:
         {
             Add(n);
             RetryPosting();
+            // DO NOT fall through (2026-07-01): RetryPosting may already have posted n's
+            // m_vpmsg to the window; falling through posted it a SECOND time. The app
+            // acknowledges the first delivery (vpAcknowledge -> Complete + DELETE the
+            // notification, Unref'ing the genericMsg), so the second WM_VPNOTIFY dispatch
+            // handed the app a FREED m_vpmsg/data buffer -> use-after-free garbage decoded
+            // as a game command. Cross-platform: killed mac clients 6/6 (SIGSEGV in
+            // CMsgVehNew::AssertValid, always during notification bursts = right after a
+            // SenumREP broadcast made the queue momentarily non-empty) AND the Windows
+            // host (same site, AV 0xC0000005) in the first 3-platform MP game.
+            return;
         }
 
         n->m_vpmsg.postTime = timeGetTime();

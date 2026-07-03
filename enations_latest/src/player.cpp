@@ -1521,6 +1521,8 @@ void CGame::SetMessagesPaused(BOOL bPause )
     theGame.ClearNetPause();
 }
 
+extern void EnMpDiagLog( const char* fmt, ... );   // [mp-plyr] trace (netapi.cpp)
+
 void CGame::StartAllPlayers( ) const
 {
 
@@ -1544,8 +1546,13 @@ void CGame::StartAllPlayers( ) const
                 pPlr->m_pXferToClient = NULL;
             }
             CNetYouAre msg( pPlr->GetPlyrNum( ) );
+            EnMpDiagLog( "StartAllPlayers: you_are -> netnum=%d plyr=%d name='%s'",
+                         pPlr->GetNetNum( ), pPlr->GetPlyrNum( ), pPlr->GetName( ) );
             theNet.Send( pPlr->GetNetNum( ), &msg, sizeof( msg ) );
         }
+        else if ( !pPlr->IsLocal( ) )
+            EnMpDiagLog( "StartAllPlayers: SKIP netnum=%d plyr=%d name='%s' state=replace (dead/ghost join?)",
+                         pPlr->GetNetNum( ), pPlr->GetPlyrNum( ), pPlr->GetName( ) );
     }
 
     // clean out buffer
@@ -1892,6 +1899,10 @@ void CGame::AiTakeOverPlayer( CPlayer* pPlr, BOOL bStartThread, BOOL bShowDlg )
 {
 
     ASSERT_VALID( pPlr );
+
+    EnMpDiagLog( "AiTakeOverPlayer: plyr=%d name='%s' isMe=%d server=%d startThread=%d",
+                 pPlr->GetPlyrNum( ), pPlr->GetName( ), ( _GetMe( ) == pPlr ) ? 1 : 0,
+                 (int)m_bServer, (int)bStartThread );
 
     pPlr->SetAI( TRUE );
     pPlr->SetLocal( m_bServer );

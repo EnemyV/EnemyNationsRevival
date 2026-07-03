@@ -764,7 +764,10 @@ void SDL2CreateNetDialog::OnInit() {
     int lx = m_x + 20, y = m_y + 45, rowH = 24, colW = (m_width - 60) / 2, rx = lx + colW + 20;
 
     AddWidget<SDL2Label>(lx, y, 100, rowH, "Game Name:");
-    m_edtGameName = AddWidget<SDL2EditBox>(lx + 105, y, colW - 105, rowH, "My Game");
+    // Persist the game name across games/sessions (mirrors the player-name field),
+    // defaulting to "My Game" the first time.
+    std::string savedGameName = EnGetProfileStdString("Create", "GameName", "My Game");
+    m_edtGameName = AddWidget<SDL2EditBox>(lx + 105, y, colW - 105, rowH, savedGameName);
     y += rowH + 4;
     AddWidget<SDL2Label>(lx, y, 100, rowH, "Your Name:");
     std::string savedName = DefaultPlayerName();
@@ -814,6 +817,8 @@ void SDL2CreateNetDialog::OnOK() {
     // Persist the name so the race picker (which pre-fills from this profile) shows
     // the name just entered here instead of reverting to the previously saved one.
     EnWriteProfileString("Create", "Name", m_playerName.c_str());
+    // Persist the game name too so it survives across games/sessions.
+    EnWriteProfileString("Create", "GameName", m_gameName.c_str());
     m_iAiLevel = m_radAiLevel->GetSelected();
     m_iWorldSize = m_radWorldSize->GetSelected();
     m_iStartPos = m_radStartPos->GetSelected();
@@ -826,11 +831,30 @@ void SDL2CreateNetDialog::OnOK() {
     EndDialog(1);
 }
 
+// Pre-fill the Join "Server Address" from the configured iServe / discovery server
+// (vdmplay.ini [vdmplay]RegistrationServerAddr — the registration daemon) so the user doesn't have
+// to know the INI. This restores the original game's intent of defaulting the join target to the
+// registration server; the original's built-in default (DEF_IP_REG_SERVER = "iserve.windward.net")
+// is long dead, so we use the operator-configured one instead. Host-only: the registration port
+// (1707) is engine-fixed and separate from this dialog's game Port (2346), so strip any :port.
+// Empty config -> "localhost".
+static std::string RegistrationDefaultAddr() {
+    char buf[128] = {0};
+    GetPrivateProfileString("vdmplay", "RegistrationServerAddr", "", buf, sizeof(buf), ".\\vdmplay.ini");
+    std::string s = (buf[0] ? buf : "localhost");
+    // Strip a trailing :port — but only when there's exactly ONE colon. An
+    // IPv6 literal ("::1", "fe80::…") has several; the old first-colon strip
+    // turned "::1" into "" and handed the join dialog an empty address.
+    std::string::size_type c = s.find(':');
+    if (c != std::string::npos && c == s.rfind(':')) s = s.substr(0, c);
+    return s;
+}
+
 // ============================================================================
 // SDL2JoinNetDialog
 // ============================================================================
 SDL2JoinNetDialog::SDL2JoinNetDialog(GameWindow* gameWindow)
-    : SDL2Dialog(gameWindow, "Join Network Game (TCP/IP)", 420, 240) {}
+    : SDL2Dialog(gameWindow, "Join Network Game (TCP/IP)", 420, 260) {}
 
 void SDL2JoinNetDialog::OnInit() {
     int lx = m_x + 20, y = m_y + 45, w = m_width - 40, rowH = 28;
@@ -839,10 +863,17 @@ void SDL2JoinNetDialog::OnInit() {
     m_edtPlayerName = AddWidget<SDL2EditBox>(lx + 115, y, w - 115, 24, savedName);
     y += rowH + 4;
     AddWidget<SDL2Label>(lx, y, 110, rowH, "Server Address:");
-    m_edtServerAddr = AddWidget<SDL2EditBox>(lx + 115, y, w - 115, 24, "localhost");
+    // Pre-filled from the configured iServe/discovery server (see RegistrationDefaultAddr).
+    m_edtServerAddr = AddWidget<SDL2EditBox>(lx + 115, y, w - 115, 24, RegistrationDefaultAddr());
     y += rowH + 4;
     AddWidget<SDL2Label>(lx, y, 110, rowH, "Port:");
     m_edtPort = AddWidget<SDL2EditBox>(lx + 115, y, 80, 24, "2346");
+    y += rowH + 2;
+    // UX hint: clarify the field accepts the iServe discovery server OR a direct host.
+    SDL2Label* hint = AddWidget<SDL2Label>(lx, y, w, rowH * 2,
+        "Server = your iServe discovery server (finds games), or a direct host IP. "
+        "Port is the game port (2346).");
+    if (hint) hint->SetWrapped(true);
     AddOKCancelButtons();
 }
 
@@ -850,6 +881,8 @@ void SDL2JoinNetDialog::OnOK() {
     m_playerName = m_edtPlayerName->GetText();
     m_serverAddr = m_edtServerAddr->GetText();
     if (m_playerName.empty() || m_serverAddr.empty()) return;
+    // Persist the name so it pre-fills next time (same profile key OnInit reads).
+    EnWriteProfileString("Create", "Name", m_playerName.c_str());
     m_iPort = atoi(m_edtPort->GetText().c_str());
     if (m_iPort <= 0) m_iPort = 2346;
     EndDialog(1);
@@ -994,6 +1027,8 @@ void SDL2HostLoadedDialog::OnInit() {
 void SDL2HostLoadedDialog::OnOK() {
     m_playerName = m_edtPlayerName ? m_edtPlayerName->GetText() : "";
     if (m_playerName.empty()) return;
+    // Persist the name so it pre-fills next time (same profile key OnInit reads).
+    EnWriteProfileString("Create", "Name", m_playerName.c_str());
     m_iPort = m_edtPort ? atoi(m_edtPort->GetText().c_str()) : 2346;
     if (m_iPort <= 0) m_iPort = 2346;
     EndDialog(1);
@@ -1087,7 +1122,9 @@ void SDL2LobbyDialog::RefreshChat() {
     m_lstChat->Clear();
     for (int i = 0; i < n; i++)
         m_lstChat->AddItem(SDL2Chat_Line(i));
-    if (n > 0) m_lstChat->SetSelected(n - 1);   // scroll to newest
+    // Auto-scroll to newest: SetSelected only moves the highlight, EnsureVisible
+    // scrolls the view so a full chat box doesn't stay pinned at the top.
+    if (n > 0) { m_lstChat->SetSelected(n - 1); m_lstChat->EnsureVisible(n - 1); }
 }
 
 void SDL2LobbyDialog::SendChat() {
@@ -1220,7 +1257,8 @@ void SDL2ClientLobbyDialog::RefreshChat() {
     m_lstChat->Clear();
     for (int i = 0; i < n; i++)
         m_lstChat->AddItem(SDL2Chat_Line(i));
-    if (n > 0) m_lstChat->SetSelected(n - 1);
+    // Auto-scroll to newest (SetSelected alone doesn't move the scroll view).
+    if (n > 0) { m_lstChat->SetSelected(n - 1); m_lstChat->EnsureVisible(n - 1); }
 }
 
 void SDL2ClientLobbyDialog::SendChat() {
@@ -1248,8 +1286,10 @@ void SDL2ClientLobbyDialog::OnFrame() {
     RefreshChat();
 
     extern bool g_bClientStartReceived;
-    if (g_bClientStartReceived)
+    if (g_bClientStartReceived) {
+        fprintf(stderr, "[mp-start] client lobby saw start flag -> EndDialog(1)\n");
         EndDialog(1);   // host started -> flow builds the world outside this loop
+    }
 }
 
 void SDL2ClientLobbyDialog::UpdatePlayerList() {
@@ -1294,7 +1334,10 @@ void SDL2SessionBrowseDialog::OnInit() {
     // Editable address + port, pre-filled from the ini the join flow wrote. The
     // user can change these and hit Search to re-target without backing out.
     char srvAddr[128] = {0};
-    GetPrivateProfileString("TCP", "ServerAddress", "localhost",
+    // Default to the configured iServe/discovery server (not "localhost") when the join flow
+    // hasn't already written [TCP]ServerAddress — so the browse query targets iserve by default.
+    std::string regDef = RegistrationDefaultAddr();
+    GetPrivateProfileString("TCP", "ServerAddress", regDef.c_str(),
                             srvAddr, sizeof(srvAddr), ".\\vdmplay.ini");
     int port = GetPrivateProfileInt("TCP", "WellKnownPort", 2346, ".\\vdmplay.ini");
 
@@ -1380,12 +1423,19 @@ void SDL2SessionBrowseDialog::UpdateList() {
             newSel = i;
     }
 
-    m_selectedIdx = newSel;
     if (newSel >= 0) m_lstSessions->SetSelected(newSel);
-    if (m_btnJoin) m_btnJoin->SetEnabled(newSel >= 0);
 
-    if (count == 0 && m_lblInfo)
-        m_lblInfo->SetText("No games found - check the server address and port, then Refresh.");
+    if (count == 0) {
+        m_selectedIdx = -1;
+        if (m_btnJoin) m_btnJoin->SetEnabled(false);
+        if (m_lblInfo)
+            m_lblInfo->SetText("No games found - check the server address and port, then Refresh.");
+    } else {
+        // SelectIndex owns m_selectedIdx/join-button/info-line; routing through
+        // it also replaces a stale "No games found" when the prior selection is
+        // re-found (the old code only cleared the label when newSel < 0)
+        SelectIndex(newSel);
+    }
 }
 
 void SDL2SessionBrowseDialog::OnJoin() {
@@ -1661,6 +1711,13 @@ bool SDL2_RunJoinNetworkFlow(GameWindow* gameWindow) {
 
     // Send race selection to server (mirrors original CDlgPickRace::OnOK join path)
     CNetReady readyMsg(&theGame.GetMe()->m_InitData);
+    // [mp-plyr] diagnostic for the "lobby shows joined players as Human" bug: log
+    // the netnum we stamp + the server netnum we send to. If myNet=0 or srvNet=0
+    // the CNetReady never lands and the host keeps our default (Human) race.
+    { extern void EnMpDiagLog(const char*, ...);
+      EnMpDiagLog("CNetReady SEND: myNetNum=%d -> serverNetNum=%d race='%s' race[0]=%.3f",
+                  (int)theGame.GetMe()->GetNetNum(), (int)theGame.GetServerNetNum(),
+                  pRace->GetLine(), theGame.GetMe()->m_InitData.GetRace(0)); }
     theNet.Send(theGame.GetServerNetNum(), &readyMsg, sizeof(readyMsg));
 
     if (gameWindow->GetWindow())
@@ -1692,6 +1749,8 @@ bool SDL2_RunJoinNetworkFlow(GameWindow* gameWindow) {
         lobbyResult = clientLobby.DoModal();
     }
     g_bClientLobbyWaiting = false;
+    fprintf(stderr, "[mp-start] client lobby closed, result=%d (1=host started, else back to menu)\n",
+            lobbyResult);
 
     if (lobbyResult != 1) {
         // Player left the waiting room before the game started. ReadyToJoin tore

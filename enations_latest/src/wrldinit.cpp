@@ -201,12 +201,18 @@ void CGameMap::Close( )
     if ( m_pHex == NULL )
         return;
 
+    // Zero the dims BEFORE freeing the hex array: the AI workers' dims guard
+    // (caidata.cpp AiFillHexLiveNoLock) treats eX==0 as the post-Close state,
+    // so freeing first left a window where a racing straggler passed the
+    // guard and dereferenced the just-freed array (#65 family). Best-effort
+    // only (no fence/lock) — the real protection is the straggler handling
+    // in myThreadClose — but this ordering makes the guard actually guard.
+    m_eX = m_eY = 0;
+
     delete[] m_pHex;
     m_pHex = NULL;
 
     m_pLandExit = m_pShipExit = NULL;
-
-    m_eX = m_eY = 0;
 }
 
 void CGameMap::GetWorldSize( int iSize, int& iSide, int& iSideSize )
@@ -343,6 +349,27 @@ static WorldTypeGen GetWorldTypeGen( int wt )
     }
 }
 
+// [wg] world-gen parity trace (cross-platform RAND MISMATCH hunt, board
+// 2026-07-02): one line per build stage — rand-generator fingerprint + map
+// hash (type+alt of every hex). Compare a host log against a client log; the
+// first stage whose pair differs is where the platforms diverged. Always-on
+// (a dozen lines per world build), stderr + ODS like EnMpDiagLog.
+void CGameMap::WgTrace( const char* szStage )
+{
+    DWORD h      = 2166136261UL;
+    long  lTotal = (long)m_eX * (long)m_eY;
+    for ( long lOn = 0; lOn < lTotal; lOn++ )
+    {
+        CHex* pHex = m_pHex + lOn;
+        h = ( h ^ (DWORD)pHex->GetType( ) ) * 16777619UL;
+        h = ( h ^ (DWORD)pHex->GetAlt( ) ) * 16777619UL;
+    }
+    char szBuf[128];
+    sprintf_s( szBuf, "[wg] %-10s rand=%08lx map=%08lx\n", szStage, (unsigned long)MyRandFP( ), (unsigned long)h );
+    fprintf( stderr, "%s", szBuf );
+    OutputDebugStringA( szBuf );
+}
+
 void CGameMap::Init( int iSide, int iSideSize, int iScenario )
 {
     theApp.m_pCreateGame->GetDlgStatus( )->SetMsg( IDS_ALLOC_MAP );
@@ -421,6 +448,17 @@ void CGameMap::Init( int iSide, int iSideSize, int iScenario )
     }
     DWORD seed = theGame.GetSeed();
     int   seedInt = static_cast<int>( seed );
+
+    // [wg] build inputs — a host/client difference HERE (settings desync, e.g.
+    // the Rivers slider) explains a divergence before any stage math does.
+    {
+        char szWg[160];
+        sprintf_s( szWg, "[wg] START seed=%08lx rivers=%ld wtype=%d plyrs=%d side=%d sz=%d scen=%d\n",
+                   (unsigned long)seed, (long)theGame.m_iRivers, (int)theGame.m_iWorldType,
+                   (int)theGame.GetAll( ).GetCount( ), iSide, iSideSize, iScenario );
+        fprintf( stderr, "%s", szWg );
+        OutputDebugStringA( szWg );
+    }
 
     // Generate the dominant terrain regions (ocean by default). The world-type preset
     // chosen on the New Game screen decides WHICH tile gets painted and in WHAT shape;
@@ -917,6 +955,8 @@ void CGameMap::Init( int iSide, int iSideSize, int iScenario )
     }
 #endif
 
+    WgTrace( "blocks" );
+
     // set the altitude for each block
     theApp.m_pCreateGame->GetDlgStatus( )->SetMsg( IDS_INIT_MAP );
     _x = _y = 0;
@@ -1320,6 +1360,8 @@ void CGameMap::Init( int iSide, int iSideSize, int iScenario )
     // cleanup the edges between blocks (done again on ln 1192?)
     // SmoothBlockEdges( iSideSize, iSide );
 
+    WgTrace( "terrain" );
+
     // at corners of blocks we may place a mountain
     for ( iInd = 0; iInd < iNumBlks; iInd++ )
     {
@@ -1547,13 +1589,16 @@ void CGameMap::Init( int iSide, int iSideSize, int iScenario )
     // we re-smooth the entire world    
     int iAlt = GetHex( 0, 0 )->GetAlt( );
     InitSquarePass2( 0, 0, m_eX, m_eY, iAlt, iAlt, iAlt, iAlt );
+    WgTrace( "pass2" );
 
     // check for too large an alt increase
     theApp.BaseYield( );
     CheckAlt( );
+    WgTrace( "checkalt" );
 
     // check ocean before smoothing to get better results
     CheckOcean( );
+    WgTrace( "checkocean" );
 
     // put rivers down: random maps use flow-accumulation hydrology (dendritic
     // networks that always reach the sea); scenarios keep the legacy forced
@@ -1596,6 +1641,8 @@ void CGameMap::Init( int iSide, int iSideSize, int iScenario )
             }
         }
     }
+
+    WgTrace( "rivers" );
 
     theApp.m_pCreateGame->GetDlgStatus( )->SetMsg( IDS_CHECK_MAP );
 
@@ -1654,6 +1701,8 @@ void CGameMap::Init( int iSide, int iSideSize, int iScenario )
         }
     }
 
+    WgTrace( "xfix" );
+
     // we assign hill & mountain tiles based on the slope
     for ( int x = 0; x < m_eX; x++ )
         for ( int y = 0; y < m_eY; y++ )
@@ -1696,6 +1745,8 @@ void CGameMap::Init( int iSide, int iSideSize, int iScenario )
                 }
             }
         }
+
+    WgTrace( "slopes" );
 
     // we now eliminate all single tiles, fingers, etc.
     //   call before assigning tiles, adding coastlines
@@ -1765,6 +1816,8 @@ void CGameMap::Init( int iSide, int iSideSize, int iScenario )
         }
     }
 
+    WgTrace( "tiles" );
+
     // we now change water tiles on the edge to coastline
     theApp.BaseYield( );
     AddCoastlines( );
@@ -1772,6 +1825,7 @@ void CGameMap::Init( int iSide, int iSideSize, int iScenario )
     // we now change all small oceans to lakes
     theApp.BaseYield( );
     MakeLakes( );
+    WgTrace( "lakes" );
 
     // FLATTEN LAKES to a single surface level. A connected lake body must be level,
     // but worldgen can leave sea-level (16) holes inside a basin flooded to its spill
@@ -1958,6 +2012,8 @@ void CGameMap::Init( int iSide, int iSideSize, int iScenario )
             delete pMn;
         }
     }
+
+    WgTrace( "done" );
 
     // we dup the extra line on the bottom
     int   iNum      = m_eX;
@@ -2718,7 +2774,9 @@ static int RandDist( int iDist )
     if ( iDist < 1 )
         return ( 0 );
 
-    int iVal = ( ( iDist + 1 ) * ( iDist + 1 ) * MyRand( ) ) / ( RAND_MAX + 1 );
+    // EN_MYRAND_MAX, not stdlib RAND_MAX: MyRand is 15-bit on all platforms now
+    // (glibc RAND_MAX+1 also overflowed INT_MAX here, making iVal's sign UB).
+    int iVal = ( ( iDist + 1 ) * ( iDist + 1 ) * MyRand( ) ) / ( EN_MYRAND_MAX + 1 );
     iVal     = iDist - (int)sqrt( (float)abs( iVal ) );
     ASSERT( ( 0 <= iVal ) && ( iVal <= iDist ) );
     if ( MyRand( ) & 0x1000 )

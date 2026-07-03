@@ -69,6 +69,65 @@ static int ConvertAlt( int iAlt, int iSideSize )
     return val;
 }
 
+// Deterministic integer sine/cosine, Q15 (result = sin*32768). World-gen must
+// be bit-identical on every platform, and libm sin/cos are NOT — MSVC ucrt,
+// glibc and Apple libm differ by ULPs, and one flipped (int) cast on a trig
+// result diverges the whole map -> CmdPlay RAND MISMATCH drops every
+// cross-platform joiner (3/3 repro on themed worlds, 2026-07-02). Quarter-wave
+// table, whole degrees; plenty for terrain shaping (max error <1% of radius).
+static const short aSinQ15[91] = {
+    0, 572, 1144, 1715, 2286, 2856, 3425, 3993, 4560, 5126,
+    5690, 6252, 6813, 7371, 7927, 8481, 9032, 9580, 10126, 10668,
+    11207, 11743, 12275, 12803, 13328, 13848, 14365, 14876, 15384, 15886,
+    16384, 16877, 17364, 17847, 18324, 18795, 19261, 19720, 20174, 20622,
+    21063, 21498, 21926, 22348, 22763, 23170, 23571, 23965, 24351, 24730,
+    25102, 25466, 25822, 26170, 26510, 26842, 27166, 27482, 27789, 28088,
+    28378, 28660, 28932, 29197, 29452, 29698, 29935, 30163, 30382, 30592,
+    30792, 30983, 31164, 31336, 31499, 31651, 31795, 31928, 32052, 32166,
+    32270, 32365, 32449, 32524, 32588, 32643, 32688, 32723, 32748, 32763,
+    32767 };
+
+static int EnSinDeg( int deg )
+{
+    deg %= 360;
+    if ( deg < 0 )
+        deg += 360;
+    if ( deg <= 90 )
+        return ( aSinQ15[deg] );
+    if ( deg <= 180 )
+        return ( aSinQ15[180 - deg] );
+    if ( deg <= 270 )
+        return ( -aSinQ15[deg - 180] );
+    return ( -aSinQ15[360 - deg] );
+}
+
+static int EnCosDeg( int deg )
+{
+    return ( EnSinDeg( deg + 90 ) );
+}
+
+// TEMP [wgbits] diag (env-gated, EN_WG_BITS=<n>): raw IEEE bits of the first
+// <n> float values produced in the mountain builder (BlockEdgeFactor returns +
+// peak falloffFactor), with their integer inputs for call-order alignment.
+// Cross-platform bit-diff pins WHICH float chain in the diverging m_peak
+// section differs (board 2026-07-03 mac↔gcc m_peak divergence). No effect
+// unless EN_WG_BITS is set; remove with the [wg] checkpoints once localized.
+static void WgBits( const char* szTag, int i1, int i2, float f )
+{
+    static int s_iLeft = -2;
+    if ( s_iLeft == -2 )
+    {
+        const char* sz = getenv( "EN_WG_BITS" );
+        s_iLeft = sz ? atoi( sz ) : 0;
+    }
+    if ( s_iLeft <= 0 )
+        return;
+    s_iLeft--;
+    unsigned u;
+    memcpy( &u, &f, sizeof( u ) );
+    fprintf( stderr, "[wgbits] %s %d %d %08x\n", szTag, i1, i2, u );
+}
+
 /// <summary>
 /// Returns how close you are to the edge.
 /// </summary>
@@ -96,7 +155,9 @@ static float BlockEdgeFactor( int x, int y, int _x, int _y, int iSideSize )
         t = 1.0f;
 
     // Smoothstep for gentle blending near edges
-    return t * t * ( 3.0f - 2.0f * t );
+    float fRtn = t * t * ( 3.0f - 2.0f * t );
+    WgBits( "bef", minDist, edgeWidth, fRtn );
+    return fRtn;
 }
 
 void CGameMap::GenerateOcean( int iNumBlks, int* piBlks, int iSide, int blockType,
@@ -489,17 +550,18 @@ void CGameMap::GenerateMountainBlock( int _x, int iSideSize, int _y)
                     // Exponential falloff for sharp peaks (steeper than linear)
                     float falloffFactor = 1.0f - ( (float)radius / (float)iMaxRadius );
                     falloffFactor       = falloffFactor * falloffFactor;  // Square for sharper falloff
+                    WgBits( "fall", radius, iMaxRadius, falloffFactor );
 
                     int ringAlt = (int)( baseAlt * falloffFactor ) + 30;  // Keep elevated base
 
                     // Draw a ring around the peak
                     for ( int angle = 0; angle < 360; angle += 15 )
                     {
-                        float rad    = angle * 3.14159f / 180.0f;
-                        // Add jaggedness to the ring
+                        // Add jaggedness to the ring. Integer Q15 trig — libm
+                        // sin/cos here diverged the map across platforms.
                         int   jitter = RandNum( 3 ) - 1;
-                        int   rx     = xPeak + (int)( ( radius + jitter ) * cos( rad ) );
-                        int   ry     = yPeak + (int)( ( radius + jitter ) * sin( rad ) );
+                        int   rx     = xPeak + ( ( radius + jitter ) * EnCosDeg( angle ) ) / 32768;
+                        int   ry     = yPeak + ( ( radius + jitter ) * EnSinDeg( angle ) ) / 32768;
 
                         CHex* pHex = GetHex( CHexCoord( rx, ry ) );
                         if ( !pHex->IsWater( ) )
@@ -530,6 +592,8 @@ void CGameMap::GenerateMountainBlock( int _x, int iSideSize, int _y)
                     MakeMineral( xPeak + iDif, yPeak + iDif, CMaterialTypes::iron, iMaxRadius * 2, 2 );
             }
         }
+
+        WgTrace( "m_peak" );  // [wg] bisect (temp): after peaks/rings section
 
         // Create sharp ridgelines connecting peaks
         for ( int iRidge = 0; iRidge < iNumPeaks - 1 && iRidge < 9; iRidge++ )
@@ -593,6 +657,8 @@ void CGameMap::GenerateMountainBlock( int _x, int iSideSize, int _y)
                 }
             }
         }
+
+        WgTrace( "m_ridge" );  // [wg] bisect (temp): after ridgelines section
 
         // Create U-shaped glacial valleys between peaks
         for ( int iValley = 0; iValley < iNumPeaks - 1 && iValley < 9; iValley++ )
@@ -661,16 +727,19 @@ void CGameMap::GenerateMountainBlock( int _x, int iSideSize, int _y)
             {
                 float t = (float)step / (float)pathSteps;
 
-                // Gentle meander (glaciers don't wind as much as rivers)
-                float meander = sin( t * 4.0f ) * ( iSideSize / 20.0f );
+                // Gentle meander (glaciers don't wind as much as rivers).
+                // Integer Q15 trig — t*4.0 rad == t*229.18 deg; libm sin here
+                // diverged the map across platforms.
+                int meanderDeg = (int)( ( (long long)step * 229183 ) / ( (long long)pathSteps * 1000 ) );
+                int meander    = ( EnSinDeg( meanderDeg ) * ( iSideSize / 20 ) ) / 32768;
 
                 int baseX = vx1 + (int)( ( vx2 - vx1 ) * t );
                 int baseY = vy1 + (int)( ( vy2 - vy1 ) * t );
 
                 if ( bHorizontal )
-                    baseY += (int)meander;
+                    baseY += meander;
                 else
-                    baseX += (int)meander;
+                    baseX += meander;
 
                 // U-shaped profile: flat bottom, steep walls
                 for ( int w = -valleyWidth - 2; w <= valleyWidth + 2; w++ )
@@ -739,6 +808,8 @@ void CGameMap::GenerateMountainBlock( int _x, int iSideSize, int _y)
                 }
             }
         }
+
+        WgTrace( "m_valley" );  // [wg] bisect (temp): after valleys/cirque/meander section
     }
 }
 
@@ -794,8 +865,15 @@ void CGameMap::GenerateBadlandsBlock( int _x, int iSideSize, int _y)
             if ( !avoidChangingWater || !pHex->IsWater( ) )
             {
                 float edgeFactor = BlockEdgeFactor( x, y, _x, _y, iSideSize );
-                float waveX       = sin( (float)x * 0.06f ) * 3.0f;
-                float waveY       = cos( (float)y * 0.05f ) * 3.0f;
+                // Integer Q15 trig — libm sin/cos here diverged the map across
+                // platforms (Apple libm != ucrt/glibc, 1-ULP flip -> (int) alt shift
+                // -> RAND MISMATCH; win+linux agreed, mac dropped). Map the radian args
+                // to whole degrees (x*0.06 rad => x*3.437747 deg, y*0.05 => y*2.864789)
+                // and scale the table result (sin*32768) back to the original *3.0 range.
+                int   degX        = (int)( (float)x * 3.437747f );
+                int   degY        = (int)( (float)y * 2.864789f );
+                float waveX       = EnSinDeg( degX ) * ( 3.0f / 32768.0f );
+                float waveY       = EnCosDeg( degY ) * ( 3.0f / 32768.0f );
                 int   waveDelta   = (int)( ( waveX + waveY ) * edgeFactor );
                 pHex->SetAlt( pHex->GetAlt( ) + waveDelta );
             }
@@ -912,9 +990,11 @@ void CGameMap::GenerateBadlandsBlock( int _x, int iSideSize, int _y)
 
                 for ( int angle = 0; angle < 360; angle += 15 )
                 {
-                    float rad = angle * 3.14159f / 180.0f;
-                    int   rx  = xS + (int)( radius * cos( rad ) );
-                    int   ry  = yS + (int)( radius * sin( rad ) );
+                    // Integer Q15 trig — libm cos/sin here diverged the map across
+                    // platforms; angle is whole degrees already (matches the mountain
+                    // ring builder's EnCosDeg/EnSinDeg conversion @22868ce4).
+                    int   rx  = xS + ( radius * EnCosDeg( angle ) ) / 32768;
+                    int   ry  = yS + ( radius * EnSinDeg( angle ) ) / 32768;
 
                     CHex* pHex = GetHex( CHexCoord( rx, ry ) );
                     if ( !avoidChangingWater || !pHex->IsWater( ) )

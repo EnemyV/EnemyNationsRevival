@@ -103,6 +103,11 @@ class CBridgeUnit;
 int  MyRand( );
 void MySrand( DWORD dwSeed );
 int  RandNum( int iMax );
+// MyRand's output range on ALL platforms (windward/wind22/src/rand.cpp uses the
+// MSVC CRT LCG everywhere for cross-platform MP world-gen parity). Consumers
+// scaling MyRand must use THIS, never stdlib RAND_MAX -- glibc's 0x7FFFFFFF
+// never matched MyRand's range and silently skewed every scaled draw on POSIX.
+#define EN_MYRAND_MAX 0x7FFF
 
 extern BOOL             bcsOk;
 extern CRITICAL_SECTION cs;

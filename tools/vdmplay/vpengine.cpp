@@ -338,10 +338,45 @@ void CVpSession::OnSafeData( CNetLink* link ) {
     }
 #endif
 
-    if ( 0 != ( waitingDataCount = link->HasData() ) ) {
+    // Stream reassembly (2026-07-01): the old code read the header, then did ONE
+    // Receive for the body and DISCARDED the message when fewer bytes had arrived —
+    // but those partial body bytes were already consumed, so the REMAINDER of the
+    // body was later parsed as the next message header: permanent stream desync.
+    // Downstream, the desynced pseudo-message's contents reached the app as a game
+    // command (VP_READDATA dataLen comes from the header's self-reported msgSize),
+    // which is exactly the deterministic garbage-veh_new SIGSEGV that killed the
+    // POSIX clients in the first 3-platform MP game (mac2, 4/4 identical crashes).
+    // Now: a short body is stashed on the link (m_pPartialMsg/m_partialGot) and
+    // filled across data events; and we loop, so several complete messages in one
+    // event are all processed instead of one-per-event.
+    for ( ;; ) {
 
+        // finish an in-progress body first
+        if ( link->m_pPartialMsg ) {
+            genericMsg* pm = link->m_pPartialMsg;
+            DWORD body = pm->hdr.msgSize - sizeof( hdr );
+            DWORD need = body - link->m_partialGot;
+
+            if ( 0 == link->HasData() )
+                return;
+
+            count = link->Receive( (char*)pm->Contents() + link->m_partialGot, need );
+            if ( count == 0 )
+                return;
+            link->m_partialGot += count;
+            if ( link->m_partialGot < body )
+                return;   // still short — wait for the next data event
+
+            link->m_pPartialMsg = NULL;
+            link->m_partialGot = 0;
+            ProcessSafeData( link, pm );
+            pm->Unref();
+            continue;   // more messages may already be buffered
+        }
+
+        waitingDataCount = link->HasData();
         if ( waitingDataCount < sizeof( hdr ) )
-            return;
+            return;   // nothing consumed — a partial header stays in the socket buffer
 
         memset( &hdr, 0, sizeof( hdr ) );
         count = link->Receive( &hdr, sizeof( hdr ) );
@@ -376,13 +411,17 @@ void CVpSession::OnSafeData( CNetLink* link ) {
 
         msg->hdr = hdr;
 
-        count = link->Receive( msg->Contents(), msgDataSize );
+        count = ( msgDataSize > 0 ) ? link->Receive( msg->Contents(), msgDataSize ) : 0;
 
-        if ( count == msgDataSize )    // Just to be sure that all is OK
-            ProcessSafeData( link, msg );
+        if ( count < msgDataSize ) {
+            // body not fully arrived — keep the message (and its ref) on the link
+            link->m_pPartialMsg = msg;
+            link->m_partialGot = count;
+            return;
+        }
 
+        ProcessSafeData( link, msg );
         msg->Unref();
-
     }
 
 }
@@ -933,6 +972,12 @@ void CLocalSession::OnDisconnect( CNetLink* link ) {
     LogV( m_log, "ClocalSession::OnDisconnect for link %08lx\n",
           (DWORD)(uintptr_t)link );   // LP64: cast via uintptr_t (ptr->DWORD direct is a clang error)
 
+    if ( link->m_pPartialMsg ) {   // drop any half-reassembled stream message
+        link->m_pPartialMsg->Unref();
+        link->m_pPartialMsg = NULL;
+        link->m_partialGot = 0;
+    }
+
     if ( m_broadcastLink == link ) {
         HandleNetDown();
         return;
@@ -1301,7 +1346,15 @@ BOOL CLocalSession::BroadcastSessionData() {
 
 
 void CLocalSession::OnTimer() {
-    if ( m_visible && m_registrationAddress && !m_gotsEnumREQ ) {
+    // Do NOT gate the reg-server heartbeat on !m_gotsEnumREQ. That flag trips on the
+    // first DIRECT SenumREQ from any client — and a joiner's LookForServer sends one —
+    // which permanently silenced the periodic re-register, so the reg server aged the
+    // session out and later clients saw an empty list ("host vanishes from iserve once
+    // the first player joins"). The flag's design assumed a reg server that RELAYS enum
+    // queries to hosts (whose replies then refresh the registration — see OnSenumREQ's
+    // m_lastRegTime touch); ours answers from its own registry and never relays, so the
+    // heartbeat must run for as long as the session is visible and reg-configured.
+    if ( m_visible && m_registrationAddress ) {
         DWORD t = GetCurrentTime();
 
         if ( t - m_lastRegTime > 2000 ) {
@@ -1874,6 +1927,12 @@ void CRemoteSession::OnDisconnect( CNetLink* link ) {
     VPENTER( CRemoteSession::OnDisconnect );
     LogV( m_log, "RemoteSession::OnDisconnect link %08lx", (DWORD)(uintptr_t)link );   // LP64-safe cast
 
+    if ( link->m_pPartialMsg ) {   // drop any half-reassembled stream message
+        link->m_pPartialMsg->Unref();
+        link->m_pPartialMsg = NULL;
+        link->m_partialGot = 0;
+    }
+
     if ( m_broadcastLink == link ) {
         m_connected = FALSE;
         HandleNetDown();
@@ -2232,13 +2291,28 @@ int CRegisterySession::ReplyServerInfo( CWS* ws, LPVOID data ) {
 }
 
 
+// Count only genuinely REGISTERED sessions: ws entries carrying session info (an
+// SenumREP landed). m_wsMap also holds bare transport entries — every enum REQUESTER
+// gets a MakeRemoteWS before OnSenumREQ, plus TCP probes (see the ReplyServerInfo
+// NULL-guard) — so raw Count() inflates with each browsing client, and a map holding
+// only such phantoms skipped the no-sessions dummy reply below, leaving the client
+// with no answer at all.
+static int CountRegisteredSession( CWS* ws, LPVOID data ) {
+    if ( ws->IsRemote() && ( (CRemoteWS*)ws )->m_info )
+        ++*(int*)data;
+    return TRUE;
+}
+
 BOOL CRegisterySession::OnSenumREQ( genericMsg* msg, CRemoteWS* ws ) {
 
-    if ( IserveLogOn() )
-        fprintf( stderr, "[iserve] sEnumREQ from a client -> serving %d registered session(s)\n",
-                 (int)m_wsMap->Count() );
+    int nRegistered = 0;
+    m_wsMap->Enum( CountRegisteredSession, &nRegistered );
 
-    if ( !m_wsMap->Count() ) {
+    if ( IserveLogOn() )
+        fprintf( stderr, "[iserve] sEnumREQ from a client -> serving %d registered session(s) (%d map entries)\n",
+                 nRegistered, (int)m_wsMap->Count() );
+
+    if ( !nRegistered ) {
         // send a dummy reply so the client will see something coming
         // from us; reply over the query's own link (TCP if it arrived over TCP, else UDP)
         // — same reason as the real SenumREP above.

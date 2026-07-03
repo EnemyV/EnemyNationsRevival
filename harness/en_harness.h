@@ -59,6 +59,12 @@ void HarnessDumpUnits(std::string& out);
 // Render/game thread only.
 void HarnessDumpBldgState(std::string& out);
 
+// Per-player AI economy/population probe (T-0068 AI-stall investigation). READ-ONLY:
+// pop, workforce have/need, m_fPplMult (understaffing), and per-player building tallies
+// (apartments / offices / camps / refinery / oil) + how many of the 7 housing-gate
+// prerequisites each player owns. Backs the `aistate` verb. Render/game thread only.
+void HarnessDumpAIStates(std::string& out);
+
 // List every civ-wide edict + whether it's active for the local player, so a QA
 // driver can verify an edict toggle (read state, click the checkbox, read again).
 // Backs `edicts`. Render/game thread only.

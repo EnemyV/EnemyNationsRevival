@@ -128,6 +128,7 @@ void trans_func( unsigned int u, EXCEPTION_POINTERS* pExp )
 
 void CatchNum( int iNum )
 {
+    fprintf( stderr, "[CatchNum] game exception %d - shutting the game down\n", iNum );
 
     bDoSubclass = FALSE;
 
@@ -205,6 +206,7 @@ void CatchSE( SE_Exception e )
 
 void CatchOther( )
 {
+    fprintf( stderr, "[CatchOther] unknown game exception - shutting the game down\n" );
 
     bDoSubclass = FALSE;
 

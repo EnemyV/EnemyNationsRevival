@@ -347,6 +347,40 @@ BOOL CNetApi::Broadcast( LPCVPMSGHDR pData, int iLen, BOOL bLocal )
     return ( TRUE );
 }
 
+// [mp-plyr] diagnostics: player-identity / leave / AI-takeover tracing for the MP
+// client auto-place bug (client's rocket placed without the player choosing; the
+// leading suspect chain is spurious-leave -> replace -> AiTakeOverPlayer -> AI
+// PlaceRocket -> bldg_new(rocket) matching the client's plyrnum). stderr for the
+// POSIX clients + OutputDebugString for the Win host (dbgcatch records ODS, not
+// stderr). Cheap and rare - stays on until the MP start path is stable.
+// Env-gated: EN_MPDIAG=0 silences it. Default is ON while the MP-start hunt is
+// live; flip the default to OFF (require EN_MPDIAG=1) before final release.
+static BOOL MpDiagOn( )
+{
+    static int s_on = -1;
+    if ( s_on < 0 ) {
+        const char* e = getenv( "EN_MPDIAG" );
+        s_on = ( e != NULL && *e == '0' ) ? 0 : 1;
+    }
+    return s_on;
+}
+void EnMpDiagLog( const char* fmt, ... )
+{
+    if ( !MpDiagOn( ) )
+        return;
+    char buf[512];
+    va_list args;
+    va_start( args, fmt );
+    vsnprintf( buf, sizeof( buf ), fmt, args );
+    va_end( args );
+    fprintf( stderr, "[mp-plyr] %s\n", buf );
+#ifdef _WIN32
+    char ods[560];
+    sprintf_s( ods, "[mp-plyr] %s\n", buf );
+    OutputDebugStringA( ods );
+#endif
+}
+
 static void OnMsgLeave( VPPLAYERID id )
 {
 
@@ -357,6 +391,10 @@ static void OnMsgLeave( VPPLAYERID id )
 
     ASSERT_VALID( pPlr );
     ASSERT( ( !theGame.HaveHP( ) ) || ( id != theGame.GetMe( )->GetPlyrNum( ) ) );
+
+    EnMpDiagLog( "OnMsgLeave: netid=%d plyr=%d name='%s' plrState=%d gameState=%d netMode=%d",
+                 (int)id, pPlr->GetPlyrNum( ), pPlr->GetName( ), (int)pPlr->GetState( ),
+                 (int)theGame.GetState( ), theNet.GetMode( ) );
 
     // if it was the server fix it
     if ( pPlr == theGame.GetServer( ) )
@@ -443,6 +481,8 @@ static void OnMsgLeave( VPPLAYERID id )
             if ( theGame.GetState( ) < CGame::AI_done )
             {
                 pPlr->SetState( CPlayer::replace );
+                EnMpDiagLog( "OnMsgLeave: plyr=%d name='%s' marked REPLACE during setup -> AI takes over at StartAi",
+                             pPlr->GetPlyrNum( ), pPlr->GetName( ) );
 
                 if ( theGame.GetState( ) == CGame::wait_AI )
                 {
@@ -654,6 +694,35 @@ static void OnMsgServerDown( LPCVPSESSIONINFO pSi )
     theApp.m_pCreateGame->OnSessionClose( pSi );
 }
 
+#if defined( _DEBUG ) && defined( _WIN32 )
+// SEH wrapper: AssertMsgValid on a garbage message can FAULT while validating
+// through garbage fields (2026-07-01 MP test: killed the Windows HOST too — AV at
+// netcmd.cpp:1023 — after the size and m_iType guards both passed, so the guards
+// can't enumerate every hostile shape). Capture the bytes and drop instead of dying.
+static BOOL SafeAssertMsgValid( CNetCmd const* pCmd, int iLen )
+{
+    __try
+    {
+        pCmd->AssertMsgValid( );
+        return TRUE;
+    }
+    __except ( EXCEPTION_EXECUTE_HANDLER )
+    {
+        char sLine[256] = { 0 };
+        const unsigned char* pb = (const unsigned char*)pCmd;
+        int nDump = ( iLen < 32 ) ? iLen : 32;
+        int nOff = sprintf( sLine, "[net-guard] AssertMsgValid FAULTED type=%d len=%d bytes: ",
+                            pCmd->GetType( ), iLen );
+        for ( int i = 0; i < nDump; i++ )
+            nOff += sprintf( sLine + nOff, "%02X ", pb[i] );
+        sLine[nOff] = '\n';
+        fprintf( stderr, "%s", sLine );
+        OutputDebugStringA( sLine );   // dbgcatch records ODS, not stderr — hex must ride here
+        return FALSE;
+    }
+}
+#endif
+
 void CGame::AddToQueue( CNetCmd const* pCmd, int iLen )
 {
 #ifdef LOGGINGON
@@ -669,18 +738,31 @@ void CGame::AddToQueue( CNetCmd const* pCmd, int iLen )
 
     ASSERT_VALID( this );
 
-#ifdef _DEBUG
-    pCmd->AssertMsgValid( );
-#endif
-    // can't do - previous messages may need to be processed first	ASSERT_CMD (pCmd);
-
-    // check if the command id is too high:
+    // Sanity BEFORE any typed read of the buffer (AssertMsgValid casts to the
+    // concrete msg struct — on a short/misrouted datagram that's an OOB read,
+    // the SIGSEGV that killed the POSIX clients in the 2026-07-01 MP test).
     int msgType = pCmd->GetType( );
     if ( msgType < 0 || msgType >= CNetCmd::last_message )
     {
         TRACE( "ProcessMessage: Invalid message type %d (corrupted message?)\n", msgType );
         return;  // Skip corrupted messages instead of asserting
     }
+    if ( !pCmd->FitsBuffer( iLen ) )
+    {
+        fprintf( stderr, "[net-guard] dropped %d-byte buffer decoding as msg type %d - too short, corrupt/misrouted datagram\n",
+                 iLen, msgType );
+        return;
+    }
+
+#ifdef _DEBUG
+#ifdef _WIN32
+    if ( !SafeAssertMsgValid( pCmd, iLen ) )
+        return;   // hostile/garbage message — bytes captured to stderr, do not queue
+#else
+    pCmd->AssertMsgValid( );
+#endif
+#endif
+    // can't do - previous messages may need to be processed first	ASSERT_CMD (pCmd);
 
 #ifdef _LOG_LAG
     ( (CNetCmd*)pCmd )->dwPostTime = timeGetTime( );
@@ -846,6 +928,16 @@ LRESULT CNetApi::OnNetMsg( WPARAM wParam, LPARAM lParam )
 
     LPVPMESSAGE pVpMsg = (LPVPMESSAGE)lParam;
 
+    // EN_VPNQ=1 lifecycle trace (see wnotque.h): dispatch leg. A vpmsg pointer
+    // appearing here AFTER its [vpnq] ack-delete line = the UAF we're hunting.
+    {
+        static int s_vpnq = -1;
+        if ( s_vpnq < 0 ) { const char* e = getenv( "EN_VPNQ" ); s_vpnq = ( e && *e && *e != '0' ) ? 1 : 0; }
+        if ( s_vpnq )
+            fprintf( stderr, "[vpnq] dispatch vpmsg=%p code=%u u.data=%p\n",
+                     (void*)pVpMsg, (unsigned)wParam, (void*)pVpMsg->u.data );
+    }
+
     DWORD dwProc = timeGetTime( );
 
     // see if receiving a file
@@ -959,10 +1051,44 @@ LRESULT CNetApi::OnNetMsg( WPARAM wParam, LPARAM lParam )
         if ( pVpMsg->userData == NULL )
         {
             CNetCmd* pCmd = (CNetCmd*)( ( (char*)pVpMsg->u.data ) - sizeof( VPMsgHdr ) );
+            int cbTotal = (int)( pVpMsg->dataLen + sizeof( VPMsgHdr ) );
+            // Guard the immediate-chat read the same way AddToQueue guards the
+            // queued path: a short/misrouted datagram must not be read as a
+            // full message struct (see FitsBuffer in netcmd.cpp).
+            if ( !pCmd->FitsBuffer( cbTotal ) )
+            {
+                char sHex[3 * 24 + 1] = { 0 };
+                const unsigned char* pb = (const unsigned char*)pCmd;
+                int nDump = ( cbTotal < 24 ) ? cbTotal : 24;
+                if ( nDump < 0 ) nDump = 0;
+                for ( int i = 0; i < nDump; i++ )
+                    sprintf( sHex + 3 * i, "%02X ", pb[i] );
+                fprintf( stderr, "[net-guard] dropped %d-byte VP_READDATA decoding as msg type %d sender=%u - too short, corrupt/misrouted; bytes: %s\n",
+                         cbTotal, pCmd->GetType( ), (unsigned)pVpMsg->senderId, sHex );
+            }
+            // Content guard + provenance capture for the cross-platform garbage
+            // veh_new (mac2 5/5 SIGSEGV: size-plausible message, out-of-range
+            // m_iType, always right after an OnSenumREP). Plain field reads within
+            // the FitsBuffer-verified span are safe; validating here (instead of
+            // letting AssertValid index arrays with garbage) turns the crash into
+            // a hex capture that identifies the sender and the actual bytes.
+            else if ( pCmd->GetType( ) == CNetCmd::veh_new &&
+                      ( ( (_CMsgVeh*)pCmd )->m_iType < 0 ||
+                        ( (_CMsgVeh*)pCmd )->m_iType >= theTransports.GetNumTransports( ) ) )
+            {
+                char sHex[3 * 24 + 1] = { 0 };
+                const unsigned char* pb = (const unsigned char*)pCmd;
+                int nDump = ( cbTotal < 24 ) ? cbTotal : 24;
+                for ( int i = 0; i < nDump; i++ )
+                    sprintf( sHex + 3 * i, "%02X ", pb[i] );
+                fprintf( stderr, "[net-guard] dropped veh_new with garbage m_iType=%d (max %d) sender=%u len=%d bytes: %s\n",
+                         ( (_CMsgVeh*)pCmd )->m_iType, theTransports.GetNumTransports( ),
+                         (unsigned)pVpMsg->senderId, cbTotal, sHex );
+            }
             // Chat is handled IMMEDIATELY (not queued) so it also works in the
             // pre-game lobby, where the message queue isn't being drained. (The
             // queued path still exists in ProcessMessage for safety.)
-            if ( pCmd->GetType( ) == CNetCmd::cmd_chat )
+            else if ( pCmd->GetType( ) == CNetCmd::cmd_chat )
             {
                 const CNetChat* pChat = (const CNetChat*)pCmd;
                 CPlayer* pSender = theGame._GetPlayer( pChat->m_iPlyrNetNum );
@@ -970,7 +1096,7 @@ LRESULT CNetApi::OnNetMsg( WPARAM wParam, LPARAM lParam )
                 SDL2Chat_AddMessage( from + ": " + pChat->m_sMsg );
             }
             else
-                theGame.AddToQueue( pCmd, pVpMsg->dataLen + sizeof( VPMsgHdr ) );
+                theGame.AddToQueue( pCmd, cbTotal );
         }
         else
             TRAP( );
@@ -1127,12 +1253,20 @@ static void CmdReady( CNetReady* pMsg )
     CPlayer* pPlr = theGame.GetPlayer( pMsg->m_iPlyrNum );
     if ( pPlr == NULL )
     {
+        // [mp-plyr] the joined player's race arrives here (CNetReady.m_InitData).
+        // If we can't find the player by netnum, the race is DROPPED -> the host
+        // lobby shows the default (Human) race for that player. Log the miss.
+        EnMpDiagLog( "CmdReady: NO PLAYER for netnum=%d -> race DROPPED (lobby will show default/Human)",
+                     pMsg->m_iPlyrNum );
         ASSERT( FALSE );
         return;
     }
     ASSERT_VALID( pPlr );
     pPlr->m_InitData = pMsg->m_InitData;
     pPlr->SetState( CPlayer::ready );
+    EnMpDiagLog( "CmdReady: applied race to plyr=%d name='%s' netnum=%d (race[0]=%.3f)",
+                 pPlr->GetPlyrNum( ), pPlr->GetName( ), pMsg->m_iPlyrNum,
+                 pMsg->m_InitData.GetRace( 0 ) );
     if ( theApp.m_pCreateGame != NULL )
         theApp.m_pCreateGame->UpdateBtns( );
 
@@ -1315,6 +1449,10 @@ static void CmdGetFile( CNetGetFile* pCmd )
 static void CmdYouAre( int iPlyrNum, int iSrvrNum )
 {
 
+    EnMpDiagLog( "cmd_you_are: host says I am plyr=%d (server plyr=%d); my plyr was %d",
+                 iPlyrNum, iSrvrNum,
+                 ( theGame._GetMe( ) != NULL ) ? theGame.GetMe( )->GetPlyrNum( ) : -1 );
+
     ASSERT( !theGame.AmServer( ) );
     ASSERT( theGame.GetAll( ).GetCount( ) == 2 );
     ASSERT( theGame.GetMe( )->GetNetNum( ) > 0 );
@@ -1331,6 +1469,7 @@ static void CmdYouAre( int iPlyrNum, int iSrvrNum )
     catch ( int iNum )
     {
         TRAP( );
+        EnMpDiagLog( "cmd_you_are: EXCEPTION (num %d) in status update - CloseWorld, my plyrnum NOT set!", iNum );
         CatchNum( iNum );
         theApp.CloseWorld( );
         return;
@@ -1338,6 +1477,7 @@ static void CmdYouAre( int iPlyrNum, int iSrvrNum )
     catch ( SE_Exception e )
     {
         TRAP( );
+        EnMpDiagLog( "cmd_you_are: SEH EXCEPTION in status update - CloseWorld, my plyrnum NOT set!" );
         CatchSE( e );
         theApp.CloseWorld( );
         return;
@@ -1345,6 +1485,7 @@ static void CmdYouAre( int iPlyrNum, int iSrvrNum )
     catch ( ... )
     {
         TRAP( );
+        EnMpDiagLog( "cmd_you_are: EXCEPTION in status update - CloseWorld, my plyrnum NOT set!" );
         CatchOther( );
         theApp.CloseWorld( );
         return;
@@ -1417,6 +1558,11 @@ static void CmdPlayer( CNetPlayer* pNp )
 
     if ( pNp->m_bServer )
         theGame._SetServer( pPlr );
+
+    EnMpDiagLog( "cmd_player: netnum=%d plyr=%d local=%d ai=%d server=%d name='%s'%s",
+                 pNp->m_iNetNum, pNp->m_iPlyrNum, (int)pNp->m_bLocal, (int)pNp->m_bAI,
+                 (int)pNp->m_bServer, pPlr->GetName( ),
+                 ( theGame._GetMe( ) == pPlr ) ? " (THIS IS ME)" : "" );
 }
 
 // --- Deferred client start (multiplayer waiting-room lobby) ----------------
@@ -1432,15 +1578,22 @@ static void CmdStart( CNetStart* pStrt );   // fwd
 
 void RunDeferredClientStart( )
 {
+    fprintf( stderr, "[mp-start] RunDeferredClientStart (startReceived=%d) -> building world\n",
+             (int)g_bClientStartReceived );
     if ( g_bClientStartReceived )
     {
         g_bClientStartReceived = false;
         CmdStart( (CNetStart*)g_clientStartBuf );
+        fprintf( stderr, "[mp-start] deferred CmdStart returned (world build done or caught)\n" );
     }
 }
 
 static void CmdStart( CNetStart* pStrt )
 {
+    // [mp-start] stderr breadcrumbs: the 3-client join test (2026-07-01) had POSIX
+    // clients silently bounce to the main menu when the host started; these mark
+    // exactly how far the client start path got. Keep until MP start is stable.
+    fprintf( stderr, "[mp-start] CNetStart received (lobbyWaiting=%d)\n", (int)g_bClientLobbyWaiting );
     if ( g_bClientLobbyWaiting )
     {
         memcpy( g_clientStartBuf, pStrt, sizeof( CNetStart ) );
@@ -1553,6 +1706,11 @@ static void CmdPlay( CNetPlay* pMsg )
     // if our rand doesn't match we drop out
     if ( theGame.m_dwFinalRand != pMsg->m_uRand )
     {
+        // Always log: this is the cross-platform world-gen desync gate (the
+        // operator-visible "client disconnects when the host starts"), and the
+        // two values are the only evidence of HOW far the PRNG streams diverged.
+        fprintf( stderr, "[mp-start] RAND MISMATCH: client m_dwFinalRand=%08lx host m_uRand=%08lx -> world-gen diverged, dropping out (CmdPlay)\n",
+                 (unsigned long)theGame.m_dwFinalRand, (unsigned long)pMsg->m_uRand );
         ASSERT( !theGame.AmServer( ) );
         theGame.Close( );
         theNet.Close( TRUE );
@@ -1990,6 +2148,11 @@ static void BldgNew( CMsgBldgNew* pMsg )
         theGame.Event( EVENT_CONST_START, EVENT_NOTIFY, pBldg );
 
     // check for all done
+    if ( theGame.HaveHP( ) && ( pMsg->m_iType == CStructureData::rocket ) )
+        EnMpDiagLog( "bldg_new ROCKET: plyr=%d me=%d%s", pMsg->m_iPlyrNum,
+                     theGame.GetMe( )->GetPlyrNum( ),
+                     ( pMsg->m_iPlyrNum == theGame.GetMe( )->GetPlyrNum( ) )
+                         ? " -> completes MY placement (SetupDone)" : "" );
     if ( theGame.HaveHP( ) )
         if ( ( pMsg->m_iType == CStructureData::rocket ) && ( pMsg->m_iPlyrNum == theGame.GetMe( )->GetPlyrNum( ) ) )
         {
@@ -2963,6 +3126,10 @@ void CGame::ProcessMessage(CNetCmd* pCmd )
             break;
         }
 
+        EnMpDiagLog( "cmd_to_ai: plyr=%d name='%s' netnum=%d isMe=%d amServer=%d",
+                     pPlr->GetPlyrNum( ), pPlr->GetName( ), pPlr->GetNetNum( ),
+                     ( theGame._GetMe( ) == pPlr ) ? 1 : 0, (int)theGame.AmServer( ) );
+
         // if it was the server fix it
         if ( pPlr == theGame.GetServer( ) )
         {
@@ -3474,7 +3641,14 @@ void CGame::ProcessMessage(CNetCmd* pCmd )
             // if any player says pause - we pause
             if ( pPlr->m_bPauseMsgs )
             {
-                TRAP( );
+                // NOT a fault (was TRAP): with several clients, pause windows overlap
+                // routinely — e.g. game start, where every joiner pauses while it builds
+                // the world and unpauses as it finishes. First unpause arriving while a
+                // slower client is still paused lands here by design: stay paused and
+                // wait for the rest. (The TRAP froze the host in the debugger mid-start
+                // of the first 3-client MP game, 2026-07-01.)
+                if ( theApp.m_pLogFile != NULL )
+                    theApp.Log( "Pause: staying paused, another player still paused" );
                 return;
             }
         }

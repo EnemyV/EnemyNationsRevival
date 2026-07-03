@@ -34,6 +34,24 @@ const std::unordered_map<UINT, std::string>& string_table() {
         { IDS_VPENUM_FAILED,    "The network layer could not ask for a list of games.\nYou may want to try a different network connection type." },
         { IDS_VPJOIN_FAILED,    "The network layer could not connect to the requested game.\nThe game may have already started." },
         { IDS_VPSEND_FAILED,    "The network layer could not talk to one of the other player's computers.\nYou may want to try to reconnect." },
+        // MP session-close / game-start strings: these surfaced as BLANK message
+        // boxes during the live Win-host↔Linux-client test (the rand-mismatch
+        // disconnect showed an empty box — undiagnosable from the operator's
+        // seat). Keep the %1 placeholder VERBATIM from lastplnt.rc: this port's
+        // strPrintf/EnLoadStdString path uses MFC FormatMessage-style %1/%2
+        // positional args, NOT printf %s (a live disconnect printed literal
+        // "The game %s" when I wrongly used %s here).
+        { IDS_RAND_MISMATCH,    "Did not generate identical world to server.\nYou have been disconnected from the game.\nYou can rejoin the game and it will then copy the world to\nyou (much slower but a guaranteed match)." },
+        { IDS_JOIN_UNJOIN,      "The game %1\nhas disconnected from the net." },
+        { IDS_SAVE_CLOSE,       "The game %1\nhas disconnected from the net.\nDo you wish to save the existing game?" },
+        { IDS_JOIN_FILE_ERROR,  "Could not receive game from server" },
+        { IDS_UNKNOWN,          "{unknown}" },
+        // MP player-notify popups (CDlgModelessMsg): missing → the recurring
+        // BLANK-body "Enemy Nations" dialog seen at every live game start
+        // (IDS_MSG_NET_GOODBYE fired empty). %1/%2 positional (strPrintf), not %s.
+        { IDS_MSG_NET_GOODBYE,  "Player %1 has disconnected from the game" },
+        { IDS_MSG_JOIN_FAILED,  "You cannot join game%1.\nThe network returned error %2." },
+        { IDS_JOIN_LOAD_FILE,   "Receiving game..." },
         // World/minimap window title (CWndWorld::CommandCenterChange) surfaced EMPTY on
         // Linux — the panel title bar went blank once the rocket landed. Title + the
         // facing-direction %1 args, verbatim from lastplnt.rc.

@@ -285,10 +285,100 @@ int CConquerApp::Run( )
 // VTBUGBUG this probably shouldn't be here...
 
     // clears out the message queue and calls OnIdle once - no graphics engine stuff
+// [mp-plyr] trace (netapi.cpp) — reused by the MP start-handshake watchdog below.
+extern void EnMpDiagLog( const char* fmt, ... );
+
+// Grace period the host waits for every joined client to report CNetInitDone
+// (-> CPlayer::wait) before it force-drops the laggards and starts anyway. The
+// host has already built its OWN world by the time it reaches wait_AI; clients
+// build in parallel, so this only needs to cover a slow client's world-build.
+static const DWORD MP_WAIT_AI_TIMEOUT_MS = 90000;
+
+// MP start-handshake watchdog (host only). StartAi fires only once EVERY non-AI
+// player has reported ready (CmdInitDone -> CPlayer::wait); a joined client that
+// quits / fails to load / is a stale duplicate lobby link never reports, so the
+// host hangs forever at "Waiting for Others". After the grace period, drop the
+// non-responding players to AI (replace) and start, so one bad client can't
+// deadlock the whole game. Cheap no-op unless we're a host actually in wait_AI.
+static void MpStartHandshakeWatchdog( )
+{
+    static DWORD s_dwWaitStart = 0;
+    static DWORD s_dwLastLog   = 0;
+
+    if ( !theGame.AmServer( ) || !theGame.HaveHP( ) ||
+         theGame.GetState( ) != CGame::wait_AI )
+    {
+        s_dwWaitStart = 0;   // reset outside the wait phase
+        return;
+    }
+
+    DWORD dwNow = GetTickCount( );
+    if ( s_dwWaitStart == 0 )
+    {
+        s_dwWaitStart = dwNow;
+        s_dwLastLog   = dwNow;
+        return;
+    }
+
+    DWORD dwElapsed = dwNow - s_dwWaitStart;
+
+    // heartbeat every ~15s so the wait is observable in the log
+    if ( dwNow - s_dwLastLog >= 15000 )
+    {
+        s_dwLastLog = dwNow;
+        EnMpDiagLog( "MP-WATCHDOG: still waiting for InitDone (%ds/%ds) before force-start",
+                     (int)( dwElapsed / 1000 ), (int)( MP_WAIT_AI_TIMEOUT_MS / 1000 ) );
+    }
+
+    if ( dwElapsed <= MP_WAIT_AI_TIMEOUT_MS )
+        return;
+
+    // Timed out: drop every non-AI player that never reported ready (not wait /
+    // replace) to replace, so StartAi's replace loop AI-takes-them-over. Never
+    // touch the host itself.
+    BOOL     bDropped = FALSE;
+    POSITION pos;
+    for ( pos = theGame.GetAll( ).GetHeadPosition( ); pos != NULL; )
+    {
+        CPlayer* pPlr = theGame.GetAll( ).GetNext( pos );
+        ASSERT_VALID( pPlr );
+        if ( !pPlr->IsAI( ) && !pPlr->IsMe( ) &&
+             pPlr->GetState( ) != CPlayer::wait &&
+             pPlr->GetState( ) != CPlayer::replace )
+        {
+            EnMpDiagLog( "MP-WATCHDOG: plyr=%d name='%s' netnum=%d never reported ready in %ds -> dropping to AI (replace)",
+                         pPlr->GetPlyrNum( ), pPlr->GetName( ), pPlr->GetNetNum( ),
+                         (int)( MP_WAIT_AI_TIMEOUT_MS / 1000 ) );
+            pPlr->SetState( CPlayer::replace );
+            bDropped = TRUE;
+        }
+    }
+
+    if ( !bDropped )
+        return;   // nothing to drop (shouldn't happen, but don't force-start blind)
+
+    // Re-run the readiness gate (mirror CmdInitDone's tail): if every non-AI
+    // player is now wait/replace, we can start.
+    for ( pos = theGame.GetAll( ).GetTailPosition( ); pos != NULL; )
+    {
+        CPlayer* pPlr = theGame.GetAll( ).GetPrev( pos );
+        ASSERT_VALID( pPlr );
+        if ( ( !pPlr->IsAI( ) ) && ( pPlr->GetState( ) != CPlayer::wait ) &&
+             ( pPlr->GetState( ) != CPlayer::replace ) )
+            return;   // still someone outstanding — keep waiting
+    }
+
+    s_dwWaitStart = 0;   // consumed; StartAi leaves wait_AI so we won't re-fire
+    EnMpDiagLog( "MP-WATCHDOG: laggards dropped, all remaining players ready -> StartAi (force-start)" );
+    theApp.StartAi( );
+}
+
 BOOL CConquerApp::BaseYield( )
 {
 
     ASSERT_STRICT_VALID( this );
+
+    MpStartHandshakeWatchdog( );
 
 #ifndef _WIN32
     // POSIX (MP port, step a): drive the vp* select() pump before draining the

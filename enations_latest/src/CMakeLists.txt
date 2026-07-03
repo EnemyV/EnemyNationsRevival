@@ -287,8 +287,11 @@ if (MSVC)
 else ()
     # Linux/gcc. -fms-extensions + -fsigned-char match MSVC semantics the code
     # relies on; -Wno-unknown-pragmas swallows #pragma warning/comment/intrinsic.
+    # -ffp-contract=off: no FMA fusing — MP world-gen parity requires float
+    # expressions to round identically everywhere; clang on Apple ARM64 fuses
+    # a*b+c by default (x86 SSE2 and MSVC don't), silently diverging mac maps.
     target_compile_options(enations PRIVATE
-        -g -fms-extensions -fsigned-char -fpermissive -Wno-unknown-pragmas -Wno-format -Wno-write-strings -Wno-narrowing
+        -g -fms-extensions -fsigned-char -fpermissive -ffp-contract=off -Wno-unknown-pragmas -Wno-format -Wno-write-strings -Wno-narrowing
         $<$<CONFIG:Release>:-O2>
         $<$<CONFIG:Profile>:-O2>
     )
@@ -395,7 +398,11 @@ if (MSVC)
             vdmplay
             wind22
             wing32.lib
-            vdmplay.lib
+            # NOTE: no bare vdmplay.lib here — the `vdmplay` target above already
+            # links the import lib from THIS build tree. The bare name only ever
+            # resolved via the hardcoded ../../cmakeBuild/ link dir (the OLD build
+            # dir name), i.e. a stale lib: fresh clones/worktrees have no
+            # cmakeBuild/ and died with LNK1181.
             winmm.lib
             vfw32.lib
             Netapi32.lib
@@ -460,10 +467,10 @@ if (MSVC)
 
     target_link_directories(enations PUBLIC
         ../../tools/lib
-        ../../cmakeBuild/tools/vdmplay/$<CONFIG>
-        ../../cmakeBuild/windward/wind22/$<CONFIG>
-        ./cmakeBuild/tools/vdmplay/$<CONFIG>
-        ./cmakeBuild/windward/wind22/$<CONFIG>
+        # (removed the hardcoded ../../cmakeBuild/ + ./cmakeBuild/ vdmplay/wind22
+        # link dirs: both are linked as CMake TARGETS above, which supplies the
+        # import libs from the CURRENT build tree; the old-name dirs only ever
+        # served stale artifacts and broke fresh clones/other build-dir names)
         ../../tools/sdl2/SDL2-2.30.12/lib/${SDL2_ARCH}        # SDL2.lib (pulled via SDL2_ttf/_mixer /DEFAULTLIB)
         ../../tools/sdl2/SDL2_ttf-2.22.0/lib/${SDL2_ARCH}
         ../../tools/sdl2/SDL2_mixer-2.8.1/lib/${SDL2_ARCH}    # SDL2_mixer.lib

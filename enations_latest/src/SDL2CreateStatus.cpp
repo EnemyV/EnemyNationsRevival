@@ -291,7 +291,18 @@ void SDL2CreateStatus::Render() {
     // bump z-order with SWP_NOACTIVATE, and only while our own process is
     // foreground (so we never fight another app the user switched to mid-load).
 #ifdef _WIN32
-    if (m_ownWindow) {
+    // Rate-limit to ~30Hz: "every frame" was designed against the ~60fps frame
+    // loop, but SetPer() now calls Render() directly from tight load loops
+    // (unbounded call rate), and unthrottled GetForegroundWindow + 2x
+    // SetWindowPos at thousands/sec slows world creation and hammers the WM.
+    // 33ms still re-pins as fast as windows are created/raised (~60Hz worst
+    // case sees at most one 1-frame gap). The mac block below has its own 2Hz
+    // limit already; the VISUAL throttle further down stays at 66ms.
+    static DWORD s_lastZOrderMs = 0;
+    DWORD nowZ = ::timeGetTime();
+    bool bZOrderDue = (nowZ - s_lastZOrderMs >= 33);
+    if (bZOrderDue) s_lastZOrderMs = nowZ;
+    if (m_ownWindow && bZOrderDue) {
         SDL_SysWMinfo wm; SDL_VERSION(&wm.version);
         if (SDL_GetWindowWMInfo(m_ownWindow, &wm)) {
             HWND h = wm.info.win.window;
@@ -515,6 +526,13 @@ bool SDL2CreateStatus::HandleEvent(const SDL_Event& event) {
             int mx = event.button.x, my = event.button.y;
             if (mx >= m_btnCancelRect.x && mx < m_btnCancelRect.x + m_btnCancelRect.w &&
                 my >= m_btnCancelRect.y && my < m_btnCancelRect.y + m_btnCancelRect.h) {
+                // The dialog now outlives game-start into the LetsGo tail
+                // (progress covers the whole start, incl. the post-pick AI
+                // spin-up) — by then the state machine is already at play and
+                // a cancel would CloseWorld a LIVE game. Swallow it; the
+                // dialog is torn down moments later anyway.
+                if (theGame.GetState() == CGame::play)
+                    return true;
                 // Match CDlgCreateStatus::OnCancel — confirm before quitting.
                 int idsQuit;
                 if (theGame._GetMe() == NULL)

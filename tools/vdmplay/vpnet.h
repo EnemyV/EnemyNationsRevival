@@ -25,6 +25,8 @@ enum {
 
 };
 
+struct genericMsg;   // vpengine.h — safe-stream reassembly state below
+
 //+ A network link
 //+ Send/Recieve data
 class CNetLink : public CRef {
@@ -60,7 +62,8 @@ public:
     //+ Get the adress of the peer
     virtual CNetAddress *GetRemoteAddress() = 0;
 
-    CNetLink(CNetInterface *net, LPVOID userData) : m_err(0), m_userData(0), m_net(net) {}
+    CNetLink(CNetInterface *net, LPVOID userData) : m_err(0), m_userData(0), m_net(net),
+        m_pPartialMsg(0), m_partialGot(0) {}
 
     virtual ~CNetLink() {}
 
@@ -76,6 +79,15 @@ public:
     CNetInterface *m_net;
     LPVOID m_userData;
 
+    // Safe-stream (TCP) partial-message reassembly, owned by CVpSession::OnSafeData.
+    // A stream read can deliver fewer bytes than the header-declared msgSize; the
+    // old code discarded the partial and left the REST OF THE BODY in the stream to
+    // be parsed as the next header — permanent desync, garbage commands delivered
+    // to the app (the 2026-07-01 cross-platform MP veh_new SIGSEGV). When a body
+    // arrives short, the message is stashed here (holding its ref) and filled on
+    // subsequent data events. Released in CVpSession::OnDisconnect.
+    genericMsg* m_pPartialMsg;
+    DWORD       m_partialGot;   // body bytes received so far
 };
 
 #define name2(a, b) _rwname2(a,b) /* to force the args to be evaluated here */

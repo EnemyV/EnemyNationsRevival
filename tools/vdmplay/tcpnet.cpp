@@ -287,6 +287,25 @@ CTcpNet::CTcpNet(CTDLogger* log, u_short streamPort, u_short dgPort, u_short wel
 
  int aIndex = vpFetchInt("TCP", "AddressIndex", 0);
 
+ // [TCP] LocalAddress=x.x.x.x — explicit override of the ADVERTISED station
+ // address. The auto-probe below asks the routing table which local IP reaches
+ // the internet; with a VPN up that's the tunnel IP (e.g. NordVPN 10.5.0.2),
+ // which other machines cannot connect to, so joiners see the session but the
+ // TCP join silently dies. Sockets bind INADDR_ANY regardless, so pinning the
+ // LAN IP here only changes what gets published to iserve/joiners.
+ char sLocalOverride[64] = { 0 };
+ vpFetchString( "TCP", "LocalAddress", "", sLocalOverride, sizeof( sLocalOverride ) - 1 );
+ if ( sLocalOverride[0] )
+ {
+  u_long ov = inet_addr( sLocalOverride );
+  if ( ov != INADDR_NONE && ov != 0 )
+  {
+   m_address.m_stationAddress.s_addr = ov;
+   return;
+  }
+  Log( "CTcpNet::CTcpNet ignoring bad [TCP] LocalAddress" );
+ }
+
  // Determine our local station address (for advertising to clients). The legacy
  // path here was gethostname() + gethostbyname(), which on a VPN/NAT machine can
  // STALL FOR SECONDS in the DNS resolver (suffix devolution, dead DNS servers) —
