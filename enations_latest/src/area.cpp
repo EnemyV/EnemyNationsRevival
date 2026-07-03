@@ -7701,6 +7701,50 @@ void HarnessFindTerrain( int id, int adjId, std::string& out )
 }
 
 //---------------------------------------------------------------------------
+// HarnessFindBridge — list every bridge hex (CHex::bridge unit bit) with its fog
+// state (`bridge <x> <y> vis <0|1> seen <0|1>`), then center the focused area view
+// on the first NEVER-SEEN one (vis=0 seen=0; else the first found). Backs the #30
+// bridge-fog verify: a never-seen bridge must NOT draw until scouted (vis flips),
+// after which IsBridge latches ("seen 1") and it stays shown. READ-ONLY of the map
+// (GetVisibility/IsBridge only — does NOT call SetBridge); mutates only the view.
+// Render thread only. Declared in en_harness.h.
+//---------------------------------------------------------------------------
+void HarnessFindBridge( std::string& out )
+{
+    CWndArea* a = theAreaList.GetTop( );
+    if ( a == NULL ) { out = "err no-area\n"; return; }
+
+    CSize sz = theMap.GetSize( );
+    int nListed = 0, cx = -1, cy = -1;
+    bool haveUnseen = false;
+    for ( int y = 0; y < sz.cy; ++y )
+    {
+        for ( int x = 0; x < sz.cx; ++x )
+        {
+            CHex* h = theMap.GetHex( x, y );
+            if ( h == NULL || !( h->GetUnits( ) & CHex::bridge ) ) continue;
+
+            BOOL vis = h->GetVisibility( ), seen = h->IsBridge( );
+            if ( nListed < 60 )   // bound the reply; bridges are rare
+                out += "bridge " + IntToStr( x ) + " " + IntToStr( y )
+                     + " vis "  + IntToStr( vis  ? 1 : 0 )
+                     + " seen " + IntToStr( seen ? 1 : 0 ) + "\n";
+            ++nListed;
+            if ( cx < 0 ) { cx = x; cy = y; }              // fallback: first found
+            if ( !haveUnseen && !vis && !seen )            // prefer: never-seen
+            { cx = x; cy = y; haveUnseen = true; }
+        }
+    }
+    if ( nListed == 0 ) { out = "notfound bridge\n"; return; }
+
+    CHexCoord hc( cx, cy );
+    CMapLoc   ml( hc );
+    a->Center( ml );
+    out += "total " + IntToStr( nListed ) + " centered " + IntToStr( cx ) + " "
+         + IntToStr( cy ) + ( haveUnseen ? " (never-seen)\n" : " (first)\n" );
+}
+
+//---------------------------------------------------------------------------
 // HarnessDumpEdicts — list every civ-wide edict and whether it's currently active
 // for the local player (CPlayer::IsEdictActive). Lets a headless QA driver verify an
 // edict TOGGLE: read state, clickid the checkbox, read state again. Backs `edicts`.
