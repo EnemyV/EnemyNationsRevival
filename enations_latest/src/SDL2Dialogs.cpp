@@ -837,11 +837,14 @@ void SDL2CreateNetDialog::OnOK() {
 // registration server; the original's built-in default (DEF_IP_REG_SERVER = "iserve.windward.net")
 // is long dead, so we use the operator-configured one instead. Host-only: the registration port
 // (1707) is engine-fixed and separate from this dialog's game Port (2346), so strip any :port.
-// Empty config -> "localhost".
+// Empty config -> the project's PUBLIC registration server (the operator's AWS iserve) —
+// "localhost" was useless as a shipped default (nobody runs a local iserve outside tests);
+// an unconfigured client should discover games on the public server out of the box.
+static const char* kPublicIServeAddr = "54.219.190.35";   // AWS iserve (:1707, engine-fixed)
 static std::string RegistrationDefaultAddr() {
     char buf[128] = {0};
     GetPrivateProfileString("vdmplay", "RegistrationServerAddr", "", buf, sizeof(buf), ".\\vdmplay.ini");
-    std::string s = (buf[0] ? buf : "localhost");
+    std::string s = (buf[0] ? buf : kPublicIServeAddr);
     // Strip a trailing :port — but only when there's exactly ONE colon. An
     // IPv6 literal ("::1", "fe80::…") has several; the old first-colon strip
     // turned "::1" into "" and handed the join dialog an empty address.
@@ -1375,8 +1378,8 @@ void SDL2SessionBrowseDialog::OnInit() {
 // callback re-enters the loop and hangs. Re-opening between dialogs (as the
 // initial OpenClient does) is safe.
 void SDL2SessionBrowseDialog::OnSearch() {
-    m_searchAddr = m_edtAddr ? m_edtAddr->GetText() : "localhost";
-    if (m_searchAddr.empty()) m_searchAddr = "localhost";
+    m_searchAddr = m_edtAddr ? m_edtAddr->GetText() : RegistrationDefaultAddr();
+    if (m_searchAddr.empty()) m_searchAddr = RegistrationDefaultAddr();
     m_searchPort = m_edtPort ? atoi(m_edtPort->GetText().c_str()) : 2346;
     if (m_searchPort <= 0) m_searchPort = 2346;
     EndDialog(3);   // join flow re-targets, then re-opens this dialog
