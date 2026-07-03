@@ -7787,6 +7787,34 @@ void HarnessFindTerrain( int id, int adjId, std::string& out )
 }
 
 //---------------------------------------------------------------------------
+// HarnessCenterHex — center the focused area view on an arbitrary hex (x,y), so a
+// headless driver can `shotid <areaWin>` a SPECIFIC location. `center <unitId>`
+// only targets a unit and findterr/findbridge only reach searched hexes; there was
+// no way to navigate to a plain coordinate for a pixel eyes-on (bridge draw, blend
+// seams) — the radar is ~5 hexes/px, too coarse to click. Reads the map bounds +
+// mutates the view, so it's serviced on the render thread like findterr. [mac2]
+//---------------------------------------------------------------------------
+void HarnessCenterHex( int x, int y, std::string& out )
+{
+    CWndArea* a = theAreaList.GetTop( );
+    if ( a == NULL ) { out = "err no-area\n"; return; }
+
+    CSize sz = theMap.GetSize( );
+    if ( x < 0 || y < 0 || x >= sz.cx || y >= sz.cy )
+    {
+        out = "err oob " + IntToStr( x ) + " " + IntToStr( y ) +
+              " (map " + IntToStr( sz.cx ) + "x" + IntToStr( sz.cy ) + ")\n";
+        return;
+    }
+
+    CHexCoord hc( x, y );
+    CMapLoc   ml( hc );
+    a->Center( ml );
+
+    out = "centered " + IntToStr( x ) + " " + IntToStr( y ) + "\n";
+}
+
+//---------------------------------------------------------------------------
 // HarnessFindBridge — list every bridge hex (CHex::bridge unit bit) with its fog
 // state (`bridge <x> <y> vis <0|1> seen <0|1>`), then center the focused area view
 // on the first NEVER-SEEN one (vis=0 seen=0; else the first found). Backs the #30

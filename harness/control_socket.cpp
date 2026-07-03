@@ -169,6 +169,15 @@ std::atomic<int>       g_findAdjId{-1};
 std::atomic<bool>      g_findPending{false};
 std::atomic<bool>      g_findDone{false};
 
+// Pending `centerhex <x> <y>` request (HarnessCenterHex) — center the area view on
+// an arbitrary hex; serviced on the render thread (mutates the view). [mac2]
+std::mutex             g_centerHexMutex;
+std::string            g_centerHexResult;
+std::atomic<int>       g_centerHexX{0};
+std::atomic<int>       g_centerHexY{0};
+std::atomic<bool>      g_centerHexPending{false};
+std::atomic<bool>      g_centerHexDone{false};
+
 // Pending `findbridge` request (HarnessFindBridge) — lists bridge hexes + fog state,
 // centers the view on the first never-seen one (BUGS #30 bridge-fog verify).
 std::mutex             g_bridgeMutex;
@@ -446,6 +455,22 @@ void handle_command(const std::string& line, int conn) {
         std::string out;
         { std::lock_guard<std::mutex> lk(g_findMutex); out = g_findResult; }
         if (!g_findDone.load()) out = "err findterr timeout (not in-game?)\n";
+        write(conn, out.c_str(), out.size());
+        return;
+    } else if (strcmp(cmd, "centerhex") == 0) {
+        // centerhex <x> <y> — center the area view on hex (x,y) so the driver can
+        // shotid the area window at a SPECIFIC location (pixel eyes-on of a bridge/
+        // blend/etc. that no unit or terrain-search reaches). Render-thread serviced.
+        int x = -1, y = -1;
+        if (sscanf(line.c_str(), "%*s %d %d", &x, &y) != 2) {
+            const char* u = "err usage: centerhex <x> <y>\n";
+            write(conn, u, strlen(u)); return;
+        }
+        g_centerHexX = x; g_centerHexY = y; g_centerHexDone = false; g_centerHexPending = true;
+        for (int i = 0; i < 2000 && !g_centerHexDone.load(); ++i) { struct timespec ts={0,5000000}; nanosleep(&ts,nullptr); }
+        std::string out;
+        { std::lock_guard<std::mutex> lk(g_centerHexMutex); out = g_centerHexResult; }
+        if (!g_centerHexDone.load()) out = "err centerhex timeout (not in-game?)\n";
         write(conn, out.c_str(), out.size());
         return;
     } else if (strcmp(cmd, "findbridge") == 0) {
@@ -774,6 +799,13 @@ void EnHarness_Service() {
         HarnessHexInfo(g_hexInfoX.load(), g_hexInfoY.load(), out);
         { std::lock_guard<std::mutex> lk(g_hexInfoMutex); g_hexInfoResult = out; }
         g_hexInfoDone = true;
+        return;
+    }
+    if (g_centerHexPending.exchange(false)) {
+        std::string out;
+        HarnessCenterHex(g_centerHexX.load(), g_centerHexY.load(), out);
+        { std::lock_guard<std::mutex> lk(g_centerHexMutex); g_centerHexResult = out; }
+        g_centerHexDone = true;
         return;
     }
     if (g_findPending.exchange(false)) {

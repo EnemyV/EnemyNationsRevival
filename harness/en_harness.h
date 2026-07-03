@@ -125,6 +125,10 @@ void HarnessHexInfo(int x, int y, std::string& out);
 // <id> [adjId]`. Render thread only (reads map + mutates the view).
 void HarnessFindTerrain(int id, int adjId, std::string& out);
 
+// Center the focused area view on an arbitrary hex (x,y) for a headless pixel
+// eyes-on. Backs `centerhex <x> <y>`. Render thread only (reads map + mutates view).
+void HarnessCenterHex(int x, int y, std::string& out);
+
 // List every bridge hex (CHex::bridge unit bit) as `bridge <x> <y> vis <0|1>
 // seen <0|1>`, then center the focused area view on the first NEVER-SEEN one
 // (vis=0 seen=0; else the first found). Backs `findbridge` = the BUGS #30
