@@ -32,10 +32,15 @@ static char BASED_CODE THIS_FILE[] = __FILE__;
 // dependent?" comment was right. All platforms now use the documented MSVC CRT
 // LCG, bit-identical to a Windows host; MSVC builds are unchanged in behavior.
 #define EN_RAND_MAX 0x7FFF
-static unsigned long g_enRandState = 1;
+// unsigned int, NOT unsigned long: long is 64-bit on LP64 (Linux/mac) but
+// 32-bit on Windows, so a `long` state silently accumulated 64 bits on POSIX.
+// Outputs only read bits 16-30 of the low 32 so it happened to match — but
+// any future reader of the wider state (fingerprint, wider rand) would
+// diverge cross-platform. 32-bit state == the MSVC CRT's, exactly.
+static unsigned int g_enRandState = 1;
 static void en_srand( unsigned int uSeed ) { g_enRandState = uSeed; }
 static int  en_rand() {
-    g_enRandState = g_enRandState * 214013UL + 2531011UL;
+    g_enRandState = g_enRandState * 214013U + 2531011U;
     return (int)( ( g_enRandState >> 16 ) & 0x7FFF );
 }
 
