@@ -201,12 +201,18 @@ void CGameMap::Close( )
     if ( m_pHex == NULL )
         return;
 
+    // Zero the dims BEFORE freeing the hex array: the AI workers' dims guard
+    // (caidata.cpp AiFillHexLiveNoLock) treats eX==0 as the post-Close state,
+    // so freeing first left a window where a racing straggler passed the
+    // guard and dereferenced the just-freed array (#65 family). Best-effort
+    // only (no fence/lock) — the real protection is the straggler handling
+    // in myThreadClose — but this ordering makes the guard actually guard.
+    m_eX = m_eY = 0;
+
     delete[] m_pHex;
     m_pHex = NULL;
 
     m_pLandExit = m_pShipExit = NULL;
-
-    m_eX = m_eY = 0;
 }
 
 void CGameMap::GetWorldSize( int iSize, int& iSide, int& iSideSize )

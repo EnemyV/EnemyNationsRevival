@@ -34,7 +34,37 @@ struct _CsAutoInit {
 // volatile: read in AI worker loops (ai.cpp AiThread while-condition) that the
 // /O2 fast-debug build could otherwise hoist out of the loop.
 volatile BOOL bEndThreads = FALSE;
+// Bumped once per myThreadClose(). A worker that outlives the close (leaked
+// straggler) sees the mismatch via myThreadShouldExit() and self-terminates
+// even after a new game's myStartThread() has reset bEndThreads to FALSE —
+// bEndThreads alone re-armed such a zombie (the second #65 mechanism).
+volatile DWORD dwThreadGen = 0;
+// Count of leaked stragglers still running. While nonzero, the AI teardown
+// (fnExit == AiExit, which frees pGameData/plAIMgrList that the straggler is
+// executing on) is deferred into fnDeferredExit instead of running in
+// myThreadClose(); it runs from the main thread once the last zombie exits.
+volatile int iZombies = 0;
+static THREADEXITFUNC fnDeferredExit = NULL;
 CObList lstThrds;
+
+DWORD myThreadGen() { return dwThreadGen; }
+BOOL  myThreadShouldExit( DWORD dwGenAtStart ) {
+    return bEndThreads || dwGenAtStart != dwThreadGen;
+}
+
+// Run a deferred AiExit() once the last zombie is gone. Main thread only
+// (called from myThreadClose/myStartThread); the callback runs outside cs.
+static void myRunDeferredThreadExit() {
+    THREADEXITFUNC fn = NULL;
+    EnterCriticalSection( &cs );
+    if ( fnDeferredExit != NULL && iZombies == 0 ) {
+        fn = fnDeferredExit;
+        fnDeferredExit = NULL;
+    }
+    LeaveCriticalSection( &cs );
+    if ( fn != NULL )
+        fn();
+}
 
 
 extern "C"
@@ -103,6 +133,10 @@ volatile int iThrdsLeft = 0;
 void myThreadClose( THREADEXITFUNC fnExit ) {
     static int iRecurse = 0;
 
+    // a previous close leaked stragglers and deferred its fnExit(); if they
+    // are gone by now, run that teardown before starting this one
+    myRunDeferredThreadExit();
+
     // we are NOT re-entrant here
     EnterCriticalSection( &cs );
     if ( iRecurse > 0 ) {
@@ -125,6 +159,10 @@ void myThreadClose( THREADEXITFUNC fnExit ) {
     }
 
     bEndThreads = TRUE;
+    // invalidate this generation of workers: even if a later myStartThread()
+    // resets bEndThreads before a leaked straggler checks it, the generation
+    // mismatch still makes the straggler exit (myThreadShouldExit)
+    dwThreadGen++;
 
     // we have to get these guys moving
     POSITION pos;
@@ -198,10 +236,13 @@ void myThreadClose( THREADEXITFUNC fnExit ) {
                         // deadlock on cs (a stuck worker can't exit while we hold it).
                         if ( WaitForSingleObject( pThrd->m_hThread, 0 ) == WAIT_OBJECT_0 )
                             delete pThrd;   // confirmed gone -> safe to free
-                        else
+                        else {
                             iLeaked++;      // leak it (no terminate, no delete) -- a tiny
                                             // one-time leak beats a heap deadlock; counted
-                                            // so bEndThreads stays armed below
+                                            // so the AI teardown is deferred below
+                            iZombies++;     // its eventual myThreadTerminate() decrements
+                                            // this (NOT iThrdsLeft -- already deducted here)
+                        }
                         iThrdsLeft--;
                     }
         }
@@ -209,16 +250,25 @@ void myThreadClose( THREADEXITFUNC fnExit ) {
         LeaveCriticalSection( &cs );
     }
 
-    // last call ever for the AI
-    fnExit();
-    // Only disarm the quit flag when every worker actually exited. A leaked
-    // straggler is still running its loop: resetting bEndThreads here re-armed
-    // it as a ZOMBIE that outlived theMap.Close() and AV'd dereferencing the
-    // freed hex array (BUGS #65, AiFillHexLiveNoLock). Leaving the flag TRUE
-    // makes the straggler self-terminate at its next check/yield; the next
-    // game's threads are unaffected — myStartThread() resets it to FALSE.
-    if ( iLeaked == 0 )
+    if ( iLeaked == 0 ) {
+        // last call ever for the AI
+        fnExit();
         bEndThreads = FALSE;
+    } else {
+        // A straggler is still executing on the very structures fnExit()
+        // (AiExit) frees — running it now is the same use-after-free #65
+        // closed, one level up (BUGS #65 follow-up). Defer the teardown; the
+        // last zombie's myThreadTerminate() makes it runnable and the next
+        // myThreadClose()/myStartThread() runs it from the main thread.
+        // bEndThreads stays TRUE so the straggler exits at its next check;
+        // even if a new game's myStartThread() resets the flag first, the
+        // dwThreadGen bump above still kills it (myThreadShouldExit).
+        EnterCriticalSection( &cs );
+        fnDeferredExit = fnExit;
+        LeaveCriticalSection( &cs );
+        fprintf( stderr, "[threads] close leaked %d straggler(s); AI teardown deferred (gen=%lu)\n",
+                 iLeaked, (unsigned long)dwThreadGen );
+    }
     iRecurse--;
 }
 
@@ -226,16 +276,31 @@ void myThreadTerminate() {
 
     // do this with a call to the AI
     if ( iWinType != W32s ) {
-        // remove from our list
         EnterCriticalSection( &cs );
-        iThrdsLeft--;
-        CWinThread* pCurrent = AfxGetThread();
+        // Is this a live worker (still in lstThrds -- entries are only ever
+        // removed wholesale by myThreadClose) or a zombie leaked by an earlier
+        // close (list rebuilt without it)? NOTE: the old check compared against
+        // AfxGetThread(), which the compat shim hardwires to NULL, so it never
+        // matched -- match by thread id instead. A zombie must NOT decrement
+        // iThrdsLeft: it was already deducted at leak time, and a second
+        // decrement corrupts the NEXT game's close accounting (the wait loop
+        // exits early and leaks a healthy worker).
+        BOOL bListed = FALSE;
+        DWORD dwSelf = ::GetCurrentThreadId();
         POSITION pos;
         for ( pos = lstThrds.GetHeadPosition(); pos != NULL; ) {
-            POSITION posOn = pos;
             CWinThread* pThrd = (CWinThread*)lstThrds.GetNext( pos );
-            if ( pThrd == pCurrent )
-                lstThrds.RemoveAt( posOn );
+            if ( pThrd != NULL && pThrd->m_nThreadID == dwSelf ) {
+                bListed = TRUE;
+                break;
+            }
+        }
+        if ( bListed )
+            iThrdsLeft--;       // normal exit; myThreadClose still owns the entry
+        else if ( iZombies > 0 ) {
+            iZombies--;         // leaked straggler finally exiting; the deferred
+                                // AiExit becomes runnable when this hits 0
+            fprintf( stderr, "[threads] zombie worker exited (%d left)\n", iZombies );
         }
         LeaveCriticalSection( &cs );
         AfxEndThread( 0 );
@@ -255,6 +320,21 @@ WORD myGetThrdUtlsVersion() {
 }
 
 void myStartThread( void* pData, AFX_THREADPROC fnThread ) {
+
+    // If the last close leaked a straggler, give it a beat to hit its next
+    // check (the generation mismatch kills it in ~100ms unless it is wedged
+    // inside one long Manage() pass), then run the deferred AiExit() so the
+    // old game's AI structures are freed BEFORE the new game re-creates them
+    // (ai.cpp deletes plAIMgrList unconditionally on init — doing that under
+    // a live zombie is #65 again).
+    if ( iZombies > 0 ) {
+        DWORD dwEnd = timeGetTime() + 2000;
+        while ( iZombies > 0 && timeGetTime() < dwEnd )
+            ::Sleep( 10 );
+        if ( iZombies > 0 )
+            fprintf( stderr, "[threads] WARNING: starting new AI worker with %d zombie(s) still live; deferred AI teardown stays parked\n", iZombies );
+    }
+    myRunDeferredThreadExit();
 
     bEndThreads = FALSE;
 

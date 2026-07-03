@@ -24,4 +24,11 @@ void myYieldThread ();
 void myThreadTerminate ();
 void myPauseThread ( BOOL bPause );
 
+// Worker-generation support: myThreadClose() bumps the generation, so a
+// straggler leaked by the close (BUGS #65) still self-terminates at its next
+// check even after myStartThread() re-arms bEndThreads=FALSE for a new game.
+// Workers capture myThreadGen() at start and poll myThreadShouldExit() with it.
+DWORD myThreadGen ();
+BOOL  myThreadShouldExit (DWORD dwGenAtStart);
+
 #endif
