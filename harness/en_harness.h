@@ -125,6 +125,13 @@ void HarnessHexInfo(int x, int y, std::string& out);
 // <id> [adjId]`. Render thread only (reads map + mutates the view).
 void HarnessFindTerrain(int id, int adjId, std::string& out);
 
+// List every bridge hex (CHex::bridge unit bit) as `bridge <x> <y> vis <0|1>
+// seen <0|1>`, then center the focused area view on the first NEVER-SEEN one
+// (vis=0 seen=0; else the first found). Backs `findbridge` = the BUGS #30
+// bridge-fog verify (a never-seen bridge must not draw until scouted). Read-only
+// of the map; mutates only the view. Render thread only.
+void HarnessFindBridge(std::string& out);
+
 // Scroll the focused area view by a pixel delta (grab-style: positive dx/dy move
 // the view center right/down). Drives the same PanByPixels path as the macOS
 // trackpad two-finger pan, so a headless driver can verify the scroll mechanic

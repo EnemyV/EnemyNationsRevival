@@ -169,6 +169,13 @@ std::atomic<int>       g_findAdjId{-1};
 std::atomic<bool>      g_findPending{false};
 std::atomic<bool>      g_findDone{false};
 
+// Pending `findbridge` request (HarnessFindBridge) — lists bridge hexes + fog state,
+// centers the view on the first never-seen one (BUGS #30 bridge-fog verify).
+std::mutex             g_bridgeMutex;
+std::string            g_bridgeResult;
+std::atomic<bool>      g_bridgePending{false};
+std::atomic<bool>      g_bridgeDone{false};
+
 // Pending `raise` request, serviced on the render thread. SDL_RaiseWindow is a
 // window/Cocoa operation that MUST run on the main thread on macOS — calling it
 // from the socket thread SIGTRAPs the process (reproducible: `raise` while a
@@ -439,6 +446,16 @@ void handle_command(const std::string& line, int conn) {
         std::string out;
         { std::lock_guard<std::mutex> lk(g_findMutex); out = g_findResult; }
         if (!g_findDone.load()) out = "err findterr timeout (not in-game?)\n";
+        write(conn, out.c_str(), out.size());
+        return;
+    } else if (strcmp(cmd, "findbridge") == 0) {
+        // findbridge — list bridge hexes (`bridge <x> <y> vis <0|1> seen <0|1>`) and
+        // center the view on the first never-seen one (#30 bridge-fog verify).
+        g_bridgeDone = false; g_bridgePending = true;
+        for (int i = 0; i < 2000 && !g_bridgeDone.load(); ++i) { struct timespec ts={0,5000000}; nanosleep(&ts,nullptr); }
+        std::string out;
+        { std::lock_guard<std::mutex> lk(g_bridgeMutex); out = g_bridgeResult; }
+        if (!g_bridgeDone.load()) out = "err findbridge timeout (not in-game?)\n";
         write(conn, out.c_str(), out.size());
         return;
     } else if (strcmp(cmd, "click") == 0) {
@@ -764,6 +781,13 @@ void EnHarness_Service() {
         HarnessFindTerrain(g_findId.load(), g_findAdjId.load(), out);
         { std::lock_guard<std::mutex> lk(g_findMutex); g_findResult = out; }
         g_findDone = true;
+        return;
+    }
+    if (g_bridgePending.exchange(false)) {
+        std::string out;
+        HarnessFindBridge(out);
+        { std::lock_guard<std::mutex> lk(g_bridgeMutex); g_bridgeResult = out; }
+        g_bridgeDone = true;
         return;
     }
     if (g_researchPending.exchange(false)) {

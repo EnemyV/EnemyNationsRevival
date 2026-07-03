@@ -7708,6 +7708,11 @@ void HarnessHexInfo( int x, int y, std::string& out )
     CTerrainSprite* spr = pHex->GetSprite( );
     out += " terr " + IntToStr( spr ? spr->GetID( ) : -1 );
     out += " tidx " + IntToStr( spr ? spr->GetIndex( ) : -1 );
+    // vtype = GetVisibleType(): what the MINIMAP paints (world.cpp pclrTerrain
+    // lookup) — distinct from terr (the actual sprite). Lets a headless driver
+    // verify fog display-deferral (e.g. #30: GrabHex's flatten must not reach
+    // vtype on a never-explored hex until the reveal).
+    out += " vtype " + IntToStr( pHex->GetVisibleType( ) );
     // Sub-surface mineral deposit (theMinerals is hex-keyed). A coal mine / iron
     // mine / oil well can ONLY be placed on a hex that carries the matching
     // deposit, and the deposit is invisible to the terrain/tree fields above — so
@@ -7779,6 +7784,50 @@ void HarnessFindTerrain( int id, int adjId, std::string& out )
     out = "notfound terr " + IntToStr( id );
     if ( adjId >= 0 ) out += " adj " + IntToStr( adjId );
     out += "\n";
+}
+
+//---------------------------------------------------------------------------
+// HarnessFindBridge — list every bridge hex (CHex::bridge unit bit) with its fog
+// state (`bridge <x> <y> vis <0|1> seen <0|1>`), then center the focused area view
+// on the first NEVER-SEEN one (vis=0 seen=0; else the first found). Backs the #30
+// bridge-fog verify: a never-seen bridge must NOT draw until scouted (vis flips),
+// after which IsBridge latches ("seen 1") and it stays shown. READ-ONLY of the map
+// (GetVisibility/IsBridge only — does NOT call SetBridge); mutates only the view.
+// Render thread only. Declared in en_harness.h.
+//---------------------------------------------------------------------------
+void HarnessFindBridge( std::string& out )
+{
+    CWndArea* a = theAreaList.GetTop( );
+    if ( a == NULL ) { out = "err no-area\n"; return; }
+
+    CSize sz = theMap.GetSize( );
+    int nListed = 0, cx = -1, cy = -1;
+    bool haveUnseen = false;
+    for ( int y = 0; y < sz.cy; ++y )
+    {
+        for ( int x = 0; x < sz.cx; ++x )
+        {
+            CHex* h = theMap.GetHex( x, y );
+            if ( h == NULL || !( h->GetUnits( ) & CHex::bridge ) ) continue;
+
+            BOOL vis = h->GetVisibility( ), seen = h->IsBridge( );
+            if ( nListed < 60 )   // bound the reply; bridges are rare
+                out += "bridge " + IntToStr( x ) + " " + IntToStr( y )
+                     + " vis "  + IntToStr( vis  ? 1 : 0 )
+                     + " seen " + IntToStr( seen ? 1 : 0 ) + "\n";
+            ++nListed;
+            if ( cx < 0 ) { cx = x; cy = y; }              // fallback: first found
+            if ( !haveUnseen && !vis && !seen )            // prefer: never-seen
+            { cx = x; cy = y; haveUnseen = true; }
+        }
+    }
+    if ( nListed == 0 ) { out = "notfound bridge\n"; return; }
+
+    CHexCoord hc( cx, cy );
+    CMapLoc   ml( hc );
+    a->Center( ml );
+    out += "total " + IntToStr( nListed ) + " centered " + IntToStr( cx ) + " "
+         + IntToStr( cy ) + ( haveUnseen ? " (never-seen)\n" : " (first)\n" );
 }
 
 //---------------------------------------------------------------------------
@@ -7971,7 +8020,24 @@ bool HarnessLoadGame( const char* path )
     // cleanly here, before any teardown. [linux2 regression find 2026-06-29]
     if ( theApp.m_pCreateGame != NULL || theApp.AmInGame( ) )
         return false;
-    g_harnessLoadPath = path;                          // arms the headless skips
+    // A nonexistent path must NOT enter the load flow: it throws mid-flow and the
+    // exception escapes this frame's catch (CatchOther + `[ASSERT-IGNORED]
+    // m_pMe != NULL` player.h:1042 — mac2 2026-07-03, cost an hour of phantom
+    // "load regressions"). Pre-check the file, and auto-append the ".en"
+    // extension when the bare name doesn't resolve but "<path>.en" does — the
+    // file-browser normally supplies it; headless callers often won't.
+    std::string sPath( path );
+    FILE* pfProbe = fopen( sPath.c_str( ), "rb" );
+    if ( pfProbe == NULL )
+    {
+        std::string sWithExt = sPath + ".en";
+        pfProbe = fopen( sWithExt.c_str( ), "rb" );
+        if ( pfProbe == NULL )
+            return false;                              // clean err, no flow entry
+        sPath = sWithExt;
+    }
+    fclose( pfProbe );
+    g_harnessLoadPath = sPath;                         // arms the headless skips
     bool bOk = false;
     try { bOk = SDL2_RunLoadSinglePlayerFlow( theApp.m_gameWindow.get( ) ); }
     catch ( ... ) { bOk = false; }
