@@ -7640,6 +7640,11 @@ void HarnessHexInfo( int x, int y, std::string& out )
     CTerrainSprite* spr = pHex->GetSprite( );
     out += " terr " + IntToStr( spr ? spr->GetID( ) : -1 );
     out += " tidx " + IntToStr( spr ? spr->GetIndex( ) : -1 );
+    // vtype = GetVisibleType(): what the MINIMAP paints (world.cpp pclrTerrain
+    // lookup) — distinct from terr (the actual sprite). Lets a headless driver
+    // verify fog display-deferral (e.g. #30: GrabHex's flatten must not reach
+    // vtype on a never-explored hex until the reveal).
+    out += " vtype " + IntToStr( pHex->GetVisibleType( ) );
     out += "\n";
 }
 
