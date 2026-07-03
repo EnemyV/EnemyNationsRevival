@@ -1894,7 +1894,14 @@ void SDL2BuildingWindow::Refresh() {
             // C5: a fuel-burning plant (coal plant) shows its fuel INPUT even in power mode — the
             // operator's "there's no input at all". Show the plant's input material + on-hand store.
             if ( m_lblPowerFuel ) {
-                CBuildPower* pBp = m_pBldg->GetData()->GetBldPower();
+                // OOB-READ FIX (mac2, re linux(newwin-mp) ASan report 13:05Z): the Power section also
+                // shows for the ROCKET (secPower() includes GetType()==rocket, not just UTpower), but the
+                // rocket's structure-data union is NOT UTpower. GetBldPower()'s unchecked (CBuildPower*)this
+                // would then read m_iInput 4 bytes PAST the real (non-power) object -> heap-buffer-overflow
+                // READ (UB; ASan-flagged every open, latent crash on a bad page). Only a true UTpower plant
+                // has CBuildPower fuel data — gate the cast exactly like PerBldgPower() (line ~1346) does.
+                CBuildPower* pBp = ( m_pBldg->GetData()->GetUnionType() == CStructureData::UTpower )
+                                   ? m_pBldg->GetData()->GetBldPower() : nullptr;
                 int iFuel = pBp ? pBp->GetInput() : -1;
                 // CRASH FIX (mac2 23:22): GetInput() returns the raw m_iInput, which for a fuel-less
                 // plant can be a sentinel/garbage index >= num_types (not just -1). GetDesc()/GetStore()
