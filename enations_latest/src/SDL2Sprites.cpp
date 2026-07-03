@@ -701,8 +701,8 @@ namespace SDL2Sprites
                 continue;
             // Unit perpendicular × half-width gives the streak's two sides.
             float ux = dx / len, uy = dy / len;   // unit along head->tail
-            float hwOut = t.halfW * 1.8f;          // operator: thicker team-colour outline
-            if ( hwOut < 3.0f ) hwOut = 3.0f;
+            float hwOut = t.halfW * 0.6f;          // team-colour outline halo pad (was 1.8x/min-3px: swamped the thin core)
+            if ( hwOut < 1.0f ) hwOut = 1.0f;
             hwOut += t.halfW;                      // outline half-width = core + halo pad
 
             // Pass 0 = team-colour OUTLINE halo (wider, dimmer); pass 1 = core strength-graded
