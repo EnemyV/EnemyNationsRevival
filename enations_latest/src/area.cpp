@@ -264,7 +264,8 @@ static SDL_Cursor* SdlCursorFromResId( int id )
         // Fire/attack target cursors (IDC_TARGET0..3): draw the crosshair RED.
         // The .cur art is all-black (palette black/white, no invert plane), so
         // without this the attack cursor reads as a plain black crosshair.
-        Uint32 tint = ( id == 165 || id == 178 || id == 179 || id == 180 )
+        Uint32 tint = ( id == IDC_TARGET0 || id == IDC_TARGET1 ||
+                        id == IDC_TARGET2 || id == IDC_TARGET3 )
                           ? 0x00DC1414u : 0u;   // red (220,20,20)
         if ( !dir.empty() )
             if ( SDL_Cursor* c = LoadCurFromFile( dir + "/" + fn, tint ) )

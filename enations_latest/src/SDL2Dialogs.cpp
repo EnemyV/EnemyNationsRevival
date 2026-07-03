@@ -842,8 +842,11 @@ static std::string RegistrationDefaultAddr() {
     char buf[128] = {0};
     GetPrivateProfileString("vdmplay", "RegistrationServerAddr", "", buf, sizeof(buf), ".\\vdmplay.ini");
     std::string s = (buf[0] ? buf : "localhost");
+    // Strip a trailing :port — but only when there's exactly ONE colon. An
+    // IPv6 literal ("::1", "fe80::…") has several; the old first-colon strip
+    // turned "::1" into "" and handed the join dialog an empty address.
     std::string::size_type c = s.find(':');
-    if (c != std::string::npos) s = s.substr(0, c);
+    if (c != std::string::npos && c == s.rfind(':')) s = s.substr(0, c);
     return s;
 }
 
@@ -1420,14 +1423,19 @@ void SDL2SessionBrowseDialog::UpdateList() {
             newSel = i;
     }
 
-    m_selectedIdx = newSel;
     if (newSel >= 0) m_lstSessions->SetSelected(newSel);
-    if (m_btnJoin) m_btnJoin->SetEnabled(newSel >= 0);
 
-    if (count == 0 && m_lblInfo)
-        m_lblInfo->SetText("No games found - check the server address and port, then Refresh.");
-    else if (count > 0 && m_lblInfo && newSel < 0)
-        m_lblInfo->SetText("");   // clear a stale "No games found" once games arrive
+    if (count == 0) {
+        m_selectedIdx = -1;
+        if (m_btnJoin) m_btnJoin->SetEnabled(false);
+        if (m_lblInfo)
+            m_lblInfo->SetText("No games found - check the server address and port, then Refresh.");
+    } else {
+        // SelectIndex owns m_selectedIdx/join-button/info-line; routing through
+        // it also replaces a stale "No games found" when the prior selection is
+        // re-found (the old code only cleared the label when newSel < 0)
+        SelectIndex(newSel);
+    }
 }
 
 void SDL2SessionBrowseDialog::OnJoin() {
