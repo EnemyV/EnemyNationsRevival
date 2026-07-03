@@ -353,8 +353,21 @@ BOOL CNetApi::Broadcast( LPCVPMSGHDR pData, int iLen, BOOL bLocal )
 // PlaceRocket -> bldg_new(rocket) matching the client's plyrnum). stderr for the
 // POSIX clients + OutputDebugString for the Win host (dbgcatch records ODS, not
 // stderr). Cheap and rare - stays on until the MP start path is stable.
+// Env-gated: EN_MPDIAG=0 silences it. Default is ON while the MP-start hunt is
+// live; flip the default to OFF (require EN_MPDIAG=1) before final release.
+static BOOL MpDiagOn( )
+{
+    static int s_on = -1;
+    if ( s_on < 0 ) {
+        const char* e = getenv( "EN_MPDIAG" );
+        s_on = ( e != NULL && *e == '0' ) ? 0 : 1;
+    }
+    return s_on;
+}
 void EnMpDiagLog( const char* fmt, ... )
 {
+    if ( !MpDiagOn( ) )
+        return;
     char buf[512];
     va_list args;
     va_start( args, fmt );

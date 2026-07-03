@@ -64,7 +64,12 @@ struct Pending {
 static bool PumpTraceOn()
 {
     static int on = -1;
-    if (on < 0) on = getenv("EN_NETTRACE") ? 1 : 0;
+    if (on < 0) {
+        // treat EN_NETTRACE=0 / empty as OFF, matching the other env gates
+        // (the old bare getenv() check turned tracing ON for =0)
+        const char* e = getenv("EN_NETTRACE");
+        on = (e != NULL && *e != '\0' && *e != '0') ? 1 : 0;
+    }
     return on == 1;
 }
 
