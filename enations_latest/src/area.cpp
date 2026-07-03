@@ -7971,6 +7971,20 @@ bool HarnessLoadGame( const char* path )
     // cleanly here, before any teardown. [linux2 regression find 2026-06-29]
     if ( theApp.m_pCreateGame != NULL || theApp.AmInGame( ) )
         return false;
+    // Fail cleanly on a missing/misnamed save BEFORE arming the flow: the load
+    // path runs far enough to hit GetMe() with m_pMe==NULL and throws (CatchOther
+    // "shutting the game down") on a bad path, leaving a wounded menu. The save is
+    // opened verbatim as theGame.m_sFileName (player.cpp), relative to cwd — so a
+    // plain existence probe on the same string predicts the failure. Common trip:
+    // `load coalliq_diag` (no .en) — reject here with a clear log instead of a throw.
+    // [mac2 harness-robustness 2026-07-03]
+    if ( FILE* fCheck = fopen( path, "rb" ) )
+        fclose( fCheck );
+    else
+    {
+        fprintf( stderr, "[harness] load: save not found: '%s' (need the full filename incl. .en, relative to the run dir)\n", path );
+        return false;
+    }
     g_harnessLoadPath = path;                          // arms the headless skips
     bool bOk = false;
     try { bOk = SDL2_RunLoadSinglePlayerFlow( theApp.m_gameWindow.get( ) ); }
