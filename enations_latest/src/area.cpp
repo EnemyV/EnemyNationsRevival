@@ -7829,6 +7829,56 @@ void HarnessCenterHex( int x, int y, std::string& out )
 }
 
 //---------------------------------------------------------------------------
+// HarnessBuildRoad — drive a crane road-build headlessly. The interactive path
+// (RoadUnit sets road_begin → LButtonDown captures m_hexRoadStart → LButtonUp in
+// road_set calls pVeh->SetRoad(start,end)) can't be delivered via the harness:
+// the 'R' hotkey never reaches the game (keyboard focus) and the road drag uses
+// CaptureMouse. So we call the SAME commit — CVehicle::SetRoad — directly on the
+// player's first owned crane (SetRoad sets build_road + drives the crane to the
+// start; it then lays the road toward the end as it works). Backs `road`. Mutates
+// game state → main/render-thread serviced. Declared in en_harness.h.
+//---------------------------------------------------------------------------
+void HarnessBuildRoad( int x1, int y1, int x2, int y2, std::string& out )
+{
+    CSize sz = theMap.GetSize( );
+    if ( x1 < 0 || y1 < 0 || x2 < 0 || y2 < 0 ||
+         x1 >= sz.cx || y1 >= sz.cy || x2 >= sz.cx || y2 >= sz.cy )
+    {
+        out = "err oob (map " + IntToStr( sz.cx ) + "x" + IntToStr( sz.cy ) + ")\n";
+        return;
+    }
+
+    CHexCoord hcStart( x1, y1 ), hcEnd( x2, y2 );
+    CHex* pHexStart = theMap._GetHex( hcStart );
+    if ( pHexStart == NULL || !pHexStart->CanRoad( ) )
+    {
+        out = "err start-hex not roadable\n";
+        return;
+    }
+
+    CVehicle* pCrane = NULL;
+    POSITION  pos = theVehicleMap.GetStartPosition( );
+    while ( pos != NULL )
+    {
+        DWORD     dwID = 0;
+        CVehicle* pVeh = NULL;
+        theVehicleMap.GetNextAssoc( pos, dwID, pVeh );
+        if ( pVeh && pVeh->GetOwner( ) && pVeh->GetOwner( )->IsMe( ) &&
+             pVeh->GetData( ) && pVeh->GetData( )->IsCrane( ) )
+        {
+            pCrane = pVeh;
+            break;
+        }
+    }
+    if ( pCrane == NULL ) { out = "err no owned crane\n"; return; }
+
+    pCrane->SetRoad( hcStart, hcEnd );
+    out = "road crane=" + IntToStr( (int)pCrane->GetID( ) ) +
+          " (" + IntToStr( x1 ) + "," + IntToStr( y1 ) + ")->(" +
+          IntToStr( x2 ) + "," + IntToStr( y2 ) + ")\n";
+}
+
+//---------------------------------------------------------------------------
 // HarnessFindBridge — list every bridge hex (CHex::bridge unit bit) with its fog
 // state (`bridge <x> <y> vis <0|1> seen <0|1>`), then center the focused area view
 // on the first NEVER-SEEN one (vis=0 seen=0; else the first found). Backs the #30

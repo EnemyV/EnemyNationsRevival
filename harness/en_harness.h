@@ -129,6 +129,13 @@ void HarnessFindTerrain(int id, int adjId, std::string& out);
 // eyes-on. Backs `centerhex <x> <y>`. Render thread only (reads map + mutates view).
 void HarnessCenterHex(int x, int y, std::string& out);
 
+// Order the player's first owned crane to build a road from hex (x1,y1) to (x2,y2),
+// driving CVehicle::SetRoad directly (the same commit the road_set mouse-release does)
+// — the crane road-build gesture (press-R + drag) can't be delivered headlessly
+// (keyboard focus + capture-drag). Backs `road <x1> <y1> <x2> <y2>`. Mutates game
+// state → serviced on the main/render thread like center/hexinfo.
+void HarnessBuildRoad(int x1, int y1, int x2, int y2, std::string& out);
+
 // List every bridge hex (CHex::bridge unit bit) as `bridge <x> <y> vis <0|1>
 // seen <0|1>`, then center the focused area view on the first NEVER-SEEN one
 // (vis=0 seen=0; else the first found). Backs `findbridge` = the BUGS #30

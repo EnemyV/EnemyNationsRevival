@@ -178,6 +178,15 @@ std::atomic<int>       g_centerHexY{0};
 std::atomic<bool>      g_centerHexPending{false};
 std::atomic<bool>      g_centerHexDone{false};
 
+// Pending `road <x1> <y1> <x2> <y2>` request (HarnessBuildRoad) — order the first
+// owned crane to build a road between two hexes; mutates game state → main/render
+// thread serviced (the R-hotkey + capture-drag road gesture can't be sent headless).
+std::mutex             g_roadMutex;
+std::string            g_roadResult;
+std::atomic<int>       g_roadX1{0}, g_roadY1{0}, g_roadX2{0}, g_roadY2{0};
+std::atomic<bool>      g_roadPending{false};
+std::atomic<bool>      g_roadDone{false};
+
 // Pending `findbridge` request (HarnessFindBridge) — lists bridge hexes + fog state,
 // centers the view on the first never-seen one (BUGS #30 bridge-fog verify).
 std::mutex             g_bridgeMutex;
@@ -471,6 +480,23 @@ void handle_command(const std::string& line, int conn) {
         std::string out;
         { std::lock_guard<std::mutex> lk(g_centerHexMutex); out = g_centerHexResult; }
         if (!g_centerHexDone.load()) out = "err centerhex timeout (not in-game?)\n";
+        write(conn, out.c_str(), out.size());
+        return;
+    } else if (strcmp(cmd, "road") == 0) {
+        // road <x1> <y1> <x2> <y2> — order the first owned crane to build a road
+        // between hexes. Drives CVehicle::SetRoad directly (the road drag gesture
+        // isn't headless-deliverable). Mutates game state → main-thread serviced.
+        int x1=-1,y1=-1,x2=-1,y2=-1;
+        if (sscanf(line.c_str(), "%*s %d %d %d %d", &x1,&y1,&x2,&y2) != 4) {
+            const char* u = "err usage: road <x1> <y1> <x2> <y2>\n";
+            write(conn, u, strlen(u)); return;
+        }
+        g_roadX1=x1; g_roadY1=y1; g_roadX2=x2; g_roadY2=y2;
+        g_roadDone=false; g_roadPending=true;
+        for (int i = 0; i < 2000 && !g_roadDone.load(); ++i) { struct timespec ts={0,5000000}; nanosleep(&ts,nullptr); }
+        std::string out;
+        { std::lock_guard<std::mutex> lk(g_roadMutex); out = g_roadResult; }
+        if (!g_roadDone.load()) out = "err road timeout (not in-game?)\n";
         write(conn, out.c_str(), out.size());
         return;
     } else if (strcmp(cmd, "findbridge") == 0) {
@@ -806,6 +832,13 @@ void EnHarness_Service() {
         HarnessCenterHex(g_centerHexX.load(), g_centerHexY.load(), out);
         { std::lock_guard<std::mutex> lk(g_centerHexMutex); g_centerHexResult = out; }
         g_centerHexDone = true;
+        return;
+    }
+    if (g_roadPending.exchange(false)) {
+        std::string out;
+        HarnessBuildRoad(g_roadX1.load(), g_roadY1.load(), g_roadX2.load(), g_roadY2.load(), out);
+        { std::lock_guard<std::mutex> lk(g_roadMutex); g_roadResult = out; }
+        g_roadDone = true;
         return;
     }
     if (g_findPending.exchange(false)) {
