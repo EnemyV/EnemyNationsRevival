@@ -10,6 +10,7 @@
 #include "EnSettings.h"
 
 #include <algorithm>
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <mutex>
@@ -225,43 +226,31 @@ class mempool_std_heap
         activeAllocations.erase( ptr );
 #endif
 
-        // Find the block that contains this pointer
-        Block* targetBlock = nullptr;
+        // Recover the owning Block in O(1): `data` is the sole member of Block
+        // (offset 0, standard-layout), so allocate() returns block->data ==
+        // (Block*)block. The old code linear-scanned allocatedBlocks here — O(n)
+        // per free, and n grows without bound as the pool doubles (this pool
+        // backs every projectile, so it hit ~51k blocks in a single battle,
+        // making combat teardown O(n^2)). Pointer identity makes the scan
+        // unnecessary.
+        static_assert( offsetof( Block, data ) == 0,
+                       "allocate() returns block->data; O(1) free needs data at offset 0" );
+        Block* targetBlock = reinterpret_cast<Block*>( ptr );
 
-        for ( Block* block: allocatedBlocks )
-        {
-            if ( block->data == ptr )
-            {
-                targetBlock = block;
-                break;
-            }
-        }
-
-        if ( targetBlock == nullptr )
-        {
 #ifdef _DEBUG
-            //CString str;
-            //str.Format( "deallocate: ERROR - ptr=%p not found in pool\n", ptr );
-            //OutputDebugStringA( str );
-#endif
-            ASSERT( false );
-            return;
-        }
-
-        // Check if already freed
-        for ( Block* freeBlock: freeList )
+        // Debug-only integrity checks (kept O(n) — Debug already pays for the
+        // activeAllocations set above, and these catch corruption/double-free
+        // during development). Release trusts the caller (a correct program
+        // never frees a foreign or already-freed pointer), keeping free O(1).
         {
-            if ( freeBlock == targetBlock )
-            {
-#ifdef _DEBUG
-                // CString str;
-                // str.Format( "deallocate: ERROR - ptr=%p already freed (double free)\n", ptr );
-                // OutputDebugStringA( str );
-#endif
-                ASSERT( false );
-                return;
-            }
+            bool inPool = false;
+            for ( Block* block : allocatedBlocks )
+                if ( block == targetBlock ) { inPool = true; break; }
+            if ( !inPool ) { ASSERT( false ); return; }
+            for ( Block* freeBlock : freeList )
+                if ( freeBlock == targetBlock ) { ASSERT( false ); return; }  // double free
         }
+#endif
 
         // Return to free list
         freeList.push_back( targetBlock );

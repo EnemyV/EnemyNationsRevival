@@ -695,6 +695,18 @@ private:
 
 typedef void* POSITION;
 
+// Packed-POSITION eligibility: the walk POSITION can hold the map iterator
+// directly (no heap IterPos wrapper) when the iterator is one raw node pointer —
+// MSVC at _ITERATOR_DEBUG_LEVEL=0 (Release), and always on libstdc++/libc++
+// (no checked-iterator proxy). Packed walks allocate nothing, so an early
+// `break`/`goto` out of a walk has nothing to leak. The pooled IterPos fallback
+// remains for MSVC Debug (IDL=2 iterators are larger than a pointer).
+#if (defined(_ITERATOR_DEBUG_LEVEL) && _ITERATOR_DEBUG_LEVEL == 0) || !defined(_WIN32)
+#define EN_CMAP_PACKED_POS 1
+#else
+#define EN_CMAP_PACKED_POS 0
+#endif
+
 // Diagnostic counter: net-live IterPos wrappers across all CMap/CList instances.
 // Every wrapper alloc bumps it; every free drops it. A monotonically rising
 // value is precisely the per-advance iterator leak (CMap early-break residual +
@@ -892,13 +904,19 @@ public:
     {
         CMapReadGuard g( m_srw );   // begin()/end() register checked iterators (proxy mutation)
         if ( m_map.empty() ) return nullptr;
-#if defined(_ITERATOR_DEBUG_LEVEL) && _ITERATOR_DEBUG_LEVEL == 0
-        // POSITION packs the unchecked iterator DIRECTLY (at IDL=0 it is one node
-        // pointer): no heap wrapper, no pool, no atomic counter — and nothing to leak
-        // when a caller breaks out of a walk early. The abandoned-IterPos leak grew
-        // ~5k wrappers/s on the 13-player save (1.8M live within minutes); this path
-        // makes a CMap walk allocation-free end to end.
+#if EN_CMAP_PACKED_POS
+        // POSITION packs the unchecked iterator DIRECTLY (one node pointer at
+        // MSVC IDL=0, and always on libstdc++/libc++): no heap wrapper, no pool,
+        // no atomic counter — and nothing to leak when a caller breaks out of a
+        // walk early. The abandoned-IterPos leak grew ~5k wrappers/s on the
+        // 13-player save (1.8M live within minutes); this path makes a CMap walk
+        // allocation-free end to end. (POSIX enabled 2026-07-02: LSan showed
+        // GraphicsEnginePump's goto-NoOper / mid-walk restart orphaning nodes.)
+#ifdef _WIN32
         UncheckedIt it = m_map.begin()._Unwrapped();
+#else
+        UncheckedIt it = m_map.begin();
+#endif
         static_assert( sizeof( UncheckedIt ) <= sizeof( POSITION ),
                        "IDL=0 unchecked iterator must be pointer-sized to pack into POSITION" );
         POSITION pos = nullptr;
@@ -936,7 +954,7 @@ public:
         // "13-player at 1 fps" collapse, 2026-06-10). Unchecked advance = plain pointer
         // chase, no lock. Walk-vs-writer safety is unchanged: the caller must hold the
         // game lock across a walk (same contract as the original MFC CMap).
-#if defined(_ITERATOR_DEBUG_LEVEL) && _ITERATOR_DEBUG_LEVEL == 0
+#if EN_CMAP_PACKED_POS
         // Pointer-packed POSITION (see GetStartPosition): unpack, read, advance,
         // repack — a pure pointer chase, allocation- and lock-free.
         if ( !rNextPosition ) return;
@@ -945,7 +963,11 @@ public:
         rKey   = it->first;
         rValue = it->second;
         ++it;
+#ifdef _WIN32
         UncheckedIt itEnd = m_map.end()._Unwrapped();   // trivial at IDL=0 (no proxy, no lock)
+#else
+        UncheckedIt itEnd = m_map.end();
+#endif
         if ( it == itEnd ) rNextPosition = nullptr;
         else               memcpy( &rNextPosition, &it, sizeof( it ) );
 #else
@@ -1507,9 +1529,30 @@ public:
 
 //------------------------- G D I   o b j e c t   w r a p p e r s ------------
 // Thin classes around Win32 GDI handles. Pattern: each holds an HXXX
-// member, supports FromHandle (returns a freshly-allocated wrapper that
-// the caller does NOT delete — leaks one per call, like MFC's temp-handle
-// map but simpler), Attach/Detach, and GetSafeHandle / m_hObject access.
+// member, supports FromHandle (returns a cached per-thread wrapper that
+// the caller does NOT delete — MFC temp-handle-map semantics),
+// Attach/Detach, and GetSafeHandle / m_hObject access.
+
+// FromHandle wrapper cache. MFC's FromHandle returned an entry from a
+// per-thread handle map (cleaned up in OnIdle); a new-per-call shim leaks one
+// wrapper per call, which is unbounded on hot paths (CWndBar::UpdateHelp goes
+// through CWnd::FromHandle on every toolbar stat refresh). One wrapper per
+// handle value per thread: wrappers hold nothing but the handle, so reuse
+// across OS handle reallocation is harmless, and the cache stays bounded by
+// the number of distinct handle values ever seen on the thread.
+template<class T>
+inline T* EnFromHandleCached( void* h )
+{
+    // Deleting map: wrappers die with their thread (AI threads use FromHandle
+    // too — without the dtor each exited thread orphaned its wrappers).
+    struct Cache : std::unordered_map<void*, T*> {
+        ~Cache() { for ( auto& kv : *this ) delete kv.second; }
+    };
+    static thread_local Cache s_cache;
+    T*& p = s_cache[h];
+    if ( !p ) p = new T();
+    return p;
+}
 //
 // These don't own the handle by default; ctor with a handle takes ownership.
 // Stubs are deliberately minimal — most live calls are owner-draw paths
@@ -1540,7 +1583,7 @@ public:
         return m_hObject != NULL;
     }
     int GetLogFont( LOGFONT* plf ) const { return ::GetObjectA( m_hObject, sizeof( LOGFONT ), plf ); }
-    static CFont* FromHandle( HFONT h ) { auto* p = new CFont(); p->m_hObject = (HGDIOBJ)h; return p; }
+    static CFont* FromHandle( HFONT h ) { auto* p = EnFromHandleCached<CFont>( (void*)h ); p->m_hObject = (HGDIOBJ)h; return p; }
     operator HFONT() const { return (HFONT)m_hObject; }
 };
 
@@ -1554,7 +1597,7 @@ public:
         m_hObject = (HGDIOBJ)::CreateSolidBrush( cr );
         return m_hObject != NULL;
     }
-    static CBrush* FromHandle( HBRUSH h ) { auto* p = new CBrush(); p->m_hObject = (HGDIOBJ)h; return p; }
+    static CBrush* FromHandle( HBRUSH h ) { auto* p = EnFromHandleCached<CBrush>( (void*)h ); p->m_hObject = (HGDIOBJ)h; return p; }
     operator HBRUSH() const { return (HBRUSH)m_hObject; }
 };
 
@@ -1571,7 +1614,7 @@ public:
         m_hObject = (HGDIOBJ)::CreatePen( nPenStyle, nWidth, cr );
         return m_hObject != NULL;
     }
-    static CPen* FromHandle( HPEN h ) { auto* p = new CPen(); p->m_hObject = (HGDIOBJ)h; return p; }
+    static CPen* FromHandle( HPEN h ) { auto* p = EnFromHandleCached<CPen>( (void*)h ); p->m_hObject = (HGDIOBJ)h; return p; }
     operator HPEN() const { return (HPEN)m_hObject; }
 };
 
@@ -1580,7 +1623,7 @@ class CBitmap : public CGdiObject
 public:
     CBitmap() {}
     int GetBitmap( BITMAP* pBitmap ) const { return ::GetObjectA( m_hObject, sizeof( BITMAP ), pBitmap ); }
-    static CBitmap* FromHandle( HBITMAP h ) { auto* p = new CBitmap(); p->m_hObject = (HGDIOBJ)h; return p; }
+    static CBitmap* FromHandle( HBITMAP h ) { auto* p = EnFromHandleCached<CBitmap>( (void*)h ); p->m_hObject = (HGDIOBJ)h; return p; }
     operator HBITMAP() const { return (HBITMAP)m_hObject; }
 };
 
@@ -1589,7 +1632,7 @@ class CPalette : public CGdiObject
 public:
     CPalette() {}
     BOOL CreatePalette( LPLOGPALETTE plp ) { m_hObject = (HGDIOBJ)::CreatePalette( plp ); return m_hObject != NULL; }
-    static CPalette* FromHandle( HPALETTE h ) { auto* p = new CPalette(); p->m_hObject = (HGDIOBJ)h; return p; }
+    static CPalette* FromHandle( HPALETTE h ) { auto* p = EnFromHandleCached<CPalette>( (void*)h ); p->m_hObject = (HGDIOBJ)h; return p; }
     operator HPALETTE() const { return (HPALETTE)m_hObject; }
 };
 
@@ -1612,7 +1655,7 @@ public:
         m_hObject = (HGDIOBJ)::CreateEllipticRgn( x1, y1, x2, y2 );
         return m_hObject != NULL;
     }
-    static CRgn* FromHandle( HRGN h ) { auto* p = new CRgn(); p->m_hObject = (HGDIOBJ)h; return p; }
+    static CRgn* FromHandle( HRGN h ) { auto* p = EnFromHandleCached<CRgn>( (void*)h ); p->m_hObject = (HGDIOBJ)h; return p; }
     operator HRGN() const { return (HRGN)m_hObject; }
 };
 
@@ -1634,7 +1677,7 @@ public:
     BOOL Attach( HDC h ) { m_hDC = h; m_hAttribDC = h; return h != NULL; }
     HDC  Detach()        { HDC h = m_hDC; m_hDC = m_hAttribDC = NULL; return h; }
 
-    static CDC* FromHandle( HDC h ) { auto* p = new CDC(); p->m_hDC = h; p->m_hAttribDC = h; return p; }
+    static CDC* FromHandle( HDC h ) { auto* p = EnFromHandleCached<CDC>( (void*)h ); p->m_hDC = h; p->m_hAttribDC = h; return p; }
 
     // SelectObject — MFC returns the previous CXxx*. We return a fresh
     // wrapper around the previously-selected handle.
@@ -1774,7 +1817,7 @@ public:
 // for game-side classes; this stub exists for the legacy paths that still
 // reference `CWnd*` as a parameter type (subclass.cpp owner-draw helpers,
 // wndstub.h's MFC-typed virtuals, etc.). The CWnd::FromHandle factory
-// returns a freshly-allocated wrapper, matching MFC's temp-handle map
+// returns a cached per-thread wrapper, matching MFC's temp-handle map
 // semantics (the returned pointer is short-lived; callers don't delete).
 
 class CWnd
@@ -1790,7 +1833,7 @@ public:
     BOOL  Attach( HWND h )  { m_hWnd = h; return h != NULL; }
     HWND  Detach()          { HWND h = m_hWnd; m_hWnd = NULL; return h; }
 
-    static CWnd* FromHandle( HWND h ) { auto* p = new CWnd(); p->m_hWnd = h; return p; }
+    static CWnd* FromHandle( HWND h ) { auto* p = EnFromHandleCached<CWnd>( (void*)h ); p->m_hWnd = h; return p; }
     CWnd*  GetParent()         const { return FromHandle( ::GetParent( m_hWnd ) ); }
     CWnd*  GetDlgItem( int id) const { return FromHandle( ::GetDlgItem( m_hWnd, id ) ); }
     BOOL   EnableWindow( BOOL b = TRUE ) { return ::EnableWindow( m_hWnd, b ); }
