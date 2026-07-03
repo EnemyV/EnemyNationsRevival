@@ -2199,7 +2199,7 @@ BOOL CSpriteCollection::Read( CMmio &mmio, unsigned int uTime, int iPerStart, in
     // being swallowed by the worker thread's catch(...) → g_bReadThreadError.
     if ( getenv( "EN_SINGLE_READ" ) ) bReadThread = FALSE;
 #endif
-    HANDLE hThread;
+    HANDLE hThread = NULL;
 
     if (bReadThread) {
         ASSERT(g_listptrspriteparms.IsEmpty());
@@ -2291,10 +2291,20 @@ BOOL CSpriteCollection::Read( CMmio &mmio, unsigned int uTime, int iPerStart, in
                 // Wait for the read thread to terminate itself (it accesses data local to this function)
 
                 WaitForSingleObject(hThread, INFINITE);
+                CloseHandle(hThread);
             }
 
             throw;
         }
+    }
+
+    if (bReadThread) {
+        // The read thread exits on its own once it has produced all m_nSprite
+        // parms (all consumed above). Reap it: the thread record (kernel handle
+        // on Windows, ThreadObj in the POSIX shim) was never closed on the
+        // success path — one leaked per collection load.
+        WaitForSingleObject(hThread, INFINITE);
+        CloseHandle(hThread);
     }
 
     ASSERT(0 <= iMaxID);

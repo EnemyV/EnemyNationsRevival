@@ -194,8 +194,12 @@ void* thread_trampoline(void* arg) {
         std::lock_guard<std::mutex> lk(t->donem);
         t->exitCode = rc;
         t->finished = true;
+        // Notify UNDER the lock: a waiter that has seen finished==true may
+        // CloseHandle (delete) the ThreadObj the moment it re-acquires donem,
+        // so nothing here may touch *t after the guard releases. Notifying
+        // outside the lock raced exactly that delete.
+        t->donecv.notify_all();
     }
-    t->donecv.notify_all();
     return nullptr;
 }
 

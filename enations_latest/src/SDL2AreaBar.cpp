@@ -87,6 +87,7 @@ SDL2AreaBar::SDL2AreaBar() {
 }
 
 SDL2AreaBar::~SDL2AreaBar() {
+    if (m_btnSheet) SDL_FreeSurface(m_btnSheet);
     if (m_bgTile) SDL_FreeSurface(m_bgTile);
     for (auto& p : m_fontCache)
         if (p.second) TTF_CloseFont(p.second);

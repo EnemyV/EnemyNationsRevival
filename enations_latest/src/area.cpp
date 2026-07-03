@@ -7708,6 +7708,19 @@ void HarnessHexInfo( int x, int y, std::string& out )
     CTerrainSprite* spr = pHex->GetSprite( );
     out += " terr " + IntToStr( spr ? spr->GetID( ) : -1 );
     out += " tidx " + IntToStr( spr ? spr->GetIndex( ) : -1 );
+    // Sub-surface mineral deposit (theMinerals is hex-keyed). A coal mine / iron
+    // mine / oil well can ONLY be placed on a hex that carries the matching
+    // deposit, and the deposit is invisible to the terrain/tree fields above — so
+    // a headless driver had no way to LOCATE a minable hex (it bit the build-chain
+    // QA: lumber-mill/farm place on any grass, but mines need the deposit).
+    // CMaterialTypes: copper=2 oil=6 coal=8 iron=9; -1 = no deposit here.
+    CMinerals* pMn = NULL;
+    if ( theMinerals.Lookup( hexcoord, pMn ) && pMn != NULL )
+        out += " mineral " + IntToStr( pMn->GetType( ) )
+             + " den " + IntToStr( pMn->GetDensity( ) )
+             + " qty " + IntToStr( pMn->GetQuantity( ) );
+    else
+        out += " mineral -1 den 0 qty 0";
     out += "\n";
 }
 
