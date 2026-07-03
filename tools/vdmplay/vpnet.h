@@ -206,6 +206,11 @@ public:
     //+ return TRUE if underlyiong protocol is keeping packet boundaries on safe links
     virtual BOOL KeepingBoundaries() const = 0;
 
+    //+ NAT candidates (vpnatcand.h): TRUE when VPNETADDRESS overlays an IPv4
+    // tcpaddress_s, i.e. the observed-address stamping / hole-punch rendezvous
+    // byte layouts apply. Only CTcpNet qualifies; IPX/netbios/comm have no NAT.
+    virtual BOOL IsInetTransport() const { return FALSE; }
+
     //+ return TRUE for slow networks
     virtual BOOL IsSlowNet() { return FALSE; }
 

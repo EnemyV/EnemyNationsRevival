@@ -167,7 +167,13 @@ void CJoinMulti::OnSessionClose( LPCVPSESSIONINFO pSi )
     m_sessions.erase(
         std::remove_if( m_sessions.begin(), m_sessions.end(),
             [pSi]( const SessionEntry& e ) {
-                return memcmp( &e.id, &pSi->sessionId, sizeof( VPSESSIONID ) ) == 0;
+                // Compare only the transport-address prefix (TCP uses 8 bytes,
+                // IPX 14). Bytes 16+ now carry iserve's observed-address
+                // candidate extension (tools/vdmplay/vpnatcand.h), so the SAME
+                // session can be seen with different tails (LAN broadcast vs
+                // iserve-served) — a full 28-byte compare would miss the match
+                // and leave a dead entry in the browser.
+                return memcmp( &e.id, &pSi->sessionId, 14 ) == 0;
             } ),
         m_sessions.end() );
 }

@@ -6,6 +6,8 @@
 #include "stdafx.h"
 #include "tdlog.h"
 #include "vpparam.h"
+#include "vpnatcand.h"
+#include <stdarg.h>
 #include <time.h>
 
 IMPLEMENT_CLASSNAME( CVpSession );
@@ -61,6 +63,42 @@ static int JoinAddrLogOn() {
     static int on = -1;
     if ( on < 0 ) on = ( getenv( "EN_JOINADDR" ) || getenv( "EN_NETTRACE" ) ) ? 1 : 0;
     return on;
+}
+
+// NAT hole-punch gate (EN_NAT_PUNCH=1). Gates the P1 rendezvous/probe machinery
+// on game hosts and clients (iserve's stateless forward is always on — it only
+// acts when a punch-enabled client asks). Default OFF while the feature soaks;
+// flip to an ini default once live-verified (see the feasibility doc §6 P1).
+static int NatPunchOn() {
+    static int on = -1;
+    if ( on < 0 ) {
+        const char* e = getenv( "EN_NAT_PUNCH" );
+        on = ( e && *e && *e != '0' ) ? 1 : 0;
+    }
+    return on;
+}
+
+// P0.1 candidate-dial gate. Default ON (inert until a session arrives with a
+// stamped tail, i.e. until a stamping iserve is deployed); EN_NAT_CAND=0 is the
+// kill switch back to the legacy always-dial-payload behavior.
+static int NatCandOn() {
+    static int on = -1;
+    if ( on < 0 ) {
+        const char* e = getenv( "EN_NAT_CAND" );
+        on = ( e && *e == '0' ) ? 0 : 1;
+    }
+    return on;
+}
+
+// [punch] log: always on while the punch machinery is active (the machinery is
+// itself opt-in via EN_NAT_PUNCH), plus iserve's EN_ISERVE_LOG side.
+static void PunchLog( const char* fmt, ... ) {
+    va_list ap;
+    va_start( ap, fmt );
+    fprintf( stderr, "[punch] " );
+    vfprintf( stderr, fmt, ap );
+    fprintf( stderr, "\n" );
+    va_end( ap );
 }
 
 DWORD vpMsgTime() {
@@ -263,6 +301,11 @@ BOOL CVpSession::InitNetwork( BOOL streamListen ) {
         return FALSE;
     }
 
+    // Zero the full 28-byte sessionId first: GetAddress only writes the
+    // transport prefix (8 bytes for TCP), and the tail previously shipped heap
+    // garbage. A deterministic zero tail is required now that vpnatcand.h uses
+    // it for the observed-address candidate extension (P0.1).
+    memset( &m_info->data.sessionId, 0, sizeof( m_info->data.sessionId ) );
     m_net->GetAddress( &m_info->data.sessionId );
 
     return TRUE;
@@ -282,6 +325,88 @@ void CVpSession::HandleNetDown() {
     VPEXIT();
     return;
 }
+
+// --- NAT hole-punch shared plumbing (see vpengine.h decls + feasibility doc P1) ---
+
+BOOL CVpSession::SendDgTo( LPCVPNETADDRESS to, LPVOID data, DWORD size ) {
+    if ( !m_broadcastLink )
+        return FALSE;
+
+    CNetAddress* a = m_net->MakeAddress( to );
+    if ( !a )
+        return FALSE;
+
+    BOOL r = m_broadcastLink->SendTo( *a, data, size, 0 );
+    a->Unref();
+    return r;
+}
+
+void CVpSession::PunchFireProbes( PunchPeer& p ) {
+    natPunchMsg ping( NatPunchPING );
+    ping.data.nonce = p.m_nonce;
+
+    const unsigned char* pubIp = EnNatCandBytes( &p.m_pub );
+    const unsigned char* privIp = EnNatCandBytes( &p.m_priv );
+
+    if ( !EnNatCandIpZero( pubIp ) )
+        SendDgTo( &p.m_pub, ping.Data(), ping.Size() );
+
+    // Private candidate too — same-LAN peers and non-hairpinning home routers
+    // only ever connect via it. Skip when absent or identical to public.
+    if ( !EnNatCandIpZero( privIp ) &&
+         !( EnNatCandIpEq( pubIp, privIp ) && pubIp[6] == privIp[6] && pubIp[7] == privIp[7] ) )
+        SendDgTo( &p.m_priv, ping.Data(), ping.Size() );
+
+    p.m_tries++;
+    p.m_lastSend = GetCurrentTime();
+}
+
+BOOL CVpSession::PunchHandlePing( natPunchMsg* msg, CNetAddress* from, PunchPeer& p ) {
+    // Always PONG back to the OBSERVED source: our reply is what opens (and
+    // then keeps refreshing) our own NAT's outbound mapping toward the peer.
+    natPunchMsg pong( NatPunchPONG );
+    pong.data.nonce = msg->data.nonce;
+
+    VPNETADDRESS src;
+    memset( &src, 0, sizeof( src ) );
+    from->GetNormalForm( &src );
+    SendDgTo( &src, pong.Data(), pong.Size() );
+
+    if ( p.m_state != PunchPeer::IDLE && msg->data.nonce == p.m_nonce ) {
+        // The peer's probe reached us: the peer->us leg is open. Treat like a
+        // PONG (our PONG above opens/confirms the us->peer leg at their end).
+        if ( p.m_state != PunchPeer::CONFIRMED ) {
+            p.m_state = PunchPeer::CONFIRMED;
+            p.m_confirmed = src;
+            char ab[64];
+            EnNatCandFmt( ab, sizeof( ab ), EnNatCandBytes( &src ), EnNatCandBytes( &src ) + 6 );
+            PunchLog( "CONFIRMED by peer PING from %s (tries=%d)", ab, p.m_tries );
+        }
+        p.m_lastAlive = GetCurrentTime();
+        return TRUE;
+    }
+    return FALSE;
+}
+
+BOOL CVpSession::PunchHandlePong( natPunchMsg* msg, CNetAddress* from, PunchPeer& p ) {
+    if ( p.m_state == PunchPeer::IDLE || msg->data.nonce != p.m_nonce )
+        return FALSE;
+
+    VPNETADDRESS src;
+    memset( &src, 0, sizeof( src ) );
+    from->GetNormalForm( &src );
+
+    if ( p.m_state != PunchPeer::CONFIRMED ) {
+        p.m_state = PunchPeer::CONFIRMED;
+        p.m_confirmed = src;
+        char ab[64];
+        EnNatCandFmt( ab, sizeof( ab ), EnNatCandBytes( &src ), EnNatCandBytes( &src ) + 6 );
+        PunchLog( "CONFIRMED punched pair -> %s (tries=%d)", ab, p.m_tries );
+    }
+    p.m_lastAlive = GetCurrentTime();
+    return TRUE;
+}
+
 
 void CVpSession::OnSafeData( CNetLink* link ) {
     DWORD waitingDataCount;
@@ -901,7 +1026,10 @@ CLocalSession::CLocalSession( CTDLogger* log,
                               CPlayerMap* players,
                               CWSMap* wsMap ):
     CVpSession( log, net, players, wsMap ), m_nextPlayerId( VP_FIRSTPLAYER ), m_visible( TRUE ),
-    m_lastRegTime( 0 ), m_gotsEnumREQ( FALSE ) {}
+    m_lastRegTime( 0 ), m_gotsEnumREQ( FALSE ) {
+    for ( int i = 0; i < MAX_PUNCH_PEERS; i++ )
+        m_punch[i].Reset();
+}
 
 //+ Connection establishemwent succeded
 void CLocalSession::OnConnect( CNetLink* link ) {
@@ -1097,6 +1225,41 @@ void CLocalSession::OnUnsafeData( CNetLink* link ) {
     case DummyREQ:
         break;
 
+    case NatPunchFWD:
+        // iserve pushed a joiner's candidates through our warm registration
+        // mapping (host role of the P1 rendezvous).
+        if ( NatPunchOn() && msg->ContentSize() >= sizeof( natPunchInfo ) )
+            OnNatPunchFWD( (natPunchMsg*)msg, addr );
+        break;
+
+    case NatPunchPING:
+        if ( NatPunchOn() && msg->ContentSize() >= sizeof( natPunchInfo ) ) {
+            // Exactly ONE PunchHandlePing call (it always PONGs the source):
+            // aim it at the nonce-matching slot so that pairing confirms, or at
+            // slot 0 (no match there => reply-only) when the nonce is unknown.
+            int hit = 0;
+            for ( int i = 0; i < MAX_PUNCH_PEERS; i++ ) {
+                if ( m_punch[i].m_state != PunchPeer::IDLE &&
+                     m_punch[i].m_nonce == ( (natPunchMsg*)msg )->data.nonce ) {
+                    PunchHandlePing( (natPunchMsg*)msg, addr, m_punch[i] );
+                    hit = 1;
+                    break;
+                }
+            }
+            if ( !hit )
+                PunchHandlePing( (natPunchMsg*)msg, addr, m_punch[0] );
+        }
+        break;
+
+    case NatPunchPONG:
+        if ( NatPunchOn() && msg->ContentSize() >= sizeof( natPunchInfo ) ) {
+            for ( int i = 0; i < MAX_PUNCH_PEERS; i++ ) {
+                if ( PunchHandlePong( (natPunchMsg*)msg, addr, m_punch[i] ) )
+                    break;
+            }
+        }
+        break;
+
     default:
         unexpected = TRUE;
         break;
@@ -1111,6 +1274,96 @@ void CLocalSession::OnUnsafeData( CNetLink* link ) {
 }
 
 
+// P1, host role: iserve forwarded a joiner's candidate pair (it can reach us
+// any time — our periodic re-register keeps the NAT mapping to :1707 warm and
+// the reply direction open). Start firing probes at the joiner from the same
+// dg socket the session plays on.
+void CLocalSession::OnNatPunchFWD( natPunchMsg* msg, CNetAddress* from ) {
+    // Light origin check: only accept forwards from the configured reg server.
+    if ( m_registrationAddress ) {
+        VPNETADDRESS reg, src;
+        memset( &reg, 0, sizeof( reg ) );
+        memset( &src, 0, sizeof( src ) );
+        m_registrationAddress->GetNormalForm( &reg );
+        from->GetNormalForm( &src );
+        if ( !EnNatCandIpEq( EnNatCandBytes( &reg ), EnNatCandBytes( &src ) ) ) {
+            PunchLog( "host: dropping NatPunchFWD from non-regserver source" );
+            return;
+        }
+    }
+
+    // Re-forward for a nonce we already track just refreshes it; otherwise take
+    // a free slot (or recycle the stalest).
+    int slot = -1, stalest = 0;
+    for ( int i = 0; i < MAX_PUNCH_PEERS; i++ ) {
+        if ( m_punch[i].m_state != PunchPeer::IDLE && m_punch[i].m_nonce == msg->data.nonce ) {
+            slot = i;
+            break;
+        }
+        if ( m_punch[i].m_state == PunchPeer::IDLE ) {
+            if ( slot < 0 || m_punch[slot].m_state != PunchPeer::IDLE )
+                slot = i;
+        } else if ( slot < 0 ) {
+            if ( m_punch[i].m_lastSend <= m_punch[stalest].m_lastSend )
+                stalest = i;
+        }
+    }
+    if ( slot < 0 )
+        slot = stalest;
+
+    PunchPeer& p = m_punch[slot];
+    if ( p.m_state == PunchPeer::IDLE || p.m_nonce != msg->data.nonce ) {
+        p.Reset();
+        p.m_nonce = msg->data.nonce;
+        p.m_pub = msg->data.pubCand;
+        p.m_priv = msg->data.privCand;
+        p.m_state = PunchPeer::PROBING;
+
+        char pb[64], vb[64];
+        EnNatCandFmt( pb, sizeof( pb ), EnNatCandBytes( &p.m_pub ), EnNatCandBytes( &p.m_pub ) + 6 );
+        EnNatCandFmt( vb, sizeof( vb ), EnNatCandBytes( &p.m_priv ), EnNatCandBytes( &p.m_priv ) + 6 );
+        PunchLog( "host: joiner candidates pub=%s priv=%s%s -> probing", pb, vb,
+                  ( msg->data.flags & EN_NATCAND_F_SAMENAT ) ? " (same public IP)" : "" );
+    }
+
+    PunchFireProbes( p );
+}
+
+
+// Punch retries/expiry for the host role, from CLocalSession::OnTimer.
+void CLocalSession::DrivePunch() {
+    if ( !NatPunchOn() )
+        return;
+
+    DWORD t = GetCurrentTime();
+
+    for ( int i = 0; i < MAX_PUNCH_PEERS; i++ ) {
+        PunchPeer& p = m_punch[i];
+
+        switch ( p.m_state ) {
+        case PunchPeer::PROBING:
+            if ( p.m_tries >= 12 ) {
+                PunchLog( "host: punch to joiner FAILED (12 probe rounds, no round-trip)" );
+                p.Reset();
+            } else if ( t - p.m_lastSend > 300 ) {
+                PunchFireProbes( p );
+            }
+            break;
+
+        case PunchPeer::CONFIRMED:
+            // The client owns keepalives (its PINGs; our PONGs refresh our own
+            // outbound mapping). Expire a pairing that has gone quiet.
+            if ( t - p.m_lastAlive > 120000 ) {
+                PunchLog( "host: punched pair expired (no keepalive for 120s)" );
+                p.Reset();
+            }
+            break;
+
+        default:
+            break;
+        }
+    }
+}
 
 
 
@@ -1346,6 +1599,8 @@ BOOL CLocalSession::BroadcastSessionData() {
 
 
 void CLocalSession::OnTimer() {
+    DrivePunch();   // NAT hole-punch probe retries/expiry (no-op unless EN_NAT_PUNCH)
+
     // Do NOT gate the reg-server heartbeat on !m_gotsEnumREQ. That flag trips on the
     // first DIRECT SenumREQ from any client — and a joiner's LookForServer sends one —
     // which permanently silenced the periodic re-register, so the reg server aged the
@@ -1385,7 +1640,9 @@ CRemoteSession::CRemoteSession( CTDLogger* log,
                                 CWSMap* wsMap, DWORD maxAge ):
     CVpSession( log, net, players, wsMap ), m_serverWS( NULL ), m_pendingJoin( NULL ),
     m_initialJoin( TRUE ), m_serverEnumData( NULL ), m_maxServerAge( maxAge ), m_connected( FALSE ),
-    m_tcpEnumTried( FALSE ) {}
+    m_tcpEnumTried( FALSE ) {
+    m_punch.Reset();
+}
 
 
 BOOL CRemoteSession::LookForServer( LPVOID data ) {
@@ -2123,6 +2380,13 @@ void CRemoteSession::OnUnsafeData( CNetLink* link ) {
     case SenumREP:
     {
         sesInfoMsg* siMsg = (sesInfoMsg*)msg;
+
+        // P0.1: the registration server stamps the datagram's OBSERVED source
+        // (the host's public NAT mapping for its game dg socket) into the
+        // sessionId tail before storing/serving it. No-op for a game client
+        // receiving enum replies (base impl is empty).
+        StampRegistration( siMsg, addr );
+
         CNetAddress* addr2 = m_net->MakeAddress( &siMsg->data.sessionId );
 
         if ( !addr2 )
@@ -2155,6 +2419,29 @@ void CRemoteSession::OnUnsafeData( CNetLink* link ) {
     case DummyREQ:
         break;
 
+    case NatPunchREQ:
+        // Only the registration server acts on this (virtual override); a game
+        // client ignores stray REQs. Always dispatched (not EN_NAT_PUNCH-gated)
+        // so iserve serves punch-enabled clients without its own env setup.
+        if ( msg->ContentSize() >= sizeof( natPunchInfo ) )
+            OnNatPunchREQ( (natPunchMsg*)msg, addr );
+        break;
+
+    case NatPunchREP:
+        if ( NatPunchOn() && msg->ContentSize() >= sizeof( natPunchInfo ) )
+            OnNatPunchREP( (natPunchMsg*)msg, addr );
+        break;
+
+    case NatPunchPING:
+        if ( NatPunchOn() && msg->ContentSize() >= sizeof( natPunchInfo ) )
+            PunchHandlePing( (natPunchMsg*)msg, addr, m_punch );
+        break;
+
+    case NatPunchPONG:
+        if ( NatPunchOn() && msg->ContentSize() >= sizeof( natPunchInfo ) )
+            PunchHandlePong( (natPunchMsg*)msg, addr, m_punch );
+        break;
+
     default:
         unexpected = TRUE;
         break;
@@ -2170,6 +2457,40 @@ void CRemoteSession::OnUnsafeData( CNetLink* link ) {
 
 
 BOOL CRemoteSession::ConnectToServer( LPCVPNETADDRESS addr, LPVOID userData ) {
+    // P0.1 candidate selection: when the sessionId carries iserve's stamped
+    // observed-address tail (vpnatcand.h), pick which candidate to dial.
+    //   - stamped public IP == payload private IP  -> host isn't NAT'd: private.
+    //   - SAMENAT flag (iserve saw us and the host from the SAME public IP)
+    //                                              -> same household: private.
+    //   - otherwise -> the private address is meaningless from here; dial the
+    //     PUBLIC candidate {observed IP, claimed stream port, observed dg port}
+    //     and (EN_NAT_PUNCH) start the UDP rendezvous in parallel.
+    // No tail (old iserve / LAN broadcast discovery) -> exactly the old path.
+    VPNETADDRESS dial;
+    if ( addr && m_net->IsInetTransport() && NatCandOn() && EnNatCandPresent( addr ) ) {
+        const unsigned char* pubIp = EnNatCandPubIp( addr );
+        const unsigned char* privIp = EnNatCandPrivIp( addr );
+        BOOL sameNat = ( EnNatCandFlags( addr ) & EN_NATCAND_F_SAMENAT ) != 0;
+
+        if ( !EnNatCandIpZero( pubIp ) && !EnNatCandIpEq( pubIp, privIp ) && !sameNat ) {
+            EnNatCandPublicAddr( addr, &dial );
+
+            if ( JoinAddrLogOn() ) {
+                char pb[64];
+                EnNatCandFmt( pb, sizeof( pb ), pubIp, EnNatCandPubDgPort( addr ) );
+                fprintf( stderr, "[natcand] host is NAT'd (observed %s != advertised private): dialing PUBLIC candidate\n", pb );
+            }
+
+            if ( NatPunchOn() )
+                StartNatPunch( addr );
+
+            addr = &dial;
+        } else if ( JoinAddrLogOn() ) {
+            fprintf( stderr, "[natcand] dialing PRIVATE candidate (%s)\n",
+                     sameNat ? "same public IP as host - same NAT" : "host not NAT'd" );
+        }
+    }
+
     if ( addr && JoinAddrLogOn() ) {
         char abuf[64];
         FormatVpAddr( abuf, sizeof( abuf ), addr );
@@ -2201,6 +2522,130 @@ BOOL CRemoteSession::ConnectToServer( LPCVPNETADDRESS addr, LPVOID userData ) {
         nA->Unref();
     }
     return m_serverWS != NULL;
+}
+
+
+// P1, client role: kick the rendezvous. The REQ goes to iserve FROM our dg
+// socket — the same socket the session will play on, so the mapping iserve
+// observes for us is the one the host must punch. Runs in parallel with the
+// TCP dial; retried from DrivePunch until REP arrives.
+void CRemoteSession::StartNatPunch( LPCVPNETADDRESS sessionId ) {
+    m_punch.Reset();
+    m_punch.m_sessionId = *sessionId;
+    m_punch.m_nonce = ( GetCurrentTime() * 2654435761u ) ^ (DWORD)(size_t)this;
+    if ( !m_punch.m_nonce )
+        m_punch.m_nonce = 1;
+    m_punch.m_state = PunchPeer::WAIT_REP;
+
+    natPunchMsg req( NatPunchREQ );
+    req.data.sessionId = *sessionId;
+    req.data.nonce = m_punch.m_nonce;
+    // Private candidate: our own station address + bound ports, same source the
+    // host advertises about itself (GetAddress only fills the transport prefix
+    // of the zeroed overlay).
+    m_net->GetAddress( &req.data.privCand );
+    // pubCand stays zero — iserve fills it with what it OBSERVES from us.
+
+    CNetAddress* reg = m_net->MakeServerLookupAddress();
+    if ( !reg ) {
+        PunchLog( "client: no reg-server address - punch unavailable" );
+        m_punch.Reset();
+        return;
+    }
+
+    VPNETADDRESS regA;
+    memset( &regA, 0, sizeof( regA ) );
+    reg->GetNormalForm( &regA );
+    reg->Unref();
+
+    m_punch.m_lastSend = GetCurrentTime();
+    m_punch.m_tries = 1;
+    SendDgTo( &regA, req.Data(), req.Size() );
+    PunchLog( "client: NatPunchREQ sent to reg server (nonce=%08lx)", (unsigned long)m_punch.m_nonce );
+}
+
+
+// P1, client role: iserve answered with the host's candidate pair — probe both.
+void CRemoteSession::OnNatPunchREP( natPunchMsg* msg, CNetAddress* from ) {
+    if ( m_punch.m_state != PunchPeer::WAIT_REP || msg->data.nonce != m_punch.m_nonce )
+        return;
+
+    m_punch.m_pub = msg->data.pubCand;
+    m_punch.m_priv = msg->data.privCand;
+    m_punch.m_state = PunchPeer::PROBING;
+    m_punch.m_tries = 0;
+
+    char pb[64], vb[64];
+    EnNatCandFmt( pb, sizeof( pb ), EnNatCandBytes( &m_punch.m_pub ), EnNatCandBytes( &m_punch.m_pub ) + 6 );
+    EnNatCandFmt( vb, sizeof( vb ), EnNatCandBytes( &m_punch.m_priv ), EnNatCandBytes( &m_punch.m_priv ) + 6 );
+    PunchLog( "client: host candidates pub=%s priv=%s%s -> probing", pb, vb,
+              ( msg->data.flags & EN_NATCAND_F_SAMENAT ) ? " (same public IP)" : "" );
+
+    PunchFireProbes( m_punch );
+}
+
+
+// Client-side punch pacing: REQ resends, probe retries, then keepalives that
+// hold both NATs' mappings open (host answers each PING with a PONG).
+void CRemoteSession::DrivePunch() {
+    if ( !NatPunchOn() || m_punch.m_state == PunchPeer::IDLE )
+        return;
+
+    DWORD t = GetCurrentTime();
+
+    switch ( m_punch.m_state ) {
+    case PunchPeer::WAIT_REP:
+        if ( m_punch.m_tries >= 5 ) {
+            PunchLog( "client: no NatPunchREP from reg server after 5 tries - giving up" );
+            m_punch.Reset();
+        } else if ( t - m_punch.m_lastSend > 1000 ) {
+            // Resend the REQ with the SAME nonce (StartNatPunch would reset the
+            // try counter and never hit the give-up above).
+            natPunchMsg req( NatPunchREQ );
+            req.data.sessionId = m_punch.m_sessionId;
+            req.data.nonce = m_punch.m_nonce;
+            m_net->GetAddress( &req.data.privCand );
+
+            CNetAddress* reg = m_net->MakeServerLookupAddress();
+            if ( reg ) {
+                VPNETADDRESS regA;
+                memset( &regA, 0, sizeof( regA ) );
+                reg->GetNormalForm( &regA );
+                reg->Unref();
+                SendDgTo( &regA, req.Data(), req.Size() );
+            }
+            m_punch.m_tries++;
+            m_punch.m_lastSend = t;
+        }
+        break;
+
+    case PunchPeer::PROBING:
+        if ( m_punch.m_tries >= 12 ) {
+            PunchLog( "client: punch FAILED (12 probe rounds, no round-trip) - symmetric NAT or filtered path" );
+            m_punch.Reset();
+        } else if ( t - m_punch.m_lastSend > 300 ) {
+            PunchFireProbes( m_punch );
+        }
+        break;
+
+    case PunchPeer::CONFIRMED:
+        if ( t - m_punch.m_lastSend > 15000 ) {
+            natPunchMsg ping( NatPunchPING );
+            ping.data.nonce = m_punch.m_nonce;
+            SendDgTo( &m_punch.m_confirmed, ping.Data(), ping.Size() );
+            m_punch.m_lastSend = t;
+        }
+        if ( t - m_punch.m_lastAlive > 60000 ) {
+            PunchLog( "client: punched pair lost (no PONG for 60s)" );
+            m_punch.Reset();
+        }
+        break;
+    }
+}
+
+
+void CRemoteSession::OnTimer() {
+    DrivePunch();
 }
 
 
@@ -2282,7 +2727,29 @@ int CRegisterySession::ReplyServerInfo( CWS* ws, LPVOID data ) {
         // keeps the datagram reply. The old unconditional flags=0 always replied over UDP,
         // so a TCP-enum query under a UDP block never got its reply -> empty browser.
         DWORD replyFlags = ( p.ws->m_safeLink ) ? VP_MUSTDELIVER : 0;
-        sendDataInfo info( msg->Data(), msg->Size(), replyFlags, NULL, p.session );
+
+        // P0.1 serve-time same-NAT hint: when THIS requester's observed IP
+        // equals the host's stamped public IP, both sit behind the same NAT —
+        // the public candidate would need router hairpinning (often broken),
+        // so flag the reply to make the joiner dial the private candidate.
+        // Per-request, so it must go into a COPY, never the stored m_info.
+        char cbuf[VP_MAXSENDDATA];
+        LPVOID sendData = msg->Data();
+        if ( msg->Size() <= sizeof( cbuf ) && p.ws->m_address &&
+             EnNatCandPresent( &msg->data.sessionId ) ) {
+            VPNETADDRESS req;
+            memset( &req, 0, sizeof( req ) );
+            p.ws->m_address->GetNormalForm( &req );
+            if ( EnNatCandIpEq( EnNatCandBytes( &req ), EnNatCandPubIp( &msg->data.sessionId ) ) ) {
+                memcpy( cbuf, msg->Data(), (size_t)msg->Size() );
+                VPSESSIONINFO* si = (VPSESSIONINFO*)( cbuf + sizeof( VPMSGHDR ) );
+                EnNatCandSetFlags( &si->sessionId,
+                                   (unsigned char)( EnNatCandFlags( &si->sessionId ) | EN_NATCAND_F_SAMENAT ) );
+                sendData = cbuf;
+            }
+        }
+
+        sendDataInfo info( sendData, msg->Size(), replyFlags, NULL, p.session );
 
         p.ws->SendData( info );
     }
@@ -2354,6 +2821,116 @@ void CRegisterySession::ProcessSafeData( CNetLink* link, genericMsg* msg ) {
         return;
     }
     CRemoteSession::ProcessSafeData( link, msg );
+}
+
+
+// P0.1: a registration datagram's OBSERVED UDP source is the host's public NAT
+// mapping for its game dg socket (registrations are sent from that socket).
+// Stamp it into the sessionId tail before the message is stored — the registry
+// then serves both candidates to every joiner with no wire-format change, and
+// a host can never spoof its public candidate (we always overwrite the tail).
+void CRegisterySession::StampRegistration( sesInfoMsg* msg, CNetAddress* observed ) {
+    if ( !m_net->IsInetTransport() || !observed )
+        return;
+
+    VPNETADDRESS obs;
+    memset( &obs, 0, sizeof( obs ) );
+    observed->GetNormalForm( &obs );
+
+    // Observed overlay (tcpaddress_s): IP at [0..3], source (dg) port at [6..7].
+    const unsigned char* b = EnNatCandBytes( &obs );
+    EnNatCandStamp( &msg->data.sessionId, b, b + 6 );
+
+    if ( IserveLogOn() ) {
+        char ab[64];
+        EnNatCandFmt( ab, sizeof( ab ), b, b + 6 );
+        fprintf( stderr, "[iserve] registration stamped: observed public candidate %s\n", ab );
+    }
+}
+
+
+// P1: stateless rendezvous. Look the target session up, tell the host about
+// the joiner (through the host's warm registration mapping — no inbound
+// connection needed), tell the joiner about the host. No punch state is kept
+// at the registry at all.
+void CRegisterySession::OnNatPunchREQ( natPunchMsg* msg, CNetAddress* from ) {
+    if ( !m_net->IsInetTransport() || !from )
+        return;
+
+    // Key the lookup by the session's transport address (IsEqual ignores the
+    // candidate tail).
+    CNetAddress* key = m_net->MakeAddress( &msg->data.sessionId );
+    if ( !key )
+        return;
+    CWS* found = m_wsMap->FindByAddress( key );
+    key->Unref();
+
+    if ( !found || !found->IsRemote() || !( (CRemoteWS*)found )->m_info ) {
+        if ( IserveLogOn() )
+            fprintf( stderr, "[iserve] NatPunchREQ for an unknown/unregistered session - dropped\n" );
+        return;
+    }
+
+    const VPNETADDRESS& hostId = ( (CRemoteWS*)found )->m_info->data.sessionId;
+    if ( !EnNatCandPresent( &hostId ) ) {
+        if ( IserveLogOn() )
+            fprintf( stderr, "[iserve] NatPunchREQ: host registration carries no observed stamp (pre-P0.1 host?) - dropped\n" );
+        return;
+    }
+
+    VPNETADDRESS cliObs;
+    memset( &cliObs, 0, sizeof( cliObs ) );
+    from->GetNormalForm( &cliObs );
+    const unsigned char* cb = EnNatCandBytes( &cliObs );
+
+    DWORD flags = 0;
+    if ( EnNatCandIpEq( cb, EnNatCandPubIp( &hostId ) ) )
+        flags |= EN_NATCAND_F_SAMENAT;
+
+    // Joiner's public candidate: observed IP + its self-claimed stream port +
+    // observed (dg) source port.
+    VPNETADDRESS cliPub;
+    memset( &cliPub, 0, sizeof( cliPub ) );
+    unsigned char* cp = EnNatCandBytes( &cliPub );
+    cp[0] = cb[0]; cp[1] = cb[1]; cp[2] = cb[2]; cp[3] = cb[3];
+    cp[4] = EnNatCandBytes( &msg->data.privCand )[4];
+    cp[5] = EnNatCandBytes( &msg->data.privCand )[5];
+    cp[6] = cb[6]; cp[7] = cb[7];
+
+    // -> host, at its OBSERVED public endpoint, from our :1707 socket (the
+    //    only source its NAT filter is guaranteed to admit).
+    natPunchMsg fwd( NatPunchFWD );
+    fwd.data.sessionId = msg->data.sessionId;
+    fwd.data.pubCand = cliPub;
+    fwd.data.privCand = msg->data.privCand;
+    fwd.data.nonce = msg->data.nonce;
+    fwd.data.flags = flags;
+
+    VPNETADDRESS hostObs;
+    memset( &hostObs, 0, sizeof( hostObs ) );
+    unsigned char* hp = EnNatCandBytes( &hostObs );
+    const unsigned char* hip = EnNatCandPubIp( &hostId );
+    const unsigned char* hdp = EnNatCandPubDgPort( &hostId );
+    hp[0] = hip[0]; hp[1] = hip[1]; hp[2] = hip[2]; hp[3] = hip[3];
+    hp[6] = hdp[0]; hp[7] = hdp[1];
+    SendDgTo( &hostObs, fwd.Data(), fwd.Size() );
+
+    // -> joiner: the host's dialable candidate pair.
+    natPunchMsg rep( NatPunchREP );
+    rep.data.sessionId = hostId;
+    EnNatCandPublicAddr( &hostId, &rep.data.pubCand );
+    memcpy( &rep.data.privCand, &hostId, 8 );   // transport prefix = private candidate
+    rep.data.nonce = msg->data.nonce;
+    rep.data.flags = flags;
+    SendDgTo( &cliObs, rep.Data(), rep.Size() );
+
+    if ( IserveLogOn() ) {
+        char ha[64], ca[64];
+        EnNatCandFmt( ha, sizeof( ha ), hip, hdp );
+        EnNatCandFmt( ca, sizeof( ca ), cb, cb + 6 );
+        fprintf( stderr, "[iserve] punch rendezvous: joiner %s <-> host %s%s\n",
+                 ca, ha, ( flags & EN_NATCAND_F_SAMENAT ) ? " (same public IP)" : "" );
+    }
 }
 
 
