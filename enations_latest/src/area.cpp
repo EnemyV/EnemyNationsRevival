@@ -8007,7 +8007,24 @@ bool HarnessLoadGame( const char* path )
     // cleanly here, before any teardown. [linux2 regression find 2026-06-29]
     if ( theApp.m_pCreateGame != NULL || theApp.AmInGame( ) )
         return false;
-    g_harnessLoadPath = path;                          // arms the headless skips
+    // A nonexistent path must NOT enter the load flow: it throws mid-flow and the
+    // exception escapes this frame's catch (CatchOther + `[ASSERT-IGNORED]
+    // m_pMe != NULL` player.h:1042 — mac2 2026-07-03, cost an hour of phantom
+    // "load regressions"). Pre-check the file, and auto-append the ".en"
+    // extension when the bare name doesn't resolve but "<path>.en" does — the
+    // file-browser normally supplies it; headless callers often won't.
+    std::string sPath( path );
+    FILE* pfProbe = fopen( sPath.c_str( ), "rb" );
+    if ( pfProbe == NULL )
+    {
+        std::string sWithExt = sPath + ".en";
+        pfProbe = fopen( sWithExt.c_str( ), "rb" );
+        if ( pfProbe == NULL )
+            return false;                              // clean err, no flow entry
+        sPath = sWithExt;
+    }
+    fclose( pfProbe );
+    g_harnessLoadPath = sPath;                         // arms the headless skips
     bool bOk = false;
     try { bOk = SDL2_RunLoadSinglePlayerFlow( theApp.m_gameWindow.get( ) ); }
     catch ( ... ) { bOk = false; }
