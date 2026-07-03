@@ -3662,6 +3662,11 @@ void CWndArea::ResClicked( )
 {
     static int aiRes[] = { -1, -1, 3, 3, -1, -1, 2, -1, 0, 1 };
 
+    // Same m_pMe==NULL teardown/loading-stall guard as OnLButtonUp: this is a
+    // toolbar-button input path and derefs GetMe() below.
+    if ( theGame._GetMe( ) == NULL )
+        return;
+
     m_bShowRes = !m_bShowRes;
 
     // Resource-view toggle swaps hex sprites to/from the minerals overlay directly
@@ -3973,6 +3978,15 @@ void CWndArea::OnLButtonUp( UINT nFlags, CPoint point )
 
     // in case from a road
     ClrRoadIcons( );
+
+    // BUGS.md (area-map click with m_pMe==NULL → Release AV): clicking the map
+    // while an MP game never fully started (loading stall) or right after
+    // session teardown (host quit → net purge) reaches player derefs below
+    // (e.g. rocket_pos posts CMsgPlaceBldg via GetMe()->GetPlyrNum()) with no
+    // local player. Debug asserted (player.h:1042); Release marched into the
+    // null-deref (mac2 .ips 2026-07-02). No player → the click has no meaning.
+    if ( theGame._GetMe( ) == NULL )
+        return;
 
     CSubHex _sub = m_aa.WindowToSubHex( point );
     _sub.Wrap( );
