@@ -300,6 +300,26 @@ else ()
     target_compile_options(enations PRIVATE -include stdafx.h)
 endif ()
 
+# Cross-platform world-gen FP determinism (MP RAND MISMATCH, 2026-07-03):
+# the enations target compiles Release/Profile with /fp:fast /arch:AVX2, which
+# lets MSVC CONTRACT a*b+c into a fused multiply-add (single rounding) and
+# reassociate float expressions in the terrain-altitude math. POSIX builds use
+# -ffp-contract=off, so gcc(Linux) and clang(mac) agree and MSVC is the lone
+# outlier: on some wtype=4 seeds the terrain stage computes a different altitude
+# (map hash diverges while the RNG fingerprint is still identical), which later
+# gates a different RandNum draw count -> CmdPlay RAND MISMATCH, client dropped.
+# Confirmed by the 3-node [wg] diff on seed 384bf615 (blocks identical; terrain
+# rand-equal/map-differs = the pure float-value signature). Scope ONLY the two
+# world-gen TUs to /fp:precise (kills contraction AND /fp:fast's reassociation/
+# reciprocal tricks) — appended AFTER the target's /fp:fast so cl.exe's last-wins
+# rule makes it override. Rest of the game keeps /fp:fast (perf). Gen-time only.
+if (MSVC)
+    set_source_files_properties(
+        wrldinit.cpp
+        wrldgen.cpp
+        PROPERTIES COMPILE_OPTIONS "/fp:precise")
+endif ()
+
 # Phase 1g step 1: drop CMAKE_MFC_FLAG. Our own WinMain (WinMain.cpp)
 # replaces MFC's auto-generated AfxWinMain entry shim. The MFC types from
 # afx*.h still link via _AFXDLL until Phase 1g step 2 (header purge).
