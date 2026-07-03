@@ -779,6 +779,12 @@ BOOL CTcpNet::Listen(BOOL streamListen, BOOL serverMode)
  // rather than the 0.0.0.0 that getsockname() reports for an INADDR_ANY bind.
  in_addr realStation = m_address.m_stationAddress;
 
+ // P0.2 (NAT plan): pinned stream port state. Declared up here (vacuous init)
+ // because the dg-bind `goto handleerr` below would otherwise jump past them.
+ u_short pinBase;
+ int     pinTry;
+ BOOL    pinBound;
+
  sin.sin_family = AF_INET;
  sin.sin_addr.s_addr = INADDR_ANY;
  sin.sin_port = m_address.m_dgPort;
@@ -796,10 +802,36 @@ BOOL CTcpNet::Listen(BOOL streamListen, BOOL serverMode)
   if (!m_listenLink)
    { failStep = "MakeListenLink(stream)"; goto nonwsaerr; }
 
+  // P0.2 (NAT plan): pin the stream listener to a KNOWN port instead of the
+  // legacy ephemeral bind(0). An ephemeral session port changes every launch,
+  // so neither a router port-forward, nor UPnP, nor TCP hole-punching can ever
+  // target it — pinning is a prerequisite for every NAT-traversal option (see
+  // docs/plans/nat-holepunch-iserve-feasibility.md P0.2). Default 2347 (dg is
+  // 2346), [TCP] StreamPort overrides, +1..+15 retried so several instances on
+  // one box (loopback tests) coexist, and 0/failure falls back to the legacy
+  // ephemeral bind — never fails harder than the old code. The bound port is
+  // read back via getsockname below and advertised in the sessionId as before.
   sin.sin_addr.s_addr = INADDR_ANY;
-  sin.sin_port = 0;
-  if (bind(m_listenLink->m_socket, (sockaddr*) &sin, sizeof(sin)))
-   { failStep = "bind(stream)"; goto handleerr; }
+  pinBound = FALSE;
+  pinBase = (u_short) vpFetchInt("TCP", "StreamPort", 2347);
+  if (pinBase)
+  {
+   for (pinTry = 0; pinTry < 16; pinTry++)
+   {
+    sin.sin_port = htons((u_short)(pinBase + pinTry));
+    if (bind(m_listenLink->m_socket, (sockaddr*) &sin, sizeof(sin)) == 0)
+     { pinBound = TRUE; break; }
+   }
+   if (!pinBound && JoinAddrLogOn())
+    fprintf(stderr,"[join-addr] CTcpNet::Listen pinned stream ports %u..%u all taken -> ephemeral fallback\n",
+            (unsigned)pinBase, (unsigned)(pinBase+15));
+  }
+  if (!pinBound)
+  {
+   sin.sin_port = 0;
+   if (bind(m_listenLink->m_socket, (sockaddr*) &sin, sizeof(sin)))
+    { failStep = "bind(stream)"; goto handleerr; }
+  }
 
   if (listen(m_listenLink->m_socket, 5))
    { failStep = "listen(stream)"; goto handleerr; }

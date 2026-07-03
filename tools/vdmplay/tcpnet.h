@@ -283,6 +283,11 @@ public:
         return TRUE;
     }
 
+    //+ NAT candidate stamping / hole-punch byte layouts apply (vpnatcand.h)
+    virtual BOOL IsInetTransport() const {
+        return TRUE;
+    }
+
 
     virtual CTCPLink *MakeListenLink();
 
