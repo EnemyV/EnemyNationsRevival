@@ -449,7 +449,6 @@ protected:
 	BOOL		MakePeak (int xOk, int yOk, int xTest, int yTest, int iSidesize, BOOL bEasy = FALSE);
 	void		MakeRiver (int x, int y, BOOL & bFound);
 	void		MakeRiversFlow (int * piBlks, int iSide, int iSideSize);	// flow-accumulation rivers (random maps)
-	void		WgTrace (const char * szStage);	// [wg] world-gen parity trace (rand-mismatch hunt)
 	void		MakeTerrain (int x, int y, int iTyp, int iSideSize);
 
 	void		CheckOcean();
