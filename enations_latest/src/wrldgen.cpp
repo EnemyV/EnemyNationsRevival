@@ -106,6 +106,28 @@ static int EnCosDeg( int deg )
     return ( EnSinDeg( deg + 90 ) );
 }
 
+// TEMP [wgbits] diag (env-gated, EN_WG_BITS=<n>): raw IEEE bits of the first
+// <n> float values produced in the mountain builder (BlockEdgeFactor returns +
+// peak falloffFactor), with their integer inputs for call-order alignment.
+// Cross-platform bit-diff pins WHICH float chain in the diverging m_peak
+// section differs (board 2026-07-03 mac↔gcc m_peak divergence). No effect
+// unless EN_WG_BITS is set; remove with the [wg] checkpoints once localized.
+static void WgBits( const char* szTag, int i1, int i2, float f )
+{
+    static int s_iLeft = -2;
+    if ( s_iLeft == -2 )
+    {
+        const char* sz = getenv( "EN_WG_BITS" );
+        s_iLeft = sz ? atoi( sz ) : 0;
+    }
+    if ( s_iLeft <= 0 )
+        return;
+    s_iLeft--;
+    unsigned u;
+    memcpy( &u, &f, sizeof( u ) );
+    fprintf( stderr, "[wgbits] %s %d %d %08x\n", szTag, i1, i2, u );
+}
+
 /// <summary>
 /// Returns how close you are to the edge.
 /// </summary>
@@ -134,6 +156,7 @@ static float BlockEdgeFactor( int x, int y, int _x, int _y, int iSideSize )
 
     // Smoothstep for gentle blending near edges
     float fRtn = t * t * ( 3.0f - 2.0f * t );
+    WgBits( "bef", minDist, edgeWidth, fRtn );
     return fRtn;
 }
 
@@ -527,6 +550,7 @@ void CGameMap::GenerateMountainBlock( int _x, int iSideSize, int _y)
                     // Exponential falloff for sharp peaks (steeper than linear)
                     float falloffFactor = 1.0f - ( (float)radius / (float)iMaxRadius );
                     falloffFactor       = falloffFactor * falloffFactor;  // Square for sharper falloff
+                    WgBits( "fall", radius, iMaxRadius, falloffFactor );
 
                     int ringAlt = (int)( baseAlt * falloffFactor ) + 30;  // Keep elevated base
 
@@ -568,6 +592,8 @@ void CGameMap::GenerateMountainBlock( int _x, int iSideSize, int _y)
                     MakeMineral( xPeak + iDif, yPeak + iDif, CMaterialTypes::iron, iMaxRadius * 2, 2 );
             }
         }
+
+        WgTrace( "m_peak" );  // [wg] bisect (temp): after peaks/rings section
 
         // Create sharp ridgelines connecting peaks
         for ( int iRidge = 0; iRidge < iNumPeaks - 1 && iRidge < 9; iRidge++ )
@@ -631,6 +657,8 @@ void CGameMap::GenerateMountainBlock( int _x, int iSideSize, int _y)
                 }
             }
         }
+
+        WgTrace( "m_ridge" );  // [wg] bisect (temp): after ridgelines section
 
         // Create U-shaped glacial valleys between peaks
         for ( int iValley = 0; iValley < iNumPeaks - 1 && iValley < 9; iValley++ )
@@ -781,6 +809,7 @@ void CGameMap::GenerateMountainBlock( int _x, int iSideSize, int _y)
             }
         }
 
+        WgTrace( "m_valley" );  // [wg] bisect (temp): after valleys/cirque/meander section
     }
 }
 
