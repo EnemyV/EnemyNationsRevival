@@ -192,7 +192,7 @@ class CPlayer : public CObject
         ASSERT_STRICT_VALID( this );
         // Civ-wide edict energy upkeep (Edicts v1): fold the recurring +pct into the
         // REPORTED need so toolbar/building-info "Energy Need" reflects an active edict's
-        // cost (e.g. Mining Subsidy +20% power). StartLoop applies the same pct to the raw
+        // cost (e.g. Mining Subsidy +25% power). StartLoop applies the same pct to the raw
         // member transiently for the m_fPwrMult drag, but resets it before render — so
         // without this the displayed need never moved. See player.cpp StartLoop.
         return ( m_iPwrNeed + (int)( m_iPwrNeed * m_fEdictEnergyUpkeepPct ) );
@@ -371,6 +371,7 @@ class CPlayer : public CObject
     void  ToggleEdict( int edictId, bool bOn );   // flips the bit, then RecomputeEdictMults (local only)
     void  ToggleEdictNet( int edictId, bool bOn );// user-initiated toggle: local + broadcast (MP sync)
     void  RecomputeEdictMults( );                 // fold active edicts (g_aEdicts) into cached mults
+    void  EdictHostLost( CStructureData const* pSd ); // a building died: revoke civ edicts whose LAST host is gone (§29)
     float GetAttackMult( ) const
     {
         ASSERT_STRICT_VALID( this );
@@ -753,7 +754,8 @@ class CPlayer : public CObject
     // edicts use the AltOutput family instead (operator: "building edicts ARE AltOutput").
     // The cached mults are recomputed from g_aEdicts whenever m_dwEdicts changes
     // (RecomputeEdictMults), then folded into the Get*Prod() accessors above. Default 1.0
-    // (no edict → no change). NOT serialized in v1 (operator deferred persistence).
+    // (no edict → no change). The bitmask IS serialized (save release 5+, see Serialize);
+    // the derived mults/upkeeps are not — they're rebuilt on load via RecomputeEdictMults.
     DWORD m_dwEdicts;
     float m_fEdictConstMult;       // → GetConstProd
     float m_fEdictMineMult;        // → GetMineProd
@@ -1103,7 +1105,7 @@ class CGame : public CObject
     LONG    m_iPos;       // initial position
     LONG    m_iWorldType; // world generation preset (EWorldType) - synced via CNetStart
     LONG    m_iRivers;    // river density slider 0-100 (60 = baseline) - synced via CNetStart
-    LONG    m_iOcean;     // ocean size slider 0-100 (50 = baseline ~= current avg); MP-sync via CNetStart is a follow-up
+    LONG    m_iOcean;     // ocean size slider 0-100 (50 = baseline ~= current avg) - synced via CNetStart
     std::string m_sGameName;  // for create_net
     std::string m_sGameDesc;
 

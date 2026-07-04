@@ -2191,6 +2191,10 @@ CBuilding::~CBuilding( )
         if ( m_iConstDone == -1 )
             GetOwner( )->AddExists( GetData( )->GetType( ), -1 );
 
+        // Edicts v1 §29: same last-host revoke as RemoveUnit — this destructor path also
+        // decrements the exists count (idempotent: only clears when no host remains).
+        GetOwner( )->EdictHostLost( GetData( ) );
+
         // scenario stuff
         if ( GetOwner( )->IsAI( ) && ( theGame.GetScenario( ) != -1 ) )
             switch ( GetData( )->GetType( ) )
@@ -2439,6 +2443,11 @@ void CBuilding::RemoveUnit( )
 
     if ( !theApp.AmInGame( ) )
         return;
+
+    // Edicts v1 §29: if this was the owner's LAST host of an active civ-wide edict
+    // (rocket → Austerity, command center → Fortify Border, ...), revoke that edict.
+    // Runs for ALL players on every client (removal is replicated) so MP converges.
+    GetOwner( )->EdictHostLost( GetData( ) );
 
     // we can't see anything anymore (may be an alliance unit)
     if ( SpottingOn( ) )

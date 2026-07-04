@@ -275,6 +275,55 @@ void CPlayer::ToggleEdictNet( int edictId, bool bOn )
     }
 }
 
+// Edicts v1 §29: a civ-wide edict is administered from its HOST building type (Austerity at
+// the rocket, Fortify Border at the command center, ...). When the owner loses the LAST
+// standing host of an active edict the policy is revoked — both the promised behavior
+// ("Lost if rocket destroyed") and the only way out of a stuck edict: with no host left
+// there is no info window to toggle it off, so its upkeep would drain the colony forever.
+// Called from CBuilding::RemoveUnit / ~CBuilding (after the m_piBldgExists decrement) with
+// the dead building's CStructureData. Runs on EVERY client — building removal is already
+// replicated — so all clients revoke the same bit deterministically without a net message.
+void CPlayer::EdictHostLost( CStructureData const* pSd )
+{
+    if ( ( m_dwEdicts == 0 ) || ( pSd == NULL ) )
+        return;
+
+    CStructureData::BLDG_TYPE bt = pSd->GetBldgType( );
+    CStructureData::BLDG_TYPE gt = pSd->GetType( );
+    DWORD dwOld = m_dwEdicts;
+
+    for ( int id = 0; id < EDICT_COUNT; ++id )
+    {
+        if ( ( m_dwEdicts & ( 1u << id ) ) == 0 )
+            continue;
+        const EdictDef& e = g_aEdicts[id];
+        if ( e.scope != EDICT_CIVWIDE )
+            continue;
+        // Was the dead building a host for this edict? Match by GetBldgType (normalised:
+        // apartment/office/fort families) OR GetType (unique: rocket/command_center) —
+        // the same dual match nCivEdictsFor uses in SDL2BuildingWindow.
+        if ( ( e.hostBuilding != bt ) && ( e.hostBuilding != gt ) )
+            continue;
+
+        // Any host of that type still standing? Sum the exists counts across every
+        // concrete structure type that normalises to the host (apartment_*, office_*, ...).
+        LONG iHave = 0;
+        for ( int iOn = 0; iOn < theStructures.GetNumBuildings( ); iOn++ )
+        {
+            CStructureData const* pData = theStructures.GetData( iOn );
+            if ( pData == NULL )
+                continue;
+            if ( ( pData->GetBldgType( ) == e.hostBuilding ) || ( pData->GetType( ) == e.hostBuilding ) )
+                iHave += GetExists( iOn );
+        }
+        if ( iHave <= 0 )
+            m_dwEdicts &= ~( 1u << id );
+    }
+
+    if ( m_dwEdicts != dwOld )
+        RecomputeEdictMults( );
+}
+
 void CPlayer::Close( )
 {
 
@@ -1606,7 +1655,8 @@ void CGame::StartNewWorld( unsigned uRand, int iSide, int iSideSize )
 #endif
     CNetStart msg( uRand, iSide, iSideSize, theApp.m_pCreateGame->m_iAi, theApp.m_pCreateGame->m_iNumAi,
                    theGame.GetAll( ).GetCount( ) - theApp.m_pCreateGame->m_iNumAi, theApp.m_pCreateGame->m_iSize,
-                   theApp.m_pCreateGame->m_iWorldType, theApp.m_pCreateGame->m_iRivers );
+                   theApp.m_pCreateGame->m_iWorldType, theApp.m_pCreateGame->m_iRivers,
+                   theApp.m_pCreateGame->m_iOcean );
 
     POSITION pos;
     for ( pos = m_lstAll.GetHeadPosition( ); pos != NULL; )

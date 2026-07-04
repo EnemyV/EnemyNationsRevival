@@ -201,6 +201,16 @@ private:
     // the shared AltOutput::Convert production hook reads); label comes from the def. Scope
     // ("This building only") is shown via an adjacent SDL2InfoIcon (#36).
     SDL2Checkbox* m_chkAltOut      = nullptr;
+    // Edicts section rows, kept live: Refresh() re-syncs each checkbox from the player's
+    // edict bitmask (a toggle can originate outside this window — harness `setedict`, or
+    // the edict being auto-revoked when its last host building dies, §29) and requests a
+    // Rebuild when the research-gated row COUNT changes (a topic discovered while the
+    // window is open adds its row in place — computeLayout reserves height for the full
+    // host set so no window resize is needed).
+    static const int kMaxEdictRows = 8;
+    SDL2Checkbox* m_chkEdict[kMaxEdictRows] = {};
+    int           m_edictIds[kMaxEdictRows] = {};
+    int           m_nEdictRows = 0;   // rows actually built (research-gated count at build time)
     // #43-audit item 2: a mode-aware OUTPUT readout in the "Production Mode" section, mirroring
     // the coal-liq Power-section swap for the BioFuel (oil) / Charcoal (coal) / Fracking (oil)
     // hosts — they have no Power section, so without this enabling the toggle showed no output.

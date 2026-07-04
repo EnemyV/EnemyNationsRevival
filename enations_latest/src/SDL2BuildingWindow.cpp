@@ -253,6 +253,21 @@ static int nCivEdictsFor(CBuilding* b) {
     }
     return n;
 }
+// The UNGATED host count (research ignored): how many civ-wide edicts COULD this building
+// type ever host. computeLayout/BuildEdicts reserve section height for this maximum so a
+// topic discovered while the window is open can add its row live (Refresh → Rebuild)
+// without an SDL window resize — the same size-for-the-max trick the coal-liq relayout uses.
+static int nCivEdictsHostMax(CBuilding* b) {
+    CStructureData::BLDG_TYPE bt = b->GetData()->GetBldgType();
+    CStructureData::BLDG_TYPE gt = b->GetData()->GetType();
+    int n = 0;
+    for ( int id = 0; id < EDICT_COUNT; ++id ) {
+        if ( g_aEdicts[id].scope != EDICT_CIVWIDE ) continue;
+        CStructureData::BLDG_TYPE host = g_aEdicts[id].hostBuilding;
+        if ( host == bt || host == gt ) ++n;
+    }
+    return n;
+}
 // Show the Edicts section only on an edict-host building that I own.
 static bool secEdicts(CBuilding* b) {
     return ( b->GetOwner() && b->GetOwner()->IsMe() ) && ( nCivEdictsFor(b) > 0 );
@@ -474,7 +489,9 @@ static BldgLayout computeLayout(CBuilding* b) {
     if ( secOfc(b)        ) L.secs[n++] = { SEC_OFFICE,     OFFICE_H };
     if ( secApt(b)        ) L.secs[n++] = { SEC_APT,        POWERLIKE_H };
     if ( secTurret(b)     ) L.secs[n++] = { SEC_TURRET,     TURRET_H };
-    if ( secEdicts(b)     ) L.secs[n++] = { SEC_EDICTS,     BOX_PAD + HDR_H + nCivEdictsFor(b) * ROW_H + BOX_PAD };
+    // Height reserved for the UNGATED host maximum (not just the discovered rows) so a
+    // research discovery while the window is open can add its row via Rebuild in place.
+    if ( secEdicts(b)     ) L.secs[n++] = { SEC_EDICTS,     BOX_PAD + HDR_H + nCivEdictsHostMax(b) * ROW_H + BOX_PAD };
     if ( secAltOutput(b)  ) L.secs[n++] = { SEC_ALTOUTPUT,  ALTOUTPUT_H };
 
     int total = 0;
@@ -547,6 +564,34 @@ static void lineOnSurface(SDL_Surface* s, int x0, int y0, int x1, int y1, Uint32
     }
 }
 
+// Recessed "slot" track behind icon stacks / strips (storage rows, fertility,
+// docked units): dark fill with a sunken 1px bevel (shadow top/left, lit
+// bottom/right — the inverse of AddOutline's raised frame), so a row of sprite
+// icons reads as a gauge sitting in a groove instead of floating on parchment.
+static void drawSlot(SDL_Surface* s, int x, int y, int w, int h) {
+    if ( !s || w <= 2 || h <= 2 ) return;
+    SDL_Rect fill = { x, y, w, h };
+    SDL_FillRect(s, &fill, SDL_MapRGBA(s->format, 34, 29, 22, 255));
+    Uint32 shadow = SDL_MapRGBA(s->format, 18, 15, 11, 255);
+    Uint32 lit    = SDL_MapRGBA(s->format, 92, 80, 54, 255);
+    SDL_Rect t = { x, y, w, 1 },         l = { x, y, 1, h };
+    SDL_Rect b = { x, y + h - 1, w, 1 }, r = { x + w - 1, y, 1, h };
+    SDL_FillRect(s, &t, shadow); SDL_FillRect(s, &l, shadow);
+    SDL_FillRect(s, &b, lit);    SDL_FillRect(s, &r, lit);
+}
+
+// Integer-only sprite scaling: native size when it fits, else the smallest
+// integer divisor that does. Non-integer nearest-neighbor scaling (the old
+// "min(srcH, rowH-2)" sizing) duplicated pixels unevenly — the main reason the
+// icons looked ragged. Never upscales (pixel art reads best at 1x).
+static void intFitIcon(int srcW, int srcH, int maxH, int& outW, int& outH) {
+    outW = srcW; outH = srcH;
+    if ( srcH <= 0 || srcW <= 0 || srcH <= maxH ) return;
+    int d = ( srcH + maxH - 1 ) / maxH;   // ceil(srcH / maxH)
+    outW = __max( 1, srcW / d );
+    outH = __max( 1, srcH / d );
+}
+
 // ============================================================================
 SDL2BuildingWindow::SDL2BuildingWindow(GameWindow* gw, CBuilding* pBldg, bool bOnTop)
     : SDL2Dialog(gw, makeTitle(pBldg), computeWidth(pBldg), computeHeight(pBldg))
@@ -606,6 +651,8 @@ void SDL2BuildingWindow::NullSectionWidgets() {
     m_lblTurretRange = nullptr; m_lblTurretDmg = nullptr; m_lblTurretReload = nullptr;
     m_lblTurretDps = nullptr; m_btnShowRange = nullptr;
     m_chkAltOut = nullptr;
+    for ( int i = 0; i < kMaxEdictRows; i++ ) { m_chkEdict[i] = nullptr; m_edictIds[i] = 0; }
+    m_nEdictRows = 0;
     m_lblProduction = nullptr; m_progProduction = nullptr;
     m_lblMilStrength = nullptr; m_lblInfantry = nullptr; m_lblVehicles = nullptr; m_lblMilEnergy = nullptr;
     for ( int i = 0; i < kRepairRows; i++ ) m_lblRepair[i] = nullptr;
@@ -811,14 +858,16 @@ int SDL2BuildingWindow::BuildAltOutput(int x, int y, int w) {
 // bonus+upkeep locally (RecomputeEdictMults) and, in a net game, broadcasts CNetEdictToggle
 // so every client converges deterministically.
 int SDL2BuildingWindow::BuildEdicts(int x, int y, int w) {
-    int n = nCivEdictsFor(m_pBldg);
-    int H = BOX_PAD + HDR_H + n * ROW_H + BOX_PAD;
+    // Box + returned height use the UNGATED host maximum (matches computeLayout's
+    // reservation) so a row a later research discovery adds always fits in place.
+    int H = BOX_PAD + HDR_H + nCivEdictsHostMax(m_pBldg) * ROW_H + BOX_PAD;
     AddOutline(x, y, w, H);
     int yh = Header(x + BOX_PAD, y + BOX_PAD, w - 2 * BOX_PAD, "Edicts", kAccentGold);
     CStructureData::BLDG_TYPE bt = m_pBldg->GetData()->GetBldgType();
     CStructureData::BLDG_TYPE gt = m_pBldg->GetData()->GetType();
     CPlayer* me = m_pBldg->GetOwner();
     int cy = yh;
+    m_nEdictRows = 0;
     for ( int id = 0; id < EDICT_COUNT; ++id ) {
         const EdictDef& e = g_aEdicts[id];
         if ( e.scope != EDICT_CIVWIDE || ( e.hostBuilding != bt && e.hostBuilding != gt ) )
@@ -833,9 +882,16 @@ int SDL2BuildingWindow::BuildEdicts(int x, int y, int w) {
         const int kInfoSz = 14;
         int cbX = x + BOX_PAD + 4;
         int cbW = w - 2 * BOX_PAD - 8 - ( kInfoSz + 4 );
-        AddWidget<SDL2Checkbox>( cbX, cy, cbW, ROW_H,
+        SDL2Checkbox* chk = AddWidget<SDL2Checkbox>( cbX, cy, cbW, ROW_H,
                                  e.name, checked,
                                  [me, eid]( bool on ){ me->ToggleEdictNet( eid, on ); } );
+        // Track the row so Refresh() can re-sync the checkbox from the player bitmask
+        // (external toggles: harness setedict, last-host auto-revoke §29).
+        if ( m_nEdictRows < kMaxEdictRows ) {
+            m_chkEdict[m_nEdictRows]  = chk;
+            m_edictIds[m_nEdictRows] = id;
+            m_nEdictRows++;
+        }
         // (i) info icon — hover reveals the edict's scope (#36) then its effect
         // text (EdictDef::desc), one per line.
         std::string tip = ( e.scope == EDICT_CIVWIDE ) ? "Civilization-wide"
@@ -904,7 +960,9 @@ void SDL2BuildingWindow::AddOutline(int x, int y, int w, int h) {
     auto* img = AddWidget<SDL2Image>(x, y, w, h);
     SDL_Surface* s = SDL_CreateRGBSurface(0, w, h, 32, 0x00FF0000, 0x0000FF00, 0x000000FF, 0xFF000000);
     if ( !s ) return;
-    SDL_FillRect(s, nullptr, SDL_MapRGBA(s->format, 0, 0, 0, 0));   // transparent interior
+    // Translucent dark interior so each section reads as a card on the parchment
+    // (was fully transparent — the window looked like one continuous field).
+    SDL_FillRect(s, nullptr, SDL_MapRGBA(s->format, 20, 14, 6, 18));
     Uint32 dark  = SDL_MapRGBA(s->format,  60,  48,  28, 255);
     Uint32 light = SDL_MapRGBA(s->format, 150, 128,  78, 255);
     // simple 2px raised frame
@@ -1388,13 +1446,17 @@ void SDL2BuildingWindow::DrawMatIcons(SDL2Image* img, const int* mats, int n) {
     if ( m_matIcons && m_matIconW > 0 && m_matIconH > 0 ) {
         const int PER_ICON = 250;   // each stacked icon ~= 250 units
         int rowH  = gh / n;
-        int iconH = std::min( m_matIconH, rowH - 2 );
-        int iconW = ( iconH > 0 ) ? ( m_matIconW * iconH / m_matIconH ) : m_matIconW;
-        int step  = iconW + 1;
-        int maxFit = ( step > 0 ) ? ( gw / step ) : 0;
+        int iconW, iconH;
+        intFitIcon( m_matIconW, m_matIconH, rowH - 4, iconW, iconH );
+        // Coin-stack overlap: each icon covers ~40% of the previous one, so a big
+        // stockpile reads as a dense stack instead of a sparse picket line.
+        int step   = __max( 3, ( iconW * 3 ) / 5 );
+        int maxFit = ( gw - 4 - iconW >= 0 ) ? ( ( gw - 4 - iconW ) / step + 1 ) : 0;
 
         SDL_SetSurfaceBlendMode(m_matIcons, SDL_BLENDMODE_BLEND);
         for (int i = 0; i < n; i++) {
+            // Slot track for every row — an empty slot IS the "none stored" reading.
+            drawSlot( s, 0, i * rowH + 1, gw, rowH - 2 );
             int amount = m_pBldg->GetStore( mats[i] );
             if ( amount <= 0 ) continue;
             int nIcons = amount / PER_ICON;
@@ -1403,7 +1465,7 @@ void SDL2BuildingWindow::DrawMatIcons(SDL2Image* img, const int* mats, int n) {
             int iy = i * rowH + ( rowH - iconH ) / 2;
             SDL_Rect src = { mats[i] * m_matIconW, 0, m_matIconW, m_matIconH };
             for (int k = 0; k < nIcons; k++) {
-                SDL_Rect dr = { k * step, iy, iconW, iconH };
+                SDL_Rect dr = { 2 + k * step, iy, iconW, iconH };
                 SDL_BlitScaled(m_matIcons, &src, s, &dr);
             }
         }
@@ -1427,15 +1489,16 @@ void SDL2BuildingWindow::DrawDensityIcons(SDL2Image* img, int pct) {
     SDL_FillRect(s, nullptr, SDL_MapRGBA(s->format, 0, 0, 0, 0));
     SDL_SetSurfaceBlendMode(s, SDL_BLENDMODE_BLEND);
 
+    drawSlot( s, 0, 0, gw, gh );                // gauge track (also the 0% reading)
     if ( m_densIcon && m_densIconW > 0 && m_densIconH > 0 ) {
-        int iconH = std::min( m_densIconH, gh - 2 );
-        int iconW = ( iconH > 0 ) ? ( m_densIconW * iconH / m_densIconH ) : m_densIconW;
-        int step  = iconW + 1;
-        int fillW = gw * pct / 100;             // how far the "X"s extend
+        int iconW, iconH;
+        intFitIcon( m_densIconW, m_densIconH, gh - 4, iconW, iconH );
+        int step  = __max( 3, ( iconW * 3 ) / 5 );   // overlapped, like the storage stacks
+        int fillW = ( gw - 4 ) * pct / 100;          // how far the icons extend
         int iy    = ( gh - iconH ) / 2;
         SDL_SetSurfaceBlendMode(m_densIcon, SDL_BLENDMODE_BLEND);
         SDL_Rect src = { 0, 0, m_densIconW, m_densIconH };
-        for (int dx = 0; ( dx + iconW ) <= fillW && step > 0; dx += step) {
+        for (int dx = 2; ( dx + iconW ) <= 2 + fillW && step > 0; dx += step) {
             SDL_Rect dr = { dx, iy, iconW, iconH };
             SDL_BlitScaled(m_densIcon, &src, s, &dr);
         }
@@ -1458,12 +1521,13 @@ void SDL2BuildingWindow::DrawContainedUnits(SDL2Image* img) {
     SDL_FillRect(s, nullptr, SDL_MapRGBA(s->format, 0, 0, 0, 0));
     SDL_SetSurfaceBlendMode(s, SDL_BLENDMODE_BLEND);
 
+    drawSlot( s, 0, 0, gw, gh );                // empty slot = "nothing docked"
     if ( m_unitIcons && m_unitIconW > 0 && m_unitIconH > 0 ) {
-        int iconH = std::min( m_unitIconH, gh - 2 );
-        int iconW = ( iconH > 0 ) ? ( m_unitIconW * iconH / m_unitIconH ) : m_unitIconW;
-        int step  = iconW + 2;
+        int iconW, iconH;
+        intFitIcon( m_unitIconW, m_unitIconH, gh - 4, iconW, iconH );
+        int step  = iconW + 2;                  // no overlap: each docked unit stays identifiable
         int iy    = ( gh - iconH ) / 2;
-        int drawX = 0;
+        int drawX = 2;
         SDL_SetSurfaceBlendMode( m_unitIcons, SDL_BLENDMODE_BLEND );
         POSITION pos = theVehicleMap.GetStartPosition();
         while ( pos != NULL ) {
@@ -1553,7 +1617,14 @@ void SDL2BuildingWindow::DrawGraph(SDL2Image* img, HistSeries a, HistSeries b) {
     SDL_Surface* s = SDL_CreateRGBSurface(0, gw, gh, 32,
                                           0x00FF0000, 0x0000FF00, 0x000000FF, 0xFF000000);
     if ( !s ) return;
-    SDL_FillRect(s, nullptr, SDL_MapRGB(s->format, 26, 24, 20));
+    // Chart panel: dark warm brown (tinted toward the parchment palette instead of
+    // the old near-black hole), quarter-height gridlines, gold-toned frame.
+    SDL_FillRect(s, nullptr, SDL_MapRGB(s->format, 38, 34, 26));
+    Uint32 grid = SDL_MapRGB(s->format, 56, 50, 38);
+    for ( int g = 1; g <= 3; g++ ) {
+        SDL_Rect gl = { 1, ( gh * g ) / 4, gw - 2, 1 };
+        SDL_FillRect(s, &gl, grid);
+    }
     Uint32 frame = SDL_MapRGB(s->format, 90, 80, 55);
     SDL_Rect top = { 0, 0, gw, 1 }, bot = { 0, gh - 1, gw, 1 };
     SDL_Rect lft = { 0, 0, 1, gh }, rgt = { gw - 1, 0, 1, gh };
@@ -1602,17 +1673,75 @@ void SDL2BuildingWindow::DrawGraph(SDL2Image* img, HistSeries a, HistSeries b) {
         }
         const int pad = 2;
         int plotW = gw - 2 * pad, plotH = gh - 2 * pad;
-        HistSeries series[2] = { a, b };
-        Uint32     colors[2] = { SDL_MapRGB(s->format, 90, 220, 110),
-                                 SDL_MapRGB(s->format, 235, 180, 60) };
+        HistSeries      series[2]  = { a, b };
+        Uint32          colors[2]  = { SDL_MapRGB(s->format,  90, 220, 110),
+                                       SDL_MapRGB(s->format, 235, 180,  60) };
+        int bottomY = pad + plotH - 1;
+
+        // Translucent area fill under the PRIMARY series (the "have" line): the
+        // series color pre-blended toward the panel background (the surface is
+        // opaque, so blending by hand beats an alpha FillRect that wouldn't blend).
+        {
+            Uint32 fillC = SDL_MapRGB( s->format,
+                38 + ( ( 90 - 38 ) * 3 ) / 10,
+                34 + ( ( 220 - 34 ) * 3 ) / 10,
+                26 + ( ( 110 - 26 ) * 3 ) / 10 );
+            int prevX = 0, prevY = 0;
+            for ( int i = 0; i < n; i++ ) {
+                int px = pad + ( i * ( plotW - 1 ) ) / ( n - 1 );
+                int py = pad + ( plotH - 1 ) - (int)( ( valOf(a, i) * (long)( plotH - 1 ) ) / maxV );
+                if ( i > 0 && px > prevX ) {
+                    for ( int cx = prevX; cx <= px; cx++ ) {      // interpolate the segment
+                        int cy = prevY + ( py - prevY ) * ( cx - prevX ) / ( px - prevX );
+                        if ( cy < bottomY ) {
+                            SDL_Rect col = { cx, cy, 1, bottomY - cy + 1 };
+                            SDL_FillRect(s, &col, fillC);
+                        }
+                    }
+                }
+                prevX = px; prevY = py;
+            }
+        }
+
         for ( int sIdx = 0; sIdx < 2; sIdx++ ) {
             if ( series[sIdx] == kNone ) continue;
             int prevX = 0, prevY = 0;
             for ( int i = 0; i < n; i++ ) {
                 int px = pad + ( i * ( plotW - 1 ) ) / ( n - 1 );
                 int py = pad + ( plotH - 1 ) - (int)( ( valOf(series[sIdx], i) * (long)( plotH - 1 ) ) / maxV );
-                if ( i > 0 ) lineOnSurface(s, prevX, prevY, px, py, colors[sIdx]);
+                if ( i > 0 ) {
+                    // 2px stroke (drawn twice, 1px apart) — a bare 1px Bresenham
+                    // polyline was near-invisible at 168x72.
+                    lineOnSurface(s, prevX, prevY, px, py, colors[sIdx]);
+                    lineOnSurface(s, prevX, prevY + 1, px, py + 1, colors[sIdx]);
+                }
                 prevX = px; prevY = py;
+            }
+        }
+
+        // Legend with live values, top-left: a color swatch + "<name> <current>"
+        // per series. Without this the two lines were unlabeled and unreadable.
+        if ( TTF_Font* f = GetFont( 10 ) ) {
+            static const char* kSeriesName[6] =
+                { "Have", "Need", "People", "Workers", "Capacity", "Capacity" };
+            SDL_Color txtC = { 214, 204, 174, 255 };
+            int ly = pad + 2;
+            for ( int sIdx = 0; sIdx < 2; sIdx++ ) {
+                if ( series[sIdx] == kNone ) continue;
+                int nameIdx = (int)series[sIdx] - (int)kPwrHave;
+                if ( nameIdx < 0 || nameIdx > 5 ) continue;
+                SDL_Rect sw = { pad + 3, ly + 2, 6, 6 };
+                SDL_FillRect(s, &sw, colors[sIdx]);
+                std::string txt = std::string( kSeriesName[nameIdx] ) + " " +
+                                  FmtNum( (int)valOf( series[sIdx], n - 1 ) );
+                if ( SDL_Surface* ts = TTF_RenderUTF8_Blended( f, txt.c_str(), txtC ) ) {
+                    SDL_Rect dr = { pad + 12, ly, ts->w, ts->h };
+                    SDL_BlitSurface( ts, nullptr, s, &dr );
+                    ly += __max( 11, ts->h );
+                    SDL_FreeSurface( ts );
+                } else {
+                    ly += 11;
+                }
             }
         }
     }
@@ -1648,6 +1777,22 @@ void SDL2BuildingWindow::Refresh() {
     if ( !m_pBldg ) return;
     CPlayer* p = m_pBldg->GetOwner();
     if ( !p ) return;
+
+    // Edicts rows stay live: re-sync each checkbox from the player's bitmask (the state
+    // can change outside this window — harness setedict, last-host auto-revoke §29), and
+    // if the research-gated row COUNT changed (topic discovered with the window open),
+    // request the deferred Rebuild — the frame was sized for the ungated host maximum,
+    // so the new row fits without a window resize. (Same OnFrame relayout path as C6.)
+    if ( m_nEdictRows > 0 ) {
+        for ( int i = 0; i < m_nEdictRows; i++ )
+            if ( m_chkEdict[i] )
+                m_chkEdict[i]->SetChecked( p->IsEdictActive( m_edictIds[i] ) );
+        if ( nCivEdictsFor( m_pBldg ) != m_nEdictRows )
+            m_bNeedRelayout = true;
+    }
+    // Same external-change sync for the building-scoped AltOutput toggle (harness setalt).
+    if ( m_chkAltOut )
+        m_chkAltOut->SetChecked( m_pBldg->IsFlag( CUnit::alt_oil ) );
 
     // At-a-glance status line: under construction, starved for an input, or the
     // building's own status text ("making gas, 60%" / "Idle"), color-coded.
