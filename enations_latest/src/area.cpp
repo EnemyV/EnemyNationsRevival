@@ -8161,3 +8161,36 @@ bool HarnessGrantResearch( void )
     return false;                                       // cheat compiled out of Release
 #endif
 }
+
+//---------------------------------------------------------------------------
+// HarnessDumpGameState — READ-ONLY single-player game-over/progress probe for the
+// local human. The defeat predicate mirrors mainloop.cpp exactly: you lose the tick
+// GetBldgsHave() hits 0 (which also flips CGame state out of `play` to CGame::other);
+// you win when <=1 player remains. Lets a headless driver poll survival + how hard
+// it's being hit each tick. Call on the game/render thread. Declared in en_harness.h.
+//---------------------------------------------------------------------------
+void HarnessDumpGameState( std::string& out )
+{
+    if ( !theApp.AmInGame( ) )
+    {
+        out = "state menu (not in-game)\n";
+        return;
+    }
+    CPlayer* me = theGame._GetMe( );
+    int  st = theGame.GetState( );
+    long bh = me ? (long) me->GetBldgsHave( ) : -1;
+    long vh = me ? (long) me->GetVehsHave( )  : -1;
+    long bd = me ? (long) me->GetBldgsDest( ) : -1;
+    long vd = me ? (long) me->GetVehsDest( )  : -1;
+    int  allc = theGame.GetAll( ).GetCount( );
+    int  aic  = theGame.GetAi( ).GetCount( );
+    unsigned long elapsed = (unsigned long) theGame.GetElapsedSeconds( );
+    bool lost = ( st == CGame::other ) || ( bh <= 0 );
+    bool won  = ( allc <= 1 );
+    const char* verdict = won ? "WON" : ( lost ? "LOST" : "playing" );
+    char buf[256];
+    snprintf( buf, sizeof(buf),
+        "state %d hp %d bldgshave %ld vehshave %ld bldgsdest %ld vehsdest %ld players %d ai %d elapsed %lu %s\n",
+        st, theGame.HaveHP( ) ? 1 : 0, bh, vh, bd, vd, allc, aic, elapsed, verdict );
+    out = buf;
+}

@@ -226,6 +226,20 @@ std::atomic<bool>      g_researchPending{false};
 std::atomic<bool>      g_researchDone{false};
 std::atomic<bool>      g_researchOK{false};
 
+// Pending `newgame` request, serviced from the main loop (create flow re-pumps events
+// during world-gen, like load). Starts a fresh SP game with the given difficulty/start.
+std::mutex             g_newgameMutex;
+int                    g_ngAi{2}, g_ngPos{3}, g_ngSize{1}, g_ngNumAi{2};
+std::atomic<bool>      g_newgamePending{false};
+std::atomic<bool>      g_newgameDone{false};
+std::atomic<bool>      g_newgameOK{false};
+
+// Pending `gamestate` request, serviced on the render thread (read-only), like units.
+std::mutex             g_gameStateMutex;
+std::string            g_gameStateResult;
+std::atomic<bool>      g_gameStatePending{false};
+std::atomic<bool>      g_gameStateDone{false};
+
 // Pending screenshot request, serviced on the render thread.
 std::mutex              g_shotMutex;
 std::string            g_shotPath;
@@ -650,6 +664,30 @@ void handle_command(const std::string& line, int conn) {
         for (int i = 0; i < 600 && !g_researchDone.load(); ++i) { struct timespec ts={0,5000000}; nanosleep(&ts,nullptr); }
         std::strcpy(reply, !g_researchDone.load() ? "err research timeout\n"
                           : (g_researchOK.load() ? "ok research granted\n" : "err research failed (in-game SP?)\n"));
+    } else if (strcmp(cmd, "newgame") == 0) {
+        // newgame [ai] [pos] [size] [numai] — start a fresh SINGLE-PLAYER game headlessly
+        // FROM THE MENU (no create/pick-race modals). ai=difficulty 0..3 (2=Difficult/HARD,
+        // 3=Impossible); pos=start force 0..3 (3=Full Military); size 0..2 (Small/Med/Large);
+        // numai=AI opponents. Defaults = HARD, Full Military, Medium, 2 AI. Deferred to the
+        // main loop (world-gen re-pumps events); generous timeout.
+        int ai=2,pos=3,size=1,numai=2;
+        sscanf(line.c_str(), "%*s %d %d %d %d", &ai,&pos,&size,&numai);
+        { std::lock_guard<std::mutex> lk(g_newgameMutex); g_ngAi=ai; g_ngPos=pos; g_ngSize=size; g_ngNumAi=numai; }
+        g_newgameDone=false; g_newgameOK=false; g_newgamePending=true;
+        for (int i = 0; i < 40000 && !g_newgameDone.load(); ++i) { struct timespec ts={0,5000000}; nanosleep(&ts,nullptr); } // ~200s
+        std::strcpy(reply, !g_newgameDone.load() ? "err newgame timeout\n"
+                          : (g_newgameOK.load() ? "ok newgame started\n" : "err newgame failed (at menu? already in-game?)\n"));
+    } else if (strcmp(cmd, "gamestate") == 0) {
+        // gamestate — READ-ONLY SP game-over/progress poll for the local human (state /
+        // building+vehicle counts+losses / elapsed / playing|LOST|WON). Render-thread
+        // serviced like units. Use to detect defeat + track defense over time.
+        g_gameStateDone=false; g_gameStatePending=true;
+        for (int i = 0; i < 400 && !g_gameStateDone.load(); ++i) { struct timespec ts={0,5000000}; nanosleep(&ts,nullptr); }
+        std::string out;
+        { std::lock_guard<std::mutex> lk(g_gameStateMutex); out = g_gameStateResult; }
+        if (!g_gameStateDone.load()) out = "err gamestate timeout (not in-game?)\n";
+        write(conn, out.c_str(), out.size());
+        return;
     } else if (strcmp(cmd, "quit") == 0) {
         SDL_Event e; SDL_zero(e); e.type=SDL_QUIT; SDL_PushEvent(&e);
     } else if (strcmp(cmd, "wins") == 0) {
@@ -747,6 +785,12 @@ void EnHarness_ServiceMainLoop() {
         { std::lock_guard<std::mutex> lk(g_loadMutex); path = g_loadPath; }
         g_loadOK = HarnessLoadGame(path.c_str());
         g_loadDone = true;
+    }
+    if (g_newgamePending.exchange(false)) {
+        int ai,pos,size,numai;
+        { std::lock_guard<std::mutex> lk(g_newgameMutex); ai=g_ngAi; pos=g_ngPos; size=g_ngSize; numai=g_ngNumAi; }
+        g_newgameOK = HarnessNewGame(ai, pos, size, numai);
+        g_newgameDone = true;
     }
 }
 
@@ -858,6 +902,13 @@ void EnHarness_Service() {
     if (g_researchPending.exchange(false)) {
         g_researchOK = HarnessGrantResearch();
         g_researchDone = true;
+        return;
+    }
+    if (g_gameStatePending.exchange(false)) {
+        std::string out;
+        HarnessDumpGameState(out);
+        { std::lock_guard<std::mutex> lk(g_gameStateMutex); g_gameStateResult = out; }
+        g_gameStateDone = true;
         return;
     }
     if (g_raisePending.exchange(false)) {

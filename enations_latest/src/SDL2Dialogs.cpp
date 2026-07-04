@@ -533,6 +533,67 @@ bool SDL2_RunCreateSinglePlayerFlow(GameWindow* gameWindow) {
     return true;
 }
 
+// Headless single-player new-game (backs the harness `newgame` verb). Mirrors
+// SDL2_RunCreateSinglePlayerFlow's non-UI steps but takes the create + pick-race
+// choices as params, so an autonomous driver can start e.g. a HARD, Full-Military
+// game with no dialogs. Runs on the main loop (theApp.ReadyToCreate -> CreateNewWorld
+// re-pumps events during world-gen). Returns true once the game reaches play state.
+bool HarnessNewGame(int ai, int pos, int size, int numai) {
+    // Only from the menu — no create/load flow in flight, no game running (same guard
+    // as HarnessLoadGame; a self-check so an in-game `newgame` can't tear down mid-play).
+    if (theApp.m_pCreateGame != NULL || theApp.AmInGame())
+        return false;
+
+    // Clamp to the create-dialog radio-group bounds.
+    ai    = ai    < 0 ? 0 : (ai    > 3 ? 3 : ai);
+    pos   = pos   < 0 ? 0 : (pos   > 3 ? 3 : pos);
+    size  = size  < 0 ? 0 : (size  > 2 ? 2 : size);
+    numai = numai < 1 ? 1 : (numai > 20 ? 20 : numai);
+
+    CCreateSingle* pCreate = new CCreateSingle();
+    theApp.m_pCreateGame = pCreate;
+
+    theGame.ctor();
+    theGame.SetServer(TRUE);
+    theGame._SetIsNetGame(FALSE);
+    theGame.Open(TRUE);
+
+    // Same assignments as SDL2_RunCreateSinglePlayerFlow step 3 (params, not dialogs).
+    theGame.m_iAi        = pCreate->m_iAi        = ai;
+    theGame.m_iSize      = pCreate->m_iSize      = size;
+    theGame.m_iPos       = pCreate->m_iPos       = pos;
+    theGame.m_iWorldType = pCreate->m_iWorldType = 0;
+    theGame.m_iRivers    = pCreate->m_iRivers    = 60;
+    theGame.m_iOcean     = pCreate->m_iOcean     = 50;
+    pCreate->m_iNumAi = numai;
+    pCreate->m_iNet   = -1;
+
+    // Race 0, fixed name (same as step 4 minus the pick-race modal).
+    CRaceDef* pRace = &ptheRaces[0];
+    pCreate->m_sName = "mac2";
+    pCreate->m_sRace = pRace->GetLine();
+    theGame.GetMe()->SetName("mac2");
+    theGame.GetMe()->m_InitData.Set(pRace, pos);
+    pCreate->GetNew()->m_InitData.Set(pRace, pos);
+
+    bool bOk = false;
+    try {
+        theGame.IncTry();
+        theApp.ReadyToCreate();   // SP: creates AI players + CreateNewWorld (lands in play)
+        theGame.DecTry();
+        bOk = theApp.AmInGame();
+    } catch (int iNum) {
+        CatchNum(iNum);
+        theApp.CloseWorld();
+        bOk = false;
+    } catch (...) {
+        CatchOther();
+        theApp.CloseWorld();
+        bOk = false;
+    }
+    return bOk;
+}
+
 bool SDL2_RunCreateScenarioFlow(GameWindow* gameWindow) {
     ASSERT(theApp.m_pCreateGame == NULL);
     CCreateScenario* pCreate = new CCreateScenario();
