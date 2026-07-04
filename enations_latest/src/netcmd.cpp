@@ -148,7 +148,7 @@ CNetChat* CNetChat::Alloc( const CPlayer* pPlyr, const char* psMsg )
 }
 
 CNetStart::CNetStart( unsigned uRand, int iSide, int iSideSize, int iAiDiff, int iNumAi, int iNumHp, int iStart,
-                      int iWorldType, int iRivers )
+                      int iWorldType, int iRivers, int iOcean )
     : CNetCmd( cmd_start )
 {
 
@@ -161,6 +161,7 @@ CNetStart::CNetStart( unsigned uRand, int iSide, int iSideSize, int iAiDiff, int
     m_iStart     = iStart;
     m_iWorldType = iWorldType;
     m_iRivers    = iRivers;
+    m_iOcean     = iOcean;
     ASSERT_CMD( this );
 }
 

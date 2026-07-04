@@ -27,7 +27,7 @@ static_assert(sizeof(CNetEnumPlyrs)==16, "CNetEnumPlyrs");
 static_assert(sizeof(CNetSelectPlyr)==100, "CNetSelectPlyr");
 static_assert(sizeof(CNetYouAre)==20, "CNetYouAre");
 static_assert(sizeof(CNetPlayer)==152, "CNetPlayer");
-static_assert(sizeof(CNetStart)==48, "CNetStart");
+static_assert(sizeof(CNetStart)==52, "CNetStart");   // +m_iOcean (2026-07-04, ocean-size slider MP sync)
 static_assert(sizeof(CNetPlyrStatus)==20, "CNetPlyrStatus");
 static_assert(sizeof(CNetInitDone)==16, "CNetInitDone");
 static_assert(sizeof(CNetChat)==21, "CNetChat");
@@ -112,7 +112,7 @@ static_assert(sizeof(CNetEnumPlyrs)==16, "CNetEnumPlyrs");
 static_assert(sizeof(CNetSelectPlyr)==100, "CNetSelectPlyr");
 static_assert(sizeof(CNetYouAre)==20, "CNetYouAre");
 static_assert(sizeof(CNetPlayer)==152, "CNetPlayer");
-static_assert(sizeof(CNetStart)==48, "CNetStart");
+static_assert(sizeof(CNetStart)==52, "CNetStart");   // +m_iOcean (2026-07-04, ocean-size slider MP sync)
 static_assert(sizeof(CNetPlyrStatus)==20, "CNetPlyrStatus");
 static_assert(sizeof(CNetInitDone)==16, "CNetInitDone");
 static_assert(sizeof(CNetChat)==21, "CNetChat");

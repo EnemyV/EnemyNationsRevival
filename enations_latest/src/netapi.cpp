@@ -1605,14 +1605,16 @@ static void CmdStart( CNetStart* pStrt )
     {
         // create the world
         theGame.IncTry( );
-        // adopt the host's world-generation preset + river density so our
+        // adopt the host's world-generation preset + river/ocean sliders so our
         // seed-deterministic generator paints the identical map (synced via CNetStart).
         theGame.m_iWorldType = pStrt->m_iWorldType;
         theGame.m_iRivers    = pStrt->m_iRivers;
+        theGame.m_iOcean     = pStrt->m_iOcean;
         if ( theApp.m_pCreateGame != NULL )
         {
             theApp.m_pCreateGame->m_iWorldType = pStrt->m_iWorldType;
             theApp.m_pCreateGame->m_iRivers    = pStrt->m_iRivers;
+            theApp.m_pCreateGame->m_iOcean     = pStrt->m_iOcean;
         }
         AIinit aiData( pStrt->m_iAi, pStrt->m_iNumAi, pStrt->m_iNumHp, pStrt->m_iStart );
         theApp.CreateNewWorld( pStrt->m_uRand, &aiData, pStrt->m_iSide, pStrt->m_iSideSize );
