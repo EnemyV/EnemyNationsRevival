@@ -46,6 +46,10 @@ volatile DWORD dwThreadGen = 0;
 volatile int iZombies = 0;
 static THREADEXITFUNC fnDeferredExit = NULL;
 CObList lstThrds;
+// The main (UI/window-owning) thread's id — myThreadTerminate must NEVER end
+// it (BUGS #69). Captured on the main-thread entry points (myStartThread /
+// myThreadClose / myThreadInit all run on the main thread).
+static DWORD dwMainThreadId = 0;
 
 DWORD myThreadGen() { return dwThreadGen; }
 BOOL  myThreadShouldExit( DWORD dwGenAtStart ) {
@@ -132,6 +136,7 @@ volatile int iThrdsLeft = 0;
 
 void myThreadClose( THREADEXITFUNC fnExit ) {
     static int iRecurse = 0;
+    if ( dwMainThreadId == 0 ) dwMainThreadId = ::GetCurrentThreadId();
 
     // a previous close leaked stragglers and deferred its fnExit(); if they
     // are gone by now, run that teardown before starting this one
@@ -274,6 +279,25 @@ void myThreadClose( THREADEXITFUNC fnExit ) {
 
 void myThreadTerminate() {
 
+    // NEVER end the MAIN thread (BUGS #69 ROOT CAUSE, 2026-07-04). AI code
+    // paths (AiSetup/AssignUnits/cmd_play dispatch) also run ON THE MAIN
+    // THREAD during game creation. Between a quit-to-menu's myThreadClose()
+    // (bEndThreads=TRUE, and #65's fix keeps it armed) and the next game's
+    // myStartThread() (re-arms FALSE), any main-thread myYieldThread() hit a
+    // TRUE bEndThreads and fell through to AfxEndThread() below — SILENTLY
+    // EXITING THE MAIN THREAD. Windows then destroys every window it owns
+    // (main + all owned panels + the thread's IME windows) with no WM_DESTROY
+    // through subclasses and SDL's flag cache left stale-SHOWN, while the
+    // process lives on via worker threads: the operator's "all my windows
+    // disappear when I create a second game" (captured live: 12 windows ->
+    // 0 in one 0.9s step incl. 'Default IME'; dbgstack then showed WinMain's
+    // thread GONE). The main thread is never a worker: ignore the terminate.
+    if ( ::GetCurrentThreadId() == dwMainThreadId ) {
+        fprintf( stderr, "[threads] myThreadTerminate on the MAIN thread ignored (bEndThreads armed between games)\n" );
+        OutputDebugStringA( "[threads] MAIN-thread terminate IGNORED (#69 guard)\n" );
+        return;
+    }
+
     // do this with a call to the AI
     if ( iWinType != W32s ) {
         EnterCriticalSection( &cs );
@@ -350,6 +374,8 @@ WORD myGetThrdUtlsVersion() {
 }
 
 void myStartThread( void* pData, AFX_THREADPROC fnThread ) {
+
+    if ( dwMainThreadId == 0 ) dwMainThreadId = ::GetCurrentThreadId();
 
     // If the last close leaked a straggler, give it a beat to hit its next
     // check (the generation mismatch kills it in ~100ms unless it is wedged
