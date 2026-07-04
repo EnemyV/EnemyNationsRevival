@@ -1822,7 +1822,6 @@ void SDL2BuildingWindow::DrawGraph(SDL2Image* img, HistSeries a, HistSeries b) {
         HistSeries      series[2]  = { a, b };
         Uint32          colors[2]  = { SDL_MapRGB(s->format,  90, 220, 110),
                                        SDL_MapRGB(s->format, 235, 180,  60) };
-        int bottomY = pad + plotH - 1;
 
         // TIME-TRUE x mapping, right-anchored: sample i's x position comes from its
         // AGE within the selected span R (newest at the right edge). A young game /
@@ -1834,30 +1833,9 @@ void SDL2BuildingWindow::DrawGraph(SDL2Image* img, HistSeries a, HistSeries b) {
             return pad + (int)( ( ( R - age ) * (long)( plotW - 1 ) ) / R );
         };
 
-        // Translucent area fill under the PRIMARY series (the "have" line): the
-        // series color pre-blended toward the panel background (the surface is
-        // opaque, so blending by hand beats an alpha FillRect that wouldn't blend).
-        {
-            Uint32 fillC = SDL_MapRGB( s->format,
-                38 + ( ( 90 - 38 ) * 3 ) / 10,
-                34 + ( ( 220 - 34 ) * 3 ) / 10,
-                26 + ( ( 110 - 26 ) * 3 ) / 10 );
-            int prevX = 0, prevY = 0;
-            for ( int i = 0; i < n; i++ ) {
-                int px = xAt( i );
-                int py = pad + ( plotH - 1 ) - (int)( ( valOf(a, i) * (long)( plotH - 1 ) ) / maxV );
-                if ( i > 0 && px > prevX ) {
-                    for ( int cx = prevX; cx <= px; cx++ ) {      // interpolate the segment
-                        int cy = prevY + ( py - prevY ) * ( cx - prevX ) / ( px - prevX );
-                        if ( cy < bottomY ) {
-                            SDL_Rect col = { cx, cy, 1, bottomY - cy + 1 };
-                            SDL_FillRect(s, &col, fillC);
-                        }
-                    }
-                }
-                prevX = px; prevY = py;
-            }
-        }
+        // No area fill under the primary series (operator): the green line stands
+        // alone and the panel background/gridlines show through beneath it — the
+        // old pre-blended fill read as a solid green block.
 
         for ( int sIdx = 0; sIdx < 2; sIdx++ ) {
             if ( series[sIdx] == kNone ) continue;
