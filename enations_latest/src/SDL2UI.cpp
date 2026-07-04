@@ -713,36 +713,25 @@ void SDL2InfoIcon::Render(SDL_Surface* dst, TTF_Font* font) {
 
 void SDL2InfoIcon::RenderOverlay(SDL_Surface* dst, TTF_Font* font, const SDL_Rect& dlgRect) {
     if (!m_visible || !m_hovered || m_tip.empty() || !font || !dst) return;
-    // The tip may carry embedded newlines (e.g. an edict's scope line above its
-    // effect text, #36). TTF_SizeUTF8 only measures the first line, so size the
-    // box from the widest line and the line count, then render wrapped.
-    int tw = 0, th = 0;
-    {
-        int lineH = TTF_FontHeight(font);
-        int nLines = 1;
-        size_t start = 0, nl;
-        while ((nl = m_tip.find('\n', start)) != std::string::npos) {
-            int lw = 0, lh = 0;
-            TTF_SizeUTF8(font, m_tip.substr(start, nl - start).c_str(), &lw, &lh);
-            if (lw > tw) tw = lw;
-            ++nLines;
-            start = nl + 1;
-        }
-        int lw = 0, lh = 0;
-        TTF_SizeUTF8(font, m_tip.substr(start).c_str(), &lw, &lh);
-        if (lw > tw) tw = lw;
-        th = nLines * lineH;
-        // Safety margin on the WIDTH. th is sized for exactly nLines rows (one per '\n'),
-        // but the renderer below wraps at wrapLength = tw. When tw equals a line's exact
-        // measured width, TTF_RenderUTF8_Blended_Wrapped can still break that line onto a
-        // 2nd row (boundary rounding/kerning) — the surface then exceeds th and the last
-        // row is clipped away by srcRect.h below. This silently ate the Nutrition edict's
-        // "Cost: +75% food consumption." line (operator screenshot 2026-07-04). A few px of
-        // slack keeps each measured line on its own row so surf->h == th and nothing clips.
-        tw += 8;
-    }
+    // The tip carries embedded newlines (an edict's scope line above its multi-line
+    // effect text, #36). Render the whole thing to ONE surface with wrapLength = 0,
+    // which per SDL_ttf wraps on '\n' ONLY (never by pixel width) — so each authored
+    // line stays on its own row and nothing is width-wrapped. Then size the box to the
+    // surface's ACTUAL dimensions so no row is ever clipped.
+    //
+    // (Was: measured the widest '\n'-line with TTF_SizeUTF8, sized the box for that
+    //  width + the line count, then rendered with wrapLength = box width. The measured
+    //  width ran a bit short of what the wrapped blended renderer actually needed, so a
+    //  full line re-wrapped onto an extra row, the surface grew past the box height, and
+    //  the last row was clipped — which hid the Nutrition edict's "Cost: +75% food
+    //  consumption." line entirely. operator screenshot 2026-07-04.)
+    SDL_Color txtCol{ 235, 235, 220, 255 };
+    SDL_Surface* txt = TTF_RenderUTF8_Blended_Wrapped(font, m_tip.c_str(), txtCol, 0);
+    if (!txt) return;
+
     const int padX = 6, padY = 4;
-    SDL_Rect box = { m_rect.x + m_rect.w + 4, m_rect.y - 2, tw + 2 * padX, th + 2 * padY };
+    SDL_Rect box = { m_rect.x + m_rect.w + 4, m_rect.y - 2,
+                     txt->w + 2 * padX, txt->h + 2 * padY };
     // Keep the box inside the DIALOG's content rect, not just the screen: the
     // dialog blits only dlgRect into its own window, so a tooltip painted past
     // the dialog's right edge (the (i) icon is pinned there) is never copied
@@ -754,10 +743,9 @@ void SDL2InfoIcon::RenderOverlay(SDL_Surface* dst, TTF_Font* font, const SDL_Rec
     if (box.y < dlgRect.y)                     box.y = dlgRect.y;
     FillRect(dst, box, SDL_Color{20, 24, 40, 255});
     DrawBevel(dst, box, 1, SDL_Color{200, 165, 70, 255}, SDL_Color{200, 165, 70, 255});
-    SDL_Rect tr = { box.x + padX, box.y + padY, tw, th };
-    // Wrapped renderer so embedded newlines split into rows (single-line RenderText
-    // would draw only the first line); top-aligned to match the box we sized above.
-    RenderTextWrapped(dst, font, m_tip.c_str(), tr, SDL_Color{235, 235, 220, 255}, false, true);
+    SDL_Rect dr = { box.x + padX, box.y + padY, txt->w, txt->h };
+    SDL_BlitSurface(txt, nullptr, dst, &dr);
+    SDL_FreeSurface(txt);
 }
 
 bool SDL2InfoIcon::HandleEvent(const SDL_Event& event) {
