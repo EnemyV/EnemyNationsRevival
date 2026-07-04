@@ -459,6 +459,18 @@ void CStructure::InitData() {
                     pBu->m_iTime = ptrMmio->ReadShort() * 24;
                     for (int iInd = 0; iInd < CMaterialTypes::GetNumBuildTypes(); iInd++)
                         pBu->m_aiInput[iInd] = ptrMmio->ReadShort();
+                    // === CUSTOM GAMEPLAY TWEAK (2026-07-04, operator combat/balance) ===
+                    // Trim the STEEL build cost of infantry (90 -> 70) and rangers /
+                    // special forces (135 -> 115). Applied here as each factory's per-unit
+                    // CBuildUnit is read, BEFORE the m_aiTotalInput rollup below, so the
+                    // factory aggregate reflects it. Code-side, NO ENATIONS.DAT change, and
+                    // identical on every client so it stays MP-deterministic. (HP +40% and
+                    // the 5-population cost are applied in CTransport::InitData.)
+                    if (pBu->m_iVehType == CTransportData::infantry)
+                        pBu->m_aiInput[CMaterialTypes::steel] = 70;
+                    else if (pBu->m_iVehType == CTransportData::rangers)
+                        pBu->m_aiInput[CMaterialTypes::steel] = 115;
+                    // ================================================================
                     pBv->m_aBldUnits.Add(pBu);
                 }
 
@@ -711,6 +723,19 @@ void CTransport::InitData() {
         // CUnitData stuff
         pTd->m_iType = (CTransportData::TRANS_TYPE) iOn;
         pTd->ReadUnitData(*ptrMmio);
+
+        // === CUSTOM GAMEPLAY TWEAK (2026-07-04, operator combat/balance) ==========
+        // Infantry and Rangers (special forces) now take 5 population/workers to field
+        // (was 1) but are 40% tougher. Steel build cost is trimmed separately in
+        // CStructure::InitData (the factory's per-unit CBuildUnit input). Applied
+        // code-side after the RIF load — NO ENATIONS.DAT change — and identically on
+        // every client, so combat stays MP-deterministic.
+        if (pTd->m_iType == CTransportData::infantry ||
+            pTd->m_iType == CTransportData::rangers) {
+            pTd->m_iPeople       = 5;
+            pTd->m_iDamagePoints = (pTd->m_iDamagePoints * 140) / 100;   // +40% HP
+        }
+        // =========================================================================
 
         if (pTd->m_iSoundIdle > 0)
             pTd->m_iSoundIdle += SOUNDS::veh_idle_base - 1;
