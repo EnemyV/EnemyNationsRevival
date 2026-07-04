@@ -299,21 +299,12 @@ void CConquerApp::ReadyToCreate() {
     if (m_pCreateGame->m_iNet < 0) {
         theApp.BaseYield();
 
+        // EN_WG_SEED seed-pin for the cross-platform world-gen parity diff is applied
+        // canonically in MySeed() (rand.cpp) — the single seed source, so it covers this
+        // SP path and the MP-host create path alike. No separate override needed here.
         unsigned uRand = MySeed();
 
         // (cheat seed-override dialog removed — Debug:SetRand was its only use)
-
-        // TEST HOOK (env-guarded, SP-only): EN_WG_SEED forces the world-gen seed so
-        // run-to-run and CROSS-PLATFORM EN_RANDTRACE fingerprints are directly
-        // comparable WITHOUT a live MP session — Linux and Windows each run SP
-        // Islands/Ocean=74 with the same EN_WG_SEED and diff calls=/sum= to localize
-        // the ocean-gen RAND MISMATCH. No effect unless EN_WG_SEED is set; does NOT
-        // touch the MP host-seeded path (the client already gets the host's m_uRand).
-        // (Re-added; the original @5a2b39d6 was removed with the [wg] scaffolding
-        // @fb21740c once the prior determinism saga closed — the ocean-slider path
-        // reopened it, and linux2 needs the shared-seed knob for the offline diff.)
-        if ( const char* szSeed = getenv( "EN_WG_SEED" ) )
-            uRand = (unsigned) strtoul( szSeed, nullptr, 0 );
 
         AIinit aiData(m_pCreateGame->m_iAi, m_pCreateGame->m_iNumAi,
                       theGame.GetAll().GetCount() - m_pCreateGame->m_iNumAi, m_pCreateGame->m_iSize);
