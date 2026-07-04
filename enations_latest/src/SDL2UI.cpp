@@ -40,6 +40,32 @@
 extern "C" int vpPumpNet( int timeout_ms );
 #endif
 
+// [z-fight] Registry of every LIVE dialog OS window (modal + non-modal). The
+// per-frame keep-on-top bump in Render() uses it to tell sibling DIALOGS apart
+// from game windows in the z-order: two overlapping keep-on-top dialogs that
+// each HWND_TOP-bump every frame alternately uncover one another (~60x/sec) —
+// the operator's "z-fight/flicker". A dialog now re-asserts only when a
+// NON-dialog window of ours (map/panel/main) has climbed above it; whichever
+// sibling dialog was raised last stays on top, stably.
+static std::vector<SDL_Window*> s_liveDlgWindows;
+static void TrackDlgWindow(SDL_Window* w) {
+    if ( w ) s_liveDlgWindows.push_back(w);
+}
+static void UntrackDlgWindow(SDL_Window* w) {
+    s_liveDlgWindows.erase(std::remove(s_liveDlgWindows.begin(), s_liveDlgWindows.end(), w),
+                           s_liveDlgWindows.end());
+}
+#ifdef _WIN32
+static bool IsDlgHwnd(HWND h) {
+    for ( SDL_Window* w : s_liveDlgWindows ) {
+        SDL_SysWMinfo wm; SDL_VERSION(&wm.version);
+        if ( SDL_GetWindowWMInfo(w, &wm) && wm.info.win.window == h )
+            return true;
+    }
+    return false;
+}
+#endif
+
 // Static game art surfaces shared by all dialogs
 SDL_Surface* SDL2Dialog::s_dlgBkgnd   = nullptr;
 SDL_Surface* SDL2Dialog::s_dlgGold    = nullptr;
@@ -1578,6 +1604,7 @@ SDL2Dialog::SDL2Dialog(GameWindow* gameWindow, const std::string& title, int w, 
 
 SDL2Dialog::~SDL2Dialog() {
     if (m_dlgWindow) {
+        UntrackDlgWindow(m_dlgWindow);
         SDL_DestroyWindow(m_dlgWindow);
         m_dlgWindow = nullptr;
     }
@@ -1648,6 +1675,7 @@ void SDL2Dialog::DismissModalNow() {
     m_running = false;        // let DoModal's loop exit when the nested flow returns
     m_dismissed = true;       // and never render again in the meantime
     if (m_dlgWindow) {
+        UntrackDlgWindow(m_dlgWindow);
         SDL_DestroyWindow(m_dlgWindow);
         m_dlgWindow = nullptr;
     }
@@ -1797,11 +1825,33 @@ void SDL2Dialog::Render() {
             HWND hDlg = wm.info.win.window;
             DWORD forePid = 0;
             ::GetWindowThreadProcessId(::GetForegroundWindow(), &forePid);
-            if (forePid == ::GetCurrentProcessId())
-                ::SetWindowPos(hDlg, HWND_TOP, 0, 0, 0, 0,
-                               SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+            if (forePid == ::GetCurrentProcessId()) {
+                // [z-fight] Bump ONLY when a NON-dialog window of ours (map /
+                // panel / main) has climbed above this dialog. Two overlapping
+                // keep-on-top dialogs that each bumped unconditionally uncovered
+                // one another ~60x/sec — the "z-fight/flicker". Sibling dialogs
+                // above us are a legitimate, stable order (last-raised wins), so
+                // walking the z-chain: our-process non-dialog above -> re-assert;
+                // only dialogs above -> leave the stack alone.
+                bool bNeedBump = false;
+                for ( HWND h = ::GetWindow(hDlg, GW_HWNDPREV); h;
+                      h = ::GetWindow(h, GW_HWNDPREV) ) {
+                    DWORD pid = 0;
+                    ::GetWindowThreadProcessId(h, &pid);
+                    if ( pid != ::GetCurrentProcessId() || !::IsWindowVisible(h) )
+                        continue;   // foreign/hidden windows don't compete
+                    if ( !IsDlgHwnd(h) ) { bNeedBump = true; break; }
+                }
+                if ( bNeedBump )
+                    ::SetWindowPos(hDlg, HWND_TOP, 0, 0, 0, 0,
+                                   SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+            }
         }
 #else
+        // POSIX: dialogs are SDL_WINDOW_ALWAYS_ON_TOP (topmost band) and X11/Cocoa
+        // give us no cheap z-order query, so keep the per-frame raise. NOTE: this
+        // can exhibit the same sibling z-fight as Windows did — if linux/mac repro
+        // it, port the "only re-assert over non-dialog windows" test above.
         SDL_RaiseWindow(m_dlgWindow);
 #endif
         }
@@ -2048,6 +2098,7 @@ int SDL2Dialog::DoModal() {
         // Fallback: render on the main window with a background snapshot
         CaptureBackground();
     } else {
+        TrackDlgWindow(m_dlgWindow);
 #ifdef _WIN32
         // Set the background window as owner so the dialog stays above it
         if (m_gameWindow->GetWindow()) {
@@ -2112,6 +2163,7 @@ int SDL2Dialog::DoModal() {
     }
 
     if (m_dlgWindow) {
+        UntrackDlgWindow(m_dlgWindow);
         SDL_DestroyWindow(m_dlgWindow);
         m_dlgWindow = nullptr;
     }
@@ -2126,6 +2178,7 @@ void SDL2Dialog::EndDialog(int result) {
     if (m_nonModal) {
         // Destroy window immediately so it vanishes this frame
         if (m_dlgWindow) {
+            UntrackDlgWindow(m_dlgWindow);
             SDL_DestroyWindow(m_dlgWindow);
             m_dlgWindow = nullptr;
         }
@@ -2155,6 +2208,7 @@ void SDL2Dialog::ShowNonModal(std::function<void(int)> onDone) {
     if (!m_dlgWindow) {
         CaptureBackground();
     } else {
+        TrackDlgWindow(m_dlgWindow);
 #ifdef _WIN32
         // Set the background window as owner so the dialog stays above it
         if (m_gameWindow->GetWindow()) {
