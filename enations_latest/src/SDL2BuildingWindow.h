@@ -55,6 +55,7 @@ private:
     bool m_bStorage    = false;
     bool m_bPower      = false;
     bool m_bOffice     = false;
+    bool m_bWorkforce  = false;   // colony workforce needed/have (offices + rocket)
     bool m_bApt        = false;
     bool m_bTurret     = false;
     bool m_bProduction = false;
@@ -98,6 +99,7 @@ private:
     int BuildStorage   (int x, int y, int w);
     int BuildPower     (int x, int y, int w);
     int BuildOffice    (int x, int y, int w);
+    int BuildWorkforce (int x, int y, int w);   // colony workforce needed/have (+ Energy Need row)
     int BuildApt       (int x, int y, int w);
     int BuildTurret    (int x, int y, int w);
     int BuildEdicts    (int x, int y, int w);   // Edicts v1: civ-wide policy toggles (host buildings)
@@ -183,9 +185,14 @@ private:
 
     SDL2Label* m_lblOfcBldg     = nullptr;
     SDL2Label* m_lblOfcColony   = nullptr;
-    SDL2Label* m_lblOfcNeed     = nullptr;
-    SDL2Label* m_lblOfcEnergy   = nullptr;   // colony energy NEED (#37/#39: surfaces Mining Subsidy's +20% energy)
     SDL2Image* m_imgOfcGraph    = nullptr;
+
+    // Workforce section (operator): colony workers needed/have — split out of the
+    // Offices section, which now shows only desk capacity vs office workers.
+    SDL2Label* m_lblWfHave      = nullptr;
+    SDL2Label* m_lblWfNeed      = nullptr;
+    SDL2Label* m_lblWfEnergy    = nullptr;   // colony energy NEED (#37/#39: surfaces Mining Subsidy's +20% energy)
+    SDL2Image* m_imgWfGraph     = nullptr;
 
     SDL2Label* m_lblAptBldg     = nullptr;
     SDL2Label* m_lblAptColony   = nullptr;

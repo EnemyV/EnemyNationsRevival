@@ -72,11 +72,11 @@ static int storageHeight() { return BOX_PAD + HDR_H + SDL2BuildingWindow::kNumSt
 static const int RANGE_ROW_H  = 18;   // height of the tiny 10m/1h/6h/24h/7d button row (fits a ~12pt crisp label)
 static const int GRAPHAREA_H  = GRAPH_H + RANGE_ROW_H + 2;
 static const int POWERLIKE_H  = BOX_PAD + HDR_H + GRAPHAREA_H + BOX_PAD;   // power / apartment (graph + range row)
-// Office has 4 text rows now (This building / Colony / Workforce Need / Energy Need #37/#39),
-// which is TALLER than the graph (6 + 4*ROW_H = 86 > GRAPH_H 72) — POWERLIKE_H clipped the
-// last row below the box (operator: "Energy Need text outside the box"). Size to the taller of
-// the text rows vs the graph+range-row area.
-static const int OFFICE_H     = BOX_PAD + HDR_H + __max( 6 + 4 * ROW_H, GRAPHAREA_H ) + BOX_PAD;
+// Offices + Workforce are SEPARATE sections now (operator): Offices = desk capacity vs
+// office workers (2 rows + graph), Workforce = colony workforce needed/have (+ the #37/#39
+// Energy Need edict-visibility row; 3 rows + graph). Both fit inside the graph-area height.
+static const int OFFICE_H     = BOX_PAD + HDR_H + __max( 6 + 2 * ROW_H, GRAPHAREA_H ) + BOX_PAD;
+static const int WORKFORCE_H  = BOX_PAD + HDR_H + __max( 6 + 3 * ROW_H, GRAPHAREA_H ) + BOX_PAD;
 static const int TURRET_H     = BOX_PAD + HDR_H + 2 * ROW_H + 34 + BOX_PAD;   // 2x2 stats + Show-Range
 static const int PRODUCTION_H = BOX_PAD + HDR_H + 2 * ROW_H + 6 + 16 + BOX_PAD;   // text + progress bar
 static const int MILITARY_H   = BOX_PAD + HDR_H + 4 * ROW_H + BOX_PAD;   // strength + infantry + vehicles + energy-need (#39)
@@ -481,7 +481,7 @@ static bool secBuilding(CBuilding* b) {
 enum {
     SEC_STORAGE, SEC_PRODUCTION, SEC_BUILDING, SEC_FERTILITY, SEC_INPUTS,
     SEC_OUTPUTS, SEC_UNITS, SEC_REPAIR, SEC_MILITARY, SEC_POWER, SEC_OFFICE,
-    SEC_APT, SEC_TURRET, SEC_EDICTS, SEC_ALTOUTPUT
+    SEC_WORKFORCE, SEC_APT, SEC_TURRET, SEC_EDICTS, SEC_ALTOUTPUT
 };
 
 // AltOutput "Production Mode" section: one outlined box with a checkbox row (+ scope (i)
@@ -516,6 +516,9 @@ static BldgLayout computeLayout(CBuilding* b) {
     if ( secMilitary(b)   ) L.secs[n++] = { SEC_MILITARY,   MILITARY_H };
     if ( secPower(b)      ) L.secs[n++] = { SEC_POWER,      POWERLIKE_H };
     if ( secOfc(b)        ) L.secs[n++] = { SEC_OFFICE,     OFFICE_H };
+    // Workforce rides with the office sections (offices + the rocket's offices):
+    // capacity/workers and needed/have are two different colony readings (operator).
+    if ( secOfc(b)        ) L.secs[n++] = { SEC_WORKFORCE,  WORKFORCE_H };
     if ( secApt(b)        ) L.secs[n++] = { SEC_APT,        POWERLIKE_H };
     if ( secTurret(b)     ) L.secs[n++] = { SEC_TURRET,     TURRET_H };
     // Height reserved for the UNGATED host maximum (not just the discovered rows) so a
@@ -675,6 +678,7 @@ void SDL2BuildingWindow::RecomputeSections() {
     m_bMilitary   = secMilitary(m_pBldg);
     m_bPower      = secPower(m_pBldg);
     m_bOffice     = secOfc(m_pBldg);
+    m_bWorkforce  = secOfc(m_pBldg);   // workforce section rides with the office sections
     m_bApt        = secApt(m_pBldg);
     m_bTurret     = secTurret(m_pBldg);
 }
@@ -690,8 +694,8 @@ void SDL2BuildingWindow::NullSectionWidgets() {
     m_lblPowerColony = nullptr; m_imgPowerGraph = nullptr;
     m_lblPowerOilHdr = nullptr; m_lblPowerOil = nullptr; m_lblPowerOilCol = nullptr;
     m_progPowerOil = nullptr; m_lblPowerFuel = nullptr;
-    m_lblOfcBldg = nullptr; m_lblOfcColony = nullptr; m_lblOfcNeed = nullptr;
-    m_lblOfcEnergy = nullptr; m_imgOfcGraph = nullptr;
+    m_lblOfcBldg = nullptr; m_lblOfcColony = nullptr; m_imgOfcGraph = nullptr;
+    m_lblWfHave = nullptr; m_lblWfNeed = nullptr; m_lblWfEnergy = nullptr; m_imgWfGraph = nullptr;
     m_lblAptBldg = nullptr; m_lblAptColony = nullptr; m_lblAptNeed = nullptr; m_imgAptGraph = nullptr;
     m_rangeBtns.clear();   // buttons are owned by the widget list (cleared on rebuild); drop stale ptrs
     m_lblTurretRange = nullptr; m_lblTurretDmg = nullptr; m_lblTurretReload = nullptr;
@@ -964,6 +968,7 @@ int SDL2BuildingWindow::BuildSection(int id, int x, int y, int w) {
         case SEC_MILITARY:   return BuildMilitary  (x, y, w);
         case SEC_POWER:      return BuildPower     (x, y, w);
         case SEC_OFFICE:     return BuildOffice    (x, y, w);
+        case SEC_WORKFORCE:  return BuildWorkforce (x, y, w);
         case SEC_APT:        return BuildApt       (x, y, w);
         case SEC_TURRET:     return BuildTurret    (x, y, w);
         case SEC_EDICTS:     return BuildEdicts    (x, y, w);
@@ -1214,6 +1219,9 @@ int SDL2BuildingWindow::BuildPower(int x, int y, int w) {
     return y + POWERLIKE_H + SEC_PAD;
 }
 
+// Offices: desk capacity vs office workers — strictly this-building + colony
+// capacity readings. The colony workforce needed/have readout is its own
+// SEPARATE section below (operator: "these are two separate things").
 int SDL2BuildingWindow::BuildOffice(int x, int y, int w) {
     AddOutline(x, y, w, OFFICE_H);
     int yh = Header(x + BOX_PAD, y + BOX_PAD, w - 2 * BOX_PAD, "Offices", kAccentGrn, ICON_PEOPLE);
@@ -1221,16 +1229,27 @@ int SDL2BuildingWindow::BuildOffice(int x, int y, int w) {
     int textW  = graphX - ( x + BOX_PAD + 4 ) - 6;
     m_lblOfcBldg   = AddWidget<SDL2Label>(x + BOX_PAD + 4, yh + 6,             textW, ROW_H, "This building: 0");
     m_lblOfcColony = AddWidget<SDL2Label>(x + BOX_PAD + 4, yh + 6 + ROW_H,     textW, ROW_H, "Colony: 0 / 0");
-    // Workforce demand (#37): people needed by all buildings — the figure a
-    // +workforce-upkeep edict (e.g. Austerity) raises, so toggling it shows here.
-    m_lblOfcNeed   = AddWidget<SDL2Label>(x + BOX_PAD + 4, yh + 6 + 2 * ROW_H, textW, ROW_H, "Workforce Need: 0");
-    // Energy demand (#37/#39): colony power NEED — the figure Mining Subsidy's +20%-energy
-    // upkeep raises. That edict is hosted on the Office, so without this row the bump is
-    // invisible in the very window that toggles it (mirrors the Command Center's #39 row).
-    m_lblOfcEnergy = AddWidget<SDL2Label>(x + BOX_PAD + 4, yh + 6 + 3 * ROW_H, textW, ROW_H, "Energy Need: 0");
     m_imgOfcGraph  = AddWidget<SDL2Image>(graphX, yh, graphW, GRAPH_H);
     AddGraphRangeRow(graphX, yh + GRAPH_H + 2, graphW);
     return y + OFFICE_H + SEC_PAD;
+}
+
+// Workforce: the colony's labor balance — workers needed by all buildings vs
+// workers available. Same layout as Offices (rows left, history graph right).
+// Also carries the Energy Need row (#37/#39): Mining Subsidy is hosted on the
+// office, so its +energy-upkeep bump must stay visible in the window that
+// toggles it (mirrors the Command Center's #39 row).
+int SDL2BuildingWindow::BuildWorkforce(int x, int y, int w) {
+    AddOutline(x, y, w, WORKFORCE_H);
+    int yh = Header(x + BOX_PAD, y + BOX_PAD, w - 2 * BOX_PAD, "Workforce", kAccentGrn, ICON_PEOPLE);
+    int graphW = 168, graphX = x + w - graphW - BOX_PAD;
+    int textW  = graphX - ( x + BOX_PAD + 4 ) - 6;
+    m_lblWfHave   = AddWidget<SDL2Label>(x + BOX_PAD + 4, yh + 6,             textW, ROW_H, "Have: 0");
+    m_lblWfNeed   = AddWidget<SDL2Label>(x + BOX_PAD + 4, yh + 6 + ROW_H,     textW, ROW_H, "Needed: 0");
+    m_lblWfEnergy = AddWidget<SDL2Label>(x + BOX_PAD + 4, yh + 6 + 2 * ROW_H, textW, ROW_H, "Energy Need: 0");
+    m_imgWfGraph  = AddWidget<SDL2Image>(graphX, yh, graphW, GRAPH_H);
+    AddGraphRangeRow(graphX, yh + GRAPH_H + 2, graphW);
+    return y + WORKFORCE_H + SEC_PAD;
 }
 
 int SDL2BuildingWindow::BuildApt(int x, int y, int w) {
@@ -2203,11 +2222,22 @@ void SDL2BuildingWindow::Refresh() {
         m_lblOfcBldg->SetText( "This building: " + FmtNum( PerBldgOfcCap() ) + " desks" );
         m_lblOfcColony->SetText( "Colony: " + FmtNum( (int)p->GetPplBldg() ) +
                                  " / " + FmtNum( (int)p->m_iOfcCap ) );
-        if ( m_lblOfcNeed )
-            m_lblOfcNeed->SetText( "Workforce Need: " + FmtNum( (int)p->GetPplNeedBldg() ) );
-        if ( m_lblOfcEnergy )
-            m_lblOfcEnergy->SetText( "Energy Need: " + FmtNum( (int)p->GetPwrNeed() ) );
         DrawGraph( m_imgOfcGraph, kOfcCap, kPplBldg );
+    }
+
+    if ( m_bWorkforce ) {
+        // Colony labor balance: workers available vs workers all buildings ask for.
+        // The Workforce-Need figure is what a +workforce-upkeep edict (Austerity)
+        // raises; Energy Need is Mining Subsidy's +energy bump (#37/#39).
+        if ( m_lblWfHave )
+            m_lblWfHave->SetText( "Have: " + FmtNum( (int)p->GetPplBldg() ) );
+        if ( m_lblWfNeed )
+            m_lblWfNeed->SetText( "Needed: " + FmtNum( (int)p->GetPplNeedBldg() ) );
+        if ( m_lblWfEnergy )
+            m_lblWfEnergy->SetText( "Energy Need: " + FmtNum( (int)p->GetPwrNeed() ) );
+        // History only tracks the HAVE side (need isn't a serialized series), so the
+        // graph shows the workforce trend on its own.
+        DrawGraph( m_imgWfGraph, kPplBldg, kNone );
     }
 
     if ( m_bApt ) {
