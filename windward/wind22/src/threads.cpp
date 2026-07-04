@@ -293,8 +293,15 @@ void myThreadTerminate() {
     // 0 in one 0.9s step incl. 'Default IME'; dbgstack then showed WinMain's
     // thread GONE). The main thread is never a worker: ignore the terminate.
     if ( ::GetCurrentThreadId() == dwMainThreadId ) {
-        fprintf( stderr, "[threads] myThreadTerminate on the MAIN thread ignored (bEndThreads armed between games)\n" );
-        OutputDebugStringA( "[threads] MAIN-thread terminate IGNORED (#69 guard)\n" );
+        // Log ONCE per session: this fires per yield call in tight main-thread
+        // AI loops (CAIMap ctor at 15p-large = thousands of hits), and under a
+        // debugger every OutputDebugString is a process suspend — the per-hit
+        // logging alone stalled a 15-player create at 0% (operator 2026-07-04).
+        static LONG lLogged = 0;
+        if ( InterlockedExchange( &lLogged, 1 ) == 0 ) {
+            fprintf( stderr, "[threads] myThreadTerminate on the MAIN thread ignored (bEndThreads armed between games; logged once)\n" );
+            OutputDebugStringA( "[threads] MAIN-thread terminate IGNORED (#69 guard; logged once)\n" );
+        }
         return;
     }
 
