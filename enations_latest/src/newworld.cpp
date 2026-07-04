@@ -1072,17 +1072,40 @@ void CConquerApp::LetsGo() {
     theGame.SetState(CGame::play);
     theGame.SetShouldOperate(TRUE);
 
-    // we turn the game on, process all messages, sleep, etc so the windows are ready to GO
-    // when we activate them.
-    if (m_pCreateGame && m_pCreateGame->GetDlgStatus())
-        m_pCreateGame->GetDlgStatus()->SetPer(97);
-    theGame.ProcessAllMessages();
-    ::Sleep(500 * theGame.GetAi().GetCount());
-    if (m_pCreateGame && m_pCreateGame->GetDlgStatus())
-        m_pCreateGame->GetDlgStatus()->SetPer(98);
-    theGame.ProcessAllMessages();
-    ::Sleep(500 * theGame.GetAi().GetCount());
-    theGame.ProcessAllMessages();
+    // We turn the game on and give the AI threads their setup head start —
+    // UNDER the loading dialog. Originally this was two blind
+    // ::Sleep(500 × AI-count) pauses (1996 cooperative threading: sleeping the
+    // main thread WAS how the AI threads got CPU to place their starting units).
+    // On preemptive threads the AIs run concurrently, so instead: slice the wait
+    // 100ms at a time and drain their message traffic each slice, so the setup
+    // flood is consumed here — on the loading screen — rather than stalling the
+    // first game-view frames (operator: "it needs to be loaded before the game";
+    // 35-player games are fine taking a long LOAD, never a frozen game view).
+    // Budget per operator spec: 250ms × AI-count, capped at 10s; after the
+    // budget, keep draining until the queue has been quiet for 3 consecutive
+    // slices (the AIs have stopped talking), with a hard +20s ceiling so a
+    // chatty AI can never wedge game-start.
+    {
+        const DWORD dwBudget  = __min( (DWORD)( 250 * theGame.GetAi().GetCount() ),
+                                       (DWORD)10000 );
+        const DWORD dwCeiling = dwBudget + 20000;
+        DWORD       dwWaited  = 0;
+        int         iQuiet    = 0;
+        while ( TRUE )
+        {
+            theGame.ProcessAllMessages();
+            iQuiet = ( theGame.m_messagePointerList.GetCount() <= 0 ) ? iQuiet + 1 : 0;
+            if ( ( dwWaited >= dwBudget ) && ( iQuiet >= 3 ) )
+                break;                      // head start served AND traffic settled
+            if ( dwWaited >= dwCeiling )
+                break;                      // safety: never wedge the start
+            if ( m_pCreateGame && m_pCreateGame->GetDlgStatus() )
+                m_pCreateGame->GetDlgStatus()->SetPer(
+                    __min( 99, 97 + (int)( ( 2 * dwWaited ) / __max( dwBudget, 1 ) ) ) );
+            ::Sleep( 100 );
+            dwWaited += 100;
+        }
+    }
     if (m_pCreateGame && m_pCreateGame->GetDlgStatus())
         m_pCreateGame->GetDlgStatus()->SetPer(99);
 
