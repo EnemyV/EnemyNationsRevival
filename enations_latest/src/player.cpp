@@ -157,8 +157,10 @@ void CPlayer::ctor( )
 
     // multi-resolution graph rings (runtime-only). Prime each ring's tick so the
     // very first SampleHistory pushes a sample to every ring (graphs aren't empty).
+    // Cadences (game-min per sample) x 120 slots = the ranges the graph buttons
+    // advertise: 5x120=10m, 15x120=30m, 150x120=5h REAL time (~1 game-min/sec).
     {
-        static const int _hrCad[HR_RINGS] = { 3, 12, 84 };
+        static const int _hrCad[HR_RINGS] = { 5, 15, 150 };
         memset( m_aHR, 0, sizeof( m_aHR ) );
         for ( int r = 0; r < HR_RINGS; r++ ) {
             m_iHRHead[r] = m_iHRCount[r] = 0;
@@ -602,7 +604,9 @@ void CPlayer::SampleHistory( )
 
     // Feed the multi-resolution rings (runtime-only) that back the graph
     // time-range buttons: each ring keeps a sample every N game-minutes.
-    static const int _hrCad[HR_RINGS] = { 3, 12, 84 };
+    // Keep in lock-step with the init table in CPlayer::ctor (5/15/150 = the
+    // 10m/30m/5h graph ranges).
+    static const int _hrCad[HR_RINGS] = { 5, 15, 150 };
     LONG hv[6] = { m_iPwrHave, m_iPwrNeed, GetPplTotal( ), m_iPplBldg, m_iAptCap, m_iOfcCap };
     for ( int r = 0; r < HR_RINGS; r++ ) {
         if ( ++m_iHRTick[r] >= _hrCad[r] ) {

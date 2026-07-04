@@ -131,6 +131,12 @@ private:
     // m_iGraphRange. SetGraphRange() re-highlights the buttons + redraws graphs.
     void AddGraphRangeRow(int x, int y, int w);
     void SetGraphRange(int range);
+    // Blit the status-bar background art behind an icon stack/strip — the same
+    // 3-piece (left cap / tiled middle / right cap) art the vehicle-list window's
+    // Render3PieceBg uses; the background row sits below the icon row in the
+    // icon's own sheet. Falls back to a drawn black/gold box if no back art.
+    void DrawSlotBg(SDL_Surface* dst, int iconIdx, SDL_Surface* sheet,
+                    int x, int y, int w, int h);
     // Draw stacked material icons (~250/icon per row) into img for the given
     // material-type list. Shared by the storage and input widgets.
     void DrawMatIcons(SDL2Image* img, const int* mats, int n);
@@ -148,6 +154,7 @@ private:
     SDL_Surface* m_densIcon = nullptr;
     int m_densIconW = 0;
     int m_densIconH = 0;
+    int m_densIconIdx = -1;   // which ICON_* the fertility strip uses (for its slot back art)
     SDL2Image* m_imgFertility = nullptr;
     SDL2Label* m_lblFertility = nullptr;
 
