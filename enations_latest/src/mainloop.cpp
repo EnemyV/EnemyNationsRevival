@@ -1577,8 +1577,11 @@ void CBuilding::Operate( )
         // non-abandoned building still DEFENDS while production is `stopped` — this
         // return used to skip HandleCombat() entirely, so enemy camps persisted
         // `stopped` in saved games computed fr>0 but never dispatched a shot.
-        // Combat only; production stays paused. Abandoned buildings don't fight.
-        if ( ( m_iConstDone == -1 ) && ( !( m_unitFlags & abandoned ) )
+        // Combat only; production stays paused. Abandoned buildings don't fight,
+        // and `event` (out-of-materials wait) is excluded for exact parity with the
+        // running path, which returns before HandleCombat when event is set (:1634).
+        if ( ( m_iConstDone == -1 )
+             && ( !( m_unitFlags & ( abandoned | event ) ) )
              && ( GetData( )->_GetFireRate( ) > 0 ) )
             HandleCombat( );
         return;
