@@ -126,7 +126,7 @@ private:
 
     enum HistSeries { kNone, kPwrHave, kPwrNeed, kPplTotal, kPplBldg, kAptCap, kOfcCap };
     void DrawGraph(SDL2Image* img, HistSeries a, HistSeries b);
-    // Graph time-range selector: a tiny row of 5 buttons (10m/1h/6h/24h/7d) that
+    // Graph time-range selector: a tiny row of 5 buttons (10s/1m/6m/24m/3h real time) that
     // rescale ALL of this window's graphs. Placed under each graph; all share
     // m_iGraphRange. SetGraphRange() re-highlights the buttons + redraws graphs.
     void AddGraphRangeRow(int x, int y, int w);
@@ -190,7 +190,7 @@ private:
     SDL2Label*  m_lblTurretReload = nullptr;
     SDL2Label*  m_lblTurretDps    = nullptr;
     SDL2Button* m_btnShowRange     = nullptr;
-    // Graph time-range selection. 0=10min 1=1h 2=6h 3=24h 4=7d (default 1h).
+    // Graph time-range selection (real time). 0=10s 1=1m 2=6m 3=24m 4=3h (default 1m).
     int                      m_iGraphRange = 1;
     std::vector<SDL2Button*> m_rangeBtns;   // all range buttons (any row); index%5 = its range
     // Generic AltOutput (alt-output toggle) -- shown on any building that has an available

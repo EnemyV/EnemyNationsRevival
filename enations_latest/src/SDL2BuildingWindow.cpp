@@ -68,8 +68,9 @@ static const int BUILDING_H   = BOX_PAD + HDR_H + ROW_H + 4 + BUILD_BAR_H + BOX_
 static const int REPAIR_H     = BOX_PAD + HDR_H + 16 + 6 +
                                 SDL2BuildingWindow::kRepairRows * ROW_H + BOX_PAD;   // bar + queue rows
 
-static const int PORTRAIT  = 64;
-static const int HEADER_H   = 92;   // portrait + name + 3-line flavor + status line
+static const int PORTRAIT_SRC = 64;   // tile size in the DIB_LIST_UNIT_BUILDINGS sheet
+static const int PORTRAIT     = 88;   // displayed size (was 64 — read too small in the band)
+static const int HEADER_H     = 104;  // portrait + condition bar + name + 3-line flavor + status line
 
 // Category accent colors for section headers — saturated darks that read on the
 // light parchment interior, replacing the one-size-fits-all blue.
@@ -564,20 +565,19 @@ static void lineOnSurface(SDL_Surface* s, int x0, int y0, int x1, int y1, Uint32
     }
 }
 
-// Recessed "slot" track behind icon stacks / strips (storage rows, fertility,
-// docked units): dark fill with a sunken 1px bevel (shadow top/left, lit
-// bottom/right — the inverse of AddOutline's raised frame), so a row of sprite
-// icons reads as a gauge sitting in a groove instead of floating on parchment.
+// "Slot" track behind icon stacks / strips (storage rows, fertility, docked
+// units): black box with a gold 1px border — the same look the original status
+// bar art uses for its gauge boxes (and DrawHealthBar's track), so the window's
+// gauges match the game's established chrome.
 static void drawSlot(SDL_Surface* s, int x, int y, int w, int h) {
     if ( !s || w <= 2 || h <= 2 ) return;
     SDL_Rect fill = { x, y, w, h };
-    SDL_FillRect(s, &fill, SDL_MapRGBA(s->format, 34, 29, 22, 255));
-    Uint32 shadow = SDL_MapRGBA(s->format, 18, 15, 11, 255);
-    Uint32 lit    = SDL_MapRGBA(s->format, 92, 80, 54, 255);
+    SDL_FillRect(s, &fill, SDL_MapRGBA(s->format, 24, 22, 18, 255));
+    Uint32 gold = SDL_MapRGBA(s->format, 150, 128, 78, 255);
     SDL_Rect t = { x, y, w, 1 },         l = { x, y, 1, h };
     SDL_Rect b = { x, y + h - 1, w, 1 }, r = { x + w - 1, y, 1, h };
-    SDL_FillRect(s, &t, shadow); SDL_FillRect(s, &l, shadow);
-    SDL_FillRect(s, &b, lit);    SDL_FillRect(s, &r, lit);
+    SDL_FillRect(s, &t, gold); SDL_FillRect(s, &l, gold);
+    SDL_FillRect(s, &b, gold); SDL_FillRect(s, &r, gold);
 }
 
 // Integer-only sprite scaling: native size when it fits, else the smallest
@@ -1035,20 +1035,24 @@ void SDL2BuildingWindow::SetHdrIcon(SDL2Image* img, int iconIdx, int iconFrame) 
 int SDL2BuildingWindow::BuildHeaderBand(int x, int y, int w) {
     // Portrait from the building-list sprite sheet (row per building type, the icon
     // region starts at srcX=20, each tile 64px tall — same as the unit-list panel).
+    // Crop to the SQUARE 64x64 tile: the sheet row is wider than the tile, and
+    // SDL2Image aspect-fits the whole surface into the widget rect — blitting the
+    // full remaining row width shrank the visible portrait well below 64px (the
+    // "building icons too small" report). Square crop = the tile fills the widget.
     if ( m_bldgSheet && m_pBldg ) {
         int type = m_pBldg->GetData()->GetType();
-        int srcY = PORTRAIT * type;
-        if ( srcY + PORTRAIT <= m_bldgSheet->h ) {
+        int srcY = PORTRAIT_SRC * type;
+        if ( srcY + PORTRAIT_SRC <= m_bldgSheet->h ) {
             int srcX = 20;
-            int srcW = m_bldgSheet->w - srcX;
+            int srcW = __min( PORTRAIT_SRC, m_bldgSheet->w - srcX );
             if ( srcW > 0 ) {
                 auto* img = AddWidget<SDL2Image>( x, y, PORTRAIT, PORTRAIT );
-                SDL_Surface* s = SDL_CreateRGBSurface( 0, srcW, PORTRAIT, 32,
+                SDL_Surface* s = SDL_CreateRGBSurface( 0, srcW, PORTRAIT_SRC, 32,
                                                        0x00FF0000, 0x0000FF00, 0x000000FF, 0xFF000000 );
                 if ( s ) {
                     SDL_FillRect( s, nullptr, SDL_MapRGBA( s->format, 0, 0, 0, 0 ) );
                     SDL_SetSurfaceBlendMode( m_bldgSheet, SDL_BLENDMODE_BLEND );
-                    SDL_Rect sr = { srcX, srcY, srcW, PORTRAIT };
+                    SDL_Rect sr = { srcX, srcY, srcW, PORTRAIT_SRC };
                     SDL_BlitSurface( m_bldgSheet, &sr, s, nullptr );
                     SDL_SetSurfaceBlendMode( s, SDL_BLENDMODE_BLEND );
                     img->SetSurface( s, true );
@@ -1586,7 +1590,10 @@ void SDL2BuildingWindow::DrawHealthBar() {
 // A tiny row of 5 range buttons placed under a graph. Subtle, ~33px each; all
 // rows in the window share m_iGraphRange, so clicking any one rescales every graph.
 void SDL2BuildingWindow::AddGraphRangeRow(int x, int y, int w) {
-    static const char* kLbl[5] = { "10m", "1h", "6h", "24h", "7d" };
+    // Labels are REAL time, not game time. One history sample lands per game-minute
+    // (~1 real second), so the ranges work out to: 10 samples ~10s, 60 ~1m, and the
+    // 3/12/84-game-min rings x120 samples ~6m / ~24m / ~2.8h.
+    static const char* kLbl[5] = { "10s", "1m", "6m", "24m", "3h" };
     int bw = w / 5;
     for ( int r = 0; r < 5; r++ ) {
         SDL2Button* b = AddWidget<SDL2Button>( x + r * bw, y, bw - 2, RANGE_ROW_H, kLbl[r],
@@ -1631,7 +1638,7 @@ void SDL2BuildingWindow::DrawGraph(SDL2Image* img, HistSeries a, HistSeries b) {
     SDL_FillRect(s, &top, frame); SDL_FillRect(s, &bot, frame);
     SDL_FillRect(s, &lft, frame); SDL_FillRect(s, &rgt, frame);
 
-    // Selected time-range -> data source. 10m/1h read the EXISTING serialized
+    // Selected time-range -> data source. 10s/1m read the EXISTING serialized
     // per-minute buffer (so a freshly-loaded save shows its saved ~2h of history
     // immediately) — last 10 / last 60 samples. 6h/24h/7d read the runtime rings
     // 0/1/2 (3/12/84-min cadence), which fill in as the game is played.
@@ -1730,14 +1737,18 @@ void SDL2BuildingWindow::DrawGraph(SDL2Image* img, HistSeries a, HistSeries b) {
                 if ( series[sIdx] == kNone ) continue;
                 int nameIdx = (int)series[sIdx] - (int)kPwrHave;
                 if ( nameIdx < 0 || nameIdx > 5 ) continue;
-                SDL_Rect sw = { pad + 3, ly + 2, 6, 6 };
-                SDL_FillRect(s, &sw, colors[sIdx]);
                 std::string txt = std::string( kSeriesName[nameIdx] ) + " " +
                                   FmtNum( (int)valOf( series[sIdx], n - 1 ) );
                 if ( SDL_Surface* ts = TTF_RenderUTF8_Blended( f, txt.c_str(), txtC ) ) {
+                    // Backdrop plate (panel color, slightly darker) so the text
+                    // stays readable where the series lines run underneath it.
+                    SDL_Rect plate = { pad + 1, ly - 1, 11 + ts->w + 4, ts->h + 2 };
+                    SDL_FillRect( s, &plate, SDL_MapRGB( s->format, 30, 27, 21 ) );
+                    SDL_Rect sw = { pad + 3, ly + 2, 6, 6 };
+                    SDL_FillRect(s, &sw, colors[sIdx]);
                     SDL_Rect dr = { pad + 12, ly, ts->w, ts->h };
                     SDL_BlitSurface( ts, nullptr, s, &dr );
-                    ly += __max( 11, ts->h );
+                    ly += __max( 11, ts->h ) + 1;
                     SDL_FreeSurface( ts );
                 } else {
                     ly += 11;
