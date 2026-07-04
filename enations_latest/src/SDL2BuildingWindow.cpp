@@ -47,7 +47,21 @@ static const int CLOSE_H = 40;
 static const int COL_GAP      = 12;    // gap between the two columns when split
 static const int TWO_COL_MAX_H = 560;  // stacked body taller than this -> go 2-column (rocket et al.)
 
-static const int STORAGE_H    = BOX_PAD + HDR_H + SDL2BuildingWindow::kNumStoreMats * ROW_H + BOX_PAD;
+// Icon-stack rows size themselves to the STATUS-BAR art: icon at native size plus
+// the full background-bar height. (The fixed 20px ROW_H integer-halved the material
+// icons and clipped the bottom off the bar art.) Falls back to ROW_H when the icon
+// entry isn't available. theIcons is loaded at app init, well before any window opens.
+static int slotRowH(int iconIdx) {
+    CStatData* sd = ( iconIdx >= 0 ) ? theIcons.GetByIndex( iconIdx ) : nullptr;
+    int h = ROW_H;
+    if ( sd ) {
+        h = __max( h, sd->m_cyIcon + 4 );
+        h = __max( h, sd->m_cyBack + 4 );
+    }
+    return h;
+}
+static int matRowH()       { return slotRowH( ICON_MATERIALS ); }
+static int storageHeight() { return BOX_PAD + HDR_H + SDL2BuildingWindow::kNumStoreMats * matRowH() + BOX_PAD; }
 // graph + the tiny time-range button row underneath it
 static const int RANGE_ROW_H  = 18;   // height of the tiny 10m/1h/6h/24h/7d button row (fits a ~12pt crisp label)
 static const int GRAPHAREA_H  = GRAPH_H + RANGE_ROW_H + 2;
@@ -60,9 +74,17 @@ static const int OFFICE_H     = BOX_PAD + HDR_H + __max( 6 + 4 * ROW_H, GRAPHARE
 static const int TURRET_H     = BOX_PAD + HDR_H + 2 * ROW_H + 34 + BOX_PAD;   // 2x2 stats + Show-Range
 static const int PRODUCTION_H = BOX_PAD + HDR_H + 2 * ROW_H + 6 + 16 + BOX_PAD;   // text + progress bar
 static const int MILITARY_H   = BOX_PAD + HDR_H + 4 * ROW_H + BOX_PAD;   // strength + infantry + vehicles + energy-need (#39)
-static const int FERTILITY_H  = BOX_PAD + HDR_H + ROW_H + BOX_PAD;       // one row: green-X bar + %
-static const int UNITS_ROW_H  = 30;                                      // tall enough for unit icons
-static const int UNITS_H      = BOX_PAD + HDR_H + UNITS_ROW_H + BOX_PAD; // seaport: docked-units strip
+// Fertility row: lumber mills use the density "X" art, food farms the wheat sheaf —
+// size to whichever this building shows (same art-aware sizing as the storage rows).
+static bool fertIsLumber(CBuilding* b) {
+    CBuildFarm* pBf = b ? b->GetData()->GetBldFarm() : nullptr;
+    return ( pBf && pBf->GetTypeFarm() == CMaterialTypes::lumber );
+}
+static int fertRowHFor(CBuilding* b)    { return slotRowH( fertIsLumber( b ) ? ICON_DENSITY : ICON_FOOD ); }
+static int fertilityHeight(CBuilding* b){ return BOX_PAD + HDR_H + fertRowHFor( b ) + BOX_PAD; }
+static const int UNITS_ROW_H  = 30;                                      // min height for unit icons
+static int unitsRowH()   { return __max( UNITS_ROW_H, slotRowH( ICON_VEHICLES ) ); }
+static int unitsHeight() { return BOX_PAD + HDR_H + unitsRowH() + BOX_PAD; }   // seaport strip
 static const int BUILD_BAR_H  = 26;
 static const int BUILDING_H   = BOX_PAD + HDR_H + ROW_H + 4 + BUILD_BAR_H + BOX_PAD;  // name + bar
 static const int REPAIR_H     = BOX_PAD + HDR_H + 16 + 6 +
@@ -348,7 +370,7 @@ static int inputsHeight(CBuilding* b) {
     int tmp[SDL2BuildingWindow::kMaxInputs];
     int n = collectInputMats(b, tmp, SDL2BuildingWindow::kMaxInputs);
     if ( n <= 0 ) return 0;
-    return BOX_PAD + HDR_H + n * ROW_H + BOX_PAD;
+    return BOX_PAD + HDR_H + n * matRowH() + BOX_PAD;
 }
 
 // Collect the material types this building produces: a smelter/refinery's GetOutput
@@ -428,7 +450,7 @@ static int outputsHeight(CBuilding* b) {
     int tmp[SDL2BuildingWindow::kMaxInputs];
     int n = collectOutputMats(b, tmp, SDL2BuildingWindow::kMaxInputs);
     if ( n <= 0 ) return 0;
-    return BOX_PAD + HDR_H + n * ROW_H + BOX_PAD;
+    return BOX_PAD + HDR_H + n * matRowH() + BOX_PAD;
 }
 
 // The seaport docks vehicles; its window lists what's currently inside.
@@ -477,13 +499,13 @@ static BldgLayout computeLayout(CBuilding* b) {
     BldgLayout L;
     int& n = L.n;
     // Order here is the display order; must match BuildSection's dispatch.
-    if ( secStorage(b)    ) L.secs[n++] = { SEC_STORAGE,    STORAGE_H };
+    if ( secStorage(b)    ) L.secs[n++] = { SEC_STORAGE,    storageHeight() };
     if ( secProduction(b) ) L.secs[n++] = { SEC_PRODUCTION, PRODUCTION_H };
     if ( secBuilding(b)   ) L.secs[n++] = { SEC_BUILDING,   BUILDING_H };
-    if ( secFertility(b)  ) L.secs[n++] = { SEC_FERTILITY,  FERTILITY_H };
+    if ( secFertility(b)  ) L.secs[n++] = { SEC_FERTILITY,  fertilityHeight(b) };
     if ( secInputs(b)     ) L.secs[n++] = { SEC_INPUTS,     inputsHeight(b) };
     if ( secOutputs(b)    ) L.secs[n++] = { SEC_OUTPUTS,    outputsHeight(b) };
-    if ( secUnits(b)      ) L.secs[n++] = { SEC_UNITS,      UNITS_H };
+    if ( secUnits(b)      ) L.secs[n++] = { SEC_UNITS,      unitsHeight() };
     if ( secRepair(b)     ) L.secs[n++] = { SEC_REPAIR,     REPAIR_H };
     if ( secMilitary(b)   ) L.secs[n++] = { SEC_MILITARY,   MILITARY_H };
     if ( secPower(b)      ) L.secs[n++] = { SEC_POWER,      POWERLIKE_H };
@@ -1111,7 +1133,9 @@ int SDL2BuildingWindow::BuildHeaderBand(int x, int y, int w) {
 // Section builders (each draws its outline first, then its content)
 // ----------------------------------------------------------------------------
 int SDL2BuildingWindow::BuildStorage(int x, int y, int w) {
-    AddOutline(x, y, w, STORAGE_H);
+    int rowH = matRowH();
+    int H    = storageHeight();
+    AddOutline(x, y, w, H);
     int yh = Header(x + BOX_PAD, y + BOX_PAD, w - 2 * BOX_PAD, "Storage", kAccentGold,
                     ICON_MATERIALS, CMaterialTypes::steel);
 
@@ -1124,14 +1148,14 @@ int SDL2BuildingWindow::BuildStorage(int x, int y, int w) {
     int iconsX = x + BOX_PAD + nameW + 4;
     int iconsW = ( x + w - BOX_PAD - countW - 4 ) - iconsX;
 
-    m_imgStorage = AddWidget<SDL2Image>(iconsX, yh, iconsW, kNumStoreMats * ROW_H);
+    m_imgStorage = AddWidget<SDL2Image>(iconsX, yh, iconsW, kNumStoreMats * rowH);
     for (int i = 0; i < kNumStoreMats; i++) {
-        int ry = yh + i * ROW_H;
-        m_lblStoreName[i]  = AddWidget<SDL2Label>(x + BOX_PAD, ry, nameW, ROW_H, kStoreNames[i]);
-        m_lblStoreCount[i] = AddWidget<SDL2Label>(x + w - BOX_PAD - countW, ry, countW, ROW_H, "0");
+        int ry = yh + i * rowH;
+        m_lblStoreName[i]  = AddWidget<SDL2Label>(x + BOX_PAD, ry, nameW, rowH, kStoreNames[i]);
+        m_lblStoreCount[i] = AddWidget<SDL2Label>(x + w - BOX_PAD - countW, ry, countW, rowH, "0");
         m_lblStoreCount[i]->SetRightAligned(true);
     }
-    return y + STORAGE_H + SEC_PAD;
+    return y + H + SEC_PAD;
 }
 
 int SDL2BuildingWindow::BuildProduction(int x, int y, int w) {
@@ -1281,7 +1305,8 @@ int SDL2BuildingWindow::BuildRepair(int x, int y, int w) {
 // Production buildings: a limited storage widget for just the materials they
 // consume (e.g. oil for a refinery), so you can see whether they're being fed.
 int SDL2BuildingWindow::BuildInputs(int x, int y, int w) {
-    int sectH = BOX_PAD + HDR_H + m_nInputMats * ROW_H + BOX_PAD;
+    int rowH  = matRowH();
+    int sectH = BOX_PAD + HDR_H + m_nInputMats * rowH + BOX_PAD;
     AddOutline(x, y, w, sectH);
     int yh = Header(x + BOX_PAD, y + BOX_PAD, w - 2 * BOX_PAD, "Inputs", kAccentGold,
                     ICON_MATERIALS, ( m_nInputMats > 0 ) ? m_inputMats[0] : 0,
@@ -1293,12 +1318,12 @@ int SDL2BuildingWindow::BuildInputs(int x, int y, int w) {
     int iconsX = x + BOX_PAD + nameW + 4;
     int iconsW = ( x + w - BOX_PAD - countW - 4 ) - iconsX;
 
-    m_imgInputs = AddWidget<SDL2Image>(iconsX, yh, iconsW, m_nInputMats * ROW_H);
+    m_imgInputs = AddWidget<SDL2Image>(iconsX, yh, iconsW, m_nInputMats * rowH);
     for (int i = 0; i < m_nInputMats; i++) {
-        int ry = yh + i * ROW_H;
-        m_lblInputName[i]  = AddWidget<SDL2Label>(x + BOX_PAD, ry, nameW, ROW_H,
+        int ry = yh + i * rowH;
+        m_lblInputName[i]  = AddWidget<SDL2Label>(x + BOX_PAD, ry, nameW, rowH,
                                 CMaterialTypes::GetDesc( m_inputMats[i] ).c_str());
-        m_lblInputCount[i] = AddWidget<SDL2Label>(x + w - BOX_PAD - countW, ry, countW, ROW_H, "0");
+        m_lblInputCount[i] = AddWidget<SDL2Label>(x + w - BOX_PAD - countW, ry, countW, rowH, "0");
         m_lblInputCount[i]->SetRightAligned(true);
     }
     return y + sectH + SEC_PAD;
@@ -1307,7 +1332,8 @@ int SDL2BuildingWindow::BuildInputs(int x, int y, int w) {
 // Production buildings: a limited storage widget for the materials they produce
 // (steel for a smelter, ore for a mine), so you can see the stockpile awaiting pickup.
 int SDL2BuildingWindow::BuildOutputs(int x, int y, int w) {
-    int sectH = BOX_PAD + HDR_H + m_nOutputMats * ROW_H + BOX_PAD;
+    int rowH  = matRowH();
+    int sectH = BOX_PAD + HDR_H + m_nOutputMats * rowH + BOX_PAD;
     AddOutline(x, y, w, sectH);
     int yh = Header(x + BOX_PAD, y + BOX_PAD, w - 2 * BOX_PAD, "Output", kAccentGold,
                     ICON_MATERIALS, ( m_nOutputMats > 0 ) ? m_outputMats[0] : 0,
@@ -1319,12 +1345,12 @@ int SDL2BuildingWindow::BuildOutputs(int x, int y, int w) {
     int iconsX = x + BOX_PAD + nameW + 4;
     int iconsW = ( x + w - BOX_PAD - countW - 4 ) - iconsX;
 
-    m_imgOutputs = AddWidget<SDL2Image>(iconsX, yh, iconsW, m_nOutputMats * ROW_H);
+    m_imgOutputs = AddWidget<SDL2Image>(iconsX, yh, iconsW, m_nOutputMats * rowH);
     for (int i = 0; i < m_nOutputMats; i++) {
-        int ry = yh + i * ROW_H;
-        m_lblOutputName[i]  = AddWidget<SDL2Label>(x + BOX_PAD, ry, nameW, ROW_H,
+        int ry = yh + i * rowH;
+        m_lblOutputName[i]  = AddWidget<SDL2Label>(x + BOX_PAD, ry, nameW, rowH,
                                  CMaterialTypes::GetDesc( m_outputMats[i] ).c_str());
-        m_lblOutputCount[i] = AddWidget<SDL2Label>(x + w - BOX_PAD - countW, ry, countW, ROW_H, "0");
+        m_lblOutputCount[i] = AddWidget<SDL2Label>(x + w - BOX_PAD - countW, ry, countW, rowH, "0");
         m_lblOutputCount[i]->SetRightAligned(true);
     }
     return y + sectH + SEC_PAD;
@@ -1332,17 +1358,19 @@ int SDL2BuildingWindow::BuildOutputs(int x, int y, int w) {
 
 // Seaport: a strip of icons for the vehicles currently docked inside, plus a count.
 int SDL2BuildingWindow::BuildUnits(int x, int y, int w) {
-    AddOutline(x, y, w, UNITS_H);
+    int rowH = unitsRowH();
+    int H    = unitsHeight();
+    AddOutline(x, y, w, H);
     int yh = Header(x + BOX_PAD, y + BOX_PAD, w - 2 * BOX_PAD, "Units Inside", kHeaderBlue, ICON_VEHICLES);
 
     int countW = 48;
     int iconsX = x + BOX_PAD + 4;
     int iconsW = ( x + w - BOX_PAD - countW - 6 ) - iconsX;
 
-    m_imgUnits = AddWidget<SDL2Image>(iconsX, yh, iconsW, UNITS_ROW_H);
-    m_lblUnits = AddWidget<SDL2Label>(x + w - BOX_PAD - countW, yh, countW, UNITS_ROW_H, "0");
+    m_imgUnits = AddWidget<SDL2Image>(iconsX, yh, iconsW, rowH);
+    m_lblUnits = AddWidget<SDL2Label>(x + w - BOX_PAD - countW, yh, countW, rowH, "0");
     m_lblUnits->SetRightAligned(true);
-    return y + UNITS_H + SEC_PAD;
+    return y + H + SEC_PAD;
 }
 
 // Vehicle plant / shipyard: what unit is being built + a construction-progress bar
@@ -1396,24 +1424,21 @@ void SDL2BuildingWindow::DrawBuildBar(SDL2Image* img, int per) {
 // Farm soil fertility, drawn as a row of the green ICON_DENSITY "X"s (the same art
 // the original status bar used) plus a "NN%" readout on the right.
 int SDL2BuildingWindow::BuildFertility(int x, int y, int w) {
-    AddOutline(x, y, w, FERTILITY_H);
+    int rowH = fertRowHFor(m_pBldg);
+    int H    = fertilityHeight(m_pBldg);
+    AddOutline(x, y, w, H);
     // Lumber-mill "fertility" = tree density -> green density "X"; food farm -> wheat sheaf.
-    bool bLumber = false;
-    if ( m_pBldg ) {
-        auto* pBf = m_pBldg->GetData()->GetBldFarm();
-        bLumber = ( pBf && pBf->GetTypeFarm() == CMaterialTypes::lumber );
-    }
     int yh = Header(x + BOX_PAD, y + BOX_PAD, w - 2 * BOX_PAD, "Fertility", kAccentGrn,
-                    bLumber ? ICON_DENSITY : ICON_FOOD);
+                    fertIsLumber(m_pBldg) ? ICON_DENSITY : ICON_FOOD);
 
     int countW = 48;
     int iconsX = x + BOX_PAD + 4;
     int iconsW = ( x + w - BOX_PAD - countW - 6 ) - iconsX;
 
-    m_imgFertility = AddWidget<SDL2Image>(iconsX, yh, iconsW, ROW_H);
-    m_lblFertility = AddWidget<SDL2Label>(x + w - BOX_PAD - countW, yh, countW, ROW_H, "0%");
+    m_imgFertility = AddWidget<SDL2Image>(iconsX, yh, iconsW, rowH);
+    m_lblFertility = AddWidget<SDL2Label>(x + w - BOX_PAD - countW, yh, countW, rowH, "0%");
     m_lblFertility->SetRightAligned(true);
-    return y + FERTILITY_H + SEC_PAD;
+    return y + H + SEC_PAD;
 }
 
 // ----------------------------------------------------------------------------
@@ -1715,20 +1740,31 @@ void SDL2BuildingWindow::DrawGraph(SDL2Image* img, HistSeries a, HistSeries b) {
     // sample lands ~5 real minutes in) — rather than show an empty panel ("3h is
     // blank"), degrade to the finest source that HAS data: it's the same series,
     // just a shorter span.
-    int gr = ( m_iGraphRange >= 0 && m_iGraphRange < 5 ) ? m_iGraphRange : 1;
+    int grSel = ( m_iGraphRange >= 0 && m_iGraphRange < 5 ) ? m_iGraphRange : 1;
+    int gr    = grSel;
     while ( gr > 1 && p->GetHRCount( gr - 2 ) < 2 )
         gr--;
-    int ring, cnt, nShow, off;
-    if ( gr <= 1 ) {                              // 10m / 1h -> saved per-minute buffer
-        ring  = -1;
-        cnt   = p->GetHistCount();
-        nShow = __min( cnt, gr == 0 ? 10 : 60 );
-    } else {                                      // 6h / 24h / 7d -> runtime rings
-        ring  = gr - 2;
-        cnt   = p->GetHRCount( ring );
-        nShow = __min( cnt, 120 );
+    // R = the SELECTED button's span (game-min); c = the SOURCE's sample cadence.
+    // x is mapped by TIME below (not sample index), so fallback data on a coarse
+    // view compresses into its true sliver of the axis instead of stretching —
+    // otherwise 30m and 5h render identically whenever 5h degrades to the 30m ring.
+    static const long kRangeGm[5] = { 10, 60, 600, 1800, 18000 };
+    static const int  kRingCad[3] = { 5, 15, 150 };   // lock-step with player.cpp _hrCad
+    long R = kRangeGm[grSel];
+    int ring, cnt, nShow, off, c;
+    if ( gr <= 1 ) {                              // 10s / 1m -> saved per-minute buffer
+        ring = -1;
+        c    = 1;
+        cnt  = p->GetHistCount();
+    } else {                                      // 10m / 30m / 5h -> runtime rings
+        ring = gr - 2;
+        c    = kRingCad[ring];
+        cnt  = p->GetHRCount( ring );
     }
-    off = cnt - nShow;                            // plot the LAST nShow samples
+    long maxSamp = R / c;                         // samples that fit the selected span
+    if ( maxSamp > 120 ) maxSamp = 120;
+    nShow = __min( cnt, (int)maxSamp );
+    off   = cnt - nShow;                          // plot the LAST nShow samples
     auto valOf = [&]( HistSeries hs, int i ) -> long {
         int s = (int)hs - (int)kPwrHave;         // kPwrHave->0 ... kOfcCap->5
         if ( s < 0 || s > 5 ) return 0;
@@ -1760,13 +1796,15 @@ void SDL2BuildingWindow::DrawGraph(SDL2Image* img, HistSeries a, HistSeries b) {
                                        SDL_MapRGB(s->format, 235, 180,  60) };
         int bottomY = pad + plotH - 1;
 
-        // RIGHT-ANCHOR the data: x maps SAMPLE SLOTS of the full advertised range
-        // (T samples), newest at the right edge, so a partially-filled ring leaves
-        // blank panel on the left instead of stretching to fill the width. (An
-        // 18-min-old game on the 30m range showed "flat for 30 minutes" — the
-        // stretch made the span lie.)
-        int T = ( gr == 0 ) ? 10 : ( gr == 1 ) ? 60 : 120;
-        int xOff = T - n;   // 0 when the source is full -> identical to before
+        // TIME-TRUE x mapping, right-anchored: sample i's x position comes from its
+        // AGE within the selected span R (newest at the right edge). A young game /
+        // fresh load draws only the portion of the axis it has data for; the blank
+        // left is honestly "no data yet". (The old stretch-to-fit made 18 minutes
+        // of data span a 30-minute axis.)
+        auto xAt = [&]( int i ) -> int {
+            long age = (long)( n - 1 - i ) * c;   // game-min before "now"
+            return pad + (int)( ( ( R - age ) * (long)( plotW - 1 ) ) / R );
+        };
 
         // Translucent area fill under the PRIMARY series (the "have" line): the
         // series color pre-blended toward the panel background (the surface is
@@ -1778,7 +1816,7 @@ void SDL2BuildingWindow::DrawGraph(SDL2Image* img, HistSeries a, HistSeries b) {
                 26 + ( ( 110 - 26 ) * 3 ) / 10 );
             int prevX = 0, prevY = 0;
             for ( int i = 0; i < n; i++ ) {
-                int px = pad + ( ( xOff + i ) * ( plotW - 1 ) ) / ( T - 1 );
+                int px = xAt( i );
                 int py = pad + ( plotH - 1 ) - (int)( ( valOf(a, i) * (long)( plotH - 1 ) ) / maxV );
                 if ( i > 0 && px > prevX ) {
                     for ( int cx = prevX; cx <= px; cx++ ) {      // interpolate the segment
@@ -1797,7 +1835,7 @@ void SDL2BuildingWindow::DrawGraph(SDL2Image* img, HistSeries a, HistSeries b) {
             if ( series[sIdx] == kNone ) continue;
             int prevX = 0, prevY = 0;
             for ( int i = 0; i < n; i++ ) {
-                int px = pad + ( ( xOff + i ) * ( plotW - 1 ) ) / ( T - 1 );
+                int px = xAt( i );
                 int py = pad + ( plotH - 1 ) - (int)( ( valOf(series[sIdx], i) * (long)( plotH - 1 ) ) / maxV );
                 if ( i > 0 ) {
                     // 2px stroke (drawn twice, 1px apart) — a bare 1px Bresenham
