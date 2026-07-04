@@ -1151,6 +1151,23 @@ void CConquerApp::LetsGo() {
 
     theGame.SetElapsedSeconds(0);
 
+    // ZERO THE SIM-CLOCK DEBT (operator's "one frame holds 20-30s at game
+    // start"). ShouldOperate turned on near the TOP of LetsGo, so every second
+    // spent under the loading dialog since (AI settle, window ordering — and
+    // historically the 500ms×AI sleeps) accrues as unsimulated time. The first
+    // GraphicsEnginePump after the dialog closes then computes
+    // m_dwOpersElapsed = (now - m_dwOperTimeLast)/42ms = HUNDREDS of sim steps
+    // and fast-forwards them all in ONE iteration — with 9 AIs × 70 starting
+    // units that single catch-up frame ran 8-16s (EN_PERF: fps=0.1,
+    // avg=8030ms, path.nodes=4.9M/interval) while the display held the last
+    // frame (input still pumps mid-iteration, so clicks/sounds worked). The
+    // game must START at T=0, not repay the loading time: stamp both pacing
+    // clocks to NOW so the first frame simulates 1/24s like every other frame.
+    // (Local pacing only — lockstep is message-driven; nothing here is synced.)
+    theGame._SettimeGetTime();
+    theGame.m_dwOperTimeLast  = theGame.GettimeGetTime();
+    theGame.m_dwFrameTimeLast = theGame.GettimeGetTime();
+
     // tell everyone speed we are at
     if (theGame.AmServer() && theGame.IsNetGame()) {
         CMsgGameSpeed msg(theGame.GetGameMul());
