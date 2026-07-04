@@ -620,6 +620,47 @@ void CPlayer::SampleHistory( )
     }
 }
 
+// Rebuild the runtime multi-resolution rings from the (just-deserialized)
+// per-minute history buffer. The rings aren't in the save format; without this
+// the 10m/30m graph ranges start EMPTY on every load (the history "vanishes"
+// across a save/load). Decimating the saved buffer at each ring's cadence,
+// newest-anchored, restores up to 120 game-min of coarse history immediately.
+// The 5h ring (150 min/sample) can get at most 1 seed from a 120-sample buffer
+// — it stays on the graph's degrade-to-finer-source fallback and fills over play.
+void CPlayer::SeedHRFromHist( )
+{
+    // Keep in lock-step with the cadence tables in ctor( ) and SampleHistory( ).
+    static const int _hrCad[HR_RINGS] = { 5, 15, 150 };
+
+    for ( int r = 0; r < HR_RINGS; r++ )
+    {
+        m_iHRHead[r] = m_iHRCount[r] = 0;
+        m_iHRTick[r] = _hrCad[r] - 1;
+    }
+    if ( m_iHistCount <= 0 )
+        return;
+
+    for ( int r = 0; r < HR_RINGS; r++ )
+    {
+        int c = _hrCad[r];
+        int n = ( m_iHistCount + c - 1 ) / c;   // <= 24 for c=5, always <= HIST_LEN
+        for ( int k = n - 1; k >= 0; k-- )      // oldest -> newest
+        {
+            int i = ( m_iHistCount - 1 ) - k * c;   // newest sample lands at k=0
+            int h = m_iHRHead[r];
+            m_aHR[r][0][h] = GetHistPwrHave ( i );
+            m_aHR[r][1][h] = GetHistPwrNeed ( i );
+            m_aHR[r][2][h] = GetHistPplTotal( i );
+            m_aHR[r][3][h] = GetHistPplBldg ( i );
+            m_aHR[r][4][h] = GetHistAptCap  ( i );
+            m_aHR[r][5][h] = GetHistOfcCap  ( i );
+            m_iHRHead[r] = ( h + 1 ) % HIST_LEN;
+            m_iHRCount[r]++;
+        }
+        m_iHRTick[r] = 0;   // the newest seed represents "now" — full cadence until the next ring sample
+    }
+}
+
 void CPlayer::Research( int iNumSec )
 {
 
@@ -1193,6 +1234,8 @@ void CPlayer::Serialize( CArchive& ar )
             ar >> l;
             m_iLastDiscovered = l;
         }
+        else
+            m_iLastDiscovered = 0;
 
         // Save release 4+ carries the colony stat history. Older saves predate it,
         // so the arrays stay at their init (empty) and we do NOT read.
@@ -1205,9 +1248,12 @@ void CPlayer::Serialize( CArchive& ar )
             for ( int i = 0; i < HIST_LEN; i++ )
                 ar >> m_aHistPwrHave[i] >> m_aHistPwrNeed[i] >> m_aHistPplTotal[i]
                    >> m_aHistPplBldg[i] >> m_aHistAptCap[i] >> m_aHistOfcCap[i];
+
+            // The runtime graph rings (10m/30m/5h ranges) are NOT serialized —
+            // rebuild them from the buffer we just read so the coarse graphs
+            // show the saved history immediately instead of starting empty.
+            SeedHRFromHist( );
         }
-        else
-            m_iLastDiscovered = 0;
 
         // Save release 5+ carries the active EDICTS bitmask. Older saves predate it,
         // so m_dwEdicts stays at its ctor default (0 = no edicts) and we do NOT read.
