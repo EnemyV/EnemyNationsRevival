@@ -977,6 +977,16 @@ void CAIUnit::SetDestination( CAIUnit* pCAIBldg )
         if ( hex == hexVeh )
             return;
 
+        // same 30s repeat-dedupe as SetDestination(CHexCoord&): the AI re-issues
+        // the SAME dest to the SAME unit every Manage pass — measured 650
+        // veh_set_dest/s at 15 players (g.mt.58), each one a server-side
+        // pathfind (8.3k path calls/s) = the sustained game-start grind.
+        if ( hex == m_hexLastDest &&
+             theGame.GettimeGetTime( ) < m_timeLastDest + 30 * 1000 )
+            return;
+        m_hexLastDest  = hex;
+        m_timeLastDest = theGame.GettimeGetTime( );
+
 #ifdef _LOGOUT
 
         logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "\nCAIUnit::SetDestination() player %d unit %ld going to %d,%d \n",
@@ -1013,6 +1023,17 @@ void CAIUnit::SetDestination( CSubHex& subHexDest )
     // don't bother if current location is the same as destination
     if ( subHexDest == subHexVeh )
         return;
+
+    // same 30s repeat-dedupe as SetDestination(CHexCoord&) — see the
+    // building-overload comment (g.mt.58 flood, 650 veh_set_dest/s).
+    {
+        CHexCoord hexDest( ( subHexDest.x / 2 ), ( subHexDest.y / 2 ) );
+        if ( hexDest == m_hexLastDest &&
+             theGame.GettimeGetTime( ) < m_timeLastDest + 30 * 1000 )
+            return;
+        m_hexLastDest  = hexDest;
+        m_timeLastDest = theGame.GettimeGetTime( );
+    }
 
     // CMsgVehSetDest (DWORD dwID, CSubHex const & hex, int iMode);
     /*
