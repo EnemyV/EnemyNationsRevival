@@ -41,6 +41,7 @@ CAITaskMgr::CAITaskMgr( BOOL bRestart, int iPlayer, CAIGoalMgr* pGoalMgr )
 {
     m_iPlayer  = iPlayer;
     m_bRestart = bRestart;
+    m_bStartAssignPending = FALSE;
 
     ASSERT_VALID( pGoalMgr );
     m_pGoalMgr = pGoalMgr;
@@ -63,6 +64,22 @@ CAITaskMgr::CAITaskMgr( BOOL bRestart, int iPlayer, CAIGoalMgr* pGoalMgr )
 void CAITaskMgr::Manage( CAIMsg* pMsg )
 {
     ASSERT_VALID( this );
+
+    // STAGGERED GAME-START AGGRESSION (operator spec 2026-07-03): AI player N
+    // holds its combat reactions + initial unit assignment until N game-SECONDS
+    // have elapsed. With Full Military starts, every AI mobilizing its whole
+    // starting force at T=0 clumps 600+ units into a hex-claim/pathfinding/
+    // message storm (EN_PERF: one 32s frame; veh_new x9 fan-out 5,670/s;
+    // AddSubOwned TRAP storm). Keyed to GAME time + player number = fully
+    // deterministic for MP. Economy/build tasking is unaffected once released;
+    // dropped combat alerts are reactive and re-arrive.
+    const BOOL bAggroReleased =
+        ( theGame.GetElapsedSeconds( ) >= (DWORD)m_iPlayer );
+    if ( m_bStartAssignPending && bAggroReleased )
+    {
+        m_bStartAssignPending = FALSE;
+        AssignUnits( );
+    }
 
     // update the tasks of this manager if there
     // has been a change to its goal manager
@@ -93,20 +110,24 @@ void CAITaskMgr::Manage( CAIMsg* pMsg )
     }
 
     // this could be the signal to a patrolling unit
+    // (combat alerts held until this AI's staggered release — see Manage top)
     if ( pMsg->m_iMsg == CNetCmd::unit_attacked)
     {
-        AttackAlert( pMsg );
+        if ( bAggroReleased )
+            AttackAlert( pMsg );
         return;
     }
     if ( pMsg->m_iMsg == CNetCmd::unit_damage )
     {
-        DamageAlert( pMsg );
+        if ( bAggroReleased )
+            DamageAlert( pMsg );
         return;
     }
 
     if ( pMsg->m_iMsg == CNetCmd::see_unit )
     {
-        SpottingAlert( pMsg );
+        if ( bAggroReleased )
+            SpottingAlert( pMsg );
         return;
     }
 
@@ -120,9 +141,15 @@ void CAITaskMgr::Manage( CAIMsg* pMsg )
 
     // on special other cases do an assignment
     //
-    // start of game
+    // start of game — staggered: AI player N assigns at N game-seconds (the
+    // pending flag is serviced at the top of Manage each pass)
     if ( pMsg->m_iMsg == CNetCmd::cmd_play )
-        AssignUnits( );
+    {
+        if ( bAggroReleased )
+            AssignUnits( );
+        else
+            m_bStartAssignPending = TRUE;
+    }
     // an opfor rocket was found
     if ( pMsg->m_iMsg == CNetCmd::bldg_new && pMsg->m_idata3 != m_iPlayer && pMsg->m_idata1 == CStructureData::rocket )
         AssignUnits( );
