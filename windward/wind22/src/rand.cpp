@@ -80,12 +80,16 @@ static int iRtn = 0;
 
 DWORD MySeed() {
 
-    // MP world-gen parity: env-gated FIXED seed override (EN_WGSEED). When set, MySeed()
-    // returns that constant so a Windows host and a POSIX client can generate byte-identical
-    // worlds LOCALLY in single-player and diff the [randtrace] marks (EN_RANDTRACE) WITHOUT a
-    // live MP join — the definitive cross-platform world-gen divergence bisect. Accepts decimal
-    // or 0x-hex. Unset (the default) => the original time-based seed below, zero behavior change.
-    const char* pszSeed = getenv( "EN_WGSEED" );
+    // MP world-gen parity: env-gated FIXED seed override. When set, MySeed() returns that
+    // constant so a Windows host and a POSIX client can generate byte-identical worlds LOCALLY
+    // in single-player and diff the [randtrace]/[wg] marks WITHOUT a live MP join — the
+    // definitive cross-platform world-gen divergence bisect. Accepts decimal or 0x-hex.
+    // Canonical name is EN_WG_SEED (newwin's fb21740c toolkit); EN_WGSEED kept as an alias so
+    // both spellings resolve to the same value (idempotent with newwin's newworld.cpp override).
+    // Unset (the default) => the original time-based seed below, zero behavior change.
+    const char* pszSeed = getenv( "EN_WG_SEED" );
+    if ( pszSeed == NULL || *pszSeed == '\0' )
+        pszSeed = getenv( "EN_WGSEED" );
     if ( pszSeed != NULL && *pszSeed != '\0' )
         return (DWORD)strtoul( pszSeed, NULL, 0 );
 
