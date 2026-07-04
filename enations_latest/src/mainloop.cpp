@@ -594,6 +594,18 @@ void CConquerApp::ProcessAllMessages( DWORD dwBudgetMs )
             LeaveCriticalSection( &cs );
             break;
         }
+        // per-type histogram of the MAIN game queue (names the game-start
+        // flood empirically — same static-key pattern as caimgr's ai.mt.*)
+        {
+            int t = ( (CNetCmd*)pBuf )->GetType( );
+            if ( t >= 0 && t < 128 )
+            {
+                static char s_aszMtKey[128][12];
+                if ( !s_aszMtKey[t][0] )
+                    sprintf_s( s_aszMtKey[t], sizeof( s_aszMtKey[t] ), "g.mt.%02d", t );
+                Perf::CounterInc( s_aszMtKey[t] );
+            }
+        }
         theGame.ProcessMessage((CNetCmd *) pBuf);
         theGame.FreeQueueElement((CNetCmd *) pBuf);
 
