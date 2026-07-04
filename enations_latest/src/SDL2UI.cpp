@@ -732,6 +732,14 @@ void SDL2InfoIcon::RenderOverlay(SDL_Surface* dst, TTF_Font* font, const SDL_Rec
         TTF_SizeUTF8(font, m_tip.substr(start).c_str(), &lw, &lh);
         if (lw > tw) tw = lw;
         th = nLines * lineH;
+        // Safety margin on the WIDTH. th is sized for exactly nLines rows (one per '\n'),
+        // but the renderer below wraps at wrapLength = tw. When tw equals a line's exact
+        // measured width, TTF_RenderUTF8_Blended_Wrapped can still break that line onto a
+        // 2nd row (boundary rounding/kerning) — the surface then exceeds th and the last
+        // row is clipped away by srcRect.h below. This silently ate the Nutrition edict's
+        // "Cost: +75% food consumption." line (operator screenshot 2026-07-04). A few px of
+        // slack keeps each measured line on its own row so surf->h == th and nothing clips.
+        tw += 8;
     }
     const int padX = 6, padY = 4;
     SDL_Rect box = { m_rect.x + m_rect.w + 4, m_rect.y - 2, tw + 2 * padX, th + 2 * padY };
