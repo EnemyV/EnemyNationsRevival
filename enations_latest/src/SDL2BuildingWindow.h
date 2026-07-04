@@ -126,7 +126,9 @@ private:
     int  PerBldgAptCap() const;
     int  PerBldgOfcCap() const;
 
-    enum HistSeries { kNone, kPwrHave, kPwrNeed, kPplTotal, kPplBldg, kAptCap, kOfcCap };
+    // Order after kPwrHave matches CPlayer's history-series index (0..6); kPplNeed
+    // is the runtime-only workforce-need series (backfilled flat on load).
+    enum HistSeries { kNone, kPwrHave, kPwrNeed, kPplTotal, kPplBldg, kAptCap, kOfcCap, kPplNeed };
     void DrawGraph(SDL2Image* img, HistSeries a, HistSeries b);
     // Graph time-range selector: a tiny row of 5 buttons (10s/1m/6m/24m/3h real time) that
     // rescale ALL of this window's graphs. Placed under each graph; all share
@@ -187,11 +189,10 @@ private:
     SDL2Label* m_lblOfcColony   = nullptr;
     SDL2Image* m_imgOfcGraph    = nullptr;
 
-    // Workforce section (operator): colony workers needed/have — split out of the
+    // Workforce section (operator): colony workers need/have — split out of the
     // Offices section, which now shows only desk capacity vs office workers.
     SDL2Label* m_lblWfHave      = nullptr;
     SDL2Label* m_lblWfNeed      = nullptr;
-    SDL2Label* m_lblWfEnergy    = nullptr;   // colony energy NEED (#37/#39: surfaces Mining Subsidy's +20% energy)
     SDL2Image* m_imgWfGraph     = nullptr;
 
     SDL2Label* m_lblAptBldg     = nullptr;

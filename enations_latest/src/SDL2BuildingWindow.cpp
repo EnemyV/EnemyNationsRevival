@@ -73,10 +73,10 @@ static const int RANGE_ROW_H  = 18;   // height of the tiny 10m/1h/6h/24h/7d but
 static const int GRAPHAREA_H  = GRAPH_H + RANGE_ROW_H + 2;
 static const int POWERLIKE_H  = BOX_PAD + HDR_H + GRAPHAREA_H + BOX_PAD;   // power / apartment (graph + range row)
 // Offices + Workforce are SEPARATE sections now (operator): Offices = desk capacity vs
-// office workers (2 rows + graph), Workforce = colony workforce needed/have (+ the #37/#39
-// Energy Need edict-visibility row; 3 rows + graph). Both fit inside the graph-area height.
+// office workers, Workforce = colony workforce need/have. 2 rows + graph each; both
+// fit inside the graph-area height.
 static const int OFFICE_H     = BOX_PAD + HDR_H + __max( 6 + 2 * ROW_H, GRAPHAREA_H ) + BOX_PAD;
-static const int WORKFORCE_H  = BOX_PAD + HDR_H + __max( 6 + 3 * ROW_H, GRAPHAREA_H ) + BOX_PAD;
+static const int WORKFORCE_H  = BOX_PAD + HDR_H + __max( 6 + 2 * ROW_H, GRAPHAREA_H ) + BOX_PAD;
 static const int TURRET_H     = BOX_PAD + HDR_H + 2 * ROW_H + 34 + BOX_PAD;   // 2x2 stats + Show-Range
 static const int PRODUCTION_H = BOX_PAD + HDR_H + 2 * ROW_H + 6 + 16 + BOX_PAD;   // text + progress bar
 static const int MILITARY_H   = BOX_PAD + HDR_H + 4 * ROW_H + BOX_PAD;   // strength + infantry + vehicles + energy-need (#39)
@@ -698,7 +698,7 @@ void SDL2BuildingWindow::NullSectionWidgets() {
     m_lblPowerOilHdr = nullptr; m_lblPowerOil = nullptr; m_lblPowerOilCol = nullptr;
     m_progPowerOil = nullptr; m_lblPowerFuel = nullptr;
     m_lblOfcBldg = nullptr; m_lblOfcColony = nullptr; m_imgOfcGraph = nullptr;
-    m_lblWfHave = nullptr; m_lblWfNeed = nullptr; m_lblWfEnergy = nullptr; m_imgWfGraph = nullptr;
+    m_lblWfHave = nullptr; m_lblWfNeed = nullptr; m_imgWfGraph = nullptr;
     m_lblAptBldg = nullptr; m_lblAptColony = nullptr; m_lblAptNeed = nullptr; m_imgAptGraph = nullptr;
     m_rangeBtns.clear();   // buttons are owned by the widget list (cleared on rebuild); drop stale ptrs
     m_lblTurretRange = nullptr; m_lblTurretDmg = nullptr; m_lblTurretReload = nullptr;
@@ -1239,17 +1239,15 @@ int SDL2BuildingWindow::BuildOffice(int x, int y, int w) {
 
 // Workforce: the colony's labor balance — workers needed by all buildings vs
 // workers available. Same layout as Offices (rows left, history graph right).
-// Also carries the Energy Need row (#37/#39): Mining Subsidy is hosted on the
-// office, so its +energy-upkeep bump must stay visible in the window that
-// toggles it (mirrors the Command Center's #39 row).
+// Strictly workforce numbers (operator): the colony Energy Need readout lives
+// in the Power/Military sections, not here.
 int SDL2BuildingWindow::BuildWorkforce(int x, int y, int w) {
     AddOutline(x, y, w, WORKFORCE_H);
     int yh = Header(x + BOX_PAD, y + BOX_PAD, w - 2 * BOX_PAD, "Workforce", kAccentGrn, ICON_PEOPLE);
     int graphW = 168, graphX = x + w - graphW - BOX_PAD;
     int textW  = graphX - ( x + BOX_PAD + 4 ) - 6;
     m_lblWfHave   = AddWidget<SDL2Label>(x + BOX_PAD + 4, yh + 6,             textW, ROW_H, "Have: 0");
-    m_lblWfNeed   = AddWidget<SDL2Label>(x + BOX_PAD + 4, yh + 6 + ROW_H,     textW, ROW_H, "Needed: 0");
-    m_lblWfEnergy = AddWidget<SDL2Label>(x + BOX_PAD + 4, yh + 6 + 2 * ROW_H, textW, ROW_H, "Energy Need: 0");
+    m_lblWfNeed   = AddWidget<SDL2Label>(x + BOX_PAD + 4, yh + 6 + ROW_H,     textW, ROW_H, "Need: 0");
     m_imgWfGraph  = AddWidget<SDL2Image>(graphX, yh, graphW, GRAPH_H);
     AddGraphRangeRow(graphX, yh + GRAPH_H + 2, graphW);
     return y + WORKFORCE_H + SEC_PAD;
@@ -1794,9 +1792,9 @@ void SDL2BuildingWindow::DrawGraph(SDL2Image* img, HistSeries a, HistSeries b) {
     nShow = __min( cnt, (int)maxSamp );
     off   = cnt - nShow;                          // plot the LAST nShow samples
     auto valOf = [&]( HistSeries hs, int i ) -> long {
-        int s = (int)hs - (int)kPwrHave;         // kPwrHave->0 ... kOfcCap->5
-        if ( s < 0 || s > 5 ) return 0;
-        if ( ring < 0 ) {                        // saved per-minute buffer
+        int s = (int)hs - (int)kPwrHave;         // kPwrHave->0 ... kPplNeed->6
+        if ( s < 0 || s > 6 ) return 0;
+        if ( ring < 0 ) {                        // per-minute buffer
             switch ( hs ) {
                 case kPwrHave:  return p->GetHistPwrHave ( off + i );
                 case kPwrNeed:  return p->GetHistPwrNeed ( off + i );
@@ -1804,6 +1802,7 @@ void SDL2BuildingWindow::DrawGraph(SDL2Image* img, HistSeries a, HistSeries b) {
                 case kPplBldg:  return p->GetHistPplBldg ( off + i );
                 case kAptCap:   return p->GetHistAptCap  ( off + i );
                 case kOfcCap:   return p->GetHistOfcCap  ( off + i );
+                case kPplNeed:  return p->GetHistPplNeed ( off + i );
                 default:        return 0;
             }
         }
@@ -1856,14 +1855,14 @@ void SDL2BuildingWindow::DrawGraph(SDL2Image* img, HistSeries a, HistSeries b) {
         // Legend with live values, top-left: a color swatch + "<name> <current>"
         // per series. Without this the two lines were unlabeled and unreadable.
         if ( TTF_Font* f = GetFont( 10 ) ) {
-            static const char* kSeriesName[6] =
-                { "Have", "Need", "People", "Workers", "Capacity", "Capacity" };
+            static const char* kSeriesName[7] =
+                { "Have", "Need", "People", "Workers", "Capacity", "Capacity", "Need" };
             SDL_Color txtC = { 214, 204, 174, 255 };
             int ly = pad + 2;
             for ( int sIdx = 0; sIdx < 2; sIdx++ ) {
                 if ( series[sIdx] == kNone ) continue;
                 int nameIdx = (int)series[sIdx] - (int)kPwrHave;
-                if ( nameIdx < 0 || nameIdx > 5 ) continue;
+                if ( nameIdx < 0 || nameIdx > 6 ) continue;
                 std::string txt = std::string( kSeriesName[nameIdx] ) + " " +
                                   FmtNum( (int)valOf( series[sIdx], n - 1 ) );
                 if ( SDL_Surface* ts = TTF_RenderUTF8_Blended( f, txt.c_str(), txtC ) ) {
@@ -2208,17 +2207,14 @@ void SDL2BuildingWindow::Refresh() {
 
     if ( m_bWorkforce ) {
         // Colony labor balance: workers available vs workers all buildings ask for.
-        // The Workforce-Need figure is what a +workforce-upkeep edict (Austerity)
-        // raises; Energy Need is Mining Subsidy's +energy bump (#37/#39).
+        // The Need figure is what a +workforce-upkeep edict (Austerity) raises.
         if ( m_lblWfHave )
             m_lblWfHave->SetText( "Have: " + FmtNum( (int)p->GetPplBldg() ) );
         if ( m_lblWfNeed )
-            m_lblWfNeed->SetText( "Needed: " + FmtNum( (int)p->GetPplNeedBldg() ) );
-        if ( m_lblWfEnergy )
-            m_lblWfEnergy->SetText( "Energy Need: " + FmtNum( (int)p->GetPwrNeed() ) );
-        // History only tracks the HAVE side (need isn't a serialized series), so the
-        // graph shows the workforce trend on its own.
-        DrawGraph( m_imgWfGraph, kPplBldg, kNone );
+            m_lblWfNeed->SetText( "Need: " + FmtNum( (int)p->GetPplNeedBldg() ) );
+        // Green = workers have, gold = workers needed (kPplNeed is runtime-only:
+        // flat-at-current for pre-load history, live-tracked from then on).
+        DrawGraph( m_imgWfGraph, kPplBldg, kPplNeed );
     }
 
     if ( m_bApt ) {
