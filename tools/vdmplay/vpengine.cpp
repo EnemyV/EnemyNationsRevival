@@ -1640,7 +1640,8 @@ CRemoteSession::CRemoteSession( CTDLogger* log,
                                 CWSMap* wsMap, DWORD maxAge ):
     CVpSession( log, net, players, wsMap ), m_serverWS( NULL ), m_pendingJoin( NULL ),
     m_initialJoin( TRUE ), m_serverEnumData( NULL ), m_maxServerAge( maxAge ), m_connected( FALSE ),
-    m_tcpEnumTried( FALSE ) {
+    m_tcpEnumTried( FALSE ), m_hasAltServer( FALSE ), m_altServerUserData( NULL ) {
+    memset( &m_altServerAddr, 0, sizeof( m_altServerAddr ) );
     m_punch.Reset();
 }
 
@@ -2153,6 +2154,7 @@ void CRemoteSession::OnConnect( CNetLink* link ) {
 
     if ( m_serverWS && m_serverWS->m_safeLink == link ) {
         m_connected = TRUE;
+        m_hasAltServer = FALSE;   // primary candidate connected — no fallback needed/wanted
     }
 
     VPEXIT();
@@ -2193,6 +2195,26 @@ void CRemoteSession::OnDisconnect( CNetLink* link ) {
     if ( m_broadcastLink == link ) {
         m_connected = FALSE;
         HandleNetDown();
+        VPEXIT();
+        return;
+    }
+
+    // Dial-both fallback: the PRIMARY candidate's connect dropped BEFORE we joined
+    // (m_connected still FALSE — the async EINPROGRESS-then-fail that lands here for an
+    // unreachable candidate). If ConnectToServer stashed an alternate, re-dial it ONCE
+    // rather than stalling the join back to the menu. Never fires once connected (the flag
+    // is cleared on connect) so it cannot disturb a live game's disconnect handling.
+    if ( !m_connected && m_hasAltServer && m_serverWS && m_serverWS->m_safeLink == link ) {
+        if ( JoinAddrLogOn() )
+            fprintf( stderr, "[natcand] primary candidate connect dropped pre-join -> re-dialing stashed ALTERNATE candidate\n" );
+        m_hasAltServer = FALSE;                 // fall back only once
+        VPNETADDRESS alt = m_altServerAddr;
+        LPVOID       ud  = m_altServerUserData;
+        CWS* dead = m_wsMap->FindBySafeLink( link );
+        if ( dead )
+            ( (CRemoteWS*)dead )->StopUsingSafeLink();
+        m_serverWS = NULL;
+        ConnectToServer( &alt, ud );
         VPEXIT();
         return;
     }
@@ -2466,28 +2488,55 @@ BOOL CRemoteSession::ConnectToServer( LPCVPNETADDRESS addr, LPVOID userData ) {
     //     PUBLIC candidate {observed IP, claimed stream port, observed dg port}
     //     and (EN_NAT_PUNCH) start the UDP rendezvous in parallel.
     // No tail (old iserve / LAN broadcast discovery) -> exactly the old path.
+    // Dial-both fallback: when the stamped session offers TWO distinct candidates
+    // (observed PUBLIC + advertised PRIVATE), dial the heuristic primary now and stash
+    // the OTHER as m_altServerAddr; OnDisconnect re-dials it if the primary connect drops
+    // before we join. Stored alternates have the NAT tail stripped so the re-dial goes
+    // straight to the transport address (no re-selection / no loop). Reset any stale alt.
+    m_hasAltServer = FALSE;
     VPNETADDRESS dial;
     if ( addr && m_net->IsInetTransport() && NatCandOn() && EnNatCandPresent( addr ) ) {
         const unsigned char* pubIp = EnNatCandPubIp( addr );
         const unsigned char* privIp = EnNatCandPrivIp( addr );
         BOOL sameNat = ( EnNatCandFlags( addr ) & EN_NATCAND_F_SAMENAT ) != 0;
+        BOOL twoCand = !EnNatCandIpZero( pubIp ) && !EnNatCandIpEq( pubIp, privIp );
 
-        if ( !EnNatCandIpZero( pubIp ) && !EnNatCandIpEq( pubIp, privIp ) && !sameNat ) {
+        if ( twoCand && !sameNat ) {
+            // Host is NAT'd: primary = PUBLIC; alternate = the advertised PRIVATE (raw addr,
+            // tail stripped) in case the observed mapping is stale but we share a LAN.
             EnNatCandPublicAddr( addr, &dial );
+            m_altServerAddr = *addr;
+            memset( EnNatCandBytes( &m_altServerAddr ) + EN_NATCAND_OFF, 0, 12 );
+            m_altServerUserData = userData;
+            m_hasAltServer = TRUE;
 
             if ( JoinAddrLogOn() ) {
                 char pb[64];
                 EnNatCandFmt( pb, sizeof( pb ), pubIp, EnNatCandPubDgPort( addr ) );
-                fprintf( stderr, "[natcand] host is NAT'd (observed %s != advertised private): dialing PUBLIC candidate\n", pb );
+                fprintf( stderr, "[natcand] host is NAT'd (observed %s != advertised private): dialing PUBLIC candidate (PRIVATE stashed as fallback)\n", pb );
             }
 
             if ( NatPunchOn() )
                 StartNatPunch( addr );
 
             addr = &dial;
+        } else if ( twoCand ) {
+            // sameNat (or host-not-NAT'd but a distinct public exists): primary = PRIVATE
+            // (hairpin/LAN), alternate = the observed PUBLIC. A DOUBLE-NAT'd joiner that
+            // shares the host's public IP still cannot reach the host's private LAN address,
+            // so keep PUBLIC as the fallback rather than dead-ending at the menu.
+            EnNatCandPublicAddr( addr, &m_altServerAddr );   // already tail-free
+            m_altServerUserData = userData;
+            m_hasAltServer = TRUE;
+
+            if ( JoinAddrLogOn() )
+                fprintf( stderr, "[natcand] dialing PRIVATE candidate (%s) - PUBLIC stashed as fallback\n",
+                         sameNat ? "same public IP as host" : "host not NAT'd" );
+
+            if ( NatPunchOn() )
+                StartNatPunch( addr );
         } else if ( JoinAddrLogOn() ) {
-            fprintf( stderr, "[natcand] dialing PRIVATE candidate (%s)\n",
-                     sameNat ? "same public IP as host - same NAT" : "host not NAT'd" );
+            fprintf( stderr, "[natcand] dialing PRIVATE candidate (no distinct public candidate)\n" );
         }
     }
 

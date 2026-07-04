@@ -1299,6 +1299,19 @@ public:
     void TryTcpEnumFallback();
     CLocalJoin *m_pendingJoin;
     BOOL m_connected;
+
+    // P0.1 candidate fallback (dial-both): a stamped session carries two dialable
+    // candidates (observed PUBLIC + advertised PRIVATE). ConnectToServer dials the primary
+    // and stashes the OTHER here; if the primary's connect drops BEFORE the join completes
+    // (m_connected still FALSE — the async EINPROGRESS failure that lands in OnDisconnect),
+    // OnDisconnect re-dials this alternate ONCE. Cleared on a successful connect so a real
+    // mid-game link drop never re-dials. Inert unless a stamp offered two distinct candidates
+    // -> only ever engages on a path that otherwise dead-ends at the menu (cannot regress a
+    // working single-candidate join).
+    BOOL         m_hasAltServer;
+    VPNETADDRESS m_altServerAddr;
+    LPVOID       m_altServerUserData;
+
     BOOL m_initialJoin;
     LPVOID m_serverEnumData;
     DWORD m_maxServerAge;
