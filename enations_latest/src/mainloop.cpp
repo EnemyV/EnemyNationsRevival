@@ -1593,6 +1593,18 @@ void CBuilding::Operate( )
             GetOwner( )->AddPplNeedBldg( GetData( )->GetPeople( ) / 2 );
         }
         m_fOperMod = 0;
+
+        // #60 (dispatch half; pairs with the fire-rate fix above): a FINISHED, armed,
+        // non-abandoned building still DEFENDS while production is `stopped` — this
+        // return used to skip HandleCombat() entirely, so enemy camps persisted
+        // `stopped` in saved games computed fr>0 but never dispatched a shot.
+        // Combat only; production stays paused. Abandoned buildings don't fight,
+        // and `event` (out-of-materials wait) is excluded for exact parity with the
+        // running path, which returns before HandleCombat when event is set (:1634).
+        if ( ( m_iConstDone == -1 )
+             && ( !( m_unitFlags & ( abandoned | event ) ) )
+             && ( GetData( )->_GetFireRate( ) > 0 ) )
+            HandleCombat( );
         return;
     }
 

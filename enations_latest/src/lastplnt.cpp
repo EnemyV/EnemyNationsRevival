@@ -1706,16 +1706,17 @@ void CConquerApp::InitCustomUI( )
 
 void CConquerApp::Minimize( )
 {
-#ifdef _WIN32
-    m_pMainWnd->ShowWindow( SW_MINIMIZE );
-#else
-    // SDL port: m_pMainWnd is a stubbed MFC window whose ShowWindow() is a no-op, so the
-    // main-menu / file-dialog "Minimize" button did nothing (operator-reported on mac).
-    // Minimize the real SDL window instead — the whole group: in-game the
-    // detached ALWAYS_ON_TOP panels cover the screen, so minimizing only the
-    // main window looks like a no-op (operator-reported on mac).
+    // The real, visible window is the SDL m_gameWindow on BOTH platforms. Once the
+    // SDL main menu / game is up, the MFC m_pMainWnd (m_wndMain) is SW_HIDE-den, so
+    // m_pMainWnd->ShowWindow(SW_MINIMIZE) minimized a hidden window and the Minimize
+    // button looked dead — on mac (m_pMainWnd is a no-op stub) AND on Windows (real
+    // HWND, but hidden). Minimize the whole SDL window group instead; MinimizeAll()
+    // also hides the detached ALWAYS_ON_TOP panels that otherwise stay up in-game.
     if ( m_gameWindow )
         m_gameWindow->MinimizeAll( );
+#ifdef _WIN32
+    else if ( m_pMainWnd )
+        m_pMainWnd->ShowWindow( SW_MINIMIZE );   // fallback: no SDL window yet
 #endif
 }
 

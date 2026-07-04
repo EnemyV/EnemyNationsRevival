@@ -503,7 +503,7 @@ protected:
 class CStubPaintDC {
 public:
     CStubPaintDC( CWndStub* p ) : m_hWnd( p->m_hWnd ) { m_hDC = ::BeginPaint( m_hWnd, &m_ps ); }
-    CStubPaintDC( CWnd* p )     : m_hWnd( p->GetSafeHwnd() ) { m_hDC = ::BeginPaint( m_hWnd, &m_ps ); }
+    CStubPaintDC( CWnd* p )     : m_hWnd( p ? p->GetSafeHwnd() : NULL ) { m_hDC = ::BeginPaint( m_hWnd, &m_ps ); }
     ~CStubPaintDC()                                   { ::EndPaint( m_hWnd, &m_ps ); }
     operator HDC() const                              { return m_hDC; }
     HDC          m_hDC;
@@ -517,7 +517,7 @@ private:
 class CStubClientDC {
 public:
     CStubClientDC( CWndStub* p ) : m_hWnd( p->m_hWnd ) { m_hDC = ::GetDC( m_hWnd ); }
-    CStubClientDC( CWnd* p )     : m_hWnd( p->GetSafeHwnd() ) { m_hDC = ::GetDC( m_hWnd ); }
+    CStubClientDC( CWnd* p )     : m_hWnd( p ? p->GetSafeHwnd() : NULL ) { m_hDC = ::GetDC( m_hWnd ); }
     ~CStubClientDC()                                   { ::ReleaseDC( m_hWnd, m_hDC ); }
     operator HDC() const                               { return m_hDC; }
     HDC m_hDC;
@@ -530,7 +530,14 @@ private:
 class CStubWindowDC {
 public:
     CStubWindowDC( CWndStub* p ) : m_hWnd( p->m_hWnd ) { m_hDC = ::GetWindowDC( m_hWnd ); }
-    CStubWindowDC( CWnd* p )     : m_hWnd( p->GetSafeHwnd() ) { m_hDC = ::GetWindowDC( m_hWnd ); }
+    // Guard p BEFORE the member call: GetSafeHwnd()'s `return this ? m_hWnd : NULL`
+    // is UB (the compiler may assume this!=NULL and delete the check). In plain
+    // Release the call inlines and constant-folds a (CWnd*)NULL arg, but a non-
+    // inlined build (ASan/Sanitize) does a real null-`this` read of m_hWnd -> SEGV
+    // in InitInstance's `CWindowDC dc((CWnd*)NULL)` (lastplnt.cpp:1153) = the whole
+    // Sanitize/ASan build died at startup. Checking p here is UB-free and matches
+    // the intended "NULL window -> screen DC" semantics.
+    CStubWindowDC( CWnd* p )     : m_hWnd( p ? p->GetSafeHwnd() : NULL ) { m_hDC = ::GetWindowDC( m_hWnd ); }
     ~CStubWindowDC()                                   { ::ReleaseDC( m_hWnd, m_hDC ); }
     operator HDC() const                               { return m_hDC; }
     HDC m_hDC;

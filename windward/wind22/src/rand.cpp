@@ -110,16 +110,3 @@ int MyRand() {
     return ( iRtn );
 }
 
-// Full-state fingerprint for the [wg] world-gen parity trace: FNV-1a over the
-// LCG state + the Bays-Durham shuffle table, so two processes report equal FPs
-// iff their generators are bit-identical (same position in the same stream).
-// Read-only — consumes nothing from the stream.
-DWORD MyRandFP() {
-
-    DWORD h = 2166136261UL;
-    h = ( h ^ (DWORD)g_enRandState ) * 16777619UL;
-    h = ( h ^ (DWORD)iRtn ) * 16777619UL;
-    for ( int iOn = 0; iOn < 98; iOn++ )
-        h = ( h ^ (DWORD)aRnd[iOn] ) * 16777619UL;
-    return ( h );
-}

@@ -57,5 +57,5 @@ if __name__ == "__main__":
     # save/load do heavy serialize+compress+disk work and can take well over the
     # default 15s; give them a long client socket timeout so the client doesn't
     # bail before the server replies.
-    _timeout = 120 if sys.argv[1] in ("save", "load") else 15
+    _timeout = 210 if sys.argv[1] == "newgame" else (120 if sys.argv[1] in ("save", "load") else 15)
     print(cmd(sys.argv[1:], timeout=_timeout))

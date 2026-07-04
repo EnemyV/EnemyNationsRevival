@@ -3652,9 +3652,18 @@ static void EnEmitUnitHitFlash( CUnit* pUnit, CAnimAtr& aa, const CHexCoord& hex
     if ( !aa.CalcWindowHexBound( hex, rb ) )
         return;
 
+    // Centre the flash on the unit's FOOTPRINT centre, not the anchor hex. For a
+    // multi-hex building the anchor `hex` is its corner hex (GetLeftHex), so the
+    // flash was landing on the corner square instead of the middle (operator-
+    // reported). GetWorldPixels() is the footprint centre for buildings and the
+    // hex centre for vehicles, so this fixes buildings and leaves vehicles put;
+    // CMapLoc3D(maploc) carries the ground altitude so elevated footprints don't
+    // shift the flash vertically. rb (the anchor hex bound) still sets the radius.
+    CPoint ptC    = aa.WrapWorldToWindow( CMapLoc3D( pUnit->GetWorldPixels( ) ) );
+
     float k       = 1.0f - (float)( now - t0 ) / (float)EN_HIT_FLASH_MS;   // 1 -> 0
-    float cx      = rb.left + rb.Width( ) * 0.5f + ulDirty.x;
-    float cy      = rb.top + rb.Height( ) * 0.45f + ulDirty.y;
+    float cx      = ptC.x + ulDirty.x;
+    float cy      = ptC.y - rb.Height( ) * 0.05f + ulDirty.y;   // keep the slight up-nudge
     float radius  = rb.Width( ) * radiusScale;
     int   aCenter = (int)( 55.0f * k );    // additive, subtle
 

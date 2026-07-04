@@ -125,6 +125,17 @@ void HarnessHexInfo(int x, int y, std::string& out);
 // <id> [adjId]`. Render thread only (reads map + mutates the view).
 void HarnessFindTerrain(int id, int adjId, std::string& out);
 
+// Center the focused area view on an arbitrary hex (x,y) for a headless pixel
+// eyes-on. Backs `centerhex <x> <y>`. Render thread only (reads map + mutates view).
+void HarnessCenterHex(int x, int y, std::string& out);
+
+// Order the player's first owned crane to build a road from hex (x1,y1) to (x2,y2),
+// driving CVehicle::SetRoad directly (the same commit the road_set mouse-release does)
+// — the crane road-build gesture (press-R + drag) can't be delivered headlessly
+// (keyboard focus + capture-drag). Backs `road <x1> <y1> <x2> <y2>`. Mutates game
+// state → serviced on the main/render thread like center/hexinfo.
+void HarnessBuildRoad(int x1, int y1, int x2, int y2, std::string& out);
+
 // List every bridge hex (CHex::bridge unit bit) as `bridge <x> <y> vis <0|1>
 // seen <0|1>`, then center the focused area view on the first NEVER-SEEN one
 // (vis=0 seen=0; else the first found). Backs `findbridge` = the BUGS #30
@@ -167,5 +178,25 @@ const char* HarnessPendingLoadPath(void);
 // hour grind. POSIX analogue of win's Windows F12 hotkey. Returns false if not
 // in-game or not single-player (MP would desync). Backs the `research` cmd.
 bool HarnessGrantResearch(void);
+
+// Start a fresh SINGLE-PLAYER game headlessly from the MAIN MENU — mirrors
+// SDL2_RunCreateSinglePlayerFlow but takes params instead of the create + pick-race
+// modals, so an autonomous driver can start e.g. a HARD, Full-Military game with no UI.
+//   ai    = AI difficulty 0..3  (0 Easy, 1 Moderate, 2 Difficult/HARD, 3 Impossible)
+//   pos   = starting force 0..3 (0 Minimal Civilian .. 3 Full Military)
+//   size  = world size 0..2     (0 Small, 1 Medium, 2 Large)
+//   numai = number of AI opponents (>=1)
+// Uses race 0 and name "mac2". Must run from the main loop (world-gen re-pumps events)
+// and only at the menu (no game in progress). Returns true once the game is in play.
+// Backs the `newgame` control_socket cmd.
+bool HarnessNewGame(int ai, int pos, int size, int numai);
+
+// Dump the local human's single-player game-over / progress state (READ-ONLY):
+//   "state <n> hp <0|1> bldgshave <n> vehshave <n> bldgsdest <n> vehsdest <n> \
+//    players <n> ai <n> elapsed <sec> <playing|LOST|WON>\n"
+// Defeat = bldgshave<=0 or CGame state left `play` (== CGame::other); win = <=1 player
+// left. Lets a headless driver poll "am I still alive / how hard am I being hit" each
+// tick. Render/game thread only. Backs the `gamestate` cmd.
+void HarnessDumpGameState(std::string& out);
 
 #endif // EN_HARNESS_H

@@ -7801,6 +7801,84 @@ void HarnessFindTerrain( int id, int adjId, std::string& out )
 }
 
 //---------------------------------------------------------------------------
+// HarnessCenterHex — center the focused area view on an arbitrary hex (x,y), so a
+// headless driver can `shotid <areaWin>` a SPECIFIC location. `center <unitId>`
+// only targets a unit and findterr/findbridge only reach searched hexes; there was
+// no way to navigate to a plain coordinate for a pixel eyes-on (bridge draw, blend
+// seams) — the radar is ~5 hexes/px, too coarse to click. Reads the map bounds +
+// mutates the view, so it's serviced on the render thread like findterr. [mac2]
+//---------------------------------------------------------------------------
+void HarnessCenterHex( int x, int y, std::string& out )
+{
+    CWndArea* a = theAreaList.GetTop( );
+    if ( a == NULL ) { out = "err no-area\n"; return; }
+
+    CSize sz = theMap.GetSize( );
+    if ( x < 0 || y < 0 || x >= sz.cx || y >= sz.cy )
+    {
+        out = "err oob " + IntToStr( x ) + " " + IntToStr( y ) +
+              " (map " + IntToStr( sz.cx ) + "x" + IntToStr( sz.cy ) + ")\n";
+        return;
+    }
+
+    CHexCoord hc( x, y );
+    CMapLoc   ml( hc );
+    a->Center( ml );
+
+    out = "centered " + IntToStr( x ) + " " + IntToStr( y ) + "\n";
+}
+
+//---------------------------------------------------------------------------
+// HarnessBuildRoad — drive a crane road-build headlessly. The interactive path
+// (RoadUnit sets road_begin → LButtonDown captures m_hexRoadStart → LButtonUp in
+// road_set calls pVeh->SetRoad(start,end)) can't be delivered via the harness:
+// the 'R' hotkey never reaches the game (keyboard focus) and the road drag uses
+// CaptureMouse. So we call the SAME commit — CVehicle::SetRoad — directly on the
+// player's first owned crane (SetRoad sets build_road + drives the crane to the
+// start; it then lays the road toward the end as it works). Backs `road`. Mutates
+// game state → main/render-thread serviced. Declared in en_harness.h.
+//---------------------------------------------------------------------------
+void HarnessBuildRoad( int x1, int y1, int x2, int y2, std::string& out )
+{
+    CSize sz = theMap.GetSize( );
+    if ( x1 < 0 || y1 < 0 || x2 < 0 || y2 < 0 ||
+         x1 >= sz.cx || y1 >= sz.cy || x2 >= sz.cx || y2 >= sz.cy )
+    {
+        out = "err oob (map " + IntToStr( sz.cx ) + "x" + IntToStr( sz.cy ) + ")\n";
+        return;
+    }
+
+    CHexCoord hcStart( x1, y1 ), hcEnd( x2, y2 );
+    CHex* pHexStart = theMap._GetHex( hcStart );
+    if ( pHexStart == NULL || !pHexStart->CanRoad( ) )
+    {
+        out = "err start-hex not roadable\n";
+        return;
+    }
+
+    CVehicle* pCrane = NULL;
+    POSITION  pos = theVehicleMap.GetStartPosition( );
+    while ( pos != NULL )
+    {
+        DWORD     dwID = 0;
+        CVehicle* pVeh = NULL;
+        theVehicleMap.GetNextAssoc( pos, dwID, pVeh );
+        if ( pVeh && pVeh->GetOwner( ) && pVeh->GetOwner( )->IsMe( ) &&
+             pVeh->GetData( ) && pVeh->GetData( )->IsCrane( ) )
+        {
+            pCrane = pVeh;
+            break;
+        }
+    }
+    if ( pCrane == NULL ) { out = "err no owned crane\n"; return; }
+
+    pCrane->SetRoad( hcStart, hcEnd );
+    out = "road crane=" + IntToStr( (int)pCrane->GetID( ) ) +
+          " (" + IntToStr( x1 ) + "," + IntToStr( y1 ) + ")->(" +
+          IntToStr( x2 ) + "," + IntToStr( y2 ) + ")\n";
+}
+
+//---------------------------------------------------------------------------
 // HarnessFindBridge — list every bridge hex (CHex::bridge unit bit) with its fog
 // state (`bridge <x> <y> vis <0|1> seen <0|1>`), then center the focused area view
 // on the first NEVER-SEEN one (vis=0 seen=0; else the first found). Backs the #30
@@ -8082,4 +8160,37 @@ bool HarnessGrantResearch( void )
 #else
     return false;                                       // cheat compiled out of Release
 #endif
+}
+
+//---------------------------------------------------------------------------
+// HarnessDumpGameState — READ-ONLY single-player game-over/progress probe for the
+// local human. The defeat predicate mirrors mainloop.cpp exactly: you lose the tick
+// GetBldgsHave() hits 0 (which also flips CGame state out of `play` to CGame::other);
+// you win when <=1 player remains. Lets a headless driver poll survival + how hard
+// it's being hit each tick. Call on the game/render thread. Declared in en_harness.h.
+//---------------------------------------------------------------------------
+void HarnessDumpGameState( std::string& out )
+{
+    if ( !theApp.AmInGame( ) )
+    {
+        out = "state menu (not in-game)\n";
+        return;
+    }
+    CPlayer* me = theGame._GetMe( );
+    int  st = theGame.GetState( );
+    long bh = me ? (long) me->GetBldgsHave( ) : -1;
+    long vh = me ? (long) me->GetVehsHave( )  : -1;
+    long bd = me ? (long) me->GetBldgsDest( ) : -1;
+    long vd = me ? (long) me->GetVehsDest( )  : -1;
+    int  allc = theGame.GetAll( ).GetCount( );
+    int  aic  = theGame.GetAi( ).GetCount( );
+    unsigned long elapsed = (unsigned long) theGame.GetElapsedSeconds( );
+    bool lost = ( st == CGame::other ) || ( bh <= 0 );
+    bool won  = ( allc <= 1 );
+    const char* verdict = won ? "WON" : ( lost ? "LOST" : "playing" );
+    char buf[256];
+    snprintf( buf, sizeof(buf),
+        "state %d hp %d bldgshave %ld vehshave %ld bldgsdest %ld vehsdest %ld players %d ai %d elapsed %lu %s\n",
+        st, theGame.HaveHP( ) ? 1 : 0, bh, vh, bd, vd, allc, aic, elapsed, verdict );
+    out = buf;
 }

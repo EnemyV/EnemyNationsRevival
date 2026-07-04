@@ -169,6 +169,24 @@ std::atomic<int>       g_findAdjId{-1};
 std::atomic<bool>      g_findPending{false};
 std::atomic<bool>      g_findDone{false};
 
+// Pending `centerhex <x> <y>` request (HarnessCenterHex) — center the area view on
+// an arbitrary hex; serviced on the render thread (mutates the view). [mac2]
+std::mutex             g_centerHexMutex;
+std::string            g_centerHexResult;
+std::atomic<int>       g_centerHexX{0};
+std::atomic<int>       g_centerHexY{0};
+std::atomic<bool>      g_centerHexPending{false};
+std::atomic<bool>      g_centerHexDone{false};
+
+// Pending `road <x1> <y1> <x2> <y2>` request (HarnessBuildRoad) — order the first
+// owned crane to build a road between two hexes; mutates game state → main/render
+// thread serviced (the R-hotkey + capture-drag road gesture can't be sent headless).
+std::mutex             g_roadMutex;
+std::string            g_roadResult;
+std::atomic<int>       g_roadX1{0}, g_roadY1{0}, g_roadX2{0}, g_roadY2{0};
+std::atomic<bool>      g_roadPending{false};
+std::atomic<bool>      g_roadDone{false};
+
 // Pending `findbridge` request (HarnessFindBridge) — lists bridge hexes + fog state,
 // centers the view on the first never-seen one (BUGS #30 bridge-fog verify).
 std::mutex             g_bridgeMutex;
@@ -207,6 +225,20 @@ std::atomic<bool>      g_loadOK{false};
 std::atomic<bool>      g_researchPending{false};
 std::atomic<bool>      g_researchDone{false};
 std::atomic<bool>      g_researchOK{false};
+
+// Pending `newgame` request, serviced from the main loop (create flow re-pumps events
+// during world-gen, like load). Starts a fresh SP game with the given difficulty/start.
+std::mutex             g_newgameMutex;
+int                    g_ngAi{2}, g_ngPos{3}, g_ngSize{1}, g_ngNumAi{2};
+std::atomic<bool>      g_newgamePending{false};
+std::atomic<bool>      g_newgameDone{false};
+std::atomic<bool>      g_newgameOK{false};
+
+// Pending `gamestate` request, serviced on the render thread (read-only), like units.
+std::mutex             g_gameStateMutex;
+std::string            g_gameStateResult;
+std::atomic<bool>      g_gameStatePending{false};
+std::atomic<bool>      g_gameStateDone{false};
 
 // Pending screenshot request, serviced on the render thread.
 std::mutex              g_shotMutex;
@@ -448,6 +480,39 @@ void handle_command(const std::string& line, int conn) {
         if (!g_findDone.load()) out = "err findterr timeout (not in-game?)\n";
         write(conn, out.c_str(), out.size());
         return;
+    } else if (strcmp(cmd, "centerhex") == 0) {
+        // centerhex <x> <y> — center the area view on hex (x,y) so the driver can
+        // shotid the area window at a SPECIFIC location (pixel eyes-on of a bridge/
+        // blend/etc. that no unit or terrain-search reaches). Render-thread serviced.
+        int x = -1, y = -1;
+        if (sscanf(line.c_str(), "%*s %d %d", &x, &y) != 2) {
+            const char* u = "err usage: centerhex <x> <y>\n";
+            write(conn, u, strlen(u)); return;
+        }
+        g_centerHexX = x; g_centerHexY = y; g_centerHexDone = false; g_centerHexPending = true;
+        for (int i = 0; i < 2000 && !g_centerHexDone.load(); ++i) { struct timespec ts={0,5000000}; nanosleep(&ts,nullptr); }
+        std::string out;
+        { std::lock_guard<std::mutex> lk(g_centerHexMutex); out = g_centerHexResult; }
+        if (!g_centerHexDone.load()) out = "err centerhex timeout (not in-game?)\n";
+        write(conn, out.c_str(), out.size());
+        return;
+    } else if (strcmp(cmd, "road") == 0) {
+        // road <x1> <y1> <x2> <y2> — order the first owned crane to build a road
+        // between hexes. Drives CVehicle::SetRoad directly (the road drag gesture
+        // isn't headless-deliverable). Mutates game state → main-thread serviced.
+        int x1=-1,y1=-1,x2=-1,y2=-1;
+        if (sscanf(line.c_str(), "%*s %d %d %d %d", &x1,&y1,&x2,&y2) != 4) {
+            const char* u = "err usage: road <x1> <y1> <x2> <y2>\n";
+            write(conn, u, strlen(u)); return;
+        }
+        g_roadX1=x1; g_roadY1=y1; g_roadX2=x2; g_roadY2=y2;
+        g_roadDone=false; g_roadPending=true;
+        for (int i = 0; i < 2000 && !g_roadDone.load(); ++i) { struct timespec ts={0,5000000}; nanosleep(&ts,nullptr); }
+        std::string out;
+        { std::lock_guard<std::mutex> lk(g_roadMutex); out = g_roadResult; }
+        if (!g_roadDone.load()) out = "err road timeout (not in-game?)\n";
+        write(conn, out.c_str(), out.size());
+        return;
     } else if (strcmp(cmd, "findbridge") == 0) {
         // findbridge — list bridge hexes (`bridge <x> <y> vis <0|1> seen <0|1>`) and
         // center the view on the first never-seen one (#30 bridge-fog verify).
@@ -599,6 +664,30 @@ void handle_command(const std::string& line, int conn) {
         for (int i = 0; i < 600 && !g_researchDone.load(); ++i) { struct timespec ts={0,5000000}; nanosleep(&ts,nullptr); }
         std::strcpy(reply, !g_researchDone.load() ? "err research timeout\n"
                           : (g_researchOK.load() ? "ok research granted\n" : "err research failed (in-game SP?)\n"));
+    } else if (strcmp(cmd, "newgame") == 0) {
+        // newgame [ai] [pos] [size] [numai] — start a fresh SINGLE-PLAYER game headlessly
+        // FROM THE MENU (no create/pick-race modals). ai=difficulty 0..3 (2=Difficult/HARD,
+        // 3=Impossible); pos=start force 0..3 (3=Full Military); size 0..2 (Small/Med/Large);
+        // numai=AI opponents. Defaults = HARD, Full Military, Medium, 2 AI. Deferred to the
+        // main loop (world-gen re-pumps events); generous timeout.
+        int ai=2,pos=3,size=1,numai=2;
+        sscanf(line.c_str(), "%*s %d %d %d %d", &ai,&pos,&size,&numai);
+        { std::lock_guard<std::mutex> lk(g_newgameMutex); g_ngAi=ai; g_ngPos=pos; g_ngSize=size; g_ngNumAi=numai; }
+        g_newgameDone=false; g_newgameOK=false; g_newgamePending=true;
+        for (int i = 0; i < 40000 && !g_newgameDone.load(); ++i) { struct timespec ts={0,5000000}; nanosleep(&ts,nullptr); } // ~200s
+        std::strcpy(reply, !g_newgameDone.load() ? "err newgame timeout\n"
+                          : (g_newgameOK.load() ? "ok newgame started\n" : "err newgame failed (at menu? already in-game?)\n"));
+    } else if (strcmp(cmd, "gamestate") == 0) {
+        // gamestate — READ-ONLY SP game-over/progress poll for the local human (state /
+        // building+vehicle counts+losses / elapsed / playing|LOST|WON). Render-thread
+        // serviced like units. Use to detect defeat + track defense over time.
+        g_gameStateDone=false; g_gameStatePending=true;
+        for (int i = 0; i < 400 && !g_gameStateDone.load(); ++i) { struct timespec ts={0,5000000}; nanosleep(&ts,nullptr); }
+        std::string out;
+        { std::lock_guard<std::mutex> lk(g_gameStateMutex); out = g_gameStateResult; }
+        if (!g_gameStateDone.load()) out = "err gamestate timeout (not in-game?)\n";
+        write(conn, out.c_str(), out.size());
+        return;
     } else if (strcmp(cmd, "quit") == 0) {
         SDL_Event e; SDL_zero(e); e.type=SDL_QUIT; SDL_PushEvent(&e);
     } else if (strcmp(cmd, "wins") == 0) {
@@ -697,6 +786,12 @@ void EnHarness_ServiceMainLoop() {
         g_loadOK = HarnessLoadGame(path.c_str());
         g_loadDone = true;
     }
+    if (g_newgamePending.exchange(false)) {
+        int ai,pos,size,numai;
+        { std::lock_guard<std::mutex> lk(g_newgameMutex); ai=g_ngAi; pos=g_ngPos; size=g_ngSize; numai=g_ngNumAi; }
+        g_newgameOK = HarnessNewGame(ai, pos, size, numai);
+        g_newgameDone = true;
+    }
 }
 
 void EnHarness_Service() {
@@ -776,6 +871,20 @@ void EnHarness_Service() {
         g_hexInfoDone = true;
         return;
     }
+    if (g_centerHexPending.exchange(false)) {
+        std::string out;
+        HarnessCenterHex(g_centerHexX.load(), g_centerHexY.load(), out);
+        { std::lock_guard<std::mutex> lk(g_centerHexMutex); g_centerHexResult = out; }
+        g_centerHexDone = true;
+        return;
+    }
+    if (g_roadPending.exchange(false)) {
+        std::string out;
+        HarnessBuildRoad(g_roadX1.load(), g_roadY1.load(), g_roadX2.load(), g_roadY2.load(), out);
+        { std::lock_guard<std::mutex> lk(g_roadMutex); g_roadResult = out; }
+        g_roadDone = true;
+        return;
+    }
     if (g_findPending.exchange(false)) {
         std::string out;
         HarnessFindTerrain(g_findId.load(), g_findAdjId.load(), out);
@@ -793,6 +902,13 @@ void EnHarness_Service() {
     if (g_researchPending.exchange(false)) {
         g_researchOK = HarnessGrantResearch();
         g_researchDone = true;
+        return;
+    }
+    if (g_gameStatePending.exchange(false)) {
+        std::string out;
+        HarnessDumpGameState(out);
+        { std::lock_guard<std::mutex> lk(g_gameStateMutex); g_gameStateResult = out; }
+        g_gameStateDone = true;
         return;
     }
     if (g_raisePending.exchange(false)) {
