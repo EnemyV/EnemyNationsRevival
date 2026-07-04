@@ -236,22 +236,6 @@ static LRESULT CALLBACK SdlSubclassWndProc(HWND hWnd, UINT msg, WPARAM wParam, L
     if (msg == WM_ACTIVATE && LOWORD(wParam) == WA_CLICKACTIVE) {
         wParam = MAKEWPARAM(WA_ACTIVE, HIWORD(wParam));
     }
-    // BUGS #69 tripwire: on a create-over-an-active-game ALL native SDL
-    // windows get DESTROYED behind SDL's back (live process, zero HWNDs,
-    // stale SDL flags) — every reveal fix no-op'd because nothing existed to
-    // show. Log every WM_DESTROY on a subclassed SDL window; under a debugger
-    // (dbgcatch) also break so the destroyer's full call stack gets walked.
-    // Undebugged: log-only, zero behavior change.
-    if (msg == WM_DESTROY) {
-        char title[80] = "";
-        ::GetWindowTextA(hWnd, title, sizeof(title) - 1);
-        char buf[192];
-        _snprintf_s(buf, sizeof(buf), _TRUNCATE,
-                    "[wnddestroy] WM_DESTROY hwnd=%p title='%s'\n", (void*)hWnd, title);
-        ::OutputDebugStringA(buf);
-        if (::IsDebuggerPresent())
-            __debugbreak();   // dbgcatch walks the stack and continues (F5-past)
-    }
     // Each SDL window stores its original wndproc as a window property so we
     // can route through the right one. Fall back to the static (main-window)
     // copy for backwards compat with installs that predate per-window storage.
@@ -275,37 +259,6 @@ static LRESULT CALLBACK SdlCbtFilterHook(int nCode, WPARAM wParam, LPARAM lParam
     return ::CallNextHookEx(s_sdlCbtHook, nCode, wParam, lParam);
 }
 #endif // _WIN32
-
-// BUGS #69: force a window visible at the RAW Win32 level. Something on the
-// create-over-active-game path hides windows via native ShowWindow(SW_HIDE)
-// behind SDL's back; SDL's flag cache still says SHOWN, so SDL_ShowWindow
-// no-ops and every SDL-level reveal failed. Bypass the cache entirely.
-void EnWin32ForceShow(SDL_Window* win) {
-    if (!win) return;
-#ifdef _WIN32
-    SDL_SysWMinfo wm;
-    SDL_VERSION(&wm.version);
-    if (SDL_GetWindowWMInfo(win, &wm) && wm.info.win.window) {
-        HWND h = wm.info.win.window;
-        if (!::IsWindowVisible(h)) {
-            char title[80] = "";
-            ::GetWindowTextA(h, title, sizeof(title) - 1);
-            char buf[192];
-            _snprintf_s(buf, sizeof(buf), _TRUNCATE,
-                        "[reveal] Win32-level force-show hwnd=%p title='%s' (SDL cache said SHOWN)\n",
-                        (void*)h, title);
-            ::OutputDebugStringA(buf);
-            ::ShowWindow(h, SW_SHOWNA);
-        }
-        // also clear a leftover layered-alpha hide (the MFC-era invisibility trick)
-        LONG ex = ::GetWindowLong(h, GWL_EXSTYLE);
-        if (ex & WS_EX_LAYERED)
-            ::SetWindowLong(h, GWL_EXSTYLE, ex & ~WS_EX_LAYERED);
-    }
-#else
-    SDL_ShowWindow(win);
-#endif
-}
 
 SDL_Window* GameWindow::CreateSDLWindow(const char* title, int x, int y, int w, int h, Uint32 flags) {
 #ifdef _WIN32
@@ -754,30 +707,6 @@ bool GameWindow::PollEvents() {
         return false;
     }
     m_pollingEvents = true;
-
-#ifdef _WIN32
-    // BUGS #69 ALIVENESS WATCHDOG: the main window's HWND has been observed
-    // DEAD (EnumWindows: zero windows for the pid) while SDL's cache still
-    // reports SHOWN — and the WM_DESTROY tripwire never fired for it, so the
-    // destroyer bypasses both SDL and our subclass. Poll the HWND every pump;
-    // the instant it dies, log loudly and break under the debugger, bracketing
-    // the death to the exact moment between two ODS lines.
-    {
-        static HWND s_mainHwnd = NULL;
-        static bool s_deathLogged = false;
-        if (m_window && s_mainHwnd == NULL) {
-            SDL_SysWMinfo wm; SDL_VERSION(&wm.version);
-            if (SDL_GetWindowWMInfo(m_window, &wm))
-                s_mainHwnd = wm.info.win.window;
-        }
-        if (s_mainHwnd && !s_deathLogged && !::IsWindow(s_mainHwnd)) {
-            s_deathLogged = true;
-            ::OutputDebugStringA("[winmain-died] main window HWND destroyed behind our back!\n");
-            if (::IsDebuggerPresent())
-                __debugbreak();
-        }
-    }
-#endif
 
     // #47 / Cluster-A global capture safety net (mac2) — complements the per-drag-site
     // local heal in SDL2UI.cpp/SDL2Panel.cpp (@c49873f7). A missed SDL_MOUSEBUTTONUP can

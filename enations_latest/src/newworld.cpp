@@ -1185,19 +1185,6 @@ void CConquerApp::LetsGo() {
     // Also tears down the pause/cutscene leftovers it always handled.
     DestroyExceptMain();
 
-    // Belt-and-braces reveal: the RenderDetached-based reveal above depends on
-    // the render loop actually running — a game-start message storm starved it
-    // for 30-45s, leaving a LIVE game with ZERO visible windows (operator's
-    // "crash", 3x on 2026-07-03). Force-show every load-deferred panel window
-    // right now; their content presents on the next render pass.
-    if ( m_gameWindow && m_gameWindow->GetCompositor( ) )
-    {
-        SDL2Compositor* pc = m_gameWindow->GetCompositor( );
-        for ( int i = 0; i < pc->GetPanelCount( ); i++ )
-            if ( SDL2Panel* p = pc->GetPanel( i ) )
-                p->ForceRevealDeferred( );
-    }
-
     ASSERT (TestEverything());
 }
 

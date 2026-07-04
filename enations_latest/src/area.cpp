@@ -4395,38 +4395,6 @@ void CWndArea::SetupStart( )
                      theGame.AmServer()?1:0, theGame.IsNetGame()?1:0, (int)theGame.GetMyNetNum()); }
     EnMpDiagLog( "CWndArea::SetupStart - interactive rocket placement ON" );
 
-    // Interactive placement REQUIRES a visible map. On a create-over-an-active-
-    // game the deferred (anti-flash) panel windows — and even the main window —
-    // can still be HIDDEN here: the end-of-load reveal (LetsGo) runs AFTER
-    // placement, so the game sat waiting for a click on an invisible map (the
-    // operator's repeated "crash": live process, zero visible windows,
-    // confirmed by window enumeration 2026-07-03). Force-show the group now.
-    if ( theApp.m_gameWindow )
-    {
-        if ( theApp.m_gameWindow->GetWindow( ) )
-        {
-            SDL_ShowWindow( theApp.m_gameWindow->GetWindow( ) );
-            // BUGS #69: SDL's SHOWN cache can be stale (windows hidden via raw
-            // Win32 SW_HIDE) — force-show at the Win32 level too.
-            extern void EnWin32ForceShow( SDL_Window* win );
-            EnWin32ForceShow( theApp.m_gameWindow->GetWindow( ) );
-            const Uint32 fl = SDL_GetWindowFlags( theApp.m_gameWindow->GetWindow( ) );
-            EnMpDiagLog( "[reveal] SetupStart main window flags=0x%x (SHOWN=%d MIN=%d)",
-                         fl, ( fl & SDL_WINDOW_SHOWN ) ? 1 : 0, ( fl & SDL_WINDOW_MINIMIZED ) ? 1 : 0 );
-        }
-        if ( SDL2Compositor* pc = theApp.m_gameWindow->GetCompositor( ) )
-            for ( int i = 0; i < pc->GetPanelCount( ); i++ )
-                if ( SDL2Panel* p = pc->GetPanel( i ) )
-                {
-                    const bool bHadOwn = p->GetOwnWindow( ) != nullptr;
-                    p->ForceRevealDeferred( );
-                    const Uint32 fl = bHadOwn ? SDL_GetWindowFlags( p->GetOwnWindow( ) ) : 0;
-                    EnMpDiagLog( "[reveal] SetupStart panel %d own=%d flags=0x%x (SHOWN=%d MIN=%d)",
-                                 i, bHadOwn ? 1 : 0, fl,
-                                 ( fl & SDL_WINDOW_SHOWN ) ? 1 : 0, ( fl & SDL_WINDOW_MINIMIZED ) ? 1 : 0 );
-                }
-    }
-
     m_iMode     = rocket_ready;
     m_iBuild    = CStructureData::rocket;
     m_iBuildDir = ( theStructures.GetData( CStructureData::rocket )->GetExitDir( ) - 2 ) & 0x03;
