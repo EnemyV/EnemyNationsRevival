@@ -516,6 +516,18 @@ void CAITaskMgr::AssignUnits( void )
                 if ( pUnit->GetOwner( ) != m_iPlayer )
                     continue;
 
+#if THREADS_ENABLED
+                // ROOT FIX for the #65 zombie leak (linux2's 3/3 start->quit->
+                // start SIGABRT; win's second-entry corruption): yield PER UNIT,
+                // not just once at the function top. AssignTask/GenerateTaskOrder
+                // do map scans + pathfinding, so a 70-unit pass at 15 players ran
+                // MINUTES between yield points — the worker couldn't see a close
+                // inside myThreadClose's 3s+10s grace and leaked as a zombie
+                // executing on soon-freed AI data. Per-unit, it exits within one
+                // unit's work.
+                myYieldThread( );
+#endif
+
                 // do not assign
                 // production tasks to buildings here, but
                 // let it happen in UnitControl()
@@ -1252,6 +1264,10 @@ void CAITaskMgr::UpdateTasks( CAIMsg* pMsg )
     POSITION pos = m_pGoalMgr->m_plTasks->GetHeadPosition( );
     while ( pos != NULL )
     {
+#if THREADS_ENABLED
+        // per-task yield — same #65 root fix as AssignUnits' per-unit yield
+        myYieldThread( );
+#endif
         CAITask* pTask = (CAITask*)m_pGoalMgr->m_plTasks->GetNext( pos );
         if ( pTask != NULL )
         {

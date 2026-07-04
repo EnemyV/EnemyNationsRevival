@@ -102,6 +102,17 @@ BOOL AiInit( int iSmart, int iNumAi, int iNumHuman, int iStartPos )
     if ( iSmart < 0 || iNumAi < 0 || iNumHuman < 0 || iStartPos < 0 )
         return TRUE;
 
+    // AIRTIGHT #65 tail (linux2 3/3 start->quit->start SIGABRT; win BUGS #69
+    // second-entry window death): the previous game's quit can leak straggler
+    // AI workers still executing on pGameData/plAIMgrList (a big-game Manage()
+    // pass outlives every grace window). Deleting/recreating those structures
+    // under a live zombie is a UAF. Block here — we're inside the new game's
+    // loading phase, so the wait lands on the loading screen — until every
+    // zombie has exited and the deferred teardown has run. 120s ceiling only
+    // for a truly wedged worker (then we proceed as before, no worse than the
+    // old behavior).
+    myThreadDrainZombies( 120000 );
+
     if ( pGameData != NULL )
         delete pGameData;
 

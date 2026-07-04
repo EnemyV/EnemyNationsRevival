@@ -311,6 +311,36 @@ void myThreadTerminate() {
     }
 }
 
+// AIRTIGHT #65 tail — see threads.h. Blocks (pumping messages) until every
+// leaked straggler has exited and the deferred AiExit has run. linux2 proved
+// the 2s myStartThread grace is NOT enough on big games (a 15-player Manage()
+// pass runs minutes): start->quit->start then hit AiInit's unconditional
+// delete of pGameData/plAIMgrList under a live zombie = UAF — SIGABRT on
+// gcc (forced_unwind swallowed, 3/3 repro), silent state corruption on
+// Windows (the second-entry window death, BUGS #69).
+int myThreadDrainZombies( DWORD dwMaxWaitMs ) {
+    const DWORD dwEnd = timeGetTime() + dwMaxWaitMs;
+    BOOL bWarned = FALSE;
+    while ( iZombies > 0 && timeGetTime() < dwEnd ) {
+        if ( !bWarned ) {
+            fprintf( stderr, "[threads] draining %d zombie AI worker(s) before new game (max %lums)\n",
+                     iZombies, (unsigned long)dwMaxWaitMs );
+            bWarned = TRUE;
+        }
+        ::Sleep( 25 );
+        MSG msg;
+        while ( PeekMessage( &msg, NULL, 0, 0, PM_REMOVE ) ) {
+            TranslateMessage( &msg );
+            DispatchMessage( &msg );
+        }
+    }
+    myRunDeferredThreadExit();
+    if ( iZombies > 0 )
+        fprintf( stderr, "[threads] WARNING: %d zombie(s) still live after %lums drain\n",
+                 iZombies, (unsigned long)dwMaxWaitMs );
+    return iZombies;
+}
+
 WORD myGetThrdUtlsVersion() {
 
     if ( iWinType != W32s )
