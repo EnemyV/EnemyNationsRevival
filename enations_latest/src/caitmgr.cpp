@@ -73,8 +73,10 @@ void CAITaskMgr::Manage( CAIMsg* pMsg )
     // AddSubOwned TRAP storm). Keyed to GAME time + player number = fully
     // deterministic for MP. Economy/build tasking is unaffected once released;
     // dropped combat alerts are reactive and re-arrive.
+    // Release at 2×N seconds (operator widened the stagger 2026-07-03:
+    // "1=2s, 2=4s, 3=6s..." — the 1×N spacing still overlapped the marches).
     const BOOL bAggroReleased =
-        ( theGame.GetElapsedSeconds( ) >= (DWORD)m_iPlayer );
+        ( theGame.GetElapsedSeconds( ) >= (DWORD)( 2 * m_iPlayer ) );
     if ( m_bStartAssignPending && bAggroReleased )
     {
         m_bStartAssignPending = FALSE;
