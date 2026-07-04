@@ -767,10 +767,18 @@ void CConquerApp::GraphicsEnginePump( )
     MarkStart( );
 #endif
 
-    // process messages — time-boxed so a storm can't starve rendering (100ms
-    // per pump keeps worst-case display cadence ~7-10fps through a burst;
-    // across iterations the drain still runs at effectively full speed)
-    { Perf::ScopeSlot _perfMsg( Perf::SEC_MSG ); ProcessAllMessages( 100 ); }
+    // process messages — time-boxed so a storm can't starve rendering, but
+    // ADAPTIVE: when the backlog is deep (game-start unit flood) spend more of
+    // each pump draining so the player's own commands (e.g. the rocket-place
+    // message queued BEHIND the AI traffic — operator: "2 min before my rocket
+    // lands, AI units crossing my screen") catch up in seconds, while still
+    // rendering ≥2-3 fps. Shallow queue = 100ms (normal ~7-10fps worst case).
+    {
+        Perf::ScopeSlot _perfMsg( Perf::SEC_MSG );
+        const int   iBacklog = theGame.m_messagePointerList.GetCount( );
+        const DWORD dwBudget = iBacklog > 2000 ? 400 : ( iBacklog > 500 ? 200 : 100 );
+        ProcessAllMessages( dwBudget );
+    }
 
     theGame._SettimeGetTime( );
 

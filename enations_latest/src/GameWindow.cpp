@@ -236,6 +236,22 @@ static LRESULT CALLBACK SdlSubclassWndProc(HWND hWnd, UINT msg, WPARAM wParam, L
     if (msg == WM_ACTIVATE && LOWORD(wParam) == WA_CLICKACTIVE) {
         wParam = MAKEWPARAM(WA_ACTIVE, HIWORD(wParam));
     }
+    // BUGS #69 tripwire: on a create-over-an-active-game ALL native SDL
+    // windows get DESTROYED behind SDL's back (live process, zero HWNDs,
+    // stale SDL flags) — every reveal fix no-op'd because nothing existed to
+    // show. Log every WM_DESTROY on a subclassed SDL window; under a debugger
+    // (dbgcatch) also break so the destroyer's full call stack gets walked.
+    // Undebugged: log-only, zero behavior change.
+    if (msg == WM_DESTROY) {
+        char title[80] = "";
+        ::GetWindowTextA(hWnd, title, sizeof(title) - 1);
+        char buf[192];
+        _snprintf_s(buf, sizeof(buf), _TRUNCATE,
+                    "[wnddestroy] WM_DESTROY hwnd=%p title='%s'\n", (void*)hWnd, title);
+        ::OutputDebugStringA(buf);
+        if (::IsDebuggerPresent())
+            __debugbreak();   // dbgcatch walks the stack and continues (F5-past)
+    }
     // Each SDL window stores its original wndproc as a window property so we
     // can route through the right one. Fall back to the static (main-window)
     // copy for backwards compat with installs that predate per-window storage.
