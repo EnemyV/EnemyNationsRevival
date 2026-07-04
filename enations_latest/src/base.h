@@ -111,6 +111,7 @@ int  RandNum( int iMax );
 // behind CmdPlay's RAND MISMATCH drop. count-differs => a control-flow/unsequenced
 // -call divergence; count-same-but-sum-differs => a value (float/data) divergence.
 void MyRandTrace( const char* pszLabel );
+void MyRandTraceReset( );   // zero the fingerprint (call at the world-gen baseline)
 extern unsigned long long g_myRandCalls;
 extern unsigned           g_myRandSum;
 // MyRand's output range on ALL platforms (windward/wind22/src/rand.cpp uses the

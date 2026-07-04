@@ -303,6 +303,18 @@ void CConquerApp::ReadyToCreate() {
 
         // (cheat seed-override dialog removed — Debug:SetRand was its only use)
 
+        // TEST HOOK (env-guarded, SP-only): EN_WG_SEED forces the world-gen seed so
+        // run-to-run and CROSS-PLATFORM EN_RANDTRACE fingerprints are directly
+        // comparable WITHOUT a live MP session — Linux and Windows each run SP
+        // Islands/Ocean=74 with the same EN_WG_SEED and diff calls=/sum= to localize
+        // the ocean-gen RAND MISMATCH. No effect unless EN_WG_SEED is set; does NOT
+        // touch the MP host-seeded path (the client already gets the host's m_uRand).
+        // (Re-added; the original @5a2b39d6 was removed with the [wg] scaffolding
+        // @fb21740c once the prior determinism saga closed — the ocean-slider path
+        // reopened it, and linux2 needs the shared-seed knob for the offline diff.)
+        if ( const char* szSeed = getenv( "EN_WG_SEED" ) )
+            uRand = (unsigned) strtoul( szSeed, nullptr, 0 );
+
         AIinit aiData(m_pCreateGame->m_iAi, m_pCreateGame->m_iNumAi,
                       theGame.GetAll().GetCount() - m_pCreateGame->m_iNumAi, m_pCreateGame->m_iSize);
         theApp.CreateNewWorld(uRand, &aiData, 2, 32);
@@ -643,10 +655,13 @@ void CConquerApp::CreateNewWorld(unsigned uRand, AIinit *pAiData, int iSide, int
     // restore rand
     MySrand(iSaveRand);
 
-    // MP world-gen parity: baseline fingerprint right after the seed is set, BEFORE
-    // any world-gen draw. Host and client feed the SAME seed here (CNetStart m_uRand),
-    // so these two lines must match across platforms; if they already differ the
-    // divergence is upstream of world-gen. See MyRandTrace / EN_RANDTRACE.
+    // MP world-gen parity: zero the fingerprint HERE (seed just set) so the counts/
+    // checksum that follow measure ONLY world-gen draws — the pre-world-gen setup
+    // draws (menu/AI init) vary run-to-run and would otherwise offset the numbers and
+    // break the cross-platform diff. After the reset, host and client feed the SAME
+    // seed, so every mark below must match across platforms; the first that differs
+    // localizes the divergence. See MyRandTrace / EN_RANDTRACE.
+    MyRandTraceReset();
     MyRandTrace( "worldgen: seed set (pre-theMap.Init)" );
 
     // Progress-bar smoothing for the SECOND+ game (operator, minor): the 0..85

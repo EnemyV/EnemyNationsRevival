@@ -142,6 +142,16 @@ void MyRandTrace( const char* pszLabel ) {
              (unsigned long long)g_myRandCalls, g_myRandSum );
 }
 
+// Zero the fingerprint so the counts/checksum that follow are measured from HERE,
+// not from process start. Called at the world-gen baseline (right after the seed
+// is set) so the pre-world-gen draws (menu/AI-setup, which vary run-to-run) don't
+// offset the numbers — that's what makes the marks directly comparable run-to-run
+// and cross-platform. Diagnostic-only; nothing else reads these globals.
+void MyRandTraceReset() {
+    g_myRandCalls = 0;
+    g_myRandSum   = 0;
+}
+
 int MyRand() {
 
     // 15-bit values: iRtn*97 tops out at ~3.2M — no overflow, iInd in [0,97].
