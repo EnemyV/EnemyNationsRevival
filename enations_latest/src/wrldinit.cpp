@@ -434,6 +434,15 @@ void CGameMap::Init( int iSide, int iSideSize, int iScenario )
     if ( wtg.bForce || theGame.GetAll( ).GetCount( ) > 6 )
         GenerateOcean( iNumBlks, piBlks, iSide, wtg.fillType, wtg.oceanStyle, wtg.bDominant, iOceansLeft, theGame );
 
+    // MP world-gen parity bisect mark (newwin greenlit, ocean-gen lane). Between the
+    // baseline mark (newworld.cpp, pre-theMap.Init) and the final mark (pre-finalrand),
+    // this splits the ocean-block-assignment pass from everything after it (rivers/
+    // mountains/coastlines/altitude). With host+client both on EN_RANDTRACE=1 for the
+    // same Islands/ocean=74 join: if calls/sum already DIFFER here, the divergence is
+    // in GenerateOcean's ocean-count/fill path (the ocean-slider-only code); if they
+    // still MATCH here but differ at the final mark, it's downstream of ocean-gen.
+    MyRandTrace( "wg: post-GenerateOcean (blocks assigned)" );
+
     theApp.m_pCreateGame->GetDlgStatus( )->SetPer( PER_WORLD_BLKS );
 
     // we walk through, if they are an island we put in 2 oceans. If they
