@@ -1279,6 +1279,7 @@ CWndArea::CWndArea( )
     m_iBuild      = -1;
     m_iMode       = normal;
     m_bPanBtnDown = FALSE;
+    m_bPanEdgeMode= FALSE;
     m_bRmbCmdDown = FALSE;
     m_bCapMouse   = FALSE;
     m_pWndInfo    = NULL;
@@ -1649,8 +1650,10 @@ void CWndArea::ReRender( )
     CRect rect;
     GetClientRect( &rect );
 
-    // if the pan button (MMB) is held & near the edge then we continuously scroll
-    if ( m_bPanBtnDown )
+    // if the pan button (MMB) is held & near the edge then we continuously scroll —
+    // but ONLY when the hold started IN the edge band (m_bPanEdgeMode, locked at
+    // MMB-press). A drag-pan that wanders into the band must not also edge-scroll.
+    if ( m_bPanBtnDown && m_bPanEdgeMode )
     {
         CPoint pt;
         ::GetCursorPos( &pt );
@@ -1877,11 +1880,21 @@ void CWndArea::OnMouseMove( UINT nFlags, CPoint point )
         }
     }
 
-    // if the pan button (MMB) is held we scroll: drag-pan ("grab the map") here,
-    // plus the original continuous edge-band scroll in ReRender.
+    // if the pan button (MMB) is held we scroll. The mode was LOCKED at MMB-press
+    // (m_bPanEdgeMode): drag-pan ("grab the map") here ONLY for an interior press;
+    // an edge-band press edge-scrolls in ReRender instead. Never both at once.
     if ( m_bPanBtnDown )
     {
         ASSERT_STRICT_VALID_STRUCT( &m_aa );
+
+        if ( m_bPanEdgeMode )
+        {
+            // edge-scroll hold: track the point for cursor purposes but do NOT grab —
+            // ReRender's edge-band scroll owns the movement for this hold.
+            m_ptRMB = point;
+            CWndBase::OnMouseMove( nFlags, point );
+            return;
+        }
 
         // grab-style: the content follows the cursor, so the view center moves
         // opposite to the mouse delta
@@ -4859,6 +4872,13 @@ void CWndArea::OnMButtonDown( UINT /*nFlags*/, CPoint point )
         else
             y = 0;
     }
+
+    // LOCK the pan mode for this hold (operator): pressed inside the outer-1/8 edge
+    // band -> edge-band scroll ONLY; pressed in the interior -> drag-pan ("grab") ONLY.
+    // Previously both ran at once — a grab started center-screen that reached the edge
+    // ALSO edge-scrolled (ReRender), fighting the drag. The gates are in OnMouseMove
+    // (drag) and ReRender (edge).
+    m_bPanEdgeMode = ( x != 0 ) || ( y != 0 );
 
     // which cursor?
     switch ( ( x + 2 ) | ( ( y + 2 ) << 2 ) )

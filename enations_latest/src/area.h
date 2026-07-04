@@ -362,6 +362,7 @@ protected:
 	BOOL					m_bNewSound;
 
 	BOOL					m_bPanBtnDown;	// TRUE while the pan button (MMB) is held
+	BOOL					m_bPanEdgeMode;	// pan mode LOCKED at MMB-press: TRUE = edge-band scroll (pressed in the outer 1/8 band), FALSE = drag-pan ("grab"). One or the other for the whole hold, never both (operator: a drag started center then moved to the edge fired both at once)
 	BOOL					m_bRmbCmdDown;	// TRUE while the RMB is held arming a command/line-move
 	BOOL					m_bRmbShift;	// Shift state captured at RMB-PRESS (queue vs replace; survives a Shift release before button-up) — lets Shift+drag be a QUEUED line-move
 	BOOL					m_bNewPos;
