@@ -230,7 +230,7 @@ std::atomic<bool>      g_researchOK{false};
 // during world-gen, like load). Starts a fresh SP game with the given difficulty/start.
 std::mutex             g_newgameMutex;
 int                    g_ngAi{2}, g_ngPos{3}, g_ngSize{1}, g_ngNumAi{2};
-int                    g_ngWorldType{0}, g_ngOcean{50};
+int                    g_ngWorldType{0}, g_ngOcean{50}, g_ngRivers{60};
 std::atomic<bool>      g_newgamePending{false};
 std::atomic<bool>      g_newgameDone{false};
 std::atomic<bool>      g_newgameOK{false};
@@ -674,9 +674,9 @@ void handle_command(const std::string& line, int conn) {
         // Islands/Ocean=74) to reproduce the cross-platform ocean-gen RAND MISMATCH offline with
         // EN_WG_SEED+EN_RANDTRACE. Defaults = HARD, Full Military, Medium, 2 AI, DEFAULT, 50
         // (unchanged legacy behavior). Deferred to the main loop (world-gen re-pumps events).
-        int ai=2,pos=3,size=1,numai=2,worldtype=0,ocean=50;
-        sscanf(line.c_str(), "%*s %d %d %d %d %d %d", &ai,&pos,&size,&numai,&worldtype,&ocean);
-        { std::lock_guard<std::mutex> lk(g_newgameMutex); g_ngAi=ai; g_ngPos=pos; g_ngSize=size; g_ngNumAi=numai; g_ngWorldType=worldtype; g_ngOcean=ocean; }
+        int ai=2,pos=3,size=1,numai=2,worldtype=0,ocean=50,rivers=60;
+        sscanf(line.c_str(), "%*s %d %d %d %d %d %d %d", &ai,&pos,&size,&numai,&worldtype,&ocean,&rivers);
+        { std::lock_guard<std::mutex> lk(g_newgameMutex); g_ngAi=ai; g_ngPos=pos; g_ngSize=size; g_ngNumAi=numai; g_ngWorldType=worldtype; g_ngOcean=ocean; g_ngRivers=rivers; }
         g_newgameDone=false; g_newgameOK=false; g_newgamePending=true;
         for (int i = 0; i < 40000 && !g_newgameDone.load(); ++i) { struct timespec ts={0,5000000}; nanosleep(&ts,nullptr); } // ~200s
         std::strcpy(reply, !g_newgameDone.load() ? "err newgame timeout\n"
@@ -791,9 +791,9 @@ void EnHarness_ServiceMainLoop() {
         g_loadDone = true;
     }
     if (g_newgamePending.exchange(false)) {
-        int ai,pos,size,numai,worldtype,ocean;
-        { std::lock_guard<std::mutex> lk(g_newgameMutex); ai=g_ngAi; pos=g_ngPos; size=g_ngSize; numai=g_ngNumAi; worldtype=g_ngWorldType; ocean=g_ngOcean; }
-        g_newgameOK = HarnessNewGame(ai, pos, size, numai, worldtype, ocean);
+        int ai,pos,size,numai,worldtype,ocean,rivers;
+        { std::lock_guard<std::mutex> lk(g_newgameMutex); ai=g_ngAi; pos=g_ngPos; size=g_ngSize; numai=g_ngNumAi; worldtype=g_ngWorldType; ocean=g_ngOcean; rivers=g_ngRivers; }
+        g_newgameOK = HarnessNewGame(ai, pos, size, numai, worldtype, ocean, rivers);
         g_newgameDone = true;
     }
 }

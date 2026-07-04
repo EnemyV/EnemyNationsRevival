@@ -685,6 +685,16 @@ void CConquerApp::CreateNewWorld(unsigned uRand, AIinit *pAiData, int iSide, int
     // compare final seeds
     theGame.m_dwFinalRand = MyRand();
 
+    // MP parity: log the EXACT value CmdPlay compares (client m_dwFinalRand vs host
+    // m_uRand). This is THE divergence metric — reset-independent (a final RNG output,
+    // not a cumulative counter), so it's directly comparable Win↔Linux↔mac. Makes an
+    // offline seed sweep trivial: run the same params over many EN_WG_SEED values on
+    // two platforms; any seed whose m_dwFinalRand differs reproduces the RAND MISMATCH
+    // and is the one to bisect with the [wg] map-hash ladder. Env-gated with the tracer.
+    if ( getenv( "EN_RANDTRACE" ) )
+        fprintf( stderr, "[randtrace] m_dwFinalRand=%08lx  (seed-pinned worldgen result)\n",
+                 (unsigned long) theGame.m_dwFinalRand );
+
     // create path manager
     if (!thePathMgr.Init((iSide * iSideSize), (iSide * iSideSize))) {
         CloseWorld();

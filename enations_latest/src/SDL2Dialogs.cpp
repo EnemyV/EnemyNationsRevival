@@ -538,7 +538,7 @@ bool SDL2_RunCreateSinglePlayerFlow(GameWindow* gameWindow) {
 // choices as params, so an autonomous driver can start e.g. a HARD, Full-Military
 // game with no dialogs. Runs on the main loop (theApp.ReadyToCreate -> CreateNewWorld
 // re-pumps events during world-gen). Returns true once the game reaches play state.
-bool HarnessNewGame(int ai, int pos, int size, int numai, int worldType, int ocean) {
+bool HarnessNewGame(int ai, int pos, int size, int numai, int worldType, int ocean, int rivers) {
     // Only from the menu — no create/load flow in flight, no game running (same guard
     // as HarnessLoadGame; a self-check so an in-game `newgame` can't tear down mid-play).
     if (theApp.m_pCreateGame != NULL || theApp.AmInGame())
@@ -553,6 +553,7 @@ bool HarnessNewGame(int ai, int pos, int size, int numai, int worldType, int oce
     // world-gen so a headless newgame can reproduce the cross-platform ocean-gen RAND MISMATCH.
     worldType = worldType < 0 ? 0 : (worldType > 7 ? 7 : worldType);
     ocean     = ocean < 0 ? 0 : (ocean > 100 ? 100 : ocean);
+    rivers    = rivers < 0 ? 0 : (rivers > 100 ? 100 : rivers);
 
     CCreateSingle* pCreate = new CCreateSingle();
     theApp.m_pCreateGame = pCreate;
@@ -567,7 +568,7 @@ bool HarnessNewGame(int ai, int pos, int size, int numai, int worldType, int oce
     theGame.m_iSize      = pCreate->m_iSize      = size;
     theGame.m_iPos       = pCreate->m_iPos       = pos;
     theGame.m_iWorldType = pCreate->m_iWorldType = worldType;
-    theGame.m_iRivers    = pCreate->m_iRivers    = 60;
+    theGame.m_iRivers    = pCreate->m_iRivers    = rivers;
     theGame.m_iOcean     = pCreate->m_iOcean     = ocean;
     pCreate->m_iNumAi = numai;
     pCreate->m_iNet   = -1;
