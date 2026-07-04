@@ -47,7 +47,13 @@ static const int CLOSE_H = 40;
 static const int COL_GAP      = 12;    // gap between the two columns when split
 static const int TWO_COL_MAX_H = 560;  // stacked body taller than this -> go 2-column (rocket et al.)
 
-// Icon-stack rows size themselves to the STATUS-BAR art: icon at native size plus
+// Slot icons display at 3/4 of the native art size — full-size status-bar icons
+// crowded the rows and read as clipped (operator: "a bit too big now"). dispIconH
+// is THE display height; slotRowH and every Draw* call size from it so layout and
+// rendering can't drift apart.
+static int dispIconH(int nativeH) { return __max( 8, ( nativeH * 3 ) / 4 ); }
+
+// Icon-stack rows size themselves to the STATUS-BAR art: icon at display size plus
 // the full background-bar height. (The fixed 20px ROW_H integer-halved the material
 // icons and clipped the bottom off the bar art.) Falls back to ROW_H when the icon
 // entry isn't available. theIcons is loaded at app init, well before any window opens.
@@ -55,7 +61,7 @@ static int slotRowH(int iconIdx) {
     CStatData* sd = ( iconIdx >= 0 ) ? theIcons.GetByIndex( iconIdx ) : nullptr;
     int h = ROW_H;
     if ( sd ) {
-        h = __max( h, sd->m_cyIcon + 4 );
+        h = __max( h, dispIconH( sd->m_cyIcon ) + 4 );
         h = __max( h, sd->m_cyBack + 4 );
     }
     return h;
@@ -620,16 +626,16 @@ static void drawSlot(SDL_Surface* s, int x, int y, int w, int h) {
     SDL_FillRect(s, &b, gold); SDL_FillRect(s, &r, gold);
 }
 
-// Integer-only sprite scaling: native size when it fits, else the smallest
-// integer divisor that does. Non-integer nearest-neighbor scaling (the old
-// "min(srcH, rowH-2)" sizing) duplicated pixels unevenly — the main reason the
-// icons looked ragged. Never upscales (pixel art reads best at 1x).
+// Fit a sprite under maxH keeping aspect; never upscales (pixel art reads best
+// at <=1x). Proportional rather than integer-divisor scaling: the icons now
+// display at the FIXED 3/4-native dispIconH, so the scale ratio is a constant
+// clean 4->3 pixel mapping — the old ceil-divisor rule would have jumped
+// straight to 1/2 size ("a bit smaller", not half).
 static void intFitIcon(int srcW, int srcH, int maxH, int& outW, int& outH) {
     outW = srcW; outH = srcH;
     if ( srcH <= 0 || srcW <= 0 || srcH <= maxH ) return;
-    int d = ( srcH + maxH - 1 ) / maxH;   // ceil(srcH / maxH)
-    outW = __max( 1, srcW / d );
-    outH = __max( 1, srcH / d );
+    outH = __max( 1, maxH );
+    outW = __max( 1, ( srcW * maxH + srcH / 2 ) / srcH );
 }
 
 // ============================================================================
@@ -1545,7 +1551,7 @@ void SDL2BuildingWindow::DrawMatIcons(SDL2Image* img, const int* mats, int n) {
         const int PER_ICON = 250;   // each stacked icon ~= 250 units
         int rowH  = gh / n;
         int iconW, iconH;
-        intFitIcon( m_matIconW, m_matIconH, rowH - 4, iconW, iconH );
+        intFitIcon( m_matIconW, m_matIconH, __min( rowH - 4, dispIconH( m_matIconH ) ), iconW, iconH );
         // Coin-stack overlap: each icon covers ~40% of the previous one, so a big
         // stockpile reads as a dense stack instead of a sparse picket line.
         int step   = __max( 3, ( iconW * 3 ) / 5 );
@@ -1590,7 +1596,7 @@ void SDL2BuildingWindow::DrawDensityIcons(SDL2Image* img, int pct) {
     DrawSlotBg( s, m_densIconIdx, m_densIcon, 0, 0, gw, gh );   // gauge track (also the 0% reading)
     if ( m_densIcon && m_densIconW > 0 && m_densIconH > 0 ) {
         int iconW, iconH;
-        intFitIcon( m_densIconW, m_densIconH, gh - 4, iconW, iconH );
+        intFitIcon( m_densIconW, m_densIconH, __min( gh - 4, dispIconH( m_densIconH ) ), iconW, iconH );
         int step  = __max( 3, ( iconW * 3 ) / 5 );   // overlapped, like the storage stacks
         int fillW = ( gw - 4 ) * pct / 100;          // how far the icons extend
         int iy    = ( gh - iconH ) / 2;
@@ -1622,7 +1628,7 @@ void SDL2BuildingWindow::DrawContainedUnits(SDL2Image* img) {
     DrawSlotBg( s, ICON_VEHICLES, m_unitIcons, 0, 0, gw, gh );  // empty slot = "nothing docked"
     if ( m_unitIcons && m_unitIconW > 0 && m_unitIconH > 0 ) {
         int iconW, iconH;
-        intFitIcon( m_unitIconW, m_unitIconH, gh - 4, iconW, iconH );
+        intFitIcon( m_unitIconW, m_unitIconH, __min( gh - 4, dispIconH( m_unitIconH ) ), iconW, iconH );
         int step  = iconW + 2;                  // no overlap: each docked unit stays identifiable
         int iy    = ( gh - iconH ) / 2;
         int drawX = 2;
