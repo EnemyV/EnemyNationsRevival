@@ -175,6 +175,8 @@ private:
     SDL2EditBox* m_edtPort = nullptr;
     SDL2Slider* m_sldRivers = nullptr;
     SDL2Label* m_lblRivers = nullptr;   // live "Rivers: N%" readout
+    SDL2Slider* m_sldOcean = nullptr;
+    SDL2Label* m_lblOcean = nullptr;    // live "Ocean: N%" readout
 public:
     int m_iAiLevel = 0;
     int m_iWorldSize = 1;
@@ -182,6 +184,7 @@ public:
     int m_iWorldType = 0;   // EWorldType preset
     int m_iNumAi = 2;
     int m_iRivers = 60;     // river density 0-100 (60 = baseline)
+    int m_iOcean = 50;      // ocean size 0-100 (50 = baseline)
     std::string m_gameName;
     std::string m_playerName;
     int m_iPort = 0;

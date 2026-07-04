@@ -306,7 +306,7 @@ class CNetStart : public CNetCmd
 {  // start a game
   public:
     CNetStart( unsigned uRand, int iSide, int iSideSize, int iAiDiff, int iNumAi, int iNumHp, int iStart,
-               int iWorldType, int iRivers );
+               int iWorldType, int iRivers, int iOcean );
     unsigned m_uRand;
     int      m_iSide;
     int      m_iSideSize;
@@ -317,6 +317,7 @@ class CNetStart : public CNetCmd
     int m_iStart;
     int m_iWorldType;  // EWorldType - world generation preset, so clients generate the same map
     int m_iRivers;     // river density slider 0-100 - same reason (worldgen determinism)
+    int m_iOcean;      // ocean size slider 0-100 - same reason (worldgen determinism)
 
 #ifdef _DEBUG
   public:
