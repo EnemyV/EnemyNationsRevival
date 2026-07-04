@@ -370,7 +370,13 @@ class CConquerApp : public CConquerAppSuper
     BOOL FullYield( );
 
     void GraphicsEnginePump( );
-    void ProcessAllMessages( );
+    // dwBudgetMs 0 = drain to empty (original semantics). A nonzero budget
+    // time-boxes the drain so a message storm (game-start unit creation:
+    // ~70 units x N players, each veh_new fanning out to every AI) can't hold
+    // one frame for 30-45s — the pump renders, then resumes draining next
+    // iteration. FIFO order and processing are unchanged; only how many land
+    // per frame.
+    void ProcessAllMessages( DWORD dwBudgetMs = 0 );
     void RenderScreens( );
     void _RenderScreens( );
 

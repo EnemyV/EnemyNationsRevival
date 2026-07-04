@@ -127,6 +127,20 @@ public:
     SDL_Window* GetOwnWindow() const { return m_ownWindow; }
     static bool GpuDirtyEnabled();   // Item 5 kill-switch (env EN_DIRTY)
 
+    // Force-reveal a load-deferred window NOW (called at the true end of
+    // game-start, LetsGo after DestroyExceptMain). The normal reveal lives in
+    // RenderDetached's present path, which a game-start message storm can
+    // starve for 30-45s — leaving a LIVE game with ZERO visible windows (the
+    // operator's perceived "crash"). Revealing here shows the window
+    // immediately; content presents on the next render pass (<=100ms with the
+    // time-boxed message drain).
+    void ForceRevealDeferred() {
+        if (m_deferShow && m_ownWindow) {
+            SDL_ShowWindow(m_ownWindow);
+            m_deferShow = false;
+        }
+    }
+
     // True for the GPU-terrain gameplay window (its own renderer + a terrain
     // CAnimAtr). Such a panel must re-present EVERY frame so animated water keeps
     // cycling even when the scene is otherwise static — the compositor's

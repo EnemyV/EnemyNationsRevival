@@ -554,15 +554,26 @@ BOOL CConquerApp::CheckYield( )
     return ( FALSE );
 }
 
-void CConquerApp::ProcessAllMessages( )
+void CConquerApp::ProcessAllMessages( DWORD dwBudgetMs )
 {
 
     if ( !theGame.ShouldProcessMessages() )
         return;
 
+    // Time-box support (see lastplnt.h): game-start unit-creation storms
+    // (veh_new x per-AI fan-out; 5,670 msgs/s at 9 AIs, worse at 15) held a
+    // single frame 30-45s in ONE drain (EN_PERF msg=32,298ms) — input pumped
+    // via CheckYield so clicks/sounds worked while the display froze AND the
+    // hidden new-game windows never got their render-loop reveal (operator's
+    // "crash": live process, zero visible windows). Operator-approved fix.
+    const DWORD dwDrainStart = dwBudgetMs ? timeGetTime( ) : 0;
+
     // process all messages so we have none pending
     while ( TRUE )
     {
+        if ( dwBudgetMs && ( timeGetTime( ) - dwDrainStart >= dwBudgetMs ) )
+            break;                      // budget spent: render a frame, resume next pump
+
         EnterCriticalSection( &cs );
         if (theGame.m_messagePointerList.GetCount( ) <= 0 )
         {
@@ -756,8 +767,10 @@ void CConquerApp::GraphicsEnginePump( )
     MarkStart( );
 #endif
 
-    // process messages
-    { Perf::ScopeSlot _perfMsg( Perf::SEC_MSG ); ProcessAllMessages( ); }
+    // process messages — time-boxed so a storm can't starve rendering (100ms
+    // per pump keeps worst-case display cadence ~7-10fps through a burst;
+    // across iterations the drain still runs at effectively full speed)
+    { Perf::ScopeSlot _perfMsg( Perf::SEC_MSG ); ProcessAllMessages( 100 ); }
 
     theGame._SettimeGetTime( );
 
@@ -1409,8 +1422,8 @@ void CConquerApp::GraphicsEnginePump( )
 
         LeaveCriticalSection( &cs );
 
-        // process messages from Operate calls
-        ProcessAllMessages( );
+        // process messages from Operate calls (same time-box as the pump head)
+        ProcessAllMessages( 100 );
     }  // if operate
 
 NoOper:
