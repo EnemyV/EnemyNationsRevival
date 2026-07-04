@@ -1418,11 +1418,17 @@ void CVehicle::AddSubOwned(int x, int y) {
         }
 
     // any dups
-    TRAP();
+    // WAS TRAP() — fired 99,424x in ONE 15-player Full-Military session
+    // (spawn-clump churn: blocked units re-claiming hexes every veh_goto until
+    // the clump disperses). The condition is fully HANDLED by the dup-scan and
+    // slot-steal recovery below; as a TRAP it (a) instantly killed any
+    // undebugged _DEBUG run (the operator's repeated "crashes") and (b) cost
+    // ~100k debugger round-trips per start under dbgcatch (minutes of fake lag).
+    EN_TRAP_REMOVED( "AddSubOwned: claim table full (spawn-clump churn) - recovered below" );
     for (int iInd = 0; iInd < NUM_SUBS_OWNED - 1; iInd++)
         for (int iChk = iInd + 1; iChk < NUM_SUBS_OWNED; iChk++)
             if (SubsOwned[iInd] == SubsOwned[iChk]) {
-                TRAP();
+                EN_TRAP_REMOVED( "AddSubOwned: duplicate claim slot - reusing it" );
                 SubsOwned[iInd].x = x;
                 SubsOwned[iInd].y = y;
                 return;
