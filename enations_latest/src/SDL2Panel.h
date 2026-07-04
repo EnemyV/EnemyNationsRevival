@@ -135,10 +135,15 @@ public:
     // immediately; content presents on the next render pass (<=100ms with the
     // time-boxed message drain).
     void ForceRevealDeferred() {
-        if (m_deferShow && m_ownWindow) {
+        if (!m_ownWindow) return;
+        // Cover ANY hide mechanism, not just the defer flag: on a second
+        // create the windows were observed hidden with m_deferShow already
+        // consumed (operator repro 2026-07-03) — show whenever not SHOWN.
+        m_deferShow = false;
+        if (!(SDL_GetWindowFlags(m_ownWindow) & SDL_WINDOW_SHOWN))
             SDL_ShowWindow(m_ownWindow);
-            m_deferShow = false;
-        }
+        if (SDL_GetWindowFlags(m_ownWindow) & SDL_WINDOW_MINIMIZED)
+            SDL_RestoreWindow(m_ownWindow);
     }
 
     // True for the GPU-terrain gameplay window (its own renderer + a terrain

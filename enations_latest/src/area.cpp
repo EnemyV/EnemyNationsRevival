@@ -4404,11 +4404,23 @@ void CWndArea::SetupStart( )
     if ( theApp.m_gameWindow )
     {
         if ( theApp.m_gameWindow->GetWindow( ) )
+        {
             SDL_ShowWindow( theApp.m_gameWindow->GetWindow( ) );
+            const Uint32 fl = SDL_GetWindowFlags( theApp.m_gameWindow->GetWindow( ) );
+            EnMpDiagLog( "[reveal] SetupStart main window flags=0x%x (SHOWN=%d MIN=%d)",
+                         fl, ( fl & SDL_WINDOW_SHOWN ) ? 1 : 0, ( fl & SDL_WINDOW_MINIMIZED ) ? 1 : 0 );
+        }
         if ( SDL2Compositor* pc = theApp.m_gameWindow->GetCompositor( ) )
             for ( int i = 0; i < pc->GetPanelCount( ); i++ )
                 if ( SDL2Panel* p = pc->GetPanel( i ) )
+                {
+                    const bool bHadOwn = p->GetOwnWindow( ) != nullptr;
                     p->ForceRevealDeferred( );
+                    const Uint32 fl = bHadOwn ? SDL_GetWindowFlags( p->GetOwnWindow( ) ) : 0;
+                    EnMpDiagLog( "[reveal] SetupStart panel %d own=%d flags=0x%x (SHOWN=%d MIN=%d)",
+                                 i, bHadOwn ? 1 : 0, fl,
+                                 ( fl & SDL_WINDOW_SHOWN ) ? 1 : 0, ( fl & SDL_WINDOW_MINIMIZED ) ? 1 : 0 );
+                }
     }
 
     m_iMode     = rocket_ready;
