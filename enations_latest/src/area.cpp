@@ -2425,17 +2425,24 @@ void CWndArea::DrawRouteWaypoints( )
     const CPoint perPY= hexWin( CHexCoord( 0,  eY ) );
     const int    perXx = perPX.x - perO.x, perXy = perPX.y - perO.y;
     const int    perYx = perPY.x - perO.x, perYy = perPY.y - perO.y;
+    // NOTE: squared distances MUST be 64-bit. When zoomed IN the torus period vectors
+    // (perX*/perY*) span many screens, so a candidate can be >100k px from ref; dx*dx
+    // then overflows a 32-bit `long` (MSVC/Win64) to garbage, and wrapNear snaps to the
+    // WRONG wrap-copy -> the preview line shoots off-screen. (operator: "works zoomed out,
+    // off-screen zoomed in.") Zoomed all the way out the periods are small, no overflow,
+    // hence it looked fine there. long long keeps the products exact at every zoom.
     auto wrapNear = [&]( CPoint wp, CPoint ref ) -> CPoint
     {
-        CPoint best = wp;
-        long   bestD = (long)( wp.x - ref.x ) * ( wp.x - ref.x ) + (long)( wp.y - ref.y ) * ( wp.y - ref.y );
+        CPoint    best = wp;
+        long long bestD = (long long)( wp.x - ref.x ) * ( wp.x - ref.x )
+                        + (long long)( wp.y - ref.y ) * ( wp.y - ref.y );
         for ( int a = -2; a <= 2; ++a )
             for ( int b = -2; b <= 2; ++b )
             {
                 if ( a == 0 && b == 0 ) continue;
-                long x = (long)wp.x + (long)a * perXx + (long)b * perYx;
-                long y = (long)wp.y + (long)a * perXy + (long)b * perYy;
-                long dx = x - ref.x, dy = y - ref.y, d = dx * dx + dy * dy;
+                long long x = (long long)wp.x + (long long)a * perXx + (long long)b * perYx;
+                long long y = (long long)wp.y + (long long)a * perXy + (long long)b * perYy;
+                long long dx = x - ref.x, dy = y - ref.y, d = dx * dx + dy * dy;
                 if ( d < bestD ) { bestD = d; best = CPoint( (int)x, (int)y ); }
             }
         return best;
