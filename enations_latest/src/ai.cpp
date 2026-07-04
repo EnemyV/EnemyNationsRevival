@@ -108,10 +108,11 @@ BOOL AiInit( int iSmart, int iNumAi, int iNumHuman, int iStartPos )
     // pass outlives every grace window). Deleting/recreating those structures
     // under a live zombie is a UAF. Block here — we're inside the new game's
     // loading phase, so the wait lands on the loading screen — until every
-    // zombie has exited and the deferred teardown has run. 120s ceiling only
-    // for a truly wedged worker (then we proceed as before, no worse than the
-    // old behavior).
-    myThreadDrainZombies( 120000 );
+    // zombie has exited and the deferred teardown has run. 10s ceiling (a
+    // wedged worker then proceeds under the old odds — the per-loop yields in
+    // caitmgr make that rare; a 120s ceiling stalled the operator's create at
+    // 0% for 2 minutes, worse than the disease).
+    myThreadDrainZombies( 10000 );
 
     if ( pGameData != NULL )
         delete pGameData;

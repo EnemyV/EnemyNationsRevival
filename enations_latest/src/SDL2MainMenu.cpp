@@ -748,6 +748,26 @@ void SDL2MainMenu::OnButtonClick(int buttonIndex) {
     if (buttonIndex < 0 || buttonIndex >= NUM_BTNS) return;
     if (!m_btnEnabled[buttonIndex]) return;
 
+    // BUGS #69 KILL-SHOT: the create/load flows run MODALLY inside this very
+    // function (see IDC_MAIN_SINGLE below) while events keep pumping — so a
+    // stray click during the minutes-long second-game load could re-enter here
+    // and hit IDCANCEL -> DestroyMain/CloseApp MID-CREATE, destroying the main
+    // window; every panel is OS-owned by it and died silently in cascade
+    // ("all my windows disappeared"; SDL2MainMenu.log recorded the stray
+    // 'Exit triggered' clicks). No menu button may fire while another menu
+    // action is still in flight.
+    static bool s_bInFlight = false;
+    if (s_bInFlight) {
+        LogMenu("Button ignored (menu action in flight): " +
+                std::string(s_buttonDefs[buttonIndex].label));
+        return;
+    }
+    struct FlightGuard {
+        bool& f;
+        FlightGuard(bool& b) : f(b) { f = true; }
+        ~FlightGuard() { f = false; }
+    } _guard(s_bInFlight);
+
     LogMenu("Button clicked: " + std::string(s_buttonDefs[buttonIndex].label));
 
     theMusicPlayer.PlayForegroundSound(SOUNDS::GetID(SOUNDS::button), SFXPRIORITY::selected_pri);
