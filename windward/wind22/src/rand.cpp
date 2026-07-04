@@ -80,6 +80,15 @@ static int iRtn = 0;
 
 DWORD MySeed() {
 
+    // MP world-gen parity: env-gated FIXED seed override (EN_WGSEED). When set, MySeed()
+    // returns that constant so a Windows host and a POSIX client can generate byte-identical
+    // worlds LOCALLY in single-player and diff the [randtrace] marks (EN_RANDTRACE) WITHOUT a
+    // live MP join — the definitive cross-platform world-gen divergence bisect. Accepts decimal
+    // or 0x-hex. Unset (the default) => the original time-based seed below, zero behavior change.
+    const char* pszSeed = getenv( "EN_WGSEED" );
+    if ( pszSeed != NULL && *pszSeed != '\0' )
+        return (DWORD)strtoul( pszSeed, NULL, 0 );
+
     SYSTEMTIME _st;
     GetSystemTime( &_st );
     unsigned uRand = ( (unsigned)_st.wDay << 28 ) | ( (unsigned)( _st.wMinute & 31 ) << 23 ) |
