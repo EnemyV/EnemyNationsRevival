@@ -664,6 +664,7 @@ class CPlayer : public CObject
     LONG GetHistPplBldg( int i )  const { return ( HistAt( m_aHistPplBldg,  i ) ); }
     LONG GetHistAptCap( int i )   const { return ( HistAt( m_aHistAptCap,   i ) ); }
     LONG GetHistOfcCap( int i )   const { return ( HistAt( m_aHistOfcCap,   i ) ); }
+    LONG GetHistPplNeed( int i )  const { return ( HistAt( m_aHistPplNeed,  i ) ); }
 
     LONG m_aHistPwrHave[HIST_LEN];
     LONG m_aHistPwrNeed[HIST_LEN];
@@ -671,6 +672,12 @@ class CPlayer : public CObject
     LONG m_aHistPplBldg[HIST_LEN];
     LONG m_aHistAptCap[HIST_LEN];
     LONG m_aHistOfcCap[HIST_LEN];
+    // Workforce NEED (m_iPplNeedBldg) — RUNTIME-ONLY, deliberately NOT serialized:
+    // the save format's history block (release 4) is frozen for old-save testing.
+    // Sampled in lock-step with the six saved series (shares head/count); on load
+    // it's backfilled with the just-deserialized live need so the graph shows a
+    // flat-at-current line for pre-load history instead of misleading zeros.
+    LONG m_aHistPplNeed[HIST_LEN];
     int  m_iHistHead;    // index of the next slot to write
     int  m_iHistCount;   // number of valid samples (<= HIST_LEN)
 
@@ -679,19 +686,20 @@ class CPlayer : public CObject
     // buffer above, so a loaded save shows history immediately). 3 rings sampled
     // at 5/15/150 game-minutes from SampleHistory => 120-sample spans of
     // 10m/30m/5h REAL time (~1 game-min/sec).
-    // Series index 0..5 = PwrHave,PwrNeed,PplTotal,PplBldg,AptCap,OfcCap.
+    // Series index 0..6 = PwrHave,PwrNeed,PplTotal,PplBldg,AptCap,OfcCap,PplNeed.
     // Not saved; instead SeedHRFromHist() rebuilds them on load by decimating
     // the serialized per-minute buffer, so the 10m/30m graphs show restored
     // history right away (the 5h ring gets <=1 seed and fills over play).
-    static const int HR_RINGS = 3;
-    LONG m_aHR[HR_RINGS][6][HIST_LEN];   // [ring][series][slot]
+    static const int HR_RINGS  = 3;
+    static const int HR_SERIES = 7;
+    LONG m_aHR[HR_RINGS][HR_SERIES][HIST_LEN];   // [ring][series][slot]
     int  m_iHRHead[HR_RINGS];
     int  m_iHRCount[HR_RINGS];
     int  m_iHRTick[HR_RINGS];            // game-minutes elapsed since this ring last sampled
     int  GetHRCount( int ring ) const { return ( ( ring >= 0 && ring < HR_RINGS ) ? m_iHRCount[ring] : 0 ); }
     LONG GetHR( int ring, int series, int i ) const
     {
-        if ( ring < 0 || ring >= HR_RINGS || series < 0 || series > 5 ) return ( 0 );
+        if ( ring < 0 || ring >= HR_RINGS || series < 0 || series >= HR_SERIES ) return ( 0 );
         if ( i < 0 || i >= m_iHRCount[ring] ) return ( 0 );
         int idx = ( m_iHRHead[ring] - m_iHRCount[ring] + i + 2 * HIST_LEN ) % HIST_LEN;
         return ( m_aHR[ring][series][idx] );

@@ -154,6 +154,7 @@ void CPlayer::ctor( )
     memset( m_aHistPplBldg,  0, sizeof( m_aHistPplBldg ) );
     memset( m_aHistAptCap,   0, sizeof( m_aHistAptCap ) );
     memset( m_aHistOfcCap,   0, sizeof( m_aHistOfcCap ) );
+    memset( m_aHistPplNeed,  0, sizeof( m_aHistPplNeed ) );
 
     // multi-resolution graph rings (runtime-only). Prime each ring's tick so the
     // very first SampleHistory pushes a sample to every ring (graphs aren't empty).
@@ -597,6 +598,7 @@ void CPlayer::SampleHistory( )
     m_aHistPplBldg[m_iHistHead]  = m_iPplBldg;
     m_aHistAptCap[m_iHistHead]   = m_iAptCap;
     m_aHistOfcCap[m_iHistHead]   = m_iOfcCap;
+    m_aHistPplNeed[m_iHistHead]  = m_iPplNeedBldg;   // runtime-only series (not serialized)
 
     m_iHistHead = ( m_iHistHead + 1 ) % HIST_LEN;
     if ( m_iHistCount < HIST_LEN )
@@ -607,12 +609,13 @@ void CPlayer::SampleHistory( )
     // Keep in lock-step with the init table in CPlayer::ctor (5/15/150 = the
     // 10m/30m/5h graph ranges).
     static const int _hrCad[HR_RINGS] = { 5, 15, 150 };
-    LONG hv[6] = { m_iPwrHave, m_iPwrNeed, GetPplTotal( ), m_iPplBldg, m_iAptCap, m_iOfcCap };
+    LONG hv[HR_SERIES] = { m_iPwrHave, m_iPwrNeed, GetPplTotal( ), m_iPplBldg,
+                           m_iAptCap, m_iOfcCap, m_iPplNeedBldg };
     for ( int r = 0; r < HR_RINGS; r++ ) {
         if ( ++m_iHRTick[r] >= _hrCad[r] ) {
             m_iHRTick[r] = 0;
             int h = m_iHRHead[r];
-            for ( int s = 0; s < 6; s++ ) m_aHR[r][s][h] = hv[s];
+            for ( int s = 0; s < HR_SERIES; s++ ) m_aHR[r][s][h] = hv[s];
             m_iHRHead[r] = ( h + 1 ) % HIST_LEN;
             if ( m_iHRCount[r] < HIST_LEN )
                 m_iHRCount[r]++;
@@ -654,6 +657,7 @@ void CPlayer::SeedHRFromHist( )
             m_aHR[r][3][h] = GetHistPplBldg ( i );
             m_aHR[r][4][h] = GetHistAptCap  ( i );
             m_aHR[r][5][h] = GetHistOfcCap  ( i );
+            m_aHR[r][6][h] = GetHistPplNeed ( i );   // backfilled flat pre-load
             m_iHRHead[r] = ( h + 1 ) % HIST_LEN;
             m_iHRCount[r]++;
         }
@@ -1248,6 +1252,13 @@ void CPlayer::Serialize( CArchive& ar )
             for ( int i = 0; i < HIST_LEN; i++ )
                 ar >> m_aHistPwrHave[i] >> m_aHistPwrNeed[i] >> m_aHistPplTotal[i]
                    >> m_aHistPplBldg[i] >> m_aHistAptCap[i] >> m_aHistOfcCap[i];
+
+            // The workforce-NEED series isn't in the (frozen) save format — backfill
+            // it with the just-deserialized live need so the graph draws a flat
+            // line at the current value for pre-load history, not zeros. It tracks
+            // for real from the next SampleHistory on.
+            for ( int i = 0; i < HIST_LEN; i++ )
+                m_aHistPplNeed[i] = m_iPplNeedBldg;
 
             // The runtime graph rings (10m/30m/5h ranges) are NOT serialized —
             // rebuild them from the buffer we just read so the coarse graphs
