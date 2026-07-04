@@ -276,6 +276,37 @@ static LRESULT CALLBACK SdlCbtFilterHook(int nCode, WPARAM wParam, LPARAM lParam
 }
 #endif // _WIN32
 
+// BUGS #69: force a window visible at the RAW Win32 level. Something on the
+// create-over-active-game path hides windows via native ShowWindow(SW_HIDE)
+// behind SDL's back; SDL's flag cache still says SHOWN, so SDL_ShowWindow
+// no-ops and every SDL-level reveal failed. Bypass the cache entirely.
+void EnWin32ForceShow(SDL_Window* win) {
+    if (!win) return;
+#ifdef _WIN32
+    SDL_SysWMinfo wm;
+    SDL_VERSION(&wm.version);
+    if (SDL_GetWindowWMInfo(win, &wm) && wm.info.win.window) {
+        HWND h = wm.info.win.window;
+        if (!::IsWindowVisible(h)) {
+            char title[80] = "";
+            ::GetWindowTextA(h, title, sizeof(title) - 1);
+            char buf[192];
+            _snprintf_s(buf, sizeof(buf), _TRUNCATE,
+                        "[reveal] Win32-level force-show hwnd=%p title='%s' (SDL cache said SHOWN)\n",
+                        (void*)h, title);
+            ::OutputDebugStringA(buf);
+            ::ShowWindow(h, SW_SHOWNA);
+        }
+        // also clear a leftover layered-alpha hide (the MFC-era invisibility trick)
+        LONG ex = ::GetWindowLong(h, GWL_EXSTYLE);
+        if (ex & WS_EX_LAYERED)
+            ::SetWindowLong(h, GWL_EXSTYLE, ex & ~WS_EX_LAYERED);
+    }
+#else
+    SDL_ShowWindow(win);
+#endif
+}
+
 SDL_Window* GameWindow::CreateSDLWindow(const char* title, int x, int y, int w, int h, Uint32 flags) {
 #ifdef _WIN32
     // Protect against MFC's CBT hook corrupting the new SDL window

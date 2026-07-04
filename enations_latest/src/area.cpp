@@ -4406,6 +4406,10 @@ void CWndArea::SetupStart( )
         if ( theApp.m_gameWindow->GetWindow( ) )
         {
             SDL_ShowWindow( theApp.m_gameWindow->GetWindow( ) );
+            // BUGS #69: SDL's SHOWN cache can be stale (windows hidden via raw
+            // Win32 SW_HIDE) — force-show at the Win32 level too.
+            extern void EnWin32ForceShow( SDL_Window* win );
+            EnWin32ForceShow( theApp.m_gameWindow->GetWindow( ) );
             const Uint32 fl = SDL_GetWindowFlags( theApp.m_gameWindow->GetWindow( ) );
             EnMpDiagLog( "[reveal] SetupStart main window flags=0x%x (SHOWN=%d MIN=%d)",
                          fl, ( fl & SDL_WINDOW_SHOWN ) ? 1 : 0, ( fl & SDL_WINDOW_MINIMIZED ) ? 1 : 0 );

@@ -136,14 +136,18 @@ public:
     // time-boxed message drain).
     void ForceRevealDeferred() {
         if (!m_ownWindow) return;
-        // Cover ANY hide mechanism, not just the defer flag: on a second
-        // create the windows were observed hidden with m_deferShow already
-        // consumed (operator repro 2026-07-03) — show whenever not SHOWN.
+        // Cover ANY hide mechanism: BUGS #69 proved the windows can be hidden
+        // at the RAW Win32 level (native SW_HIDE behind SDL's back) while
+        // SDL's flag cache still claims SHOWN — so SDL_ShowWindow no-ops.
+        // EnWin32ForceShow bypasses the cache (and clears leftover layered-
+        // alpha); on POSIX it's a plain SDL_ShowWindow.
         m_deferShow = false;
         if (!(SDL_GetWindowFlags(m_ownWindow) & SDL_WINDOW_SHOWN))
             SDL_ShowWindow(m_ownWindow);
         if (SDL_GetWindowFlags(m_ownWindow) & SDL_WINDOW_MINIMIZED)
             SDL_RestoreWindow(m_ownWindow);
+        extern void EnWin32ForceShow(SDL_Window* win);
+        EnWin32ForceShow(m_ownWindow);
     }
 
     // True for the GPU-terrain gameplay window (its own renderer + a terrain
