@@ -61,6 +61,16 @@ const std::unordered_map<UINT, std::string>& string_table() {
         { IDS_WORLD_SE,          "SE" },
         { IDS_WORLD_SW,          "SW" },
         { IDS_WORLD_NW,          "NW" },
+        // End-game cut-scene / game-over strings surfaced EMPTY on mac/Linux: the
+        // win/lose end screen (SDL2CutSceneDialog, fed by EnLoadStdString) drew a BLANK
+        // title — the "You Lost" / "You have conquered the planet" text never rendered
+        // over the LS/WN painting (operator-reported on a HARD single-player defeat,
+        // 2026-07-04). IDS_GAME_OVER likewise showed a blank EnMessageBox on the
+        // all-humans-eliminated path (mainloop.cpp). Text verbatim from lastplnt.rc.
+        { IDS_YOU_WON,          "You have conquered the planet" },
+        { IDS_YOU_LOST,         "You Lost" },
+        { IDS_YOU_END_SCENARIO, "Mission Completed" },
+        { IDS_GAME_OVER,        "The game has ended" },
     };
     return t;
 }
