@@ -1538,11 +1538,17 @@ void SDL2SessionBrowseDialog::OnRefresh() {
 // game-session port (2346). Clients point at the same server via the Join dialog's
 // Server Address field (already written to [TCP]ServerAddress).
 static void ApplyOptionalRegistrationServer() {
-    char regSrv[80] = {0};
-    GetPrivateProfileString("vdmplay", "RegistrationServerAddr", "",
-                            regSrv, sizeof(regSrv), ".\\vdmplay.ini");
-    if (regSrv[0])
-        WritePrivateProfileString("TCP", "RegistrationAddress", regSrv, ".\\vdmplay.ini");
+    // Register the HOST with the SAME discovery server the Join dialog defaults to:
+    // RegistrationDefaultAddr() = vdmplay.ini [vdmplay]RegistrationServerAddr, else the
+    // public AWS iserve (kPublicIServeAddr). Previously this read the raw INI value and
+    // only wrote [TCP]RegistrationAddress when it was NON-EMPTY — so an unconfigured host
+    // (e.g. a fresh build dir with no vdmplay.ini) never registered, while CLIENTS still
+    // defaulted to the public iserve. Result: clients queried iserve and saw NO game
+    // (operator: "mac users can't see the game, they're pointed at 54.219.190.35").
+    // Host and client are now symmetric — both use the public iserve out of the box.
+    std::string regSrv = RegistrationDefaultAddr();
+    if (!regSrv.empty())
+        WritePrivateProfileString("TCP", "RegistrationAddress", regSrv.c_str(), ".\\vdmplay.ini");
 }
 
 // ============================================================================
@@ -1553,6 +1559,10 @@ bool SDL2_RunCreateNetworkFlow(GameWindow* gameWindow) {
     ShowWallpaperBackground(gameWindow);
     SDL2CreateNetDialog createDlg(gameWindow);
     if (createDlg.DoModal() != 1) return false;
+
+    // Fresh room -> fresh chat: drop any backlog from a previous session so the
+    // new lobby doesn't show stale history (operator: chat should clear on join).
+    SDL2Chat_Clear();
 
     ASSERT(theApp.m_pCreateGame == NULL);
     CCreateMulti* pCreate = new CCreateMulti();
@@ -1664,6 +1674,10 @@ bool SDL2_RunJoinNetworkFlow(GameWindow* gameWindow) {
     // Step 1: collect player name + server address
     SDL2JoinNetDialog joinDlg(gameWindow);
     if (joinDlg.DoModal() != 1) return false;
+
+    // Fresh room -> fresh chat: drop any backlog from a previous session so the
+    // joined lobby doesn't show stale history (operator: chat should clear on join).
+    SDL2Chat_Clear();
 
     // Step 2: write TCP config for VDMPLAY
     WritePrivateProfileString("TCP", "ServerAddress", joinDlg.m_serverAddr.c_str(), ".\\vdmplay.ini");

@@ -41,6 +41,11 @@ void SDL2Chat_AddMessage(const std::string& line) {
         g_chatMessages.erase(g_chatMessages.begin());
 }
 
+// Clear the chat backlog. Called when entering a network room (host-create /
+// client-join) so a new room starts with an empty chat instead of carrying over
+// the previous session's history (operator: chat should clear on leave/join).
+void SDL2Chat_Clear() { g_chatMessages.clear(); }
+
 int SDL2Chat_Count() { return (int)g_chatMessages.size(); }
 
 std::string SDL2Chat_Line(int i) {

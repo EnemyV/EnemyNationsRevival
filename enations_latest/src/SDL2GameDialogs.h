@@ -14,6 +14,10 @@ void SDL2Chat_AddMessage(const std::string& line);
 int         SDL2Chat_Count();
 std::string SDL2Chat_Line(int i);
 
+// Clear the chat backlog — called on entering a network room so the new room
+// starts fresh instead of showing the previous session's history.
+void        SDL2Chat_Clear();
+
 // Send a chat line: broadcasts to the other players (net game) and echoes it
 // locally. Usable pre-game (lobby) and in-game.
 void SDL2Chat_Send(const std::string& text);
