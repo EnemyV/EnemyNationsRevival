@@ -912,15 +912,30 @@ void SDL2CreateNetDialog::OnOK() {
 // "localhost" was useless as a shipped default (nobody runs a local iserve outside tests);
 // an unconfigured client should discover games on the public server out of the box.
 static const char* kPublicIServeAddr = "54.219.190.35";   // AWS iserve (:1707, engine-fixed)
+// A loopback / self address must NEVER be the client's shipped Join default. The
+// [vdmplay]RegistrationServerAddr key is a HOST-side knob: testers set it to
+// 127.0.0.1 so a locally-hosted game registers with a local iserve. That value
+// lives in the same vdmplay.ini the CLIENT reads for its Join default, so without
+// this guard a box that ever hosted-locally would offer 127.0.0.1 as the join
+// target — useless for a real client. New clients/installs must always default to
+// the public iserve; a tester wanting a local host still types it in by hand.
+static bool IsLoopbackAddr(const std::string& s) {
+    if (s.empty()) return true;
+    if (s == "localhost" || s == "::1" || s == "0.0.0.0") return true;
+    return s.compare(0, 4, "127.") == 0;   // 127.0.0.0/8
+}
 static std::string RegistrationDefaultAddr() {
     char buf[128] = {0};
     GetPrivateProfileString("vdmplay", "RegistrationServerAddr", "", buf, sizeof(buf), ".\\vdmplay.ini");
-    std::string s = (buf[0] ? buf : kPublicIServeAddr);
+    std::string s = buf;
     // Strip a trailing :port — but only when there's exactly ONE colon. An
     // IPv6 literal ("::1", "fe80::…") has several; the old first-colon strip
     // turned "::1" into "" and handed the join dialog an empty address.
     std::string::size_type c = s.find(':');
     if (c != std::string::npos && c == s.rfind(':')) s = s.substr(0, c);
+    // Empty OR loopback -> the project's PUBLIC iserve. The client Join default is
+    // the discovery server, never self; loopback here is a host-side test artifact.
+    if (IsLoopbackAddr(s)) s = kPublicIServeAddr;
     return s;
 }
 
@@ -1644,7 +1659,16 @@ bool SDL2_RunCreateNetworkFlow(GameWindow* gameWindow) {
         // Step 4: lobby — wait for clients to join, then server clicks Start
         ShowWallpaperBackground(gameWindow);
         SDL2LobbyDialog lobbyDlg(gameWindow, createDlg.m_gameName);
-        int lobbyResult = lobbyDlg.DoModal();
+        int lobbyResult;
+        try {
+            lobbyResult = lobbyDlg.DoModal();
+        } catch (int iNum) {
+            // A client dropped while we hosted the lobby and a chat broadcast then
+            // failed (ERR_TLP_QUIT). Broadcast already tore the world down; contain
+            // the throw so it can't unwind out of Run() and kill the app, and treat
+            // it as a lobby cancel (fall through to the back-to-menu cleanup below).
+            CatchNum(iNum); lobbyResult = 0;
+        } catch (...) { CatchOther(); lobbyResult = 0; }
         if (lobbyResult == 2) continue;          // Change Race -> re-pick
         if (lobbyResult != 1) {                  // Cancel / closed
             theNet.Close(FALSE); theGame.Close();
@@ -1836,7 +1860,24 @@ bool SDL2_RunJoinNetworkFlow(GameWindow* gameWindow) {
     int lobbyResult;
     {
         SDL2ClientLobbyDialog clientLobby(gameWindow, theGame.m_sGameName.c_str());
-        lobbyResult = clientLobby.DoModal();
+        try {
+            lobbyResult = clientLobby.DoModal();
+        } catch (int iNum) {
+            // The host/peer dropped while we sat in the waiting room and a lobby
+            // chat send (SDL2Chat_Send -> theNet.Broadcast) then failed, throwing
+            // ERR_TLP_QUIT. Broadcast already ran CloseWorld (DestroyWorld +
+            // CreateMain) before throwing, so the world is torn down and the menu is
+            // already back — but WITHOUT this catch the throw unwinds out of
+            // DoModal() and every caller up to the top-level main-loop handler
+            // (mainloop.cpp), which returns out of Run() and kills the whole app
+            // (the user experiences a crash). Contain it here and treat it as
+            // "left the lobby" so the code below drops back to the menu cleanly.
+            CatchNum(iNum);
+            lobbyResult = 0;
+        } catch (...) {
+            CatchOther();
+            lobbyResult = 0;
+        }
     }
     g_bClientLobbyWaiting = false;
     fprintf(stderr, "[mp-start] client lobby closed, result=%d (1=host started, else back to menu)\n",
@@ -1967,7 +2008,17 @@ bool SDL2_RunLoadNetworkFlow(GameWindow* gameWindow) {
     // Step 5: lobby — wait for clients to claim saved-game players
     ShowWallpaperBackground(gameWindow);
     SDL2LobbyDialog lobbyDlg(gameWindow, theGame.m_sGameName);
-    if (lobbyDlg.DoModal() != 1) {
+    int loadLobbyResult;
+    try {
+        loadLobbyResult = lobbyDlg.DoModal();
+    } catch (int iNum) {
+        // A client dropped while we hosted the load-game lobby and a chat broadcast
+        // then failed (ERR_TLP_QUIT). Broadcast already tore the world down; contain
+        // the throw so it can't unwind out of Run() and kill the app, and treat it
+        // as a lobby cancel (fall through to the back-to-menu cleanup below).
+        CatchNum(iNum); loadLobbyResult = 0;
+    } catch (...) { CatchOther(); loadLobbyResult = 0; }
+    if (loadLobbyResult != 1) {
         theNet.Close(FALSE);
         theGame.Close();
         delete theApp.m_pCreateGame;
