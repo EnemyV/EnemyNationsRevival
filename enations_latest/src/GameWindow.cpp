@@ -344,6 +344,26 @@ static void SetMacDockIcon() {
     void* app = send0(cls("NSApplication"), sel("sharedApplication"));
     send1(app, sel("setApplicationIconImage:"), img);
 }
+
+// Hide the macOS Dock + menu bar while the game is frontmost. The game runs as a
+// borderless fullscreen-desktop window with Spaces DISABLED (so the detached
+// map/radar panels can overlay it) — but a non-Space fullscreen window does NOT
+// auto-hide the Dock, so the always-on Dock (and menu bar) draw over the game's
+// edges (operator release blocker: "the launcher bar draws on top of the game").
+// NSApplicationPresentationAutoHideDock | AutoHideMenuBar hides both WITHOUT a
+// fullscreen Space, so the multi-window panels keep working. Re-applied on focus
+// gain (macOS clears presentation options when the app resigns active).
+static void HideMacDockBar() {
+    auto cls    = [](const char* n) { return objc_getClass(n); };
+    auto sel    = [](const char* n) { return sel_registerName(n); };
+    auto send0  = (void* (*)(void*, void*))objc_msgSend;
+    auto sendUL = (void  (*)(void*, void*, unsigned long))objc_msgSend;
+    void* app = send0(cls("NSApplication"), sel("sharedApplication"));
+    if (!app) return;
+    // NSApplicationPresentationAutoHideDock (1<<0) | AutoHideMenuBar (1<<2).
+    const unsigned long opts = (1UL << 0) | (1UL << 2);
+    sendUL(app, sel("setPresentationOptions:"), opts);
+}
 #endif
 
 bool GameWindow::InitializeSDL() {
@@ -439,6 +459,13 @@ bool GameWindow::InitializeSDL() {
     }
 
     LogToFile("SDL window created successfully");
+
+#ifdef __APPLE__
+    // Hide the Dock + menu bar now that the game window exists (fullscreen game;
+    // the non-Space fullscreen-desktop window won't auto-hide them on its own).
+    if (wantFullscreen)
+        HideMacDockBar();
+#endif
 
     // Cross-platform: register hit-test callback so SDL handles resize drags
     // on all platforms.  The OS shows the resize cursor during the drag itself.
@@ -977,6 +1004,17 @@ void GameWindow::HandleEvent(SDL_Event& event) {
                 LogToFile("Window resized to " + std::to_string(m_width) + "x" + std::to_string(m_height));
             }
             else if (event.window.event == SDL_WINDOWEVENT_FOCUS_GAINED) {
+#ifdef __APPLE__
+                // Re-hide the Dock/menu bar: macOS clears an app's presentation
+                // options when it resigns active (Cmd-Tab away), so they must be
+                // re-applied each time the game regains focus, or the launcher bar
+                // reappears over the game after an alt-tab.
+                {
+                    const char* enFs = getenv("EN_FULLSCREEN");
+                    if (!(enFs && enFs[0] == '0'))
+                        HideMacDockBar();
+                }
+#endif
                 // The detached map/radar/unit windows are borderless + SKIP_TASKBAR
                 // and (Linux) WM_TRANSIENT_FOR-owned by the main window, so Alt-Tabbing
                 // away can leave them buried OR — on WMs that minimize/unmap transient
