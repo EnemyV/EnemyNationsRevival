@@ -103,6 +103,16 @@ class CBridgeUnit;
 int  MyRand( );
 void MySrand( DWORD dwSeed );
 int  RandNum( int iMax );
+// MP world-gen parity trace. MyRand() keeps a monotonic call count + rolling
+// checksum of its returned stream (always maintained; platform-identical 32/64-bit
+// math). MyRandTrace(label) dumps "calls=/sum=" to stderr ONLY when env EN_RANDTRACE
+// is set. Host and client that generate identical worlds have identical (calls,sum)
+// at every mark; the first mark that differs localizes the cross-platform desync
+// behind CmdPlay's RAND MISMATCH drop. count-differs => a control-flow/unsequenced
+// -call divergence; count-same-but-sum-differs => a value (float/data) divergence.
+void MyRandTrace( const char* pszLabel );
+extern unsigned long long g_myRandCalls;
+extern unsigned           g_myRandSum;
 // MyRand's output range on ALL platforms (windward/wind22/src/rand.cpp uses the
 // MSVC CRT LCG everywhere for cross-platform MP world-gen parity). Consumers
 // scaling MyRand must use THIS, never stdlib RAND_MAX -- glibc's 0x7FFFFFFF

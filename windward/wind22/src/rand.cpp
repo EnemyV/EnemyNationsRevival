@@ -98,6 +98,37 @@ void MySrand( DWORD dwSeed ) {
     iRtn = en_rand();
 }
 
+// --- MP world-gen parity trace (env EN_RANDTRACE) --------------------------
+// Every deterministic draw goes through MyRand(), so a monotonic call count +
+// rolling checksum of the returned stream is a compact fingerprint of "how far
+// the PRNG has been walked and with what results". A Windows host and a POSIX
+// client that generate IDENTICAL worlds must have identical (calls,sum) at every
+// MyRandTrace mark; the FIRST mark where they differ localizes the cross-platform
+// desync that trips CmdPlay's m_dwFinalRand handshake (the client-kicked-to-menu
+// RAND MISMATCH). Both counters use fixed-width, platform-identical arithmetic
+// (unsigned long long / unsigned), so they compare byte-for-byte across Win/Linux/
+// mac. The counter maths are unconditional (2 trivial int ops on top of MyRand's
+// existing divide+array work — negligible); only the stderr dump is env-gated.
+unsigned long long g_myRandCalls = 0;
+unsigned           g_myRandSum   = 0;
+
+static int RandTraceOn() {
+    static int s_on = -1;
+    if ( s_on < 0 ) {
+        const char* e = getenv( "EN_RANDTRACE" );
+        s_on = ( e != NULL && *e != '\0' && *e != '0' ) ? 1 : 0;
+    }
+    return s_on;
+}
+
+void MyRandTrace( const char* pszLabel ) {
+    if ( !RandTraceOn() )
+        return;
+    fprintf( stderr, "[randtrace] %-30s calls=%llu sum=%08x\n",
+             pszLabel ? pszLabel : "(mark)",
+             (unsigned long long)g_myRandCalls, g_myRandSum );
+}
+
 int MyRand() {
 
     // 15-bit values: iRtn*97 tops out at ~3.2M — no overflow, iInd in [0,97].
@@ -106,6 +137,11 @@ int MyRand() {
 
     iRtn = aRnd[iInd];
     aRnd[iInd] = en_rand();
+
+    // MP-parity fingerprint (see MyRandTrace). Rolling 32-bit hash of the stream;
+    // wraps identically on every platform.
+    ++g_myRandCalls;
+    g_myRandSum = g_myRandSum * 1000003u + (unsigned)iRtn;
 
     return ( iRtn );
 }

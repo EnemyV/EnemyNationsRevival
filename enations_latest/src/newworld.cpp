@@ -643,6 +643,12 @@ void CConquerApp::CreateNewWorld(unsigned uRand, AIinit *pAiData, int iSide, int
     // restore rand
     MySrand(iSaveRand);
 
+    // MP world-gen parity: baseline fingerprint right after the seed is set, BEFORE
+    // any world-gen draw. Host and client feed the SAME seed here (CNetStart m_uRand),
+    // so these two lines must match across platforms; if they already differ the
+    // divergence is upstream of world-gen. See MyRandTrace / EN_RANDTRACE.
+    MyRandTrace( "worldgen: seed set (pre-theMap.Init)" );
+
     // Progress-bar smoothing for the SECOND+ game (operator, minor): the 0..85
     // band is sprite/data loading (PER_*_INIT), which drives the bar smoothly on
     // the FIRST create. On a reload the assets are already resident, so every
@@ -661,6 +667,14 @@ void CConquerApp::CreateNewWorld(unsigned uRand, AIinit *pAiData, int iSide, int
     theApp.Log("Map created");
 
     CpMark( "theMap.Init (WORLDGEN)" );
+
+    // MP world-gen parity: fingerprint the FULL world-gen draw sequence. This is the
+    // decisive line — compare it host-vs-client (both with EN_RANDTRACE=1) against the
+    // baseline above. calls DIFFER => a control-flow / unsequenced-MyRand()-arg-order
+    // divergence inside theMap.Init; calls SAME but sum DIFFERS => a value divergence
+    // (a float/data input feeding the same number of draws). Either way this is what
+    // makes m_dwFinalRand mismatch and kicks the client back to the menu at CmdPlay.
+    MyRandTrace( "worldgen: theMap.Init done (pre-finalrand)" );
 
     // compare final seeds
     theGame.m_dwFinalRand = MyRand();
