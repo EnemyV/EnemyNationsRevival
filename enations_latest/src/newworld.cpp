@@ -643,6 +643,17 @@ void CConquerApp::CreateNewWorld(unsigned uRand, AIinit *pAiData, int iSide, int
     // restore rand
     MySrand(iSaveRand);
 
+    // Progress-bar smoothing for the SECOND+ game (operator, minor): the 0..85
+    // band is sprite/data loading (PER_*_INIT), which drives the bar smoothly on
+    // the FIRST create. On a reload the assets are already resident, so every
+    // InitSprites/InitData above is a fast no-op that emits NO SetPer — leaving
+    // the bar stuck at 0 until world-gen's first SetPer(PER_WORLD_START=86)
+    // snaps it to ~90. Advance to PER_MUZZLE_FLASHES_INIT (85) here: on the
+    // first create the bar is already there (SetPer is no-backward, so no-op);
+    // on a reload it jumps 0->85, which is honest (85% = all assets loaded) and
+    // turns "stuck at 0 then jump to 90" into "quick to 85 then smooth to 100".
+    m_pCreateGame->GetDlgStatus()->SetPer(PER_MUZZLE_FLASHES_INIT);
+
     // This is where we create the actual map / world / terrain
     // create the map
     theApp.Log("Create the map");
