@@ -80,27 +80,47 @@ bool SDL2BuildStructure::CanBuild(int iCat, const CStructureData* pSd) {
     if (pSd->GetBldgType() == CStructureData::apartment ||
         pSd->GetBldgType() == CStructureData::office) {
 
-        // Note 9 (operator playtest): "Mid-sized Buildings" unlocks SEVERAL apartment/
-        // office tiers at once — including the LARGEST (apartment_2_4 / office_3_1, =
-        // base+max-1) — so the top-anchored window drops the intermediate tiers off the
-        // bottom ("skipped", never selectable). Gate that top tier behind LARGE Buildings
-        // research (large_facilities, already exists) so it appears as its own step and
-        // the intermediates surface. Code-side gate mirroring the edicts/AltOutput
-        // GetRsrch pattern — NO ENATIONS.DAT change. (num_apartments/num_offices already
-        // exclude the obsolete _3_x tiers, so base+max-1 is the largest LIVE tier.)
+        // Note 9b (operator 2026-07-04): capacity-based housing research gates, refining
+        // the earlier single-top-tier Large-Buildings gate ("Mid-sized Buildings" unlocks
+        // several tiers at once, so the top-anchored window dropped the intermediates).
+        // Per operator playtest, gate by the building's CAPACITY instead of tier index:
+        //   - an OFFICE    of capacity >= 600  needs Large Buildings (large_facilities)
+        //   - an APARTMENT of capacity >= 1000 needs Large Buildings
+        //   - an APARTMENT of capacity >= 500 (below 1000) needs New Construction
+        //     Techniques (const_1) OR Large Buildings
+        // Capacity rises with tier, so the gated buildings are always a contiguous run at
+        // the TOP of each type's list — exactly what the top-anchored window below expects,
+        // so excluding them from the discovered count keeps the permitted run contiguous.
+        // Code-side gate mirroring the edicts/AltOutput GetRsrch pattern — NO ENATIONS.DAT
+        // change. (num_apartments/num_offices already exclude the obsolete _3_x tiers.)
         CPlayer* meRsrch = theGame.GetMe();
-        bool bLargeBldgs = meRsrch &&
+        const bool bLargeBldgs = meRsrch &&
             meRsrch->GetRsrch( CRsrchArray::large_facilities ).m_bDiscovered;
+        const bool bNewConst = meRsrch &&
+            meRsrch->GetRsrch( CRsrchArray::const_1 ).m_bDiscovered;   // "New Construction Techniques"
 
-        // Number of discovered tiers of each type. (Research unlocks them in order
-        // from the base, so the discovered set is the contiguous low-index run.) The
-        // largest tier (base+max-1) is additionally gated on Large Buildings (Note 9).
-        auto countDisc = [bLargeBldgs](int base, int max) {
+        // TRUE if the player's research permits this specific housing building (by capacity).
+        auto rsrchAllows = [bLargeBldgs, bNewConst]( const CStructureData* p ) -> bool {
+            const int cap = p->GetBldHousing( )->GetCapacity( );
+            if ( p->GetBldgType( ) == CStructureData::office ) {
+                if ( cap >= 600 ) return bLargeBldgs;
+            } else {   // apartment
+                if ( cap >= 1000 ) return bLargeBldgs;
+                if ( cap >= 500 )  return bLargeBldgs || bNewConst;
+            }
+            return true;
+        };
+
+        // Number of discovered tiers of each type the research permits. (Research unlocks
+        // tiers in order from the base; the capacity gates exclude a contiguous top run, so
+        // the permitted set stays the contiguous low-index run.)
+        auto countDisc = [rsrchAllows](int base, int max) {
             int n = 0;
             for (int iOn = base; iOn < base + max; iOn++) {
-                if (!theStructures.GetData(iOn)->IsDiscovered())
+                const CStructureData* pd = theStructures.GetData(iOn);
+                if (!pd->IsDiscovered())
                     continue;
-                if (iOn == base + max - 1 && !bLargeBldgs)   // largest tier needs Large Buildings
+                if (!rsrchAllows(pd))
                     continue;
                 n++;
             }
@@ -128,6 +148,8 @@ bool SDL2BuildStructure::CanBuild(int iCat, const CStructureData* pSd) {
         // only by the (iMax - iShow) tiers we can't fit — never "before it needs to".
         int iStrt = base + (iMax - iShow);
         if (pSd->GetType() < iStrt || pSd->GetType() >= base + iMax)
+            return false;
+        if (!rsrchAllows(pSd))   // explicit capacity gate — never show a research-locked tier
             return false;
     }
 
