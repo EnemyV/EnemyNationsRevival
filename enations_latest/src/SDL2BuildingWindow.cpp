@@ -565,6 +565,24 @@ static void lineOnSurface(SDL_Surface* s, int x0, int y0, int x1, int y1, Uint32
     }
 }
 
+// 50/50 blend a color rect into an OPAQUE ARGB surface (SDL_FillRect can't blend,
+// and the graph surfaces are opaque). Used for the legend backdrop plates so the
+// series lines stay faintly visible through them.
+static void fillRect50(SDL_Surface* s, SDL_Rect rc, Uint8 pr, Uint8 pg, Uint8 pb) {
+    if ( !s || s->format->BytesPerPixel != 4 ) return;
+    int x0 = __max( 0, (int)rc.x ),              y0 = __max( 0, (int)rc.y );
+    int x1 = __min( s->w, (int)rc.x + rc.w ),    y1 = __min( s->h, (int)rc.y + rc.h );
+    if ( x0 >= x1 || y0 >= y1 ) return;
+    if ( SDL_MUSTLOCK( s ) && SDL_LockSurface( s ) != 0 ) return;
+    Uint32 halfPlate = ( (Uint32)( pr >> 1 ) << 16 ) | ( (Uint32)( pg >> 1 ) << 8 ) | ( pb >> 1 );
+    for ( int y = y0; y < y1; y++ ) {
+        Uint32* px = (Uint32*)( (Uint8*)s->pixels + y * s->pitch ) + x0;
+        for ( int x = x0; x < x1; x++, px++ )
+            *px = 0xFF000000u | ( ( ( *px >> 1 ) & 0x007F7F7Fu ) + halfPlate );
+    }
+    if ( SDL_MUSTLOCK( s ) ) SDL_UnlockSurface( s );
+}
+
 // "Slot" track behind icon stacks / strips (storage rows, fertility, docked
 // units): black box with a gold 1px border — the same look the original status
 // bar art uses for its gauge boxes (and DrawHealthBar's track), so the window's
@@ -696,7 +714,8 @@ void SDL2BuildingWindow::LoadIcons() {
         // density "X" (ICON_DENSITY), the same art the original status bar used.
         auto* pBf = m_pBldg->GetData()->GetBldFarm();
         bool bLumber = ( pBf && pBf->GetTypeFarm() == CMaterialTypes::lumber );
-        CStatData* pIco = theIcons.GetByIndex( bLumber ? ICON_DENSITY : ICON_FOOD );
+        m_densIconIdx = bLumber ? ICON_DENSITY : ICON_FOOD;
+        CStatData* pIco = theIcons.GetByIndex( m_densIconIdx );
         if ( pIco && pIco->m_pcDib ) {
             m_densIcon  = SDL2MainMenu::CreateSurfaceFromDIB( pIco->m_pcDib );
             m_densIconW = pIco->m_cxIcon;
@@ -1435,6 +1454,56 @@ int SDL2BuildingWindow::PerBldgOfcCap() const {
 // ----------------------------------------------------------------------------
 // Storage icon stacks
 // ----------------------------------------------------------------------------
+// Slot background from the REAL status-bar art (operator: "look at how the
+// vehicle window does it"): each theIcons entry carries its status-bar background
+// pieces in the sheet row below the icon row (m_cxLeft/m_cxBack/m_cxRight,
+// m_cyBack, m_iTypBack) — blit them exactly like SDL2UnitList::Render3PieceBg.
+// Falls back to the drawn black/gold box when the entry has no back art.
+void SDL2BuildingWindow::DrawSlotBg(SDL_Surface* dst, int iconIdx, SDL_Surface* sheet,
+                                    int x, int y, int w, int h) {
+    CStatData* sd = ( iconIdx >= 0 ) ? theIcons.GetByIndex( iconIdx ) : nullptr;
+    if ( !dst || !sheet || !sd || sd->m_cyBack <= 0 ) {
+        drawSlot( dst, x, y, w, h );
+        return;
+    }
+    int bgSrcY = sd->m_cyIcon;               // background row is below the icon row
+    int bh = __min( sd->m_cyBack, h );
+    int by = y + ( h - bh ) / 2;
+    SDL_SetSurfaceBlendMode( sheet, SDL_BLENDMODE_BLEND );
+    if ( sd->m_iTypBack == CStatData::back_3 ) {   // left cap + tiled middle + right cap
+        if ( sd->m_cxLeft > 0 ) {
+            SDL_Rect sr = { 0, bgSrcY, sd->m_cxLeft, bh };
+            SDL_Rect dr = { x, by, sd->m_cxLeft, bh };
+            SDL_BlitSurface( sheet, &sr, dst, &dr );
+        }
+        if ( sd->m_cxBack > 0 ) {
+            int midX = x + sd->m_cxLeft, midEnd = x + w - sd->m_cxRight;
+            for ( int tx = midX; tx < midEnd; tx += sd->m_cxBack ) {
+                int bw = __min( sd->m_cxBack, midEnd - tx );
+                SDL_Rect sr = { sd->m_cxLeft, bgSrcY, bw, bh };
+                SDL_Rect dr = { tx, by, bw, bh };
+                SDL_BlitSurface( sheet, &sr, dst, &dr );
+            }
+        }
+        if ( sd->m_cxRight > 0 ) {
+            SDL_Rect sr = { sd->m_cxLeft + sd->m_cxBack, bgSrcY, sd->m_cxRight, bh };
+            SDL_Rect dr = { x + w - sd->m_cxRight, by, sd->m_cxRight, bh };
+            SDL_BlitSurface( sheet, &sr, dst, &dr );
+        }
+    } else if ( sd->m_iTypBack == CStatData::full_back ) {   // stretch to fit
+        SDL_Rect sr = { 0, bgSrcY, sd->m_cxBack, bh };
+        SDL_Rect dr = { x, by, w, bh };
+        SDL_BlitScaled( sheet, &sr, dst, &dr );
+    } else if ( sd->m_cxBack > 0 ) {                          // tile
+        for ( int tx = 0; tx < w; tx += sd->m_cxBack ) {
+            int bw = __min( sd->m_cxBack, w - tx );
+            SDL_Rect sr = { 0, bgSrcY, bw, bh };
+            SDL_Rect dr = { x + tx, by, bw, bh };
+            SDL_BlitSurface( sheet, &sr, dst, &dr );
+        }
+    }
+}
+
 void SDL2BuildingWindow::DrawMatIcons(SDL2Image* img, const int* mats, int n) {
     if ( !img || !m_pBldg || n <= 0 ) return;
     SDL_Rect rc = img->GetRect();
@@ -1460,7 +1529,7 @@ void SDL2BuildingWindow::DrawMatIcons(SDL2Image* img, const int* mats, int n) {
         SDL_SetSurfaceBlendMode(m_matIcons, SDL_BLENDMODE_BLEND);
         for (int i = 0; i < n; i++) {
             // Slot track for every row — an empty slot IS the "none stored" reading.
-            drawSlot( s, 0, i * rowH + 1, gw, rowH - 2 );
+            DrawSlotBg( s, ICON_MATERIALS, m_matIcons, 0, i * rowH + 1, gw, rowH - 2 );
             int amount = m_pBldg->GetStore( mats[i] );
             if ( amount <= 0 ) continue;
             int nIcons = amount / PER_ICON;
@@ -1493,7 +1562,7 @@ void SDL2BuildingWindow::DrawDensityIcons(SDL2Image* img, int pct) {
     SDL_FillRect(s, nullptr, SDL_MapRGBA(s->format, 0, 0, 0, 0));
     SDL_SetSurfaceBlendMode(s, SDL_BLENDMODE_BLEND);
 
-    drawSlot( s, 0, 0, gw, gh );                // gauge track (also the 0% reading)
+    DrawSlotBg( s, m_densIconIdx, m_densIcon, 0, 0, gw, gh );   // gauge track (also the 0% reading)
     if ( m_densIcon && m_densIconW > 0 && m_densIconH > 0 ) {
         int iconW, iconH;
         intFitIcon( m_densIconW, m_densIconH, gh - 4, iconW, iconH );
@@ -1525,7 +1594,7 @@ void SDL2BuildingWindow::DrawContainedUnits(SDL2Image* img) {
     SDL_FillRect(s, nullptr, SDL_MapRGBA(s->format, 0, 0, 0, 0));
     SDL_SetSurfaceBlendMode(s, SDL_BLENDMODE_BLEND);
 
-    drawSlot( s, 0, 0, gw, gh );                // empty slot = "nothing docked"
+    DrawSlotBg( s, ICON_VEHICLES, m_unitIcons, 0, 0, gw, gh );  // empty slot = "nothing docked"
     if ( m_unitIcons && m_unitIconW > 0 && m_unitIconH > 0 ) {
         int iconW, iconH;
         intFitIcon( m_unitIconW, m_unitIconH, gh - 4, iconW, iconH );
@@ -1592,8 +1661,8 @@ void SDL2BuildingWindow::DrawHealthBar() {
 void SDL2BuildingWindow::AddGraphRangeRow(int x, int y, int w) {
     // Labels are REAL time, not game time. One history sample lands per game-minute
     // (~1 real second), so the ranges work out to: 10 samples ~10s, 60 ~1m, and the
-    // 3/12/84-game-min rings x120 samples ~6m / ~24m / ~2.8h.
-    static const char* kLbl[5] = { "10s", "1m", "6m", "24m", "3h" };
+    // 5/15/150-game-min rings x120 samples ~10m / ~30m / ~5h.
+    static const char* kLbl[5] = { "10s", "1m", "10m", "30m", "5h" };
     int bw = w / 5;
     for ( int r = 0; r < 5; r++ ) {
         SDL2Button* b = AddWidget<SDL2Button>( x + r * bw, y, bw - 2, RANGE_ROW_H, kLbl[r],
@@ -1639,10 +1708,16 @@ void SDL2BuildingWindow::DrawGraph(SDL2Image* img, HistSeries a, HistSeries b) {
     SDL_FillRect(s, &lft, frame); SDL_FillRect(s, &rgt, frame);
 
     // Selected time-range -> data source. 10s/1m read the EXISTING serialized
-    // per-minute buffer (so a freshly-loaded save shows its saved ~2h of history
-    // immediately) — last 10 / last 60 samples. 6h/24h/7d read the runtime rings
-    // 0/1/2 (3/12/84-min cadence), which fill in as the game is played.
+    // per-minute buffer (so a freshly-loaded save shows its saved history
+    // immediately) — last 10 / last 60 samples. 10m/30m/5h read the runtime rings
+    // 0/1/2 (5/15/150-game-min cadence), which fill in as the game is played.
+    // A coarse ring needs 2 samples before it can plot (the 5h ring's second
+    // sample lands ~5 real minutes in) — rather than show an empty panel ("3h is
+    // blank"), degrade to the finest source that HAS data: it's the same series,
+    // just a shorter span.
     int gr = ( m_iGraphRange >= 0 && m_iGraphRange < 5 ) ? m_iGraphRange : 1;
+    while ( gr > 1 && p->GetHRCount( gr - 2 ) < 2 )
+        gr--;
     int ring, cnt, nShow, off;
     if ( gr <= 1 ) {                              // 10m / 1h -> saved per-minute buffer
         ring  = -1;
@@ -1685,6 +1760,14 @@ void SDL2BuildingWindow::DrawGraph(SDL2Image* img, HistSeries a, HistSeries b) {
                                        SDL_MapRGB(s->format, 235, 180,  60) };
         int bottomY = pad + plotH - 1;
 
+        // RIGHT-ANCHOR the data: x maps SAMPLE SLOTS of the full advertised range
+        // (T samples), newest at the right edge, so a partially-filled ring leaves
+        // blank panel on the left instead of stretching to fill the width. (An
+        // 18-min-old game on the 30m range showed "flat for 30 minutes" — the
+        // stretch made the span lie.)
+        int T = ( gr == 0 ) ? 10 : ( gr == 1 ) ? 60 : 120;
+        int xOff = T - n;   // 0 when the source is full -> identical to before
+
         // Translucent area fill under the PRIMARY series (the "have" line): the
         // series color pre-blended toward the panel background (the surface is
         // opaque, so blending by hand beats an alpha FillRect that wouldn't blend).
@@ -1695,7 +1778,7 @@ void SDL2BuildingWindow::DrawGraph(SDL2Image* img, HistSeries a, HistSeries b) {
                 26 + ( ( 110 - 26 ) * 3 ) / 10 );
             int prevX = 0, prevY = 0;
             for ( int i = 0; i < n; i++ ) {
-                int px = pad + ( i * ( plotW - 1 ) ) / ( n - 1 );
+                int px = pad + ( ( xOff + i ) * ( plotW - 1 ) ) / ( T - 1 );
                 int py = pad + ( plotH - 1 ) - (int)( ( valOf(a, i) * (long)( plotH - 1 ) ) / maxV );
                 if ( i > 0 && px > prevX ) {
                     for ( int cx = prevX; cx <= px; cx++ ) {      // interpolate the segment
@@ -1714,7 +1797,7 @@ void SDL2BuildingWindow::DrawGraph(SDL2Image* img, HistSeries a, HistSeries b) {
             if ( series[sIdx] == kNone ) continue;
             int prevX = 0, prevY = 0;
             for ( int i = 0; i < n; i++ ) {
-                int px = pad + ( i * ( plotW - 1 ) ) / ( n - 1 );
+                int px = pad + ( ( xOff + i ) * ( plotW - 1 ) ) / ( T - 1 );
                 int py = pad + ( plotH - 1 ) - (int)( ( valOf(series[sIdx], i) * (long)( plotH - 1 ) ) / maxV );
                 if ( i > 0 ) {
                     // 2px stroke (drawn twice, 1px apart) — a bare 1px Bresenham
@@ -1740,10 +1823,10 @@ void SDL2BuildingWindow::DrawGraph(SDL2Image* img, HistSeries a, HistSeries b) {
                 std::string txt = std::string( kSeriesName[nameIdx] ) + " " +
                                   FmtNum( (int)valOf( series[sIdx], n - 1 ) );
                 if ( SDL_Surface* ts = TTF_RenderUTF8_Blended( f, txt.c_str(), txtC ) ) {
-                    // Backdrop plate (panel color, slightly darker) so the text
-                    // stays readable where the series lines run underneath it.
+                    // Backdrop plate, 50% transparent (operator req): keeps the text
+                    // readable where lines cross it without fully hiding the plot.
                     SDL_Rect plate = { pad + 1, ly - 1, 11 + ts->w + 4, ts->h + 2 };
-                    SDL_FillRect( s, &plate, SDL_MapRGB( s->format, 30, 27, 21 ) );
+                    fillRect50( s, plate, 22, 20, 15 );
                     SDL_Rect sw = { pad + 3, ly + 2, 6, 6 };
                     SDL_FillRect(s, &sw, colors[sIdx]);
                     SDL_Rect dr = { pad + 12, ly, ts->w, ts->h };
