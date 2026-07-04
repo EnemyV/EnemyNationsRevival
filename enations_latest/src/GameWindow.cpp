@@ -755,6 +755,30 @@ bool GameWindow::PollEvents() {
     }
     m_pollingEvents = true;
 
+#ifdef _WIN32
+    // BUGS #69 ALIVENESS WATCHDOG: the main window's HWND has been observed
+    // DEAD (EnumWindows: zero windows for the pid) while SDL's cache still
+    // reports SHOWN — and the WM_DESTROY tripwire never fired for it, so the
+    // destroyer bypasses both SDL and our subclass. Poll the HWND every pump;
+    // the instant it dies, log loudly and break under the debugger, bracketing
+    // the death to the exact moment between two ODS lines.
+    {
+        static HWND s_mainHwnd = NULL;
+        static bool s_deathLogged = false;
+        if (m_window && s_mainHwnd == NULL) {
+            SDL_SysWMinfo wm; SDL_VERSION(&wm.version);
+            if (SDL_GetWindowWMInfo(m_window, &wm))
+                s_mainHwnd = wm.info.win.window;
+        }
+        if (s_mainHwnd && !s_deathLogged && !::IsWindow(s_mainHwnd)) {
+            s_deathLogged = true;
+            ::OutputDebugStringA("[winmain-died] main window HWND destroyed behind our back!\n");
+            if (::IsDebuggerPresent())
+                __debugbreak();
+        }
+    }
+#endif
+
     // #47 / Cluster-A global capture safety net (mac2) — complements the per-drag-site
     // local heal in SDL2UI.cpp/SDL2Panel.cpp (@c49873f7). A missed SDL_MOUSEBUTTONUP can
     // leave an OS mouse-capture (SDL_CaptureMouse(TRUE), set by a title-bar/panel drag)

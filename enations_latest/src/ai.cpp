@@ -459,11 +459,34 @@ void WINAPI AiThread( AI_INIT* pAiI )
         // resets bEndThreads, the flag alone would re-arm it as a zombie.
         // The close bumps dwThreadGen, so the mismatch still kills it here.
         DWORD dwGenAtStart = myThreadGen( );
+        DWORD dwLastManage = 0;
         while ( !myThreadShouldExit( dwGenAtStart ) )
         {
             pAIMgr->WaitForWork( 100 );  // AI_IDLE_SLICE_MS (caimgr.cpp)
             if ( myThreadShouldExit( dwGenAtStart ) )  // quit signalled during the wait:
                 break;                                 // skip the final Manage() pass
+
+            // MANAGE-CADENCE THROTTLE (operator spec 2026-07-03): under load,
+            // WaitForWork returns immediately (work always pending), so Manage()
+            // ran BACK-TO-BACK at full CPU speed — each AI re-deciding hundreds
+            // of times per second (the 1996 cooperative scheduler implicitly
+            // throttled this to a thin slice). That constant re-deciding was the
+            // measured veh_set_dest order storm at game start. Cap each AI at
+            // ~10 thinking passes/sec; messages batch up between passes and are
+            // drained in the next one. Sleep in one bounded chunk, then re-check
+            // the quit flag so shutdown latency stays ~100ms.
+            {
+                const DWORD dwNow   = timeGetTime( );
+                const DWORD dwSince = dwNow - dwLastManage;
+                if ( dwLastManage != 0 && dwSince < 100 )
+                {
+                    ::Sleep( 100 - dwSince );
+                    if ( myThreadShouldExit( dwGenAtStart ) )
+                        break;
+                }
+                dwLastManage = timeGetTime( );
+            }
+
             pAIMgr->Manage( );
             myYieldThread( );
         }
