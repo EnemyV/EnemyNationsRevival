@@ -97,8 +97,11 @@ static const int REPAIR_H     = BOX_PAD + HDR_H + 16 + 6 +
                                 SDL2BuildingWindow::kRepairRows * ROW_H + BOX_PAD;   // bar + queue rows
 
 static const int PORTRAIT_SRC = 64;   // tile size in the DIB_LIST_UNIT_BUILDINGS sheet
-static const int PORTRAIT     = 88;   // displayed size (was 64 — read too small in the band)
-static const int HEADER_H     = 104;  // portrait + condition bar + name + 3-line flavor + status line
+static const int PORTRAIT     = 72;   // displayed size (88 read too big and clipped; 64 too small)
+// Band height DERIVES from the portrait (portrait + 3px gap + 10px condition bar +
+// 6px breathing room) so resizing the portrait can never clip it against the first
+// section again; floor of 89 keeps room for the name + 3-line flavor + status text.
+static const int HEADER_H     = __max( 89, PORTRAIT + 3 + 10 + 6 );
 
 // Category accent colors for section headers — saturated darks that read on the
 // light parchment interior, replacing the one-size-fits-all blue.
