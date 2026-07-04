@@ -530,6 +530,21 @@ static void OnMsgLeave( VPPLAYERID id )
 static void OnMsgSessionClose( )
 {
 
+    extern bool g_bClientLobbyWaiting;
+    extern bool g_bClientHostLost;
+    // Host dropped while we're still in the client waiting room (before the game
+    // started): there is no game to tear down or save. Flag it so the lobby dialog
+    // shows "the host has left" and closes itself, instead of falling through to the
+    // in-game teardown/save-prompt below (which assumes an active game).
+    if ( g_bClientLobbyWaiting )
+    {
+        g_bClientHostLost = true;
+        if ( theGame.GetServer( ) != NULL )
+            theGame.GetServer( )->SetNetNum( 0 );
+        theNet.SessionClose( );
+        return;
+    }
+
     int iMode = theNet.GetMode( );
     if ( theGame.GetServer( ) != NULL )
         theGame.GetServer( )->SetNetNum( 0 );
@@ -1572,6 +1587,10 @@ static void CmdPlayer( CNetPlayer* pNp )
 // we stash the start params, let the lobby close, then build at the flow level.
 bool g_bClientLobbyWaiting  = false;
 bool g_bClientStartReceived = false;
+// Set by OnMsgSessionClose when the host drops WHILE we're still in the client
+// waiting room (pre-start). The lobby dialog polls it to show "the host has left"
+// instead of waiting on "Waiting for the host..." forever. Reset at lobby entry.
+bool g_bClientHostLost      = false;
 static char g_clientStartBuf[ sizeof( CNetStart ) ];
 
 static void CmdStart( CNetStart* pStrt );   // fwd
