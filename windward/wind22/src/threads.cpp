@@ -412,6 +412,23 @@ void myStartThread( void* pData, AFX_THREADPROC fnThread ) {
 
 void myYieldThread() {
 
+    // The MAIN thread must NEVER take the terminate path here (BUGS #69 root):
+    // AI setup (AiSetupHeavy/CreateHeavy/CAIMap ctor) runs ON the main thread
+    // during game-2 creation while bEndThreads is still armed from game-1's
+    // quit (myThreadClose set it TRUE; game-2's myStartThread hasn't reset it
+    // yet). The guard in myThreadTerminate stops the main thread from EXITING,
+    // but execution then falls through to the TRAP() below = an int3 on EVERY
+    // yield — thousands in the CAIMap loop = "stuck at 94%" under a debugger,
+    // and an unhandled EXCEPTION_BREAKPOINT (crash) undebugged. Skip the whole
+    // end-of-thread block on the main thread; it just yields.
+    if ( dwMainThreadId != 0 && ::GetCurrentThreadId() == dwMainThreadId ) {
+#ifdef AI_THREADS_ENABLED
+        if ( SwitchToThread( ) == 0 )
+            Sleep( 0 );
+#endif
+        return;
+    }
+
     // is it time to end it?
     if ( bEndThreads ) {
         myThreadTerminate();
