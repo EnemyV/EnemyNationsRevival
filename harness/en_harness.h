@@ -189,7 +189,7 @@ bool HarnessGrantResearch(void);
 // Uses race 0 and name "mac2". Must run from the main loop (world-gen re-pumps events)
 // and only at the menu (no game in progress). Returns true once the game is in play.
 // Backs the `newgame` control_socket cmd.
-bool HarnessNewGame(int ai, int pos, int size, int numai);
+bool HarnessNewGame(int ai, int pos, int size, int numai, int worldType = 0, int ocean = 50);
 
 // Dump the local human's single-player game-over / progress state (READ-ONLY):
 //   "state <n> hp <0|1> bldgshave <n> vehshave <n> bldgsdest <n> vehsdest <n> \
