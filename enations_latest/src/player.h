@@ -675,11 +675,14 @@ class CPlayer : public CObject
     int  m_iHistCount;   // number of valid samples (<= HIST_LEN)
 
     // --- Multi-resolution history (RUNTIME-ONLY, not serialized) — feeds the
-    // graph 6h/24h/7d ranges (the 10m/1h ranges read the serialized per-minute
+    // graph 10m/30m/5h ranges (the 10s/1m ranges read the serialized per-minute
     // buffer above, so a loaded save shows history immediately). 3 rings sampled
-    // at 3/12/84 game-minutes from SampleHistory => 120-sample spans of 6h/24h/7d.
+    // at 5/15/150 game-minutes from SampleHistory => 120-sample spans of
+    // 10m/30m/5h REAL time (~1 game-min/sec).
     // Series index 0..5 = PwrHave,PwrNeed,PplTotal,PplBldg,AptCap,OfcCap.
-    // Not saved: these longer ranges simply fill in as the game is played.
+    // Not saved; instead SeedHRFromHist() rebuilds them on load by decimating
+    // the serialized per-minute buffer, so the 10m/30m graphs show restored
+    // history right away (the 5h ring gets <=1 seed and fills over play).
     static const int HR_RINGS = 3;
     LONG m_aHR[HR_RINGS][6][HIST_LEN];   // [ring][series][slot]
     int  m_iHRHead[HR_RINGS];
@@ -695,6 +698,8 @@ class CPlayer : public CObject
     }
 
   protected:
+    void SeedHRFromHist( );   // rebuild the runtime rings from the loaded per-minute buffer
+
     // Ring-buffer read: map logical sample i (0 = oldest) to the physical slot.
     LONG HistAt( const LONG* a, int i ) const
     {
