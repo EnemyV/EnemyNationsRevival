@@ -4140,10 +4140,10 @@ void CAIGoalMgr::UpdateConstructionTasks( CAIMsg* pMsg )
                         if ( m_iNeedApt &&
                              ( iBldg >= CStructureData::apartment_1_1 && iBldg <= CStructureData::apartment_2_4 ) )
                         {
-                            if ( !m_bAptCritical && bNoFreeCranes )
-                                pTask->SetPriority( (BYTE)35 );   // expansion housing yields: cranes scarce + workers housed (S8)
+                            if ( m_bAptCritical )
+                                pTask->SetPriority( (BYTE)99 );   // workers unhoused -> top priority
                             else
-                                pTask->SetPriority( (BYTE)99 );   // real shortage, or cranes free -> build
+                                pTask->SetPriority( (BYTE)1 );    // rich-nation expansion: build only with spare cranes
                         }
 
                         if ( m_iNeedOffice &&
@@ -4236,6 +4236,13 @@ void CAIGoalMgr::UpdateConstructionTasks( CAIMsg* pMsg )
                                        pTask->GetGoalID( ), pTask->GetID( ), pTask->GetPriority( ) );
 #endif
                         }
+
+                        // advanced factories build up to goal ahead of surplus housing (never ahead of a real shortage)
+                        if ( ( iBldg == CStructureData::light_2 || iBldg == CStructureData::heavy ||
+                               iBldg == CStructureData::shipyard_3 ) &&
+                             m_pwaBldgs[iBldg] < m_pwaBldgGoals[iBldg] &&
+                             m_pwaBldgs[CStructureData::smelter] && !m_bAptCritical )
+                            pTask->SetPriority( (BYTE)90 );
                     }
 
                     // this unit type was just lost

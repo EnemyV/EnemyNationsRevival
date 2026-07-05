@@ -5501,6 +5501,21 @@ void CAITaskMgr::ConstructBuilding( CAIUnit* pUnit, CAITask* pTask )
                         if ( dwDiff < 30000 )
                             return;
 
+#ifdef _WIN32
+                        // TEMP DIAGNOSTIC (remove after root-cause): a crane that
+                        // has been stalled >30s on a build task -- dump exactly
+                        // what it's being told to build and where, so we can see
+                        // ground truth instead of inferring. Catch with dbgcatch.
+                        {
+                            char szDbg[256];
+                            sprintf( szDbg,
+                                     "[CRANEPROBE] plyr %d crane %lu bldgType %d site %d,%d veh %d,%d dest %d,%d stalled %lums\n",
+                                     m_iPlayer, (unsigned long)pUnit->GetID( ), iBldg, hexSite.X( ), hexSite.Y( ),
+                                     hexVeh.X( ), hexVeh.Y( ), hexDest.X( ), hexDest.Y( ), (unsigned long)dwDiff );
+                            OutputDebugStringA( szDbg );
+                        }
+#endif
+
                         // The crane has been unable to make progress onto this
                         // build hex for a long time -- e.g. several cranes aimed
                         // at the same site blocking each other, or a mineral/
