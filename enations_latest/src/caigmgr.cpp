@@ -10367,6 +10367,42 @@ void CAIGoalMgr::Load( CArchive& ar, CAIMap* pMap, CAIUnitList* plUnits, CAIOpFo
         throw( ERR_CAI_BAD_FILE );
     }
 
+    // ---- Reconcile bound-task status after load ------------------------------
+    // CAITask::m_cStatus is NOT serialized: the loop above rebuilds every task
+    // through the CAITask ctor, which forces UNASSIGNED_TASK. That is wrong for
+    // any task a unit is still bound to. GetConstructionTask()/GetProductionTask()
+    // only ever hand out UNASSIGNED tasks, so an in-progress task reloaded as
+    // UNASSIGNED gets handed to a SECOND unit -- e.g. several cranes stacking on
+    // the exact same build hex -- and a construction crane that already placed
+    // its building loses the COMPLETED_TASK latch (caitmgr.cpp:5236), so it tries
+    // to re-place a building that is already under construction and ends up
+    // deserting it. Both were causing the post-load "cranes pile on one spot,
+    // half-built buildings freeze" symptom. Restore the invariant that a task a
+    // unit holds is not free: promote each bound unit's task out of UNASSIGNED --
+    // COMPLETED for a crane that already issued its build, INPROCESS otherwise.
+    // (Units load before the goal manager, so m_plUnits is fully populated here.)
+    if ( m_plUnits != NULL && m_plTasks != NULL )
+    {
+        POSITION pos = m_plUnits->GetHeadPosition( );
+        while ( pos != NULL )
+        {
+            CAIUnit* pUnit = (CAIUnit*)m_plUnits->GetNext( pos );
+            if ( pUnit == NULL || !pUnit->GetTask( ) )
+                continue;
+
+            CAITask* pTask = m_plTasks->GetTask( pUnit->GetTask( ), pUnit->GetGoal( ) );
+            if ( pTask == NULL || pTask->GetStatus( ) != UNASSIGNED_TASK )
+                continue;
+
+            if ( pUnit->GetTypeUnit( ) == CTransportData::construction &&
+                 pTask->GetTaskParam( ORDER_TYPE ) == CONSTRUCTION_ORDER &&
+                 pUnit->GetParam( CAI_EFFECTIVE ) )
+                pTask->SetStatus( COMPLETED_TASK );  // build already issued -> wait for built/100%
+            else
+                pTask->SetStatus( INPROCESS_TASK );  // held by a unit -> not free to re-hand
+        }
+    }
+
     // after a load, the lists should all be reinitialized
     m_bGoalChange = TRUE;
 }

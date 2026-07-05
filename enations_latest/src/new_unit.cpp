@@ -1241,15 +1241,18 @@ void CUnit::AssignData( CUnitData const* pData )
 
     // this brings in the R&D multipliers
     // Radar/spotting bonus DOUBLES per level for spot_1..3 (>>3,>>2,>>1) then DIMINISHES at
-    // spot_4/5 (the >>(4-lvl) form would be a negative shift / UB at lvl>=4). Clamp the result
-    // to MAX_SPOTTING — the effective range indexes the spotting bitmask (see DrawSpotting).
+    // spot_4..7 (the >>(4-lvl) form would be a negative shift / UB at lvl>=4). Each higher
+    // tier adds the next halving (>>3,>>4,>>5,>>6), so the gain shrinks each level. Clamp the
+    // result to MAX_SPOTTING — the effective range indexes the spotting bitmask (see DrawSpotting).
     {
         int spB = GetData( )->_GetSpottingRange( );
         int spL = GetOwner( )->GetSpottingLevel( );
         int spBonus;
         if ( spL <= 3 )      spBonus = spB >> ( 4 - spL );                          // none..spot_3: /16 /8 /4 /2
-        else if ( spL == 4 ) spBonus = ( spB >> 1 ) + ( spB >> 3 );                 // spot_4: +62.5%
-        else                 spBonus = ( spB >> 1 ) + ( spB >> 3 ) + ( spB >> 4 );  // spot_5: +68.75%
+        else if ( spL == 4 ) spBonus = ( spB >> 1 ) + ( spB >> 3 );                                          // spot_4: +62.5%
+        else if ( spL == 5 ) spBonus = ( spB >> 1 ) + ( spB >> 3 ) + ( spB >> 4 );                           // spot_5: +68.75%
+        else if ( spL == 6 ) spBonus = ( spB >> 1 ) + ( spB >> 3 ) + ( spB >> 4 ) + ( spB >> 5 );            // spot_6: +71.875%
+        else                 spBonus = ( spB >> 1 ) + ( spB >> 3 ) + ( spB >> 4 ) + ( spB >> 5 ) + ( spB >> 6 ); // spot_7: +73.4375%
         m_iSpottingRange = __min( MAX_SPOTTING, spB + spBonus );
     }
     m_iRange = GetData( )->_GetRange( ) + ( GetData( )->_GetRange( ) >> ( 4 - GetOwner( )->GetRangeLevel( ) ) );

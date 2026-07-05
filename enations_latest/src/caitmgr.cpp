@@ -5461,9 +5461,16 @@ void CAITaskMgr::ConstructBuilding( CAIUnit* pUnit, CAITask* pTask )
                 if ( pUnit->GetParam( CAI_EFFECTIVE ) )
                     return;
 
-                // crane is still moving and enroute to site
+                // crane is still moving and enroute to site -- it is making
+                // progress, so clear the stall timer the give-up below relies on
+                // (this branch is skipped while the crane is blocked/not moving,
+                // so CAI_ROUTE_X only accumulates continuous no-progress time --
+                // a legit long haul to a far site never trips the give-up)
                 if ( bIsMoving && hexDest == hexCrane )
+                {
+                    pUnit->SetParamDW( CAI_ROUTE_X, 0 );
                     return;
+                }
 
                 // check destination to make sure its still open
                 CHex* pHex = theMap.GetHex( hexDest );
@@ -5493,6 +5500,32 @@ void CAITaskMgr::ConstructBuilding( CAIUnit* pUnit, CAITask* pTask )
                         DWORD dwDiff = dwNow - dwUnitTime;
                         if ( dwDiff < 30000 )
                             return;
+
+                        // The crane has been unable to make progress onto this
+                        // build hex for a long time -- e.g. several cranes aimed
+                        // at the same site blocking each other, or a mineral/
+                        // refinery hex right at the shore that a land crane cannot
+                        // occupy. It never reaches the on-site arrival branch, so
+                        // the arrival-time placement check never runs; and the
+                        // movement watchdog (HandleStuckVehicles) ignores it
+                        // because it is within 2 hexes of its destination. So it
+                        // would orbit forever. Give up: shelve the site briefly
+                        // (it may just be transient mutual blocking) and free the
+                        // crane so it can do other work.
+                        if ( dwDiff > 90000 )
+                        {
+                            if ( m_pGoalMgr->m_pMap->m_pMapUtil != NULL )
+                                m_pGoalMgr->m_pMap->m_pMapUtil->AddFailedSiteTemp( iBldg, hexSite, 60 * 1000 );
+                            ClearTaskUnit( pUnit );
+                            UnAssignTask( pTask->GetID( ), pTask->GetGoalID( ) );
+
+#ifdef _LOGOUT
+                            logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC,
+                                       "ConstructBuilding(): player %d unit %ld gave up reaching site for a %d -> shelved ",
+                                       m_iPlayer, pUnit->GetID( ), iBldg );
+#endif
+                            return;
+                        }
                     }
                 }
                 // in case the crane is stalled, send goto again
