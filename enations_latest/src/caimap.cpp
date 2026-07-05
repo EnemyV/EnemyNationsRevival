@@ -527,10 +527,11 @@ void CAIMap::RocketRoad( void )
 		{
 			m_pwaMap[j] |= MSW_PLANNED_ROAD;
 			m_iRoadCount++;
+			m_aPlannedRoad.push_back( j );	// index the new planned hex
 
 #ifdef _LOGOUT
-	logPrintf(LOG_PRI_ALWAYS, LOG_AI_MISC, 
-		"player %d planned rocket road laid at %d,%d ", 
+	logPrintf(LOG_PRI_ALWAYS, LOG_AI_MISC,
+		"player %d planned rocket road laid at %d,%d ",
     	m_iPlayer, hexRocket.X(), hexRocket.Y() );
 
 #endif
@@ -816,6 +817,8 @@ BOOL CAIMap::ConnectRoad( CHexCoord& hexFrom, CHexCoord& hexTo )
 				wStatus |= MSW_PLANNED_ROAD;
 				SetLocation( pHex->X(), pHex->Y(), wStatus );
 				m_iRoadCount++;
+				// index the new planned hex (flag was just newly set here)
+				m_aPlannedRoad.push_back( m_pMapUtil->GetMapOffset( pHex->X(), pHex->Y() ) );
 
 				// update city bounds
 				m_pMapUtil->UpdateCityBounds( pHex->X(), pHex->Y() );
@@ -953,23 +956,163 @@ void CAIMap::GetBridgingHexes( CHexCoord& hexSite, CAIUnit *pUnit )
 }
 
 //
-// call utility and get planned road hex that is nearest
-// power plant
+// pick the nearest eligible planned-road hex to the crane (hexSite in/out).
+// was a radius spiral over the unindexed map (FindRoadHex) -- a crane far from
+// the plan "missed" even with hundreds of planned hexes elsewhere.
 //
 void CAIMap::GetRoadHex( CHexCoord& hexSite )
 {
-	CHexCoord hexBefore = hexSite;
-	m_pMapUtil->FindRoadHex( hexSite );
-
-	// a site was selected, so mark the map
-	if( hexBefore != hexSite )
+	CHexCoord hexOut;
+	if( GetPlannedRoadNear( hexSite, hexOut ) )
 	{
+		hexSite = hexOut;
+
+		// a site was selected, so mark the map planned -> road
 		WORD wStatus = GetLocation( hexSite.X(), hexSite.Y() );
 		if( wStatus & MSW_PLANNED_ROAD )
 			wStatus ^= MSW_PLANNED_ROAD;
 		wStatus |= MSW_ROAD;
 		SetLocation( hexSite.X(), hexSite.Y(), wStatus );
 	}
+	// else: no eligible hex -> leave hexSite == crane pos so caller sees the miss
+}
+
+//
+// neighbor hex carries an actual road or one of our buildings
+//
+BOOL CAIMap::NeighborHasRoadOrBldg( CHexCoord& hex )
+{
+	int j = m_pMapUtil->GetMapOffset( hex.X(), hex.Y() );
+	if( j < 0 || j >= m_iMapSize )
+		return FALSE;
+	WORD w = m_pwaMap[j];
+	return ( ( w & MSW_ROAD ) || ( w & MSW_AI_BUILDING ) ) ? TRUE : FALSE;
+}
+
+//
+// replicates CAIMapUtil::FindRoadHex eligibility (caimaput.cpp ~3162-3227):
+// planned flag set, not a building, not river, no bldg/vehicle on the game hex,
+// and an actual road/building at cardinal neighbor 0/2/4/6.
+//
+BOOL CAIMap::IsRoadHexEligible( int iOff, CHexCoord& hexRoad )
+{
+	WORD w = m_pwaMap[iOff];
+	if( !( w & MSW_PLANNED_ROAD ) )
+		return FALSE;
+	if( ( w & MSW_AI_BUILDING ) || ( w & MSW_OPFOR_BUILDING ) )
+		return FALSE;
+
+	// skip planned road hexes on river terrain (bridge candidates, not roads)
+	CHex *pGameHex = theMap.GetHex( hexRoad );
+	if( pGameHex == NULL )
+		return FALSE;
+	if( pGameHex->GetType() == CHex::river )
+		return FALSE;
+
+	BYTE bUnits = pGameHex->GetUnits();
+	if( bUnits & CHex::bldg )						// a building sits here
+		return FALSE;
+	if( bUnits & ( CHex::ul | CHex::ur | CHex::ll | CHex::lr ) )	// a vehicle
+		return FALSE;
+
+	// only accept planned roads adjacent to a real road/building at 0,2,4,6
+	CHexCoord hexT;
+	hexT = hexRoad; hexT.Ydec();  if( NeighborHasRoadOrBldg( hexT ) ) return TRUE;	// 0
+	hexT = hexRoad; hexT.Xinc();  if( NeighborHasRoadOrBldg( hexT ) ) return TRUE;	// 2
+	hexT = hexRoad; hexT.Yinc();  if( NeighborHasRoadOrBldg( hexT ) ) return TRUE;	// 4
+	hexT = hexRoad; hexT.Xdec();  if( NeighborHasRoadOrBldg( hexT ) ) return TRUE;	// 6
+	return FALSE;
+}
+
+//
+// nearest eligible planned-road hex to hexCrane, via the exact index.
+// lazy-drops entries whose MSW_PLANNED_ROAD flag is gone. Runs on this AI's
+// own thread (planner + picker both do), same as every other m_pwaMap write --
+// no locking needed. O(index size); ~1-2k entries.
+//
+BOOL CAIMap::GetPlannedRoadNear( CHexCoord& hexCrane, CHexCoord& hexOut )
+{
+	int iBestDist = m_iMapSize + 1;
+	int iBestOff  = -1;
+	CHexCoord hexBest;
+
+	size_t k = 0;
+	while( k < m_aPlannedRoad.size() )
+	{
+		int off = m_aPlannedRoad[k];
+
+		// lazy removal: entry no longer a planned road -> swap-and-pop
+		if( off < 0 || off >= m_iMapSize || !( m_pwaMap[off] & MSW_PLANNED_ROAD ) )
+		{
+			m_aPlannedRoad[k] = m_aPlannedRoad.back();
+			m_aPlannedRoad.pop_back();
+			continue;
+		}
+
+#if THREADS_ENABLED
+		myYieldThread();	// same yield the old spiral did per candidate
+#endif
+
+		int iX, iY;
+		m_pMapUtil->OffsetToXY( off, &iX, &iY );
+		CHexCoord hexCand( iX, iY );
+
+		// eligible-but-not-nearest stays indexed (may qualify once roads grow)
+		if( IsRoadHexEligible( off, hexCand ) )
+		{
+			// dist>0: the old spiral scanned rings from step 1, never the crane's
+			// own hex; excluding it keeps GetRoadHex's mark-vs-miss test intact
+			int iDist = pGameData->GetRangeDistance( hexCrane, hexCand );
+			if( iDist > 0 && iDist < iBestDist )
+			{
+				iBestDist = iDist;
+				iBestOff  = off;
+				hexBest   = hexCand;
+			}
+		}
+		++k;
+	}
+
+	if( iBestOff < 0 )
+		return FALSE;	// entries may remain, just none eligible right now
+
+	hexOut = hexBest;
+	return TRUE;
+}
+
+//
+// count of live planned-road entries (prunes stale as it scans). Used to tell
+// a disconnected plan (entries exist, none eligible) from true exhaustion.
+//
+int CAIMap::GetPlannedCount( void )
+{
+	size_t k = 0;
+	while( k < m_aPlannedRoad.size() )
+	{
+		int off = m_aPlannedRoad[k];
+		if( off < 0 || off >= m_iMapSize || !( m_pwaMap[off] & MSW_PLANNED_ROAD ) )
+		{
+			m_aPlannedRoad[k] = m_aPlannedRoad.back();
+			m_aPlannedRoad.pop_back();
+			continue;
+		}
+		++k;
+	}
+	return (int)m_aPlannedRoad.size();
+}
+
+//
+// rebuild the runtime planned-road index from the map (e.g. after load, which
+// reads the raw m_pwaMap buffer straight from the save).
+//
+void CAIMap::RebuildPlannedIndex( void )
+{
+	m_aPlannedRoad.clear();
+	if( m_pwaMap == NULL )
+		return;
+	for( int i = 0; i < m_iMapSize; ++i )
+		if( m_pwaMap[i] & MSW_PLANNED_ROAD )
+			m_aPlannedRoad.push_back( i );
 }
 
 //
@@ -1672,6 +1815,10 @@ void CAIMap::Load( CArchive& ar, CAIUnitList* plUnits )
     }
 
     m_pMapUtil->Load( ar, m_pwaMap, plUnits );
+
+    // planned-road index is runtime-only (not serialized) -- rebuild from the
+    // just-read map so post-load road picking works.
+    RebuildPlannedIndex();
 }
 
 // end of CAIMap.cpp

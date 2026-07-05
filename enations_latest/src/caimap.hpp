@@ -11,6 +11,7 @@
 
 #include "caimsg.hpp"
 #include "caimaput.hpp"
+#include <vector>			// planned-road index
 
 #ifndef __CAIMAP_HPP__
 #define __CAIMAP_HPP__
@@ -36,10 +37,18 @@ protected:
 
 	WORD m_wStatus;			// general purpose status word
 
+	// planned-road index helpers (replicate FindRoadHex eligibility)
+	BOOL IsRoadHexEligible( int iOff, CHexCoord& hexRoad );
+	BOOL NeighborHasRoadOrBldg( CHexCoord& hex );
+
 public:
 	CAIMapUtil *m_pMapUtil;
 
 	int m_iRoadCount;	// count of MSW_PLANNED_ROAD locations left
+	// Exact index of planned-road hexes (offsets into m_pwaMap). Runtime-only,
+	// NOT serialized -- rebuilt from the map on load. Replaces the radius spiral
+	// in FindRoadHex so a distant crane can't "miss" a plan it has hexes for.
+	std::vector<int> m_aPlannedRoad;
 	int m_iOcean;		// count of terrain == ocean
 	int m_iLake;		// count of terrain == lake
 	int m_iLand;		// count of all other terrain
@@ -113,6 +122,10 @@ public:
 	void GetBuildHex( int iBldg, CHexCoord& hex );
 	void GetBridgingHexes( CHexCoord& hexSite, CAIUnit *pUnit );
 	void GetRoadHex( CHexCoord& hexSite );
+	// planned-road index: nearest eligible planned hex to hexCrane -> hexOut
+	BOOL GetPlannedRoadNear( CHexCoord& hexCrane, CHexCoord& hexOut );
+	int  GetPlannedCount( void );		// live index entries (prunes stale)
+	void RebuildPlannedIndex( void );	// rescan m_pwaMap after load
 	// batch road: extend a picked road hex into a straight cardinal run of
 	// contiguous planned-road hexes (marks them ROAD); returns hex count.
 	int GetRoadRun( const CHexCoord& hexStart, CHexCoord& hexEnd, int iMaxHexes );

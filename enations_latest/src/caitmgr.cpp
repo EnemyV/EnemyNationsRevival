@@ -5228,16 +5228,21 @@ void CAITaskMgr::BuildRoad( CAIUnit* pUnit, CAITask* pTask )
             // clear unit of task/goal and its params
             ClearTaskUnit( pUnit );
 
-            // back off instead of latching to 0 -- one missed search (e.g. a
-            // transient blocker) used to zero the grid and kill road priority
-            // for the REST OF THE GAME; halving survives transient misses but
-            // still drains on genuine exhaustion
-            m_pGoalMgr->m_pMap->m_iRoadCount /= 2;
+            // PLANNED-ROAD INDEX (operator): only DRAIN the grid on TRUE plan
+            // exhaustion (index empty). A disconnected plan -- entries exist but
+            // none currently adjacent to a road/building -- must NOT halve; the
+            // crane just repools and retries as roads/buildings fill in. The old
+            // radius spiral couldn't tell the two apart, so a distant crane's
+            // "miss" halved a plan with hundreds of hexes left.
+            int iPlanned = m_pGoalMgr->m_pMap->GetPlannedCount( );
+            if ( iPlanned == 0 )
+                m_pGoalMgr->m_pMap->m_iRoadCount /= 2;
 #ifdef _WIN32
             {
-                char szR[96];
-                sprintf( szR, "[ROAD] plyr %d crane %lu no hex found, grid now %d\n", m_iPlayer,
-                         (unsigned long)pUnit->GetID( ), m_pGoalMgr->m_pMap->m_iRoadCount );
+                char szR[128];
+                sprintf( szR, "[ROAD] plyr %d crane %lu %s (%d planned), grid now %d\n", m_iPlayer,
+                         (unsigned long)pUnit->GetID( ), iPlanned ? "no ELIGIBLE hex" : "plan EXHAUSTED",
+                         iPlanned, m_pGoalMgr->m_pMap->m_iRoadCount );
                 OutputDebugStringA( szR );
             }
 #endif
@@ -7285,6 +7290,11 @@ void CAITaskMgr::RepairUnit( CAIMsg* pMsg, int iDmgPer )
 //
 void CAITaskMgr::RunAway( CAIUnit* pTargeted, CAIUnit* pAttacker, CAIMsg* pMsg )
 {
+    // tasked cranes stick to the job (operator): fleeing left half-built
+    // shells and scared-idle cranes all around the front line
+    if ( pTargeted->GetTypeUnit( ) == CTransportData::construction && pTargeted->GetTask( ) )
+        return;
+
     CHexCoord hexFlee( pMsg->m_iX, pMsg->m_iY );
     CHexCoord hexAway( pMsg->m_ieX, pMsg->m_ieY );
 
