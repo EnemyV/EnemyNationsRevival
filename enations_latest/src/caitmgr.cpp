@@ -1934,6 +1934,14 @@ void CAITaskMgr::AssignConstruction( CAIUnit* pUnit )
     if ( ++m_iCraneAssignCnt % 5 == 0 && m_pGoalMgr->m_pMap->m_iRoadCount && m_pGoalMgr->m_iGasHave )
     {
         CAITask* pRoad = m_pGoalMgr->m_plTasks->FindTask( IDT_CONSTRUCT );
+#ifdef _WIN32
+        {
+            char szR[96];
+            sprintf( szR, "[ROAD] plyr %d QUOTA roll cnt %d task %s crane %lu\n", m_iPlayer, m_iCraneAssignCnt,
+                     pRoad ? "found" : "MISSING", (unsigned long)pUnit->GetID( ) );
+            OutputDebugStringA( szR );
+        }
+#endif
         if ( pRoad != NULL )
         {
             ClearTaskUnit( pUnit );
@@ -4975,6 +4983,10 @@ BOOL CAITaskMgr::RepairConstruction( CAIUnit* pUnit )
 
                         // rate building's importance
                         iRating = m_pGoalMgr->m_pMap->m_pMapUtil->AssessTarget( pBldg, 0 );
+                        // some types rate 0 and could never win the '>' pick --
+                        // a partial must always be selectable
+                        if ( pBldg->IsConstructing( ) && iRating < 1 )
+                            iRating = 1;
                     }
                 }
                 LeaveCriticalSection( &cs );
@@ -5141,19 +5153,11 @@ void CAITaskMgr::BuildRoad( CAIUnit* pUnit, CAITask* pTask )
     else if ( !iX && !iY )  // need to go to a build site
     {
 
-#ifdef _LOGOUT
-        logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "RoadBuilding() looking for building to repair" );
-#endif
-        // at the start of each search for a road build site,
-        // check to see if any buildings need to be repaired
-        if ( RepairConstruction( pUnit ) )
-        {
-            // switch to repair buildings, because building(s) are damaged
-            pUnit->SetTask( IDT_REPAIR );
-
-            return;
-        }
-        // reassign unit to road/bridge/repair construction
+        // NOTE: this used to divert to RepairConstruction() first -- with
+        // anything damaged OR under construction anywhere, the road crane
+        // switched to repair and roads were only ever built in a pristine
+        // idle colony. Repair has its own assignment path now (alternation
+        // in AssignConstruction); a road crane builds roads.
         pUnit->SetGoal( IDG_ESTABLISH );
         pUnit->SetTask( IDT_CONSTRUCT );
         // get goal manager to tell us where to go
