@@ -916,10 +916,20 @@ void CAIMgr::UpdateUnits( CAIMsg* pMsg )
 #endif
             // update number of MSW_PLANNED_ROAD locations left
             m_pMap->m_iRoadCount--;
-            // reset the task used for the construction
-            m_pTaskMgr->UnAssignTask( wTask, wGoal );
             if ( m_pMap->m_iRoadCount )
                 m_pGoalMgr->ConsiderRoads( );
+
+            // ROAD MODE (operator): keep a road crane on roads -- it used to
+            // unassign + stage away after EVERY hex (one square per pool cycle)
+            if ( wTask == IDT_CONSTRUCT && m_pMap->m_iRoadCount && m_pGoalMgr->m_iGasHave )
+            {
+                pUnit->ClearParam( );                     // per-hex state only
+                m_pTaskMgr->GenerateTaskOrder( pUnit );   // pick the next hex
+                return;
+            }
+
+            // reset the task used for the construction
+            m_pTaskMgr->UnAssignTask( wTask, wGoal );
 
             // reset the crane unit making it available again
             pUnit->SetDataDW( (DWORD)0 );
