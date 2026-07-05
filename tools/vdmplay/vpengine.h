@@ -1311,6 +1311,10 @@ public:
     BOOL         m_hasAltServer;
     VPNETADDRESS m_altServerAddr;
     LPVOID       m_altServerUserData;
+    // Re-dial is DEFERRED to the next OnTimer pass, never called inline from
+    // OnDisconnect (the pump may still hold the dropped link — re-entrant
+    // ConnectToServer there risks UAF / iterator invalidation; newwin review).
+    BOOL         m_redialPending;
 
     BOOL m_initialJoin;
     LPVOID m_serverEnumData;

@@ -1640,7 +1640,8 @@ CRemoteSession::CRemoteSession( CTDLogger* log,
                                 CWSMap* wsMap, DWORD maxAge ):
     CVpSession( log, net, players, wsMap ), m_serverWS( NULL ), m_pendingJoin( NULL ),
     m_initialJoin( TRUE ), m_serverEnumData( NULL ), m_maxServerAge( maxAge ), m_connected( FALSE ),
-    m_tcpEnumTried( FALSE ), m_hasAltServer( FALSE ), m_altServerUserData( NULL ) {
+    m_tcpEnumTried( FALSE ), m_hasAltServer( FALSE ), m_altServerUserData( NULL ),
+    m_redialPending( FALSE ) {
     memset( &m_altServerAddr, 0, sizeof( m_altServerAddr ) );
     m_punch.Reset();
 }
@@ -2206,15 +2207,16 @@ void CRemoteSession::OnDisconnect( CNetLink* link ) {
     // is cleared on connect) so it cannot disturb a live game's disconnect handling.
     if ( !m_connected && m_hasAltServer && m_serverWS && m_serverWS->m_safeLink == link ) {
         if ( JoinAddrLogOn() )
-            fprintf( stderr, "[natcand] primary candidate connect dropped pre-join -> re-dialing stashed ALTERNATE candidate\n" );
-        m_hasAltServer = FALSE;                 // fall back only once
-        VPNETADDRESS alt = m_altServerAddr;
-        LPVOID       ud  = m_altServerUserData;
+            fprintf( stderr, "[natcand] primary candidate connect dropped pre-join -> DEFERRING re-dial of stashed ALTERNATE candidate to next OnTimer\n" );
+        m_hasAltServer  = FALSE;                // fall back only once
+        m_redialPending = TRUE;                 // serviced on the next pump pass (OnTimer)
+        // Tear down the failed primary WS now (same as the normal drop path below);
+        // the actual ConnectToServer runs from OnTimer, NOT re-entrantly here — the
+        // pump may still hold `link`, so dialing a fresh link inline risks UAF.
         CWS* dead = m_wsMap->FindBySafeLink( link );
         if ( dead )
             ( (CRemoteWS*)dead )->StopUsingSafeLink();
         m_serverWS = NULL;
-        ConnectToServer( &alt, ud );
         VPEXIT();
         return;
     }
@@ -2694,6 +2696,17 @@ void CRemoteSession::DrivePunch() {
 
 
 void CRemoteSession::OnTimer() {
+    // Deferred dial-both fallback: a pre-join primary-candidate drop stashed an
+    // alternate in OnDisconnect; dial it here, on a clean pump pass (never inline
+    // from the disconnect callback). Single-shot — m_redialPending is one-way false.
+    if ( m_redialPending ) {
+        m_redialPending = FALSE;
+        VPNETADDRESS alt = m_altServerAddr;
+        LPVOID       ud  = m_altServerUserData;
+        BOOL ok = ConnectToServer( &alt, ud );
+        if ( !ok && JoinAddrLogOn() )
+            fprintf( stderr, "[natcand] deferred re-dial of ALTERNATE candidate FAILED synchronously (no reachable candidate left) -> join will dead-end\n" );
+    }
     DrivePunch();
 }
 
