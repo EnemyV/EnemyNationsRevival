@@ -32,6 +32,10 @@ public:
 
 	BOOL m_bNeedGas;	// external access for goalmgr to update gas status
 
+	// diagnostics: queue depths for the sweep telemetry
+	int GetNeedCount( ) { return m_plBldgsNeed ? (int)m_plBldgsNeed->GetCount( ) : 0; }
+	int GetIdleTruckCount( ) { return m_plTrucksAvailable ? (int)m_plTrucksAvailable->GetCount( ) : 0; }
+
 	CAIRouter( CAIMap *pMap, CAIUnitList *plUnits, int iPlayer );
 	~CAIRouter();
 

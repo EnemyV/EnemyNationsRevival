@@ -346,9 +346,15 @@ void CAIMgr::Manage( void )
                     if ( pPlyr != NULL )
                         iTopic = pPlyr->GetRsrchItem( );
                     LeaveCriticalSection( &cs );
-                    char szR[96];
+                    char szR[128];
                     sprintf( szR, "[RSRCHSTAT] plyr %d topic %d\n", m_iPlayer, iTopic );
                     OutputDebugStringA( szR );
+                    if ( m_pRouter != NULL )
+                    {
+                        sprintf( szR, "[ROUTESTAT] plyr %d need %d idletrucks %d\n", m_iPlayer,
+                                 m_pRouter->GetNeedCount( ), m_pRouter->GetIdleTruckCount( ) );
+                        OutputDebugStringA( szR );
+                    }
                 }
 #endif
             }

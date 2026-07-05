@@ -669,6 +669,11 @@ void CPlayer::SeedHRFromHist( )
 void CPlayer::Research( int iNumSec )
 {
 
+    // negative garbage (saved corruption) must be CLEARED, not just skipped,
+    // or the AI stays 'busy researching' forever (same deadlock as the OOB case)
+    if ( m_iRsrchItem < 0 )
+        m_iRsrchItem = 0;
+
     if ( ( m_iRsrchHave <= 0 ) || ( m_iRsrchItem <= 0 ) )
         return;
 
