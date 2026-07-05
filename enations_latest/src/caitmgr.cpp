@@ -5099,6 +5099,16 @@ void CAITaskMgr::BuildRoad( CAIUnit* pUnit, CAITask* pTask )
     // save vehicle's location
     hexVeh = hexSite;
 
+    // BATCH ROAD: a crane paving a multi-hex run (SetRoad) drives + builds
+    // itself; the per-hex arrival/else logic below would hijack its routing with
+    // SetDestination. Leave it alone until it reaches the run's end hex -- then
+    // the arrived branch and road_done completion take over. (Single-hex builds
+    // set road_new only once already ON their hex, so head==DEST there.)
+    if ( pUnit->GetParam( CAI_FUEL ) == CNetCmd::road_new &&
+         ( hexVeh.X( ) != pUnit->GetParam( CAI_DEST_X ) ||
+           hexVeh.Y( ) != pUnit->GetParam( CAI_DEST_Y ) ) )
+        return;
+
     // truck has arrived at the road/bridge construction site
     if ( hexSite.X( ) == iX && hexSite.Y( ) == iY )
     {
@@ -5276,6 +5286,45 @@ void CAITaskMgr::BuildRoad( CAIUnit* pUnit, CAITask* pTask )
 #ifdef _LOGOUT
         logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "RoadBuilding() go to %d,%d ", hexSite.X( ), hexSite.Y( ) );
 #endif
+
+        // BATCH ROAD (operator): try to extend this first hex into a straight run
+        // and pave it in ONE order instead of one hex per AI round-trip. Gas
+        // budget leaves headroom (half of what we have, GAS_PER_ROAD per hex);
+        // cap at 8 hexes. GetRoadRun marks the whole strip ROAD upfront.
+        int iRunMax = m_pGoalMgr->m_iGasHave / ( GAS_PER_ROAD * 2 );
+        if ( iRunMax > 8 )
+            iRunMax = 8;
+        if ( iRunMax >= 2 )
+        {
+            CHexCoord hexRunEnd = hexSite;
+            int       iRunLen   = m_pGoalMgr->m_pMap->GetRoadRun( hexSite, hexRunEnd, iRunMax );
+            if ( iRunLen >= 2 )
+            {
+                // issue the whole run: the crane drives to the start and
+                // auto-advances per hex to the end (posting road_done each hex).
+                EnterCriticalSection( &cs );
+                CVehicle* pV = theVehicleMap.GetVehicle( pUnit->GetID( ) );
+                if ( pV != NULL )
+                    pV->SetRoad( hexSite, hexRunEnd );
+                LeaveCriticalSection( &cs );
+
+                // mark 'order sent'; DEST = run END so the arrival test keys on it
+                pUnit->SetParam( CAI_DEST_X, hexRunEnd.X( ) );
+                pUnit->SetParam( CAI_DEST_Y, hexRunEnd.Y( ) );
+                pUnit->SetParam( CAI_FUEL, CNetCmd::road_new );
+#ifdef _WIN32
+                {
+                    char szR[128];
+                    sprintf( szR, "[ROAD] plyr %d crane %lu RUN %d hexes %d,%d -> %d,%d\n", m_iPlayer,
+                             (unsigned long)pUnit->GetID( ), iRunLen, hexSite.X( ), hexSite.Y( ),
+                             hexRunEnd.X( ), hexRunEnd.Y( ) );
+                    OutputDebugStringA( szR );
+                }
+#endif
+                return;
+            }
+        }
+
         // so send message to vehicle to goto adjacent hex and
         // update the task assigned to this construction truck
         // to reflect the hex already selected to build in so

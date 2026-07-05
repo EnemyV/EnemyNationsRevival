@@ -919,6 +919,16 @@ void CAIMgr::UpdateUnits( CAIMsg* pMsg )
             if ( m_pMap->m_iRoadCount )
                 m_pGoalMgr->ConsiderRoads( );
 
+            // BATCH ROAD (operator): per-hex road_done fires for EACH section
+            // while a crane is still paving a multi-hex run. Don't re-task or
+            // unassign a crane that's still working -- just account the hex; the
+            // run's final road_done (crane stopped) falls through to the re-pick.
+            {
+                AiVehSnap snap;
+                if ( AiSnap::ReadVeh( pUnit->GetID( ), snap ) && snap.iRouteMode != CVehicle::stop )
+                    return;
+            }
+
             // ROAD MODE (operator): keep a road crane on roads -- it used to
             // unassign + stage away after EVERY hex (one square per pool cycle)
             if ( wTask == IDT_CONSTRUCT && m_pMap->m_iRoadCount && m_pGoalMgr->m_iGasHave )

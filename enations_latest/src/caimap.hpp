@@ -113,6 +113,9 @@ public:
 	void GetBuildHex( int iBldg, CHexCoord& hex );
 	void GetBridgingHexes( CHexCoord& hexSite, CAIUnit *pUnit );
 	void GetRoadHex( CHexCoord& hexSite );
+	// batch road: extend a picked road hex into a straight cardinal run of
+	// contiguous planned-road hexes (marks them ROAD); returns hex count.
+	int GetRoadRun( const CHexCoord& hexStart, CHexCoord& hexEnd, int iMaxHexes );
 	void GetCraneHex( CHexCoord& hexSite, CHexCoord& hexCrane );
 
 	void Save( CArchive& ar );

@@ -889,6 +889,14 @@ void CAIMap::PlanWarRoad( CHexCoord& hexTo )
 		"\nCAIMap::PlanWarRoad() player %d from %d,%d to %d,%d ",
 		m_iPlayer, hexFrom.X(), hexFrom.Y(), hexTo.X(), hexTo.Y() );
 #endif
+#ifdef _WIN32
+	{
+		char szW[96];
+		sprintf( szW, "[WARROAD] plyr %d plan %d,%d -> %d,%d\n",
+			m_iPlayer, hexFrom.X(), hexFrom.Y(), hexTo.X(), hexTo.Y() );
+		OutputDebugStringA( szW );
+	}
+#endif
 
 	// A* routes through existing roads; the last reachable stretch is the road
 	ConnectRoad( hexFrom, hexTo );
@@ -964,7 +972,66 @@ void CAIMap::GetRoadHex( CHexCoord& hexSite )
 	}
 }
 
-// 
+//
+// batch road: extend a just-picked road hex (already marked ROAD by GetRoadHex)
+// into a STRAIGHT CARDINAL run of contiguous MSW_PLANNED_ROAD hexes so a crane
+// can pave the strip in one order. Cardinal-only: the vehicle's NextRoadHex
+// steps the longer axis one hex at a time, so a diagonal "run" would pave a
+// staircase, not the hexes we mark. Marks every run hex PLANNED->ROAD so no
+// other crane claims the strip. hexEnd = last run hex; returns hex count.
+//
+int CAIMap::GetRoadRun( const CHexCoord& hexStart, CHexCoord& hexEnd, int iMaxHexes )
+{
+	hexEnd = hexStart;
+	if( iMaxHexes < 2 )
+		return 1;
+
+	// E, W, S, N (cardinal only)
+	static const int adx[4] = {  1, -1,  0,  0 };
+	static const int ady[4] = {  0,  0,  1, -1 };
+
+	int iBaseCol = (int)m_wBaseCol, iBaseRow = (int)m_wBaseRow;
+	int iCol = (int)hexStart.X(), iRow = (int)hexStart.Y();
+
+	// pick the first cardinal direction with a planned-road neighbor
+	int iDir = -1;
+	for( int d = 0; d < 4; ++d )
+	{
+		int nx = iCol + adx[d], ny = iRow + ady[d];
+		if( nx < iBaseCol || nx >= iBaseCol + (int)m_wCols ||
+			ny < iBaseRow || ny >= iBaseRow + (int)m_wRows )
+			continue;
+		if( GetLocation( (WORD)nx, (WORD)ny ) & MSW_PLANNED_ROAD )
+		{
+			iDir = d;
+			break;
+		}
+	}
+	if( iDir < 0 )
+		return 1;	// no straight extension -- single-hex fallback
+
+	// walk straight, claiming each planned-road hex, up to iMaxHexes total
+	int iCount = 1;
+	while( iCount < iMaxHexes )
+	{
+		int nx = iCol + adx[iDir], ny = iRow + ady[iDir];
+		if( nx < iBaseCol || nx >= iBaseCol + (int)m_wCols ||
+			ny < iBaseRow || ny >= iBaseRow + (int)m_wRows )
+			break;
+		WORD wStatus = GetLocation( (WORD)nx, (WORD)ny );
+		if( !( wStatus & MSW_PLANNED_ROAD ) )
+			break;
+		wStatus &= ~MSW_PLANNED_ROAD;	// claim: planned -> built
+		wStatus |= MSW_ROAD;
+		SetLocation( (WORD)nx, (WORD)ny, wStatus );
+		iCol = nx; iRow = ny;
+		hexEnd.X( nx ); hexEnd.Y( ny );
+		++iCount;
+	}
+	return iCount;
+}
+
+//
 // find a hex, based on power plant settings
 // suitable for locating a power plant, and
 // return it in the CHexCoord reference
