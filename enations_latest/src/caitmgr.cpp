@@ -4983,10 +4983,10 @@ BOOL CAITaskMgr::RepairConstruction( CAIUnit* pUnit )
 
                         // rate building's importance
                         iRating = m_pGoalMgr->m_pMap->m_pMapUtil->AssessTarget( pBldg, 0 );
-                        // some types rate 0 and could never win the '>' pick --
-                        // a partial must always be selectable
-                        if ( pBldg->IsConstructing( ) && iRating < 1 )
-                            iRating = 1;
+                        // partials outrank damage: finishing a shell yields a whole
+                        // building, and endless war damage otherwise starves them
+                        if ( pBldg->IsConstructing( ) )
+                            iRating += 10;
                     }
                 }
                 LeaveCriticalSection( &cs );
@@ -5008,9 +5008,19 @@ BOOL CAITaskMgr::RepairConstruction( CAIUnit* pUnit )
         {
 #ifdef _WIN32
             {
-                char szR[128];
-                sprintf( szR, "[REPAIR] crane %lu -> bldg %lu at %d,%d rating %d\n", (unsigned long)pUnit->GetID( ),
-                         (unsigned long)paiBldg->GetID( ), hexBldg.X( ), hexBldg.Y( ), iBestRating );
+                int iDmg = 0, iCon = 0;
+                EnterCriticalSection( &cs );
+                CBuilding* pB = theBuildingMap.GetBldg( paiBldg->GetID( ) );
+                if ( pB != NULL )
+                {
+                    iDmg = pB->GetDamagePer( );
+                    iCon = (int)pB->IsConstructing( );
+                }
+                LeaveCriticalSection( &cs );
+                char szR[160];
+                sprintf( szR, "[REPAIR] crane %lu -> bldg %lu at %d,%d rating %d dmg %d con %d\n",
+                         (unsigned long)pUnit->GetID( ), (unsigned long)paiBldg->GetID( ), hexBldg.X( ), hexBldg.Y( ),
+                         iBestRating, iDmg, iCon );
                 OutputDebugStringA( szR );
             }
 #endif
