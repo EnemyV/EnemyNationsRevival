@@ -1126,11 +1126,26 @@ void CPlayer::Serialize( CArchive& ar )
         for ( int i = 0; i < HIST_LEN; i++ )
             ar << m_aHistPplNeed[i];
 
+        // Save release 6+: the FULL runtime multi-resolution rings (the 10m/30m/5h graph
+        // ranges). These hold the long history; previously they were runtime-only and were
+        // REBUILT on load by decimating the short per-minute buffer (SeedHRFromHist), which
+        // could only cover the fine buffer's ~120-sample span -> the long history was
+        // truncated to ~the last few minutes on load (operator: "only ~10 min after load").
+        // Persisting the rings directly preserves the entire history across save/load.
+        for ( int r = 0; r < HR_RINGS; r++ )
+        {
+            ar << (LONG)m_iHRHead[r] << (LONG)m_iHRCount[r] << (LONG)m_iHRTick[r];
+            for ( int s = 0; s < HR_SERIES; s++ )
+                for ( int i = 0; i < HIST_LEN; i++ )
+                    ar << m_aHR[r][s][i];
+        }
+
         // Diagnostic (EN_SAVE_DIAG): confirm how many history samples are being WRITTEN per
         // player, to settle whether an empty post-load graph is a save gap or a stale save.
         if ( getenv( "EN_SAVE_DIAG" ) )
-            fprintf( stderr, "[savehist] plyr=%d wrote histCount=%d head=%d ver=%d\n",
-                     (int)m_iPlyrNum, (int)m_iHistCount, (int)m_iHistHead, (int)VER_RELEASE );
+            fprintf( stderr, "[savehist] plyr=%d wrote histCount=%d head=%d HR=[%d,%d,%d] ver=%d\n",
+                     (int)m_iPlyrNum, (int)m_iHistCount, (int)m_iHistHead,
+                     (int)m_iHRCount[0], (int)m_iHRCount[1], (int)m_iHRCount[2], (int)VER_RELEASE );
 
         // Save release 5+: active EDICTS bitmask (CPlayer::m_dwEdicts). Always written.
         // The derived multipliers/upkeeps are NOT serialized — they are recomputed
@@ -1275,17 +1290,33 @@ void CPlayer::Serialize( CArchive& ar )
             else
                 for ( int i = 0; i < HIST_LEN; i++ ) m_aHistPplNeed[i] = m_iPplNeedBldg;
 
+            // Save release 6+ carries the FULL runtime rings too -> read them directly (the
+            // whole 10m/30m/5h history), matching the save order (after the workforce series).
+            // Older saves (<6) didn't persist them.
+            if ( theGame.m_dwVer >= 6 )
+                for ( int r = 0; r < HR_RINGS; r++ )
+                {
+                    LONG lh, lc, lt;
+                    ar >> lh >> lc >> lt;
+                    m_iHRHead[r] = (int)lh; m_iHRCount[r] = (int)lc; m_iHRTick[r] = (int)lt;
+                    for ( int s = 0; s < HR_SERIES; s++ )
+                        for ( int i = 0; i < HIST_LEN; i++ )
+                            ar >> m_aHR[r][s][i];
+                }
+
             // Diagnostic (EN_SAVE_DIAG): confirm how many history samples were READ back.
             // If save wrote >0 but load reads 0 (or the graph is still empty), that isolates
             // the fault to the load/graph path vs. a save-with-no-history.
             if ( getenv( "EN_SAVE_DIAG" ) )
-                fprintf( stderr, "[loadhist] plyr=%d read histCount=%d head=%d saveVer=%d\n",
-                         (int)m_iPlyrNum, (int)m_iHistCount, (int)m_iHistHead, (int)theGame.m_dwVer );
+                fprintf( stderr, "[loadhist] plyr=%d read histCount=%d head=%d HR=[%d,%d,%d] saveVer=%d\n",
+                         (int)m_iPlyrNum, (int)m_iHistCount, (int)m_iHistHead,
+                         (int)m_iHRCount[0], (int)m_iHRCount[1], (int)m_iHRCount[2], (int)theGame.m_dwVer );
 
-            // The runtime graph rings (10m/30m/5h ranges) are NOT serialized —
-            // rebuild them from the buffer we just read so the coarse graphs
-            // show the saved history immediately instead of starting empty.
-            SeedHRFromHist( );
+            // Older saves (< release 6) didn't persist the runtime rings — rebuild them by
+            // decimating the per-minute buffer (best-effort; covers only the fine buffer's
+            // span). Release 6+ read the full rings directly above, so no reseed needed.
+            if ( theGame.m_dwVer < 6 )
+                SeedHRFromHist( );
         }
 
         // Save release 5+ carries the active EDICTS bitmask. Older saves predate it,
