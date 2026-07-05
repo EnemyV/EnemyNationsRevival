@@ -43,6 +43,7 @@ CAITaskMgr::CAITaskMgr( BOOL bRestart, int iPlayer, CAIGoalMgr* pGoalMgr )
     m_bRestart = bRestart;
     m_bStartAssignPending = FALSE;
     m_bRepairFirst        = FALSE;
+    m_iCraneAssignCnt     = 0;
 
     ASSERT_VALID( pGoalMgr );
     m_pGoalMgr = pGoalMgr;
@@ -1927,6 +1928,21 @@ void CAITaskMgr::AssignConstruction( CAIUnit* pUnit )
         return;
 
     int iHang = 0;
+
+    // ~20% road share (operator): every 5th assignment grabs the road task
+    // directly, bypassing the priority contest buildings always win
+    if ( ++m_iCraneAssignCnt % 5 == 0 && m_pGoalMgr->m_pMap->m_iRoadCount && m_pGoalMgr->m_iGasHave )
+    {
+        CAITask* pRoad = m_pGoalMgr->m_plTasks->FindTask( IDT_CONSTRUCT );
+        if ( pRoad != NULL )
+        {
+            ClearTaskUnit( pUnit );
+            pUnit->SetTask( pRoad->GetID( ) );
+            pUnit->SetGoal( pRoad->GetGoalID( ) );
+            pRoad->SetStatus( INPROCESS_TASK );
+            return;
+        }
+    }
     // need to find an unassigned task that requires
     // building something
 GetTask:
@@ -4924,6 +4940,24 @@ BOOL CAITaskMgr::RepairConstruction( CAIUnit* pUnit )
                 if ( pUnitB->GetType( ) != CUnit::building )
                     continue;
 
+                // skip targets another crane is already headed to -- spreads the
+                // fleet across partials instead of converging on the top-rated one
+                BOOL     bTaken = FALSE;
+                POSITION posC   = m_pGoalMgr->m_plUnits->GetHeadPosition( );
+                while ( posC != NULL )
+                {
+                    CAIUnit* pUnitC = (CAIUnit*)m_pGoalMgr->m_plUnits->GetNext( posC );
+                    if ( pUnitC != NULL && pUnitC != pUnit && pUnitC->GetOwner( ) == m_iPlayer &&
+                         pUnitC->GetTypeUnit( ) == CTransportData::construction &&
+                         pUnitC->GetTask( ) == IDT_REPAIR && pUnitC->GetDataDW( ) == pUnitB->GetID( ) )
+                    {
+                        bTaken = TRUE;
+                        break;
+                    }
+                }
+                if ( bTaken )
+                    continue;
+
                 BOOL bNeedRepair = FALSE;
                 EnterCriticalSection( &cs );
                 CBuilding* pBldg = theBuildingMap.GetBldg( pUnitB->GetID( ) );
@@ -5162,8 +5196,11 @@ void CAITaskMgr::BuildRoad( CAIUnit* pUnit, CAITask* pTask )
             // clear unit of task/goal and its params
             ClearTaskUnit( pUnit );
 
-            // no road was found so we must be out of roads
-            m_pGoalMgr->m_pMap->m_iRoadCount = 0;
+            // back off instead of latching to 0 -- one missed search (e.g. a
+            // transient blocker) used to zero the grid and kill road priority
+            // for the REST OF THE GAME; halving survives transient misses but
+            // still drains on genuine exhaustion
+            m_pGoalMgr->m_pMap->m_iRoadCount /= 2;
             // tell the goalmgr we have an idle crane
             m_pGoalMgr->IdleCrane( );
             m_pGoalMgr->ConsiderRoads( );
