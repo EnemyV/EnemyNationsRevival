@@ -1911,6 +1911,10 @@ int CAIGoalMgr::NextResearchTopic( CPlayer* pPlayer )
         int iTopic = m_iRDPath[i];
         if ( !iTopic )
             continue;
+        // a corrupt/misaligned saved path entry wedged research permanently
+        // (saved garbage m_iRsrchItem); never hand the server an OOB topic
+        if ( iTopic < 0 || iTopic >= CRsrchArray::num_types )
+            continue;
         // this assumes that topic is discovered test occurs too
         if ( pPlayer->CanRsrch( iTopic ) )
         {
