@@ -713,7 +713,9 @@ int CVehicle::GetMaxMaterials() const {
 int CVehicle::GetEffPeopleCarry() {
     int iBase = GetData()->GetPeopleCarry();
     if ( GetData()->IsBoat() && GetData()->IsCarrier() && GetOwner() )
-        iBase += GetOwner()->GetLandingCraftBonus();
+        // Scale by MAX_CARGO: each tech = +1 unit slot (a vehicle costs MAX_CARGO). The raw
+        // +1/+2 left partial room the "enter" click accepted but the load gate rejected.
+        iBase += GetOwner()->GetLandingCraftBonus() * MAX_CARGO;
     return iBase;
 }
 

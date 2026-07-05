@@ -493,10 +493,8 @@ class CPlayer : public CObject
         return ( 100 + 10 * iLevels );
     }
 
-    // Extra landing-craft unit-hold capacity from the Landing Craft 2/3 techs (each
-    // +1 over the base 2-unit hold): 0, +1, or +2. Applied in CVehicle::GetEffPeopleCarry
-    // for boat carriers (landing craft). Guarded for older saves whose m_aRsrch predates
-    // these in-code tiers.
+    // Landing Craft 2/3 techs discovered: 0/1/2. GetEffPeopleCarry scales this by MAX_CARGO
+    // (each tech = one full unit slot). Landing craft only; guarded for pre-tier saves.
     int GetLandingCraftBonus( )
     {
         int iBonus = 0;
