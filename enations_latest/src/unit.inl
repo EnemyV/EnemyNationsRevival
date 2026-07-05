@@ -88,6 +88,14 @@ inline void CUnit::AddToStore(int iInd, int iNum) {
 
 inline int CUnit::GetSpottingRange() const {
     ASSERT_STRICT_VALID (this);
+    // Total Surveillance edict: live vision modifier applied on read (clamped — callers index
+    // arrays with the result). Edict-off (mult<=1) returns the raw value unchanged.
+    CPlayer* pOwner = GetOwner ();
+    if ( pOwner != NULL ) {
+        float fMult = pOwner->GetEdictVisionMult ();
+        if ( fMult > 1.0f )
+            return ( __min ( MAX_SPOTTING, (int)( m_iSpottingRange * fMult + 0.5f ) ) );
+    }
     return (m_iSpottingRange);
 }
 

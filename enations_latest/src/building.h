@@ -763,6 +763,11 @@ public:
 			int p = (int)( m_fAltAccum * 100.0f );
 			return ( p < 0 ) ? 0 : ( p > 100 ? 100 : p );
 		}
+		// eMultiTrickle (Desperate/Scrounging) progress: line 0 accumulator as a representative bar.
+		int						GetAltProgressPerMulti () const {
+			int p = (int)( m_afAltAccum[0] * 100.0f );
+			return ( p < 0 ) ? 0 : ( p > 100 ? 100 : p );
+		}
 
 		void					AssignToHex (CHexCoord hex, int iAlt, BOOL bSetAlt = TRUE);
 		CHexCoord &		GetHex ();
@@ -860,6 +865,9 @@ protected:
 		// sub-unit secondary-output remainder between production calls so small yields
 		// aren't lost. Runtime-only, NOT serialized (like the alt_oil toggle itself).
 		float					m_fAltAccum = 0.0f;
+		// eMultiTrickle (Desperate Measures / Scrounging): one accumulator per output line
+		// (size must match AltOutput::kMaxMulti = 4; hardcoded to avoid an altoutput.h include here).
+		float					m_afAltAccum[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
 
 		// construction vars
 		LONG					m_iConstDone;						// -1 == done, else time building so far

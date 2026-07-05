@@ -237,6 +237,14 @@ static std::string AltProductionStatus(CBuilding* b, const AltOutput::AltOutputD
         int rate = pDef->m_pfnFlat ? pDef->m_pfnFlat( p ) : 0;
         return "Producing " + matName + ": " + FmtNum( rate ) + " / min";
     }
+    if ( pDef->m_eMode == AltOutput::eMultiTrickle ) {
+        // Desperate Measures / Scrounging: list each scrounged line, e.g. "+10 lumber +5 iron…/min".
+        std::string s = "Producing:";
+        for ( int i = 0; i < pDef->m_nMulti; i++ )
+            s += " +" + std::to_string( pDef->m_aMulti[i].m_iPerMin ) + " " +
+                 std::string( CMaterialTypes::GetDesc( pDef->m_aMulti[i].m_iMat ).c_str() );
+        return s + " / min";
+    }
     // eRatioConsume / eGlobalConsume: a conversion. Show the OUTPUT RATE (units/min) using the
     // rebranded display label, computed from the building's primary throughput exactly as the
     // production hook (mainloop.cpp) feeds Convert():
@@ -325,6 +333,11 @@ static bool secProduction(CBuilding* b) {
     // C6: a coal-liq-active power plant is a producer (coal -> oil), so it gets the Production
     // section + bar like a refinery instead of the Power section.
     if ( ( ut == CStructureData::UTpower ) && secCoalLiqActive( b ) ) return true;
+    // Desperate Measures / Scrounging: a rocket/warehouse that CAN scrounge shows the Production
+    // section whether or not it's toggled on — capability-based, so the section set never changes
+    // (no relayout). When off the bar just reads 0.
+    if ( const AltOutput::AltOutputDef* pDef = AltOutput::Available( b ) )
+        if ( pDef->m_eMode == AltOutput::eMultiTrickle ) return true;
     return ( ut == CStructureData::UTmaterials ) || ( ut == CStructureData::UTmine ) ||
            ( ut == CStructureData::UTfarm );
 }
@@ -2062,7 +2075,13 @@ void SDL2BuildingWindow::Refresh() {
             // the real cycle progress when there is one, else 0 (the bar stays present).
             // C6: the coal-liq plant has no GetProductionPer cycle, so drive it from the conversion
             // accumulator (GetAltProgressPer, the same source as the old C4 power-section bar).
-            int per = bCoalLiq ? m_pBldg->GetAltProgressPer() : m_pBldg->GetProductionPer();
+            int per;
+            if ( bCoalLiq )
+                per = m_pBldg->GetAltProgressPer();
+            else if ( bAlt && pAlt && ( pAlt->m_eMode == AltOutput::eMultiTrickle ) )
+                per = m_pBldg->GetAltProgressPerMulti();   // rocket/warehouse scrounge trickle
+            else
+                per = m_pBldg->GetProductionPer();
             m_progProduction->SetVisible( true );
             m_progProduction->SetProgress( per < 0 ? 0 : per );
         }

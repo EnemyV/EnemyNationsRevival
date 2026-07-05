@@ -1993,6 +1993,7 @@ void CBuilding::ctor( )
 
     m_fOperMod          = 0.0f;
     m_fAltAccum         = 0.0f;
+    m_afAltAccum[0] = m_afAltAccum[1] = m_afAltAccum[2] = m_afAltAccum[3] = 0.0f;
     m_iBldgDir          = 0;
     m_iConstDone        = 0;
     m_iBuildDone        = 0;
@@ -5376,6 +5377,14 @@ CVehicle* CVehicle::Create( const CSubHex& ptHead, const CSubHex& ptTail, int iV
 
     // uses some people
     pVeh->GetOwner( )->PplBldgToVeh( theTransports.GetData( iVeh )->GetPeople( ) );
+    // The Draft edict: drafted infantry (walk units) burn extra population (conscription
+    // overhead). Mult is 1.0 when off → no burn. Symmetric-safe: the extra is taken from the
+    // labor pool only (not the vehicle crew), so unit death still releases the normal amount.
+    if ( theTransports.GetData( iVeh )->GetWheelType( ) == CWheelTypes::walk )
+    {
+        int iPeople = theTransports.GetData( iVeh )->GetPeople( );
+        pVeh->GetOwner( )->BurnPpl( (int)( ( pVeh->GetOwner( )->GetEdictInfPopMult( ) - 1.0f ) * iPeople + 0.5f ) );
+    }
 
     // take the count
     pVeh->GetOwner( )->IncVehsBuilt( );

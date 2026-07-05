@@ -65,11 +65,32 @@ namespace
         return ( pMine->IsOilWell( ) && pMine->IsExhausted( ) );
     }
 
+    // An EXHAUSTED iron mine: Moho Mining revives it into a flat iron trickle, exactly like
+    // Fracking on an exhausted oil well. GetType()==iron (not the UTmine union, which also
+    // covers oil wells). Only matched once the deposit is dry, so producing mines are unchanged.
+    bool IsExhaustedIronMine( CBuilding* b )
+    {
+        if ( b->GetData( )->GetUnionType( ) != CStructureData::UTmine )
+            return ( false );
+        if ( b->GetData( )->GetType( ) != CStructureData::iron )
+            return ( false );
+        return ( ( (CMineBuilding*)b )->IsExhausted( ) );
+    }
+
+    // The rocket / the warehouse: hosts for the emergency multi-resource "scrounge" trickle.
+    // Test the exact GetType() -- UTwarehouse also covers the market, and rocket/warehouse differ.
+    bool IsRocket( CBuilding* b )    { return ( b->GetData( )->GetType( ) == CStructureData::rocket ); }
+    bool IsWarehouse( CBuilding* b ) { return ( b->GetData( )->GetType( ) == CStructureData::warehouse ); }
+
     // ---- Tech-gate predicates (thin adapters over the CPlayer accessors) ---------------
     bool TechBioFuel( CPlayer* p ) { return ( p->CanBioFuel( ) != FALSE ); }
     bool TechCoalLiq( CPlayer* p ) { return ( p->CanCoalLiq( ) != FALSE ); }
     bool TechCharcoal( CPlayer* p ) { return ( p->CanCharcoal( ) != FALSE ); }
     bool TechFrack( CPlayer* p ) { return ( p->CanFrack( ) != FALSE ); }
+    bool TechMoho( CPlayer* p ) { return ( p->CanMoho( ) != FALSE ); }
+    bool TechAlways( CPlayer* ) { return ( true ); }   // Desperate Measures / Scrounging: default-enabled
+
+    int FlatMohoIron( CPlayer* p ) { return ( p->GetMohoIronPerMin( ) ); }
 
     // ---- Per-tier flat-rate accessors (eFlatTrickle only) -----------------------------
     // Oil/min an exhausted, fracked well trickles by the owner's highest Fracking tier
@@ -165,6 +186,65 @@ namespace
             0,                           // m_iRatioIn
             1.0f,
             0                            // m_iWorkforceAdd (no extra labor)
+        },
+
+        // 5) Moho Mining (NEW) -- an EXHAUSTED iron mine trickles a flat iron rate when toggled,
+        //    exactly like Fracking on an oil well (shares the generic UTmine FrackTick path +
+        //    its +50% power surcharge). eFlatTrickle, ~10 iron/min. Tech-gated on mine_2.
+        {
+            "Moho Mining",
+            "Revives this exhausted iron mine to trickle iron, at +50% power cost",
+            &IsExhaustedIronMine,
+            &TechMoho,
+            CMaterialTypes::iron,        // notional input (not consumed in eFlatTrickle)
+            CMaterialTypes::iron,
+            AltOutput::eFlatTrickle,
+            nullptr,                     // m_pfnPct
+            &FlatMohoIron,               // m_pfnFlat (iron/min)
+            0,                           // m_iRatioIn
+            1.0f,
+            0,                           // m_iWorkforceAdd
+            {},                          // m_aMulti (unused)
+            0                            // m_nMulti
+        },
+
+        // 6) Desperate Measures (NEW) -- the ROCKET scrounges a small multi-resource trickle
+        //    when toggled: emergency income at a heavy labor cost. eMultiTrickle, no input,
+        //    no tech gate (default-enabled). 50 workers.
+        {
+            "Desperate Measures",
+            "Frantically scrounge base resources: +10 lumber, +5 iron, +5 food, +5 coal / min",
+            &IsRocket,
+            &TechAlways,
+            CMaterialTypes::lumber,      // notional (unused in eMultiTrickle)
+            CMaterialTypes::lumber,
+            AltOutput::eMultiTrickle,
+            nullptr,                     // m_pfnPct
+            nullptr,                     // m_pfnFlat
+            0,                           // m_iRatioIn
+            1.0f,
+            50,                          // m_iWorkforceAdd (50 workers)
+            { { CMaterialTypes::lumber, 10 }, { CMaterialTypes::iron, 5 }, { CMaterialTypes::food, 5 }, { CMaterialTypes::coal, 5 } },
+            4
+        },
+
+        // 7) Scrounging (NEW) -- the WAREHOUSE version of Desperate Measures at half the yield
+        //    and half the labor. eMultiTrickle, default-enabled. 25 workers.
+        {
+            "Scrounging",
+            "Scrounge base resources: +5 lumber, +2 iron, +2 food, +2 coal / min",
+            &IsWarehouse,
+            &TechAlways,
+            CMaterialTypes::lumber,
+            CMaterialTypes::lumber,
+            AltOutput::eMultiTrickle,
+            nullptr,
+            nullptr,
+            0,
+            1.0f,
+            25,                          // m_iWorkforceAdd (25 workers)
+            { { CMaterialTypes::lumber, 5 }, { CMaterialTypes::iron, 2 }, { CMaterialTypes::food, 2 }, { CMaterialTypes::coal, 2 } },
+            4
         },
     };
 
@@ -313,5 +393,44 @@ namespace AltOutput
         pBldg->AddToStore( pDef->m_iOutputMat, iOut );
         pOwner->IncMaterialMade( pDef->m_iOutputMat, iOut );
         pOwner->IncMaterialHave( pDef->m_iOutputMat, iOut );
+    }
+
+    void ConvertMulti( CBuilding* pBldg, int iAmount, float* afAccum )
+    {
+        if ( ( iAmount <= 0 ) || !afAccum )
+            return;
+        if ( !pBldg->IsFlag( CUnit::alt_oil ) )
+            return;
+        const AltOutputDef* pDef = Available( pBldg );
+        if ( !pDef || ( pDef->m_eMode != eMultiTrickle ) )
+            return;
+
+        CPlayer*    pOwner = pBldg->GetOwner( );
+        const float OPERS_PER_MINUTE = 384.0f * 60.0f;   // = 23040 (matches Convert)
+
+        // Each output line trickles independently, carried by its own accumulator.
+        for ( int i = 0; ( i < pDef->m_nMulti ) && ( i < kMaxMulti ); i++ )
+        {
+            int iRate = pDef->m_aMulti[i].m_iPerMin;
+            if ( iRate <= 0 )
+                continue;
+            afAccum[i] += ( (float)iRate * (float)iAmount ) / OPERS_PER_MINUTE;
+            int iOut = (int)afAccum[i];
+            if ( iOut <= 0 )
+                continue;
+            afAccum[i] -= (float)iOut;
+
+            int iMat = pDef->m_aMulti[i].m_iMat;
+            if ( iMat == CMaterialTypes::food )
+                pOwner->AddFood( iOut );                 // food is a GLOBAL pool, not a store
+            else if ( iMat == CMaterialTypes::gas )
+                pOwner->AddGas( iOut );                  // gas is global too
+            else
+            {
+                pBldg->AddToStore( iMat, iOut );         // lumber / iron / coal -> building store
+                pOwner->IncMaterialMade( iMat, iOut );
+                pOwner->IncMaterialHave( iMat, iOut );
+            }
+        }
     }
 }

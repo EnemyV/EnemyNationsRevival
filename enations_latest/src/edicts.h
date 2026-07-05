@@ -35,6 +35,14 @@ enum EdictId
     EDICT_MINING_SUBSIDY,       // Office: +mine output, +energy upkeep
     EDICT_RESEARCH_SUBSIDY,     // Office: +research speed, +workforce upkeep
     EDICT_AUSTERITY,            // Rocket (civ-wide): +construction speed, +workforce upkeep
+    EDICT_AGRICULTURAL,         // Office: +farm output, +25% workers required at farms
+    EDICT_OVERCLOCKED_GRID,     // Rocket (tech-gated): +all production, +global power upkeep
+    EDICT_TURBOCHARGERS,        // Command Center: +move speed / +fuel use (fuel-consuming units)
+    EDICT_TOTAL_SURVEILLANCE,   // Command Center: +unit vision, +energy upkeep
+    EDICT_DRAFT,                // Command Center: +infantry build speed, +infantry population cost
+    EDICT_PRECISION_MINING,     // Office: +mine output, +energy & +worker requirement at mines
+    EDICT_MEAT_SHIELD,          // Command Center: buildings take less damage, +worker requirement
+    EDICT_AUTO_RESEARCH,        // Office: auto-researches the next-cheapest available tech (behavior flag)
     EDICT_COUNT
 };
 
@@ -54,12 +62,27 @@ struct EdictDef
     float fMineMult;        // mine output
     float fRsrchMult;       // research speed (wires the latent m_fRsrchProd lever, RG-1)
     float fPopGrowthMult;   // population growth
+    float fFarmMult;        // farm/food output (GetFarmProd — all UTfarm buildings)
+    float fGlobalProdMult;  // ALL production (folded into every Get*Prod — Overclocked Grid)
+    float fMoveMult;        // movement speed of fuel-consuming units (vehmove.cpp)
+    float fVisionMult;      // unit spotting range (CUnit::AssignData; re-clamped to MAX_SPOTTING)
+    float fInfBuildMult;    // infantry build speed (CVehicleBuilding::BuildVehicle)
+    float fBldgDmgMult;     // building damage TAKEN (Meat Shield; 0.90 = 10% less damage, applied at projbase.cpp)
 
     // Upkeep — recurring cost while active. Expressed as a fraction of the relevant
     // per-loop base demand (so "+20% energy" scales with empire size) or a flat amount.
     float fEnergyUpkeepPct;     // added to m_iPwrNeed as pct of current need
     float fWorkforceUpkeepPct;  // added to m_iPplNeedBldg as pct of current need
     float fFoodUpkeepPct;       // extra drain in PeopleAndFood as pct of current food use
+
+    // Scoped costs — a multiplier on ONE building/unit's requirement (1.0 == no change).
+    // Unlike the upkeep pcts above (which tax the whole empire's demand), these bump only
+    // the named requirement at its own site.
+    float fFarmWorkerMult;      // farm worker requirement (BuildFarm AddPplNeedBldg; 1.25 = +25%)
+    float fFuelMult;            // fuel-consuming unit gas burn (FuelVehicle; 1.5 = +50%)
+    float fInfPopMult;          // infantry population cost at build (PplBldgToVeh; 3.0 = +200%)
+    float fMineEnergyMult;      // mine power requirement (BuildMine AddPwrNeed; 1.10 = +10%)
+    float fMineWorkerMult;      // mine worker requirement (BuildMine AddPplNeedBldg; 1.10 = +10%)
 };
 
 // The catalog. Definition in edicts.cpp. Indexed by EdictId; size == EDICT_COUNT.

@@ -108,11 +108,24 @@ void CPlayer::ctor( )
     m_fEatingRate     = 0.01;
     // Edicts v1 (civ-wide): no edicts active, all mults neutral (see RecomputeEdictMults).
     m_dwEdicts            = 0;
+    m_fEdictFuelCarry     = 0.0f;   // runtime-only fractional gas-surcharge carry (not reset per recompute)
+    m_bAutoRsrchPending   = FALSE;  // runtime-only AutoResearch set_rsrch-in-flight guard
     m_fEdictConstMult     = 1.0f;
     m_fEdictMineMult      = 1.0f;
     m_fEdictRsrchMult     = 1.0f;
     m_fEdictPopGrowthMult = 1.0f;
+    m_fEdictFarmMult      = 1.0f;
+    m_fEdictGlobalProdMult = 1.0f;
+    m_fEdictMoveMult      = 1.0f;
+    m_fEdictVisionMult    = 1.0f;
+    m_fEdictInfBuildMult  = 1.0f;
     m_fEdictFortBuildMult = 1.0f;
+    m_fEdictFarmWorkerMult = 1.0f;
+    m_fEdictFuelMult      = 1.0f;
+    m_fEdictInfPopMult    = 1.0f;
+    m_fEdictMineEnergyMult = 1.0f;
+    m_fEdictMineWorkerMult = 1.0f;
+    m_fEdictBldgDmgMult    = 1.0f;
     m_fEdictEnergyUpkeepPct    = 0.0f;
     m_fEdictWorkforceUpkeepPct = 0.0f;
     m_fEdictFoodUpkeepPct      = 0.0f;
@@ -232,7 +245,18 @@ void CPlayer::RecomputeEdictMults( )
     m_fEdictMineMult      = 1.0f;
     m_fEdictRsrchMult     = 1.0f;
     m_fEdictPopGrowthMult = 1.0f;
+    m_fEdictFarmMult      = 1.0f;
+    m_fEdictGlobalProdMult = 1.0f;
+    m_fEdictMoveMult      = 1.0f;
+    m_fEdictVisionMult    = 1.0f;
+    m_fEdictInfBuildMult  = 1.0f;
     m_fEdictFortBuildMult = 1.0f;
+    m_fEdictFarmWorkerMult = 1.0f;
+    m_fEdictFuelMult      = 1.0f;
+    m_fEdictInfPopMult    = 1.0f;
+    m_fEdictMineEnergyMult = 1.0f;
+    m_fEdictMineWorkerMult = 1.0f;
+    m_fEdictBldgDmgMult    = 1.0f;
     m_fEdictEnergyUpkeepPct    = 0.0f;
     m_fEdictWorkforceUpkeepPct = 0.0f;
     m_fEdictFoodUpkeepPct      = 0.0f;
@@ -248,7 +272,18 @@ void CPlayer::RecomputeEdictMults( )
         m_fEdictMineMult      *= e.fMineMult;
         m_fEdictRsrchMult     *= e.fRsrchMult;
         m_fEdictPopGrowthMult *= e.fPopGrowthMult;
+        m_fEdictFarmMult      *= e.fFarmMult;
+        m_fEdictGlobalProdMult *= e.fGlobalProdMult;
+        m_fEdictMoveMult      *= e.fMoveMult;
+        m_fEdictVisionMult    *= e.fVisionMult;
+        m_fEdictInfBuildMult  *= e.fInfBuildMult;
         m_fEdictFortBuildMult *= e.fFortConstMult;
+        m_fEdictFarmWorkerMult *= e.fFarmWorkerMult;
+        m_fEdictFuelMult      *= e.fFuelMult;
+        m_fEdictInfPopMult    *= e.fInfPopMult;
+        m_fEdictMineEnergyMult *= e.fMineEnergyMult;
+        m_fEdictMineWorkerMult *= e.fMineWorkerMult;
+        m_fEdictBldgDmgMult    *= e.fBldgDmgMult;
         // Upkeep is additive across active edicts (a pct of the relevant per-loop demand).
         m_fEdictEnergyUpkeepPct    += e.fEnergyUpkeepPct;
         m_fEdictWorkforceUpkeepPct += e.fWorkforceUpkeepPct;
@@ -668,6 +703,35 @@ void CPlayer::SeedHRFromHist( )
 
 void CPlayer::Research( int iNumSec )
 {
+    // AutoResearch edict: when idle, auto-start the cheapest available topic. Runs only for the
+    // owning client (Research() is called under IsLocal(), mainloop.cpp) and starts research via
+    // the set_rsrch net command — server-authoritative, so all clients set m_iRsrchItem the same
+    // way (identical path the AI + manual UI use). The pending guard posts EXACTLY ONCE per
+    // idle→active transition: the set_rsrch handler docks 10% of points when switching (iOn>0),
+    // so re-posting each loop would repeatedly penalise progress. It self-clears once research is
+    // active (item landed) or the edict is off; a human can't receive free techs, so the picked
+    // topic can't go stale in flight and leave the guard stuck.
+    if ( IsEdictActive( EDICT_AUTO_RESEARCH ) && ( m_iRsrchItem <= 0 ) )
+    {
+        if ( !m_bAutoRsrchPending )
+        {
+            int iBest = 0, iMinCost = 0x7FFFFFFF;
+            for ( int i = 1; i < theRsrch.GetSize( ); ++i )   // cheapest available; lowest index wins ties
+                if ( CanRsrch( i ) && theRsrch.ElementAt( i ).m_iPtsRequired < iMinCost )
+                {
+                    iMinCost = theRsrch.ElementAt( i ).m_iPtsRequired;
+                    iBest    = i;
+                }
+            if ( iBest > 0 )
+            {
+                CMsgRsrch msg( GetPlyrNum( ), iBest );
+                theGame.PostToServer( &msg, sizeof( msg ) );
+                m_bAutoRsrchPending = TRUE;
+            }
+        }
+    }
+    else
+        m_bAutoRsrchPending = FALSE;   // research active, or edict off → allow the next auto-pick
 
     // negative garbage (saved corruption) must be CLEARED, not just skipped,
     // or the AI stays 'busy researching' forever (same deadlock as the OOB case)
