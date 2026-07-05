@@ -10,6 +10,7 @@
 //
 
 #include <algorithm> // for the memory pool
+#include <cstdio>    // fprintf(stderr) for the EN_SAVE_DIAG history save/load diagnostic
 #include "player.h"
 #include "edicts.h"   // Edicts v1: g_aEdicts catalog for RecomputeEdictMults
 
@@ -1119,6 +1120,18 @@ void CPlayer::Serialize( CArchive& ar )
             ar << m_aHistPwrHave[i] << m_aHistPwrNeed[i] << m_aHistPplTotal[i]
                << m_aHistPplBldg[i] << m_aHistAptCap[i] << m_aHistOfcCap[i];
 
+        // Save release 6+: the workforce-NEED series (7th history series). Previously
+        // runtime-only and backfilled flat on load, so the workforce graph's "need" line
+        // didn't restore across a save/load. Always written (current release >= 6).
+        for ( int i = 0; i < HIST_LEN; i++ )
+            ar << m_aHistPplNeed[i];
+
+        // Diagnostic (EN_SAVE_DIAG): confirm how many history samples are being WRITTEN per
+        // player, to settle whether an empty post-load graph is a save gap or a stale save.
+        if ( getenv( "EN_SAVE_DIAG" ) )
+            fprintf( stderr, "[savehist] plyr=%d wrote histCount=%d head=%d ver=%d\n",
+                     (int)m_iPlyrNum, (int)m_iHistCount, (int)m_iHistHead, (int)VER_RELEASE );
+
         // Save release 5+: active EDICTS bitmask (CPlayer::m_dwEdicts). Always written.
         // The derived multipliers/upkeeps are NOT serialized — they are recomputed
         // from the bitmask on load via RecomputeEdictMults().
@@ -1253,12 +1266,21 @@ void CPlayer::Serialize( CArchive& ar )
                 ar >> m_aHistPwrHave[i] >> m_aHistPwrNeed[i] >> m_aHistPplTotal[i]
                    >> m_aHistPplBldg[i] >> m_aHistAptCap[i] >> m_aHistOfcCap[i];
 
-            // The workforce-NEED series isn't in the (frozen) save format — backfill
-            // it with the just-deserialized live need so the graph draws a flat
-            // line at the current value for pre-load history, not zeros. It tracks
-            // for real from the next SampleHistory on.
-            for ( int i = 0; i < HIST_LEN; i++ )
-                m_aHistPplNeed[i] = m_iPplNeedBldg;
+            // Save release 6+ carries the workforce-NEED series (7th) for real; read it back
+            // so the workforce graph's "need" line restores. Older saves (release 4/5) predate
+            // it -> backfill flat at the just-deserialized live need (a flat pre-load line, not
+            // zeros); it tracks for real from the next SampleHistory on.
+            if ( theGame.m_dwVer >= 6 )
+                for ( int i = 0; i < HIST_LEN; i++ ) ar >> m_aHistPplNeed[i];
+            else
+                for ( int i = 0; i < HIST_LEN; i++ ) m_aHistPplNeed[i] = m_iPplNeedBldg;
+
+            // Diagnostic (EN_SAVE_DIAG): confirm how many history samples were READ back.
+            // If save wrote >0 but load reads 0 (or the graph is still empty), that isolates
+            // the fault to the load/graph path vs. a save-with-no-history.
+            if ( getenv( "EN_SAVE_DIAG" ) )
+                fprintf( stderr, "[loadhist] plyr=%d read histCount=%d head=%d saveVer=%d\n",
+                         (int)m_iPlyrNum, (int)m_iHistCount, (int)m_iHistHead, (int)theGame.m_dwVer );
 
             // The runtime graph rings (10m/30m/5h ranges) are NOT serialized —
             // rebuild them from the buffer we just read so the coarse graphs

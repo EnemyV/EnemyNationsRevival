@@ -32,11 +32,13 @@ const char GameLogFile[] = "ENations.log";
 // only when the loaded save's release is >= 5, and RecomputeEdictMults() rebuilds the
 // derived multipliers/upkeeps after the bit field is restored.
 // NOTE: VER_RELEASE is the SAVE-FORMAT counter (written as m_dwVer; load gates the
-// optional fields on m_dwVer >= 3 / >= 4 / >= 5 in CPlayer::Serialize). It deliberately
+// optional fields on m_dwVer >= 3 / >= 4 / >= 5 / >= 6 in CPlayer::Serialize). It deliberately
 // does NOT reset on the 3.00 major bump: resetting it to 0 would make a 3.00 save
-// write those fields but refuse to read them back (0 < 3/4/5) -> stream desync. The
+// write those fields but refuse to read them back (0 < 3/4/5/6) -> stream desync. The
 // 2.xx -> 3.00 major bump already rejects old saves via the MAJOR/MINOR check.
-#define         VER_RELEASE     5
+// Release 6: the workforce-NEED history series (m_aHistPplNeed) is now serialized too
+// (was runtime-only + backfilled flat on load, so the workforce graph didn't restore).
+#define         VER_RELEASE     6
 
 #define         VER_STRING                              "3.00.000"
 #define         RES_VER_STRING                          "3.00.000\0"
