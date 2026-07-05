@@ -77,7 +77,8 @@ CAIMgr::CAIMgr( int iPlayer )
     m_bIsAI   = TRUE;
     m_bIsDead = FALSE;
 
-    m_iIdle = 0;
+    m_iIdle            = 0;
+    m_dwLastStuckSweep = 0;
     for ( int i = 0; i < MAX_IDLE_FUNCTIONS; ++i ) m_bIdleFunction[i] = TRUE;
 
     m_pGoalMgr = NULL;
@@ -315,6 +316,17 @@ void CAIMgr::Manage( void )
 
             // reset this time and start over
             for ( int i = 0; i < MAX_IDLE_FUNCTIONS; ++i ) m_bIdleFunction[i] = TRUE;
+        }
+    }
+
+    // stuck-vehicle sweep on a wall clock too: the idle rotation above never
+    // runs for an AI under sustained attack — exactly when cranes get stuck
+    {
+        DWORD dwSweepNow = timeGetTime( );
+        if ( !m_dwLastStuckSweep || dwSweepNow - m_dwLastStuckSweep > 60000 )
+        {
+            m_dwLastStuckSweep = dwSweepNow;
+            HandleStuckVehicles( );
         }
     }
 
@@ -1157,11 +1169,17 @@ void CAIMgr::HandleStuckVehicles( void )
                     pUnit->SetGoal( FALSE );
                     pUnit->ClearParam( );
 
-                    // place the vehicle in the rocket?
-                    hexDest = m_pMap->m_pMapUtil->m_RocketHex;
-                    CMsgPlaceVeh msg( hexDest, hexDest, m_iPlayer, pUnit->GetTypeUnit( ) );
-                    msg.m_dwID = pUnit->GetID( );
-                    theGame.PostToServer( (CNetCmd*)&msg, sizeof( CMsgPlaceVeh ) );
+                    // teleport home only if the player still HAS a rocket (it can
+                    // be lost); otherwise just leave the unbound crane in place
+                    CHexCoord hexRocket( 0, 0 );
+                    pGameData->FindBuilding( CStructureData::rocket, m_iPlayer, hexRocket );
+                    if ( hexRocket.X( ) || hexRocket.Y( ) )
+                    {
+                        hexDest = m_pMap->m_pMapUtil->m_RocketHex;
+                        CMsgPlaceVeh msg( hexDest, hexDest, m_iPlayer, pUnit->GetTypeUnit( ) );
+                        msg.m_dwID = pUnit->GetID( );
+                        theGame.PostToServer( (CNetCmd*)&msg, sizeof( CMsgPlaceVeh ) );
+                    }
 #ifdef _LOGOUT
                     logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC,
                                "CAIMgr::HandleStuckVehicles() player %d unit %d a %d is stuck after 10 min, placed at "
