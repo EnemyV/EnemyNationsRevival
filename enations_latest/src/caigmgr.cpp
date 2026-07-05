@@ -10394,16 +10394,54 @@ void CAIGoalMgr::Load( CArchive& ar, CAIMap* pMap, CAIUnitList* plUnits, CAIOpFo
         while ( pos != NULL )
         {
             CAIUnit* pUnit = (CAIUnit*)m_plUnits->GetNext( pos );
-            if ( pUnit == NULL || !pUnit->GetTask( ) )
+            if ( pUnit == NULL )
+                continue;
+
+            // stale cross-session stuck timers (ms-since-boot) read as hours of
+            // fake stuck time after a load -> spurious instant teleports.
+            // vehicles only: building DW params carry router truck assignments.
+            if ( pUnit->GetType( ) == CUnit::vehicle &&
+                 ( pUnit->GetTypeUnit( ) == CTransportData::construction ||
+                   pUnit->GetTypeUnit( ) == CTransportData::heavy_truck ) )
+            {
+                pUnit->SetParamDW( CAI_ROUTE_X, 0 );
+                pUnit->SetParamDW( CAI_ROUTE_Y, 0 );
+            }
+
+            if ( !pUnit->GetTask( ) )
                 continue;
 
             CAITask* pTask = m_plTasks->GetTask( pUnit->GetTask( ), pUnit->GetGoal( ) );
-            if ( pTask == NULL || pTask->GetStatus( ) != UNASSIGNED_TASK )
+            if ( pTask == NULL )
                 continue;
 
-            if ( pUnit->GetTypeUnit( ) == CTransportData::construction &&
-                 pTask->GetTaskParam( ORDER_TYPE ) == CONSTRUCTION_ORDER &&
-                 pUnit->GetParam( CAI_EFFECTIVE ) )
+            BOOL bCrane = ( pUnit->GetType( ) == CUnit::vehicle &&
+                            pUnit->GetTypeUnit( ) == CTransportData::construction );
+            BOOL bConstruction = ( pTask->GetTaskParam( ORDER_TYPE ) == CONSTRUCTION_ORDER );
+
+            if ( pTask->GetStatus( ) != UNASSIGNED_TASK )
+            {
+                // This task was already claimed by an earlier unit in this loop:
+                // a DUPLICATE binding. The unserialized-status bug used to hand
+                // one construction task to several cranes before the save was
+                // made, and those extra bindings are baked into old saves --
+                // observed live as three cranes bound to ONE build hex, mutually
+                // blocking each other forever (each is the others' obstruction).
+                // Keep the first owner and unbind the extras so they return to
+                // the assignment pool. Never unbind a crane that already issued
+                // its build (CAI_EFFECTIVE) -- it must wait for built/100%.
+                if ( bCrane && bConstruction && !pUnit->GetParam( CAI_EFFECTIVE ) )
+                {
+                    pUnit->ClearParam( );
+                    pUnit->SetTask( FALSE );
+                    pUnit->SetGoal( FALSE );
+                    pUnit->SetDataDW( 0 );
+                    pUnit->SetStatus( 0 );
+                }
+                continue;
+            }
+
+            if ( bCrane && bConstruction && pUnit->GetParam( CAI_EFFECTIVE ) )
                 pTask->SetStatus( COMPLETED_TASK );  // build already issued -> wait for built/100%
             else
                 pTask->SetStatus( INPROCESS_TASK );  // held by a unit -> not free to re-hand

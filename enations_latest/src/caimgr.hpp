@@ -78,6 +78,7 @@ private:
     // Member variables
     DWORD m_dwLastMessageTime;
     DWORD m_dwLastIdleProcess;
+    DWORD m_dwLastStuckSweep;  // wall-clock HandleStuckVehicles cadence (transient)
 	int  m_iIdle;  // counter for cycles without messages (idle time)
 	BOOL m_bIdleFunction[MAX_IDLE_FUNCTIONS];
 

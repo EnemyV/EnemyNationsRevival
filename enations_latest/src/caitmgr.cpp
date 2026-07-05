@@ -534,14 +534,24 @@ void CAITaskMgr::AssignUnits( void )
                 if ( pUnit->GetType( ) == CUnit::building )
                     continue;
 
-                pUnit->SetParamDW( CAI_ROUTE_X, 0 );
-                pUnit->SetParamDW( CAI_ROUTE_Y, 0 );
-
                 // unit has no task assigned
                 // this should pick up new units
                 // and units whose tasks are gone
                 if ( !pUnit->GetTask( ) && !pUnit->GetGoal( ) )
                 {
+                    // Reset the route/stuck timers ONLY when handing out a fresh
+                    // assignment. This zeroing used to run unconditionally for
+                    // EVERY vehicle on EVERY AssignUnits pass (which fires on each
+                    // bldg_new/veh_new event and as idle job #1, i.e. every few
+                    // seconds) -- silently restarting HandleStuckVehicles' 5/10-
+                    // minute stuck clocks and ConstructBuilding's 30s re-send
+                    // timer for actively-tasked units. Net effect: the 10-minute
+                    // stuck-crane teleport rescue could never fire at all
+                    // (live-diagnosed: every crane dumped rx=0 on every rotation
+                    // while visibly stuck for 15+ minutes).
+                    pUnit->SetParamDW( CAI_ROUTE_X, 0 );
+                    pUnit->SetParamDW( CAI_ROUTE_Y, 0 );
+
                     AssignTask( pUnit );
 
                     if ( pUnit->GetType( ) == CUnit::vehicle )
@@ -5221,6 +5231,19 @@ void CAITaskMgr::ConstructBuilding( CAIUnit* pUnit, CAITask* pTask )
     // PREPARE for crane needing to be adjacent to build site
     // and not on the hex-of-the-building
     CHexCoord hexCrane( pUnit->GetParam( CAI_DEST_X ), pUnit->GetParam( CAI_DEST_Y ) );
+
+    // resync a stale CAI_DEST: task BUILD_AT and CAI_DEST are supposed to be
+    // identical today (see the adjacent-hex comments), but a re-picked site can
+    // leave CAI_DEST pointing at the OLD hex -- the arrival test then keys on
+    // the stale param while the already-enroute test keys on the task site, and
+    // a crane standing ON its true site is stuck in limbo forever (live: crane
+    // 98 at 147,1019 == BUILD_AT, CAI_DEST stale at 145,1019).
+    if ( ( hexSite.X( ) || hexSite.Y( ) ) && ( hexCrane.X( ) || hexCrane.Y( ) ) && hexCrane != hexSite )
+    {
+        hexCrane = hexSite;
+        pUnit->SetParam( CAI_DEST_X, hexSite.X( ) );
+        pUnit->SetParam( CAI_DEST_Y, hexSite.Y( ) );
+    }
 
 #ifdef _LOGOUT
     logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC,

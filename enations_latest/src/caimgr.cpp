@@ -77,7 +77,8 @@ CAIMgr::CAIMgr( int iPlayer )
     m_bIsAI   = TRUE;
     m_bIsDead = FALSE;
 
-    m_iIdle = 0;
+    m_iIdle            = 0;
+    m_dwLastStuckSweep = 0;
     for ( int i = 0; i < MAX_IDLE_FUNCTIONS; ++i ) m_bIdleFunction[i] = TRUE;
 
     m_pGoalMgr = NULL;
@@ -315,6 +316,17 @@ void CAIMgr::Manage( void )
 
             // reset this time and start over
             for ( int i = 0; i < MAX_IDLE_FUNCTIONS; ++i ) m_bIdleFunction[i] = TRUE;
+        }
+    }
+
+    // stuck-vehicle sweep on a wall clock too: the idle rotation above never
+    // runs for an AI under sustained attack — exactly when cranes get stuck
+    {
+        DWORD dwSweepNow = timeGetTime( );
+        if ( !m_dwLastStuckSweep || dwSweepNow - m_dwLastStuckSweep > 60000 )
+        {
+            m_dwLastStuckSweep = dwSweepNow;
+            HandleStuckVehicles( );
         }
     }
 
@@ -1007,6 +1019,29 @@ void CAIMgr::HandleStuckVehicles( void )
             if ( bIsCarried || bIsWorking )
                 continue;
 
+            // arrived-idle limbo: a crane sitting ON its build site that never
+            // sent its build message (task order is message-driven and no message
+            // ever comes). The timer branches below skip arrived vehicles, so
+            // nudge its task order here instead -- idempotent if already sent.
+            if ( pUnit->GetTypeUnit( ) == CTransportData::construction &&
+                 pUnit->GetTask( ) && hexVeh == hexDest &&
+                 !pUnit->GetParam( CAI_EFFECTIVE ) )
+            {
+#ifdef _WIN32
+                {
+                    char szR[192];
+                    sprintf( szR,
+                             "[CRANERESCUE] nudge arrived-idle crane %lu task %u at %d,%d tail %d,%d aidest %u,%u\n",
+                             (unsigned long)pUnit->GetID( ), (unsigned)pUnit->GetTask( ), hexVeh.X( ), hexVeh.Y( ),
+                             snap.iPtTailX / 2, snap.iPtTailY / 2, (unsigned)pUnit->GetParam( CAI_DEST_X ),
+                             (unsigned)pUnit->GetParam( CAI_DEST_Y ) );
+                    OutputDebugStringA( szR );
+                }
+#endif
+                m_pTaskMgr->GenerateTaskOrder( pUnit );
+                continue;
+            }
+
             // has this vehicle been given time?
             dwUnitTime = pUnit->GetParamDW( CAI_ROUTE_X );  // last time
             if ( !dwUnitTime || dwUnitTime > dwNow )
@@ -1033,6 +1068,15 @@ void CAIMgr::HandleStuckVehicles( void )
                 pUnit->SetDestination( hexDest );
                 // last hex LOWORD(X), HIWORD(Y) occupied
                 pUnit->SetParamDW( CAI_ROUTE_Y, (DWORD)MAKELPARAM( hexVeh.X( ), hexVeh.Y( ) ) );
+#ifdef _WIN32
+                // TEMP DIAGNOSTIC (remove with CRANEDUMP)
+                {
+                    char szR[160];
+                    sprintf( szR, "[CRANERESCUE] 5min resend crane %lu to %d,%d diff %lu\n",
+                             (unsigned long)pUnit->GetID( ), hexDest.X( ), hexDest.Y( ), (unsigned long)dwDiff );
+                    OutputDebugStringA( szR );
+                }
+#endif
 #ifdef _LOGOUT
                 logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC,
                            "CAIMgr::HandleStuckVehicles() player %d unit %d a %d is stuck after 5 min, resent to %d,%d "
@@ -1057,7 +1101,26 @@ void CAIMgr::HandleStuckVehicles( void )
                 hexDest.X( LOWORD( pUnit->GetParamDW( CAI_ROUTE_Y ) ) );
                 hexDest.Y( HIWORD( pUnit->GetParamDW( CAI_ROUTE_Y ) ) );
 
+                // a crane actively travelling is never teleported (operator rule);
+                // it only gets the re-send path below
+                if ( snap.iRouteMode == CVehicle::moving )
+                {
+                    pUnit->SetDestination( hex );
+                    pUnit->SetParamDW( CAI_ROUTE_Y, (DWORD)MAKELPARAM( hexVeh.X( ), hexVeh.Y( ) ) );
+                    continue;
+                }
+
                 int iDist = pGameData->GetRangeDistance( hexVeh, hexDest );
+
+#ifdef _WIN32
+                // TEMP DIAGNOSTIC (remove with CRANEDUMP)
+                {
+                    char szR[160];
+                    sprintf( szR, "[CRANERESCUE] 10min crane %lu diff %lu iDist %d (moved-since-5min test)\n",
+                             (unsigned long)pUnit->GetID( ), (unsigned long)dwDiff, iDist );
+                    OutputDebugStringA( szR );
+                }
+#endif
 
                 // if still too far away
                 if ( iDist > 2 )
@@ -1081,6 +1144,35 @@ void CAIMgr::HandleStuckVehicles( void )
 
                     if ( pUnit->GetTypeUnit( ) == CTransportData::construction )
                     {
+                        // Shelve the build site this crane could never reach BEFORE
+                        // UnAssignTask zeroes the task's BUILD_AT -- otherwise the
+                        // reassignment (this crane or the next) re-selects the same
+                        // doomed hex and marches straight back: a rescue->re-stuck
+                        // macro-loop. Temporary (2 min): the blockage may have been
+                        // other cranes, which this rescue is itself dissolving.
+                        if ( m_pGoalMgr != NULL && m_pGoalMgr->m_plTasks != NULL )
+                        {
+                            CAITask* pTask = m_pGoalMgr->m_plTasks->GetTask( pUnit->GetTask( ), pUnit->GetGoal( ) );
+                            if ( pTask != NULL && pTask->GetTaskParam( ORDER_TYPE ) == CONSTRUCTION_ORDER )
+                            {
+                                CHexCoord hexSite( pTask->GetTaskParam( BUILD_AT_X ),
+                                                   pTask->GetTaskParam( BUILD_AT_Y ) );
+                                if ( ( hexSite.X( ) || hexSite.Y( ) ) && m_pMap->m_pMapUtil != NULL )
+                                    m_pMap->m_pMapUtil->AddFailedSiteTemp(
+                                        (int)pTask->GetTaskParam( BUILDING_ID ), hexSite, 120 * 1000 );
+                            }
+                        }
+
+#ifdef _WIN32
+                        // TEMP DIAGNOSTIC (remove with CRANEDUMP)
+                        {
+                            char szR[160];
+                            sprintf( szR, "[CRANERESCUE] 10min TELEPORT crane %lu task %u -> rocket, unbound\n",
+                                     (unsigned long)pUnit->GetID( ), (unsigned)pUnit->GetTask( ) );
+                            OutputDebugStringA( szR );
+                        }
+#endif
+
                         // unassign crane task
                         m_pTaskMgr->UnAssignTask( pUnit->GetTask( ), pUnit->GetGoal( ) );
                     }
@@ -1089,11 +1181,17 @@ void CAIMgr::HandleStuckVehicles( void )
                     pUnit->SetGoal( FALSE );
                     pUnit->ClearParam( );
 
-                    // place the vehicle in the rocket?
-                    hexDest = m_pMap->m_pMapUtil->m_RocketHex;
-                    CMsgPlaceVeh msg( hexDest, hexDest, m_iPlayer, pUnit->GetTypeUnit( ) );
-                    msg.m_dwID = pUnit->GetID( );
-                    theGame.PostToServer( (CNetCmd*)&msg, sizeof( CMsgPlaceVeh ) );
+                    // teleport home only if the player still HAS a rocket (it can
+                    // be lost); otherwise just leave the unbound crane in place
+                    CHexCoord hexRocket( 0, 0 );
+                    pGameData->FindBuilding( CStructureData::rocket, m_iPlayer, hexRocket );
+                    if ( hexRocket.X( ) || hexRocket.Y( ) )
+                    {
+                        hexDest = m_pMap->m_pMapUtil->m_RocketHex;
+                        CMsgPlaceVeh msg( hexDest, hexDest, m_iPlayer, pUnit->GetTypeUnit( ) );
+                        msg.m_dwID = pUnit->GetID( );
+                        theGame.PostToServer( (CNetCmd*)&msg, sizeof( CMsgPlaceVeh ) );
+                    }
 #ifdef _LOGOUT
                     logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC,
                                "CAIMgr::HandleStuckVehicles() player %d unit %d a %d is stuck after 10 min, placed at "
@@ -1290,8 +1388,11 @@ void CAIMgr::VehicleErrorResponse( CAIMsg* pMsg )
                 hexSite.Y( pUnit->GetParam( CAI_DEST_Y ) );
             }
 
-            pUnit->SetParamDW( CAI_ROUTE_X, 0 );
-            pUnit->SetParamDW( CAI_ROUTE_Y, 0 );
+            // NOTE: do NOT zero CAI_ROUTE_X/Y here. Every failed goto lands in
+            // this handler, so zeroing restarted the 30s/90s/5min/10min stuck
+            // clocks on each failure -- a chronically blocked crane looped
+            // (re-send -> error -> reset) forever and never escalated to the
+            // give-up or the sweep rescue.
 
             // the crane is blocked from entering build site
             if ( hexNext == hexSite )
@@ -1358,8 +1459,7 @@ void CAIMgr::VehicleErrorResponse( CAIMsg* pMsg )
 
         pUnit->SetDestination( hexDest );
 
-        pUnit->SetParamDW( CAI_ROUTE_X, 0 );
-        pUnit->SetParamDW( CAI_ROUTE_Y, 0 );
+        // (stuck clocks deliberately left running -- see note above)
 
 #ifdef _LOGOUT
         logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "CAIMgr::VehicleErrorResponse() respondinging to vehicle error " );
