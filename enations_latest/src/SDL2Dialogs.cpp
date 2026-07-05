@@ -1321,6 +1321,10 @@ void SDL2ClientLobbyDialog::OnInit() {
     m_lblStatus->SetWrapped(true);
     y += rowH * 2 + 6;
 
+    m_startTicks = SDL_GetTicks();
+    extern bool g_bClientHostLost;
+    g_bClientHostLost = false;   // fresh lobby — clear any stale host-lost flag
+
     AddWidget<SDL2Button>(lx, y, 110, rowH, "Leave", [this]() { EndDialog(0); });
     y += rowH + 12;
 
@@ -1378,6 +1382,35 @@ void SDL2ClientLobbyDialog::OnFrame() {
 
     UpdatePlayerList();
     RefreshChat();
+
+    // Host-presence indication: a player who joins a game whose host has left (or a
+    // stale registration with no live host) must be told, not left staring at
+    // "Waiting for the host..." forever. Detect two cases and update the status line:
+    //   2 = host left  (we saw the host, then it dropped; or OnMsgSessionClose flagged it)
+    //   1 = no response (never saw a host after a grace period)
+    extern bool g_bClientHostLost;
+    CPlayer* pHost = theGame.GetServer();
+    bool hostOk = (pHost != NULL) && (pHost->GetNetNum() != 0);
+    if (hostOk) m_sawHost = true;
+
+    int want = 0;
+    if (g_bClientHostLost || (m_sawHost && !hostOk))
+        want = 2;
+    else if (!m_sawHost && (SDL_GetTicks() - m_startTicks > 12000u))
+        want = 1;
+
+    if (want != m_statusState && m_lblStatus) {
+        m_statusState = want;
+        if (want == 2) {
+            m_lblStatus->SetText("The host has left \342\200\224 this game is no longer available. Click Leave to return to the menu.");
+            m_lblStatus->SetColor({220, 60, 60, 255});
+        } else if (want == 1) {
+            m_lblStatus->SetText("No response from the host \342\200\224 the game may no longer be available. You can keep waiting or click Leave.");
+            m_lblStatus->SetColor({220, 160, 60, 255});
+        } else {
+            m_lblStatus->SetText("Connected. Waiting for the host to start the game...");
+        }
+    }
 
     extern bool g_bClientStartReceived;
     if (g_bClientStartReceived) {

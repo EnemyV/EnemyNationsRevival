@@ -281,6 +281,11 @@ private:
     SDL2EditBox* m_edtChat    = nullptr;
     int          m_chatCount  = -1;
     std::string  m_lastSig;
+    // Host-presence tracking: surface "the host left / no host responding" instead
+    // of sitting on "Waiting for the host..." forever (a joined-but-hostless game).
+    Uint32       m_startTicks  = 0;
+    bool         m_sawHost     = false;
+    int          m_statusState = 0;   // 0=waiting, 1=no-response-yet, 2=host-left
 };
 
 // ============================================================================
