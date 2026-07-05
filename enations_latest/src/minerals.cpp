@@ -80,7 +80,17 @@ void CMineralHex::InitHex( CHexCoord const& hex, int iType, int multiplier )
 			break;
 	  }
 
-	iDensity  = RandNum( iDensity ) + (RandNum( iDensity ) * 0.1) * multiplier;
+	// MP determinism: the two draws MUST be sequenced — as one `a + b*0.1`
+	// expression their evaluation order is unspecified and differed across
+	// MSVC/gcc/clang, swapping which draw lands in which role. When the swap
+	// crosses the <=0 early-return below, the minerals flag differs per
+	// platform and MakeMineral's iAvail branch then consumes a different
+	// number of draws -> world-gen RAND MISMATCH (the missed 23rd site of the
+	// arg-eval hoist wave). Integer /10 replaces the *0.1 double: this TU is
+	// not /fp:precise, and the value is equivalent at the boundary.
+	const int iDensDraw1 = RandNum( iDensity );
+	const int iDensDraw2 = RandNum( iDensity );
+	iDensity  = iDensDraw1 + ( iDensDraw2 * multiplier ) / 10;
       iQuantity = RandNum( iQuantity ) * multiplier;
 
 	if ((iDensity <= 0) || (iQuantity <= 0))
