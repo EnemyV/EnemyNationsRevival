@@ -1049,9 +1049,12 @@ void CAIMgr::HandleStuckVehicles( void )
             {
 #ifdef _WIN32
                 {
-                    char szR[128];
-                    sprintf( szR, "[CRANERESCUE] nudge arrived-idle crane %lu task %u at %d,%d\n",
-                             (unsigned long)pUnit->GetID( ), (unsigned)pUnit->GetTask( ), hexVeh.X( ), hexVeh.Y( ) );
+                    char szR[192];
+                    sprintf( szR,
+                             "[CRANERESCUE] nudge arrived-idle crane %lu task %u at %d,%d tail %d,%d aidest %u,%u\n",
+                             (unsigned long)pUnit->GetID( ), (unsigned)pUnit->GetTask( ), hexVeh.X( ), hexVeh.Y( ),
+                             snap.iPtTailX / 2, snap.iPtTailY / 2, (unsigned)pUnit->GetParam( CAI_DEST_X ),
+                             (unsigned)pUnit->GetParam( CAI_DEST_Y ) );
                     OutputDebugStringA( szR );
                 }
 #endif
@@ -1405,8 +1408,11 @@ void CAIMgr::VehicleErrorResponse( CAIMsg* pMsg )
                 hexSite.Y( pUnit->GetParam( CAI_DEST_Y ) );
             }
 
-            pUnit->SetParamDW( CAI_ROUTE_X, 0 );
-            pUnit->SetParamDW( CAI_ROUTE_Y, 0 );
+            // NOTE: do NOT zero CAI_ROUTE_X/Y here. Every failed goto lands in
+            // this handler, so zeroing restarted the 30s/90s/5min/10min stuck
+            // clocks on each failure -- a chronically blocked crane looped
+            // (re-send -> error -> reset) forever and never escalated to the
+            // give-up or the sweep rescue.
 
             // the crane is blocked from entering build site
             if ( hexNext == hexSite )
@@ -1473,8 +1479,7 @@ void CAIMgr::VehicleErrorResponse( CAIMsg* pMsg )
 
         pUnit->SetDestination( hexDest );
 
-        pUnit->SetParamDW( CAI_ROUTE_X, 0 );
-        pUnit->SetParamDW( CAI_ROUTE_Y, 0 );
+        // (stuck clocks deliberately left running -- see note above)
 
 #ifdef _LOGOUT
         logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "CAIMgr::VehicleErrorResponse() respondinging to vehicle error " );
