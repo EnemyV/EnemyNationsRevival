@@ -2083,6 +2083,14 @@ BOOL CAITaskMgr::AssignRepair( CAIUnit* pCrane )
                 {
                     pCrane->SetGoal( pTask->GetGoalID( ) );
                     pCrane->SetTask( pTask->GetID( ) );
+#ifdef _WIN32
+                    {
+                        char szR[96];
+                        sprintf( szR, "[REPAIR] plyr %d assign crane %lu\n", m_iPlayer,
+                                 (unsigned long)pCrane->GetID( ) );
+                        OutputDebugStringA( szR );
+                    }
+#endif
                     return TRUE;
                 }
             }
@@ -4857,6 +4865,14 @@ BOOL CAITaskMgr::RepairConstruction( CAIUnit* pUnit )
 
             // flag unit has having sent message
             pUnit->SetParam( CAI_FUEL, 1 );
+#ifdef _WIN32
+            {
+                char szR[96];
+                sprintf( szR, "[REPAIR] crane %lu repair msg for bldg %lu\n", (unsigned long)pUnit->GetID( ),
+                         (unsigned long)pUnit->GetDataDW( ) );
+                OutputDebugStringA( szR );
+            }
+#endif
 
 #ifdef _LOGOUT
             logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC,
@@ -4944,6 +4960,14 @@ BOOL CAITaskMgr::RepairConstruction( CAIUnit* pUnit )
         // selected a building to repair
         if ( paiBldg != NULL )
         {
+#ifdef _WIN32
+            {
+                char szR[128];
+                sprintf( szR, "[REPAIR] crane %lu -> bldg %lu at %d,%d rating %d\n", (unsigned long)pUnit->GetID( ),
+                         (unsigned long)paiBldg->GetID( ), hexBldg.X( ), hexBldg.Y( ), iBestRating );
+                OutputDebugStringA( szR );
+            }
+#endif
 #ifdef _LOGOUT
             logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC,
                        "RepairConstruction() plyr %d crane %ld going to bldg %ld at %d,%d ", pUnit->GetOwner( ),
@@ -4962,6 +4986,13 @@ BOOL CAITaskMgr::RepairConstruction( CAIUnit* pUnit )
     }
 
 DismissUnit:
+#ifdef _WIN32
+    {
+        char szR[96];
+        sprintf( szR, "[REPAIR] crane %lu dismissed (done or no target)\n", (unsigned long)pUnit->GetID( ) );
+        OutputDebugStringA( szR );
+    }
+#endif
     // find staging hex to move crane to
     // m_pGoalMgr->m_pMap->m_pMapUtil->FindStagingHex(
     //	hexVeh, 1, 1, pUnit->GetTypeUnit(), hexDest );
