@@ -601,6 +601,10 @@ void CWndBar::SetStatusFunc( int iLine, FNSTATUSLINE fnStat, void* pData )
             }
         }
 
+        // Append the hex coordinates (operator request).
+        text += "  (" + std::to_string( pHex->GetHex().X() ) + "," +
+                        std::to_string( pHex->GetHex().Y() ) + ")";
+
         tb->SetStatusText( iLine, text, 0 );
         return;
     }
