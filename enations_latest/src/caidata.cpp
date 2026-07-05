@@ -1280,6 +1280,8 @@ const char* CAIData::GetMsgString( int iMsg )
         return ( "cmd_you_are" );
     case CNetCmd::cmd_player:
         return ( "cmd_player" );
+    case CNetCmd::cmd_lobby_race:
+        return ( "cmd_lobby_race" );
     case CNetCmd::cmd_start:
         return ( "cmd_start" );
     case CNetCmd::cmd_play:

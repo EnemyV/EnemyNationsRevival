@@ -154,6 +154,7 @@ class CNetCmd : public VPMsgHdr
         save_info,       // base save info
         research_disc,   // player has discovered research
         edict_toggle,    // player toggled a civ-wide edict (Edicts v1)
+        cmd_lobby_race,  // host relays a player's picked race to the other clients (lobby display)
 
         last_message  // used for ASSERT
     };
@@ -196,6 +197,23 @@ class CNetReady : public CNetCmd
   public:
     CNetReady( CInitData* pId );
     int       m_iPlyrNum;
+    CInitData m_InitData;
+
+#ifdef _DEBUG
+  public:
+    void AssertValid( ) const;
+#endif
+};
+
+class CNetLobbyRace : public CNetCmd
+{  // host->clients: one player's picked race (CInitData) so the waiting-room list
+   // can show every player's real race, not just the local player's. Cosmetic
+   // (race does NOT feed world-gen); the client handler only copies m_InitData
+   // into the matching player, never mutating the roster. m_iNetNum is the stable
+   // per-player id (same field CNetReady/GetPlayer key on).
+  public:
+    CNetLobbyRace( int iNetNum, CInitData const& id );
+    int       m_iNetNum;
     CInitData m_InitData;
 
 #ifdef _DEBUG

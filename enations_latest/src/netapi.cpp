@@ -1282,6 +1282,19 @@ static void CmdReady( CNetReady* pMsg )
     EnMpDiagLog( "CmdReady: applied race to plyr=%d name='%s' netnum=%d (race[0]=%.3f)",
                  pPlr->GetPlyrNum( ), pPlr->GetName( ), pMsg->m_iPlyrNum,
                  pMsg->m_InitData.GetRace( 0 ) );
+
+    // Relay this player's race to the OTHER clients so their waiting-room list
+    // shows the real race, not the default. Cosmetic (race does not feed
+    // world-gen) — the CNetReady above is host-only, and cmd_player (the other
+    // InitData carrier) is start-only, so without this relay a client only ever
+    // knows its own race. Broadcast reaches every client incl. the sender, whose
+    // re-apply of its own InitData is a harmless no-op.
+    if ( theGame.IsNetGame( ) )
+    {
+        CNetLobbyRace race( pPlr->GetNetNum( ), pPlr->m_InitData );
+        theGame.PostToAllClients( &race, sizeof( race ), FALSE );
+    }
+
     if ( theApp.m_pCreateGame != NULL )
         theApp.m_pCreateGame->UpdateBtns( );
 
@@ -1318,6 +1331,31 @@ static void CmdReady( CNetReady* pMsg )
     }
 }
 
+// Client-side: the host relayed another player's picked race. Copy it onto the
+// matching player so the waiting-room list shows the real race. Lobby-cosmetic
+// ONLY — deliberately does NOT touch the roster (unlike CmdPlayer): no add/
+// remove, no AI takeover, no state change. Safe to arrive any time in the lobby.
+static void CmdLobbyRace( CNetLobbyRace* pMsg )
+{
+
+    ASSERT_CMD( pMsg );
+    if ( theGame.AmServer( ) )
+        return;   // host already has every race from CmdReady
+
+    CPlayer* pPlr = theGame.GetPlayer( pMsg->m_iNetNum );
+    if ( pPlr == NULL )
+    {
+        // The player may not be in our list yet (race arrived before the join
+        // enum). Harmless — the CmdEnumPlyrs re-send covers a late joiner.
+        EnMpDiagLog( "CmdLobbyRace: no player for netnum=%d yet (race deferred)", pMsg->m_iNetNum );
+        return;
+    }
+    pPlr->m_InitData = pMsg->m_InitData;
+    EnMpDiagLog( "CmdLobbyRace: applied race to plyr=%d name='%s' netnum=%d (race[0]=%.3f)",
+                 pPlr->GetPlyrNum( ), pPlr->GetName( ), pMsg->m_iNetNum,
+                 pMsg->m_InitData.GetRace( 0 ) );
+}
+
 static void CmdEnumPlyrs( int iNetNum )
 {
 
@@ -1344,6 +1382,19 @@ static void CmdEnumPlyrs( int iNetNum )
             CNetPlyrJoin* pData = CNetPlyrJoin::Alloc( pPlr );
             theGame.PostToClient( pPlrSend, pData, pData->m_iLen );
             delete[] ( (char*)pData );
+
+            // CNetPlyrJoin carries name + economy but NOT race — a late joiner
+            // would miss the cmd_lobby_race broadcasts that fired before it
+            // arrived. Send each already-picked human's race too so the new
+            // client's waiting-room list is complete. (Players who haven't
+            // picked yet get theirs via the live CmdReady relay; AIs are keyed
+            // by netnum 0 which this message can't address — they carry their
+            // race in cmd_player at game start.)
+            if ( pPlr->GetNetNum( ) > 0 && pPlr->GetNetNum( ) != iNetNum )
+            {
+                CNetLobbyRace race( pPlr->GetNetNum( ), pPlr->m_InitData );
+                theGame.PostToClient( pPlrSend, &race, sizeof( race ) );
+            }
         }
     }
 }
@@ -3117,6 +3168,9 @@ void CGame::ProcessMessage(CNetCmd* pCmd )
         break;
     case CNetCmd::cmd_player:
         CmdPlayer( (CNetPlayer*)pCmd );
+        break;
+    case CNetCmd::cmd_lobby_race:
+        CmdLobbyRace( (CNetLobbyRace*)pCmd );
         break;
     case CNetCmd::cmd_start:
         CmdStart( (CNetStart*)pCmd );

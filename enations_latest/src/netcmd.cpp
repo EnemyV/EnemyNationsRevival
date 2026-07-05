@@ -39,6 +39,15 @@ CNetReady::CNetReady( CInitData* pId ): CNetCmd( cmd_ready )
     ASSERT_CMD( this );
 }
 
+CNetLobbyRace::CNetLobbyRace( int iNetNum, CInitData const& id ): CNetCmd( cmd_lobby_race )
+{
+
+    m_iNetNum  = iNetNum;
+    m_InitData = id;
+
+    ASSERT_CMD( this );
+}
+
 CNetYouAre::CNetYouAre( int iPlyr ): CNetCmd( cmd_you_are )
 {
 
@@ -1002,6 +1011,13 @@ void CNetYouAre::AssertValid( ) const
     ASSERT( m_bMsg == cmd_you_are );
 }
 
+void CNetLobbyRace::AssertValid( ) const
+{
+
+    ASSERT( m_bMsg == cmd_lobby_race );
+    ASSERT( m_iNetNum > 0 );
+}
+
 void CNetPlayer::AssertValid( ) const
 {
 
@@ -1332,6 +1348,9 @@ void CNetCmd::AssertMsgValid( ) const
     case cmd_you_are:
         ( (CNetYouAre*)this )->AssertValid( );
         break;
+    case cmd_lobby_race:
+        ( (CNetLobbyRace*)this )->AssertValid( );
+        break;
     case cmd_player:
         ( (CNetPlayer*)this )->AssertValid( );
         break;
@@ -1511,6 +1530,7 @@ BOOL CNetCmd::FitsBuffer( int cbAvail ) const
     {
     case cmd_ready:            cbNeed = sizeof( CNetReady ); break;
     case cmd_you_are:          cbNeed = sizeof( CNetYouAre ); break;
+    case cmd_lobby_race:       cbNeed = sizeof( CNetLobbyRace ); break;
     case cmd_player:           cbNeed = sizeof( CNetPlayer ); break;
     case cmd_start:            cbNeed = sizeof( CNetStart ); break;
     case cmd_chat:             cbNeed = sizeof( CNetChat ); break;
