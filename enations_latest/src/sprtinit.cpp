@@ -397,6 +397,13 @@ void CStructure::InitData() {
         // BUGBUG - inc building points
         (*ppSd)->m_iDamagePoints += (*ppSd)->m_iDamagePoints / 2;
 
+        // Operator balance (2026-07-05): the Rocket ship gets +15% HP and +10% weapon range
+        // (range clamped to 9 per the MAX_SPOTTING limit).
+        if ((*ppSd)->m_iType == CStructureData::rocket) {
+            (*ppSd)->m_iDamagePoints = ((*ppSd)->m_iDamagePoints * 115) / 100;
+            (*ppSd)->m_iRange        = __min(((*ppSd)->m_iRange * 110) / 100, 9);
+        }
+
         if ((*ppSd)->m_iSoundIdle > 0)
             (*ppSd)->m_iSoundIdle += SOUNDS::bld_base - 1;
         if ((*ppSd)->m_iSoundRun > 0)
@@ -735,6 +742,18 @@ void CTransport::InitData() {
             pTd->m_iPeople       = 5;
             pTd->m_iDamagePoints = (pTd->m_iDamagePoints * 140) / 100;   // +40% HP
         }
+        // =========================================================================
+
+        // === CUSTOM GAMEPLAY TWEAK (2026-07-05, operator balance) =================
+        // Artillery range +20% (Mortar=light_art, Rover=med_art, Rocket tank=heavy_art),
+        // Frigate (cruiser) +25%. Clamp to 9 — m_iMaxRange (=range*1.5+2) must stay <=
+        // MAX_SPOTTING (15), so effective range can't exceed 9.
+        if (pTd->m_iType == CTransportData::light_art ||
+            pTd->m_iType == CTransportData::med_art ||
+            pTd->m_iType == CTransportData::heavy_art)
+            pTd->m_iRange = __min((pTd->m_iRange * 120) / 100, 9);
+        else if (pTd->m_iType == CTransportData::cruiser)   // Frigate
+            pTd->m_iRange = __min((pTd->m_iRange * 125) / 100, 9);
         // =========================================================================
 
         if (pTd->m_iSoundIdle > 0)
