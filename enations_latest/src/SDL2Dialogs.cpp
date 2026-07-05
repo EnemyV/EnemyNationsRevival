@@ -1064,13 +1064,17 @@ bool SDL2_RunLoadSinglePlayerFlow(GameWindow* gameWindow) {
         ShowWallpaperBackground(gameWindow);
         SDL2PickPlayerDialog pickDlg(gameWindow);
         if (pickDlg.DoModal() != 1) {
+            // LoadGame() disabled all windows; only StartGame (OK path) re-enables. A
+            // pick-cancel returns to the menu without StartGame, so re-enable or the menu
+            // is left input-dead. (Mirrors LoadGame's failure catches.)
+            EnableAllWindows(NULL, TRUE);
             theGame.Close();
             delete theApp.m_pCreateGame;
             theApp.m_pCreateGame = NULL;
             return false;
         }
         pPlr = theGame.GetPlayerByPlyr(pickDlg.m_iSelectedPlyrNum);
-        if (!pPlr) { theGame.Close(); delete theApp.m_pCreateGame; theApp.m_pCreateGame = NULL; return false; }
+        if (!pPlr) { EnableAllWindows(NULL, TRUE); theGame.Close(); delete theApp.m_pCreateGame; theApp.m_pCreateGame = NULL; return false; }
         sPickName = pickDlg.m_playerName;
     }
 
@@ -2034,6 +2038,8 @@ bool SDL2_RunLoadNetworkFlow(GameWindow* gameWindow) {
 
     SDL2PickPlayerDialog pickDlg(gameWindow);
     if (pickDlg.DoModal() != 1) {
+        // Re-enable windows LoadGame disabled (see the SP flow); pick-cancel skips StartGame.
+        EnableAllWindows(NULL, TRUE);
         theNet.Close(FALSE);
         theGame.Close();
         delete theApp.m_pCreateGame;
@@ -2043,6 +2049,7 @@ bool SDL2_RunLoadNetworkFlow(GameWindow* gameWindow) {
 
     CPlayer* pPlr = theGame.GetPlayerByPlyr(pickDlg.m_iSelectedPlyrNum);
     if (!pPlr) {
+        EnableAllWindows(NULL, TRUE);
         theNet.Close(FALSE);
         theGame.Close();
         delete theApp.m_pCreateGame;

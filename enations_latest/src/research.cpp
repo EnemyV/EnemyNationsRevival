@@ -408,7 +408,7 @@ void CRsrchArray::Open( )
             "Synthetic lubricants slash friction losses across the drivetrain, saving 2%.",
             "Ion scavengers strip the last usable energy from the exhaust stream, another 2%.",
             "A near-closed-loop drive cycle wastes almost nothing, shaving another 2% (30% total).",
-            "Cryogenic conditioning densifies the fuel charge for a final 1% (31% total).",
+            "Cryogenic conditioning densifies the fuel charge for another 1% (31% total).",
             "Perfected combustion leaves nothing unburned, the last 1% (32% total)." };
         static char const* aszRslt[12] = {
             "Fuel injection is fielded. Our vehicles burn 5% less gas.",
@@ -474,7 +474,13 @@ void CRsrchArray::Open( )
     // later level requires the previous speed level plus the NEXT fuel-efficiency level
     // (so it climbs in lock-step with fuel economy). Level 10 has no higher fuel level
     // to gate on, so it just requires speed level 9. The AI reaches these via its
-    // randomized research fallback.
+    // randomized research fallback. COST: because the speed line unlocks LATE (each tier is
+    // gated behind the matching fuel-efficiency tier), it is priced as a premium line that
+    // KEEPS DOUBLING the whole way — B * 2^(tier-1) with NO flat cap (B = gas_turbine cost):
+    // B, 2B, 4B ... 512B at tier 10, 1024B/2048B at 11/12. Unlike Fuel Efficiency (which
+    // caps its doubling at 32*B then goes flat +16*B, staying affordable), speed escalates
+    // continuously so the high tiers are appropriately expensive for how deep they unlock.
+    // The extended tiers 11-12 continue this one curve (see the block below).
     {
         static char const* aszName[10] = {
             "Tuned Drivetrains",  "High-Torque Gearing", "Lightweight Frames",
@@ -491,7 +497,7 @@ void CRsrchArray::Open( )
             "Frictionless magnetic bearings cut drivetrain losses, adding 2% speed.",
             "Composite drivetrains shed weight and friction together, adding 2% speed.",
             "Vectored thrust adds a push where wheels and tracks cannot, adding 2% speed.",
-            "Inertial dampeners shrug off acceleration losses, adding a final 2% speed." };
+            "Inertial dampeners shrug off acceleration losses, adding another 2% speed." };
         static char const* aszRslt[10] = {
             "Tuned drivetrains are fielded. Our vehicles move 2% faster.",
             "High-torque gearing is installed. Our vehicles move faster still.",
@@ -502,7 +508,7 @@ void CRsrchArray::Open( )
             "Magnetic bearings are running. Our vehicles gain still more speed.",
             "Composite drivetrains are in service. Our vehicles move faster.",
             "Vectored thrust is operational. Our vehicles surge ahead.",
-            "Inertial dampeners are perfected. Our vehicles reach their top speed." };
+            "Inertial dampeners are installed. Our vehicles gain still more speed." };
 
         // Extra (cross-line) prereq per level, on top of the chain + fuel prereqs.
         // -1 = none. Aerodynamic Profiling (level 6) also needs Fuel-Air Explosive
@@ -510,11 +516,14 @@ void CRsrchArray::Open( )
         static const int aiExtra[10] = {
             -1, -1, -1, -1, -1, (int)atk_3, -1, -1, -1, -1 };
 
+        int iBase = ElementAt( gas_turbine ).m_iPtsRequired;   // B, same base as Fuel Efficiency
         for ( int iOn = 0; iOn < 10; iOn++ )
         {
             CRsrchItem* pRi = &ElementAt( vehicle_speed_1 + iOn );
 
-            pRi->m_iPtsRequired      = 50000 + 25000 * iOn;                       // modest, gating does the pacing
+            // Premium curve: pure doubling, no flat cap — B * 2^(tier-1) (t10 = 512B).
+            int iTier = iOn + 1;                                                  // 1..10
+            pRi->m_iPtsRequired      = iBase << ( iTier - 1 );
             pRi->m_iScenarioReq      = ElementAt( gas_turbine ).m_iScenarioReq;   // fuel line's campaign gate
             pRi->m_iNumBldgsRequired = 0;
 
@@ -548,55 +557,30 @@ void CRsrchArray::Open( )
         }
     }
 
-    // In-code research topics: Vehicle Speed 11-20 (not in the DAT file). Ten MORE speed
-    // levels beyond the base 1-10 line above, each adding only +1% move speed (vs +2% for
-    // 1-10; see CPlayer::GetSpeedPct). Chain off the previous speed tier (11<-10, 12<-11,
-    // ...); the fuel-efficiency line is exhausted by here so there is no fuel gate. Cost
-    // follows the FUEL EFFICIENCY curve: double each level up to 32*B at the 6th new tier
-    // (tier 16), then a flat +16*B per level (B = gas_turbine cost). Appended at the END of
-    // the research enum (vehicle_speed_11..20), so the index is contiguous within this batch
-    // but chains back to the base line's vehicle_speed_10 for tier 11.
+    // In-code research topics: Vehicle Speed 11-12 (not in the DAT file). Two MORE speed
+    // tiers, each +1% (vs +2% for 1-10). Chain off the previous speed tier; no fuel gate.
+    // Cost continues the pure-doubling curve: tier 11 = 1024*B, tier 12 = 2048*B.
     {
-        static char const* aszName[10] = {
-            "Fluidic Drives",        "Gyroscopic Stabilizers","Nanotube Chassis",
-            "Superconducting Motors","Gravitic Assist",       "Phase-Slip Bearings",
-            "Kinetic Recyclers",     "Monocoque Exoframes",   "Plasma Treads",
-            "Warp-Assisted Locomotion" };
-        static char const* aszDesc[10] = {
+        static char const* aszName[2] = {
+            "Fluidic Drives", "Gyroscopic Stabilizers" };
+        static char const* aszDesc[2] = {
             "Fluidic drivetrains smooth every power stroke, adding 1% vehicle speed.",
-            "Gyroscopic stabilizers hold vehicles steady at pace, adding another 1% speed.",
-            "Nanotube chassis shed still more dead weight, adding 1% speed.",
-            "Superconducting motors waste almost no current, adding 1% speed.",
-            "Gravitic assist lightens each vehicle's effective load, adding 1% speed.",
-            "Phase-slip bearings all but eliminate friction, adding 1% speed.",
-            "Kinetic recyclers return braking energy to the drive, adding 1% speed.",
-            "Monocoque exoframes stiffen the hull for cleaner power delivery, adding 1% speed.",
-            "Plasma treads grip and release the ground instantly, adding 1% speed.",
-            "Warp-assisted locomotion pushes the last limit of speed, adding a final 1%." };
-        static char const* aszRslt[10] = {
+            "Gyroscopic stabilizers hold vehicles steady at pace, adding a final 1% speed." };
+        static char const* aszRslt[2] = {
             "Fluidic drives are fielded. Our vehicles move 1% faster.",
-            "Gyroscopic stabilizers are installed. Our vehicles gain a little more speed.",
-            "Nanotube chassis are in service. Our vehicles move faster still.",
-            "Superconducting motors are online. Our vehicles pick up more speed.",
-            "Gravitic assist is operational. Our vehicles move faster.",
-            "Phase-slip bearings are running. Our vehicles gain still more speed.",
-            "Kinetic recyclers are fielded. Our vehicles keep more of their momentum.",
-            "Monocoque exoframes are in service. Our vehicles move faster.",
-            "Plasma treads are operational. Our vehicles surge ahead.",
-            "Warp-assisted locomotion is perfected. Our vehicles reach their absolute top speed." };
+            "Gyroscopic stabilizers are perfected. Our vehicles reach their top speed." };
 
-        int iBase = ElementAt( gas_turbine ).m_iPtsRequired;   // B (same base as Fuel Efficiency)
-        int iPts  = iBase;                                     // new tier 11 = B
-        for ( int iOn = 0; iOn < 10; iOn++ )
+        int iBase = ElementAt( gas_turbine ).m_iPtsRequired;   // B, same base as Fuel Efficiency
+        for ( int iOn = 0; iOn < 2; iOn++ )
         {
             CRsrchItem* pRi = &ElementAt( vehicle_speed_11 + iOn );
 
-            pRi->m_iPtsRequired      = iPts;
+            // Pure doubling, no cap: B * 2^(tier-1). Tier 11 = 1024*B, tier 12 = 2048*B.
+            int iTier = 11 + iOn;                                                // 11..12
+            pRi->m_iPtsRequired      = iBase << ( iTier - 1 );
             pRi->m_iScenarioReq      = ElementAt( gas_turbine ).m_iScenarioReq;
             pRi->m_iNumBldgsRequired = 0;
 
-            // Tier 11 chains the base line's top (vehicle_speed_10); 12-20 chain the prior
-            // new tier. vehicle_speed_11..20 are contiguous, so the arithmetic is direct.
             int iChain = ( 0 == iOn ) ? (int)vehicle_speed_10 : (int)( vehicle_speed_11 + iOn - 1 );
             pRi->m_iNumRsrchRequired  = 1;
             pRi->m_piRsrchRequired    = new int[1];
@@ -605,12 +589,6 @@ void CRsrchArray::Open( )
             pRi->m_sName   = aszName[iOn];
             pRi->m_sDesc   = aszDesc[iOn];
             pRi->m_sResult = aszRslt[iOn];
-
-            // Fuel Efficiency cost curve: double to 32*B at the 6th new tier, then flat +16*B.
-            if ( iOn < 5 )
-                iPts *= 2;            // tiers 11->16 double
-            else
-                iPts += 16 * iBase;   // tier 16 onward: flat +16*B per level
         }
     }
 

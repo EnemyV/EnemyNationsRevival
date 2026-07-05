@@ -240,23 +240,17 @@ public:
 					// +1% gas saving (30% at level 10 -> 31% -> 32%), see CPlayer::GetFuelPct.
 					fuel_efficiency_11,
 					fuel_efficiency_12,
-					// Vehicle Speed 11-20 (in-code) — ten MORE speed levels beyond the base
+					// Vehicle Speed 11-12 (in-code) — two MORE speed levels beyond the base
 					// vehicle_speed_1..10 line above. Each adds only +1% move speed (vs +2% for
 					// levels 1-10; see CPlayer::GetSpeedPct) and chains off the previous speed
-					// tier (11<-10, 12<-11, ...). Cost follows the Fuel Efficiency curve (double
-					// to 32*B at the 6th new tier, then flat +16*B; B = gas_turbine cost).
-					// Appended LAST so no earlier enum index shifts — old saves store the
-					// discovered-flags positionally (see player.cpp Serialize).
+					// tier (11<-10, 12<-11). The WHOLE 12-tier speed line is a PREMIUM pure-
+					// doubling cost curve (B * 2^(tier-1), NO flat cap; B = gas_turbine cost) —
+					// unlike Fuel Efficiency, which caps at 32*B then goes flat. So speed keeps
+					// escalating (tier 10=512*B, 11=1024*B, 12=2048*B), pricing the late tiers
+					// for how deep they unlock. Appended LAST so no earlier enum index shifts —
+					// old saves store the discovered-flags positionally.
 					vehicle_speed_11,
 					vehicle_speed_12,
-					vehicle_speed_13,
-					vehicle_speed_14,
-					vehicle_speed_15,
-					vehicle_speed_16,
-					vehicle_speed_17,
-					vehicle_speed_18,
-					vehicle_speed_19,
-					vehicle_speed_20,
 					// Radar/Spotting tiers 6-7 (in-code) — two MORE diminishing-return sight
 					// levels beyond spot_4/5 above; each 2x the previous tier's research cost and
 					// chains off it (spot_6<-spot_5, spot_7<-spot_6). Sight bonus in

@@ -1933,19 +1933,27 @@ int CAIGoalMgr::NextResearchTopic( CPlayer* pPlayer )
     // RDPATH_SAVE_COUNT, so any new in-code tech is invisible to it). Pick a RANDOM
     // available topic so the AI still researches those newer techs (Pontoon Bridges,
     // the repeatable tiers, fuel efficiency, ...) instead of stalling on them.
-    // GetRandom is the game's deterministic RNG, so this stays multiplayer-safe.
-    int aiAvail[CRsrchArray::num_types];
-    int nAvail = 0;
+    // Prioritize the CHEAPEST available topic (not uniform-random), so the AI grabs the
+    // cheap early tiers of the in-code lines first. Two passes: min cost, then random
+    // tie-break among topics sharing it. GetRandom keeps it multiplayer-deterministic.
+    int iMinCost = 0x7FFFFFFF;
     for ( int i = 1; i < CRsrchArray::num_types; ++i )
-        if ( pPlayer->CanRsrch( i ) )
-            aiAvail[nAvail++] = i;
+        if ( pPlayer->CanRsrch( i ) && theRsrch[i].m_iPtsRequired < iMinCost )
+            iMinCost = theRsrch[i].m_iPtsRequired;
 
-    if ( nAvail > 0 )
+    if ( iMinCost != 0x7FFFFFFF )
     {
-        int iTopic = aiAvail[ pGameData->GetRandom( nAvail ) ];
+        int aiCheapest[CRsrchArray::num_types];
+        int nCheapest = 0;
+        for ( int i = 1; i < CRsrchArray::num_types; ++i )
+            if ( pPlayer->CanRsrch( i ) && theRsrch[i].m_iPtsRequired == iMinCost )
+                aiCheapest[nCheapest++] = i;
+
+        int iTopic = aiCheapest[ pGameData->GetRandom( nCheapest ) ];
 #ifdef _LOGOUT
         logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC,
-                   "CAIGoalMgr::NextResearchTopic() for %d random-fallback %d \n", m_iPlayer, iTopic );
+                   "CAIGoalMgr::NextResearchTopic() for %d cheapest-fallback %d (cost %d) \n",
+                   m_iPlayer, iTopic, iMinCost );
 #endif
         return ( iTopic );
     }

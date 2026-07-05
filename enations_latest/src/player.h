@@ -532,10 +532,10 @@ class CPlayer : public CObject
     }
 
     // Vehicle movement speed as a percent of base. Base line vehicle_speed_1..10 gives
-    // +2% per level (up to +20%); the extended line vehicle_speed_11..20 gives +1% per
-    // level (up to another +10%), so a fully-researched player caps at 130%. Applied to
+    // +2% per level (up to +20%); the extended tiers vehicle_speed_11..12 give +1% per
+    // level (up to another +2%), so a fully-researched player caps at 122%. Applied to
     // the base move rate in CVehicle::Move, so it speeds up every vehicle this player owns.
-    // Levels 1-10 are contiguous; 11-20 were appended at the END of the research enum for
+    // Levels 1-10 are contiguous; 11-12 were appended at the END of the research enum for
     // save parity, so they're counted separately. Guarded for older saves.
     int GetSpeedPct( )
     {
@@ -544,9 +544,9 @@ class CPlayer : public CObject
             for ( int iOn = CRsrchArray::vehicle_speed_1; iOn <= CRsrchArray::vehicle_speed_10; iOn++ )
                 if ( GetRsrch( iOn ).m_bDiscovered )
                     iLevels++;
-        int iLevels2 = 0;  // tiers 11-20, +1% each
-        if ( m_aRsrch.GetSize( ) > CRsrchArray::vehicle_speed_20 )
-            for ( int iOn = CRsrchArray::vehicle_speed_11; iOn <= CRsrchArray::vehicle_speed_20; iOn++ )
+        int iLevels2 = 0;  // tiers 11-12, +1% each
+        if ( m_aRsrch.GetSize( ) > CRsrchArray::vehicle_speed_12 )
+            for ( int iOn = CRsrchArray::vehicle_speed_11; iOn <= CRsrchArray::vehicle_speed_12; iOn++ )
                 if ( GetRsrch( iOn ).m_bDiscovered )
                     iLevels2++;
         return ( 100 + 2 * iLevels + iLevels2 );
