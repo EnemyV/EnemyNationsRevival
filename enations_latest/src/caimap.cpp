@@ -869,6 +869,32 @@ BOOL CAIMap::ConnectRoad( CHexCoord& hexFrom, CHexCoord& hexTo )
 }
 
 //
+// plan a war road from the colony (rocket exit hex) toward an assault
+// staging area.  reuses ConnectRoad's A* (river crossings enabled), so
+// planned river hexes get bridged and m_iRoadCount is updated.
+//
+void CAIMap::PlanWarRoad( CHexCoord& hexTo )
+{
+	// no rocket placed yet
+	if( !m_pMapUtil->m_RocketHex.X() && !m_pMapUtil->m_RocketHex.Y() )
+		return;
+
+	// colony origin = rocket exit hex (same derivation as RocketRoad)
+	CHexCoord hexFrom = m_pMapUtil->m_RocketHex;
+	hexFrom.Xinc();
+	hexFrom.Yinc();
+
+#ifdef _LOGOUT
+	logPrintf(LOG_PRI_ALWAYS, LOG_AI_MISC,
+		"\nCAIMap::PlanWarRoad() player %d from %d,%d to %d,%d ",
+		m_iPlayer, hexFrom.X(), hexFrom.Y(), hexTo.X(), hexTo.Y() );
+#endif
+
+	// A* routes through existing roads; the last reachable stretch is the road
+	ConnectRoad( hexFrom, hexTo );
+}
+
+//
 // consider if there are any bridging canidates, and if so, then
 // look for the best bridge site and return the start hex in hexSite
 // and in GetParam(CAI_PREV_X/Y) and end in GetParam(CAI_DEST_X/Y)

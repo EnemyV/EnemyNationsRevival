@@ -353,6 +353,10 @@ CAIGoalMgr::CAIGoalMgr( BOOL bRestart, int iPlayer, CAIMap* pMap, CAIUnitList* p
     m_iScenario = 0;
     m_dwRocket  = 0;
 
+    // no war road planned yet
+    m_hexLastWarRoad.X( 0 );
+    m_hexLastWarRoad.Y( 0 );
+
     m_pwaRatios    = NULL;
     m_pwaUnits     = NULL;
     m_pwaBldgs     = NULL;
@@ -6516,6 +6520,13 @@ void CAIGoalMgr::LaunchAssault( CAITask* pTask )
                 return;
             }
 
+            // WAR ROAD: plan a paved, river-crossing route toward the target (once per target)
+            if ( m_pMap != NULL && ( hexCity.X( ) != m_hexLastWarRoad.X( ) || hexCity.Y( ) != m_hexLastWarRoad.Y( ) ) )
+            {
+                m_hexLastWarRoad = hexCity;
+                m_pMap->PlanWarRoad( hexCity );
+            }
+
             // if not at war, then based on this AI's combat attribute
             // and the difficulty level of the game, make a fuzzy decision
             // to go ahead and launch, or just recon in strength
@@ -6584,6 +6595,13 @@ void CAIGoalMgr::LaunchAssault( CAITask* pTask )
 
     if ( !IsTargetReachable( hexCity, pTask ) )
         return;
+
+    // WAR ROAD: plan a paved, river-crossing route toward the target (once per target)
+    if ( m_pMap != NULL && ( hexCity.X( ) != m_hexLastWarRoad.X( ) || hexCity.Y( ) != m_hexLastWarRoad.Y( ) ) )
+    {
+        m_hexLastWarRoad = hexCity;
+        m_pMap->PlanWarRoad( hexCity );
+    }
 
     // if not at war, then based on this AI's combat attribute
     // and the difficulty level of the game, make a fuzzy decision

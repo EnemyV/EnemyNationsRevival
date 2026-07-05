@@ -79,6 +79,7 @@ public:
 	void PlanRoads( CAIMsg *pMsg );
 	void PlanRoad( DWORD dwID );
 	void PlanRoad( CAIHex *paiHex );
+	void PlanWarRoad( CHexCoord& hexTo );	// road from colony toward an assault staging area
 	BOOL ConnectRoad( CHexCoord& hexFrom, CHexCoord& hexTo );
 	
 	void Initialize( void );
