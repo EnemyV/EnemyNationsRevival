@@ -404,13 +404,17 @@ static int collectOutputMats(CBuilding* b, int* outMats, int maxOut) {
         CBuildMine* pmn = b->GetData()->GetBldMine();
         if ( pmn ) { int m = pmn->GetTypeMines(); if ( ( m >= 0 ) && ( n < maxOut ) ) outMats[n++] = m; }
     }
-    // #51 follow-up (gap 1): a UTfarm alt host (the charcoal lumber mill) isn't covered above.
-    // Reserve its primary product slot (lumber) so the Output section exists; the refresh swaps it
-    // to the alt output (coal) when the mode is on. Scoped to alt-capable so plain farms (food is a
-    // colony resource, deliberately skipped) stay unaffected.
-    if ( n == 0 && AltOutput::Available( b ) && ut == CStructureData::UTfarm ) {
+    // #51 follow-up (gap 1): a UTfarm's product isn't in the CBuildMaterials GetOutput list above.
+    // A LUMBER MILL keeps its lumber in a per-building store (like a smelter's steel), so it must
+    // ALWAYS show an Output widget -- lumber in wood mode, coal in charcoal mode (the refresh at
+    // RefreshDynamic swaps slot 0 to coal when the toggle is on). Only FOOD farms are skipped: food
+    // is a colony-wide resource with no per-building stockpile. (Previously this was gated on
+    // AltOutput::Available, so a lumber mill with no Charcoal research showed NO Output section at
+    // all -- operator nit: "lumber mill is missing the output widget".)
+    if ( n == 0 && ut == CStructureData::UTfarm ) {
         CBuildFarm* pf = b->GetData()->GetBldFarm();
-        if ( pf && n < maxOut ) outMats[n++] = pf->GetTypeFarm();
+        if ( pf && pf->GetTypeFarm() != CMaterialTypes::food && n < maxOut )
+            outMats[n++] = pf->GetTypeFarm();
     }
     return n;
 }
