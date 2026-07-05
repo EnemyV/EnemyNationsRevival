@@ -1002,6 +1002,26 @@ void CAIMgr::HandleStuckVehicles( void )
             {
                 if ( snap.iRouteMode == CVehicle::run )
                     bIsWorking = TRUE;
+
+#ifdef _WIN32
+                // TEMP DIAGNOSTIC (remove after the stuck-crane root-cause):
+                // dump every crane's full AI state each idle rotation so we can
+                // see what a visibly-stuck crane is actually bound to (task 0 =
+                // idle; IDT_* build/road/repair; mode; dest ping-pong = flee-
+                // return). Catch with dbgcatch / DBWIN.
+                {
+                    char szDump[256];
+                    sprintf( szDump,
+                             "[CRANEDUMP] plyr %d crane %lu at %d,%d dest %d,%d mode %d task %u goal %u eff %u data %lu"
+                             " rx %lu ry 0x%08lx now %lu\n",
+                             m_iPlayer, (unsigned long)pUnit->GetID( ), snap.iHeadX, snap.iHeadY, snap.iDestX,
+                             snap.iDestY, snap.iRouteMode, (unsigned)pUnit->GetTask( ), (unsigned)pUnit->GetGoal( ),
+                             (unsigned)pUnit->GetParam( CAI_EFFECTIVE ), (unsigned long)pUnit->GetDataDW( ),
+                             (unsigned long)pUnit->GetParamDW( CAI_ROUTE_X ),
+                             (unsigned long)pUnit->GetParamDW( CAI_ROUTE_Y ), (unsigned long)dwNow );
+                    OutputDebugStringA( szDump );
+                }
+#endif
             }
 
             if ( bIsCarried || bIsWorking )
@@ -1033,6 +1053,15 @@ void CAIMgr::HandleStuckVehicles( void )
                 pUnit->SetDestination( hexDest );
                 // last hex LOWORD(X), HIWORD(Y) occupied
                 pUnit->SetParamDW( CAI_ROUTE_Y, (DWORD)MAKELPARAM( hexVeh.X( ), hexVeh.Y( ) ) );
+#ifdef _WIN32
+                // TEMP DIAGNOSTIC (remove with CRANEDUMP)
+                {
+                    char szR[160];
+                    sprintf( szR, "[CRANERESCUE] 5min resend crane %lu to %d,%d diff %lu\n",
+                             (unsigned long)pUnit->GetID( ), hexDest.X( ), hexDest.Y( ), (unsigned long)dwDiff );
+                    OutputDebugStringA( szR );
+                }
+#endif
 #ifdef _LOGOUT
                 logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC,
                            "CAIMgr::HandleStuckVehicles() player %d unit %d a %d is stuck after 5 min, resent to %d,%d "
@@ -1059,6 +1088,16 @@ void CAIMgr::HandleStuckVehicles( void )
 
                 int iDist = pGameData->GetRangeDistance( hexVeh, hexDest );
 
+#ifdef _WIN32
+                // TEMP DIAGNOSTIC (remove with CRANEDUMP)
+                {
+                    char szR[160];
+                    sprintf( szR, "[CRANERESCUE] 10min crane %lu diff %lu iDist %d (moved-since-5min test)\n",
+                             (unsigned long)pUnit->GetID( ), (unsigned long)dwDiff, iDist );
+                    OutputDebugStringA( szR );
+                }
+#endif
+
                 // if still too far away
                 if ( iDist > 2 )
                 {
@@ -1081,6 +1120,35 @@ void CAIMgr::HandleStuckVehicles( void )
 
                     if ( pUnit->GetTypeUnit( ) == CTransportData::construction )
                     {
+                        // Shelve the build site this crane could never reach BEFORE
+                        // UnAssignTask zeroes the task's BUILD_AT -- otherwise the
+                        // reassignment (this crane or the next) re-selects the same
+                        // doomed hex and marches straight back: a rescue->re-stuck
+                        // macro-loop. Temporary (2 min): the blockage may have been
+                        // other cranes, which this rescue is itself dissolving.
+                        if ( m_pGoalMgr != NULL && m_pGoalMgr->m_plTasks != NULL )
+                        {
+                            CAITask* pTask = m_pGoalMgr->m_plTasks->GetTask( pUnit->GetTask( ), pUnit->GetGoal( ) );
+                            if ( pTask != NULL && pTask->GetTaskParam( ORDER_TYPE ) == CONSTRUCTION_ORDER )
+                            {
+                                CHexCoord hexSite( pTask->GetTaskParam( BUILD_AT_X ),
+                                                   pTask->GetTaskParam( BUILD_AT_Y ) );
+                                if ( ( hexSite.X( ) || hexSite.Y( ) ) && m_pMap->m_pMapUtil != NULL )
+                                    m_pMap->m_pMapUtil->AddFailedSiteTemp(
+                                        (int)pTask->GetTaskParam( BUILDING_ID ), hexSite, 120 * 1000 );
+                            }
+                        }
+
+#ifdef _WIN32
+                        // TEMP DIAGNOSTIC (remove with CRANEDUMP)
+                        {
+                            char szR[160];
+                            sprintf( szR, "[CRANERESCUE] 10min TELEPORT crane %lu task %u -> rocket, unbound\n",
+                                     (unsigned long)pUnit->GetID( ), (unsigned)pUnit->GetTask( ) );
+                            OutputDebugStringA( szR );
+                        }
+#endif
+
                         // unassign crane task
                         m_pTaskMgr->UnAssignTask( pUnit->GetTask( ), pUnit->GetGoal( ) );
                     }
