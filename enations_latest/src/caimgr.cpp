@@ -1039,6 +1039,26 @@ void CAIMgr::HandleStuckVehicles( void )
             if ( bIsCarried || bIsWorking )
                 continue;
 
+            // arrived-idle limbo: a crane sitting ON its build site that never
+            // sent its build message (task order is message-driven and no message
+            // ever comes). The timer branches below skip arrived vehicles, so
+            // nudge its task order here instead -- idempotent if already sent.
+            if ( pUnit->GetTypeUnit( ) == CTransportData::construction &&
+                 pUnit->GetTask( ) && hexVeh == hexDest &&
+                 !pUnit->GetParam( CAI_EFFECTIVE ) )
+            {
+#ifdef _WIN32
+                {
+                    char szR[128];
+                    sprintf( szR, "[CRANERESCUE] nudge arrived-idle crane %lu task %u at %d,%d\n",
+                             (unsigned long)pUnit->GetID( ), (unsigned)pUnit->GetTask( ), hexVeh.X( ), hexVeh.Y( ) );
+                    OutputDebugStringA( szR );
+                }
+#endif
+                m_pTaskMgr->GenerateTaskOrder( pUnit );
+                continue;
+            }
+
             // has this vehicle been given time?
             dwUnitTime = pUnit->GetParamDW( CAI_ROUTE_X );  // last time
             if ( !dwUnitTime || dwUnitTime > dwNow )
@@ -1097,6 +1117,15 @@ void CAIMgr::HandleStuckVehicles( void )
                 hex = hexDest;
                 hexDest.X( LOWORD( pUnit->GetParamDW( CAI_ROUTE_Y ) ) );
                 hexDest.Y( HIWORD( pUnit->GetParamDW( CAI_ROUTE_Y ) ) );
+
+                // a crane actively travelling is never teleported (operator rule);
+                // it only gets the re-send path below
+                if ( snap.iRouteMode == CVehicle::moving )
+                {
+                    pUnit->SetDestination( hex );
+                    pUnit->SetParamDW( CAI_ROUTE_Y, (DWORD)MAKELPARAM( hexVeh.X( ), hexVeh.Y( ) ) );
+                    continue;
+                }
 
                 int iDist = pGameData->GetRangeDistance( hexVeh, hexDest );
 

@@ -10394,7 +10394,21 @@ void CAIGoalMgr::Load( CArchive& ar, CAIMap* pMap, CAIUnitList* plUnits, CAIOpFo
         while ( pos != NULL )
         {
             CAIUnit* pUnit = (CAIUnit*)m_plUnits->GetNext( pos );
-            if ( pUnit == NULL || !pUnit->GetTask( ) )
+            if ( pUnit == NULL )
+                continue;
+
+            // stale cross-session stuck timers (ms-since-boot) read as hours of
+            // fake stuck time after a load -> spurious instant teleports.
+            // vehicles only: building DW params carry router truck assignments.
+            if ( pUnit->GetType( ) == CUnit::vehicle &&
+                 ( pUnit->GetTypeUnit( ) == CTransportData::construction ||
+                   pUnit->GetTypeUnit( ) == CTransportData::heavy_truck ) )
+            {
+                pUnit->SetParamDW( CAI_ROUTE_X, 0 );
+                pUnit->SetParamDW( CAI_ROUTE_Y, 0 );
+            }
+
+            if ( !pUnit->GetTask( ) )
                 continue;
 
             CAITask* pTask = m_plTasks->GetTask( pUnit->GetTask( ), pUnit->GetGoal( ) );
