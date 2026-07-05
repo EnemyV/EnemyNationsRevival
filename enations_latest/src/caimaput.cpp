@@ -2879,7 +2879,8 @@ void CAIMapUtil::FindBridgeHex( CHexCoord& hexSite, CAIUnit* pUnit )
     CHexCoord hexBridge, hcFrom, hcTo;
 
     int iStep = 1, i, iX, iY;
-    while ( iStep < pGameData->m_iHexPerBlk )
+    // 2x block radius, same reason as FindRoadHex
+    while ( iStep < pGameData->m_iHexPerBlk * 2 )
     {
         hcFrom.X( hexBridge.Wrap( hexBase.X( ) - iStep ) );
         hcFrom.Y( hexBridge.Wrap( hexBase.Y( ) - iStep ) );
@@ -3121,7 +3122,9 @@ void CAIMapUtil::FindRoadHex( CHexCoord& hexFound )
     BOOL  bRoads = FALSE;
     int   iStep = 1, iBestRoad = m_iMapSize, i, iX, iY;
 
-    while ( iStep < pGameData->m_iHexPerBlk )
+    // 2x block radius: planned roads to far mines/wells were beyond the old cap,
+    // so they never got paved and the road grid drained (operator)
+    while ( iStep < pGameData->m_iHexPerBlk * 2 )
     {
         hcFrom.X( hexRoad.Wrap( hexBase.X( ) - iStep ) );
         hcFrom.Y( hexRoad.Wrap( hexBase.Y( ) - iStep ) );

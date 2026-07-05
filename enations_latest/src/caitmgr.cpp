@@ -5182,6 +5182,14 @@ void CAITaskMgr::BuildRoad( CAIUnit* pUnit, CAITask* pTask )
                 pUnit->SetDestination( hexSite );
                 // flag unit to send message to build a bridge
                 pUnit->SetParam( CAI_FUEL, CNetCmd::build_bridge );
+#ifdef _WIN32
+                {
+                    char szR[96];
+                    sprintf( szR, "[ROAD] plyr %d crane %lu -> BRIDGE at %d,%d\n", m_iPlayer,
+                             (unsigned long)pUnit->GetID( ), hexSite.X( ), hexSite.Y( ) );
+                    OutputDebugStringA( szR );
+                }
+#endif
 
 #ifdef _LOGOUT
                 logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "BridgeBuilding() go to %d,%d ", hexSite.X( ),
@@ -5201,6 +5209,14 @@ void CAITaskMgr::BuildRoad( CAIUnit* pUnit, CAITask* pTask )
             // for the REST OF THE GAME; halving survives transient misses but
             // still drains on genuine exhaustion
             m_pGoalMgr->m_pMap->m_iRoadCount /= 2;
+#ifdef _WIN32
+            {
+                char szR[96];
+                sprintf( szR, "[ROAD] plyr %d crane %lu no hex found, grid now %d\n", m_iPlayer,
+                         (unsigned long)pUnit->GetID( ), m_pGoalMgr->m_pMap->m_iRoadCount );
+                OutputDebugStringA( szR );
+            }
+#endif
             // tell the goalmgr we have an idle crane
             m_pGoalMgr->IdleCrane( );
             m_pGoalMgr->ConsiderRoads( );
@@ -5229,6 +5245,13 @@ void CAITaskMgr::BuildRoad( CAIUnit* pUnit, CAITask* pTask )
             // tell the goalmgr we have an idle crane
             m_pGoalMgr->IdleCrane( );
 
+#ifdef _WIN32
+            {
+                char szR[96];
+                sprintf( szR, "[ROAD] plyr %d crane %lu NO-GAS bail\n", m_iPlayer, (unsigned long)pUnit->GetID( ) );
+                OutputDebugStringA( szR );
+            }
+#endif
 #ifdef _LOGOUT
             logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "RoadBuilding() %d/%ld crane can't build road, out of gas",
                        pUnit->GetOwner( ), pUnit->GetID( ) );
@@ -5253,6 +5276,14 @@ void CAITaskMgr::BuildRoad( CAIUnit* pUnit, CAITask* pTask )
         pUnit->SetDestination( hexSite );
         // flag unit to send message to build a road
         pUnit->SetParam( CAI_FUEL, CNetCmd::build_road );
+#ifdef _WIN32
+        {
+            char szR[96];
+            sprintf( szR, "[ROAD] plyr %d crane %lu -> road hex %d,%d\n", m_iPlayer, (unsigned long)pUnit->GetID( ),
+                     hexSite.X( ), hexSite.Y( ) );
+            OutputDebugStringA( szR );
+        }
+#endif
     }
     else  // vehicle is not at site but a site was selected
     {

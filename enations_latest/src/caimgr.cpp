@@ -973,6 +973,17 @@ void CAIMgr::HandleStuckVehicles( void )
     CHexCoord hexDest, hexVeh, hex;
     BOOL      bIsWorking, bIsCarried;
 
+#ifdef _WIN32
+    // TEMP: road bottleneck telemetry, once per sweep
+    if ( m_pGoalMgr != NULL && m_pGoalMgr->m_pMap != NULL )
+    {
+        char szR[96];
+        sprintf( szR, "[ROADSTAT] plyr %d grid %d gas %d\n", m_iPlayer, m_pGoalMgr->m_pMap->m_iRoadCount,
+                 m_pGoalMgr->m_iGasHave );
+        OutputDebugStringA( szR );
+    }
+#endif
+
 #ifdef _LOGOUT
     logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "CAIMgr::HandleStuckVehicles() player %d called at %ld  ", m_iPlayer,
                dwNow );
