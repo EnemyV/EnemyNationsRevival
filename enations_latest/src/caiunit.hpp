@@ -30,6 +30,8 @@ class CAIUnit : public CObject
 protected:
 	CHexCoord	m_hexLastDest;		// last place/time for SetDest (so don't repeat)
 	DWORD			m_timeLastDest;
+	DWORD			m_dwTimeLastAtkCmd;	// last time AttackUnit() was issued (attack-alert
+										// feedback-loop cooldown; transient, not saved)
 
 	DWORD m_dwID;
 	int m_iOwner;
@@ -75,7 +77,10 @@ protected:
 public:
 	CAIUnit( DWORD dwID, int iOwner, int iType, int iTypeUnit );
 	~CAIUnit();
-	CAIUnit() {};
+	CAIUnit() : m_dwTimeLastAtkCmd( 0 ) {};
+
+	// attack-alert feedback-loop cooldown (see CAITaskMgr::AttackAlert)
+	DWORD GetTimeLastAtkCmd( void ) const { return m_dwTimeLastAtkCmd; }
 
 	DWORD GetID( void );
 	void SetID( DWORD );

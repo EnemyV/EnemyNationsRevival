@@ -6418,30 +6418,6 @@ void CAITaskMgr::AttackAlert( CAIMsg* pMsg )
 #endif
     char buf[256];
 
-    char szTargetCategory[32]   = "Unknown";
-    char szTargetType[32]       = "Unknown";
-    char szAttackerCategory[32] = "Unknown";
-    char szAttackerType[32]     = "Unknown";
-
-    CAIUnit* pTempUnit = m_pGoalMgr->m_plUnits->GetUnit( pMsg->m_dwID );
-    if ( pTempUnit )
-    {
-        // category = building/vehicle, type = unit subtype id
-        sprintf_s( szTargetCategory, sizeof( szTargetCategory ), "%d", pTempUnit->GetType( ) );
-        sprintf_s( szTargetType, sizeof( szTargetType ), "%d", pTempUnit->GetTypeUnit( ) );
-    }
-    pTempUnit = m_pGoalMgr->m_plUnits->GetUnit( pMsg->m_dwID2 );
-    if ( pTempUnit )
-    {
-        sprintf_s( szAttackerCategory, sizeof( szAttackerCategory ), "%d", pTempUnit->GetType( ) );
-        sprintf_s( szAttackerType, sizeof( szAttackerType ), "%d", pTempUnit->GetTypeUnit( ) );
-    }
-
-    sprintf_s( buf, sizeof( buf ), "CAITaskMgr::AttackAlert(): Target=%ld (%s, %s), Attacker=%ld (%s, %s)\n",
-               pMsg->m_dwID, szTargetCategory, szTargetType, pMsg->m_dwID2, szAttackerCategory, szAttackerType );
-    OutputDebugStringA( buf );
-
-
     CAIUnit* pTarget = m_pGoalMgr->m_plUnits->GetUnit( pMsg->m_dwID );
     if ( pTarget == NULL )
         return;
@@ -6457,6 +6433,44 @@ void CAITaskMgr::AttackAlert( CAIMsg* pMsg )
 
     if ( pAttacker->GetOwner( ) == m_iPlayer )
         return;
+
+    // ---- attack-alert feedback-loop guard ---------------------------------
+    // The 1996 code re-issued AttackUnit() on EVERY alert; the guard below the
+    // difficulty block was left commented out with the author's own note
+    // "does this create a loop?" -- it does. Every unit_attacked AND every
+    // per-hit unit_damage (DamageAlert routes here too) re-sent a full attack
+    // order for a target the unit was usually already attacking: ~one order
+    // per shot landed, per unit, for the whole battle (observed live: the same
+    // target/attacker pair re-ordered ~2x/sec for 45s straight). The order
+    // flood keeps this AI permanently busy, so its idle jobs (AssignUnits,
+    // construction/production review, HandleStuckVehicles) starve -- seen as
+    // cranes and half-built buildings frozen during any sustained fight. If
+    // the unit is already targeting this attacker, only re-issue after a
+    // cooldown (the periodic re-order self-heals a vehicle that silently
+    // disengaged; AttackUnit() stamps the time).
+    const DWORD ATTACK_REISSUE_COOLDOWN_MS = 10000;
+    if ( pTarget->GetDataDW( ) == pMsg->m_dwID2 &&
+         ( theGame.GettimeGetTime( ) - pTarget->GetTimeLastAtkCmd( ) ) < ATTACK_REISSUE_COOLDOWN_MS )
+        return;
+
+    // diagnostic: logs actual issued orders (moved below the guard so the
+    // suppressed per-hit alerts no longer spam the debug channel)
+    {
+        char szTargetCategory[32]   = "Unknown";
+        char szTargetType[32]       = "Unknown";
+        char szAttackerCategory[32] = "Unknown";
+        char szAttackerType[32]     = "Unknown";
+
+        // category = building/vehicle, type = unit subtype id
+        sprintf_s( szTargetCategory, sizeof( szTargetCategory ), "%d", pTarget->GetType( ) );
+        sprintf_s( szTargetType, sizeof( szTargetType ), "%d", pTarget->GetTypeUnit( ) );
+        sprintf_s( szAttackerCategory, sizeof( szAttackerCategory ), "%d", pAttacker->GetType( ) );
+        sprintf_s( szAttackerType, sizeof( szAttackerType ), "%d", pAttacker->GetTypeUnit( ) );
+
+        sprintf_s( buf, sizeof( buf ), "CAITaskMgr::AttackAlert(): Target=%ld (%s, %s), Attacker=%ld (%s, %s)\n",
+                   pMsg->m_dwID, szTargetCategory, szTargetType, pMsg->m_dwID2, szAttackerCategory, szAttackerType );
+        OutputDebugStringA( buf );
+    }
 
     // let's do something special for moderate difficulty
     // we have a 3 in 4 chance to not attack

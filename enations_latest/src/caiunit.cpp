@@ -44,6 +44,8 @@ CAIUnit::CAIUnit( DWORD dwID, int iOwner, int iType, int iTypeUnit )
     m_pwaParams  = NULL;
     m_pdwaParams = NULL;
 
+    m_dwTimeLastAtkCmd = 0;  // attack-alert cooldown stamp (transient, not saved)
+
     ASSERT_VALID( this );
 
     try
@@ -1130,6 +1132,11 @@ void CAIUnit::AttackUnit( DWORD dwTarget )
     // it in the dwParams of the target unit and recording
     // the targeted opfor in the CAIUnit::m_dwData
     m_dwData = dwTarget;
+
+    // stamp for the attack-alert feedback-loop cooldown: AttackAlert() will not
+    // re-issue this same order again until the cooldown elapses (per-hit
+    // unit_damage alerts were re-commanding the same target ~2x/sec forever)
+    m_dwTimeLastAtkCmd = theGame.GettimeGetTime( );
 
     CMsgAttack msg( m_dwID, dwTarget );
     theGame.PostToServer( (CNetCmd*)&msg, sizeof( CMsgAttack ) );
