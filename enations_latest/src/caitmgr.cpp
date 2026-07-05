@@ -1961,7 +1961,16 @@ GetTask:
     {
         // the task obtained is to build roads by default
         if ( pTask->GetID( ) == IDT_CONSTRUCT )
+        {
+            // plan-less player: don't churn cranes through the road fallback
+            if ( !m_pGoalMgr->m_pMap->m_iRoadCount )
+            {
+                if ( AssignRepair( pUnit ) )
+                    return;
+                return;
+            }
             goto DefaultRoad;
+        }
 
 #ifdef _LOGOUT
         logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "CAITaskMgr::AssignConstruction() unit %ld player %d did not find task",

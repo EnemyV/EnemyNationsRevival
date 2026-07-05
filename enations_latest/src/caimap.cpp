@@ -990,6 +990,34 @@ BOOL CAIMap::NeighborHasRoadOrBldg( CHexCoord& hex )
 }
 
 //
+// ROAD AVOIDANCE (pick-time belt): TRUE if any of hex's 8 neighbors carries one
+// of our own farm/lumber buildings, whose neighbor squares must stay road-free.
+// AI-map high byte = GetBldgType (caimaput.cpp ConvertStatus), MSW_AI_BUILDING
+// gates own buildings. Belt for OLD saves whose roads were planned before the
+// pathfinder (layer 1) learned to route around these hexes.
+//
+BOOL CAIMap::NeighborIsFarmLumber( CHexCoord& hex )
+{
+	// 8-neighborhood offsets (N, NE, E, SE, S, SW, W, NW)
+	static const int adx[MAX_ADJACENT] = {  0,  1,  1,  1,  0, -1, -1, -1 };
+	static const int ady[MAX_ADJACENT] = { -1, -1,  0,  1,  1,  1,  0, -1 };
+
+	for( int d = 0; d < MAX_ADJACENT; ++d )
+	{
+		CHexCoord hexT( CHexCoord::Wrap( hex.X() + adx[d] ),
+			CHexCoord::Wrap( hex.Y() + ady[d] ) );
+		WORD w = GetLocation( hexT.X(), hexT.Y() );
+		if( !( w & MSW_AI_BUILDING ) )
+			continue;
+		int iType = w >> 8;	// base type via GetBldgType, per ConvertStatus
+		if( iType == CStructureData::farm ||
+			iType == CStructureData::lumber )
+			return TRUE;
+	}
+	return FALSE;
+}
+
+//
 // replicates CAIMapUtil::FindRoadHex eligibility (caimaput.cpp ~3162-3227):
 // planned flag set, not a building, not river, no bldg/vehicle on the game hex,
 // and an actual road/building at cardinal neighbor 0/2/4/6.
@@ -1013,6 +1041,10 @@ BOOL CAIMap::IsRoadHexEligible( int iOff, CHexCoord& hexRoad )
 	if( bUnits & CHex::bldg )						// a building sits here
 		return FALSE;
 	if( bUnits & ( CHex::ul | CHex::ur | CHex::ll | CHex::lr ) )	// a vehicle
+		return FALSE;
+
+	// ROAD AVOIDANCE (belt): never pave a hex abutting an own farm/lumber
+	if( NeighborIsFarmLumber( hexRoad ) )
 		return FALSE;
 
 	// only accept planned roads adjacent to a real road/building at 0,2,4,6
@@ -1146,6 +1178,10 @@ int CAIMap::GetRoadRun( const CHexCoord& hexStart, CHexCoord& hexEnd, int iMaxHe
 			continue;
 		if( GetLocation( (WORD)nx, (WORD)ny ) & MSW_PLANNED_ROAD )
 		{
+			// ROAD AVOIDANCE (belt): don't run into a farm/lumber-adjacent hex
+			CHexCoord hexN( nx, ny );
+			if( NeighborIsFarmLumber( hexN ) )
+				continue;
 			iDir = d;
 			break;
 		}
@@ -1163,6 +1199,10 @@ int CAIMap::GetRoadRun( const CHexCoord& hexStart, CHexCoord& hexEnd, int iMaxHe
 			break;
 		WORD wStatus = GetLocation( (WORD)nx, (WORD)ny );
 		if( !( wStatus & MSW_PLANNED_ROAD ) )
+			break;
+		// ROAD AVOIDANCE (belt): stop the run before a farm/lumber-adjacent hex
+		CHexCoord hexRun( nx, ny );
+		if( NeighborIsFarmLumber( hexRun ) )
 			break;
 		wStatus &= ~MSW_PLANNED_ROAD;	// claim: planned -> built
 		wStatus |= MSW_ROAD;

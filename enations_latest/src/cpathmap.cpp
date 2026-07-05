@@ -625,12 +625,21 @@ m_hexFrom.X(), m_hexFrom.Y(), m_hexTo.X(), m_hexTo.Y(), m_iNextSlot );
 			return;
 	}
 	
+	// ROAD AVOIDANCE (plan-time): a heavy per-hex step cost for planned-road hexes
+	// that abut an own farm/lumber building routes the A* AROUND them (their
+	// neighbors must stay pristine for fertility/yield). Additive, not exclusion:
+	// the road still connects if no clean detour exists, just at higher cost. 40
+	// beats any small ring detour yet stays well under MAX_BOTH_INDEX bucketing.
+	int iStep = 1;
+	if( m_bRoadPlanning && FarmLumberAdjacent( pToCell->m_iX, pToCell->m_iY ) )
+		iStep += 40;
+
 	// if this cost + cost to this point < what we already have
 	// then save the value and the pointer to where we came from
-	if( (1 + pFromCell->m_iCost)
+	if( (iStep + pFromCell->m_iCost)
 		< pToCell->m_iCost )
 	{
-			pToCell->m_iCost = (1 + pFromCell->m_iCost);
+			pToCell->m_iCost = (iStep + pFromCell->m_iCost);
 			pToCell->m_pCellFrom = pFromCell;
 	}
 	else
@@ -905,6 +914,42 @@ int CPathMap::GetOffset( int iX, int iY )
 	int iy = iY - m_iBaseY;
 	int j = (m_iWidth * iy) + ix;
 	return( j );
+}
+
+// ROAD AVOIDANCE (plan-time): TRUE if any of the 8 neighbors of iX,iY carries an
+// own farm/lumber building. AI-map high byte = GetBldgType (caimaput.cpp
+// ConvertStatus), MSW_AI_BUILDING gates own buildings. Cheap: 8 array reads,
+// fast-fail on the MSW_AI_BUILDING bit; only called for road-planning nodes.
+BOOL CPathMap::FarmLumberAdjacent( int iX, int iY )
+{
+	if( m_pMap == NULL )
+		return( FALSE );
+
+	for( int dy = -1; dy <= 1; ++dy )
+	{
+		int ny = iY + dy;
+		if( ny < m_iBaseY || ny > m_iMapEY )
+			continue;
+		for( int dx = -1; dx <= 1; ++dx )
+		{
+			if( !dx && !dy )
+				continue;
+			int nx = iX + dx;
+			if( nx < m_iBaseX || nx > m_iMapEX )
+				continue;
+			int i = GetOffset( nx, ny );
+			if( i < 0 || i >= m_iNumOfMapCells )
+				continue;
+			WORD w = m_pMap[i];
+			if( !( w & MSW_AI_BUILDING ) )
+				continue;
+			int iType = w >> 8;	// base type via GetBldgType, per ConvertStatus
+			if( iType == CStructureData::farm ||
+				iType == CStructureData::lumber )
+				return( TRUE );
+		}
+	}
+	return( FALSE );
 }
 
 // (was: identical implementation to CPathMgr::AddCellToArray — now gen-grid)

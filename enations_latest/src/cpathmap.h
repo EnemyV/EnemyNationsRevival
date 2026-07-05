@@ -121,6 +121,8 @@ public:
 	
 	BOOL AtDestination( CCell *pCell );
 	int GetOffset( int iX, int iY );
+	// ROAD AVOIDANCE: TRUE if a neighbor of iX,iY holds an own farm/lumber bldg
+	BOOL FarmLumberAdjacent( int iX, int iY );
 	void GetCellCosts( CCell *pFromCell, CCell *pToCell );
 	void GetCellAt( int iPos, CCell *pFromCell, int& iX, int& iY );
 

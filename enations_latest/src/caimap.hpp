@@ -40,6 +40,8 @@ protected:
 	// planned-road index helpers (replicate FindRoadHex eligibility)
 	BOOL IsRoadHexEligible( int iOff, CHexCoord& hexRoad );
 	BOOL NeighborHasRoadOrBldg( CHexCoord& hex );
+	// ROAD AVOIDANCE: TRUE if a neighbor of hex holds an own farm/lumber bldg
+	BOOL NeighborIsFarmLumber( CHexCoord& hex );
 
 public:
 	CAIMapUtil *m_pMapUtil;
