@@ -1635,6 +1635,13 @@ static void CmdStart( CNetStart* pStrt )
             theApp.m_pCreateGame->m_iRivers    = pStrt->m_iRivers;
             theApp.m_pCreateGame->m_iOcean     = pStrt->m_iOcean;
         }
+        // MP world-gen parity (Bug 2): freeze the count world-gen will use to the
+        // HOST's authoritative roster size (numHp+numAi from CNetStart), NOT this
+        // client's live list count — which can differ while the roster is still
+        // settling (auto-start / late AI) and would shift the RNG stream -> RAND
+        // MISMATCH -> uniform client kick. Set BEFORE CreateNewWorld (the client
+        // path calls SetSideSize, not StartNewWorld, so nothing else sets it).
+        theGame.m_iWorldGenCount = pStrt->m_iNumHp + pStrt->m_iNumAi;
         AIinit aiData( pStrt->m_iAi, pStrt->m_iNumAi, pStrt->m_iNumHp, pStrt->m_iStart );
         theApp.CreateNewWorld( pStrt->m_uRand, &aiData, pStrt->m_iSide, pStrt->m_iSideSize );
         theGame.DecTry( );

@@ -1355,6 +1355,7 @@ void CGame::ctor( )
     m_iWorldType = WORLD_DEFAULT;
     m_iRivers    = 60;  // river density slider baseline
     m_iOcean     = 50;  // ocean size slider baseline (~= current average)
+    m_iWorldGenCount = 0;  // MP parity (Bug 2): set authoritatively in StartNewWorld/CmdStart before world-gen
     m_sFileName              = "";
 
     m_iTryCount = 0;
@@ -1714,6 +1715,13 @@ void CGame::StartNewWorld( unsigned uRand, int iSide, int iSideSize )
 #ifdef LOGGINGON
     OutputDebugStringA( "CNetStart msg create\n" );
 #endif
+    // MP world-gen parity (Bug 2): freeze the count world-gen will use to the SAME
+    // value we encode into CNetStart below (numHp+numAi == GetCount() at this instant).
+    // Host/SP-only (StartNewWorld asserts m_bServer); the client sets its own copy in
+    // CmdStart from the received numHp+numAi. World-gen reads m_iWorldGenCount, never
+    // the live list count, so host and client stay count-consistent by construction.
+    m_iWorldGenCount = theGame.GetAll( ).GetCount( );
+
     CNetStart msg( uRand, iSide, iSideSize, theApp.m_pCreateGame->m_iAi, theApp.m_pCreateGame->m_iNumAi,
                    theGame.GetAll( ).GetCount( ) - theApp.m_pCreateGame->m_iNumAi, theApp.m_pCreateGame->m_iSize,
                    theApp.m_pCreateGame->m_iWorldType, theApp.m_pCreateGame->m_iRivers,

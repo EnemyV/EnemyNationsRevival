@@ -164,7 +164,7 @@ void CGameMap::GenerateOcean( int iNumBlks, int* piBlks, int iSide, int blockTyp
                               int oceanStyle, bool bDominant, int& iOceansLeft, CGame& theGame )
 {
     // figure out max ocean blocks
-    int   count = theGame.GetAll( ).GetCount( );  // get player count
+    int   count = theGame.m_iWorldGenCount;  // get player count (MP parity: frozen count, Bug 2)
     float multi = 1.0f;
 
     if ( count <= 8 && iNumBlks >= 64 )
@@ -176,10 +176,10 @@ void CGameMap::GenerateOcean( int iNumBlks, int* piBlks, int iSide, int blockTyp
     else if ( count <= 4 && iNumBlks >= 16 )
         multi = 2.0f;
 
-    int maxOceanTileCount = iNumBlks - theGame.GetAll( ).GetCount( ) * multi;
+    int maxOceanTileCount = iNumBlks - theGame.m_iWorldGenCount * multi;   // MP parity: frozen count (Bug 2)
 
     if ( maxOceanTileCount <= 0 )
-        maxOceanTileCount = iNumBlks - theGame.GetAll( ).GetCount( );
+        maxOceanTileCount = iNumBlks - theGame.m_iWorldGenCount;   // MP parity: frozen count (Bug 2)
 
     if ( maxOceanTileCount > 0 )
     {

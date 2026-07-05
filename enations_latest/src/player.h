@@ -1112,6 +1112,16 @@ class CGame : public CObject
     std::string m_sFileName;    // file name of the game (if loaded or saved)
     DWORD   m_dwFinalRand;  // final seed at end of init
 
+    // MP world-gen parity: the AUTHORITATIVE player count world-gen must use, frozen
+    // from the host's CNetStart (m_iNumHp + m_iNumAi) instead of the LIVE
+    // GetAll().GetCount(). The live list count can differ host-vs-client while the
+    // roster is still settling (auto-start / late AI), and several world-gen sites
+    // draw RNG proportional to it -> the stream shifts -> m_dwFinalRand mismatch ->
+    // every client kicked uniformly at CmdPlay. Host/SP sets this in StartNewWorld;
+    // the client sets it in CmdStart before CreateNewWorld. See the investigation
+    // doc mp-lobby-roster-replication-and-worldgen-count.md (Bug 2).
+    int     m_iWorldGenCount;
+
     // what the game was started at (for loading descriptions)
     LONG    m_iAi;        // AI intelligence
     LONG    m_iSize;      // world size
