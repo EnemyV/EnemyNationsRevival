@@ -49,8 +49,13 @@ namespace AltOutput
         ePctAdditive,    // output = m_pfnPct(owner)% of amount; input not consumed
         eRatioConsume,   // consume m_iRatioIn input from store -> 1 output (Coal Liquefaction)
         eFlatTrickle,    // credit m_pfnFlat(owner) units/min, scaled by opers elapsed (Fracking)
-        eGlobalConsume   // consume m_iRatioIn GLOBAL player food from owner -> 1 output (BioFuel)
+        eGlobalConsume,  // consume m_iRatioIn GLOBAL player food from owner -> 1 output (BioFuel)
+        eMultiTrickle    // credit SEVERAL flat units/min (m_aMulti), no input (Desperate/Scrounging)
     };
+
+    // eMultiTrickle: one flat per-minute output line (a material id + units/min).
+    struct AltMat { int m_iMat; int m_iPerMin; };
+    const int kMaxMulti = 4;
 
     struct AltOutputDef
     {
@@ -69,6 +74,8 @@ namespace AltOutput
                                                  // mode is ON (0 = none). Absolute, NOT a percent of base
                                                  // GetPeople() -- a lumber mill's base people is ~0, so a
                                                  // percent added nothing. Applied in CBuilding::Operate.
+        AltMat      m_aMulti[kMaxMulti];         // eMultiTrickle: the output lines (else all-zero)
+        int         m_nMulti;                    // eMultiTrickle: number of active m_aMulti lines (else 0)
     };
 
     // The matching def for this building's type, or nullptr. Type-only -- does NOT check the
@@ -87,6 +94,13 @@ namespace AltOutput
     // otherwise. fAccum is a per-building runtime fractional accumulator (carries the
     // leftover sub-unit yield between calls); pass the building's own accumulator field.
     void Convert( CBuilding* pBldg, int iAmount, float& fAccum );
+
+    // eMultiTrickle helper (Desperate Measures / Scrounging). Like Convert's eFlatTrickle
+    // branch but for SEVERAL outputs at once: each active m_aMulti line credits its own
+    // material at its own units/min, each carried by its own accumulator in afAccum[kMaxMulti].
+    // No-op unless the toggle is ON and a multi-trickle def is Available(). iAmount = opers
+    // elapsed this call. food/gas credit the global pools; other materials the building store.
+    void ConvertMulti( CBuilding* pBldg, int iAmount, float* afAccum );
 }
 
 #endif // ENATIONS_ALTOUTPUT_H

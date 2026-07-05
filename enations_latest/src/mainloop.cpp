@@ -1583,7 +1583,16 @@ void CBuilding::Operate( )
              && AltOutput::Available( this ) )
         {
             ( (CMineBuilding*)this )->FrackTick( );
+            AnimateOperating( TRUE );        // fracking: keep the pumpjack running...
+            SetAmbientHalfSpeed( TRUE );     // ...at half speed
             return;
+        }
+
+        // an exhausted well not fracking shows no pumpjack (undo a prior frack-enable)
+        if ( ( m_unitFlags & abandoned ) && ( GetData( )->GetUnionType( ) == CStructureData::UTmine ) )
+        {
+            SetAmbientHalfSpeed( FALSE );
+            AnimateOperating( FALSE );
         }
 
         // if stopped we only need half the people & power
@@ -1697,6 +1706,15 @@ RepairDone:;
         ( (CFarmBuilding*)this )->BuildFarm( );
         break;
     case CStructureData::UThousing:
+        break;
+    case CStructureData::UTwarehouse:
+        // Desperate Measures (rocket) / Scrounging (warehouse): normally a warehouse just draws
+        // its power/people; with its alt-output toggle ON it also scrounges a small multi-resource
+        // trickle (the +workers cost is applied centrally below via m_iWorkforceAdd).
+        GetOwner( )->AddPwrNeed( GetData( )->GetPower( ) );
+        GetOwner( )->AddPplNeedBldg( GetData( )->GetPeople( ) );
+        if ( IsFlag( CUnit::alt_oil ) && ( AltOutput::Available( this ) != nullptr ) )
+            AltOutput::ConvertMulti( this, (int)theGame.GetOpersElapsed( ), m_afAltAccum );
         break;
     case CStructureData::UTrepair:
         ( (CRepairBuilding*)this )->BuildRepair( );
@@ -2046,6 +2064,10 @@ void CVehicleBuilding::BuildVehicle( )
     int iOldTime = m_iBuildDone;
     // get production based on everything
     int iInc = GetProd( GetOwner( )->GetManfProd( ) );
+
+    // The Draft edict: infantry (walk units) build faster. Mult is 1.0 when the edict is off.
+    if ( theTransports.GetData( m_pBldUnt->GetVehType( ) )->GetWheelType( ) == CWheelTypes::walk )
+        iInc = (int)( iInc * GetOwner( )->GetEdictInfBuildMult( ) + 0.5f );
 
     if ( iInc < 1 )
         return;
@@ -2673,9 +2695,12 @@ void CMineBuilding::BuildMine( )
         return;
     }
 
-    // add in its power & people usuage
-    GetOwner( )->AddPwrNeed( GetData( )->GetPower( ) );
-    GetOwner( )->AddPplNeedBldg( GetData( )->GetPeople( ) );
+    // add in its power & people usuage. Precision Mining edict scales a mine's own power +
+    // worker demand (mults are 1.0 when the edict is off → no change).
+    GetOwner( )->AddPwrNeed(
+        (int)( GetData( )->GetPower( ) * GetOwner( )->GetEdictMineEnergyMult( ) + 0.5f ) );
+    GetOwner( )->AddPplNeedBldg(
+        (int)( GetData( )->GetPeople( ) * GetOwner( )->GetEdictMineWorkerMult( ) + 0.5f ) );
 
     // get change based on everything
     int iInc = GetProd( GetOwner( )->GetMineProd( ) );
@@ -2733,10 +2758,13 @@ void CMineBuilding::FrackTick( )
 {
     ASSERT_STRICT( GetData( )->GetUnionType( ) == CStructureData::UTmine );
 
-    // Full operating power + 50% surcharge for fracking (1.5x the well's normal draw),
-    // plus the building's people. (A normal stopped building draws only half power; a
-    // fracked well runs hot.)
-    GetOwner( )->AddPwrNeed( ( GetData( )->GetPower( ) * 3 ) / 2 );
+    // Power surcharge for running an exhausted mine hot. Moho Mining (iron mine) runs at 5x
+    // the mine's normal draw (per operator); Fracking (oil well) at 1.5x + 1. (A normal
+    // stopped building draws only half power.) Plus the building's people.
+    if ( GetData( )->GetType( ) == CStructureData::iron )
+        GetOwner( )->AddPwrNeed( GetData( )->GetPower( ) * 5 );          // Moho: 5x
+    else
+        GetOwner( )->AddPwrNeed( ( ( GetData( )->GetPower( ) * 3 ) / 2 ) + 1 );  // Fracking: 1.5x + 1
     GetOwner( )->AddPplNeedBldg( GetData( )->GetPeople( ) );
 
     // Credit the flat oil trickle. eFlatTrickle scales the per-minute rate by the opers
@@ -2767,7 +2795,9 @@ void CFarmBuilding::BuildFarm( )
 
     // add in its power & people usuage
     GetOwner( )->AddPwrNeed( GetData( )->GetPower( ) );
-    GetOwner( )->AddPplNeedBldg( GetData( )->GetPeople( ) );
+    // Agricultural Subsidy edict bumps only the farm's own worker requirement (default ×1.0).
+    GetOwner( )->AddPplNeedBldg(
+        (int)( GetData( )->GetPeople( ) * GetOwner( )->GetEdictFarmWorkerMult( ) + 0.5f ) );
 
     // BUGBUG - pull this from the adjoining hexes!!!
     float fMul = GetOwner( )->GetFarmProd( ) * m_iTerMult;

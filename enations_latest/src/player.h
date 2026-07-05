@@ -254,6 +254,16 @@ class CPlayer : public CObject
         m_iPplBldg = __max( 1, m_iPplBldg );
         m_iPplVeh += iAdd;
     }
+    // The Draft edict: burn extra population out of the labor pool (conscription overhead)
+    // when a drafted infantry is built. Clamped ≥1 so it can never underflow; does NOT touch
+    // m_iPplVeh (crew accounting stays symmetric with the normal unit-death release).
+    void BurnPpl( int iBurn )
+    {
+        ASSERT_STRICT_VALID( this );
+        if ( iBurn <= 0 )
+            return;
+        m_iPplBldg = __max( 1, m_iPplBldg - iBurn );
+    }
     void _SetPplBldg( int iNum )
     {
         ASSERT_STRICT_VALID( this );
@@ -307,6 +317,18 @@ class CPlayer : public CObject
     {
         ASSERT_STRICT_VALID( this );
         m_iGasUsed++;
+        // Turbochargers edict: fuel-consuming units burn extra gas. Called only for
+        // non-walk units (vehmove.cpp guard), so the surcharge lands on the right units.
+        // m_iGasUsed is an integer accumulator, so carry the fractional +pct across calls.
+        if ( m_fEdictFuelMult > 1.0f )
+        {
+            m_fEdictFuelCarry += ( m_fEdictFuelMult - 1.0f );
+            if ( m_fEdictFuelCarry >= 1.0f )
+            {
+                m_iGasUsed++;
+                m_fEdictFuelCarry -= 1.0f;
+            }
+        }
     }
     BOOL  BuildRoad( );
     float GetPplMult( ) const
@@ -322,27 +344,28 @@ class CPlayer : public CObject
     float GetConstProd( ) const
     {
         ASSERT_STRICT_VALID( this );
-        return ( m_fConstProd * m_fEdictConstMult );   // civ-wide edict bonus (Edicts v1)
+        // civ-wide edict bonuses: per-category (Const) + global (Overclocked Grid).
+        return ( m_fConstProd * m_fEdictConstMult * m_fEdictGlobalProdMult );
     }
     float GetMtrlsProd( ) const
     {
         ASSERT_STRICT_VALID( this );
-        return ( m_fMtrlsProd );
+        return ( m_fMtrlsProd * m_fEdictGlobalProdMult );   // Overclocked Grid (Edicts v1)
     }
     float GetManfProd( ) const
     {
         ASSERT_STRICT_VALID( this );
-        return ( m_fManfProd );
+        return ( m_fManfProd * m_fEdictGlobalProdMult );   // Overclocked Grid (Edicts v1)
     }
     float GetMineProd( ) const
     {
         ASSERT_STRICT_VALID( this );
-        return ( m_fMineProd * m_fEdictMineMult );   // civ-wide edict bonus (Edicts v1)
+        return ( m_fMineProd * m_fEdictMineMult * m_fEdictGlobalProdMult );   // Mining Subsidy + Overclocked Grid
     }
     float GetFarmProd( ) const
     {
         ASSERT_STRICT_VALID( this );
-        return ( m_fFarmProd );
+        return ( m_fFarmProd * m_fEdictFarmMult * m_fEdictGlobalProdMult );   // Agricultural Subsidy + Overclocked Grid
     }
     float GetPopGrowth( ) const
     {
@@ -362,12 +385,20 @@ class CPlayer : public CObject
     float GetRsrchMult( ) const
     {
         ASSERT_STRICT_VALID( this );
-        return ( m_fRsrchProd * m_fEdictRsrchMult );   // civ-wide edict bonus (Edicts v1; RG-1: also wire Research())
+        return ( m_fRsrchProd * m_fEdictRsrchMult * m_fEdictGlobalProdMult );   // Research Subsidy + Overclocked Grid (RG-1)
     }
     // --- Edicts v1 (civ-wide policy toggles; see edicts.h / RecomputeEdictMults) ---
     bool  IsEdictActive( int edictId ) const { return ( m_dwEdicts & ( 1u << edictId ) ) != 0; }
     DWORD GetEdicts( ) const { return ( m_dwEdicts ); }
     float GetEdictFortBuildMult( ) const { return ( m_fEdictFortBuildMult ); }
+    float GetEdictFarmWorkerMult( ) const { return ( m_fEdictFarmWorkerMult ); } // BuildFarm worker-need scale
+    float GetEdictMineEnergyMult( ) const { return ( m_fEdictMineEnergyMult ); }  // BuildMine power-need scale
+    float GetEdictMineWorkerMult( ) const { return ( m_fEdictMineWorkerMult ); }  // BuildMine worker-need scale
+    float GetEdictBldgDmgMult( ) const { return ( m_fEdictBldgDmgMult ); }         // Meat Shield: building damage-taken (projbase.cpp)
+    float GetEdictMoveMult( ) const { return ( m_fEdictMoveMult ); }       // Turbochargers (vehmove.cpp, != walk)
+    float GetEdictVisionMult( ) const { return ( m_fEdictVisionMult ); }   // Total Surveillance (AssignData spotting)
+    float GetEdictInfBuildMult( ) const { return ( m_fEdictInfBuildMult ); } // The Draft (infantry build speed)
+    float GetEdictInfPopMult( ) const { return ( m_fEdictInfPopMult ); }   // The Draft (infantry population cost)
     void  ToggleEdict( int edictId, bool bOn );   // flips the bit, then RecomputeEdictMults (local only)
     void  ToggleEdictNet( int edictId, bool bOn );// user-initiated toggle: local + broadcast (MP sync)
     void  RecomputeEdictMults( );                 // fold active edicts (g_aEdicts) into cached mults
@@ -555,7 +586,7 @@ class CPlayer : public CObject
         for ( int iOn = CRsrchArray::fracking_1; iOn <= iTop; iOn++ )
             if ( GetRsrch( iOn ).m_bDiscovered )
                 iTier = iOn - CRsrchArray::fracking_1 + 1;   // highest discovered (tiers chain)
-        static const int aiOil[6] = { 0, 10, 15, 20, 25, 30 };
+        static const int aiOil[6] = { 0, 5, 7, 9, 11, 13 };
         return ( aiOil[iTier] );
     }
 
@@ -583,6 +614,11 @@ class CPlayer : public CObject
     // Charcoal kiln researched? Gates whether the per-building Charcoal alt-output toggle
     // shows on a lumber mill (the sawmill) and whether its kiln runs. See Charcoal (#44).
     BOOL CanCharcoal( ) { return ( m_aRsrch.GetSize( ) > CRsrchArray::charcoal_1 && GetRsrch( CRsrchArray::charcoal_1 ).m_bDiscovered ); }
+
+    // Moho Mining: gates the per-building toggle on an EXHAUSTED iron mine (Fracking-style
+    // iron trickle). Tech-gated on the existing mine_2 topic. Flat ~10 iron/min (no tiers).
+    BOOL CanMoho( )          { return ( m_aRsrch.GetSize( ) > CRsrchArray::mine_2 && GetRsrch( CRsrchArray::mine_2 ).m_bDiscovered ); }
+    int  GetMohoIronPerMin( ) { return ( CanMoho( ) ? 10 : 0 ); }
 
     // Charcoal kiln THROUGHPUT -- the percent of harvested lumber fed into the kiln, then
     // converted at the fixed 2 lumber -> 1 coal. Operator steer (2026-06-28): charcoal is
@@ -774,7 +810,20 @@ class CPlayer : public CObject
     float m_fEdictMineMult;        // → GetMineProd
     float m_fEdictRsrchMult;       // → GetRsrchMult
     float m_fEdictPopGrowthMult;   // → GetPopGrowth
+    float m_fEdictFarmMult;        // → GetFarmProd
+    float m_fEdictGlobalProdMult;  // → every Get*Prod (Overclocked Grid)
+    float m_fEdictMoveMult;        // fuel-consuming unit move speed (vehmove.cpp)
+    float m_fEdictVisionMult;      // unit spotting range (new_unit.cpp AssignData)
+    float m_fEdictInfBuildMult;    // infantry build speed (mainloop.cpp BuildVehicle)
     float m_fEdictFortBuildMult;   // fort-only construction (vehicle.cpp ConstructBuilding)
+    float m_fEdictFarmWorkerMult;  // farm-only worker need (mainloop.cpp BuildFarm)
+    float m_fEdictFuelMult;        // fuel-consuming unit gas burn (FuelVehicle)
+    float m_fEdictInfPopMult;      // infantry population cost at build (new_unit.cpp Create)
+    float m_fEdictMineEnergyMult;  // mine-only power need (mainloop.cpp BuildMine)
+    float m_fEdictMineWorkerMult;  // mine-only worker need (mainloop.cpp BuildMine)
+    float m_fEdictBldgDmgMult;     // building damage-taken (Meat Shield; projbase.cpp)
+    float m_fEdictFuelCarry;       // runtime-only: fractional gas-surcharge carry (not serialized)
+    BOOL  m_bAutoRsrchPending;     // runtime-only: AutoResearch edict posted a set_rsrch, awaiting it (not serialized)
     // Upkeep — recurring cost (sum of active edicts' pct), applied as extra per-loop demand:
     float m_fEdictEnergyUpkeepPct;     // added to m_iPwrNeed in StartLoop (pre-throttle)
     float m_fEdictWorkforceUpkeepPct;  // added to m_iPplNeedBldg in StartLoop (pre-throttle)

@@ -69,6 +69,9 @@ void CVehicle::Move() {
     // operations this turn. vehicle_speed research scales the base move rate
     // (GetSpeedPct: 100% + 2% per level), so the owner's teched vehicles move faster.
     float fSpeedMul = (float) GetOwner()->GetSpeedPct() / 100.0f;
+    // Turbochargers edict: +move speed for fuel-consuming units (infantry/walk unaffected).
+    if (GetData()->GetWheelType() != CWheelTypes::walk)
+        fSpeedMul *= GetOwner()->GetEdictMoveMult();
     m_fVehMove += (m_fDamPerfMult * 0.9 * (float) (theGame.GetOpersElapsed() * GetData()->GetSpeed()) * fSpeedMul) /
                   (float) AVG_SPEED_MUL;
 

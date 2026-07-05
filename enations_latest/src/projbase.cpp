@@ -724,6 +724,14 @@ void CUnit::DecDamagePoints (int iDamage, DWORD dwKiller)
             iDamage += (iTotalTime * iDamage) / iDone;
         }
 
+    // Meat Shield edict: this player's buildings take less damage (0.90 = -10%). Live/toggleable.
+    if (GetUnitType () == CUnit::building)
+        {
+        float fDmg = GetOwner()->GetEdictBldgDmgMult ();
+        if (fDmg < 1.0f)
+            iDamage = (int)(iDamage * fDmg + 0.5f);
+        }
+
     m_iDamagePoints -= iDamage;
     if (m_iDamagePoints <= 0)
         {
