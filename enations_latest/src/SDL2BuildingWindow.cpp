@@ -101,7 +101,7 @@ static const int PORTRAIT     = 72;   // displayed size (88 read too big and cli
 // Band height DERIVES from the portrait (portrait + 3px gap + 10px condition bar +
 // 6px breathing room) so resizing the portrait can never clip it against the first
 // section again; floor of 89 keeps room for the name + 3-line flavor + status text.
-static const int HEADER_H     = __max( 89, PORTRAIT + 3 + 10 + 6 );
+static const int HEADER_H     = __max( 107, PORTRAIT + 3 + 10 + 6 + 16 );   // +16px: operating-cost line (power/workers) under the flavor
 
 // Category accent colors for section headers — saturated darks that read on the
 // light parchment interior, replacing the one-size-fits-all blue.
@@ -1139,6 +1139,18 @@ int SDL2BuildingWindow::BuildHeaderBand(int x, int y, int w) {
         lblFlavor->SetTopAligned( true );
         lblFlavor->SetFontSize( 12 );
         lblFlavor->SetColor( { 70, 56, 30, 255 } );   // muted brown, "parchment ink"
+    }
+
+    // Operating cost (operator request): the building's power + worker requirement, shown in
+    // the info window's description area so it's visible at a glance — e.g. to see an oil
+    // well's / a fracked well's draw. Static spec (GetPower/GetPeople); no per-frame refresh.
+    {
+        std::string cost = "Power required: " + std::to_string( m_pBldg->GetData()->GetPower() )
+                         + "     Workers: "    + std::to_string( m_pBldg->GetData()->GetPeople() );
+        auto* lblCost = AddWidget<SDL2Label>( tx, y + 63, tw, 15, cost.c_str() );
+        lblCost->SetFontSize( 12 );
+        lblCost->SetBold( true );
+        lblCost->SetColor( { 90, 66, 30, 255 } );   // parchment ink, a touch bolder than the flavor
     }
 
     m_lblStatus = AddWidget<SDL2Label>( tx, y + HEADER_H - 18, tw, 16, "" );
