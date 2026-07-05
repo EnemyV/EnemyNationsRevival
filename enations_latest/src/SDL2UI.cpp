@@ -739,23 +739,27 @@ void SDL2InfoIcon::Render(SDL_Surface* dst, TTF_Font* font) {
 
 void SDL2InfoIcon::RenderOverlay(SDL_Surface* dst, TTF_Font* font, const SDL_Rect& dlgRect) {
     if (!m_visible || !m_hovered || m_tip.empty() || !font || !dst) return;
-    // The tip carries embedded newlines (an edict's scope line above its multi-line
-    // effect text, #36). Render the whole thing to ONE surface with wrapLength = 0,
-    // which per SDL_ttf wraps on '\n' ONLY (never by pixel width) — so each authored
-    // line stays on its own row and nothing is width-wrapped. Then size the box to the
-    // surface's ACTUAL dimensions so no row is ever clipped.
+    // Render the tip to ONE surface. Word-wrap to a bounded max width so a long single-line
+    // description (e.g. Fracking's "Revives this exhausted oil well to trickle oil, at +50%
+    // power cost", which has NO '\n') flows onto extra lines instead of running off the
+    // dialog's right edge and being clipped (operator: "at +50% pow|" cut off). Explicit
+    // '\n's (an edict's scope line above its effect text, #36) still break as authored;
+    // width-wrapping only adds breaks to over-long lines. The wrap width is bounded to the
+    // dialog so the box always fits inside it.
     //
-    // (Was: measured the widest '\n'-line with TTF_SizeUTF8, sized the box for that
-    //  width + the line count, then rendered with wrapLength = box width. The measured
-    //  width ran a bit short of what the wrapped blended renderer actually needed, so a
-    //  full line re-wrapped onto an extra row, the surface grew past the box height, and
-    //  the last row was clipped — which hid the Nutrition edict's "Cost: +75% food
-    //  consumption." line entirely. operator screenshot 2026-07-04.)
+    // The box is sized to the surface's ACTUAL dimensions below, so there is no
+    // measure-vs-render width mismatch regardless of where words wrap — that mismatch was
+    // the old clip bug (measured the widest line, sized for it, then rendered wrapped at a
+    // slightly different width -> a line re-wrapped past the box height and the last row was
+    // clipped, hiding the Nutrition edict's "Cost: +75%..." line; operator 2026-07-04).
     SDL_Color txtCol{ 235, 235, 220, 255 };
-    SDL_Surface* txt = TTF_RenderUTF8_Blended_Wrapped(font, m_tip.c_str(), txtCol, 0);
+    const int padX = 6, padY = 4;
+    int wrapW = dlgRect.w - 2 * padX - 8;   // keep the box within the dialog width
+    if (wrapW < 120) wrapW = 120;           // floor for very narrow dialogs
+    if (wrapW > 300) wrapW = 300;           // cap so tooltips stay readable, not full-width
+    SDL_Surface* txt = TTF_RenderUTF8_Blended_Wrapped(font, m_tip.c_str(), txtCol, (Uint32)wrapW);
     if (!txt) return;
 
-    const int padX = 6, padY = 4;
     SDL_Rect box = { m_rect.x + m_rect.w + 4, m_rect.y - 2,
                      txt->w + 2 * padX, txt->h + 2 * padY };
     // Keep the box inside the DIALOG's content rect, not just the screen: the
