@@ -1,5 +1,7 @@
 #include "stdafx.h"
 #include "SDL2Dialogs.h"
+#include <sstream>   // locale-grouped number formatting for the load-game stats
+#include <locale>
 #include "RenderBackend.h"   // RenderBackendOpenGLAvailable() — grey out OpenGL until done
 #include "SDL2MainMenu.h"
 #include "GameWindow.h"
@@ -786,18 +788,32 @@ void SDL2PickPlayerDialog::OnInit() {
     }
 }
 
+// Format an integer with the user's locale thousands separators (e.g. 1,234,543).
+// Falls back to plain digits if the environment locale can't be constructed.
+static std::string FormatGroupedNumber(long long value) {
+    try {
+        std::ostringstream ss;
+        ss.imbue(std::locale(""));   // user's current locale (grouping via its numpunct)
+        ss << value;
+        return ss.str();
+    } catch (...) {
+        return std::to_string(value);
+    }
+}
+
 void SDL2PickPlayerDialog::OnPlayerSelected(int index) {
     if (index < 0 || index >= (int)m_players.size()) return;
     auto& pi = m_players[index];
     // Mirror CDlgPickPlayer::OnSelchangeRaceList: optional "taken" line, then
-    // buildings, vehicles, and every resource the player holds.
+    // buildings, vehicles, and every resource the player holds. Numbers are
+    // locale-grouped (operator: show resource counts as e.g. 1,234,543).
     std::string desc;
     if (!pi.available)
         desc += "(player taken)\n";
-    desc += "Buildings: " + std::to_string(pi.numBldgs) + "\n";
-    desc += "Vehicles: " + std::to_string(pi.numVeh) + "\n";
+    desc += "Buildings: " + FormatGroupedNumber(pi.numBldgs) + "\n";
+    desc += "Vehicles: " + FormatGroupedNumber(pi.numVeh) + "\n";
     for (const auto& r : pi.resources)
-        desc += r.name + ": " + std::to_string(r.amount) + "\n";
+        desc += r.name + ": " + FormatGroupedNumber(r.amount) + "\n";
     m_lblDesc->SetText(desc);
 
     // Reflect the selected player's saved name (read-only).
