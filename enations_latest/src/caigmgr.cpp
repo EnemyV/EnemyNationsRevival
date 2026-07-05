@@ -66,6 +66,10 @@ static int aiCbtPath[CRsrchArray::num_types] = { CRsrchArray::fire_control,
                                                  CRsrchArray::medium_facilities,
                                                  CRsrchArray::tanks,
                                                  CRsrchArray::artillery,
+                                                 // power techs pulled forward (were #40/#44: combat AIs
+                                                 // never reached them and built coal plants all game)
+                                                 CRsrchArray::gas_turbine,
+                                                 CRsrchArray::nuclear,
                                                  CRsrchArray::large_facilities,
                                                  CRsrchArray::heavy_vehicle,
                                                  CRsrchArray::fortification,
@@ -100,11 +104,9 @@ static int aiCbtPath[CRsrchArray::num_types] = { CRsrchArray::fire_control,
                                                  CRsrchArray::const_1,
                                                  CRsrchArray::mine_2,
                                                  CRsrchArray::manf_2,
-                                                 CRsrchArray::gas_turbine,
                                                  CRsrchArray::const_2,
                                                  CRsrchArray::manf_3,
                                                  CRsrchArray::const_3,
-                                                 CRsrchArray::nuclear,
                                                  CRsrchArray::copper,
                                                  CRsrchArray::landing_craft,
                                                  CRsrchArray::cargo_handling,
@@ -1749,9 +1751,10 @@ void CAIGoalMgr::IdleCrane( void )
     if ( !m_pwaBldgs[CStructureData::research] )
         return;
 
-    // only consider relative to difficulty setting
-    if ( m_pwaBldgGoals[CStructureData::research] >= pGameData->m_iSmart ||
-         m_pwaBldgs[CStructureData::research] >= pGameData->m_iSmart )
+    // only consider relative to difficulty setting (+1: the old cap of
+    // m_iSmart labs made a ~45-topic serial path unfinishable -- operator)
+    if ( m_pwaBldgGoals[CStructureData::research] >= pGameData->m_iSmart + 1 ||
+         m_pwaBldgs[CStructureData::research] >= pGameData->m_iSmart + 1 )
         return;
 
     // and if current reseach institutes goals are met
