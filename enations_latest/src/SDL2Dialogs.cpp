@@ -309,8 +309,19 @@ void SDL2PickRaceDialog::OnInit() {
     // Player name
     AddWidget<SDL2Label>(lx, y, 60, 24, "Name:");
     std::string savedName = DefaultPlayerName();
+    // MP name bug (operator): the player already entered their name at the Create/Join
+    // dialog and THAT name was sent to the host (host-create: GetMe()->SetName; join:
+    // CNetJoin). Re-editing it here does NOT re-sync to the host, so the in-game name
+    // reverts to the first one. Show the already-chosen name READ-ONLY for net games so
+    // it can't diverge; SP has no earlier name entry, so it stays editable. (Full fix =
+    // a CNetJoinName resync message — follow-up.)
+    const bool bNetName = theGame.IsNetGame( );
+    if ( bNetName && theGame.GetMe( ) && theGame.GetMe( )->GetName( ) && *theGame.GetMe( )->GetName( ) )
+        savedName = theGame.GetMe( )->GetName( );
     m_edtName = AddWidget<SDL2EditBox>(lx + 65, y, w - 65, 24, savedName,
         [this](const std::string& name) { OnNameChanged(name); });
+    if ( bNetName && m_edtName )
+        m_edtName->SetEnabled( false );   // read-only in MP (name is set at Create/Join)
     y += 34;
 
     // Race list on the left — fill from here down to the OK/Cancel buttons
