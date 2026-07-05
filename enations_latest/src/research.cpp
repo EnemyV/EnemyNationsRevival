@@ -381,29 +381,36 @@ void CRsrchArray::Open( )
         }
     }
 
-    // In-code research topics: the Fuel Efficiency line (not in the DAT file). A 10-
+    // In-code research topics: the Fuel Efficiency line (not in the DAT file). A 12-
     // level repeatable line unlocked after Gas Turbines; level 1 requires gas_turbine,
-    // each later level requires the previous. Each level costs DOUBLE the previous in
-    // points, and cuts gas consumption by 5% of what remains (diminishing; the engine
-    // applies 0.95^level via CPlayer::GetFuelPct). Names run grounded -> sci-fi.
+    // each later level requires the previous. Cost DOUBLES per level up to 32*B at level 6,
+    // then goes flat +16*B per level (L7=48B, L8=64B, ... L12=128B; B = gas_turbine cost).
+    // Gas saving follows a diminishing curve (5/4/4/3/3/3/2/2/2/2 => 30% total
+    // at level 10), then levels 11-12 add only +1% each (31% / 32%) — see
+    // CPlayer::GetFuelPct for the authoritative gas% table. Levels 1-10 are contiguous
+    // (fuel_efficiency_1..10); levels 11-12 were appended at the END of the research enum
+    // for save parity, so the setup loop maps the index non-contiguously. Names run
+    // grounded -> sci-fi.
     {
-        static char const* aszName[10] = {
+        static char const* aszName[12] = {
             "Fuel Injection",      "Lean-Burn Mapping",   "Turbo Compounding",
             "Regenerative Drive",  "Thermal Recovery",    "Plasma Ignition",
             "Catalytic Reclamation","Synthetic Lubricants","Ion Scavenging",
-            "Zero-Loss Cycle" };
-        static char const* aszDesc[10] = {
+            "Zero-Loss Cycle",     "Cryo-Fuel Conditioning","Perfect Combustion" };
+        static char const* aszDesc[12] = {
             "Precision fuel injection meters every drop, trimming gas burn by 5%.",
-            "Lean-burn engine mapping squeezes more travel from less gas, saving another 5%.",
-            "Turbo-compounding recovers exhaust energy back into the drivetrain for a further 5%.",
-            "Regenerative drives recapture braking energy, cutting gas burn another 5%.",
-            "Thermal recovery loops harvest waste engine heat, burning 5% less gas.",
-            "Plasma ignition burns fuel cleaner and more completely, saving a further 5%.",
-            "Catalytic reclamation refines spent fuel back into the tank for another 5%.",
-            "Synthetic lubricants slash friction losses across the drivetrain, saving 5%.",
-            "Ion scavengers strip the last usable energy from the exhaust stream, another 5%.",
-            "A near-closed-loop drive cycle wastes almost nothing, shaving a final 5%." };
-        static char const* aszRslt[10] = {
+            "Lean-burn engine mapping squeezes more travel from less gas, saving another 4%.",
+            "Turbo-compounding recovers exhaust energy back into the drivetrain for a further 4%.",
+            "Regenerative drives recapture braking energy, cutting gas burn another 3%.",
+            "Thermal recovery loops harvest waste engine heat, burning 3% less gas.",
+            "Plasma ignition burns fuel cleaner and more completely, saving a further 3%.",
+            "Catalytic reclamation refines spent fuel back into the tank for another 2%.",
+            "Synthetic lubricants slash friction losses across the drivetrain, saving 2%.",
+            "Ion scavengers strip the last usable energy from the exhaust stream, another 2%.",
+            "A near-closed-loop drive cycle wastes almost nothing, shaving another 2% (30% total).",
+            "Cryogenic conditioning densifies the fuel charge for a final 1% (31% total).",
+            "Perfected combustion leaves nothing unburned, the last 1% (32% total)." };
+        static char const* aszRslt[12] = {
             "Fuel injection is fielded. Our vehicles burn 5% less gas.",
             "Lean-burn mapping is live. Our vehicles burn less gas still.",
             "Turbo compounding is online. Gas consumption drops again.",
@@ -413,24 +420,33 @@ void CRsrchArray::Open( )
             "Catalytic reclamation is online. Our vehicles stretch every tank further.",
             "Synthetic lubricants are in service. Friction losses cut, gas saved.",
             "Ion scavenging is active. Almost nothing leaves the exhaust unused.",
-            "The zero-loss cycle is perfected. Our vehicles burn the least gas possible." };
+            "The zero-loss cycle is perfected. A full 30% less gas burned.",
+            "Cryo-fuel conditioning is fielded. Gas burn edges down to 31% saved.",
+            "Perfect combustion achieved. Our vehicles burn the least gas possible (32% saved)." };
 
         // Extra (cross-line) prereq per level, on top of the previous level. -1 = none.
         // Turbo compounding leans on manufacturing; plasma ignition needs nuclear-era
         // physics. Levels above each gate inherit it through the chain, so we only
-        // pin it once where it first becomes necessary.
-        static const int aiExtra[10] = {
-            -1, -1, (int)manf_1, -1, -1, (int)nuclear, -1, -1, -1, -1 };
+        // pin it once where it first becomes necessary. Levels 11-12 add no new gate.
+        static const int aiExtra[12] = {
+            -1, -1, (int)manf_1, -1, -1, (int)nuclear, -1, -1, -1, -1, -1, -1 };
 
-        int iPts = ElementAt( gas_turbine ).m_iPtsRequired;
-        for ( int iOn = 0; iOn < 10; iOn++ )
+        int iBase = ElementAt( gas_turbine ).m_iPtsRequired;   // B = gas_turbine cost
+        int iPts  = iBase;                                     // level 1 = B
+        for ( int iOn = 0; iOn < 12; iOn++ )
         {
-            CRsrchItem* pRi = &ElementAt( fuel_efficiency_1 + iOn );
+            // Levels 1-10 are contiguous from fuel_efficiency_1; 11-12 live at the end of
+            // the enum (fuel_efficiency_11/12) for save parity. Map current + previous index.
+            int iIdx  = ( iOn < 10 ) ? (int)( fuel_efficiency_1 + iOn )
+                                     : (int)( fuel_efficiency_11 + ( iOn - 10 ) );
+            int iPrev = ( iOn - 1 < 10 ) ? (int)( fuel_efficiency_1 + iOn - 1 )
+                                         : (int)( fuel_efficiency_11 + ( iOn - 1 - 10 ) );
+            CRsrchItem* pRi = &ElementAt( iIdx );
 
             pRi->m_iPtsRequired       = iPts;   // level 1 = gas_turbine cost; doubles each level
             pRi->m_iScenarioReq       = ElementAt( gas_turbine ).m_iScenarioReq;
 
-            int iChain = ( 0 == iOn ) ? (int)gas_turbine : (int)( fuel_efficiency_1 + iOn - 1 );
+            int iChain = ( 0 == iOn ) ? (int)gas_turbine : iPrev;
             int nReq   = 1 + ( aiExtra[iOn] >= 0 ? 1 : 0 );
             pRi->m_iNumRsrchRequired  = nReq;
             pRi->m_piRsrchRequired    = new int[nReq];
@@ -442,7 +458,13 @@ void CRsrchArray::Open( )
             pRi->m_sDesc              = aszDesc[iOn];
             pRi->m_sResult            = aszRslt[iOn];
 
-            iPts *= 2;   // each level costs twice as much as the previous
+            // Cost curve: double each level up to 32*B at level 6, then switch to a flat
+            // +16*B per level (L6=32B -> L7=48B -> L8=64B -> L9=80B -> ... -> L12=128B).
+            // Keeps the top of the line expensive but LINEAR, not the runaway 2x doubling.
+            if ( iOn < 5 )
+                iPts *= 2;            // levels 1->6 still double
+            else
+                iPts += 16 * iBase;   // level 6 onward: flat +16*B per level
         }
     }
 
@@ -526,28 +548,106 @@ void CRsrchArray::Open( )
         }
     }
 
-    // Radar/Spotting tiers 4-5 (in-code) — extend the DAT spot_1..3 line. Each tier costs
-    // 2x the previous tier's points and chains off it (spot_4<-spot_3, spot_5<-spot_4).
-    // Per-level sight bonus (diminishing) is in CUnit::AssignData. The AI's frozen research
-    // path doesn't pursue these (optional human tiers), like the other in-code lines.
+    // In-code research topics: Vehicle Speed 11-20 (not in the DAT file). Ten MORE speed
+    // levels beyond the base 1-10 line above, each adding only +1% move speed (vs +2% for
+    // 1-10; see CPlayer::GetSpeedPct). Chain off the previous speed tier (11<-10, 12<-11,
+    // ...); the fuel-efficiency line is exhausted by here so there is no fuel gate. Cost
+    // follows the FUEL EFFICIENCY curve: double each level up to 32*B at the 6th new tier
+    // (tier 16), then a flat +16*B per level (B = gas_turbine cost). Appended at the END of
+    // the research enum (vehicle_speed_11..20), so the index is contiguous within this batch
+    // but chains back to the base line's vehicle_speed_10 for tier 11.
     {
-        static const char* aszSpotName[2] = { "Enhanced Sensors", "Deep-Scan Array" };
-        static const char* aszSpotDesc[2] = {
-            "Refined sensor arrays extend our units' sight a little further.",
-            "Deep-scanning sensors push our sight range to its practical limit." };
-        static const char* aszSpotRslt[2] = {
-            "Enhanced Sensors online. Our units see a bit further.",
-            "Deep-Scan Array online. Our units see as far as the hardware allows." };
-        int aiSpotPrev[2] = { (int)spot_3, (int)spot_4 };   // spot_5 reads spot_4 after it's set below
-        for ( int iOn = 0; iOn < 2; iOn++ )
+        static char const* aszName[10] = {
+            "Fluidic Drives",        "Gyroscopic Stabilizers","Nanotube Chassis",
+            "Superconducting Motors","Gravitic Assist",       "Phase-Slip Bearings",
+            "Kinetic Recyclers",     "Monocoque Exoframes",   "Plasma Treads",
+            "Warp-Assisted Locomotion" };
+        static char const* aszDesc[10] = {
+            "Fluidic drivetrains smooth every power stroke, adding 1% vehicle speed.",
+            "Gyroscopic stabilizers hold vehicles steady at pace, adding another 1% speed.",
+            "Nanotube chassis shed still more dead weight, adding 1% speed.",
+            "Superconducting motors waste almost no current, adding 1% speed.",
+            "Gravitic assist lightens each vehicle's effective load, adding 1% speed.",
+            "Phase-slip bearings all but eliminate friction, adding 1% speed.",
+            "Kinetic recyclers return braking energy to the drive, adding 1% speed.",
+            "Monocoque exoframes stiffen the hull for cleaner power delivery, adding 1% speed.",
+            "Plasma treads grip and release the ground instantly, adding 1% speed.",
+            "Warp-assisted locomotion pushes the last limit of speed, adding a final 1%." };
+        static char const* aszRslt[10] = {
+            "Fluidic drives are fielded. Our vehicles move 1% faster.",
+            "Gyroscopic stabilizers are installed. Our vehicles gain a little more speed.",
+            "Nanotube chassis are in service. Our vehicles move faster still.",
+            "Superconducting motors are online. Our vehicles pick up more speed.",
+            "Gravitic assist is operational. Our vehicles move faster.",
+            "Phase-slip bearings are running. Our vehicles gain still more speed.",
+            "Kinetic recyclers are fielded. Our vehicles keep more of their momentum.",
+            "Monocoque exoframes are in service. Our vehicles move faster.",
+            "Plasma treads are operational. Our vehicles surge ahead.",
+            "Warp-assisted locomotion is perfected. Our vehicles reach their absolute top speed." };
+
+        int iBase = ElementAt( gas_turbine ).m_iPtsRequired;   // B (same base as Fuel Efficiency)
+        int iPts  = iBase;                                     // new tier 11 = B
+        for ( int iOn = 0; iOn < 10; iOn++ )
         {
-            CRsrchItem* pRi = &ElementAt( spot_4 + iOn );
-            pRi->m_iPtsRequired       = ElementAt( aiSpotPrev[iOn] ).m_iPtsRequired * 2;   // 2x the previous tier
+            CRsrchItem* pRi = &ElementAt( vehicle_speed_11 + iOn );
+
+            pRi->m_iPtsRequired      = iPts;
+            pRi->m_iScenarioReq      = ElementAt( gas_turbine ).m_iScenarioReq;
+            pRi->m_iNumBldgsRequired = 0;
+
+            // Tier 11 chains the base line's top (vehicle_speed_10); 12-20 chain the prior
+            // new tier. vehicle_speed_11..20 are contiguous, so the arithmetic is direct.
+            int iChain = ( 0 == iOn ) ? (int)vehicle_speed_10 : (int)( vehicle_speed_11 + iOn - 1 );
+            pRi->m_iNumRsrchRequired  = 1;
+            pRi->m_piRsrchRequired    = new int[1];
+            pRi->m_piRsrchRequired[0] = iChain;
+
+            pRi->m_sName   = aszName[iOn];
+            pRi->m_sDesc   = aszDesc[iOn];
+            pRi->m_sResult = aszRslt[iOn];
+
+            // Fuel Efficiency cost curve: double to 32*B at the 6th new tier, then flat +16*B.
+            if ( iOn < 5 )
+                iPts *= 2;            // tiers 11->16 double
+            else
+                iPts += 16 * iBase;   // tier 16 onward: flat +16*B per level
+        }
+    }
+
+    // Radar/Spotting tiers 4-7 (in-code) — extend the DAT spot_1..3 line with four
+    // diminishing-return levels. Each tier costs 2x the previous tier's points and chains
+    // off it (spot_4<-spot_3, spot_5<-spot_4, spot_6<-spot_5, spot_7<-spot_6). Per-level
+    // sight bonus (diminishing) is in CUnit::AssignData; level lookup in CPlayer::SetRsrch.
+    // The AI's frozen research path doesn't pursue these (optional human tiers). NOTE:
+    // spot_4/5 are contiguous, but spot_6/7 were appended at the END of the enum for save
+    // parity, so the current + previous index are mapped non-contiguously below.
+    {
+        static const char* aszSpotName[4] = {
+            "Enhanced Sensors", "Deep-Scan Array", "Quantum Radar", "Orbital Uplink" };
+        static const char* aszSpotDesc[4] = {
+            "Refined sensor arrays extend our units' sight a little further.",
+            "Deep-scanning sensors push our sight range further still.",
+            "Quantum radar teases faint returns from the noise, extending sight a little more.",
+            "An orbital uplink relays a top-down view, pushing sight to its practical limit." };
+        static const char* aszSpotRslt[4] = {
+            "Enhanced Sensors online. Our units see a bit further.",
+            "Deep-Scan Array online. Our units see further still.",
+            "Quantum Radar online. Our units pick out targets further out.",
+            "Orbital Uplink online. Our units see as far as the hardware allows." };
+        for ( int iOn = 0; iOn < 4; iOn++ )
+        {
+            // spot_4/5 contiguous; spot_6/7 at the enum end. Map current + previous index.
+            int iIdx  = ( iOn < 2 ) ? (int)( spot_4 + iOn ) : (int)( spot_6 + ( iOn - 2 ) );
+            int iPrev = ( iOn == 0 ) ? (int)spot_3
+                      : ( iOn - 1 < 2 ) ? (int)( spot_4 + iOn - 1 )
+                                        : (int)( spot_6 + ( iOn - 1 - 2 ) );
+            CRsrchItem* pRi = &ElementAt( iIdx );
+            pRi->m_iPtsRequired       = ElementAt( iPrev ).m_iPtsRequired * 2;   // 2x the previous tier
             pRi->m_iScenarioReq       = ElementAt( spot_3 ).m_iScenarioReq;
             pRi->m_iNumBldgsRequired  = 0;
             pRi->m_iNumRsrchRequired  = 1;
             pRi->m_piRsrchRequired    = new int[1];
-            pRi->m_piRsrchRequired[0] = aiSpotPrev[iOn];
+            pRi->m_piRsrchRequired[0] = iPrev;
             pRi->m_sName   = aszSpotName[iOn];
             pRi->m_sDesc   = aszSpotDesc[iOn];
             pRi->m_sResult = aszSpotRslt[iOn];
@@ -595,11 +695,11 @@ void CRsrchArray::Open( )
             "Hydraulic Fracturing", "Horizontal Drilling", "Proppant Injection",
             "Microseismic Mapping", "Supercritical Extraction" };
         static const char* aszFrDesc[5] = {
-            "High-pressure fluid fractures spent rock, coaxing a 10/min oil trickle from exhausted wells.",
-            "Horizontal bores reach untapped pockets, lifting the trickle to 15/min.",
-            "Engineered proppants hold fractures open longer, raising recovery to 20/min.",
-            "Microseismic mapping targets the richest seams, yielding 25/min.",
-            "Supercritical solvents strip the last bound oil from dead rock, 30/min." };
+            "High-pressure fluid fractures spent rock, coaxing a 5/min oil trickle from exhausted wells.",
+            "Horizontal bores reach untapped pockets, lifting the trickle to 7/min.",
+            "Engineered proppants hold fractures open longer, raising recovery to 9/min.",
+            "Microseismic mapping targets the richest seams, yielding 11/min.",
+            "Supercritical solvents strip the last bound oil from dead rock, 13/min." };
         static const char* aszFrRslt[5] = {
             "Hydraulic fracturing online. Exhausted wells now trickle oil (toggle per well).",
             "Horizontal drilling fielded. Fracked wells yield more oil.",

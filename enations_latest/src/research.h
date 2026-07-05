@@ -138,10 +138,13 @@ public:
 					cargo_handling_2,
 					cargo_handling_3,
 					cargo_handling_4,
-					// Fuel Efficiency 1-10 (in-code, unlocked after gas_turbine): a 10-level
-					// repeatable line, each level costing double the previous in points and
-					// cutting gas consumption by 5% of what remains (diminishing; see
-					// CPlayer::GetFuelPct). Named in research.cpp. Appended last so all the
+					// Fuel Efficiency 1-10 (in-code, unlocked after gas_turbine): the first ten
+					// levels of a 12-level line; cost doubles per level up to 32*B at level 6 then
+					// goes flat +16*B per level (L7=48B..L12=128B, B=gas_turbine cost), while
+					// cutting gas consumption on a diminishing curve to a 30% total saving at
+					// level 10 (per-level increments 5/4/4/3/3/3/2/2/2/2; see CPlayer::GetFuelPct).
+					// Levels 11-12 (+1% each) are appended at the END of the enum for save parity
+					// (fuel_efficiency_11/12). Named in research.cpp. Appended last so all the
 					// earlier indices (incl. bridge_2 / RDPATH_SAVE_COUNT==53) stay put.
 					fuel_efficiency_1,
 					fuel_efficiency_2,
@@ -189,8 +192,8 @@ public:
 					landing_craft_2,
 					landing_craft_3,
 					// Fracking (#23, in-code) — 5 tiers. EXHAUSTED oil wells trickle oil when
-					// fracking is toggled ON (at +50% well energy). Flat oil/min by tier
-					// (10/15/20/25/30) via CPlayer::GetFrackOilPerMin. T1<-gas_turbine, T2-5 chain
+					// fracking is toggled ON (at +50% well energy +1 flat). Flat oil/min by tier
+					// (5/7/9/11/13) via CPlayer::GetFrackOilPerMin. T1<-gas_turbine, T2-5 chain
 					// the prev tier + a Fuel-Efficiency level. Appended LAST so earlier indices
 					// (incl. bridge_2 / RDPATH_SAVE_COUNT==53) stay put; old saves load via the
 					// count-prefixed research-status read (player.cpp ~910) + auto-resize.
@@ -229,6 +232,39 @@ public:
 					charcoal_2,
 					charcoal_3,
 					charcoal_4,
+					// Fuel Efficiency 11-12 (in-code) — the two TOP levels of the fuel line
+					// (levels 1-10 live above at fuel_efficiency_1..10). Split out here and
+					// appended LAST so adding them does NOT shift any earlier enum index (old
+					// saves store discovered-flags positionally; see player.cpp Serialize).
+					// They continue the x2 cost chain (11<-fe_10, 12<-fe_11) and each add only
+					// +1% gas saving (30% at level 10 -> 31% -> 32%), see CPlayer::GetFuelPct.
+					fuel_efficiency_11,
+					fuel_efficiency_12,
+					// Vehicle Speed 11-20 (in-code) — ten MORE speed levels beyond the base
+					// vehicle_speed_1..10 line above. Each adds only +1% move speed (vs +2% for
+					// levels 1-10; see CPlayer::GetSpeedPct) and chains off the previous speed
+					// tier (11<-10, 12<-11, ...). Cost follows the Fuel Efficiency curve (double
+					// to 32*B at the 6th new tier, then flat +16*B; B = gas_turbine cost).
+					// Appended LAST so no earlier enum index shifts — old saves store the
+					// discovered-flags positionally (see player.cpp Serialize).
+					vehicle_speed_11,
+					vehicle_speed_12,
+					vehicle_speed_13,
+					vehicle_speed_14,
+					vehicle_speed_15,
+					vehicle_speed_16,
+					vehicle_speed_17,
+					vehicle_speed_18,
+					vehicle_speed_19,
+					vehicle_speed_20,
+					// Radar/Spotting tiers 6-7 (in-code) — two MORE diminishing-return sight
+					// levels beyond spot_4/5 above; each 2x the previous tier's research cost and
+					// chains off it (spot_6<-spot_5, spot_7<-spot_6). Sight bonus in
+					// CUnit::AssignData (spot_6 ~+71.9%, spot_7 ~+73.4%); level lookup in
+					// CPlayer::SetRsrch. Appended LAST so no earlier enum index shifts (old saves
+					// store discovered-flags positionally; see player.cpp Serialize).
+					spot_6,
+					spot_7,
 					num_types	};
 
 	CRsrchArray () {}

@@ -147,7 +147,7 @@ namespace
 
         // 4) Fracking (NEW) -- an EXHAUSTED oil well (its deposit run dry, so it is
         //    stopped/abandoned and normally idle) trickles a flat oil rate when toggled
-        //    ON. eFlatTrickle: credit FlatFrackOil() units/min (per-tier 10/15/20/25/30),
+        //    ON. eFlatTrickle: credit FlatFrackOil() units/min (per-tier 5/7/9/11/13),
         //    no input consumed -- it is neither a pct-of-production (the well produces
         //    nothing) nor an input-consume, so it uses the third mode added for this
         //    feature. The +50% well energy is applied at the production hook

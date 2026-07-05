@@ -508,10 +508,13 @@ class CPlayer : public CObject
         return ( iBonus );
     }
 
-    // Gas consumption as a percent of base: each fuel_efficiency level cuts burn by
-    // 5% of what remains (diminishing), i.e. 100 * 0.95^levels. 10 levels run from
-    // 100% (none) down to ~60%. Unlocked after gas_turbine; see CPlayer::Operate's
-    // gas deduction. Lower = burns less gas for the same travel.
+    // Gas consumption as a percent of base by highest Fuel Efficiency level researched.
+    // Diminishing-return curve (nerfed): 100% (none) down to 70% (30% saving) at level 10,
+    // then levels 11-12 shave only 1% more each (69% / 68%). Unlocked after gas_turbine;
+    // see CPlayer::Operate's gas deduction. Lower = burns less gas for the same travel.
+    // Levels 1-10 are contiguous (fuel_efficiency_1..10); 11-12 were appended at the END of
+    // the research enum for save parity, so they're counted separately. Guarded for older
+    // saves whose m_aRsrch predates these in-code tiers.
     int GetFuelPct( )
     {
         int iLevels = 0;
@@ -519,27 +522,41 @@ class CPlayer : public CObject
             for ( int iOn = CRsrchArray::fuel_efficiency_1; iOn <= CRsrchArray::fuel_efficiency_10; iOn++ )
                 if ( GetRsrch( iOn ).m_bDiscovered )
                     iLevels++;
-        double dMult = 1.0;
-        for ( int i = 0; i < iLevels; i++ )
-            dMult *= 0.95;
-        return ( (int)( dMult * 100.0 + 0.5 ) );
+        if ( m_aRsrch.GetSize( ) > CRsrchArray::fuel_efficiency_11 && GetRsrch( CRsrchArray::fuel_efficiency_11 ).m_bDiscovered )
+            iLevels++;
+        if ( m_aRsrch.GetSize( ) > CRsrchArray::fuel_efficiency_12 && GetRsrch( CRsrchArray::fuel_efficiency_12 ).m_bDiscovered )
+            iLevels++;
+        // Cumulative gas% by level (increments 5/4/4/3/3/3/2/2/2/2/1/1 => 30% saving @10, 32% @12).
+        static const int aiGasPct[13] = { 100, 95, 91, 87, 84, 81, 78, 76, 74, 72, 70, 69, 68 };
+        if ( iLevels < 0 )  iLevels = 0;
+        if ( iLevels > 12 ) iLevels = 12;
+        return ( aiGasPct[iLevels] );
     }
 
-    // Vehicle movement speed as a percent of base: +2% per vehicle_speed level
-    // discovered (10 levels). 100% (none) to 120% (all ten). Applied to the base move
-    // rate in CVehicle::Move, so it speeds up every vehicle this player owns.
+    // Vehicle movement speed as a percent of base. Base line vehicle_speed_1..10 gives
+    // +2% per level (up to +20%); the extended line vehicle_speed_11..20 gives +1% per
+    // level (up to another +10%), so a fully-researched player caps at 130%. Applied to
+    // the base move rate in CVehicle::Move, so it speeds up every vehicle this player owns.
+    // Levels 1-10 are contiguous; 11-20 were appended at the END of the research enum for
+    // save parity, so they're counted separately. Guarded for older saves.
     int GetSpeedPct( )
     {
-        int iLevels = 0;
+        int iLevels = 0;   // tiers 1-10, +2% each
         if ( m_aRsrch.GetSize( ) > CRsrchArray::vehicle_speed_10 )
             for ( int iOn = CRsrchArray::vehicle_speed_1; iOn <= CRsrchArray::vehicle_speed_10; iOn++ )
                 if ( GetRsrch( iOn ).m_bDiscovered )
                     iLevels++;
-        return ( 100 + 2 * iLevels );
+        int iLevels2 = 0;  // tiers 11-20, +1% each
+        if ( m_aRsrch.GetSize( ) > CRsrchArray::vehicle_speed_20 )
+            for ( int iOn = CRsrchArray::vehicle_speed_11; iOn <= CRsrchArray::vehicle_speed_20; iOn++ )
+                if ( GetRsrch( iOn ).m_bDiscovered )
+                    iLevels2++;
+        return ( 100 + 2 * iLevels + iLevels2 );
     }
 
     // Flat oil/minute an EXHAUSTED oil well trickles when its Fracking toggle is ON, by
-    // the highest Fracking tier researched: 0 / 10 / 15 / 20 / 25 / 30. Consumed in the
+    // the highest Fracking tier researched: 0 / 5 / 7 / 9 / 11 / 13 (nerfed from the old
+    // 10/15/20/25/30 — halved base + flatter tier gains per operator). Consumed in the
     // mine production hook (exhausted wells only; at +50% that well's energy). Guarded for
     // older saves whose m_aRsrch predates these in-code tiers. See Fracking (#23).
     int GetFrackOilPerMin( )
@@ -555,7 +572,7 @@ class CPlayer : public CObject
         for ( int iOn = CRsrchArray::fracking_1; iOn <= iTop; iOn++ )
             if ( GetRsrch( iOn ).m_bDiscovered )
                 iTier = iOn - CRsrchArray::fracking_1 + 1;   // highest discovered (tiers chain)
-        static const int aiOil[6] = { 0, 10, 15, 20, 25, 30 };
+        static const int aiOil[6] = { 0, 5, 7, 9, 11, 13 };
         return ( aiOil[iTier] );
     }
 

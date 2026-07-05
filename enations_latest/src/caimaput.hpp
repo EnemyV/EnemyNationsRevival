@@ -11,6 +11,8 @@
 #include "caiunit.hpp"
 #include "caihex.hpp"
 
+#include <map>
+
 #ifndef __CAIMAPUT_HPP__
 #define __CAIMAPUT_HPP__
 
@@ -108,9 +110,22 @@ public:
 		int iWidthX, int iWidthY, CHexCoord& hexFound );
 	void FindSpecialHex( int iBldg, 
 		int iWidthX, int iWidthY, CHexCoord& hexFound );
-	void FindHexInCity( int iBldg, 
+	void FindHexInCity( int iBldg,
 		int iWidthX, int iWidthY, CHexCoord& hexFound );
 	BOOL IsHexInCity( CHexCoord& hexTest );
+
+	// Runtime "don't try to build here again" memory. When a crane reaches a
+	// selected site and the build is rejected, we remember (building-type, hex)
+	// so site selection stops handing cranes back to the same doomed spot.
+	// AddFailedSite = permanent (terrain-level: ground re-leveled by an adjacent
+	// build, or a rotated footprint overlaps water). AddFailedSiteTemp = timed:
+	// a *mobile unit* is parked on the footprint -- it will likely move, so we
+	// only shelve the spot for dwMs and then retry rather than abandon the
+	// deposit. Runtime-only / per-player, deliberately NOT serialized -- a reload
+	// re-learns, which self-heals.
+	void AddFailedSite( int iBldg, const CHexCoord& hex );
+	void AddFailedSiteTemp( int iBldg, const CHexCoord& hex, DWORD dwMs );
+	BOOL IsFailedSite( int iBldg, const CHexCoord& hex );
 
 	void GetExploreHex( CAIUnit *pUnit, CHexCoord& hexFound,
 		/*int& iDirectionFromBase, */CHexCoord& hcNow );
@@ -332,6 +347,19 @@ public:
         key *= 0xff51afd7ed558ccdULL;
         key ^= key >> 33;
         return static_cast<int>( key & CACHE_MASK );
+    }
+
+    // Runtime blacklist of build sites that were rejected this game (see
+    // AddFailedSite/IsFailedSite). Value is the expiry deadline in
+    // theGame.GettimeGetTime() ms; 0 means permanent. Touched only by this AI
+    // player's own thread, so no lock is needed (same as the path cache above).
+    // Lookups are by key, so it stays deterministic across nodes.
+    std::map<uint64_t, DWORD> m_failedBuildSites;
+
+    static inline uint64_t MakeSiteKey( int iBldg, const CHexCoord& hex )
+    {
+        return ( static_cast<uint64_t>( iBldg & 0xFFFF ) << 32 ) |
+               static_cast<uint64_t>( static_cast<unsigned long>( hex ) );
     }
 };
 
