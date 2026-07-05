@@ -330,6 +330,28 @@ void CAIMgr::Manage( void )
         {
             m_dwLastStuckSweep = dwSweepNow;
             HandleStuckVehicles( );
+
+            // lab-goal growth lived ONLY in the road-bail paths (IdleCrane), so
+            // fixing roads froze it; grow + restart research on the sweep instead
+            if ( m_pGoalMgr != NULL )
+            {
+                m_pGoalMgr->IdleCrane( );
+                m_pGoalMgr->CheckResearch( );
+
+#ifdef _WIN32
+                {
+                    int iTopic = -1;
+                    EnterCriticalSection( &cs );
+                    CPlayer* pPlyr = pGameData->GetPlayerData( m_iPlayer );
+                    if ( pPlyr != NULL )
+                        iTopic = pPlyr->GetRsrchItem( );
+                    LeaveCriticalSection( &cs );
+                    char szR[96];
+                    sprintf( szR, "[RSRCHSTAT] plyr %d topic %d\n", m_iPlayer, iTopic );
+                    OutputDebugStringA( szR );
+                }
+#endif
+            }
         }
     }
 
