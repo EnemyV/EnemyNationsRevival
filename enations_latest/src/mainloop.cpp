@@ -2733,11 +2733,11 @@ void CMineBuilding::FrackTick( )
 {
     ASSERT_STRICT( GetData( )->GetUnionType( ) == CStructureData::UTmine );
 
-    // Full operating power + 50% surcharge + a flat +1 for fracking (1.5x the well's normal
-    // draw, then +1; nerf per operator), plus the building's people. (A normal stopped
-    // building draws only half power; a fracked well runs hot.)
-    GetOwner( )->AddPwrNeed( ( ( GetData( )->GetPower( ) * 3 ) / 2 ) + 1 );
-    GetOwner( )->AddPplNeedBldg( GetData( )->GetPeople( ) );
+    // Fracking runs the well HOT: +100% power AND +100% workers vs its normal operating cost
+    // (operator spec: a base 1-power / 2-worker oil well draws 2 power + 4 workers while
+    // fracking). A normal stopped building draws only half power; a fracked well doubles both.
+    GetOwner( )->AddPwrNeed( GetData( )->GetPower( ) * 2 );
+    GetOwner( )->AddPplNeedBldg( GetData( )->GetPeople( ) * 2 );
 
     // Credit the flat oil trickle. eFlatTrickle scales the per-minute rate by the opers
     // elapsed this call; the building's m_fAltAccum carries the sub-unit remainder.
