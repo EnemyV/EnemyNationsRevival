@@ -22,10 +22,10 @@ namespace
     using AltOutput::AltOutputDef;
 
     // ---- Tunable ratios ---------------------------------------------------------------
-    // BIOFUEL_FOOD_PER_OIL -- operator to confirm. Global player FOOD consumed per 1 oil
-    // produced while a refinery runs in BioFuel mode. DEFAULT 5 food -> 1 oil (placeholder;
-    // change this single value when the operator confirms the exact rate).
-    const int BIOFUEL_FOOD_PER_OIL = 5;
+    // BIOFUEL_FOOD_PER_OIL -- Global player FOOD consumed per 1 oil produced while a refinery
+    // runs in BioFuel mode. Operator: BioFuel should be MORE EXPENSIVE to run -- raised 5 -> 8
+    // (8 food -> 1 oil). Change this single value to retune the rate.
+    const int BIOFUEL_FOOD_PER_OIL = 8;
 
     // ---- Type predicates --------------------------------------------------------------
     // The oil refinery: a materials building (UTmaterials) of the refinery type. Normally

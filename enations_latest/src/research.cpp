@@ -639,10 +639,11 @@ void CRsrchArray::Open( )
 
     // In-code research topics: BioFuel 1-6 (#33, not in the DAT file). Unlocks a refinery
     // mode toggle: a refinery switched to Bio Oil stops converting oil into gas and instead
-    // converts global FOOD into oil (~5 food -> 1 oil), consumed in the refinery production
+    // converts global FOOD into oil (~8 food -> 1 oil), consumed in the refinery production
     // hook. Each tier costs DOUBLE the previous and chains the prior tier; T1 is a heavy
-    // multi-line gate (farming + gas turbines + some fuel efficiency + vehicle speed), no
-    // energy cost. The AI's frozen research path doesn't pursue these.
+    // multi-line gate (farming + gas turbines + some fuel efficiency + vehicle speed + ADVANCED
+    // MANUFACTURING) and the cost basis is gas_turbine (not farm_1) so it lands late and costs
+    // more, no energy cost. The AI's frozen research path doesn't pursue these.
     {
         static const char* aszBfName[6] = {
             "Biomass Digestion", "Algae Bioreactors", "Enzymatic Cracking",
@@ -662,7 +663,11 @@ void CRsrchArray::Open( )
             "Gene-tuned oilseed adopted. Refinery food-to-oil yield rises further.",
             "Closed-loop biorefinery perfected. Maximum oil from every unit of food converted." };
 
-        int iPts = ElementAt( farm_1 ).m_iPtsRequired;
+        // Operator: BioFuel should be gated behind a HIGHER / more expensive tech. Cost basis
+        // raised from farm_1 (an early ag tech) to gas_turbine so every tier costs more, and the
+        // T1 entry gate now also requires ADVANCED MANUFACTURING (manf_3) -- the same high gate
+        // coal-liquefaction sits behind -- so Biomass Digestion can't be reached early.
+        int iPts = ElementAt( gas_turbine ).m_iPtsRequired;
         for ( int iOn = 0; iOn < 6; iOn++ )
         {
             CRsrchItem* pRi = &ElementAt( biofuel_1 + iOn );
@@ -674,12 +679,12 @@ void CRsrchArray::Open( )
 
             if ( 0 == iOn )
             {
-                // Heavy multi-line entry gate.
-                static const int aiBf1[4] = {
-                    (int)farm_1, (int)gas_turbine, (int)fuel_efficiency_2, (int)vehicle_speed_2 };
-                pRi->m_iNumRsrchRequired  = 4;
-                pRi->m_piRsrchRequired    = new int[4];
-                for ( int k = 0; k < 4; k++ ) pRi->m_piRsrchRequired[k] = aiBf1[k];
+                // Heavy multi-line entry gate + manf_3 (advanced manufacturing) so it lands late.
+                static const int aiBf1[5] = {
+                    (int)farm_1, (int)gas_turbine, (int)fuel_efficiency_2, (int)vehicle_speed_2, (int)manf_3 };
+                pRi->m_iNumRsrchRequired  = 5;
+                pRi->m_piRsrchRequired    = new int[5];
+                for ( int k = 0; k < 5; k++ ) pRi->m_piRsrchRequired[k] = aiBf1[k];
             }
             else
             {
