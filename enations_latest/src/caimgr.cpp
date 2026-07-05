@@ -1081,6 +1081,32 @@ void CAIMgr::HandleStuckVehicles( void )
             if ( bIsCarried || bIsWorking )
                 continue;
 
+            // arrived-idle TRUCK limbo: an in-use truck stopped at its dest whose
+            // arrival event was missed never unloads/reloads and never returns to
+            // the pool (observed: need 33, idletrucks 0, fleet motionless).
+            // Synthesize the missed arrival so the router logic runs.
+            if ( pUnit->GetTypeUnit( ) == CTransportData::heavy_truck &&
+                 ( pUnit->GetStatus( ) & CAI_IN_USE ) && hexVeh == hexDest &&
+                 snap.iRouteMode == CVehicle::stop )
+            {
+#ifdef _WIN32
+                {
+                    char szR[96];
+                    sprintf( szR, "[TRUCK] nudge arrived-idle truck %lu at %d,%d\n",
+                             (unsigned long)pUnit->GetID( ), hexVeh.X( ), hexVeh.Y( ) );
+                    OutputDebugStringA( szR );
+                }
+#endif
+                CAIMsg msg;
+                msg.m_iMsg   = CNetCmd::veh_dest;
+                msg.m_dwID   = pUnit->GetID( );
+                msg.m_iX     = hexVeh.X( );
+                msg.m_iY     = hexVeh.Y( );
+                msg.m_idata3 = m_iPlayer;
+                DestinationResponse( &msg );
+                continue;
+            }
+
             // arrived-idle limbo: a crane sitting ON its build site that never
             // sent its build message (task order is message-driven and no message
             // ever comes). The timer branches below skip arrived vehicles, so
