@@ -3113,8 +3113,12 @@ void CAIMapUtil::GetStartSpan( CHexCoord& hexStart, CHexCoord& hexBridge )
 void CAIMapUtil::FindRoadHex( CHexCoord& hexFound )
 {
     CHexCoord hexBase;
-    // use rocket exit for base hex
-    pGameData->FindBuilding( CStructureData::rocket, m_iPlayer, hexBase );
+    // spiral from the crane's own hex when given (keeps it paving its local
+    // strip instead of ping-ponging between distant frontier arms), else rocket
+    if ( hexFound.X( ) || hexFound.Y( ) )
+        hexBase = hexFound;
+    else
+        pGameData->FindBuilding( CStructureData::rocket, m_iPlayer, hexBase );
     CHexCoord hexRoad, hcFrom, hcTo;
 
     // spiral search out from base hex
