@@ -737,8 +737,11 @@ static void Start7() {
                         // set us at war
                         NewRelations(pPlr, RELATIONS_WAR);
 
-                        // find a clear hex nearby
-                        CHexCoord _hexAI(_hex.X() + RandNum(4) - 2, _hex.Y() + RandNum(4) - 2);
+                        // find a clear hex nearby (draws hoisted: unsequenced ctor
+                        // args swap the x/y jitter across compilers -> MP desync)
+                        const int iDrawX = RandNum(4);
+                        const int iDrawY = RandNum(4);
+                        CHexCoord _hexAI(_hex.X() + iDrawX - 2, _hex.Y() + iDrawY - 2);
                         for (int iTry2 = 0; iTry2 < 10; iTry2++) {
                             CHex *pHex = theMap._GetHex(_hexAI);
                             // hex clear and vehicle can travel on it
