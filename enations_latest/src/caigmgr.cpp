@@ -11,6 +11,7 @@
 
 #include "caigmgr.hpp"
 
+#include "aisnap.h"  // Tier-B world snapshot (lock-free AI reads) — depleted-mine flag
 #include "caidata.hpp"
 #include "caitargt.h"
 #include "logging.h"  // dave's logging system
@@ -345,6 +346,8 @@ CAIGoalMgr::CAIGoalMgr( BOOL bRestart, int iPlayer, CAIMap* pMap, CAIUnitList* p
     m_bNeedTrucks       = FALSE;
     m_iNeedApt          = FALSE;
     m_iNeedOffice       = FALSE;
+    m_iWealthLevel      = 0;
+    m_bAptCritical      = FALSE;
 
     m_iLastFood = 0;
     m_iScenario = 0;
@@ -1775,7 +1778,14 @@ BOOL CAIGoalMgr::CheckAbandonedBuildings( void )
         if ( IsAbandonedBuilding( iBldg ) )
         {
             bHaveAbandoned = TRUE;
-            m_pwaBldgGoals[iBldg] += 1;
+            // NOTE: the goal `+= 1` bump was removed. The count loop
+            // (UpdateVehGoals) now excludes depleted extractors, so a dead mine
+            // already drops m_pwaBldgs[iBldg] below goal and the normal build
+            // machinery (count<goal + the material-shortage path) replaces it on
+            // a fresh deposit. Bumping the goal here would double-compensate and,
+            // because the dead building lingers on the map (IsAbandonedBuilding
+            // stays TRUE), perpetually over-build the mine. We keep the detection
+            // only to signal a construction re-evaluation (bHaveAbandoned).
 
 #ifdef _LOGOUT
             logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC,
@@ -1968,6 +1978,7 @@ void CAIGoalMgr::CheckPlayer( void )
 
     // The wealth level is limited by the resource with the lowest "level"
     int wealthLevel = min(min(min(min( foodLevel, coalLevel), steelLevel), lumberLevel ), gasLevel);
+    m_iWealthLevel  = wealthLevel;   // expose to UpdateVehGoals (S7)
 
 
     // get hours pass in gametime
@@ -2106,6 +2117,7 @@ void CAIGoalMgr::CheckPlayer( void )
         m_iNeedApt = FALSE;
     else
         m_iNeedApt = TRUE;
+    m_bAptCritical = m_iNeedApt;   // TRUE only if genuinely under-housed, before wealth inflation (S8)
 
     // in the case that the AI is rich, its more interesting for them to expand their city buildings
     // if they have tons of steel, lumber, food, and power, they are rich
@@ -2113,7 +2125,8 @@ void CAIGoalMgr::CheckPlayer( void )
     {
         int multi = 3 + hoursPassed / 2;
         multi *= wealthLevel;
-        
+        if ( multi > 6 ) multi = 6;          // stop the apartment/office runaway (S1)
+
         if ( iOfcCap > iOfcNeed * multi )
             m_iNeedOffice = FALSE;
         else
@@ -2174,7 +2187,7 @@ void CAIGoalMgr::AddPowerTask( )
     }
 
     // make sure that the goalmgr does not go overboard on power
-    if ( m_pwaBldgs[iBldg] > pGameData->m_iSmart )
+    if ( m_pwaBldgs[iBldg] > pGameData->m_iSmart + 4 )   // +4 headroom for late game (S5)
         return;
 
     CAITask* pTask = m_plTasks->FindTask( iTask );
@@ -2839,6 +2852,10 @@ void CAIGoalMgr::GetVehicleNeeds( )
 //
 void CAIGoalMgr::UpdateVehGoals( void )
 {
+    // elapsed game-hours; scales the fleet/mine caps below so a long game keeps
+    // growing its logistics (mirrors CheckPlayer's hoursPassed). Serves S2/S3.
+    int hrs = theGame.GetElapsedSeconds( ) / 3600;
+
     // clear count of goals based on tasks
     for ( int i = 0; i < m_iNumBldgs; ++i )
     {
@@ -2871,6 +2888,23 @@ void CAIGoalMgr::UpdateVehGoals( void )
 
             if ( pUnit->GetType( ) == CUnit::building )
             {
+                // Don't count a DEPLETED resource extractor as a producer — it
+                // makes nothing, so counting it makes the AI think it has enough
+                // mines and never builds replacements (late-game resource
+                // collapse). bAbandoned is the lock-free snapshot flag; gate the
+                // read to the extractor range (lumber..copper) so the hot count
+                // loop pays nothing for ordinary buildings.
+                // (refinery is in this enum range but processes oil rather than
+                // extracting a deposit, so it never depletes — exclude it, matching
+                // CheckAbandonedBuildings' deliberate skip, so a stray flag could
+                // never make the AI over-build refineries.)
+                if ( i >= CStructureData::lumber && i <= CStructureData::copper &&
+                     i != CStructureData::refinery )
+                {
+                    AiBldgSnap snap;
+                    if ( AiSnap::ReadBldg( pUnit->GetID( ), snap ) && snap.bAbandoned )
+                        continue;   // depleted -> not a producer; skip it
+                }
                 if ( i < m_iNumBldgs )
                     m_pwaBldgs[i]++;
             }
@@ -2947,14 +2981,16 @@ void CAIGoalMgr::UpdateVehGoals( void )
     if ( !m_pwaBldgGoals[CStructureData::research] )
         m_pwaBldgGoals[CStructureData::research] = 1;
 
-    m_pwaBldgGoals[CStructureData::oil_well] = iCnt;
-    m_pwaBldgGoals[CStructureData::iron]     = iCnt;
-    m_pwaBldgGoals[CStructureData::coal]     = iCnt;
+    // un-freeze the mine goals so a long game gets raw ore/oil (S4): +1/hr up to +10
+    int mineBonus = ( hrs < 10 ? hrs : 10 );
+    m_pwaBldgGoals[CStructureData::oil_well] = iCnt + mineBonus;
+    m_pwaBldgGoals[CStructureData::iron]     = iCnt + mineBonus;
+    m_pwaBldgGoals[CStructureData::coal]     = iCnt + mineBonus;
 
     // qualified increase in smelters
     if ( m_pwaBldgs[CStructureData::iron] >= m_pwaBldgGoals[CStructureData::iron] &&
          m_pwaBldgs[CStructureData::coal] >= m_pwaBldgGoals[CStructureData::coal] )
-        m_pwaBldgGoals[CStructureData::smelter] += ( iCnt / 2 );
+        m_pwaBldgGoals[CStructureData::smelter] += iCnt;   // was iCnt/2 (S6)
 
     // never need more than one rep fac
     m_pwaBldgGoals[CStructureData::repair] = 1;
@@ -3059,20 +3095,25 @@ void CAIGoalMgr::UpdateVehGoals( void )
     }
 
     iCnt = pGameData->m_iSmart + 1;
+    // time-scaled bonus so the hauling fleet grows in a long game (S3), +1/hr up to +20
+    // extra fleet for a rich AI (S7): 0 until CheckPlayer first runs, so no ordering hazard
+    int wealthBonus = ( m_iWealthLevel < 4 ? m_iWealthLevel : 4 );
+    int truckBonus = ( hrs < 20 ? hrs : 20 ) + 2 * wealthBonus;   // +up to 8 trucks from wealth
     // adjust production of trucks once weapons factorys built
     if ( m_pwaBldgs[CStructureData::light_2] >= m_pwaBldgGoals[CStructureData::light_2] )
-        m_pwaVehGoals[CTransportData::heavy_truck] = ( 4 * iCnt );
+        m_pwaVehGoals[CTransportData::heavy_truck] = ( 4 * iCnt ) + truckBonus;
     else
-        m_pwaVehGoals[CTransportData::heavy_truck] = ( 3 * iCnt );
+        m_pwaVehGoals[CTransportData::heavy_truck] = ( 3 * iCnt ) + truckBonus;
 
-    // stop over production of trucks
-    if ( m_pwaVehGoals[CTransportData::heavy_truck] > ( 4 * iCnt ) )
-        m_pwaVehGoals[CTransportData::heavy_truck] = ( 4 * iCnt );
+    // stop over production of trucks (ceiling raised to match the bonus)
+    if ( m_pwaVehGoals[CTransportData::heavy_truck] > ( 4 * iCnt ) + truckBonus )
+        m_pwaVehGoals[CTransportData::heavy_truck] = ( 4 * iCnt ) + truckBonus;
 
-    // stop over production of cranes
-    if ( m_pwaVehGoals[CTransportData::construction] > ( 2 * iCnt ) )
+    // stop over production of cranes (time-scaled cap, S2): was 2*iCnt; +1/hr up to +12, +up to 4 wealth (S7)
+    int craneCap = 2 * iCnt + ( hrs < 12 ? hrs : 12 ) + wealthBonus;
+    if ( m_pwaVehGoals[CTransportData::construction] > craneCap )
     {
-        m_pwaVehGoals[CTransportData::construction] = ( 2 * iCnt );
+        m_pwaVehGoals[CTransportData::construction] = craneCap;
     }
 
     // increase gunboats and destroyers
@@ -3790,6 +3831,9 @@ void CAIGoalMgr::UpdateConstructionTasks( CAIMsg* pMsg )
     if ( m_pwaBldgs[CStructureData::light_2] && m_pwaBldgs[CStructureData::light_1] )
         bNeedDefenses = TRUE;
 
+    // no idle crane and none in production -> cranes are the bottleneck (S8)
+    BOOL bNoFreeCranes = NeedCranes( );
+
 #ifdef _LOGOUT
     logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "CAIGoalMgr::UpdateConstructionTasks() for %d executing ", m_iPlayer );
     logPrintf(
@@ -4095,7 +4139,12 @@ void CAIGoalMgr::UpdateConstructionTasks( CAIMsg* pMsg )
                     {
                         if ( m_iNeedApt &&
                              ( iBldg >= CStructureData::apartment_1_1 && iBldg <= CStructureData::apartment_2_4 ) )
-                            pTask->SetPriority( (BYTE)99 );
+                        {
+                            if ( !m_bAptCritical && bNoFreeCranes )
+                                pTask->SetPriority( (BYTE)35 );   // expansion housing yields: cranes scarce + workers housed (S8)
+                            else
+                                pTask->SetPriority( (BYTE)99 );   // real shortage, or cranes free -> build
+                        }
 
                         if ( m_iNeedOffice &&
                              ( iBldg >= CStructureData::office_2_1 && iBldg <= CStructureData::office_3_1 ) )
