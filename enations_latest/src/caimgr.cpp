@@ -1014,26 +1014,6 @@ void CAIMgr::HandleStuckVehicles( void )
             {
                 if ( snap.iRouteMode == CVehicle::run )
                     bIsWorking = TRUE;
-
-#ifdef _WIN32
-                // TEMP DIAGNOSTIC (remove after the stuck-crane root-cause):
-                // dump every crane's full AI state each idle rotation so we can
-                // see what a visibly-stuck crane is actually bound to (task 0 =
-                // idle; IDT_* build/road/repair; mode; dest ping-pong = flee-
-                // return). Catch with dbgcatch / DBWIN.
-                {
-                    char szDump[256];
-                    sprintf( szDump,
-                             "[CRANEDUMP] plyr %d crane %lu at %d,%d dest %d,%d mode %d task %u goal %u eff %u data %lu"
-                             " rx %lu ry 0x%08lx now %lu\n",
-                             m_iPlayer, (unsigned long)pUnit->GetID( ), snap.iHeadX, snap.iHeadY, snap.iDestX,
-                             snap.iDestY, snap.iRouteMode, (unsigned)pUnit->GetTask( ), (unsigned)pUnit->GetGoal( ),
-                             (unsigned)pUnit->GetParam( CAI_EFFECTIVE ), (unsigned long)pUnit->GetDataDW( ),
-                             (unsigned long)pUnit->GetParamDW( CAI_ROUTE_X ),
-                             (unsigned long)pUnit->GetParamDW( CAI_ROUTE_Y ), (unsigned long)dwNow );
-                    OutputDebugStringA( szDump );
-                }
-#endif
             }
 
             if ( bIsCarried || bIsWorking )

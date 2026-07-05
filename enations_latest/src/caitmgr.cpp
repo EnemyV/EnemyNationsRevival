@@ -5232,6 +5232,19 @@ void CAITaskMgr::ConstructBuilding( CAIUnit* pUnit, CAITask* pTask )
     // and not on the hex-of-the-building
     CHexCoord hexCrane( pUnit->GetParam( CAI_DEST_X ), pUnit->GetParam( CAI_DEST_Y ) );
 
+    // resync a stale CAI_DEST: task BUILD_AT and CAI_DEST are supposed to be
+    // identical today (see the adjacent-hex comments), but a re-picked site can
+    // leave CAI_DEST pointing at the OLD hex -- the arrival test then keys on
+    // the stale param while the already-enroute test keys on the task site, and
+    // a crane standing ON its true site is stuck in limbo forever (live: crane
+    // 98 at 147,1019 == BUILD_AT, CAI_DEST stale at 145,1019).
+    if ( ( hexSite.X( ) || hexSite.Y( ) ) && ( hexCrane.X( ) || hexCrane.Y( ) ) && hexCrane != hexSite )
+    {
+        hexCrane = hexSite;
+        pUnit->SetParam( CAI_DEST_X, hexSite.X( ) );
+        pUnit->SetParam( CAI_DEST_Y, hexSite.Y( ) );
+    }
+
 #ifdef _LOGOUT
     logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC,
                "\nConstructBuilding(): player %d crane %ld at %d,%d  hexSite=%d,%d  hexCrane=%d,%d", pUnit->GetOwner( ),
