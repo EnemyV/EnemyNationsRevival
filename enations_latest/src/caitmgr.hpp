@@ -23,6 +23,7 @@ protected:
 	// this AI's release second (player N releases at N game-seconds) — the
 	// initial AssignUnits is held and serviced at the top of Manage once due.
 	BOOL m_bStartAssignPending;
+	BOOL m_bRepairFirst;	// alternates repair/resume vs new-construction first pick
 
 	CAIGoalMgr *m_pGoalMgr;	// this player's goal manager
 	

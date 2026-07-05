@@ -42,6 +42,7 @@ CAITaskMgr::CAITaskMgr( BOOL bRestart, int iPlayer, CAIGoalMgr* pGoalMgr )
     m_iPlayer  = iPlayer;
     m_bRestart = bRestart;
     m_bStartAssignPending = FALSE;
+    m_bRepairFirst        = FALSE;
 
     ASSERT_VALID( pGoalMgr );
     m_pGoalMgr = pGoalMgr;
@@ -1919,6 +1920,12 @@ void CAITaskMgr::AssignScout( CAIUnit* pUnit )
 
 void CAITaskMgr::AssignConstruction( CAIUnit* pUnit )
 {
+    // alternate repair/resume vs new-build first pick (operator) -- as a
+    // last-resort fallback only, orphaned partials never got adopted
+    m_bRepairFirst = !m_bRepairFirst;
+    if ( m_bRepairFirst && AssignRepair( pUnit ) )
+        return;
+
     int iHang = 0;
     // need to find an unassigned task that requires
     // building something
