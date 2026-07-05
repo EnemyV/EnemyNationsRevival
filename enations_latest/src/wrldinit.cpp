@@ -220,7 +220,7 @@ void CGameMap::GetWorldSize( int iSize, int& iSide, int& iSideSize )
 
     // add 2 blocks for each island & .25 for each ocean-front
     // add 1 block total to liven things up
-    float fNumBlks = (float)theGame.GetAll( ).GetCount( ) * 1.125f + 1; // -0.4f;
+    float fNumBlks = (float)theGame.m_iWorldGenCount * 1.125f + 1; // -0.4f;  // MP parity: frozen count (Bug 2)
 
 #ifdef _CHEAT
     if ( ( theGame.GetServerNetNum( ) == 0 ) && ( EnGetProfileInt( "Cheat", "ForceOcean", 0 ) ) )
@@ -428,7 +428,7 @@ void CGameMap::Init( int iSide, int iSideSize, int iScenario )
     int  iNumBlks    = iSide * iSide;
     // the max oceans are total blocks - players
     // so theoretically every player could be island
-    int  iOceansLeft = iNumBlks - theGame.GetAll( ).GetCount( ); 
+    int  iOceansLeft = iNumBlks - theGame.m_iWorldGenCount;   // MP parity: frozen count (Bug 2)
     int* piBlks      = new int[iNumBlks];
     for ( int iInd = 0; iInd < iNumBlks; iInd++ ) piBlks[iInd] = 0; // set all blocks to 0
 
@@ -473,7 +473,7 @@ void CGameMap::Init( int iSide, int iSideSize, int iScenario )
         sprintf_s( szWg, "[wg] START seed=%08lx rivers=%ld ocean=%ld wtype=%d plyrs=%d side=%d sz=%d scen=%d\n",
                    (unsigned long)seed, (long)theGame.m_iRivers, (long)theGame.m_iOcean,
                    (int)theGame.m_iWorldType,
-                   (int)theGame.GetAll( ).GetCount( ), iSide, iSideSize, iScenario );
+                   (int)theGame.m_iWorldGenCount, iSide, iSideSize, iScenario );  // MP parity: frozen count so [wg] plyrs= reflects what world-gen used (Bug 2)
         fprintf( stderr, "%s", szWg );
         OutputDebugStringA( szWg );
     }
@@ -483,7 +483,7 @@ void CGameMap::Init( int iSide, int iSideSize, int iScenario )
     // "ocean is just a tile type that can be swapped out". WORLD_DEFAULT keeps the
     // legacy behavior: a random ocean style, and only when there are >6 players.
     WorldTypeGen wtg = GetWorldTypeGen( theGame.m_iWorldType );
-    if ( wtg.bForce || theGame.GetAll( ).GetCount( ) > 6 )
+    if ( wtg.bForce || theGame.m_iWorldGenCount > 6 )   // MP parity: frozen count (Bug 2)
         GenerateOcean( iNumBlks, piBlks, iSide, wtg.fillType, wtg.oceanStyle, wtg.bDominant, iOceansLeft, theGame );
 
     // MP world-gen parity bisect mark (newwin greenlit, ocean-gen lane). Between the
@@ -502,7 +502,7 @@ void CGameMap::Init( int iSide, int iSideSize, int iScenario )
     // out of oceans - though, nothing in life is for certain!!!
     // when we're all done, remaining plots are set to desert/swamp or ocean (or mountains!)
     int iInd       = 0;
-    int iPlyrsLeft = theGame.GetAll( ).GetCount( );
+    int iPlyrsLeft = theGame.m_iWorldGenCount;   // MP parity: frozen count (Bug 2)
     for ( pos = theGame.GetAll( ).GetHeadPosition( ); pos != NULL; )
     {
         // skip to the next blk. Bounds-guarded: iInd can arrive here == iNumBlks
