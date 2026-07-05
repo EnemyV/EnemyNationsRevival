@@ -722,7 +722,7 @@ void SDL2BuildingWindow::NullSectionWidgets() {
     m_imgOutputs = nullptr;
     m_imgUnits = nullptr; m_lblUnits = nullptr;
     m_imgBuildBar = nullptr; m_lblBuildName = nullptr;
-    m_lblStatus = nullptr; m_imgHealth = nullptr;
+    m_lblStatus = nullptr; m_lblOperCost = nullptr; m_imgHealth = nullptr;
 }
 
 SDL2BuildingWindow::~SDL2BuildingWindow() {
@@ -1141,17 +1141,14 @@ int SDL2BuildingWindow::BuildHeaderBand(int x, int y, int w) {
         lblFlavor->SetColor( { 70, 56, 30, 255 } );   // muted brown, "parchment ink"
     }
 
-    // Operating cost (operator request): the building's power + worker requirement, shown in
-    // the info window's description area so it's visible at a glance — e.g. to see an oil
-    // well's / a fracked well's draw. Static spec (GetPower/GetPeople); no per-frame refresh.
-    {
-        std::string cost = "Power required: " + std::to_string( m_pBldg->GetData()->GetPower() )
-                         + "     Workers: "    + std::to_string( m_pBldg->GetData()->GetPeople() );
-        auto* lblCost = AddWidget<SDL2Label>( tx, y + 63, tw, 15, cost.c_str() );
-        lblCost->SetFontSize( 12 );
-        lblCost->SetBold( true );
-        lblCost->SetColor( { 90, 66, 30, 255 } );   // parchment ink, a touch bolder than the flavor
-    }
+    // Operating cost (operator): the building's power + worker draw, in the description area.
+    // STATE-AWARE — filled/updated by RefreshDynamic so it shows the LIVE draw: a fracked
+    // exhausted well reads 2x its base (so the +100% is visible), an idle exhausted well
+    // reads 0, a stopped well half, a running well its base. (Text set in RefreshDynamic.)
+    m_lblOperCost = AddWidget<SDL2Label>( tx, y + 63, tw, 15, "" );
+    m_lblOperCost->SetFontSize( 12 );
+    m_lblOperCost->SetBold( true );
+    m_lblOperCost->SetColor( { 90, 66, 30, 255 } );   // parchment ink, a touch bolder than the flavor
 
     m_lblStatus = AddWidget<SDL2Label>( tx, y + HEADER_H - 18, tw, 16, "" );
     m_lblStatus->SetBold( true );
@@ -1597,7 +1594,11 @@ void SDL2BuildingWindow::DrawMatIcons(SDL2Image* img, const int* mats, int n) {
         for (int i = 0; i < n; i++) {
             // Slot track for every row — an empty slot IS the "none stored" reading.
             DrawSlotBg( s, ICON_MATERIALS, m_matIcons, 0, i * rowH + 1, gw, rowH - 2 );
-            int amount = m_pBldg->GetStore( mats[i] );
+            // Use matAmount(), NOT GetStore(): food/gas are COLONY-wide (a building's local
+            // GetStore(food) is 0), so raw GetStore left the food/gas rows with no icons even
+            // when the colony was flush (operator: 343k food, number shows, no icons). matAmount
+            // returns the colony total for food/gas and the building store for everything else.
+            int amount = matAmount( m_pBldg, mats[i] );
             if ( amount <= 0 ) continue;
             int nIcons = amount / PER_ICON;
             if ( nIcons < 1 )      nIcons = 1;
@@ -1973,6 +1974,30 @@ void SDL2BuildingWindow::Refresh() {
         }
         m_lblStatus->SetText( st );
         m_lblStatus->SetColor( col );
+    }
+
+    // Live operating cost (operator): mirror the sim's per-state power/worker draw so the line
+    // shows the ACTUAL draw, not just the base spec — a fracked exhausted well reads 2x (the
+    // +100% is now visible), an idle exhausted well 0, a stopped well half. Matches FrackTick /
+    // the stopped|abandoned path in mainloop.cpp.
+    if ( m_lblOperCost ) {
+        int basePwr = m_pBldg->GetData()->GetPower();
+        int basePpl = m_pBldg->GetData()->GetPeople();
+        int curPwr = basePwr, curPpl = basePpl;
+        const char* mode = "";
+        bool fracking = m_pBldg->IsFlag( CUnit::alt_oil )
+                     && ( m_pBldg->IsFlag( CUnit::stopped ) || m_pBldg->IsFlag( CUnit::abandoned ) )
+                     && ( m_pBldg->GetData()->GetUnionType() == CStructureData::UTmine )
+                     && ( AltOutput::Available( m_pBldg ) != nullptr );
+        if ( fracking ) {
+            curPwr = basePwr * 2; curPpl = basePpl * 2; mode = "  (fracking)";
+        } else if ( m_pBldg->IsFlag( CUnit::abandoned ) ) {
+            curPwr = 0; curPpl = 0; mode = "  (exhausted)";
+        } else if ( m_pBldg->IsFlag( CUnit::stopped ) ) {
+            curPwr = basePwr / 2; curPpl = basePpl / 2; mode = "  (stopped)";
+        }
+        m_lblOperCost->SetText( ( "Power required: " + std::to_string( curPwr )
+                              + "     Workers: "     + std::to_string( curPpl ) + mode ).c_str() );
     }
 
     DrawHealthBar();

@@ -286,6 +286,7 @@ private:
     // Header band: building portrait, flavor text, live status line, health bar.
     SDL_Surface* m_bldgSheet = nullptr;   // DIB_LIST_UNIT_BUILDINGS (row per bldg type)
     SDL2Label*   m_lblStatus = nullptr;   // colored "Operating / Idle / Needs X"
+    SDL2Label*   m_lblOperCost = nullptr; // state-aware "Power required: N   Workers: N" (live draw)
     SDL2Image*   m_imgHealth = nullptr;   // condition bar under the portrait
     void DrawHealthBar();
 

@@ -1654,17 +1654,34 @@ void CBuilding::Operate( )
     }
 RepairDone:;
 
-    // if waiting on an event, return
+    // if waiting on an event, return -- UNLESS this is a refinery running BioFuel (Bio Oil).
+    // A refinery out of OIL gets SetFlag(event) (see BuildMaterials, "if we ran out - stop us")
+    // and would idle here every tick, BEFORE BuildMaterials -- so the BioFuel food->oil branch
+    // (which lives IN BuildMaterials and needs no oil) never ran. That's the operator's bug:
+    // "turned Bio Oil on, plenty of food, but it's not producing" -- you enable Bio Oil exactly
+    // because you're out of oil, i.e. exactly when the well is stuck in `event`. Clear the
+    // oil-wait for a BioFuel-active refinery and fall through so it operates off global food.
     if ( m_unitFlags & event )
     {
-        // if stopped we only need half the people & power
-        if ( m_iConstDone == -1 )
+        const bool bBioFuelActive = ( m_iConstDone == -1 )
+                                 && IsFlag( CUnit::alt_oil )
+                                 && ( GetData( )->GetUnionType( ) == CStructureData::UTmaterials )
+                                 && ( AltOutput::Available( this ) != nullptr );
+        if ( bBioFuelActive )
         {
-            GetOwner( )->AddPwrNeed( GetData( )->GetPower( ) / 2 );
-            GetOwner( )->AddPplNeedBldg( GetData( )->GetPeople( ) / 2 );
+            ClrFlag( event );   // no longer waiting on oil -- BioFuel operates off global food
         }
-        m_fOperMod = 0;
-        return;
+        else
+        {
+            // if stopped we only need half the people & power
+            if ( m_iConstDone == -1 )
+            {
+                GetOwner( )->AddPwrNeed( GetData( )->GetPower( ) / 2 );
+                GetOwner( )->AddPplNeedBldg( GetData( )->GetPeople( ) / 2 );
+            }
+            m_fOperMod = 0;
+            return;
+        }
     }
 
     // are we still building?
