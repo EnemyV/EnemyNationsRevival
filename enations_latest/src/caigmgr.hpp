@@ -161,6 +161,7 @@ public:
 	void ScenarioPriority( CAITask *pTask );
 
 	void ConsiderRoads( void );
+	void ConsiderAltOutputs( void );
 	BOOL IsGasAvailable( void );
 	BOOL NeedGas( void );
 	void ConsiderTrucks( CAIMsg *pMsg );

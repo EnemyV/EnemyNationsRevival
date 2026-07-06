@@ -12,6 +12,7 @@
 #include "caigmgr.hpp"
 
 #include "aisnap.h"  // Tier-B world snapshot (lock-free AI reads) — depleted-mine flag
+#include "altoutput.h"  // Fracking/Moho revival toggles (ConsiderAltOutputs)
 #include "caidata.hpp"
 #include "caitargt.h"
 #include "logging.h"  // dave's logging system
@@ -1727,6 +1728,56 @@ logPrintf(LOG_PRI_ALWAYS, LOG_AI_MISC,
     logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "CAIGoalMgr::ConsiderRoads() player %d  gas %d  roads %d", m_iPlayer,
                m_iGasHave, m_pMap->m_iRoadCount );
 #endif
+}
+
+//
+// revive exhausted extractors (Fracking/Moho) when the colony has surplus
+// people AND energy (the trickle costs +50% well power, nothing else)
+//
+void CAIGoalMgr::ConsiderAltOutputs( void )
+{
+    if ( m_plUnits == NULL )
+        return;
+
+    EnterCriticalSection( &cs );
+
+    CPlayer* pPlyr = pGameData->GetPlayerData( m_iPlayer );
+    if ( pPlyr == NULL )
+    {
+        LeaveCriticalSection( &cs );
+        return;
+    }
+
+    // hysteresis: ON only with clear slack in BOTH, OFF only on a real deficit
+    BOOL bOn = pPlyr->GetPplBldg( ) > pPlyr->GetPplNeedBldg( ) &&
+               pPlyr->GetPwrHave( ) > pPlyr->GetPwrNeed( );
+    BOOL bOff = pPlyr->GetPwrHave( ) < pPlyr->GetPwrNeed( ) ||
+                pPlyr->GetPplBldg( ) < pPlyr->GetPplNeedBldg( );
+
+    POSITION pos = m_plUnits->GetHeadPosition( );
+    while ( pos != NULL )
+    {
+        CAIUnit* pUnit = (CAIUnit*)m_plUnits->GetNext( pos );
+        if ( pUnit == NULL || pUnit->GetOwner( ) != m_iPlayer || pUnit->GetType( ) != CUnit::building )
+            continue;
+
+        CBuilding* pBldg = theBuildingMap.GetBldg( pUnit->GetID( ) );
+        if ( pBldg == NULL )
+            continue;
+
+        // flat-trickle revivals ONLY - never auto-flip the mode-switch toggles
+        // (BioFuel/Coal-Liq kill the building's primary output)
+        const AltOutput::AltOutputDef* pDef = AltOutput::Available( pBldg );
+        if ( pDef == NULL || pDef->m_eMode != AltOutput::eFlatTrickle )
+            continue;
+
+        if ( bOn && !pBldg->IsFlag( CUnit::alt_oil ) )
+            pBldg->SetFlag( CUnit::alt_oil );
+        else if ( bOff && pBldg->IsFlag( CUnit::alt_oil ) )
+            pBldg->ClrFlag( CUnit::alt_oil );
+    }
+
+    LeaveCriticalSection( &cs );
 }
 
 //

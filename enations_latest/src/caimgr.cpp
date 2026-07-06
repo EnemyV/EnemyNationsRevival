@@ -344,6 +344,7 @@ void CAIMgr::Manage( void )
             {
                 m_pGoalMgr->IdleCrane( );
                 m_pGoalMgr->CheckResearch( );
+                m_pGoalMgr->ConsiderAltOutputs( );
 
 #ifdef _WIN32
                 {
@@ -1238,7 +1239,16 @@ void CAIMgr::HandleStuckVehicles( void )
                     continue;
                 }
                 DWORD dwStuck = dwNow - pUnit->GetStuckSince( );
-                if ( dwStuck < 180000 )
+                // inside its own delivery target with a pending unload: nothing
+                // legit to wait for - rescue fast (engine misses that arrival)
+                DWORD dwGate = 180000;
+                {
+                    CAIHex aiHexIn( hexVeh.X( ), hexVeh.Y( ) );
+                    pGameData->GetCHexData( &aiHexIn );
+                    if ( aiHexIn.m_iUnit == CUnit::building && aiHexIn.m_dwUnitID == pUnit->GetDataDW( ) )
+                        dwGate = 45000;
+                }
+                if ( dwStuck < dwGate )
                     continue;
                 if ( dwStuck > 360000 )
                 {
