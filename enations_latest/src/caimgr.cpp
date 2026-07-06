@@ -1899,6 +1899,10 @@ void CAIMgr::DestinationResponse( CAIMsg* pMsg )
             }
             else
             {
+                // clamped-path arrival: the engine stopped us short of the routed
+                // hex, so the retry MUST beat the 30s same-dest dedupe or the
+                // truck parks until the next sweep (the hop-stall)
+                pUnit->ForceNextDest( );
                 pUnit->SetDestination( hexDest );
                 return;
             }

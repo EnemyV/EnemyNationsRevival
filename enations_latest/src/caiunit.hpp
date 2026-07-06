@@ -88,6 +88,8 @@ public:
 	void  SetStuckSince( DWORD dw ) { m_dwStuckSince = dw; }
 	DWORD GetStuckHex( void ) const { return m_dwStuckHex; }
 	void  SetStuckHex( DWORD dw ) { m_dwStuckHex = dw; }
+	// bypass the 30s same-dest dedupe for ONE deliberate retry (clamped-path resume)
+	void  ForceNextDest( void ) { m_timeLastDest = 0; }
 
 	DWORD GetID( void );
 	void SetID( DWORD );
