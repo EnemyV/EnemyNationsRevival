@@ -83,6 +83,7 @@ public:
 	int   m_aiStageRestages[3];		// restages fired this stall cycle
 	DWORD m_adwStageStart[3];		// epoch start (wall-clock ms)
 	DWORD m_adwStageCooldownUntil[3];	// suppress watchdog until this wall-clock ms
+	int   m_aiStageLastForce[3];		// force size at last eval (growth = staging fine)
 	CAIMap *m_pMap;	// CAIMgr's CAIMap
 	CAIUnitList *m_plUnits;	// list of CAIMgr's CAIUnits
 	CAITaskList *m_plTasks;	// this player's list of tasks

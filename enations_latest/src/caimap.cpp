@@ -922,6 +922,10 @@ void CAIMap::GetBridgingHexes( CHexCoord& hexSite, CAIUnit *pUnit )
 	// nearest river crossing to the crane; keeps IsBridgeSpan validation.
 	FindBridgeOnPlan( hexSite, pUnit );
 
+	// plan-index miss: fall back to the vanilla rocket-ring search (superset)
+	if( hexBefore == hexSite )
+		m_pMapUtil->FindBridgeHex( hexSite, pUnit );
+
 	// a site was selected, so mark the map
 	if( hexBefore != hexSite )
 	{

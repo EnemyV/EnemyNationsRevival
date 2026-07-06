@@ -369,6 +369,7 @@ CAIGoalMgr::CAIGoalMgr( BOOL bRestart, int iPlayer, CAIMap* pMap, CAIUnitList* p
         m_aiStageRestages[iSw]       = 0;
         m_adwStageStart[iSw]         = 0;
         m_adwStageCooldownUntil[iSw] = 0;
+        m_aiStageLastForce[iSw]      = 0;
     }
 
     m_pwaRatios    = NULL;
@@ -4581,6 +4582,24 @@ void CAIGoalMgr::EvalStagingWatchdog( void )
     static const int s_aiGoals[3] = { IDG_LANDWAR, IDG_ADVDEFENSE, IDG_SEAINVADE };
     DWORD            dwNow        = theGame.GettimeGetTime( );
 
+    // one pass: current PREPAREWAR force size per goal (stall = NO growth)
+    int aiForce[3] = { 0, 0, 0 };
+    if ( m_plUnits != NULL )
+    {
+        POSITION posF = m_plUnits->GetHeadPosition( );
+        while ( posF != NULL )
+        {
+            CAIUnit* pF = (CAIUnit*)m_plUnits->GetNext( posF );
+            if ( pF == NULL || pF->GetOwner( ) != m_iPlayer )
+                continue;
+            if ( pF->GetTask( ) != IDT_PREPAREWAR )
+                continue;
+            int iF = StageGoalIdx( (int)pF->GetGoal( ) );
+            if ( iF >= 0 )
+                aiForce[iF]++;
+        }
+    }
+
     for ( int idx = 0; idx < 3; ++idx )
     {
         CAITask* pTask = m_plTasks->GetTask( IDT_PREPAREWAR, s_aiGoals[idx] );
@@ -4623,6 +4642,15 @@ void CAIGoalMgr::EvalStagingWatchdog( void )
             }
             continue;
         }
+
+        // a growing force is staging fine - defer the stall eval (no premature launch)
+        if ( aiForce[idx] > m_aiStageLastForce[idx] )
+        {
+            m_aiStageLastForce[idx] = aiForce[idx];
+            m_adwStageStart[idx]    = dwNow;
+            continue;
+        }
+        m_aiStageLastForce[idx] = aiForce[idx];
 
         // stalled > 8 min without LaunchAssault completing -> force it once per epoch
         if ( dwNow - m_adwStageStart[idx] > 480000 )
