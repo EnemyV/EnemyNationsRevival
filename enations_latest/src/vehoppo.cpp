@@ -161,36 +161,36 @@ void CVehicle::DetermineSpotting ()
 	  {
 		case 0 :	// just us
 			TRAP ();
-			m_dwaSpot [MAX_SPOTTING] = 1 << MAX_SPOTTING;
+			m_dwaSpot [MAX_SPOTTING] = 1ULL << MAX_SPOTTING;
 			break;
 		case 1 :	// a PLUS
-			m_dwaSpot [MAX_SPOTTING-1] = 1 << MAX_SPOTTING;
-			m_dwaSpot [MAX_SPOTTING] = (1 << MAX_SPOTTING) | (1 << (MAX_SPOTTING + 1)) |
-																													(1 << (MAX_SPOTTING - 1));
-			m_dwaSpot [MAX_SPOTTING+1] = 1 << MAX_SPOTTING;
+			m_dwaSpot [MAX_SPOTTING-1] = 1ULL << MAX_SPOTTING;
+			m_dwaSpot [MAX_SPOTTING] = (1ULL << MAX_SPOTTING) | (1ULL << (MAX_SPOTTING + 1)) |
+																													(1ULL << (MAX_SPOTTING - 1));
+			m_dwaSpot [MAX_SPOTTING+1] = 1ULL << MAX_SPOTTING;
 			break;
 
 		case 2 : {	// a 2*PLUS & 1 into the diamonds
-			m_dwaSpot [MAX_SPOTTING-1] = (1 << MAX_SPOTTING) | (1 << (MAX_SPOTTING + 1)) |
-																													(1 << (MAX_SPOTTING - 1));
-			m_dwaSpot [MAX_SPOTTING] = (1 << MAX_SPOTTING) | (1 << (MAX_SPOTTING + 1)) |
-																													(1 << (MAX_SPOTTING - 1));
-			m_dwaSpot [MAX_SPOTTING+1] = (1 << MAX_SPOTTING) | (1 << (MAX_SPOTTING + 1)) |
-																													(1 << (MAX_SPOTTING - 1));
+			m_dwaSpot [MAX_SPOTTING-1] = (1ULL << MAX_SPOTTING) | (1ULL << (MAX_SPOTTING + 1)) |
+																													(1ULL << (MAX_SPOTTING - 1));
+			m_dwaSpot [MAX_SPOTTING] = (1ULL << MAX_SPOTTING) | (1ULL << (MAX_SPOTTING + 1)) |
+																													(1ULL << (MAX_SPOTTING - 1));
+			m_dwaSpot [MAX_SPOTTING+1] = (1ULL << MAX_SPOTTING) | (1ULL << (MAX_SPOTTING + 1)) |
+																													(1ULL << (MAX_SPOTTING - 1));
 
 			CHexCoord hexOrig (m_ptHead);
 			hexOrig.Ydec ();
-			m_dwaSpot [MAX_SPOTTING-2] |= 1 << MAX_SPOTTING;
+			m_dwaSpot [MAX_SPOTTING-2] |= 1ULL << MAX_SPOTTING;
 
 			hexOrig.Y (hexOrig.Y () + 2);
-			m_dwaSpot [MAX_SPOTTING+2] |= 1 << MAX_SPOTTING;
+			m_dwaSpot [MAX_SPOTTING+2] |= 1ULL << MAX_SPOTTING;
 
 			hexOrig.Ydec ();
 			hexOrig.Xdec ();
-			m_dwaSpot [MAX_SPOTTING] |= 1 << (MAX_SPOTTING - 2);
+			m_dwaSpot [MAX_SPOTTING] |= 1ULL << (MAX_SPOTTING - 2);
 
 			hexOrig.X (hexOrig.X () + 2);
-			m_dwaSpot [MAX_SPOTTING] |= 1 << (MAX_SPOTTING + 2);
+			m_dwaSpot [MAX_SPOTTING] |= 1ULL << (MAX_SPOTTING + 2);
 			break; }
 
 		default: {	// spotting > 2
@@ -212,7 +212,7 @@ void CVehicle::DetermineSpotting ()
 			int iMode = 0;
 		
 			// set the hex we are on to visible
-			m_dwaSpot [MAX_SPOTTING] = 1 << MAX_SPOTTING;
+			m_dwaSpot [MAX_SPOTTING] = 1ULL << MAX_SPOTTING;
 			BOOL bBlocked = FALSE;
 		
 			for (; TRUE; )
@@ -257,7 +257,7 @@ void CVehicle::DetermineSpotting ()
 					int iShft = CHexCoord::Diff (hexOn.X () - hexOrig.X ()) + MAX_SPOTTING;
 					ASSERT ((0 <= iInd) && (iInd < SPOTTING_LINE));
 					ASSERT ((0 <= iShft) && (iShft < SPOTTING_LINE));
-					m_dwaSpot [iInd] |= 1 << iShft;
+					m_dwaSpot [iInd] |= 1ULL << iShft;
 					if (NextVisible (&piOn, piRange, iXmax, iYmin, iYmax, hexOrig, hexDest, iMode, max (abs (xDif), abs (yDif))))
 						break;
 					bBlocked = FALSE;
@@ -284,7 +284,7 @@ void CVehicle::DetermineSpotting ()
 					int iShft = CHexCoord::Diff (hexOn.X () - hexOrig.X ()) + MAX_SPOTTING;
 					ASSERT ((0 <= iInd) && (iInd < SPOTTING_LINE));
 					ASSERT ((0 <= iShft) && (iShft < SPOTTING_LINE));
-					m_dwaSpot [iInd] |= 1 << iShft;
+					m_dwaSpot [iInd] |= 1ULL << iShft;
 					}
 				}
 			

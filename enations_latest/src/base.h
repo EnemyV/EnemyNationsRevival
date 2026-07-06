@@ -84,10 +84,14 @@ const int HEX_HT_PWR_2    = 2 * HEX_HT_PWR;
 const int TERRAIN_HT_SHIFT = 3;  // 4 for Scotland, 3 for Holland
 
 // note - this is all hardcoded in CVehicle::***Spotting
-const int MAX_SPOTTING        = 15;
-const int SPOTTING_LINE       = ( MAX_SPOTTING + 1 ) * 2;
-const int SPOTTING_DW_LINE    = SPOTTING_LINE / 32;
-const int SPOTTING_ARRAY_SIZE = ( SPOTTING_LINE * SPOTTING_LINE + 31 ) / 32;
+// Spotting/LOS mask widened to 64-bit words (was 32) so MAX_SPOTTING can exceed 15 without
+// overflowing the per-row bitmask. m_dwaSpot is one SPOT_WORD (64-bit) per row; each row packs
+// SPOTTING_LINE columns, so SPOTTING_LINE must stay <= 64 (MAX_SPOTTING <= 31).
+typedef unsigned long long    SPOT_WORD;                // 64-bit spotting-mask word
+const int MAX_SPOTTING        = 24;                     // was 15; caps effective range near 14
+const int SPOTTING_LINE       = ( MAX_SPOTTING + 1 ) * 2;   // 50 columns/rows (<= 64)
+const int SPOTTING_DW_LINE    = SPOTTING_LINE / 64;
+const int SPOTTING_ARRAY_SIZE = SPOTTING_LINE;             // one 64-bit word per row
 
 class CPathMgr;
 class CCell;

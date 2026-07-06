@@ -699,7 +699,7 @@ class CUnit : public CUnitTile
     // who can see us, who is shooting at us - counted by number of units of that player
     DWORD* m_pdwPlyrsSee;  // which players can see this unit
     // spotting bitmap
-    DWORD     m_dwaSpot[SPOTTING_ARRAY_SIZE];  // a bitmask of hexes this unit can see in
+    SPOT_WORD m_dwaSpot[SPOTTING_ARRAY_SIZE];  // a bitmask of hexes this unit can see in (64-bit/row)
     int       m_iVisible;                      // number of HP units that can see me
     BOOL      m_bSpotted;                      // TRUE when it has spotted (set visibility for the map)
     CHexCoord m_hexSpotting;                   // hex on when did spotting

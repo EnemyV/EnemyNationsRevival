@@ -38,7 +38,9 @@ const char GameLogFile[] = "ENations.log";
 // 2.xx -> 3.00 major bump already rejects old saves via the MAJOR/MINOR check.
 // Release 6: the workforce-NEED history series (m_aHistPplNeed) is now serialized too
 // (was runtime-only + backfilled flat on load, so the workforce graph didn't restore).
-#define         VER_RELEASE     6
+// Release 7: CVehicleBuilding::m_iNum (the vehicle-build queue count) is now serialized,
+// so a factory's remaining build queue survives save/load (was lost -> queue truncated).
+#define         VER_RELEASE     7
 
 #define         VER_STRING                              "3.00.000"
 #define         RES_VER_STRING                          "3.00.000\0"

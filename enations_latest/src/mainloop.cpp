@@ -2650,14 +2650,23 @@ void CPowerBuilding::BuildPower( )
         return;
     }
 
-    // if we have nothing to burn there is nothing to do
+    // if we have nothing to burn there is nothing to do -- and it isn't operating, so stop the
+    // animation (operator: a coal-liq plant with no coal shouldn't animate).
     if ( GetStore( pBp->GetInput( ) ) <= 0 )
+    {
+        AnimateOperating( FALSE );
         return;
+    }
+
+    AnimateOperating( TRUE );   // has fuel -> operating (generating power, or liquefying coal)
 
     // add in our power if we have any input materials left -- UNLESS we're in coal-liq mode,
-    // in which case the burned coal becomes oil instead of power.
+    // where the burned coal becomes oil instead of power AND the plant DRAWS 2 power to run the
+    // conversion (operator).
     if ( !bCoalLiq )
         GetOwner( )->AddPwrHave( (int)( (float)pBp->GetPower( ) * fPower ) );
+    else
+        GetOwner( )->AddPwrNeed( 2 );
 
     int iInc = GetProd( 1 );
     if ( iInc <= 0 )

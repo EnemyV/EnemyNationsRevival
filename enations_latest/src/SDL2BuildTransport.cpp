@@ -504,7 +504,7 @@ void SDL2BuildTransport::OnBuild() {
     m_pBldg->StartVehicle(iVehType, m_buildNum);
 
     if (!theGame.AmServer()) {
-        CMsgBuildVeh msg(m_pBldg, iVehType);
+        CMsgBuildVeh msg(m_pBldg, iVehType, m_buildNum);   // include the count (was defaulting to 1)
         theGame.PostToServer(&msg, sizeof(msg));
     }
 

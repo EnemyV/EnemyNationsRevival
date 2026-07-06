@@ -397,11 +397,10 @@ void CStructure::InitData() {
         // BUGBUG - inc building points
         (*ppSd)->m_iDamagePoints += (*ppSd)->m_iDamagePoints / 2;
 
-        // Operator balance (2026-07-05): the Rocket ship gets +15% HP and +10% weapon range
-        // (range clamped to 9 per the MAX_SPOTTING limit).
+        // Operator balance (2026-07-05): Rocket ship +15% HP, +10% weapon range (clamp 12).
         if ((*ppSd)->m_iType == CStructureData::rocket) {
             (*ppSd)->m_iDamagePoints = ((*ppSd)->m_iDamagePoints * 115) / 100;
-            (*ppSd)->m_iRange        = __min(((*ppSd)->m_iRange * 110) / 100, 9);
+            (*ppSd)->m_iRange        = __min(((*ppSd)->m_iRange * 110) / 100, 12);
         }
 
         if ((*ppSd)->m_iSoundIdle > 0)
@@ -477,6 +476,19 @@ void CStructure::InitData() {
                         pBu->m_aiInput[CMaterialTypes::steel] = 70;
                     else if (pBu->m_iVehType == CTransportData::rangers)
                         pBu->m_aiInput[CMaterialTypes::steel] = 115;
+                    // Range-buffed artillery (+20% steel) and Frigate/cruiser (+25% steel) cost
+                    // more to build; tiny Xil (copper) bump if the unit uses it (operator).
+                    else if (pBu->m_iVehType == CTransportData::light_art ||
+                             pBu->m_iVehType == CTransportData::med_art ||
+                             pBu->m_iVehType == CTransportData::heavy_art ||
+                             pBu->m_iVehType == CTransportData::cruiser) {
+                        int iPct = (pBu->m_iVehType == CTransportData::cruiser) ? 125 : 120;
+                        pBu->m_aiInput[CMaterialTypes::steel] =
+                            (pBu->m_aiInput[CMaterialTypes::steel] * iPct) / 100;
+                        if (pBu->m_aiInput[CMaterialTypes::copper] > 0)
+                            pBu->m_aiInput[CMaterialTypes::copper] +=
+                                __max(1, pBu->m_aiInput[CMaterialTypes::copper] / 10);
+                    }
                     // ================================================================
                     pBv->m_aBldUnits.Add(pBu);
                 }
@@ -745,15 +757,14 @@ void CTransport::InitData() {
         // =========================================================================
 
         // === CUSTOM GAMEPLAY TWEAK (2026-07-05, operator balance) =================
-        // Artillery range +20% (Mortar=light_art, Rover=med_art, Rocket tank=heavy_art),
-        // Frigate (cruiser) +25%. Clamp to 9 — m_iMaxRange (=range*1.5+2) must stay <=
-        // MAX_SPOTTING (15), so effective range can't exceed 9.
+        // Artillery range +20% (light/med/heavy_art), Frigate (cruiser) +25%. Clamp to 12
+        // (m_iMaxRange = range*1.5+2 must stay <= MAX_SPOTTING, now 24).
         if (pTd->m_iType == CTransportData::light_art ||
             pTd->m_iType == CTransportData::med_art ||
             pTd->m_iType == CTransportData::heavy_art)
-            pTd->m_iRange = __min((pTd->m_iRange * 120) / 100, 9);
+            pTd->m_iRange = __min((pTd->m_iRange * 120) / 100, 12);
         else if (pTd->m_iType == CTransportData::cruiser)   // Frigate
-            pTd->m_iRange = __min((pTd->m_iRange * 125) / 100, 9);
+            pTd->m_iRange = __min((pTd->m_iRange * 125) / 100, 12);
         // =========================================================================
 
         if (pTd->m_iSoundIdle > 0)

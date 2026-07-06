@@ -3273,7 +3273,7 @@ IsVis:
 
             for ( int y = 0; y < pBldg->GetData( )->GetCY( ); y++ )
             {
-                int iMask = 1 << MAX_SPOTTING;
+                SPOT_WORD iMask = (SPOT_WORD)1 << MAX_SPOTTING;
                 for ( int x = 0; x < pBldg->GetCX( ); x++ )
                 {
                     pBldg->m_dwaSpot[iInd] |= iMask;
@@ -3394,7 +3394,7 @@ void CBuilding::DetermineSpotting( )
 
         int xMax = ( *piOn ) * 2 + GetCX( );
         ASSERT( ( 0 <= ( MAX_SPOTTING - *piOn ) ) && ( ( MAX_SPOTTING - *piOn ) < SPOTTING_LINE ) );
-        int iMask = 1 << ( MAX_SPOTTING - *piOn );
+        SPOT_WORD iMask = (SPOT_WORD)1 << ( MAX_SPOTTING - *piOn );
 
         for ( int x = 0; x < xMax; x++ )
         {
@@ -5929,6 +5929,10 @@ void CVehicleBuilding::Serialize( CArchive& ar )
             ar << (LONG)0;
         else
             ar << (LONG)m_pBldUnt->GetVehType( );
+
+        // Save release 7+: the build-queue COUNT, so a factory's remaining queue survives
+        // save/load (was not saved -> the queue was truncated to whatever had already built).
+        ar << (LONG)m_iNum;
     }
 
     else
@@ -5941,6 +5945,15 @@ void CVehicleBuilding::Serialize( CArchive& ar )
             m_pBldUnt = NULL;
         else
             AssignBldUnit( iIndex );
+
+        // Save release 7+ carries the queue count; older saves predate it (m_iNum stays at
+        // its ctor default, so an old save still loses the queue tail — best effort).
+        if ( theGame.m_dwVer >= 7 )
+        {
+            LONG lNum;
+            ar >> lNum;
+            m_iNum = (int)lNum;
+        }
     }
 }
 
@@ -6785,7 +6798,7 @@ void CVehicle::AssertValid( ) const
         // check spotting
         if ( m_bSpotted )
         {
-            DWORD const* pdwSpot = m_dwaSpot;
+            SPOT_WORD const* pdwSpot = m_dwaSpot;
             CHexCoord    _hex( m_ptHead.x / 2 - MAX_SPOTTING, m_ptHead.y / 2 - MAX_SPOTTING );
             _hex.Wrap( );
             int  x        = _hex.X( );
@@ -6797,10 +6810,10 @@ void CVehicle::AssertValid( ) const
                 if ( *pdwSpot != 0 )
                 {
                     bSpots     = TRUE;
-                    int   iInd = 1;
+                    SPOT_WORD iInd = 1;
                     CHex* pHex = theMap._GetHex( _hex );
 
-                    for ( int iNum = 32; iNum > 0; iNum-- )
+                    for ( int iNum = SPOTTING_LINE; iNum > 0; iNum-- )
                     {
                         if ( *pdwSpot & iInd )
                             ASSERT( pHex->GetVisibility( ) );

@@ -952,7 +952,7 @@ void CUnit::DecrementSpotting( )
     if ( !m_bSpotted )
         return;
 
-    DWORD*    pdwSpot = m_dwaSpot;
+    SPOT_WORD* pdwSpot = m_dwaSpot;
     CHexCoord _hex( m_hexSpotting );
     int       x        = _hex.X( );
     int       iNumBlks = SPOTTING_ARRAY_SIZE;
@@ -966,10 +966,10 @@ void CUnit::DecrementSpotting( )
     {
         if ( *pdwSpot != 0 )
         {
-            int   iInd = 1;
+            SPOT_WORD iInd = 1;
             CHex* pHex = theMap._GetHex( _hex );
 
-            for ( int iNum = 32; iNum > 0; iNum-- )
+            for ( int iNum = SPOTTING_LINE; iNum > 0; iNum-- )
             {
                 if ( *pdwSpot & iInd )
                 {
@@ -1019,7 +1019,7 @@ void CUnit::IncrementSpotting( CHexCoord const& hex )
     if ( m_bSpotted )
         return;
 
-    DWORD*    pdwSpot = m_dwaSpot;
+    SPOT_WORD* pdwSpot = m_dwaSpot;
     CHexCoord _hex( hex.X( ) - MAX_SPOTTING, hex.Y( ) - MAX_SPOTTING );
     _hex.Wrap( );
     int x        = _hex.X( );
@@ -1032,10 +1032,10 @@ void CUnit::IncrementSpotting( CHexCoord const& hex )
     {
         if ( *pdwSpot != 0 )
         {
-            int   iInd = 1;
+            SPOT_WORD iInd = 1;
             CHex* pHex = theMap._GetHex( _hex );
 
-            for ( int iNum = 32; iNum > 0; iNum-- )
+            for ( int iNum = SPOTTING_LINE; iNum > 0; iNum-- )
             {
 
                 if ( *pdwSpot & iInd )
