@@ -12,6 +12,9 @@
 #include "caimsg.hpp"
 #include "caimap.hpp"
 
+#include <map>       // material-reservation ledger
+#include <utility>   // std::pair key for the reservation ledger
+
 #ifndef __CAIROUTE_HPP__
 #define __CAIROUTE_HPP__
 
@@ -27,6 +30,10 @@ class CAIRouter : public CObject
 
 	int m_iPlayer;		// id of the player
 	DWORD m_dwRocket;	// ID of the rocket
+
+	// pending-pickup ledger: (material,source bldg id) -> reserved qty; runtime-only, not serialized, cleared on Load
+	std::map<std::pair<int, DWORD>, int> m_mReserved;
+	int m_iReserveSweep;	// FillPriorities call counter driving the periodic ledger rebuild
 
 public:
 
@@ -51,8 +58,15 @@ public:
 
 	void GetTrucksAvailable( void );
 	CAIUnit *GetNearestTruck( CAIUnit *pCAIBldg );
-	CAIUnit *GetNearestSource( int iMaterial, int iQtyNeeded, 
+	CAIUnit *GetNearestSource( int iMaterial, int iQtyNeeded,
 		int *piDistBack, int iX, int iY );
+
+	// material-reservation ledger helpers (see cairoute.cpp)
+	void ReserveMaterial( int iMaterial, DWORD dwSource, int iQty );
+	void ReleaseMaterial( int iMaterial, DWORD dwSource, int iQty );
+	int  GetReserved( int iMaterial, DWORD dwSource );
+	void ReleaseTruckReservations( CAIUnit *pTruck );
+	void RebuildReservations( void );
 
 	BOOL IsValidUnit( CAIUnit *pUnit );
 	BOOL IsValidUnit( DWORD dwID );

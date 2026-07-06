@@ -34,8 +34,87 @@ CAIRouter::CAIRouter( CAIMap* pMap, CAIUnitList* plUnits, int iPlayer )
     m_dwRocket = 0;
     m_bNeedGas = FALSE;
 
+    m_iReserveSweep = 0;  // periodic reservation-ledger rebuild counter
+
     m_plTrucksAvailable = NULL;
     m_plBldgsNeed       = NULL;
+}
+
+// ---------------------------------------------------------------------------
+// Material reservation ledger (runtime-only). GetNearestSource picks a source
+// with enough LIVE store, but between assignment and the truck's arrival that
+// store can be drained (own production consumed / another truck), so the truck
+// arrives to an empty source ([XFER-EMPTY]) and the need re-queues forever.
+// The ledger records each truck's pending pickup so effective availability =
+// live store - reserved, and no two trucks (nor parity consumption) double-book
+// the same units. Host-side AI only; not serialized; cleared on Load.
+// ---------------------------------------------------------------------------
+void CAIRouter::ReserveMaterial( int iMaterial, DWORD dwSource, int iQty )
+{
+    if ( dwSource == 0 || iQty <= 0 )
+        return;
+    m_mReserved[std::make_pair( iMaterial, dwSource )] += iQty;
+}
+
+void CAIRouter::ReleaseMaterial( int iMaterial, DWORD dwSource, int iQty )
+{
+    if ( dwSource == 0 )
+        return;
+    std::map<std::pair<int, DWORD>, int>::iterator it = m_mReserved.find( std::make_pair( iMaterial, dwSource ) );
+    if ( it == m_mReserved.end( ) )
+        return;
+    it->second -= iQty;
+    if ( it->second <= 0 )  // fully released -> drop the entry
+        m_mReserved.erase( it );
+}
+
+int CAIRouter::GetReserved( int iMaterial, DWORD dwSource )
+{
+    std::map<std::pair<int, DWORD>, int>::iterator it = m_mReserved.find( std::make_pair( iMaterial, dwSource ) );
+    return ( it != m_mReserved.end( ) ) ? it->second : 0;
+}
+
+void CAIRouter::ReleaseTruckReservations( CAIUnit* pTruck )
+{
+    if ( pTruck == NULL )
+        return;
+    // release every still-outstanding per-material source claim this truck holds
+    for ( int i = 0; i < CMaterialTypes::num_types; ++i )
+    {
+        DWORD dwSource = pTruck->GetParamDW( i );
+        if ( dwSource != 0 )
+            ReleaseMaterial( i, dwSource, pTruck->GetParam( i ) );
+    }
+}
+
+void CAIRouter::RebuildReservations( void )
+{
+    // coarse leak-safety: rederive the whole ledger from live in-use trucks so a
+    // missed release (truck destroyed, odd bail path) can't starve a source forever
+    m_mReserved.clear( );
+    if ( m_plUnits == NULL )
+        return;
+    POSITION pos = m_plUnits->GetHeadPosition( );
+    while ( pos != NULL )
+    {
+        CAIUnit* pUnit = (CAIUnit*)m_plUnits->GetNext( pos );
+        if ( pUnit == NULL )
+            continue;
+        if ( pUnit->GetOwner( ) != m_iPlayer )
+            continue;
+        if ( pUnit->GetType( ) == CUnit::building )
+            continue;
+        if ( !( pUnit->GetStatus( ) & CAI_IN_USE ) )
+            continue;
+        if ( !pGameData->IsTruck( pUnit->GetID( ) ) )
+            continue;
+        for ( int i = 0; i < CMaterialTypes::num_types; ++i )
+        {
+            DWORD dwSource = pUnit->GetParamDW( i );
+            if ( dwSource != 0 )
+                ReserveMaterial( i, dwSource, pUnit->GetParam( i ) );
+        }
+    }
 }
 
 CAIRouter::~CAIRouter( )
@@ -371,6 +450,10 @@ void CAIRouter::FillPriorities( void )
     if ( m_plBldgsNeed == NULL || m_plTrucksAvailable == NULL )
         return;
 
+    // periodic coarse leak-safety: rebuild the reservation ledger from live in-use trucks
+    if ( ( ++m_iReserveSweep % 50 ) == 0 )
+        RebuildReservations( );
+
 #ifdef _LOGOUT
     logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "CAIRouter::FillPriorities for player %d \n ", m_iPlayer );
 #endif
@@ -702,6 +785,7 @@ void CAIRouter::IdleTruckTask( int iMat, int iFromBldg, int iToBldg )
         return;
 
     // update the truck and building as need commodiaties
+    ReleaseTruckReservations( pTruck );  // drop any stale claims before repurposing this truck
     pTruck->ClearParam( );
 
     WORD wStatus = 0;
@@ -826,6 +910,7 @@ BOOL CAIRouter::FindTransport( CAIUnit* pCAIBldg )
     wStatus |= CAI_IN_USE;
     pTruck->SetStatus( wStatus );             // truck is now assigned
     pTruck->SetDataDW( pCAIBldg->GetID( ) );  // id of building needing
+    ReleaseTruckReservations( pTruck );       // drop any stale claims before re-assigning this truck
     pTruck->ClearParam( );
 
     // get truck's location to help find source (snapshot read, lock-free)
@@ -929,6 +1014,9 @@ BOOL CAIRouter::FindTransport( CAIUnit* pCAIBldg )
             // that is a source for the material again using
             // offset of the material needed
             pTruck->SetParamDW( i, pBldgSource->GetID( ) );
+
+            // reserve what this truck is expected to pick up so the source isn't drained out from under it
+            ReserveMaterial( i, pBldgSource->GetID( ), iQtyToGet );
 
             // and record truck at the source building
             // pBldgSource->SetParamDW( i, pTruck->GetID() );
@@ -1296,7 +1384,11 @@ CAIUnit* CAIRouter::GetNearestSource( int iMaterial, int iQtyNeeded, int* piDist
             {
                 CBuilding* pLive = theBuildingMap.GetBldg( pUnit->GetID( ) );
                 if ( pLive != NULL )
-                    pCopyCBuilding->m_aiDataIn[iMaterial] = pLive->GetStore( iMaterial );
+                {
+                    // effective availability = live store minus other trucks' pending pickups
+                    int iEff                              = pLive->GetStore( iMaterial ) - GetReserved( iMaterial, pUnit->GetID( ) );
+                    pCopyCBuilding->m_aiDataIn[iMaterial] = ( iEff > 0 ) ? iEff : 0;
+                }
             }
             LeaveCriticalSection( &cs );
 
@@ -1691,6 +1783,7 @@ void CAIRouter::UnassignTrucks( CAIUnit* pBldg )
                 {
                     // now unassign the truck
                     pTruck->SetDataDW( 0 );
+                    ReleaseTruckReservations( pTruck );  // free this truck's source claims
                     pTruck->ClearParam( );
                     pTruck->SetStatus( 0 );
                     // and add it to the list
@@ -1724,6 +1817,7 @@ void CAIRouter::UnassignTruck( DWORD dwTruckID )
 
         // clear its assignment to the building
         pTruck->SetDataDW( (DWORD)0 );
+        ReleaseTruckReservations( pTruck );  // free this truck's source claims
         pTruck->ClearParam( );
         pTruck->SetStatus( 0 );
 
@@ -2411,6 +2505,7 @@ BOOL CAIRouter::UnloadMaterials( CAIUnit* pTruck, CAIUnit* pBldg )
 
     // now unassign the truck
     pTruck->SetDataDW( 0 );
+    ReleaseTruckReservations( pTruck );  // free any residual source claims after delivery
     pTruck->ClearParam( );
     pTruck->SetStatus( 0 );
     // and add back to the available truck list
@@ -2521,6 +2616,9 @@ void CAIRouter::LoadMaterials( CAIUnit* pTruck, CAIHex* paiHex )
                        pCopyCBuilding->m_aiDataIn[i], iCapacity );
 #endif
 
+            // pickup consumes this source's reservation regardless of the amount actually loaded
+            ReleaseMaterial( i, paiHex->m_dwUnitID, pTruck->GetParam( i ) );
+
             // clear the truck so that it can be directed to
             // the next source building destination
             pTruck->SetParamDW( i, 0 );
@@ -2586,6 +2684,8 @@ void CAIRouter::LoadMaterials( CAIUnit* pTruck, CAIHex* paiHex )
             pBldg = m_plUnits->GetUnit( pTruck->GetParamDW( i ) );
             if ( pBldg == NULL )
             {
+                // source vanished before pickup - drop its reservation too
+                ReleaseMaterial( i, pTruck->GetParamDW( i ), pTruck->GetParam( i ) );
                 pTruck->SetParamDW( i, 0 );
                 continue;
             }
@@ -2767,6 +2867,9 @@ void CAIRouter::Load( CArchive& ar, CAIUnitList* plUnits )
 {
     // newly loaded units
     m_plUnits = plUnits;
+
+    m_mReserved.clear( );  // reservation ledger is runtime-only; rebuilt from live trucks after load
+    m_iReserveSweep = 0;
 
     // first get the player id
     try
