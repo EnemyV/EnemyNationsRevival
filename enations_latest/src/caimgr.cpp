@@ -373,6 +373,28 @@ void CAIMgr::Manage( void )
                                  m_pRouter->GetNeedCount( ), m_pRouter->GetIdleTruckCount( ) );
                         OutputDebugStringA( szR );
                     }
+                    // physical steel vs ledger (phantom-wealth check)
+                    if ( m_plUnits != NULL )
+                    {
+                        int iSum = 0, iLedger = 0;
+                        EnterCriticalSection( &cs );
+                        POSITION posB = m_plUnits->GetHeadPosition( );
+                        while ( posB != NULL )
+                        {
+                            CAIUnit* pB = (CAIUnit*)m_plUnits->GetNext( posB );
+                            if ( pB == NULL || pB->GetOwner( ) != m_iPlayer || pB->GetType( ) != CUnit::building )
+                                continue;
+                            CBuilding* pLive = theBuildingMap.GetBldg( pB->GetID( ) );
+                            if ( pLive != NULL )
+                                iSum += pLive->GetStore( CMaterialTypes::steel );
+                        }
+                        CPlayer* pP = pGameData->GetPlayerData( m_iPlayer );
+                        if ( pP != NULL )
+                            iLedger = pP->GetMaterialHave( CMaterialTypes::steel );
+                        LeaveCriticalSection( &cs );
+                        sprintf( szR, "[MATSTAT] plyr %d steel stores %d ledger %d\n", m_iPlayer, iSum, iLedger );
+                        OutputDebugStringA( szR );
+                    }
                     // idle cranes vs pending work: idle+work = dispatch bug,
                     // idle+none = fleet exceeds demand
                     if ( m_plUnits != NULL )
