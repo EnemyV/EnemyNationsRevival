@@ -61,6 +61,9 @@ public:
 	CAIUnit *GetNearestSource( int iMaterial, int iQtyNeeded,
 		int *piDistBack, int iX, int iY );
 
+	// resume an interrupted in-use truck (combat flee, missed event); TRUE = handled
+	BOOL ResumeTruck( CAIUnit *pTruck, int iX, int iY );
+
 	// material-reservation ledger helpers (see cairoute.cpp)
 	void ReserveMaterial( int iMaterial, DWORD dwSource, int iQty );
 	void ReleaseMaterial( int iMaterial, DWORD dwSource, int iQty );

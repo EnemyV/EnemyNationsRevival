@@ -87,6 +87,74 @@ void CAIRouter::ReleaseTruckReservations( CAIUnit* pTruck )
     }
 }
 
+// resume an in-use truck whose route was interrupted (combat flee, missed arrival):
+// nearest still-claimed source, else the dest building's exit, else release to pool
+BOOL CAIRouter::ResumeTruck( CAIUnit* pTruck, int iX, int iY )
+{
+    if ( pTruck == NULL || m_plUnits == NULL )
+        return FALSE;
+
+    int       iBestDist = 0xFFFF;
+    CAIUnit*  pBestBldg = NULL;
+    CHexCoord hexTruck( iX, iY );
+    CHexCoord hexBldg, hexBest;
+
+    for ( int i = 0; i < CMaterialTypes::num_types; ++i )
+    {
+        if ( !pTruck->GetParamDW( i ) )
+            continue;
+        CAIUnit* pBldg = m_plUnits->GetUnit( pTruck->GetParamDW( i ) );
+        if ( pBldg == NULL )
+        {
+            // source vanished - drop claim + reservation
+            ReleaseMaterial( i, pTruck->GetParamDW( i ), pTruck->GetParam( i ) );
+            pTruck->SetParamDW( i, 0 );
+            continue;
+        }
+        CAICopy* pCopy = pBldg->GetCopyData( CAICopy::CBuilding );
+        if ( pCopy == NULL )
+            continue;
+        hexBldg.X( pCopy->m_aiDataOut[CAI_LOC_X] );
+        hexBldg.Y( pCopy->m_aiDataOut[CAI_LOC_Y] );
+        int iDist = pGameData->GetRangeDistance( hexTruck, hexBldg );
+        if ( iDist && iDist < iBestDist )
+        {
+            iBestDist = iDist;
+            pBestBldg = pBldg;
+            hexBest   = hexBldg;
+        }
+    }
+    if ( pBestBldg != NULL )
+    {
+        pTruck->SetDestination( pBestBldg );
+        pTruck->SetParam( CAI_ROUTE_X, hexBest.X( ) );
+        pTruck->SetParam( CAI_ROUTE_Y, hexBest.Y( ) );
+        return TRUE;
+    }
+
+    // no sources left: head for the building being supplied
+    CAIUnit* pDest = m_plUnits->GetUnit( pTruck->GetDataDW( ) );
+    if ( pDest != NULL )
+    {
+        CHexCoord hex( 0, 0 );
+        pGameData->GetBldgExit( pDest->GetID( ), hex );
+        if ( hex.X( ) || hex.Y( ) )
+        {
+            pTruck->SetDestination( hex );
+            pTruck->SetParam( CAI_ROUTE_X, hex.X( ) );
+            pTruck->SetParam( CAI_ROUTE_Y, hex.Y( ) );
+            return TRUE;
+        }
+    }
+
+    // nothing to resume: release back to the pool
+    ReleaseTruckReservations( pTruck );
+    pTruck->SetStatus( 0 );
+    pTruck->SetDataDW( 0 );
+    pTruck->ClearParam( );
+    return TRUE;
+}
+
 void CAIRouter::RebuildReservations( void )
 {
     // coarse leak-safety: rederive the whole ledger from live in-use trucks so a

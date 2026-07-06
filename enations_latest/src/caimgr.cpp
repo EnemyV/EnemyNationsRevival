@@ -1855,6 +1855,10 @@ void CAIMgr::DestinationResponse( CAIMsg* pMsg )
             pUnit->SetDestination( hexDest );
             return;
         }
+
+        // interrupted delivery (combat flee etc): resume it, don't drop the event
+        if ( m_pRouter->ResumeTruck( pUnit, pMsg->m_iX, pMsg->m_iY ) )
+            return;
     }
 #endif
 
