@@ -32,6 +32,8 @@ protected:
 	DWORD			m_timeLastDest;
 	DWORD			m_dwTimeLastAtkCmd;	// last time AttackUnit() was issued (attack-alert
 										// feedback-loop cooldown; transient, not saved)
+	DWORD			m_dwStuckSince;		// stuck-watch timer (transient; CAI_ROUTE_X is router-owned)
+	DWORD			m_dwStuckHex;		// stuck-watch last hex, MAKELPARAM packed (transient)
 
 	DWORD m_dwID;
 	int m_iOwner;
@@ -77,10 +79,15 @@ protected:
 public:
 	CAIUnit( DWORD dwID, int iOwner, int iType, int iTypeUnit );
 	~CAIUnit();
-	CAIUnit() : m_dwTimeLastAtkCmd( 0 ) {};
+	CAIUnit() : m_dwTimeLastAtkCmd( 0 ), m_dwStuckSince( 0 ), m_dwStuckHex( 0 ) {};
 
 	// attack-alert feedback-loop cooldown (see CAITaskMgr::AttackAlert)
 	DWORD GetTimeLastAtkCmd( void ) const { return m_dwTimeLastAtkCmd; }
+	// stuck-watch accessors (CAIMgr::HandleStuckVehicles)
+	DWORD GetStuckSince( void ) const { return m_dwStuckSince; }
+	void  SetStuckSince( DWORD dw ) { m_dwStuckSince = dw; }
+	DWORD GetStuckHex( void ) const { return m_dwStuckHex; }
+	void  SetStuckHex( DWORD dw ) { m_dwStuckHex = dw; }
 
 	DWORD GetID( void );
 	void SetID( DWORD );

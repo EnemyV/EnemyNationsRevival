@@ -45,6 +45,8 @@ CAIUnit::CAIUnit( DWORD dwID, int iOwner, int iType, int iTypeUnit )
     m_pdwaParams = NULL;
 
     m_dwTimeLastAtkCmd = 0;  // attack-alert cooldown stamp (transient, not saved)
+    m_dwStuckSince     = 0;  // stuck-watch (transient)
+    m_dwStuckHex       = 0;
 
     ASSERT_VALID( this );
 

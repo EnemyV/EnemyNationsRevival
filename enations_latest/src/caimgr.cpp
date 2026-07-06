@@ -1101,7 +1101,7 @@ void CAIMgr::HandleStuckVehicles( void )
             AiVehSnap snap;
             if ( !AiSnap::ReadVeh( pUnit->GetID( ), snap ) )
             {
-                pUnit->SetParamDW( CAI_ROUTE_X, 0 );
+                pUnit->SetStuckSince( 0 );
                 continue;
             }
 
@@ -1133,14 +1133,14 @@ void CAIMgr::HandleStuckVehicles( void )
                  snap.iRouteMode == CVehicle::stop )
             {
                 DWORD dwHexNow = (DWORD)MAKELPARAM( hexVeh.X( ), hexVeh.Y( ) );
-                if ( pUnit->GetParamDW( CAI_ROUTE_Y ) != dwHexNow )
+                if ( pUnit->GetStuckHex( ) != dwHexNow )
                 {
                     // first sighting here: stamp and leave it alone
-                    pUnit->SetParamDW( CAI_ROUTE_Y, dwHexNow );
-                    pUnit->SetParamDW( CAI_ROUTE_X, dwNow );
+                    pUnit->SetStuckHex( dwHexNow );
+                    pUnit->SetStuckSince( dwNow );
                     continue;
                 }
-                DWORD dwStuck = dwNow - pUnit->GetParamDW( CAI_ROUTE_X );
+                DWORD dwStuck = dwNow - pUnit->GetStuckSince( );
                 if ( dwStuck < 180000 )
                     continue;
                 if ( dwStuck > 360000 )
@@ -1203,10 +1203,10 @@ void CAIMgr::HandleStuckVehicles( void )
             }
 
             // has this vehicle been given time?
-            dwUnitTime = pUnit->GetParamDW( CAI_ROUTE_X );  // last time
+            dwUnitTime = pUnit->GetStuckSince( );  // last time
             if ( !dwUnitTime || dwUnitTime > dwNow )
             {
-                pUnit->SetParamDW( CAI_ROUTE_X, timeGetTime( ) );
+                pUnit->SetStuckSince( timeGetTime( ) );
                 continue;
             }
 
@@ -1219,15 +1219,15 @@ void CAIMgr::HandleStuckVehicles( void )
                 // vehicle is not stuck, but is where it needs to be
                 if ( hexVeh == hexDest )
                 {
-                    pUnit->SetParamDW( CAI_ROUTE_X, 0 );
-                    pUnit->SetParamDW( CAI_ROUTE_Y, 0 );
+                    pUnit->SetStuckSince( 0 );
+                    pUnit->SetStuckHex( 0 );
                     continue;
                 }
 
                 // make unit go to last destination
                 pUnit->SetDestination( hexDest );
                 // last hex LOWORD(X), HIWORD(Y) occupied
-                pUnit->SetParamDW( CAI_ROUTE_Y, (DWORD)MAKELPARAM( hexVeh.X( ), hexVeh.Y( ) ) );
+                pUnit->SetStuckHex( (DWORD)MAKELPARAM( hexVeh.X( ), hexVeh.Y( ) ) );
 #ifdef _WIN32
                 // TEMP DIAGNOSTIC (remove with CRANEDUMP)
                 {
@@ -1251,22 +1251,22 @@ void CAIMgr::HandleStuckVehicles( void )
                 // vehicle is not stuck, but is where it needs to be
                 if ( hexVeh == hexDest )
                 {
-                    pUnit->SetParamDW( CAI_ROUTE_X, 0 );
-                    pUnit->SetParamDW( CAI_ROUTE_Y, 0 );
+                    pUnit->SetStuckSince( 0 );
+                    pUnit->SetStuckHex( 0 );
                     continue;
                 }
 
                 // get unit's last location
                 hex = hexDest;
-                hexDest.X( LOWORD( pUnit->GetParamDW( CAI_ROUTE_Y ) ) );
-                hexDest.Y( HIWORD( pUnit->GetParamDW( CAI_ROUTE_Y ) ) );
+                hexDest.X( LOWORD( pUnit->GetStuckHex( ) ) );
+                hexDest.Y( HIWORD( pUnit->GetStuckHex( ) ) );
 
                 // a crane actively travelling is never teleported (operator rule);
                 // it only gets the re-send path below
                 if ( snap.iRouteMode == CVehicle::moving )
                 {
                     pUnit->SetDestination( hex );
-                    pUnit->SetParamDW( CAI_ROUTE_Y, (DWORD)MAKELPARAM( hexVeh.X( ), hexVeh.Y( ) ) );
+                    pUnit->SetStuckHex( (DWORD)MAKELPARAM( hexVeh.X( ), hexVeh.Y( ) ) );
                     continue;
                 }
 
@@ -1288,7 +1288,7 @@ void CAIMgr::HandleStuckVehicles( void )
                     // make unit go to last destination
                     pUnit->SetDestination( hex );
                     // last hex LOWORD(X), HIWORD(Y) occupied
-                    pUnit->SetParamDW( CAI_ROUTE_Y, (DWORD)MAKELPARAM( hexVeh.X( ), hexVeh.Y( ) ) );
+                    pUnit->SetStuckHex( (DWORD)MAKELPARAM( hexVeh.X( ), hexVeh.Y( ) ) );
 #ifdef _LOGOUT
                     logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC,
                                "CAIMgr::HandleStuckVehicles() player %d unit %d a %d is stuck after 10 min, resent to "
