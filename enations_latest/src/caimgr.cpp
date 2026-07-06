@@ -1760,7 +1760,13 @@ void CAIMgr::DestinationResponse( CAIMsg* pMsg )
             {
                 CAIUnit* pBldg = m_plUnits->GetUnit( pUnit->GetDataDW( ) );
                 if ( pBldg == NULL )
+                {
+                    // dest gone from AI list: release the truck, don't strand it IN_USE
+                    pUnit->SetStatus( 0 );
+                    pUnit->SetDataDW( 0 );
+                    pUnit->ClearParam( );
                     return;
+                }
 
                 // transfer the qty needed to the building
                 // and clear the truck of assignment

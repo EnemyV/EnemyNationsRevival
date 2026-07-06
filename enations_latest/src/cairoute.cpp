@@ -2635,6 +2635,15 @@ void CAIRouter::LoadMaterials( CAIUnit* pTruck, CAIHex* paiHex )
     if ( !bMoreSources )
     {
         pBldg = m_plUnits->GetUnit( pTruck->GetDataDW( ) );
+        if ( pBldg == NULL )
+        {
+            // dest died in transit: release the truck or it parks IN_USE forever
+            ReleaseTruckReservations( pTruck );
+            pTruck->SetStatus( 0 );
+            pTruck->SetDataDW( 0 );
+            pTruck->ClearParam( );
+            return;
+        }
         if ( pBldg != NULL )
         {
             CHexCoord hex( 0, 0 );
