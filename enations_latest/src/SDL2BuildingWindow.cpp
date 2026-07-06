@@ -183,6 +183,25 @@ static bool coalLiqCapable(CBuilding* b) {
            && ( pDef->m_iInputMat == CMaterialTypes::coal )
            && ( pDef->m_iOutputMat == CMaterialTypes::oil );
 }
+// Desperate Measures (rocket EDICT) / Scrounging (warehouse AltOutput toggle): is the scrounge ON?
+// Its Production section shows only while ON, so the section SET flips on toggle — same as coal-liq.
+// The override lets computeLayout size for both on/off modes without touching game state.
+static int s_scroungeLayoutOverride = -1;   // -1 = live; 0/1 = force off/on (height calc only)
+static bool scroungeActive(CBuilding* b) {
+    if ( s_scroungeLayoutOverride >= 0 ) return ( s_scroungeLayoutOverride != 0 );
+    if ( b->GetData()->GetType() == CStructureData::rocket )
+        return ( b->GetOwner() != nullptr ) && b->GetOwner()->IsEdictActive( EDICT_DESPERATE_MEASURES );
+    if ( !b->IsFlag( CUnit::alt_oil ) ) return false;
+    const AltOutput::AltOutputDef* pDef = AltOutput::Available( b );
+    return ( pDef != nullptr ) && ( pDef->m_eMode == AltOutput::eMultiTrickle );
+}
+// Can this building scrounge at all (rocket, or a warehouse with the Scrounging def)? Gets the
+// max-of-both-modes frame + relayout-on-toggle, like coalLiqCapable.
+static bool scroungeCapable(CBuilding* b) {
+    if ( b->GetData()->GetType() == CStructureData::rocket ) return true;
+    const AltOutput::AltOutputDef* pDef = AltOutput::Available( b );
+    return ( pDef != nullptr ) && ( pDef->m_eMode == AltOutput::eMultiTrickle );
+}
 // #51: the building's PRIMARY output rate, per in-game minute — the exact figure the info
 // window's status line shows for a normal producer. Mirrors the per-class ShowStatusText math
 // (CFarmBuilding / CMaterialBuilding, new_unit.cpp) so the alt-mode and fallback readouts stay
@@ -333,11 +352,9 @@ static bool secProduction(CBuilding* b) {
     // C6: a coal-liq-active power plant is a producer (coal -> oil), so it gets the Production
     // section + bar like a refinery instead of the Power section.
     if ( ( ut == CStructureData::UTpower ) && secCoalLiqActive( b ) ) return true;
-    // Desperate Measures / Scrounging: a rocket/warehouse that CAN scrounge shows the Production
-    // section whether or not it's toggled on — capability-based, so the section set never changes
-    // (no relayout). When off the bar just reads 0.
-    if ( const AltOutput::AltOutputDef* pDef = AltOutput::Available( b ) )
-        if ( pDef->m_eMode == AltOutput::eMultiTrickle ) return true;
+    // Desperate Measures (rocket edict) / Scrounging (warehouse): Production section shown ONLY
+    // while the scrounge is ON (section set flips -> relayout on toggle; sized for max-of-both).
+    if ( scroungeCapable( b ) ) return scroungeActive( b );
     return ( ut == CStructureData::UTmaterials ) || ( ut == CStructureData::UTmine ) ||
            ( ut == CStructureData::UTfarm );
 }
@@ -587,12 +604,24 @@ static void coalLiqMaxDims(CBuilding* b, int& wMax, int& hMax) {
     wMax = __max(on.width,  off.width);
     hMax = __max(on.height, off.height);
 }
+// Scrounge hosts flip their section SET on toggle too (Production appears/disappears); size for
+// the max of both modes so the relayout never needs an SDL window resize (mirrors coalLiqMaxDims).
+static void scroungeMaxDims(CBuilding* b, int& wMax, int& hMax) {
+    int save = s_scroungeLayoutOverride;
+    s_scroungeLayoutOverride = 1; BldgLayout on  = computeLayout(b);
+    s_scroungeLayoutOverride = 0; BldgLayout off = computeLayout(b);
+    s_scroungeLayoutOverride = save;
+    wMax = __max(on.width,  off.width);
+    hMax = __max(on.height, off.height);
+}
 static int computeWidth(CBuilding* b) {
-    if ( coalLiqCapable(b) ) { int w, h; coalLiqMaxDims(b, w, h); return w; }
+    if ( coalLiqCapable(b) )  { int w, h; coalLiqMaxDims(b, w, h);  return w; }
+    if ( scroungeCapable(b) ) { int w, h; scroungeMaxDims(b, w, h); return w; }
     return computeLayout(b).width;
 }
 static int computeHeight(CBuilding* b) {
-    if ( coalLiqCapable(b) ) { int w, h; coalLiqMaxDims(b, w, h); return h; }
+    if ( coalLiqCapable(b) )  { int w, h; coalLiqMaxDims(b, w, h);  return h; }
+    if ( scroungeCapable(b) ) { int w, h; scroungeMaxDims(b, w, h); return h; }
     return computeLayout(b).height;
 }
 
@@ -897,7 +926,7 @@ int SDL2BuildingWindow::BuildAltOutput(int x, int y, int w) {
     // so it needs a window relayout — but NOT here (clearing widgets mid-callback frees this very
     // checkbox). Just request it; OnFrame does the rebuild next frame. Other alt hosts (charcoal/
     // bio-oil/fracking) keep the same sections, so they only need the existing live-Refresh swap.
-    bool bRelayout = coalLiqCapable( m_pBldg );
+    bool bRelayout = coalLiqCapable( m_pBldg ) || scroungeCapable( m_pBldg );  // Scrounging: Production appears on toggle
     m_chkAltOut = AddWidget<SDL2Checkbox>(
         cbX, yh, cbW, ROW_H, pDef->m_szLabel, checked,
         [this, pBldg, bRelayout]( bool on ) {
@@ -955,7 +984,12 @@ int SDL2BuildingWindow::BuildEdicts(int x, int y, int w) {
         int cbW = w - 2 * BOX_PAD - 8 - ( kInfoSz + 4 );
         SDL2Checkbox* chk = AddWidget<SDL2Checkbox>( cbX, cy, cbW, ROW_H,
                                  e.name, checked,
-                                 [me, eid]( bool on ){ me->ToggleEdictNet( eid, on ); } );
+                                 [this, me, eid]( bool on ){
+                                     me->ToggleEdictNet( eid, on );
+                                     // Desperate Measures adds/removes the rocket's Production section;
+                                     // defer the relayout to OnFrame (don't free this checkbox mid-callback).
+                                     if ( eid == EDICT_DESPERATE_MEASURES ) m_bNeedRelayout = true;
+                                 } );
         // Track the row so Refresh() can re-sync the checkbox from the player bitmask
         // (external toggles: harness setedict, last-host auto-revoke §29).
         if ( m_nEdictRows < kMaxEdictRows ) {
@@ -1960,6 +1994,11 @@ void SDL2BuildingWindow::Refresh() {
     // Same external-change sync for the building-scoped AltOutput toggle (harness setalt).
     if ( m_chkAltOut )
         m_chkAltOut->SetChecked( m_pBldg->IsFlag( CUnit::alt_oil ) );
+    // Scrounge hosts (rocket Desperate / warehouse Scrounging): the Production section appears/
+    // disappears with the toggle. If the active state no longer matches what's shown (checkbox OR
+    // an external toggle: harness, rocket-death auto-revoke), relayout so the section set matches.
+    if ( scroungeCapable( m_pBldg ) && ( scroungeActive( m_pBldg ) != m_bProduction ) )
+        m_bNeedRelayout = true;
 
     // At-a-glance status line: under construction, starved for an input, or the
     // building's own status text ("making gas, 60%" / "Idle"), color-coded.
@@ -2034,8 +2073,13 @@ void SDL2BuildingWindow::Refresh() {
         // gets a real Production status + bar instead of the old repurposed Power section.
         bool bCoalLiq = secCoalLiqActive( m_pBldg );
         bool bAlt = ( pAlt != nullptr ) && m_pBldg->IsFlag( CUnit::alt_oil ) && !bCoalLiq;
+        // Desperate Measures (rocket edict): not an AltOutput def, so show its fixed scrounge rate here.
+        bool bScroungeRocket = ( m_pBldg->GetData()->GetType() == CStructureData::rocket )
+                               && m_pBldg->GetOwner() && m_pBldg->GetOwner()->IsEdictActive( EDICT_DESPERATE_MEASURES );
         std::string str;
-        if ( bCoalLiq ) {
+        if ( bScroungeRocket ) {
+            str = "Producing: +10 lumber +5 iron +5 food +5 coal / min";
+        } else if ( bCoalLiq ) {
             // Name the oil product and show its per-minute rate so it matches every other producer
             // widget ("Producing Oil: N / min"), per the operator. The coal plant burns coal at
             // GetRate() build-units per coal (BuildPower) and Convert credits 1 oil per m_iRatioIn
@@ -2078,8 +2122,8 @@ void SDL2BuildingWindow::Refresh() {
             int per;
             if ( bCoalLiq )
                 per = m_pBldg->GetAltProgressPer();
-            else if ( bAlt && pAlt && ( pAlt->m_eMode == AltOutput::eMultiTrickle ) )
-                per = m_pBldg->GetAltProgressPerMulti();   // rocket/warehouse scrounge trickle
+            else if ( bScroungeRocket || ( bAlt && pAlt && ( pAlt->m_eMode == AltOutput::eMultiTrickle ) ) )
+                per = m_pBldg->GetAltProgressPerMulti();   // rocket edict / warehouse scrounge trickle
             else
                 per = m_pBldg->GetProductionPer();
             m_progProduction->SetVisible( true );

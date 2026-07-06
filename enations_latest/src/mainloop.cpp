@@ -8,6 +8,7 @@
 
 #include "ai.h"
 #include "altoutput.h"
+#include "edicts.h"     // EDICT_DESPERATE_MEASURES (rocket scrounge edict)
 #include "aisnap.h"  // Tier-B AI world snapshot (published here, read by AI threads)
 #include "area.h"
 #include "building.inl"
@@ -1721,13 +1722,26 @@ RepairDone:;
     case CStructureData::UThousing:
         break;
     case CStructureData::UTwarehouse:
-        // Desperate Measures (rocket) / Scrounging (warehouse): normally a warehouse just draws
-        // its power/people; with its alt-output toggle ON it also scrounges a small multi-resource
-        // trickle (the +workers cost is applied centrally below via m_iWorkforceAdd).
+        // A warehouse/rocket normally just draws power + people. Two scrounge modes add a small
+        // multi-resource trickle: the ROCKET via the Desperate Measures civ-wide EDICT (net-synced,
+        // lost on rocket death); the WAREHOUSE via its per-building AltOutput toggle (Scrounging).
         GetOwner( )->AddPwrNeed( GetData( )->GetPower( ) );
-        GetOwner( )->AddPplNeedBldg( GetData( )->GetPeople( ) );
-        if ( IsFlag( CUnit::alt_oil ) && ( AltOutput::Available( this ) != nullptr ) )
-            AltOutput::ConvertMulti( this, (int)theGame.GetOpersElapsed( ), m_afAltAccum );
+        if ( ( GetData( )->GetType( ) == CStructureData::rocket )
+             && GetOwner( )->IsEdictActive( EDICT_DESPERATE_MEASURES ) )
+        {
+            // +50 draft workers; fixed 10 lumber / 5 iron / 5 food / 5 coal per minute.
+            GetOwner( )->AddPplNeedBldg( GetData( )->GetPeople( ) + 50 );
+            static const AltOutput::AltMat aDesperate[4] =
+                { { CMaterialTypes::lumber, 10 }, { CMaterialTypes::iron, 5 },
+                  { CMaterialTypes::food, 5 },    { CMaterialTypes::coal, 5 } };
+            AltOutput::CreditTrickle( this, (int)theGame.GetOpersElapsed( ), m_afAltAccum, aDesperate, 4 );
+        }
+        else
+        {
+            GetOwner( )->AddPplNeedBldg( GetData( )->GetPeople( ) );
+            if ( IsFlag( CUnit::alt_oil ) && ( AltOutput::Available( this ) != nullptr ) )
+                AltOutput::ConvertMulti( this, (int)theGame.GetOpersElapsed( ), m_afAltAccum );
+        }
         break;
     case CStructureData::UTrepair:
         ( (CRepairBuilding*)this )->BuildRepair( );

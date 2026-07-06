@@ -138,6 +138,16 @@ const EdictDef g_aEdicts[EDICT_COUNT] =
       1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f,
       0.0f, 0.0f, 0.0f,
       1.0f, 1.0f, 1.0f, 1.0f, 1.0f },
+
+    // EDICT_DESPERATE_MEASURES — Rocket, civ-wide BEHAVIOR edict (all mults neutral). The production
+    // (10 lumber/5 iron/5 food/5 coal per min + 50 workers) is hardcoded in CBuilding::Operate's
+    // UTwarehouse case, gated on IsEdictActive. Default-available (gate: nothing, always discovered).
+    // Net-synced via ToggleEdictNet; revoked on rocket death via EdictHostLost (rocket host).
+    { "Desperate Measures", "Frantically scrounge base resources: +10 lumber, +5 iron, +5 food, +5 coal / min.\nCost: 50 workers. Lost if rocket destroyed.",
+      CStructureData::rocket, EDICT_CIVWIDE, CRsrchArray::nothing,
+      1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f,
+      0.0f, 0.0f, 0.0f,
+      1.0f, 1.0f, 1.0f, 1.0f, 1.0f },
 };
 
 bool EdictHostHasEdicts( CStructureData::BLDG_TYPE bldgType )

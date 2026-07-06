@@ -43,6 +43,7 @@ enum EdictId
     EDICT_PRECISION_MINING,     // Office: +mine output, +energy & +worker requirement at mines
     EDICT_MEAT_SHIELD,          // Command Center: buildings take less damage, +worker requirement
     EDICT_AUTO_RESEARCH,        // Office: auto-researches the next-cheapest available tech (behavior flag)
+    EDICT_DESPERATE_MEASURES,   // Rocket (civ-wide): scrounge a multi-resource trickle for +50 workers
     EDICT_COUNT
 };
 

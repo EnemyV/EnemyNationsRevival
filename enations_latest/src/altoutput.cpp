@@ -79,7 +79,6 @@ namespace
 
     // The rocket / the warehouse: hosts for the emergency multi-resource "scrounge" trickle.
     // Test the exact GetType() -- UTwarehouse also covers the market, and rocket/warehouse differ.
-    bool IsRocket( CBuilding* b )    { return ( b->GetData( )->GetType( ) == CStructureData::rocket ); }
     bool IsWarehouse( CBuilding* b ) { return ( b->GetData( )->GetType( ) == CStructureData::warehouse ); }
 
     // ---- Tech-gate predicates (thin adapters over the CPlayer accessors) ---------------
@@ -208,28 +207,9 @@ namespace
             0                            // m_nMulti
         },
 
-        // 6) Desperate Measures (NEW) -- the ROCKET scrounges a small multi-resource trickle
-        //    when toggled: emergency income at a heavy labor cost. eMultiTrickle, no input,
-        //    no tech gate (default-enabled). 50 workers.
-        {
-            "Desperate Measures",
-            "Frantically scrounge base resources: +10 lumber, +5 iron, +5 food, +5 coal / min",
-            &IsRocket,
-            &TechAlways,
-            CMaterialTypes::lumber,      // notional (unused in eMultiTrickle)
-            CMaterialTypes::lumber,
-            AltOutput::eMultiTrickle,
-            nullptr,                     // m_pfnPct
-            nullptr,                     // m_pfnFlat
-            0,                           // m_iRatioIn
-            1.0f,
-            50,                          // m_iWorkforceAdd (50 workers)
-            { { CMaterialTypes::lumber, 10 }, { CMaterialTypes::iron, 5 }, { CMaterialTypes::food, 5 }, { CMaterialTypes::coal, 5 } },
-            4
-        },
-
-        // 7) Scrounging (NEW) -- the WAREHOUSE version of Desperate Measures at half the yield
-        //    and half the labor. eMultiTrickle, default-enabled. 25 workers.
+        // 6) Scrounging (NEW) -- the WAREHOUSE scrounges a small multi-resource trickle when
+        //    toggled: emergency income at a labor cost. eMultiTrickle, default-enabled. 25 workers.
+        //    (The rocket's richer version, Desperate Measures, is a civ-wide edict, not AltOutput.)
         {
             "Scrounging",
             "Scrounge base resources: +5 lumber, +2 iron, +2 food, +2 coal / min",
@@ -395,23 +375,18 @@ namespace AltOutput
         pOwner->IncMaterialHave( pDef->m_iOutputMat, iOut );
     }
 
-    void ConvertMulti( CBuilding* pBldg, int iAmount, float* afAccum )
+    void CreditTrickle( CBuilding* pBldg, int iAmount, float* afAccum, const AltMat* pMats, int nMats )
     {
-        if ( ( iAmount <= 0 ) || !afAccum )
-            return;
-        if ( !pBldg->IsFlag( CUnit::alt_oil ) )
-            return;
-        const AltOutputDef* pDef = Available( pBldg );
-        if ( !pDef || ( pDef->m_eMode != eMultiTrickle ) )
+        if ( ( iAmount <= 0 ) || !afAccum || !pMats )
             return;
 
         CPlayer*    pOwner = pBldg->GetOwner( );
         const float OPERS_PER_MINUTE = 384.0f * 60.0f;   // = 23040 (matches Convert)
 
         // Each output line trickles independently, carried by its own accumulator.
-        for ( int i = 0; ( i < pDef->m_nMulti ) && ( i < kMaxMulti ); i++ )
+        for ( int i = 0; ( i < nMats ) && ( i < kMaxMulti ); i++ )
         {
-            int iRate = pDef->m_aMulti[i].m_iPerMin;
+            int iRate = pMats[i].m_iPerMin;
             if ( iRate <= 0 )
                 continue;
             afAccum[i] += ( (float)iRate * (float)iAmount ) / OPERS_PER_MINUTE;
@@ -420,7 +395,7 @@ namespace AltOutput
                 continue;
             afAccum[i] -= (float)iOut;
 
-            int iMat = pDef->m_aMulti[i].m_iMat;
+            int iMat = pMats[i].m_iMat;
             if ( iMat == CMaterialTypes::food )
                 pOwner->AddFood( iOut );                 // food is a GLOBAL pool, not a store
             else if ( iMat == CMaterialTypes::gas )
@@ -432,5 +407,15 @@ namespace AltOutput
                 pOwner->IncMaterialHave( iMat, iOut );
             }
         }
+    }
+
+    void ConvertMulti( CBuilding* pBldg, int iAmount, float* afAccum )
+    {
+        if ( !pBldg->IsFlag( CUnit::alt_oil ) )
+            return;
+        const AltOutputDef* pDef = Available( pBldg );
+        if ( !pDef || ( pDef->m_eMode != eMultiTrickle ) )
+            return;
+        CreditTrickle( pBldg, iAmount, afAccum, pDef->m_aMulti, pDef->m_nMulti );
     }
 }
