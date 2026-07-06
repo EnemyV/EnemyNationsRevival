@@ -522,6 +522,11 @@ void CAIRouter::FillPriorities( void )
     if ( ( ++m_iReserveSweep % 50 ) == 0 )
         RebuildReservations( );
 
+    // re-scan for poolable trucks: GetTrucksAvailable otherwise ran ONCE at init,
+    // so trucks released outside UnassignTruck never rejoined the pool
+    if ( ( m_iReserveSweep % 10 ) == 0 )
+        GetTrucksAvailable( );
+
 #ifdef _LOGOUT
     logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "CAIRouter::FillPriorities for player %d \n ", m_iPlayer );
 #endif
@@ -1237,6 +1242,11 @@ void CAIRouter::GetTrucksAvailable( void )
             // look only at vehicles that are TRUCKS
             if ( !pGameData->IsTruck( pUnit->GetID( ) ) )
                 continue;
+
+            // a released truck with no task is pool material - re-tag it
+            // (rescue/combat paths drop the tag and the truck never returned)
+            if ( !pUnit->GetTask( ) )
+                pUnit->SetTask( IDT_SETTRANSPORT );
 
             if ( pUnit->GetTask( ) != IDT_SETTRANSPORT )
                 continue;
