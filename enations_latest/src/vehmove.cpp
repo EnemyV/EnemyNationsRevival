@@ -1460,6 +1460,12 @@ void CVehicle::EnterBuilding() {
         m_ptDest = m_ptHead;
         m_hexDest = m_ptHead;
         DeletePath();
+
+        // entering the dest IS the arrival; the stop-mode backup never runs for
+        // an in-building vehicle, so an AI owner was never told (truck waited
+        // for the sweep rescue). Humans/HP-router keep their own path.
+        if ((!(m_bFlags & told_ai_stop)) && GetOwner()->IsAI())
+            PostArrivedOrBlocked();
     }
 
     MaterialChange();
