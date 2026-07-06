@@ -2029,6 +2029,15 @@ void CAIGoalMgr::CheckPlayer( void )
     // need gas, +100 to make the ai want it more
     if ( m_iGasHave < (m_iGasNeed + 100) )
     {
+        // lost the last well (war) -> reseed the oil industry or gas never recovers
+        if ( !m_pwaBldgs[CStructureData::oil_well] && hasCommandCenter )
+        {
+            if ( m_pwaBldgGoals[CStructureData::oil_well] < 1 )
+                m_pwaBldgGoals[CStructureData::oil_well] = 1;
+            if ( !m_pwaBldgs[CStructureData::refinery] && m_pwaBldgGoals[CStructureData::refinery] < 1 )
+                m_pwaBldgGoals[CStructureData::refinery] = 1;
+        }
+
         // must already have an oil well
         if ( m_pwaBldgs[CStructureData::oil_well] )
         {

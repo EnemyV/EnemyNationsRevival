@@ -1089,9 +1089,10 @@ void CAIMgr::HandleStuckVehicles( void )
     // TEMP: road bottleneck telemetry, once per sweep
     if ( m_pGoalMgr != NULL && m_pGoalMgr->m_pMap != NULL )
     {
-        char szR[96];
-        sprintf( szR, "[ROADSTAT] plyr %d grid %d gas %d\n", m_iPlayer, m_pGoalMgr->m_pMap->m_iRoadCount,
-                 m_pGoalMgr->m_iGasHave );
+        char szR[128];
+        sprintf( szR, "[ROADSTAT] plyr %d grid %d gas %d need %d wells %d refy %d\n", m_iPlayer,
+                 m_pGoalMgr->m_pMap->m_iRoadCount, m_pGoalMgr->m_iGasHave, m_pGoalMgr->m_iGasNeed,
+                 m_pGoalMgr->m_pwaBldgs[CStructureData::oil_well], m_pGoalMgr->m_pwaBldgs[CStructureData::refinery] );
         OutputDebugStringA( szR );
     }
 #endif
