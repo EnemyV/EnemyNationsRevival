@@ -918,7 +918,9 @@ void CAIMap::GetBridgingHexes( CHexCoord& hexSite, CAIUnit *pUnit )
 
 	// if still here then the player can build bridges
 	CHexCoord hexBefore = hexSite;
-	m_pMapUtil->FindBridgeHex( hexSite, pUnit );
+	// scan the whole planned road (not just the 2-block rocket ring) for the
+	// nearest river crossing to the crane; keeps IsBridgeSpan validation.
+	FindBridgeOnPlan( hexSite, pUnit );
 
 	// a site was selected, so mark the map
 	if( hexBefore != hexSite )
@@ -944,6 +946,83 @@ void CAIMap::GetBridgingHexes( CHexCoord& hexSite, CAIUnit *pUnit )
 			hexSite = hexBefore;
 
 		iDelta = 0;
+	}
+}
+
+//
+// nearest planned-road RIVER hex to the crane (hexSite in on entry) that forms a
+// valid bridge span. iterates m_aPlannedRoad (whole road, not the old 2-block
+// rocket ring) so crossings anywhere along a war road are found. same contract as
+// CAIMapUtil::FindBridgeHex: on success sets hexSite to the span START hex and
+// stores start in CAI_PREV_X/Y, end in CAI_DEST_X/Y; hexSite unchanged if none.
+//
+void CAIMap::FindBridgeOnPlan( CHexCoord& hexSite, CAIUnit *pUnit )
+{
+	CHexCoord hexCrane = hexSite;
+	int iBestDist = m_iMapSize + 1;
+	CHexCoord hexBestSite;
+	int iPrevX = 0, iPrevY = 0, iDestX = 0, iDestY = 0;
+	BOOL bFound = FALSE;
+
+	size_t k = 0;
+	while( k < m_aPlannedRoad.size() )
+	{
+		int off = m_aPlannedRoad[k];
+
+		// lazy removal: entry no longer a planned road -> swap-and-pop
+		if( off < 0 || off >= m_iMapSize || !( m_pwaMap[off] & MSW_PLANNED_ROAD ) )
+		{
+			m_aPlannedRoad[k] = m_aPlannedRoad.back();
+			m_aPlannedRoad.pop_back();
+			continue;
+		}
+
+#if THREADS_ENABLED
+		myYieldThread();
+#endif
+
+		int iX, iY;
+		m_pMapUtil->OffsetToXY( off, &iX, &iY );
+		CHexCoord hexCand( iX, iY );
+
+		// only river hexes are bridge candidates
+		CHex *pGameHex = theMap.GetHex( hexCand );
+		if( pGameHex == NULL || pGameHex->GetType() != CHex::river )
+		{
+			++k;
+			continue;
+		}
+
+		// only validate candidates that could beat the current best
+		int iDist = pGameData->GetRangeDistance( hexCrane, hexCand );
+		if( iDist >= iBestDist )
+		{
+			++k;
+			continue;
+		}
+
+		// IsBridgeSpan rewrites hexTest -> span start land hex and sets CAI_PREV/DEST
+		CHexCoord hexTest = hexCand;
+		if( m_pMapUtil->IsBridgeSpan( hexTest, pUnit ) )
+		{
+			iBestDist   = iDist;
+			hexBestSite = hexTest;
+			iPrevX = pUnit->GetParam( CAI_PREV_X );
+			iPrevY = pUnit->GetParam( CAI_PREV_Y );
+			iDestX = pUnit->GetParam( CAI_DEST_X );
+			iDestY = pUnit->GetParam( CAI_DEST_Y );
+			bFound = TRUE;
+		}
+		++k;
+	}
+
+	if( bFound )
+	{
+		hexSite = hexBestSite;
+		pUnit->SetParam( CAI_PREV_X, iPrevX );
+		pUnit->SetParam( CAI_PREV_Y, iPrevY );
+		pUnit->SetParam( CAI_DEST_X, iDestX );
+		pUnit->SetParam( CAI_DEST_Y, iDestY );
 	}
 }
 

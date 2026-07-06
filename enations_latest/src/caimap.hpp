@@ -123,6 +123,8 @@ public:
 
 	void GetBuildHex( int iBldg, CHexCoord& hex );
 	void GetBridgingHexes( CHexCoord& hexSite, CAIUnit *pUnit );
+	// bridge-site search over the WHOLE planned-road index (nearest river hex to crane)
+	void FindBridgeOnPlan( CHexCoord& hexSite, CAIUnit *pUnit );
 	void GetRoadHex( CHexCoord& hexSite );
 	// planned-road index: nearest eligible planned hex to hexCrane -> hexOut
 	BOOL GetPlannedRoadNear( CHexCoord& hexCrane, CHexCoord& hexOut );

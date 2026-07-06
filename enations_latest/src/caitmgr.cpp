@@ -5124,6 +5124,15 @@ void CAITaskMgr::BuildRoad( CAIUnit* pUnit, CAITask* pTask )
             // flag unit as having sent the message already for this hex
             pUnit->SetParam( CAI_FUEL, CNetCmd::bridge_new );
 
+#ifdef _WIN32
+            {
+                // TEMP: bridge acceptance probe (operator has never seen an AI bridge)
+                char szB[96];
+                sprintf( szB, "[BRIDGE] plyr %d span %d,%d\n", pUnit->GetOwner( ), hexStart.X( ), hexStart.Y( ) );
+                OutputDebugStringA( szB );
+            }
+#endif
+
 #ifdef _LOGOUT
             logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "BridgeBuilding() from %d,%d to %d,%d ", hexStart.X( ),
                        hexStart.Y( ), hexEnd.X( ), hexEnd.Y( ) );

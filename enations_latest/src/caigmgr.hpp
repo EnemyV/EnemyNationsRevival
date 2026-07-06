@@ -77,6 +77,7 @@ public:
 
 	DWORD m_dwRocket;		// id of the rocket building
 	CHexCoord m_hexLastWarRoad;	// last assault target we planned a war road to (transient, not saved)
+	CHexCoord m_hexLastStageRoad;	// last staging midpoint we planned a war road to (transient)
 	CAIMap *m_pMap;	// CAIMgr's CAIMap
 	CAIUnitList *m_plUnits;	// list of CAIMgr's CAIUnits
 	CAITaskList *m_plTasks;	// this player's list of tasks
