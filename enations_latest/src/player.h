@@ -555,10 +555,14 @@ class CPlayer : public CObject
             iLevels++;
         if ( m_aRsrch.GetSize( ) > CRsrchArray::fuel_efficiency_12 && GetRsrch( CRsrchArray::fuel_efficiency_12 ).m_bDiscovered )
             iLevels++;
-        // Cumulative gas% by level (increments 5/4/4/3/3/3/2/2/2/2/1/1 => 30% saving @10, 32% @12).
-        static const int aiGasPct[13] = { 100, 95, 91, 87, 84, 81, 78, 76, 74, 72, 70, 69, 68 };
+        if ( m_aRsrch.GetSize( ) > CRsrchArray::fuel_efficiency_16 )
+            for ( int iOn = CRsrchArray::fuel_efficiency_13; iOn <= CRsrchArray::fuel_efficiency_16; iOn++ )
+                if ( GetRsrch( iOn ).m_bDiscovered )
+                    iLevels++;
+        // Cumulative gas% by level (5/4/4/3/3/3/2/2/2/2 to level 10, then +1 each to 16).
+        static const int aiGasPct[17] = { 100, 95, 91, 87, 84, 81, 78, 76, 74, 72, 70, 69, 68, 67, 66, 65, 64 };
         if ( iLevels < 0 )  iLevels = 0;
-        if ( iLevels > 12 ) iLevels = 12;
+        if ( iLevels > 16 ) iLevels = 16;
         return ( aiGasPct[iLevels] );
     }
 

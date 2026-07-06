@@ -381,23 +381,21 @@ void CRsrchArray::Open( )
         }
     }
 
-    // In-code research topics: the Fuel Efficiency line (not in the DAT file). A 12-
-    // level repeatable line unlocked after Gas Turbines; level 1 requires gas_turbine,
-    // each later level requires the previous. Cost DOUBLES per level up to 32*B at level 6,
-    // then goes flat +16*B per level (L7=48B, L8=64B, ... L12=128B; B = gas_turbine cost).
-    // Gas saving follows a diminishing curve (5/4/4/3/3/3/2/2/2/2 => 30% total
-    // at level 10), then levels 11-12 add only +1% each (31% / 32%) — see
-    // CPlayer::GetFuelPct for the authoritative gas% table. Levels 1-10 are contiguous
-    // (fuel_efficiency_1..10); levels 11-12 were appended at the END of the research enum
-    // for save parity, so the setup loop maps the index non-contiguously. Names run
-    // grounded -> sci-fi.
+    // In-code research topics: the Fuel Efficiency line (not in the DAT file). A 16-level
+    // line unlocked after Gas Turbines; level 1 requires gas_turbine, each later the prev.
+    // Cost DOUBLES to 32*B at level 6, then flat +16*B (L7=48B ... L16=192B; B = gas_turbine
+    // cost). Gas saving diminishes 5/4/4/3/3/3/2/2/2/2 to 30% at level 10, then +1% per level
+    // to 36% at level 16 (see CPlayer::GetFuelPct). Levels 1-10 contiguous; 11-12 and 13-16
+    // appended at the enum end, so the setup loop maps the index non-contiguously.
     {
-        static char const* aszName[12] = {
+        static char const* aszName[16] = {
             "Fuel Injection",      "Lean-Burn Mapping",   "Turbo Compounding",
             "Regenerative Drive",  "Thermal Recovery",    "Plasma Ignition",
             "Catalytic Reclamation","Synthetic Lubricants","Ion Scavenging",
-            "Zero-Loss Cycle",     "Cryo-Fuel Conditioning","Perfect Combustion" };
-        static char const* aszDesc[12] = {
+            "Zero-Loss Cycle",     "Cryo-Fuel Conditioning","Perfect Combustion",
+            "Regenerative Preheating","Catalytic Nanocoating","Quantum Fuel Reforming",
+            "Zero-Point Drive" };
+        static char const* aszDesc[16] = {
             "Precision fuel injection meters every drop, trimming gas burn by 5%.",
             "Lean-burn engine mapping squeezes more travel from less gas, saving another 4%.",
             "Turbo-compounding recovers exhaust energy back into the drivetrain for a further 4%.",
@@ -409,8 +407,12 @@ void CRsrchArray::Open( )
             "Ion scavengers strip the last usable energy from the exhaust stream, another 2%.",
             "A near-closed-loop drive cycle wastes almost nothing, shaving another 2% (30% total).",
             "Cryogenic conditioning densifies the fuel charge for another 1% (31% total).",
-            "Perfected combustion leaves nothing unburned, the last 1% (32% total)." };
-        static char const* aszRslt[12] = {
+            "Perfected combustion leaves nothing unburned, another 1% (32% total).",
+            "Regenerative preheating primes the intake charge for another 1% (33% total).",
+            "Catalytic nanocoating smooths every cycle for another 1% (34% total).",
+            "Quantum fuel reforming restructures the charge for another 1% (35% total).",
+            "A zero-point drive taps vacuum energy for a final 1% (36% total)." };
+        static char const* aszRslt[16] = {
             "Fuel injection is fielded. Our vehicles burn 5% less gas.",
             "Lean-burn mapping is live. Our vehicles burn less gas still.",
             "Turbo compounding is online. Gas consumption drops again.",
@@ -422,25 +424,30 @@ void CRsrchArray::Open( )
             "Ion scavenging is active. Almost nothing leaves the exhaust unused.",
             "The zero-loss cycle is perfected. A full 30% less gas burned.",
             "Cryo-fuel conditioning is fielded. Gas burn edges down to 31% saved.",
-            "Perfect combustion achieved. Our vehicles burn the least gas possible (32% saved)." };
+            "Perfect combustion achieved. Gas burn falls to 32% saved.",
+            "Regenerative preheating fielded. Gas burn edges to 33% saved.",
+            "Catalytic nanocoating in service. Gas burn falls to 34% saved.",
+            "Quantum fuel reforming online. Gas burn drops to 35% saved.",
+            "Zero-point drive perfected. Our vehicles burn the least gas possible (36% saved)." };
 
         // Extra (cross-line) prereq per level, on top of the previous level. -1 = none.
         // Turbo compounding leans on manufacturing; plasma ignition needs nuclear-era
         // physics. Levels above each gate inherit it through the chain, so we only
         // pin it once where it first becomes necessary. Levels 11-12 add no new gate.
-        static const int aiExtra[12] = {
-            -1, -1, (int)manf_1, -1, -1, (int)nuclear, -1, -1, -1, -1, -1, -1 };
+        static const int aiExtra[16] = {
+            -1, -1, (int)manf_1, -1, -1, (int)nuclear, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1 };
 
         int iBase = ElementAt( gas_turbine ).m_iPtsRequired;   // B = gas_turbine cost
         int iPts  = iBase;                                     // level 1 = B
-        for ( int iOn = 0; iOn < 12; iOn++ )
+        for ( int iOn = 0; iOn < 16; iOn++ )
         {
-            // Levels 1-10 are contiguous from fuel_efficiency_1; 11-12 live at the end of
-            // the enum (fuel_efficiency_11/12) for save parity. Map current + previous index.
+            // 1-10 contiguous from fuel_efficiency_1; 11-12 and 13-16 at the enum end.
             int iIdx  = ( iOn < 10 ) ? (int)( fuel_efficiency_1 + iOn )
-                                     : (int)( fuel_efficiency_11 + ( iOn - 10 ) );
+                      : ( iOn < 12 ) ? (int)( fuel_efficiency_11 + ( iOn - 10 ) )
+                                     : (int)( fuel_efficiency_13 + ( iOn - 12 ) );
             int iPrev = ( iOn - 1 < 10 ) ? (int)( fuel_efficiency_1 + iOn - 1 )
-                                         : (int)( fuel_efficiency_11 + ( iOn - 1 - 10 ) );
+                      : ( iOn - 1 < 12 ) ? (int)( fuel_efficiency_11 + ( iOn - 1 - 10 ) )
+                                         : (int)( fuel_efficiency_13 + ( iOn - 1 - 12 ) );
             CRsrchItem* pRi = &ElementAt( iIdx );
 
             pRi->m_iPtsRequired       = iPts;   // level 1 = gas_turbine cost; doubles each level

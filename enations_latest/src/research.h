@@ -139,13 +139,13 @@ public:
 					cargo_handling_3,
 					cargo_handling_4,
 					// Fuel Efficiency 1-10 (in-code, unlocked after gas_turbine): the first ten
-					// levels of a 12-level line; cost doubles per level up to 32*B at level 6 then
-					// goes flat +16*B per level (L7=48B..L12=128B, B=gas_turbine cost), while
+					// levels of a 16-level line; cost doubles per level up to 32*B at level 6 then
+					// goes flat +16*B per level (L7=48B..L16=192B, B=gas_turbine cost), while
 					// cutting gas consumption on a diminishing curve to a 30% total saving at
-					// level 10 (per-level increments 5/4/4/3/3/3/2/2/2/2; see CPlayer::GetFuelPct).
-					// Levels 11-12 (+1% each) are appended at the END of the enum for save parity
-					// (fuel_efficiency_11/12). Named in research.cpp. Appended last so all the
-					// earlier indices (incl. bridge_2 / RDPATH_SAVE_COUNT==53) stay put.
+					// level 10 (increments 5/4/4/3/3/3/2/2/2/2), then +1% per level to 36% at 16.
+					// Levels 11-12 and 13-16 (+1% each) are appended at the END of the enum for
+					// save parity. Named in research.cpp. Appended last so all the earlier
+					// indices (incl. bridge_2 / RDPATH_SAVE_COUNT==53) stay put.
 					fuel_efficiency_1,
 					fuel_efficiency_2,
 					fuel_efficiency_3,
@@ -259,6 +259,12 @@ public:
 					// store discovered-flags positionally; see player.cpp Serialize).
 					spot_6,
 					spot_7,
+					// Fuel Efficiency 13-16 (in-code): 4 more +1% tiers appended for save parity.
+					// Cost continues the flat +16*B ramp; counted in CPlayer::GetFuelPct.
+					fuel_efficiency_13,
+					fuel_efficiency_14,
+					fuel_efficiency_15,
+					fuel_efficiency_16,
 					num_types	};
 
 	CRsrchArray () {}
