@@ -7550,6 +7550,35 @@ void CAIGoalMgr::FindAssaultTarget( CHexCoord& hexTarget, CAITask* pTask, CAIOpF
         pGameData->FindBuilding( CStructureData::rocket, pOpFor->GetPlayerID( ), hexTarget );
     }
 
+    // LAND goals: a MUCH closer enemy factory outranks the distant rocket
+    // (operator: production = threat; under half the rocket distance wins)
+    if ( pTask->GetGoalID( ) != IDG_PIRATE && pTask->GetGoalID( ) != IDG_SEAWAR &&
+         pTask->GetGoalID( ) != IDG_SEAINVADE && m_pMap != NULL )
+    {
+        static const int s_aiFact[4] = { CStructureData::light_1, CStructureData::light_2, CStructureData::heavy,
+                                         CStructureData::barracks_2 };
+        CHexCoord hexBase( m_pMap->m_iBaseX, m_pMap->m_iBaseY );
+        CHexCoord hexFact( 0, 0 );
+        if ( pGameData->FindNearestBuilding( pOpFor->GetPlayerID( ), hexBase, hexFact, s_aiFact, 4 ) )
+        {
+            int iFact   = pGameData->GetRangeDistance( hexBase, hexFact );
+            int iRocket = pGameData->GetRangeDistance( hexBase, hexTarget );
+            if ( iFact * 2 < iRocket )
+            {
+                hexTarget = hexFact;
+#ifdef _WIN32
+                {
+                    // TEMP: factory-target verification probe
+                    char szF[96];
+                    sprintf( szF, "[FACTORYTGT] plyr %d target %d,%d dist %d vs rocket %d\n", m_iPlayer,
+                             hexFact.X( ), hexFact.Y( ), iFact, iRocket );
+                    OutputDebugStringA( szF );
+                }
+#endif
+            }
+        }
+    }
+
     // adjust target to nearest ocean from hexTarget
     int iWhere = CHex::plain;
     if ( pTask->GetGoalID( ) == IDG_PIRATE || pTask->GetGoalID( ) == IDG_SEAWAR )

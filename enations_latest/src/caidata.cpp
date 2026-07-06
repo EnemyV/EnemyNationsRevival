@@ -595,7 +595,8 @@ void CAIData::FindBuilding( int iBldg, int iPlayer, CHexCoord& hexAt )
 // hexFrom; returns it in hexBack. FALSE if the player has no buildings.
 // used for beachhead retargeting: land-assault a reachable forward base.
 //
-BOOL CAIData::FindNearestBuilding( int iPlayer, CHexCoord& hexFrom, CHexCoord& hexBack )
+BOOL CAIData::FindNearestBuilding( int iPlayer, CHexCoord& hexFrom, CHexCoord& hexBack, const int* aiTypes,
+                                   int nTypes )
 {
     DWORD      dwDumb;
     CBuilding* pBldg;
@@ -618,6 +619,17 @@ BOOL CAIData::FindNearestBuilding( int iPlayer, CHexCoord& hexFrom, CHexCoord& h
         int iType = pBldg->GetData( )->GetType( );
         if ( iType >= CStructureData::bridge_0 && iType <= CStructureData::bridge_end_3 )
             continue;
+
+        // optional type filter (e.g. factories only)
+        if ( aiTypes != NULL )
+        {
+            BOOL bMatch = FALSE;
+            for ( int iT = 0; iT < nTypes; ++iT )
+                if ( iType == aiTypes[iT] )
+                    bMatch = TRUE;
+            if ( !bMatch )
+                continue;
+        }
 
         CHexCoord hexBldg = pBldg->GetExitHex( );
         int       iDist   = GetRangeDistance( hexFrom, hexBldg );
