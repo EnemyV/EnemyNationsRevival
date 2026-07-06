@@ -1291,6 +1291,15 @@ CAIUnit* CAIRouter::GetNearestSource( int iMaterial, int iQtyNeeded, int* piDist
             if ( pCopyCBuilding == NULL )
                 continue;
 
+            // refresh this material from the live store (stale-copy routing bug)
+            EnterCriticalSection( &cs );
+            {
+                CBuilding* pLive = theBuildingMap.GetBldg( pUnit->GetID( ) );
+                if ( pLive != NULL )
+                    pCopyCBuilding->m_aiDataIn[iMaterial] = pLive->GetStore( iMaterial );
+            }
+            LeaveCriticalSection( &cs );
+
             // this building needs that same material and has
             // less than it needs
             if ( pUnit->GetParam( iMaterial ) >= pCopyCBuilding->m_aiDataIn[iMaterial] )
