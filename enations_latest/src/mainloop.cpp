@@ -2500,6 +2500,12 @@ void CBuilding::BuildMaterials( )
     // toggle OFF / un-researched: bBioFuel stays false and gas production is byte-identical.)
     const bool bBioFuel = IsFlag( CUnit::alt_oil ) && ( AltOutput::Available( this ) != nullptr );
 
+    // BioFuel runs continuously off global food, so keep the refinery animating the whole time the
+    // toggle is on. Do this BEFORE the batch-complete early-returns below (which otherwise leave the
+    // operating animation in whatever state it had when toggled on). Idempotent + mirrors fracking.
+    if ( bBioFuel )
+        AnimateOperating( TRUE );
+
     // get change based on everything
     int iInc = GetProd( GetOwner( )->GetMtrlsProd( ) );
     if ( iInc < 1 )
