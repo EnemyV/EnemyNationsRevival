@@ -3682,14 +3682,6 @@ BOOL CAIMapUtil::GetPathRating( CHexCoord& hexFrom, CHexCoord& hexTo, int iVehTy
         // Check if this path is temporarily banned due to repeated failures
         if ( IsPathBanned( iCacheIndex ) )
         {
-#ifdef _LOGOUT
-
-            char buf[256];
-            sprintf_s( buf, sizeof( buf ), "Path is BANNED X,Y %d %d to X,Y %d %d  \n", hexFrom.X( ), hexFrom.Y( ), hexTo.X( ),
-                       hexTo.Y( ));
-            OutputDebugStringA( buf );
-
-#endif
             return FALSE;
         }
 
@@ -3698,14 +3690,6 @@ BOOL CAIMapUtil::GetPathRating( CHexCoord& hexFrom, CHexCoord& hexTo, int iVehTy
         // Check if cache entry is still valid
         if ( dwCurrentTime - entry.dwTimestamp < CACHE_EXPIRE_MS )
         {
-#ifdef _LOGOUT
-
-            char buf[256];
-            sprintf_s( buf, sizeof( buf ), "Path was found in cache X,Y %d %d to X,Y %d %d\n", hexFrom.X( ), hexFrom.Y( ), hexTo.X( ));
-            OutputDebugStringA( buf );
-
-#endif
-
             // Update timestamp for LRU behavior
           //  entry.dwTimestamp = dwCurrentTime;
             return entry.bResult;
@@ -3816,16 +3800,7 @@ void CAIMapUtil::AddCacheEntry( const CHexCoord& hexFrom, const CHexCoord& hexTo
     entry.bResult         = bResult;
     entry.dwTimestamp     = dwCurrentTime;
     entry.iFailureCount   = bResult ? 0 : 1;
-    entry.dwFirstFailTime = bResult ? 0 : dwCurrentTime;  
-
-    
-#ifdef _LOGOUT
-
-//    char buf[256];
- //   sprintf_s( buf, sizeof( buf ), "Path was added to cache X,Y %d %d to X,Y %d %d\n", hexFrom.X( ), hexFrom.Y( ));
-//    OutputDebugStringA( buf );
-
-#endif
+    entry.dwFirstFailTime = bResult ? 0 : dwCurrentTime;
 }
 
 void CAIMapUtil::ClearExpiredCache( )

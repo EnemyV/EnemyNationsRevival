@@ -892,14 +892,6 @@ void CAIMap::PlanWarRoad( CHexCoord& hexTo )
 		"\nCAIMap::PlanWarRoad() player %d from %d,%d to %d,%d ",
 		m_iPlayer, hexFrom.X(), hexFrom.Y(), hexTo.X(), hexTo.Y() );
 #endif
-#ifdef _WIN32
-	{
-		char szW[96];
-		sprintf( szW, "[WARROAD] plyr %d plan %d,%d -> %d,%d\n",
-			m_iPlayer, hexFrom.X(), hexFrom.Y(), hexTo.X(), hexTo.Y() );
-		OutputDebugStringA( szW );
-	}
-#endif
 
 	// A* routes through existing roads; the last reachable stretch is the road
 	ConnectRoad( hexFrom, hexTo );

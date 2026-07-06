@@ -44,7 +44,7 @@ CAIRouter::CAIRouter( CAIMap* pMap, CAIUnitList* plUnits, int iPlayer )
 // Material reservation ledger (runtime-only). GetNearestSource picks a source
 // with enough LIVE store, but between assignment and the truck's arrival that
 // store can be drained (own production consumed / another truck), so the truck
-// arrives to an empty source ([XFER-EMPTY]) and the need re-queues forever.
+// arrives to an empty source and the need re-queues forever.
 // The ledger records each truck's pending pickup so effective availability =
 // live store - reserved, and no two trucks (nor parity consumption) double-book
 // the same units. Host-side AI only; not serialized; cleared on Load.
@@ -1049,14 +1049,6 @@ BOOL CAIRouter::FindTransport( CAIUnit* pCAIBldg )
             // that will be
             if ( pBldgSource == NULL )
             {
-#ifdef _WIN32
-                {
-                    char szR[128];
-                    sprintf( szR, "[SOURCEMISS] plyr %d bldg %lu mat %d qty %d\n", m_iPlayer,
-                             (unsigned long)pCAIBldg->GetID( ), i, (int)pCAIBldg->GetParam( i ) );
-                    OutputDebugStringA( szR );
-                }
-#endif
 #ifdef _LOGOUT
                 logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "unable to find source for material %d ", i );
 #endif
@@ -2673,17 +2665,6 @@ void CAIRouter::LoadMaterials( CAIUnit* pTruck, CAIHex* paiHex )
             // record this material quantity to be transferred
             msg.m_aiMat[i] = min( iQtyNeeded, iCapacity );
             iCapacity -= msg.m_aiMat[i];
-#ifdef _WIN32
-            if ( msg.m_aiMat[i] == 0 && pTruck->GetParam( i ) > 0 )
-            {
-                // truly-empty source at arrival
-                char szR[128];
-                sprintf( szR, "[XFER-EMPTY] plyr %d truck %lu src %lu mat %d wanted %d livehad %d\n", m_iPlayer,
-                         (unsigned long)pTruck->GetID( ), (unsigned long)pBldg->GetID( ), i,
-                         (int)pTruck->GetParam( i ), iLiveHave );
-                OutputDebugStringA( szR );
-            }
-#endif
 
 #ifdef _LOGOUT
             logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC,

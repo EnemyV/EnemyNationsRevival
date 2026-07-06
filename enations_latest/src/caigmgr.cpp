@@ -6498,14 +6498,6 @@ CAITask* CAIGoalMgr::GetProductionTask( CAIUnit* pUnit )
 //
 void CAIGoalMgr::LaunchAssault( CAITask* pTask )
 {
-#ifdef _WIN32
-    {
-        // TEMP: war roads have never fired; count entries vs the WARROAD probe
-        char szA[64];
-        sprintf( szA, "[ASSAULT] plyr %d enter\n", m_iPlayer );
-        OutputDebugStringA( szA );
-    }
-#endif
     if ( !m_plOpFors->GetCount( ) )
     {
 #ifdef _LOGOUT
