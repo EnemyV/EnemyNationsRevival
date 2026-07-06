@@ -2477,8 +2477,16 @@ void CAIRouter::LoadMaterials( CAIUnit* pTruck, CAIHex* paiHex )
             if ( pCopyCBuilding == NULL )
                 continue;
 
+            // read the LIVE store, not the stale AI copy (empty-shuttle bug)
+            int iLiveHave = pCopyCBuilding->m_aiDataIn[i];
+            EnterCriticalSection( &cs );
+            CBuilding* pLive = theBuildingMap.GetBldg( paiHex->m_dwUnitID );
+            if ( pLive != NULL )
+                iLiveHave = pLive->GetStore( i );
+            LeaveCriticalSection( &cs );
+
             // get the lesser of what's needed vs. what's carried
-            int iQtyNeeded = min( pTruck->GetParam( i ), pCopyCBuilding->m_aiDataIn[i] );
+            int iQtyNeeded = min( pTruck->GetParam( i ), iLiveHave );
 
             // record this material quantity to be transferred
             msg.m_aiMat[i] = min( iQtyNeeded, iCapacity );
@@ -2486,11 +2494,11 @@ void CAIRouter::LoadMaterials( CAIUnit* pTruck, CAIHex* paiHex )
 #ifdef _WIN32
             if ( msg.m_aiMat[i] == 0 && pTruck->GetParam( i ) > 0 )
             {
-                // stale source-store cache -> truck shuttles EMPTY forever
+                // truly-empty source at arrival
                 char szR[128];
-                sprintf( szR, "[XFER-EMPTY] plyr %d truck %lu src %lu mat %d wanted %d cachehad %d\n", m_iPlayer,
+                sprintf( szR, "[XFER-EMPTY] plyr %d truck %lu src %lu mat %d wanted %d livehad %d\n", m_iPlayer,
                          (unsigned long)pTruck->GetID( ), (unsigned long)pBldg->GetID( ), i,
-                         (int)pTruck->GetParam( i ), pCopyCBuilding->m_aiDataIn[i] );
+                         (int)pTruck->GetParam( i ), iLiveHave );
                 OutputDebugStringA( szR );
             }
 #endif

@@ -1473,6 +1473,13 @@ void CAIMgr::VehicleErrorResponse( CAIMsg* pMsg )
         if ( hexAt != hexVeh || hexGo != hexDest )
             return;
 
+        // blocked delivery truck: retry the target, don't stage-away-and-strand
+        if ( ( pUnit->GetStatus( ) & CAI_IN_USE ) && pGameData->IsTruck( pUnit->GetID( ) ) )
+        {
+            pUnit->SetDestination( hexDest );
+            return;
+        }
+
         // check the unit
         // if it has no task, or a combat task
         // then it is probably being staged or on patrol
