@@ -395,6 +395,50 @@ void CAIMgr::Manage( void )
                         sprintf( szR, "[MATSTAT] plyr %d steel stores %d ledger %d\n", m_iPlayer, iSum, iLedger );
                         OutputDebugStringA( szR );
                     }
+                    // truck pipeline x-ray: in-use trucks that aren't moving = zombie claims
+                    if ( m_plUnits != NULL )
+                    {
+                        int iTrucks = 0, iInUse = 0, iMoving = 0, iStopped = 0, iDumped = 0;
+                        POSITION posT = m_plUnits->GetHeadPosition( );
+                        while ( posT != NULL )
+                        {
+                            CAIUnit* pT = (CAIUnit*)m_plUnits->GetNext( posT );
+                            if ( pT == NULL || pT->GetOwner( ) != m_iPlayer )
+                                continue;
+                            if ( pT->GetType( ) != CUnit::vehicle ||
+                                 pT->GetTypeUnit( ) != CTransportData::heavy_truck )
+                                continue;
+                            iTrucks++;
+                            if ( !( pT->GetStatus( ) & CAI_IN_USE ) )
+                                continue;
+                            iInUse++;
+                            AiVehSnap snapT;
+                            if ( !AiSnap::ReadVeh( pT->GetID( ), snapT ) )
+                                continue;
+                            if ( snapT.iRouteMode != CVehicle::stop )
+                            {
+                                iMoving++;
+                                continue;
+                            }
+                            iStopped++;
+                            if ( iDumped < 6 )
+                            {
+                                iDumped++;
+                                int iSrcs = 0;
+                                for ( int im = 0; im < CMaterialTypes::num_types; im++ )
+                                    if ( pT->GetParamDW( im ) != 0 )
+                                        iSrcs++;
+                                sprintf( szR, "[TRUCKSTUCK] plyr %d id %lu ddw %lu at %d,%d dest %d,%d srcs %d stat %u\n",
+                                         m_iPlayer, (unsigned long)pT->GetID( ), (unsigned long)pT->GetDataDW( ),
+                                         snapT.iHeadX, snapT.iHeadY, snapT.iDestX, snapT.iDestY, iSrcs,
+                                         (unsigned)pT->GetStatus( ) );
+                                OutputDebugStringA( szR );
+                            }
+                        }
+                        sprintf( szR, "[TRUCKSTAT] plyr %d trucks %d inuse %d moving %d stopped %d\n", m_iPlayer,
+                                 iTrucks, iInUse, iMoving, iStopped );
+                        OutputDebugStringA( szR );
+                    }
                     // idle cranes vs pending work: idle+work = dispatch bug,
                     // idle+none = fleet exceeds demand
                     if ( m_plUnits != NULL )
