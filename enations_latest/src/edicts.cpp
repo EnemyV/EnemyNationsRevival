@@ -112,14 +112,14 @@ const EdictDef g_aEdicts[EDICT_COUNT] =
       1.0f, 1.0f, 3.0f, 1.0f, 1.0f },
 
     // EDICT_PRECISION_MINING — Office-hosted, civ-wide economy policy. +5% mine output via the
-    // shared fMineMult lever; cost is scoped to mines only (fMineEnergyMult/fMineWorkerMult bump
-    // the mine's own AddPwrNeed/AddPplNeedBldg in BuildMine). Retroactive automatically — mines
-    // read GetMineProd() and re-add their demand live each loop. Gate: mine_2.
-    { "Precision Mining", "Civ-wide: +5% output from all mines.\nCost: mines use +10% power and +10% more workers.",
+    // shared fMineMult lever; cost is a FLAT +1 power & +1 worker per producing mine, applied by
+    // IsEdictActive in BuildMine (a % surcharge rounded away on a mine's tiny base). The
+    // fMineEnergyMult/fMineWorkerMult scoped fields are left neutral (1.0) — now unused. Gate: mine_2.
+    { "Precision Mining", "Civ-wide: +5% output from all mines.\nCost: each mine uses +1 power and +1 worker.",
       CStructureData::office, EDICT_CIVWIDE, CRsrchArray::mine_2,
       1.0f, 1.0f, 1.05f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f,
       0.0f, 0.0f, 0.0f,
-      1.0f, 1.0f, 1.0f, 1.10f, 1.10f },
+      1.0f, 1.0f, 1.0f, 1.0f, 1.0f },
 
     // EDICT_MEAT_SHIELD — Command Center, civ-wide combat policy. fBldgDmgMult reduces damage
     // TAKEN by buildings (0.90 = 10% less, applied at projbase.cpp hit site — live/toggleable,

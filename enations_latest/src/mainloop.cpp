@@ -2709,12 +2709,17 @@ void CMineBuilding::BuildMine( )
         return;
     }
 
-    // add in its power & people usuage. Precision Mining edict scales a mine's own power +
-    // worker demand (mults are 1.0 when the edict is off → no change).
-    GetOwner( )->AddPwrNeed(
-        (int)( GetData( )->GetPower( ) * GetOwner( )->GetEdictMineEnergyMult( ) + 0.5f ) );
-    GetOwner( )->AddPplNeedBldg(
-        (int)( GetData( )->GetPeople( ) * GetOwner( )->GetEdictMineWorkerMult( ) + 0.5f ) );
+    // add in its power & people usuage. Precision Mining edict: flat +1 power & +1 worker per
+    // producing mine (a % surcharge rounds away on a mine's tiny base, e.g. 1-power/2-worker).
+    int iMinePwr = GetData( )->GetPower( );
+    int iMinePpl = GetData( )->GetPeople( );
+    if ( GetOwner( )->IsEdictActive( EDICT_PRECISION_MINING ) )
+    {
+        iMinePwr += 1;
+        iMinePpl += 1;
+    }
+    GetOwner( )->AddPwrNeed( iMinePwr );
+    GetOwner( )->AddPplNeedBldg( iMinePpl );
 
     // get change based on everything
     int iInc = GetProd( GetOwner( )->GetMineProd( ) );
