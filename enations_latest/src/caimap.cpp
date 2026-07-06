@@ -1145,6 +1145,11 @@ void CAIMap::RebuildPlannedIndex( void )
 	for( int i = 0; i < m_iMapSize; ++i )
 		if( m_pwaMap[i] & MSW_PLANNED_ROAD )
 			m_aPlannedRoad.push_back( i );
+
+	// heal a saved corrupt count (seen -2406 in a live save) -- the index is
+	// the source of truth
+	if( m_iRoadCount < (int)m_aPlannedRoad.size() )
+		m_iRoadCount = (int)m_aPlannedRoad.size();
 }
 
 //

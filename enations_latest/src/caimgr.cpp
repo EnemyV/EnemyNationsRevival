@@ -1085,13 +1085,40 @@ void CAIMgr::HandleStuckVehicles( void )
                 continue;
 
             // arrived-idle TRUCK limbo: an in-use truck stopped at its dest whose
-            // arrival event was missed never unloads/reloads and never returns to
-            // the pool (observed: need 33, idletrucks 0, fleet motionless).
-            // Synthesize the missed arrival so the router logic runs.
+            // arrival event was missed never unloads/returns to the pool. STRICTLY
+            // time-gated: nudging a truck merely WAITING (source queue, stock)
+            // killed live deliveries and starved the whole event-driven AI
+            // (regression, operator-diagnosed). Nudge >3min same hex, release >6min.
             if ( pUnit->GetTypeUnit( ) == CTransportData::heavy_truck &&
                  ( pUnit->GetStatus( ) & CAI_IN_USE ) && hexVeh == hexDest &&
                  snap.iRouteMode == CVehicle::stop )
             {
+                DWORD dwHexNow = (DWORD)MAKELPARAM( hexVeh.X( ), hexVeh.Y( ) );
+                if ( pUnit->GetParamDW( CAI_ROUTE_Y ) != dwHexNow )
+                {
+                    // first sighting here: stamp and leave it alone
+                    pUnit->SetParamDW( CAI_ROUTE_Y, dwHexNow );
+                    pUnit->SetParamDW( CAI_ROUTE_X, dwNow );
+                    continue;
+                }
+                DWORD dwStuck = dwNow - pUnit->GetParamDW( CAI_ROUTE_X );
+                if ( dwStuck < 180000 )
+                    continue;
+                if ( dwStuck > 360000 )
+                {
+#ifdef _WIN32
+                    {
+                        char szR[96];
+                        sprintf( szR, "[TRUCK] force-release truck %lu at %d,%d\n",
+                                 (unsigned long)pUnit->GetID( ), hexVeh.X( ), hexVeh.Y( ) );
+                        OutputDebugStringA( szR );
+                    }
+#endif
+                    pUnit->SetStatus( 0 );
+                    pUnit->SetDataDW( 0 );
+                    pUnit->ClearParam( );
+                    continue;
+                }
 #ifdef _WIN32
                 {
                     char szR[96];
@@ -1100,17 +1127,6 @@ void CAIMgr::HandleStuckVehicles( void )
                     OutputDebugStringA( szR );
                 }
 #endif
-                // second nudge at the same spot = the arrival logic can't release
-                // it (stale target); force it back to the pool instead of looping
-                if ( pUnit->GetParamDW( CAI_ROUTE_Y ) == (DWORD)MAKELPARAM( hexVeh.X( ), hexVeh.Y( ) ) )
-                {
-                    pUnit->SetStatus( 0 );
-                    pUnit->SetDataDW( 0 );
-                    pUnit->ClearParam( );
-                    continue;
-                }
-                pUnit->SetParamDW( CAI_ROUTE_Y, (DWORD)MAKELPARAM( hexVeh.X( ), hexVeh.Y( ) ) );
-
                 CAIMsg msg;
                 msg.m_iMsg   = CNetCmd::veh_dest;
                 msg.m_dwID   = pUnit->GetID( );
