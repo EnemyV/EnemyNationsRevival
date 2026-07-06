@@ -2487,6 +2487,12 @@ void CBuilding::BuildMaterials( )
     // toggle OFF / un-researched: bBioFuel stays false and gas production is byte-identical.)
     const bool bBioFuel = IsFlag( CUnit::alt_oil ) && ( AltOutput::Available( this ) != nullptr );
 
+    // BioFuel runs continuously off global food, so keep the refinery animating the whole time the
+    // toggle is on. Do this BEFORE the batch-complete early-returns below (which otherwise leave the
+    // operating animation in whatever state it had when toggled on). Idempotent + mirrors fracking.
+    if ( bBioFuel )
+        AnimateOperating( TRUE );
+
     // get change based on everything
     int iInc = GetProd( GetOwner( )->GetMtrlsProd( ) );
     if ( iInc < 1 )
@@ -2777,13 +2783,13 @@ void CMineBuilding::FrackTick( )
 {
     ASSERT_STRICT( GetData( )->GetUnionType( ) == CStructureData::UTmine );
 
-    // Power surcharge for running an exhausted mine hot. Moho Mining (iron mine) runs at 5x
-    // the mine's normal draw (per operator); Fracking (oil well) at 1.5x + 1. (A normal
-    // stopped building draws only half power.) Plus the building's people.
+    // Power surcharge for running an exhausted mine hot. Moho Mining (iron mine) runs at 10x
+    // the mine's normal draw; Fracking (oil well) at 2*(1.5x + 1). (A normal stopped building
+    // draws only half power.) Plus the building's people. (Energy doubled per operator.)
     if ( GetData( )->GetType( ) == CStructureData::iron )
-        GetOwner( )->AddPwrNeed( GetData( )->GetPower( ) * 5 );          // Moho: 5x
+        GetOwner( )->AddPwrNeed( GetData( )->GetPower( ) * 10 );         // Moho: 10x
     else
-        GetOwner( )->AddPwrNeed( ( ( GetData( )->GetPower( ) * 3 ) / 2 ) + 1 );  // Fracking: 1.5x + 1
+        GetOwner( )->AddPwrNeed( ( ( ( GetData( )->GetPower( ) * 3 ) / 2 ) + 1 ) * 2 );  // Fracking: 2*(1.5x + 1)
     GetOwner( )->AddPplNeedBldg( GetData( )->GetPeople( ) );
 
     // Credit the flat oil trickle. eFlatTrickle scales the per-minute rate by the opers
