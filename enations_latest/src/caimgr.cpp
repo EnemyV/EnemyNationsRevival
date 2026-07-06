@@ -374,6 +374,24 @@ void CAIMgr::Manage( void )
                                  m_pRouter->GetNeedCount( ), m_pRouter->GetIdleTruckCount( ) );
                         OutputDebugStringA( szR );
                     }
+                    // rebuild-pipeline check: which building types are under goal?
+                    if ( m_pGoalMgr->m_pwaBldgs != NULL && m_pGoalMgr->m_pwaBldgGoals != NULL )
+                    {
+                        char szG[160];
+                        int  n = sprintf( szG, "[GOALSTAT] plyr %d deficits:", m_iPlayer );
+                        int  iCnt = 0;
+                        for ( int ib = 0; ib < CStructureData::num_types && iCnt < 6; ib++ )
+                        {
+                            if ( m_pGoalMgr->m_pwaBldgGoals[ib] > m_pGoalMgr->m_pwaBldgs[ib] )
+                            {
+                                n += sprintf( szG + n, " %d:%d/%d", ib, (int)m_pGoalMgr->m_pwaBldgs[ib],
+                                              (int)m_pGoalMgr->m_pwaBldgGoals[ib] );
+                                iCnt++;
+                            }
+                        }
+                        sprintf( szG + n, " (%d)\n", iCnt );
+                        OutputDebugStringA( szG );
+                    }
                     // physical steel vs ledger (phantom-wealth check)
                     if ( m_plUnits != NULL )
                     {
