@@ -101,6 +101,12 @@ namespace AltOutput
     // No-op unless the toggle is ON and a multi-trickle def is Available(). iAmount = opers
     // elapsed this call. food/gas credit the global pools; other materials the building store.
     void ConvertMulti( CBuilding* pBldg, int iAmount, float* afAccum );
+
+    // Low-level multi-trickle crediting, shared by ConvertMulti (Scrounging AltOutput toggle) and
+    // the Desperate Measures rocket EDICT. Each of nMats lines accrues m_iPerMin/min into afAccum[i]
+    // and emits whole units (food/gas -> global pools, else the building's store). iAmount = opers
+    // elapsed. No toggle/Available gate here -- the caller decides when to credit.
+    void CreditTrickle( CBuilding* pBldg, int iAmount, float* afAccum, const AltMat* pMats, int nMats );
 }
 
 #endif // ENATIONS_ALTOUTPUT_H
