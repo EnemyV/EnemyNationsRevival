@@ -2846,6 +2846,19 @@ void CAIRouter::LoadMaterials( CAIUnit* pTruck, CAIHex* paiHex )
                    pTruck->GetID( ), pBestBldg->GetID( ) );
 #endif
     }
+    else
+    {
+        // no pickable source left (drained/vanished): drop the dead claims and
+        // deliver what's aboard - falling out here stranded the truck IN the source
+        for ( int i = 0; i < CMaterialTypes::num_types; ++i )
+        {
+            if ( !pTruck->GetParamDW( i ) )
+                continue;
+            ReleaseMaterial( i, pTruck->GetParamDW( i ), pTruck->GetParam( i ) );
+            pTruck->SetParamDW( i, 0 );
+        }
+        ResumeTruck( pTruck, paiHex->m_iX, paiHex->m_iY );
+    }
 }
 
 //
