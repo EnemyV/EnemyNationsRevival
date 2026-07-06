@@ -79,6 +79,7 @@ CAIMgr::CAIMgr( int iPlayer )
 
     m_iIdle            = 0;
     m_dwLastStuckSweep = 0;
+    m_dwLastIdleFunc   = 0;
     for ( int i = 0; i < MAX_IDLE_FUNCTIONS; ++i ) m_bIdleFunction[i] = TRUE;
 
     m_pGoalMgr = NULL;
@@ -243,10 +244,16 @@ void CAIMgr::Manage( void )
         m_bUnitLoaded       = FALSE;
     }
 
-    // test for idle time processing
-    if ( m_iIdle > AI_IDLE_LIMIT )
+    // test for idle time processing. AGING (root fix): a busy message queue
+    // (late-game war) starved ALL 7 background jobs -- assignment, router fill,
+    // map update, construction/production review, patrols, stuck rescue -- so
+    // fleets idled and deliveries froze; force a rotation step every 15s under
+    // load
+    if ( m_iIdle > AI_IDLE_LIMIT ||
+         timeGetTime( ) - m_dwLastIdleFunc > 10000 )
     {
-        m_iIdle = 0;
+        m_iIdle          = 0;
+        m_dwLastIdleFunc = timeGetTime( );
 
 #ifdef _LOGOUT
         logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "\nCAIMgr::Manage() player %d idle function, messages %d ", m_iPlayer,
@@ -353,6 +360,27 @@ void CAIMgr::Manage( void )
                     {
                         sprintf( szR, "[ROUTESTAT] plyr %d need %d idletrucks %d\n", m_iPlayer,
                                  m_pRouter->GetNeedCount( ), m_pRouter->GetIdleTruckCount( ) );
+                        OutputDebugStringA( szR );
+                    }
+                    // idle cranes vs pending work: idle+work = dispatch bug,
+                    // idle+none = fleet exceeds demand
+                    if ( m_plUnits != NULL )
+                    {
+                        int iIdleCranes = 0, iCranes = 0;
+                        POSITION posC = m_plUnits->GetHeadPosition( );
+                        while ( posC != NULL )
+                        {
+                            CAIUnit* pC = (CAIUnit*)m_plUnits->GetNext( posC );
+                            if ( pC == NULL || pC->GetOwner( ) != m_iPlayer )
+                                continue;
+                            if ( pC->GetType( ) != CUnit::vehicle ||
+                                 pC->GetTypeUnit( ) != CTransportData::construction )
+                                continue;
+                            iCranes++;
+                            if ( !pC->GetTask( ) )
+                                iIdleCranes++;
+                        }
+                        sprintf( szR, "[ASSIGNSTAT] plyr %d cranes %d idle %d\n", m_iPlayer, iCranes, iIdleCranes );
                         OutputDebugStringA( szR );
                     }
                 }
