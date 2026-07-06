@@ -277,8 +277,8 @@ CHexCoord *CPathMap::_GetRoadPath(
 // critical section bracketed version of GetPath()
 //
 BOOL CPathMap::GetPath( CHexCoord& hexFrom, CHexCoord& hexTo,
-	int iBaseX, int iBaseY, WORD *pMap, int iVehType, 
-	BOOL bLongHang /*=FALSE*/ )
+	int iBaseX, int iBaseY, WORD *pMap, int iVehType,
+	BOOL bLongHang /*=FALSE*/, BOOL bWarPlanning /*=FALSE*/ )
 {
 	// this is a long expensive function that blocks everybody...
 	// EN_PERF: per-search counters (see GetRoadPath note — never per-node).
@@ -289,7 +289,7 @@ BOOL CPathMap::GetPath( CHexCoord& hexFrom, CHexCoord& hexTo,
 	EnterCriticalSection (&m_cs);
 	m_iNextSlot = 0;	// early-outs skip the in-search reset; don't re-count
 	BOOL bPath = _GetPath( hexFrom, hexTo,
-		iBaseX, iBaseY, pMap, iVehType, bLongHang );
+		iBaseX, iBaseY, pMap, iVehType, bLongHang, bWarPlanning );
 	Perf::CounterInc( "path.calls" );
 	Perf::CounterAdd( "path.nodes", m_iNextSlot );	// cells created this search
 	LeaveCriticalSection (&m_cs);
@@ -301,7 +301,8 @@ BOOL CPathMap::GetPath( CHexCoord& hexFrom, CHexCoord& hexTo,
 // and return TRUE if it does
 //
 BOOL CPathMap::_GetPath( CHexCoord& hexFrom, CHexCoord& hexTo,
-	int iBaseX, int iBaseY, WORD *pMap, int iVehType, BOOL bLongHang )
+	int iBaseX, int iBaseY, WORD *pMap, int iVehType, BOOL bLongHang,
+	BOOL bWarPlanning )
 {
 	// no path from start to destination because we are there
 	if( hexFrom == hexTo )
@@ -364,6 +365,7 @@ BOOL CPathMap::_GetPath( CHexCoord& hexFrom, CHexCoord& hexTo,
 #endif
 
 	m_bRoadPlanning = FALSE;
+	m_bWarPlanning = bWarPlanning;	// war mode: rivers passable + bigger budget
 	m_bOverWater = FALSE;
 
 	// set special state for hexFrom
@@ -384,6 +386,16 @@ BOOL CPathMap::_GetPath( CHexCoord& hexFrom, CHexCoord& hexTo,
 	int iHang = m_iNumOfCells;
 	if( !bLongHang )
 		iHang = m_iNumOfCells * 2;
+
+	// war mode raises ONLY iHang (arena untouched; AddCellToArray self-caps)
+	if( m_bWarPlanning )
+	{
+		int iWarHang = theMap.GetRangeDistance( m_hexFrom, m_hexTo ) * 8;
+		if( iWarHang > iHang )
+			iHang = iWarHang;
+		if( iHang > 0xFFFF )
+			iHang = 0xFFFF;
+	}
 
 	int iX,iY;
 	int iTicks = 0;
@@ -431,9 +443,10 @@ BOOL CPathMap::_GetPath( CHexCoord& hexFrom, CHexCoord& hexTo,
 				dwEnd = timeGetTime();
 				TRACE( "GetPath() for AI map took %ld ticks for \n", 
 					(dwEnd - dwStart));
-				TRACE( " %d inerations with %d cells in list \n\n", 
+				TRACE( " %d inerations with %d cells in list \n\n",
 					++iTicks, iList );
 #endif
+				m_bWarPlanning = FALSE;
 				return( TRUE );
 			}
 		}
@@ -465,10 +478,11 @@ BOOL CPathMap::_GetPath( CHexCoord& hexFrom, CHexCoord& hexTo,
 		iTicks++;
 	}
 
+	m_bWarPlanning = FALSE;
 	ClearArray();
 
 	if( pTest == NULL )
-	{	
+	{
 #if PATH_TIMING_MAP
 	TRACE( "GetPath() for AI map failed to reach destination \n" );
 	TRACE( "after %d inerations with %d cells in list \n\n", 
@@ -529,8 +543,9 @@ void CPathMap::GetCellCosts( CCell *pFromCell, CCell *pToCell )
 	// to determine if the hex can be entered and then not use
 	// the m_pTD->CanTravelHex( pDestHex ) 
 
-	// use different tests if planning a road
-	if( m_bRoadPlanning )
+	// use different tests if planning a road OR planning war (both cross
+	// rivers as candidate bridge sites; ocean/lake still fail CanTravelHex)
+	if( m_bRoadPlanning || m_bWarPlanning )
 	{
 		// allow road to cross river, which create
 		// candidate bridge locations
@@ -1188,6 +1203,7 @@ CPathMap::CPathMap( void )
 	m_iDistFactor = 0;
 	m_paCells = NULL;
 	m_bRoadPlanning = FALSE;
+	m_bWarPlanning = FALSE;
 	m_bOverWater = FALSE;
 	m_tdWheel = NULL;
 	m_tdTrack = NULL;

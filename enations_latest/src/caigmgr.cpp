@@ -7430,12 +7430,13 @@ BOOL CAIGoalMgr::IsTargetReachable( CHexCoord& hexTarget, CAITask* pTask )
 
             // the corner must be reachable from HOME too - a staging area that
             // snapped across water passes corner->target while the TF beaches
+            // war mode: rivers count as bridgeable, ocean still walls off islands
             CHexCoord hexBase( m_pMap->m_iBaseX, m_pMap->m_iBaseY );
-            if ( !m_pMap->m_pMapUtil->GetPathRating( hexBase, hex, pVehData->GetType( ) ) )
+            if ( !m_pMap->m_pMapUtil->GetPathRating( hexBase, hex, pVehData->GetType( ), TRUE ) )
                 continue;
 
             // consider if the base type of unit can get from hex->hexTarget
-            if ( !m_pMap->m_pMapUtil->GetPathRating( hex, hexTarget, pVehData->GetType( ) ) )
+            if ( !m_pMap->m_pMapUtil->GetPathRating( hex, hexTarget, pVehData->GetType( ), TRUE ) )
                 continue;
         }
 

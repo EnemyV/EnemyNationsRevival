@@ -200,7 +200,7 @@ public:
 	int GetEnterableHexes( CHexCoord hexStart, CHexCoord hexEnd );
 	BOOL GetClosestWaterHex( CHexCoord& hcFrom, CHexCoord& hcTo );
 	BOOL GetPathRating( CHexCoord& hexFrom, CHexCoord& hexTo,
-		int iVehType = CTransportData::construction );
+		int iVehType = CTransportData::construction, BOOL bWarPlanning = FALSE );
 	BOOL InBufferSizeRange( CAIHex *paiHex );
 	int GetClosestRocket( CHexCoord& hexNear );
 	int GetRocketRating( CHexCoord& hex, BOOL bIsCloser=FALSE );

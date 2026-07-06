@@ -53,6 +53,7 @@ class CPathMap
 	BOOL m_bPathCompleted;	// the destination has been reached
 	BOOL m_bNoDestination;  // destination can't be reached
 	BOOL m_bRoadPlanning;	// flag indicates road planning is occuring
+	BOOL m_bWarPlanning;	// war mode: rivers passable (planned bridge), bigger iHang
 	BOOL m_bOverWater;		// flag indicates a path across water is allowed
 
 	// these are used only if the array of cells is used
@@ -97,10 +98,10 @@ public:
 	//
 	BOOL GetPath( CHexCoord& hexFrom, CHexCoord& hexTo,
 		int iBaseX, int iBaseY, WORD *pMap, int iVehType,
-		BOOL bLongHang=FALSE );
+		BOOL bLongHang=FALSE, BOOL bWarPlanning=FALSE );
 	BOOL _GetPath( CHexCoord& hexFrom, CHexCoord& hexTo,
 		int iBaseX, int iBaseY, WORD *pMap, int iVehType,
-		BOOL bLongHang );
+		BOOL bLongHang, BOOL bWarPlanning );
 
 	// for use in finding a road path between buildings
 	// and with flag bAllowWater set

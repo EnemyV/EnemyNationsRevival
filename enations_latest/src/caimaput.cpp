@@ -3662,7 +3662,7 @@ int CAIMapUtil::GetClosestTo( CHexCoord hexFrom, int iBldg1, int iBldg2, int iBl
 // ISSUE:
 // what if we cant get there?
 // also, can we memoize this maybe?
-BOOL CAIMapUtil::GetPathRating( CHexCoord& hexFrom, CHexCoord& hexTo, int iVehType /*= CTransportData::construction*/ )
+BOOL CAIMapUtil::GetPathRating( CHexCoord& hexFrom, CHexCoord& hexTo, int iVehType /*= CTransportData::construction*/, BOOL bWarPlanning /*= FALSE*/ )
 {
     // 0,0 means no truck involved, this is a placement
     if ( !hexFrom.X( ) && !hexFrom.Y( ) )
@@ -3671,6 +3671,14 @@ BOOL CAIMapUtil::GetPathRating( CHexCoord& hexFrom, CHexCoord& hexTo, int iVehTy
         return FALSE;
     if ( hexTo.X( ) > m_wEndCol || hexTo.Y( ) > m_wEndRow )
         return FALSE;
+
+    // war mode treats rivers as bridgeable — its result differs from normal and
+    // the cache key omits the war bit, so bypass the cache both ways (no poison)
+    if ( bWarPlanning )
+    {
+        CPathMap& pathMap = m_pPathMap ? *m_pPathMap : thePathMap;
+        return pathMap.GetPath( hexFrom, hexTo, 0, 0, m_pMap, iVehType, FALSE, TRUE );
+    }
 
     DWORD dwCurrentTime = theGame.GettimeGetTime( );
 
