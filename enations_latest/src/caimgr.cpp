@@ -435,8 +435,38 @@ void CAIMgr::Manage( void )
                                 OutputDebugStringA( szR );
                             }
                         }
-                        sprintf( szR, "[TRUCKSTAT] plyr %d trucks %d inuse %d moving %d stopped %d\n", m_iPlayer,
-                                 iTrucks, iInUse, iMoving, iStopped );
+                        // trucks parked on/inside a building hex (exit-after-unload check)
+                        int iInBldg = 0, iInDump = 0;
+                        posT = m_plUnits->GetHeadPosition( );
+                        while ( posT != NULL )
+                        {
+                            CAIUnit* pT = (CAIUnit*)m_plUnits->GetNext( posT );
+                            if ( pT == NULL || pT->GetOwner( ) != m_iPlayer )
+                                continue;
+                            if ( pT->GetType( ) != CUnit::vehicle ||
+                                 pT->GetTypeUnit( ) != CTransportData::heavy_truck )
+                                continue;
+                            AiVehSnap snapT;
+                            if ( !AiSnap::ReadVeh( pT->GetID( ), snapT ) )
+                                continue;
+                            if ( snapT.iRouteMode != CVehicle::stop )
+                                continue;
+                            CAIHex aiHexT( snapT.iHeadX, snapT.iHeadY );
+                            pGameData->GetCHexData( &aiHexT );
+                            if ( aiHexT.m_iUnit != CUnit::building )
+                                continue;
+                            iInBldg++;
+                            if ( iInDump < 6 )
+                            {
+                                iInDump++;
+                                sprintf( szR, "[TRUCKIN] plyr %d id %lu in bldg %lu stat %u ddw %lu\n", m_iPlayer,
+                                         (unsigned long)pT->GetID( ), (unsigned long)aiHexT.m_dwUnitID,
+                                         (unsigned)pT->GetStatus( ), (unsigned long)pT->GetDataDW( ) );
+                                OutputDebugStringA( szR );
+                            }
+                        }
+                        sprintf( szR, "[TRUCKSTAT] plyr %d trucks %d inuse %d moving %d stopped %d inbldg %d\n",
+                                 m_iPlayer, iTrucks, iInUse, iMoving, iStopped, iInBldg );
                         OutputDebugStringA( szR );
                     }
                     // idle cranes vs pending work: idle+work = dispatch bug,
