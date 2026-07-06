@@ -1852,8 +1852,26 @@ void CAIMgr::DestinationResponse( CAIMsg* pMsg )
         CHexCoord hexDest( pUnit->GetParam( CAI_ROUTE_X ), pUnit->GetParam( CAI_ROUTE_Y ) );
         if ( hexDest.X( ) || hexDest.Y( ) )
         {
-            pUnit->SetDestination( hexDest );
-            return;
+            if ( hexDest.X( ) == pMsg->m_iX && hexDest.Y( ) == pMsg->m_iY )
+            {
+                // already AT the routed hex: re-sending it loops forever at the
+                // doorstep; drive INTO the dest building so unload can fire
+                pUnit->SetParam( CAI_ROUTE_X, 0 );
+                pUnit->SetParam( CAI_ROUTE_Y, 0 );
+                CAIUnit* pDest = m_plUnits->GetUnit( pUnit->GetDataDW( ) );
+                if ( pDest != NULL )
+                {
+                    pUnit->SetDestination( pDest );
+                    return;
+                }
+                if ( m_pRouter->ResumeTruck( pUnit, pMsg->m_iX, pMsg->m_iY ) )
+                    return;
+            }
+            else
+            {
+                pUnit->SetDestination( hexDest );
+                return;
+            }
         }
 
         // interrupted delivery (combat flee etc): resume it, don't drop the event
