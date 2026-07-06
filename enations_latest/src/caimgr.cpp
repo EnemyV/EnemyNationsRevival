@@ -942,8 +942,11 @@ void CAIMgr::UpdateUnits( CAIMsg* pMsg )
                        "CAIMgr::UpdateUnits() player %d road building crane %ld unassigned goal %d task %d ", m_iPlayer,
                        pUnit->GetID( ), wGoal, wTask );
 #endif
-            // update number of MSW_PLANNED_ROAD locations left
-            m_pMap->m_iRoadCount--;
+            // update number of MSW_PLANNED_ROAD locations left (floor at 0: a
+            // batch run can pave hexes the planner never counted, and a negative
+            // count wrecks the quota/priority gates -- seen live at -1036)
+            if ( m_pMap->m_iRoadCount > 0 )
+                m_pMap->m_iRoadCount--;
             if ( m_pMap->m_iRoadCount )
                 m_pGoalMgr->ConsiderRoads( );
 
@@ -1097,12 +1100,26 @@ void CAIMgr::HandleStuckVehicles( void )
                     OutputDebugStringA( szR );
                 }
 #endif
+                // second nudge at the same spot = the arrival logic can't release
+                // it (stale target); force it back to the pool instead of looping
+                if ( pUnit->GetParamDW( CAI_ROUTE_Y ) == (DWORD)MAKELPARAM( hexVeh.X( ), hexVeh.Y( ) ) )
+                {
+                    pUnit->SetStatus( 0 );
+                    pUnit->SetDataDW( 0 );
+                    pUnit->ClearParam( );
+                    continue;
+                }
+                pUnit->SetParamDW( CAI_ROUTE_Y, (DWORD)MAKELPARAM( hexVeh.X( ), hexVeh.Y( ) ) );
+
                 CAIMsg msg;
                 msg.m_iMsg   = CNetCmd::veh_dest;
                 msg.m_dwID   = pUnit->GetID( );
                 msg.m_iX     = hexVeh.X( );
                 msg.m_iY     = hexVeh.Y( );
                 msg.m_idata3 = m_iPlayer;
+                msg.m_idata1 = 0;
+                msg.m_idata2 = 0;
+                msg.m_dwID2  = 0;
                 DestinationResponse( &msg );
                 continue;
             }
