@@ -4992,10 +4992,12 @@ BOOL CAITaskMgr::RepairConstruction( CAIUnit* pUnit )
 
                         // rate building's importance
                         iRating = m_pGoalMgr->m_pMap->m_pMapUtil->AssessTarget( pBldg, 0 );
-                        // partials outrank damage: finishing a shell yields a whole
-                        // building, and endless war damage otherwise starves them
+                        // graded: small partial edge + damage severity, so neither
+                        // class starves the other (+10 flat let partials starve
+                        // ALL damage repair -- operator regression)
                         if ( pBldg->IsConstructing( ) )
-                            iRating += 10;
+                            iRating += 3;
+                        iRating += ( DAMAGE_0 - pBldg->GetDamagePer( ) ) / 20;
                     }
                 }
                 LeaveCriticalSection( &cs );

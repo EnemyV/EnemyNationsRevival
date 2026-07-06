@@ -2483,6 +2483,17 @@ void CAIRouter::LoadMaterials( CAIUnit* pTruck, CAIHex* paiHex )
             // record this material quantity to be transferred
             msg.m_aiMat[i] = min( iQtyNeeded, iCapacity );
             iCapacity -= msg.m_aiMat[i];
+#ifdef _WIN32
+            if ( msg.m_aiMat[i] == 0 && pTruck->GetParam( i ) > 0 )
+            {
+                // stale source-store cache -> truck shuttles EMPTY forever
+                char szR[128];
+                sprintf( szR, "[XFER-EMPTY] plyr %d truck %lu src %lu mat %d wanted %d cachehad %d\n", m_iPlayer,
+                         (unsigned long)pTruck->GetID( ), (unsigned long)pBldg->GetID( ), i,
+                         (int)pTruck->GetParam( i ), pCopyCBuilding->m_aiDataIn[i] );
+                OutputDebugStringA( szR );
+            }
+#endif
 
 #ifdef _LOGOUT
             logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC,
