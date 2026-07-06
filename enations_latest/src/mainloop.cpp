@@ -2796,18 +2796,14 @@ void CMineBuilding::FrackTick( )
 {
     ASSERT_STRICT( GetData( )->GetUnionType( ) == CStructureData::UTmine );
 
-    // Running an exhausted mine HOT. Moho Mining (iron mine) draws 5x power (per operator);
-    // Fracking (oil well) draws +100% power AND +100% workers vs normal (operator spec).
+    // Running an exhausted mine HOT. Moho Mining (iron mine) draws 10x the mine's normal power;
+    // Fracking (oil well) draws 2*(1.5x + 1). (A normal stopped building draws only half power.)
+    // Plus the building's people. (Energy doubled per operator.)
     if ( GetData( )->GetType( ) == CStructureData::iron )
-    {
-        GetOwner( )->AddPwrNeed( GetData( )->GetPower( ) * 5 );          // Moho: 5x power
-        GetOwner( )->AddPplNeedBldg( GetData( )->GetPeople( ) );          // normal workers
-    }
+        GetOwner( )->AddPwrNeed( GetData( )->GetPower( ) * 10 );                         // Moho: 10x
     else
-    {
-        GetOwner( )->AddPwrNeed( GetData( )->GetPower( ) * 2 );           // Fracking: 2x power
-        GetOwner( )->AddPplNeedBldg( GetData( )->GetPeople( ) * 2 );      // Fracking: 2x workers
-    }
+        GetOwner( )->AddPwrNeed( ( ( ( GetData( )->GetPower( ) * 3 ) / 2 ) + 1 ) * 2 );  // Fracking: 2*(1.5x + 1)
+    GetOwner( )->AddPplNeedBldg( GetData( )->GetPeople( ) );
 
     // Credit the flat oil trickle. eFlatTrickle scales the per-minute rate by the opers
     // elapsed this call; the building's m_fAltAccum carries the sub-unit remainder.
