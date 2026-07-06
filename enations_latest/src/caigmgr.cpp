@@ -6669,7 +6669,31 @@ void CAIGoalMgr::LaunchAssault( CAITask* pTask )
         return;
 
     if ( !IsTargetReachable( hexCity, pTask ) )
+    {
+        // ISLAND ESCALATION (mirror of the single-opfor branch): a land assault
+        // that can't reach its target beaches the whole TF on the shore forever
+        if ( ( m_bOceanWorld || m_bLakeWorld ) &&
+             ( pTask->GetGoalID( ) == IDG_LANDWAR || pTask->GetGoalID( ) == IDG_ADVDEFENSE ) )
+        {
+            CAIGoal* pGoalInv = m_plGoalList->GetGoal( IDG_SEAINVADE );
+            if ( pGoalInv == NULL )
+            {
+                AddGoal( IDG_SEAINVADE );
+                m_bGoalChange = TRUE;
+#ifdef _WIN32
+                {
+                    // TEMP: island-war verification probe
+                    char szI[96];
+                    sprintf( szI, "[SEAINVADE-ESC] plyr %d target %d,%d unreachable -> sea invasion\n", m_iPlayer,
+                             hexCity.X( ), hexCity.Y( ) );
+                    OutputDebugStringA( szI );
+                }
+#endif
+            }
+        }
+        CancelAssault( pTask );
         return;
+    }
 
     // WAR ROAD: plan a paved, river-crossing route toward the target (once per target)
     if ( m_pMap != NULL && ( hexCity.X( ) != m_hexLastWarRoad.X( ) || hexCity.Y( ) != m_hexLastWarRoad.Y( ) ) )
@@ -7347,7 +7371,8 @@ BOOL CAIGoalMgr::IsTargetReachable( CHexCoord& hexTarget, CAITask* pTask )
             break;
         case 3:
             hex.X( pTask->GetTaskParam( CAI_LOC_X ) );
-            hex.Y( pTask->GetTaskParam( CAI_PREV_X ) );
+            // vanilla typo: used CAI_PREV_X as the Y coordinate (garbage 4th corner)
+            hex.Y( pTask->GetTaskParam( CAI_PREV_Y ) );
             break;
         }
         // sea based assault
@@ -7401,6 +7426,12 @@ BOOL CAIGoalMgr::IsTargetReachable( CHexCoord& hexTarget, CAITask* pTask )
             if ( pGameHex == NULL )
                 return FALSE;
             if ( !pVehData->CanTravelHex( pGameHex ) )
+                continue;
+
+            // the corner must be reachable from HOME too - a staging area that
+            // snapped across water passes corner->target while the TF beaches
+            CHexCoord hexBase( m_pMap->m_iBaseX, m_pMap->m_iBaseY );
+            if ( !m_pMap->m_pMapUtil->GetPathRating( hexBase, hex, pVehData->GetType( ) ) )
                 continue;
 
             // consider if the base type of unit can get from hex->hexTarget
