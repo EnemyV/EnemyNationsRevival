@@ -362,6 +362,15 @@ CAIGoalMgr::CAIGoalMgr( BOOL bRestart, int iPlayer, CAIMap* pMap, CAIUnitList* p
     m_hexLastStageRoad.X( 0 );
     m_hexLastStageRoad.Y( 0 );
 
+    // staging watchdog state starts clean (transient, never serialized)
+    for ( int iSw = 0; iSw < 3; ++iSw )
+    {
+        m_aiStageLosses[iSw]         = 0;
+        m_aiStageRestages[iSw]       = 0;
+        m_adwStageStart[iSw]         = 0;
+        m_adwStageCooldownUntil[iSw] = 0;
+    }
+
     m_pwaRatios    = NULL;
     m_pwaUnits     = NULL;
     m_pwaBldgs     = NULL;
@@ -4548,6 +4557,91 @@ void CAIGoalMgr::SetAssaultStagingVehicle( WORD* awTypes )
         }
     }
 }
+// Phase 3: only 3 staging goals are watched; map goal id -> 0..2 (else -1)
+int CAIGoalMgr::StageGoalIdx( int iGoal )
+{
+    if ( iGoal == IDG_LANDWAR )    return 0;
+    if ( iGoal == IDG_ADVDEFENSE ) return 1;
+    if ( iGoal == IDG_SEAINVADE )  return 2;
+    return -1;
+}
+
+// Phase 3: a staged (IDT_PREPAREWAR) unit died - tally it against its goal
+void CAIGoalMgr::NoteStagingLoss( WORD wGoal )
+{
+    int idx = StageGoalIdx( (int)wGoal );
+    if ( idx >= 0 )
+        m_aiStageLosses[idx]++;
+}
+
+// Phase 3: per staging goal, restage after heavy losses, back off after
+// repeated restages, and force a stalled assault to evaluate once per epoch
+void CAIGoalMgr::EvalStagingWatchdog( void )
+{
+    static const int s_aiGoals[3] = { IDG_LANDWAR, IDG_ADVDEFENSE, IDG_SEAINVADE };
+    DWORD            dwNow        = theGame.GettimeGetTime( );
+
+    for ( int idx = 0; idx < 3; ++idx )
+    {
+        CAITask* pTask = m_plTasks->GetTask( IDT_PREPAREWAR, s_aiGoals[idx] );
+        if ( pTask == NULL )
+            continue;
+        // only an anchored (active) staging task matters
+        if ( !pTask->GetTaskParam( CAI_LOC_X ) && !pTask->GetTaskParam( CAI_LOC_Y ) )
+            continue;
+
+        // begin an epoch the first time we see this task active
+        if ( m_adwStageStart[idx] == 0 )
+            m_adwStageStart[idx] = dwNow;
+
+        // cooldown gates both the restage and the stall eval below
+        if ( dwNow < m_adwStageCooldownUntil[idx] )
+            continue;
+
+        // heavy attrition since epoch -> re-anchor the staging area further out
+        if ( m_aiStageLosses[idx] >= 8 )
+        {
+            int iLost = m_aiStageLosses[idx];
+            GetNewStagingArea( pTask );          // re-anchors + cleans old FlagStagingArea
+            m_aiStageLosses[idx] = 0;
+            m_adwStageStart[idx] = dwNow;         // new epoch
+            m_aiStageRestages[idx]++;
+#ifdef _WIN32
+            {
+                // TEMP: staging-watchdog verification probe
+                char szW[128];
+                sprintf( szW, "[STAGEWATCH] plyr %d goal %d losses %d restage %d\n", m_iPlayer, s_aiGoals[idx],
+                         iLost, m_aiStageRestages[idx] );
+                OutputDebugStringA( szW );
+            }
+#endif
+            // too many restages with no progress -> back off for 10 wall-clock min
+            if ( m_aiStageRestages[idx] >= 2 )
+            {
+                m_adwStageCooldownUntil[idx] = dwNow + 600000;
+                m_aiStageRestages[idx]       = 0;
+            }
+            continue;
+        }
+
+        // stalled > 8 min without LaunchAssault completing -> force it once per epoch
+        if ( dwNow - m_adwStageStart[idx] > 480000 )
+        {
+            m_adwStageStart[idx] = dwNow;         // reset epoch so this fires once
+#ifdef _WIN32
+            {
+                // TEMP: staging-watchdog verification probe
+                char szW[128];
+                sprintf( szW, "[STAGEWATCH] plyr %d goal %d losses %d restage %d\n", m_iPlayer, s_aiGoals[idx],
+                         m_aiStageLosses[idx], m_aiStageRestages[idx] );
+                OutputDebugStringA( szW );
+            }
+#endif
+            LaunchAssault( pTask );               // Phase-0 reachability + SEAINVADE escalation + CancelAssault
+        }
+    }
+}
+
 #if 1
 //
 // for IDG_ADVDEFENSE and IDG_LANDWAR versions of task
@@ -4578,6 +4672,9 @@ void CAIGoalMgr::UpdateStagingTasks( void )
 #ifdef _LOGOUT
     logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "CAIGoalMgr::UpdateStagingTasks() for %d executing ", m_iPlayer );
 #endif
+
+    // Phase 3: run the staging watchdog on this periodic pass
+    EvalStagingWatchdog( );
 
     // now go thru task list and find active IDT_PREPAREWAR tasks
     // and for each up to STAGING_TASKS, record the goal id in
@@ -6850,25 +6947,39 @@ void CAIGoalMgr::ReconInForce( CAITask* pTask, CHexCoord hcTo )
     // first, use location of base & destination, to find midpoint
     CHexCoord hcBase( m_pMap->m_iBaseX, m_pMap->m_iBaseY );
     CHexCoord hcMid, hex, hcStart, hcEnd;
-    int       iDist = hcBase.Diff( ( hcBase.X( ) - hcTo.X( ) ) );
+
+    // Phase 3: defense-aware - aim past the rocket at the nearest known enemy
+    // BUILDING and pull the midpoint 25% back toward home (3/8 of the span,
+    // not 1/2). Default (no opfor) keeps the old exact rocket midpoint.
+    CHexCoord hcTgt = hcTo;
+    int       iNum = 1, iDen = 2;
+    if ( m_pMap->m_pMapUtil->m_bUseOpFor &&
+         ( m_pMap->m_pMapUtil->m_hexOpFor.X( ) || m_pMap->m_pMapUtil->m_hexOpFor.Y( ) ) )
+    {
+        hcTgt = m_pMap->m_pMapUtil->m_hexOpFor;
+        iNum  = 3;
+        iDen  = 8;
+    }
+
+    int iDist = hcBase.Diff( ( hcBase.X( ) - hcTgt.X( ) ) );
     if ( iDist < 0 )
     {
         iDist *= -1;
-        hcMid.X( hex.Wrap( hcBase.X( ) + ( iDist / 2 ) ) );
+        hcMid.X( hex.Wrap( hcBase.X( ) + ( iDist * iNum ) / iDen ) );
     }
     else
     {
-        hcMid.X( hex.Wrap( hcTo.X( ) + ( iDist / 2 ) ) );
+        hcMid.X( hex.Wrap( hcTgt.X( ) + ( iDist * ( iDen - iNum ) ) / iDen ) );
     }
-    iDist = hcBase.Diff( ( hcBase.Y( ) - hcTo.Y( ) ) );
+    iDist = hcBase.Diff( ( hcBase.Y( ) - hcTgt.Y( ) ) );
     if ( iDist < 0 )
     {
         iDist *= -1;
-        hcMid.Y( hex.Wrap( hcBase.Y( ) + ( iDist / 2 ) ) );
+        hcMid.Y( hex.Wrap( hcBase.Y( ) + ( iDist * iNum ) / iDen ) );
     }
     else
     {
-        hcMid.Y( hex.Wrap( hcTo.Y( ) + ( iDist / 2 ) ) );
+        hcMid.Y( hex.Wrap( hcTgt.Y( ) + ( iDist * ( iDen - iNum ) ) / iDen ) );
     }
 
     if ( pTask->GetGoalID( ) == IDG_PIRATE || pTask->GetGoalID( ) == IDG_SEAWAR ||

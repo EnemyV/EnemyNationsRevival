@@ -78,6 +78,11 @@ public:
 	DWORD m_dwRocket;		// id of the rocket building
 	CHexCoord m_hexLastWarRoad;	// last assault target we planned a war road to (transient, not saved)
 	CHexCoord m_hexLastStageRoad;	// last staging midpoint we planned a war road to (transient)
+	// staging watchdog (Phase 3) - transient, idx 0=IDG_LANDWAR 1=IDG_ADVDEFENSE 2=IDG_SEAINVADE
+	int   m_aiStageLosses[3];		// IDT_PREPAREWAR units lost since epoch start
+	int   m_aiStageRestages[3];		// restages fired this stall cycle
+	DWORD m_adwStageStart[3];		// epoch start (wall-clock ms)
+	DWORD m_adwStageCooldownUntil[3];	// suppress watchdog until this wall-clock ms
 	CAIMap *m_pMap;	// CAIMgr's CAIMap
 	CAIUnitList *m_plUnits;	// list of CAIMgr's CAIUnits
 	CAITaskList *m_plTasks;	// this player's list of tasks
@@ -194,7 +199,10 @@ public:
 	void UpdateCombatTasks( CAIMsg *pMsg );
 	void UpdateProductionTasks( CAIMsg *pMsg );
 	void UpdateStagingTasks( void );
-	void ConsiderReassignment( CAITask *pToTask, 
+	void NoteStagingLoss( WORD wGoal );	// Phase 3: count a staged unit lost
+	void EvalStagingWatchdog( void );	// Phase 3: restage/stall/cooldown per staging goal
+	int  StageGoalIdx( int iGoal );		// Phase 3: staging goal -> 0..2 (or -1)
+	void ConsiderReassignment( CAITask *pToTask,
 		CAITask *pCntTask, CAITask *pFromTask, WORD wUnitCat );
 
 

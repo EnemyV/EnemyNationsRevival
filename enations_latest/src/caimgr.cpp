@@ -753,6 +753,9 @@ void CAIMgr::UpdateUnits( CAIMsg* pMsg )
             {
                 wTask = pUnit->GetTask( );
                 wGoal = pUnit->GetGoal( );
+                // Phase 3: a unit lost while staging feeds the staging watchdog
+                if ( wTask == IDT_PREPAREWAR && m_pGoalMgr != NULL )
+                    m_pGoalMgr->NoteStagingLoss( wGoal );
                 m_pTaskMgr->UnAssignTask( wTask, wGoal );
             }
             else
