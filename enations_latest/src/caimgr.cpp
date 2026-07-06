@@ -356,6 +356,17 @@ void CAIMgr::Manage( void )
                     char szR[128];
                     sprintf( szR, "[RSRCHSTAT] plyr %d topic %d\n", m_iPlayer, iTopic );
                     OutputDebugStringA( szR );
+                    // queue depth: ~0 = trickle (scheduler flaw, aging is root);
+                    // large/growing = genuine backlog (volume is root)
+                    {
+                        int iQ = 0;
+                        EnterCriticalSection( &m_cs );
+                        if ( m_plMsgQueue != NULL )
+                            iQ = (int)m_plMsgQueue->GetCount( );
+                        LeaveCriticalSection( &m_cs );
+                        sprintf( szR, "[QSTAT] plyr %d queue %d\n", m_iPlayer, iQ );
+                        OutputDebugStringA( szR );
+                    }
                     if ( m_pRouter != NULL )
                     {
                         sprintf( szR, "[ROUTESTAT] plyr %d need %d idletrucks %d\n", m_iPlayer,
