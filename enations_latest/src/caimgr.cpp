@@ -328,12 +328,12 @@ void CAIMgr::Manage( void )
 
     // stuck-vehicle sweep on a wall clock too: the idle rotation above never
     // runs for an AI under sustained attack — exactly when cranes get stuck
-    // 120s cadence + 0-30s per-AI jitter (wall clock ^ player id, NOT the
+    // 240s cadence + 0-30s per-AI jitter (wall clock ^ player id, NOT the
     // deterministic game RNG) so all AIs don't sweep in the same tick
     {
         DWORD dwSweepNow = timeGetTime( );
         DWORD dwJitter   = ( dwSweepNow ^ ( (DWORD)m_iPlayer * 2654435761u ) ) % 30000;
-        if ( !m_dwLastStuckSweep || dwSweepNow - m_dwLastStuckSweep > 120000 + dwJitter )
+        if ( !m_dwLastStuckSweep || dwSweepNow - m_dwLastStuckSweep > 240000 + dwJitter )
         {
             m_dwLastStuckSweep = dwSweepNow;
             HandleStuckVehicles( );
