@@ -97,6 +97,9 @@ public:
 
 	void FindBuilding( int iBldg, int iPlayer, CHexCoord& hexAt );
 
+	// nearest (non-bridge) building of iPlayer to hexFrom; FALSE if none
+	BOOL FindNearestBuilding( int iPlayer, CHexCoord& hexFrom, CHexCoord& hexBack );
+
 	int GetMaterialCapacity( CAIUnit *paiUnit );
 	int GetQtyMaterialAt( CAIUnit *paiUnit, int iMaterial );
 

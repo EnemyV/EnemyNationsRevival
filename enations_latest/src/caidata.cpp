@@ -591,6 +591,49 @@ void CAIData::FindBuilding( int iBldg, int iPlayer, CHexCoord& hexAt )
 }
 
 //
+// find the (non-bridge) building of iPlayer whose exit hex is nearest
+// hexFrom; returns it in hexBack. FALSE if the player has no buildings.
+// used for beachhead retargeting: land-assault a reachable forward base.
+//
+BOOL CAIData::FindNearestBuilding( int iPlayer, CHexCoord& hexFrom, CHexCoord& hexBack )
+{
+    DWORD      dwDumb;
+    CBuilding* pBldg;
+    int        iBest  = 0xFFFE;
+    BOOL       bFound = FALSE;
+
+    EnterCriticalSection( &cs );
+
+    POSITION pos = theBuildingMap.GetStartPosition( );
+    while ( pos != NULL )
+    {
+        theBuildingMap.GetNextAssoc( pos, dwDumb, pBldg );
+        ASSERT_VALID( pBldg );
+
+        // only this player's buildings
+        if ( pBldg->GetOwner( )->GetPlyrNum( ) != iPlayer )
+            continue;
+
+        // skip bridges (not a landing objective)
+        int iType = pBldg->GetData( )->GetType( );
+        if ( iType >= CStructureData::bridge_0 && iType <= CStructureData::bridge_end_3 )
+            continue;
+
+        CHexCoord hexBldg = pBldg->GetExitHex( );
+        int       iDist   = GetRangeDistance( hexFrom, hexBldg );
+        if ( iDist < iBest )
+        {
+            iBest   = iDist;
+            hexBack = hexBldg;
+            bFound  = TRUE;
+        }
+    }
+    LeaveCriticalSection( &cs );
+
+    return ( bFound );
+}
+
+//
 // return the carrying capacity found for the unit indicated
 //
 int CAIData::GetMaterialCapacity( CAIUnit* paiUnit )
