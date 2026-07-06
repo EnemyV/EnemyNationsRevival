@@ -891,6 +891,14 @@ BOOL CAIRouter::FindTransport( CAIUnit* pCAIBldg )
             // that will be
             if ( pBldgSource == NULL )
             {
+#ifdef _WIN32
+                {
+                    char szR[128];
+                    sprintf( szR, "[SOURCEMISS] plyr %d bldg %lu mat %d qty %d\n", m_iPlayer,
+                             (unsigned long)pCAIBldg->GetID( ), i, (int)pCAIBldg->GetParam( i ) );
+                    OutputDebugStringA( szR );
+                }
+#endif
 #ifdef _LOGOUT
                 logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "unable to find source for material %d ", i );
 #endif
