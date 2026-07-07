@@ -6738,8 +6738,13 @@ CAITask* CAIGoalMgr::GetProductionTask( CAIUnit* pUnit )
                     }
 #endif
 
-                    // not being staged
-                    if ( !awTypes[iVeh] )
+                    // not being staged. Staging governs COMBAT production only --
+                    // cranes/trucks are never staging types, so this filter made
+                    // their production tasks categorically unpickable by any
+                    // factory (0 crane/truck orders in 3,000+ measured). Economy
+                    // vehicles are governed by the goal check below instead.
+                    if ( !awTypes[iVeh] && iVeh != CTransportData::construction &&
+                         iVeh != CTransportData::heavy_truck )
                         continue;
 
                     // produced enough of this type
