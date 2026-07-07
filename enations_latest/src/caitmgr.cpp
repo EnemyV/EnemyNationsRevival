@@ -1921,6 +1921,21 @@ void CAITaskMgr::AssignScout( CAIUnit* pUnit )
 
 void CAITaskMgr::AssignConstruction( CAIUnit* pUnit )
 {
+    // a planned river crossing waits: route this crane via the road task NOW --
+    // the 1-in-5 quota alone left crossings undispatched for whole rounds
+    if ( m_pGoalMgr->m_pMap != NULL && m_pGoalMgr->m_pMap->m_bPendingBridge && m_pGoalMgr->m_iGasHave )
+    {
+        CAITask* pRoadB = m_pGoalMgr->m_plTasks->FindTask( IDT_CONSTRUCT );
+        if ( pRoadB != NULL )
+        {
+            ClearTaskUnit( pUnit );
+            pUnit->SetTask( pRoadB->GetID( ) );
+            pUnit->SetGoal( pRoadB->GetGoalID( ) );
+            pRoadB->SetStatus( INPROCESS_TASK );
+            return;
+        }
+    }
+
     // alternate repair/resume vs new-build first pick (operator) -- as a
     // last-resort fallback only, orphaned partials never got adopted
     m_bRepairFirst = !m_bRepairFirst;
