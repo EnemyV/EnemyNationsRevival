@@ -6842,9 +6842,28 @@ void CAIGoalMgr::LaunchAssault( CAITask* pTask )
             if ( ( !allowAiTarget && pOpFor->IsAI( ) ) && !pOpFor->AtWar( ) )
                 continue;
 
-            if ( pOpFor->GetAttitude( ) < iMeanest ) // a.i. immediately attacks on loading a saved game
+            // distance scales how much we CARE (operator): the deviation from
+            // NEUTRAL is amplified for close opfors (150%) and damped for far
+            // ones (50%), linear over half the map. Stored attitude untouched.
+            int iEff = pOpFor->GetAttitude( );
+            if ( m_pMap != NULL )
             {
-                iMeanest = pOpFor->GetAttitude( );
+                CHexCoord hexTheirs( 0, 0 );
+                if ( pGameData->FindNearestBuilding( pOpFor->GetPlayerID( ),
+                         CHexCoord( m_pMap->m_iBaseX, m_pMap->m_iBaseY ), hexTheirs ) )
+                {
+                    CHexCoord hexBase( m_pMap->m_iBaseX, m_pMap->m_iBaseY );
+                    int iDist = pGameData->GetRangeDistance( hexBase, hexTheirs );
+                    int iHalf = ( pGameData->m_iHexPerBlk * pGameData->m_iBlkPerSide ) / 2;
+                    int iPct  = 150 - ( 100 * iDist ) / ( iHalf > 0 ? iHalf : 1 );
+                    iPct      = __max( 50, __min( 150, iPct ) );
+                    iEff      = (int)NEUTRAL + ( ( iEff - (int)NEUTRAL ) * iPct ) / 100;
+                }
+            }
+
+            if ( iEff < iMeanest ) // a.i. immediately attacks on loading a saved game
+            {
+                iMeanest = iEff;
                 iOpforID = pOpFor->GetPlayerID( );
             }
         }
