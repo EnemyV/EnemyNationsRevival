@@ -1064,6 +1064,8 @@ BOOL CAIMap::PlanBridgeToward( CHexCoord const& hexAt, CHexCoord const& hexSite 
 	LeaveCriticalSection( &cs );
 	if( !bCanBridge || iMaxSpan <= 0 )
 	{
+		// no tech at all and something needs crossing: strongest research signal
+		m_iBridgeSpanFails++;
 #if EN_AI_PROBES_ECON && defined(_WIN32)
 		{
 			char szB[96];
