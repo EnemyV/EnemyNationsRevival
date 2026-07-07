@@ -1531,11 +1531,7 @@ void CAIMapUtil::FindSpecialHex( int iBldg, int iWidthX, int iWidthY, CHexCoord&
         // if enemy is used then best is closest to hexRocket
         if ( m_bUseOpFor )
         {
-            // was m_iHexPerBlk: forts were only accepted within ONE BLOCK of the
-            // ENEMY rocket -- anchors are the AI's own eco buildings, hundreds of
-            // hexes away, so no fort was ever placed. "Closest to the enemy"
-            // among valid candidates is the intent.
-            iBestForts = m_iMapSize;
+            iBestForts = pGameData->m_iHexPerBlk;
         }
         else  // else using own rocket, means best is far from hexRocket
         {
@@ -1629,15 +1625,11 @@ void CAIMapUtil::FindSpecialHex( int iBldg, int iWidthX, int iWidthY, CHexCoord&
             // if a site was found then return with it
             if ( m_bUseOpFor )
             {
-                if ( iBestForts < m_iMapSize )
+                if ( iBestForts < pGameData->m_iHexPerBlk )
                 {
-#if EN_AI_PROBES_ECON && defined(_WIN32)
-                    {
-                        char szF[96];
-                        sprintf( szF, "[FORTSITE] plyr %d bldg %d at %d,%d\n", m_iPlayer, iBldg, hexFort.X( ),
-                                 hexFort.Y( ) );
-                        OutputDebugStringA( szF );
-                    }
+#ifdef _LOGOUT
+                    logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "FindSpecialHex() found at %d,%d \n", hexFort.X( ),
+                               hexFort.Y( ) );
 #endif
                     hexFound = hexFort;
                     return;
