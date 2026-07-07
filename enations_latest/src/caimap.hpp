@@ -48,6 +48,7 @@ public:
 
 	int m_iRoadCount;	// count of MSW_PLANNED_ROAD locations left
 	int m_iBridgeSpanFails;	// span-fail bridge attempts (research-nudge signal; transient)
+	BOOL m_bPendingBridge;	// a planned crossing awaits a crane (checked by BuildRoad; transient)
 	// Exact index of planned-road hexes (offsets into m_pwaMap). Runtime-only,
 	// NOT serialized -- rebuilt from the map on load. Replaces the radius spiral
 	// in FindRoadHex so a distant crane can't "miss" a plan it has hexes for.

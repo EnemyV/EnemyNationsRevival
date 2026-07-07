@@ -95,6 +95,7 @@ CAIMap::CAIMap( int iPlayer, CAIUnitList *pUnits,
 
 	m_iRoadCount = 0;
 	m_iBridgeSpanFails = 0;
+	m_bPendingBridge = FALSE;
 	m_iOcean = 0;
 	m_iLake = 0;
 	m_iLand = 0;
@@ -1171,6 +1172,7 @@ BOOL CAIMap::PlanBridgeToward( CHexCoord const& hexAt, CHexCoord const& hexSite 
 		}
 	}
 
+	m_bPendingBridge = TRUE;
 #if EN_AI_PROBES_ECON && defined(_WIN32)
 	{
 		char szB[128];

@@ -5248,6 +5248,31 @@ void CAITaskMgr::BuildRoad( CAIUnit* pUnit, CAITask* pTask )
         // in AssignConstruction); a road crane builds roads.
         pUnit->SetGoal( IDG_ESTABLISH );
         pUnit->SetTask( IDT_CONSTRUCT );
+
+        // a planned crossing awaits: build the bridge BEFORE more road hexes --
+        // discovery used to require total plan exhaustion near the crane, so
+        // crossings sat flagged forever while 800+ ordinary hexes kept cranes busy
+        if ( m_pGoalMgr->m_pMap->m_bPendingBridge )
+        {
+            CHexCoord hexBr = hexVeh;
+            m_pGoalMgr->m_pMap->GetBridgingHexes( hexBr, pUnit );
+            m_pGoalMgr->m_pMap->m_bPendingBridge = FALSE;  // stale or dispatched; replanning re-arms
+            if ( hexBr.X( ) != hexVeh.X( ) || hexBr.Y( ) != hexVeh.Y( ) )
+            {
+                pUnit->SetDestination( hexBr );
+                pUnit->SetParam( CAI_FUEL, CNetCmd::build_bridge );
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+                {
+                    char szR[96];
+                    sprintf( szR, "[ROAD] plyr %d crane %lu -> PENDING BRIDGE at %d,%d\n", m_iPlayer,
+                             (unsigned long)pUnit->GetID( ), hexBr.X( ), hexBr.Y( ) );
+                    OutputDebugStringA( szR );
+                }
+#endif
+                return;
+            }
+        }
+
         // get goal manager to tell us where to go
         //
         m_pGoalMgr->m_pMap->GetRoadHex( hexSite );
