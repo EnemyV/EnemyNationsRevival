@@ -3564,6 +3564,17 @@ void CVehicleBuilding::StartVehicle( int iIndex, int iNum )
         if ( m_pBldUnt->GetInput( iInd ) > 0 )
             if ( GetStore( iInd ) <= 0 )
             {
+#ifdef _WIN32
+                {
+                    // observation: WHICH material halts vehicle production (491
+                    // outrider orders -> 0 completions at a stocked factory)
+                    char szH[96];
+                    sprintf( szH, "[VEHHALT] plyr %d bldg %lu veh %d needs mat %d\n",
+                             GetOwner( ) != NULL ? GetOwner( )->GetPlyrNum( ) : -1, (unsigned long)GetID( ), iIndex,
+                             iInd );
+                    OutputDebugStringA( szH );
+                }
+#endif
                 theGame.Event( EVENT_BUILD_HALTED, EVENT_WARN, this );
                 return;
             }
