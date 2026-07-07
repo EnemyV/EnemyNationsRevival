@@ -4603,6 +4603,30 @@ void CAIGoalMgr::EvalStagingWatchdog( void )
     static const int s_aiGoals[3] = { IDG_LANDWAR, IDG_ADVDEFENSE, IDG_SEAINVADE };
     DWORD            dwNow        = theGame.GettimeGetTime( );
 
+#ifdef _WIN32
+    // TEMP: one-shot per-player dump of EXISTING naval tasks (loaded goals never re-InitTasks)
+    static DWORD s_dwDumped = 0;
+    if ( !( s_dwDumped & ( 1u << ( m_iPlayer & 31 ) ) ) && m_plTasks != NULL )
+    {
+        s_dwDumped |= ( 1u << ( m_iPlayer & 31 ) );
+        POSITION posD = m_plTasks->GetHeadPosition( );
+        while ( posD != NULL )
+        {
+            CAITask* pD = (CAITask*)m_plTasks->GetNext( posD );
+            if ( pD == NULL )
+                continue;
+            if ( pD->GetGoalID( ) != IDG_SEAINVADE && pD->GetGoalID( ) != IDG_PIRATE )
+                continue;
+            char szD[144];
+            sprintf( szD, "[SEAGOAL] plyr %d goal %d task %d order %d ptype %d item %d qty %d stat %d\n", m_iPlayer,
+                     (int)pD->GetGoalID( ), (int)pD->GetID( ), (int)pD->GetTaskParam( ORDER_TYPE ),
+                     (int)pD->GetTaskParam( PRODUCTION_TYPE ), (int)pD->GetTaskParam( PRODUCTION_ITEM ),
+                     (int)pD->GetTaskParam( PRODUCTION_QTY ), (int)pD->GetStatus( ) );
+            OutputDebugStringA( szD );
+        }
+    }
+#endif
+
     // one pass: current PREPAREWAR force size per goal (stall = NO growth)
     int aiForce[3] = { 0, 0, 0 };
     if ( m_plUnits != NULL )
