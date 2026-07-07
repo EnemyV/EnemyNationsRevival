@@ -2212,6 +2212,16 @@ void CAIMgr::DestinationResponse( CAIMsg* pMsg )
         CAIHex aiHex( pMsg->m_iX, pMsg->m_iY );
         pGameData->GetCHexData( &aiHex );
 
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+        {
+            char szD[128];
+            sprintf( szD, "[ARRHANDLE] plyr %d truck %lu arrhex %d,%d unit %d atbldg %lu want %lu
+",
+                     m_iPlayer, (unsigned long)pUnit->GetID( ), pMsg->m_iX, pMsg->m_iY, aiHex.m_iUnit,
+                     (unsigned long)aiHex.m_dwUnitID, (unsigned long)pUnit->GetDataDW( ) );
+            OutputDebugStringA( szD );
+        }
+#endif
         if ( aiHex.m_iUnit == CUnit::building )
         {
             // if its dwID matches
