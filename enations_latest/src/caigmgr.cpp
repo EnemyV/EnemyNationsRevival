@@ -2787,30 +2787,17 @@ BOOL CAIGoalMgr::AddNewFactory( int iBldg1, int iBldg2, WORD& wTask, WORD& wGoal
                     bWaiting      = pBldg->IsWaiting( );
 
                     // consider if it is a factory, and if so, if it is
-                    // currently not producing a vehicle, then no add
-                    if ( !bConstructing && !bWaiting )
-                    {
-                        CBuildUnit const* pBuildVeh = NULL;
-
-                        if ( pBldg->GetData( )->GetUnionType( ) == CStructureData::UTvehicle )
-                        {
-                            CVehicleBuilding* pVehBldg = (CVehicleBuilding*)pBldg;
-                            pBuildVeh                  = pVehBldg->GetBldUnt( );
-                            if ( pBuildVeh == NULL )
-                                bWaiting = TRUE;
-                        }
-                        else if ( pBldg->GetData( )->GetUnionType( ) == CStructureData::UTshipyard )
-                        {
-                            CShipyardBuilding* pShipBldg = (CShipyardBuilding*)pBldg;
-                            pBuildVeh                    = pShipBldg->GetBldUnt( );
-                            if ( pBuildVeh == NULL )
-                                bWaiting = TRUE;
-                        }
-                    }
+                    // (was: an IDLE factory (GetBldUnt NULL) or a WAITING/halted
+                    // one set bWaiting and blocked production-task creation --
+                    // backwards: the idle factory is exactly the one that needs
+                    // the task, and a halted one queues it for resume. In the
+                    // late game every factory is idle-or-halted at once, so
+                    // crane/truck orders could NEVER be created: 0 of 1,149
+                    // measured. Only a factory still under construction blocks.)
                 }
                 LeaveCriticalSection( &cs );
 
-                if ( bConstructing || bWaiting )
+                if ( bConstructing )
                     return ( FALSE );
             }
         }
