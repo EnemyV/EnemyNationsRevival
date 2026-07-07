@@ -3634,6 +3634,17 @@ void CAITaskMgr::ProduceVehicle( CAIUnit* pBldg, CAITask* pTask )
         msg.m_iNum = 1;
     theGame.PostToServer( (CNetCmd*)&msg, sizeof( CMsgBuildVeh ) );
 
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+    {
+        // observation: every production order sent (vehicle-factory output is 0
+        // for cranes/trucks/scouts -- are orders sent and then lost/replaced?)
+        char szP[96];
+        sprintf( szP, "[PRODORD] plyr %d factory %lu veh %d num %d\n", m_iPlayer, (unsigned long)dwFactory, iVehType,
+                 msg.m_iNum );
+        OutputDebugStringA( szP );
+    }
+#endif
+
 #ifdef _LOGOUT
     logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC,
                "CAITaskMgr::ProduceVehicle() sending CMsgBuildVeh for player %d unit %ld to build %d of %d", m_iPlayer,
