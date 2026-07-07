@@ -4617,8 +4617,9 @@ void CAIGoalMgr::EvalStagingWatchdog( void )
         if ( dwNow < m_adwStageCooldownUntil[idx] )
             continue;
 
-        // heavy attrition since epoch -> re-anchor the staging area further out
-        if ( m_aiStageLosses[idx] >= 8 )
+        // heavy attrition = at least 6 dead AND dead outnumber survivors
+        // (a few losses from a big healthy force must NOT thrash the anchor)
+        if ( m_aiStageLosses[idx] >= 6 && m_aiStageLosses[idx] >= aiForce[idx] )
         {
             int iLost = m_aiStageLosses[idx];
             GetNewStagingArea( pTask );          // re-anchors + cleans old FlagStagingArea
