@@ -1238,6 +1238,11 @@ BOOL CAIMgr::RepoolFarStuck( CAIUnit* pUnit, CHexCoord& hexVeh, CHexCoord& hexDe
          m_pGoalMgr == NULL || m_pGoalMgr->m_plTasks == NULL || m_pTaskMgr == NULL )
         return FALSE;
 
+    // a crane on a bridge mission keeps marching -- repooling cancels the build
+    if ( pUnit->GetParam( CAI_FUEL ) == CNetCmd::build_bridge ||
+         pUnit->GetParam( CAI_FUEL ) == CNetCmd::bridge_new )
+        return FALSE;
+
     CAITask* pTF = m_pGoalMgr->m_plTasks->GetTask( pUnit->GetTask( ), pUnit->GetGoal( ) );
     if ( pTF == NULL )
         return FALSE;

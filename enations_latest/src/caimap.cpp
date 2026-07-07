@@ -1018,7 +1018,8 @@ void CAIMap::FindBridgeOnPlan( CHexCoord& hexSite, CAIUnit *pUnit )
 
 		// IsBridgeSpan rewrites hexTest -> span start land hex and sets CAI_PREV/DEST
 		CHexCoord hexTest = hexCand;
-		if( m_pMapUtil->IsBridgeSpan( hexTest, pUnit ) )
+		if( m_pMapUtil->IsBridgeSpan( hexTest, pUnit ) &&
+			m_pMapUtil->GetPathRating( hexCrane, hexTest ) )	// crane must REACH the span start (600 was sent to the far bank)
 		{
 			iBestDist   = iDist;
 			hexBestSite = hexTest;
