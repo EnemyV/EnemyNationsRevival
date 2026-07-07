@@ -361,7 +361,7 @@ void CAIMgr::Manage( void )
                 {
                     // TEMP: per-sweep AI census (gas, road plan vs paved, bldgs +/-)
                     // troops = owned combat vehicles (exclude construction/med/heavy trucks = 0/1/2)
-                    int iTroops = 0;
+                    int iTroops = 0, iBldgsTotal = 0;
                     if ( m_plUnits != NULL )
                     {
                         POSITION posT = m_plUnits->GetHeadPosition( );
@@ -370,6 +370,11 @@ void CAIMgr::Manage( void )
                             CAIUnit* pT = (CAIUnit*)m_plUnits->GetNext( posT );
                             if ( pT == NULL || pT->GetOwner( ) != m_iPlayer )
                                 continue;
+                            if ( pT->GetType( ) == CUnit::building )
+                            {
+                                iBldgsTotal++;  // ALL own buildings (matches the load screen)
+                                continue;
+                            }
                             if ( pT->GetType( ) != CUnit::vehicle )
                                 continue;
                             int iVeh = pT->GetTypeUnit( );
@@ -379,10 +384,12 @@ void CAIMgr::Manage( void )
                             iTroops++;
                         }
                     }
-                    char szC[160];
-                    sprintf( szC, "[AISTAT] plyr %d gas %d roadplan %d paved %d built %d lost %d bldgs %d troops %d\n", m_iPlayer,
-                             m_pGoalMgr->m_iGasHave, m_pGoalMgr->m_pMap->m_iRoadCount, m_iStatRoadsPaved,
-                             m_iStatBldgBuilt, m_iStatBldgLost, (int)m_pGoalMgr->GetBuildingCnt( ), iTroops );
+                    char szC[176];
+                    sprintf( szC,
+                             "[AISTAT] plyr %d gas %d roadplan %d paved %d built %d lost %d bldgs %d bldgsAll %d troops %d\n",
+                             m_iPlayer, m_pGoalMgr->m_iGasHave, m_pGoalMgr->m_pMap->m_iRoadCount, m_iStatRoadsPaved,
+                             m_iStatBldgBuilt, m_iStatBldgLost, (int)m_pGoalMgr->GetBuildingCnt( ), iBldgsTotal,
+                             iTroops );
                     OutputDebugStringA( szC );
                 }
 #endif
