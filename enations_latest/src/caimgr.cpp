@@ -1429,12 +1429,39 @@ void CAIMgr::HandleStuckVehicles( void )
                     if ( pTaskC != NULL && pTaskC->GetTaskParam( ORDER_TYPE ) == CONSTRUCTION_ORDER )
                     {
                         CHexCoord hexSiteC( pTaskC->GetTaskParam( BUILD_AT_X ), pTaskC->GetTaskParam( BUILD_AT_Y ) );
-                        BOOL bSiteless = ( !hexSiteC.X( ) && !hexSiteC.Y( ) );
-                        int  iSiteDist = bSiteless ? 0 : pGameData->GetRangeDistance( hexVeh, hexSiteC );
-                        if ( bSiteless || iSiteDist > 2 )
+                        if ( !hexSiteC.X( ) && !hexSiteC.Y( ) )
+                        {
+                            // no site yet (fresh assignment or dead site-pick):
+                            // give site selection its chance FIRST -- unassigning
+                            // here intercepts every fresh rebind (UnAssignTask
+                            // zeroes BUILD_AT) = infinite free/rebind churn
+                            m_pTaskMgr->GenerateTaskOrder( pUnit );
+                            hexSiteC.X( pTaskC->GetTaskParam( BUILD_AT_X ) );
+                            hexSiteC.Y( pTaskC->GetTaskParam( BUILD_AT_Y ) );
+                            if ( !hexSiteC.X( ) && !hexSiteC.Y( ) && !pUnit->GetParam( CAI_EFFECTIVE ) &&
+                                 pUnit->GetTask( ) )
+                            {
+                                // site selection failed AGAIN -> a truly unsiteable
+                                // task (e.g. shipyard with no coastal pick): free
+                                // the crane, task repools
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+                                {
+                                    char szR[128];
+                                    sprintf( szR, "[SITELESS] crane %lu task %u at %d,%d freed\n",
+                                             (unsigned long)pUnit->GetID( ), (unsigned)pUnit->GetTask( ),
+                                             hexVeh.X( ), hexVeh.Y( ) );
+                                    OutputDebugStringA( szR );
+                                }
+#endif
+                                m_pTaskMgr->UnAssignTask( pUnit->GetTask( ), pUnit->GetGoal( ) );
+                            }
+                            continue;
+                        }
+                        int iSiteDist = pGameData->GetRangeDistance( hexVeh, hexSiteC );
+                        if ( iSiteDist > 2 )
                         {
                             BOOL bBridged = FALSE;
-                            if ( !bSiteless && m_pMap != NULL )
+                            if ( m_pMap != NULL )
                             {
                                 bBridged = m_pMap->PlanBridgeToward( hexVeh, hexSiteC );
                                 if ( m_pMap->m_pMapUtil != NULL )
