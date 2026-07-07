@@ -3007,6 +3007,13 @@ void CVehicle::SetDestAndMode( CSubHex sub, VEH_POS iMode )
 {
     const int aiAdd[4][2] = { 0, 1, 0, 0, 1, 0, 1, 1 };
 
+    // new orders re-arm the notify-once arrival flag. told_ai_stop was set on
+    // the FIRST arrival post and never cleared (ToldAiStopOff has no callers)
+    // AND is serialized -- so every vehicle in a loaded game was permanently
+    // DEAF: arrivals never notified the AI again, trucks sat inside buildings
+    // until a sweep nudge (measured 12+ min dwells with live assignments).
+    ToldAiStopOff( );
+
     if ( m_pVehLoadOn != NULL )
         if ( theVehicleHex._GetVehicle( sub ) != m_pVehLoadOn )
             m_pVehLoadOn = NULL;
