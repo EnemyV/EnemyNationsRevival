@@ -2215,8 +2215,7 @@ void CAIMgr::DestinationResponse( CAIMsg* pMsg )
 #if EN_AI_PROBES_ECON && defined(_WIN32)
         {
             char szD[128];
-            sprintf( szD, "[ARRHANDLE] plyr %d truck %lu arrhex %d,%d unit %d atbldg %lu want %lu
-",
+            sprintf( szD, "[ARRHANDLE] plyr %d truck %lu arrhex %d,%d unit %d atbldg %lu want %lu\n",
                      m_iPlayer, (unsigned long)pUnit->GetID( ), pMsg->m_iX, pMsg->m_iY, aiHex.m_iUnit,
                      (unsigned long)aiHex.m_dwUnitID, (unsigned long)pUnit->GetDataDW( ) );
             OutputDebugStringA( szD );
