@@ -1120,29 +1120,62 @@ BOOL CAIMap::PlanBridgeToward( CHexCoord const& hexAt, CHexCoord const& hexSite 
 		return FALSE;
 	}
 
-	// bank must be crane-traversable land with no building on it
-	CHex *pBankHex = theMap.GetHex( hexBank );
-	BOOL bBadBank = ( pBankHex == NULL || pBankHex->GetType() == CHex::river ||
-		!m_pMapUtil->m_tdWheel->CanTravelHex( pBankHex ) );
-	if( !bBadBank )
-	{
-		EnterCriticalSection( &cs );
-		bBadBank = ( theBuildingHex.GetBuilding( hexBank ) != NULL );
-		LeaveCriticalSection( &cs );
-	}
-
-	// crossing must land on traversable unbuilt ground within the owner's span
+	// try the direct bank point, then slide along the bank +/-6 hexes for a
+	// narrower crossing (the round-8 success at 436,541 was such a spot; the
+	// direct point alone misses them)
+	BOOL bShiftX = ( iDir == 0 || iDir == 4 );	// span runs along Y -> slide along X
+	static const int aiOff[13] = { 0, 1, -1, 2, -2, 3, -3, 4, -4, 5, -5, 6, -6 };
 	CHexCoord hexEnd( 0, 0 );
-	if( bBadBank || !m_pMapUtil->TryBridgeWalk( hexBank, iDir, iMaxSpan, hexEnd ) )
+	BOOL bFoundSpan = FALSE;
+	for( int k = 0; k < 13 && !bFoundSpan; k++ )
 	{
-		// a river we WANT to cross but can't span: signal the research nudge
-		if( !bBadBank )
-			m_iBridgeSpanFails++;
+		CHexCoord hexTry = hexBank;
+		if( bShiftX )
+			hexTry.X( CHexCoord::Wrap( hexBank.X() + aiOff[k] ) );
+		else
+			hexTry.Y( CHexCoord::Wrap( hexBank.Y() + aiOff[k] ) );
+
+		// bank must be crane-traversable land with no building on it
+		CHex *pBankHex = theMap.GetHex( hexTry );
+		if( pBankHex == NULL || pBankHex->GetType() == CHex::river ||
+			!m_pMapUtil->m_tdWheel->CanTravelHex( pBankHex ) )
+			continue;
+		BOOL bBlockedTry;
+		EnterCriticalSection( &cs );
+		bBlockedTry = ( theBuildingHex.GetBuilding( hexTry ) != NULL );
+		LeaveCriticalSection( &cs );
+		if( bBlockedTry )
+			continue;
+
+		// the hex ahead in the span direction must still be river
+		CHexCoord hexAhead = hexTry;
+		switch( iDir )
+		{
+			case 0: hexAhead.Ydec(); break;
+			case 2: hexAhead.Xinc(); break;
+			case 4: hexAhead.Yinc(); break;
+			case 6: hexAhead.Xdec(); break;
+		}
+		CHex *pAheadHex = theMap.GetHex( hexAhead );
+		if( pAheadHex == NULL || pAheadHex->GetType() != CHex::river )
+			continue;
+
+		// crossing must land on traversable unbuilt ground within the owner's span
+		if( m_pMapUtil->TryBridgeWalk( hexTry, iDir, iMaxSpan, hexEnd ) )
+		{
+			hexBank    = hexTry;
+			bFoundSpan = TRUE;
+		}
+	}
+	if( !bFoundSpan )
+	{
+		// a river we WANT to cross but can't span anywhere nearby: research nudge
+		m_iBridgeSpanFails++;
 #if EN_AI_PROBES_ECON && defined(_WIN32)
 		{
 			char szB[112];
-			sprintf( szB, "[BRIDGEMISS] plyr %d %s at bank %d,%d dir %d span %d\n", m_iPlayer,
-				bBadBank ? "badbank" : "nowalk", hexBank.X(), hexBank.Y(), iDir, iMaxSpan );
+			sprintf( szB, "[BRIDGEMISS] plyr %d nowalk at bank %d,%d dir %d span %d\n", m_iPlayer,
+				hexBank.X(), hexBank.Y(), iDir, iMaxSpan );
 			OutputDebugStringA( szB );
 		}
 #endif
