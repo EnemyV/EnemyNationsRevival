@@ -1124,10 +1124,10 @@ BOOL CAIMap::PlanBridgeToward( CHexCoord const& hexAt, CHexCoord const& hexSite 
 	// narrower crossing (the round-8 success at 436,541 was such a spot; the
 	// direct point alone misses them)
 	BOOL bShiftX = ( iDir == 0 || iDir == 4 );	// span runs along Y -> slide along X
-	static const int aiOff[13] = { 0, 1, -1, 2, -2, 3, -3, 4, -4, 5, -5, 6, -6 };
+	static const int aiOff[21] = { 0, 1, -1, 2, -2, 3, -3, 4, -4, 5, -5, 6, -6, 7, -7, 8, -8, 9, -9, 10, -10 };
 	CHexCoord hexEnd( 0, 0 );
 	BOOL bFoundSpan = FALSE;
-	for( int k = 0; k < 13 && !bFoundSpan; k++ )
+	for( int k = 0; k < 21 && !bFoundSpan; k++ )
 	{
 		CHexCoord hexTry = hexBank;
 		if( bShiftX )
