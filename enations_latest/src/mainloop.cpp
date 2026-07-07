@@ -2117,8 +2117,7 @@ void CVehicleBuilding::BuildVehicle( )
                 {
                     m_dwNextPplLog = timeGetTime( ) + 30000;
                     char szS[128];
-                    sprintf( szS, "[VEHSTALL] plyr %d bldg %lu veh %d at %d%% needs mat %d store %d
-",
+                    sprintf( szS, "[VEHSTALL] plyr %d bldg %lu veh %d at %d%% needs mat %d store %d\n",
                              GetOwner( )->GetPlyrNum( ), (unsigned long)GetID( ), m_pBldUnt->GetVehType( ),
                              ( m_iBuildDone * 100 ) / m_pBldUnt->GetTime( ), iInd, (int)GetStore( iInd ) );
                     OutputDebugStringA( szS );
