@@ -1441,14 +1441,18 @@ void CAIMgr::HandleStuckVehicles( void )
                             if ( !hexSiteC.X( ) && !hexSiteC.Y( ) && !pUnit->GetParam( CAI_EFFECTIVE ) &&
                                  pUnit->GetTask( ) )
                             {
-                                // site selection failed AGAIN -> a truly unsiteable
-                                // task (e.g. shipyard with no coastal pick): free
-                                // the crane, task repools
+                                // site selection failed AGAIN -> unsiteable task:
+                                // free the crane and cool the TYPE down so the
+                                // assigner doesn't weld the next crane to it
+                                int iBSl = (int)pTaskC->GetTaskParam( BUILDING_ID );
+                                if ( iBSl >= 0 && iBSl < 64 )
+                                    m_pGoalMgr->m_adwSitePickCool[iBSl] =
+                                        theGame.GettimeGetTime( ) + 600 * 1000;
 #if EN_AI_PROBES_ECON && defined(_WIN32)
                                 {
-                                    char szR[128];
-                                    sprintf( szR, "[SITELESS] crane %lu task %u at %d,%d freed\n",
-                                             (unsigned long)pUnit->GetID( ), (unsigned)pUnit->GetTask( ),
+                                    char szR[144];
+                                    sprintf( szR, "[SITELESS] plyr %d crane %lu bldg %d at %d,%d freed+cooled\n",
+                                             m_iPlayer, (unsigned long)pUnit->GetID( ), iBSl,
                                              hexVeh.X( ), hexVeh.Y( ) );
                                     OutputDebugStringA( szR );
                                 }
@@ -1580,6 +1584,38 @@ void CAIMgr::HandleStuckVehicles( void )
                 // if still too far away
                 if ( iDist > 2 )
                 {
+                    // a construct crane far-stuck for 10 min never gets there by
+                    // resending (466 wasted resends/20min measured): try a bridge
+                    // toward the dest, shelve the site, repool the crane
+                    if ( pUnit->GetTypeUnit( ) == CTransportData::construction &&
+                         m_pGoalMgr != NULL && m_pGoalMgr->m_plTasks != NULL && m_pTaskMgr != NULL )
+                    {
+                        CAITask* pTF = m_pGoalMgr->m_plTasks->GetTask( pUnit->GetTask( ), pUnit->GetGoal( ) );
+                        if ( pTF != NULL )
+                        {
+                            BOOL bBridged = ( m_pMap != NULL && m_pMap->PlanBridgeToward( hexVeh, hexDest ) );
+                            if ( pTF->GetTaskParam( ORDER_TYPE ) == CONSTRUCTION_ORDER )
+                            {
+                                CHexCoord hexSF( pTF->GetTaskParam( BUILD_AT_X ), pTF->GetTaskParam( BUILD_AT_Y ) );
+                                if ( ( hexSF.X( ) || hexSF.Y( ) ) && m_pMap != NULL && m_pMap->m_pMapUtil != NULL )
+                                    m_pMap->m_pMapUtil->AddFailedSiteTemp(
+                                        (int)pTF->GetTaskParam( BUILDING_ID ), hexSF, 600 * 1000 );
+                            }
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+                            {
+                                char szR[160];
+                                sprintf( szR, "[FARSTUCK] plyr %d crane %lu at %d,%d dest %d,%d dist %d bridge %d repooled\n",
+                                         m_iPlayer, (unsigned long)pUnit->GetID( ), hexVeh.X( ), hexVeh.Y( ),
+                                         hexDest.X( ), hexDest.Y( ), iDist, (int)bBridged );
+                                OutputDebugStringA( szR );
+                            }
+#endif
+                            m_pTaskMgr->UnAssignTask( pUnit->GetTask( ), pUnit->GetGoal( ) );
+                            pUnit->SetStuckSince( 0 );
+                            pUnit->SetStuckHex( 0 );
+                            continue;
+                        }
+                    }
                     // make unit go to last destination
                     pUnit->SetDestination( hex );
                     // last hex LOWORD(X), HIWORD(Y) occupied

@@ -335,6 +335,7 @@ CAIGoalMgr::CAIGoalMgr( BOOL bRestart, int iPlayer, CAIMap* pMap, CAIUnitList* p
 
     m_pMap     = pMap;
     m_pRouter  = NULL;  // wired by CAIMgr after its router exists
+    memset( m_adwSitePickCool, 0, sizeof( m_adwSitePickCool ) );
     m_plUnits  = plUnits;
     m_plOpFors = plOpFors;
 
@@ -10787,6 +10788,7 @@ void CAIGoalMgr::Load( CArchive& ar, CAIMap* pMap, CAIUnitList* plUnits, CAIOpFo
 {
     m_pMap     = pMap;
     m_pRouter  = NULL;  // wired by CAIMgr after its router exists
+    memset( m_adwSitePickCool, 0, sizeof( m_adwSitePickCool ) );
     m_plUnits  = plUnits;
     m_plOpFors = plOpFors;
 

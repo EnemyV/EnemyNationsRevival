@@ -90,6 +90,7 @@ public:
 	DWORD m_dwDefenseUntil;			// bunker mode: suppress OFFENSIVE launches until
 	CAIMap *m_pMap;	// CAIMgr's CAIMap
 	CAIRouter *m_pRouter;	// CAIMgr's router (set post-construction; may be NULL)
+	DWORD m_adwSitePickCool[64];	// per-building-type cooldown after siteless failures
 	CAIUnitList *m_plUnits;	// list of CAIMgr's CAIUnits
 	CAITaskList *m_plTasks;	// this player's list of tasks
 

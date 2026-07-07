@@ -1979,6 +1979,25 @@ GetTask:
 
         int iBldg = (int)pTask->GetTaskParam( BUILDING_ID );
 
+        // site-pick for this type failed repeatedly and recently: don't weld
+        // another crane to it -- skip to the next task (same shape as the
+        // not-discovered path below)
+        if ( iBldg >= 0 && iBldg < 64 &&
+             m_pGoalMgr->m_adwSitePickCool[iBldg] > theGame.GettimeGetTime( ) )
+        {
+            pTask->SetStatus( UNASSIGNED_TASK );
+            m_pGoalMgr->UpdateConstructionTasks( NULL );
+            if ( iHang )
+            {
+                pTask = m_pGoalMgr->m_plTasks->FindTask( IDT_CONSTRUCT );
+                if ( pTask == NULL )
+                    return;
+                goto DefaultRoad;
+            }
+            iHang++;
+            goto GetTask;
+        }
+
         // add test to confirm this can be built by this player
         BOOL bCanBuild = FALSE;
         // by getting a pointer to that type of building
