@@ -161,6 +161,8 @@ public:
 	void ProcessMessage( CAIMsg *pMsg );
 
 	void HandleStuckVehicles( void );
+	// far-stuck construct crane: bridge attempt + site shelf + repool; TRUE if handled
+	BOOL RepoolFarStuck( CAIUnit *pUnit, CHexCoord& hexVeh, CHexCoord& hexDest, int iDist );
 	void ResignGame( void );
 	BOOL IsEmbraced( CAIMsg *pMsg );
 	void VehicleErrorResponse( CAIMsg *pMsg );

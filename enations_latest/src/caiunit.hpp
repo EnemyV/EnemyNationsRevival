@@ -34,6 +34,8 @@ protected:
 										// feedback-loop cooldown; transient, not saved)
 	DWORD			m_dwStuckSince;		// stuck-watch timer (transient; CAI_ROUTE_X is router-owned)
 	DWORD			m_dwStuckHex;		// stuck-watch last hex, MAKELPARAM packed (transient)
+	DWORD			m_dwResendDest;		// 5-min rescue: last resent dest, MAKELPARAM (transient)
+	WORD			m_wResendCnt;		// consecutive resends to that dest (oscillating-crane escape)
 
 	DWORD m_dwID;
 	int m_iOwner;
@@ -88,6 +90,14 @@ public:
 	void  SetStuckSince( DWORD dw ) { m_dwStuckSince = dw; }
 	DWORD GetStuckHex( void ) const { return m_dwStuckHex; }
 	void  SetStuckHex( DWORD dw ) { m_dwStuckHex = dw; }
+	// consecutive 5-min resends to the same dest; returns the updated count
+	int  NoteResend( DWORD dwDest )
+	{
+		if ( dwDest == m_dwResendDest ) ++m_wResendCnt;
+		else { m_dwResendDest = dwDest; m_wResendCnt = 1; }
+		return m_wResendCnt;
+	}
+	void ClearResend( void ) { m_dwResendDest = 0; m_wResendCnt = 0; }
 	// bypass the 30s same-dest dedupe for ONE deliberate retry (clamped-path resume)
 	void  ForceNextDest( void ) { m_timeLastDest = 0; }
 
