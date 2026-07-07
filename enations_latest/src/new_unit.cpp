@@ -9,6 +9,7 @@
 // sprite.cpp : the sprites
 //
 
+#include "enprobes.h"
 #include "stdafx.h"
 #include "SDL2BuildStructure.h"
 #include "SDL2BuildTransport.h"
@@ -3574,7 +3575,7 @@ void CVehicleBuilding::StartVehicle( int iIndex, int iNum )
         if ( m_pBldUnt->GetInput( iInd ) > 0 )
             if ( GetStore( iInd ) <= 0 )
             {
-#ifdef _WIN32
+#if EN_AI_PROBES_ECON && defined(_WIN32)
                 {
                     // observation: WHICH material halts vehicle production (491
                     // outrider orders -> 0 completions at a stocked factory)

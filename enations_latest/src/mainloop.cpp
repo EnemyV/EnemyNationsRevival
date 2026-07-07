@@ -6,6 +6,7 @@
 //---------------------------------------------------------------------------
 
 
+#include "enprobes.h"
 #include "ai.h"
 #include "altoutput.h"
 #include "edicts.h"     // EDICT_DESPERATE_MEASURES (rocket scrounge edict)
@@ -2140,7 +2141,22 @@ void CVehicleBuilding::BuildVehicle( )
         CTransportData const* pData = theTransports.GetData( m_pBldUnt->GetVehType( ) );
         ASSERT_VALID( pData );
         if ( pData->GetPeople( ) >= GetOwner( )->GetPplBldg( ) )
+        {
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+            // observation: finished vehicle can't spawn for lack of CREW -- the
+            // suspected 100%-wedge (throttled: one line per building per ~30s)
+            if ( m_dwNextPplLog <= timeGetTime( ) )
+            {
+                m_dwNextPplLog = timeGetTime( ) + 30000;
+                char szW[112];
+                sprintf( szW, "[VEHPPL] plyr %d bldg %lu veh %d done100 needppl %d haveppl %d\n",
+                         GetOwner( )->GetPlyrNum( ), (unsigned long)GetID( ), m_pBldUnt->GetVehType( ),
+                         pData->GetPeople( ), GetOwner( )->GetPplBldg( ) );
+                OutputDebugStringA( szW );
+            }
+#endif
             return;
+        }
 
         // AI cheat - we give it materials for more units
         if ( ( GetOwner( )->IsAI( ) ) && ( GetOwner( )->IsLocal( ) ) )

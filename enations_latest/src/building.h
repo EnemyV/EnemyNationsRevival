@@ -977,6 +977,7 @@ protected:
 		CBuildUnit const *	m_pBldUnt;				// vehicle building
 		LONG								m_aiUsed [CMaterialTypes::num_build_types];	// materials used for this vehicle
 		int									m_iNum;						// number to build
+		DWORD								m_dwNextPplLog = 0;	// [VEHPPL] probe throttle (transient)
 
 #ifdef _DEBUG
 public:
