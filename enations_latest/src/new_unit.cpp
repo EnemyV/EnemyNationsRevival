@@ -3532,6 +3532,16 @@ void CVehicleBuilding::StartVehicle( int iIndex, int iNum )
     ASSERT_STRICT( ( 0 <= iIndex ) && ( iIndex < theTransports.GetNumTransports( ) ) );
     ASSERT( ( 0 < iNum ) && ( iNum < 200 ) );
 
+    // same type already in progress: keep building, just update the count.
+    // The unconditional restart below zeroes m_iBuildDone, and the AI re-issues
+    // orders on a cadence -- so anything slower than the cadence NEVER finished
+    // (measured: 508 outrider orders -> 0 built; only quick rangers completed).
+    if ( m_pBldUnt != NULL && m_pBldUnt->GetVehType( ) == iIndex && m_iBuildDone > 0 )
+    {
+        m_iNum = iNum;
+        return;
+    }
+
     // give back used materials
     for ( int iInd = 0; iInd < CMaterialTypes::GetNumBuildTypes( ); iInd++ )
         if ( m_aiUsed[iInd] > 0 )
