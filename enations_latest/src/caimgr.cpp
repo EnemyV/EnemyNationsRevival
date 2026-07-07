@@ -489,6 +489,8 @@ void CAIMgr::Manage( void )
                     if ( m_plUnits != NULL )
                     {
                         int iSum = 0, iLedger = 0;
+                        DWORD dwTop1 = 0, dwTop2 = 0;
+                        int   iTop1 = 0, iTop2 = 0, iTopT1 = -1, iTopT2 = -1;
                         EnterCriticalSection( &cs );
                         POSITION posB = m_plUnits->GetHeadPosition( );
                         while ( posB != NULL )
@@ -498,13 +500,27 @@ void CAIMgr::Manage( void )
                                 continue;
                             CBuilding* pLive = theBuildingMap.GetBldg( pB->GetID( ) );
                             if ( pLive != NULL )
-                                iSum += pLive->GetStore( CMaterialTypes::steel );
+                            {
+                                int iSt = pLive->GetStore( CMaterialTypes::steel );
+                                iSum += iSt;
+                                if ( iSt > iTop1 )
+                                {
+                                    iTop2 = iTop1; dwTop2 = dwTop1; iTopT2 = iTopT1;
+                                    iTop1 = iSt; dwTop1 = pB->GetID( ); iTopT1 = pB->GetTypeUnit( );
+                                }
+                                else if ( iSt > iTop2 )
+                                {
+                                    iTop2 = iSt; dwTop2 = pB->GetID( ); iTopT2 = pB->GetTypeUnit( );
+                                }
+                            }
                         }
                         CPlayer* pP = pGameData->GetPlayerData( m_iPlayer );
                         if ( pP != NULL )
                             iLedger = pP->GetMaterialHave( CMaterialTypes::steel );
                         LeaveCriticalSection( &cs );
-                        sprintf( szR, "[MATSTAT] plyr %d steel stores %d ledger %d\n", m_iPlayer, iSum, iLedger );
+                        sprintf( szR, "[MATSTAT] plyr %d steel stores %d ledger %d top %lu(t%d)=%d %lu(t%d)=%d\n",
+                                 m_iPlayer, iSum, iLedger, (unsigned long)dwTop1, iTopT1, iTop1,
+                                 (unsigned long)dwTop2, iTopT2, iTop2 );
                         OutputDebugStringA( szR );
                     }
                     // truck pipeline x-ray: in-use trucks that aren't moving = zombie claims
