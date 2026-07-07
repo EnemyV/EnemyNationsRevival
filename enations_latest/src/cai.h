@@ -191,9 +191,10 @@
 #define CAI_COAL	8
 #define CAI_IRON	9
 
-// TEMP AI war-system diagnostics: 1 = emit OutputDebugString probes (slow when a
-// debugger/DBWIN listener is attached). Flip to 0 for play/release builds.
-#define EN_AI_PROBES 1
+// TEMP AI diagnostics: emit OutputDebugString probes (slow when a debugger/DBWIN
+// listener is attached). Flip a flag to 0 to silence that category for play/release.
+#define EN_AI_PROBES_WAR  1  // war system: sea invasion, beachheads, bridges, targeting
+#define EN_AI_PROBES_ECON 1  // economy/logistics/census: trucks, cranes, roads, repair, census
 
 #define CAI_ROUTE_X	12
 #define CAI_ROUTE_Y	13

@@ -1934,6 +1934,14 @@ void CAITaskMgr::AssignConstruction( CAIUnit* pUnit )
     if ( ++m_iCraneAssignCnt % 5 == 0 && m_pGoalMgr->m_pMap->m_iRoadCount && m_pGoalMgr->m_iGasHave )
     {
         CAITask* pRoad = m_pGoalMgr->m_plTasks->FindTask( IDT_CONSTRUCT );
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+        {
+            char szR[96];
+            sprintf( szR, "[ROAD] plyr %d QUOTA roll cnt %d task %s crane %lu\n", m_iPlayer, m_iCraneAssignCnt,
+                     pRoad ? "found" : "MISSING", (unsigned long)pUnit->GetID( ) );
+            OutputDebugStringA( szR );
+        }
+#endif
         if ( pRoad != NULL )
         {
             ClearTaskUnit( pUnit );
@@ -2065,7 +2073,17 @@ BOOL CAITaskMgr::AssignRepair( CAIUnit* pCrane )
 {
     CAITask* pTask = m_pGoalMgr->m_plTasks->FindTask( IDT_REPAIR );
     if ( pTask == NULL )
+    {
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+        {
+            // TEMP: no repair task = partials can NEVER be adopted (loaded-goal gap)
+            char szN[64];
+            sprintf( szN, "[NOREPTASK] plyr %d\n", m_iPlayer );
+            OutputDebugStringA( szN );
+        }
+#endif
         return FALSE;
+    }
 
     if ( m_pGoalMgr->m_plUnits != NULL )
     {
@@ -2108,6 +2126,14 @@ BOOL CAITaskMgr::AssignRepair( CAIUnit* pCrane )
                 {
                     pCrane->SetGoal( pTask->GetGoalID( ) );
                     pCrane->SetTask( pTask->GetID( ) );
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+                    {
+                        char szR[96];
+                        sprintf( szR, "[REPAIR] plyr %d assign crane %lu\n", m_iPlayer,
+                                 (unsigned long)pCrane->GetID( ) );
+                        OutputDebugStringA( szR );
+                    }
+#endif
                     return TRUE;
                 }
             }
@@ -4882,6 +4908,14 @@ BOOL CAITaskMgr::RepairConstruction( CAIUnit* pUnit )
 
             // flag unit has having sent message
             pUnit->SetParam( CAI_FUEL, 1 );
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+            {
+                char szR[96];
+                sprintf( szR, "[REPAIR] crane %lu repair msg for bldg %lu\n", (unsigned long)pUnit->GetID( ),
+                         (unsigned long)pUnit->GetDataDW( ) );
+                OutputDebugStringA( szR );
+            }
+#endif
 
 #ifdef _LOGOUT
             logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC,
@@ -4993,6 +5027,24 @@ BOOL CAITaskMgr::RepairConstruction( CAIUnit* pUnit )
         // selected a building to repair
         if ( paiBldg != NULL )
         {
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+            {
+                int iDmg = 0, iCon = 0;
+                EnterCriticalSection( &cs );
+                CBuilding* pB = theBuildingMap.GetBldg( paiBldg->GetID( ) );
+                if ( pB != NULL )
+                {
+                    iDmg = pB->GetDamagePer( );
+                    iCon = (int)pB->IsConstructing( );
+                }
+                LeaveCriticalSection( &cs );
+                char szR[160];
+                sprintf( szR, "[REPAIR] crane %lu -> bldg %lu at %d,%d rating %d dmg %d con %d\n",
+                         (unsigned long)pUnit->GetID( ), (unsigned long)paiBldg->GetID( ), hexBldg.X( ), hexBldg.Y( ),
+                         iBestRating, iDmg, iCon );
+                OutputDebugStringA( szR );
+            }
+#endif
 #ifdef _LOGOUT
             logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC,
                        "RepairConstruction() plyr %d crane %ld going to bldg %ld at %d,%d ", pUnit->GetOwner( ),
@@ -5011,6 +5063,13 @@ BOOL CAITaskMgr::RepairConstruction( CAIUnit* pUnit )
     }
 
 DismissUnit:
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+    {
+        char szR[96];
+        sprintf( szR, "[REPAIR] crane %lu dismissed (done or no target)\n", (unsigned long)pUnit->GetID( ) );
+        OutputDebugStringA( szR );
+    }
+#endif
     // find staging hex to move crane to
     // m_pGoalMgr->m_pMap->m_pMapUtil->FindStagingHex(
     //	hexVeh, 1, 1, pUnit->GetTypeUnit(), hexDest );
@@ -5124,7 +5183,7 @@ void CAITaskMgr::BuildRoad( CAIUnit* pUnit, CAITask* pTask )
             // flag unit as having sent the message already for this hex
             pUnit->SetParam( CAI_FUEL, CNetCmd::bridge_new );
 
-#if EN_AI_PROBES && defined(_WIN32)
+#if EN_AI_PROBES_WAR && defined(_WIN32)
             {
                 // TEMP: bridge acceptance probe (operator has never seen an AI bridge)
                 char szB[96];
@@ -5177,6 +5236,14 @@ void CAITaskMgr::BuildRoad( CAIUnit* pUnit, CAITask* pTask )
                 pUnit->SetDestination( hexSite );
                 // flag unit to send message to build a bridge
                 pUnit->SetParam( CAI_FUEL, CNetCmd::build_bridge );
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+                {
+                    char szR[96];
+                    sprintf( szR, "[ROAD] plyr %d crane %lu -> BRIDGE at %d,%d\n", m_iPlayer,
+                             (unsigned long)pUnit->GetID( ), hexSite.X( ), hexSite.Y( ) );
+                    OutputDebugStringA( szR );
+                }
+#endif
 
 #ifdef _LOGOUT
                 logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "BridgeBuilding() go to %d,%d ", hexSite.X( ),
@@ -5200,6 +5267,15 @@ void CAITaskMgr::BuildRoad( CAIUnit* pUnit, CAITask* pTask )
             int iPlanned = m_pGoalMgr->m_pMap->GetPlannedCount( );
             if ( iPlanned == 0 )
                 m_pGoalMgr->m_pMap->m_iRoadCount /= 2;
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+            {
+                char szR[128];
+                sprintf( szR, "[ROAD] plyr %d crane %lu %s (%d planned), grid now %d\n", m_iPlayer,
+                         (unsigned long)pUnit->GetID( ), iPlanned ? "no ELIGIBLE hex" : "plan EXHAUSTED",
+                         iPlanned, m_pGoalMgr->m_pMap->m_iRoadCount );
+                OutputDebugStringA( szR );
+            }
+#endif
             // tell the goalmgr we have an idle crane
             m_pGoalMgr->IdleCrane( );
             m_pGoalMgr->ConsiderRoads( );
@@ -5228,6 +5304,13 @@ void CAITaskMgr::BuildRoad( CAIUnit* pUnit, CAITask* pTask )
             // tell the goalmgr we have an idle crane
             m_pGoalMgr->IdleCrane( );
 
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+            {
+                char szR[96];
+                sprintf( szR, "[ROAD] plyr %d crane %lu NO-GAS bail\n", m_iPlayer, (unsigned long)pUnit->GetID( ) );
+                OutputDebugStringA( szR );
+            }
+#endif
 #ifdef _LOGOUT
             logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "RoadBuilding() %d/%ld crane can't build road, out of gas",
                        pUnit->GetOwner( ), pUnit->GetID( ) );
@@ -5264,6 +5347,15 @@ void CAITaskMgr::BuildRoad( CAIUnit* pUnit, CAITask* pTask )
                 pUnit->SetParam( CAI_DEST_X, hexRunEnd.X( ) );
                 pUnit->SetParam( CAI_DEST_Y, hexRunEnd.Y( ) );
                 pUnit->SetParam( CAI_FUEL, CNetCmd::road_new );
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+                {
+                    char szR[128];
+                    sprintf( szR, "[ROAD] plyr %d crane %lu RUN %d hexes %d,%d -> %d,%d\n", m_iPlayer,
+                             (unsigned long)pUnit->GetID( ), iRunLen, hexSite.X( ), hexSite.Y( ),
+                             hexRunEnd.X( ), hexRunEnd.Y( ) );
+                    OutputDebugStringA( szR );
+                }
+#endif
                 return;
             }
         }
@@ -5282,6 +5374,14 @@ void CAITaskMgr::BuildRoad( CAIUnit* pUnit, CAITask* pTask )
         pUnit->SetDestination( hexSite );
         // flag unit to send message to build a road
         pUnit->SetParam( CAI_FUEL, CNetCmd::build_road );
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+        {
+            char szR[96];
+            sprintf( szR, "[ROAD] plyr %d crane %lu -> road hex %d,%d\n", m_iPlayer, (unsigned long)pUnit->GetID( ),
+                     hexSite.X( ), hexSite.Y( ) );
+            OutputDebugStringA( szR );
+        }
+#endif
     }
     else  // vehicle is not at site but a site was selected
     {
@@ -5627,6 +5727,18 @@ void CAITaskMgr::ConstructBuilding( CAIUnit* pUnit, CAITask* pTask )
                         DWORD dwDiff = dwNow - dwUnitTime;
                         if ( dwDiff < 30000 )
                             return;
+
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+                        // stalled >30s on a build task: dump what it's told to build + where
+                        {
+                            char szDbg[256];
+                            sprintf( szDbg,
+                                     "[CRANEPROBE] plyr %d crane %lu bldgType %d site %d,%d veh %d,%d dest %d,%d stalled %lums\n",
+                                     m_iPlayer, (unsigned long)pUnit->GetID( ), iBldg, hexSite.X( ), hexSite.Y( ),
+                                     hexVeh.X( ), hexVeh.Y( ), hexDest.X( ), hexDest.Y( ), (unsigned long)dwDiff );
+                            OutputDebugStringA( szDbg );
+                        }
+#endif
 
                         // The crane has been unable to make progress onto this
                         // build hex for a long time -- e.g. several cranes aimed

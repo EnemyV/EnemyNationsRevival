@@ -1049,6 +1049,14 @@ BOOL CAIRouter::FindTransport( CAIUnit* pCAIBldg )
             // that will be
             if ( pBldgSource == NULL )
             {
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+                {
+                    char szR[128];
+                    sprintf( szR, "[SOURCEMISS] plyr %d bldg %lu mat %d qty %d\n", m_iPlayer,
+                             (unsigned long)pCAIBldg->GetID( ), i, (int)pCAIBldg->GetParam( i ) );
+                    OutputDebugStringA( szR );
+                }
+#endif
 #ifdef _LOGOUT
                 logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "unable to find source for material %d ", i );
 #endif
@@ -1974,18 +1982,17 @@ BOOL CAIRouter::NeedsCommodities( CAIUnit* pCAIBldg )
     // is this a building under construction
     else if ( pCopyCBuilding->m_aiDataOut[CAI_ISCONSTRUCTING] )
     {
-        // get pointer to CStructureData copy data
-        CAICopy* pCopyCStructureData = pCAIBldg->GetCopyData( CAICopy::CStructureData );
-        if ( pCopyCStructureData == NULL )
-            return FALSE;
-
-        // go thru materials needed, and record needs
-        for ( int i = 0; i < CMaterialTypes::num_types; ++i )
+        // an UNDAMAGED partial needs its remaining BUILD materials - reading
+        // production inputs here kept such partials off the needs list forever
+        EnterCriticalSection( &cs );
+        CBuilding* pBldg = theBuildingMap.GetBldg( pCAIBldg->GetID( ) );
+        if ( pBldg != NULL )
         {
-            // update materials needed to produce materials
-            if ( pCopyCStructureData->m_aiDataIn[i] )
-                aiMatsNeeded[i] = pCopyCStructureData->m_aiDataIn[i];
+            for ( int i = 0; i < CMaterialTypes::num_build_types; ++i )
+                if ( pBldg->GetBldgMatReq( i, FALSE ) )
+                    aiMatsNeeded[i] = pBldg->GetBldgMatReq( i, FALSE );
         }
+        LeaveCriticalSection( &cs );
     }
     // building is built and running
     else if ( !pCopyCBuilding->m_aiDataOut[CAI_ISPAUSED] )
@@ -2665,6 +2672,17 @@ void CAIRouter::LoadMaterials( CAIUnit* pTruck, CAIHex* paiHex )
             // record this material quantity to be transferred
             msg.m_aiMat[i] = min( iQtyNeeded, iCapacity );
             iCapacity -= msg.m_aiMat[i];
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+            if ( msg.m_aiMat[i] == 0 && pTruck->GetParam( i ) > 0 )
+            {
+                // truly-empty source at arrival
+                char szR[128];
+                sprintf( szR, "[XFER-EMPTY] plyr %d truck %lu src %lu mat %d wanted %d livehad %d\n", m_iPlayer,
+                         (unsigned long)pTruck->GetID( ), (unsigned long)pBldg->GetID( ), i,
+                         (int)pTruck->GetParam( i ), iLiveHave );
+                OutputDebugStringA( szR );
+            }
+#endif
 
 #ifdef _LOGOUT
             logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC,

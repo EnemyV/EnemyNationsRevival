@@ -349,7 +349,7 @@ void CAIMgr::Manage( void )
                 m_pGoalMgr->CheckResearch( );
                 m_pGoalMgr->ConsiderAltOutputs( );
 
-#if EN_AI_PROBES && defined(_WIN32)
+#if EN_AI_PROBES_ECON && defined(_WIN32)
                 if ( m_pGoalMgr->m_pMap != NULL )
                 {
                     // TEMP: per-sweep AI census (gas, road plan vs paved, bldgs +/-)
@@ -377,6 +377,169 @@ void CAIMgr::Manage( void )
                              m_pGoalMgr->m_iGasHave, m_pGoalMgr->m_pMap->m_iRoadCount, m_iStatRoadsPaved,
                              m_iStatBldgBuilt, m_iStatBldgLost, (int)m_pGoalMgr->GetBuildingCnt( ), iTroops );
                     OutputDebugStringA( szC );
+                }
+#endif
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+                {
+                    int iTopic = -1;
+                    EnterCriticalSection( &cs );
+                    CPlayer* pPlyr = pGameData->GetPlayerData( m_iPlayer );
+                    if ( pPlyr != NULL )
+                        iTopic = pPlyr->GetRsrchItem( );
+                    LeaveCriticalSection( &cs );
+                    char szR[128];
+                    sprintf( szR, "[RSRCHSTAT] plyr %d topic %d\n", m_iPlayer, iTopic );
+                    OutputDebugStringA( szR );
+                    // queue depth: ~0 = trickle (scheduler flaw); large/growing = backlog
+                    {
+                        int iQ = 0;
+                        EnterCriticalSection( &m_cs );
+                        if ( m_plMsgQueue != NULL )
+                            iQ = (int)m_plMsgQueue->GetCount( );
+                        LeaveCriticalSection( &m_cs );
+                        sprintf( szR, "[QSTAT] plyr %d queue %d\n", m_iPlayer, iQ );
+                        OutputDebugStringA( szR );
+                    }
+                    if ( m_pRouter != NULL )
+                    {
+                        sprintf( szR, "[ROUTESTAT] plyr %d need %d idletrucks %d\n", m_iPlayer,
+                                 m_pRouter->GetNeedCount( ), m_pRouter->GetIdleTruckCount( ) );
+                        OutputDebugStringA( szR );
+                    }
+                    // rebuild-pipeline check: which building types are under goal?
+                    if ( m_pGoalMgr->m_pwaBldgs != NULL && m_pGoalMgr->m_pwaBldgGoals != NULL )
+                    {
+                        char szG[160];
+                        int  n = sprintf( szG, "[GOALSTAT] plyr %d deficits:", m_iPlayer );
+                        int  iCnt = 0;
+                        for ( int ib = 0; ib < CStructureData::num_types && iCnt < 6; ib++ )
+                        {
+                            if ( m_pGoalMgr->m_pwaBldgGoals[ib] > m_pGoalMgr->m_pwaBldgs[ib] )
+                            {
+                                n += sprintf( szG + n, " %d:%d/%d", ib, (int)m_pGoalMgr->m_pwaBldgs[ib],
+                                              (int)m_pGoalMgr->m_pwaBldgGoals[ib] );
+                                iCnt++;
+                            }
+                        }
+                        sprintf( szG + n, " (%d)\n", iCnt );
+                        OutputDebugStringA( szG );
+                    }
+                    // physical steel vs ledger (phantom-wealth check)
+                    if ( m_plUnits != NULL )
+                    {
+                        int iSum = 0, iLedger = 0;
+                        EnterCriticalSection( &cs );
+                        POSITION posB = m_plUnits->GetHeadPosition( );
+                        while ( posB != NULL )
+                        {
+                            CAIUnit* pB = (CAIUnit*)m_plUnits->GetNext( posB );
+                            if ( pB == NULL || pB->GetOwner( ) != m_iPlayer || pB->GetType( ) != CUnit::building )
+                                continue;
+                            CBuilding* pLive = theBuildingMap.GetBldg( pB->GetID( ) );
+                            if ( pLive != NULL )
+                                iSum += pLive->GetStore( CMaterialTypes::steel );
+                        }
+                        CPlayer* pP = pGameData->GetPlayerData( m_iPlayer );
+                        if ( pP != NULL )
+                            iLedger = pP->GetMaterialHave( CMaterialTypes::steel );
+                        LeaveCriticalSection( &cs );
+                        sprintf( szR, "[MATSTAT] plyr %d steel stores %d ledger %d\n", m_iPlayer, iSum, iLedger );
+                        OutputDebugStringA( szR );
+                    }
+                    // truck pipeline x-ray: in-use trucks that aren't moving = zombie claims
+                    if ( m_plUnits != NULL )
+                    {
+                        int iTrucks = 0, iInUse = 0, iMoving = 0, iStopped = 0, iDumped = 0;
+                        POSITION posT = m_plUnits->GetHeadPosition( );
+                        while ( posT != NULL )
+                        {
+                            CAIUnit* pT = (CAIUnit*)m_plUnits->GetNext( posT );
+                            if ( pT == NULL || pT->GetOwner( ) != m_iPlayer )
+                                continue;
+                            if ( pT->GetType( ) != CUnit::vehicle ||
+                                 pT->GetTypeUnit( ) != CTransportData::heavy_truck )
+                                continue;
+                            iTrucks++;
+                            if ( !( pT->GetStatus( ) & CAI_IN_USE ) )
+                                continue;
+                            iInUse++;
+                            AiVehSnap snapT;
+                            if ( !AiSnap::ReadVeh( pT->GetID( ), snapT ) )
+                                continue;
+                            if ( snapT.iRouteMode != CVehicle::stop )
+                            {
+                                iMoving++;
+                                continue;
+                            }
+                            iStopped++;
+                            if ( iDumped < 6 )
+                            {
+                                iDumped++;
+                                int iSrcs = 0;
+                                for ( int im = 0; im < CMaterialTypes::num_types; im++ )
+                                    if ( pT->GetParamDW( im ) != 0 )
+                                        iSrcs++;
+                                sprintf( szR, "[TRUCKSTUCK] plyr %d id %lu ddw %lu at %d,%d dest %d,%d srcs %d stat %u\n",
+                                         m_iPlayer, (unsigned long)pT->GetID( ), (unsigned long)pT->GetDataDW( ),
+                                         snapT.iHeadX, snapT.iHeadY, snapT.iDestX, snapT.iDestY, iSrcs,
+                                         (unsigned)pT->GetStatus( ) );
+                                OutputDebugStringA( szR );
+                            }
+                        }
+                        // trucks parked on/inside a building hex (exit-after-unload check)
+                        int iInBldg = 0, iInDump = 0;
+                        posT = m_plUnits->GetHeadPosition( );
+                        while ( posT != NULL )
+                        {
+                            CAIUnit* pT = (CAIUnit*)m_plUnits->GetNext( posT );
+                            if ( pT == NULL || pT->GetOwner( ) != m_iPlayer )
+                                continue;
+                            if ( pT->GetType( ) != CUnit::vehicle ||
+                                 pT->GetTypeUnit( ) != CTransportData::heavy_truck )
+                                continue;
+                            AiVehSnap snapT;
+                            if ( !AiSnap::ReadVeh( pT->GetID( ), snapT ) )
+                                continue;
+                            if ( snapT.iRouteMode != CVehicle::stop )
+                                continue;
+                            CAIHex aiHexT( snapT.iHeadX, snapT.iHeadY );
+                            pGameData->GetCHexData( &aiHexT );
+                            if ( aiHexT.m_iUnit != CUnit::building )
+                                continue;
+                            iInBldg++;
+                            if ( iInDump < 6 )
+                            {
+                                iInDump++;
+                                sprintf( szR, "[TRUCKIN] plyr %d id %lu in bldg %lu stat %u ddw %lu\n", m_iPlayer,
+                                         (unsigned long)pT->GetID( ), (unsigned long)aiHexT.m_dwUnitID,
+                                         (unsigned)pT->GetStatus( ), (unsigned long)pT->GetDataDW( ) );
+                                OutputDebugStringA( szR );
+                            }
+                        }
+                        sprintf( szR, "[TRUCKSTAT] plyr %d trucks %d inuse %d moving %d stopped %d inbldg %d\n",
+                                 m_iPlayer, iTrucks, iInUse, iMoving, iStopped, iInBldg );
+                        OutputDebugStringA( szR );
+                    }
+                    // idle cranes vs pending work: idle+work = dispatch bug, idle+none = fleet exceeds demand
+                    if ( m_plUnits != NULL )
+                    {
+                        int iIdleCranes = 0, iCranes = 0;
+                        POSITION posC = m_plUnits->GetHeadPosition( );
+                        while ( posC != NULL )
+                        {
+                            CAIUnit* pC = (CAIUnit*)m_plUnits->GetNext( posC );
+                            if ( pC == NULL || pC->GetOwner( ) != m_iPlayer )
+                                continue;
+                            if ( pC->GetType( ) != CUnit::vehicle ||
+                                 pC->GetTypeUnit( ) != CTransportData::construction )
+                                continue;
+                            iCranes++;
+                            if ( !pC->GetTask( ) )
+                                iIdleCranes++;
+                        }
+                        sprintf( szR, "[ASSIGNSTAT] plyr %d cranes %d idle %d\n", m_iPlayer, iCranes, iIdleCranes );
+                        OutputDebugStringA( szR );
+                    }
                 }
 #endif
             }
@@ -748,7 +911,7 @@ void CAIMgr::UpdateUnits( CAIMsg* pMsg )
         // determine unit type (building/vehicle)
         int iType = pMsg->m_iMsg == CNetCmd::veh_new ? CUnit::vehicle : CUnit::building;
 
-#if EN_AI_PROBES && defined(_WIN32)
+#if EN_AI_PROBES_WAR && defined(_WIN32)
         if ( iType == CUnit::vehicle &&
              ( pMsg->m_idata1 == CTransportData::gun_boat || pMsg->m_idata1 == CTransportData::landing_craft ||
                pMsg->m_idata1 == CTransportData::destroyer || pMsg->m_idata1 == CTransportData::cruiser ||
@@ -785,7 +948,7 @@ void CAIMgr::UpdateUnits( CAIMsg* pMsg )
         pUnit->SetGoal( FALSE );
         pUnit->ClearParam( );
 
-#if EN_AI_PROBES && defined(_WIN32)
+#if EN_AI_PROBES_ECON && defined(_WIN32)
         if ( pMsg->m_iMsg == CNetCmd::bldg_new && pMsg->m_idata3 == m_iPlayer )
             m_iStatBldgBuilt++;
 #endif
@@ -811,7 +974,7 @@ void CAIMgr::UpdateUnits( CAIMsg* pMsg )
                 // bunker mode: a lost building puts offense on hold
                 if ( pUnit->GetType( ) == CUnit::building && m_pGoalMgr != NULL )
                     m_pGoalMgr->NoteBuildingLost( );
-#if EN_AI_PROBES && defined(_WIN32)
+#if EN_AI_PROBES_ECON && defined(_WIN32)
                 if ( pUnit->GetType( ) == CUnit::building )
                     m_iStatBldgLost++;
 #endif
@@ -1075,6 +1238,18 @@ void CAIMgr::HandleStuckVehicles( void )
     CHexCoord hexDest, hexVeh, hex;
     BOOL      bIsWorking, bIsCarried;
 
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+    // road bottleneck telemetry, once per sweep
+    if ( m_pGoalMgr != NULL && m_pGoalMgr->m_pMap != NULL )
+    {
+        char szR[128];
+        sprintf( szR, "[ROADSTAT] plyr %d grid %d gas %d need %d wells %d refy %d\n", m_iPlayer,
+                 m_pGoalMgr->m_pMap->m_iRoadCount, m_pGoalMgr->m_iGasHave, m_pGoalMgr->m_iGasNeed,
+                 m_pGoalMgr->m_pwaBldgs[CStructureData::oil_well], m_pGoalMgr->m_pwaBldgs[CStructureData::refinery] );
+        OutputDebugStringA( szR );
+    }
+#endif
+
 #ifdef _LOGOUT
     logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "CAIMgr::HandleStuckVehicles() player %d called at %ld  ", m_iPlayer,
                dwNow );
@@ -1120,7 +1295,7 @@ void CAIMgr::HandleStuckVehicles( void )
                     }
                     if ( dwNow - pUnit->GetStuckSince( ) > 600000 )
                     {
-#if EN_AI_PROBES && defined(_WIN32)
+#if EN_AI_PROBES_WAR && defined(_WIN32)
                         {
                             char szF[96];
                             sprintf( szF, "[RECALL] plyr %d unit %lu task %u beached at %d,%d\n", m_iPlayer,
@@ -1195,11 +1370,27 @@ void CAIMgr::HandleStuckVehicles( void )
                     continue;
                 if ( dwStuck > 360000 )
                 {
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+                    {
+                        char szR[96];
+                        sprintf( szR, "[TRUCK] force-release truck %lu at %d,%d\n",
+                                 (unsigned long)pUnit->GetID( ), hexVeh.X( ), hexVeh.Y( ) );
+                        OutputDebugStringA( szR );
+                    }
+#endif
                     pUnit->SetStatus( 0 );
                     pUnit->SetDataDW( 0 );
                     pUnit->ClearParam( );
                     continue;
                 }
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+                {
+                    char szR[96];
+                    sprintf( szR, "[TRUCK] nudge arrived-idle truck %lu at %d,%d\n",
+                             (unsigned long)pUnit->GetID( ), hexVeh.X( ), hexVeh.Y( ) );
+                    OutputDebugStringA( szR );
+                }
+#endif
                 CAIMsg msg;
                 msg.m_iMsg   = CNetCmd::veh_dest;
                 msg.m_dwID   = pUnit->GetID( );
@@ -1221,6 +1412,17 @@ void CAIMgr::HandleStuckVehicles( void )
                  pUnit->GetTask( ) && hexVeh == hexDest &&
                  !pUnit->GetParam( CAI_EFFECTIVE ) )
             {
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+                {
+                    char szR[192];
+                    sprintf( szR,
+                             "[CRANERESCUE] nudge arrived-idle crane %lu task %u at %d,%d tail %d,%d aidest %u,%u\n",
+                             (unsigned long)pUnit->GetID( ), (unsigned)pUnit->GetTask( ), hexVeh.X( ), hexVeh.Y( ),
+                             snap.iPtTailX / 2, snap.iPtTailY / 2, (unsigned)pUnit->GetParam( CAI_DEST_X ),
+                             (unsigned)pUnit->GetParam( CAI_DEST_Y ) );
+                    OutputDebugStringA( szR );
+                }
+#endif
                 m_pTaskMgr->GenerateTaskOrder( pUnit );
                 continue;
             }
@@ -1251,6 +1453,14 @@ void CAIMgr::HandleStuckVehicles( void )
                 pUnit->SetDestination( hexDest );
                 // last hex LOWORD(X), HIWORD(Y) occupied
                 pUnit->SetStuckHex( (DWORD)MAKELPARAM( hexVeh.X( ), hexVeh.Y( ) ) );
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+                {
+                    char szR[160];
+                    sprintf( szR, "[CRANERESCUE] 5min resend crane %lu to %d,%d diff %lu\n",
+                             (unsigned long)pUnit->GetID( ), hexDest.X( ), hexDest.Y( ), (unsigned long)dwDiff );
+                    OutputDebugStringA( szR );
+                }
+#endif
 #ifdef _LOGOUT
                 logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC,
                            "CAIMgr::HandleStuckVehicles() player %d unit %d a %d is stuck after 5 min, resent to %d,%d "
@@ -1285,6 +1495,15 @@ void CAIMgr::HandleStuckVehicles( void )
                 }
 
                 int iDist = pGameData->GetRangeDistance( hexVeh, hexDest );
+
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+                {
+                    char szR[160];
+                    sprintf( szR, "[CRANERESCUE] 10min crane %lu diff %lu iDist %d (moved-since-5min test)\n",
+                             (unsigned long)pUnit->GetID( ), (unsigned long)dwDiff, iDist );
+                    OutputDebugStringA( szR );
+                }
+#endif
 
                 // if still too far away
                 if ( iDist > 2 )
@@ -1327,6 +1546,14 @@ void CAIMgr::HandleStuckVehicles( void )
                             }
                         }
 
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+                        {
+                            char szR[160];
+                            sprintf( szR, "[CRANERESCUE] 10min TELEPORT crane %lu task %u -> rocket, unbound\n",
+                                     (unsigned long)pUnit->GetID( ), (unsigned)pUnit->GetTask( ) );
+                            OutputDebugStringA( szR );
+                        }
+#endif
                         // unassign crane task
                         m_pTaskMgr->UnAssignTask( pUnit->GetTask( ), pUnit->GetGoal( ) );
                     }

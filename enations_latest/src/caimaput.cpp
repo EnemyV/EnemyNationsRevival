@@ -2105,7 +2105,7 @@ TryTryAgain:
 #ifdef _LOGOUT
                             logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "GetPathRating() failed " );
 #endif
-#if EN_AI_PROBES && defined(_WIN32)
+#if EN_AI_PROBES_ECON && defined(_WIN32)
                             char szSP[96];
                             sprintf( szSP, "[SITEPICK] plyr %d bldg %d rejected-unreachable %d,%d\n", m_iPlayer,
                                      iBldg, hex.X( ), hex.Y( ) );
@@ -3027,7 +3027,7 @@ BOOL CAIMapUtil::IsBridgeSpan( CHexCoord& hexRiverRoad, CAIUnit* pUnit )
         LeaveCriticalSection( &cs );
         if ( bStartBlocked )
         {
-#if EN_AI_PROBES && defined(_WIN32)
+#if EN_AI_PROBES_WAR && defined(_WIN32)
             char szV[96];
             sprintf( szV, "[BRIDGEVETO] plyr %d bad landing %d,%d\n", m_iPlayer, hexStart.X( ), hexStart.Y( ) );
             OutputDebugStringA( szV );
@@ -3155,7 +3155,7 @@ BOOL CAIMapUtil::IsBridgeSpan( CHexCoord& hexRiverRoad, CAIUnit* pUnit )
             continue;
         if ( TryBridgeWalk( hexShift, iDir, iMaxSpan, hexEnd ) )
         {
-#if EN_AI_PROBES && defined(_WIN32)
+#if EN_AI_PROBES_WAR && defined(_WIN32)
             char szS[96];
             sprintf( szS, "[BRIDGESHIFT] plyr %d moved crossing to %d,%d\n", m_iPlayer, hexShift.X( ), hexShift.Y( ) );
             OutputDebugStringA( szS );
@@ -3220,7 +3220,7 @@ BOOL CAIMapUtil::TryBridgeWalk( CHexCoord const& hexStart, int iDir, int iMaxSpa
             }
             if ( bBadLanding )
             {
-#if EN_AI_PROBES && defined(_WIN32)
+#if EN_AI_PROBES_WAR && defined(_WIN32)
                 char szV[96];
                 sprintf( szV, "[BRIDGEVETO] plyr %d bad landing %d,%d\n", m_iPlayer, hexBridge.X( ), hexBridge.Y( ) );
                 OutputDebugStringA( szV );
