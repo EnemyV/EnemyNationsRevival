@@ -1062,7 +1062,16 @@ BOOL CAIMap::PlanBridgeToward( CHexCoord const& hexAt, CHexCoord const& hexSite 
 	}
 	LeaveCriticalSection( &cs );
 	if( !bCanBridge || iMaxSpan <= 0 )
+	{
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+		{
+			char szB[96];
+			sprintf( szB, "[BRIDGEMISS] plyr %d notech (canbridge %d span %d)\n", m_iPlayer, (int)bCanBridge, iMaxSpan );
+			OutputDebugStringA( szB );
+		}
+#endif
 		return FALSE;
+	}
 
 	// step toward the site (dominant axis first) until a river hex or 12 steps
 	CHexCoord hexWalk = hexAt, hexBank( 0, 0 );
@@ -1095,24 +1104,43 @@ BOOL CAIMap::PlanBridgeToward( CHexCoord const& hexAt, CHexCoord const& hexSite 
 			hexWalk = hexNext;
 	}
 	if( iDir < 0 )
+	{
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+		{
+			char szB[96];
+			sprintf( szB, "[BRIDGEMISS] plyr %d noriver on walk %d,%d -> %d,%d\n", m_iPlayer,
+				hexAt.X(), hexAt.Y(), hexSite.X(), hexSite.Y() );
+			OutputDebugStringA( szB );
+		}
+#endif
 		return FALSE;
+	}
 
 	// bank must be crane-traversable land with no building on it
 	CHex *pBankHex = theMap.GetHex( hexBank );
-	if( pBankHex == NULL || pBankHex->GetType() == CHex::river ||
-		!m_pMapUtil->m_tdWheel->CanTravelHex( pBankHex ) )
-		return FALSE;
-	BOOL bBlocked;
-	EnterCriticalSection( &cs );
-	bBlocked = ( theBuildingHex.GetBuilding( hexBank ) != NULL );
-	LeaveCriticalSection( &cs );
-	if( bBlocked )
-		return FALSE;
+	BOOL bBadBank = ( pBankHex == NULL || pBankHex->GetType() == CHex::river ||
+		!m_pMapUtil->m_tdWheel->CanTravelHex( pBankHex ) );
+	if( !bBadBank )
+	{
+		EnterCriticalSection( &cs );
+		bBadBank = ( theBuildingHex.GetBuilding( hexBank ) != NULL );
+		LeaveCriticalSection( &cs );
+	}
 
 	// crossing must land on traversable unbuilt ground within the owner's span
 	CHexCoord hexEnd( 0, 0 );
-	if( !m_pMapUtil->TryBridgeWalk( hexBank, iDir, iMaxSpan, hexEnd ) )
+	if( bBadBank || !m_pMapUtil->TryBridgeWalk( hexBank, iDir, iMaxSpan, hexEnd ) )
+	{
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+		{
+			char szB[112];
+			sprintf( szB, "[BRIDGEMISS] plyr %d %s at bank %d,%d dir %d\n", m_iPlayer,
+				bBadBank ? "badbank" : "nowalk", hexBank.X(), hexBank.Y(), iDir );
+			OutputDebugStringA( szB );
+		}
+#endif
 		return FALSE;
+	}
 
 	// flag bank -> river span -> landing as planned road
 	CHexCoord hexMark = hexBank;

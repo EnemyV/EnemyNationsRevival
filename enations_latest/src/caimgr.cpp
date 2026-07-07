@@ -1461,7 +1461,8 @@ void CAIMgr::HandleStuckVehicles( void )
                 // never picked, re-nudging can NEVER succeed -- free the crane.
                 // Clamped at a spannable river + bridge tech -> plan the bridge.
                 if ( m_pGoalMgr != NULL && m_pGoalMgr->m_plTasks != NULL &&
-                     pUnit->GetTask( ) != IDT_CONSTRUCT )  // road task: BuildRoad repools on its own
+                     pUnit->GetTask( ) != IDT_CONSTRUCT &&  // road task: BuildRoad repools on its own
+                     pUnit->GetTask( ) != IDT_REPAIR )      // repair: own lifecycle, BUILD_AT always 0
                 {
                     CAITask* pTaskC = m_pGoalMgr->m_plTasks->GetTask( pUnit->GetTask( ), pUnit->GetGoal( ) );
                     if ( pTaskC != NULL && pTaskC->GetTaskParam( ORDER_TYPE ) == CONSTRUCTION_ORDER )
@@ -1563,12 +1564,37 @@ void CAIMgr::HandleStuckVehicles( void )
                     continue;
                 }
 
-                // oscillating crane: 3 resends to the same dest = never getting
+                // oscillating unit: 3 resends to the same dest = never getting
                 // there (309 wasted resends/round measured) -> repool now
-                if ( pUnit->NoteResend( (DWORD)MAKELPARAM( hexDest.X( ), hexDest.Y( ) ) ) >= 3 &&
-                     RepoolFarStuck( pUnit, hexVeh, hexDest,
-                                     pGameData->GetRangeDistance( hexVeh, hexDest ) ) )
-                    continue;
+                if ( pUnit->NoteResend( (DWORD)MAKELPARAM( hexDest.X( ), hexDest.Y( ) ) ) >= 3 )
+                {
+                    if ( RepoolFarStuck( pUnit, hexVeh, hexDest,
+                                         pGameData->GetRangeDistance( hexVeh, hexDest ) ) )
+                        continue;
+                    // combat unit marching at an unreachable war dest: try a WAR
+                    // BRIDGE toward it, then re-pool the unit for reassignment
+                    WORD wTask = pUnit->GetTask( );
+                    if ( ( wTask == IDT_SEEKINWAR || wTask == IDT_SEEKINRANGE || wTask == IDT_SEEKATSEA ||
+                           wTask == IDT_CONDUCTWAR || wTask == IDT_PREPAREWAR ) &&
+                         m_pTaskMgr != NULL )
+                    {
+                        BOOL bBridged = ( m_pMap != NULL && m_pMap->PlanBridgeToward( hexVeh, hexDest ) );
+#if EN_AI_PROBES_WAR && defined(_WIN32)
+                        {
+                            char szR[160];
+                            sprintf( szR, "[WARSTUCK] plyr %d unit %lu task %u at %d,%d dest %d,%d bridge %d repooled\n",
+                                     m_iPlayer, (unsigned long)pUnit->GetID( ), (unsigned)wTask, hexVeh.X( ),
+                                     hexVeh.Y( ), hexDest.X( ), hexDest.Y( ), (int)bBridged );
+                            OutputDebugStringA( szR );
+                        }
+#endif
+                        m_pTaskMgr->ClearTaskUnit( pUnit );
+                        pUnit->SetStuckSince( 0 );
+                        pUnit->SetStuckHex( 0 );
+                        pUnit->ClearResend( );
+                        continue;
+                    }
+                }
 
                 // make unit go to last destination
                 pUnit->SetDestination( hexDest );

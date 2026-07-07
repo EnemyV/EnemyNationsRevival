@@ -2686,18 +2686,27 @@ void CAIRouter::LoadMaterials( CAIUnit* pTruck, CAIHex* paiHex )
             iCapacity -= msg.m_aiMat[i];
             if ( msg.m_aiMat[i] == 0 && pTruck->GetParam( i ) > 0 )
             {
-                // empty at arrival: blacklist this (mat,src) 2 min so the next
-                // pick doesn't send another truck to the same dry source
-                m_mEmptyUntil[std::make_pair( i, paiHex->m_dwUnitID )] = theGame.GettimeGetTime( ) + 120 * 1000;
+                // empty at arrival: blacklist this (mat,src) with escalating
+                // duration (2/4/8 min) -- a permanently dry source (46 wasted
+                // trips/round measured) shouldn't be re-picked at a fixed pace
+                std::pair<int, DWORD> keyE = std::make_pair( i, paiHex->m_dwUnitID );
+                int iStrikes = ++m_mEmptyStrikes[keyE];
+                if ( iStrikes > 3 ) iStrikes = 3;
+                m_mEmptyUntil[keyE] = theGame.GettimeGetTime( ) + ( 120 << ( iStrikes - 1 ) ) * 1000;
 #if EN_AI_PROBES_ECON && defined(_WIN32)
                 {
                     char szR[128];
-                    sprintf( szR, "[XFER-EMPTY] plyr %d truck %lu src %lu mat %d wanted %d livehad %d\n", m_iPlayer,
-                             (unsigned long)pTruck->GetID( ), (unsigned long)pBldg->GetID( ), i,
-                             (int)pTruck->GetParam( i ), iLiveHave );
+                    sprintf( szR, "[XFER-EMPTY] plyr %d truck %lu src %lu mat %d wanted %d livehad %d strikes %d\n",
+                             m_iPlayer, (unsigned long)pTruck->GetID( ), (unsigned long)pBldg->GetID( ), i,
+                             (int)pTruck->GetParam( i ), iLiveHave, iStrikes );
                     OutputDebugStringA( szR );
                 }
 #endif
+            }
+            else if ( msg.m_aiMat[i] > 0 )
+            {
+                // source delivered again -> forgive its strike history
+                m_mEmptyStrikes.erase( std::make_pair( i, paiHex->m_dwUnitID ) );
             }
 
 #ifdef _LOGOUT

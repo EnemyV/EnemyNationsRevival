@@ -35,6 +35,8 @@ class CAIRouter : public CObject
 	std::map<std::pair<int, DWORD>, int> m_mReserved;
 	// empty-at-arrival blacklist: (material,source) -> skip as source until this wall-clock ms
 	std::map<std::pair<int, DWORD>, DWORD> m_mEmptyUntil;
+	// strike count per (material,source): duration escalates 2->4->8 min
+	std::map<std::pair<int, DWORD>, int> m_mEmptyStrikes;
 	int m_iReserveSweep;	// FillPriorities call counter driving the periodic ledger rebuild
 
 public:
