@@ -2613,6 +2613,17 @@ void CAIGoalMgr::ProduceVehicles( int iVeh )
     if ( iBldg1 == CStructureData::num_types && iBldg2 == CStructureData::num_types )
         return;
 
+#ifdef _WIN32
+    if ( iVeh == CTransportData::gun_boat || iVeh == CTransportData::landing_craft ||
+         iVeh == CTransportData::destroyer || iVeh == CTransportData::cruiser )
+    {
+        // TEMP: sea-war verification probe (production REQUEST side)
+        char szS[80];
+        sprintf( szS, "[SEAPROD] plyr %d wants veh %d\n", m_iPlayer, iVeh );
+        OutputDebugStringA( szS );
+    }
+#endif
+
     // decide if a new building (a producer of that vehicle)
     // should be added or not
     if ( !AddNewFactory( iBldg1, iBldg2, wTask, wGoal ) )

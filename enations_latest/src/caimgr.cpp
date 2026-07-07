@@ -714,6 +714,19 @@ void CAIMgr::UpdateUnits( CAIMsg* pMsg )
         // determine unit type (building/vehicle)
         int iType = pMsg->m_iMsg == CNetCmd::veh_new ? CUnit::vehicle : CUnit::building;
 
+#ifdef _WIN32
+        if ( iType == CUnit::vehicle &&
+             ( pMsg->m_idata1 == CTransportData::gun_boat || pMsg->m_idata1 == CTransportData::landing_craft ||
+               pMsg->m_idata1 == CTransportData::destroyer || pMsg->m_idata1 == CTransportData::cruiser ||
+               pMsg->m_idata1 == CTransportData::light_cargo ) )
+        {
+            // TEMP: sea-war verification probe (BUILT side)
+            char szB[80];
+            sprintf( szB, "[BOAT] plyr %d built veh %d\n", m_iPlayer, pMsg->m_idata1 );
+            OutputDebugStringA( szB );
+        }
+#endif
+
         try
         {
             // CAIUnit( DWORD dwID, int iOwner,
