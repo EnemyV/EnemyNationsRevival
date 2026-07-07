@@ -6724,8 +6724,7 @@ void CAIGoalMgr::LaunchAssault( CAITask* pTask )
 #if EN_AI_PROBES && defined(_WIN32)
         {
             char szK[96];
-            sprintf( szK, "[BUNKER] plyr %d holds goal %d offense (lost %d bldgs)
-", m_iPlayer,
+            sprintf( szK, "[BUNKER] plyr %d holds goal %d offense (lost %d bldgs)\n", m_iPlayer,
                      (int)pTask->GetGoalID( ), m_iBldgLostRecent );
             OutputDebugStringA( szK );
         }
