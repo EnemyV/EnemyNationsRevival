@@ -3619,6 +3619,29 @@ void CAITaskMgr::ProduceVehicle( CAIUnit* pBldg, CAITask* pTask )
     #endif
     };
     */
+    // idempotence at the SOURCE: if the factory is already building this very
+    // type, don't re-send -- the unthrottled re-orders (644/round measured)
+    // saturated the AI pump and starved the idle rotation (census + truck
+    // dispatch FillPriorities), making deliveries WORSE.
+    {
+        BOOL bAlready = FALSE;
+        EnterCriticalSection( &cs );
+        CBuilding* pLiveF = theBuildingMap.GetBldg( dwFactory );
+        if ( pLiveF != NULL && pLiveF->GetData( ) != NULL &&
+             ( pLiveF->GetData( )->GetUnionType( ) == CStructureData::UTvehicle ||
+               pLiveF->GetData( )->GetUnionType( ) == CStructureData::UTshipyard ) )
+        {
+            CBuildUnit const* pBU = ( pLiveF->GetData( )->GetUnionType( ) == CStructureData::UTvehicle )
+                                        ? ( (CVehicleBuilding*)pLiveF )->GetBldUnt( )
+                                        : ( (CShipyardBuilding*)pLiveF )->GetBldUnt( );
+            if ( pBU != NULL && pBU->GetVehType( ) == iVehType )
+                bAlready = TRUE;
+        }
+        LeaveCriticalSection( &cs );
+        if ( bAlready )
+            return;
+    }
+
     CMsgBuildVeh msg;
     msg.m_dwID     = dwFactory;
     msg.m_iVehType = iVehType;
