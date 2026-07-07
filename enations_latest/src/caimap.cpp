@@ -1018,9 +1018,30 @@ void CAIMap::FindBridgeOnPlan( CHexCoord& hexSite, CAIUnit *pUnit )
 
 		// IsBridgeSpan rewrites hexTest -> span start land hex and sets CAI_PREV/DEST
 		CHexCoord hexTest = hexCand;
-		if( m_pMapUtil->IsBridgeSpan( hexTest, pUnit ) &&
-			m_pMapUtil->GetPathRating( hexCrane, hexTest ) )	// crane must REACH the span start (600 was sent to the far bank)
+		if( m_pMapUtil->IsBridgeSpan( hexTest, pUnit ) )
 		{
+			// crane must REACH the span start; bridges are symmetric, so if the
+			// near bank is inside an isolated pocket, build from the far bank
+			BOOL bReach = m_pMapUtil->GetPathRating( hexCrane, hexTest );
+			if( !bReach )
+			{
+				CHexCoord hexFar( pUnit->GetParam( CAI_DEST_X ), pUnit->GetParam( CAI_DEST_Y ) );
+				if( m_pMapUtil->GetPathRating( hexCrane, hexFar ) )
+				{
+					int iSwapX = pUnit->GetParam( CAI_PREV_X ), iSwapY = pUnit->GetParam( CAI_PREV_Y );
+					pUnit->SetParam( CAI_PREV_X, hexFar.X() );
+					pUnit->SetParam( CAI_PREV_Y, hexFar.Y() );
+					pUnit->SetParam( CAI_DEST_X, iSwapX );
+					pUnit->SetParam( CAI_DEST_Y, iSwapY );
+					hexTest = hexFar;
+					bReach  = TRUE;
+				}
+			}
+			if( !bReach )
+			{
+				++k;
+				continue;
+			}
 			iBestDist   = iDist;
 			hexBestSite = hexTest;
 			iPrevX = pUnit->GetParam( CAI_PREV_X );
