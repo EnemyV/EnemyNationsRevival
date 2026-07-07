@@ -3019,6 +3019,23 @@ BOOL CAIMapUtil::IsBridgeSpan( CHexCoord& hexRiverRoad, CAIUnit* pUnit )
     if ( !hexStart.X( ) && !hexStart.Y( ) )
         return FALSE;
 
+    // START land hex must be clear: a planned-road flag can be stale under a since-built building/bridge
+    {
+        BOOL bStartBlocked;
+        EnterCriticalSection( &cs );
+        bStartBlocked = ( theBuildingHex.GetBuilding( hexStart ) != NULL );
+        LeaveCriticalSection( &cs );
+        if ( bStartBlocked )
+        {
+#if EN_AI_PROBES && defined(_WIN32)
+            char szV[96];
+            sprintf( szV, "[BRIDGEVETO] plyr %d bad landing %d,%d\n", m_iPlayer, hexStart.X( ), hexStart.Y( ) );
+            OutputDebugStringA( szV );
+#endif
+            return FALSE;
+        }
+    }
+
     // if still here, then hexStart contains the hex found with both
     // land and a type of road set and hexRiverRoad is adjacent to it
     // so the 0,2,4,6 direction that hexRiverRoad is from hexStart
@@ -3066,8 +3083,6 @@ BOOL CAIMapUtil::IsBridgeSpan( CHexCoord& hexRiverRoad, CAIUnit* pUnit )
     //      else if not river/road then return as a failure
     //      else if river/road then keep moving
     //
-    hexBridge = hexRiverRoad;
-    int iSpan = 2;
     // plan with the owner's REAL span: pontoon-only = half base (planning full
     // MAX_SPAN here got rejected server-side), bridge tiers = longer reach
     int iMaxSpan = MAX_SPAN;
@@ -3080,6 +3095,90 @@ BOOL CAIMapUtil::IsBridgeSpan( CHexCoord& hexRiverRoad, CAIUnit* pUnit )
     LeaveCriticalSection( &cs );
     if ( iMaxSpan <= 0 )
         return FALSE;
+
+    CHexCoord hexEnd( 0, 0 );
+    // original candidate crossing first
+    if ( TryBridgeWalk( hexStart, iDir, iMaxSpan, hexEnd ) )
+    {
+        hexRiverRoad = hexStart;
+        pUnit->SetParam( CAI_PREV_X, hexStart.X( ) );
+        pUnit->SetParam( CAI_PREV_Y, hexStart.Y( ) );
+        pUnit->SetParam( CAI_DEST_X, hexEnd.X( ) );
+        pUnit->SetParam( CAI_DEST_Y, hexEnd.Y( ) );
+        return TRUE;
+    }
+
+    // failed crossing: try shifted starts +/-1..3 along the bank (perpendicular to iDir)
+    BOOL             bShiftX  = ( iDir == 0 || iDir == 4 );  // span runs along Y -> shift along X
+    static const int aiOff[6] = { 1, -1, 2, -2, 3, -3 };
+    for ( i = 0; i < 6; i++ )
+    {
+        CHexCoord hexShift = hexStart;
+        if ( bShiftX )
+            hexShift.X( CHexCoord::Wrap( hexStart.X( ) + aiOff[i] ) );
+        else
+            hexShift.Y( CHexCoord::Wrap( hexStart.Y( ) + aiOff[i] ) );
+        int iOff = GetMapOffset( hexShift.X( ), hexShift.Y( ) );
+        if ( iOff >= m_iMapSize )
+            continue;
+        // shifted start must ALREADY be on the plan (corridors are several hexes wide near rivers)
+        if ( !( m_pMap[iOff] & MSW_PLANNED_ROAD ) && !( m_pMap[iOff] & MSW_ROAD ) )
+            continue;
+        pGameHex = theMap.GetHex( hexShift );
+        // shifted start must be crane-traversable land
+        if ( pGameHex->GetType( ) == CHex::river || !m_tdWheel->CanTravelHex( pGameHex ) )
+            continue;
+        BOOL bBlocked;
+        EnterCriticalSection( &cs );
+        bBlocked = ( theBuildingHex.GetBuilding( hexShift ) != NULL );
+        LeaveCriticalSection( &cs );
+        if ( bBlocked )
+            continue;
+        // the hex ahead in the span direction must still be river
+        hexBridge = hexShift;
+        switch ( iDir )
+        {
+        case 0:
+            hexBridge.Ydec( );
+            break;
+        case 2:
+            hexBridge.Xinc( );
+            break;
+        case 4:
+            hexBridge.Yinc( );
+            break;
+        case 6:
+            hexBridge.Xdec( );
+            break;
+        }
+        if ( theMap.GetHex( hexBridge )->GetType( ) != CHex::river )
+            continue;
+        if ( TryBridgeWalk( hexShift, iDir, iMaxSpan, hexEnd ) )
+        {
+#if EN_AI_PROBES && defined(_WIN32)
+            char szS[96];
+            sprintf( szS, "[BRIDGESHIFT] plyr %d moved crossing to %d,%d\n", m_iPlayer, hexShift.X( ), hexShift.Y( ) );
+            OutputDebugStringA( szS );
+#endif
+            hexRiverRoad = hexShift;
+            pUnit->SetParam( CAI_PREV_X, hexShift.X( ) );
+            pUnit->SetParam( CAI_PREV_Y, hexShift.Y( ) );
+            pUnit->SetParam( CAI_DEST_X, hexEnd.X( ) );
+            pUnit->SetParam( CAI_DEST_Y, hexEnd.Y( ) );
+            return TRUE;
+        }
+    }
+    return FALSE;
+}
+
+//
+// walk the span from hexStart in direction iDir; TRUE + hexEnd when a valid
+// (crane-traversable, unbuilt) landing is found within iMaxSpan
+//
+BOOL CAIMapUtil::TryBridgeWalk( CHexCoord const& hexStart, int iDir, int iMaxSpan, CHexCoord& hexEnd )
+{
+    CHexCoord hexBridge = hexStart;
+    int       iSpan     = 1;
     while ( iSpan <= iMaxSpan )
     {
         switch ( iDir )
@@ -3100,22 +3199,35 @@ BOOL CAIMapUtil::IsBridgeSpan( CHexCoord& hexRiverRoad, CAIUnit* pUnit )
             return FALSE;
         }
         // invalid hex conversion to offset
-        i = GetMapOffset( hexBridge.X( ), hexBridge.Y( ) );
+        int i = GetMapOffset( hexBridge.X( ), hexBridge.Y( ) );
         if ( i >= m_iMapSize )
             return FALSE;
         // there MUST be a road type here to be a bridge
         if ( !( m_pMap[i] & MSW_PLANNED_ROAD ) && !( m_pMap[i] & MSW_ROAD ) )
             return FALSE;
 
-        pGameHex = theMap.GetHex( hexBridge );
+        CHex* pGameHex = theMap.GetHex( hexBridge );
         // if not river then we assume land, this is the end
         if ( pGameHex->GetType( ) != CHex::river )
         {
-            hexRiverRoad = hexStart;
-            pUnit->SetParam( CAI_PREV_X, hexStart.X( ) );
-            pUnit->SetParam( CAI_PREV_Y, hexStart.Y( ) );
-            pUnit->SetParam( CAI_DEST_X, hexBridge.X( ) );
-            pUnit->SetParam( CAI_DEST_Y, hexBridge.Y( ) );
+            // landing must be crane-traversable land (m_tdWheel == construction) and unbuilt
+            BOOL bBadLanding = !m_tdWheel->CanTravelHex( pGameHex );
+            if ( !bBadLanding )
+            {
+                EnterCriticalSection( &cs );
+                bBadLanding = ( theBuildingHex.GetBuilding( hexBridge ) != NULL );
+                LeaveCriticalSection( &cs );
+            }
+            if ( bBadLanding )
+            {
+#if EN_AI_PROBES && defined(_WIN32)
+                char szV[96];
+                sprintf( szV, "[BRIDGEVETO] plyr %d bad landing %d,%d\n", m_iPlayer, hexBridge.X( ), hexBridge.Y( ) );
+                OutputDebugStringA( szV );
+#endif
+                return FALSE;
+            }
+            hexEnd = hexBridge;
             return TRUE;
         }
 

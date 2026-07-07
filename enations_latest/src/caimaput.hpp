@@ -222,6 +222,7 @@ public:
 	void FindAssaultHex( CHexCoord& hexTarget, int iTerrain );
 	void FindBridgeHex( CHexCoord& hexSite, CAIUnit *pUnit );
 	BOOL IsBridgeSpan( CHexCoord& hexRiverRoad, CAIUnit *pUnit );
+	BOOL TryBridgeWalk( CHexCoord const& hexStart, int iDir, int iMaxSpan, CHexCoord& hexEnd );
 	void GetStartSpan( CHexCoord& hexStart, CHexCoord& hexBridge );
 
 	void FindRoadHex( CHexCoord& hexFound );
