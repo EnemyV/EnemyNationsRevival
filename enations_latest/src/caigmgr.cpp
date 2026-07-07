@@ -3226,6 +3226,12 @@ void CAIGoalMgr::UpdateVehGoals( void )
     if ( m_pwaVehGoals[CTransportData::heavy_truck] > ( 4 * iCnt ) + truckBonus )
         m_pwaVehGoals[CTransportData::heavy_truck] = ( 4 * iCnt ) + truckBonus;
 
+    // gas-rich + big road backlog + few cranes = plans never pave (operator):
+    // demand extra cranes so the road quota actually gets crane assignments
+    if ( m_iGasHave > 5000 && m_pMap != NULL && m_pMap->m_iRoadCount > 200 &&
+         m_pwaVehGoals[CTransportData::construction] < m_pwaUnits[CTransportData::construction] + 2 )
+        m_pwaVehGoals[CTransportData::construction] = m_pwaUnits[CTransportData::construction] + 2;
+
     // stop over production of cranes (time-scaled cap, S2): was 2*iCnt; +1/hr up to +12, +up to 4 wealth (S7)
     int craneCap = 2 * iCnt + ( hrs < 12 ? hrs : 12 ) + wealthBonus;
     if ( m_pwaVehGoals[CTransportData::construction] > craneCap )

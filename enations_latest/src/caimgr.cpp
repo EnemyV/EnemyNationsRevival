@@ -353,10 +353,29 @@ void CAIMgr::Manage( void )
                 if ( m_pGoalMgr->m_pMap != NULL )
                 {
                     // TEMP: per-sweep AI census (gas, road plan vs paved, bldgs +/-)
-                    char szC[144];
-                    sprintf( szC, "[AISTAT] plyr %d gas %d roadplan %d paved %d built %d lost %d bldgs %d\n", m_iPlayer,
+                    // troops = owned combat vehicles (exclude construction/med/heavy trucks = 0/1/2)
+                    int iTroops = 0;
+                    if ( m_plUnits != NULL )
+                    {
+                        POSITION posT = m_plUnits->GetHeadPosition( );
+                        while ( posT != NULL )
+                        {
+                            CAIUnit* pT = (CAIUnit*)m_plUnits->GetNext( posT );
+                            if ( pT == NULL || pT->GetOwner( ) != m_iPlayer )
+                                continue;
+                            if ( pT->GetType( ) != CUnit::vehicle )
+                                continue;
+                            int iVeh = pT->GetTypeUnit( );
+                            if ( iVeh == CTransportData::construction || iVeh == CTransportData::med_truck ||
+                                 iVeh == CTransportData::heavy_truck )
+                                continue;
+                            iTroops++;
+                        }
+                    }
+                    char szC[160];
+                    sprintf( szC, "[AISTAT] plyr %d gas %d roadplan %d paved %d built %d lost %d bldgs %d troops %d\n", m_iPlayer,
                              m_pGoalMgr->m_iGasHave, m_pGoalMgr->m_pMap->m_iRoadCount, m_iStatRoadsPaved,
-                             m_iStatBldgBuilt, m_iStatBldgLost, (int)m_pGoalMgr->GetBuildingCnt( ) );
+                             m_iStatBldgBuilt, m_iStatBldgLost, (int)m_pGoalMgr->GetBuildingCnt( ), iTroops );
                     OutputDebugStringA( szC );
                 }
 #endif
@@ -1073,9 +1092,49 @@ void CAIMgr::HandleStuckVehicles( void )
                 continue;
             if ( pUnit->GetType( ) != CUnit::vehicle )
                 continue;
+
+            // BEACHED FORCE RECALL (operator): a LAUNCHED attacker (SEEK task)
+            // parked 10+ min at the same hex (unreachable target - e.g. across
+            // water) is re-pooled; nothing else ever recalls launched forces
             if ( pUnit->GetTypeUnit( ) != CTransportData::construction &&
                  pUnit->GetTypeUnit( ) != CTransportData::heavy_truck )
+            {
+                if ( ( pUnit->GetTask( ) == IDT_SEEKINWAR || pUnit->GetTask( ) == IDT_SEEKINRANGE ||
+                       pUnit->GetTask( ) == IDT_SEEKATSEA ) &&
+                     !( pUnit->GetStatus( ) & CAI_IN_COMBAT ) )
+                {
+                    AiVehSnap snapS;
+                    if ( !AiSnap::ReadVeh( pUnit->GetID( ), snapS ) )
+                        continue;
+                    if ( snapS.bCarried || snapS.iRouteMode != CVehicle::stop )
+                    {
+                        pUnit->SetStuckSince( 0 );
+                        continue;
+                    }
+                    DWORD dwHexS = (DWORD)MAKELPARAM( snapS.iHeadX, snapS.iHeadY );
+                    if ( pUnit->GetStuckHex( ) != dwHexS )
+                    {
+                        pUnit->SetStuckHex( dwHexS );
+                        pUnit->SetStuckSince( dwNow );
+                        continue;
+                    }
+                    if ( dwNow - pUnit->GetStuckSince( ) > 600000 )
+                    {
+#if EN_AI_PROBES && defined(_WIN32)
+                        {
+                            char szF[96];
+                            sprintf( szF, "[RECALL] plyr %d unit %lu task %u beached at %d,%d\n", m_iPlayer,
+                                     (unsigned long)pUnit->GetID( ), (unsigned)pUnit->GetTask( ), snapS.iHeadX,
+                                     snapS.iHeadY );
+                            OutputDebugStringA( szF );
+                        }
+#endif
+                        m_pTaskMgr->ClearTaskUnit( pUnit );
+                        pUnit->SetStuckSince( 0 );
+                    }
+                }
                 continue;
+            }
 
             bIsWorking = bIsCarried = FALSE;
 
