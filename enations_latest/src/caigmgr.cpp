@@ -14,6 +14,7 @@
 #include "aisnap.h"  // Tier-B world snapshot (lock-free AI reads) — depleted-mine flag
 #include "altoutput.h"  // Fracking/Moho revival toggles (ConsiderAltOutputs)
 #include "caidata.hpp"
+#include "cairoute.hpp"  // truck-saturation check in UpdateVehGoals
 #include "caitargt.h"
 #include "logging.h"  // dave's logging system
 #include "stdafx.h"
@@ -333,6 +334,7 @@ CAIGoalMgr::CAIGoalMgr( BOOL bRestart, int iPlayer, CAIMap* pMap, CAIUnitList* p
     m_bRestart = bRestart;
 
     m_pMap     = pMap;
+    m_pRouter  = NULL;  // wired by CAIMgr after its router exists
     m_plUnits  = plUnits;
     m_plOpFors = plOpFors;
 
@@ -10784,6 +10786,7 @@ CAITask* CAIGoalMgr::GetPatrolTask( int iType )
 void CAIGoalMgr::Load( CArchive& ar, CAIMap* pMap, CAIUnitList* plUnits, CAIOpForList* plOpFors )
 {
     m_pMap     = pMap;
+    m_pRouter  = NULL;  // wired by CAIMgr after its router exists
     m_plUnits  = plUnits;
     m_plOpFors = plOpFors;
 

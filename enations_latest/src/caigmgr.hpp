@@ -18,6 +18,8 @@
 #ifndef __CAIGMGR_HPP__
 #define __CAIGMGR_HPP__
 
+class CAIRouter;
+
 // the number of different types of units, that can be staged for an assault
 // with a specific staging task
 #define STAGING_UNITTYPES	4
@@ -87,6 +89,7 @@ public:
 	int   m_iBldgLostRecent;		// bunker mode: own buildings lost (rolling)
 	DWORD m_dwDefenseUntil;			// bunker mode: suppress OFFENSIVE launches until
 	CAIMap *m_pMap;	// CAIMgr's CAIMap
+	CAIRouter *m_pRouter;	// CAIMgr's router (set post-construction; may be NULL)
 	CAIUnitList *m_plUnits;	// list of CAIMgr's CAIUnits
 	CAITaskList *m_plTasks;	// this player's list of tasks
 

@@ -3806,6 +3806,7 @@ void CAIMgr::LoadGame( CArchive& ar )
         if ( m_pRouter == NULL )
             m_pRouter = new CAIRouter( m_pMap, m_plUnits, m_iPlayer );
         m_pRouter->Load( ar, m_plUnits );
+        m_pGoalMgr->m_pRouter = m_pRouter;
     }
     catch ( CFileException* theException )
     {
@@ -4268,6 +4269,7 @@ void CAIMgr::CreateManagers( void )
 
     if ( m_pGoalMgr == NULL )
         return;
+    m_pGoalMgr->m_pRouter = m_pRouter;
 
     try
     {
