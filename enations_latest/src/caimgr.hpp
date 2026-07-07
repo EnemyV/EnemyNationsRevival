@@ -79,6 +79,9 @@ private:
     DWORD m_dwLastMessageTime;
     DWORD m_dwLastIdleProcess;
     DWORD m_dwLastStuckSweep;  // wall-clock HandleStuckVehicles cadence (transient)
+    int   m_iStatBldgBuilt;    // TEMP census counters (transient, [AISTAT] probe)
+    int   m_iStatBldgLost;
+    int   m_iStatRoadsPaved;
     DWORD m_dwLastIdleFunc;    // idle-rotation aging: force a step every 15s under load
 	int  m_iIdle;  // counter for cycles without messages (idle time)
 	BOOL m_bIdleFunction[MAX_IDLE_FUNCTIONS];

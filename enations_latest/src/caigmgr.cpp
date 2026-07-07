@@ -2623,7 +2623,7 @@ void CAIGoalMgr::ProduceVehicles( int iVeh )
     if ( iBldg1 == CStructureData::num_types && iBldg2 == CStructureData::num_types )
         return;
 
-#ifdef _WIN32
+#if EN_AI_PROBES && defined(_WIN32)
     if ( iVeh == CTransportData::gun_boat || iVeh == CTransportData::landing_craft ||
          iVeh == CTransportData::destroyer || iVeh == CTransportData::cruiser )
     {
@@ -4681,7 +4681,7 @@ void CAIGoalMgr::EvalStagingWatchdog( void )
             m_aiStageLosses[idx] = 0;
             m_adwStageStart[idx] = dwNow;         // new epoch
             m_aiStageRestages[idx]++;
-#ifdef _WIN32
+#if EN_AI_PROBES && defined(_WIN32)
             {
                 // TEMP: staging-watchdog verification probe
                 char szW[128];
@@ -4712,7 +4712,7 @@ void CAIGoalMgr::EvalStagingWatchdog( void )
         if ( dwNow - m_adwStageStart[idx] > 480000 )
         {
             m_adwStageStart[idx] = dwNow;         // reset epoch so this fires once
-#ifdef _WIN32
+#if EN_AI_PROBES && defined(_WIN32)
             {
                 // TEMP: staging-watchdog verification probe
                 char szW[128];
@@ -6138,7 +6138,7 @@ void CAIGoalMgr::InitTasks( CAIGoal* pGoal )
                 CAITask* pNewTask = pTask->CopyTask( );
                 pNewTask->SetGoalID( pGoal->GetID( ) );
 
-#ifdef _WIN32
+#if EN_AI_PROBES && defined(_WIN32)
                 if ( pGoal->GetID( ) == IDG_SEAINVADE || pGoal->GetID( ) == IDG_PIRATE )
                 {
                     // TEMP: dump what the naval goals' data tasks actually are
@@ -6653,7 +6653,7 @@ CAITask* CAIGoalMgr::GetProductionTask( CAIUnit* pUnit )
                     if ( iVeh >= m_iNumUnits )
                         continue;
 
-#ifdef _WIN32
+#if EN_AI_PROBES && defined(_WIN32)
                     if ( iVeh == CTransportData::gun_boat || iVeh == CTransportData::landing_craft ||
                          iVeh == CTransportData::destroyer || iVeh == CTransportData::cruiser )
                     {
@@ -6783,7 +6783,7 @@ void CAIGoalMgr::LaunchAssault( CAITask* pTask )
                     {
                         hexCity    = hexFwd;  // land-assault the beachhead instead
                         bBeachhead = TRUE;
-#ifdef _WIN32
+#if EN_AI_PROBES && defined(_WIN32)
                         {
                             // TEMP: beachhead retarget probe
                             char szB[96];
@@ -6953,7 +6953,7 @@ void CAIGoalMgr::LaunchAssault( CAITask* pTask )
             {
                 hexCity    = hexFwd;  // land-assault the beachhead instead
                 bBeachhead = TRUE;
-#ifdef _WIN32
+#if EN_AI_PROBES && defined(_WIN32)
                 {
                     // TEMP: beachhead retarget probe
                     char szB[96];
@@ -6977,7 +6977,7 @@ void CAIGoalMgr::LaunchAssault( CAITask* pTask )
                 {
                     AddGoal( IDG_SEAINVADE );
                     m_bGoalChange = TRUE;
-#ifdef _WIN32
+#if EN_AI_PROBES && defined(_WIN32)
                     {
                         // TEMP: island-war verification probe
                         char szI[96];
@@ -7667,7 +7667,7 @@ void CAIGoalMgr::FindAssaultTarget( CHexCoord& hexTarget, CAITask* pTask, CAIOpF
             if ( iFact * 2 < iRocket )
             {
                 hexTarget = hexFact;
-#ifdef _WIN32
+#if EN_AI_PROBES && defined(_WIN32)
                 {
                     // TEMP: factory-target verification probe
                     char szF[96];

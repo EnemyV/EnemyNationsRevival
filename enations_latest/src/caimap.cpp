@@ -896,7 +896,7 @@ void CAIMap::PlanWarRoad( CHexCoord& hexTo )
 	// A* routes through existing roads; the last reachable stretch is the road
 	ConnectRoad( hexFrom, hexTo );
 
-#ifdef _WIN32
+#if EN_AI_PROBES && defined(_WIN32)
 	{
 		// TEMP: war-road planning probe (operator needs to see war roads planned)
 		char szW[96];

@@ -80,6 +80,9 @@ CAIMgr::CAIMgr( int iPlayer )
     m_iIdle            = 0;
     m_dwLastStuckSweep = 0;
     m_dwLastIdleFunc   = 0;
+    m_iStatBldgBuilt   = 0;
+    m_iStatBldgLost    = 0;
+    m_iStatRoadsPaved  = 0;
     for ( int i = 0; i < MAX_IDLE_FUNCTIONS; ++i ) m_bIdleFunction[i] = TRUE;
 
     m_pGoalMgr = NULL;
@@ -345,6 +348,18 @@ void CAIMgr::Manage( void )
                 m_pGoalMgr->IdleCrane( );
                 m_pGoalMgr->CheckResearch( );
                 m_pGoalMgr->ConsiderAltOutputs( );
+
+#if EN_AI_PROBES && defined(_WIN32)
+                if ( m_pGoalMgr->m_pMap != NULL )
+                {
+                    // TEMP: per-sweep AI census (gas, road plan vs paved, bldgs +/-)
+                    char szC[144];
+                    sprintf( szC, "[AISTAT] plyr %d gas %d roadplan %d paved %d built %d lost %d bldgs %d\n", m_iPlayer,
+                             m_pGoalMgr->m_iGasHave, m_pGoalMgr->m_pMap->m_iRoadCount, m_iStatRoadsPaved,
+                             m_iStatBldgBuilt, m_iStatBldgLost, (int)m_pGoalMgr->GetBuildingCnt( ) );
+                    OutputDebugStringA( szC );
+                }
+#endif
             }
         }
     }
@@ -714,7 +729,7 @@ void CAIMgr::UpdateUnits( CAIMsg* pMsg )
         // determine unit type (building/vehicle)
         int iType = pMsg->m_iMsg == CNetCmd::veh_new ? CUnit::vehicle : CUnit::building;
 
-#ifdef _WIN32
+#if EN_AI_PROBES && defined(_WIN32)
         if ( iType == CUnit::vehicle &&
              ( pMsg->m_idata1 == CTransportData::gun_boat || pMsg->m_idata1 == CTransportData::landing_craft ||
                pMsg->m_idata1 == CTransportData::destroyer || pMsg->m_idata1 == CTransportData::cruiser ||
@@ -750,6 +765,11 @@ void CAIMgr::UpdateUnits( CAIMsg* pMsg )
         pUnit->SetTask( FALSE );
         pUnit->SetGoal( FALSE );
         pUnit->ClearParam( );
+
+#if EN_AI_PROBES && defined(_WIN32)
+        if ( pMsg->m_iMsg == CNetCmd::bldg_new && pMsg->m_idata3 == m_iPlayer )
+            m_iStatBldgBuilt++;
+#endif
     }
 
     WORD     wTask, wGoal;
@@ -769,6 +789,10 @@ void CAIMgr::UpdateUnits( CAIMsg* pMsg )
                 // Phase 3: a unit lost while staging feeds the staging watchdog
                 if ( wTask == IDT_PREPAREWAR && m_pGoalMgr != NULL )
                     m_pGoalMgr->NoteStagingLoss( wGoal );
+#if EN_AI_PROBES && defined(_WIN32)
+                if ( pUnit->GetType( ) == CUnit::building )
+                    m_iStatBldgLost++;
+#endif
                 m_pTaskMgr->UnAssignTask( wTask, wGoal );
             }
             else
@@ -933,6 +957,7 @@ void CAIMgr::UpdateUnits( CAIMsg* pMsg )
     // handle road done messages
     if ( pMsg->m_iMsg == CNetCmd::road_done && pMsg->m_idata3 == m_iPlayer )
     {
+        m_iStatRoadsPaved++;
         CAIUnit* pUnit = (CAIUnit*)m_plUnits->GetUnit( pMsg->m_dwID );
         if ( pUnit != NULL )
         {

@@ -5124,7 +5124,7 @@ void CAITaskMgr::BuildRoad( CAIUnit* pUnit, CAITask* pTask )
             // flag unit as having sent the message already for this hex
             pUnit->SetParam( CAI_FUEL, CNetCmd::bridge_new );
 
-#ifdef _WIN32
+#if EN_AI_PROBES && defined(_WIN32)
             {
                 // TEMP: bridge acceptance probe (operator has never seen an AI bridge)
                 char szB[96];
