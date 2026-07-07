@@ -2013,7 +2013,17 @@ static void BuildBridge( CMsgBuildBridge* pMsg )
     theMap._EnumHexes( _hexUL, 3, 3, fnEnumBaseBridge, &bbData );
     if ( !bbData.m_bOK )
     {
-        TRAP( );
+        // reachable at runtime via AI-planned spans (bldg/bridge beside the
+        // landing at another altitude) -- was TRAP(), which killed the game on
+        // the FIRST AI bridge order ever sent; answer with the error instead
+#ifdef _WIN32
+        {
+            char szB[96];
+            sprintf( szB, "[BRIDGEDENY] plyr %d end-base fail at %d,%d\n", pMsg->m_iPlyrNum, pMsg->m_hexEnd.X( ),
+                     pMsg->m_hexEnd.Y( ) );
+            OutputDebugStringA( szB );
+        }
+#endif
         goto EndIt;
     }
 

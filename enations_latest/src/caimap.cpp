@@ -1162,6 +1162,17 @@ BOOL CAIMap::PlanBridgeToward( CHexCoord const& hexAt, CHexCoord const& hexSite 
 		if( pBankHex == NULL || pBankHex->GetType() == CHex::river ||
 			!m_pMapUtil->m_tdWheel->CanTravelHex( pBankHex ) )
 			continue;
+		// server refused a span from this bank recently
+		{
+			std::map<int, DWORD>::iterator itD =
+				m_mBridgeDeny.find( m_pMapUtil->GetMapOffset( hexTry.X(), hexTry.Y() ) );
+			if( itD != m_mBridgeDeny.end() )
+			{
+				if( timeGetTime() < itD->second )
+					continue;
+				m_mBridgeDeny.erase( itD );
+			}
+		}
 		BOOL bBlockedTry;
 		EnterCriticalSection( &cs );
 		bBlockedTry = ( theBuildingHex.GetBuilding( hexTry ) != NULL );
@@ -1237,6 +1248,42 @@ BOOL CAIMap::PlanBridgeToward( CHexCoord const& hexAt, CHexCoord const& hexSite 
 	}
 #endif
 	return TRUE;
+}
+
+//
+// server refused the span (end-base check): unmark its hexes so road cranes
+// skip it and deny replanning from that bank for 30 min
+//
+void CAIMap::DenyBridge( CHexCoord const& hexStart, CHexCoord const& hexEnd )
+{
+	int dx = CHexCoord::Diff( hexEnd.X() - hexStart.X() );
+	int dy = CHexCoord::Diff( hexEnd.Y() - hexStart.Y() );
+	int sx = ( dx > 0 ) - ( dx < 0 ), sy = ( dy > 0 ) - ( dy < 0 );
+	CHexCoord hexMark = hexStart;
+	for( int i = 0; i <= abs( dx ) + abs( dy ); i++ )
+	{
+		int j = m_pMapUtil->GetMapOffset( hexMark.X(), hexMark.Y() );
+		if( j >= 0 && j < m_iMapSize && ( m_pwaMap[j] & MSW_PLANNED_ROAD ) )
+		{
+			m_pwaMap[j] &= ~MSW_PLANNED_ROAD;
+			if( m_iRoadCount > 0 )
+				m_iRoadCount--;
+		}
+		if( hexMark == hexEnd )
+			break;
+		hexMark.X( CHexCoord::Wrap( hexMark.X() + sx ) );
+		hexMark.Y( CHexCoord::Wrap( hexMark.Y() + sy ) );
+	}
+	int jBank = m_pMapUtil->GetMapOffset( hexStart.X(), hexStart.Y() );
+	m_mBridgeDeny[jBank] = timeGetTime() + 30 * 60 * 1000;
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+	{
+		char szB[96];
+		sprintf( szB, "[BRIDGEDENY-AI] plyr %d span %d,%d unplanned + denied\n", m_iPlayer,
+			hexStart.X(), hexStart.Y() );
+		OutputDebugStringA( szB );
+	}
+#endif
 }
 
 //

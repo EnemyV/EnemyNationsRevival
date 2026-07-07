@@ -1146,6 +1146,26 @@ void CAIMgr::UpdateUnits( CAIMsg* pMsg )
         }
     }
 
+    // server refused a bridge span: free the crane, unmark + deny the crossing
+    if ( pMsg->m_iMsg == CNetCmd::err_build_bridge )
+    {
+        CMsgBuildBridge* pBr = (CMsgBuildBridge*)pMsg;
+        if ( pBr->m_iPlyrNum == m_iPlayer )
+        {
+            if ( m_pMap != NULL )
+                m_pMap->DenyBridge( pBr->m_hexStart, pBr->m_hexEnd );
+            CAIUnit* pUnit = (CAIUnit*)m_plUnits->GetUnit( pBr->m_dwIDVeh );
+            if ( pUnit != NULL )
+            {
+                m_pTaskMgr->UnAssignTask( pUnit->GetTask( ), pUnit->GetGoal( ) );
+                pUnit->SetDataDW( (DWORD)0 );
+                pUnit->SetTask( FALSE );
+                pUnit->SetGoal( FALSE );
+                pUnit->ClearParam( );
+            }
+        }
+    }
+
     // handle road done messages
     if ( pMsg->m_iMsg == CNetCmd::road_done && pMsg->m_idata3 == m_iPlayer )
     {

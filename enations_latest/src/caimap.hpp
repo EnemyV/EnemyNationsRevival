@@ -12,6 +12,7 @@
 #include "caimsg.hpp"
 #include "caimaput.hpp"
 #include <vector>			// planned-road index
+#include <map>				// denied-bridge banks
 
 #ifndef __CAIMAP_HPP__
 #define __CAIMAP_HPP__
@@ -129,6 +130,9 @@ public:
 	void FindBridgeOnPlan( CHexCoord& hexSite, CAIUnit *pUnit );
 	// clamped-crane assist: plan a validated river crossing toward an unreachable site
 	BOOL PlanBridgeToward( CHexCoord const& hexAt, CHexCoord const& hexSite );
+	// server rejected the span: unmark its planned hexes + deny the bank 30 min
+	void DenyBridge( CHexCoord const& hexStart, CHexCoord const& hexEnd );
+	std::map<int, DWORD> m_mBridgeDeny;	// bank map-offset -> denied-until ms (transient)
 	void GetRoadHex( CHexCoord& hexSite );
 	// planned-road index: nearest eligible planned hex to hexCrane -> hexOut
 	BOOL GetPlannedRoadNear( CHexCoord& hexCrane, CHexCoord& hexOut );
