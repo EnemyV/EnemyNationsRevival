@@ -1509,6 +1509,15 @@ BOOL CAIGoalMgr::NeedCranes( void )
         }
     }
 
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+    {
+        // observation only: how often + why crane production is gated (logic untouched)
+        char szC[96];
+        sprintf( szC, "[CRANEGATE] plyr %d making %d idle %d -> %s\n", m_iPlayer, (int)bMakingCranes,
+                 (int)bCranesUnassigned, ( bMakingCranes || bCranesUnassigned ) ? "SUPPRESS" : "produce" );
+        OutputDebugStringA( szC );
+    }
+#endif
     if ( bMakingCranes || bCranesUnassigned )
         return FALSE;
     return TRUE;

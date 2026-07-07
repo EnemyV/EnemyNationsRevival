@@ -957,7 +957,14 @@ void CAIMgr::UpdateUnits( CAIMsg* pMsg )
 
 #if EN_AI_PROBES_ECON && defined(_WIN32)
         if ( pMsg->m_iMsg == CNetCmd::bldg_new && pMsg->m_idata3 == m_iPlayer )
+        {
             m_iStatBldgBuilt++;
+            // observation only: WHAT gets built (settles the fort question with data)
+            char szN[96];
+            sprintf( szN, "[BLDGNEW] plyr %d type %d id %lu\n", m_iPlayer, pMsg->m_idata1,
+                     (unsigned long)pMsg->m_dwID );
+            OutputDebugStringA( szN );
+        }
 #endif
     }
 
