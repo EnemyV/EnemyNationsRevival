@@ -964,9 +964,13 @@ void CAIUnit::SetDestination( CAIUnit* pCAIBldg )
     // the destination is being set to make sure the unit
     // is not being requested to go to its current location
     CHexCoord hexVeh;
+    BOOL      bInBldgB = FALSE;
     CVehicle* pVehicle = pGameData->GetVehicleData( m_iOwner, m_dwID );
     if ( pVehicle != NULL )
-        hexVeh = pVehicle->GetHexHead( );
+    {
+        hexVeh   = pVehicle->GetHexHead( );
+        bInBldgB = pVehicle->IsInBuilding( );
+    }
 
     CBuilding* pBldg = pGameData->GetBuildingData( pCAIBldg->GetOwner( ), pCAIBldg->GetID( ) );
     if ( pBldg != NULL )
@@ -988,7 +992,9 @@ void CAIUnit::SetDestination( CAIUnit* pCAIBldg )
         // the SAME dest to the SAME unit every Manage pass — measured 650
         // veh_set_dest/s at 15 players (g.mt.58), each one a server-side
         // pathfind (8.3k path calls/s) = the sustained game-start grind.
-        if ( hex == m_hexLastDest &&
+        // parked INSIDE a building, the next-leg order is a correction, not
+        // spam (trucks sat 12 min inside sources waiting for the sweep nudge)
+        if ( !bInBldgB && hex == m_hexLastDest &&
              theGame.GettimeGetTime( ) < m_timeLastDest + 30 * 1000 )
             return;
         m_hexLastDest  = hex;
@@ -1022,9 +1028,13 @@ void CAIUnit::SetDestination( CSubHex& subHexDest )
     // is not being requested to go to its current location
     EnterCriticalSection( &cs );
     CSubHex   subHexVeh;
+    BOOL      bInBldgS = FALSE;
     CVehicle* pVehicle = pGameData->GetVehicleData( m_iOwner, m_dwID );
     if ( pVehicle != NULL )
+    {
         subHexVeh = pVehicle->GetPtHead( );
+        bInBldgS  = pVehicle->IsInBuilding( );
+    }
     LeaveCriticalSection( &cs );
 
     // don't bother if current location is the same as destination
@@ -1035,7 +1045,8 @@ void CAIUnit::SetDestination( CSubHex& subHexDest )
     // building-overload comment (g.mt.58 flood, 650 veh_set_dest/s).
     {
         CHexCoord hexDest( ( subHexDest.x / 2 ), ( subHexDest.y / 2 ) );
-        if ( hexDest == m_hexLastDest &&
+        // parked INSIDE a building: next-leg order is a correction, not spam
+        if ( !bInBldgS && hexDest == m_hexLastDest &&
              theGame.GettimeGetTime( ) < m_timeLastDest + 30 * 1000 )
             return;
         m_hexLastDest  = hexDest;
