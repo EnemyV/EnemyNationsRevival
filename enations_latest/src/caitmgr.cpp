@@ -5183,6 +5183,30 @@ void CAITaskMgr::BuildRoad( CAIUnit* pUnit, CAITask* pTask )
            hexVeh.Y( ) != pUnit->GetParam( CAI_DEST_Y ) ) )
         return;
 
+    // bridge crane: arrival = the span START (CAI_PREV) or adjacent -- the
+    // vanilla test below compares against CAI_DEST, the far landing ACROSS the
+    // water, so the build order could never fire (no AI bridge since 1996)
+    if ( pUnit->GetParam( CAI_FUEL ) == CNetCmd::build_bridge )
+    {
+        CHexCoord hexBrStart( pUnit->GetParam( CAI_PREV_X ), pUnit->GetParam( CAI_PREV_Y ) );
+        if ( ( hexBrStart.X( ) || hexBrStart.Y( ) ) &&
+             pGameData->GetRangeDistance( hexVeh, hexBrStart ) <= 1 )
+        {
+            CHexCoord hexBrEnd( pUnit->GetParam( CAI_DEST_X ), pUnit->GetParam( CAI_DEST_Y ) );
+            pGameData->BuildBridgeAt( pUnit, hexBrStart, hexBrEnd );
+            pUnit->SetParam( CAI_FUEL, CNetCmd::bridge_new );
+#if EN_AI_PROBES_WAR && defined(_WIN32)
+            {
+                char szB[96];
+                sprintf( szB, "[BRIDGE] plyr %d span %d,%d -> %d,%d\n", pUnit->GetOwner( ), hexBrStart.X( ),
+                         hexBrStart.Y( ), hexBrEnd.X( ), hexBrEnd.Y( ) );
+                OutputDebugStringA( szB );
+            }
+#endif
+            return;
+        }
+    }
+
     // truck has arrived at the road/bridge construction site
     if ( hexSite.X( ) == iX && hexSite.Y( ) == iY )
     {
