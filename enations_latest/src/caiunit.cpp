@@ -1104,17 +1104,29 @@ void CAIUnit::SetDestination( CHexCoord& m_hex )
     // correction, never the en-route repeat spam this guard exists for.
     if ( !bInBldg && m_hex == m_hexLastDest )
         if ( theGame.GettimeGetTime( ) < m_timeLastDest + 30 * 1000 )
+        {
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+            if ( pGameData->IsTruck( m_dwID ) )
+            { char szZ[80]; sprintf( szZ, "[SETDEST] truck %lu DEDUPED\n", (unsigned long)m_dwID ); OutputDebugStringA( szZ ); }
+#endif
             return;
+        }
     m_hexLastDest  = m_hex;
     m_timeLastDest = theGame.GettimeGetTime( );
 
     // don't bother if current location is the same as destination
     if ( m_hex == hexVeh )
+    {
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+        if ( pGameData->IsTruck( m_dwID ) )
+        { char szZ[80]; sprintf( szZ, "[SETDEST] truck %lu SAMELOC\n", (unsigned long)m_dwID ); OutputDebugStringA( szZ ); }
+#endif
         return;
+    }
 
-#ifdef _LOGOUT
-    logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "\nCAIUnit::SetDestination() player %d unit %ld going to %d,%d \n",
-               m_iOwner, m_dwID, m_hex.X( ), m_hex.Y( ) );
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+    if ( pGameData->IsTruck( m_dwID ) )
+    { char szZ[80]; sprintf( szZ, "[SETDEST] truck %lu POSTED inbldg %d\n", (unsigned long)m_dwID, (int)bInBldg ); OutputDebugStringA( szZ ); }
 #endif
 
     // CMsgVehSetDest (DWORD dwID, CHexCoord const & hex, int iMode);
