@@ -2731,6 +2731,18 @@ void CAIRouter::LoadMaterials( CAIUnit* pTruck, CAIHex* paiHex )
     // send message to the game to cause the transfer to occur
     theGame.PostToServer( (CNetCmd*)&msg, sizeof( CMsgTransMat ) );
 
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+    {
+        int iLoaded = 0;
+        for ( int k = 0; k < CMaterialTypes::num_types; ++k ) iLoaded += msg.m_aiMat[k];
+        char szL[112];
+        sprintf( szL, "[LOADMAT] plyr %d truck %lu atbldg %lu loaded %d moresrc %d\n",
+                 m_iPlayer, (unsigned long)pTruck->GetID( ), (unsigned long)paiHex->m_dwUnitID, iLoaded,
+                 (int)bMoreSources );
+        OutputDebugStringA( szL );
+    }
+#endif
+
 
     // if all sources have been visited, then it is time to go
     // to the building with the needed materials
