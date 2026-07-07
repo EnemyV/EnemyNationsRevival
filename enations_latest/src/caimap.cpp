@@ -1073,10 +1073,10 @@ BOOL CAIMap::PlanBridgeToward( CHexCoord const& hexAt, CHexCoord const& hexSite 
 		return FALSE;
 	}
 
-	// step toward the site (dominant axis first) until a river hex or 12 steps
+	// step toward the site (dominant axis first) until a river hex or the site
 	CHexCoord hexWalk = hexAt, hexBank( 0, 0 );
 	int iDir = -1;
-	for( int i = 0; i < 12 && iDir < 0; i++ )
+	for( int i = 0; i < 128 && iDir < 0; i++ )
 	{
 		int dx = (int)hexSite.X() - (int)hexWalk.X();
 		int dy = (int)hexSite.Y() - (int)hexWalk.Y();
