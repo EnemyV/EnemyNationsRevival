@@ -391,6 +391,22 @@ void CAIMgr::Manage( void )
                              m_iStatBldgBuilt, m_iStatBldgLost, (int)m_pGoalMgr->GetBuildingCnt( ), iBldgsTotal,
                              iTroops );
                     OutputDebugStringA( szC );
+                    // observation: goal-runaway check (UpdateVehGoals compounds with no reset)
+                    if ( m_pGoalMgr->m_pwaVehGoals != NULL && m_pGoalMgr->m_pwaUnits != NULL )
+                        sprintf( szC,
+                                 "[VEHGOALS] plyr %d crane %u/%u truck %u/%u rangers %u/%u ltank %u/%u fort1goal %u\n",
+                                 m_iPlayer, m_pGoalMgr->m_pwaUnits[CTransportData::construction],
+                                 m_pGoalMgr->m_pwaVehGoals[CTransportData::construction],
+                                 m_pGoalMgr->m_pwaUnits[CTransportData::heavy_truck],
+                                 m_pGoalMgr->m_pwaVehGoals[CTransportData::heavy_truck],
+                                 m_pGoalMgr->m_pwaUnits[CTransportData::rangers],
+                                 m_pGoalMgr->m_pwaVehGoals[CTransportData::rangers],
+                                 m_pGoalMgr->m_pwaUnits[CTransportData::light_tank],
+                                 m_pGoalMgr->m_pwaVehGoals[CTransportData::light_tank],
+                                 m_pGoalMgr->m_pwaBldgGoals != NULL
+                                     ? m_pGoalMgr->m_pwaBldgGoals[CStructureData::fort_1]
+                                     : 0 );
+                    OutputDebugStringA( szC );
                 }
 #endif
 #if EN_AI_PROBES_ECON && defined(_WIN32)
