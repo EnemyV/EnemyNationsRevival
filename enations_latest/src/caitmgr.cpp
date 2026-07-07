@@ -5190,7 +5190,7 @@ void CAITaskMgr::BuildRoad( CAIUnit* pUnit, CAITask* pTask )
     {
         CHexCoord hexBrStart( pUnit->GetParam( CAI_PREV_X ), pUnit->GetParam( CAI_PREV_Y ) );
         if ( ( hexBrStart.X( ) || hexBrStart.Y( ) ) &&
-             pGameData->GetRangeDistance( hexVeh, hexBrStart ) <= 1 )
+             pGameData->GetRangeDistance( hexVeh, hexBrStart ) <= 2 )
         {
             CHexCoord hexBrEnd( pUnit->GetParam( CAI_DEST_X ), pUnit->GetParam( CAI_DEST_Y ) );
             pGameData->BuildBridgeAt( pUnit, hexBrStart, hexBrEnd );

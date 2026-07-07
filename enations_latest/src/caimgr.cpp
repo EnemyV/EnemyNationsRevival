@@ -1719,6 +1719,16 @@ void CAIMgr::HandleStuckVehicles( void )
                 }
                 else
                 {
+                    // bridge-mission crane parked at the clamp point beside the
+                    // span: fire the build via its task order, don't teleport
+                    if ( pUnit->GetParam( CAI_FUEL ) == CNetCmd::build_bridge && m_pTaskMgr != NULL )
+                    {
+                        m_pTaskMgr->GenerateTaskOrder( pUnit );
+                        pUnit->SetStuckSince( 0 );
+                        pUnit->SetStuckHex( 0 );
+                        continue;
+                    }
+
                     // ignore this vehicle? how? no vehicles are ever ignored!
                     pUnit->SetDataDW( (DWORD)0 );
 
