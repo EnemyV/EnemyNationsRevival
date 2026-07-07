@@ -937,6 +937,15 @@ void CAIMgr::UpdateUnits( CAIMsg* pMsg )
             OutputDebugStringA( szB );
         }
 #endif
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+        if ( iType == CUnit::vehicle )
+        {
+            // observation only: ALL vehicle completions (what do land factories finish?)
+            char szV[80];
+            sprintf( szV, "[VEHNEW] plyr %d veh %d\n", m_iPlayer, pMsg->m_idata1 );
+            OutputDebugStringA( szV );
+        }
+#endif
 
         try
         {
