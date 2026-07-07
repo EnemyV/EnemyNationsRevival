@@ -1603,8 +1603,9 @@ void CAIMgr::HandleStuckVehicles( void )
 #if EN_AI_PROBES_ECON && defined(_WIN32)
                 {
                     char szR[160];
-                    sprintf( szR, "[CRANERESCUE] 5min resend crane %lu to %d,%d diff %lu\n",
-                             (unsigned long)pUnit->GetID( ), hexDest.X( ), hexDest.Y( ), (unsigned long)dwDiff );
+                    sprintf( szR, "[CRANERESCUE] 5min resend plyr %d unit %lu vtype %d task %u to %d,%d diff %lu\n",
+                             m_iPlayer, (unsigned long)pUnit->GetID( ), (int)pUnit->GetTypeUnit( ),
+                             (unsigned)pUnit->GetTask( ), hexDest.X( ), hexDest.Y( ), (unsigned long)dwDiff );
                     OutputDebugStringA( szR );
                 }
 #endif
