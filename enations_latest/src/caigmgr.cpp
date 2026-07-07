@@ -1974,6 +1974,29 @@ int CAIGoalMgr::NextResearchTopic( CPlayer* pPlayer )
     logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "\nCAIGoalMgr::NextResearchTopic() player %d is looking", m_iPlayer );
 #endif
 
+    // gas-starved with dead wells: research fracking tiers first -- gasless AIs
+    // plateau (roads, vehicles, war all gas-gated) while frackers keep growing
+    if ( m_iGasHave == 0 )
+    {
+        static const int s_aiFrackTech[] = { CRsrchArray::fracking_1, CRsrchArray::fracking_2,
+                                             CRsrchArray::fracking_3, CRsrchArray::fracking_4,
+                                             CRsrchArray::fracking_5 };
+        for ( int f = 0; f < 5; ++f )
+        {
+            if ( pPlayer->CanRsrch( s_aiFrackTech[f] ) )
+            {
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+                {
+                    char szR[96];
+                    sprintf( szR, "[RSRCHFRACK] plyr %d gasless -> topic %d\n", m_iPlayer, s_aiFrackTech[f] );
+                    OutputDebugStringA( szR );
+                }
+#endif
+                return s_aiFrackTech[f];
+            }
+        }
+    }
+
     // repeated span-fail bridge attempts: research the next bridge tier first
     // (rivers are blocking sites/pools/war paths and the span is too short)
     if ( m_pMap != NULL && m_pMap->m_iBridgeSpanFails >= 3 )
