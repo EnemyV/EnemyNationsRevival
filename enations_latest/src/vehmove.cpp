@@ -6,6 +6,7 @@
 //---------------------------------------------------------------------------
 
 
+#include "enprobes.h"
 #include "stdafx.h"
 #include "lastplnt.h"
 #include "chproute.hpp"
@@ -2995,6 +2996,15 @@ void CVehicle::PostArrivedOrBlocked() {
     if (m_ptDest == m_ptHead) {
         // tell the AI
         if (GetOwner()->IsAI()) {
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+            {
+                // arrival-path ground truth: does the AI get told?
+                char szA[96];
+                sprintf(szA, "[ARRPOST] plyr %d veh %lu at %d,%d\n", GetOwner()->GetPlyrNum(),
+                        (unsigned long)GetID(), m_ptHead.x / 2, m_ptHead.y / 2);
+                OutputDebugStringA(szA);
+            }
+#endif
 #ifdef _LOGOUT
             logPrintf(LOG_PRI_CRITICAL, LOG_VEH_MOVE, "Tell AI vehicle %d arrived dest sub (%d,%d)", GetID(),
                       m_ptHead.x, m_ptHead.y);
