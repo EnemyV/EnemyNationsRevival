@@ -2112,6 +2112,18 @@ void CVehicleBuilding::BuildVehicle( )
         {
             if ( GetStore( iInd ) < iAmount - m_aiUsed[iInd] )
             {
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+                if ( m_dwNextPplLog <= timeGetTime( ) )
+                {
+                    m_dwNextPplLog = timeGetTime( ) + 30000;
+                    char szS[128];
+                    sprintf( szS, "[VEHSTALL] plyr %d bldg %lu veh %d at %d%% needs mat %d store %d
+",
+                             GetOwner( )->GetPlyrNum( ), (unsigned long)GetID( ), m_pBldUnt->GetVehType( ),
+                             ( m_iBuildDone * 100 ) / m_pBldUnt->GetTime( ), iInd, (int)GetStore( iInd ) );
+                    OutputDebugStringA( szS );
+                }
+#endif
                 m_iBuildDone = iOldTime;
                 m_fOperMod   = 0;
                 SetFlag( event );
