@@ -18,6 +18,7 @@
 #include "player.h"
 #include "sprite.h"
 #include "chproute.hpp"
+#include "altoutput.h"
 #include "icons.h"
 #include "bitmaps.h"
 #include "area.h"
@@ -983,7 +984,8 @@ void CUnit::DecrementSpotting( )
                         if ( pHex->GetUnits( ) & CHex::bldg )
                         {
                             CBuilding* pBldg = theBuildingHex._GetBuilding( _hex );
-                            if ( ( pBldg != NULL ) && ( pBldg->GetOwner( ) != GetOwner( ) ) )
+                            // only freeze once the building fully leaves vision, not per-hex
+                            if ( ( pBldg != NULL ) && ( pBldg->GetOwner( ) != GetOwner( ) ) && !pBldg->IsLive( ) )
                                 pBldg->PauseAnimations( TRUE );
                         }
                     }
@@ -2349,6 +2351,11 @@ int CMaterialBuilding::GetNextMinuteMat( int iInd ) const
 {
 
     int iRtn = GetBldgResReq( iInd, FALSE );
+
+    // BioFuel consumes no normal input; don't report a need
+    CMaterialBuilding* pThis = const_cast<CMaterialBuilding*>( this );
+    if ( pThis->IsFlag( CUnit::alt_oil ) && AltOutput::Available( pThis ) != nullptr )
+        return ( iRtn );
 
     CBuildMaterials const* pBm = GetData( )->GetBldMaterials( );
     if ( pBm->GetInput( iInd ) == 0 )
