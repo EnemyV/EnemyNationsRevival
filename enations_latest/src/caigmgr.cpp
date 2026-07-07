@@ -1475,7 +1475,7 @@ BOOL CAIGoalMgr::NeedCranes( void )
 
     // first determine if there vehicle factories producing cranes
     BOOL     bMakingCranes     = FALSE;
-    int      iCranesUnassigned = 0;
+    BOOL     bCranesUnassigned = FALSE;
     POSITION pos               = m_plUnits->GetHeadPosition( );
     while ( pos != NULL )
     {
@@ -1501,15 +1501,15 @@ BOOL CAIGoalMgr::NeedCranes( void )
             if ( pUnit->GetTypeUnit( ) == CTransportData::construction )
             {
                 if ( !pUnit->GetTask( ) )
-                    iCranesUnassigned++;
+                {
+                    bCranesUnassigned = TRUE;
+                    break;
+                }
             }
         }
     }
 
-    // one between-tasks crane is normal churn (repool drains); only a
-    // PERSISTENT surplus (2+) means production should pause -- the old
-    // any-one-idle brake pinned every AI at 4-6 cranes vs goals of 20+
-    if ( bMakingCranes || iCranesUnassigned >= 2 )
+    if ( bMakingCranes || bCranesUnassigned )
         return FALSE;
     return TRUE;
 }
