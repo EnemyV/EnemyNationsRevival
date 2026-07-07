@@ -84,6 +84,8 @@ public:
 	DWORD m_adwStageStart[3];		// epoch start (wall-clock ms)
 	DWORD m_adwStageCooldownUntil[3];	// suppress watchdog until this wall-clock ms
 	int   m_aiStageLastForce[3];		// force size at last eval (growth = staging fine)
+	int   m_iBldgLostRecent;		// bunker mode: own buildings lost (rolling)
+	DWORD m_dwDefenseUntil;			// bunker mode: suppress OFFENSIVE launches until
 	CAIMap *m_pMap;	// CAIMgr's CAIMap
 	CAIUnitList *m_plUnits;	// list of CAIMgr's CAIUnits
 	CAITaskList *m_plTasks;	// this player's list of tasks
@@ -201,6 +203,7 @@ public:
 	void UpdateProductionTasks( CAIMsg *pMsg );
 	void UpdateStagingTasks( void );
 	void NoteStagingLoss( WORD wGoal );	// Phase 3: count a staged unit lost
+	void NoteBuildingLost( void );		// bunker mode: losing buildings -> defense first
 	void EvalStagingWatchdog( void );
 	int WarRoadIdx( CAITask *pTask );	// Phase 3: restage/stall/cooldown per staging goal
 	int  StageGoalIdx( int iGoal );		// Phase 3: staging goal -> 0..2 (or -1)

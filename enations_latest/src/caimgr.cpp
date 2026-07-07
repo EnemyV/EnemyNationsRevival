@@ -789,6 +789,9 @@ void CAIMgr::UpdateUnits( CAIMsg* pMsg )
                 // Phase 3: a unit lost while staging feeds the staging watchdog
                 if ( wTask == IDT_PREPAREWAR && m_pGoalMgr != NULL )
                     m_pGoalMgr->NoteStagingLoss( wGoal );
+                // bunker mode: a lost building puts offense on hold
+                if ( pUnit->GetType( ) == CUnit::building && m_pGoalMgr != NULL )
+                    m_pGoalMgr->NoteBuildingLost( );
 #if EN_AI_PROBES && defined(_WIN32)
                 if ( pUnit->GetType( ) == CUnit::building )
                     m_iStatBldgLost++;

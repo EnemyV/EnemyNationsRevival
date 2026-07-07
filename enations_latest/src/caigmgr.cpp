@@ -374,6 +374,8 @@ CAIGoalMgr::CAIGoalMgr( BOOL bRestart, int iPlayer, CAIMap* pMap, CAIUnitList* p
         m_adwStageCooldownUntil[iSw] = 0;
         m_aiStageLastForce[iSw]      = 0;
     }
+    m_iBldgLostRecent = 0;
+    m_dwDefenseUntil  = 0;
 
     m_pwaRatios    = NULL;
     m_pwaUnits     = NULL;
@@ -4598,6 +4600,13 @@ int CAIGoalMgr::WarRoadIdx( CAITask* pTask )
     return ( idx >= 0 ) ? idx : 3;
 }
 
+// bunker mode: each building lost extends a defense-first window (rolling 10 min)
+void CAIGoalMgr::NoteBuildingLost( void )
+{
+    m_iBldgLostRecent++;
+    m_dwDefenseUntil = theGame.GettimeGetTime( ) + 600000;
+}
+
 // Phase 3: a staged (IDT_PREPAREWAR) unit died - tally it against its goal
 void CAIGoalMgr::NoteStagingLoss( WORD wGoal )
 {
@@ -6707,6 +6716,25 @@ CAITask* CAIGoalMgr::GetProductionTask( CAIUnit* pUnit )
 //
 void CAIGoalMgr::LaunchAssault( CAITask* pTask )
 {
+    // bunker mode: while losing buildings, OFFENSIVE launches wait at home
+    // (ADVDEFENSE staging and all reactive combat are unaffected)
+    if ( theGame.GettimeGetTime( ) < m_dwDefenseUntil &&
+         ( pTask->GetGoalID( ) == IDG_LANDWAR || pTask->GetGoalID( ) == IDG_SEAINVADE ) )
+    {
+#if EN_AI_PROBES && defined(_WIN32)
+        {
+            char szK[96];
+            sprintf( szK, "[BUNKER] plyr %d holds goal %d offense (lost %d bldgs)
+", m_iPlayer,
+                     (int)pTask->GetGoalID( ), m_iBldgLostRecent );
+            OutputDebugStringA( szK );
+        }
+#endif
+        return;
+    }
+    if ( theGame.GettimeGetTime( ) >= m_dwDefenseUntil )
+        m_iBldgLostRecent = 0;
+
     if ( !m_plOpFors->GetCount( ) )
     {
 #ifdef _LOGOUT
