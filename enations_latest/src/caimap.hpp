@@ -47,6 +47,7 @@ public:
 	CAIMapUtil *m_pMapUtil;
 
 	int m_iRoadCount;	// count of MSW_PLANNED_ROAD locations left
+	int m_iBridgeSpanFails;	// span-fail bridge attempts (research-nudge signal; transient)
 	// Exact index of planned-road hexes (offsets into m_pwaMap). Runtime-only,
 	// NOT serialized -- rebuilt from the map on load. Replaces the radius spiral
 	// in FindRoadHex so a distant crane can't "miss" a plan it has hexes for.

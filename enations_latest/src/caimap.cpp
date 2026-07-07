@@ -94,6 +94,7 @@ CAIMap::CAIMap( int iPlayer, CAIUnitList *pUnits,
 	m_cMainRoads = (BYTE)0;
 
 	m_iRoadCount = 0;
+	m_iBridgeSpanFails = 0;
 	m_iOcean = 0;
 	m_iLake = 0;
 	m_iLand = 0;
@@ -1131,6 +1132,9 @@ BOOL CAIMap::PlanBridgeToward( CHexCoord const& hexAt, CHexCoord const& hexSite 
 	CHexCoord hexEnd( 0, 0 );
 	if( bBadBank || !m_pMapUtil->TryBridgeWalk( hexBank, iDir, iMaxSpan, hexEnd ) )
 	{
+		// a river we WANT to cross but can't span: signal the research nudge
+		if( !bBadBank )
+			m_iBridgeSpanFails++;
 #if EN_AI_PROBES_ECON && defined(_WIN32)
 		{
 			char szB[112];

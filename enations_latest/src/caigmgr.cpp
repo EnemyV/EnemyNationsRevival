@@ -1974,6 +1974,29 @@ int CAIGoalMgr::NextResearchTopic( CPlayer* pPlayer )
     logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "\nCAIGoalMgr::NextResearchTopic() player %d is looking", m_iPlayer );
 #endif
 
+    // repeated span-fail bridge attempts: research the next bridge tier first
+    // (rivers are blocking sites/pools/war paths and the span is too short)
+    if ( m_pMap != NULL && m_pMap->m_iBridgeSpanFails >= 3 )
+    {
+        static const int s_aiBridgeTech[] = { CRsrchArray::bridge, CRsrchArray::bridge_2, CRsrchArray::bridge_3,
+                                              CRsrchArray::bridge_4, CRsrchArray::bridge_5 };
+        for ( int b = 0; b < 5; ++b )
+        {
+            if ( pPlayer->CanRsrch( s_aiBridgeTech[b] ) )
+            {
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+                {
+                    char szR[96];
+                    sprintf( szR, "[RSRCHBRIDGE] plyr %d span-fails %d -> topic %d\n", m_iPlayer,
+                             m_pMap->m_iBridgeSpanFails, s_aiBridgeTech[b] );
+                    OutputDebugStringA( szR );
+                }
+#endif
+                return s_aiBridgeTech[b];
+            }
+        }
+    }
+
     // just go through the path assigned this AI
     for ( int i = 0; i < CRsrchArray::num_types; ++i )
     {
