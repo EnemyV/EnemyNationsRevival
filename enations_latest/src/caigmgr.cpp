@@ -6104,6 +6104,20 @@ void CAIGoalMgr::InitTasks( CAIGoal* pGoal )
                 CAITask* pNewTask = pTask->CopyTask( );
                 pNewTask->SetGoalID( pGoal->GetID( ) );
 
+#ifdef _WIN32
+                if ( pGoal->GetID( ) == IDG_SEAINVADE || pGoal->GetID( ) == IDG_PIRATE )
+                {
+                    // TEMP: dump what the naval goals' data tasks actually are
+                    char szT[128];
+                    sprintf( szT, "[SEAGOAL] plyr %d goal %d task %d order %d ptype %d item %d qty %d\n", m_iPlayer,
+                             (int)pGoal->GetID( ), (int)pNewTask->GetID( ), (int)pNewTask->GetTaskParam( ORDER_TYPE ),
+                             (int)pNewTask->GetTaskParam( PRODUCTION_TYPE ),
+                             (int)pNewTask->GetTaskParam( PRODUCTION_ITEM ),
+                             (int)pNewTask->GetTaskParam( PRODUCTION_QTY ) );
+                    OutputDebugStringA( szT );
+                }
+#endif
+
                 // if a build apt or build office then
                 // select a type of apt/building to build
                 // when either of them is needed
@@ -6604,6 +6618,18 @@ CAITask* CAIGoalMgr::GetProductionTask( CAIUnit* pUnit )
                     int iVeh = pTask->GetTaskParam( PRODUCTION_ITEM );
                     if ( iVeh >= m_iNumUnits )
                         continue;
+
+#ifdef _WIN32
+                    if ( iVeh == CTransportData::gun_boat || iVeh == CTransportData::landing_craft ||
+                         iVeh == CTransportData::destroyer || iVeh == CTransportData::cruiser )
+                    {
+                        // TEMP: ship task at the REAL production filter
+                        char szS[96];
+                        sprintf( szS, "[SEATASK] plyr %d ship %d staged %d goal %d have %d\n", m_iPlayer, iVeh,
+                                 (int)awTypes[iVeh], (int)m_pwaVehGoals[iVeh], (int)m_pwaUnits[iVeh] );
+                        OutputDebugStringA( szS );
+                    }
+#endif
 
                     // not being staged
                     if ( !awTypes[iVeh] )
@@ -8324,6 +8350,10 @@ void CAIGoalMgr::GetStagingArea( CAITask* pTask )
             if ( i > iTotalUnits )
                 i = iTotalUnits;
             pTask->SetTaskParam( CAI_TF_SHIPS, pGameData->GetRandom( i ) );
+            // min-1 fallback like PIRATE's cruiser/destroyer buckets - without
+            // it low gun_boat goals starve the SHIPS bucket to 0 forever
+            if ( !pTask->GetTaskParam( CAI_TF_SHIPS ) && CanBuildVehType( CTransportData::gun_boat ) )
+                pTask->SetTaskParam( CAI_TF_SHIPS, 1 );
         }
 
 
