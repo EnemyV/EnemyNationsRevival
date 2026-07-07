@@ -1571,9 +1571,29 @@ void CAIMgr::HandleStuckVehicles( void )
                     if ( RepoolFarStuck( pUnit, hexVeh, hexDest,
                                          pGameData->GetRangeDistance( hexVeh, hexDest ) ) )
                         continue;
+                    // pool truck that can't reach its parking spot: park HERE --
+                    // it stays dispatchable from its current position (plyr 4 had
+                    // 4 of 5 trucks burning 376 resends on one unreachable spot)
+                    WORD wTask = pUnit->GetTask( );
+                    if ( wTask == IDT_SETTRANSPORT )
+                    {
+                        BOOL bBridged = ( m_pMap != NULL && m_pMap->PlanBridgeToward( hexVeh, hexDest ) );
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+                        {
+                            char szR[144];
+                            sprintf( szR, "[POOLPARK] plyr %d truck %lu parked at %d,%d (pool %d,%d unreachable) bridge %d\n",
+                                     m_iPlayer, (unsigned long)pUnit->GetID( ), hexVeh.X( ), hexVeh.Y( ),
+                                     hexDest.X( ), hexDest.Y( ), (int)bBridged );
+                            OutputDebugStringA( szR );
+                        }
+#endif
+                        pUnit->SetStuckSince( 0 );
+                        pUnit->SetStuckHex( 0 );
+                        pUnit->ClearResend( );
+                        continue;
+                    }
                     // combat unit marching at an unreachable war dest: try a WAR
                     // BRIDGE toward it, then re-pool the unit for reassignment
-                    WORD wTask = pUnit->GetTask( );
                     if ( ( wTask == IDT_SEEKINWAR || wTask == IDT_SEEKINRANGE || wTask == IDT_SEEKATSEA ||
                            wTask == IDT_CONDUCTWAR || wTask == IDT_PREPAREWAR ) &&
                          m_pTaskMgr != NULL )

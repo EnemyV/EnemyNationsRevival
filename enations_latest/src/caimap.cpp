@@ -1134,8 +1134,8 @@ BOOL CAIMap::PlanBridgeToward( CHexCoord const& hexAt, CHexCoord const& hexSite 
 #if EN_AI_PROBES_ECON && defined(_WIN32)
 		{
 			char szB[112];
-			sprintf( szB, "[BRIDGEMISS] plyr %d %s at bank %d,%d dir %d\n", m_iPlayer,
-				bBadBank ? "badbank" : "nowalk", hexBank.X(), hexBank.Y(), iDir );
+			sprintf( szB, "[BRIDGEMISS] plyr %d %s at bank %d,%d dir %d span %d\n", m_iPlayer,
+				bBadBank ? "badbank" : "nowalk", hexBank.X(), hexBank.Y(), iDir, iMaxSpan );
 			OutputDebugStringA( szB );
 		}
 #endif
