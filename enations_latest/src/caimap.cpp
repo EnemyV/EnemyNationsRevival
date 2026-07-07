@@ -1040,6 +1040,115 @@ void CAIMap::FindBridgeOnPlan( CHexCoord& hexSite, CAIUnit *pUnit )
 }
 
 //
+// clamped-crane bridge assist: a crane parked at hexAt cannot reach its task
+// site hexSite. If the straight walk toward the site hits a river the owner
+// can span, flag bank + crossing + landing as planned road -- the existing
+// road/bridge pipeline (GetBridgingHexes -> IsBridgeSpan -> BuildBridgeAt)
+// then discovers and builds it. TRUE = a crossing was planned.
+//
+BOOL CAIMap::PlanBridgeToward( CHexCoord const& hexAt, CHexCoord const& hexSite )
+{
+	// bridge tech + real span reach
+	BOOL bCanBridge = FALSE;
+	int iMaxSpan = 0;
+	EnterCriticalSection( &cs );
+	{
+		CPlayer *pPlyr = pGameData->GetPlayerData( m_iPlayer );
+		if( pPlyr != NULL )
+		{
+			bCanBridge = pPlyr->CanBridge();
+			iMaxSpan   = pPlyr->GetMaxSpan();
+		}
+	}
+	LeaveCriticalSection( &cs );
+	if( !bCanBridge || iMaxSpan <= 0 )
+		return FALSE;
+
+	// step toward the site (dominant axis first) until a river hex or 12 steps
+	CHexCoord hexWalk = hexAt, hexBank( 0, 0 );
+	int iDir = -1;
+	for( int i = 0; i < 12 && iDir < 0; i++ )
+	{
+		int dx = (int)hexSite.X() - (int)hexWalk.X();
+		int dy = (int)hexSite.Y() - (int)hexWalk.Y();
+		if( !dx && !dy )
+			break;
+		CHexCoord hexNext = hexWalk;
+		int iStepDir;
+		if( ( dx >= 0 ? dx : -dx ) >= ( dy >= 0 ? dy : -dy ) )
+		{
+			if( dx > 0 ) { hexNext.Xinc(); iStepDir = 2; }
+			else         { hexNext.Xdec(); iStepDir = 6; }
+		}
+		else
+		{
+			if( dy > 0 ) { hexNext.Yinc(); iStepDir = 4; }
+			else         { hexNext.Ydec(); iStepDir = 0; }
+		}
+		CHex *pNextHex = theMap.GetHex( hexNext );
+		if( pNextHex != NULL && pNextHex->GetType() == CHex::river )
+		{
+			hexBank = hexWalk;
+			iDir    = iStepDir;
+		}
+		else
+			hexWalk = hexNext;
+	}
+	if( iDir < 0 )
+		return FALSE;
+
+	// bank must be crane-traversable land with no building on it
+	CHex *pBankHex = theMap.GetHex( hexBank );
+	if( pBankHex == NULL || pBankHex->GetType() == CHex::river ||
+		!m_pMapUtil->m_tdWheel->CanTravelHex( pBankHex ) )
+		return FALSE;
+	BOOL bBlocked;
+	EnterCriticalSection( &cs );
+	bBlocked = ( theBuildingHex.GetBuilding( hexBank ) != NULL );
+	LeaveCriticalSection( &cs );
+	if( bBlocked )
+		return FALSE;
+
+	// crossing must land on traversable unbuilt ground within the owner's span
+	CHexCoord hexEnd( 0, 0 );
+	if( !m_pMapUtil->TryBridgeWalk( hexBank, iDir, iMaxSpan, hexEnd ) )
+		return FALSE;
+
+	// flag bank -> river span -> landing as planned road
+	CHexCoord hexMark = hexBank;
+	for( int i = 0; i <= iMaxSpan + 2; i++ )
+	{
+		int j = m_pMapUtil->GetMapOffset( hexMark.X(), hexMark.Y() );
+		if( j >= 0 && j < m_iMapSize &&
+			!( m_pwaMap[j] & MSW_AI_BUILDING ) && !( m_pwaMap[j] & MSW_PLANNED_ROAD ) )
+		{
+			m_pwaMap[j] |= MSW_PLANNED_ROAD;
+			m_iRoadCount++;
+			m_aPlannedRoad.push_back( j );
+		}
+		if( hexMark == hexEnd )
+			break;
+		switch( iDir )
+		{
+			case 0: hexMark.Ydec(); break;
+			case 2: hexMark.Xinc(); break;
+			case 4: hexMark.Yinc(); break;
+			case 6: hexMark.Xdec(); break;
+		}
+	}
+
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+	{
+		char szB[128];
+		sprintf( szB, "[BRIDGEPLAN] plyr %d clamped-crane crossing %d,%d dir %d\n",
+			m_iPlayer, hexBank.X(), hexBank.Y(), iDir );
+		OutputDebugStringA( szB );
+	}
+#endif
+	return TRUE;
+}
+
+//
 // pick the nearest eligible planned-road hex to the crane (hexSite in/out).
 // was a radius spiral over the unindexed map (FindRoadHex) -- a crane far from
 // the plan "missed" even with hundreds of planned hexes elsewhere.

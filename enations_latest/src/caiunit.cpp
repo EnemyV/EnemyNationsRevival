@@ -1069,22 +1069,30 @@ void CAIUnit::SetDestination( CHexCoord& m_hex )
 {
     ASSERT_VALID( this );
 
-    // if we gave it this dest in the last minute - don't repeat
-    if ( m_hex == m_hexLastDest )
-        if ( theGame.GettimeGetTime( ) < m_timeLastDest + 30 * 1000 )
-            return;
-    m_hexLastDest  = m_hex;
-    m_timeLastDest = theGame.GettimeGetTime( );
-
     // BUGBUG get current location of the unit for which
     // the destination is being set to make sure the unit
     // is not being requested to go to its current location
     EnterCriticalSection( &cs );
     CHexCoord hexVeh;
+    BOOL      bInBldg  = FALSE;
     CVehicle* pVehicle = pGameData->GetVehicleData( m_iOwner, m_dwID );
     if ( pVehicle != NULL )
-        hexVeh = pVehicle->GetHexHead( );
+    {
+        hexVeh  = pVehicle->GetHexHead( );
+        bInBldg = pVehicle->IsInBuilding( );
+    }
     LeaveCriticalSection( &cs );
+
+    // if we gave it this dest in the last minute - don't repeat.
+    // EXCEPT inside a building: the exit order after unload often re-targets
+    // the entry hex the truck was just sent to, and the dedupe would strand
+    // it inside until a sweep nudge. An order to a parked-inside unit is a
+    // correction, never the en-route repeat spam this guard exists for.
+    if ( !bInBldg && m_hex == m_hexLastDest )
+        if ( theGame.GettimeGetTime( ) < m_timeLastDest + 30 * 1000 )
+            return;
+    m_hexLastDest  = m_hex;
+    m_timeLastDest = theGame.GettimeGetTime( );
 
     // don't bother if current location is the same as destination
     if ( m_hex == hexVeh )

@@ -125,6 +125,8 @@ public:
 	void GetBridgingHexes( CHexCoord& hexSite, CAIUnit *pUnit );
 	// bridge-site search over the WHOLE planned-road index (nearest river hex to crane)
 	void FindBridgeOnPlan( CHexCoord& hexSite, CAIUnit *pUnit );
+	// clamped-crane assist: plan a validated river crossing toward an unreachable site
+	BOOL PlanBridgeToward( CHexCoord const& hexAt, CHexCoord const& hexSite );
 	void GetRoadHex( CHexCoord& hexSite );
 	// planned-road index: nearest eligible planned hex to hexCrane -> hexOut
 	BOOL GetPlannedRoadNear( CHexCoord& hexCrane, CHexCoord& hexOut );

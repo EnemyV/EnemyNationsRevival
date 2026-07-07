@@ -339,6 +339,13 @@ void CAIMgr::Manage( void )
         if ( !m_dwLastStuckSweep || dwSweepNow - m_dwLastStuckSweep > 240000 + dwJitter )
         {
             m_dwLastStuckSweep = dwSweepNow;
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+            {
+                char szSw[64];
+                sprintf( szSw, "[SWEEP] plyr %d enter\n", m_iPlayer );
+                OutputDebugStringA( szSw );
+            }
+#endif
             HandleStuckVehicles( );
 
             // lab-goal growth lived ONLY in the road-bail paths (IdleCrane), so
@@ -1412,6 +1419,43 @@ void CAIMgr::HandleStuckVehicles( void )
                  pUnit->GetTask( ) && hexVeh == hexDest &&
                  !pUnit->GetParam( CAI_EFFECTIVE ) )
             {
+                // clamped-path / siteless weld: if the construct task's site is
+                // far away (path was clamped to the reachable prefix) or was
+                // never picked, re-nudging can NEVER succeed -- free the crane.
+                // Clamped at a spannable river + bridge tech -> plan the bridge.
+                if ( m_pGoalMgr != NULL && m_pGoalMgr->m_plTasks != NULL )
+                {
+                    CAITask* pTaskC = m_pGoalMgr->m_plTasks->GetTask( pUnit->GetTask( ), pUnit->GetGoal( ) );
+                    if ( pTaskC != NULL && pTaskC->GetTaskParam( ORDER_TYPE ) == CONSTRUCTION_ORDER )
+                    {
+                        CHexCoord hexSiteC( pTaskC->GetTaskParam( BUILD_AT_X ), pTaskC->GetTaskParam( BUILD_AT_Y ) );
+                        BOOL bSiteless = ( !hexSiteC.X( ) && !hexSiteC.Y( ) );
+                        int  iSiteDist = bSiteless ? 0 : pGameData->GetRangeDistance( hexVeh, hexSiteC );
+                        if ( bSiteless || iSiteDist > 2 )
+                        {
+                            BOOL bBridged = FALSE;
+                            if ( !bSiteless && m_pMap != NULL )
+                            {
+                                bBridged = m_pMap->PlanBridgeToward( hexVeh, hexSiteC );
+                                if ( m_pMap->m_pMapUtil != NULL )
+                                    m_pMap->m_pMapUtil->AddFailedSiteTemp(
+                                        (int)pTaskC->GetTaskParam( BUILDING_ID ), hexSiteC, 600 * 1000 );
+                            }
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+                            {
+                                char szR[192];
+                                sprintf( szR,
+                                         "[CLAMPFREE] crane %lu task %u at %d,%d site %d,%d dist %d bridge %d\n",
+                                         (unsigned long)pUnit->GetID( ), (unsigned)pUnit->GetTask( ), hexVeh.X( ),
+                                         hexVeh.Y( ), hexSiteC.X( ), hexSiteC.Y( ), iSiteDist, (int)bBridged );
+                                OutputDebugStringA( szR );
+                            }
+#endif
+                            m_pTaskMgr->UnAssignTask( pUnit->GetTask( ), pUnit->GetGoal( ) );
+                            continue;
+                        }
+                    }
+                }
 #if EN_AI_PROBES_ECON && defined(_WIN32)
                 {
                     char szR[192];
@@ -1499,8 +1543,9 @@ void CAIMgr::HandleStuckVehicles( void )
 #if EN_AI_PROBES_ECON && defined(_WIN32)
                 {
                     char szR[160];
-                    sprintf( szR, "[CRANERESCUE] 10min crane %lu diff %lu iDist %d (moved-since-5min test)\n",
-                             (unsigned long)pUnit->GetID( ), (unsigned long)dwDiff, iDist );
+                    sprintf( szR, "[CRANERESCUE] 10min crane %lu diff %lu iDist %d at %d,%d dest %d,%d\n",
+                             (unsigned long)pUnit->GetID( ), (unsigned long)dwDiff, iDist,
+                             hexVeh.X( ), hexVeh.Y( ), hexDest.X( ), hexDest.Y( ) );
                     OutputDebugStringA( szR );
                 }
 #endif
@@ -1549,8 +1594,9 @@ void CAIMgr::HandleStuckVehicles( void )
 #if EN_AI_PROBES_ECON && defined(_WIN32)
                         {
                             char szR[160];
-                            sprintf( szR, "[CRANERESCUE] 10min TELEPORT crane %lu task %u -> rocket, unbound\n",
-                                     (unsigned long)pUnit->GetID( ), (unsigned)pUnit->GetTask( ) );
+                            sprintf( szR, "[CRANERESCUE] 10min TELEPORT crane %lu task %u at %d,%d dest %d,%d -> rocket, unbound\n",
+                                     (unsigned long)pUnit->GetID( ), (unsigned)pUnit->GetTask( ),
+                                     hexVeh.X( ), hexVeh.Y( ), hexDest.X( ), hexDest.Y( ) );
                             OutputDebugStringA( szR );
                         }
 #endif

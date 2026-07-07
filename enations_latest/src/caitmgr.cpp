@@ -2120,6 +2120,25 @@ BOOL CAITaskMgr::AssignRepair( CAIUnit* pCrane )
                 }
                 LeaveCriticalSection( &cs );
 
+                // skip targets another crane already services -- assigning here
+                // just to have RepairConstruction's picker dismiss it is the
+                // [REPAIR] assign->dismiss churn loop
+                if ( bNeedRepair )
+                {
+                    POSITION posC = m_pGoalMgr->m_plUnits->GetHeadPosition( );
+                    while ( posC != NULL )
+                    {
+                        CAIUnit* pUnitC = (CAIUnit*)m_pGoalMgr->m_plUnits->GetNext( posC );
+                        if ( pUnitC != NULL && pUnitC != pCrane && pUnitC->GetOwner( ) == m_iPlayer &&
+                             pUnitC->GetTypeUnit( ) == CTransportData::construction &&
+                             pUnitC->GetTask( ) == IDT_REPAIR && pUnitC->GetDataDW( ) == pUnitB->GetID( ) )
+                        {
+                            bNeedRepair = FALSE;
+                            break;
+                        }
+                    }
+                }
+
                 // assign the task and let something else pick a building
                 // and direct the crane to it
                 if ( bNeedRepair )
