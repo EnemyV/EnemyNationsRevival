@@ -357,10 +357,13 @@ CAIGoalMgr::CAIGoalMgr( BOOL bRestart, int iPlayer, CAIMap* pMap, CAIUnitList* p
     m_dwRocket  = 0;
 
     // no war road planned yet
-    m_hexLastWarRoad.X( 0 );
-    m_hexLastWarRoad.Y( 0 );
-    m_hexLastStageRoad.X( 0 );
-    m_hexLastStageRoad.Y( 0 );
+    for ( int iWr = 0; iWr < 4; ++iWr )
+    {
+        m_ahexLastWarRoad[iWr].X( 0 );
+        m_ahexLastWarRoad[iWr].Y( 0 );
+        m_ahexLastStageRoad[iWr].X( 0 );
+        m_ahexLastStageRoad[iWr].Y( 0 );
+    }
 
     // staging watchdog state starts clean (transient, never serialized)
     for ( int iSw = 0; iSw < 3; ++iSw )
@@ -4567,6 +4570,13 @@ int CAIGoalMgr::StageGoalIdx( int iGoal )
     return -1;
 }
 
+// per-goal war-road guard slot (3 = any other goal)
+int CAIGoalMgr::WarRoadIdx( CAITask* pTask )
+{
+    int idx = StageGoalIdx( (int)pTask->GetGoalID( ) );
+    return ( idx >= 0 ) ? idx : 3;
+}
+
 // Phase 3: a staged (IDT_PREPAREWAR) unit died - tally it against its goal
 void CAIGoalMgr::NoteStagingLoss( WORD wGoal )
 {
@@ -6759,17 +6769,17 @@ void CAIGoalMgr::LaunchAssault( CAITask* pTask )
                 int iSdy = hexM.Wrap( pTask->GetTaskParam( CAI_PREV_Y ) - pTask->GetTaskParam( CAI_LOC_Y ) );
                 CHexCoord hexStage( hexM.Wrap( pTask->GetTaskParam( CAI_LOC_X ) + iSdx / 2 ),
                                     hexM.Wrap( pTask->GetTaskParam( CAI_LOC_Y ) + iSdy / 2 ) );
-                if ( hexStage.X( ) != m_hexLastStageRoad.X( ) || hexStage.Y( ) != m_hexLastStageRoad.Y( ) )
+                if ( hexStage.X( ) != m_ahexLastStageRoad[WarRoadIdx( pTask )].X( ) || hexStage.Y( ) != m_ahexLastStageRoad[WarRoadIdx( pTask )].Y( ) )
                 {
-                    m_hexLastStageRoad = hexStage;
+                    m_ahexLastStageRoad[WarRoadIdx( pTask )] = hexStage;
                     m_pMap->PlanWarRoad( hexStage );
                 }
             }
 
             // WAR ROAD: plan a paved, river-crossing route toward the target (once per target)
-            if ( m_pMap != NULL && ( hexCity.X( ) != m_hexLastWarRoad.X( ) || hexCity.Y( ) != m_hexLastWarRoad.Y( ) ) )
+            if ( m_pMap != NULL && ( hexCity.X( ) != m_ahexLastWarRoad[WarRoadIdx( pTask )].X( ) || hexCity.Y( ) != m_ahexLastWarRoad[WarRoadIdx( pTask )].Y( ) ) )
             {
-                m_hexLastWarRoad = hexCity;
+                m_ahexLastWarRoad[WarRoadIdx( pTask )] = hexCity;
                 m_pMap->PlanWarRoad( hexCity );
             }
 
@@ -6902,17 +6912,17 @@ void CAIGoalMgr::LaunchAssault( CAITask* pTask )
         int iSdy = hexM.Wrap( pTask->GetTaskParam( CAI_PREV_Y ) - pTask->GetTaskParam( CAI_LOC_Y ) );
         CHexCoord hexStage( hexM.Wrap( pTask->GetTaskParam( CAI_LOC_X ) + iSdx / 2 ),
                             hexM.Wrap( pTask->GetTaskParam( CAI_LOC_Y ) + iSdy / 2 ) );
-        if ( hexStage.X( ) != m_hexLastStageRoad.X( ) || hexStage.Y( ) != m_hexLastStageRoad.Y( ) )
+        if ( hexStage.X( ) != m_ahexLastStageRoad[WarRoadIdx( pTask )].X( ) || hexStage.Y( ) != m_ahexLastStageRoad[WarRoadIdx( pTask )].Y( ) )
         {
-            m_hexLastStageRoad = hexStage;
+            m_ahexLastStageRoad[WarRoadIdx( pTask )] = hexStage;
             m_pMap->PlanWarRoad( hexStage );
         }
     }
 
     // WAR ROAD: plan a paved, river-crossing route toward the target (once per target)
-    if ( m_pMap != NULL && ( hexCity.X( ) != m_hexLastWarRoad.X( ) || hexCity.Y( ) != m_hexLastWarRoad.Y( ) ) )
+    if ( m_pMap != NULL && ( hexCity.X( ) != m_ahexLastWarRoad[WarRoadIdx( pTask )].X( ) || hexCity.Y( ) != m_ahexLastWarRoad[WarRoadIdx( pTask )].Y( ) ) )
     {
-        m_hexLastWarRoad = hexCity;
+        m_ahexLastWarRoad[WarRoadIdx( pTask )] = hexCity;
         m_pMap->PlanWarRoad( hexCity );
     }
 
