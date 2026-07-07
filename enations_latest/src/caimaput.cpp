@@ -1942,6 +1942,10 @@ void CAIMapUtil::FindHexOnMaterial( int iBldg, int iWidthX, int iWidthY, CHexCoo
     WORD wStatus, wTest;
     int  iDeltaX, iDeltaY, iRocketRating;
 
+    // best buildable-but-UNREACHABLE deposit, kept only as a last resort (see below)
+    int  iFallbackHex    = m_iMapSize;
+    int  iFallbackRating = 0;
+
     // setup test to filter out invalid cells
     wTest = 0;
     wTest = MSW_AI_BUILDING | MSW_OPFOR_BUILDING | MSW_STAGING;
@@ -2092,11 +2096,27 @@ TryTryAgain:
                         // over to it and to get stuff back
                         //
                         // CHexCoord hexTo( aiHex.m_iX, aiHex.m_iY );
+                        // economic mode (construction, NOT war): rivers are not
+                        // bridgeable, so a cross-river deposit a gas-less AI can
+                        // never reach fails here. Prefer reachable deposits; keep
+                        // the best unreachable one only as a last-resort fallback.
                         if ( !GetPathRating( hexFound, hex ) )
                         {
 #ifdef _LOGOUT
                             logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "GetPathRating() failed " );
 #endif
+#if EN_AI_PROBES && defined(_WIN32)
+                            char szSP[96];
+                            sprintf( szSP, "[SITEPICK] plyr %d bldg %d rejected-unreachable %d,%d\n", m_iPlayer,
+                                     iBldg, hex.X( ), hex.Y( ) );
+                            OutputDebugStringA( szSP );
+#endif
+                            int iFB = GetMineralRating( hex, iWidthX, iWidthY, iMaterial );
+                            if ( iFB > iFallbackRating )
+                            {
+                                iFallbackRating = iFB;
+                                iFallbackHex    = i;
+                            }
                             continue;
                         }
 
@@ -2165,6 +2185,15 @@ TryTryAgain:
             goto TryTryAgain;
         }
 
+        // no REACHABLE deposit anywhere -> last resort: best buildable unreachable
+        // one (vanilla ranked purely by mineral rating). ConstructBuilding's 10-min
+        // shelf keeps a gas-less AI from shuttle-looping on it.
+        if ( iFallbackHex < m_iMapSize )
+        {
+            OffsetToXY( iFallbackHex, &aiHex.m_iX, &aiHex.m_iY );
+            hexFound.X( aiHex.m_iX );
+            hexFound.Y( aiHex.m_iY );
+        }
         return;
     }
 

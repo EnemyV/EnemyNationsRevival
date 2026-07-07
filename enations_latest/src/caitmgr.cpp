@@ -5642,7 +5642,15 @@ void CAITaskMgr::ConstructBuilding( CAIUnit* pUnit, CAITask* pTask )
                         if ( dwDiff > 90000 )
                         {
                             if ( m_pGoalMgr->m_pMap->m_pMapUtil != NULL )
-                                m_pGoalMgr->m_pMap->m_pMapUtil->AddFailedSiteTemp( iBldg, hexSite, 60 * 1000 );
+                            {
+                                // unreachable site (e.g. a deposit across a river a gas-less AI
+                                // can never bridge) shelves 10 min so the picker stops re-selecting
+                                // it every 60s and shuttle-looping; transient mutual blocking = 60s
+                                DWORD dwShelf = 60 * 1000;
+                                if ( !m_pGoalMgr->m_pMap->m_pMapUtil->GetPathRating( hexVeh, hexSite ) )
+                                    dwShelf = 600 * 1000;
+                                m_pGoalMgr->m_pMap->m_pMapUtil->AddFailedSiteTemp( iBldg, hexSite, dwShelf );
+                            }
                             ClearTaskUnit( pUnit );
                             UnAssignTask( pTask->GetID( ), pTask->GetGoalID( ) );
 
