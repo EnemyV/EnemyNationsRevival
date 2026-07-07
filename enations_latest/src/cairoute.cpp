@@ -2733,12 +2733,16 @@ void CAIRouter::LoadMaterials( CAIUnit* pTruck, CAIHex* paiHex )
 
 #if EN_AI_PROBES_ECON && defined(_WIN32)
     {
-        int iLoaded = 0;
-        for ( int k = 0; k < CMaterialTypes::num_types; ++k ) iLoaded += msg.m_aiMat[k];
-        char szL[112];
-        sprintf( szL, "[LOADMAT] plyr %d truck %lu atbldg %lu loaded %d moresrc %d\n",
-                 m_iPlayer, (unsigned long)pTruck->GetID( ), (unsigned long)paiHex->m_dwUnitID, iLoaded,
-                 (int)bMoreSources );
+        int iLoaded = 0, iMatch = 0, iWantSum = 0;
+        for ( int k = 0; k < CMaterialTypes::num_types; ++k )
+        {
+            iLoaded += msg.m_aiMat[k];
+            if ( pTruck->GetParamDW( k ) == paiHex->m_dwUnitID ) { iMatch++; iWantSum += pTruck->GetParam( k ); }
+        }
+        char szL[144];
+        sprintf( szL, "[LOADMAT] plyr %d truck %lu atbldg %lu dest %lu loaded %d match %d want %d moresrc %d\n",
+                 m_iPlayer, (unsigned long)pTruck->GetID( ), (unsigned long)paiHex->m_dwUnitID,
+                 (unsigned long)pTruck->GetDataDW( ), iLoaded, iMatch, iWantSum, (int)bMoreSources );
         OutputDebugStringA( szL );
     }
 #endif
