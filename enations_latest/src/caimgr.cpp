@@ -578,11 +578,19 @@ void CAIMgr::Manage( void )
                             if ( !AiSnap::ReadVeh( pT->GetID( ), snapT ) )
                                 continue;
                             if ( snapT.iRouteMode != CVehicle::stop )
+                            {
+                                pT->SetInBldgSince( 0 );  // moving -> not garaged
                                 continue;
+                            }
                             CAIHex aiHexT( snapT.iHeadX, snapT.iHeadY );
                             pGameData->GetCHexData( &aiHexT );
                             if ( aiHexT.m_iUnit != CUnit::building )
+                            {
+                                pT->SetInBldgSince( 0 );  // stopped outdoors -> not garaged
                                 continue;
+                            }
+                            if ( !pT->GetInBldgSince( ) )
+                                pT->SetInBldgSince( timeGetTime( ) );
                             iInBldg++;
                             if ( iInDump < 6 )
                             {
@@ -592,9 +600,10 @@ void CAIMgr::Manage( void )
                                 for ( int iM = 0; !bLegit && iM < CMaterialTypes::num_types; iM++ )
                                     if ( pT->GetParamDW( iM ) == aiHexT.m_dwUnitID )
                                         bLegit = TRUE;
-                                sprintf( szR, "[TRUCKIN] plyr %d id %lu in bldg %lu target %lu legit %d\n", m_iPlayer,
+                                sprintf( szR, "[TRUCKIN] plyr %d id %lu in bldg %lu target %lu legit %d mins %lu\n", m_iPlayer,
                                          (unsigned long)pT->GetID( ), (unsigned long)aiHexT.m_dwUnitID,
-                                         (unsigned long)pT->GetDataDW( ), (int)bLegit );
+                                         (unsigned long)pT->GetDataDW( ), (int)bLegit,
+                                         (unsigned long)( ( timeGetTime( ) - pT->GetInBldgSince( ) ) / 60000 ) );
                                 OutputDebugStringA( szR );
                             }
                         }

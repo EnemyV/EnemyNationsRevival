@@ -36,6 +36,7 @@ protected:
 	DWORD			m_dwStuckHex;		// stuck-watch last hex, MAKELPARAM packed (transient)
 	DWORD			m_dwResendDest;		// 5-min rescue: last resent dest, MAKELPARAM (transient)
 	WORD			m_wResendCnt;		// consecutive resends to that dest (oscillating-crane escape)
+	DWORD			m_dwInBldgSince;	// census: first sweep this truck was seen inside a bldg (transient)
 
 	DWORD m_dwID;
 	int m_iOwner;
@@ -98,6 +99,8 @@ public:
 		return m_wResendCnt;
 	}
 	void ClearResend( void ) { m_dwResendDest = 0; m_wResendCnt = 0; }
+	DWORD GetInBldgSince( void ) const { return m_dwInBldgSince; }
+	void  SetInBldgSince( DWORD dw ) { m_dwInBldgSince = dw; }
 	// bypass the 30s same-dest dedupe for ONE deliberate retry (clamped-path resume)
 	void  ForceNextDest( void ) { m_timeLastDest = 0; }
 

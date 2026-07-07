@@ -49,6 +49,7 @@ CAIUnit::CAIUnit( DWORD dwID, int iOwner, int iType, int iTypeUnit )
     m_dwStuckHex       = 0;
     m_dwResendDest     = 0;
     m_wResendCnt       = 0;
+    m_dwInBldgSince    = 0;
 
     ASSERT_VALID( this );
 
