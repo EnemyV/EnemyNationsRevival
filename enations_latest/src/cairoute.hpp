@@ -33,6 +33,8 @@ class CAIRouter : public CObject
 
 	// pending-pickup ledger: (material,source bldg id) -> reserved qty; runtime-only, not serialized, cleared on Load
 	std::map<std::pair<int, DWORD>, int> m_mReserved;
+	// empty-at-arrival blacklist: (material,source) -> skip as source until this wall-clock ms
+	std::map<std::pair<int, DWORD>, DWORD> m_mEmptyUntil;
 	int m_iReserveSweep;	// FillPriorities call counter driving the periodic ledger rebuild
 
 public:

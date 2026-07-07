@@ -1452,6 +1452,18 @@ CAIUnit* CAIRouter::GetNearestSource( int iMaterial, int iQtyNeeded, int* piDist
             if ( pUnit->GetType( ) != CUnit::building )
                 continue;
 
+            // recently found empty at arrival -> skip until the blacklist expires
+            {
+                std::map<std::pair<int, DWORD>, DWORD>::iterator itE =
+                    m_mEmptyUntil.find( std::make_pair( iMaterial, pUnit->GetID( ) ) );
+                if ( itE != m_mEmptyUntil.end( ) )
+                {
+                    if ( theGame.GettimeGetTime( ) < itE->second )
+                        continue;
+                    m_mEmptyUntil.erase( itE );
+                }
+            }
+
             // get access to CBuilding copied data for building
             CAICopy* pCopyCBuilding = pUnit->GetCopyData( CAICopy::CBuilding );
             if ( pCopyCBuilding == NULL )
@@ -2672,17 +2684,21 @@ void CAIRouter::LoadMaterials( CAIUnit* pTruck, CAIHex* paiHex )
             // record this material quantity to be transferred
             msg.m_aiMat[i] = min( iQtyNeeded, iCapacity );
             iCapacity -= msg.m_aiMat[i];
-#if EN_AI_PROBES_ECON && defined(_WIN32)
             if ( msg.m_aiMat[i] == 0 && pTruck->GetParam( i ) > 0 )
             {
-                // truly-empty source at arrival
-                char szR[128];
-                sprintf( szR, "[XFER-EMPTY] plyr %d truck %lu src %lu mat %d wanted %d livehad %d\n", m_iPlayer,
-                         (unsigned long)pTruck->GetID( ), (unsigned long)pBldg->GetID( ), i,
-                         (int)pTruck->GetParam( i ), iLiveHave );
-                OutputDebugStringA( szR );
-            }
+                // empty at arrival: blacklist this (mat,src) 2 min so the next
+                // pick doesn't send another truck to the same dry source
+                m_mEmptyUntil[std::make_pair( i, paiHex->m_dwUnitID )] = theGame.GettimeGetTime( ) + 120 * 1000;
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+                {
+                    char szR[128];
+                    sprintf( szR, "[XFER-EMPTY] plyr %d truck %lu src %lu mat %d wanted %d livehad %d\n", m_iPlayer,
+                             (unsigned long)pTruck->GetID( ), (unsigned long)pBldg->GetID( ), i,
+                             (int)pTruck->GetParam( i ), iLiveHave );
+                    OutputDebugStringA( szR );
+                }
 #endif
+            }
 
 #ifdef _LOGOUT
             logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC,

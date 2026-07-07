@@ -1423,7 +1423,8 @@ void CAIMgr::HandleStuckVehicles( void )
                 // far away (path was clamped to the reachable prefix) or was
                 // never picked, re-nudging can NEVER succeed -- free the crane.
                 // Clamped at a spannable river + bridge tech -> plan the bridge.
-                if ( m_pGoalMgr != NULL && m_pGoalMgr->m_plTasks != NULL )
+                if ( m_pGoalMgr != NULL && m_pGoalMgr->m_plTasks != NULL &&
+                     pUnit->GetTask( ) != IDT_CONSTRUCT )  // road task: BuildRoad repools on its own
                 {
                     CAITask* pTaskC = m_pGoalMgr->m_plTasks->GetTask( pUnit->GetTask( ), pUnit->GetGoal( ) );
                     if ( pTaskC != NULL && pTaskC->GetTaskParam( ORDER_TYPE ) == CONSTRUCTION_ORDER )
