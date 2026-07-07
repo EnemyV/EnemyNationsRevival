@@ -1121,7 +1121,8 @@ BOOL CAIMap::PlanBridgeToward( CHexCoord const& hexAt, CHexCoord const& hexSite 
 			else         { hexNext.Ydec(); iStepDir = 0; }
 		}
 		CHex *pNextHex = theMap.GetHex( hexNext );
-		if( pNextHex != NULL && pNextHex->GetType() == CHex::river )
+		if( pNextHex != NULL && pNextHex->GetType() == CHex::river &&
+			!( pNextHex->GetUnits() & CHex::bridge ) )	// bridged water is crossable: walk on to the NEXT gap
 		{
 			hexBank = hexWalk;
 			iDir    = iStepDir;
