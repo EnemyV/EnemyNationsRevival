@@ -3216,6 +3216,9 @@ void CAIGoalMgr::UpdateVehGoals( void )
     // extra fleet for a rich AI (S7): 0 until CheckPlayer first runs, so no ordering hazard
     int wealthBonus = ( m_iWealthLevel < 4 ? m_iWealthLevel : 4 );
     int truckBonus = ( hrs < 20 ? hrs : 20 ) + 2 * wealthBonus;   // +up to 8 trucks from wealth
+    // fleet saturated + gas-rich -> demand more trucks (operator)
+    if ( m_pRouter != NULL && m_pRouter->GetIdleTruckCount( ) == 0 && m_iGasHave > 10000 )
+        truckBonus += __min( m_iGasHave / 10000, 6 );
     // adjust production of trucks once weapons factorys built
     if ( m_pwaBldgs[CStructureData::light_2] >= m_pwaBldgGoals[CStructureData::light_2] )
         m_pwaVehGoals[CTransportData::heavy_truck] = ( 4 * iCnt ) + truckBonus;
@@ -3227,10 +3230,10 @@ void CAIGoalMgr::UpdateVehGoals( void )
         m_pwaVehGoals[CTransportData::heavy_truck] = ( 4 * iCnt ) + truckBonus;
 
     // stop over production of cranes (time-scaled cap, S2): was 2*iCnt; +1/hr up to +12, +up to 4 wealth (S7)
-    // road-backlog bonus (operator): +1 per 5k gas, capped +5, while 200+ hexes are planned
+    // road-backlog bonus (operator): +1 per 5k gas, capped +8, while 200+ hexes are planned
     int craneCap = 2 * iCnt + ( hrs < 12 ? hrs : 12 ) + wealthBonus;
     if ( m_pMap != NULL && m_pMap->m_iRoadCount > 200 )
-        craneCap += __min( m_iGasHave / 5000, 5 );
+        craneCap += __min( m_iGasHave / 5000, 8 );
     if ( m_pwaVehGoals[CTransportData::construction] > craneCap )
     {
         m_pwaVehGoals[CTransportData::construction] = craneCap;

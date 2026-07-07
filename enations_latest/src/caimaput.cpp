@@ -4356,8 +4356,9 @@ void CAIMapUtil::FindHexByWater( int iBldg, int iWidthX, int iWidthY, CHexCoord&
                     if ( NearBuildings( hcAt, iWidthX, iWidthY, FALSE ) )
                         continue;
 
-                    // make sure there is some ocean adjacent
-                    if ( !IsWaterAdjacent( hcTo, iWidthX, iWidthY ) )
+                    // make sure there is some ocean adjacent (vanilla checked
+                    // hcTo -- the scan-rect corner -- so shipyard picks failed)
+                    if ( !IsWaterAdjacent( hcAt, iWidthX, iWidthY ) )
                         continue;
 
                     // make sure the crane can get there
@@ -4370,7 +4371,7 @@ void CAIMapUtil::FindHexByWater( int iBldg, int iWidthX, int iWidthY, CHexCoord&
                     iRating = 1;
                     for ( int j = 0; j < 4; ++j )
                     {
-                        if ( theMap.FoundationCost( hcTo, iBldg, j, (CVehicle const*)-1 ) < 0 )
+                        if ( theMap.FoundationCost( hcAt, iBldg, j, (CVehicle const*)-1 ) < 0 )
                             continue;
 
                         // at least one exit orientation is acceptable
@@ -4381,8 +4382,8 @@ void CAIMapUtil::FindHexByWater( int iBldg, int iWidthX, int iWidthY, CHexCoord&
                     if ( iRating )
                     {
 #if 0  // DEBUG_OUTPUT_MAPUTL
-logPrintf(LOG_PRI_ALWAYS, LOG_AI_MISC, 
-"FindHexByWater() FoundationCost failed at %d,%d ", hcTo.X(), hcTo.Y() );
+logPrintf(LOG_PRI_ALWAYS, LOG_AI_MISC,
+"FindHexByWater() FoundationCost failed at %d,%d ", hcAt.X(), hcAt.Y() );
 #endif
                         continue;
                     }
@@ -4394,11 +4395,11 @@ logPrintf(LOG_PRI_ALWAYS, LOG_AI_MISC,
                     // rate distance from stuff
                     if ( pBldgData->GetBldgType( ) == CStructureData::shipyard )
                     {
-                        iRating = GetClosestTo( hcTo, CStructureData::seaport, CStructureData::power,
+                        iRating = GetClosestTo( hcAt, CStructureData::seaport, CStructureData::power,
                                                 CStructureData::num_types );
                     }
                     else  // CStructureData::seaport
-                        iRating = GetClosestTo( hcTo, CStructureData::power, CStructureData::seaport,
+                        iRating = GetClosestTo( hcAt, CStructureData::power, CStructureData::seaport,
                                                 CStructureData::num_types );
 
                     if ( iRating && ( iRating < iBestRating ) )
