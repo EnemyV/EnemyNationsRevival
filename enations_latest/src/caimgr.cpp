@@ -454,6 +454,37 @@ void CAIMgr::Manage( void )
                         sprintf( szG + n, " (%d)\n", iCnt );
                         OutputDebugStringA( szG );
                     }
+                    // factory starvation check: input stores at vehicle factories
+                    if ( m_plUnits != NULL )
+                    {
+                        int      iFDump = 0;
+                        POSITION posF   = m_plUnits->GetHeadPosition( );
+                        while ( posF != NULL && iFDump < 3 )
+                        {
+                            CAIUnit* pF = (CAIUnit*)m_plUnits->GetNext( posF );
+                            if ( pF == NULL || pF->GetOwner( ) != m_iPlayer || pF->GetType( ) != CUnit::building )
+                                continue;
+                            int iBT = pF->GetTypeUnit( );
+                            if ( iBT != CStructureData::heavy && iBT != CStructureData::light_1 &&
+                                 iBT != CStructureData::light_2 && iBT != CStructureData::light_0 )
+                                continue;
+                            EnterCriticalSection( &cs );
+                            CBuilding* pFB = theBuildingMap.GetBldg( pF->GetID( ) );
+                            if ( pFB != NULL )
+                            {
+                                char szF[160];
+                                sprintf( szF, "[FACTSTAT] plyr %d bldg %lu type %d steel %d lumber %d xil %d\n",
+                                         m_iPlayer, (unsigned long)pF->GetID( ), iBT,
+                                         pFB->GetStore( CMaterialTypes::steel ),
+                                         pFB->GetStore( CMaterialTypes::lumber ),
+                                         pFB->GetStore( CMaterialTypes::copper ) );
+                                OutputDebugStringA( szF );
+                                iFDump++;
+                            }
+                            LeaveCriticalSection( &cs );
+                        }
+                    }
+
                     // physical steel vs ledger (phantom-wealth check)
                     if ( m_plUnits != NULL )
                     {
@@ -540,9 +571,14 @@ void CAIMgr::Manage( void )
                             if ( iInDump < 6 )
                             {
                                 iInDump++;
-                                sprintf( szR, "[TRUCKIN] plyr %d id %lu in bldg %lu stat %u ddw %lu\n", m_iPlayer,
+                                // legit stops: the assigned target or any assigned SOURCE
+                                BOOL bLegit = ( aiHexT.m_dwUnitID == pT->GetDataDW( ) );
+                                for ( int iM = 0; !bLegit && iM < CMaterialTypes::num_types; iM++ )
+                                    if ( pT->GetParamDW( iM ) == aiHexT.m_dwUnitID )
+                                        bLegit = TRUE;
+                                sprintf( szR, "[TRUCKIN] plyr %d id %lu in bldg %lu target %lu legit %d\n", m_iPlayer,
                                          (unsigned long)pT->GetID( ), (unsigned long)aiHexT.m_dwUnitID,
-                                         (unsigned)pT->GetStatus( ), (unsigned long)pT->GetDataDW( ) );
+                                         (unsigned long)pT->GetDataDW( ), (int)bLegit );
                                 OutputDebugStringA( szR );
                             }
                         }
