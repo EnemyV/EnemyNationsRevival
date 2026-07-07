@@ -2160,6 +2160,16 @@ void CAIGoalMgr::CheckPlayer( void )
         }
     }
 
+    // a naval goal needs a shipyard, but goal 1033/1034 data has NO shipyard
+    // build task and nothing else ever raises the goal - ships were unbuildable
+    if ( m_bOceanWorld && hasCommandCenter &&
+         ( m_plGoalList->GetGoal( IDG_SEAINVADE ) != NULL || m_plGoalList->GetGoal( IDG_PIRATE ) != NULL ) )
+    {
+        WORD wYards = (WORD)( 1 + ( m_iWealthLevel > 1 ? 1 : 0 ) );
+        if ( m_pwaBldgGoals[CStructureData::shipyard_1] < wYards )
+            m_pwaBldgGoals[CStructureData::shipyard_1] = wYards;
+    }
+
     // on difficult levels, if the command_center exists
     // then adjusts coal and iron to difficulty level
     if ( hasCommandCenter)
