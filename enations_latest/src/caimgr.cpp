@@ -558,7 +558,7 @@ void CAIMgr::Manage( void )
                     // truck pipeline x-ray: in-use trucks that aren't moving = zombie claims
                     if ( m_plUnits != NULL )
                     {
-                        int iTrucks = 0, iInUse = 0, iMoving = 0, iStopped = 0, iDumped = 0;
+                        int iTrucks = 0, iInUse = 0, iMoving = 0, iStopped = 0, iDumped = 0, iTDump = 0;
                         POSITION posT = m_plUnits->GetHeadPosition( );
                         while ( posT != NULL )
                         {
@@ -569,6 +569,41 @@ void CAIMgr::Manage( void )
                                  pT->GetTypeUnit( ) != CTransportData::heavy_truck )
                                 continue;
                             iTrucks++;
+                            // per-truck census: AI binding vs engine truth
+                            if ( iTDump < 30 )
+                            {
+                                iTDump++;
+                                AiVehSnap snapX;
+                                BOOL bSnapX = AiSnap::ReadVeh( pT->GetID( ), snapX );
+                                int  iLoad = 0, iSrcs = 0, iWant = 0;
+                                for ( int im = 0; im < CMaterialTypes::num_types; im++ )
+                                {
+                                    if ( bSnapX )
+                                        iLoad += snapX.aiStore[im];
+                                    if ( pT->GetParamDW( im ) != 0 )
+                                        iSrcs++;
+                                    iWant += pT->GetParam( im );
+                                }
+                                int bIn = -1, iTAS = -1;
+                                EnterCriticalSection( &cs );
+                                CVehicle* pTV = pGameData->GetVehicleData( m_iPlayer, pT->GetID( ) );
+                                if ( pTV != NULL )
+                                {
+                                    bIn  = pTV->IsInBuilding( ) ? 1 : 0;
+                                    iTAS = pTV->IsToldAiStop( ) ? 1 : 0;
+                                }
+                                LeaveCriticalSection( &cs );
+                                char szX[192];
+                                sprintf( szX,
+                                         "[TRUCK] plyr %d id %lu stat %u task %u ddw %lu at %d,%d dest %d,%d "
+                                         "rm %d load %d want %d srcs %d in %d tas %d\n",
+                                         m_iPlayer, (unsigned long)pT->GetID( ), (unsigned)pT->GetStatus( ),
+                                         (unsigned)pT->GetTask( ), (unsigned long)pT->GetDataDW( ),
+                                         bSnapX ? snapX.iHeadX : -1, bSnapX ? snapX.iHeadY : -1,
+                                         bSnapX ? snapX.iDestX : -1, bSnapX ? snapX.iDestY : -1,
+                                         bSnapX ? snapX.iRouteMode : -1, iLoad, iWant, iSrcs, bIn, iTAS );
+                                OutputDebugStringA( szX );
+                            }
                             if ( !( pT->GetStatus( ) & CAI_IN_USE ) )
                                 continue;
                             iInUse++;
@@ -659,6 +694,52 @@ void CAIMgr::Manage( void )
                             iCranes++;
                             if ( !pC->GetTask( ) )
                                 iIdleCranes++;
+                            // per-crane census: AI binding vs engine truth
+                            int iOrd = -1, iBX = -1, iBY = -1, iCD = -2;
+                            unsigned long ulSite = 0;
+                            if ( pC->GetTask( ) && m_pGoalMgr != NULL && m_pGoalMgr->m_plTasks != NULL )
+                            {
+                                CAITask* pCT = m_pGoalMgr->m_plTasks->GetTask( pC->GetTask( ), pC->GetGoal( ) );
+                                if ( pCT != NULL )
+                                {
+                                    iOrd = pCT->GetTaskParam( ORDER_TYPE );
+                                    iBX  = pCT->GetTaskParam( BUILD_AT_X );
+                                    iBY  = pCT->GetTaskParam( BUILD_AT_Y );
+                                }
+                            }
+                            AiVehSnap snapC;
+                            BOOL bSnapC = AiSnap::ReadVeh( pC->GetID( ), snapC );
+                            int  bIn = -1, iTAS = -1;
+                            EnterCriticalSection( &cs );
+                            CVehicle* pCV = pGameData->GetVehicleData( m_iPlayer, pC->GetID( ) );
+                            if ( pCV != NULL )
+                            {
+                                bIn  = pCV->IsInBuilding( ) ? 1 : 0;
+                                iTAS = pCV->IsToldAiStop( ) ? 1 : 0;
+                            }
+                            if ( iBX > 0 && iBY > 0 )
+                            {
+                                CAIHex aiHexS( iBX, iBY );
+                                pGameData->GetCHexData( &aiHexS );
+                                if ( aiHexS.m_iUnit == CUnit::building )
+                                {
+                                    ulSite = (unsigned long)aiHexS.m_dwUnitID;
+                                    CBuilding* pSB = theBuildingMap.GetBldg( aiHexS.m_dwUnitID );
+                                    if ( pSB != NULL )
+                                        iCD = pSB->GetConstDone( );
+                                }
+                            }
+                            LeaveCriticalSection( &cs );
+                            char szC[192];
+                            sprintf( szC,
+                                     "[CRANE] plyr %d id %lu stat %u task %u ord %d bxy %d,%d site %lu cd %d "
+                                     "at %d,%d dest %d,%d rm %d in %d tas %d\n",
+                                     m_iPlayer, (unsigned long)pC->GetID( ), (unsigned)pC->GetStatus( ),
+                                     (unsigned)pC->GetTask( ), iOrd, iBX, iBY, ulSite, iCD,
+                                     bSnapC ? snapC.iHeadX : -1, bSnapC ? snapC.iHeadY : -1,
+                                     bSnapC ? snapC.iDestX : -1, bSnapC ? snapC.iDestY : -1,
+                                     bSnapC ? snapC.iRouteMode : -1, bIn, iTAS );
+                            OutputDebugStringA( szC );
                         }
                         sprintf( szR, "[ASSIGNSTAT] plyr %d cranes %d idle %d\n", m_iPlayer, iCranes, iIdleCranes );
                         OutputDebugStringA( szR );
@@ -1715,6 +1796,45 @@ void CAIMgr::HandleStuckVehicles( void )
                 // vehicle is not stuck, but is where it needs to be
                 if ( hexVeh == hexDest )
                 {
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+                    // observe only: crane at-dest, outside, site still partial
+                    if ( pUnit->GetTypeUnit( ) == CTransportData::construction && m_pGoalMgr != NULL &&
+                         m_pGoalMgr->m_plTasks != NULL )
+                    {
+                        CAITask* pCT = m_pGoalMgr->m_plTasks->GetTask( pUnit->GetTask( ), pUnit->GetGoal( ) );
+                        if ( pCT != NULL && pCT->GetTaskParam( ORDER_TYPE ) == CONSTRUCTION_ORDER )
+                        {
+                            // site = building at BUILD_AT_X/Y (BUILDING_ID is a TYPE, not an id)
+                            int  iBXo = pCT->GetTaskParam( BUILD_AT_X );
+                            int  iBYo = pCT->GetTaskParam( BUILD_AT_Y );
+                            BOOL bOutside = FALSE;
+                            int  iCD      = -2;
+                            unsigned long ulSite = 0;
+                            EnterCriticalSection( &cs );
+                            CVehicle* pCV = pGameData->GetVehicleData( m_iPlayer, pUnit->GetID( ) );
+                            if ( pCV != NULL )
+                                bOutside = !pCV->IsInBuilding( );
+                            if ( iBXo > 0 && iBYo > 0 )
+                            {
+                                CAIHex aiHexS( iBXo, iBYo );
+                                pGameData->GetCHexData( &aiHexS );
+                                if ( aiHexS.m_iUnit == CUnit::building )
+                                {
+                                    ulSite = (unsigned long)aiHexS.m_dwUnitID;
+                                    CBuilding* pSB = theBuildingMap.GetBldg( aiHexS.m_dwUnitID );
+                                    if ( pSB != NULL )
+                                        iCD = pSB->GetConstDone( );
+                                }
+                            }
+                            LeaveCriticalSection( &cs );
+                            char szW[160];
+                            sprintf( szW, "[CRANEOUTSIDE] plyr %d crane %lu at %d,%d outside %d bxy %d,%d site %lu constdone %d\n",
+                                     m_iPlayer, (unsigned long)pUnit->GetID( ), hexVeh.X( ), hexVeh.Y( ),
+                                     (int)bOutside, iBXo, iBYo, ulSite, iCD );
+                            OutputDebugStringA( szW );
+                        }
+                    }
+#endif
                     pUnit->SetStuckSince( 0 );
                     pUnit->SetStuckHex( 0 );
                     pUnit->ClearResend( );
