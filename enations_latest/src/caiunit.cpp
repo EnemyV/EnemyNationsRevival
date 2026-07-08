@@ -979,10 +979,12 @@ void CAIUnit::SetDestination( CAIUnit* pCAIBldg )
         // CHexCoord hex = pBldg->GetHex();
         CHexCoord hex = pBldg->GetExitHex( );
 
-        // a truck standing ON the exit hex: an order there would be dropped
-        // below and the truck freezes at the doorstep. Order it INTO the
-        // building instead - entry re-arms arrival and unload can fire
-        BOOL bTruck = pGameData->IsTruck( m_dwID );
+        // a truck/crane standing ON the exit hex: an order there would be
+        // dropped below and it freezes at the doorstep. Order it INTO the
+        // building instead - entry re-arms arrival; trucks unload, cranes
+        // weld from INSIDE the site (operator-confirmed)
+        BOOL bTruck = pGameData->IsTruck( m_dwID ) ||
+                      GetTypeUnit( ) == CTransportData::construction;
         if ( hex == hexVeh && bTruck )
             hex = pBldg->GetHex( );
 
@@ -1047,7 +1049,8 @@ void CAIUnit::SetDestination( CSubHex& subHexDest )
 
     // same-location: drop for non-trucks; a truck gets the wake instead
     // (instant arrival -> handler unloads/loads; see CHexCoord overload)
-    if ( subHexDest == subHexVeh && !pGameData->IsTruck( m_dwID ) )
+    if ( subHexDest == subHexVeh && !pGameData->IsTruck( m_dwID ) &&
+         GetTypeUnit( ) != CTransportData::construction )
         return;
 
     // same 30s repeat-dedupe as SetDestination(CHexCoord&) — see the
@@ -1128,7 +1131,8 @@ void CAIUnit::SetDestination( CHexCoord& m_hex )
     // waking trucks parked inside buildings that no other event can reach.
     // Dropping it silently was the freeze: parked-inside trucks never tick
     // the stopped-post and the AI never re-orders IN_USE trucks.
-    if ( m_hex == hexVeh && !pGameData->IsTruck( m_dwID ) )
+    if ( m_hex == hexVeh && !pGameData->IsTruck( m_dwID ) &&
+         GetTypeUnit( ) != CTransportData::construction )
         return;
 
 #if EN_AI_PROBES_ECON && defined(_WIN32)

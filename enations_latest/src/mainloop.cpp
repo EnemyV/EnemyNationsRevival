@@ -1738,23 +1738,6 @@ RepairDone:;
         }
     }
 
-#if EN_AI_PROBES_ECON && defined(_WIN32)
-    // ground truth per vehicle-producer: does it tick, complete or partial?
-    {
-        // per-building stagger: a global throttle only ever logs the first
-        // producer in tick order
-        if ( GetOwner( )->IsAI( ) && GetData( )->GetUnionType( ) == CStructureData::UTvehicle &&
-             ( ( theGame.GettimeGetTime( ) / 5000 + GetID( ) ) % 24 ) == 0 )
-        {
-            char szF[128];
-            sprintf( szF, "[FACTTICK] plyr %d bldg %lu type %d constdone %d flags %x\n",
-                     GetOwner( )->GetPlyrNum( ), (unsigned long)GetID( ), GetData( )->GetType( ),
-                     m_iConstDone, (unsigned)m_unitFlags );
-            OutputDebugStringA( szF );
-        }
-    }
-#endif
-
     // are we still building?
     if ( m_iConstDone != -1 )
     {
