@@ -1680,6 +1680,22 @@ RepairDone:;
         }
         else
         {
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+            // which factories sit event-wedged (halt saved into the game; the
+            // material request that would clear it did not survive the load)
+            static DWORD s_dwNextWedgeLog = 0;
+            if ( m_iConstDone == -1 && GetOwner( )->IsAI( ) &&
+                 GetData( )->GetUnionType( ) == CStructureData::UTvehicle &&
+                 theGame.GettimeGetTime( ) >= s_dwNextWedgeLog )
+            {
+                s_dwNextWedgeLog = theGame.GettimeGetTime( ) + 15000;
+                char szW[128];
+                sprintf( szW, "[FACTWEDGE] plyr %d bldg %lu type %d stores %d/%d/%d\n",
+                         GetOwner( )->GetPlyrNum( ), (unsigned long)GetID( ), GetData( )->GetType( ),
+                         GetStore( 0 ), GetStore( 1 ), GetStore( 2 ) );
+                OutputDebugStringA( szW );
+            }
+#endif
             // if stopped we only need half the people & power
             if ( m_iConstDone == -1 )
             {
