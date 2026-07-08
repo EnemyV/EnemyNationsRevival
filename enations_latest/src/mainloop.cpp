@@ -1572,6 +1572,20 @@ void CBuilding::Operate( )
     // if paused, return
     if ( m_unitFlags & ( stopped | abandoned ) )
     {
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+        // AI vehicle producers stuck paused (persisted `stopped` from the save,
+        // same phenomenon as #60; the AI never sets nor clears this flag)
+        if ( GetOwner( ) != NULL && GetOwner( )->IsAI( ) &&
+             GetData( )->GetUnionType( ) == CStructureData::UTvehicle &&
+             ( ( theGame.GettimeGetTime( ) / 5000 + GetID( ) ) % 24 ) == 0 )
+        {
+            char szP[112];
+            sprintf( szP, "[FACTSTOPPED] plyr %d bldg %lu type %d constdone %d flags %x\n",
+                     GetOwner( )->GetPlyrNum( ), (unsigned long)GetID( ), GetData( )->GetType( ),
+                     m_iConstDone, (unsigned)m_unitFlags );
+            OutputDebugStringA( szP );
+        }
+#endif
         // Fracking (#23): an EXHAUSTED oil well is stopped+abandoned and so would idle
         // here. If its per-well alt-output toggle (alt_oil) is ON and the owner has
         // researched Fracking, instead of idling it draws power and trickles oil. The
