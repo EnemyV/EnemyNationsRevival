@@ -1519,6 +1519,23 @@ void CBuilding::Operate( )
 
     ASSERT_STRICT_VALID( this );
 
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+    // id-targeted ground truth (stagger probes alias vs the operate schedule):
+    // the two vehicle factories that have never produced anything
+    {
+        static DWORD s_dwNextTgtLog = 0;
+        if ( ( GetID( ) == 1199 || GetID( ) == 1168 ) && theGame.GettimeGetTime( ) >= s_dwNextTgtLog )
+        {
+            s_dwNextTgtLog = theGame.GettimeGetTime( ) + 3000;
+            char szT[112];
+            sprintf( szT, "[FACT43] bldg %lu plyr %d constdone %d flags %x local %d\n",
+                     (unsigned long)GetID( ), GetOwner( ) ? GetOwner( )->GetPlyrNum( ) : -1,
+                     m_iConstDone, (unsigned)m_unitFlags, GetOwner( ) ? (int)GetOwner( )->IsLocal( ) : -1 );
+            OutputDebugStringA( szT );
+        }
+    }
+#endif
+
     // check for material changes
     if ( m_iUpdateMat != 0 )
         UpdateStore( FALSE );
