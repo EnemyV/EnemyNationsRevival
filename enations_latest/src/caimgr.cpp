@@ -485,6 +485,38 @@ void CAIMgr::Manage( void )
                         }
                     }
 
+                    // partials census: every own under-construction building -
+                    // the eternal-partial population (fort at 69% + idle crane)
+                    if ( m_plUnits != NULL )
+                    {
+                        int      iPDump = 0;
+                        POSITION posP   = m_plUnits->GetHeadPosition( );
+                        while ( posP != NULL && iPDump < 6 )
+                        {
+                            CAIUnit* pP = (CAIUnit*)m_plUnits->GetNext( posP );
+                            if ( pP == NULL || pP->GetOwner( ) != m_iPlayer || pP->GetType( ) != CUnit::building )
+                                continue;
+                            EnterCriticalSection( &cs );
+                            CBuilding* pLB = theBuildingMap.GetBldg( pP->GetID( ) );
+                            if ( pLB != NULL && pLB->GetConstDone( ) != -1 )
+                            {
+                                char szP[176];
+                                sprintf( szP,
+                                         "[PARTIAL] plyr %d bldg %lu type %d constdone %d event %d stopped %d "
+                                         "steel %d unassigned %d truckdw %lu\n",
+                                         m_iPlayer, (unsigned long)pP->GetID( ), pP->GetTypeUnit( ),
+                                         pLB->GetConstDone( ), (int)pLB->IsFlag( CUnit::event ),
+                                         (int)pLB->IsFlag( CUnit::stopped ),
+                                         pLB->GetStore( CMaterialTypes::steel ),
+                                         (int)pP->GetParam( CAI_UNASSIGNED ),
+                                         (unsigned long)pP->GetParamDW( CMaterialTypes::steel ) );
+                                OutputDebugStringA( szP );
+                                iPDump++;
+                            }
+                            LeaveCriticalSection( &cs );
+                        }
+                    }
+
                     // physical steel vs ledger (phantom-wealth check)
                     if ( m_plUnits != NULL )
                     {
