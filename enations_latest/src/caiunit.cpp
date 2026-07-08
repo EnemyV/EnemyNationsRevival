@@ -979,6 +979,12 @@ void CAIUnit::SetDestination( CAIUnit* pCAIBldg )
         // CHexCoord hex = pBldg->GetHex();
         CHexCoord hex = pBldg->GetExitHex( );
 
+        // a truck standing ON the exit hex: an order there would be dropped
+        // below and the (deaf) truck freezes at the doorstep. Order it INTO
+        // the building instead - entry re-arms arrival and unload can fire
+        if ( hex == hexVeh && pGameData->IsTruck( m_dwID ) )
+            hex = pBldg->GetHex( );
+
         // CMsgVehSetDest (DWORD dwID, CHexCoord const & hex, int iMode);
         // pMsg = new CMsgVehSetDest( m_dwID, hex, CVehicle::_goto );
         CMsgVehSetDest msg( m_dwID, hex, CVehicle::moving );

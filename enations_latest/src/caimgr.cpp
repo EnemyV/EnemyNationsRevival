@@ -2195,6 +2195,12 @@ void CAIMgr::DestinationResponse( CAIMsg* pMsg )
     if ( pUnit == NULL )
         return;
 
+    // an order issued in RESPONSE to an arrival is the unit's only un-deafen
+    // path (told_ai_stop clears only when a new dest reaches the engine); if
+    // the dedupe swallows it the unit freezes until a sweep nudge. Response
+    // orders always pass; steady-state Manage spam still deduped.
+    pUnit->ForceNextDest( );
+
     // an HP unit not controlled
     if ( !pUnit->IsControl( ) )
         return;

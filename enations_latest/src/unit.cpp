@@ -3007,10 +3007,6 @@ void CVehicle::SetDestAndMode( CSubHex sub, VEH_POS iMode )
 {
     const int aiAdd[4][2] = { 0, 1, 0, 0, 1, 0, 1, 1 };
 
-    // re-arm the notify-once arrival flag: it was never cleared (and is saved),
-    // leaving loaded vehicles permanently deaf to their own arrivals
-    ToldAiStopOff( );
-
     if ( m_pVehLoadOn != NULL )
         if ( theVehicleHex._GetVehicle( sub ) != m_pVehLoadOn )
             m_pVehLoadOn = NULL;
