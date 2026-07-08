@@ -1707,6 +1707,23 @@ RepairDone:;
         }
     }
 
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+    // ground truth per vehicle-producer: does it tick, complete or partial?
+    {
+        static DWORD s_dwNextFactLog = 0;
+        if ( GetOwner( )->IsAI( ) && GetData( )->GetUnionType( ) == CStructureData::UTvehicle &&
+             theGame.GettimeGetTime( ) >= s_dwNextFactLog )
+        {
+            s_dwNextFactLog = theGame.GettimeGetTime( ) + 10000;
+            char szF[128];
+            sprintf( szF, "[FACTTICK] plyr %d bldg %lu type %d constdone %d flags %x\n",
+                     GetOwner( )->GetPlyrNum( ), (unsigned long)GetID( ), GetData( )->GetType( ),
+                     m_iConstDone, (unsigned)m_unitFlags );
+            OutputDebugStringA( szF );
+        }
+    }
+#endif
+
     // are we still building?
     if ( m_iConstDone != -1 )
     {
