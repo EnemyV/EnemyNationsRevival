@@ -3527,6 +3527,28 @@ void CGame::Serialize( CArchive& ar )
         theBridgeMap.Serialize( ar );
         ASSERT_VALID( &theBridgeMap );
 
+        // heal orphaned bridge marks saved by the dead-crane window
+        // (bit set, no bridge unit -> any path probe across it AVs)
+        {
+            int iHealed = 0;
+            for ( int yy = 0; yy < theMap.Get_eY( ); yy++ )
+                for ( int xx = 0; xx < theMap.Get_eX( ); xx++ )
+                {
+                    CHex* pHexB = theMap._GetHex( xx, yy );
+                    if ( ( pHexB->GetUnits( ) & CHex::bridge ) && theBridgeHex._GetBridge( xx, yy ) == NULL )
+                    {
+                        pHexB->NandUnits( CHex::bridge );
+                        iHealed++;
+                    }
+                }
+            if ( iHealed )
+            {
+                char szH[80];
+                sprintf_s( szH, sizeof( szH ), "[BRIDGEHEAL] cleared %d orphaned bridge-mark hexes\n", iHealed );
+                OutputDebugStringA( szH );
+            }
+        }
+
         // load the units
         ar >> wCount;
         while ( wCount-- )

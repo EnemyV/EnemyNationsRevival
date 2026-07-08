@@ -1026,9 +1026,13 @@ void CVehicle::ConstructRoad() {
     int iTotal;
     CBridge *pBridge = NULL;
     if (pHex->GetUnits() & CHex::bridge) {
-        pBridge = theBridgeHex.GetBridge(_hexHead)->GetParent();
+        CBridgeUnit *pBu = theBridgeHex.GetBridge(_hexHead);
+        if (pBu != NULL)
+            pBridge = pBu->GetParent();
+    }
+    if (pBridge != NULL)
         iTotal = pBridge->GetConstTotal();
-    } else
+    else
         iTotal = theTerrain.GetData(pHex->GetType()).GetBuildMult() * CTerrainData::GetBuildRoadTime();
 
     if (m_iBuildDone >= iTotal) {

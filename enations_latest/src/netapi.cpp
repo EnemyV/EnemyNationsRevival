@@ -2123,7 +2123,33 @@ static void BridgeNew( CMsgBridgeNew* pMsg )
     // get the pVeh
     CVehicle* pVeh = theVehicleMap.GetVehicle( pMsg->m_dwIDVeh );
     if ( pVeh == NULL )
+    {
+        // crane died between order and here: BuildBridge already marked the
+        // span - unmark or the orphaned bits poison every path probe (AV)
+        CHexCoord _hexOn( pMsg->m_hexStart );
+        int xAdd = __minmax( -1, 1, CHexCoord::Diff( pMsg->m_hexEnd.X( ) - _hexOn.X( ) ) );
+        int yAdd = __minmax( -1, 1, CHexCoord::Diff( pMsg->m_hexEnd.Y( ) - _hexOn.Y( ) ) );
+        for ( ;; )
+        {
+            if ( theBridgeHex.GetBridge( _hexOn ) == NULL )
+                theMap._GetHex( _hexOn )->NandUnits( CHex::bridge );
+            if ( _hexOn == pMsg->m_hexEnd || ( xAdd == 0 && yAdd == 0 ) )
+                break;
+            _hexOn.X( ) += xAdd;
+            _hexOn.Y( ) += yAdd;
+            _hexOn.Wrap( );
+        }
+#ifdef _WIN32
+        {
+            char szO[96];
+            sprintf( szO, "[BRIDGEORPHAN] crane %lu gone, unmarked span %d,%d-%d,%d\n",
+                     (unsigned long)pMsg->m_dwIDVeh, pMsg->m_hexStart.X( ), pMsg->m_hexStart.Y( ),
+                     pMsg->m_hexEnd.X( ), pMsg->m_hexEnd.Y( ) );
+            OutputDebugStringA( szO );
+        }
+#endif
         return;
+    }
     ASSERT_CMD( pMsg );
 
     // AI
@@ -2146,7 +2172,11 @@ static void RoadDone( CMsgRoadDone* pMsg )
 
     // mark the bridge as completed
     if ( pHex->GetUnits( ) & CHex::bridge )
-        theBridgeHex.GetBridge( pMsg->m_hexBuild )->GetParent( )->BridgeBuilt( );
+    {
+        CBridgeUnit* pBu = theBridgeHex.GetBridge( pMsg->m_hexBuild );
+        if ( pBu != NULL && pBu->GetParent( ) != NULL )
+            pBu->GetParent( )->BridgeBuilt( );
+    }
     else
         pHex->ChangeToRoad( pMsg->m_hexBuild );
 }

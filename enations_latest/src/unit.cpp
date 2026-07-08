@@ -258,10 +258,16 @@ BOOL CTransportData::CanEnterHex( CHexCoord const& hexSrc, CHexCoord const& hexD
 
         CBridgeUnit* pBuDest = theBridgeHex.GetBridge( hexDest );
 
+        // orphaned mark (bit set, no bridge unit) = can't enter
+        if ( ( pHexDest->GetUnits( ) & CHex::bridge ) && pBuDest == NULL )
+            return ( FALSE );
+
         // if on a bridge either same bridge or exit
         if ( pHexSrc->GetUnits( ) & CHex::bridge )
         {
             CBridgeUnit* pBuSrc = theBridgeHex.GetBridge( hexSrc );
+            if ( pBuSrc == NULL )
+                return ( FALSE );
             // both bridge - same bridge check (or exit one enter other below)
             if ( pHexDest->GetUnits( ) & CHex::bridge )
                 if ( pBuSrc->GetParent( ) == pBuDest->GetParent( ) )
@@ -420,7 +426,9 @@ BOOL CTransportData::CanTravelHex( CHex const* pHex ) const
         // if a completed bridge we can travel on it
         if ( ( pHex->GetUnits( ) & CHex::bridge ) != 0 )
         {
-            if ( theBridgeHex.GetBridge( pHex->GetHex( ) )->GetParent( )->IsBuilt( ) )
+            // orphaned mark (no bridge unit) = not travelable
+            CBridgeUnit* pBuTrav = theBridgeHex.GetBridge( pHex->GetHex( ) );
+            if ( pBuTrav != NULL && pBuTrav->GetParent( ) != NULL && pBuTrav->GetParent( )->IsBuilt( ) )
                 return ( TRUE );
             return ( FALSE );
         }
