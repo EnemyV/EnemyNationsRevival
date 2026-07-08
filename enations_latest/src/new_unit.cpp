@@ -3415,6 +3415,22 @@ void CBuilding::FixUp( )
 {
 
     GetOwner( )->AddExists( GetData( )->GetType( ), 1 );
+
+    // saves carry `stopped` on AI buildings (bldg 1168/1199: complete vehicle
+    // factories pause-locked for the whole game). No AI code ever sets or
+    // clears the pause flag, so on an AI building it is always a save artifact
+    // - clear it. Human pause state persists as before; abandoned stays.
+    if ( GetOwner( )->IsAI( ) && ( m_unitFlags & stopped ) && !( m_unitFlags & abandoned ) )
+    {
+        ClrFlag( stopped );
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+        char szR[96];
+        sprintf( szR, "[FACTRESUME] plyr %d bldg %lu type %d un-paused on load\n",
+                 GetOwner( )->GetPlyrNum( ), (unsigned long)GetID( ), GetData( )->GetType( ) );
+        OutputDebugStringA( szR );
+#endif
+    }
+
     CUnit::FixUp( );
 }
 
