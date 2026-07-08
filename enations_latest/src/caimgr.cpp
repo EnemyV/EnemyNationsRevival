@@ -2344,6 +2344,17 @@ void CAIMgr::DestinationResponse( CAIMsg* pMsg )
 
     // get the unit that just arrived
     CAIUnit* pUnit = m_plUnits->GetUnit( pMsg->m_dwID );
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+    {
+        char szV[128];
+        sprintf( szV, "[ARRRESP] plyr %d unit %lu found %d ctrl %d stat %u ttype %d task %u at %d,%d\n",
+                 m_iPlayer, (unsigned long)pMsg->m_dwID, (int)( pUnit != NULL ),
+                 pUnit ? (int)pUnit->IsControl( ) : -1, pUnit ? (unsigned)pUnit->GetStatus( ) : 0,
+                 pUnit ? pUnit->GetTypeUnit( ) : -1, pUnit ? (unsigned)pUnit->GetTask( ) : 0,
+                 pMsg->m_iX, pMsg->m_iY );
+        OutputDebugStringA( szV );
+    }
+#endif
     if ( pUnit == NULL )
         return;
 

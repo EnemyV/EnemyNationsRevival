@@ -12,6 +12,7 @@
 #include "netapi.h"
 
 #include "SDL2GameDialogs.h"
+#include "enprobes.h"
 #include "ai.h"
 #include "area.h"
 #include "bridge.h"
@@ -2369,6 +2370,17 @@ static void SetVehDest( CMsgVehSetDest* pMsg )
                pMsg->m_sub.y );
 #endif
 
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+    if ( pVeh->GetOwner( )->IsAI( ) )
+    {
+        char szE[112];
+        sprintf( szE, "[ENGSET] plyr %d veh %lu vtype %d mode %d to %d,%d submode %d\n",
+                 pVeh->GetOwner( )->GetPlyrNum( ), (unsigned long)pMsg->m_dwID,
+                 pVeh->GetData( )->GetType( ), (int)pVeh->m_cMode,
+                 pMsg->m_hex.X( ), pMsg->m_hex.Y( ), (int)pMsg->m_iSub );
+        OutputDebugStringA( szE );
+    }
+#endif
     pVeh->SetEvent( CVehicle::none );
     if ( pMsg->m_iSub == CVehicle::sub )
         pVeh->SetDest( pMsg->m_sub );

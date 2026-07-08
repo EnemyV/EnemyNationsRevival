@@ -2999,9 +2999,10 @@ void CVehicle::PostArrivedOrBlocked() {
 #if EN_AI_PROBES_ECON && defined(_WIN32)
             {
                 // arrival-path ground truth: does the AI get told?
-                char szA[96];
-                sprintf(szA, "[ARRPOST] plyr %d veh %lu at %d,%d\n", GetOwner()->GetPlyrNum(),
-                        (unsigned long)GetID(), m_ptHead.x / 2, m_ptHead.y / 2);
+                char szA[112];
+                sprintf(szA, "[ARRPOST] plyr %d veh %lu vtype %d mode %d at %d,%d dest %d,%d\n",
+                        GetOwner()->GetPlyrNum(), (unsigned long)GetID(), GetData()->GetType(),
+                        (int)m_cMode, m_ptHead.x / 2, m_ptHead.y / 2, m_ptDest.x / 2, m_ptDest.y / 2);
                 OutputDebugStringA(szA);
             }
 #endif
