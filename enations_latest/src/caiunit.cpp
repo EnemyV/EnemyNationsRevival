@@ -980,9 +980,10 @@ void CAIUnit::SetDestination( CAIUnit* pCAIBldg )
         CHexCoord hex = pBldg->GetExitHex( );
 
         // a truck standing ON the exit hex: an order there would be dropped
-        // below and the (deaf) truck freezes at the doorstep. Order it INTO
-        // the building instead - entry re-arms arrival and unload can fire
-        if ( hex == hexVeh && pGameData->IsTruck( m_dwID ) )
+        // below and the truck freezes at the doorstep. Order it INTO the
+        // building instead - entry re-arms arrival and unload can fire
+        BOOL bTruck = pGameData->IsTruck( m_dwID );
+        if ( hex == hexVeh && bTruck )
             hex = pBldg->GetHex( );
 
         // CMsgVehSetDest (DWORD dwID, CHexCoord const & hex, int iMode);
@@ -990,8 +991,9 @@ void CAIUnit::SetDestination( CAIUnit* pCAIBldg )
         CMsgVehSetDest msg( m_dwID, hex, CVehicle::moving );
         LeaveCriticalSection( &cs );
 
-        // don't bother if current location is the same as destination
-        if ( hex == hexVeh )
+        // same-location: drop for non-trucks; for a truck send the wake
+        // (instant arrival -> handler unloads/loads; see CHexCoord overload)
+        if ( hex == hexVeh && !bTruck )
             return;
 
         // same 30s repeat-dedupe as SetDestination(CHexCoord&): the AI re-issues
@@ -1043,8 +1045,9 @@ void CAIUnit::SetDestination( CSubHex& subHexDest )
     }
     LeaveCriticalSection( &cs );
 
-    // don't bother if current location is the same as destination
-    if ( subHexDest == subHexVeh )
+    // same-location: drop for non-trucks; a truck gets the wake instead
+    // (instant arrival -> handler unloads/loads; see CHexCoord overload)
+    if ( subHexDest == subHexVeh && !pGameData->IsTruck( m_dwID ) )
         return;
 
     // same 30s repeat-dedupe as SetDestination(CHexCoord&) — see the
@@ -1120,19 +1123,17 @@ void CAIUnit::SetDestination( CHexCoord& m_hex )
     m_hexLastDest  = m_hex;
     m_timeLastDest = theGame.GettimeGetTime( );
 
-    // don't bother if current location is the same as destination
-    if ( m_hex == hexVeh )
-    {
-#if EN_AI_PROBES_ECON && defined(_WIN32)
-        if ( pGameData->IsTruck( m_dwID ) )
-        { char szZ[80]; sprintf( szZ, "[SETDEST] truck %lu SAMELOC\n", (unsigned long)m_dwID ); OutputDebugStringA( szZ ); }
-#endif
+    // same-location orders: for a TRUCK, send anyway - the engine answers
+    // with an instant arrival the handler consumes (unload/load/redispatch),
+    // waking trucks parked inside buildings that no other event can reach.
+    // Dropping it silently was the freeze: parked-inside trucks never tick
+    // the stopped-post and the AI never re-orders IN_USE trucks.
+    if ( m_hex == hexVeh && !pGameData->IsTruck( m_dwID ) )
         return;
-    }
 
 #if EN_AI_PROBES_ECON && defined(_WIN32)
     if ( pGameData->IsTruck( m_dwID ) )
-    { char szZ[80]; sprintf( szZ, "[SETDEST] truck %lu POSTED inbldg %d\n", (unsigned long)m_dwID, (int)bInBldg ); OutputDebugStringA( szZ ); }
+    { char szZ[80]; sprintf( szZ, "[SETDEST] truck %lu %s\n", (unsigned long)m_dwID, m_hex == hexVeh ? "WAKE" : "POSTED" ); OutputDebugStringA( szZ ); }
 #endif
 
     // CMsgVehSetDest (DWORD dwID, CHexCoord const & hex, int iMode);
