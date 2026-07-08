@@ -15,6 +15,7 @@
 #include "chproute.hpp"
 #include "bridge.h"
 #include "area.h"
+#include "enprobes.h"
 
 #include "building.inl"
 #include "vehicle.inl"
@@ -35,8 +36,9 @@ int aiDir[9] = {7 * EIGHTH_ROT, 6 * EIGHTH_ROT, 5 * EIGHTH_ROT, 0, 0, 4 * EIGHTH
 
 BOOL CVehicle::TestStuck() {
 
-    // only do this for local AI vehicles
-    if ((!GetOwner()->IsLocal()) || (GetOwner()->IsAI()))
+    // only do this for local AI vehicles (condition was inverted since 1996:
+    // the jump rescue this exists for never ran for AI vehicles)
+    if ((!GetOwner()->IsLocal()) || (!GetOwner()->IsAI()))
         return FALSE;
 
     // only for trucks & cranes
@@ -70,6 +72,14 @@ BOOL CVehicle::TestStuck() {
         ReleaseOwnership();
         ForceAtDest();
         ArrivedDest();
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+        {
+            char szJ[80];
+            sprintf(szJ, "[JUMP] plyr %d veh %lu into bldg %lu\n", GetOwner()->GetPlyrNum(),
+                    (unsigned long)GetID(), (unsigned long)pBldg->GetID());
+            OutputDebugStringA(szJ);
+        }
+#endif
         return TRUE;
     }
 
