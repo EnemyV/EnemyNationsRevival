@@ -2048,6 +2048,16 @@ void SDL2BuildingWindow::Refresh() {
         } else if ( m_pBldg->IsFlag( CUnit::stopped ) ) {
             curPwr = basePwr / 2; curPpl = basePpl / 2; mode = "  (stopped)";
         }
+        // AltOutput surcharge (Scrounging: +2x power +25 workers; charcoal/bio kilns: +workers).
+        // Mirror the central alt-mode cost block (mainloop.cpp) so the panel shows the ACTUAL
+        // draw, not just the base spec. Absolute add on top of the mode adjustment above.
+        if ( m_pBldg->IsFlag( CUnit::alt_oil ) ) {
+            const AltOutput::AltOutputDef* pSur = AltOutput::Available( m_pBldg );
+            if ( pSur ) {
+                if ( pSur->m_iWorkforceAdd > 0 ) curPpl += pSur->m_iWorkforceAdd;
+                if ( pSur->m_iPowerMultAdd > 0 ) curPwr += basePwr * pSur->m_iPowerMultAdd;
+            }
+        }
         m_lblOperCost->SetText( ( "Power required: " + std::to_string( curPwr )
                               + "     Workers: "     + std::to_string( curPpl ) + mode ).c_str() );
     }
