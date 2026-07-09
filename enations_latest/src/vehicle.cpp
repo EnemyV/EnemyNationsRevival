@@ -558,6 +558,12 @@ void CVehicle::Operate() {
                         TRAP (); // BUGBUG - I don't think this ever happens
                         break;
 #endif
+                default :
+                    // run mode with no build job (e.g. StopConstruction clears
+                    // event+bldg but never the mode): same broken state, same
+                    // resolution
+                    SetEventAndRoute(none, stop);
+                    break;
             }
             ASSERT_STRICT_VALID (this);
 #ifdef TEST_TRAFFIC
@@ -968,8 +974,13 @@ void CVehicle::ConstructBuilding() {
 
     ASSERT_STRICT_VALID (this);
 
-    if (m_pBldg == NULL)
+    if (m_pBldg == NULL) {
+        // run+build with no building = broken state (crane reports "working"
+        // forever; every idle check skips it). Resolve where detected: go
+        // genuinely idle so the normal idle->job machinery recovers it.
+        SetEventAndRoute(none, stop);
         return;
+    }
     ASSERT_STRICT_VALID (m_pBldg);
 
     // get change based on everything
