@@ -11017,7 +11017,9 @@ void CAIGoalMgr::Load( CArchive& ar, CAIMap* pMap, CAIUnitList* plUnits, CAIOpFo
             // its CAI_EFFECTIVE survived). No build can be pending without a
             // site, so EFFECTIVE is stale here: unbind and repool, NEVER promote
             // (COMPLETED waits forever for a built-message that cannot come).
+            // Standing tasks (road/repair) legitimately carry no site - skip.
             if ( bCrane && bConstruction &&
+                 pUnit->GetTask( ) != IDT_CONSTRUCT && pUnit->GetTask( ) != IDT_REPAIR &&
                  !pTask->GetTaskParam( BUILD_AT_X ) && !pTask->GetTaskParam( BUILD_AT_Y ) )
             {
                 pUnit->ClearParam( );

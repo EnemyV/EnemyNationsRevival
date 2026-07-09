@@ -1690,6 +1690,78 @@ void CAIMgr::HandleStuckVehicles( void )
                 continue;
             }
 
+            // EFFECTIVE-stranded crane: build was issued (eff>0, task latched
+            // COMPLETED) but the release message never came (lost, or pre-save).
+            // Act on engine truth at the recorded site.
+            if ( pUnit->GetTypeUnit( ) == CTransportData::construction &&
+                 pUnit->GetTask( ) && hexVeh == hexDest &&
+                 pUnit->GetParam( CAI_EFFECTIVE ) &&
+                 pUnit->GetTask( ) != IDT_CONSTRUCT && pUnit->GetTask( ) != IDT_REPAIR &&
+                 m_pGoalMgr != NULL && m_pGoalMgr->m_plTasks != NULL )
+            {
+                CAITask* pTaskE = m_pGoalMgr->m_plTasks->GetTask( pUnit->GetTask( ), pUnit->GetGoal( ) );
+                if ( pTaskE != NULL && pTaskE->GetTaskParam( ORDER_TYPE ) == CONSTRUCTION_ORDER )
+                {
+                    int       iEBX = pTaskE->GetTaskParam( BUILD_AT_X );
+                    int       iEBY = pTaskE->GetTaskParam( BUILD_AT_Y );
+                    int       iECd = -2;  // -2 = no building at the site
+                    BOOL      bInE = FALSE;
+                    CHexCoord hexEB( 0, 0 );
+                    EnterCriticalSection( &cs );
+                    CVehicle* pCVe = pGameData->GetVehicleData( m_iPlayer, pUnit->GetID( ) );
+                    if ( pCVe != NULL )
+                        bInE = pCVe->IsInBuilding( );
+                    if ( iEBX > 0 && iEBY > 0 )
+                    {
+                        CAIHex aiHexE( iEBX, iEBY );
+                        pGameData->GetCHexData( &aiHexE );
+                        if ( aiHexE.m_iUnit == CUnit::building && aiHexE.m_dwUnitID )
+                        {
+                            CBuilding* pEB = theBuildingMap.GetBldg( aiHexE.m_dwUnitID );
+                            if ( pEB != NULL )
+                            {
+                                iECd  = pEB->GetConstDone( );
+                                hexEB = pEB->GetHex( );
+                            }
+                        }
+                    }
+                    LeaveCriticalSection( &cs );
+
+                    if ( iECd != -2 && iECd != -1 )
+                    {
+                        // site still under construction: put the builder back inside
+                        if ( !( bInE && hexVeh == hexEB ) )
+                        {
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+                            {
+                                char szR[144];
+                                sprintf( szR, "[EFFRESCUE] plyr %d crane %lu RESUME site %d,%d cd %d from %d,%d\n",
+                                         m_iPlayer, (unsigned long)pUnit->GetID( ), iEBX, iEBY, iECd,
+                                         hexVeh.X( ), hexVeh.Y( ) );
+                                OutputDebugStringA( szR );
+                            }
+#endif
+                            pUnit->SetDestination( hexEB );
+                        }
+                    }
+                    else
+                    {
+                        // site finished or gone: the awaited built-msg can never come
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+                        {
+                            char szR[128];
+                            sprintf( szR, "[EFFRESCUE] plyr %d crane %lu RELEASE site %d,%d cd %d\n",
+                                     m_iPlayer, (unsigned long)pUnit->GetID( ), iEBX, iEBY, iECd );
+                            OutputDebugStringA( szR );
+                        }
+#endif
+                        m_pTaskMgr->UnAssignTask( pUnit->GetTask( ), pUnit->GetGoal( ) );
+                        m_pTaskMgr->ClearTaskUnit( pUnit );
+                    }
+                    continue;
+                }
+            }
+
             // arrived-idle limbo: a crane sitting ON its build site that never
             // sent its build message (task order is message-driven and no message
             // ever comes). The timer branches below skip arrived vehicles, so
