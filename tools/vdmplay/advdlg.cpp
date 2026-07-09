@@ -637,9 +637,9 @@ BOOL CAdvNbDlg::OnInitDialog() {
     m_stationName = FetchString("Netbios", "StationName");
     m_lanaStr = FetchString("Netbios", "Lana");
 
-    NCB ncb;
-    LANA_ENUM lEnum;
-    UCHAR ret;
+    NCB       ncb   = {};
+    LANA_ENUM lEnum = {};
+    UCHAR     ret   = {};
 
     memset(&ncb, 0, sizeof(ncb));
 
