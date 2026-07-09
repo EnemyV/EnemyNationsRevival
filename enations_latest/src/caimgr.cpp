@@ -1632,6 +1632,17 @@ void CAIMgr::HandleStuckVehicles( void )
             if ( bIsCarried || bIsWorking )
                 continue;
 
+            // engine actively executing (driving or building) = NOT stuck.
+            // Rescuing an en-route unit re-sends its dest and the engine's
+            // order handler wipes its job event (SetVehDest -> SetEvent(none))
+            // -- this killed every batch road run whose drive took >5 min.
+            // Rescue only units the engine reports stopped/blocked.
+            if ( snap.iRouteMode == CVehicle::moving || snap.iRouteMode == CVehicle::run )
+            {
+                pUnit->SetStuckSince( 0 );
+                continue;
+            }
+
             // arrived-idle TRUCK limbo: an in-use truck stopped at its dest whose
             // arrival event was missed never unloads/returns to the pool. STRICTLY
             // time-gated: nudging a truck merely WAITING (source queue, stock)
