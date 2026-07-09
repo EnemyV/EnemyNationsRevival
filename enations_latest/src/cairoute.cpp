@@ -2592,6 +2592,17 @@ BOOL CAIRouter::UnloadMaterials( CAIUnit* pTruck, CAIUnit* pBldg )
     // send message to the game to cause the transfer
     theGame.PostToServer( (CNetCmd*)&msg, sizeof( CMsgTransMat ) );
 
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+    {
+        int iXfer = 0;
+        for ( int k = 0; k < CMaterialTypes::num_types; ++k ) iXfer += msg.m_aiMat[k];
+        char szU[112];
+        sprintf( szU, "[UNLOAD] plyr %d truck %lu bldg %lu xfer %d stillneeds %d\n", m_iPlayer,
+                 (unsigned long)pTruck->GetID( ), (unsigned long)pBldg->GetID( ), iXfer, (int)bStillNeeds );
+        OutputDebugStringA( szU );
+    }
+#endif
+
     // now unassign the truck
     pTruck->SetDataDW( 0 );
     ReleaseTruckReservations( pTruck );  // free any residual source claims after delivery
