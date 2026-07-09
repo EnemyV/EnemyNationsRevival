@@ -93,7 +93,7 @@ void CComStatDlg::ShowStatus(UINT id)
  wsprintf(buf, fmt, (LPCSTR) m_number);
  SetDlgItemText(m_hWnd, IDC_COMM_STATUS, buf);
 #else
- m_commStat.LoadString(id);
+ (void)m_commStat.LoadString(id);
  UpdateData(FALSE);
 #endif
 
@@ -118,9 +118,15 @@ void CComStatDlg::ShowTrace(LPCSTR p, UINT size)
 #else
  char* tmp = (char*) malloc(size+1);
 #endif
- 
- memcpy(tmp, p, size);
- tmp[size] = 0;
+ if ( tmp != 0 )
+ {
+     memcpy(tmp, p, size);
+     tmp[size] = 0;
+ }
+ else
+ {
+     return;
+ }
 #ifndef NOMFC
  UINT i = m_commTrace.AddString(tmp);
  m_commTrace.SetTopIndex(i);

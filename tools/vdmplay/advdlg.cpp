@@ -95,7 +95,8 @@ void FillPortCombo(CComboBox &aComboBox) {
         char sBuf[10];
         strcpy(sBuf, "COM");
         itoa(iPort, &sBuf[3], 10);
-        HANDLE dev = CreateFile(sBuf, GENERIC_READ | GENERIC_WRITE, 0, NULL,
+        HANDLE dev = INVALID_HANDLE_VALUE;
+        dev = CreateFile(sBuf, GENERIC_READ | GENERIC_WRITE, 0, NULL,
                                 OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OVERLAPPED, NULL);
         if (dev != INVALID_HANDLE_VALUE) {
             CloseHandle(dev);
