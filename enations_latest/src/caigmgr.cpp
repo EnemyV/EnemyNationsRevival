@@ -10982,6 +10982,7 @@ void CAIGoalMgr::Load( CArchive& ar, CAIMap* pMap, CAIUnitList* plUnits, CAIOpFo
     // (Units load before the goal manager, so m_plUnits is fully populated here.)
     if ( m_plUnits != NULL && m_plTasks != NULL )
     {
+        int      iWeldFreed = 0;
         POSITION pos = m_plUnits->GetHeadPosition( );
         while ( pos != NULL )
         {
@@ -11011,6 +11012,23 @@ void CAIGoalMgr::Load( CArchive& ar, CAIMap* pMap, CAIUnitList* plUnits, CAIOpFo
                             pUnit->GetTypeUnit( ) == CTransportData::construction );
             BOOL bConstruction = ( pTask->GetTaskParam( ORDER_TYPE ) == CONSTRUCTION_ORDER );
 
+            // a bound construction task with NO site is a recycled task the save
+            // fossilized (UnAssignTask zeroed BUILD_AT but the crane binding and
+            // its CAI_EFFECTIVE survived). No build can be pending without a
+            // site, so EFFECTIVE is stale here: unbind and repool, NEVER promote
+            // (COMPLETED waits forever for a built-message that cannot come).
+            if ( bCrane && bConstruction &&
+                 !pTask->GetTaskParam( BUILD_AT_X ) && !pTask->GetTaskParam( BUILD_AT_Y ) )
+            {
+                pUnit->ClearParam( );
+                pUnit->SetTask( FALSE );
+                pUnit->SetGoal( FALSE );
+                pUnit->SetDataDW( 0 );
+                pUnit->SetStatus( 0 );
+                iWeldFreed++;
+                continue;
+            }
+
             if ( pTask->GetStatus( ) != UNASSIGNED_TASK )
             {
                 // This task was already claimed by an earlier unit in this loop:
@@ -11038,6 +11056,14 @@ void CAIGoalMgr::Load( CArchive& ar, CAIMap* pMap, CAIUnitList* plUnits, CAIOpFo
             else
                 pTask->SetStatus( INPROCESS_TASK );  // held by a unit -> not free to re-hand
         }
+#ifdef _WIN32
+        if ( iWeldFreed )
+        {
+            char szW[96];
+            sprintf( szW, "[WELDFREE] plyr load unbound %d cranes from siteless tasks\n", iWeldFreed );
+            OutputDebugStringA( szW );
+        }
+#endif
     }
 
     // after a load, the lists should all be reinitialized

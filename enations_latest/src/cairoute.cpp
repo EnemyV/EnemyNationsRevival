@@ -2734,15 +2734,21 @@ void CAIRouter::LoadMaterials( CAIUnit* pTruck, CAIHex* paiHex )
 #if EN_AI_PROBES_ECON && defined(_WIN32)
     {
         int iLoaded = 0, iMatch = 0, iWantSum = 0;
+        unsigned long ulSrc1 = 0, ulSrc2 = 0;
         for ( int k = 0; k < CMaterialTypes::num_types; ++k )
         {
             iLoaded += msg.m_aiMat[k];
             if ( pTruck->GetParamDW( k ) == paiHex->m_dwUnitID ) { iMatch++; iWantSum += pTruck->GetParam( k ); }
+            if ( pTruck->GetParamDW( k ) )
+            {
+                if ( !ulSrc1 ) ulSrc1 = pTruck->GetParamDW( k );
+                else if ( !ulSrc2 && pTruck->GetParamDW( k ) != ulSrc1 ) ulSrc2 = pTruck->GetParamDW( k );
+            }
         }
-        char szL[144];
-        sprintf( szL, "[LOADMAT] plyr %d truck %lu atbldg %lu dest %lu loaded %d match %d want %d moresrc %d\n",
+        char szL[176];
+        sprintf( szL, "[LOADMAT] plyr %d truck %lu atbldg %lu dest %lu loaded %d match %d want %d moresrc %d rem %lu,%lu\n",
                  m_iPlayer, (unsigned long)pTruck->GetID( ), (unsigned long)paiHex->m_dwUnitID,
-                 (unsigned long)pTruck->GetDataDW( ), iLoaded, iMatch, iWantSum, (int)bMoreSources );
+                 (unsigned long)pTruck->GetDataDW( ), iLoaded, iMatch, iWantSum, (int)bMoreSources, ulSrc1, ulSrc2 );
         OutputDebugStringA( szL );
     }
 #endif

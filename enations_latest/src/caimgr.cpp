@@ -695,7 +695,7 @@ void CAIMgr::Manage( void )
                             if ( !pC->GetTask( ) )
                                 iIdleCranes++;
                             // per-crane census: AI binding vs engine truth
-                            int iOrd = -1, iBX = -1, iBY = -1, iCD = -2;
+                            int iOrd = -1, iBX = -1, iBY = -1, iCD = -2, iTst = -1, iBT = -1;
                             unsigned long ulSite = 0;
                             if ( pC->GetTask( ) && m_pGoalMgr != NULL && m_pGoalMgr->m_plTasks != NULL )
                             {
@@ -705,8 +705,11 @@ void CAIMgr::Manage( void )
                                     iOrd = pCT->GetTaskParam( ORDER_TYPE );
                                     iBX  = pCT->GetTaskParam( BUILD_AT_X );
                                     iBY  = pCT->GetTaskParam( BUILD_AT_Y );
+                                    iTst = (int)pCT->GetStatus( );
+                                    iBT  = (int)pCT->GetTaskParam( BUILDING_ID );
                                 }
                             }
+                            int iEff = (int)pC->GetParam( CAI_EFFECTIVE );
                             AiVehSnap snapC;
                             BOOL bSnapC = AiSnap::ReadVeh( pC->GetID( ), snapC );
                             int  bIn = -1, iTAS = -1;
@@ -730,15 +733,15 @@ void CAIMgr::Manage( void )
                                 }
                             }
                             LeaveCriticalSection( &cs );
-                            char szC[192];
+                            char szC[224];
                             sprintf( szC,
                                      "[CRANE] plyr %d id %lu stat %u task %u ord %d bxy %d,%d site %lu cd %d "
-                                     "at %d,%d dest %d,%d rm %d in %d tas %d\n",
+                                     "at %d,%d dest %d,%d rm %d in %d tas %d eff %d tst %d bt %d\n",
                                      m_iPlayer, (unsigned long)pC->GetID( ), (unsigned)pC->GetStatus( ),
                                      (unsigned)pC->GetTask( ), iOrd, iBX, iBY, ulSite, iCD,
                                      bSnapC ? snapC.iHeadX : -1, bSnapC ? snapC.iHeadY : -1,
                                      bSnapC ? snapC.iDestX : -1, bSnapC ? snapC.iDestY : -1,
-                                     bSnapC ? snapC.iRouteMode : -1, bIn, iTAS );
+                                     bSnapC ? snapC.iRouteMode : -1, bIn, iTAS, iEff, iTst, iBT );
                             OutputDebugStringA( szC );
                         }
                         sprintf( szR, "[ASSIGNSTAT] plyr %d cranes %d idle %d\n", m_iPlayer, iCranes, iIdleCranes );
@@ -1497,6 +1500,7 @@ BOOL CAIMgr::RepoolFarStuck( CAIUnit* pUnit, CHexCoord& hexVeh, CHexCoord& hexDe
     }
 #endif
     m_pTaskMgr->UnAssignTask( pUnit->GetTask( ), pUnit->GetGoal( ) );
+    m_pTaskMgr->ClearTaskUnit( pUnit );  // task freed above; crane must be freed too or it stays welded
     pUnit->SetStuckSince( 0 );
     pUnit->SetStuckHex( 0 );
     pUnit->ClearResend( );
@@ -1735,6 +1739,7 @@ void CAIMgr::HandleStuckVehicles( void )
                                 }
 #endif
                                 m_pTaskMgr->UnAssignTask( pUnit->GetTask( ), pUnit->GetGoal( ) );
+                                m_pTaskMgr->ClearTaskUnit( pUnit );  // free the crane too
                             }
                             continue;
                         }
@@ -1760,6 +1765,7 @@ void CAIMgr::HandleStuckVehicles( void )
                             }
 #endif
                             m_pTaskMgr->UnAssignTask( pUnit->GetTask( ), pUnit->GetGoal( ) );
+                            m_pTaskMgr->ClearTaskUnit( pUnit );  // free the crane too
                             continue;
                         }
                     }

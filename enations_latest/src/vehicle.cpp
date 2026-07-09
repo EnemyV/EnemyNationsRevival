@@ -136,6 +136,7 @@ BOOL CVehicle::TestStuck() {
 
         TRAP();
         pHexOn++;
+        iNumTries--;  // was never decremented (since 1996): loop walked past the path array
     }
 
     // we failed
