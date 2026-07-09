@@ -2775,8 +2775,11 @@ void CAIRouter::LoadMaterials( CAIUnit* pTruck, CAIHex* paiHex )
 
             if ( !hex.X( ) && !hex.Y( ) )
             {
-                pTruck->SetStatus( 0 );  // truck is no longer assigned
-                pTruck->SetDataDW( 0 );
+                // no exit hex: full vanilla release - clear the dest building's
+                // claim markers (or SetUnitPriority never re-raises it) and
+                // return the truck to the pool
+                UnassignTrucks( pTruck->GetID( ) );
+                UnassignTruck( pTruck->GetID( ) );
                 return;
             }
 

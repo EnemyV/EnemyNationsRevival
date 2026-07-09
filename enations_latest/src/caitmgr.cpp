@@ -43,6 +43,7 @@ CAITaskMgr::CAITaskMgr( BOOL bRestart, int iPlayer, CAIGoalMgr* pGoalMgr )
     m_bRestart = bRestart;
     m_bStartAssignPending = FALSE;
     m_bRepairFirst        = FALSE;
+    m_bPartialPick        = FALSE;
     m_iCraneAssignCnt     = 0;
 
     ASSERT_VALID( pGoalMgr );
@@ -5029,8 +5030,11 @@ BOOL CAITaskMgr::RepairConstruction( CAIUnit* pUnit )
     }
     else  // need to select a building to repair
     {
-        int      iBestRating = 0, iRating;
-        CAIUnit* paiBldg     = NULL;
+        // per-class maxima: partial-adopts and damage-repairs alternate so
+        // constant war damage can't starve partial adoption (nor vice versa)
+        int       iBestP = 0, iBestD = 0, iRating;
+        CAIUnit * paiBldgP = NULL, *paiBldgD = NULL;
+        CHexCoord hexP( 0, 0 ), hexD( 0, 0 );
 
 #if THREADS_ENABLED
         // BUGBUG this function must yield
@@ -5073,6 +5077,7 @@ BOOL CAITaskMgr::RepairConstruction( CAIUnit* pUnit )
                     continue;
 
                 BOOL bNeedRepair = FALSE;
+                BOOL bIsPartial  = FALSE;
                 EnterCriticalSection( &cs );
                 CBuilding* pBldg = theBuildingMap.GetBldg( pUnitB->GetID( ) );
                 if ( pBldg != NULL )
@@ -5085,15 +5090,11 @@ BOOL CAITaskMgr::RepairConstruction( CAIUnit* pUnit )
                         if ( pBldg->GetFlags( ) & CUnit::dying )
                             bNeedRepair = FALSE;
 
-                        hexBldg = pBldg->GetExitHex( );
+                        hexBldg    = pBldg->GetExitHex( );
+                        bIsPartial = pBldg->IsConstructing( );
 
                         // rate building's importance
                         iRating = m_pGoalMgr->m_pMap->m_pMapUtil->AssessTarget( pBldg, 0 );
-                        // graded: small partial edge + damage severity, so neither
-                        // class starves the other (+10 flat let partials starve
-                        // ALL damage repair -- operator regression)
-                        if ( pBldg->IsConstructing( ) )
-                            iRating += 3;
                         iRating += ( DAMAGE_0 - pBldg->GetDamagePer( ) ) / 20;
                     }
                 }
@@ -5102,18 +5103,49 @@ BOOL CAITaskMgr::RepairConstruction( CAIUnit* pUnit )
                 if ( !bNeedRepair )
                     continue;
 
-                // always pick the more valuable
-                if ( iRating > iBestRating )
+                // best of each class, with ITS OWN hex (the shared hexBldg used
+                // to dispatch the crane to the LAST candidate scanned, not the
+                // selected one - ghost trips)
+                if ( bIsPartial )
                 {
-                    iBestRating = iRating;
-                    paiBldg     = pUnitB;
+                    if ( iRating > iBestP )
+                    {
+                        iBestP   = iRating;
+                        paiBldgP = pUnitB;
+                        hexP     = hexBldg;
+                    }
+                }
+                else if ( iRating > iBestD )
+                {
+                    iBestD   = iRating;
+                    paiBldgD = pUnitB;
+                    hexD     = hexBldg;
                 }
             }
+        }
+
+        // alternate the classes; fall through to the other when one is empty
+        CAIUnit* paiBldg = NULL;
+        if ( m_bPartialPick && paiBldgP != NULL )
+        {
+            paiBldg = paiBldgP;
+            hexBldg = hexP;
+        }
+        else if ( paiBldgD != NULL )
+        {
+            paiBldg = paiBldgD;
+            hexBldg = hexD;
+        }
+        else if ( paiBldgP != NULL )
+        {
+            paiBldg = paiBldgP;
+            hexBldg = hexP;
         }
 
         // selected a building to repair
         if ( paiBldg != NULL )
         {
+            m_bPartialPick = !m_bPartialPick;
 #if EN_AI_PROBES_ECON && defined(_WIN32)
             {
                 int iDmg = 0, iCon = 0;
@@ -5128,7 +5160,7 @@ BOOL CAITaskMgr::RepairConstruction( CAIUnit* pUnit )
                 char szR[160];
                 sprintf( szR, "[REPAIR] crane %lu -> bldg %lu at %d,%d rating %d dmg %d con %d\n",
                          (unsigned long)pUnit->GetID( ), (unsigned long)paiBldg->GetID( ), hexBldg.X( ), hexBldg.Y( ),
-                         iBestRating, iDmg, iCon );
+                         ( paiBldg == paiBldgP ) ? iBestP : iBestD, iDmg, iCon );
                 OutputDebugStringA( szR );
             }
 #endif

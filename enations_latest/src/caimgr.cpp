@@ -1499,6 +1499,13 @@ BOOL CAIMgr::RepoolFarStuck( CAIUnit* pUnit, CHexCoord& hexVeh, CHexCoord& hexDe
         OutputDebugStringA( szR );
     }
 #endif
+    // a repooled truck must drop its claim markers on the dest building or the
+    // site never re-raises (vanilla only did this on truck DEATH)
+    if ( m_pRouter != NULL && pGameData->IsTruck( pUnit->GetID( ) ) )
+    {
+        m_pRouter->UnassignTrucks( pUnit->GetID( ) );
+        m_pRouter->UnassignTruck( pUnit->GetID( ) );
+    }
     m_pTaskMgr->UnAssignTask( pUnit->GetTask( ), pUnit->GetGoal( ) );
     m_pTaskMgr->ClearTaskUnit( pUnit );  // task freed above; crane must be freed too or it stays welded
     pUnit->SetStuckSince( 0 );
