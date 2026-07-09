@@ -20,13 +20,13 @@
 class CCreditLine
 {
 public:
-		CCreditLine () {}
+    CCreditLine( ): m_iAlign( ), m_iSize( ), m_iRtn( ) {}
 		~CCreditLine () {}
 
 	int				m_iAlign;		// 0 == left, 1 == center, 2 == right
 	int				m_iSize;		// m_font[]
 	int				m_iRtn;			// TRUE -> CR at end of line
-	CString		m_sText;		// guess
+	CString		    m_sText;		// guess
 };
 
 

@@ -299,7 +299,7 @@ void CIserveDlg::OnAbout ()
 CString CIserveDlg::GetAddressString(LPCVPNETADDRESS a)
 {
 
-	char buf[256];
+	char buf[256] = {};
 	buf[0] = 0;
 
 	vpGetAddressString(m_vpH, a, buf, sizeof(buf));
@@ -355,7 +355,7 @@ LONG CIserveDlg::OnVpNotify(WPARAM w, LPARAM l)
 CString CIserveDlg::GetSessionData(LPCVPSESSIONINFO info)
 {
 	CString sData;
-	char sessionAddress[256];
+    char    sessionAddress[256] = {};
 
 	sessionAddress[0] = 0;
 	vpGetAddressString(m_vpH, &info->sessionId, sessionAddress, sizeof(sessionAddress));

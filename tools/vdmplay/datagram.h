@@ -16,9 +16,10 @@ public:
     WORD m_chksum;
 
 
-    Datagram() : m_size(0), m_data(NULL), m_offset(0) {}
+    Datagram( ): m_size( 0 ), m_bufSize( 0 ), m_data( NULL ), m_offset( 0 ), m_time( 0 ), m_seq( 0 ), m_chksum( 0 ) {}
 
-    Datagram(WORD bSize) : m_bufSize(bSize), m_size(0), m_offset(0) {
+    Datagram( WORD bSize ): m_bufSize( bSize ), m_size( 0 ), m_offset( 0 ), m_time( 0 ), m_seq( 0 ), m_chksum( 0 )
+    {
 #ifdef USE_VPMEM
         m_data = (LPSTR) vpAllocMem(bSize);
 #else
@@ -26,10 +27,11 @@ public:
 #endif
     }
 
-    Datagram(LPVOID data, WORD size) : m_size(size), m_offset(0) {
+    Datagram( LPVOID data, WORD size ): m_size( size ), m_bufSize( 0 ), m_data( NULL ), m_offset( 0 ), m_chksum( 0 )
+    {
         VPASSERT(data);
         VPASSERT(size);
-        m_time = GetCurrentTime();
+        m_time = GetCurrentTime(); // TODO: Consider switching to GetTickCount64()
 
 #ifdef USE_VPMEM
         m_data = (LPSTR) vpAllocMem(m_size);
@@ -45,7 +47,7 @@ public:
         VPASSERT(data);
         VPASSERT(size);
 
-        m_time = GetCurrentTime();
+        m_time = GetCurrentTime(); // TODO: Consider switching to GetTickCount64()
 
         if (pfx)
             m_size += sizeof(WORD);

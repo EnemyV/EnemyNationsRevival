@@ -157,8 +157,8 @@ class CNetCmd : public VPMsgHdr
         last_message  // used for ASSERT
     };
 
-    CNetCmd( ) { m_bMsg = (BYTE)-1; }
-    CNetCmd( int iCmd ) { m_bMsg = (BYTE)iCmd; }
+    CNetCmd( ): m_bMemPool( ) { m_bMsg = (BYTE)-1; }
+    CNetCmd( int iCmd ): m_bMemPool( ) { m_bMsg = (BYTE)iCmd; }
 
     int GetType( ) const { return ( m_bMsg ); }
 
@@ -200,7 +200,11 @@ class CNetReady : public CNetCmd
 class CNetPlyrJoin : public CNetCmd
 {
   public:
-    CNetPlyrJoin( ): CNetCmd( cmd_plyr_join ) {}
+    CNetPlyrJoin( )
+        : CNetCmd( cmd_plyr_join ), m_iLen( ), m_iPlyrNum( ), m_iPwrHave( ), m_iPwrNeed( ), m_iPplHave( ),
+          m_iPplNeed( ), m_iMat( ), m_iRsrchLevel( ), m_iNumBldgs( ), m_iNumVeh( ), m_bAvail( ), m_sName( )
+    {
+    }
 
     static CNetPlyrJoin* Alloc( const CNetPlyrJoin* pData );
     static CNetPlyrJoin* Alloc( const CPlayer* pPlyr );
@@ -437,8 +441,8 @@ class _CMsgBldg : public CNetCmd
 class _CMsgRoad : public CNetCmd
 {
   public:
-    _CMsgRoad( ): CNetCmd( -1 ) {}
-    _CMsgRoad( int iMsg ): CNetCmd( iMsg ) {}
+    _CMsgRoad( ): CNetCmd( -1 ), m_iPlyrNum( ), m_dwID( ), m_hexBuild( ), m_iMode( ) {}
+    _CMsgRoad( int iMsg ): CNetCmd( iMsg ), m_iPlyrNum( ), m_dwID( ), m_hexBuild( ), m_iMode( ) {}
 
     int       m_iPlyrNum;  // player requesting the placement
     DWORD     m_dwID;      // ID of vehicle
@@ -461,8 +465,14 @@ class _CMsgRoad : public CNetCmd
 class _CMsgBridge : public CNetCmd
 {
   public:
-    _CMsgBridge( ): CNetCmd( -1 ) {}
-    _CMsgBridge( int iMsg ): CNetCmd( iMsg ) {}
+    _CMsgBridge( )
+        : CNetCmd( -1 ), m_dwIDBrdg( ), m_iPlyrNum( ), m_dwIDVeh( ), m_hexStart( ), m_hexEnd( ), m_iAlt( ), m_iMode( )
+    {
+    }
+    _CMsgBridge( int iMsg )
+        : CNetCmd( iMsg ), m_dwIDBrdg( ), m_iPlyrNum( ), m_dwIDVeh( ), m_hexStart( ), m_hexEnd( ), m_iAlt( ), m_iMode( )
+    {
+    }
 
     DWORD     m_dwIDBrdg;  // ID of bridge
     int       m_iPlyrNum;  // player requesting the placement
@@ -486,8 +496,18 @@ class _CMsgBridge : public CNetCmd
 class _CMsgVehGo : public CNetCmd
 {
   public:
-    _CMsgVehGo( ): CNetCmd( -1 ) {}
-    _CMsgVehGo( int iMsg ): CNetCmd( iMsg ) {}
+    _CMsgVehGo( )
+        : CNetCmd( -1 ), m_dwID( ), m_iPlyrNum( ), m_ptDest( ), m_ptNext( ), m_ptHead( ), m_ptTail( ), m_hexNext( ),
+          m_hexDest( ), m_iDir( ), m_iTurretDir( ), m_iXadd( ), m_iYadd( ), m_iDadd( ), m_iTadd( ), m_iMode( ),
+          m_iOwn( ), m_iStepsLeft( ), m_iSpeed( ), m_dwBlocker( ), m_bOnWater( )
+    {
+    }
+    _CMsgVehGo( int iMsg )
+        : CNetCmd( iMsg ), m_dwID( ), m_iPlyrNum( ), m_ptDest( ), m_ptNext( ), m_ptHead( ), m_ptTail( ), m_hexNext( ),
+          m_hexDest( ), m_iDir( ), m_iTurretDir( ), m_iXadd( ), m_iYadd( ), m_iDadd( ), m_iTadd( ), m_iMode( ),
+          m_iOwn( ), m_iStepsLeft( ), m_iSpeed( ), m_dwBlocker( ), m_bOnWater( )
+    {
+    }
     const _CMsgVehGo operator=( _CMsgVehGo const& src );
 
     DWORD     m_dwID;        // ID of vehicle
@@ -520,7 +540,11 @@ class _CMsgVehGo : public CNetCmd
 class CMsgUnitDamage : public CNetCmd
 {
   public:
-    CMsgUnitDamage( ): CNetCmd( unit_damage ) {}
+    CMsgUnitDamage( )
+        : CNetCmd( unit_damage ), m_dwIDTarget( ), m_iPlyrTarget( ), m_dwIDDamage( ), m_iPlyrDamage( ), m_dwIDShoot( ),
+          m_iPlyrShoot( ), m_iDamageShot( )
+    {
+    }
     CMsgUnitDamage( CUnit const* pTarget, CUnit const* pShoot, CUnit const* pDamage, int iDamage );
     CMsgUnitDamage( CMsgCompUnitDamageElem* pElem );
 
@@ -541,12 +565,13 @@ class CMsgUnitDamage : public CNetCmd
 class CMsgUnitSetDamage : public CNetCmd
 {
   public:
-    CMsgUnitSetDamage( ): CNetCmd( unit_set_damage ) {}
-    CMsgUnitSetDamage( DWORD dwDam, DWORD dwShoot, int iDam ): CNetCmd( unit_set_damage )
+    CMsgUnitSetDamage( )
+        : CNetCmd( unit_set_damage ), m_dwIDDamage( ), m_dwIDShoot( ), m_iDamageLevel( )
     {
-        m_dwIDDamage   = dwDam;
-        m_dwIDShoot    = dwShoot;
-        m_iDamageLevel = iDam;
+    }
+    CMsgUnitSetDamage( DWORD dwDam, DWORD dwShoot, int iDam )
+        : CNetCmd( unit_set_damage ), m_dwIDDamage( dwDam ), m_dwIDShoot( dwShoot ), m_iDamageLevel( iDam )
+    {
     }
     CMsgUnitSetDamage( CMsgCompUnitDamageElem* pElem );
 
@@ -629,7 +654,7 @@ class CMsgBuildBldg : public _CMsgBldg
 class CMsgBuildVeh : public CNetCmd
 {
   public:
-    CMsgBuildVeh( ): CNetCmd( build_veh ) {}
+    CMsgBuildVeh( ): CNetCmd( build_veh ), m_dwID( ), m_iVehType( ), m_iNum( ) {}
     CMsgBuildVeh( CBuilding const* pBldg, int iVehType, int iNum = 1 );
 
     DWORD m_dwID;      // ID of factory
@@ -707,7 +732,7 @@ class CMsgVehGoto : public _CMsgVehGo
 class CMsgTransMat : public CNetCmd
 {
   public:
-    CMsgTransMat( ): CNetCmd( trans_mat ) {}
+    CMsgTransMat( ): CNetCmd( trans_mat ), m_dwIDSrc( ), m_dwIDDest( ), m_aiMat( ) {}
     CMsgTransMat( CUnit const* pSrc, CUnit const* pDest );
 
     DWORD m_dwIDSrc;                           // ID of unit giving up materials
@@ -724,7 +749,7 @@ class CMsgTransMat : public CNetCmd
 class CMsgUnitControl : public CNetCmd
 {
   public:
-    CMsgUnitControl( ): CNetCmd( unit_control ) {}
+    CMsgUnitControl( ): CNetCmd( unit_control ), m_dwID( ), m_cCmd( ) {}
     enum
     {
         cancel,
@@ -746,7 +771,7 @@ class CMsgUnitControl : public CNetCmd
 class CMsgUnitRepair : public CNetCmd
 {
   public:
-    CMsgUnitRepair( ): CNetCmd( unit_repair ) {}
+    CMsgUnitRepair( ): CNetCmd( unit_repair ), m_dwID( ), m_iPlyr( ), m_iRepair( ), m_iDamageLevel( ) {}
     CMsgUnitRepair( CUnit const* pUnit, int iRepair );
 
     void ToSetRepair( ) { m_bMsg = unit_set_repair; }
@@ -766,7 +791,7 @@ class CMsgUnitRepair : public CNetCmd
 class CMsgDestroyUnit : public CNetCmd
 {
   public:
-    CMsgDestroyUnit( ): CNetCmd( destroy_unit ) {}
+    CMsgDestroyUnit( ): CNetCmd( destroy_unit ), m_dwID( ) {}
     CMsgDestroyUnit( CUnit const* pUnit );
 
     DWORD m_dwID;  // ID of unit
@@ -1019,7 +1044,7 @@ class CMsgDeployIt : public CNetCmd
 class CMsgPlyrDying : public CNetCmd
 {
   public:
-    CMsgPlyrDying( ): CNetCmd( plyr_dying ) {}
+    CMsgPlyrDying( ): CNetCmd( plyr_dying ), m_iPlyrNum( ) {}
     CMsgPlyrDying( CPlayer const* pPlyr );
 
     int m_iPlyrNum;
@@ -1029,7 +1054,7 @@ class CMsgPlyrDying : public CNetCmd
 class CMsgPlyrDead : public CNetCmd
 {
   public:
-    CMsgPlyrDead( ): CNetCmd( plyr_dead ) {}
+    CMsgPlyrDead( ): CNetCmd( plyr_dead ), m_pPlyr( ) {}
     CMsgPlyrDead( CPlayer* pPlyr );
 
     CPlayer* m_pPlyr;
@@ -1039,11 +1064,9 @@ class CMsgPlyrDead : public CNetCmd
 class CMsgRsrch : public CNetCmd
 {
   public:
-    CMsgRsrch( ): CNetCmd( set_rsrch ) {}
-    CMsgRsrch( int iPlyr, int iTopic ): CNetCmd( set_rsrch )
+    CMsgRsrch( ): CNetCmd( set_rsrch ), m_iPlyrNum( ), m_iTopic( ) {}
+    CMsgRsrch( int iPlyr, int iTopic ): CNetCmd( set_rsrch ), m_iPlyrNum( iPlyr ), m_iTopic( iTopic )
     {
-        m_iPlyrNum = iPlyr;
-        m_iTopic   = iTopic;
     }
 
     int m_iPlyrNum;
@@ -1054,7 +1077,7 @@ class CMsgRsrch : public CNetCmd
 class CMsgLoadCarrier : public CNetCmd
 {
   public:
-    CMsgLoadCarrier( ): CNetCmd( load_carrier ) {}
+    CMsgLoadCarrier( ): CNetCmd( load_carrier ), m_dwIDCargo( ), m_dwIDCarrier( ) {}
     CMsgLoadCarrier( CVehicle const* pCargo, CVehicle const* pCarrier );
 
     DWORD m_dwIDCargo;    // unit to carry
@@ -1065,7 +1088,7 @@ class CMsgLoadCarrier : public CNetCmd
 class CMsgUnloadCarrier : public CNetCmd
 {
   public:
-    CMsgUnloadCarrier( ): CNetCmd( unload_carrier ) {}
+    CMsgUnloadCarrier( ): CNetCmd( unload_carrier ), m_dwID( ) {}
     CMsgUnloadCarrier( CVehicle const* pVeh );
 
     DWORD m_dwID;  // unit carrying it

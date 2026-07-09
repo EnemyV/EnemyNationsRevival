@@ -159,18 +159,18 @@ void CatchSE( SE_Exception e )
     dlg.m_pe = &e;
     dlg.m_sText.LoadString( IDS_ERR_LOAD_3 );
 
-    MEMORYSTATUS ms;
+    MEMORYSTATUS ms {};
     ms.dwLength = sizeof( ms );
     GlobalMemoryStatus( &ms );
     const int ONE_MEG = 1024 * 1024;
     if ( ms.dwAvailPageFile / ONE_MEG < 8 )
     {
-        CString sMsg;
+        CString sMsg {};
         sMsg.LoadString( IDS_OUT_OF_MEMORY );
         dlg.m_sText = sMsg + "\r\n" + dlg.m_sText;
     }
 
-    char sNum1[20], sNum2[80], sNumS[5][20];
+    char sNum1[20] {}, sNum2[80] {}, sNumS[5][20] {};
     itoa( e.m_uEc, sNum1, 16 );
     switch ( (uint64_t)e.m_pExCode )
     {
@@ -654,7 +654,7 @@ BOOL CConquerApp::InitInstance( )
              IntToCString( LOBYTE( HIWORD( lVer ) ) ) + "." + IntToCString( LOWORD( lVer ) );
     Log( m_sNet );
 
-    MEMORYSTATUS ms;
+    MEMORYSTATUS ms {};
     ms.dwLength = sizeof( ms );
     GlobalMemoryStatus( &ms );
     const int ONE_MEG   = 1024 * 1024;
@@ -935,8 +935,8 @@ BOOL CConquerApp::InitInstance( )
             RegSetValueEx( key, NULL, NULL, REG_SZ, (unsigned char*)"4", 2 );
 
             unsigned long iLen = 256;
-            DWORD         dwTyp, dwLen = sizeof( DWORD );
-            time_t        dwTime;
+            DWORD         dwTyp {}, dwLen = sizeof( DWORD );
+            time_t        dwTime {};
             if ( RegQueryValueEx( key, "CD-ROM", NULL, &dwTyp, (unsigned char*)&dwTime, &dwLen ) != ERROR_SUCCESS )
             {
                 TRAP( );
@@ -1489,8 +1489,8 @@ BOOL CConquerApp::InitInstance( )
         m_sSoundVer = "MSS: " + CString( theMusicPlayer.GetVersion( ) ) + " {off}";
     else
     {
-        char sBuf[130], *psFmt;
-        long iRate, iFmt;
+        char sBuf[130] {}, *psFmt {};
+        long iRate {}, iFmt {};
         sBuf[0] = 0;
         AIL_digital_configuration( theMusicPlayer._GetHDig( ), &iRate, &iFmt, sBuf );
         switch ( iFmt )
@@ -2868,8 +2868,8 @@ CDlgVer::CDlgVer( CWnd* pParent /*=NULL*/ ): CDialog( CDlgVer::IDD, pParent )
         m_sSoundVer = "MSS: " + CString( theMusicPlayer.GetVersion( ) ) + " {off}";
     else
     {
-        char sBuf[130], *psFmt;
-        long iRate, iFmt;
+        char sBuf[130] {}, *psFmt {};
+        long iRate {}, iFmt {};
         sBuf[0] = 0;
         AIL_digital_configuration( theMusicPlayer._GetHDig( ), &iRate, &iFmt, sBuf );
         switch ( iFmt )
@@ -2894,7 +2894,7 @@ CDlgVer::CDlgVer( CWnd* pParent /*=NULL*/ ): CDialog( CDlgVer::IDD, pParent )
     m_sSpeed = "CPU Speed: ~" + IntToCString( theApp.GetCpuSpeed( ) ) + "  CD-ROM Speed: ~" +
                IntToCString( theApp.GetCdSpeed( ) ) + "X";
 
-    MEMORYSTATUS ms;
+    MEMORYSTATUS ms {};
     ms.dwLength = sizeof( ms );
     GlobalMemoryStatus( &ms );
     const int ONE_MEG = 1024 * 1024;
@@ -2998,7 +2998,7 @@ void CDlgStackDump::OnCopyStack( )
         return;
     }
 
-    MEMORYSTATUS ms;
+    MEMORYSTATUS ms {};
     ms.dwLength = sizeof( ms );
     GlobalMemoryStatus( &ms );
     const int ONE_MEG = 1024 * 1024;

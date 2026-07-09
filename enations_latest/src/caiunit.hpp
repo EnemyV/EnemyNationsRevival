@@ -73,7 +73,9 @@ protected:
 public:
 	CAIUnit( DWORD dwID, int iOwner, int iType, int iTypeUnit );
 	~CAIUnit();
-	CAIUnit() {};
+    CAIUnit( )
+        : m_bControl( ), m_dwData( ), m_dwID( ), m_iOwner( ), m_iType( ), m_iTypeUnit( ), m_pdwaParams( ),
+          m_pwaParams( ), m_plCopyData( ), m_timeLastDest( ), m_wGoal( ), m_wStatus( ), m_wTask( ) {};
 
 	DWORD GetID( void );
 	void SetID( DWORD );

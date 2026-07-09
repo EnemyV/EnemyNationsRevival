@@ -903,7 +903,7 @@ void CAIData::SetWorldSize( int iHexPerBlk, int iBlkPerSide )
 //
 // create
 //
-CAIData::CAIData( int iSmart, int iNumAi, int iNumHuman )
+CAIData::CAIData( int iSmart, int iNumAi, int iNumHuman ): m_iBlkPerSide( ), m_iHexPerBlk( )
 {
     m_iStartPos      = 0;  // safe default
     m_iSmart         = iSmart;
