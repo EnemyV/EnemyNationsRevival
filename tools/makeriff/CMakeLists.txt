@@ -14,8 +14,8 @@ set(makeriff_sources
 add_executable(makeriff ${makeriff_sources})
 
 target_compile_options(makeriff INTERFACE
-        "$<$<CONFIG:RELEASE>:$<BUILD_INTERFACE:/MD;/GX;/Zi;/O2;/Ob2>"
-        "$<$<CONFIG:DEBUG>:$<BUILD_INTERFACE:/MD;/GX>"
+        "$<$<CONFIG:RELEASE>:$<BUILD_INTERFACE:/MD;/EHsc;/Zi;/O2;/Ob2>"
+        "$<$<CONFIG:DEBUG>:$<BUILD_INTERFACE:/MD;/EHsc>"
         )
 
 message("CMAKE_CXX_FLAGS: ${CMAKE_CXX_FLAGS}")

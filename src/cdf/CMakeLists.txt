@@ -15,8 +15,8 @@ add_executable(cdf ${cdf_sources})
 #        "$<$<CONFIG:DEBUG>:$<BUILD_INTERFACE:/GX>"
 #        )
 target_compile_options(cdf PRIVATE
-    $<$<CONFIG:RELEASE>:/GX;/Zi;/O2;/Ob2>
-    $<$<CONFIG:DEBUG>:/GX>
+    $<$<CONFIG:RELEASE>:/EHsc;/Zi;/O2;/Ob2>
+    $<$<CONFIG:DEBUG>:/EHsc>
 )
 #message("CMAKE_CXX_FLAGS: ${CMAKE_CXX_FLAGS}")
 
