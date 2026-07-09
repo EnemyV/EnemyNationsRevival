@@ -1734,37 +1734,21 @@ void CAIMgr::HandleStuckVehicles( void )
                     }
                     LeaveCriticalSection( &cs );
 
-                    if ( iECd != -2 && iECd != -1 )
-                    {
-                        // site still under construction: put the builder back inside
-                        if ( !( bInE && hexVeh == hexEB ) )
-                        {
+                    // release in ALL cases (site done, gone, or still building):
+                    // a bare goto parks the crane inside stop-mode doing nothing;
+                    // the DESIGNED resume is the repair flow, which adopts
+                    // still-constructing sites once the crane is genuinely idle
+                    // (same treatment as a crane dying mid-build)
 #if EN_AI_PROBES_ECON && defined(_WIN32)
-                            {
-                                char szR[144];
-                                sprintf( szR, "[EFFRESCUE] plyr %d crane %lu RESUME site %d,%d cd %d from %d,%d\n",
-                                         m_iPlayer, (unsigned long)pUnit->GetID( ), iEBX, iEBY, iECd,
-                                         hexVeh.X( ), hexVeh.Y( ) );
-                                OutputDebugStringA( szR );
-                            }
-#endif
-                            pUnit->SetDestination( hexEB );
-                        }
-                    }
-                    else
                     {
-                        // site finished or gone: the awaited built-msg can never come
-#if EN_AI_PROBES_ECON && defined(_WIN32)
-                        {
-                            char szR[128];
-                            sprintf( szR, "[EFFRESCUE] plyr %d crane %lu RELEASE site %d,%d cd %d\n",
-                                     m_iPlayer, (unsigned long)pUnit->GetID( ), iEBX, iEBY, iECd );
-                            OutputDebugStringA( szR );
-                        }
-#endif
-                        m_pTaskMgr->UnAssignTask( pUnit->GetTask( ), pUnit->GetGoal( ) );
-                        m_pTaskMgr->ClearTaskUnit( pUnit );
+                        char szR[128];
+                        sprintf( szR, "[EFFRESCUE] plyr %d crane %lu RELEASE site %d,%d cd %d in %d\n",
+                                 m_iPlayer, (unsigned long)pUnit->GetID( ), iEBX, iEBY, iECd, (int)bInE );
+                        OutputDebugStringA( szR );
                     }
+#endif
+                    m_pTaskMgr->UnAssignTask( pUnit->GetTask( ), pUnit->GetGoal( ) );
+                    m_pTaskMgr->ClearTaskUnit( pUnit );
                     continue;
                 }
             }

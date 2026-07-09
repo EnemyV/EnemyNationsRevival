@@ -5247,7 +5247,30 @@ void CAITaskMgr::BuildRoad( CAIUnit* pUnit, CAITask* pTask )
     if ( pUnit->GetParam( CAI_FUEL ) == CNetCmd::road_new &&
          ( hexVeh.X( ) != pUnit->GetParam( CAI_DEST_X ) ||
            hexVeh.Y( ) != pUnit->GetParam( CAI_DEST_Y ) ) )
+    {
+        // only while the run is ALIVE (driving or paving). A crane stopped
+        // short of the run's end is a dead run (unreachable pick / hijacked
+        // route) and was wedged here forever: unlatch and repool.
+        AiVehSnap snapR;
+        if ( !AiSnap::ReadVeh( pUnit->GetID( ), snapR ) ||
+             ( snapR.iRouteMode != CVehicle::stop && snapR.iRouteMode != CVehicle::cant_deploy ) )
+            return;
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+        {
+            char szR[112];
+            sprintf( szR, "[ROADFREE] plyr %d crane %lu dead run at %d,%d run-end %d,%d\n", m_iPlayer,
+                     (unsigned long)pUnit->GetID( ), hexVeh.X( ), hexVeh.Y( ),
+                     (int)pUnit->GetParam( CAI_DEST_X ), (int)pUnit->GetParam( CAI_DEST_Y ) );
+            OutputDebugStringA( szR );
+        }
+#endif
+        pUnit->SetParam( CAI_FUEL, 0 );
+        pUnit->SetParam( CAI_DEST_X, 0 );
+        pUnit->SetParam( CAI_DEST_Y, 0 );
+        UnAssignTask( pUnit->GetTask( ), pUnit->GetGoal( ) );
+        ClearTaskUnit( pUnit );
         return;
+    }
 
     // bridge crane: arrival = the span START (CAI_PREV) or adjacent -- the
     // vanilla test below compares against CAI_DEST, the far landing ACROSS the

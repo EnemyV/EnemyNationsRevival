@@ -2548,6 +2548,12 @@ BOOL CAIRouter::UnloadMaterials( CAIUnit* pTruck, CAIUnit* pBldg )
     msg.m_dwIDDest = pBldg->GetID( );
     memset( msg.m_aiMat, 0, sizeof( msg.m_aiMat ) );
 
+    // continuous consumers (power/refinery/smelter) take the full load;
+    // everyone else takes only what they still need - surplus stays aboard
+    // (the router already prefers trucks that carry a needed commodity), so
+    // full-truck min-loads stop burying the world's materials in basements
+    BOOL bTakeAll = BuildingNeedsAlways( pBldg );
+
     // now go through the materials needed
     for ( int i = 0; i < CMaterialTypes::num_types; ++i )
     {
@@ -2556,6 +2562,8 @@ BOOL CAIRouter::UnloadMaterials( CAIUnit* pTruck, CAIUnit* pBldg )
         {
             // record this material quantity to be transferred
             msg.m_aiMat[i] = pCopyCVehicle->m_aiDataIn[i];
+            if ( !bTakeAll && msg.m_aiMat[i] > (int)pBldg->GetParam( i ) )
+                msg.m_aiMat[i] = pBldg->GetParam( i );
 
 #ifdef _LOGOUT
             logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC,
