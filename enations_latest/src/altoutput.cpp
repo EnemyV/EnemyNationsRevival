@@ -152,7 +152,7 @@ namespace
         //    2:1 ratio stays fixed while throughput scales with research. No energy cost.
         {
             "Charcoal",
-            "Stops lumber output; burns the mill's whole harvest into a small coal trickle (yield scales with Charcoal research)",
+            "Stops lumber output; burns the mill's whole harvest into a small coal trickle (yield scales with Charcoal research), at +15 workers",
             &IsLumberMill,
             &TechCharcoal,
             CMaterialTypes::lumber,
@@ -214,7 +214,7 @@ namespace
         //    (The rocket's richer version, Desperate Measures, is a civ-wide edict, not AltOutput.)
         {
             "Scrounging",
-            "Scrounge base resources: +5 lumber, +2 iron, +2 food, +2 coal / min",
+            "Scrounge base resources: +5 lumber, +2 iron, +2 food, +2 coal / min; costs 25 workers and doubles power while on",
             &IsWarehouse,
             &TechAlways,
             CMaterialTypes::lumber,
