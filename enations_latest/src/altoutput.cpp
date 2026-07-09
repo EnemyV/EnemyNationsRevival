@@ -203,12 +203,14 @@ namespace
             0,                           // m_iRatioIn
             1.0f,
             0,                           // m_iWorkforceAdd
+            0,                           // m_iPowerMultAdd (no extra power)
             {},                          // m_aMulti (unused)
             0                            // m_nMulti
         },
 
         // 6) Scrounging (NEW) -- the WAREHOUSE scrounges a small multi-resource trickle when
-        //    toggled: emergency income at a labor cost. eMultiTrickle, default-enabled. 25 workers.
+        //    toggled: emergency income at a cost. eMultiTrickle, default-enabled. Costs 25 workers
+        //    and DOUBLES the warehouse's power draw while ON (m_iPowerMultAdd=1).
         //    (The rocket's richer version, Desperate Measures, is a civ-wide edict, not AltOutput.)
         {
             "Scrounging",
@@ -223,6 +225,7 @@ namespace
             0,
             1.0f,
             25,                          // m_iWorkforceAdd (25 workers)
+            1,                           // m_iPowerMultAdd (double the warehouse's power while ON)
             { { CMaterialTypes::lumber, 5 }, { CMaterialTypes::iron, 2 }, { CMaterialTypes::food, 2 }, { CMaterialTypes::coal, 2 } },
             4
         },

@@ -74,6 +74,10 @@ namespace AltOutput
                                                  // mode is ON (0 = none). Absolute, NOT a percent of base
                                                  // GetPeople() -- a lumber mill's base people is ~0, so a
                                                  // percent added nothing. Applied in CBuilding::Operate.
+        int         m_iPowerMultAdd;             // extra power drawn while ON, as ADDITIONAL copies of the
+                                                 // building's base GetPower() (0 = none, 1 = double). Applied
+                                                 // in CBuilding::Operate next to m_iWorkforceAdd; base power
+                                                 // is already added by the per-type tick, so this is the delta.
         AltMat      m_aMulti[kMaxMulti];         // eMultiTrickle: the output lines (else all-zero)
         int         m_nMulti;                    // eMultiTrickle: number of active m_aMulti lines (else 0)
     };

@@ -1845,6 +1845,10 @@ RepairDone:;
         const AltOutput::AltOutputDef* pAo = AltOutput::Available( this );
         if ( pAo && pAo->m_iWorkforceAdd > 0 )
             GetOwner( )->AddPplNeedBldg( pAo->m_iWorkforceAdd );
+        // Extra power (Scrounging doubles the warehouse's draw): m_iPowerMultAdd EXTRA copies of
+        // base power. Base power was already added by the per-type tick, so add only the delta.
+        if ( pAo && pAo->m_iPowerMultAdd > 0 )
+            GetOwner( )->AddPwrNeed( GetData( )->GetPower( ) * pAo->m_iPowerMultAdd );
     }
 
     ASSERT_STRICT_VALID( this );
