@@ -148,27 +148,6 @@ void CVehicle::Operate() {
 
     xASSERT_VALID (ASSERT_PRI_ANAL, ASSERT_VEH_MOVE, this);
 
-#if EN_AI_PROBES_ECON && defined(_WIN32)
-    // TEMP diagnosis (remove after): the four savegame19 welded cranes never
-    // reach ConstructBuilding despite census rm=run/evt=build - what is the
-    // TRUE live mode/event/flags at Operate entry?
-    {
-        DWORD dwId = GetID();
-        if (dwId == 9173 || dwId == 9731 || dwId == 5072 || dwId == 4902) {
-            static DWORD s_dwNextWeldLog = 0;
-            if (theGame.GettimeGetTime() >= s_dwNextWeldLog) {
-                s_dwNextWeldLog = theGame.GettimeGetTime() + 5000;
-                char szW[144];
-                sprintf(szW, "[WELDOP] crane %lu mode %d event %d flags %x bldg %lu loadon %d transport %d\n",
-                        (unsigned long)dwId, (int)m_cMode, (int)m_iEvent, (unsigned)m_unitFlags,
-                        m_pBldg ? (unsigned long)m_pBldg->GetID() : 0,
-                        m_pVehLoadOn ? 1 : 0, m_pTransport ? 1 : 0);
-                OutputDebugStringA(szW);
-            }
-        }
-    }
-#endif
-
     if (m_iFrameHit > 0) {
         m_iFrameHit -= theGame.GetFramesElapsed();
         if (m_iFrameHit <= 0) {
