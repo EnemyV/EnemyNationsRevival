@@ -91,6 +91,10 @@ namespace
 
     int FlatMohoIron( CPlayer* p ) { return ( p->GetMohoIronPerMin( ) ); }
 
+    // Coal Liquefaction input ratio (coal per 1 oil) by the owner's highest tier: 3 at tier 1,
+    // 2 at tier 2 (Catalytic Coal Cracking). Wired into the coal-liq def's m_pfnRatioIn.
+    int CoalLiqRatio( CPlayer* p ) { return ( p->GetCoalLiqRatio( ) ); }
+
     // ---- Per-tier flat-rate accessors (eFlatTrickle only) -----------------------------
     // Oil/min an exhausted, fracked well trickles by the owner's highest Fracking tier
     // (0/10/15/20/25/30). Convert() scales this per-minute rate by the opers elapsed.
@@ -125,7 +129,7 @@ namespace
         //    toggled. eRatioConsume: pulls coal from the plant's own store and credits oil.
         {
             "Coal Liquefaction",
-            "Stops power generation; converts 3 coal -> 1 oil",
+            "Stops power generation; converts coal into oil",
             &IsCoalPowerPlant,
             &TechCoalLiq,
             CMaterialTypes::coal,
@@ -133,9 +137,13 @@ namespace
             AltOutput::eRatioConsume,
             nullptr,                     // m_pfnPct
             nullptr,                     // m_pfnFlat
-            3,                            // 3 coal per 1 oil (nerfed from 2 per operator)
+            3,                            // 3 coal per 1 oil at tier 1 (m_pfnRatioIn drops it to 2 at tier 2)
             1.0f,
-            0                            // m_iWorkforceAdd (no extra labor)
+            0,                           // m_iWorkforceAdd (no extra labor)
+            0,                           // m_iPowerMultAdd (no extra power)
+            {},                          // m_aMulti (unused)
+            0,                           // m_nMulti
+            &CoalLiqRatio                // per-tier input ratio (3 -> 2 at Catalytic Coal Cracking)
         },
 
         // 3) Charcoal (NEW) -- a lumber mill (the sawmill: UTfarm with lumber output) runs a
@@ -313,13 +321,16 @@ namespace AltOutput
         }
         else if ( pDef->m_eMode == eRatioConsume )
         {
-            // Consume m_iRatioIn input units from the building's store per 1 output unit,
-            // scaled by the per-call amount. A runtime fractional accumulator carries the
-            // sub-unit remainder between calls so small yields aren't repeatedly lost.
-            if ( pDef->m_iRatioIn <= 0 )
+            // Consume iRatio input units from the building's store per 1 output unit, scaled by
+            // the per-call amount. iRatio is the def's fixed m_iRatioIn unless the def supplies a
+            // per-tier override (m_pfnRatioIn) -- Coal Liquefaction drops 3:1 -> 2:1 at tier 2.
+            // A runtime fractional accumulator carries the sub-unit remainder between calls so
+            // small yields aren't repeatedly lost.
+            int iRatio = pDef->m_pfnRatioIn ? pDef->m_pfnRatioIn( pOwner ) : pDef->m_iRatioIn;
+            if ( iRatio <= 0 )
                 return;
 
-            float fWant = ( (float)iAmount * pDef->m_fEnergyMult ) / (float)pDef->m_iRatioIn;
+            float fWant = ( (float)iAmount * pDef->m_fEnergyMult ) / (float)iRatio;
             fAccum += fWant;
             int iWantOut = (int)fAccum;
             if ( iWantOut <= 0 )
@@ -327,13 +338,13 @@ namespace AltOutput
 
             // Clamp to the coal actually on hand (whole-unit conversions only).
             int iHave    = pBldg->GetStore( pDef->m_iInputMat );
-            int iMaxOut  = iHave / pDef->m_iRatioIn;
+            int iMaxOut  = iHave / iRatio;
             if ( iWantOut > iMaxOut )
                 iWantOut = iMaxOut;
             if ( iWantOut <= 0 )
                 return;
 
-            int iConsume = iWantOut * pDef->m_iRatioIn;
+            int iConsume = iWantOut * iRatio;
             pBldg->AddToStore( pDef->m_iInputMat, -iConsume );
             pOwner->IncMaterialHave( pDef->m_iInputMat, -iConsume );
 

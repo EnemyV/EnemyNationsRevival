@@ -559,10 +559,14 @@ class CPlayer : public CObject
             for ( int iOn = CRsrchArray::fuel_efficiency_13; iOn <= CRsrchArray::fuel_efficiency_16; iOn++ )
                 if ( GetRsrch( iOn ).m_bDiscovered )
                     iLevels++;
-        // Cumulative gas% by level (5/4/4/3/3/3/2/2/2/2 to level 10, then +1 each to 16).
-        static const int aiGasPct[17] = { 100, 95, 91, 87, 84, 81, 78, 76, 74, 72, 70, 69, 68, 67, 66, 65, 64 };
+        if ( m_aRsrch.GetSize( ) > CRsrchArray::fuel_efficiency_17 && GetRsrch( CRsrchArray::fuel_efficiency_17 ).m_bDiscovered )
+            iLevels++;
+        if ( m_aRsrch.GetSize( ) > CRsrchArray::fuel_efficiency_18 && GetRsrch( CRsrchArray::fuel_efficiency_18 ).m_bDiscovered )
+            iLevels++;
+        // Cumulative gas% by level (5/4/4/3/3/3/2/2/2/2 to level 10, then +1 each to 18).
+        static const int aiGasPct[19] = { 100, 95, 91, 87, 84, 81, 78, 76, 74, 72, 70, 69, 68, 67, 66, 65, 64, 63, 62 };
         if ( iLevels < 0 )  iLevels = 0;
-        if ( iLevels > 16 ) iLevels = 16;
+        if ( iLevels > 18 ) iLevels = 18;
         return ( aiGasPct[iLevels] );
     }
 
@@ -605,7 +609,9 @@ class CPlayer : public CObject
         for ( int iOn = CRsrchArray::fracking_1; iOn <= iTop; iOn++ )
             if ( GetRsrch( iOn ).m_bDiscovered )
                 iTier = iOn - CRsrchArray::fracking_1 + 1;   // highest discovered (tiers chain)
-        static const int aiOil[6] = { 0, 5, 7, 9, 11, 13 };
+        if ( m_aRsrch.GetSize( ) > CRsrchArray::fracking_6 && GetRsrch( CRsrchArray::fracking_6 ).m_bDiscovered )
+            iTier = 6;   // tier 6 sits at the enum end (unrelated topics between fracking_5 and it)
+        static const int aiOil[7] = { 0, 5, 7, 9, 11, 13, 15 };
         return ( aiOil[iTier] );
     }
 
@@ -627,8 +633,18 @@ class CPlayer : public CObject
     // T1 researched? Gates whether the per-building Fracking / BioFuel toggle button shows.
     BOOL CanFrack( )   { return ( m_aRsrch.GetSize( ) > CRsrchArray::fracking_1 && GetRsrch( CRsrchArray::fracking_1 ).m_bDiscovered ); }
     BOOL CanBioFuel( ) { return ( m_aRsrch.GetSize( ) > CRsrchArray::biofuel_1 && GetRsrch( CRsrchArray::biofuel_1 ).m_bDiscovered ); }
-    // Coal Liquefaction researched? Gates the coal power-plant alt-output toggle (2 coal -> 1 oil).
+    // Coal Liquefaction researched? Gates the coal power-plant alt-output toggle.
     BOOL CanCoalLiq( ) { return ( m_aRsrch.GetSize( ) > CRsrchArray::coal_liquefaction && GetRsrch( CRsrchArray::coal_liquefaction ).m_bDiscovered ); }
+
+    // Coal per 1 oil for the coal-liquefaction recipe by highest tier: 3 (tier 1) or 2
+    // (tier 2, Catalytic Coal Cracking). Read per-tick by AltOutput::Convert via the
+    // coal-liq def's m_pfnRatioIn. Guarded for older/short save research arrays.
+    int GetCoalLiqRatio( )
+    {
+        if ( m_aRsrch.GetSize( ) > CRsrchArray::coal_liquefaction_2 && GetRsrch( CRsrchArray::coal_liquefaction_2 ).m_bDiscovered )
+            return ( 2 );
+        return ( 3 );
+    }
 
     // Charcoal kiln researched? Gates whether the per-building Charcoal alt-output toggle
     // shows on a lumber mill (the sawmill) and whether its kiln runs. See Charcoal (#44).
@@ -660,7 +676,9 @@ class CPlayer : public CObject
         for ( int iOn = CRsrchArray::charcoal_1; iOn <= iTop; iOn++ )
             if ( GetRsrch( iOn ).m_bDiscovered )
                 iTier = iOn - CRsrchArray::charcoal_1 + 1;   // highest discovered (tiers chain)
-        static const int aiPct[5] = { 0, 6, 8, 10, 12 };   // coal output 3/4/5/6% (base ~33 lumber:1 coal; free coal = stingy)
+        if ( m_aRsrch.GetSize( ) > CRsrchArray::charcoal_5 && GetRsrch( CRsrchArray::charcoal_5 ).m_bDiscovered )
+            iTier = 5;   // tier 5 sits at the enum end (unrelated topics between charcoal_4 and it)
+        static const int aiPct[6] = { 0, 6, 8, 10, 12, 14 };   // coal output 3/4/5/6/7% (base ~33 lumber:1 coal; free coal = stingy)
         return ( aiPct[iTier] );
     }
 

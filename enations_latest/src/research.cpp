@@ -381,79 +381,86 @@ void CRsrchArray::Open( )
         }
     }
 
-    // In-code research topics: the Fuel Efficiency line (not in the DAT file). A 16-level
+    // In-code research topics: the Fuel Efficiency line (not in the DAT file). An 18-level
     // line unlocked after Gas Turbines; level 1 requires gas_turbine, each later the prev.
-    // Cost DOUBLES to 32*B at level 6, then flat +16*B (L7=48B ... L16=192B; B = gas_turbine
+    // Cost DOUBLES to 32*B at level 6, then flat +16*B (L7=48B ... L18=224B; B = gas_turbine
     // cost). Gas saving diminishes 5/4/4/3/3/3/2/2/2/2 to 30% at level 10, then +1% per level
-    // to 36% at level 16 (see CPlayer::GetFuelPct). Levels 1-10 contiguous; 11-12 and 13-16
-    // appended at the enum end, so the setup loop maps the index non-contiguously.
+    // to 38% at level 18 (see CPlayer::GetFuelPct). The late levels are deliberately mundane
+    // garage tweaks (additives, thinner oil, cleaner filters), not sci-fi. Levels 1-10 are
+    // contiguous; 11-12, 13-16, and 17-18 were appended at the enum end for save parity, so
+    // the setup loop maps the index through aiIdx[] rather than a running offset.
     {
-        static char const* aszName[16] = {
-            "Fuel Injection",      "Lean-Burn Mapping",   "Turbo Compounding",
-            "Regenerative Drive",  "Thermal Recovery",    "Plasma Ignition",
-            "Catalytic Reclamation","Synthetic Lubricants","Ion Scavenging",
-            "Zero-Loss Cycle",     "Cryo-Fuel Conditioning","Perfect Combustion",
-            "Regenerative Preheating","Catalytic Nanocoating","Quantum Fuel Reforming",
-            "Zero-Point Drive" };
-        static char const* aszDesc[16] = {
-            "Precision fuel injection meters every drop, trimming gas burn by 5%.",
-            "Lean-burn engine mapping squeezes more travel from less gas, saving another 4%.",
-            "Turbo-compounding recovers exhaust energy back into the drivetrain for a further 4%.",
-            "Regenerative drives recapture braking energy, cutting gas burn another 3%.",
-            "Thermal recovery loops harvest waste engine heat, burning 3% less gas.",
-            "Plasma ignition burns fuel cleaner and more completely, saving a further 3%.",
-            "Catalytic reclamation refines spent fuel back into the tank for another 2%.",
-            "Synthetic lubricants slash friction losses across the drivetrain, saving 2%.",
-            "Ion scavengers strip the last usable energy from the exhaust stream, another 2%.",
-            "A near-closed-loop drive cycle wastes almost nothing, shaving another 2% (30% total).",
-            "Cryogenic conditioning densifies the fuel charge for another 1% (31% total).",
-            "Perfected combustion leaves nothing unburned, another 1% (32% total).",
-            "Regenerative preheating primes the intake charge for another 1% (33% total).",
-            "Catalytic nanocoating smooths every cycle for another 1% (34% total).",
-            "Quantum fuel reforming restructures the charge for another 1% (35% total).",
-            "A zero-point drive taps vacuum energy for a final 1% (36% total)." };
-        static char const* aszRslt[16] = {
-            "Fuel injection is fielded. Our vehicles burn 5% less gas.",
-            "Lean-burn mapping is live. Our vehicles burn less gas still.",
-            "Turbo compounding is online. Gas consumption drops again.",
-            "Regenerative drives are installed. Our fleet sips even less gas.",
-            "Thermal recovery is running. Gas burn falls further.",
-            "Plasma ignition is operational. Cleaner burn, less gas used.",
-            "Catalytic reclamation is online. Our vehicles stretch every tank further.",
-            "Synthetic lubricants are in service. Friction losses cut, gas saved.",
-            "Ion scavenging is active. Almost nothing leaves the exhaust unused.",
-            "The zero-loss cycle is perfected. A full 30% less gas burned.",
-            "Cryo-fuel conditioning is fielded. Gas burn edges down to 31% saved.",
-            "Perfect combustion achieved. Gas burn falls to 32% saved.",
-            "Regenerative preheating fielded. Gas burn edges to 33% saved.",
-            "Catalytic nanocoating in service. Gas burn falls to 34% saved.",
-            "Quantum fuel reforming online. Gas burn drops to 35% saved.",
-            "Zero-point drive perfected. Our vehicles burn the least gas possible (36% saved)." };
+        static char const* aszName[18] = {
+            "Fuel Injection",      "Lean-Burn Tuning",    "Turbo Compounding",
+            "Regenerative Braking","Waste-Heat Recovery", "Better Spark Timing",
+            "Exhaust Reclamation", "Synthetic Lubricants","Low-Friction Bearings",
+            "Reduced Rolling Resistance","Fuel Additives", "Tighter Tolerances",
+            "Low-Viscosity Oil",   "Cleaner Fuel Filters","Lightweight Flywheels",
+            "Idle Cutoff",         "Coasting Governor",   "Fuel Preheating" };
+        static char const* aszDesc[18] = {
+            "Our engines still gulp fuel through crude carburetors. We should be able to meter each drop with proper injection and burn a good 5% less gas.",
+            "We think we can tune the engines to run leaner, coaxing more travel out of every tank for another 4%.",
+            "All that hot exhaust just blows away. If we feed it back through a turbine we should recover another 4% of the fuel.",
+            "Every time a vehicle slows down we throw away good energy as heat. We should be able to catch some of it back, worth about 3%.",
+            "Our engines run hot enough to cook dinner on. We think we can scavenge that waste heat for a further 3%.",
+            "Our ignition timing is a guess at best. Dialing in the spark should burn the charge more completely for another 3%.",
+            "There is still unburned fuel going out the tailpipe. We should be able to catch and re-burn it for another 2%.",
+            "The local oils gum up in this climate. A proper synthetic lubricant should cut friction across the drivetrain for 2%.",
+            "Our bearings are rougher than we would like. Polishing them to a low-friction finish should be good for another 2%.",
+            "Our wheels and tracks fight the ground the whole way. Trimming that rolling resistance should save a final 2%, a full 30% by now.",
+            "The local crude is full of grit. A dose of the right additives should keep our engines from gumming up and save another 1%.",
+            "If our machinists shave the tolerances a little finer, the engines will leak a bit less power, worth about 1%.",
+            "A thinner oil would let everything spin easier once the engine warms up. We think that is good for another 1%.",
+            "Half the dirt on this planet ends up in our fuel lines. Finer filters should keep the injectors happy for another 1%.",
+            "Our flywheels are heavier than they need to be. Shaving them down should free up about 1%.",
+            "Vehicles sitting idle just drink fuel for nothing. A cutoff that stops the engine when they wait should save 1%.",
+            "On a downhill our engines keep pulling when they could just coast. A governor to ease off should be worth a last 1%.",
+            "Cold fuel burns poorly in this thin air. Warming it before it hits the cylinder should wring out one final 1%." };
+        static char const* aszRslt[18] = {
+            "Fuel injection is working. Our vehicles stop dumping gas down the intake and burn about 5% less of it.",
+            "The engines run lean and clean now. Our vehicles squeeze another 4% out of every tank.",
+            "Turbo compounding is fitted. The exhaust that used to blow away now helps drive the wheels, saving another 4%.",
+            "Regenerative braking is installed. Our vehicles claw back the energy they used to burn off stopping, about 3% less gas.",
+            "Waste-heat recovery is running. The heat that poured off our engines now does useful work, 3% less gas.",
+            "The spark timing is dialed in. A cleaner burn means our vehicles use 3% less gas.",
+            "Exhaust reclamation is online. What used to go out the pipe now goes back in the tank, 2% saved.",
+            "Synthetic lubricants are in service. Nothing drags the way it used to, and we burn 2% less gas.",
+            "Low-friction bearings are fitted. The wheels turn that much easier, saving another 2%.",
+            "Rolling resistance is down. Our vehicles roll freer than ever, a full 30% less gas than when we landed.",
+            "Fuel additives are in the mix. Our engines run cleaner on the local muck and burn 1% less (31% total).",
+            "The parts fit tighter now. A little less slop, a little less waste, 1% saved (32% total).",
+            "We switched to a lighter oil. Everything spins a touch freer, 1% less gas (33% total).",
+            "Finer fuel filters are fitted. Cleaner fuel, happier injectors, 1% saved (34% total).",
+            "Lighter flywheels are installed. Less dead weight to spin up, 1% less gas (35% total).",
+            "Idle cutoff is fielded. Our vehicles stop guzzling while they sit around, 1% saved (36% total).",
+            "The coasting governor works. Our vehicles freewheel where they can instead of burning gas, 1% saved (37% total).",
+            "Fuel preheating is running. Even in the cold our engines burn every drop, the last 1% we are going to get (38% total)." };
 
         // Extra (cross-line) prereq per level, on top of the previous level. -1 = none.
-        // Turbo compounding leans on manufacturing; plasma ignition needs nuclear-era
-        // physics. Levels above each gate inherit it through the chain, so we only
-        // pin it once where it first becomes necessary. Levels 11-12 add no new gate.
-        static const int aiExtra[16] = {
-            -1, -1, (int)manf_1, -1, -1, (int)nuclear, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1 };
+        // Turbo compounding leans on manufacturing; better spark timing needs nuclear-era
+        // physics. Levels above each gate inherit it through the chain, so we only pin it
+        // once where it first becomes necessary. The late mundane levels add no new gate.
+        static const int aiExtra[18] = {
+            -1, -1, (int)manf_1, -1, -1, (int)nuclear, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1 };
+
+        // Level (0-based) -> enum id. Non-contiguous because 11-12, 13-16 and 17-18 were
+        // appended at the enum end for save parity.
+        static const int aiIdx[18] = {
+            fuel_efficiency_1,  fuel_efficiency_2,  fuel_efficiency_3,  fuel_efficiency_4,  fuel_efficiency_5,
+            fuel_efficiency_6,  fuel_efficiency_7,  fuel_efficiency_8,  fuel_efficiency_9,  fuel_efficiency_10,
+            fuel_efficiency_11, fuel_efficiency_12, fuel_efficiency_13, fuel_efficiency_14,
+            fuel_efficiency_15, fuel_efficiency_16, fuel_efficiency_17, fuel_efficiency_18 };
 
         int iBase = ElementAt( gas_turbine ).m_iPtsRequired;   // B = gas_turbine cost
         int iPts  = iBase;                                     // level 1 = B
-        for ( int iOn = 0; iOn < 16; iOn++ )
+        for ( int iOn = 0; iOn < 18; iOn++ )
         {
-            // 1-10 contiguous from fuel_efficiency_1; 11-12 and 13-16 at the enum end.
-            int iIdx  = ( iOn < 10 ) ? (int)( fuel_efficiency_1 + iOn )
-                      : ( iOn < 12 ) ? (int)( fuel_efficiency_11 + ( iOn - 10 ) )
-                                     : (int)( fuel_efficiency_13 + ( iOn - 12 ) );
-            int iPrev = ( iOn - 1 < 10 ) ? (int)( fuel_efficiency_1 + iOn - 1 )
-                      : ( iOn - 1 < 12 ) ? (int)( fuel_efficiency_11 + ( iOn - 1 - 10 ) )
-                                         : (int)( fuel_efficiency_13 + ( iOn - 1 - 12 ) );
-            CRsrchItem* pRi = &ElementAt( iIdx );
+            CRsrchItem* pRi = &ElementAt( aiIdx[iOn] );
 
             pRi->m_iPtsRequired       = iPts;   // level 1 = gas_turbine cost; doubles each level
             pRi->m_iScenarioReq       = ElementAt( gas_turbine ).m_iScenarioReq;
 
-            int iChain = ( 0 == iOn ) ? (int)gas_turbine : iPrev;
+            int iChain = ( 0 == iOn ) ? (int)gas_turbine : aiIdx[iOn - 1];
             int nReq   = 1 + ( aiExtra[iOn] >= 0 ? 1 : 0 );
             pRi->m_iNumRsrchRequired  = nReq;
             pRi->m_piRsrchRequired    = new int[nReq];
@@ -466,8 +473,8 @@ void CRsrchArray::Open( )
             pRi->m_sResult            = aszRslt[iOn];
 
             // Cost curve: double each level up to 32*B at level 6, then switch to a flat
-            // +16*B per level (L6=32B -> L7=48B -> L8=64B -> L9=80B -> ... -> L12=128B).
-            // Keeps the top of the line expensive but LINEAR, not the runaway 2x doubling.
+            // +16*B per level (L6=32B -> L7=48B -> ... -> L18=224B). Keeps the top of the
+            // line expensive but LINEAR, not the runaway 2x doubling.
             if ( iOn < 5 )
                 iPts *= 2;            // levels 1->6 still double
             else
@@ -669,36 +676,43 @@ void CRsrchArray::Open( )
         }
     }
 
-    // In-code research topics: Fracking 1-5 (#23, not in the DAT file). Exhausted oil
+    // In-code research topics: Fracking 1-6 (#23, not in the DAT file). Exhausted oil
     // wells trickle oil when fracking is toggled ON (consumed in the mine production hook
     // via CPlayer::GetFrackOilPerMin), at +50% well energy. Each tier costs DOUBLE the
     // previous and chains the prior tier; T1 needs gas_turbine, later tiers also a
     // Fuel-Efficiency level. The AI's frozen research path doesn't pursue these (optional
     // human tiers). Point/gate values are easy to retune — operator to balance in-game.
     {
-        static const char* aszFrName[5] = {
+        static const char* aszFrName[6] = {
             "Hydraulic Fracturing", "Horizontal Drilling", "Proppant Injection",
-            "Microseismic Mapping", "Supercritical Extraction" };
-        static const char* aszFrDesc[5] = {
+            "Microseismic Mapping", "Supercritical Extraction", "Thermal Flooding" };
+        static const char* aszFrDesc[6] = {
             "High-pressure fluid fractures spent rock, coaxing a 5/min oil trickle from exhausted wells.",
             "Horizontal bores reach untapped pockets, lifting the trickle to 7/min.",
             "Engineered proppants hold fractures open longer, raising recovery to 9/min.",
             "Microseismic mapping targets the richest seams, yielding 11/min.",
-            "Supercritical solvents strip the last bound oil from dead rock, 13/min." };
-        static const char* aszFrRslt[5] = {
+            "Supercritical solvents strip the last bound oil from dead rock, 13/min.",
+            "Pumped steam drives the last clinging oil out of dead rock, lifting the trickle to 15/min." };
+        static const char* aszFrRslt[6] = {
             "Hydraulic fracturing online. Exhausted wells now trickle oil (toggle per well).",
             "Horizontal drilling fielded. Fracked wells yield more oil.",
             "Proppant injection in service. Fracked-well oil rises again.",
             "Microseismic mapping operational. Fracked wells reach deeper pockets.",
-            "Supercritical extraction perfected. Maximum oil from spent wells." };
+            "Supercritical extraction perfected. Maximum oil from spent wells.",
+            "Thermal flooding operational. Even the most spent wells give up a little more oil." };
         // Extra (cross-line) prereq per tier, on top of the previous tier. -1 = none.
-        static const int aiFrExtra[5] = {
-            -1, (int)fuel_efficiency_1, (int)fuel_efficiency_3, (int)fuel_efficiency_5, (int)fuel_efficiency_8 };
+        static const int aiFrExtra[6] = {
+            -1, (int)fuel_efficiency_1, (int)fuel_efficiency_3, (int)fuel_efficiency_5, (int)fuel_efficiency_8, (int)fuel_efficiency_10 };
+
+        // Level (0-based) -> enum id. Tiers 1-5 are contiguous; tier 6 was appended at the
+        // enum end for save parity, so it is NOT fracking_5+1 -- map it explicitly.
+        static const int aiFrIdx[6] = {
+            fracking_1, fracking_2, fracking_3, fracking_4, fracking_5, fracking_6 };
 
         int iPts = ElementAt( gas_turbine ).m_iPtsRequired;
-        for ( int iOn = 0; iOn < 5; iOn++ )
+        for ( int iOn = 0; iOn < 6; iOn++ )
         {
-            CRsrchItem* pRi = &ElementAt( fracking_1 + iOn );
+            CRsrchItem* pRi = &ElementAt( aiFrIdx[iOn] );
 
             iPts *= 2;
             pRi->m_iPtsRequired       = iPts;
@@ -708,7 +722,7 @@ void CRsrchArray::Open( )
             // #23 (operator Note 17): fracking should be LATE-game ("especially fracking").
             // T1 prereq gas_turbine -> nuclear (a late gate, later than coal-liq's Adv-Mfg).
             // mac1's pick; @linux2/@win adjust the exact tech if balance wants different.
-            int iChain = ( 0 == iOn ) ? (int)nuclear : (int)( fracking_1 + iOn - 1 );
+            int iChain = ( 0 == iOn ) ? (int)nuclear : aiFrIdx[iOn - 1];
             int nReq   = 1 + ( aiFrExtra[iOn] >= 0 ? 1 : 0 );
             pRi->m_iNumRsrchRequired  = nReq;
             pRi->m_piRsrchRequired    = new int[nReq];
@@ -784,11 +798,14 @@ void CRsrchArray::Open( )
         }
     }
 
-    // In-code research topic: Coal Liquefaction (1 tier, not in the DAT file). A coal
-    // POWER PLANT, once this is researched and its per-building alt-output toggle is ON,
-    // also converts coal into oil (2 coal -> 1 oil) via the shared AltOutput system
-    // (eRatioConsume). Single tech, chained off Gas Turbines; cost ~4x the gas_turbine
-    // tech (a few x, easy to retune -- operator balances in-game). Appended LAST in the
+    // In-code research topics: Coal Liquefaction (2 tiers, not in the DAT file). A coal
+    // POWER PLANT, once tier 1 is researched and its per-building alt-output toggle is ON,
+    // also converts coal into oil via the shared AltOutput system (eRatioConsume). Tier 1
+    // runs the recipe at 3 coal -> 1 oil; tier 2 improves it to 2 coal -> 1 oil (the ratio
+    // is read per-tier by CPlayer::GetCoalLiqRatio and wired into the def's m_pfnRatioIn).
+    // Tier 1 chained off Advanced Manufacturing. Tier 2 is a deliberate MEGA-EXPENSIVE
+    // endgame tech: a flat 2,000,000-point cost, gated behind fuel_efficiency_5 (so a few
+    // fuel-efficiency techs are researched first) as well as tier 1. Appended LAST in the
     // enum so save indices don't shift.
     {
         CRsrchItem* pRi = &ElementAt( coal_liquefaction );
@@ -800,43 +817,71 @@ void CRsrchArray::Open( )
         pRi->m_iNumRsrchRequired = 1;
         pRi->m_piRsrchRequired   = new int[1];
         // #28 (operator Note 23): gate Coal Liquefaction behind ADVANCED MANUFACTURING
-        // (manf_3) — it appeared too early off gas_turbine. (Cost basis left as-is;
+        // (manf_3) since it appeared too early off gas_turbine. (Cost basis left as-is;
         // operator retunes in-game.)
         pRi->m_piRsrchRequired[0] = (int)manf_3;
 
         pRi->m_sName   = "Coal Liquefaction";
         pRi->m_sDesc   = "Fischer-Tropsch synthesis cracks coal into liquid fuel: a toggled coal power plant turns 3 coal into 1 oil.";
         pRi->m_sResult = "Coal liquefaction online. Coal power plants can convert coal to oil (toggle per plant).";
+
+        // Tier 2: better catalysts wring more oil from the same coal (3:1 -> 2:1). Priced as a
+        // super-expensive endgame prize (2 million points) and gated behind a chunk of the fuel-
+        // efficiency line, not just tier 1. Both values are trivially retunable here.
+        CRsrchItem* pRi2 = &ElementAt( coal_liquefaction_2 );
+
+        pRi2->m_iPtsRequired      = 2000000;   // millions of points: a very late, very costly tech
+        pRi2->m_iScenarioReq      = ElementAt( gas_turbine ).m_iScenarioReq;
+        pRi2->m_iNumBldgsRequired = 0;
+
+        // Requires Coal Liquefaction (tier 1) AND fuel_efficiency_5 (which chains 1-5, so a few
+        // fuel-efficiency techs are already done before this unlocks).
+        pRi2->m_iNumRsrchRequired = 2;
+        pRi2->m_piRsrchRequired   = new int[2];
+        pRi2->m_piRsrchRequired[0] = (int)coal_liquefaction;
+        pRi2->m_piRsrchRequired[1] = (int)fuel_efficiency_5;
+
+        pRi2->m_sName   = "Catalytic Coal Cracking";
+        pRi2->m_sDesc   = "A better catalyst bed should let our plants squeeze the same oil from less coal, dropping the recipe to 2 coal for 1 oil. It will take a fortune in research to perfect.";
+        pRi2->m_sResult = "Catalytic cracking is dialed in. Our coal plants now make 1 oil from just 2 coal instead of 3.";
     }
 
-    // In-code research topic: Charcoal (4 tiers, not in the DAT file). A lumber MILL (the
+    // In-code research topic: Charcoal (5 tiers, not in the DAT file). A lumber MILL (the
     // sawmill -- UTfarm whose GetTypeFarm() == lumber), once a Charcoal tier is researched
     // and its per-building alt-output toggle is ON, runs a kiln: it converts harvested
     // lumber into coal ("Charcoal" label only) at a fixed 2 lumber -> 1 coal via the shared
     // AltOutput system (eRatioConsume), MODE-SWITCH (lumber output stops while the kiln
     // runs). The 2:1 ratio is fixed; the THROUGHPUT is tier-scaled by CPlayer::GetCharcoalPct
-    // (T1 = VERY LOW per operator spec, T2-4 raise it). No energy cost. T1 chained off Gas
+    // (T1 = VERY LOW per operator spec, T2-5 raise it). No energy cost. T1 chained off Gas
     // Turbines; T2-4 chain the prior tier (mirrors the BioFuel line). Cost doubles each tier.
     // Appended LAST in the enum so save indices don't shift. The AI's frozen research path
     // doesn't pursue these.
     {
-        static const char* aszChName[4] = {
-            "Charcoal Kiln", "Retort Kiln", "Continuous Carbonization", "Pyrolysis Refinery" };
-        static const char* aszChDesc[4] = {
+        static const char* aszChName[5] = {
+            "Charcoal Kiln", "Retort Kiln", "Continuous Carbonization", "Pyrolysis Refinery",
+            "Fluidized-Bed Reactor" };
+        static const char* aszChDesc[5] = {
             "A simple wood kiln chars lumber into coal: a toggled sawmill converts 2 lumber into 1 coal at a very low rate.",
             "Sealed retort kilns char lumber more efficiently, raising the sawmill's charcoal output.",
             "Continuous carbonization lines keep the kiln running, raising charcoal output again.",
-            "A full pyrolysis refinery wrings the most charcoal from every log." };
-        static const char* aszChRslt[4] = {
+            "A full pyrolysis refinery wrings still more charcoal from every log.",
+            "A fluidized-bed reactor chars every scrap at once, squeezing the most coal yet from each log." };
+        static const char* aszChRslt[5] = {
             "Charcoal kiln online. Sawmills can convert lumber into coal (toggle per mill).",
             "Retort kilns fielded. Sawmill charcoal output rises.",
             "Continuous carbonization in service. More charcoal per log.",
-            "Pyrolysis refinery perfected. Maximum charcoal from every sawmill." };
+            "Pyrolysis refinery fielded. Charcoal output climbs again.",
+            "Fluidized-bed reactor perfected. Maximum charcoal from every sawmill." };
+
+        // Level (0-based) -> enum id. Tiers 1-4 are contiguous; tier 5 was appended at the
+        // enum end for save parity, so it is NOT charcoal_4+1 -- map it explicitly.
+        static const int aiChIdx[5] = {
+            charcoal_1, charcoal_2, charcoal_3, charcoal_4, charcoal_5 };
 
         int iPts = ElementAt( gas_turbine ).m_iPtsRequired;
-        for ( int iOn = 0; iOn < 4; iOn++ )
+        for ( int iOn = 0; iOn < 5; iOn++ )
         {
-            CRsrchItem* pRi = &ElementAt( charcoal_1 + iOn );
+            CRsrchItem* pRi = &ElementAt( aiChIdx[iOn] );
 
             iPts *= 2;
             pRi->m_iPtsRequired       = iPts;
@@ -845,7 +890,7 @@ void CRsrchArray::Open( )
 
             pRi->m_iNumRsrchRequired  = 1;
             pRi->m_piRsrchRequired    = new int[1];
-            pRi->m_piRsrchRequired[0] = ( 0 == iOn ) ? (int)gas_turbine : (int)( charcoal_1 + iOn - 1 );
+            pRi->m_piRsrchRequired[0] = ( 0 == iOn ) ? (int)gas_turbine : aiChIdx[iOn - 1];
 
             pRi->m_sName   = aszChName[iOn];
             pRi->m_sDesc   = aszChDesc[iOn];

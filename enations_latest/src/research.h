@@ -265,6 +265,24 @@ public:
 					fuel_efficiency_14,
 					fuel_efficiency_15,
 					fuel_efficiency_16,
+					// Fuel Efficiency 17-18 (in-code): two more +1% tiers (37% / 38% total gas
+					// saving; see CPlayer::GetFuelPct). Cost continues the flat +16*B ramp.
+					// Appended LAST so no earlier enum index shifts (old saves store
+					// discovered-flags positionally; RDPATH_SAVE_COUNT==53 stays put).
+					fuel_efficiency_17,
+					fuel_efficiency_18,
+					// Fracking tier 6 (in-code): one more oil-trickle level for exhausted wells
+					// (15 oil/min; CPlayer::GetFrackOilPerMin). Chains off fracking_5 + a Fuel
+					// Efficiency level. Appended LAST (save-parity, as above).
+					fracking_6,
+					// Coal Liquefaction tier 2 (in-code): improves the coal power plant's
+					// coal->oil conversion from 3:1 to 2:1 (CPlayer::GetCoalLiqRatio, wired into
+					// AltOutput via the def's m_pfnRatioIn). Chains off coal_liquefaction.
+					// Appended LAST (save-parity, as above).
+					coal_liquefaction_2,
+					// Charcoal tier 5 (in-code): one more sawmill kiln throughput level
+					// (CPlayer::GetCharcoalPct). Chains off charcoal_4. Appended LAST (save-parity).
+					charcoal_5,
 					num_types	};
 
 	CRsrchArray () {}
