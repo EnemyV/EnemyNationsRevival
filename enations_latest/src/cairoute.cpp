@@ -1160,13 +1160,14 @@ BOOL CAIRouter::FindTransport( CAIUnit* pCAIBldg )
         CAIUnit* pDestBldg = m_plUnits->GetUnit( pTruck->GetParamDW( iFirstDest ) );
         if ( pDestBldg == NULL )
         {
+            // abandoning the plan: unwrite the claims/reservations written above
+            // or the site is orphaned every failed plan (the GHOSTCLAIM churn)
+            UnassignTrucks( pTruck->GetID( ) );
+            ReleaseTruckReservations( pTruck );
+            pTruck->ClearParam( );
             pTruck->SetStatus( 0 );  // truck is no longer assigned
             pTruck->SetDataDW( 0 );
 
-#ifdef _LOGOUT
-            logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "CAIRouter::player %d truck %ld  source building not found \n",
-                       m_iPlayer, pTruck->GetID( ), pDestBldg->GetID( ) );
-#endif
             // put back in list
             return FALSE;
         }
@@ -1176,6 +1177,9 @@ BOOL CAIRouter::FindTransport( CAIUnit* pCAIBldg )
 
         if ( !hex.X( ) && !hex.Y( ) )
         {
+            UnassignTrucks( pTruck->GetID( ) );
+            ReleaseTruckReservations( pTruck );
+            pTruck->ClearParam( );
             pTruck->SetStatus( 0 );  // truck is no longer assigned
             pTruck->SetDataDW( 0 );
 
@@ -1203,6 +1207,9 @@ BOOL CAIRouter::FindTransport( CAIUnit* pCAIBldg )
         logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "CAIRouter::player %d truck %ld - no first source building found \n",
                    m_iPlayer, pTruck->GetID( ) );
 #endif
+        UnassignTrucks( pTruck->GetID( ) );
+        ReleaseTruckReservations( pTruck );
+        pTruck->ClearParam( );
         pTruck->SetStatus( 0 );  // truck is no longer assigned
         pTruck->SetDataDW( 0 );
         // put back in list
