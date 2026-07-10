@@ -3045,22 +3045,7 @@ void CVehicle::SetDestAndMode( CSubHex sub, VEH_POS iMode )
     // ladder (m_iNumRetries/m_dwTimeBlocked/m_iBlockCount) before it could
     // reach the give-up or AI-teleport rungs - boxed units livelocked at a
     // fixed hex forever (the frozen scouts / stuck staging armies)
-    BOOL bSameDest = ( m_ptDest == sub );
-#if EN_AI_PROBES_ECON && defined(_WIN32)
-    // TEMP knot diagnosis (remove after): reset-vs-preserve truth per specimen
-    {
-        DWORD dwKId = GetID( );
-        if ( dwKId == 643 || dwKId == 644 || dwKId == 577 || dwKId == 223 )
-        {
-            char szK[128];
-            sprintf( szK, "[KNOTSET] veh %lu same %d cur %d,%d new %d,%d retries %d bc %ld tb %lu\n",
-                     (unsigned long)dwKId, (int)bSameDest, m_ptDest.x, m_ptDest.y, sub.x, sub.y,
-                     m_iNumRetries, (long)m_iBlockCount, (unsigned long)m_dwTimeBlocked );
-            OutputDebugStringA( szK );
-        }
-    }
-#endif
-    if ( !bSameDest )
+    if ( m_ptDest != sub )
     {
         m_iNumRetries   = 0;
         m_dwTimeBlocked = 0;

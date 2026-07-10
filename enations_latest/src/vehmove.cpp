@@ -1921,24 +1921,6 @@ void CVehicle::HandleBlocked() {
     if ((MyRand() & 0x3000) == 0x1000)
         return;
 
-#if EN_AI_PROBES_ECON && defined(_WIN32)
-    // TEMP knot diagnosis (remove after): is the ladder climbing for the specimens?
-    {
-        DWORD dwKId = GetID();
-        if (dwKId == 643 || dwKId == 644 || dwKId == 577 || dwKId == 223) {
-            static DWORD s_dwNextKnotLog = 0;
-            if (theGame.GettimeGetTime() >= s_dwNextKnotLog) {
-                s_dwNextKnotLog = theGame.GettimeGetTime() + 5000;
-                char szK[128];
-                sprintf(szK, "[KNOTHB] veh %lu retries %d bc %ld tb %lu at %d,%d dest %d,%d\n",
-                        (unsigned long)dwKId, m_iNumRetries, (long)m_iBlockCount,
-                        (unsigned long)m_dwTimeBlocked, m_ptHead.x, m_ptHead.y, m_ptDest.x, m_ptDest.y);
-                OutputDebugStringA(szK);
-            }
-        }
-    }
-#endif
-
 #ifdef _LOGOUT
     logPrintf(LOG_PRI_VERBOSE, LOG_VEH_MOVE, "vehicle %d at sub (%d,%d) trying to unblock, retry %d, block %d",
               GetID(), m_ptHead.x, m_ptHead.y, m_iNumRetries, m_iBlockCount);
