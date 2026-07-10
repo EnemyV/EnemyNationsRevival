@@ -3249,6 +3249,14 @@ void CAIRouter::Load( CArchive& ar, CAIUnitList* plUnits )
         if ( pUnit != NULL )
             m_plBldgsNeed->AddTail( (CObject*)pUnit );
     }
+
+    // the needs list is a CACHE of NeedsCommodities over live buildings. The
+    // saved copy is a stale snapshot: a site absent at save time (e.g. its
+    // request was claim-suppressed) is unreachable by every downstream heal
+    // FOREVER - savegame19's fossil sites that never built across any round.
+    // Rebuild from live state; NeedsCommodities also recomputes honest wants.
+    m_plBldgsNeed->RemoveAll( );
+    GetBuildingNeeding( );
 }
 
 // end of CAIRoute.cpp
