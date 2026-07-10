@@ -2200,6 +2200,14 @@ void CVehicle::HandleBlocked() {
         return;
     }
 
+    // all rungs exhausted + block count saturated: the give-up is the designed
+    // terminal state - take it NOW. The wait gates below pace the RUNGS, but
+    // micro-oscillation (blocked->moving->traffic->blocked) resets
+    // m_dwTimeBlocked every ~20s, so a permanently boxed unit never crossed
+    // them and livelocked (retries 25, bc 6, tb sawtooth for 55+ min)
+    if ((m_iNumRetries > 15) && (m_iBlockCount > 5))
+        goto GiveUp;
+
     // wait a bit
     if (m_dwTimeBlocked < (DWORD) (m_iBlockCount * m_iSpeed * STEPS_HEX / 4)) {
         m_iBlockCount--;
