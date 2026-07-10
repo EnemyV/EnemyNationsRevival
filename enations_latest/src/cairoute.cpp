@@ -2445,6 +2445,29 @@ void CAIRouter::SetUnitPriority( CAIUnit* pCAIBldg )
         // if material is needed
         if ( pCAIBldg->GetParam( i ) )
         {
+            // validate the claim exactly like TrucksAreEnroute: a truck that is
+            // gone or re-tasked elsewhere is no claim at all. A false claim here
+            // silences this building's requests FOREVER (savegame19 carries such
+            // fossils - the sites that never built across every round).
+            DWORD dwClaim = pCAIBldg->GetParamDW( i );
+            if ( dwClaim )
+            {
+                CAIUnit* pClaimT = m_plUnits->GetUnit( dwClaim );
+                if ( pClaimT == NULL || pClaimT->GetDataDW( ) != pCAIBldg->GetID( ) )
+                {
+                    pCAIBldg->SetParamDW( i, 0 );  // stale/ghost claim
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+                    {
+                        char szG[112];
+                        sprintf( szG, "[GHOSTCLAIM] plyr %d bldg %lu mat %d truck %lu %s\n", m_iPlayer,
+                                 (unsigned long)pCAIBldg->GetID( ), i, (unsigned long)dwClaim,
+                                 ( pClaimT == NULL ) ? "gone" : "re-tasked" );
+                        OutputDebugStringA( szG );
+                    }
+#endif
+                }
+            }
+
             // is a truck assigned to transport it?
             if ( !pCAIBldg->GetParamDW( i ) )
                 bTruckStillNeeded = TRUE;
