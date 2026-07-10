@@ -989,6 +989,23 @@ void CVehicle::ConstructBuilding() {
     if (GetOwner()->GetEdictFortBuildMult() != 1.0f
         && m_pBldg->GetData()->GetBldgType() == CStructureData::fort)
         iInc = (int)(iInc * GetOwner()->GetEdictFortBuildMult());
+
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+    // welded-crane instrument: is the work tick producing anything at an
+    // abandoned host, and from what inputs?
+    if (GetOwner()->IsAI() && m_pBldg->IsFlag(CUnit::abandoned)) {
+        static DWORD s_dwNextCwLog = 0;
+        if (theGame.GettimeGetTime() >= s_dwNextCwLog) {
+            s_dwNextCwLog = theGame.GettimeGetTime() + 5000;
+            char szCw[144];
+            sprintf(szCw, "[CONSTABAND] crane %lu host %lu iInc %d dampf %.3f constprod %.3f opers %ld\n",
+                    (unsigned long)GetID(), (unsigned long)m_pBldg->GetID(), iInc,
+                    m_fDamPerfMult, GetOwner()->GetConstProd(), (long)theGame.GetOpersElapsed());
+            OutputDebugStringA(szCw);
+        }
+    }
+#endif
+
     if (iInc <= 0)
         return;
 
