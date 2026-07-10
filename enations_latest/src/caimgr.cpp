@@ -2340,6 +2340,16 @@ void CAIMgr::VehicleErrorResponse( CAIMsg* pMsg )
             return;
         }
 
+        // escalate the restage search on repeated errors from the same hex --
+        // a radius-2 restage lands back inside the same traffic knot and the
+        // unit livelocks (stop<->blocked at a fixed position; the frozen scouts)
+        int iRestage = 2;
+        {
+            int iErrs = pUnit->NoteErrRestage( MAKELPARAM( hexVeh.X( ), hexVeh.Y( ) ) );
+            if ( iErrs > 1 )
+                iRestage = __min( 2 << ( iErrs - 1 ), 32 );  // 4, 8, 16, 32
+        }
+
         // check the unit
         // if it has no task, or a combat task
         // then it is probably being staged or on patrol
@@ -2355,7 +2365,7 @@ void CAIMgr::VehicleErrorResponse( CAIMsg* pMsg )
 
             // armies have staging areas, which I think is really cool
             // they like cluster in spots that, i think, are betweenish their base and target
-            m_pMap->m_pMapUtil->FindStagingHex( hexVeh, 2, 2, pUnit->GetTypeUnit( ), hexDest, FALSE );
+            m_pMap->m_pMapUtil->FindStagingHex( hexVeh, iRestage, iRestage, pUnit->GetTypeUnit( ), hexDest, FALSE );
 
             pUnit->SetDestination( hexDest );
 
@@ -2374,7 +2384,7 @@ void CAIMgr::VehicleErrorResponse( CAIMsg* pMsg )
             {
                 // m_pGoalMgr->GetPatrolHex( pUnit, hexDest );
 
-                m_pMap->m_pMapUtil->FindStagingHex( hexVeh, 2, 2, pUnit->GetTypeUnit( ), hexDest, FALSE );
+                m_pMap->m_pMapUtil->FindStagingHex( hexVeh, iRestage, iRestage, pUnit->GetTypeUnit( ), hexDest, FALSE );
 
                 pUnit->SetDestination( hexDest );
 #ifdef _LOGOUT
@@ -2482,7 +2492,7 @@ void CAIMgr::VehicleErrorResponse( CAIMsg* pMsg )
         if ( !IsEmbraced( pMsg ) )
             hexVeh = hexNext;
 
-        m_pMap->m_pMapUtil->FindStagingHex( hexVeh, 2, 2, pUnit->GetTypeUnit( ), hexDest, FALSE );
+        m_pMap->m_pMapUtil->FindStagingHex( hexVeh, iRestage, iRestage, pUnit->GetTypeUnit( ), hexDest, FALSE );
 
         pUnit->SetDestination( hexDest );
 

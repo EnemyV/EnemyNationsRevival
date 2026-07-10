@@ -37,6 +37,8 @@ protected:
 	DWORD			m_dwResendDest;		// 5-min rescue: last resent dest, MAKELPARAM (transient)
 	WORD			m_wResendCnt;		// consecutive resends to that dest (oscillating-crane escape)
 	DWORD			m_dwInBldgSince;	// census: first sweep this truck was seen inside a bldg (transient)
+	DWORD			m_dwErrHex;			// error-restage: last error position, MAKELPARAM (transient)
+	WORD			m_wErrCnt;			// consecutive error-restages from that hex (traffic-knot escape)
 
 	DWORD m_dwID;
 	int m_iOwner;
@@ -82,7 +84,7 @@ protected:
 public:
 	CAIUnit( DWORD dwID, int iOwner, int iType, int iTypeUnit );
 	~CAIUnit();
-	CAIUnit() : m_dwTimeLastAtkCmd( 0 ), m_dwStuckSince( 0 ), m_dwStuckHex( 0 ) {};
+	CAIUnit() : m_dwTimeLastAtkCmd( 0 ), m_dwStuckSince( 0 ), m_dwStuckHex( 0 ), m_dwErrHex( 0 ), m_wErrCnt( 0 ) {};
 
 	// attack-alert feedback-loop cooldown (see CAITaskMgr::AttackAlert)
 	DWORD GetTimeLastAtkCmd( void ) const { return m_dwTimeLastAtkCmd; }
@@ -99,6 +101,13 @@ public:
 		return m_wResendCnt;
 	}
 	void ClearResend( void ) { m_dwResendDest = 0; m_wResendCnt = 0; }
+	// consecutive blocked-error restages from the same hex; returns the updated count
+	int NoteErrRestage( DWORD dwHex )
+	{
+		if ( dwHex == m_dwErrHex ) ++m_wErrCnt;
+		else { m_dwErrHex = dwHex; m_wErrCnt = 1; }
+		return m_wErrCnt;
+	}
 	DWORD GetInBldgSince( void ) const { return m_dwInBldgSince; }
 	void  SetInBldgSince( DWORD dw ) { m_dwInBldgSince = dw; }
 	// bypass the 30s same-dest dedupe for ONE deliberate retry (clamped-path resume)

@@ -50,6 +50,8 @@ CAIUnit::CAIUnit( DWORD dwID, int iOwner, int iType, int iTypeUnit )
     m_dwResendDest     = 0;
     m_wResendCnt       = 0;
     m_dwInBldgSince    = 0;
+    m_dwErrHex         = 0;
+    m_wErrCnt          = 0;
 
     ASSERT_VALID( this );
 
