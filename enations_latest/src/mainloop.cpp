@@ -1637,6 +1637,20 @@ void CBuilding::Operate( )
         for ( int iInd = 0; iInd < CMaterialTypes::GetNumBuildTypes( ); iInd++ )
             if ( GetStore( iInd ) < NeedToRepair( iInd, m_aiRepair[iInd] ) )
             {
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+                {
+                    static DWORD s_dwNextRepStopLog = 0;
+                    if ( GetOwner( )->IsAI( ) && theGame.GettimeGetTime( ) >= s_dwNextRepStopLog )
+                    {
+                        s_dwNextRepStopLog = theGame.GettimeGetTime( ) + 5000;
+                        char szRs[144];
+                        sprintf( szRs, "[REPSTOP] plyr %d bldg %lu mat %d store %d need %d work %d dmg %d\n",
+                                 GetOwner( )->GetPlyrNum( ), (unsigned long)GetID( ), iInd, GetStore( iInd ),
+                                 NeedToRepair( iInd, m_aiRepair[iInd] ), m_iRepairWork, GetDamagePer( ) );
+                        OutputDebugStringA( szRs );
+                    }
+                }
+#endif
                 SetFlag( repair_stop );
                 memset( m_aiRepair, 0, sizeof( m_aiRepair ) );
 
@@ -1670,6 +1684,20 @@ void CBuilding::Operate( )
             GetData( )->GetTimeBuild( ) );
         m_iRepairMod  = dtFix.rem;
         m_iRepairWork = 0;
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+        if ( GetOwner( )->IsAI( ) && dtFix.quot > 0 )
+        {
+            static DWORD s_dwNextRepAppLog = 0;
+            if ( theGame.GettimeGetTime( ) >= s_dwNextRepAppLog )
+            {
+                s_dwNextRepAppLog = theGame.GettimeGetTime( ) + 5000;
+                char szRa[112];
+                sprintf( szRa, "[REPAPPLY] plyr %d bldg %lu pts %d dmg %d\n", GetOwner( )->GetPlyrNum( ),
+                         (unsigned long)GetID( ), dtFix.quot, GetDamagePer( ) );
+                OutputDebugStringA( szRa );
+            }
+        }
+#endif
         CMsgUnitRepair msg( this, dtFix.quot );
         theGame.PostToServer( &msg, sizeof( msg ) );
     }
