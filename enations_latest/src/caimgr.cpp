@@ -754,7 +754,7 @@ void CAIMgr::Manage( void )
                             AiVehSnap snapC;
                             BOOL bSnapC = AiSnap::ReadVeh( pC->GetID( ), snapC );
                             int  bIn = -1, iTAS = -1, iEvt = -1, iHostCd = -3, iHostEvt = -1, iHostDmg = -1;
-                            int  iHostStp = -1;
+                            int  iHostStp = -1, iCStp = -1;
                             unsigned long ulHost = 0;
                             EnterCriticalSection( &cs );
                             CVehicle* pCV = pGameData->GetVehicleData( m_iPlayer, pC->GetID( ) );
@@ -763,6 +763,9 @@ void CAIMgr::Manage( void )
                                 bIn  = pCV->IsInBuilding( ) ? 1 : 0;
                                 iTAS = pCV->IsToldAiStop( ) ? 1 : 0;
                                 iEvt = (int)pCV->GetEvent( );
+                                iCStp = ( pCV->IsFlag( CUnit::stopped ) ? 1 : 0 ) |
+                                        ( pCV->IsFlag( CUnit::abandoned ) ? 2 : 0 ) |
+                                        ( pCV->IsFlag( CUnit::dying ) ? 4 : 0 );
                                 CBuilding* pHost = pCV->GetConstBldg( );
                                 if ( pHost != NULL )
                                 {
@@ -791,13 +794,13 @@ void CAIMgr::Manage( void )
                             sprintf( szC,
                                      "[CRANE] plyr %d id %lu stat %u task %u ord %d bxy %d,%d site %lu cd %d "
                                      "at %d,%d dest %d,%d rm %d in %d tas %d eff %d tst %d bt %d "
-                                     "evt %d host %lu hcd %d hevt %d hdmg %d hstp %d\n",
+                                     "evt %d cstp %d host %lu hcd %d hevt %d hdmg %d hstp %d\n",
                                      m_iPlayer, (unsigned long)pC->GetID( ), (unsigned)pC->GetStatus( ),
                                      (unsigned)pC->GetTask( ), iOrd, iBX, iBY, ulSite, iCD,
                                      bSnapC ? snapC.iHeadX : -1, bSnapC ? snapC.iHeadY : -1,
                                      bSnapC ? snapC.iDestX : -1, bSnapC ? snapC.iDestY : -1,
                                      bSnapC ? snapC.iRouteMode : -1, bIn, iTAS, iEff, iTst, iBT,
-                                     iEvt, ulHost, iHostCd, iHostEvt, iHostDmg, iHostStp );
+                                     iEvt, iCStp, ulHost, iHostCd, iHostEvt, iHostDmg, iHostStp );
                             OutputDebugStringA( szC );
                         }
                         sprintf( szR, "[ASSIGNSTAT] plyr %d cranes %d idle %d\n", m_iPlayer, iCranes, iIdleCranes );
