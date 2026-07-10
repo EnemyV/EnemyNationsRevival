@@ -719,6 +719,46 @@ void CAIMgr::Manage( void )
                                  m_iPlayer, iTrucks, iInUse, iMoving, iStopped, iInBldg );
                         OutputDebugStringA( szR );
                     }
+                    // scout census: are Outriders scouting or idling in the city?
+                    // (task + AI dest params + engine pos/dest/mode per scout)
+                    if ( m_plUnits != NULL )
+                    {
+                        int iScouts = 0, iSDump = 0;
+                        POSITION posS = m_plUnits->GetHeadPosition( );
+                        while ( posS != NULL )
+                        {
+                            CAIUnit* pS = (CAIUnit*)m_plUnits->GetNext( posS );
+                            if ( pS == NULL || pS->GetOwner( ) != m_iPlayer )
+                                continue;
+                            if ( pS->GetType( ) != CUnit::vehicle )
+                                continue;
+                            int iST = pS->GetTypeUnit( );
+                            if ( iST != CTransportData::light_scout && iST != CTransportData::med_scout &&
+                                 iST != CTransportData::heavy_scout )
+                                continue;
+                            iScouts++;
+                            if ( iSDump < 4 )
+                            {
+                                iSDump++;
+                                AiVehSnap snapS;
+                                BOOL bSnapS = AiSnap::ReadVeh( pS->GetID( ), snapS );
+                                char szS[176];
+                                sprintf( szS,
+                                         "[SCOUT] plyr %d id %lu type %d task %u aidest %d,%d at %d,%d dest %d,%d rm %d\n",
+                                         m_iPlayer, (unsigned long)pS->GetID( ), iST, (unsigned)pS->GetTask( ),
+                                         (int)pS->GetParam( CAI_DEST_X ), (int)pS->GetParam( CAI_DEST_Y ),
+                                         bSnapS ? snapS.iHeadX : -1, bSnapS ? snapS.iHeadY : -1,
+                                         bSnapS ? snapS.iDestX : -1, bSnapS ? snapS.iDestY : -1,
+                                         bSnapS ? snapS.iRouteMode : -1 );
+                                OutputDebugStringA( szS );
+                            }
+                        }
+                        if ( iScouts )
+                        {
+                            sprintf( szR, "[SCOUTSTAT] plyr %d scouts %d\n", m_iPlayer, iScouts );
+                            OutputDebugStringA( szR );
+                        }
+                    }
                     // idle cranes vs pending work: idle+work = dispatch bug, idle+none = fleet exceeds demand
                     if ( m_plUnits != NULL )
                     {
