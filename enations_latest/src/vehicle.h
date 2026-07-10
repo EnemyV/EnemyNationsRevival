@@ -359,6 +359,7 @@ public:
 		void					StartConst (CBuilding * pBldg);
 		CBuilding *		GetConst () const { ASSERT_STRICT_VALID_OR_NULL (m_pBldg); return (m_pBldg); }
 		VEH_EVENT			GetEvent () const { return (m_iEvent); }
+		CBuilding *		GetConstBldg () const { return (m_pBldg); }	// build/repair work target
 		int						GetBldgType () const { return (m_iBldgType); }
 		void					SetBldgType (int iType) { m_iBldgType = iType; }
 		CHexCoord const & GetHexBldg () const { return (m_hexBldg); }

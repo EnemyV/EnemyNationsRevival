@@ -712,13 +712,23 @@ void CAIMgr::Manage( void )
                             int iEff = (int)pC->GetParam( CAI_EFFECTIVE );
                             AiVehSnap snapC;
                             BOOL bSnapC = AiSnap::ReadVeh( pC->GetID( ), snapC );
-                            int  bIn = -1, iTAS = -1;
+                            int  bIn = -1, iTAS = -1, iEvt = -1, iHostCd = -3, iHostEvt = -1, iHostDmg = -1;
+                            unsigned long ulHost = 0;
                             EnterCriticalSection( &cs );
                             CVehicle* pCV = pGameData->GetVehicleData( m_iPlayer, pC->GetID( ) );
                             if ( pCV != NULL )
                             {
                                 bIn  = pCV->IsInBuilding( ) ? 1 : 0;
                                 iTAS = pCV->IsToldAiStop( ) ? 1 : 0;
+                                iEvt = (int)pCV->GetEvent( );
+                                CBuilding* pHost = pCV->GetConstBldg( );
+                                if ( pHost != NULL )
+                                {
+                                    ulHost   = (unsigned long)pHost->GetID( );
+                                    iHostCd  = pHost->GetConstDone( );
+                                    iHostEvt = (int)pHost->IsFlag( CUnit::event );
+                                    iHostDmg = pHost->GetDamagePer( );
+                                }
                             }
                             if ( iBX > 0 && iBY > 0 )
                             {
@@ -733,15 +743,17 @@ void CAIMgr::Manage( void )
                                 }
                             }
                             LeaveCriticalSection( &cs );
-                            char szC[224];
+                            char szC[288];
                             sprintf( szC,
                                      "[CRANE] plyr %d id %lu stat %u task %u ord %d bxy %d,%d site %lu cd %d "
-                                     "at %d,%d dest %d,%d rm %d in %d tas %d eff %d tst %d bt %d\n",
+                                     "at %d,%d dest %d,%d rm %d in %d tas %d eff %d tst %d bt %d "
+                                     "evt %d host %lu hcd %d hevt %d hdmg %d\n",
                                      m_iPlayer, (unsigned long)pC->GetID( ), (unsigned)pC->GetStatus( ),
                                      (unsigned)pC->GetTask( ), iOrd, iBX, iBY, ulSite, iCD,
                                      bSnapC ? snapC.iHeadX : -1, bSnapC ? snapC.iHeadY : -1,
                                      bSnapC ? snapC.iDestX : -1, bSnapC ? snapC.iDestY : -1,
-                                     bSnapC ? snapC.iRouteMode : -1, bIn, iTAS, iEff, iTst, iBT );
+                                     bSnapC ? snapC.iRouteMode : -1, bIn, iTAS, iEff, iTst, iBT,
+                                     iEvt, ulHost, iHostCd, iHostEvt, iHostDmg );
                             OutputDebugStringA( szC );
                         }
                         sprintf( szR, "[ASSIGNSTAT] plyr %d cranes %d idle %d\n", m_iPlayer, iCranes, iIdleCranes );
