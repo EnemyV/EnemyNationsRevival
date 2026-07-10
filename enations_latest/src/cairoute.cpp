@@ -2062,7 +2062,8 @@ BOOL CAIRouter::NeedsCommodities( CAIUnit* pCAIBldg )
                 }
                 else  // repair after constructed
                 {
-                    if ( pBldg->GetBldgMatRepair( i ) )
+                    // abandoned (exhausted mine): repairs never apply - don't request
+                    if ( !pBldg->IsFlag( CUnit::abandoned ) && pBldg->GetBldgMatRepair( i ) )
                         aiMatsNeeded[i] = pBldg->GetBldgMatRepair( i );
                 }
             }

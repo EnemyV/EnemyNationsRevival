@@ -2252,6 +2252,13 @@ void CBuilding::AddConstDone( int iDone )
     // can we repair?
     if ( GetDamagePoints( ) < GetData( )->GetDamagePoints( ) )
     {
+        // abandoned (exhausted mine): Operate returns before the repair block,
+        // so repair work is never consumed - release the crews, don't weld them
+        if ( m_unitFlags & abandoned )
+        {
+            CVehicle::StopConstruction( this );
+            return;
+        }
         if ( !IsFlag( repair_stop ) )
         {
             for ( int iInd = 0; iInd < CMaterialTypes::num_build_types; iInd++ ) m_aiRepair[iInd] += iDone;

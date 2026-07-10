@@ -2151,6 +2151,9 @@ BOOL CAITaskMgr::AssignRepair( CAIUnit* pCrane )
                         // check for delete in progress
                         if ( pBldg->GetFlags( ) & CUnit::dying )
                             bNeedRepair = FALSE;
+                        // abandoned (exhausted mine) never consumes repair work
+                        if ( pBldg->GetFlags( ) & CUnit::abandoned )
+                            bNeedRepair = FALSE;
                     }
                 }
                 LeaveCriticalSection( &cs );
@@ -4969,6 +4972,7 @@ BOOL CAITaskMgr::RepairConstruction( CAIUnit* pUnit )
     {
         int  iDmgPer      = 0;
         BOOL bConstructing = FALSE;
+        BOOL bAbandoned    = FALSE;
 
         EnterCriticalSection( &cs );
         CBuilding* pBldg = theBuildingMap.GetBldg( pUnit->GetDataDW( ) );
@@ -4977,11 +4981,16 @@ BOOL CAITaskMgr::RepairConstruction( CAIUnit* pUnit )
             hexBldg       = pBldg->GetExitHex( );
             iDmgPer       = pBldg->GetDamagePer( );
             bConstructing = pBldg->IsConstructing( );
+            bAbandoned    = ( pBldg->GetFlags( ) & CUnit::abandoned ) != 0;
         }
         LeaveCriticalSection( &cs );
 
         // done only when repaired AND built (an orphaned shell is undamaged but constructing)
         if ( iDmgPer == DAMAGE_0 && !bConstructing )
+            goto DismissUnit;
+
+        // abandoned (exhausted mine) never consumes repair work - not a repair target
+        if ( bAbandoned )
             goto DismissUnit;
 
         // crane is already at the building
@@ -5088,6 +5097,9 @@ BOOL CAITaskMgr::RepairConstruction( CAIUnit* pUnit )
                         bNeedRepair = TRUE;
                         // check for delete in progress
                         if ( pBldg->GetFlags( ) & CUnit::dying )
+                            bNeedRepair = FALSE;
+                        // abandoned (exhausted mine) never consumes repair work
+                        if ( pBldg->GetFlags( ) & CUnit::abandoned )
                             bNeedRepair = FALSE;
 
                         hexBldg    = pBldg->GetExitHex( );
