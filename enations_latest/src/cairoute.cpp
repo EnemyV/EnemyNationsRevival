@@ -157,6 +157,12 @@ BOOL CAIRouter::ResumeTruck( CAIUnit* pTruck, int iX, int iY )
 
 void CAIRouter::RebuildReservations( void )
 {
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+    // measure the leak this rebuild is about to wipe
+    int iEntB = (int)m_mReserved.size( );
+    int iTotB = 0;
+    for ( auto itR = m_mReserved.begin( ); itR != m_mReserved.end( ); ++itR ) iTotB += itR->second;
+#endif
     // coarse leak-safety: rederive the whole ledger from live in-use trucks so a
     // missed release (truck destroyed, odd bail path) can't starve a source forever
     m_mReserved.clear( );
@@ -183,6 +189,19 @@ void CAIRouter::RebuildReservations( void )
                 ReserveMaterial( i, dwSource, pUnit->GetParam( i ) );
         }
     }
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+    {
+        int iEntA = (int)m_mReserved.size( );
+        int iTotA = 0;
+        for ( auto itR = m_mReserved.begin( ); itR != m_mReserved.end( ); ++itR ) iTotA += itR->second;
+        if ( iEntB != iEntA || iTotB != iTotA )
+        {
+            char szL[128];
+            sprintf( szL, "[RESLEDGER] plyr %d entries %d->%d total %d->%d\n", m_iPlayer, iEntB, iEntA, iTotB, iTotA );
+            OutputDebugStringA( szL );
+        }
+    }
+#endif
 }
 
 CAIRouter::~CAIRouter( )
@@ -1431,6 +1450,13 @@ CAIUnit* CAIRouter::GetNearestSource( int iMaterial, int iQtyNeeded, int* piDist
     CHexCoord hexNeed( iX, iY );
     CHexCoord hexMat;
 
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+    // observe: the richest candidate we SKIP, and why - names the reason the
+    // 100k warehouses never serve pickups (want-check / reservation / other)
+    DWORD dwSkipID = 0;
+    int   iSkipLive = 0, iSkipResv = 0, iSkipWant = 0, iSkipReason = 0;  // 1=want>=stock
+#endif
+
     POSITION pos = m_plUnits->GetHeadPosition( );
     while ( pos != NULL )
     {
@@ -1470,13 +1496,16 @@ CAIUnit* CAIRouter::GetNearestSource( int iMaterial, int iQtyNeeded, int* piDist
                 continue;
 
             // refresh this material from the live store (stale-copy routing bug)
+            int iLiveStore = 0, iResv = 0;
             EnterCriticalSection( &cs );
             {
                 CBuilding* pLive = theBuildingMap.GetBldg( pUnit->GetID( ) );
                 if ( pLive != NULL )
                 {
                     // effective availability = live store minus other trucks' pending pickups
-                    int iEff                              = pLive->GetStore( iMaterial ) - GetReserved( iMaterial, pUnit->GetID( ) );
+                    iLiveStore = pLive->GetStore( iMaterial );
+                    iResv      = GetReserved( iMaterial, pUnit->GetID( ) );
+                    int iEff   = iLiveStore - iResv;
                     pCopyCBuilding->m_aiDataIn[iMaterial] = ( iEff > 0 ) ? iEff : 0;
                 }
             }
@@ -1485,7 +1514,19 @@ CAIUnit* CAIRouter::GetNearestSource( int iMaterial, int iQtyNeeded, int* piDist
             // this building needs that same material and has
             // less than it needs
             if ( pUnit->GetParam( iMaterial ) >= pCopyCBuilding->m_aiDataIn[iMaterial] )
+            {
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+                if ( iLiveStore > iSkipLive )
+                {
+                    dwSkipID    = pUnit->GetID( );
+                    iSkipLive   = iLiveStore;
+                    iSkipResv   = iResv;
+                    iSkipWant   = (int)pUnit->GetParam( iMaterial );
+                    iSkipReason = 1;  // own-want >= effective stock
+                }
+#endif
                 continue;
+            }
 
             // is this a building under construction
             if ( pCopyCBuilding->m_aiDataOut[CAI_ISCONSTRUCTING] )
@@ -1737,6 +1778,20 @@ CAIUnit* CAIRouter::GetNearestSource( int iMaterial, int iQtyNeeded, int* piDist
     // either the closest or the next closest pointer
     if ( pClosest == NULL && pNextClosest != NULL )
     {
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+        {
+            static DWORD s_dwNextSrcLog = 0;
+            if ( timeGetTime( ) >= s_dwNextSrcLog )
+            {
+                s_dwNextSrcLog = timeGetTime( ) + 5000;
+                char szS[176];
+                sprintf( szS, "[SRCPICK] plyr %d mat %d need %d DRIBBLE src %lu has %d | skipped %lu live %d resv %d want %d r%d\n",
+                         m_iPlayer, iMaterial, iQtyNeeded, (unsigned long)pNextClosest->GetID( ), iNextBest,
+                         (unsigned long)dwSkipID, iSkipLive, iSkipResv, iSkipWant, iSkipReason );
+                OutputDebugStringA( szS );
+            }
+        }
+#endif
         // get access to CBuilding copied data for building
         CAICopy* pCopyCBuilding = pNextClosest->GetCopyData( CAICopy::CBuilding );
         if ( pCopyCBuilding != NULL )
@@ -1751,6 +1806,20 @@ CAIUnit* CAIRouter::GetNearestSource( int iMaterial, int iQtyNeeded, int* piDist
     }
     else if ( pClosest == NULL && pNextClosest == NULL )
     {
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+        {
+            static DWORD s_dwNextRktLog = 0;
+            if ( timeGetTime( ) >= s_dwNextRktLog )
+            {
+                s_dwNextRktLog = timeGetTime( ) + 5000;
+                char szS[176];
+                sprintf( szS, "[SRCPICK] plyr %d mat %d need %d ROCKET-CONJURE | skipped %lu live %d resv %d want %d r%d\n",
+                         m_iPlayer, iMaterial, iQtyNeeded,
+                         (unsigned long)dwSkipID, iSkipLive, iSkipResv, iSkipWant, iSkipReason );
+                OutputDebugStringA( szS );
+            }
+        }
+#endif
         // this compensates for the HP reserve material change
         pClosest = m_plUnits->GetUnit( m_dwRocket );
         if ( pClosest == NULL )
@@ -1809,10 +1878,11 @@ BOOL CAIRouter::TrucksAreEnroute( CAIUnit* pBldg )
 //
 void CAIRouter::UnassignTrucks( DWORD dwTruckID )
 {
-    // get truck
+    // get truck. NULL = already removed from the unit list (death-cleanup
+    // ordering) - the claims it left on buildings must STILL be cleared or
+    // SetUnitPriority never re-raises those sites (they starve forever while
+    // the rocket backstop sits unused). The lookup below is only a filter.
     CAIUnit* pTruck = m_plUnits->GetUnit( dwTruckID );
-    if ( pTruck == NULL )
-        return;
 
     POSITION pos = m_plUnits->GetHeadPosition( );
     while ( pos != NULL )
@@ -1827,7 +1897,8 @@ void CAIRouter::UnassignTrucks( DWORD dwTruckID )
                 continue;
 
             // is this the building the truck is assigned to?
-            if ( pTruck->GetDataDW( ) != pBldg->GetID( ) )
+            // (truck gone -> can't know its dest: scan every building)
+            if ( pTruck != NULL && pTruck->GetDataDW( ) != pBldg->GetID( ) )
                 continue;
 
             for ( int i = 0; i < CMaterialTypes::num_types; ++i )
