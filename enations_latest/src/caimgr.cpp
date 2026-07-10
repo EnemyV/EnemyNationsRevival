@@ -500,13 +500,15 @@ void CAIMgr::Manage( void )
                             CBuilding* pLB = theBuildingMap.GetBldg( pP->GetID( ) );
                             if ( pLB != NULL && pLB->GetConstDone( ) != -1 )
                             {
-                                char szP[176];
+                                char szP[208];
                                 sprintf( szP,
-                                         "[PARTIAL] plyr %d bldg %lu type %d constdone %d event %d stopped %d "
-                                         "steel %d unassigned %d truckdw %lu\n",
+                                         "[PARTIAL] plyr %d bldg %lu type %d at %d,%d constdone %d event %d stopped %d "
+                                         "rs %d dmg %d steel %d unassigned %d truckdw %lu\n",
                                          m_iPlayer, (unsigned long)pP->GetID( ), pP->GetTypeUnit( ),
+                                         pLB->GetHex( ).X( ), pLB->GetHex( ).Y( ),
                                          pLB->GetConstDone( ), (int)pLB->IsFlag( CUnit::event ),
                                          (int)pLB->IsFlag( CUnit::stopped ),
+                                         (int)pLB->IsFlag( CUnit::repair_stop ), pLB->GetDamagePer( ),
                                          pLB->GetStore( CMaterialTypes::steel ),
                                          (int)pP->GetParam( CAI_UNASSIGNED ),
                                          (unsigned long)pP->GetParamDW( CMaterialTypes::steel ) );
@@ -514,6 +516,45 @@ void CAIMgr::Manage( void )
                                 iPDump++;
                             }
                             LeaveCriticalSection( &cs );
+                        }
+                    }
+
+                    // damaged-building census: the repair pipeline's demand side.
+                    // repair_stop + no deliveries = the permanent crane-weld class
+                    if ( m_plUnits != NULL )
+                    {
+                        int  iDmgCnt = 0, iRsCnt = 0, iDDump = 0;
+                        char szD[224];
+                        int  nD = sprintf( szD, "[DMGSTAT] plyr %d |", m_iPlayer );
+                        POSITION posD = m_plUnits->GetHeadPosition( );
+                        while ( posD != NULL )
+                        {
+                            CAIUnit* pD = (CAIUnit*)m_plUnits->GetNext( posD );
+                            if ( pD == NULL || pD->GetOwner( ) != m_iPlayer || pD->GetType( ) != CUnit::building )
+                                continue;
+                            EnterCriticalSection( &cs );
+                            CBuilding* pDB = theBuildingMap.GetBldg( pD->GetID( ) );
+                            if ( pDB != NULL && pDB->GetConstDone( ) == -1 && pDB->GetDamagePer( ) < 100 )
+                            {
+                                iDmgCnt++;
+                                if ( pDB->IsFlag( CUnit::repair_stop ) )
+                                    iRsCnt++;
+                                if ( iDDump < 3 )
+                                {
+                                    iDDump++;
+                                    nD += sprintf( szD + nD, " %lu@%d,%d d%d rs%d s%d",
+                                                   (unsigned long)pD->GetID( ), pDB->GetHex( ).X( ),
+                                                   pDB->GetHex( ).Y( ), pDB->GetDamagePer( ),
+                                                   (int)pDB->IsFlag( CUnit::repair_stop ),
+                                                   pDB->GetStore( CMaterialTypes::steel ) );
+                                }
+                            }
+                            LeaveCriticalSection( &cs );
+                        }
+                        if ( iDmgCnt )
+                        {
+                            sprintf( szD + nD, " | dmgd %d repstop %d\n", iDmgCnt, iRsCnt );
+                            OutputDebugStringA( szD );
                         }
                     }
 
