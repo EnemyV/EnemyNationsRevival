@@ -474,6 +474,7 @@ class CPlayer : public CObject
     int           GetExists( int iIndex ) const { return m_piBldgExists[iIndex]; }
     void          AddExists( int iIndex, int iNum ) { m_piBldgExists[iIndex] += iNum; }
     CRsrchStatus& GetRsrch( int iInd ) { return ( m_aRsrch.ElementAt( iInd ) ); }
+    int           GetRsrchSize( ) const { return ( (int)m_aRsrch.GetSize( ) ); }
     BOOL          CanRsrch( int iIndex );
 
     // Bridge building is unlocked by EITHER the full Bridges tech or the early

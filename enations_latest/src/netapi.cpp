@@ -3506,11 +3506,20 @@ void CGame::ProcessMessage(CNetCmd* pCmd )
             OutputDebugStringA("set_rsrch: player not found\n");
             break;
         }
-        int        iOn  = pPlr->GetRsrchItem( );
-        if ( iOn > 0 )
+        int        iSize = pPlr->GetRsrchSize( );
+        int        iOn   = pPlr->GetRsrchItem( );
+        if ( iOn > 0 && iOn < iSize )
         {
-            CRsrchStatus* pRs = &( pPlr->GetRsrch( pPlr->GetRsrchItem( ) ) );
+            CRsrchStatus* pRs = &( pPlr->GetRsrch( iOn ) );
             pRs->m_iPtsDiscovered -= pRs->m_iPtsDiscovered / 10;
+        }
+        // out-of-range topic (garbage from a stale/reused message buffer): drop
+        // it before ANY GetRsrch deref - the lower-bound-only guard below read
+        // ~30GB past the 114-entry array (v48 crash, full dump 2026-07-10)
+        if ( pMsg->m_iTopic < 0 || pMsg->m_iTopic >= iSize )
+        {
+            OutputDebugStringA( "set_rsrch: out-of-range topic dropped\n" );
+            break;
         }
         // Root-cause guard for the CPlayer::Research ASSERT( !m_bDiscovered )
         // crash: set_rsrch is posted asynchronously (e.g. AI CheckResearch ->
