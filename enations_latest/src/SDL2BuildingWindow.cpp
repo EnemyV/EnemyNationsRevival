@@ -2037,11 +2037,15 @@ void SDL2BuildingWindow::Refresh() {
         int basePpl = m_pBldg->GetData()->GetPeople();
         int curPwr = basePwr, curPpl = basePpl;
         const char* mode = "";
-        bool fracking = m_pBldg->IsFlag( CUnit::alt_oil )
+        bool altmine = m_pBldg->IsFlag( CUnit::alt_oil )
                      && ( m_pBldg->IsFlag( CUnit::stopped ) || m_pBldg->IsFlag( CUnit::abandoned ) )
                      && ( m_pBldg->GetData()->GetUnionType() == CStructureData::UTmine )
                      && ( AltOutput::Available( m_pBldg ) != nullptr );
-        if ( fracking ) {
+        if ( altmine && m_pBldg->GetData()->GetType() == CStructureData::iron ) {
+            // Moho Mining revives an exhausted IRON mine at a flat 16 power (matches FrackTick).
+            curPwr = 16; curPpl = basePpl; mode = "  (Moho Mining)";
+        } else if ( altmine ) {
+            // Fracking revives an exhausted OIL well at 2x power (matches the fracking branch).
             curPwr = basePwr * 2; curPpl = basePpl * 2; mode = "  (fracking)";
         } else if ( m_pBldg->IsFlag( CUnit::abandoned ) ) {
             curPwr = 0; curPpl = 0; mode = "  (exhausted)";

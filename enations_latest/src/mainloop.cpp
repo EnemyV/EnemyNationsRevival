@@ -2894,11 +2894,11 @@ void CMineBuilding::FrackTick( )
 {
     ASSERT_STRICT( GetData( )->GetUnionType( ) == CStructureData::UTmine );
 
-    // Running an exhausted mine HOT. Moho Mining (iron mine) draws 10x the mine's normal power;
-    // Fracking (oil well) draws 2*(1.5x + 1). (A normal stopped building draws only half power.)
-    // Plus the building's people. (Energy doubled per operator.)
+    // Running an exhausted mine HOT. Moho Mining (iron mine) draws a flat 16 power -- a big,
+    // deliberate drain (a power plant only makes 120). Fracking (oil well) draws 2*(1.5x + 1).
+    // (A normal stopped building draws only half power.) Plus the building's people.
     if ( GetData( )->GetType( ) == CStructureData::iron )
-        GetOwner( )->AddPwrNeed( GetData( )->GetPower( ) * 10 );                         // Moho: 10x
+        GetOwner( )->AddPwrNeed( 16 );                                                  // Moho: flat 16
     else
         GetOwner( )->AddPwrNeed( ( ( ( GetData( )->GetPower( ) * 3 ) / 2 ) + 1 ) * 2 );  // Fracking: 2*(1.5x + 1)
     GetOwner( )->AddPplNeedBldg( GetData( )->GetPeople( ) );
