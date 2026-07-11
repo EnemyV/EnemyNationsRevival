@@ -6203,6 +6203,21 @@ void CWndArea::SetMouseState( )
             return;
         }
 
+    // A truck can enter ANY building to load/unload -- steal from enemies, gift to allies (or
+    // vice versa): emergent truck gameplay, NO relations check (operator). The sim already
+    // supports it (CanEnterBldg lets a transport into any building; DoCommandAt's lmb_goto and
+    // Load/Unload don't check the building's owner) -- the own-buildings-only gate below is the
+    // only thing that blocked issuing the order for a foreign building. Pure-truck selection
+    // only (mixed/armed selections fall through to attack); repair centers keep their handling.
+    if ( ( pUnitOn != NULL ) && ( pUnitOn->GetUnitType( ) == CUnit::building ) &&
+         ( m_uFlags & truck ) && !( m_uFlags & non_truck ) &&
+         ( ( (CBuilding*)pUnitOn )->GetData( )->GetType( ) != CStructureData::repair ) )
+    {
+        AreaApplyCursor( m_hCurGoto[m_aa.m_iZoom] );
+        m_uMouseMode = lmb_goto;
+        return;
+    }
+
     // if its mine we can select it
     if ( ( pUnitOn != NULL ) && ( pUnitOn->GetOwner( )->IsMe( ) ) )
     {
