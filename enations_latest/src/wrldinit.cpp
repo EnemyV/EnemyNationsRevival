@@ -333,6 +333,13 @@ struct WorldTypeGen
     int  fillerType;
 };
 
+// The world type actually used for THIS generation. Set once at the top of
+// CGameMap::Init: normally just theGame.m_iWorldType, but WORLD_RANDOM is
+// resolved there into a concrete preset (rolled off the shared, already-seeded
+// RNG so every MP client lands on the SAME planet). SetRandomTerrainBlock reads
+// this instead of theGame.m_iWorldType so the whole pass agrees on the type.
+static int s_iWorldTypeGen = WORLD_DEFAULT;
+
 static WorldTypeGen GetWorldTypeGen( int wt )
 {
     switch ( wt )
@@ -481,8 +488,14 @@ void CGameMap::Init( int iSide, int iSideSize, int iScenario )
     // Generate the dominant terrain regions (ocean by default). The world-type preset
     // chosen on the New Game screen decides WHICH tile gets painted and in WHAT shape;
     // "ocean is just a tile type that can be swapped out". WORLD_DEFAULT keeps the
-    // legacy behavior: a random ocean style, and only when there are >6 players.
-    WorldTypeGen wtg = GetWorldTypeGen( theGame.m_iWorldType );
+    // vanilla behavior: a random ocean style, and only when there are >6 players.
+    // WORLD_RANDOM resolves HERE into one of the concrete presets — the roll comes
+    // from the shared game seed (SetSeed ran in CreateNewWorld), so all MP clients
+    // resolve to the identical planet type.
+    s_iWorldTypeGen = theGame.m_iWorldType;
+    if ( s_iWorldTypeGen == WORLD_RANDOM )
+        s_iWorldTypeGen = WORLD_BIG_OCEAN + ( ( MyRand( ) >> 8 ) % ( WORLD_NUM - WORLD_BIG_OCEAN ) );
+    WorldTypeGen wtg = GetWorldTypeGen( s_iWorldTypeGen );
     if ( wtg.bForce || theGame.m_iWorldGenCount > 6 )   // MP parity: frozen count (Bug 2)
         GenerateOcean( iNumBlks, piBlks, iSide, wtg.fillType, wtg.oceanStyle, wtg.bDominant, iOceansLeft, theGame );
 
@@ -2081,7 +2094,8 @@ void CGameMap::SetRandomTerrainBlock( int* piBlks, int iInd )
 {
     // Planet themes (Mountain/Badlands/Desert) bias the leftover land toward the theme
     // terrain so the whole world reads as that type, while still leaving some variety.
-    int themeFill = GetWorldTypeGen( theGame.m_iWorldType ).fillerType;
+    // (s_iWorldTypeGen = the type resolved at the top of Init, incl. a WORLD_RANDOM roll.)
+    int themeFill = GetWorldTypeGen( s_iWorldTypeGen ).fillerType;
     if ( themeFill != 0 )
     {
         if ( ( MyRand( ) >> 11 ) % 4 != 0 )  // ~75% theme terrain, 25% random variety
@@ -2089,6 +2103,18 @@ void CGameMap::SetRandomTerrainBlock( int* piBlks, int iInd )
             piBlks[iInd] = themeFill;
             return;
         }
+    }
+
+    // WORLD_DEFAULT plays it vanilla: the original filler rolled only ocean (-1),
+    // desert (-2) or swamp (-3) — (rand & 3) with 0 remapped to desert/swamp — no
+    // plains bucket and no rare mountain/badlands surprises.
+    if ( s_iWorldTypeGen == WORLD_DEFAULT )
+    {
+        int iRtn = ( MyRand( ) >> 11 ) & 0x03;
+        if ( iRtn == 0 )
+            iRtn = ( ( MyRand( ) >> 10 ) & 0x01 ) + 2;
+        piBlks[iInd] = -iRtn;
+        return;
     }
 
     int iRtn = ( MyRand( ) >> 11 ) % 5;  // 0�4

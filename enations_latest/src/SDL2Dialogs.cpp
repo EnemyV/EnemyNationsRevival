@@ -26,10 +26,12 @@
 
 // World-type presets shown in the Create dialogs. The list index is the EWorldType
 // value (terrain.h) and is stored on m_iWorldType / synced via CNetStart, so order
-// here must match the enum. Entry 0 keeps the original random behavior.
+// here must match the enum. Entry 0 = vanilla generation; entry 1 rolls one of the
+// concrete presets below at generation time (seed-synced, resolved in CGameMap::Init).
 static const std::vector<std::string>& WorldTypeLabels() {
     static const std::vector<std::string> labels = {
-        "Default (random)",
+        "Default",
+        "Random",
         "Big Ocean",
         "Strip Ocean",
         "Scattered Ocean",
@@ -66,6 +68,47 @@ static void PopulateWorldTypeList(SDL2Listbox* lst) {
     if (sel < 0 || sel >= (int)WorldTypeLabels().size()) sel = 0;
     lst->SetSelected(sel);
     lst->EnsureVisible(sel);
+}
+
+// ============================================================================
+// SDL2WorldGenWidgets — the ONE implementation of the world-generation settings
+// group, embedded by both SDL2CreateSingleDialog and SDL2CreateNetDialog.
+// ============================================================================
+int SDL2WorldGenWidgets::AddTo(SDL2Dialog* dlg, int lx, int y, int w, int rowH) {
+    // World type — full-width preset list
+    dlg->AddWidget<SDL2GroupBox>(lx - 8, y - 8, w + 16, rowH * 5 + 16, "World Type");
+    lstWorldType = dlg->AddWidget<SDL2Listbox>(lx, y + 4, w, rowH * 5);
+    PopulateWorldTypeList(lstWorldType);
+
+    // Rivers — density slider (0 = none, 60 = classic baseline, 100 = lots).
+    // Value feeds MakeRiversFlow's accumulation threshold; synced via CNetStart.
+    int rvY = y + rowH * 5 + 18;
+    int savedRivers = std::max(0, std::min(100, (int)EnGetProfileInt("Create", "Rivers", 60)));
+    lblRivers = dlg->AddWidget<SDL2Label>(lx, rvY, 110, rowH, "Rivers: " + std::to_string(savedRivers) + "%");
+    sldRivers = dlg->AddWidget<SDL2Slider>(lx + 115, rvY, w - 115, rowH, 0, 100, savedRivers,
+        [this](int v) { if (lblRivers) lblRivers->SetText("Rivers: " + std::to_string(v) + "%"); });
+    if (sldRivers) sldRivers->SetShowValue(false);  // label shows the value; slider's own readout overflows the dialog
+
+    // Ocean — size slider (0 = none, 50 = baseline ~= old average, 100 = lots).
+    // Value biases GenerateOcean's random block count; synced via CNetStart.
+    int ocY = rvY + rowH + 6;
+    int savedOcean = std::max(0, std::min(100, (int)EnGetProfileInt("Create", "Ocean", 50)));
+    lblOcean = dlg->AddWidget<SDL2Label>(lx, ocY, 110, rowH, "Ocean: " + std::to_string(savedOcean) + "%");
+    sldOcean = dlg->AddWidget<SDL2Slider>(lx + 115, ocY, w - 115, rowH, 0, 100, savedOcean,
+        [this](int v) { if (lblOcean) lblOcean->SetText("Ocean: " + std::to_string(v) + "%"); });
+    if (sldOcean) sldOcean->SetShowValue(false);  // label shows the value; slider's own readout overflows the dialog
+
+    return ocY + rowH;
+}
+
+int SDL2WorldGenWidgets::WorldType() const {
+    return lstWorldType ? std::max(0, lstWorldType->GetSelected()) : 0;
+}
+int SDL2WorldGenWidgets::Rivers() const {
+    return sldRivers ? sldRivers->GetValue() : 60;
+}
+int SDL2WorldGenWidgets::Ocean() const {
+    return sldOcean ? sldOcean->GetValue() : 50;
 }
 
 // ============================================================================
@@ -255,29 +298,10 @@ void SDL2CreateSingleDialog::OnInit() {
     m_radStartPos = AddWidget<SDL2RadioGroup>(rx, y + rowH * 3 + 14, colW, rowH * 4,
         std::vector<std::string>{"Minimal Civilian", "Full Civilian", "Minimal Military", "Full Military"}, savedPos);
 
-    // World type — full-width preset list below the two columns
+    // World type + Rivers/Ocean sliders — the shared world-gen group (also used
+    // by the network create dialog) below the two columns
     int wtY = y + rowH * 8 + 28;
-    AddWidget<SDL2GroupBox>(lx - 8, wtY - 8, m_width - 24, rowH * 5 + 16, "World Type");
-    m_lstWorldType = AddWidget<SDL2Listbox>(lx, wtY + 4, m_width - 40, rowH * 5);
-    PopulateWorldTypeList(m_lstWorldType);
-
-    // Rivers — density slider (0 = none, 60 = classic baseline, 100 = lots).
-    // Value feeds MakeRiversFlow's accumulation threshold; synced via CNetStart.
-    int rvY = wtY + rowH * 5 + 18;
-    int savedRivers = std::max(0, std::min(100, (int)EnGetProfileInt("Create", "Rivers", 60)));
-    m_lblRivers = AddWidget<SDL2Label>(lx, rvY, 110, rowH, "Rivers: " + std::to_string(savedRivers) + "%");
-    m_sldRivers = AddWidget<SDL2Slider>(lx + 115, rvY, m_width - 40 - 115, rowH, 0, 100, savedRivers,
-        [this](int v) { if (m_lblRivers) m_lblRivers->SetText("Rivers: " + std::to_string(v) + "%"); });
-    if (m_sldRivers) m_sldRivers->SetShowValue(false);  // label shows the value; slider's own readout overflows the dialog
-
-    // Ocean — size slider (0 = none, 50 = baseline ~= current average, 100 = lots).
-    // Value biases GenerateOcean's random block count; keeps randomness.
-    int ocY = rvY + rowH + 6;
-    int savedOcean = std::max(0, std::min(100, (int)EnGetProfileInt("Create", "Ocean", 50)));
-    m_lblOcean = AddWidget<SDL2Label>(lx, ocY, 110, rowH, "Ocean: " + std::to_string(savedOcean) + "%");
-    m_sldOcean = AddWidget<SDL2Slider>(lx + 115, ocY, m_width - 40 - 115, rowH, 0, 100, savedOcean,
-        [this](int v) { if (m_lblOcean) m_lblOcean->SetText("Ocean: " + std::to_string(v) + "%"); });
-    if (m_sldOcean) m_sldOcean->SetShowValue(false);  // label shows the value; slider's own readout overflows the dialog
+    m_worldGen.AddTo(this, lx, wtY, m_width - 40, rowH);
 
     AddOKCancelButtons();
 }
@@ -286,9 +310,9 @@ void SDL2CreateSingleDialog::OnOK() {
     m_iAiLevel = m_radAiLevel->GetSelected();
     m_iWorldSize = m_radWorldSize->GetSelected();
     m_iStartPos = m_radStartPos->GetSelected();
-    m_iWorldType = m_lstWorldType ? std::max(0, m_lstWorldType->GetSelected()) : 0;
-    m_iRivers = m_sldRivers ? m_sldRivers->GetValue() : 60;
-    m_iOcean = m_sldOcean ? m_sldOcean->GetValue() : 50;
+    m_iWorldType = m_worldGen.WorldType();
+    m_iRivers = m_worldGen.Rivers();
+    m_iOcean = m_worldGen.Ocean();
     m_iNumAi = atoi(m_edtNumAi->GetText().c_str());
     if (m_iNumAi <= 0) m_iNumAi = 1;
     EndDialog(1);
@@ -886,19 +910,11 @@ void SDL2CreateNetDialog::OnInit() {
         std::vector<std::string>{"Minimal Civilian", "Full Civilian", "Minimal Military", "Full Military"},
         std::max(0, std::min(3, (int)EnGetProfileInt("Create", "StartPosition", 1))));
 
-    // World type — full-width preset list below the two columns
-    int wtY = y + rowH * 9 + 16;
-    AddWidget<SDL2Label>(lx, wtY, colW, rowH, "World Type:");
-    m_lstWorldType = AddWidget<SDL2Listbox>(lx, wtY + rowH, m_width - 40, rowH * 5);
-    PopulateWorldTypeList(m_lstWorldType);
-
-    // Rivers — density slider (0 = none, 60 = classic baseline, 100 = lots).
-    // Host's value rides CNetStart so every client generates the identical map.
-    int rvY = wtY + rowH * 6 + 10;
-    int savedRivers = std::max(0, std::min(100, (int)EnGetProfileInt("Create", "Rivers", 60)));
-    m_lblRivers = AddWidget<SDL2Label>(lx, rvY, 110, rowH, "Rivers: " + std::to_string(savedRivers) + "%");
-    m_sldRivers = AddWidget<SDL2Slider>(lx + 115, rvY, m_width - 40 - 115, rowH, 0, 100, savedRivers,
-        [this](int v) { if (m_lblRivers) m_lblRivers->SetText("Rivers: " + std::to_string(v) + "%"); });
+    // World type + Rivers/Ocean sliders — the shared world-gen group (also used
+    // by the single-player create dialog). Host's values ride CNetStart so every
+    // client generates the identical map.
+    int wtY = y + rowH * 9 + 22;
+    m_worldGen.AddTo(this, lx, wtY, m_width - 40, rowH);
 
     // Ocean — size slider (0 = none, 50 = baseline ~= current average, 100 = lots).
     // Host's value rides CNetStart so every client generates the identical map.
@@ -924,9 +940,9 @@ void SDL2CreateNetDialog::OnOK() {
     m_iAiLevel = m_radAiLevel->GetSelected();
     m_iWorldSize = m_radWorldSize->GetSelected();
     m_iStartPos = m_radStartPos->GetSelected();
-    m_iWorldType = m_lstWorldType ? std::max(0, m_lstWorldType->GetSelected()) : 0;
-    m_iRivers = m_sldRivers ? m_sldRivers->GetValue() : 60;
-    m_iOcean = m_sldOcean ? m_sldOcean->GetValue() : 50;
+    m_iWorldType = m_worldGen.WorldType();
+    m_iRivers = m_worldGen.Rivers();
+    m_iOcean = m_worldGen.Ocean();
     m_iNumAi = atoi(m_edtNumAi->GetText().c_str());
     if (m_iNumAi < 0) m_iNumAi = 0;
     m_iPort = atoi(m_edtPort->GetText().c_str());
