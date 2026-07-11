@@ -2160,7 +2160,8 @@ SkipPixel1:
             m_eAnim(eAnim),
             m_bEnabled(TRUE),
             m_bPaused(FALSE),
-            m_bOneShot(FALSE) {
+            m_bOneShot(FALSE),
+            m_bHalfSpeed(FALSE) {
         Reset();
         SetOneShot(bOneShot);
     }
@@ -2177,6 +2178,7 @@ SkipPixel1:
             DWORD dwCurTime = theGame.GettimeGetTime();
             DWORD dwElapsedTime = dwCurTime - m_dwLastTime;
             DWORD dwHoldTime = uHolds * 1000 / FRAME_RATE;
+            if (m_bHalfSpeed) dwHoldTime *= 2;   // fracking well pumps at half speed
 
             if (dwElapsedTime >= dwHoldTime) {
                 m_iFrame++;

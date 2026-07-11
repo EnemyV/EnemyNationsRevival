@@ -1024,6 +1024,7 @@ public:
 	void	Enable	 ( BOOL bEnable  );
 	void	Pause		 ( BOOL bPause   );
 	void	SetOneShot( BOOL bOneShot );
+	void	SetHalfSpeed( BOOL b )	{ m_bHalfSpeed = b; }	// 2x frame hold (fracking wells)
 
 	BOOL	IsOneShot() const	{ return m_bOneShot; }
 	BOOL	IsEnabled() const	{ return m_bEnabled; }
@@ -1047,9 +1048,10 @@ private:
 
 	DWORD	m_dwLastTime;
 	int	m_iFrame;
-	BOOL	m_bEnabled;	
+	BOOL	m_bEnabled;
 	BOOL	m_bOneShot;
 	BOOL	m_bPaused;
+	BOOL	m_bHalfSpeed;
 };
 
 //------------------------------- C T i l e -------------------------------

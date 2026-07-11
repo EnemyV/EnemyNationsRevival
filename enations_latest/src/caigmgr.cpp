@@ -11058,7 +11058,7 @@ void CAIGoalMgr::Load( CArchive& ar, CAIMap* pMap, CAIUnitList* plUnits, CAIOpFo
             else
                 pTask->SetStatus( INPROCESS_TASK );  // held by a unit -> not free to re-hand
         }
-#ifdef _WIN32
+#if EN_AI_PROBES_ECON && defined(_WIN32)
         if ( iWeldFreed )
         {
             char szW[96];

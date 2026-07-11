@@ -916,14 +916,6 @@ void SDL2CreateNetDialog::OnInit() {
     int wtY = y + rowH * 9 + 22;
     m_worldGen.AddTo(this, lx, wtY, m_width - 40, rowH);
 
-    // Ocean — size slider (0 = none, 50 = baseline ~= current average, 100 = lots).
-    // Host's value rides CNetStart so every client generates the identical map.
-    int ocY = rvY + rowH + 6;
-    int savedOcean = std::max(0, std::min(100, (int)EnGetProfileInt("Create", "Ocean", 50)));
-    m_lblOcean = AddWidget<SDL2Label>(lx, ocY, 110, rowH, "Ocean: " + std::to_string(savedOcean) + "%");
-    m_sldOcean = AddWidget<SDL2Slider>(lx + 115, ocY, m_width - 40 - 115, rowH, 0, 100, savedOcean,
-        [this](int v) { if (m_lblOcean) m_lblOcean->SetText("Ocean: " + std::to_string(v) + "%"); });
-    if (m_sldOcean) m_sldOcean->SetShowValue(false);  // label shows the value; slider's own readout overflows the dialog
 
     AddOKCancelButtons();
 }

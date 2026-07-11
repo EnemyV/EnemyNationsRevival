@@ -3503,7 +3503,9 @@ void CGame::ProcessMessage(CNetCmd* pCmd )
         if (!pPlr)
         {
             
+#if EN_AI_PROBES_ECON && defined(_WIN32)
             OutputDebugStringA("set_rsrch: player not found\n");
+#endif
             break;
         }
         int        iSize = pPlr->GetRsrchSize( );
@@ -3518,7 +3520,9 @@ void CGame::ProcessMessage(CNetCmd* pCmd )
         // ~30GB past the 114-entry array (v48 crash, full dump 2026-07-10)
         if ( pMsg->m_iTopic < 0 || pMsg->m_iTopic >= iSize )
         {
+#if EN_AI_PROBES_ECON && defined(_WIN32)
             OutputDebugStringA( "set_rsrch: out-of-range topic dropped\n" );
+#endif
             break;
         }
         // Root-cause guard for the CPlayer::Research ASSERT( !m_bDiscovered )
@@ -3533,7 +3537,9 @@ void CGame::ProcessMessage(CNetCmd* pCmd )
         if ( pMsg->m_iTopic > 0 &&
              pPlr->GetRsrch( pMsg->m_iTopic ).m_bDiscovered )
         {
+#if EN_AI_PROBES_ECON && defined(_WIN32)
             OutputDebugStringA( "set_rsrch: ignoring already-discovered topic (stale request)\n" );
+#endif
             pPlr->SetRsrchItem( 0 );
             break;
         }
