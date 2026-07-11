@@ -539,12 +539,9 @@ class CPlayer : public CObject
     }
 
     // Gas consumption as a percent of base by highest Fuel Efficiency level researched.
-    // Diminishing-return curve (nerfed): 100% (none) down to 70% (30% saving) at level 10,
-    // then levels 11-12 shave only 1% more each (69% / 68%). Unlocked after gas_turbine;
-    // see CPlayer::Operate's gas deduction. Lower = burns less gas for the same travel.
-    // Levels 1-10 are contiguous (fuel_efficiency_1..10); 11-12 were appended at the END of
-    // the research enum for save parity, so they're counted separately. Guarded for older
-    // saves whose m_aRsrch predates these in-code tiers.
+    // Diminishing to 70% (30% saving) at level 10, then +1% per level to 62% (38%) at 18.
+    // Unlocked after gas_turbine; see CPlayer::Operate. Levels 1-10 contiguous; 11-12, 13-16
+    // and 17-18 were appended at the enum end for save parity, so they're counted separately.
     int GetFuelPct( )
     {
         int iLevels = 0;
@@ -593,17 +590,17 @@ class CPlayer : public CObject
     }
 
     // Flat oil/minute an EXHAUSTED oil well trickles when its Fracking toggle is ON, by
-    // the highest Fracking tier researched: 0 / 5 / 7 / 9 / 11 / 13 (nerfed from the old
-    // 10/15/20/25/30 — halved base + flatter tier gains per operator). Consumed in the
+    // the highest Fracking tier researched: 0 / 5 / 7 / 9 / 11 / 13 / 15 (tier 6 added; base
+    // halved + flatter tier gains vs the old 10/15/20/25/30 per operator). Consumed in the
     // mine production hook (exhausted wells only; at +50% that well's energy). Guarded for
     // older saves whose m_aRsrch predates these in-code tiers. See Fracking (#23).
     int GetFrackOilPerMin( )
     {
         int iTier = 0;
-        // Tier-gate alignment (audit): CanFrack only requires the array to reach fracking_1, so
-        // a player who has just fracking_1 must get the tier-1 trickle, not a silent 0. Clamp the
-        // scan to the tiers the array actually holds (ElementAt is unchecked, so never read past
-        // GetSize()) instead of demanding the full fracking_5 span up front.
+        // Tiers 1-5 are CONTIGUOUS; tier 6 sits at the enum end (unrelated topics in between),
+        // so scan the 1-5 block then test tier 6 on its own -- never walk the gap. Clamp the
+        // block scan to what the array actually holds (ElementAt is unchecked; old/short saves)
+        // so a player with just fracking_1 still gets the tier-1 trickle, not a silent 0.
         int iTop = CRsrchArray::fracking_5;
         if ( m_aRsrch.GetSize( ) <= iTop )
             iTop = m_aRsrch.GetSize( ) - 1;
@@ -667,10 +664,10 @@ class CPlayer : public CObject
     int GetCharcoalPct( )
     {
         int iTier = 0;
-        // Tier-gate alignment (audit): CanCharcoal only requires the array to reach charcoal_1, so
-        // a player who has just charcoal_1 must get the tier-1 throughput, not a silent 0. Clamp the
-        // scan to the tiers the array actually holds (ElementAt is unchecked, so never read past
-        // GetSize()) instead of demanding the full charcoal_4 span up front.
+        // Tiers 1-4 are CONTIGUOUS; tier 5 sits at the enum end (unrelated topics in between),
+        // so scan the 1-4 block then test tier 5 on its own -- never walk the gap. Clamp the
+        // block scan to what the array actually holds (ElementAt is unchecked; old/short saves)
+        // so a player with just charcoal_1 still gets the tier-1 throughput, not a silent 0.
         int iTop = CRsrchArray::charcoal_4;
         if ( m_aRsrch.GetSize( ) <= iTop )
             iTop = m_aRsrch.GetSize( ) - 1;

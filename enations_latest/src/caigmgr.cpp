@@ -472,10 +472,10 @@ void CAIGoalMgr::Assess( CAIMsg* pMsg )
         m_bOceanWorld = TRUE;
         m_bLakeWorld  = TRUE;
 
-        // check with map for too little ocean to matter
-        if ( m_pMap->m_iOcean < ( m_pMap->m_iLand / 5 ) )  // was 10
+        // check with map for too little ocean to matter (9f520f11 eased /3->/5, /4->/10 = more sea worlds)
+        if ( m_pMap->m_iOcean < ( m_pMap->m_iLand / 5 ) )
             m_bOceanWorld = FALSE;
-        if ( m_pMap->m_iLake < ( m_pMap->m_iLand / 10 ) )  // was 20
+        if ( m_pMap->m_iLake < ( m_pMap->m_iLand / 10 ) )
             m_bLakeWorld = FALSE;
 
 #ifdef _LOGOUT
@@ -1148,6 +1148,13 @@ void CAIGoalMgr::AttackPlayer( int iOpforID )
         if ( pGoal == NULL )
         {
             AddGoal( IDG_SHORES );
+            m_bGoalChange = TRUE;
+        }
+        // lake worlds build shipyards too, so give them the make-ship tasks (was ocean-only)
+        pGoal = m_plGoalList->GetGoal( IDG_SEAWAR );
+        if ( pGoal == NULL )
+        {
+            AddGoal( IDG_SEAWAR );
             m_bGoalChange = TRUE;
         }
     }
@@ -2056,8 +2063,8 @@ int CAIGoalMgr::NextResearchTopic( CPlayer* pPlayer )
     // Fallback: the AI's guided path (m_iRDPath) had nothing researchable right now —
     // either it finished its authored tree, or the next path topic is gated behind a
     // tech we ADDED after the path was frozen (the RDPath can't reference indices past
-    // RDPATH_SAVE_COUNT, so any new in-code tech is invisible to it). Pick a RANDOM
-    // available topic so the AI still researches those newer techs (Pontoon Bridges,
+    // RDPATH_SAVE_COUNT, so any new in-code tech is invisible to it). Pick from the
+    // available topics so the AI still researches those newer techs (Pontoon Bridges,
     // the repeatable tiers, fuel efficiency, ...) instead of stalling on them.
     // Prioritize the CHEAPEST available topic (not uniform-random), so the AI grabs the
     // cheap early tiers of the in-code lines first. Two passes: min cost, then random
@@ -4418,9 +4425,9 @@ void CAIGoalMgr::UpdateConstructionTasks( CAIMsg* pMsg )
 #endif
                         }
 
-                        // advanced factories build up to goal ahead of surplus housing (never ahead of a real shortage)
-                        if ( ( iBldg == CStructureData::light_2 || iBldg == CStructureData::heavy ||
-                               iBldg == CStructureData::shipyard_3 ) &&
+                        // advanced LAND factories build up to goal ahead of surplus housing
+                        // (never ahead of a real shortage); shipyards stay below land factories
+                        if ( ( iBldg == CStructureData::light_2 || iBldg == CStructureData::heavy ) &&
                              m_pwaBldgs[iBldg] < m_pwaBldgGoals[iBldg] &&
                              m_pwaBldgs[CStructureData::smelter] && !m_bAptCritical )
                             pTask->SetPriority( (BYTE)90 );
@@ -7514,8 +7521,16 @@ void CAIGoalMgr::UpdateTaskForce( CAITask* pTask, CHexCoord& hcStart, CHexCoord&
                 // time to change the task to SEEK*
                 if ( wNewTask )
                 {
+                    // a landing craft attacks only when loaded (else it holds at its
+                    // staging beach); loaded, it keeps the seek->unload-at-shore chain
+                    if ( pUnit->GetTypeUnit( ) == CTransportData::landing_craft )
+                    {
+                        AiVehSnap snapLC;
+                        if ( AiSnap::ReadVeh( pUnit->GetID( ), snapLC ) && snapLC.iCargoCount > 0 )
+                            pUnit->SetTask( IDT_SEEKATSEA );
+                    }
                     // ships only
-                    if ( pVehData->GetBaseType( ) == CTransportData::ship )
+                    else if ( pVehData->GetBaseType( ) == CTransportData::ship )
                     {
                         pUnit->SetTask( IDT_SEEKATSEA );
                     }

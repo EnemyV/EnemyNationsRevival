@@ -681,7 +681,7 @@ void CRsrchArray::Open( )
     // via CPlayer::GetFrackOilPerMin), at +50% well energy. Each tier costs DOUBLE the
     // previous and chains the prior tier; T1 needs gas_turbine, later tiers also a
     // Fuel-Efficiency level. The AI's frozen research path doesn't pursue these (optional
-    // human tiers). Point/gate values are easy to retune — operator to balance in-game.
+    // human tiers). Point/gate values are easy to retune (operator balances in-game).
     {
         static const char* aszFrName[6] = {
             "Hydraulic Fracturing", "Horizontal Drilling", "Proppant Injection",
