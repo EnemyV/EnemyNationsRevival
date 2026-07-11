@@ -96,8 +96,13 @@ static const int BUILDING_H   = BOX_PAD + HDR_H + ROW_H + 4 + BUILD_BAR_H + BOX_
 static const int REPAIR_H     = BOX_PAD + HDR_H + 16 + 6 +
                                 SDL2BuildingWindow::kRepairRows * ROW_H + BOX_PAD;   // bar + queue rows
 
-static const int PORTRAIT_SRC = 64;   // tile size in the DIB_LIST_UNIT_BUILDINGS sheet
-static const int PORTRAIT     = 72;   // displayed size (88 read too big and clipped; 64 too small)
+static const int PORTRAIT_SRC   = 64;   // tile HEIGHT in the DIB_LIST_UNIT_BUILDINGS sheet
+static const int PORTRAIT_SRC_W = 84;   // tile WIDTH: icons are wider than tall (the original blit
+                                        // took ~84px from srcX=20); cropping a 64px square clipped
+                                        // the icon's right edge (the "icons cut off" report).
+static const int PORTRAIT       = 72;   // displayed HEIGHT
+static const int PORTRAIT_W      = 94;   // displayed WIDTH (keeps the ~84:64 icon aspect at PORTRAIT
+                                        // height; the name/flavor text starts to the right of this).
 // Band height DERIVES from the portrait (portrait + 3px gap + 10px condition bar +
 // 6px breathing room) so resizing the portrait can never clip it against the first
 // section again; floor of 89 keeps room for the name + 3-line flavor + status text.
@@ -1141,18 +1146,17 @@ void SDL2BuildingWindow::SetHdrIcon(SDL2Image* img, int iconIdx, int iconFrame) 
 int SDL2BuildingWindow::BuildHeaderBand(int x, int y, int w) {
     // Portrait from the building-list sprite sheet (row per building type, the icon
     // region starts at srcX=20, each tile 64px tall — same as the unit-list panel).
-    // Crop to the SQUARE 64x64 tile: the sheet row is wider than the tile, and
-    // SDL2Image aspect-fits the whole surface into the widget rect — blitting the
-    // full remaining row width shrank the visible portrait well below 64px (the
-    // "building icons too small" report). Square crop = the tile fills the widget.
+    // The icons are WIDER than tall, so crop the full PORTRAIT_SRC_W-wide tile (not a
+    // 64px square, which clipped the icon's right edge) and show it in a PORTRAIT_W-wide
+    // widget. SDL2Image aspect-fits the surface into the widget, so the whole icon reads.
     if ( m_bldgSheet && m_pBldg ) {
         int type = m_pBldg->GetData()->GetType();
         int srcY = PORTRAIT_SRC * type;
         if ( srcY + PORTRAIT_SRC <= m_bldgSheet->h ) {
             int srcX = 20;
-            int srcW = __min( PORTRAIT_SRC, m_bldgSheet->w - srcX );
+            int srcW = __min( PORTRAIT_SRC_W, m_bldgSheet->w - srcX );
             if ( srcW > 0 ) {
-                auto* img = AddWidget<SDL2Image>( x, y, PORTRAIT, PORTRAIT );
+                auto* img = AddWidget<SDL2Image>( x, y, PORTRAIT_W, PORTRAIT );
                 SDL_Surface* s = SDL_CreateRGBSurface( 0, srcW, PORTRAIT_SRC, 32,
                                                        0x00FF0000, 0x0000FF00, 0x000000FF, 0xFF000000 );
                 if ( s ) {
@@ -1169,10 +1173,10 @@ int SDL2BuildingWindow::BuildHeaderBand(int x, int y, int w) {
 
     // Condition bar directly under the portrait (this is the real "health" display —
     // the green/amber/red fill shows how damaged the building is).
-    m_imgHealth = AddWidget<SDL2Image>( x, y + PORTRAIT + 3, PORTRAIT, 10 );
+    m_imgHealth = AddWidget<SDL2Image>( x, y + PORTRAIT + 3, PORTRAIT_W, 10 );
 
-    int tx = x + PORTRAIT + 10;
-    int tw = w - PORTRAIT - 10;
+    int tx = x + PORTRAIT_W + 10;
+    int tw = w - PORTRAIT_W - 10;
 
     auto* lblName = AddWidget<SDL2Label>( tx, y, tw, 20, m_pBldg->GetData()->GetDesc().c_str() );
     lblName->SetColor( kHeaderBlue );
