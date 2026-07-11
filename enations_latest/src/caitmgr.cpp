@@ -5321,7 +5321,7 @@ void CAITaskMgr::BuildRoad( CAIUnit* pUnit, CAITask* pTask )
             // road, or a hex no road can exist on -> the wait is over; clear
             // the latch and fall through to the normal next-hex/release flow.
             // A just-ordered paveable hex stays latched (road_done will come).
-            BOOL bOver = FALSE;
+            BOOL bOver = FALSE, bDone = FALSE;
             AiVehSnap snapD;
             if ( AiSnap::ReadVeh( pUnit->GetID( ), snapD ) &&
                  ( snapD.iRouteMode == CVehicle::stop || snapD.iRouteMode == CVehicle::cant_deploy ) )
@@ -5331,7 +5331,8 @@ void CAITaskMgr::BuildRoad( CAIUnit* pUnit, CAITask* pTask )
                 if ( pRoadHex != NULL )
                 {
                     int iHT = pRoadHex->GetType( );
-                    bOver = ( iHT == CHex::road || pRoadHex->IsWater( ) || iHT == CHex::coastline );
+                    bDone = ( iHT == CHex::road );
+                    bOver = ( bDone || pRoadHex->IsWater( ) || iHT == CHex::coastline );
                 }
                 LeaveCriticalSection( &cs );
             }
@@ -5340,8 +5341,9 @@ void CAITaskMgr::BuildRoad( CAIUnit* pUnit, CAITask* pTask )
 #if EN_AI_PROBES_ECON && defined(_WIN32)
             {
                 char szR[112];
-                sprintf( szR, "[ROADFREE] plyr %d crane %lu run-end latch cleared at %d,%d (done/unpaveable)\n",
-                         m_iPlayer, (unsigned long)pUnit->GetID( ), hexVeh.X( ), hexVeh.Y( ) );
+                sprintf( szR, "[ROADFREE] plyr %d crane %lu run-end latch cleared at %d,%d (%s)\n",
+                         m_iPlayer, (unsigned long)pUnit->GetID( ), hexVeh.X( ), hexVeh.Y( ),
+                         bDone ? "done" : "unpaveable" );
                 OutputDebugStringA( szR );
             }
 #endif
