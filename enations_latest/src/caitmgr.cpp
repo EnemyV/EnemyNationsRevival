@@ -5313,7 +5313,43 @@ void CAITaskMgr::BuildRoad( CAIUnit* pUnit, CAITask* pTask )
     {
         // unit has already sent message to build road
         if ( pUnit->GetParam( CAI_FUEL ) == CNetCmd::road_new )
-            return;
+        {
+            // completion is message-driven and road_done never comes when the
+            // hex can't take a road (coastline/water pick) or the message was
+            // lost after paving - the crane waited here forever (nudge
+            // treadmill, 25x/crane). Engine truth closes both: hex already a
+            // road, or a hex no road can exist on -> the wait is over; clear
+            // the latch and fall through to the normal next-hex/release flow.
+            // A just-ordered paveable hex stays latched (road_done will come).
+            BOOL bOver = FALSE;
+            AiVehSnap snapD;
+            if ( AiSnap::ReadVeh( pUnit->GetID( ), snapD ) &&
+                 ( snapD.iRouteMode == CVehicle::stop || snapD.iRouteMode == CVehicle::cant_deploy ) )
+            {
+                EnterCriticalSection( &cs );
+                CHex* pRoadHex = theMap.GetHex( hexVeh );
+                if ( pRoadHex != NULL )
+                {
+                    int iHT = pRoadHex->GetType( );
+                    bOver = ( iHT == CHex::road || pRoadHex->IsWater( ) || iHT == CHex::coastline );
+                }
+                LeaveCriticalSection( &cs );
+            }
+            if ( !bOver )
+                return;
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+            {
+                char szR[112];
+                sprintf( szR, "[ROADFREE] plyr %d crane %lu run-end latch cleared at %d,%d (done/unpaveable)\n",
+                         m_iPlayer, (unsigned long)pUnit->GetID( ), hexVeh.X( ), hexVeh.Y( ) );
+                OutputDebugStringA( szR );
+            }
+#endif
+            pUnit->SetParam( CAI_FUEL, 0 );
+            pUnit->SetParam( CAI_DEST_X, 0 );
+            pUnit->SetParam( CAI_DEST_Y, 0 );
+            iX = iY = 0;   // re-enter the pick flow below as "needs a site"
+        }
 
         // is this crane to build a road?
         if ( pUnit->GetParam( CAI_FUEL ) == CNetCmd::build_road )
