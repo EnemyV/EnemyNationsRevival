@@ -42,8 +42,8 @@ const char GameLogFile[] = "ENations.log";
 // so a factory's remaining build queue survives save/load (was lost -> queue truncated).
 #define         VER_RELEASE     7
 
-#define         VER_STRING                              "3.00.000"
-#define         RES_VER_STRING                          "3.00.000\0"
+#define         VER_STRING                              "3.00.005"
+#define         RES_VER_STRING                          "3.00.005\0"
 
 #ifdef _DEBUG
 	#define         VER_FLAGS         VS_FF_DEBUG | VS_FF_PRIVATEBUILD | VS_FF_PRERELEASE
