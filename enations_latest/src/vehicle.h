@@ -548,6 +548,8 @@ protected:
 
 		DWORD					m_dwTimeBlocked;				// we only wait 1.2 * hex transit time when blocked
 		LONG					m_iBlockCount;					// number of consecutive times blocked
+		CHexCoord			m_hexStagnant;					// blocked-stagnation watch: last hex seen blocked at (transient, not saved)
+		DWORD					m_dwStagnantSince;			// real ms when we first saw it blocked at that hex (0 = not watching)
 
 		DWORD					m_dwTimeJump;						// for AI trucks & cranes we transport if can't get there by this time
 

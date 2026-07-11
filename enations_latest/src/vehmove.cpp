@@ -2182,13 +2182,20 @@ void CVehicle::HandleBlocked() {
         return;
     }
 
-    // all rungs exhausted + block count saturated: the give-up is the designed
-    // terminal state - take it NOW. The wait gates below pace the RUNGS, but
-    // micro-oscillation (blocked->moving->traffic->blocked) resets
-    // m_dwTimeBlocked every ~20s, so a permanently boxed unit never crossed
-    // them and livelocked (retries 25, bc 6, tb sawtooth for 55+ min)
-    if ((m_iNumRetries > 15) && (m_iBlockCount > 5))
-        goto GiveUp;
+    // permanently-boxed detector: a unit still on the SAME hex after 90s of
+    // real time despite wanting to move is boxed, not jammed - take the
+    // designed give-up so the AI can re-task it. Transient traffic always
+    // moves the unit within seconds (which resets the watch below); the
+    // vanilla counters can't see this state because every re-path, re-send
+    // and blocked<->traffic oscillation resets them.
+    {
+        CHexCoord _hexNow(m_ptHead);
+        if (m_dwStagnantSince == 0 || m_hexStagnant != _hexNow) {
+            m_hexStagnant     = _hexNow;
+            m_dwStagnantSince = theGame.GettimeGetTime();
+        } else if (theGame.GettimeGetTime() - m_dwStagnantSince > 90 * 1000)
+            goto GiveUp;
+    }
 
     // wait a bit
     if (m_dwTimeBlocked < (DWORD) (m_iBlockCount * m_iSpeed * STEPS_HEX / 4)) {
@@ -2578,6 +2585,7 @@ void CVehicle::HandleBlocked() {
             }
         }
 #endif
+        m_dwStagnantSince = 0;   // one give-up per stagnation window
         _SetRouteMode(stop);
         if (theBuildingHex._GetBuilding(_hexHead) != NULL)
             EnterBuilding();

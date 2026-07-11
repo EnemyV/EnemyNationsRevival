@@ -4887,6 +4887,9 @@ void CVehicle::ctor( )
     m_lOperMod   = 0;
     m_iLastPer   = 0;
 
+    m_hexStagnant     = CHexCoord( 0, 0 );
+    m_dwStagnantSince = 0;
+
     m_iStepsLeft = 0;
     m_iSpeed     = 0;
     m_iXadd      = 0;

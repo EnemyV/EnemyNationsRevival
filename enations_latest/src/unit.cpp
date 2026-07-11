@@ -3040,17 +3040,9 @@ void CVehicle::SetDestAndMode( CSubHex sub, VEH_POS iMode )
     m_iTimesOn      = 0;
     m_iClosest      = INT_MAX;
     m_iNumClosest   = 0;
-    // re-issuing the UNCHANGED destination must not reset recovery progress:
-    // the AI task sweep re-sends its dest every ~30s, which wiped the blocked
-    // ladder (m_iNumRetries/m_dwTimeBlocked/m_iBlockCount) before it could
-    // reach the give-up or AI-teleport rungs - boxed units livelocked at a
-    // fixed hex forever (the frozen scouts / stuck staging armies)
-    if ( m_ptDest != sub )
-    {
-        m_iNumRetries   = 0;
-        m_dwTimeBlocked = 0;
-        m_iBlockCount   = 0;
-    }
+    m_iNumRetries   = 0;
+    m_dwTimeBlocked = 0;
+    m_iBlockCount   = 0;
     m_bFlags &= ~told_ai_stop;
 
     // for a building there is only one entrance
