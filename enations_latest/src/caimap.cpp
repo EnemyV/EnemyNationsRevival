@@ -807,9 +807,23 @@ BOOL CAIMap::ConnectRoad( CHexCoord& hexFrom, CHexCoord& hexTo )
 		CHexCoord hexGame;
 		CHex *pGameHex;
 
+		// owner's bridge reach (tech-derived; 0 = no bridge tech) for the
+		// span-aware crossing cap below
+		int iMaxSpan = 0;
+		{
+			EnterCriticalSection( &cs );
+			CPlayer *pPlyr = pGameData->GetPlayerData( m_iPlayer );
+			if( pPlyr != NULL && pPlyr->CanBridge() )
+				iMaxSpan = pPlyr->GetMaxSpan();
+			LeaveCriticalSection( &cs );
+		}
+
+		int iSkipUntil = 0;   // > i while inside an unbridgeable river run
 		for( int i=0; i<iPathLen; ++i )
 		{
 			CHexCoord *pHex = &pRoadPath[i];
+			if( i < iSkipUntil )
+				continue;
 
 			// travel-passable is not build-able: the planner's A* routes over
 			// coastline (vehicles drive it) but no road can be BUILT there --
@@ -823,6 +837,27 @@ BOOL CAIMap::ConnectRoad( CHexCoord& hexFrom, CHexCoord& hexTo )
 					int iTT = pTerrHex->GetType();
 					if( iTT == CHex::coastline || iTT == CHex::ocean || iTT == CHex::lake )
 						continue;
+
+					// span-aware crossing cap (operator): a consecutive river
+					// run longer than the owner's bridge reach must not enter
+					// the plan - roads dead-ended at unbridgeable crossings.
+					// Runs within reach stay: legitimate bridge candidates.
+					if( iTT == CHex::river )
+					{
+						int j = i;
+						while( j < iPathLen )
+						{
+							CHex* pRunHex = theMap.GetHex( pRoadPath[j] );
+							if( pRunHex == NULL || pRunHex->GetType() != CHex::river )
+								break;
+							++j;
+						}
+						if( ( j - i ) > iMaxSpan )
+						{
+							iSkipUntil = j;   // drop the whole crossing from the plan
+							continue;
+						}
+					}
 				}
 			}
 
