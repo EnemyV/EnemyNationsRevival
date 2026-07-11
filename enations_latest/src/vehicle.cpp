@@ -1138,10 +1138,16 @@ BOOL CVehicle::NextRoadHex() {
     // nope, go to the next hex
     CHexCoord _hex(m_ptHead);
 
+    // a bridge crossing can jump PAST m_hexEnd and then bounce between the
+    // bridge ends forever (an end hex covered by a bridge never == _hex) -
+    // bound the walk; no legit walk exceeds the map size
+    CSize sizeMap = theMap.GetSize();
+    int iStepsLeft = sizeMap.cx + sizeMap.cy;
+
     // skip by buildings
     while (TRUE) {
         // if this was the last, shut us down
-        if (m_ptHead.SameHex(m_hexEnd)) {
+        if (m_ptHead.SameHex(m_hexEnd) || (--iStepsLeft < 0)) {
             _SetEventAndRoute(none, stop);
             theGame.Event(EVENT_ROAD_DONE, EVENT_NOTIFY, this);
             return (FALSE);
