@@ -1599,13 +1599,17 @@ void CBuilding::Operate( )
              && AltOutput::Available( this ) )
         {
             ( (CMineBuilding*)this )->FrackTick( );
-            AnimateOperating( TRUE );        // fracking/moho: keep the well animating
+            AnimateOperating( TRUE );        // fracking/moho: keep the well animating...
+            SetAmbientHalfSpeed( TRUE );     // ...at half speed
             return;
         }
 
         // an exhausted well not fracking shows no animation (undo a prior frack-enable)
         if ( ( m_unitFlags & abandoned ) && ( GetData( )->GetUnionType( ) == CStructureData::UTmine ) )
+        {
+            SetAmbientHalfSpeed( FALSE );
             AnimateOperating( FALSE );
+        }
 
         // if stopped we only need half the people & power
         if ( ( m_iConstDone == -1 ) && ( !( m_unitFlags & abandoned ) ) )

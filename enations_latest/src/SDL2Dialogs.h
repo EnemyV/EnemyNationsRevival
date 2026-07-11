@@ -36,6 +36,31 @@ private:
 };
 
 // ============================================================================
+// SDL2WorldGenWidgets — the shared "world generation" settings group: the
+// World Type preset list plus the Rivers and Ocean sliders. ONE implementation
+// (AddTo/readers in SDL2Dialogs.cpp) builds and reads the group for BOTH the
+// single-player and network create dialogs, so a change here updates both.
+// ============================================================================
+struct SDL2WorldGenWidgets {
+    SDL2Listbox* lstWorldType = nullptr;
+    SDL2Label*   lblRivers = nullptr;   // live "Rivers: N%" readout
+    SDL2Slider*  sldRivers = nullptr;
+    SDL2Label*   lblOcean = nullptr;    // live "Ocean: N%" readout
+    SDL2Slider*  sldOcean = nullptr;
+
+    // Build the group in dlg: World Type group box + list at (lx, y), width w,
+    // then the Rivers/Ocean slider rows. Returns the y just below the group.
+    // The slider lambdas capture `this` — embed the struct in the dialog (it
+    // must outlive the widgets and not move).
+    int AddTo(SDL2Dialog* dlg, int lx, int y, int w, int rowH);
+
+    // Read back the selections, with the shared clamps/fallbacks.
+    int WorldType() const;   // EWorldType preset (0 on no selection)
+    int Rivers() const;      // 0-100 (60 = classic baseline)
+    int Ocean() const;       // 0-100 (50 = baseline ~= old average)
+};
+
+// ============================================================================
 // SDL2 Create Single Player Dialog (replaces CDlgCreateSingle)
 // ============================================================================
 class SDL2CreateSingleDialog : public SDL2Dialog {
@@ -48,12 +73,8 @@ private:
     SDL2RadioGroup* m_radAiLevel = nullptr;
     SDL2RadioGroup* m_radWorldSize = nullptr;
     SDL2RadioGroup* m_radStartPos = nullptr;
-    SDL2Listbox* m_lstWorldType = nullptr;
     SDL2EditBox* m_edtNumAi = nullptr;
-    SDL2Slider* m_sldRivers = nullptr;
-    SDL2Label* m_lblRivers = nullptr;   // live "Rivers: N%" readout
-    SDL2Slider* m_sldOcean = nullptr;
-    SDL2Label* m_lblOcean = nullptr;    // live "Ocean: N%" readout
+    SDL2WorldGenWidgets m_worldGen;   // shared with SDL2CreateNetDialog
 
     // Results stored for the caller
 public:
@@ -168,15 +189,11 @@ private:
     SDL2RadioGroup* m_radAiLevel = nullptr;
     SDL2RadioGroup* m_radWorldSize = nullptr;
     SDL2RadioGroup* m_radStartPos = nullptr;
-    SDL2Listbox* m_lstWorldType = nullptr;
     SDL2EditBox* m_edtNumAi = nullptr;
     SDL2EditBox* m_edtGameName = nullptr;
     SDL2EditBox* m_edtPlayerName = nullptr;
     SDL2EditBox* m_edtPort = nullptr;
-    SDL2Slider* m_sldRivers = nullptr;
-    SDL2Label* m_lblRivers = nullptr;   // live "Rivers: N%" readout
-    SDL2Slider* m_sldOcean = nullptr;
-    SDL2Label* m_lblOcean = nullptr;    // live "Ocean: N%" readout
+    SDL2WorldGenWidgets m_worldGen;   // shared with SDL2CreateSingleDialog
 public:
     int m_iAiLevel = 0;
     int m_iWorldSize = 1;
@@ -184,7 +201,7 @@ public:
     int m_iWorldType = 0;   // EWorldType preset
     int m_iNumAi = 2;
     int m_iRivers = 60;     // river density 0-100 (60 = baseline)
-    int m_iOcean = 50;      // ocean size 0-100 (50 = baseline)
+    int m_iOcean = 50;      // ocean size 0-100 (50 = baseline ~= old average)
     std::string m_gameName;
     std::string m_playerName;
     int m_iPort = 0;

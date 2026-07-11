@@ -1492,6 +1492,15 @@ void CBuilding::AnimateOperating( BOOL bEnable )
     }
 }
 
+// half-speed the operating ambient(s) — a fracking well's slow pumpjack
+void CBuilding::SetAmbientHalfSpeed( BOOL bHalf )
+{
+    if ( GetData( )->GetBldgFlags( ) & CStructureData::FlOperAmb1 )
+        GetAmbient( CSpriteView::ANIM_FRONT_1 )->SetHalfSpeed( bHalf );
+    if ( GetData( )->GetBldgFlags( ) & CStructureData::FlOperAmb2 )
+        GetAmbient( CSpriteView::ANIM_FRONT_2 )->SetHalfSpeed( bHalf );
+}
+
 // makes a building visible on the screen
 void CBuilding::MakeBldgVisible( )
 {

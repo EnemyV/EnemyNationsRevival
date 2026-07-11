@@ -695,6 +695,7 @@ public:
 		virtual void ConstComplete () { }
 
 		void					AnimateOperating (BOOL bOper);
+		void					SetAmbientHalfSpeed (BOOL bHalf);
 		void					StopUnit () { CUnit::StopUnit (); AnimateOperating (FALSE); }
 		void					ResumeUnit () { CUnit::ResumeUnit (); 
 																	if ( ! IsConstructing () )

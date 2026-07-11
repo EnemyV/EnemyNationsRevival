@@ -523,6 +523,11 @@ protected:
     // Override to handle Cancel
     virtual void OnCancel() { EndDialog(0); }
 
+    // Shared widget groups (built by one implementation, embedded by several
+    // dialogs — e.g. the world-gen group used by both create dialogs) need to
+    // add widgets from outside the dialog's own methods.
+    friend struct SDL2WorldGenWidgets;
+
     // Add a widget to the dialog
     template<typename T, typename... Args>
     T* AddWidget(Args&&... args) {

@@ -22,11 +22,14 @@
 // World generation presets chosen on the New Game screen. The selected value is
 // stored on CCreateBase/CGame (m_iWorldType) and sent to every client inside
 // CNetStart, so all machines run the seed-deterministic generator identically.
-// WORLD_DEFAULT == the legacy behavior (random ocean style, oceans only when >6
-// players). Keep this enum in sync with the dialog menu in SDL2Dialogs.cpp.
+// WORLD_DEFAULT == vanilla generation (random ocean style, oceans only when >6
+// players, classic leftover-block fill). WORLD_RANDOM rolls one of the concrete
+// presets (WORLD_BIG_OCEAN..WORLD_DESERT) at generation time, off the shared
+// game seed. Keep this enum in sync with the dialog menu in SDL2Dialogs.cpp.
 enum EWorldType
 {
-	WORLD_DEFAULT = 0,    // random ocean, only with >6 players (legacy)
+	WORLD_DEFAULT = 0,    // vanilla: random ocean style, only with >6 players
+	WORLD_RANDOM,         // roll a concrete preset below (resolved in CGameMap::Init)
 	WORLD_BIG_OCEAN,      // ocean, grow style
 	WORLD_STRIP_OCEAN,    // ocean, stripe style
 	WORLD_SCATTER_OCEAN,  // ocean, scatter style
