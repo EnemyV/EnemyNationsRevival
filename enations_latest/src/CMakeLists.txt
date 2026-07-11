@@ -526,6 +526,23 @@ else ()
     )
 endif ()
 
+# Stage the original .CUR cursor art next to the binary. On POSIX the Win32 GDI
+# cursor pipeline (GetIconInfo/GetDIBits) is stubbed, so CWndArea loads the .cur
+# files directly from a res/ dir found relative to the binary (area.cpp
+# FindCursorDir / LoadCurFromFile). Without these the custom in-game cursors —
+# select reticle, attack target, road, goto/move — silently fall back to the
+# arrow. Windows compiles the cursors into the exe via lastplnt.rc, so this is a
+# no-op there, but harmless (copy_if_different). Cursors-only, not the whole res/
+# (skips the .rc/.dib/.bmp source art we don't need at runtime).
+file(GLOB EN_CURSOR_FILES "${CMAKE_CURRENT_SOURCE_DIR}/res/*.cur"
+                          "${CMAKE_CURRENT_SOURCE_DIR}/res/*.CUR")
+add_custom_command(TARGET enations POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:enations>/res"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${EN_CURSOR_FILES}
+        "$<TARGET_FILE_DIR:enations>/res"
+    COMMENT "Staging .cur cursor art (res/) next to the binary for the POSIX cursor pipeline"
+)
+
 # Stage the intro/logo videos the menu's PlayVideo loads at runtime (assets/videos/*.mpg).
 # NOT in ENATIONS.DAT — PlayVideo reads loose files (CWD then exe dir) and silently no-ops if
 # missing, which was bug #53 "Replay Introduction does nothing". The real clips are the *_44k.mpg
