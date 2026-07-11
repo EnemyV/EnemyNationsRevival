@@ -652,15 +652,14 @@ CAITask *CAITaskList::GetNavyTask( int iUnitType )
 	//if( pVehData->GetTargetType() != CUnitData::naval )
 	//	return( NULL );
 
-	// some vehicles come into this, which are not naval vehicles
-	// and still need a navy task cause its an amphibious assault
-	// only med_tank + rangers can board a landing craft (see LoadCargo /
-	// LoadTroops), so only they are eligible for the amphibious assault task.
+	// med_tank + rangers board a landing craft, which carries them; all three
+	// belong only to the staged amphibious assault (IDG_SEAINVADE), never a solo raid.
 	BOOL bAmphib = FALSE;
 	switch( iUnitType )
 	{
 		case CTransportData::rangers:
 		case CTransportData::med_tank:
+		case CTransportData::landing_craft:
 			bAmphib = TRUE;
 		default:
 			break;

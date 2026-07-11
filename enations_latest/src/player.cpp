@@ -867,13 +867,19 @@ void CPlayer::UpdateRacialAttributes( int iRsrch )
         m_bSpotting = m_iRsrchItem - CRsrchArray::spot_1 + 1;
         m_bSpotting = __minmax( 0, 3, m_bSpotting );
         break;
-    // spot_4/spot_5 are appended at the END of the enum (not contiguous after spot_3),
+    // spot_4..7 are appended at the END of the enum (not contiguous after spot_3),
     // so map them explicitly. Sight bonus per level is in CUnit::AssignData.
     case CRsrchArray::spot_4:
         m_bSpotting = 4;
         break;
     case CRsrchArray::spot_5:
         m_bSpotting = 5;
+        break;
+    case CRsrchArray::spot_6:
+        m_bSpotting = 6;
+        break;
+    case CRsrchArray::spot_7:
+        m_bSpotting = 7;
         break;
     case CRsrchArray::range_1:
     case CRsrchArray::range_2:

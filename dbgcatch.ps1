@@ -47,6 +47,10 @@ public static class DebugRun {
     [DllImport("kernel32.dll", SetLastError = true)]
     public static extern bool ContinueDebugEvent(uint dwProcessId, uint dwThreadId, uint dwContinueStatus);
     [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern bool DebugSetProcessKillOnExit(bool KillOnExit);
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern bool DebugActiveProcessStop(uint dwProcessId);
+    [DllImport("kernel32.dll", SetLastError = true)]
     public static extern bool ReadProcessMemory(IntPtr hProcess, IntPtr lpBaseAddress, byte[] lpBuffer, uint dwSize, out uint lpNumberOfBytesRead);
     [DllImport("kernel32.dll", SetLastError = true)]
     public static extern bool CloseHandle(IntPtr hObject);
@@ -281,6 +285,7 @@ public static class DebugRun {
         PROCESS_INFORMATION pi;
         bool ok = CreateProcess(null, exePath, IntPtr.Zero, IntPtr.Zero, false, DEBUG_PROCESS | DEBUG_ONLY_THIS_PROCESS, IntPtr.Zero, workDir, ref si, out pi);
         if (!ok) { Console.WriteLine("CreateProcess failed: " + Marshal.GetLastWin32Error()); return -1; }
+        DebugSetProcessKillOnExit(false); // debugger exit must never kill the game
         Console.WriteLine("[debugger] started pid=" + pi.dwProcessId);
 
         // Don't defer — we want immediate symbol loading per module.
@@ -386,7 +391,10 @@ public static class DebugRun {
                 }
                 ContinueDebugEvent(pid, tid, cont);
             }
-            Console.WriteLine("[timeout]");
+            // timeout: DETACH so the game keeps running (abandoning the debug port
+            // would suspend the next ODS-raising thread and orphan the debuggee)
+            DebugActiveProcessStop(pi.dwProcessId);
+            Console.WriteLine("[timeout] detached; game keeps running");
             return -1;
         } finally { Marshal.FreeHGlobal(buf); }
     }

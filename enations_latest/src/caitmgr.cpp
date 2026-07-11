@@ -1431,6 +1431,21 @@ void CAITaskMgr::ConstructionError( CAIMsg* pMsg )
         return;
     }
 
+    // This build was rejected for a non-transient reason (water / steep /
+    // adjacent-building altitude / river). Remember (building,hex) so site
+    // selection won't hand another crane back to the same doomed spot. This is
+    // the backstop for a site that passed the arrival-time orientation check but
+    // was then rejected by the server (e.g. the ground changed in between). Read
+    // it before the task params below are zeroed.
+    {
+        int       iBldgFail = (int)pTask->GetTaskParam( BUILDING_ID );
+        CHexCoord hexFail( 0, 0 );
+        hexFail.X( pTask->GetTaskParam( BUILD_AT_X ) );
+        hexFail.Y( pTask->GetTaskParam( BUILD_AT_Y ) );
+        if ( ( hexFail.X( ) || hexFail.Y( ) ) && m_pGoalMgr->m_pMap->m_pMapUtil != NULL )
+            m_pGoalMgr->m_pMap->m_pMapUtil->AddFailedSite( iBldgFail, hexFail );
+    }
+
     // now unassign both the crane and the task
     ClearTaskUnit( pUnit );
     // UnAssignTask( pTask->GetID(), pTask->GetGoalID() );
@@ -2034,7 +2049,8 @@ BOOL CAITaskMgr::AssignRepair( CAIUnit* pCrane )
                 CBuilding* pBldg = theBuildingMap.GetBldg( pUnitB->GetID( ) );
                 if ( pBldg != NULL )
                 {
-                    if ( pBldg->GetDamagePer( ) < DAMAGE_0 )
+                    // damaged OR an unfinished/orphaned build -> a crane finishes it
+                    if ( pBldg->GetDamagePer( ) < DAMAGE_0 || pBldg->IsConstructing( ) )
                     {
                         bNeedRepair = TRUE;
                         // check for delete in progress
@@ -4795,19 +4811,21 @@ BOOL CAITaskMgr::RepairConstruction( CAIUnit* pUnit )
     // a building to repair has already been selected
     if ( pUnit->GetDataDW( ) )
     {
-        int iDmgPer = 0;
+        int  iDmgPer      = 0;
+        BOOL bConstructing = FALSE;
 
         EnterCriticalSection( &cs );
         CBuilding* pBldg = theBuildingMap.GetBldg( pUnit->GetDataDW( ) );
         if ( pBldg != NULL )
         {
-            hexBldg = pBldg->GetExitHex( );
-            iDmgPer = pBldg->GetDamagePer( );
+            hexBldg       = pBldg->GetExitHex( );
+            iDmgPer       = pBldg->GetDamagePer( );
+            bConstructing = pBldg->IsConstructing( );
         }
         LeaveCriticalSection( &cs );
 
-        // building is fully repaired
-        if ( iDmgPer == DAMAGE_0 )
+        // done only when repaired AND built (an orphaned shell is undamaged but constructing)
+        if ( iDmgPer == DAMAGE_0 && !bConstructing )
             goto DismissUnit;
 
         // crane is already at the building
@@ -4878,7 +4896,8 @@ BOOL CAITaskMgr::RepairConstruction( CAIUnit* pUnit )
                 CBuilding* pBldg = theBuildingMap.GetBldg( pUnitB->GetID( ) );
                 if ( pBldg != NULL )
                 {
-                    if ( pBldg->GetDamagePer( ) < DAMAGE_0 )
+                    // damaged OR an unfinished/orphaned build -> a crane finishes it
+                    if ( pBldg->GetDamagePer( ) < DAMAGE_0 || pBldg->IsConstructing( ) )
                     {
                         bNeedRepair = TRUE;
                         // check for delete in progress
@@ -5265,10 +5284,17 @@ void CAITaskMgr::ConstructBuilding( CAIUnit* pUnit, CAITask* pTask )
         }
         else
         {
-            iDir = 0;
-            // lets slow the AI thread down some more by randomly
-            // selecting an exit orientation for non-veh-exit buildings
-            // HasVehExit
+            // Pick a starting exit orientation exactly as before -- this keeps
+            // the RNG draw pattern identical, so MP/determinism is unaffected --
+            // but then VALIDATE it against the real vehicle instead of building
+            // blindly. The site was chosen at selection time with direction 0
+            // and a sentinel vehicle; since then a rotated footprint may overlap
+            // water, or an adjacent build may have re-leveled the ground. Try the
+            // chosen orientation first, then the rest, and take the first that
+            // FoundationCost accepts (the seaport/shipyard branch above already
+            // does this). Building at an unvalidated random direction was the
+            // root of the "crane stuck at an oil well by the water" bug.
+            int                   iStart   = 0;
             CStructureData const* pBldgData = pGameData->GetStructureData( iBldg );
             if ( pBldgData != NULL )
             {
@@ -5277,13 +5303,64 @@ void CAITaskMgr::ConstructBuilding( CAIUnit* pUnit, CAITask* pTask )
                     // square buildings
                     if ( pBldgData->GetCX( ) == pBldgData->GetCY( ) )
                     {
-                        iDir = pGameData->GetRandom( 3 );
+                        iStart = pGameData->GetRandom( 3 );
                     }
                     else  // non-square buildings
                     {
-                        iDir = pGameData->GetRandom( 1 ) * 2;
+                        iStart = pGameData->GetRandom( 1 ) * 2;
                     }
                 }
+            }
+
+            iDir              = 4;
+            int  iWhy         = 0;
+            BOOL bAnyVehInWay = FALSE;
+            EnterCriticalSection( &cs );
+            pVehicle = theVehicleMap.GetVehicle( pUnit->GetID( ) );
+            if ( pVehicle != NULL )
+            {
+                for ( int k = 0; k < 4; ++k )
+                {
+                    int i = ( iStart + k ) & 3;
+                    // use the game's opinion of building this building
+                    if ( theMap.FoundationCost( hexSite, iBldg, i, (CVehicle const*)pVehicle, NULL, &iWhy ) < 0 )
+                    {
+                        if ( iWhy == CGameMap::veh_in_way )
+                            bAnyVehInWay = TRUE;
+                        continue;
+                    }
+                    iDir = i;
+                    break;
+                }
+            }
+            LeaveCriticalSection( &cs );
+
+            if ( iDir == 4 )
+            {
+                // No legal orientation exists any more. Remember this site so
+                // FindHexOnMaterial()/site selection stops re-selecting it and
+                // re-stranding cranes, then free the crane and re-open the task.
+                // If a *mobile unit* (veh_in_way) was on the footprint it will
+                // likely move, so shelve the spot for just 30s and retry rather
+                // than permanently abandon a good deposit; a terrain-level reason
+                // (water / steep / adjacent altitude) is a permanent blacklist.
+                if ( m_pGoalMgr->m_pMap->m_pMapUtil != NULL )
+                {
+                    if ( bAnyVehInWay )
+                        m_pGoalMgr->m_pMap->m_pMapUtil->AddFailedSiteTemp( iBldg, hexSite, 30 * 1000 );
+                    else
+                        m_pGoalMgr->m_pMap->m_pMapUtil->AddFailedSite( iBldg, hexSite );
+                }
+
+                ClearTaskUnit( pUnit );
+                UnAssignTask( pTask->GetID( ), pTask->GetGoalID( ) );
+
+#ifdef _LOGOUT
+                logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC,
+                           "ConstructBuilding(): player %d no legal orientation for a %d at %d,%d (why=%d) -> blacklisted ",
+                           m_iPlayer, iBldg, hexSite.X( ), hexSite.Y( ), iWhy );
+#endif
+                return;
             }
         }
 
@@ -5384,9 +5461,16 @@ void CAITaskMgr::ConstructBuilding( CAIUnit* pUnit, CAITask* pTask )
                 if ( pUnit->GetParam( CAI_EFFECTIVE ) )
                     return;
 
-                // crane is still moving and enroute to site
+                // crane is still moving and enroute to site -- it is making
+                // progress, so clear the stall timer the give-up below relies on
+                // (this branch is skipped while the crane is blocked/not moving,
+                // so CAI_ROUTE_X only accumulates continuous no-progress time --
+                // a legit long haul to a far site never trips the give-up)
                 if ( bIsMoving && hexDest == hexCrane )
+                {
+                    pUnit->SetParamDW( CAI_ROUTE_X, 0 );
                     return;
+                }
 
                 // check destination to make sure its still open
                 CHex* pHex = theMap.GetHex( hexDest );
@@ -5416,6 +5500,47 @@ void CAITaskMgr::ConstructBuilding( CAIUnit* pUnit, CAITask* pTask )
                         DWORD dwDiff = dwNow - dwUnitTime;
                         if ( dwDiff < 30000 )
                             return;
+
+#ifdef _WIN32
+                        // TEMP DIAGNOSTIC (remove after root-cause): a crane that
+                        // has been stalled >30s on a build task -- dump exactly
+                        // what it's being told to build and where, so we can see
+                        // ground truth instead of inferring. Catch with dbgcatch.
+                        {
+                            char szDbg[256];
+                            sprintf( szDbg,
+                                     "[CRANEPROBE] plyr %d crane %lu bldgType %d site %d,%d veh %d,%d dest %d,%d stalled %lums\n",
+                                     m_iPlayer, (unsigned long)pUnit->GetID( ), iBldg, hexSite.X( ), hexSite.Y( ),
+                                     hexVeh.X( ), hexVeh.Y( ), hexDest.X( ), hexDest.Y( ), (unsigned long)dwDiff );
+                            OutputDebugStringA( szDbg );
+                        }
+#endif
+
+                        // The crane has been unable to make progress onto this
+                        // build hex for a long time -- e.g. several cranes aimed
+                        // at the same site blocking each other, or a mineral/
+                        // refinery hex right at the shore that a land crane cannot
+                        // occupy. It never reaches the on-site arrival branch, so
+                        // the arrival-time placement check never runs; and the
+                        // movement watchdog (HandleStuckVehicles) ignores it
+                        // because it is within 2 hexes of its destination. So it
+                        // would orbit forever. Give up: shelve the site briefly
+                        // (it may just be transient mutual blocking) and free the
+                        // crane so it can do other work.
+                        if ( dwDiff > 90000 )
+                        {
+                            if ( m_pGoalMgr->m_pMap->m_pMapUtil != NULL )
+                                m_pGoalMgr->m_pMap->m_pMapUtil->AddFailedSiteTemp( iBldg, hexSite, 60 * 1000 );
+                            ClearTaskUnit( pUnit );
+                            UnAssignTask( pTask->GetID( ), pTask->GetGoalID( ) );
+
+#ifdef _LOGOUT
+                            logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC,
+                                       "ConstructBuilding(): player %d unit %ld gave up reaching site for a %d -> shelved ",
+                                       m_iPlayer, pUnit->GetID( ), iBldg );
+#endif
+                            return;
+                        }
                     }
                 }
                 // in case the crane is stalled, send goto again

@@ -3813,8 +3813,12 @@ void CGameMap::DiscoverSpritesGpu( CAnimAtr& aa, const CRect& rect )
                 ->Draw( );
             SDL2Sprites::SetCaptureShadow( false );
 
-            // Subtle additive white hit flash (transient overlay; no g_rt / dirty-rect work)
-            EnEmitUnitHitFlash( pbuilding, aa, hexBuilding, ulDirty, 0.6f );
+            // Subtle additive white hit flash (transient overlay; no g_rt / dirty-rect work).
+            // Only when the building's hex is currently visible (not under fog) — a fogged /
+            // remembered building shouldn't show a live damage flash. Mirrors the vehicle loop.
+            CHex* phexB = GetHex( pbuilding->GetHex( ) );
+            if ( phexB != NULL && phexB->GetVisibility( ) )
+                EnEmitUnitHitFlash( pbuilding, aa, hexBuilding, ulDirty, 0.6f );
         }
     }
 

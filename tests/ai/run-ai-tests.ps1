@@ -36,17 +36,20 @@ if (-not $DataFile) {
     $DataFile = Join-Path $here '..\..\enations_latest\data\files\stdgta.dat'
 }
 
-$srcLogic = Join-Path $here 'test_ai_staging.cpp'
-$srcData  = Join-Path $here 'test_ai_data.cpp'
-$srcPaths = Join-Path $here 'test_ai_paths.cpp'
-$exeLogic = Join-Path $outDir 'ai_tests.exe'
-$exeData  = Join-Path $outDir 'ai_data_tests.exe'
-$exePaths = Join-Path $outDir 'ai_path_tests.exe'
-$caigmgr  = Join-Path $here '..\..\enations_latest\src\caigmgr.cpp'
+$srcLogic   = Join-Path $here 'test_ai_staging.cpp'
+$srcData    = Join-Path $here 'test_ai_data.cpp'
+$srcPaths   = Join-Path $here 'test_ai_paths.cpp'
+$srcStopgap = Join-Path $here 'test_ai_stopgap.cpp'
+$exeLogic   = Join-Path $outDir 'ai_tests.exe'
+$exeData    = Join-Path $outDir 'ai_data_tests.exe'
+$exePaths   = Join-Path $outDir 'ai_path_tests.exe'
+$exeStopgap = Join-Path $outDir 'ai_stopgap_tests.exe'
+$caigmgr    = Join-Path $here '..\..\enations_latest\src\caigmgr.cpp'
 
-$clLogic = "cl /nologo /EHsc /std:c++17 /W4 `"$srcLogic`" /Fo`"$outDir\ai_tests.obj`" /Fe`"$exeLogic`""
-$clData  = "cl /nologo /EHsc /std:c++17 /W4 `"$srcData`" /Fo`"$outDir\ai_data.obj`" /Fe`"$exeData`""
-$clPaths = "cl /nologo /EHsc /std:c++17 /W4 `"$srcPaths`" /Fo`"$outDir\ai_paths.obj`" /Fe`"$exePaths`""
+$clLogic   = "cl /nologo /EHsc /std:c++17 /W4 `"$srcLogic`" /Fo`"$outDir\ai_tests.obj`" /Fe`"$exeLogic`""
+$clData    = "cl /nologo /EHsc /std:c++17 /W4 `"$srcData`" /Fo`"$outDir\ai_data.obj`" /Fe`"$exeData`""
+$clPaths   = "cl /nologo /EHsc /std:c++17 /W4 `"$srcPaths`" /Fo`"$outDir\ai_paths.obj`" /Fe`"$exePaths`""
+$clStopgap = "cl /nologo /EHsc /std:c++17 /W4 `"$srcStopgap`" /Fo`"$outDir\ai_stopgap.obj`" /Fe`"$exeStopgap`""
 
 # compile + run logic suite
 cmd /c "`"$vcvars`" >nul 2>&1 && $clLogic && `"$exeLogic`""
@@ -77,5 +80,19 @@ if (Test-Path $caigmgr) {
     Write-Host "[ai_paths] SKIP (no source at $caigmgr)"
 }
 
-if ($logicExit -ne 0 -or $dataExit -ne 0 -or $pathsExit -ne 0) { exit 1 }
+# compile + run stop-gap arithmetic mirror + caigmgr.cpp source lint
+$stopgapExit = 0
+cmd /c "`"$vcvars`" >nul 2>&1 && $clStopgap"
+if ($LASTEXITCODE -ne 0) { exit 2 }
+if (Test-Path $caigmgr) {
+    & $exeStopgap (Resolve-Path $caigmgr).Path
+    $stopgapExit = $LASTEXITCODE
+    if ($stopgapExit -eq 2) { Write-Host "[ai_stopgap] SKIP (cannot open $caigmgr)"; $stopgapExit = 0 }
+} else {
+    # arithmetic mirror still runs with no source path
+    & $exeStopgap
+    $stopgapExit = $LASTEXITCODE
+}
+
+if ($logicExit -ne 0 -or $dataExit -ne 0 -or $pathsExit -ne 0 -or $stopgapExit -ne 0) { exit 1 }
 exit 0

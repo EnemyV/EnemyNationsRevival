@@ -274,6 +274,13 @@ void SDL2FileBrowser::OnFileDblClick(int index) {
     }
 }
 
+void SDL2FileBrowser::OnOK() {
+    // Enter confirms the current filename, exactly like clicking Save/Open.
+    // The base OnOK just EndDialog(1)s without setting m_confirmed or building
+    // the path, so the caller's WasConfirmed() check would skip the save/load.
+    OnConfirm();
+}
+
 void SDL2FileBrowser::OnConfirm() {
     std::string filename;
     if (m_editFilename)

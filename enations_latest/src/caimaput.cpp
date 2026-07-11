@@ -1820,6 +1820,51 @@ int CAIMapUtil::AssessTarget( CBuilding* pBldg, int iKindOf )
 // find the hex, relative to the material needed for the
 // iBldg passed, of the width passed, and return the hex
 //
+// Runtime "don't build here again" memory. Recorded when a crane arrives at a
+// selected site and no legal orientation exists (or the server rejects the
+// build), consulted by the site selectors so they stop returning the doomed
+// hex. Per-player, single-threaded (this AI's thread), not serialized.
+
+// Permanent entry: the site is unbuildable for terrain-level reasons (water /
+// steep / adjacent-building altitude) that will not change on their own.
+void CAIMapUtil::AddFailedSite( int iBldg, const CHexCoord& hex )
+{
+    m_failedBuildSites[MakeSiteKey( iBldg, hex )] = 0;  // 0 == permanent
+}
+
+// Timed entry: a mobile unit is parked on the footprint (FoundationCost said
+// veh_in_way). It will probably move, so shelve the spot only for dwMs -- long
+// enough to stop cranes thrashing on it -- then let it be retried. Never
+// downgrade an existing permanent entry to a temporary one.
+void CAIMapUtil::AddFailedSiteTemp( int iBldg, const CHexCoord& hex, DWORD dwMs )
+{
+    uint64_t key = MakeSiteKey( iBldg, hex );
+
+    std::map<uint64_t, DWORD>::iterator it = m_failedBuildSites.find( key );
+    if ( it != m_failedBuildSites.end( ) && it->second == 0 )
+        return;  // already permanently blacklisted -- keep it that way
+
+    m_failedBuildSites[key] = theGame.GettimeGetTime( ) + dwMs;
+}
+
+BOOL CAIMapUtil::IsFailedSite( int iBldg, const CHexCoord& hex )
+{
+    std::map<uint64_t, DWORD>::iterator it = m_failedBuildSites.find( MakeSiteKey( iBldg, hex ) );
+    if ( it == m_failedBuildSites.end( ) )
+        return FALSE;
+
+    if ( it->second == 0 )
+        return TRUE;  // permanent
+
+    if ( theGame.GettimeGetTime( ) < it->second )
+        return TRUE;  // still inside the temporary window
+
+    // temporary window elapsed -- the blocking unit has had time to move on;
+    // drop the entry so the site is retried.
+    m_failedBuildSites.erase( it );
+    return FALSE;
+}
+
 void CAIMapUtil::FindHexOnMaterial( int iBldg, int iWidthX, int iWidthY, CHexCoord& hexFound )
 {
     // based on the building type, determine
@@ -1998,6 +2043,14 @@ TryTryAgain:
 #endif
                         continue;
                     }
+
+                    // skip sites we've already learned are unbuildable for
+                    // this building type this game -- otherwise a fixed mineral
+                    // deposit whose only footprint overlaps water (or was re-
+                    // leveled by an adjacent build) gets re-selected forever and
+                    // cranes pile up on it. Runtime-only; see AddFailedSite().
+                    if ( IsFailedSite( iBldg, hex ) )
+                        continue;
 
                     // consider if this is buildable
                     if ( AreHexesOpen( MAX_ADJACENT, hex, iWidthX, iWidthY ) )

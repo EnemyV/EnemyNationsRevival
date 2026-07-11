@@ -76,6 +76,9 @@ namespace AltOutput
                                                  // percent added nothing. Applied in CBuilding::Operate.
         AltMat      m_aMulti[kMaxMulti];         // eMultiTrickle: the output lines (else all-zero)
         int         m_nMulti;                    // eMultiTrickle: number of active m_aMulti lines (else 0)
+        int         (*m_pfnRatioIn)(CPlayer*);   // eRatioConsume: optional PER-TIER input ratio override
+                                                 // (units of input per 1 output). nullptr = use m_iRatioIn.
+                                                 // Coal Liquefaction uses this to drop 3:1 -> 2:1 at tier 2.
     };
 
     // The matching def for this building's type, or nullptr. Type-only -- does NOT check the

@@ -11,6 +11,7 @@
 
 #include "caigmgr.hpp"
 
+#include "aisnap.h"  // Tier-B world snapshot (lock-free AI reads) — depleted-mine flag
 #include "caidata.hpp"
 #include "caitargt.h"
 #include "logging.h"  // dave's logging system
@@ -345,6 +346,8 @@ CAIGoalMgr::CAIGoalMgr( BOOL bRestart, int iPlayer, CAIMap* pMap, CAIUnitList* p
     m_bNeedTrucks       = FALSE;
     m_iNeedApt          = FALSE;
     m_iNeedOffice       = FALSE;
+    m_iWealthLevel      = 0;
+    m_bAptCritical      = FALSE;
 
     m_iLastFood = 0;
     m_iScenario = 0;
@@ -442,10 +445,10 @@ void CAIGoalMgr::Assess( CAIMsg* pMsg )
         m_bOceanWorld = TRUE;
         m_bLakeWorld  = TRUE;
 
-        // check with map for too little ocean to matter
-        if ( m_pMap->m_iOcean < ( m_pMap->m_iLand / 5 ) )  // was 10
+        // check with map for too little ocean to matter (9f520f11 eased /3->/5, /4->/10 = more sea worlds)
+        if ( m_pMap->m_iOcean < ( m_pMap->m_iLand / 5 ) )
             m_bOceanWorld = FALSE;
-        if ( m_pMap->m_iLake < ( m_pMap->m_iLand / 10 ) )  // was 20
+        if ( m_pMap->m_iLake < ( m_pMap->m_iLand / 10 ) )
             m_bLakeWorld = FALSE;
 
 #ifdef _LOGOUT
@@ -1120,6 +1123,13 @@ void CAIGoalMgr::AttackPlayer( int iOpforID )
             AddGoal( IDG_SHORES );
             m_bGoalChange = TRUE;
         }
+        // lake worlds build shipyards too, so give them the make-ship tasks (was ocean-only)
+        pGoal = m_plGoalList->GetGoal( IDG_SEAWAR );
+        if ( pGoal == NULL )
+        {
+            AddGoal( IDG_SEAWAR );
+            m_bGoalChange = TRUE;
+        }
     }
 
     // then for each patrol unit, pick best targets and attack
@@ -1775,7 +1785,14 @@ BOOL CAIGoalMgr::CheckAbandonedBuildings( void )
         if ( IsAbandonedBuilding( iBldg ) )
         {
             bHaveAbandoned = TRUE;
-            m_pwaBldgGoals[iBldg] += 1;
+            // NOTE: the goal `+= 1` bump was removed. The count loop
+            // (UpdateVehGoals) now excludes depleted extractors, so a dead mine
+            // already drops m_pwaBldgs[iBldg] below goal and the normal build
+            // machinery (count<goal + the material-shortage path) replaces it on
+            // a fresh deposit. Bumping the goal here would double-compensate and,
+            // because the dead building lingers on the map (IsAbandonedBuilding
+            // stays TRUE), perpetually over-build the mine. We keep the detection
+            // only to signal a construction re-evaluation (bHaveAbandoned).
 
 #ifdef _LOGOUT
             logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC,
@@ -1909,22 +1926,35 @@ int CAIGoalMgr::NextResearchTopic( CPlayer* pPlayer )
     // Fallback: the AI's guided path (m_iRDPath) had nothing researchable right now —
     // either it finished its authored tree, or the next path topic is gated behind a
     // tech we ADDED after the path was frozen (the RDPath can't reference indices past
-    // RDPATH_SAVE_COUNT, so any new in-code tech is invisible to it). Pick a RANDOM
-    // available topic so the AI still researches those newer techs (Pontoon Bridges,
+    // RDPATH_SAVE_COUNT, so any new in-code tech is invisible to it). Pick from the
+    // available topics so the AI still researches those newer techs (Pontoon Bridges,
     // the repeatable tiers, fuel efficiency, ...) instead of stalling on them.
-    // GetRandom is the game's deterministic RNG, so this stays multiplayer-safe.
-    int aiAvail[CRsrchArray::num_types];
-    int nAvail = 0;
+    //
+    // PRIORITIZE THE CHEAPEST available topic (operator): in fallback the AI should grab
+    // low-cost techs first rather than a uniform-random one — steady, efficient progress,
+    // and it climbs the cheap early tiers of the in-code lines (fuel efficiency 1, fracking
+    // 1, ...) instead of gambling its research points on an expensive top-tier. Two passes:
+    // find the minimum point cost among all available topics, then random tie-break among
+    // those that share it. GetRandom is the game's deterministic RNG, so this stays
+    // multiplayer-safe.
+    int iMinCost = 0x7FFFFFFF;
     for ( int i = 1; i < CRsrchArray::num_types; ++i )
-        if ( pPlayer->CanRsrch( i ) )
-            aiAvail[nAvail++] = i;
+        if ( pPlayer->CanRsrch( i ) && theRsrch[i].m_iPtsRequired < iMinCost )
+            iMinCost = theRsrch[i].m_iPtsRequired;
 
-    if ( nAvail > 0 )
+    if ( iMinCost != 0x7FFFFFFF )
     {
-        int iTopic = aiAvail[ pGameData->GetRandom( nAvail ) ];
+        int aiCheapest[CRsrchArray::num_types];
+        int nCheapest = 0;
+        for ( int i = 1; i < CRsrchArray::num_types; ++i )
+            if ( pPlayer->CanRsrch( i ) && theRsrch[i].m_iPtsRequired == iMinCost )
+                aiCheapest[nCheapest++] = i;
+
+        int iTopic = aiCheapest[ pGameData->GetRandom( nCheapest ) ];
 #ifdef _LOGOUT
         logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC,
-                   "CAIGoalMgr::NextResearchTopic() for %d random-fallback %d \n", m_iPlayer, iTopic );
+                   "CAIGoalMgr::NextResearchTopic() for %d cheapest-fallback %d (cost %d) \n",
+                   m_iPlayer, iTopic, iMinCost );
 #endif
         return ( iTopic );
     }
@@ -1968,6 +1998,7 @@ void CAIGoalMgr::CheckPlayer( void )
 
     // The wealth level is limited by the resource with the lowest "level"
     int wealthLevel = min(min(min(min( foodLevel, coalLevel), steelLevel), lumberLevel ), gasLevel);
+    m_iWealthLevel  = wealthLevel;   // expose to UpdateVehGoals (S7)
 
 
     // get hours pass in gametime
@@ -2106,6 +2137,7 @@ void CAIGoalMgr::CheckPlayer( void )
         m_iNeedApt = FALSE;
     else
         m_iNeedApt = TRUE;
+    m_bAptCritical = m_iNeedApt;   // TRUE only if genuinely under-housed, before wealth inflation (S8)
 
     // in the case that the AI is rich, its more interesting for them to expand their city buildings
     // if they have tons of steel, lumber, food, and power, they are rich
@@ -2113,7 +2145,8 @@ void CAIGoalMgr::CheckPlayer( void )
     {
         int multi = 3 + hoursPassed / 2;
         multi *= wealthLevel;
-        
+        if ( multi > 6 ) multi = 6;          // stop the apartment/office runaway (S1)
+
         if ( iOfcCap > iOfcNeed * multi )
             m_iNeedOffice = FALSE;
         else
@@ -2174,7 +2207,7 @@ void CAIGoalMgr::AddPowerTask( )
     }
 
     // make sure that the goalmgr does not go overboard on power
-    if ( m_pwaBldgs[iBldg] > pGameData->m_iSmart )
+    if ( m_pwaBldgs[iBldg] > pGameData->m_iSmart + 4 )   // +4 headroom for late game (S5)
         return;
 
     CAITask* pTask = m_plTasks->FindTask( iTask );
@@ -2839,6 +2872,10 @@ void CAIGoalMgr::GetVehicleNeeds( )
 //
 void CAIGoalMgr::UpdateVehGoals( void )
 {
+    // elapsed game-hours; scales the fleet/mine caps below so a long game keeps
+    // growing its logistics (mirrors CheckPlayer's hoursPassed). Serves S2/S3.
+    int hrs = theGame.GetElapsedSeconds( ) / 3600;
+
     // clear count of goals based on tasks
     for ( int i = 0; i < m_iNumBldgs; ++i )
     {
@@ -2871,6 +2908,23 @@ void CAIGoalMgr::UpdateVehGoals( void )
 
             if ( pUnit->GetType( ) == CUnit::building )
             {
+                // Don't count a DEPLETED resource extractor as a producer — it
+                // makes nothing, so counting it makes the AI think it has enough
+                // mines and never builds replacements (late-game resource
+                // collapse). bAbandoned is the lock-free snapshot flag; gate the
+                // read to the extractor range (lumber..copper) so the hot count
+                // loop pays nothing for ordinary buildings.
+                // (refinery is in this enum range but processes oil rather than
+                // extracting a deposit, so it never depletes — exclude it, matching
+                // CheckAbandonedBuildings' deliberate skip, so a stray flag could
+                // never make the AI over-build refineries.)
+                if ( i >= CStructureData::lumber && i <= CStructureData::copper &&
+                     i != CStructureData::refinery )
+                {
+                    AiBldgSnap snap;
+                    if ( AiSnap::ReadBldg( pUnit->GetID( ), snap ) && snap.bAbandoned )
+                        continue;   // depleted -> not a producer; skip it
+                }
                 if ( i < m_iNumBldgs )
                     m_pwaBldgs[i]++;
             }
@@ -2947,14 +3001,16 @@ void CAIGoalMgr::UpdateVehGoals( void )
     if ( !m_pwaBldgGoals[CStructureData::research] )
         m_pwaBldgGoals[CStructureData::research] = 1;
 
-    m_pwaBldgGoals[CStructureData::oil_well] = iCnt;
-    m_pwaBldgGoals[CStructureData::iron]     = iCnt;
-    m_pwaBldgGoals[CStructureData::coal]     = iCnt;
+    // un-freeze the mine goals so a long game gets raw ore/oil (S4): +1/hr up to +10
+    int mineBonus = ( hrs < 10 ? hrs : 10 );
+    m_pwaBldgGoals[CStructureData::oil_well] = iCnt + mineBonus;
+    m_pwaBldgGoals[CStructureData::iron]     = iCnt + mineBonus;
+    m_pwaBldgGoals[CStructureData::coal]     = iCnt + mineBonus;
 
     // qualified increase in smelters
     if ( m_pwaBldgs[CStructureData::iron] >= m_pwaBldgGoals[CStructureData::iron] &&
          m_pwaBldgs[CStructureData::coal] >= m_pwaBldgGoals[CStructureData::coal] )
-        m_pwaBldgGoals[CStructureData::smelter] += ( iCnt / 2 );
+        m_pwaBldgGoals[CStructureData::smelter] += iCnt;   // was iCnt/2 (S6)
 
     // never need more than one rep fac
     m_pwaBldgGoals[CStructureData::repair] = 1;
@@ -3059,20 +3115,25 @@ void CAIGoalMgr::UpdateVehGoals( void )
     }
 
     iCnt = pGameData->m_iSmart + 1;
+    // time-scaled bonus so the hauling fleet grows in a long game (S3), +1/hr up to +20
+    // extra fleet for a rich AI (S7): 0 until CheckPlayer first runs, so no ordering hazard
+    int wealthBonus = ( m_iWealthLevel < 4 ? m_iWealthLevel : 4 );
+    int truckBonus = ( hrs < 20 ? hrs : 20 ) + 2 * wealthBonus;   // +up to 8 trucks from wealth
     // adjust production of trucks once weapons factorys built
     if ( m_pwaBldgs[CStructureData::light_2] >= m_pwaBldgGoals[CStructureData::light_2] )
-        m_pwaVehGoals[CTransportData::heavy_truck] = ( 4 * iCnt );
+        m_pwaVehGoals[CTransportData::heavy_truck] = ( 4 * iCnt ) + truckBonus;
     else
-        m_pwaVehGoals[CTransportData::heavy_truck] = ( 3 * iCnt );
+        m_pwaVehGoals[CTransportData::heavy_truck] = ( 3 * iCnt ) + truckBonus;
 
-    // stop over production of trucks
-    if ( m_pwaVehGoals[CTransportData::heavy_truck] > ( 4 * iCnt ) )
-        m_pwaVehGoals[CTransportData::heavy_truck] = ( 4 * iCnt );
+    // stop over production of trucks (ceiling raised to match the bonus)
+    if ( m_pwaVehGoals[CTransportData::heavy_truck] > ( 4 * iCnt ) + truckBonus )
+        m_pwaVehGoals[CTransportData::heavy_truck] = ( 4 * iCnt ) + truckBonus;
 
-    // stop over production of cranes
-    if ( m_pwaVehGoals[CTransportData::construction] > ( 2 * iCnt ) )
+    // stop over production of cranes (time-scaled cap, S2): was 2*iCnt; +1/hr up to +12, +up to 4 wealth (S7)
+    int craneCap = 2 * iCnt + ( hrs < 12 ? hrs : 12 ) + wealthBonus;
+    if ( m_pwaVehGoals[CTransportData::construction] > craneCap )
     {
-        m_pwaVehGoals[CTransportData::construction] = ( 2 * iCnt );
+        m_pwaVehGoals[CTransportData::construction] = craneCap;
     }
 
     // increase gunboats and destroyers
@@ -4095,7 +4156,12 @@ void CAIGoalMgr::UpdateConstructionTasks( CAIMsg* pMsg )
                     {
                         if ( m_iNeedApt &&
                              ( iBldg >= CStructureData::apartment_1_1 && iBldg <= CStructureData::apartment_2_4 ) )
-                            pTask->SetPriority( (BYTE)99 );
+                        {
+                            if ( m_bAptCritical )
+                                pTask->SetPriority( (BYTE)99 );   // workers unhoused -> top priority
+                            else
+                                pTask->SetPriority( (BYTE)1 );    // rich-nation expansion: build only with spare cranes
+                        }
 
                         if ( m_iNeedOffice &&
                              ( iBldg >= CStructureData::office_2_1 && iBldg <= CStructureData::office_3_1 ) )
@@ -4187,6 +4253,13 @@ void CAIGoalMgr::UpdateConstructionTasks( CAIMsg* pMsg )
                                        pTask->GetGoalID( ), pTask->GetID( ), pTask->GetPriority( ) );
 #endif
                         }
+
+                        // advanced LAND factories build up to goal ahead of surplus housing
+                        // (never ahead of a real shortage); shipyards stay below land factories
+                        if ( ( iBldg == CStructureData::light_2 || iBldg == CStructureData::heavy ) &&
+                             m_pwaBldgs[iBldg] < m_pwaBldgGoals[iBldg] &&
+                             m_pwaBldgs[CStructureData::smelter] && !m_bAptCritical )
+                            pTask->SetPriority( (BYTE)90 );
                     }
 
                     // this unit type was just lost
@@ -6909,8 +6982,16 @@ void CAIGoalMgr::UpdateTaskForce( CAITask* pTask, CHexCoord& hcStart, CHexCoord&
                 // time to change the task to SEEK*
                 if ( wNewTask )
                 {
+                    // a landing craft attacks only when loaded (else it holds at its
+                    // staging beach); loaded, it keeps the seek->unload-at-shore chain
+                    if ( pUnit->GetTypeUnit( ) == CTransportData::landing_craft )
+                    {
+                        AiVehSnap snapLC;
+                        if ( AiSnap::ReadVeh( pUnit->GetID( ), snapLC ) && snapLC.iCargoCount > 0 )
+                            pUnit->SetTask( IDT_SEEKATSEA );
+                    }
                     // ships only
-                    if ( pVehData->GetBaseType( ) == CTransportData::ship )
+                    else if ( pVehData->GetBaseType( ) == CTransportData::ship )
                     {
                         pUnit->SetTask( IDT_SEEKATSEA );
                     }
@@ -10316,6 +10397,42 @@ void CAIGoalMgr::Load( CArchive& ar, CAIMap* pMap, CAIUnitList* plUnits, CAIOpFo
     catch ( CFileException* /*theException*/ )
     {
         throw( ERR_CAI_BAD_FILE );
+    }
+
+    // ---- Reconcile bound-task status after load ------------------------------
+    // CAITask::m_cStatus is NOT serialized: the loop above rebuilds every task
+    // through the CAITask ctor, which forces UNASSIGNED_TASK. That is wrong for
+    // any task a unit is still bound to. GetConstructionTask()/GetProductionTask()
+    // only ever hand out UNASSIGNED tasks, so an in-progress task reloaded as
+    // UNASSIGNED gets handed to a SECOND unit -- e.g. several cranes stacking on
+    // the exact same build hex -- and a construction crane that already placed
+    // its building loses the COMPLETED_TASK latch (caitmgr.cpp:5236), so it tries
+    // to re-place a building that is already under construction and ends up
+    // deserting it. Both were causing the post-load "cranes pile on one spot,
+    // half-built buildings freeze" symptom. Restore the invariant that a task a
+    // unit holds is not free: promote each bound unit's task out of UNASSIGNED --
+    // COMPLETED for a crane that already issued its build, INPROCESS otherwise.
+    // (Units load before the goal manager, so m_plUnits is fully populated here.)
+    if ( m_plUnits != NULL && m_plTasks != NULL )
+    {
+        POSITION pos = m_plUnits->GetHeadPosition( );
+        while ( pos != NULL )
+        {
+            CAIUnit* pUnit = (CAIUnit*)m_plUnits->GetNext( pos );
+            if ( pUnit == NULL || !pUnit->GetTask( ) )
+                continue;
+
+            CAITask* pTask = m_plTasks->GetTask( pUnit->GetTask( ), pUnit->GetGoal( ) );
+            if ( pTask == NULL || pTask->GetStatus( ) != UNASSIGNED_TASK )
+                continue;
+
+            if ( pUnit->GetTypeUnit( ) == CTransportData::construction &&
+                 pTask->GetTaskParam( ORDER_TYPE ) == CONSTRUCTION_ORDER &&
+                 pUnit->GetParam( CAI_EFFECTIVE ) )
+                pTask->SetStatus( COMPLETED_TASK );  // build already issued -> wait for built/100%
+            else
+                pTask->SetStatus( INPROCESS_TASK );  // held by a unit -> not free to re-hand
+        }
     }
 
     // after a load, the lists should all be reinitialized

@@ -46,6 +46,8 @@ protected:
 	BOOL m_bNeedTrucks;
 	BOOL m_iNeedApt;
 	BOOL m_iNeedOffice;
+	int  m_iWealthLevel;	// cached from CheckPlayer (S7) - extra fleet for a rich AI
+	BOOL m_bAptCritical;	// cached from CheckPlayer (S8) - genuine housing shortage
 
 	int m_iLastFood;
 	int m_iScenario; 	// 0=none, else the number of the current scenario

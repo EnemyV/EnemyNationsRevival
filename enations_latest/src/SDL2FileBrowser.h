@@ -29,6 +29,7 @@ public:
 
 protected:
     void OnInit() override;
+    void OnOK() override;   // Enter -> Confirm (base EndDialog(1) skips the save/load)
 
 private:
     void PopulateList();

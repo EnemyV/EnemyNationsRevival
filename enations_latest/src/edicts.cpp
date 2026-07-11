@@ -96,10 +96,10 @@ const EdictDef g_aEdicts[EDICT_COUNT] =
 
     // EDICT_TOTAL_SURVEILLANCE — Command Center, civ-wide. fVisionMult scales unit spotting
     // range (baked in AssignData + re-derived on toggle; re-clamped to MAX_SPOTTING). Gate: spot_3.
-    { "Total Surveillance", "Civ-wide: +20% unit & building vision.\nCost: +15% power use.",
+    { "Total Surveillance", "Civ-wide: +20% unit & building vision.\nCost: +30% power use.",
       CStructureData::command_center, EDICT_CIVWIDE, CRsrchArray::spot_3,
       1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.20f, 1.0f, 1.0f,
-      0.15f, 0.0f, 0.0f,
+      0.30f, 0.0f, 0.0f,
       1.0f, 1.0f, 1.0f, 1.0f, 1.0f },
 
     // EDICT_DRAFT — Command Center, civ-wide. fInfBuildMult speeds infantry production
