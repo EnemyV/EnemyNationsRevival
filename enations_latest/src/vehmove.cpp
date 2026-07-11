@@ -2561,6 +2561,23 @@ void CVehicle::HandleBlocked() {
 #endif
 
         GiveUp:
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+        // give-up rate meter: root-cause instrument for the post-knot-trio
+        // throughput regression (total is exact; detail lines throttled)
+        if (GetOwner()->IsAI()) {
+            static DWORD s_dwGiveupTotal = 0;
+            ++s_dwGiveupTotal;
+            static DWORD s_dwNextGuLog = 0;
+            if (theGame.GettimeGetTime() >= s_dwNextGuLog) {
+                s_dwNextGuLog = theGame.GettimeGetTime() + 2000;
+                char szG[144];
+                sprintf(szG, "[GIVEUP] total %lu veh %lu vtype %d retries %d bc %ld at %d,%d dest %d,%d\n",
+                        (unsigned long)s_dwGiveupTotal, (unsigned long)GetID(), GetData()->GetType(),
+                        m_iNumRetries, (long)m_iBlockCount, m_ptHead.x, m_ptHead.y, m_ptDest.x, m_ptDest.y);
+                OutputDebugStringA(szG);
+            }
+        }
+#endif
         _SetRouteMode(stop);
         if (theBuildingHex._GetBuilding(_hexHead) != NULL)
             EnterBuilding();

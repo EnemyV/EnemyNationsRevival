@@ -2,6 +2,44 @@
 
 Auto-loaded into every Claude conversation. Keep it short, keep it current.
 
+## ⛔ FIX WORKFLOW — the operator's law (dictated 2026-07-11; READ BEFORE ANY FIX)
+
+Repeated 10+ times across June–July 2026; violations burned a week of churn.
+When you find an issue, you are NOT to do the first fix you can think of:
+
+1. **Analyze the issue. Determine the root cause.** Confirm it with evidence
+   (logs, probes, live memory reads) — *"always try to confirm a root cause if
+   you can before you jump into a fix."*
+2. **Can't find the root cause?** Log the bug (discussion repo,
+   `docs/investigations/`) and move on — we deal with it later. A band-aid is
+   NEVER the fallback.
+3. **The fix must be maintainable, professional, minimal, and at the root** —
+   at the line where the code detects/creates the broken state. Sweepers,
+   watchdogs, rescues, and anything that interrupts a unit's task from outside
+   are band-aids BY DEFINITION: *"sweepers are catch-all bandaids... if we just
+   keep bandaiding it, it'll completely fall apart at some point."* A real root
+   fix should RETIRE an existing band-aid, never add one.
+4. **Confirm the fix: run the game and soak ~30 minutes** (not multi-hour
+   unless asked). The original symptom must be measurably gone.
+5. **Then check for regressions in the same soak** — trucks moving-%,
+   deliveries, new buildings, crane welds, war activity. *"We had one bug with
+   trucks... you bandaided that and that broke cranes... and we basically
+   churned like that for multiple days."*
+6. **Only after 4 AND 5 pass do you move to the next task.** (The next task's
+   soak may overlap the previous task's verification.)
+
+Standing corrections from the same dictations:
+- *"Do not add another Band Aid. We have to fix root causes, otherwise this is
+  never gonna end."*
+- *"I'm not telling you to do anything that I haven't explicitly told you to
+  do."* — no unrequested actions; "answer only" / "only respond" means ZERO
+  tool calls in the reply.
+- *"It worked in an older version. We made a change and broke it."* — when a
+  symptom appears, suspect OUR recent changes first; find the build boundary
+  where the metric regressed before theorizing.
+- One data point is not "fixed": sustained data + counterexamples, and
+  periodically re-verify old fixes for returning bugs.
+
 ## ⚠️ Cross-platform integration + multi-agent coordination (READ FIRST)
 
 We are merging **three platform codebases into one tree** for release **3.00.000**:
