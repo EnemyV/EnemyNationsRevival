@@ -411,14 +411,22 @@ void CAIMgr::Manage( void )
 #endif
 #if EN_AI_PROBES_ECON && defined(_WIN32)
                 {
-                    int iTopic = -1;
+                    int iTopic = -1, iPts = -1, iHave = -1, iFails = -1;
                     EnterCriticalSection( &cs );
                     CPlayer* pPlyr = pGameData->GetPlayerData( m_iPlayer );
                     if ( pPlyr != NULL )
+                    {
                         iTopic = pPlyr->GetRsrchItem( );
+                        iHave  = pPlyr->GetRsrchHave( );
+                        if ( iTopic > 0 && iTopic < pPlyr->GetRsrchSize( ) )
+                            iPts = pPlyr->GetRsrch( iTopic ).m_iPtsDiscovered;
+                    }
                     LeaveCriticalSection( &cs );
+                    if ( m_pGoalMgr != NULL && m_pGoalMgr->m_pMap != NULL )
+                        iFails = m_pGoalMgr->m_pMap->m_iBridgeSpanFails;
                     char szR[128];
-                    sprintf( szR, "[RSRCHSTAT] plyr %d topic %d\n", m_iPlayer, iTopic );
+                    sprintf( szR, "[RSRCHSTAT] plyr %d topic %d pts %d have %d bridgefails %d\n",
+                             m_iPlayer, iTopic, iPts, iHave, iFails );
                     OutputDebugStringA( szR );
                     // queue depth: ~0 = trickle (scheduler flaw); large/growing = backlog
                     {
