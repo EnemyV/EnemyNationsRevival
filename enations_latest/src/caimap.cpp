@@ -811,6 +811,21 @@ BOOL CAIMap::ConnectRoad( CHexCoord& hexFrom, CHexCoord& hexTo )
 		{
 			CHexCoord *pHex = &pRoadPath[i];
 
+			// travel-passable is not build-able: the planner's A* routes over
+			// coastline (vehicles drive it) but no road can be BUILT there --
+			// each flagged coast hex wedged a crane at the run-end latch
+			// (~2/min steady). Rivers STAY flagged: bridge discovery scans the
+			// plan for spans (FindBridgeOnPlan/GetBridgingHexes).
+			{
+				CHex* pTerrHex = theMap.GetHex( *pHex );
+				if( pTerrHex != NULL )
+				{
+					int iTT = pTerrHex->GetType();
+					if( iTT == CHex::coastline || iTT == CHex::ocean || iTT == CHex::lake )
+						continue;
+				}
+			}
+
 			WORD wStatus = GetLocation( pHex->X(), pHex->Y() );
 			if( !(wStatus & MSW_PLANNED_ROAD) &&
 				!(wStatus & MSW_ROAD) &&
