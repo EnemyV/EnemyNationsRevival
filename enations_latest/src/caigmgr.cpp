@@ -7020,10 +7020,10 @@ void CAIGoalMgr::LaunchAssault( CAITask* pTask )
             if ( m_pMap != NULL )
             {
                 CHexCoord hexTheirs( 0, 0 );
+                CHexCoord hexBase( m_pMap->m_iBaseX, m_pMap->m_iBaseY );
                 if ( pGameData->FindNearestBuilding( pOpFor->GetPlayerID( ),
-                         CHexCoord( m_pMap->m_iBaseX, m_pMap->m_iBaseY ), hexTheirs ) )
+                         hexBase, hexTheirs ) )
                 {
-                    CHexCoord hexBase( m_pMap->m_iBaseX, m_pMap->m_iBaseY );
                     int iDist = pGameData->GetRangeDistance( hexBase, hexTheirs );
                     int iHalf = ( pGameData->m_iHexPerBlk * pGameData->m_iBlkPerSide ) / 2;
                     int iPct  = 150 - ( 100 * iDist ) / ( iHalf > 0 ? iHalf : 1 );
