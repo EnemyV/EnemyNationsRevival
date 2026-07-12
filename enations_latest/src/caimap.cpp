@@ -1248,7 +1248,9 @@ BOOL CAIMap::PlanBridgeToward( CHexCoord const& hexAt, CHexCoord const& hexSite 
 			continue;
 
 		// crossing must land on traversable unbuilt ground within the owner's span
-		if( m_pMapUtil->TryBridgeWalk( hexTry, iDir, iMaxSpan, hexEnd ) )
+		// (bRequirePlan FALSE: planning a NEW crossing over raw water - the
+		// plan marks are laid after success, requiring them here = never succeed)
+		if( m_pMapUtil->TryBridgeWalk( hexTry, iDir, iMaxSpan, hexEnd, FALSE ) )
 		{
 			hexBank    = hexTry;
 			bFoundSpan = TRUE;

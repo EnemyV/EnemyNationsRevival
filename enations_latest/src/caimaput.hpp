@@ -222,7 +222,10 @@ public:
 	void FindAssaultHex( CHexCoord& hexTarget, int iTerrain );
 	void FindBridgeHex( CHexCoord& hexSite, CAIUnit *pUnit );
 	BOOL IsBridgeSpan( CHexCoord& hexRiverRoad, CAIUnit *pUnit );
-	BOOL TryBridgeWalk( CHexCoord const& hexStart, int iDir, int iMaxSpan, CHexCoord& hexEnd );
+	// bRequirePlan: TRUE = span hexes must carry road-plan marks (legacy on-plan
+	// validation); FALSE = raw water allowed (PlanBridgeToward lays its marks
+	// AFTER success, so requiring them made the fallback unable to succeed)
+	BOOL TryBridgeWalk( CHexCoord const& hexStart, int iDir, int iMaxSpan, CHexCoord& hexEnd, BOOL bRequirePlan = TRUE );
 	void GetStartSpan( CHexCoord& hexStart, CHexCoord& hexBridge );
 
 	void FindRoadHex( CHexCoord& hexFound );

@@ -3009,8 +3009,10 @@ void CVehicleHex::CheckHex(CSubHex const &_sub) {
         logPrintf(LOG_PRI_CRITICAL, LOG_VEH_MOVE, "*** Vehicle %d at m_cOwn == 0, owns (%d,%d)", pVeh->GetID(), _sub.x,
                   _sub.y);
 #endif
-        TRAP();
-        ASSERT (FALSE);
+        // was TRAP+ASSERT - ReleaseOwnership frees only head/tail/next, so a
+        // live vehicle entering a building can leave a stale 4th claim; this
+        // checker IS the vanilla recovery (crashed the 16:08 soak)
+        EN_TRAP_REMOVED( "CheckHex: claim with m_cOwn==0 - released below" );
         ReleaseHex(_sub, pVeh);
         return;
     }
@@ -3020,8 +3022,7 @@ void CVehicleHex::CheckHex(CSubHex const &_sub) {
         logPrintf(LOG_PRI_CRITICAL, LOG_VEH_MOVE, "*** Vehicle %d at m_cOwn == 1, didn't release (%d,%d)",
                   pVeh->GetID(), _sub.x, _sub.y);
 #endif
-        TRAP();
-        ASSERT (FALSE);
+        EN_TRAP_REMOVED( "CheckHex: stale non-footprint claim - released below" );
         ReleaseHex(_sub, pVeh);
     }
 }

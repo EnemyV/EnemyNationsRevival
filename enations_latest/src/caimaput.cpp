@@ -3175,7 +3175,8 @@ BOOL CAIMapUtil::IsBridgeSpan( CHexCoord& hexRiverRoad, CAIUnit* pUnit )
 // walk the span from hexStart in direction iDir; TRUE + hexEnd when a valid
 // (crane-traversable, unbuilt) landing is found within iMaxSpan
 //
-BOOL CAIMapUtil::TryBridgeWalk( CHexCoord const& hexStart, int iDir, int iMaxSpan, CHexCoord& hexEnd )
+BOOL CAIMapUtil::TryBridgeWalk( CHexCoord const& hexStart, int iDir, int iMaxSpan, CHexCoord& hexEnd,
+                                BOOL bRequirePlan /*=TRUE*/ )
 {
     CHexCoord hexBridge = hexStart;
     int       iSpan     = 1;
@@ -3202,8 +3203,9 @@ BOOL CAIMapUtil::TryBridgeWalk( CHexCoord const& hexStart, int iDir, int iMaxSpa
         int i = GetMapOffset( hexBridge.X( ), hexBridge.Y( ) );
         if ( i >= m_iMapSize )
             return FALSE;
-        // there MUST be a road type here to be a bridge
-        if ( !( m_pMap[i] & MSW_PLANNED_ROAD ) && !( m_pMap[i] & MSW_ROAD ) )
+        // on-plan validation: span hexes must carry a road type (new-crossing
+        // planning walks raw water - the marks come after)
+        if ( bRequirePlan && !( m_pMap[i] & MSW_PLANNED_ROAD ) && !( m_pMap[i] & MSW_ROAD ) )
             return FALSE;
 
         CHex* pGameHex = theMap.GetHex( hexBridge );

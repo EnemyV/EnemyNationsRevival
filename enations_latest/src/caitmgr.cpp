@@ -5949,6 +5949,20 @@ void CAITaskMgr::ConstructBuilding( CAIUnit* pUnit, CAITask* pTask )
         // may not be able to reach the site?
         if ( hexVeh != hexSite && !m_pGoalMgr->m_pMap->m_pMapUtil->GetPathRating( hexVeh, hexSite ) )
         {
+            // EARLIEST river-split detection: deliver it to the bridge fallback
+            // instead of discarding it - unassigning silently re-paired crane and
+            // site forever (Cartugon: taskless cranes idle at the rocket, no dest,
+            // invisible to every rescue). On success PlanBridgeToward marks the
+            // crossing + arms the pending-bridge dispatch; site becomes reachable.
+            BOOL bBridged = m_pGoalMgr->m_pMap->PlanBridgeToward( hexVeh, hexSite );
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+            {
+                char szR[128];
+                sprintf( szR, "[ASSIGNSPLIT] plyr %d crane %lu site %d,%d unreachable bridge %d\n", m_iPlayer,
+                         (unsigned long)pUnit->GetID( ), hexSite.X( ), hexSite.Y( ), (int)bBridged );
+                OutputDebugStringA( szR );
+            }
+#endif
             ClearTaskUnit( pUnit );
             UnAssignTask( pTask->GetID( ), pTask->GetGoalID( ) );
 
@@ -6060,7 +6074,11 @@ void CAITaskMgr::ConstructBuilding( CAIUnit* pUnit, CAITask* pTask )
                                 // +0-15s jitter breaks retry lockstep between colliding cranes
                                 DWORD dwShelf = ( 60 + pGameData->GetRandom( 16 ) ) * 1000;
                                 if ( !m_pGoalMgr->m_pMap->m_pMapUtil->GetPathRating( hexVeh, hexSite ) )
+                                {
                                     dwShelf = 600 * 1000;
+                                    // same split-detection delivery as the assign gate
+                                    m_pGoalMgr->m_pMap->PlanBridgeToward( hexVeh, hexSite );
+                                }
                                 m_pGoalMgr->m_pMap->m_pMapUtil->AddFailedSiteTemp( iBldg, hexSite, dwShelf );
                             }
                             ClearTaskUnit( pUnit );
