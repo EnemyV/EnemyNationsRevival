@@ -2949,11 +2949,11 @@ void CAIMapUtil::FindBridgeHex( CHexCoord& hexSite, CAIUnit* pUnit )
                 // a planned road
                 if ( ( m_pMap[i] & MSW_PLANNED_ROAD ) )
                 {
-                    // on river terrain indicates a bridge candidate
+                    // on water terrain indicates a bridge candidate
                     pGameHex = theMap.GetHex( hexBridge );
                     if ( pGameHex == NULL )
                         continue;
-                    if ( pGameHex->GetType( ) != CHex::river )
+                    if ( !pGameHex->IsWater( ) )
                         continue;
 
                     // found a river hex with a planned road so check
@@ -3126,7 +3126,7 @@ BOOL CAIMapUtil::IsBridgeSpan( CHexCoord& hexRiverRoad, CAIUnit* pUnit )
             continue;
         pGameHex = theMap.GetHex( hexShift );
         // shifted start must be crane-traversable land
-        if ( pGameHex->GetType( ) == CHex::river || !m_tdWheel->CanTravelHex( pGameHex ) )
+        if ( pGameHex->IsWater( ) || !m_tdWheel->CanTravelHex( pGameHex ) )
             continue;
         BOOL bBlocked;
         EnterCriticalSection( &cs );
@@ -3151,7 +3151,7 @@ BOOL CAIMapUtil::IsBridgeSpan( CHexCoord& hexRiverRoad, CAIUnit* pUnit )
             hexBridge.Xdec( );
             break;
         }
-        if ( theMap.GetHex( hexBridge )->GetType( ) != CHex::river )
+        if ( !theMap.GetHex( hexBridge )->IsWater( ) )
             continue;
         if ( TryBridgeWalk( hexShift, iDir, iMaxSpan, hexEnd ) )
         {
@@ -3207,8 +3207,8 @@ BOOL CAIMapUtil::TryBridgeWalk( CHexCoord const& hexStart, int iDir, int iMaxSpa
             return FALSE;
 
         CHex* pGameHex = theMap.GetHex( hexBridge );
-        // if not river then we assume land, this is the end
-        if ( pGameHex->GetType( ) != CHex::river )
+        // if not water (river/lake/ocean) then we assume land, this is the end
+        if ( !pGameHex->IsWater( ) )
         {
             // landing must be crane-traversable land (m_tdWheel == construction) and unbuilt
             BOOL bBadLanding = !m_tdWheel->CanTravelHex( pGameHex );
@@ -3251,7 +3251,7 @@ void CAIMapUtil::GetStartSpan( CHexCoord& hexStart, CHexCoord& hexBridge )
         if ( ( m_pMap[i] & MSW_PLANNED_ROAD ) || ( m_pMap[i] & MSW_ROAD ) )
         {
             CHex* pGameHex = theMap.GetHex( hexBridge );
-            if ( pGameHex->GetType( ) != CHex::river )
+            if ( !pGameHex->IsWater( ) )
                 hexStart = hexBridge;
         }
     }

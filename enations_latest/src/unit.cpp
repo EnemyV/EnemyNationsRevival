@@ -3252,6 +3252,14 @@ void CVehicle::GetPath( BOOL bNoOcc )
     // if we have no path we're stuck
     if ( ( m_iPathLen <= 0 ) || ( ( m_iPathLen > 1 ) && ( *m_phexPath == *( m_phexPath + m_iPathLen - 1 ) ) ) )
     {
+        // in a building with no ownership: blocked's handler assumes owned
+        // hexes (GrabHex TRAPs on road-clear - soak3/4 [BLKNOOWN] veh 53);
+        // cant_deploy is the designed in-building wait state
+        if ( !m_cOwn && theBuildingHex._GetBuilding( m_ptHead ) != NULL )
+        {
+            _SetRouteMode( cant_deploy );
+            return;
+        }
         _SetRouteMode( blocked );
         m_iNumRetries = MAX_NUM_RETRIES;
         m_iBlockCount = 6;
@@ -3272,6 +3280,13 @@ void CVehicle::GetPath( BOOL bNoOcc )
         delete[] m_phexPath;
         m_phexPath = NULL;
         m_iPathOff = m_iPathLen = 0;
+        // same in-building guard as the no-path case above
+        if ( !m_cOwn && theBuildingHex._GetBuilding( m_ptHead ) != NULL )
+        {
+            _SetRouteMode( cant_deploy );
+            m_hexLastDest = _dest;
+            return;
+        }
         _SetRouteMode( blocked );
         m_iNumRetries = MAX_NUM_RETRIES;
         m_iBlockCount = 6;

@@ -1870,12 +1870,10 @@ void CGame::StartNewWorld( unsigned uRand, int iSide, int iSideSize )
 #ifdef LOGGINGON
     OutputDebugStringA( "CNetStart msg create\n" );
 #endif
-    // MP world-gen parity (Bug 2): freeze the count world-gen will use to the SAME
-    // value we encode into CNetStart below (numHp+numAi == GetCount() at this instant).
-    // Host/SP-only (StartNewWorld asserts m_bServer); the client sets its own copy in
-    // CmdStart from the received numHp+numAi. World-gen reads m_iWorldGenCount, never
-    // the live list count, so host and client stay count-consistent by construction.
-    m_iWorldGenCount = theGame.GetAll( ).GetCount( );
+    // MP world-gen parity (Bug 2): the frozen count is now set in CreateNewWorld
+    // just before GetWorldSize (which reads it for planet sizing). Re-assert here
+    // that it still matches what CNetStart encodes (roster unchanged in between).
+    ASSERT( m_iWorldGenCount == theGame.GetAll( ).GetCount( ) );
 
     CNetStart msg( uRand, iSide, iSideSize, theApp.m_pCreateGame->m_iAi, theApp.m_pCreateGame->m_iNumAi,
                    theGame.GetAll( ).GetCount( ) - theApp.m_pCreateGame->m_iNumAi, theApp.m_pCreateGame->m_iSize,

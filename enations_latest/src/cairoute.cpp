@@ -2937,6 +2937,27 @@ void CAIRouter::LoadMaterials( CAIUnit* pTruck, CAIHex* paiHex )
                 return;
             }
 
+            // truck already standing at that exit: ordering it there again is
+            // the stale-arrival echo (order -> instant arrival -> stale handle
+            // -> re-order at ~1Hz; backlog starved plyr 3's whole AI thread).
+            // The genuine arrival for this hex is already queued - let it drive.
+            {
+                CHexCoord hexLive( 0, 0 );
+                pGameData->GetVehicleHex( pTruck->GetID( ), hexLive );
+                if ( hexLive == hex )
+                {
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+                    {
+                        char szE[96];
+                        sprintf( szE, "[ECHOSKIP] plyr %d truck %lu already at %d,%d\n", m_iPlayer,
+                                 (unsigned long)pTruck->GetID( ), hex.X( ), hex.Y( ) );
+                        OutputDebugStringA( szE );
+                    }
+#endif
+                    return;
+                }
+            }
+
             pTruck->SetDestination( hex );
             pTruck->SetParam( CAI_ROUTE_X, hex.X( ) );
             pTruck->SetParam( CAI_ROUTE_Y, hex.Y( ) );

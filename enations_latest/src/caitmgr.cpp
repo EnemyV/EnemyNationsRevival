@@ -4997,6 +4997,22 @@ BOOL CAITaskMgr::RepairConstruction( CAIUnit* pUnit )
         }
         LeaveCriticalSection( &cs );
 
+        // target destroyed (id no longer resolves): dismiss - hexBldg stayed
+        // (0,0), which the else-branch below took as a real destination and
+        // welded the crane at the map origin holding IDT_REPAIR forever
+        if ( pBldg == NULL )
+        {
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+            {
+                char szR[96];
+                sprintf( szR, "[REPAIRGONE] crane %lu target bldg %lu destroyed - dismissed\n",
+                         (unsigned long)pUnit->GetID( ), (unsigned long)pUnit->GetDataDW( ) );
+                OutputDebugStringA( szR );
+            }
+#endif
+            goto DismissUnit;
+        }
+
         // done only when repaired AND built (an orphaned shell is undamaged but constructing)
         if ( iDmgPer == DAMAGE_0 && !bConstructing )
             goto DismissUnit;

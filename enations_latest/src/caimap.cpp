@@ -1052,9 +1052,10 @@ void CAIMap::FindBridgeOnPlan( CHexCoord& hexSite, CAIUnit *pUnit )
 		m_pMapUtil->OffsetToXY( off, &iX, &iY );
 		CHexCoord hexCand( iX, iY );
 
-		// only river hexes are bridge candidates
+		// any water hex (river/lake/ocean) is a bridge candidate - the server
+		// span check is water-agnostic (BuildBridge counts IsWater hexes)
 		CHex *pGameHex = theMap.GetHex( hexCand );
-		if( pGameHex == NULL || pGameHex->GetType() != CHex::river )
+		if( pGameHex == NULL || !pGameHex->IsWater() )
 		{
 			++k;
 			continue;
@@ -1173,7 +1174,7 @@ BOOL CAIMap::PlanBridgeToward( CHexCoord const& hexAt, CHexCoord const& hexSite 
 			else         { hexNext.Ydec(); iStepDir = 0; }
 		}
 		CHex *pNextHex = theMap.GetHex( hexNext );
-		if( pNextHex != NULL && pNextHex->GetType() == CHex::river &&
+		if( pNextHex != NULL && pNextHex->IsWater() &&
 			!( pNextHex->GetUnits() & CHex::bridge ) )	// bridged water is crossable: walk on to the NEXT gap
 		{
 			hexBank = hexWalk;
@@ -1212,7 +1213,7 @@ BOOL CAIMap::PlanBridgeToward( CHexCoord const& hexAt, CHexCoord const& hexSite 
 
 		// bank must be crane-traversable land with no building on it
 		CHex *pBankHex = theMap.GetHex( hexTry );
-		if( pBankHex == NULL || pBankHex->GetType() == CHex::river ||
+		if( pBankHex == NULL || pBankHex->IsWater() ||
 			!m_pMapUtil->m_tdWheel->CanTravelHex( pBankHex ) )
 			continue;
 		// server refused a span from this bank recently
@@ -1243,7 +1244,7 @@ BOOL CAIMap::PlanBridgeToward( CHexCoord const& hexAt, CHexCoord const& hexSite 
 			case 6: hexAhead.Xdec(); break;
 		}
 		CHex *pAheadHex = theMap.GetHex( hexAhead );
-		if( pAheadHex == NULL || pAheadHex->GetType() != CHex::river )
+		if( pAheadHex == NULL || !pAheadHex->IsWater() )
 			continue;
 
 		// crossing must land on traversable unbuilt ground within the owner's span
@@ -1414,11 +1415,11 @@ BOOL CAIMap::IsRoadHexEligible( int iOff, CHexCoord& hexRoad )
 	if( ( w & MSW_AI_BUILDING ) || ( w & MSW_OPFOR_BUILDING ) )
 		return FALSE;
 
-	// skip planned road hexes on river terrain (bridge candidates, not roads)
+	// skip planned road hexes on water (bridge candidates, not paveable roads)
 	CHex *pGameHex = theMap.GetHex( hexRoad );
 	if( pGameHex == NULL )
 		return FALSE;
-	if( pGameHex->GetType() == CHex::river )
+	if( pGameHex->IsWater() )
 		return FALSE;
 
 	BYTE bUnits = pGameHex->GetUnits();
@@ -1593,10 +1594,10 @@ int CAIMap::GetRoadRun( const CHexCoord& hexStart, CHexCoord& hexEnd, int iMaxHe
 		CHexCoord hexRun( nx, ny );
 		if( NeighborIsFarmLumber( hexRun ) )
 			break;
-		// stop at rivers: bridge candidates, never paveable (mirror IsRoadHexEligible)
+		// stop at water: bridge candidates, never paveable (mirror IsRoadHexEligible)
 		{
 			CHex* pRunHex = theMap.GetHex( hexRun );
-			if( pRunHex == NULL || pRunHex->GetType() == CHex::river )
+			if( pRunHex == NULL || pRunHex->IsWater() )
 				break;
 		}
 		wStatus &= ~MSW_PLANNED_ROAD;	// claim: planned -> built

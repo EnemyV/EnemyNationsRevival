@@ -547,6 +547,12 @@ void CConquerApp::CreateNewWorld(unsigned uRand, AIinit *pAiData, int iSide, int
 
     // set up the world
     if (theGame.AmServer()) {
+        // freeze the world-gen player count BEFORE GetWorldSize reads it —
+        // StartNewWorld froze it 10 lines too late, so the planet was sized
+        // from the PREVIOUS game's count (12-player worlds got 16 blocks ->
+        // overflow players all started on the same block)
+        theGame.m_iWorldGenCount = theGame.GetAll().GetCount();
+
         // get the map size
         theMap.GetWorldSize(pAiData->m_iSize, iSide, iSideSize);
         if (AiWorldSize(iSideSize, iSide))

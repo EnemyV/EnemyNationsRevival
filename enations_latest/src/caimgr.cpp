@@ -439,14 +439,18 @@ void CAIMgr::Manage( void )
                     sprintf( szR, "[RSRCHSTAT] plyr %d topic %d pts %d have %d bridgefails %d pontoon can %d disc %d missbldg %d\n",
                              m_iPlayer, iTopic, iPts, iHave, iFails, iCanP, iPDisc, iPMissBldg );
                     OutputDebugStringA( szR );
-                    // queue depth: ~0 = trickle (scheduler flaw); large/growing = backlog
+                    // queue depth: ~0 = trickle (scheduler flaw); large/growing = backlog.
+                    // tmp = m_plTmpQueue, where arrivals actually pile up (PrioritizeMessage
+                    // drains ONE per call; plyr 3 wedged with queue 0 but tmp in the thousands)
                     {
-                        int iQ = 0;
+                        int iQ = 0, iTmp = 0;
                         EnterCriticalSection( &m_cs );
                         if ( m_plMsgQueue != NULL )
                             iQ = (int)m_plMsgQueue->GetCount( );
+                        if ( m_plTmpQueue != NULL )
+                            iTmp = (int)m_plTmpQueue->GetCount( );
                         LeaveCriticalSection( &m_cs );
-                        sprintf( szR, "[QSTAT] plyr %d queue %d\n", m_iPlayer, iQ );
+                        sprintf( szR, "[QSTAT] plyr %d queue %d tmp %d\n", m_iPlayer, iQ, iTmp );
                         OutputDebugStringA( szR );
                     }
                     if ( m_pRouter != NULL )
