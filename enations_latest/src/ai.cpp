@@ -487,7 +487,19 @@ void WINAPI AiThread( AI_INIT* pAiI )
                 dwLastManage = timeGetTime( );
             }
 
+            // batch-drain: the 10 passes/sec cadence above capped drain at 10
+            // msg/s while a mature patrol force alone generates ~11 arrivals/s
+            // (soak5 plyr 6: tmp queue 1000+, construction msgs starved >70s
+            // behind patrol arrivals). Run up to 32 FULL Manage cycles per
+            // pass - each message keeps its complete original per-message
+            // semantics - then sleep out the cadence slice as before.
             pAIMgr->Manage( );
+            for ( int iBatch = 1; iBatch < 32 && pAIMgr->HasPendingMessages( ); iBatch++ )
+            {
+                if ( myThreadShouldExit( dwGenAtStart ) )
+                    break;
+                pAIMgr->Manage( );
+            }
             myYieldThread( );
         }
 #ifdef _LOGOUT

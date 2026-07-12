@@ -1124,6 +1124,15 @@ void CAIMgr::WaitForWork( DWORD dwTimeoutMs )
         WaitForSingleObject( m_hWork, dwTimeoutMs );
 }
 
+BOOL CAIMgr::HasPendingMessages( void )
+{
+    EnterCriticalSection( &m_cs );
+    BOOL bPending = ( m_plMsgQueue != NULL && !m_plMsgQueue->IsEmpty( ) ) ||
+                    ( m_plTmpQueue != NULL && !m_plTmpQueue->IsEmpty( ) );
+    LeaveCriticalSection( &m_cs );
+    return bPending;
+}
+
 void CAIMgr::SetDead( void )
 {
     m_bIsDead = TRUE;

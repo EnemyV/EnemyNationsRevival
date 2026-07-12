@@ -130,6 +130,8 @@ public:
 	// Block until a message is pending or dwTimeoutMs elapses (idle slice).
 	// Called only by this AI's own thread (AiThread loop).
 	void WaitForWork( DWORD dwTimeoutMs );
+	// TRUE while messages await in either queue (AiThread batch-drain check)
+	BOOL HasPendingMessages( void );
 
 	void UpdateLocation( CAIMsg *pMsg );
 	void UpdatePlayer( CAIMsg *pMsg );
