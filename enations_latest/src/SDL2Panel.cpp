@@ -478,6 +478,7 @@ bool SDL2Panel::HandleEvent(SDL_Event& event) {
                 m_resizeCallback(newW, newH);
         } else if (event.type == SDL_MOUSEBUTTONUP) {
             m_resizing = false;
+            m_ownMaximized = false;   // a manual resize redefines the "normal" rect
         }
         return true;  // Always consume during resize
     }
@@ -508,10 +509,28 @@ bool SDL2Panel::HandleEvent(SDL_Event& event) {
             SDL_MinimizeWindow(m_ownWindow);
             return true;
         } else if (btn == TB_BTN_MAX && m_ownWindow) {
-            if (SDL_GetWindowFlags(m_ownWindow) & SDL_WINDOW_MAXIMIZED)
+            // Manual maximize: SDL_MaximizeWindow (SW_MAXIMIZE) on this borderless window
+            // comes back at a stale small rect (operator's "minimized the area map,
+            // maximize never came back up correctly") — the window has no maximize style
+            // for the OS to do it with. Remember the rect and fill the display's usable
+            // bounds ourselves; a second click puts the remembered rect back.
+            if (SDL_GetWindowFlags(m_ownWindow) & SDL_WINDOW_MINIMIZED)
                 SDL_RestoreWindow(m_ownWindow);
-            else
-                SDL_MaximizeWindow(m_ownWindow);
+            if (m_ownMaximized) {
+                SDL_SetWindowPosition(m_ownWindow, m_preMaxX, m_preMaxY);
+                SDL_SetWindowSize(m_ownWindow, m_preMaxW, m_preMaxH);
+                m_ownMaximized = false;
+            } else {
+                SDL_GetWindowPosition(m_ownWindow, &m_preMaxX, &m_preMaxY);
+                SDL_GetWindowSize(m_ownWindow, &m_preMaxW, &m_preMaxH);
+                SDL_Rect rWork;
+                int disp = SDL_GetWindowDisplayIndex(m_ownWindow);
+                if (disp >= 0 && SDL_GetDisplayUsableBounds(disp, &rWork) == 0) {
+                    SDL_SetWindowPosition(m_ownWindow, rWork.x, rWork.y);
+                    SDL_SetWindowSize(m_ownWindow, rWork.w, rWork.h);
+                    m_ownMaximized = true;
+                }
+            }
             return true;
         }
     }

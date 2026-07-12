@@ -251,6 +251,10 @@ private:
     SDL_Window* m_ownWindow   = nullptr;
     uint32_t    m_ownWindowID = 0;
     bool        m_suppressSync = false;  // skip SDL_SetWindowPos/Size during temp swaps
+    // Manual maximize for the borderless own-window (SDL_MaximizeWindow lands on a
+    // stale small rect on Windows — no WS_MAXIMIZEBOX/THICKFRAME to SW_MAXIMIZE with).
+    bool        m_ownMaximized = false;
+    int         m_preMaxX = 0, m_preMaxY = 0, m_preMaxW = 0, m_preMaxH = 0;
 
     // When a panel detaches WHILE a load is in progress (loading dialog up), its
     // own window is created hidden and shown on the first post-load RenderDetached
