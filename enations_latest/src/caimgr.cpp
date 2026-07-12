@@ -1605,14 +1605,45 @@ BOOL CAIMgr::RepoolFarStuck( CAIUnit* pUnit, CHexCoord& hexVeh, CHexCoord& hexDe
          m_pGoalMgr == NULL || m_pGoalMgr->m_plTasks == NULL || m_pTaskMgr == NULL )
         return FALSE;
 
-    // a crane on a bridge mission keeps marching -- repooling cancels the build
+    // bridge-mission badge: at THIS layer (3 same-dest resends = 15+ min of no
+    // progress) the badge only protects welded cranes - a healthy bridge crane
+    // never reaches 3 strikes (at-dest cranes are cleared before the counter).
+    // A denied/failed bridge order never cleared the badge, exempting the crane
+    // from every escape forever. Clear it and repool like any stuck crane.
     if ( pUnit->GetParam( CAI_FUEL ) == CNetCmd::build_bridge ||
          pUnit->GetParam( CAI_FUEL ) == CNetCmd::bridge_new )
-        return FALSE;
+    {
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+        {
+            char szR[112];
+            sprintf( szR, "[REPOOLBADGE] plyr %d crane %lu stale bridge badge cleared\n", m_iPlayer,
+                     (unsigned long)pUnit->GetID( ) );
+            OutputDebugStringA( szR );
+        }
+#endif
+        pUnit->SetParam( CAI_FUEL, 0 );
+    }
 
     CAITask* pTF = m_pGoalMgr->m_plTasks->GetTask( pUnit->GetTask( ), pUnit->GetGoal( ) );
     if ( pTF == NULL )
-        return FALSE;
+    {
+        // dead task id: the crane is bound to work that no longer exists -
+        // free it (bailing here left it in the resend loop forever; crane 30
+        // took 25 same-dest resends in one 5-min window)
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+        {
+            char szR[112];
+            sprintf( szR, "[REPOOLDEAD] plyr %d crane %lu dead task %u freed\n", m_iPlayer,
+                     (unsigned long)pUnit->GetID( ), (unsigned)pUnit->GetTask( ) );
+            OutputDebugStringA( szR );
+        }
+#endif
+        m_pTaskMgr->ClearTaskUnit( pUnit );
+        pUnit->SetStuckSince( 0 );
+        pUnit->SetStuckHex( 0 );
+        pUnit->ClearResend( );
+        return TRUE;
+    }
 
     BOOL bBridged = ( m_pMap != NULL && m_pMap->PlanBridgeToward( hexVeh, hexDest ) );
     if ( pTF->GetTaskParam( ORDER_TYPE ) == CONSTRUCTION_ORDER )
@@ -2075,6 +2106,11 @@ void CAIMgr::HandleStuckVehicles( void )
                             OutputDebugStringA( szR );
                         }
 #endif
+                        // settle the engine dest to HERE - parking only cleared
+                        // the counters, so the stale unreachable dest restarted
+                        // the resend cycle every sweep (17 resends/chunk seen)
+                        pUnit->ForceNextDest( );
+                        pUnit->SetDestination( hexVeh );
                         pUnit->SetStuckSince( 0 );
                         pUnit->SetStuckHex( 0 );
                         pUnit->ClearResend( );
