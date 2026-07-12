@@ -6,7 +6,7 @@ class CTDLogger
 {
  
 public:
- CTDLogger()  { m_time = GetCurrentTime(); }
+    CTDLogger( ): m_buf( ) { m_time = GetCurrentTime( ); } // TODO: Consider switching to GetTickCount64()
  virtual ~CTDLogger() { }
 
  virtual void Write(LPCSTR) = 0;

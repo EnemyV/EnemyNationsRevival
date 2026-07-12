@@ -13,8 +13,8 @@ set(compit_sources
 add_executable(compit ${compit_sources})
 
 target_compile_options(compit INTERFACE
-        "$<$<CONFIG:RELEASE>:$<BUILD_INTERFACE:/GX;/Zi;/O2;/Ob2>"
-        "$<$<CONFIG:DEBUG>:$<BUILD_INTERFACE:/GX>"
+        "$<$<CONFIG:RELEASE>:$<BUILD_INTERFACE:/EHsc;/Zi;/O2;/Ob2>"
+        "$<$<CONFIG:DEBUG>:$<BUILD_INTERFACE:/EHsc>"
         )
 
 #message("CMAKE_CXX_FLAGS: ${CMAKE_CXX_FLAGS}")

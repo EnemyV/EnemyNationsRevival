@@ -83,7 +83,7 @@ CIserveDlg::CIserveDlg(CWnd* pParent /*=NULL*/)
 	CWinApp* app = AfxGetApp();
 	m_hIcon = app->LoadIcon(IDR_MAINFRAME);
 
-	if (!stricmp(app->m_lpCmdLine, "/IPX"))
+	if (!_stricmp(app->m_lpCmdLine, "/IPX"))
 		m_protocol = VPT_IPX;
 
 }
@@ -148,7 +148,7 @@ BOOL CIserveDlg::OnInitDialog()
 			
 	if (iSocket != -1)
 	{
-		itoa (iSocket, m_strSocket.GetBuffer (40), 10);
+		_itoa (iSocket, m_strSocket.GetBuffer (40), 10);
 		m_strSocket.ReleaseBuffer (-1);
 		UpdateData (FALSE);
 	}
@@ -199,9 +199,10 @@ void CIserveDlg::FixStationName()
 	if (m_protocol == VPT_TCP)
 	{
 		CString addr = m_strAddr.SpanExcluding(":");
-		DWORD tcpAddr = inet_addr(addr);
+		DWORD tcpAddr = inet_addr(addr); // TODO: replace with inet_pton see: https://learn.microsoft.com/en-us/windows/win32/api/ws2tcpip/nf-ws2tcpip-inet_pton
 
-		hostent* he = gethostbyaddr((LPSTR) &tcpAddr, sizeof(tcpAddr), PF_INET);
+		hostent* he = gethostbyaddr((LPSTR) &tcpAddr, sizeof(tcpAddr), PF_INET); // TODO: replace with getnameinfo() or GetNameInfoW()
+                                                                                          // see: https://learn.microsoft.com/en-us/windows/win32/api/ws2tcpip/nf-ws2tcpip-getnameinfo
 	
 		if (he)
 			m_strName = he->h_name;
@@ -299,7 +300,7 @@ void CIserveDlg::OnAbout ()
 CString CIserveDlg::GetAddressString(LPCVPNETADDRESS a)
 {
 
-	char buf[256];
+	char buf[256] = {};
 	buf[0] = 0;
 
 	vpGetAddressString(m_vpH, a, buf, sizeof(buf));
@@ -355,7 +356,7 @@ LONG CIserveDlg::OnVpNotify(WPARAM w, LPARAM l)
 CString CIserveDlg::GetSessionData(LPCVPSESSIONINFO info)
 {
 	CString sData;
-	char sessionAddress[256];
+    char    sessionAddress[256] = {};
 
 	sessionAddress[0] = 0;
 	vpGetAddressString(m_vpH, &info->sessionId, sessionAddress, sizeof(sessionAddress));
@@ -407,10 +408,10 @@ void CIserveDlg::UpdateCaption ()
 	}
 
 	CString sTitle;
-	sTitle.LoadString (m_vpH ? IDS_TITLE : IDS_TITLE_WHEN_OFF);
+	(void)sTitle.LoadString (m_vpH ? IDS_TITLE : IDS_TITLE_WHEN_OFF);
 
 	char sBuf[80];
-	sprintf (sBuf, sTitle, m_ServerList.GetCount ());
+	sprintf_s (sBuf, sTitle, m_ServerList.GetCount ());
 	SetWindowText(sBuf);
 }
 
@@ -452,7 +453,7 @@ void CDlgSocket::OnOK()
 	
 	UpdateData (TRUE);
 	char sBuf[20];
-	itoa (m_iSocket, sBuf, 10);
+	_itoa (m_iSocket, sBuf, 10);
 
 	const char* protoStr;
 

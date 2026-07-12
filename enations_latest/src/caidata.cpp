@@ -666,7 +666,7 @@ void CAIData::BuildAt( CHexCoord& hexSite, int iBldg, int iDir, CAIUnit* paiUnit
         // BUGBUG check the vehicle's location and make
         // sure it matches with the hexSite sent in msg
         CHexCoord hexVeh = pVehicle->GetHexHead( );
-#ifdef _DEBUG || STRICTER_ASSERTS
+#if defined(_DEBUG) || STRICTER_ASSERTS
         ASSERT( hexVeh == hexSite );
 #endif
         if ( hexVeh != hexSite )
@@ -903,7 +903,7 @@ void CAIData::SetWorldSize( int iHexPerBlk, int iBlkPerSide )
 //
 // create
 //
-CAIData::CAIData( int iSmart, int iNumAi, int iNumHuman )
+CAIData::CAIData( int iSmart, int iNumAi, int iNumHuman ): m_iBlkPerSide( ), m_iHexPerBlk( )
 {
     m_iStartPos      = 0;  // safe default
     m_iSmart         = iSmart;

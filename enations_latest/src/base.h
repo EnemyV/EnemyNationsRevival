@@ -163,7 +163,7 @@ class CHexCoord
     friend class CSubHex;
     friend class CGameMap;  // for enumHex only!!!
   public:
-    CHexCoord( )
+    CHexCoord( ): m_iX( ), m_iY ()
     {
 #ifdef _DEBUG
         m_iX = m_iY = -1;

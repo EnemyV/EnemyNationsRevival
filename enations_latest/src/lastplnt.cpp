@@ -131,7 +131,7 @@ void CatchNum( int iNum )
         return;
 
     CString sMsg;
-    sMsg.LoadString( IDS_ERR_LOAD_1 );
+    (void)sMsg.LoadString( IDS_ERR_LOAD_1 );
     char sNum[20];
     if ( iNum >= ERR_BASE_USER_ERROR )
         iNum -= ERR_BASE_USER_ERROR;
@@ -157,20 +157,20 @@ void CatchSE( SE_Exception e )
 
     CDlgStackDump dlg;
     dlg.m_pe = &e;
-    dlg.m_sText.LoadString( IDS_ERR_LOAD_3 );
+    (void)dlg.m_sText.LoadString( IDS_ERR_LOAD_3 );
 
-    MEMORYSTATUS ms;
+    MEMORYSTATUS ms {};
     ms.dwLength = sizeof( ms );
-    GlobalMemoryStatus( &ms );
+    GlobalMemoryStatus( &ms ); // TODO: replace with GlobalMemoryStatusEx
     const int ONE_MEG = 1024 * 1024;
     if ( ms.dwAvailPageFile / ONE_MEG < 8 )
     {
-        CString sMsg;
-        sMsg.LoadString( IDS_OUT_OF_MEMORY );
+        CString sMsg {};
+        (void)sMsg.LoadString( IDS_OUT_OF_MEMORY );
         dlg.m_sText = sMsg + "\r\n" + dlg.m_sText;
     }
 
-    char sNum1[20], sNum2[80], sNumS[5][20];
+    char sNum1[20] {}, sNum2[80] {}, sNumS[5][20] {};
     itoa( e.m_uEc, sNum1, 16 );
     switch ( (uint64_t)e.m_pExCode )
     {
@@ -217,7 +217,7 @@ void CatchOther( )
     theGame.EmptyQueue( );
 
     CString sMsg;
-    sMsg.LoadString( IDS_ERR_LOAD_2 );
+    (void)sMsg.LoadString( IDS_ERR_LOAD_2 );
     AfxMessageBox( sMsg, MB_OK | MB_ICONSTOP );
 
     bDoSubclass = TRUE;
@@ -398,7 +398,7 @@ BOOL CConquerApp::InitInstance( )
 
     InitWindwardLib1( this );
 
-    
+
 
 
     WriteProfileString( "ADPCM", "Error", "OK" );
@@ -443,7 +443,7 @@ BOOL CConquerApp::InitInstance( )
     InitializeCriticalSection( &cs );
     hRenderEvent = CreateEvent( NULL, TRUE, FALSE, "RenderEvent" );
 
-    m_sAppName.LoadString( IDS_MAIN_TITLE );
+    (void)m_sAppName.LoadString( IDS_MAIN_TITLE );
 
     // Get CPU Speed
     CPUInfo cpu;
@@ -512,7 +512,7 @@ BOOL CConquerApp::InitInstance( )
             {
                 CDlgMsg dlg;
                 CString sMsg;
-                sMsg.LoadString( IDS_KILLER_RES );
+                (void)sMsg.LoadString( IDS_KILLER_RES );
                 CString sRes = IntToCString( m_iOldWidth ) + "x" + IntToCString( m_iOldHeight ) + "x" +
                                IntToCString( m_iOldDepth );
                 csPrintf( &sMsg, (char const*)sRes, pRes );
@@ -636,7 +636,7 @@ BOOL CConquerApp::InitInstance( )
     OSVERSIONINFO ovi;
     memset( &ovi, 0, sizeof( ovi ) );
     ovi.dwOSVersionInfoSize = sizeof( ovi );
-    GetVersionEx( &ovi );
+    GetVersionEx( &ovi ); // TODO: Consider using VerifyVersionInfo* or IsWindows*
     m_sOs += " " + LongToCString( ovi.dwMajorVersion ) + "." + LongToCString( ovi.dwMinorVersion ) + " (";
     if ( ( ovi.dwBuildNumber & 0xFFFF0000 ) == 0 )
         m_sOs += LongToCString( ovi.dwBuildNumber ) + ")";
@@ -651,17 +651,17 @@ BOOL CConquerApp::InitInstance( )
 
     long lVer = CNetApi::GetVersion( );
     m_sNet    = "VDMPlay API " + IntToCString( HIBYTE( HIWORD( lVer ) ) ) + "." +
-             IntToCString( LOBYTE( HIWORD( lVer ) ) ) + "." + IntToCString( LOWORD( lVer ) );
+                IntToCString( LOBYTE( HIWORD( lVer ) ) ) + "." + IntToCString( LOWORD( lVer ) );
     Log( m_sNet );
 
-    MEMORYSTATUS ms;
+    MEMORYSTATUS ms {};
     ms.dwLength = sizeof( ms );
-    GlobalMemoryStatus( &ms );
-    const int ONE_MEG   = 1024 * 1024;
-    CString sMemory = "Memory (avail/total) Physical: " + IntToCString( ms.dwAvailPhys / ONE_MEG ) + "M/" +
-                      IntToCString( ms.dwTotalPhys / ONE_MEG ) +
-                      "M Virtual: " + IntToCString( ms.dwAvailPageFile / ONE_MEG ) + "M/" +
-                      IntToCString( ms.dwTotalPageFile / ONE_MEG ) + "M";
+    GlobalMemoryStatus( &ms ); // TODO: replace with GlobalMemoryStatusEx
+    const int ONE_MEG = 1024 * 1024;
+    CString   sMemory = "Memory (avail/total) Physical: " + IntToCString( ms.dwAvailPhys / ONE_MEG ) + "M/" +
+                        IntToCString( ms.dwTotalPhys / ONE_MEG ) +
+                        "M Virtual: " + IntToCString( ms.dwAvailPageFile / ONE_MEG ) + "M/" +
+                        IntToCString( ms.dwTotalPageFile / ONE_MEG ) + "M";
     Log( sMemory );
 
     // enough memory?
@@ -678,7 +678,7 @@ BOOL CConquerApp::InitInstance( )
     if ( ms.dwTotalPageFile < 1024 * 1024 * MEM_NEEDED_BASE )
     {
         CString sText;
-        sText.LoadString( IDS_ERROR_LOW_VIRT_MEM );
+        (void)sText.LoadString( IDS_ERROR_LOW_VIRT_MEM );
         CString sNum;
         sNum = IntToCString( MEM_NEEDED_BASE );
         csPrintf( &sText, (char const*)sNum );
@@ -851,7 +851,7 @@ BOOL CConquerApp::InitInstance( )
         m_bShareware  = pMmio->ReadShort( );
         m_bSecondDisk = pMmio->ReadShort( );
         m_bWAV        = pMmio->ReadShort( );
-        m_iRequireCD  = FALSE; // pMmio->ReadShort( ); // no longer needs CD!
+        m_iRequireCD  = FALSE;  // pMmio->ReadShort( ); // no longer needs CD!
         m_iMultVoices = pMmio->ReadShort( );
         m_iHaveIntro  = pMmio->ReadShort( );
 
@@ -885,7 +885,7 @@ BOOL CConquerApp::InitInstance( )
         {
             TRAP( );
             CString sMsg, sNum1, sNum2;
-            sMsg.LoadString( IDS_WRONG_DATA_FILE );
+            (void)sMsg.LoadString( IDS_WRONG_DATA_FILE );
             sNum1 = IntToCString( m_iRifVer );
             sNum2 = IntToCString( VER_RIFF );
             csPrintf( &sMsg, (char const*)sName, (char const*)sNum1, (char const*)sNum2 );
@@ -935,8 +935,8 @@ BOOL CConquerApp::InitInstance( )
             RegSetValueEx( key, NULL, NULL, REG_SZ, (unsigned char*)"4", 2 );
 
             unsigned long iLen = 256;
-            DWORD         dwTyp, dwLen = sizeof( DWORD );
-            time_t        dwTime;
+            DWORD         dwTyp {}, dwLen = sizeof( DWORD );
+            time_t        dwTime {};
             if ( RegQueryValueEx( key, "CD-ROM", NULL, &dwTyp, (unsigned char*)&dwTime, &dwLen ) != ERROR_SUCCESS )
             {
                 TRAP( );
@@ -961,18 +961,18 @@ BOOL CConquerApp::InitInstance( )
             else
                 // is it earlier (ie did they advance the date before installing)?
                 if ( iToday < (int)dwTime )
-            {
-                iToday -= i1Month / 2;
-                RegSetValueEx( key, "CD-ROM", NULL, REG_DWORD, (unsigned char*)&iToday, sizeof( iToday ) );
-            }
-            else if ( iToday > (int)dwTime + i1Month )
-            {
-                CTime   _time( dwTime );
-                CString sBuf = _time.Format( "Installed: %x" );
-                Log( sBuf );
-                AfxMessageBox( IDS_DEMO_OVER, MB_OK | MB_ICONSTOP );
-                return ( 0 );
-            }
+                {
+                    iToday -= i1Month / 2;
+                    RegSetValueEx( key, "CD-ROM", NULL, REG_DWORD, (unsigned char*)&iToday, sizeof( iToday ) );
+                }
+                else if ( iToday > (int)dwTime + i1Month )
+                {
+                    CTime   _time( dwTime );
+                    CString sBuf = _time.Format( "Installed: %x" );
+                    Log( sBuf );
+                    AfxMessageBox( IDS_DEMO_OVER, MB_OK | MB_ICONSTOP );
+                    return ( 0 );
+                }
 
             RegCloseKey( key );
         }
@@ -990,29 +990,29 @@ BOOL CConquerApp::InitInstance( )
             else
                 // is it earlier (ie did they advance the date before installing)?
                 if ( iToday < (int)iTime )
-            {
-                iToday -= i1Month / 2;
-                char sBuf[20];
-                itoa( iToday + i1Month, sBuf, 10 );
-                ::WriteProfileString( "DOS Emulation", "_COMM", sBuf );
-            }
-            else if ( iToday > (int)iTime + i1Month )
-            {
-                TRAP( );
-                CTime   _time( iTime );
-                CString sBuf = _time.Format( "Installed: %x" );
-                Log( sBuf );
-                AfxMessageBox( IDS_DEMO_OVER, MB_OK | MB_ICONSTOP );
-                return ( 0 );
-            }
+                {
+                    iToday -= i1Month / 2;
+                    char sBuf[20];
+                    itoa( iToday + i1Month, sBuf, 10 );
+                    ::WriteProfileString( "DOS Emulation", "_COMM", sBuf );
+                }
+                else if ( iToday > (int)iTime + i1Month )
+                {
+                    TRAP( );
+                    CTime   _time( iTime );
+                    CString sBuf = _time.Format( "Installed: %x" );
+                    Log( sBuf );
+                    AfxMessageBox( IDS_DEMO_OVER, MB_OK | MB_ICONSTOP );
+                    return ( 0 );
+                }
         }
     }
 
-    Log( "Check for CD" );
+    //Log( "Check for CD" );
 
     // do we have a CD?
-    if ( !CheckForCD( ) )
-        return ( 0 );
+    //if ( !CheckForCD( ) )
+    //    return ( 0 );
 
     // shareware notice
     if ( IsShareware( ) )
@@ -1022,7 +1022,7 @@ BOOL CConquerApp::InitInstance( )
         if ( ( iTry % 25 ) == 0 )
         {
             CString sMsg;
-            sMsg.LoadString( IDS_DEMO_25 );
+            (void)sMsg.LoadString( IDS_DEMO_25 );
             CString sNum = IntToCString( iTry );
             csPrintf( &sMsg, (char const*)sNum );
             if ( AfxMessageBox( sMsg, MB_YESNO | MB_ICONSTOP ) != IDYES )
@@ -1068,7 +1068,7 @@ BOOL CConquerApp::InitInstance( )
 
         // RedText class for -#s in dialogs
 //        if ( m_hPrevInstance == NULL )  // If statement removed because hPrevInstance is always null in modern windows
-//        {
+        //        {
         WNDCLASS wc;
         memset( &wc, 0, sizeof( wc ) );
         wc.lpfnWndProc   = RedTextProc;
@@ -1084,7 +1084,7 @@ BOOL CConquerApp::InitInstance( )
         if ( !RegisterClass( &wc ) )
             return ( FALSE );
         Log( "Window classes registered" );
-//        }
+        //        }
 
 #ifdef _CHEAT
         _bShowRate       = GetProfileInt( "Debug", "ShowRate", 0 );
@@ -1255,9 +1255,9 @@ BOOL CConquerApp::InitInstance( )
 
             delete pMmio;
 
-// time the CD // we dont have a cd anymore
+            // time the CD // we dont have a cd anymore
             m_iCdSpeed = 100; // assume fast CD drive
-#ifndef _GG && 0
+#if !defined(_GG) && 0
             if ( ( m_iCdSpeed = GetProfileInt( "Advanced", "CDspeed", 0 ) ) <= 0 )
             {
                 CFile* pFile = theDataFile.OpenAsFile( "music" );
@@ -1369,7 +1369,7 @@ BOOL CConquerApp::InitInstance( )
             try
             {
                 m_wndMovie.AddMovie( "logo.avi" );
-//                m_wndMovie.AddMovie( "headgame.avi" );  // This file doesnt exist
+                //                m_wndMovie.AddMovie( "headgame.avi" );  // This file doesnt exist
                 m_wndMovie.AddMovie( "intro.avi" );
                 m_wndMovie.Create( FALSE );
             }
@@ -1489,8 +1489,8 @@ BOOL CConquerApp::InitInstance( )
         m_sSoundVer = "MSS: " + CString( theMusicPlayer.GetVersion( ) ) + " {off}";
     else
     {
-        char sBuf[130], *psFmt;
-        long iRate, iFmt;
+        char sBuf[130] {}, *psFmt {};
+        long iRate {}, iFmt {};
         sBuf[0] = 0;
         AIL_digital_configuration( theMusicPlayer._GetHDig( ), &iRate, &iFmt, sBuf );
         switch ( iFmt )
@@ -1621,7 +1621,7 @@ void CConquerApp::CreateMain( )
         m_wndMovie.DestroyWindow( );
 
     // if coming from a game setup - kill it
-    theGame.SetShouldProcessMessages(FALSE);
+    theGame.SetShouldProcessMessages( FALSE );
     DestroyExceptMain( );
 
     m_wndMain.SetProgPos( CWndMain::playing );
@@ -1638,7 +1638,7 @@ void CConquerApp::CreateMain( )
     m_pdlgMain->ShowWindow( SW_SHOW );
     theGame.SetState( CGame::main );
 
-    CheckForCD( );
+    // CheckForCD( );
 
     theMusicPlayer.PlayExclusiveMusic( MUSIC::GetID( MUSIC::main_screen ) );
 }
@@ -1747,7 +1747,7 @@ int CConquerApp::ExitInstance( )
         dc.SetBkMode( TRANSPARENT );
         dc.SetTextColor( RGB( 0, 0, 0 ) );
         CString sLoad;
-        sLoad.LoadString( IDS_LEAVING );
+        (void)sLoad.LoadString( IDS_LEAVING );
         dc.TextOut( 0, 0, sLoad );
     }
 
@@ -1757,7 +1757,7 @@ int CConquerApp::ExitInstance( )
     CloseHandle( hRenderEvent );
 
 #ifdef USE_SMARTHEAP
- //   MemUnregisterTask( );
+    //   MemUnregisterTask( );
 #endif
 
     if ( m_hLibLang != NULL )
@@ -2094,7 +2094,7 @@ BOOL CDlgMain::OnInitDialog( )
 
     SendMessage( WM_SETICON, (WPARAM)TRUE, (LPARAM)theApp.LoadIcon( MAKEINTRESOURCE( IDI_MAIN ) ) );
     CString sTitle;
-    sTitle.LoadString( IDS_MAIN_TITLE );
+    (void)sTitle.LoadString( IDS_MAIN_TITLE );
     SetWindowText( sTitle );
 
     // if shareware no loading
@@ -2150,14 +2150,14 @@ void CDlgMain::OnSize( UINT nType, int cx, int cy )
     {
         // probably not an issue!
 #ifdef LOGGINGON
-     //   OutputDebugStringA( "not init'ed yet\n" );
+        //   OutputDebugStringA( "not init'ed yet\n" );
 #endif
         return;
     }
-    else 
+    else
     {
 #ifdef LOGGINGON
-     //   OutputDebugStringA( "OnSize a go!\n" );
+        //   OutputDebugStringA( "OnSize a go!\n" );
 #endif
     }
 
@@ -2295,7 +2295,7 @@ void CDlgMain::OnPaint( )
 
     // put up the title
     CString sTitle;
-    sTitle.LoadString( IDS_MAIN_TITLE );
+    (void)sTitle.LoadString( IDS_MAIN_TITLE );
     LOGFONT lf;
     memset( &lf, 0, sizeof( lf ) );
     lf.lfWidth  = ( 3 * ( iWid / sTitle.GetLength( ) ) ) / 4;
@@ -2339,7 +2339,7 @@ void CDlgMain::OnPaint( )
 
     // put up copyright
     CString sCopy;
-    sCopy.LoadString( IDS_COPYRIGHT );
+    (void)sCopy.LoadString( IDS_COPYRIGHT );
     GetClientRect( &rect );
     dc.DrawText( sCopy, -1, &rect, DT_CALCRECT | DT_CENTER | DT_SINGLELINE | DT_TOP );
     int iHt     = rect.Height( );
@@ -2771,7 +2771,7 @@ CDlgVer::CDlgVer( CWnd* pParent /*=NULL*/ ): CDialog( CDlgVer::IDD, pParent )
     OSVERSIONINFO ovi;
     memset( &ovi, 0, sizeof( ovi ) );
     ovi.dwOSVersionInfoSize = sizeof( ovi );
-    if ( GetVersionEx( &ovi ) )
+    if ( GetVersionEx( &ovi ) ) // TODO: consider VerifyVersionInfo* or IsWindows* instead.
         m_sOs += " " + LongToCString( ovi.dwMajorVersion ) + "." + LongToCString( ovi.dwMinorVersion ) + " (" +
                  LongToCString( ovi.dwBuildNumber ) + ")";
     if ( iWinType == W32s )
@@ -2782,7 +2782,7 @@ CDlgVer::CDlgVer( CWnd* pParent /*=NULL*/ ): CDialog( CDlgVer::IDD, pParent )
 
     long lVer = CNetApi::GetVersion( );
     m_sNet    = "VDMPlay API " + IntToCString( HIBYTE( HIWORD( lVer ) ) ) + "." +
-             IntToCString( LOBYTE( HIWORD( lVer ) ) ) + "." + IntToCString( LOWORD( lVer ) );
+                IntToCString( LOBYTE( HIWORD( lVer ) ) ) + "." + IntToCString( LOWORD( lVer ) );
 
     m_sRif = "Data Ver: " + IntToCString( theApp.GetRifVer( ) ) + "." + IntToCString( VER_RIFF );
     if ( theApp.IsShareware( ) )
@@ -2868,8 +2868,8 @@ CDlgVer::CDlgVer( CWnd* pParent /*=NULL*/ ): CDialog( CDlgVer::IDD, pParent )
         m_sSoundVer = "MSS: " + CString( theMusicPlayer.GetVersion( ) ) + " {off}";
     else
     {
-        char sBuf[130], *psFmt;
-        long iRate, iFmt;
+        char sBuf[130] {}, *psFmt {};
+        long iRate {}, iFmt {};
         sBuf[0] = 0;
         AIL_digital_configuration( theMusicPlayer._GetHDig( ), &iRate, &iFmt, sBuf );
         switch ( iFmt )
@@ -2894,14 +2894,14 @@ CDlgVer::CDlgVer( CWnd* pParent /*=NULL*/ ): CDialog( CDlgVer::IDD, pParent )
     m_sSpeed = "CPU Speed: ~" + IntToCString( theApp.GetCpuSpeed( ) ) + "  CD-ROM Speed: ~" +
                IntToCString( theApp.GetCdSpeed( ) ) + "X";
 
-    MEMORYSTATUS ms;
+    MEMORYSTATUS ms {};
     ms.dwLength = sizeof( ms );
-    GlobalMemoryStatus( &ms );
+    GlobalMemoryStatus( &ms ); // TODO: replace with GlobalMemoryStatusEx
     const int ONE_MEG = 1024 * 1024;
     m_sMemory         = "Memory (avail/total) Physical: " + IntToCString( ms.dwAvailPhys / ONE_MEG ) + "M/" +
-                IntToCString( ms.dwTotalPhys / ONE_MEG ) +
-                "M Virtual: " + IntToCString( ms.dwAvailPageFile / ONE_MEG ) + "M/" +
-                IntToCString( ms.dwTotalPageFile / ONE_MEG ) + "M";
+                        IntToCString( ms.dwTotalPhys / ONE_MEG ) +
+                        "M Virtual: " + IntToCString( ms.dwAvailPageFile / ONE_MEG ) + "M/" +
+                        IntToCString( ms.dwTotalPageFile / ONE_MEG ) + "M";
 
     if ( iWinType == W32s )
     {
@@ -2998,9 +2998,9 @@ void CDlgStackDump::OnCopyStack( )
         return;
     }
 
-    MEMORYSTATUS ms;
+    MEMORYSTATUS ms {};
     ms.dwLength = sizeof( ms );
-    GlobalMemoryStatus( &ms );
+    GlobalMemoryStatus( &ms ); // TODO: replace with GlobalMemoryStatusEx
     const int ONE_MEG = 1024 * 1024;
 
     char sNum1[20], sNum2[20];
@@ -3009,7 +3009,7 @@ void CDlgStackDump::OnCopyStack( )
     CString sMsg;
     if ( ms.dwAvailPageFile / ONE_MEG < 8 )
     {
-        sMsg.LoadString( IDS_OUT_OF_MEMORY );
+        (void)sMsg.LoadString( IDS_OUT_OF_MEMORY );
         sMsg += "\r\n";
     }
     sMsg += "Sorry, an unknown error occured.\r\nVersion: " + CString( VER_STRING ) + "\r\n" +

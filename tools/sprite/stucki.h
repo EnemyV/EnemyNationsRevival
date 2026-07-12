@@ -12,8 +12,8 @@
 //  Should be nested class when supported by compiler.
 struct sortedColor
 {
-	RGBColor 	color;
-	byte		originalIndex;
+    RGBColor color = {};
+    byte     originalIndex = {};
 };
 
 class StuckiDither : public Dither
@@ -32,7 +32,7 @@ class StuckiDither : public Dither
 
 		//  Default ctor because compiler can't 
 		//  generate one.  Why not?
-		StuckiDither()	{}
+      StuckiDither( ): aOriginalPalette( ), aSortedPalette( ), palSize( ), redLookup( ) {}
 
 		virtual bool Init( const RGBColor *pPalette, int palSize );
 		virtual Image *DitherImage( const Image *pOriginalImage );
