@@ -114,7 +114,9 @@ class CBmButton : public CMyButton
 {
     // Construction
   public:
-    CBmButton( ) {}
+    CBmButton( ): m_iBmOn( ), m_iBtnNum( ), m_pBmBtnData( )
+    {
+    }
 
     // Attributes
   public:

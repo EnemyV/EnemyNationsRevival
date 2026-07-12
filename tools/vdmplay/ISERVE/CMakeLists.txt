@@ -46,8 +46,8 @@ target_compile_definitions(iserve PRIVATE
 )
 
 target_compile_options(iserve PRIVATE
-    $<$<CONFIG:Debug>:/MD /W3 /GX /Zi /Od>
-    $<$<CONFIG:Release>:/MD /W3 /GX /O2>
+    $<$<CONFIG:Debug>:/MD /W3 /EHsc /Zi /Od>
+    $<$<CONFIG:Release>:/MD /W3 /EHsc /O2>
 )
 
 target_link_options(iserve PRIVATE

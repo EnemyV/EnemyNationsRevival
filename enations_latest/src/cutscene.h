@@ -48,7 +48,7 @@ class CWndCutScene : public CWndBase
 {
 // Construction
 public:
-	CWndCutScene () { m_pdibPicture = NULL; }
+CWndCutScene( ): m_iTyp( ), m_iRtn( ), m_iScenario( ), m_bTile( ) { m_pdibPicture = NULL; }
 
 	void		Create (int iTyp, int iScenario = -1);
 				enum { cut, repeat, scenario_end, win, lose };

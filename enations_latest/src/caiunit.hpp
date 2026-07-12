@@ -85,7 +85,12 @@ protected:
 public:
 	CAIUnit( DWORD dwID, int iOwner, int iType, int iTypeUnit );
 	~CAIUnit();
-	CAIUnit() : m_dwTimeLastAtkCmd( 0 ), m_dwStuckSince( 0 ), m_dwStuckHex( 0 ), m_dwErrHex( 0 ), m_wErrCnt( 0 ) {};
+	// master's fuller member-init list + our transient AI-state members
+	CAIUnit( )
+	    : m_bControl( ), m_dwData( ), m_dwID( ), m_iOwner( ), m_iType( ), m_iTypeUnit( ), m_pdwaParams( ),
+	      m_pwaParams( ), m_plCopyData( ), m_timeLastDest( ), m_wGoal( ), m_wStatus( ), m_wTask( ),
+	      m_dwTimeLastAtkCmd( 0 ), m_dwStuckSince( 0 ), m_dwStuckHex( 0 ), m_dwResendDest( 0 ), m_wResendCnt( 0 ),
+	      m_dwInBldgSince( 0 ), m_dwErrHex( 0 ), m_wErrCnt( 0 ), m_dwRoadStopSeen( 0 ) {};
 
 	// attack-alert feedback-loop cooldown (see CAITaskMgr::AttackAlert)
 	DWORD GetTimeLastAtkCmd( void ) const { return m_dwTimeLastAtkCmd; }

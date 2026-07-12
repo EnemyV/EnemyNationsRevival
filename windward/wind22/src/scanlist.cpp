@@ -103,6 +103,7 @@ void ScanList::ScanPoly( CPoint const apt[],  // Array of points in clockwise or
     //--------------------------------------------------------------------------
 // ScanList::ScanPoly
 //--------------------------------------------------------------------------
+#pragma warning( disable : 4731 5073 )
 void
 ScanList::ScanPolyOld(
     CPoint const apt[], // Array of points in clockwise order
@@ -191,6 +192,7 @@ ScanList::ScanPolyOld(
 
     ASSERT_STRICT_VALID( this );
 }
+#pragma warning( default : 4731 5073 )
 
 
 //--------------------------------------------------------------------------
@@ -325,7 +327,7 @@ void ScanList::ScanPolyNew( CPoint const apt[], int iCount )
 //--------------------------------------------------------------------------
 // ScanList::ScanPolyFixed
 //--------------------------------------------------------------------------
-
+#pragma warning( disable : 4731 5073 )
 void
 ScanList::ScanPolyFixedOld(
     CPoint const apt[],  // Array of points in clockwise order
@@ -414,9 +416,9 @@ ScanList::ScanPolyFixedOld(
 
     ASSERT_STRICT_VALID( this );
 }
+#pragma warning( default : 4731 5073 )
 
-
-    //--------------------------------------------------------------------------
+//--------------------------------------------------------------------------
 // ScanList::ScanPolyFixed
 //--------------------------------------------------------------------------
 void ScanList::ScanPolyFixed(CPoint const apt[],  // Array of points in clockwise order

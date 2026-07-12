@@ -46,8 +46,8 @@ set(sprite_sources
 add_executable(sprite WIN32 ${sprite_sources})
 
 target_compile_options(sprite INTERFACE
-        "$<$<CONFIG:RELEASE>:$<BUILD_INTERFACE:/MD;/GX;/Zi;/O2;/Ob2;/EHsc>"
-        "$<$<CONFIG:DEBUG>:$<BUILD_INTERFACE:/MD;/GX;/EHsc>"
+        "$<$<CONFIG:RELEASE>:$<BUILD_INTERFACE:/MD;/Zi;/O2;/Ob2;/EHsc>"
+        "$<$<CONFIG:DEBUG>:$<BUILD_INTERFACE:/MD;/EHsc>"
         )
 
 message("CMAKE_CXX_FLAGS: ${CMAKE_CXX_FLAGS}")

@@ -20,7 +20,7 @@
 class CCreditLine
 {
 public:
-		CCreditLine () {}
+    CCreditLine( ): m_iAlign( ), m_iSize( ), m_iRtn( ) {}
 		~CCreditLine () {}
 
 	int				m_iAlign;		// 0 == left, 1 == center, 2 == right

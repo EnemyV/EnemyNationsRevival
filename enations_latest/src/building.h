@@ -333,7 +333,7 @@ friend void CStructure::InitSprites ();
 friend void CStructure::InitLang ();
 
 public:
-			CBuildMaterials () : CStructureData (CStructureData::UTmaterials) {}
+CBuildMaterials( ): CStructureData( CStructureData::UTmaterials ), m_aiInput( ), m_aiOutput( ), m_iTime( ) {}
 
 			int			GetTime () const;
 			int			GetInput (int iInd) const;
@@ -417,7 +417,7 @@ friend void CStructure::InitSprites ();
 friend void CStructure::InitLang ();
 
 public:
-			CBuildHousing () : CStructureData (CStructureData::UThousing) {}
+CBuildHousing( ): CStructureData( CStructureData::UThousing ), m_iCapacity( ) {}
 
 			int		GetCapacity () { ASSERT_STRICT_VALID (this); return (m_iCapacity); }
 
@@ -498,7 +498,7 @@ friend void CStructure::InitSprites ();
 friend void CStructure::InitLang ();
 
 public:
-			CBuildPower () : CStructureData (CStructureData::UTpower) {}
+CBuildPower( ): CStructureData( CStructureData::UTpower ), m_iPower( ), m_iInput( ), m_iRate( ) {}
 
 			int		GetPower () { ASSERT_STRICT_VALID (this); return (m_iPower); }
 			int		GetInput () { ASSERT_STRICT_VALID (this); return (m_iInput); }
@@ -526,7 +526,7 @@ friend void CStructure::InitSprites ();
 friend void CStructure::InitLang ();
 
 public:
-			CBuildResearch () : CStructureData (CStructureData::UTresearch) {}
+CBuildResearch( ): CStructureData( CStructureData::UTresearch ), m_iRate( ) {}
 
 			int		GetRate () { ASSERT_STRICT_VALID (this); return (m_iRate); }
 
@@ -622,14 +622,14 @@ friend void CStructure::InitSprites ();
 friend void CStructure::InitLang ();
 
 public:
-			CBuildMine () : CStructureData (CStructureData::UTmine) {}
+CBuildMine( ): CStructureData( CStructureData::UTmine ), m_iTime( ), m_iAmount( ), m_iOutput( ) {}
 
 			int				GetTimeToMine () const { return (m_iTime); }
 			int				GetAmount () const { return (m_iAmount); }
 			int				GetTypeMines () const { return (m_iOutput); }
 
 protected:
-			int			m_iTime;								// time to mine
+			int			m_iTime;							// time to mine
 			int			m_iAmount;							// amount produced in MAX_DENSITY ground
 			int			m_iOutput;							// CMaterialTypes:: it mines
 
@@ -650,9 +650,9 @@ friend void CStructure::InitSprites ();
 friend void CStructure::InitLang ();
 
 public:
-			CBuildFarm () : CStructureData (CStructureData::UTfarm) {}
+CBuildFarm( ): CStructureData( CStructureData::UTfarm ), m_iTime( ), m_iOutput( ), m_iQuantity( ) {}
 
-			void			BuildFarm ();
+			void			BuildFarm (); // apparently unused and unimplemented
 
 			int				GetTimeToFarm () const { return (m_iTime); }
 			int				GetTypeFarm () const { return (m_iOutput); }
@@ -661,7 +661,7 @@ public:
 static int			GetCowDistance () { return (3); }
 
 protected:
-			int			m_iTime;								// time to mine
+			int			m_iTime;							// time to mine
 			int			m_iOutput;							// CMaterialTypes:: it mines
 			int			m_iQuantity;						// how much you get each time
 

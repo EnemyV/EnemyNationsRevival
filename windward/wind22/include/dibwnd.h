@@ -110,7 +110,7 @@ protected:
     void CoalesceRects( CRect arect[], int& nCount );
 
 #ifdef OPTIMIZE_BLIT_ORDER
-    void CDirtyRects::SortRectsByPosition( CRect arect[], int nCount );
+    void SortRectsByPosition( CRect arect[], int nCount );
 #endif
     void AddRect( CRect const* prect, CRect arect[], int& );
 
