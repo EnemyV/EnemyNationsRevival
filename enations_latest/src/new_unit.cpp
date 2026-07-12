@@ -165,8 +165,12 @@ void CMaterialBuilding::ShowStatusText( std::string& str )
     // this is the only way it generates code correctly
     char const* pDesc = CMaterialTypes::GetDesc( iTyp ).c_str( );
     char        sNum[14];
-    int         iNum = (int)( GetFrameProd( GetOwner( )->GetMtrlsProd( ) * float( 24 * 60 * pBm->GetOutput( iTyp ) ) /
-                                            float( pBm->GetTime( ) ) ) );
+    // Operator: the rate must be ACTUAL, not theoretical — the sim halts production entirely
+    // for these states (Operate's stopped|abandoned block, the event wait), so read 0/min.
+    int iNum = ( m_unitFlags & ( stopped | abandoned | event | dying ) )
+                   ? 0
+                   : (int)( GetFrameProd( GetOwner( )->GetMtrlsProd( ) * float( 24 * 60 * pBm->GetOutput( iTyp ) ) /
+                                          float( pBm->GetTime( ) ) ) );
     itoa( iNum, sNum, 10 );
 
     str = strPrintf( EnLoadStdString( IDS_STAT_MATERIAL ).c_str(), pDesc, sNum );
@@ -242,10 +246,13 @@ void CFarmBuilding::ShowStatusText( std::string& str )
     }
 
     CBuildFarm* pBf = GetData( )->GetBldFarm( );
-    std::string sNum =
-        IntToStr( GetFrameProd( GetOwner( )->GetFarmProd( ) * m_iTerMult * float( 24 * 60 * pBf->GetQuantity( ) ) /
-                                float( pBf->GetTimeToFarm( ) ) ),
-                  10, true );
+    // Operator: actual rate, not theoretical — 0 while the sim has the farm halted.
+    int iFarmRate = ( m_unitFlags & ( stopped | abandoned | event | dying ) )
+                        ? 0
+                        : (int)GetFrameProd( GetOwner( )->GetFarmProd( ) * m_iTerMult *
+                                             float( 24 * 60 * pBf->GetQuantity( ) ) /
+                                             float( pBf->GetTimeToFarm( ) ) );
+    std::string sNum = IntToStr( iFarmRate, 10, true );
     str = strPrintf( EnLoadStdString( IDS_STAT_FARM ).c_str(), sNum.c_str() );
 }
 
@@ -371,9 +378,14 @@ void CMineBuilding::ShowStatusText( std::string& str )
     }
 
     CBuildMine* pBm = GetData( )->GetBldMine( );
-    int         iRate10 =
-        (int)( GetFrameProd( GetOwner( )->GetMineProd( ) * (float)( 10 * m_iDensity * 24 * 60 * pBm->GetAmount( ) ) /
-                             (float)( CMinerals::DensityDiv( ) * pBm->GetTimeToMine( ) ) ) );
+    // Operator: actual rate, not theoretical — 0 while the sim has the mine halted.
+    // (An exhausted mine returned above with its own message; fracking/moho wells show
+    // their alt rate via the info window's AltOutput override, not this line.)
+    int iRate10 =
+        ( m_unitFlags & ( stopped | abandoned | event | dying ) )
+            ? 0
+            : (int)( GetFrameProd( GetOwner( )->GetMineProd( ) * (float)( 10 * m_iDensity * 24 * 60 * pBm->GetAmount( ) ) /
+                                   (float)( CMinerals::DensityDiv( ) * pBm->GetTimeToMine( ) ) ) );
     std::string sNum1;
     if ( iRate10 >= 20 )
         sNum1 = IntToStr( iRate10 / 10 );

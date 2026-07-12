@@ -212,11 +212,25 @@ static bool scroungeCapable(CBuilding* b) {
 // (CFarmBuilding / CMaterialBuilding, new_unit.cpp) so the alt-mode and fallback readouts stay
 // in sync with the stock "<resource>: <N>/min" line. Returns -1 when the building has no
 // per-minute rate (idle / non-producer) so callers can fall back to a plain label.
+// Operator (release 3.00.005 RC): the sim HALTS production outright for these states —
+// CBuilding::Operate's paused block (stopped|abandoned), the event-wait ("ran out" wedge,
+// set in BuildMaterials and idled on until materials arrive), dying, and under-construction.
+// GetFrameProd() knows nothing of them, so the rate readout showed the theoretical rate for
+// a building that isn't running. bWaitsOnEvent=false for the BioFuel branch only: a
+// BioFuel-active refinery deliberately CLEARS event and runs off global food (Operate).
+static bool productionHalted(CBuilding* b, bool bWaitsOnEvent = true) {
+    if ( b->GetConstDone() != -1 ) return true;
+    if ( b->IsFlag( CUnit::stopped ) || b->IsFlag( CUnit::abandoned ) ||
+         b->IsFlag( CUnit::dying ) )
+        return true;
+    return bWaitsOnEvent && b->IsFlag( CUnit::event );
+}
 static int primaryRatePerMin(CBuilding* b) {
     int ut = b->GetData()->GetUnionType();
     if ( ut == CStructureData::UTfarm ) {
         CBuildFarm* pf = b->GetData()->GetBldFarm();
         if ( !pf || pf->GetTimeToFarm() <= 0 ) return -1;
+        if ( productionHalted( b ) ) return 0;
         float fRate = b->GetOwner()->GetFarmProd() * (float)( (CFarmBuilding*)b )->GetTerMult()
                       * float( 24 * 60 * pf->GetQuantity() ) / float( pf->GetTimeToFarm() );
         return (int)b->GetFrameProd( fRate );
@@ -224,6 +238,7 @@ static int primaryRatePerMin(CBuilding* b) {
     if ( ut == CStructureData::UTmaterials ) {
         CBuildMaterials const* pm = b->GetData()->GetBldMaterials();
         if ( !pm || pm->GetTime() <= 0 ) return -1;
+        if ( productionHalted( b ) ) return 0;
         // I1 (operator): a converter with an empty required-input store produces NOTHING —
         // show 0/min, not the theoretical max. Mirrors the runtime BuildMaterials gate
         // (mainloop.cpp:2361) and the Inputs-widget "missing" check (GetStore(input)<=0).
@@ -279,14 +294,24 @@ static std::string AltProductionStatus(CBuilding* b, const AltOutput::AltOutputD
     int ut   = b->GetData()->GetUnionType();
     if ( ut == CStructureData::UTfarm ) {
         int lumber = primaryRatePerMin( b );   // lumber/min the mill harvests (then diverts to kiln)
-        if ( lumber > 0 && pDef->m_iRatioIn > 0 )
-            rate = ( lumber * p->GetCharcoalPct() ) / ( 100 * pDef->m_iRatioIn );
+        if ( pDef->m_iRatioIn > 0 )
+            rate = ( lumber > 0 ) ? ( lumber * p->GetCharcoalPct() ) / ( 100 * pDef->m_iRatioIn ) : 0;
     } else if ( ut == CStructureData::UTmaterials ) {
         CBuildMaterials const* pm = b->GetData()->GetBldMaterials();
         if ( pm && pm->GetTime() > 0 && pDef->m_iRatioIn > 0 ) {
-            int batches = (int)b->GetFrameProd( p->GetMtrlsProd() * float( 24 * 60 )
-                                                / float( pm->GetTime() ) );
-            rate = batches / pDef->m_iRatioIn;
+            // Operator: the rate must reflect ACTUAL output. BioFuel (eGlobalConsume) runs even
+            // through the event wedge (Operate clears it) but not stopped/abandoned/unbuilt, and
+            // Convert() clamps to the input actually on hand — global food for BioFuel, the
+            // building's own store for eRatioConsume. Empty input ⇒ 0 / min, same as the sim.
+            bool bGlobal = ( pDef->m_eMode == AltOutput::eGlobalConsume );
+            int  iHave   = bGlobal ? p->GetFood() : b->GetStore( pDef->m_iInputMat );
+            if ( productionHalted( b, /*bWaitsOnEvent=*/!bGlobal ) || iHave < pDef->m_iRatioIn )
+                rate = 0;
+            else {
+                int batches = (int)b->GetFrameProd( p->GetMtrlsProd() * float( 24 * 60 )
+                                                    / float( pm->GetTime() ) );
+                rate = batches / pDef->m_iRatioIn;
+            }
         }
     }
     if ( rate >= 0 )
@@ -2114,7 +2139,7 @@ void SDL2BuildingWindow::Refresh() {
                 // in primaryRatePerMin (empty input -> 0) and the runtime BuildPower gate
                 // (mainloop.cpp:2476: GetStore(input)<=0 -> no burn, no oil).
                 int inMat     = pAlt ? pAlt->m_iInputMat : CMaterialTypes::coal;
-                int oilPerMin = ( m_pBldg->GetStore( inMat ) <= 0 ) ? 0
+                int oilPerMin = ( productionHalted( m_pBldg ) || m_pBldg->GetStore( inMat ) <= 0 ) ? 0
                                 : (int)( m_pBldg->GetFrameProd( float( 24 * 60 ) / (float)pBp->GetRate() )
                                          / (float)ratioIn );
                 str += ": " + FmtNum( oilPerMin ) + " / min";
