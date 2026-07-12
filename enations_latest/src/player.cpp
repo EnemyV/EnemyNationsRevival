@@ -1115,6 +1115,14 @@ BOOL CPlayer::CanRsrch( int iIndex )
         if ( !GetExists( *piNum ) )
             return ( FALSE );
 
+    // Pontoon Bridges: ONE-OF building gate (light factory line / refinery /
+    // heavy factory) - the prereq array is AND-only, so the OR lives here
+    if ( iIndex == CRsrchArray::bridge_short )
+        if ( !GetExists( CStructureData::light_0 ) && !GetExists( CStructureData::light_1 ) &&
+             !GetExists( CStructureData::light_2 ) && !GetExists( CStructureData::refinery ) &&
+             !GetExists( CStructureData::heavy ) )
+            return ( FALSE );
+
     return ( TRUE );
 }
 

@@ -265,14 +265,11 @@ void CRsrchArray::Open( )
         pRi->m_iScenarioReq      = pMid->m_iScenarioReq;                   // same gate as Mid-sized Buildings
         pRi->m_iNumRsrchRequired = 0;                                      // no research prereq
 
-        // Same BUILDING prerequisites as Mid-sized Buildings.
-        pRi->m_iNumBldgsRequired = pMid->m_iNumBldgsRequired;
-        if ( pMid->m_iNumBldgsRequired > 0 )
-        {
-            pRi->m_piBldgsRequired = new int[pMid->m_iNumBldgsRequired];
-            for ( int i = 0; i < pMid->m_iNumBldgsRequired; i++ )
-                pRi->m_piBldgsRequired[i] = pMid->m_piBldgsRequired[i];
-        }
+        // Building gate is ONE-OF light factory / refinery / heavy factory,
+        // special-cased in CPlayer::CanRsrch (the prereq array is AND-semantics
+        // only). Mid-sized Buildings' prereq (light factory only) starved
+        // river-split AIs that had a refinery but no factory (operator).
+        pRi->m_iNumBldgsRequired = 0;
 
         pRi->m_sName   = "Pontoon Bridges";
         pRi->m_sDesc   = "Light floating pontoon spans let our engineers bridge narrow water early, at half the reach of full bridge engineering.";
