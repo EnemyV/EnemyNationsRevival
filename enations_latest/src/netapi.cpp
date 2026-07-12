@@ -2155,7 +2155,8 @@ static void BridgeNew( CMsgBridgeNew* pMsg )
     // AI
     if ( pMsg->m_iMode == _CMsgRoad::one_hex )
     {
-        TRAP( );  // eric - if it builds a bridge and then stops - tell me to delete this
+        // eric's 1996 note said "if it builds a bridge and then stops - tell me
+        // to delete this". It happened (2026-07-12, first AI pontoon). Deleted.
         pVeh->SetRoadHex( pMsg->m_hexStart, pMsg->m_hexEnd );
     }
 
