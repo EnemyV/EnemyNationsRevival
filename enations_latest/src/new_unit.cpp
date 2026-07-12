@@ -5210,7 +5210,10 @@ CVehicle::~CVehicle( )
     for ( int iInd = 0; iInd < NUM_SUBS_OWNED; iInd++ )
         if ( ( SubsOwned[iInd].x != -1 ) && ( theVehicleHex.GetVehicle( SubsOwned[iInd] ) == this ) )
         {
-            TRAP( );  // this is bad - a hex wasn't freed
+            // was TRAP() - fires on ROUTINE world-teardown order (vehicles die
+            // in arbitrary order, stale claims expected) and killed every Debug
+            // exit (soak7 crash); the next line IS the recovery
+            EN_TRAP_REMOVED( "~CVehicle: unfreed hex claim - released below" );
             theVehicleHex.ReleaseHex( SubsOwned[iInd], this );
         }
 
