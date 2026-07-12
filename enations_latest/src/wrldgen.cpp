@@ -827,7 +827,7 @@ void CGameMap::GenerateBadlandsBlock( int _x, int iSideSize, int _y)
     // We subtract sea_level at the end to get JUST the change amount
     int  deltaAmount        = ConvertAlt( CHex::sea_level + boost, iSideSize ) - CHex::sea_level;
 
-    bool avoidChangingWater = false;
+    bool avoidChangingWater = true;   // match the mountain builder: never raise water hexes
     for ( int x = _x * iSideSize; x < ( _x + 1 ) * iSideSize; x++ )
     {
         for ( int y = _y * iSideSize; y < ( _y + 1 ) * iSideSize; y++ )

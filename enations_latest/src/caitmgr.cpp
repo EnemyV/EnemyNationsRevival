@@ -6326,7 +6326,9 @@ void CAITaskMgr::MoveToRange( CAIUnit* pUnit, CHexCoord hex )
     // CHexCoord& hexDefending, int iWidth, int iHeight,
     // CTransportData const *pVehData )
     CHexCoord hexRange = hexUnit;
-    m_pGoalMgr->m_pMap->m_pMapUtil->FindDefenseHex( hex, hexRange, iRange, iRange, pVehData );
+    // [assault-advance] TRUE = if no cover hex is reachable (attacking into a packed
+    // base), still advance toward the target instead of parking at the edge.
+    m_pGoalMgr->m_pMap->m_pMapUtil->FindDefenseHex( hex, hexRange, iRange, iRange, pVehData, TRUE );
 
     // unit may already be on the way to the 'in range' hex
     if ( hexDest == hexRange && bIsMoving )

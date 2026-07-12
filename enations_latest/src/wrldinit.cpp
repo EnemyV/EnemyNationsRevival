@@ -1280,6 +1280,10 @@ void CGameMap::Init( int iSide, int iSideSize, int iScenario )
 
                     CHex* pHexOn = GetHex( CHexCoord( x, y ) );
 
+                    // don't overwrite the ocean/lake/river creep-in with land types
+                    if ( pHexOn->IsWater( ) )
+                        continue;
+
                     int iSlope  = abs( pHexOn->GetAlt( ) - pHexTop->GetAlt( ) );
                     int iSlope2 = abs( pHexOn->GetAlt( ) - pHexRight->GetAlt( ) );
                     iSlope      = __max( iSlope, iSlope2 );

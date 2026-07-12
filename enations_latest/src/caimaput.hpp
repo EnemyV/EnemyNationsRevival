@@ -160,9 +160,9 @@ public:
 		CAIUnit *pAttacker, CHexCoord& hexAttacking );
 	void FindApproachHex( CHexCoord& hexTarget, 
 		CAIUnit *pUnit, CHexCoord& hexDest );
-	void FindDefenseHex( CHexCoord& hexAttacking, 
-		CHexCoord& hexDefending, int iWidth, int iHeight, 
-		CTransportData const *pVehData );
+	void FindDefenseHex( CHexCoord& hexAttacking,
+		CHexCoord& hexDefending, int iWidth, int iHeight,
+		CTransportData const *pVehData, BOOL bAdvanceIfNoCover = FALSE );
 	CAIHex *FindWaterPatrol( int iGoal );
 	CAIHex *FindWaterPatrol( CHexCoord& hexAt, CTransportData const *ptdShip );
 
