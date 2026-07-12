@@ -146,13 +146,11 @@ CHexCoord* CPathMgr::_GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord
     for ( int t = CHex::city; t < CHex::num_types; ++t )
     {
         int iRtn = theTerrain.GetData( t ).GetWheelMult( m_pTD->GetWheelType( ) );
-        // #27 (weighted-A*): m_iDistFactor is the MIN per-hex move cost; the old `<<=1`
-        // (x2) made the distance heuristic dist*2*min overestimate the true floor
-        // dist*min by 2x -> inadmissible -> A* went greedy-by-fewest-hexes and skipped
-        // the cheaper road. Use x1.5 (win's call @02:50): still > admissible so node
-        // count stays bounded (no perf regression on normal/short orders), but the
-        // smaller overestimate lets A* compare + prefer the longer road route.
-        iRtn = ( iRtn * 3 ) / 2;
+        // x2 (1996 original). Do NOT soften to x1.5 (reverted #27): at the shipping
+        // search budget both weights skip detour-roads identically, and x1.5 only
+        // explores more cells. Road-following is a budget/cost fix, not a heuristic one.
+        // iRtn *= 2;
+        iRtn <<= 1;
 
         if ( iRtn && iRtn < m_iDistFactor )
             m_iDistFactor = iRtn;
@@ -222,6 +220,7 @@ CHexCoord* CPathMgr::_GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord
         iHang *= 2;  // 256
     else
         iHang += ( theMap.GetRangeDistance( m_hexFrom, m_hexTo ) * CELLSAROUND );
+    iHang = ( iHang * 3 ) / 2;  // +50% search headroom (pairs with the *5 arena above)
 
     int iTicks = 0;
     int iList  = 1;
@@ -1594,7 +1593,7 @@ CPathMgr::CPathMgr( int iMapEX, int iMapEY )
     m_iMapEY    = iMapEY - 1;
     m_bVehBlock = TRUE;
 
-    m_iNumOfCells = ( m_iWidth + m_iHeight ) * 2;  // m_iWidth * m_iHeight;
+    m_iNumOfCells = ( m_iWidth + m_iHeight ) * 5;  // was *2 (1996); *5 = 2.5x search headroom for big obstacle-cut maps
     m_iNextSlot   = 0;
     m_iLowestBoth = 0;
     memset( m_acBoth, 0, sizeof( m_acBoth ) );
@@ -1644,7 +1643,7 @@ BOOL CPathMgr::Init( int iMapEX, int iMapEY )
     m_iMapEX  = iMapEX - 1;
     m_iMapEY  = iMapEY - 1;
 
-    m_iNumOfCells = ( m_iWidth + m_iHeight ) * 2;  // m_iWidth * m_iHeight;
+    m_iNumOfCells = ( m_iWidth + m_iHeight ) * 5;  // was *2 (1996); *5 = 2.5x search headroom for big obstacle-cut maps
     m_iNextSlot   = 0;
     m_iLowestBoth = 0;
     memset( m_acBoth, 0, sizeof( m_acBoth ) );

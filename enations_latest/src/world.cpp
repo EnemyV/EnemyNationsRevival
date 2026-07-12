@@ -2365,8 +2365,10 @@ void CWndWorld::ReRender( )
                 continue;
 
             // map loc -> radar pixel: subtract center, inverse-rotate by camera dir, scale.
+            // Diff() wraps the delta the short way around the toroidal map seam; raw subtraction
+            // sent across-seam units off the diamond into the button corners (or clipped them out).
             CMapLoc ml( pVeh->GetPtHead( ) );
-            int X = ml.x - cen.x, Y = ml.y - cen.y, x, y;
+            int X = CMapLoc::Diff( ml.x - cen.x ), Y = CMapLoc::Diff( ml.y - cen.y ), x, y;
             switch ( dirV )
             {
             case 0:  x = ( X + Y ) / 2; y = ( Y - X ) / 2;  break;
