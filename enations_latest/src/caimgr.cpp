@@ -1421,6 +1421,17 @@ void CAIMgr::UpdateUnits( CAIMsg* pMsg )
                     // reset the task used for the construction
                     m_pTaskMgr->UnAssignTask( wTask, wGoal );
 
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+                    {
+                        // interrupted-crane evidence: a LATE error for a past order
+                        // resets the crane's CURRENT mission (fuel = pending order tag)
+                        char szR[144];
+                        sprintf( szR, "[CRANERESET] plyr %d crane %lu err %d task %u fuel %u\n", m_iPlayer,
+                                 (unsigned long)pUnit->GetID( ), pMsg->m_iMsg, (unsigned)wTask,
+                                 (unsigned)pUnit->GetParam( CAI_FUEL ) );
+                        OutputDebugStringA( szR );
+                    }
+#endif
                     // reset the crane unit making it available again
                     pUnit->SetDataDW( (DWORD)0 );
                     pUnit->SetTask( FALSE );
@@ -1470,6 +1481,17 @@ void CAIMgr::UpdateUnits( CAIMsg* pMsg )
             // reset the task used for the construction
             m_pTaskMgr->UnAssignTask( wTask, wGoal );
 
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+            {
+                // interrupted-crane evidence (err_build_road path): this reset hit
+                // bridge-crane 130 mid-mission and orphaned its crossing
+                char szR[144];
+                sprintf( szR, "[CRANERESET] plyr %d crane %lu err %d task %u fuel %u\n", m_iPlayer,
+                         (unsigned long)pUnit->GetID( ), pMsg->m_iMsg, (unsigned)wTask,
+                         (unsigned)pUnit->GetParam( CAI_FUEL ) );
+                OutputDebugStringA( szR );
+            }
+#endif
             // reset the crane unit making it available again
             pUnit->SetDataDW( (DWORD)0 );
             pUnit->SetTask( FALSE );

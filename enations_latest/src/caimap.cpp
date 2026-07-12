@@ -1152,36 +1152,51 @@ BOOL CAIMap::PlanBridgeToward( CHexCoord const& hexAt, CHexCoord const& hexSite 
 		return FALSE;
 	}
 
-	// step toward the site (dominant axis first) until a river hex or the site
-	CHexCoord hexWalk = hexAt, hexBank( 0, 0 );
+	// step toward the site until a water hex or the site. Three walk shapes:
+	// staircase (dominant axis of remaining delta - the original), then the two
+	// L-walks (x-leg-first, y-leg-first) - a river bending around the base is
+	// invisible to the staircase (plyr 11 'noriver' at 391,462->413,390) but one
+	// of the L-legs crosses it
+	CHexCoord hexWalk, hexBank( 0, 0 );
 	int iDir = -1;
-	for( int i = 0; i < 128 && iDir < 0; i++ )
+	for( int iMode = 0; iMode < 3 && iDir < 0; iMode++ )
 	{
-		int dx = (int)hexSite.X() - (int)hexWalk.X();
-		int dy = (int)hexSite.Y() - (int)hexWalk.Y();
-		if( !dx && !dy )
-			break;
-		CHexCoord hexNext = hexWalk;
-		int iStepDir;
-		if( ( dx >= 0 ? dx : -dx ) >= ( dy >= 0 ? dy : -dy ) )
+		hexWalk = hexAt;
+		for( int i = 0; i < 128 && iDir < 0; i++ )
 		{
-			if( dx > 0 ) { hexNext.Xinc(); iStepDir = 2; }
-			else         { hexNext.Xdec(); iStepDir = 6; }
+			int dx = (int)hexSite.X() - (int)hexWalk.X();
+			int dy = (int)hexSite.Y() - (int)hexWalk.Y();
+			if( !dx && !dy )
+				break;
+			CHexCoord hexNext = hexWalk;
+			int iStepDir;
+			BOOL bStepX;
+			switch( iMode )
+			{
+			default: bStepX = ( ( dx >= 0 ? dx : -dx ) >= ( dy >= 0 ? dy : -dy ) ); break;  // staircase
+			case 1:  bStepX = ( dx != 0 ); break;   // x leg first
+			case 2:  bStepX = ( dy == 0 ); break;   // y leg first
+			}
+			if( bStepX )
+			{
+				if( dx > 0 ) { hexNext.Xinc(); iStepDir = 2; }
+				else         { hexNext.Xdec(); iStepDir = 6; }
+			}
+			else
+			{
+				if( dy > 0 ) { hexNext.Yinc(); iStepDir = 4; }
+				else         { hexNext.Ydec(); iStepDir = 0; }
+			}
+			CHex *pNextHex = theMap.GetHex( hexNext );
+			if( pNextHex != NULL && pNextHex->IsWater() &&
+				!( pNextHex->GetUnits() & CHex::bridge ) )	// bridged water is crossable: walk on to the NEXT gap
+			{
+				hexBank = hexWalk;
+				iDir    = iStepDir;
+			}
+			else
+				hexWalk = hexNext;
 		}
-		else
-		{
-			if( dy > 0 ) { hexNext.Yinc(); iStepDir = 4; }
-			else         { hexNext.Ydec(); iStepDir = 0; }
-		}
-		CHex *pNextHex = theMap.GetHex( hexNext );
-		if( pNextHex != NULL && pNextHex->IsWater() &&
-			!( pNextHex->GetUnits() & CHex::bridge ) )	// bridged water is crossable: walk on to the NEXT gap
-		{
-			hexBank = hexWalk;
-			iDir    = iStepDir;
-		}
-		else
-			hexWalk = hexNext;
 	}
 	if( iDir < 0 )
 	{

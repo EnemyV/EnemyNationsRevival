@@ -1548,8 +1548,13 @@ void CVehicle::DetermineSpeed(BOOL bEvent) {
         m_iSpeed = 32;
 
     // out of gas -> drop to 1/4 speed for trucks, 1/16 for all else
-    // NONE for walking
-    if ((GetData()->GetWheelType() != CWheelTypes::walk) && (GetOwner()->GetGasHave() <= 0)) {
+    // NONE for walking. AI cranes on build work are EXEMPT (operator 2026-07-12):
+    // gasless bridge/road builds crawled to a visual standstill, and the bridge
+    // is a river-split AI's only escape from the no-gas trap - same circularity
+    // pontoon-at-start broke
+    if ((GetData()->GetWheelType() != CWheelTypes::walk) && (GetOwner()->GetGasHave() <= 0) &&
+        !(GetOwner()->IsAI() && (GetData()->GetType() == CTransportData::construction) &&
+          (GetEvent() == build_road))) {
         if (GetData()->GetBaseType() == CTransportData::non_combat)
             m_iSpeed *= 2;
         else

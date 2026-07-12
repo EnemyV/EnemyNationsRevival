@@ -1923,8 +1923,10 @@ void CAITaskMgr::AssignScout( CAIUnit* pUnit )
 void CAITaskMgr::AssignConstruction( CAIUnit* pUnit )
 {
     // a planned river crossing waits: route this crane via the road task NOW --
-    // the 1-in-5 quota alone left crossings undispatched for whole rounds
-    if ( m_pGoalMgr->m_pMap != NULL && m_pGoalMgr->m_pMap->m_bPendingBridge && m_pGoalMgr->m_iGasHave )
+    // the 1-in-5 quota alone left crossings undispatched for whole rounds.
+    // No gas gate (operator): AI bridges are gas-free - the bridge IS the
+    // gasless river-split AI's escape route
+    if ( m_pGoalMgr->m_pMap != NULL && m_pGoalMgr->m_pMap->m_bPendingBridge )
     {
         CAITask* pRoadB = m_pGoalMgr->m_plTasks->FindTask( IDT_CONSTRUCT );
         if ( pRoadB != NULL )
