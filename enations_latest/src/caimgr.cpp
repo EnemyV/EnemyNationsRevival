@@ -186,54 +186,24 @@ void CAIMgr::Manage( void )
     PrioritizeMessage( );
     CAIMsg* pMsg = NULL;
 
-    // drain a BOUNDED BATCH per pass. The ~10 passes/sec cadence (ai.cpp) also
-    // capped drain at 10 msg/s while a mature patrol force alone generates ~11
-    // arrivals/s - tmp queue grew unbounded and construction/dispatch messages
-    // starved >70s behind patrol arrivals (soak5 plyr 6). The cadence comment
-    // always intended per-pass batching; the bound keeps the throttle's job
-    // (killing the full-CPU re-decide spin) intact.
-    const int AI_MSG_BATCH = 32;
-    int       iDrained     = 0;
-    while ( iDrained < AI_MSG_BATCH )
+    // get next message from message queue
+    // need to critical section bracket this: EnterCriticalSection
+    if ( !m_plMsgQueue->IsEmpty( ) )
     {
-        pMsg = NULL;
+        EnterCriticalSection( &m_cs );
+        pMsg = (CAIMsg*)m_plMsgQueue->RemoveHead( );
+        // [attack-dedup] this alert is leaving the queue → allow the next identical
+        // (id,id2) one of this type to enqueue again.
+        if ( pMsg != NULL && IsDedupAlert( pMsg->m_iMsg ) )
+            m_setPendingAttack.erase( DedupKey( pMsg ) );
+        LeaveCriticalSection( &m_cs );
+        m_iIdle = 0;
 
-        // get next message from message queue
-        // need to critical section bracket this: EnterCriticalSection
-        if ( !m_plMsgQueue->IsEmpty( ) )
-        {
-            EnterCriticalSection( &m_cs );
-            pMsg = (CAIMsg*)m_plMsgQueue->RemoveHead( );
-            // [attack-dedup] this alert is leaving the queue → allow the next identical
-            // (id,id2) one of this type to enqueue again.
-            if ( pMsg != NULL && IsDedupAlert( pMsg->m_iMsg ) )
-                m_setPendingAttack.erase( DedupKey( pMsg ) );
-            LeaveCriticalSection( &m_cs );
-            m_iIdle = 0;
-
-            // metrics: one message left the AI pipeline (about to be processed)
-            Perf::CounterInc( "ai.msg.proc" );
-            Perf::GaugeSet( "ai.q.depth", InterlockedDecrement( &g_aiMsgBacklog ) );
-        }
-
-        if ( pMsg == NULL )
-            break;
-
-        // delete early so that it don't leak if closed
-        // in the middle of this function
-        {
-            CAIMsg* aMsg = new CAIMsg( pMsg );
-            delete pMsg;
-            pMsg = aMsg;
-
-            // figure out what the message is about
-            ProcessMessage( pMsg );
-        }
-        ++iDrained;
-        PrioritizeMessage( );  // pull the next tmp entry through
+        // metrics: one message left the AI pipeline (about to be processed)
+        Perf::CounterInc( "ai.msg.proc" );
+        Perf::GaugeSet( "ai.q.depth", InterlockedDecrement( &g_aiMsgBacklog ) );
     }
-
-    if ( iDrained == 0 )
+    else
     {
         // we want to increment this by gametime, as in, how much game time has passed.
         // since, for example, if we're paused we dont need to be doing idle processing.
@@ -244,7 +214,18 @@ void CAIMgr::Manage( void )
     }
     //  m_dwLastMessageTime = GetTickCount64( );
 
-    if ( iDrained == 0 )
+    // delete early so that it don't leak if closed
+    // in the middle of this function
+    if ( pMsg != NULL )
+    {
+        CAIMsg* aMsg = new CAIMsg( pMsg );
+        delete pMsg;
+        pMsg = aMsg;
+
+        // figure out what the message is about
+        ProcessMessage( pMsg );
+    }
+    else if ( pMsg == NULL )
     {
         // reset all state flags
         m_bAttackOccurred   = FALSE;
