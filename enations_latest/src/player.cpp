@@ -489,6 +489,13 @@ void CPlayer::StartGame( )
         if ( theRsrch[iOn].m_iPtsRequired <= 0 )
             m_aRsrch.ElementAt( iOn ).m_bDiscovered = TRUE;
 
+    // AI players START with Pontoon Bridges (operator, 2026-07-12): river-split
+    // AI starts died waiting on a tech gate no rescue logic can substitute for.
+    // Humans research it normally. Runs identically on every client (StartGame
+    // is roster-driven), so MP-deterministic.
+    if ( IsAI( ) && m_aRsrch.GetSize( ) > CRsrchArray::bridge_short )
+        m_aRsrch.ElementAt( CRsrchArray::bridge_short ).m_bDiscovered = TRUE;
+
 #ifdef _CHEAT
     if ( EnGetProfileInt( "Cheat", "KnowItAll", 0 ) )
         for ( int iOn = 1; iOn < m_aRsrch.GetSize( ); iOn++ ) m_aRsrch.ElementAt( iOn ).m_bDiscovered = TRUE;
