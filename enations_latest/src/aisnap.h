@@ -80,6 +80,7 @@ struct AiVehSnap
     int bCarried;                   // GetTransport() != NULL
     int iSpotting;                  // GetSpottingRange()
     int iRouteMode;                 // GetRouteMode()
+    int iEvent;                     // GetEvent() - build/build_road = actively working
 };
 
 namespace AiSnap

@@ -80,10 +80,10 @@ int SDL2WorldGenWidgets::AddTo(SDL2Dialog* dlg, int lx, int y, int w, int rowH) 
     lstWorldType = dlg->AddWidget<SDL2Listbox>(lx, y + 4, w, rowH * 5);
     PopulateWorldTypeList(lstWorldType);
 
-    // Rivers — density slider (0 = none, 60 = classic baseline, 100 = lots).
+    // Rivers — density slider (0 = none, 35 = default, 100 = lots).
     // Value feeds MakeRiversFlow's accumulation threshold; synced via CNetStart.
     int rvY = y + rowH * 5 + 18;
-    int savedRivers = std::max(0, std::min(100, (int)EnGetProfileInt("Create", "Rivers", 60)));
+    int savedRivers = std::max(0, std::min(100, (int)EnGetProfileInt("Create", "Rivers", 35)));
     lblRivers = dlg->AddWidget<SDL2Label>(lx, rvY, 110, rowH, "Rivers: " + std::to_string(savedRivers) + "%");
     sldRivers = dlg->AddWidget<SDL2Slider>(lx + 115, rvY, w - 115, rowH, 0, 100, savedRivers,
         [this](int v) { if (lblRivers) lblRivers->SetText("Rivers: " + std::to_string(v) + "%"); });

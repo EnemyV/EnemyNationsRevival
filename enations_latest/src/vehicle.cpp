@@ -54,15 +54,23 @@ BOOL CVehicle::TestStuck() {
     m_dwTimeJump = theGame.GettimeGetTime() + 1000 * TRUCK_JUMP_TIME;
 
     // ok, we transport to the dest if we can
+    // NOTE: the TRAPs below were 1996 curiosity breakpoints in a path that was
+    // dead for AI units until the gate ruling; they fire on ROUTINE states for a
+    // 6-min-stuck unit (occupied hexes, unenterable dest) and killed Debug
+    // observation runs. Logged instead - TestStuck only; TRAP stays fatal elsewhere.
     CBuilding *pBldg = theBuildingHex._GetBuilding(m_ptDest);
     if (pBldg != NULL) {
         if (!CanEnterBldg(pBldg)) {
-            TRAP();
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+            { char szT[64]; sprintf(szT, "[TSTRAP] veh %lu entercant\n", (unsigned long)GetID()); OutputDebugStringA(szT); }
+#endif
             return FALSE;
         }
 
         if (m_pTransport != NULL) {
-            TRAP();
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+            { char szT[64]; sprintf(szT, "[TSTRAP] veh %lu carried\n", (unsigned long)GetID()); OutputDebugStringA(szT); }
+#endif
             POSITION pos = m_pTransport->m_lstCargo.Find(this);
             if (pos != NULL)
                 m_pTransport->m_lstCargo.RemoveAt(pos);
@@ -96,17 +104,14 @@ BOOL CVehicle::TestStuck() {
             // put it here pointing at the next hex
             ReleaseOwnership();
             if (pHexOn->X() < (pHexOn + 1)->X()) {
-                TRAP();
                 m_ptTail.x = pHexOn->X() * 2;
                 m_ptHead.y = m_ptTail.y = pHexOn->Y() * 2 + 1;
                 m_ptHead.x = m_ptTail.x + 1;
             } else if (pHexOn->X() > (pHexOn + 1)->X()) {
-                TRAP();
                 m_ptHead.x = pHexOn->X() * 2;
                 m_ptHead.y = m_ptTail.y = pHexOn->Y() * 2;
                 m_ptTail.x = m_ptHead.x + 1;
             } else if (pHexOn->Y() < (pHexOn + 1)->Y()) {
-                TRAP();
                 m_ptHead.y = pHexOn->Y() * 2 + 1;
                 m_ptHead.x = m_ptTail.x = pHexOn->X() * 2;
                 m_ptTail.y = m_ptHead.y - 1;
@@ -118,7 +123,9 @@ BOOL CVehicle::TestStuck() {
 
             // get it going
             if (m_pTransport != NULL) {
-                TRAP();
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+                { char szT[64]; sprintf(szT, "[TSTRAP] veh %lu carried2\n", (unsigned long)GetID()); OutputDebugStringA(szT); }
+#endif
                 POSITION pos = m_pTransport->m_lstCargo.Find(this);
                 if (pos != NULL)
                     m_pTransport->m_lstCargo.RemoveAt(pos);
@@ -134,13 +141,14 @@ BOOL CVehicle::TestStuck() {
             return TRUE;
         }
 
-        TRAP();
         pHexOn++;
         iNumTries--;  // was never decremented (since 1996): loop walked past the path array
     }
 
     // we failed
-    TRAP();
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+    { char szT[64]; sprintf(szT, "[TSTRAP] veh %lu nofree\n", (unsigned long)GetID()); OutputDebugStringA(szT); }
+#endif
     return FALSE;
 }
 

@@ -12,6 +12,7 @@
 #include "caidata.hpp"
 
 #include "cpathmap.h"
+#include "enprobes.h"
 #include "stdafx.h"
 
 extern CException* pException;  // standard exception for yielding
@@ -840,6 +841,15 @@ void CAIData::BuildAt( CHexCoord& hexSite, int iBldg, int iDir, CAIUnit* paiUnit
 #endif
         if ( hexVeh != hexSite )
         {
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+            // the caller (ConstructBuilding) has ALREADY marked the task COMPLETED
+            // when this drops - nothing resends; the crane strands at the site
+            char szBd[128];
+            sprintf( szBd, "[BUILDDROP] plyr %d veh %lu at %d,%d != site %d,%d bldg %d dir %d\n",
+                     paiUnit->GetOwner( ), (unsigned long)paiUnit->GetID( ),
+                     hexVeh.X( ), hexVeh.Y( ), hexSite.X( ), hexSite.Y( ), iBldg, iDir );
+            OutputDebugStringA( szBd );
+#endif
             LeaveCriticalSection( &cs );
             return;
         }

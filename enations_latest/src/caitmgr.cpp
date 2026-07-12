@@ -2070,6 +2070,18 @@ DefaultRoad:
     // order the vehicle to perform it
     if ( pTask != NULL )
     {
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+        {
+            // the wandering ledger: every crane task switch, old -> new
+            char szRe[128];
+            sprintf( szRe, "[REASSIGN] plyr %d crane %lu oldtask %u oldgoal %u -> task %u type %u goal %u\n",
+                     m_iPlayer, (unsigned long)pUnit->GetID( ),
+                     (unsigned)pUnit->GetTask( ), (unsigned)pUnit->GetGoal( ),
+                     (unsigned)pTask->GetID( ), (unsigned)pTask->GetType( ),
+                     (unsigned)pTask->GetGoalID( ) );
+            OutputDebugStringA( szRe );
+        }
+#endif
         ClearTaskUnit( pUnit );
 
         pUnit->SetTask( pTask->GetID( ) );
@@ -5263,9 +5275,19 @@ void CAITaskMgr::BuildRoad( CAIUnit* pUnit, CAITask* pTask )
         // only while the run is ALIVE (driving or paving). A crane stopped
         // short of the run's end is a dead run (unreachable pick / hijacked
         // route) and was wedged here forever: unlatch and repool.
+        // PAVING looks stopped too - the build event is the discriminator
+        // (this guard was killing mid-pave cranes ~96x/5min, the road gaps)
         AiVehSnap snapR;
         if ( !AiSnap::ReadVeh( pUnit->GetID( ), snapR ) ||
-             ( snapR.iRouteMode != CVehicle::stop && snapR.iRouteMode != CVehicle::cant_deploy ) )
+             ( snapR.iRouteMode != CVehicle::stop && snapR.iRouteMode != CVehicle::cant_deploy ) ||
+             snapR.iEvent == CVehicle::build_road || snapR.iEvent == CVehicle::build )
+        {
+            pUnit->ClearRoadStop( );  // observed alive
+            return;
+        }
+        // the stop must PERSIST 30s across passes - a traffic pause caught at
+        // sample time is not a dead run (56-109 false kills/5min measured)
+        if ( !pUnit->NoteRoadStop( theGame.GettimeGetTime( ) ) )
             return;
 #if EN_AI_PROBES_ECON && defined(_WIN32)
         {
@@ -5812,17 +5834,27 @@ void CAITaskMgr::ConstructBuilding( CAIUnit* pUnit, CAITask* pTask )
                 // likely move, so shelve the spot for just 30s and retry rather
                 // than permanently abandon a good deposit; a terrain-level reason
                 // (water / steep / adjacent altitude) is a permanent blacklist.
+                // a mobile unit on the footprint: RETRY IN PLACE (operator) -
+                // keep the task, stay put, try again next pass; blockers move
+                if ( bAnyVehInWay )
+                    return;
+
                 if ( m_pGoalMgr->m_pMap->m_pMapUtil != NULL )
-                {
-                    if ( bAnyVehInWay )
-                        m_pGoalMgr->m_pMap->m_pMapUtil->AddFailedSiteTemp( iBldg, hexSite, 30 * 1000 );
-                    else
-                        m_pGoalMgr->m_pMap->m_pMapUtil->AddFailedSite( iBldg, hexSite );
-                }
+                    m_pGoalMgr->m_pMap->m_pMapUtil->AddFailedSite( iBldg, hexSite );
 
                 ClearTaskUnit( pUnit );
                 UnAssignTask( pTask->GetID( ), pTask->GetGoalID( ) );
 
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+                {
+                    // arrive->reject: the crane traveled here and the site failed on arrival
+                    char szNo[128];
+                    sprintf( szNo, "[NOORIENT] plyr %d crane %lu bldg %d at %d,%d why %d vehinway %d\n",
+                             m_iPlayer, (unsigned long)pUnit->GetID( ), iBldg,
+                             hexSite.X( ), hexSite.Y( ), iWhy, (int)bAnyVehInWay );
+                    OutputDebugStringA( szNo );
+                }
+#endif
 #ifdef _LOGOUT
                 logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC,
                            "ConstructBuilding(): player %d no legal orientation for a %d at %d,%d (why=%d) -> blacklisted ",
@@ -5835,6 +5867,16 @@ void CAITaskMgr::ConstructBuilding( CAIUnit* pUnit, CAITask* pTask )
 
         // tell game to send message to truck to build now
         pGameData->BuildAt( hexSite, iBldg, iDir, pUnit );
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+        {
+            // arrive->issue: the success outcome (pair with NOORIENT/BUILDDROP for the split)
+            char szGo[112];
+            sprintf( szGo, "[BUILDGO] plyr %d crane %lu bldg %d at %d,%d dir %d\n",
+                     m_iPlayer, (unsigned long)pUnit->GetID( ), iBldg,
+                     hexSite.X( ), hexSite.Y( ), iDir );
+            OutputDebugStringA( szGo );
+        }
+#endif
         // flag it as completed so we don't resend the build message
         pTask->SetStatus( COMPLETED_TASK );
         // set exit orientation for future usage in error recovery
@@ -5999,7 +6041,8 @@ void CAITaskMgr::ConstructBuilding( CAIUnit* pUnit, CAITask* pTask )
                                 // unreachable site (e.g. a deposit across a river a gas-less AI
                                 // can never bridge) shelves 10 min so the picker stops re-selecting
                                 // it every 60s and shuttle-looping; transient mutual blocking = 60s
-                                DWORD dwShelf = 60 * 1000;
+                                // +0-15s jitter breaks retry lockstep between colliding cranes
+                                DWORD dwShelf = ( 60 + pGameData->GetRandom( 16 ) ) * 1000;
                                 if ( !m_pGoalMgr->m_pMap->m_pMapUtil->GetPathRating( hexVeh, hexSite ) )
                                     dwShelf = 600 * 1000;
                                 m_pGoalMgr->m_pMap->m_pMapUtil->AddFailedSiteTemp( iBldg, hexSite, dwShelf );

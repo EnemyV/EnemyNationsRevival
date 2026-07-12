@@ -39,6 +39,7 @@ protected:
 	DWORD			m_dwInBldgSince;	// census: first sweep this truck was seen inside a bldg (transient)
 	DWORD			m_dwErrHex;			// error-restage: last error position, MAKELPARAM (transient)
 	WORD			m_wErrCnt;			// consecutive error-restages from that hex (traffic-knot escape)
+	DWORD			m_dwRoadStopSeen;	// dead-run guard: first stopped observation (transient)
 
 	DWORD m_dwID;
 	int m_iOwner;
@@ -110,6 +111,14 @@ public:
 	}
 	DWORD GetInBldgSince( void ) const { return m_dwInBldgSince; }
 	void  SetInBldgSince( DWORD dw ) { m_dwInBldgSince = dw; }
+	// dead-run guard: TRUE once a stop has persisted 30s across passes
+	BOOL NoteRoadStop( DWORD dwNow )
+	{
+		if ( m_dwRoadStopSeen == 0 ) { m_dwRoadStopSeen = dwNow; return FALSE; }
+		if ( dwNow - m_dwRoadStopSeen < 30 * 1000 ) return FALSE;
+		m_dwRoadStopSeen = 0; return TRUE;
+	}
+	void ClearRoadStop( void ) { m_dwRoadStopSeen = 0; }
 	// bypass the 30s same-dest dedupe for ONE deliberate retry (clamped-path resume)
 	void  ForceNextDest( void ) { m_timeLastDest = 0; }
 

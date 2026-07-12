@@ -838,11 +838,13 @@ BOOL CAIMap::ConnectRoad( CHexCoord& hexFrom, CHexCoord& hexTo )
 					if( iTT == CHex::coastline || iTT == CHex::ocean || iTT == CHex::lake )
 						continue;
 
-					// span-aware crossing cap (operator): a consecutive river
-					// run longer than the owner's bridge reach must not enter
-					// the plan - roads dead-ended at unbridgeable crossings.
-					// Runs within reach stay: legitimate bridge candidates.
-					if( iTT == CHex::river )
+					// span-aware crossing cap (operator): with bridge tech, drop
+					// crossings longer than the reach. PRE-tech rivers STAY
+					// planned (vanilla) - iMaxSpan=0 stripped every river from
+					// every early plan, so bridge discovery (it scans the plan)
+					// never saw a span: 0 bridges in the 14h fog-off run. The
+					// pick-time gate keeps cranes off river hexes instead.
+					if( iTT == CHex::river && iMaxSpan > 0 )
 					{
 						int j = i;
 						while( j < iPathLen )
@@ -1591,6 +1593,12 @@ int CAIMap::GetRoadRun( const CHexCoord& hexStart, CHexCoord& hexEnd, int iMaxHe
 		CHexCoord hexRun( nx, ny );
 		if( NeighborIsFarmLumber( hexRun ) )
 			break;
+		// stop at rivers: bridge candidates, never paveable (mirror IsRoadHexEligible)
+		{
+			CHex* pRunHex = theMap.GetHex( hexRun );
+			if( pRunHex == NULL || pRunHex->GetType() == CHex::river )
+				break;
+		}
 		wStatus &= ~MSW_PLANNED_ROAD;	// claim: planned -> built
 		wStatus |= MSW_ROAD;
 		SetLocation( (WORD)nx, (WORD)ny, wStatus );

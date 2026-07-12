@@ -1444,6 +1444,33 @@ void CAIRouter::RemovePlayerUnitsFromLists( int iPlayer )
 // also need it) and this quantity and return
 // the pointer
 //
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+// tripwire: a returned source that is LIVE under construction = the vulture bug
+// (the eligibility skip read a copy saying not-constructing)
+static void SrcConstrCheck( int iPlyr, int iMat, CAIUnit* pSrc )
+{
+    if ( pSrc == NULL )
+        return;
+    int      iCopyFlag = -1;
+    CAICopy* pC        = pSrc->GetCopyData( CAICopy::CBuilding );
+    if ( pC != NULL )
+        iCopyFlag = pC->m_aiDataOut[CAI_ISCONSTRUCTING];
+    BOOL bLive = FALSE;
+    EnterCriticalSection( &cs );
+    CBuilding* pB = theBuildingMap.GetBldg( pSrc->GetID( ) );
+    if ( pB != NULL )
+        bLive = pB->IsConstructing( );
+    LeaveCriticalSection( &cs );
+    if ( bLive )
+    {
+        char sz[112];
+        sprintf( sz, "[SRCCONSTR] plyr %d mat %d src %lu copyflag %d LIVE-CONSTRUCTING\n", iPlyr, iMat,
+                 (unsigned long)pSrc->GetID( ), iCopyFlag );
+        OutputDebugStringA( sz );
+    }
+}
+#endif
+
 CAIUnit* CAIRouter::GetNearestSource( int iMaterial, int iQtyNeeded, int* piDistBack, int iX, int iY )
 {
     ASSERT_VALID( m_plUnits );
@@ -1809,6 +1836,9 @@ CAIUnit* CAIRouter::GetNearestSource( int iMaterial, int iQtyNeeded, int* piDist
             iBestDist = theMap.GetRangeDistance( hexNeed, hexMat );
         }
         *piDistBack = iBestDist;
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+        SrcConstrCheck( m_iPlayer, iMaterial, pNextClosest );
+#endif
         return ( pNextClosest );
     }
     else if ( pClosest == NULL && pNextClosest == NULL )
@@ -1851,6 +1881,9 @@ CAIUnit* CAIRouter::GetNearestSource( int iMaterial, int iQtyNeeded, int* piDist
     // return the best distance
     *piDistBack = iBestDist;
 
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+    SrcConstrCheck( m_iPlayer, iMaterial, pClosest );
+#endif
     return ( pClosest );
 }
 //

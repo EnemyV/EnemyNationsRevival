@@ -1445,7 +1445,14 @@ void CVehicle::EnterBuilding() {
     CBuilding *pBldg = theBuildingHex._GetBuilding(m_ptHead);
     ASSERT (pBldg != NULL);
     if (pBldg != NULL) {
-        TRAP((pBldg->GetOwner() != GetOwner()) && (GetOwner()->GetRelations() != RELATIONS_ALLIANCE));
+        // 1996 TRAP: entering a foreign, non-allied building. Now a LEGIT state
+        // (trucks steal from enemies - fc7fe992; AI jump-rescue lands in dest).
+        // Debug-only breakpoint, no-op in Release - log instead so it doesn't
+        // kill observation runs.
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+        if ((pBldg->GetOwner() != GetOwner()) && (GetOwner()->GetRelations() != RELATIONS_ALLIANCE))
+        { char szE[80]; sprintf(szE, "[ENTERFOREIGN] veh %lu bldg %lu\n", (unsigned long)GetID(), (unsigned long)pBldg->GetID()); OutputDebugStringA(szE); }
+#endif
 
         GetExitLoc(pBldg, GetData()->GetType(), m_ptNext, m_ptHead, m_ptTail);
         CheckExit();
@@ -2182,18 +2189,15 @@ void CVehicle::HandleBlocked() {
         return;
     }
 
-    // permanently-boxed detector: a unit still on the SAME hex after 90s of
-    // real time despite wanting to move is boxed, not jammed - take the
-    // designed give-up so the AI can re-task it. Transient traffic always
-    // moves the unit within seconds (which resets the watch below); the
-    // vanilla counters can't see this state because every re-path, re-send
-    // and blocked<->traffic oscillation resets them.
+    // permanently-boxed detector: same hex past the 1996 escalation horizon
+    // (TRUCK_JUMP_TIME) -> designed give-up. 90s aborted trips for units
+    // merely queued in fresh-base gridlock; frozen units sit for hours.
     {
         CHexCoord _hexNow(m_ptHead);
         if (m_dwStagnantSince == 0 || m_hexStagnant != _hexNow) {
             m_hexStagnant     = _hexNow;
             m_dwStagnantSince = theGame.GettimeGetTime();
-        } else if (theGame.GettimeGetTime() - m_dwStagnantSince > 90 * 1000)
+        } else if (theGame.GettimeGetTime() - m_dwStagnantSince > (DWORD)TRUCK_JUMP_TIME * 1000)
             goto GiveUp;
     }
 

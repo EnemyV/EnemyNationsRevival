@@ -2490,6 +2490,23 @@ void CAIMgr::VehicleErrorResponse( CAIMsg* pMsg )
                 // if not opfor (its ours) so stage away
                 return;
             }
+
+            // blocked MID-ROUTE: re-aim at the crane's own site so the engine
+            // re-paths around the jam. The default stage-away below diverted
+            // working cranes sideways on every traffic error (wander/dead runs).
+            if ( hexSite.X( ) || hexSite.Y( ) )
+            {
+                pUnit->SetDestination( hexSite );
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+                {
+                    char szC[112];
+                    sprintf( szC, "[CRANEREAIM] plyr %d crane %lu blocked at %d,%d -> re-aim %d,%d\n", m_iPlayer,
+                             (unsigned long)pUnit->GetID( ), hexVeh.X( ), hexVeh.Y( ), hexSite.X( ), hexSite.Y( ) );
+                    OutputDebugStringA( szC );
+                }
+#endif
+                return;
+            }
         }
 
         // default response

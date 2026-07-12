@@ -142,6 +142,7 @@ void FillVehSnap( CVehicle* pVeh, AiVehSnap& s )
     s.bCarried    = ( pVeh->GetTransport( ) != NULL ) ? 1 : 0;
     s.iSpotting   = pVeh->GetSpottingRange( );
     s.iRouteMode  = (int)pVeh->GetRouteMode( );
+    s.iEvent      = (int)pVeh->GetEvent( );
 }
 }  // namespace
 

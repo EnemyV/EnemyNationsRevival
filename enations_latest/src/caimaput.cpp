@@ -3814,10 +3814,16 @@ int CAIMapUtil::GetClosestTo( CHexCoord hexFrom, int iBldg1, int iBldg2, int iBl
 // also, can we memoize this maybe?
 BOOL CAIMapUtil::GetPathRating( CHexCoord& hexFrom, CHexCoord& hexTo, int iVehType /*= CTransportData::construction*/, BOOL bWarPlanning /*= FALSE*/ )
 {
-    // 0,0 means no truck involved, this is a placement
-    if ( !hexFrom.X( ) && !hexFrom.Y( ) )
-        return TRUE;
-    if ( hexFrom.X( ) > m_wEndCol || hexFrom.Y( ) > m_wEndRow )
+    // 0,0 means no truck involved, this is a placement. Skipping validation here
+    // let cross-water sites into the task pool - validate from the rocket hex.
+    CHexCoord hexOrigin = hexFrom;
+    if ( !hexOrigin.X( ) && !hexOrigin.Y( ) )
+    {
+        hexOrigin = m_RocketHex;
+        if ( !hexOrigin.X( ) && !hexOrigin.Y( ) )
+            return TRUE;
+    }
+    if ( hexOrigin.X( ) > m_wEndCol || hexOrigin.Y( ) > m_wEndRow )
         return FALSE;
     if ( hexTo.X( ) > m_wEndCol || hexTo.Y( ) > m_wEndRow )
         return FALSE;
@@ -3827,13 +3833,13 @@ BOOL CAIMapUtil::GetPathRating( CHexCoord& hexFrom, CHexCoord& hexTo, int iVehTy
     if ( bWarPlanning )
     {
         CPathMap& pathMap = m_pPathMap ? *m_pPathMap : thePathMap;
-        return pathMap.GetPath( hexFrom, hexTo, 0, 0, m_pMap, iVehType, FALSE, TRUE );
+        return pathMap.GetPath( hexOrigin, hexTo, 0, 0, m_pMap, iVehType, FALSE, TRUE );
     }
 
     DWORD dwCurrentTime = theGame.GettimeGetTime( );
 
     // Check cache first
-    int iCacheIndex = FindCacheEntry( hexFrom, hexTo, iVehType );
+    int iCacheIndex = FindCacheEntry( hexOrigin, hexTo, iVehType );
     if ( iCacheIndex >= 0 )
     {
 
@@ -3857,10 +3863,10 @@ BOOL CAIMapUtil::GetPathRating( CHexCoord& hexFrom, CHexCoord& hexTo, int iVehTy
     // Perform actual pathfinding on this AI's OWN path instance (per-AI => no
     // cross-AI lock wait). Falls back to the global only if somehow unallocated.
     CPathMap&    pathMap = m_pPathMap ? *m_pPathMap : thePathMap;
-    BOOL bResult = pathMap.GetPath( hexFrom, hexTo, 0, 0, m_pMap, iVehType );
+    BOOL bResult = pathMap.GetPath( hexOrigin, hexTo, 0, 0, m_pMap, iVehType );
 
     // Cache the result
-    AddCacheEntry( hexFrom, hexTo, iVehType, bResult );
+    AddCacheEntry( hexOrigin, hexTo, iVehType, bResult );
 
     return bResult;
     // m_wBaseCol, m_wBaseRow, m_pMap, iVehType) );

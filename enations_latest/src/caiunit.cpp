@@ -15,6 +15,9 @@
 #include "caidata.hpp"
 #include "logging.h"  // dave's logging system
 #include "stdafx.h"
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+#include <intrin.h>  // _ReturnAddress for the [CRANEORD] caller tag
+#endif
 
 #include "Perf.h"  // ai.snap.hit/miss counters (gated by EN_PERF)
 
@@ -52,6 +55,7 @@ CAIUnit::CAIUnit( DWORD dwID, int iOwner, int iType, int iTypeUnit )
     m_dwInBldgSince    = 0;
     m_dwErrHex         = 0;
     m_wErrCnt          = 0;
+    m_dwRoadStopSeen   = 0;
 
     ASSERT_VALID( this );
 
@@ -1114,10 +1118,11 @@ void CAIUnit::SetDestination( CHexCoord& m_hex )
     // if we gave it this dest in the last minute - don't repeat.
     // EXCEPT inside a building: the exit order after unload often re-targets
     // the entry hex the truck was just sent to, and the dedupe would strand
-    // it inside until a sweep nudge. An order to a parked-inside unit is a
-    // correction, never the en-route repeat spam this guard exists for.
-    if ( !bInBldg && m_hex == m_hexLastDest )
-        if ( theGame.GettimeGetTime( ) < m_timeLastDest + 30 * 1000 )
+    // it inside until a sweep nudge. A parked-inside repeat still needs a
+    // SHORT cooldown - the unlimited bypass echoed (order->instant arrival->
+    // order, 4/s per stuck truck) and the flood starved every AI sweep.
+    if ( m_hex == m_hexLastDest )
+        if ( theGame.GettimeGetTime( ) < m_timeLastDest + ( bInBldg ? 5 : 30 ) * 1000 )
         {
 #if EN_AI_PROBES_ECON && defined(_WIN32)
             if ( pGameData->IsTruck( m_dwID ) )
@@ -1140,6 +1145,16 @@ void CAIUnit::SetDestination( CHexCoord& m_hex )
 #if EN_AI_PROBES_ECON && defined(_WIN32)
     if ( pGameData->IsTruck( m_dwID ) )
     { char szZ[80]; sprintf( szZ, "[SETDEST] truck %lu %s\n", (unsigned long)m_dwID, m_hex == hexVeh ? "WAKE" : "POSTED" ); OutputDebugStringA( szZ ); }
+    // every crane movement order, with the CALLER (resolve via PDB) - the
+    // "why is this crane going there" ledger
+    if ( GetTypeUnit( ) == CTransportData::construction )
+    {
+        char szC[128];
+        sprintf( szC, "[CRANEORD] plyr %d crane %lu task %u at %d,%d -> %d,%d from %p\n", m_iOwner,
+                 (unsigned long)m_dwID, (unsigned)GetTask( ), hexVeh.X( ), hexVeh.Y( ), m_hex.X( ), m_hex.Y( ),
+                 _ReturnAddress( ) );
+        OutputDebugStringA( szC );
+    }
 #endif
 
     // CMsgVehSetDest (DWORD dwID, CHexCoord const & hex, int iMode);

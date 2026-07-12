@@ -2036,6 +2036,11 @@ int CAIGoalMgr::NextResearchTopic( CPlayer* pPlayer )
         }
     }
 
+    // Pontoon Bridges: cheap, unblocks river-locked expansion - grab it the
+    // moment it's researchable (operator)
+    if ( pPlayer->CanRsrch( CRsrchArray::bridge_short ) )
+        return ( CRsrchArray::bridge_short );
+
     // just go through the path assigned this AI
     for ( int i = 0; i < CRsrchArray::num_types; ++i )
     {
