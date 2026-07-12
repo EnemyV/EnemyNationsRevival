@@ -411,10 +411,33 @@ void CPlayer::SetColor( COLORREF clr )
     m_clrPlyr = thePal.GetColorValue( m_rgbPlyr, ptrthebltformat->GetBitsPerPixel( ) );
 }
 
-const int       NUM_PLYR_COLORS           = 7;
-static COLORREF plyrClrs[NUM_PLYR_COLORS] = { RGB( 142, 33, 23 ), RGB( 32, 26, 151 ), RGB( 255, 227, 36 ),
-                                              RGB( 11, 215, 0 ),  RGB( 0, 152, 159 ), RGB( 195, 78, 150 ),
-                                              RGB( 127, 19, 190 ) };
+// 64 team colors. First 7 are the original palette; the rest are Lab-space
+// farthest-point picks (min pairwise dist ~20.6, well past the ~15 "clearly
+// distinct" floor) so no two teams look alike. Truecolor render = exact RGB.
+const int       NUM_PLYR_COLORS           = 64;
+static COLORREF plyrClrs[NUM_PLYR_COLORS] = {
+    RGB( 142,  33,  23 ), RGB(  32,  26, 151 ), RGB( 255, 227,  36 ),
+    RGB(  11, 215,   0 ), RGB(   0, 152, 159 ), RGB( 195,  78, 150 ),
+    RGB( 127,  19, 190 ), RGB(   0, 153, 255 ), RGB( 140, 133,  63 ),
+    RGB( 115, 255, 185 ), RGB( 255, 128,   0 ), RGB( 255,   0, 102 ),
+    RGB(   0, 140,  42 ), RGB(   0,   0, 255 ), RGB( 255,   0, 204 ),
+    RGB( 205, 205, 205 ), RGB( 255,   0,  26 ), RGB( 199, 255, 115 ),
+    RGB( 255, 143, 115 ), RGB(  90,  90,  90 ), RGB(  63,  71, 140 ),
+    RGB(   0, 255, 255 ), RGB( 255, 199, 115 ), RGB( 115, 115, 255 ),
+    RGB(  64, 198, 255 ), RGB( 227, 115, 255 ), RGB( 230,   0, 255 ),
+    RGB( 178, 255,   0 ), RGB( 140,  84,   0 ), RGB(  63, 140,  94 ),
+    RGB( 140,  63,  79 ), RGB(   0, 255, 128 ), RGB(   0,  76, 255 ),
+    RGB(   0,  98, 140 ), RGB( 199, 159,   0 ), RGB( 199,  60,   0 ),
+    RGB( 130,  35, 140 ), RGB( 255, 115, 143 ), RGB( 112, 140,   0 ),
+    RGB( 255,   0, 153 ), RGB(  50, 199, 169 ), RGB( 199, 199,  90 ),
+    RGB( 119, 199,   0 ), RGB( 122, 199,  90 ), RGB( 140,  94,  63 ),
+    RGB( 199,   0,  40 ), RGB( 153,   0, 255 ), RGB( 179, 199,   0 ),
+    RGB( 199,   0,  99 ), RGB(   0,   0, 199 ), RGB( 199, 144,  90 ),
+    RGB( 199, 119,   0 ), RGB( 199,  50, 184 ), RGB( 255, 255, 115 ),
+    RGB(  50,  94, 199 ), RGB( 140,   0,  84 ), RGB(   0, 199, 119 ),
+    RGB(  90, 133, 199 ), RGB(  50, 199,  65 ), RGB( 255, 115, 213 ),
+    RGB( 199,  90,  90 ), RGB( 144,  90, 199 ), RGB( 199,  94,  50 ),
+    RGB( 255, 178,   0 ) };
 
 void CPlayer::SetPlyrNum( int iNum )
 {

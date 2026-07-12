@@ -28,6 +28,11 @@
 
 #include "minerals.inl"
 #include "terrain.inl"
+
+#include "enprobes.h"
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+#include <intrin.h>
+#endif
 #include "unit.inl"
 #include "building.inl"
 #include "vehicle.inl"
@@ -3480,6 +3485,19 @@ void CVehicle::_SetRouteMode( VEH_MODE iMode )
 
     BOOL bOld = ( m_cMode == moving );
     m_cMode   = iMode;
+
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+    // blocked-without-ownership tripwire: catches the breaker BEFORE the
+    // AddSubOwned TRAP fires on road-clear (soak3 crash 2026-07-12)
+    if ( iMode == blocked && !m_cOwn )
+    {
+        char szB[128];
+        sprintf( szB, "[BLKNOOWN] veh %lu ev %d plyr %d at %d,%d caller %p\n", (unsigned long)GetID( ),
+                 (int)m_iEvent, GetOwner( ) ? GetOwner( )->GetPlyrNum( ) : -1, m_ptHead.x, m_ptHead.y,
+                 _ReturnAddress( ) );
+        OutputDebugStringA( szB );
+    }
+#endif
 
     BOOL bNew = ( iMode == moving );
     if ( bOld != bNew )

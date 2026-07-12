@@ -1960,6 +1960,26 @@ void CAIGoalMgr::CheckResearch( void )
     // its busy researching
     if ( pPlayer->GetRsrchItem( ) != 0 )
     {
+        // pontoon pre-emption (operator): rivers are blocking us and the tech is in
+        // reach - switch NOW instead of after the current multi-hour topic. Points
+        // are stored per topic, so the interrupted one keeps its progress.
+        if ( m_pMap != NULL && m_pMap->m_iBridgeSpanFails > 0 &&
+             pPlayer->GetRsrchItem( ) != CRsrchArray::bridge_short &&
+             pPlayer->CanRsrch( CRsrchArray::bridge_short ) )
+        {
+            LeaveCriticalSection( &cs );
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+            {
+                char szR[96];
+                sprintf( szR, "[RSRCHPREEMPT] plyr %d fails %d -> pontoon\n", m_iPlayer,
+                         m_pMap->m_iBridgeSpanFails );
+                OutputDebugStringA( szR );
+            }
+#endif
+            CMsgRsrch msg( pPlayer->GetPlyrNum( ), CRsrchArray::bridge_short );
+            theGame.PostToServer( &msg, sizeof( msg ) );
+            return;
+        }
         LeaveCriticalSection( &cs );
         return;
     }

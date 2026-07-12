@@ -68,6 +68,7 @@ extern CException*      pException;  // standard exception for yielding
 extern CRITICAL_SECTION cs;          // used by threads
 extern CAIData*         pGameData;   // pointer to game data interface
 extern CPathMap         thePathMap;  // the map pathfinding object (no yield)
+extern CGameMap NEAR    theMap;      // terrain reads for the reactive bridge
 
 extern void AiDeletePlayer( DWORD_PTR dwID );
 
@@ -412,6 +413,7 @@ void CAIMgr::Manage( void )
 #if EN_AI_PROBES_ECON && defined(_WIN32)
                 {
                     int iTopic = -1, iPts = -1, iHave = -1, iFails = -1;
+                    int iCanP = -1, iPDisc = -1, iPMissBldg = -1;   // pontoon gate breakdown
                     EnterCriticalSection( &cs );
                     CPlayer* pPlyr = pGameData->GetPlayerData( m_iPlayer );
                     if ( pPlyr != NULL )
@@ -420,13 +422,22 @@ void CAIMgr::Manage( void )
                         iHave  = pPlyr->GetRsrchHave( );
                         if ( iTopic > 0 && iTopic < pPlyr->GetRsrchSize( ) )
                             iPts = pPlyr->GetRsrch( iTopic ).m_iPtsDiscovered;
+                        iCanP  = (int)pPlyr->CanRsrch( CRsrchArray::bridge_short );
+                        iPDisc = (int)pPlyr->GetRsrch( CRsrchArray::bridge_short ).m_bDiscovered;
+                        CRsrchItem* pRi = &theRsrch.ElementAt( CRsrchArray::bridge_short );
+                        for ( int iB = 0; iB < pRi->m_iNumBldgsRequired; iB++ )
+                            if ( !pPlyr->GetExists( pRi->m_piBldgsRequired[iB] ) )
+                            {
+                                iPMissBldg = pRi->m_piBldgsRequired[iB];
+                                break;
+                            }
                     }
                     LeaveCriticalSection( &cs );
                     if ( m_pGoalMgr != NULL && m_pGoalMgr->m_pMap != NULL )
                         iFails = m_pGoalMgr->m_pMap->m_iBridgeSpanFails;
-                    char szR[128];
-                    sprintf( szR, "[RSRCHSTAT] plyr %d topic %d pts %d have %d bridgefails %d\n",
-                             m_iPlayer, iTopic, iPts, iHave, iFails );
+                    char szR[176];
+                    sprintf( szR, "[RSRCHSTAT] plyr %d topic %d pts %d have %d bridgefails %d pontoon can %d disc %d missbldg %d\n",
+                             m_iPlayer, iTopic, iPts, iHave, iFails, iCanP, iPDisc, iPMissBldg );
                     OutputDebugStringA( szR );
                     // queue depth: ~0 = trickle (scheduler flaw); large/growing = backlog
                     {
@@ -2489,6 +2500,86 @@ void CAIMgr::VehicleErrorResponse( CAIMsg* pMsg )
                 // opfor vehicle, then the crane should run away else
                 // if not opfor (its ours) so stage away
                 return;
+            }
+
+            // blocked INTO WATER: bridge it (operator) - any water type; the span
+            // cap is the only gate (short lake/ocean necks are strategic crossings)
+            {
+                int iTT = -1;
+                EnterCriticalSection( &cs );
+                CHex* pWet = theMap.GetHex( hexNext );
+                if ( pWet != NULL )
+                    iTT = pWet->GetType( );
+                LeaveCriticalSection( &cs );
+                if ( iTT == CHex::river || iTT == CHex::lake || iTT == CHex::ocean )
+                {
+                    BOOL bCan     = FALSE;
+                    int  iSpanMax = 0;
+                    EnterCriticalSection( &cs );
+                    CPlayer* pP = pGameData->GetPlayerData( m_iPlayer );
+                    if ( pP != NULL && pP->CanBridge( ) )
+                    {
+                        bCan     = TRUE;
+                        iSpanMax = pP->GetMaxSpan( );
+                    }
+                    LeaveCriticalSection( &cs );
+                    if ( !bCan )
+                    {
+                        // demand signal: feeds the pontoon research pre-emption
+                        if ( m_pGoalMgr != NULL && m_pGoalMgr->m_pMap != NULL )
+                            m_pGoalMgr->m_pMap->m_iBridgeSpanFails++;
+                    }
+                    else if ( m_pGoalMgr != NULL && m_pGoalMgr->m_iGasHave > 0 )
+                    {
+                        // dominant-axis walk across the water to the far landing
+                        int dx = CHexCoord::Diff( hexNext.X( ) - hexVeh.X( ) );
+                        int dy = CHexCoord::Diff( hexNext.Y( ) - hexVeh.Y( ) );
+                        if ( abs( dx ) >= abs( dy ) )
+                        {
+                            dx = ( dx >= 0 ) ? 1 : -1;
+                            dy = 0;
+                        }
+                        else
+                        {
+                            dy = ( dy >= 0 ) ? 1 : -1;
+                            dx = 0;
+                        }
+                        CHexCoord hexEnd   = hexNext;
+                        int       iSpan    = 1;   // hexNext is the first water hex
+                        BOOL      bLanded  = FALSE;
+                        EnterCriticalSection( &cs );
+                        while ( iSpan <= iSpanMax )
+                        {
+                            hexEnd.X( hexEnd.X( ) + dx );
+                            hexEnd.Y( hexEnd.Y( ) + dy );
+                            hexEnd.Wrap( );
+                            CHex* pH = theMap.GetHex( hexEnd );
+                            int   iT2 = pH ? pH->GetType( ) : -1;
+                            if ( iT2 != CHex::river && iT2 != CHex::lake && iT2 != CHex::ocean )
+                            {
+                                bLanded = ( iT2 >= 0 );
+                                break;
+                            }
+                            iSpan++;
+                        }
+                        LeaveCriticalSection( &cs );
+                        if ( bLanded )
+                        {
+                            pGameData->BuildBridgeAt( pUnit, hexNext, hexEnd );
+                            pUnit->SetParam( CAI_FUEL, CNetCmd::bridge_new );
+#if EN_AI_PROBES_WAR && defined(_WIN32)
+                            {
+                                char szB[112];
+                                sprintf( szB, "[BRIDGEREACT] plyr %d crane %lu span %d %d,%d -> %d,%d\n", m_iPlayer,
+                                         (unsigned long)pUnit->GetID( ), iSpan, hexNext.X( ), hexNext.Y( ),
+                                         hexEnd.X( ), hexEnd.Y( ) );
+                                OutputDebugStringA( szB );
+                            }
+#endif
+                            return;
+                        }
+                    }
+                }
             }
 
             // blocked MID-ROUTE: re-aim at the crane's own site so the engine
