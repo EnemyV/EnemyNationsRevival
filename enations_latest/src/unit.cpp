@@ -3504,14 +3504,17 @@ void CVehicle::_SetRouteMode( VEH_MODE iMode )
     m_cMode   = iMode;
 
 #if EN_AI_PROBES_ECON && defined(_WIN32)
-    // blocked-without-ownership tripwire: catches the breaker BEFORE the
-    // AddSubOwned TRAP fires on road-clear (soak3 crash 2026-07-12)
-    if ( iMode == blocked && !m_cOwn )
+    // blocked/moving-without-ownership tripwire: catches the breaker BEFORE
+    // the AddSubOwned TRAP fires (soak3 + soak25 crashes; moving added
+    // 2026-07-13 - truck 151 crashed via HandleBlocked with mode already
+    // moving and m_cOwn 0, and BLKNOOWN never fired)
+    if ( ( iMode == blocked || iMode == moving ) && !m_cOwn )
     {
-        char szB[128];
-        sprintf( szB, "[BLKNOOWN] veh %lu ev %d plyr %d at %d,%d caller %p\n", (unsigned long)GetID( ),
-                 (int)m_iEvent, GetOwner( ) ? GetOwner( )->GetPlyrNum( ) : -1, m_ptHead.x, m_ptHead.y,
-                 _ReturnAddress( ) );
+        char szB[144];
+        sprintf( szB, "[%s] veh %lu ev %d mode-was %d plyr %d at %d,%d caller %p\n",
+                 iMode == blocked ? "BLKNOOWN" : "MOVNOOWN", (unsigned long)GetID( ),
+                 (int)m_iEvent, (int)( bOld ? 1 : 0 ), GetOwner( ) ? GetOwner( )->GetPlyrNum( ) : -1,
+                 m_ptHead.x, m_ptHead.y, _ReturnAddress( ) );
         OutputDebugStringA( szB );
     }
 #endif

@@ -2930,6 +2930,16 @@ void CVehicle::SetFromMsg(CMsgVehLoc *pMsg, BOOL bWorld) {
     m_iTadd = pMsg->m_iTadd;
     m_cMode = (CVehicle::VEH_MODE) pMsg->m_iMode;
     m_cOwn = pMsg->m_iOwn;
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+    // message-borne moving-without-ownership (bypasses _SetRouteMode tripwire)
+    if ( m_cMode == moving && !m_cOwn )
+    {
+        char szB[112];
+        sprintf( szB, "[MOVNOOWN-MSG] veh %lu plyr %d at %d,%d\n", (unsigned long)GetID( ),
+                 GetOwner( ) ? GetOwner( )->GetPlyrNum( ) : -1, m_ptHead.x, m_ptHead.y );
+        OutputDebugStringA( szB );
+    }
+#endif
     m_iStepsLeft = pMsg->m_iStepsLeft;
     m_iSpeed = pMsg->m_iSpeed;
     SetOnWater(pMsg->m_bOnWater);
