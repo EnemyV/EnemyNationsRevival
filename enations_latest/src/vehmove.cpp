@@ -2673,6 +2673,17 @@ BOOL CVehicle::TryNextHex() {
     if ((pVehNext != NULL) && (pVehNext != this))
         return (FALSE);
 
+    // an ownerless vehicle cannot CONTINUE a move (the grab below assumes an
+    // owned head/tail) - route it through the designed re-acquire ladder
+    // instead. [MOVNOOWN] upstream names each producer for its own root fix
+    // (soak36 11:49: TryNextHex+0x7F was the minting site of the 6th
+    // ownership crash; producers fixed so far: EnterBuilding modes,
+    // dest==head shortcut, stale-next TakeOwnership, unload validation)
+    if (!m_cOwn) {
+        _SetRouteMode(cant_deploy);
+        return (FALSE);
+    }
+
     SetMoveParams(FALSE);
     _SetRouteMode(moving);
     theVehicleHex.GrabHex(m_ptNext, this);
