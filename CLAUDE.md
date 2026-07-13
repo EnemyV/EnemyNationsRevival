@@ -31,6 +31,13 @@ When you find an issue, you are NOT to do the first fix you can think of:
 Standing corrections from the same dictations:
 - *"Do not add another Band Aid. We have to fix root causes, otherwise this is
   never gonna end."*
+- **(2026-07-12, absolute) Never suggest or implement band-aid solutions.** If the
+  operator explicitly orders one, PUSH BACK first ("that's a band-aid, we're not
+  gonna do that") and only proceed if they insist. Sweepers, rescue layers, and
+  parallel re-implementations of broken mechanisms are band-aids by definition —
+  fix the mechanism that's broken instead. Corollary: never implement ahead of
+  approval; propose in plain words (what/size/risk), get the go, then change
+  exactly that.
 - *"I'm not telling you to do anything that I haven't explicitly told you to
   do."* — no unrequested actions; "answer only" / "only respond" means ZERO
   tool calls in the reply.
