@@ -819,6 +819,7 @@ BOOL CAIMap::ConnectRoad( CHexCoord& hexFrom, CHexCoord& hexTo )
 		}
 
 		int iSkipUntil = 0;   // > i while inside an unbridgeable river run
+		BOOL bCrossingLaid = FALSE;   // plan includes a river span
 		for( int i=0; i<iPathLen; ++i )
 		{
 			CHexCoord *pHex = &pRoadPath[i];
@@ -882,9 +883,10 @@ BOOL CAIMap::ConnectRoad( CHexCoord& hexFrom, CHexCoord& hexTo )
 				pGameHex = theMap.GetHex( hexGame );
 				if( pGameHex->GetType() == CHex::river )
 				{
+					bCrossingLaid = TRUE;
 #ifdef _LOGOUT
-	logPrintf(LOG_PRI_ALWAYS, LOG_AI_MISC, 
-		"player %d planned river/road laid at %d,%d ", 
+	logPrintf(LOG_PRI_ALWAYS, LOG_AI_MISC,
+		"player %d planned river/road laid at %d,%d ",
     	m_iPlayer, pHex->X(), pHex->Y() );
 
 #endif
@@ -911,12 +913,33 @@ BOOL CAIMap::ConnectRoad( CHexCoord& hexFrom, CHexCoord& hexTo )
 			}
 		}
 
+		// PLANNED crossings: arm the pending-bridge preempt at plan-lay time.
+		// Discovery previously required TOTAL plan exhaustion near a crane
+		// (GetRoadHex returning nothing), which a big plan never reaches - so
+		// planner spans sat flagged forever while only impromptu bridges built
+		// (operator: the plan-based path is the original mechanism, regressed).
+		// The preempt routes the next crane assignment through BuildRoad's
+		// pending handler -> GetBridgingHexes -> FindBridgeOnPlan = the
+		// original plan-discovery dispatch, just triggered promptly.
+		if( bCrossingLaid )
+		{
+			m_bPendingBridge = TRUE;
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+			{
+				char szP[112];
+				sprintf( szP, "[PLANPEND] plyr %d road plan %d,%d -> %d,%d includes river span - pending-bridge armed\n",
+						 m_iPlayer, hexFrom.X(), hexFrom.Y(), hexTo.X(), hexTo.Y() );
+				OutputDebugStringA( szP );
+			}
+#endif
+		}
+
 		delete [] pRoadPath;
 		return( TRUE );
 	}
 
 #ifdef _LOGOUT
-	logPrintf(LOG_PRI_ALWAYS, LOG_AI_MISC, 
+	logPrintf(LOG_PRI_ALWAYS, LOG_AI_MISC,
 		"\nCAIMap::ConnectRoad() player %d NULL path returned \n",
     	m_iPlayer );
 
