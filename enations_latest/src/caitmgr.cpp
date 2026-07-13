@@ -5481,6 +5481,7 @@ void CAITaskMgr::BuildRoad( CAIUnit* pUnit, CAITask* pTask )
                 pUnit->SetDestination( hexBr );
                 pUnit->SetDataDW( 0 );  // stale prev-building id must not match a late completion
                 pUnit->SetParam( CAI_FUEL, CNetCmd::build_bridge );
+                m_pGoalMgr->m_pMap->ClaimBridge( hexBr );  // one crossing, one crane
 #if EN_AI_PROBES_ECON && defined(_WIN32)
                 {
                     char szR[96];
@@ -5520,6 +5521,7 @@ void CAITaskMgr::BuildRoad( CAIUnit* pUnit, CAITask* pTask )
                 pUnit->SetDataDW( 0 );  // stale prev-building id must not match a late completion
                 // flag unit to send message to build a bridge
                 pUnit->SetParam( CAI_FUEL, CNetCmd::build_bridge );
+                m_pGoalMgr->m_pMap->ClaimBridge( hexSite );  // one crossing, one crane
 #if EN_AI_PROBES_ECON && defined(_WIN32)
                 {
                     char szR[96];

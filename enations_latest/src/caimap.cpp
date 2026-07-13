@@ -992,6 +992,19 @@ void CAIMap::GetBridgingHexes( CHexCoord& hexSite, CAIUnit *pUnit )
 	// a site was selected, so mark the map
 	if( hexBefore != hexSite )
 	{
+		// crossing already claimed by a dispatched crane (or recently denied):
+		// pretend no site so a second crane is never sent (soak17: 3 on one span)
+		std::map<int, DWORD>::iterator itC =
+			m_mBridgeDeny.find( m_pMapUtil->GetMapOffset( hexSite.X(), hexSite.Y() ) );
+		if( itC != m_mBridgeDeny.end() )
+		{
+			if( timeGetTime() < itC->second )
+			{
+				hexSite = hexBefore;
+				return;
+			}
+			m_mBridgeDeny.erase( itC );
+		}
 		CHexCoord hexStart(
 		pUnit->GetParam(CAI_PREV_X),pUnit->GetParam(CAI_PREV_Y) );
 		CHexCoord hexEnd(
@@ -1319,6 +1332,18 @@ BOOL CAIMap::PlanBridgeToward( CHexCoord const& hexAt, CHexCoord const& hexSite 
 	}
 #endif
 	return TRUE;
+}
+
+//
+// dispatch-time claim: between "crane sent to the crossing" and "server accept
+// marks the span" the crossing looked unclaimed, so every freed road crane
+// re-took it (3 cranes on one span, soak17). Short TTL so a dead crane cannot
+// lock the crossing forever.
+//
+void CAIMap::ClaimBridge( CHexCoord const& hexStart )
+{
+	m_mBridgeDeny[m_pMapUtil->GetMapOffset( hexStart.X(), hexStart.Y() )] =
+		timeGetTime() + 3 * 60 * 1000;
 }
 
 //

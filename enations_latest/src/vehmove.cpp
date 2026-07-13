@@ -1709,6 +1709,27 @@ void CVehicle::UnloadCarrier() {
         } while (theMap._GetHex(_dest)->IsWater());
 
         GotIt:
+        // FINAL pre-grab validation with the SAME lookup the grab uses: the
+        // rotation loops above missed a claimant twice (19:48 crash - occupant
+        // details logged here to root-cause the loop asymmetry). Clash -> try
+        // the next exit sub, the semantics the loops already intend.
+        {
+            CVehicle *pClash = theVehicleHex.GetVehicle(_sub);
+            if (pClash == NULL && !(GetData()->GetVehFlags() & CTransportData::FL1hex))
+                pClash = theVehicleHex.GetVehicle(_head);
+            if (pClash == NULL)
+                pClash = theVehicleHex.GetVehicle(_dest);
+            if (pClash != NULL && pClash != this) {
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+                { char szC[128]; sprintf(szC, "[UNLOADCLASH] carrier %lu subs (%d,%d)/(%d,%d)/(%d,%d) occupied by veh %lu dying %d\n",
+                        (unsigned long)GetID(), _sub.x, _sub.y, _head.x, _head.y, _dest.x, _dest.y,
+                        (unsigned long)pClash->GetID(), (int)((pClash->GetFlags() & CUnit::dying) != 0));
+                  OutputDebugStringA(szC); }
+#endif
+                return;   // defer the unload this tick (a continue would re-pick
+                          // the same subs without dequeuing = main-thread spin)
+            }
+        }
         CVehicle *pVehOn = m_lstCargo.RemoveHead();
         pVehOn->m_pTransport = NULL;
         if (pVehOn->GetData()->GetVehFlags() & CTransportData::FL1hex) {

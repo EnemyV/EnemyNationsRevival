@@ -130,6 +130,9 @@ public:
 	void FindBridgeOnPlan( CHexCoord& hexSite, CAIUnit *pUnit );
 	// clamped-crane assist: plan a validated river crossing toward an unreachable site
 	BOOL PlanBridgeToward( CHexCoord const& hexAt, CHexCoord const& hexSite );
+	// dispatch-time claim: crane sent to this crossing - scanners skip the
+	// bank until the claim expires (3 min) or the server accept marks the span
+	void ClaimBridge( CHexCoord const& hexStart );
 	// server rejected the span: unmark its planned hexes + deny the bank 30 min
 	void DenyBridge( CHexCoord const& hexStart, CHexCoord const& hexEnd );
 	std::map<int, DWORD> m_mBridgeDeny;	// bank map-offset -> denied-until ms (transient)
