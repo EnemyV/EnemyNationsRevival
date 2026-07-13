@@ -2284,7 +2284,7 @@ void CVehicle::HandleBlocked() {
 
                 // if it's a land/water break we're there (actually travel/no travel)
                 if (!GetData()->CanEnterHex(m_ptDest, m_ptDest, IsOnWater(), TRUE)) {
-                    TRAP();
+                    EN_TRAP_REMOVED("HandleBlocked: dest across land/water break - handled below");
                     xDif = m_ptDest.x - m_ptHead.x;
                     yDif = m_ptDest.y - m_ptHead.y;
                     xDif = __minmax(-1, 1, xDif);
@@ -2292,7 +2292,7 @@ void CVehicle::HandleBlocked() {
                     CSubHex _test(m_ptHead.x + xDif, m_ptHead.y + yDif);
                     _test.Wrap();
                     if (!GetData()->CanEnterHex(m_ptHead, _test, IsOnWater(), TRUE)) {
-                        TRAP();
+                        EN_TRAP_REMOVED("HandleBlocked: land/water break confirmed - graceful give-up follows");
 #ifdef _LOGOUT
                         logPrintf(LOG_PRI_VERBOSE, LOG_VEH_MOVE, "Vehicle %d hit land/water break", GetID());
 #endif
