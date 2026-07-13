@@ -2320,6 +2320,17 @@ void CAIMgr::HandleStuckVehicles( void )
                         CMsgPlaceVeh msg( hexDest, hexDest, m_iPlayer, pUnit->GetTypeUnit( ) );
                         msg.m_dwID = pUnit->GetID( );
                         theGame.PostToServer( (CNetCmd*)&msg, sizeof( CMsgPlaceVeh ) );
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+                        {
+                            // fallback visibility law: the 10-min teleport was the
+                            // last SILENT rescue (only _LOGOUT logged it)
+                            char szT[128];
+                            sprintf( szT, "[TELEPORT] plyr %d unit %lu vtype %d from %d,%d -> rocket %d,%d (10-min tier)\n",
+                                     m_iPlayer, (unsigned long)pUnit->GetID( ), (int)pUnit->GetTypeUnit( ),
+                                     hexVeh.X( ), hexVeh.Y( ), hexDest.X( ), hexDest.Y( ) );
+                            OutputDebugStringA( szT );
+                        }
+#endif
                     }
 #ifdef _LOGOUT
                     logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC,
