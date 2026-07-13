@@ -1998,7 +1998,9 @@ void CVehicle::HandleBlocked() {
     CBridgeUnit *pBu = theBridgeHex.GetBridge(m_ptHead);
     if ((pBu != NULL) && (!pBu->GetParent()->IsBuilt()) &&
         (pBu == theBridgeHex.GetBridge(m_ptDest))) {
-        TRAP();
+        // 1996 curiosity TRAP; the arrive-here handling below IS the recovery.
+        // Routinely reachable now that AI bridges build at scale (soak29 06:24)
+        EN_TRAP_REMOVED( "HandleBlocked: blocked on under-construction bridge - arrived-here below" );
 #ifdef _LOGOUT
         logPrintf(LOG_PRI_VERBOSE, LOG_VEH_MOVE, "Vehicle %d arrived at incomplete bridge", GetID());
 #endif
