@@ -1543,7 +1543,8 @@ void CBuilding::DetermineOppo( )
         for ( int y = -GetRange( ); y < yMax; y++ )
         {
             _hex.X( m_hex.X( ) - *piOn );
-            CHex* pHex = theMap._GetHex( _hex );
+            _hex.WrapX( );                        // torus: this X can fall off the left/right
+            CHex* pHex = theMap._GetHex( _hex );  // edge, and _GetHex does NOT wrap its index
 
             for ( int x = ( *piOn ) * 2 + m_cx - 1; x >= 0; x-- )
             {
@@ -1571,9 +1572,9 @@ void CBuilding::DetermineOppo( )
                     }
                 }
 
-                _hex.Xinc( );
-                pHex = theMap._Xinc( pHex );
-            }
+                _hex.Xinc( );                   // wraps X across the right edge, so the raw
+                pHex = theMap._GetHex( _hex );  // pHex+1 of _Xinc would desync and run off
+            }                                   // the hex array — re-fetch from the wrapped hex
             _hex.Yinc( );
             piOn++;
         }
@@ -1589,7 +1590,8 @@ void CBuilding::DetermineOppo( )
     for ( int y = -GetRange( ); y < yMax; y++ )
     {
         _hex.X( m_hex.X( ) - *piOn );
-        CHex* pHex = theMap._GetHex( _hex );
+        _hex.WrapX( );                        // torus: this X can fall off the left/right
+        CHex* pHex = theMap._GetHex( _hex );  // edge, and _GetHex does NOT wrap its index
 
         for ( int x = ( *piOn ) * 2 + m_cx - 1; x >= 0; x-- )
         {
@@ -1615,9 +1617,9 @@ void CBuilding::DetermineOppo( )
                     return;
                 }
             }
-            _hex.Xinc( );
-            pHex = theMap._Xinc( pHex );
-        }
+            _hex.Xinc( );                   // wraps X across the right edge, so the raw
+            pHex = theMap._GetHex( _hex );  // pHex+1 of _Xinc would desync and run off
+        }                                   // the hex array — re-fetch from the wrapped hex
         _hex.Yinc( );
         piOn++;
     }

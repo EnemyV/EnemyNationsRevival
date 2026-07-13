@@ -3720,9 +3720,11 @@ void CAITaskMgr::PatrolSea( CAIUnit* pUnit, CAITask* pTask, CTransportData const
         if ( pCopyCVehicle == NULL )
             return;
 
-        // get current location
-        int iX = pCopyCVehicle->m_aiDataOut[CAI_LOC_X];
-        int iY = pCopyCVehicle->m_aiDataOut[CAI_LOC_Y];
+        // get current location (NOT a new declaration: shadowing the outer
+        // iX/iY here left the destination read below uninitialized, so sea
+        // patrols broke after their first leg)
+        iX = pCopyCVehicle->m_aiDataOut[CAI_LOC_X];
+        iY = pCopyCVehicle->m_aiDataOut[CAI_LOC_Y];
 
         // if at point 0, then go to point 1
         if ( iX == pUnit->GetParam( 0 ) && iY == pUnit->GetParam( 1 ) )
