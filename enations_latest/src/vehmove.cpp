@@ -1680,7 +1680,12 @@ void CVehicle::UnloadCarrier() {
                 _dest.Wrap();
                 for (int x = 0; x < 3; x++) {
                     for (int y = 0; y < 3; y++) {
-                        if (!theMap._GetHex(_dest)->IsWater())
+                        // occupancy check matches the primary exit loop above -
+                        // this fallback only tested water, so a unit unloaded
+                        // onto an occupied hex (claim-conflict TRAP, 17:24 crash)
+                        if (!theMap._GetHex(_dest)->IsWater() &&
+                            theVehicleHex._GetVehicle(_dest) == NULL &&
+                            theBuildingHex._GetBuilding(_dest) == NULL)
                             goto GotIt;
                         _dest.y++;
                         _dest.Wrap();

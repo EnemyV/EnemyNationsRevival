@@ -5669,8 +5669,19 @@ void CAITaskMgr::BuildRoad( CAIUnit* pUnit, CAITask* pTask )
     }
     else  // vehicle is not at site but a site was selected
     {
-        hexSite.X( pUnit->GetParam( CAI_DEST_X ) );
-        hexSite.Y( pUnit->GetParam( CAI_DEST_Y ) );
+        // a bridge crane drives to the NEAR bank (CAI_PREV, the span start) -
+        // CAI_DEST is the far landing ACROSS the water, unreachable by road
+        if ( pUnit->GetParam( CAI_FUEL ) == CNetCmd::build_bridge &&
+             ( pUnit->GetParam( CAI_PREV_X ) || pUnit->GetParam( CAI_PREV_Y ) ) )
+        {
+            hexSite.X( pUnit->GetParam( CAI_PREV_X ) );
+            hexSite.Y( pUnit->GetParam( CAI_PREV_Y ) );
+        }
+        else
+        {
+            hexSite.X( pUnit->GetParam( CAI_DEST_X ) );
+            hexSite.Y( pUnit->GetParam( CAI_DEST_Y ) );
+        }
 
         pUnit->SetDestination( hexSite );
 

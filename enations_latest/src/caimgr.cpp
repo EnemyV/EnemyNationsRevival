@@ -1468,6 +1468,24 @@ void CAIMgr::UpdateUnits( CAIMsg* pMsg )
         CAIUnit* pUnit = (CAIUnit*)m_plUnits->GetUnit( pMsg->m_dwID );
         if ( pUnit != NULL )
         {
+            // a LATE error must not reset a crane actively mid-build on other
+            // work (engine event is ground truth; orphaned bridge-crane 130)
+            AiVehSnap snapE;
+            if ( AiSnap::ReadVeh( pUnit->GetID( ), snapE ) &&
+                 ( snapE.iEvent == CVehicle::build || snapE.iEvent == CVehicle::build_road ) )
+            {
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+                {
+                    char szR[112];
+                    sprintf( szR, "[CRANERESET-SKIP] plyr %d crane %lu err %d but actively building - ignored\n",
+                             m_iPlayer, (unsigned long)pUnit->GetID( ), pMsg->m_iMsg );
+                    OutputDebugStringA( szR );
+                }
+#endif
+            }
+            else
+            {
+
             // this unit is a crane which just completed
             // the construction of a building
             wTask = pUnit->GetTask( );
@@ -1512,6 +1530,7 @@ void CAIMgr::UpdateUnits( CAIMsg* pMsg )
                 pUnit->SetDestination( hexDest );
                 m_pMap->PlaceFakeVeh( hexDest, pUnit->GetTypeUnit( ) );
             }
+            }  // end not-actively-building (late-error skip)
         }
     }
 
@@ -2653,17 +2672,21 @@ void CAIMgr::VehicleErrorResponse( CAIMsg* pMsg )
                 }
             }
 
-            // blocked MID-ROUTE: re-aim at the crane's own site so the engine
-            // re-paths around the jam. The default stage-away below diverted
-            // working cranes sideways on every traffic error (wander/dead runs).
+            // RESCUE LAYER REMOVED (operator, 2026-07-12): the re-aim answered
+            // stale errors and aborted in-progress builds (every SetDestination
+            // wipes the build event - netapi SetVehDest). The vanilla stage-away
+            // below is the ORIGINAL sideways-wander sweeper - equally external.
+            // A crane with a site gets NO outside interference on movement
+            // errors: the engine's blocked-handling retries the jam itself and
+            // the 5-min/3-strike ladder owns real stuckness.
             if ( hexSite.X( ) || hexSite.Y( ) )
             {
-                pUnit->SetDestination( hexSite );
 #if EN_AI_PROBES_ECON && defined(_WIN32)
                 {
                     char szC[112];
-                    sprintf( szC, "[CRANEREAIM] plyr %d crane %lu blocked at %d,%d -> re-aim %d,%d\n", m_iPlayer,
-                             (unsigned long)pUnit->GetID( ), hexVeh.X( ), hexVeh.Y( ), hexSite.X( ), hexSite.Y( ) );
+                    sprintf( szC, "[CRANEERR-NOOP] plyr %d crane %lu error at %d,%d site %d,%d - left alone\n",
+                             m_iPlayer, (unsigned long)pUnit->GetID( ), hexVeh.X( ), hexVeh.Y( ),
+                             hexSite.X( ), hexSite.Y( ) );
                     OutputDebugStringA( szC );
                 }
 #endif
