@@ -1711,20 +1711,29 @@ void CVehicle::UnloadCarrier() {
         } while (theMap._GetHex(_dest)->IsWater());
 
         GotIt:
-        // FINAL pre-grab validation with the SAME lookup the grab uses: the
-        // rotation loops above missed a claimant twice (19:48 crash - occupant
-        // details logged here to root-cause the loop asymmetry). Clash -> try
-        // the next exit sub, the semantics the loops already intend.
+        // FINAL pre-grab validation on the EXACT subs TakeOwnership will grab
+        // (next/head/tail per the cargo's own FL1hex mapping, not the loop's
+        // triplet - the two diverged again, soak30 07:01 cross-claim at a
+        // multi-carrier beach). Same lookup as the grab; clash -> defer.
         {
-            CVehicle *pClash = theVehicleHex.GetVehicle(_sub);
-            if (pClash == NULL && !(GetData()->GetVehFlags() & CTransportData::FL1hex))
-                pClash = theVehicleHex.GetVehicle(_head);
+            CVehicle *pCargoPeek = m_lstCargo.GetHead();
+            CSubHex _pH, _pT, _pN;
+            if (pCargoPeek->GetData()->GetVehFlags() & CTransportData::FL1hex) {
+                _pH = _pT = _sub;
+                _pN = _dest;
+            } else {
+                _pT = _sub;
+                _pN = _pH = _head;
+            }
+            CVehicle *pClash = theVehicleHex.GetVehicle(_pN);
             if (pClash == NULL)
-                pClash = theVehicleHex.GetVehicle(_dest);
+                pClash = theVehicleHex.GetVehicle(_pH);
+            if (pClash == NULL)
+                pClash = theVehicleHex.GetVehicle(_pT);
             if (pClash != NULL && pClash != this) {
 #if EN_AI_PROBES_ECON && defined(_WIN32)
-                { char szC[128]; sprintf(szC, "[UNLOADCLASH] carrier %lu subs (%d,%d)/(%d,%d)/(%d,%d) occupied by veh %lu dying %d\n",
-                        (unsigned long)GetID(), _sub.x, _sub.y, _head.x, _head.y, _dest.x, _dest.y,
+                { char szC[144]; sprintf(szC, "[UNLOADCLASH] carrier %lu grab-subs n(%d,%d)/h(%d,%d)/t(%d,%d) occupied by veh %lu dying %d\n",
+                        (unsigned long)GetID(), _pN.x, _pN.y, _pH.x, _pH.y, _pT.x, _pT.y,
                         (unsigned long)pClash->GetID(), (int)((pClash->GetFlags() & CUnit::dying) != 0));
                   OutputDebugStringA(szC); }
 #endif
