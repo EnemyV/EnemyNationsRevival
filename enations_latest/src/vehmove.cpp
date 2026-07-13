@@ -2977,6 +2977,51 @@ void CVehicle::SetFromMsg(CMsgVehLoc *pMsg, BOOL bWorld) {
         theApp.m_wndWorld.InvalidateWindow(CWndWorld::visible | CWndWorld::other_units);
 }
 
+// re-place an EXISTING vehicle at a new location (the AI 10-min stuck
+// teleport posts CMsgPlaceVeh with the unit's id; CVehicle::Create has no
+// relocate path and minted a DUPLICATE object on the same id - map overwrite
+// orphaned the old one on its hexes = ghost unit + scrambled comp-loc deltas,
+// soak38 14:18 wire TRAP). Mirrors TestStuck's hop: release, move, settle
+// next=head, re-acquire through the designed deploy ladder.
+void CVehicle::RelocateTo(CSubHex const &ptHead, CHexCoord const &hexDest) {
+
+    ASSERT_VALID (this);
+
+    ReleaseOwnership();
+
+    m_ptHead = ptHead;
+    if (GetData()->GetVehFlags() & CTransportData::FL1hex)
+        m_ptTail = m_ptHead;
+    else {
+        m_ptTail = m_ptHead;
+        m_ptTail.y += 1;
+        m_ptTail.Wrap();
+    }
+    m_ptNext = m_ptHead;
+    m_hexDest = hexDest;
+    m_ptDest = CSubHex(hexDest);
+    m_iDir = CalcDir();
+    ZeroMoveParams();
+    SetLoc(TRUE);
+    AtNewLoc();
+
+    // deploy ladder: only take the spot if it is actually free
+    if ((theBuildingHex._GetBuilding(m_ptHead) == NULL) &&
+        (theVehicleHex.GetVehicle(m_ptHead) == NULL) &&
+        (theVehicleHex.GetVehicle(m_ptTail) == NULL)) {
+        TakeOwnership();
+        _SetEventAndRoute(none, stop);
+    } else
+        _SetEventAndRoute(none, cant_deploy);
+
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+    { char szR[96]; sprintf(szR, "[RELOC] veh %lu re-placed at %d,%d own %d\n",
+            (unsigned long)GetID(), m_ptHead.x / 2, m_ptHead.y / 2, (int)m_cOwn); OutputDebugStringA(szR); }
+#endif
+
+    ASSERT_VALID (this);
+}
+
 void CVehicle::CantInBldg(CBuilding const *pBldg) {
 
     ASSERT_VALID (this);

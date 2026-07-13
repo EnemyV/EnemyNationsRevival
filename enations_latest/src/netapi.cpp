@@ -2271,6 +2271,20 @@ static void VehNew( CMsgVehNew* pMsg )
 
     ASSERT_CMD( pMsg );
 
+    // veh_new carrying an EXISTING id is a re-place (the AI 10-min stuck
+    // teleport posts CMsgPlaceVeh with the unit's id). Create has no relocate
+    // path: it minted a duplicate object on the same id and orphaned the old
+    // one on its hexes (ghost unit; soak38 14:18 wire TRAP). Relocate instead.
+    if ( pMsg->m_dwID != 0 )
+    {
+        CVehicle* pExisting = theVehicleMap._GetVehicle( pMsg->m_dwID );
+        if ( pExisting != NULL )
+        {
+            pExisting->RelocateTo( pMsg->m_ptHead, pMsg->m_hexDest );
+            return;
+        }
+    }
+
     // create it
     CVehicle::Create( pMsg->m_ptHead, pMsg->m_ptTail, pMsg->m_iType, pMsg->m_iPlyrNum, pMsg->m_dwID,
                       (CVehicle::VEH_MODE)pMsg->m_iRouteMode, pMsg->m_hexDest, pMsg->m_dwIDBldg, pMsg->m_iDelay );

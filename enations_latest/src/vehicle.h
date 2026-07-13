@@ -402,6 +402,7 @@ public:
 		void					CantInBldg (CBuilding const * pBldg);
 		void					MakeBlocked ();
 		void					ForceAtDest ();
+		void					RelocateTo (CSubHex const & ptHead, CHexCoord const & hexDest);  // re-place of an existing unit (AI 10-min teleport)
 
 		BOOL					CanEnterBldg ( CBuilding * pBldg ) const;
 
