@@ -3233,6 +3233,12 @@ BOOL CAIMapUtil::TryBridgeWalk( CHexCoord const& hexStart, int iDir, int iMaxSpa
             return TRUE;
         }
 
+        // a span hex already carrying a bridge = this crossing is ordered or
+        // built - validating it again dispatched a SECOND crane from the other
+        // bank (20 accepts for 5 spans, 75% effort lost to duelling builders)
+        if ( pGameHex->GetUnits( ) & CHex::bridge )
+            return FALSE;
+
         // if still here that means the hex was river/road
         // thus will be part of the span
         iSpan++;
