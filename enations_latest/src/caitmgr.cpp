@@ -5286,7 +5286,8 @@ void CAITaskMgr::BuildRoad( CAIUnit* pUnit, CAITask* pTask )
     // SetDestination. Leave it alone until it reaches the run's end hex -- then
     // the arrived branch and road_done completion take over. (Single-hex builds
     // set road_new only once already ON their hex, so head==DEST there.)
-    if ( pUnit->GetParam( CAI_FUEL ) == CNetCmd::road_new &&
+    if ( ( pUnit->GetParam( CAI_FUEL ) == CNetCmd::road_new ||
+           pUnit->GetParam( CAI_FUEL ) == CNetCmd::bridge_new ) &&  // span-riding = same latched state
          ( hexVeh.X( ) != pUnit->GetParam( CAI_DEST_X ) ||
            hexVeh.Y( ) != pUnit->GetParam( CAI_DEST_Y ) ) )
     {
