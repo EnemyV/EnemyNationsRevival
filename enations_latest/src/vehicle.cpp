@@ -138,6 +138,10 @@ BOOL CVehicle::TestStuck() {
             AtNewLoc();
             TakeOwnership();
             _SetRouteMode(moving);
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+            { char szF[96]; sprintf(szF, "[STUCKHOP] veh %lu hopped along path (6-min fallback)\n",
+                                    (unsigned long)GetID()); OutputDebugStringA(szF); }
+#endif
             return TRUE;
         }
 

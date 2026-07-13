@@ -3123,6 +3123,10 @@ static void feCheckSub(CSubHex const &_sub, void *pData) {
     // transport in if waiting
     CBuilding *pBldg = theBuildingHex._GetBuilding(pVeh->GetHexDest());
     if ((pVeh->GetHexOwnership()) && (pBldg == pData) && (pBldg->GetOwner() == pVeh->GetOwner())) {
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+        { char szF[96]; sprintf(szF, "[XPORTIN] veh %lu force-transported into dest bldg (fallback)\n",
+                                (unsigned long)pVeh->GetID()); OutputDebugStringA(szF); }
+#endif
         pVeh->ReleaseOwnership();
         pVeh->_SetRouteMode(CVehicle::stop);
         pVeh->ForceAtDest();
@@ -3135,6 +3139,10 @@ static void feCheckSub(CSubHex const &_sub, void *pData) {
     // if blocked and touching building - make cant_deploy
     if (theBuildingHex._GetBuilding(pVeh->GetPtTail()) == pData)
         if (pVeh->GetRouteMode() == CVehicle::blocked) {
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+            { char szF[96]; sprintf(szF, "[XPORTIN] veh %lu blocked-at-bldg -> cant_deploy (fallback)\n",
+                                    (unsigned long)pVeh->GetID()); OutputDebugStringA(szF); }
+#endif
             pVeh->ReleaseOwnership();
             pVeh->_SetRouteMode(CVehicle::cant_deploy);
 #ifdef _LOGOUT
