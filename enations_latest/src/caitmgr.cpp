@@ -5576,6 +5576,27 @@ void CAITaskMgr::BuildRoad( CAIUnit* pUnit, CAITask* pTask )
             return;
         }
 
+        // picked road hex unreachable (e.g. the planned network continues across
+        // water): deliver the split to the crossing planner NOW instead of
+        // marching the crane into a clamp - road-flow twin of the
+        // ConstructBuilding reachability gate. Only holds the crane back when a
+        // crossing was actually planned; unspannable picks keep today's flow.
+        if ( hexSite != hexVeh &&
+             !m_pGoalMgr->m_pMap->m_pMapUtil->GetPathRating( hexVeh, hexSite ) )
+        {
+            BOOL bBridged = m_pGoalMgr->m_pMap->PlanBridgeToward( hexVeh, hexSite );
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+            {
+                char szR[128];
+                sprintf( szR, "[ROADSPLIT] plyr %d crane %lu road hex %d,%d unreachable bridge %d\n", m_iPlayer,
+                         (unsigned long)pUnit->GetID( ), hexSite.X( ), hexSite.Y( ), (int)bBridged );
+                OutputDebugStringA( szR );
+            }
+#endif
+            if ( bBridged )
+                return;   // pending-bridge dispatch takes over next pass
+        }
+
         // road building takes GAS_PER_ROAD (5 units gas per road hex)
         if ( !m_pGoalMgr->m_iGasHave )
         {
