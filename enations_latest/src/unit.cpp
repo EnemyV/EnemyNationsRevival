@@ -410,7 +410,19 @@ BOOL CTransportData::CanEnterHex( CHexCoord const& hexSrc, CHexCoord const& hexD
         return ( xDif > 0 );
     }
 
-    TRAP( );
+    // 1996 'impossible' - dir -1 is now reachable (soak27 04:41 dump: dir -1
+    // deep in war) and refusal below IS the handling; log the producer instead
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+    {
+        char szD[128];
+        sprintf( szD, "[BADEXITDIR] bldg %lu type %d dir %d at %d,%d\n",
+                 (unsigned long)pBldgDest->GetID( ), (int)pBldgDest->GetData( )->GetType( ),
+                 IsBoat( ) ? pBldgDest->GetShipDir( ) : pBldgDest->GetExitDir( ),
+                 pBldgDest->GetHex( ).X( ), pBldgDest->GetHex( ).Y( ) );
+        OutputDebugStringA( szD );
+    }
+#endif
+    EN_TRAP_REMOVED( "CanEnterHex: building exit dir out of range - entry refused below" );
     return ( FALSE );
 }
 
