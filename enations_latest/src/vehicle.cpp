@@ -1165,14 +1165,26 @@ BOOL CVehicle::NextRoadHex() {
             return (FALSE);
         }
 
-        // if we're on a bridge - cross it AND OFF
+        // if we're on a bridge - cross it AND OFF. Cross AWAY from where we
+        // stand: a bridge built from the far bank stores its END on OUR side,
+        // and the blind end+exit jump landed the walk back on the crane's own
+        // hex = infinite same-patch rebuild ([ROADLOOP] veh 230/175, soak21)
         CBridgeUnit *pBu = theBridgeHex.GetBridge(_hex);
         if (pBu != NULL) {
-            _hex = pBu->GetParent()->GetHexEnd();
-            int iExitDir = (pBu->GetParent())->GetUnitEnd()->GetExit();
+            CBridge *pBr = pBu->GetParent();
+            _hex = pBr->GetHexEnd();
+            int iExitDir = pBr->GetUnitEnd()->GetExit();
             _hex.X() += (iExitDir & 1) ? 2 - iExitDir : 0;
             _hex.Y() += (!(iExitDir & 1)) ? iExitDir - 1 : 0;
             _hex.Wrap();
+            if (m_ptHead.SameHex(_hex)) {
+                // we ARE the end-side landing: the far bank is the START side
+                _hex = pBr->GetHexStart();
+                iExitDir = pBr->GetUnitStart()->GetExit();
+                _hex.X() += (iExitDir & 1) ? 2 - iExitDir : 0;
+                _hex.Y() += (!(iExitDir & 1)) ? iExitDir - 1 : 0;
+                _hex.Wrap();
+            }
         } else
             _hex = _NextRoadHex(_hex);
 

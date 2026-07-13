@@ -1133,7 +1133,9 @@ class CGame : public CObject
     void DecTry( ) { m_iTryCount--; }
     int  GetTry( ) const { return ( m_iTryCount ); }
 
-    DWORD GetID( ) { return ( m_dwNextUnitID++ ); }
+    // atomic: 13 AI init threads draw concurrently; the bare ++ handed the same
+    // id to two players (confirmed live: collisions at every player boundary)
+    DWORD GetID( ) { return ( (DWORD)InterlockedIncrement( (LONG volatile*)&m_dwNextUnitID ) - 1 ); }
 
     // players
     CPlayer* GetMe( )
