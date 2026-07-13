@@ -254,12 +254,11 @@ BOOL CTransportData::CanEnterHex( CHexCoord const& hexSrc, CHexCoord const& hexD
     // only if we are not on water do we care about a bridge
     if ( !bVehOnWater )
     {
-        // ships can't enter a bridge (and better not be on one)
+        // ships can't enter a bridge (and better not be on one). 1996 curiosity
+        // TRAP: ships probing paths near river spans is routine now (soak34
+        // 09:29 dump); the refusal is the handling
         if ( ( pHexDest->GetUnits( ) & CHex::bridge ) && ( GetWheelType( ) == CWheelTypes::water ) )
-        {
-            TRAP( );
             return ( FALSE );
-        }
 
         CBridgeUnit* pBuDest = theBridgeHex.GetBridge( hexDest );
 
