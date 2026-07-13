@@ -84,6 +84,9 @@ static UINT SDLKeyToVK(SDL_Scancode sc) {
     case SDL_SCANCODE_DELETE: return VK_DELETE;
     case SDL_SCANCODE_INSERT: return VK_INSERT;   // IDA_STOP_DESTROY (was unmapped -> key dropped)
     case SDL_SCANCODE_HOME:   return VK_HOME;     // IDA_CENTER: center on selection/rocket (was unmapped)
+    case SDL_SCANCODE_PAGEUP:   return VK_PRIOR;  // cheat: cycle rockets (was unmapped)
+    case SDL_SCANCODE_PAGEDOWN: return VK_NEXT;
+    case SDL_SCANCODE_END:      return VK_END;    // cheat: observer mode (skip rocket landing)
     case SDL_SCANCODE_LEFT:   return VK_LEFT;
     case SDL_SCANCODE_RIGHT:  return VK_RIGHT;
     case SDL_SCANCODE_UP:     return VK_UP;
@@ -6385,6 +6388,47 @@ void CWndArea::OnKeyDown( UINT nChar, UINT nRepCnt, UINT nFlags )
     // handle changes in CTRL & SHIFT which changes the cursor
     if ( ( nChar == VK_CONTROL ) || ( nChar == VK_SHIFT ) )
         SetMouseState( );
+
+#ifdef _CHEAT
+    // observer aids (cheat + SP only, operator 2026-07-12)
+    if ( !theGame.IsNetGame( ) )
+    {
+        // PgUp/PgDn: cycle the view through every player's rocket
+        if ( nChar == VK_PRIOR || nChar == VK_NEXT )
+        {
+            CBuilding* apRockets[64];
+            int        nRockets = 0;
+            POSITION   posB     = theBuildingMap.GetStartPosition( );
+            while ( posB != NULL && nRockets < 64 )
+            {
+                DWORD      dwID;
+                CBuilding* pBldg;
+                theBuildingMap.GetNextAssoc( posB, dwID, pBldg );
+                if ( pBldg != NULL && pBldg->GetData( )->GetType( ) == CStructureData::rocket )
+                    apRockets[nRockets++] = pBldg;
+            }
+            if ( nRockets > 0 )
+            {
+                static int s_iRocketOn = -1;
+                s_iRocketOn += ( nChar == VK_NEXT ) ? 1 : -1;
+                if ( s_iRocketOn < 0 )
+                    s_iRocketOn = nRockets - 1;
+                if ( s_iRocketOn >= nRockets )
+                    s_iRocketOn = 0;
+                Center( apRockets[s_iRocketOn] );
+            }
+            return;
+        }
+        // End during rocket placement: pure observer - no rocket, normal
+        // cursor. The 1996 defeat-grace (m_bPlacedRocket ? 0 : 1) keeps a
+        // rocketless human alive indefinitely; live-observation only.
+        if ( nChar == VK_END && ( m_iMode == rocket_ready || m_iMode == rocket_pos ) )
+        {
+            SetupDone( );
+            return;
+        }
+    }
+#endif
 
     // if not a number we don't care about it
     if ( ( nChar < '0' ) || ( '9' < nChar ) )
