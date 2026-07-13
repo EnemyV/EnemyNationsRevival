@@ -1441,13 +1441,15 @@ void CVehicle::EnterBuilding() {
 
     ReleaseOwnership();
 
-    // POSTCONDITION: an in-building vehicle must never remain 'moving' (it owns
-    // no hexes). Every normal caller stops the vehicle first, but the blocked-
-    // traffic shove (HandleBlocked ~2167) enters a mid-move foreign vehicle with
-    // its mode untouched -> next Move grabbed hexes unowned (18:25 crash, third
-    // of the ownership family). cant_deploy is the designed in-building state
-    // (mirrors ExitBuilding's own guard) and legitimately redeploys it later.
-    if (m_cMode == moving)
+    // POSTCONDITION: an in-building vehicle must never remain in an outside
+    // movement mode (it owns no hexes). Every normal caller stops the vehicle
+    // first, but the blocked-traffic shove (HandleBlocked ~2197) enters a
+    // vehicle with its mode untouched -> moving re-grabbed on next Move (18:25
+    // crash) and blocked re-grabbed on road-clear (soak26 03:18 crash, same
+    // TRAP; traffic/contention share that cycle). cant_deploy is the designed
+    // in-building state (mirrors ExitBuilding's own guard) and legitimately
+    // redeploys later. stop stays stop (vanilla arrival flow).
+    if (m_cMode == moving || m_cMode == blocked || m_cMode == traffic || m_cMode == contention)
         _SetRouteMode(cant_deploy);
 
     // put us in the exit slot
