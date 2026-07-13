@@ -356,6 +356,10 @@ int myThreadDrainZombies( DWORD dwMaxWaitMs ) {
         if ( !bWarned ) {
             fprintf( stderr, "[threads] draining %d zombie AI worker(s) before new game (max %lums)\n",
                      iZombies, (unsigned long)dwMaxWaitMs );
+#ifdef _WIN32
+            { char szZ[96]; sprintf( szZ, "[ZOMBIE] draining %d AI worker(s) before new game\n", iZombies );
+              OutputDebugStringA( szZ ); }
+#endif
             bWarned = TRUE;
         }
         ::Sleep( 25 );
@@ -366,9 +370,14 @@ int myThreadDrainZombies( DWORD dwMaxWaitMs ) {
         }
     }
     myRunDeferredThreadExit();
-    if ( iZombies > 0 )
+    if ( iZombies > 0 ) {
         fprintf( stderr, "[threads] WARNING: %d zombie(s) still live after %lums drain\n",
                  iZombies, (unsigned long)dwMaxWaitMs );
+#ifdef _WIN32
+        { char szZ[96]; sprintf( szZ, "[ZOMBIE] WARNING: %d worker(s) still live after drain\n", iZombies );
+          OutputDebugStringA( szZ ); }
+#endif
+    }
     return iZombies;
 }
 

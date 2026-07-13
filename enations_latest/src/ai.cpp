@@ -112,9 +112,27 @@ BOOL AiInit( int iSmart, int iNumAi, int iNumHuman, int iStartPos )
     // wedged worker then proceeds under the old odds — the per-loop yields in
     // caitmgr make that rare; a 120s ceiling stalled the operator's create at
     // 0% for 2 minutes, worse than the disease).
-    myThreadDrainZombies( 10000 );
+    int iZombiesLeft = myThreadDrainZombies( 10000 );
+    if ( iZombiesLeft > 0 )
+    {
+        // wedged zombie survived the drain: deleting pGameData/plAIMgrList
+        // under it is the #69 silent-corruption path (its sweeps then run on
+        // freed/reused heap -> crossed unit records, stale orders into the
+        // new game). Skip the deletes - the news below overwrite the globals,
+        // the old objects leak intact (bounded, once per bad regen) and the
+        // zombie dies at its next generation check against valid memory.
+        // Do NOT null the globals: zombies read them live (NULL-deref).
+#ifdef _WIN32
+        {
+            char szZ[128];
+            sprintf( szZ, "[ZOMBIE] %d AI worker(s) survived drain - parking old pGameData/plAIMgrList (leak, no delete)\n",
+                     iZombiesLeft );
+            OutputDebugStringA( szZ );
+        }
+#endif
+    }
 
-    if ( pGameData != NULL )
+    if ( pGameData != NULL && iZombiesLeft == 0 )
         delete pGameData;
 
     // attempt to create the game data interface object
@@ -143,7 +161,7 @@ BOOL AiInit( int iSmart, int iNumAi, int iNumHuman, int iStartPos )
         return TRUE;
     }
 
-    if ( plAIMgrList != NULL )
+    if ( plAIMgrList != NULL && iZombiesLeft == 0 )
         delete plAIMgrList;
 
     // attempt to create an CAIMgr list
