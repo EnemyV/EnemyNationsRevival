@@ -5478,6 +5478,7 @@ void CAITaskMgr::BuildRoad( CAIUnit* pUnit, CAITask* pTask )
             if ( hexBr.X( ) != hexVeh.X( ) || hexBr.Y( ) != hexVeh.Y( ) )
             {
                 pUnit->SetDestination( hexBr );
+                pUnit->SetDataDW( 0 );  // stale prev-building id must not match a late completion
                 pUnit->SetParam( CAI_FUEL, CNetCmd::build_bridge );
 #if EN_AI_PROBES_ECON && defined(_WIN32)
                 {
@@ -5515,6 +5516,7 @@ void CAITaskMgr::BuildRoad( CAIUnit* pUnit, CAITask* pTask )
             {
                 // send truck to build site for one end
                 pUnit->SetDestination( hexSite );
+                pUnit->SetDataDW( 0 );  // stale prev-building id must not match a late completion
                 // flag unit to send message to build a bridge
                 pUnit->SetParam( CAI_FUEL, CNetCmd::build_bridge );
 #if EN_AI_PROBES_ECON && defined(_WIN32)
