@@ -2179,7 +2179,9 @@ void CVehicle::HandleBlocked() {
         if (pVehInWay != NULL) {
             if ((pVehInWay->m_ptNext != m_ptNext) && (pVehInWay->m_ptHead != m_ptNext) &&
                 (pVehInWay->m_ptTail != m_ptNext)) {
-                TRAP();
+                // stale claim detected; CheckHex below scrubs it and TryNewSub
+                // retries = the recovery (soak37 12:38 dump)
+                EN_TRAP_REMOVED("HandleBlocked: stale claim on next - scrubbed below");
                 theVehicleHex.CheckHex(m_ptNext);
                 if (TryNewSub(bGotPath)) {
 #ifdef _LOGOUT

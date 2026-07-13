@@ -256,9 +256,20 @@ BOOL CTransportData::CanEnterHex( CHexCoord const& hexSrc, CHexCoord const& hexD
     {
         // ships can't enter a bridge (and better not be on one). 1996 curiosity
         // TRAP: ships probing paths near river spans is routine now (soak34
-        // 09:29 dump); the refusal is the handling
+        // 09:29 dump); the refusal is the handling. Warn once per session
+        // (hot path - per-hit logging would flood)
         if ( ( pHexDest->GetUnits( ) & CHex::bridge ) && ( GetWheelType( ) == CWheelTypes::water ) )
+        {
+#ifdef _WIN32
+            static BOOL s_bWarnedShipBridge = FALSE;
+            if ( !s_bWarnedShipBridge )
+            {
+                s_bWarnedShipBridge = TRUE;
+                OutputDebugStringA( "[TRAP-REMOVED-1st] CanEnterHex: ship vs bridge hex - refused (once-per-session note)\n" );
+            }
+#endif
             return ( FALSE );
+        }
 
         CBridgeUnit* pBuDest = theBridgeHex.GetBridge( hexDest );
 
@@ -279,9 +290,18 @@ BOOL CTransportData::CanEnterHex( CHexCoord const& hexSrc, CHexCoord const& hexD
 
             // is our exit direction ok? (if it is we continue in case going to a bridge or bldg)
             // only care if strict. 1996 curiosity TRAPs, mirror of the entry-side
-            // trio (soak32 07:41 dump); -1 mid-span refuse is the handling
+            // trio (soak32 07:41 dump); -1 mid-span refuse is the handling.
+            // Warn once per session (hot path)
             if ( !bStrict )
             {
+#ifdef _WIN32
+                static BOOL s_bWarnedBridgeExit = FALSE;
+                if ( !s_bWarnedBridgeExit )
+                {
+                    s_bWarnedBridgeExit = TRUE;
+                    OutputDebugStringA( "[TRAP-REMOVED-1st] CanEnterHex: non-strict bridge-exit probe (once-per-session note)\n" );
+                }
+#endif
                 if ( pBuSrc->GetExit( ) == -1 )
                     return ( FALSE );  // mid-span has no exit
             }
@@ -316,9 +336,18 @@ BOOL CTransportData::CanEnterHex( CHexCoord const& hexSrc, CHexCoord const& hexD
             // note - we are the reverse of the dir because we are entering
             // only care if strict. 1996 curiosity TRAPs: non-strict passability
             // probes near bridges are routine now (CheckExit/IsPassable at
-            // landings - soak31 07:25 dump); handling below is already correct
+            // landings - soak31 07:25 dump); handling below is already correct.
+            // Warn once per session (hot path)
             if ( !bStrict )
             {
+#ifdef _WIN32
+                static BOOL s_bWarnedBridgeEntry = FALSE;
+                if ( !s_bWarnedBridgeEntry )
+                {
+                    s_bWarnedBridgeEntry = TRUE;
+                    OutputDebugStringA( "[TRAP-REMOVED-1st] CanEnterHex: non-strict bridge-entry probe (once-per-session note)\n" );
+                }
+#endif
                 if ( pBuDest->GetExit( ) == -1 )
                     return ( FALSE );  // mid-span is never enterable
             }
