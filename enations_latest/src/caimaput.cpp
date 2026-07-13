@@ -1847,6 +1847,21 @@ void CAIMapUtil::AddFailedSiteTemp( int iBldg, const CHexCoord& hex, DWORD dwMs 
     m_failedBuildSites[key] = theGame.GettimeGetTime( ) + dwMs;
 }
 
+// A completed bridge changes reachability globally: every temp entry was
+// shelved under the OLD map, so drop them all and let the site selectors
+// re-validate. Permanent (terrain) entries stay.
+void CAIMapUtil::ClearFailedSiteTemps( void )
+{
+    std::map<uint64_t, DWORD>::iterator it = m_failedBuildSites.begin( );
+    while ( it != m_failedBuildSites.end( ) )
+    {
+        if ( it->second != 0 )
+            it = m_failedBuildSites.erase( it );
+        else
+            ++it;
+    }
+}
+
 BOOL CAIMapUtil::IsFailedSite( int iBldg, const CHexCoord& hex )
 {
     std::map<uint64_t, DWORD>::iterator it = m_failedBuildSites.find( MakeSiteKey( iBldg, hex ) );

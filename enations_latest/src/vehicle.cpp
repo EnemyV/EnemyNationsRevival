@@ -1185,6 +1185,24 @@ BOOL CVehicle::NextRoadHex() {
             break;
     }
 
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+    // ROADLOOP probe: a next-hex resolving to the crane's own hex re-runs
+    // ConstructRoad on the same spot forever; a water resolve is undrivable
+    {
+        CHex *pHexN = theMap._GetHex(_hex);
+        BOOL bSelf = m_ptHead.SameHex(_hex);
+        BOOL bWater = (pHexN != NULL) && pHexN->IsWater();
+        if (bSelf || bWater) {
+            CBridgeUnit *pBuL = theBridgeHex.GetBridge(_hex);
+            char szL[176];
+            sprintf(szL, "[ROADLOOP] veh %lu head %d,%d next %d,%d end %d,%d self %d water %d nextbridge %d exit %d\n",
+                    (unsigned long)GetID(), m_ptHead.x / 2, m_ptHead.y / 2, _hex.X(), _hex.Y(),
+                    m_hexEnd.X(), m_hexEnd.Y(), (int)bSelf, (int)bWater, (int)(pBuL != NULL),
+                    pBuL ? (pBuL->GetParent())->GetUnitEnd()->GetExit() : -1);
+            OutputDebugStringA(szL);
+        }
+    }
+#endif
     SetDestAndMode(_hex, center);
     return (TRUE);
 }

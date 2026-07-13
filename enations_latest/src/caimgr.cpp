@@ -1558,6 +1558,32 @@ void CAIMgr::UpdateUnits( CAIMsg* pMsg )
     if ( pMsg->m_iMsg == CNetCmd::road_done && pMsg->m_idata3 == m_iPlayer )
     {
         m_iStatRoadsPaved++;
+
+        // a completed BRIDGE hex changes reachability: flush the timed site
+        // shelf so far-side sites are re-picked NOW instead of waiting out
+        // their 10-min window (operator: cranes idled after the bridge)
+        if ( m_pMap != NULL && m_pMap->m_pMapUtil != NULL )
+        {
+            BOOL bBridgeHex = FALSE;
+            CHexCoord hexDone( pMsg->m_iX, pMsg->m_iY );
+            EnterCriticalSection( &cs );
+            CHex* pHexDone = theMap.GetHex( hexDone );
+            if ( pHexDone != NULL && ( pHexDone->GetUnits( ) & CHex::bridge ) )
+                bBridgeHex = TRUE;
+            LeaveCriticalSection( &cs );
+            if ( bBridgeHex )
+            {
+                m_pMap->m_pMapUtil->ClearFailedSiteTemps( );
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+                {
+                    char szR[112];
+                    sprintf( szR, "[UNBAN] plyr %d bridge hex %d,%d done - temp site shelf flushed\n",
+                             m_iPlayer, hexDone.X( ), hexDone.Y( ) );
+                    OutputDebugStringA( szR );
+                }
+#endif
+            }
+        }
         CAIUnit* pUnit = (CAIUnit*)m_plUnits->GetUnit( pMsg->m_dwID );
         if ( pUnit != NULL )
         {
@@ -2067,6 +2093,27 @@ void CAIMgr::HandleStuckVehicles( void )
             if ( !dwUnitTime || dwUnitTime > dwNow )
             {
                 pUnit->SetStuckSince( timeGetTime( ) );
+                // first-contact river split (operator 2026-07-12): a crane the
+                // engine reports STOPPED short of its dest is stranded NOW --
+                // plan the crossing at detection, not on the 5-min resend.
+                // PlanBridgeToward no-ops when no water lies toward the dest;
+                // the claim/deny map dedupes repeats.
+                if ( pUnit->GetTypeUnit( ) == CTransportData::construction &&
+                     pUnit->GetTask( ) && hexVeh != hexDest &&
+                     ( hexDest.X( ) || hexDest.Y( ) ) && m_pMap != NULL )
+                {
+                    BOOL bBridged = m_pMap->PlanBridgeToward( hexVeh, hexDest );
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+                    if ( bBridged )
+                    {
+                        char szR[144];
+                        sprintf( szR, "[BANKSPLIT] plyr %d crane %lu at %d,%d dest %d,%d first-contact bridge\n",
+                                 m_iPlayer, (unsigned long)pUnit->GetID( ), hexVeh.X( ), hexVeh.Y( ),
+                                 hexDest.X( ), hexDest.Y( ) );
+                        OutputDebugStringA( szR );
+                    }
+#endif
+                }
                 continue;
             }
 

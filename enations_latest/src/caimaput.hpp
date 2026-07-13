@@ -125,6 +125,7 @@ public:
 	// re-learns, which self-heals.
 	void AddFailedSite( int iBldg, const CHexCoord& hex );
 	void AddFailedSiteTemp( int iBldg, const CHexCoord& hex, DWORD dwMs );
+	void ClearFailedSiteTemps( void );	// bridge completed: reachability changed
 	BOOL IsFailedSite( int iBldg, const CHexCoord& hex );
 
 	void GetExploreHex( CAIUnit *pUnit, CHexCoord& hexFound,
