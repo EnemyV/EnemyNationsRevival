@@ -384,8 +384,20 @@ BOOL CTransportData::CanEnterHex( CHexCoord const& hexSrc, CHexCoord const& hexD
             return ( yDif > 0 );
         case 3:   // exit left
             return ( xDif < 0 );
-        default:  // this is impossible
-            TRAP( );
+        default:
+            // 1996 'impossible' - leaving-side twin of the entering-side dir=-1
+            // (soak33 08:32 dump); refusal below is the handling
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+            {
+                char szD[128];
+                sprintf( szD, "[BADEXITDIR] leave bldg %lu type %d dir %d at %d,%d\n",
+                         (unsigned long)pBldgSrc->GetID( ), (int)pBldgSrc->GetData( )->GetType( ),
+                         IsBoat( ) ? pBldgSrc->GetShipDir( ) : pBldgSrc->GetExitDir( ),
+                         pBldgSrc->GetHex( ).X( ), pBldgSrc->GetHex( ).Y( ) );
+                OutputDebugStringA( szD );
+            }
+#endif
+            EN_TRAP_REMOVED( "CanEnterHex: leaving-building exit dir out of range - refused below" );
             return ( FALSE );
         }
     }
