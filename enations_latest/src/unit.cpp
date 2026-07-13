@@ -319,16 +319,13 @@ BOOL CTransportData::CanEnterHex( CHexCoord const& hexSrc, CHexCoord const& hexD
         if ( pHexDest->GetUnits( ) & CHex::bridge )
         {
             // note - we are the reverse of the dir because we are entering
-            // only care if strict
+            // only care if strict. 1996 curiosity TRAPs: non-strict passability
+            // probes near bridges are routine now (CheckExit/IsPassable at
+            // landings - soak31 07:25 dump); handling below is already correct
             if ( !bStrict )
             {
-                TRAP( );
                 if ( pBuDest->GetExit( ) == -1 )
-                {
-                    TRAP( );
-                    return ( FALSE );
-                }
-                TRAP( );
+                    return ( FALSE );  // mid-span is never enterable
             }
             else
 
