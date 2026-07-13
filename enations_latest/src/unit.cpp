@@ -3075,8 +3075,8 @@ void CVehicle::SetDestAndMode( CSubHex sub, VEH_POS iMode )
     // if not there in 6 minutes we jump it there
     m_dwTimeJump = theGame.GettimeGetTime( ) + 1000 * TRUCK_JUMP_TIME;
 
-    // may be there
-    if ( m_ptDest == m_ptHead )
+    // may be there (owned only - undeployed must take the !m_cOwn ladder below)
+    if ( ( m_ptDest == m_ptHead ) && m_cOwn )
     {
         _SetRouteMode( moving );
         return;
