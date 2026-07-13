@@ -279,16 +279,12 @@ BOOL CTransportData::CanEnterHex( CHexCoord const& hexSrc, CHexCoord const& hexD
                     return ( TRUE );
 
             // is our exit direction ok? (if it is we continue in case going to a bridge or bldg)
-            // only care if strict
+            // only care if strict. 1996 curiosity TRAPs, mirror of the entry-side
+            // trio (soak32 07:41 dump); -1 mid-span refuse is the handling
             if ( !bStrict )
             {
-                TRAP( );
                 if ( pBuSrc->GetExit( ) == -1 )
-                {
-                    TRAP( );
-                    return ( FALSE );
-                }
-                TRAP( );
+                    return ( FALSE );  // mid-span has no exit
             }
             else
 
