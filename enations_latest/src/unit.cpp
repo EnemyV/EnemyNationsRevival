@@ -3120,6 +3120,12 @@ void CVehicle::SetDestAndMode( CSubHex sub, VEH_POS iMode )
             if ( ( theVehicleHex._GetVehicle( m_ptHead ) == NULL ) &&
                  ( theVehicleHex._GetVehicle( m_ptTail ) == NULL ) )
             {
+                // settle the stale next (old exit slot/step) before re-acquiring:
+                // TakeOwnership grabs m_ptNext FIRST and only head/tail were
+                // checked free - a foreign claim on the stale next tripped the
+                // AddSubOwned cross-claim TRAP (soak28 05:56). TestStuck and the
+                // HandleBlocked beam-over settle next=head the same way.
+                m_ptNext = m_ptHead;
                 TakeOwnership( );
                 SetLoc( TRUE );
                 GetPath( FALSE );
