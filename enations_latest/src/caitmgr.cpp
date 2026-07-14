@@ -5511,6 +5511,17 @@ void CAITaskMgr::BuildRoad( CAIUnit* pUnit, CAITask* pTask )
 #endif
                 return;
             }
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+            else
+            {
+                // the arm is spent with NOTHING dispatched - the crossing that
+                // set the flag starves silently ([SPANFAIL] names the reason)
+                char szR[112];
+                sprintf( szR, "[PENDMISS] plyr %d crane %lu pending consumed, no span (anchor %d,%d)\n", m_iPlayer,
+                         (unsigned long)pUnit->GetID( ), hexVeh.X( ), hexVeh.Y( ) );
+                OutputDebugStringA( szR );
+            }
+#endif
         }
 
         // get goal manager to tell us where to go

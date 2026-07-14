@@ -18,6 +18,7 @@
 #include "logging.h"  // dave's logging system
 
 #include <vector>
+#include <set>  // [SPANFAIL] once-per-hex probe throttle
 
 extern CAIData*         pGameData;   // pointer to API object for game data
 extern CException*      pException;  // standard exception for yielding
@@ -2994,6 +2995,20 @@ void CAIMapUtil::FindBridgeHex( CHexCoord& hexSite, CAIUnit* pUnit )
 // been reached, returning TRUE and updating pUnit->GetParam() with
 // start/end of span (must be land hexes)
 //
+#if EN_AI_PROBES_WAR && defined(_WIN32)
+// [SPANFAIL] throttle: FindBridgeOnPlan rescans every candidate each pass, so
+// log once per (hex,reason) or a failing colony floods the stream
+static BOOL SpanFailFirst( int iOff, int iReason )
+{
+    static std::set<int> s_setLogged;
+    BOOL                 bFirst;
+    EnterCriticalSection( &cs );
+    bFirst = s_setLogged.insert( ( iOff << 3 ) | iReason ).second;
+    LeaveCriticalSection( &cs );
+    return bFirst;
+}
+#endif
+
 BOOL CAIMapUtil::IsBridgeSpan( CHexCoord& hexRiverRoad, CAIUnit* pUnit )
 {
     CHex*     pGameHex;
@@ -3032,7 +3047,17 @@ BOOL CAIMapUtil::IsBridgeSpan( CHexCoord& hexRiverRoad, CAIUnit* pUnit )
     }
     // could not find the land hex to start the span
     if ( !hexStart.X( ) && !hexStart.Y( ) )
+    {
+#if EN_AI_PROBES_WAR && defined(_WIN32)
+        if ( SpanFailFirst( GetMapOffset( hexRiverRoad.X( ), hexRiverRoad.Y( ) ), 1 ) )
+        {
+            char szF[112];
+            sprintf( szF, "[SPANFAIL] plyr %d at %d,%d nostart\n", m_iPlayer, hexRiverRoad.X( ), hexRiverRoad.Y( ) );
+            OutputDebugStringA( szF );
+        }
+#endif
         return FALSE;
+    }
 
     // START land hex must be clear: a planned-road flag can be stale under a since-built building/bridge
     {
@@ -3109,7 +3134,17 @@ BOOL CAIMapUtil::IsBridgeSpan( CHexCoord& hexRiverRoad, CAIUnit* pUnit )
     }
     LeaveCriticalSection( &cs );
     if ( iMaxSpan <= 0 )
+    {
+#if EN_AI_PROBES_WAR && defined(_WIN32)
+        if ( SpanFailFirst( GetMapOffset( hexRiverRoad.X( ), hexRiverRoad.Y( ) ), 2 ) )
+        {
+            char szF[112];
+            sprintf( szF, "[SPANFAIL] plyr %d at %d,%d notech\n", m_iPlayer, hexRiverRoad.X( ), hexRiverRoad.Y( ) );
+            OutputDebugStringA( szF );
+        }
+#endif
         return FALSE;
+    }
 
     CHexCoord hexEnd( 0, 0 );
     // original candidate crossing first
@@ -3214,6 +3249,31 @@ BOOL CAIMapUtil::IsBridgeSpan( CHexCoord& hexRiverRoad, CAIUnit* pUnit )
             return TRUE;
         }
     }
+#if EN_AI_PROBES_WAR && defined(_WIN32)
+    {
+        // name the failure: re-walk with the all-tiers budget to split
+        // "river wider than MY reach" from "no clean walk at all"
+        CHexCoord hexEndT( 0, 0 );
+        int       iOffP = GetMapOffset( hexRiverRoad.X( ), hexRiverRoad.Y( ) );
+        if ( TryBridgeWalk( hexStart, iDir, MAX_SPAN_ULT, hexEndT ) )
+        {
+            if ( SpanFailFirst( iOffP, 3 ) )
+            {
+                char szF[128];
+                sprintf( szF, "[SPANFAIL] plyr %d at %d,%d toolong span %d max %d\n", m_iPlayer, hexRiverRoad.X( ),
+                         hexRiverRoad.Y( ), pGameData->GetRangeDistance( hexStart, hexEndT ) - 1, iMaxSpan );
+                OutputDebugStringA( szF );
+            }
+        }
+        else if ( SpanFailFirst( iOffP, 4 ) )
+        {
+            char szF[128];
+            sprintf( szF, "[SPANFAIL] plyr %d at %d,%d nowalk max %d\n", m_iPlayer, hexRiverRoad.X( ),
+                     hexRiverRoad.Y( ), iMaxSpan );
+            OutputDebugStringA( szF );
+        }
+    }
+#endif
     return FALSE;
 }
 
