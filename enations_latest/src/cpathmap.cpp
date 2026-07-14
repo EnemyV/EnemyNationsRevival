@@ -16,6 +16,7 @@
 #include "caidata.hpp"
 #include "logging.h"	// dave's logging system
 #include "Perf.h"		// EN_PERF counters (path volume/cost split)
+#include "enprobes.h"	// temp AI probe gates
 
 
 //#define TEST_RESULT1		// test GetAt improvement
@@ -401,6 +402,11 @@ BOOL CPathMap::_GetPath( CHexCoord& hexFrom, CHexCoord& hexTo,
 	int iTicks = 0;
 	int iList = 1;
 
+#if EN_AI_PROBES_WAR && defined(_WIN32)
+	// war-probe: which ceiling killed a war-planning search
+	const char* pszWarFail = NULL;
+#endif
+
 	// start looping to find a path
 	while( TRUE )
 	{
@@ -428,10 +434,14 @@ BOOL CPathMap::_GetPath( CHexCoord& hexFrom, CHexCoord& hexTo,
 			}
 			if( pAdjCell == NULL )
 			{
+#if EN_AI_PROBES_WAR && defined(_WIN32)
+				if( pszWarFail == NULL )
+					pszWarFail = "arena-full";
+#endif
 				iHang = 1;
 				break;
 			}
-			// 
+			//
 			// get distance from pAdjCell to destination,
 			// and make pAdjCell point to pTest
 			GetCellCosts( pTest, pAdjCell );
@@ -446,6 +456,16 @@ BOOL CPathMap::_GetPath( CHexCoord& hexFrom, CHexCoord& hexTo,
 				TRACE( " %d inerations with %d cells in list \n\n",
 					++iTicks, iList );
 #endif
+#if EN_AI_PROBES_WAR && defined(_WIN32)
+				if( bWarPlanning )
+				{
+					char szW[160];
+					sprintf( szW, "[WARPATH] ok from %d,%d to %d,%d dist %d cells %d/%d\n",
+						m_hexFrom.X( ), m_hexFrom.Y( ), m_hexTo.X( ), m_hexTo.Y( ),
+						theMap.GetRangeDistance( m_hexFrom, m_hexTo ), m_iNextSlot, m_iNumOfCells );
+					OutputDebugStringA( szW );
+				}
+#endif
 				m_bWarPlanning = FALSE;
 				return( TRUE );
 			}
@@ -459,6 +479,12 @@ BOOL CPathMap::_GetPath( CHexCoord& hexFrom, CHexCoord& hexTo,
 		pTest = GetLowestCost();
 		if( pTest == NULL )
 		{
+#if EN_AI_PROBES_WAR && defined(_WIN32)
+			// open list dry: region walled off, or every frontier cell
+			// overflowed the MAX_BOTH_INDEX bucket table
+			if( pszWarFail == NULL )
+				pszWarFail = "open-empty";
+#endif
 			break;
 		}
 
@@ -471,6 +497,10 @@ BOOL CPathMap::_GetPath( CHexCoord& hexFrom, CHexCoord& hexTo,
 		iHang--;
 		if( !iHang )
 		{
+#if EN_AI_PROBES_WAR && defined(_WIN32)
+			if( pszWarFail == NULL )
+				pszWarFail = "hang-exhausted";
+#endif
 			pTest = NULL;
 			break;
 		}
@@ -485,18 +515,40 @@ BOOL CPathMap::_GetPath( CHexCoord& hexFrom, CHexCoord& hexTo,
 	{
 #if PATH_TIMING_MAP
 	TRACE( "GetPath() for AI map failed to reach destination \n" );
-	TRACE( "after %d inerations with %d cells in list \n\n", 
+	TRACE( "after %d inerations with %d cells in list \n\n",
 		++iTicks, iList );
+#endif
+#if EN_AI_PROBES_WAR && defined(_WIN32)
+		if( bWarPlanning )
+		{
+			char szW[160];
+			sprintf( szW, "[WARPATH] FAIL %s from %d,%d to %d,%d dist %d cells %d/%d\n",
+				pszWarFail != NULL ? pszWarFail : "?",
+				m_hexFrom.X( ), m_hexFrom.Y( ), m_hexTo.X( ), m_hexTo.Y( ),
+				theMap.GetRangeDistance( m_hexFrom, m_hexTo ), m_iNextSlot, m_iNumOfCells );
+			OutputDebugStringA( szW );
+		}
 #endif
 		return( FALSE );
 	}
 
 #if PATH_TIMING_MAP
 	dwEnd = timeGetTime();
-	TRACE( "GetPath() for AI map took %ld ticks for \n", 
+	TRACE( "GetPath() for AI map took %ld ticks for \n",
 		(dwEnd - dwStart));
-	TRACE( " %d inerations with %d cells in list \n\n", 
+	TRACE( " %d inerations with %d cells in list \n\n",
 		++iTicks, iList );
+#endif
+
+#if EN_AI_PROBES_WAR && defined(_WIN32)
+	if( bWarPlanning )
+	{
+		char szW[160];
+		sprintf( szW, "[WARPATH] ok from %d,%d to %d,%d dist %d cells %d/%d\n",
+			m_hexFrom.X( ), m_hexFrom.Y( ), m_hexTo.X( ), m_hexTo.Y( ),
+			theMap.GetRangeDistance( m_hexFrom, m_hexTo ), m_iNextSlot, m_iNumOfCells );
+		OutputDebugStringA( szW );
+	}
 #endif
 
 	return( TRUE );
