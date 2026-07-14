@@ -826,18 +826,18 @@ BOOL CAIMap::ConnectRoad( CHexCoord& hexFrom, CHexCoord& hexTo )
 			if( i < iSkipUntil )
 				continue;
 
-			// travel-passable is not build-able: the planner's A* routes over
-			// coastline (vehicles drive it) but no road can be BUILT there --
-			// each flagged coast hex wedged a crane at the run-end latch
-			// (~2/min steady). Rivers STAY flagged: bridge discovery scans the
-			// plan for spans (FindBridgeOnPlan/GetBridgingHexes).
+			// VANILLA CONTRACT RESTORED (0e926177 regression): every path hex is
+			// flagged, including coastline/lake/ocean - GetStartSpan anchors a
+			// span only on a FLAGGED bank and TryBridgeWalk demands the flag on
+			// every span hex, so skipping coast/water flags made crossings with
+			// coast-typed banks/junctions invisible at birth ([SPANFAIL]
+			// nostart/nowalk). The crane-wedge 0e926177 fixed lives at the PICK
+			// site now: IsRoadHexEligible/GetRoadRun skip unpaveable terrain.
 			{
 				CHex* pTerrHex = theMap.GetHex( *pHex );
 				if( pTerrHex != NULL )
 				{
 					int iTT = pTerrHex->GetType();
-					if( iTT == CHex::coastline || iTT == CHex::ocean || iTT == CHex::lake )
-						continue;
 
 					// crossing cap - THE planner-bridge regression (operator,
 					// 07-13): dropping crossings longer than the player's
@@ -1511,6 +1511,10 @@ BOOL CAIMap::IsRoadHexEligible( int iOff, CHexCoord& hexRoad )
 		return FALSE;
 	if( pGameHex->IsWater() )
 		return FALSE;
+	// coastline: drivable but NOT paveable - its plan mark anchors bridge spans
+	// (vanilla contract), never hand it to a paving crane (the 0e926177 wedge)
+	if( pGameHex->GetType() == CHex::coastline )
+		return FALSE;
 
 	BYTE bUnits = pGameHex->GetUnits();
 	if( bUnits & CHex::bldg )						// a building sits here
@@ -1735,10 +1739,11 @@ int CAIMap::GetRoadRun( const CHexCoord& hexStart, CHexCoord& hexEnd, int iMaxHe
 		CHexCoord hexRun( nx, ny );
 		if( NeighborIsFarmLumber( hexRun ) )
 			break;
-		// stop at water: bridge candidates, never paveable (mirror IsRoadHexEligible)
+		// stop at water/coastline: span anchors, never paveable (mirror IsRoadHexEligible)
 		{
 			CHex* pRunHex = theMap.GetHex( hexRun );
-			if( pRunHex == NULL || pRunHex->IsWater() )
+			if( pRunHex == NULL || pRunHex->IsWater() ||
+				pRunHex->GetType() == CHex::coastline )
 				break;
 		}
 		wStatus &= ~MSW_PLANNED_ROAD;	// claim: planned -> built
