@@ -7126,7 +7126,14 @@ void CAIGoalMgr::LaunchAssault( CAITask* pTask )
     }
 
     // if there is more than one opfor known, then attack the one
-    // with the worst relations.
+    // with the worst relations. If that opfor's target turns out to be
+    // untargetable/unreachable, retry with it excluded (next-meanest)
+    // instead of cancelling the whole assault on the first dead-end.
+    int  aiTriedOpfor[32];
+    int  cTriedOpfor  = 0;
+    BOOL bUnreachable = FALSE;  // saw a real target we couldn't reach
+
+TryNextMeanest:
     int      iMeanest = (int)ALLIANCE;
     int      iOpforID = 0;
     POSITION pos      = m_plOpFors->GetHeadPosition( );
@@ -7136,6 +7143,14 @@ void CAIGoalMgr::LaunchAssault( CAITask* pTask )
         if ( pOpFor != NULL )
         {
             ASSERT_VALID( pOpFor );
+
+            // skip opfors already tried this pass (no target / unreachable)
+            BOOL bTried = FALSE;
+            for ( int iT = 0; iT < cTriedOpfor; iT++ )
+                if ( aiTriedOpfor[iT] == pOpFor->GetPlayerID( ) )
+                    bTried = TRUE;
+            if ( bTried )
+                continue;
 
             // This is where the AI decides who to attack!! (took me a while to find it)
             // This skips AI's and players already at WAR
@@ -7175,15 +7190,55 @@ void CAIGoalMgr::LaunchAssault( CAITask* pTask )
         }
     }
     if ( !iOpforID )
+    {
+        // no untried opfor left. If any of them had a real target we just
+        // couldn't reach, keep the original abort behavior for the exhausted
+        // case: island escalation, then stand the task force down.
+        if ( bUnreachable )
+        {
+            // ISLAND ESCALATION (mirror of the single-opfor branch): a land assault
+            // that can't reach its target beaches the whole TF on the shore forever
+            if ( ( m_bOceanWorld || m_bLakeWorld ) &&
+                 ( pTask->GetGoalID( ) == IDG_LANDWAR || pTask->GetGoalID( ) == IDG_ADVDEFENSE ) )
+            {
+                CAIGoal* pGoalInv = m_plGoalList->GetGoal( IDG_SEAINVADE );
+                if ( pGoalInv == NULL )
+                {
+                    AddGoal( IDG_SEAINVADE );
+                    m_bGoalChange = TRUE;
+#if EN_AI_PROBES_WAR && defined(_WIN32)
+                    {
+                        // TEMP: island-war verification probe
+                        char szI[96];
+                        sprintf( szI, "[SEAINVADE-ESC] plyr %d target %d,%d unreachable -> sea invasion\n", m_iPlayer,
+                                 hexCity.X( ), hexCity.Y( ) );
+                        OutputDebugStringA( szI );
+                    }
+#endif
+                }
+            }
+            CancelAssault( pTask );
+        }
         return;  // could not launch, just return?
+    }
 
     CAIOpFor* pOpFor = m_plOpFors->GetOpFor( iOpforID );
     if ( pOpFor == NULL )
         return;  // could not launch, just return?
 
+    // mark tried up front: any dead-end below falls back to the next-meanest
+    if ( cTriedOpfor >= (int)( sizeof( aiTriedOpfor ) / sizeof( aiTriedOpfor[0] ) ) )
+        return;  // safety bound (real games have far fewer opfors)
+    aiTriedOpfor[cTriedOpfor++] = iOpforID;
+
+    // reset to "no target found" before each probe (FindAssaultTarget leaves
+    // hexCity alone when it finds nothing, and a prior pass may have set it)
+    hexCity.X( pTask->GetTaskParam( CAI_LOC_X ) );
+    hexCity.Y( pTask->GetTaskParam( CAI_LOC_Y ) );
+
     FindAssaultTarget( hexCity, pTask, pOpFor );
     if ( hexCity.X( ) == pTask->GetTaskParam( CAI_LOC_X ) && hexCity.Y( ) == pTask->GetTaskParam( CAI_LOC_Y ) )
-        return;
+        goto TryNextMeanest;  // this opfor has nothing to hit - try the next-meanest
 
     // WAR ROAD (before the gate: paving/bridging toward the target is what
     // eventually MAKES an unreachable target reachable)
@@ -7211,31 +7266,49 @@ void CAIGoalMgr::LaunchAssault( CAITask* pTask )
 
     if ( !IsTargetReachable( hexCity, pTask ) )
     {
-        // ISLAND ESCALATION: if sea travel is possible, escalate to
-        // IDG_SEAINVADE so the war can be prosecuted amphibiously
-        if ( ( m_bOceanWorld || m_bLakeWorld ) &&
-             ( pTask->GetGoalID( ) == IDG_LANDWAR || pTask->GetGoalID( ) == IDG_ADVDEFENSE ) )
+        // BEACHHEAD: prefer land-assaulting the enemy's nearest reachable forward base over going to sea
+        BOOL bBeachhead = FALSE;
+        if ( m_pMap != NULL )
         {
-            CAIGoal* pGoalInv = m_plGoalList->GetGoal( IDG_SEAINVADE );
-            if ( pGoalInv == NULL )
+            CHexCoord hexBase( m_pMap->m_iBaseX, m_pMap->m_iBaseY );
+            CHexCoord hexFwd;
+            if ( pGameData->FindNearestBuilding( pOpFor->GetPlayerID( ), hexBase, hexFwd ) &&
+                 ( hexFwd.X( ) != hexCity.X( ) || hexFwd.Y( ) != hexCity.Y( ) ) &&
+                 IsTargetReachable( hexFwd, pTask ) )
             {
-                AddGoal( IDG_SEAINVADE );
-                m_bGoalChange = TRUE;
+                hexCity    = hexFwd;  // land-assault the beachhead instead
+                bBeachhead = TRUE;
 #if EN_AI_PROBES_WAR && defined(_WIN32)
                 {
-                    // TEMP: island-war verification probe
-                    char szI[96];
-                    sprintf( szI, "[SEAINVADE-ESC] plyr %d target %d,%d unreachable -> sea invasion\n", m_iPlayer,
-                             hexCity.X( ), hexCity.Y( ) );
-                    OutputDebugStringA( szI );
+                    // TEMP: beachhead retarget probe
+                    char szB[96];
+                    sprintf( szB, "[BEACHHEAD] plyr %d retarget %d,%d\n", m_iPlayer, hexFwd.X( ), hexFwd.Y( ) );
+                    OutputDebugStringA( szB );
                 }
 #endif
             }
         }
 
-        // vanilla: keep the army staged and retry next assault cycle
-        // (the war road planned above keeps extending toward the target)
-        return;
+        // no reachable beachhead -> try the next-meanest opfor before giving up.
+        // The island escalation + CancelAssault now live in the !iOpforID exhausted
+        // branch above, so they fire once per assault cycle after EVERY opfor has
+        // come up unreachable — not once per opfor. The war road planned above keeps
+        // extending toward this target either way.
+        if ( !bBeachhead )
+        {
+            bUnreachable = TRUE;
+#if EN_AI_PROBES_WAR && defined(_WIN32)
+            {
+                // TEMP: next-meanest fallback probe
+                char szN[96];
+                sprintf( szN, "[NEXTMEANEST] plyr %d opfor %d target %d,%d unreachable -> trying next\n", m_iPlayer,
+                         iOpforID, hexCity.X( ), hexCity.Y( ) );
+                OutputDebugStringA( szN );
+            }
+#endif
+            goto TryNextMeanest;
+        }
+        // beachhead reachable -> fall through to launch
     }
 
     // if not at war, then based on this AI's combat attribute
