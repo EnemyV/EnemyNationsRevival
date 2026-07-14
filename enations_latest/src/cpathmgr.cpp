@@ -1599,6 +1599,7 @@ CCell* CPathMgr::AddCellToArray( CCell* pCell )
     pNewCell->m_iDist     = pCell->m_iDist;
     pNewCell->m_iBoth     = pCell->m_iBoth;
     pNewCell->m_pCellFrom = pCell->m_pCellFrom;
+    pNewCell->m_bClosed   = 0;  // CPathMgr never closes; keep recycled slots clean
     NewBoth( pNewCell );
 
     DWORD  dwKey = ( pCell->m_iX & 0xFFFF ) | ( ( pCell->m_iY & 0xFFFF ) << 16 );
@@ -1947,6 +1948,7 @@ CCell::CCell( )
     m_pcNextBoth = NULL;
     m_pcPrevBoth = NULL;
     m_iBothIn    = 0;
+    m_bClosed    = 0;
 }
 
 CCell::CCell( int iX, int iY )
@@ -1961,6 +1963,7 @@ CCell::CCell( int iX, int iY )
     m_pcNextBoth = NULL;
     m_pcPrevBoth = NULL;
     m_iBothIn    = 0;
+    m_bClosed    = 0;
 }
 
 // end of CPathMgr.cpp
