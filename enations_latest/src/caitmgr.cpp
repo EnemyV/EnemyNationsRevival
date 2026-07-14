@@ -3706,9 +3706,11 @@ void CAITaskMgr::PatrolSea( CAIUnit* pUnit, CAITask* pTask, CTransportData const
         if ( pCopyCVehicle == NULL )
             return;
 
-        // get current location
-        int iX = pCopyCVehicle->m_aiDataOut[CAI_LOC_X];
-        int iY = pCopyCVehicle->m_aiDataOut[CAI_LOC_Y];
+        // get current location (NOT a new declaration: shadowing the outer
+        // iX/iY here left the destination read below uninitialized, so sea
+        // patrols broke after their first leg)
+        iX = pCopyCVehicle->m_aiDataOut[CAI_LOC_X];
+        iY = pCopyCVehicle->m_aiDataOut[CAI_LOC_Y];
 
         // if at point 0, then go to point 1
         if ( iX == pUnit->GetParam( 0 ) && iY == pUnit->GetParam( 1 ) )
@@ -6247,7 +6249,9 @@ void CAITaskMgr::MoveToRange( CAIUnit* pUnit, CHexCoord hex )
     // CHexCoord& hexDefending, int iWidth, int iHeight,
     // CTransportData const *pVehData )
     CHexCoord hexRange = hexUnit;
-    m_pGoalMgr->m_pMap->m_pMapUtil->FindDefenseHex( hex, hexRange, iRange, iRange, pVehData );
+    // [assault-advance] TRUE = if no cover hex is reachable (attacking into a packed
+    // base), still advance toward the target instead of parking at the edge.
+    m_pGoalMgr->m_pMap->m_pMapUtil->FindDefenseHex( hex, hexRange, iRange, iRange, pVehData, TRUE );
 
     // unit may already be on the way to the 'in range' hex
     if ( hexDest == hexRange && bIsMoving )

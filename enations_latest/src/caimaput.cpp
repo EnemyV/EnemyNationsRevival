@@ -7848,7 +7848,7 @@ void CAIMapUtil::FindApproachHex( CHexCoord& hexTarget, CAIUnit* pUnit, CHexCoor
 // iWidth x iHeight around hexAttacking, for the vehicle type
 //
 void CAIMapUtil::FindDefenseHex( CHexCoord& hexAttacking, CHexCoord& hexDefending, int iWidth, int iHeight,
-                                 CTransportData const* pVehData )
+                                 CTransportData const* pVehData, BOOL bAdvanceIfNoCover )
 {
     CHexCoord hcStart, hcEnd, hcAt;
     // use iWidth and iHeight +/- hex to form boundaries of an area
@@ -7996,7 +7996,65 @@ TryTryAgain:
     {
         // hang protection
         if ( !iCnt )
+        {
+            // [assault-advance] No reachable hex with terrain cover exists in the box
+            // (e.g. attacking INTO a base: the open ground/roads have a 0 defense value,
+            // so the defensive search above rejects every hex and would leave the unit
+            // parked at the edge). For an ATTACK APPROACH, don't freeze: fall back to the
+            // nearest reachable, unoccupied hex that is strictly CLOSER to the target, so
+            // SeekOpfor keeps closing the unit one step each arrival until it is in range.
+            // Cover is still preferred by the loop above; this only drops the defense gate,
+            // and keeps the building/vehicle (collision) and pathability (reachable) guards.
+            if ( bAdvanceIfNoCover )
+            {
+                int iUnitDist = pGameData->GetRangeDistance( hexDefending, hexAttacking );
+                int iAdvBest = m_iMapSize, iAdvHex = m_iMapSize;
+                for ( iy = 0; iy < iDeltaY; iy++ )
+                {
+                    hcAt.Y( hcAt.Wrap( hcStart.Y( ) + iy ) );
+                    for ( ix = 0; ix < iDeltaX; ix++ )
+                    {
+#if THREADS_ENABLED
+                        myYieldThread( );
+#endif
+                        hcAt.X( hcAt.Wrap( hcStart.X( ) + ix ) );
+                        if ( !hcAt.X( ) && !hcAt.Y( ) )
+                            continue;
+                        CHex* pAdvHex = theMap.GetHex( hcAt );
+                        if ( pAdvHex == NULL )
+                            continue;
+                        BYTE bAdvUnits = pAdvHex->GetUnits( );
+                        // keep the collision guards: no building, no vehicle
+                        if ( bAdvUnits & ( CHex::bldg | CHex::ul | CHex::ur | CHex::ll | CHex::lr ) )
+                            continue;
+                        if ( !pVehData->CanTravelHex( pAdvHex ) )
+                            continue;
+                        // must make progress: strictly closer to the target than we are now
+                        if ( pGameData->GetRangeDistance( hcAt, hexAttacking ) >= iUnitDist )
+                            continue;
+                        // keep the reachability guard
+                        if ( !GetPathRating( hexDefending, hcAt, pVehData->GetType( ) ) )
+                            continue;
+                        // among forward hexes take the nearest step (least exposure) -
+                        // this naturally enters weapon range from the closest side
+                        int iStep = pGameData->GetRangeDistance( hexDefending, hcAt );
+                        if ( iStep < iAdvBest )
+                        {
+                            iAdvBest = iStep;
+                            iAdvHex  = GetMapOffset( hcAt.X( ), hcAt.Y( ) );
+                        }
+                    }
+                }
+                if ( iAdvHex != m_iMapSize )
+                {
+                    int iAdvX, iAdvY;
+                    OffsetToXY( iAdvHex, &iAdvX, &iAdvY );
+                    hexDefending.X( iAdvX );
+                    hexDefending.Y( iAdvY );
+                }
+            }
             return;
+        }
 
         goto TryTryAgain;
     }
