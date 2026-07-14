@@ -1534,23 +1534,23 @@ void CAIMgr::UpdateUnits( CAIMsg* pMsg )
         }
     }
 
-    // server refused a bridge span: free the crane, unmark + deny the crossing
-    if ( pMsg->m_iMsg == CNetCmd::err_build_bridge )
+    // server refused a bridge span: free the crane, unmark + deny the crossing.
+    // Read the CAIMsg repack fields (ctor packs _CMsgBridge layout) - the old
+    // CMsgBuildBridge cast read a CAIMsg as wire bytes = garbage hexes
+    if ( pMsg->m_iMsg == CNetCmd::err_build_bridge && pMsg->m_idata3 == m_iPlayer )
     {
-        CMsgBuildBridge* pBr = (CMsgBuildBridge*)pMsg;
-        if ( pBr->m_iPlyrNum == m_iPlayer )
+        CHexCoord hexBrStart( pMsg->m_iX, pMsg->m_iY );
+        CHexCoord hexBrEnd( pMsg->m_ieX, pMsg->m_ieY );
+        if ( m_pMap != NULL && ( hexBrStart.X( ) || hexBrStart.Y( ) ) )
+            m_pMap->DenyBridge( hexBrStart, hexBrEnd );
+        CAIUnit* pUnit = (CAIUnit*)m_plUnits->GetUnit( pMsg->m_dwID2 );
+        if ( pUnit != NULL )
         {
-            if ( m_pMap != NULL )
-                m_pMap->DenyBridge( pBr->m_hexStart, pBr->m_hexEnd );
-            CAIUnit* pUnit = (CAIUnit*)m_plUnits->GetUnit( pBr->m_dwIDVeh );
-            if ( pUnit != NULL )
-            {
-                m_pTaskMgr->UnAssignTask( pUnit->GetTask( ), pUnit->GetGoal( ) );
-                pUnit->SetDataDW( (DWORD)0 );
-                pUnit->SetTask( FALSE );
-                pUnit->SetGoal( FALSE );
-                pUnit->ClearParam( );
-            }
+            m_pTaskMgr->UnAssignTask( pUnit->GetTask( ), pUnit->GetGoal( ) );
+            pUnit->SetDataDW( (DWORD)0 );
+            pUnit->SetTask( FALSE );
+            pUnit->SetGoal( FALSE );
+            pUnit->ClearParam( );
         }
     }
 
@@ -3454,9 +3454,10 @@ void CAIMgr::ProcessMessage( CAIMsg* pMsg )
         m_bMapChanged = TRUE;
     }
 
-    // a road hex was completed
+    // a road hex was completed (err_build_bridge rides the same flag: without
+    // it NO UpdateUnits call site fired and the deny handler was unreachable)
     if ( pMsg->m_iMsg == CNetCmd::road_done || pMsg->m_iMsg == CNetCmd::road_new ||
-         pMsg->m_iMsg == CNetCmd::err_build_road )
+         pMsg->m_iMsg == CNetCmd::err_build_road || pMsg->m_iMsg == CNetCmd::err_build_bridge )
     {
 #ifdef _LOGOUT
         logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "\nplayer %d unit id: %ld road at %d,%d mode=%d msgID=%d",
