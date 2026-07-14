@@ -1024,6 +1024,11 @@ void CAIMap::GetBridgingHexes( CHexCoord& hexSite, CAIUnit *pUnit )
 			if( timeGetTime() < itC->second )
 			{
 				hexSite = hexBefore;
+				// FindBridgeOnPlan already wrote CAI_PREV/DEST for the denied
+				// span - clear them so callers can trust params as the found
+				// signal (the anchored bridge-candidate dispatch does)
+				pUnit->SetParam( CAI_PREV_X, 0 );
+				pUnit->SetParam( CAI_PREV_Y, 0 );
 				return;
 			}
 			m_mBridgeDeny.erase( itC );
@@ -1410,10 +1415,10 @@ void CAIMap::DenyBridge( CHexCoord const& hexStart, CHexCoord const& hexEnd )
 // was a radius spiral over the unindexed map (FindRoadHex) -- a crane far from
 // the plan "missed" even with hundreds of planned hexes elsewhere.
 //
-void CAIMap::GetRoadHex( CHexCoord& hexSite )
+void CAIMap::GetRoadHex( CHexCoord& hexSite, CHexCoord* phexBridgeCand )
 {
 	CHexCoord hexOut;
-	if( GetPlannedRoadNear( hexSite, hexOut ) )
+	if( GetPlannedRoadNear( hexSite, hexOut, phexBridgeCand ) )
 	{
 		hexSite = hexOut;
 
@@ -1507,16 +1512,53 @@ BOOL CAIMap::IsRoadHexEligible( int iOff, CHexCoord& hexRoad )
 }
 
 //
+// frontier-adjacent WATER plan hex: the paving frontier has reached a planned
+// river crossing. The pre-index radius spiral surfaced this via LOCAL
+// exhaustion (nothing paveable near the crane -> caller ran GetBridgingHexes);
+// the global index always finds land elsewhere, so the eligibility scan's
+// silent water-skip froze every crossing arm (operator: planner bridges
+// regressed to zero, spans never on plan lines). Same tests as
+// IsRoadHexEligible minus the water refusal.
+//
+BOOL CAIMap::IsBridgeCandidateHex( int iOff, CHexCoord& hexRoad )
+{
+	WORD w = m_pwaMap[iOff];
+	if( !( w & MSW_PLANNED_ROAD ) )
+		return FALSE;
+	if( ( w & MSW_AI_BUILDING ) || ( w & MSW_OPFOR_BUILDING ) )
+		return FALSE;
+
+	CHex *pGameHex = theMap.GetHex( hexRoad );
+	if( pGameHex == NULL )
+		return FALSE;
+	if( !pGameHex->IsWater() )
+		return FALSE;	// land hexes are IsRoadHexEligible's business
+
+	// crossing is "reached" when the network touches it at 0,2,4,6
+	CHexCoord hexT;
+	hexT = hexRoad; hexT.Ydec();  if( NeighborHasRoadOrBldg( hexT ) ) return TRUE;
+	hexT = hexRoad; hexT.Xinc();  if( NeighborHasRoadOrBldg( hexT ) ) return TRUE;
+	hexT = hexRoad; hexT.Yinc();  if( NeighborHasRoadOrBldg( hexT ) ) return TRUE;
+	hexT = hexRoad; hexT.Xdec();  if( NeighborHasRoadOrBldg( hexT ) ) return TRUE;
+	return FALSE;
+}
+
+//
 // nearest eligible planned-road hex to hexCrane, via the exact index.
 // lazy-drops entries whose MSW_PLANNED_ROAD flag is gone. Runs on this AI's
 // own thread (planner + picker both do), same as every other m_pwaMap write --
 // no locking needed. O(index size); ~1-2k entries.
 //
-BOOL CAIMap::GetPlannedRoadNear( CHexCoord& hexCrane, CHexCoord& hexOut )
+BOOL CAIMap::GetPlannedRoadNear( CHexCoord& hexCrane, CHexCoord& hexOut, CHexCoord* phexBridgeCand )
 {
 	int iBestDist = m_iMapSize + 1;
 	int iBestOff  = -1;
 	CHexCoord hexBest;
+	int iBestBrDist = m_iMapSize + 1;
+	CHexCoord hexBrBest( 0, 0 );
+
+	if( phexBridgeCand != NULL )
+		*phexBridgeCand = CHexCoord( 0, 0 );
 
 	size_t k = 0;
 	while( k < m_aPlannedRoad.size() )
@@ -1552,8 +1594,22 @@ BOOL CAIMap::GetPlannedRoadNear( CHexCoord& hexCrane, CHexCoord& hexOut )
 				hexBest   = hexCand;
 			}
 		}
+		// frontier-reached-a-crossing: track it alongside (restores the local
+		// exhaustion signal the pre-index spiral gave the bridge discovery)
+		else if( phexBridgeCand != NULL && IsBridgeCandidateHex( off, hexCand ) )
+		{
+			int iDist = pGameData->GetRangeDistance( hexCrane, hexCand );
+			if( iDist > 0 && iDist < iBestBrDist )
+			{
+				iBestBrDist = iDist;
+				hexBrBest   = hexCand;
+			}
+		}
 		++k;
 	}
+
+	if( phexBridgeCand != NULL && ( hexBrBest.X() || hexBrBest.Y() ) )
+		*phexBridgeCand = hexBrBest;
 
 	if( iBestOff < 0 )
 		return FALSE;	// entries may remain, just none eligible right now

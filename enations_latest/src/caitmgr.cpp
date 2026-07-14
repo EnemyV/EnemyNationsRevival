@@ -5498,7 +5498,43 @@ void CAITaskMgr::BuildRoad( CAIUnit* pUnit, CAITask* pTask )
 
         // get goal manager to tell us where to go
         //
-        m_pGoalMgr->m_pMap->GetRoadHex( hexSite );
+        CHexCoord hexBridgeCand( 0, 0 );
+        m_pGoalMgr->m_pMap->GetRoadHex( hexSite, &hexBridgeCand );
+
+        // frontier-reached-a-crossing (ROOT repair of the planner-bridge
+        // regression): the pre-index spiral surfaced a plan crossing via LOCAL
+        // exhaustion; the global index always finds land elsewhere, so plan
+        // arms froze at rivers forever. When the nearest frontier work is the
+        // crossing itself, run the ORIGINAL discovery anchored AT the crossing
+        // and dispatch through the original build_bridge path.
+        if ( ( hexBridgeCand.X( ) || hexBridgeCand.Y( ) ) &&
+             ( ( hexSite.X( ) == hexVeh.X( ) && hexSite.Y( ) == hexVeh.Y( ) ) ||
+               pGameData->GetRangeDistance( hexVeh, hexBridgeCand ) <
+                   pGameData->GetRangeDistance( hexVeh, hexSite ) ) )
+        {
+            pUnit->SetParam( CAI_PREV_X, 0 );
+            pUnit->SetParam( CAI_PREV_Y, 0 );
+            CHexCoord hexBr = hexBridgeCand;
+            m_pGoalMgr->m_pMap->GetBridgingHexes( hexBr, pUnit );
+            if ( pUnit->GetParam( CAI_PREV_X ) || pUnit->GetParam( CAI_PREV_Y ) )
+            {
+                pUnit->SetDestination( hexBr );
+                pUnit->SetDataDW( 0 );
+                pUnit->SetParam( CAI_FUEL, CNetCmd::build_bridge );
+                m_pGoalMgr->m_pMap->ClaimBridge( hexBr );
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+                {
+                    char szR[128];
+                    sprintf( szR, "[BRIDGECAND] plyr %d crane %lu frontier crossing %d,%d -> dispatch %d,%d\n",
+                             m_iPlayer, (unsigned long)pUnit->GetID( ), hexBridgeCand.X( ), hexBridgeCand.Y( ),
+                             hexBr.X( ), hexBr.Y( ) );
+                    OutputDebugStringA( szR );
+                }
+#endif
+                return;
+            }
+            // candidate denied/claimed/no valid span: fall through to paving
+        }
 
         // if the site returned is the current location of
         // the truck then no site was found, so return

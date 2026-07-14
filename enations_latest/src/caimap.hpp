@@ -40,6 +40,7 @@ protected:
 
 	// planned-road index helpers (replicate FindRoadHex eligibility)
 	BOOL IsRoadHexEligible( int iOff, CHexCoord& hexRoad );
+	BOOL IsBridgeCandidateHex( int iOff, CHexCoord& hexRoad );	// frontier-adjacent WATER plan hex = crossing reached
 	BOOL NeighborHasRoadOrBldg( CHexCoord& hex );
 	// ROAD AVOIDANCE: TRUE if a neighbor of hex holds an own farm/lumber bldg
 	BOOL NeighborIsFarmLumber( CHexCoord& hex );
@@ -136,9 +137,12 @@ public:
 	// server rejected the span: unmark its planned hexes + deny the bank 30 min
 	void DenyBridge( CHexCoord const& hexStart, CHexCoord const& hexEnd );
 	std::map<int, DWORD> m_mBridgeDeny;	// bank map-offset -> denied-until ms (transient)
-	void GetRoadHex( CHexCoord& hexSite );
+	// phexBridgeCand (optional): nearest frontier-adjacent WATER plan hex - the
+	// "plan frontier reached a river" event the pre-index radius spiral used to
+	// surface via local exhaustion (regressed when the pick went global)
+	void GetRoadHex( CHexCoord& hexSite, CHexCoord* phexBridgeCand = NULL );
 	// planned-road index: nearest eligible planned hex to hexCrane -> hexOut
-	BOOL GetPlannedRoadNear( CHexCoord& hexCrane, CHexCoord& hexOut );
+	BOOL GetPlannedRoadNear( CHexCoord& hexCrane, CHexCoord& hexOut, CHexCoord* phexBridgeCand = NULL );
 	int  GetPlannedCount( void );		// live index entries (prunes stale)
 	void RebuildPlannedIndex( void );	// rescan m_pwaMap after load
 	// batch road: extend a picked road hex into a straight cardinal run of
