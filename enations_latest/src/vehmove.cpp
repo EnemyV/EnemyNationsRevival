@@ -1730,7 +1730,11 @@ void CVehicle::UnloadCarrier() {
                 pClash = theVehicleHex.GetVehicle(_pH);
             if (pClash == NULL)
                 pClash = theVehicleHex.GetVehicle(_pT);
-            if (pClash != NULL && pClash != this) {
+            // ANY claimant blocks - including this CARRIER's own subs: the
+            // grab runs as the CARGO, which owns nothing, so the carrier's
+            // claim is foreign to it (soak42 20:08 dump - the != this
+            // exemption was the last hole in the checked set)
+            if (pClash != NULL) {
 #if EN_AI_PROBES_ECON && defined(_WIN32)
                 { char szC[144]; sprintf(szC, "[UNLOADCLASH] carrier %lu grab-subs n(%d,%d)/h(%d,%d)/t(%d,%d) occupied by veh %lu dying %d\n",
                         (unsigned long)GetID(), _pN.x, _pN.y, _pH.x, _pH.y, _pT.x, _pT.y,
