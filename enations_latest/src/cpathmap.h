@@ -57,7 +57,8 @@ class CPathMap
 	BOOL m_bOverWater;		// flag indicates a path across water is allowed
 
 	// these are used only if the array of cells is used
-	int m_iNumOfCells;	// size of array of cells
+	int m_iNumOfCells;	// arena cap for normal searches (also iHang base)
+	int m_iCellAlloc;	// actual allocation (2x) - war planning may fill it all
 	int m_iNextSlot;	// next open slot in array
 	int m_iFirst;		// first slot used in array
 	int m_iLast;		// last slot used in array

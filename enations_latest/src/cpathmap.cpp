@@ -388,15 +388,11 @@ BOOL CPathMap::_GetPath( CHexCoord& hexFrom, CHexCoord& hexTo,
 	if( !bLongHang )
 		iHang = m_iNumOfCells * 2;
 
-	// war mode raises ONLY iHang (arena untouched; AddCellToArray self-caps)
+	// war mode: with the closed set each cell is popped at most once, so pops
+	// are bounded by the war arena cap and the hang guard is a pure backstop.
+	// (The old dist*8 raise never exceeded the default and never engaged.)
 	if( m_bWarPlanning )
-	{
-		int iWarHang = theMap.GetRangeDistance( m_hexFrom, m_hexTo ) * 8;
-		if( iWarHang > iHang )
-			iHang = iWarHang;
-		if( iHang > 0xFFFF )
-			iHang = 0xFFFF;
-	}
+		iHang = 0xFFFF;
 
 	int iX,iY;
 	int iTicks = 0;
@@ -462,7 +458,7 @@ BOOL CPathMap::_GetPath( CHexCoord& hexFrom, CHexCoord& hexTo,
 					char szW[160];
 					sprintf( szW, "[WARPATH] ok from %d,%d to %d,%d dist %d cells %d/%d\n",
 						m_hexFrom.X( ), m_hexFrom.Y( ), m_hexTo.X( ), m_hexTo.Y( ),
-						theMap.GetRangeDistance( m_hexFrom, m_hexTo ), m_iNextSlot, m_iNumOfCells );
+						theMap.GetRangeDistance( m_hexFrom, m_hexTo ), m_iNextSlot, m_iCellAlloc );
 					OutputDebugStringA( szW );
 				}
 #endif
@@ -473,6 +469,7 @@ BOOL CPathMap::_GetPath( CHexCoord& hexFrom, CHexCoord& hexTo,
 
 		// flag pTest so that it does not get re-picked
 		pTest->m_iBoth = 0;
+		pTest->m_bClosed = 1;	// boolean search: expanded cells stay closed
 		NewBoth ( pTest );
 
 		// get lowest combined cost cell in list to repeat
@@ -525,7 +522,7 @@ BOOL CPathMap::_GetPath( CHexCoord& hexFrom, CHexCoord& hexTo,
 			sprintf( szW, "[WARPATH] FAIL %s from %d,%d to %d,%d dist %d cells %d/%d\n",
 				pszWarFail != NULL ? pszWarFail : "?",
 				m_hexFrom.X( ), m_hexFrom.Y( ), m_hexTo.X( ), m_hexTo.Y( ),
-				theMap.GetRangeDistance( m_hexFrom, m_hexTo ), m_iNextSlot, m_iNumOfCells );
+				theMap.GetRangeDistance( m_hexFrom, m_hexTo ), m_iNextSlot, m_iCellAlloc );
 			OutputDebugStringA( szW );
 		}
 #endif
@@ -546,7 +543,7 @@ BOOL CPathMap::_GetPath( CHexCoord& hexFrom, CHexCoord& hexTo,
 		char szW[160];
 		sprintf( szW, "[WARPATH] ok from %d,%d to %d,%d dist %d cells %d/%d\n",
 			m_hexFrom.X( ), m_hexFrom.Y( ), m_hexTo.X( ), m_hexTo.Y( ),
-			theMap.GetRangeDistance( m_hexFrom, m_hexTo ), m_iNextSlot, m_iNumOfCells );
+			theMap.GetRangeDistance( m_hexFrom, m_hexTo ), m_iNextSlot, m_iCellAlloc );
 		OutputDebugStringA( szW );
 	}
 #endif
@@ -575,6 +572,15 @@ void CPathMap::GetCellCosts( CCell *pFromCell, CCell *pToCell )
 {
 	// this cell is the start cell and should not be costed
 	if( !pToCell->m_iCost )
+		return;
+
+	// already expanded: never re-open. Only _GetPath sets m_bClosed (its answer
+	// is a reachability BOOL - no caller reads path or cost, so cost-optimality
+	// is waste). The hex-range heuristic (1.5/diagonal) vs unit step cost made
+	// the search re-pop each cell ~4x on long paths, exhausting iHang -> false
+	// "unreachable" -> AI wars never launched. GetRoadPath doesn't close, so
+	// road planning keeps its vanilla re-open behavior.
+	if( pToCell->m_bClosed )
 		return;
 
 	if( AtDestination(pToCell) )
@@ -769,7 +775,7 @@ CCell *CPathMap::GetClosestCell( void )
 	int iBestDist = 0xFFFE;
 
 	// change to reflect new approach
-	int iEnd = min( m_iNextSlot, m_iNumOfCells );
+	int iEnd = min( m_iNextSlot, m_iCellAlloc );	// war searches fill past m_iNumOfCells
 
 	CCell *pCell = &m_paCells[0];
 	for( int i=0; i<=iEnd; ++i, pCell++ )
@@ -798,7 +804,7 @@ CCell *CPathMap::xGetLowestCost( void )
 	int iCost = 0xFFFF;
 
 	// change to reflect new approach
-	int iEnd = min( m_iNextSlot, m_iNumOfCells );
+	int iEnd = min( m_iNextSlot, m_iCellAlloc );	// war searches fill past m_iNumOfCells
 
 	CCell *pCell = &m_paCells[0];
 	for( int i=0; i<iEnd; ++i, pCell++ )
@@ -1023,7 +1029,10 @@ BOOL CPathMap::FarmLumberAdjacent( int iX, int iY )
 CCell * CPathMap::AddCellToArray( CCell *pCell )
 {
 
-	if( m_iNextSlot >= m_iNumOfCells )
+	// war planning may use the full double allocation; everything else keeps
+	// the original arena cap
+	int iCap = m_bWarPlanning ? m_iCellAlloc : m_iNumOfCells;
+	if( m_iNextSlot >= iCap )
 		return (NULL) ;
 
 	CCell *pNewCell = &m_paCells[m_iNextSlot];
@@ -1039,6 +1048,7 @@ CCell * CPathMap::AddCellToArray( CCell *pCell )
 	pNewCell->m_pcNextBoth = NULL;
 	pNewCell->m_pcPrevBoth = NULL;
 	pNewCell->m_iBothIn = 0;
+	pNewCell->m_bClosed = 0;
 	NewBoth ( pNewCell );
 
 	// register in the coord->cell grid for this search
@@ -1211,7 +1221,14 @@ BOOL CPathMap::Init( int iMapEX, int iMapEY )
 	if( m_iNumOfCells > 0xFFFF )
 		m_iNumOfCells = 0xFFFF;
 
-	m_paCells = new CCell[m_iNumOfCells];
+	// allocate DOUBLE: war-planning searches may fill the whole allocation
+	// (long cross-map reachability corridors), every other search keeps the
+	// old m_iNumOfCells cap in AddCellToArray - economy pathing unchanged
+	m_iCellAlloc = m_iNumOfCells * 2;
+	if( m_iCellAlloc > 0xFFFF )
+		m_iCellAlloc = 0xFFFF;
+
+	m_paCells = new CCell[m_iCellAlloc];
 
 	// (re)build the coord->cell lookup grids; gen 0 == "never touched"
 	delete [] m_pwCellGen;
@@ -1254,6 +1271,7 @@ CPathMap::CPathMap( void )
 	m_iMapEY = 0;
 	m_iDistFactor = 0;
 	m_paCells = NULL;
+	m_iCellAlloc = 0;
 	m_bRoadPlanning = FALSE;
 	m_bWarPlanning = FALSE;
 	m_bOverWater = FALSE;

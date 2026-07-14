@@ -47,6 +47,7 @@ public:
 	CCell *		m_pcNextBoth;				// these are NULL at the ends
 	CCell *		m_pcPrevBoth;
 	int				m_iBothIn;
+	BYTE			m_bClosed;	// expanded once; CPathMap::_GetPath never re-opens (boolean searches)
 
 	CCell();
 	CCell( int iX, int iY );
