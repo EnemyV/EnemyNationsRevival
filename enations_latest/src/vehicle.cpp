@@ -1490,9 +1490,11 @@ void CVehicle::DumpContents() {
         }
     }
 
-    // if didn't find - hand it off
+    // if didn't find - hand it off. 1996 TRAP assumed "me" always owns a
+    // rocket/warehouse; an OBSERVER player (never landed) owns nothing, so a
+    // gifted loaded truck hits this legitimately - recovery is right below
     if (pDest == NULL) {
-        TRAP();
+        EN_TRAP_REMOVED("DumpContents: me owns no rocket/warehouse (observer) - handing veh to router");
         m_bFlags &= ~(hp_controls | dump_contents);
         theGame.m_pHpRtr->MsgGiveVeh(this);
         theGame.m_pHpRtr->MsgArrived(this);
