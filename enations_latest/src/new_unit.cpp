@@ -4910,6 +4910,9 @@ void CVehicle::ctor( )
 
     m_hexStagnant     = CHexCoord( 0, 0 );
     m_dwStagnantSince = 0;
+#if EN_PATH_PROBES
+    m_hexLastClamp    = CHexCoord( -1, -1 );  // no prior clamp
+#endif
 
     m_iStepsLeft = 0;
     m_iSpeed     = 0;

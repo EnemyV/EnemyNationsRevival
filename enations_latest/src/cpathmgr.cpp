@@ -13,6 +13,8 @@
 
 #include "stdafx.h"
 #include "logging.h"  // dave's logging system
+#include "Perf.h"     // EN_PERF counters (mpath.* exit mix)
+#include "enprobes.h" // EN_PATH_PROBES compile gate
 
 //#define TEST_RESULT1		// test GetAt improvement
 //#define TEST_RESULT2			// test GetLowest improvement
@@ -65,8 +67,20 @@ static unsigned char ucHeadings[] = {
 CHexCoord* CPathMgr::GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord& hexTo, int& iPathLen, int iVehType,
                               BOOL bVehBlock, BOOL bDirectPath )
 {
+#if EN_PATH_PROBES
+    // movement-A* twin of the CPathMap path.* trio (cpathmap.cpp GetPath).
+    // mpath.us includes lock wait, so contention shows up here too.
+    Perf::ScopeCounter _t( "mpath.us" );
+#endif
     EnterCriticalSection( &m_cs );
+#if EN_PATH_PROBES
+    m_iNextSlot = 0;  // trivial rejects skip the in-search reset; don't re-count
+#endif
     CHexCoord* phcPath = ( _GetPath( pVehicle, hexFrom, hexTo, iPathLen, iVehType, bVehBlock, bDirectPath ) );
+#if EN_PATH_PROBES
+    Perf::CounterInc( "mpath.calls" );
+    Perf::CounterAdd( "mpath.nodes", m_iNextSlot );  // cells created this search
+#endif
     LeaveCriticalSection( &m_cs );
     return phcPath;
 }
@@ -105,6 +119,9 @@ CHexCoord* CPathMgr::_GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord
                    hexFrom.X( ), hexFrom.Y( ), hexTo.X( ), hexTo.Y( ) );
 #endif
 #endif
+#if EN_PATH_PROBES
+        Perf::CounterInc( "mpath.trivial" );
+#endif
         return ( NULL );
     }
 
@@ -120,7 +137,12 @@ CHexCoord* CPathMgr::_GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord
 
     // no path from start to destination because we are there
     if ( hexFrom == hexTo )
+    {
+#if EN_PATH_PROBES
+        Perf::CounterInc( "mpath.trivial" );
+#endif
         return ( NULL );
+    }
 
     m_hexFrom   = hexFrom;
     m_hexTo     = hexTo;
@@ -222,6 +244,10 @@ CHexCoord* CPathMgr::_GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord
         iHang += ( theMap.GetRangeDistance( m_hexFrom, m_hexTo ) * CELLSAROUND );
     iHang = ( iHang * 3 ) / 2;  // +50% search headroom (pairs with the *5 arena above)
 
+#if EN_PATH_PROBES
+    BOOL bProbeArenaFull = FALSE;  // arena exhaustion forces the iHang exit; keep the two counters distinct
+#endif
+
     int iTicks = 0;
     int iList  = 1;
 
@@ -266,6 +292,10 @@ CHexCoord* CPathMgr::_GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord
             // the AddCellToArray() could fail if array has been exceeded
             if ( pAdjCell == NULL )
             {
+#if EN_PATH_PROBES
+                Perf::CounterInc( "mpath.arena_full" );
+                bProbeArenaFull = TRUE;
+#endif
                 iHang = 1;  // cause early termination
                 break;
             }
@@ -318,6 +348,9 @@ CHexCoord* CPathMgr::_GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord
                         m_iStepCnt += iPathLen;                    // count of steps in paths
 #endif
 
+#if EN_PATH_PROBES
+                        Perf::CounterInc( phexPath != NULL ? "mpath.ok" : "mpath.nopath" );
+#endif
                         return ( phexPath );
                     }
                     else
@@ -345,6 +378,9 @@ CHexCoord* CPathMgr::_GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord
                             m_iStepCnt += iPathLen;                    // count of steps in paths
 #endif
 
+#if EN_PATH_PROBES
+                            Perf::CounterInc( phexPath != NULL ? "mpath.ok" : "mpath.nopath" );
+#endif
                             return ( phexPath );
                         }
                     }
@@ -400,6 +436,9 @@ CHexCoord* CPathMgr::_GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord
 #endif
 #endif  // PATH_TIMING
 
+#if EN_PATH_PROBES
+                        Perf::CounterInc( "mpath.blocked" );  // dest hex unenterable; partial path or NULL
+#endif
                         return ( phexPath );
                     }
                 }
@@ -415,6 +454,9 @@ CHexCoord* CPathMgr::_GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord
         pTest     = GetLowestCost( iCnt );
         if ( pTest == NULL )
         {
+#if EN_PATH_PROBES
+            Perf::CounterInc( "mpath.exhausted" );  // open list empty pre-dest: unreachable-goal signature
+#endif
             if ( !bDirectPath )
                 pTest = GetClosestCell( );
 
@@ -435,6 +477,10 @@ CHexCoord* CPathMgr::_GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord
         iHang--;
         if ( !iHang )
         {
+#if EN_PATH_PROBES
+            if ( !bProbeArenaFull )
+                Perf::CounterInc( "mpath.ihang" );
+#endif
 
 #if PATH_TIMING
 #ifdef _LOGOUT
@@ -487,12 +533,21 @@ CHexCoord* CPathMgr::_GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord
 #endif
 #endif
         ClearArray( );
+#if EN_PATH_PROBES
+        Perf::CounterInc( "mpath.nopath" );
+#endif
         return ( NULL );
     }
 
     // a break from trying has occurred and the dest was reached
     if ( !iHang && pDestCell != NULL )
         pTest = pDestCell;
+
+#if EN_PATH_PROBES
+    // capture before ClearArray() wipes the cells
+    BOOL      bProbeAtDest = AtDestination( pTest );
+    CHexCoord hexProbeClamp( pTest->m_iX, pTest->m_iY );
+#endif
 
     // now walk the m_plCells and
     // create a CHexCoord[] to return to caller
@@ -557,6 +612,27 @@ CHexCoord* CPathMgr::_GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord
     if ( phexPath == NULL )
         logPrintf( LOG_PRI_ALWAYS, LOG_VEH_PATH, "last NULL path returned " );
 #endif
+#endif
+
+#if EN_PATH_PROBES
+    if ( phexPath == NULL )
+        Perf::CounterInc( "mpath.nopath" );
+    else if ( bProbeAtDest )
+    {
+        Perf::CounterInc( "mpath.ok" );
+        if ( pVehicle != NULL )
+            pVehicle->m_hexLastClamp = CHexCoord( -1, -1 );  // success clears the re-clamp watch
+    }
+    else
+    {
+        Perf::CounterInc( "mpath.clamped" );  // GetClosestCell fallback path
+        if ( pVehicle != NULL )
+        {
+            if ( pVehicle->m_hexLastClamp == hexProbeClamp )
+                Perf::CounterInc( "mpath.reclamp" );  // clamped at the SAME hex again: churn signature
+            pVehicle->m_hexLastClamp = hexProbeClamp;
+        }
+    }
 #endif
 
     return ( phexPath );

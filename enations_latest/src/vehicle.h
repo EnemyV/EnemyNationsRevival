@@ -15,6 +15,7 @@
 #include "unit.h"
 #include "unit_wnd.h"
 #include "netcmd.h"
+#include "enprobes.h"
 
 
 class CWndRoute;
@@ -250,6 +251,9 @@ friend class CMsgVehLoc;
 friend class CMsgBlocked;
 friend class CDlgBuildStructure;
 friend class CWndRoute;
+#if EN_PATH_PROBES
+friend class CPathMgr;	// mpath.reclamp probe reads/writes m_hexLastClamp
+#endif
 
 public:
 		enum VEH_MODE { 	stop,				// m_iMode - vehicle is stopped
@@ -550,6 +554,9 @@ protected:
 		LONG					m_iBlockCount;					// number of consecutive times blocked
 		CHexCoord			m_hexStagnant;					// blocked-stagnation watch: last hex seen blocked at (transient, not saved)
 		DWORD					m_dwStagnantSince;			// real ms when we first saw it blocked at that hex (0 = not watching)
+#if EN_PATH_PROBES
+		CHexCoord			m_hexLastClamp;					// mpath.reclamp probe: hex of last clamped path, (-1,-1) = none (transient, not saved)
+#endif
 
 		DWORD					m_dwTimeJump;						// for AI trucks & cranes we transport if can't get there by this time
 
