@@ -5327,27 +5327,44 @@ void CAITaskMgr::BuildRoad( CAIUnit* pUnit, CAITask* pTask )
         return;
     }
 
-    // bridge crane: arrival = the span START (CAI_PREV) or adjacent -- the
-    // vanilla test below compares against CAI_DEST, the far landing ACROSS the
-    // water, so the build order could never fire (no AI bridge since 1996)
+    // bridge crane: arrival = EITHER span endpoint or adjacent -- the vanilla
+    // test below compares against CAI_DEST, the far landing ACROSS the water,
+    // so the build order could never fire (no AI bridge since 1996). Banks are
+    // symmetric (server validates both), so a span oriented start-on-far-bank
+    // still builds: the drive clamps the crane at its OWN bank = the end
+    // landing; accept that side and build from the bank actually reached.
     if ( pUnit->GetParam( CAI_FUEL ) == CNetCmd::build_bridge )
     {
         CHexCoord hexBrStart( pUnit->GetParam( CAI_PREV_X ), pUnit->GetParam( CAI_PREV_Y ) );
-        if ( ( hexBrStart.X( ) || hexBrStart.Y( ) ) &&
-             pGameData->GetRangeDistance( hexVeh, hexBrStart ) <= 2 )
+        CHexCoord hexBrEnd( pUnit->GetParam( CAI_DEST_X ), pUnit->GetParam( CAI_DEST_Y ) );
+        if ( hexBrStart.X( ) || hexBrStart.Y( ) )
         {
-            CHexCoord hexBrEnd( pUnit->GetParam( CAI_DEST_X ), pUnit->GetParam( CAI_DEST_Y ) );
-            pGameData->BuildBridgeAt( pUnit, hexBrStart, hexBrEnd );
-            pUnit->SetParam( CAI_FUEL, CNetCmd::bridge_new );
-#if EN_AI_PROBES_WAR && defined(_WIN32)
+            BOOL bEndSide = ( pGameData->GetRangeDistance( hexVeh, hexBrStart ) > 2 &&
+                              pGameData->GetRangeDistance( hexVeh, hexBrEnd ) <= 2 );
+            if ( bEndSide || pGameData->GetRangeDistance( hexVeh, hexBrStart ) <= 2 )
             {
-                char szB[96];
-                sprintf( szB, "[BRIDGE] plyr %d span %d,%d -> %d,%d\n", pUnit->GetOwner( ), hexBrStart.X( ),
-                         hexBrStart.Y( ), hexBrEnd.X( ), hexBrEnd.Y( ) );
-                OutputDebugStringA( szB );
-            }
+                if ( bEndSide )
+                {
+                    CHexCoord hexSwap = hexBrStart;
+                    hexBrStart = hexBrEnd;
+                    hexBrEnd   = hexSwap;
+                    pUnit->SetParam( CAI_PREV_X, hexBrStart.X( ) );
+                    pUnit->SetParam( CAI_PREV_Y, hexBrStart.Y( ) );
+                    pUnit->SetParam( CAI_DEST_X, hexBrEnd.X( ) );
+                    pUnit->SetParam( CAI_DEST_Y, hexBrEnd.Y( ) );
+                }
+                pGameData->BuildBridgeAt( pUnit, hexBrStart, hexBrEnd );
+                pUnit->SetParam( CAI_FUEL, CNetCmd::bridge_new );
+#if EN_AI_PROBES_WAR && defined(_WIN32)
+                {
+                    char szB[112];
+                    sprintf( szB, "[BRIDGE] plyr %d span %d,%d -> %d,%d%s\n", pUnit->GetOwner( ), hexBrStart.X( ),
+                             hexBrStart.Y( ), hexBrEnd.X( ), hexBrEnd.Y( ), bEndSide ? " end-side" : "" );
+                    OutputDebugStringA( szB );
+                }
 #endif
-            return;
+                return;
+            }
         }
     }
 
