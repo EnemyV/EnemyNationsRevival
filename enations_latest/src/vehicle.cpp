@@ -1165,26 +1165,38 @@ BOOL CVehicle::NextRoadHex() {
             return (FALSE);
         }
 
-        // if we're on a bridge - cross it AND OFF. Cross AWAY from where we
-        // stand: a bridge built from the far bank stores its END on OUR side,
-        // and the blind end+exit jump landed the walk back on the crane's own
-        // hex = infinite same-patch rebuild ([ROADLOOP] veh 230/175, soak21)
+        // if we're on a bridge - cross it AND OFF. GOAL-DIRECTED: cross toward
+        // whichever landing is nearer the run's destination, and if we already
+        // stand on that side, don't cross at all. (v1 crossed blindly to the
+        // END landing and redirected off self - a crane commuted back and
+        // forth over a finished span forever; operator eyes-on 07-13 21:30.)
         CBridgeUnit *pBu = theBridgeHex.GetBridge(_hex);
         if (pBu != NULL) {
             CBridge *pBr = pBu->GetParent();
-            _hex = pBr->GetHexEnd();
+            CHexCoord landEnd = pBr->GetHexEnd();
             int iExitDir = pBr->GetUnitEnd()->GetExit();
-            _hex.X() += (iExitDir & 1) ? 2 - iExitDir : 0;
-            _hex.Y() += (!(iExitDir & 1)) ? iExitDir - 1 : 0;
-            _hex.Wrap();
-            if (m_ptHead.SameHex(_hex)) {
-                // we ARE the end-side landing: the far bank is the START side
-                _hex = pBr->GetHexStart();
-                iExitDir = pBr->GetUnitStart()->GetExit();
-                _hex.X() += (iExitDir & 1) ? 2 - iExitDir : 0;
-                _hex.Y() += (!(iExitDir & 1)) ? iExitDir - 1 : 0;
-                _hex.Wrap();
-            }
+            landEnd.X() += (iExitDir & 1) ? 2 - iExitDir : 0;
+            landEnd.Y() += (!(iExitDir & 1)) ? iExitDir - 1 : 0;
+            landEnd.Wrap();
+            CHexCoord landStart = pBr->GetHexStart();
+            iExitDir = pBr->GetUnitStart()->GetExit();
+            landStart.X() += (iExitDir & 1) ? 2 - iExitDir : 0;
+            landStart.Y() += (!(iExitDir & 1)) ? iExitDir - 1 : 0;
+            landStart.Wrap();
+
+            CHexCoord landTo = (CHexCoord::Dist(landEnd, m_hexEnd) <= CHexCoord::Dist(landStart, m_hexEnd))
+                                   ? landEnd : landStart;
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+            { char szJ[128]; sprintf(szJ, "[BRIDGEPONG] veh %lu at %d,%d jump-> %d,%d (runend %d,%d)\n",
+                    (unsigned long)GetID(), m_ptHead.x / 2, m_ptHead.y / 2, landTo.X(), landTo.Y(),
+                    m_hexEnd.X(), m_hexEnd.Y()); OutputDebugStringA(szJ); }
+#endif
+            if (m_ptHead.SameHex(landTo))
+                // already on the destination side: never re-cross; take the
+                // plain geometric step instead (bounded walk handles the rest)
+                _hex = _NextRoadHex(_hex);
+            else
+                _hex = landTo;
         } else
             _hex = _NextRoadHex(_hex);
 

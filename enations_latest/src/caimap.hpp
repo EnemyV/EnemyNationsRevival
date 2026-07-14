@@ -13,6 +13,7 @@
 #include "caimaput.hpp"
 #include <vector>			// planned-road index
 #include <map>				// denied-bridge banks
+#include <set>				// impromptu span marks (discriminator)
 
 #ifndef __CAIMAP_HPP__
 #define __CAIMAP_HPP__
@@ -133,10 +134,15 @@ public:
 	BOOL PlanBridgeToward( CHexCoord const& hexAt, CHexCoord const& hexSite );
 	// dispatch-time claim: crane sent to this crossing - scanners skip the
 	// bank until the claim expires (3 min) or the server accept marks the span
-	void ClaimBridge( CHexCoord const& hexStart );
+	void ClaimBridge( CHexCoord const& hexStart, CHexCoord const& hexEnd );
 	// server rejected the span: unmark its planned hexes + deny the bank 30 min
 	void DenyBridge( CHexCoord const& hexStart, CHexCoord const& hexEnd );
 	std::map<int, DWORD> m_mBridgeDeny;	// bank map-offset -> denied-until ms (transient)
+	// offsets whose MSW_PLANNED_ROAD mark came from PlanBridgeToward (impromptu),
+	// NOT the road planner - the two were indistinguishable, which broke every
+	// planner-vs-impromptu measurement and let impromptu marks masquerade as
+	// planner crossings. Runtime-only (rebuilt per game), like m_mBridgeDeny.
+	std::set<int> m_setImpromptuSpan;
 	// phexBridgeCand (optional): nearest frontier-adjacent WATER plan hex - the
 	// "plan frontier reached a river" event the pre-index radius spiral used to
 	// surface via local exhaustion (regressed when the pick went global)

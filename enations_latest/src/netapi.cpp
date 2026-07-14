@@ -1946,6 +1946,11 @@ static void BuildBridge( CMsgBuildBridge* pMsg )
     // test params
     if ( ( ( xAdd != 0 ) && ( yAdd != 0 ) ) || ( pMsg->m_hexStart == pMsg->m_hexEnd ) )
     {
+#ifdef _WIN32
+        { char szB[112]; sprintf( szB, "[BRIDGESRV] REJECT params plyr %d span %d,%d -> %d,%d\n", pMsg->m_iPlyrNum,
+                  pMsg->m_hexStart.X( ), pMsg->m_hexStart.Y( ), pMsg->m_hexEnd.X( ), pMsg->m_hexEnd.Y( ) );
+          OutputDebugStringA( szB ); }
+#endif
         pMsg->ToErr( );
         theGame.PostToClient( pMsg->m_iPlyrNum, pMsg, sizeof( *pMsg ) );
         return;
@@ -1979,6 +1984,13 @@ static void BuildBridge( CMsgBuildBridge* pMsg )
         if ( ( iLen > iMaxSpan ) || ( pHex->GetUnits( ) & ( CHex::bldg | CHex::bridge ) ) )
         {
             ASSERT( iLen <= iMaxSpan );
+#ifdef _WIN32
+            { char szB[128]; sprintf( szB, "[BRIDGESRV] REJECT %s plyr %d span %d,%d -> %d,%d at %d,%d len %d max %d\n",
+                      ( iLen > iMaxSpan ) ? "span-too-long" : "obstacle-in-path", pMsg->m_iPlyrNum,
+                      pMsg->m_hexStart.X( ), pMsg->m_hexStart.Y( ), pMsg->m_hexEnd.X( ), pMsg->m_hexEnd.Y( ),
+                      _hexOn.X( ), _hexOn.Y( ), iLen, iMaxSpan );
+              OutputDebugStringA( szB ); }
+#endif
         EndIt:
             pMsg->ToErr( );
             theGame.PostToClient( pMsg->m_iPlyrNum, pMsg, sizeof( *pMsg ) );
@@ -2004,7 +2016,14 @@ static void BuildBridge( CMsgBuildBridge* pMsg )
     bbData.m_bOK    = TRUE;
     theMap._EnumHexes( _hexUL, 3, 3, fnEnumBaseBridge, &bbData );
     if ( !bbData.m_bOK )
+    {
+#ifdef _WIN32
+        { char szB[112]; sprintf( szB, "[BRIDGESRV] REJECT start-base plyr %d at %d,%d\n", pMsg->m_iPlyrNum,
+                  pMsg->m_hexStart.X( ), pMsg->m_hexStart.Y( ) );
+          OutputDebugStringA( szB ); }
+#endif
         goto EndIt;
+    }
 
     // check end hex
     _hexUL = CHexCoord( pMsg->m_hexEnd.X( ) - 1, pMsg->m_hexEnd.Y( ) - 1 );
@@ -2057,6 +2076,13 @@ static void BuildBridge( CMsgBuildBridge* pMsg )
     pMsg->ToNew( );
     if ( pMsg->m_dwIDBrdg == 0 )
         pMsg->m_dwIDBrdg = theGame.GetID( );
+
+#ifdef _WIN32
+    { char szB[112]; sprintf( szB, "[BRIDGESRV] ACCEPT plyr %d span %d,%d -> %d,%d id %lu\n", pMsg->m_iPlyrNum,
+              pMsg->m_hexStart.X( ), pMsg->m_hexStart.Y( ), pMsg->m_hexEnd.X( ), pMsg->m_hexEnd.Y( ),
+              (unsigned long)pMsg->m_dwIDBrdg );
+      OutputDebugStringA( szB ); }
+#endif
 
     theGame.PostToAll( pMsg, sizeof( *pMsg ) );
 }

@@ -1083,6 +1083,7 @@ void CAIMap::FindBridgeOnPlan( CHexCoord& hexSite, CAIUnit *pUnit )
 	int iBestDist = m_iMapSize + 1;
 	CHexCoord hexBestSite;
 	int iPrevX = 0, iPrevY = 0, iDestX = 0, iDestY = 0;
+	int iBestOffKind = -1;	// selected mark's offset (attribution: planner vs impromptu)
 	BOOL bFound = FALSE;
 
 	size_t k = 0;
@@ -1155,6 +1156,7 @@ void CAIMap::FindBridgeOnPlan( CHexCoord& hexSite, CAIUnit *pUnit )
 			iPrevY = pUnit->GetParam( CAI_PREV_Y );
 			iDestX = pUnit->GetParam( CAI_DEST_X );
 			iDestY = pUnit->GetParam( CAI_DEST_Y );
+			iBestOffKind = off;	// remember source mark for attribution
 			bFound = TRUE;
 		}
 		++k;
@@ -1167,6 +1169,17 @@ void CAIMap::FindBridgeOnPlan( CHexCoord& hexSite, CAIUnit *pUnit )
 		pUnit->SetParam( CAI_PREV_Y, iPrevY );
 		pUnit->SetParam( CAI_DEST_X, iDestX );
 		pUnit->SetParam( CAI_DEST_Y, iDestY );
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+		{
+			// TRUTHFUL attribution at last: the selected crossing's mark origin
+			char szP[144];
+			sprintf( szP, "[PLANSEL] plyr %d %s crossing sel %d,%d span %d,%d -> %d,%d crane-dist %d\n",
+				m_iPlayer,
+				( m_setImpromptuSpan.count( iBestOffKind ) ? "IMPROMPTU" : "PLANNER" ),
+				hexBestSite.X(), hexBestSite.Y(), iPrevX, iPrevY, iDestX, iDestY, iBestDist );
+			OutputDebugStringA( szP );
+		}
+#endif
 	}
 }
 
@@ -1351,6 +1364,7 @@ BOOL CAIMap::PlanBridgeToward( CHexCoord const& hexAt, CHexCoord const& hexSite 
 			m_pwaMap[j] |= MSW_PLANNED_ROAD;
 			m_iRoadCount++;
 			m_aPlannedRoad.push_back( j );
+			m_setImpromptuSpan.insert( j );	// discriminator: impromptu, not planner
 		}
 		if( hexMark == hexEnd )
 			break;
@@ -1381,10 +1395,16 @@ BOOL CAIMap::PlanBridgeToward( CHexCoord const& hexAt, CHexCoord const& hexSite 
 // re-took it (3 cranes on one span, soak17). Short TTL so a dead crane cannot
 // lock the crossing forever.
 //
-void CAIMap::ClaimBridge( CHexCoord const& hexStart )
+void CAIMap::ClaimBridge( CHexCoord const& hexStart, CHexCoord const& hexEnd )
 {
+	// key BOTH banks: a claim/deny on one bank alone let the same crossing be
+	// re-selected from the OTHER bank (soak43: one span dispatched 11x, built
+	// alternately from both directions)
 	m_mBridgeDeny[m_pMapUtil->GetMapOffset( hexStart.X(), hexStart.Y() )] =
 		timeGetTime() + 3 * 60 * 1000;
+	if ( hexEnd.X() || hexEnd.Y() )
+		m_mBridgeDeny[m_pMapUtil->GetMapOffset( hexEnd.X(), hexEnd.Y() )] =
+			timeGetTime() + 3 * 60 * 1000;
 }
 
 //
@@ -1413,6 +1433,10 @@ void CAIMap::DenyBridge( CHexCoord const& hexStart, CHexCoord const& hexEnd )
 	}
 	int jBank = m_pMapUtil->GetMapOffset( hexStart.X(), hexStart.Y() );
 	m_mBridgeDeny[jBank] = timeGetTime() + 30 * 60 * 1000;
+	// both banks (other-bank re-selection bypassed a one-key deny)
+	int jBank2 = m_pMapUtil->GetMapOffset( hexEnd.X(), hexEnd.Y() );
+	if ( jBank2 >= 0 && jBank2 < m_iMapSize )
+		m_mBridgeDeny[jBank2] = timeGetTime() + 30 * 60 * 1000;
 #if EN_AI_PROBES_ECON && defined(_WIN32)
 	{
 		char szB[96];

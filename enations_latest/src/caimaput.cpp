@@ -3115,6 +3115,23 @@ BOOL CAIMapUtil::IsBridgeSpan( CHexCoord& hexRiverRoad, CAIUnit* pUnit )
     // original candidate crossing first
     if ( TryBridgeWalk( hexStart, iDir, iMaxSpan, hexEnd ) )
     {
+        // FAR landing must be clear too - the server validates BOTH ends
+        // (end-base 3x3) and a blocked far landing made a crossing
+        // dispatch-and-reject forever (soak43: one span 11x; crane idled at
+        // the bank each cycle). Mirror of the start-side BRIDGEVETO.
+        BOOL bEndBlocked;
+        EnterCriticalSection( &cs );
+        bEndBlocked = ( theBuildingHex.GetBuilding( hexEnd ) != NULL );
+        LeaveCriticalSection( &cs );
+        if ( bEndBlocked )
+        {
+#if EN_AI_PROBES_WAR && defined(_WIN32)
+            char szV[96];
+            sprintf( szV, "[BRIDGEVETO] plyr %d bad FAR landing %d,%d\n", m_iPlayer, hexEnd.X( ), hexEnd.Y( ) );
+            OutputDebugStringA( szV );
+#endif
+            return FALSE;
+        }
         hexRiverRoad = hexStart;
         pUnit->SetParam( CAI_PREV_X, hexStart.X( ) );
         pUnit->SetParam( CAI_PREV_Y, hexStart.Y( ) );
@@ -3170,6 +3187,20 @@ BOOL CAIMapUtil::IsBridgeSpan( CHexCoord& hexRiverRoad, CAIUnit* pUnit )
             continue;
         if ( TryBridgeWalk( hexShift, iDir, iMaxSpan, hexEnd ) )
         {
+            // far landing check, same as the primary path
+            BOOL bEndBlocked2;
+            EnterCriticalSection( &cs );
+            bEndBlocked2 = ( theBuildingHex.GetBuilding( hexEnd ) != NULL );
+            LeaveCriticalSection( &cs );
+            if ( bEndBlocked2 )
+            {
+#if EN_AI_PROBES_WAR && defined(_WIN32)
+                char szV[96];
+                sprintf( szV, "[BRIDGEVETO] plyr %d bad FAR landing %d,%d (shift)\n", m_iPlayer, hexEnd.X( ), hexEnd.Y( ) );
+                OutputDebugStringA( szV );
+#endif
+                continue;
+            }
 #if EN_AI_PROBES_WAR && defined(_WIN32)
             char szS[96];
             sprintf( szS, "[BRIDGESHIFT] plyr %d moved crossing to %d,%d\n", m_iPlayer, hexShift.X( ), hexShift.Y( ) );
