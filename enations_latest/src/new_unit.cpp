@@ -2865,7 +2865,10 @@ static void FindChannel( CHexCoord& _hex )
                     return;
                 }
 
-                TRAP( );
+                // 1996 curiosity TRAP: adjacent water hexes the path graph
+                // doesn't connect (draft-blocked/pocket) - the fake-up below IS
+                // the designed handling (author's own comment). soak40 17:54
+                EN_TRAP_REMOVED( "FindChannel: no path between adjoining water hexes - faking per design" );
                 // fake one up if same or adjoining
                 phexPath  = new CHexCoord[3];
                 *phexPath = _hex;
