@@ -839,12 +839,17 @@ BOOL CAIMap::ConnectRoad( CHexCoord& hexFrom, CHexCoord& hexTo )
 					if( iTT == CHex::coastline || iTT == CHex::ocean || iTT == CHex::lake )
 						continue;
 
-					// span-aware crossing cap (operator): with bridge tech, drop
-					// crossings longer than the reach. PRE-tech rivers STAY
-					// planned (vanilla) - iMaxSpan=0 stripped every river from
-					// every early plan, so bridge discovery (it scans the plan)
-					// never saw a span: 0 bridges in the 14h fog-off run. The
-					// pick-time gate keeps cranes off river hexes instead.
+					// crossing cap - THE planner-bridge regression (operator,
+					// 07-13): dropping crossings longer than the player's
+					// CURRENT reach deleted most arteries permanently, because
+					// plans are laid at colony founding when reach is
+					// pontoon-half (4) and are never re-laid as tiers grow.
+					// Both banks stayed planned, the river gap never bridged.
+					// IsBridgeSpan already validates reach at DISPATCH time
+					// (TryBridgeWalk bounded by GetMaxSpan), so a kept crossing
+					// simply waits for tech. Drop ONLY never-bridgeable spans
+					// (beyond MAX_SPAN_ULT = all tiers). Pre-tech rivers stay
+					// planned (vanilla), pick-time gate keeps cranes off them.
 					if( iTT == CHex::river && iMaxSpan > 0 )
 					{
 						int j = i;
@@ -855,9 +860,17 @@ BOOL CAIMap::ConnectRoad( CHexCoord& hexFrom, CHexCoord& hexTo )
 								break;
 							++j;
 						}
-						if( ( j - i ) > iMaxSpan )
+						if( ( j - i ) > MAX_SPAN_ULT )
 						{
-							iSkipUntil = j;   // drop the whole crossing from the plan
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+							{
+								char szD[112];
+								sprintf( szD, "[PLANDROP] plyr %d crossing at %d,%d len %d > ult %d - never bridgeable, dropped\n",
+										 m_iPlayer, pRoadPath[i].X(), pRoadPath[i].Y(), j - i, MAX_SPAN_ULT );
+								OutputDebugStringA( szD );
+							}
+#endif
+							iSkipUntil = j;   // truly unbridgeable: drop from the plan
 							continue;
 						}
 					}
