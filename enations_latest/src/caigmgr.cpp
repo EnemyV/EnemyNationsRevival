@@ -7898,6 +7898,9 @@ BOOL CAIGoalMgr::IsTargetReachable( CHexCoord& hexTarget, CAITask* pTask )
 {
     CTransportData const* pVehData = NULL;
     CHexCoord             hex;
+    // [WARGATE] which gate killed each corner: 1=corner-travel 2=target-travel
+    // 3=home->corner path 4=corner->target path (0 = corner never evaluated)
+    int aiGate[4] = { 0, 0, 0, 0 };
 
     for ( int i = 0; i < 4; ++i )
     {
@@ -7938,7 +7941,10 @@ BOOL CAIGoalMgr::IsTargetReachable( CHexCoord& hexTarget, CAITask* pTask )
             if ( pGameHex == NULL )
                 return FALSE;
             if ( !pVehData->CanTravelHex( pGameHex ) )
+            {
+                aiGate[i] = 1;
                 continue;
+            }
 
             // now consider if the target can be traveled
             pGameHex = theMap.GetHex( hexTarget );
@@ -7948,11 +7954,17 @@ BOOL CAIGoalMgr::IsTargetReachable( CHexCoord& hexTarget, CAITask* pTask )
             {
                 // if not, look for adjacent water
                 if ( !m_pMap->m_pMapUtil->IsWaterAdjacent( hexTarget, 2, 2 ) )
+                {
+                    aiGate[i] = 2;
                     continue;
+                }
             }
             // consider if the base type of unit can get from hex->hexTarget
             if ( !m_pMap->m_pMapUtil->GetPathRating( hex, hexTarget, pVehData->GetType( ) ) )
+            {
+                aiGate[i] = 4;
                 continue;
+            }
         }
         else  // land based assault
         {
@@ -7965,29 +7977,54 @@ BOOL CAIGoalMgr::IsTargetReachable( CHexCoord& hexTarget, CAITask* pTask )
             if ( pGameHex == NULL )
                 return FALSE;
             if ( !pVehData->CanTravelHex( pGameHex ) )
+            {
+                aiGate[i] = 1;
                 continue;
+            }
 
             // now consider if the target can be traveled
             pGameHex = theMap.GetHex( hexTarget );
             if ( pGameHex == NULL )
                 return FALSE;
             if ( !pVehData->CanTravelHex( pGameHex ) )
+            {
+                aiGate[i] = 2;
                 continue;
+            }
 
             // the corner must be reachable from HOME too - a staging area that
             // snapped across water passes corner->target while the TF beaches
             // war mode: rivers count as bridgeable, ocean still walls off islands
             CHexCoord hexBase( m_pMap->m_iBaseX, m_pMap->m_iBaseY );
             if ( !m_pMap->m_pMapUtil->GetPathRating( hexBase, hex, pVehData->GetType( ), TRUE ) )
+            {
+                aiGate[i] = 3;
                 continue;
+            }
 
             // consider if the base type of unit can get from hex->hexTarget
             if ( !m_pMap->m_pMapUtil->GetPathRating( hex, hexTarget, pVehData->GetType( ), TRUE ) )
+            {
+                aiGate[i] = 4;
                 continue;
+            }
         }
 
         return TRUE;
     }
+#if EN_AI_PROBES_WAR && defined(_WIN32)
+    {
+        // name the un-instrumented rejections: which gate killed each corner
+        // (soak48: 6952 NEXTMEANEST rejects, only 3/34 targets ever reached
+        // the pathfinder probes - the block is at these gates)
+        char szG[160];
+        sprintf( szG, "[WARGATE] plyr %d target %d,%d gates %d/%d/%d/%d loc %d,%d prev %d,%d\n", m_iPlayer,
+                 hexTarget.X( ), hexTarget.Y( ), aiGate[0], aiGate[1], aiGate[2], aiGate[3],
+                 (int)pTask->GetTaskParam( CAI_LOC_X ), (int)pTask->GetTaskParam( CAI_LOC_Y ),
+                 (int)pTask->GetTaskParam( CAI_PREV_X ), (int)pTask->GetTaskParam( CAI_PREV_Y ) );
+        OutputDebugStringA( szG );
+    }
+#endif
     return FALSE;
 }
 
