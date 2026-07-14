@@ -3955,22 +3955,42 @@ void CGameMap::DiscoverSpritesGpu( CAnimAtr& aa, const CRect& rect )
                     CBridgeUnit* pbridge = theBridgeHex.GetBridge( hexWrapped );
                     ASSERT_VALID( pbridge );
 
-                    CMapLoc maploc( hexcoord );
-                    maploc.x += 32;
-                    maploc.y += 32;
+                    // orphaned mark (units bit set, no bridge unit - e.g. a
+                    // war-destroyed span): the designed consumers all skip it
+                    // (CanTravelHex "not travelable"); the GPU path must too
+                    // (soak39 17:20 AV after 175 min - first destroyed-bridge
+                    // render). Probe logs the hex to chase the mark producer.
+                    if ( pbridge == NULL )
+                    {
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+                        {
+                            char szB[96];
+                            sprintf( szB, "[BRIDGEORPHAN] mark w/o unit at %d,%d vis %d latch %d\n",
+                                     hexWrapped.X( ), hexWrapped.Y( ), (int)phex->GetVisibility( ),
+                                     (int)phex->IsBridge( ) );
+                            OutputDebugStringA( szB );
+                        }
+#endif
+                    }
+                    else
+                    {
+                        CMapLoc maploc( hexcoord );
+                        maploc.x += 32;
+                        maploc.y += 32;
 
-                    SDL2Sprites::SetCaptureDynamic( true );
+                        SDL2Sprites::SetCaptureDynamic( true );
 
-                    if ( pbridge->IsTwoPiece( ) )
+                        if ( pbridge->IsTwoPiece( ) )
+                            drawinfopool.GetStructureDrawInfo( pbridge, CTileDrawInfo::bridge, hexcoord, maploc,
+                                                               CStructureSprite::BACKGROUND_LAYER )
+                                ->Draw( );
+
                         drawinfopool.GetStructureDrawInfo( pbridge, CTileDrawInfo::bridge, hexcoord, maploc,
-                                                           CStructureSprite::BACKGROUND_LAYER )
+                                                           CStructureSprite::FOREGROUND_LAYER )
                             ->Draw( );
 
-                    drawinfopool.GetStructureDrawInfo( pbridge, CTileDrawInfo::bridge, hexcoord, maploc,
-                                                       CStructureSprite::FOREGROUND_LAYER )
-                        ->Draw( );
-
-                    SDL2Sprites::SetCaptureDynamic( false );
+                        SDL2Sprites::SetCaptureDynamic( false );
+                    }
                 }
             }
 
