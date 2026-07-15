@@ -4784,6 +4784,31 @@ void CAIGoalMgr::StagingCensusProbe( void )
                      (int)( m_pwaVehGoals[CTransportData::light_art] + m_pwaVehGoals[CTransportData::med_art] ),
                      (int)m_pwaVehGoals[CTransportData::infantry] );
             OutputDebugStringA( szM );
+
+            // per-war-task state: is the refill pipeline moving?
+            static const int s_aiWg[3] = { IDG_LANDWAR, IDG_ADVDEFENSE, IDG_SEAINVADE };
+            for ( int iW = 0; iW < 3; ++iW )
+            {
+                CAITask* pWt = m_plTasks->GetTask( IDT_PREPAREWAR, s_aiWg[iW] );
+                if ( pWt == NULL )
+                    continue;
+                int      cOn  = 0;
+                POSITION posC = m_plUnits->GetHeadPosition( );
+                while ( posC != NULL )
+                {
+                    CAIUnit* pC = (CAIUnit*)m_plUnits->GetNext( posC );
+                    if ( pC != NULL && pC->GetOwner( ) == m_iPlayer &&
+                         pC->GetTask( ) == pWt->GetID( ) && pC->GetGoal( ) == pWt->GetGoalID( ) )
+                        cOn++;
+                }
+                char szT[144];
+                sprintf( szT, "[WARTASK] plyr %d goal %d stat %d pri %d req %d/%d/%d/%d on %d rect %d,%d\n",
+                         m_iPlayer, s_aiWg[iW], (int)pWt->GetStatus( ), (int)pWt->GetPriority( ),
+                         (int)pWt->GetTaskParam( 4 ), (int)pWt->GetTaskParam( 5 ),
+                         (int)pWt->GetTaskParam( 6 ), (int)pWt->GetTaskParam( 7 ), cOn,
+                         (int)pWt->GetTaskParam( CAI_LOC_X ), (int)pWt->GetTaskParam( CAI_LOC_Y ) );
+                OutputDebugStringA( szT );
+            }
         }
     }
 #else
