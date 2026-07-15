@@ -282,17 +282,10 @@ public:
             iFailureCount   = 0;
         }
 
-        void SetKey( const CHexCoord& hexFrom, const CHexCoord& hexTo, int iVehType )
-        {
-            compositeKey = ( static_cast<uint64_t>( static_cast<unsigned long>( hexFrom ) ) << 32 ) |
-                           ( static_cast<uint64_t>( static_cast<unsigned long>( hexTo ) & 0x00FFFFFF ) ) |
-                           ( static_cast<uint64_t>( iVehType & 0xFF ) << 24 );
-        }
-
-        // If you still need to read back the original values:
-        CHexCoord GetHexFrom( ) const { return CHexCoord( static_cast<unsigned long>( compositeKey >> 32 ) ); }
-        CHexCoord GetHexTo( ) const { return CHexCoord( static_cast<unsigned long>( compositeKey & 0x00FFFFFF ) ); }
-        int       GetVehType( ) const { return static_cast<int>( ( compositeKey >> 24 ) & 0xFF ); }
+        // NOTE: no field decoders. compositeKey is a scrambled hash
+        // (MakeCompositeKey), not a positional bit-pack - the old GetVehType()
+        // decoder read garbage bits and vetoed nearly every true match, which
+        // is why this cache never hit from 2026-01 (f0d6493a) until now.
     };
 
 	static const int   MAX_PROBE_COUNT   = 4;  // Max probes for hash collisions
@@ -300,15 +293,6 @@ public:
     static const int   MAX_FAILURE_COUNT = 2;      // Max failures before temporary ban
     static const DWORD FAILURE_BAN_MS    = 55000;  // just tempban it after repeated failures
     
-	/*
-	static inline uint64_t MakeKey( const CHexCoord& hexFrom, const CHexCoord& hexTo, int iVehType )
-    {
-        return ( static_cast<uint64_t>( static_cast<unsigned long>( hexFrom ) ) << 32 ) |
-               ( static_cast<uint64_t>( static_cast<unsigned long>( hexTo ) & 0x00FFFFFF ) ) |
-               ( static_cast<uint64_t>( iVehType & 0xFF ) << 24 );
-    }*/
-
-
     // In class header
     static constexpr int HASH_TABLE_SIZE = 2048;         // Power of 2 for fast modulo
     static const int     CACHE_MASK      = HASH_TABLE_SIZE - 1;
@@ -322,19 +306,20 @@ public:
 
 // void InvalidatePathCache( );
 
-    int  FindCacheEntry( const CHexCoord& hexFrom, const CHexCoord& hexTo, int iVehType );
-    void AddCacheEntry( const CHexCoord& hexFrom, const CHexCoord& hexTo, int iVehType, BOOL bResult );
+    int  FindCacheEntry( const CHexCoord& hexFrom, const CHexCoord& hexTo, int iVehType, BOOL bWar );
+    void AddCacheEntry( const CHexCoord& hexFrom, const CHexCoord& hexTo, int iVehType, BOOL bWar, BOOL bResult );
     void ClearExpiredCache( );
-    BOOL IsPathBanned( const CHexCoord& hexFrom, const CHexCoord& hexTo, int iVehType );
+    BOOL IsPathBanned( const CHexCoord& hexFrom, const CHexCoord& hexTo, int iVehType, BOOL bWar = FALSE );
     BOOL IsPathBanned(int iIndex );
     void InvalidatePathCache( );
 
-    // 64-bit composite key with vehType mixed in
-    static inline uint64_t MakeCompositeKey( const CHexCoord& hexFrom, const CHexCoord& hexTo, int iVehType )
+    // 64-bit composite key with vehType + war bit mixed in (war mode treats
+    // rivers as bridgeable, so its verdicts must never collide with economy's)
+    static inline uint64_t MakeCompositeKey( const CHexCoord& hexFrom, const CHexCoord& hexTo, int iVehType, BOOL bWar )
     {
         uint64_t f = static_cast<uint64_t>( static_cast<unsigned long>( hexFrom ) );
         uint64_t t = static_cast<uint64_t>( static_cast<unsigned long>( hexTo ) );
-        uint64_t v = static_cast<uint32_t>( iVehType );
+        uint64_t v = static_cast<uint32_t>( iVehType ) | ( bWar ? 0x100u : 0u );
 
         uint64_t key = ( f << 32 ) | t;
         key ^= ( v * 0x9E3779B185EBCA87ull );

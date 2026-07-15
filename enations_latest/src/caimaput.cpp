@@ -3942,18 +3942,13 @@ BOOL CAIMapUtil::GetPathRating( CHexCoord& hexFrom, CHexCoord& hexTo, int iVehTy
     if ( hexTo.X( ) > m_wEndCol || hexTo.Y( ) > m_wEndRow )
         return FALSE;
 
-    // war mode treats rivers as bridgeable — its result differs from normal and
-    // the cache key omits the war bit, so bypass the cache both ways (no poison)
-    if ( bWarPlanning )
-    {
-        CPathMap& pathMap = m_pPathMap ? *m_pPathMap : thePathMap;
-        return pathMap.GetPath( hexOrigin, hexTo, 0, 0, m_pMap, iVehType, FALSE, TRUE );
-    }
-
     DWORD dwCurrentTime = theGame.GettimeGetTime( );
 
-    // Check cache first
-    int iCacheIndex = FindCacheEntry( hexOrigin, hexTo, iVehType );
+    // Check cache first (war verdicts carry their own key bit - no poison).
+    // The TTL + failure-ban is the churn absorber: a staged army retrying an
+    // arena-blocked target re-floods ~2x/min instead of every AI pass
+    // (soak54 ch13: 4752 identical 65k-cell floods in 300s)
+    int iCacheIndex = FindCacheEntry( hexOrigin, hexTo, iVehType, bWarPlanning );
     if ( iCacheIndex >= 0 )
     {
 
@@ -3977,31 +3972,34 @@ BOOL CAIMapUtil::GetPathRating( CHexCoord& hexFrom, CHexCoord& hexTo, int iVehTy
     // Perform actual pathfinding on this AI's OWN path instance (per-AI => no
     // cross-AI lock wait). Falls back to the global only if somehow unallocated.
     CPathMap&    pathMap = m_pPathMap ? *m_pPathMap : thePathMap;
-    BOOL bResult = pathMap.GetPath( hexOrigin, hexTo, 0, 0, m_pMap, iVehType );
+    BOOL bResult = pathMap.GetPath( hexOrigin, hexTo, 0, 0, m_pMap, iVehType, FALSE, bWarPlanning );
 
     // Cache the result
-    AddCacheEntry( hexOrigin, hexTo, iVehType, bResult );
+    AddCacheEntry( hexOrigin, hexTo, iVehType, bWarPlanning, bResult );
 
     return bResult;
     // m_wBaseCol, m_wBaseRow, m_pMap, iVehType) );
 }
 
 // Cache management methods
-int CAIMapUtil::FindCacheEntry( const CHexCoord& hexFrom, const CHexCoord& hexTo, int iVehType )
+int CAIMapUtil::FindCacheEntry( const CHexCoord& hexFrom, const CHexCoord& hexTo, int iVehType, BOOL bWar )
 {
-    const uint64_t key      = MakeCompositeKey( hexFrom, hexTo, iVehType );
+    const uint64_t key      = MakeCompositeKey( hexFrom, hexTo, iVehType, bWar );
 
     // Use a fast hash - combine coords with vehicle type
-    int idx = static_cast<int>( ( key ^ ( key >> 32 ) ) & CACHE_MASK );  
+    int idx = static_cast<int>( ( key ^ ( key >> 32 ) ) & CACHE_MASK );
 
-    for ( int probe = 0; probe < 8; ++probe )
+    for ( int probe = 0; probe < MAX_PROBE_COUNT; ++probe )
     {
         const PathCacheEntry& entry = m_pathCache[idx];
 
         if ( entry.IsEmpty( ) )
             return -1;
 
-        if ( entry.compositeKey == key && entry.GetVehType( ) == iVehType )
+        // key equality IS the match: from/to/vehType/war are all mixed into
+        // the hash. (The old extra GetVehType() clause decoded garbage bits
+        // from the scrambled key and vetoed nearly every true hit.)
+        if ( entry.compositeKey == key )
         {
             return idx;
         }
@@ -4010,9 +4008,9 @@ int CAIMapUtil::FindCacheEntry( const CHexCoord& hexFrom, const CHexCoord& hexTo
     }
     return -1;
 }
-void CAIMapUtil::AddCacheEntry( const CHexCoord& hexFrom, const CHexCoord& hexTo, int iVehType, BOOL bResult )
+void CAIMapUtil::AddCacheEntry( const CHexCoord& hexFrom, const CHexCoord& hexTo, int iVehType, BOOL bWar, BOOL bResult )
 {
-    const uint64_t key           = MakeCompositeKey( hexFrom, hexTo, iVehType );
+    const uint64_t key           = MakeCompositeKey( hexFrom, hexTo, iVehType, bWar );
     int            idx           = static_cast<int>( ( key ^ ( key >> 32 ) ) & CACHE_MASK );
     const DWORD    dwCurrentTime = theGame.GettimeGetTime( );
 
@@ -4040,7 +4038,7 @@ void CAIMapUtil::AddCacheEntry( const CHexCoord& hexFrom, const CHexCoord& hexTo
         }
 
         // Existing entry for this key — update it in place.
-        if ( entry.compositeKey == key && entry.GetVehType( ) == iVehType )
+        if ( entry.compositeKey == key )
         {
             entry.bResult     = bResult;
             entry.dwTimestamp = dwCurrentTime;
@@ -4098,9 +4096,9 @@ void CAIMapUtil::ClearExpiredCache( )
     }
 }
 
-BOOL CAIMapUtil::IsPathBanned( const CHexCoord& hexFrom, const CHexCoord& hexTo, int iVehType )
+BOOL CAIMapUtil::IsPathBanned( const CHexCoord& hexFrom, const CHexCoord& hexTo, int iVehType, BOOL bWar /*=FALSE*/ )
 {
-    int iIndex = FindCacheEntry( hexFrom, hexTo, iVehType );
+    int iIndex = FindCacheEntry( hexFrom, hexTo, iVehType, bWar );
     if ( iIndex >= 0 )
     {
         return ( IsPathBanned( iIndex ) );
