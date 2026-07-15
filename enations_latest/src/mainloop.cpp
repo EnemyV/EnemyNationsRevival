@@ -613,7 +613,25 @@ void CConquerApp::ProcessAllMessages( DWORD dwBudgetMs )
             LeaveCriticalSection( &cs );
             break;
         }
+#if EN_AI_PROBES_WAR && defined(_WIN32)
+        {
+            // hang-regression probe: the drain budget checks BETWEEN messages,
+            // so one slow handler = one multi-second frame (t=632: 9,958ms in
+            // ProcessAllMessages under a 400ms budget). Name the message type.
+            DWORD dwMsgT0  = timeGetTime( );
+            int   iMsgType = (int)( (CNetCmd*)pBuf )->GetType( );
+            theGame.ProcessMessage( (CNetCmd*)pBuf );
+            DWORD dwMsgMs = timeGetTime( ) - dwMsgT0;
+            if ( dwMsgMs > 250 )
+            {
+                char szM[80];
+                sprintf( szM, "[SLOWMSG] type %d took %lu ms\n", iMsgType, dwMsgMs );
+                OutputDebugStringA( szM );
+            }
+        }
+#else
         theGame.ProcessMessage((CNetCmd *) pBuf);
+#endif
         theGame.FreeQueueElement((CNetCmd *) pBuf);
 
         // throttle messages back on if a net game
