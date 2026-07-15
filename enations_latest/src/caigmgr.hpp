@@ -81,11 +81,6 @@ public:
 	CHexCoord m_ahexLastWarRoad[4];		// per-goal last war-road target (transient; [3]=other goals)
 	CHexCoord m_ahexLastStageRoad[4];	// per-goal last staging-road midpoint (transient)
 	// staging watchdog (Phase 3) - transient, idx 0=IDG_LANDWAR 1=IDG_ADVDEFENSE 2=IDG_SEAINVADE
-	int   m_aiStageLosses[3];		// IDT_PREPAREWAR units lost since epoch start
-	int   m_aiStageRestages[3];		// restages fired this stall cycle
-	DWORD m_adwStageStart[3];		// epoch start (wall-clock ms)
-	DWORD m_adwStageCooldownUntil[3];	// suppress watchdog until this wall-clock ms
-	int   m_aiStageLastForce[3];		// force size at last eval (growth = staging fine)
 	int   m_iBldgLostRecent;		// bunker mode: own buildings lost (rolling)
 	DWORD m_dwDefenseUntil;			// bunker mode: suppress OFFENSIVE launches until
 	CAIMap *m_pMap;	// CAIMgr's CAIMap
@@ -206,11 +201,10 @@ public:
 	void UpdateCombatTasks( CAIMsg *pMsg );
 	void UpdateProductionTasks( CAIMsg *pMsg );
 	void UpdateStagingTasks( void );
-	void NoteStagingLoss( WORD wGoal );	// Phase 3: count a staged unit lost
 	void NoteBuildingLost( void );		// bunker mode: losing buildings -> defense first
-	void EvalStagingWatchdog( void );
-	int WarRoadIdx( CAITask *pTask );	// Phase 3: restage/stall/cooldown per staging goal
-	int  StageGoalIdx( int iGoal );		// Phase 3: staging goal -> 0..2 (or -1)
+	void StagingCensusProbe( void );	// probe-only army-composition census
+	int WarRoadIdx( CAITask *pTask );	// per-goal war-road guard slot
+	int  StageGoalIdx( int iGoal );		// staging goal -> 0..2 (or -1)
 	void ConsiderReassignment( CAITask *pToTask,
 		CAITask *pCntTask, CAITask *pFromTask, WORD wUnitCat );
 

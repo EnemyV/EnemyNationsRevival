@@ -368,15 +368,6 @@ CAIGoalMgr::CAIGoalMgr( BOOL bRestart, int iPlayer, CAIMap* pMap, CAIUnitList* p
         m_ahexLastStageRoad[iWr].Y( 0 );
     }
 
-    // staging watchdog state starts clean (transient, never serialized)
-    for ( int iSw = 0; iSw < 3; ++iSw )
-    {
-        m_aiStageLosses[iSw]         = 0;
-        m_aiStageRestages[iSw]       = 0;
-        m_adwStageStart[iSw]         = 0;
-        m_adwStageCooldownUntil[iSw] = 0;
-        m_aiStageLastForce[iSw]      = 0;
-    }
     m_iBldgLostRecent = 0;
     m_dwDefenseUntil  = 0;
 
@@ -4703,20 +4694,18 @@ void CAIGoalMgr::NoteBuildingLost( void )
     m_dwDefenseUntil = theGame.GettimeGetTime( ) + 600000;
 }
 
-// Phase 3: a staged (IDT_PREPAREWAR) unit died - tally it against its goal
-void CAIGoalMgr::NoteStagingLoss( WORD wGoal )
+// army-composition + naval-task census probes (probe-gated, no game effect).
+// The Phase-3 staging WATCHDOG that lived here is RETIRED: its 8-min stall
+// path force-called LaunchAssault on part-filled staging tasks, whose tail
+// stamped INPROCESS - and GetCombatTask assigns units only to UNASSIGNED
+// tasks, so one forced fire made a war task unable to accept units FOREVER
+// (soak56-58: every civ's ADVDEFENSE ghost-launched 0 units every 8 min while
+// 1000+ tanks / 2700+ infantry idled on patrol; each LANDWAR got exactly one
+// real wave, then died the same way). Vanilla lifecycle restored: staging
+// fills at production speed, launches fire only when IsStagingCompete passes.
+void CAIGoalMgr::StagingCensusProbe( void )
 {
-    int idx = StageGoalIdx( (int)wGoal );
-    if ( idx >= 0 )
-        m_aiStageLosses[idx]++;
-}
-
-// Phase 3: per staging goal, restage after heavy losses, back off after
-// repeated restages, and force a stalled assault to evaluate once per epoch
-void CAIGoalMgr::EvalStagingWatchdog( void )
-{
-    static const int s_aiGoals[3] = { IDG_LANDWAR, IDG_ADVDEFENSE, IDG_SEAINVADE };
-    DWORD            dwNow        = theGame.GettimeGetTime( );
+    DWORD dwNow = theGame.GettimeGetTime( );
 
 #ifdef _WIN32
     // TEMP: one-shot per-player dump of EXISTING naval tasks (loaded goals never re-InitTasks)
@@ -4742,11 +4731,8 @@ void CAIGoalMgr::EvalStagingWatchdog( void )
     }
 #endif
 
-    // one pass: current PREPAREWAR force size per goal (stall = NO growth)
-    int aiForce[3] = { 0, 0, 0 };
 #if EN_AI_PROBES_WAR && defined(_WIN32)
     int aiMix[6] = { 0, 0, 0, 0, 0, 0 };  // tankbucket/ifv/art/inf/scout/other
-#endif
     if ( m_plUnits != NULL )
     {
         POSITION posF = m_plUnits->GetHeadPosition( );
@@ -4755,7 +4741,6 @@ void CAIGoalMgr::EvalStagingWatchdog( void )
             CAIUnit* pF = (CAIUnit*)m_plUnits->GetNext( posF );
             if ( pF == NULL || pF->GetOwner( ) != m_iPlayer )
                 continue;
-#if EN_AI_PROBES_WAR && defined(_WIN32)
             if ( pF->GetType( ) == CUnit::vehicle )
             {
                 switch ( pF->GetTypeUnit( ) )
@@ -4781,19 +4766,11 @@ void CAIGoalMgr::EvalStagingWatchdog( void )
                     aiMix[5]++; break;
                 }
             }
-#endif
-            if ( pF->GetTask( ) != IDT_PREPAREWAR )
-                continue;
-            int iF = StageGoalIdx( (int)pF->GetGoal( ) );
-            if ( iF >= 0 )
-                aiForce[iF]++;
         }
     }
 
-#if EN_AI_PROBES_WAR && defined(_WIN32)
     {
-        // army-composition census (throttled ~5 min/player): what can staging
-        // actually draw on vs the tank-bucket requirements it is stalled on
+        // army-composition census (throttled ~5 min/player)
         static DWORD s_adwMixNext[32] = { 0 };
         int          iSlot            = m_iPlayer & 31;
         if ( dwNow >= s_adwMixNext[iSlot] )
@@ -4809,77 +4786,9 @@ void CAIGoalMgr::EvalStagingWatchdog( void )
             OutputDebugStringA( szM );
         }
     }
+#else
+    (void)dwNow;
 #endif
-
-    for ( int idx = 0; idx < 3; ++idx )
-    {
-        CAITask* pTask = m_plTasks->GetTask( IDT_PREPAREWAR, s_aiGoals[idx] );
-        if ( pTask == NULL )
-            continue;
-        // only an anchored (active) staging task matters
-        if ( !pTask->GetTaskParam( CAI_LOC_X ) && !pTask->GetTaskParam( CAI_LOC_Y ) )
-            continue;
-
-        // begin an epoch the first time we see this task active
-        if ( m_adwStageStart[idx] == 0 )
-            m_adwStageStart[idx] = dwNow;
-
-        // cooldown gates both the restage and the stall eval below
-        if ( dwNow < m_adwStageCooldownUntil[idx] )
-            continue;
-
-        // heavy attrition = at least 6 dead AND dead outnumber survivors
-        // (a few losses from a big healthy force must NOT thrash the anchor)
-        if ( m_aiStageLosses[idx] >= 6 && m_aiStageLosses[idx] >= aiForce[idx] )
-        {
-            int iLost = m_aiStageLosses[idx];
-            GetNewStagingArea( pTask );          // re-anchors + cleans old FlagStagingArea
-            m_aiStageLosses[idx] = 0;
-            m_adwStageStart[idx] = dwNow;         // new epoch
-            m_aiStageRestages[idx]++;
-#if EN_AI_PROBES_WAR && defined(_WIN32)
-            {
-                // TEMP: staging-watchdog verification probe
-                char szW[128];
-                sprintf( szW, "[STAGEWATCH] plyr %d goal %d losses %d restage %d\n", m_iPlayer, s_aiGoals[idx],
-                         iLost, m_aiStageRestages[idx] );
-                OutputDebugStringA( szW );
-            }
-#endif
-            // too many restages with no progress -> back off for 10 wall-clock min
-            if ( m_aiStageRestages[idx] >= 2 )
-            {
-                m_adwStageCooldownUntil[idx] = dwNow + 600000;
-                m_aiStageRestages[idx]       = 0;
-            }
-            continue;
-        }
-
-        // a growing force is staging fine - defer the stall eval (no premature launch)
-        if ( aiForce[idx] > m_aiStageLastForce[idx] )
-        {
-            m_aiStageLastForce[idx] = aiForce[idx];
-            m_adwStageStart[idx]    = dwNow;
-            continue;
-        }
-        m_aiStageLastForce[idx] = aiForce[idx];
-
-        // stalled > 8 min without LaunchAssault completing -> force it once per epoch
-        if ( dwNow - m_adwStageStart[idx] > 480000 )
-        {
-            m_adwStageStart[idx] = dwNow;         // reset epoch so this fires once
-#if EN_AI_PROBES_WAR && defined(_WIN32)
-            {
-                // TEMP: staging-watchdog verification probe
-                char szW[128];
-                sprintf( szW, "[STAGEWATCH] plyr %d goal %d losses %d restage %d\n", m_iPlayer, s_aiGoals[idx],
-                         m_aiStageLosses[idx], m_aiStageRestages[idx] );
-                OutputDebugStringA( szW );
-            }
-#endif
-            LaunchAssault( pTask );               // Phase-0 reachability + SEAINVADE escalation + CancelAssault
-        }
-    }
 }
 
 #if 1
@@ -4913,8 +4822,8 @@ void CAIGoalMgr::UpdateStagingTasks( void )
     logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "CAIGoalMgr::UpdateStagingTasks() for %d executing ", m_iPlayer );
 #endif
 
-    // Phase 3: run the staging watchdog on this periodic pass
-    EvalStagingWatchdog( );
+    // probe-only unit census on this periodic pass (no game effect)
+    StagingCensusProbe( );
 
     // now go thru task list and find active IDT_PREPAREWAR tasks
     // and for each up to STAGING_TASKS, record the goal id in
