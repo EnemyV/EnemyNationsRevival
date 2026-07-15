@@ -7461,8 +7461,12 @@ void CAITaskMgr::SpottingAlert( CAIMsg* pMsg )
     CAIOpFor* pOpFor = m_pGoalMgr->GetOpFor( pOpForUnit->GetOwner( ) );
     if ( pOpFor == NULL )
         return;
-    // higher difficulty has auto AI player alliance
-    if ( pGameData->m_iSmart && pOpFor->IsAI( ) )
+    // higher difficulty has auto AI player alliance - but only while NOT at
+    // war: this blanket pass disabled ALL reactive fire between AI civs at
+    // difficulty>0 (operator: 'armies don't fire' - standing units watched
+    // warring enemies roll past; only SEEK waves fought). Same IsAI&&!AtWar
+    // idiom the targeting side already uses.
+    if ( pGameData->m_iSmart && pOpFor->IsAI( ) && !pOpFor->AtWar( ) )
         return;
     // non-AI, easy and no war then skip, otherwise attack
     if ( !pGameData->m_iSmart && !pOpFor->AtWar( ) )
