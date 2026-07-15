@@ -3317,18 +3317,33 @@ BOOL CAIMapUtil::TryBridgeWalk( CHexCoord const& hexStart, int iDir, int iMaxSpa
 
         CHex* pGameHex = theMap.GetHex( hexBridge );
 
-        // shore rides the deck: a span that ENDS on coastline is a bridge to
-        // nowhere (coastline can't carry road - IsRoadHexEligible refuses it),
-        // so extend across shore until real land (operator: impromptu bridges
-        // stopping on the shore tile). The server span check agrees: only
-        // WATER counts toward the tech reach, so shore doesn't consume span.
-        if ( pGameHex->GetType( ) == CHex::coastline )
+        // shore look-AHEAD (operator spec): a landing may itself be coastline,
+        // but the tile AFTER the landing must not be shore - otherwise the
+        // onward road has nowhere to go and the bridge dead-ends. When the
+        // next tile is coastline, the current hex rides the deck and the span
+        // extends. Shore doesn't consume tech reach (server counts only WATER).
+        if ( !pGameHex->IsWater( ) )
         {
-            if ( pGameHex->GetUnits( ) & CHex::bridge )
-                return FALSE;
-            if ( ++iSteps > iMaxSpan + MAX_SPAN_ULT )
-                return FALSE;
-            continue;
+            CHexCoord hexPeek = hexBridge;
+            switch ( iDir )
+            {
+            case 0: hexPeek.Ydec( ); break;
+            case 2: hexPeek.Xinc( ); break;
+            case 4: hexPeek.Yinc( ); break;
+            case 6: hexPeek.Xdec( ); break;
+            }
+            if ( GetMapOffset( hexPeek.X( ), hexPeek.Y( ) ) < m_iMapSize )
+            {
+                CHex* pPeek = theMap.GetHex( hexPeek );
+                if ( pPeek != NULL && pPeek->GetType( ) == CHex::coastline )
+                {
+                    if ( pGameHex->GetUnits( ) & CHex::bridge )
+                        return FALSE;
+                    if ( ++iSteps > iMaxSpan + MAX_SPAN_ULT )
+                        return FALSE;
+                    continue;  // deck extends over this hex
+                }
+            }
         }
 
         // if not water (river/lake/ocean) then we assume land, this is the end
@@ -3352,6 +3367,16 @@ BOOL CAIMapUtil::TryBridgeWalk( CHexCoord const& hexStart, int iDir, int iMaxSpa
                 return FALSE;
             }
             hexEnd = hexBridge;
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+            {
+                // ground truth for 'bridge ends on coast': the visual shore may
+                // not be TYPE coastline (textures blend) - log the landing type
+                char szL[96];
+                sprintf( szL, "[BRIDGELAND] plyr %d end %d,%d type %d\n", m_iPlayer,
+                         hexBridge.X( ), hexBridge.Y( ), (int)pGameHex->GetType( ) );
+                OutputDebugStringA( szL );
+            }
+#endif
             return TRUE;
         }
 
