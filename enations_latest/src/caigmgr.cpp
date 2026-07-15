@@ -4825,6 +4825,58 @@ void CAIGoalMgr::UpdateStagingTasks( void )
     // probe-only unit census on this periodic pass (no game effect)
     StagingCensusProbe( );
 
+    // LIFECYCLE COMPLETION: a launched wave leaves its staging task INPROCESS
+    // with no units aboard. StageUnit's own reset (its completed-launch path)
+    // needs a last unit to ARRIVE, i.e. the wave's survivors to come home -
+    // but SeekOpfor's final "nearest opfor of any type" never exhausts on a
+    // big multi-civ map, so units hunt until they die and the task stays
+    // INPROCESS (= invisible to GetCombatTask) forever: soak59, every civ's
+    // two war tasks fired exactly ONE wave then wedged while 6000+ reserves
+    // idled. An INPROCESS staging task with ZERO assigned units can never
+    // complete - finish its lifecycle exactly as StageUnit does, so the next
+    // goal cycle stages the next wave. No timers, no forced launches; tasks
+    // with any unit still aboard (recons, stragglers, filling) are untouched.
+    {
+        static const int s_aiWarGoals[3] = { IDG_LANDWAR, IDG_ADVDEFENSE, IDG_SEAINVADE };
+        for ( int iWg = 0; iWg < 3; ++iWg )
+        {
+            CAITask* pSpent = m_plTasks->GetTask( IDT_PREPAREWAR, s_aiWarGoals[iWg] );
+            if ( pSpent == NULL || pSpent->GetStatus( ) != INPROCESS_TASK )
+                continue;
+            // unanchored tasks have nothing to release
+            if ( !pSpent->GetTaskParam( CAI_LOC_X ) && !pSpent->GetTaskParam( CAI_LOC_Y ) )
+                continue;
+
+            BOOL     bHasUnit = FALSE;
+            POSITION posW     = m_plUnits->GetHeadPosition( );
+            while ( posW != NULL && !bHasUnit )
+            {
+                CAIUnit* pW = (CAIUnit*)m_plUnits->GetNext( posW );
+                if ( pW != NULL && pW->GetOwner( ) == m_iPlayer &&
+                     pW->GetTask( ) == pSpent->GetID( ) && pW->GetGoal( ) == pSpent->GetGoalID( ) )
+                    bHasUnit = TRUE;
+            }
+            if ( bHasUnit )
+                continue;
+
+#if EN_AI_PROBES_WAR && defined(_WIN32)
+            {
+                char szR[112];
+                sprintf( szR, "[REARM] plyr %d goal %d spent task reset for next wave\n", m_iPlayer,
+                         s_aiWarGoals[iWg] );
+                OutputDebugStringA( szR );
+            }
+#endif
+            // mirror StageUnit's completed-launch reset (caitmgr StageUnit)
+            m_pMap->m_pMapUtil->FlagStagingArea(
+                FALSE, pSpent->GetTaskParam( CAI_LOC_X ), pSpent->GetTaskParam( CAI_LOC_Y ),
+                pSpent->GetTaskParam( CAI_PREV_X ), pSpent->GetTaskParam( CAI_PREV_Y ) );
+            pSpent->SetStatus( UNASSIGNED_TASK );
+            pSpent->SetPriority( 0 );
+            for ( int iP = 0; iP < MAX_TASKPARAMS; ++iP ) pSpent->SetTaskParam( iP, 0 );
+        }
+    }
+
     // now go thru task list and find active IDT_PREPAREWAR tasks
     // and for each up to STAGING_TASKS, record the goal id in
     // wCounts[j][STAGING_UPDATES-1]
