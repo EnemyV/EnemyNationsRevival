@@ -8082,9 +8082,9 @@ BOOL CAIGoalMgr::IsTargetReachable( CHexCoord& hexTarget, CAITask* pTask )
         // name the un-instrumented rejections: which gate killed each corner
         // (soak48: 6952 NEXTMEANEST rejects, only 3/34 targets ever reached
         // the pathfinder probes - the block is at these gates)
-        char szG[160];
-        sprintf( szG, "[WARGATE] plyr %d target %d,%d gates %d/%d/%d/%d loc %d,%d prev %d,%d\n", m_iPlayer,
-                 hexTarget.X( ), hexTarget.Y( ), aiGate[0], aiGate[1], aiGate[2], aiGate[3],
+        char szG[176];
+        sprintf( szG, "[WARGATE] plyr %d goal %d target %d,%d gates %d/%d/%d/%d loc %d,%d prev %d,%d\n", m_iPlayer,
+                 (int)pTask->GetGoalID( ), hexTarget.X( ), hexTarget.Y( ), aiGate[0], aiGate[1], aiGate[2], aiGate[3],
                  (int)pTask->GetTaskParam( CAI_LOC_X ), (int)pTask->GetTaskParam( CAI_LOC_Y ),
                  (int)pTask->GetTaskParam( CAI_PREV_X ), (int)pTask->GetTaskParam( CAI_PREV_Y ) );
         OutputDebugStringA( szG );

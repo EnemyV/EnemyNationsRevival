@@ -6058,7 +6058,15 @@ void CAIMapUtil::GetWaterStagingArea( int iShipType, CHexCoord& hcStart, CHexCoo
                         LeaveCriticalSection( &cs );
                         continue;
                     }
-                    hex = pBldg->GetExitHex( );
+                    // anchor on the SHIP exit (water-side launch hex), not the
+                    // land exit: a land-centered rect gave IsTargetReachable's
+                    // sea branch land corners a landing craft can't travel, so
+                    // NO sea invasion ever passed the gate (soak51: ~1600
+                    // sea-branch WARGATE rejections, 0 successes) and staging
+                    // could never place craft on interior water
+                    hex = pBldg->GetShipHex( );
+                    if ( !hex.X( ) && !hex.Y( ) )
+                        hex = pBldg->GetExitHex( );
                     LeaveCriticalSection( &cs );
 
 #if THREADS_ENABLED
