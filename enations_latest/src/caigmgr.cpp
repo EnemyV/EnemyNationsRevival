@@ -370,6 +370,7 @@ CAIGoalMgr::CAIGoalMgr( BOOL bRestart, int iPlayer, CAIMap* pMap, CAIUnitList* p
 
     m_iBldgLostRecent = 0;
     m_dwDefenseUntil  = 0;
+    m_dwGunsUntil     = 0;
 
     m_pwaRatios    = NULL;
     m_pwaUnits     = NULL;
@@ -519,6 +520,8 @@ void CAIGoalMgr::Assess( CAIMsg* pMsg )
         }
         m_bMapChanged   = TRUE;
         m_bGunsOrButter = TRUE;
+        // attacked: hold the war footing (rolling 5 min)
+        m_dwGunsUntil = theGame.GettimeGetTime( ) + 300000;
     }
 
     // consider scenario
@@ -765,6 +768,8 @@ void CAIGoalMgr::ConsiderThreats( CAIMsg* pMsg )
             }
             // if we are being shot at, then turn on combat production
             m_bGunsOrButter = TRUE;
+            // attacked: hold the war footing (rolling 5 min)
+            m_dwGunsUntil = theGame.GettimeGetTime( ) + 300000;
         }
 
         // need to consider that unit just attacked needs
@@ -970,7 +975,11 @@ void CAIGoalMgr::ConsiderThreats( CAIMsg* pMsg )
                     m_bGoalChange = TRUE;
                 }
 
-                m_bGunsOrButter = FALSE;
+                // tense-peace butter must not clear a war footing (this fires
+                // on intel about ANY sub-PEACE neighbor, even mid-war with
+                // a different civ - last-writer-wins starved war staging)
+                if ( !WarPressure( ) )
+                    m_bGunsOrButter = FALSE;
             }
 
             // by the time a command center is built, its time
@@ -1610,7 +1619,10 @@ void CAIGoalMgr::NeedTrucks( void )
     int iQty = pTask->GetTaskParam( PRODUCTION_QTY ) + 1;
     pTask->SetTaskParam( PRODUCTION_QTY, iQty );
     m_bGoalChange   = TRUE;
-    m_bGunsOrButter = FALSE;
+    // truck/crane need = butter ONLY in peace; war pressure keeps guns
+    // (truck production still gets its triple priority + m_bNeedTrucks)
+    if ( !WarPressure( ) )
+        m_bGunsOrButter = FALSE;
     m_bNeedTrucks   = TRUE;
 
     UpdateVehGoals( );
@@ -4694,6 +4706,29 @@ void CAIGoalMgr::NoteBuildingLost( void )
     m_dwDefenseUntil = theGame.GettimeGetTime( ) + 600000;
 }
 
+// war pressure = at war with anyone, or attacked recently. Guns-or-butter is
+// message-driven with last-writer-wins; the butter writers (truck need,
+// peaceful-neighbor intel) must not clear a war footing (operator: "being
+// attacked/at war should be war" - the flag thrashed to butter within seconds
+// of every attack-reactive TRUE, starving war staging at priority 0)
+BOOL CAIGoalMgr::WarPressure( void )
+{
+    DWORD dwNow = theGame.GettimeGetTime( );
+    if ( dwNow < m_dwGunsUntil || dwNow < m_dwDefenseUntil )
+        return TRUE;
+    if ( m_plOpFors != NULL )
+    {
+        POSITION pos = m_plOpFors->GetHeadPosition( );
+        while ( pos != NULL )
+        {
+            CAIOpFor* pOpFor = (CAIOpFor*)m_plOpFors->GetNext( pos );
+            if ( pOpFor != NULL && pOpFor->AtWar( ) )
+                return TRUE;
+        }
+    }
+    return FALSE;
+}
+
 // army-composition + naval-task census probes (probe-gated, no game effect).
 // The Phase-3 staging WATCHDOG that lived here is RETIRED: its 8-min stall
 // path force-called LaunchAssault on part-filled staging tasks, whose tail
@@ -4777,8 +4812,9 @@ void CAIGoalMgr::StagingCensusProbe( void )
         {
             s_adwMixNext[iSlot] = dwNow + 300000;
             char szM[176];
-            sprintf( szM, "[UNITMIX] plyr %d tankbkt %d ifv %d art %d inf %d scout %d other %d goals tk %d art %d inf %d\n",
-                     m_iPlayer, aiMix[0], aiMix[1], aiMix[2], aiMix[3], aiMix[4], aiMix[5],
+            sprintf( szM, "[UNITMIX] plyr %d guns %d press %d tankbkt %d ifv %d art %d inf %d scout %d other %d goals tk %d art %d inf %d\n",
+                     m_iPlayer, (int)m_bGunsOrButter, (int)WarPressure( ),
+                     aiMix[0], aiMix[1], aiMix[2], aiMix[3], aiMix[4], aiMix[5],
                      (int)( m_pwaVehGoals[CTransportData::light_tank] + m_pwaVehGoals[CTransportData::med_tank] +
                             m_pwaVehGoals[CTransportData::heavy_tank] ),
                      (int)( m_pwaVehGoals[CTransportData::light_art] + m_pwaVehGoals[CTransportData::med_art] ),

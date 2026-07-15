@@ -83,6 +83,8 @@ public:
 	// staging watchdog (Phase 3) - transient, idx 0=IDG_LANDWAR 1=IDG_ADVDEFENSE 2=IDG_SEAINVADE
 	int   m_iBldgLostRecent;		// bunker mode: own buildings lost (rolling)
 	DWORD m_dwDefenseUntil;			// bunker mode: suppress OFFENSIVE launches until
+	DWORD m_dwGunsUntil;			// recently attacked: hold guns-or-butter ON until
+	BOOL  WarPressure( void );		// at war with anyone, or attacked recently
 	CAIMap *m_pMap;	// CAIMgr's CAIMap
 	CAIRouter *m_pRouter;	// CAIMgr's router (set post-construction; may be NULL)
 	DWORD m_adwSitePickCool[64];	// per-building-type cooldown after siteless failures
