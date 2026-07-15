@@ -4744,6 +4744,9 @@ void CAIGoalMgr::EvalStagingWatchdog( void )
 
     // one pass: current PREPAREWAR force size per goal (stall = NO growth)
     int aiForce[3] = { 0, 0, 0 };
+#if EN_AI_PROBES_WAR && defined(_WIN32)
+    int aiMix[6] = { 0, 0, 0, 0, 0, 0 };  // tankbucket/ifv/art/inf/scout/other
+#endif
     if ( m_plUnits != NULL )
     {
         POSITION posF = m_plUnits->GetHeadPosition( );
@@ -4752,6 +4755,33 @@ void CAIGoalMgr::EvalStagingWatchdog( void )
             CAIUnit* pF = (CAIUnit*)m_plUnits->GetNext( posF );
             if ( pF == NULL || pF->GetOwner( ) != m_iPlayer )
                 continue;
+#if EN_AI_PROBES_WAR && defined(_WIN32)
+            if ( pF->GetType( ) == CUnit::vehicle )
+            {
+                switch ( pF->GetTypeUnit( ) )
+                {
+                case CTransportData::heavy_scout:
+                case CTransportData::light_tank:
+                case CTransportData::med_tank:
+                case CTransportData::heavy_tank:
+                    aiMix[0]++; break;
+                case CTransportData::infantry_carrier:
+                    aiMix[1]++; break;
+                case CTransportData::light_art:
+                case CTransportData::med_art:
+                case CTransportData::heavy_art:
+                    aiMix[2]++; break;
+                case CTransportData::infantry:
+                case CTransportData::rangers:
+                    aiMix[3]++; break;
+                case CTransportData::light_scout:
+                case CTransportData::med_scout:
+                    aiMix[4]++; break;
+                default:
+                    aiMix[5]++; break;
+                }
+            }
+#endif
             if ( pF->GetTask( ) != IDT_PREPAREWAR )
                 continue;
             int iF = StageGoalIdx( (int)pF->GetGoal( ) );
@@ -4759,6 +4789,27 @@ void CAIGoalMgr::EvalStagingWatchdog( void )
                 aiForce[iF]++;
         }
     }
+
+#if EN_AI_PROBES_WAR && defined(_WIN32)
+    {
+        // army-composition census (throttled ~5 min/player): what can staging
+        // actually draw on vs the tank-bucket requirements it is stalled on
+        static DWORD s_adwMixNext[32] = { 0 };
+        int          iSlot            = m_iPlayer & 31;
+        if ( dwNow >= s_adwMixNext[iSlot] )
+        {
+            s_adwMixNext[iSlot] = dwNow + 300000;
+            char szM[176];
+            sprintf( szM, "[UNITMIX] plyr %d tankbkt %d ifv %d art %d inf %d scout %d other %d goals tk %d art %d inf %d\n",
+                     m_iPlayer, aiMix[0], aiMix[1], aiMix[2], aiMix[3], aiMix[4], aiMix[5],
+                     (int)( m_pwaVehGoals[CTransportData::light_tank] + m_pwaVehGoals[CTransportData::med_tank] +
+                            m_pwaVehGoals[CTransportData::heavy_tank] ),
+                     (int)( m_pwaVehGoals[CTransportData::light_art] + m_pwaVehGoals[CTransportData::med_art] ),
+                     (int)m_pwaVehGoals[CTransportData::infantry] );
+            OutputDebugStringA( szM );
+        }
+    }
+#endif
 
     for ( int idx = 0; idx < 3; ++idx )
     {
