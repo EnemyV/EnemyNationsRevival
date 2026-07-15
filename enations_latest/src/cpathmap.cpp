@@ -1221,12 +1221,17 @@ BOOL CPathMap::Init( int iMapEX, int iMapEY )
 	if( m_iNumOfCells > 0xFFFF )
 		m_iNumOfCells = 0xFFFF;
 
-	// allocate DOUBLE: war-planning searches may fill the whole allocation
-	// (long cross-map reachability corridors), every other search keeps the
-	// old m_iNumOfCells cap in AddCellToArray - economy pathing unchanged
-	m_iCellAlloc = m_iNumOfCells * 2;
+	// war-planning arena sized to the MAP, not the perimeter: perimeter*8
+	// (=16384 on 1024 maps) was exhausted by EVERY cross-map reachability
+	// search - soak52: 917/917 [WARPATH] FAILs were arena-full, ZERO honest
+	// open-empty, so all long-range war/sea targets read false-unreachable.
+	// WORD slot grid caps it at 0xFFFF. Every non-war search keeps the old
+	// m_iNumOfCells cap in AddCellToArray - economy pathing unchanged
+	m_iCellAlloc = m_iNumOfMapCells;
 	if( m_iCellAlloc > 0xFFFF )
 		m_iCellAlloc = 0xFFFF;
+	if( m_iCellAlloc < m_iNumOfCells * 2 )
+		m_iCellAlloc = m_iNumOfCells * 2 > 0xFFFF ? 0xFFFF : m_iNumOfCells * 2;
 
 	m_paCells = new CCell[m_iCellAlloc];
 

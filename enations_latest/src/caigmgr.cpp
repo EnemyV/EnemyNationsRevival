@@ -8019,8 +8019,10 @@ BOOL CAIGoalMgr::IsTargetReachable( CHexCoord& hexTarget, CAITask* pTask )
                     continue;
                 }
             }
-            // consider if the base type of unit can get from hex->hexTarget
-            if ( !m_pMap->m_pMapUtil->GetPathRating( hex, hexTarget, pVehData->GetType( ) ) )
+            // consider if the base type of unit can get from hex->hexTarget.
+            // bWarPlanning TRUE mirrors the land branch: the map-sized arena
+            // (perimeter arena false-failed 97% of sea targets) + cache bypass
+            if ( !m_pMap->m_pMapUtil->GetPathRating( hex, hexTarget, pVehData->GetType( ), TRUE ) )
             {
                 aiGate[i] = 4;
                 continue;
