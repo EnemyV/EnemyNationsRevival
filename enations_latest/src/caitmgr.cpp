@@ -4030,24 +4030,26 @@ BOOL CAITaskMgr::IsStagingCompete( CAITask* pTask, int iType /*=0*/ )
         return TRUE;
     }
 
-    // FUZZY LAUNCH IS TURNED OFF, NOW MUST STAGE COMPLETELY
+    // FUZZY LAUNCH RE-ENABLED (operator, 2026-07-15; was commented out in the
+    // 1996 source import - "NOW MUST STAGE COMPLETELY"). Strict full staging
+    // wedged task forces waiting forever on stragglers (soak61: 20/20-assigned
+    // TFs stuck 60+ min because the last units never physically completed the
+    // rect). The authors' own cure, exactly as they wrote it:
     //
     // first, randomly decide if this is a finite
     // or fuzzy decision.  if it is a fuzzy decision
     // then staging will be considered complete if
     // something over 1/2 the desired units are staged
-    /*
     BOOL bIsFuzzy = FALSE;
-    i = pGameData->GetRandom(NUM_DIFFICUTY_LEVELS);
-    if( i == pGameData->m_iSmart )
+    int iFz = pGameData->GetRandom( NUM_DIFFICUTY_LEVELS );
+    if ( iFz == pGameData->m_iSmart )
         bIsFuzzy = TRUE;
 
-    if( bIsFuzzy )
+    if ( bIsFuzzy )
     {
-        i = (iTaskCnt/2) + (pGameData->GetRandom((iTaskCnt/2)));
-        iTaskCnt = i;
+        iFz      = ( iTaskCnt / 2 ) + ( pGameData->GetRandom( ( iTaskCnt / 2 ) ) );
+        iTaskCnt = iFz;
     }
-    */
 
     // BUGBUG force 4 units for testing
     // iTaskCnt = 4;
