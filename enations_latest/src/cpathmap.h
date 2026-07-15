@@ -54,6 +54,7 @@ class CPathMap
 	BOOL m_bNoDestination;  // destination can't be reached
 	BOOL m_bRoadPlanning;	// flag indicates road planning is occuring
 	BOOL m_bWarPlanning;	// war mode: rivers passable (planned bridge), bigger iHang
+	BOOL m_bWarRoad;		// war-road planning: map-sized arena/iHang for long arteries
 	BOOL m_bOverWater;		// flag indicates a path across water is allowed
 
 	// these are used only if the array of cells is used
@@ -112,14 +113,16 @@ public:
 	// 
 	// WORD *pMap - map to use or when null, uses theGame.GetHex only
 	//
-	CHexCoord *GetRoadPath( 
-		CHexCoord& hexFrom, CHexCoord& hexTo, 
-		int& iPathLen, WORD *pMap, 
-		BOOL bAllowWater=FALSE, BOOL bRiverCrossing=TRUE );
-	CHexCoord *_GetRoadPath( 
-		CHexCoord& hexFrom, CHexCoord& hexTo, 
-		int& iPathLen, WORD *pMap, 
-		BOOL bAllowWater, BOOL bRiverCrossing );
+	CHexCoord *GetRoadPath(
+		CHexCoord& hexFrom, CHexCoord& hexTo,
+		int& iPathLen, WORD *pMap,
+		BOOL bAllowWater=FALSE, BOOL bRiverCrossing=TRUE,
+		BOOL bWarRoad=FALSE );
+	CHexCoord *_GetRoadPath(
+		CHexCoord& hexFrom, CHexCoord& hexTo,
+		int& iPathLen, WORD *pMap,
+		BOOL bAllowWater, BOOL bRiverCrossing,
+		BOOL bWarRoad );
 	
 	BOOL AtDestination( CCell *pCell );
 	int GetOffset( int iX, int iY );

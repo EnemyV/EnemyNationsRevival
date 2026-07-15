@@ -783,7 +783,7 @@ void CAIMap::PlanRoad( CAIHex *paiHex )
 //
 // assume north->south and east->west connectors
 //
-BOOL CAIMap::ConnectRoad( CHexCoord& hexFrom, CHexCoord& hexTo )
+BOOL CAIMap::ConnectRoad( CHexCoord& hexFrom, CHexCoord& hexTo, BOOL bWarRoad /*=FALSE*/ )
 {
 #ifdef _LOGOUT
 	logPrintf(LOG_PRI_ALWAYS, LOG_AI_MISC, 
@@ -801,7 +801,8 @@ BOOL CAIMap::ConnectRoad( CHexCoord& hexFrom, CHexCoord& hexTo )
 	// Use this AI's own path instance (per-AI; no cross-AI lock contention).
 	CPathMap& pathMap = ( m_pMapUtil && m_pMapUtil->m_pPathMap ) ? *m_pMapUtil->m_pPathMap : thePathMap;
 	CHexCoord *pRoadPath =
-		pathMap.GetRoadPath( hexFrom, hexTo, iPathLen, m_pwaMap );
+		pathMap.GetRoadPath( hexFrom, hexTo, iPathLen, m_pwaMap,
+			FALSE, TRUE, bWarRoad );
 	if( pRoadPath != NULL )
 	{
 		CHexCoord hexGame;
@@ -983,16 +984,21 @@ void CAIMap::PlanWarRoad( CHexCoord& hexTo )
 		m_iPlayer, hexFrom.X(), hexFrom.Y(), hexTo.X(), hexTo.Y() );
 #endif
 
-	// A* routes through existing roads; the last reachable stretch is the road
-	ConnectRoad( hexFrom, hexTo );
+	// A* routes through existing roads; the last reachable stretch is the road.
+	// bWarRoad = map-sized search budget (the economy budget silently NULLed
+	// every long plan; 126 WARROAD calls in soak53 never laid one crossing)
+	BOOL bPlanned = ConnectRoad( hexFrom, hexTo, TRUE );
 
 #if EN_AI_PROBES_WAR && defined(_WIN32)
 	{
-		// TEMP: war-road planning probe (operator needs to see war roads planned)
-		char szW[96];
-		sprintf( szW, "[WARROAD] plyr %d to %d,%d\n", m_iPlayer, hexTo.X(), hexTo.Y() );
+		// war-road probe - now truthful: reports whether a plan was laid
+		char szW[112];
+		sprintf( szW, "[WARROAD] plyr %d to %d,%d %s\n", m_iPlayer,
+			hexTo.X(), hexTo.Y(), bPlanned ? "ok" : "FAIL" );
 		OutputDebugStringA( szW );
 	}
+#else
+	(void)bPlanned;
 #endif
 }
 

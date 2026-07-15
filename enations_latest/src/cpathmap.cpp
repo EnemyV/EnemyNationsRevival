@@ -31,9 +31,10 @@ CPathMap thePathMap;
 //
 // critical section bracketed version of GetRoadPath()
 //
-CHexCoord *CPathMap::GetRoadPath( 
-	CHexCoord& hexFrom, CHexCoord& hexTo, int& iPathLen, WORD *pMap, 
-	BOOL bAllowWater /*=FALSE*/, BOOL bRiverCrossing /*=TRUE*/ )
+CHexCoord *CPathMap::GetRoadPath(
+	CHexCoord& hexFrom, CHexCoord& hexTo, int& iPathLen, WORD *pMap,
+	BOOL bAllowWater /*=FALSE*/, BOOL bRiverCrossing /*=TRUE*/,
+	BOOL bWarRoad /*=FALSE*/ )
 {
 	// EN_PERF: time the whole call (incl. m_cs wait) + count searches/nodes.
 	// Per-SEARCH counter ops only — CounterInc takes a global CS, so a
@@ -42,7 +43,7 @@ CHexCoord *CPathMap::GetRoadPath(
 	EnterCriticalSection (&m_cs);
 	m_iNextSlot = 0;	// early-outs skip the in-search reset; don't re-count
 	CHexCoord *phcPath = _GetRoadPath( hexFrom, hexTo, iPathLen,
-		pMap, bAllowWater, bRiverCrossing );
+		pMap, bAllowWater, bRiverCrossing, bWarRoad );
 	Perf::CounterInc( "pathr.calls" );
 	Perf::CounterAdd( "pathr.nodes", m_iNextSlot );	// cells created this search
 	LeaveCriticalSection (&m_cs);
@@ -52,10 +53,13 @@ CHexCoord *CPathMap::GetRoadPath(
 //
 // actual GetRoadPath()
 //
-CHexCoord *CPathMap::_GetRoadPath( 
-	CHexCoord& hexFrom, CHexCoord& hexTo, int& iPathLen, WORD *pMap, 
-	BOOL bAllowWater, BOOL bRiverCrossing )
+CHexCoord *CPathMap::_GetRoadPath(
+	CHexCoord& hexFrom, CHexCoord& hexTo, int& iPathLen, WORD *pMap,
+	BOOL bAllowWater, BOOL bRiverCrossing, BOOL bWarRoad )
 {
+	// war roads span half the map; the economy hang/arena silently NULLed
+	// every long plan (PlanWarRoad fired, nothing was ever laid)
+	m_bWarRoad = bWarRoad;
 #if PATH_TIMING_ROAD
 	DWORD dwStart, dwEnd;
 	dwStart = timeGetTime(); 
@@ -142,6 +146,8 @@ CHexCoord *CPathMap::_GetRoadPath(
 	
 	int iX,iY;
 	int iHang = (m_iWidth + m_iHeight) * 2;
+	if( m_bWarRoad )
+		iHang = 0xFFFF;
 	int iTicks = 0;
 	int iList = 1;
 
@@ -367,6 +373,7 @@ BOOL CPathMap::_GetPath( CHexCoord& hexFrom, CHexCoord& hexTo,
 
 	m_bRoadPlanning = FALSE;
 	m_bWarPlanning = bWarPlanning;	// war mode: rivers passable + bigger budget
+	m_bWarRoad = FALSE;				// road-only flag; never active in GetPath
 	m_bOverWater = FALSE;
 
 	// set special state for hexFrom
@@ -1029,9 +1036,9 @@ BOOL CPathMap::FarmLumberAdjacent( int iX, int iY )
 CCell * CPathMap::AddCellToArray( CCell *pCell )
 {
 
-	// war planning may use the full double allocation; everything else keeps
-	// the original arena cap
-	int iCap = m_bWarPlanning ? m_iCellAlloc : m_iNumOfCells;
+	// war planning + war roads may use the full map-sized allocation;
+	// everything else keeps the original arena cap
+	int iCap = ( m_bWarPlanning || m_bWarRoad ) ? m_iCellAlloc : m_iNumOfCells;
 	if( m_iNextSlot >= iCap )
 		return (NULL) ;
 
@@ -1279,6 +1286,7 @@ CPathMap::CPathMap( void )
 	m_iCellAlloc = 0;
 	m_bRoadPlanning = FALSE;
 	m_bWarPlanning = FALSE;
+	m_bWarRoad = FALSE;
 	m_bOverWater = FALSE;
 	m_tdWheel = NULL;
 	m_tdTrack = NULL;

@@ -6900,75 +6900,9 @@ void CAIGoalMgr::LaunchAssault( CAITask* pTask )
                 return;
             }
 
-            if ( !IsTargetReachable( hexCity, pTask ) )
-            {
-#ifdef _LOGOUT
-                logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC,
-                           "CAIGoalMgr::LaunchAssault() player %d goal %d task %d can't reach target ", m_iPlayer,
-                           pTask->GetGoalID( ), pTask->GetID( ) );
-#endif
-                // BEACHHEAD: prefer land-assaulting the enemy's nearest reachable forward base over going to sea
-                BOOL bBeachhead = FALSE;
-                if ( m_pMap != NULL )
-                {
-                    CHexCoord hexBase( m_pMap->m_iBaseX, m_pMap->m_iBaseY );
-                    CHexCoord hexFwd;
-                    if ( pGameData->FindNearestBuilding( pOpFor->GetPlayerID( ), hexBase, hexFwd ) &&
-                         ( hexFwd.X( ) != hexCity.X( ) || hexFwd.Y( ) != hexCity.Y( ) ) &&
-                         IsTargetReachable( hexFwd, pTask ) )
-                    {
-                        hexCity    = hexFwd;  // land-assault the beachhead instead
-                        bBeachhead = TRUE;
-#if EN_AI_PROBES_WAR && defined(_WIN32)
-                        {
-                            // TEMP: beachhead retarget probe
-                            char szB[96];
-                            sprintf( szB, "[BEACHHEAD] plyr %d retarget %d,%d\n", m_iPlayer, hexFwd.X( ), hexFwd.Y( ) );
-                            OutputDebugStringA( szB );
-                        }
-#endif
-                    }
-                }
-
-                // no reachable beachhead -> escalate to a sea invasion
-                if ( !bBeachhead )
-                {
-                    // ISLAND ESCALATION: a LAND assault that cannot reach its
-                    // target will never succeed by itself (see comment below).
-                    // If sea travel is possible on this world, escalate to
-                    // IDG_SEAINVADE so the war can be prosecuted amphibiously --
-                    // its data tasks (stdgta.dat goal 1033) spin up landing-craft
-                    // + rangers production and the staging task. Without this,
-                    // the AI restages land forces on the shore forever: the only
-                    // SEAINVADE trigger was spotting an enemy seaport/shipyard,
-                    // which a navy-less island player never provides.
-                    if ( ( m_bOceanWorld || m_bLakeWorld ) &&
-                         ( pTask->GetGoalID( ) == IDG_LANDWAR || pTask->GetGoalID( ) == IDG_ADVDEFENSE ) )
-                    {
-                        CAIGoal* pGoalInv = m_plGoalList->GetGoal( IDG_SEAINVADE );
-                        if ( pGoalInv == NULL )
-                        {
-                            AddGoal( IDG_SEAINVADE );
-                            m_bGoalChange = TRUE;
-#ifdef _LOGOUT
-                            logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC,
-                                       "CAIGoalMgr::LaunchAssault() player %d target unreachable by land -> "
-                                       "escalating to IDG_SEAINVADE ", m_iPlayer );
-#endif
-                        }
-                    }
-
-                    // must do something with the units assigned to this
-                    // this assault, because not being able to reach the
-                    // target will not change by itself
-                    CancelAssault( pTask );
-
-                    return;
-                }
-                // beachhead reachable -> fall through to war road + launch
-            }
-
-            // WAR ROAD (staging): also pave toward the assault staging midpoint (once per stage)
+            // WAR ROAD (before the gate: paving/bridging toward the target is
+            // what eventually MAKES an unreachable target reachable)
+            // staging midpoint (once per stage)
             if ( m_pMap != NULL && ( pTask->GetTaskParam( CAI_LOC_X ) || pTask->GetTaskParam( CAI_LOC_Y ) ) )
             {
                 CHexCoord hexM;
@@ -6983,11 +6917,46 @@ void CAIGoalMgr::LaunchAssault( CAITask* pTask )
                 }
             }
 
-            // WAR ROAD: plan a paved, river-crossing route toward the target (once per target)
+            // route toward the target (once per target)
             if ( m_pMap != NULL && ( hexCity.X( ) != m_ahexLastWarRoad[WarRoadIdx( pTask )].X( ) || hexCity.Y( ) != m_ahexLastWarRoad[WarRoadIdx( pTask )].Y( ) ) )
             {
                 m_ahexLastWarRoad[WarRoadIdx( pTask )] = hexCity;
                 m_pMap->PlanWarRoad( hexCity );
+            }
+
+            if ( !IsTargetReachable( hexCity, pTask ) )
+            {
+#ifdef _LOGOUT
+                logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC,
+                           "CAIGoalMgr::LaunchAssault() player %d goal %d task %d can't reach target ", m_iPlayer,
+                           pTask->GetGoalID( ), pTask->GetID( ) );
+#endif
+                // ISLAND ESCALATION: if sea travel is possible, escalate to
+                // IDG_SEAINVADE so the war can be prosecuted amphibiously
+                // (a navy-less island opfor never provides the vanilla
+                // seaport-spotting trigger)
+                if ( ( m_bOceanWorld || m_bLakeWorld ) &&
+                     ( pTask->GetGoalID( ) == IDG_LANDWAR || pTask->GetGoalID( ) == IDG_ADVDEFENSE ) )
+                {
+                    CAIGoal* pGoalInv = m_plGoalList->GetGoal( IDG_SEAINVADE );
+                    if ( pGoalInv == NULL )
+                    {
+                        AddGoal( IDG_SEAINVADE );
+                        m_bGoalChange = TRUE;
+#ifdef _LOGOUT
+                        logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC,
+                                   "CAIGoalMgr::LaunchAssault() player %d target unreachable by land -> "
+                                   "escalating to IDG_SEAINVADE ", m_iPlayer );
+#endif
+                    }
+                }
+
+                // must do something with the units assigned to this
+                // this assault, because not being able to reach the
+                // target will not change by itself
+                CancelAssault( pTask );
+
+                return;
             }
 
             // if not at war, then based on this AI's combat attribute
@@ -7016,14 +6985,7 @@ void CAIGoalMgr::LaunchAssault( CAITask* pTask )
     }
 
     // if there is more than one opfor known, then attack the one
-    // with the worst relations. If that opfor's target turns out to be
-    // untargetable/unreachable, retry with it excluded (next-meanest)
-    // instead of cancelling the whole assault on the first dead-end.
-    int  aiTriedOpfor[32];
-    int  cTriedOpfor  = 0;
-    BOOL bUnreachable = FALSE;  // saw a real target we couldn't reach
-
-TryNextMeanest:
+    // with the worst relations.
     int      iMeanest = (int)ALLIANCE;
     int      iOpforID = 0;
     POSITION pos      = m_plOpFors->GetHeadPosition( );
@@ -7033,14 +6995,6 @@ TryNextMeanest:
         if ( pOpFor != NULL )
         {
             ASSERT_VALID( pOpFor );
-
-            // skip opfors already tried this pass (no target / unreachable)
-            BOOL bTried = FALSE;
-            for ( int iT = 0; iT < cTriedOpfor; iT++ )
-                if ( aiTriedOpfor[iT] == pOpFor->GetPlayerID( ) )
-                    bTried = TRUE;
-            if ( bTried )
-                continue;
 
             // This is where the AI decides who to attack!! (took me a while to find it)
             // This skips AI's and players already at WAR
@@ -7080,122 +7034,19 @@ TryNextMeanest:
         }
     }
     if ( !iOpforID )
-    {
-        // no untried opfor left. If any of them had a real target we just
-        // couldn't reach, keep the original abort behavior for the exhausted
-        // case: island escalation, then stand the task force down.
-        if ( bUnreachable )
-        {
-            // ISLAND ESCALATION (mirror of the single-opfor branch): a land assault
-            // that can't reach its target beaches the whole TF on the shore forever
-            if ( ( m_bOceanWorld || m_bLakeWorld ) &&
-                 ( pTask->GetGoalID( ) == IDG_LANDWAR || pTask->GetGoalID( ) == IDG_ADVDEFENSE ) )
-            {
-                CAIGoal* pGoalInv = m_plGoalList->GetGoal( IDG_SEAINVADE );
-                if ( pGoalInv == NULL )
-                {
-                    AddGoal( IDG_SEAINVADE );
-                    m_bGoalChange = TRUE;
-#if EN_AI_PROBES_WAR && defined(_WIN32)
-                    {
-                        // TEMP: island-war verification probe
-                        char szI[96];
-                        sprintf( szI, "[SEAINVADE-ESC] plyr %d target %d,%d unreachable -> sea invasion\n", m_iPlayer,
-                                 hexCity.X( ), hexCity.Y( ) );
-                        OutputDebugStringA( szI );
-                    }
-#endif
-                }
-            }
-            CancelAssault( pTask );
-        }
         return;  // could not launch, just return?
-    }
 
     CAIOpFor* pOpFor = m_plOpFors->GetOpFor( iOpforID );
     if ( pOpFor == NULL )
         return;  // could not launch, just return?
 
-    // mark tried up front: any dead-end below falls back to the next-meanest
-    if ( cTriedOpfor >= (int)( sizeof( aiTriedOpfor ) / sizeof( aiTriedOpfor[0] ) ) )
-        return;  // safety bound (real games have far fewer opfors)
-    aiTriedOpfor[cTriedOpfor++] = iOpforID;
-
-    // reset to "no target found" before each probe (FindAssaultTarget leaves
-    // hexCity alone when it finds nothing, and a prior pass may have set it)
-    hexCity.X( pTask->GetTaskParam( CAI_LOC_X ) );
-    hexCity.Y( pTask->GetTaskParam( CAI_LOC_Y ) );
-
     FindAssaultTarget( hexCity, pTask, pOpFor );
     if ( hexCity.X( ) == pTask->GetTaskParam( CAI_LOC_X ) && hexCity.Y( ) == pTask->GetTaskParam( CAI_LOC_Y ) )
-        goto TryNextMeanest;  // this opfor has nothing to hit - try the next-meanest
+        return;
 
-    if ( !IsTargetReachable( hexCity, pTask ) )
-    {
-        // target-INDEPENDENT failure (bad staging rect): iterating opfors is
-        // futile - re-place the rect via ReconInForce (validated placement)
-        // and let the next assault cycle retry from usable ground
-        BOOL bStagingBad = m_bStagingBad;
-
-        // BEACHHEAD: prefer land-assaulting the enemy's nearest reachable forward base over going to sea
-        BOOL bBeachhead = FALSE;
-        if ( !bStagingBad && m_pMap != NULL )
-        {
-            CHexCoord hexBase( m_pMap->m_iBaseX, m_pMap->m_iBaseY );
-            CHexCoord hexFwd;
-            if ( pGameData->FindNearestBuilding( pOpFor->GetPlayerID( ), hexBase, hexFwd ) &&
-                 ( hexFwd.X( ) != hexCity.X( ) || hexFwd.Y( ) != hexCity.Y( ) ) &&
-                 IsTargetReachable( hexFwd, pTask ) )
-            {
-                hexCity    = hexFwd;  // land-assault the beachhead instead
-                bBeachhead = TRUE;
-#if EN_AI_PROBES_WAR && defined(_WIN32)
-                {
-                    // TEMP: beachhead retarget probe
-                    char szB[96];
-                    sprintf( szB, "[BEACHHEAD] plyr %d retarget %d,%d\n", m_iPlayer, hexFwd.X( ), hexFwd.Y( ) );
-                    OutputDebugStringA( szB );
-                }
-#endif
-            }
-        }
-
-        if ( bStagingBad )
-        {
-#if EN_AI_PROBES_WAR && defined(_WIN32)
-            {
-                char szS[96];
-                sprintf( szS, "[RESTAGE] plyr %d staging rect bad (target-independent) - re-placing\n", m_iPlayer );
-                OutputDebugStringA( szS );
-            }
-#endif
-            ReconInForce( pTask, hexCity );
-            if ( pTask->GetStatus( ) != COMPLETED_TASK )
-                pTask->SetStatus( INPROCESS_TASK );
-            return;
-        }
-
-        // no reachable beachhead -> try the next-meanest opfor before
-        // giving up (the island escalation + cancel now happen only after
-        // EVERY known opfor has come up unreachable)
-        if ( !bBeachhead )
-        {
-            bUnreachable = TRUE;
-#if EN_AI_PROBES_WAR && defined(_WIN32)
-            {
-                // TEMP: next-meanest fallback probe
-                char szN[96];
-                sprintf( szN, "[NEXTMEANEST] plyr %d opfor %d target %d,%d unreachable -> trying next\n", m_iPlayer,
-                         iOpforID, hexCity.X( ), hexCity.Y( ) );
-                OutputDebugStringA( szN );
-            }
-#endif
-            goto TryNextMeanest;
-        }
-        // beachhead reachable -> fall through to war road + launch
-    }
-
-    // WAR ROAD (staging): also pave toward the assault staging midpoint (once per stage)
+    // WAR ROAD (before the gate: paving/bridging toward the target is what
+    // eventually MAKES an unreachable target reachable)
+    // staging midpoint (once per stage)
     if ( m_pMap != NULL && ( pTask->GetTaskParam( CAI_LOC_X ) || pTask->GetTaskParam( CAI_LOC_Y ) ) )
     {
         CHexCoord hexM;
@@ -7210,11 +7061,40 @@ TryNextMeanest:
         }
     }
 
-    // WAR ROAD: plan a paved, river-crossing route toward the target (once per target)
+    // route toward the target (once per target)
     if ( m_pMap != NULL && ( hexCity.X( ) != m_ahexLastWarRoad[WarRoadIdx( pTask )].X( ) || hexCity.Y( ) != m_ahexLastWarRoad[WarRoadIdx( pTask )].Y( ) ) )
     {
         m_ahexLastWarRoad[WarRoadIdx( pTask )] = hexCity;
         m_pMap->PlanWarRoad( hexCity );
+    }
+
+    if ( !IsTargetReachable( hexCity, pTask ) )
+    {
+        // ISLAND ESCALATION: if sea travel is possible, escalate to
+        // IDG_SEAINVADE so the war can be prosecuted amphibiously
+        if ( ( m_bOceanWorld || m_bLakeWorld ) &&
+             ( pTask->GetGoalID( ) == IDG_LANDWAR || pTask->GetGoalID( ) == IDG_ADVDEFENSE ) )
+        {
+            CAIGoal* pGoalInv = m_plGoalList->GetGoal( IDG_SEAINVADE );
+            if ( pGoalInv == NULL )
+            {
+                AddGoal( IDG_SEAINVADE );
+                m_bGoalChange = TRUE;
+#if EN_AI_PROBES_WAR && defined(_WIN32)
+                {
+                    // TEMP: island-war verification probe
+                    char szI[96];
+                    sprintf( szI, "[SEAINVADE-ESC] plyr %d target %d,%d unreachable -> sea invasion\n", m_iPlayer,
+                             hexCity.X( ), hexCity.Y( ) );
+                    OutputDebugStringA( szI );
+                }
+#endif
+            }
+        }
+
+        // vanilla: keep the army staged and retry next assault cycle
+        // (the war road planned above keeps extending toward the target)
+        return;
     }
 
     // if not at war, then based on this AI's combat attribute
@@ -7431,32 +7311,10 @@ void CAIGoalMgr::ReconInForce( CAITask* pTask, CHexCoord hcTo )
             int iDeltaX = hcMid.Wrap( pTask->GetTaskParam( CAI_PREV_X ) - pTask->GetTaskParam( CAI_LOC_X ) );
             int iDeltaY = hcMid.Wrap( pTask->GetTaskParam( CAI_PREV_Y ) - pTask->GetTaskParam( CAI_LOC_Y ) );
 
-            // VALIDATE AT PLACEMENT (root fix for staging paralysis): the
-            // midpoint formula is deterministic, so a rect on untravelable /
-            // home-unreachable ground was rewritten IDENTICALLY forever and
-            // the civ never launched (WARGATE 1/1/1/1-family, soaks 50/51).
-            // If the rect fails, pull the midpoint stepwise back toward home
-            // - the near end of the corridor is reachable by construction.
-            for ( int iTry = 0; iTry < 6; ++iTry )
-            {
-                hcStart.X( hex.Wrap( hcMid.X( ) - ( iDeltaX / 2 ) ) );
-                hcStart.Y( hex.Wrap( hcMid.Y( ) - ( iDeltaY / 2 ) ) );
-                hcEnd.X( hex.Wrap( hcMid.X( ) + ( iDeltaX / 2 ) ) );
-                hcEnd.Y( hex.Wrap( hcMid.Y( ) + ( iDeltaY / 2 ) ) );
-                if ( StagingRectUsable( hcStart, hcEnd ) )
-                    break;
-#if EN_AI_PROBES_WAR && defined(_WIN32)
-                {
-                    char szR[112];
-                    sprintf( szR, "[RESTAGE] plyr %d rect %d,%d-%d,%d unusable, pulling toward home (try %d)\n",
-                             m_iPlayer, hcStart.X( ), hcStart.Y( ), hcEnd.X( ), hcEnd.Y( ), iTry + 1 );
-                    OutputDebugStringA( szR );
-                }
-#endif
-                // step the midpoint 1/4 of the remaining way back toward home
-                hcMid.X( hex.Wrap( hcMid.X( ) + hcMid.Diff( hcBase.X( ) - hcMid.X( ) ) / 4 ) );
-                hcMid.Y( hex.Wrap( hcMid.Y( ) + hcMid.Diff( hcBase.Y( ) - hcMid.Y( ) ) / 4 ) );
-            }
+            hcStart.X( hex.Wrap( hcMid.X( ) - ( iDeltaX / 2 ) ) );
+            hcStart.Y( hex.Wrap( hcMid.Y( ) - ( iDeltaY / 2 ) ) );
+            hcEnd.X( hex.Wrap( hcMid.X( ) + ( iDeltaX / 2 ) ) );
+            hcEnd.Y( hex.Wrap( hcMid.Y( ) + ( iDeltaY / 2 ) ) );
 
             // now set task params with new area to stage in
             pTask->SetTaskParam( CAI_LOC_X, hcStart.X( ) );
@@ -7933,34 +7791,13 @@ void CAIGoalMgr::FindAssaultTarget( CHexCoord& hexTarget, CAITask* pTask, CAIOpF
 //
 // staging rect usable = at least one corner is scout-travelable land that the
 // war-path can reach from home (the target-INDEPENDENT half of the
-// IsTargetReachable gates). Used to validate a rect BEFORE it is committed.
-BOOL CAIGoalMgr::StagingRectUsable( CHexCoord hcStart, CHexCoord hcEnd )
-{
-    CTransportData const* pVehData = pGameData->GetTransportData( CTransportData::med_scout );
-    if ( pVehData == NULL || m_pMap == NULL )
-        return TRUE;  // can't judge - don't block
-    CHexCoord hexBase( m_pMap->m_iBaseX, m_pMap->m_iBaseY );
-    for ( int i = 0; i < 4; ++i )
-    {
-        CHexCoord hex( ( i == 1 || i == 2 ) ? hcEnd.X( ) : hcStart.X( ),
-                       ( i >= 2 ) ? hcEnd.Y( ) : hcStart.Y( ) );
-        CHex* pGameHex = theMap.GetHex( hex );
-        if ( pGameHex == NULL || !pVehData->CanTravelHex( pGameHex ) )
-            continue;
-        if ( m_pMap->m_pMapUtil->GetPathRating( hexBase, hex, pVehData->GetType( ), TRUE ) )
-            return TRUE;
-    }
-    return FALSE;
-}
-
 BOOL CAIGoalMgr::IsTargetReachable( CHexCoord& hexTarget, CAITask* pTask )
 {
     CTransportData const* pVehData = NULL;
     CHexCoord             hex;
     // [WARGATE] which gate killed each corner: 1=corner-travel 2=target-travel
-    // 3=home->corner path 4=corner->target path (0 = corner never evaluated)
+    // 4=corner->target path (0 = corner never evaluated)
     int aiGate[4] = { 0, 0, 0, 0 };
-    m_bStagingBad = FALSE;
 
     for ( int i = 0; i < 4; ++i )
     {
@@ -8054,17 +7891,8 @@ BOOL CAIGoalMgr::IsTargetReachable( CHexCoord& hexTarget, CAITask* pTask )
                 continue;
             }
 
-            // the corner must be reachable from HOME too - a staging area that
-            // snapped across water passes corner->target while the TF beaches
-            // war mode: rivers count as bridgeable, ocean still walls off islands
-            CHexCoord hexBase( m_pMap->m_iBaseX, m_pMap->m_iBaseY );
-            if ( !m_pMap->m_pMapUtil->GetPathRating( hexBase, hex, pVehData->GetType( ), TRUE ) )
-            {
-                aiGate[i] = 3;
-                continue;
-            }
-
             // consider if the base type of unit can get from hex->hexTarget
+            // war mode: rivers count as bridgeable, ocean still walls off islands
             if ( !m_pMap->m_pMapUtil->GetPathRating( hex, hexTarget, pVehData->GetType( ), TRUE ) )
             {
                 aiGate[i] = 4;
@@ -8074,11 +7902,6 @@ BOOL CAIGoalMgr::IsTargetReachable( CHexCoord& hexTarget, CAITask* pTask )
 
         return TRUE;
     }
-    // every corner died on a target-INDEPENDENT gate (untravelable corner or
-    // home->corner unreachable): iterating opfors is futile - the STAGING RECT
-    // is the fault. Caller re-stages instead of the next-meanest death spiral.
-    m_bStagingBad = ( ( aiGate[0] == 1 || aiGate[0] == 3 ) && ( aiGate[1] == 1 || aiGate[1] == 3 ) &&
-                      ( aiGate[2] == 1 || aiGate[2] == 3 ) && ( aiGate[3] == 1 || aiGate[3] == 3 ) );
 #if EN_AI_PROBES_WAR && defined(_WIN32)
     {
         // name the un-instrumented rejections: which gate killed each corner
