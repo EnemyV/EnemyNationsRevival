@@ -4742,7 +4742,7 @@ void CAIGoalMgr::StagingCensusProbe( void )
 {
     DWORD dwNow = theGame.GettimeGetTime( );
 
-#ifdef _WIN32
+#if EN_AI_PROBES_WAR && defined(_WIN32)
     // TEMP: one-shot per-player dump of EXISTING naval tasks (loaded goals never re-InitTasks)
     static DWORD s_dwDumped = 0;
     if ( !( s_dwDumped & ( 1u << ( m_iPlayer & 31 ) ) ) && m_plTasks != NULL )
