@@ -3175,80 +3175,13 @@ BOOL CAIMapUtil::IsBridgeSpan( CHexCoord& hexRiverRoad, CAIUnit* pUnit )
         return TRUE;
     }
 
-    // failed crossing: try shifted starts +/-1..3 along the bank (perpendicular to iDir)
-    BOOL             bShiftX  = ( iDir == 0 || iDir == 4 );  // span runs along Y -> shift along X
-    static const int aiOff[6] = { 1, -1, 2, -2, 3, -3 };
-    for ( i = 0; i < 6; i++ )
-    {
-        CHexCoord hexShift = hexStart;
-        if ( bShiftX )
-            hexShift.X( CHexCoord::Wrap( hexStart.X( ) + aiOff[i] ) );
-        else
-            hexShift.Y( CHexCoord::Wrap( hexStart.Y( ) + aiOff[i] ) );
-        int iOff = GetMapOffset( hexShift.X( ), hexShift.Y( ) );
-        if ( iOff >= m_iMapSize )
-            continue;
-        // shifted start must ALREADY be on the plan (corridors are several hexes wide near rivers)
-        if ( !( m_pMap[iOff] & MSW_PLANNED_ROAD ) && !( m_pMap[iOff] & MSW_ROAD ) )
-            continue;
-        pGameHex = theMap.GetHex( hexShift );
-        // shifted start must be crane-traversable land
-        if ( pGameHex->IsWater( ) || !m_tdWheel->CanTravelHex( pGameHex ) )
-            continue;
-        BOOL bBlocked;
-        EnterCriticalSection( &cs );
-        bBlocked = ( theBuildingHex.GetBuilding( hexShift ) != NULL );
-        LeaveCriticalSection( &cs );
-        if ( bBlocked )
-            continue;
-        // the hex ahead in the span direction must still be river
-        hexBridge = hexShift;
-        switch ( iDir )
-        {
-        case 0:
-            hexBridge.Ydec( );
-            break;
-        case 2:
-            hexBridge.Xinc( );
-            break;
-        case 4:
-            hexBridge.Yinc( );
-            break;
-        case 6:
-            hexBridge.Xdec( );
-            break;
-        }
-        if ( !theMap.GetHex( hexBridge )->IsWater( ) )
-            continue;
-        if ( TryBridgeWalk( hexShift, iDir, iMaxSpan, hexEnd ) )
-        {
-            // far landing check, same as the primary path
-            BOOL bEndBlocked2;
-            EnterCriticalSection( &cs );
-            bEndBlocked2 = ( theBuildingHex.GetBuilding( hexEnd ) != NULL );
-            LeaveCriticalSection( &cs );
-            if ( bEndBlocked2 )
-            {
-#if EN_AI_PROBES_WAR && defined(_WIN32)
-                char szV[96];
-                sprintf( szV, "[BRIDGEVETO] plyr %d bad FAR landing %d,%d (shift)\n", m_iPlayer, hexEnd.X( ), hexEnd.Y( ) );
-                OutputDebugStringA( szV );
-#endif
-                continue;
-            }
-#if EN_AI_PROBES_WAR && defined(_WIN32)
-            char szS[96];
-            sprintf( szS, "[BRIDGESHIFT] plyr %d moved crossing to %d,%d\n", m_iPlayer, hexShift.X( ), hexShift.Y( ) );
-            OutputDebugStringA( szS );
-#endif
-            hexRiverRoad = hexShift;
-            pUnit->SetParam( CAI_PREV_X, hexShift.X( ) );
-            pUnit->SetParam( CAI_PREV_Y, hexShift.Y( ) );
-            pUnit->SetParam( CAI_DEST_X, hexEnd.X( ) );
-            pUnit->SetParam( CAI_DEST_Y, hexEnd.Y( ) );
-            return TRUE;
-        }
-    }
+    // NO SHIFT-RETRY (operator, 2026-07-16): the +/-1..3 bank-shift that lived
+    // here relocated failed crossings sideways to force a build - EVERY
+    // planned bridge on a staircased crossing was built one square off the
+    // road (and the shift rewrote the params [PLANSEL] prints, masking itself
+    // from the probes). "If a bridge can't be built, we planned it wrong.
+    // Shifting is wrong." A failed straight on-plan span = FALSE; the planner
+    // must lay buildable crossings.
 #if EN_AI_PROBES_WAR && defined(_WIN32)
     {
         // name the failure: re-walk with the all-tiers budget to split
