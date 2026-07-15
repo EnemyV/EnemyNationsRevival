@@ -1042,6 +1042,14 @@ void CAIMap::GetBridgingHexes( CHexCoord& hexSite, CAIUnit *pUnit )
 		{
 			if( timeGetTime() < itC->second )
 			{
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+				{
+					char szH[96];
+					sprintf( szH, "[CLAIMHIT] plyr %d site %d,%d denied\n", m_iPlayer,
+							 hexSite.X(), hexSite.Y() );
+					OutputDebugStringA( szH );
+				}
+#endif
 				hexSite = hexBefore;
 				// FindBridgeOnPlan already wrote CAI_PREV/DEST for the denied
 				// span - clear them so callers can trust params as the found
@@ -1386,37 +1394,17 @@ BOOL CAIMap::PlanBridgeToward( CHexCoord const& hexAt, CHexCoord const& hexSite 
 //
 void CAIMap::ClaimBridge( CHexCoord const& hexStart, CHexCoord const& hexEnd )
 {
-	// claim the whole CORRIDOR (every hex within 2 of the span line), not just
-	// the two endpoint hexes: exact-hex claims let a crossing ONE tile along
-	// the bank sail through - soak67 built exact parallel duplicates (P9
-	// 516,371 + 516,372 ordered ~simultaneously; P11 THREE spans in a 3x3).
-	// One crossing per corridor is the invariant; radius 2 covers the +/-1..2
-	// shifted picks and both banks. TTL unchanged (3 min - a dead crane cannot
-	// lock the corridor).
-	DWORD dwUntil = timeGetTime() + 3 * 60 * 1000;
-	int   iSdx    = 0, iSdy = 0;
-	int   iLen    = 0;
+	// key BOTH banks: a claim/deny on one bank alone let the same crossing be
+	// re-selected from the OTHER bank (soak43: one span dispatched 11x, built
+	// alternately from both directions)
+	// NOTE (operator, 2026-07-16): exact-hex claims are CORRECT - bridges may
+	// legitimately be built side by side (parallel capacity); the corridor-
+	// radius claim tried here briefly blocked that and was reverted.
+	m_mBridgeDeny[m_pMapUtil->GetMapOffset( hexStart.X(), hexStart.Y() )] =
+		timeGetTime() + 3 * 60 * 1000;
 	if ( hexEnd.X() || hexEnd.Y() )
-	{
-		int iDx = CHexCoord::Diff( hexEnd.X() - hexStart.X() );
-		int iDy = CHexCoord::Diff( hexEnd.Y() - hexStart.Y() );
-		iSdx    = ( iDx > 0 ) - ( iDx < 0 );
-		iSdy    = ( iDy > 0 ) - ( iDy < 0 );
-		iLen    = abs( iDx ) + abs( iDy );  // spans are axis-aligned
-	}
-	CHexCoord hexOn = hexStart;
-	for ( int iStep = 0; iStep <= iLen; ++iStep )
-	{
-		for ( int dy = -2; dy <= 2; ++dy )
-			for ( int dx = -2; dx <= 2; ++dx )
-			{
-				// Wrap keeps coords in-range so the offset is always valid
-				CHexCoord hex( CHexCoord::Wrap( hexOn.X() + dx ), CHexCoord::Wrap( hexOn.Y() + dy ) );
-				m_mBridgeDeny[m_pMapUtil->GetMapOffset( hex.X(), hex.Y() )] = dwUntil;
-			}
-		hexOn.X( CHexCoord::Wrap( hexOn.X() + iSdx ) );
-		hexOn.Y( CHexCoord::Wrap( hexOn.Y() + iSdy ) );
-	}
+		m_mBridgeDeny[m_pMapUtil->GetMapOffset( hexEnd.X(), hexEnd.Y() )] =
+			timeGetTime() + 3 * 60 * 1000;
 }
 
 //

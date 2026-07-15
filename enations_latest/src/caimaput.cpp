@@ -3316,36 +3316,6 @@ BOOL CAIMapUtil::TryBridgeWalk( CHexCoord const& hexStart, int iDir, int iMaxSpa
             return FALSE;
 
         CHex* pGameHex = theMap.GetHex( hexBridge );
-
-        // shore look-AHEAD (operator spec): a landing may itself be coastline,
-        // but the tile AFTER the landing must not be shore - otherwise the
-        // onward road has nowhere to go and the bridge dead-ends. When the
-        // next tile is coastline, the current hex rides the deck and the span
-        // extends. Shore doesn't consume tech reach (server counts only WATER).
-        if ( !pGameHex->IsWater( ) )
-        {
-            CHexCoord hexPeek = hexBridge;
-            switch ( iDir )
-            {
-            case 0: hexPeek.Ydec( ); break;
-            case 2: hexPeek.Xinc( ); break;
-            case 4: hexPeek.Yinc( ); break;
-            case 6: hexPeek.Xdec( ); break;
-            }
-            if ( GetMapOffset( hexPeek.X( ), hexPeek.Y( ) ) < m_iMapSize )
-            {
-                CHex* pPeek = theMap.GetHex( hexPeek );
-                if ( pPeek != NULL && pPeek->GetType( ) == CHex::coastline )
-                {
-                    if ( pGameHex->GetUnits( ) & CHex::bridge )
-                        return FALSE;
-                    if ( ++iSteps > iMaxSpan + MAX_SPAN_ULT )
-                        return FALSE;
-                    continue;  // deck extends over this hex
-                }
-            }
-        }
-
         // if not water (river/lake/ocean) then we assume land, this is the end
         if ( !pGameHex->IsWater( ) )
         {
@@ -3389,8 +3359,6 @@ BOOL CAIMapUtil::TryBridgeWalk( CHexCoord const& hexStart, int iDir, int iMaxSpa
         // if still here that means the hex was river/road
         // thus will be part of the span
         iSpan++;
-        if ( ++iSteps > iMaxSpan + MAX_SPAN_ULT )
-            return FALSE;
     }
     return FALSE;
 }
