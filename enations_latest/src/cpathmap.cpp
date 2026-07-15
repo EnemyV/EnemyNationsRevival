@@ -40,13 +40,35 @@ CHexCoord *CPathMap::GetRoadPath(
 	// Per-SEARCH counter ops only — CounterInc takes a global CS, so a
 	// per-node counter in AddCellToArray would serialize the AI threads.
 	Perf::ScopeCounter _t( "pathr.us" );
+#if EN_AI_PROBES_WAR && defined(_WIN32)
+	DWORD dwT0 = timeGetTime( );
+#endif
 	EnterCriticalSection (&m_cs);
+#if EN_AI_PROBES_WAR && defined(_WIN32)
+	DWORD dwT1 = timeGetTime( );
+#endif
 	m_iNextSlot = 0;	// early-outs skip the in-search reset; don't re-count
 	CHexCoord *phcPath = _GetRoadPath( hexFrom, hexTo, iPathLen,
 		pMap, bAllowWater, bRiverCrossing, bWarRoad );
 	Perf::CounterInc( "pathr.calls" );
 	Perf::CounterAdd( "pathr.nodes", m_iNextSlot );	// cells created this search
+	int iCellsUsed = m_iNextSlot;
 	LeaveCriticalSection (&m_cs);
+#if EN_AI_PROBES_WAR && defined(_WIN32)
+	{
+		// hang-regression probe: road planning with the war budget can pop
+		// 65k nodes on an unreachable target - name any >200ms stall
+		DWORD dwT2 = timeGetTime( );
+		if ( dwT2 - dwT0 > 200 )
+		{
+			char szS[160];
+			sprintf( szS, "[SLOWROAD] tid %lu wait %lu work %lu ms warroad %d cells %d from %d,%d to %d,%d\n",
+				GetCurrentThreadId( ), dwT1 - dwT0, dwT2 - dwT1, (int)bWarRoad, iCellsUsed,
+				hexFrom.X( ), hexFrom.Y( ), hexTo.X( ), hexTo.Y( ) );
+			OutputDebugStringA( szS );
+		}
+	}
+#endif
 	return( phcPath );
 }
 
@@ -293,13 +315,35 @@ BOOL CPathMap::GetPath( CHexCoord& hexFrom, CHexCoord& hexTo,
 	// (many calls, few nodes) -> cache quantization; node-bound (few calls,
 	// many nodes) -> scratch/world-read structure work.
 	Perf::ScopeCounter _t( "path.us" );
+#if EN_AI_PROBES_WAR && defined(_WIN32)
+	DWORD dwT0 = timeGetTime( );
+#endif
 	EnterCriticalSection (&m_cs);
+#if EN_AI_PROBES_WAR && defined(_WIN32)
+	DWORD dwT1 = timeGetTime( );
+#endif
 	m_iNextSlot = 0;	// early-outs skip the in-search reset; don't re-count
 	BOOL bPath = _GetPath( hexFrom, hexTo,
 		iBaseX, iBaseY, pMap, iVehType, bLongHang, bWarPlanning );
 	Perf::CounterInc( "path.calls" );
 	Perf::CounterAdd( "path.nodes", m_iNextSlot );	// cells created this search
+	int iCellsUsed = m_iNextSlot;
 	LeaveCriticalSection (&m_cs);
+#if EN_AI_PROBES_WAR && defined(_WIN32)
+	{
+		// hang-regression probe: name any search that stalls a caller >200ms
+		// (wait = lock contention, work = the flood itself)
+		DWORD dwT2 = timeGetTime( );
+		if ( dwT2 - dwT0 > 200 )
+		{
+			char szS[160];
+			sprintf( szS, "[SLOWPATH] tid %lu wait %lu work %lu ms war %d cells %d from %d,%d to %d,%d\n",
+				GetCurrentThreadId( ), dwT1 - dwT0, dwT2 - dwT1, (int)bWarPlanning, iCellsUsed,
+				hexFrom.X( ), hexFrom.Y( ), hexTo.X( ), hexTo.Y( ) );
+			OutputDebugStringA( szS );
+		}
+	}
+#endif
 	return( bPath );
 }
 

@@ -131,6 +131,23 @@ int CConquerApp::Run( )
             // unless EN_PERF is set; flushes a perf.log line each interval.
             Perf::FrameMark();
 
+#if EN_AI_PROBES_WAR && defined(_WIN32)
+            {
+                // hang-regression probe (operator: transient freezes, days-old):
+                // one line whenever a MAIN-loop iteration gap exceeds 400ms;
+                // correlate timestamps with [SLOWPATH]/[SLOWROAD] to name the blocker
+                static DWORD s_dwLastLoop = 0;
+                DWORD        dwLoopNow    = timeGetTime( );
+                if ( s_dwLastLoop && dwLoopNow - s_dwLastLoop > 400 )
+                {
+                    char szH[96];
+                    sprintf( szH, "[MAINSTALL] %lu ms\n", dwLoopNow - s_dwLastLoop );
+                    OutputDebugStringA( szH );
+                }
+                s_dwLastLoop = dwLoopNow;
+            }
+#endif
+
             uint64_t _perfPumpStart = Perf::IsEnabled() ? Perf::Now() : 0;
 
             // === Phase 3a: INVERTED event loop - SDL2 events first ===
