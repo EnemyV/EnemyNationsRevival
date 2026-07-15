@@ -3286,6 +3286,7 @@ BOOL CAIMapUtil::TryBridgeWalk( CHexCoord const& hexStart, int iDir, int iMaxSpa
 {
     CHexCoord hexBridge = hexStart;
     int       iSpan     = 1;
+    int       iSteps    = 0;  // total deck hexes incl. shore (loop bound)
     while ( iSpan <= iMaxSpan )
     {
         switch ( iDir )
@@ -3315,6 +3316,21 @@ BOOL CAIMapUtil::TryBridgeWalk( CHexCoord const& hexStart, int iDir, int iMaxSpa
             return FALSE;
 
         CHex* pGameHex = theMap.GetHex( hexBridge );
+
+        // shore rides the deck: a span that ENDS on coastline is a bridge to
+        // nowhere (coastline can't carry road - IsRoadHexEligible refuses it),
+        // so extend across shore until real land (operator: impromptu bridges
+        // stopping on the shore tile). The server span check agrees: only
+        // WATER counts toward the tech reach, so shore doesn't consume span.
+        if ( pGameHex->GetType( ) == CHex::coastline )
+        {
+            if ( pGameHex->GetUnits( ) & CHex::bridge )
+                return FALSE;
+            if ( ++iSteps > iMaxSpan + MAX_SPAN_ULT )
+                return FALSE;
+            continue;
+        }
+
         // if not water (river/lake/ocean) then we assume land, this is the end
         if ( !pGameHex->IsWater( ) )
         {
@@ -3348,6 +3364,8 @@ BOOL CAIMapUtil::TryBridgeWalk( CHexCoord const& hexStart, int iDir, int iMaxSpa
         // if still here that means the hex was river/road
         // thus will be part of the span
         iSpan++;
+        if ( ++iSteps > iMaxSpan + MAX_SPAN_ULT )
+            return FALSE;
     }
     return FALSE;
 }
