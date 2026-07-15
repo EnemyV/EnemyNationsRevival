@@ -1298,7 +1298,26 @@ void CConquerApp::GraphicsEnginePump( )
             CBuilding* pBldg;
             theBuildingMap.GetNextAssoc( pos, dwID, pBldg );
             ASSERT_STRICT_VALID( pBldg );
+#if EN_AI_PROBES_WAR && defined(_WIN32)
+            {
+                // lag probe: perf.log shows the recurring ~10s frames spend
+                // ~10,000ms in THIS loop (operB) - name the building
+                DWORD dwB0 = timeGetTime( );
+                pBldg->Operate( );
+                DWORD dwBMs = timeGetTime( ) - dwB0;
+                if ( dwBMs > 500 )
+                {
+                    char szB[96];
+                    sprintf( szB, "[SLOWBLDG] plyr %d bldg %lu type %d took %lu ms\n",
+                             pBldg->GetOwner( ) ? pBldg->GetOwner( )->GetPlyrNum( ) : -1,
+                             (unsigned long)dwID, pBldg->GetData( ) ? (int)pBldg->GetData( )->GetType( ) : -1,
+                             dwBMs );
+                    OutputDebugStringA( szB );
+                }
+            }
+#else
             pBldg->Operate( );
+#endif
         }
         }
 
