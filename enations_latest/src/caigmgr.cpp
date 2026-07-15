@@ -7202,9 +7202,11 @@ void CAIGoalMgr::LaunchAssault( CAITask* pTask, CHexCoord hcTo )
                  pU->GetTask( ) == pTask->GetID( ) && pU->GetGoal( ) == pTask->GetGoalID( ) )
                 cTF++;
         }
-        char szL[128];
-        sprintf( szL, "[LAUNCH] plyr %d goal %d task %d target %d,%d units %d\n", m_iPlayer,
-                 (int)pTask->GetGoalID( ), (int)pTask->GetID( ), hcTo.X( ), hcTo.Y( ), cTF );
+        char szL[160];
+        sprintf( szL, "[LAUNCH] plyr %d goal %d task %d target %d,%d units %d req %d/%d/%d/%d\n", m_iPlayer,
+                 (int)pTask->GetGoalID( ), (int)pTask->GetID( ), hcTo.X( ), hcTo.Y( ), cTF,
+                 (int)pTask->GetTaskParam( 4 ), (int)pTask->GetTaskParam( 5 ),
+                 (int)pTask->GetTaskParam( 6 ), (int)pTask->GetTaskParam( 7 ) );
         OutputDebugStringA( szL );
     }
 #endif

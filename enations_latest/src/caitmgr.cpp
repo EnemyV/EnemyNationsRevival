@@ -4014,6 +4014,18 @@ BOOL CAITaskMgr::IsStagingCompete( CAITask* pTask, int iType /*=0*/ )
         if ( !pTask->GetTaskParam( CAI_LOC_X ) && !pTask->GetTaskParam( CAI_LOC_Y ) )
             return FALSE;
 
+#if EN_AI_PROBES_WAR && defined(_WIN32)
+        {
+            // ghost-staging probe: a rect exists but requirements are all zero,
+            // so this "completes" instantly and launches an empty assault
+            char szG[128];
+            sprintf( szG, "[GHOSTSTAGE] plyr %d goal %d task %d rect %d,%d-%d,%d\n", m_iPlayer,
+                     (int)pTask->GetGoalID( ), (int)pTask->GetID( ),
+                     (int)pTask->GetTaskParam( CAI_LOC_X ), (int)pTask->GetTaskParam( CAI_LOC_Y ),
+                     (int)pTask->GetTaskParam( CAI_PREV_X ), (int)pTask->GetTaskParam( CAI_PREV_Y ) );
+            OutputDebugStringA( szG );
+        }
+#endif
         // can't be staged for some reason
         return TRUE;
     }
