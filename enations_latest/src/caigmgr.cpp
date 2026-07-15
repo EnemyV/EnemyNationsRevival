@@ -7132,9 +7132,14 @@ TryNextMeanest:
 
     if ( !IsTargetReachable( hexCity, pTask ) )
     {
+        // target-INDEPENDENT failure (bad staging rect): iterating opfors is
+        // futile - re-place the rect via ReconInForce (validated placement)
+        // and let the next assault cycle retry from usable ground
+        BOOL bStagingBad = m_bStagingBad;
+
         // BEACHHEAD: prefer land-assaulting the enemy's nearest reachable forward base over going to sea
         BOOL bBeachhead = FALSE;
-        if ( m_pMap != NULL )
+        if ( !bStagingBad && m_pMap != NULL )
         {
             CHexCoord hexBase( m_pMap->m_iBaseX, m_pMap->m_iBaseY );
             CHexCoord hexFwd;
@@ -7153,6 +7158,21 @@ TryNextMeanest:
                 }
 #endif
             }
+        }
+
+        if ( bStagingBad )
+        {
+#if EN_AI_PROBES_WAR && defined(_WIN32)
+            {
+                char szS[96];
+                sprintf( szS, "[RESTAGE] plyr %d staging rect bad (target-independent) - re-placing\n", m_iPlayer );
+                OutputDebugStringA( szS );
+            }
+#endif
+            ReconInForce( pTask, hexCity );
+            if ( pTask->GetStatus( ) != COMPLETED_TASK )
+                pTask->SetStatus( INPROCESS_TASK );
+            return;
         }
 
         // no reachable beachhead -> try the next-meanest opfor before
@@ -7410,16 +7430,33 @@ void CAIGoalMgr::ReconInForce( CAITask* pTask, CHexCoord hcTo )
             // get size of previous staging area
             int iDeltaX = hcMid.Wrap( pTask->GetTaskParam( CAI_PREV_X ) - pTask->GetTaskParam( CAI_LOC_X ) );
             int iDeltaY = hcMid.Wrap( pTask->GetTaskParam( CAI_PREV_Y ) - pTask->GetTaskParam( CAI_LOC_Y ) );
-            // int iDeltaX = abs( hcMid.Diff( pTask->GetTaskParam(CAI_PREV_X) -
-            //	pTask->GetTaskParam(CAI_LOC_X)));
-            // int iDeltaY = abs( hcMid.Diff( pTask->GetTaskParam(CAI_PREV_Y) -
-            //	pTask->GetTaskParam(CAI_LOC_Y)));
 
-            // now use hcStart and hcEnd with deltas to define new area
-            hcStart.X( hex.Wrap( hcMid.X( ) - ( iDeltaX / 2 ) ) );
-            hcStart.Y( hex.Wrap( hcMid.Y( ) - ( iDeltaY / 2 ) ) );
-            hcEnd.X( hex.Wrap( hcMid.X( ) + ( iDeltaX / 2 ) ) );
-            hcEnd.Y( hex.Wrap( hcMid.Y( ) + ( iDeltaY / 2 ) ) );
+            // VALIDATE AT PLACEMENT (root fix for staging paralysis): the
+            // midpoint formula is deterministic, so a rect on untravelable /
+            // home-unreachable ground was rewritten IDENTICALLY forever and
+            // the civ never launched (WARGATE 1/1/1/1-family, soaks 50/51).
+            // If the rect fails, pull the midpoint stepwise back toward home
+            // - the near end of the corridor is reachable by construction.
+            for ( int iTry = 0; iTry < 6; ++iTry )
+            {
+                hcStart.X( hex.Wrap( hcMid.X( ) - ( iDeltaX / 2 ) ) );
+                hcStart.Y( hex.Wrap( hcMid.Y( ) - ( iDeltaY / 2 ) ) );
+                hcEnd.X( hex.Wrap( hcMid.X( ) + ( iDeltaX / 2 ) ) );
+                hcEnd.Y( hex.Wrap( hcMid.Y( ) + ( iDeltaY / 2 ) ) );
+                if ( StagingRectUsable( hcStart, hcEnd ) )
+                    break;
+#if EN_AI_PROBES_WAR && defined(_WIN32)
+                {
+                    char szR[112];
+                    sprintf( szR, "[RESTAGE] plyr %d rect %d,%d-%d,%d unusable, pulling toward home (try %d)\n",
+                             m_iPlayer, hcStart.X( ), hcStart.Y( ), hcEnd.X( ), hcEnd.Y( ), iTry + 1 );
+                    OutputDebugStringA( szR );
+                }
+#endif
+                // step the midpoint 1/4 of the remaining way back toward home
+                hcMid.X( hex.Wrap( hcMid.X( ) + hcMid.Diff( hcBase.X( ) - hcMid.X( ) ) / 4 ) );
+                hcMid.Y( hex.Wrap( hcMid.Y( ) + hcMid.Diff( hcBase.Y( ) - hcMid.Y( ) ) / 4 ) );
+            }
 
             // now set task params with new area to stage in
             pTask->SetTaskParam( CAI_LOC_X, hcStart.X( ) );
@@ -7894,6 +7931,28 @@ void CAIGoalMgr::FindAssaultTarget( CHexCoord& hexTarget, CAITask* pTask, CAIOpF
 // may be that the assault is land based and the target is on island
 // or the assault it sea based and the target is too far inland
 //
+// staging rect usable = at least one corner is scout-travelable land that the
+// war-path can reach from home (the target-INDEPENDENT half of the
+// IsTargetReachable gates). Used to validate a rect BEFORE it is committed.
+BOOL CAIGoalMgr::StagingRectUsable( CHexCoord hcStart, CHexCoord hcEnd )
+{
+    CTransportData const* pVehData = pGameData->GetTransportData( CTransportData::med_scout );
+    if ( pVehData == NULL || m_pMap == NULL )
+        return TRUE;  // can't judge - don't block
+    CHexCoord hexBase( m_pMap->m_iBaseX, m_pMap->m_iBaseY );
+    for ( int i = 0; i < 4; ++i )
+    {
+        CHexCoord hex( ( i == 1 || i == 2 ) ? hcEnd.X( ) : hcStart.X( ),
+                       ( i >= 2 ) ? hcEnd.Y( ) : hcStart.Y( ) );
+        CHex* pGameHex = theMap.GetHex( hex );
+        if ( pGameHex == NULL || !pVehData->CanTravelHex( pGameHex ) )
+            continue;
+        if ( m_pMap->m_pMapUtil->GetPathRating( hexBase, hex, pVehData->GetType( ), TRUE ) )
+            return TRUE;
+    }
+    return FALSE;
+}
+
 BOOL CAIGoalMgr::IsTargetReachable( CHexCoord& hexTarget, CAITask* pTask )
 {
     CTransportData const* pVehData = NULL;
@@ -7901,6 +7960,7 @@ BOOL CAIGoalMgr::IsTargetReachable( CHexCoord& hexTarget, CAITask* pTask )
     // [WARGATE] which gate killed each corner: 1=corner-travel 2=target-travel
     // 3=home->corner path 4=corner->target path (0 = corner never evaluated)
     int aiGate[4] = { 0, 0, 0, 0 };
+    m_bStagingBad = FALSE;
 
     for ( int i = 0; i < 4; ++i )
     {
@@ -8012,6 +8072,11 @@ BOOL CAIGoalMgr::IsTargetReachable( CHexCoord& hexTarget, CAITask* pTask )
 
         return TRUE;
     }
+    // every corner died on a target-INDEPENDENT gate (untravelable corner or
+    // home->corner unreachable): iterating opfors is futile - the STAGING RECT
+    // is the fault. Caller re-stages instead of the next-meanest death spiral.
+    m_bStagingBad = ( ( aiGate[0] == 1 || aiGate[0] == 3 ) && ( aiGate[1] == 1 || aiGate[1] == 3 ) &&
+                      ( aiGate[2] == 1 || aiGate[2] == 3 ) && ( aiGate[3] == 1 || aiGate[3] == 3 ) );
 #if EN_AI_PROBES_WAR && defined(_WIN32)
     {
         // name the un-instrumented rejections: which gate killed each corner

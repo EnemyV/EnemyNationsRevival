@@ -1449,7 +1449,12 @@ void CVehicle::EnterBuilding() {
     // TRAP; traffic/contention share that cycle). cant_deploy is the designed
     // in-building state (mirrors ExitBuilding's own guard) and legitimately
     // redeploys later. stop stays stop (vanilla arrival flow).
-    if (m_cMode == moving || m_cMode == blocked || m_cMode == traffic || m_cMode == contention)
+    // deploy_it included: a deploy_it vehicle shoved inside (HandleBlocked
+    // same-owner shove) kept its mode after ReleaseOwnership, and Operate's
+    // deploy_it resume set moving with NO ownership (soak51 MOVNOOWN veh 223,
+    // caller Operate+0x9DE). cant_deploy re-enters the designed deploy ladder.
+    if (m_cMode == moving || m_cMode == blocked || m_cMode == traffic || m_cMode == contention ||
+        m_cMode == deploy_it)
         _SetRouteMode(cant_deploy);
 
     // put us in the exit slot

@@ -24,6 +24,7 @@
 
 #include "SDL2Sprites.h"   // GPU tracer streaks (CaptureTrail)
 #include "Perf.h"          // shoot.oor out-of-range-fire probe
+#include "enprobes.h"      // BLDGKILL/UNITKILL war-attribution probes
 
 // GPU split-layer pass flag (defined in terrain.cpp): TRUE while sprites are being
 // captured into the GPU layer. We only emit tracer geometry on that path.
@@ -1664,6 +1665,25 @@ void CUnit::PrepareToDie (DWORD dwIDKiller)
     // if we are already dying - don't send again
     if (m_unitFlags & dying)
         return;
+
+#if EN_AI_PROBES_WAR && defined(_WIN32)
+    {
+        // war-attribution telemetry (operator): every combat death names its
+        // killer. BLDGKILL/UNITKILL victim owner+type + killer owner (0 = env)
+        int   iKillerPlyr = 0;
+        CUnit* pKiller = GetUnit (dwIDKiller);
+        if (pKiller != NULL && pKiller->GetOwner () != NULL)
+            iKillerPlyr = pKiller->GetOwner ()->GetPlyrNum ();
+        char szK[128];
+        sprintf (szK, "[%s] victim plyr %d type %d id %lu killer plyr %d id %lu\n",
+                 (GetUnitType () == CUnit::building) ? "BLDGKILL" : "UNITKILL",
+                 (GetOwner () != NULL) ? GetOwner ()->GetPlyrNum () : -1,
+                 (GetUnitType () == CUnit::building) ? (int)((CBuilding*)this)->GetData ()->GetType ()
+                                                     : (int)((CVehicle*)this)->GetData ()->GetType (),
+                 (unsigned long)GetID (), iKillerPlyr, (unsigned long)dwIDKiller);
+        OutputDebugStringA (szK);
+    }
+#endif
 
     if ( ( theApp.m_pLogFile != NULL ) && ( GetUnitType () == CUnit::building ) )
         {

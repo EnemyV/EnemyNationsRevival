@@ -237,7 +237,12 @@ public:
 		CHexCoord& hcStart, CHexCoord& hcEnd, WORD wNewTask );
 
 	BOOL IsTargetReachable( CHexCoord& hexTarget, CAITask *pTask );
-	void FindAssaultTarget( CHexCoord& hexTarget, 
+	// staging rect usable = at least one corner is scout-travelable land
+	// reachable from home by war-path (mirrors IsTargetReachable gates 1+3)
+	BOOL StagingRectUsable( CHexCoord hcStart, CHexCoord hcEnd );
+	BOOL m_bStagingBad;		// last IsTargetReachable failure was target-INDEPENDENT
+							// (bad staging rect, gates 1/3) -> re-stage, don't iterate opfors
+	void FindAssaultTarget( CHexCoord& hexTarget,
 		CAITask *pTask, CAIOpFor *pOpFor );
 
 	//void GetSupport( CAIUnit *pTarget, 
