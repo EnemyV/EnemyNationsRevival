@@ -7190,6 +7190,25 @@ void CAIGoalMgr::LaunchAssault( CAITask* pTask, CHexCoord hcTo )
     hcEnd.X( hcStart.Wrap( hexDest.X( ) + ( iDeltaX / 2 ) ) );
     hcEnd.Y( hcStart.Wrap( hexDest.Y( ) + ( iDeltaY / 2 ) ) );
 
+#if EN_AI_PROBES_WAR && defined(_WIN32)
+    {
+        // launch-cadence probe: every assault conversion, with wave size
+        int      cTF  = 0;
+        POSITION posL = m_plUnits->GetHeadPosition( );
+        while ( posL != NULL )
+        {
+            CAIUnit* pU = (CAIUnit*)m_plUnits->GetNext( posL );
+            if ( pU != NULL && pU->GetOwner( ) == m_iPlayer &&
+                 pU->GetTask( ) == pTask->GetID( ) && pU->GetGoal( ) == pTask->GetGoalID( ) )
+                cTF++;
+        }
+        char szL[128];
+        sprintf( szL, "[LAUNCH] plyr %d goal %d task %d target %d,%d units %d\n", m_iPlayer,
+                 (int)pTask->GetGoalID( ), (int)pTask->GetID( ), hcTo.X( ), hcTo.Y( ), cTF );
+        OutputDebugStringA( szL );
+    }
+#endif
+
     // finally for each unit with this goal/task set its destination
     // to be a location within the new area, that is not already
     // selected to be the destination of another unit on the task
@@ -7205,6 +7224,15 @@ void CAIGoalMgr::LaunchAssault( CAITask* pTask, CHexCoord hcTo )
 //
 void CAIGoalMgr::ReconInForce( CAITask* pTask, CHexCoord hcTo )
 {
+#if EN_AI_PROBES_WAR && defined(_WIN32)
+    {
+        // fuzzy-split probe: how often the roll picks recon over launch
+        char szR[96];
+        sprintf( szR, "[RECON] plyr %d goal %d to %d,%d\n", m_iPlayer,
+                 (int)pTask->GetGoalID( ), hcTo.X( ), hcTo.Y( ) );
+        OutputDebugStringA( szR );
+    }
+#endif
 #ifdef _LOGOUT
     logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "CAIGoalMgr::ReconInForce() player %d goal %d task %d at %d,%d ", m_iPlayer,
                pTask->GetGoalID( ), pTask->GetID( ), hcTo.X( ), hcTo.Y( ) );
