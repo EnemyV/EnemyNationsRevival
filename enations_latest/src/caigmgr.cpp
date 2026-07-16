@@ -4722,7 +4722,11 @@ BOOL CAIGoalMgr::WarPressure( void )
         while ( pos != NULL )
         {
             CAIOpFor* pOpFor = (CAIOpFor*)m_plOpFors->GetNext( pos );
-            if ( pOpFor != NULL && pOpFor->AtWar( ) )
+            // below-neutral ATTITUDE counts as pressure: guns must ramp BEFORE
+            // the shooting starts or ignited wars field 6-unit waves (soak81).
+            // Raw attitude, not GetRelations - SetRelations quantizes 71..99
+            // back to the NEUTRAL band constant and pressure flickered off.
+            if ( pOpFor != NULL && ( pOpFor->AtWar( ) || pOpFor->GetAttitude( ) < (int)NEUTRAL ) )
                 return TRUE;
         }
     }
@@ -4820,6 +4824,23 @@ void CAIGoalMgr::StagingCensusProbe( void )
                      (int)( m_pwaVehGoals[CTransportData::light_art] + m_pwaVehGoals[CTransportData::med_art] ),
                      (int)m_pwaVehGoals[CTransportData::infantry] );
             OutputDebugStringA( szM );
+
+            // per-opfor attitude drift: is peace an absorbing state live?
+            if ( m_plOpFors != NULL )
+            {
+                POSITION posO = m_plOpFors->GetHeadPosition( );
+                while ( posO != NULL )
+                {
+                    CAIOpFor* pO = (CAIOpFor*)m_plOpFors->GetNext( posO );
+                    if ( pO == NULL )
+                        continue;
+                    char szO[128];
+                    sprintf( szO, "[ATTITUDE] plyr %d opfor %d att %d rel %d war %d msgs %d\n", m_iPlayer,
+                             pO->GetPlayerID( ), pO->GetAttitude( ), (int)pO->GetRelations( ),
+                             (int)pO->AtWar( ), pO->GetMsgCount( ) );
+                    OutputDebugStringA( szO );
+                }
+            }
 
             // per-war-task state: is the refill pipeline moving?
             static const int s_aiWg[3] = { IDG_LANDWAR, IDG_ADVDEFENSE, IDG_SEAINVADE };
@@ -6950,17 +6971,9 @@ void CAIGoalMgr::LaunchAssault( CAITask* pTask )
         CAIOpFor* pOpFor = (CAIOpFor*)m_plOpFors->GetHead( );
         if ( pOpFor != NULL )
         {
-            // on higher difficulty, automatic alliance with other AI players!
-            //
-            if ( pGameData->m_iSmart > 1 && pOpFor->IsAI( ) && !pOpFor->AtWar( ) )
-            {
-#ifdef _LOGOUT
-                logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC,
-                           "CAIGoalMgr::LaunchAssault() player %d goal %d task %d opfor is AI ", m_iPlayer,
-                           pTask->GetGoalID( ), pTask->GetID( ) );
-#endif
-                return;  // could not launch, just return?
-            }
+            // "on higher difficulty, automatic alliance with other AI players!"
+            // REMOVED (operator, 2026-07-15): last copy of the vanilla AI-war
+            // suppressor trio - the multi-opfor branch already allows AI targets
 
             FindAssaultTarget( hexCity, pTask, pOpFor );
             if ( hexCity.X( ) == pTask->GetTaskParam( CAI_LOC_X ) && hexCity.Y( ) == pTask->GetTaskParam( CAI_LOC_Y ) )
@@ -7042,7 +7055,21 @@ void CAIGoalMgr::LaunchAssault( CAITask* pTask )
             else  // not at war, yet
             {
                 if ( pTask->GetStatus( ) != UNASSIGNED_TASK || pGameData->GetRandom( iBase ) < iAttitude )
+                {
+                    // a launched assault IS the declaration of war: without it
+                    // the wave arrives but can't fire (AutoFire requires AtWar
+                    // for AI targets) - tanks circled the target not shooting
+                    pOpFor->SetAttitude( (int)WAR );
+#if EN_AI_PROBES_WAR && defined(_WIN32)
+                    {
+                        char szW[96];
+                        sprintf( szW, "[WARDECL] plyr %d declares on opfor %d (assault launch)\n", m_iPlayer,
+                                 pOpFor->GetPlayerID( ) );
+                        OutputDebugStringA( szW );
+                    }
+#endif
                     LaunchAssault( pTask, hexCity );
+                }
                 else
                     ReconInForce( pTask, hexCity );
             }
@@ -7181,7 +7208,20 @@ void CAIGoalMgr::LaunchAssault( CAITask* pTask )
     {
         // make a random decision, relative to attitude
         if ( pTask->GetStatus( ) != UNASSIGNED_TASK || pGameData->GetRandom( iBase ) < iAttitude )
+        {
+            // a launched assault IS the declaration of war (see single-opfor
+            // branch above) - the wave must be able to fire on arrival
+            pOpFor->SetAttitude( (int)WAR );
+#if EN_AI_PROBES_WAR && defined(_WIN32)
+            {
+                char szW[96];
+                sprintf( szW, "[WARDECL] plyr %d declares on opfor %d (assault launch)\n", m_iPlayer,
+                         pOpFor->GetPlayerID( ) );
+                OutputDebugStringA( szW );
+            }
+#endif
             LaunchAssault( pTask, hexCity );
+        }
         else
             ReconInForce( pTask, hexCity );
     }

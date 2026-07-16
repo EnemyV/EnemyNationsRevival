@@ -97,7 +97,7 @@ public:
 	int GetMsgCount( void );
 	void SetMsgCount( int );
 	int GetAttitude( void );
-	void SetAttitude( int );
+	void SetAttitude( int );	// sets attitude + requantizes relations/war
 
 	void AdjustThreat( void );
 	void UpdateCounts( CAIMsg *pMsg );

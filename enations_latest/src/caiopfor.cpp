@@ -51,6 +51,16 @@ CAIOpFor::CAIOpFor( int iPlayer, const char* pzName )
     //
     // if( pGameData->m_iSmart )
     //	m_bAtWar = TRUE;
+    //
+    // REVIVED scaled-down (operator, 2026-07-15): attitude instead of full
+    // war - Difficult starts at 80 (low neutral), Impossible at 70 (the
+    // HOSTILE line; WAR is <=50). Attitude only ever falls on damage and no
+    // AI fires first, so a neutral start made war unreachable in all-AI games.
+    if ( pGameData != NULL && pGameData->m_iSmart >= ( NUM_DIFFICUTY_LEVELS / 2 ) )
+    {
+        m_iAttitude  = NEUTRAL - 10 * pGameData->m_iSmart;
+        m_cRelations = (BYTE)m_iAttitude;
+    }
 
     m_bIsAI  = FALSE;
     m_bKnown = FALSE;
@@ -369,7 +379,13 @@ void CAIOpFor::AdjustThreat( void )
         m_iMsgCount = 0;
 
         // allow attitude to migrate towards PEACE
-        if ( (BYTE)m_iAttitude <= PEACE )
+        // AI opfors on Difficult+ drift only back to the difficulty start
+        // line: per-message drift at 12-AI volume (~100x 1996) otherwise
+        // forces alliance and makes peace an absorbing state
+        BYTE cCeil = PEACE;
+        if ( m_bIsAI && pGameData != NULL && pGameData->m_iSmart >= ( NUM_DIFFICUTY_LEVELS / 2 ) )
+            cCeil = (BYTE)( NEUTRAL - 10 * pGameData->m_iSmart );
+        if ( (BYTE)m_iAttitude < cCeil )
             m_iAttitude++;
 
         SetRelations( );
@@ -896,7 +912,10 @@ void CAIOpFor::SetAttitude( int iAttitude )
 {
     ASSERT_VALID( this );
     if ( iAttitude > 0 && (BYTE)iAttitude <= ALLIANCE )
+    {
         m_iAttitude = iAttitude;
+        SetRelations( );  // requantize relations + war flag consistently
+    }
 }
 
 //
