@@ -3130,6 +3130,36 @@ BOOL CAIMapUtil::IsBridgeSpan( CHexCoord& hexRiverRoad, CAIUnit* pUnit, BOOL bIm
     if ( iDir == MAX_ADJACENT )
         return FALSE;
 
+    // LSWWSL start side (operator, eyes-on: impromptu bridge built FROM a
+    // shore tile stops one hex short): a coastline bank with more coastline
+    // behind it rides the deck too - slide the start landward until the deck
+    // begins beside real traversable land. The walk's shore-ride covers the
+    // slid-over hexes; CAI_PREV/dispatch get the extended start below.
+    if ( bImpromptu )
+    {
+        for ( int iBack = 0; iBack < MAX_SPAN_ULT; iBack++ )
+        {
+            CHex* pStartHex = theMap.GetHex( hexStart );
+            if ( pStartHex == NULL || pStartHex->GetType( ) != CHex::coastline )
+                break;  // already starts on real land
+            CHexCoord hexBehind = hexStart;
+            switch ( iDir )  // behind = opposite the span direction
+            {
+            case 0: hexBehind.Yinc( ); break;
+            case 2: hexBehind.Xdec( ); break;
+            case 4: hexBehind.Ydec( ); break;
+            case 6: hexBehind.Xinc( ); break;
+            }
+            if ( GetMapOffset( hexBehind.X( ), hexBehind.Y( ) ) >= m_iMapSize )
+                break;
+            CHex* pBehind = theMap.GetHex( hexBehind );
+            if ( pBehind == NULL || pBehind->IsWater( ) )
+                break;  // spit: nothing landward to reach
+            if ( pBehind->GetType( ) != CHex::coastline && m_tdWheel->CanTravelHex( pBehind ) )
+                break;  // shore start beside real land = legal landing-may-be-shore
+            hexStart = hexBehind;  // more shore behind: deck rides over it
+        }
+    }
 
     // while count of span < MAX_SPAN
     //      move the bridge hex in the direction of the span

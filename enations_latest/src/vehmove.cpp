@@ -2248,6 +2248,10 @@ void CVehicle::HandleBlocked() {
         theVehicleHex.GrabHex(m_ptNext, this);
         SetMoveParams(FALSE);
         _SetRouteMode(moving);
+        // recovery clears the stagnation watch: a stale same-hex stamp made a
+        // RE-block at a hex visited >6min ago an instant give-up on a fresh
+        // jam (garage-door commutes; audit finding)
+        m_dwStagnantSince = 0;
         ASSERT_VALID (this);
 #ifdef _LOGOUT
         logPrintf(LOG_PRI_VERBOSE, LOG_VEH_MOVE, "Vehicle %d road cleared", GetID());
@@ -2997,6 +3001,12 @@ void CVehicle::SetFromMsg(CMsgVehLoc *pMsg, BOOL bWorld) {
 void CVehicle::RelocateTo(CSubHex const &ptHead, CHexCoord const &hexDest) {
 
     ASSERT_VALID (this);
+
+    // any position jump must dirty the DEPARTED painted rect: the retained GPU
+    // sprite layer only repaints on dirty rects, so the origin kept a stale
+    // sprite forever (operator's 'ghost crane' - renders, no hover, unhittable)
+    if (IsVisible())
+        theApp.m_wndWorld.InvalidateWindow(CWndWorld::visible | CWndWorld::other_units);
 
     ReleaseOwnership();
 

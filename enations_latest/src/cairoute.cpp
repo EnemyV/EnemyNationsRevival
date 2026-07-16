@@ -1975,21 +1975,27 @@ void CAIRouter::UnassignTrucks( DWORD dwTruckID )
             if ( pTruck != NULL && pTruck->GetDataDW( ) != pBldg->GetID( ) )
                 continue;
 
+            BOOL bHadClaim = FALSE;
             for ( int i = 0; i < CMaterialTypes::num_types; ++i )
             {
                 // is there an id present, if so its a truck
                 // and those materials still needed are in GetParam()
                 // but the truck is gone now
                 if ( pBldg->GetParamDW( i ) == dwTruckID )
+                {
                     pBldg->SetParamDW( i, 0 );
+                    bHadClaim = TRUE;
+                }
             }
 
-            // need to put the building back in the needs list
-
-            // consider adding building to buildings need list
-            if ( m_plBldgsNeed->GetUnit( pBldg->GetID( ) ) == NULL )
-                m_plBldgsNeed->AddTail( (CObject*)pBldg );
+            // re-list ONLY real claim holders that are BUILDINGS: with the
+            // truck already gone (NULL lookup) the dest filter above is
+            // skipped, and this used to append EVERY unit in the AI list to
+            // m_plBldgsNeed - permanent router pollution (audit finding)
+            if ( ( bHadClaim || pTruck != NULL ) && pBldg->GetType( ) == CUnit::building &&
+                 m_plBldgsNeed->GetUnit( pBldg->GetID( ) ) == NULL )
             {
+                m_plBldgsNeed->AddTail( (CObject*)pBldg );
 #ifdef _LOGOUT
                 logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "Player %d Building %ld now needs a new truck ", m_iPlayer,
                            pBldg->GetID( ) );

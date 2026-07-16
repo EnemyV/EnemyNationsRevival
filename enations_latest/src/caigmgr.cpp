@@ -724,6 +724,25 @@ void CAIGoalMgr::ConsiderThreats( CAIMsg* pMsg )
         else
             pOpFor->UpdateCounts( pMsg );
 
+        // RETALIATION (operator: 'the attackee doesn't respond... they don't
+        // seem to retaliatory war'): mirror the HUMAN first-attack rule
+        // (netapi UnitAttacked: neutral-or-worse attacker -> RELATIONS_WAR,
+        // allies forgiven) in the AI layer - first blood from a below-PEACE
+        // attacker snaps this record to WAR instead of grinding -3/hit while
+        // bunkers stay silent and mobiles won't return fire (AutoFire gates
+        // on AtWar per pair). Runs in the defender's own AI thread.
+        if ( !pOpFor->AtWar( ) && pOpFor->GetAttitude( ) < (int)PEACE )
+        {
+            pOpFor->SetAttitude( (int)WAR );
+#if EN_AI_PROBES_WAR && defined(_WIN32)
+            {
+                char szW[96];
+                sprintf( szW, "[WARDECL] plyr %d RETALIATES vs opfor %d (first blood)\n", m_iPlayer, iOpForID );
+                OutputDebugStringA( szW );
+            }
+#endif
+        }
+
         // update attack counts by unit type
         if ( pTarget->GetType( ) == CUnit::building )
             pOpFor->AddBldgAttack( pTarget->GetTypeUnit( ) );

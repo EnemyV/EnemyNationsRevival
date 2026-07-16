@@ -7201,10 +7201,15 @@ void CAITaskMgr::AttackAlert( CAIMsg* pMsg )
     // the unit is already targeting this attacker, only re-issue after a
     // cooldown (the periodic re-order self-heals a vehicle that silently
     // disengaged; AttackUnit() stamps the time).
+    //
+    // COOLDOWN SCOPE (operator, soak85 eyes-on): the guard used to RETURN,
+    // which also skipped RESCUER RECRUITMENT below - vanilla's mobilization
+    // engine (one staged/patrolling unit pulled in per shot landed). Waves
+    // attacked 1-2 units at a time while 20 reserves idled. The order path
+    // keeps the 10s pair cooldown; recruitment runs on with its own throttle.
     const DWORD ATTACK_REISSUE_COOLDOWN_MS = 10000;
-    if ( pTarget->GetDataDW( ) == pMsg->m_dwID2 &&
-         ( theGame.GettimeGetTime( ) - pTarget->GetTimeLastAtkCmd( ) ) < ATTACK_REISSUE_COOLDOWN_MS )
-        return;
+    BOOL bSkipOrder = ( pTarget->GetDataDW( ) == pMsg->m_dwID2 &&
+                        ( theGame.GettimeGetTime( ) - pTarget->GetTimeLastAtkCmd( ) ) < ATTACK_REISSUE_COOLDOWN_MS );
 
     // let's do something special for moderate difficulty
     // we have a 3 in 4 chance to not attack
@@ -7217,7 +7222,7 @@ void CAITaskMgr::AttackAlert( CAIMsg* pMsg )
     */
 
     // consider targeting unit that attacked target
-    if ( pTarget->GetDataDW( ) )
+    if ( !bSkipOrder && pTarget->GetDataDW( ) )
     {
         if ( pTarget->GetDataDW( ) != pMsg->m_dwID2 )
         {
@@ -7247,6 +7252,7 @@ void CAITaskMgr::AttackAlert( CAIMsg* pMsg )
     // if not already attacking, tell it we're attacking!
     // this sends off another attack message. does this create a loop?
     // if ( pTarget->GetDataDW( ) != pMsg->m_dwID2 )  // check if we're already targeting attacker? otherwise it just loops?
+    if ( !bSkipOrder )
         pTarget->AttackUnit( pMsg->m_dwID2 );
 
 #ifdef _LOGOUT
@@ -7300,6 +7306,20 @@ void CAITaskMgr::AttackAlert( CAIMsg* pMsg )
             return;
     }
     // find nearest combat unit with proper task
+    //
+    // RECRUITMENT THROTTLE (operator, soak85): the scan below is the alert's
+    // expensive half (full unit walk + up to 2 path calls per candidate, per
+    // shot landed) - one scan per AI per 2s keeps vanilla's mobilization
+    // cascade alive at a bounded cost. The 10s pair cooldown above now gates
+    // ONLY the order re-issue; recruitment must not starve behind it.
+    {
+        static DWORD s_adwRescueNext[32] = { 0 };
+        int          iSlotR              = m_iPlayer & 31;
+        DWORD        dwNowR              = theGame.GettimeGetTime( );
+        if ( dwNowR < s_adwRescueNext[iSlotR] )
+            return;
+        s_adwRescueNext[iSlotR] = dwNowR + 2000;
+    }
 
     CHexCoord hexVeh;
     int       iBest    = 0xFFFE, iDist;
@@ -7451,6 +7471,16 @@ void CAITaskMgr::AttackAlert( CAIMsg* pMsg )
         pRescuer->SetTask( IDT_SEEKINRANGE );
 
         MoveToRange( pRescuer, hexAttacked );
+
+#if EN_AI_PROBES_WAR && defined(_WIN32)
+        {
+            char szJ[112];
+            sprintf( szJ, "[RESCUE-JOIN] plyr %d unit %lu from task %u -> battle %d,%d\n", m_iPlayer,
+                     (unsigned long)pRescuer->GetID( ), (unsigned)pRescuer->GetParam( CAI_UNASSIGNED ),
+                     hexAttacked.X( ), hexAttacked.Y( ) );
+            OutputDebugStringA( szJ );
+        }
+#endif
 
 #ifdef _LOGOUT
         logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "CAITaskMgr::AttackAlert(): Player %d Unit %ld has task switched \n",

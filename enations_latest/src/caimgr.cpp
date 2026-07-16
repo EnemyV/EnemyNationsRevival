@@ -1819,11 +1819,16 @@ void CAIMgr::HandleStuckVehicles( void )
                         continue;
                     if ( snapS.bCarried || snapS.iRouteMode != CVehicle::stop )
                     {
+                        // clear the HEX with the clock: a stale stamp + zeroed
+                        // clock made any later re-stop at that hex read as
+                        // dwNow-0 = instant 10-min timeout (waves silently
+                        // shrank one recall at a time - audit finding)
+                        pUnit->SetStuckHex( 0 );
                         pUnit->SetStuckSince( 0 );
                         continue;
                     }
                     DWORD dwHexS = (DWORD)MAKELPARAM( snapS.iHeadX, snapS.iHeadY );
-                    if ( pUnit->GetStuckHex( ) != dwHexS )
+                    if ( pUnit->GetStuckHex( ) != dwHexS || !pUnit->GetStuckSince( ) )
                     {
                         pUnit->SetStuckHex( dwHexS );
                         pUnit->SetStuckSince( dwNow );
@@ -1841,6 +1846,7 @@ void CAIMgr::HandleStuckVehicles( void )
                         }
 #endif
                         m_pTaskMgr->ClearTaskUnit( pUnit );
+                        pUnit->SetStuckHex( 0 );
                         pUnit->SetStuckSince( 0 );
                     }
                 }
@@ -1853,6 +1859,7 @@ void CAIMgr::HandleStuckVehicles( void )
             AiVehSnap snap;
             if ( !AiSnap::ReadVeh( pUnit->GetID( ), snap ) )
             {
+                pUnit->SetStuckHex( 0 );
                 pUnit->SetStuckSince( 0 );
                 continue;
             }
@@ -1882,6 +1889,7 @@ void CAIMgr::HandleStuckVehicles( void )
             // Rescue only units the engine reports stopped/blocked.
             if ( snap.iRouteMode == CVehicle::moving || snap.iRouteMode == CVehicle::run )
             {
+                pUnit->SetStuckHex( 0 );  // stale stamp + zero clock = instant timeout on re-stop
                 pUnit->SetStuckSince( 0 );
                 continue;
             }
@@ -1896,7 +1904,7 @@ void CAIMgr::HandleStuckVehicles( void )
                  snap.iRouteMode == CVehicle::stop )
             {
                 DWORD dwHexNow = (DWORD)MAKELPARAM( hexVeh.X( ), hexVeh.Y( ) );
-                if ( pUnit->GetStuckHex( ) != dwHexNow )
+                if ( pUnit->GetStuckHex( ) != dwHexNow || !pUnit->GetStuckSince( ) )
                 {
                     // first sighting here: stamp and leave it alone
                     pUnit->SetStuckHex( dwHexNow );
