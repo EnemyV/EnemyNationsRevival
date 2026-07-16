@@ -3161,7 +3161,9 @@ void CAIMgr::AttackResponse( CAIMsg* pMsg )
             {
                 int       iRange = pVeh->GetRange( );
                 CHexCoord hexTarget( pMsg->m_iX, pMsg->m_iY );
-                CHexCoord hexAttacker( pMsg->m_ieX, pMsg->m_ieX );
+                // 1996 typo: Y was built from m_ieX (siblings use m_ieY) -
+                // return fire aimed/ranged at a corrupted attacker position
+                CHexCoord hexAttacker( pMsg->m_ieX, pMsg->m_ieY );
                 // but is it in range to do so?
                 if ( pGameData->GetRangeDistance( hexTarget, hexAttacker ) > iRange )
                 {

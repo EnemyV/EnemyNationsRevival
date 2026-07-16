@@ -3829,6 +3829,15 @@ void CGame::ProcessMessage(CNetCmd* pCmd )
         CPlayer*       pPlr = theGame._GetPlayerByPlyr( pMsg->m_iPlyrNum );
         if ( pPlr == NULL )
             break;
+        // out-of-range topic: drop before ANY GetRsrch/ElementAt deref -
+        // unfixed twin of the set_rsrch v48 OOB (same pooled-buffer garbage)
+        if ( pMsg->m_iRsrch < 0 || pMsg->m_iRsrch >= pPlr->GetRsrchSize( ) )
+        {
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+            OutputDebugStringA( "research_disc: out-of-range topic dropped\n" );
+#endif
+            break;
+        }
         if ( !pPlr->IsLocal( ) )
         {
             TRAP( );
