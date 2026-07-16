@@ -36,9 +36,10 @@ int aiDir[9] = {7 * EIGHTH_ROT, 6 * EIGHTH_ROT, 5 * EIGHTH_ROT, 0, 0, 4 * EIGHTH
 
 BOOL CVehicle::TestStuck() {
 
-    // only do this for local AI vehicles (condition was inverted since 1996:
-    // the jump rescue this exists for never ran for AI vehicles)
-    if ((!GetOwner()->IsLocal()) || (!GetOwner()->IsAI()))
+    // VANILLA GUARD RESTORED (operator, 2026-07-16: 'horrible change, revert
+    // for sure'): 2cc7163c flipped this so the 6-min stuck-escape ran for AI
+    // vehicles - TELEPORTING AI trucks/cranes into their destination buildings
+    if ((!GetOwner()->IsLocal()) || (GetOwner()->IsAI()))
         return FALSE;
 
     // only for trucks & cranes
