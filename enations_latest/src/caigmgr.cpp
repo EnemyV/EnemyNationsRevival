@@ -696,14 +696,23 @@ void CAIGoalMgr::ConsiderThreats( CAIMsg* pMsg )
 
         // id of the attacking unit is used to get id of opfor
         CAIUnit* pAttacker = m_plUnits->GetOpForUnit( pMsg->m_dwID2 );
-        if ( pAttacker == NULL )
+        int      iOpForID;
+        if ( pAttacker != NULL )
+            iOpForID = pAttacker->GetOwner( );
+        else
         {
-            // unit might have been destroyed
-            return;
+            // UNSEEN attacker: this early-returned since 1996, eating the
+            // attitude decrement AND the retaliation snap for most war damage
+            // (soak86: 156 kills, zero grind values, zero RETALIATES - the
+            // victim rarely has the attacker's unit record). The message
+            // itself names the attacker's player; being shot must not
+            // require line-of-sight bookkeeping. pAttacker is otherwise
+            // only used for GetOwner - nothing below dereferences it.
+            iOpForID = pMsg->m_idata2;
+            if ( iOpForID < 0 || iOpForID == m_iPlayer )
+                return;
         }
-
-        int iOpForID = pAttacker->GetOwner( );
-        pOpFor       = m_plOpFors->GetOpFor( iOpForID );
+        pOpFor = m_plOpFors->GetOpFor( iOpForID );
 
         // new CAIOpFor is needed
         if ( pOpFor == NULL )
