@@ -222,7 +222,9 @@ public:
 
 	void FindAssaultHex( CHexCoord& hexTarget, int iTerrain );
 	void FindBridgeHex( CHexCoord& hexSite, CAIUnit *pUnit );
-	BOOL IsBridgeSpan( CHexCoord& hexRiverRoad, CAIUnit *pUnit );
+	// bImpromptu: candidate comes from the impromptu store (no plan flags) -
+	// relaxed bank anchoring + span hexes need no MSW_PLANNED_ROAD marks
+	BOOL IsBridgeSpan( CHexCoord& hexRiverRoad, CAIUnit *pUnit, BOOL bImpromptu = FALSE );
 	// bRequirePlan: TRUE = span hexes must carry road-plan marks (legacy on-plan
 	// validation); FALSE = raw water allowed (PlanBridgeToward lays its marks
 	// AFTER success, so requiring them made the fallback unable to succeed)

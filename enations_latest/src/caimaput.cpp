@@ -3009,7 +3009,7 @@ static BOOL SpanFailFirst( int iOff, int iReason )
 }
 #endif
 
-BOOL CAIMapUtil::IsBridgeSpan( CHexCoord& hexRiverRoad, CAIUnit* pUnit )
+BOOL CAIMapUtil::IsBridgeSpan( CHexCoord& hexRiverRoad, CAIUnit* pUnit, BOOL bImpromptu /*=FALSE*/ )
 {
     CHex*     pGameHex;
     int       i;
@@ -3044,6 +3044,22 @@ BOOL CAIMapUtil::IsBridgeSpan( CHexCoord& hexRiverRoad, CAIUnit* pUnit )
         hexBridge = hexRiverRoad;
         hexBridge.Xdec( );
         GetStartSpan( hexStart, hexBridge );
+    }
+    // impromptu candidates carry no plan flags: anchor on any adjacent
+    // crane-traversable land bank instead (mirrors PlanBridgeToward's own
+    // bank test at plan time)
+    if ( bImpromptu && !hexStart.X( ) && !hexStart.Y( ) )
+    {
+        static const int aiDx[4] = { 0, 1, 0, -1 };
+        static const int aiDy[4] = { -1, 0, 1, 0 };
+        for ( i = 0; i < 4 && !hexStart.X( ) && !hexStart.Y( ); i++ )
+        {
+            CHexCoord hexBank( CHexCoord::Wrap( hexRiverRoad.X( ) + aiDx[i] ),
+                               CHexCoord::Wrap( hexRiverRoad.Y( ) + aiDy[i] ) );
+            CHex* pBankHex = theMap.GetHex( hexBank );
+            if ( pBankHex != NULL && !pBankHex->IsWater( ) && m_tdWheel->CanTravelHex( pBankHex ) )
+                hexStart = hexBank;
+        }
     }
     // could not find the land hex to start the span
     if ( !hexStart.X( ) && !hexStart.Y( ) )
@@ -3147,8 +3163,8 @@ BOOL CAIMapUtil::IsBridgeSpan( CHexCoord& hexRiverRoad, CAIUnit* pUnit )
     }
 
     CHexCoord hexEnd( 0, 0 );
-    // original candidate crossing first
-    if ( TryBridgeWalk( hexStart, iDir, iMaxSpan, hexEnd ) )
+    // original candidate crossing first (impromptu spans carry no plan flags)
+    if ( TryBridgeWalk( hexStart, iDir, iMaxSpan, hexEnd, !bImpromptu ) )
     {
         // FAR landing must be clear too - the server validates BOTH ends
         // (end-base 3x3) and a blocked far landing made a crossing

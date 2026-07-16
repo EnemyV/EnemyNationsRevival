@@ -1097,7 +1097,7 @@ void CAIMap::FindBridgeOnPlan( CHexCoord& hexSite, CAIUnit *pUnit )
 	int iBestDist = m_iMapSize + 1;
 	CHexCoord hexBestSite;
 	int iPrevX = 0, iPrevY = 0, iDestX = 0, iDestY = 0;
-	int iBestOffKind = -1;	// selected mark's offset (attribution: planner vs impromptu)
+	BOOL bBestImpromptu = FALSE;
 	BOOL bFound = FALSE;
 
 	size_t k = 0;
@@ -1153,10 +1153,69 @@ void CAIMap::FindBridgeOnPlan( CHexCoord& hexSite, CAIUnit *pUnit )
 			iPrevY = pUnit->GetParam( CAI_PREV_Y );
 			iDestX = pUnit->GetParam( CAI_DEST_X );
 			iDestY = pUnit->GetParam( CAI_DEST_Y );
-			iBestOffKind = off;	// remember source mark for attribution
+			bBestImpromptu = FALSE;
 			bFound = TRUE;
 		}
 		++k;
+	}
+
+	// IMPROMPTU STORE (separate channel): crossings planned by PlanBridgeToward
+	// live here, never in the road plan. Validated with relaxed (flag-free)
+	// span rules; nearest-to-crane competes with the planner candidates above.
+	{
+		std::set<int>::iterator it = m_setImpromptuSpan.begin();
+		while( it != m_setImpromptuSpan.end() )
+		{
+			int off = *it;
+			if( off < 0 || off >= m_iMapSize )
+			{
+				it = m_setImpromptuSpan.erase( it );
+				continue;
+			}
+
+#if THREADS_ENABLED
+			myYieldThread();
+#endif
+
+			int iX, iY;
+			m_pMapUtil->OffsetToXY( off, &iX, &iY );
+			CHexCoord hexCand( iX, iY );
+
+			CHex *pGameHex = theMap.GetHex( hexCand );
+			// bank/landing entries and built-over water are not candidates;
+			// a hex already carrying a bridge is spent - drop it
+			if( pGameHex == NULL || ( pGameHex->GetUnits() & CHex::bridge ) )
+			{
+				it = m_setImpromptuSpan.erase( it );
+				continue;
+			}
+			if( !pGameHex->IsWater() )
+			{
+				++it;
+				continue;
+			}
+
+			int iDist = pGameData->GetRangeDistance( hexCrane, hexCand );
+			if( iDist >= iBestDist )
+			{
+				++it;
+				continue;
+			}
+
+			CHexCoord hexTest = hexCand;
+			if( m_pMapUtil->IsBridgeSpan( hexTest, pUnit, TRUE ) )
+			{
+				iBestDist   = iDist;
+				hexBestSite = hexTest;
+				iPrevX = pUnit->GetParam( CAI_PREV_X );
+				iPrevY = pUnit->GetParam( CAI_PREV_Y );
+				iDestX = pUnit->GetParam( CAI_DEST_X );
+				iDestY = pUnit->GetParam( CAI_DEST_Y );
+				bBestImpromptu = TRUE;
+				bFound = TRUE;
+			}
+			++it;
+		}
 	}
 
 	if( bFound )
@@ -1168,11 +1227,11 @@ void CAIMap::FindBridgeOnPlan( CHexCoord& hexSite, CAIUnit *pUnit )
 		pUnit->SetParam( CAI_DEST_Y, iDestY );
 #if EN_AI_PROBES_ECON && defined(_WIN32)
 		{
-			// TRUTHFUL attribution at last: the selected crossing's mark origin
+			// attribution is now structural: the source channel is known
 			char szP[144];
 			sprintf( szP, "[PLANSEL] plyr %d %s crossing sel %d,%d span %d,%d -> %d,%d crane-dist %d\n",
 				m_iPlayer,
-				( m_setImpromptuSpan.count( iBestOffKind ) ? "IMPROMPTU" : "PLANNER" ),
+				( bBestImpromptu ? "IMPROMPTU" : "PLANNER" ),
 				hexBestSite.X(), hexBestSite.Y(), iPrevX, iPrevY, iDestX, iDestY, iBestDist );
 			OutputDebugStringA( szP );
 		}
@@ -1350,19 +1409,18 @@ BOOL CAIMap::PlanBridgeToward( CHexCoord const& hexAt, CHexCoord const& hexSite 
 		return FALSE;
 	}
 
-	// flag bank -> river span -> landing as planned road
+	// record bank -> river span -> landing in the IMPROMPTU STORE ONLY.
+	// Operator invariant (2026-07-16): building an impromptu bridge must NOT
+	// change the road plan - the old MSW_PLANNED_ROAD writes here polluted the
+	// planner's index (planner picks preempted, paving cranes drawn to banks).
+	// The store is scanned by FindBridgeOnPlan alongside the planner index and
+	// validated with relaxed (flag-free) span rules.
 	CHexCoord hexMark = hexBank;
 	for( int i = 0; i <= iMaxSpan + 2; i++ )
 	{
 		int j = m_pMapUtil->GetMapOffset( hexMark.X(), hexMark.Y() );
-		if( j >= 0 && j < m_iMapSize &&
-			!( m_pwaMap[j] & MSW_AI_BUILDING ) && !( m_pwaMap[j] & MSW_PLANNED_ROAD ) )
-		{
-			m_pwaMap[j] |= MSW_PLANNED_ROAD;
-			m_iRoadCount++;
-			m_aPlannedRoad.push_back( j );
-			m_setImpromptuSpan.insert( j );	// discriminator: impromptu, not planner
-		}
+		if( j >= 0 && j < m_iMapSize && !( m_pwaMap[j] & MSW_AI_BUILDING ) )
+			m_setImpromptuSpan.insert( j );
 		if( hexMark == hexEnd )
 			break;
 		switch( iDir )
@@ -1432,6 +1490,9 @@ void CAIMap::DenyBridge( CHexCoord const& hexStart, CHexCoord const& hexEnd )
 			if( m_iRoadCount > 0 )
 				m_iRoadCount--;
 		}
+		// denied impromptu crossings leave the impromptu store too
+		if( j >= 0 && j < m_iMapSize )
+			m_setImpromptuSpan.erase( j );
 		if( hexMark == hexEnd )
 			break;
 		hexMark.X( CHexCoord::Wrap( hexMark.X() + sx ) );
