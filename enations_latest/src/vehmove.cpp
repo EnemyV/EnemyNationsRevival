@@ -1542,10 +1542,12 @@ void CVehicle::ExitBuilding() {
     // get a new path if needed
     if ((!HavePath()) || (*(m_phexPath + m_iPathLen - 1) != m_hexDest))
         GetPath(FALSE);
-#ifdef _DEBUG
-        else
-            TRAP ();
-#endif
+    else
+        // 1996 TRAP retired: a surviving path on exit was "impossible" only
+        // because the AI wiped it with mid-weld SetDestination spam - with
+        // welds no longer cancelled it's a legal state (soak83 crash). The
+        // path is already valid for m_hexDest; keep it.
+        EN_TRAP_REMOVED( "ExitBuilding: live path to dest survives the visit - using it" );
 
     ASSERT_VALID (this);
     ASSERT ((abs(CSubHex::Diff(m_ptNext.x - m_ptHead.x)) < 2) &&

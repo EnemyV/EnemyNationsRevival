@@ -5004,6 +5004,9 @@ BOOL CAITaskMgr::RepairConstruction( CAIUnit* pUnit )
         BOOL bConstructing = FALSE;
         BOOL bAbandoned    = FALSE;
 
+        BOOL bOnBldg = FALSE, bDestBldg = FALSE;  // crane/dest on the target's footprint
+        CHexCoord hexAnchor( 0, 0 );
+        int       iBCX = 0, iBCY = 0;
         EnterCriticalSection( &cs );
         CBuilding* pBldg = theBuildingMap.GetBldg( pUnit->GetDataDW( ) );
         if ( pBldg != NULL )
@@ -5012,6 +5015,13 @@ BOOL CAITaskMgr::RepairConstruction( CAIUnit* pUnit )
             iDmgPer       = pBldg->GetDamagePer( );
             bConstructing = pBldg->IsConstructing( );
             bAbandoned    = ( pBldg->GetFlags( ) & CUnit::abandoned ) != 0;
+            // weld position/dest are footprint hexes (not anchor, not exit) -
+            // multi-hex buildings need membership, not hex equality
+            bOnBldg    = ( theBuildingHex.GetBuilding( hexVeh ) == pBldg );
+            bDestBldg  = ( theBuildingHex.GetBuilding( hexDest ) == pBldg );
+            hexAnchor  = pBldg->GetHex( );
+            iBCX       = pBldg->GetCX( );
+            iBCY       = pBldg->GetCY( );
         }
         LeaveCriticalSection( &cs );
 
@@ -5039,8 +5049,10 @@ BOOL CAITaskMgr::RepairConstruction( CAIUnit* pUnit )
         if ( bAbandoned )
             goto DismissUnit;
 
-        // crane is already at the building
-        if ( hexVeh == hexBldg && hexTail == hexBldg )
+        // crane is already at the building: at the exit hex, or on the building
+        // footprint (RepairBldg orders it inside to weld - re-sending the exit
+        // dest from here cancelled the weld and latched the crane at CAI_FUEL=1)
+        if ( ( hexVeh == hexBldg && hexTail == hexBldg ) || bOnBldg )
         {
             // unit has already sent message to repair building
             if ( pUnit->GetParam( CAI_FUEL ) )
@@ -5069,14 +5081,35 @@ BOOL CAITaskMgr::RepairConstruction( CAIUnit* pUnit )
         }
         else
         {
-            // crane is already enroute to building
-            if ( hexBldg == hexDest )
+            // weld handoff died: msg sent (fuel=1) but the crane sits stopped
+            // outside the footprint (entry lost to truck traffic at the exit;
+            // 84 specimens/5min, all this signature). Unlatch so the arrival
+            // back at the exit re-sends the repair msg - retry, not park.
+            if ( pUnit->GetParam( CAI_FUEL ) && hexVeh == hexDest )
+                pUnit->SetParam( CAI_FUEL, 0 );
+
+            // crane is already enroute to building (exit hex, or walking in to weld)
+            if ( hexBldg == hexDest || bDestBldg )
                 return TRUE;
 
 #ifdef _LOGOUT
             logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC,
                        "RepairConstruction() plyr %d crane %ld going to bldg %ld at %d,%d ", pUnit->GetOwner( ),
                        pUnit->GetID( ), pUnit->GetDataDW( ), hexBldg.X( ), hexBldg.Y( ) );
+#endif
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+            {
+                // every input of the at-building/enroute decision at the moment
+                // it re-sends the exit dest (the weld-cancel conviction probe)
+                char szR[192];
+                sprintf( szR,
+                         "[REPAIRCXL] crane %lu bldg %lu fuel %u veh %d,%d tail %d,%d dest %d,%d exit %d,%d anchor %d,%d cx %d cy %d on %d destb %d\n",
+                         (unsigned long)pUnit->GetID( ), (unsigned long)pUnit->GetDataDW( ),
+                         (unsigned)pUnit->GetParam( CAI_FUEL ), hexVeh.X( ), hexVeh.Y( ), hexTail.X( ), hexTail.Y( ),
+                         hexDest.X( ), hexDest.Y( ), hexBldg.X( ), hexBldg.Y( ), hexAnchor.X( ), hexAnchor.Y( ),
+                         iBCX, iBCY, (int)bOnBldg, (int)bDestBldg );
+                OutputDebugStringA( szR );
+            }
 #endif
             // send the crane to the building
             pUnit->SetDestination( hexBldg );
@@ -5113,8 +5146,9 @@ BOOL CAITaskMgr::RepairConstruction( CAIUnit* pUnit )
                 if ( pUnitB->GetType( ) != CUnit::building )
                     continue;
 
-                // skip targets another crane is already headed to -- spreads the
-                // fleet across partials instead of converging on the top-rated one
+                // skip targets another crane is already bound to (ANY task:
+                // the original builder holds the bldg id too - adopters were
+                // piling onto actively-built buildings and jamming the exit)
                 BOOL     bTaken = FALSE;
                 POSITION posC   = m_pGoalMgr->m_plUnits->GetHeadPosition( );
                 while ( posC != NULL )
@@ -5122,7 +5156,7 @@ BOOL CAITaskMgr::RepairConstruction( CAIUnit* pUnit )
                     CAIUnit* pUnitC = (CAIUnit*)m_pGoalMgr->m_plUnits->GetNext( posC );
                     if ( pUnitC != NULL && pUnitC != pUnit && pUnitC->GetOwner( ) == m_iPlayer &&
                          pUnitC->GetTypeUnit( ) == CTransportData::construction &&
-                         pUnitC->GetTask( ) == IDT_REPAIR && pUnitC->GetDataDW( ) == pUnitB->GetID( ) )
+                         pUnitC->GetDataDW( ) == pUnitB->GetID( ) )
                     {
                         bTaken = TRUE;
                         break;
@@ -5367,6 +5401,25 @@ void CAITaskMgr::BuildRoad( CAIUnit* pUnit, CAITask* pTask )
                     pUnit->SetParam( CAI_DEST_X, hexBrEnd.X( ) );
                     pUnit->SetParam( CAI_DEST_Y, hexBrEnd.Y( ) );
                 }
+                // order ONLY from the bank itself: the server accepts with no
+                // crane-position check and stamps CHex::bridge on the whole
+                // span at accept - an off-line order stranded the crane and
+                // orphaned a 0% bridge whose flags then shifted every later
+                // walk one row (duplicate sibling spans, crane 71 / bridge 317)
+                if ( hexVeh != hexBrStart )
+                {
+                    pUnit->SetDestination( hexBrStart );
+#if EN_AI_PROBES_WAR && defined(_WIN32)
+                    {
+                        char szB[112];
+                        sprintf( szB, "[BRIDGEWALKUP] plyr %d crane %lu at %d,%d -> bank %d,%d\n", pUnit->GetOwner( ),
+                                 (unsigned long)pUnit->GetID( ), hexVeh.X( ), hexVeh.Y( ),
+                                 hexBrStart.X( ), hexBrStart.Y( ) );
+                        OutputDebugStringA( szB );
+                    }
+#endif
+                    return;
+                }
                 pGameData->BuildBridgeAt( pUnit, hexBrStart, hexBrEnd );
                 pUnit->SetParam( CAI_FUEL, CNetCmd::bridge_new );
 #if EN_AI_PROBES_WAR && defined(_WIN32)
@@ -5450,6 +5503,35 @@ void CAITaskMgr::BuildRoad( CAIUnit* pUnit, CAITask* pTask )
 #ifdef _LOGOUT
             logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "RoadBuilding() at %d,%d ", hexSite.X( ), hexSite.Y( ) );
 #endif
+
+            // batch run pending: arm it now - the crane stands at the start
+            // and its order pipeline is drained (this arrival was its last
+            // queued order), so nothing can cancel the run behind our back
+            if ( pUnit->GetParam( CAI_PREV_X ) || pUnit->GetParam( CAI_PREV_Y ) )
+            {
+                CHexCoord hexRunEnd( pUnit->GetParam( CAI_PREV_X ), pUnit->GetParam( CAI_PREV_Y ) );
+                EnterCriticalSection( &cs );
+                CVehicle* pV = theVehicleMap.GetVehicle( pUnit->GetID( ) );
+                if ( pV != NULL )
+                    pV->SetRoad( hexSite, hexRunEnd );
+                LeaveCriticalSection( &cs );
+                pUnit->SetParam( CAI_PREV_X, 0 );
+                pUnit->SetParam( CAI_PREV_Y, 0 );
+                // DEST = run END so the arrival test keys on it
+                pUnit->SetParam( CAI_DEST_X, hexRunEnd.X( ) );
+                pUnit->SetParam( CAI_DEST_Y, hexRunEnd.Y( ) );
+                pUnit->SetParam( CAI_FUEL, CNetCmd::road_new );
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+                {
+                    char szR[112];
+                    sprintf( szR, "[ROAD] plyr %d crane %lu RUN armed %d,%d -> %d,%d\n", m_iPlayer,
+                             (unsigned long)pUnit->GetID( ), hexSite.X( ), hexSite.Y( ),
+                             hexRunEnd.X( ), hexRunEnd.Y( ) );
+                    OutputDebugStringA( szR );
+                }
+#endif
+                return;
+            }
 
             // send start road construction message
             pGameData->BuildRoadAt( hexSite, pUnit );
@@ -5722,22 +5804,21 @@ void CAITaskMgr::BuildRoad( CAIUnit* pUnit, CAITask* pTask )
             int       iRunLen   = m_pGoalMgr->m_pMap->GetRoadRun( hexSite, hexRunEnd, iRunMax );
             if ( iRunLen >= 2 )
             {
-                // issue the whole run: the crane drives to the start and
-                // auto-advances per hex to the end (posting road_done each hex).
-                EnterCriticalSection( &cs );
-                CVehicle* pV = theVehicleMap.GetVehicle( pUnit->GetID( ) );
-                if ( pV != NULL )
-                    pV->SetRoad( hexSite, hexRunEnd );
-                LeaveCriticalSection( &cs );
-
-                // mark 'order sent'; DEST = run END so the arrival test keys on it
-                pUnit->SetParam( CAI_DEST_X, hexRunEnd.X( ) );
-                pUnit->SetParam( CAI_DEST_Y, hexRunEnd.Y( ) );
-                pUnit->SetParam( CAI_FUEL, CNetCmd::road_new );
+                // drive to the run start through the ORDER QUEUE. A direct
+                // SetRoad here raced any queued move still in flight (release
+                // staging) - the late move SetEvent(none)'d the run and latched
+                // the crane on road_new forever (cranes 132/89). The run arms
+                // on arrival below, when the crane's pipeline is drained.
+                pUnit->SetDestination( hexSite );
+                pUnit->SetParam( CAI_DEST_X, hexSite.X( ) );
+                pUnit->SetParam( CAI_DEST_Y, hexSite.Y( ) );
+                pUnit->SetParam( CAI_PREV_X, hexRunEnd.X( ) );
+                pUnit->SetParam( CAI_PREV_Y, hexRunEnd.Y( ) );
+                pUnit->SetParam( CAI_FUEL, CNetCmd::build_road );
 #if EN_AI_PROBES_ECON && defined(_WIN32)
                 {
                     char szR[128];
-                    sprintf( szR, "[ROAD] plyr %d crane %lu RUN %d hexes %d,%d -> %d,%d\n", m_iPlayer,
+                    sprintf( szR, "[ROAD] plyr %d crane %lu RUN %d hexes %d,%d -> %d,%d queued\n", m_iPlayer,
                              (unsigned long)pUnit->GetID( ), iRunLen, hexSite.X( ), hexSite.Y( ),
                              hexRunEnd.X( ), hexRunEnd.Y( ) );
                     OutputDebugStringA( szR );
@@ -5755,7 +5836,9 @@ void CAITaskMgr::BuildRoad( CAIUnit* pUnit, CAITask* pTask )
         // pTask->SetTaskParam(BUILD_AT_Y, hexSite.Y() );
         pUnit->SetParam( CAI_DEST_X, hexSite.X( ) );
         pUnit->SetParam( CAI_DEST_Y, hexSite.Y( ) );
-        // CAI_PREV_X
+        // single hex: no run end (stale bridge PREV would mis-arm a run on arrival)
+        pUnit->SetParam( CAI_PREV_X, 0 );
+        pUnit->SetParam( CAI_PREV_Y, 0 );
 
         // send truck to build site
         pUnit->SetDestination( hexSite );

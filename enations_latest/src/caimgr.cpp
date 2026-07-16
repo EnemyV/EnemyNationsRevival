@@ -1604,11 +1604,28 @@ void CAIMgr::UpdateUnits( CAIMsg* pMsg )
 
             // BATCH ROAD (operator): per-hex road_done fires for EACH section
             // while a crane is still paving a multi-hex run. Don't re-task or
-            // unassign a crane that's still working -- just account the hex; the
-            // run's final road_done (crane stopped) falls through to the re-pick.
+            // unassign a crane that's still working -- just account the hex.
+            // FINAL section = the completed hex IS the run end (CAI_DEST),
+            // deterministic from the message itself. (An engine routeMode read
+            // here raced the stop transition and dropped the final release --
+            // crane 129 parked at its run end; bridges post ONE road_done with
+            // fuel=bridge_new and fall through to the vanilla release.)
+            if ( pUnit->GetParam( CAI_FUEL ) == CNetCmd::road_new &&
+                 ( pMsg->m_iX != pUnit->GetParam( CAI_DEST_X ) ||
+                   pMsg->m_iY != pUnit->GetParam( CAI_DEST_Y ) ) )
+                return;
+            // BRIDGE: road_done fires per SPAN SEGMENT (BridgeBuilt+NextRoadHex
+            // per deck hex; bridge_done is defined but never posted). Releasing
+            // on the first segment abandoned the bridge partway (operator,
+            // soak80). Release only on the FINAL segment - the deck hex beside
+            // the far landing (CAI_DEST); mid-span segments keep the crane.
+            if ( pUnit->GetParam( CAI_FUEL ) == CNetCmd::bridge_new )
             {
-                AiVehSnap snap;
-                if ( AiSnap::ReadVeh( pUnit->GetID( ), snap ) && snap.iRouteMode != CVehicle::stop )
+                int iDx = pMsg->m_iX - (int)pUnit->GetParam( CAI_DEST_X );
+                int iDy = pMsg->m_iY - (int)pUnit->GetParam( CAI_DEST_Y );
+                if ( iDx < 0 ) iDx = -iDx;
+                if ( iDy < 0 ) iDy = -iDy;
+                if ( iDx + iDy > 1 )
                     return;
             }
 
@@ -2074,10 +2091,11 @@ void CAIMgr::HandleStuckVehicles( void )
                 {
                     char szR[192];
                     sprintf( szR,
-                             "[CRANERESCUE] nudge arrived-idle crane %lu task %u at %d,%d tail %d,%d aidest %u,%u\n",
+                             "[CRANERESCUE] nudge arrived-idle crane %lu task %u at %d,%d tail %d,%d aidest %u,%u fuel %u rt %d ev %d\n",
                              (unsigned long)pUnit->GetID( ), (unsigned)pUnit->GetTask( ), hexVeh.X( ), hexVeh.Y( ),
                              snap.iPtTailX / 2, snap.iPtTailY / 2, (unsigned)pUnit->GetParam( CAI_DEST_X ),
-                             (unsigned)pUnit->GetParam( CAI_DEST_Y ) );
+                             (unsigned)pUnit->GetParam( CAI_DEST_Y ), (unsigned)pUnit->GetParam( CAI_FUEL ),
+                             snap.iRouteMode, snap.iEvent );
                     OutputDebugStringA( szR );
                 }
 #endif
