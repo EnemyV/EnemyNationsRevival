@@ -484,9 +484,26 @@ void CAIRouter::SetPriorities( void )
     POSITION pos = m_plBldgsNeed->GetHeadPosition( );
     while ( pos != NULL )
     {
-        CAIUnit* pUnit = (CAIUnit*)m_plBldgsNeed->GetNext( pos );
+        POSITION posCur = pos;
+        CAIUnit* pUnit  = (CAIUnit*)m_plBldgsNeed->GetNext( pos );
         if ( pUnit != NULL )
         {
+            // liveness FIRST, by pointer identity: ASSERT_VALID is a virtual
+            // call and the borrowed pointer may already be freed (soak84 AV
+            // here at war-scale destruction). Stale nodes are REMOVED - they
+            // used to sit in the list forever.
+            if ( !IsValidUnit( pUnit ) )
+            {
+                m_plBldgsNeed->RemoveAt( posCur );
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+                {
+                    char szR[80];
+                    sprintf( szR, "[ROUTERSTALE] plyr %d dead bldg node dropped (SetPriorities)\n", m_iPlayer );
+                    OutputDebugStringA( szR );
+                }
+#endif
+                continue;
+            }
             ASSERT_VALID( pUnit );
 
 #if 0  // THREADS_ENABLED
@@ -507,11 +524,6 @@ void CAIRouter::SetPriorities( void )
             // for now, and BUGBUG later will also be influenced
             // by the state of the game
             //
-
-            // make sure it still exists
-            if ( !IsValidUnit( pUnit ) )
-                continue;
-
             SetUnitPriority( pUnit );
         }
     }
@@ -531,8 +543,6 @@ void CAIRouter::SetPriorities( void )
 
 void CAIRouter::FillPriorities( void )
 {
-    BOOL bTrucksFound = TRUE;
-
     // just in case we get here before they get init-ed
     if ( m_plBldgsNeed == NULL || m_plTrucksAvailable == NULL )
         return;
@@ -559,23 +569,26 @@ void CAIRouter::FillPriorities( void )
         // with the current highest priority
         CAIUnit* pBldg = (CAIUnit*)m_plBldgsNeed->RemoveHead( );
 
-        // DNT - this has GPF'ed several times
-        // it's coming here, not null but either deleted or being deleted
-        if ( pBldg != NULL  ) 
+        // liveness by POINTER IDENTITY, never a dereference. The 1996
+        // try/catch TRAP band-aid that lived here ("DNT - this has GPF'ed
+        // several times... deleted or being deleted") validated by calling
+        // pBldg->GetID() on the suspect - the validator WAS the UAF
+        // (soak84 AV, 0xDD vtable). RETIRED for the real check.
+        if ( pBldg != NULL && !IsValidUnit( pBldg ) )
         {
-            try
+            pBldg = NULL;
+#if EN_AI_PROBES_ECON && defined(_WIN32)
             {
-                CAIUnit* pTest = m_plUnits->GetUnit( pBldg->GetID( ) );
-                if ( pTest != pBldg )
-                    pBldg = NULL;
+                char szR[80];
+                sprintf( szR, "[ROUTERSTALE] plyr %d dead bldg head dropped (FillPriorities)\n", m_iPlayer );
+                OutputDebugStringA( szR );
             }
-            catch ( ... )
-            {
-                TRAP( );
-                pBldg = NULL;
-            }
+#endif
         }
 
+        // per-iteration: a dead/NULL head must not re-add itself via the
+        // PREVIOUS iteration's FALSE (that re-queued NULL/stale pointers)
+        BOOL bTrucksFound = TRUE;
         if ( pBldg != NULL )
         {
 
@@ -1310,12 +1323,25 @@ CAIUnit* CAIRouter::GetNearestTruck( CAIUnit* pCAIBldg )
     {
         // if the truck has been killed the pointer in this list
         // will be invalid
+        POSITION posCur = pos;
         CAIUnit* pTruck = (CAIUnit*)m_plTrucksAvailable->GetNext( pos );
         if ( pTruck != NULL )
         {
-            ASSERT_VALID( pTruck );
+            // liveness FIRST (identity walk, no deref) - ASSERT_VALID on a
+            // freed truck was the same AV class as the bldg list (soak84)
             if ( !IsValidUnit( pTruck ) )
+            {
+                m_plTrucksAvailable->RemoveAt( posCur );
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+                {
+                    char szR[80];
+                    sprintf( szR, "[ROUTERSTALE] plyr %d dead truck node dropped (NearestTruck)\n", m_iPlayer );
+                    OutputDebugStringA( szR );
+                }
+#endif
                 continue;
+            }
+            ASSERT_VALID( pTruck );
 
             // BUGBUG the truck may be dirty from a prior assignment
             // if this breakpoint fires, that means this truck is
@@ -1377,9 +1403,17 @@ BOOL CAIRouter::IsValidUnit( CAIUnit* pUnit )
 {
     if ( pUnit == NULL )
         return FALSE;
-    CAIUnit* pValid = m_plUnits->GetUnit( pUnit->GetID( ) );
-    if ( pUnit == pValid )
-        return TRUE;
+    // NEVER dereference pUnit: the borrowed pointer may already be FREED
+    // (soak84 AV: vtable load from 0xDD debug-heap fill - the old
+    // GetUnit(pUnit->GetID()) validated by dereferencing the suspect).
+    // Identity-walk the master list instead; borrowed pointers are valid
+    // only while the master still holds the SAME pointer.
+    POSITION pos = m_plUnits->GetHeadPosition( );
+    while ( pos != NULL )
+    {
+        if ( (CAIUnit*)m_plUnits->GetNext( pos ) == pUnit )
+            return TRUE;
+    }
     return FALSE;
 }
 
