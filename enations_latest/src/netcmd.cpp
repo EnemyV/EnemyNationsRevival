@@ -475,6 +475,10 @@ CMsgUnitDamage::CMsgUnitDamage( CUnit const* pTarget, CUnit const* pShoot, CUnit
 }
 
 CMsgUnitDamage::CMsgUnitDamage( CMsgCompUnitDamageElem* pElem )
+    : CNetCmd( unit_damage )  // was default-constructed: the TYPE was never
+                              // set, so the AI repack switch matched nothing -
+                              // every batched damage message reached the AI as
+                              // a blank (dead letter; bridge-reject pattern)
 {
 
     CUnit* pShoot  = ::GetUnit( pElem->m_dwKiller );
@@ -502,12 +506,17 @@ CMsgUnitDamage::CMsgUnitDamage( CMsgCompUnitDamageElem* pElem )
         m_iPlyrDamage = -1;
     }
 
-    m_dwIDTarget  = 0;
-    m_iPlyrTarget = -1;
+    // the element carries no separate target: the damaged unit IS the target.
+    // -1 here made every AI classifier (m_idata3 == m_iPlayer) reject the
+    // message - batched war damage NEVER reached ConsiderThreats/DamageAlert
+    // (no attitude grind, no retaliation; unit_attacked carried combat alone)
+    m_dwIDTarget  = m_dwIDDamage;
+    m_iPlyrTarget = m_iPlyrDamage;
     m_iDamageShot = pElem->m_wDamage;
 }
 
 CMsgUnitSetDamage::CMsgUnitSetDamage( CMsgCompUnitDamageElem* pElem )
+    : CNetCmd( unit_set_damage )  // same missing-type dead letter as above
 {
 
     m_dwIDDamage   = pElem->m_dwID;

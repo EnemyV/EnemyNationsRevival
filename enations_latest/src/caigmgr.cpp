@@ -684,6 +684,16 @@ void CAIGoalMgr::ConsiderThreats( CAIMsg* pMsg )
     // message reporting an attack on AI's units
     if ( pMsg->m_iMsg == CNetCmd::unit_damage )
     {
+#if EN_AI_PROBES_WAR && defined(_WIN32)
+        {
+            // stage probe: which check eats war damage? (RETAL=0 + zero grind
+            // across every soak = this branch may never complete)
+            char szT[96];
+            sprintf( szT, "[THREAT] plyr %d dmg victim %lu atkplyr %d stage=enter\n", m_iPlayer,
+                     (unsigned long)pMsg->m_dwID, pMsg->m_idata2 );
+            OutputDebugStringA( szT );
+        }
+#endif
         // get unit fired upon
         CAIUnit* pTarget = m_plUnits->GetUnit( pMsg->m_dwID );
         if ( pTarget == NULL )
@@ -693,6 +703,9 @@ void CAIGoalMgr::ConsiderThreats( CAIMsg* pMsg )
         }
         if ( pTarget->GetOwner( ) != m_iPlayer )
             return;
+#if EN_AI_PROBES_WAR && defined(_WIN32)
+        OutputDebugStringA( "[THREAT] stage=victim-ok\n" );
+#endif
 
         // id of the attacking unit is used to get id of opfor
         CAIUnit* pAttacker = m_plUnits->GetOpForUnit( pMsg->m_dwID2 );
