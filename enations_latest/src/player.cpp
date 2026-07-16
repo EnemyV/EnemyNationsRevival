@@ -439,13 +439,23 @@ static COLORREF plyrClrs[NUM_PLYR_COLORS] = {
     RGB( 199,  90,  90 ), RGB( 144,  90, 199 ), RGB( 199,  94,  50 ),
     RGB( 255, 178,   0 ) };
 
+COLORREF CPlayer::GetTeamColor( int iPlyrNum )
+{
+    return plyrClrs[iPlyrNum % NUM_PLYR_COLORS];
+}
+
+int CPlayer::GetNumTeamColors( )
+{
+    return NUM_PLYR_COLORS;
+}
+
 void CPlayer::SetPlyrNum( int iNum )
 {
 
     ASSERT_STRICT_VALID( this );
     m_iPlyrNum = iNum;
 
-    SetColor( plyrClrs[iNum % NUM_PLYR_COLORS] );
+    SetColor( GetTeamColor( iNum ) );
 }
 
 void CPlayer::StartGame( )

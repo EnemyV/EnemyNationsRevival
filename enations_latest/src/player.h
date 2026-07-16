@@ -106,6 +106,10 @@ class CPlayer : public CObject
     COLORREF GetRGBColor( ) const { return ( m_rgbPlyr ); }
     void     SetColor( COLORREF clr );
 
+    // shared 64-entry team palette (minimap + flags)
+    static COLORREF GetTeamColor( int iPlyrNum );
+    static int      GetNumTeamColors( );
+
     BYTE GetState( ) const
     {
         ASSERT_STRICT_VALID( this );

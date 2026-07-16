@@ -15,6 +15,7 @@
 #include "help.h"
 #include "error.h"
 #include "sfx.h"
+#include "enprobes.h"
 #include "SDL2CreateStatus.h"
 
 #include <process.h>  // _beginthreadex (replaces AfxBeginThread)
@@ -1120,6 +1121,54 @@ CEffect::Close() {
     delete[] m_ptrees;
 
     m_ptrees = NULL;
+
+    // m_pptrFlagClrs deliberately kept: clones own their storage and stay
+    // valid across collection reloads (process lifetime).
+}
+
+//-------------------------------------------------------------------------
+// CEffect::GetFlagSprite - flag matching the shared team palette. Colors
+// 0..base-1 are the shipped art (it matches plyrClrs[0..6]); beyond that a
+// recolored clone of variant 0 is synthesized once and cached.
+//-------------------------------------------------------------------------
+CEffectSprite *
+CEffect::GetFlagSprite(int iPlayer) {
+    int nBase = GetCount(flag);
+
+    ASSERT(0 < nBase);
+
+    if (0 >= nBase)
+        return NULL;
+    if (iPlayer < 0)
+        iPlayer = 0;
+
+    int nClrs = CPlayer::GetNumTeamColors();
+    int iClr = iPlayer % nClrs;
+
+    if (iClr < nBase)   // shipped art already matches the first palette entries
+        return GetSprite(flag, iClr);
+
+    // 8-bit palette build can't recolor: old wrap behavior
+    if (8 >= ptrthebltformat->GetBitsPerPixel())
+        return GetSprite(flag, iPlayer % nBase);
+
+    if (NULL == m_pptrFlagClrs) {
+        m_pptrFlagClrs = new Ptr<CSprite>[nClrs];
+
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+        char sz[128];
+        sprintf(sz, "[FLAGCLR] synthesizing flag variants: %d team colors (base art count %d)\n",
+                nClrs, nBase);
+        OutputDebugStringA(sz);
+#endif
+    }
+
+    if (NULL == m_pptrFlagClrs[iClr].Value())
+        m_pptrFlagClrs[iClr] = new CEffectSprite(*GetSprite(flag, 0),
+                                                 CPlayer::GetTeamColor(iClr),
+                                                 iClr % nBase);   // serialized index stays old-format
+
+    return (CEffectSprite *) m_pptrFlagClrs[iClr].Value();
 }
 
 //-------------------------------------------------------------------------
@@ -1725,6 +1774,220 @@ void CSprite::PostConstruct() {
 }
 
 //-------------------------------------------------------------------------
+// CSprite::CloneStorage - after a shallow copy-construct, deep-copy the header
+// block (views + CSpriteDIBs) and the decompressed pixel blocks so this sprite
+// owns distinct, writable storage (the GPU atlas keys on CSpriteDIB pointers).
+// Assumes views own their DIB arrays (true for effects - no CopyBase sharing)
+// and that the clone is never re-parsed via GetViewIndices.
+//-------------------------------------------------------------------------
+void CSprite::CloneStorage() {
+    BYTE *pbyOld = (BYTE *) m_ptrspritehdr.Value();
+
+    ASSERT(pbyOld);
+
+    if (!pbyOld)
+        return;
+
+    int nViews = GetNumViews();
+    int nSupers = GetNumSuperviews();
+    int i, j, k;
+
+    // the header block length isn't kept after load - recover it as the end of
+    // the farthest view (the fixed tables precede the views in the block)
+    long lHdrLen = (long) ((BYTE *) (m_piViewIndices + nViews) - pbyOld);
+
+    for (i = 0; i < nViews; ++i) {
+        CSpriteView *pv = GetSpriteView(i, FALSE);
+        long lEnd = m_piViewOffsets[i] + (long) sizeof(CSpriteView)
+                    + pv->m_nHotSpots * (long) sizeof(CHotSpot)
+                    + (pv->m_nBase + pv->m_nOverlay + pv->m_anAnim[0] + pv->m_anAnim[1]
+                       + pv->m_anAnim[2] + pv->m_anAnim[3]) * (long) sizeof(CSpriteDIB);
+
+        lHdrLen = __max(lHdrLen, lEnd);
+    }
+
+    BYTE *pbyNew = new BYTE[lHdrLen];
+    memcpy(pbyNew, pbyOld, lHdrLen);
+
+    m_ptrspritehdr = (CSpriteHdr *) pbyNew;   // drops the shared ref, owns the copy
+    m_psuperviewinfo = (CSuperviewInfo *) m_ptrspritehdr->m_abyTheRest;
+    m_piViewOffsets = (int *) (m_psuperviewinfo + nSupers);
+    m_piViewIndices = m_piViewOffsets + nViews;
+
+    // deep-copy the decompressed superview pixel blocks (same walk as the ctor)
+    int iFirstZoom = theApp.GetZoomData()->GetFirstZoom();
+    int iZoom, iSuper;
+    long lPixLen = 0;
+
+    for (iZoom = iFirstZoom; iZoom < NUM_ZOOM_LEVELS; iZoom++)
+        for (iSuper = 0; iSuper < nSupers; iSuper++)
+            lPixLen += m_psuperviewinfo[iSuper].m_alayoutinfo[iZoom].m_aiDecompressedLength[m_iBytesPerPixel - 1];
+
+    BYTE *pbyPix = new BYTE[lPixLen];
+
+    m_ptrbyDecompressedSuperviews = pbyPix;   // drops the shared ref, owns the copy
+
+    for (iZoom = NUM_ZOOM_LEVELS - 1; iZoom >= iFirstZoom; iZoom--)
+        for (iSuper = 0; iSuper < nSupers; iSuper++) {
+            long lBlock = m_psuperviewinfo[iSuper].m_alayoutinfo[iZoom].m_aiDecompressedLength[m_iBytesPerPixel - 1];
+
+            if (m_apbyDecompressedSuperviews[iZoom][iSuper])
+                memcpy(pbyPix, m_apbyDecompressedSuperviews[iZoom][iSuper], lBlock);
+            else
+                memset(pbyPix, 0, lBlock);
+
+            m_apbyDecompressedSuperviews[iZoom][iSuper] = pbyPix;
+            pbyPix += lBlock;
+        }
+
+    // rebase the copied views' intra-block pointers; DIB back-pointers via Init
+    for (i = 0; i < nViews; ++i) {
+        CSpriteView *pv = GetSpriteView(i, FALSE);
+
+        pv->m_psprite = this;
+        if (pv->m_photspots)
+            pv->m_photspots = (CHotSpot *) (pbyNew + ((BYTE *) pv->m_photspots - pbyOld));
+        if (pv->m_pspritedibBase)
+            pv->m_pspritedibBase = (CSpriteDIB *) (pbyNew + ((BYTE *) pv->m_pspritedibBase - pbyOld));
+        if (pv->m_pspritedibOverlay)
+            pv->m_pspritedibOverlay = (CSpriteDIB *) (pbyNew + ((BYTE *) pv->m_pspritedibOverlay - pbyOld));
+        for (k = 0; k < CSpriteView::ANIM_COUNT; ++k)
+            if (pv->m_apspritedibAnim[k])
+                pv->m_apspritedibAnim[k] = (CSpriteDIB *) (pbyNew + ((BYTE *) pv->m_apspritedibAnim[k] - pbyOld));
+
+        CSpriteDIBParms spritedibparms(0, m_iType, m_iBitsPerPixel);
+
+        spritedibparms.m_pspriteview = pv;
+
+        for (j = 0; j < pv->m_nBase; ++j) {
+            spritedibparms.m_uTime = pv->m_pspritedibBase[j].Time();
+            pv->m_pspritedibBase[j].Init(spritedibparms);
+        }
+        for (j = 0; j < pv->m_nOverlay; ++j) {
+            spritedibparms.m_uTime = pv->m_pspritedibOverlay[j].Time();
+            pv->m_pspritedibOverlay[j].Init(spritedibparms);
+        }
+        for (k = 0; k < CSpriteView::ANIM_COUNT; ++k)
+            for (j = 0; j < pv->m_anAnim[k]; ++j) {
+                spritedibparms.m_uTime = pv->m_apspritedibAnim[k][j].Time();
+                pv->m_apspritedibAnim[k][j].Init(spritedibparms);
+            }
+    }
+}
+
+//-------------------------------------------------------------------------
+// xRecolorClothChunk - one decompressed RLE frame chunk (layout per
+// CSpriteDIB::DecodeToRGBA: 2 header ints, H row offsets, then
+// [skip][len][pixels...] runs). Chromatic pixels -> clr scaled by value;
+// grays and transparency untouched.
+//-------------------------------------------------------------------------
+static void xRecolorClothChunk(BYTE *pbyData, long lLen, int H, int bpp, COLORREF clr) {
+    int const iChromaMin = 24;   // pole gray = 0 chroma; cloth is strongly chromatic
+
+    int *piRows = 2 + (int *) pbyData;
+    BYTE *pbyPixels = (BYTE *) (piRows + H);
+    BYTE *pbyEnd = pbyData + lLen;
+
+    for (int y = 0; y < H; ++y) {
+        if ((BYTE *) (piRows + y) + sizeof(int) > pbyEnd)
+            break;
+
+        BYTE *pbySrc = pbyPixels + piRows[y];
+
+        for (;;) {
+            if (pbySrc < pbyData || pbySrc + 2 * (int) sizeof(int) > pbyEnd)
+                break;
+
+            pbySrc += sizeof(int);              // transparent skip run - untouched
+
+            int nDataBytes = *(int *) pbySrc;
+            pbySrc += sizeof(int);
+
+            if (0 == nDataBytes)
+                break;
+            if (nDataBytes < 0 || pbySrc + nDataBytes > pbyEnd)
+                break;
+
+            for (BYTE *s = pbySrc; s + bpp <= pbySrc + nDataBytes; s += bpp) {
+                int iHi = __max(s[0], __max(s[1], s[2]));   // data is BGR(X)
+                int iLo = __min(s[0], __min(s[1], s[2]));
+
+                if (iHi - iLo > iChromaMin) {
+                    s[0] = (BYTE) ((GetBValue(clr) * iHi) / 255);
+                    s[1] = (BYTE) ((GetGValue(clr) * iHi) / 255);
+                    s[2] = (BYTE) ((GetRValue(clr) * iHi) / 255);
+                }
+            }
+
+            pbySrc += nDataBytes;
+        }
+    }
+}
+
+//-------------------------------------------------------------------------
+// CSprite::RecolorCloth - recolor all frames/zooms of an owned-storage clone
+// (call CloneStorage first). Truecolor RLE data only.
+//-------------------------------------------------------------------------
+void CSprite::RecolorCloth( COLORREF clr ) {
+    if (3 != m_iBytesPerPixel && 4 != m_iBytesPerPixel)
+        return;   // 8-bit palette data: keep the base art
+
+    int const nGroups = 2 + CSpriteView::ANIM_COUNT;
+    BYTE const *apbyDone[256];   // visit each chunk once
+    int nDone = 0;
+
+    int iFirstZoom = theApp.GetZoomData()->GetFirstZoom();
+    int bpp = m_iBytesPerPixel;
+
+    for (int i = 0; i < GetNumViews(); ++i) {
+        CSpriteView *pv = GetSpriteView(i, FALSE);
+
+        CSpriteDIB *apdibGroup[nGroups];
+        int anGroup[nGroups];
+
+        apdibGroup[0] = pv->m_pspritedibBase;
+        anGroup[0] = pv->m_nBase;
+        apdibGroup[1] = pv->m_pspritedibOverlay;
+        anGroup[1] = pv->m_nOverlay;
+        for (int k = 0; k < CSpriteView::ANIM_COUNT; ++k) {
+            apdibGroup[2 + k] = pv->m_apspritedibAnim[k];
+            anGroup[2 + k] = pv->m_anAnim[k];
+        }
+
+        for (int g = 0; g < nGroups; ++g)
+            for (int j = 0; j < anGroup[g]; ++j) {
+                CSpriteDIB &dib = apdibGroup[g][j];
+
+                for (int iZoom = iFirstZoom; iZoom < NUM_ZOOM_LEVELS; iZoom++) {
+                    BYTE *pbySuper = m_apbyDecompressedSuperviews[iZoom][pv->m_iSuperviewIndex];
+
+                    if (!pbySuper)
+                        continue;
+
+                    BYTE *pbyData = pbySuper + dib.Offset(iZoom);
+                    long lLen = dib.Length(iZoom);
+
+                    if (lLen <= 0)
+                        continue;
+
+                    BOOL bSeen = FALSE;
+                    for (int d = 0; d < nDone; ++d)
+                        if (apbyDone[d] == pbyData) {
+                            bSeen = TRUE;
+                            break;
+                        }
+                    if (bSeen)
+                        continue;
+                    if (nDone < 256)
+                        apbyDone[nDone++] = pbyData;
+
+                    xRecolorClothChunk(pbyData, lLen, dib.Height(iZoom), bpp, clr);
+                }
+            }
+    }
+}
+
+//-------------------------------------------------------------------------
 // CSprite::AddHotSpotKey
 //-------------------------------------------------------------------------
 void CSprite::AddHotSpotKey( CHotSpotKey const &hotspotkey ) {
@@ -2057,6 +2320,33 @@ CEffectSprite::CEffectSprite( CSpriteParms const &spriteparms ):
             m_apspriteview[BACKGROUND_LAYER]->Rect(i, rect);
         }
     }
+
+#ifdef _DEBUG
+    CheckValid();
+#endif
+}
+
+//---------------------------------------------------------------------------
+// CEffectSprite::CEffectSprite - team-color clone (extended flag palette).
+// Deep-copies storage so pixels AND CSpriteDIB identities are distinct (the
+// GPU atlas keys on the CSpriteDIB pointer), then recolors the cloth. iIndex
+// must stay in the base-art range: it's what CUnitTile::Serialize writes.
+//---------------------------------------------------------------------------
+CEffectSprite::CEffectSprite( CEffectSprite const &effectsprite, COLORREF clrCloth, int iIndex ):
+        CSprite( effectsprite ) {
+    SetIndex(iIndex);
+
+    CloneStorage();
+
+    // remap the layer views into the copied header block
+    BYTE *pbyOld = (BYTE *) effectsprite.m_ptrspritehdr.Value();
+    BYTE *pbyNew = (BYTE *) m_ptrspritehdr.Value();
+
+    for (int i = 0; i < NUM_BLDG_LAYERS; ++i)
+        m_apspriteview[i] = (NULL == effectsprite.m_apspriteview[i]) ? NULL :
+                (CSpriteView *) (pbyNew + ((BYTE *) effectsprite.m_apspriteview[i] - pbyOld));
+
+    RecolorCloth(clrCloth);
 
 #ifdef _DEBUG
     CheckValid();

@@ -248,6 +248,7 @@ struct CSpriteDIB
 	int				Width ( int iZoom ) const	{ return Rect( iZoom ).Width();  }
 	int				Height( int iZoom ) const	{ return Rect( iZoom ).Height();	}
 	long				Length( int iZoom ) const  { return m_adiblayoutinfo[ iZoom ].m_blockinfoDecompressed[ m_iBytesPerPixel - 1 ].m_lLength; }
+	long				Offset( int iZoom ) const  { return m_adiblayoutinfo[ iZoom ].m_blockinfoDecompressed[ m_iBytesPerPixel - 1 ].m_lOffset; }	// into the superview block
 
 	CRect	const &	Rect() 		 		  const	{ return m_arect[ xiZoom ]; }
 	int	  			X() 			 		  const	{ return Rect().left;		 }
@@ -699,6 +700,11 @@ protected:
 
 	void	ColorConvert( BYTE * pbyDst, BYTE const * pbySrc, long lLenDst, long	lLenSrc, int iZoom, int iSuperviewIndex );
 
+	// Team-color flag clones: deep-copy the shallow-shared storage (header block
+	// incl. CSpriteDIBs + decompressed pixel blocks), then recolor cloth pixels.
+	void	CloneStorage();
+	void	RecolorCloth( COLORREF clr );
+
 	int			m_iID;
 	int			m_iIndex;
 	int			m_iType;
@@ -736,6 +742,7 @@ class CEffectSprite : public CSprite
 public:
 
 	CEffectSprite( CSpriteParms const & );
+	CEffectSprite( CEffectSprite const &, COLORREF clrCloth, int iIndex );	// team-color clone
 
 	CSpriteView * GetView( int iLayer = CSprite::FOREGROUND_LAYER ) const
 	{

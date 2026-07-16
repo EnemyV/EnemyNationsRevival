@@ -355,6 +355,9 @@ class CEffect : public CSpriteStore<CEffectSprite>
         return m_ptrees + iIndex;
     }
 
+    // flag matching the team palette: base art for colors 0..6, synthesized beyond
+    CEffectSprite* GetFlagSprite( int iPlayer );
+
 #ifdef _DEBUG
     virtual void AssertValid( ) const;
 #endif
@@ -362,6 +365,8 @@ class CEffect : public CSpriteStore<CEffectSprite>
   private:
     int    m_nTrees;
     CTree* m_ptrees;
+
+    Ptr<CSprite>* m_pptrFlagClrs;  // lazy team-color flag clones, [GetNumTeamColors()]; survives Close()
 };
 
 

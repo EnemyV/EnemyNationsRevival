@@ -4797,7 +4797,8 @@ int CTransport::GetIndex( CTransportData const* pData ) const
 //--------------------------------------------------------------------------
 // CEffect::CEffect
 //--------------------------------------------------------------------------
-CEffect::CEffect( char const* pszRifName ): CSpriteStore<CEffectSprite>( pszRifName ), m_ptrees( NULL ), m_nTrees( 0 )
+CEffect::CEffect( char const* pszRifName ):
+    CSpriteStore<CEffectSprite>( pszRifName ), m_ptrees( NULL ), m_nTrees( 0 ), m_pptrFlagClrs( NULL )
 {
 }
 
@@ -4807,6 +4808,9 @@ CEffect::CEffect( char const* pszRifName ): CSpriteStore<CEffectSprite>( pszRifN
 CEffect::~CEffect( )
 {
     Close( );
+
+    delete[] m_pptrFlagClrs;
+    m_pptrFlagClrs = NULL;
 }
 
 //--------------------------------------------------------------------------
@@ -4874,11 +4878,10 @@ void CFlag::Init( int iPlayer )
 {
     m_iPlayer = iPlayer;
 
-    int nSprites = theEffects.GetCount( CEffect::flag );
+    // matches the minimap's 64-color team palette (base art for colors 0..6)
+    m_psprite = theEffects.GetFlagSprite( m_iPlayer );
 
-    ASSERT( 0 < nSprites );
-
-    m_psprite = theEffects.GetSprite( CEffect::flag, m_iPlayer % nSprites );
+    ASSERT( m_psprite );
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -6087,6 +6090,11 @@ void CFlag::Serialize( CArchive& ar )
         ar >> l;
 
         m_iPlayer = l;
+
+        // saves carry only base-art sprite indices (old-build compatible);
+        // re-resolve the extended team color from the player number
+        if ( 0 <= m_iPlayer )
+            m_psprite = theEffects.GetFlagSprite( m_iPlayer );
     }
 }
 
