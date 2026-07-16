@@ -1772,28 +1772,32 @@ POSITION CAIUnitList::AddTail( CObject* pObj )
     return CObList::AddTail( pObj );
 }
 
+// index maintenance on REMOVAL is by VALUE, never by deref: borrowed lists
+// (m_plBldgsNeed / m_plTrucksAvailable) hold pointers that may already be
+// FREED (soak97 AV: RemoveHead's GetID() read 0xDD fill off a dead head).
+// Objects being ADDED are alive by contract, so AddTail keeps its deref.
+static void xIndexEraseByValue( std::unordered_map<DWORD, CAIUnit*>& index, CAIUnit* pUnit )
+{
+    if ( pUnit == NULL )
+        return;
+    for ( std::unordered_map<DWORD, CAIUnit*>::iterator it = index.begin( ); it != index.end( ); ++it )
+        if ( it->second == pUnit )  // pointer compare only - pUnit may be freed
+        {
+            index.erase( it );
+            return;
+        }
+}
+
 void CAIUnitList::RemoveAt( POSITION pos )
 {
-    CAIUnit* pUnit = (CAIUnit*)GetAt( pos );
-    if ( pUnit != NULL )
-    {
-        std::unordered_map<DWORD, CAIUnit*>::iterator it = m_index.find( pUnit->GetID( ) );
-        if ( it != m_index.end( ) && it->second == pUnit )
-            m_index.erase( it );
-    }
+    xIndexEraseByValue( m_index, (CAIUnit*)GetAt( pos ) );
     CObList::RemoveAt( pos );
 }
 
 CObject* CAIUnitList::RemoveHead( void )
 {
-    CObject* pObj  = CObList::RemoveHead( );
-    CAIUnit* pUnit = (CAIUnit*)pObj;
-    if ( pUnit != NULL )
-    {
-        std::unordered_map<DWORD, CAIUnit*>::iterator it = m_index.find( pUnit->GetID( ) );
-        if ( it != m_index.end( ) && it->second == pUnit )
-            m_index.erase( it );
-    }
+    CObject* pObj = CObList::RemoveHead( );
+    xIndexEraseByValue( m_index, (CAIUnit*)pObj );
     return pObj;
 }
 
