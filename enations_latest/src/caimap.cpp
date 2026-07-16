@@ -1411,40 +1411,11 @@ void CAIMap::ClaimBridge( CHexCoord const& hexStart, CHexCoord const& hexEnd )
 // server refused the span (end-base check): unmark its hexes so road cranes
 // skip it and deny replanning from that bank for 30 min
 //
-// a completed bridge hex CONSUMES the leftover crossing marks around it: the
-// +/-1..3 shift corridor and PlanBridgeToward's slide leave planned WATER
-// hexes that can never be paved - scanners re-picked them forever (416,832
-// selected 399x) and adjacent picks built DUPLICATE parallel spans (205/206,38)
-void CAIMap::ConsumeCrossingMarks( CHexCoord const& hexDone )
-{
-	int iCleared = 0;
-	for( int dy = -3; dy <= 3; ++dy )
-	{
-		for( int dx = -3; dx <= 3; ++dx )
-		{
-			CHexCoord hex( CHexCoord::Wrap( hexDone.X() + dx ), CHexCoord::Wrap( hexDone.Y() + dy ) );
-			int iOff = m_pMapUtil->GetMapOffset( hex.X(), hex.Y() );
-			if( iOff < 0 || iOff >= m_iMapSize || !( m_pwaMap[iOff] & MSW_PLANNED_ROAD ) )
-				continue;
-			CHex* pGameHex = theMap.GetHex( hex );
-			if( pGameHex == NULL || !pGameHex->IsWater() )
-				continue;
-			m_pwaMap[iOff] &= ~MSW_PLANNED_ROAD;
-			if( m_iRoadCount > 0 )
-				m_iRoadCount--;
-			++iCleared;
-		}
-	}
-#if EN_AI_PROBES_ECON && defined(_WIN32)
-	if( iCleared )
-	{
-		char szC[112];
-		sprintf( szC, "[CONSUME] plyr %d bridge done %d,%d cleared %d leftover crossing marks\n",
-			m_iPlayer, hexDone.X(), hexDone.Y(), iCleared );
-		OutputDebugStringA( szC );
-	}
-#endif
-}
+// REMOVED (operator order, 2026-07-16): ConsumeCrossingMarks cleared planned
+// WATER marks within 3 of ANY completed bridge - which also erased WANTED
+// nearby planned crossings (redundant/parallel bridges are GOOD: more
+// crossings = fewer stuck vehicles). A completed impromptu bridge could
+// silently suppress a pending planned bridge beside it.
 
 void CAIMap::DenyBridge( CHexCoord const& hexStart, CHexCoord const& hexEnd )
 {

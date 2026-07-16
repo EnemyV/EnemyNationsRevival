@@ -1571,8 +1571,6 @@ void CAIMgr::UpdateUnits( CAIMsg* pMsg )
             if ( bBridgeHex )
             {
                 m_pMap->m_pMapUtil->ClearFailedSiteTemps( );
-                // the completed span consumes its leftover corridor marks
-                m_pMap->ConsumeCrossingMarks( hexDone );
 #if EN_AI_PROBES_ECON && defined(_WIN32)
                 {
                     char szR[112];

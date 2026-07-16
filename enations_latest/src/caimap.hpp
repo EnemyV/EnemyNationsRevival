@@ -140,7 +140,6 @@ public:
 	// a COMPLETED bridge hex consumes leftover crossing marks around it (the
 	// +/-1..3 shift corridor + slide marks) - they can never be paved and fed
 	// endless re-selection + DUPLICATE parallel bridges
-	void ConsumeCrossingMarks( CHexCoord const& hexDone );
 	std::map<int, DWORD> m_mBridgeDeny;	// bank map-offset -> denied-until ms (transient)
 	// offsets whose MSW_PLANNED_ROAD mark came from PlanBridgeToward (impromptu),
 	// NOT the road planner - the two were indistinguishable, which broke every
