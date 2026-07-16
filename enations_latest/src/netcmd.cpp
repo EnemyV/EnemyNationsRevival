@@ -875,19 +875,38 @@ CMsgVehLoc::CMsgVehLoc( CMsgVehCompLocElem const* pElem ): _CMsgVehGo( veh_loc )
     m_bOnWater = pElem->m_bFlags & CMsgVehCompLocElem::_on_water;
 }
 
+// clamp helper for the compact encoder below
+static inline int xClampLoc( int i, int iLo, int iHi )
+{
+    return ( i < iLo ) ? iLo : ( ( i > iHi ) ? iHi : i );
+}
+
 const CMsgVehCompLocElem CMsgVehCompLocElem::operator=( CVehicle const& src )
 {
-
-    if ( src.GetTurret( ) )
-        TRAP( ( src.GetTurret( )->GetDir( ) < 0 ) || ( 256 <= src.GetTurret( )->GetDir( ) ) );
-    TRAP( ( src.m_iDir < 0 ) || ( 256 <= src.m_iDir ) );
-    TRAP( ( src.m_iXadd < -127 ) || ( 127 <= src.m_iXadd ) );
-    TRAP( ( src.m_iYadd < -127 ) || ( 127 <= src.m_iYadd ) );
-    TRAP( ( src.m_iDadd < -127 ) || ( 127 <= src.m_iDadd ) );
-    TRAP( ( src.m_iTadd < -127 ) || ( 127 <= src.m_iTadd ) );
-    TRAP( ( src.m_iDir < 0 ) || ( 256 <= src.m_iDir ) );
-    TRAP( ( src.m_iStepsLeft < 0 ) || ( 256 <= src.m_iStepsLeft ) );
-    TRAP( ( src.m_iSpeed < 0 ) || ( 256 <= src.m_iSpeed ) );
+    // 1996 range TRAPs retired (EN_TRAP_REMOVED class): one out-of-range
+    // field (609 - a bypassing writer, producer unconvicted; soak94 crash,
+    // full dump 20260716_080334) killed a war game 45 min in. Encode with
+    // wrap/clamp instead (worst case: a one-step visual stutter on ONE
+    // vehicle) and log EVERY raw field so the next occurrence NAMES its
+    // producer - the evidence the dump alone could not give.
+    {
+        int iTur = src.GetTurret( ) ? src.GetTurret( )->GetDir( ) : 0;
+        if ( ( iTur < 0 || 256 <= iTur ) || ( src.m_iDir < 0 || 256 <= src.m_iDir ) ||
+             ( src.m_iXadd < -127 || 127 <= src.m_iXadd ) || ( src.m_iYadd < -127 || 127 <= src.m_iYadd ) ||
+             ( src.m_iDadd < -127 || 127 <= src.m_iDadd ) || ( src.m_iTadd < -127 || 127 <= src.m_iTadd ) ||
+             ( src.m_iStepsLeft < 0 || 256 <= src.m_iStepsLeft ) || ( src.m_iSpeed < 0 || 256 <= src.m_iSpeed ) )
+        {
+            EN_TRAP_REMOVED( "CompLocElem: field out of encoding range - clamped (producer probe below)" );
+#if defined(_WIN32)
+            char szL[224];
+            sprintf( szL,
+                     "[COMPLOC-RANGE] veh %lu dir %d tur %d adds %d/%d/%d/%d steps %d speed %d mode %d ev %d\n",
+                     (unsigned long)src.GetID( ), src.m_iDir, iTur, src.m_iXadd, src.m_iYadd, src.m_iDadd,
+                     src.m_iTadd, src.m_iStepsLeft, src.m_iSpeed, src.GetRouteMode( ), src.GetEvent( ) );
+            OutputDebugStringA( szL );
+#endif
+        }
+    }
 
     m_dwID      = src.GetID( );
     m_wDestX    = (WORD)src.m_ptDest.x;
@@ -902,16 +921,16 @@ const CMsgVehCompLocElem CMsgVehCompLocElem::operator=( CVehicle const& src )
     m_wHexNextY = (WORD)src.m_hexNext.Y( );
     m_wHexDestX = (WORD)src.m_hexDest.X( );
     m_wHexDestY = (WORD)src.m_hexDest.Y( );
-    m_bDir      = (BYTE)src.m_iDir;
+    m_bDir      = (BYTE)( src.m_iDir & 0xFF );  // directions wrap
     if ( src.GetTurret( ) )
-        m_bTurretDir = (BYTE)src.GetTurret( )->GetDir( );
-    m_cXadd      = (signed char)src.m_iXadd;
-    m_cYadd      = (signed char)src.m_iYadd;
-    m_cDadd      = (signed char)src.m_iDadd;
-    m_cTadd      = (signed char)src.m_iTadd;
+        m_bTurretDir = (BYTE)( src.GetTurret( )->GetDir( ) & 0xFF );
+    m_cXadd      = (signed char)xClampLoc( src.m_iXadd, -127, 127 );
+    m_cYadd      = (signed char)xClampLoc( src.m_iYadd, -127, 127 );
+    m_cDadd      = (signed char)xClampLoc( src.m_iDadd, -127, 127 );
+    m_cTadd      = (signed char)xClampLoc( src.m_iTadd, -127, 127 );
     m_bMode      = (BYTE)src.GetRouteMode( );
-    m_bStepsLeft = (BYTE)src.m_iStepsLeft;
-    m_bSpeed     = (BYTE)src.m_iSpeed;
+    m_bStepsLeft = (BYTE)xClampLoc( src.m_iStepsLeft, 0, 255 );
+    m_bSpeed     = (BYTE)xClampLoc( src.m_iSpeed, 0, 255 );
 
     m_bFlags = src.GetHexOwnership( ) ? _own : 0;
     if ( src.IsOnWater( ) )
