@@ -131,7 +131,7 @@ int CConquerApp::Run( )
             // unless EN_PERF is set; flushes a perf.log line each interval.
             Perf::FrameMark();
 
-#if EN_AI_PROBES_WAR && defined(_WIN32)
+#if EN_PERF_PROBES && defined(_WIN32)
             {
                 // hang-regression probe (operator: transient freezes, days-old):
                 // one line whenever a MAIN-loop iteration gap exceeds 400ms;
@@ -613,7 +613,7 @@ void CConquerApp::ProcessAllMessages( DWORD dwBudgetMs )
             LeaveCriticalSection( &cs );
             break;
         }
-#if EN_AI_PROBES_WAR && defined(_WIN32)
+#if EN_PERF_PROBES && defined(_WIN32)
         {
             // hang-regression probe: the drain budget checks BETWEEN messages,
             // so one slow handler = one multi-second frame (t=632: 9,958ms in
@@ -1298,7 +1298,7 @@ void CConquerApp::GraphicsEnginePump( )
             CBuilding* pBldg;
             theBuildingMap.GetNextAssoc( pos, dwID, pBldg );
             ASSERT_STRICT_VALID( pBldg );
-#if EN_AI_PROBES_WAR && defined(_WIN32)
+#if EN_PERF_PROBES && defined(_WIN32)
             {
                 // lag probe: perf.log shows the recurring ~10s frames spend
                 // ~10,000ms in THIS loop (operB) - name the building

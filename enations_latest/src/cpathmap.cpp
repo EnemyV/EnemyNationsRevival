@@ -40,11 +40,11 @@ CHexCoord *CPathMap::GetRoadPath(
 	// Per-SEARCH counter ops only — CounterInc takes a global CS, so a
 	// per-node counter in AddCellToArray would serialize the AI threads.
 	Perf::ScopeCounter _t( "pathr.us" );
-#if EN_AI_PROBES_WAR && defined(_WIN32)
+#if EN_PERF_PROBES && defined(_WIN32)
 	DWORD dwT0 = timeGetTime( );
 #endif
 	EnterCriticalSection (&m_cs);
-#if EN_AI_PROBES_WAR && defined(_WIN32)
+#if EN_PERF_PROBES && defined(_WIN32)
 	DWORD dwT1 = timeGetTime( );
 #endif
 	m_iNextSlot = 0;	// early-outs skip the in-search reset; don't re-count
@@ -54,7 +54,7 @@ CHexCoord *CPathMap::GetRoadPath(
 	Perf::CounterAdd( "pathr.nodes", m_iNextSlot );	// cells created this search
 	int iCellsUsed = m_iNextSlot;
 	LeaveCriticalSection (&m_cs);
-#if EN_AI_PROBES_WAR && defined(_WIN32)
+#if EN_PERF_PROBES && defined(_WIN32)
 	{
 		// hang-regression probe: road planning with the war budget can pop
 		// 65k nodes on an unreachable target - name any >200ms stall
@@ -315,11 +315,11 @@ BOOL CPathMap::GetPath( CHexCoord& hexFrom, CHexCoord& hexTo,
 	// (many calls, few nodes) -> cache quantization; node-bound (few calls,
 	// many nodes) -> scratch/world-read structure work.
 	Perf::ScopeCounter _t( "path.us" );
-#if EN_AI_PROBES_WAR && defined(_WIN32)
+#if EN_PERF_PROBES && defined(_WIN32)
 	DWORD dwT0 = timeGetTime( );
 #endif
 	EnterCriticalSection (&m_cs);
-#if EN_AI_PROBES_WAR && defined(_WIN32)
+#if EN_PERF_PROBES && defined(_WIN32)
 	DWORD dwT1 = timeGetTime( );
 #endif
 	m_iNextSlot = 0;	// early-outs skip the in-search reset; don't re-count
@@ -329,7 +329,7 @@ BOOL CPathMap::GetPath( CHexCoord& hexFrom, CHexCoord& hexTo,
 	Perf::CounterAdd( "path.nodes", m_iNextSlot );	// cells created this search
 	int iCellsUsed = m_iNextSlot;
 	LeaveCriticalSection (&m_cs);
-#if EN_AI_PROBES_WAR && defined(_WIN32)
+#if EN_PERF_PROBES && defined(_WIN32)
 	{
 		// hang-regression probe: name any search that stalls a caller >200ms
 		// (wait = lock contention, work = the flood itself)
