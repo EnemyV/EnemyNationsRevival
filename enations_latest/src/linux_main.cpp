@@ -14,6 +14,9 @@
 #include <SDL.h>
 
 #include <cstdlib>   // getenv (EN_MAC_USABLE_FULLSCREEN opt-in)
+#include <cstring>   // strrchr (exe-dir cwd anchor)
+#include <climits>   // PATH_MAX
+#include <unistd.h>  // chdir
 #include <string>
 
 extern "C" int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
@@ -22,6 +25,21 @@ extern "C" int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
 int main(int argc, char** argv) {
     // We own main(); tell SDL not to expect its own entry shim.
     SDL_SetMainReady();
+
+    // Anchor the working directory to the executable's own directory so the game
+    // finds its co-located ENations.dat / data/ / res/ no matter how it was launched.
+    // The data pipeline (CDataFile) resolves paths relative to cwd, but Finder
+    // double-clicks and absolute-path launches start with cwd = "/" or $HOME, which
+    // threw ERR_DATAFILE_NO_ENTRY. GetModuleFileNameA already resolves the exe path
+    // via _NSGetExecutablePath (mac) / /proc/self/exe (Linux). No-op when cwd is
+    // already the package dir (the previous working "cd in first" launch path).
+    {
+        char exePath[PATH_MAX];
+        if ( GetModuleFileNameA( NULL, exePath, sizeof(exePath) ) > 0 ) {
+            char* slash = strrchr( exePath, '/' );
+            if ( slash ) { *slash = '\0'; (void)chdir( exePath ); }
+        }
+    }
 
     // Pick the launch resolution. The engine only renders correctly at its
     // designed fixed sizes (≤ 1280x1024) — running at an arbitrary desktop size
