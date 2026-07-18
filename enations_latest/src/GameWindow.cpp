@@ -413,18 +413,19 @@ bool GameWindow::InitializeSDL() {
     int winX = 0, winY = 0;
 #ifndef _WIN32
 #ifdef __APPLE__
-    // #47 symptom-5 (opt-in, default OFF): EN_MAC_USABLE_FULLSCREEN makes the game a
-    // borderless window sized+positioned to the display's USABLE bounds (which exclude
-    // the Dock + menu bar) instead of a true FULLSCREEN_DESKTOP window. A borderless
-    // fullscreen-desktop window with Spaces disabled covers the Dock's screen rect, but
-    // the Dock (a higher-level system element) draws ON TOP of the game's bottom edge,
-    // and the fullscreen style can swallow Cmd-Tab. A usable-bounds window leaves the
-    // Dock/menu-bar untouched (no overlap), stays a normal window (Cmd-Tab works), and —
-    // not being a fullscreen Space — still lets the ALWAYS_ON_TOP panels overlay. The
-    // matching engine render size is set in linux_main.cpp under the SAME env flag, so
-    // metrics/window/back-buffer stay consistent (no terrain-rasterizer mismatch).
+    // #47 symptom-5 (default ON as of 3.00.006): the game is a borderless window
+    // sized+positioned to the display's USABLE bounds (which exclude the Dock + menu bar)
+    // instead of a true FULLSCREEN_DESKTOP window. A fullscreen-desktop window relies on the
+    // menu-bar/Dock auto-hide (#70) to expose the full screen height; that auto-hide is
+    // machine-dependent, and where it doesn't fire the bottom UI row is pushed off-screen
+    // (operator repro, 3.00.006). A usable-bounds window fits under the menu bar / above the
+    // Dock unconditionally (no overlap), stays a normal window (Cmd-Tab works), and — not
+    // being a fullscreen Space — still lets the ALWAYS_ON_TOP panels overlay. The matching
+    // engine render size is set in linux_main.cpp under the SAME default, so metrics/window/
+    // back-buffer stay consistent (no terrain-rasterizer mismatch). EN_MAC_USABLE_FULLSCREEN=0
+    // opts back into the old full-desktop behavior.
     const char* usableFs = getenv("EN_MAC_USABLE_FULLSCREEN");
-    const bool usableMode = wantFullscreen && usableFs && usableFs[0] && usableFs[0] != '0';
+    const bool usableMode = wantFullscreen && !(usableFs && usableFs[0] == '0');
     if (usableMode) {
         SDL_Rect usable;
         if (SDL_GetDisplayUsableBounds(0, &usable) == 0 && usable.w > 0 && usable.h > 0) {
