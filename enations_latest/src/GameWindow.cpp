@@ -358,8 +358,20 @@ static void HideMacDockBar() {
     auto sel    = [](const char* n) { return sel_registerName(n); };
     auto send0  = (void* (*)(void*, void*))objc_msgSend;
     auto sendUL = (void  (*)(void*, void*, unsigned long))objc_msgSend;
+    auto sendL  = (void  (*)(void*, void*, long))objc_msgSend;
+    auto sendB  = (void  (*)(void*, void*, bool))objc_msgSend;
     void* app = send0(cls("NSApplication"), sel("sharedApplication"));
     if (!app) return;
+    // NSApplicationPresentation* options only take effect while the app is the ACTIVE,
+    // regular-policy application. A binary launched from Terminal (not a .app bundle)
+    // can come up as an accessory/background process on some machines (operator's
+    // MacBook host: menu bar never auto-hid, so the full-desktop window's bottom UI row
+    // fell off-screen) — there setPresentationOptions: silently no-ops. Force a regular,
+    // frontmost app FIRST so the menu-bar/Dock auto-hide actually applies. Idempotent, so
+    // the focus-gain re-apply path is safe too. (Works already on the VM where the app
+    // came up active; this makes it deterministic everywhere.)
+    sendL(app, sel("setActivationPolicy:"), 0L);                 // NSApplicationActivationPolicyRegular
+    sendB(app, sel("activateIgnoringOtherApps:"), true);         // become frontmost
     // NSApplicationPresentationAutoHideDock (1<<0) | AutoHideMenuBar (1<<2).
     const unsigned long opts = (1UL << 0) | (1UL << 2);
     sendUL(app, sel("setPresentationOptions:"), opts);
