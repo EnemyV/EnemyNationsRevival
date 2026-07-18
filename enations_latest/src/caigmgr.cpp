@@ -9129,14 +9129,16 @@ TryTryAgain:
     {
         hcAt.Y( hcAt.Wrap( hcStart.Y( ) + iY ) );
 
+#if THREADS_ENABLED
+        // yield once per row, not per hex - the per-hex yield made
+        // block-size rescans thousands of syscalls per scan
+        myYieldThread( );
+        // if( myYieldThread() == TM_QUIT )
+        //	throw(ERR_CAI_TM_QUIT); // THROW( pException );
+#endif
+
         for ( iX = 0; iX < iDeltaX; iX++ )
         {
-#if THREADS_ENABLED
-            // BUGBUG this function must yield
-            myYieldThread( );
-            // if( myYieldThread() == TM_QUIT )
-            //	throw(ERR_CAI_TM_QUIT); // THROW( pException );
-#endif
             hcAt.X( hcAt.Wrap( hcStart.X( ) + iX ) );
 
             pGameHex = theMap.GetHex( hcAt );
@@ -9603,6 +9605,479 @@ TryTryAgain:
         goto TryTryAgain;
     }
     return ( dwSeekTo );
+}
+
+//
+// single-pass replacement for SeekOpfor's ladder of GetOpForUnit calls.
+// One area escalation evaluates every target class at once; a class's
+// result freezes at the smallest area that contains a candidate for it,
+// which reproduces the per-rung ladder's answers (each rung returned its
+// class's best at the smallest area containing that class) while paying
+// the escalation and the per-candidate path checks once instead of once
+// per rung. Class priority = array order, same as the old ladder order.
+// Per-class escalation caps preserved: THREAT/BEST stop at spotting,
+// NEAREST goes on to block size and the whole-unit-list fallback (which,
+// as in the original, ignores iKindOf - "regardless of type").
+//
+DWORD CAIGoalMgr::GetOpForUnitScan( int const* aiHow, int const* aiKindOf, int nClasses, CAIUnit* pUnit, int* piClassSel )
+{
+    if ( piClassSel != NULL )
+        *piClassSel = -1;
+    if ( pUnit->GetOwner( ) != m_iPlayer )
+        return ( 0 );
+    if ( nClasses <= 0 || nClasses > 8 )
+        return ( 0 );
+
+    int       iArea = 0;
+    int       iSpotting = 0;
+    CHexCoord hexUnit;
+    int       iAttackTypes[CUnitData::num_attacks];
+    memset( iAttackTypes, 0, sizeof( iAttackTypes ) );
+
+    // seeker location, ranges and attack capabilities (as GetOpForUnit)
+    if ( pUnit->GetType( ) == CUnit::vehicle )
+    {
+        EnterCriticalSection( &cs );
+        CVehicle* pVehicle = theVehicleMap.GetVehicle( pUnit->GetID( ) );
+        if ( pVehicle != NULL )
+        {
+            hexUnit   = pVehicle->GetHexHead( );
+            iArea     = pVehicle->GetRange( ) * 2;
+            iSpotting = pVehicle->GetSpottingRange( );
+
+            iAttackTypes[CUnitData::soft]  = pVehicle->GetAttack( CUnitData::soft );
+            iAttackTypes[CUnitData::hard]  = pVehicle->GetAttack( CUnitData::hard );
+            iAttackTypes[CUnitData::naval] = pVehicle->GetAttack( CUnitData::naval );
+        }
+        else
+            iArea = 0;
+        LeaveCriticalSection( &cs );
+    }
+    else if ( pUnit->GetType( ) == CUnit::building )
+    {
+        EnterCriticalSection( &cs );
+        CBuilding* pBldg = theBuildingMap.GetBldg( pUnit->GetID( ) );
+        if ( pBldg != NULL )
+        {
+            hexUnit   = pBldg->GetExitHex( );
+            iArea     = pBldg->GetRange( );
+            iSpotting = pBldg->GetSpottingRange( );
+
+            iAttackTypes[CUnitData::soft]  = pBldg->GetAttack( CUnitData::soft );
+            iAttackTypes[CUnitData::hard]  = pBldg->GetAttack( CUnitData::hard );
+            iAttackTypes[CUnitData::naval] = pBldg->GetAttack( CUnitData::naval );
+        }
+        else
+            iArea = 0;
+        LeaveCriticalSection( &cs );
+    }
+    else
+        return ( 0 );
+
+    BOOL bAnyNearest = FALSE;
+    int  c;
+    for ( c = 0; c < nClasses; ++c )
+        if ( aiHow[c] == NEAREST_TARGET )
+            bAnyNearest = TRUE;
+
+    // strictly-growing escalation levels: range, spotting, then (NEAREST
+    // classes only) blk/4, blk/2, blk - the vanilla TryTryAgain chain
+    int aiLevels[8];
+    int nLevels = 0;
+    aiLevels[nLevels++] = iArea;
+    if ( iSpotting > iArea )
+        aiLevels[nLevels++] = iSpotting;
+    int iSpotLevel = nLevels - 1;  // last level THREAT/BEST classes may use
+    if ( bAnyNearest )
+    {
+        for ( int iFactor = 4; iFactor >= 1; iFactor /= 2 )
+        {
+            int iA = pGameData->m_iHexPerBlk / iFactor;
+            if ( iA > aiLevels[nLevels - 1] )
+                aiLevels[nLevels++] = iA;
+        }
+    }
+
+    DWORD adwSel[8];
+    int   aiScore[8];
+    BOOL  abFrozen[8];
+    for ( c = 0; c < nClasses; ++c )
+    {
+        adwSel[c]   = 0;
+        abFrozen[c] = FALSE;
+        aiScore[c]  = ( aiHow[c] == NEAREST_TARGET ) ? 0xFFFE : 0;
+    }
+
+    CHexCoord             hcStart, hcEnd, hcAt;
+    CSubHex               sub( hcAt );
+    CStructureData const* pSd;
+    CTransportData const* pTd;
+    int                   i;
+
+    for ( int iLvl = 0; iLvl < nLevels; ++iLvl )
+    {
+        int  iA    = aiLevels[iLvl];
+        BOOL bWork = FALSE;
+        for ( c = 0; c < nClasses; ++c )
+            if ( !abFrozen[c] && ( aiHow[c] == NEAREST_TARGET || iLvl <= iSpotLevel ) )
+                bWork = TRUE;
+        if ( !bWork )
+            break;
+
+        hcStart.X( hcAt.Wrap( hexUnit.X( ) - iA ) );
+        hcStart.Y( hcAt.Wrap( hexUnit.Y( ) - iA ) );
+        hcEnd.X( hcAt.Wrap( hexUnit.X( ) + iA ) );
+        hcEnd.Y( hcAt.Wrap( hexUnit.Y( ) + iA ) );
+
+        int iDeltaX = hcStart.Wrap( hcEnd.X( ) - hcStart.X( ) );
+        int iDeltaY = hcStart.Wrap( hcEnd.Y( ) - hcStart.Y( ) );
+
+        for ( int iY = 0; iY < iDeltaY; ++iY )
+        {
+            hcAt.Y( hcAt.Wrap( hcStart.Y( ) + iY ) );
+
+#if THREADS_ENABLED
+            // yield once per row (see GetOpForUnit)
+            myYieldThread( );
+#endif
+
+            for ( int iX = 0; iX < iDeltaX; iX++ )
+            {
+                hcAt.X( hcAt.Wrap( hcStart.X( ) + iX ) );
+
+                CHex* pGameHex = theMap.GetHex( hcAt );
+                if ( pGameHex == NULL )
+                    continue;
+
+                BYTE bUnits = pGameHex->GetUnits( );
+                if ( !( bUnits & CHex::unit ) )
+                    continue;
+
+                // ---- occupant extraction, once per hex ----
+                DWORD dwVehID   = 0;
+                int   iVehOwner = 0;
+                DWORD dwBldgID   = 0;
+                int   iBldgOwner = 0;
+
+                // first non-own, non-cargo vehicle in the hex (vanilla subhex order)
+                if ( !( bUnits & CHex::bldg ) && ( bUnits & ( CHex::ul | CHex::ur | CHex::ll | CHex::lr ) ) )
+                {
+                    BOOL bIsCargo = FALSE;
+                    CVehicle* pVehicle = NULL;
+                    for ( int iy = 0; iy < 2 && pVehicle == NULL; ++iy )
+                    {
+                        sub.y = ( hcAt.Y( ) * 2 ) + iy;
+                        for ( int ix = 0; ix < 2; ++ix )
+                        {
+                            sub.x = ( hcAt.X( ) * 2 ) + ix;
+                            EnterCriticalSection( &cs );
+                            pVehicle = theVehicleHex.GetVehicle( sub.x, sub.y );
+                            if ( pVehicle != NULL )
+                            {
+                                iVehOwner = pVehicle->GetOwner( )->GetPlyrNum( );
+                                dwVehID   = pVehicle->GetID( );
+                                bIsCargo  = ( pVehicle->GetTransport( ) != NULL );
+                            }
+                            LeaveCriticalSection( &cs );
+
+                            if ( pVehicle != NULL && iVehOwner == m_iPlayer )
+                            {
+                                dwVehID  = 0;
+                                pVehicle = NULL;
+                                continue;
+                            }
+                            break;
+                        }
+                    }
+                    if ( dwVehID && ( iVehOwner == m_iPlayer || bIsCargo ) )
+                        dwVehID = 0;
+                }
+
+                if ( bUnits & CHex::bldg )
+                {
+                    int  iType       = -1;
+                    BOOL bIsAbandoned = FALSE;
+                    EnterCriticalSection( &cs );
+                    CBuilding* pBuilding = theBuildingHex.GetBuilding( hcAt );
+                    if ( pBuilding != NULL )
+                    {
+                        iBldgOwner   = pBuilding->GetOwner( )->GetPlyrNum( );
+                        iType        = pBuilding->GetData( )->GetType( );
+                        dwBldgID     = pBuilding->GetID( );
+                        bIsAbandoned = pBuilding->IsFlag( CUnit::abandoned );
+                    }
+                    LeaveCriticalSection( &cs );
+
+                    if ( dwBldgID && ( iBldgOwner == m_iPlayer || bIsAbandoned || iType == CStructureData::city ) )
+                        dwBldgID = 0;
+                }
+
+                if ( !dwVehID && !dwBldgID )
+                    continue;
+
+                BOOL bPathChecked = FALSE;
+                BOOL bPathOK      = FALSE;
+
+                // ---- apply the candidate to every unfrozen class ----
+                for ( c = 0; c < nClasses; ++c )
+                {
+                    if ( abFrozen[c] )
+                        continue;
+                    if ( aiHow[c] != NEAREST_TARGET && iLvl > iSpotLevel )
+                        continue;
+
+                    int   iKindOf = aiKindOf[c];
+                    DWORD dwCand  = 0;
+                    int   iOwner  = 0;
+                    BOOL  bIsVeh  = FALSE;
+
+                    // vanilla branch gating: vehicles for soft/naval/any (vehicle
+                    // wins a mixed hex for 'any'), buildings for hard/any
+                    if ( iKindOf == CAI_SOFTATTACK || iKindOf == CAI_NAVALATTACK )
+                    {
+                        if ( dwVehID ) { dwCand = dwVehID; iOwner = iVehOwner; bIsVeh = TRUE; }
+                    }
+                    else if ( iKindOf == CAI_HARDATTACK )
+                    {
+                        if ( dwBldgID ) { dwCand = dwBldgID; iOwner = iBldgOwner; }
+                    }
+                    else  // any
+                    {
+                        if ( dwVehID )      { dwCand = dwVehID;  iOwner = iVehOwner; bIsVeh = TRUE; }
+                        else if ( dwBldgID ) { dwCand = dwBldgID; iOwner = iBldgOwner; }
+                    }
+                    if ( !dwCand )
+                        continue;
+
+                    CAIOpFor* pOpFor = m_plOpFors->GetOpFor( iOwner );
+                    if ( pOpFor == NULL )
+                        continue;
+                    if ( pOpFor->IsAI( ) && !pOpFor->AtWar( ) )
+                        continue;
+                    if ( m_plUnits->GetOpForUnit( dwCand ) == NULL )
+                        continue;
+
+                    // per-class scoring, vanilla formulas
+                    int iScore;
+                    if ( aiHow[c] == NEAREST_TARGET )
+                    {
+                        iScore = pGameData->GetRangeDistance( hexUnit, hcAt );
+                        if ( !iScore || iScore >= aiScore[c] )
+                            continue;
+                    }
+                    else if ( aiHow[c] == THREAT_TARGET )
+                    {
+                        iScore = 0;
+                        EnterCriticalSection( &cs );
+                        if ( bIsVeh )
+                        {
+                            CVehicle* pV = theVehicleMap.GetVehicle( dwCand );
+                            if ( pV != NULL )
+                                iScore = AssessThreat( pV, iKindOf );
+                        }
+                        else
+                        {
+                            CBuilding* pB = theBuildingMap.GetBldg( dwCand );
+                            if ( pB != NULL )
+                            {
+                                iScore = AssessThreat( pB, iKindOf );
+                                if ( iScore && pB->IsFlag( CUnit::abandoned ) )
+                                    iScore >>= 1;
+                            }
+                        }
+                        LeaveCriticalSection( &cs );
+                        if ( iScore <= aiScore[c] )
+                            continue;
+                    }
+                    else  // BEST_TARGET
+                    {
+                        iScore = 0;
+                        EnterCriticalSection( &cs );
+                        if ( bIsVeh )
+                        {
+                            CVehicle* pV = theVehicleMap.GetVehicle( dwCand );
+                            if ( pV != NULL )
+                            {
+                                iScore = m_pMap->m_pMapUtil->AssessTarget( pV, iKindOf );
+                                pTd    = pV->GetData( );
+                                i      = NUM_COMBINED_UNITS * ( CStructureData::num_types + pTd->GetType( ) );
+                                i += pUnit->GetTypeUnit( );
+                                iScore += ( caTargetAttack[i] * iScore );
+                            }
+                        }
+                        else
+                        {
+                            CBuilding* pB = theBuildingMap.GetBldg( dwCand );
+                            if ( pB != NULL )
+                            {
+                                iScore = m_pMap->m_pMapUtil->AssessTarget( pB, iKindOf );
+                                pSd    = pB->GetData( );
+                                i      = NUM_COMBINED_UNITS * pSd->GetType( );
+                                i += pUnit->GetTypeUnit( );
+                                iScore += ( caTargetAttack[i] * iScore );
+                                if ( iScore && pB->IsFlag( CUnit::abandoned ) )
+                                    iScore >>= 1;
+                            }
+                        }
+                        LeaveCriticalSection( &cs );
+                        if ( iScore <= 0 || iScore <= aiScore[c] )
+                            continue;
+                    }
+
+                    // reachability: at most one path search per hex, shared by
+                    // all classes, run only when a class would take the target
+                    if ( !bPathChecked )
+                    {
+                        bPathOK      = ( m_pMap->m_pMapUtil->GetPathRating( hexUnit, hcAt, pUnit->GetTypeUnit( ) ) != 0 );
+                        bPathChecked = TRUE;
+                    }
+                    if ( !bPathOK )
+                        break;  // unreachable for every class
+
+                    aiScore[c] = iScore;
+                    adwSel[c]  = dwCand;
+                }
+            }
+        }
+
+        // end of level: freeze classes that found a candidate at this area
+        for ( c = 0; c < nClasses; ++c )
+            if ( !abFrozen[c] && adwSel[c] )
+                abFrozen[c] = TRUE;
+
+        // return the best frozen class once every higher-priority class is
+        // beyond hope (THREAT/BEST are hopeless past spotting; NEAREST never
+        // until all levels + fallback are done)
+        for ( c = 0; c < nClasses; ++c )
+        {
+            if ( !abFrozen[c] )
+            {
+                BOOL bStillHunting = ( aiHow[c] == NEAREST_TARGET ) || ( iLvl < iSpotLevel );
+                if ( bStillHunting )
+                    break;  // c may yet win - keep scanning
+                continue;   // c is done and empty - next class decides
+            }
+            if ( piClassSel != NULL )
+                *piClassSel = c;
+            return ( adwSel[c] );
+        }
+    }
+
+    // area levels exhausted with no decidable class: the vanilla
+    // whole-unit-list fallback, for NEAREST classes only ("always get a
+    // target?!?" - kind filter deliberately ignored, as in the original)
+    if ( bAnyNearest )
+    {
+        DWORD dwSeekTo = 0;
+        int   iClosest = 0xFFFE;
+        int   iThreat;
+        CHexCoord hcTgt;
+
+        POSITION pos = m_plUnits->GetHeadPosition( );
+        while ( pos != NULL )
+        {
+            CAIUnit* pTargetUnit = (CAIUnit*)m_plUnits->GetNext( pos );
+            if ( pTargetUnit == NULL )
+                continue;
+            ASSERT_VALID( pTargetUnit );
+
+            if ( pTargetUnit->GetOwner( ) == m_iPlayer )
+                continue;
+
+            CAIOpFor* pOpFor = m_plOpFors->GetOpFor( pTargetUnit->GetOwner( ) );
+            if ( pOpFor == NULL )
+                continue;
+            if ( pOpFor->IsAI( ) && !pOpFor->AtWar( ) )
+                continue;
+
+            hcTgt.X( 0 );
+            hcTgt.Y( 0 );
+            iThreat = 0;
+
+            if ( pTargetUnit->GetType( ) == CUnit::building )
+            {
+                // skip unimportant buildings
+                if ( pTargetUnit->GetTypeUnit( ) != CStructureData::rocket &&
+                     pTargetUnit->GetTypeUnit( ) < CStructureData::barracks_2 )
+                    continue;
+
+                EnterCriticalSection( &cs );
+                CBuilding* pBldg = theBuildingMap.GetBldg( pTargetUnit->GetID( ) );
+                if ( pBldg != NULL )
+                {
+                    hcTgt   = pBldg->GetExitHex( );
+                    iThreat = pBldg->GetData( )->GetTargetType( );
+                }
+                LeaveCriticalSection( &cs );
+            }
+            else if ( pTargetUnit->GetType( ) == CUnit::vehicle )
+            {
+                EnterCriticalSection( &cs );
+                CVehicle* pVehicle = theVehicleMap.GetVehicle( pTargetUnit->GetID( ) );
+                if ( pVehicle != NULL )
+                {
+                    // skip vehicles that are cargo
+                    if ( pVehicle->GetTransport( ) == NULL )
+                    {
+                        hcTgt   = pVehicle->GetHexHead( );
+                        iThreat = pVehicle->GetData( )->GetTargetType( );
+                    }
+                }
+                LeaveCriticalSection( &cs );
+            }
+
+            if ( !hcTgt.X( ) && !hcTgt.Y( ) )
+                continue;
+            if ( !iAttackTypes[iThreat] )
+                continue;
+
+#if THREADS_ENABLED
+            myYieldThread( );
+#endif
+
+            int iRange = pGameData->GetRangeDistance( hexUnit, hcTgt );
+            if ( iRange && ( iRange < iClosest ) )
+            {
+                if ( pUnit->GetType( ) == CUnit::vehicle &&
+                     !m_pMap->m_pMapUtil->GetPathRating( hexUnit, hcTgt, pUnit->GetTypeUnit( ) ) )
+                    continue;
+
+                iClosest = iRange;
+                dwSeekTo = pTargetUnit->GetID( );
+            }
+        }
+
+        if ( dwSeekTo )
+        {
+            // the fallback belongs to the first NEAREST class whose area scan
+            // failed - in vanilla that rung ran its fallback before any later
+            // rung's area scan could win
+            for ( c = 0; c < nClasses; ++c )
+            {
+                if ( aiHow[c] == NEAREST_TARGET && !abFrozen[c] )
+                {
+                    if ( piClassSel != NULL )
+                        *piClassSel = c;
+                    break;
+                }
+            }
+            return ( dwSeekTo );
+        }
+    }
+
+    // fallback empty (or no NEAREST class): a later class's area result,
+    // frozen while an earlier NEAREST class was still hunting, wins now
+    for ( c = 0; c < nClasses; ++c )
+    {
+        if ( abFrozen[c] )
+        {
+            if ( piClassSel != NULL )
+                *piClassSel = c;
+            return ( adwSel[c] );
+        }
+    }
+
+    return ( 0 );
 }
 
 //

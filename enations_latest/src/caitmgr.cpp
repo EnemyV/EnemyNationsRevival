@@ -14,6 +14,7 @@
 #include "aisnap.h"  // Tier-B world snapshot (lock-free AI reads)
 #include "caidata.hpp"
 #include "cpathmgr.h"
+#include "enprobes.h"
 #include "logging.h"  // dave's logging system
 #include "stdafx.h"
 
@@ -2810,6 +2811,60 @@ SeekNDestroy:
     //
     // when the opfor unit is destroyed, clear the m_dwData with zero
     DWORD dwOpForUnit = 0;
+#if EN_SEEK_SINGLEPASS
+    // one multi-class scan replaces the per-rung GetOpForUnit ladder below
+    // (class order = the old rung order, so selection preference is identical)
+    {
+        int aiHow[6], aiKind[6], nClasses = 0;
+
+        if ( pTask->GetID( ) == IDT_SEEKATSEA )
+        {
+            aiHow[nClasses] = THREAT_TARGET;  aiKind[nClasses++] = CAI_NAVALATTACK;
+            aiHow[nClasses] = NEAREST_TARGET; aiKind[nClasses++] = CAI_HARDATTACK;
+            aiHow[nClasses] = NEAREST_TARGET; aiKind[nClasses++] = 0;
+        }
+        else if ( pTask->GetID( ) == IDT_SEEKINWAR )
+        {
+            aiHow[nClasses] = THREAT_TARGET;  aiKind[nClasses++] = CAI_SOFTATTACK;
+            aiHow[nClasses] = BEST_TARGET;    aiKind[nClasses++] = CAI_HARDATTACK;
+            aiHow[nClasses] = NEAREST_TARGET; aiKind[nClasses++] = 0;
+        }
+        else if ( pTask->GetID( ) == IDT_SEEKINRANGE )
+        {
+            aiHow[nClasses] = BEST_TARGET;    aiKind[nClasses++] = CAI_SOFTATTACK;
+            aiHow[nClasses] = THREAT_TARGET;  aiKind[nClasses++] = CAI_SOFTATTACK;
+            aiHow[nClasses] = BEST_TARGET;    aiKind[nClasses++] = CAI_HARDATTACK;
+            aiHow[nClasses] = NEAREST_TARGET; aiKind[nClasses++] = CAI_HARDATTACK;
+            // task-switched support units don't go looking outside range;
+            // staged PREPAREWAR units do (same conditions as the old rungs)
+            if ( !( pUnit->GetStatus( ) & CAI_TASKSWITCH ) ||
+                 pUnit->GetParam( CAI_UNASSIGNED ) == IDT_PREPAREWAR )
+            {
+                aiHow[nClasses] = NEAREST_TARGET; aiKind[nClasses++] = 0;
+            }
+        }
+
+        if ( nClasses )
+        {
+            int iClassSel = -1;
+            dwOpForUnit   = m_pGoalMgr->GetOpForUnitScan( aiHow, aiKind, nClasses, pUnit, &iClassSel );
+            if ( dwOpForUnit )
+            {
+                pUnit->SetDataDW( dwOpForUnit );
+                int iTgtType = 0xFFFE;
+                if ( iClassSel >= 0 )
+                {
+                    if ( aiKind[iClassSel] == CAI_SOFTATTACK || aiKind[iClassSel] == CAI_NAVALATTACK )
+                        iTgtType = CUnit::vehicle;
+                    else if ( aiKind[iClassSel] == CAI_HARDATTACK )
+                        iTgtType = CUnit::building;
+                }
+                pUnit->SetParam( CAI_TARGETTYPE, iTgtType );
+                goto SeekNDestroy;
+            }
+        }
+    }
+#else
     // depending on the type of seek, find the nearest opfor
     // unit of the seek, and move to range of the seek and fire
     if ( pTask->GetID( ) == IDT_SEEKATSEA )
@@ -2984,6 +3039,7 @@ SeekNDestroy:
             }
         }
     }
+#endif  // EN_SEEK_SINGLEPASS
 
     // could not find a target for the unit, so clear it
     // and unassign it and let the cycle begin later
@@ -3016,7 +3072,12 @@ SeekNDestroy:
                    "\nCAITaskMgr::SeekOpfor() unit %ld player %d unassigned, target was %ld \n", pUnit->GetID( ),
                    pUnit->GetOwner( ), dwOpForUnit );
 #endif
-        AssignCombat( pUnit );
+        // the full ladder found no reachable at-war target anywhere on the
+        // map - stand down to patrol instead of re-arming the same seek task
+        // (AssignCombat would hand it right back and the unit would rescan
+        // every cycle forever); KillOpfor re-drafts patrols when war events
+        // fire, so this is a resting state, not retirement
+        AssignPatrol( pUnit );
     }
     CVehicle* pVehicle = theVehicleMap.GetVehicle( pUnit->GetID( ) );
     if ( pVehicle == NULL )

@@ -242,6 +242,8 @@ public:
 
 	DWORD GetOpforTarget( int iOpForID, int iVehType );
 	DWORD GetOpForUnit( int iHow, int iKindOf, CAIUnit *pUnit );
+	DWORD GetOpForUnitScan( int const *aiHow, int const *aiKindOf,
+		int nClasses, CAIUnit *pUnit, int *piClassSel );
 	void SetMapOpFor( void );
 	void SetKnownOpFor( int iOpForID );
 	int GetOpForId( int iType, CHexCoord hex, BOOL bKnown );

@@ -6,4 +6,6 @@
 #define EN_AI_PROBES_ECON 0  // economy/logistics/census: trucks, cranes, roads, factories
 #define EN_PERF_PROBES    1  // performance: MAINSTALL/SLOWMSG/SLOWBLDG/SLOWPATH/SLOWROAD stall reporters
 
+#define EN_SEEK_SINGLEPASS 1 // SeekOpfor targeting: 1 = single-pass multi-class scan (GetOpForUnitScan), 0 = vanilla per-rung GetOpForUnit ladder
+
 #endif
