@@ -52,17 +52,14 @@ int main(int argc, char** argv) {
         if ( SDL_GetDesktopDisplayMode( 0, &dm ) == 0 && dm.w > 0 && dm.h > 0 ) {
             int scrW = dm.w, scrH = dm.h;
 #ifdef __APPLE__
-            // #47 symptom-5 (default ON as of 3.00.006): render to the display's USABLE
-            // bounds (excl. Dock + menu bar) so the matching window (GameWindow.cpp, same
-            // flag) fits the usable area instead of overflowing the bottom of the screen.
-            // Needed because the menu-bar auto-hide (#70) is machine-dependent — where it
-            // doesn't fire, a full-desktop window pushes the bottom UI row off-screen.
-            // Usable bounds are <= the desktop size already used here, so no new terrain-
-            // rasterizer envelope risk. EN_MAC_USABLE_FULLSCREEN=0 forces the old full-desktop.
+            // #47 symptom-5 (opt-in, default OFF): when EN_MAC_USABLE_FULLSCREEN is set,
+            // render to the display's USABLE bounds (excl. Dock + menu bar) so the matching
+            // window (GameWindow.cpp, same flag) sits in the usable area instead of under
+            // the Dock. Usable bounds are <= the desktop size already used here, so there is
+            // no new terrain-rasterizer envelope risk. Default OFF = full desktop (unchanged).
             const char* usableFs = getenv( "EN_MAC_USABLE_FULLSCREEN" );
-            const bool usableMode = !( usableFs && usableFs[0] == '0' );  // default ON; =0 opts out
             SDL_Rect usable;
-            if ( usableMode
+            if ( usableFs && usableFs[0] && usableFs[0] != '0'
                  && SDL_GetDisplayUsableBounds( 0, &usable ) == 0
                  && usable.w > 0 && usable.h > 0 ) {
                 scrW = usable.w;
