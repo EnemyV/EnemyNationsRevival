@@ -815,6 +815,13 @@ typedef PTOP_LEVEL_EXCEPTION_FILTER LPTOP_LEVEL_EXCEPTION_FILTER;
 #define SB_TOP 6
 #define SB_BOTTOM 7
 #define SB_ENDSCROLL 8
+// Scrollbar TYPE selectors (the nBar argument of Get/SetScrollPos/Range above) —
+// distinct from the SB_* scroll COMMAND codes listed just before. Win32 values.
+// CScrollBar (mfc_compat.h) passes SB_CTL for its own control-shaped accessors.
+#define SB_HORZ 0
+#define SB_VERT 1
+#define SB_CTL  2
+#define SB_BOTH 3
 #define HTCLIENT  1
 #define HTCAPTION 2
 #define HELP_CONTEXT  1
