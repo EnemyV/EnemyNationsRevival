@@ -1966,7 +1966,28 @@ public:
     int  GetCheck() const         { return (int)::SendMessageA( m_hWnd, BM_GETCHECK, 0, 0 ); }
     void SetCheck( int nCheck )   { ::SendMessageA( m_hWnd, BM_SETCHECK, (WPARAM)nCheck, 0 ); }
 };
-class CScrollBar : public CWnd {};
+class CScrollBar : public CWnd
+{
+public:
+    // MFC CScrollBar::Create — a real "SCROLLBAR"-class child control. The empty
+    // stub inherited CWnd::Create's unconditional FALSE, which CWndArea::Create
+    // turns into throw(ERR_RES_CREATE_WND) — the 93% "Unknown error loading the
+    // game" on every world create once [Advanced]Scroll=1.
+    BOOL Create( DWORD dwStyle, const RECT& rect, CWnd* pParentWnd, UINT nID ) override
+    {
+        m_hWnd = ::CreateWindowExA( 0, "SCROLLBAR", "", dwStyle,
+                                    rect.left, rect.top,
+                                    rect.right - rect.left, rect.bottom - rect.top,
+                                    pParentWnd ? pParentWnd->m_hWnd : NULL,
+                                    (HMENU)(UINT_PTR)nID, ::GetModuleHandleA( NULL ), NULL );
+        return m_hWnd != NULL;
+    }
+    // Control-shaped (SB_CTL) accessors, as in MFC's CScrollBar. Without these the
+    // game's 3-arg calls misbind to CWnd's (nBar, nMin, nMax) overloads: nBar=nMin.
+    int SetScrollRange( int nMin, int nMax, BOOL bRedraw = TRUE ) { return ::SetScrollRange( m_hWnd, SB_CTL, nMin, nMax, bRedraw ); }
+    int SetScrollPos  ( int nPos, BOOL bRedraw = TRUE )           { return ::SetScrollPos  ( m_hWnd, SB_CTL, nPos, bRedraw ); }
+    int GetScrollPos  ( ) const                                   { return ::GetScrollPos  ( m_hWnd, SB_CTL ); }
+};
 class CListBox : public CWnd
 {
 public:

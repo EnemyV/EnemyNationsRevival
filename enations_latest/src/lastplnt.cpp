@@ -204,9 +204,38 @@ void CatchSE( SE_Exception e )
     bDoSubclass = TRUE;
 }
 
-void CatchOther( )
+#include <exception>
+#include <typeinfo>
+
+// Name the in-flight exception. Valid while a catch(...) handler is running, which
+// is the only place CatchOther is called from. A bare "Unknown error" told a tester
+// (and us) nothing; bad_alloc vs a game int-code vs something else are different bugs.
+static std::string DescribeCurrentException( )
 {
-    fprintf( stderr, "[CatchOther] unknown game exception - shutting the game down\n" );
+    std::exception_ptr p = std::current_exception( );
+    if ( !p )
+        return "no active exception";
+    try
+    {
+        std::rethrow_exception( p );
+    }
+    catch ( const std::bad_alloc& e )   { return std::string( "std::bad_alloc: " ) + e.what( ); }
+    catch ( const std::exception& e )   { return std::string( typeid( e ).name( ) ) + ": " + e.what( ); }
+    catch ( int i )                     { return "int " + IntToStr( i ); }
+    // Raw `throw( ERR_* )` sites (world.cpp CreateEx, area.cpp, the CAI code) throw the
+    // ENUM type, which catch(int) does not catch — these were the anonymous "Unknown error".
+    catch ( Error e )                   { const char* s = GetWind22ErrString( e );
+                                          return ( s && s[0] ? std::string( s ) : "wind22 error" ) +
+                                                 " (" + IntToStr( (int)e ) + ")"; }
+    catch ( GameError e )               { return "game error " + IntToStr( (int)e - (int)ERR_BASE_USER_ERROR ); }
+    catch ( ... )                       { return "non-standard exception type"; }
+}
+
+void CatchOther( char const* pContext )
+{
+    std::string sWhat = DescribeCurrentException( );
+
+    fprintf( stderr, "[CatchOther] unknown game exception (%s) - shutting the game down\n", sWhat.c_str( ) );
 
     bDoSubclass = FALSE;
 
@@ -216,7 +245,15 @@ void CatchOther( )
     theGame.SetShouldProcessMessages(FALSE);
     theGame.EmptyQueue( );
 
-    EnMessageBox( IDS_ERR_LOAD_2, MB_OK | MB_ICONSTOP );
+    // Headline stays the shipped string; the detail lines are what a bug report needs.
+    std::string sMsg = EnLoadStdString( IDS_ERR_LOAD_2 );
+    sMsg += "\r\n\r\nException: " + sWhat;
+    if ( pContext && *pContext )
+        sMsg += "\r\n" + std::string( pContext );
+    sMsg += "\r\nVersion: " + std::string( VER_STRING );
+
+    OutputDebugStringA( ( "[CatchOther] " + sMsg + "\n" ).c_str( ) );
+    EnMessageBox( sMsg.c_str( ), MB_OK | MB_ICONSTOP );
 
     bDoSubclass = TRUE;
 }
@@ -1646,7 +1683,7 @@ void CConquerApp::PostIntro( )
         bDidIt = TRUE;
 
         // start the audio
-        theMusicPlayer.Open( EnGetProfileInt( "Game", "Music", 100 ), EnGetProfileInt( "Game", "Sound", 100 ), m_mMode,
+        theMusicPlayer.Open( EnGetProfileInt( "Game", "Music", 50 ), EnGetProfileInt( "Game", "Sound", 50 ), m_mMode,
                              SFXGROUP::global );
 
         if ( EnGetProfileInt( "Game", "CustomUI", W32s != iWinType ) ) {

@@ -275,7 +275,13 @@ BOOL CWndStub::CreateEx( DWORD dwExStyle, LPCSTR lpszClassName, LPCSTR lpszWindo
     cs.lpszClass      = lpszClassName;
     cs.dwExStyle      = dwExStyle;
     if ( !PreCreateWindow( cs ) )
+    {
+        char b[256];
+        wsprintfA( b, "[CREATEEX] PreCreateWindow refused class=%s title=%s\n",
+                   cs.lpszClass ? cs.lpszClass : "?", cs.lpszName ? cs.lpszName : "?" );
+        OutputDebugStringA( b );
         return FALSE;
+    }
 
     // Pass `this` as the create param so WM_NCCREATE can stash it.
     LPVOID actualParam = ( cs.lpCreateParams != NULL ) ? cs.lpCreateParams : (LPVOID)this;
@@ -283,7 +289,19 @@ BOOL CWndStub::CreateEx( DWORD dwExStyle, LPCSTR lpszClassName, LPCSTR lpszWindo
                                   cs.x, cs.y, cs.cx, cs.cy, cs.hwndParent, cs.hMenu,
                                   cs.hInstance, actualParam );
     if ( hwnd == NULL )
+    {
+        // ERR_RES_CREATE_WND diagnosis (issue #26): name the OS failure. gle=0 with
+        // NULL hwnd = the WM_CREATE handler returned -1 (init failure inside OnCreate).
+        DWORD gle = ::GetLastError( );
+        char  b[320];
+        wsprintfA( b, "[CREATEEX] CreateWindowEx FAILED gle=%lu class=%s title=%s parent=%p "
+                      "pos=%d,%d size=%dx%d style=%08lX ex=%08lX\n",
+                   gle, cs.lpszClass ? cs.lpszClass : "?", cs.lpszName ? cs.lpszName : "?",
+                   cs.hwndParent, cs.x, cs.y, cs.cx, cs.cy, cs.style, cs.dwExStyle );
+        OutputDebugStringA( b );
+        { FILE* _f = fopen( "SDL2Panel.log", "a" ); if ( _f ) { fputs( b, _f ); fclose( _f ); } }
         return FALSE;
+    }
     // Set m_hWnd directly. StaticWndProc would also set it during WM_NCCREATE,
     // but only if the window class points at StaticWndProc — many game-side
     // classes register with DefWindowProc (e.g. EnemyNationsMainWindow), in
