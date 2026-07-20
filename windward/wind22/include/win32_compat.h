@@ -724,6 +724,13 @@ typedef int (*_CRT_ALLOC_HOOK)(int, void*, size_t, int, long, const unsigned cha
 #define SB_PAGERIGHT 3
 #define SB_LEFT      6
 #define SB_RIGHT     7
+// Scrollbar-type selectors (the nBar arg of Get/SetScrollPos/Range). SB_CTL is
+// used by CScrollBar's control-shaped accessors in mfc_compat.h; the POSIX scroll
+// stubs ignore nBar, so these are for compile-parity with the Win32 SDK values.
+#define SB_HORZ      0
+#define SB_VERT      1
+#define SB_CTL       2
+#define SB_BOTH      3
 #define SBS_HORZ     0x0000u
 #define SBS_VERT     0x0001u
 // Structured-exception types (for crash-handler signatures; never actually
