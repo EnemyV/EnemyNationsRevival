@@ -415,6 +415,23 @@ void CConquerApp::CreateNewWorld(unsigned uRand, AIinit *pAiData, int iSide, int
 
     theApp.Log("Create world");
 
+    // World-gen settings + seed, logged BEFORE generation so a failed create (tester bug
+    // reports carry the log, not the dialog) says exactly which world was being built.
+    {
+        char b[256];
+        sprintf_s( b, sizeof( b ),
+                   "[WORLDGEN] size=%d worldType=%d ocean=%d rivers=%d startPos=%d aiLevel=%d "
+                   "numAi=%d scenario=%d seed=%u\n",
+                   pAiData ? pAiData->m_iSize : -1, (int)theGame.m_iWorldType, (int)theGame.m_iOcean,
+                   (int)theGame.m_iRivers, (int)theGame.m_iPos, pAiData ? pAiData->m_iDiff : -1,
+                   pAiData ? pAiData->m_iNumAI : -1,
+                   (int)( m_pCreateGame->m_iTyp == CCreateBase::scenario ), uRand );
+        OutputDebugStringA( b );
+        // Plain file append, NOT theApp.Log — that one no-ops unless [Advanced]Log=1.
+        // This is the channel whose contents testers actually send us.
+        { FILE* _f = fopen( "SDL2Panel.log", "a" ); if ( _f ) { fputs( b, _f ); fclose( _f ); } }
+    }
+
     // no player, no music/sound
     if (!theGame.HaveHP()) {
         theMusicPlayer.SoundsOff();
@@ -558,6 +575,14 @@ void CConquerApp::CreateNewWorld(unsigned uRand, AIinit *pAiData, int iSide, int
         if (AiWorldSize(iSideSize, iSide))
             return;
 
+        {   // resolved map geometry — the numbers the generator actually runs on
+            char b[128];
+            sprintf_s( b, sizeof( b ), "[WORLDGEN] blocks/side=%d blockSize=%d -> map %dx%d hexes\n",
+                       iSide, iSideSize, iSide * iSideSize, iSide * iSideSize );
+            OutputDebugStringA( b );
+            { FILE* _f = fopen( "SDL2Panel.log", "a" ); if ( _f ) { fputs( b, _f ); fclose( _f ); } }
+        }
+
         theApp.Log("Tell other players to start");
         // send everyone all the players so they can set up their direct links
         if (theGame.IsNetGame())
@@ -644,7 +669,10 @@ void CConquerApp::CreateNewWorld(unsigned uRand, AIinit *pAiData, int iSide, int
     }
     catch (...) {
         TRAP();
-        CatchOther();
+        // NB: this try covers the sprite/data load only — it closes before theMap.Init()
+        // below, so world-gen failures do NOT land here (they surface at the create-flow
+        // handler in SDL2Dialogs.cpp, which supplies the world-gen context).
+        CatchOther( "Stage: loading sprite/terrain data (pre-world-gen)" );
         theApp.CloseWorld();
         return;
     }

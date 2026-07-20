@@ -10,7 +10,10 @@
 #define __ERROR_H__
 
 
-enum 
+// Named (was anonymous) so catch sites can identify a raw `throw( ERR_TLP_* )`:
+// an enum throw is NOT caught by catch(int), so these land in catch(...) — the
+// name lets DescribeCurrentException (lastplnt.cpp) report which error it was.
+enum GameError
 {
     ERR_FIRST = ERR_APP_START,
 

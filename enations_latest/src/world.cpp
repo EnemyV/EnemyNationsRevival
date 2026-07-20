@@ -262,6 +262,8 @@ void CWndWorld::Create(BOOL bStart) {
                    theApp.m_pMainWnd->m_hWnd, // window parent!
                    NULL, NULL ) == 0 )
     {
+        OutputDebugStringA( "[REN] CWndWorld::Create CreateEx FAILED (see [CREATEEX] above)\n" );
+        { FILE* _f = fopen( "SDL2Panel.log", "a" ); if ( _f ) { fputs( "[REN] CWndWorld::Create CreateEx FAILED\n", _f ); fclose( _f ); } }
         throw( ERR_RES_CREATE_WND );
     }
 

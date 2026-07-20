@@ -479,6 +479,21 @@ static void ShowConnectingMessage(GameWindow* gameWindow, const char* msg) {
         theApp.m_sdlMainMenu->RenderWallpaperWithMessage(msg);
 }
 
+// Issue #26: a tester could only tell us "frozen at 89%". Every create flow's catch(...)
+// passes this into CatchOther so the box names the stage and the world being built.
+static char const* WorldGenContext( )
+{
+    static char s[256];
+    sprintf_s( s, sizeof( s ),
+               "Stage: %d%% of world creation\r\n"
+               "World: size=%d type=%d ocean=%d rivers=%d startPos=%d",
+               ( theApp.m_pCreateGame && theApp.m_pCreateGame->GetDlgStatus( ) )
+                   ? theApp.m_pCreateGame->GetDlgStatus( )->GetPer( ) : -1,
+               (int)theGame.m_iSize, (int)theGame.m_iWorldType, (int)theGame.m_iOcean,
+               (int)theGame.m_iRivers, (int)theGame.m_iPos );
+    return s;
+}
+
 bool SDL2_RunCreateSinglePlayerFlow(GameWindow* gameWindow) {
     // Create the game object FIRST - its constructor loads race data (CRaceDef::Init)
     ASSERT(theApp.m_pCreateGame == NULL);
@@ -549,6 +564,8 @@ bool SDL2_RunCreateSinglePlayerFlow(GameWindow* gameWindow) {
 
     // Step 5: Start game creation via the real game logic path
     // ReadyToCreate() creates AI players and calls StartCreateWorld().
+    // NOTE: the catch(...) below is where WORLD-GEN failures land. CreateNewWorld's own
+    // try closes before theMap.Init(), and StartCreateWorld/ReadyToCreate have none.
     // Fill the wallpaper-only gap between the race pick closing and the "Creating
     // world..." progress dialog appearing with a status line — same style as the
     // online "Searching for games..." message.
@@ -562,7 +579,7 @@ bool SDL2_RunCreateSinglePlayerFlow(GameWindow* gameWindow) {
         theApp.CloseWorld();
         return false;
     } catch (...) {
-        CatchOther();
+        CatchOther( WorldGenContext() );
         theApp.CloseWorld();
         return false;
     }
@@ -629,7 +646,7 @@ bool HarnessNewGame(int ai, int pos, int size, int numai, int worldType, int oce
         theApp.CloseWorld();
         bOk = false;
     } catch (...) {
-        CatchOther();
+        CatchOther( WorldGenContext() );
         theApp.CloseWorld();
         bOk = false;
     }
@@ -696,7 +713,7 @@ bool SDL2_RunCreateScenarioFlow(GameWindow* gameWindow) {
         theApp.CloseWorld();
         return false;
     } catch (...) {
-        CatchOther();
+        CatchOther( WorldGenContext() );
         theApp.CloseWorld();
         return false;
     }
@@ -1762,7 +1779,7 @@ bool SDL2_RunCreateNetworkFlow(GameWindow* gameWindow) {
     try {
         theGame.IncTry(); theApp.ReadyToCreate(); theGame.DecTry();
     } catch (int iNum) { CatchNum(iNum); theApp.CloseWorld(); return false; }
-    catch (...) { CatchOther(); theApp.CloseWorld(); return false; }
+    catch (...) { CatchOther( WorldGenContext() ); theApp.CloseWorld(); return false; }
     return true;
 }
 
@@ -2115,7 +2132,7 @@ bool SDL2_RunLoadNetworkFlow(GameWindow* gameWindow) {
         theApp.ReadyToCreate();
         theGame.DecTry();
     } catch (int iNum) { CatchNum(iNum); theApp.CloseWorld(); return false; }
-    catch (...) { CatchOther(); theApp.CloseWorld(); return false; }
+    catch (...) { CatchOther( WorldGenContext() ); theApp.CloseWorld(); return false; }
 
     return true;
 }

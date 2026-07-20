@@ -1448,7 +1448,11 @@ void CWndArea::Create( CMapLoc const& ml, CUnit* pUnit, BOOL bFirst )
 
     if ( CreateEx( 0, sWndCls.c_str( ), sTitle.c_str( ), dwStyle, rect.left, rect.top, rect.Width( ), rect.Height( ),
                    theApp.m_pMainWnd->m_hWnd, NULL, NULL ) == 0 )
+    {
+        OutputDebugStringA( "[REN] CWndArea::Create CreateEx FAILED\n" );
+        { FILE* _f = fopen( "SDL2Panel.log", "a" ); if ( _f ) { fputs( "[REN] CWndArea::Create CreateEx FAILED\n", _f ); fclose( _f ); } }
         throw( ERR_RES_CREATE_WND );
+    }
 
     if ( m_bScrollBars )
     {

@@ -84,7 +84,7 @@ typedef void ( *TRANS_FUNC )( unsigned int u, EXCEPTION_POINTERS* pExp );
 extern TRANS_FUNC prevFn;
 void              CatchNum( int iNum );
 void              CatchSE( SE_Exception e );
-void              CatchOther( );
+void              CatchOther( char const* pContext = NULL );
 
 
 /////////////////////////////////////////////////////////////////////////////
