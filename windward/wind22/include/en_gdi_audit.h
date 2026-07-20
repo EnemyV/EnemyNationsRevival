@@ -42,7 +42,7 @@ inline void EnGdiAuditFirst( const char* label, const void* caller )
                  "[GDI-AUDIT] %-32s caller=%p\n", label, caller );
     OutputDebugStringA( line );
     FILE* f = nullptr;
-    if ( 0 == fopen_s( &f, "d:\\tmp\\gdi_audit.log", "a" ) && f )
+    if ( 0 == fopen_s( &f, "gdi_audit.log", "a" ) && f )   // run dir
     {
         fputs( line, f );
         fclose( f );

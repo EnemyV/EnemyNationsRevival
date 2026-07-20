@@ -44,7 +44,10 @@ inline RenderBackend GetRenderBackend()
         return RenderBackend::OpenGL;
     return RenderBackend::SDL2;
 #else
-    int v = w22::GetProfileInt( "Advanced", "Renderer", 0 );
+    // SDL2 (GPU) is the DEFAULT on Windows too — a fresh install used to land on the
+    // legacy software present path (tester logs: gpu=0, no "T0 renderer present path
+    // active" line). Software stays selectable via [Advanced]Renderer=0.
+    int v = w22::GetProfileInt( "Advanced", "Renderer", 1 );
     if ( v <= 0 )
         return RenderBackend::Software;
     if ( v == 2 && RenderBackendOpenGLAvailable() )

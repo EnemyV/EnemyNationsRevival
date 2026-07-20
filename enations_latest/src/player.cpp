@@ -38,6 +38,7 @@
 #include "SaveCompat.h"
 #include "SDL2CreateStatus.h"
 #include "stdafx.h"
+#include "enprobes.h"   // EN_SAVE_PROBES
 #include "terrain.inl"
 #include "unit.inl"
 #include "vehicle.inl"
@@ -3354,7 +3355,8 @@ void CGame::Serialize( CArchive& ar )
         theMap.Serialize( ar );
         theMinerals.Serialize( ar );
 
-        // TEMP DEBUG: mineral flag/map round-trip diagnosis (store)
+        // mineral flag/map round-trip diagnosis (store)
+#if EN_SAVE_PROBES
         {
             int flagged = 0;
             for ( int yy = 0; yy < theMap.Get_eY( ); yy++ )
@@ -3364,8 +3366,9 @@ void CGame::Serialize( CArchive& ar )
             sprintf_s( b, sizeof( b ), "[SAVE store] minerals=%d flaggedHexes=%d eX=%d eY=%d\n",
                        (int)theMinerals.GetCount( ), flagged, theMap.Get_eX( ), theMap.Get_eY( ) );
             OutputDebugStringA( b );
-            FILE* f = NULL; if ( fopen_s( &f, "d:\\tmp\\worlddbg.log", "a" ) == 0 && f ) { fputs( b, f ); fclose( f ); }
+            FILE* f = NULL; if ( fopen_s( &f, "worlddbg.log", "a" ) == 0 && f ) { fputs( b, f ); fclose( f ); }
         }
+#endif
 
         // save the bridges
         theBridgeMap.Serialize( ar );
@@ -3510,7 +3513,8 @@ void CGame::Serialize( CArchive& ar )
         theMinerals.Serialize( ar );
         ASSERT_VALID( &theMinerals );
 
-        // TEMP DEBUG: mineral flag/map round-trip diagnosis (load)
+        // mineral flag/map round-trip diagnosis (load)
+#if EN_SAVE_PROBES
         {
             int flagged = 0;
             for ( int yy = 0; yy < theMap.Get_eY( ); yy++ )
@@ -3520,8 +3524,9 @@ void CGame::Serialize( CArchive& ar )
             sprintf_s( b, sizeof( b ), "[LOAD] minerals=%d flaggedHexes=%d eX=%d eY=%d\n",
                        (int)theMinerals.GetCount( ), flagged, theMap.Get_eX( ), theMap.Get_eY( ) );
             OutputDebugStringA( b );
-            FILE* f = NULL; if ( fopen_s( &f, "d:\\tmp\\worlddbg.log", "a" ) == 0 && f ) { fputs( b, f ); fclose( f ); }
+            FILE* f = NULL; if ( fopen_s( &f, "worlddbg.log", "a" ) == 0 && f ) { fputs( b, f ); fclose( f ); }
         }
+#endif
 
         // load the bridges
         theBridgeMap.Serialize( ar );

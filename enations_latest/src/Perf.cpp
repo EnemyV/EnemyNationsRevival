@@ -336,8 +336,7 @@ namespace
 
         // ---- lock-free: write the snapshot ----
         HMODULE hMod = GetModuleHandleA( NULL );
-        FILE* f = fopen( "leakstacks.txt", "w" );
-        if ( !f ) f = fopen( "d:\\Enemy Nations\\leakstacks.txt", "w" );
+        FILE* f = fopen( "leakstacks.txt", "w" );   // run dir
         if ( f )
         {
             fprintf( f, "# leak profiler 1/%d sampled. top %d of %d sites by LIVE bytes.\n",
@@ -365,9 +364,7 @@ namespace
 
         // Trigger B: on-demand — a "DUMP_NOW" file appears. RE-TRIGGERABLE: each
         // time the file appears we dump once, then ignore until it's removed.
-        bool filePresent =
-            ( GetFileAttributesA( "DUMP_NOW" ) != INVALID_FILE_ATTRIBUTES ) ||
-            ( GetFileAttributesA( "d:\\Enemy Nations\\DUMP_NOW" ) != INVALID_FILE_ATTRIBUTES );
+        bool filePresent = ( GetFileAttributesA( "DUMP_NOW" ) != INVALID_FILE_ATTRIBUTES );
         bool fileHit = ( filePresent && !g_dumpFileLatched );
         g_dumpFileLatched = filePresent;   // reset once the file is gone
 

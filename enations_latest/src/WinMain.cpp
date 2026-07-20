@@ -31,16 +31,27 @@ extern CConquerApp theApp;
 // Full-memory crash dumps. Writes a complete .dmp (MiniDumpWithFullMemory, so
 // stacks are never truncated) on any unhandled exception. No admin / WER
 // LocalDumps needed. Captures the AI worker threads' stacks too — important
-// since the slowdown/crash bug lives in the AI sim. Dumps go to
-// %EN_DUMP_DIR% (default d:\tmp\crashdumps).
+// since the slowdown/crash bug lives in the AI sim. Dumps go to %EN_DUMP_DIR%,
+// else %LOCALAPPDATA%\EnemyNations\crashdumps (the old hardcoded d:\tmp path
+// silently wrote nothing on a tester box with no D: drive), else d:\tmp.
 // ---------------------------------------------------------------------------
 #ifdef _WIN32
 static LONG WINAPI EnWriteFullDump( EXCEPTION_POINTERS* ep )
 {
     const char* dir = getenv( "EN_DUMP_DIR" );
+    const char* lad = getenv( "LOCALAPPDATA" );
     char path[MAX_PATH];
     char folder[MAX_PATH];
-    lstrcpynA( folder, dir && dir[0] ? dir : "d:\\tmp\\crashdumps", MAX_PATH );
+    if ( dir && dir[0] )
+        lstrcpynA( folder, dir, MAX_PATH );
+    else if ( lad && lad[0] )
+    {
+        wsprintfA( folder, "%s\\EnemyNations", lad );
+        CreateDirectoryA( folder, NULL );          // parent must exist first
+        wsprintfA( folder, "%s\\EnemyNations\\crashdumps", lad );
+    }
+    else
+        lstrcpynA( folder, "d:\\tmp\\crashdumps", MAX_PATH );
     CreateDirectoryA( folder, NULL );
 
     SYSTEMTIME st; GetLocalTime( &st );
@@ -50,6 +61,19 @@ static LONG WINAPI EnWriteFullDump( EXCEPTION_POINTERS* ep )
 
     HANDLE hf = CreateFileA( path, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS,
                              FILE_ATTRIBUTE_NORMAL, NULL );
+    if ( hf == INVALID_HANDLE_VALUE )
+    {
+        // Unwritable dir (read-only Program Files, missing drive): last resort %TEMP%.
+        char tmp[MAX_PATH];
+        if ( GetTempPathA( MAX_PATH, tmp ) )
+        {
+            wsprintfA( path, "%senations_full_%04d%02d%02d_%02d%02d%02d_pid%lu.dmp",
+                       tmp, st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute,
+                       st.wSecond, GetCurrentProcessId() );
+            hf = CreateFileA( path, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS,
+                              FILE_ATTRIBUTE_NORMAL, NULL );
+        }
+    }
     if ( hf != INVALID_HANDLE_VALUE )
     {
         MINIDUMP_EXCEPTION_INFORMATION mei;
