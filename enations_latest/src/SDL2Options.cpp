@@ -25,13 +25,13 @@ void SDL2OptionsDialog::OnInit() {
     AddWidget<SDL2Label>(lx, startY + rowH, 100, rowH, "Sound:");
     m_sldSound = AddWidget<SDL2Slider>(sx, startY + rowH + 8, sw, 24,
                                         0, 100,
-                                        EnGetProfileInt("Game", "Sound", 100));
+                                        EnGetProfileInt("Game", "Sound", 50));
 
     // Music Volume
     AddWidget<SDL2Label>(lx, startY + 2*rowH, 100, rowH, "Music:");
     m_sldMusic = AddWidget<SDL2Slider>(sx, startY + 2*rowH + 8, sw, 24,
                                         0, 100,
-                                        EnGetProfileInt("Game", "Music", 100));
+                                        EnGetProfileInt("Game", "Music", 50));
 
     // Buttons
     int btnW = 90, btnH = 30;
