@@ -1,4 +1,5 @@
 #include "stdafx.h"
+#include "enprobes.h"   // EN_GAMEPLAY_PROBES
 
 #include "SDL2Panel.h"
 #include "framecap.h"   // #45 frame-capture debug mode
@@ -33,10 +34,14 @@
 static std::unordered_map<std::string, SDL_Rect> g_savedPlacements;
 
 static void LogPanel(const std::string& msg) {
+#if EN_GAMEPLAY_PROBES
     std::ofstream log("SDL2Panel.log", std::ios::app);
     if (log.is_open()) {
         log << msg << std::endl;
     }
+#else
+    (void)msg;   // release: panel/renderer lifecycle chatter compiled out
+#endif
 }
 
 // ---------------------------------------------------------------------------
@@ -819,9 +824,12 @@ void SDL2Panel::Detach(SDL_Window* ownerWindow) {
     const bool singleWin = (getenv("EN_SINGLEWIN") != nullptr);
 #endif
     if (singleWin) {
+#if EN_GAMEPLAY_PROBES
         LogPanel("[REN] Detach suppressed (single-window): '" + m_name + "'");
+#endif
         return;
     }
+#if EN_GAMEPLAY_PROBES
     {
         char b[160];
         sprintf(b, "[REN] Detach '%s' ownWindow=%p ownRenderer=%p (earlyReturn=%d)",
@@ -829,6 +837,7 @@ void SDL2Panel::Detach(SDL_Window* ownerWindow) {
         LogPanel(b);
         OutputDebugStringA(b); OutputDebugStringA("\n");
     }
+#endif
     if (m_ownWindow)
         return;  // already detached
 
@@ -1010,9 +1019,11 @@ void SDL2Panel::Detach(SDL_Window* ownerWindow) {
     // post-extents configure sticks at exactly the requested rect.
     SDL_SetWindowSize(m_ownWindow, desiredW, desiredH);
     SDL_SetWindowPosition(m_ownWindow, desiredX, desiredY);
+#if EN_GAMEPLAY_PROBES
     LogPanel("Reasserted '" + m_name + "' geometry " + std::to_string(desiredW) + "x" +
              std::to_string(desiredH) + "+" + std::to_string(desiredX) + "+" +
              std::to_string(desiredY));
+#endif
 
     // First map, now that transient/extents/user-time are all in place (see the
     // HIDDEN-create note at winFlags). Deferred windows keep their contract:
@@ -1025,7 +1036,9 @@ void SDL2Panel::Detach(SDL_Window* ownerWindow) {
     // raising it would SetForegroundWindow and defeat the point.
     if (!m_deferShow)
         SDL_RaiseWindow(m_ownWindow);
+#if EN_GAMEPLAY_PROBES
     LogPanel("Detached panel '" + m_name + "' to own window (ID=" + std::to_string(m_ownWindowID) + ")");
+#endif
     m_dirty = true;
     InvokeMoveCallback();  // sync the backing MFC window to the new screen pos
 }
@@ -1039,12 +1052,14 @@ void SDL2Panel::Detach(SDL_Window* ownerWindow) {
 void SDL2Panel::MaybeCreateOwnRenderer() {
     // DIAG (black-area-map race): log every entry + which gate it hits, so a black game
     // shows exactly where the area renderer setup stops (already-have / no-window / not-GPU).
+#if EN_GAMEPLAY_PROBES
     {
         char b[160];
         sprintf(b, "[REN] MaybeCreateOwnRenderer '%s' ownRenderer=%p ownWindow=%p gpu=%d",
                 m_name.c_str(), (void*)m_ownRenderer, (void*)m_ownWindow, RenderBackendIsGpu() ? 1 : 0);
         LogPanel(b);
     }
+#endif
     if (m_ownRenderer || !m_ownWindow)
         return;
     if (!RenderBackendIsGpu())
@@ -1059,15 +1074,19 @@ void SDL2Panel::MaybeCreateOwnRenderer() {
     }
     SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "1");
     EnsureOwnBack();
+#if EN_GAMEPLAY_PROBES
     LogPanel("T0b: GPU present active for detached panel '" + m_name + "'");
+#endif
 
     // T2: the area-map panel is the terrain-bearing window — load the baked
     // terrain tile textures onto its renderer so the GPU mesh (T2.3) can draw.
     if (m_name.rfind("area", 0) == 0) {
         int n = SDL2Terrain::Load(m_ownRenderer);
+#if EN_GAMEPLAY_PROBES
         char rp[64]; sprintf(rp, "%p", (void*)m_ownRenderer);
         LogPanel("[REN] area renderer CREATED " + std::string(rp) + " loaded " +
                  std::to_string(n) + " tiles");
+#endif
         // GPU sprite layer (S1): trees draw on this same renderer.
         SDL2Sprites::SetRenderer(m_ownRenderer);
     }
@@ -1099,8 +1118,10 @@ void SDL2Panel::DestroyOwnRenderer() {
     // flickering trees after the load. (Main-menu load avoids the overlap; this is the
     // in-game-load / new-game path.)
     if (m_name.rfind("area", 0) == 0) {
+#if EN_GAMEPLAY_PROBES
         char rp[64]; sprintf(rp, "%p", (void*)m_ownRenderer);
         LogPanel("[REN] area renderer DESTROYED " + std::string(rp));
+#endif
         // Terrain AND sprites are per-renderer now: free ONLY this renderer's context
         // (terrain tile textures + RT cache; sprite atlas + composite RT); any OTHER
         // live area map keeps its own, untouched. Must run BEFORE SDL_DestroyRenderer
@@ -1228,7 +1249,9 @@ void SDL2Panel::Attach(GameWindow* mainWin) {
     m_y = gy - wy + tbH;  // window top is the title bar; content is tbH below
 
     DestroyOwnWindow();
+#if EN_GAMEPLAY_PROBES
     LogPanel("Attached panel '" + m_name + "' back to compositor");
+#endif
     m_dirty = true;
     InvokeMoveCallback();
 }

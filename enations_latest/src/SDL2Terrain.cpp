@@ -1,4 +1,5 @@
 #include "stdafx.h"
+#include "enprobes.h"   // EN_GAMEPLAY_PROBES
 #include "SDL2Terrain.h"
 #include "base.h"      // CAnimAtr, CViewHexCoord, CHexCoord
 #include "terrain.h"   // CHex, theMap
@@ -288,9 +289,13 @@ static const int kCoastRot[39] = {
 
 static void LogTerrain( const std::string& msg )
 {
+#if EN_GAMEPLAY_PROBES
     std::ofstream log( "SDL2Terrain.log", std::ios::app );
     if ( log.is_open() )
         log << msg << std::endl;
+#else
+    (void)msg;   // release: terrain/renderer lifecycle chatter compiled out
+#endif
 }
 
 // terrain type render flags (mirror tools/terrainbake + terrain.cpp CHex::Draw).
@@ -1230,9 +1235,11 @@ void SDL2Terrain::ReleaseRenderer( SDL_Renderer* r )
         for ( SDL_Texture* t : kv.second.tex )
             if ( t ) SDL_DestroyTexture( t );
     s_rctx.erase( it );
+#if EN_GAMEPLAY_PROBES
     char m[96]; sprintf( m, "[REN] terrain context released for renderer %p (now %d live)",
                          (void*)r, (int)s_rctx.size() );
     LogTerrain( m );
+#endif
 }
 
 int SDL2Terrain::Load( SDL_Renderer* renderer )
@@ -1493,10 +1500,12 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
     {
         if ( s_renderRenderer != nullptr )   // not the first-ever bind — log the swap
         {
+#if EN_GAMEPLAY_PROBES
             char m[128];
             sprintf( m, "[REN] terrain renderer changed %p -> %p (rebinding RTs)",
                      (void*)s_renderRenderer, (void*)r );
             LogTerrain( m );
+#endif
             // NULL (do NOT SDL_DestroyTexture) the renderer-bound statics: the old
             // renderer may already have been destroyed by the panel teardown, which
             // frees all its textures — destroying them again here is a use-after-free.
@@ -1554,7 +1563,9 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
         if ( s_farRT ) { SDL_DestroyTexture( s_farRT ); s_farRT = nullptr; }
         s_farZoom = -1;
         for ( int d = 0; d < 4; ++d ) { s_mapLoadGen[d] = ~0u; s_mapRow[d] = 0; }
+#if EN_GAMEPLAY_PROBES
         LogTerrain( "[REN] render targets reset — rebuilding cached layers" );
+#endif
     }
 
     // (Re)create the textures when the viewport size (hence rtW/rtH) changes.

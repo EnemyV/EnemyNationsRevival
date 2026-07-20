@@ -14,10 +14,15 @@
 // the EN_GDI_PROBE() call sites once Stage 5a's data is captured.
 //---------------------------------------------------------------------------
 
-// Flip this to 0 (or delete) to make every probe a no-op.
-// Windows-only: the probe body uses _ReturnAddress/_snprintf_s/fopen_s and a
-// d:\tmp log path. On Linux the probes compile out to ((void)0).
-#ifdef _WIN32
+// Windows-only: the probe body uses _ReturnAddress/_snprintf_s/fopen_s. On Linux
+// the probes compile out to ((void)0). Release builds compile them out everywhere:
+// this is per-call-site instrumentation, not a diagnostic anyone reads in the field
+// (operator: strip the gameplay probes from the shipping build). Define
+// EN_GDI_AUDIT_FORCE to bring them back for a Stage-5a style audit.
+// Self-contained gate: this header is in the wind22 library tree and cannot rely on
+// the game's enprobes.h being included first. Define EN_GDI_AUDIT_FORCE (compiler
+// flag) to re-arm the audit.
+#if defined( _WIN32 ) && defined( EN_GDI_AUDIT_FORCE )
 #define EN_GDI_AUDIT 1
 #endif
 

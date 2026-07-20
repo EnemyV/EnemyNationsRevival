@@ -28,6 +28,7 @@
 #include "sfx.h"
 #include "sprite.h"
 #include "stdafx.h"
+#include "enprobes.h"   // EN_GAMEPLAY_PROBES
 #include "terrain.inl"
 #include "ui.inl"
 #include "unit.inl"
@@ -3049,6 +3050,7 @@ int CWndArea::OnCreate( LPCREATESTRUCT lpCreateStruct )
         rect.Width( ), rect.Height( ) );
 
     // Create SDL2 panel for this area window
+#if EN_GAMEPLAY_PROBES
     {
         char b[160];
         sprintf_s( b, "[REN] CWndArea::OnCreate panel-create: gameWindow=%p compositor=%p existingPanel=%p\n",
@@ -3058,6 +3060,7 @@ int CWndArea::OnCreate( LPCREATESTRUCT lpCreateStruct )
         OutputDebugStringA( b );
         FILE* _f = fopen( "SDL2Panel.log", "a" ); if ( _f ) { fputs( b, _f ); fclose( _f ); }
     }
+#endif
     if ( theApp.m_gameWindow && theApp.m_gameWindow->GetCompositor() )
     {
         // Get screen position of this window's client area

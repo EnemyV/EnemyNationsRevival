@@ -354,14 +354,14 @@ BOOL CNetApi::Broadcast( LPCVPMSGHDR pData, int iLen, BOOL bLocal )
 // PlaceRocket -> bldg_new(rocket) matching the client's plyrnum). stderr for the
 // POSIX clients + OutputDebugString for the Win host (dbgcatch records ODS, not
 // stderr). Cheap and rare - stays on until the MP start path is stable.
-// Env-gated: EN_MPDIAG=0 silences it. Default is ON while the MP-start hunt is
-// live; flip the default to OFF (require EN_MPDIAG=1) before final release.
+// Env-gated: default OFF as the note above always intended for release — set
+// EN_MPDIAG=1 to re-arm it for an MP-start hunt.
 static BOOL MpDiagOn( )
 {
     static int s_on = -1;
     if ( s_on < 0 ) {
         const char* e = getenv( "EN_MPDIAG" );
-        s_on = ( e != NULL && *e == '0' ) ? 0 : 1;
+        s_on = ( e != NULL && *e == '1' ) ? 1 : 0;
     }
     return s_on;
 }
@@ -1946,7 +1946,7 @@ static void BuildBridge( CMsgBuildBridge* pMsg )
     // test params
     if ( ( ( xAdd != 0 ) && ( yAdd != 0 ) ) || ( pMsg->m_hexStart == pMsg->m_hexEnd ) )
     {
-#ifdef _WIN32
+#if defined( _WIN32 ) && EN_GAMEPLAY_PROBES
         { char szB[112]; sprintf( szB, "[BRIDGESRV] REJECT params plyr %d span %d,%d -> %d,%d\n", pMsg->m_iPlyrNum,
                   pMsg->m_hexStart.X( ), pMsg->m_hexStart.Y( ), pMsg->m_hexEnd.X( ), pMsg->m_hexEnd.Y( ) );
           OutputDebugStringA( szB ); }
@@ -1984,7 +1984,7 @@ static void BuildBridge( CMsgBuildBridge* pMsg )
         if ( ( iLen > iMaxSpan ) || ( pHex->GetUnits( ) & ( CHex::bldg | CHex::bridge ) ) )
         {
             ASSERT( iLen <= iMaxSpan );
-#ifdef _WIN32
+#if defined( _WIN32 ) && EN_GAMEPLAY_PROBES
             { char szB[128]; sprintf( szB, "[BRIDGESRV] REJECT %s plyr %d span %d,%d -> %d,%d at %d,%d len %d max %d\n",
                       ( iLen > iMaxSpan ) ? "span-too-long" : "obstacle-in-path", pMsg->m_iPlyrNum,
                       pMsg->m_hexStart.X( ), pMsg->m_hexStart.Y( ), pMsg->m_hexEnd.X( ), pMsg->m_hexEnd.Y( ),
@@ -2017,7 +2017,7 @@ static void BuildBridge( CMsgBuildBridge* pMsg )
     theMap._EnumHexes( _hexUL, 3, 3, fnEnumBaseBridge, &bbData );
     if ( !bbData.m_bOK )
     {
-#ifdef _WIN32
+#if defined( _WIN32 ) && EN_GAMEPLAY_PROBES
         { char szB[112]; sprintf( szB, "[BRIDGESRV] REJECT start-base plyr %d at %d,%d\n", pMsg->m_iPlyrNum,
                   pMsg->m_hexStart.X( ), pMsg->m_hexStart.Y( ) );
           OutputDebugStringA( szB ); }
@@ -2077,7 +2077,7 @@ static void BuildBridge( CMsgBuildBridge* pMsg )
     if ( pMsg->m_dwIDBrdg == 0 )
         pMsg->m_dwIDBrdg = theGame.GetID( );
 
-#ifdef _WIN32
+#if defined( _WIN32 ) && EN_GAMEPLAY_PROBES
     { char szB[112]; sprintf( szB, "[BRIDGESRV] ACCEPT plyr %d span %d,%d -> %d,%d id %lu\n", pMsg->m_iPlyrNum,
               pMsg->m_hexStart.X( ), pMsg->m_hexStart.Y( ), pMsg->m_hexEnd.X( ), pMsg->m_hexEnd.Y( ),
               (unsigned long)pMsg->m_dwIDBrdg );

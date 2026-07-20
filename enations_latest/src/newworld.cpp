@@ -10,6 +10,7 @@
 //
 
 #include "stdafx.h"
+#include "enprobes.h"   // EN_GAMEPLAY_PROBES
 #include "lastplnt.h"
 #include "GameWindow.h"
 #include "SDL2MFCPanel.h"
@@ -399,8 +400,10 @@ int GetPrime(int iMin) {
 }
 
 void CConquerApp::CreateNewWorld(unsigned uRand, AIinit *pAiData, int iSide, int iSideSize) {
+#if EN_GAMEPLAY_PROBES
     OutputDebugStringA( "[REN] CreateNewWorld ENTRY\n" );
     { FILE* _f = fopen( "SDL2Panel.log", "a" ); if ( _f ) { fputs( "[REN] CreateNewWorld ENTRY\n", _f ); fclose( _f ); } }
+#endif
 
     ASSERT (m_pCreateGame->GetDlgStatus() != NULL);
     // ASSERT_VALID + m_hWnd check removed — SDL2CreateStatus is the replacement (Phase 2d) and is not a CObject/CWnd
@@ -741,11 +744,13 @@ void CConquerApp::CreateNewWorld(unsigned uRand, AIinit *pAiData, int iSide, int
     m_pCreateGame->GetDlgStatus()->SetMsg(IDS_CREATE_WINDOWS);
     m_pCreateGame->GetDlgStatus()->SetPer(PER_CREATE_WINDOWS);
 
+#if EN_GAMEPLAY_PROBES
     {
         char b[128];
         sprintf_s( b, "[REN] NewGame window-create reached: HaveHP=%d\n", theGame.HaveHP() ? 1 : 0 );
         OutputDebugStringA( b );
     }
+#endif
     if (theGame.HaveHP()) {
         m_wndBar.Create();    // must be first to set row3
         m_wndVehicles.Create();
