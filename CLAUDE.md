@@ -47,6 +47,43 @@ Standing corrections from the same dictations:
 - One data point is not "fixed": sustained data + counterexamples, and
   periodically re-verify old fixes for returning bugs.
 
+## 📦 RELEASE RULES (added 2026-07-20 after the 3.00.007 incident)
+
+**Before packaging ANY artifact, prove the branch contains every other lane.** Not the
+version number, not the board, not memory — the commit graph:
+
+```powershell
+git fetch revival --prune
+# every active branch must report 0
+foreach ($b in git branch -r --list 'revival/release3_00_*' 'revival/master' 'revival/mac-build' 'revival/linux-build') {
+  "$b : $(git rev-list --count HEAD..$($b.Trim()))"
+}
+```
+
+Non-zero on any lane = **DO NOT CUT**. Merge or cherry-pick first, then re-check.
+(`git cherry` marks conflict-resolved picks as `+` even when the content IS present —
+when that happens, verify per-symbol, not by patch-id.)
+
+**Then verify the BUILT BINARY, not the source.** Scan the shipped exe for a string
+unique to each lane's work (e.g. `[TRAP-REMOVED]` = 006 lineage, `SCROLLBAR` = the create
+fix, `Player %1 has died` = the POSIX STRINGTABLE fix). Source correctness does not prove
+the artifact was built from that source.
+
+**Version numbers do NOT imply recency.** They're hand-typed. 3.00.007 looked newer than
+3.00.006 while containing 113 fewer commits. Never reason "higher number = newer code."
+
+**Version fields — three DIFFERENT numbers, don't conflate them** (`enations_latest/src/version.h`):
+- `VER_STRING` / `RES_VER_STRING` — the display build number ("3.00.008"). Bump freely;
+  **no effect on saves**. Both must be edited together; it's the only file with the string.
+- `VER_RELEASE` — the **save-format** counter (stored as `m_dwVer`). Bump ONLY when adding
+  serialized fields, and gate every new read on `theGame.m_dwVer >= N`. Currently 7.
+- `VER_MAJOR` / `VER_MINOR` — the only fields the save loader REJECTS on
+  (`player.cpp:3465`). Bumping either invalidates every existing save.
+
+**If a bad artifact ships:** convert the GitHub release to a **draft** (hides it, assets
+404 publicly, nothing is destroyed) rather than deleting it — other agents' good assets
+may be attached to it.
+
 ## ⚠️ Cross-platform integration + multi-agent coordination (READ FIRST)
 
 We are merging **three platform codebases into one tree** for release **3.00.000**:
@@ -54,10 +91,16 @@ We are merging **three platform codebases into one tree** for release **3.00.000
 work in parallel — at least one per platform, sometimes more — each on its own machine,
 all sharing the integration branch.
 
-- **Integration branch: `release3_00_000`** (cut from `mac-build`, which already contains
-  Windows game logic + the Linux port + the macOS port). This is the single source of truth.
+- **Release lane: `release3_00_008`** (as of 2026-07-20). This is the single source of truth.
   Pull it before you work; build before you push; keep all three platforms compiling.
+  **`release3_00_000` / `_005` / `_006` / `_007` are DEAD** — do not commit to them.
+- **⛔ NEVER cut a release without running the containment check** (see the release rules
+  below). On 2026-07-20 the 3.00.007 Windows asset shipped from a branch **113 commits
+  behind** the real development line, missing a month of verified crash fixes.
 - **You are one of several agents.** Coordinate — don't silently change shared files.
+- **Creating a branch, or publishing a GitHub release, REQUIRES a board post.** The 007
+  incident happened because a second release branch was created — and a release shipped
+  from it — with no board announcement, so the other agents kept working on the old lane.
 - **Live cross-agent message board + build-status table: [AGENT_SYNC.md](AGENT_SYNC.md).**
   Read it at the start of every loop; post there when you change shared code, get blocked,
   or finish a task. Message format is defined at the top of that file — follow it exactly.
