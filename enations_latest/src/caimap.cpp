@@ -1295,6 +1295,17 @@ void CAIMap::FindBridgeOnPlan( CHexCoord& hexSite, CAIUnit *pUnit )
 		}
 #endif
 	}
+	else
+	{
+		// no viable crossing: IsBridgeSpan writes CAI_PREV/DEST per candidate as
+		// scratch, so a trailing denied-and-skipped candidate leaves them non-zero.
+		// The anchored dispatch reads non-zero params as "found" -> a duplicate
+		// crane on a claimed span. Clear them so no-find reads as no-find.
+		pUnit->SetParam( CAI_PREV_X, 0 );
+		pUnit->SetParam( CAI_PREV_Y, 0 );
+		pUnit->SetParam( CAI_DEST_X, 0 );
+		pUnit->SetParam( CAI_DEST_Y, 0 );
+	}
 }
 
 //
