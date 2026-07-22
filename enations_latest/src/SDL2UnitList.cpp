@@ -223,23 +223,18 @@ void SDL2UnitList::Render() {
     // Content width excludes scrollbar (always reserved)
     int contentW = w - SB_WIDTH;
 
-    // Highlight whichever item matches the area map's current selection, rather
-    // than a stored index. This keeps the list in sync with the map: selecting a
-    // unit on the map highlights it here, and ??? importantly ??? when the map clears
-    // its selection (e.g. after a crane is given a build order, area.cpp build_loc
-    // does RemoveAllUnits/SelectOff) the highlight clears here too instead of
-    // lingering.
-    CUnit* pSelUnit = nullptr;
-    if (CWndArea* pTop = theAreaList.GetTop())
-        pSelUnit = pTop->GetUnit();
+    // Highlight is driven per-row from each unit's live selected flag (RenderItem
+    // re-resolves the row by ID and reads IsSelected()), so the whole selection SET
+    // shows selected ??? not just the single m_pUnit. This keeps the list in sync with
+    // the map: box/list-selecting units highlights them all here, and when the map
+    // clears its selection (e.g. after a crane is given a build order, area.cpp
+    // build_loc does RemoveAllUnits/SelectOff) the highlight clears here too.
 
     // Render visible items (within content area, not overlapping scrollbar)
     int y = -m_scrollY;
     for (int i = 0; i < (int)m_items.size(); i++) {
-        if (y + ITEM_HT > 0 && y < h) {
-            bool selected = (pSelUnit != nullptr && m_items[i].pUnit == pSelUnit);
-            RenderItem(dst, i, 0, y, contentW, selected);
-        }
+        if (y + ITEM_HT > 0 && y < h)
+            RenderItem(dst, i, 0, y, contentW, false);
         y += ITEM_HT;
     }
 
@@ -313,6 +308,7 @@ void SDL2UnitList::RenderItem(SDL_Surface* dst, int idx, int x, int y, int w, bo
     if ( pLive == NULL )
         return;            // unit died since the last Rebuild() ??? don't draw a stale row
     item.pUnit = pLive;
+    selected = pLive->IsSelected();   // reflect the map's live selection set
 
     // --- Background: STRETCH to fill entire item (matching original StretchBlt) ---
     SDL_Surface* bg = selected ? m_bgSelected : m_bgNormal;
@@ -814,11 +810,57 @@ void SDL2UnitList::RenderStatusBars(SDL_Surface* dst, CUnit* pUnit, int x, int y
     }
 }
 
-void SDL2UnitList::OnClick(int itemIdx, bool dblClick) {
-    if (itemIdx < 0 || itemIdx >= (int)m_items.size()) return;
+// Re-resolve a row's unit against the live map by ID; a row can outlive its unit
+// (the list is only rebuilt every ~2s), so the cached pointer may be stale.
+CUnit* SDL2UnitList::LiveUnit(int idx) {
+    if (idx < 0 || idx >= (int)m_items.size()) return nullptr;
+    return (m_type == VEHICLES)
+               ? (CUnit*)theVehicleMap.GetVehicle(m_items[idx].dwID)
+               : (CUnit*)theBuildingMap.GetBldg(m_items[idx].dwID);
+}
 
-    CUnit* pUnit = m_items[itemIdx].pUnit;
+// Windows-convention extended selection, mirrored onto the area map's unit set.
+// Faithful to the 1996 CWndListUnits::OnLbnClk semantics: the map selection becomes
+// all highlighted rows, and m_pUnit is set only when exactly one unit is selected
+// (CWndArea::OnlySelectUnit/AddSelectUnit/SubSelectUnit enforce that).
+void SDL2UnitList::Select(int itemIdx, bool ctrl, bool shift) {
+    CUnit* pUnit = LiveUnit(itemIdx);
     CWndArea* pArea = theAreaList.GetTop();
+    if (!pUnit || !pArea) return;
+
+    if (shift && m_anchorIdx >= 0 && m_anchorIdx < (int)m_items.size()) {
+        // Range from anchor to clicked row, replacing the selection; anchor stays put.
+        int lo = std::min(m_anchorIdx, itemIdx);
+        int hi = std::max(m_anchorIdx, itemIdx);
+        bool first = true;
+        for (int i = lo; i <= hi; i++) {
+            CUnit* pU = LiveUnit(i);
+            if (!pU) continue;
+            if (first) { pArea->OnlySelectUnit(pU); first = false; }
+            else       pArea->AddSelectUnit(pU);
+        }
+    } else if (ctrl) {
+        // Toggle this row in/out of the set.
+        if (pUnit->IsSelected()) pArea->SubSelectUnit(pUnit);
+        else                     pArea->AddSelectUnit(pUnit);
+        m_anchorIdx = itemIdx;
+    } else {
+        // Plain click: single select + center on the unit (existing behavior).
+        pArea->OnlySelectUnit(pUnit);
+        if (pUnit->GetUnitType() == CUnit::vehicle)
+            pArea->Center(CMapLoc(((CVehicle*)pUnit)->GetPtHead()));
+        else if (pUnit->GetUnitType() == CUnit::building)
+            pArea->Center(CMapLoc(((CBuilding*)pUnit)->GetHex()));
+        m_anchorIdx = itemIdx;
+    }
+
+    pArea->InvalidateWindow();
+    m_selectedIdx = itemIdx;
+}
+
+void SDL2UnitList::OnClick(int itemIdx, bool dblClick) {
+    CUnit* pUnit = LiveUnit(itemIdx);
+    if (!pUnit) return;
 
     if (dblClick) {
         // ShowWindow() brings the relevant area map to the top of the list and
@@ -856,18 +898,6 @@ void SDL2UnitList::OnClick(int itemIdx, bool dblClick) {
             pTop->OnlySelectUnit(pUnit);
             pTop->InvalidateWindow();
         }
-    } else {
-        if (pArea) {
-            pArea->OnlySelectUnit(pUnit);
-            pArea->InvalidateWindow();
-
-            if (pUnit->GetUnitType() == CUnit::vehicle) {
-                CHexCoord hex = ((CVehicle*)pUnit)->GetPtHead();
-                pArea->Center(CMapLoc(hex));
-            } else if (pUnit->GetUnitType() == CUnit::building) {
-                pArea->Center(CMapLoc(((CBuilding*)pUnit)->GetHex()));
-            }
-        }
     }
 }
 
@@ -900,14 +930,21 @@ bool SDL2UnitList::HandleEvent(SDL_Event& event, int localX, int localY) {
             } else {
                 // Click on list item
                 int itemIdx = (localY + m_scrollY) / ITEM_HT;
+                if (itemIdx >= 0 && itemIdx < (int)m_items.size()) {
+                    DWORD now = ::timeGetTime();
+                    bool dblClick = (itemIdx == m_lastClickIdx && now - m_lastClickTime < 400);
+                    m_lastClickTime = now;
+                    m_lastClickIdx = itemIdx;
 
-                DWORD now = ::timeGetTime();
-                bool dblClick = (itemIdx == m_lastClickIdx && now - m_lastClickTime < 400);
-                m_lastClickTime = now;
-                m_lastClickIdx = itemIdx;
-
-                m_selectedIdx = itemIdx;
-                OnClick(itemIdx, dblClick);
+                    if (dblClick) {
+                        OnClick(itemIdx, true);   // show + center, single-select
+                    } else {
+                        // Windows-convention extended select (modifier state read live,
+                        // like area.cpp SDLModToMFC): Ctrl toggles, Shift ranges.
+                        SDL_Keymod km = SDL_GetModState();
+                        Select(itemIdx, (km & KMOD_CTRL) != 0, (km & KMOD_SHIFT) != 0);
+                    }
+                }
             }
             m_forceDraw = true;  // repaint immediately so selection/scroll feels instant
         }

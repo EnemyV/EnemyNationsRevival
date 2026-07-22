@@ -20,6 +20,7 @@ private:
     void OnHelp();
     void OnMinimize();
     void OnResetWindows();
+    void OnMission();   // replay scenario briefing (scenario games only)
 
     void ApplySettings();
 

@@ -66,6 +66,15 @@ public:
     // etc. are user-range messages that need explicit dispatch here.
     virtual LRESULT WindowProc(UINT msg, WPARAM wParam, LPARAM lParam) override;
 
+    // Called directly from the SDL event pump (GameWindow: window-close, F2,
+    // Ctrl+P/S) now that the MFC message map is dead — hence public. OnCommand
+    // re-dispatches the same handlers for the residual TranslateAccelerator path.
+    afx_msg void OnCloseApp();
+    afx_msg void OnSave();
+    afx_msg void OnPause();
+    afx_msg void OnBoss();
+    virtual BOOL OnCommand( WPARAM wParam, LPARAM lParam ) override;
+
 protected:
 	void		OnDisplayChange2 ();
 	void		DrawScreen ( CRect const & rectDst );
@@ -86,9 +95,7 @@ protected:
 	afx_msg void OnPaint();
 	afx_msg void OnHide();
 	afx_msg void OnUnHide();
-	afx_msg void OnSave();
 	afx_msg void OnArea();
-	afx_msg void OnBoss();
 	afx_msg void OnHelp();
 	afx_msg void OnMail();
 	afx_msg void OnOptions();
@@ -99,11 +106,9 @@ protected:
 	afx_msg void OnVehicles();
 	afx_msg void OnNext();
 	afx_msg void OnPrev();
-	afx_msg void OnPause();
 	afx_msg void OnPaletteChanged(CWnd* pFocusWnd);
 	afx_msg BOOL OnQueryNewPalette();
 	afx_msg BOOL OnQueryEndSession();
-	afx_msg void OnCloseApp();
 	afx_msg void OnTimer(UINT nIDEvent);
 	afx_msg void OnKeyDown(UINT nChar, UINT nRepCnt, UINT nFlags);
 	afx_msg void OnLButtonDown(UINT nFlags, CPoint point);

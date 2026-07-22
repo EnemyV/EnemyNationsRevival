@@ -688,19 +688,39 @@ bool SDL2_RunCreateScenarioFlow(GameWindow* gameWindow) {
     if (gameWindow->GetWindow())
         SDL_RaiseWindow(gameWindow->GetWindow());
 
+    // Scenario setup — mirror CDlgScenario::OnOK (scenario.cpp): fixed campaign
+    // start position, NUM_AI_IN_SCENARIO opponents (+difficulty, CPU-clamped), and
+    // — the load-bearing bit lost in the port — SetScenario(0) so the mission
+    // gates (mainloop.cpp / ScenarioEnd) engage instead of a plain skirmish.
     theGame.m_iAi = pCreate->m_iAi = scnDlg.m_iAiLevel;
     theGame.m_iSize = pCreate->m_iSize = scnDlg.m_iWorldSize;
-    theGame.m_iPos = pCreate->m_iPos = 1;
-    pCreate->m_iNumAi = 1;
+    theGame.m_iPos = pCreate->m_iPos = SCENARIO_POS;
     pCreate->m_iNet = -1;
+
+    pCreate->m_iNumAi = NUM_AI_IN_SCENARIO + scnDlg.m_iAiLevel;
+    int iMax = __max(0, theApp.GetCpuSpeed() - 100);
+    iMax = 3 + iMax / 20;
+    pCreate->m_iNumAi = __min(iMax, pCreate->m_iNumAi);
+    pCreate->m_iNumAi = __max(NUM_AI_IN_SCENARIO, pCreate->m_iNumAi);
+
+    theGame.SetScenario(0);
 
     CRaceDef* pRace = &ptheRaces[raceDlg.m_iSelectedRace];
     pCreate->m_sName = raceDlg.m_playerName.c_str();
     pCreate->m_sRace = pRace->GetLine();
 
     theGame.GetMe()->SetName(raceDlg.m_playerName.c_str());
-    theGame.GetMe()->m_InitData.Set(pRace, 1);
-    pCreate->GetNew()->m_InitData.Set(pRace, 1);
+    theGame.GetMe()->m_InitData.Set(pRace, pCreate->m_iPos);
+    pCreate->GetNew()->m_InitData.Set(pRace, pCreate->m_iPos);
+
+    // Scenario intro briefing (CDlgPickRace::OnOK played it once race was picked).
+    // Cancel here aborts the game the same way the earlier dialogs' cancels do.
+    if (theCutScene.PlayCutScene(theGame.GetScenario(), FALSE) != CUT_OK) {
+        theGame.Close();
+        delete theApp.m_pCreateGame;
+        theApp.m_pCreateGame = NULL;
+        return false;
+    }
 
     // Fill the wallpaper-only gap before the "Creating world..." progress dialog
     // (same style as the online "Searching for games..." status line).

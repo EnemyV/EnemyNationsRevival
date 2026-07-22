@@ -11,7 +11,9 @@
 #include "sfx.h"
 
 SDL2FileDialog::SDL2FileDialog(GameWindow* gw)
-    : SDL2Dialog(gw, "Game Options", 360, 344)
+    // Scenario games get one extra button row ("Mission" briefing replay), so
+    // grow the dialog to fit it rather than cramming 5 rows into the skirmish height.
+    : SDL2Dialog(gw, "Game Options", 360, 344 + (theGame.GetScenario() >= 0 ? 42 : 0))
 {
 }
 
@@ -58,10 +60,15 @@ void SDL2FileDialog::OnInit() {
     const int col2 = gridX + btnW + colGap;
     const int fullW = btnW * 2 + colGap;
 
-    // Distribute the 4 rows evenly between the settings box and the bottom border.
+    // Scenario games add a full-width "Mission" row (replays the objective
+    // briefing, like the 1996 Options->Mission button — IDC_FILE_SCENE).
+    const bool bScenario = theGame.GetScenario() >= 0;
+    const int nRows = bScenario ? 5 : 4;
+
+    // Distribute the rows evenly between the settings box and the bottom border.
     const int areaTop = gbY + gbH + 12;
     const int areaBot = cBot - 8;
-    int rowGap = (areaBot - areaTop - 4 * btnH) / 3;
+    int rowGap = (areaBot - areaTop - nRows * btnH) / (nRows - 1);
     if (rowGap < 8)  rowGap = 8;
     if (rowGap > 16) rowGap = 16;
     const int rowStep = btnH + rowGap;
@@ -74,6 +81,11 @@ void SDL2FileDialog::OnInit() {
     AddWidget<SDL2Button>(gridX, by, btnW, btnH, "Minimize", [this]() { OnMinimize(); });
     AddWidget<SDL2Button>(col2,  by, btnW, btnH, "Help",     [this]() { OnHelp(); });
     by += rowStep;
+
+    if (bScenario) {
+        AddWidget<SDL2Button>(gridX, by, fullW, btnH, "Mission", [this]() { OnMission(); });
+        by += rowStep;
+    }
 
     AddWidget<SDL2Button>(gridX, by, fullW, btnH, "Reset Windows", [this]() { OnResetWindows(); });
     by += rowStep;
@@ -225,6 +237,14 @@ void SDL2FileDialog::OnResetWindows() {
     if (m_gameWindow && m_gameWindow->GetCompositor())
         m_gameWindow->GetCompositor()->ResetWindowLayout();
     EndDialog(1);
+}
+
+void SDL2FileDialog::OnMission() {
+    // Replay the current scenario's briefing (repeat mode = OK-only, no cancel/save).
+    // Mirrors CDlgFile::OnFileScene. The full-screen cut scene nests over this dialog
+    // and returns here when dismissed.
+    if (theGame.GetScenario() >= 0)
+        theCutScene.PlayCutScene(theGame.GetScenario(), TRUE);
 }
 
 void SDL2FileDialog::OnMinimize() {

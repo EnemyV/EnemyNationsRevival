@@ -573,6 +573,25 @@ int CWndWorld::OnCreate(LPCREATESTRUCT lpCreateStruct) {
                     pThis->OnMouseMove(flags, pt);
                     pThis->SetMouseState();
                     return true;
+                case SDL_KEYDOWN:
+                    // IDR_WORLD accelerators (lastplnt.rc): overlay toggles. Ignore
+                    // auto-repeat so a held key doesn't flip the toggle every frame.
+                    // No text input in this window, so no focus/typing guard needed.
+                    if (event.key.repeat)
+                        return true;
+                    switch (event.key.keysym.sym) {
+                    case SDLK_e: pThis->OnUnits();   return true;  // IDA_ENEMY: other units
+                    case SDLK_r: pThis->OnRes();     return true;  // IDA_RESOURSES
+                    case SDLK_u: pThis->OnMine();    return true;  // IDA_UNITS: my units
+                    case SDLK_v: pThis->OnVisible(); return true;  // IDA_VISIBLE: fog
+                    case SDLK_F4:                                  // IDA_CLOSE_WIN: Ctrl+F4 hides
+                        if (event.key.keysym.mod & KMOD_CTRL) {
+                            pThis->OnCloseWin();
+                            return true;
+                        }
+                        break;
+                    }
+                    return false;
                 }
                 return false;
             });

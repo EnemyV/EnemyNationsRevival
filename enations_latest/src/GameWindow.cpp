@@ -1004,11 +1004,9 @@ void GameWindow::HandleEvent(SDL_Event& event) {
         case SDL_WINDOWEVENT:
             if (event.window.event == SDL_WINDOWEVENT_CLOSE) {
                 LogToFile("Window close event — routing through OnCloseApp");
-                // Route through the MFC main window's close handler, which calls
-                // SaveGame() (now SDL2-based) for quit confirmation + save prompt.
-#ifdef _WIN32
-                ::PostMessage(theApp.m_wndMain.m_hWnd, WM_COMMAND, IDA_CLOSE_APP, 0);
-#endif
+                // Direct, portable call: SaveGame()-backed quit confirm + save prompt.
+                // The old PostMessage(WM_COMMAND) route died with the MFC message map.
+                theApp.m_wndMain.OnCloseApp();
             }
             else if (event.window.event == SDL_WINDOWEVENT_SIZE_CHANGED) {
                 m_width  = event.window.data1;
@@ -1119,7 +1117,6 @@ void GameWindow::HandleEvent(SDL_Event& event) {
 }
 
 bool GameWindow::HandleGlobalShortcut(SDL_Event& event) {
-#ifdef _WIN32
     if (event.type != SDL_KEYDOWN)
         return false;
 
@@ -1128,12 +1125,13 @@ bool GameWindow::HandleGlobalShortcut(SDL_Event& event) {
     if (!theApp.m_wndBar.IsCreated())
         return false;
 
-    // The window-switch commands call the SAME public CWndBar handlers the toolbar
-    // buttons use (CWndMain::On* just forward to these). The old path posted
-    // WM_COMMAND to m_wndMain, but that MFC window is stubbed in the SDL port so the
-    // messages were never dispatched — call the handlers directly instead.
+    // Every case dispatches through a portable direct call: the window-switch
+    // commands hit the SAME public CWndBar handlers the toolbar buttons use, and
+    // pause/save/boss hit CWndMain's handlers. The old path posted WM_COMMAND to
+    // m_wndMain, but that MFC message map is dead in the SDL port so nothing was
+    // dispatched — hence this whole routine used to be _WIN32-only and dead
+    // everywhere.
     CWndBar&    bar  = theApp.m_wndBar;
-    HWND        hMain = theApp.m_wndMain.m_hWnd;   // may be NULL (stub) in the SDL port
     SDL_Keycode key  = event.key.keysym.sym;
     SDL_Keymod  mod  = (SDL_Keymod)event.key.keysym.mod;
     bool        ctrl = (mod & KMOD_CTRL) != 0;
@@ -1156,7 +1154,7 @@ bool GameWindow::HandleGlobalShortcut(SDL_Event& event) {
         return true;
     }
     if (key == SDLK_F2) {
-        if (hMain) ::PostMessage(hMain, WM_COMMAND, (WPARAM)IDA_BOSS, 0);
+        theApp.m_wndMain.OnBoss();   // minimize (portable via MinimizeAll)
         return true;
     }
 
@@ -1173,16 +1171,12 @@ bool GameWindow::HandleGlobalShortcut(SDL_Event& event) {
         case SDLK_d: bar.GotoRelations();         return true;
         case SDLK_h: bar.ShowWindow(SW_HIDE);     return true;  // hide toolbar
         case SDLK_u: bar.ShowWindow(SW_SHOW);     return true;  // unhide toolbar
-        // Pause/save keep the MFC command route (server-side pause logic / SaveGame);
-        // no-op if the stubbed main window has no HWND.
-        case SDLK_p: if (hMain) ::PostMessage(hMain, WM_COMMAND, (WPARAM)IDA_PAUSE, 0); return true;
-        case SDLK_s: if (hMain) ::PostMessage(hMain, WM_COMMAND, (WPARAM)IDA_SAVE, 0);  return true;
+        // Pause = server-side pause logic; Save = SaveGame (both SDL2-safe).
+        case SDLK_p: theApp.m_wndMain.OnPause(); return true;
+        case SDLK_s: theApp.m_wndMain.OnSave();  return true;
         default: break;
         }
     }
-#else
-    (void)event;
-#endif
     return false;
 }
 

@@ -59,6 +59,8 @@ private:
     void RenderMaterialsBar(SDL_Surface* dst, CUnit* pUnit, int iconIdx, int x, int y, int w, int h);
 
     void OnClick(int itemIdx, bool dblClick);
+    void Select(int itemIdx, bool ctrl, bool shift);   // extended list selection -> map
+    CUnit* LiveUnit(int idx);                           // re-resolve row by ID (unit may have died)
 
     ListType     m_type;
     SDL2Panel*   m_panel = nullptr;
@@ -91,6 +93,7 @@ private:
     std::vector<ListItem> m_items;
     int m_scrollY = 0;
     int m_selectedIdx = -1;
+    int m_anchorIdx = -1;   // range-select anchor for Shift+click
 
     // Font
     std::string m_fontPath;

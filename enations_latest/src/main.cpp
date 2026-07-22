@@ -1106,7 +1106,25 @@ BOOL CWndMain::OnQueryEndSession()
 	return TRUE;
 }
 
-void CWndMain::OnCloseApp() 
+BOOL CWndMain::OnCommand( WPARAM wParam, LPARAM lParam )
+{
+	// The MFC message map is dead (ON_COMMAND is a no-op in the SDL port), but the
+	// residual TranslateAccelerator path (mainloop.cpp) still posts WM_COMMAND for
+	// the in-game accelerators. Dispatch them here so an accel hit performs the
+	// action instead of swallowing the key.
+	switch ( LOWORD( wParam ) )
+	{
+	case IDA_PAUSE:     OnPause();    return TRUE;
+	case IDA_SAVE:      OnSave();     return TRUE;
+	case IDA_BOSS:      OnBoss();     return TRUE;
+	case IDA_CLOSE_APP: OnCloseApp(); return TRUE;
+	case IDA_HELP:      OnHelp();     return TRUE;
+	default: break;
+	}
+	return CWndBase::OnCommand( wParam, lParam );
+}
+
+void CWndMain::OnCloseApp()
 {
 
 	// if we aren't playing - exit

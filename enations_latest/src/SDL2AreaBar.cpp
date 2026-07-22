@@ -5,10 +5,13 @@
 #include "SDL2MainMenu.h"
 #include "GameWindow.h"
 #include "lastplnt.h"
+#include "player.h"       // CPlayer (housing/occupancy bars), theGame.GetMe
 #include "area.h"
 #include "building.h"
 #include "building.inl"   // CBuilding::IsConstructing, CVehicleBuilding::GetBldUnt (inline)
+#include "vehicle.inl"    // CVehicle inlines + theTransports / theVehicleMap
 #include "unit.inl"       // CUnit::GetUnitType/IsPaused inlines (needed at /Ob2)
+#include "terrain.inl"    // CHexCoord/CMapLoc inlines for the building-hex lookups (/Ob2)
 #include "bitmaps.h"
 #include "bmbutton.h"
 #include "icons.h"
@@ -89,6 +92,8 @@ SDL2AreaBar::SDL2AreaBar() {
 SDL2AreaBar::~SDL2AreaBar() {
     if (m_btnSheet) SDL_FreeSurface(m_btnSheet);
     if (m_bgTile) SDL_FreeSurface(m_bgTile);
+    for (auto& icon : m_iconData)
+        if (icon.sheet) SDL_FreeSurface(icon.sheet);
     for (auto& p : m_fontCache)
         if (p.second) TTF_CloseFont(p.second);
 }
@@ -117,6 +122,30 @@ void SDL2AreaBar::Init(SDL2Panel* panel, CWndArea* pArea, HWND hStaticWnd) {
     CDIB* pBg = theBitmaps.GetByIndex(DIB_AREA_BAR);
     if (pBg)
         m_bgTile = SDL2MainMenu::CreateSurfaceFromDIB(pBg);
+
+    // Load icon sprite sheets for the selected-unit status readout (ICON_* 0..14),
+    // exactly as SDL2Toolbar does — these feed RenderUnitStatus / RenderStatusBars.
+    for (int i = 0; i < 15; i++) {
+        CStatData* pSd = theIcons.GetByIndex(i);
+        if (!pSd) continue;
+        m_iconData[i].cxIcon = pSd->m_cxIcon;
+        m_iconData[i].cyIcon = pSd->m_cyIcon;
+        m_iconData[i].cxLeft = pSd->m_cxLeft;
+        m_iconData[i].cxBack = pSd->m_cxBack;
+        m_iconData[i].cxRight = pSd->m_cxRight;
+        m_iconData[i].cyBack = pSd->m_cyBack;
+        m_iconData[i].leftOff = pSd->m_leftOff;
+        m_iconData[i].rightOff = pSd->m_rightOff;
+        m_iconData[i].typIcon = (int)pSd->m_iTypIcon;
+        m_iconData[i].typBack = (int)pSd->m_iTypBack;
+        m_iconData[i].nNeedIcon = pSd->m_nNeedIcon;
+        if (pSd->m_pcDib)
+            m_iconData[i].sheet = SDL2MainMenu::CreateSurfaceFromDIB(pSd->m_pcDib);
+    }
+    // Status-bar row height = ICON_DAMAGE background height (matches the original
+    // CWndUnitStat m_iStatHt).
+    if (m_iconData[ICON_DAMAGE].cyBack > 0)
+        m_statBarHt = m_iconData[ICON_DAMAGE].cyBack;
 
     // Compute button positions (matching CWndAreaStatic layout)
     int x = AREA_BTN_X_SKIP;
@@ -301,6 +330,28 @@ void SDL2AreaBar::Render() {
         RenderButton(dst, i, m_btnPos[i].x, m_btnPos[i].y, m_btnPos[i].w, m_btnPos[i].h);
     }
 
+    // Selected-unit status readout in the right region — restores the 1996 local
+    // status bar (name + damage + materials/cargo). Data source is the existing
+    // CWndUnitStat feed via GetStaticUnit(); nothing selected -> region stays as-is.
+    if (m_pArea) {
+        CUnit* pUnit = m_pArea->GetStaticUnit();
+        if (pUnit) {
+            // Status start = the same two fixed anchors CWndAreaStatic::OnCreate set:
+            // a crane shows the extra Road/Repair buttons, so its readout starts
+            // past ALL order buttons (m_totalW); otherwise it starts at the Road
+            // button's column (index 13). Both + one AREA_BTN_X_SKIP, matching the
+            // original m_iStatusCraneStrt / m_iStatusNoCraneStrt (area.cpp:1012,1015).
+            unsigned flags = m_pArea->m_uFlags;
+            bool isCrane = flags != 0 &&
+                           ((flags & (CWndArea::bldg | CWndArea::non_crane)) == 0);
+            int statX  = (isCrane ? m_totalW : m_btnPos[13].x) + AREA_BTN_X_SKIP;
+            int statW  = w - statX - AREA_BTN_X_SKIP;
+            int statY  = (h - AREA_TEXT_HT) / 2;   // vertically centered (SizeStatus)
+            if (statW > 0)
+                RenderUnitStatus(dst, pUnit, statX, statY, statW, AREA_TEXT_HT);
+        }
+    }
+
     m_panel->SetDirty();
 }
 
@@ -376,4 +427,493 @@ bool SDL2AreaBar::HandleEvent(SDL_Event& event, int localX, int localY) {
     }
     }
     return false;
+}
+
+
+/////////////////////////////////////////////////////////////////////////////
+// Selected-unit status readout (name + damage + materials/cargo icon bars).
+// Faithful port of the MFC CWndUnitStat path (_UnitShowStatus / CStatInst /
+// CUnit::PaintStatusBars), copied from SDL2Toolbar's proven hover-readout so the
+// area bar and the main toolbar render unit status identically. Data comes from
+// CWndArea::GetStaticUnit() (the existing StatUnit -> SetUnit feed).
+
+// Software StretchBlt: scale src(sr) to dst(dr).
+static void AB_StretchBlit(SDL_Surface* src, SDL_Rect sr, SDL_Surface* dst, SDL_Rect dr) {
+    if (!src || !dst || dr.w <= 0 || dr.h <= 0 || sr.w <= 0 || sr.h <= 0) return;
+    SDL_BlitScaled(src, &sr, dst, &dr);
+}
+
+int SDL2AreaBar::GetNumStatusBars(CUnit* pUnit) {
+    if (!pUnit) return 0;
+
+    if (pUnit->GetUnitType() == CUnit::vehicle) {
+        CVehicle* pVeh = (CVehicle*)pUnit;
+        if (pVeh->GetData()->IsTransport())
+            return 3;  // damage + route text + materials/cargo
+        if (pVeh->GetData()->IsCrane() || pVeh->GetData()->IsCarrier())
+            return 2;  // damage + construction/cargo
+        return 1;      // damage only
+    }
+
+    if (pUnit->GetUnitType() == CUnit::building) {
+        CBuilding* pBldg = (CBuilding*)pUnit;
+        if (pBldg->IsConstructing())
+            return 3;  // damage + materials + construction progress
+        int bt = pBldg->GetData()->GetBldgType();
+        if (bt == CStructureData::apartment || bt == CStructureData::office)
+            return 2;  // damage + population
+        int ut = pBldg->GetData()->GetUnionType();
+        int base;
+        if (ut == CStructureData::UTvehicle || ut == CStructureData::UTshipyard)
+            base = 3;
+        else if (ut == CStructureData::UTfarm)
+            base = (pBldg->GetData()->GetType() == CStructureData::farm) ? 2 : 3;
+        else if (pBldg->GetTotalStore() > 0)
+            base = 2;  // damage + materials
+        else
+            base = 1;  // damage only
+        if (CountContainedUnits(pBldg) > 0)
+            base++;    // trailing bar for units parked inside
+        return base;
+    }
+
+    return 1;
+}
+
+// Render the 3-piece background for a status bar icon.
+void SDL2AreaBar::Render3PieceBg(SDL_Surface* dst, int iconIdx, int x, int y, int w) {
+    IconData& icon = m_iconData[iconIdx];
+    if (!icon.sheet || icon.cyBack <= 0) return;
+
+    int bgSrcY = icon.cyIcon;  // background row is below the icon row
+
+    if (icon.typBack == 1) {  // back_3: left cap + tiled middle + right cap
+        if (icon.cxLeft > 0) {
+            SDL_Rect sr = {0, bgSrcY, icon.cxLeft, icon.cyBack};
+            SDL_Rect dr = {x, y, icon.cxLeft, icon.cyBack};
+            SDL_BlitSurface(icon.sheet, &sr, dst, &dr);
+        }
+        if (icon.cxBack > 0) {
+            int midX = x + icon.cxLeft;
+            int midEnd = x + w - icon.cxRight;
+            for (int tx = midX; tx < midEnd; tx += icon.cxBack) {
+                int bw = std::min(icon.cxBack, midEnd - tx);
+                SDL_Rect sr = {icon.cxLeft, bgSrcY, bw, icon.cyBack};
+                SDL_Rect dr = {tx, y, bw, icon.cyBack};
+                SDL_BlitSurface(icon.sheet, &sr, dst, &dr);
+            }
+        }
+        if (icon.cxRight > 0) {
+            SDL_Rect sr = {icon.cxLeft + icon.cxBack, bgSrcY, icon.cxRight, icon.cyBack};
+            SDL_Rect dr = {x + w - icon.cxRight, y, icon.cxRight, icon.cyBack};
+            SDL_BlitSurface(icon.sheet, &sr, dst, &dr);
+        }
+    } else if (icon.typBack == 0) {  // full_back: stretch entire background
+        SDL_Rect sr = {0, bgSrcY, icon.cxBack, icon.cyBack};
+        SDL_Rect dr = {x, y, w, icon.cyBack};
+        AB_StretchBlit(icon.sheet, sr, dst, dr);
+    } else {  // tile
+        for (int tx = 0; tx < w; tx += icon.cxBack) {
+            int bw = std::min(icon.cxBack, w - tx);
+            SDL_Rect sr = {0, bgSrcY, bw, icon.cyBack};
+            SDL_Rect dr = {x + tx, y, bw, icon.cyBack};
+            SDL_BlitSurface(icon.sheet, &sr, dst, &dr);
+        }
+    }
+}
+
+// Continuous gradient progress bar (damage/health).
+void SDL2AreaBar::RenderIconBar(SDL_Surface* dst, int iconIdx, int percent,
+                                int x, int y, int w, int h) {
+    Render3PieceBg(dst, iconIdx, x, y, w);
+
+    IconData& icon = m_iconData[iconIdx];
+    if (!icon.sheet || percent <= 0) return;
+
+    int barLeft = x + icon.leftOff;
+    int barRight = x + w - icon.rightOff;
+    int barW = barRight - barLeft;
+    if (barW <= 0) return;
+
+    int fillW = (barW * percent) / 100;
+    if (fillW <= 0) return;
+
+    int srcW = (icon.cxIcon * percent) / 100;
+    if (srcW <= 0) srcW = 1;
+    SDL_Rect sr = {0, 0, srcW, icon.cyIcon};
+    SDL_Rect dr = {barLeft, y, fillW, h};
+    AB_StretchBlit(icon.sheet, sr, dst, dr);
+}
+
+// Tiles the stat icon sprite across `percent`% of the bar (construction/road/etc).
+void SDL2AreaBar::RenderIconDone(SDL_Surface* dst, int iconIdx, int percent,
+                                 int x, int y, int w, int h) {
+    Render3PieceBg(dst, iconIdx, x, y, w);
+
+    if (percent <= 0) return;
+
+    IconData& icon = m_iconData[iconIdx];
+    if (!icon.sheet || icon.cxIcon <= 0 || icon.cyIcon <= 0) return;
+
+    int iconY  = y + (h - icon.cyIcon) / 2;
+    int left   = x + icon.leftOff;
+    int right  = x + w - icon.rightOff;
+    int width  = right - left;
+    if (width <= 0) return;
+
+    int iEnd = right;
+    if (percent < 100) iEnd -= icon.cxIcon / 2;
+    int iRight = left + (width * percent) / 100;
+    iRight = std::max(left + 1, iRight);
+    int iStep = std::max(1, icon.cxIcon / 2);
+
+    SDL_SetSurfaceBlendMode(icon.sheet, SDL_BLENDMODE_BLEND);
+    for (int ix = left; ix < iRight; ix += iStep) {
+        if (ix + icon.cxIcon > iEnd) break;
+        SDL_Rect sr = {0, 0, icon.cxIcon, icon.cyIcon};
+        SDL_Rect dr = {ix, iconY, icon.cxIcon, icon.cyIcon};
+        SDL_BlitSurface(icon.sheet, &sr, dst, &dr);
+    }
+}
+
+// Text inside a status bar background (unit name / route text).
+void SDL2AreaBar::RenderIconText(SDL_Surface* dst, int iconIdx, const char* text,
+                                 int x, int y, int w, int h) {
+    Render3PieceBg(dst, iconIdx, x, y, w);
+
+    IconData& icon = m_iconData[iconIdx];
+    if (!text || !text[0]) return;
+
+    TTF_Font* font = GetFont(16);
+    if (!font) return;
+
+    int textX = x + icon.leftOff;
+    int textW = w - icon.leftOff - icon.rightOff;
+    if (textW <= 0) return;
+
+    int th = 0;
+    TTF_SizeText(font, text, nullptr, &th);
+    int textY = y + (h - th) / 2;
+
+    SDL_Color white = {255, 255, 255, 255};
+    SDL_Surface* ts = TTF_RenderText_Blended(font, text, white);
+    if (ts) {
+        SDL_Rect sr = {0, 0, std::min(ts->w, textW), ts->h};
+        SDL_Rect dr = {textX, textY, sr.w, sr.h};
+        SDL_BlitSurface(ts, &sr, dst, &dr);
+        SDL_FreeSurface(ts);
+    }
+}
+
+// Carried vehicle sprites (a carrier's cargo).
+void SDL2AreaBar::RenderCarrierCargo(SDL_Surface* dst, CVehicle* pVeh, int iconIdx,
+                                     int x, int y, int w, int h) {
+    Render3PieceBg(dst, iconIdx, x, y, w);
+
+    IconData& icon = m_iconData[iconIdx];
+    if (!icon.sheet || icon.cxIcon <= 0 || icon.cyIcon <= 0) return;
+
+    int iconY = y + (h - icon.cyIcon) / 2;
+    int drawX = x + icon.leftOff;
+    int rightLimit = x + w - icon.rightOff;
+
+    auto pos = pVeh->GetCargoHeadPosition();
+    while (pos != NULL) {
+        CVehicle* pCargo = pVeh->GetCargoNext(pos);
+        if (drawX + icon.cxIcon > rightLimit) break;
+
+        int srcX = pCargo->GetData()->GetType() * icon.cxIcon;
+        if (srcX + icon.cxIcon <= icon.sheet->w) {
+            SDL_Rect sr = {srcX, 0, icon.cxIcon, icon.cyIcon};
+            SDL_Rect dr = {drawX, iconY, icon.cxIcon, icon.cyIcon};
+            SDL_SetSurfaceBlendMode(icon.sheet, SDL_BLENDMODE_BLEND);
+            SDL_BlitSurface(icon.sheet, &sr, dst, &dr);
+        }
+        drawX += icon.cxIcon;
+    }
+}
+
+// Count friendly vehicles parked inside a building (ships in a seaport, etc).
+int SDL2AreaBar::CountContainedUnits(CUnit* pUnit) {
+    if (!pUnit || pUnit->GetUnitType() != CUnit::building) return 0;
+    int n = 0;
+    auto pos = theVehicleMap.GetStartPosition();
+    while (pos != NULL) {
+        DWORD dwID; CVehicle* pVeh;
+        theVehicleMap.GetNextAssoc(pos, dwID, pVeh);
+        if (pVeh->GetOwner()->IsMe() && !pVeh->GetHexOwnership() &&
+            theBuildingHex._GetBuilding(pVeh->GetPtHead()) == pUnit)
+            n++;
+    }
+    return n;
+}
+
+// Draw the icons of the vehicles parked inside a building (reveals seaport/factory contents).
+void SDL2AreaBar::RenderContainedUnits(SDL_Surface* dst, CBuilding* pBldg, int iconIdx,
+                                       int x, int y, int w, int h) {
+    Render3PieceBg(dst, iconIdx, x, y, w);
+
+    IconData& icon = m_iconData[iconIdx];
+    if (!icon.sheet || icon.cxIcon <= 0 || icon.cyIcon <= 0) return;
+
+    int iconY = y + (h - icon.cyIcon) / 2;
+    int drawX = x + icon.leftOff;
+    int rightLimit = x + w - icon.rightOff;
+
+    auto pos = theVehicleMap.GetStartPosition();
+    while (pos != NULL) {
+        DWORD dwID; CVehicle* pVeh;
+        theVehicleMap.GetNextAssoc(pos, dwID, pVeh);
+        if (!pVeh->GetOwner()->IsMe() || pVeh->GetHexOwnership()) continue;
+        if (theBuildingHex._GetBuilding(pVeh->GetPtHead()) != pBldg) continue;
+        if (drawX + icon.cxIcon > rightLimit) break;
+
+        int srcX = pVeh->GetData()->GetType() * icon.cxIcon;
+        if (srcX + icon.cxIcon <= icon.sheet->w) {
+            SDL_Rect sr = {srcX, 0, icon.cxIcon, icon.cyIcon};
+            SDL_Rect dr = {drawX, iconY, icon.cxIcon, icon.cyIcon};
+            SDL_SetSurfaceBlendMode(icon.sheet, SDL_BLENDMODE_BLEND);
+            SDL_BlitSurface(icon.sheet, &sr, dst, &dr);
+        }
+        drawX += icon.cxIcon;
+    }
+}
+
+// Materials icon bars — faithful port of CUnit::PaintStatusMaterials.
+void SDL2AreaBar::RenderMaterialsBar(SDL_Surface* dst, CUnit* pUnit, int iconIdx,
+                                     int x, int y, int w, int h) {
+    Render3PieceBg(dst, iconIdx, x, y, w);
+
+    IconData& icon = m_iconData[iconIdx];
+    if (!icon.sheet || icon.cxIcon <= 0 || icon.cyIcon <= 0) return;
+
+    int total = pUnit->GetTotalStore();
+    if (total <= 0) return;
+
+    int maxStore = total;
+    if (pUnit->GetUnitType() == CUnit::vehicle) {
+        int maxMat = ((CVehicle*)pUnit)->GetMaxMaterials();
+        if (maxMat > total) maxStore = maxMat;
+    } else {
+        int iStep = std::max(1, icon.cxIcon / 2);
+        int barWi = w - icon.leftOff - icon.rightOff;
+        int numIcons = barWi / iStep;
+        maxStore = std::max(total, 500 * numIcons);
+    }
+
+    int iconY = y + (h - icon.cyIcon) / 2;
+    int barLeft = x + icon.leftOff;
+    int barRight = x + w - icon.rightOff;
+    int barW = barRight - barLeft;
+    if (barW <= 0) return;
+
+    // Single cursor advances by cxIcon/2 across ALL material types (no per-type
+    // reset), each type reserving room for one icon of every remaining type —
+    // mirrors CUnit::PaintStatusMaterials.
+    int iIconAdd = std::max(1, icon.cxIcon / 2);
+    int iLen   = barW - icon.cxIcon;
+    int iRight = barRight - icon.cxIcon;
+
+    int iNumTypes = 0;
+    for (int i = 0; i < CMaterialTypes::GetNumTypes(); i++)
+        if (pUnit->GetStore(i) > 0) iNumTypes++;
+
+    int iTotal = maxStore;
+    int cursor = barLeft;
+
+    for (int i = 0; i < CMaterialTypes::GetNumTypes(); i++) {
+        int stored = pUnit->GetStore(i);
+        if (stored <= 0) continue;
+
+        int iWid = (iTotal > 0) ? (iLen * stored) / iTotal : iLen;
+        iWid = std::max(1, iWid);
+        iNumTypes--;
+        iWid = std::min(iWid, iLen - iNumTypes * iIconAdd);
+        iTotal -= stored;
+        iWid += cursor;
+
+        int srcX = i * icon.cxIcon;
+        if (srcX + icon.cxIcon > icon.sheet->w)
+            srcX = 0;
+
+        SDL_SetSurfaceBlendMode(icon.sheet, SDL_BLENDMODE_BLEND);
+        for (; cursor < iWid; cursor += iIconAdd) {
+            if (cursor > iRight) break;
+            SDL_Rect sr = {srcX, 0, icon.cxIcon, icon.cyIcon};
+            SDL_Rect dr = {cursor, iconY, icon.cxIcon, icon.cyIcon};
+            SDL_BlitSurface(icon.sheet, &sr, dst, &dr);
+            iLen -= iIconAdd;
+        }
+    }
+}
+
+void SDL2AreaBar::RenderStatusBars(SDL_Surface* dst, CUnit* pUnit, int x, int y, int w, int numBars) {
+    if (!pUnit || numBars <= 0 || w <= 0) return;
+
+    int usedW = 0;
+    int barH = (m_statBarHt > 0) ? m_statBarHt
+             : (m_iconData[ICON_DAMAGE].cyBack > 0 ? m_iconData[ICON_DAMAGE].cyBack : 16);
+
+    int containedSlot = -1;
+    if (pUnit->GetUnitType() == CUnit::building && CountContainedUnits(pUnit) > 0)
+        containedSlot = numBars - 1;
+
+    for (int iOn = 0; iOn < numBars; iOn++) {
+        int barW = (w - usedW) / (numBars - iOn);
+        int barX = x + usedW;
+        usedW += barW;
+
+        int renderX = barX + 1;
+        int renderW = barW - 1;
+
+        if (pUnit->GetUnitType() == CUnit::vehicle) {
+            CVehicle* pVeh = (CVehicle*)pUnit;
+
+            if (iOn == 0) {
+                int dmg = std::max(1, pVeh->GetDamagePer());
+                RenderIconBar(dst, ICON_DAMAGE, dmg, renderX, y, renderW, barH);
+            } else if (pVeh->GetData()->IsCarrier() &&
+                       ((pVeh->GetData()->IsTransport() && iOn == 2) ||
+                        (!pVeh->GetData()->IsTransport() && iOn == 1))) {
+                RenderCarrierCargo(dst, pVeh, ICON_VEHICLES, renderX, y, renderW, barH);
+            } else if (pVeh->GetData()->IsTransport() && iOn == 1) {
+                std::string routeText;
+                if (!pVeh->IsHpControl())
+                    routeText = CTransportData::m_sAuto;
+                else if (pVeh->GetEvent() == CVehicle::route)
+                    routeText = CTransportData::m_sRoute;
+
+                CBuilding* pBldg = theBuildingHex.GetBuilding(pVeh->GetPtHead());
+                if (pBldg == NULL || pVeh->GetHexOwnership())
+                    pBldg = theBuildingHex.GetBuilding(pVeh->GetHexDest());
+                if (pBldg != NULL && pBldg->GetOwner()->IsMe())
+                    routeText += pBldg->GetData()->GetDesc().c_str();
+                else if (pVeh->GetRouteMode() == CVehicle::stop)
+                    routeText += CTransportData::m_sIdle;
+                else
+                    routeText += CTransportData::m_sTravel;
+
+                RenderIconText(dst, ICON_BAR_TEXT, routeText.c_str(), renderX, y, renderW, barH);
+            } else if (pVeh->GetData()->IsCrane() && iOn == 1) {
+                int per = 0;
+                int craneIcon = ICON_CONSTRUCTION;
+                if (pVeh->GetRouteMode() == CVehicle::run) {
+                    if (pVeh->GetEvent() == CVehicle::build ||
+                        pVeh->GetEvent() == CVehicle::repair_bldg) {
+                        CBuilding* pConst = pVeh->GetConst();
+                        if (pConst)
+                            per = std::max(1, pConst->GetBuildPer());
+                    } else if (pVeh->GetEvent() == CVehicle::build_road) {
+                        craneIcon = ICON_BUILD_ROAD;
+                        per = std::max(1, pVeh->GetRoadPer());
+                    }
+                }
+                RenderIconDone(dst, craneIcon, per, renderX, y, renderW, barH);
+            } else {
+                RenderMaterialsBar(dst, pVeh, ICON_MATERIALS, renderX, y, renderW, barH);
+            }
+        } else if (pUnit->GetUnitType() == CUnit::building) {
+            CBuilding* pBldg = (CBuilding*)pUnit;
+            int bt = pBldg->GetData()->GetBldgType();
+            bool isHousing = !pBldg->IsConstructing() &&
+                             (bt == CStructureData::apartment || bt == CStructureData::office);
+
+            if (iOn == containedSlot) {
+                RenderContainedUnits(dst, pBldg, ICON_VEHICLES, renderX, y, renderW, barH);
+            } else if (iOn == 0) {
+                int dmg = std::max(1, pBldg->GetDamagePer());
+                RenderIconBar(dst, ICON_DAMAGE, dmg, renderX, y, renderW, barH);
+            } else if (isHousing && iOn == 1) {
+                CPlayer* pMe = theGame.GetMe();
+                int per = 0;
+                if (pMe) {
+                    if (bt == CStructureData::apartment) {
+                        if (pMe->m_iAptCap > 0)
+                            per = (int)((pMe->GetPplTotal() * 100) / pMe->m_iAptCap);
+                    } else {
+                        if (pMe->m_iOfcCap > 0)
+                            per = (int)((pMe->GetPplBldg() * 100) / pMe->m_iOfcCap);
+                    }
+                }
+                RenderIconDone(dst, ICON_PEOPLE, std::min(100, std::max(0, per)),
+                               renderX, y, renderW, barH);
+            } else if (iOn == 1) {
+                if (pBldg->GetData()->GetUnionType() == CStructureData::UTfarm &&
+                    pBldg->GetData()->GetType() == CStructureData::farm) {
+                    int per = std::min(100, std::max(0, ((CFarmBuilding*)pBldg)->GetTerMult() * 10));
+                    RenderIconDone(dst, ICON_DENSITY, per, renderX, y, renderW, barH);
+                } else {
+                    RenderMaterialsBar(dst, pBldg, ICON_MATERIALS, renderX, y, renderW, barH);
+                }
+            } else if (iOn == 2) {
+                int ut = pBldg->GetData()->GetUnionType();
+                if (pBldg->IsConstructing()) {
+                    int per = std::max(1, pBldg->GetBuildPer());
+                    RenderIconDone(dst, ICON_CONSTRUCTION, per, renderX, y, renderW, barH);
+                } else if (ut == CStructureData::UTfarm) {
+                    int per = std::min(100, std::max(0, ((CFarmBuilding*)pBldg)->GetTerMult() * 10));
+                    RenderIconDone(dst, ICON_DENSITY, per, renderX, y, renderW, barH);
+                } else if (ut == CStructureData::UTvehicle || ut == CStructureData::UTshipyard) {
+                    CVehicleBuilding* pVb = (CVehicleBuilding*)pBldg;
+                    CBuildUnit const* pBu = pVb->GetBldUnt();
+                    if (pBu == NULL) {
+                        RenderIconDone(dst, ICON_BUILD_VEH, 0, renderX, y, renderW, barH);
+                    } else {
+                        RenderIconDone(dst, ICON_BUILD_VEH, std::max(1, pVb->GetBuildPer()),
+                                       renderX, y, renderW, barH);
+                        // Validate the vehicle type first: the sim thread can finish/cancel
+                        // the build between GetBldUnt() and here (GetVehType() == -1).
+                        int vehType = pBu->GetVehType();
+                        std::string name;
+                        if (vehType >= 0 && vehType < theTransports.GetNumTransports())
+                            name = theTransports.GetData(vehType)->GetDesc();
+                        TTF_Font* font = GetFont(14);
+                        if (font && !name.empty()) {
+                            SDL_Color white = {255, 255, 255, 255};
+                            SDL_Surface* ts = TTF_RenderText_Blended(font, name.c_str(), white);
+                            if (ts) {
+                                SDL_Rect sr = { 0, 0, std::min(ts->w, renderW), ts->h };
+                                SDL_Rect dr = { renderX + std::max(0, (renderW - ts->w) / 2),
+                                                y + (barH - ts->h) / 2, sr.w, sr.h };
+                                SDL_BlitSurface(ts, &sr, dst, &dr);
+                                SDL_FreeSurface(ts);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+void SDL2AreaBar::RenderUnitStatus(SDL_Surface* dst, CUnit* pUnit, int x, int y, int w, int h) {
+    if (!pUnit || w <= 0) return;
+
+    int barH = (m_statBarHt > 0 && m_statBarHt <= h) ? m_statBarHt : h;
+    int barY = y + (h - barH) / 2;
+
+    // Description (unit name) in an ICON_BAR_TEXT bar — left portion, capped at
+    // ~14 chars, matching the original _UnitShowStatus(bText=TRUE).
+    IconData& bt = m_iconData[ICON_BAR_TEXT];
+    int descMax = 14 * 8 + bt.leftOff + bt.rightOff;
+    int descW = std::min(w / 2, descMax);
+    if (descW < 1) descW = w / 2;
+    RenderIconText(dst, ICON_BAR_TEXT, pUnit->GetData()->GetDesc().c_str(), x, y, descW, h);
+
+    int sx = x + descW + 1;
+    int sw = w - descW - 1;
+    if (sw <= 0) return;
+
+    // Non-owned unit: owner name + damage only (matches _UnitShowStatus). The area
+    // bar only feeds owned units, but keep the branch faithful to the original.
+    if (!pUnit->GetOwner()->IsMe()) {
+        int nameW = sw / 2;
+        RenderIconText(dst, ICON_BAR_TEXT, (const char*)pUnit->GetOwner()->GetName(),
+                       sx, barY, nameW, barH);
+        int dmg = std::max(1, pUnit->GetLastShowDamagePer());
+        RenderIconBar(dst, ICON_DAMAGE, dmg, sx + nameW + 1, barY, sw - nameW - 1, barH);
+        return;
+    }
+
+    RenderStatusBars(dst, pUnit, sx, barY, sw, GetNumStatusBars(pUnit));
 }
