@@ -1187,6 +1187,19 @@ BOOL CVehicle::NextRoadHex() {
 
             CHexCoord landTo = (CHexCoord::Dist(landEnd, m_hexEnd) <= CHexCoord::Dist(landStart, m_hexEnd))
                                    ? landEnd : landStart;
+            // the 1996 jump fabricates the landing with no land check - a
+            // water landTo flowed into SetDestAndMode as an undrivable dest.
+            // Try the other landing; both wet = the run is done (designed exit)
+            if (theMap._GetHex(landTo)->IsWater()) {
+                CHexCoord landOther = (landTo == landEnd) ? landStart : landEnd;
+                if (!theMap._GetHex(landOther)->IsWater())
+                    landTo = landOther;
+                else {
+                    _SetEventAndRoute(none, stop);
+                    theGame.Event(EVENT_ROAD_DONE, EVENT_NOTIFY, this);
+                    return (FALSE);
+                }
+            }
 #if EN_AI_PROBES_ECON && defined(_WIN32)
             { char szJ[128]; sprintf(szJ, "[BRIDGEPONG] veh %lu at %d,%d jump-> %d,%d (runend %d,%d)\n",
                     (unsigned long)GetID(), m_ptHead.x / 2, m_ptHead.y / 2, landTo.X(), landTo.Y(),
