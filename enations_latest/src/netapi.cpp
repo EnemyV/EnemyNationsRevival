@@ -1893,42 +1893,9 @@ static void BuildRoad( CMsgBuildRoad* pMsg )
     theGame.PostToAll( pMsg, sizeof( *pMsg ) );
 }
 
-class CBBData
-{
-  public:
-    CBBData( ) {}
-
-    int       m_iAlt;
-    int       m_iLen;
-    BOOL      m_bOK;
-    CHexCoord m_hexOn;
-    CHexCoord m_hexEnd;
-};
-
-static int fnEnumBaseBridge( CHex* pHex, CHexCoord hex, void* pData )
-{
-
-    CBBData* pBbData = (CBBData*)pData;
-
-    // if already there ok
-    if ( ( ( pHex->GetAlt( ) + 2 ) & ~0x03 ) == pBbData->m_iAlt )
-        return FALSE;
-
-    // if this is closer to end it's not relevant
-    int xDif = abs( CHexCoord::Diff( pBbData->m_hexEnd.X( ) - hex.X( ) ) );
-    int yDif = abs( CHexCoord::Diff( pBbData->m_hexEnd.Y( ) - hex.Y( ) ) );
-    if ( xDif + yDif <= pBbData->m_iLen )
-        return FALSE;
-
-    // if there is a building or bridge here we can't change it
-    if ( pHex->GetUnits( ) & ( CHex::bldg | CHex::bridge ) )
-    {
-        pBbData->m_bOK = FALSE;
-        return TRUE;
-    }
-
-    return FALSE;
-}
+// CBBData/fnEnumBaseBridge (the 3x3 base-regrade test) moved to terrain.cpp:
+// the acceptance rule is CGameMap::BridgeSpanDeny, shared with the AI
+// planner/dispatcher so client==server by construction.
 
 static void BuildBridge( CMsgBuildBridge* pMsg )
 {
@@ -1967,76 +1934,32 @@ static void BuildBridge( CMsgBuildBridge* pMsg )
         return;
     int const iMaxSpan = pPlyrSpan->GetMaxSpan( );
 
-    int   iLen = 0;
-    CHex* pHex;
-    goto StartIt;
-
-    while ( _hexOn != pMsg->m_hexEnd )
+    // shared server/AI acceptance rule - CGameMap::BridgeSpanDeny (the AI
+    // planner/dispatcher call the SAME code, client==server by construction);
+    // sets m_iAlt (the deck altitude) once the span walk passes
+    int       iLen = 0;
+    CHexCoord hexAt( pMsg->m_hexStart );
+    int iDeny = theMap.BridgeSpanDeny( pMsg->m_hexStart, pMsg->m_hexEnd, iMaxSpan, &pMsg->m_iAlt, &hexAt, &iLen );
+    if ( iDeny != CGameMap::bridge_ok )
     {
-        _hexOn.X( ) += xAdd;
-        _hexOn.Y( ) += yAdd;
-        _hexOn.Wrap( );
-    StartIt:
-        pHex = theMap._GetHex( _hexOn );
-        if ( pHex->IsWater( ) )
-            iLen++;
-
-        if ( ( iLen > iMaxSpan ) || ( pHex->GetUnits( ) & ( CHex::bldg | CHex::bridge ) ) )
-        {
-            ASSERT( iLen <= iMaxSpan );
+        ASSERT( iLen <= iMaxSpan );
 #if defined( _WIN32 ) && EN_GAMEPLAY_PROBES
-            { char szB[128]; sprintf( szB, "[BRIDGESRV] REJECT %s plyr %d span %d,%d -> %d,%d at %d,%d len %d max %d\n",
-                      ( iLen > iMaxSpan ) ? "span-too-long" : "obstacle-in-path", pMsg->m_iPlyrNum,
-                      pMsg->m_hexStart.X( ), pMsg->m_hexStart.Y( ), pMsg->m_hexEnd.X( ), pMsg->m_hexEnd.Y( ),
-                      _hexOn.X( ), _hexOn.Y( ), iLen, iMaxSpan );
-              OutputDebugStringA( szB ); }
-#endif
-        EndIt:
-            pMsg->ToErr( );
-            theGame.PostToClient( pMsg->m_iPlyrNum, pMsg, sizeof( *pMsg ) );
-            return;
-        }
-    }
-
-    // set the altitude - see if we can do it
-    pMsg->m_iAlt =
-        ( ( theMap.GetHex( pMsg->m_hexStart )->GetAlt( ) + theMap.GetHex( pMsg->m_hexEnd )->GetAlt( ) + 2 ) / 2 ) &
-        ~0x03;
-    int xDif = CHexCoord::Diff( pMsg->m_hexEnd.X( ) - pMsg->m_hexStart.X( ) );
-    int yDif = CHexCoord::Diff( pMsg->m_hexEnd.Y( ) - pMsg->m_hexStart.Y( ) );
-
-    // check start hex
-    CHexCoord _hexUL( pMsg->m_hexStart.X( ) - 1, pMsg->m_hexStart.Y( ) - 1 );
-    _hexUL.Wrap( );
-    CBBData bbData;
-    bbData.m_iAlt   = pMsg->m_iAlt;
-    bbData.m_hexOn  = pMsg->m_hexStart;
-    bbData.m_hexEnd = pMsg->m_hexEnd;
-    bbData.m_iLen   = abs( xDif ) + abs( yDif );
-    bbData.m_bOK    = TRUE;
-    theMap._EnumHexes( _hexUL, 3, 3, fnEnumBaseBridge, &bbData );
-    if ( !bbData.m_bOK )
-    {
-#if defined( _WIN32 ) && EN_GAMEPLAY_PROBES
+        if ( ( iDeny == CGameMap::bridge_too_long ) || ( iDeny == CGameMap::bridge_obstacle ) )
+        { char szB[128]; sprintf( szB, "[BRIDGESRV] REJECT %s plyr %d span %d,%d -> %d,%d at %d,%d len %d max %d\n",
+                  ( iDeny == CGameMap::bridge_too_long ) ? "span-too-long" : "obstacle-in-path", pMsg->m_iPlyrNum,
+                  pMsg->m_hexStart.X( ), pMsg->m_hexStart.Y( ), pMsg->m_hexEnd.X( ), pMsg->m_hexEnd.Y( ),
+                  hexAt.X( ), hexAt.Y( ), iLen, iMaxSpan );
+          OutputDebugStringA( szB ); }
+        else if ( iDeny == CGameMap::bridge_start_base )
         { char szB[112]; sprintf( szB, "[BRIDGESRV] REJECT start-base plyr %d at %d,%d\n", pMsg->m_iPlyrNum,
                   pMsg->m_hexStart.X( ), pMsg->m_hexStart.Y( ) );
           OutputDebugStringA( szB ); }
 #endif
-        goto EndIt;
-    }
-
-    // check end hex
-    _hexUL = CHexCoord( pMsg->m_hexEnd.X( ) - 1, pMsg->m_hexEnd.Y( ) - 1 );
-    _hexUL.Wrap( );
-    bbData.m_hexOn  = pMsg->m_hexEnd;
-    bbData.m_hexEnd = pMsg->m_hexStart;
-    theMap._EnumHexes( _hexUL, 3, 3, fnEnumBaseBridge, &bbData );
-    if ( !bbData.m_bOK )
-    {
-        // reachable at runtime via AI-planned spans (bldg/bridge beside the
-        // landing at another altitude) -- was TRAP(), which killed the game on
-        // the FIRST AI bridge order ever sent; answer with the error instead
+        // end-base: reachable at runtime via AI-planned spans (bldg/bridge
+        // beside the landing at another altitude) -- was TRAP(), which killed
+        // the game on the FIRST AI bridge order ever sent; answer the error
 #ifdef _WIN32
+        if ( iDeny == CGameMap::bridge_end_base )
         {
             char szB[96];
             sprintf( szB, "[BRIDGEDENY] plyr %d end-base fail at %d,%d\n", pMsg->m_iPlyrNum, pMsg->m_hexEnd.X( ),
@@ -2044,7 +1967,9 @@ static void BuildBridge( CMsgBuildBridge* pMsg )
             OutputDebugStringA( szB );
         }
 #endif
-        goto EndIt;
+        pMsg->ToErr( );
+        theGame.PostToClient( pMsg->m_iPlyrNum, pMsg, sizeof( *pMsg ) );
+        return;
     }
 
     /////////////////////////////

@@ -874,6 +874,45 @@ BOOL CAIMap::ConnectRoad( CHexCoord& hexFrom, CHexCoord& hexTo, BOOL bWarRoad /*
 							iSkipUntil = j;   // truly unbridgeable: drop from the plan
 							continue;
 						}
+
+						// server-congruent buildability at PLAN time (shared
+						// CGameMap::BridgeSpanDeny) + active-deny consult: a
+						// crossing the server will reject (or just rejected)
+						// is never marked MSW_PLANNED_ROAD, so the war-stage
+						// replan can't re-lay it every cycle. MAX_SPAN_ULT
+						// keeps tech-gated spans planned (vanilla); a bent run
+						// (bridge_bad_span) is left to dispatch validation.
+						if( i > 0 && j < iPathLen )
+						{
+							CHexCoord hexBankA = pRoadPath[i-1];
+							CHexCoord hexBankB = pRoadPath[j];
+							CHex *pBankA = theMap.GetHex( hexBankA );
+							CHex *pBankB = theMap.GetHex( hexBankB );
+							if( pBankA != NULL && pBankB != NULL &&
+								!pBankA->IsWater() && !pBankB->IsWater() )
+							{
+								int iDeny = theMap.BridgeSpanDeny( hexBankA, hexBankB, MAX_SPAN_ULT );
+								if( iDeny == CGameMap::bridge_bad_span )
+									iDeny = CGameMap::bridge_ok;
+								BOOL bDenied = ( iDeny == CGameMap::bridge_ok ) &&
+									( IsBridgeBankDenied( hexBankA ) || IsBridgeBankDenied( hexBankB ) );
+								if( iDeny != CGameMap::bridge_ok || bDenied )
+								{
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+									{
+										char szD[128];
+										sprintf( szD, "[PLANDROP] plyr %d crossing at %d,%d span %d,%d -> %d,%d %s %d - dropped\n",
+												 m_iPlayer, pRoadPath[i].X(), pRoadPath[i].Y(),
+												 hexBankA.X(), hexBankA.Y(), hexBankB.X(), hexBankB.Y(),
+												 bDenied ? "denied" : "srv-deny", iDeny );
+										OutputDebugStringA( szD );
+									}
+#endif
+									iSkipUntil = j;   // server-unbuildable/denied: drop from the plan
+									continue;
+								}
+							}
+						}
 					}
 				}
 			}
@@ -1147,6 +1186,16 @@ void CAIMap::FindBridgeOnPlan( CHexCoord& hexSite, CAIUnit *pUnit )
 		CHexCoord hexTest = hexCand;
 		if( m_pMapUtil->IsBridgeSpan( hexTest, pUnit ) )
 		{
+			// denied span: skip THIS candidate so the next-nearest viable
+			// crossing competes (the winner-only deny check discarded the
+			// whole selection - one denied site masked every other crossing)
+			CHexCoord hexP( pUnit->GetParam( CAI_PREV_X ), pUnit->GetParam( CAI_PREV_Y ) );
+			CHexCoord hexD( pUnit->GetParam( CAI_DEST_X ), pUnit->GetParam( CAI_DEST_Y ) );
+			if( IsBridgeBankDenied( hexP ) || IsBridgeBankDenied( hexD ) )
+			{
+				++k;
+				continue;
+			}
 			iBestDist   = iDist;
 			hexBestSite = hexTest;
 			iPrevX = pUnit->GetParam( CAI_PREV_X );
@@ -1205,6 +1254,14 @@ void CAIMap::FindBridgeOnPlan( CHexCoord& hexSite, CAIUnit *pUnit )
 			CHexCoord hexTest = hexCand;
 			if( m_pMapUtil->IsBridgeSpan( hexTest, pUnit, TRUE ) )
 			{
+				// denied span: skip so the next-nearest candidate competes
+				CHexCoord hexP( pUnit->GetParam( CAI_PREV_X ), pUnit->GetParam( CAI_PREV_Y ) );
+				CHexCoord hexD( pUnit->GetParam( CAI_DEST_X ), pUnit->GetParam( CAI_DEST_Y ) );
+				if( IsBridgeBankDenied( hexP ) || IsBridgeBankDenied( hexD ) )
+				{
+					++it;
+					continue;
+				}
 				iBestDist   = iDist;
 				hexBestSite = hexTest;
 				iPrevX = pUnit->GetParam( CAI_PREV_X );
@@ -1534,6 +1591,22 @@ void CAIMap::GetRoadHex( CHexCoord& hexSite, CHexCoord* phexBridgeCand )
 		SetLocation( hexSite.X(), hexSite.Y(), wStatus );
 	}
 	// else: no eligible hex -> leave hexSite == crane pos so caller sees the miss
+}
+
+//
+// active deny on this bank? (expired entries pruned; same TTL contract as the
+// GetBridgingHexes winner check)
+//
+BOOL CAIMap::IsBridgeBankDenied( CHexCoord const& hex )
+{
+	std::map<int, DWORD>::iterator it =
+		m_mBridgeDeny.find( m_pMapUtil->GetMapOffset( hex.X(), hex.Y() ) );
+	if( it == m_mBridgeDeny.end() )
+		return FALSE;
+	if( timeGetTime() < it->second )
+		return TRUE;
+	m_mBridgeDeny.erase( it );
+	return FALSE;
 }
 
 //

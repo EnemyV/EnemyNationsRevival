@@ -418,6 +418,11 @@ public:
 	int			FoundationCost (CHexCoord const & hex, int iType, int iDir, CVehicle const * pVeh, int * piAlt = NULL, int * piWhy = NULL) const;
 	int			BridgeCost (CHexCoord const & hexBgn, CHexCoord const & hexEnd, CVehicle const * pVeh, int * piAlt = NULL, int * piWhy = NULL) const;
 					enum { ok, bldg_next, water_next, bldg_or_river, veh_in_way, water, no_water, no_land_exit, no_water_exit, steep };
+	// server bridge-acceptance rule (netapi BuildBridge), shared with the AI planner/
+	// dispatcher so client==server: span walk (bldg|bridge obstacles, water length vs
+	// iMaxSpan), then the 3x3 base-regrade on BOTH banks at the exact deck altitude.
+					enum { bridge_ok = 0, bridge_bad_span, bridge_too_long, bridge_obstacle, bridge_start_base, bridge_end_base };
+	int			BridgeSpanDeny (CHexCoord const & hexStart, CHexCoord const & hexEnd, int iMaxSpan, int * piAlt = NULL, CHexCoord * phexAt = NULL, int * piLen = NULL);
 
 	// battle stuff
 	int			GetRangeDistance (CUnit const * pSrc, CUnit const * pDest) const;

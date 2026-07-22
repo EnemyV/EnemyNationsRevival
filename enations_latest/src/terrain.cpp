@@ -3244,6 +3244,126 @@ int CGameMap::_GetTerrainCost( CHex const* pHex, CHex const* pHexDest, int iDir,
 }
 
 
+// 3x3 base-regrade test (moved verbatim from netapi.cpp BuildBridge so server
+// and AI share ONE acceptance rule - see CGameMap::BridgeSpanDeny)
+class CBBData
+{
+  public:
+    CBBData( ) {}
+
+    int       m_iAlt;
+    int       m_iLen;
+    BOOL      m_bOK;
+    CHexCoord m_hexOn;
+    CHexCoord m_hexEnd;
+};
+
+static int fnEnumBaseBridge( CHex* pHex, CHexCoord hex, void* pData )
+{
+
+    CBBData* pBbData = (CBBData*)pData;
+
+    // if already there ok
+    if ( ( ( pHex->GetAlt( ) + 2 ) & ~0x03 ) == pBbData->m_iAlt )
+        return FALSE;
+
+    // if this is closer to end it's not relevant
+    int xDif = abs( CHexCoord::Diff( pBbData->m_hexEnd.X( ) - hex.X( ) ) );
+    int yDif = abs( CHexCoord::Diff( pBbData->m_hexEnd.Y( ) - hex.Y( ) ) );
+    if ( xDif + yDif <= pBbData->m_iLen )
+        return FALSE;
+
+    // if there is a building or bridge here we can't change it
+    if ( pHex->GetUnits( ) & ( CHex::bldg | CHex::bridge ) )
+    {
+        pBbData->m_bOK = FALSE;
+        return TRUE;
+    }
+
+    return FALSE;
+}
+
+//
+// the server's span-acceptance rule (BuildBridge), callable from the AI so the
+// planner/dispatcher never lay/select a span the server will reject. Returns
+// bridge_ok or the first reject reason; piAlt = deck altitude (set once the
+// walk passes), phexAt/piLen = walk position + water length on a reject.
+//
+int CGameMap::BridgeSpanDeny( CHexCoord const& hexStart, CHexCoord const& hexEnd, int iMaxSpan, int* piAlt,
+                              CHexCoord* phexAt, int* piLen )
+{
+    CHexCoord _hexOn( hexStart );
+    int       xAdd = CHexCoord::Diff( hexEnd.X( ) - _hexOn.X( ) );
+    int       yAdd = CHexCoord::Diff( hexEnd.Y( ) - _hexOn.Y( ) );
+    xAdd           = __minmax( -1, 1, xAdd );
+    yAdd           = __minmax( -1, 1, yAdd );
+
+    // diagonal or zero-length span
+    if ( ( ( xAdd != 0 ) && ( yAdd != 0 ) ) || ( hexStart == hexEnd ) )
+        return ( bridge_bad_span );
+
+    int   iLen = 0;
+    CHex* pHex;
+    goto StartIt;
+
+    while ( _hexOn != hexEnd )
+    {
+        _hexOn.X( ) += xAdd;
+        _hexOn.Y( ) += yAdd;
+        _hexOn.Wrap( );
+    StartIt:
+        pHex = _GetHex( _hexOn );
+        if ( pHex->IsWater( ) )
+            iLen++;
+
+        if ( ( iLen > iMaxSpan ) || ( pHex->GetUnits( ) & ( CHex::bldg | CHex::bridge ) ) )
+        {
+            if ( phexAt != NULL )
+                *phexAt = _hexOn;
+            if ( piLen != NULL )
+                *piLen = iLen;
+            return ( ( iLen > iMaxSpan ) ? bridge_too_long : bridge_obstacle );
+        }
+    }
+
+    // the deck altitude - the 3x3 test compares against exactly this
+    int iAlt = ( ( GetHex( hexStart )->GetAlt( ) + GetHex( hexEnd )->GetAlt( ) + 2 ) / 2 ) & ~0x03;
+    if ( piAlt != NULL )
+        *piAlt = iAlt;
+    if ( piLen != NULL )
+        *piLen = iLen;
+
+    int xDif = CHexCoord::Diff( hexEnd.X( ) - hexStart.X( ) );
+    int yDif = CHexCoord::Diff( hexEnd.Y( ) - hexStart.Y( ) );
+
+    CBBData bbData;
+    bbData.m_iAlt = iAlt;
+    bbData.m_iLen = abs( xDif ) + abs( yDif );
+
+    // check start hex
+    CHexCoord _hexUL( hexStart.X( ) - 1, hexStart.Y( ) - 1 );
+    _hexUL.Wrap( );
+    bbData.m_hexOn  = hexStart;
+    bbData.m_hexEnd = hexEnd;
+    bbData.m_bOK    = TRUE;
+    _EnumHexes( _hexUL, 3, 3, fnEnumBaseBridge, &bbData );
+    if ( !bbData.m_bOK )
+        return ( bridge_start_base );
+
+    // check end hex
+    _hexUL = CHexCoord( hexEnd.X( ) - 1, hexEnd.Y( ) - 1 );
+    _hexUL.Wrap( );
+    bbData.m_hexOn  = hexEnd;
+    bbData.m_hexEnd = hexStart;
+    bbData.m_bOK    = TRUE;
+    _EnumHexes( _hexUL, 3, 3, fnEnumBaseBridge, &bbData );
+    if ( !bbData.m_bOK )
+        return ( bridge_end_base );
+
+    return ( bridge_ok );
+}
+
+
 struct tagCHECK3
 {
     int iAbove;

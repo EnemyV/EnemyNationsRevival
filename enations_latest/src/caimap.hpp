@@ -45,6 +45,8 @@ protected:
 	BOOL NeighborHasRoadOrBldg( CHexCoord& hex );
 	// ROAD AVOIDANCE: TRUE if a neighbor of hex holds an own farm/lumber bldg
 	BOOL NeighborIsFarmLumber( CHexCoord& hex );
+	// active m_mBridgeDeny entry on this bank? (prunes expired entries)
+	BOOL IsBridgeBankDenied( CHexCoord const& hex );
 
 public:
 	CAIMapUtil *m_pMapUtil;

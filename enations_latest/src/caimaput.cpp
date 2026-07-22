@@ -3196,19 +3196,18 @@ BOOL CAIMapUtil::IsBridgeSpan( CHexCoord& hexRiverRoad, CAIUnit* pUnit, BOOL bIm
     // original candidate crossing first (impromptu spans carry no plan flags)
     if ( TryBridgeWalk( hexStart, iDir, iMaxSpan, hexEnd, !bImpromptu ) )
     {
-        // FAR landing must be clear too - the server validates BOTH ends
-        // (end-base 3x3) and a blocked far landing made a crossing
-        // dispatch-and-reject forever (soak43: one span 11x; crane idled at
-        // the bank each cycle). Mirror of the start-side BRIDGEVETO.
-        BOOL bEndBlocked;
-        EnterCriticalSection( &cs );
-        bEndBlocked = ( theBuildingHex.GetBuilding( hexEnd ) != NULL );
-        LeaveCriticalSection( &cs );
-        if ( bEndBlocked )
+        // server-congruent acceptance (shared CGameMap::BridgeSpanDeny): start
+        // hex obstacle + BOTH banks' 3x3 base-regrade at the exact deck
+        // altitude. Replaces the far-landing building-only check - an end-base
+        // 3x3 fail (e.g. a parallel deck at another altitude beside the bank)
+        // made a crossing dispatch-and-reject forever.
+        int iDeny = theMap.BridgeSpanDeny( hexStart, hexEnd, iMaxSpan );
+        if ( iDeny != CGameMap::bridge_ok )
         {
 #if EN_AI_PROBES_WAR && defined(_WIN32)
-            char szV[96];
-            sprintf( szV, "[BRIDGEVETO] plyr %d bad FAR landing %d,%d\n", m_iPlayer, hexEnd.X( ), hexEnd.Y( ) );
+            char szV[112];
+            sprintf( szV, "[BRIDGEVETO] plyr %d span %d,%d -> %d,%d srv-deny %d\n", m_iPlayer, hexStart.X( ),
+                     hexStart.Y( ), hexEnd.X( ), hexEnd.Y( ), iDeny );
             OutputDebugStringA( szV );
 #endif
             return FALSE;
