@@ -5172,6 +5172,10 @@ BOOL CAITaskMgr::RepairConstruction( CAIUnit* pUnit )
                 OutputDebugStringA( szR );
             }
 #endif
+            // resend cancels any live weld - clear the latch so arrival re-sends the repair msg
+            if ( pUnit->GetParam( CAI_FUEL ) )
+                pUnit->SetParam( CAI_FUEL, 0 );
+
             // send the crane to the building
             pUnit->SetDestination( hexBldg );
             return TRUE;
