@@ -14,6 +14,7 @@
 #include "caimap.hpp"
 #include "caidata.hpp"
 #include "cpathmap.h"
+#include "bridge.h"		// theBridgeHex: completed decks seed road eligibility
 
 #include "logging.h"	// dave's logging system
 #include "ai.h"			// AiHexCacheActive()
@@ -1650,6 +1651,28 @@ BOOL CAIMap::NeighborIsFarmLumber( CHexCoord& hex )
 }
 
 //
+// a COMPLETED bridge deck at this hex. Decks never become MSW_ROAD (terrain
+// stays water), so roads could not chain off a finished span - the far bank
+// demanded a building first. CHex::bridge is set at ORDER time, so gate on
+// the parent bridge's IsBuilt (units flag first, CBridge lookup under cs).
+//
+static BOOL NeighborHasBuiltBridge( CHexCoord& hex )
+{
+	CHex *pGameHex = theMap.GetHex( hex );
+	if( pGameHex == NULL || !( pGameHex->GetUnits() & CHex::bridge ) )
+		return FALSE;
+	BOOL bBuilt = FALSE;
+	EnterCriticalSection( &cs );
+	{
+		CBridgeUnit *pBu = theBridgeHex.GetBridge( hex );
+		if( pBu != NULL && pBu->GetParent() != NULL && pBu->GetParent()->IsBuilt() )
+			bBuilt = TRUE;
+	}
+	LeaveCriticalSection( &cs );
+	return bBuilt;
+}
+
+//
 // replicates CAIMapUtil::FindRoadHex eligibility (caimaput.cpp ~3162-3227):
 // planned flag set, not a building, not river, no bldg/vehicle on the game hex,
 // and an actual road/building at cardinal neighbor 0/2/4/6.
@@ -1683,12 +1706,15 @@ BOOL CAIMap::IsRoadHexEligible( int iOff, CHexCoord& hexRoad )
 	if( NeighborIsFarmLumber( hexRoad ) )
 		return FALSE;
 
-	// only accept planned roads adjacent to a real road/building at 0,2,4,6
+	// only accept planned roads adjacent to a real road/building at 0,2,4,6;
+	// a COMPLETED bridge deck also counts (call-site only - the shared
+	// NeighborHasRoadOrBldg would leak deck-adjacency into bridge-candidate
+	// discovery via GetPlannedRoadNear)
 	CHexCoord hexT;
-	hexT = hexRoad; hexT.Ydec();  if( NeighborHasRoadOrBldg( hexT ) ) return TRUE;	// 0
-	hexT = hexRoad; hexT.Xinc();  if( NeighborHasRoadOrBldg( hexT ) ) return TRUE;	// 2
-	hexT = hexRoad; hexT.Yinc();  if( NeighborHasRoadOrBldg( hexT ) ) return TRUE;	// 4
-	hexT = hexRoad; hexT.Xdec();  if( NeighborHasRoadOrBldg( hexT ) ) return TRUE;	// 6
+	hexT = hexRoad; hexT.Ydec();  if( NeighborHasRoadOrBldg( hexT ) || NeighborHasBuiltBridge( hexT ) ) return TRUE;	// 0
+	hexT = hexRoad; hexT.Xinc();  if( NeighborHasRoadOrBldg( hexT ) || NeighborHasBuiltBridge( hexT ) ) return TRUE;	// 2
+	hexT = hexRoad; hexT.Yinc();  if( NeighborHasRoadOrBldg( hexT ) || NeighborHasBuiltBridge( hexT ) ) return TRUE;	// 4
+	hexT = hexRoad; hexT.Xdec();  if( NeighborHasRoadOrBldg( hexT ) || NeighborHasBuiltBridge( hexT ) ) return TRUE;	// 6
 	return FALSE;
 }
 
