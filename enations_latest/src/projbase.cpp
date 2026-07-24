@@ -268,8 +268,10 @@ void CProjectile::EmitTrail ()
     double	wfac = 1.0 + ( 1.6 - 1.0 ) * t;           // weak no longer razor-thin (was 0.8)
     double	lfac = 1.0 + 0.7 * t;                     // strong streak runs longer
 
-    double	dLenMax = __max( 30, 96 >> xiZoom ) * lfac;           // max length, gradient-scaled (operator: longer)
-    double	dHalfW  = __max( 1.4, ( 1.6 - xiZoom * 0.3 ) * wfac );// width, gradient-scaled (raised floor: visible)
+    // trail size scales with zoom like everything else (world halves per level, >>xiZoom).
+    // z0 values unchanged; only the floors/ramp were letting z1-z3 stay too big when zoomed out.
+    double	dLenMax = __max( 8.0, (double)( 96 >> xiZoom ) ) * lfac;  // length halves per zoom-out (was floored at 30)
+    double	dHalfW  = __max( 0.5, ( 1.6 / ( 1 << xiZoom ) ) * wfac ); // width halves per zoom-out (was a shallow linear ramp)
 
     // Grow the trail from launch up to dLenMax: the tail is anchored to where the projectile
     // started, until it has travelled far enough to reach full length (then it trails behind at
@@ -285,7 +287,7 @@ void CProjectile::EmitTrail ()
     // Floor the length generously so even a weak, short, point-blank shot (a camp firing an
     // adjacent unit) reads as a clear streak the instant it spawns (operator: "start with length",
     // and camp tracers were too subtle to notice). Raised from 9 -> so short shots are unmissable.
-    double	dLenMin = __max( 22.0, dLenMax * 0.50 );
+    double	dLenMin = __max( 6.0, dLenMax * 0.50 );   // floor shrinks with zoom so short shots also scale
     if ( dLen < dLenMin )
         dLen = dLenMin;
 
@@ -293,7 +295,7 @@ void CProjectile::EmitTrail ()
     // bullet (along the backward travel dir) — leaves the projectile sprite visible in front
     // instead of buried under the bright head. (ddx,ddy)/len is the unit backward direction.
     double	ux  = ddx / len, uy = ddy / len;
-    double	gap = (double) __max( 3, 8 >> xiZoom );
+    double	gap = (double) __max( 1, 8 >> xiZoom );   // head gap shrinks with zoom too
 
     CPoint	ul( xpanimatr->GetUL() );
     float	hx = (float) ( ptHead.x + ux * gap + ul.x );
