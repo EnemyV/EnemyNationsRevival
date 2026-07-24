@@ -3373,11 +3373,15 @@ void CAIGoalMgr::UpdateVehGoals( void )
         m_pwaVehGoals[CTransportData::construction] = craneCap;
     }
 
-    // increase gunboats and destroyers
+    // increase gunboats, destroyers, cruisers on water maps (goal scales with
+    // m_iSmart via iCnt). Fleet weight class: gunboats most, destroyers fewer,
+    // cruisers fewest — heavy capital ship. Without a non-zero cruiser goal,
+    // GetStagingArea's cruiser_goal/2 stays 0 and the AI never builds cruisers.
     if ( m_bOceanWorld || m_bLakeWorld )
     {
         m_pwaVehGoals[CTransportData::gun_boat] += ( 4 * iCnt );
         m_pwaVehGoals[CTransportData::destroyer] += ( 2 * iCnt );
+        m_pwaVehGoals[CTransportData::cruiser] += iCnt;
     }
 }
 
