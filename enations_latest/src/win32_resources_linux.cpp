@@ -68,6 +68,7 @@ const std::unordered_map<UINT, std::string>& string_table() {
         // 2026-07-04). IDS_GAME_OVER likewise showed a blank EnMessageBox on the
         // all-humans-eliminated path (mainloop.cpp). Text verbatim from lastplnt.rc.
         { IDS_YOU_WON,          "You have conquered the planet" },
+        { IDS_PLAYER_WON,       "%1 has conquered the planet" },
         { IDS_YOU_LOST,         "You Lost" },
         { IDS_YOU_END_SCENARIO, "Mission Completed" },
         { IDS_GAME_OVER,        "The game has ended" },

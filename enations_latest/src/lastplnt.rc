@@ -1569,6 +1569,7 @@ BEGIN
     IDS_CANCEL              "Exit"
     IDS_SAVE                "Save..."
     IDS_YOU_WON             "You have conquered the planet"
+    IDS_PLAYER_WON          "%1 has conquered the planet"
     IDS_YOU_LOST            "You Lost"
     IDS_LOADING             "Loading Second Chance..."
     IDS_LEAVING             "Leaving Second Chance..."

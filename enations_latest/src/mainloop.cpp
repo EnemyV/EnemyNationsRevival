@@ -51,6 +51,21 @@ static char BASED_CODE THIS_FILE[] = __FILE__;
 extern BOOL bDoSubclass;
 
 
+// Count still-alive players who actually landed their rocket. A rocketless
+// "spectator" (End-key observer, m_bPlacedRocket FALSE) is held in m_lstAll
+// forever by the 1996 defeat-grace (m_iBuiltBldgsHave = m_bPlacedRocket?0:1),
+// so it must NOT count toward the last-player-standing win, or the AIs can
+// never win the game while an observer watches.
+static int CountLandedPlayers( CList<CPlayer*, CPlayer*>& lst )
+{
+    int n = 0;
+    for ( POSITION pos = lst.GetHeadPosition( ); pos != NULL; )
+        if ( lst.GetNext( pos )->m_bPlacedRocket )
+            n++;
+    return n;
+}
+
+
 #ifdef _PROFILE
 extern "C"
 {
@@ -1018,7 +1033,7 @@ void CConquerApp::GraphicsEnginePump( )
                     return;
                 }
 
-                if ( theGame.GetAll( ).GetCount( ) <= 1 )
+                if ( CountLandedPlayers( theGame.GetAll( ) ) <= 1 )
                 {
                     LeaveCriticalSection( &cs );
                     theCutScene.PlayEnd( CWndCutScene::win );

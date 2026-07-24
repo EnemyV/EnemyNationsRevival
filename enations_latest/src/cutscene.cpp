@@ -79,7 +79,30 @@ UINT CCutScene::_PlayScene (int iTyp, int iScenario, BOOL bAsync)
 		switch (iTyp)
 		  {
 			case CWndCutScene::win:
-			  sText = EnLoadStdString(IDS_YOU_WON); break;
+			  {
+				// The win fires for the last player still holding a landed
+				// rocket. If the local player is a rocketless spectator, the
+				// winner is someone else (e.g. an AI) - name them, don't say
+				// "you".
+				CPlayer* pWinner = NULL;
+				for ( POSITION pos = theGame.GetAll( ).GetHeadPosition( ); pos != NULL; )
+				  {
+					CPlayer* p = theGame.GetAll( ).GetNext( pos );
+					if ( p->m_bPlacedRocket ) { pWinner = p; break; }
+				  }
+				if ( pWinner != NULL && pWinner != theGame.GetMe( ) )
+				  {
+					sText = EnLoadStdString( IDS_PLAYER_WON );
+					std::string::size_type i = sText.find( "%1" );
+					if ( i != std::string::npos )
+						sText.replace( i, 2, pWinner->GetName( ) );
+					else
+						sText = std::string( pWinner->GetName( ) ) + " has conquered the planet";
+				  }
+				else
+					sText = EnLoadStdString( IDS_YOU_WON );
+			  }
+			  break;
 			case CWndCutScene::lose:
 			  sText = EnLoadStdString(IDS_YOU_LOST); break;
 			case CWndCutScene::scenario_end:
