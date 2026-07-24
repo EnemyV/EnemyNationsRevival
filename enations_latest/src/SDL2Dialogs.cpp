@@ -285,7 +285,7 @@ void SDL2CreateSingleDialog::OnInit() {
     m_radAiLevel = AddWidget<SDL2RadioGroup>(lx, y, colW, rowH * 4,
         std::vector<std::string>{"Easy", "Moderate", "Difficult", "Impossible"}, savedAi);
 
-    int numAi = std::max(1, std::min(20, (int)EnGetProfileInt("Create", "AiOpponents", 2)));
+    int numAi = std::max(1, (int)EnGetProfileInt("Create", "AiOpponents", 2));  // no cap (operator); the edit-box read at OnOK has no upper bound either. Game player list is dynamic; internal limits (e.g. MAX_BOTH_INDEX pathing) are the real ceiling.
     AddWidget<SDL2Label>(lx, y + rowH * 4 + 4, colW - 60, rowH, "AI Players:");
     m_edtNumAi = AddWidget<SDL2EditBox>(lx + colW - 50, y + rowH * 4 + 4, 50, rowH, std::to_string(numAi));
 
@@ -935,7 +935,7 @@ void SDL2CreateNetDialog::OnInit() {
     m_radAiLevel = AddWidget<SDL2RadioGroup>(lx, y + rowH, colW, rowH * 4,
         std::vector<std::string>{"Easy", "Moderate", "Difficult", "Impossible"},
         std::max(0, std::min(3, (int)EnGetProfileInt("Create", "Difficultity", 0))));
-    int numAi = std::max(0, std::min(20, (int)EnGetProfileInt("Create", "AiOpponents", 2)));
+    int numAi = std::max(0, (int)EnGetProfileInt("Create", "AiOpponents", 2));  // no cap (operator) - network create dialog
     AddWidget<SDL2Label>(lx, y + rowH * 5 + 8, colW - 60, rowH, "AI Players:");
     m_edtNumAi = AddWidget<SDL2EditBox>(lx + colW - 50, y + rowH * 5 + 8, 50, rowH, std::to_string(numAi));
 
