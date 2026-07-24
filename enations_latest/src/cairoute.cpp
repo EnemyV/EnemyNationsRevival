@@ -1465,7 +1465,25 @@ void CAIRouter::RemovePlayerUnitsFromLists( int iPlayer )
         for ( pos1 = pl->GetHeadPosition( ); ( pos2 = pos1 ) != NULL; )
         {
             CAIUnit* pUnit = (CAIUnit*)pl->GetNext( pos1 );
-            if ( pUnit != NULL && pUnit->GetOwner( ) == iPlayer )
+            // liveness FIRST (identity walk, no deref): GetOwner() on a freed
+            // borrowed unit is the soak84 UAF class. 710628f9 hardened the three
+            // live walk sites (SetPriorities/FillPriorities/GetNearestTruck) but
+            // MISSED this fourth walk, which still dereferenced GetOwner() on a
+            // possibly-stale borrowed pointer (crash: cairoute.cpp:1468 ->
+            // caiunit.cpp:1378, reproduced with ROCKETSCRUB=0 = producer-agnostic).
+            if ( !IsValidUnit( pUnit ) )
+            {
+                pl->RemoveAt( pos2 );  // stale node — drop it (matches the sibling sites)
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+                {
+                    char szR[80];
+                    sprintf( szR, "[ROUTERSTALE] plyr %d dead node dropped (RemovePlayerUnits)\n", m_iPlayer );
+                    OutputDebugStringA( szR );
+                }
+#endif
+                continue;
+            }
+            if ( pUnit->GetOwner( ) == iPlayer )
                 pl->RemoveAt( pos2 );  // borrowed pointer — remove node, don't delete object
         }
     }
