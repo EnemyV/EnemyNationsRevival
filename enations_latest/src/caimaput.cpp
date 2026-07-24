@@ -3297,38 +3297,25 @@ BOOL CAIMapUtil::TryBridgeWalk( CHexCoord const& hexStart, int iDir, int iMaxSpa
         // if not water (river/lake/ocean) then we assume land, this is the end
         if ( !pGameHex->IsWater( ) )
         {
-            // the tile beyond the candidate landing, one more step in iDir
-            CHexCoord hexPeek = hexBridge;
-            switch ( iDir )
-            {
-            case 0: hexPeek.Ydec( ); break;
-            case 2: hexPeek.Xinc( ); break;
-            case 4: hexPeek.Yinc( ); break;
-            case 6: hexPeek.Xdec( ); break;
-            }
-            CHex* pPeek = ( GetMapOffset( hexPeek.X( ), hexPeek.Y( ) ) < m_iMapSize )
-                              ? theMap.GetHex( hexPeek ) : NULL;
-
-            // LSWWSL (operator): a landing may be shore, but the tile beyond a
-            // deck end must be real traversable land. Coastline is drivable but
-            // NOT paveable (IsRoadHexEligible), so shore-with-shore/water-beyond
-            // is a road-less dead end - the shore hex rides the deck instead
-            // (shore consumes no span; the server counts only water hexes).
-            // BOTH channels: planner rides stay plan-gated by the per-hex mark
-            // check above (coastline plan marks exist only as span anchors).
+            // Coastline is drivable but NOT paveable (CanRoad()==FALSE,
+            // terrain.inl:200; IsRoadHexEligible refuses it, caimap.cpp:1707).
+            // The player's _BuildBridge only ENDS a deck on a CanRoad() hex
+            // (vehicle.cpp:708) - it rides the deck across shore to real land.
+            // Match that: a coastline hex ALWAYS rides the deck onward, so the
+            // far landing is a paveable, road-eligible LAND hex (no non-paveable
+            // hex left in the road plan). Coastline is non-water -> consumes no
+            // span budget, so continuing to the land beyond costs nothing. The
+            // deck-flag + iSteps guards stop a re-cross and a degenerate all-shore
+            // run. (Prior trial's crane-abandon was the separate repair-eject bug,
+            // now fixed at netapi.cpp:2629; road-chaining off the deck is covered
+            // by NeighborHasBuiltBridge, caimap.cpp:1670.)
             if ( pGameHex->GetType( ) == CHex::coastline )
             {
-                BOOL bPeekLand = ( pPeek != NULL && !pPeek->IsWater( ) &&
-                                   pPeek->GetType( ) != CHex::coastline &&
-                                   m_tdWheel->CanTravelHex( pPeek ) );
-                if ( !bPeekLand )
-                {
-                    if ( pGameHex->GetUnits( ) & CHex::bridge )
-                        return FALSE;
-                    if ( ++iSteps > MAX_SPAN_ULT )  // degenerate shore run
-                        return FALSE;
-                    continue;  // shore rides the deck; walk on toward real land
-                }
+                if ( pGameHex->GetUnits( ) & CHex::bridge )
+                    return FALSE;
+                if ( ++iSteps > MAX_SPAN_ULT )  // degenerate all-shore run
+                    return FALSE;
+                continue;  // shore rides the deck; walk on toward real paveable land
             }
 
             // landing must be crane-traversable land (m_tdWheel == construction) and unbuilt
@@ -3351,8 +3338,20 @@ BOOL CAIMapUtil::TryBridgeWalk( CHexCoord const& hexStart, int iDir, int iMaxSpa
             hexEnd = hexBridge;
 #if EN_AI_PROBES_ECON && defined(_WIN32)
             {
+                // the tile beyond the landing, one more step in iDir
+                CHexCoord hexPeek = hexBridge;
+                switch ( iDir )
+                {
+                case 0: hexPeek.Ydec( ); break;
+                case 2: hexPeek.Xinc( ); break;
+                case 4: hexPeek.Yinc( ); break;
+                case 6: hexPeek.Xdec( ); break;
+                }
+                CHex* pPeek = ( GetMapOffset( hexPeek.X( ), hexPeek.Y( ) ) < m_iMapSize )
+                                  ? theMap.GetHex( hexPeek ) : NULL;
                 // ground truth for 'bridge ends on coast': the visual shore may
-                // not be TYPE coastline (textures blend) - log landing + beyond
+                // not be TYPE coastline (textures blend) - log landing + beyond.
+                // type should now be a LAND type (not 12=coastline) with this fix.
                 char szL[96];
                 sprintf( szL, "[BRIDGELAND] plyr %d chan %c end %d,%d type %d beyond %d\n", m_iPlayer,
                          bRequirePlan ? 'P' : 'I', hexBridge.X( ), hexBridge.Y( ), (int)pGameHex->GetType( ),
