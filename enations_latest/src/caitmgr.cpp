@@ -2175,7 +2175,11 @@ BOOL CAITaskMgr::AssignRepair( CAIUnit* pCrane )
 
                 // skip targets another crane already services -- assigning here
                 // just to have RepairConstruction's picker dismiss it is the
-                // [REPAIR] assign->dismiss churn loop
+                // [REPAIR] assign->dismiss churn loop. Match RepairConstruction's
+                // taken-check (5222): ANY-task construction crane holding the
+                // bldg id, so the original BUILDER finishing a partial (task =
+                // IDT_BUILD, not IDT_REPAIR) also counts as taken - the task
+                // filter here was the half-fix that left the churn in place.
                 if ( bNeedRepair )
                 {
                     POSITION posC = m_pGoalMgr->m_plUnits->GetHeadPosition( );
@@ -2184,7 +2188,7 @@ BOOL CAITaskMgr::AssignRepair( CAIUnit* pCrane )
                         CAIUnit* pUnitC = (CAIUnit*)m_pGoalMgr->m_plUnits->GetNext( posC );
                         if ( pUnitC != NULL && pUnitC != pCrane && pUnitC->GetOwner( ) == m_iPlayer &&
                              pUnitC->GetTypeUnit( ) == CTransportData::construction &&
-                             pUnitC->GetTask( ) == IDT_REPAIR && pUnitC->GetDataDW( ) == pUnitB->GetID( ) )
+                             pUnitC->GetDataDW( ) == pUnitB->GetID( ) )
                         {
                             bNeedRepair = FALSE;
                             break;

@@ -2627,7 +2627,17 @@ static void RepairBldg( CMsgRepairBldg* pMsg )
 
     ASSERT_CMD( pMsg );
     pVeh->SetEvent( CVehicle::repair_bldg );
-    pVeh->SetDest( pBldg->GetHex( ) );
+    // If the crane is already standing on the target building's footprint, weld
+    // in place. SetDest(building hex) on an inside-the-building vehicle triggers
+    // ExitBuilding (unit.cpp:3138), which kicks it 3 hexes away and fizzles the
+    // armed repair event -> the crane oscillates in/out and never welds. Small
+    // buildings whose exit hex is inside the footprint hit this; larger ones
+    // repair from an outside exit hex (guard false -> unchanged SetDest path).
+    // StartConst here mirrors the on-arrival weld (vehmove.cpp:408-414).
+    if ( theBuildingHex._GetBuilding( pVeh->GetPtHead( ) ) == pBldg )
+        pVeh->StartConst( pBldg );
+    else
+        pVeh->SetDest( pBldg->GetHex( ) );
 }
 
 static void LoadCarrier( CMsgLoadCarrier* pMsg )
