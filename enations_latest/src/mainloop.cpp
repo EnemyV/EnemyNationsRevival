@@ -51,19 +51,29 @@ static char BASED_CODE THIS_FILE[] = __FILE__;
 extern BOOL bDoSubclass;
 
 
-// Count still-alive players who actually landed their rocket. A rocketless
-// "spectator" (End-key observer, m_bPlacedRocket FALSE) is held in m_lstAll
-// forever by the 1996 defeat-grace (m_iBuiltBldgsHave = m_bPlacedRocket?0:1),
-// so it must NOT count toward the last-player-standing win, or the AIs can
-// never win the game while an observer watches.
-static int CountLandedPlayers( CList<CPlayer*, CPlayer*>& lst )
+// Contenders for the last-player-standing win: every player still in m_lstAll
+// EXCEPT declared observers. This is the 1996 predicate (GetAll().GetCount())
+// minus spectators - deliberately NOT "players who landed a rocket", because a
+// player who has not landed YET has not lost and must still count, or the win
+// fires during initial rocket placement (1 AI: count 1 at t=0; MP: the first
+// player to land sees it). Only the End-key observer is excluded: it declined
+// the rocket, and the 1996 defeat-grace (m_iBuiltBldgsHave = m_bPlacedRocket?0:1)
+// keeps it in m_lstAll forever, which is what stopped the AI from ever winning.
+static int CountContenders( CList<CPlayer*, CPlayer*>& lst )
 {
     int n = 0;
     for ( POSITION pos = lst.GetHeadPosition( ); pos != NULL; )
-        if ( lst.GetNext( pos )->m_bPlacedRocket )
+        if ( !lst.GetNext( pos )->m_bSpectator )
             n++;
     return n;
 }
+
+// A game that has only ever had ONE contender (observer watching a single AI,
+// or no opponents at all) is decided before it starts. Declare it, but not on
+// the first tick - an instant cut-scene at world-create reads as a bug. Game
+// seconds (sim clock, reset to 0 at create, stops when paused), so a loaded
+// save is already past it and a real endgame is unaffected.
+static const DWORD DECIDED_GRACE_SECS = 60;
 
 
 #ifdef _PROFILE
@@ -1033,7 +1043,8 @@ void CConquerApp::GraphicsEnginePump( )
                     return;
                 }
 
-                if ( CountLandedPlayers( theGame.GetAll( ) ) <= 1 )
+                if ( ( CountContenders( theGame.GetAll( ) ) <= 1 ) &&
+                     ( theGame.GetElapsedSeconds( ) >= DECIDED_GRACE_SECS ) )
                 {
                     LeaveCriticalSection( &cs );
                     theCutScene.PlayEnd( CWndCutScene::win );

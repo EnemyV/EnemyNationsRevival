@@ -726,6 +726,14 @@ class CPlayer : public CObject
     int  m_iBuiltBldgsHave;
     BOOL m_bPlacedRocket;
 
+    // Observer: declined the rocket (End during placement) so this player is
+    // not a contender for the last-player-standing win. NOT yet synced or
+    // serialized - only the local player's flag is set today (the End key is
+    // local + cheat-build). MP spectators and save/reload need the broadcast +
+    // Serialize + VER_RELEASE bump; the win predicate already reads it per
+    // player so that lands without touching CountContenders.
+    BOOL m_bSpectator;
+
     // --- Colony stat history (for the building-info windows' graphs) ----------
     // A ring buffer of periodic samples taken in StartLoop (~once per game-minute);
     // serialized when the save release is >= 4. GetHist*() returns sample i where

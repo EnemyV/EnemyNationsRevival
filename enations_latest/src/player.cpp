@@ -193,6 +193,7 @@ void CPlayer::ctor( )
 
     m_iBuiltBldgsHave = 1;
     m_bPlacedRocket   = FALSE;
+    m_bSpectator      = FALSE;
 
     m_iNumAiGpfs = 0;
     m_bMsgDead   = FALSE;

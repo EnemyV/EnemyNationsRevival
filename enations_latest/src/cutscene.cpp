@@ -85,11 +85,20 @@ UINT CCutScene::_PlayScene (int iTyp, int iScenario, BOOL bAsync)
 				// winner is someone else (e.g. an AI) - name them, don't say
 				// "you".
 				CPlayer* pWinner = NULL;
+				CPlayer* pAny    = NULL;   // fallback: a non-observer still in the game
 				for ( POSITION pos = theGame.GetAll( ).GetHeadPosition( ); pos != NULL; )
 				  {
 					CPlayer* p = theGame.GetAll( ).GetNext( pos );
+					if ( p->m_bSpectator )   // an observer never wins
+						continue;
+					if ( pAny == NULL )
+						pAny = p;
 					if ( p->m_bPlacedRocket ) { pWinner = p; break; }
 				  }
+				// nobody holds a rocket (two players removed in one recount pass):
+				// name whoever is left rather than telling an observer "you won"
+				if ( pWinner == NULL )
+					pWinner = pAny;
 				if ( pWinner != NULL && pWinner != theGame.GetMe( ) )
 				  {
 					sText = EnLoadStdString( IDS_PLAYER_WON );

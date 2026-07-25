@@ -6431,6 +6431,11 @@ void CWndArea::OnKeyDown( UINT nChar, UINT nRepCnt, UINT nFlags )
         // rocketless human alive indefinitely; live-observation only.
         if ( nChar == VK_END && ( m_iMode == rocket_ready || m_iMode == rocket_pos ) )
         {
+            // mark the observer BEFORE SetupDone: this is the only place that
+            // knows "no rocket by choice" as opposed to "not landed yet", and
+            // SetupDone is also called on a normal landing (netapi.cpp:2182)
+            // and on load (player.cpp:2958), so the flag cannot live in there.
+            theGame.GetMe( )->m_bSpectator = TRUE;
             SetupDone( );
             return;
         }
