@@ -70,9 +70,13 @@ static int CountContenders( CList<CPlayer*, CPlayer*>& lst )
 
 // A game that has only ever had ONE contender (observer watching a single AI,
 // or no opponents at all) is decided before it starts. Declare it, but not on
-// the first tick - an instant cut-scene at world-create reads as a bug. Game
-// seconds (sim clock, reset to 0 at create, stops when paused), so a loaded
-// save is already past it and a real endgame is unaffected.
+// the first tick - an instant cut-scene at world-create reads as a bug.
+// Sim clock, stops when paused. NOTE: it is zeroed on LOAD too, not just at
+// create (newworld.cpp:1227 SetElapsedSeconds(0), the sim-clock-debt line, runs
+// after deserialize), so this floor RE-ARMS on every load - measured 7950 -> 25
+// by MacOpus. Harmless: loading an already-decided game declares its winner 60
+// game-seconds later instead of at once. Do NOT assume "a load is past the
+// floor" anywhere else.
 static const DWORD DECIDED_GRACE_SECS = 60;
 
 
