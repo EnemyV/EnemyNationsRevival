@@ -327,7 +327,11 @@ friend class CHexCoord;
 friend class CSubHex;
 friend class CMapLoc;
 friend class CHex;
-#ifdef _CHEAT
+// CUnit::AssertValid (new_unit.cpp) reads m_eX/m_eY, so this friendship is a
+// _DEBUG dependency, not a cheat one. It was keyed to _CHEAT only because
+// _CHEAT used to be implied by _DEBUG; decoupling the two (EN_CHEAT option)
+// broke the Debug build until this said what it actually needs.
+#if defined( _CHEAT ) || defined( _DEBUG )
 friend class CUnit;
 #endif
 
@@ -481,7 +485,9 @@ protected:
 
 	Ptr< CHexValidMatrix	>	m_ptrhexvalidmatrix;
 
-#ifdef _CHEAT
+// same story: CHex::AssertValid (terrain.cpp) calls this, so it is a _DEBUG
+// need. (GetHexOffPub above is the identical public one used by the GPU path.)
+#if defined( _CHEAT ) || defined( _DEBUG )
 	long		GetHexOff (CHex const *pHex) const { return (pHex - m_pHex); }
 #endif
 #ifdef _DEBUG
