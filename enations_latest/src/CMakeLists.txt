@@ -1,5 +1,10 @@
 message("Current CMAKE_SOURCE_DIR: ${CMAKE_SOURCE_DIR}")
 
+# Dev cheat surface. OFF by default: a debug build is NOT a cheat build.
+# Turn on deliberately with -DEN_CHEAT=ON (needed for the in-dev End-key
+# spectator mode). See the _CHEAT note in target_compile_definitions below.
+option(EN_CHEAT "Compile the dev cheat surface (_CHEAT): map reveal, research grants, Max*, AI unit grants, End-key spectator, debug overlays" OFF)
+
 set(enations_sources
 #        advanced.cpp
         ai.cpp
@@ -348,11 +353,16 @@ target_compile_definitions(enations PUBLIC
         AI_THREADS_ENABLED # here's hoping!!
         OPTIMIZE_BLIT_ORDER
         # AI_SPECTATE
-        # _CHEAT enables the dev cheat system (KnowItAll, GrantResearch, AiCranes, _bShowPos...)
-        # — Debug/Sanitize ONLY (compiled OUT of Release), and each cheat is still opt-in via the
-        # [Cheat] registry section (EnGetProfileInt(...,0) = off by default). Safe by construction.
-        $<$<CONFIG:Debug>:_CHEAT>
-        $<$<CONFIG:Sanitize>:_CHEAT>
+        # _CHEAT = the dev cheat surface (map reveal, KnowItAll/GrantResearch, Max*, the AI unit
+        # grants, the in-dev End-key spectator, the debug overlays). It used to be defined for
+        # EVERY Debug/Sanitize build, on the argument that each cheat is separately opt-in via the
+        # [Cheat] registry section so it was "safe by construction". It is not: a stale
+        # [Cheat]SeeAll=1 left in the registry silently revealed the whole map in every debug
+        # build (operator hit this while testing Training Grounds, 2026-07-25). Now an explicit
+        # opt-in, default OFF:  cmake -B cmakeBuild-x64 -A x64 -DEN_CHEAT=ON
+        # Still fenced to Debug/Sanitize so a cheat can never reach a Release artifact even if
+        # someone turns the option on.
+        $<$<AND:$<BOOL:${EN_CHEAT}>,$<OR:$<CONFIG:Debug>,$<CONFIG:Sanitize>>>:_CHEAT>
         $<$<CONFIG:Release>:NDEBUG>
         $<$<CONFIG:Profile>:NDEBUG>
         $<$<CONFIG:Debug>:_DEBUG>

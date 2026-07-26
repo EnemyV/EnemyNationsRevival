@@ -93,7 +93,20 @@
 
 #pragma warning( disable : 4244 )  // I don't like this!!!
 
-#ifdef _DEBUG
+// Dev cheat surface (_CHEAT): map reveal, KnowItAll/GrantResearch, Max*, the AI
+// unit grants, the End-key spectator, the debug overlays. This used to be implied
+// by _DEBUG, so EVERY debug build was a cheat build and a stale [Cheat] registry
+// value (e.g. SeeAll=1) silently revealed the map in it. Now an explicit opt-in,
+// default OFF: flip to 1 here or build with -DEN_CHEAT=1.
+// NOTE: spectator mode (End during rocket placement) is in-dev and lives behind
+// this gate, so it needs a cheat build - deliberate, it does not ship.
+// The CMake build is the primary gate (option EN_CHEAT, default OFF, which
+// defines _CHEAT directly); this covers any non-CMake path. Guarded so the two
+// can never collide into a macro redefinition warning.
+#ifndef EN_CHEAT
+#define EN_CHEAT 0
+#endif
+#if EN_CHEAT && !defined( _CHEAT )
 #define _CHEAT 1
 #endif
 
