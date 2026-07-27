@@ -9,9 +9,10 @@
 //
 ////////////////////////////////////////////////////////////////////////////
 
-#include <afxwin.h>
+// CObject comes from mfc_compat.h (via stdafx.h).
+#include <windows.h>
 
-#include "CAIMsg.hpp"
+#include "caimsg.hpp"
 
 #ifndef __CAIOPFOR_HPP__
 #define __CAIOPFOR_HPP__
@@ -36,7 +37,7 @@ class CAIOpFor : public CObject
 protected:
 
 	int m_iPlayer;			// game generated id (called owner sometimes)
-	CString m_sName;		// name of the OpFor
+	std::string m_sName;	// name of the OpFor
 	DWORD m_dwRocket;		// id of the rocket building
 
 							// the OpFor units we know about
@@ -72,7 +73,7 @@ public:
 
 	int GetPlayerID( void );
 	
-	CString& GetName( void );
+	std::string& GetName( void );
 
 	int GetStrengths( void );
 	int GetIndustrial( void );
@@ -96,7 +97,7 @@ public:
 	int GetMsgCount( void );
 	void SetMsgCount( int );
 	int GetAttitude( void );
-	void SetAttitude( int );
+	void SetAttitude( int );	// sets attitude + requantizes relations/war
 
 	void AdjustThreat( void );
 	void UpdateCounts( CAIMsg *pMsg );

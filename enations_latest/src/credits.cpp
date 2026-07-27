@@ -52,10 +52,11 @@ END_MESSAGE_MAP()
 void CWndCredits::Create ()
 {
 
-	const char *pCls = AfxRegisterWndClass (0, NULL, NULL, theApp.LoadIcon (IDI_MAIN));
+	const char *pCls = CConquerApp::EnRegisterWndClass ("EnCreditsWnd", 0, NULL, NULL,
+	                                                    theApp.LoadIcon ((UINT)IDI_MAIN));
 
 	const DWORD dwSty = WS_POPUP;
-	if (CreateEx (0, pCls, theApp.m_sAppName, dwSty, 0, 0, theApp.m_iScrnX, 
+	if (CreateEx (0, pCls, theApp.m_sAppName.c_str(), dwSty, 0, 0, theApp.m_iScrnX,
 												theApp.m_iScrnY, theApp.m_wndMain.m_hWnd, NULL, NULL) == 0)
 		ThrowError (ERR_RES_CREATE_WND);
 }
@@ -187,14 +188,14 @@ void CWndCredits::OnPaint()
 		if (bFigRect)
 			{
 			rect.bottom = iBottom;
-			dc.DrawText (pCcl->m_sText, -1, &rect, DT_CALCRECT | DT_TOP | DT_SINGLELINE | DT_NOPREFIX | DT_LEFT);
+			dc.DrawText (pCcl->m_sText.c_str(), -1, &rect, DT_CALCRECT | DT_TOP | DT_SINGLELINE | DT_NOPREFIX | DT_LEFT);
 			rect.left = iLeft;
 			rect.right = iRight;
 			if (! pCcl->m_iRtn)
 				rect.bottom += rect.Height () / 3;
 			}
 
-		dc.DrawText (pCcl->m_sText, -1, &rect, DT_BOTTOM | DT_SINGLELINE | DT_NOPREFIX |
+		dc.DrawText (pCcl->m_sText.c_str(), -1, &rect, DT_BOTTOM | DT_SINGLELINE | DT_NOPREFIX |
 						(pCcl->m_iAlign == 0 ? DT_LEFT : (pCcl->m_iAlign == 1 ? DT_CENTER : DT_RIGHT)) );
 
 		int iHt = rect.Height () + rect.Height () / 5;
@@ -259,7 +260,7 @@ void CWndCredits::OnTimer(UINT nIDEvent)
 			}
 		}
 
-	ScrollWindow ( 0, - iNum, &m_rText );
+	::ScrollWindow ( m_hWnd, 0, - iNum, &m_rText, NULL );
   
 	CRect rect (m_rText);
 	rect.top = rect.bottom - iNum;

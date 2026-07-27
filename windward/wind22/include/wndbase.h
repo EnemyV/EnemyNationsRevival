@@ -7,14 +7,16 @@
 // wndbase.h : header file
 //
 
+// CWndBase inherits from the non-MFC CWndStub. The FNMOUSEMOVE callback
+// takes CWndStub* and (x,y) ints (not CWnd*/CPoint, which were MFC types).
+#include "wndstub.h"
+typedef CWndStub CWndBaseSuper;
+typedef void ( FNMOUSEMOVE )( CWndStub* pWnd, UINT nFlags, int x, int y );
+
 /////////////////////////////////////////////////////////////////////////////
 // CWndBase window
 
-// this is a function that is called for all mouse move messages that aren't handled
-// by their window (used in Enemy Nations to blank out the status help
-typedef void ( FNMOUSEMOVE )( CWnd* pWnd, UINT nFlags, CPoint point );
-
-class CWndBase: public CWnd {
+class CWndBase: public CWndBaseSuper {
     // Construction
 public:
 
@@ -22,8 +24,9 @@ public:
 
     // Attributes
 public:
-    CDC* GetDC() { if ( m_pDc != NULL ) return ( m_pDc ); return CWnd::GetDC(); }
-    int  ReleaseDC( CDC* pDc ) { if ( pDc == m_pDc ) return TRUE; return CWnd::ReleaseDC( pDc ); }
+    // HDC-based DC management
+    HDC GetDC() { if ( m_pDc != NULL ) return ( m_pDc ); return CWndStub::GetDC(); }
+    int ReleaseDC( HDC h ) { if ( h == m_pDc ) return TRUE; return CWndStub::ReleaseDC( h ); }
 
     // Operations
 public:
@@ -40,15 +43,26 @@ public:
 
     // Generated message map functions
 protected:
-    //{{AFX_MSG(CWndBase)
-    afx_msg int OnCreate( LPCREATESTRUCT lpCreateStruct );
-    afx_msg void OnDestroy();
-    afx_msg BOOL OnEraseBkgnd( CDC* pDC );
-    afx_msg void OnMouseMove( UINT nFlags, CPoint point );
-    afx_msg void OnPaletteChanged( CWnd* pFocusWnd );
-    afx_msg BOOL OnQueryNewPalette();
-    //}}AFX_MSG
-    DECLARE_MESSAGE_MAP()
+    // Virtual overrides of CWndStub handlers. Signatures must match
+    // CWndStub's virtuals exactly (HDC, int x,y instead of CDC*, CPoint).
+    virtual int  OnCreate( LPCREATESTRUCT lpCreateStruct );
+    virtual void OnDestroy();
+    virtual BOOL OnEraseBkgnd( HDC hdc );
+    virtual void OnMouseMove( UINT nFlags, int x, int y );
+    virtual void OnPaletteChanged( HWND hwndFocus );
+    virtual BOOL OnQueryNewPalette();
+    // Bring CWndStub's POINT-taking forwarders into scope so derived calls
+    // like `CWndBase::OnMouseMove(nFlags, point)` resolve to the forwarder
+    // that unpacks to (UINT, int, int). C++ name-hiding would otherwise
+    // make CWndBase::OnMouseMove only match the (UINT, int, int) override.
+public:
+    using CWndStub::OnMouseMove;
+    using CWndStub::OnLButtonDown;
+    using CWndStub::OnLButtonDblClk;
+    using CWndStub::OnRButtonDown;
+    using CWndStub::OnMButtonDown;
+    using CWndStub::OnPaletteChanged;
+protected:
 
     LRESULT WindowProc( UINT Message, WPARAM wParam, LPARAM lParam );
 
@@ -56,7 +70,7 @@ protected:
 
     CFramePainter m_framepainter;
 
-    CDC* m_pDc;   // for own DC windows
+    HDC m_pDc;   // for own DC windows
 };
 
 
@@ -80,12 +94,8 @@ public:
     virtual ~CWndPrimary();
 
 protected:
-    // Generated message map functions
-    //{{AFX_MSG(CWndPrimary)
-    afx_msg int OnCreate( LPCREATESTRUCT lpCreateStruct );
-    afx_msg void OnDestroy();
-    //}}AFX_MSG
-    DECLARE_MESSAGE_MAP()
+    virtual int  OnCreate( LPCREATESTRUCT lpCreateStruct );
+    virtual void OnDestroy();
 };
 
 
@@ -106,6 +116,37 @@ public:
     virtual void  ReRender() { ASSERT( FALSE ); }
     virtual void  Draw() { ASSERT( FALSE ); }
 
+    // --- Per-window frame-rate throttle ------------------------------------
+    // The mainloop re-renders every CWndAnim each game frame, which steals
+    // frames from the simulation. Windows that show slowly-changing data only
+    // need to repaint a few times a second. Map windows that need smooth
+    // scrolling (the area map and the radar) override RendersEveryFrame() to
+    // return TRUE and keep the full frame rate.
+    //
+    // DecideRenderFrame() is called once per frame (in the ReRender pass); it
+    // records whether this window paints this frame so the later Draw pass
+    // makes the same decision. Returns TRUE if the window should render now.
+    virtual bool  RendersEveryFrame() const { return false; }
+    // Per-window MINIMUM repaint interval (ms). Default 0 = use the global throttle.
+    // A window with slowly-changing content (the World Map overview) overrides this to
+    // a larger value so it repaints a few times/second instead of at the global rate —
+    // its full-window per-pixel re-walk is ~117ms in Debug and was ~85% of the render
+    // budget at 20 players. Applied via DecideRenderFrame, which skips BOTH the ReRender
+    // and Draw passes cleanly (unlike an early-return inside ReRender, which leaves the
+    // window flagged as rendering and faults the shared Draw loop).
+    virtual DWORD MinRenderIntervalMs() const { return 0; }
+    bool DecideRenderFrame( DWORD dwNow, DWORD dwIntervalMs ) {
+        DWORD iv = dwIntervalMs > MinRenderIntervalMs() ? dwIntervalMs : MinRenderIntervalMs();
+        if ( RendersEveryFrame() || ( dwNow - m_dwLastRenderTick ) >= iv ) {
+            m_dwLastRenderTick = dwNow;
+            m_bRenderThisFrame = true;
+        } else {
+            m_bRenderThisFrame = false;
+        }
+        return m_bRenderThisFrame;
+    }
+    bool RenderingThisFrame() const { return m_bRenderThisFrame; }
+
 #ifdef BUGBUG
     virtual void  InvalidateMap();
     virtual void  Update() { ASSERT( FALSE ); }
@@ -119,16 +160,18 @@ public:
     virtual ~CWndAnim() {}
 
 protected:
-    // Generated message map functions
-    //{{AFX_MSG(CWndAnim)
-    afx_msg void OnDestroy();
-    //}}AFX_MSG
-    DECLARE_MESSAGE_MAP()
+    virtual void OnDestroy();
+
+    // Frame-rate throttle state (see DecideRenderFrame above).
+    DWORD m_dwLastRenderTick = 0;
+    bool  m_bRenderThisFrame = true;
 };
 
 
-extern CList <CWndAnim*, CWndAnim*> theAnimList;
-extern CMap <CWndPrimary*, CWndPrimary*, CWndPrimary*, CWndPrimary*> thePrimaryMap;
+#include <list>
+#include <unordered_map>
+extern std::list<CWndAnim*> theAnimList;
+extern std::unordered_map<CWndPrimary*, CWndPrimary*> thePrimaryMap;
 
 
 #endif

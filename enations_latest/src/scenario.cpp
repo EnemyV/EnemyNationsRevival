@@ -524,7 +524,7 @@ static void Start6() {
     // drop an AI unit in their middle, set us at war if not at easy level
     int iTotal = 5;
     if (theGame.m_iAi > 0) {
-        CDlgRelations::NewRelations(pBldgLoc->GetOwner(), RELATIONS_WAR);
+        NewRelations(pBldgLoc->GetOwner(), RELATIONS_WAR);
         iTotal = 6;
     }
 
@@ -735,10 +735,13 @@ static void Start7() {
                     if ( ( iInd == 4 ) && ( theGame.m_iAi > 1 ) ) {
                         TRAP();
                         // set us at war
-                        CDlgRelations::NewRelations(pPlr, RELATIONS_WAR);
+                        NewRelations(pPlr, RELATIONS_WAR);
 
-                        // find a clear hex nearby
-                        CHexCoord _hexAI(_hex.X() + RandNum(4) - 2, _hex.Y() + RandNum(4) - 2);
+                        // find a clear hex nearby (draws hoisted: unsequenced ctor
+                        // args swap the x/y jitter across compilers -> MP desync)
+                        const int iDrawX = RandNum(4);
+                        const int iDrawY = RandNum(4);
+                        CHexCoord _hexAI(_hex.X() + iDrawX - 2, _hex.Y() + iDrawY - 2);
                         for (int iTry2 = 0; iTry2 < 10; iTry2++) {
                             CHex *pHex = theMap._GetHex(_hexAI);
                             // hex clear and vehicle can travel on it
@@ -1044,154 +1047,20 @@ BOOL CConquerApp::ScenarioEnd() {
 // CCreateScenario
 
 void CCreateScenario::Init() {
-
+    // CDlgScenario removed (Phase 2d). The SDL2 flow constructs CCreateScenario
+    // directly and runs SDL2_RunCreateScenarioFlow(); this MFC entry point only
+    // ran from CDlgMain::OnMainScenario which is the dead MFC main-menu fallback.
     ASSERT_VALID(this);
-    theApp.Log("Create scenario game");
-
-    // set it as the server
-    theGame.ctor();
-    theGame.SetServer(TRUE);
-    theGame._SetIsNetGame(FALSE);
-    theGame.Open(TRUE);
-
-    m_dlgScenario.Create(this, CDlgScenario::IDD, theApp.m_pMainWnd);
+    theApp.Log("Create scenario game (MFC entry — no-op)");
 }
 
 void CCreateScenario::Close() {
-
-    if (m_dlgPickRace.m_hWnd != NULL)
-        m_dlgPickRace.DestroyWindow();
-
-    if (m_dlgScenario.m_hWnd != NULL)
-        m_dlgScenario.DestroyWindow();
+    // CDlgPickRace removed (Phase 2d) — nothing to close here now.
 }
 
 #ifdef _DEBUG
 void CCreateScenario::AssertValid( ) const
 {
-
     CCreateBase::AssertValid( );
-
-    ASSERT_VALID( &m_dlgScenario );
 }
 #endif
-
-/////////////////////////////////////////////////////////////////////////////
-// CDlgScenario dialog
-
-CDlgScenario::CDlgScenario(CWnd *pParent /*=NULL*/ ) : CDialog(CDlgScenario::IDD, pParent) {
-    //{{AFX_DATA_INIT(CDlgScenario)
-    m_iAi = 0;
-    m_iSize = 0;
-    //}}AFX_DATA_INIT
-}
-
-
-void CDlgScenario::DoDataExchange(CDataExchange *pDX) {
-    CDialog::DoDataExchange(pDX);
-    //{{AFX_DATA_MAP(CDlgScenario)
-    DDX_Control(pDX, IDOK, m_btnOk);
-    DDX_Radio(pDX, IDC_CREATE_EASY, m_iAi);
-    DDX_Radio(pDX, IDC_CREATE_SMALL, m_iSize);
-    //}}AFX_DATA_MAP
-}
-
-
-BEGIN_MESSAGE_MAP(CDlgScenario, CDialog)
-//{{AFX_MSG_MAP(CDlgScenario)
-                    ON_BN_CLICKED(IDX_HELP, OnHelp)
-//}}AFX_MSG_MAP
-END_MESSAGE_MAP()
-
-
-/////////////////////////////////////////////////////////////////////////////
-// CDlgScenario message handlers
-
-void CDlgScenario::Create(CCreateScenario *pCs, UINT id, CWnd *pPar) {
-
-    ASSERT_VALID(this);
-
-    m_pCs = pCs;
-    CDialog::Create(id, pPar);
-}
-
-void CDlgScenario::OnCancel() {
-
-    ASSERT_VALID(this);
-
-    theGame.Close();
-    CDialog::OnCancel();
-    theApp.CreateMain();
-}
-
-void CDlgScenario::OnOK() {
-
-    ASSERT_VALID(this);
-    theApp.Log("Set game type");
-
-    // save the parameters we use
-    UpdateData(TRUE);
-    theGame.m_iAi = m_pCs->m_iAi = m_iAi;
-    theGame.m_iSize = m_pCs->m_iSize = m_iSize;
-    theGame.m_iPos = m_pCs->m_iPos = SCENARIO_POS;
-    m_pCs->m_iNet = -1;
-
-    // number of opponents
-    m_pCs->m_iNumAi = NUM_AI_IN_SCENARIO + m_iAi;
-    int iMax = __max(0, theApp.GetCpuSpeed() - 100);
-    iMax = 3 + iMax / 20;
-    m_pCs->m_iNumAi = __min(iMax, m_pCs->m_iNumAi);
-    m_pCs->m_iNumAi = __max(NUM_AI_IN_SCENARIO, m_pCs->m_iNumAi);
-
-    theGame.SetScenario(0);
-
-    theApp.WriteProfileInt("Create", "Difficultity", m_iAi);
-    theApp.WriteProfileInt("Create", "Size", m_iSize);
-
-    // switch to the pick race dialog
-    if (m_pCs->m_dlgPickRace.m_hWnd == NULL)
-        m_pCs->m_dlgPickRace.Create(m_pCs, this, CDlgPickRace::IDD, theApp.m_pMainWnd);
-
-    m_pCs->m_dlgPickRace.ShowWindow(SW_SHOW);
-    ShowWindow(SW_HIDE);
-}
-
-BOOL CDlgScenario::OnInitDialog() {
-
-    CDialog::OnInitDialog();
-
-    CenterWindow(theApp.m_pMainWnd);
-
-    // init the radio buttons
-    UpdateData(TRUE);
-
-    m_iAi = theApp.GetProfileInt("Create", "Difficultity", 0);
-    m_iSize = theApp.GetProfileInt("Create", "Size", 0);
-
-#ifndef HACK_TEST_AI
-    // shareware restrictions
-    if ((theApp.IsShareware()) || (theApp.IsSecondDisk())) {
-        m_iAi = 1;
-        m_iSize = 1;
-
-        GetDlgItem(IDC_CREATE_EASY)->EnableWindow(FALSE);
-        GetDlgItem(IDC_CREATE_DIFFICULT)->EnableWindow(FALSE);
-        GetDlgItem(IDC_CREATE_IMPOSSIBLE)->EnableWindow(FALSE);
-        GetDlgItem(IDC_CREATE_SMALL)->EnableWindow(FALSE);
-        GetDlgItem(IDC_CREATE_LARGE)->EnableWindow(FALSE);
-    }
-#endif
-
-    UpdateData(FALSE);
-
-    // get rid of the main menu
-    theApp.DestroyMain();
-
-    return TRUE;  // return TRUE unless you set the focus to a control
-    // EXCEPTION: OCX Property Pages should return FALSE
-}
-
-void CDlgScenario::OnHelp() {
-
-    theApp.WinHelp(HLP_SCENARIO, HELP_CONTEXT);
-}

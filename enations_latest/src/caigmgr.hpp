@@ -9,14 +9,16 @@
 //
 ////////////////////////////////////////////////////////////////////////////
 
-#include "CAIGoal.hpp"
-#include "CAITask.hpp"
-#include "CAIMap.hpp"
-#include "CAIUnit.hpp"
-#include "CAIOpFor.hpp"
+#include "caigoal.hpp"
+#include "caitask.hpp"
+#include "caimap.hpp"
+#include "caiunit.hpp"
+#include "caiopfor.hpp"
 
 #ifndef __CAIGMGR_HPP__
 #define __CAIGMGR_HPP__
+
+class CAIRouter;
 
 // the number of different types of units, that can be staged for an assault
 // with a specific staging task
@@ -46,6 +48,8 @@ protected:
 	BOOL m_bNeedTrucks;
 	BOOL m_iNeedApt;
 	BOOL m_iNeedOffice;
+	int  m_iWealthLevel;	// cached from CheckPlayer (S7) - extra fleet for a rich AI
+	BOOL m_bAptCritical;	// cached from CheckPlayer (S8) - genuine housing shortage
 
 	int m_iLastFood;
 	int m_iScenario; 	// 0=none, else the number of the current scenario
@@ -74,7 +78,16 @@ public:
 	int m_iPowerLvl;		// indicate type of power plant we can build
 
 	DWORD m_dwRocket;		// id of the rocket building
+	CHexCoord m_ahexLastWarRoad[4];		// per-goal last war-road target (transient; [3]=other goals)
+	CHexCoord m_ahexLastStageRoad[4];	// per-goal last staging-road midpoint (transient)
+	// staging watchdog (Phase 3) - transient, idx 0=IDG_LANDWAR 1=IDG_ADVDEFENSE 2=IDG_SEAINVADE
+	int   m_iBldgLostRecent;		// bunker mode: own buildings lost (rolling)
+	DWORD m_dwDefenseUntil;			// bunker mode: suppress OFFENSIVE launches until
+	DWORD m_dwGunsUntil;			// recently attacked: hold guns-or-butter ON until
+	BOOL  WarPressure( void );		// at war with anyone, or attacked recently
 	CAIMap *m_pMap;	// CAIMgr's CAIMap
+	CAIRouter *m_pRouter;	// CAIMgr's router (set post-construction; may be NULL)
+	DWORD m_adwSitePickCool[64];	// per-building-type cooldown after siteless failures
 	CAIUnitList *m_plUnits;	// list of CAIMgr's CAIUnits
 	CAITaskList *m_plTasks;	// this player's list of tasks
 
@@ -158,6 +171,7 @@ public:
 	void ScenarioPriority( CAITask *pTask );
 
 	void ConsiderRoads( void );
+	void ConsiderAltOutputs( void );
 	BOOL IsGasAvailable( void );
 	BOOL NeedGas( void );
 	void ConsiderTrucks( CAIMsg *pMsg );
@@ -189,7 +203,11 @@ public:
 	void UpdateCombatTasks( CAIMsg *pMsg );
 	void UpdateProductionTasks( CAIMsg *pMsg );
 	void UpdateStagingTasks( void );
-	void ConsiderReassignment( CAITask *pToTask, 
+	void NoteBuildingLost( void );		// bunker mode: losing buildings -> defense first
+	void StagingCensusProbe( void );	// probe-only army-composition census
+	int WarRoadIdx( CAITask *pTask );	// per-goal war-road guard slot
+	int  StageGoalIdx( int iGoal );		// staging goal -> 0..2 (or -1)
+	void ConsiderReassignment( CAITask *pToTask,
 		CAITask *pCntTask, CAITask *pFromTask, WORD wUnitCat );
 
 
@@ -215,7 +233,7 @@ public:
 		CHexCoord& hcStart, CHexCoord& hcEnd, WORD wNewTask );
 
 	BOOL IsTargetReachable( CHexCoord& hexTarget, CAITask *pTask );
-	void FindAssaultTarget( CHexCoord& hexTarget, 
+	void FindAssaultTarget( CHexCoord& hexTarget,
 		CAITask *pTask, CAIOpFor *pOpFor );
 
 	//void GetSupport( CAIUnit *pTarget, 
@@ -224,6 +242,8 @@ public:
 
 	DWORD GetOpforTarget( int iOpForID, int iVehType );
 	DWORD GetOpForUnit( int iHow, int iKindOf, CAIUnit *pUnit );
+	DWORD GetOpForUnitScan( int const *aiHow, int const *aiKindOf,
+		int nClasses, CAIUnit *pUnit, int *piClassSel );
 	void SetMapOpFor( void );
 	void SetKnownOpFor( int iOpForID );
 	int GetOpForId( int iType, CHexCoord hex, BOOL bKnown );

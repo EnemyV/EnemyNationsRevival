@@ -12,6 +12,10 @@
 #include "thielen.h"
 #include <_windwrd.h>
 
+// Phase 6 Stage 0: SDL_Surface backing for CDIB. Forward-declared here so
+// the (widely-included) header doesn't pull in SDL.h; dib.cpp includes it.
+typedef struct SDL_Surface SDL_Surface;
+
 class CDIB;
 
 //------------------------- B I T M A P I N F O 2 5 6 -----------------------
@@ -74,9 +78,6 @@ private:
 // Device-independent bitmap
 
 class CDIB
-#ifdef _DEBUG
-    : public CObject
-#endif
 {
 
 public:
@@ -162,8 +163,11 @@ public:
     BOOL        IsInRange( BYTE const*, int iBytes ) const;
     int        GetOffset( int x, int y ) { return GetRow( y ) * GetPitch() + x * GetBytesPerPixel(); }
 
-    LPDIRECTDRAWSURFACE GetDDSurface( );
-    BOOL HasDDSurface( );
+    // Phase 6 Stage 2: SDL surface accessor. Returns the long-lived backing
+    // for DIB_SDL_SURFACE; NULL for any other type. Intended for SDL_BlitSurface
+    // callers (they lock internally). Raw-pixel callers should keep going
+    // through GetBits()/CDIBits so the lock contract stays uniform.
+    SDL_Surface* GetSDLSurface() { return m_psdlsurfaceBack; }
 
     //--------------------------------------------------------------------------
     // 
@@ -223,8 +227,8 @@ public:
 
 protected:
 
-    friend CDIBits;
-    friend CDIBHDC;
+    friend class CDIBits;
+    friend class CDIBHDC;
 
     BYTE* GetDIBits() { return m_pBits; }
 
@@ -245,15 +249,13 @@ private:
     HBITMAP       m_hOrigBm;    // the original bitmap attached to hDCWinG
     HBITMAP       m_hTextBm;    // the original bitmap attached to hDCWinG
     BITMAPINFO256     m_bmi;      // WinG DIB header
-    DDSURFACEDESC     m_ddOffSurfDesc;  // off-screen surface desc
-    LPDIRECTDRAWSURFACE   m_pddsurfaceBack;  // off-screen surface (the bitmap)
+    SDL_Surface*      m_psdlsurfaceBack;  // DIB_SDL_SURFACE backing (Phase 6)
     HRESULT       m_hRes;
     Ptr< BITMAPINFO256 >   m_ptrbmiIdentity;
     int        m_iLock;
     BOOL        m_bBitmapSelected;
 
     Ptr< CWinG >     m_ptrwing;
-    Ptr< CDirectDraw >   m_ptrdirectdraw;
 };
 
 
@@ -296,29 +298,6 @@ inline CDIBHDC::CDIBHDC(
 //-------------------------------------------------------------------------
 inline CDIBHDC::~CDIBHDC() {
     m_pdib->ReleaseDC();
-}
-
-//-------------------------------------------------------------------------
-// CDIB::GetDDSurface
-//-------------------------------------------------------------------------
-inline LPDIRECTDRAWSURFACE CDIB::GetDDSurface() {
-    ASSERT( CBLTFormat::DIB_DIRECTDRAW == m_eType );
-    ASSERT( m_pddsurfaceBack );
-
-    m_hRes = m_pddsurfaceBack->IsLost();
-
-    if ( m_hRes == DDERR_SURFACELOST )
-        m_hRes = m_pddsurfaceBack->Restore();
-
-    if ( FAILED( m_hRes ) )
-        ; // GGFIXIT: throw
-
-    return m_pddsurfaceBack;
-}
-
-inline BOOL CDIB::HasDDSurface( )
-{
-    return ( m_pddsurfaceBack != 0 );
 }
 
 /////////////////////////////////////////////////////////////////////////////

@@ -18,52 +18,9 @@ class CCreateSingle;
 
 
 /////////////////////////////////////////////////////////////////////////////
-// CDlgCreateSingle dialog
-
-class CDlgCreateSingle : public CDialog
-{
-// Construction
-public:
-	CDlgCreateSingle(CWnd* pParent = NULL);   // standard constructor
-	void Create (CCreateSingle * pCs, UINT id, CWnd *pPar = NULL);
-
-	CCreateSingle *		m_pCs;
-
-// Dialog Data
-	//{{AFX_DATA(CDlgCreateSingle)
-	enum { IDD = IDD_CREATE_SINGLE };
-	CWndOD< CButton >	m_btnOk;
-	int		m_iAiLevel;
-	int		m_iSizeWorld;
-	int		m_iPosStart;
-	CString	m_strAiNum;
-	//}}AFX_DATA
-
-
-// Overrides
-	// ClassWizard generated virtual function overrides
-	//{{AFX_VIRTUAL(CDlgCreateSingle)
-	protected:
-	virtual void DoDataExchange(CDataExchange* pDX);    // DDX/DDV support
-	//}}AFX_VIRTUAL
-
-// Implementation
-protected:
-
-	// Generated message map functions
-	//{{AFX_MSG(CDlgCreateSingle)
-	virtual BOOL OnInitDialog();
-	virtual void OnCancel();
-	virtual void OnOK();
-	afx_msg void OnHelp();
-	afx_msg void OnChangeCreateNumAi();
-	//}}AFX_MSG
-	DECLARE_MESSAGE_MAP()
-};
-
-
-/////////////////////////////////////////////////////////////////////////////
-// CCreateSingle - holds everything for creating game
+// CCreateSingle - holds everything for creating game.
+// MFC pre-game CDlgCreateSingle removed (Phase 2d) — replaced by
+// SDL2CreateSingleDialog driven by SDL2_RunCreateSinglePlayerFlow().
 
 class CCreateSingle : public CCreateBase, public CCreateNewBase
 {
@@ -76,8 +33,6 @@ public:
 		void  CloseAll () { ClosePick (); }
 
 		CCreateNewBase *	GetNew () { return (this); }
-
-		CDlgCreateSingle		m_dlgCreateSingle;
 
 #ifdef _DEBUG
 public:
@@ -92,7 +47,8 @@ public:
 		~CCreateLoadSingle () { CloseAll (); }
 
 		CCreateLoadBase *	GetLoad () { return (this); }
-		void  UpdateBtns () { if (m_dlgPickPlayer.m_hWnd != NULL) m_dlgPickPlayer.UpdateBtns (); }
+		// CDlgPickPlayer removed (Phase 2d) — SDL2PickPlayerDialog does its own button state.
+		void  UpdateBtns () {}
 
 		void	Init ();
 		void  ClosePick ();

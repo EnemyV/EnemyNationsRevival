@@ -8,13 +8,17 @@
 
 inline CTransportData const * CTransport::GetData (int iIndex) const
 			{ ASSERT ((0 <= iIndex) && (iIndex < m_iNumTransports));
-				ASSERT_STRICT (0 <= iIndex); if (iIndex >= m_iNumTransports) iIndex = 0;
-				ASSERT_STRICT_VALID (this); 
+				// Clamp NEGATIVE too: asserts are non-fatal (logged + continue), and a -1
+				// type (e.g. a vehicle build finished/cancelled on the sim thread between
+				// the UI's fetch and this lookup) walked m_pData backwards into garbage —
+				// the toolbar status-bar AV in RenderStatusBars (GetDesc on trash).
+				if (iIndex < 0 || iIndex >= m_iNumTransports) iIndex = 0;
+				ASSERT_STRICT_VALID (this);
 				return (m_pData + iIndex); }
 inline CTransportData * CTransport::_GetData (int iIndex) const
 			{ ASSERT ((0 <= iIndex) && (iIndex < m_iNumTransports));
-				ASSERT_STRICT (0 <= iIndex); if (iIndex >= m_iNumTransports) iIndex = 0;
-				ASSERT_STRICT_VALID (this); 
+				if (iIndex < 0 || iIndex >= m_iNumTransports) iIndex = 0;   // see GetData
+				ASSERT_STRICT_VALID (this);
 				return (m_pData + iIndex); }
 inline int CTransportData::GetMaxMaterials () const { ASSERT_STRICT_VALID (this); return (m_iMaxMaterials); }
 inline int CTransport::GetNumTransports () const { return (m_iNumTransports); }
@@ -48,7 +52,7 @@ inline int CVehicle::GetProd (float fProd) {
 
 inline CVehicle::VEH_MODE CVehicle::GetRouteMode () const 	{ ASSERT_STRICT_VALID (this); return (m_cMode); }
 inline CTransportData const *	CVehicle::GetData () const { ASSERT_STRICT_VALID (this); return ((CTransportData const *) m_pUnitData); }
-inline void CVehicle::UpdateChoices () { if (m_pDlgStructure != NULL) m_pDlgStructure->UpdateChoices (); }
+inline void CVehicle::UpdateChoices () { /* CDlgBuildStructure excluded (Phase 2d). */ }
 inline CSubHex CVehicle::Rotate (int iDir) { return (::Rotate (iDir, m_ptHead, m_ptTail)); }
 
 

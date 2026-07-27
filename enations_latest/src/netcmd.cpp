@@ -147,17 +147,21 @@ CNetChat* CNetChat::Alloc( const CPlayer* pPlyr, const char* psMsg )
     return ( pRtn );
 }
 
-CNetStart::CNetStart( unsigned uRand, int iSide, int iSideSize, int iAiDiff, int iNumAi, int iNumHp, int iStart )
+CNetStart::CNetStart( unsigned uRand, int iSide, int iSideSize, int iAiDiff, int iNumAi, int iNumHp, int iStart,
+                      int iWorldType, int iRivers, int iOcean )
     : CNetCmd( cmd_start )
 {
 
-    m_uRand     = uRand;
-    m_iSide     = iSide;
-    m_iSideSize = iSideSize;
-    m_iAi       = iAiDiff;
-    m_iNumAi    = iNumAi;
-    m_iNumHp    = iNumHp;
-    m_iStart    = iStart;
+    m_uRand      = uRand;
+    m_iSide      = iSide;
+    m_iSideSize  = iSideSize;
+    m_iAi        = iAiDiff;
+    m_iNumAi     = iNumAi;
+    m_iNumHp     = iNumHp;
+    m_iStart     = iStart;
+    m_iWorldType = iWorldType;
+    m_iRivers    = iRivers;
+    m_iOcean     = iOcean;
     ASSERT_CMD( this );
 }
 
@@ -471,6 +475,10 @@ CMsgUnitDamage::CMsgUnitDamage( CUnit const* pTarget, CUnit const* pShoot, CUnit
 }
 
 CMsgUnitDamage::CMsgUnitDamage( CMsgCompUnitDamageElem* pElem )
+    : CNetCmd( unit_damage )  // was default-constructed: the TYPE was never
+                              // set, so the AI repack switch matched nothing -
+                              // every batched damage message reached the AI as
+                              // a blank (dead letter; bridge-reject pattern)
 {
 
     CUnit* pShoot  = ::GetUnit( pElem->m_dwKiller );
@@ -498,12 +506,17 @@ CMsgUnitDamage::CMsgUnitDamage( CMsgCompUnitDamageElem* pElem )
         m_iPlyrDamage = -1;
     }
 
-    m_dwIDTarget  = 0;
-    m_iPlyrTarget = -1;
+    // the element carries no separate target: the damaged unit IS the target.
+    // -1 here made every AI classifier (m_idata3 == m_iPlayer) reject the
+    // message - batched war damage NEVER reached ConsiderThreats/DamageAlert
+    // (no attitude grind, no retaliation; unit_attacked carried combat alone)
+    m_dwIDTarget  = m_dwIDDamage;
+    m_iPlyrTarget = m_iPlyrDamage;
     m_iDamageShot = pElem->m_wDamage;
 }
 
 CMsgUnitSetDamage::CMsgUnitSetDamage( CMsgCompUnitDamageElem* pElem )
+    : CNetCmd( unit_set_damage )  // same missing-type dead letter as above
 {
 
     m_dwIDDamage   = pElem->m_dwID;
@@ -862,19 +875,38 @@ CMsgVehLoc::CMsgVehLoc( CMsgVehCompLocElem const* pElem ): _CMsgVehGo( veh_loc )
     m_bOnWater = pElem->m_bFlags & CMsgVehCompLocElem::_on_water;
 }
 
+// clamp helper for the compact encoder below
+static inline int xClampLoc( int i, int iLo, int iHi )
+{
+    return ( i < iLo ) ? iLo : ( ( i > iHi ) ? iHi : i );
+}
+
 const CMsgVehCompLocElem CMsgVehCompLocElem::operator=( CVehicle const& src )
 {
-
-    if ( src.GetTurret( ) )
-        TRAP( ( src.GetTurret( )->GetDir( ) < 0 ) || ( 256 <= src.GetTurret( )->GetDir( ) ) );
-    TRAP( ( src.m_iDir < 0 ) || ( 256 <= src.m_iDir ) );
-    TRAP( ( src.m_iXadd < -127 ) || ( 127 <= src.m_iXadd ) );
-    TRAP( ( src.m_iYadd < -127 ) || ( 127 <= src.m_iYadd ) );
-    TRAP( ( src.m_iDadd < -127 ) || ( 127 <= src.m_iDadd ) );
-    TRAP( ( src.m_iTadd < -127 ) || ( 127 <= src.m_iTadd ) );
-    TRAP( ( src.m_iDir < 0 ) || ( 256 <= src.m_iDir ) );
-    TRAP( ( src.m_iStepsLeft < 0 ) || ( 256 <= src.m_iStepsLeft ) );
-    TRAP( ( src.m_iSpeed < 0 ) || ( 256 <= src.m_iSpeed ) );
+    // 1996 range TRAPs retired (EN_TRAP_REMOVED class): one out-of-range
+    // field (609 - a bypassing writer, producer unconvicted; soak94 crash,
+    // full dump 20260716_080334) killed a war game 45 min in. Encode with
+    // wrap/clamp instead (worst case: a one-step visual stutter on ONE
+    // vehicle) and log EVERY raw field so the next occurrence NAMES its
+    // producer - the evidence the dump alone could not give.
+    {
+        int iTur = src.GetTurret( ) ? src.GetTurret( )->GetDir( ) : 0;
+        if ( ( iTur < 0 || 256 <= iTur ) || ( src.m_iDir < 0 || 256 <= src.m_iDir ) ||
+             ( src.m_iXadd < -127 || 127 <= src.m_iXadd ) || ( src.m_iYadd < -127 || 127 <= src.m_iYadd ) ||
+             ( src.m_iDadd < -127 || 127 <= src.m_iDadd ) || ( src.m_iTadd < -127 || 127 <= src.m_iTadd ) ||
+             ( src.m_iStepsLeft < 0 || 256 <= src.m_iStepsLeft ) || ( src.m_iSpeed < 0 || 256 <= src.m_iSpeed ) )
+        {
+            EN_TRAP_REMOVED( "CompLocElem: field out of encoding range - clamped (producer probe below)" );
+#if defined(_WIN32)
+            char szL[224];
+            sprintf( szL,
+                     "[COMPLOC-RANGE] veh %lu dir %d tur %d adds %d/%d/%d/%d steps %d speed %d mode %d ev %d\n",
+                     (unsigned long)src.GetID( ), src.m_iDir, iTur, src.m_iXadd, src.m_iYadd, src.m_iDadd,
+                     src.m_iTadd, src.m_iStepsLeft, src.m_iSpeed, src.GetRouteMode( ), src.GetEvent( ) );
+            OutputDebugStringA( szL );
+#endif
+        }
+    }
 
     m_dwID      = src.GetID( );
     m_wDestX    = (WORD)src.m_ptDest.x;
@@ -889,16 +921,16 @@ const CMsgVehCompLocElem CMsgVehCompLocElem::operator=( CVehicle const& src )
     m_wHexNextY = (WORD)src.m_hexNext.Y( );
     m_wHexDestX = (WORD)src.m_hexDest.X( );
     m_wHexDestY = (WORD)src.m_hexDest.Y( );
-    m_bDir      = (BYTE)src.m_iDir;
+    m_bDir      = (BYTE)( src.m_iDir & 0xFF );  // directions wrap
     if ( src.GetTurret( ) )
-        m_bTurretDir = (BYTE)src.GetTurret( )->GetDir( );
-    m_cXadd      = (signed char)src.m_iXadd;
-    m_cYadd      = (signed char)src.m_iYadd;
-    m_cDadd      = (signed char)src.m_iDadd;
-    m_cTadd      = (signed char)src.m_iTadd;
+        m_bTurretDir = (BYTE)( src.GetTurret( )->GetDir( ) & 0xFF );
+    m_cXadd      = (signed char)xClampLoc( src.m_iXadd, -127, 127 );
+    m_cYadd      = (signed char)xClampLoc( src.m_iYadd, -127, 127 );
+    m_cDadd      = (signed char)xClampLoc( src.m_iDadd, -127, 127 );
+    m_cTadd      = (signed char)xClampLoc( src.m_iTadd, -127, 127 );
     m_bMode      = (BYTE)src.GetRouteMode( );
-    m_bStepsLeft = (BYTE)src.m_iStepsLeft;
-    m_bSpeed     = (BYTE)src.m_iSpeed;
+    m_bStepsLeft = (BYTE)xClampLoc( src.m_iStepsLeft, 0, 255 );
+    m_bSpeed     = (BYTE)xClampLoc( src.m_iSpeed, 0, 255 );
 
     m_bFlags = src.GetHexOwnership( ) ? _own : 0;
     if ( src.IsOnWater( ) )
@@ -952,6 +984,13 @@ CNetRsrchDisc::CNetRsrchDisc( CPlayer const* pPlyr, int iRsrch ): CNetCmd( resea
 
     m_iPlyrNum = pPlyr->GetPlyrNum( );
     m_iRsrch   = pPlyr->GetRsrchItem( );
+}
+
+CNetEdictToggle::CNetEdictToggle( CPlayer const* pPlyr, int iEdict, bool bOn ): CNetCmd( edict_toggle )
+{
+    m_iPlyrNum = pPlyr->GetPlyrNum( );
+    m_iEdict   = iEdict;
+    m_bOn      = bOn ? 1 : 0;
 }
 
 CNetNeedSaveInfo::CNetNeedSaveInfo( CPlayer const* pPlyr ): CNetCmd( need_save_info )
@@ -1184,7 +1223,13 @@ void CMsgBldgStat::AssertValid( ) const
     ASSERT( m_bMsg == bldg_stat );
     if ( theGame.AmServer( ) )
         ASSERT( ( 0 < m_dwID ) && ( m_dwID < theGame.GetNextID( ) ) );
-    ASSERT( m_iPlyrNum == theBuildingMap.GetBldg( m_dwID )->GetOwner( )->GetPlyrNum( ) );
+    // The building may not exist on this side YET — its create message can still
+    // be queued ahead of this stat update — so guard the lookup (matches the
+    // ==NULL|| pattern the sibling AssertValid methods use). Dereferencing the
+    // missing building here turned a debug sanity check into a hard crash at the
+    // start of a network game.
+    ASSERT( ( theBuildingMap.GetBldg( m_dwID ) == NULL ) ||
+            ( m_iPlyrNum == theBuildingMap.GetBldg( m_dwID )->GetOwner( )->GetPlyrNum( ) ) );
     ASSERT( ( 0 <= m_iBuilt ) && ( m_iBuilt <= 100 ) );
 }
 
@@ -1467,10 +1512,115 @@ void CNetCmd::AssertMsgValid( ) const
        char buf[64];
        sprintf( buf, "Unhandled event! %d\n", value );
        OutputDebugStringA( buf );
-       
+
 #endif
         break;
     }
 }
 
 #endif
+
+// TRUE if a cbAvail-byte buffer is big enough to be read as this message type.
+// Per-type minimum = sizeof of the concrete struct (variable-tail messages like
+// CNetPlayer/the comp_* groups still need at least their base struct). Types not
+// listed only ever get read as the base CNetCmd here. NOT _DEBUG-gated: Release
+// handlers do the same struct reads.
+//
+// Why (2026-07-01, first 3-platform MP game): a short non-game datagram whose
+// first payload byte decoded as veh_new reached CGame::AddToQueue, where
+// AssertMsgValid read a full CMsgVehNew from a ~10-byte buffer -> OOB read ->
+// SIGSEGV that killed the mac and linux clients mid-game (Windows' allocator
+// happened to tolerate the same read). 3/3 reproducible, same faulting address.
+BOOL CNetCmd::FitsBuffer( int cbAvail ) const
+{
+    int cbNeed;
+
+    switch ( m_bMsg )
+    {
+    case cmd_ready:            cbNeed = sizeof( CNetReady ); break;
+    case cmd_you_are:          cbNeed = sizeof( CNetYouAre ); break;
+    case cmd_player:           cbNeed = sizeof( CNetPlayer ); break;
+    case cmd_start:            cbNeed = sizeof( CNetStart ); break;
+    case cmd_chat:             cbNeed = sizeof( CNetChat ); break;
+
+    case place_veh:            cbNeed = sizeof( CMsgPlaceVeh ); break;
+    case veh_new:              cbNeed = sizeof( CMsgVehNew ); break;
+    case bldg_new:             cbNeed = sizeof( CMsgBldgNew ); break;
+    case place_bldg:
+    case err_place_bldg:       cbNeed = sizeof( CMsgPlaceBldg ); break;
+    case build_bldg:
+    case err_build_bldg:       cbNeed = sizeof( CMsgBuildBldg ); break;
+    case build_veh:
+    case err_build_veh:        cbNeed = sizeof( CMsgBuildVeh ); break;
+    case veh_loc:              cbNeed = sizeof( CMsgVehLoc ); break;
+    case veh_goto:
+    case err_veh_goto:
+    case err_veh_traffic:      cbNeed = sizeof( CMsgVehGoto ); break;
+    case trans_mat:            cbNeed = sizeof( CMsgTransMat ); break;
+    case bldg_stat:            cbNeed = sizeof( CMsgBldgStat ); break;
+    case veh_stat:             cbNeed = sizeof( CMsgVehStat ); break;
+    case veh_dest:             cbNeed = sizeof( CMsgVehDest ); break;
+    case veh_set_dest:         cbNeed = sizeof( CMsgVehSetDest ); break;
+    case build_road:
+    case err_build_road:       cbNeed = sizeof( CMsgBuildRoad ); break;
+    case road_new:             cbNeed = sizeof( CMsgRoadNew ); break;
+    case road_done:            cbNeed = sizeof( CMsgRoadDone ); break;
+    case unit_damage:          cbNeed = sizeof( CMsgUnitDamage ); break;
+    case unit_set_damage:      cbNeed = sizeof( CMsgUnitSetDamage ); break;
+    case destroy_unit:
+    case unit_destroying:
+    case stop_destroy_unit:
+    case stop_unit_destroying: cbNeed = sizeof( CMsgDestroyUnit ); break;
+    case delete_unit:          cbNeed = sizeof( CMsgDeleteUnit ); break;
+    case attack:               cbNeed = sizeof( CMsgAttack ); break;
+    case unit_attacked:        cbNeed = sizeof( CMsgUnitAttacked ); break;
+    case see_unit:             cbNeed = sizeof( CMsgSeeUnit ); break;
+
+    // Compound (variable-length) messages are sent at SendSize() = header +
+    // m_iNumMsgs*elem, NOT the full struct. Checking against sizeof(the whole
+    // struct) — which embeds the MAX element array (~VP_MAXSENDDATA) — rejected
+    // EVERY real compound message (a few-vehicle veh_comp_loc is ~54 bytes vs a
+    // ~kB max struct): the "type-85 too-short" drops seen live on the Win host
+    // AND the Linux client at game start, and a source of client desync (dropped
+    // unit-location/damage batches). Validate the declared count instead: header
+    // must fit, count must be in range, then exactly count elements must fit.
+    case veh_comp_loc: {
+        int hdr = sizeof( CNetCmd ) + sizeof( int );
+        if ( cbAvail < hdr ) return FALSE;
+        int n = ( (const CMsgVehCompLoc*)this )->m_iNumMsgs;
+        if ( n < 0 || n > NUM_LOC_ELEM ) return FALSE;
+        cbNeed = hdr + n * (int)sizeof( CMsgVehCompLocElem );
+        break;
+    }
+    case comp_unit_damage: {
+        int hdr = sizeof( CNetCmd ) + sizeof( int );
+        if ( cbAvail < hdr ) return FALSE;
+        int n = ( (const CMsgCompUnitDamage*)this )->m_iNumMsgs;
+        if ( n < 0 || n > NUM_UNIT_DAMAGE_ELEM ) return FALSE;
+        cbNeed = hdr + n * (int)sizeof( CMsgCompUnitDamageElem );
+        break;
+    }
+    case comp_unit_set_damage: {
+        int hdr = sizeof( CNetCmd ) + sizeof( int );
+        if ( cbAvail < hdr ) return FALSE;
+        int n = ( (const CMsgCompUnitSetDamage*)this )->m_iNumMsgs;
+        if ( n < 0 || n > NUM_UNIT_SET_DAMAGE_ELEM ) return FALSE;
+        cbNeed = hdr + n * (int)sizeof( CMsgCompUnitDamageElem );
+        break;
+    }
+    case shoot_gun: {
+        // Also compound; previously fell through to the lenient default (sizeof
+        // CNetCmd) so a truncated shoot could reach element indexing. Same guard.
+        int hdr = sizeof( CNetCmd ) + sizeof( int );
+        if ( cbAvail < hdr ) return FALSE;
+        int n = ( (const CMsgShoot*)this )->m_iNumMsgs;
+        if ( n < 0 || n > NUM_SHOOT_ELEM ) return FALSE;
+        cbNeed = hdr + n * (int)sizeof( CMsgShootElem );
+        break;
+    }
+
+    default:                   cbNeed = sizeof( CNetCmd ); break;
+    }
+
+    return cbAvail >= cbNeed;
+}

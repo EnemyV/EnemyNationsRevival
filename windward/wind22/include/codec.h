@@ -3,7 +3,7 @@
 
 #include "thielen.h"
 
-typedef void ( *FNCOMPSTAT ) ( DWORD dwData, int iBlk );
+typedef void ( *FNCOMPSTAT ) ( DWORD_PTR dwData, int iBlk );
 
 class CoDec {
 public:
@@ -21,12 +21,12 @@ public:
     static CODEC BufType( void const* pBuf ) { return ( CODEC ) * ( (BYTE*)pBuf ); }
     static int BufLength( void const* pBuf ) { return *( (int*)( ( (BYTE*)pBuf ) + 1 ) ); }
 
-    static void* Compress( CODEC typ, void const* pSrc, int iSrcSize, int& iDestSize, FNCOMPSTAT fnStat = nullptr, DWORD dwData = NULL );
-    static void* Decompress( void const* pSrc, int iSrcSize, int& iDestSize, FNCOMPSTAT fnStat = nullptr, DWORD dwData = NULL );
+    static void* Compress( CODEC typ, void const* pSrc, int iSrcSize, int& iDestSize, FNCOMPSTAT fnStat = nullptr, DWORD_PTR dwData = NULL );
+    static void* Decompress( void const* pSrc, int iSrcSize, int& iDestSize, FNCOMPSTAT fnStat = nullptr, DWORD_PTR dwData = NULL );
 
     // give it a pointer from AllocBuf
-    static void Compress( CODEC typ, void const* pSrc, int iSrcSize, void* pDest, int& iDestSize, FNCOMPSTAT fnStat = nullptr, DWORD dwData = NULL );
-    static void Decompress( void const* pSrc, int iSrcSize, void* pDest, int& iDestSize, FNCOMPSTAT fnStat = nullptr, DWORD dwData = NULL );
+    static void Compress( CODEC typ, void const* pSrc, int iSrcSize, void* pDest, int& iDestSize, FNCOMPSTAT fnStat = nullptr, DWORD_PTR dwData = NULL );
+    static void Decompress( void const* pSrc, int iSrcSize, void* pDest, int& iDestSize, FNCOMPSTAT fnStat = nullptr, DWORD_PTR dwData = NULL );
 
     static void* AllocBuf( int iSize ) { return malloc( iSize ); }
     static void FreeBuf( void* pBuf ) { free( pBuf ); }
@@ -34,8 +34,8 @@ public:
     CoDec() {}
     virtual ~CoDec() {}
 
-    virtual void* Compress( const void* pUncompressedBuffer, int iUncompressedBufSize, void* pCompressedBuffer, int* piCompressedBufSize, FNCOMPSTAT fnStat, DWORD dwData ) PURE_FUNC
-    virtual void* Decompress( const void* pCompressedBuffer, int iCompressedBufSize, void* pUncompressedBuffer, int* piUncompressedBufSize, FNCOMPSTAT fnStat, DWORD dwData ) PURE_FUNC
+    virtual void* Compress( const void* pUncompressedBuffer, int iUncompressedBufSize, void* pCompressedBuffer, int* piCompressedBufSize, FNCOMPSTAT fnStat, DWORD_PTR dwData ) PURE_FUNC
+    virtual void* Decompress( const void* pCompressedBuffer, int iCompressedBufSize, void* pUncompressedBuffer, int* piUncompressedBufSize, FNCOMPSTAT fnStat, DWORD_PTR dwData ) PURE_FUNC
 };
 
 #endif

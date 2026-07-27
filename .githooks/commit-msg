@@ -1,0 +1,13 @@
+#!/bin/sh
+# Enforce single-line commit messages, no Co-Authored-By trailer.
+f="$1"
+n=$(grep -vE '^#' "$f" | grep -vE '^[[:space:]]*$' | wc -l)
+if [ "$n" -gt 1 ]; then
+  echo "commit-msg hook: message must be a SINGLE line, no body. Found $n content lines." >&2
+  exit 1
+fi
+if grep -qiE 'co[- ]?authored' "$f"; then
+  echo "commit-msg hook: remove the Co-Authored-By / coauthored trailer." >&2
+  exit 1
+fi
+exit 0

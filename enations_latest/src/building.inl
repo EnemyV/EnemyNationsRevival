@@ -58,8 +58,16 @@ inline int CBuildUnit::GetTime( ) const
 }
 inline int CBuildUnit::GetInput( int iInd ) const
 {
-    ASSERT_STRICT( ( 0 <= iInd ) && ( iInd < CMaterialTypes::num_build_types ) );
     ASSERT_STRICT_VALID( this );
+    // m_aiInput only holds entries for build-type materials [0, num_build_types).
+    // Several callers (notably the HP router's GetNearestSource/FindTransport)
+    // iterate the FULL material range [0, num_types) and pass that index here;
+    // a build unit consumes none of the non-build materials (food, goods, ...),
+    // so those are definitionally 0. Returning 0 instead of indexing past the
+    // array fixes an out-of-bounds read — silent garbage on the normal heap,
+    // a hard fault under page-heap — at every call site at once.
+    if ( iInd < 0 || iInd >= CMaterialTypes::num_build_types )
+        return 0;
     return ( m_aiInput[iInd] );
 }
 inline int CBuildUnit::GetVehType( ) const
@@ -321,8 +329,7 @@ inline CBuildUnit const* CVehicleBuilding::GetBldUnt( ) const
 }
 inline void CVehicleBuilding::UpdateChoices( )
 {
-    if ( m_pDlgTransport != NULL )
-        m_pDlgTransport->UpdateChoices( );
+    // CDlgBuildTransport excluded from build (Phase 2d) — SDL2 dialog re-reads on open.
 }
 
 //   CBuildRepair

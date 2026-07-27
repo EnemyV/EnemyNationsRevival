@@ -2,7 +2,7 @@
 #define VPSYSTEM
 #endif
 
-#ifndef NOMFC
+#if !defined(NOMFC) && defined(_WIN32)
 #include <afxwin.h>         // MFC core and standard components
 #include <afxext.h>         // MFC extensions
 #if defined(_AFXDLL) && !defined(_USRDLL)
@@ -23,7 +23,12 @@
 #include "vpparam.h"
 #include "vpwinsk.h"
 #include "wnotque.h"
-#include <mmsystem.h>
+#ifdef _WIN32
+#include <mmsystem.h>   // timeGetTime etc. — win32_compat provides these on POSIX
+#endif
+#ifndef _WIN32
+#include <csignal>      // signal(SIGPIPE, SIG_IGN) in vpStartup (POSIX-only)
+#endif
 #include <stdio.h>
 
 #ifndef WIN32
@@ -53,9 +58,9 @@ extern "C"
 #include "datagram.h"
 #include "tcpnet.h"
 
-#ifdef WIN32
+#ifdef _WIN32
 # include "wsipxnet.h"
-#else
+#elif defined(_WIN16)
 #define NWWIN
 #ifdef socket
 #undef socket
@@ -63,10 +68,13 @@ extern "C"
 #include <nwipxspx.h>
 # include "ipx16net.h"
 #endif
+// POSIX (§7b): IPX/SPX transport dropped — TCP only. No IPX includes.
 
 #include "nbnet.h"
 
-#define WITH_COMM 
+#ifdef _WIN32
+#define WITH_COMM    // COMM/modem/TAPI transport — Windows only (dropped on POSIX, §7b TCP-only)
+#endif
 #ifdef WITH_COMM
 #include "commnet.h"
 #include "commport.h"
@@ -86,6 +94,10 @@ extern "C"
 
 #include "vpint.h"
 
+#ifndef _WIN32
+#include "vp_netpump_posix.h"   // step 5: select() pump replacing WSAAsyncSelect
+#endif
+
 #ifdef WIN32
 #ifdef _DEBUG
 #undef THIS_FILE
@@ -97,6 +109,16 @@ static char BASED_CODE THIS_FILE[] = __FILE__;
 #define VDMPLAYCLASS "VdmPlayClass"
 #define WM_WINSOCK (WM_USER+1000)
 #define WM_ABORTWAIT (WM_USER+1001)
+
+#ifndef _WIN32
+// Bridge the select() pump's FD_* callback back to the engine's existing
+// dispatch: CNetInterface::OnMessage(hWnd, WM_WINSOCK, socket, MAKELONG(ev,err)).
+// Stored ctx is the CNetInterface* (the net object) registered by ConfigureSocket.
+static long vpTcpSelectThunk( void* ctx, SOCKET s, void* hWnd, long lParam ) {
+    return (long)( (CNetInterface*)ctx )->OnMessage(
+        (HWND)hWnd, WM_WINSOCK, (WPARAM)s, (LPARAM)lParam );
+}
+#endif
 
 HINSTANCE vphInst;
 HWND   vphWnd;
@@ -149,7 +171,15 @@ class CDbDataLogger: public CDataLogger {
 };
 
 CDataLogger* vpMakeDataLogger() {
+#ifdef _WIN32
     return new CDialogLogger();
+#else
+    // POSIX: CDialogLogger is an MFC GUI comm-log window (datalog.cpp, not built
+    // here). The engine treats a NULL data logger as "logging off" — every
+    // m_dataLog dereference (CNetInterface/CDataLink) is null-guarded, and the
+    // TCP path (tcpnet.cpp) never touches it. So no UI logger on POSIX.
+    return NULL;
+#endif
 }
 
 #if 0
@@ -249,8 +279,8 @@ public:
 
     void KeekNotifications( SOCKET s );
 
-    void ConfigureSocket( SOCKET s, u_long flags ) {
-        u_long on = 1;
+    void ConfigureSocket( SOCKET s, DWORD flags ) {   // DWORD not u_long: on LP64 they differ, so
+        u_long on = 1;                                 // u_long broke the override of the base pure-virtual (POSIX)
         int bufSize = 2048 * 4;
         int bvLen = sizeof( int );
 
@@ -261,7 +291,14 @@ public:
         bufSize = (int)m_sockBufSize;
         setsockopt( s, SOL_SOCKET, SO_SNDBUF, (LPCSTR)&bufSize, bvLen );
 
+#ifdef _WIN32
         WSAAsyncSelect( s, m_window, WM_WINSOCK, flags );
+#else
+        // POSIX (step 5): record the requested FD_* mask for the select() pump,
+        // which synthesizes the same WM_WINSOCK/OnMessage dispatch. `this` is the
+        // CNetInterface* the thunk calls OnMessage on. flags==0 deregisters.
+        vpNetSelectSet( s, vpTcpSelectThunk, (CNetInterface*)this, m_window, (long)flags );
+#endif
 
     }
 
@@ -446,7 +483,7 @@ LRESULT CWinTcpNet::OnMessage( HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPara
 }
 
 
-#ifdef WIN32
+#ifdef _WIN32
 class CWinIpxNet: public CWSIpxNet {
 
 
@@ -457,8 +494,8 @@ public:
 
 
 
-    void ConfigureSocket( SOCKET s, u_long flags ) {
-        u_long on = 1;
+    void ConfigureSocket( SOCKET s, DWORD flags ) {   // DWORD not u_long: on LP64 they differ, so
+        u_long on = 1;                                 // u_long broke the override of the base pure-virtual (POSIX)
         int bufSize = 2048 * 4;
         int bvLen = sizeof( int );
 
@@ -542,7 +579,7 @@ LRESULT CWinIpxNet::OnMessage( HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPara
     return TRUE;
 }
 
-#else
+#elif defined(_WIN16)   // POSIX: IPX dropped (§7b TCP-only) — build neither IPX class
 
 class CWinIpx16Net: public CIpx16Net {
 
@@ -580,7 +617,11 @@ class CVdmErrorLogger:public CTDLogger {
 public:
     CVdmErrorLogger( CVdmPlay* vdmplay, BOOL visible = FALSE ): m_vdmPlay( vdmplay ), m_file( NULL ) {
         if ( gUseLogfile ) {
-            m_file = fopen( "vdmplay.log", "wt" );
+            // Per-process filename so two instances on the same machine (host +
+            // client localhost test) don't truncate each other's log.
+            char logName[64];
+            wsprintf( logName, "vdmplay_%lu.log", (unsigned long)GetCurrentProcessId() );
+            m_file = fopen( logName, "wt" );
         }
 
     }
@@ -619,7 +660,7 @@ protected:
 };
 
 
-#ifndef WIN32
+#ifdef _WIN16   // Universal-Thunk CVdmPlay subclass — Win16/Win32s only (n/a on Win32/POSIX)
 class CUtVdmPlay: public CVdmPlay {
 public:
 
@@ -786,7 +827,10 @@ VPSESSIONHANDLE CVdmPlay::JoinSession( IN HWND hWnd,
 
     m_session = MakeRemoteSession( hWnd );
 
-
+    { static int ja=-1; if(ja<0) ja=(getenv("EN_JOINADDR")||getenv("EN_NETTRACE"))?1:0;
+      if(ja) fprintf(stderr,"[join-addr] vpJoinSession: MakeRemoteSession -> %s\n",
+                     m_session ? "ok (proceeding to SetSessionId/AddLocalPlayer)"
+                               : "NULL -> vpJoinSession returns NULL (this IS the upstream-of-dial bail linux1's strace saw; see the InitNetwork/Listen [join-addr] line above for why)"); }
 
     if ( !m_session )
         return NULL;
@@ -842,28 +886,14 @@ BOOL CVdmPlay::GetServerAddress( OUT LPVPNETADDRESS addr ) {
 
 
 LRESULT APIENTRY CVdmPlay::WinProc( HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam ) {
-    CVdmPlay* vp = (CVdmPlay*)GetWindowLong( hWnd, GWL_USERDATA );
+    CVdmPlay* vp = (CVdmPlay*)GetWindowLongPtr( hWnd, GWLP_USERDATA );
 
     if ( !vp )
         return DefWindowProc( hWnd, uMsg, wParam, lParam );
 
 
     if ( uMsg == WM_TIMER ) {
-        if ( vp->m_queue )
-            vp->m_queue->RetryPosting();
-
-        if ( vp->m_net )
-            vp->m_net->OnTimer();
-
-        if ( vp->m_sEnum )
-            vp->m_sEnum->OnTimer();
-
-        if ( vp->m_pEnum )
-            vp->m_pEnum->OnTimer();
-
-        if ( vp->m_session )
-            vp->m_session->OnTimer();
-
+        vp->DriveTimers();
         return TRUE;
     }
 
@@ -885,6 +915,7 @@ LRESULT APIENTRY CVdmPlay::WinProc( HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM 
 
 
 BOOL CVdmPlay::InitWindowsStuff() {
+#ifdef _WIN32
     static BOOL classReady = FALSE;
     WNDCLASS vdmPlayClass = { 0, WinProc, 0, sizeof( void* ),
              NULL, NULL, NULL, NULL,
@@ -923,7 +954,7 @@ BOOL CVdmPlay::InitWindowsStuff() {
     }
 
 
-    SetWindowLong( m_window, GWL_USERDATA, (DWORD)this );
+    SetWindowLongPtr( m_window, GWLP_USERDATA, (LONG_PTR)this );
 
     m_timer = SetTimer( m_window, 0, 250L, NULL );
 
@@ -934,6 +965,13 @@ BOOL CVdmPlay::InitWindowsStuff() {
     }
 
     return TRUE;
+#else
+    // POSIX: no hidden WSAAsyncSelect msg-window. The step-5 select() loop drives socket
+    // events and the engine timer (OnTimer) runs from the main-loop drain (step 6).
+    m_window = NULL;
+    m_timer  = 0;
+    return TRUE;
+#endif
 }
 
 
@@ -969,24 +1007,33 @@ BOOL CVdmPlay::InitTcp( LPCVOID data ) {
     srvAddrStr[0] = 0;
 
     if ( needAddrString ) {
+        char nt_sa[160]={0}, nt_ra[160]={0}, nt_path[256]={0}; int nt_src=0;
         LoadDefault( VPT_TCP, "ServerAddress", "", srvAddrStr, sizeof( srvAddrStr ) );
+        strncpy(nt_sa, srvAddrStr, sizeof(nt_sa)-1);
         if ( lstrlen( srvAddrStr ) ) {
             pSrvAddr = srvAddrStr;
             serverAddress = 0;
+            nt_src=1;
         } else {
             LoadDefault( VPT_TCP, "RegistrationAddress", "", srvAddrStr, sizeof( srvAddrStr ) );
+            strncpy(nt_ra, srvAddrStr, sizeof(nt_ra)-1);
             if ( lstrlen( srvAddrStr ) ) {
                 pSrvAddr = srvAddrStr;
                 serverAddress = 0;
+                nt_src=2;
             } else {
                 strcpy( srvAddrStr, DEF_IP_REG_SERVER );
                 pSrvAddr = srvAddrStr;
                 serverAddress = 0;
+                nt_src=3;
             }
 
         }
-
-
+        { static int nt=-1; if(nt<0) nt=getenv("EN_NETTRACE")?1:0;
+          if(nt){ vpMakeIniFile(nt_path);
+                  fprintf(stderr,"[nettrace] InitTcp read iniPath='%s' ServerAddress='%s' RegistrationAddress='%s' -> pSrvAddr='%s' src=%s\n",
+                          nt_path, nt_sa, nt_ra, pSrvAddr?pSrvAddr:"(null)",
+                          nt_src==1?"ServerAddress":nt_src==2?"RegistrationAddress":"DEF_IP_REG_SERVER(dead)"); } }
     }
 
 
@@ -1010,10 +1057,19 @@ BOOL CVdmPlay::InitTcp( LPCVOID data ) {
     if ( lstrlen( srvAddrStr ) )
         net->SetRegistrationAddress( srvAddrStr );
 
+    // iserve host-register diagnostic (env EN_ISERVE_LOG=1; off => zero impact).
+    // Logs the [TCP]RegistrationAddress the HOST read here (distinct from the client's
+    // ServerAddress read above) + whether SetRegistrationAddress fired — the first link
+    // in the host->iserve register chain. Pairs with the [iserve-host] traces in vpengine.
+    { static int il=-1; if(il<0) il=getenv("EN_ISERVE_LOG")?1:0;
+      if(il) fprintf(stderr,"[iserve-host] InitTcp [TCP]RegistrationAddress read='%s' -> SetRegistrationAddress %s\n",
+                     srvAddrStr, lstrlen(srvAddrStr)?"CALLED":"SKIPPED(empty)"); }
+
     return TRUE;
 }
 
 BOOL CVdmPlay::InitIpx( LPCVOID data ) {
+#ifdef _WIN32
     UINT ipxPort = 0;
     LPCVPIPXDATA ipxData = (LPCVPIPXDATA)data;
 #ifdef WIN32
@@ -1088,6 +1144,9 @@ BOOL CVdmPlay::InitIpx( LPCVOID data ) {
         m_net->SetRegistrationAddress( srvAddrStr );
 
     return TRUE;
+#else
+    (void)data; return FALSE;   // §7b: IPX transport dropped on POSIX (TCP only)
+#endif
 }
 
 
@@ -1234,6 +1293,7 @@ BOOL CVdmPlay::InitTapi( LPCVOID data ) {
 
 
 BOOL CVdmPlay::InitNetbios( LPCVOID data ) {
+#ifdef _WIN32
     char stationName[NCBNAMSZ + 1];
     static char groupName[NCBNAMSZ + 1] = "VDMPLAY         ";
     WORD  lana = 255;
@@ -1275,6 +1335,9 @@ BOOL CVdmPlay::InitNetbios( LPCVOID data ) {
     m_net = net;
 
     return TRUE;
+#else
+    (void)data; return FALSE;   // §7b: NetBIOS transport dropped on POSIX (TCP only)
+#endif
 }
 
 
@@ -1363,7 +1426,7 @@ CWinNotifyQueue* CVdmPlay::MakeNotifyQueue( HWND wnd, UINT msg ) {
     return q;
 }
 
-#ifndef WIN32
+#ifdef _WIN16   // Universal-Thunk notify-queue factory — Win16/Win32s only (n/a on Win32/POSIX)
 CWinNotifyQueue* CUtVdmPlay::MakeNotifyQueue( HWND wnd, UINT msg ) {
     CUtNotifyQueue* q = new CUtNotifyQueue( msg, wnd );
 
@@ -1488,9 +1551,34 @@ CWinRegSession* CVdmPlay::MakeRegSession( HWND wnd ) {
         return NULL;
     }
 
+    // TCP-enum (phase-1): ALSO accept enum/queries over TCP on the well-known port,
+    // so clients behind UDP-blocking routers / tunnels can reach the reg server.
+    // Best-effort + additive — the UDP datagram enum (set up in InitNetwork) stays the
+    // default; if the TCP listener can't bind we log and continue (UDP still serves).
+    if ( !m_net->EnableStreamEnumListener() ) {
+        if ( m_log )
+            m_log->Log( "MakeRegSession: TCP-enum listener not enabled (UDP enum still active)" );
+    }
+
     ses->m_vdmPlay = this;
 
     return ses;
+}
+
+
+// Periodic engine-timer drive (see vpint.h). Called from the 250ms WM_TIMER on Windows
+// and from vpPumpNet on POSIX (which has no WM_TIMER). Same sequence either way.
+void CVdmPlay::DriveTimers() {
+    if ( m_queue )
+        m_queue->RetryPosting();
+    if ( m_net )
+        m_net->OnTimer();
+    if ( m_sEnum )
+        m_sEnum->OnTimer();
+    if ( m_pEnum )
+        m_pEnum->OnTimer();
+    if ( m_session )
+        m_session->OnTimer();
 }
 
 
@@ -1580,7 +1668,7 @@ void vpassertion( LPCSTR text, LPCSTR file, int line ) {
     MessageBox( NULL, buf, "VDMPLAY", MB_OK );
 #endif
     if ( gBreakOnAssert ) {
-        __asm int 3
+        __debugbreak();   // was `__asm int 3` — x64 has no inline asm
     }
 
 #if defined (WIN32)
@@ -1633,15 +1721,64 @@ extern "C"
         return ( MAKELONG( VER_RELEASE, MAKEWORD( VER_MINOR, VER_MAJOR ) ) );
     }
 
+#ifndef _WIN32
+    // POSIX MP pump (step a): the game's main loop calls this each idle pass to
+    // drive the select() pump that replaces WSAAsyncSelect (on Windows the hidden
+    // message window did this implicitly). FD_* events become OnMessage calls
+    // whose notifications are PostMessage'd as WM_VPNOTIFY and drained by the same
+    // loop -> CNetApi::OnNetMsg. Returns the number of events dispatched; a no-op
+    // (returns 0) when no MP sockets are armed, so single-player pays nothing.
+    // POSIX engine-timer drive. On Windows the engine OnTimers (enum re-poll, host
+    // periodic re-registration, server-list aging, notify-queue retry that delivers enum
+    // replies to the app) run off a 250ms WM_TIMER. POSIX has no message window / WM_TIMER
+    // (SetTimer is a no-op stub, m_window==NULL), so those NEVER fired on Linux/mac —
+    // breaking enum re-poll, re-register, aging, AND enum-reply delivery (linux1 root-cause
+    // 2026-06-26). Fix: a tiny registry of live CVdmPlay handles, throttle-driven from
+    // vpPumpNet (the game's net-service entry) on the same ~250ms cadence. Additive.
+    static CVdmPlay* g_vpActive[8] = { 0 };
+    static void vpRegisterActive( CVdmPlay* vp ) {
+        for ( int i = 0; i < 8; ++i ) if ( !g_vpActive[i] ) { g_vpActive[i] = vp; return; }
+    }
+    static void vpUnregisterActive( CVdmPlay* vp ) {
+        for ( int i = 0; i < 8; ++i ) if ( g_vpActive[i] == vp ) { g_vpActive[i] = 0; return; }
+    }
+
+    int VPAPI vpPumpNet( int timeout_ms ) {
+        int n = vpNetPumpPosix( timeout_ms );
+
+        // Drive the engine timers on a ~250ms cadence (POSIX has no WM_TIMER to do it).
+        static DWORD lastDrive = 0;
+        DWORD now = GetCurrentTime();
+        if ( now - lastDrive >= 250 ) {
+            lastDrive = now;
+            for ( int i = 0; i < 8; ++i )
+                if ( g_vpActive[i] )
+                    g_vpActive[i]->DriveTimers();
+        }
+        return n;
+    }
+#endif
+
 
 
     DWORD VPAPI vpSupportedTransports() {
         DWORD result = 0;
 
+        // TCP/IP ONLY. We deliberately report only the TCP transport:
+        //  - Multiplayer is TCP/IP only by design.
+        //  - The NetBIOS probe (CNbNet::Supported -> GetLanas -> NCBASTAT) corrupts
+        //    the stack on x64 (the custom NCB struct in nbnet doesn't match the
+        //    Windows SDK NCB the OS Netbios() writes back), which fired the /RTC
+        //    "Debug Error" crash when hosting/joining a network game.
+        //  - Reporting a single transport also removes the spurious "multiple
+        //    protocols will cause issues" warning.
+        // The old IPX / TAPI / DirectPlay / COMM / NetBIOS probes are left here
+        // (disabled) for reference.
         if ( CWinTcpNet::Supported() )
             result |= 1 << VPT_TCP;
 
-#ifdef WIN32  
+#if 0  // non-TCP transports disabled — see note above
+#ifdef WIN32
         if ( CWinIpxNet::Supported() )
             result |= 1 << VPT_IPX;
 
@@ -1664,8 +1801,7 @@ extern "C"
 
         if ( CNbNet::Supported() )
             result |= 1 << VPT_NETBIOS;
-
-        // result |= VPT_COMM;
+#endif  // 0
 
         return result;
     }
@@ -1684,6 +1820,15 @@ extern "C"
 
         if ( vpReentrancyCounter )
             return NULL;
+
+#ifndef _WIN32
+        // POSIX: ignore SIGPIPE so a socket send() to a closed/refused/RST peer returns
+        // -1/EPIPE (handled by the SOCKET_ERROR checks + closesocket cleanup) instead of
+        // killing the process with the default-fatal SIGPIPE. Covers every vp send/sendto
+        // (tcpnet.cpp has several flags=0 sends). Surfaced by the TCP-enum fallback hitting
+        // a dead reg server (linux2 SIGPIPE repro 2026-06-26); Windows has no SIGPIPE.
+        signal( SIGPIPE, SIG_IGN );
+#endif
 
         vpMemPoolInit();
         CVdmPlay* vp = new CVdmPlay;
@@ -1707,12 +1852,15 @@ extern "C"
             return NULL;
         }
 
+#ifndef _WIN32
+        vpRegisterActive( vp );   // so vpPumpNet drives its engine timers (no WM_TIMER on POSIX)
+#endif
 
         return (VPHANDLE)vp;
     }
 
 
-#ifndef WIN32
+#ifdef _WIN16   // Win16/Win32s Universal-Thunk machinery (vpUtStartup + CUtNotifyQueue) — n/a on Win32/POSIX
 
     CUtNotifyQueue::PostMessage( WPARAM wParam, LPARAM lParam ) {
         LPUTMSG utMsg = m_freeList;
@@ -1788,8 +1936,8 @@ extern "C"
 
         vp->m_log = new CVdmErrorLogger( vp );
 
-#ifndef WIN32
-        SetMessageQueue( 64 );
+#ifdef _WIN16
+        SetMessageQueue( 64 );   // Win16 only — enlarge msg queue (n/a on Win32/POSIX)
 #endif
 
         vp->Startup( version, guid, sessionDataSize, playerDataSize, protocol, protocolData );
@@ -1817,6 +1965,9 @@ extern "C"
 
         if ( pHdl ) {
             CVdmPlay* vp = (CVdmPlay*)pHdl;
+#ifndef _WIN32
+            vpUnregisterActive( vp );
+#endif
             vp->Cleanup();
             delete vp;
         }
@@ -1979,6 +2130,15 @@ extern "C"
                                          IN LPCSTR playerName,
                                          IN DWORD  playerFlags,
                                          IN LPCVOID userData ) {
+        // Pin WHY the wrapper bails before CVdmPlay::JoinSession is reached
+        // (linux2 [12:01Z]: JoinSession never entered): reentrancy guard, null
+        // handle, or a LATCHED fatal error (GotFatalError -> m_fatalError). A
+        // fatal latched on the enum/TCP-fallback path would block every later
+        // join. Gated; zero ship impact.
+        { static int ja=-1; if(ja<0) ja=(getenv("EN_JOINADDR")||getenv("EN_NETTRACE"))?1:0;
+          if(ja) fprintf(stderr,"[join-addr] vpJoinSession wrapper: reentrancy=%lu hdl=%p fatal=%d\n",
+                         (unsigned long)vpReentrancyCounter, (void*)pHdl,
+                         pHdl ? (int)((CVdmPlay*)pHdl)->GotFatalError() : -1); }
         if ( vpReentrancyCounter )
             return NULL;
         if ( pHdl ) {
@@ -2074,13 +2234,21 @@ extern "C"
     }
 
 
-    // this should be called after processing the WM_VPNOTIFY message 
+    // this should be called after processing the WM_VPNOTIFY message
     BOOL VPAPI vpAcknowledge( IN VPHANDLE pHdl, LPCVPMESSAGE pMsg ) {
-        if ( vpReentrancyCounter )
+        if ( vpReentrancyCounter ) {
+            // Ack SKIPPED: the notification is neither Completed nor deleted here.
+            // Rare + suspicious in the UAF hunt — log unconditionally (cheap).
+            fprintf( stderr, "[vpnq] ack-SKIPPED (reentrancy=%d) vpmsg=%p\n",
+                     (int)vpReentrancyCounter, (const void*)pMsg );
             return FALSE;
+        }
         if ( pHdl && pMsg ) {
             CVdmPlay* vp = (CVdmPlay*)pHdl;
             CNotification* notification = vp->m_queue->RecoverNotification( pMsg );
+            if ( CWinNotifyQueue::VpnqLogOn() )
+                fprintf( stderr, "[vpnq] ack-delete n=%p vpmsg=%p\n",
+                         (void*)notification, (const void*)pMsg );
             notification->Complete();
 
 
@@ -2250,8 +2418,15 @@ extern "C"
     void InitMfcStuff();
 
     void VPAPI vpAdvDialog( HWND hWnd, int iProtocol, BOOL bServer ) {
+#ifdef _WIN32
         InitMfcStuff();
         doAdvDialog( hWnd, iProtocol, bServer );
+#else
+        // POSIX MP port: the advanced TCP/IP-settings dialog is MFC GUI
+        // (advdlg.cpp/advanced.cpp, not built on POSIX). The SDL2 UI drives MP
+        // setup, so this exported entry is a no-op here.
+        (void)hWnd; (void)iProtocol; (void)bServer;
+#endif
     }
 
 
@@ -2323,10 +2498,14 @@ extern "C"
 
 
 
-            gLocalIni = FALSE;
+            // Default to local-directory ini so port/address writes from the
+            // game (WritePrivateProfileString "vdmplay.ini") and VDMPLAY reads
+            // land in the same file.  Overridable via [VDMPLAY] LocalIni=0 in
+            // the Windows-directory VDMPLAY.INI.
+            gLocalIni = TRUE;
             vpMakeIniFile( fName );
 
-            gLocalIni = GetPrivateProfileInt( "VDMPLAY", "LocalIni", 0, fName );
+            gLocalIni = GetPrivateProfileInt( "VDMPLAY", "LocalIni", 1, fName );
 
             vpMakeIniFile( fName );
 
@@ -2412,14 +2591,19 @@ extern "C"
 
 
 
-        gLocalIni = FALSE;
+        // Default to the local-directory ini so the WellKnownPort/ServerAddress
+        // the game writes to ".\vdmplay.ini" are actually read (otherwise this
+        // read the Windows-dir VDMPLAY.INI and silently fell back to defaults,
+        // e.g. the old 1707 port -> host/client port mismatch -> no discovery).
+        gLocalIni = TRUE;
         vpMakeIniFile( fName );
 
-        gLocalIni = GetPrivateProfileInt( "VDMPLAY", "LocalIni", 0, fName );
+        gLocalIni = GetPrivateProfileInt( "VDMPLAY", "LocalIni", 1, fName );
 
         gBreakOnAssert = GetPrivateProfileInt( "VDMPLAY", "BreakOnAssert", 0, fName );
 
         gUseLogfile = GetPrivateProfileInt( "VDMPLAY", "UseLogFile", 0, fName );
+        gLogWinsock = GetPrivateProfileInt( "VDMPLAY", "LogWinsock", 0, fName );
         return TRUE;
 
     }

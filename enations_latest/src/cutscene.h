@@ -85,7 +85,7 @@ protected:
 	DECLARE_MESSAGE_MAP()
 
 	CDIB *			m_pdibPicture;
-	CString			m_sText;
+	std::string		m_sText;
 	int					m_iTyp;
 	int					m_iRtn;
 	int					m_iScenario;
@@ -97,42 +97,7 @@ protected:
 	BOOL				m_bTile;
 };
 
-/////////////////////////////////////////////////////////////////////////////
-// CDlgScnDesc dialog
-
-class CDlgScnDesc : public CDialog
-{
-// Construction
-public:
-	CDlgScnDesc(CWnd* pParent = NULL);   // standard constructor
-
-// Dialog Data
-	//{{AFX_DATA(CDlgScnDesc)
-	enum { IDD = IDD_SCENARIO_DESC };
-	CWndOD< CButton >	m_btnOk;
-	CWndOD< CButton >	m_btnSave;
-	CString	m_strDesc;
-	//}}AFX_DATA
-
-	BOOL			m_bRepeat;
-
-// Overrides
-	// ClassWizard generated virtual function overrides
-	//{{AFX_VIRTUAL(CDlgScnDesc)
-	protected:
-	virtual void DoDataExchange(CDataExchange* pDX);    // DDX/DDV support
-	//}}AFX_VIRTUAL
-
-// Implementation
-protected:
-
-	// Generated message map functions
-	//{{AFX_MSG(CDlgScnDesc)
-	virtual BOOL OnInitDialog();
-	afx_msg void OnSceneSave();
-	//}}AFX_MSG
-	DECLARE_MESSAGE_MAP()
-};
+// CDlgScnDesc removed (declared but never defined or instantiated)
 
 
 extern CCutScene theCutScene;

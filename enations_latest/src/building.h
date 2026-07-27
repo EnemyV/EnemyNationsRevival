@@ -15,6 +15,9 @@
 #include "unit.h"
 #include "vehicle.h"
 
+class SDL2BuildTransport;
+class SDL2BuildingWindow;
+
 
 const int ROCKET_APT_CAP = 80;
 const int ROCKET_OFC_CAP = 40;
@@ -104,11 +107,11 @@ friend void CStructure::InitLang ();
 friend void CStructure::Close ();
 public:
 					CStructureType () {}
-		char const *	GetDesc (int iInd) { ASSERT_STRICT ((0 <= iInd) && (iInd < 6)); return (m_sTitle[iInd]); }
+		char const *	GetDesc (int iInd) { ASSERT_STRICT ((0 <= iInd) && (iInd < 6)); return (m_sTitle[iInd].c_str()); }
 		int						GetNum () { return (6); }
 
 protected:
-		CString		m_sTitle[6];
+		std::string		m_sTitle[6];
 
 #ifdef _DEBUG
 public:
@@ -676,7 +679,7 @@ public:
 class CBuilding : public CUnit
 {
 friend class CGame;
-friend CWndOrders;
+friend class CWndOrders;
 friend void CUnit::DecDamagePoints (int iDamage, DWORD dwKiller);
 
 public:
@@ -692,6 +695,7 @@ public:
 		virtual void ConstComplete () { }
 
 		void					AnimateOperating (BOOL bOper);
+		void					SetAmbientHalfSpeed (BOOL bHalf);
 		void					StopUnit () { CUnit::StopUnit (); AnimateOperating (FALSE); }
 		void					ResumeUnit () { CUnit::ResumeUnit (); 
 																	if ( ! IsConstructing () )
@@ -712,12 +716,23 @@ public:
 		BOOL					IsLive () const;	// TRUE if we can see it now
 		void					UpdateStore (BOOL bForce);
 
+		// Open the read-only building-info window (storage / power / housing / turret
+		// as applicable). Non-modal; the building owns it and closes it on death.
+		// bOnTop keeps it floating above other dialogs (used when launched from the
+		// build dialog's (I) button, which itself stays on top each frame).
+		void					ShowInfoWindow ( bool bOnTop = false );
+
+		// Production progress 0..100 toward this producer's next output batch (mines /
+		// farms / smelters accumulate toward a threshold then emit a batch). -1 means
+		// "no production cycle" (most buildings). Shown as a bar in the info window.
+		virtual int				GetProductionPer () const { return ( -1 ); }
+
 		void					DrawStatusPer (CDC *pDc, CRect *pRect) const;
 		virtual int		GetNumStatusBars () const;
 		virtual void	PaintStatusBars (CStatInst * pSi, int iNum, CDC * pDc) const;
-		virtual void	ShowStatusText (CString & str);
+		virtual void	ShowStatusText (std::string & str);
 
-		void 					GetDesc (CString & sText) const;
+		void 					GetDesc (std::string & sText) const;
 		CRect					Draw( const CHexCoord & );
 		void					DrawFoundation( const CHexCoord & );
 		CRect					DrawTurret( CPoint );
@@ -741,7 +756,21 @@ public:
 
 		int						GetBuildPer () const { return m_iLastPer; }
 
-		void					AssignToHex (CHexCoord hex, int iAlt);
+		// AltOutput conversion progress 0..100 toward the next secondary-output unit (the runtime
+		// fractional accumulator). Lets the info window show a live progress bar for modes whose
+		// host has no normal production cycle — Fracking (exhausted well, H3) and Coal-Liquefaction
+		// (the power plant in oil mode, C4).
+		int						GetAltProgressPer () const {
+			int p = (int)( m_fAltAccum * 100.0f );
+			return ( p < 0 ) ? 0 : ( p > 100 ? 100 : p );
+		}
+		// eMultiTrickle (Desperate/Scrounging) progress: line 0 accumulator as a representative bar.
+		int						GetAltProgressPerMulti () const {
+			int p = (int)( m_afAltAccum[0] * 100.0f );
+			return ( p < 0 ) ? 0 : ( p > 100 ? 100 : p );
+		}
+
+		void					AssignToHex (CHexCoord hex, int iAlt, BOOL bSetAlt = TRUE);
 		CHexCoord &		GetHex ();
 		CHexCoord const &		GetHex () const;
 		int						GetDir () const { return (m_iBldgDir); }
@@ -817,6 +846,8 @@ protected:
 		void					DropUnits (int iVehTyp, int iWheelTyp, int iNum, int iNumSkip, int *piTime, int iBlkSiz, CHexCoord const & hex, CHexCoord const & hexUL);
 		BOOL					InitRocket (CHexCoord const & hex, BOOL bMe);
 
+		SDL2BuildingWindow*		m_pSdlInfoWin = nullptr;		// read-only info window (non-modal)
+
 		CHexCoord			m_hex;							// CHex we are assigned to
 		LONG					m_iBldgDir;
 
@@ -830,6 +861,14 @@ protected:
 
 		// remainder from last operate loop
 		float					m_fOperMod;					// apply to next operate
+
+		// AltOutput (alt-output toggle) runtime fractional accumulator -- carries the
+		// sub-unit secondary-output remainder between production calls so small yields
+		// aren't lost. Runtime-only, NOT serialized (like the alt_oil toggle itself).
+		float					m_fAltAccum = 0.0f;
+		// eMultiTrickle (Desperate Measures / Scrounging): one accumulator per output line
+		// (size must match AltOutput::kMaxMulti = 4; hardcoded to avoid an altoutput.h include here).
+		float					m_afAltAccum[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
 
 		// construction vars
 		LONG					m_iConstDone;						// -1 == done, else time building so far
@@ -874,7 +913,8 @@ public:
 
 		virtual BOOL	IsOperating () const;
 		virtual int		GetNextMinuteMat (int iInd) const;
-		virtual void	ShowStatusText (CString & str);
+		virtual void	ShowStatusText (std::string & str);
+		virtual int		GetProductionPer () const;
 
 		virtual void GetInputs (int * pVals) const;
 		virtual void GetAccepts (int * pVals) const { GetInputs (pVals); }
@@ -892,7 +932,7 @@ public:
 
 class CVehicleBuilding : public CBuilding
 {
-friend CDlgBuildTransport;
+friend class CDlgBuildTransport;
 public:
 
 									CVehicleBuilding () { ctor (); }
@@ -918,7 +958,7 @@ public:
 		void					MaterialChange ();
 		int						GetNumStatusBars () const { return 3; }
 		void					PaintStatusBars (CStatInst * pSi, int iNum, CDC * pDc) const;
-		void					ShowStatusText (CString & str);
+		void					ShowStatusText (std::string & str);
 
 									// iInd material needed to finish vehicle building
 		int						NeedToFinish (int iInd) const;
@@ -933,10 +973,12 @@ protected:
 		void					ctor ();
 
 		CDlgBuildTransport *	m_pDlgTransport;
+		SDL2BuildTransport*     m_pSdlBuildTransport = nullptr;  // SDL2 non-modal build dialog
 
 		CBuildUnit const *	m_pBldUnt;				// vehicle building
 		LONG								m_aiUsed [CMaterialTypes::num_build_types];	// materials used for this vehicle
 		int									m_iNum;						// number to build
+		DWORD								m_dwNextPplLog = 0;	// [VEHPPL] probe throttle (transient)
 
 #ifdef _DEBUG
 public:
@@ -968,9 +1010,13 @@ public:
 		void					MaterialChange ();
 		int						GetNumStatusBars () const { return 3; }
 		void					PaintStatusBars (CStatInst * pSi, int iNum, CDC * pDc) const;
-		void					ShowStatusText (CString & str);
+		void					ShowStatusText (std::string & str);
 
 		CVehicle *		GetVehRepairing () { return (m_pVehRepairing); }
+
+		// Read-only access to the waiting queue (for the repair info window).
+		int						GetRepairQueueCount () const { return ((int) m_lstNext.GetCount ()); }
+		CVehicle *		GetRepairQueueAt (int idx) const;
 
 		void 					Serialize (CArchive & ar);
 		virtual void	FixUp ();
@@ -1019,7 +1065,7 @@ public:
 		void					MaterialChange ();
 		int						GetNumStatusBars () const { return 3; }
 		void					PaintStatusBars (CStatInst * pSi, int iNum, CDC * pDc) const;
-		void					ShowStatusText (CString & str);
+		void					ShowStatusText (std::string & str);
 
 									// iInd material needed to finish vehicle building
 		int						NeedToFinish (int iInd) const;
@@ -1059,7 +1105,7 @@ public:
 
 		virtual BOOL	IsOperating () const;
 		void					BuildPower ();
-		void					ShowStatusText (CString & str);
+		void					ShowStatusText (std::string & str);
 		virtual int		GetNextMinuteMat (int iInd) const;
 
 		virtual void GetInputs (int * pVals) const;
@@ -1107,7 +1153,7 @@ public:
 
 		int						GetNumStatusBars () const { if (m_iConstDone != -1) return (3); return 2; }
 		void					PaintStatusBars (CStatInst * pSi, int iNum, CDC * pDc) const;
-		void					ShowStatusText (CString & str);
+		void					ShowStatusText (std::string & str);
 
 protected:
 };
@@ -1127,15 +1173,27 @@ public:
 		virtual BOOL	IsOperating () const
 												{ if ( ! CBuilding::IsOperating () ) return FALSE;
 													return m_iMinerals > 0; }
+
+		// Fracking (#23): a deposit-exhausted well/mine has nothing left to mine. The
+		// minerals counter is protected, so expose read-only predicates for the AltOutput
+		// fracking def (an EXHAUSTED OIL WELL trickles oil). IsOilWell() = a mine whose
+		// output material is oil.
+		bool			IsExhausted () const { return ( m_iMinerals <= 0 ); }
+		bool			IsOilWell () const
+												{ CBuildMine* pBm = GetData ()->GetBldMine ();
+													return ( pBm && ( pBm->GetTypeMines () == CMaterialTypes::oil ) ); }
+
 		static int		TotalQuantity (CHexCoord const & hex, int iTyp, int iDir);
 		static int		TotalDensity (CHexCoord const & hex, int iTyp, int iDir);
+		virtual int		GetProductionPer () const;
 		void					BuildMine ();
+		void					FrackTick ();		// Fracking (#23): exhausted-well oil trickle + energy
 		void					UpdateMine ();		// copy ground data to mine
 		void					UpdateGround ();	// copy mine data to ground
 
 		// show what we have mined
 		int						GetNumStatusBars () const { if (m_iConstDone != -1) return (3); return 2; }
-		void					ShowStatusText (CString & str);
+		void					ShowStatusText (std::string & str);
 
 		void 					Serialize (CArchive & ar);
 
@@ -1173,15 +1231,28 @@ public:
 									CFarmBuilding () { ctor (); }
 									CFarmBuilding (int iBldg, int iBldgDir, int iOwner=0, DWORD ID = 0) : 
 																	CBuilding (iBldg, iBldgDir, iOwner, ID) { ctor (); }
+								~CFarmBuilding ();
 
 		static int		LandMult (CHexCoord _hex, int iTyp, int iDir);
+		virtual int		GetProductionPer () const;
 		void					BuildFarm ();
 		void					UpdateFarm ();
+
+		// Soil fertility of the hexes this farm covers (0..10). The status bar and
+		// the farm info window show it as a percent (m_iTerMult * 10), drawn with the
+		// green ICON_DENSITY "X" art.
+		int						GetTerMult () const { return ((int) m_iTerMult); }
+
+		// "Fields grown around farms": paint the farmable ring as crop fields,
+		// animate them through growth stages, and restore the soil on teardown.
+		void					GrowFields ();          // (re)build & paint the plots
+		void					RevertFields ();        // restore plots to their soil
+		void					UpdateFieldStage ( int iTimeToFarm );  // advance growth anim
 
 		// lumber for mill, production rate for farm
 		int						GetNumStatusBars () const;
 		void					PaintStatusBars (CStatInst * pSi, int iNum, CDC * pDc) const;
-		void					ShowStatusText (CString & str);
+		void					ShowStatusText (std::string & str);
 
 		void 					Serialize (CArchive & ar);
 
@@ -1192,6 +1263,11 @@ protected:
 
 		CList <CLandUse *, CLandUse *>	m_landUse;		// surrounding tiles we are using
 		LONG					m_iTimeToNext;									// time to next change
+
+		// Field plots painted around this farm. Transient - not serialized; rebuilt
+		// on the first operational tick (and after load) by GrowFields().
+		std::vector<DWORD>	m_fieldHexes;									// packed CHexCoord of plots
+		int					m_iFieldStage;									// last growth stage applied (-1 = none)
 
 #ifdef _DEBUG
 public:

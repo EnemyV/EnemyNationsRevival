@@ -18,10 +18,11 @@
 #include "player.h"
 #include "error.h"
 #include "event.h"
-#include "CHPRoute.hpp"
+#include "chproute.hpp"
 #include "bitmaps.h"
 #include "area.h"
 #include "sfx.h"
+#include "SDL2MFCPanel.h"
 
 #include "terrain.inl"
 #include "ui.inl"
@@ -82,14 +83,14 @@ int CWndListUnits::OnCreate(LPCREATESTRUCT lpCreateStruct) {
     GetClientRect(&rect);
     m_ListBox.Create(WS_CHILD | WS_VISIBLE | LBS_NOINTEGRALHEIGHT | WS_VSCROLL | LBS_SORT |
                      LBS_NOTIFY | LBS_OWNERDRAWFIXED | LBS_MULTIPLESEL | LBS_EXTENDEDSEL,
-                     rect, this, 101);
+                     rect, CWnd::FromHandle( m_hWnd ), 101);
 
     return 0;
 }
 
 void CWndListUnits::OnGetMinMaxInfo(MINMAXINFO FAR *lpMMI) {
 
-    if (theApp.m_wndBar.m_hWnd != NULL) {
+    if (theApp.m_wndBar.IsCreated()) {
         CRect rect;
         theApp.m_wndBar.GetWindowRect(&rect);
         lpMMI->ptMaxTrackSize.y = __min (lpMMI->ptMaxTrackSize.y, rect.top);
@@ -287,9 +288,9 @@ void CWndListUnits::OnDrawItem(int, LPDRAWITEMSTRUCT pDis) {
         }
         thePal.Paint(pDc->m_hDC);
         pDc->SetBkMode(TRANSPARENT);
-        CFont *pOldFont = pDc->SelectObject(&theApp.TextFont());
+        HGDIOBJ pOldFontTop = ::SelectObject(pDc->m_hDC, theApp.TextFont());  // Phase 4c prep
 
-        CString sText = pUnit->GetData()->GetDesc();
+        std::string sText = pUnit->GetData()->GetDesc();
         // put dest/location if dest is a building
         if (pUnit->GetUnitType() == CUnit::vehicle) {
             sText += " ";
@@ -305,7 +306,7 @@ void CWndListUnits::OnDrawItem(int, LPDRAWITEMSTRUCT pDis) {
             if ((pBldg == NULL) || (pVeh->GetHexOwnership()))
                 pBldg = theBuildingHex.GetBuilding(pVeh->GetHexDest());
             if ((pBldg != NULL) && (pBldg->GetOwner()->IsMe()))
-                sText += "[" + pBldg->GetData()->GetDesc() + "]";
+                sText += std::string("[") + pBldg->GetData()->GetDesc().c_str() + "]";
             else if (pVeh->GetData()->IsTransport()) {
                 if (pVeh->GetRouteMode() == CVehicle::stop)
                     sText += CTransportData::m_sIdle;
@@ -319,32 +320,32 @@ void CWndListUnits::OnDrawItem(int, LPDRAWITEMSTRUCT pDis) {
         BOOL bShrink = FALSE;
         while (TRUE) {
             rFit = rect;
-            pDc->DrawText(sText, -1, &rFit, DT_CALCRECT | DT_LEFT | DT_SINGLELINE | DT_VCENTER);
+            pDc->DrawText(sText.c_str(), -1, &rFit, DT_CALCRECT | DT_LEFT | DT_SINGLELINE | DT_VCENTER);
             if (rFit.right < rect.right)
                 break;
-            if (sText.GetLength() < 5)
+            if (sText.size() < 5)
                 break;
-            sText.ReleaseBuffer(sText.GetLength() - 1);
+            sText.resize(sText.size() - 1);
             bShrink = TRUE;
         }
         if (bShrink) {
-            sText.ReleaseBuffer(sText.GetLength() - 2);
+            sText.resize(sText.size() - 2);
             sText += "...";
         }
 
         rect.OffsetRect(1, 1);
         pDc->SetTextColor(RGB (0, 0, 0));
-        pDc->DrawText(sText, -1, &rect, DT_LEFT | DT_SINGLELINE | DT_VCENTER);
+        pDc->DrawText(sText.c_str(), -1, &rect, DT_LEFT | DT_SINGLELINE | DT_VCENTER);
         rect.OffsetRect(-2, -2);
         pDc->SetTextColor(RGB (255, 255, 255));
-        pDc->DrawText(sText, -1, &rect, DT_LEFT | DT_SINGLELINE | DT_VCENTER);
+        pDc->DrawText(sText.c_str(), -1, &rect, DT_LEFT | DT_SINGLELINE | DT_VCENTER);
 
         // now the status
         rect.top = 60 - m_iStatHt;
         rect.bottom = 60;
         _UnitShowStatus(FALSE, pUnit, pDc, rect, m_pDibBack, CPoint(0, 0));
 
-        pDc->SelectObject(pOldFont);
+        ::SelectObject(pDc->m_hDC, pOldFontTop);  // Phase 4c prep
         thePal.EndPaint(pDc->m_hDC);
     }
 
@@ -475,13 +476,12 @@ void CWndListBuildings::Create() {
     // units
     m_pDibUnit = theBitmaps.GetByIndex(DIB_LIST_UNIT_BUILDINGS);
 
-    CString sTitle;
-    sTitle.LoadString(IDS_TITLE_BUILDINGS);
-    if (CreateEx(0, theApp.m_sWndCls, sTitle, dwPopWndStyle,
-                 theApp.GetProfileInt(theApp.m_sResIni, "BuildX", theApp.m_iCol2),
-                 theApp.GetProfileInt(theApp.m_sResIni, "BuildY", theApp.m_iRow4),
-                 __max (256, theApp.GetProfileInt(theApp.m_sResIni, "BuildEX", theApp.m_iScrnX - theApp.m_iCol2 + 1)),
-                 theApp.GetProfileInt(theApp.m_sResIni, "BuildEY", (theApp.m_iRow3 - theApp.m_iRow4 + 1) / 2),
+    std::string sTitle = EnLoadStdString(IDS_TITLE_BUILDINGS);
+    if (CreateEx(0, theApp.m_sWndCls.c_str(), sTitle.c_str(), dwPopWndStyle,
+                 EnGetProfileInt(theApp.m_sResIni.c_str(), "BuildX", theApp.m_iCol2),
+                 EnGetProfileInt(theApp.m_sResIni.c_str(), "BuildY", theApp.m_iRow4),
+                 __max (256, EnGetProfileInt(theApp.m_sResIni.c_str(), "BuildEX", theApp.m_iScrnX - theApp.m_iCol2 + 1)),
+                 EnGetProfileInt(theApp.m_sResIni.c_str(), "BuildEY", (theApp.m_iRow3 - theApp.m_iRow4 + 1) / 2),
                  theApp.m_pMainWnd->m_hWnd, NULL, NULL) == 0)
         ThrowError(ERR_RES_CREATE_WND);
 }
@@ -541,14 +541,13 @@ void CWndListVehicles::Create() {
     // units
     m_pDibUnit = theBitmaps.GetByIndex(DIB_LIST_UNIT_VEHICLES);
 
-    CString sTitle;
-    sTitle.LoadString(IDS_TITLE_VEHICLES);
+    std::string sTitle = EnLoadStdString(IDS_TITLE_VEHICLES);
     int y = (theApp.m_iRow3 + theApp.m_iRow4) / 2 - 1;
-    if (CreateEx(0, theApp.m_sWndCls, sTitle, dwPopWndStyle,
-                 theApp.GetProfileInt(theApp.m_sResIni, "VehicleX", theApp.m_iCol2),
-                 theApp.GetProfileInt(theApp.m_sResIni, "VehicleY", y),
-                 __max (256, theApp.GetProfileInt(theApp.m_sResIni, "VehicleEX", theApp.m_iScrnX - theApp.m_iCol2 + 1)),
-                 theApp.GetProfileInt(theApp.m_sResIni, "VehicleEY", theApp.m_iRow3 - y + 1),
+    if (CreateEx(0, theApp.m_sWndCls.c_str(), sTitle.c_str(), dwPopWndStyle,
+                 EnGetProfileInt(theApp.m_sResIni.c_str(), "VehicleX", theApp.m_iCol2),
+                 EnGetProfileInt(theApp.m_sResIni.c_str(), "VehicleY", y),
+                 __max (256, EnGetProfileInt(theApp.m_sResIni.c_str(), "VehicleEX", theApp.m_iScrnX - theApp.m_iCol2 + 1)),
+                 EnGetProfileInt(theApp.m_sResIni.c_str(), "VehicleEY", theApp.m_iRow3 - y + 1),
                  theApp.m_pMainWnd->m_hWnd, NULL, NULL) == 0)
         ThrowError(ERR_RES_CREATE_WND);
 }
@@ -755,20 +754,20 @@ void CUnitButton::DrawItem(LPDRAWITEMSTRUCT pDis) {
     }
 
     // if we have text
-    CString sText;
-    GetWindowText(sText);
-    if (!sText.IsEmpty()) {
+    char sText[256];
+    int  sTextLen = GetWindowText(sText, (int)sizeof(sText));
+    if (sTextLen > 0) {
         CDC *pDc = CDC::FromHandle(m_pDib->GetDC());
         if (pDc == NULL)
             return;
 
         pDc->SetBkMode(TRANSPARENT);
         pDc->SetTextColor(CLR_UNIT_BUILD);
-        CFont *pOldFont;
+        HGDIOBJ pOldFont;
         if (m_pOvrlyDib != NULL)
-            pOldFont = pDc->SelectObject(&theApp.CostFont());
+            pOldFont = ::SelectObject(pDc->m_hDC, theApp.CostFont());  // Phase 4c prep
         else
-            pOldFont = pDc->SelectObject(&theApp.TextFont());
+            pOldFont = ::SelectObject(pDc->m_hDC, theApp.TextFont());
 
         pDc->SetTextColor(RGB (0, 0, 0));
         int iHt = rect.Height();
@@ -785,7 +784,7 @@ void CUnitButton::DrawItem(LPDRAWITEMSTRUCT pDis) {
         pDc->SetTextColor(RGB (255, 255, 255));
         pDc->DrawText(sText, -1, &rect, DT_CENTER | DT_NOPREFIX | DT_WORDBREAK | DT_NOPREFIX);
 
-        pDc->SelectObject(pOldFont);
+        ::SelectObject(pDc->m_hDC, pOldFont);  // Phase 4c prep
     }
 
     // BLT to the screen DC
@@ -799,7 +798,10 @@ void CUnitButton::DrawItem(LPDRAWITEMSTRUCT pDis) {
 
 
 /////////////////////////////////////////////////////////////////////////////
-// CDlgBuildStructure dialog
+// CDlgBuildStructure / CDlgBuildTransport dialogs — excluded from build (Phase 2d).
+// Replaced by SDL2BuildStructure / SDL2BuildTransport. Bodies kept in source for
+// reference but not compiled.
+#if 0  // MFC_LEGACY_BUILD_DIALOGS
 
 const int FIRST_CAT_BUTTON = 100;
 const int FIRST_BLDG_BUTTON = 110;
@@ -855,13 +857,13 @@ BOOL CDlgBuildStructure::OnInitDialog() {
 
     m_pSd = NULL;
 
-    m_sCost.LoadString(IDS_COST);
-    m_sHave.LoadString(IDS_HAVE);
-    m_sNeed.LoadString(IDS_NEED);
-    m_sTime.LoadString(IDS_TIME);
-    m_sOper.LoadString(IDS_OPERATING);
-    m_sPeople.LoadString(IDS_PEOPLE);
-    m_sPower.LoadString(IDS_POWER);
+    m_sCost = EnLoadStdString(IDS_COST);
+    m_sHave = EnLoadStdString(IDS_HAVE);
+    m_sNeed = EnLoadStdString(IDS_NEED);
+    m_sTime = EnLoadStdString(IDS_TIME);
+    m_sOper = EnLoadStdString(IDS_OPERATING);
+    m_sPeople = EnLoadStdString(IDS_PEOPLE);
+    m_sPower = EnLoadStdString(IDS_POWER);
 
     m_pDibBkgnd = new CDIB(ptrthebltformat->GetColorFormat(), CBLTFormat::DIB_MEMORY,
                            CBLTFormat::DIR_BOTTOMUP, 465, 345);
@@ -906,6 +908,8 @@ BOOL CDlgBuildStructure::OnInitDialog() {
 
     // init controls
     OnSelchangeBuildListCat();
+
+    // Native SDL2 dialog handles rendering — no MFC bridge needed
 
     ASSERT_VALID (this);
     return (TRUE);
@@ -1157,6 +1161,8 @@ void CDlgBuildStructure::OnOK() {
 
 void CDlgBuildStructure::OnDestroy() {
 
+    SDL2MFCPanel::Detach(this);
+
     // get rid of the pointer cause we're about to be destroyed
     m_pVehPar->m_pDlgStructure = NULL;
 
@@ -1261,23 +1267,26 @@ void CDlgBuildStructure::OnPaint() {
         // time
         pDcTxt->DrawText(m_sTime, &rect, DT_LEFT | DT_SINGLELINE | DT_TOP);
         rect.right = 366;
-        int iHt = pDcTxt->DrawText(IntToCString(m_pSd->m_iTimeBuild / 24), &rect, DT_RIGHT | DT_SINGLELINE | DT_TOP);
+        std::string sNum = IntToStr(m_pSd->m_iTimeBuild / 24);
+        int iHt = pDcTxt->DrawText(sNum.c_str(), -1, &rect, DT_RIGHT | DT_SINGLELINE | DT_TOP);
         rect.top += iHt;
 
         // materials
         for (int iInd = 0; iInd < CMaterialTypes::GetNumBuildTypes(); iInd++)
             if (m_pSd->m_aiBuild[iInd] > 0) {
-                pDcTxt->DrawText(CMaterialTypes::GetDesc(iInd), &rect, DT_LEFT | DT_SINGLELINE | DT_TOP);
+                pDcTxt->DrawText(CMaterialTypes::GetDesc(iInd).c_str(), -1, &rect, DT_LEFT | DT_SINGLELINE | DT_TOP);
                 rect.right = 366;
-                pDcTxt->DrawText(IntToCString(m_pSd->m_aiBuild[iInd]), &rect, DT_RIGHT | DT_SINGLELINE | DT_TOP);
+                sNum = IntToStr(m_pSd->m_aiBuild[iInd]);
+                pDcTxt->DrawText(sNum.c_str(), -1, &rect, DT_RIGHT | DT_SINGLELINE | DT_TOP);
                 rect.right = 402;
-                iHt = pDcTxt->DrawText(IntToCString(theGame.GetMe()->GetMaterialHave(iInd)), &rect,
-                                       DT_RIGHT | DT_SINGLELINE | DT_TOP);
+                sNum = IntToStr(theGame.GetMe()->GetMaterialHave(iInd));
+                iHt = pDcTxt->DrawText(sNum.c_str(), -1, &rect, DT_RIGHT | DT_SINGLELINE | DT_TOP);
                 int iLoss = theGame.GetMe()->GetMaterialHave(iInd) - m_pSd->m_aiBuild[iInd];
                 if (iLoss < 0) {
                     rect.right = 439;
                     pDcTxt->SetTextColor(PALETTERGB (255, 41, 8));
-                    pDcTxt->DrawText("(" + IntToCString(iLoss) + ")", &rect, DT_RIGHT | DT_SINGLELINE | DT_TOP);
+                    std::string sLoss = "(" + IntToStr(iLoss) + ")";
+                    pDcTxt->DrawText(sLoss.c_str(), -1, &rect, DT_RIGHT | DT_SINGLELINE | DT_TOP);
                     pDcTxt->SetTextColor(PALETTERGB (41, 255, 8));
                 }
                 rect.top += iHt;
@@ -1290,28 +1299,34 @@ void CDlgBuildStructure::OnPaint() {
 
         pDcTxt->DrawText(m_sPeople, &rect, DT_LEFT | DT_SINGLELINE | DT_TOP);
         rect.right = 366;
-        pDcTxt->DrawText(IntToCString(m_pSd->GetPeople()), &rect, DT_RIGHT | DT_SINGLELINE | DT_TOP);
+        sNum = IntToStr(m_pSd->GetPeople());
+        pDcTxt->DrawText(sNum.c_str(), -1, &rect, DT_RIGHT | DT_SINGLELINE | DT_TOP);
         rect.right = 402;
-        iHt = pDcTxt->DrawText(IntToCString(theGame.GetMe()->GetPplTotal()), &rect, DT_RIGHT | DT_SINGLELINE | DT_TOP);
+        sNum = IntToStr(theGame.GetMe()->GetPplTotal());
+        iHt = pDcTxt->DrawText(sNum.c_str(), -1, &rect, DT_RIGHT | DT_SINGLELINE | DT_TOP);
         int iLoss = theGame.GetMe()->GetPplBldg() - theGame.GetMe()->GetPplNeedBldg() - m_pSd->GetPeople();
         if (iLoss < 0) {
             rect.right = 439;
             pDcTxt->SetTextColor(PALETTERGB (255, 41, 8));
-            pDcTxt->DrawText("(" + IntToCString(iLoss) + ")", &rect, DT_RIGHT | DT_SINGLELINE | DT_TOP);
+            std::string sLoss = "(" + IntToStr(iLoss) + ")";
+            pDcTxt->DrawText(sLoss.c_str(), -1, &rect, DT_RIGHT | DT_SINGLELINE | DT_TOP);
             pDcTxt->SetTextColor(PALETTERGB (71, 71, 225));
         }
         rect.top += iHt;
 
         pDcTxt->DrawText(m_sPower, &rect, DT_LEFT | DT_SINGLELINE | DT_TOP);
         rect.right = 366;
-        pDcTxt->DrawText(IntToCString(m_pSd->m_iPower), &rect, DT_RIGHT | DT_SINGLELINE | DT_TOP);
+        sNum = IntToStr(m_pSd->m_iPower);
+        pDcTxt->DrawText(sNum.c_str(), -1, &rect, DT_RIGHT | DT_SINGLELINE | DT_TOP);
         rect.right = 402;
-        iHt = pDcTxt->DrawText(IntToCString(theGame.GetMe()->GetPwrHave()), &rect, DT_RIGHT | DT_SINGLELINE | DT_TOP);
+        sNum = IntToStr(theGame.GetMe()->GetPwrHave());
+        iHt = pDcTxt->DrawText(sNum.c_str(), -1, &rect, DT_RIGHT | DT_SINGLELINE | DT_TOP);
         iLoss = theGame.GetMe()->GetPwrHave() - theGame.GetMe()->GetPwrNeed() - m_pSd->m_iPower;
         if (iLoss < 0) {
             rect.right = 439;
             pDcTxt->SetTextColor(PALETTERGB (255, 41, 8));
-            pDcTxt->DrawText("(" + IntToCString(iLoss) + ")", &rect, DT_RIGHT | DT_SINGLELINE | DT_TOP);
+            std::string sLoss = "(" + IntToStr(iLoss) + ")";
+            pDcTxt->DrawText(sLoss.c_str(), -1, &rect, DT_RIGHT | DT_SINGLELINE | DT_TOP);
             pDcTxt->SetTextColor(PALETTERGB (71, 71, 225));
         }
         rect.top += iHt;
@@ -1373,8 +1388,8 @@ void CDlgBuildStructure::OnDrawItem(int, LPDRAWITEMSTRUCT pDis) {
         pDc->SetBkMode(TRANSPARENT);
         pDc->SetTextColor(CLR_UNIT_BUILD);
         pDc->SetTextColor(RGB (255, 255, 255));
-        CString sText;
-        GetDlgItem(pDis->CtlID)->GetWindowText(sText);
+        char sText[256];
+        GetDlgItem(pDis->CtlID)->GetWindowText(sText, (int)sizeof(sText));
         pDc->DrawText(sText, -1, &rDest,
                       DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX | DT_WORDBREAK | DT_NOPREFIX);
 
@@ -1454,11 +1469,11 @@ BOOL CDlgBuildTransport::OnInitDialog() {
 
     m_pBu = NULL;
 
-    m_sCost.LoadString(IDS_COST);
-    m_sHave.LoadString(IDS_HAVE);
-    m_sNeed.LoadString(IDS_NEED);
-    m_sTime.LoadString(IDS_TIME);
-    m_sPeople.LoadString(IDS_PEOPLE);
+    m_sCost = EnLoadStdString(IDS_COST);
+    m_sHave = EnLoadStdString(IDS_HAVE);
+    m_sNeed = EnLoadStdString(IDS_NEED);
+    m_sTime = EnLoadStdString(IDS_TIME);
+    m_sPeople = EnLoadStdString(IDS_PEOPLE);
 
     m_pDibBkgnd = new CDIB(ptrthebltformat->GetColorFormat(), CBLTFormat::DIB_MEMORY,
                            CBLTFormat::DIR_BOTTOMUP, 380, 332);
@@ -1503,9 +1518,8 @@ BOOL CDlgBuildTransport::OnInitDialog() {
 
     // if its troops we change the title
     if (m_pBldgPar->GetData()->GetBldgType() == CStructureData::barracks) {
-        CString sTitle;
-        sTitle.LoadString(IDS_BUILD_PEOPLE);
-        SetWindowText(sTitle);
+        std::string sTitle = EnLoadStdString(IDS_BUILD_PEOPLE);
+        SetWindowText(sTitle.c_str());
     }
 
     CenterWindow(&theApp.m_wndMain);
@@ -1517,6 +1531,8 @@ BOOL CDlgBuildTransport::OnInitDialog() {
     
     // now it's safe for handlers to call UpdateData(TRUE)
     m_bInitComplete = true;
+
+    // Native SDL2 dialog handles rendering — no MFC bridge needed
 
     return (TRUE);
 }
@@ -1636,19 +1652,16 @@ void CDlgBuildTransport::UpdateStatus(int iPer) {
     InvalidateRect(&(m_statInst.m_rDest), FALSE);
 
     // set the title
-    CString sTitle;
+    std::string sTitle;
     if (iPer != 0) {
-        sTitle.LoadString(IDS_BUILD_UNIT);
         CBuildUnit const *pBu = m_pBldgPar->GetBldUnt();
-        if (pBu == NULL)
-            csPrintf(&sTitle, (char const *) "");
-        else
-            csPrintf(&sTitle, (char const *) theTransports.GetData(pBu->GetVehType())->GetDesc());
+        const char* pDesc = (pBu == NULL) ? "" : theTransports.GetData(pBu->GetVehType())->GetDesc().c_str();
+        sTitle = strPrintf(EnLoadStdString( IDS_BUILD_UNIT ).c_str(), pDesc);
     } else if (m_pBldgPar->GetData()->GetBldgType() == CStructureData::barracks)
-        sTitle.LoadString(IDS_BUILD_PEOPLE);
+        sTitle = EnLoadStdString(IDS_BUILD_PEOPLE);
     else
-        sTitle.LoadString(IDS_BUILD_VEHICLE);
-    SetWindowText(sTitle);
+        sTitle = EnLoadStdString(IDS_BUILD_VEHICLE);
+    SetWindowText(sTitle.c_str());
 
     // the below we do only if we aren't active
     if (CWnd::GetActiveWindow() == this)
@@ -1659,7 +1672,7 @@ void CDlgBuildTransport::UpdateStatus(int iPer) {
     m_iNum = atoi(m_sNum);
     if (m_iNum != m_pBldgPar->GetNum()) {
         m_iNum = __max (1, m_pBldgPar->GetNum());
-        m_sNum = IntToCString(m_iNum);
+        m_sNum = IntToStr(m_iNum);
         UpdateData(FALSE);
     }
     InvalidateRect(&rectTranText, FALSE);
@@ -1756,30 +1769,31 @@ void CDlgBuildTransport::OnPaint() {
         // time
         pDcTxt->DrawText(m_sTime, &rect, DT_LEFT | DT_SINGLELINE | DT_TOP);
         rect.right = 270;
-        CString sTime = IntToCString(m_pBu->m_iTime / 24);
-        int iHt = pDcTxt->DrawText(sTime, &rect, DT_RIGHT | DT_SINGLELINE | DT_TOP);
+        std::string sTime = IntToStr(m_pBu->m_iTime / 24);
+        int iHt = pDcTxt->DrawText(sTime.c_str(), -1, &rect, DT_RIGHT | DT_SINGLELINE | DT_TOP);
         if (m_iNum > 1) {
-            sTime = "(" + IntToCString((m_iNum * m_pBu->m_iTime) / 24) + ")";
+            sTime = "(" + IntToStr((m_iNum * m_pBu->m_iTime) / 24) + ")";
             rect.right = 315;
-            pDcTxt->DrawText(sTime, &rect, DT_RIGHT | DT_SINGLELINE | DT_TOP);
+            pDcTxt->DrawText(sTime.c_str(), -1, &rect, DT_RIGHT | DT_SINGLELINE | DT_TOP);
         }
         rect.top += iHt;
 
         // materials
         for (int iInd = 0; iInd < CMaterialTypes::GetNumBuildTypes(); iInd++)
             if (m_pBu->m_aiInput[iInd] > 0) {
-                pDcTxt->DrawText(CMaterialTypes::GetDesc(iInd), &rect, DT_LEFT | DT_SINGLELINE | DT_TOP);
+                pDcTxt->DrawText(CMaterialTypes::GetDesc(iInd).c_str(), -1, &rect, DT_LEFT | DT_SINGLELINE | DT_TOP);
                 rect.right = 270;
-                pDcTxt->DrawText(IntToCString(m_pBu->m_aiInput[iInd] * m_iNum), &rect,
-                                 DT_RIGHT | DT_SINGLELINE | DT_TOP);
+                std::string sNum = IntToStr(m_pBu->m_aiInput[iInd] * m_iNum);
+                pDcTxt->DrawText(sNum.c_str(), -1, &rect, DT_RIGHT | DT_SINGLELINE | DT_TOP);
                 rect.right = 315;
-                int iHt = pDcTxt->DrawText(IntToCString(m_pBldgPar->GetStore(iInd)), &rect,
-                                           DT_RIGHT | DT_SINGLELINE | DT_TOP);
+                sNum = IntToStr(m_pBldgPar->GetStore(iInd));
+                int iHt = pDcTxt->DrawText(sNum.c_str(), -1, &rect, DT_RIGHT | DT_SINGLELINE | DT_TOP);
                 int iLoss = m_pBldgPar->GetStore(iInd) - (m_pBu->m_aiInput[iInd] * m_iNum);
                 if (iLoss < 0) {
                     rect.right = 360;
                     pDcTxt->SetTextColor(PALETTERGB (255, 41, 8));
-                    pDcTxt->DrawText("(" + IntToCString(iLoss) + ")", &rect, DT_RIGHT | DT_SINGLELINE | DT_TOP);
+                    std::string sLoss = "(" + IntToStr(iLoss) + ")";
+                    pDcTxt->DrawText(sLoss.c_str(), -1, &rect, DT_RIGHT | DT_SINGLELINE | DT_TOP);
                     pDcTxt->SetTextColor(PALETTERGB (41, 255, 8));
                 }
                 rect.top += iHt;
@@ -1792,8 +1806,8 @@ void CDlgBuildTransport::OnPaint() {
         pDcTxt->DrawText(m_sPeople, &rect, DT_LEFT | DT_SINGLELINE | DT_TOP);
         rect.right = 315;
         CTransportData const *pData = theTransports.GetData(m_pBu->GetVehType());
-        rect.top += pDcTxt->DrawText(IntToCString(m_iNum * pData->GetPeople()), &rect,
-                                     DT_RIGHT | DT_SINGLELINE | DT_TOP);
+        std::string sPeople = IntToStr(m_iNum * pData->GetPeople());
+        rect.top += pDcTxt->DrawText(sPeople.c_str(), -1, &rect, DT_RIGHT | DT_SINGLELINE | DT_TOP);
 
         pDcTxt->MoveTo(210, 142);
         pDcTxt->LineTo(210, rect.top);
@@ -1848,8 +1862,8 @@ void CDlgBuildTransport::OnDrawItem(int, LPDRAWITEMSTRUCT pDis) {
         pDc->SetBkMode(TRANSPARENT);
         pDc->SetTextColor(CLR_UNIT_BUILD);
         pDc->SetTextColor(RGB (255, 255, 255));
-        CString sText;
-        GetDlgItem(pDis->CtlID)->GetWindowText(sText);
+        char sText[256];
+        GetDlgItem(pDis->CtlID)->GetWindowText(sText, (int)sizeof(sText));
         pDc->DrawText(sText, -1, &rDest,
                       DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX | DT_WORDBREAK | DT_NOPREFIX);
 
@@ -1909,6 +1923,8 @@ void CDlgBuildTransport::OnOK() {
 
 void CDlgBuildTransport::OnDestroy() {
 
+    SDL2MFCPanel::Detach(this);
+
     // get rid of the pointer cause we're about to be destroyed
     m_pBldgPar->m_pDlgTransport = NULL;
 
@@ -1919,6 +1935,8 @@ void CDlgBuildTransport::OnDestroy() {
 
     CDialog::OnDestroy();
 }
+
+#endif // MFC_LEGACY_BUILD_DIALOGS
 
 
 /////////////////////////////////////////////////////////////////////////////
@@ -1975,7 +1993,7 @@ void CWndRoute::Create(CWndArea *pPar) {
     pPar->GetClientRect(&rect);
     pPar->ClientToScreen(&rect);
 
-    CreateEx(0, theApp.m_sWndCls, m_pVeh->GetData()->GetDesc(), dwPopWndStyle,
+    CreateEx(0, theApp.m_sWndCls.c_str(), m_pVeh->GetData()->GetDesc().c_str(), dwPopWndStyle,
              rect.right - m_iXmin, rect.bottom - m_iYmin * 2, m_iXmin, m_iYmin * 2,
              pPar->m_hWnd, NULL, NULL);
 }
@@ -1992,7 +2010,7 @@ int CWndRoute::OnCreate(LPCREATESTRUCT lpCreateStruct) {
     rect.left = theApp.BevelDimen();
     rect.bottom -= (theApp.TextHt() + 4 * theApp.BevelDimen());
     rect.right -= theApp.BevelDimen();
-    m_listbox.Create(WS_CHILD | WS_VISIBLE | WS_VSCROLL | LBS_NOTIFY | LBS_USETABSTOPS, rect, this, 101);
+    m_listbox.Create(WS_CHILD | WS_VISIBLE | WS_VSCROLL | LBS_NOTIFY | LBS_USETABSTOPS, rect, CWnd::FromHandle( m_hWnd ), 101);
 
     m_iYmin = theApp.TextHt() + 5 * theApp.BevelDimen() +
               3 * m_listbox.GetItemHeight(0);
@@ -2023,10 +2041,9 @@ int CWndRoute::OnCreate(LPCREATESTRUCT lpCreateStruct) {
     }
     OnLbnClk();
 
-    CString sTitle;
-    sTitle.LoadString(IDS_ROUTE_TITLE);
-    csPrintf(&sTitle, (char const *) m_pVeh->GetData()->GetDesc());
-    SetWindowText(sTitle);
+    std::string sTitle = strPrintf( EnLoadStdString( IDS_ROUTE_TITLE ).c_str(),
+                                    m_pVeh->GetData()->GetDesc().c_str() );
+    SetWindowText(sTitle.c_str());
 
     // fill the listbox
     NewRoute(m_pVeh);
@@ -2036,6 +2053,8 @@ int CWndRoute::OnCreate(LPCREATESTRUCT lpCreateStruct) {
         m_Btns[1].EnableWindow(FALSE);
         m_Btns[2].EnableWindow(FALSE);
     }
+
+    SDL2MFCPanel::Attach(CWnd::FromHandle( m_hWnd ), "route", 35);
 
     return 0;
 }
@@ -2274,7 +2293,7 @@ void CWndRoute::Auto() {
     DestroyWindow();
 }
 
-void CWndRoute::VehDesc(CVehicle *pVeh, POSITION &pos, CString &sLine) {
+void CWndRoute::VehDesc(CVehicle *pVeh, POSITION &pos, std::string &sLine) {
 
     ASSERT_VALID (this);
     ASSERT_VALID (pVeh);
@@ -2286,14 +2305,14 @@ void CWndRoute::VehDesc(CVehicle *pVeh, POSITION &pos, CString &sLine) {
 
     CRoute *pR = pVeh->GetRouteList().GetNext(pos);
 
-    CString sName;
+    std::string sName;
     CBuilding *pBldg = theBuildingHex._GetBuilding(pR->GetCoord());
     if (pBldg != NULL)
         pBldg->GetDesc(sName);
-    if (sName.GetLength() > 0)
+    if (!sName.empty())
         sLine += sName;
     else
-        sLine += IntToCString(pR->GetCoord().X()) + "," + IntToCString(pR->GetCoord().Y());
+        sLine += IntToStr(pR->GetCoord().X()) + "," + IntToStr(pR->GetCoord().Y());
 
     int ID = 0;
     switch (pR->GetRouteType()) {
@@ -2313,9 +2332,7 @@ void CWndRoute::VehDesc(CVehicle *pVeh, POSITION &pos, CString &sLine) {
 #endif
     }
 
-    CString sRes;
-    sRes.LoadString(ID);
-    sLine += "\t" + sRes;
+    sLine += "\t" + EnLoadStdString(ID);
 }
 
 void CWndRoute::NewRoute(CVehicle *pVeh) {
@@ -2328,9 +2345,9 @@ void CWndRoute::NewRoute(CVehicle *pVeh) {
     m_listbox.ResetContent();
     POSITION pos = pVeh->GetRouteList().GetHeadPosition();
     while (pos != NULL) {
-        CString sLine;
+        std::string sLine;
         VehDesc(pVeh, pos, sLine);
-        m_listbox.AddString(sLine);
+        m_listbox.AddString(sLine.c_str());
     }
     m_listbox.SetCurSel(iSel + 1);
 
@@ -2368,14 +2385,16 @@ void CWndRoute::Invalidate() {
     m_listbox.ResetContent();
 
     while (pos != NULL) {
-        CString sLine;
+        std::string sLine;
         VehDesc(m_pVeh, pos, sLine);
-        m_listbox.AddString(sLine);
+        m_listbox.AddString(sLine.c_str());
     }
     m_listbox.SetCurSel(iIndex);
 }
 
 void CWndRoute::OnDestroy() {
+
+    SDL2MFCPanel::Detach(CWnd::FromHandle( m_hWnd ));
 
     ASSERT_VALID (m_pVeh);
     m_pVeh->m_pWndRoute = NULL;

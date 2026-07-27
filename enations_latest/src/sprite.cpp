@@ -24,6 +24,15 @@
 #include "unit.inl"
 #include "building.inl"
 
+#include "SDL2Sprites.h"   // GPU sprite layer (S1): divert tree blits to GPU quads
+
+// Set in terrain.cpp (UpdateRect + the CTileDrawInfo::Draw variants). When the split
+// pass is active and the current draw is a capturable world sprite, the blits below
+// divert it to the GPU sprite list instead of compositing into m_dibSprite.
+extern bool g_enSpriteSplitPass;
+extern bool g_enSprCapture;
+extern int  g_enSprSortX, g_enSprSortY;
+
 #ifdef _DEBUG
 #undef THIS_FILE
 static char BASED_CODE THIS_FILE[] = __FILE__;
@@ -289,28 +298,41 @@ CSpriteDIB::StructureIsHit(
         return TRUE;
 
     BYTE const *pbyData = GetDIBPixels();
+    if (!pbyData)               // superview not decompressed yet (load race) — no hit
+        return FALSE;
     int const *piRowStartOffsets = 2 + (int const *) pbyData;
     BYTE const *pbyPixels = (BYTE const *) (piRowStartOffsets + Height());
+    // Bound every RLE read to the decompressed block — same guard as DecodeToRGBA.
+    BYTE const *pbyEnd = pbyData + Length();
     BYTE const *pbySrc = pbyPixels + piRowStartOffsets[y];
     int xBytes = x * m_iBytesPerPixel;
     int xBytesCur = 0;
 
     for (;;) {
-        xBytesCur += *(long *) pbySrc;
+        // 32-bit length prefixes in the decompressed stream — LONG, not `long`
+        // (which is 8 bytes on Linux LP64 and would desync the walk).
+        if (pbySrc < pbyData || pbySrc + (int) sizeof(LONG) > pbyEnd)
+            return FALSE;                       // skip-run prefix past the buffer
+        xBytesCur += *(LONG *) pbySrc;
 
         if (xBytes < xBytesCur)
             return FALSE;
 
-        pbySrc += sizeof(long);
+        pbySrc += sizeof(LONG);
 
-        int iDataBytes = *(long *) pbySrc;
+        if (pbySrc + (int) sizeof(LONG) > pbyEnd)
+            return FALSE;                       // data-len prefix past the buffer
+        int iDataBytes = *(LONG *) pbySrc;
 
         xBytesCur += iDataBytes;
 
         if (xBytes < xBytesCur)
             return TRUE;
 
-        pbySrc += sizeof(long) + iDataBytes;
+        if (iDataBytes < 0 || pbySrc + sizeof(LONG) + iDataBytes > pbyEnd)
+            return FALSE;                       // data run past the buffer
+
+        pbySrc += sizeof(LONG) + iDataBytes;
     }
 
     return FALSE;
@@ -529,7 +551,47 @@ CSpriteDIB::StructureDrawToDIB(
         CRect const &rectClip) const    // Clipping rect in window client coords
 {
     CRect rectBound(ptDst, CSize(Width(), Height()));
+
+    // GPU sprite layer: divert this world sprite to the GPU list and skip the CPU
+    // blit. Store the VIEW-space position (screen + UL) so it stays valid as the map
+    // scrolls, plus the z-order key. If capture fails, fall through to the CPU path.
+    if (g_enSpriteSplitPass && g_enSprCapture) {
+        CPoint ul = xpanimatr->GetUL();
+        // Visible band = clip rect ∩ sprite bounds, in sprite-local coords. With the
+        // full-viewport GPU walk the clip rect is the WHOLE window (so this is the full
+        // sprite) EXCEPT during building construction, where CBuilding::Draw's DrawClip
+        // narrows the top to the revealed fraction — giving the bottom-up "swype" reveal
+        // for free. (rectBound uses ptDst, so multi-piece sprites clip correctly.)
+        CRect rectDraw = rectClip & rectBound;
+        int clw = rectDraw.right - rectDraw.left;
+        int clh = rectDraw.bottom - rectDraw.top;
+        if (clw > 0 && clh > 0) {
+            int clx = rectDraw.left - rectBound.left;
+            int cly = rectDraw.top  - rectBound.top;
+            if (SDL2Sprites::CaptureStructure(this, xiZoom,
+                                              ptDst.x + ul.x, ptDst.y + ul.y,
+                                              Width(), Height(),
+                                              clx, cly, clw, clh,
+                                              g_enSprSortX, g_enSprSortY))
+                return rectBound;
+        }
+    }
+
     CRect rectDraw = rectClip & rectBound;
+
+    // [BRG] probe: a bridge draw reaching the CPU blit means it was NOT GPU-captured
+    // (split pass off, capture flag unset, or CaptureStructure declined) → it lands in
+    // m_dibSprite and flashes for one frame. Log which gate failed.
+    {
+        extern bool g_enSprBridgeProbe;
+        if (g_enSprBridgeProbe) {
+            char b[160];
+            sprintf(b, "[BRG] CPU-fallback blit: splitPass=%d capture=%d clipWH=%dx%d\n",
+                    (int)g_enSpriteSplitPass, (int)g_enSprCapture,
+                    rectDraw.right - rectDraw.left, rectDraw.bottom - rectDraw.top);
+            OutputDebugStringA(b);
+        }
+    }
 
     if (rectDraw.left >= rectDraw.right ||
         rectDraw.top >= rectDraw.bottom)
@@ -544,8 +606,14 @@ CSpriteDIB::StructureDrawToDIB(
     int iDirPitch = pdib->GetDirPitch();
 
     BYTE const *pbyData = GetDIBPixels();
+    if (!pbyData)               // superview not decompressed yet (load race) — skip the blit
+        return CRect(0, 0, 0, 0);
     int const *piRowStartOffsets = 2 + (int const *) pbyData;
     BYTE const *pbyPixels = (BYTE const *) (piRowStartOffsets + Height());
+    // Bound every RLE read to the decompressed block — same guard as DecodeToRGBA.
+    // A malformed/truncated stream (or bad row offset, e.g. the 24/32bpp sprite
+    // variant on a non-x86 build) otherwise walks pbySrc past the buffer and faults.
+    BYTE const *pbyEnd = pbyData + Length();
     BYTE const *pbySrc = pbyPixels + piRowStartOffsets[iTopSrcY];
     CDIBits dibits = pdib->GetBits();
     BYTE *pbyDst = dibits + pdib->GetOffset(0, iTopDstY);
@@ -554,6 +622,9 @@ CSpriteDIB::StructureDrawToDIB(
         int iBytesX = iLeftBytesX;
 
         for (;;) {
+            // both length prefixes (skip-run + data-len) must be in the buffer
+            if (pbySrc < pbyData || pbySrc + 2 * (int) sizeof(int) > pbyEnd)
+                break;
             iBytesX += *(int *) pbySrc;
             pbySrc += sizeof(int);
 
@@ -563,6 +634,8 @@ CSpriteDIB::StructureDrawToDIB(
 
             if (0 == nDataBytes)
                 break;
+            if (nDataBytes < 0 || pbySrc + nDataBytes > pbyEnd)
+                break;          // run extends past the buffer
 
             int iLeftBytesX = Max(iLeftBytesClipX, iBytesX);
             int iRightBytesX = Min(iRightBytesClipX, iBytesX + nDataBytes);
@@ -579,6 +652,106 @@ CSpriteDIB::StructureDrawToDIB(
     }
 
     return rectBound;
+}
+
+//--------------------------------------------------------------------------
+// CSpriteDIB::DecodeToRGBA — GPU sprite layer (SDL2Sprites)
+//
+// Decode the current-zoom sprite frame into a W*H ARGB8888 buffer, transparent
+// where the sprite has no pixel. Same per-row run/skip RLE walk as
+// StructureDrawToDIB, but written into a sprite-local buffer (x from 0) instead of
+// the window DIB at a clipped dst offset. Source pixels are the DIB's native
+// 32-bit BGRX (true-color runtime); 24-bit BGR handled as a fallback.
+//--------------------------------------------------------------------------
+bool
+CSpriteDIB::DecodeToRGBA( unsigned *pDst ) const {
+    int W = Width();
+    int H = Height();
+    if (W <= 0 || H <= 0 || !pDst)
+        return false;
+
+    int bpp = m_iBytesPerPixel;
+    if (bpp != 4 && bpp != 3)
+        return false;   // only true-color sprite data
+
+    memset(pDst, 0, (size_t) W * H * 4);   // fully transparent
+
+    // VEHICLE sprites are stored as a FLAT (uncompressed) bitmap with a magenta
+    // color-key (index 253) for transparency — not the RLE skip/run that structures
+    // use (CSprite::ColorConvert: bCompressed excludes VEHICLE). Decode accordingly.
+    if (CSprite::VEHICLE == m_iType) {
+        BYTE const *pSrc = GetDIBPixels();
+        if (!pSrc)
+            return false;
+        BYTE *pbyMagenta = thePal.GetDeviceColor(253);
+        int srcWBytes = bpp * W;
+        for (int y = 0; y < H; ++y) {
+            unsigned *pRow = pDst + (size_t) y * W;
+            for (int x = 0; x < W; ++x) {
+                BYTE const *s = pSrc + (size_t) y * srcWBytes + (size_t) x * bpp;
+                if (0 == memcmp(s, pbyMagenta, bpp))
+                    continue;   // transparent
+                pRow[x] = 0xFF000000u | ((unsigned) s[2] << 16) |
+                          ((unsigned) s[1] << 8) | (unsigned) s[0];
+            }
+        }
+        return true;
+    }
+
+    BYTE const *pbyData = GetDIBPixels();
+    if (!pbyData)               // superview not decompressed yet (load race): bail so the
+        return false;           // atlas does NOT cache a black/garbage tile (the tree-box bug)
+    int const *piRowStartOffsets = 2 + (int const *) pbyData;
+    BYTE const *pbyPixels = (BYTE const *) (piRowStartOffsets + H);
+
+    // Bound every read to the decompressed block. A malformed / truncated RLE
+    // stream (or a bad row offset) otherwise walks pbySrc past the buffer and
+    // faults — the intermittent structure/tree sprite-decode crash. On overrun
+    // we stop decoding (a partial tile beats an access violation).
+    BYTE const *pbyEnd = pbyData + Length();
+
+    for (int y = 0; y < H; ++y) {
+        // the row-offset int itself must be readable
+        if ( (BYTE const *) ( piRowStartOffsets + y ) + sizeof(int) > pbyEnd )
+            break;
+        BYTE const *pbySrc = pbyPixels + piRowStartOffsets[y];
+        unsigned *pRow = pDst + (size_t) y * W;
+        int iBytesX = 0;            // sprite-local x, in bytes
+
+        for (;;) {
+            // need two ints (skip-run + data-len) within the buffer
+            if (pbySrc < pbyData || pbySrc + 2 * (int) sizeof(int) > pbyEnd)
+                break;
+            iBytesX += *(int *) pbySrc;     // skip (transparent) run
+            pbySrc += sizeof(int);
+
+            int nDataBytes = *(int *) pbySrc;
+            pbySrc += sizeof(int);
+
+            if (0 == nDataBytes)
+                break;
+            if (nDataBytes < 0 || pbySrc + nDataBytes > pbyEnd)
+                break;                      // run extends past the buffer
+
+            int nPix = nDataBytes / bpp;
+            int x0 = iBytesX / bpp;
+
+            for (int i = 0; i < nPix; ++i) {
+                int x = x0 + i;
+                if (x >= 0 && x < W) {
+                    BYTE const *s = pbySrc + (size_t) i * bpp;
+                    // BGRX/BGR -> 0xAARRGGBB
+                    pRow[x] = 0xFF000000u | ((unsigned) s[2] << 16) |
+                              ((unsigned) s[1] << 8) | (unsigned) s[0];
+                }
+            }
+
+            iBytesX += nDataBytes;
+            pbySrc += nDataBytes;
+        }
+    }
+
+    return true;
 }
 
 //-----------------------------------------------------------------------
@@ -1415,6 +1588,18 @@ void CSpriteDIB::TerrainDrawQuadVert( int aiShadeIndex[2], CPoint aptHex[4], BOO
 
         CRect rectBound = VehicleCalcBoundingRect(aptVertex);
 
+        // GPU sprite layer: divert this vehicle to the GPU list as a warped textured
+        // quad (the 4 view-space vertices), skipping the CPU affine raster below. The
+        // texture is the un-warped sprite frame (Width x Height); the quad does the
+        // warp on the GPU via SDL_RenderGeometry. Verts → view space (+UL) for scroll.
+        if (g_enSpriteSplitPass && g_enSprCapture) {
+            CPoint ul = xpanimatr->GetUL();
+            int vx[4], vy[4];
+            for (int i = 0; i < 4; ++i) { vx[i] = aptVertex[i].x + ul.x; vy[i] = aptVertex[i].y + ul.y; }
+            if (SDL2Sprites::CaptureVehicle(this, xiZoom, vx, vy, g_enSprSortX, g_enSprSortY))
+                return rectBound;
+        }
+
         // Scan the polygon edges into a buffer
 
         xscanlist.ScanPolyFixed(aptVertex, 4);    // static to avoid memory alloc
@@ -1975,7 +2160,8 @@ SkipPixel1:
             m_eAnim(eAnim),
             m_bEnabled(TRUE),
             m_bPaused(FALSE),
-            m_bOneShot(FALSE) {
+            m_bOneShot(FALSE),
+            m_bHalfSpeed(FALSE) {
         Reset();
         SetOneShot(bOneShot);
     }
@@ -1992,6 +2178,7 @@ SkipPixel1:
             DWORD dwCurTime = theGame.GettimeGetTime();
             DWORD dwElapsedTime = dwCurTime - m_dwLastTime;
             DWORD dwHoldTime = uHolds * 1000 / FRAME_RATE;
+            if (m_bHalfSpeed) dwHoldTime *= 2;   // fracking well pumps at half speed
 
             if (dwElapsedTime >= dwHoldTime) {
                 m_iFrame++;
@@ -2819,31 +3006,33 @@ SkipPixel1:
                         ASSERT(pbyDst + 3 < pbyDstEnd);
                         ASSERT(pbySrc + 3 < pbySrcEnd);
 
-                        // Convert the # of transparent bytes
-                        iSrcBytes = *(long *) pbySrc;
+                        // Convert the # of transparent bytes.
+                        // The compressed stream stores 32-bit length prefixes;
+                        // use LONG (4 bytes on Win + Linux) not `long` (8 on LP64).
+                        iSrcBytes = *(LONG *) pbySrc;
 
                         ASSERT(0 == iSrcBytes % 3);
 
-                        *(long *) pbyDst = m_iBytesPerPixel * iSrcBytes / 3;
+                        *(LONG *) pbyDst = m_iBytesPerPixel * iSrcBytes / 3;
 
-                        pbySrc += sizeof(long);
-                        pbyDst += sizeof(long);
+                        pbySrc += sizeof(LONG);
+                        pbyDst += sizeof(LONG);
 
                         ASSERT(pbyDst + 3 < pbyDstEnd);
                         ASSERT(pbySrc + 3 < pbySrcEnd);
 
-                        iSrcBytes = *(long *) pbySrc;
+                        iSrcBytes = *(LONG *) pbySrc;
                         iDstBytes = m_iBytesPerPixel * iSrcBytes / 3;
 
                         ASSERT(0 == iSrcBytes % 3);
 
                         // Convert the # of data bytes
-                        *(long *) pbyDst = iDstBytes;
+                        *(LONG *) pbyDst = iDstBytes;
 
-                        pbySrc += sizeof(long);
-                        pbyDst += sizeof(long);
+                        pbySrc += sizeof(LONG);
+                        pbyDst += sizeof(LONG);
 
-                        nCompressedBytes += 2 * sizeof(long) + iDstBytes;
+                        nCompressedBytes += 2 * sizeof(LONG) + iDstBytes;
 
                         if (0L == iDstBytes)    // End of the row reached
                             break;

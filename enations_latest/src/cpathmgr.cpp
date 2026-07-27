@@ -9,18 +9,20 @@
 //
 ////////////////////////////////////////////////////////////////////////////
 
-#include "CPathMgr.h"
+#include "cpathmgr.h"
 
-#include "STDAFX.H"
+#include "stdafx.h"
 #include "logging.h"  // dave's logging system
+#include "Perf.h"     // EN_PERF counters (mpath.* exit mix)
+#include "enprobes.h" // EN_PATH_PROBES compile gate
 
 //#define TEST_RESULT1		// test GetAt improvement
 //#define TEST_RESULT2			// test GetLowest improvement
 //#define TEST_RESULT3			// anal level of testing
 
 // BUGBUG these are here for diagnostics only
-#include "CAIData.hpp"
-#include "CAIHex.hpp"
+#include "caidata.hpp"
+#include "caihex.hpp"
 
 extern CAIData* pGameData;  // pointer to API object for game data
 
@@ -65,8 +67,20 @@ static unsigned char ucHeadings[] = {
 CHexCoord* CPathMgr::GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord& hexTo, int& iPathLen, int iVehType,
                               BOOL bVehBlock, BOOL bDirectPath )
 {
+#if EN_PATH_PROBES
+    // movement-A* twin of the CPathMap path.* trio (cpathmap.cpp GetPath).
+    // mpath.us includes lock wait, so contention shows up here too.
+    Perf::ScopeCounter _t( "mpath.us" );
+#endif
     EnterCriticalSection( &m_cs );
+#if EN_PATH_PROBES
+    m_iNextSlot = 0;  // trivial rejects skip the in-search reset; don't re-count
+#endif
     CHexCoord* phcPath = ( _GetPath( pVehicle, hexFrom, hexTo, iPathLen, iVehType, bVehBlock, bDirectPath ) );
+#if EN_PATH_PROBES
+    Perf::CounterInc( "mpath.calls" );
+    Perf::CounterAdd( "mpath.nodes", m_iNextSlot );  // cells created this search
+#endif
     LeaveCriticalSection( &m_cs );
     return phcPath;
 }
@@ -105,6 +119,9 @@ CHexCoord* CPathMgr::_GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord
                    hexFrom.X( ), hexFrom.Y( ), hexTo.X( ), hexTo.Y( ) );
 #endif
 #endif
+#if EN_PATH_PROBES
+        Perf::CounterInc( "mpath.trivial" );
+#endif
         return ( NULL );
     }
 
@@ -120,7 +137,12 @@ CHexCoord* CPathMgr::_GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord
 
     // no path from start to destination because we are there
     if ( hexFrom == hexTo )
+    {
+#if EN_PATH_PROBES
+        Perf::CounterInc( "mpath.trivial" );
+#endif
         return ( NULL );
+    }
 
     m_hexFrom   = hexFrom;
     m_hexTo     = hexTo;
@@ -146,6 +168,9 @@ CHexCoord* CPathMgr::_GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord
     for ( int t = CHex::city; t < CHex::num_types; ++t )
     {
         int iRtn = theTerrain.GetData( t ).GetWheelMult( m_pTD->GetWheelType( ) );
+        // x2 (1996 original). Do NOT soften to x1.5 (reverted #27): at the shipping
+        // search budget both weights skip detour-roads identically, and x1.5 only
+        // explores more cells. Road-following is a budget/cost fix, not a heuristic one.
         // iRtn *= 2;
         iRtn <<= 1;
 
@@ -217,6 +242,11 @@ CHexCoord* CPathMgr::_GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord
         iHang *= 2;  // 256
     else
         iHang += ( theMap.GetRangeDistance( m_hexFrom, m_hexTo ) * CELLSAROUND );
+    iHang = ( iHang * 3 ) / 2;  // +50% search headroom (pairs with the *5 arena above)
+
+#if EN_PATH_PROBES
+    BOOL bProbeArenaFull = FALSE;  // arena exhaustion forces the iHang exit; keep the two counters distinct
+#endif
 
     int iTicks = 0;
     int iList  = 1;
@@ -262,6 +292,10 @@ CHexCoord* CPathMgr::_GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord
             // the AddCellToArray() could fail if array has been exceeded
             if ( pAdjCell == NULL )
             {
+#if EN_PATH_PROBES
+                Perf::CounterInc( "mpath.arena_full" );
+                bProbeArenaFull = TRUE;
+#endif
                 iHang = 1;  // cause early termination
                 break;
             }
@@ -304,7 +338,7 @@ CHexCoord* CPathMgr::_GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord
 #ifdef _LOGOUT
                         logPrintf( LOG_PRI_ALWAYS, LOG_VEH_PATH,
                                    "GetPath() direct for a %s took %ld ticks for %d steps ",
-                                   (const char*)m_pTD->GetDesc( ), ( dwEnd - dwStart ), iPathLen );
+                                   m_pTD->GetDesc( ).c_str(), ( dwEnd - dwStart ), iPathLen );
                         logPrintf( LOG_PRI_ALWAYS, LOG_VEH_PATH, "Took %d interations with %d cells in list \n", iTicks,
                                    iList );
                         if ( phexPath == NULL )
@@ -314,6 +348,9 @@ CHexCoord* CPathMgr::_GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord
                         m_iStepCnt += iPathLen;                    // count of steps in paths
 #endif
 
+#if EN_PATH_PROBES
+                        Perf::CounterInc( phexPath != NULL ? "mpath.ok" : "mpath.nopath" );
+#endif
                         return ( phexPath );
                     }
                     else
@@ -331,7 +368,7 @@ CHexCoord* CPathMgr::_GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord
 #ifdef _LOGOUT
                             logPrintf( LOG_PRI_ALWAYS, LOG_VEH_PATH,
                                        "GetPath() early end for a %s took %ld ticks for %d steps ",
-                                       (const char*)m_pTD->GetDesc( ), ( dwEnd - dwStart ), iPathLen );
+                                       m_pTD->GetDesc( ).c_str(), ( dwEnd - dwStart ), iPathLen );
                             logPrintf( LOG_PRI_ALWAYS, LOG_VEH_PATH, "Took %d interations with %d cells in list \n",
                                        iTicks, iList );
                             if ( phexPath == NULL )
@@ -341,6 +378,9 @@ CHexCoord* CPathMgr::_GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord
                             m_iStepCnt += iPathLen;                    // count of steps in paths
 #endif
 
+#if EN_PATH_PROBES
+                            Perf::CounterInc( phexPath != NULL ? "mpath.ok" : "mpath.nopath" );
+#endif
                             return ( phexPath );
                         }
                     }
@@ -371,7 +411,7 @@ CHexCoord* CPathMgr::_GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord
 #ifdef _LOGOUT
                         logPrintf( LOG_PRI_ALWAYS, LOG_VEH_PATH,
                                    "GetPath() blocked for a %s took %ld ticks for %d steps ",
-                                   (const char*)m_pTD->GetDesc( ), ( dwEnd - dwStart ), iPathLen );
+                                   m_pTD->GetDesc( ).c_str(), ( dwEnd - dwStart ), iPathLen );
                         logPrintf( LOG_PRI_ALWAYS, LOG_VEH_PATH, "returning path to %d,%d instead of destination ",
                                    m_hexTo.X( ), m_hexTo.Y( ) );
                         logPrintf( LOG_PRI_ALWAYS, LOG_VEH_PATH, "Took %d interations with %d cells in list \n", iTicks,
@@ -396,6 +436,9 @@ CHexCoord* CPathMgr::_GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord
 #endif
 #endif  // PATH_TIMING
 
+#if EN_PATH_PROBES
+                        Perf::CounterInc( "mpath.blocked" );  // dest hex unenterable; partial path or NULL
+#endif
                         return ( phexPath );
                     }
                 }
@@ -411,6 +454,9 @@ CHexCoord* CPathMgr::_GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord
         pTest     = GetLowestCost( iCnt );
         if ( pTest == NULL )
         {
+#if EN_PATH_PROBES
+            Perf::CounterInc( "mpath.exhausted" );  // open list empty pre-dest: unreachable-goal signature
+#endif
             if ( !bDirectPath )
                 pTest = GetClosestCell( );
 
@@ -431,6 +477,10 @@ CHexCoord* CPathMgr::_GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord
         iHang--;
         if ( !iHang )
         {
+#if EN_PATH_PROBES
+            if ( !bProbeArenaFull )
+                Perf::CounterInc( "mpath.ihang" );
+#endif
 
 #if PATH_TIMING
 #ifdef _LOGOUT
@@ -483,12 +533,21 @@ CHexCoord* CPathMgr::_GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord
 #endif
 #endif
         ClearArray( );
+#if EN_PATH_PROBES
+        Perf::CounterInc( "mpath.nopath" );
+#endif
         return ( NULL );
     }
 
     // a break from trying has occurred and the dest was reached
     if ( !iHang && pDestCell != NULL )
         pTest = pDestCell;
+
+#if EN_PATH_PROBES
+    // capture before ClearArray() wipes the cells
+    BOOL      bProbeAtDest = AtDestination( pTest );
+    CHexCoord hexProbeClamp( pTest->m_iX, pTest->m_iY );
+#endif
 
     // now walk the m_plCells and
     // create a CHexCoord[] to return to caller
@@ -509,7 +568,7 @@ CHexCoord* CPathMgr::_GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord
     dwEnd = timeGetTime( );
 #ifdef _LOGOUT
     logPrintf( LOG_PRI_ALWAYS, LOG_VEH_PATH, "GetPath() for a %s took %ld ticks for %d steps ",
-               (const char*)m_pTD->GetDesc( ), ( dwEnd - dwStart ), iPathLen );
+               m_pTD->GetDesc( ).c_str(), ( dwEnd - dwStart ), iPathLen );
     logPrintf( LOG_PRI_ALWAYS, LOG_VEH_PATH, "from %d,%d to %d,%d ", m_hexFrom.X( ), m_hexFrom.Y( ), m_hexTo.X( ),
                m_hexTo.Y( ) );
     logPrintf( LOG_PRI_ALWAYS, LOG_VEH_PATH, "Took %d interations with %d cells in list \n", iTicks, iList );
@@ -555,6 +614,27 @@ CHexCoord* CPathMgr::_GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord
 #endif
 #endif
 
+#if EN_PATH_PROBES
+    if ( phexPath == NULL )
+        Perf::CounterInc( "mpath.nopath" );
+    else if ( bProbeAtDest )
+    {
+        Perf::CounterInc( "mpath.ok" );
+        if ( pVehicle != NULL )
+            pVehicle->m_hexLastClamp = CHexCoord( -1, -1 );  // success clears the re-clamp watch
+    }
+    else
+    {
+        Perf::CounterInc( "mpath.clamped" );  // GetClosestCell fallback path
+        if ( pVehicle != NULL )
+        {
+            if ( pVehicle->m_hexLastClamp == hexProbeClamp )
+                Perf::CounterInc( "mpath.reclamp" );  // clamped at the SAME hex again: churn signature
+            pVehicle->m_hexLastClamp = hexProbeClamp;
+        }
+    }
+#endif
+
     return ( phexPath );
 }
 
@@ -567,10 +647,27 @@ CHexCoord* CPathMgr::_GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord
 void CPathMgr::AdjustDestination( void )
 {
     int iRange = theMap.GetRangeDistance( m_hexFrom, m_hexTo );
-    if ( iRange <= m_iMaxPath )
+
+    // #25 long-haul fix: the flat MAX_PATH_RANGE (80) clamp below halved any order
+    // beyond ~80 hexes down to a near midpoint, so long hauls only pathed partway
+    // ("short-path breakout"). Scale the clamp to THIS order's straight-line range
+    // (m_hexTo is still the original destination here, pre-ChangeDestination), capped
+    // at the map span (m_iWidth+m_iHeight) so it stays bounded. SHORT orders
+    // (iRange <= m_iMaxPath) keep today's early return unchanged -> the common case is
+    // unaffected (operator's no-regress gate). Long orders run the full search; iHang
+    // (FindPath L215-219) already scales the node budget with range and early-exits, so
+    // an over-budget search still terminates with best-so-far heading the right way.
+    int iLimit = m_iMaxPath;
+    if ( iRange > iLimit )
+    {
+        int iCap = m_iWidth + m_iHeight;            // map span = max meaningful range
+        iLimit   = ( iRange < iCap ) ? iRange : iCap;
+    }
+
+    if ( iRange <= iLimit )
         return;
 
-    while ( iRange > m_iMaxPath )
+    while ( iRange > iLimit )
     {
         ChangeDestination( );
 
@@ -584,7 +681,7 @@ void CPathMgr::AdjustDestination( void )
                        m_hexFrom.X( ), m_hexFrom.Y( ), m_hexTo.X( ), m_hexTo.Y( ), iRange );
 #endif
 #endif
-            iRange = m_iMaxPath;
+            iRange = iLimit;
             continue;
         }
 
@@ -598,7 +695,7 @@ void CPathMgr::AdjustDestination( void )
             continue;
         // new destination is not passible so stay in the loop
         if ( !m_pTD->CanTravelHex( pGameHex ) )
-            iRange = m_iMaxPath;
+            iRange = iLimit;
     }
 
 #if 0  // PATH_TIMING
@@ -819,14 +916,15 @@ BOOL CPathMgr::CanEnterBridge( CCell* pFromCell, CCell* pToCell )
     // if there is bridge hex involved, we must do another test
     if ( pDestHex->GetUnits( ) & CHex::bridge || pFromHex->GetUnits( ) & CHex::bridge )
     {
-        // we don't know the unit here so we figure if the from hex is water & not a bridge
-        // it is on the water, otherwise it is land/bridge.
-        // this does stop moving along a bridge under it
-        BOOL bOnWater = pFromHex->IsWater( ) & ( ( pFromHex->GetUnits( ) & CHex::bridge ) == 0 );
+        // A WATER vehicle is ALWAYS on the water — it passes UNDER bridges, never on
+        // the deck — so force on-water for it; otherwise exiting a bridge-over-water
+        // hex hits CanEnterHex's bridge-deck direction checks and a boat (e.g. cargo
+        // ship) can't traverse under the span. Keep this in sync with GetCellCosts,
+        // the other A* gate, which already has this fix.
+        BOOL bOnWater = ( m_pTD->GetWheelType( ) == CWheelTypes::water ) ||
+                        ( pFromHex->IsWater( ) & ( ( pFromHex->GetUnits( ) & CHex::bridge ) == 0 ) );
         if ( !m_pTD->CanEnterHex( hexFrom, hexDest, bOnWater ) )
             return FALSE;
-        // if( !m_pTD->CanEnterHex(hexFrom, hexDest, pFromHex->IsWater()) )
-        //	return FALSE;
     }
     return TRUE;
 }
@@ -869,8 +967,11 @@ void CPathMgr::GetCellCosts( int iPos, CCell* pFromCell, CCell* pToCell )
     // unless its the dest
     if ( pDestHex->GetType( ) == CHex::coastline )
     {
-        // except of course, inf/outriders can travel coastline anytime
+        // except of course, inf/outriders can travel coastline anytime — and small
+        // boats (motorboat/gun_boat, landing craft) must cross coastline shores to
+        // reach rivers / lakes through their mouths.
         if ( m_pTD->GetWheelType( ) != CWheelTypes::walk && m_pTD->GetWheelType( ) != CWheelTypes::hover &&
+             m_pTD->GetType( ) != CTransportData::gun_boat && m_pTD->GetType( ) != CTransportData::landing_craft &&
              hexDest != m_hexTo )
         {
             // but any vehicle on a bridge
@@ -893,10 +994,13 @@ void CPathMgr::GetCellCosts( int iPos, CCell* pFromCell, CCell* pToCell )
     // if there is bridge hex involved, we must do another test
     if ( pDestHex->GetUnits( ) & CHex::bridge || pFromHex->GetUnits( ) & CHex::bridge )
     {
-        // we don't know the unit here so we figure if the from hex is water & not a bridge
-        // it is on the water, otherwise it is land/bridge.
-        // this does stop moving along a bridge under it
-        BOOL bOnWater = pFromHex->IsWater( ) & ( ( pFromHex->GetUnits( ) & CHex::bridge ) == 0 );
+        // figure if we're on the water (vs land/bridge-deck): a from-hex that is water
+        // & not a bridge means on water. A WATER vehicle is ALWAYS on the water — it
+        // passes UNDER bridges, never on the deck — so force on-water for it; otherwise
+        // exiting a bridge-over-water hex hits CanEnterHex's bridge-deck direction
+        // checks and a boat can't traverse the span.
+        BOOL bOnWater = ( m_pTD->GetWheelType( ) == CWheelTypes::water ) ||
+                        ( pFromHex->IsWater( ) & ( ( pFromHex->GetUnits( ) & CHex::bridge ) == 0 ) );
         if ( !m_pTD->CanEnterHex( hexFrom, hexDest, bOnWater ) )
             return;
         // if( !m_pTD->CanEnterHex(hexFrom, hexDest, pFromHex->IsWater()) )
@@ -1495,6 +1599,7 @@ CCell* CPathMgr::AddCellToArray( CCell* pCell )
     pNewCell->m_iDist     = pCell->m_iDist;
     pNewCell->m_iBoth     = pCell->m_iBoth;
     pNewCell->m_pCellFrom = pCell->m_pCellFrom;
+    pNewCell->m_bClosed   = 0;  // CPathMgr never closes; keep recycled slots clean
     NewBoth( pNewCell );
 
     DWORD  dwKey = ( pCell->m_iX & 0xFFFF ) | ( ( pCell->m_iY & 0xFFFF ) << 16 );
@@ -1565,7 +1670,7 @@ CPathMgr::CPathMgr( int iMapEX, int iMapEY )
     m_iMapEY    = iMapEY - 1;
     m_bVehBlock = TRUE;
 
-    m_iNumOfCells = ( m_iWidth + m_iHeight ) * 2;  // m_iWidth * m_iHeight;
+    m_iNumOfCells = ( m_iWidth + m_iHeight ) * 5;  // was *2 (1996); *5 = 2.5x search headroom for big obstacle-cut maps
     m_iNextSlot   = 0;
     m_iLowestBoth = 0;
     memset( m_acBoth, 0, sizeof( m_acBoth ) );
@@ -1615,7 +1720,7 @@ BOOL CPathMgr::Init( int iMapEX, int iMapEY )
     m_iMapEX  = iMapEX - 1;
     m_iMapEY  = iMapEY - 1;
 
-    m_iNumOfCells = ( m_iWidth + m_iHeight ) * 2;  // m_iWidth * m_iHeight;
+    m_iNumOfCells = ( m_iWidth + m_iHeight ) * 5;  // was *2 (1996); *5 = 2.5x search headroom for big obstacle-cut maps
     m_iNextSlot   = 0;
     m_iLowestBoth = 0;
     memset( m_acBoth, 0, sizeof( m_acBoth ) );
@@ -1843,6 +1948,7 @@ CCell::CCell( )
     m_pcNextBoth = NULL;
     m_pcPrevBoth = NULL;
     m_iBothIn    = 0;
+    m_bClosed    = 0;
 }
 
 CCell::CCell( int iX, int iY )
@@ -1857,6 +1963,7 @@ CCell::CCell( int iX, int iY )
     m_pcNextBoth = NULL;
     m_pcPrevBoth = NULL;
     m_iBothIn    = 0;
+    m_bClosed    = 0;
 }
 
 // end of CPathMgr.cpp

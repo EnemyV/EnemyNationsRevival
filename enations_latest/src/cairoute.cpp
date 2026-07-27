@@ -11,6 +11,7 @@
 
 #include "cairoute.hpp"
 
+#include "aisnap.h"  // Tier-B world snapshot (lock-free AI reads)
 #include "caidata.hpp"
 #include "logging.h"  // dave's logging system
 #include "stdafx.h"
@@ -33,8 +34,174 @@ CAIRouter::CAIRouter( CAIMap* pMap, CAIUnitList* plUnits, int iPlayer )
     m_dwRocket = 0;
     m_bNeedGas = FALSE;
 
+    m_iReserveSweep = 0;  // periodic reservation-ledger rebuild counter
+
     m_plTrucksAvailable = NULL;
     m_plBldgsNeed       = NULL;
+}
+
+// ---------------------------------------------------------------------------
+// Material reservation ledger (runtime-only). GetNearestSource picks a source
+// with enough LIVE store, but between assignment and the truck's arrival that
+// store can be drained (own production consumed / another truck), so the truck
+// arrives to an empty source and the need re-queues forever.
+// The ledger records each truck's pending pickup so effective availability =
+// live store - reserved, and no two trucks (nor parity consumption) double-book
+// the same units. Host-side AI only; not serialized; cleared on Load.
+// ---------------------------------------------------------------------------
+void CAIRouter::ReserveMaterial( int iMaterial, DWORD dwSource, int iQty )
+{
+    if ( dwSource == 0 || iQty <= 0 )
+        return;
+    m_mReserved[std::make_pair( iMaterial, dwSource )] += iQty;
+}
+
+void CAIRouter::ReleaseMaterial( int iMaterial, DWORD dwSource, int iQty )
+{
+    if ( dwSource == 0 )
+        return;
+    std::map<std::pair<int, DWORD>, int>::iterator it = m_mReserved.find( std::make_pair( iMaterial, dwSource ) );
+    if ( it == m_mReserved.end( ) )
+        return;
+    it->second -= iQty;
+    if ( it->second <= 0 )  // fully released -> drop the entry
+        m_mReserved.erase( it );
+}
+
+int CAIRouter::GetReserved( int iMaterial, DWORD dwSource )
+{
+    std::map<std::pair<int, DWORD>, int>::iterator it = m_mReserved.find( std::make_pair( iMaterial, dwSource ) );
+    return ( it != m_mReserved.end( ) ) ? it->second : 0;
+}
+
+void CAIRouter::ReleaseTruckReservations( CAIUnit* pTruck )
+{
+    if ( pTruck == NULL )
+        return;
+    // release every still-outstanding per-material source claim this truck holds
+    for ( int i = 0; i < CMaterialTypes::num_types; ++i )
+    {
+        DWORD dwSource = pTruck->GetParamDW( i );
+        if ( dwSource != 0 )
+            ReleaseMaterial( i, dwSource, pTruck->GetParam( i ) );
+    }
+}
+
+// resume an in-use truck whose route was interrupted (combat flee, missed arrival):
+// nearest still-claimed source, else the dest building's exit, else release to pool
+BOOL CAIRouter::ResumeTruck( CAIUnit* pTruck, int iX, int iY )
+{
+    if ( pTruck == NULL || m_plUnits == NULL )
+        return FALSE;
+
+    int       iBestDist = 0xFFFF;
+    CAIUnit*  pBestBldg = NULL;
+    CHexCoord hexTruck( iX, iY );
+    CHexCoord hexBldg, hexBest;
+
+    for ( int i = 0; i < CMaterialTypes::num_types; ++i )
+    {
+        if ( !pTruck->GetParamDW( i ) )
+            continue;
+        CAIUnit* pBldg = m_plUnits->GetUnit( pTruck->GetParamDW( i ) );
+        if ( pBldg == NULL )
+        {
+            // source vanished - drop claim + reservation
+            ReleaseMaterial( i, pTruck->GetParamDW( i ), pTruck->GetParam( i ) );
+            pTruck->SetParamDW( i, 0 );
+            continue;
+        }
+        CAICopy* pCopy = pBldg->GetCopyData( CAICopy::CBuilding );
+        if ( pCopy == NULL )
+            continue;
+        hexBldg.X( pCopy->m_aiDataOut[CAI_LOC_X] );
+        hexBldg.Y( pCopy->m_aiDataOut[CAI_LOC_Y] );
+        int iDist = pGameData->GetRangeDistance( hexTruck, hexBldg );
+        if ( iDist && iDist < iBestDist )
+        {
+            iBestDist = iDist;
+            pBestBldg = pBldg;
+            hexBest   = hexBldg;
+        }
+    }
+    if ( pBestBldg != NULL )
+    {
+        pTruck->SetDestination( pBestBldg );
+        pTruck->SetParam( CAI_ROUTE_X, hexBest.X( ) );
+        pTruck->SetParam( CAI_ROUTE_Y, hexBest.Y( ) );
+        return TRUE;
+    }
+
+    // no sources left: head for the building being supplied
+    CAIUnit* pDest = m_plUnits->GetUnit( pTruck->GetDataDW( ) );
+    if ( pDest != NULL )
+    {
+        CHexCoord hex( 0, 0 );
+        pGameData->GetBldgExit( pDest->GetID( ), hex );
+        if ( hex.X( ) || hex.Y( ) )
+        {
+            pTruck->SetDestination( hex );
+            pTruck->SetParam( CAI_ROUTE_X, hex.X( ) );
+            pTruck->SetParam( CAI_ROUTE_Y, hex.Y( ) );
+            return TRUE;
+        }
+    }
+
+    // nothing to resume: release back to the pool
+    ReleaseTruckReservations( pTruck );
+    pTruck->SetStatus( 0 );
+    pTruck->SetDataDW( 0 );
+    pTruck->ClearParam( );
+    return TRUE;
+}
+
+void CAIRouter::RebuildReservations( void )
+{
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+    // measure the leak this rebuild is about to wipe
+    int iEntB = (int)m_mReserved.size( );
+    int iTotB = 0;
+    for ( auto itR = m_mReserved.begin( ); itR != m_mReserved.end( ); ++itR ) iTotB += itR->second;
+#endif
+    // coarse leak-safety: rederive the whole ledger from live in-use trucks so a
+    // missed release (truck destroyed, odd bail path) can't starve a source forever
+    m_mReserved.clear( );
+    if ( m_plUnits == NULL )
+        return;
+    POSITION pos = m_plUnits->GetHeadPosition( );
+    while ( pos != NULL )
+    {
+        CAIUnit* pUnit = (CAIUnit*)m_plUnits->GetNext( pos );
+        if ( pUnit == NULL )
+            continue;
+        if ( pUnit->GetOwner( ) != m_iPlayer )
+            continue;
+        if ( pUnit->GetType( ) == CUnit::building )
+            continue;
+        if ( !( pUnit->GetStatus( ) & CAI_IN_USE ) )
+            continue;
+        if ( !pGameData->IsTruck( pUnit->GetID( ) ) )
+            continue;
+        for ( int i = 0; i < CMaterialTypes::num_types; ++i )
+        {
+            DWORD dwSource = pUnit->GetParamDW( i );
+            if ( dwSource != 0 )
+                ReserveMaterial( i, dwSource, pUnit->GetParam( i ) );
+        }
+    }
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+    {
+        int iEntA = (int)m_mReserved.size( );
+        int iTotA = 0;
+        for ( auto itR = m_mReserved.begin( ); itR != m_mReserved.end( ); ++itR ) iTotA += itR->second;
+        if ( iEntB != iEntA || iTotB != iTotA )
+        {
+            char szL[128];
+            sprintf( szL, "[RESLEDGER] plyr %d entries %d->%d total %d->%d\n", m_iPlayer, iEntB, iEntA, iTotB, iTotA );
+            OutputDebugStringA( szL );
+        }
+    }
+#endif
 }
 
 CAIRouter::~CAIRouter( )
@@ -79,10 +246,9 @@ void CAIRouter::DoRouting( CAIMsg* pMsg )
 
     if ( pMsg != NULL )
     {
-        CString sMsg = pGameData->GetMsgString( pMsg->m_iMsg );
+        const char* sMsg = pGameData->GetMsgString( pMsg->m_iMsg );
 
-        logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "Message id %d is a %s ", pMsg->m_iMsg, (const char*)sMsg );
-        sMsg.Empty( );
+        logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "Message id %d is a %s ", pMsg->m_iMsg, sMsg );
 
         if ( pMsg->m_iMsg == CNetCmd::bldg_new && pMsg->m_idata3 == m_iPlayer )
         {
@@ -318,9 +484,26 @@ void CAIRouter::SetPriorities( void )
     POSITION pos = m_plBldgsNeed->GetHeadPosition( );
     while ( pos != NULL )
     {
-        CAIUnit* pUnit = (CAIUnit*)m_plBldgsNeed->GetNext( pos );
+        POSITION posCur = pos;
+        CAIUnit* pUnit  = (CAIUnit*)m_plBldgsNeed->GetNext( pos );
         if ( pUnit != NULL )
         {
+            // liveness FIRST, by pointer identity: ASSERT_VALID is a virtual
+            // call and the borrowed pointer may already be freed (soak84 AV
+            // here at war-scale destruction). Stale nodes are REMOVED - they
+            // used to sit in the list forever.
+            if ( !IsValidUnit( pUnit ) )
+            {
+                m_plBldgsNeed->RemoveAt( posCur );
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+                {
+                    char szR[80];
+                    sprintf( szR, "[ROUTERSTALE] plyr %d dead bldg node dropped (SetPriorities)\n", m_iPlayer );
+                    OutputDebugStringA( szR );
+                }
+#endif
+                continue;
+            }
             ASSERT_VALID( pUnit );
 
 #if 0  // THREADS_ENABLED
@@ -341,11 +524,6 @@ void CAIRouter::SetPriorities( void )
             // for now, and BUGBUG later will also be influenced
             // by the state of the game
             //
-
-            // make sure it still exists
-            if ( !IsValidUnit( pUnit ) )
-                continue;
-
             SetUnitPriority( pUnit );
         }
     }
@@ -365,11 +543,18 @@ void CAIRouter::SetPriorities( void )
 
 void CAIRouter::FillPriorities( void )
 {
-    BOOL bTrucksFound = TRUE;
-
     // just in case we get here before they get init-ed
     if ( m_plBldgsNeed == NULL || m_plTrucksAvailable == NULL )
         return;
+
+    // periodic coarse leak-safety: rebuild the reservation ledger from live in-use trucks
+    if ( ( ++m_iReserveSweep % 50 ) == 0 )
+        RebuildReservations( );
+
+    // re-scan for poolable trucks: GetTrucksAvailable otherwise ran ONCE at init,
+    // so trucks released outside UnassignTruck never rejoined the pool
+    if ( ( m_iReserveSweep % 10 ) == 0 )
+        GetTrucksAvailable( );
 
 #ifdef _LOGOUT
     logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "CAIRouter::FillPriorities for player %d \n ", m_iPlayer );
@@ -384,23 +569,26 @@ void CAIRouter::FillPriorities( void )
         // with the current highest priority
         CAIUnit* pBldg = (CAIUnit*)m_plBldgsNeed->RemoveHead( );
 
-        // DNT - this has GPF'ed several times
-        // it's coming here, not null but either deleted or being deleted
-        if ( pBldg != NULL  ) 
+        // liveness by POINTER IDENTITY, never a dereference. The 1996
+        // try/catch TRAP band-aid that lived here ("DNT - this has GPF'ed
+        // several times... deleted or being deleted") validated by calling
+        // pBldg->GetID() on the suspect - the validator WAS the UAF
+        // (soak84 AV, 0xDD vtable). RETIRED for the real check.
+        if ( pBldg != NULL && !IsValidUnit( pBldg ) )
         {
-            try
+            pBldg = NULL;
+#if EN_AI_PROBES_ECON && defined(_WIN32)
             {
-                CAIUnit* pTest = m_plUnits->GetUnit( pBldg->GetID( ) );
-                if ( pTest != pBldg )
-                    pBldg = NULL;
+                char szR[80];
+                sprintf( szR, "[ROUTERSTALE] plyr %d dead bldg head dropped (FillPriorities)\n", m_iPlayer );
+                OutputDebugStringA( szR );
             }
-            catch ( ... )
-            {
-                TRAP( );
-                pBldg = NULL;
-            }
+#endif
         }
 
+        // per-iteration: a dead/NULL head must not re-add itself via the
+        // PREVIOUS iteration's FALSE (that re-queued NULL/stale pointers)
+        BOOL bTrucksFound = TRUE;
         if ( pBldg != NULL )
         {
 
@@ -597,14 +785,14 @@ void CAIRouter::IdleTruckTask( int iMat, int iFromBldg, int iToBldg )
                 myYieldThread( );
 #endif
 
-                // this is a valid iFromBldg/iToBldg, so check how much iMat it has
-                EnterCriticalSection( &cs );
-                CBuilding* pBldg = theBuildingMap.GetBldg( pUnit->GetID( ) );
-                if ( pBldg != NULL )
+                // this is a valid iFromBldg/iToBldg, so check how much iMat it
+                // has (snapshot read, lock-free)
+                AiBldgSnap snapB;
+                if ( AiSnap::ReadBldg( pUnit->GetID( ), snapB ) )
                 {
                     if ( pUnit->GetTypeUnit( ) == iFromBldg )
                     {
-                        iExcess = pBldg->GetStore( iMat ) - EXCESS_IDLE_MATERIALS;
+                        iExcess = snapB.aiStore[iMat] - EXCESS_IDLE_MATERIALS;
                         if ( iExcess > 0 && iExcess > iBestFromExcess )
                         {
                             iBestFromExcess = iExcess;
@@ -613,7 +801,7 @@ void CAIRouter::IdleTruckTask( int iMat, int iFromBldg, int iToBldg )
                     }
                     else if ( pUnit->GetTypeUnit( ) == iToBldg )
                     {
-                        iExcess = pBldg->GetStore( iMat );
+                        iExcess = snapB.aiStore[iMat];
                         if ( iExcess > 0 && iExcess < iBestToExcess )
                         {
                             iBestToExcess = iExcess;
@@ -621,7 +809,6 @@ void CAIRouter::IdleTruckTask( int iMat, int iFromBldg, int iToBldg )
                         }
                     }
                 }
-                LeaveCriticalSection( &cs );
             }
 
             // possible multiple to building types
@@ -649,18 +836,17 @@ void CAIRouter::IdleTruckTask( int iMat, int iFromBldg, int iToBldg )
 #endif
 
                 // this is a valid iToBldg, so check how much iMat it has
-                EnterCriticalSection( &cs );
-                CBuilding* pBldg = theBuildingMap.GetBldg( pUnit->GetID( ) );
-                if ( pBldg != NULL )
+                // (snapshot read, lock-free)
+                AiBldgSnap snapTo;
+                if ( AiSnap::ReadBldg( pUnit->GetID( ), snapTo ) )
                 {
-                    iExcess = pBldg->GetStore( iMat );
+                    iExcess = snapTo.aiStore[iMat];
                     if ( iExcess > 0 && iExcess < iBestToExcess )
                     {
                         iBestToExcess = iExcess;
                         paiTo         = pUnit;
                     }
                 }
-                LeaveCriticalSection( &cs );
             }
         }
     }
@@ -682,15 +868,19 @@ void CAIRouter::IdleTruckTask( int iMat, int iFromBldg, int iToBldg )
     }
 
     // check to be sure truck can get to the to building from the from building
-    CHexCoord hexFrom( 0, 0 ), hexTo( 0, 0 );
-    EnterCriticalSection( &cs );
-    CBuilding* pBldg = theBuildingMap.GetBldg( paiFrom->GetID( ) );
-    if ( pBldg != NULL )
-        hexFrom = pBldg->GetExitHex( );
-    pBldg = theBuildingMap.GetBldg( paiTo->GetID( ) );
-    if ( pBldg != NULL )
-        hexTo = pBldg->GetExitHex( );
-    LeaveCriticalSection( &cs );
+    // (snapshot reads, lock-free)
+    CHexCoord  hexFrom( 0, 0 ), hexTo( 0, 0 );
+    AiBldgSnap snapEx;
+    if ( AiSnap::ReadBldg( paiFrom->GetID( ), snapEx ) )
+    {
+        hexFrom.X( snapEx.iExitX );
+        hexFrom.Y( snapEx.iExitY );
+    }
+    if ( AiSnap::ReadBldg( paiTo->GetID( ), snapEx ) )
+    {
+        hexTo.X( snapEx.iExitX );
+        hexTo.Y( snapEx.iExitY );
+    }
 
     if ( ( !hexFrom.X( ) && !hexFrom.Y( ) ) || ( !hexTo.X( ) && !hexTo.Y( ) ) )
         return;
@@ -700,6 +890,7 @@ void CAIRouter::IdleTruckTask( int iMat, int iFromBldg, int iToBldg )
         return;
 
     // update the truck and building as need commodiaties
+    ReleaseTruckReservations( pTruck );  // drop any stale claims before repurposing this truck
     pTruck->ClearParam( );
 
     WORD wStatus = 0;
@@ -824,15 +1015,17 @@ BOOL CAIRouter::FindTransport( CAIUnit* pCAIBldg )
     wStatus |= CAI_IN_USE;
     pTruck->SetStatus( wStatus );             // truck is now assigned
     pTruck->SetDataDW( pCAIBldg->GetID( ) );  // id of building needing
+    ReleaseTruckReservations( pTruck );       // drop any stale claims before re-assigning this truck
     pTruck->ClearParam( );
 
-    // get truck's location to help find source
+    // get truck's location to help find source (snapshot read, lock-free)
     CHexCoord hexTruck;
-    EnterCriticalSection( &cs );
-    CVehicle* pVehicle = theVehicleMap.GetVehicle( pTruck->GetID( ) );
-    if ( pVehicle != NULL )
-        hexTruck = pVehicle->GetHexHead( );
-    LeaveCriticalSection( &cs );
+    AiVehSnap snapTruck;
+    if ( AiSnap::ReadVeh( pTruck->GetID( ), snapTruck ) )
+    {
+        hexTruck.X( snapTruck.iHeadX );
+        hexTruck.Y( snapTruck.iHeadY );
+    }
 
 
     BOOL bAssigned    = FALSE;
@@ -888,6 +1081,14 @@ BOOL CAIRouter::FindTransport( CAIUnit* pCAIBldg )
             // that will be
             if ( pBldgSource == NULL )
             {
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+                {
+                    char szR[128];
+                    sprintf( szR, "[SOURCEMISS] plyr %d bldg %lu mat %d qty %d\n", m_iPlayer,
+                             (unsigned long)pCAIBldg->GetID( ), i, (int)pCAIBldg->GetParam( i ) );
+                    OutputDebugStringA( szR );
+                }
+#endif
 #ifdef _LOGOUT
                 logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "unable to find source for material %d ", i );
 #endif
@@ -918,6 +1119,9 @@ BOOL CAIRouter::FindTransport( CAIUnit* pCAIBldg )
             // that is a source for the material again using
             // offset of the material needed
             pTruck->SetParamDW( i, pBldgSource->GetID( ) );
+
+            // reserve what this truck is expected to pick up so the source isn't drained out from under it
+            ReserveMaterial( i, pBldgSource->GetID( ), iQtyToGet );
 
             // and record truck at the source building
             // pBldgSource->SetParamDW( i, pTruck->GetID() );
@@ -969,13 +1173,14 @@ BOOL CAIRouter::FindTransport( CAIUnit* pCAIBldg )
         CAIUnit* pDestBldg = m_plUnits->GetUnit( pTruck->GetParamDW( iFirstDest ) );
         if ( pDestBldg == NULL )
         {
+            // abandoning the plan: unwrite the claims/reservations written above
+            // or the site is orphaned every failed plan (the GHOSTCLAIM churn)
+            UnassignTrucks( pTruck->GetID( ) );
+            ReleaseTruckReservations( pTruck );
+            pTruck->ClearParam( );
             pTruck->SetStatus( 0 );  // truck is no longer assigned
             pTruck->SetDataDW( 0 );
 
-#ifdef _LOGOUT
-            logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "CAIRouter::player %d truck %ld  source building not found \n",
-                       m_iPlayer, pTruck->GetID( ), pDestBldg->GetID( ) );
-#endif
             // put back in list
             return FALSE;
         }
@@ -985,6 +1190,9 @@ BOOL CAIRouter::FindTransport( CAIUnit* pCAIBldg )
 
         if ( !hex.X( ) && !hex.Y( ) )
         {
+            UnassignTrucks( pTruck->GetID( ) );
+            ReleaseTruckReservations( pTruck );
+            pTruck->ClearParam( );
             pTruck->SetStatus( 0 );  // truck is no longer assigned
             pTruck->SetDataDW( 0 );
 
@@ -1012,6 +1220,9 @@ BOOL CAIRouter::FindTransport( CAIUnit* pCAIBldg )
         logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "CAIRouter::player %d truck %ld - no first source building found \n",
                    m_iPlayer, pTruck->GetID( ) );
 #endif
+        UnassignTrucks( pTruck->GetID( ) );
+        ReleaseTruckReservations( pTruck );
+        pTruck->ClearParam( );
         pTruck->SetStatus( 0 );  // truck is no longer assigned
         pTruck->SetDataDW( 0 );
         // put back in list
@@ -1071,6 +1282,11 @@ void CAIRouter::GetTrucksAvailable( void )
             if ( !pGameData->IsTruck( pUnit->GetID( ) ) )
                 continue;
 
+            // a released truck with no task is pool material - re-tag it
+            // (rescue/combat paths drop the tag and the truck never returned)
+            if ( !pUnit->GetTask( ) )
+                pUnit->SetTask( IDT_SETTRANSPORT );
+
             if ( pUnit->GetTask( ) != IDT_SETTRANSPORT )
                 continue;
 
@@ -1107,12 +1323,25 @@ CAIUnit* CAIRouter::GetNearestTruck( CAIUnit* pCAIBldg )
     {
         // if the truck has been killed the pointer in this list
         // will be invalid
+        POSITION posCur = pos;
         CAIUnit* pTruck = (CAIUnit*)m_plTrucksAvailable->GetNext( pos );
         if ( pTruck != NULL )
         {
-            ASSERT_VALID( pTruck );
+            // liveness FIRST (identity walk, no deref) - ASSERT_VALID on a
+            // freed truck was the same AV class as the bldg list (soak84)
             if ( !IsValidUnit( pTruck ) )
+            {
+                m_plTrucksAvailable->RemoveAt( posCur );
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+                {
+                    char szR[80];
+                    sprintf( szR, "[ROUTERSTALE] plyr %d dead truck node dropped (NearestTruck)\n", m_iPlayer );
+                    OutputDebugStringA( szR );
+                }
+#endif
                 continue;
+            }
+            ASSERT_VALID( pTruck );
 
             // BUGBUG the truck may be dirty from a prior assignment
             // if this breakpoint fires, that means this truck is
@@ -1174,9 +1403,17 @@ BOOL CAIRouter::IsValidUnit( CAIUnit* pUnit )
 {
     if ( pUnit == NULL )
         return FALSE;
-    CAIUnit* pValid = m_plUnits->GetUnit( pUnit->GetID( ) );
-    if ( pUnit == pValid )
-        return TRUE;
+    // NEVER dereference pUnit: the borrowed pointer may already be FREED
+    // (soak84 AV: vtable load from 0xDD debug-heap fill - the old
+    // GetUnit(pUnit->GetID()) validated by dereferencing the suspect).
+    // Identity-walk the master list instead; borrowed pointers are valid
+    // only while the master still holds the SAME pointer.
+    POSITION pos = m_plUnits->GetHeadPosition( );
+    while ( pos != NULL )
+    {
+        if ( (CAIUnit*)m_plUnits->GetNext( pos ) == pUnit )
+            return TRUE;
+    }
     return FALSE;
 }
 
@@ -1188,6 +1425,70 @@ BOOL CAIRouter::IsValidUnit( DWORD dwID )
     return FALSE;
 }
 
+//
+// Drop any borrowed reference to dwID from the helper lists. The borrowed
+// lists (m_plBldgsNeed / m_plTrucksAvailable) hold pointers to CAIUnit objects
+// OWNED by the master m_plUnits. The normal delete_unit path scrubs them via
+// DoRouting before the master frees, but a unit whose ownership changed
+// (give_unit -> SetOwner) dies under a different player id and so skips that
+// scrub, leaving a dangling pointer that a later list walk dereferences (UAF
+// crash on the AI thread). Calling this with the object still alive, right
+// before the master free, closes the window for every free path. Removing a
+// missing id is a harmless no-op, so this is safe to call unconditionally.
+//
+void CAIRouter::RemoveUnitFromLists( DWORD dwID )
+{
+    if ( m_plBldgsNeed != NULL )
+        m_plBldgsNeed->RemoveUnit( dwID, FALSE );
+    if ( m_plTrucksAvailable != NULL )
+        m_plTrucksAvailable->RemoveUnit( dwID, FALSE );
+}
+
+//
+// Bulk version for the player-dying path: the master list is about to
+// RemoveUnits( iPlayer ) (freeing all of that player's CAIUnit objects). Any
+// of those still referenced here — e.g. a unit we once owned that was given
+// to the now-dying player — must be dropped first. The objects are still
+// alive at call time, so reading GetOwner() is safe; we remove the node only
+// (FALSE-equivalent: never delete a borrowed object).
+//
+void CAIRouter::RemovePlayerUnitsFromLists( int iPlayer )
+{
+    CAIUnitList* aLists[2] = { m_plBldgsNeed, m_plTrucksAvailable };
+    for ( int i = 0; i < 2; ++i )
+    {
+        CAIUnitList* pl = aLists[i];
+        if ( pl == NULL )
+            continue;
+
+        POSITION pos1, pos2;
+        for ( pos1 = pl->GetHeadPosition( ); ( pos2 = pos1 ) != NULL; )
+        {
+            CAIUnit* pUnit = (CAIUnit*)pl->GetNext( pos1 );
+            // liveness FIRST (identity walk, no deref): GetOwner() on a freed
+            // borrowed unit is the soak84 UAF class. 710628f9 hardened the three
+            // live walk sites (SetPriorities/FillPriorities/GetNearestTruck) but
+            // MISSED this fourth walk, which still dereferenced GetOwner() on a
+            // possibly-stale borrowed pointer (crash: cairoute.cpp:1468 ->
+            // caiunit.cpp:1378, reproduced with ROCKETSCRUB=0 = producer-agnostic).
+            if ( !IsValidUnit( pUnit ) )
+            {
+                pl->RemoveAt( pos2 );  // stale node — drop it (matches the sibling sites)
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+                {
+                    char szR[80];
+                    sprintf( szR, "[ROUTERSTALE] plyr %d dead node dropped (RemovePlayerUnits)\n", m_iPlayer );
+                    OutputDebugStringA( szR );
+                }
+#endif
+                continue;
+            }
+            if ( pUnit->GetOwner( ) == iPlayer )
+                pl->RemoveAt( pos2 );  // borrowed pointer — remove node, don't delete object
+        }
+    }
+}
+
 
 //
 // get CAIUnit pointer of the building nearest to this
@@ -1195,6 +1496,33 @@ BOOL CAIRouter::IsValidUnit( DWORD dwID )
 // also need it) and this quantity and return
 // the pointer
 //
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+// tripwire: a returned source that is LIVE under construction = the vulture bug
+// (the eligibility skip read a copy saying not-constructing)
+static void SrcConstrCheck( int iPlyr, int iMat, CAIUnit* pSrc )
+{
+    if ( pSrc == NULL )
+        return;
+    int      iCopyFlag = -1;
+    CAICopy* pC        = pSrc->GetCopyData( CAICopy::CBuilding );
+    if ( pC != NULL )
+        iCopyFlag = pC->m_aiDataOut[CAI_ISCONSTRUCTING];
+    BOOL bLive = FALSE;
+    EnterCriticalSection( &cs );
+    CBuilding* pB = theBuildingMap.GetBldg( pSrc->GetID( ) );
+    if ( pB != NULL )
+        bLive = pB->IsConstructing( );
+    LeaveCriticalSection( &cs );
+    if ( bLive )
+    {
+        char sz[112];
+        sprintf( sz, "[SRCCONSTR] plyr %d mat %d src %lu copyflag %d LIVE-CONSTRUCTING\n", iPlyr, iMat,
+                 (unsigned long)pSrc->GetID( ), iCopyFlag );
+        OutputDebugStringA( sz );
+    }
+}
+#endif
+
 CAIUnit* CAIRouter::GetNearestSource( int iMaterial, int iQtyNeeded, int* piDistBack, int iX, int iY )
 {
     ASSERT_VALID( m_plUnits );
@@ -1207,6 +1535,13 @@ CAIUnit* CAIRouter::GetNearestSource( int iMaterial, int iQtyNeeded, int* piDist
 
     CHexCoord hexNeed( iX, iY );
     CHexCoord hexMat;
+
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+    // observe: the richest candidate we SKIP, and why - names the reason the
+    // 100k warehouses never serve pickups (want-check / reservation / other)
+    DWORD dwSkipID = 0;
+    int   iSkipLive = 0, iSkipResv = 0, iSkipWant = 0, iSkipReason = 0;  // 1=want>=stock
+#endif
 
     POSITION pos = m_plUnits->GetHeadPosition( );
     while ( pos != NULL )
@@ -1229,15 +1564,55 @@ CAIUnit* CAIRouter::GetNearestSource( int iMaterial, int iQtyNeeded, int* piDist
             if ( pUnit->GetType( ) != CUnit::building )
                 continue;
 
+            // recently found empty at arrival -> skip until the blacklist expires
+            {
+                std::map<std::pair<int, DWORD>, DWORD>::iterator itE =
+                    m_mEmptyUntil.find( std::make_pair( iMaterial, pUnit->GetID( ) ) );
+                if ( itE != m_mEmptyUntil.end( ) )
+                {
+                    if ( theGame.GettimeGetTime( ) < itE->second )
+                        continue;
+                    m_mEmptyUntil.erase( itE );
+                }
+            }
+
             // get access to CBuilding copied data for building
             CAICopy* pCopyCBuilding = pUnit->GetCopyData( CAICopy::CBuilding );
             if ( pCopyCBuilding == NULL )
                 continue;
 
+            // refresh this material from the live store (stale-copy routing bug)
+            int iLiveStore = 0, iResv = 0;
+            EnterCriticalSection( &cs );
+            {
+                CBuilding* pLive = theBuildingMap.GetBldg( pUnit->GetID( ) );
+                if ( pLive != NULL )
+                {
+                    // effective availability = live store minus other trucks' pending pickups
+                    iLiveStore = pLive->GetStore( iMaterial );
+                    iResv      = GetReserved( iMaterial, pUnit->GetID( ) );
+                    int iEff   = iLiveStore - iResv;
+                    pCopyCBuilding->m_aiDataIn[iMaterial] = ( iEff > 0 ) ? iEff : 0;
+                }
+            }
+            LeaveCriticalSection( &cs );
+
             // this building needs that same material and has
             // less than it needs
             if ( pUnit->GetParam( iMaterial ) >= pCopyCBuilding->m_aiDataIn[iMaterial] )
+            {
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+                if ( iLiveStore > iSkipLive )
+                {
+                    dwSkipID    = pUnit->GetID( );
+                    iSkipLive   = iLiveStore;
+                    iSkipResv   = iResv;
+                    iSkipWant   = (int)pUnit->GetParam( iMaterial );
+                    iSkipReason = 1;  // own-want >= effective stock
+                }
+#endif
                 continue;
+            }
 
             // is this a building under construction
             if ( pCopyCBuilding->m_aiDataOut[CAI_ISCONSTRUCTING] )
@@ -1300,14 +1675,11 @@ CAIUnit* CAIRouter::GetNearestSource( int iMaterial, int iQtyNeeded, int* piDist
                 if ( pCopyCBuildMine == NULL )
                     continue;
 
-                // new feature of abandoned, added too late to incorporate
-                // into the CAICopy object so do a direct access
-                BOOL bIsDepleted = FALSE;
-                EnterCriticalSection( &cs );
-                CBuilding* pBldg = theBuildingMap.GetBldg( pUnit->GetID( ) );
-                if ( pBldg != NULL )
-                    bIsDepleted = pBldg->IsFlag( CUnit::abandoned );
-                LeaveCriticalSection( &cs );
+                // abandoned (depleted) flag — now carried in the snapshot
+                BOOL       bIsDepleted = FALSE;
+                AiBldgSnap snapMine;
+                if ( AiSnap::ReadBldg( pUnit->GetID( ), snapMine ) )
+                    bIsDepleted = snapMine.bAbandoned;
                 // is this an abandoned building and has none of the material needed
                 if ( bIsDepleted && !pCopyCBuilding->m_aiDataIn[iMaterial] )
                 {
@@ -1492,6 +1864,20 @@ CAIUnit* CAIRouter::GetNearestSource( int iMaterial, int iQtyNeeded, int* piDist
     // either the closest or the next closest pointer
     if ( pClosest == NULL && pNextClosest != NULL )
     {
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+        {
+            static DWORD s_dwNextSrcLog = 0;
+            if ( timeGetTime( ) >= s_dwNextSrcLog )
+            {
+                s_dwNextSrcLog = timeGetTime( ) + 5000;
+                char szS[176];
+                sprintf( szS, "[SRCPICK] plyr %d mat %d need %d DRIBBLE src %lu has %d | skipped %lu live %d resv %d want %d r%d\n",
+                         m_iPlayer, iMaterial, iQtyNeeded, (unsigned long)pNextClosest->GetID( ), iNextBest,
+                         (unsigned long)dwSkipID, iSkipLive, iSkipResv, iSkipWant, iSkipReason );
+                OutputDebugStringA( szS );
+            }
+        }
+#endif
         // get access to CBuilding copied data for building
         CAICopy* pCopyCBuilding = pNextClosest->GetCopyData( CAICopy::CBuilding );
         if ( pCopyCBuilding != NULL )
@@ -1502,10 +1888,27 @@ CAIUnit* CAIRouter::GetNearestSource( int iMaterial, int iQtyNeeded, int* piDist
             iBestDist = theMap.GetRangeDistance( hexNeed, hexMat );
         }
         *piDistBack = iBestDist;
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+        SrcConstrCheck( m_iPlayer, iMaterial, pNextClosest );
+#endif
         return ( pNextClosest );
     }
     else if ( pClosest == NULL && pNextClosest == NULL )
     {
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+        {
+            static DWORD s_dwNextRktLog = 0;
+            if ( timeGetTime( ) >= s_dwNextRktLog )
+            {
+                s_dwNextRktLog = timeGetTime( ) + 5000;
+                char szS[176];
+                sprintf( szS, "[SRCPICK] plyr %d mat %d need %d ROCKET-CONJURE | skipped %lu live %d resv %d want %d r%d\n",
+                         m_iPlayer, iMaterial, iQtyNeeded,
+                         (unsigned long)dwSkipID, iSkipLive, iSkipResv, iSkipWant, iSkipReason );
+                OutputDebugStringA( szS );
+            }
+        }
+#endif
         // this compensates for the HP reserve material change
         pClosest = m_plUnits->GetUnit( m_dwRocket );
         if ( pClosest == NULL )
@@ -1530,6 +1933,9 @@ CAIUnit* CAIRouter::GetNearestSource( int iMaterial, int iQtyNeeded, int* piDist
     // return the best distance
     *piDistBack = iBestDist;
 
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+    SrcConstrCheck( m_iPlayer, iMaterial, pClosest );
+#endif
     return ( pClosest );
 }
 //
@@ -1564,10 +1970,11 @@ BOOL CAIRouter::TrucksAreEnroute( CAIUnit* pBldg )
 //
 void CAIRouter::UnassignTrucks( DWORD dwTruckID )
 {
-    // get truck
+    // get truck. NULL = already removed from the unit list (death-cleanup
+    // ordering) - the claims it left on buildings must STILL be cleared or
+    // SetUnitPriority never re-raises those sites (they starve forever while
+    // the rocket backstop sits unused). The lookup below is only a filter.
     CAIUnit* pTruck = m_plUnits->GetUnit( dwTruckID );
-    if ( pTruck == NULL )
-        return;
 
     POSITION pos = m_plUnits->GetHeadPosition( );
     while ( pos != NULL )
@@ -1582,24 +1989,31 @@ void CAIRouter::UnassignTrucks( DWORD dwTruckID )
                 continue;
 
             // is this the building the truck is assigned to?
-            if ( pTruck->GetDataDW( ) != pBldg->GetID( ) )
+            // (truck gone -> can't know its dest: scan every building)
+            if ( pTruck != NULL && pTruck->GetDataDW( ) != pBldg->GetID( ) )
                 continue;
 
+            BOOL bHadClaim = FALSE;
             for ( int i = 0; i < CMaterialTypes::num_types; ++i )
             {
                 // is there an id present, if so its a truck
                 // and those materials still needed are in GetParam()
                 // but the truck is gone now
                 if ( pBldg->GetParamDW( i ) == dwTruckID )
+                {
                     pBldg->SetParamDW( i, 0 );
+                    bHadClaim = TRUE;
+                }
             }
 
-            // need to put the building back in the needs list
-
-            // consider adding building to buildings need list
-            if ( m_plBldgsNeed->GetUnit( pBldg->GetID( ) ) == NULL )
-                m_plBldgsNeed->AddTail( (CObject*)pBldg );
+            // re-list ONLY real claim holders that are BUILDINGS: with the
+            // truck already gone (NULL lookup) the dest filter above is
+            // skipped, and this used to append EVERY unit in the AI list to
+            // m_plBldgsNeed - permanent router pollution (audit finding)
+            if ( ( bHadClaim || pTruck != NULL ) && pBldg->GetType( ) == CUnit::building &&
+                 m_plBldgsNeed->GetUnit( pBldg->GetID( ) ) == NULL )
             {
+                m_plBldgsNeed->AddTail( (CObject*)pBldg );
 #ifdef _LOGOUT
                 logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "Player %d Building %ld now needs a new truck ", m_iPlayer,
                            pBldg->GetID( ) );
@@ -1628,6 +2042,7 @@ void CAIRouter::UnassignTrucks( CAIUnit* pBldg )
                 {
                     // now unassign the truck
                     pTruck->SetDataDW( 0 );
+                    ReleaseTruckReservations( pTruck );  // free this truck's source claims
                     pTruck->ClearParam( );
                     pTruck->SetStatus( 0 );
                     // and add it to the list
@@ -1661,6 +2076,7 @@ void CAIRouter::UnassignTruck( DWORD dwTruckID )
 
         // clear its assignment to the building
         pTruck->SetDataDW( (DWORD)0 );
+        ReleaseTruckReservations( pTruck );  // free this truck's source claims
         pTruck->ClearParam( );
         pTruck->SetStatus( 0 );
 
@@ -1737,7 +2153,8 @@ BOOL CAIRouter::NeedsCommodities( CAIUnit* pCAIBldg )
                 }
                 else  // repair after constructed
                 {
-                    if ( pBldg->GetBldgMatRepair( i ) )
+                    // abandoned (exhausted mine): repairs never apply - don't request
+                    if ( !pBldg->IsFlag( CUnit::abandoned ) && pBldg->GetBldgMatRepair( i ) )
                         aiMatsNeeded[i] = pBldg->GetBldgMatRepair( i );
                 }
             }
@@ -1747,18 +2164,17 @@ BOOL CAIRouter::NeedsCommodities( CAIUnit* pCAIBldg )
     // is this a building under construction
     else if ( pCopyCBuilding->m_aiDataOut[CAI_ISCONSTRUCTING] )
     {
-        // get pointer to CStructureData copy data
-        CAICopy* pCopyCStructureData = pCAIBldg->GetCopyData( CAICopy::CStructureData );
-        if ( pCopyCStructureData == NULL )
-            return FALSE;
-
-        // go thru materials needed, and record needs
-        for ( int i = 0; i < CMaterialTypes::num_types; ++i )
+        // an UNDAMAGED partial needs its remaining BUILD materials - reading
+        // production inputs here kept such partials off the needs list forever
+        EnterCriticalSection( &cs );
+        CBuilding* pBldg = theBuildingMap.GetBldg( pCAIBldg->GetID( ) );
+        if ( pBldg != NULL )
         {
-            // update materials needed to produce materials
-            if ( pCopyCStructureData->m_aiDataIn[i] )
-                aiMatsNeeded[i] = pCopyCStructureData->m_aiDataIn[i];
+            for ( int i = 0; i < CMaterialTypes::num_build_types; ++i )
+                if ( pBldg->GetBldgMatReq( i, FALSE ) )
+                    aiMatsNeeded[i] = pBldg->GetBldgMatReq( i, FALSE );
         }
+        LeaveCriticalSection( &cs );
     }
     // building is built and running
     else if ( !pCopyCBuilding->m_aiDataOut[CAI_ISPAUSED] )
@@ -2128,6 +2544,29 @@ void CAIRouter::SetUnitPriority( CAIUnit* pCAIBldg )
         // if material is needed
         if ( pCAIBldg->GetParam( i ) )
         {
+            // validate the claim exactly like TrucksAreEnroute: a truck that is
+            // gone or re-tasked elsewhere is no claim at all. A false claim here
+            // silences this building's requests FOREVER (savegame19 carries such
+            // fossils - the sites that never built across every round).
+            DWORD dwClaim = pCAIBldg->GetParamDW( i );
+            if ( dwClaim )
+            {
+                CAIUnit* pClaimT = m_plUnits->GetUnit( dwClaim );
+                if ( pClaimT == NULL || pClaimT->GetDataDW( ) != pCAIBldg->GetID( ) )
+                {
+                    pCAIBldg->SetParamDW( i, 0 );  // stale/ghost claim
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+                    {
+                        char szG[112];
+                        sprintf( szG, "[GHOSTCLAIM] plyr %d bldg %lu mat %d truck %lu %s\n", m_iPlayer,
+                                 (unsigned long)pCAIBldg->GetID( ), i, (unsigned long)dwClaim,
+                                 ( pClaimT == NULL ) ? "gone" : "re-tasked" );
+                        OutputDebugStringA( szG );
+                    }
+#endif
+                }
+            }
+
             // is a truck assigned to transport it?
             if ( !pCAIBldg->GetParamDW( i ) )
                 bTruckStillNeeded = TRUE;
@@ -2302,6 +2741,12 @@ BOOL CAIRouter::UnloadMaterials( CAIUnit* pTruck, CAIUnit* pBldg )
     msg.m_dwIDDest = pBldg->GetID( );
     memset( msg.m_aiMat, 0, sizeof( msg.m_aiMat ) );
 
+    // continuous consumers (power/refinery/smelter) take the full load;
+    // everyone else takes only what they still need - surplus stays aboard
+    // (the router already prefers trucks that carry a needed commodity), so
+    // full-truck min-loads stop burying the world's materials in basements
+    BOOL bTakeAll = BuildingNeedsAlways( pBldg );
+
     // now go through the materials needed
     for ( int i = 0; i < CMaterialTypes::num_types; ++i )
     {
@@ -2310,6 +2755,8 @@ BOOL CAIRouter::UnloadMaterials( CAIUnit* pTruck, CAIUnit* pBldg )
         {
             // record this material quantity to be transferred
             msg.m_aiMat[i] = pCopyCVehicle->m_aiDataIn[i];
+            if ( !bTakeAll && msg.m_aiMat[i] > (int)pBldg->GetParam( i ) )
+                msg.m_aiMat[i] = pBldg->GetParam( i );
 
 #ifdef _LOGOUT
             logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC,
@@ -2346,8 +2793,20 @@ BOOL CAIRouter::UnloadMaterials( CAIUnit* pTruck, CAIUnit* pBldg )
     // send message to the game to cause the transfer
     theGame.PostToServer( (CNetCmd*)&msg, sizeof( CMsgTransMat ) );
 
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+    {
+        int iXfer = 0;
+        for ( int k = 0; k < CMaterialTypes::num_types; ++k ) iXfer += msg.m_aiMat[k];
+        char szU[112];
+        sprintf( szU, "[UNLOAD] plyr %d truck %lu bldg %lu xfer %d stillneeds %d\n", m_iPlayer,
+                 (unsigned long)pTruck->GetID( ), (unsigned long)pBldg->GetID( ), iXfer, (int)bStillNeeds );
+        OutputDebugStringA( szU );
+    }
+#endif
+
     // now unassign the truck
     pTruck->SetDataDW( 0 );
+    ReleaseTruckReservations( pTruck );  // free any residual source claims after delivery
     pTruck->ClearParam( );
     pTruck->SetStatus( 0 );
     // and add back to the available truck list
@@ -2423,12 +2882,44 @@ void CAIRouter::LoadMaterials( CAIUnit* pTruck, CAIHex* paiHex )
             if ( pCopyCBuilding == NULL )
                 continue;
 
+            // read the LIVE store, not the stale AI copy (empty-shuttle bug)
+            int iLiveHave = pCopyCBuilding->m_aiDataIn[i];
+            EnterCriticalSection( &cs );
+            CBuilding* pLive = theBuildingMap.GetBldg( paiHex->m_dwUnitID );
+            if ( pLive != NULL )
+                iLiveHave = pLive->GetStore( i );
+            LeaveCriticalSection( &cs );
+
             // get the lesser of what's needed vs. what's carried
-            int iQtyNeeded = min( pTruck->GetParam( i ), pCopyCBuilding->m_aiDataIn[i] );
+            int iQtyNeeded = min( pTruck->GetParam( i ), iLiveHave );
 
             // record this material quantity to be transferred
             msg.m_aiMat[i] = min( iQtyNeeded, iCapacity );
             iCapacity -= msg.m_aiMat[i];
+            if ( msg.m_aiMat[i] == 0 && pTruck->GetParam( i ) > 0 )
+            {
+                // empty at arrival: blacklist this (mat,src) with escalating
+                // duration (2/4/8 min) -- a permanently dry source (46 wasted
+                // trips/round measured) shouldn't be re-picked at a fixed pace
+                std::pair<int, DWORD> keyE = std::make_pair( i, paiHex->m_dwUnitID );
+                int iStrikes = ++m_mEmptyStrikes[keyE];
+                if ( iStrikes > 3 ) iStrikes = 3;
+                m_mEmptyUntil[keyE] = theGame.GettimeGetTime( ) + ( 120 << ( iStrikes - 1 ) ) * 1000;
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+                {
+                    char szR[128];
+                    sprintf( szR, "[XFER-EMPTY] plyr %d truck %lu src %lu mat %d wanted %d livehad %d strikes %d\n",
+                             m_iPlayer, (unsigned long)pTruck->GetID( ), (unsigned long)pBldg->GetID( ), i,
+                             (int)pTruck->GetParam( i ), iLiveHave, iStrikes );
+                    OutputDebugStringA( szR );
+                }
+#endif
+            }
+            else if ( msg.m_aiMat[i] > 0 )
+            {
+                // source delivered again -> forgive its strike history
+                m_mEmptyStrikes.erase( std::make_pair( i, paiHex->m_dwUnitID ) );
+            }
 
 #ifdef _LOGOUT
             logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC,
@@ -2438,6 +2929,9 @@ void CAIRouter::LoadMaterials( CAIUnit* pTruck, CAIHex* paiHex )
                        "CAIRouter::truck wanted %d, source building had %d, capacity left %d ", pTruck->GetParam( i ),
                        pCopyCBuilding->m_aiDataIn[i], iCapacity );
 #endif
+
+            // pickup consumes this source's reservation regardless of the amount actually loaded
+            ReleaseMaterial( i, paiHex->m_dwUnitID, pTruck->GetParam( i ) );
 
             // clear the truck so that it can be directed to
             // the next source building destination
@@ -2449,12 +2943,43 @@ void CAIRouter::LoadMaterials( CAIUnit* pTruck, CAIHex* paiHex )
     // send message to the game to cause the transfer to occur
     theGame.PostToServer( (CNetCmd*)&msg, sizeof( CMsgTransMat ) );
 
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+    {
+        int iLoaded = 0, iMatch = 0, iWantSum = 0;
+        unsigned long ulSrc1 = 0, ulSrc2 = 0;
+        for ( int k = 0; k < CMaterialTypes::num_types; ++k )
+        {
+            iLoaded += msg.m_aiMat[k];
+            if ( pTruck->GetParamDW( k ) == paiHex->m_dwUnitID ) { iMatch++; iWantSum += pTruck->GetParam( k ); }
+            if ( pTruck->GetParamDW( k ) )
+            {
+                if ( !ulSrc1 ) ulSrc1 = pTruck->GetParamDW( k );
+                else if ( !ulSrc2 && pTruck->GetParamDW( k ) != ulSrc1 ) ulSrc2 = pTruck->GetParamDW( k );
+            }
+        }
+        char szL[176];
+        sprintf( szL, "[LOADMAT] plyr %d truck %lu atbldg %lu dest %lu loaded %d match %d want %d moresrc %d rem %lu,%lu\n",
+                 m_iPlayer, (unsigned long)pTruck->GetID( ), (unsigned long)paiHex->m_dwUnitID,
+                 (unsigned long)pTruck->GetDataDW( ), iLoaded, iMatch, iWantSum, (int)bMoreSources, ulSrc1, ulSrc2 );
+        OutputDebugStringA( szL );
+    }
+#endif
+
 
     // if all sources have been visited, then it is time to go
     // to the building with the needed materials
     if ( !bMoreSources )
     {
         pBldg = m_plUnits->GetUnit( pTruck->GetDataDW( ) );
+        if ( pBldg == NULL )
+        {
+            // dest died in transit: release the truck or it parks IN_USE forever
+            ReleaseTruckReservations( pTruck );
+            pTruck->SetStatus( 0 );
+            pTruck->SetDataDW( 0 );
+            pTruck->ClearParam( );
+            return;
+        }
         if ( pBldg != NULL )
         {
             CHexCoord hex( 0, 0 );
@@ -2462,9 +2987,33 @@ void CAIRouter::LoadMaterials( CAIUnit* pTruck, CAIHex* paiHex )
 
             if ( !hex.X( ) && !hex.Y( ) )
             {
-                pTruck->SetStatus( 0 );  // truck is no longer assigned
-                pTruck->SetDataDW( 0 );
+                // no exit hex: full vanilla release - clear the dest building's
+                // claim markers (or SetUnitPriority never re-raises it) and
+                // return the truck to the pool
+                UnassignTrucks( pTruck->GetID( ) );
+                UnassignTruck( pTruck->GetID( ) );
                 return;
+            }
+
+            // truck already standing at that exit: ordering it there again is
+            // the stale-arrival echo (order -> instant arrival -> stale handle
+            // -> re-order at ~1Hz; backlog starved plyr 3's whole AI thread).
+            // The genuine arrival for this hex is already queued - let it drive.
+            {
+                CHexCoord hexLive( 0, 0 );
+                pGameData->GetVehicleHex( pTruck->GetID( ), hexLive );
+                if ( hexLive == hex )
+                {
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+                    {
+                        char szE[96];
+                        sprintf( szE, "[ECHOSKIP] plyr %d truck %lu already at %d,%d\n", m_iPlayer,
+                                 (unsigned long)pTruck->GetID( ), hex.X( ), hex.Y( ) );
+                        OutputDebugStringA( szE );
+                    }
+#endif
+                    return;
+                }
             }
 
             pTruck->SetDestination( hex );
@@ -2504,6 +3053,8 @@ void CAIRouter::LoadMaterials( CAIUnit* pTruck, CAIHex* paiHex )
             pBldg = m_plUnits->GetUnit( pTruck->GetParamDW( i ) );
             if ( pBldg == NULL )
             {
+                // source vanished before pickup - drop its reservation too
+                ReleaseMaterial( i, pTruck->GetParamDW( i ), pTruck->GetParam( i ) );
                 pTruck->SetParamDW( i, 0 );
                 continue;
             }
@@ -2576,6 +3127,19 @@ void CAIRouter::LoadMaterials( CAIUnit* pTruck, CAIHex* paiHex )
                    "CAIRouter::player %d transport truck %ld enroute to source building %ld \n", m_iPlayer,
                    pTruck->GetID( ), pBestBldg->GetID( ) );
 #endif
+    }
+    else
+    {
+        // no pickable source left (drained/vanished): drop the dead claims and
+        // deliver what's aboard - falling out here stranded the truck IN the source
+        for ( int i = 0; i < CMaterialTypes::num_types; ++i )
+        {
+            if ( !pTruck->GetParamDW( i ) )
+                continue;
+            ReleaseMaterial( i, pTruck->GetParamDW( i ), pTruck->GetParam( i ) );
+            pTruck->SetParamDW( i, 0 );
+        }
+        ResumeTruck( pTruck, paiHex->m_iX, paiHex->m_iY );
     }
 }
 
@@ -2686,6 +3250,9 @@ void CAIRouter::Load( CArchive& ar, CAIUnitList* plUnits )
     // newly loaded units
     m_plUnits = plUnits;
 
+    m_mReserved.clear( );  // reservation ledger is runtime-only; rebuilt from live trucks after load
+    m_iReserveSweep = 0;
+
     // first get the player id
     try
     {
@@ -2795,6 +3362,14 @@ void CAIRouter::Load( CArchive& ar, CAIUnitList* plUnits )
         if ( pUnit != NULL )
             m_plBldgsNeed->AddTail( (CObject*)pUnit );
     }
+
+    // the needs list is a CACHE of NeedsCommodities over live buildings. The
+    // saved copy is a stale snapshot: a site absent at save time (e.g. its
+    // request was claim-suppressed) is unreachable by every downstream heal
+    // FOREVER - savegame19's fossil sites that never built across any round.
+    // Rebuild from live state; NeedsCommodities also recomputes honest wants.
+    m_plBldgsNeed->RemoveAll( );
+    GetBuildingNeeding( );
 }
 
 // end of CAIRoute.cpp

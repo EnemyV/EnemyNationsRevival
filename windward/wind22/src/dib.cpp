@@ -12,6 +12,10 @@
 #pragma intrinsic( memcpy )
 
 #include "dib.h"
+#include "mfc_compat_text.h"  // Phase 6 Stage 5 Phase C: GetDC/ReleaseDC register
+#include "en_gdi_audit.h"     // Phase 6 Stage 5a: TEMP GDI liveness instrumentation
+
+#include <SDL.h>  // Phase 6 Stage 0: DIB_SDL_SURFACE backing
 
 #ifdef _DEBUG
 #undef THIS_FILE
@@ -58,7 +62,7 @@ CDIB::CDIB(
     m_eType( eType ),
     m_iDir( eDirection ),
     m_pBits( NULL ),
-    m_pddsurfaceBack( NULL ),
+    m_psdlsurfaceBack( NULL ),
     m_hDCDib( NULL ),
     m_hOrigBm( NULL ),
     m_hTextBm( NULL ),
@@ -75,32 +79,13 @@ CDIB::CDIB(
             m_ptrwing = ptrtheWinG;
 
         break;
-
-    case CBLTFormat::DIB_DIRECTDRAW:
-
-
-        if ( !CDirectDraw::GetTheDirectDraw( ) )
-        {
-#ifdef LOGGINGON
-            OutputDebugStringA( "Can't direct draw!!\n" );
-#endif
-            m_eType = CBLTFormat::DIB_MEMORY;
-        }
-        else
-        {
-#ifdef LOGGINGON
-            OutputDebugStringA( "Setting DD pointer\n" );
-#endif
-            m_ptrdirectdraw = ptrtheDirectDraw;
-        }
-
-        break;
     }
 
     switch ( GetType() ) {
     case CBLTFormat::DIB_DIBSECTION:
     case CBLTFormat::DIB_MEMORY:
 
+        EN_GDI_PROBE( "dib:ctor-CreateCompatibleDC" );
         m_hDCDib = CreateCompatibleDC( NULL );
 
         break;
@@ -146,8 +131,8 @@ CDIB::~CDIB() {
         DeleteDC( m_hDCDib );
     }
 
-    if ( m_pddsurfaceBack )
-        m_pddsurfaceBack->Release();
+    if ( m_psdlsurfaceBack )
+        SDL_FreeSurface( m_psdlsurfaceBack );
 
     if ( m_pBits && CBLTFormat::DIB_MEMORY == GetType() )
         delete[] m_pBits;
@@ -294,77 +279,6 @@ BOOL CDIB::Resize( int cx, int cy ) {
         break;
     }
 
-    case CBLTFormat::DIB_DIRECTDRAW:
-
-        //
-        // create an off-screen surface
-        //
-
-#ifdef LOGGINGON
-        OutputDebugStringA( "DIB_DIRECTDRAW\n" );
-#endif
-
-        if ( m_pddsurfaceBack ) {
-            
-            LPDIRECTDRAWSURFACE surface = GetDDSurface( );
-            ASSERT( surface );
-            if ( surface )
-            {
-                m_hRes = surface->Release( );
-
-                m_pddsurfaceBack = NULL;
-
-                if ( FAILED( m_hRes ) )
-                {
-                    TRACE( "Off-screen surface release failed." );
-
-                    return FALSE;
-                }
-            }
-            else
-            {
-                return false;
-            }
-        }
-
-        memset( &m_ddOffSurfDesc, 0, sizeof( DDSURFACEDESC ) );
-
-        m_ddOffSurfDesc.dwSize = sizeof( DDSURFACEDESC );
-        m_ddOffSurfDesc.dwFlags        = DDSD_CAPS | DDSD_HEIGHT | DDSD_WIDTH;
-        m_ddOffSurfDesc.ddsCaps.dwCaps = DDSCAPS_OFFSCREENPLAIN | DDSCAPS_SYSTEMMEMORY;
-       // m_ddOffSurfDesc.ddsCaps.dwCaps = DDSCAPS_OFFSCREENPLAIN | DDSCAPS_VIDEOMEMORY; // video memory is an issue?
-        m_ddOffSurfDesc.dwWidth = GetWidth();
-        m_ddOffSurfDesc.dwHeight = GetHeight();
-
-
-        
-#ifdef LOGGINGON
-        OutputDebugStringA( "create surface\n" );
-#endif
-
-        m_hRes = CDirectDraw::GetTheDirectDraw()->GetDD()->CreateSurface( &m_ddOffSurfDesc, 
-            &m_pddsurfaceBack, NULL );
-
-        if ( FAILED( m_hRes ) ) {
-            TRACE( "Off-screen surface create failed." );
-
-            return FALSE;
-        }
-
-        //
-        // get a full description of the surface
-        //
-
-        m_hRes = m_pddsurfaceBack->GetSurfaceDesc( &m_ddOffSurfDesc );
-
-        if ( FAILED( m_hRes ) ) {
-            TRACE( "Off-screen Surface GetSurfaceDesc failed." );
-
-            return FALSE;
-        }
-
-        break;
-
     case CBLTFormat::DIB_MEMORY:
 
 #ifdef LOGGINGON
@@ -375,9 +289,43 @@ BOOL CDIB::Resize( int cx, int cy ) {
 
         break;
 
+    case CBLTFormat::DIB_SDL_SURFACE:
+
+        // Phase 6: long-lived SDL_Surface backing. 32-bit BGRX (RGB888) to
+        // match the screen/bridge format. Allocated once, freed + recreated
+        // on resize, freed in dtor. m_pBits/m_lPitch point into the surface
+        // so the raw-pointer callers (GetBits/GetPitch/GetOffset) keep working.
+
+        // SDL surfaces are physically top-down. Force direction to match the
+        // storage so GetRow()/GetOffset() compute offsets that land in the
+        // correct memory rows. CBLTFormat::Init() does the same for the
+        // global default; this handles any caller that constructs an
+        // SDL-backed CDIB with DIR_BOTTOMUP explicitly. m_lPitch /
+        // m_lDirPitch are recomputed below.
+        m_iDir = CBLTFormat::DIR_TOPDOWN;
+        m_bmi.hdr.biHeight = m_cy * m_iDir;
+
+        if ( m_psdlsurfaceBack ) {
+            SDL_FreeSurface( m_psdlsurfaceBack );
+            m_psdlsurfaceBack = NULL;
+            m_pBits = NULL;
+        }
+
+        m_psdlsurfaceBack = SDL_CreateRGBSurfaceWithFormat(
+            0, m_cx, m_cy, 32, SDL_PIXELFORMAT_RGB888 );
+
+        if ( !m_psdlsurfaceBack ) {
+            TRACE( "SDL_CreateRGBSurfaceWithFormat failed." );
+            return FALSE;
+        }
+
+        m_pBits = (BYTE*)m_psdlsurfaceBack->pixels;
+
+        break;
+
     }
 
-    if ( CBLTFormat::DIB_MEMORY != GetType() && hbm == NULL && m_pddsurfaceBack == NULL )
+    if ( CBLTFormat::DIB_MEMORY != GetType() && hbm == NULL && m_psdlsurfaceBack == NULL )
         return FALSE;
 
     if ( 1 == GetBytesPerPixel() ) {
@@ -388,8 +336,8 @@ BOOL CDIB::Resize( int cx, int cy ) {
             m_bmi.hdr.biClrImportant = 256;
     }
 
-    if ( CBLTFormat::DIB_DIRECTDRAW == GetType() )
-        m_lPitch = m_ddOffSurfDesc.lPitch;
+    if ( CBLTFormat::DIB_SDL_SURFACE == GetType() )
+        m_lPitch = m_psdlsurfaceBack->pitch;
     else
         m_lPitch = ( GetBytesPerPixel() * m_bmi.hdr.biWidth + 3 ) & ~3;
 
@@ -415,23 +363,19 @@ BOOL CDIB::Lock() {
     m_iLock++;
 
     switch ( GetType() ) {
-    case CBLTFormat::DIB_DIRECTDRAW:
+    case CBLTFormat::DIB_SDL_SURFACE:
 
-        ASSERT_STRICT( m_pddsurfaceBack );
-        ASSERT( m_pddsurfaceBack );
+        // Software surface: SDL_MUSTLOCK is false, so the lock is a no-op and
+        // the pixel pointer is valid for the surface's lifetime. m_pBits was
+        // set in Resize and persists; refresh it defensively.
+        if ( !m_psdlsurfaceBack )
+            return FALSE;
 
-        if ( m_pBits )
-            return TRUE;
+        if ( SDL_MUSTLOCK( m_psdlsurfaceBack ) )
+            SDL_LockSurface( m_psdlsurfaceBack );
 
-        m_hRes = GetDDSurface()->Lock( 0, &m_ddOffSurfDesc, DDLOCK_SURFACEMEMORYPTR | DDLOCK_WAIT, 0 );
-
-        if ( SUCCEEDED( m_hRes ) ) {
-            m_pBits = (LPBYTE)m_ddOffSurfDesc.lpSurface;
-
-            return TRUE;
-        }
-
-        return FALSE;
+        m_pBits = (BYTE*)m_psdlsurfaceBack->pixels;
+        return TRUE;
 
     case CBLTFormat::DIB_WING:
     case CBLTFormat::DIB_DIBSECTION:
@@ -453,18 +397,13 @@ BOOL CDIB::Unlock() {
 
     m_iLock--;
 
-    if ( CBLTFormat::DIB_DIRECTDRAW == GetType() ) {
-        if ( m_pBits ) {
-            m_hRes = GetDDSurface()->Unlock( m_pBits );
+    if ( CBLTFormat::DIB_SDL_SURFACE == GetType() ) {
+        // Mirror of Lock: no-op for a software surface. Keep m_pBits valid
+        // (the pixel pointer survives the unlock), unlike the DD path.
+        if ( m_psdlsurfaceBack && SDL_MUSTLOCK( m_psdlsurfaceBack ) )
+            SDL_UnlockSurface( m_psdlsurfaceBack );
 
-            if ( SUCCEEDED( m_hRes ) ) {
-                m_pBits = 0;
-
-                return TRUE;
-            }
-        }
-
-        return FALSE;
+        return TRUE;
     }
 
     return TRUE;
@@ -498,11 +437,7 @@ void CDIB::Clear( CRect const* prect, /* NULL means the entire window*/ int iPal
 
     if ( 0 == iPaletteIndex || 1 == GetBytesPerPixel() ) {
         if ( prect == NULL ) {
-            if ( CBLTFormat::DIB_DIRECTDRAW != GetType() ||
-                 m_ddOffSurfDesc.lPitch == (LONG)m_ddOffSurfDesc.dwWidth )
-
-                memset( pbyDst, iPaletteIndex, m_bmi.hdr.biSizeImage );
-
+            memset( pbyDst, iPaletteIndex, m_bmi.hdr.biSizeImage );
             return;
         }
 
@@ -658,6 +593,7 @@ CDIB::NewPalette(
 //-------------------------------------------------------------------------
 int CDIB::BitBlt( HDC hdcDst, CRect const& rectDst, CPoint const& ptSrc ) {
     ASSERT_STRICT_VALID( this );
+    EN_GDI_PROBE( "dib:CDIB->HDC-BitBlt" );
 
     CDIBits bits = GetBits();
 
@@ -674,44 +610,6 @@ int CDIB::BitBlt( HDC hdcDst, CRect const& rectDst, CPoint const& ptSrc ) {
 
         return ::BitBlt( hdcDst, rectDst.left, rectDst.top, rectDst.Width( ), rectDst.Height( ), m_hDCDib,
                          ptSrcAdjusted.x, ptSrcAdjusted.y, SRCCOPY );
-
-    case CBLTFormat::DIB_DIRECTDRAW:{        
-        /*
-        TRAP();
-
-        ASSERT_STRICT( 0 ); // FIXIT: Implement
-
-        return 0;
-        */
-
-        // this was literally not implemented... why??
-        // im pretty sure that wind22 is not the latest code
-
-        // Use the DirectDraw surface's HDC to BitBlt into the destination DC.
-        // This mirrors the logic used in CDIB::GetDC()/ReleaseDC() where the
-        // surface supplies an HDC for GDI operations.
-        if ( !m_pddsurfaceBack )
-            return 0;
-
-        // Adjust for top-down vs bottom-up like the memory case
-        if ( !IsTopDown( ) )
-            ptSrcAdjusted.y += GetHeight( ) - ptSrcAdjusted.y - ptSrcAdjusted.y - rectDst.Height( );
-
-        HDC     hdcSrc = NULL;
-        HRESULT hr     = m_pddsurfaceBack->GetDC( &hdcSrc );
-        if ( FAILED( hr ) || hdcSrc == NULL )
-            return 0;
-
-        // Perform BitBlt from surface HDC to destination HDC.
-        // We use SRCCOPY to match other cases.
-        int iRet = ::BitBlt( hdcDst, rectDst.left, rectDst.top, rectDst.Width( ), rectDst.Height( ), hdcSrc,
-                             ptSrcAdjusted.x, ptSrcAdjusted.y, SRCCOPY );
-
-        // Release the DC back to the DirectDraw surface.
-        m_pddsurfaceBack->ReleaseDC( hdcSrc );
-
-        return iRet;
-    }
 
     case CBLTFormat::DIB_MEMORY:
 
@@ -756,8 +654,9 @@ int CDIB::BitBlt( HDC hdcDst, CRect const& rectDst, CPoint const& ptSrc ) {
 //-------------------------------------------------------------------------
 // CDIB::StretchBlt
 //-------------------------------------------------------------------------
-int CDIB::StretchBlt( HDC hdcDst, CRect const& rectDst, CRect const& rectSrc ) { 
+int CDIB::StretchBlt( HDC hdcDst, CRect const& rectDst, CRect const& rectSrc ) {
     ASSERT_STRICT_VALID( this );
+    EN_GDI_PROBE( "dib:CDIB->HDC-StretchBlt" );
 
     CDIBits bits = GetBits();
 
@@ -792,14 +691,6 @@ int CDIB::StretchBlt( HDC hdcDst, CRect const& rectDst, CRect const& rectSrc ) {
                              rectSrcAdjusted.Width(),
                              rectSrcAdjusted.Height(),
                              SRCCOPY );
-
-    case CBLTFormat::DIB_DIRECTDRAW:
-
-        TRAP();
-
-        ASSERT_STRICT( 0 ); // FIXIT: Implement
-
-        return 0;
 
     default:
 
@@ -1031,6 +922,20 @@ BOOL CDIB::BitBlt( CDIB* pdibDst, CRect const& rectDst, CPoint const& ptSrc ) {
     if ( rectDstClipped.IsRectEmpty() )
         return TRUE;
 
+    // Phase 6 Stage 1: SDL fast path when both src and dst are SDL-backed.
+    // Same-class private access to peer's m_psdlsurfaceBack; the public
+    // GetSDLSurface() accessor lands in Stage 2.
+    if ( CBLTFormat::DIB_SDL_SURFACE == GetType()
+      && CBLTFormat::DIB_SDL_SURFACE == pdibDst->GetType() ) {
+        SDL_Rect srcRect = { rectSrcClipped.left, rectSrcClipped.top,
+                             rectSrcClipped.Width(), rectSrcClipped.Height() };
+        SDL_Rect dstRect = { rectDstClipped.left, rectDstClipped.top,
+                             rectDstClipped.Width(), rectDstClipped.Height() };
+        SDL_BlitSurface( m_psdlsurfaceBack, &srcRect,
+                         pdibDst->m_psdlsurfaceBack, &dstRect );
+        return TRUE;
+    }
+
     // BLT it
 
     CDIBits bitsDst = pdibDst->GetBits();
@@ -1045,94 +950,16 @@ BOOL CDIB::BitBlt( CDIB* pdibDst, CRect const& rectDst, CPoint const& ptSrc ) {
     int iSrcAdd = GetDirPitch() - iWBytes;
     int iDstAdd = pdibDst->GetDirPitch() - iWBytes;
 
-    int iNumDword = iWBytes / 4;
-    int iNumBytes = iWBytes & 3;
-
+    // x64 port: the per-remainder asm blit (rep movsd + 1/2/3 tail bytes,
+    // switched on iWBytes & 3) collapses to a portable per-row memcpy. Each
+    // row copies iWBytes and advances by the full pitch (iWBytes + iSrcAdd /
+    // iDstAdd) — exactly what the asm did. memcpy vectorizes at least as well
+    // as rep movsd, so there is no speed loss.
     try {
-        switch ( iNumBytes ) {
-        case 0:
-            _asm
-            {
-                mov  esi, pbySrc
-                mov  edi, pbyDst
-                mov  edx, iH
-
-                DoNextLine0 :
-                mov  ecx, iNumDword
-                    rep  movsd
-
-                    add  esi, iSrcAdd
-                    add  edi, iDstAdd
-                    dec  edx
-                    jnz  DoNextLine0
-            }
-            return TRUE;
-
-        case 1:
-            iSrcAdd++;  // extra byte to move
-            iDstAdd++;
-
-            _asm
-            {
-                mov  esi, pbySrc
-                mov  edi, pbyDst
-                mov  edx, iH
-
-                DoNextLine1 :
-                mov  ecx, iNumDword
-                    rep  movsd
-                    mov  al, [esi]
-                    mov[edi], al
-
-                    add  esi, iSrcAdd
-                    add  edi, iDstAdd
-                    dec  edx
-                    jnz  DoNextLine1
-            }
-            return TRUE;
-
-        case 2:
-            iSrcAdd += 2;  // extra word to move
-            iDstAdd += 2;
-
-            _asm
-            {
-                mov  esi, pbySrc
-                mov  edi, pbyDst
-                mov  edx, iH
-
-                DoNextLine2 :
-                mov  ecx, iNumDword
-                    rep  movsd
-                    mov  ax, [esi]
-                    mov[edi], ax
-
-                    add  esi, iSrcAdd
-                    add  edi, iDstAdd
-                    dec  edx
-                    jnz  DoNextLine2
-            }
-            return TRUE;
-
-        case 3:
-            _asm
-            {
-                mov  esi, pbySrc
-                mov  edi, pbyDst
-                mov  edx, iH
-
-                DoNextLine3 :
-                mov  ecx, iNumDword
-                    rep  movsd
-                    movsw
-                    movsb
-
-                    add  esi, iSrcAdd
-                    add  edi, iDstAdd
-                    dec  edx
-                    jnz  DoNextLine3
-            }
-            return TRUE;
+        for ( int y = 0; y < iH; ++y ) {
+            memcpy( pbyDst, pbySrc, iWBytes );
+            pbySrc += iWBytes + iSrcAdd;
+            pbyDst += iWBytes + iDstAdd;
         }
     }
 
@@ -1172,6 +999,19 @@ BOOL CDIB::StretchBlt( CDIB* pdibDst, CRect const& rectDst, CRect const& rectSrc
     // return if nothing to do
     if ( rectDstClip.IsRectEmpty() )
         return TRUE;
+
+    // Phase 6 Stage 1: SDL fast path for stretched blit. SDL_BlitScaled
+    // does its own proportional clipping; pass the unclipped rects.
+    if ( CBLTFormat::DIB_SDL_SURFACE == GetType()
+      && CBLTFormat::DIB_SDL_SURFACE == pdibDst->GetType() ) {
+        SDL_Rect srcRect = { rectSrc.left, rectSrc.top,
+                             rectSrc.Width(), rectSrc.Height() };
+        SDL_Rect dstRect = { rectDst.left, rectDst.top,
+                             rectDst.Width(), rectDst.Height() };
+        SDL_BlitScaled( m_psdlsurfaceBack, &srcRect,
+                        pdibDst->m_psdlsurfaceBack, &dstRect );
+        return TRUE;
+    }
 
     // Calc scale using pre-clipped rects
 
@@ -1229,21 +1069,15 @@ BOOL CDIB::StretchBlt( CDIB* pdibDst, CRect const& rectDst, CRect const& rectSrc
                 // VT FIXME why was there a trap here??
                 // // it triggers when 8bit is used
                // TRAP();
-                _asm
+                // x64 port: 8-bit stretched row. Sample the source row at the
+                // scaled U positions (fixDU is the 16.16 source-pixels-per-dest
+                // step). Faithful to the asm, the accumulator starts at fixDU.
                 {
-                    mov  edi, [pbyDst]
-                    mov  ecx, [iNum]
-                    mov  ebx, [pbySrcLine]
-                    mov  edx, [fixDU]
-                    _doline:
-                    mov  esi, edx
-                        shr  esi, 16
-                        mov  al, [esi + ebx]
-                        mov[edi], al
-                        add  edx, [fixDU]
-                        inc  edi
-                        dec  ecx
-                        jnz  _doline
+                    int fixUAcc = fixDU;
+                    for ( int n = 0; n < iNum; ++n ) {
+                        pbyDst[n] = pbySrcLine[ fixUAcc >> 16 ];
+                        fixUAcc += fixDU;
+                    }
                 }
 
                 break;
@@ -1309,6 +1143,23 @@ BOOL CDIB::StretchTranBlt( CDIB* pdibDst, CRect const& rectDst, CRect const& rec
     // return if nothing to do
     if ( rectDstClip.IsRectEmpty() )
         return TRUE;
+
+    // Phase 6 Stage 1: SDL fast path for stretched tran-blit. Colorkey
+    // set per-blit and cleared after (hygiene per plan). SDL_BlitScaled
+    // does its own proportional clipping.
+    if ( CBLTFormat::DIB_SDL_SURFACE == GetType()
+      && CBLTFormat::DIB_SDL_SURFACE == pdibDst->GetType() ) {
+        Uint32 key = (Uint32)thePal.GetDeviceColor( iTransColor, GetBitsPerPixel() );
+        SDL_SetColorKey( m_psdlsurfaceBack, SDL_TRUE, key );
+        SDL_Rect srcRect = { rectSrc.left, rectSrc.top,
+                             rectSrc.Width(), rectSrc.Height() };
+        SDL_Rect dstRect = { rectDst.left, rectDst.top,
+                             rectDst.Width(), rectDst.Height() };
+        SDL_BlitScaled( m_psdlsurfaceBack, &srcRect,
+                        pdibDst->m_psdlsurfaceBack, &dstRect );
+        SDL_SetColorKey( m_psdlsurfaceBack, SDL_FALSE, 0 );
+        return TRUE;
+    }
 
     // Calc scale using pre-clipped rects
 
@@ -1497,6 +1348,23 @@ BOOL CDIB::TranBlt( CDIB* pdibDst, CRect const& rectDst, CPoint const& ptSrc, in
     if ( rectDstClip.IsRectEmpty() )
         return TRUE;
 
+    // Phase 6 Stage 1: SDL fast path for TranBlt. Colorkey set per-blit
+    // and cleared after — hygiene per plan: don't leave the key sticky on
+    // a surface that could be a blit destination later.
+    if ( CBLTFormat::DIB_SDL_SURFACE == GetType()
+      && CBLTFormat::DIB_SDL_SURFACE == pdibDst->GetType() ) {
+        Uint32 key = (Uint32)thePal.GetDeviceColor( iTransColor, GetBitsPerPixel() );
+        SDL_SetColorKey( m_psdlsurfaceBack, SDL_TRUE, key );
+        SDL_Rect srcRect = { rectSrcClip.left, rectSrcClip.top,
+                             rectSrcClip.Width(), rectSrcClip.Height() };
+        SDL_Rect dstRect = { rectDstClip.left, rectDstClip.top,
+                             rectDstClip.Width(), rectDstClip.Height() };
+        SDL_BlitSurface( m_psdlsurfaceBack, &srcRect,
+                         pdibDst->m_psdlsurfaceBack, &dstRect );
+        SDL_SetColorKey( m_psdlsurfaceBack, SDL_FALSE, 0 );
+        return TRUE;
+    }
+
     // Blit
 
     CDIBits bitsSrc = GetBits();
@@ -1516,31 +1384,20 @@ BOOL CDIB::TranBlt( CDIB* pdibDst, CRect const& rectDst, CPoint const& ptSrc, in
         int iSrcLineAdd = GetDirPitch() - iNumPixels;
         int iDestLineAdd = pdibDst->GetDirPitch() - iNumPixels;
 
-        _asm
+        // x64 port: 8-bit transparent blit. Copy each source pixel unless it is
+        // the transparent index (0xFD); advance one full pitch per row.
         {
-            mov  esi, pbySrcLine
-            mov  edi, pbyDstLine
-            mov  edx, iNumLines
-
-            DoNextLine :
-            mov  ecx, iNumPixels
-
-                DoLine :
-            mov  al, byte ptr[esi]
-                inc  esi
-                cmp  al, 0FDh
-                je  IsTran
-                mov[edi], al
-                IsTran :
-            inc  edi
-
-                dec  ecx
-                jnz  DoLine
-
-                add  esi, iSrcLineAdd
-                add  edi, iDestLineAdd
-                dec  edx
-                jnz  DoNextLine
+            BYTE* pSrc = pbySrcLine;
+            BYTE* pDst = pbyDstLine;
+            for ( int y = 0; y < iNumLines; ++y ) {
+                for ( int x = 0; x < iNumPixels; ++x ) {
+                    BYTE by = pSrc[x];
+                    if ( by != 0xFD )
+                        pDst[x] = by;
+                }
+                pSrc += iNumPixels + iSrcLineAdd;
+                pDst += iNumPixels + iDestLineAdd;
+            }
         }
         break;
     }
@@ -1553,32 +1410,23 @@ BOOL CDIB::TranBlt( CDIB* pdibDst, CRect const& rectDst, CPoint const& ptSrc, in
         // in 16-bit mode the transparent color can have several values
         DWORD  dwTransColor = thePal.GetDeviceColor( iTransColor, GetBitsPerPixel() );
 
-        _asm
+        // x64 port: 16-bit transparent blit. Skip pixels matching the device
+        // transparent color; advance one full pitch per row.
         {
-            mov  esi, pbySrcLine
-            mov  edi, pbyDstLine
-            mov  edx, iNumLines
-            mov  ebx, dwTransColor
-
-            DoNextLine2 :
-            mov  ecx, iNumPixels
-
-                DoLine2 :
-            mov  eax, [esi]
-                add  esi, 2
-                cmp  ax, bx
-                je  IsTran2
-                mov[edi], ax
-                IsTran2 :
-            add  edi, 2
-
-                dec  ecx
-                jnz  DoLine2
-
-                add  esi, iSrcLineAdd
-                add  edi, iDestLineAdd
-                dec  edx
-                jnz  DoNextLine2
+            WORD  wTran = (WORD)dwTransColor;
+            BYTE* pSrc = pbySrcLine;
+            BYTE* pDst = pbyDstLine;
+            for ( int y = 0; y < iNumLines; ++y ) {
+                WORD* s = (WORD*)pSrc;
+                WORD* d = (WORD*)pDst;
+                for ( int x = 0; x < iNumPixels; ++x ) {
+                    WORD w = s[x];
+                    if ( w != wTran )
+                        d[x] = w;
+                }
+                pSrc += iNumPixels * 2 + iSrcLineAdd;
+                pDst += iNumPixels * 2 + iDestLineAdd;
+            }
         }
         break;
     }
@@ -1588,35 +1436,24 @@ BOOL CDIB::TranBlt( CDIB* pdibDst, CRect const& rectDst, CPoint const& ptSrc, in
         int iSrcLineAdd = GetDirPitch() - iNumPixels * 3;
         int iDestLineAdd = pdibDst->GetDirPitch() - iNumPixels * 3;
 
-        _asm
+        // x64 port: 24-bit transparent blit. Transparent color is 0xFF00FF;
+        // copy the 3 source bytes per opaque pixel, one full pitch per row.
         {
-            mov  esi, pbySrcLine
-            mov  edi, pbyDstLine
-            mov  edx, iNumLines
-
-            DoNextLine3 :
-            mov  ecx, iNumPixels
-
-                DoLine3 :
-            mov  eax, [esi]
-                add  esi, 3
-                and eax, 0FFFFFFh
-                cmp  eax, 0FF00FFh
-                je  IsTran3
-                mov  ebx, [edi]
-                and ebx, 0FF000000h
-                or ebx, eax
-                mov[edi], eax
-                IsTran3 :
-            add  edi, 3
-
-                dec  ecx
-                jnz  DoLine3
-
-                add  esi, iSrcLineAdd
-                add  edi, iDestLineAdd
-                dec  edx
-                jnz  DoNextLine3
+            BYTE* pSrc = pbySrcLine;
+            BYTE* pDst = pbyDstLine;
+            for ( int y = 0; y < iNumLines; ++y ) {
+                BYTE* s = pSrc;
+                BYTE* d = pDst;
+                for ( int x = 0; x < iNumPixels; ++x ) {
+                    DWORD px = (DWORD)s[0] | ( (DWORD)s[1] << 8 ) | ( (DWORD)s[2] << 16 );
+                    if ( px != 0x00FF00FF ) {
+                        d[0] = s[0]; d[1] = s[1]; d[2] = s[2];
+                    }
+                    s += 3; d += 3;
+                }
+                pSrc += iNumPixels * 3 + iSrcLineAdd;
+                pDst += iNumPixels * 3 + iDestLineAdd;
+            }
         }
         break;
     }
@@ -1626,31 +1463,22 @@ BOOL CDIB::TranBlt( CDIB* pdibDst, CRect const& rectDst, CPoint const& ptSrc, in
         int iSrcLineAdd = GetDirPitch() - iNumPixels * 4;
         int iDestLineAdd = pdibDst->GetDirPitch() - iNumPixels * 4;
 
-        _asm
+        // x64 port: 32-bit transparent blit. Transparent color is 0xFF00FF;
+        // copy the source dword per opaque pixel, one full pitch per row.
         {
-            mov  esi, pbySrcLine
-            mov  edi, pbyDstLine
-            mov  edx, iNumLines
-
-            DoNextLine4 :
-            mov  ecx, iNumPixels
-
-                DoLine4 :
-            mov  eax, [esi]
-                add  esi, 4
-                cmp  eax, 0FF00FFh
-                je  IsTran4
-                mov[edi], eax
-                IsTran4 :
-            add  edi, 4
-
-                dec  ecx
-                jnz  DoLine4
-
-                add  esi, iSrcLineAdd
-                add  edi, iDestLineAdd
-                dec  edx
-                jnz  DoNextLine4
+            BYTE* pSrc = pbySrcLine;
+            BYTE* pDst = pbyDstLine;
+            for ( int y = 0; y < iNumLines; ++y ) {
+                DWORD* s = (DWORD*)pSrc;
+                DWORD* d = (DWORD*)pDst;
+                for ( int x = 0; x < iNumPixels; ++x ) {
+                    DWORD px = s[x];
+                    if ( px != 0x00FF00FF )
+                        d[x] = px;
+                }
+                pSrc += iNumPixels * 4 + iSrcLineAdd;
+                pDst += iNumPixels * 4 + iDestLineAdd;
+            }
         }
         break;
     }
@@ -1674,20 +1502,9 @@ HDC CDIB::GetDC() {
     m_iLock++;
 
     switch ( GetType() ) {
-    case CBLTFormat::DIB_DIRECTDRAW:
-
-        
-#ifdef LOGGINGON
-        OutputDebugStringA( "DIB_DIRECTDRAW\n" );
-#endif
-
-        m_hRes = GetDDSurface()->GetDC( &m_hDCDib );
-        thePal.Paint( m_hDCDib ); // GG 9/11/96 - Just to be consistent, not sure if we need it
-
-        break;
-
     case CBLTFormat::DIB_MEMORY:
     {
+        EN_GDI_PROBE( "dib:DIBMEM-GetDC" );
 
         CDIBits dibits = GetBits();
 
@@ -1717,6 +1534,14 @@ HDC CDIB::GetDC() {
 
     m_bBitmapSelected = TRUE;
 
+    // Phase 6 Stage 5 Phase C: register this CDIB against its HDC so that
+    // CDC::DrawText/TextOut/GetTextExtent can route to SDL_ttf when the
+    // backing is an SDL_Surface. For non-SDL-backed CDIBs (DIB_MEMORY,
+    // DIB_DIBSECTION) the helpers no-op and the existing ::DrawTextA
+    // path takes over via the fallback in mfc_compat.h.
+    if ( m_hDCDib )
+        Wind22_RegisterDibForHdc( m_hDCDib, this );
+
     return m_hDCDib;
 }
 
@@ -1730,12 +1555,6 @@ void CDIB::ReleaseDC( BOOL bSaveChanges ) {
     m_iLock--;
 
     switch ( GetType() ) {
-    case CBLTFormat::DIB_DIRECTDRAW:
-
-        thePal.EndPaint( m_hDCDib );
-        m_hRes = GetDDSurface()->ReleaseDC( m_hDCDib );
-        break;
-
     case CBLTFormat::DIB_MEMORY:
     {
 
@@ -1759,6 +1578,10 @@ void CDIB::ReleaseDC( BOOL bSaveChanges ) {
         thePal.EndPaint( m_hDCDib );
         break;
     }
+
+    // Phase 6 Stage 5 Phase C: unregister from the SDL_ttf routing map.
+    if ( m_hDCDib )
+        Wind22_UnregisterDibForHdc( m_hDCDib );
 
     m_bBitmapSelected = FALSE;
 }
@@ -1801,7 +1624,12 @@ void CDIB::Load( CMmio& mmio ) {
         if ( dwLen > sizeof( BITMAPFILEHEADER ) + sizeof( BITMAPINFO ) + sizeof( long ) ) {
             dwLen -= ( sizeof( BITMAPFILEHEADER ) + sizeof( long ) );
 
-            lp = ( LPBITMAPINFO ) new BYTE[dwLen];
+            // +4 zeroed pad bytes: the datafile stores 24-bpp bitmaps WITHOUT the
+            // final row's DWORD padding, so SetBits24's last-pixel read (pbySrc[2])
+            // runs up to 2 bytes past the chunk data (ASan-caught heap-buffer-
+            // overflow on the very first CWndMain::LoadData bitmap). Padding the
+            // allocation keeps the read in bounds and deterministic.
+            lp = ( LPBITMAPINFO ) new BYTE[dwLen + 4]();
 
             mmio.Read( &bmfh, sizeof( BITMAPFILEHEADER ) );
 
@@ -1828,6 +1656,26 @@ void CDIB::Copy( LPBITMAPINFO lpBmi, void const* pvBits ) {
     if ( lpBmi->bmiHeader.biBitCount == GetBitsPerPixel() && lpBmi->bmiHeader.biBitCount != 16 ) {
         Resize( lpBmi->bmiHeader.biWidth, abs( lpBmi->bmiHeader.biHeight ) );
         SetBits( &lpBmi->bmiHeader, pvBits );
+
+        // Preserve the source color table for 8-bit DIBs. The Win32/WinG palette
+        // pipeline (thePal/SetDIBColorTable) is absent on the SDL2 build, so the
+        // indexed art is converted to RGB later (CreateSurfaceFromDIB) using this
+        // per-DIB table — without it every 8-bit bitmap renders blank.
+        if ( lpBmi->bmiHeader.biBitCount == 8 ) {
+            // Copy ONLY the entries the source declares (biClrUsed). Per the BMP
+            // spec, biClrUsed==0 on an 8bpp DIB means "all 256" — EN's datafile
+            // bitmaps carry a full 256-entry table in that case, so 256 is the
+            // correct (and only) read. We zero-fill the destination first so any
+            // entries the source doesn't supply are defined rather than stale, and
+            // clamp to [0,256] so a garbage biClrUsed can never over-run m_bmi.rgb
+            // (a fixed 256-entry array) — i.e. the destination is always in-bounds.
+            int nClr = (int)lpBmi->bmiHeader.biClrUsed;
+            if ( nClr < 0 || nClr > 256 ) nClr = 256;
+            if ( nClr == 0 ) nClr = 256;   // 8bpp + biClrUsed==0 ⇒ 256 (BMP spec)
+            memset( m_bmi.rgb, 0, sizeof( m_bmi.rgb ) );
+            memcpy( m_bmi.rgb, lpBmi->bmiColors, nClr * sizeof( RGBQUAD ) );
+            m_bmi.hdr.biClrUsed = nClr;
+        }
 
         return;
     }
@@ -1985,8 +1833,6 @@ void CDIB::Copy( CBitmap const& bmp ) {
 //-------------------------------------------------------------------------
 #ifdef _DEBUG
 void CDIB::AssertValid() const {
-    CObject::AssertValid();
-
     // FIXIT - finish
 }
 #endif

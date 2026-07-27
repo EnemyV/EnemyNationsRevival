@@ -161,36 +161,36 @@ void CVehicle::DetermineSpotting ()
 	  {
 		case 0 :	// just us
 			TRAP ();
-			m_dwaSpot [MAX_SPOTTING] = 1 << MAX_SPOTTING;
+			m_dwaSpot [MAX_SPOTTING] = 1ULL << MAX_SPOTTING;
 			break;
 		case 1 :	// a PLUS
-			m_dwaSpot [MAX_SPOTTING-1] = 1 << MAX_SPOTTING;
-			m_dwaSpot [MAX_SPOTTING] = (1 << MAX_SPOTTING) | (1 << (MAX_SPOTTING + 1)) |
-																													(1 << (MAX_SPOTTING - 1));
-			m_dwaSpot [MAX_SPOTTING+1] = 1 << MAX_SPOTTING;
+			m_dwaSpot [MAX_SPOTTING-1] = 1ULL << MAX_SPOTTING;
+			m_dwaSpot [MAX_SPOTTING] = (1ULL << MAX_SPOTTING) | (1ULL << (MAX_SPOTTING + 1)) |
+																													(1ULL << (MAX_SPOTTING - 1));
+			m_dwaSpot [MAX_SPOTTING+1] = 1ULL << MAX_SPOTTING;
 			break;
 
 		case 2 : {	// a 2*PLUS & 1 into the diamonds
-			m_dwaSpot [MAX_SPOTTING-1] = (1 << MAX_SPOTTING) | (1 << (MAX_SPOTTING + 1)) |
-																													(1 << (MAX_SPOTTING - 1));
-			m_dwaSpot [MAX_SPOTTING] = (1 << MAX_SPOTTING) | (1 << (MAX_SPOTTING + 1)) |
-																													(1 << (MAX_SPOTTING - 1));
-			m_dwaSpot [MAX_SPOTTING+1] = (1 << MAX_SPOTTING) | (1 << (MAX_SPOTTING + 1)) |
-																													(1 << (MAX_SPOTTING - 1));
+			m_dwaSpot [MAX_SPOTTING-1] = (1ULL << MAX_SPOTTING) | (1ULL << (MAX_SPOTTING + 1)) |
+																													(1ULL << (MAX_SPOTTING - 1));
+			m_dwaSpot [MAX_SPOTTING] = (1ULL << MAX_SPOTTING) | (1ULL << (MAX_SPOTTING + 1)) |
+																													(1ULL << (MAX_SPOTTING - 1));
+			m_dwaSpot [MAX_SPOTTING+1] = (1ULL << MAX_SPOTTING) | (1ULL << (MAX_SPOTTING + 1)) |
+																													(1ULL << (MAX_SPOTTING - 1));
 
 			CHexCoord hexOrig (m_ptHead);
 			hexOrig.Ydec ();
-			m_dwaSpot [MAX_SPOTTING-2] |= 1 << MAX_SPOTTING;
+			m_dwaSpot [MAX_SPOTTING-2] |= 1ULL << MAX_SPOTTING;
 
 			hexOrig.Y (hexOrig.Y () + 2);
-			m_dwaSpot [MAX_SPOTTING+2] |= 1 << MAX_SPOTTING;
+			m_dwaSpot [MAX_SPOTTING+2] |= 1ULL << MAX_SPOTTING;
 
 			hexOrig.Ydec ();
 			hexOrig.Xdec ();
-			m_dwaSpot [MAX_SPOTTING] |= 1 << (MAX_SPOTTING - 2);
+			m_dwaSpot [MAX_SPOTTING] |= 1ULL << (MAX_SPOTTING - 2);
 
 			hexOrig.X (hexOrig.X () + 2);
-			m_dwaSpot [MAX_SPOTTING] |= 1 << (MAX_SPOTTING + 2);
+			m_dwaSpot [MAX_SPOTTING] |= 1ULL << (MAX_SPOTTING + 2);
 			break; }
 
 		default: {	// spotting > 2
@@ -212,7 +212,7 @@ void CVehicle::DetermineSpotting ()
 			int iMode = 0;
 		
 			// set the hex we are on to visible
-			m_dwaSpot [MAX_SPOTTING] = 1 << MAX_SPOTTING;
+			m_dwaSpot [MAX_SPOTTING] = 1ULL << MAX_SPOTTING;
 			BOOL bBlocked = FALSE;
 		
 			for (; TRUE; )
@@ -257,7 +257,7 @@ void CVehicle::DetermineSpotting ()
 					int iShft = CHexCoord::Diff (hexOn.X () - hexOrig.X ()) + MAX_SPOTTING;
 					ASSERT ((0 <= iInd) && (iInd < SPOTTING_LINE));
 					ASSERT ((0 <= iShft) && (iShft < SPOTTING_LINE));
-					m_dwaSpot [iInd] |= 1 << iShft;
+					m_dwaSpot [iInd] |= 1ULL << iShft;
 					if (NextVisible (&piOn, piRange, iXmax, iYmin, iYmax, hexOrig, hexDest, iMode, max (abs (xDif), abs (yDif))))
 						break;
 					bBlocked = FALSE;
@@ -284,7 +284,7 @@ void CVehicle::DetermineSpotting ()
 					int iShft = CHexCoord::Diff (hexOn.X () - hexOrig.X ()) + MAX_SPOTTING;
 					ASSERT ((0 <= iInd) && (iInd < SPOTTING_LINE));
 					ASSERT ((0 <= iShft) && (iShft < SPOTTING_LINE));
-					m_dwaSpot [iInd] |= 1 << iShft;
+					m_dwaSpot [iInd] |= 1ULL << iShft;
 					}
 				}
 			
@@ -319,7 +319,8 @@ void CVehicle::DetermineOppo ()
 		for (int y=-GetRange (); y<GetRange(); y++)
 			{
 			_hex.X (m_ptHead.x / 2 - *piOn);
-			CHex * pHex = theMap._GetHex (_hex);
+			_hex.WrapX ();                       // torus: this X can fall off the left/right
+			CHex * pHex = theMap._GetHex (_hex); // edge, and _GetHex does NOT wrap its index
 
 			for (int x=(*piOn)*2; x>=0; x--)
 				{
@@ -347,9 +348,9 @@ void CVehicle::DetermineOppo ()
 						}
 					}
 
-				_hex.Xinc ();
-				pHex = theMap._Xinc (pHex);
-				}
+				_hex.Xinc ();                  // wraps X across the right edge, so the raw
+				pHex = theMap._GetHex (_hex);  // pHex+1 of _Xinc would desync and run off
+				}                              // the hex array — re-fetch from the wrapped hex
 			_hex.Yinc ();
 			piOn++;
 			}
@@ -378,7 +379,8 @@ void CVehicle::DetermineOppo ()
 	for (int y=-iMax; y<iMax; y++)
 		{
 		_hex.X (m_ptHead.x / 2 - *piOn);
-		CHex * pHex = theMap._GetHex (_hex);
+		_hex.WrapX ();                       // torus: this X can fall off the left/right
+		CHex * pHex = theMap._GetHex (_hex); // edge, and _GetHex does NOT wrap its index
 		for (int x=(*piOn)*2; x>=0; x--)
 			{
 			if (pHex->GetUnits () & (CHex::ul | CHex::ur | CHex::ll | CHex::lr | CHex::bldg))
@@ -403,9 +405,9 @@ void CVehicle::DetermineOppo ()
 					SetOppo (pOppo);
 					}
 				}
-			_hex.Xinc ();
-			pHex = theMap._Xinc (pHex);
-			}
+			_hex.Xinc ();                  // wraps X across the right edge, so the raw
+			pHex = theMap._GetHex (_hex);  // pHex+1 of _Xinc would desync and run off
+			}                              // the hex array — re-fetch from the wrapped hex
 		_hex.Yinc ();
 		piOn++;
 		}

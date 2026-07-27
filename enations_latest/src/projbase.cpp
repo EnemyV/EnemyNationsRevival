@@ -22,6 +22,22 @@
 #include "building.inl"
 #include "vehicle.inl"
 
+#include "SDL2Sprites.h"   // GPU tracer streaks (CaptureTrail)
+#include "Perf.h"          // shoot.oor out-of-range-fire probe
+#include "enprobes.h"      // BLDGKILL/UNITKILL war-attribution probes
+
+// GPU split-layer pass flag (defined in terrain.cpp): TRUE while sprites are being
+// captured into the GPU layer. We only emit tracer geometry on that path.
+extern bool g_enSpriteSplitPass;
+
+// Master on/off for projectile tracer trails (client-local eye-candy). Flip to FALSE
+// to disable all trails regardless of per-type style. (Per-type style lives on
+// CExplData::m_iTrailType; smoke trails are a future addition.)
+bool g_enProjTrails = true;
+
+// Master on/off for rotating projectiles to face their travel direction (GPU path).
+bool g_enProjRotate = true;
+
 
 #ifdef _DEBUG
 #undef THIS_FILE
@@ -32,7 +48,7 @@ static char BASED_CODE THIS_FILE[] = __FILE__;
 CExplGrp theExplGrp;
 CProjMap theProjMap;
 CInitProjMem theInitProjMem;
-memory_pool<mempool_std_heap<188, 64>> CProjBase::m_memPool;
+memory_pool<mempool_std_heap<PROJ_POOL_BLOCK, 64>> CProjBase::m_memPool;
 
 
 const int MAX_NUM_PROJECTILES = 24;
@@ -44,6 +60,11 @@ CExplData::CExplData ()
 
     m_pProjSprite = m_pExpSprite = NULL;
     m_iProjDelay = m_iExplSound = 0;
+
+    // Default every projectile to an orange tracer streak. Per-type overrides (e.g.
+    // trail_smoke for a rocket) can be set in CExplGrp::PostSpriteInit once we know
+    // which EXPL index is the rocket. Master on/off is g_enProjTrails below.
+    m_iTrailType = trail_tracer;
 }
 
 
@@ -84,11 +105,206 @@ CRect CProjectile::Draw( const CHexCoord &hexcoord )
 {
     ASSERT_STRICT_VALID (this);
 
-    CRect	rectBound = CProjBase::Draw( hexcoord );
+    // Rotate the bullet to face its travel direction (GPU split path only). The angle is
+    // computed in SCREEN space (projecting one step ahead), so the isometric view rotation
+    // is handled automatically. Skipped for directional-frame art (has_dir) and stationary
+    // projectiles; published to the sprite capture, then reset right after the draw.
+    bool bRot = false;
+    if ( g_enProjRotate && g_enSpriteSplitPass && SDL2Sprites::Enabled () &&
+         ( ( m_xAdd != 0 ) || ( m_yAdd != 0 ) ) &&
+         ( ( m_pEd == NULL ) || ! ( m_pEd->m_iFlags & CExplData::has_dir ) ) )
+        {
+        CMapLoc3D	p0( GetMapLoc().x,          GetMapLoc().y,          GetAlt() );
+        CMapLoc3D	p1( GetMapLoc().x + m_xAdd, GetMapLoc().y + m_yAdd, GetAlt() );
+        CPoint		s0( xpanimatr->WorldToWindow( xpanimatr->WorldToCenterWorld( p0 ) ) );
+        CPoint		s1( xpanimatr->WorldToWindow( xpanimatr->WorldToCenterWorld( p1 ) ) );
+        double		fx = s1.x - s0.x, fy = s1.y - s0.y;
+        double		len = sqrt( fx * fx + fy * fy );
+        if ( ( len > 0.5 ) && ( len < 256.0 ) )    // skip a torus-wrapped (bogus) step
+            {
+            // The bullet art is a horizontal streak (faces +x / "right"), so the
+            // travel-direction angle from atan2 aligns it directly — no offset. The
+            // previous +90deg ("faces up") rotated bullets perpendicular to travel.
+            const double PROJ_ART_OFFSET = 0.0;
+            SDL2Sprites::SetCaptureRotation( (float) ( atan2( fy, fx ) + PROJ_ART_OFFSET ) );
+            bRot = true;
+            }
+        }
+
+    CRect	rectBound;
+    if ( m_psprite != NULL )
+        rectBound = CProjBase::Draw( hexcoord );
+    else
+        {
+        // Trail-only projectile (weapon has no bullet sprite, e.g. camp guns): nothing to blit,
+        // but still fly + trail. CProjBase::Draw derefs the sprite view, so skip it and synthesize
+        // a small dirty bound at the bullet's screen position (the tracer itself is drawn fresh each
+        // present in the GPU sprite Submit pass, so it needs no dirty-rect coverage of its own).
+        CMapLoc3D	m3d( GetMapLoc().x, GetMapLoc().y, GetAlt() );
+        CPoint		pt( xpanimatr->WorldToWindow( xpanimatr->WorldToCenterWorld( m3d ) ) );
+        rectBound.SetRect( pt.x - 3, pt.y - 3, pt.x + 3, pt.y + 3 );
+        }
+
+    if ( bRot )
+        {
+        SDL2Sprites::SetCaptureRotation( 0.0f );
+        // A rotated quad's corners reach ~0.21*maxdim past the axis-aligned bound — pad the
+        // dirty rect so the cached sprite layer doesn't smear the rotated tips.
+        int pad = (int) ( 0.22 * __max( rectBound.Width(), rectBound.Height() ) ) + 1;
+        rectBound.InflateRect( pad, pad );
+        }
 
     xpanimatr->GetDirtyRects()->AddRect( &rectBound, CDirtyRects::RECT_LIST::LIST_PAINT_BOTH );
 
+    EmitTrail ();
+
     return rectBound;
+}
+
+//---------------------------------------------------------------------------
+// ProjShooterStrength - normalise a shooter's primary attack to 0..1
+//
+// 0 = the weakest attacker in the game (e.g. infantry), 1 = the strongest
+// (e.g. the frigate). The min/max are scanned ONCE over every vehicle + building
+// type that can attack, so the gradient is procedural (no magic numbers) and
+// auto-adjusts if unit data changes. Uses the RAW (pre-R&D) attack so the colour
+// tracks unit TYPE, not how upgraded a particular player is.
+//---------------------------------------------------------------------------
+// Weighted firepower for the tracer gradient. attack[0] alone (soft/anti-personnel)
+// MISRANKS units: a howitzer's power is in the HARD slot, so by soft-attack alone it can
+// score below infantry. Hard attack is weighted heaviest (it's what the heavy/strong
+// units carry), so the gradient runs infantry (low) -> frigate (high) as intended.
+static int ProjAttackTotal (CUnitData const * pData)
+{
+    return pData->_GetAttack (0) + 3 * pData->_GetAttack (1) + pData->_GetAttack (2);
+}
+
+static float ProjShooterStrength (DWORD dwIDShooter)
+{
+    // Gradient endpoints anchored to specific unit TYPES rather than the global min/max:
+    // scanning all units let outliers (the Heavy Rover's experimental gun = hard 1500, the
+    // Fort = 3036) blow out the scale so the frigate only reached ~half. Anchoring to
+    // infantry..frigate gives the intended spread; anything stronger (Heavy Rover, Fort)
+    // simply clamps to the strong end.
+    static int s_iMin = -1, s_iMax = -1;
+    if ( s_iMin < 0 )
+        {
+        s_iMin = ProjAttackTotal (theTransports.GetData (CTransportData::infantry));
+        s_iMax = ProjAttackTotal (theTransports.GetData (CTransportData::cruiser));   // "Frigate"
+        if ( s_iMax <= s_iMin ) s_iMax = s_iMin + 1;   // guard divide-by-zero
+        }
+
+    CUnit * pShoot = GetUnit (dwIDShooter);
+    int a = ( pShoot != NULL ) ? ProjAttackTotal (pShoot->GetData ()) : s_iMin;
+    float t = (float) ( a - s_iMin ) / (float) ( s_iMax - s_iMin );
+    return __max (0.0f, __min (1.0f, t));
+}
+
+//---------------------------------------------------------------------------
+// CProjectile::EmitTrail - record a tracer streak behind the bullet (GPU only)
+//
+// Stretched-tracer eye-candy: an additive, alpha-faded streak trailing the
+// projectile along its (screen-projected) travel direction. Pure render-side,
+// client-local — it is NOT a sim object and never touches the netcode/pool, so
+// it can't desync and costs ~one quad per visible projectile. The software
+// renderer has no equivalent yet (palette/additive blits make it awkward); GPU
+// is the first-class path.
+//
+// Colour/width/opacity form a gradient over m_fStrength (0 = weakest shooter,
+// 1 = strongest): weak shots are thinner, yellower and dimmer; strong shots are
+// thicker, redder and brighter.
+//---------------------------------------------------------------------------
+void CProjectile::EmitTrail ()
+{
+    // master switch + per-projectile style; only on the GPU capture pass
+    if ( ! g_enProjTrails || ! g_enSpriteSplitPass || ! SDL2Sprites::Enabled () )
+        return;
+    if ( ( m_pEd == NULL ) || ( m_pEd->m_iTrailType != CExplData::trail_tracer ) )
+        return;
+    // a stationary projectile (arrived, or zero-length path) has no direction
+    if ( ( m_xAdd == 0 ) && ( m_yAdd == 0 ) )
+        return;
+
+    // Project the bullet and a point one sub-step BEHIND it. The screen delta is the
+    // streak direction; we then normalise and scale to a fixed on-screen length so the
+    // tracer reads the same regardless of speed (and shrinks when zoomed out). Working
+    // off the projected delta means the isometric view rotation is handled for free.
+    CMapLoc3D	head3d( GetMapLoc().x,          GetMapLoc().y,          GetAlt() );
+    CMapLoc3D	back3d( GetMapLoc().x - m_xAdd, GetMapLoc().y - m_yAdd, GetAlt() );
+
+    CPoint	ptHead( xpanimatr->WorldToWindow( xpanimatr->WorldToCenterWorld( head3d ) ) );
+    CPoint	ptBack( xpanimatr->WorldToWindow( xpanimatr->WorldToCenterWorld( back3d ) ) );
+
+    double	ddx = ptBack.x - ptHead.x;   // points backward (toward the tail), screen px
+    double	ddy = ptBack.y - ptHead.y;
+    double	len = sqrt( ddx * ddx + ddy * ddy );
+
+    // len ~0 => no motion this projection; len huge => the back point wrapped the torus
+    // edge (bogus direction) — skip both.
+    if ( ( len < 0.5 ) || ( len > 256.0 ) )
+        return;
+
+    // Gradient by shooter strength: t=0 weakest (infantry) .. t=1 strongest (frigate).
+    // Strong shots read as bigger/brighter: redder, thicker, LONGER, and more opaque.
+    float	t = m_fStrength;
+
+    // Colour ramp: yellow (weak) -> red (mid) -> purple (only the very strongest).
+    int		cr, cg, cb;
+    if ( t < 0.5f )
+        {
+        float u = t / 0.5f;                       // 0..1 across yellow -> red
+        cr = 255;
+        cg = (int) ( 185 + ( 45 - 185 ) * u );    // 185 -> 45
+        cb = (int) ( 35 + ( 10 - 35 ) * u );      // 35 -> 10
+        }
+    else
+        {
+        float u = ( t - 0.5f ) / 0.5f;            // 0..1 across red -> purple
+        cr = (int) ( 255 + ( 190 - 255 ) * u );   // 255 -> 190
+        cg = (int) ( 45 + ( 25 - 45 ) * u );      // 45 -> 25
+        cb = (int) ( 10 + ( 230 - 10 ) * u );     // 10 -> 230
+        }
+    int		aHead = (int) ( 205 + ( 250 - 205 ) * t );// weak still bright (was 160 -> too dim to notice)
+    double	wfac = 1.0 + ( 1.6 - 1.0 ) * t;           // weak no longer razor-thin (was 0.8)
+    double	lfac = 1.0 + 0.7 * t;                     // strong streak runs longer
+
+    // trail size scales with zoom like everything else (world halves per level, >>xiZoom).
+    // z0 values unchanged; only the floors/ramp were letting z1-z3 stay too big when zoomed out.
+    double	dLenMax = __max( 8.0, (double)( 96 >> xiZoom ) ) * lfac;  // length halves per zoom-out (was floored at 30)
+    double	dHalfW  = __max( 0.5, ( 1.6 / ( 1 << xiZoom ) ) * wfac ); // width halves per zoom-out (was a shallow linear ramp)
+
+    // Grow the trail from launch up to dLenMax: the tail is anchored to where the projectile
+    // started, until it has travelled far enough to reach full length (then it trails behind at
+    // dLenMax, comet-style). len is one step's screen distance, so (steps travelled) * len =
+    // screen distance covered — no map-edge wrap issues.
+    int		iStepsGone = m_iStepsStart - m_iSteps;
+    if ( iStepsGone < 0 )
+        iStepsGone = 0;
+    double	dLen = __min( dLenMax, iStepsGone * len );
+    // Operator: don't start at 0. A short/point-blank shot (e.g. a camp firing an adjacent unit,
+    // now given a 2-step visible flight) covers too little before it lands to grow a visible trail,
+    // so it drew NOTHING. Floor the length so every shot shows a streak the instant it spawns.
+    // Floor the length generously so even a weak, short, point-blank shot (a camp firing an
+    // adjacent unit) reads as a clear streak the instant it spawns (operator: "start with length",
+    // and camp tracers were too subtle to notice). Raised from 9 -> so short shots are unmissable.
+    double	dLenMin = __max( 6.0, dLenMax * 0.50 );   // floor shrinks with zoom so short shots also scale
+    if ( dLen < dLenMin )
+        dLen = dLenMin;
+
+    // The trail draws additively OVER the sprite layer, so start it a small gap BEHIND the
+    // bullet (along the backward travel dir) — leaves the projectile sprite visible in front
+    // instead of buried under the bright head. (ddx,ddy)/len is the unit backward direction.
+    double	ux  = ddx / len, uy = ddy / len;
+    double	gap = (double) __max( 1, 8 >> xiZoom );   // head gap shrinks with zoom too
+
+    CPoint	ul( xpanimatr->GetUL() );
+    float	hx = (float) ( ptHead.x + ux * gap + ul.x );
+    float	hy = (float) ( ptHead.y + uy * gap + ul.y );
+    float	tx = (float) ( ptHead.x + ux * ( gap + dLen ) + ul.x );
+    float	ty = (float) ( ptHead.y + uy * ( gap + dLen ) + ul.y );
+
+    SDL2Sprites::CaptureTrail( hx, hy, tx, ty, (float) dHalfW, cr, cg, cb, aHead,
+                               m_iTrailTeamR, m_iTrailTeamG, m_iTrailTeamB );
 }
 
 CProjectile::CProjectile (CUnit const * pUnit, CMapLoc const & mlEnd, DWORD dwTarget, int iNumShots) : CProjBase (projectile)
@@ -97,6 +313,19 @@ CProjectile::CProjectile (CUnit const * pUnit, CMapLoc const & mlEnd, DWORD dwTa
     m_dwIDTarget = dwTarget;
     m_dwIDShooter = pUnit->GetID ();
     m_iNumShots = iNumShots;
+
+    // cache the shooter's normalised strength for the tracer-colour gradient
+    m_fStrength = ProjShooterStrength (m_dwIDShooter);
+    m_iStepsStart = 0;   // set to flight-start step count below (trail length basis)
+
+    // cache the shooter's TEAM colour for the trail outline (player-distinguishing + flavour).
+    // Captured here (not in EmitTrail) so it survives even if the shooter dies mid-flight.
+    {
+        COLORREF rgbTeam = pUnit->GetOwner ()->GetRGBColor ();
+        m_iTrailTeamR = GetRValue (rgbTeam);
+        m_iTrailTeamG = GetGValue (rgbTeam);
+        m_iTrailTeamB = GetBValue (rgbTeam);
+    }
 
     // attach the sprite
     if (pUnit->GetData()->GetProjectile () == 0)
@@ -111,19 +340,16 @@ CProjectile::CProjectile (CUnit const * pUnit, CMapLoc const & mlEnd, DWORD dwTa
         m_iProjDelay = 0;
 //BUGBUG - can't hide it		m_iProjDelay = m_pEd->m_iProjDelay;
         }
-    if (m_pEd != NULL)
-        {
-        // if no projectile set it to fire the explosion
-        if ( (m_psprite = m_pEd->m_pProjSprite) == NULL)
-            {
-            m_mlEnd = mlEnd;
-            m_mlEnd.Wrap ();
-            m_maploc = m_mlEnd;
-            m_xAdd = m_yAdd = m_iSteps = 0;
-            m_iStepMod = AVG_SPEED_MUL;
-            return;
-            }
-        }
+    m_psprite = ( m_pEd != NULL ) ? m_pEd->m_pProjSprite : NULL;
+    // A weapon whose projectile art has NO bullet sprite (m_psprite == NULL) used to early-return
+    // here as a ZERO-step instant explosion -> no flying projectile, so no tracer TRAIL. That's why
+    // enemy camp guns (which fire exactly such a spriteless projArt) were invisible: you took damage
+    // but saw no bullet and no trail (operator's #1 combat-visibility bug). Now we FALL THROUGH and
+    // compute a normal flight path so a spriteless shot flies and emits a trail like any other; the
+    // trail is pure GPU geometry and needs no sprite. CProjectile::Draw skips the (absent) sprite
+    // blit but still calls EmitTrail. Damage is unaffected (it's applied on the separate damage
+    // message, not this visual path), so this is a visual-only change. A truly zero-distance shot
+    // (x==0 && y==0) still resolves instantly below.
 
     m_maploc = pUnit->GetMapLoc ();
     m_maploc.Wrap ();
@@ -163,7 +389,7 @@ CProjectile::CProjectile (CUnit const * pUnit, CMapLoc const & mlEnd, DWORD dwTa
     m_iStepMod = 0;
 
     // set the direction
-    if ( (m_pEd != NULL) && (m_pEd->m_iFlags && CExplData::has_dir) )
+    if ( (m_pEd != NULL) && (m_pEd->m_iFlags & CExplData::has_dir) )   // was '&&' (latent bug)
         {
         PauseAnimations ( TRUE );
         SetFrame ( CSpriteView::ANIM_FRONT_1, ( ( FastATan ( x, y ) + 8 ) / 16 - 1 ) & 0x07 );
@@ -211,12 +437,34 @@ CProjectile::CProjectile (CUnit const * pUnit, CMapLoc const & mlEnd, DWORD dwTa
                 }
             }
 
+    // remember how many flight steps we begin with (post unit-exit) so the trail can
+    // grow from 0 to its max length as the projectile covers them
+    m_iStepsStart = m_iSteps;
+
     if (m_iSteps <= 0)
         {
-        m_iSteps = 0;
-        m_iProjDelay = 0;
-        m_faAdd = 0;
-        m_iStepMod = AVG_SPEED_MUL;
+        // A building firing a target within/at its own footprint edge (point-blank) has had ALL its
+        // flight steps consumed exiting the footprint above -> a zero-flight shot, which the creation
+        // site turns into an INSTANT hit with NO flying bullet, so it renders no projectile and no
+        // trail (operator: enemy camps' point-blank bullets were invisible, so the camps looked like
+        // they weren't firing). Give a DIRECTIONAL point-blank shot a minimal visible flight so it
+        // spawns a real flying bullet + trail, the same as a vehicle's shot. Damage + the explosion
+        // still resolve at m_mlEnd (the target) on arrival, so this is visual-only + a ~2-substep
+        // delay. A no-direction shot (m_xAdd==m_yAdd==0) stays instant (there's nothing to fly).
+        if ( ( m_xAdd != 0 ) || ( m_yAdd != 0 ) )
+            {
+            m_iSteps      = 2;      // minimal visible flight; arrival/damage still land at m_mlEnd
+            m_iStepsStart = m_iSteps;
+            m_iStepMod    = 0;      // fly immediately, as a normal ranged shot does (see :361)
+            m_faAdd       = 0;      // flat over ~2 substeps (altitude interp isn't meaningful here)
+            }
+        else
+            {
+            m_iSteps = 0;
+            m_iProjDelay = 0;
+            m_faAdd = 0;
+            m_iStepMod = AVG_SPEED_MUL;
+            }
         }
     else
         // handle the altitude
@@ -228,8 +476,51 @@ CProjectile::CProjectile (CUnit const * pUnit, CMapLoc const & mlEnd, DWORD dwTa
         m_faAdd /= m_iSteps;
         }
 
+    // --- point-blank / short building (camp) shot: subdivide so it is DRAWN (and trails) ---
+    // A camp firing a nearby unit flies very few steps (often 1 after the footprint walk) and can
+    // arrive + despawn within a SINGLE sim tick, before the renderer ever draws it once -> the
+    // tracer trail is never emitted, so the shot is invisible (operator: enemy camps looked like
+    // they weren't firing). Split a short building shot into more, smaller sub-steps: the flight
+    // then spans several frames (each draw emits the tracer -> a visible growing streak) and still
+    // lands on the SAME target (total travel = steps * delta is preserved). Damage is applied on
+    // the separate damage message, so this is a visual-only change.
+    if ( ( pUnit->GetUnitType () == CUnit::building ) && ( ( m_xAdd != 0 ) || ( m_yAdd != 0 ) ) )
+        {
+        const int MIN_VIS_STEPS = 6;
+        if ( ( m_iSteps > 0 ) && ( m_iSteps < MIN_VIS_STEPS ) )
+            {
+            int mul   = ( MIN_VIS_STEPS + m_iSteps - 1 ) / m_iSteps;   // ceil(MIN_VIS_STEPS / steps)
+            int nxAdd = m_xAdd / mul;
+            int nyAdd = m_yAdd / mul;
+            if ( ( nxAdd == 0 ) && ( nyAdd == 0 ) )                    // never stall a diagonal shot
+                { if ( abs (m_xAdd) >= abs (m_yAdd) ) nxAdd = ( m_xAdd > 0 ? 1 : -1 );
+                  else                                nyAdd = ( m_yAdd > 0 ? 1 : -1 ); }
+            m_xAdd        = nxAdd;
+            m_yAdd        = nyAdd;
+            m_iSteps     *= mul;
+            m_iStepsStart = m_iSteps;
+            m_faAdd      /= mul;                                       // keep total altitude change ~constant
+            }
+        }
+
     ASSERT ((0 <= m_iSteps) && (m_iSteps < 160));
-    TRAP (! ((0 <= m_iSteps) && (m_iSteps < 320)));
+    // WAS: TRAP(!(0 <= m_iSteps && m_iSteps < 320)). On the 1024x1024 13-player save
+    // this fired in STORMS during combat — every int3 costs a debugger stack-walk and
+    // the flood killed two sessions (2026-06-12). Suspected root: a shot whose target
+    // sits across the torus seam computes the LONG-way distance (unwrapped delta) and
+    // gets a huge step count. Log the evidence for the sim-side wrap fix and CLAMP —
+    // a clamped projectile merely arrives sooner; the session survives.
+    if (! ((0 <= m_iSteps) && (m_iSteps < 320)))
+    {
+        static long s_iLogged = 0;
+        if (InterlockedIncrement (&s_iLogged) <= 8)
+        {
+            char b[128];
+            sprintf_s (b, sizeof (b), "[PROJ-STEPS] m_iSteps=%d (clamped; torus-seam distance suspected)\n", m_iSteps);
+            OutputDebugStringA (b);
+        }
+        m_iSteps = __minmax (0, 319, m_iSteps);
+    }
 }
 
 CExplosion::CExplosion (CProjectile const * pProj, CUnit * pTarget) : CProjBase (explosion)
@@ -350,7 +641,8 @@ CExplosion::Draw(
 
     CMapLoc		maploc  ( hexcoord );
     CMapLoc3D	maploc3d( GetMapLoc().x, GetMapLoc().y, GetAlt() );
-    CPoint		ptOffset( xpanimatr->WorldToWindow( xpanimatr->WorldToCenterWorld( maploc3d )));
+    CPoint		ptCenter( xpanimatr->WorldToWindow( xpanimatr->WorldToCenterWorld( maploc3d )));
+    CPoint		ptOffset( ptCenter );
 
     // Assumes projectiles are 1-piece
 
@@ -362,13 +654,49 @@ CExplosion::Draw(
     ptOffset.x -= pspriteview->Width()  >> 1;
     ptOffset.y -= pspriteview->Height();
 
+    EmitFlash ( ptCenter, pspriteview->Width(), pspriteview->Height() );
+
     CDrawParms	drawparms( *this, ptOffset );
 
     return pspriteview->Draw( drawparms );
 }
 
+//---------------------------------------------------------------------------
+// CExplosion::EmitFlash - additive light pop at impact (GPU only)
+//
+// A brief, SUBTLE additive glow under the explosion sprite, brightest on the
+// first frame and gone within a couple — purely render-side eye-candy (no sim).
+//---------------------------------------------------------------------------
+void CExplosion::EmitFlash ( const CPoint & ptCenter, int iSprW, int iSprH )
+{
+
+    if ( ! g_enProjTrails || ! g_enSpriteSplitPass || ! SDL2Sprites::Enabled () )
+        return;
+
+    // Fade over the first few animation frames (brightest at frame 0).
+    const double FADE_FRAMES = 3.0;
+    int    iFrame = GetFrame ( CSpriteView::ANIM_FRONT_1 );
+    double fade   = 1.0 - iFrame / FADE_FRAMES;
+    if ( fade <= 0.0 )
+        return;
+
+    CPoint	ul( xpanimatr->GetUL() );
+    float	cx = (float) ( ptCenter.x + ul.x );
+    float	cy = (float) ( ptCenter.y - ( iSprH >> 1 ) + ul.y );   // middle of the blast
+    float	radius = (float) iSprW * 0.6f;
+    int		aCenter = (int) ( 110.0 * fade );    // additive + modest -> never blows out
+
+    SDL2Sprites::CaptureFlash ( cx, cy, radius, 255, 235, 190, aCenter );
+}
+
 void CUnit::DecDamagePoints (int iDamage, DWORD dwKiller)
 {
+
+    // render-side hit flash (area map): timestamp the hit for ANY unit (mine or enemy)
+    // so the sprite briefly tints red. DecDamagePoints runs on every client via the
+    // network damage handlers, so this fires for whatever the viewer can see.
+    if ( iDamage > 0 )
+        m_dwHitFlash = timeGetTime ();
 
     // mark it for red
     if ( (iDamage > 0) && (GetOwner()->IsMe ()) )
@@ -397,6 +725,14 @@ void CUnit::DecDamagePoints (int iDamage, DWORD dwKiller)
             iDamage *= 256;
         else
             iDamage += (iTotalTime * iDamage) / iDone;
+        }
+
+    // Meat Shield edict: this player's buildings take less damage (0.90 = -10%). Live/toggleable.
+    if (GetUnitType () == CUnit::building)
+        {
+        float fDmg = GetOwner()->GetEdictBldgDmgMult ();
+        if (fDmg < 1.0f)
+            iDamage = (int)(iDamage * fDmg + 0.5f);
         }
 
     m_iDamagePoints -= iDamage;
@@ -962,6 +1298,16 @@ void CVehicle::HandleCombat ()
                                 m_iOppoLOS = theMap.LineOfSight (this, m_pUnitOppo);
                             }
 
+                // SHOOT-OOR fix (newwin's land-ready diff): re-derive the oppo range EVERY fire tick.
+                // The change-detection refresh above misses a stationary shooter vs a (building) oppo,
+                // leaving m_iOppoLOS frozen "in range" so it keeps mis-firing out-of-range (401x in the
+                // operator's save). Recomputing here makes the gate see the FRESH distance → OOR drops
+                // through to bOkTurret=FALSE → the give-up path clears the stale oppo. (Shoot already
+                // calls GetRangeDistance, so ~no extra cost.)
+                m_iOppoLOS = theMap.GetRangeDistance( this, m_pUnitOppo );
+                if ( m_iOppoLOS <= GetRange () )
+                    m_iOppoLOS = theMap.LineOfSight( this, m_pUnitOppo );
+
                 if ( (abs (m_iOppoLOS) <= GetRange ()) &&
                                 ((m_iOppoLOS >= 0) || (GetData()->GetBaseType () == CTransportData::artillery)))
                     Shoot (m_pUnitOppo, m_iOppoLOS);
@@ -1132,6 +1478,31 @@ void CUnit::Shoot (CUnit * pUnit, int iLOS)
 
     ASSERT_STRICT (GetOwner()->IsLocal ());
 
+    // DIAGNOSTIC (2026-06-11, user report: "unit fired from across the map").
+    // Every fire path funnels through here. All four fire gates check wrap-
+    // aware torus distance, so an "impossibly long" shot is either (a) a
+    // LEGAL across-the-wrap-seam shot that only LOOKS cross-map on the flat
+    // view, or (b) a real out-of-range fire via transient position corruption
+    // (the AssertValidAndLoc y==y2 family). This probe decides: it re-derives
+    // the torus distance at the moment of fire and flags only true violations.
+    {
+        int iHexDist = theMap.GetRangeDistance (this, pUnit);
+        if ( iHexDist > GetRange () + 2 )
+        {
+            // world-pixel positions give the full geometry (seam-adjacent vs
+            // genuinely far) from a single occurrence — no repro chase needed
+            CMapLoc mlMe  = GetWorldPixels ();
+            CMapLoc mlHim = pUnit->GetWorldPixels ();
+            char szOor[224];
+            sprintf_s (szOor, sizeof (szOor),
+                "[SHOOT-OOR] shooter=%lu type=%d at(%d,%d) target=%lu at(%d,%d) dist=%d range=%d LOS=%d\n",
+                GetID (), GetUnitType (), mlMe.x, mlMe.y,
+                pUnit->GetID (), mlHim.x, mlHim.y, iHexDist, GetRange (), iLOS);
+            OutputDebugStringA (szOor);
+            Perf::CounterInc ("shoot.oor");
+        }
+    }
+
     // figure the number of shots
 
     div_t dtShoot = div ( m_dwReloadMod, GetFireRate () * AVG_SPEED_MUL );
@@ -1149,6 +1520,8 @@ void CUnit::Shoot (CUnit * pUnit, int iLOS)
     // get where it hits based on:
     //   turret/veh direction (vehicle only)
     //   accuracy
+    // (GetWorldPixels() is already the building footprint centre — see
+    // CBuilding::AssignToHex — so no special-casing is needed here.)
     CMapLoc mlTarget = pUnit->GetWorldPixels ();
 
     // now accuracy enters the picture
@@ -1294,6 +1667,25 @@ void CUnit::PrepareToDie (DWORD dwIDKiller)
     // if we are already dying - don't send again
     if (m_unitFlags & dying)
         return;
+
+#if EN_AI_PROBES_WAR && defined(_WIN32)
+    {
+        // war-attribution telemetry (operator): every combat death names its
+        // killer. BLDGKILL/UNITKILL victim owner+type + killer owner (0 = env)
+        int   iKillerPlyr = 0;
+        CUnit* pKiller = GetUnit (dwIDKiller);
+        if (pKiller != NULL && pKiller->GetOwner () != NULL)
+            iKillerPlyr = pKiller->GetOwner ()->GetPlyrNum ();
+        char szK[128];
+        sprintf (szK, "[%s] victim plyr %d type %d id %lu killer plyr %d id %lu\n",
+                 (GetUnitType () == CUnit::building) ? "BLDGKILL" : "UNITKILL",
+                 (GetOwner () != NULL) ? GetOwner ()->GetPlyrNum () : -1,
+                 (GetUnitType () == CUnit::building) ? (int)((CBuilding*)this)->GetData ()->GetType ()
+                                                     : (int)((CVehicle*)this)->GetData ()->GetType (),
+                 (unsigned long)GetID (), iKillerPlyr, (unsigned long)dwIDKiller);
+        OutputDebugStringA (szK);
+    }
+#endif
 
     if ( ( theApp.m_pLogFile != NULL ) && ( GetUnitType () == CUnit::building ) )
         {

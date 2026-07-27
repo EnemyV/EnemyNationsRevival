@@ -29,9 +29,15 @@
 #endif
 #else
 #ifndef VPSYSTEM
-#define VPAPI FAR PASCAL
+// Game side (imports): the vp* symbols come from libvdmplay_posix.so at load
+// time. No attribute needed — plain extern decls resolve against the .so.
+#define VPAPI
 #else
-#define VPAPI APIENTRY
+// Engine side (exports): the vp* lib is built -fvisibility=hidden so its
+// internal C++ classes (CPlayer/CSession/…) stay private to the .so and don't
+// collide with the game's same-named classes — mirroring the old vdmplay.dll
+// boundary. The public extern "C" vp* API is forced visible so the game links.
+#define VPAPI __attribute__((visibility("default")))
 #endif
 
 typedef const void FAR *LPCVOID;
@@ -48,7 +54,12 @@ typedef const void FAR *LPCVOID;
 
 #define VP_PSEUDOSIZE 2
 
-#define VDMPLAY_INIFILE "VDMPLAY.INI"
+#define VDMPLAY_INIFILE "vdmplay.ini"   // lowercase: POSIX is case-sensitive and the game
+                                        // writes "vdmplay.ini" (WritePrivateProfileString); the
+                                        // engine's reads (vpMakeIniFile) must hit the SAME file or
+                                        // ServerAddress/RegistrationAddress read empty -> the directed
+                                        // TCP discovery query falls to the dead DEF_IP_REG_SERVER ->
+                                        // broadcast. Harmless on case-insensitive Windows.
 
 
 #define VPAPIVERSION_MAJOR  0x00
@@ -282,9 +293,11 @@ typedef struct VPCommData
 
 typedef CONST  VPCOMMDATA FAR* LPCVPCOMMDATA;
 
-const DWORD VP_MAXPLAYERDATA = 256;
-const DWORD VP_MAXSESSIONDATA = 256;
-const DWORD VP_MAXSENDDATA  = 500;
+const DWORD VP_MAXPLAYERDATA  = 512;
+const DWORD VP_MAXSESSIONDATA = 512;
+// SenumREP wire size = dataSize + 90 bytes (10 hdr + 80 VPSESSIONINFO fields).
+// VP_MAXSENDDATA must exceed VP_MAXSESSIONDATA + 90 to avoid false disconnect.
+const DWORD VP_MAXSENDDATA    = 700;
 
 enum VP_SESSIONFLAGS 
 { 

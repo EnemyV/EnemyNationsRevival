@@ -148,7 +148,7 @@ void CStatData::Init (CMmio * pMmio)
 		{
 		int iHt = pMmio->ReadShort ();
 		int iWt = pMmio->ReadShort ();
-		CString sName;
+		std::string sName;
 		pMmio->ReadString (sName);
 		m_pFnt = new CFont ();
 
@@ -164,7 +164,7 @@ void CStatData::Init (CMmio * pMmio)
 					case 0 :
 					case 1 :
 						lf.lfHeight = iHt - 2 * iTry;
-						strncpy (lf.lfFaceName, sName, LF_FACESIZE-1);
+						strncpy (lf.lfFaceName, sName.c_str(), LF_FACESIZE-1);
 						break;
 					case 2 :
 					case 3 :
@@ -182,12 +182,11 @@ void CStatData::Init (CMmio * pMmio)
 				m_pFnt->CreateFontIndirect (&lf);
 
 				// see if it will fit
-				CClientDC dc ( NULL );
+				CClientDC dc ( (CWnd*)NULL );
 				CFont * pOldFont = dc.SelectObject (m_pFnt);
-				CString sTest;
-				sTest.LoadString (IDS_LONGEST_STRING);
+				std::string sTest = EnLoadStdString(IDS_LONGEST_STRING);
 				CRect rect (0, 0, theApp.m_iScrnX, theApp.m_iScrnY);
-				dc.DrawText (sTest, -1, &rect, DT_CALCRECT | DT_LEFT | DT_SINGLELINE);
+				dc.DrawText (sTest.c_str(), -1, &rect, DT_CALCRECT | DT_LEFT | DT_SINGLELINE);
 				dc.SelectObject ( pOldFont );
 				if (rect.Width () + rect.Width () / 8 < theApp.m_iScrnX / 2)
 					break;
@@ -200,7 +199,7 @@ void CStatData::Init (CMmio * pMmio)
 			memset (&lf, 0, sizeof (lf));
 			lf.lfHeight = iHt;
 			lf.lfWeight = iWt;
-			strcpy (lf.lfFaceName, sName);
+			strcpy (lf.lfFaceName, sName.c_str());
 			m_pFnt->CreateFontIndirect (&lf);
 			}
 
@@ -475,7 +474,7 @@ void CStatInst::DrawStatHave () const
 void CStatInst::DrawStatText () const
 {
 
-	if (m_sText.IsEmpty ())
+	if (m_sText.empty ())
 		return;
 
 	CRect rText (m_rDest);
@@ -499,7 +498,7 @@ void CStatInst::DrawStatText () const
 	pDc->SetBkMode (TRANSPARENT);
 	if (m_pStatData->m_pFnt == NULL)
 		{
-		pDc->DrawText (m_sText, -1, rText, dtStyle);
+		pDc->DrawText (m_sText.c_str(), -1, rText, dtStyle);
 		return;
 		}
 
@@ -507,7 +506,7 @@ void CStatInst::DrawStatText () const
 	CFont * pOld = pDc->SelectObject (m_pStatData->m_pFnt);
 	CFont fntTemp;
 	CRect rFit ( rText );
-	pDc->DrawText (m_sText, -1, &rFit, DT_CALCRECT | dtStyle );
+	pDc->DrawText (m_sText.c_str(), -1, &rFit, DT_CALCRECT | dtStyle );
 	if ( (rFit.right > rText.right) || (rFit.bottom > rText.bottom) )
 		{
 		// make it smaller
@@ -529,7 +528,7 @@ void CStatInst::DrawStatText () const
 
 			// see if this works
 			pDc->SelectObject ( &fntTemp );
-			pDc->DrawText (m_sText, -1, &rFit, DT_CALCRECT | dtStyle );
+			pDc->DrawText (m_sText.c_str(), -1, &rFit, DT_CALCRECT | dtStyle );
 			if ( (rFit.right <= rText.right) && (rFit.bottom <= rText.bottom) )
 				break;
 			}
@@ -541,7 +540,7 @@ void CStatInst::DrawStatText () const
 	if (*pClr == *(pClr+1))
 		{
 		pDc->SetTextColor (*pClr);
-		pDc->DrawText (m_sText, -1, rText, dtStyle);
+		pDc->DrawText (m_sText.c_str(), -1, rText, dtStyle);
 		pDc->SelectObject ( pOld );
 		return;
 		}
@@ -549,11 +548,11 @@ void CStatInst::DrawStatText () const
 	// shaded letters
 	pDc->SetTextColor (*(pClr+1));
 	rText.OffsetRect (1, 1);
-	pDc->DrawText (m_sText, -1, rText, dtStyle);
+	pDc->DrawText (m_sText.c_str(), -1, rText, dtStyle);
 
 	pDc->SetTextColor (*pClr);
 	rText.OffsetRect (-1, -1);
-	pDc->DrawText (m_sText, -1, rText, dtStyle);
+	pDc->DrawText (m_sText.c_str(), -1, rText, dtStyle);
 
 	pDc->SelectObject ( pOld );
 }
@@ -694,6 +693,10 @@ void CWndStatBar::SetPer (int iPer)
 {
 
 	ASSERT ((0 <= iPer) && (iPer <= 100));
+	// Same null-guard as SetText below — pre-init SetPer / SetHaveNeed
+	// calls can fire before m_pStatData is populated, crashing Debug.
+	if (m_statInst.m_pStatData == NULL)
+		return;
 	ASSERT (m_statInst.m_pStatData->m_iTypIcon == CStatData::done);
 	if (iPer == m_statInst.m_iPerDone)
 		return;
@@ -705,6 +708,8 @@ void CWndStatBar::SetPer (int iPer)
 void CWndStatBar::SetHaveNeed (int iHave, int iNeed)
 {
 
+	if (m_statInst.m_pStatData == NULL)
+		return;
 	ASSERT (m_statInst.m_pStatData->m_iTypIcon == CStatData::have_all);
 	if ((iHave == m_statInst.m_iPerDone) && (iNeed == m_statInst.m_iNeed))
 		return;
@@ -719,8 +724,14 @@ void CWndStatBar::SetText (char const * pText, CStatInst::IMPORTANCE iImp)
 	if (pText == NULL)
 		pText = "";
 
+	// Guard: m_pStatData can be NULL on early/pre-init SetText calls
+	// (Debug-only crash captured 2026-05-24 / again 2026-05-25 at icons.cpp:721
+	// during Phase 6 testing). Release passed because ASSERT is a no-op.
+	if (m_statInst.m_pStatData == NULL)
+		return;
+
 	ASSERT ( (m_statInst.m_pStatData->m_iTypIcon == CStatData::text) || (m_statInst.m_pStatData->m_iTypIcon == CStatData::text_right));
-	if ((iImp == m_statInst.m_iImp) && (! strcmp (m_statInst.m_sText, pText)))
+	if ((iImp == m_statInst.m_iImp) && (m_statInst.m_sText == pText))
 		return;
 
 	m_statInst.SetText (pText, iImp);
@@ -755,7 +766,7 @@ void CWndStatBar::OnPaint()
 	CPaintDC dc(this); // device context for painting
 	thePal.Paint (dc.m_hDC);
 	
-	m_statInst.DrawIcon (&dc);
+	m_statInst.DrawIcon ((CDC*)dc);
 
 	thePal.EndPaint (dc.m_hDC);
 	// Do not call CWndBase::OnPaint() for painting messages
@@ -785,7 +796,7 @@ void CWndStatBar::OnMouseMove(UINT nFlags, CPoint point)
 	// tell the parent
 	GetParent()->SendMessage ( WM_ICONMOUSEMOVE, 0, (LPARAM) this );
 
-	CWnd::OnMouseMove(nFlags, point);
+	CWndBaseSuper::OnMouseMove(nFlags, point);
 }
 
 int CWndStatBar::OnCreate(LPCREATESTRUCT lpCreateStruct) 

@@ -10,11 +10,14 @@
 #define __WORLD_H__
 
 #include <wndbase.h>
+#include <vector>
 
 #include "bmbutton.h"
 #include "terrain.h"
 
 #include "resource.h"
+
+class SDL2Panel;
 
 
 
@@ -35,7 +38,15 @@ public:
 	void		PaletteChange ();
 
 	void		NewDir () { m_bNewDir = TRUE; }							// new direction (called by OnSize)
-	void		NewMode () { m_bNewMode = TRUE; }						// button pressed or building built/destroyed
+	void		NewMode () { m_bNewMode = TRUE; }						// mode button pressed (immediate)
+	// Building built/destroyed/captured: the minimap needs a ground re-bake (buildings
+	// are baked into m_pdibGround0), but NOT an immediate one — AI economies fire this
+	// 1-2x/s and each _NewDir is an O(window px) whole-map sampling walk (~70ms in
+	// Debug on a 1024 map; rr.ndir measured 32-146ms/s STEADY in a 13-player game).
+	// Coalesced in ReRender to at most one re-bake per ~1.5s; a building appearing on
+	// the minimap up to 1.5s late is imperceptible. User actions (mode buttons,
+	// rotation, resize) keep the immediate NewMode()/NewDir() paths.
+	void		BuildingsChanged () { m_dwDirBakePending = timeGetTime (); }
 	void		NewLocation () { m_bNewLocation = TRUE; }		// area map moved
 	void		NewAreaMap (CWndArea * pWnd);								// different area map on top (calls NewLocation)
 
@@ -54,8 +65,20 @@ public:
 				enum { up = 0, down = 1, disabled = 2 };
 	void		CommandCenterChange ();
 
+	// The radar (minimap) tracks unit movement, so it keeps the full frame
+	// rate; the larger world overview repaints at the reduced rate like the
+	// other game windows.
+	bool		RendersEveryFrame () const override { return m_bIsRadar != FALSE; }
+	// The World Map overview is a full per-pixel O(window) re-walk (~117ms in Debug) and
+	// was ~85% of the render budget at 20 players (rr.world ~0.76s/interval, ~7×/sec). It
+	// shows only slow-changing territory/fog/resources (no live unit dots — those are
+	// radar-only), so cap it to ~3fps. Radar keeps the full rate (0). Safe: throttled in
+	// DecideRenderFrame, which skips both render passes cleanly.
+	DWORD		MinRenderIntervalMs () const override { return m_bIsRadar ? 0 : 333; }
 	void		ReRender ();										// mainloop - re-render the screen
-	void		Draw () { m_dibwnd.Update (); }	// draw the rendered screen
+	void		Draw ();												// draw the rendered screen
+
+	SDL2Panel*	GetMapPanel () const { return m_sdlPanel; }		// detached SDL window (may be NULL)
 
 protected:
 	// Generated message map functions
@@ -63,6 +86,7 @@ protected:
 	afx_msg void OnPaint();
 	afx_msg void OnDestroy();
 	afx_msg void OnSize(UINT nType, int cx, int cy);
+	afx_msg void OnMove(int x, int y);
 	afx_msg int OnCreate(LPCREATESTRUCT lpCreateStruct);
 	afx_msg void OnSysCommand(UINT nID, LPARAM lParam);
 	afx_msg void OnUnits ();
@@ -74,6 +98,12 @@ protected:
 	afx_msg void OnLButtonUp(UINT nFlags, CPoint point);
 	afx_msg void OnRButtonDown(UINT nFlags, CPoint point);
 	afx_msg void OnRButtonUp(UINT nFlags, CPoint point);
+	// Modern bindings (2026): MMB held = drag-scroll (was RMB). RMB = send units.
+	void OnMButtonDown(UINT nFlags, CPoint point);
+	void OnMButtonUp(UINT nFlags, CPoint point);
+	// send the area map's selected units to the map location under `pt`
+	// (attack if it's an enemy) — the command half of the old OnLButtonUp
+	void SendUnitsTo(UINT nFlags, CPoint pt);
 	afx_msg void OnMouseMove(UINT nFlags, CPoint point);
 	afx_msg BOOL OnSetCursor(CWnd* pWnd, UINT nHitTest, UINT message);
 	afx_msg BOOL OnEraseBkgnd(CDC* pDC);
@@ -92,13 +122,16 @@ protected:
 	void		SetMouseState ();
 	int			ButtonOn (CPoint const & pt) const;
 	void		ApplyColors (CDIB const *pDib);
-	void		CaptureMouse () { ASSERT (! m_bCapMouse); SetCapture (); m_bCapMouse = TRUE; }
-	void		ReleaseMouse () { ASSERT (m_bCapMouse); ReleaseCapture (); m_bCapMouse = FALSE; }
+	void		CaptureMouse () { if (!m_bCapMouse) { if (!m_sdlPanel) SetCapture(); m_bCapMouse = TRUE; } }
+	void		ReleaseMouse () { if (m_bCapMouse) { if (!m_sdlPanel) ReleaseCapture(); m_bCapMouse = FALSE; } }
 
 	CWndArea *		m_pWndArea;		// area map we represent
 
 	// out WinG window
 	CDIBWnd		m_dibwnd;					// window we blt into
+
+	// SDL2 panel for composited rendering (Phase 1)
+	SDL2Panel*	m_sdlPanel = nullptr;
 
 	// we have several bitmaps to make updates FAST
 	CDIB *				m_pdibGround0;				// this is the terrain starting at 0,0. 
@@ -136,7 +169,8 @@ protected:
 	int						m_iFrameOn;
 
 	BOOL					m_bLBtnDown;
-	BOOL					m_bRBtnDown;
+	BOOL					m_bRBtnDown;	// pan button (MMB) held — drag-scrolls the area view
+	BOOL					m_bRCmdDown;	// RMB held — send-units command pending on RMB-up
 	BOOL					m_bCapMouse;
 
 	BOOL					m_bNewDir;				// TRUE if need to render for new dir
@@ -145,15 +179,23 @@ protected:
 	BOOL					m_bUpdate;				// TRUE if need to update
 	BOOL					m_bBldgHit{};				// TRUE if need to render buildings again
 	BOOL					m_bIsRadar;				// TRUE if it's a radar unit
+	DWORD					m_dwLastRadarDraw{};	// last time the static minimap background was baked
+	CDIB*					m_pdibRadarStatic{};	// cached minimap background (no unit dots) — see ReRender
+	unsigned long long		m_qwLastWalkSig{};		// inputs signature of the last bake (skip-gate, see ReRender)
+	DWORD					m_dwDirBakePending{};	// !=0: building change awaits a coalesced _NewDir
+	DWORD					m_dwLastDirBake{};		// last _NewDir time (coalescing clock)
+	CPoint					m_ptLastBakeCtr{};		// area-view centre the last bake was anchored to
+													// (scroll-follow: moving centre = fast re-bake cadence)
+	std::vector<CPoint>		m_radarDots;			// last frame's unit-dot pixels (for O(units) erase)
 
 	CPoint				m_ptRMB;
 
-	CString				m_sHelpRMB;
-	CString				m_sHelp;
-	CString				m_sHelpBtn[4];
-	CString				m_sHelpBtnDis[4];
-	CString				m_sHelpFace;
-	CString				m_sDir [4];
+	std::string			m_sHelpRMB;
+	std::string			m_sHelp;
+	std::string			m_sHelpBtn[4];
+	std::string			m_sHelpBtnDis[4];
+	std::string			m_sHelpFace;
+	std::string			m_sDir [4];
 
 	HCURSOR				m_hCurArrow{};	// standard cursor
 	HCURSOR				m_hCurCross{};	// cross hairs
@@ -164,12 +206,14 @@ protected:
 
 	// colors for painting the window
 	static DWORD		m_clrTerrain [CHex::num_types];		// same order as CHex m_bType
+	static DWORD		m_clrTerrainPaper [CHex::num_types];	// parchment "paper map" palette — WORLD MAP only (radar keeps m_clrTerrain)
 	static DWORD		m_clrResources [4];
 	static DWORD		m_clrResHigh [4];
 	static DWORD		m_clrLocation;
 	static DWORD		m_clrHit;
 
 	static COLORREF		m_rgbTerrain [CHex::num_types];		// same order as CHex m_bType
+	static COLORREF		m_rgbTerrainPaper [CHex::num_types];	// parchment tones, same order as m_bType
 	static COLORREF		m_rgbResources [4];
 	static COLORREF		m_rgbResHigh [4];
 	static COLORREF		m_rgbLocation;

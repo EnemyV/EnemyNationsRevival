@@ -61,6 +61,20 @@ public:
 public:
 	virtual ~CWndMain() {}
 
+    // Route custom Win32 messages that the dead MFC message map can no longer
+    // register.  CWndStub::WindowProc handles standard WM_*, but WM_VPNOTIFY
+    // etc. are user-range messages that need explicit dispatch here.
+    virtual LRESULT WindowProc(UINT msg, WPARAM wParam, LPARAM lParam) override;
+
+    // Called directly from the SDL event pump (GameWindow: window-close, F2,
+    // Ctrl+P/S) now that the MFC message map is dead — hence public. OnCommand
+    // re-dispatches the same handlers for the residual TranslateAccelerator path.
+    afx_msg void OnCloseApp();
+    afx_msg void OnSave();
+    afx_msg void OnPause();
+    afx_msg void OnBoss();
+    virtual BOOL OnCommand( WPARAM wParam, LPARAM lParam ) override;
+
 protected:
 	void		OnDisplayChange2 ();
 	void		DrawScreen ( CRect const & rectDst );
@@ -81,9 +95,7 @@ protected:
 	afx_msg void OnPaint();
 	afx_msg void OnHide();
 	afx_msg void OnUnHide();
-	afx_msg void OnSave();
 	afx_msg void OnArea();
-	afx_msg void OnBoss();
 	afx_msg void OnHelp();
 	afx_msg void OnMail();
 	afx_msg void OnOptions();
@@ -94,11 +106,9 @@ protected:
 	afx_msg void OnVehicles();
 	afx_msg void OnNext();
 	afx_msg void OnPrev();
-	afx_msg void OnPause();
 	afx_msg void OnPaletteChanged(CWnd* pFocusWnd);
 	afx_msg BOOL OnQueryNewPalette();
 	afx_msg BOOL OnQueryEndSession();
-	afx_msg void OnCloseApp();
 	afx_msg void OnTimer(UINT nIDEvent);
 	afx_msg void OnKeyDown(UINT nChar, UINT nRepCnt, UINT nFlags);
 	afx_msg void OnLButtonDown(UINT nFlags, CPoint point);
@@ -111,7 +121,7 @@ protected:
 	int					m_iWid;
 	int					m_iHt;
 	PROG_POS		m_progPos;
-	CString			m_sText;				// license agreement
+	std::string	m_sText;				// license agreement
 	CFont				m_fnt;
 	BOOL				m_bPauseOnActive;
 	BOOL				m_bLicTimer;
@@ -126,201 +136,71 @@ inline LRESULT CWndMain::OnNetFlowOff (WPARAM , LPARAM )
 		{ CNetApi::OnNetFlowOff (); return 0; }
 
 
-/////////////////////////////////////////////////////////////////////////////
-// CDlgRandNum dialog
+// CDlgRandNum removed (cheat seed-override dialog)
 
-class CDlgRandNum : public CDialog
-{
-// Construction
-public:
-	CDlgRandNum(CWnd* pParent = NULL);   // standard constructor
-
-// Dialog Data
-	//{{AFX_DATA(CDlgRandNum)
-	enum { IDD = IDD_DIALOG_RAND };
-	CString	m_sNum;
-	//}}AFX_DATA
+// CDlgAiPos removed (CHEAT-only AI position dialog)
 
 
-// Overrides
-	// ClassWizard generated virtual function overrides
-	//{{AFX_VIRTUAL(CDlgRandNum)
-	protected:
-	virtual void DoDataExchange(CDataExchange* pDX);    // DDX/DDV support
-	//}}AFX_VIRTUAL
+// CDlgFile removed (Phase 2d) — replaced by SDL2FileDialog (in SDL2FileDialog.cpp).
+// The MFC Save/Load/Options/Speed/Sound/Music/Exit dialog is gone; the SDL2
+// equivalent is invoked from the toolbar Options button.
 
-// Implementation
-protected:
-
-	// Generated message map functions
-	//{{AFX_MSG(CDlgRandNum)
-		// NOTE: the ClassWizard will add member functions here
-	//}}AFX_MSG
-	DECLARE_MESSAGE_MAP()
-};
 
 /////////////////////////////////////////////////////////////////////////////
-// CDlgAiPos dialog
+// CDlgSaveMsg — modeless save progress indicator (SDL2-rendered).
+//
+// Owns an internal SDL2 dialog object that GameWindow renders per frame.
+// UpdateData(FALSE) pushes m_sText/m_sStat into the dialog labels.
 
-class CDlgAiPos : public CDialog
+class _SaveProgressDialog;  // defined privately in main.cpp
+
+class CDlgSaveMsg
 {
-// Construction
 public:
-	CDlgAiPos(CWnd* pParent = NULL);   // standard constructor
+	CDlgSaveMsg(CWnd* pParent = NULL);
+	~CDlgSaveMsg();
 
-// Dialog Data
-	//{{AFX_DATA(CDlgAiPos)
-	enum { IDD = IDD_AI_POS };
-	CWndOD< CButton >	m_btnGoto;
-	CListBox	m_lstBox;
-	//}}AFX_DATA
+	void Create( UINT nIDTemplate, CWnd* pParent );
+	void DestroyWindow();
+	void UpdateData( BOOL bSaveAndValidate );
 
+	// Drive the determinate progress bar (0-100). The save compressor reports a
+	// running block index; m_iTotalBlocks (set before compression starts) lets
+	// the per-block callback turn that into a percentage.
+	void SetProgress( int pct );
 
-// Overrides
-	// ClassWizard generated virtual function overrides
-	//{{AFX_VIRTUAL(CDlgAiPos)
-	protected:
-	virtual void DoDataExchange(CDataExchange* pDX);    // DDX/DDV support
-	//}}AFX_VIRTUAL
+	std::string	m_sText;
+	std::string	m_sStat;
+	int			m_iTotalBlocks = 0;
 
-// Implementation
-protected:
-
-	// Generated message map functions
-	//{{AFX_MSG(CDlgAiPos)
-	virtual void OnOK();
-	afx_msg void OnDblclkListAi();
-	afx_msg void OnSelchangeListAi();
-	virtual BOOL OnInitDialog();
-	//}}AFX_MSG
-	DECLARE_MESSAGE_MAP()
+private:
+	_SaveProgressDialog* m_pDlg;  // owned by GameWindow (heap, deleted on EndDialog cleanup)
 };
 
 
 /////////////////////////////////////////////////////////////////////////////
-// CDlgFile dialog
+// CDlgPause — modeless pause notification
+// No longer inherits CDialog. Uses a Win32 popup window.
 
-class CDlgFile : public CDialog
+class CDlgPause
 {
-// Construction
 public:
-	CDlgFile(CWnd* pParent = NULL);   // standard constructor
+	CDlgPause(CWnd* pParent = NULL);
+	~CDlgPause();
 
-	void		SetState ();
-	void		SetSpeed ();
+	void Show( int iMode );
+	void DestroyWindow();
+	enum { server, client, off };
 
-// Dialog Data
-	//{{AFX_DATA(CDlgFile)
-	enum { IDD = IDD_FILE };
-	CWndOD< CButton >	m_btnMission;
-	CSliderCtrl	m_sldMusic;
-	CSliderCtrl	m_sldSound;
-	CSliderCtrl	m_sldSpeed;
-	CScrollBar	m_scrSpeed;
-	CScrollBar	m_scrSound;
-	CScrollBar	m_scrMusic;
-	//}}AFX_DATA
+	HWND m_hWnd;
+	std::string m_sText;
 
+private:
+	void Repaint();
 
-// Overrides
-	// ClassWizard generated virtual function overrides
-	//{{AFX_VIRTUAL(CDlgFile)
-	protected:
-	virtual void DoDataExchange(CDataExchange* pDX);    // DDX/DDV support
-	virtual void PostNcDestroy();
-	//}}AFX_VIRTUAL
-
-// Implementation
-protected:
-
-	// Generated message map functions
-	//{{AFX_MSG(CDlgFile)
-	virtual BOOL OnInitDialog();
-	afx_msg void OnFileSave();
-	afx_msg void OnFileHelp();
-	afx_msg void OnFileExit();
-	afx_msg void OnDestroy();
-	virtual void OnOK();
-	afx_msg void OnHScroll(UINT nSBCode, UINT nPos, CScrollBar* pScrollBar);
-	afx_msg void OnFileVersion();
-	afx_msg void OnFileMinimize();
-	afx_msg void OnActivate(UINT nState, CWnd* pWndOther, BOOL bMinimized);
-	afx_msg void OnFileScene();
-	//}}AFX_MSG
-	DECLARE_MESSAGE_MAP()
-};
-
-
-/////////////////////////////////////////////////////////////////////////////
-// CDlgSaveMsg dialog
-
-class CDlgSaveMsg : public CDialog
-{
-// Construction
-public:
-	CDlgSaveMsg(CWnd* pParent = NULL);   // standard constructor
-
-// Dialog Data
-	//{{AFX_DATA(CDlgSaveMsg)
-	enum { IDD = IDD_SAVE_MSG };
-	CString	m_sText;
-	CString	m_sStat;
-	//}}AFX_DATA
-
-
-// Overrides
-	// ClassWizard generated virtual function overrides
-	//{{AFX_VIRTUAL(CDlgSaveMsg)
-	protected:
-	virtual void DoDataExchange(CDataExchange* pDX);    // DDX/DDV support
-	//}}AFX_VIRTUAL
-
-// Implementation
-protected:
-
-	// Generated message map functions
-	//{{AFX_MSG(CDlgSaveMsg)
-	afx_msg int OnCreate(LPCREATESTRUCT lpCreateStruct);
-	//}}AFX_MSG
-	DECLARE_MESSAGE_MAP()
-};
-
-
-/////////////////////////////////////////////////////////////////////////////
-// CDlgPause dialog
-
-class CDlgPause : public CDialog
-{
-// Construction
-public:
-	CDlgPause(CWnd* pParent = NULL);   // standard constructor
-
-	void		Show (int iMode);
-				enum { server, client, off };
-
-// Dialog Data
-	//{{AFX_DATA(CDlgPause)
-	enum { IDD = IDD_PAUSE_MSG };
-	CString	m_sText;
-	//}}AFX_DATA
-
-
-// Overrides
-	// ClassWizard generated virtual function overrides
-	//{{AFX_VIRTUAL(CDlgPause)
-	protected:
-	virtual void DoDataExchange(CDataExchange* pDX);    // DDX/DDV support
-	virtual void PostNcDestroy() { delete this; }
-	//}}AFX_VIRTUAL
-
-// Implementation
-protected:
-
-	// Generated message map functions
-	//{{AFX_MSG(CDlgPause)
-	virtual BOOL OnInitDialog();
-	//}}AFX_MSG
-	DECLARE_MESSAGE_MAP()
+	static LRESULT CALLBACK WndProc( HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam );
+	static const char* s_className;
+	static bool s_classRegistered;
 };
 
 #endif

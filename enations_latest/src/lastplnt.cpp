@@ -6,7 +6,16 @@
 //---------------------------------------------------------------------------
 
 #include "CdLoc.h"
-#include "DlgReg.h"
+#include "GameWindow.h"
+#ifndef _WIN32
+#include "en_harness.h"   // in-process LLM-driving harness (Linux/Debug)
+#endif
+#include "SDL2Compositor.h"
+#include "SDL2Video.h"
+#include "SDL2MainMenu.h"
+#include "SDL2GameDialogs.h"
+#include "SDL2Options.h"
+#include "w22_settings.h"
 #include "ai.h"
 #include "area.h"
 #include "bitmaps.h"
@@ -18,14 +27,12 @@
 #include "error.h"
 #include "join.h"
 #include "license.h"
-#include "options.h"
 #include "racedata.h"
 #include "scenario.h"
 #include "sfx.h"
 #include "sprite.h"
 #include "stdafx.h"
 #include "terrain.inl"
-#include "tstsnds.h"
 
 #include <processenv.h>
 
@@ -54,7 +61,7 @@ extern HANDLE hRenderEvent;
 extern BOOL   bDoSubclass;
 
 
-CString          GetDefaultApp( char const* pExt, char const* pDef, char const* pCmdLine );
+std::string      GetDefaultApp( char const* pExt, char const* pDef, char const* pCmdLine );
 LRESULT CALLBACK PerBarProc( HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam );
 
 
@@ -99,7 +106,11 @@ void trans_func( unsigned int u, EXCEPTION_POINTERS* pExp )
     memset( exp.m_stack, 0, sizeof( exp.m_stack ) );
 
     // no clean way to do this so we walk the stack looking for pointers to code
+#ifdef _WIN64
+    DWORD* pCall = (DWORD*)pExp->ContextRecord->Rsp;   // x64 stack pointer (Esp is 32-bit only)
+#else
     DWORD* pCall = (DWORD*)pExp->ContextRecord->Esp;
+#endif
     for ( int iInd = 0; iInd < NUM_EXCEP; pCall++ )
     {
         // if the pointer is bad - we're done (we don't write but the stack is writeable)
@@ -117,6 +128,7 @@ void trans_func( unsigned int u, EXCEPTION_POINTERS* pExp )
 
 void CatchNum( int iNum )
 {
+    fprintf( stderr, "[CatchNum] game exception %d - shutting the game down\n", iNum );
 
     bDoSubclass = FALSE;
 
@@ -130,16 +142,14 @@ void CatchNum( int iNum )
     if ( iNum == ERR_TLP_QUIT )
         return;
 
-    CString sMsg;
-    (void)sMsg.LoadString( IDS_ERR_LOAD_1 );
     char sNum[20];
     if ( iNum >= ERR_BASE_USER_ERROR )
         iNum -= ERR_BASE_USER_ERROR;
     else
         iNum += 100;
     itoa( iNum, sNum, 10 );
-    csPrintf( &sMsg, (char const*)sNum );
-    AfxMessageBox( sMsg, MB_OK | MB_ICONSTOP );
+    std::string sMsg = strPrintf( EnLoadStdString( IDS_ERR_LOAD_1 ).c_str(), sNum );
+    EnMessageBox( sMsg.c_str(), MB_OK | MB_ICONSTOP );
 
     bDoSubclass = TRUE;
 }
@@ -155,22 +165,18 @@ void CatchSE( SE_Exception e )
     theGame.SetShouldProcessMessages(FALSE);
     theGame.EmptyQueue( );
 
-    CDlgStackDump dlg;
-    dlg.m_pe = &e;
-    (void)dlg.m_sText.LoadString( IDS_ERR_LOAD_3 );
+    std::string sDumpText = EnLoadStdString( IDS_ERR_LOAD_3 );
 
-    MEMORYSTATUS ms {};
+    MEMORYSTATUS ms;
     ms.dwLength = sizeof( ms );
-    GlobalMemoryStatus( &ms ); // TODO: replace with GlobalMemoryStatusEx
+    GlobalMemoryStatus( &ms );
     const int ONE_MEG = 1024 * 1024;
     if ( ms.dwAvailPageFile / ONE_MEG < 8 )
     {
-        CString sMsg {};
-        (void)sMsg.LoadString( IDS_OUT_OF_MEMORY );
-        dlg.m_sText = sMsg + "\r\n" + dlg.m_sText;
+        sDumpText = EnLoadStdString( IDS_OUT_OF_MEMORY ) + "\r\n" + sDumpText;
     }
 
-    char sNum1[20] {}, sNum2[80] {}, sNumS[5][20] {};
+    char sNum1[20], sNum2[80], sNumS[5][20];
     itoa( e.m_uEc, sNum1, 16 );
     switch ( (uint64_t)e.m_pExCode )
     {
@@ -191,22 +197,45 @@ void CatchSE( SE_Exception e )
         break;
     }
     for ( int iOn = 0; iOn < 5; iOn++ ) itoa( e.m_stack[iOn], sNumS[iOn], 16 );
-    csPrintf( &dlg.m_sText, (char const*)VER_STRING, (char const*)sNum1, (char const*)sNum2, (char const*)sNumS[0],
-              (char const*)sNumS[1], (char const*)sNumS[2], (char const*)sNumS[3], (char const*)sNumS[4] );
-    try
-    {
-        dlg.DoModal( );
-    }
-    catch ( ... )
-    {
-        AfxMessageBox( dlg.m_sText, MB_OK | MB_ICONSTOP );
-    }
+    sDumpText = strPrintf( sDumpText.c_str(), VER_STRING, sNum1, sNum2,
+                           sNumS[0], sNumS[1], sNumS[2], sNumS[3], sNumS[4] );
+    ::MessageBoxA( NULL, sDumpText.c_str(), "Enemy Nations - Exception", MB_OK | MB_ICONSTOP );
 
     bDoSubclass = TRUE;
 }
 
-void CatchOther( )
+#include <exception>
+#include <typeinfo>
+
+// Name the in-flight exception. Valid while a catch(...) handler is running, which
+// is the only place CatchOther is called from. A bare "Unknown error" told a tester
+// (and us) nothing; bad_alloc vs a game int-code vs something else are different bugs.
+static std::string DescribeCurrentException( )
 {
+    std::exception_ptr p = std::current_exception( );
+    if ( !p )
+        return "no active exception";
+    try
+    {
+        std::rethrow_exception( p );
+    }
+    catch ( const std::bad_alloc& e )   { return std::string( "std::bad_alloc: " ) + e.what( ); }
+    catch ( const std::exception& e )   { return std::string( typeid( e ).name( ) ) + ": " + e.what( ); }
+    catch ( int i )                     { return "int " + IntToStr( i ); }
+    // Raw `throw( ERR_* )` sites (world.cpp CreateEx, area.cpp, the CAI code) throw the
+    // ENUM type, which catch(int) does not catch — these were the anonymous "Unknown error".
+    catch ( Error e )                   { const char* s = GetWind22ErrString( e );
+                                          return ( s && s[0] ? std::string( s ) : "wind22 error" ) +
+                                                 " (" + IntToStr( (int)e ) + ")"; }
+    catch ( GameError e )               { return "game error " + IntToStr( (int)e - (int)ERR_BASE_USER_ERROR ); }
+    catch ( ... )                       { return "non-standard exception type"; }
+}
+
+void CatchOther( char const* pContext )
+{
+    std::string sWhat = DescribeCurrentException( );
+
+    fprintf( stderr, "[CatchOther] unknown game exception (%s) - shutting the game down\n", sWhat.c_str( ) );
 
     bDoSubclass = FALSE;
 
@@ -216,9 +245,15 @@ void CatchOther( )
     theGame.SetShouldProcessMessages(FALSE);
     theGame.EmptyQueue( );
 
-    CString sMsg;
-    (void)sMsg.LoadString( IDS_ERR_LOAD_2 );
-    AfxMessageBox( sMsg, MB_OK | MB_ICONSTOP );
+    // Headline stays the shipped string; the detail lines are what a bug report needs.
+    std::string sMsg = EnLoadStdString( IDS_ERR_LOAD_2 );
+    sMsg += "\r\n\r\nException: " + sWhat;
+    if ( pContext && *pContext )
+        sMsg += "\r\n" + std::string( pContext );
+    sMsg += "\r\nVersion: " + std::string( VER_STRING );
+
+    OutputDebugStringA( ( "[CatchOther] " + sMsg + "\n" ).c_str( ) );
+    EnMessageBox( sMsg.c_str( ), MB_OK | MB_ICONSTOP );
 
     bDoSubclass = TRUE;
 }
@@ -235,7 +270,7 @@ LRESULT CALLBACK RedTextProc( HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
         RECT rect;
         char sText[20];
         ::GetClientRect( hWnd, &rect );
-        ::GetWindowText( hWnd, sText, 19 );
+        ::GetWindowTextA( hWnd, sText, 19 );
         ::SetBkColor( ps.hdc, RGB( 192, 192, 192 ) );
         if ( sText[0] == '-' )
             ::SetTextColor( ps.hdc, RGB( 255, 0, 0 ) );
@@ -287,9 +322,7 @@ CConquerApp::CConquerApp( ): m_MapClrFmt( CColorFormat::DEPTH_EIGHT ),
 {
 
     m_bInGame       = FALSE;
-    m_pdlgRelations = NULL;
-    m_pdlgFile      = NULL;
-    m_pdlgRsrch     = NULL;
+    m_bWorldTearingDown = FALSE;
     m_hAccel        = NULL;
     m_hLibLang      = NULL;
     m_iLangCode     = 0;
@@ -302,7 +335,6 @@ CConquerApp::CConquerApp( ): m_MapClrFmt( CColorFormat::DEPTH_EIGHT ),
     m_iMultVoices = TRUE;
     m_iHaveIntro  = TRUE;
     m_pdlgPause   = NULL;
-    m_pdlgChat    = NULL;
 
     m_pLogFile = NULL;
 
@@ -326,6 +358,12 @@ CConquerApp::~CConquerApp( )
     ptheRaces = NULL;
 
     CGlobalSubClass::UnSubClass( );
+
+    // Phase 4c prep: HFONT cleanup (was automatic via CFont dtor)
+    if ( m_Fnt )     { ::DeleteObject( m_Fnt );     m_Fnt = NULL; }
+    if ( m_FntRD )   { ::DeleteObject( m_FntRD );   m_FntRD = NULL; }
+    if ( m_FntDesc ) { ::DeleteObject( m_FntDesc ); m_FntDesc = NULL; }
+    if ( m_FntCost ) { ::DeleteObject( m_FntCost ); m_FntCost = NULL; }
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -334,10 +372,61 @@ CConquerApp::~CConquerApp( )
 CConquerApp theApp;
 
 
-int _excep_new_handler( size_t )
+int _excep_new_handler( size_t size )
 {
+    // Log the failed allocation. The size is the SINGLE request that exceeded
+    // available address space — for a 32-bit process this is almost always a
+    // corrupted count read from a save / archive (e.g. 0xFFFFFFFF interpreted
+    // as a length). Capturing the size and a stack snapshot here makes it
+    // possible to pinpoint the bad reader instead of guessing.
+    char head[256];
+    _snprintf_s( head, sizeof( head ), _TRUNCATE,
+                 "[bad_alloc] requested %zu bytes (%.2f MB)",
+                 size, (double)size / (1024.0 * 1024.0) );
+    ::OutputDebugStringA( head );
+    ::OutputDebugStringA( "\n" );
+    theApp.Log( head );
 
-    AfxMessageBox( IDS_NO_MEMORY, MB_OK | MB_SYSTEMMODAL | MB_ICONSTOP );
+#ifdef _WIN32
+    // Brief stack snapshot — symbols only resolve if dbghelp + PDB present,
+    // but raw module+offset is still searchable in the map file.
+    void*  frames[ 24 ];
+    USHORT count = ::CaptureStackBackTrace( 1, 24, frames, nullptr );
+    for ( USHORT i = 0; i < count; ++i )
+    {
+        HMODULE hMod = NULL;
+        char line[ 256 ];
+        if ( ::GetModuleHandleExA( GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+                                   GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                                   (LPCSTR)frames[ i ], &hMod ) && hMod )
+        {
+            char modPath[ MAX_PATH ] = { 0 };
+            ::GetModuleFileNameA( hMod, modPath, sizeof( modPath ) );
+            const char* base = strrchr( modPath, '\\' );
+            base = base ? base + 1 : modPath;
+            uintptr_t off = (uintptr_t)frames[ i ] - (uintptr_t)hMod;
+            _snprintf_s( line, sizeof( line ), _TRUNCATE,
+                         "  [%02u] %p  %s+0x%zX", i, frames[ i ], base, (size_t)off );
+        }
+        else
+        {
+            _snprintf_s( line, sizeof( line ), _TRUNCATE,
+                         "  [%02u] %p", i, frames[ i ] );
+        }
+        ::OutputDebugStringA( line );
+        ::OutputDebugStringA( "\n" );
+        theApp.Log( line );
+    }
+#endif
+
+    // Show the size in the message box so users can flag huge requests
+    // (e.g. 4 GB) immediately instead of just seeing a generic OOM.
+    char msg[ 512 ];
+    std::string stdMsg = EnLoadStdString( IDS_NO_MEMORY );
+    _snprintf_s( msg, sizeof( msg ), _TRUNCATE,
+                 "%s\n\n(Requested %zu bytes / %.2f MB. See log for stack.)",
+                 stdMsg.c_str(), size, (double)size / (1024.0 * 1024.0) );
+    EnMessageBox( msg, MB_OK | MB_SYSTEMMODAL | MB_ICONSTOP );
     ::PostQuitMessage( 0 );
     throw;
     return ( 0 );
@@ -379,10 +468,10 @@ void CConquerApp::Log( char const* pText )
         iLen--;
     }
 
-    m_pLogFile->Write( pText, iLen );
-    m_pLogFile->Write( "\r\n", 2 );
+    fwrite( pText, 1, iLen, m_pLogFile );
+    fwrite( "\r\n", 1, 2, m_pLogFile );
 
-    m_pLogFile->Flush( );
+    fflush( m_pLogFile );
 }
 
 BOOL CConquerApp::InitInstance( )
@@ -398,23 +487,17 @@ BOOL CConquerApp::InitInstance( )
 
     InitWindwardLib1( this );
 
+    
 
 
+    EnWriteProfileString( "ADPCM", "Error", "OK" );
 
-    WriteProfileString( "ADPCM", "Error", "OK" );
-
-    if ( GetProfileInt( "Advanced", "Log", 0 ) )
+    if ( EnGetProfileInt( "Advanced", "Log", 0 ) )
     {
-        AfxMessageBox( IDS_EN_LOGGING, MB_OK | MB_ICONINFORMATION );
-        m_pLogFile    = new CFile( );
-        CString sName = GetProfileString( "Advanced", "LogName", GameLogFile );
-        if ( m_pLogFile->Open( sName, CFile::modeCreate | CFile::modeWrite | CFile::shareDenyWrite ) == 0 )
-        {
-            m_pLogFile->Close( );
-            delete m_pLogFile;
-            m_pLogFile = NULL;
-        }
-        else
+        EnMessageBox( IDS_EN_LOGGING, MB_OK | MB_ICONINFORMATION );
+        std::string sName = EnGetProfileStdString( "Advanced", "LogName", GameLogFile );
+        m_pLogFile = fopen( sName.c_str(), "wb" );  // Phase 4c prep — replaces CFile
+        if ( m_pLogFile != NULL )
         {
             time_t t;
             time( &t );
@@ -424,18 +507,18 @@ BOOL CConquerApp::InitInstance( )
         }
     }
     else if ( ::GetPrivateProfileInt( "vdmplay", "UseLogFile", 0, "vdmplay.ini" ) )
-        AfxMessageBox( IDS_VP_LOGGING, MB_OK | MB_ICONINFORMATION );
+        EnMessageBox( IDS_VP_LOGGING, MB_OK | MB_ICONINFORMATION );
 
-    WriteProfileString( "Advanced", "Version", VER_STRING );
+    EnWriteProfileString( "Advanced", "Version", VER_STRING );
 
     // over-ride default event method
-    m_bUseEvents  = GetProfileInt( "Advanced", "Events", m_bUseEvents );
-    m_bPauseOnAct = GetProfileInt( "Advanced", "Pause", TRUE );
+    m_bUseEvents  = EnGetProfileInt( "Advanced", "Events", m_bUseEvents );
+    m_bPauseOnAct = EnGetProfileInt( "Advanced", "Pause", TRUE );
 
     // load the correct language
-    m_iLangCode  = GetProfileInt( "Advanced", "Language", PRIMARYLANGID( LANGIDFROMLCID( ::GetUserDefaultLCID( ) ) ) );
-    CString sLib = "ENLang" + IntToCString( m_iLangCode ) + ".DLL";
-    if ( ( m_hLibLang = LoadLibrary( sLib ) ) != NULL )
+    m_iLangCode  = EnGetProfileInt( "Advanced", "Language", PRIMARYLANGID( LANGIDFROMLCID( ::GetUserDefaultLCID( ) ) ) );
+    std::string sLib = "ENLang" + IntToStr( m_iLangCode ) + ".DLL";
+    if ( ( m_hLibLang = LoadLibrary( sLib.c_str() ) ) != NULL )
         AfxSetResourceHandle( m_hLibLang );
 
     // init critical section (before maybe exiting below)
@@ -443,7 +526,7 @@ BOOL CConquerApp::InitInstance( )
     InitializeCriticalSection( &cs );
     hRenderEvent = CreateEvent( NULL, TRUE, FALSE, "RenderEvent" );
 
-    (void)m_sAppName.LoadString( IDS_MAIN_TITLE );
+    m_sAppName = EnLoadStdString( IDS_MAIN_TITLE );
 
     // Get CPU Speed
     CPUInfo cpu;
@@ -473,7 +556,7 @@ BOOL CConquerApp::InitInstance( )
         if ( lRtn == DISP_CHANGE_SUCCESSFUL )
         {
             // do we set the screen resolution?
-            int iRes     = GetProfileInt( "Advanced", "ScreenResolution", 0 );
+            int iRes     = EnGetProfileInt( "Advanced", "ScreenResolution", 0 );
             m_iOldWidth  = GetSystemMetrics( SM_CXSCREEN );
             m_iOldHeight = GetSystemMetrics( SM_CYSCREEN );
             HDC hdc      = GetDC( NULL );
@@ -510,13 +593,11 @@ BOOL CConquerApp::InitInstance( )
                 ( m_iOldWidth * m_iOldHeight * ( ( m_iOldDepth + 7 ) / 8 ) ) / m_iCpuSpeed <= ( 640 * 480 ) / 60;
             if ( ( iBest < 5 ) && ( iRes == 0 ) && !bNativeOk )
             {
-                CDlgMsg dlg;
-                CString sMsg;
-                (void)sMsg.LoadString( IDS_KILLER_RES );
-                CString sRes = IntToCString( m_iOldWidth ) + "x" + IntToCString( m_iOldHeight ) + "x" +
-                               IntToCString( m_iOldDepth );
-                csPrintf( &sMsg, (char const*)sRes, pRes );
-                if ( dlg.MsgBox( sMsg, MB_YESNO | MB_ICONSTOP | MB_TASKMODAL, "Warnings", "ScreenRes", IDNO ) == IDYES )
+                std::string sRes = IntToStr( m_iOldWidth ) + "x" + IntToStr( m_iOldHeight ) + "x" +
+                                   IntToStr( m_iOldDepth );
+                std::string sMsg = strPrintf( EnLoadStdString( IDS_KILLER_RES ).c_str(),
+                                              sRes.c_str(), pRes );
+                if ( EnMessageBoxOnce( sMsg.c_str(), MB_YESNO | MB_ICONSTOP | MB_TASKMODAL, "Warnings", "ScreenRes", IDNO ) == IDYES )
                     iRes = iBest;
             }
             else if ( iRes == 1 )
@@ -557,18 +638,20 @@ BOOL CConquerApp::InitInstance( )
     m_sClsName = "EnemyNationsMainWindow";
     WNDCLASS wc;
     memset( &wc, 0, sizeof( wc ) );
-    wc.lpfnWndProc   = ::DefWindowProc;
-    wc.hInstance     = AfxGetInstanceHandle( );
+    // Route the main window class through CWndStub::StaticWndProc so
+    // CWndMain::OnCreate / OnPaint / OnEraseBkgnd / etc. virtuals actually fire.
+    wc.lpfnWndProc   = &CWndStub::StaticWndProc;
+    wc.hInstance     = ::GetModuleHandle( NULL );  // Phase 4c prep: was AfxGetInstanceHandle
     wc.hIcon         = LoadIcon( IDI_MAIN );
     wc.hCursor       = LoadStandardCursor( IDC_ARROW );
-    wc.lpszClassName = m_sClsName;
-    if ( !AfxRegisterClass( &wc ) ) {
+    wc.lpszClassName = m_sClsName.c_str();
+    if ( !::RegisterClass( &wc ) ) {  // Phase 4c prep: was AfxRegisterClass
         return FALSE;
     }
 
-    HWND hPrevWnd = ::FindWindow( m_sClsName, m_sAppName );
+    HWND hPrevWnd = ::FindWindow( m_sClsName.c_str(), m_sAppName.c_str() );
     if ( hPrevWnd != NULL )
-        if ( AfxMessageBox( IDS_MULT_INST, MB_YESNO | MB_ICONQUESTION ) == IDYES )
+        if ( EnMessageBox( IDS_MULT_INST, MB_YESNO | MB_ICONQUESTION ) == IDYES )
         {
             ::SetForegroundWindow( hPrevWnd );
             return ( FALSE );
@@ -585,6 +668,9 @@ BOOL CConquerApp::InitInstance( )
     m_wndMain.InvalidateRect( NULL );
     m_wndMain.UpdateWindow( );
 
+    // Tell wind22 about our main window so it doesn't need ptheApp->m_pMainWnd
+    w22::SetMainHWND( m_wndMain.m_hWnd );
+
     Log( "Initialize windward.lib" );
 
     // set it up
@@ -593,22 +679,10 @@ BOOL CConquerApp::InitInstance( )
 
     if ( CNetApi::GetVersion( ) < 0x01000021 )
     {
-        AfxMessageBox( IDS_VDMPLAY_VER, MB_OK | MB_ICONSTOP );
+        EnMessageBox( IDS_VDMPLAY_VER, MB_OK | MB_ICONSTOP );
         return ( FALSE );
     }
-    char sTmp[12];
-    strncpy( sTmp, theMusicPlayer.GetVersion( ), 10 );
-    sTmp[10]      = 0;
-    int   iMajVer = atoi( sTmp );
-    char* pBuf    = sTmp;
-    while ( isdigit( *pBuf ) ) pBuf++;
-    while ( !isdigit( *pBuf ) ) pBuf++;
-    int iMinVer = atoi( pBuf );
-    if ( ( iMajVer < 3 ) || ( ( iMajVer == 3 ) && ( iMinVer < 6 ) ) )
-    {
-        AfxMessageBox( IDS_MSS_VER, MB_OK | MB_ICONSTOP );
-        return ( FALSE );
-    }
+    // SDL_mixer version (MSS version check removed)
 
     // list out version
     switch ( iWinType )
@@ -628,48 +702,47 @@ BOOL CConquerApp::InitInstance( )
     }
 
 #ifdef LOGGINGON
-    CString msg;
-    msg.Format( "OS Detected: %s\n", m_sOs );
+    char msg[256];
+    snprintf( msg, sizeof(msg), "OS Detected: %s\n", m_sOs.c_str() );
     OutputDebugStringA( msg );
 #endif
 
     OSVERSIONINFO ovi;
     memset( &ovi, 0, sizeof( ovi ) );
     ovi.dwOSVersionInfoSize = sizeof( ovi );
-    GetVersionEx( &ovi ); // TODO: Consider using VerifyVersionInfo* or IsWindows*
-    m_sOs += " " + LongToCString( ovi.dwMajorVersion ) + "." + LongToCString( ovi.dwMinorVersion ) + " (";
+    GetVersionEx( &ovi );
+    m_sOs += " " + LongToStr( ovi.dwMajorVersion ) + "." + LongToStr( ovi.dwMinorVersion ) + " (";
     if ( ( ovi.dwBuildNumber & 0xFFFF0000 ) == 0 )
-        m_sOs += LongToCString( ovi.dwBuildNumber ) + ")";
+        m_sOs += LongToStr( ovi.dwBuildNumber ) + ")";
     else
-        m_sOs += LongToCString( ovi.dwBuildNumber >> 16 ) + "," + LongToCString( ovi.dwBuildNumber & 0xFFFF ) + ")";
+        m_sOs += LongToStr( ovi.dwBuildNumber >> 16 ) + "," + LongToStr( ovi.dwBuildNumber & 0xFFFF ) + ")";
     if ( iWinType == W32s )
     {
         WORD wVer = LOWORD( GetVersion( ) );
-        m_sOs += " [Windows " + IntToCString( LOBYTE( wVer ) ) + "." + IntToCString( HIBYTE( wVer ) ) + "]";
+        m_sOs += " [Windows " + IntToStr( LOBYTE( wVer ) ) + "." + IntToStr( HIBYTE( wVer ) ) + "]";
     }
-    Log( m_sOs );
+    Log( m_sOs.c_str( ) );
 
     long lVer = CNetApi::GetVersion( );
-    m_sNet    = "VDMPlay API " + IntToCString( HIBYTE( HIWORD( lVer ) ) ) + "." +
-                IntToCString( LOBYTE( HIWORD( lVer ) ) ) + "." + IntToCString( LOWORD( lVer ) );
-    Log( m_sNet );
+    m_sNet    = "VDMPlay API " + IntToStr( HIBYTE( HIWORD( lVer ) ) ) + "." +
+             IntToStr( LOBYTE( HIWORD( lVer ) ) ) + "." + IntToStr( LOWORD( lVer ) );
+    Log( m_sNet.c_str( ) );
 
-    MEMORYSTATUS ms {};
+    MEMORYSTATUS ms;
     ms.dwLength = sizeof( ms );
-    GlobalMemoryStatus( &ms ); // TODO: replace with GlobalMemoryStatusEx
-    const int ONE_MEG = 1024 * 1024;
-    CString   sMemory = "Memory (avail/total) Physical: " + IntToCString( ms.dwAvailPhys / ONE_MEG ) + "M/" +
-                        IntToCString( ms.dwTotalPhys / ONE_MEG ) +
-                        "M Virtual: " + IntToCString( ms.dwAvailPageFile / ONE_MEG ) + "M/" +
-                        IntToCString( ms.dwTotalPageFile / ONE_MEG ) + "M";
-    Log( sMemory );
+    GlobalMemoryStatus( &ms );
+    const int ONE_MEG   = 1024 * 1024;
+    std::string sMemory = "Memory (avail/total) Physical: " + IntToStr( ms.dwAvailPhys / ONE_MEG ) + "M/" +
+                          IntToStr( ms.dwTotalPhys / ONE_MEG ) +
+                          "M Virtual: " + IntToStr( ms.dwAvailPageFile / ONE_MEG ) + "M/" +
+                          IntToStr( ms.dwTotalPageFile / ONE_MEG ) + "M";
+    Log( sMemory.c_str() );
 
     // enough memory?
     // need 8M system
     if ( ms.dwTotalPhys < 1024 * 1024 * 7 )
     {
-        CDlgMsg dlg;
-        if ( dlg.MsgBox( IDS_ERROR_LOW_PHYS_MEM, MB_YESNO | MB_ICONSTOP | MB_TASKMODAL, "Warnings", "LessThan8Meg" ) !=
+        if ( EnMessageBoxOnce( IDS_ERROR_LOW_PHYS_MEM, MB_YESNO | MB_ICONSTOP | MB_TASKMODAL, "Warnings", "LessThan8Meg" ) !=
              IDYES )
             return ( 0 );
         Log( "Error: Not enough physical memory to run" );
@@ -677,21 +750,16 @@ BOOL CConquerApp::InitInstance( )
     }
     if ( ms.dwTotalPageFile < 1024 * 1024 * MEM_NEEDED_BASE )
     {
-        CString sText;
-        (void)sText.LoadString( IDS_ERROR_LOW_VIRT_MEM );
-        CString sNum;
-        sNum = IntToCString( MEM_NEEDED_BASE );
-        csPrintf( &sText, (char const*)sNum );
-        CDlgMsg dlg;
-        if ( dlg.MsgBox( sText, MB_YESNO | MB_ICONSTOP | MB_TASKMODAL, "Warnings", "LessThan8Meg" ) != IDYES )
+        std::string sNum = IntToStr( MEM_NEEDED_BASE );
+        std::string sText = strPrintf( EnLoadStdString( IDS_ERROR_LOW_VIRT_MEM ).c_str(), sNum.c_str() );
+        if ( EnMessageBoxOnce( sText.c_str(), MB_YESNO | MB_ICONSTOP | MB_TASKMODAL, "Warnings", "LessThan8Meg" ) != IDYES )
             return ( 0 );
         Log( "Error: Not enough virtual memory to run" );
         m_wndMain.UpdateWindow( );
     }
     if ( ( ms.dwTotalPhys < 1024 * 1024 * 7 ) || ( ms.dwAvailPageFile < 1024 * 1024 * ( MEM_NEEDED_BASE - 10 ) ) )
     {
-        CDlgMsg dlg;
-        if ( dlg.MsgBox( IDS_ERROR_LOW_AVAIL_MEM, MB_YESNO | MB_ICONSTOP | MB_TASKMODAL, "Warnings",
+        if ( EnMessageBoxOnce( IDS_ERROR_LOW_AVAIL_MEM, MB_YESNO | MB_ICONSTOP | MB_TASKMODAL, "Warnings",
                          "NotEnoughFreeMem" ) != IDYES )
             return ( 0 );
         m_wndMain.UpdateWindow( );
@@ -725,7 +793,7 @@ BOOL CConquerApp::InitInstance( )
         break;
     }
 
-    switch ( GetProfileInt( "Advanced", "ColorDepth", 0 ) )
+    switch ( EnGetProfileInt( "Advanced", "ColorDepth", 0 ) )
     {
     case 2:
         m_bUse8Bit = FALSE;
@@ -733,16 +801,14 @@ BOOL CConquerApp::InitInstance( )
             break;
         if ( bForce8 )
         {
-            CDlgMsg dlg;
-            if ( dlg.MsgBox( IDS_ERROR_LOW_COLOR_DEPTH, MB_YESNO | MB_ICONSTOP | MB_TASKMODAL, "Warnings",
+            if ( EnMessageBoxOnce( IDS_ERROR_LOW_COLOR_DEPTH, MB_YESNO | MB_ICONSTOP | MB_TASKMODAL, "Warnings",
                              "LessThanColorDepth" ) == IDYES )
                 m_bUse8Bit = TRUE;
             m_wndMain.UpdateWindow( );
         }
         else if ( m_iCpuSpeed <= 200 )
         {
-            CDlgMsg dlg;
-            if ( dlg.MsgBox( IDS_ERROR_LOW_COLOR_DEPTH2, MB_YESNO | MB_ICONSTOP | MB_TASKMODAL, "Warnings",
+            if ( EnMessageBoxOnce( IDS_ERROR_LOW_COLOR_DEPTH2, MB_YESNO | MB_ICONSTOP | MB_TASKMODAL, "Warnings",
                              "LessThanColorDepth" ) == IDYES )
                 m_bUse8Bit = TRUE;
             m_wndMain.UpdateWindow( );
@@ -786,37 +852,26 @@ BOOL CConquerApp::InitInstance( )
         break;
     }
 
-    switch ( theApp.GetProfileInt( "Advanced", "Zoom", 0 ) )
+    // Zoom Levels (SDL2 Advanced Options dialog): 0 = "All 4 levels" (enable the closest zoom,
+    // m_iFirstZoom=0), 1 = "3 levels", 2 = "2 levels" (both start at zoom 1). The legacy MFC dialog
+    // used DIFFERENT values (1 = "force zoom 0"); that dialog is gone, so honor the SDL2 dialog's
+    // semantics directly — this is why picking a zoom level "wasn't respected". "All 4" still respects
+    // the per-bit-depth memory budget (bUse0) so a genuinely low-memory box gracefully drops to 3. The
+    // obsolete P/200 CPU gate is dropped (no modern machine trips it; Linux CPU-speed detect is flaky).
+    switch ( EnGetProfileInt( "Advanced", "Zoom", 0 ) )
     {
-    case 1:
-        m_bUseZoom0 = TRUE;
+    case 0:   // All 4 levels
+        m_bUseZoom0 = bUse0;
         if ( !bUse0 )
         {
-            CDlgMsg dlg;
-            if ( dlg.MsgBox( IDS_ERROR_LOW_ZOOM, MB_YESNO | MB_ICONSTOP | MB_TASKMODAL, "Warnings", "LessThanZoom" ) ==
-                 IDYES )
-                m_bUseZoom0 = FALSE;
-            m_wndMain.UpdateWindow( );
-        }
-        else if ( m_iCpuSpeed <= 200 )
-        {
-            CDlgMsg dlg;
-            if ( dlg.MsgBox( IDS_ERROR_LOW_ZOOM2, MB_YESNO | MB_ICONSTOP | MB_TASKMODAL, "Warnings", "LessThanZoom" ) ==
+            if ( EnMessageBoxOnce( IDS_ERROR_LOW_ZOOM, MB_YESNO | MB_ICONSTOP | MB_TASKMODAL, "Warnings", "LessThanZoom" ) ==
                  IDYES )
                 m_bUseZoom0 = FALSE;
             m_wndMain.UpdateWindow( );
         }
         break;
 
-    case 0:
-        // if a P/200 or less stay at no zoom 0
-        if ( m_iCpuSpeed <= 200 )
-            m_bUseZoom0 = FALSE;
-        else
-            m_bUseZoom0 = bUse0;
-        break;
-
-    default:
+    default:  // "3 levels" / "2 levels" -> start at zoom 1
         m_bUseZoom0 = FALSE;
         break;
     }
@@ -851,7 +906,7 @@ BOOL CConquerApp::InitInstance( )
         m_bShareware  = pMmio->ReadShort( );
         m_bSecondDisk = pMmio->ReadShort( );
         m_bWAV        = pMmio->ReadShort( );
-        m_iRequireCD  = FALSE;  // pMmio->ReadShort( ); // no longer needs CD!
+        m_iRequireCD  = FALSE; // pMmio->ReadShort( ); // no longer needs CD!
         m_iMultVoices = pMmio->ReadShort( );
         m_iHaveIntro  = pMmio->ReadShort( );
 
@@ -873,7 +928,7 @@ BOOL CConquerApp::InitInstance( )
 #endif
 
         // check the version
-        CString sName;
+        std::string sName;
         pMmio->AscendChunk( );
         pMmio->DescendChunk( 'N', 'A', 'M', 'E' );
         pMmio->ReadString( sName );
@@ -884,22 +939,33 @@ BOOL CConquerApp::InitInstance( )
         if ( ( m_iRifVer != VER_RIFF ) || ( sName != GameDataName ) )
         {
             TRAP( );
-            CString sMsg, sNum1, sNum2;
-            (void)sMsg.LoadString( IDS_WRONG_DATA_FILE );
-            sNum1 = IntToCString( m_iRifVer );
-            sNum2 = IntToCString( VER_RIFF );
-            csPrintf( &sMsg, (char const*)sName, (char const*)sNum1, (char const*)sNum2 );
-            if ( AfxMessageBox( sMsg, MB_YESNO | MB_ICONSTOP ) != IDYES )
+            std::string sNum1 = IntToStr( m_iRifVer );
+            std::string sNum2 = IntToStr( VER_RIFF );
+            // IDS_WRONG_DATA_FILE has 4 positional placeholders (%1=actualName,
+            // %2=actualVer, %3=expectedName, %4=expectedVer). The legacy code
+            // passed only 3 args, which made strPrintf walk past the va_list
+            // tail and dereference garbage when this branch fired.
+            std::string sMsg = strPrintf( EnLoadStdString( IDS_WRONG_DATA_FILE ).c_str(),
+                                          sName.c_str(), sNum1.c_str(),
+                                          GameDataName, sNum2.c_str() );
+            if ( EnMessageBox( sMsg.c_str(), MB_YESNO | MB_ICONSTOP ) != IDYES )
                 return ( 0 );
             bErr = TRUE;
         }
     } while ( bErr );
 
-    // if .dat < 400M then it's shareware (anti-pirate)
-    CFileStatus fs;
-    CFile::GetStatus( theDataFile.GetName( ), fs );
-    if ( fs.m_size < 400000000 )
-        m_bShareware = TRUE;
+    // if .dat < 400M then it's shareware (anti-pirate) — Phase 5c: Win32 file-size check
+    {
+        WIN32_FILE_ATTRIBUTE_DATA wfad;
+        if ( ::GetFileAttributesExA( theDataFile.GetName(), GetFileExInfoStandard, &wfad ) )
+        {
+            ULARGE_INTEGER size;
+            size.HighPart = wfad.nFileSizeHigh;
+            size.LowPart  = wfad.nFileSizeLow;
+            if ( size.QuadPart < 400000000ULL )
+                m_bShareware = TRUE;
+        }
+    }
 
     // warn on 16-bit
     if ( !m_bUse8Bit )
@@ -909,8 +975,7 @@ BOOL CConquerApp::InitInstance( )
         ReleaseDC( NULL, hdc );
         if ( iDepth == 16 )
         {
-            CDlgMsg dlg;
-            dlg.MsgBox( IDS_ERROR_16_BIT_WARNING, MB_OK | MB_ICONSTOP | MB_TASKMODAL, "Warnings", "16bitWarning" );
+            EnMessageBoxOnce( IDS_ERROR_16_BIT_WARNING, MB_OK | MB_ICONSTOP | MB_TASKMODAL, "Warnings", "16bitWarning" );
         }
     }
 
@@ -927,7 +992,7 @@ BOOL CConquerApp::InitInstance( )
                                KEY_ALL_ACCESS, &key ) != ERROR_SUCCESS )
             {
                 Log( "Expired 1" );
-                AfxMessageBox( IDS_DEMO_OVER, MB_OK | MB_ICONSTOP );
+                EnMessageBox( IDS_DEMO_OVER, MB_OK | MB_ICONSTOP );
                 return ( 0 );
             }
 
@@ -935,13 +1000,18 @@ BOOL CConquerApp::InitInstance( )
             RegSetValueEx( key, NULL, NULL, REG_SZ, (unsigned char*)"4", 2 );
 
             unsigned long iLen = 256;
-            DWORD         dwTyp {}, dwLen = sizeof( DWORD );
-            time_t        dwTime {};
+            DWORD         dwTyp, dwLen = sizeof( DWORD );
+            // The registry value is a REG_DWORD (4 bytes). It MUST be read into a
+            // 32-bit variable: on LP64 (macOS/Linux) `time_t` is 8 bytes, so
+            // reading 4 bytes into a time_t leaves the high half uninitialized and
+            // `dwTime == 41` / the date math below operate on garbage. (On the
+            // original 32-bit Windows build time_t happened to be 4 bytes.)
+            DWORD         dwTime = 0;
             if ( RegQueryValueEx( key, "CD-ROM", NULL, &dwTyp, (unsigned char*)&dwTime, &dwLen ) != ERROR_SUCCESS )
             {
                 TRAP( );
                 Log( "Expired 2" );
-                AfxMessageBox( IDS_DEMO_OVER, MB_OK | MB_ICONSTOP );
+                EnMessageBox( IDS_DEMO_OVER, MB_OK | MB_ICONSTOP );
                 return ( 0 );
             }
 
@@ -949,7 +1019,7 @@ BOOL CConquerApp::InitInstance( )
             {
                 TRAP( );
                 Log( "Expired 3" );
-                AfxMessageBox( IDS_DEMO_OVER, MB_OK | MB_ICONSTOP );
+                EnMessageBox( IDS_DEMO_OVER, MB_OK | MB_ICONSTOP );
                 return ( 0 );
             }
 
@@ -961,73 +1031,72 @@ BOOL CConquerApp::InitInstance( )
             else
                 // is it earlier (ie did they advance the date before installing)?
                 if ( iToday < (int)dwTime )
-                {
-                    iToday -= i1Month / 2;
-                    RegSetValueEx( key, "CD-ROM", NULL, REG_DWORD, (unsigned char*)&iToday, sizeof( iToday ) );
-                }
-                else if ( iToday > (int)dwTime + i1Month )
-                {
-                    CTime   _time( dwTime );
-                    CString sBuf = _time.Format( "Installed: %x" );
-                    Log( sBuf );
-                    AfxMessageBox( IDS_DEMO_OVER, MB_OK | MB_ICONSTOP );
-                    return ( 0 );
-                }
+            {
+                iToday -= i1Month / 2;
+                RegSetValueEx( key, "CD-ROM", NULL, REG_DWORD, (unsigned char*)&iToday, sizeof( iToday ) );
+            }
+            else if ( iToday > (int)dwTime + i1Month )
+            {
+                time_t tInstalled = (time_t)dwTime;
+                char   sBuf[64];
+                strftime( sBuf, sizeof(sBuf), "Installed: %x", localtime( &tInstalled ) );
+                Log( sBuf );
+                EnMessageBox( IDS_DEMO_OVER, MB_OK | MB_ICONSTOP );
+                return ( 0 );
+            }
 
             RegCloseKey( key );
         }
 
         else
         {
-            time_t iTime = ::GetProfileInt( "DOS Emulation", "_COMM", -1 );
+            time_t iTime = ::GetProfileIntA( "DOS Emulation", "_COMM", -1 );
             if ( iTime == -1 )
             {
                 TRAP( );
                 char sBuf[20];
                 itoa( iToday + i1Month, sBuf, 10 );
-                ::WriteProfileString( "DOS Emulation", "_COMM", sBuf );
+                ::WriteProfileStringA( "DOS Emulation", "_COMM", sBuf );
             }
             else
                 // is it earlier (ie did they advance the date before installing)?
                 if ( iToday < (int)iTime )
-                {
-                    iToday -= i1Month / 2;
-                    char sBuf[20];
-                    itoa( iToday + i1Month, sBuf, 10 );
-                    ::WriteProfileString( "DOS Emulation", "_COMM", sBuf );
-                }
-                else if ( iToday > (int)iTime + i1Month )
-                {
-                    TRAP( );
-                    CTime   _time( iTime );
-                    CString sBuf = _time.Format( "Installed: %x" );
-                    Log( sBuf );
-                    AfxMessageBox( IDS_DEMO_OVER, MB_OK | MB_ICONSTOP );
-                    return ( 0 );
-                }
+            {
+                iToday -= i1Month / 2;
+                char sBuf[20];
+                itoa( iToday + i1Month, sBuf, 10 );
+                ::WriteProfileStringA( "DOS Emulation", "_COMM", sBuf );
+            }
+            else if ( iToday > (int)iTime + i1Month )
+            {
+                TRAP( );
+                char sBuf[64];
+                strftime( sBuf, sizeof(sBuf), "Installed: %x", localtime( &iTime ) );
+                Log( sBuf );
+                EnMessageBox( IDS_DEMO_OVER, MB_OK | MB_ICONSTOP );
+                return ( 0 );
+            }
         }
     }
 
-    //Log( "Check for CD" );
+    Log( "Check for CD" );
 
     // do we have a CD?
-    //if ( !CheckForCD( ) )
-    //    return ( 0 );
+    if ( !CheckForCD( ) )
+        return ( 0 );
 
     // shareware notice
     if ( IsShareware( ) )
     {
-        int iTry = GetProfileInt( "Game", "NumDemo", 1 );
-        WriteProfileInt( "Game", "NumDemo", iTry + 1 );
+        int iTry = EnGetProfileInt( "Game", "NumDemo", 1 );
+        EnWriteProfileInt( "Game", "NumDemo", iTry + 1 );
         if ( ( iTry % 25 ) == 0 )
         {
-            CString sMsg;
-            (void)sMsg.LoadString( IDS_DEMO_25 );
-            CString sNum = IntToCString( iTry );
-            csPrintf( &sMsg, (char const*)sNum );
-            if ( AfxMessageBox( sMsg, MB_YESNO | MB_ICONSTOP ) != IDYES )
+            std::string sNum = IntToStr( iTry );
+            std::string sMsg = strPrintf( EnLoadStdString( IDS_DEMO_25 ).c_str(), sNum.c_str() );
+            if ( EnMessageBox( sMsg.c_str(), MB_YESNO | MB_ICONSTOP ) != IDYES )
             {
-                WriteProfileInt( "Game", "NumDemo", iTry );
+                EnWriteProfileInt( "Game", "NumDemo", iTry );
                 return ( 0 );
             }
         }
@@ -1051,7 +1120,13 @@ BOOL CConquerApp::InitInstance( )
     {
         m_hAccel = ::LoadAccelerators( m_hInstance, MAKEINTRESOURCE( IDR_ACCEL ) );
         if ( m_hAccel == NULL )
+#ifdef _WIN32
             ThrowError( ERR_RES_NO_ACCEL );
+#else
+            // Linux has no embedded accelerator resource; hotkeys come via SDL
+            // key events, so a null accel table is non-fatal here.
+            Log( "No accelerator table (Linux: no embedded resources) — continuing" );
+#endif
         Log( "Accelerators loaded" );
 
         // screen size, create button brushes
@@ -1063,47 +1138,47 @@ BOOL CConquerApp::InitInstance( )
         SetDialogBkColor( ::GetOurSysClr( COLOR_BTNFACE ), ::GetOurSysClr( COLOR_WINDOWTEXT ) );
         Enable3dControls( );
 #endif
-        m_bSetSysColors = GetProfileInt( "Advanced", "SetSysColors", 0 );
+        m_bSetSysColors = EnGetProfileInt( "Advanced", "SetSysColors", 0 );
 
 
         // RedText class for -#s in dialogs
 //        if ( m_hPrevInstance == NULL )  // If statement removed because hPrevInstance is always null in modern windows
-        //        {
+//        {
         WNDCLASS wc;
         memset( &wc, 0, sizeof( wc ) );
         wc.lpfnWndProc   = RedTextProc;
-        wc.hInstance     = AfxGetInstanceHandle( );
+        wc.hInstance     = ::GetModuleHandle( NULL );  // Phase 4c prep: was AfxGetInstanceHandle
         wc.lpszClassName = "RedText";
         if ( !RegisterClass( &wc ) )
             return ( FALSE );
         memset( &wc, 0, sizeof( wc ) );
         wc.lpfnWndProc   = PerBarProc;
         wc.cbWndExtra    = 2;
-        wc.hInstance     = AfxGetInstanceHandle( );
+        wc.hInstance     = ::GetModuleHandle( NULL );  // Phase 4c prep: was AfxGetInstanceHandle
         wc.lpszClassName = "dcPerBar";
         if ( !RegisterClass( &wc ) )
             return ( FALSE );
         Log( "Window classes registered" );
-        //        }
+//        }
 
 #ifdef _CHEAT
-        _bShowRate       = GetProfileInt( "Debug", "ShowRate", 0 );
-        _bClickAny       = GetProfileInt( "Cheat", "ClickAny", 0 );
-        _bMaxMaterials   = GetProfileInt( "Cheat", "MaxMaterials", 0 );
-        _bMaxRocket      = GetProfileInt( "Cheat", "MaxRocket", 0 );
-        _bMaxPower       = GetProfileInt( "Cheat", "MaxPower", 0 );
-        _iFrameRate      = GetProfileInt( "Cheat", "FrameRate", 1 );
+        _bShowRate       = EnGetProfileInt( "Debug", "ShowRate", 0 );
+        _bClickAny       = EnGetProfileInt( "Cheat", "ClickAny", 0 );
+        _bMaxMaterials   = EnGetProfileInt( "Cheat", "MaxMaterials", 0 );
+        _bMaxRocket      = EnGetProfileInt( "Cheat", "MaxRocket", 0 );
+        _bMaxPower       = EnGetProfileInt( "Cheat", "MaxPower", 0 );
+        _iFrameRate      = EnGetProfileInt( "Cheat", "FrameRate", 1 );
         _iFrameRate      = __minmax( 1, 48, _iFrameRate );
-        _bSeeAll         = GetProfileInt( "Cheat", "SeeAll", 0 );
-        _bShowWorld      = GetProfileInt( "Cheat", "SeeWorld", 0 );
-        _bShowStatus     = GetProfileInt( "Cheat", "ShowStatus", 0 );
-        _bShowPos        = GetProfileInt( "Cheat", "ShowPos", 0 );
-        _bShowAISelected = theApp.GetProfileInt( "Cheat", "ShowAISelected", 0 );
-        _iScenarioOn     = theApp.GetProfileInt( "Cheat", "Scenario", -1 );
+        _bSeeAll         = EnGetProfileInt( "Cheat", "SeeAll", 0 );
+        _bShowWorld      = EnGetProfileInt( "Cheat", "SeeWorld", 0 );
+        _bShowStatus     = EnGetProfileInt( "Cheat", "ShowStatus", 0 );
+        _bShowPos        = EnGetProfileInt( "Cheat", "ShowPos", 0 );
+        _bShowAISelected = EnGetProfileInt( "Cheat", "ShowAISelected", 0 );
+        _iScenarioOn     = EnGetProfileInt( "Cheat", "Scenario", -1 );
 #endif
 
         // get screen resolution, default positions for windows
-        m_sResIni = IntToCString( m_iScrnX ) + "x" + IntToCString( m_iScrnY );
+        m_sResIni = IntToStr( m_iScrnX ) + "x" + IntToStr( m_iScrnY );
         m_iCol1   = m_iScrnX / 5;
         m_iCol2   = __min( ( m_iScrnX * 4 ) / 5, m_iScrnX - 256 );
         m_iRow1   = m_iScrnY / 4;
@@ -1112,15 +1187,15 @@ BOOL CConquerApp::InitInstance( )
 
         // get the font and sizes for the button bars
         Log( "Creating fonts" );
-        CWindowDC dc( NULL );
+        CWindowDC dc( (CWnd*)NULL );
 
         // get the main font - we try Newtown, then Arial, then Arial condensed till we fit
         LOGFONT lf;
         memset( &lf, 0, sizeof( lf ) );
-        lf.lfHeight   = GetProfileInt( "StatusBar", "CharHeight", 16 );
-        CString sFont = GetProfileString( "StatusBar", "Font", "Newtown Italic" );
-        strncpy( lf.lfFaceName, sFont, LF_FACESIZE - 1 );
-        m_Fnt.CreateFontIndirect( &lf );
+        lf.lfHeight   = EnGetProfileInt( "StatusBar", "CharHeight", 16 );
+        std::string sFont = EnGetProfileStdString( "StatusBar", "Font", "Newtown Italic" );
+        strncpy( lf.lfFaceName, sFont.c_str(), LF_FACESIZE - 1 );
+        m_Fnt = ::CreateFontIndirect( &lf );
 
         TEXTMETRIC tm;
         dc.GetTextMetrics( &tm );
@@ -1131,26 +1206,26 @@ BOOL CConquerApp::InitInstance( )
             m_iBtnBevel = 2;
 
         // dialog fonts
-        int iHt = GetProfileInt( "StatusBar", "RDHeight", 14 );
-        sFont   = GetProfileString( "StatusBar", "RDFont", "Lucida Console" );
+        int iHt = EnGetProfileInt( "StatusBar", "RDHeight", 14 );
+        sFont   = EnGetProfileStdString( "StatusBar", "RDFont", "Lucida Console" );
         memset( &lf, 0, sizeof( lf ) );
         lf.lfHeight = iHt;
-        strncpy( lf.lfFaceName, sFont, LF_FACESIZE - 1 );
-        m_FntRD.CreateFontIndirect( &lf );
+        strncpy( lf.lfFaceName, sFont.c_str(), LF_FACESIZE - 1 );
+        m_FntRD = ::CreateFontIndirect( &lf );
 
-        iHt   = GetProfileInt( "StatusBar", "DescHeight", 18 );
-        sFont = GetProfileString( "StatusBar", "DescFont", "Newtown Italic" );
+        iHt   = EnGetProfileInt( "StatusBar", "DescHeight", 18 );
+        sFont = EnGetProfileStdString( "StatusBar", "DescFont", "Newtown Italic" );
         memset( &lf, 0, sizeof( lf ) );
         lf.lfHeight = iHt;
-        strncpy( lf.lfFaceName, sFont, LF_FACESIZE - 1 );
-        m_FntDesc.CreateFontIndirect( &lf );
+        strncpy( lf.lfFaceName, sFont.c_str(), LF_FACESIZE - 1 );
+        m_FntDesc = ::CreateFontIndirect( &lf );
 
-        iHt   = GetProfileInt( "StatusBar", "CostHeight", 11 );
-        sFont = GetProfileString( "StatusBar", "CostFont", "Lucida Console" );
+        iHt   = EnGetProfileInt( "StatusBar", "CostHeight", 11 );
+        sFont = EnGetProfileStdString( "StatusBar", "CostFont", "Lucida Console" );
         memset( &lf, 0, sizeof( lf ) );
         lf.lfHeight = iHt;
-        strncpy( lf.lfFaceName, sFont, LF_FACESIZE - 1 );
-        m_FntCost.CreateFontIndirect( &lf );
+        strncpy( lf.lfFaceName, sFont.c_str(), LF_FACESIZE - 1 );
+        m_FntCost = ::CreateFontIndirect( &lf );
         Log( "fonts Created" );
 
         m_iRow3 = m_iScrnY - TOOLBAR_HT;
@@ -1182,7 +1257,19 @@ BOOL CConquerApp::InitInstance( )
             // this is our main window - first created and last destroyed
             // already created by here but now we can load it's data (palette above)
             m_wndMain.LoadData( );
-            m_pMainWnd = &m_wndMain;
+            // m_wndMain is CWndStub-derived (not CWnd), so we can't do
+            // `m_pMainWnd = &m_wndMain` directly. CWnd::FromHandle returns
+            // a *temporary* CWnd that MFC garbage-collects in OnIdle, which
+            // makes storing it in m_pMainWnd dangerous (crashes inside MFC).
+            // Instead: use a permanent proxy CWnd and Attach our HWND to it —
+            // this puts the HWND in MFC's permanent handle map. The proxy
+            // doesn't get message dispatch (that goes through CWndStub via
+            // the registered wndproc), but it lets CWinApp::Run see a valid
+            // m_pMainWnd->m_hWnd.
+            static CWnd s_mfcMainWndProxy;
+            if ( s_mfcMainWndProxy.m_hWnd == NULL )
+                s_mfcMainWndProxy.Attach( m_wndMain.m_hWnd );
+            m_pMainWnd = &s_mfcMainWndProxy;
 
             // set up the thread code if we're Win32s (after window created)
             Log( "Initialize AI multi-threading" );
@@ -1255,10 +1342,15 @@ BOOL CConquerApp::InitInstance( )
 
             delete pMmio;
 
-            // time the CD // we dont have a cd anymore
+            // (Compositor wallpaper load moved below, after GameWindow::Create —
+            // m_gameWindow doesn't exist yet here, so a load at this point always
+            // silently skipped and the load-game flow flashed the dark-gold
+            // null-wallpaper fallback.)
+
+// time the CD // we dont have a cd anymore
             m_iCdSpeed = 100; // assume fast CD drive
-#if !defined(_GG) && 0
-            if ( ( m_iCdSpeed = GetProfileInt( "Advanced", "CDspeed", 0 ) ) <= 0 )
+#ifndef _GG && 0
+            if ( ( m_iCdSpeed = EnGetProfileInt( "Advanced", "CDspeed", 0 ) ) <= 0 )
             {
                 CFile* pFile = theDataFile.OpenAsFile( "music" );
                 void*  pBuf  = malloc( 0x10000 );
@@ -1291,7 +1383,7 @@ BOOL CConquerApp::InitInstance( )
             if ( !m_bWAV )
                 m_mMode = CMusicPlayer::MUSIC_MODE::midi_only;
             else
-                switch ( GetProfileInt( "Advanced", "Music", -1 ) )
+                switch ( EnGetProfileInt( "Advanced", "Music", -1 ) )
                 {
                 case 2:
                     if ( ( ms.dwAvailPageFile < 1000 * 1000 * MEM_NEEDED_MUSIC_MIXED ) || ( m_iCdSpeed < 4 ) )
@@ -1305,8 +1397,7 @@ BOOL CConquerApp::InitInstance( )
                     if ( ( ms.dwAvailPageFile < 1000 * 1000 * MEM_NEEDED_MUSIC_DIGITAL ) || ( m_iCdSpeed < 6 ) ||
                          ( m_iCpuSpeed < 120 ) )
                     {
-                        CDlgMsg dlg;
-                        if ( dlg.MsgBox( IDS_ERROR_LOW_MUSIC, MB_YESNO | MB_ICONSTOP | MB_TASKMODAL, "Warnings",
+                        if ( EnMessageBoxOnce( IDS_ERROR_LOW_MUSIC, MB_YESNO | MB_ICONSTOP | MB_TASKMODAL, "Warnings",
                                          "LessThanMusic" ) == IDYES )
                         {
                             if ( ( ms.dwAvailPageFile < 1000 * 1000 * MEM_NEEDED_MUSIC_MIXED ) || ( m_iCdSpeed < 4 ) )
@@ -1337,8 +1428,9 @@ BOOL CConquerApp::InitInstance( )
         thePal.UpdateDeviceColors( 0, 256 );
 
         // this is the window class for all our popup windows
-        m_sWndCls = AfxRegisterWndClass( CS_DBLCLKS | CS_HREDRAW | CS_VREDRAW | CS_OWNDC,
-                                         LoadStandardCursor( IDC_ARROW ), 0, 0 );
+        m_sWndCls = EnRegisterWndClass( "EnPopupWnd",
+                                        CS_DBLCLKS | CS_HREDRAW | CS_VREDRAW | CS_OWNDC,
+                                        LoadStandardCursor( IDC_ARROW ) );
 
 #ifdef _DEBUG
         theDataFile.DisableNegativeSeekChecking( );
@@ -1346,7 +1438,7 @@ BOOL CConquerApp::InitInstance( )
 
         // demo license agreement
         if ( IsShareware( ) )
-            if ( GetProfileInt( "Game", "NoIntro", 0 ) == 0 )
+            if ( EnGetProfileInt( "Game", "NoIntro", 0 ) == 0 )
             {
                 PostIntro( );
                 goto MovieDone;
@@ -1355,7 +1447,7 @@ BOOL CConquerApp::InitInstance( )
 #ifdef BUGBUG
         // remind them to register
         if ( W32s != iWinType )
-            if ( ( !IsShareware( ) ) && ( GetProfileInt( "Warnings", "Register", 0 ) == 0 ) )
+            if ( ( !IsShareware( ) ) && ( EnGetProfileInt( "Warnings", "Register", 0 ) == 0 ) )
             {
                 CDlgReg dlg( &m_wndMain );
                 dlg.DoModal( );
@@ -1363,20 +1455,81 @@ BOOL CConquerApp::InitInstance( )
             }
 #endif
 
-        // Play the startup movie
-        if ( ( HaveIntro( ) ) && ( GetProfileInt( "Game", "NoIntro", 0 ) == 0 ) )
+        // Initialize SDL2 rendering window before PostIntro/CreateMain
+        // so the SDL window is available for the main menu
+        try {
+            m_gameWindow = GameWindow::Create("Enemy Nations - Game View", m_iScrnX, m_iScrnY);
+        } catch (...) {
+            // Non-fatal: fall back to MFC rendering
+        }
+
+#ifndef _WIN32
+        // Start the in-process LLM-driving harness (screenshot/click/keys) once
+        // the SDL window exists. No-op unless EN_HARNESS is set in the env.
+        if ( m_gameWindow )
+            EnHarness_Start( m_gameWindow->GetWindow(), m_gameWindow->GetRenderer() );
+#endif
+
+        // Load the compositor's WL tile wallpaper NOW that the window exists. The
+        // earlier attempt (right after theBitmaps.Init above) is guarded by
+        // m_gameWindow — which is only created HERE, so it always silently skipped
+        // and the compositor's wallpaper stayed null. RenderWallpaper's null
+        // fallback is a solid dark-gold fill, which is what flashed during the
+        // load-game flow (status dialog repaints the background every frame) until
+        // DestroyMain transferred the menu's tile mid-load.
+        if ( m_gameWindow && m_gameWindow->GetCompositor() )
         {
-            try
+            if ( m_gameWindow->GetCompositor()->LoadWallpaper() )
+                Log( "SDL2 compositor: wallpaper loaded (post window create)" );
+            else
+                Log( "SDL2 compositor: wallpaper load failed (post window create)" );
+        }
+
+        // Phase 6 hotfix: make the legacy Win32 main window (EnemyNations-
+        // MainWindow stub) transparent + click-through once the SDL window
+        // is up. Otherwise both windows compete for Z-order during video
+        // playback — clicking to skip a video can land on the Win32 stub
+        // instead, bringing it forward and pushing the SDL render target
+        // behind it.
+        //
+        // Important: do NOT SW_HIDE the window. The MFC vehicle/building
+        // list-box child windows (m_wndVehicles.m_ListBox, etc.) are
+        // created later in newworld.cpp via CreateWindow with this stub
+        // as the parent; if the parent is hidden, MFC's CListBox lazy-
+        // create leaves m_hWnd NULL and AddToList silently bails — which
+        // makes CVehicle::InvalidateStatus FindItem return -1 and trip the
+        // ASSERT at unit.cpp:2914. WS_EX_LAYERED + alpha=0 +
+        // WS_EX_TRANSPARENT keeps the window in the tree but invisible
+        // and click-through. (This mirrors what newworld.cpp:568-570 was
+        // already doing later in the lifecycle for the post-game-create
+        // window; we just need it earlier so videos benefit.)
+        if ( m_gameWindow && m_wndMain.m_hWnd )
+        {
+            LONG ex = ::GetWindowLong( m_wndMain.m_hWnd, GWL_EXSTYLE );
+            ::SetWindowLong( m_wndMain.m_hWnd, GWL_EXSTYLE,
+                             ex | WS_EX_LAYERED | WS_EX_TRANSPARENT );
+            ::SetLayeredWindowAttributes( m_wndMain.m_hWnd, 0, 0, LWA_ALPHA );
+        }
+
+        // Play the startup movie via SDL2
+        if ( ( HaveIntro( ) ) && ( EnGetProfileInt( "Game", "NoIntro", 0 ) == 0 ) )
+        {
+            // Temporarily open SDL_mixer so video audio works via Mix_HookMusic.
+            // PostIntro() will call theMusicPlayer.Open() later for the full init.
+            bool tempAudio = false;
+            if ( Mix_OpenAudio( 22050, AUDIO_S16SYS, 2, 2048 ) == 0 )
+                tempAudio = true;
+
+            if ( m_gameWindow )
             {
-                m_wndMovie.AddMovie( "logo.avi" );
-                //                m_wndMovie.AddMovie( "headgame.avi" );  // This file doesnt exist
-                m_wndMovie.AddMovie( "intro.avi" );
-                m_wndMovie.Create( FALSE );
+                SDL2VideoPlayer::PlayVideo( m_gameWindow.get(), "assets/videos/logo.mpg" );
+                SDL2VideoPlayer::PlayVideo( m_gameWindow.get(), "assets/videos/intro.mpg" );
             }
-            catch ( ... )
-            {
-                PostIntro( );
-            }
+
+            if ( tempAudio )
+                Mix_CloseAudio();
+
+            PostIntro( );
         }
         else {
             PostIntro();
@@ -1397,12 +1550,12 @@ BOOL CConquerApp::InitInstance( )
     }
     catch ( ... )
     {
-        AfxMessageBox( IDS_ERR_LOAD_2, MB_OK | MB_ICONSTOP );
+        EnMessageBox( IDS_ERR_LOAD_2, MB_OK | MB_ICONSTOP );
         return ( 0 );
     }
 
     // list out version
-    m_sRif = "Data Ver: " + IntToCString( theApp.GetRifVer( ) ) + "." + IntToCString( VER_RIFF );
+    m_sRif = "Data Ver: " + IntToStr( theApp.GetRifVer( ) ) + "." + IntToStr( VER_RIFF );
     if ( theApp.IsShareware( ) )
         m_sRif += " {Shareware}";
     if ( theApp.HaveWAV( ) )
@@ -1417,15 +1570,12 @@ BOOL CConquerApp::InitInstance( )
         m_sRif += ", Zoom1";
     else
         m_sRif += ", Zoom0";
-    Log( m_sRif );
+    Log( m_sRif.c_str( ) );
 
     // video info
     m_sVideo = "Video: ";
     switch ( ptrthebltformat->GetType( ) )
     {
-    case CBLTFormat::DIB_DIRECTDRAW:
-        m_sVideo += "DirectDraw";
-        break;
     case CBLTFormat::DIB_WING:
         m_sVideo += "WinG";
         break;
@@ -1434,6 +1584,12 @@ BOOL CConquerApp::InitInstance( )
         break;
     case CBLTFormat::DIB_MEMORY:
         m_sVideo += "StretchDIBits";
+        break;
+    case CBLTFormat::DIB_SDL_SURFACE:
+        m_sVideo += "SDL_Surface";
+        break;
+    default:
+        m_sVideo += "?";
         break;
     }
     m_sVideo += " (";
@@ -1447,14 +1603,14 @@ BOOL CConquerApp::InitInstance( )
         m_sVideo += "bottom-up";
         break;
     }
-    m_sVideo += "), " + IntToCString( ptrthebltformat->GetBitsPerPixel( ) ) + "-bit, (" +
-                IntToCString( GetSystemMetrics( SM_CXSCREEN ) ) + "x" +
-                IntToCString( GetSystemMetrics( SM_CYSCREEN ) ) + "x";
+    m_sVideo += "), " + IntToStr( ptrthebltformat->GetBitsPerPixel( ) ) + "-bit, (" +
+                IntToStr( GetSystemMetrics( SM_CXSCREEN ) ) + "x" +
+                IntToStr( GetSystemMetrics( SM_CYSCREEN ) ) + "x";
     hdc           = GetDC( NULL );
     int iBitDepth = GetDeviceCaps( hdc, BITSPIXEL ) * GetDeviceCaps( hdc, PLANES );
     ReleaseDC( NULL, hdc );
-    m_sVideo += IntToCString( iBitDepth ) + ")";
-    Log( m_sVideo );
+    m_sVideo += IntToStr( iBitDepth ) + ")";
+    Log( m_sVideo.c_str( ) );
 
     // sound info
     m_sSound = "Sound: ";
@@ -1470,59 +1626,34 @@ BOOL CConquerApp::InitInstance( )
         m_sSound += "Digital Music";
         break;
     }
-    if ( theMusicPlayer.UseDirectSound( ) )
-        m_sSound += " (DirectSound)";
-    else
-        m_sSound += " (MME)";
-
-    if ( ( !theMusicPlayer.MidiOk( ) ) && ( !theMusicPlayer.WavOk( ) ) )
-        m_sSound += " {MIDI and WAV drivers failed}";
-    else if ( !theMusicPlayer.MidiOk( ) )
-        m_sSound += " {MIDI driver failed}";
-    else if ( !theMusicPlayer.WavOk( ) )
+    if ( !theMusicPlayer.WavOk( ) )
         m_sSound += " {WAV driver failed}";
     else if ( !theMusicPlayer.IsRunning( ) )
         m_sSound += " {turned off}";
-    Log( m_sSound );
+    Log( m_sSound.c_str( ) );
 
-    if ( theMusicPlayer._GetHDig( ) == 0 )
-        m_sSoundVer = "MSS: " + CString( theMusicPlayer.GetVersion( ) ) + " {off}";
-    else
     {
-        char sBuf[130] {}, *psFmt {};
-        long iRate {}, iFmt {};
-        sBuf[0] = 0;
-        AIL_digital_configuration( theMusicPlayer._GetHDig( ), &iRate, &iFmt, sBuf );
-        switch ( iFmt )
-        {
-        case DIG_F_MONO_8:
-            psFmt = "K/8-bit/Mono, ";
-            break;
-        case DIG_F_MONO_16:
-            psFmt = "K/16-bit/Mono, ";
-            break;
-        case DIG_F_STEREO_8:
-            psFmt = "K/8-bit/Stereo, ";
-            break;
-        case DIG_F_STEREO_16:
-            psFmt = "K/16-bit/Stereo, ";
-            break;
-        }
-        m_sSoundVer =
-            "MSS: " + CString( theMusicPlayer.GetVersion( ) ) + " " + IntToCString( iRate ) + CString( psFmt ) + sBuf;
+        int iRate, iChannels;
+        std::string sDriverName;
+        theMusicPlayer.GetDigitalConfig( &iRate, &iChannels, sDriverName );
+        if ( iRate > 0 )
+            m_sSoundVer = std::string( "Audio: " ) + theMusicPlayer.GetVersion( ) + " " +
+                          IntToStr( iRate ) + "Hz/" + IntToStr( iChannels ) + "ch, " + sDriverName;
+        else
+            m_sSoundVer = std::string( "Audio: " ) + theMusicPlayer.GetVersion( ) + " {off}";
     }
-    Log( m_sSoundVer );
+    Log( m_sSoundVer.c_str( ) );
 
-    m_sSpeed = "CPU Speed: ~" + IntToCString( theApp.GetCpuSpeed( ) ) + "  CD-ROM Speed: ~" +
-               IntToCString( theApp.GetCdSpeed( ) ) + "X";
-    Log( m_sSpeed );
+    m_sSpeed = "CPU Speed: ~" + IntToStr( theApp.GetCpuSpeed( ) ) + "  CD-ROM Speed: ~" +
+               IntToStr( theApp.GetCdSpeed( ) ) + "X";
+    Log( m_sSpeed.c_str( ) );
 
     if ( iWinType == W32s )
     {
         Log( "iWinType w32s" );
-        WORD    wVer   = myGetThrdUtlsVersion( );
-        CString sThunk = "Threads DLL " + IntToCString( HIBYTE( wVer ) ) + "." + IntToCString( LOBYTE( wVer ) );
-        Log( sThunk );
+        WORD        wVer   = myGetThrdUtlsVersion( );
+        std::string sThunk = "Threads DLL " + IntToStr( HIBYTE( wVer ) ) + "." + IntToStr( LOBYTE( wVer ) );
+        Log( sThunk.c_str( ) );
     }
 
     Log( "Initialization complete" );
@@ -1534,7 +1665,7 @@ CDlgPause* CConquerApp::GetDlgPause( )
 {
 
     if ( m_pdlgPause == NULL )
-        m_pdlgPause = new CDlgPause( &m_wndMain );
+        m_pdlgPause = new CDlgPause( CWnd::FromHandle( m_wndMain.m_hWnd ) );
     return ( m_pdlgPause );
 }
 
@@ -1552,10 +1683,10 @@ void CConquerApp::PostIntro( )
         bDidIt = TRUE;
 
         // start the audio
-        theMusicPlayer.Open( GetProfileInt( "Game", "Music", 100 ), GetProfileInt( "Game", "Sound", 100 ), m_mMode,
+        theMusicPlayer.Open( EnGetProfileInt( "Game", "Music", 50 ), EnGetProfileInt( "Game", "Sound", 50 ), m_mMode,
                              SFXGROUP::global );
 
-        if ( GetProfileInt( "Game", "CustomUI", W32s != iWinType ) ) {
+        if ( EnGetProfileInt( "Game", "CustomUI", W32s != iWinType ) ) {
             InitCustomUI();
         }
         theMusicPlayer.YieldPlayer( );
@@ -1579,6 +1710,12 @@ void CConquerApp::CloseApp( )
     CGlobalSubClass::UnSubClass( );
 
     ::PostQuitMessage( 0 );
+
+    // The SDL-driven main loop (CConquerApp::Run -> GameWindow::PollEvents) never
+    // sees the WM_QUIT above — SDL's message pump discards the NULL-hwnd thread
+    // message. Push an SDL_QUIT so PollEvents() returns true and the loop exits.
+    if ( m_gameWindow )
+        m_gameWindow->RequestQuit( );
 }
 
 //---------------------------------------------------------------------------
@@ -1606,8 +1743,18 @@ void CConquerApp::InitCustomUI( )
 
 void CConquerApp::Minimize( )
 {
-
-    m_pMainWnd->ShowWindow( SW_MINIMIZE );
+    // The real, visible window is the SDL m_gameWindow on BOTH platforms. Once the
+    // SDL main menu / game is up, the MFC m_pMainWnd (m_wndMain) is SW_HIDE-den, so
+    // m_pMainWnd->ShowWindow(SW_MINIMIZE) minimized a hidden window and the Minimize
+    // button looked dead — on mac (m_pMainWnd is a no-op stub) AND on Windows (real
+    // HWND, but hidden). Minimize the whole SDL window group instead; MinimizeAll()
+    // also hides the detached ALWAYS_ON_TOP panels that otherwise stay up in-game.
+    if ( m_gameWindow )
+        m_gameWindow->MinimizeAll( );
+#ifdef _WIN32
+    else if ( m_pMainWnd )
+        m_pMainWnd->ShowWindow( SW_MINIMIZE );   // fallback: no SDL window yet
+#endif
 }
 
 void CConquerApp::CreateMain( )
@@ -1616,29 +1763,42 @@ void CConquerApp::CreateMain( )
     // close chat (cancel on multi create)
     CloseDlgChat( );
 
-    // kill movie if running
-    if ( ( m_wndMovie.m_hWnd != NULL ) && ( !m_wndMovie.m_bInDestroy ) )
-        m_wndMovie.DestroyWindow( );
+    // CWndMovie excluded from build (Phase 2d) — SDL2VideoPlayer is synchronous,
+    // nothing to destroy at this point.
 
     // if coming from a game setup - kill it
-    theGame.SetShouldProcessMessages( FALSE );
+    theGame.SetShouldProcessMessages(FALSE);
     DestroyExceptMain( );
 
     m_wndMain.SetProgPos( CWndMain::playing );
 
     bDoSubclass = TRUE;
 
-    if ( m_pdlgMain == NULL )
+    // SDL2 main menu is the only path. CDlgMain MFC fallback excluded from
+    // build (Phase 2d).
+    if ( !m_sdlMainMenu )
     {
-        m_pdlgMain = new CDlgMain( m_pMainWnd );
-        m_pdlgMain->Create( IDD_MAIN, m_pMainWnd );
+        m_sdlMainMenu = std::make_unique<SDL2MainMenu>();
+        if ( !m_sdlMainMenu->Initialize( m_gameWindow.get() ) )
+            m_sdlMainMenu.reset();
+    }
+    if ( m_sdlMainMenu && m_sdlMainMenu->IsInitialized() )
+    {
+        m_wndMain.ShowWindow( SW_HIDE );
+        m_gameWindow->Show();
+        m_gameWindow->SetMainMenu( m_sdlMainMenu.get() );
+        m_gameWindow->Raise();
+        // Restore a visible arrow cursor. Cancelling a game mid-creation returns
+        // here while the area map (rocket placement) had hidden the OS cursor via
+        // the app-global SDL_ShowCursor(DISABLE); without this the menu has no
+        // cursor (no window-enter event fires when the pointer is already over us).
+        m_gameWindow->SetArrowCursor();
+        Log( "Using SDL2 main menu" );
     }
 
-    m_pdlgMain->EnableWindow( TRUE );
-    m_pdlgMain->ShowWindow( SW_SHOW );
     theGame.SetState( CGame::main );
 
-    // CheckForCD( );
+    CheckForCD( );
 
     theMusicPlayer.PlayExclusiveMusic( MUSIC::GetID( MUSIC::main_screen ) );
 }
@@ -1646,22 +1806,58 @@ void CConquerApp::CreateMain( )
 void CConquerApp::DisableMain( )
 {
 
-    if ( m_pdlgMain == NULL )
+    if ( m_sdlMainMenu )
+    {
+        // Stop rendering the SDL menu but keep SDL window visible
+        // so the create-status dialog can render on it during game creation
+        if ( m_gameWindow )
+        {
+            m_gameWindow->SetMainMenu( nullptr );
+            // Don't hide — the SDL window is needed for the status dialog
+        }
         return;
+    }
 
-    m_pdlgMain->EnableWindow( FALSE );
-    m_pdlgMain->ShowWindow( SW_HIDE );
+    // CDlgMain excluded from build (Phase 2d).
 }
 
 void CConquerApp::DestroyMain( )
 {
 
-    if ( m_pdlgMain == NULL )
-        return;
+    if ( m_sdlMainMenu )
+    {
+        if ( m_gameWindow )
+        {
+            m_gameWindow->SetMainMenu( nullptr );
 
-    CDlgMain* pDm = m_pdlgMain;
-    m_pdlgMain    = NULL;
-    pDm->DestroyWindow( );
+            // Transfer the WL24 tile wallpaper to the compositor before
+            // Shutdown() frees it, so it's available during world building.
+            SDL2Compositor* comp = m_gameWindow->GetCompositor();
+            SDL_Surface* tile = m_sdlMainMenu->GetTileWallpaper();
+            if ( comp && tile )
+            {
+                // Duplicate the surface — Shutdown() will free the original
+                SDL_Surface* copy = SDL_ConvertSurface( tile, tile->format, 0 );
+                if ( copy )
+                    comp->SetWallpaperSurface( copy );
+            }
+        }
+        m_sdlMainMenu->Shutdown();
+        m_sdlMainMenu.reset();
+    }
+
+    // Make MFC main window fully transparent during gameplay.
+    // It stays valid and in-place (GetDC/RectVisible work) but invisible.
+    ::SetWindowLong( m_wndMain.m_hWnd, GWL_EXSTYLE,
+                     ::GetWindowLong( m_wndMain.m_hWnd, GWL_EXSTYLE ) | WS_EX_LAYERED );
+    ::SetLayeredWindowAttributes( m_wndMain.m_hWnd, 0, 0, LWA_ALPHA );
+    if ( m_gameWindow )
+    {
+        m_gameWindow->Show();
+        m_gameWindow->Raise();
+    }
+
+    // CDlgMain excluded from build (Phase 2d).
 }
 
 void CConquerApp::DestroyExceptMain( )
@@ -1688,27 +1884,37 @@ void CConquerApp::DestroyExceptMain( )
 
 CDlgChatAll* CConquerApp::GetDlgChat( )
 {
-
-    if ( m_pdlgChat == NULL )
-        m_pdlgChat = new CDlgChatAll( &m_wndMain );
-    if ( m_pdlgChat->m_hWnd == NULL )
-        m_pdlgChat->Create( IDD_CHAT_INIT, &m_wndMain );
-
-    return ( m_pdlgChat );
+    // CDlgChatAll excluded from build (Phase 2d). SDL2ChatWindow is the
+    // intended replacement; until its network routing is wired, no chat UI.
+    return nullptr;
 }
 
 void CConquerApp::CloseDlgChat( )
 {
-
-    if ( ( m_pdlgChat != NULL ) && ( m_pdlgChat->m_hWnd != NULL ) )
-        m_pdlgChat->DestroyWindow( );
-    m_pdlgChat = NULL;
+    // CDlgChatAll excluded from build (Phase 2d).
 }
 
 int CConquerApp::ExitInstance( )
 {
+    // Idempotent: ExitInstance is reached from TWO paths on quit — the message
+    // loop calls it on WM_QUIT (mainloop.cpp `return ExitInstance()`), then WinMain
+    // calls it again unconditionally after Run() returns. Running the full teardown
+    // twice re-entered myThreadClose() with the global thread-lock `cs` already
+    // torn down by the first pass -> EnterCriticalSection on a zeroed CS -> exit-time
+    // 0xC0000005 on every quit. Tear down exactly once; later calls are no-ops.
+    static bool s_bExited = false;
+    if ( s_bExited )
+        return 0;
+    s_bExited = true;
 
     CGlobalSubClass::UnSubClass( );
+
+    // Stop and join the AI worker threads FIRST — before ANY game data is
+    // torn down. They scan the live world (GetCHexData/AiFillHexLiveNoLock,
+    // pathing) right up until they exit; closing sprites/terrain/world under
+    // them was the exit-time 0xC0000005 on every quit (2026-06-11). With the
+    // AiThread bEndThreads check this join completes in ~100ms per worker.
+    myThreadClose( (THREADEXITFUNC)AiExit );
 
     // close out sprites
     theTransports.Close( );
@@ -1726,13 +1932,11 @@ int CConquerApp::ExitInstance( )
 
     theMusicPlayer.Close( );
 
-    myThreadClose( (THREADEXITFUNC)AiExit );
-
     delete m_pdlgPause;
     m_pdlgPause = NULL;
 
     DestroyExceptMain( );  // if in create
-    if ( m_wndBar.m_hWnd != NULL )
+    if ( m_wndBar.IsCreated() )
         DestroyWorld( );  // game
     DestroyMain( );       // main window (dialog)
 
@@ -1746,9 +1950,8 @@ int CConquerApp::ExitInstance( )
         dc.FillRect( &rect, &brBlack );
         dc.SetBkMode( TRANSPARENT );
         dc.SetTextColor( RGB( 0, 0, 0 ) );
-        CString sLoad;
-        (void)sLoad.LoadString( IDS_LEAVING );
-        dc.TextOut( 0, 0, sLoad );
+        std::string sLoad = EnLoadStdString( IDS_LEAVING );
+        dc.TextOut( 0, 0, sLoad.c_str(), (int)sLoad.size() );
     }
 
     m_wndMain.DestroyWindow( );  // background window
@@ -1757,7 +1960,7 @@ int CConquerApp::ExitInstance( )
     CloseHandle( hRenderEvent );
 
 #ifdef USE_SMARTHEAP
-    //   MemUnregisterTask( );
+ //   MemUnregisterTask( );
 #endif
 
     if ( m_hLibLang != NULL )
@@ -1783,15 +1986,14 @@ int CConquerApp::ExitInstance( )
 
     if ( m_pLogFile != NULL )
     {
-        m_pLogFile->Close( );
-        delete m_pLogFile;
+        fclose( m_pLogFile );
         m_pLogFile = NULL;
     }
 
     // show the order form
     if ( IsShareware( ) )
     {
-        CString sCmd = GetDefaultApp( ".doc", "write", "order.doc" );
+        std::string sCmd = GetDefaultApp( ".doc", "write", "order.doc" );
 
         STARTUPINFO si;
         memset( &si, 0, sizeof( si ) );
@@ -1800,12 +2002,38 @@ int CConquerApp::ExitInstance( )
         si.dwFlags     = STARTF_USESHOWWINDOW;
         PROCESS_INFORMATION pi;
 
-        CreateProcess( NULL, (char*)(char const*)sCmd, NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi );
+        CreateProcess( NULL, &sCmd[0], NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi );
         CloseHandle( pi.hProcess );
         CloseHandle( pi.hThread );
     }
 
-    return ( CWinApp::ExitInstance( ) );
+    return ( CConquerAppSuper::ExitInstance( ) );
+}
+
+// Show a Yes/No or Yes/No/Cancel message box via SDL2 if available, else MFC.
+static int SDL2_MessageBox( int idsString, bool yesNoCancel = false )
+{
+    // Load the string from the resource table
+    std::string msg = EnLoadStdString( idsString );
+
+    // Replace \n with space for single-line display in our dialog
+    for ( auto& c : msg )
+        if ( c == '\n' ) c = ' ';
+
+    if ( theApp.m_gameWindow )
+    {
+        SDL2MessageBox::Style style = yesNoCancel
+            ? SDL2MessageBox::YesNoCancel
+            : SDL2MessageBox::YesNo;
+        SDL2MessageBox dlg( theApp.m_gameWindow.get(), msg, style );
+        return dlg.DoModal();
+    }
+
+    // MFC fallback
+    UINT flags = yesNoCancel
+        ? ( MB_YESNOCANCEL | MB_ICONQUESTION )
+        : ( MB_YESNO | MB_ICONSTOP | MB_TASKMODAL );
+    return EnMessageBox( idsString, flags );
 }
 
 // true - continue
@@ -1823,13 +2051,13 @@ BOOL CConquerApp::SaveGame( CWnd* pPar )
     {
         if ( theGame.IsNetGame( ) )
         {
-            if ( AfxMessageBox( IDS_SERVER_QUIT, MB_YESNO | MB_ICONSTOP | MB_TASKMODAL ) == IDNO )
+            if ( SDL2_MessageBox( IDS_SERVER_QUIT ) == IDNO )
                 return ( FALSE );
         }
-        else if ( AfxMessageBox( IDS_SINGLE_QUIT, MB_YESNO | MB_ICONSTOP | MB_TASKMODAL ) == IDNO )
+        else if ( SDL2_MessageBox( IDS_SINGLE_QUIT ) == IDNO )
             return ( FALSE );
     }
-    else if ( AfxMessageBox( IDS_CLIENT_QUIT, MB_YESNO | MB_ICONSTOP | MB_TASKMODAL ) == IDNO )
+    else if ( SDL2_MessageBox( IDS_CLIENT_QUIT ) == IDNO )
         return ( FALSE );
 
     CWndArea* pWnd = theAreaList.GetTop( );
@@ -1837,7 +2065,7 @@ BOOL CConquerApp::SaveGame( CWnd* pPar )
         if ( ( pWnd->GetMode( ) != CWndArea::rocket_ready ) && ( pWnd->GetMode( ) != CWndArea::rocket_pos ) &&
              ( pWnd->GetMode( ) != CWndArea::rocket_wait ) )
         {
-            iRtn = AfxMessageBox( IDS_SAVE_OLD, MB_YESNOCANCEL | MB_ICONQUESTION );
+            iRtn = SDL2_MessageBox( IDS_SAVE_OLD, true );
             if ( iRtn == IDCANCEL )
                 return ( FALSE );
             if ( iRtn == IDYES )
@@ -1866,10 +2094,8 @@ BOOL CConquerApp::PreTranslateMessage( MSG* pMsg )
 
         // erase WinG screen area
         case VK_F12: {
-            POSITION pos = theAnimList.GetHeadPosition( );
-            while ( pos != NULL )
+            for ( CWndAnim* pWnd : theAnimList )
             {
-                CWndAnim* pWnd = theAnimList.GetNext( pos );
                 CClientDC dc( pWnd );
                 CBrush    br;
                 br.CreateSolidBrush( RGB( 0, 0, 0 ) );
@@ -1882,30 +2108,32 @@ BOOL CConquerApp::PreTranslateMessage( MSG* pMsg )
 #endif
         }
 
-    return ( CWinApp::PreTranslateMessage( pMsg ) );
+    return ( CConquerAppSuper::PreTranslateMessage( pMsg ) );
 }
 
 #ifdef _DEBUG
 void CConquerApp::AssertValid( ) const
 {
 
-    CWinApp::AssertValid( );
+    CConquerAppSuper::AssertValid( );
 
     ASSERT_VALID( &m_wndWorld );
-    ASSERT_VALID( &m_wndChat );
+    // ASSERT_VALID( &m_wndChat );  // ChatStub is not CObject-derived (Phase 2d-cont)
     ASSERT_VALID( &m_wndBar );
     ASSERT_VALID( &m_wndBldgs );
     ASSERT_VALID( &m_wndVehicles );
 
     ASSERT_VALID( &m_wndMain );
-    ASSERT_VALID_OR_NULL( m_pdlgMain );
+    // CDlgMain excluded from build (Phase 2d).
     ASSERT_VALID_OR_NULL( m_pCreateGame );
 }
 #endif
 
 
 /////////////////////////////////////////////////////////////////////////////
-// CDlgMain dialog
+// CDlgMain dialog — excluded from build (Phase 2d). SDL2MainMenu is the
+// live main-menu path. Body kept in source for reference but not compiled.
+#if 0  // MFC_LEGACY_MAIN_MENU
 
 CDlgMain::CDlgMain( CWnd* pParent /*=NULL*/ ): CDialog( CDlgMain::IDD, pParent )
 {
@@ -2093,9 +2321,8 @@ BOOL CDlgMain::OnInitDialog( )
     theApp.DestroyExceptMain( );
 
     SendMessage( WM_SETICON, (WPARAM)TRUE, (LPARAM)theApp.LoadIcon( MAKEINTRESOURCE( IDI_MAIN ) ) );
-    CString sTitle;
-    (void)sTitle.LoadString( IDS_MAIN_TITLE );
-    SetWindowText( sTitle );
+    std::string sTitle = EnLoadStdString( IDS_MAIN_TITLE );
+    SetWindowText( sTitle.c_str() );
 
     // if shareware no loading
     if ( ( theApp.IsShareware( ) ) || ( theApp.IsSecondDisk( ) ) )
@@ -2150,14 +2377,14 @@ void CDlgMain::OnSize( UINT nType, int cx, int cy )
     {
         // probably not an issue!
 #ifdef LOGGINGON
-        //   OutputDebugStringA( "not init'ed yet\n" );
+     //   OutputDebugStringA( "not init'ed yet\n" );
 #endif
         return;
     }
-    else
+    else 
     {
 #ifdef LOGGINGON
-        //   OutputDebugStringA( "OnSize a go!\n" );
+     //   OutputDebugStringA( "OnSize a go!\n" );
 #endif
     }
 
@@ -2294,11 +2521,10 @@ void CDlgMain::OnPaint( )
     }
 
     // put up the title
-    CString sTitle;
-    (void)sTitle.LoadString( IDS_MAIN_TITLE );
+    std::string sTitle = EnLoadStdString( IDS_MAIN_TITLE );
     LOGFONT lf;
     memset( &lf, 0, sizeof( lf ) );
-    lf.lfWidth  = ( 3 * ( iWid / sTitle.GetLength( ) ) ) / 4;
+    lf.lfWidth  = ( 3 * ( iWid / (int)sTitle.size( ) ) ) / 4;
     lf.lfHeight = lf.lfWidth * 2;
     lf.lfWeight = 800;
     strcpy( lf.lfFaceName, "Book Antiqua" );
@@ -2312,13 +2538,13 @@ void CDlgMain::OnPaint( )
     dc.SetTextColor( PALETTERGB( 144, 127, 116 ) );
     while ( iShift-- )
     {
-        dc.DrawText( sTitle, -1, &rect, dtFmt );
+        dc.DrawText( sTitle.c_str(), -1, &rect, dtFmt );
         rect.top--;
         rect.left -= iJmp;
     }
 
     dc.SetTextColor( PALETTERGB( 90, 74, 57 ) );
-    dc.DrawText( sTitle, -1, &rect, dtFmt );
+    dc.DrawText( sTitle.c_str(), -1, &rect, dtFmt );
 
     rect.top = 0;
     dc.SelectObject( pOld );
@@ -2326,7 +2552,7 @@ void CDlgMain::OnPaint( )
     dc.SetTextColor( PALETTERGB( 255, 255, 255 ) );
 
 #ifdef _CHEAT
-    CString sVer( "Version: " VER_STRING );
+    std::string sVer = "Version: " VER_STRING;
 #ifdef _DEBUG
     sVer += " (debug, cheat)";
 #else
@@ -2334,20 +2560,19 @@ void CDlgMain::OnPaint( )
 #endif
     TEXTMETRIC tm;
     dc.GetTextMetrics( &tm );
-    dc.TextOut( tm.tmAveCharWidth, theApp.m_iScrnY - tm.tmHeight, sVer );
+    dc.TextOut( tm.tmAveCharWidth, theApp.m_iScrnY - tm.tmHeight, sVer.c_str(), (int)sVer.size() );
 #endif
 
     // put up copyright
-    CString sCopy;
-    (void)sCopy.LoadString( IDS_COPYRIGHT );
+    std::string sCopy = EnLoadStdString( IDS_COPYRIGHT );
     GetClientRect( &rect );
-    dc.DrawText( sCopy, -1, &rect, DT_CALCRECT | DT_CENTER | DT_SINGLELINE | DT_TOP );
+    dc.DrawText( sCopy.c_str(), -1, &rect, DT_CALCRECT | DT_CENTER | DT_SINGLELINE | DT_TOP );
     int iHt     = rect.Height( );
     rect.top    = theApp.m_iScrnY - iHt - iHt / 2;
     rect.bottom = theApp.m_iScrnY;
     rect.left   = theApp.m_iScrnX - rect.Width( ) - iHt / 2;
     rect.right  = theApp.m_iScrnX;
-    dc.DrawText( sCopy, -1, &rect, DT_CENTER | DT_SINGLELINE | DT_TOP );
+    dc.DrawText( sCopy.c_str(), -1, &rect, DT_CENTER | DT_SINGLELINE | DT_TOP );
 
     thePal.EndPaint( dc.m_hDC );
     // Do not call CDialog::OnPaint() for painting messages
@@ -2368,9 +2593,9 @@ void CDlgMain::OnDrawItem( int, LPDRAWITEMSTRUCT lpDIS )
     // set the palette
     thePal.Paint( pDc->m_hDC );
 
-    CRect   rect( lpDIS->rcItem );
-    CString sText;
-    pWnd->GetWindowText( sText );
+    CRect rect( lpDIS->rcItem );
+    char  sText[256];
+    pWnd->GetWindowText( sText, (int)sizeof( sText ) );
     int iInd = 0;  // in case m_bTile
 
     CRect rPos;
@@ -2626,8 +2851,7 @@ void       CDlgMain::OnMainCreate( )
 
     if ( ( iWinType == WNT ) && ( iNumTimesNet > 0 ) )
     {
-        CDlgMsg dlg;
-        dlg.MsgBox( IDS_ERROR_NT_NET_BUG, MB_OK | MB_ICONSTOP | MB_TASKMODAL, "Warnings", "NTnetBug" );
+        EnMessageBoxOnce( IDS_ERROR_NT_NET_BUG, MB_OK | MB_ICONSTOP | MB_TASKMODAL, "Warnings", "NTnetBug" );
         UpdateWindow( );
     }
     iNumTimesNet++;
@@ -2642,8 +2866,7 @@ void CDlgMain::OnMainJoin( )
 
     if ( ( iWinType == WNT ) && ( iNumTimesNet > 0 ) )
     {
-        CDlgMsg dlg;
-        dlg.MsgBox( IDS_ERROR_NT_NET_BUG, MB_OK | MB_ICONSTOP | MB_TASKMODAL, "Warnings", "NTnetBug" );
+        EnMessageBoxOnce( IDS_ERROR_NT_NET_BUG, MB_OK | MB_ICONSTOP | MB_TASKMODAL, "Warnings", "NTnetBug" );
         UpdateWindow( );
     }
     iNumTimesNet++;
@@ -2682,8 +2905,7 @@ void CDlgMain::OnMainLoadMulti( )
 
     if ( ( iWinType == WNT ) && ( iNumTimesNet > 0 ) )
     {
-        CDlgMsg dlg;
-        dlg.MsgBox( IDS_ERROR_NT_NET_BUG, MB_OK | MB_ICONSTOP | MB_TASKMODAL, "Warnings", "NTnetBug" );
+        EnMessageBoxOnce( IDS_ERROR_NT_NET_BUG, MB_OK | MB_ICONSTOP | MB_TASKMODAL, "Warnings", "NTnetBug" );
         UpdateWindow( );
     }
     iNumTimesNet++;
@@ -2696,14 +2918,8 @@ void CDlgMain::OnMainLoadMulti( )
 void CDlgMain::OnMainCredits( )
 {
 
-#ifdef _CHEAT
-    if ( theApp.GetProfileInt( "Cheat", "TestAudio", 0 ) == 1 )
-    {
-        CDlgTestSounds dlg;
-        dlg.DoModal( );
-        return;
-    }
-#endif
+    // Removed CHEAT-only CDlgTestSounds branch (TestAudio reg key) along
+    // with CDlgTestSounds itself.
 
     theMusicPlayer.PlayForegroundSound( SOUNDS::GetID( SOUNDS::button ), SFXPRIORITY::selected_pri );
     theApp.m_wndCredits.Create( );
@@ -2722,333 +2938,14 @@ void CDlgMain::OnMainOptions( )
 {
 
     theMusicPlayer.PlayForegroundSound( SOUNDS::GetID( SOUNDS::button ), SFXPRIORITY::selected_pri );
-    CDlgOptions dlg( this );
-    dlg.DoModal( );
+    SDL2OptionsDialog dlg( theApp.m_gameWindow.get() );
+    dlg.DoModal();
 }
+
+#endif // MFC_LEGACY_MAIN_MENU
 
 /////////////////////////////////////////////////////////////////////////////
-// CDlgVer dialog
+// CDlgVer dialog removed; SDL2VersionDialog (SDL2Dialogs.cpp) replaces it.
 
-CDlgVer::CDlgVer( CWnd* pParent /*=NULL*/ ): CDialog( CDlgVer::IDD, pParent )
-{
-    //{{AFX_DATA_INIT(CDlgVer)
-    m_sVer      = "Version: " VER_STRING;
-    m_sOs       = _T("");
-    m_sNet      = _T("");
-    m_sThunk    = _T("");
-    m_sRif      = _T("");
-    m_sVideo    = _T("");
-    m_sSound    = _T("");
-    m_sSoundVer = _T("");
-    m_sSpeed    = _T("");
-    //}}AFX_DATA_INIT
-
-#ifdef _DEBUG
-    m_sVer += " (debug, cheat)";
-#else
-#ifdef _CHEAT
-    m_sVer += " (cheat)";
-#endif
-#endif
-    m_sVer += " - " __DATE__ "  " __TIME__;
-
-    switch ( iWinType )
-    {
-    case W32s:
-        m_sOs = "Win32s";
-        break;
-    case W95:
-        m_sOs = "Windows95";
-        break;
-    case WNT:
-        m_sOs = "Win/NT";
-        break;
-    default:
-        m_sOs = "Unknown";
-        break;
-    }
-
-    OSVERSIONINFO ovi;
-    memset( &ovi, 0, sizeof( ovi ) );
-    ovi.dwOSVersionInfoSize = sizeof( ovi );
-    if ( GetVersionEx( &ovi ) ) // TODO: consider VerifyVersionInfo* or IsWindows* instead.
-        m_sOs += " " + LongToCString( ovi.dwMajorVersion ) + "." + LongToCString( ovi.dwMinorVersion ) + " (" +
-                 LongToCString( ovi.dwBuildNumber ) + ")";
-    if ( iWinType == W32s )
-    {
-        WORD wVer = LOWORD( GetVersion( ) );
-        m_sOs += " [Windows " + IntToCString( LOBYTE( wVer ) ) + "." + IntToCString( HIBYTE( wVer ) ) + "]";
-    }
-
-    long lVer = CNetApi::GetVersion( );
-    m_sNet    = "VDMPlay API " + IntToCString( HIBYTE( HIWORD( lVer ) ) ) + "." +
-                IntToCString( LOBYTE( HIWORD( lVer ) ) ) + "." + IntToCString( LOWORD( lVer ) );
-
-    m_sRif = "Data Ver: " + IntToCString( theApp.GetRifVer( ) ) + "." + IntToCString( VER_RIFF );
-    if ( theApp.IsShareware( ) )
-        m_sRif += " {Shareware}";
-    if ( theApp.HaveWAV( ) )
-        m_sRif += ", WAV";
-    else
-        m_sRif += ", MIDI";
-    if ( theApp.Have24Bit( ) )
-        m_sRif += ", 24-bit";
-    else
-        m_sRif += ", 8-bit";
-    if ( theApp.GetFirstZoom( ) )
-        m_sRif += ", Zoom1";
-    else
-        m_sRif += ", Zoom0";
-
-    // video info
-    m_sVideo = "Video: ";
-    switch ( ptrthebltformat->GetType( ) )
-    {
-    case CBLTFormat::DIB_DIRECTDRAW:
-        m_sVideo += "DirectDraw";
-        break;
-    case CBLTFormat::DIB_WING:
-        m_sVideo += "WinG";
-        break;
-    case CBLTFormat::DIB_DIBSECTION:
-        m_sVideo += "CreateDIBSection";
-        break;
-    case CBLTFormat::DIB_MEMORY:
-        m_sVideo += "StretchDIBits";
-        break;
-    }
-    m_sVideo += " (";
-
-    switch ( ptrthebltformat->GetDirection( ) )
-    {
-    case CBLTFormat::DIR_TOPDOWN:
-        m_sVideo += "top-down";
-        break;
-    case CBLTFormat::DIR_BOTTOMUP:
-        m_sVideo += "bottom-up";
-        break;
-    }
-    m_sVideo += "), " + IntToCString( ptrthebltformat->GetBitsPerPixel( ) ) + "-bit (" +
-                IntToCString( GetSystemMetrics( SM_CXSCREEN ) ) + "x" +
-                IntToCString( GetSystemMetrics( SM_CYSCREEN ) ) + "x";
-    HDC hdc       = ::GetDC( NULL );
-    int iBitDepth = GetDeviceCaps( hdc, BITSPIXEL ) * GetDeviceCaps( hdc, PLANES );
-    ::ReleaseDC( NULL, hdc );
-    m_sVideo += IntToCString( iBitDepth ) + ")";
-
-    // sound info
-    m_sSound = "Sound: ";
-    switch ( theMusicPlayer.GetMode( ) )
-    {
-    case CMusicPlayer::MUSIC_MODE::midi_only:
-        m_sSound += "MIDI Music";
-        break;
-    case CMusicPlayer::MUSIC_MODE::mixed:
-        m_sSound += "MIDI && Digital Music";
-        break;
-    case CMusicPlayer::MUSIC_MODE::wav_only:
-        m_sSound += "Digital Music";
-        break;
-    }
-    if ( theMusicPlayer.UseDirectSound( ) )
-        m_sSound += " (DirectSound)";
-    else
-        m_sSound += " (MME)";
-
-    if ( ( !theMusicPlayer.MidiOk( ) ) && ( !theMusicPlayer.WavOk( ) ) )
-        m_sSound += " {MIDI and WAV drivers failed}";
-    else if ( !theMusicPlayer.MidiOk( ) )
-        m_sSound += " {MIDI driver failed}";
-    else if ( !theMusicPlayer.WavOk( ) )
-        m_sSound += " {WAV driver failed}";
-    else if ( !theMusicPlayer.IsRunning( ) )
-        m_sSound += " {turned off}";
-
-    if ( theMusicPlayer._GetHDig( ) == 0 )
-        m_sSoundVer = "MSS: " + CString( theMusicPlayer.GetVersion( ) ) + " {off}";
-    else
-    {
-        char sBuf[130] {}, *psFmt {};
-        long iRate {}, iFmt {};
-        sBuf[0] = 0;
-        AIL_digital_configuration( theMusicPlayer._GetHDig( ), &iRate, &iFmt, sBuf );
-        switch ( iFmt )
-        {
-        case DIG_F_MONO_8:
-            psFmt = "K/8-bit/Mono, ";
-            break;
-        case DIG_F_MONO_16:
-            psFmt = "K/16-bit/Mono, ";
-            break;
-        case DIG_F_STEREO_8:
-            psFmt = "K/8-bit/Stereo, ";
-            break;
-        case DIG_F_STEREO_16:
-            psFmt = "K/16-bit/Stereo, ";
-            break;
-        }
-        m_sSoundVer =
-            "MSS: " + CString( theMusicPlayer.GetVersion( ) ) + " " + IntToCString( iRate ) + CString( psFmt ) + sBuf;
-    }
-
-    m_sSpeed = "CPU Speed: ~" + IntToCString( theApp.GetCpuSpeed( ) ) + "  CD-ROM Speed: ~" +
-               IntToCString( theApp.GetCdSpeed( ) ) + "X";
-
-    MEMORYSTATUS ms {};
-    ms.dwLength = sizeof( ms );
-    GlobalMemoryStatus( &ms ); // TODO: replace with GlobalMemoryStatusEx
-    const int ONE_MEG = 1024 * 1024;
-    m_sMemory         = "Memory (avail/total) Physical: " + IntToCString( ms.dwAvailPhys / ONE_MEG ) + "M/" +
-                        IntToCString( ms.dwTotalPhys / ONE_MEG ) +
-                        "M Virtual: " + IntToCString( ms.dwAvailPageFile / ONE_MEG ) + "M/" +
-                        IntToCString( ms.dwTotalPageFile / ONE_MEG ) + "M";
-
-    if ( iWinType == W32s )
-    {
-        WORD wVer = myGetThrdUtlsVersion( );
-        m_sThunk  = "Threads DLL " + IntToCString( HIBYTE( wVer ) ) + "." + IntToCString( LOBYTE( wVer ) );
-    }
-}
-
-void CDlgVer::DoDataExchange( CDataExchange* pDX )
-{
-    CDialog::DoDataExchange( pDX );
-    //{{AFX_DATA_MAP(CDlgVer)
-    DDX_Text( pDX, IDC_VER_TEXT, m_sVer );
-    DDX_Text( pDX, IDC_VER_TEXT_OS, m_sOs );
-    DDX_Text( pDX, IDC_VER_NET, m_sNet );
-    DDX_Text( pDX, IDC_VER_THUNK, m_sThunk );
-    DDX_Text( pDX, IDC_VER_RIF, m_sRif );
-    DDX_Text( pDX, IDC_VER_VIDEO, m_sVideo );
-    DDX_Text( pDX, IDC_VER_SOUND, m_sSound );
-    DDX_Text( pDX, IDC_VER_SOUND2, m_sSoundVer );
-    DDX_Text( pDX, IDC_VER_SPEED, m_sSpeed );
-    DDX_Text( pDX, IDC_VER_MEMORY, m_sMemory );
-    //}}AFX_DATA_MAP
-}
-
-BEGIN_MESSAGE_MAP( CDlgVer, CDialog )
-//{{AFX_MSG_MAP(CDlgVer)
-ON_BN_CLICKED( IDC_LICENSE, OnLicense )
-//}}AFX_MSG_MAP
-END_MESSAGE_MAP( )
-
-
-/////////////////////////////////////////////////////////////////////////////
-// CDlgVer message handlers
-
-BOOL CDlgVer::OnInitDialog( )
-{
-    CDialog::OnInitDialog( );
-
-    CenterWindow( theApp.m_pMainWnd );
-
-    return TRUE;  // return TRUE  unless you set the focus to a control
-}
-
-void CDlgVer::OnLicense( )
-{
-    // TODO: Add your control notification handler code here
-    CDlgLicense dlgLic( theApp.IsShareware( ) ? 2 : 3, TRUE );
-    dlgLic.DoModal( );
-}
-/////////////////////////////////////////////////////////////////////////////
-// CDlgStackDump dialog
-
-
-CDlgStackDump::CDlgStackDump( CWnd* pParent /*=NULL*/ ): CDialog( CDlgStackDump::IDD, pParent )
-{
-    //{{AFX_DATA_INIT(CDlgStackDump)
-    m_sText = _T("");
-    //}}AFX_DATA_INIT
-}
-
-
-void CDlgStackDump::DoDataExchange( CDataExchange* pDX )
-{
-    CDialog::DoDataExchange( pDX );
-    //{{AFX_DATA_MAP(CDlgStackDump)
-    DDX_Text( pDX, IDC_STACK_DUMP, m_sText );
-    //}}AFX_DATA_MAP
-}
-
-
-BEGIN_MESSAGE_MAP( CDlgStackDump, CDialog )
-//{{AFX_MSG_MAP(CDlgStackDump)
-ON_BN_CLICKED( IDC_COPY_STACK, OnCopyStack )
-//}}AFX_MSG_MAP
-END_MESSAGE_MAP( )
-
-/////////////////////////////////////////////////////////////////////////////
-// CDlgStackDump message handlers
-
-void CDlgStackDump::OnCopyStack( )
-{
-
-    // open the clipboard
-    if ( !OpenClipboard( ) )
-    {
-        MessageBeep( MB_ICONEXCLAMATION );
-        return;
-    }
-    if ( !EmptyClipboard( ) )
-    {
-        CloseClipboard( );
-        MessageBeep( MB_ICONEXCLAMATION );
-        return;
-    }
-
-    MEMORYSTATUS ms {};
-    ms.dwLength = sizeof( ms );
-    GlobalMemoryStatus( &ms ); // TODO: replace with GlobalMemoryStatusEx
-    const int ONE_MEG = 1024 * 1024;
-
-    char sNum1[20], sNum2[20];
-    itoa( m_pe->m_uEc, sNum1, 16 );
-    itoa( (int)m_pe->m_pExCode, sNum2, 16 );
-    CString sMsg;
-    if ( ms.dwAvailPageFile / ONE_MEG < 8 )
-    {
-        (void)sMsg.LoadString( IDS_OUT_OF_MEMORY );
-        sMsg += "\r\n";
-    }
-    sMsg += "Sorry, an unknown error occured.\r\nVersion: " + CString( VER_STRING ) + "\r\n" +
-            "Type: " + CString( sNum1 ) + ", Address: 0x" + CString( sNum2 ) + "\r\n";
-    for ( int iOn = 0; iOn < NUM_EXCEP; iOn++ )
-    {
-        itoa( m_pe->m_stack[iOn], sNum1, 16 );
-        sMsg += "     0x" + CString( sNum1 ) + "\r\n";
-    }
-
-    time_t t;
-    time( &t );
-    struct tm* _now = localtime( &t );
-    sMsg += CString( asctime( _now ) );
-    sMsg += theApp.m_sOs + "\r\n";
-    sMsg += theApp.m_sNet + "\r\n";
-
-    sMsg += "Memory (avail/total) Physical: " + IntToCString( ms.dwAvailPhys / ONE_MEG ) + "M/" +
-            IntToCString( ms.dwTotalPhys / ONE_MEG ) + "M Virtual: " + IntToCString( ms.dwAvailPageFile / ONE_MEG ) +
-            "M/" + IntToCString( ms.dwTotalPageFile / ONE_MEG ) + "M\r\n";
-    sMsg += theApp.m_sRif + "\r\n";
-    sMsg += theApp.m_sVideo + "\r\n";
-    sMsg += theApp.m_sSound + "\r\n";
-    sMsg += theApp.m_sSoundVer + "\r\n";
-    sMsg += theApp.m_sSpeed + "\r\n";
-
-    // set the data
-    int     iLen = sMsg.GetLength( ) + 1;
-    HGLOBAL hMem = GlobalAlloc( GMEM_MOVEABLE | GMEM_DDESHARE, iLen + 1 );
-    if ( hMem != NULL )
-    {
-        void* pData = GlobalLock( hMem );
-        if ( pData != NULL )
-        {
-            memcpy( pData, (char const*)sMsg, iLen );
-            GlobalUnlock( hMem );
-            SetClipboardData( CF_TEXT, hMem );
-        }
-    }
-
-    CloseClipboard( );
-}
+// CDlgStackDump removed: declared but never instantiated outside this file
+// (the exception-stack copy-to-clipboard dialog had no live UI).

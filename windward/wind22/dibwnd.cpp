@@ -49,13 +49,6 @@ void CDIBWnd::Exit( )
 
     // release DIB smart pointer
     m_ptrdib = Ptr<CDIB>( );
-
-    // release DirectDraw clipper pointer if present
-    if ( m_pddclipper )
-    {
-        m_pddclipper->Release( );
-        m_pddclipper = nullptr;
-    }
 }
 
 BOOL CDIBWnd::Size( LPARAM lParam ){
@@ -174,7 +167,6 @@ void CDIBWnd::ctor( )
     m_iWinHt     = 0;
     m_ptrdib     = Ptr<CDIB>( );  // empty
     m_hRes       = S_OK;
-    m_pddclipper = nullptr;
 }
 
 // --------------------------------------------------
@@ -372,8 +364,21 @@ void CDirtyRects::AssertValid( ) const
 // Add rect to current or cur/next lists. Coalesce with overlapping rects
 void CDirtyRects::AddRect( CRect const* prect, CDirtyRects::RECT_LIST eList )
 {
+    // A NULL rect means "invalidate the entire window". Callers rely on this to
+    // force a full repaint — CAnimAtr::SetCenter(SET_CENTER_INVALIDATE) (fired by
+    // resize/zoom/turn) and CAnimAtr::Scroll() (large scroll). Substitute the
+    // full DIB rect so the whole client is repainted; otherwise the newly
+    // exposed region (e.g. after resizing the window taller) is never drawn and
+    // shows stale/black backbuffer content.
+    CRect rcFull;
     if ( prect == NULL )
-        return;
+    {
+        if ( m_pdibwnd )
+            rcFull = m_pdibwnd->GetRect( );
+        if ( rcFull.IsRectEmpty( ) )
+            return;
+        prect = &rcFull;
+    }
 
     switch ( eList )
     {

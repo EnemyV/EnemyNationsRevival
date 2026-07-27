@@ -291,7 +291,17 @@ enum MessageCodes {
     UBDataREQ = 'B',   // User Broadcast Data Request
     FtREQ = 'F',  // File transfer Request
     FtACK = 'f',   // File transfer ACK
-    DummyREQ = 'D'  // dummy packet to signal link alive
+    DummyREQ = 'D',  // dummy packet to signal link alive
+
+    // NAT hole-punch rendezvous (docs/plans/nat-holepunch-iserve-feasibility.md P1).
+    // All ride the existing dg/:1707 channel; iserve stays a registry+signaler
+    // (stateless forward), game traffic never touches it. Peer probes are gated
+    // by EN_NAT_PUNCH; old builds route unknown kinds to OnUnexpectedMsg (ignored).
+    NatPunchREQ = 'H',  // client -> iserve: rendezvous me with session X
+    NatPunchFWD = 'W',  // iserve -> host: a joiner wants in; its candidates
+    NatPunchREP = 'h',  // iserve -> client: the host's candidates
+    NatPunchPING = 'Y',  // peer -> peer: punch probe (opens/keeps the mapping)
+    NatPunchPONG = 'y'   // peer -> peer: probe reply (nonce echo = pair works)
 };
 
 
@@ -407,6 +417,29 @@ struct ftMsg : genericMsg {
             genericMsg(code, sizeof(data)) {
     }
 };
+
+// NAT hole-punch rendezvous payload (all 5 NatPunch* kinds share it; unused
+// fields stay zero). Addresses are VPNETADDRESS overlays in the transport's
+// normal form (tcpaddress_s for TCP), candidate tails per vpnatcand.h.
+// Wire size: 3*28 + 4 + 4 = 92 (+10 hdr) — well under VP_MAXSENDDATA.
+struct natPunchInfo {
+    VPSESSIONID sessionId;   // target session as enumerated (incl. stamped tail)
+    VPNETADDRESS pubCand;    // requesting/target peer's OBSERVED public candidate
+    VPNETADDRESS privCand;   // that peer's self-reported private candidate
+    DWORD nonce;             // round-trip id: PING/PONG echo proves the pair
+    DWORD flags;             // EN_NATCAND_F_* hints (bit0: peers share a public IP)
+};
+
+struct natPunchMsg : genericMsg {
+    natPunchInfo data;
+
+    natPunchMsg(MessageCodes code) :
+            genericMsg(code, sizeof(data)) {
+        memset(&data, 0, sizeof(data));
+    }
+};
+
+static_assert(sizeof(natPunchInfo) == 92, "natPunchInfo wire size (3x28 + 2x4, pack(1))");
 
 struct ftReqMsg : ftMsg {
     ftReqMsg() : ftMsg(FtREQ) {}
@@ -656,6 +689,24 @@ public:
 };
 
 
+// One in-flight/confirmed hole-punch pairing (client: the host; host: a joiner).
+// Not a wire struct — local state only, driven from OnTimer.
+struct PunchPeer {
+    enum { IDLE = 0, WAIT_REP, PROBING, CONFIRMED };
+
+    DWORD m_nonce;
+    VPNETADDRESS m_pub;        // peer public candidate (dialable overlay)
+    VPNETADDRESS m_priv;       // peer private candidate
+    VPNETADDRESS m_confirmed;  // the address whose probe round-tripped
+    VPSESSIONID m_sessionId;   // client role: target session (for REQ resends)
+    int m_state;
+    int m_tries;
+    DWORD m_lastSend;
+    DWORD m_lastAlive;
+
+    void Reset() { memset(this, 0, sizeof(*this)); }
+};
+
 class CVpSession : public CSession, public CMsgDispatcher {
 public:
     typedef CWSMap::EnumProc WSEnum;
@@ -691,6 +742,29 @@ public:
     CNetLink *MakeSafeLink(CNetAddress *addr) {
         return m_net->MakeSafeLink(addr);
     }
+
+    // --- NAT hole-punch plumbing shared by host/client/iserve roles ---
+    // (docs/plans/nat-holepunch-iserve-feasibility.md P1; EN_NAT_PUNCH-gated at
+    // the call sites in the role classes.)
+
+    // Fire a datagram at a raw VPNETADDRESS from the session's dg socket
+    // (m_broadcastLink) — the SAME socket that registers/enums, so every send
+    // reuses the one NAT mapping the rendezvous exchanged (mapping is
+    // per-socket; a throwaway socket would learn a different one).
+    BOOL SendDgTo(LPCVPNETADDRESS to, LPVOID data, DWORD size);
+
+    // Send NatPunchPING at both of a peer's candidates (private skipped when
+    // absent or equal to public). Bumps tries/lastSend.
+    void PunchFireProbes(PunchPeer &p);
+
+    // Unconditional PONG reply to an incoming PING's observed source; also
+    // reports whether the ping's nonce matched `p` (host reached us => the
+    // pair works even before our own probe round-trips).
+    BOOL PunchHandlePing(natPunchMsg *msg, CNetAddress *from, PunchPeer &p);
+
+    // PONG receive: nonce match => record the observed source as the working
+    // pair. Returns TRUE when this PONG confirmed (or refreshed) the peer.
+    BOOL PunchHandlePong(natPunchMsg *msg, CNetAddress *from, PunchPeer &p);
 
 
     virtual BOOL SendData(VPPLAYERID fromId, VPPLAYERID toId,
@@ -1097,7 +1171,16 @@ public:
 
     virtual void OnTimer();
 
+    // NAT hole-punch, host role: a NatPunchFWD pushed by iserve through our
+    // warm registration mapping announces a joiner; we probe its candidates.
+    void OnNatPunchFWD(natPunchMsg *msg, CNetAddress *from);
+
 protected:
+    void DrivePunch();     // retries/keepalive-expiry, from OnTimer
+
+    enum { MAX_PUNCH_PEERS = 4 };
+    PunchPeer m_punch[MAX_PUNCH_PEERS];
+
     static const char FAR className[];
     VPPLAYERID m_nextPlayerId;
     BOOL m_visible;
@@ -1170,8 +1253,28 @@ public:
 
     virtual BOOL SetVisibility(BOOL visibility);
 
+    virtual void OnTimer();    // punch retries/keepalive (no-op when punch idle)
+
+    // NAT hole-punch, client role: ask iserve to rendezvous us with the (NAT'd)
+    // host of `sessionId`, then probe the candidates from NatPunchREP. Runs in
+    // parallel with the TCP dial; EN_NAT_PUNCH-gated.
+    void StartNatPunch(LPCVPNETADDRESS sessionId);
+
+    void OnNatPunchREP(natPunchMsg *msg, CNetAddress *from);
+
+    // iserve role only (CRegisterySession overrides); a game client ignores it.
+    virtual void OnNatPunchREQ(natPunchMsg *msg, CNetAddress *from) {}
+
+    // Registration observed-address stamp (P0.1). Called from the shared
+    // OnUnsafeData SenumREP case with the datagram's OBSERVED source; only the
+    // registration server (CRegisterySession) does anything with it.
+    virtual void StampRegistration(sesInfoMsg *msg, CNetAddress *observed) {}
 
 protected:
+    void DrivePunch();     // REQ resends / probe retries / keepalive, from OnTimer
+
+    PunchPeer m_punch;
+
     virtual void OnUnsafeData(CNetLink *link);
 
     virtual void OnConnect(CNetLink *link);
@@ -1188,8 +1291,31 @@ protected:
 
 public:
     CRemoteWS *m_serverWS;   // game server WS
+
+    // TCP-enum (phase-3): a one-shot TCP enum probe per enum session (m_tcpEnumTried),
+    // fired in parallel with the UDP query for a directed reg server (happy-eyeballs) so
+    // discovery survives a UDP-blocked path. TryTcpEnumFallback() does the connect+send.
+    BOOL m_tcpEnumTried;
+    void TryTcpEnumFallback();
     CLocalJoin *m_pendingJoin;
     BOOL m_connected;
+
+    // P0.1 candidate fallback (dial-both): a stamped session carries two dialable
+    // candidates (observed PUBLIC + advertised PRIVATE). ConnectToServer dials the primary
+    // and stashes the OTHER here; if the primary's connect drops BEFORE the join completes
+    // (m_connected still FALSE — the async EINPROGRESS failure that lands in OnDisconnect),
+    // OnDisconnect re-dials this alternate ONCE. Cleared on a successful connect so a real
+    // mid-game link drop never re-dials. Inert unless a stamp offered two distinct candidates
+    // -> only ever engages on a path that otherwise dead-ends at the menu (cannot regress a
+    // working single-candidate join).
+    BOOL         m_hasAltServer;
+    VPNETADDRESS m_altServerAddr;
+    LPVOID       m_altServerUserData;
+    // Re-dial is DEFERRED to the next OnTimer pass, never called inline from
+    // OnDisconnect (the pump may still hold the dropped link — re-entrant
+    // ConnectToServer there risks UAF / iterator invalidation; newwin review).
+    BOOL         m_redialPending;
+
     BOOL m_initialJoin;
     LPVOID m_serverEnumData;
     DWORD m_maxServerAge;
@@ -1213,6 +1339,21 @@ public:
     virtual BOOL OnSenumREQ(genericMsg *msg, CRemoteWS *ws);
 
     virtual BOOL LookForServer(LPVOID data);
+
+    // P0.1: stamp the host's observed public UDP endpoint into the stored
+    // sessionId tail at registration time (vpnatcand.h layout).
+    virtual void StampRegistration(sesInfoMsg *msg, CNetAddress *observed);
+
+    // P1: stateless rendezvous — forward the joiner's candidates to the host
+    // through its warm registration mapping, reply the host's to the joiner.
+    virtual void OnNatPunchREQ(natPunchMsg *msg, CNetAddress *from);
+
+    // TCP-enum (phase-1): dispatch a client's SenumREQ that arrives over a TCP
+    // connection (vs the UDP datagram path). The base CRemoteSession::ProcessSafeData
+    // has no SenumREQ case (a game client never RECEIVES a query — its OnSenumREQ is
+    // IMPOSSIBLE()), so the reg server overrides it here; all other kinds delegate to
+    // the base. Additive — inert until the reg server gets a TCP-enum listener.
+    virtual void ProcessSafeData(CNetLink *link, genericMsg *msg);
 
     BOOL IsServerMode() const { return TRUE; }
 

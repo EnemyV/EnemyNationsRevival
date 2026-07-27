@@ -12,7 +12,7 @@
 #include "msgs.h"
 #include "windward.h"
 
-void FitDrawText( CDC* pDc, CFont& fnt, CString& sText, CRect& rect );
+void FitDrawText( CDC* pDc, CFont& fnt, char const* sText, CRect& rect );
 void PaintBorder( CDIB* pDib, CRect const& rect, BOOL bBack );
 void PaintBevel( CDC& dc, CRect& rEdge, unsigned uWid, CBrush& brTop, CBrush& brBottom );
 
@@ -65,12 +65,15 @@ class CMyButton : public CButton
     virtual ~CMyButton( ) {}
 
     BOOL Create( char const* psText, int idHelp, CRect& rect, CDIB* pBackDib, CWnd* pPar, int ID );
+    template<class WndT>
+    BOOL Create( char const* psText, int idHelp, CRect& rect, CDIB* pBackDib, WndT* pPar, int ID )
+        { return Create( psText, idHelp, rect, pBackDib, CWnd::FromHandle( pPar ? pPar->m_hWnd : NULL ), ID ); }
 
     // Attributes
   public:
     // Operations
   public:
-    char const* GetHelp( ) const { return ( m_sHelp ); }
+    char const* GetHelp( ) const { return ( m_sHelp.c_str() ); }
     void        SetToggleMode( BOOL bOn )
     {
         if ( bOn )
@@ -94,7 +97,7 @@ class CMyButton : public CButton
 
     CDIB* m_pBackDib;  // bitmap that is the background (for transparent parts)
 
-    CString m_sHelp;   // help text for button
+    std::string m_sHelp;   // help text for button
     BYTE    m_cState;  // if button is down or up & if it's toggleable
     enum
     {
@@ -120,6 +123,9 @@ class CBmButton : public CMyButton
     // Operations
   public:
     BOOL Create( int iBtnNum, int idHelp, CBmBtnData* pBbd, CRect& rect, CDIB* pBackDib, CWnd* pPar, int ID );
+    template<class WndT>
+    BOOL Create( int iBtnNum, int idHelp, CBmBtnData* pBbd, CRect& rect, CDIB* pBackDib, WndT* pPar, int ID )
+        { return Create( iBtnNum, idHelp, pBbd, rect, pBackDib, CWnd::FromHandle( pPar ? pPar->m_hWnd : NULL ), ID ); }
 
     // Implementation
   public:
@@ -152,6 +158,9 @@ class CTextButton : public CMyButton
     // Operations
   public:
     BOOL Create( int idText, int idHelp, CTextBtnData* pTbd, CRect& rect, CDIB* pBackDib, CWnd* pPar, int ID );
+    template<class WndT>
+    BOOL Create( int idText, int idHelp, CTextBtnData* pTbd, CRect& rect, CDIB* pBackDib, WndT* pPar, int ID )
+        { return Create( idText, idHelp, pTbd, rect, pBackDib, CWnd::FromHandle( pPar ? pPar->m_hWnd : NULL ), ID ); }
 
     // Implementation
   public:

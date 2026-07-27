@@ -28,7 +28,7 @@ static char BASED_CODE THIS_FILE[] = __FILE__;
 
 /////////////////////////////////////////////////////////////////////////////
 // FitDrawText - smaller font if needed
-void FitDrawText( CDC* pDc, CFont& fnt, CString& sText, CRect& rect )
+void FitDrawText( CDC* pDc, CFont& fnt, char const* sText, CRect& rect )
 {
 
     CFont* pOldFont = pDc->SelectObject( &fnt );
@@ -258,9 +258,9 @@ void CTextBtnData::Init( CMmio* pMmio )
     lf.lfHeight = pMmio->ReadShort( );
     lf.lfWidth  = lf.lfHeight / 2;
     lf.lfWeight = pMmio->ReadShort( );
-    CString sName;
+    std::string sName;
     pMmio->ReadString( sName );
-    strcpy( lf.lfFaceName, sName );
+    strcpy( lf.lfFaceName, sName.c_str() );
     m_fntText.CreateFontIndirect( &lf );
     for ( int iInd = 0; iInd < 2; iInd++ )
     {
@@ -315,7 +315,7 @@ BOOL CMyButton::Create( char const* psText, int idHelp, CRect& rect, CDIB* pBack
     ASSERT_VALID( pPar );
 
     // the help text
-    m_sHelp.LoadString( idHelp );
+    m_sHelp = EnLoadStdString( idHelp );
 
     m_pBackDib = pBackDib;
 
@@ -451,10 +451,8 @@ BOOL CTextButton::Create( int idText, int idHelp, CTextBtnData* pTbd, CRect& rec
 
     m_pTextBtnData = pTbd;
 
-    CString sTitle;
-    sTitle.LoadString( idText );
-
-    return ( CMyButton::Create( sTitle, idHelp, rect, pBackDib, pPar, ID ) );
+    std::string sTitle = EnLoadStdString( idText );
+    return ( CMyButton::Create( sTitle.c_str( ), idHelp, rect, pBackDib, pPar, ID ) );
 }
 
 void CTextButton::DrawItem( LPDRAWITEMSTRUCT lpDIS )
@@ -531,8 +529,8 @@ void CTextButton::DrawItem( LPDRAWITEMSTRUCT lpDIS )
     m_pDib->BitBlt (pDc->m_hDC, &(lpDIS->rcItem), CPoint (0, 0));
 
     // draw the text
-    CString sText;
-    GetWindowText (sText);
+    char sText[256];
+    GetWindowText (sText, (int)sizeof(sText));
     pDc->SetBkMode (TRANSPARENT);
     pDc->SelectObject (&(m_pTextBtnData->m_fntText));
 

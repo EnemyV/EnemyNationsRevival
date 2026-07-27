@@ -18,8 +18,8 @@
 #include "stdafx.h"
 #include "lastplnt.h"
 #include "player.h"
-#include "IPCComm.h"
-#include "IPCPlay.h"
+#include "ipccomm.h"
+#include "ipcplay.h"
 #include "bitmaps.h"
 #include "toolbar.h"
 #include "error.h"
@@ -39,7 +39,7 @@ CEMsgList *plEmailMsgs;
 // list of players specific to IPC
 CIPCPlayerList *plIPCPlayers = NULL;
 // one player status dialog
-CPlyrMsgStatusDlg *pPlayerDlg = NULL; 
+// CPlyrMsgStatusDlg removed (Phase 2d).
 
 static UINT buttons[] =
 {
@@ -159,7 +159,7 @@ void CMyHeaderCtrl::DrawItem (LPDRAWITEMSTRUCT lpDIS)
 	*/
 
 	// try brute force
-	CString sName;
+	const char* sName;
 	switch( lpDIS->itemID )
 	{
 	case 1:
@@ -173,9 +173,9 @@ void CMyHeaderCtrl::DrawItem (LPDRAWITEMSTRUCT lpDIS)
 		sName = "";
 		break;
 	}
-	
 
-	dc.TextOut( iX, iY, sName, sName.GetLength() );
+
+	dc.TextOut( iX, iY, sName, (int)strlen( sName ) );
 
 	dc.SetTextColor( dwOldText );
 	dc.SetBkMode( iOldMode );
@@ -413,24 +413,14 @@ void CWndComm::ProcessIncomingChat( CMsgIPC *pMsg )
 
 	// annouce incoming chat request in status window
 	// get name of player of message and put in title
-	CString sStatus;
-	sStatus.LoadString (IDS_CHAT_STATUS);
-	csPrintf (&sStatus, (const char *) pPlyr->GetName ());
+	std::string sStatus = strPrintf( EnLoadStdString(IDS_CHAT_STATUS).c_str(),
+	                                 pPlyr->GetName() );
 
-	// turn off status bar completely
-	/*
-#if EN_CONTROLS
-	m_status.SetText ( sStatus, 255, SBT_OWNERDRAW );
-#else
-	m_status.SetText ( sStatus, 255, 0 );
-#endif
-	*/
-	
+	// turn off status bar completely — unused
 
-	CString sTitle;
-	sTitle.LoadString (IDS_CHAT_TITLE);
-	csPrintf (&sTitle, (const char *) pPlyr->GetName ());
-	pWnd->Create (NULL, sTitle, dwPopWndStyle, rect, this);
+	std::string sTitle = strPrintf( EnLoadStdString(IDS_CHAT_TITLE).c_str(),
+	                                pPlyr->GetName() );
+	pWnd->Create (NULL, sTitle.c_str(), dwPopWndStyle, rect, this);
 
 	pWnd->SetFrom (pPlyr);
 	pWnd->ShowWindow (SW_SHOW);
@@ -790,13 +780,12 @@ LONG CWndComm::OnDestroyEmailWnd( UINT uParam, LONG )
 void CWndComm::Create ()
 {
 
-	CString sTitle;
-	sTitle.LoadString (IDS_TITLE_CHAT_WND);
-	if (CWndBase::CreateEx (0, theApp.m_sWndCls, sTitle, dwPopWndStyle,
-					theApp.GetProfileInt (theApp.m_sResIni, "ChatX", 0),
-					theApp.GetProfileInt (theApp.m_sResIni, "ChatY", theApp.m_iRow2),
-					theApp.GetProfileInt (theApp.m_sResIni, "ChatEX", theApp.m_iCol1 + 1),
-					theApp.GetProfileInt (theApp.m_sResIni, "ChatEY", theApp.m_iRow3 - theApp.m_iRow2 + 1),
+	std::string sTitle = EnLoadStdString(IDS_TITLE_CHAT_WND);
+	if (CWndBase::CreateEx (0, theApp.m_sWndCls.c_str(), sTitle.c_str(), dwPopWndStyle,
+					EnGetProfileInt(theApp.m_sResIni.c_str(), "ChatX", 0),
+					EnGetProfileInt(theApp.m_sResIni.c_str(), "ChatY", theApp.m_iRow2),
+					EnGetProfileInt(theApp.m_sResIni.c_str(), "ChatEX", theApp.m_iCol1 + 1),
+					EnGetProfileInt(theApp.m_sResIni.c_str(), "ChatEY", theApp.m_iRow3 - theApp.m_iRow2 + 1),
 					theApp.m_pMainWnd->m_hWnd, NULL) == 0)
 		ThrowError (ERR_RES_CREATE_WND);
 
@@ -1383,15 +1372,9 @@ void CWndComm::OnDelete ()
 
 void CWndComm::OnPlayerStatus()
 {
+	// CPlyrMsgStatusDlg removed (Phase 2d). The MFC chat window CWndComm is
+	// itself queued for removal in the chat-dialog cluster.
 	ASSERT_VALID (this);
-
-	if( pPlayerDlg == NULL )
-	{
-		pPlayerDlg= new CPlyrMsgStatusDlg(NULL);
-		pPlayerDlg->Create (CPlyrMsgStatusDlg::IDD, this);
-	}
-	else
-		pPlayerDlg->ShowWindow(SW_SHOW);
 }
 
 void CWndComm::OnRefuse ()
@@ -1436,11 +1419,8 @@ void CWndComm::OnRefuse ()
 
 void CWndComm::OnGlobalChat ()
 {
-
+	// CDlgChatAll excluded from build (Phase 2d).
 	ASSERT_VALID (this);
-	// bring up chat
-	theApp.GetDlgChat ()->ShowWindow ( SW_SHOWNORMAL );
-	theApp.GetDlgChat ()->SetFocus ();
 }
 
 void CWndComm::OnChat ()
@@ -1448,9 +1428,7 @@ void CWndComm::OnChat ()
 
 	ASSERT_VALID (this);
 
-	CString sTitle;
-	sTitle.LoadString (IDS_CHAT_TITLE);
-	csPrintf (&sTitle, " ");
+	std::string sTitle = strPrintf( EnLoadStdString(IDS_CHAT_TITLE).c_str(), " " );
 
 	// get parent location
 	CRect rect;
@@ -1491,7 +1469,7 @@ void CWndComm::OnChat ()
 	if( bNew )
 	{
 		pWnd = new CChatWnd();
-		pWnd->Create( NULL, sTitle, dwPopWndStyle, rect, this );
+		pWnd->Create( NULL, sTitle.c_str(), dwPopWndStyle, rect, this );
 		pWnd->ShowWindow( SW_SHOW );
 		pWnd->UpdateWindow();
 	}
@@ -1607,10 +1585,9 @@ void CEMailLB::LoadEmail(void)
 CEMailLB::CEMailLB( UINT uID, CWnd *pParent, CRect& rLoc )
 {
 	CClientDC dc( pParent );
-	CString sTest = "Test String";
-	CSize csName = dc.GetTextExtent( sTest, sTest.GetLength() );
+	const char sTest[] = "Test String";
+	CSize csName = dc.GetTextExtent( sTest, (int)sizeof(sTest) - 1 );
 	m_uCharHeight = csName.cy + 1;
-	sTest.Empty();
 
 	CListBox();
 
@@ -1666,7 +1643,7 @@ void CEMailLB::DrawItem( LPDRAWITEMSTRUCT lpDIS )
 
 		CBitmap *pOldWork = workDC.SelectObject( &workBM );
 
-		CString sName;
+		std::string sName;
 		CPlayer *pPlayer = theGame.GetPlayerByPlyr( pMsg->m_iFrom );
 		if( pPlayer != NULL )
 			sName = pPlayer->GetName();
@@ -1674,7 +1651,7 @@ void CEMailLB::DrawItem( LPDRAWITEMSTRUCT lpDIS )
 			sName = "Unknown player";
 
 #if USE_FAKE_NET
-		if( sName.IsEmpty() )
+		if( sName.empty() )
 			sName = "Eric";
 #endif
 		int iWidth = lpDIS->rcItem.right - lpDIS->rcItem.left;
@@ -1702,7 +1679,7 @@ void CEMailLB::DrawItem( LPDRAWITEMSTRUCT lpDIS )
 				&workDC, 0, 0, SRCCOPY );
 
 			iX = lpDIS->rcItem.left + m_iNameAt; //(iWidth / 8);
-			pDC->TextOut( iX, iY, sName, sName.GetLength() );
+			pDC->TextOut( iX, iY, sName.c_str(), (int)sName.size() );
 			iX = lpDIS->rcItem.left + m_iSubjectAt; //(iWidth / 4);
 			pDC->TextOut( iX, iY, 
 				pMsg->m_sSubject, pMsg->m_sSubject.GetLength() );
@@ -1727,7 +1704,7 @@ void CEMailLB::DrawItem( LPDRAWITEMSTRUCT lpDIS )
 				&workDC, 0, 0, SRCCOPY );
 
 			iX = lpDIS->rcItem.left + m_iNameAt;
-			pDC->TextOut( iX, iY, sName, sName.GetLength() );
+			pDC->TextOut( iX, iY, sName.c_str(), (int)sName.size() );
 			iX = lpDIS->rcItem.left + m_iSubjectAt;
 			pDC->TextOut( iX, iY, 
 				pMsg->m_sSubject, pMsg->m_sSubject.GetLength() );
@@ -1751,7 +1728,7 @@ void CEMailLB::DrawItem( LPDRAWITEMSTRUCT lpDIS )
 				&workDC, 0, 0, SRCCOPY );
 
 			iX = lpDIS->rcItem.left + m_iNameAt;
-			pDC->TextOut( iX, iY, sName, sName.GetLength() );
+			pDC->TextOut( iX, iY, sName.c_str(), (int)sName.size() );
 			iX = lpDIS->rcItem.left + m_iSubjectAt;
 			pDC->TextOut( iX, iY, 
 				pMsg->m_sSubject, pMsg->m_sSubject.GetLength() );
@@ -1760,7 +1737,6 @@ void CEMailLB::DrawItem( LPDRAWITEMSTRUCT lpDIS )
 			pDC->SetBkMode( iOldMode );
 		}
 
-		sName.Empty();
 		workDC.SelectObject( pOldWork );
 		workDC.DeleteDC();
 		workBM.DeleteObject();

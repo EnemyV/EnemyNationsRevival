@@ -25,6 +25,8 @@ enum {
 
 };
 
+struct genericMsg;   // vpengine.h — safe-stream reassembly state below
+
 //+ A network link
 //+ Send/Recieve data
 class CNetLink : public CRef {
@@ -60,7 +62,8 @@ public:
     //+ Get the adress of the peer
     virtual CNetAddress *GetRemoteAddress() = 0;
 
-    CNetLink(CNetInterface *net, LPVOID userData) : m_err(0), m_userData(0), m_net(net) {}
+    CNetLink(CNetInterface *net, LPVOID userData) : m_err(0), m_userData(0), m_net(net),
+        m_pPartialMsg(0), m_partialGot(0) {}
 
     virtual ~CNetLink() {}
 
@@ -76,6 +79,15 @@ public:
     CNetInterface *m_net;
     LPVOID m_userData;
 
+    // Safe-stream (TCP) partial-message reassembly, owned by CVpSession::OnSafeData.
+    // A stream read can deliver fewer bytes than the header-declared msgSize; the
+    // old code discarded the partial and left the REST OF THE BODY in the stream to
+    // be parsed as the next header — permanent desync, garbage commands delivered
+    // to the app (the 2026-07-01 cross-platform MP veh_new SIGSEGV). When a body
+    // arrives short, the message is stashed here (holding its ref) and filled on
+    // subsequent data events. Released in CVpSession::OnDisconnect.
+    genericMsg* m_pPartialMsg;
+    DWORD       m_partialGot;   // body bytes received so far
 };
 
 #define name2(a, b) _rwname2(a,b) /* to force the args to be evaluated here */
@@ -158,8 +170,19 @@ public:
     //+ Create a NetAddress object used for server lookup
     virtual CNetAddress *MakeServerLookupAddress() = 0;
 
+    //+ TCP-enum (phase-3): the directed reg server's address with the well-known port
+    // as the STREAM (TCP-connect) port, for the client's UDP->TCP enum fallback. Returns
+    // NULL when there is no directed reg server (broadcast-only LAN) or the net is non-TCP.
+    virtual CNetAddress *MakeServerStreamAddress() { return NULL; }
+
     //+ Start listening for incoming connections and datagrams
     virtual BOOL Listen(BOOL streamListen = TRUE, BOOL serverMode = FALSE) = 0;
+
+    //+ TCP-enum (phase-1): make a reg server ALSO accept enum/queries over a TCP
+    // connection on the well-known port (vs the UDP datagram path), for UDP-blocked
+    // routers / tunnels. Base = no-op success (non-TCP nets have nothing to add);
+    // CTcpNet overrides with a real TCP listener. Additive — never replaces UDP enum.
+    virtual BOOL EnableStreamEnumListener() { return TRUE; }
 
     //+ Become deef to incoming data
     virtual void BecomeDeef() = 0;
@@ -182,6 +205,11 @@ public:
 
     //+ return TRUE if underlyiong protocol is keeping packet boundaries on safe links
     virtual BOOL KeepingBoundaries() const = 0;
+
+    //+ NAT candidates (vpnatcand.h): TRUE when VPNETADDRESS overlays an IPv4
+    // tcpaddress_s, i.e. the observed-address stamping / hole-punch rendezvous
+    // byte layouts apply. Only CTcpNet qualifies; IPX/netbios/comm have no NAT.
+    virtual BOOL IsInetTransport() const { return FALSE; }
 
     //+ return TRUE for slow networks
     virtual BOOL IsSlowNet() { return FALSE; }

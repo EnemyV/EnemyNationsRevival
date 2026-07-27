@@ -11,11 +11,16 @@
 
 #include "stdafx.h"
 #include "netapi.h"
-#include "CAIMap.hpp"
-#include "CAIData.hpp"
-#include "CPathMap.h"
+#include "caimap.hpp"
+#include "caidata.hpp"
+#include "cpathmap.h"
+#include "bridge.h"		// theBridgeHex: completed decks seed road eligibility
 
 #include "logging.h"	// dave's logging system
+#include "ai.h"			// AiHexCacheActive()
+
+#include <vector>
+#include <cstring>
 
 extern CAIData *pGameData;		// pointer to API object for game data
 extern CPathMap thePathMap;		// the map pathfinding object (no yield)
@@ -23,6 +28,36 @@ extern CException *pException;	// standard exception for yielding
 extern CRITICAL_SECTION cs;	// used by threads
 
 #define new DEBUG_NEW
+
+//---------------------------------------------------------------------------
+// Shared per-AI BASE map snapshot (new-game create speed-up).
+//
+// Every AI's CAIMap::UpdateMap(NULL) scans the whole world identically; the
+// only per-player difference is whether each BUILDING hex is mine vs theirs.
+// So the first AI of the game does the full scan and we save its result as a
+// base; every later AI just memcpy's the base and re-derives the handful of
+// building hexes for its own ownership. Built/used only while the setup hex
+// cache is live (AiHexCacheActive); freed in AiHexCacheFree -> AiMapBaseFree.
+// Setup runs on the main thread, so no locking is needed here.
+//---------------------------------------------------------------------------
+namespace
+{
+	WORD*            s_pAiBaseMap  = nullptr;
+	int              s_aiBaseSize  = 0;
+	int              s_aiBaseOcean = 0, s_aiBaseLand = 0, s_aiBaseLake = 0;
+	std::vector<int> s_aiBldgOffsets;   // map offsets that carry a building bit
+	bool             s_aiBaseValid = false;
+}
+
+void AiMapBaseFree( )
+{
+	delete[] s_pAiBaseMap;
+	s_pAiBaseMap  = nullptr;
+	s_aiBaseSize  = 0;
+	s_aiBaseValid = false;
+	s_aiBldgOffsets.clear();
+	s_aiBldgOffsets.shrink_to_fit();
+}
 
 //
 // this class maintains a block of locations, in start block size chunks
@@ -60,12 +95,14 @@ CAIMap::CAIMap( int iPlayer, CAIUnitList *pUnits,
 	m_cMainRoads = (BYTE)0;
 
 	m_iRoadCount = 0;
+	m_iBridgeSpanFails = 0;
+	m_bPendingBridge = FALSE;
 	m_iOcean = 0;
 	m_iLake = 0;
 	m_iLand = 0;
 	
 	Initialize();
-	
+
 	m_pMapUtil = new CAIMapUtil( m_pwaMap, pUnits, m_iBaseX, m_iBaseY,
 		m_wBaseCol, m_wBaseRow, m_wCols, m_wRows, iPlayer );
 
@@ -278,16 +315,44 @@ void CAIMap::UpdateMap( CAIMsg *pMsg )
 
 #ifdef _LOGOUT
 	DWORD dwStart, dwEnd;
-	dwStart = timeGetTime(); 
+	dwStart = timeGetTime();
 #endif
 
 	// do a complete update of all hexes on the map
 	// create AI copy to use for hexes
 	CAIHex aiHex( 0, 0 );
+
+	// FAST PATH (AI create): the player-independent base map was already built
+	// by the first AI of this game — copy it, then re-derive ONLY the building
+	// hexes for THIS player's ownership (the sole per-player difference).
+	if( AiHexCacheActive() && s_aiBaseValid && s_aiBaseSize == m_iMapSize )
+	{
+		memcpy( m_pwaMap, s_pAiBaseMap, (size_t)m_iMapSize * sizeof( WORD ) );
+		m_iOcean = s_aiBaseOcean;
+		m_iLand  = s_aiBaseLand;
+		m_iLake  = s_aiBaseLake;
+
+		for( size_t k = 0; k < s_aiBldgOffsets.size(); ++k )
+		{
+			int i = s_aiBldgOffsets[k];
+			m_pMapUtil->OffsetToXY( i, &aiHex.m_iX, &aiHex.m_iY );
+			pGameData->GetCHexData( &aiHex );
+			// oldStatus 0 mirrors the original (each AI's m_pwaMap starts zeroed)
+			m_pwaMap[i] = m_pMapUtil->ConvertStatus( &aiHex, 0 );
+		}
+		return;
+	}
+
+	// SLOW PATH: full scan (first AI of the game, or outside setup). When in
+	// setup, capture the result as the shared base so the rest take the fast path.
+	bool bBuildBase = AiHexCacheActive() && !s_aiBaseValid;
+	if( bBuildBase )
+		s_aiBldgOffsets.clear();
+
 	m_iOcean = 0;
 	m_iLand = 0;
 	m_iLake = 0;
-	
+
 	for( int i=0; i<m_iMapSize; ++i )
 	{
 		// this throws an exception because it is executing
@@ -321,6 +386,28 @@ void CAIMap::UpdateMap( CAIMsg *pMsg )
 
 		// update map array with status
 		m_pwaMap[i] = wStatus;
+
+		if( bBuildBase && ( wStatus & ( MSW_AI_BUILDING | MSW_OPFOR_BUILDING ) ) )
+			s_aiBldgOffsets.push_back( i );
+	}
+
+	if( bBuildBase )
+	{
+		delete[] s_pAiBaseMap;
+		s_pAiBaseMap = new ( std::nothrow ) WORD[m_iMapSize];
+		if( s_pAiBaseMap != NULL )
+		{
+			memcpy( s_pAiBaseMap, m_pwaMap, (size_t)m_iMapSize * sizeof( WORD ) );
+			s_aiBaseSize  = m_iMapSize;
+			s_aiBaseOcean = m_iOcean;
+			s_aiBaseLand  = m_iLand;
+			s_aiBaseLake  = m_iLake;
+			s_aiBaseValid = true;
+		}
+		else
+		{
+			s_aiBldgOffsets.clear();   // OOM → just keep using the slow path
+		}
 	}
 
 #ifdef _LOGOUT
@@ -443,10 +530,11 @@ void CAIMap::RocketRoad( void )
 		{
 			m_pwaMap[j] |= MSW_PLANNED_ROAD;
 			m_iRoadCount++;
+			m_aPlannedRoad.push_back( j );	// index the new planned hex
 
 #ifdef _LOGOUT
-	logPrintf(LOG_PRI_ALWAYS, LOG_AI_MISC, 
-		"player %d planned rocket road laid at %d,%d ", 
+	logPrintf(LOG_PRI_ALWAYS, LOG_AI_MISC,
+		"player %d planned rocket road laid at %d,%d ",
     	m_iPlayer, hexRocket.X(), hexRocket.Y() );
 
 #endif
@@ -696,7 +784,7 @@ void CAIMap::PlanRoad( CAIHex *paiHex )
 //
 // assume north->south and east->west connectors
 //
-BOOL CAIMap::ConnectRoad( CHexCoord& hexFrom, CHexCoord& hexTo )
+BOOL CAIMap::ConnectRoad( CHexCoord& hexFrom, CHexCoord& hexTo, BOOL bWarRoad /*=FALSE*/ )
 {
 #ifdef _LOGOUT
 	logPrintf(LOG_PRI_ALWAYS, LOG_AI_MISC, 
@@ -711,16 +799,124 @@ BOOL CAIMap::ConnectRoad( CHexCoord& hexFrom, CHexCoord& hexTo )
 	//	BOOL bAllowWater=FALSE, BOOL bRiverCrossing=TRUE );
 
 	int iPathLen = 0;
-	CHexCoord *pRoadPath = 
-		thePathMap.GetRoadPath( hexFrom, hexTo, iPathLen, m_pwaMap );
+	// Use this AI's own path instance (per-AI; no cross-AI lock contention).
+	CPathMap& pathMap = ( m_pMapUtil && m_pMapUtil->m_pPathMap ) ? *m_pMapUtil->m_pPathMap : thePathMap;
+	CHexCoord *pRoadPath =
+		pathMap.GetRoadPath( hexFrom, hexTo, iPathLen, m_pwaMap,
+			FALSE, TRUE, bWarRoad );
 	if( pRoadPath != NULL )
 	{
 		CHexCoord hexGame;
 		CHex *pGameHex;
 
+		// owner's bridge reach (tech-derived; 0 = no bridge tech) for the
+		// span-aware crossing cap below
+		int iMaxSpan = 0;
+		{
+			EnterCriticalSection( &cs );
+			CPlayer *pPlyr = pGameData->GetPlayerData( m_iPlayer );
+			if( pPlyr != NULL && pPlyr->CanBridge() )
+				iMaxSpan = pPlyr->GetMaxSpan();
+			LeaveCriticalSection( &cs );
+		}
+
+		int iSkipUntil = 0;   // > i while inside an unbridgeable river run
+		BOOL bCrossingLaid = FALSE;   // plan includes a river span
 		for( int i=0; i<iPathLen; ++i )
 		{
 			CHexCoord *pHex = &pRoadPath[i];
+			if( i < iSkipUntil )
+				continue;
+
+			// VANILLA CONTRACT RESTORED (0e926177 regression): every path hex is
+			// flagged, including coastline/lake/ocean - GetStartSpan anchors a
+			// span only on a FLAGGED bank and TryBridgeWalk demands the flag on
+			// every span hex, so skipping coast/water flags made crossings with
+			// coast-typed banks/junctions invisible at birth ([SPANFAIL]
+			// nostart/nowalk). The crane-wedge 0e926177 fixed lives at the PICK
+			// site now: IsRoadHexEligible/GetRoadRun skip unpaveable terrain.
+			{
+				CHex* pTerrHex = theMap.GetHex( *pHex );
+				if( pTerrHex != NULL )
+				{
+					int iTT = pTerrHex->GetType();
+
+					// crossing cap - THE planner-bridge regression (operator,
+					// 07-13): dropping crossings longer than the player's
+					// CURRENT reach deleted most arteries permanently, because
+					// plans are laid at colony founding when reach is
+					// pontoon-half (4) and are never re-laid as tiers grow.
+					// Both banks stayed planned, the river gap never bridged.
+					// IsBridgeSpan already validates reach at DISPATCH time
+					// (TryBridgeWalk bounded by GetMaxSpan), so a kept crossing
+					// simply waits for tech. Drop ONLY never-bridgeable spans
+					// (beyond MAX_SPAN_ULT = all tiers). Pre-tech rivers stay
+					// planned (vanilla), pick-time gate keeps cranes off them.
+					if( iTT == CHex::river && iMaxSpan > 0 )
+					{
+						int j = i;
+						while( j < iPathLen )
+						{
+							CHex* pRunHex = theMap.GetHex( pRoadPath[j] );
+							if( pRunHex == NULL || pRunHex->GetType() != CHex::river )
+								break;
+							++j;
+						}
+						if( ( j - i ) > MAX_SPAN_ULT )
+						{
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+							{
+								char szD[112];
+								sprintf( szD, "[PLANDROP] plyr %d crossing at %d,%d len %d > ult %d - never bridgeable, dropped\n",
+										 m_iPlayer, pRoadPath[i].X(), pRoadPath[i].Y(), j - i, MAX_SPAN_ULT );
+								OutputDebugStringA( szD );
+							}
+#endif
+							iSkipUntil = j;   // truly unbridgeable: drop from the plan
+							continue;
+						}
+
+						// server-congruent buildability at PLAN time (shared
+						// CGameMap::BridgeSpanDeny) + active-deny consult: a
+						// crossing the server will reject (or just rejected)
+						// is never marked MSW_PLANNED_ROAD, so the war-stage
+						// replan can't re-lay it every cycle. MAX_SPAN_ULT
+						// keeps tech-gated spans planned (vanilla); a bent run
+						// (bridge_bad_span) is left to dispatch validation.
+						if( i > 0 && j < iPathLen )
+						{
+							CHexCoord hexBankA = pRoadPath[i-1];
+							CHexCoord hexBankB = pRoadPath[j];
+							CHex *pBankA = theMap.GetHex( hexBankA );
+							CHex *pBankB = theMap.GetHex( hexBankB );
+							if( pBankA != NULL && pBankB != NULL &&
+								!pBankA->IsWater() && !pBankB->IsWater() )
+							{
+								int iDeny = theMap.BridgeSpanDeny( hexBankA, hexBankB, MAX_SPAN_ULT );
+								if( iDeny == CGameMap::bridge_bad_span )
+									iDeny = CGameMap::bridge_ok;
+								BOOL bDenied = ( iDeny == CGameMap::bridge_ok ) &&
+									( IsBridgeBankDenied( hexBankA ) || IsBridgeBankDenied( hexBankB ) );
+								if( iDeny != CGameMap::bridge_ok || bDenied )
+								{
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+									{
+										char szD[128];
+										sprintf( szD, "[PLANDROP] plyr %d crossing at %d,%d span %d,%d -> %d,%d %s %d - dropped\n",
+												 m_iPlayer, pRoadPath[i].X(), pRoadPath[i].Y(),
+												 hexBankA.X(), hexBankA.Y(), hexBankB.X(), hexBankB.Y(),
+												 bDenied ? "denied" : "srv-deny", iDeny );
+										OutputDebugStringA( szD );
+									}
+#endif
+									iSkipUntil = j;   // server-unbuildable/denied: drop from the plan
+									continue;
+								}
+							}
+						}
+					}
+				}
+			}
 
 			WORD wStatus = GetLocation( pHex->X(), pHex->Y() );
 			if( !(wStatus & MSW_PLANNED_ROAD) &&
@@ -730,6 +926,8 @@ BOOL CAIMap::ConnectRoad( CHexCoord& hexFrom, CHexCoord& hexTo )
 				wStatus |= MSW_PLANNED_ROAD;
 				SetLocation( pHex->X(), pHex->Y(), wStatus );
 				m_iRoadCount++;
+				// index the new planned hex (flag was just newly set here)
+				m_aPlannedRoad.push_back( m_pMapUtil->GetMapOffset( pHex->X(), pHex->Y() ) );
 
 				// update city bounds
 				m_pMapUtil->UpdateCityBounds( pHex->X(), pHex->Y() );
@@ -739,9 +937,10 @@ BOOL CAIMap::ConnectRoad( CHexCoord& hexFrom, CHexCoord& hexTo )
 				pGameHex = theMap.GetHex( hexGame );
 				if( pGameHex->GetType() == CHex::river )
 				{
+					bCrossingLaid = TRUE;
 #ifdef _LOGOUT
-	logPrintf(LOG_PRI_ALWAYS, LOG_AI_MISC, 
-		"player %d planned river/road laid at %d,%d ", 
+	logPrintf(LOG_PRI_ALWAYS, LOG_AI_MISC,
+		"player %d planned river/road laid at %d,%d ",
     	m_iPlayer, pHex->X(), pHex->Y() );
 
 #endif
@@ -768,18 +967,79 @@ BOOL CAIMap::ConnectRoad( CHexCoord& hexFrom, CHexCoord& hexTo )
 			}
 		}
 
+		// PLANNED crossings: arm the pending-bridge preempt at plan-lay time.
+		// Discovery previously required TOTAL plan exhaustion near a crane
+		// (GetRoadHex returning nothing), which a big plan never reaches - so
+		// planner spans sat flagged forever while only impromptu bridges built
+		// (operator: the plan-based path is the original mechanism, regressed).
+		// The preempt routes the next crane assignment through BuildRoad's
+		// pending handler -> GetBridgingHexes -> FindBridgeOnPlan = the
+		// original plan-discovery dispatch, just triggered promptly.
+		if( bCrossingLaid )
+		{
+			m_bPendingBridge = TRUE;
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+			{
+				char szP[112];
+				sprintf( szP, "[PLANPEND] plyr %d road plan %d,%d -> %d,%d includes river span - pending-bridge armed\n",
+						 m_iPlayer, hexFrom.X(), hexFrom.Y(), hexTo.X(), hexTo.Y() );
+				OutputDebugStringA( szP );
+			}
+#endif
+		}
+
 		delete [] pRoadPath;
 		return( TRUE );
 	}
 
 #ifdef _LOGOUT
-	logPrintf(LOG_PRI_ALWAYS, LOG_AI_MISC, 
+	logPrintf(LOG_PRI_ALWAYS, LOG_AI_MISC,
 		"\nCAIMap::ConnectRoad() player %d NULL path returned \n",
     	m_iPlayer );
 
 #endif
 
 	return( FALSE );
+}
+
+//
+// plan a war road from the colony (rocket exit hex) toward an assault
+// staging area.  reuses ConnectRoad's A* (river crossings enabled), so
+// planned river hexes get bridged and m_iRoadCount is updated.
+//
+void CAIMap::PlanWarRoad( CHexCoord& hexTo )
+{
+	// no rocket placed yet
+	if( !m_pMapUtil->m_RocketHex.X() && !m_pMapUtil->m_RocketHex.Y() )
+		return;
+
+	// colony origin = rocket exit hex (same derivation as RocketRoad)
+	CHexCoord hexFrom = m_pMapUtil->m_RocketHex;
+	hexFrom.Xinc();
+	hexFrom.Yinc();
+
+#ifdef _LOGOUT
+	logPrintf(LOG_PRI_ALWAYS, LOG_AI_MISC,
+		"\nCAIMap::PlanWarRoad() player %d from %d,%d to %d,%d ",
+		m_iPlayer, hexFrom.X(), hexFrom.Y(), hexTo.X(), hexTo.Y() );
+#endif
+
+	// A* routes through existing roads; the last reachable stretch is the road.
+	// bWarRoad = map-sized search budget (the economy budget silently NULLed
+	// every long plan; 126 WARROAD calls in soak53 never laid one crossing)
+	BOOL bPlanned = ConnectRoad( hexFrom, hexTo, TRUE );
+
+#if EN_AI_PROBES_WAR && defined(_WIN32)
+	{
+		// war-road probe - now truthful: reports whether a plan was laid
+		char szW[112];
+		sprintf( szW, "[WARROAD] plyr %d to %d,%d %s\n", m_iPlayer,
+			hexTo.X(), hexTo.Y(), bPlanned ? "ok" : "FAIL" );
+		OutputDebugStringA( szW );
+	}
+#else
+	(void)bPlanned;
+#endif
 }
 
 //
@@ -796,18 +1056,50 @@ void CAIMap::GetBridgingHexes( CHexCoord& hexSite, CAIUnit *pUnit )
 	EnterCriticalSection( &cs );
 	CPlayer *pPlayer = pGameData->GetPlayerData(m_iPlayer);
 	if( pPlayer != NULL )
-		pPlayer->CanBridge();
+		bCanBridge = pPlayer->CanBridge();   // was discarded -> bCanBridge stayed FALSE -> always returned early (bug #29)
 	LeaveCriticalSection( &cs );
 	if( !bCanBridge )
 		return;
 
 	// if still here then the player can build bridges
 	CHexCoord hexBefore = hexSite;
-	m_pMapUtil->FindBridgeHex( hexSite, pUnit );
+	// scan the whole planned road (not just the 2-block rocket ring) for the
+	// nearest river crossing to the crane; keeps IsBridgeSpan validation.
+	FindBridgeOnPlan( hexSite, pUnit );
+
+	// plan-index miss: fall back to the vanilla rocket-ring search (superset)
+	if( hexBefore == hexSite )
+		m_pMapUtil->FindBridgeHex( hexSite, pUnit );
 
 	// a site was selected, so mark the map
 	if( hexBefore != hexSite )
 	{
+		// crossing already claimed by a dispatched crane (or recently denied):
+		// pretend no site so a second crane is never sent (soak17: 3 on one span)
+		std::map<int, DWORD>::iterator itC =
+			m_mBridgeDeny.find( m_pMapUtil->GetMapOffset( hexSite.X(), hexSite.Y() ) );
+		if( itC != m_mBridgeDeny.end() )
+		{
+			if( timeGetTime() < itC->second )
+			{
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+				{
+					char szH[96];
+					sprintf( szH, "[CLAIMHIT] plyr %d site %d,%d denied\n", m_iPlayer,
+							 hexSite.X(), hexSite.Y() );
+					OutputDebugStringA( szH );
+				}
+#endif
+				hexSite = hexBefore;
+				// FindBridgeOnPlan already wrote CAI_PREV/DEST for the denied
+				// span - clear them so callers can trust params as the found
+				// signal (the anchored bridge-candidate dispatch does)
+				pUnit->SetParam( CAI_PREV_X, 0 );
+				pUnit->SetParam( CAI_PREV_Y, 0 );
+				return;
+			}
+			m_mBridgeDeny.erase( itC );
+		}
 		CHexCoord hexStart(
 		pUnit->GetParam(CAI_PREV_X),pUnit->GetParam(CAI_PREV_Y) );
 		CHexCoord hexEnd(
@@ -833,26 +1125,832 @@ void CAIMap::GetBridgingHexes( CHexCoord& hexSite, CAIUnit *pUnit )
 }
 
 //
-// call utility and get planned road hex that is nearest
-// power plant
+// nearest planned-road RIVER hex to the crane (hexSite in on entry) that forms a
+// valid bridge span. iterates m_aPlannedRoad (whole road, not the old 2-block
+// rocket ring) so crossings anywhere along a war road are found. same contract as
+// CAIMapUtil::FindBridgeHex: on success sets hexSite to the span START hex and
+// stores start in CAI_PREV_X/Y, end in CAI_DEST_X/Y; hexSite unchanged if none.
 //
-void CAIMap::GetRoadHex( CHexCoord& hexSite )
+void CAIMap::FindBridgeOnPlan( CHexCoord& hexSite, CAIUnit *pUnit )
 {
-	CHexCoord hexBefore = hexSite;
-	m_pMapUtil->FindRoadHex( hexSite );
+	CHexCoord hexCrane = hexSite;
+	int iBestDist = m_iMapSize + 1;
+	CHexCoord hexBestSite;
+	int iPrevX = 0, iPrevY = 0, iDestX = 0, iDestY = 0;
+	BOOL bBestImpromptu = FALSE;
+	BOOL bFound = FALSE;
 
-	// a site was selected, so mark the map
-	if( hexBefore != hexSite )
+	size_t k = 0;
+	while( k < m_aPlannedRoad.size() )
 	{
+		int off = m_aPlannedRoad[k];
+
+		// lazy removal: entry no longer a planned road -> swap-and-pop
+		if( off < 0 || off >= m_iMapSize || !( m_pwaMap[off] & MSW_PLANNED_ROAD ) )
+		{
+			m_aPlannedRoad[k] = m_aPlannedRoad.back();
+			m_aPlannedRoad.pop_back();
+			continue;
+		}
+
+#if THREADS_ENABLED
+		myYieldThread();
+#endif
+
+		int iX, iY;
+		m_pMapUtil->OffsetToXY( off, &iX, &iY );
+		CHexCoord hexCand( iX, iY );
+
+		// any water hex (river/lake/ocean) is a bridge candidate - the server
+		// span check is water-agnostic (BuildBridge counts IsWater hexes)
+		CHex *pGameHex = theMap.GetHex( hexCand );
+		if( pGameHex == NULL || !pGameHex->IsWater() )
+		{
+			++k;
+			continue;
+		}
+
+		// only validate candidates that could beat the current best
+		int iDist = pGameData->GetRangeDistance( hexCrane, hexCand );
+		if( iDist >= iBestDist )
+		{
+			++k;
+			continue;
+		}
+
+		// IsBridgeSpan rewrites hexTest -> span start land hex and sets CAI_PREV/DEST.
+		// Span orientation no longer matters here: the arrival gate accepts
+		// EITHER endpoint and builds from the bank the crane actually reached
+		// (replaces the GetPathRating start-reach swap - its oracle called far
+		// banks reachable that movement then clamped short of, wrong-oriented
+		// spans never dispatched, and the crossing re-selected forever)
+		CHexCoord hexTest = hexCand;
+		if( m_pMapUtil->IsBridgeSpan( hexTest, pUnit ) )
+		{
+			// denied span: skip THIS candidate so the next-nearest viable
+			// crossing competes (the winner-only deny check discarded the
+			// whole selection - one denied site masked every other crossing)
+			CHexCoord hexP( pUnit->GetParam( CAI_PREV_X ), pUnit->GetParam( CAI_PREV_Y ) );
+			CHexCoord hexD( pUnit->GetParam( CAI_DEST_X ), pUnit->GetParam( CAI_DEST_Y ) );
+			if( IsBridgeBankDenied( hexP ) || IsBridgeBankDenied( hexD ) )
+			{
+				++k;
+				continue;
+			}
+			iBestDist   = iDist;
+			hexBestSite = hexTest;
+			iPrevX = pUnit->GetParam( CAI_PREV_X );
+			iPrevY = pUnit->GetParam( CAI_PREV_Y );
+			iDestX = pUnit->GetParam( CAI_DEST_X );
+			iDestY = pUnit->GetParam( CAI_DEST_Y );
+			bBestImpromptu = FALSE;
+			bFound = TRUE;
+		}
+		++k;
+	}
+
+	// IMPROMPTU STORE (separate channel): crossings planned by PlanBridgeToward
+	// live here, never in the road plan. Validated with relaxed (flag-free)
+	// span rules; nearest-to-crane competes with the planner candidates above.
+	{
+		std::set<int>::iterator it = m_setImpromptuSpan.begin();
+		while( it != m_setImpromptuSpan.end() )
+		{
+			int off = *it;
+			if( off < 0 || off >= m_iMapSize )
+			{
+				it = m_setImpromptuSpan.erase( it );
+				continue;
+			}
+
+#if THREADS_ENABLED
+			myYieldThread();
+#endif
+
+			int iX, iY;
+			m_pMapUtil->OffsetToXY( off, &iX, &iY );
+			CHexCoord hexCand( iX, iY );
+
+			CHex *pGameHex = theMap.GetHex( hexCand );
+			// bank/landing entries and built-over water are not candidates;
+			// a hex already carrying a bridge is spent - drop it
+			if( pGameHex == NULL || ( pGameHex->GetUnits() & CHex::bridge ) )
+			{
+				it = m_setImpromptuSpan.erase( it );
+				continue;
+			}
+			if( !pGameHex->IsWater() )
+			{
+				++it;
+				continue;
+			}
+
+			int iDist = pGameData->GetRangeDistance( hexCrane, hexCand );
+			if( iDist >= iBestDist )
+			{
+				++it;
+				continue;
+			}
+
+			CHexCoord hexTest = hexCand;
+			if( m_pMapUtil->IsBridgeSpan( hexTest, pUnit, TRUE ) )
+			{
+				// denied span: skip so the next-nearest candidate competes
+				CHexCoord hexP( pUnit->GetParam( CAI_PREV_X ), pUnit->GetParam( CAI_PREV_Y ) );
+				CHexCoord hexD( pUnit->GetParam( CAI_DEST_X ), pUnit->GetParam( CAI_DEST_Y ) );
+				if( IsBridgeBankDenied( hexP ) || IsBridgeBankDenied( hexD ) )
+				{
+					++it;
+					continue;
+				}
+				iBestDist   = iDist;
+				hexBestSite = hexTest;
+				iPrevX = pUnit->GetParam( CAI_PREV_X );
+				iPrevY = pUnit->GetParam( CAI_PREV_Y );
+				iDestX = pUnit->GetParam( CAI_DEST_X );
+				iDestY = pUnit->GetParam( CAI_DEST_Y );
+				bBestImpromptu = TRUE;
+				bFound = TRUE;
+			}
+			++it;
+		}
+	}
+
+	if( bFound )
+	{
+		hexSite = hexBestSite;
+		pUnit->SetParam( CAI_PREV_X, iPrevX );
+		pUnit->SetParam( CAI_PREV_Y, iPrevY );
+		pUnit->SetParam( CAI_DEST_X, iDestX );
+		pUnit->SetParam( CAI_DEST_Y, iDestY );
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+		{
+			// attribution is now structural: the source channel is known
+			char szP[144];
+			sprintf( szP, "[PLANSEL] plyr %d %s crossing sel %d,%d span %d,%d -> %d,%d crane-dist %d\n",
+				m_iPlayer,
+				( bBestImpromptu ? "IMPROMPTU" : "PLANNER" ),
+				hexBestSite.X(), hexBestSite.Y(), iPrevX, iPrevY, iDestX, iDestY, iBestDist );
+			OutputDebugStringA( szP );
+		}
+#endif
+	}
+	else
+	{
+		// no viable crossing: IsBridgeSpan writes CAI_PREV/DEST per candidate as
+		// scratch, so a trailing denied-and-skipped candidate leaves them non-zero.
+		// The anchored dispatch reads non-zero params as "found" -> a duplicate
+		// crane on a claimed span. Clear them so no-find reads as no-find.
+		pUnit->SetParam( CAI_PREV_X, 0 );
+		pUnit->SetParam( CAI_PREV_Y, 0 );
+		pUnit->SetParam( CAI_DEST_X, 0 );
+		pUnit->SetParam( CAI_DEST_Y, 0 );
+	}
+}
+
+//
+// clamped-crane bridge assist: a crane parked at hexAt cannot reach its task
+// site hexSite. If the straight walk toward the site hits a river the owner
+// can span, flag bank + crossing + landing as planned road -- the existing
+// road/bridge pipeline (GetBridgingHexes -> IsBridgeSpan -> BuildBridgeAt)
+// then discovers and builds it. TRUE = a crossing was planned.
+//
+BOOL CAIMap::PlanBridgeToward( CHexCoord const& hexAt, CHexCoord const& hexSite )
+{
+	// bridge tech + real span reach
+	BOOL bCanBridge = FALSE;
+	int iMaxSpan = 0;
+	EnterCriticalSection( &cs );
+	{
+		CPlayer *pPlyr = pGameData->GetPlayerData( m_iPlayer );
+		if( pPlyr != NULL )
+		{
+			bCanBridge = pPlyr->CanBridge();
+			iMaxSpan   = pPlyr->GetMaxSpan();
+		}
+	}
+	LeaveCriticalSection( &cs );
+	if( !bCanBridge || iMaxSpan <= 0 )
+	{
+		// no tech at all and something needs crossing: strongest research signal
+		m_iBridgeSpanFails++;
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+		{
+			char szB[96];
+			sprintf( szB, "[BRIDGEMISS] plyr %d notech (canbridge %d span %d)\n", m_iPlayer, (int)bCanBridge, iMaxSpan );
+			OutputDebugStringA( szB );
+		}
+#endif
+		return FALSE;
+	}
+
+	// step toward the site until a water hex or the site. Three walk shapes:
+	// staircase (dominant axis of remaining delta - the original), then the two
+	// L-walks (x-leg-first, y-leg-first) - a river bending around the base is
+	// invisible to the staircase (plyr 11 'noriver' at 391,462->413,390) but one
+	// of the L-legs crosses it
+	CHexCoord hexWalk, hexBank( 0, 0 );
+	int iDir = -1;
+	for( int iMode = 0; iMode < 3 && iDir < 0; iMode++ )
+	{
+		hexWalk = hexAt;
+		for( int i = 0; i < 128 && iDir < 0; i++ )
+		{
+			int dx = (int)hexSite.X() - (int)hexWalk.X();
+			int dy = (int)hexSite.Y() - (int)hexWalk.Y();
+			if( !dx && !dy )
+				break;
+			CHexCoord hexNext = hexWalk;
+			int iStepDir;
+			BOOL bStepX;
+			switch( iMode )
+			{
+			default: bStepX = ( ( dx >= 0 ? dx : -dx ) >= ( dy >= 0 ? dy : -dy ) ); break;  // staircase
+			case 1:  bStepX = ( dx != 0 ); break;   // x leg first
+			case 2:  bStepX = ( dy == 0 ); break;   // y leg first
+			}
+			if( bStepX )
+			{
+				if( dx > 0 ) { hexNext.Xinc(); iStepDir = 2; }
+				else         { hexNext.Xdec(); iStepDir = 6; }
+			}
+			else
+			{
+				if( dy > 0 ) { hexNext.Yinc(); iStepDir = 4; }
+				else         { hexNext.Ydec(); iStepDir = 0; }
+			}
+			CHex *pNextHex = theMap.GetHex( hexNext );
+			if( pNextHex != NULL && pNextHex->IsWater() &&
+				!( pNextHex->GetUnits() & CHex::bridge ) )	// bridged water is crossable: walk on to the NEXT gap
+			{
+				hexBank = hexWalk;
+				iDir    = iStepDir;
+			}
+			else
+				hexWalk = hexNext;
+		}
+	}
+	if( iDir < 0 )
+	{
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+		{
+			char szB[96];
+			sprintf( szB, "[BRIDGEMISS] plyr %d noriver on walk %d,%d -> %d,%d\n", m_iPlayer,
+				hexAt.X(), hexAt.Y(), hexSite.X(), hexSite.Y() );
+			OutputDebugStringA( szB );
+		}
+#endif
+		return FALSE;
+	}
+
+	// try the direct bank point, then slide along the bank +/-6 hexes for a
+	// narrower crossing (the round-8 success at 436,541 was such a spot; the
+	// direct point alone misses them)
+	BOOL bShiftX = ( iDir == 0 || iDir == 4 );	// span runs along Y -> slide along X
+	static const int aiOff[21] = { 0, 1, -1, 2, -2, 3, -3, 4, -4, 5, -5, 6, -6, 7, -7, 8, -8, 9, -9, 10, -10 };
+	CHexCoord hexEnd( 0, 0 );
+	BOOL bFoundSpan = FALSE;
+	for( int k = 0; k < 21 && !bFoundSpan; k++ )
+	{
+		CHexCoord hexTry = hexBank;
+		if( bShiftX )
+			hexTry.X( CHexCoord::Wrap( hexBank.X() + aiOff[k] ) );
+		else
+			hexTry.Y( CHexCoord::Wrap( hexBank.Y() + aiOff[k] ) );
+
+		// bank must be crane-traversable land with no building on it
+		CHex *pBankHex = theMap.GetHex( hexTry );
+		if( pBankHex == NULL || pBankHex->IsWater() ||
+			!m_pMapUtil->m_tdWheel->CanTravelHex( pBankHex ) )
+			continue;
+		// server refused a span from this bank recently
+		{
+			std::map<int, DWORD>::iterator itD =
+				m_mBridgeDeny.find( m_pMapUtil->GetMapOffset( hexTry.X(), hexTry.Y() ) );
+			if( itD != m_mBridgeDeny.end() )
+			{
+				if( timeGetTime() < itD->second )
+					continue;
+				m_mBridgeDeny.erase( itD );
+			}
+		}
+		BOOL bBlockedTry;
+		EnterCriticalSection( &cs );
+		bBlockedTry = ( theBuildingHex.GetBuilding( hexTry ) != NULL );
+		LeaveCriticalSection( &cs );
+		if( bBlockedTry )
+			continue;
+
+		// the hex ahead in the span direction must still be river
+		CHexCoord hexAhead = hexTry;
+		switch( iDir )
+		{
+			case 0: hexAhead.Ydec(); break;
+			case 2: hexAhead.Xinc(); break;
+			case 4: hexAhead.Yinc(); break;
+			case 6: hexAhead.Xdec(); break;
+		}
+		CHex *pAheadHex = theMap.GetHex( hexAhead );
+		if( pAheadHex == NULL || !pAheadHex->IsWater() )
+			continue;
+
+		// crossing must land on traversable unbuilt ground within the owner's span
+		// (bRequirePlan FALSE: planning a NEW crossing over raw water - the
+		// plan marks are laid after success, requiring them here = never succeed)
+		if( m_pMapUtil->TryBridgeWalk( hexTry, iDir, iMaxSpan, hexEnd, FALSE ) )
+		{
+			hexBank    = hexTry;
+			bFoundSpan = TRUE;
+		}
+	}
+	if( !bFoundSpan )
+	{
+		// a river we WANT to cross but can't span anywhere nearby: research nudge
+		m_iBridgeSpanFails++;
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+		{
+			char szB[112];
+			sprintf( szB, "[BRIDGEMISS] plyr %d nowalk at bank %d,%d dir %d span %d\n", m_iPlayer,
+				hexBank.X(), hexBank.Y(), iDir, iMaxSpan );
+			OutputDebugStringA( szB );
+		}
+#endif
+		return FALSE;
+	}
+
+	// record bank -> river span -> landing in the IMPROMPTU STORE ONLY.
+	// Operator invariant (2026-07-16): building an impromptu bridge must NOT
+	// change the road plan - the old MSW_PLANNED_ROAD writes here polluted the
+	// planner's index (planner picks preempted, paving cranes drawn to banks).
+	// The store is scanned by FindBridgeOnPlan alongside the planner index and
+	// validated with relaxed (flag-free) span rules.
+	CHexCoord hexMark = hexBank;
+	for( int i = 0; i <= iMaxSpan + 2; i++ )
+	{
+		int j = m_pMapUtil->GetMapOffset( hexMark.X(), hexMark.Y() );
+		if( j >= 0 && j < m_iMapSize && !( m_pwaMap[j] & MSW_AI_BUILDING ) )
+			m_setImpromptuSpan.insert( j );
+		if( hexMark == hexEnd )
+			break;
+		switch( iDir )
+		{
+			case 0: hexMark.Ydec(); break;
+			case 2: hexMark.Xinc(); break;
+			case 4: hexMark.Yinc(); break;
+			case 6: hexMark.Xdec(); break;
+		}
+	}
+
+	m_bPendingBridge = TRUE;
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+	{
+		char szB[128];
+		sprintf( szB, "[BRIDGEPLAN] plyr %d clamped-crane crossing %d,%d dir %d\n",
+			m_iPlayer, hexBank.X(), hexBank.Y(), iDir );
+		OutputDebugStringA( szB );
+	}
+#endif
+	return TRUE;
+}
+
+//
+// dispatch-time claim: between "crane sent to the crossing" and "server accept
+// marks the span" the crossing looked unclaimed, so every freed road crane
+// re-took it (3 cranes on one span, soak17). Short TTL so a dead crane cannot
+// lock the crossing forever.
+//
+void CAIMap::ClaimBridge( CHexCoord const& hexStart, CHexCoord const& hexEnd )
+{
+	// key BOTH banks: a claim/deny on one bank alone let the same crossing be
+	// re-selected from the OTHER bank (soak43: one span dispatched 11x, built
+	// alternately from both directions)
+	// NOTE (operator, 2026-07-16): exact-hex claims are CORRECT - bridges may
+	// legitimately be built side by side (parallel capacity); the corridor-
+	// radius claim tried here briefly blocked that and was reverted.
+	m_mBridgeDeny[m_pMapUtil->GetMapOffset( hexStart.X(), hexStart.Y() )] =
+		timeGetTime() + 3 * 60 * 1000;
+	if ( hexEnd.X() || hexEnd.Y() )
+		m_mBridgeDeny[m_pMapUtil->GetMapOffset( hexEnd.X(), hexEnd.Y() )] =
+			timeGetTime() + 3 * 60 * 1000;
+}
+
+//
+// server refused the span (end-base check): unmark its hexes so road cranes
+// skip it and deny replanning from that bank for 30 min
+//
+// REMOVED (operator order, 2026-07-16): ConsumeCrossingMarks cleared planned
+// WATER marks within 3 of ANY completed bridge - which also erased WANTED
+// nearby planned crossings (redundant/parallel bridges are GOOD: more
+// crossings = fewer stuck vehicles). A completed impromptu bridge could
+// silently suppress a pending planned bridge beside it.
+
+void CAIMap::DenyBridge( CHexCoord const& hexStart, CHexCoord const& hexEnd )
+{
+	int dx = CHexCoord::Diff( hexEnd.X() - hexStart.X() );
+	int dy = CHexCoord::Diff( hexEnd.Y() - hexStart.Y() );
+	int sx = ( dx > 0 ) - ( dx < 0 ), sy = ( dy > 0 ) - ( dy < 0 );
+	CHexCoord hexMark = hexStart;
+	for( int i = 0; i <= abs( dx ) + abs( dy ); i++ )
+	{
+		int j = m_pMapUtil->GetMapOffset( hexMark.X(), hexMark.Y() );
+		if( j >= 0 && j < m_iMapSize && ( m_pwaMap[j] & MSW_PLANNED_ROAD ) )
+		{
+			m_pwaMap[j] &= ~MSW_PLANNED_ROAD;
+			if( m_iRoadCount > 0 )
+				m_iRoadCount--;
+		}
+		// denied impromptu crossings leave the impromptu store too
+		if( j >= 0 && j < m_iMapSize )
+			m_setImpromptuSpan.erase( j );
+		if( hexMark == hexEnd )
+			break;
+		hexMark.X( CHexCoord::Wrap( hexMark.X() + sx ) );
+		hexMark.Y( CHexCoord::Wrap( hexMark.Y() + sy ) );
+	}
+	int jBank = m_pMapUtil->GetMapOffset( hexStart.X(), hexStart.Y() );
+	m_mBridgeDeny[jBank] = timeGetTime() + 30 * 60 * 1000;
+	// both banks (other-bank re-selection bypassed a one-key deny)
+	int jBank2 = m_pMapUtil->GetMapOffset( hexEnd.X(), hexEnd.Y() );
+	if ( jBank2 >= 0 && jBank2 < m_iMapSize )
+		m_mBridgeDeny[jBank2] = timeGetTime() + 30 * 60 * 1000;
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+	{
+		char szB[96];
+		sprintf( szB, "[BRIDGEDENY-AI] plyr %d span %d,%d unplanned + denied\n", m_iPlayer,
+			hexStart.X(), hexStart.Y() );
+		OutputDebugStringA( szB );
+	}
+#endif
+}
+
+//
+// pick the nearest eligible planned-road hex to the crane (hexSite in/out).
+// was a radius spiral over the unindexed map (FindRoadHex) -- a crane far from
+// the plan "missed" even with hundreds of planned hexes elsewhere.
+//
+void CAIMap::GetRoadHex( CHexCoord& hexSite, CHexCoord* phexBridgeCand )
+{
+	CHexCoord hexOut;
+	if( GetPlannedRoadNear( hexSite, hexOut, phexBridgeCand ) )
+	{
+		hexSite = hexOut;
+
+		// a site was selected, so mark the map planned -> road
 		WORD wStatus = GetLocation( hexSite.X(), hexSite.Y() );
 		if( wStatus & MSW_PLANNED_ROAD )
 			wStatus ^= MSW_PLANNED_ROAD;
 		wStatus |= MSW_ROAD;
 		SetLocation( hexSite.X(), hexSite.Y(), wStatus );
 	}
+	// else: no eligible hex -> leave hexSite == crane pos so caller sees the miss
 }
 
-// 
+//
+// active deny on this bank? (expired entries pruned; same TTL contract as the
+// GetBridgingHexes winner check)
+//
+BOOL CAIMap::IsBridgeBankDenied( CHexCoord const& hex )
+{
+	std::map<int, DWORD>::iterator it =
+		m_mBridgeDeny.find( m_pMapUtil->GetMapOffset( hex.X(), hex.Y() ) );
+	if( it == m_mBridgeDeny.end() )
+		return FALSE;
+	if( timeGetTime() < it->second )
+		return TRUE;
+	m_mBridgeDeny.erase( it );
+	return FALSE;
+}
+
+//
+// neighbor hex carries an actual road or one of our buildings
+//
+BOOL CAIMap::NeighborHasRoadOrBldg( CHexCoord& hex )
+{
+	int j = m_pMapUtil->GetMapOffset( hex.X(), hex.Y() );
+	if( j < 0 || j >= m_iMapSize )
+		return FALSE;
+	WORD w = m_pwaMap[j];
+	return ( ( w & MSW_ROAD ) || ( w & MSW_AI_BUILDING ) ) ? TRUE : FALSE;
+}
+
+//
+// ROAD AVOIDANCE (pick-time belt): TRUE if any of hex's 8 neighbors carries one
+// of our own farm/lumber buildings, whose neighbor squares must stay road-free.
+// AI-map high byte = GetBldgType (caimaput.cpp ConvertStatus), MSW_AI_BUILDING
+// gates own buildings. Belt for OLD saves whose roads were planned before the
+// pathfinder (layer 1) learned to route around these hexes.
+//
+BOOL CAIMap::NeighborIsFarmLumber( CHexCoord& hex )
+{
+	// 8-neighborhood offsets (N, NE, E, SE, S, SW, W, NW)
+	static const int adx[MAX_ADJACENT] = {  0,  1,  1,  1,  0, -1, -1, -1 };
+	static const int ady[MAX_ADJACENT] = { -1, -1,  0,  1,  1,  1,  0, -1 };
+
+	for( int d = 0; d < MAX_ADJACENT; ++d )
+	{
+		CHexCoord hexT( CHexCoord::Wrap( hex.X() + adx[d] ),
+			CHexCoord::Wrap( hex.Y() + ady[d] ) );
+		WORD w = GetLocation( hexT.X(), hexT.Y() );
+		if( !( w & MSW_AI_BUILDING ) )
+			continue;
+		int iType = w >> 8;	// base type via GetBldgType, per ConvertStatus
+		if( iType == CStructureData::farm ||
+			iType == CStructureData::lumber )
+			return TRUE;
+	}
+	return FALSE;
+}
+
+//
+// a COMPLETED bridge deck at this hex. Decks never become MSW_ROAD (terrain
+// stays water), so roads could not chain off a finished span - the far bank
+// demanded a building first. CHex::bridge is set at ORDER time, so gate on
+// the parent bridge's IsBuilt (units flag first, CBridge lookup under cs).
+//
+static BOOL NeighborHasBuiltBridge( CHexCoord& hex )
+{
+	CHex *pGameHex = theMap.GetHex( hex );
+	if( pGameHex == NULL || !( pGameHex->GetUnits() & CHex::bridge ) )
+		return FALSE;
+	BOOL bBuilt = FALSE;
+	EnterCriticalSection( &cs );
+	{
+		CBridgeUnit *pBu = theBridgeHex.GetBridge( hex );
+		if( pBu != NULL && pBu->GetParent() != NULL && pBu->GetParent()->IsBuilt() )
+			bBuilt = TRUE;
+	}
+	LeaveCriticalSection( &cs );
+	return bBuilt;
+}
+
+//
+// replicates CAIMapUtil::FindRoadHex eligibility (caimaput.cpp ~3162-3227):
+// planned flag set, not a building, not river, no bldg/vehicle on the game hex,
+// and an actual road/building at cardinal neighbor 0/2/4/6.
+//
+BOOL CAIMap::IsRoadHexEligible( int iOff, CHexCoord& hexRoad )
+{
+	WORD w = m_pwaMap[iOff];
+	if( !( w & MSW_PLANNED_ROAD ) )
+		return FALSE;
+	if( ( w & MSW_AI_BUILDING ) || ( w & MSW_OPFOR_BUILDING ) )
+		return FALSE;
+
+	// skip planned road hexes on water (bridge candidates, not paveable roads)
+	CHex *pGameHex = theMap.GetHex( hexRoad );
+	if( pGameHex == NULL )
+		return FALSE;
+	if( pGameHex->IsWater() )
+		return FALSE;
+	// coastline: drivable but NOT paveable - its plan mark anchors bridge spans
+	// (vanilla contract), never hand it to a paving crane (the 0e926177 wedge)
+	if( pGameHex->GetType() == CHex::coastline )
+		return FALSE;
+
+	BYTE bUnits = pGameHex->GetUnits();
+	if( bUnits & CHex::bldg )						// a building sits here
+		return FALSE;
+	if( bUnits & ( CHex::ul | CHex::ur | CHex::ll | CHex::lr ) )	// a vehicle
+		return FALSE;
+
+	// ROAD AVOIDANCE (belt): never pave a hex abutting an own farm/lumber
+	if( NeighborIsFarmLumber( hexRoad ) )
+		return FALSE;
+
+	// only accept planned roads adjacent to a real road/building at 0,2,4,6;
+	// a COMPLETED bridge deck also counts (call-site only - the shared
+	// NeighborHasRoadOrBldg would leak deck-adjacency into bridge-candidate
+	// discovery via GetPlannedRoadNear)
+	CHexCoord hexT;
+	hexT = hexRoad; hexT.Ydec();  if( NeighborHasRoadOrBldg( hexT ) || NeighborHasBuiltBridge( hexT ) ) return TRUE;	// 0
+	hexT = hexRoad; hexT.Xinc();  if( NeighborHasRoadOrBldg( hexT ) || NeighborHasBuiltBridge( hexT ) ) return TRUE;	// 2
+	hexT = hexRoad; hexT.Yinc();  if( NeighborHasRoadOrBldg( hexT ) || NeighborHasBuiltBridge( hexT ) ) return TRUE;	// 4
+	hexT = hexRoad; hexT.Xdec();  if( NeighborHasRoadOrBldg( hexT ) || NeighborHasBuiltBridge( hexT ) ) return TRUE;	// 6
+	return FALSE;
+}
+
+//
+// frontier-adjacent WATER plan hex: the paving frontier has reached a planned
+// river crossing. The pre-index radius spiral surfaced this via LOCAL
+// exhaustion (nothing paveable near the crane -> caller ran GetBridgingHexes);
+// the global index always finds land elsewhere, so the eligibility scan's
+// silent water-skip froze every crossing arm (operator: planner bridges
+// regressed to zero, spans never on plan lines). Same tests as
+// IsRoadHexEligible minus the water refusal.
+//
+BOOL CAIMap::IsBridgeCandidateHex( int iOff, CHexCoord& hexRoad )
+{
+	WORD w = m_pwaMap[iOff];
+	if( !( w & MSW_PLANNED_ROAD ) )
+		return FALSE;
+	if( ( w & MSW_AI_BUILDING ) || ( w & MSW_OPFOR_BUILDING ) )
+		return FALSE;
+
+	CHex *pGameHex = theMap.GetHex( hexRoad );
+	if( pGameHex == NULL )
+		return FALSE;
+	if( !pGameHex->IsWater() )
+		return FALSE;	// land hexes are IsRoadHexEligible's business
+
+	// crossing is "reached" when the network touches it at 0,2,4,6
+	CHexCoord hexT;
+	hexT = hexRoad; hexT.Ydec();  if( NeighborHasRoadOrBldg( hexT ) ) return TRUE;
+	hexT = hexRoad; hexT.Xinc();  if( NeighborHasRoadOrBldg( hexT ) ) return TRUE;
+	hexT = hexRoad; hexT.Yinc();  if( NeighborHasRoadOrBldg( hexT ) ) return TRUE;
+	hexT = hexRoad; hexT.Xdec();  if( NeighborHasRoadOrBldg( hexT ) ) return TRUE;
+	return FALSE;
+}
+
+//
+// nearest eligible planned-road hex to hexCrane, via the exact index.
+// lazy-drops entries whose MSW_PLANNED_ROAD flag is gone. Runs on this AI's
+// own thread (planner + picker both do), same as every other m_pwaMap write --
+// no locking needed. O(index size); ~1-2k entries.
+//
+BOOL CAIMap::GetPlannedRoadNear( CHexCoord& hexCrane, CHexCoord& hexOut, CHexCoord* phexBridgeCand )
+{
+	int iBestDist = m_iMapSize + 1;
+	int iBestOff  = -1;
+	CHexCoord hexBest;
+	int iBestBrDist = m_iMapSize + 1;
+	CHexCoord hexBrBest( 0, 0 );
+
+	if( phexBridgeCand != NULL )
+		*phexBridgeCand = CHexCoord( 0, 0 );
+
+	size_t k = 0;
+	while( k < m_aPlannedRoad.size() )
+	{
+		int off = m_aPlannedRoad[k];
+
+		// lazy removal: entry no longer a planned road -> swap-and-pop
+		if( off < 0 || off >= m_iMapSize || !( m_pwaMap[off] & MSW_PLANNED_ROAD ) )
+		{
+			m_aPlannedRoad[k] = m_aPlannedRoad.back();
+			m_aPlannedRoad.pop_back();
+			continue;
+		}
+
+#if THREADS_ENABLED
+		myYieldThread();	// same yield the old spiral did per candidate
+#endif
+
+		int iX, iY;
+		m_pMapUtil->OffsetToXY( off, &iX, &iY );
+		CHexCoord hexCand( iX, iY );
+
+		// eligible-but-not-nearest stays indexed (may qualify once roads grow)
+		if( IsRoadHexEligible( off, hexCand ) )
+		{
+			// dist>0: the old spiral scanned rings from step 1, never the crane's
+			// own hex; excluding it keeps GetRoadHex's mark-vs-miss test intact
+			int iDist = pGameData->GetRangeDistance( hexCrane, hexCand );
+			if( iDist > 0 && iDist < iBestDist )
+			{
+				iBestDist = iDist;
+				iBestOff  = off;
+				hexBest   = hexCand;
+			}
+		}
+		// frontier-reached-a-crossing: track it alongside (restores the local
+		// exhaustion signal the pre-index spiral gave the bridge discovery)
+		else if( phexBridgeCand != NULL && IsBridgeCandidateHex( off, hexCand ) )
+		{
+			int iDist = pGameData->GetRangeDistance( hexCrane, hexCand );
+			if( iDist > 0 && iDist < iBestBrDist )
+			{
+				iBestBrDist = iDist;
+				hexBrBest   = hexCand;
+			}
+		}
+		++k;
+	}
+
+	if( phexBridgeCand != NULL && ( hexBrBest.X() || hexBrBest.Y() ) )
+		*phexBridgeCand = hexBrBest;
+
+	if( iBestOff < 0 )
+		return FALSE;	// entries may remain, just none eligible right now
+
+	hexOut = hexBest;
+	return TRUE;
+}
+
+//
+// count of live planned-road entries (prunes stale as it scans). Used to tell
+// a disconnected plan (entries exist, none eligible) from true exhaustion.
+//
+int CAIMap::GetPlannedCount( void )
+{
+	size_t k = 0;
+	while( k < m_aPlannedRoad.size() )
+	{
+		int off = m_aPlannedRoad[k];
+		if( off < 0 || off >= m_iMapSize || !( m_pwaMap[off] & MSW_PLANNED_ROAD ) )
+		{
+			m_aPlannedRoad[k] = m_aPlannedRoad.back();
+			m_aPlannedRoad.pop_back();
+			continue;
+		}
+		++k;
+	}
+	return (int)m_aPlannedRoad.size();
+}
+
+//
+// rebuild the runtime planned-road index from the map (e.g. after load, which
+// reads the raw m_pwaMap buffer straight from the save).
+//
+void CAIMap::RebuildPlannedIndex( void )
+{
+	m_aPlannedRoad.clear();
+	if( m_pwaMap == NULL )
+		return;
+	for( int i = 0; i < m_iMapSize; ++i )
+		if( m_pwaMap[i] & MSW_PLANNED_ROAD )
+			m_aPlannedRoad.push_back( i );
+
+	// heal a saved corrupt count (seen -2406 in a live save) -- the index is
+	// the source of truth
+	if( m_iRoadCount < (int)m_aPlannedRoad.size() )
+		m_iRoadCount = (int)m_aPlannedRoad.size();
+}
+
+//
+// batch road: extend a just-picked road hex (already marked ROAD by GetRoadHex)
+// into a STRAIGHT CARDINAL run of contiguous MSW_PLANNED_ROAD hexes so a crane
+// can pave the strip in one order. Cardinal-only: the vehicle's NextRoadHex
+// steps the longer axis one hex at a time, so a diagonal "run" would pave a
+// staircase, not the hexes we mark. Marks every run hex PLANNED->ROAD so no
+// other crane claims the strip. hexEnd = last run hex; returns hex count.
+//
+int CAIMap::GetRoadRun( const CHexCoord& hexStart, CHexCoord& hexEnd, int iMaxHexes )
+{
+	hexEnd = hexStart;
+	if( iMaxHexes < 2 )
+		return 1;
+
+	// E, W, S, N (cardinal only)
+	static const int adx[4] = {  1, -1,  0,  0 };
+	static const int ady[4] = {  0,  0,  1, -1 };
+
+	int iBaseCol = (int)m_wBaseCol, iBaseRow = (int)m_wBaseRow;
+	int iCol = (int)hexStart.X(), iRow = (int)hexStart.Y();
+
+	// pick the first cardinal direction with a planned-road neighbor
+	int iDir = -1;
+	for( int d = 0; d < 4; ++d )
+	{
+		int nx = iCol + adx[d], ny = iRow + ady[d];
+		if( nx < iBaseCol || nx >= iBaseCol + (int)m_wCols ||
+			ny < iBaseRow || ny >= iBaseRow + (int)m_wRows )
+			continue;
+		if( GetLocation( (WORD)nx, (WORD)ny ) & MSW_PLANNED_ROAD )
+		{
+			// ROAD AVOIDANCE (belt): don't run into a farm/lumber-adjacent hex
+			CHexCoord hexN( nx, ny );
+			if( NeighborIsFarmLumber( hexN ) )
+				continue;
+			iDir = d;
+			break;
+		}
+	}
+	if( iDir < 0 )
+		return 1;	// no straight extension -- single-hex fallback
+
+	// walk straight, claiming each planned-road hex, up to iMaxHexes total
+	int iCount = 1;
+	while( iCount < iMaxHexes )
+	{
+		int nx = iCol + adx[iDir], ny = iRow + ady[iDir];
+		if( nx < iBaseCol || nx >= iBaseCol + (int)m_wCols ||
+			ny < iBaseRow || ny >= iBaseRow + (int)m_wRows )
+			break;
+		WORD wStatus = GetLocation( (WORD)nx, (WORD)ny );
+		if( !( wStatus & MSW_PLANNED_ROAD ) )
+			break;
+		// ROAD AVOIDANCE (belt): stop the run before a farm/lumber-adjacent hex
+		CHexCoord hexRun( nx, ny );
+		if( NeighborIsFarmLumber( hexRun ) )
+			break;
+		// stop at water/coastline: span anchors, never paveable (mirror IsRoadHexEligible)
+		{
+			CHex* pRunHex = theMap.GetHex( hexRun );
+			if( pRunHex == NULL || pRunHex->IsWater() ||
+				pRunHex->GetType() == CHex::coastline )
+				break;
+		}
+		wStatus &= ~MSW_PLANNED_ROAD;	// claim: planned -> built
+		wStatus |= MSW_ROAD;
+		SetLocation( (WORD)nx, (WORD)ny, wStatus );
+		iCol = nx; iRow = ny;
+		hexEnd.X( nx ); hexEnd.Y( ny );
+		++iCount;
+	}
+	return iCount;
+}
+
+//
 // find a hex, based on power plant settings
 // suitable for locating a power plant, and
 // return it in the CHexCoord reference
@@ -1131,8 +2229,8 @@ void CAIMap::PlaceBuilding( CAIMsg *pMsg, CAIUnitList *plUnits )
 
 }
 
-void CAIMap::GetStartHex( CHexCoord& hexStart, CHexCoord& hexEnd, 
-	CHexCoord& hexPlace, int iVehType )
+void CAIMap::GetStartHex( CHexCoord& hexStart, CHexCoord& hexEnd,
+	CHexCoord& hexPlace, int iVehType, CHexCoord* phexRocket /*=NULL*/ )
 {
 	int iOffset = pGameData->m_iHexPerBlk / 4;
 	CHexCoord hcStart;
@@ -1142,8 +2240,10 @@ void CAIMap::GetStartHex( CHexCoord& hexStart, CHexCoord& hexEnd,
 	hcEnd.X( hcEnd.Wrap( hexEnd.X() - iOffset ));
 	hcEnd.Y( hcEnd.Wrap( hexEnd.Y() - iOffset ));
 
-	m_pMapUtil->FindStagingHex( hcStart.X(), hcStart.Y(), 
-		hcEnd.X(), hcEnd.Y(), hexPlace, iVehType );
+	// phexRocket non-NULL => initial AI vehicle placement: reject water hexes
+	// for land vehicles and require a path back to the rocket (see FindStagingHex)
+	m_pMapUtil->FindStagingHex( hcStart.X(), hcStart.Y(),
+		hcEnd.X(), hcEnd.Y(), hexPlace, iVehType, FALSE, phexRocket );
 }
 
 // now ask map to do the work and find a place to stage
@@ -1491,6 +2591,10 @@ void CAIMap::Load( CArchive& ar, CAIUnitList* plUnits )
     }
 
     m_pMapUtil->Load( ar, m_pwaMap, plUnits );
+
+    // planned-road index is runtime-only (not serialized) -- rebuild from the
+    // just-read map so post-load road picking works.
+    RebuildPlannedIndex();
 }
 
 // end of CAIMap.cpp

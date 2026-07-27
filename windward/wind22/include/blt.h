@@ -13,21 +13,26 @@
 #include "ptr.h"
 #include "thielen.h"
 
-#include <ddraw.h>
+#ifdef _WIN32
+// WinG is the legacy Windows blit path. On Linux it is dead (rendering is
+// SDL_Renderer) and wing.h is a Windows SDK header; CWinG's declarations below
+// only need BITMAPINFO/RGBQUAD, which the shim provides.
 #include <wing/INCLUDE/wing.h>
+#endif
 
 //------------------------------ C B L T B a s e ---------------------------
 
 class CBLTBase
-#ifdef _DEBUG
-    : public CObject
-#endif
 {
 
   public:
     CBLTBase( ) { SetValid( FALSE ); }
 
     BOOL IsValid( ) const { return m_bValid; }
+
+#ifdef _DEBUG
+    virtual void AssertValid( ) const {}
+#endif
 
   protected:
     void SetValid( BOOL bValid ) { m_bValid = bValid; }
@@ -64,43 +69,11 @@ class CWinG : public CBLTBase
     HINSTANCE m_hInstLib;
 };
 
-//---------------------------- C D i r e c t D r a w ------------------------
-
-class CDirectDraw : public CBLTBase
-{
-
-  public:
-    static CDirectDraw* GetTheDirectDraw( );
-
-    ~CDirectDraw( );
-
-    LPDIRECTDRAW        GetDD( ) { return m_pdirectdraw; }
-    LPDIRECTDRAWSURFACE GetFrontSurface( );
-
-#ifdef _DEBUG
-    virtual void AssertValid( ) const;
-#endif
-
-  protected:
-    CDirectDraw( );
-
-  private:
-    HRESULT             m_hRes;            // last COM return code
-    HINSTANCE           m_hInstDDrawLib;
-    LPDIRECTDRAW        m_pdirectdraw;     // Direct Draw object
-    DDSURFACEDESC       m_ddPrimSurfDesc;  // primary surface description
-    LPDIRECTDRAWSURFACE m_pddsurfacePrim;  // primary surface (the screen)
-    LPDIRECTDRAWCLIPPER m_pddclipper;      // primary surface clipper
-};
-
 //------------------------- C C o l o r F o r m a t -----------------------
 //
 // Device-dependent color format info
 
 class CColorFormat
-#ifdef _DEBUG
-    : public CObject
-#endif
 {
 
   public:
@@ -148,18 +121,15 @@ class CColorFormat
 //
 
 class CBLTFormat
-#ifdef _DEBUG
-    : public CObject
-#endif
 {
 
   public:
     enum DIB_TYPE
     {
-        DIB_DIRECTDRAW,
         DIB_WING,
         DIB_DIBSECTION,
         DIB_MEMORY,
+        DIB_SDL_SURFACE,
         DIB_NUM_TYPES
     };
 
@@ -196,6 +166,5 @@ class CBLTFormat
 
 extern Ptr<CBLTFormat>  ptrthebltformat;
 extern Ptr<CWinG>       ptrtheWinG;
-extern Ptr<CDirectDraw> ptrtheDirectDraw;
 
 #endif

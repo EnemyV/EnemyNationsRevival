@@ -426,9 +426,12 @@ void CAppPalette::SetColors( RGBQUAD* pRgb, int iFirst, int iNumClrs ) {
     UpdateDeviceColors( iFirst, iNumClrs );
 }
 
-void CAppPalette::Animate() {
-    AnimatePalette( m_hPal, m_iNumSys / 2, 256 - m_iNumSys, &m_lPal.palPalEntry[m_iNumSys / 2] );
-}
+// Phase 6 Stage 5: CAppPalette::Animate / Fadein / Fadeout removed.
+// Animate had zero callers (per runtime audit + dead-stripped from Release
+// via /OPT:REF); Fadein/Fadeout were empty stubs also with zero callers.
+// Removing them lets us drop the corresponding game-side cycling concept
+// and shrinks the GDI surface (AnimatePalette was the only GDI palette
+// call left in this file).
 
 void CAppPalette::GetColors( RGBQUAD* pRgb, int iFirst, int iNumClrs ) const {
     ASSERT_STRICT_VALID( this );
@@ -458,22 +461,6 @@ void CAppPalette::NewWnd( BITMAPINFO256& bmi ) {
         pRgb++;
         pPeDest++;
     }
-}
-
-void CAppPalette::Fadeout() {
-
-    // if no palette then nothing to do
-    if ( m_hPal == NULL )
-        return;
-
-}
-
-void CAppPalette::Fadein() {
-
-    // if no palette then nothing to do
-    if ( m_hPal == NULL )
-        return;
-
 }
 
 static int SysPalIndex[] = {
@@ -552,10 +539,6 @@ void CAppPalette::SysColors( BOOL bActive, HDC hdc ) {
 
 #ifdef _DEBUG
 void CAppPalette::AssertValid() const {
-
-    // assert base object
-    CObject::AssertValid();
-
     ASSERT( m_iNumSys == 20 );
 }
 #endif

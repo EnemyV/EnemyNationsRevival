@@ -34,7 +34,7 @@ struct
 
 const int nCodecCnt = sizeof( _codecs ) / sizeof( _codecs[0] );
 
-void* CoDec::Compress( CODEC typ, void const* pSrc, int iSrcSize, int& iDestSize, FNCOMPSTAT fnStat, DWORD dwData )
+void* CoDec::Compress( CODEC typ, void const* pSrc, int iSrcSize, int& iDestSize, FNCOMPSTAT fnStat, DWORD_PTR dwData )
 {
 
     char* pDest;
@@ -77,7 +77,7 @@ void* CoDec::Compress( CODEC typ, void const* pSrc, int iSrcSize, int& iDestSize
     return pDest;
 }
 
-void* CoDec::Decompress( void const* pSrc, int iSrcSize, int& iDestSize, FNCOMPSTAT fnStat, DWORD dwData )
+void* CoDec::Decompress( void const* pSrc, int iSrcSize, int& iDestSize, FNCOMPSTAT fnStat, DWORD_PTR dwData )
 {
 
     auto pcSrc = static_cast<char const*>( pSrc );
@@ -99,7 +99,7 @@ void* CoDec::Decompress( void const* pSrc, int iSrcSize, int& iDestSize, FNCOMPS
     return ( (void*)pCodec->Decompress( pcSrc + 1, iSrcSize - 1, NULL, &iDestSize, fnStat, dwData ) );
 }
 
-void CoDec::Decompress( void const* pSrc, int iSrcSize, void* pDest, int& iDestSize, FNCOMPSTAT fnStat, DWORD dwData )
+void CoDec::Decompress( void const* pSrc, int iSrcSize, void* pDest, int& iDestSize, FNCOMPSTAT fnStat, DWORD_PTR dwData )
 {
 
     auto pcSrc = static_cast<char const*>( pSrc );

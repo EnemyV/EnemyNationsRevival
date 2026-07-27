@@ -9,12 +9,14 @@
 //
 ////////////////////////////////////////////////////////////////////////////
 
-#include "STDAFX.H"
+#include "stdafx.h"
 #include "cai.h"
-#include "CPathMap.h"
+#include "cpathmap.h"
 
-#include "CAIData.hpp"
+#include "caidata.hpp"
 #include "logging.h"	// dave's logging system
+#include "Perf.h"		// EN_PERF counters (path volume/cost split)
+#include "enprobes.h"	// temp AI probe gates
 
 
 //#define TEST_RESULT1		// test GetAt improvement
@@ -29,24 +31,57 @@ CPathMap thePathMap;
 //
 // critical section bracketed version of GetRoadPath()
 //
-CHexCoord *CPathMap::GetRoadPath( 
-	CHexCoord& hexFrom, CHexCoord& hexTo, int& iPathLen, WORD *pMap, 
-	BOOL bAllowWater /*=FALSE*/, BOOL bRiverCrossing /*=TRUE*/ )
+CHexCoord *CPathMap::GetRoadPath(
+	CHexCoord& hexFrom, CHexCoord& hexTo, int& iPathLen, WORD *pMap,
+	BOOL bAllowWater /*=FALSE*/, BOOL bRiverCrossing /*=TRUE*/,
+	BOOL bWarRoad /*=FALSE*/ )
 {
+	// EN_PERF: time the whole call (incl. m_cs wait) + count searches/nodes.
+	// Per-SEARCH counter ops only — CounterInc takes a global CS, so a
+	// per-node counter in AddCellToArray would serialize the AI threads.
+	Perf::ScopeCounter _t( "pathr.us" );
+#if EN_PERF_PROBES && defined(_WIN32)
+	DWORD dwT0 = timeGetTime( );
+#endif
 	EnterCriticalSection (&m_cs);
+#if EN_PERF_PROBES && defined(_WIN32)
+	DWORD dwT1 = timeGetTime( );
+#endif
+	m_iNextSlot = 0;	// early-outs skip the in-search reset; don't re-count
 	CHexCoord *phcPath = _GetRoadPath( hexFrom, hexTo, iPathLen,
-		pMap, bAllowWater, bRiverCrossing );
+		pMap, bAllowWater, bRiverCrossing, bWarRoad );
+	Perf::CounterInc( "pathr.calls" );
+	Perf::CounterAdd( "pathr.nodes", m_iNextSlot );	// cells created this search
+	int iCellsUsed = m_iNextSlot;
 	LeaveCriticalSection (&m_cs);
+#if EN_PERF_PROBES && defined(_WIN32)
+	{
+		// hang-regression probe: road planning with the war budget can pop
+		// 65k nodes on an unreachable target - name any >200ms stall
+		DWORD dwT2 = timeGetTime( );
+		if ( dwT2 - dwT0 > 200 )
+		{
+			char szS[160];
+			sprintf( szS, "[SLOWROAD] tid %lu wait %lu work %lu ms warroad %d cells %d from %d,%d to %d,%d\n",
+				GetCurrentThreadId( ), dwT1 - dwT0, dwT2 - dwT1, (int)bWarRoad, iCellsUsed,
+				hexFrom.X( ), hexFrom.Y( ), hexTo.X( ), hexTo.Y( ) );
+			OutputDebugStringA( szS );
+		}
+	}
+#endif
 	return( phcPath );
 }
 
 //
 // actual GetRoadPath()
 //
-CHexCoord *CPathMap::_GetRoadPath( 
-	CHexCoord& hexFrom, CHexCoord& hexTo, int& iPathLen, WORD *pMap, 
-	BOOL bAllowWater, BOOL bRiverCrossing )
+CHexCoord *CPathMap::_GetRoadPath(
+	CHexCoord& hexFrom, CHexCoord& hexTo, int& iPathLen, WORD *pMap,
+	BOOL bAllowWater, BOOL bRiverCrossing, BOOL bWarRoad )
 {
+	// war roads span half the map; the economy hang/arena silently NULLed
+	// every long plan (PlanWarRoad fired, nothing was ever laid)
+	m_bWarRoad = bWarRoad;
 #if PATH_TIMING_ROAD
 	DWORD dwStart, dwEnd;
 	dwStart = timeGetTime(); 
@@ -75,6 +110,10 @@ CHexCoord *CPathMap::_GetRoadPath(
 	m_iLast = 0;
 	m_iNextSlot = 0;
 	m_iLowestBoth = 0;
+	// belt-and-suspenders vs ClearArray-at-exit: even if a prior search
+	// leaked registrations past its ClearArray, a fresh generation here
+	// guarantees this search can never see them
+	NewSearchGen( );
 
 	m_hexFrom = hexFrom;
 	m_hexTo = hexTo;
@@ -129,6 +168,8 @@ CHexCoord *CPathMap::_GetRoadPath(
 	
 	int iX,iY;
 	int iHang = (m_iWidth + m_iHeight) * 2;
+	if( m_bWarRoad )
+		iHang = 0xFFFF;
 	int iTicks = 0;
 	int iList = 1;
 
@@ -265,14 +306,44 @@ CHexCoord *CPathMap::_GetRoadPath(
 // critical section bracketed version of GetPath()
 //
 BOOL CPathMap::GetPath( CHexCoord& hexFrom, CHexCoord& hexTo,
-	int iBaseX, int iBaseY, WORD *pMap, int iVehType, 
-	BOOL bLongHang /*=FALSE*/ )
+	int iBaseX, int iBaseY, WORD *pMap, int iVehType,
+	BOOL bLongHang /*=FALSE*/, BOOL bWarPlanning /*=FALSE*/ )
 {
 	// this is a long expensive function that blocks everybody...
+	// EN_PERF: per-search counters (see GetRoadPath note — never per-node).
+	// path.us/path.calls vs path.nodes splits the verdict: volume-bound
+	// (many calls, few nodes) -> cache quantization; node-bound (few calls,
+	// many nodes) -> scratch/world-read structure work.
+	Perf::ScopeCounter _t( "path.us" );
+#if EN_PERF_PROBES && defined(_WIN32)
+	DWORD dwT0 = timeGetTime( );
+#endif
 	EnterCriticalSection (&m_cs);
+#if EN_PERF_PROBES && defined(_WIN32)
+	DWORD dwT1 = timeGetTime( );
+#endif
+	m_iNextSlot = 0;	// early-outs skip the in-search reset; don't re-count
 	BOOL bPath = _GetPath( hexFrom, hexTo,
-		iBaseX, iBaseY, pMap, iVehType, bLongHang );
+		iBaseX, iBaseY, pMap, iVehType, bLongHang, bWarPlanning );
+	Perf::CounterInc( "path.calls" );
+	Perf::CounterAdd( "path.nodes", m_iNextSlot );	// cells created this search
+	int iCellsUsed = m_iNextSlot;
 	LeaveCriticalSection (&m_cs);
+#if EN_PERF_PROBES && defined(_WIN32)
+	{
+		// hang-regression probe: name any search that stalls a caller >200ms
+		// (wait = lock contention, work = the flood itself)
+		DWORD dwT2 = timeGetTime( );
+		if ( dwT2 - dwT0 > 200 )
+		{
+			char szS[160];
+			sprintf( szS, "[SLOWPATH] tid %lu wait %lu work %lu ms war %d cells %d from %d,%d to %d,%d\n",
+				GetCurrentThreadId( ), dwT1 - dwT0, dwT2 - dwT1, (int)bWarPlanning, iCellsUsed,
+				hexFrom.X( ), hexFrom.Y( ), hexTo.X( ), hexTo.Y( ) );
+			OutputDebugStringA( szS );
+		}
+	}
+#endif
 	return( bPath );
 }
 
@@ -281,7 +352,8 @@ BOOL CPathMap::GetPath( CHexCoord& hexFrom, CHexCoord& hexTo,
 // and return TRUE if it does
 //
 BOOL CPathMap::_GetPath( CHexCoord& hexFrom, CHexCoord& hexTo,
-	int iBaseX, int iBaseY, WORD *pMap, int iVehType, BOOL bLongHang )
+	int iBaseX, int iBaseY, WORD *pMap, int iVehType, BOOL bLongHang,
+	BOOL bWarPlanning )
 {
 	// no path from start to destination because we are there
 	if( hexFrom == hexTo )
@@ -321,6 +393,10 @@ BOOL CPathMap::_GetPath( CHexCoord& hexFrom, CHexCoord& hexTo,
 	m_iLast = 0;
 	m_iNextSlot = 0;
 	m_iLowestBoth = 0;
+	// belt-and-suspenders vs ClearArray-at-exit: even if a prior search
+	// leaked registrations past its ClearArray, a fresh generation here
+	// guarantees this search can never see them
+	NewSearchGen( );
 
 	m_hexFrom = hexFrom;
 	m_hexTo = hexTo;
@@ -340,6 +416,8 @@ BOOL CPathMap::_GetPath( CHexCoord& hexFrom, CHexCoord& hexTo,
 #endif
 
 	m_bRoadPlanning = FALSE;
+	m_bWarPlanning = bWarPlanning;	// war mode: rivers passable + bigger budget
+	m_bWarRoad = FALSE;				// road-only flag; never active in GetPath
 	m_bOverWater = FALSE;
 
 	// set special state for hexFrom
@@ -361,9 +439,20 @@ BOOL CPathMap::_GetPath( CHexCoord& hexFrom, CHexCoord& hexTo,
 	if( !bLongHang )
 		iHang = m_iNumOfCells * 2;
 
+	// war mode: with the closed set each cell is popped at most once, so pops
+	// are bounded by the war arena cap and the hang guard is a pure backstop.
+	// (The old dist*8 raise never exceeded the default and never engaged.)
+	if( m_bWarPlanning )
+		iHang = 0xFFFF;
+
 	int iX,iY;
 	int iTicks = 0;
 	int iList = 1;
+
+#if EN_AI_PROBES_WAR && defined(_WIN32)
+	// war-probe: which ceiling killed a war-planning search
+	const char* pszWarFail = NULL;
+#endif
 
 	// start looping to find a path
 	while( TRUE )
@@ -392,10 +481,14 @@ BOOL CPathMap::_GetPath( CHexCoord& hexFrom, CHexCoord& hexTo,
 			}
 			if( pAdjCell == NULL )
 			{
+#if EN_AI_PROBES_WAR && defined(_WIN32)
+				if( pszWarFail == NULL )
+					pszWarFail = "arena-full";
+#endif
 				iHang = 1;
 				break;
 			}
-			// 
+			//
 			// get distance from pAdjCell to destination,
 			// and make pAdjCell point to pTest
 			GetCellCosts( pTest, pAdjCell );
@@ -407,21 +500,39 @@ BOOL CPathMap::_GetPath( CHexCoord& hexFrom, CHexCoord& hexTo,
 				dwEnd = timeGetTime();
 				TRACE( "GetPath() for AI map took %ld ticks for \n", 
 					(dwEnd - dwStart));
-				TRACE( " %d inerations with %d cells in list \n\n", 
+				TRACE( " %d inerations with %d cells in list \n\n",
 					++iTicks, iList );
 #endif
+#if EN_AI_PROBES_WAR && defined(_WIN32)
+				if( bWarPlanning )
+				{
+					char szW[160];
+					sprintf( szW, "[WARPATH] ok from %d,%d to %d,%d dist %d cells %d/%d\n",
+						m_hexFrom.X( ), m_hexFrom.Y( ), m_hexTo.X( ), m_hexTo.Y( ),
+						theMap.GetRangeDistance( m_hexFrom, m_hexTo ), m_iNextSlot, m_iCellAlloc );
+					OutputDebugStringA( szW );
+				}
+#endif
+				m_bWarPlanning = FALSE;
 				return( TRUE );
 			}
 		}
 
 		// flag pTest so that it does not get re-picked
 		pTest->m_iBoth = 0;
+		pTest->m_bClosed = 1;	// boolean search: expanded cells stay closed
 		NewBoth ( pTest );
 
 		// get lowest combined cost cell in list to repeat
 		pTest = GetLowestCost();
 		if( pTest == NULL )
 		{
+#if EN_AI_PROBES_WAR && defined(_WIN32)
+			// open list dry: region walled off, or every frontier cell
+			// overflowed the MAX_BOTH_INDEX bucket table
+			if( pszWarFail == NULL )
+				pszWarFail = "open-empty";
+#endif
 			break;
 		}
 
@@ -434,6 +545,10 @@ BOOL CPathMap::_GetPath( CHexCoord& hexFrom, CHexCoord& hexTo,
 		iHang--;
 		if( !iHang )
 		{
+#if EN_AI_PROBES_WAR && defined(_WIN32)
+			if( pszWarFail == NULL )
+				pszWarFail = "hang-exhausted";
+#endif
 			pTest = NULL;
 			break;
 		}
@@ -441,24 +556,47 @@ BOOL CPathMap::_GetPath( CHexCoord& hexFrom, CHexCoord& hexTo,
 		iTicks++;
 	}
 
+	m_bWarPlanning = FALSE;
 	ClearArray();
 
 	if( pTest == NULL )
-	{	
+	{
 #if PATH_TIMING_MAP
 	TRACE( "GetPath() for AI map failed to reach destination \n" );
-	TRACE( "after %d inerations with %d cells in list \n\n", 
+	TRACE( "after %d inerations with %d cells in list \n\n",
 		++iTicks, iList );
+#endif
+#if EN_AI_PROBES_WAR && defined(_WIN32)
+		if( bWarPlanning )
+		{
+			char szW[160];
+			sprintf( szW, "[WARPATH] FAIL %s from %d,%d to %d,%d dist %d cells %d/%d\n",
+				pszWarFail != NULL ? pszWarFail : "?",
+				m_hexFrom.X( ), m_hexFrom.Y( ), m_hexTo.X( ), m_hexTo.Y( ),
+				theMap.GetRangeDistance( m_hexFrom, m_hexTo ), m_iNextSlot, m_iCellAlloc );
+			OutputDebugStringA( szW );
+		}
 #endif
 		return( FALSE );
 	}
 
 #if PATH_TIMING_MAP
 	dwEnd = timeGetTime();
-	TRACE( "GetPath() for AI map took %ld ticks for \n", 
+	TRACE( "GetPath() for AI map took %ld ticks for \n",
 		(dwEnd - dwStart));
-	TRACE( " %d inerations with %d cells in list \n\n", 
+	TRACE( " %d inerations with %d cells in list \n\n",
 		++iTicks, iList );
+#endif
+
+#if EN_AI_PROBES_WAR && defined(_WIN32)
+	if( bWarPlanning )
+	{
+		char szW[160];
+		sprintf( szW, "[WARPATH] ok from %d,%d to %d,%d dist %d cells %d/%d\n",
+			m_hexFrom.X( ), m_hexFrom.Y( ), m_hexTo.X( ), m_hexTo.Y( ),
+			theMap.GetRangeDistance( m_hexFrom, m_hexTo ), m_iNextSlot, m_iCellAlloc );
+		OutputDebugStringA( szW );
+	}
 #endif
 
 	return( TRUE );
@@ -487,6 +625,15 @@ void CPathMap::GetCellCosts( CCell *pFromCell, CCell *pToCell )
 	if( !pToCell->m_iCost )
 		return;
 
+	// already expanded: never re-open. Only _GetPath sets m_bClosed (its answer
+	// is a reachability BOOL - no caller reads path or cost, so cost-optimality
+	// is waste). The hex-range heuristic (1.5/diagonal) vs unit step cost made
+	// the search re-pop each cell ~4x on long paths, exhausting iHang -> false
+	// "unreachable" -> AI wars never launched. GetRoadPath doesn't close, so
+	// road planning keeps its vanilla re-open behavior.
+	if( pToCell->m_bClosed )
+		return;
+
 	if( AtDestination(pToCell) )
 	{
 		pToCell->m_pCellFrom = pFromCell;
@@ -505,8 +652,9 @@ void CPathMap::GetCellCosts( CCell *pFromCell, CCell *pToCell )
 	// to determine if the hex can be entered and then not use
 	// the m_pTD->CanTravelHex( pDestHex ) 
 
-	// use different tests if planning a road
-	if( m_bRoadPlanning )
+	// use different tests if planning a road OR planning war (both cross
+	// rivers as candidate bridge sites; ocean/lake still fail CanTravelHex)
+	if( m_bRoadPlanning || m_bWarPlanning )
 	{
 		// allow road to cross river, which create
 		// candidate bridge locations
@@ -601,12 +749,21 @@ m_hexFrom.X(), m_hexFrom.Y(), m_hexTo.X(), m_hexTo.Y(), m_iNextSlot );
 			return;
 	}
 	
+	// ROAD AVOIDANCE (plan-time): a heavy per-hex step cost for planned-road hexes
+	// that abut an own farm/lumber building routes the A* AROUND them (their
+	// neighbors must stay pristine for fertility/yield). Additive, not exclusion:
+	// the road still connects if no clean detour exists, just at higher cost. 40
+	// beats any small ring detour yet stays well under MAX_BOTH_INDEX bucketing.
+	int iStep = 1;
+	if( m_bRoadPlanning && FarmLumberAdjacent( pToCell->m_iX, pToCell->m_iY ) )
+		iStep += 40;
+
 	// if this cost + cost to this point < what we already have
 	// then save the value and the pointer to where we came from
-	if( (1 + pFromCell->m_iCost)
+	if( (iStep + pFromCell->m_iCost)
 		< pToCell->m_iCost )
 	{
-			pToCell->m_iCost = (1 + pFromCell->m_iCost);
+			pToCell->m_iCost = (iStep + pFromCell->m_iCost);
 			pToCell->m_pCellFrom = pFromCell;
 	}
 	else
@@ -669,7 +826,7 @@ CCell *CPathMap::GetClosestCell( void )
 	int iBestDist = 0xFFFE;
 
 	// change to reflect new approach
-	int iEnd = min( m_iNextSlot, m_iNumOfCells );
+	int iEnd = min( m_iNextSlot, m_iCellAlloc );	// war searches fill past m_iNumOfCells
 
 	CCell *pCell = &m_paCells[0];
 	for( int i=0; i<=iEnd; ++i, pCell++ )
@@ -698,7 +855,7 @@ CCell *CPathMap::xGetLowestCost( void )
 	int iCost = 0xFFFF;
 
 	// change to reflect new approach
-	int iEnd = min( m_iNextSlot, m_iNumOfCells );
+	int iEnd = min( m_iNextSlot, m_iCellAlloc );	// war searches fill past m_iNumOfCells
 
 	CCell *pCell = &m_paCells[0];
 	for( int i=0; i<iEnd; ++i, pCell++ )
@@ -723,12 +880,14 @@ CCell* CPathMap::GetLowestCost( void )
     // advance m_iLowestBoth past empty buckets (cached for future calls)
     while ( m_iLowestBoth < MAX_BOTH_INDEX && m_acBoth[m_iLowestBoth] == NULL ) m_iLowestBoth++;
 
-    // no valid bucket found
+    // No valid bucket found: every remaining open cell has m_iBoth > MAX_BOTH_INDEX
+    // (out-of-bucket by design — see cpathmgr.h; routine for long paths on big maps).
+    // The linear fallback below is correct for them. This carried a TRAP() from
+    // development, which on a 1024x1024 map fired CONSTANTLY during AI assault
+    // pathing (every int3 = a debugger stack-walk; the storm froze the session).
+    // Investigated 2026-06-10: benign designed-for fallback, not an invariant break.
     if ( m_iLowestBoth >= MAX_BOTH_INDEX )
-    {
-        TRAP( );
         return xGetLowestCost( );
-    }
 
     // all cells in this bucket have the same m_iBoth value (cost + distance),
     // so returning the head is correct - they're all equally "lowest"
@@ -832,35 +991,19 @@ void CPathMap::NewBoth ( CCell * pTest )
 
 CCell *CPathMap::GetCellAt( int iX, int iY )
 {
-	if( iX > m_iMapEX ||
+	if( iX < 0 || iY < 0 ||
+		iX > m_iMapEX ||
 		iY > m_iMapEY )
 		return( NULL );
 
-	DWORD dwKey = ( iX & 0xFFFF) | ( ( iY & 0xFFFF ) << 16 );
-	CCell * pCellFind = NULL;
+	// flat-grid lookup; an entry is ours only if stamped by THIS search
+	int i = ( m_iWidth * iY ) + iX;
+	if( i < 0 || i >= m_iNumOfMapCells )
+		return( NULL );
+	if( m_pwCellGen[i] != m_wSearchGen )
+		return( NULL );
 
-	// do we have it?
-	if ( m_mapCell.Lookup ( dwKey, pCellFind ) == 0 )
-		pCellFind = NULL;
-	else
-		{
-		// only need to look if more than 1
-		while ( pCellFind->m_pCellNext != NULL )
-			{
-			TRAP ();
-			if ( ( pCellFind->m_iX == iX ) && ( pCellFind->m_iY == iY ) )
-				{
-                TRAP( );
-				break;
-				}
-                TRAP( );
-                pCellFind = pCellFind->m_pCellNext;
-			}
-#ifdef TEST_RESULT2
-		TRAP ( ( pCellFind->m_iX != iX ) || ( pCellFind->m_iY != iY ) );
-#endif
-		}
-
+	CCell * pCellFind = &m_paCells[ m_pwCellSlot[i] ];
 
 #ifdef TEST_RESULT1
 
@@ -897,43 +1040,79 @@ int CPathMap::GetOffset( int iX, int iY )
 	return( j );
 }
 
-// BUGBUG: identical implementation to CPathMgr::AddCellToArray!
+// ROAD AVOIDANCE (plan-time): TRUE if any of the 8 neighbors of iX,iY carries an
+// own farm/lumber building. AI-map high byte = GetBldgType (caimaput.cpp
+// ConvertStatus), MSW_AI_BUILDING gates own buildings. Cheap: 8 array reads,
+// fast-fail on the MSW_AI_BUILDING bit; only called for road-planning nodes.
+BOOL CPathMap::FarmLumberAdjacent( int iX, int iY )
+{
+	if( m_pMap == NULL )
+		return( FALSE );
+
+	for( int dy = -1; dy <= 1; ++dy )
+	{
+		int ny = iY + dy;
+		if( ny < m_iBaseY || ny > m_iMapEY )
+			continue;
+		for( int dx = -1; dx <= 1; ++dx )
+		{
+			if( !dx && !dy )
+				continue;
+			int nx = iX + dx;
+			if( nx < m_iBaseX || nx > m_iMapEX )
+				continue;
+			int i = GetOffset( nx, ny );
+			if( i < 0 || i >= m_iNumOfMapCells )
+				continue;
+			WORD w = m_pMap[i];
+			if( !( w & MSW_AI_BUILDING ) )
+				continue;
+			int iType = w >> 8;	// base type via GetBldgType, per ConvertStatus
+			if( iType == CStructureData::farm ||
+				iType == CStructureData::lumber )
+				return( TRUE );
+		}
+	}
+	return( FALSE );
+}
+
+// (was: identical implementation to CPathMgr::AddCellToArray — now gen-grid)
 CCell * CPathMap::AddCellToArray( CCell *pCell )
 {
 
-	if( m_iNextSlot >= m_iNumOfCells )
+	// war planning + war roads may use the full map-sized allocation;
+	// everything else keeps the original arena cap
+	int iCap = ( m_bWarPlanning || m_bWarRoad ) ? m_iCellAlloc : m_iNumOfCells;
+	if( m_iNextSlot >= iCap )
 		return (NULL) ;
 
-	CCell *pNewCell = &m_paCells[m_iNextSlot++];
+	CCell *pNewCell = &m_paCells[m_iNextSlot];
 	pNewCell->m_iX = pCell->m_iX;
 	pNewCell->m_iY = pCell->m_iY;
 	pNewCell->m_iCost = pCell->m_iCost;
 	pNewCell->m_iDist = pCell->m_iDist;
 	pNewCell->m_iBoth = pCell->m_iBoth;
 	pNewCell->m_pCellFrom = pCell->m_pCellFrom;
+	// recycled slots are no longer pre-cleared by ClearArray — reset the
+	// intrusive-list state BEFORE NewBoth reads m_iBothIn/m_pcPrevBoth
+	pNewCell->m_pCellNext = NULL;
+	pNewCell->m_pcNextBoth = NULL;
+	pNewCell->m_pcPrevBoth = NULL;
+	pNewCell->m_iBothIn = 0;
+	pNewCell->m_bClosed = 0;
 	NewBoth ( pNewCell );
 
-	DWORD dwKey = ( pCell->m_iX & 0xFFFF) | ( ( pCell->m_iY & 0xFFFF ) << 16 );
-	CCell * pCellFind;
-	// add first element to hash table
-	if ( m_mapCell.Lookup ( dwKey, pCellFind ) == 0 )
+	// register in the coord->cell grid for this search
+	if( pCell->m_iX >= 0 && pCell->m_iY >= 0 )
+	{
+		int i = ( m_iWidth * pCell->m_iY ) + pCell->m_iX;
+		if( i >= 0 && i < m_iNumOfMapCells )
 		{
-		m_mapCell.SetAt ( dwKey, pNewCell );
-		pNewCell->m_pCellNext = NULL;
+			m_pwCellGen[i] = m_wSearchGen;
+			m_pwCellSlot[i] = (WORD)m_iNextSlot;
 		}
-
-	// add another element to a hash element
-	else
-		{
-		TRAP ();
-		while ( pCellFind->m_pCellNext != NULL )
-			{
-			TRAP ();
-			pCellFind = pCellFind->m_pCellNext;
-			}
-		TRAP ();
-		pCellFind->m_pCellNext = pNewCell;
-		}
+	}
+	m_iNextSlot++;
 
 	return pNewCell;
 }
@@ -943,29 +1122,28 @@ CCell * CPathMap::AddCellToArray( CCell *pCell )
 //
 void CPathMap::ClearArray( void )
 {
-	const int iVal = 0xFFFE;
-	const int iZero = 0;
-	int iEnd = min( m_iNextSlot, m_iNumOfCells );
-
-	m_mapCell.RemoveAll ();
-
-	CCell *pCell = &m_paCells[0];
-	for( int i=0; i<iEnd; ++i, pCell++ )
-	{
-		pCell->m_iX = iZero;
-		pCell->m_iY = iZero;
-		pCell->m_iCost = iVal;
-		pCell->m_iDist = iVal;
-		pCell->m_iBoth = iVal;
-		pCell->m_pCellFrom = NULL;
-		pCell->m_pCellNext = NULL;
-		pCell->m_pcNextBoth = NULL;
-		pCell->m_pcPrevBoth = NULL;
-		pCell->m_iBothIn = 0;
-	}
+	// Cells are invalidated wholesale by bumping the search generation —
+	// the old per-cell reinit loop and the hash-map RemoveAll are gone
+	// (recycled slots are fully re-initialized in AddCellToArray instead).
+	NewSearchGen( );
 
 	m_iLowestBoth = 0;
 	memset ( m_acBoth , 0, sizeof (m_acBoth) );
+}
+
+//
+// start a new search generation: O(1) "clear" of the coord->cell lookup.
+// On WORD wrap (every 65535 searches) do one real grid clear so stamps
+// from 65535 searches ago can't read as current.
+//
+void CPathMap::NewSearchGen( void )
+{
+	if ( ++m_wSearchGen == 0 )
+	{
+		if ( m_pwCellGen != NULL )
+			memset( m_pwCellGen, 0, m_iNumOfMapCells * sizeof( WORD ) );
+		m_wSearchGen = 1;
+	}
 }
 
 CHexCoord *CPathMap::CreateHexPath( int& iPathLen, CCell *pDestCell )
@@ -1057,6 +1235,23 @@ int CPathMap::GetPathCount( CCell *pDestCell )
 //
 BOOL CPathMap::Init( int iMapEX, int iMapEY )
 {
+	// thePathMap is a single GLOBAL object shared by every AI player's worker
+	// thread; GetPath()/GetRoadPath() serialize through m_cs. Init() can be
+	// called DURING gameplay (ai.cpp/caidata.cpp, on map resize/expansion) while
+	// other AI threads are mid-path. The original code tore down the shared
+	// state — delete[] m_paCells, m_mapCell.RemoveAll(), and even
+	// DeleteCriticalSection(&m_cs)/InitializeCriticalSection — with NO lock held.
+	// That frees the std::map nodes and cell array another thread is walking, and
+	// destroys the very lock another thread is inside, producing red-black-tree
+	// heap corruption (STATUS_HEAP_CORRUPTION 0xc0000374, seen via AI combat
+	// pathfinding SeekOpfor->FindDefenseHex->GetPath). Hold m_cs across the
+	// rebuild, and do NOT destroy/recreate the lock here (it is created once in
+	// the constructor and destroyed in ~CPathMap/Close).
+	//
+	// Note: m_cs is created in the constructor, so it is valid on entry here even
+	// on the first Init().
+	EnterCriticalSection( &m_cs );
+
 	m_iWidth = iMapEX;
 	m_iHeight = iMapEY;
 
@@ -1068,17 +1263,36 @@ BOOL CPathMap::Init( int iMapEX, int iMapEY )
 	m_iFirst = m_iNumOfCells-1;
 	m_iLast = 0;
 
-
 	if( m_paCells != NULL )
-		{
 		delete [] m_paCells;
-		DeleteCriticalSection(&m_cs);
-		}
 
-	m_paCells = new CCell[m_iNumOfCells];
+	// slot indices live in a WORD grid — clamp the arena if a giant map ever
+	// pushes (W+H)*4 past what a WORD can index (none of our maps do)
+	TRAP( m_iNumOfCells > 0xFFFF );
+	if( m_iNumOfCells > 0xFFFF )
+		m_iNumOfCells = 0xFFFF;
 
-	m_mapCell.RemoveAll ();
-	m_mapCell.InitHashTable ( GetPrime ( m_iNumOfCells * 2 ) ); 
+	// war-planning arena sized to the MAP, not the perimeter: perimeter*8
+	// (=16384 on 1024 maps) was exhausted by EVERY cross-map reachability
+	// search - soak52: 917/917 [WARPATH] FAILs were arena-full, ZERO honest
+	// open-empty, so all long-range war/sea targets read false-unreachable.
+	// WORD slot grid caps it at 0xFFFF. Every non-war search keeps the old
+	// m_iNumOfCells cap in AddCellToArray - economy pathing unchanged
+	m_iCellAlloc = m_iNumOfMapCells;
+	if( m_iCellAlloc > 0xFFFF )
+		m_iCellAlloc = 0xFFFF;
+	if( m_iCellAlloc < m_iNumOfCells * 2 )
+		m_iCellAlloc = m_iNumOfCells * 2 > 0xFFFF ? 0xFFFF : m_iNumOfCells * 2;
+
+	m_paCells = new CCell[m_iCellAlloc];
+
+	// (re)build the coord->cell lookup grids; gen 0 == "never touched"
+	delete [] m_pwCellGen;
+	delete [] m_pwCellSlot;
+	m_pwCellGen  = new WORD[m_iNumOfMapCells];
+	m_pwCellSlot = new WORD[m_iNumOfMapCells];
+	memset( m_pwCellGen, 0, m_iNumOfMapCells * sizeof( WORD ) );
+	m_wSearchGen = 0;
 
 	m_tdWheel = theTransports.GetData( CTransportData::construction );
 	m_tdTrack = theTransports.GetData( CTransportData::infantry_carrier );
@@ -1091,15 +1305,13 @@ BOOL CPathMap::Init( int iMapEX, int iMapEY )
 
 #if PATH_TIMING
 #ifdef _LOGOUT
-	logPrintf(LOG_PRI_ALWAYS, LOG_VEH_PATH, 
-		"\nCPathMap::Init() for %d,%d  m_iNumOfCells=%d  m_iNumOfMapCells=%d ", 
+	logPrintf(LOG_PRI_ALWAYS, LOG_VEH_PATH,
+		"\nCPathMap::Init() for %d,%d  m_iNumOfCells=%d  m_iNumOfMapCells=%d ",
 		iMapEX, iMapEX, m_iNumOfCells, m_iNumOfMapCells );
 #endif
 #endif
 
-	// private critical section 
-	memset( &m_cs, 0, sizeof( m_cs ) );
-	InitializeCriticalSection(&m_cs);
+	LeaveCriticalSection( &m_cs );
 
 	return TRUE;
 }
@@ -1115,7 +1327,10 @@ CPathMap::CPathMap( void )
 	m_iMapEY = 0;
 	m_iDistFactor = 0;
 	m_paCells = NULL;
+	m_iCellAlloc = 0;
 	m_bRoadPlanning = FALSE;
+	m_bWarPlanning = FALSE;
+	m_bWarRoad = FALSE;
 	m_bOverWater = FALSE;
 	m_tdWheel = NULL;
 	m_tdTrack = NULL;
@@ -1123,30 +1338,48 @@ CPathMap::CPathMap( void )
 	m_tdFoot  = NULL;
 	m_pTD = NULL;
 
-	m_mapCell.InitHashTable ( GetPrime ( 256 ) );
+	m_pwCellGen = NULL;
+	m_pwCellSlot = NULL;
+	m_wSearchGen = 0;
 
 	memset ( m_acBoth , 0, sizeof (m_acBoth) );
 	m_iLowestBoth = 0;
 
+	// Create the lock here, ONCE, so Init() (which may run during gameplay while
+	// AI threads are pathing) never has to create/destroy it. m_bCsInited tracks
+	// ownership so the destructor/Close() delete it exactly once.
 	memset( &m_cs, 0, sizeof( m_cs ) );
+	InitializeCriticalSection( &m_cs );
+	m_bCsInited = TRUE;
 }
 
 CPathMap::~CPathMap()
 {
-	if ( m_paCells != NULL )
+	if ( m_bCsInited )
+	{
 		DeleteCriticalSection(&m_cs);
+		m_bCsInited = FALSE;
+	}
 
 	delete [] m_paCells;
-	m_mapCell.RemoveAll ();
+	delete [] m_pwCellGen;
+	delete [] m_pwCellSlot;
 }
 
 void CPathMap::Close ()
 {
 	delete [] m_paCells;
 	m_paCells = NULL;
-	m_mapCell.RemoveAll ();
+	delete [] m_pwCellGen;
+	m_pwCellGen = NULL;
+	delete [] m_pwCellSlot;
+	m_pwCellSlot = NULL;
 
-	DeleteCriticalSection(&m_cs);
+	if ( m_bCsInited )
+	{
+		DeleteCriticalSection(&m_cs);
+		m_bCsInited = FALSE;
+	}
 }
 
 // end of CPathMap.cpp

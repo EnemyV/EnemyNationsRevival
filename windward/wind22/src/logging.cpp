@@ -9,8 +9,9 @@
 //
 ////////////////////////////////////////////////////////////////////////////
 
-#include "STDAFX.H"
+#include "stdafx.h"
 #include "_windwrd.h"
+#include "w22_settings.h"
 
 
 #ifdef _LOGOUT
@@ -28,7 +29,7 @@ CLog::CLog() {
 
     m_iSection = m_iLevel = 0;
     m_bLogToFile = m_bLogToDebug = m_bOpened = FALSE;
-    m_File.m_hFile = reinterpret_cast<HANDLE>( UINT_MAX );
+    m_pFile = NULL;
 }
 
 CLog::~CLog() {
@@ -36,8 +37,8 @@ CLog::~CLog() {
     if ( ( m_bLogToFile ) || ( m_bLogToDebug ) )
         DeleteCriticalSection( &m_cs );
 
-    if ( m_File.m_hFile != reinterpret_cast<HANDLE>( UINT_MAX ) )
-        m_File.Close();
+    if ( m_pFile != NULL )
+        fclose( m_pFile );
 }
 
 BOOL CLog::OkLevel( int iLevel, int iSection ) const {
@@ -56,18 +57,18 @@ void CLog::Write( int iLevel, int iSection, char const* pBuf ) {
     if ( !m_bOpened ) {
         m_bOpened = TRUE;
 
-        m_bLogToFile = ptheApp->GetProfileInt( "Logging", "ToFile", 0 );
+        m_bLogToFile = w22::GetProfileInt( "Logging", "ToFile", 0 );
 
         if ( m_bLogToFile ) {
-            CString sName = ptheApp->GetProfileString( "Logging", "FileName", CString( AfxGetAppName() + CString( ".log" ) ) );
-            if ( m_File.Open( sName, CFile::modeCreate | CFile::modeWrite | CFile::shareDenyWrite | CFile::typeBinary ) == 0 )
+            const char* sName = w22::GetProfileString( "Logging", "FileName", "enations.log" );
+            if ( fopen_s( &m_pFile, sName, "wb" ) != 0 || m_pFile == NULL )
                 m_bLogToFile = FALSE;
         }
 
-        m_bLogToDebug = ptheApp->GetProfileInt( "Logging", "ToDebug", 0 );
+        m_bLogToDebug = w22::GetProfileInt( "Logging", "ToDebug", 0 );
 
-        m_iSection = ptheApp->GetProfileInt( "Logging", "Section", -1 );
-        m_iLevel = ptheApp->GetProfileInt( "Logging", "Level", LOG_PRI_USEFUL );
+        m_iSection = w22::GetProfileInt( "Logging", "Section", -1 );
+        m_iLevel = w22::GetProfileInt( "Logging", "Level", LOG_PRI_USEFUL );
     }
 
     if ( ( iLevel > m_iLevel ) || ( !( m_iSection & iSection ) ) )
@@ -76,12 +77,13 @@ void CLog::Write( int iLevel, int iSection, char const* pBuf ) {
     EnterCriticalSection( &m_cs );
 
     // write to the file (we assume an exception is disk full)
-    if ( m_bLogToFile ) {
-        try {
-            m_File.Write( pBuf, strlen( pBuf ) );
-        } catch ( ... ) {
-            m_File.SetLength( 0 );
+    if ( m_bLogToFile && m_pFile != NULL ) {
+        size_t len = strlen( pBuf );
+        if ( fwrite( pBuf, 1, len, m_pFile ) < len ) {
+            // disk full — truncate
+            _chsize_s( _fileno( m_pFile ), 0 );
         }
+        fflush( m_pFile );
     }
 
     if ( m_bLogToDebug )

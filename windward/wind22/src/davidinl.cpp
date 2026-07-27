@@ -10,14 +10,14 @@
 //   Copyright 1994, All Rights Reserved
 
 
-#include "STDAFX.H"
+#include "stdafx.h"
 
 #ifdef _DEBUG
 
-#include "_WINDWRD.H"
+#include "_windwrd.h"
 
 #define _RELEASE_INLINE
-#include "WINDWARD.INL"
+#include "windward.inl"
 
 
 #endif

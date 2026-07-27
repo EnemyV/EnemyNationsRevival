@@ -10,11 +10,15 @@
 ////////////////////////////////////////////////////////////////////////////
 
 #include "stdafx.h"
-#include "CAIMapUt.hpp"
-#include "CAIData.hpp"
-#include "CPathMap.h"
+#include "caimaput.hpp"
+#include "caidata.hpp"
+#include "cpathmap.h"
+#include "aisnap.h"  // lock-free minerals presence bitmap (ConvertStatus)
 
 #include "logging.h"  // dave's logging system
+
+#include <vector>
+#include <set>  // [SPANFAIL] once-per-hex probe throttle
 
 extern CAIData*         pGameData;   // pointer to API object for game data
 extern CException*      pException;  // standard exception for yielding
@@ -24,6 +28,15 @@ extern CRITICAL_SECTION cs;          // used by threads
 
 #define new DEBUG_NEW
 #define MAX_MINERAL_DENSITY 128
+
+// DEBUG PLAYABILITY: force-optimize this file even in Debug. The AI map-utility
+// scans (FindCentralHex/FindStagingHex/placement) walk block- or map-sized loops
+// where every CHexCoord accessor + GetMapOffset is an un-inlined call under
+// /Od /Ob0 — that overhead dominates per-AI setup in Debug (it's inlined away in
+// Release anyway, so this only speeds Debug, making big-AI games playtestable).
+// /RTC must be off for #pragma optimize to take effect. No behaviour change.
+#pragma runtime_checks( "", off )
+#pragma optimize( "gt", on )
 
 CAIHex* CAIMapUtil::CreatePathPoints( int iSX, int iSY, int iEX, int iEY )
 {
@@ -308,7 +321,17 @@ void CAIMapUtil::FindCentralHex( CAIHex* pBaseHex, int iWidthX, int iWidthY, CHe
     int iNearDist = m_iMapSize;
     int iNearHex  = m_iMapSize;
 
-    CMinerals* pmn;
+    int yc = 0;   // yield-throttle counter for the per-hex scan loops
+
+    // Candidate list of open hexes found in pass 1. The original code re-scanned the
+    // entire block (iDeltaX*iDeltaY) FOUR more times after pass 1 to filter/rate, but
+    // every one of those passes skips hexes whose m_pwaWork[] is 0 — i.e. the vast
+    // majority. Collecting the open hexes once here lets the rating passes walk only
+    // the candidates. Identical result (same hexes, same ratings, same FindNth pick);
+    // it just removes the empty-hex iteration + GetMapOffset/Wrap traffic. Helps both
+    // Debug (un-inlined accessors) and Release (memory traffic over the big work map).
+    std::vector<int> candList;
+    candList.reserve( 512 );
 
     for ( int iy = 0; iy < iDeltaY; iy++ )
     {
@@ -317,10 +340,10 @@ void CAIMapUtil::FindCentralHex( CAIHex* pBaseHex, int iWidthX, int iWidthY, CHe
         for ( int ix = 0; ix < iDeltaX; ix++ )
         {
 #if THREADS_ENABLED
-            // BUGBUG this function must yield
-            myYieldThread( );
-            // if( myYieldThread() == TM_QUIT )
-            //	throw(ERR_CAI_TM_QUIT); // THROW( pException );
+            // Cooperative yield for the gameplay AI threads, throttled — calling
+            // it every hex was a syscall-grade cost over this block-sized scan.
+            if ( ( ++yc & 0xFF ) == 0 )
+                myYieldThread( );
 #endif
             hex.X( hex.Wrap( hcStart.X( ) + ix ) );
 
@@ -335,11 +358,10 @@ void CAIMapUtil::FindCentralHex( CAIHex* pBaseHex, int iWidthX, int iWidthY, CHe
             if ( i < 0 || i >= m_iMapSize )
                 continue;
 
+            // MSW_RESOURCE is set from theMinerals (ConvertStatus), so this already
+            // excludes mineral hexes — the explicit theMinerals.Lookup that used to
+            // follow was a redundant per-hex std::map probe.
             if ( m_pMap[i] & MSW_RESOURCE )
-                continue;
-
-            // check hex for material
-            if ( theMinerals.Lookup( hex, pmn ) )
                 continue;
 
             // use the game's opinion of building this building
@@ -375,6 +397,7 @@ void CAIMapUtil::FindCentralHex( CAIHex* pBaseHex, int iWidthX, int iWidthY, CHe
                 if ( i < m_iMapSize && i >= 0 )
                 {
                     m_pwaWork[i] = iDist;
+                    candList.push_back( i );
 
                     if ( iDist && iDist < iNearDist )
                     {
@@ -393,41 +416,32 @@ void CAIMapUtil::FindCentralHex( CAIHex* pBaseHex, int iWidthX, int iWidthY, CHe
     // double the iNearDist
     iNearDist <<= 1;
 
-    // reprocess limited array, this time clearing
-    // hexes with > nearest distance
-    for ( int iy = 0; iy < iDeltaY; iy++ )
+    // The four passes below walk only the candidate hexes collected in pass 1
+    // (instead of re-scanning the whole iDeltaX*iDeltaY block each time). Behaviour
+    // is identical: every original pass already skipped m_pwaWork[i]==0 hexes.
+
+    // reprocess, clearing hexes with > nearest distance, else store build multiplier
+    for ( size_t ci = 0; ci < candList.size( ); ++ci )
     {
-        hex.Y( hex.Wrap( hcStart.Y( ) + iy ) );
+        int i = candList[ci];
 
 #if THREADS_ENABLED
-        // BUGBUG this function must yield
-        myYieldThread( );
-        // if( myYieldThread() == TM_QUIT )
-        //	throw(ERR_CAI_TM_QUIT); // THROW( pException );
+        if ( ( ++yc & 0xFF ) == 0 )
+            myYieldThread( );
 #endif
-        for ( int ix = 0; ix < iDeltaX; ix++ )
+        if ( !m_pwaWork[i] )
+            continue;
+
+        // reset those hexes with higher ratings
+        if ( m_pwaWork[i] > iNearDist )
+            m_pwaWork[i] = 0;
+        else
         {
-            hex.X( hex.Wrap( hcStart.X( ) + ix ) );
-
-            // do not allow placing on 0,0
-            if ( !hex.X( ) && !hex.Y( ) )
-                continue;
-
-            int i = GetMapOffset( hex.X( ), hex.Y( ) );
-            if ( i < 0 || i >= m_iMapSize )
-                continue;
-
-            if ( !m_pwaWork[i] )
-                continue;
-
-            // reset those hexes with higher ratings
-            if ( m_pwaWork[i] > iNearDist )
-                m_pwaWork[i] = 0;
-            else
-            {
-                // get build multiplier
-                m_pwaWork[i] = GetMultiplier( hex, iWidthX, iWidthY, CStructureData::city );
-            }
+            // get build multiplier
+            OffsetToXY( i, &aiHex.m_iX, &aiHex.m_iY );
+            hex.X( aiHex.m_iX );
+            hex.Y( aiHex.m_iY );
+            m_pwaWork[i] = GetMultiplier( hex, iWidthX, iWidthY, CStructureData::city );
         }
     }
 
@@ -435,101 +449,55 @@ void CAIMapUtil::FindCentralHex( CAIHex* pBaseHex, int iWidthX, int iWidthY, CHe
     iNearDist = m_iMapSize;
     iNearHex  = m_iMapSize;
     // then process for the lowest building multiplier
-    for ( int iy = 0; iy < iDeltaY; iy++ )
+    for ( size_t ci = 0; ci < candList.size( ); ++ci )
     {
-        hex.Y( hex.Wrap( hcStart.Y( ) + iy ) );
+        int i = candList[ci];
 
 #if THREADS_ENABLED
-        // BUGBUG this function must yield
-        myYieldThread( );
-        // if( myYieldThread() == TM_QUIT )
-        //	throw(ERR_CAI_TM_QUIT); // THROW( pException );
+        if ( ( ++yc & 0xFF ) == 0 )
+            myYieldThread( );
 #endif
-        for ( int ix = 0; ix < iDeltaX; ix++ )
-        {
-            hex.X( hex.Wrap( hcStart.X( ) + ix ) );
+        if ( !m_pwaWork[i] )
+            continue;
 
-            // do not allow placing on 0,0
-            if ( !hex.X( ) && !hex.Y( ) )
-                continue;
-
-            int i = GetMapOffset( hex.X( ), hex.Y( ) );
-            if ( i < 0 || i >= m_iMapSize )
-                continue;
-
-            if ( !m_pwaWork[i] )
-                continue;
-
-            // looking for lowest building multiplier
-            if ( m_pwaWork[i] > 0 && m_pwaWork[i] < iNearDist )
-                iNearDist = m_pwaWork[i];
-        }
+        // looking for lowest building multiplier
+        if ( m_pwaWork[i] > 0 && m_pwaWork[i] < iNearDist )
+            iNearDist = m_pwaWork[i];
     }
 
-    // reprocess limited array, this time clearing
-    // hexes with > best building multiplier
-    for ( int iy = 0; iy < iDeltaY; iy++ )
+    // reprocess, clearing hexes with > best building multiplier
+    for ( size_t ci = 0; ci < candList.size( ); ++ci )
     {
-        hex.Y( hex.Wrap( hcStart.Y( ) + iy ) );
+        int i = candList[ci];
 
 #if THREADS_ENABLED
-        // BUGBUG this function must yield
-        myYieldThread( );
-        // if( myYieldThread() == TM_QUIT )
-        //	throw(ERR_CAI_TM_QUIT); // THROW( pException );
+        if ( ( ++yc & 0xFF ) == 0 )
+            myYieldThread( );
 #endif
-        for ( int ix = 0; ix < iDeltaX; ix++ )
-        {
-            hex.X( hex.Wrap( hcStart.X( ) + ix ) );
+        if ( !m_pwaWork[i] )
+            continue;
 
-            // do not allow placing on 0,0
-            if ( !hex.X( ) && !hex.Y( ) )
-                continue;
-
-            int i = GetMapOffset( hex.X( ), hex.Y( ) );
-            if ( i < 0 || i >= m_iMapSize )
-                continue;
-
-            if ( !m_pwaWork[i] )
-                continue;
-
-            // reset those hexes with higher ratings
-            if ( m_pwaWork[i] > iNearDist )
-                m_pwaWork[i] = 0;
-        }
+        // reset those hexes with higher ratings
+        if ( m_pwaWork[i] > iNearDist )
+            m_pwaWork[i] = 0;
     }
 
     // reset to count the nearest open hexes
     iCnt = 0;
 
     // count those who are <= nearest distance
-    for ( int iy = 0; iy < iDeltaY; iy++ )
+    for ( size_t ci = 0; ci < candList.size( ); ++ci )
     {
-        hex.Y( hex.Wrap( hcStart.Y( ) + iy ) );
+        int i = candList[ci];
 
 #if THREADS_ENABLED
-        // BUGBUG this function must yield
-        myYieldThread( );
-        // if( myYieldThread() == TM_QUIT )
-        //	throw(ERR_CAI_TM_QUIT); // THROW( pException );
+        if ( ( ++yc & 0xFF ) == 0 )
+            myYieldThread( );
 #endif
-        for ( int ix = 0; ix < iDeltaX; ix++ )
+        if ( m_pwaWork[i] )
         {
-            hex.X( hex.Wrap( hcStart.X( ) + ix ) );
-
-            // do not allow placing on 0,0
-            if ( !hex.X( ) && !hex.Y( ) )
-                continue;
-
-            int i = GetMapOffset( hex.X( ), hex.Y( ) );
-            if ( i < 0 || i >= m_iMapSize )
-                continue;
-
-            if ( m_pwaWork[i] )
-            {
-                iCnt++;
-                iNearHex = i;
-            }
+            iCnt++;
+            iNearHex = i;
         }
     }
 
@@ -562,10 +530,9 @@ void CAIMapUtil::FindCentralHex( CAIHex* pBaseHex, int iWidthX, int iWidthY, CHe
     for ( int i = 0; i < m_iMapSize; ++i )
     {
 #if THREADS_ENABLED
-        // BUGBUG this function must yield
-        myYieldThread( );
-        // if( myYieldThread() == TM_QUIT )
-        //	throw(ERR_CAI_TM_QUIT); // THROW( pException );
+        // throttled cooperative yield (see the block-scan loop above)
+        if ( ( ++yc & 0xFF ) == 0 )
+            myYieldThread( );
 #endif
         OffsetToXY( i, &aiHex.m_iX, &aiHex.m_iY );
 
@@ -1854,6 +1821,66 @@ int CAIMapUtil::AssessTarget( CBuilding* pBldg, int iKindOf )
 // find the hex, relative to the material needed for the
 // iBldg passed, of the width passed, and return the hex
 //
+// Runtime "don't build here again" memory. Recorded when a crane arrives at a
+// selected site and no legal orientation exists (or the server rejects the
+// build), consulted by the site selectors so they stop returning the doomed
+// hex. Per-player, single-threaded (this AI's thread), not serialized.
+
+// Permanent entry: the site is unbuildable for terrain-level reasons (water /
+// steep / adjacent-building altitude) that will not change on their own.
+void CAIMapUtil::AddFailedSite( int iBldg, const CHexCoord& hex )
+{
+    m_failedBuildSites[MakeSiteKey( iBldg, hex )] = 0;  // 0 == permanent
+}
+
+// Timed entry: a mobile unit is parked on the footprint (FoundationCost said
+// veh_in_way). It will probably move, so shelve the spot only for dwMs -- long
+// enough to stop cranes thrashing on it -- then let it be retried. Never
+// downgrade an existing permanent entry to a temporary one.
+void CAIMapUtil::AddFailedSiteTemp( int iBldg, const CHexCoord& hex, DWORD dwMs )
+{
+    uint64_t key = MakeSiteKey( iBldg, hex );
+
+    std::map<uint64_t, DWORD>::iterator it = m_failedBuildSites.find( key );
+    if ( it != m_failedBuildSites.end( ) && it->second == 0 )
+        return;  // already permanently blacklisted -- keep it that way
+
+    m_failedBuildSites[key] = theGame.GettimeGetTime( ) + dwMs;
+}
+
+// A completed bridge changes reachability globally: every temp entry was
+// shelved under the OLD map, so drop them all and let the site selectors
+// re-validate. Permanent (terrain) entries stay.
+void CAIMapUtil::ClearFailedSiteTemps( void )
+{
+    std::map<uint64_t, DWORD>::iterator it = m_failedBuildSites.begin( );
+    while ( it != m_failedBuildSites.end( ) )
+    {
+        if ( it->second != 0 )
+            it = m_failedBuildSites.erase( it );
+        else
+            ++it;
+    }
+}
+
+BOOL CAIMapUtil::IsFailedSite( int iBldg, const CHexCoord& hex )
+{
+    std::map<uint64_t, DWORD>::iterator it = m_failedBuildSites.find( MakeSiteKey( iBldg, hex ) );
+    if ( it == m_failedBuildSites.end( ) )
+        return FALSE;
+
+    if ( it->second == 0 )
+        return TRUE;  // permanent
+
+    if ( theGame.GettimeGetTime( ) < it->second )
+        return TRUE;  // still inside the temporary window
+
+    // temporary window elapsed -- the blocking unit has had time to move on;
+    // drop the entry so the site is retried.
+    m_failedBuildSites.erase( it );
+    return FALSE;
+}
+
 void CAIMapUtil::FindHexOnMaterial( int iBldg, int iWidthX, int iWidthY, CHexCoord& hexFound )
 {
     // based on the building type, determine
@@ -1868,7 +1895,7 @@ void CAIMapUtil::FindHexOnMaterial( int iBldg, int iWidthX, int iWidthY, CHexCoo
     if ( pBldgData == NULL )
         return;
 
-    CString sMat;
+    const char* sMat = "";
 
     // use the base type rather than specific type
     switch ( pBldgData->GetBldgType( ) )
@@ -1931,6 +1958,10 @@ void CAIMapUtil::FindHexOnMaterial( int iBldg, int iWidthX, int iWidthY, CHexCoo
     WORD wStatus, wTest;
     int  iDeltaX, iDeltaY, iRocketRating;
 
+    // best buildable-but-UNREACHABLE deposit, kept only as a last resort (see below)
+    int  iFallbackHex    = m_iMapSize;
+    int  iFallbackRating = 0;
+
     // setup test to filter out invalid cells
     wTest = 0;
     wTest = MSW_AI_BUILDING | MSW_OPFOR_BUILDING | MSW_STAGING;
@@ -1960,7 +1991,7 @@ TryTryAgain:
 
 #ifdef _LOGOUT
     logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "\nFindHexOnMaterial() player %d for %s (%d) ", m_iPlayer,
-               (const char*)sMat, iMaterial );
+               sMat, iMaterial );
     logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "from %d,%d to %d,%d ", hcStart.X( ), hcStart.Y( ), hcEnd.X( ),
                hcEnd.Y( ) );
     logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "best density %d  wTest=%d \n", iDenseFactor, wTest );
@@ -2033,6 +2064,14 @@ TryTryAgain:
                         continue;
                     }
 
+                    // skip sites we've already learned are unbuildable for
+                    // this building type this game -- otherwise a fixed mineral
+                    // deposit whose only footprint overlaps water (or was re-
+                    // leveled by an adjacent build) gets re-selected forever and
+                    // cranes pile up on it. Runtime-only; see AddFailedSite().
+                    if ( IsFailedSite( iBldg, hex ) )
+                        continue;
+
                     // consider if this is buildable
                     if ( AreHexesOpen( MAX_ADJACENT, hex, iWidthX, iWidthY ) )
                     {
@@ -2073,11 +2112,27 @@ TryTryAgain:
                         // over to it and to get stuff back
                         //
                         // CHexCoord hexTo( aiHex.m_iX, aiHex.m_iY );
+                        // economic mode (construction, NOT war): rivers are not
+                        // bridgeable, so a cross-river deposit a gas-less AI can
+                        // never reach fails here. Prefer reachable deposits; keep
+                        // the best unreachable one only as a last-resort fallback.
                         if ( !GetPathRating( hexFound, hex ) )
                         {
 #ifdef _LOGOUT
                             logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "GetPathRating() failed " );
 #endif
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+                            char szSP[96];
+                            sprintf( szSP, "[SITEPICK] plyr %d bldg %d rejected-unreachable %d,%d\n", m_iPlayer,
+                                     iBldg, hex.X( ), hex.Y( ) );
+                            OutputDebugStringA( szSP );
+#endif
+                            int iFB = GetMineralRating( hex, iWidthX, iWidthY, iMaterial );
+                            if ( iFB > iFallbackRating )
+                            {
+                                iFallbackRating = iFB;
+                                iFallbackHex    = i;
+                            }
                             continue;
                         }
 
@@ -2146,12 +2201,17 @@ TryTryAgain:
             goto TryTryAgain;
         }
 
-        sMat.Empty( );
-
+        // no REACHABLE deposit anywhere -> last resort: best buildable unreachable
+        // one (vanilla ranked purely by mineral rating). ConstructBuilding's 10-min
+        // shelf keeps a gas-less AI from shuttle-looping on it.
+        if ( iFallbackHex < m_iMapSize )
+        {
+            OffsetToXY( iFallbackHex, &aiHex.m_iX, &aiHex.m_iY );
+            hexFound.X( aiHex.m_iX );
+            hexFound.Y( aiHex.m_iY );
+        }
         return;
     }
-
-    sMat.Empty( );
 
     // only one found
     if ( iCnt == 1 )
@@ -2864,15 +2924,18 @@ void CAIMapUtil::FindBridgeHex( CHexCoord& hexSite, CAIUnit* pUnit )
     CHexCoord hexBridge, hcFrom, hcTo;
 
     int iStep = 1, i, iX, iY;
-    while ( iStep < pGameData->m_iHexPerBlk )
+    // 2x block radius, same reason as FindRoadHex
+    while ( iStep < pGameData->m_iHexPerBlk * 2 )
     {
         hcFrom.X( hexBridge.Wrap( hexBase.X( ) - iStep ) );
         hcFrom.Y( hexBridge.Wrap( hexBase.Y( ) - iStep ) );
         hcTo.X( hexBridge.Wrap( hexBase.X( ) + iStep ) );
         hcTo.Y( hexBridge.Wrap( hexBase.Y( ) + iStep ) );
 
-        int iDeltax = hexBridge.Wrap( hcTo.X( ) - hcFrom.X( ) );
-        int iDeltay = hexBridge.Wrap( hcTo.Y( ) - hcFrom.Y( ) );
+        // + 1 so the scan reaches the hcTo edge of the ring (matches FindRoadHex);
+        // without it only the hcFrom edges were ever visited (bug #29).
+        int iDeltax = hexBridge.Wrap( hcTo.X( ) - hcFrom.X( ) ) + 1;
+        int iDeltay = hexBridge.Wrap( hcTo.Y( ) - hcFrom.Y( ) ) + 1;
 
         for ( iY = 0; iY < iDeltay; ++iY )
         {
@@ -2902,11 +2965,11 @@ void CAIMapUtil::FindBridgeHex( CHexCoord& hexSite, CAIUnit* pUnit )
                 // a planned road
                 if ( ( m_pMap[i] & MSW_PLANNED_ROAD ) )
                 {
-                    // on river terrain indicates a bridge candidate
+                    // on water terrain indicates a bridge candidate
                     pGameHex = theMap.GetHex( hexBridge );
                     if ( pGameHex == NULL )
                         continue;
-                    if ( pGameHex->GetType( ) != CHex::river )
+                    if ( !pGameHex->IsWater( ) )
                         continue;
 
                     // found a river hex with a planned road so check
@@ -2921,6 +2984,7 @@ void CAIMapUtil::FindBridgeHex( CHexCoord& hexSite, CAIUnit* pUnit )
                 }
             }
         }
+        ++iStep;   // was missing -> spun forever on the iStep==1 ring (bug #29 hang); matches FindRoadHex
     }
 }
 
@@ -2931,7 +2995,21 @@ void CAIMapUtil::FindBridgeHex( CHexCoord& hexSite, CAIUnit* pUnit )
 // been reached, returning TRUE and updating pUnit->GetParam() with
 // start/end of span (must be land hexes)
 //
-BOOL CAIMapUtil::IsBridgeSpan( CHexCoord& hexRiverRoad, CAIUnit* pUnit )
+#if EN_AI_PROBES_WAR && defined(_WIN32)
+// [SPANFAIL] throttle: FindBridgeOnPlan rescans every candidate each pass, so
+// log once per (hex,reason) or a failing colony floods the stream
+static BOOL SpanFailFirst( int iOff, int iReason )
+{
+    static std::set<int> s_setLogged;
+    BOOL                 bFirst;
+    EnterCriticalSection( &cs );
+    bFirst = s_setLogged.insert( ( iOff << 3 ) | iReason ).second;
+    LeaveCriticalSection( &cs );
+    return bFirst;
+}
+#endif
+
+BOOL CAIMapUtil::IsBridgeSpan( CHexCoord& hexRiverRoad, CAIUnit* pUnit, BOOL bImpromptu /*=FALSE*/ )
 {
     CHex*     pGameHex;
     int       i;
@@ -2967,9 +3045,52 @@ BOOL CAIMapUtil::IsBridgeSpan( CHexCoord& hexRiverRoad, CAIUnit* pUnit )
         hexBridge.Xdec( );
         GetStartSpan( hexStart, hexBridge );
     }
+    // impromptu candidates carry no plan flags: anchor on any adjacent
+    // crane-traversable land bank instead (mirrors PlanBridgeToward's own
+    // bank test at plan time)
+    if ( bImpromptu && !hexStart.X( ) && !hexStart.Y( ) )
+    {
+        static const int aiDx[4] = { 0, 1, 0, -1 };
+        static const int aiDy[4] = { -1, 0, 1, 0 };
+        for ( i = 0; i < 4 && !hexStart.X( ) && !hexStart.Y( ); i++ )
+        {
+            CHexCoord hexBank( CHexCoord::Wrap( hexRiverRoad.X( ) + aiDx[i] ),
+                               CHexCoord::Wrap( hexRiverRoad.Y( ) + aiDy[i] ) );
+            CHex* pBankHex = theMap.GetHex( hexBank );
+            if ( pBankHex != NULL && !pBankHex->IsWater( ) && m_tdWheel->CanTravelHex( pBankHex ) )
+                hexStart = hexBank;
+        }
+    }
     // could not find the land hex to start the span
     if ( !hexStart.X( ) && !hexStart.Y( ) )
+    {
+#if EN_AI_PROBES_WAR && defined(_WIN32)
+        if ( SpanFailFirst( GetMapOffset( hexRiverRoad.X( ), hexRiverRoad.Y( ) ), 1 ) )
+        {
+            char szF[112];
+            sprintf( szF, "[SPANFAIL] plyr %d at %d,%d nostart\n", m_iPlayer, hexRiverRoad.X( ), hexRiverRoad.Y( ) );
+            OutputDebugStringA( szF );
+        }
+#endif
         return FALSE;
+    }
+
+    // START land hex must be clear: a planned-road flag can be stale under a since-built building/bridge
+    {
+        BOOL bStartBlocked;
+        EnterCriticalSection( &cs );
+        bStartBlocked = ( theBuildingHex.GetBuilding( hexStart ) != NULL );
+        LeaveCriticalSection( &cs );
+        if ( bStartBlocked )
+        {
+#if EN_AI_PROBES_WAR && defined(_WIN32)
+            char szV[96];
+            sprintf( szV, "[BRIDGEVETO] plyr %d bad landing %d,%d\n", m_iPlayer, hexStart.X( ), hexStart.Y( ) );
+            OutputDebugStringA( szV );
+#endif
+            return FALSE;
+        }
+    }
 
     // if still here, then hexStart contains the hex found with both
     // land and a type of road set and hexRiverRoad is adjacent to it
@@ -3009,6 +3130,36 @@ BOOL CAIMapUtil::IsBridgeSpan( CHexCoord& hexRiverRoad, CAIUnit* pUnit )
     if ( iDir == MAX_ADJACENT )
         return FALSE;
 
+    // LSWWSL start side (operator, eyes-on: impromptu bridge built FROM a
+    // shore tile stops one hex short): a coastline bank with more coastline
+    // behind it rides the deck too - slide the start landward until the deck
+    // begins beside real traversable land. The walk's shore-ride covers the
+    // slid-over hexes; CAI_PREV/dispatch get the extended start below.
+    if ( bImpromptu )
+    {
+        for ( int iBack = 0; iBack < MAX_SPAN_ULT; iBack++ )
+        {
+            CHex* pStartHex = theMap.GetHex( hexStart );
+            if ( pStartHex == NULL || pStartHex->GetType( ) != CHex::coastline )
+                break;  // already starts on real land
+            CHexCoord hexBehind = hexStart;
+            switch ( iDir )  // behind = opposite the span direction
+            {
+            case 0: hexBehind.Yinc( ); break;
+            case 2: hexBehind.Xdec( ); break;
+            case 4: hexBehind.Ydec( ); break;
+            case 6: hexBehind.Xinc( ); break;
+            }
+            if ( GetMapOffset( hexBehind.X( ), hexBehind.Y( ) ) >= m_iMapSize )
+                break;
+            CHex* pBehind = theMap.GetHex( hexBehind );
+            if ( pBehind == NULL || pBehind->IsWater( ) )
+                break;  // spit: nothing landward to reach
+            if ( pBehind->GetType( ) != CHex::coastline && m_tdWheel->CanTravelHex( pBehind ) )
+                break;  // shore start beside real land = legal landing-may-be-shore
+            hexStart = hexBehind;  // more shore behind: deck rides over it
+        }
+    }
 
     // while count of span < MAX_SPAN
     //      move the bridge hex in the direction of the span
@@ -3018,9 +3169,103 @@ BOOL CAIMapUtil::IsBridgeSpan( CHexCoord& hexRiverRoad, CAIUnit* pUnit )
     //      else if not river/road then return as a failure
     //      else if river/road then keep moving
     //
-    hexBridge = hexRiverRoad;
-    int iSpan = 2;
-    while ( iSpan <= MAX_SPAN )
+    // plan with the owner's REAL span: pontoon-only = half base (planning full
+    // MAX_SPAN here got rejected server-side), bridge tiers = longer reach
+    int iMaxSpan = MAX_SPAN;
+    EnterCriticalSection( &cs );
+    {
+        CPlayer* pPlyr = pGameData->GetPlayerData( m_iPlayer );
+        if ( pPlyr != NULL )
+            iMaxSpan = pPlyr->GetMaxSpan( );
+    }
+    LeaveCriticalSection( &cs );
+    if ( iMaxSpan <= 0 )
+    {
+#if EN_AI_PROBES_WAR && defined(_WIN32)
+        if ( SpanFailFirst( GetMapOffset( hexRiverRoad.X( ), hexRiverRoad.Y( ) ), 2 ) )
+        {
+            char szF[112];
+            sprintf( szF, "[SPANFAIL] plyr %d at %d,%d notech\n", m_iPlayer, hexRiverRoad.X( ), hexRiverRoad.Y( ) );
+            OutputDebugStringA( szF );
+        }
+#endif
+        return FALSE;
+    }
+
+    CHexCoord hexEnd( 0, 0 );
+    // original candidate crossing first (impromptu spans carry no plan flags)
+    if ( TryBridgeWalk( hexStart, iDir, iMaxSpan, hexEnd, !bImpromptu ) )
+    {
+        // server-congruent acceptance (shared CGameMap::BridgeSpanDeny): start
+        // hex obstacle + BOTH banks' 3x3 base-regrade at the exact deck
+        // altitude. Replaces the far-landing building-only check - an end-base
+        // 3x3 fail (e.g. a parallel deck at another altitude beside the bank)
+        // made a crossing dispatch-and-reject forever.
+        int iDeny = theMap.BridgeSpanDeny( hexStart, hexEnd, iMaxSpan );
+        if ( iDeny != CGameMap::bridge_ok )
+        {
+#if EN_AI_PROBES_WAR && defined(_WIN32)
+            char szV[112];
+            sprintf( szV, "[BRIDGEVETO] plyr %d span %d,%d -> %d,%d srv-deny %d\n", m_iPlayer, hexStart.X( ),
+                     hexStart.Y( ), hexEnd.X( ), hexEnd.Y( ), iDeny );
+            OutputDebugStringA( szV );
+#endif
+            return FALSE;
+        }
+        hexRiverRoad = hexStart;
+        pUnit->SetParam( CAI_PREV_X, hexStart.X( ) );
+        pUnit->SetParam( CAI_PREV_Y, hexStart.Y( ) );
+        pUnit->SetParam( CAI_DEST_X, hexEnd.X( ) );
+        pUnit->SetParam( CAI_DEST_Y, hexEnd.Y( ) );
+        return TRUE;
+    }
+
+    // NO SHIFT-RETRY (operator, 2026-07-16): the +/-1..3 bank-shift that lived
+    // here relocated failed crossings sideways to force a build - EVERY
+    // planned bridge on a staircased crossing was built one square off the
+    // road (and the shift rewrote the params [PLANSEL] prints, masking itself
+    // from the probes). "If a bridge can't be built, we planned it wrong.
+    // Shifting is wrong." A failed straight on-plan span = FALSE; the planner
+    // must lay buildable crossings.
+#if EN_AI_PROBES_WAR && defined(_WIN32)
+    {
+        // name the failure: re-walk with the all-tiers budget to split
+        // "river wider than MY reach" from "no clean walk at all"
+        CHexCoord hexEndT( 0, 0 );
+        int       iOffP = GetMapOffset( hexRiverRoad.X( ), hexRiverRoad.Y( ) );
+        if ( TryBridgeWalk( hexStart, iDir, MAX_SPAN_ULT, hexEndT ) )
+        {
+            if ( SpanFailFirst( iOffP, 3 ) )
+            {
+                char szF[128];
+                sprintf( szF, "[SPANFAIL] plyr %d at %d,%d toolong span %d max %d\n", m_iPlayer, hexRiverRoad.X( ),
+                         hexRiverRoad.Y( ), pGameData->GetRangeDistance( hexStart, hexEndT ) - 1, iMaxSpan );
+                OutputDebugStringA( szF );
+            }
+        }
+        else if ( SpanFailFirst( iOffP, 4 ) )
+        {
+            char szF[128];
+            sprintf( szF, "[SPANFAIL] plyr %d at %d,%d nowalk max %d\n", m_iPlayer, hexRiverRoad.X( ),
+                     hexRiverRoad.Y( ), iMaxSpan );
+            OutputDebugStringA( szF );
+        }
+    }
+#endif
+    return FALSE;
+}
+
+//
+// walk the span from hexStart in direction iDir; TRUE + hexEnd when a valid
+// (crane-traversable, unbuilt) landing is found within iMaxSpan
+//
+BOOL CAIMapUtil::TryBridgeWalk( CHexCoord const& hexStart, int iDir, int iMaxSpan, CHexCoord& hexEnd,
+                                BOOL bRequirePlan /*=TRUE*/ )
+{
+    CHexCoord hexBridge = hexStart;
+    int       iSpan     = 1;
+    int       iSteps    = 0;  // shore hexes ridden by the deck (bound)
+    while ( iSpan <= iMaxSpan )
     {
         switch ( iDir )
         {
@@ -3040,24 +3285,88 @@ BOOL CAIMapUtil::IsBridgeSpan( CHexCoord& hexRiverRoad, CAIUnit* pUnit )
             return FALSE;
         }
         // invalid hex conversion to offset
-        i = GetMapOffset( hexBridge.X( ), hexBridge.Y( ) );
+        int i = GetMapOffset( hexBridge.X( ), hexBridge.Y( ) );
         if ( i >= m_iMapSize )
             return FALSE;
-        // there MUST be a road type here to be a bridge
-        if ( !( m_pMap[i] & MSW_PLANNED_ROAD ) && !( m_pMap[i] & MSW_ROAD ) )
+        // on-plan validation: span hexes must carry a road type (new-crossing
+        // planning walks raw water - the marks come after)
+        if ( bRequirePlan && !( m_pMap[i] & MSW_PLANNED_ROAD ) && !( m_pMap[i] & MSW_ROAD ) )
             return FALSE;
 
-        pGameHex = theMap.GetHex( hexBridge );
-        // if not river then we assume land, this is the end
-        if ( pGameHex->GetType( ) != CHex::river )
+        CHex* pGameHex = theMap.GetHex( hexBridge );
+        // if not water (river/lake/ocean) then we assume land, this is the end
+        if ( !pGameHex->IsWater( ) )
         {
-            hexRiverRoad = hexStart;
-            pUnit->SetParam( CAI_PREV_X, hexStart.X( ) );
-            pUnit->SetParam( CAI_PREV_Y, hexStart.Y( ) );
-            pUnit->SetParam( CAI_DEST_X, hexBridge.X( ) );
-            pUnit->SetParam( CAI_DEST_Y, hexBridge.Y( ) );
+            // Coastline is drivable but NOT paveable (CanRoad()==FALSE,
+            // terrain.inl:200; IsRoadHexEligible refuses it, caimap.cpp:1707).
+            // The player's _BuildBridge only ENDS a deck on a CanRoad() hex
+            // (vehicle.cpp:708) - it rides the deck across shore to real land.
+            // Match that: a coastline hex ALWAYS rides the deck onward, so the
+            // far landing is a paveable, road-eligible LAND hex (no non-paveable
+            // hex left in the road plan). Coastline is non-water -> consumes no
+            // span budget, so continuing to the land beyond costs nothing. The
+            // deck-flag + iSteps guards stop a re-cross and a degenerate all-shore
+            // run. (Prior trial's crane-abandon was the separate repair-eject bug,
+            // now fixed at netapi.cpp:2629; road-chaining off the deck is covered
+            // by NeighborHasBuiltBridge, caimap.cpp:1670.)
+            if ( pGameHex->GetType( ) == CHex::coastline )
+            {
+                if ( pGameHex->GetUnits( ) & CHex::bridge )
+                    return FALSE;
+                if ( ++iSteps > MAX_SPAN_ULT )  // degenerate all-shore run
+                    return FALSE;
+                continue;  // shore rides the deck; walk on toward real paveable land
+            }
+
+            // landing must be crane-traversable land (m_tdWheel == construction) and unbuilt
+            BOOL bBadLanding = !m_tdWheel->CanTravelHex( pGameHex );
+            if ( !bBadLanding )
+            {
+                EnterCriticalSection( &cs );
+                bBadLanding = ( theBuildingHex.GetBuilding( hexBridge ) != NULL );
+                LeaveCriticalSection( &cs );
+            }
+            if ( bBadLanding )
+            {
+#if EN_AI_PROBES_WAR && defined(_WIN32)
+                char szV[96];
+                sprintf( szV, "[BRIDGEVETO] plyr %d bad landing %d,%d\n", m_iPlayer, hexBridge.X( ), hexBridge.Y( ) );
+                OutputDebugStringA( szV );
+#endif
+                return FALSE;
+            }
+            hexEnd = hexBridge;
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+            {
+                // the tile beyond the landing, one more step in iDir
+                CHexCoord hexPeek = hexBridge;
+                switch ( iDir )
+                {
+                case 0: hexPeek.Ydec( ); break;
+                case 2: hexPeek.Xinc( ); break;
+                case 4: hexPeek.Yinc( ); break;
+                case 6: hexPeek.Xdec( ); break;
+                }
+                CHex* pPeek = ( GetMapOffset( hexPeek.X( ), hexPeek.Y( ) ) < m_iMapSize )
+                                  ? theMap.GetHex( hexPeek ) : NULL;
+                // ground truth for 'bridge ends on coast': the visual shore may
+                // not be TYPE coastline (textures blend) - log landing + beyond.
+                // type should now be a LAND type (not 12=coastline) with this fix.
+                char szL[96];
+                sprintf( szL, "[BRIDGELAND] plyr %d chan %c end %d,%d type %d beyond %d\n", m_iPlayer,
+                         bRequirePlan ? 'P' : 'I', hexBridge.X( ), hexBridge.Y( ), (int)pGameHex->GetType( ),
+                         pPeek != NULL ? (int)pPeek->GetType( ) : -1 );
+                OutputDebugStringA( szL );
+            }
+#endif
             return TRUE;
         }
+
+        // a span hex already carrying a bridge = this crossing is ordered or
+        // built - validating it again dispatched a SECOND crane from the other
+        // bank (20 accepts for 5 spans, 75% effort lost to duelling builders)
+        if ( pGameHex->GetUnits( ) & CHex::bridge )
+            return FALSE;
 
         // if still here that means the hex was river/road
         // thus will be part of the span
@@ -3079,7 +3388,7 @@ void CAIMapUtil::GetStartSpan( CHexCoord& hexStart, CHexCoord& hexBridge )
         if ( ( m_pMap[i] & MSW_PLANNED_ROAD ) || ( m_pMap[i] & MSW_ROAD ) )
         {
             CHex* pGameHex = theMap.GetHex( hexBridge );
-            if ( pGameHex->GetType( ) != CHex::river )
+            if ( !pGameHex->IsWater( ) )
                 hexStart = hexBridge;
         }
     }
@@ -3091,8 +3400,12 @@ void CAIMapUtil::GetStartSpan( CHexCoord& hexStart, CHexCoord& hexBridge )
 void CAIMapUtil::FindRoadHex( CHexCoord& hexFound )
 {
     CHexCoord hexBase;
-    // use rocket exit for base hex
-    pGameData->FindBuilding( CStructureData::rocket, m_iPlayer, hexBase );
+    // spiral from the crane's own hex when given (keeps it paving its local
+    // strip instead of ping-ponging between distant frontier arms), else rocket
+    if ( hexFound.X( ) || hexFound.Y( ) )
+        hexBase = hexFound;
+    else
+        pGameData->FindBuilding( CStructureData::rocket, m_iPlayer, hexBase );
     CHexCoord hexRoad, hcFrom, hcTo;
 
     // spiral search out from base hex
@@ -3100,7 +3413,9 @@ void CAIMapUtil::FindRoadHex( CHexCoord& hexFound )
     BOOL  bRoads = FALSE;
     int   iStep = 1, iBestRoad = m_iMapSize, i, iX, iY;
 
-    while ( iStep < pGameData->m_iHexPerBlk )
+    // 2x block radius: planned roads to far mines/wells were beyond the old cap,
+    // so they never got paved and the road grid drained (operator)
+    while ( iStep < pGameData->m_iHexPerBlk * 2 )
     {
         hcFrom.X( hexRoad.Wrap( hexBase.X( ) - iStep ) );
         hcFrom.Y( hexRoad.Wrap( hexBase.Y( ) - iStep ) );
@@ -3634,34 +3949,35 @@ int CAIMapUtil::GetClosestTo( CHexCoord hexFrom, int iBldg1, int iBldg2, int iBl
 // ISSUE:
 // what if we cant get there?
 // also, can we memoize this maybe?
-BOOL CAIMapUtil::GetPathRating( CHexCoord& hexFrom, CHexCoord& hexTo, int iVehType /*= CTransportData::construction*/ )
+BOOL CAIMapUtil::GetPathRating( CHexCoord& hexFrom, CHexCoord& hexTo, int iVehType /*= CTransportData::construction*/, BOOL bWarPlanning /*= FALSE*/ )
 {
-    // 0,0 means no truck involved, this is a placement
-    if ( !hexFrom.X( ) && !hexFrom.Y( ) )
-        return TRUE;
-    if ( hexFrom.X( ) > m_wEndCol || hexFrom.Y( ) > m_wEndRow )
+    // 0,0 means no truck involved, this is a placement. Skipping validation here
+    // let cross-water sites into the task pool - validate from the rocket hex.
+    CHexCoord hexOrigin = hexFrom;
+    if ( !hexOrigin.X( ) && !hexOrigin.Y( ) )
+    {
+        hexOrigin = m_RocketHex;
+        if ( !hexOrigin.X( ) && !hexOrigin.Y( ) )
+            return TRUE;
+    }
+    if ( hexOrigin.X( ) > m_wEndCol || hexOrigin.Y( ) > m_wEndRow )
         return FALSE;
     if ( hexTo.X( ) > m_wEndCol || hexTo.Y( ) > m_wEndRow )
         return FALSE;
 
     DWORD dwCurrentTime = theGame.GettimeGetTime( );
 
-    // Check cache first
-    int iCacheIndex = FindCacheEntry( hexFrom, hexTo, iVehType );
+    // Check cache first (war verdicts carry their own key bit - no poison).
+    // The TTL + failure-ban is the churn absorber: a staged army retrying an
+    // arena-blocked target re-floods ~2x/min instead of every AI pass
+    // (soak54 ch13: 4752 identical 65k-cell floods in 300s)
+    int iCacheIndex = FindCacheEntry( hexOrigin, hexTo, iVehType, bWarPlanning );
     if ( iCacheIndex >= 0 )
     {
 
         // Check if this path is temporarily banned due to repeated failures
         if ( IsPathBanned( iCacheIndex ) )
         {
-#ifdef _LOGOUT
-
-            char buf[256];
-            sprintf_s( buf, sizeof( buf ), "Path is BANNED X,Y %d %d to X,Y %d %d  \n", hexFrom.X( ), hexFrom.Y( ), hexTo.X( ),
-                       hexTo.Y( ));
-            OutputDebugStringA( buf );
-
-#endif
             return FALSE;
         }
 
@@ -3670,46 +3986,43 @@ BOOL CAIMapUtil::GetPathRating( CHexCoord& hexFrom, CHexCoord& hexTo, int iVehTy
         // Check if cache entry is still valid
         if ( dwCurrentTime - entry.dwTimestamp < CACHE_EXPIRE_MS )
         {
-#ifdef _LOGOUT
-
-            char buf[256];
-            sprintf_s( buf, sizeof( buf ), "Path was found in cache X,Y %d %d to X,Y %d %d\n", hexFrom.X( ), hexFrom.Y( ), hexTo.X( ));
-            OutputDebugStringA( buf );
-
-#endif
-
             // Update timestamp for LRU behavior
           //  entry.dwTimestamp = dwCurrentTime;
             return entry.bResult;
         }
     }
 
-    // Perform actual pathfinding
-    BOOL bResult = thePathMap.GetPath( hexFrom, hexTo, 0, 0, m_pMap, iVehType );
+    // Perform actual pathfinding on this AI's OWN path instance (per-AI => no
+    // cross-AI lock wait). Falls back to the global only if somehow unallocated.
+    CPathMap&    pathMap = m_pPathMap ? *m_pPathMap : thePathMap;
+    BOOL bResult = pathMap.GetPath( hexOrigin, hexTo, 0, 0, m_pMap, iVehType, FALSE, bWarPlanning );
 
     // Cache the result
-    AddCacheEntry( hexFrom, hexTo, iVehType, bResult );
+    AddCacheEntry( hexOrigin, hexTo, iVehType, bWarPlanning, bResult );
 
     return bResult;
     // m_wBaseCol, m_wBaseRow, m_pMap, iVehType) );
 }
 
 // Cache management methods
-int CAIMapUtil::FindCacheEntry( const CHexCoord& hexFrom, const CHexCoord& hexTo, int iVehType )
+int CAIMapUtil::FindCacheEntry( const CHexCoord& hexFrom, const CHexCoord& hexTo, int iVehType, BOOL bWar )
 {
-    const uint64_t key      = MakeCompositeKey( hexFrom, hexTo, iVehType );
+    const uint64_t key      = MakeCompositeKey( hexFrom, hexTo, iVehType, bWar );
 
     // Use a fast hash - combine coords with vehicle type
-    int idx = static_cast<int>( ( key ^ ( key >> 32 ) ) & CACHE_MASK );  
+    int idx = static_cast<int>( ( key ^ ( key >> 32 ) ) & CACHE_MASK );
 
-    for ( int probe = 0; probe < 8; ++probe )
+    for ( int probe = 0; probe < MAX_PROBE_COUNT; ++probe )
     {
         const PathCacheEntry& entry = m_pathCache[idx];
 
         if ( entry.IsEmpty( ) )
             return -1;
 
-        if ( entry.compositeKey == key && entry.GetVehType( ) == iVehType )
+        // key equality IS the match: from/to/vehType/war are all mixed into
+        // the hash. (The old extra GetVehType() clause decoded garbage bits
+        // from the scrambled key and vetoed nearly every true hit.)
+        if ( entry.compositeKey == key )
         {
             return idx;
         }
@@ -3718,9 +4031,9 @@ int CAIMapUtil::FindCacheEntry( const CHexCoord& hexFrom, const CHexCoord& hexTo
     }
     return -1;
 }
-void CAIMapUtil::AddCacheEntry( const CHexCoord& hexFrom, const CHexCoord& hexTo, int iVehType, BOOL bResult )
+void CAIMapUtil::AddCacheEntry( const CHexCoord& hexFrom, const CHexCoord& hexTo, int iVehType, BOOL bWar, BOOL bResult )
 {
-    const uint64_t key           = MakeCompositeKey( hexFrom, hexTo, iVehType );
+    const uint64_t key           = MakeCompositeKey( hexFrom, hexTo, iVehType, bWar );
     int            idx           = static_cast<int>( ( key ^ ( key >> 32 ) ) & CACHE_MASK );
     const DWORD    dwCurrentTime = theGame.GettimeGetTime( );
 
@@ -3728,16 +4041,27 @@ void CAIMapUtil::AddCacheEntry( const CHexCoord& hexFrom, const CHexCoord& hexTo
     int   oldestIdx  = idx;
     DWORD oldestTime = MAXDWORD;
 
-    // Single pass:  find existing, track empty slot, track oldest for LRU
-    for ( int probe = 0; probe < MAX_PROBE_COUNT; ++probe )  // Use constant instead of 8
+    // Single linear-probe pass. NOTE: idx MUST advance every iteration. The
+    // previous version advanced idx only at the bottom of the body but used
+    // `continue` on a collision (occupied slot, different key) — which skipped
+    // the advance and spun on the SAME slot for all remaining probes. It never
+    // linear-probed to the real entry or an empty slot, and never updated the
+    // LRU candidate, so a colliding insert always evicted the home slot and the
+    // cache barely held anything. Advancing in the for-header fixes it.
+    for ( int probe = 0; probe < MAX_PROBE_COUNT; ++probe, idx = ( idx + 1 ) & CACHE_MASK )
     {
         PathCacheEntry& entry = m_pathCache[idx];
-        // verify it's the right one
-        if (!entry.IsEmpty() && (entry.GetHexFrom( ) != hexFrom || entry.GetHexTo( ) != hexTo || entry.GetVehType( ) != iVehType ))
-            continue;
 
-        // Found existing entry - update it
-        if (!entry.IsEmpty( ) && entry.compositeKey == key )  // Added IsEmpty check
+        // First empty slot ends the probe sequence: the key isn't present
+        // (FindCacheEntry also stops at the first empty), so insert here.
+        if ( entry.IsEmpty( ) )
+        {
+            emptyIdx = idx;
+            break;
+        }
+
+        // Existing entry for this key — update it in place.
+        if ( entry.compositeKey == key )
         {
             entry.bResult     = bResult;
             entry.dwTimestamp = dwCurrentTime;
@@ -3746,38 +4070,28 @@ void CAIMapUtil::AddCacheEntry( const CHexCoord& hexFrom, const CHexCoord& hexTo
             {
                 // Success - reset failure tracking
                 entry.iFailureCount   = 0;
-                entry.dwFirstFailTime = 0;  // ← Add this
+                entry.dwFirstFailTime = 0;
             }
             else
             {
                 // Failure - increment count, set first fail time if needed
                 entry.iFailureCount++;
                 if ( entry.dwFirstFailTime == 0 )
-                {
                     entry.dwFirstFailTime = dwCurrentTime;
-                }
             }
-            return; // it already existed?
+            return;
         }
 
-        // Track first empty slot
-        if ( entry.IsEmpty( ) && emptyIdx < 0 )
-        {
-            emptyIdx = idx;
-        }
-
-        // Track oldest for LRU eviction (only consider non-empty slots)
-        if ( !entry.IsEmpty( ) && entry.dwTimestamp < oldestTime )
+        // Occupied by a different key — remember the oldest for LRU eviction in
+        // case we never hit an empty slot within MAX_PROBE_COUNT.
+        if ( entry.dwTimestamp < oldestTime )
         {
             oldestTime = entry.dwTimestamp;
             oldestIdx  = idx;
         }
-
-        idx = ( idx + 1 ) & CACHE_MASK;
     }
 
-    // Not found - insert new entry
-    // Prefer empty slot, fallback to LRU eviction
+    // Insert: prefer the first empty slot, else evict the oldest probed slot.
     int insertIdx = ( emptyIdx >= 0 ) ? emptyIdx : oldestIdx;
 
     PathCacheEntry& entry = m_pathCache[insertIdx];
@@ -3785,16 +4099,7 @@ void CAIMapUtil::AddCacheEntry( const CHexCoord& hexFrom, const CHexCoord& hexTo
     entry.bResult         = bResult;
     entry.dwTimestamp     = dwCurrentTime;
     entry.iFailureCount   = bResult ? 0 : 1;
-    entry.dwFirstFailTime = bResult ? 0 : dwCurrentTime;  
-
-    
-#ifdef _LOGOUT
-
-//    char buf[256];
- //   sprintf_s( buf, sizeof( buf ), "Path was added to cache X,Y %d %d to X,Y %d %d\n", hexFrom.X( ), hexFrom.Y( ));
-//    OutputDebugStringA( buf );
-
-#endif
+    entry.dwFirstFailTime = bResult ? 0 : dwCurrentTime;
 }
 
 void CAIMapUtil::ClearExpiredCache( )
@@ -3814,9 +4119,9 @@ void CAIMapUtil::ClearExpiredCache( )
     }
 }
 
-BOOL CAIMapUtil::IsPathBanned( const CHexCoord& hexFrom, const CHexCoord& hexTo, int iVehType )
+BOOL CAIMapUtil::IsPathBanned( const CHexCoord& hexFrom, const CHexCoord& hexTo, int iVehType, BOOL bWar /*=FALSE*/ )
 {
-    int iIndex = FindCacheEntry( hexFrom, hexTo, iVehType );
+    int iIndex = FindCacheEntry( hexFrom, hexTo, iVehType, bWar );
     if ( iIndex >= 0 )
     {
         return ( IsPathBanned( iIndex ) );
@@ -4192,8 +4497,9 @@ void CAIMapUtil::FindHexByWater( int iBldg, int iWidthX, int iWidthY, CHexCoord&
                     if ( NearBuildings( hcAt, iWidthX, iWidthY, FALSE ) )
                         continue;
 
-                    // make sure there is some ocean adjacent
-                    if ( !IsWaterAdjacent( hcTo, iWidthX, iWidthY ) )
+                    // make sure there is some ocean adjacent (vanilla checked
+                    // hcTo -- the scan-rect corner -- so shipyard picks failed)
+                    if ( !IsWaterAdjacent( hcAt, iWidthX, iWidthY ) )
                         continue;
 
                     // make sure the crane can get there
@@ -4206,7 +4512,7 @@ void CAIMapUtil::FindHexByWater( int iBldg, int iWidthX, int iWidthY, CHexCoord&
                     iRating = 1;
                     for ( int j = 0; j < 4; ++j )
                     {
-                        if ( theMap.FoundationCost( hcTo, iBldg, j, (CVehicle const*)-1 ) < 0 )
+                        if ( theMap.FoundationCost( hcAt, iBldg, j, (CVehicle const*)-1 ) < 0 )
                             continue;
 
                         // at least one exit orientation is acceptable
@@ -4217,8 +4523,8 @@ void CAIMapUtil::FindHexByWater( int iBldg, int iWidthX, int iWidthY, CHexCoord&
                     if ( iRating )
                     {
 #if 0  // DEBUG_OUTPUT_MAPUTL
-logPrintf(LOG_PRI_ALWAYS, LOG_AI_MISC, 
-"FindHexByWater() FoundationCost failed at %d,%d ", hcTo.X(), hcTo.Y() );
+logPrintf(LOG_PRI_ALWAYS, LOG_AI_MISC,
+"FindHexByWater() FoundationCost failed at %d,%d ", hcAt.X(), hcAt.Y() );
 #endif
                         continue;
                     }
@@ -4230,11 +4536,11 @@ logPrintf(LOG_PRI_ALWAYS, LOG_AI_MISC,
                     // rate distance from stuff
                     if ( pBldgData->GetBldgType( ) == CStructureData::shipyard )
                     {
-                        iRating = GetClosestTo( hcTo, CStructureData::seaport, CStructureData::power,
+                        iRating = GetClosestTo( hcAt, CStructureData::seaport, CStructureData::power,
                                                 CStructureData::num_types );
                     }
                     else  // CStructureData::seaport
-                        iRating = GetClosestTo( hcTo, CStructureData::power, CStructureData::seaport,
+                        iRating = GetClosestTo( hcAt, CStructureData::power, CStructureData::seaport,
                                                 CStructureData::num_types );
 
                     if ( iRating && ( iRating < iBestRating ) )
@@ -5773,7 +6079,15 @@ void CAIMapUtil::GetWaterStagingArea( int iShipType, CHexCoord& hcStart, CHexCoo
                         LeaveCriticalSection( &cs );
                         continue;
                     }
-                    hex = pBldg->GetExitHex( );
+                    // anchor on the SHIP exit (water-side launch hex), not the
+                    // land exit: a land-centered rect gave IsTargetReachable's
+                    // sea branch land corners a landing craft can't travel, so
+                    // NO sea invasion ever passed the gate (soak51: ~1600
+                    // sea-branch WARGATE rejections, 0 successes) and staging
+                    // could never place craft on interior water
+                    hex = pBldg->GetShipHex( );
+                    if ( !hex.X( ) && !hex.Y( ) )
+                        hex = pBldg->GetExitHex( );
                     LeaveCriticalSection( &cs );
 
 #if THREADS_ENABLED
@@ -6426,7 +6740,7 @@ void CAIMapUtil::FlagStagingArea( BOOL bFlag, int iSX, int iSY, int iEX, int iEY
 // used to stage a taskforce, but only on land!
 //
 void CAIMapUtil::FindStagingHex( int iSX, int iSY, int iEX, int iEY, CHexCoord& hexDest, int iVehType,
-                                 BOOL bFindPath /*=FALSE*/ )
+                                 BOOL bFindPath /*=FALSE*/, CHexCoord* phexRocket /*=NULL*/ )
 {
     // get pointer to vehicle type data
     CTransportData const* pVehData = pGameData->GetTransportData( iVehType );
@@ -6512,6 +6826,16 @@ void CAIMapUtil::FindStagingHex( int iSX, int iSY, int iEX, int iEY, CHexCoord& 
             if ( !IsLandingArea( hex ) )
                 continue;
         }
+        // initial AI vehicle placement (phexRocket non-NULL): never strand a
+        // land vehicle on a water hex, and require it can path to the rocket so
+        // a lone starting crane/truck can actually reach and build the base
+        if ( phexRocket != NULL )
+        {
+            if ( ( pVehData->GetWheelType( ) != CWheelTypes::water ) && pGameHex->IsWater( ) )
+                continue;
+            if ( !GetPathRating( hex, *phexRocket, iVehType ) )
+                continue;
+        }
         if ( bFindPath )
         {
             if ( !GetPathRating( hexVeh, hex, iVehType ) )
@@ -6588,6 +6912,17 @@ void CAIMapUtil::FindStagingHex( int iSX, int iSY, int iEX, int iEY, CHexCoord& 
                 if ( pGameHex->GetType( ) != CHex::coastline )
                     continue;
                 if ( !IsLandingArea( hex ) )
+                    continue;
+            }
+
+            // initial AI vehicle placement fallback (phexRocket non-NULL): this
+            // exhaustive sweep is the guaranteed last resort, so only enforce the
+            // hard rule (never strand a land vehicle on water). The path-to-rocket
+            // preference is applied by the random loop above; requiring it here too
+            // could leave the AI with zero starting vehicles if pathing is flaky.
+            if ( phexRocket != NULL )
+            {
+                if ( ( pVehData->GetWheelType( ) != CWheelTypes::water ) && pGameHex->IsWater( ) )
                     continue;
             }
 
@@ -6691,7 +7026,7 @@ TryTryAgain:
 
 #ifdef _LOGOUT
     logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "\nFindStagingHex() player %d for a %s from nearby %d,%d  iRadi=%d ",
-               m_iPlayer, (const char*)pVehData->GetDesc( ), hexNearBy.X( ), hexNearBy.Y( ), iRadi );
+               m_iPlayer, pVehData->GetDesc( ).c_str(), hexNearBy.X( ), hexNearBy.Y( ), iRadi );
     logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "within area of %d,%d to %d,%d  deltaX=%d deltaY=%d ", hcStartArea.X( ),
                hcStartArea.Y( ), hcEndArea.X( ), hcEndArea.Y( ), hcDelta.X( ), hcDelta.Y( ) );
     if ( bExclude )
@@ -6779,7 +7114,7 @@ TryTryAgain:
 #ifdef _LOGOUT
         dwEnd = timeGetTime( );
         logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "player %d for a %s staging at %d,%d  took %ld ticks \n", m_iPlayer,
-                   (const char*)pVehData->GetDesc( ), hexDest.X( ), hexDest.Y( ), ( dwEnd - dwStart ) );
+                   pVehData->GetDesc( ).c_str(), hexDest.X( ), hexDest.Y( ), ( dwEnd - dwStart ) );
 #endif
         return;
     }
@@ -6876,7 +7211,7 @@ TryTryAgain:
 #ifdef _LOGOUT
                 dwEnd = timeGetTime( );
                 logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "player %d for a %s SPIRAL staging at %d,%d  took %ld ticks \n",
-                           m_iPlayer, (const char*)pVehData->GetDesc( ), hexDest.X( ), hexDest.Y( ),
+                           m_iPlayer, pVehData->GetDesc( ).c_str(), hexDest.X( ), hexDest.Y( ),
                            ( dwEnd - dwStart ) );
 #endif
                 return;
@@ -6891,7 +7226,7 @@ TryTryAgain:
 #ifdef _LOGOUT
     dwEnd = timeGetTime( );
     logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "player %d for a %s could not stage from %d,%d  took %ld ticks \n",
-               m_iPlayer, (const char*)pVehData->GetDesc( ), hexDest.X( ), hexDest.Y( ), ( dwEnd - dwStart ) );
+               m_iPlayer, pVehData->GetDesc( ).c_str(), hexDest.X( ), hexDest.Y( ), ( dwEnd - dwStart ) );
 #endif
 }
 
@@ -6932,7 +7267,7 @@ void CAIMapUtil::FindLandingHex( CHexCoord& hexHead )
 
 #ifdef _LOGOUT
         logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "\nFindLandingHex() player %d for a %s from nearby %d,%d ", m_iPlayer,
-                   (const char*)pVehData->GetDesc( ), hexVeh.X( ), hexVeh.Y( ) );
+                   pVehData->GetDesc( ).c_str(), hexVeh.X( ), hexVeh.Y( ) );
         logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "within area of %d,%d to %d,%d  deltaX=%d deltaY=%d ", hcStartArea.X( ),
                    hcStartArea.Y( ), hcEndArea.X( ), hcEndArea.Y( ), iDeltaX, iDeltaY );
 #endif
@@ -6993,7 +7328,7 @@ void CAIMapUtil::FindLandingHex( CHexCoord& hexHead )
 #ifdef _LOGOUT
                 dwEnd = timeGetTime( );
                 logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "player %d for a %s unloading at %d,%d  took %ld ticks \n",
-                           m_iPlayer, (const char*)pVehData->GetDesc( ), hex.X( ), hex.Y( ), ( dwEnd - dwStart ) );
+                           m_iPlayer, pVehData->GetDesc( ).c_str(), hex.X( ), hex.Y( ), ( dwEnd - dwStart ) );
 #endif
                 return;
             }
@@ -7004,7 +7339,7 @@ void CAIMapUtil::FindLandingHex( CHexCoord& hexHead )
 #ifdef _LOGOUT
     dwEnd = timeGetTime( );
     logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "player %d for a %s could find landing site from %d,%d  took %ld ticks \n",
-               m_iPlayer, (const char*)pVehData->GetDesc( ), hexVeh.X( ), hexVeh.Y( ), ( dwEnd - dwStart ) );
+               m_iPlayer, pVehData->GetDesc( ).c_str(), hexVeh.X( ), hexVeh.Y( ), ( dwEnd - dwStart ) );
 #endif
 }
 
@@ -7662,7 +7997,7 @@ void CAIMapUtil::FindApproachHex( CHexCoord& hexTarget, CAIUnit* pUnit, CHexCoor
 // iWidth x iHeight around hexAttacking, for the vehicle type
 //
 void CAIMapUtil::FindDefenseHex( CHexCoord& hexAttacking, CHexCoord& hexDefending, int iWidth, int iHeight,
-                                 CTransportData const* pVehData )
+                                 CTransportData const* pVehData, BOOL bAdvanceIfNoCover )
 {
     CHexCoord hcStart, hcEnd, hcAt;
     // use iWidth and iHeight +/- hex to form boundaries of an area
@@ -7810,7 +8145,65 @@ TryTryAgain:
     {
         // hang protection
         if ( !iCnt )
+        {
+            // [assault-advance] No reachable hex with terrain cover exists in the box
+            // (e.g. attacking INTO a base: the open ground/roads have a 0 defense value,
+            // so the defensive search above rejects every hex and would leave the unit
+            // parked at the edge). For an ATTACK APPROACH, don't freeze: fall back to the
+            // nearest reachable, unoccupied hex that is strictly CLOSER to the target, so
+            // SeekOpfor keeps closing the unit one step each arrival until it is in range.
+            // Cover is still preferred by the loop above; this only drops the defense gate,
+            // and keeps the building/vehicle (collision) and pathability (reachable) guards.
+            if ( bAdvanceIfNoCover )
+            {
+                int iUnitDist = pGameData->GetRangeDistance( hexDefending, hexAttacking );
+                int iAdvBest = m_iMapSize, iAdvHex = m_iMapSize;
+                for ( iy = 0; iy < iDeltaY; iy++ )
+                {
+                    hcAt.Y( hcAt.Wrap( hcStart.Y( ) + iy ) );
+                    for ( ix = 0; ix < iDeltaX; ix++ )
+                    {
+#if THREADS_ENABLED
+                        myYieldThread( );
+#endif
+                        hcAt.X( hcAt.Wrap( hcStart.X( ) + ix ) );
+                        if ( !hcAt.X( ) && !hcAt.Y( ) )
+                            continue;
+                        CHex* pAdvHex = theMap.GetHex( hcAt );
+                        if ( pAdvHex == NULL )
+                            continue;
+                        BYTE bAdvUnits = pAdvHex->GetUnits( );
+                        // keep the collision guards: no building, no vehicle
+                        if ( bAdvUnits & ( CHex::bldg | CHex::ul | CHex::ur | CHex::ll | CHex::lr ) )
+                            continue;
+                        if ( !pVehData->CanTravelHex( pAdvHex ) )
+                            continue;
+                        // must make progress: strictly closer to the target than we are now
+                        if ( pGameData->GetRangeDistance( hcAt, hexAttacking ) >= iUnitDist )
+                            continue;
+                        // keep the reachability guard
+                        if ( !GetPathRating( hexDefending, hcAt, pVehData->GetType( ) ) )
+                            continue;
+                        // among forward hexes take the nearest step (least exposure) -
+                        // this naturally enters weapon range from the closest side
+                        int iStep = pGameData->GetRangeDistance( hexDefending, hcAt );
+                        if ( iStep < iAdvBest )
+                        {
+                            iAdvBest = iStep;
+                            iAdvHex  = GetMapOffset( hcAt.X( ), hcAt.Y( ) );
+                        }
+                    }
+                }
+                if ( iAdvHex != m_iMapSize )
+                {
+                    int iAdvX, iAdvY;
+                    OffsetToXY( iAdvHex, &iAdvX, &iAdvY );
+                    hexDefending.X( iAdvX );
+                    hexDefending.Y( iAdvY );
+                }
+            }
             return;
+        }
 
         goto TryTryAgain;
     }
@@ -8784,11 +9177,21 @@ WORD CAIMapUtil::ConvertStatus( CAIHex* pHex, WORD wOldStatus )
     if ( wOldStatus & MSW_KNOWN )
         wStatus |= MSW_KNOWN;
 
-    // consider materials in this hex
-    CHexCoord  hcHex( pHex->m_iX, pHex->m_iY );
-    CMinerals* pmn;
-    if ( theMinerals.Lookup( hcHex, pmn ) )
-        wStatus |= MSW_RESOURCE;
+    // consider materials in this hex. The lock-free bitmap replaces a guarded
+    // hash Lookup that ran PER HEX in UpdateMap's full rescan (65k+ per pass,
+    // per AI, per idle rotation — profiled with 7 AI threads inside it).
+    if ( AiSnap::MineralsReady( ) )
+    {
+        if ( AiSnap::MineralsHas( pHex->m_iX, pHex->m_iY ) )
+            wStatus |= MSW_RESOURCE;
+    }
+    else  // bitmap not built yet (or map too large): legacy lookup
+    {
+        CHexCoord  hcHex( pHex->m_iX, pHex->m_iY );
+        CMinerals* pmn;
+        if ( theMinerals.Lookup( hcHex, pmn ) )
+            wStatus |= MSW_RESOURCE;
+    }
 
     // CAIUnit::CAIUnit( DWORD dwID, int iOwner, int iType, int iTypeUnit )
     // CAIUnit aiUnit(0,0,0,0);
@@ -8900,6 +9303,15 @@ CAIMapUtil::CAIMapUtil( WORD* pMap, CAIUnitList* plUnits, int iBaseX, int iBaseY
     m_tdFoot  = theTransports.GetData( CTransportData::infantry );
     m_tdShip  = theTransports.GetData( CTransportData::landing_craft );
 
+    // Per-AI path search instance: replaces the shared global thePathMap for
+    // this AI's pathing so AI threads no longer serialize on one lock. Sized to
+    // the full map exactly like the global Init (see ai.cpp / caidata.cpp).
+    {
+        int iMapSide = pGameData->m_iHexPerBlk * pGameData->m_iBlkPerSide;
+        m_pPathMap   = new CPathMap;
+        m_pPathMap->Init( iMapSide, iMapSide );
+    }
+
     // Initialize cache
   //  m_iCacheSize       = HASH_TABLE_SIZE;
     m_dwLastCacheClear = theGame.GettimeGetTime( );
@@ -8918,6 +9330,9 @@ CAIMapUtil::~CAIMapUtil( )
         m_pwaWork = NULL;
     }
     delete[] m_pgrpHexs;
+
+    delete m_pPathMap;
+    m_pPathMap = NULL;
 }
 
 void CAIMapUtil::Save( CArchive& ar )
@@ -9167,16 +9582,14 @@ void CAIMapUtil::ReportPavedRoads( void )
 //
 void CAIMapUtil::ReportGroupHex( int iBldg, int iWidthX, int iWidthY, CHexCoord& hex )
 {
-    CString               sName;
+    const char*           sName     = "";
     CStructureData const* pBldgData = pGameData->GetStructureData( iBldg );
     if ( pBldgData != NULL )
     {
         sName = pBldgData->GetDesc( );
     }
-    logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "Player %d Placing a %s at %d,%d ", m_iPlayer, (const char*)sName, hex.X( ),
+    logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "Player %d Placing a %s at %d,%d ", m_iPlayer, sName, hex.X( ),
                hex.Y( ) );
-
-    sName.Empty( );
 
     ClearGroupHexes( );
     int isy = hex.Y( );
@@ -9223,11 +9636,8 @@ void CAIMapUtil::ReportGroupHex( int iBldg, int iWidthX, int iWidthY, CHexCoord&
         // check hex for material
         if ( theMinerals.Lookup( hexMin, pmn ) )
         {
-            sName = pmn->GetStatus( );
-
-            logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "Mineral found: %s ", (const char*)sName );
-
-            sName.Empty( );
+            std::string sStatus = pmn->GetStatus( );
+            logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "Mineral found: %s ", sStatus.c_str( ) );
         }
 
         if ( paiGrpHex->m_dwUnitID )

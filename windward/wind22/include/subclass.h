@@ -1,7 +1,11 @@
 #ifndef __SUBCLASS_H__
 #define __SUBCLASS_H__
 
-#include "afxwin.h"
+// windows.h covers HWND/COLORREF/DRAWITEMSTRUCT, mfc_compat.h (via
+// stdafx.h) covers CRect/CPoint/CSize, and CFont is forward-declared
+// since this file only uses CFont*.
+#include <windows.h>
+class CFont;
 #include "dib.h"
 
 // subclass.h : header file

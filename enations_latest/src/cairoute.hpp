@@ -9,8 +9,11 @@
 //
 ////////////////////////////////////////////////////////////////////////////
 
-#include "CAIMsg.hpp"
-#include "CAIMap.hpp"
+#include "caimsg.hpp"
+#include "caimap.hpp"
+
+#include <map>       // material-reservation ledger
+#include <utility>   // std::pair key for the reservation ledger
 
 #ifndef __CAIROUTE_HPP__
 #define __CAIROUTE_HPP__
@@ -28,9 +31,21 @@ class CAIRouter : public CObject
 	int m_iPlayer;		// id of the player
 	DWORD m_dwRocket;	// ID of the rocket
 
+	// pending-pickup ledger: (material,source bldg id) -> reserved qty; runtime-only, not serialized, cleared on Load
+	std::map<std::pair<int, DWORD>, int> m_mReserved;
+	// empty-at-arrival blacklist: (material,source) -> skip as source until this wall-clock ms
+	std::map<std::pair<int, DWORD>, DWORD> m_mEmptyUntil;
+	// strike count per (material,source): duration escalates 2->4->8 min
+	std::map<std::pair<int, DWORD>, int> m_mEmptyStrikes;
+	int m_iReserveSweep;	// FillPriorities call counter driving the periodic ledger rebuild
+
 public:
 
 	BOOL m_bNeedGas;	// external access for goalmgr to update gas status
+
+	// diagnostics: queue depths for the sweep telemetry
+	int GetNeedCount( ) { return m_plBldgsNeed ? (int)m_plBldgsNeed->GetCount( ) : 0; }
+	int GetIdleTruckCount( ) { return m_plTrucksAvailable ? (int)m_plTrucksAvailable->GetCount( ) : 0; }
 
 	CAIRouter( CAIMap *pMap, CAIUnitList *plUnits, int iPlayer );
 	~CAIRouter();
@@ -47,11 +62,27 @@ public:
 
 	void GetTrucksAvailable( void );
 	CAIUnit *GetNearestTruck( CAIUnit *pCAIBldg );
-	CAIUnit *GetNearestSource( int iMaterial, int iQtyNeeded, 
+	CAIUnit *GetNearestSource( int iMaterial, int iQtyNeeded,
 		int *piDistBack, int iX, int iY );
+
+	// resume an interrupted in-use truck (combat flee, missed event); TRUE = handled
+	BOOL ResumeTruck( CAIUnit *pTruck, int iX, int iY );
+
+	// material-reservation ledger helpers (see cairoute.cpp)
+	void ReserveMaterial( int iMaterial, DWORD dwSource, int iQty );
+	void ReleaseMaterial( int iMaterial, DWORD dwSource, int iQty );
+	int  GetReserved( int iMaterial, DWORD dwSource );
+	void ReleaseTruckReservations( CAIUnit *pTruck );
+	void RebuildReservations( void );
 
 	BOOL IsValidUnit( CAIUnit *pUnit );
 	BOOL IsValidUnit( DWORD dwID );
+
+	// Producer-side safety scrub of the borrowed helper lists. Call these with
+	// the CAIUnit object(s) still ALIVE, immediately before the owning master
+	// list frees them, so no freed pointer is ever left behind here. See impl.
+	void RemoveUnitFromLists( DWORD dwID );
+	void RemovePlayerUnitsFromLists( int iPlayer );
 
 	BOOL TrucksAreEnroute( CAIUnit *pBldg );
 	void UnassignTruck( DWORD dwTruckID );

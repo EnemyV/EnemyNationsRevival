@@ -193,7 +193,10 @@ public:
 
 protected:
 
-    void  Destroy() { delete Value(); }
+    // delete[] — every SimplePtr in the codebase holds a new[]'d buffer (the
+    // sprite superview BYTE arrays); scalar delete on new[] memory is UB and
+    // fired ASan's alloc-dealloc-mismatch on every sprite-collection load.
+    void  Destroy() { delete[] Value(); }
 };
 
 #endif

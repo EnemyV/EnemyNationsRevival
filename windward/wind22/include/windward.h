@@ -50,7 +50,8 @@ struct LOGPALETTE256;
 #include <wndbase.h>
 */
 
-extern void InitWindwardLib1( CWinApp const* pWa );
+class CWinAppStub;
+extern void InitWindwardLib1( CWinAppStub const* pWa );
 extern BOOL InitWindwardLib2( );
 
 // this brings in the inlines in non-debug mode

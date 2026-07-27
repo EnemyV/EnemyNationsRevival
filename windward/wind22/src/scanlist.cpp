@@ -9,8 +9,8 @@
 // scanlist.cpp : class for row-by-row scan conversion
 //
 
-#include "STDAFX.H"
-#include "_WINDWRD.H"
+#include "stdafx.h"
+#include "_windwrd.h"
 
 #ifdef _DEBUG
 #undef THIS_FILE
@@ -22,6 +22,13 @@ static char BASED_CODE THIS_FILE[] = __FILE__;
 
 #ifndef __SCANLIST_H__
 #error scanlist.h not imported
+#endif
+
+// The scan-fill loops below have an AVX2 fast path (x86) and a scalar fallback.
+// On non-AVX2 targets (e.g. Apple Silicon / ARM) the intrinsics don't exist, so
+// compile only the scalar path. __AVX2__ is defined by the compiler under -mavx2.
+#if defined(__AVX2__)
+#include <immintrin.h>
 #endif
 
 //---------------------------- S c a n L i s t ------------------------------
@@ -157,104 +164,22 @@ ScanList::ScanPolyOld(
         int iLineCount  = iDelY + 1;
 
         if ( 0 == iDelX ) {
-            __asm
-            {
-                ; Fill the column with the same x - coordinate
-
-                mov eax, [iX]
-                mov edi, [pi]
-                mov ecx, [iLineCount]
-                rep stosd
-            }
+            // x64 port: fill the column with the constant integer x.
+            for ( int n = 0; n < iLineCount; ++n )
+                pi[n] = iX;
         } else {
-            __asm
+            // x64 port of the fixed-point DDA edge walk (was a 4x-unrolled asm
+            // loop with a 0.32 fractional accumulator). Reproduces the authors'
+            // own commented-out C reference below: a 16.16 delta-x of
+            // (iDelX<<16)/iDelY, walked down the column with a +0.5px rounding
+            // bias, storing the whole part of x for each row.
             {
-                ; Calc fixed - point delta - x
-
-                mov  ebx, [iDelY]; integer divisor
-                mov  eax, [iDelX]; integer dividend
-                shl  ebx, 16; fixed - point divisor
-                shl  eax, 16; fixed - point dividend
-                cdq; convert to 64 bits
-                shld edx, eax, 16
-                shl  eax, 16
-                idiv ebx; divide - eax contains now fixed - point delta - x
-
-                ; eax - whole part of delta - x( in ax )
-                ; ebx - current x - coordinate
-                ; ecx - loop counter
-                ; edx - fractional part of delta - x( in upper 2 bytes )
-                ; esi - accumulated fractional part of delta - x( in upper 2 bytes )
-                ; edi - destination pointer
-
-                ; Initialize loop
-
-                mov  edi, [pi]; destination pointer
-                mov  ebx, [iX]; initial x - coordinate
-                mov  ecx, [iLineCount]; # of rows
-                mov  edx, eax; assign 16.16 delta - x to edx
-                mov  esi, 80000000H; initial fractional accumulation( 1 / 2 starts in the middle of the pixel )
-                sar  eax, 16; whole part of delta - x
-                shl  edx, 16; fractional part of delta - x stored in upper 2 bytes
-
-                push ebp; extra register
-
-                ; Can't access stack frame
-
-                ; Determine entry point into loop( jump table is easier, but can't dw with inline asm)
-
-                mov ebp, ecx; # of rows
-                add ecx, 3; unrolled loop count is
-                shr ecx, 2; ( count + 3 ) / 4
-                bt  ebp, 0; 1 or 3 extra rows ?
-                jnc EvenRows; no, 2 or 4
-                bt  ebp, 1; 3 extra rows ?
-                jc  LoopEntry3; yes
-                jmp LoopEntry1; 1 extra row
-
-                EvenRows :
-
-                bt  ebp, 1; 2 extra rows ?
-                    jc  LoopEntry2; yes
-
-                    ; Calculate the x - coordinate for each row( loop unrolled 4x )
-                    ; Should be 2 cycles per pixel on a Pentium
-
-                    LoopEntry4 :
-
-                mov[edi], ebx; assign the x - coordinate( mov / add faster than stosd on Pentium )
-                    add esi, edx; add fractional step to accumulated fractional step
-                    adc ebx, eax; add delta whole step to current x - coord( plus 1 if accumulated fractional step >= 1 )
-                    add edi, 4; bump dest pointer for next x - coordinate
-
-                    LoopEntry3 :
-
-                mov[edi], ebx; assign the x - coordinate( mov / add faster than stosd on Pentium )
-                    add esi, edx; add fractional step to accumulated fractional step
-                    adc ebx, eax; add delta whole step to current x - coord( plus 1 if accumulated fractional step >= 1 )
-                    add edi, 4; bump dest pointer for next x - coordinate
-
-                    LoopEntry2 :
-
-                mov[edi], ebx; assign the x - coordinate( mov / add faster than stosd on Pentium )
-                    add esi, edx; add fractional step to accumulated fractional step
-                    adc ebx, eax; add delta whole step to current x - coord( plus 1 if accumulated fractional step >= 1 )
-                    add edi, 4; bump dest pointer for next x - coordinate
-
-                    LoopEntry1 :
-
-                mov[edi], ebx; assign the x - coordinate( mov / add faster than stosd on Pentium )
-                    add esi, edx; add fractional step to accumulated fractional step
-                    adc ebx, eax; add delta whole step to current x - coord( plus 1 if accumulated fractional step >= 1 )
-                    add edi, 4; bump dest pointer for next x - coordinate
-
-                    dec ecx; decrement loop counter( dec / jnz faster than loopnz )
-
-                    jnz LoopEntry4; next iteration - ggtodo: unroll for 486 ?
-
-                    pop ebp
-
-                    ; Can access stack frame
+                long fixDelta = (long)( ( (long long)iDelX << 16 ) / (long long)iDelY );
+                long fixX     = ( iX << 16 ) + 0x00008000;   // +0.5 px rounding bias
+                for ( int n = 0; n < iLineCount; ++n ) {
+                    pi[n] = fixX >> 16;
+                    fixX += fixDelta;
+                }
             }
 
             //  while ( iCount-- > 0 )
@@ -330,9 +255,9 @@ void ScanList::ScanPolyNew( CPoint const apt[], int iCount )
         if ( iDelX == 0 )
         {
             // Vertical edge - AVX2 can blast 8 ints at once
+            int k = 0;
+#if defined(__AVX2__)
             const __m256i vx = _mm256_set1_epi32( ptTop.x );
-            int           k  = 0;
-
             for ( ; k + 8 <= iLineCount; k += 8 )
             {
                 _mm256_storeu_si256( reinterpret_cast<__m256i*>( pi + k ), vx );
@@ -343,7 +268,8 @@ void ScanList::ScanPolyNew( CPoint const apt[], int iCount )
                 _mm_storeu_si128( reinterpret_cast<__m128i*>( pi + k ), _mm256_castsi256_si128( vx ) );
                 k += 4;
             }
-            // Scalar remainder
+#endif
+            // Scalar remainder (handles everything when AVX2 is unavailable)
             for ( ; k < iLineCount; ++k )
             {
                 pi[k] = ptTop.x;
@@ -359,6 +285,7 @@ void ScanList::ScanPolyNew( CPoint const apt[], int iCount )
 
             int k = 0;
 
+#if defined(__AVX2__)
             // AVX2: process 8 at a time
             if ( iLineCount >= 8 )
             {
@@ -383,8 +310,9 @@ void ScanList::ScanPolyNew( CPoint const apt[], int iCount )
                     fixedX += delta8;
                 }
             }
+#endif // __AVX2__
 
-            // Scalar remainder
+            // Scalar remainder (handles everything when AVX2 is unavailable)
             for ( ; k < iLineCount; ++k )
             {
                 pi[k] = static_cast<int>( fixedX >> 32 );
@@ -462,88 +390,20 @@ ScanList::ScanPolyFixedOld(
         int iCount = iDelY + 1;
 
         if ( 0 == iDelX ) {
-            __asm
-            {
-                ; Fill the column with the same x - coordinate
-
-                mov eax, [fixX]
-                mov edi, [pi]
-                mov ecx, [iCount]
-                rep stosd
-            }
+            // x64 port: fill the column with the constant 16.16 x value.
+            for ( int n = 0; n < iCount; ++n )
+                pi[n] = fixX;
         } else {
-            __asm
+            // x64 port of the fixed-point DDA edge walk (was a 4x-unrolled asm
+            // loop). Reproduces the authors' own commented-out C reference
+            // below: 16.16 delta-x = (iDelX<<16)/iDelY, storing the full 16.16
+            // x value for each row (fixX already carries the +0.5px bias).
             {
-                ; Calc fixed - point delta - x
-
-                mov  ebx, [iDelY]; integer divisor
-                mov  eax, [iDelX]; integer dividend
-                shl  ebx, 16; fixed - point divisor
-                shl  eax, 16; fixed - point dividend
-                cdq; convert to 64 bits
-                shld edx, eax, 16
-                shl  eax, 16
-                idiv ebx; divide - eax contains now fixed - point delta - x
-
-                ; eax - whole part of delta - x( in ax )
-                ; ebx - current x - coordinate
-                ; ecx - loop counter
-                ; edx - fractional part of delta - x( in upper 2 bytes )
-                ; esi - accumulated fractional part of delta - x( in upper 2 bytes )
-                ; edi - destination pointer
-
-                ; Initialize loop
-
-                mov edi, [pi]; destination pointer
-                mov ebx, [fixX]; initial x - coordinate
-                mov ecx, [iCount]; # of rows
-
-                ; Determine entry point into loop( jump table is easier, but can't dw with inline asm)
-
-                mov edx, ecx; # of rows
-                add ecx, 3; unrolled loop count is
-                shr ecx, 2; ( count + 3 ) / 4
-                bt  edx, 0; 1 or 3 extra rows ?
-                jnc EvenRows; no, 2 or 4
-                bt  edx, 1; 3 extra rows ?
-                jc  LoopEntry3; yes
-                jmp LoopEntry1; 1 extra row
-
-                EvenRows :
-
-                bt  edx, 1; 2 extra rows ?
-                    jc  LoopEntry2; yes
-
-                    ; Calculate the x - coordinate for each row( loop unrolled 4x )
-                    ; Should be 2 cycles per pixel on a Pentium
-
-                    LoopEntry4 :
-
-                mov[edi], ebx; assign the x - coordinate( mov / add faster than stosd on Pentium )
-                    add ebx, eax; add delta whole step to current x - coord( plus 1 if accumulated fractional step >= 1 )
-                    add edi, 4; bump dest pointer for next x - coordinate
-
-                    LoopEntry3 :
-
-                mov[edi], ebx; assign the x - coordinate( mov / add faster than stosd on Pentium )
-                    add ebx, eax; add delta whole step to current x - coord( plus 1 if accumulated fractional step >= 1 )
-                    add edi, 4; bump dest pointer for next x - coordinate
-
-                    LoopEntry2 :
-
-                mov[edi], ebx; assign the x - coordinate( mov / add faster than stosd on Pentium )
-                    add ebx, eax; add delta whole step to current x - coord( plus 1 if accumulated fractional step >= 1 )
-                    add edi, 4; bump dest pointer for next x - coordinate
-
-                    LoopEntry1 :
-
-                mov[edi], ebx; assign the x - coordinate( mov / add faster than stosd on Pentium )
-                    add ebx, eax; add delta whole step to current x - coord( plus 1 if accumulated fractional step >= 1 )
-                    add edi, 4; bump dest pointer for next x - coordinate
-
-                    dec ecx; decrement loop counter( dec / jnz faster than loopnz )
-
-                    jnz LoopEntry4; next iteration - ggtodo: unroll for 486 ?
+                long fixDelta = (long)( ( (long long)iDelX << 16 ) / (long long)iDelY );
+                for ( int n = 0; n < iCount; ++n ) {
+                    pi[n] = fixX;
+                    fixX += fixDelta;
+                }
             }
 
             //  while ( iCount-- > 0 )
@@ -700,7 +560,6 @@ void ScanList::ScanPolyFixedNew(
 //-------------------------------------------------------------------------
 #ifdef _DEBUG
 void ScanList::AssertValid() const {
-    CObject::AssertValid();
 
     ASSERT_STRICT( 0 <= m_iMaxHeight && m_iMaxHeight < 2000 );
 

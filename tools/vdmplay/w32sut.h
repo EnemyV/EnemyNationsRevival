@@ -72,4 +72,3 @@ LPVOID  WINAPI  UTSelectorOffsetToLinear(LPBYTE lpByte);
 /*
  * $Log:$
  */
-

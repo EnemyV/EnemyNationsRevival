@@ -7,8 +7,10 @@
 
 #include "netcmd.h"
 #include "vdmplay.h"
+#include "EnSettings.h"
 
 #include <algorithm>
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <mutex>
@@ -79,10 +81,9 @@ class mempool_std_heap
             {
 #if LOGGINGON
                 // log that this is an issue!
-                CString str;
-                str.Format(
+                std::string str = strPrintf(
                     "mempool_std_heap::~mempool_std_heap: ERROR - null block pointer found during destruction\n" );
-                OutputDebugStringA( str );
+                OutputDebugStringA( str.c_str() );
 #endif
                 continue;
             }
@@ -100,9 +101,7 @@ class mempool_std_heap
 
         if ( isInit )
         {
-            CString str;
-            str.Format( "Was already initialized!!" );
-            OutputDebugStringA( str );
+            OutputDebugStringA( "Was already initialized!!" );
             return;
         }
 
@@ -117,9 +116,11 @@ class mempool_std_heap
 #ifdef _DEBUG
         activeAllocations.clear( );
 
-        CString str;
-        str.Format( "init: allocated %u blocks of size %u bytes each\n", N, S );
-        OutputDebugStringA( str );
+        // strPrintf only handles positional %1/%2 (not printf %u/%s) — use snprintf here.
+        char buf[128];
+        _snprintf( buf, sizeof( buf ), "init: allocated %u blocks of size %u bytes each\n",
+                   (unsigned)N, (unsigned)S );
+        OutputDebugStringA( buf );
 #endif
 
         isInit = true;
@@ -137,9 +138,11 @@ class mempool_std_heap
         size_type newBlocks   = currentSize;  // Double the pool size
 
 #ifdef _DEBUG
-        CString str;
-        str.Format( "Expanding pool: adding %u blocks (total will be %u)\n", newBlocks, currentSize + newBlocks );
-        OutputDebugStringA( str );
+        // strPrintf only handles positional %1/%2 (not printf %u/%s) — use snprintf.
+        char buf1[128];
+        _snprintf( buf1, sizeof( buf1 ), "Expanding pool: adding %u blocks (total will be %u)\n",
+                   (unsigned)newBlocks, (unsigned)( currentSize + newBlocks ) );
+        OutputDebugStringA( buf1 );
 #endif
 
         // Allocate new blocks - each on its own heap address
@@ -152,9 +155,11 @@ class mempool_std_heap
         }
 
 #ifdef _DEBUG
-        str.Format( "Pool expanded. Total: %u blocks, Free: %u blocks\n", (unsigned int)allocatedBlocks.size( ),
-                    (unsigned int)freeList.size( ) );
-        OutputDebugStringA( str );
+        char buf2[128];
+        _snprintf( buf2, sizeof( buf2 ), "Pool expanded. Total: %u blocks, Free: %u blocks\n",
+                   (unsigned int)allocatedBlocks.size( ),
+                   (unsigned int)freeList.size( ) );
+        OutputDebugStringA( buf2 );
 #endif
     }
 
@@ -213,52 +218,39 @@ class mempool_std_heap
         // Verify this was allocated from our pool
         if ( activeAllocations.find( ptr ) == activeAllocations.end( ) )
         {
-            CString str;
-            str.Format( "deallocate: ERROR - ptr=%p not in active allocations\n", ptr );
-            OutputDebugStringA( str );
+            std::string str = strPrintf( "deallocate: ERROR - ptr=%p not in active allocations\n", ptr );
+            OutputDebugStringA( str.c_str() );
             ASSERT( false );
             return;
         }
         activeAllocations.erase( ptr );
 #endif
 
-        // Find the block that contains this pointer
-        Block* targetBlock = nullptr;
+        // Recover the owning Block in O(1): `data` is the sole member of Block
+        // (offset 0, standard-layout), so allocate() returns block->data ==
+        // (Block*)block. The old code linear-scanned allocatedBlocks here — O(n)
+        // per free, and n grows without bound as the pool doubles (this pool
+        // backs every projectile, so it hit ~51k blocks in a single battle,
+        // making combat teardown O(n^2)). Pointer identity makes the scan
+        // unnecessary.
+        static_assert( offsetof( Block, data ) == 0,
+                       "allocate() returns block->data; O(1) free needs data at offset 0" );
+        Block* targetBlock = reinterpret_cast<Block*>( ptr );
 
-        for ( Block* block: allocatedBlocks )
-        {
-            if ( block->data == ptr )
-            {
-                targetBlock = block;
-                break;
-            }
-        }
-
-        if ( targetBlock == nullptr )
-        {
 #ifdef _DEBUG
-            //CString str;
-            //str.Format( "deallocate: ERROR - ptr=%p not found in pool\n", ptr );
-            //OutputDebugStringA( str );
-#endif
-            ASSERT( false );
-            return;
-        }
-
-        // Check if already freed
-        for ( Block* freeBlock: freeList )
+        // Debug-only integrity checks (kept O(n) — Debug already pays for the
+        // activeAllocations set above, and these catch corruption/double-free
+        // during development). Release trusts the caller (a correct program
+        // never frees a foreign or already-freed pointer), keeping free O(1).
         {
-            if ( freeBlock == targetBlock )
-            {
-#ifdef _DEBUG
-                // CString str;
-                // str.Format( "deallocate: ERROR - ptr=%p already freed (double free)\n", ptr );
-                // OutputDebugStringA( str );
-#endif
-                ASSERT( false );
-                return;
-            }
+            bool inPool = false;
+            for ( Block* block : allocatedBlocks )
+                if ( block == targetBlock ) { inPool = true; break; }
+            if ( !inPool ) { ASSERT( false ); return; }
+            for ( Block* freeBlock : freeList )
+                if ( freeBlock == targetBlock ) { ASSERT( false ); return; }  // double free
         }
+#endif
 
         // Return to free list
         freeList.push_back( targetBlock );

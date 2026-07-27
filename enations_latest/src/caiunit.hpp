@@ -14,7 +14,9 @@
 #include "netapi.h"
 #include "player.h"
 
-#include "CAICopy.hpp"
+#include "caicopy.hpp"
+
+#include <unordered_map>  // CAIUnitList O(1) id index
 
 #ifndef __CAIUNIT_HPP__
 #define __CAIUNIT_HPP__
@@ -28,6 +30,16 @@ class CAIUnit : public CObject
 protected:
 	CHexCoord	m_hexLastDest;		// last place/time for SetDest (so don't repeat)
 	DWORD			m_timeLastDest;
+	DWORD			m_dwTimeLastAtkCmd;	// last time AttackUnit() was issued (attack-alert
+										// feedback-loop cooldown; transient, not saved)
+	DWORD			m_dwStuckSince;		// stuck-watch timer (transient; CAI_ROUTE_X is router-owned)
+	DWORD			m_dwStuckHex;		// stuck-watch last hex, MAKELPARAM packed (transient)
+	DWORD			m_dwResendDest;		// 5-min rescue: last resent dest, MAKELPARAM (transient)
+	WORD			m_wResendCnt;		// consecutive resends to that dest (oscillating-crane escape)
+	DWORD			m_dwInBldgSince;	// census: first sweep this truck was seen inside a bldg (transient)
+	DWORD			m_dwErrHex;			// error-restage: last error position, MAKELPARAM (transient)
+	WORD			m_wErrCnt;			// consecutive error-restages from that hex (traffic-knot escape)
+	DWORD			m_dwRoadStopSeen;	// dead-run guard: first stopped observation (transient)
 
 	DWORD m_dwID;
 	int m_iOwner;
@@ -73,9 +85,47 @@ protected:
 public:
 	CAIUnit( DWORD dwID, int iOwner, int iType, int iTypeUnit );
 	~CAIUnit();
-    CAIUnit( )
-        : m_bControl( ), m_dwData( ), m_dwID( ), m_iOwner( ), m_iType( ), m_iTypeUnit( ), m_pdwaParams( ),
-          m_pwaParams( ), m_plCopyData( ), m_timeLastDest( ), m_wGoal( ), m_wStatus( ), m_wTask( ) {};
+	// master's fuller member-init list + our transient AI-state members
+	CAIUnit( )
+	    : m_bControl( ), m_dwData( ), m_dwID( ), m_iOwner( ), m_iType( ), m_iTypeUnit( ), m_pdwaParams( ),
+	      m_pwaParams( ), m_plCopyData( ), m_timeLastDest( ), m_wGoal( ), m_wStatus( ), m_wTask( ),
+	      m_dwTimeLastAtkCmd( 0 ), m_dwStuckSince( 0 ), m_dwStuckHex( 0 ), m_dwResendDest( 0 ), m_wResendCnt( 0 ),
+	      m_dwInBldgSince( 0 ), m_dwErrHex( 0 ), m_wErrCnt( 0 ), m_dwRoadStopSeen( 0 ) {};
+
+	// attack-alert feedback-loop cooldown (see CAITaskMgr::AttackAlert)
+	DWORD GetTimeLastAtkCmd( void ) const { return m_dwTimeLastAtkCmd; }
+	// stuck-watch accessors (CAIMgr::HandleStuckVehicles)
+	DWORD GetStuckSince( void ) const { return m_dwStuckSince; }
+	void  SetStuckSince( DWORD dw ) { m_dwStuckSince = dw; }
+	DWORD GetStuckHex( void ) const { return m_dwStuckHex; }
+	void  SetStuckHex( DWORD dw ) { m_dwStuckHex = dw; }
+	// consecutive 5-min resends to the same dest; returns the updated count
+	int  NoteResend( DWORD dwDest )
+	{
+		if ( dwDest == m_dwResendDest ) ++m_wResendCnt;
+		else { m_dwResendDest = dwDest; m_wResendCnt = 1; }
+		return m_wResendCnt;
+	}
+	void ClearResend( void ) { m_dwResendDest = 0; m_wResendCnt = 0; }
+	// consecutive blocked-error restages from the same hex; returns the updated count
+	int NoteErrRestage( DWORD dwHex )
+	{
+		if ( dwHex == m_dwErrHex ) ++m_wErrCnt;
+		else { m_dwErrHex = dwHex; m_wErrCnt = 1; }
+		return m_wErrCnt;
+	}
+	DWORD GetInBldgSince( void ) const { return m_dwInBldgSince; }
+	void  SetInBldgSince( DWORD dw ) { m_dwInBldgSince = dw; }
+	// dead-run guard: TRUE once a stop has persisted 30s across passes
+	BOOL NoteRoadStop( DWORD dwNow )
+	{
+		if ( m_dwRoadStopSeen == 0 ) { m_dwRoadStopSeen = dwNow; return FALSE; }
+		if ( dwNow - m_dwRoadStopSeen < 30 * 1000 ) return FALSE;
+		m_dwRoadStopSeen = 0; return TRUE;
+	}
+	void ClearRoadStop( void ) { m_dwRoadStopSeen = 0; }
+	// bypass the 30s same-dest dedupe for ONE deliberate retry (clamped-path resume)
+	void  ForceNextDest( void ) { m_timeLastDest = 0; }
 
 	DWORD GetID( void );
 	void SetID( DWORD );
@@ -113,7 +163,15 @@ public:
 	void Update( CBuilding *pData );
 	void Update( CVehicle *pData );
 
-	// critical section used
+	// Tier-B snapshot path (aisnap.h): fill the copy from the per-tick world
+	// snapshot instead of the live (cs-locked) game objects. ServeFromSnapshot
+	// returns FALSE when the snapshot can't serve the request (disabled, unit
+	// not in snapshot, or no production record) -> caller uses the locked path.
+	BOOL ServeFromSnapshot( int iType );
+	void UpdateFromSnap( const struct AiBldgSnap &snap );
+	void UpdateFromSnap( const struct AiVehSnap &snap );
+
+	// critical section used (legacy path; snapshot path is lock-free)
 	CAICopy *GetCopyData( int iType );
 	void RepairVehicle( void );
 	void RepairBuilding( void );
@@ -132,9 +190,25 @@ public:
 
 class CAIUnitList : public CObList
 {
+	// O(1) id -> unit index (2026-06-11). GetUnit/GetUnitNY were O(n) list
+	// walks and dominated per-message AI cost in large games (~2300 units,
+	// mfc.iterpos ~2M/s profiled). The index is kept exact by shadowing the
+	// only CObList mutators used on unit lists (AddTail / RemoveAt /
+	// RemoveHead / RemoveAll) -- every internal helper (AddUnit, RemoveUnit,
+	// RemoveUnits, DeleteList, Load) routes through them, and every call site
+	// uses a CAIUnitList-typed pointer, so non-virtual name hiding applies.
+	// Each list is touched by a single thread (its AI's), so no locking.
+	std::unordered_map<DWORD, class CAIUnit*> m_index;
+
 public:
 	CAIUnitList() {};
 	~CAIUnitList();
+
+	// shadowed CObList mutators -- keep m_index exact (see comment above)
+	POSITION AddTail( CObject *pObj );
+	void RemoveAt( POSITION pos );
+	CObject *RemoveHead( void );
+	void RemoveAll( void );
 
 	CAIUnit *GetUnitNY( DWORD dwId );
 	CAIUnit *GetUnit( DWORD dwID );

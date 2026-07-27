@@ -342,4 +342,13 @@ const VP_SOCK_CALL _vpSOCKInit =
 
 
 
+#else  // !USE_VPWINSOCK — POSIX: real BSD sockets live in libc, no winsock DLL.
+
+// The vp* engine still brackets socket use with vpLoadWinsockDll/vpUnloadWinsockDll
+// (e.g. CTcpNet::Supported, DllMain). On POSIX there is no DLL to load — sockets
+// are in libc — so these are no-ops. (WSAStartup/WSACleanup are #defined to 0 in
+// vp_sock_posix.h, so winsockinit()/WSACleanup() in tcpnet.cpp are harmless too.)
+BOOL vpLoadWinsockDll()   { return TRUE; }
+void vpUnloadWinsockDll() { }
+
 #endif

@@ -176,8 +176,8 @@ class CUnitData
     int _GetDefense( ) const { return m_iDefense; }
     int _GetAccuracy( ) const;
 
-    CString const& GetDesc( ) const;
-    CString const& GetText( ) const;
+    std::string const& GetDesc( ) const;
+    std::string const& GetText( ) const;
     int            GetCX( ) const;
     int            GetCY( ) const;
 
@@ -219,8 +219,8 @@ class CUnitData
     int m_iFireRate;    // how often it fires
     int m_iAccuracy;    // how accurate it is
 
-    CString m_sDesc;  // what its called
-    CString m_sText;  // explanation about it
+    std::string m_sDesc;  // what its called
+    std::string m_sText;  // explanation about it
 
     int m_cx;  // size in hexes
     int m_cy;
@@ -355,6 +355,9 @@ class CEffect : public CSpriteStore<CEffectSprite>
         return m_ptrees + iIndex;
     }
 
+    // flag matching the team palette: base art for colors 0..6, synthesized beyond
+    CEffectSprite* GetFlagSprite( int iPlayer );
+
 #ifdef _DEBUG
     virtual void AssertValid( ) const;
 #endif
@@ -362,6 +365,8 @@ class CEffect : public CSpriteStore<CEffectSprite>
   private:
     int    m_nTrees;
     CTree* m_ptrees;
+
+    Ptr<CSprite>* m_pptrFlagClrs;  // lazy team-color flag clones, [GetNumTeamColors()]; survives Close()
 };
 
 
@@ -476,13 +481,13 @@ class CUnit : public CUnitTile
 
     void Shoot( CUnit* pUnit, int iLOS );
 
-    virtual BOOL IsHit( CHexCoord, CPoint ) const PURE_FUNC virtual void GetDesc( CString& sText ) const PURE_FUNC
+    virtual BOOL IsHit( CHexCoord, CPoint ) const PURE_FUNC virtual void GetDesc( std::string& sText ) const PURE_FUNC
         virtual void InvalidateStatus( ) const PURE_FUNC virtual void MaterialChange( );
 
     virtual int  GetNumStatusBars( ) const { return 1; }
     virtual void PaintStatusBars( CStatInst* pSi, int iNum, CDC* pDc ) const;
     void         PaintStatusMaterials( CStatInst* pSi, CDC* pDc ) const;
-    virtual void ShowStatusText( CString& str );
+    virtual void ShowStatusText( std::string& str );
 
     enum UNIT_FLAGS
     {
@@ -496,7 +501,13 @@ class CUnit : public CUnitTile
         abandoned       = 0x80,
         dead            = 0x100,
         unit_set_damage = 0x200,
-        show_bldg       = 0x0400
+        show_bldg       = 0x0400,
+        // Per-building "alternate oil" toggle for the oil techs: ON = a farm also makes
+        // Bio Oil (#33) / an exhausted oil well fracks (#23). RUNTIME-ONLY for now — not
+        // serialized (m_unitFlags isn't), so it resets to OFF on load, like the F1 route-
+        // loop flag; save persistence is a deliberate follow-up. Gated on CanBioFuel()/
+        // CanFrack(); set via the building info-window toggle.
+        alt_oil         = 0x0800
     };
     void         SetFlag( UNIT_FLAGS fl ) { m_unitFlags = (UNIT_FLAGS)( (int)m_unitFlags | (int)fl ); }
     void         ClrFlag( UNIT_FLAGS fl ) { m_unitFlags = (UNIT_FLAGS)( (int)m_unitFlags & ~(int)fl ); }
@@ -631,9 +642,9 @@ class CUnit : public CUnitTile
     static COLORREF    GetOk( ) { return ( m_clrOk ); }
     static COLORREF    GetWarn( ) { return ( m_clrWarn ); }
     static COLORREF    GetBad( ) { return ( m_clrBad ); }
-    static char const* GetsDamage( ) { return ( m_sDamage ); }
+    static char const* GetsDamage( ) { return ( m_sDamage.c_str( ) ); }
 
-    static CString  m_sDamage;
+    static std::string m_sDamage;
     static COLORREF m_clrOk;
     static COLORREF m_clrWarn;
     static COLORREF m_clrBad;
@@ -645,6 +656,8 @@ class CUnit : public CUnitTile
     void CheckOppo( CUnit* pTarget, int& iDamageOppo, CUnit** ppOppo );
 
     int m_iFrameHit;  // show it being hit in the world map
+
+    DWORD m_dwHitFlash;  // timeGetTime() of last damage taken; area-map hit-flash tint (0 = none)
 
     DWORD m_dwLastMatTime;  // last time it broadcast materials on hand
     char  m_iUpdateMat;     // 0 - no update
@@ -691,7 +704,7 @@ class CUnit : public CUnitTile
     // who can see us, who is shooting at us - counted by number of units of that player
     DWORD* m_pdwPlyrsSee;  // which players can see this unit
     // spotting bitmap
-    DWORD     m_dwaSpot[SPOTTING_ARRAY_SIZE];  // a bitmask of hexes this unit can see in
+    SPOT_WORD m_dwaSpot[SPOTTING_ARRAY_SIZE];  // a bitmask of hexes this unit can see in (64-bit/row)
     int       m_iVisible;                      // number of HP units that can see me
     BOOL      m_bSpotted;                      // TRUE when it has spotted (set visibility for the map)
     CHexCoord m_hexSpotting;                   // hex on when did spotting
@@ -747,6 +760,17 @@ class CExplData
     {
         has_dir = 0x01
     };
+
+    // Render-side projectile trail style (client-local eye-candy; not networked, not a
+    // sim object). Set in code (see CExplData ctor) — keyed by projectile type here so a
+    // future rocket entry can ask for trail_smoke without disturbing the data file.
+    enum TRAIL_TYPE
+    {
+        trail_none,
+        trail_tracer,  // stretched additive orange streak (bullets/shells)
+        trail_smoke    // TODO: drifting smoke puffs (rockets) — not implemented yet
+    };
+    int m_iTrailType;
 };
 
 class CExplGrp
@@ -779,10 +803,21 @@ class CExplGrp
 
 class CInitProjMem;
 
+// Fixed-block size for CProjBase::m_memPool. Must be >= the largest pooled
+// derived object (CProjectile / CExplosion). It can't be written as
+// sizeof(CProjectile) here because those classes aren't defined yet, so it's a
+// generous constant guarded by a static_assert below (after the classes are
+// complete). The original hardcoded 188 was sized for the 32-bit build; on x64
+// the wider pointers/vtable pushed sizeof(CProjectile) past 188, so every fired
+// projectile overran its pool block -> combat heap corruption. Bumped 256->320
+// when the projectile-trail fix (4d5b959e) added m_fStrength/m_iStepsStart/
+// m_iTrailTeamR,G,B to CProjectile, pushing it back past the old block size.
+constexpr unsigned PROJ_POOL_BLOCK = 320;
+
 class CProjBase : public CEffectTile
 {
-    friend CProjMap;
-    friend CInitProjMem;
+    friend class CProjMap;
+    friend class CInitProjMem;
 
   public:
     enum TILE_TYPE
@@ -812,7 +847,7 @@ class CProjBase : public CEffectTile
     // GG						enum { projectile, explosion };
     Fixed m_fixAlt;
 
-    static memory_pool<mempool_std_heap<188, 64>> m_memPool; // FIXME: should be PROJ_BASE_ALLOC_SIZE not hardcoded!
+    static memory_pool<mempool_std_heap<PROJ_POOL_BLOCK, 64>> m_memPool;
 
     // for linked list in CProjMap
     CProjBase* m_pNext;
@@ -830,6 +865,7 @@ class CProjectile : public CProjBase
     CProjectile( CUnit const* pUnit, CMapLoc const& end, DWORD dwIDTarget, int iNumShots );
     void  Operate( );
     CRect Draw( const CHexCoord& );
+    void  EmitTrail( );  // GPU tracer streak (see projbase.cpp)
 
     int              m_xAdd;        // added to m_maploc.x each step
     int              m_yAdd;        // added to .y
@@ -840,6 +876,9 @@ class CProjectile : public CProjBase
     CMapLoc          m_mlEnd;       // our destination
     int              m_iNumShots;   // num shots fired
     CExplData const* m_pEd;         // the explosion data
+    float            m_fStrength;   // shooter attack normalised 0..1 (tracer colour gradient)
+    int              m_iStepsStart; // steps at flight start (trail grows 0 -> max as it flies)
+    int              m_iTrailTeamR, m_iTrailTeamG, m_iTrailTeamB; // shooter team colour (trail outline)
 };
 
 class CExplosion : public CProjBase
@@ -849,11 +888,17 @@ class CExplosion : public CProjBase
     CExplosion( CUnit const* pTarget, CMapLoc const& ml, DWORD dwIDShooter );
     void  Operate( );
     CRect Draw( const CHexCoord& );
+    void  EmitFlash( const CPoint& ptCenter, int iSprW, int iSprH );  // additive impact pop
 
     int m_iKillFrame;  // on or after this frame kill the building
 };
 
 const int PROJ_BASE_ALLOC_SIZE = __max(sizeof(CProjectile), sizeof(CExplosion));
+
+// Guarantee the pool block actually fits the largest pooled object. If this
+// ever fails, bump PROJ_POOL_BLOCK (above) to at least PROJ_BASE_ALLOC_SIZE.
+static_assert( PROJ_BASE_ALLOC_SIZE <= (int)PROJ_POOL_BLOCK,
+               "CProjBase::m_memPool block is smaller than CProjectile/CExplosion - bump PROJ_POOL_BLOCK" );
 
 // we map based on CHex
 class CProjMap : public CMap<DWORD, DWORD, CProjBase*, CProjBase*>
@@ -881,7 +926,7 @@ CUnit*  GetUnit( CSubHex const& sub );  // bldg takes priority
 CSubHex Rotate( int iDir, CSubHex const& ptHead, CSubHex const& ptTail );
 void    UnitShowStatus( void* pData, CDC* pDc, CRect const& rDraw, CDIB* pDib, CPoint const& ptOff );
 void    _UnitShowStatus( BOOL bText, void* pData, CDC* pDc, CRect const& rDraw, CDIB* pDibBack, CPoint const& ptOff );
-void    UnitStatusText( void* pData, CString& str );
+void    UnitStatusText( void* pData, std::string& str );
 
 
 extern CTurrets       theTurrets;

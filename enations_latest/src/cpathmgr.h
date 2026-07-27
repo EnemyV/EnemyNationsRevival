@@ -12,7 +12,14 @@
 //
 ////////////////////////////////////////////////////////////////////////////
 
-const int MAX_BOTH_INDEX = 600;
+// Bucket bound for the path open-list's cost+distance (m_iBoth) index. Cells whose
+// m_iBoth exceeds this can't live in the O(1) bucket array and fall back to the O(n)
+// linear scan (xGetLowestCost). 600 was sized for 1996 map sizes: on a 1024x1024 map a
+// cross-map path's cost+heuristic exceeds it ROUTINELY, so 12-AI assault pathing
+// degraded to permanent linear scans (and tripped the "no bucket found" TRAP storm in
+// CPathMap::GetLowestCost). 4096 covers 1024-map diagonals with terrain multipliers;
+// the array is pointers (32KB/instance) and the per-search clear is a ~3us memset.
+const int MAX_BOTH_INDEX = 4096;
 
 #define CELLSAROUND 		8
 #define HEADINGS			3
@@ -40,6 +47,7 @@ public:
 	CCell *		m_pcNextBoth;				// these are NULL at the ends
 	CCell *		m_pcPrevBoth;
 	int				m_iBothIn;
+	BYTE			m_bClosed;	// expanded once; CPathMap::_GetPath never re-opens (boolean searches)
 
 	CCell();
 	CCell( int iX, int iY );
@@ -53,8 +61,9 @@ class CPathMgr
 	// these are used only if the array of cells is used
 	CCell *m_paCells;	// array version
 
-	// this is to find elements in CCell faster
-	CMap <DWORD, DWORD, CCell *, CCell *>		m_mapCell;
+	// this is to find elements in CCell faster (pooled node allocator: fills+clears
+	// thousands of nodes per A* search — pooling kills the CRT-heap churn/lock).
+	CMap <DWORD, DWORD, CCell *, CCell *, EnPoolAllocator<std::pair<const DWORD, CCell*>>>		m_mapCell;
 
 	int m_iPaths;	// count of all calls
 	int m_iOrtho;	// count of x==x or y==y paths
@@ -161,6 +170,9 @@ public:
 	CCell *GetCellAt( int iX, int iY );
 	void ClearArray( void );
 	CCell * AddCellToArray( CCell *pCell );
+
+	// Diagnostic: exact live node count of the per-path CCell scratch map.
+	int GetMapCellCount() const { return (int)m_mapCell.GetCount(); }
 
 	private:
     CHexCoord* _GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord& hexTo, int& iPathLen, int iVehType = 0,

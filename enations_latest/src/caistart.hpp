@@ -9,7 +9,7 @@
 //
 ////////////////////////////////////////////////////////////////////////////
 
-#include "CAIData.hpp"
+#include "caidata.hpp"
 
 #ifndef __CAISTART_HPP__
 #define __CAISTART_HPP__

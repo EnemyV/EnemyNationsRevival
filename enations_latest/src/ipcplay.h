@@ -17,7 +17,9 @@
 //
 ////////////////////////////////////////////////////////////////////////////
 
-class CChatWnd;
+// CChatWnd type forward decl no longer needed — chat cluster excluded
+// from build (Phase 2d-cont, 2026-05-11). m_pwndChat retained as void*
+// to preserve struct layout; never set, only NULL-initialized.
 
 
 //
@@ -38,10 +40,10 @@ class CIPCPlayer : public CObject
 	DECLARE_SERIAL( CIPCPlayer );
 public:
 	WORD m_wID;		// id of player
-	CString m_sName;// name of player
+	std::string m_sName;// name of player
 	WORD m_wStatus;	// bitmap of current status
 	CPlayer * m_pPlyr;	// player
-	CChatWnd *	m_pwndChat;	// chat window to this person
+	void *	m_pwndChat;	// chat window to this person — always NULL post-Phase-2d
 
 	CIPCPlayer() { m_pwndChat = NULL; };
 	//CIPCPlayer( WORD wID );
@@ -59,55 +61,17 @@ public:
 	~CIPCPlayerList();
 
 	CIPCPlayer *GetPlayer( WORD wID );
-	CIPCPlayer *GetPlayer( CString& sName );
+	CIPCPlayer *GetPlayer( const std::string& sName );
 
 	void InitPlayers( void );
 	void RemovePlayer( WORD wID );
-	void RemovePlayer( CString& sName );
+	void RemovePlayer( const std::string& sName );
 	void DeleteList( void );
 };
 
-/////////////////////////////////////////////////////////////////////////////
-// CPlyrMsgStatusDlg dialog
-
-class CPlyrMsgStatusDlg : public CDialog
-{
-// Construction
-public:
-	CPlyrMsgStatusDlg(CWnd* pParent = NULL);   // standard constructor
-
-// Dialog Data
-	//{{AFX_DATA(CPlyrMsgStatusDlg)
-	enum { IDD = IDD_MSG_STATUS };
-		// NOTE: the ClassWizard will add data members here
-	//}}AFX_DATA
-
-
-// Overrides
-	// ClassWizard generated virtual function overrides
-	//{{AFX_VIRTUAL(CPlyrMsgStatusDlg)
-	protected:
-	virtual void DoDataExchange(CDataExchange* pDX);    // DDX/DDV support
-	virtual void PostNcDestroy();
-	//}}AFX_VIRTUAL
-
-// Implementation
-protected:
-
-	// Generated message map functions
-	//{{AFX_MSG(CPlyrMsgStatusDlg)
-	virtual BOOL OnInitDialog();
-	virtual void OnOK();
-	virtual void OnCancel();
-	afx_msg void OnDestroy();
-	afx_msg void OnSelchangePlayerList();
-	afx_msg void OnSysCommand(UINT nID, LPARAM lParam);
-	afx_msg void OnDrawItem(int nIDCtl, LPDRAWITEMSTRUCT lpDrawItemStruct);
-	afx_msg void OnMeasureItem(int nIDCtl, LPMEASUREITEMSTRUCT lpMeasureItemStruct);
-	//}}AFX_MSG
-	DECLARE_MESSAGE_MAP()
-};
-
+// CPlyrMsgStatusDlg removed (Phase 2d) — was a per-player chat/email/voice
+// accept-or-ignore configuration dialog reachable via CWndComm::OnPlayerStatus.
+// SDL2 chat doesn't expose this configuration yet (the CWndComm path is dead).
 
 extern CIPCPlayerList *plIPCPlayers;
 

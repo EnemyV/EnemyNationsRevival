@@ -9,10 +9,13 @@
 //
 ////////////////////////////////////////////////////////////////////////////
 
-#include "CAIGMgr.hpp"
+#include "caigmgr.hpp"
 
-#include "CAIData.hpp"
-#include "CAITargt.h"
+#include "aisnap.h"  // Tier-B world snapshot (lock-free AI reads) — depleted-mine flag
+#include "altoutput.h"  // Fracking/Moho revival toggles (ConsiderAltOutputs)
+#include "caidata.hpp"
+#include "cairoute.hpp"  // truck-saturation check in UpdateVehGoals
+#include "caitargt.h"
 #include "logging.h"  // dave's logging system
 #include "stdafx.h"
 
@@ -24,6 +27,12 @@ extern CAITaskList* plTaskList;  // standard task list
 extern CException*      pException;  // standard exception for yielding
 extern CAIData*         pGameData;   // pointer to game data interface
 extern CRITICAL_SECTION cs;          // used by threads
+
+// On-disk size of the m_iRDPath blob in Load/Save. Frozen at the legacy topic
+// count (num_types BEFORE the in-code Bridges 2-5 tiers were appended) so old
+// saves stay byte-aligned. Do NOT grow this when adding research topics.
+const int RDPATH_SAVE_COUNT = CRsrchArray::bridge_2;
+static_assert( RDPATH_SAVE_COUNT == 53, "RDPath save blob must stay at the legacy topic count" );
 
 // pre-determine economic oriented research path - not used anymore
 //
@@ -59,6 +68,10 @@ static int aiCbtPath[CRsrchArray::num_types] = { CRsrchArray::fire_control,
                                                  CRsrchArray::medium_facilities,
                                                  CRsrchArray::tanks,
                                                  CRsrchArray::artillery,
+                                                 // power techs pulled forward (were #40/#44: combat AIs
+                                                 // never reached them and built coal plants all game)
+                                                 CRsrchArray::gas_turbine,
+                                                 CRsrchArray::nuclear,
                                                  CRsrchArray::large_facilities,
                                                  CRsrchArray::heavy_vehicle,
                                                  CRsrchArray::fortification,
@@ -74,7 +87,7 @@ static int aiCbtPath[CRsrchArray::num_types] = { CRsrchArray::fire_control,
                                                  CRsrchArray::acc_1,
                                                  CRsrchArray::spot_1,
                                                  CRsrchArray::spot_2,
-                                                 CRsrchArray::range_1,
+                                                 CRsrchArray::range_2,  // was a duplicate range_1; range_2 was missing
                                                  CRsrchArray::atk_2,
                                                  CRsrchArray::def_2,
                                                  CRsrchArray::acc_2,
@@ -93,11 +106,9 @@ static int aiCbtPath[CRsrchArray::num_types] = { CRsrchArray::fire_control,
                                                  CRsrchArray::const_1,
                                                  CRsrchArray::mine_2,
                                                  CRsrchArray::manf_2,
-                                                 CRsrchArray::gas_turbine,
                                                  CRsrchArray::const_2,
                                                  CRsrchArray::manf_3,
                                                  CRsrchArray::const_3,
-                                                 CRsrchArray::nuclear,
                                                  CRsrchArray::copper,
                                                  CRsrchArray::landing_craft,
                                                  CRsrchArray::cargo_handling,
@@ -130,7 +141,7 @@ static int aiEricPath[CRsrchArray::num_types] = { CRsrchArray::armored_vehicle,
                                                   CRsrchArray::acc_1,
                                                   CRsrchArray::spot_1,
                                                   CRsrchArray::spot_2,
-                                                  CRsrchArray::range_1,
+                                                  CRsrchArray::range_2,  // was a duplicate range_1; range_2 was missing
                                                   CRsrchArray::atk_2,
                                                   CRsrchArray::def_2,
                                                   CRsrchArray::acc_2,
@@ -191,7 +202,7 @@ static int aiStevePath[CRsrchArray::num_types] = { CRsrchArray::armored_vehicle,
                                                    CRsrchArray::acc_1,
                                                    CRsrchArray::spot_1,
                                                    CRsrchArray::spot_2,
-                                                   CRsrchArray::range_1,
+                                                   CRsrchArray::range_2,  // was a duplicate range_1; range_2 was missing
                                                    CRsrchArray::atk_2,
                                                    CRsrchArray::def_2,
                                                    CRsrchArray::acc_2,
@@ -242,7 +253,7 @@ static int aiKeithPath[CRsrchArray::num_types] = { CRsrchArray::fire_control,
                                                    CRsrchArray::acc_1,
                                                    CRsrchArray::spot_1,
                                                    CRsrchArray::spot_2,
-                                                   CRsrchArray::range_1,
+                                                   CRsrchArray::range_2,  // was a duplicate range_1; range_2 was missing
                                                    CRsrchArray::atk_2,
                                                    CRsrchArray::def_2,
                                                    CRsrchArray::acc_2,
@@ -295,12 +306,36 @@ static int aiDavePath[CRsrchArray::num_types] =
 };
 */
 
+// The static AI research paths above were authored before Pontoon Bridges existed,
+// and a loaded game's RDPath is frozen at the legacy size — so none of them list it.
+// Inject bridge_short into the in-memory path right before full Bridge Building (which
+// now REQUIRES it), so the AI researches Pontoon on schedule instead of waiting for the
+// random fallback. Idempotent; only shifts trailing padding.
+static void InjectPontoonIntoPath( int* piPath )
+{
+    int iBridge = -1;
+    for ( int i = 0; i < CRsrchArray::num_types; ++i )
+    {
+        if ( piPath[i] == CRsrchArray::bridge_short )
+            return;                                   // already present
+        if ( ( piPath[i] == CRsrchArray::bridge ) && ( iBridge < 0 ) )
+            iBridge = i;
+    }
+    if ( iBridge < 0 )
+        return;                                       // this path never researches bridges
+    for ( int i = CRsrchArray::num_types - 1; i > iBridge; --i )
+        piPath[i] = piPath[i - 1];
+    piPath[iBridge] = CRsrchArray::bridge_short;       // sits immediately before bridge
+}
+
 CAIGoalMgr::CAIGoalMgr( BOOL bRestart, int iPlayer, CAIMap* pMap, CAIUnitList* plUnits, CAIOpForList* plOpFors )
 {
     m_iPlayer  = iPlayer;
     m_bRestart = bRestart;
 
     m_pMap     = pMap;
+    m_pRouter  = NULL;  // wired by CAIMgr after its router exists
+    memset( m_adwSitePickCool, 0, sizeof( m_adwSitePickCool ) );
     m_plUnits  = plUnits;
     m_plOpFors = plOpFors;
 
@@ -317,10 +352,25 @@ CAIGoalMgr::CAIGoalMgr( BOOL bRestart, int iPlayer, CAIMap* pMap, CAIUnitList* p
     m_bNeedTrucks       = FALSE;
     m_iNeedApt          = FALSE;
     m_iNeedOffice       = FALSE;
+    m_iWealthLevel      = 0;
+    m_bAptCritical      = FALSE;
 
     m_iLastFood = 0;
     m_iScenario = 0;
     m_dwRocket  = 0;
+
+    // no war road planned yet
+    for ( int iWr = 0; iWr < 4; ++iWr )
+    {
+        m_ahexLastWarRoad[iWr].X( 0 );
+        m_ahexLastWarRoad[iWr].Y( 0 );
+        m_ahexLastStageRoad[iWr].X( 0 );
+        m_ahexLastStageRoad[iWr].Y( 0 );
+    }
+
+    m_iBldgLostRecent = 0;
+    m_dwDefenseUntil  = 0;
+    m_dwGunsUntil     = 0;
 
     m_pwaRatios    = NULL;
     m_pwaUnits     = NULL;
@@ -370,11 +420,9 @@ void CAIGoalMgr::Assess( CAIMsg* pMsg )
 #endif
 
 #ifdef _LOGOUT
-    CString sMsg = pGameData->GetMsgString( pMsg->m_iMsg );
+    const char* sMsg = pGameData->GetMsgString( pMsg->m_iMsg );
     logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "CAIGoalMgr::Assess() Player=%d ", m_iPlayer );
-    logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "Message id %d is a %s ", pMsg->m_iMsg, (const char*)sMsg );
-
-    sMsg.Empty( );
+    logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "Message id %d is a %s ", pMsg->m_iMsg, sMsg );
 #endif
 
     if ( pMsg->m_iMsg == CNetCmd::unit_damage && pMsg->m_idata3 != m_iPlayer )
@@ -416,10 +464,10 @@ void CAIGoalMgr::Assess( CAIMsg* pMsg )
         m_bOceanWorld = TRUE;
         m_bLakeWorld  = TRUE;
 
-        // check with map for too little ocean to matter
-        if ( m_pMap->m_iOcean < ( m_pMap->m_iLand / 5 ) )  // was 10
+        // check with map for too little ocean to matter (9f520f11 eased /3->/5, /4->/10 = more sea worlds)
+        if ( m_pMap->m_iOcean < ( m_pMap->m_iLand / 5 ) )
             m_bOceanWorld = FALSE;
-        if ( m_pMap->m_iLake < ( m_pMap->m_iLand / 10 ) )  // was 20
+        if ( m_pMap->m_iLake < ( m_pMap->m_iLand / 10 ) )
             m_bLakeWorld = FALSE;
 
 #ifdef _LOGOUT
@@ -438,6 +486,7 @@ void CAIGoalMgr::Assess( CAIMsg* pMsg )
 
             // load naval biased research path
             for ( int i = 0; i < CRsrchArray::num_types; ++i ) m_iRDPath[i] = aiStevePath[i];
+            InjectPontoonIntoPath( m_iRDPath );
 
             // BUGBUG for testing
             // pGoal = m_plGoalList->GetGoal(IDG_SEAINVADE);
@@ -471,6 +520,8 @@ void CAIGoalMgr::Assess( CAIMsg* pMsg )
         }
         m_bMapChanged   = TRUE;
         m_bGunsOrButter = TRUE;
+        // attacked: hold the war footing (rolling 5 min)
+        m_dwGunsUntil = theGame.GettimeGetTime( ) + 300000;
     }
 
     // consider scenario
@@ -544,20 +595,15 @@ BOOL CAIGoalMgr::AutoFire( int iPlayer )
     // a known opfor
     if ( pOpFor != NULL )
     {
-        // on the highest difficulty AI players have auto-alliance
-        if ( pOpFor->IsAI( ) && pGameData->m_iSmart > 1 )
-        {
-            // except for on MODERATE level, leave a chance that
-            // the AI will shoot another AI player
-            /*
-            if( pGameData->m_iSmart == 1 )
-            {
-                if( !pGameData->GetRandom(NUM_DIFFICUTY_LEVELS) )
-                    return( TRUE );
-            }
-            */
-            return ( FALSE );
-        }
+        // OPERATOR DIRECTIVE (#2, AI-vs-AI war) — 2nd half (newwin spec): the high-difficulty
+        // AI-vs-AI auto-alliance override that used to live here (`if ( pOpFor->IsAI() &&
+        // pGameData->m_iSmart > 1 ) return FALSE;`) made AIs NEVER auto-fire on each other on
+        // high diff — even when at war (it short-circuited before the `return pOpFor->AtWar()`
+        // below). Paired with the CAIOpFor::SetRelations override removal (@8ade1040), this is
+        // removed so AIs fire on each other when their attitude-driven relations reach WAR.
+        // Deterministic (the moderate-level GetRandom fuzz was already commented out, so no
+        // RandNum/MP-desync). High-diff AIs still ally when attitude is high (they just no
+        // longer force not-firing).
 
         // highest level of difficult always fires back
         if ( !pOpFor->IsAI( ) && pGameData->m_iSmart )
@@ -638,6 +684,16 @@ void CAIGoalMgr::ConsiderThreats( CAIMsg* pMsg )
     // message reporting an attack on AI's units
     if ( pMsg->m_iMsg == CNetCmd::unit_damage )
     {
+#if EN_AI_PROBES_WAR && defined(_WIN32)
+        {
+            // stage probe: which check eats war damage? (RETAL=0 + zero grind
+            // across every soak = this branch may never complete)
+            char szT[96];
+            sprintf( szT, "[THREAT] plyr %d dmg victim %lu atkplyr %d stage=enter\n", m_iPlayer,
+                     (unsigned long)pMsg->m_dwID, pMsg->m_idata2 );
+            OutputDebugStringA( szT );
+        }
+#endif
         // get unit fired upon
         CAIUnit* pTarget = m_plUnits->GetUnit( pMsg->m_dwID );
         if ( pTarget == NULL )
@@ -647,17 +703,29 @@ void CAIGoalMgr::ConsiderThreats( CAIMsg* pMsg )
         }
         if ( pTarget->GetOwner( ) != m_iPlayer )
             return;
+#if EN_AI_PROBES_WAR && defined(_WIN32)
+        OutputDebugStringA( "[THREAT] stage=victim-ok\n" );
+#endif
 
         // id of the attacking unit is used to get id of opfor
         CAIUnit* pAttacker = m_plUnits->GetOpForUnit( pMsg->m_dwID2 );
-        if ( pAttacker == NULL )
+        int      iOpForID;
+        if ( pAttacker != NULL )
+            iOpForID = pAttacker->GetOwner( );
+        else
         {
-            // unit might have been destroyed
-            return;
+            // UNSEEN attacker: this early-returned since 1996, eating the
+            // attitude decrement AND the retaliation snap for most war damage
+            // (soak86: 156 kills, zero grind values, zero RETALIATES - the
+            // victim rarely has the attacker's unit record). The message
+            // itself names the attacker's player; being shot must not
+            // require line-of-sight bookkeeping. pAttacker is otherwise
+            // only used for GetOwner - nothing below dereferences it.
+            iOpForID = pMsg->m_idata2;
+            if ( iOpForID < 0 || iOpForID == m_iPlayer )
+                return;
         }
-
-        int iOpForID = pAttacker->GetOwner( );
-        pOpFor       = m_plOpFors->GetOpFor( iOpForID );
+        pOpFor = m_plOpFors->GetOpFor( iOpForID );
 
         // new CAIOpFor is needed
         if ( pOpFor == NULL )
@@ -677,6 +745,25 @@ void CAIGoalMgr::ConsiderThreats( CAIMsg* pMsg )
         }
         else
             pOpFor->UpdateCounts( pMsg );
+
+        // RETALIATION (operator: 'the attackee doesn't respond... they don't
+        // seem to retaliatory war'): mirror the HUMAN first-attack rule
+        // (netapi UnitAttacked: neutral-or-worse attacker -> RELATIONS_WAR,
+        // allies forgiven) in the AI layer - first blood from a below-PEACE
+        // attacker snaps this record to WAR instead of grinding -3/hit while
+        // bunkers stay silent and mobiles won't return fire (AutoFire gates
+        // on AtWar per pair). Runs in the defender's own AI thread.
+        if ( !pOpFor->AtWar( ) && pOpFor->GetAttitude( ) < (int)PEACE )
+        {
+            pOpFor->SetAttitude( (int)WAR );
+#if EN_AI_PROBES_WAR && defined(_WIN32)
+            {
+                char szW[96];
+                sprintf( szW, "[WARDECL] plyr %d RETALIATES vs opfor %d (first blood)\n", m_iPlayer, iOpForID );
+                OutputDebugStringA( szW );
+            }
+#endif
+        }
 
         // update attack counts by unit type
         if ( pTarget->GetType( ) == CUnit::building )
@@ -722,6 +809,8 @@ void CAIGoalMgr::ConsiderThreats( CAIMsg* pMsg )
             }
             // if we are being shot at, then turn on combat production
             m_bGunsOrButter = TRUE;
+            // attacked: hold the war footing (rolling 5 min)
+            m_dwGunsUntil = theGame.GettimeGetTime( ) + 300000;
         }
 
         // need to consider that unit just attacked needs
@@ -927,7 +1016,11 @@ void CAIGoalMgr::ConsiderThreats( CAIMsg* pMsg )
                     m_bGoalChange = TRUE;
                 }
 
-                m_bGunsOrButter = FALSE;
+                // tense-peace butter must not clear a war footing (this fires
+                // on intel about ANY sub-PEACE neighbor, even mid-war with
+                // a different civ - last-writer-wins starved war staging)
+                if ( !WarPressure( ) )
+                    m_bGunsOrButter = FALSE;
             }
 
             // by the time a command center is built, its time
@@ -1096,6 +1189,13 @@ void CAIGoalMgr::AttackPlayer( int iOpforID )
         if ( pGoal == NULL )
         {
             AddGoal( IDG_SHORES );
+            m_bGoalChange = TRUE;
+        }
+        // lake worlds build shipyards too, so give them the make-ship tasks (was ocean-only)
+        pGoal = m_plGoalList->GetGoal( IDG_SEAWAR );
+        if ( pGoal == NULL )
+        {
+            AddGoal( IDG_SEAWAR );
             m_bGoalChange = TRUE;
         }
     }
@@ -1457,6 +1557,15 @@ BOOL CAIGoalMgr::NeedCranes( void )
         }
     }
 
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+    {
+        // observation only: how often + why crane production is gated (logic untouched)
+        char szC[96];
+        sprintf( szC, "[CRANEGATE] plyr %d making %d idle %d -> %s\n", m_iPlayer, (int)bMakingCranes,
+                 (int)bCranesUnassigned, ( bMakingCranes || bCranesUnassigned ) ? "SUPPRESS" : "produce" );
+        OutputDebugStringA( szC );
+    }
+#endif
     if ( bMakingCranes || bCranesUnassigned )
         return FALSE;
     return TRUE;
@@ -1551,7 +1660,10 @@ void CAIGoalMgr::NeedTrucks( void )
     int iQty = pTask->GetTaskParam( PRODUCTION_QTY ) + 1;
     pTask->SetTaskParam( PRODUCTION_QTY, iQty );
     m_bGoalChange   = TRUE;
-    m_bGunsOrButter = FALSE;
+    // truck/crane need = butter ONLY in peace; war pressure keeps guns
+    // (truck production still gets its triple priority + m_bNeedTrucks)
+    if ( !WarPressure( ) )
+        m_bGunsOrButter = FALSE;
     m_bNeedTrucks   = TRUE;
 
     UpdateVehGoals( );
@@ -1699,6 +1811,56 @@ logPrintf(LOG_PRI_ALWAYS, LOG_AI_MISC,
 }
 
 //
+// revive exhausted extractors (Fracking/Moho) when the colony has surplus
+// people AND energy (the trickle costs +50% well power, nothing else)
+//
+void CAIGoalMgr::ConsiderAltOutputs( void )
+{
+    if ( m_plUnits == NULL )
+        return;
+
+    EnterCriticalSection( &cs );
+
+    CPlayer* pPlyr = pGameData->GetPlayerData( m_iPlayer );
+    if ( pPlyr == NULL )
+    {
+        LeaveCriticalSection( &cs );
+        return;
+    }
+
+    // hysteresis: ON only with clear slack in BOTH, OFF only on a real deficit
+    BOOL bOn = pPlyr->GetPplBldg( ) > pPlyr->GetPplNeedBldg( ) &&
+               pPlyr->GetPwrHave( ) > pPlyr->GetPwrNeed( );
+    BOOL bOff = pPlyr->GetPwrHave( ) < pPlyr->GetPwrNeed( ) ||
+                pPlyr->GetPplBldg( ) < pPlyr->GetPplNeedBldg( );
+
+    POSITION pos = m_plUnits->GetHeadPosition( );
+    while ( pos != NULL )
+    {
+        CAIUnit* pUnit = (CAIUnit*)m_plUnits->GetNext( pos );
+        if ( pUnit == NULL || pUnit->GetOwner( ) != m_iPlayer || pUnit->GetType( ) != CUnit::building )
+            continue;
+
+        CBuilding* pBldg = theBuildingMap.GetBldg( pUnit->GetID( ) );
+        if ( pBldg == NULL )
+            continue;
+
+        // flat-trickle revivals ONLY - never auto-flip the mode-switch toggles
+        // (BioFuel/Coal-Liq kill the building's primary output)
+        const AltOutput::AltOutputDef* pDef = AltOutput::Available( pBldg );
+        if ( pDef == NULL || pDef->m_eMode != AltOutput::eFlatTrickle )
+            continue;
+
+        if ( bOn && !pBldg->IsFlag( CUnit::alt_oil ) )
+            pBldg->SetFlag( CUnit::alt_oil );
+        else if ( bOff && pBldg->IsFlag( CUnit::alt_oil ) )
+            pBldg->ClrFlag( CUnit::alt_oil );
+    }
+
+    LeaveCriticalSection( &cs );
+}
+
+//
 // make sure we do not spend all our gas on road building
 //
 BOOL CAIGoalMgr::IsGasAvailable( void )
@@ -1720,9 +1882,10 @@ void CAIGoalMgr::IdleCrane( void )
     if ( !m_pwaBldgs[CStructureData::research] )
         return;
 
-    // only consider relative to difficulty setting
-    if ( m_pwaBldgGoals[CStructureData::research] >= pGameData->m_iSmart ||
-         m_pwaBldgs[CStructureData::research] >= pGameData->m_iSmart )
+    // only consider relative to difficulty setting (+1: the old cap of
+    // m_iSmart labs made a ~45-topic serial path unfinishable -- operator)
+    if ( m_pwaBldgGoals[CStructureData::research] >= pGameData->m_iSmart + 1 ||
+         m_pwaBldgs[CStructureData::research] >= pGameData->m_iSmart + 1 )
         return;
 
     // and if current reseach institutes goals are met
@@ -1753,7 +1916,14 @@ BOOL CAIGoalMgr::CheckAbandonedBuildings( void )
         if ( IsAbandonedBuilding( iBldg ) )
         {
             bHaveAbandoned = TRUE;
-            m_pwaBldgGoals[iBldg] += 1;
+            // NOTE: the goal `+= 1` bump was removed. The count loop
+            // (UpdateVehGoals) now excludes depleted extractors, so a dead mine
+            // already drops m_pwaBldgs[iBldg] below goal and the normal build
+            // machinery (count<goal + the material-shortage path) replaces it on
+            // a fresh deposit. Bumping the goal here would double-compensate and,
+            // because the dead building lingers on the map (IsAbandonedBuilding
+            // stays TRUE), perpetually over-build the mine. We keep the detection
+            // only to signal a construction re-evaluation (bHaveAbandoned).
 
 #ifdef _LOGOUT
             logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC,
@@ -1834,6 +2004,26 @@ void CAIGoalMgr::CheckResearch( void )
     // its busy researching
     if ( pPlayer->GetRsrchItem( ) != 0 )
     {
+        // pontoon pre-emption (operator): rivers are blocking us and the tech is in
+        // reach - switch NOW instead of after the current multi-hour topic. Points
+        // are stored per topic, so the interrupted one keeps its progress.
+        if ( m_pMap != NULL && m_pMap->m_iBridgeSpanFails > 0 &&
+             pPlayer->GetRsrchItem( ) != CRsrchArray::bridge_short &&
+             pPlayer->CanRsrch( CRsrchArray::bridge_short ) )
+        {
+            LeaveCriticalSection( &cs );
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+            {
+                char szR[96];
+                sprintf( szR, "[RSRCHPREEMPT] plyr %d fails %d -> pontoon\n", m_iPlayer,
+                         m_pMap->m_iBridgeSpanFails );
+                OutputDebugStringA( szR );
+            }
+#endif
+            CMsgRsrch msg( pPlayer->GetPlyrNum( ), CRsrchArray::bridge_short );
+            theGame.PostToServer( &msg, sizeof( msg ) );
+            return;
+        }
         LeaveCriticalSection( &cs );
         return;
     }
@@ -1864,6 +2054,57 @@ int CAIGoalMgr::NextResearchTopic( CPlayer* pPlayer )
     logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "\nCAIGoalMgr::NextResearchTopic() player %d is looking", m_iPlayer );
 #endif
 
+    // gas-starved with dead wells: research fracking tiers first -- gasless AIs
+    // plateau (roads, vehicles, war all gas-gated) while frackers keep growing
+    if ( m_iGasHave == 0 )
+    {
+        static const int s_aiFrackTech[] = { CRsrchArray::fracking_1, CRsrchArray::fracking_2,
+                                             CRsrchArray::fracking_3, CRsrchArray::fracking_4,
+                                             CRsrchArray::fracking_5 };
+        for ( int f = 0; f < 5; ++f )
+        {
+            if ( pPlayer->CanRsrch( s_aiFrackTech[f] ) )
+            {
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+                {
+                    char szR[96];
+                    sprintf( szR, "[RSRCHFRACK] plyr %d gasless -> topic %d\n", m_iPlayer, s_aiFrackTech[f] );
+                    OutputDebugStringA( szR );
+                }
+#endif
+                return s_aiFrackTech[f];
+            }
+        }
+    }
+
+    // repeated span-fail bridge attempts: research the next bridge tier first
+    // (rivers are blocking sites/pools/war paths and the span is too short)
+    if ( m_pMap != NULL && m_pMap->m_iBridgeSpanFails >= 3 )
+    {
+        static const int s_aiBridgeTech[] = { CRsrchArray::bridge, CRsrchArray::bridge_2, CRsrchArray::bridge_3,
+                                              CRsrchArray::bridge_4, CRsrchArray::bridge_5 };
+        for ( int b = 0; b < 5; ++b )
+        {
+            if ( pPlayer->CanRsrch( s_aiBridgeTech[b] ) )
+            {
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+                {
+                    char szR[96];
+                    sprintf( szR, "[RSRCHBRIDGE] plyr %d span-fails %d -> topic %d\n", m_iPlayer,
+                             m_pMap->m_iBridgeSpanFails, s_aiBridgeTech[b] );
+                    OutputDebugStringA( szR );
+                }
+#endif
+                return s_aiBridgeTech[b];
+            }
+        }
+    }
+
+    // Pontoon Bridges: cheap, unblocks river-locked expansion - grab it the
+    // moment it's researchable (operator)
+    if ( pPlayer->CanRsrch( CRsrchArray::bridge_short ) )
+        return ( CRsrchArray::bridge_short );
+
     // just go through the path assigned this AI
     for ( int i = 0; i < CRsrchArray::num_types; ++i )
     {
@@ -1871,6 +2112,10 @@ int CAIGoalMgr::NextResearchTopic( CPlayer* pPlayer )
 
         int iTopic = m_iRDPath[i];
         if ( !iTopic )
+            continue;
+        // a corrupt/misaligned saved path entry wedged research permanently
+        // (saved garbage m_iRsrchItem); never hand the server an OOB topic
+        if ( iTopic < 0 || iTopic >= CRsrchArray::num_types )
             continue;
         // this assumes that topic is discovered test occurs too
         if ( pPlayer->CanRsrch( iTopic ) )
@@ -1884,18 +2129,35 @@ int CAIGoalMgr::NextResearchTopic( CPlayer* pPlayer )
         }
     }
 
-    // DNT - now try all topics in order in case missed one in the array
-    for ( int i = 0; i < CRsrchArray::num_types; ++i )
-    {
-        // this assumes that topic is discovered test occurs too
-        if ( pPlayer->CanRsrch( i ) )
-        {
-#ifdef _LOGOUT
-            logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "CAIGoalMgr::NextResearchTopic() for %d is %d \n", m_iPlayer, i );
-#endif
+    // Fallback: the AI's guided path (m_iRDPath) had nothing researchable right now —
+    // either it finished its authored tree, or the next path topic is gated behind a
+    // tech we ADDED after the path was frozen (the RDPath can't reference indices past
+    // RDPATH_SAVE_COUNT, so any new in-code tech is invisible to it). Pick from the
+    // available topics so the AI still researches those newer techs (Pontoon Bridges,
+    // the repeatable tiers, fuel efficiency, ...) instead of stalling on them.
+    // Prioritize the CHEAPEST available topic (not uniform-random), so the AI grabs the
+    // cheap early tiers of the in-code lines first. Two passes: min cost, then random
+    // tie-break among topics sharing it. GetRandom keeps it multiplayer-deterministic.
+    int iMinCost = 0x7FFFFFFF;
+    for ( int i = 1; i < CRsrchArray::num_types; ++i )
+        if ( pPlayer->CanRsrch( i ) && theRsrch[i].m_iPtsRequired < iMinCost )
+            iMinCost = theRsrch[i].m_iPtsRequired;
 
-            return ( i );
-        }
+    if ( iMinCost != 0x7FFFFFFF )
+    {
+        int aiCheapest[CRsrchArray::num_types];
+        int nCheapest = 0;
+        for ( int i = 1; i < CRsrchArray::num_types; ++i )
+            if ( pPlayer->CanRsrch( i ) && theRsrch[i].m_iPtsRequired == iMinCost )
+                aiCheapest[nCheapest++] = i;
+
+        int iTopic = aiCheapest[ pGameData->GetRandom( nCheapest ) ];
+#ifdef _LOGOUT
+        logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC,
+                   "CAIGoalMgr::NextResearchTopic() for %d cheapest-fallback %d (cost %d) \n",
+                   m_iPlayer, iTopic, iMinCost );
+#endif
+        return ( iTopic );
     }
 
     return ( 0 );
@@ -1937,6 +2199,7 @@ void CAIGoalMgr::CheckPlayer( void )
 
     // The wealth level is limited by the resource with the lowest "level"
     int wealthLevel = min(min(min(min( foodLevel, coalLevel), steelLevel), lumberLevel ), gasLevel);
+    m_iWealthLevel  = wealthLevel;   // expose to UpdateVehGoals (S7)
 
 
     // get hours pass in gametime
@@ -1968,6 +2231,15 @@ void CAIGoalMgr::CheckPlayer( void )
     // need gas, +100 to make the ai want it more
     if ( m_iGasHave < (m_iGasNeed + 100) )
     {
+        // lost the last well (war) -> reseed the oil industry or gas never recovers
+        if ( !m_pwaBldgs[CStructureData::oil_well] && hasCommandCenter )
+        {
+            if ( m_pwaBldgGoals[CStructureData::oil_well] < 1 )
+                m_pwaBldgGoals[CStructureData::oil_well] = 1;
+            if ( !m_pwaBldgs[CStructureData::refinery] && m_pwaBldgGoals[CStructureData::refinery] < 1 )
+                m_pwaBldgGoals[CStructureData::refinery] = 1;
+        }
+
         // must already have an oil well
         if ( m_pwaBldgs[CStructureData::oil_well] )
         {
@@ -2024,6 +2296,16 @@ void CAIGoalMgr::CheckPlayer( void )
         }
     }
 
+    // a naval goal needs a shipyard, but goal 1033/1034 data has NO shipyard
+    // build task and nothing else ever raises the goal - ships were unbuildable
+    if ( m_bOceanWorld && hasCommandCenter &&
+         ( m_plGoalList->GetGoal( IDG_SEAINVADE ) != NULL || m_plGoalList->GetGoal( IDG_PIRATE ) != NULL ) )
+    {
+        WORD wYards = (WORD)( 1 + ( m_iWealthLevel > 1 ? 1 : 0 ) );
+        if ( m_pwaBldgGoals[CStructureData::shipyard_1] < wYards )
+            m_pwaBldgGoals[CStructureData::shipyard_1] = wYards;
+    }
+
     // on difficult levels, if the command_center exists
     // then adjusts coal and iron to difficulty level
     if ( hasCommandCenter)
@@ -2075,6 +2357,7 @@ void CAIGoalMgr::CheckPlayer( void )
         m_iNeedApt = FALSE;
     else
         m_iNeedApt = TRUE;
+    m_bAptCritical = m_iNeedApt;   // TRUE only if genuinely under-housed, before wealth inflation (S8)
 
     // in the case that the AI is rich, its more interesting for them to expand their city buildings
     // if they have tons of steel, lumber, food, and power, they are rich
@@ -2082,7 +2365,8 @@ void CAIGoalMgr::CheckPlayer( void )
     {
         int multi = 3 + hoursPassed / 2;
         multi *= wealthLevel;
-        
+        if ( multi > 6 ) multi = 6;          // stop the apartment/office runaway (S1)
+
         if ( iOfcCap > iOfcNeed * multi )
             m_iNeedOffice = FALSE;
         else
@@ -2143,7 +2427,7 @@ void CAIGoalMgr::AddPowerTask( )
     }
 
     // make sure that the goalmgr does not go overboard on power
-    if ( m_pwaBldgs[iBldg] > pGameData->m_iSmart )
+    if ( m_pwaBldgs[iBldg] > pGameData->m_iSmart + 4 )   // +4 headroom for late game (S5)
         return;
 
     CAITask* pTask = m_plTasks->FindTask( iTask );
@@ -2173,7 +2457,7 @@ void CAIGoalMgr::ProduceMaterials( int iMat )
     BOOL    bBuild = FALSE;
     int     iBldg  = 0;
     WORD    wTask, wGoal;
-    CString sMat;
+    const char* sMat = "";
 
     // based on the material, set the type of building,
     // the id of the task to update, and the id of the
@@ -2246,7 +2530,7 @@ void CAIGoalMgr::ProduceMaterials( int iMat )
 
 #ifdef _LOGOUT
         logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "\nCAIGoalMgr::ProduceMaterials() player %d for %s ", m_iPlayer,
-                   (const char*)sMat );
+                   sMat );
         logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "onhand=%d  need=%d  increased task %d to quantity %d ",
                    m_pwaMatOnHand[iMat], m_pwaMatGoals[iMat], wTask, iQty );
         logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "bldgs=%d  need=%d \n", m_pwaBldgs[iBldg], m_pwaBldgGoals[iBldg] );
@@ -2474,6 +2758,17 @@ void CAIGoalMgr::ProduceVehicles( int iVeh )
     }
     if ( iBldg1 == CStructureData::num_types && iBldg2 == CStructureData::num_types )
         return;
+
+#if EN_AI_PROBES_WAR && defined(_WIN32)
+    if ( iVeh == CTransportData::gun_boat || iVeh == CTransportData::landing_craft ||
+         iVeh == CTransportData::destroyer || iVeh == CTransportData::cruiser )
+    {
+        // TEMP: sea-war verification probe (production REQUEST side)
+        char szS[80];
+        sprintf( szS, "[SEAPROD] plyr %d wants veh %d\n", m_iPlayer, iVeh );
+        OutputDebugStringA( szS );
+    }
+#endif
 
     // decide if a new building (a producer of that vehicle)
     // should be added or not
@@ -2808,6 +3103,10 @@ void CAIGoalMgr::GetVehicleNeeds( )
 //
 void CAIGoalMgr::UpdateVehGoals( void )
 {
+    // elapsed game-hours; scales the fleet/mine caps below so a long game keeps
+    // growing its logistics (mirrors CheckPlayer's hoursPassed). Serves S2/S3.
+    int hrs = theGame.GetElapsedSeconds( ) / 3600;
+
     // clear count of goals based on tasks
     for ( int i = 0; i < m_iNumBldgs; ++i )
     {
@@ -2840,6 +3139,23 @@ void CAIGoalMgr::UpdateVehGoals( void )
 
             if ( pUnit->GetType( ) == CUnit::building )
             {
+                // Don't count a DEPLETED resource extractor as a producer — it
+                // makes nothing, so counting it makes the AI think it has enough
+                // mines and never builds replacements (late-game resource
+                // collapse). bAbandoned is the lock-free snapshot flag; gate the
+                // read to the extractor range (lumber..copper) so the hot count
+                // loop pays nothing for ordinary buildings.
+                // (refinery is in this enum range but processes oil rather than
+                // extracting a deposit, so it never depletes — exclude it, matching
+                // CheckAbandonedBuildings' deliberate skip, so a stray flag could
+                // never make the AI over-build refineries.)
+                if ( i >= CStructureData::lumber && i <= CStructureData::copper &&
+                     i != CStructureData::refinery )
+                {
+                    AiBldgSnap snap;
+                    if ( AiSnap::ReadBldg( pUnit->GetID( ), snap ) && snap.bAbandoned )
+                        continue;   // depleted -> not a producer; skip it
+                }
                 if ( i < m_iNumBldgs )
                     m_pwaBldgs[i]++;
             }
@@ -2916,14 +3232,16 @@ void CAIGoalMgr::UpdateVehGoals( void )
     if ( !m_pwaBldgGoals[CStructureData::research] )
         m_pwaBldgGoals[CStructureData::research] = 1;
 
-    m_pwaBldgGoals[CStructureData::oil_well] = iCnt;
-    m_pwaBldgGoals[CStructureData::iron]     = iCnt;
-    m_pwaBldgGoals[CStructureData::coal]     = iCnt;
+    // un-freeze the mine goals so a long game gets raw ore/oil (S4): +1/hr up to +10
+    int mineBonus = ( hrs < 10 ? hrs : 10 );
+    m_pwaBldgGoals[CStructureData::oil_well] = iCnt + mineBonus;
+    m_pwaBldgGoals[CStructureData::iron]     = iCnt + mineBonus;
+    m_pwaBldgGoals[CStructureData::coal]     = iCnt + mineBonus;
 
     // qualified increase in smelters
     if ( m_pwaBldgs[CStructureData::iron] >= m_pwaBldgGoals[CStructureData::iron] &&
          m_pwaBldgs[CStructureData::coal] >= m_pwaBldgGoals[CStructureData::coal] )
-        m_pwaBldgGoals[CStructureData::smelter] += ( iCnt / 2 );
+        m_pwaBldgGoals[CStructureData::smelter] += iCnt;   // was iCnt/2 (S6)
 
     // never need more than one rep fac
     m_pwaBldgGoals[CStructureData::repair] = 1;
@@ -3028,27 +3346,42 @@ void CAIGoalMgr::UpdateVehGoals( void )
     }
 
     iCnt = pGameData->m_iSmart + 1;
+    // time-scaled bonus so the hauling fleet grows in a long game (S3), +1/hr up to +20
+    // extra fleet for a rich AI (S7): 0 until CheckPlayer first runs, so no ordering hazard
+    int wealthBonus = ( m_iWealthLevel < 4 ? m_iWealthLevel : 4 );
+    int truckBonus = ( hrs < 20 ? hrs : 20 ) + 2 * wealthBonus;   // +up to 8 trucks from wealth
+    // fleet saturated + gas-rich -> demand more trucks (operator)
+    if ( m_pRouter != NULL && m_pRouter->GetIdleTruckCount( ) == 0 && m_iGasHave > 10000 )
+        truckBonus += __min( m_iGasHave / 10000, 6 );
     // adjust production of trucks once weapons factorys built
     if ( m_pwaBldgs[CStructureData::light_2] >= m_pwaBldgGoals[CStructureData::light_2] )
-        m_pwaVehGoals[CTransportData::heavy_truck] = ( 4 * iCnt );
+        m_pwaVehGoals[CTransportData::heavy_truck] = ( 4 * iCnt ) + truckBonus;
     else
-        m_pwaVehGoals[CTransportData::heavy_truck] = ( 3 * iCnt );
+        m_pwaVehGoals[CTransportData::heavy_truck] = ( 3 * iCnt ) + truckBonus;
 
-    // stop over production of trucks
-    if ( m_pwaVehGoals[CTransportData::heavy_truck] > ( 4 * iCnt ) )
-        m_pwaVehGoals[CTransportData::heavy_truck] = ( 4 * iCnt );
+    // stop over production of trucks (ceiling raised to match the bonus)
+    if ( m_pwaVehGoals[CTransportData::heavy_truck] > ( 4 * iCnt ) + truckBonus )
+        m_pwaVehGoals[CTransportData::heavy_truck] = ( 4 * iCnt ) + truckBonus;
 
-    // stop over production of cranes
-    if ( m_pwaVehGoals[CTransportData::construction] > ( 2 * iCnt ) )
+    // stop over production of cranes (time-scaled cap, S2): was 2*iCnt; +1/hr up to +12, +up to 4 wealth (S7)
+    // road-backlog bonus (operator): +1 per 5k gas, capped +8, while 200+ hexes are planned
+    int craneCap = 2 * iCnt + ( hrs < 12 ? hrs : 12 ) + wealthBonus;
+    if ( m_pMap != NULL && m_pMap->m_iRoadCount > 200 )
+        craneCap += __min( m_iGasHave / 5000, 8 );
+    if ( m_pwaVehGoals[CTransportData::construction] > craneCap )
     {
-        m_pwaVehGoals[CTransportData::construction] = ( 2 * iCnt );
+        m_pwaVehGoals[CTransportData::construction] = craneCap;
     }
 
-    // increase gunboats and destroyers
+    // increase gunboats, destroyers, cruisers on water maps (goal scales with
+    // m_iSmart via iCnt). Fleet weight class: gunboats most, destroyers fewer,
+    // cruisers fewest — heavy capital ship. Without a non-zero cruiser goal,
+    // GetStagingArea's cruiser_goal/2 stays 0 and the AI never builds cruisers.
     if ( m_bOceanWorld || m_bLakeWorld )
     {
         m_pwaVehGoals[CTransportData::gun_boat] += ( 4 * iCnt );
         m_pwaVehGoals[CTransportData::destroyer] += ( 2 * iCnt );
+        m_pwaVehGoals[CTransportData::cruiser] += iCnt;
     }
 }
 
@@ -3759,6 +4092,9 @@ void CAIGoalMgr::UpdateConstructionTasks( CAIMsg* pMsg )
     if ( m_pwaBldgs[CStructureData::light_2] && m_pwaBldgs[CStructureData::light_1] )
         bNeedDefenses = TRUE;
 
+    // no idle crane and none in production -> cranes are the bottleneck (S8)
+    BOOL bNoFreeCranes = NeedCranes( );
+
 #ifdef _LOGOUT
     logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "CAIGoalMgr::UpdateConstructionTasks() for %d executing ", m_iPlayer );
     logPrintf(
@@ -4064,7 +4400,12 @@ void CAIGoalMgr::UpdateConstructionTasks( CAIMsg* pMsg )
                     {
                         if ( m_iNeedApt &&
                              ( iBldg >= CStructureData::apartment_1_1 && iBldg <= CStructureData::apartment_2_4 ) )
-                            pTask->SetPriority( (BYTE)99 );
+                        {
+                            if ( m_bAptCritical )
+                                pTask->SetPriority( (BYTE)99 );   // workers unhoused -> top priority
+                            else
+                                pTask->SetPriority( (BYTE)1 );    // rich-nation expansion: build only with spare cranes
+                        }
 
                         if ( m_iNeedOffice &&
                              ( iBldg >= CStructureData::office_2_1 && iBldg <= CStructureData::office_3_1 ) )
@@ -4156,6 +4497,13 @@ void CAIGoalMgr::UpdateConstructionTasks( CAIMsg* pMsg )
                                        pTask->GetGoalID( ), pTask->GetID( ), pTask->GetPriority( ) );
 #endif
                         }
+
+                        // advanced LAND factories build up to goal ahead of surplus housing
+                        // (never ahead of a real shortage); shipyards stay below land factories
+                        if ( ( iBldg == CStructureData::light_2 || iBldg == CStructureData::heavy ) &&
+                             m_pwaBldgs[iBldg] < m_pwaBldgGoals[iBldg] &&
+                             m_pwaBldgs[CStructureData::smelter] && !m_bAptCritical )
+                            pTask->SetPriority( (BYTE)90 );
                     }
 
                     // this unit type was just lost
@@ -4380,6 +4728,196 @@ void CAIGoalMgr::SetAssaultStagingVehicle( WORD* awTypes )
         }
     }
 }
+// Phase 3: only 3 staging goals are watched; map goal id -> 0..2 (else -1)
+int CAIGoalMgr::StageGoalIdx( int iGoal )
+{
+    if ( iGoal == IDG_LANDWAR )    return 0;
+    if ( iGoal == IDG_ADVDEFENSE ) return 1;
+    if ( iGoal == IDG_SEAINVADE )  return 2;
+    return -1;
+}
+
+// per-goal war-road guard slot (3 = any other goal)
+int CAIGoalMgr::WarRoadIdx( CAITask* pTask )
+{
+    int idx = StageGoalIdx( (int)pTask->GetGoalID( ) );
+    return ( idx >= 0 ) ? idx : 3;
+}
+
+// bunker mode: each building lost extends a defense-first window (rolling 10 min)
+void CAIGoalMgr::NoteBuildingLost( void )
+{
+    m_iBldgLostRecent++;
+    m_dwDefenseUntil = theGame.GettimeGetTime( ) + 600000;
+}
+
+// war pressure = at war with anyone, or attacked recently. Guns-or-butter is
+// message-driven with last-writer-wins; the butter writers (truck need,
+// peaceful-neighbor intel) must not clear a war footing (operator: "being
+// attacked/at war should be war" - the flag thrashed to butter within seconds
+// of every attack-reactive TRUE, starving war staging at priority 0)
+BOOL CAIGoalMgr::WarPressure( void )
+{
+    DWORD dwNow = theGame.GettimeGetTime( );
+    if ( dwNow < m_dwGunsUntil || dwNow < m_dwDefenseUntil )
+        return TRUE;
+    if ( m_plOpFors != NULL )
+    {
+        POSITION pos = m_plOpFors->GetHeadPosition( );
+        while ( pos != NULL )
+        {
+            CAIOpFor* pOpFor = (CAIOpFor*)m_plOpFors->GetNext( pos );
+            // below-neutral ATTITUDE counts as pressure: guns must ramp BEFORE
+            // the shooting starts or ignited wars field 6-unit waves (soak81).
+            // Raw attitude, not GetRelations - SetRelations quantizes 71..99
+            // back to the NEUTRAL band constant and pressure flickered off.
+            if ( pOpFor != NULL && ( pOpFor->AtWar( ) || pOpFor->GetAttitude( ) < (int)NEUTRAL ) )
+                return TRUE;
+        }
+    }
+    return FALSE;
+}
+
+// army-composition + naval-task census probes (probe-gated, no game effect).
+// The Phase-3 staging WATCHDOG that lived here is RETIRED: its 8-min stall
+// path force-called LaunchAssault on part-filled staging tasks, whose tail
+// stamped INPROCESS - and GetCombatTask assigns units only to UNASSIGNED
+// tasks, so one forced fire made a war task unable to accept units FOREVER
+// (soak56-58: every civ's ADVDEFENSE ghost-launched 0 units every 8 min while
+// 1000+ tanks / 2700+ infantry idled on patrol; each LANDWAR got exactly one
+// real wave, then died the same way). Vanilla lifecycle restored: staging
+// fills at production speed, launches fire only when IsStagingCompete passes.
+void CAIGoalMgr::StagingCensusProbe( void )
+{
+    DWORD dwNow = theGame.GettimeGetTime( );
+
+#if EN_AI_PROBES_WAR && defined(_WIN32)
+    // TEMP: one-shot per-player dump of EXISTING naval tasks (loaded goals never re-InitTasks)
+    static DWORD s_dwDumped = 0;
+    if ( !( s_dwDumped & ( 1u << ( m_iPlayer & 31 ) ) ) && m_plTasks != NULL )
+    {
+        s_dwDumped |= ( 1u << ( m_iPlayer & 31 ) );
+        POSITION posD = m_plTasks->GetHeadPosition( );
+        while ( posD != NULL )
+        {
+            CAITask* pD = (CAITask*)m_plTasks->GetNext( posD );
+            if ( pD == NULL )
+                continue;
+            if ( pD->GetGoalID( ) != IDG_SEAINVADE && pD->GetGoalID( ) != IDG_PIRATE )
+                continue;
+            char szD[144];
+            sprintf( szD, "[SEAGOAL] plyr %d goal %d task %d order %d ptype %d item %d qty %d stat %d\n", m_iPlayer,
+                     (int)pD->GetGoalID( ), (int)pD->GetID( ), (int)pD->GetTaskParam( ORDER_TYPE ),
+                     (int)pD->GetTaskParam( PRODUCTION_TYPE ), (int)pD->GetTaskParam( PRODUCTION_ITEM ),
+                     (int)pD->GetTaskParam( PRODUCTION_QTY ), (int)pD->GetStatus( ) );
+            OutputDebugStringA( szD );
+        }
+    }
+#endif
+
+#if EN_AI_PROBES_WAR && defined(_WIN32)
+    int aiMix[6] = { 0, 0, 0, 0, 0, 0 };  // tankbucket/ifv/art/inf/scout/other
+    if ( m_plUnits != NULL )
+    {
+        POSITION posF = m_plUnits->GetHeadPosition( );
+        while ( posF != NULL )
+        {
+            CAIUnit* pF = (CAIUnit*)m_plUnits->GetNext( posF );
+            if ( pF == NULL || pF->GetOwner( ) != m_iPlayer )
+                continue;
+            if ( pF->GetType( ) == CUnit::vehicle )
+            {
+                switch ( pF->GetTypeUnit( ) )
+                {
+                case CTransportData::heavy_scout:
+                case CTransportData::light_tank:
+                case CTransportData::med_tank:
+                case CTransportData::heavy_tank:
+                    aiMix[0]++; break;
+                case CTransportData::infantry_carrier:
+                    aiMix[1]++; break;
+                case CTransportData::light_art:
+                case CTransportData::med_art:
+                case CTransportData::heavy_art:
+                    aiMix[2]++; break;
+                case CTransportData::infantry:
+                case CTransportData::rangers:
+                    aiMix[3]++; break;
+                case CTransportData::light_scout:
+                case CTransportData::med_scout:
+                    aiMix[4]++; break;
+                default:
+                    aiMix[5]++; break;
+                }
+            }
+        }
+    }
+
+    {
+        // army-composition census (throttled ~5 min/player)
+        static DWORD s_adwMixNext[32] = { 0 };
+        int          iSlot            = m_iPlayer & 31;
+        if ( dwNow >= s_adwMixNext[iSlot] )
+        {
+            s_adwMixNext[iSlot] = dwNow + 300000;
+            char szM[176];
+            sprintf( szM, "[UNITMIX] plyr %d guns %d press %d tankbkt %d ifv %d art %d inf %d scout %d other %d goals tk %d art %d inf %d\n",
+                     m_iPlayer, (int)m_bGunsOrButter, (int)WarPressure( ),
+                     aiMix[0], aiMix[1], aiMix[2], aiMix[3], aiMix[4], aiMix[5],
+                     (int)( m_pwaVehGoals[CTransportData::light_tank] + m_pwaVehGoals[CTransportData::med_tank] +
+                            m_pwaVehGoals[CTransportData::heavy_tank] ),
+                     (int)( m_pwaVehGoals[CTransportData::light_art] + m_pwaVehGoals[CTransportData::med_art] ),
+                     (int)m_pwaVehGoals[CTransportData::infantry] );
+            OutputDebugStringA( szM );
+
+            // per-opfor attitude drift: is peace an absorbing state live?
+            if ( m_plOpFors != NULL )
+            {
+                POSITION posO = m_plOpFors->GetHeadPosition( );
+                while ( posO != NULL )
+                {
+                    CAIOpFor* pO = (CAIOpFor*)m_plOpFors->GetNext( posO );
+                    if ( pO == NULL )
+                        continue;
+                    char szO[128];
+                    sprintf( szO, "[ATTITUDE] plyr %d opfor %d att %d rel %d war %d msgs %d\n", m_iPlayer,
+                             pO->GetPlayerID( ), pO->GetAttitude( ), (int)pO->GetRelations( ),
+                             (int)pO->AtWar( ), pO->GetMsgCount( ) );
+                    OutputDebugStringA( szO );
+                }
+            }
+
+            // per-war-task state: is the refill pipeline moving?
+            static const int s_aiWg[3] = { IDG_LANDWAR, IDG_ADVDEFENSE, IDG_SEAINVADE };
+            for ( int iW = 0; iW < 3; ++iW )
+            {
+                CAITask* pWt = m_plTasks->GetTask( IDT_PREPAREWAR, s_aiWg[iW] );
+                if ( pWt == NULL )
+                    continue;
+                int      cOn  = 0;
+                POSITION posC = m_plUnits->GetHeadPosition( );
+                while ( posC != NULL )
+                {
+                    CAIUnit* pC = (CAIUnit*)m_plUnits->GetNext( posC );
+                    if ( pC != NULL && pC->GetOwner( ) == m_iPlayer &&
+                         pC->GetTask( ) == pWt->GetID( ) && pC->GetGoal( ) == pWt->GetGoalID( ) )
+                        cOn++;
+                }
+                char szT[144];
+                sprintf( szT, "[WARTASK] plyr %d goal %d stat %d pri %d req %d/%d/%d/%d on %d rect %d,%d\n",
+                         m_iPlayer, s_aiWg[iW], (int)pWt->GetStatus( ), (int)pWt->GetPriority( ),
+                         (int)pWt->GetTaskParam( 4 ), (int)pWt->GetTaskParam( 5 ),
+                         (int)pWt->GetTaskParam( 6 ), (int)pWt->GetTaskParam( 7 ), cOn,
+                         (int)pWt->GetTaskParam( CAI_LOC_X ), (int)pWt->GetTaskParam( CAI_LOC_Y ) );
+                OutputDebugStringA( szT );
+            }
+        }
+    }
+#else
+    (void)dwNow;
+#endif
+}
+
 #if 1
 //
 // for IDG_ADVDEFENSE and IDG_LANDWAR versions of task
@@ -4410,6 +4948,61 @@ void CAIGoalMgr::UpdateStagingTasks( void )
 #ifdef _LOGOUT
     logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "CAIGoalMgr::UpdateStagingTasks() for %d executing ", m_iPlayer );
 #endif
+
+    // probe-only unit census on this periodic pass (no game effect)
+    StagingCensusProbe( );
+
+    // LIFECYCLE COMPLETION: a launched wave leaves its staging task INPROCESS
+    // with no units aboard. StageUnit's own reset (its completed-launch path)
+    // needs a last unit to ARRIVE, i.e. the wave's survivors to come home -
+    // but SeekOpfor's final "nearest opfor of any type" never exhausts on a
+    // big multi-civ map, so units hunt until they die and the task stays
+    // INPROCESS (= invisible to GetCombatTask) forever: soak59, every civ's
+    // two war tasks fired exactly ONE wave then wedged while 6000+ reserves
+    // idled. An INPROCESS staging task with ZERO assigned units can never
+    // complete - finish its lifecycle exactly as StageUnit does, so the next
+    // goal cycle stages the next wave. No timers, no forced launches; tasks
+    // with any unit still aboard (recons, stragglers, filling) are untouched.
+    {
+        static const int s_aiWarGoals[3] = { IDG_LANDWAR, IDG_ADVDEFENSE, IDG_SEAINVADE };
+        for ( int iWg = 0; iWg < 3; ++iWg )
+        {
+            CAITask* pSpent = m_plTasks->GetTask( IDT_PREPAREWAR, s_aiWarGoals[iWg] );
+            if ( pSpent == NULL || pSpent->GetStatus( ) != INPROCESS_TASK )
+                continue;
+            // unanchored tasks have nothing to release
+            if ( !pSpent->GetTaskParam( CAI_LOC_X ) && !pSpent->GetTaskParam( CAI_LOC_Y ) )
+                continue;
+
+            BOOL     bHasUnit = FALSE;
+            POSITION posW     = m_plUnits->GetHeadPosition( );
+            while ( posW != NULL && !bHasUnit )
+            {
+                CAIUnit* pW = (CAIUnit*)m_plUnits->GetNext( posW );
+                if ( pW != NULL && pW->GetOwner( ) == m_iPlayer &&
+                     pW->GetTask( ) == pSpent->GetID( ) && pW->GetGoal( ) == pSpent->GetGoalID( ) )
+                    bHasUnit = TRUE;
+            }
+            if ( bHasUnit )
+                continue;
+
+#if EN_AI_PROBES_WAR && defined(_WIN32)
+            {
+                char szR[112];
+                sprintf( szR, "[REARM] plyr %d goal %d spent task reset for next wave\n", m_iPlayer,
+                         s_aiWarGoals[iWg] );
+                OutputDebugStringA( szR );
+            }
+#endif
+            // mirror StageUnit's completed-launch reset (caitmgr StageUnit)
+            m_pMap->m_pMapUtil->FlagStagingArea(
+                FALSE, pSpent->GetTaskParam( CAI_LOC_X ), pSpent->GetTaskParam( CAI_LOC_Y ),
+                pSpent->GetTaskParam( CAI_PREV_X ), pSpent->GetTaskParam( CAI_PREV_Y ) );
+            pSpent->SetStatus( UNASSIGNED_TASK );
+            pSpent->SetPriority( 0 );
+            for ( int iP = 0; iP < MAX_TASKPARAMS; ++iP ) pSpent->SetTaskParam( iP, 0 );
+        }
+    }
 
     // now go thru task list and find active IDT_PREPAREWAR tasks
     // and for each up to STAGING_TASKS, record the goal id in
@@ -5706,6 +6299,7 @@ void CAIGoalMgr::InitPlayer( void )
         piPath = aiEricPath;
 
     for ( int i = 0; i < CRsrchArray::num_types; ++i ) m_iRDPath[i] = piPath[i];
+    InjectPontoonIntoPath( m_iRDPath );
 }
 
 //
@@ -5787,6 +6381,20 @@ void CAIGoalMgr::InitTasks( CAIGoal* pGoal )
                 // copy this task information to a new task
                 CAITask* pNewTask = pTask->CopyTask( );
                 pNewTask->SetGoalID( pGoal->GetID( ) );
+
+#if EN_AI_PROBES_WAR && defined(_WIN32)
+                if ( pGoal->GetID( ) == IDG_SEAINVADE || pGoal->GetID( ) == IDG_PIRATE )
+                {
+                    // TEMP: dump what the naval goals' data tasks actually are
+                    char szT[128];
+                    sprintf( szT, "[SEAGOAL] plyr %d goal %d task %d order %d ptype %d item %d qty %d\n", m_iPlayer,
+                             (int)pGoal->GetID( ), (int)pNewTask->GetID( ), (int)pNewTask->GetTaskParam( ORDER_TYPE ),
+                             (int)pNewTask->GetTaskParam( PRODUCTION_TYPE ),
+                             (int)pNewTask->GetTaskParam( PRODUCTION_ITEM ),
+                             (int)pNewTask->GetTaskParam( PRODUCTION_QTY ) );
+                    OutputDebugStringA( szT );
+                }
+#endif
 
                 // if a build apt or build office then
                 // select a type of apt/building to build
@@ -6289,8 +6897,25 @@ CAITask* CAIGoalMgr::GetProductionTask( CAIUnit* pUnit )
                     if ( iVeh >= m_iNumUnits )
                         continue;
 
-                    // not being staged
-                    if ( !awTypes[iVeh] )
+#if EN_AI_PROBES_WAR && defined(_WIN32)
+                    if ( iVeh == CTransportData::gun_boat || iVeh == CTransportData::landing_craft ||
+                         iVeh == CTransportData::destroyer || iVeh == CTransportData::cruiser )
+                    {
+                        // TEMP: ship task at the REAL production filter
+                        char szS[96];
+                        sprintf( szS, "[SEATASK] plyr %d ship %d staged %d goal %d have %d\n", m_iPlayer, iVeh,
+                                 (int)awTypes[iVeh], (int)m_pwaVehGoals[iVeh], (int)m_pwaUnits[iVeh] );
+                        OutputDebugStringA( szS );
+                    }
+#endif
+
+                    // not being staged. Staging governs COMBAT production only --
+                    // cranes/trucks are never staging types, so this filter made
+                    // their production tasks categorically unpickable by any
+                    // factory (0 crane/truck orders in 3,000+ measured). Economy
+                    // vehicles are governed by the goal check below instead.
+                    if ( !awTypes[iVeh] && iVeh != CTransportData::construction &&
+                         iVeh != CTransportData::heavy_truck )
                         continue;
 
                     // produced enough of this type
@@ -6331,6 +6956,32 @@ CAITask* CAIGoalMgr::GetProductionTask( CAIUnit* pUnit )
 //
 void CAIGoalMgr::LaunchAssault( CAITask* pTask )
 {
+#if EN_AI_PROBES_WAR && defined(_WIN32)
+    {
+        // war roads have never fired; count entries vs the WARROAD probe
+        char szA[64];
+        sprintf( szA, "[ASSAULT] plyr %d enter\n", m_iPlayer );
+        OutputDebugStringA( szA );
+    }
+#endif
+    // bunker mode: while losing buildings, OFFENSIVE launches wait at home
+    // (ADVDEFENSE staging and all reactive combat are unaffected)
+    if ( theGame.GettimeGetTime( ) < m_dwDefenseUntil &&
+         ( pTask->GetGoalID( ) == IDG_LANDWAR || pTask->GetGoalID( ) == IDG_SEAINVADE ) )
+    {
+#if EN_AI_PROBES_WAR && defined(_WIN32)
+        {
+            char szK[96];
+            sprintf( szK, "[BUNKER] plyr %d holds goal %d offense (lost %d bldgs)\n", m_iPlayer,
+                     (int)pTask->GetGoalID( ), m_iBldgLostRecent );
+            OutputDebugStringA( szK );
+        }
+#endif
+        return;
+    }
+    if ( theGame.GettimeGetTime( ) >= m_dwDefenseUntil )
+        m_iBldgLostRecent = 0;
+
     if ( !m_plOpFors->GetCount( ) )
     {
 #ifdef _LOGOUT
@@ -6365,17 +7016,9 @@ void CAIGoalMgr::LaunchAssault( CAITask* pTask )
         CAIOpFor* pOpFor = (CAIOpFor*)m_plOpFors->GetHead( );
         if ( pOpFor != NULL )
         {
-            // on higher difficulty, automatic alliance with other AI players!
-            //
-            if ( pGameData->m_iSmart > 1 && pOpFor->IsAI( ) && !pOpFor->AtWar( ) )
-            {
-#ifdef _LOGOUT
-                logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC,
-                           "CAIGoalMgr::LaunchAssault() player %d goal %d task %d opfor is AI ", m_iPlayer,
-                           pTask->GetGoalID( ), pTask->GetID( ) );
-#endif
-                return;  // could not launch, just return?
-            }
+            // "on higher difficulty, automatic alliance with other AI players!"
+            // REMOVED (operator, 2026-07-15): last copy of the vanilla AI-war
+            // suppressor trio - the multi-opfor branch already allows AI targets
 
             FindAssaultTarget( hexCity, pTask, pOpFor );
             if ( hexCity.X( ) == pTask->GetTaskParam( CAI_LOC_X ) && hexCity.Y( ) == pTask->GetTaskParam( CAI_LOC_Y ) )
@@ -6388,6 +7031,30 @@ void CAIGoalMgr::LaunchAssault( CAITask* pTask )
                 return;
             }
 
+            // WAR ROAD (before the gate: paving/bridging toward the target is
+            // what eventually MAKES an unreachable target reachable)
+            // staging midpoint (once per stage)
+            if ( m_pMap != NULL && ( pTask->GetTaskParam( CAI_LOC_X ) || pTask->GetTaskParam( CAI_LOC_Y ) ) )
+            {
+                CHexCoord hexM;
+                int iSdx = hexM.Wrap( pTask->GetTaskParam( CAI_PREV_X ) - pTask->GetTaskParam( CAI_LOC_X ) );
+                int iSdy = hexM.Wrap( pTask->GetTaskParam( CAI_PREV_Y ) - pTask->GetTaskParam( CAI_LOC_Y ) );
+                CHexCoord hexStage( hexM.Wrap( pTask->GetTaskParam( CAI_LOC_X ) + iSdx / 2 ),
+                                    hexM.Wrap( pTask->GetTaskParam( CAI_LOC_Y ) + iSdy / 2 ) );
+                if ( hexStage.X( ) != m_ahexLastStageRoad[WarRoadIdx( pTask )].X( ) || hexStage.Y( ) != m_ahexLastStageRoad[WarRoadIdx( pTask )].Y( ) )
+                {
+                    m_ahexLastStageRoad[WarRoadIdx( pTask )] = hexStage;
+                    m_pMap->PlanWarRoad( hexStage );
+                }
+            }
+
+            // route toward the target (once per target)
+            if ( m_pMap != NULL && ( hexCity.X( ) != m_ahexLastWarRoad[WarRoadIdx( pTask )].X( ) || hexCity.Y( ) != m_ahexLastWarRoad[WarRoadIdx( pTask )].Y( ) ) )
+            {
+                m_ahexLastWarRoad[WarRoadIdx( pTask )] = hexCity;
+                m_pMap->PlanWarRoad( hexCity );
+            }
+
             if ( !IsTargetReachable( hexCity, pTask ) )
             {
 #ifdef _LOGOUT
@@ -6395,6 +7062,26 @@ void CAIGoalMgr::LaunchAssault( CAITask* pTask )
                            "CAIGoalMgr::LaunchAssault() player %d goal %d task %d can't reach target ", m_iPlayer,
                            pTask->GetGoalID( ), pTask->GetID( ) );
 #endif
+                // ISLAND ESCALATION: if sea travel is possible, escalate to
+                // IDG_SEAINVADE so the war can be prosecuted amphibiously
+                // (a navy-less island opfor never provides the vanilla
+                // seaport-spotting trigger)
+                if ( ( m_bOceanWorld || m_bLakeWorld ) &&
+                     ( pTask->GetGoalID( ) == IDG_LANDWAR || pTask->GetGoalID( ) == IDG_ADVDEFENSE ) )
+                {
+                    CAIGoal* pGoalInv = m_plGoalList->GetGoal( IDG_SEAINVADE );
+                    if ( pGoalInv == NULL )
+                    {
+                        AddGoal( IDG_SEAINVADE );
+                        m_bGoalChange = TRUE;
+#ifdef _LOGOUT
+                        logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC,
+                                   "CAIGoalMgr::LaunchAssault() player %d target unreachable by land -> "
+                                   "escalating to IDG_SEAINVADE ", m_iPlayer );
+#endif
+                    }
+                }
+
                 // must do something with the units assigned to this
                 // this assault, because not being able to reach the
                 // target will not change by itself
@@ -6413,7 +7100,21 @@ void CAIGoalMgr::LaunchAssault( CAITask* pTask )
             else  // not at war, yet
             {
                 if ( pTask->GetStatus( ) != UNASSIGNED_TASK || pGameData->GetRandom( iBase ) < iAttitude )
+                {
+                    // a launched assault IS the declaration of war: without it
+                    // the wave arrives but can't fire (AutoFire requires AtWar
+                    // for AI targets) - tanks circled the target not shooting
+                    pOpFor->SetAttitude( (int)WAR );
+#if EN_AI_PROBES_WAR && defined(_WIN32)
+                    {
+                        char szW[96];
+                        sprintf( szW, "[WARDECL] plyr %d declares on opfor %d (assault launch)\n", m_iPlayer,
+                                 pOpFor->GetPlayerID( ) );
+                        OutputDebugStringA( szW );
+                    }
+#endif
                     LaunchAssault( pTask, hexCity );
+                }
                 else
                     ReconInForce( pTask, hexCity );
             }
@@ -6429,7 +7130,14 @@ void CAIGoalMgr::LaunchAssault( CAITask* pTask )
     }
 
     // if there is more than one opfor known, then attack the one
-    // with the worst relations.
+    // with the worst relations. If that opfor's target turns out to be
+    // untargetable/unreachable, retry with it excluded (next-meanest)
+    // instead of cancelling the whole assault on the first dead-end.
+    int  aiTriedOpfor[32];
+    int  cTriedOpfor  = 0;
+    BOOL bUnreachable = FALSE;  // saw a real target we couldn't reach
+
+TryNextMeanest:
     int      iMeanest = (int)ALLIANCE;
     int      iOpforID = 0;
     POSITION pos      = m_plOpFors->GetHeadPosition( );
@@ -6439,6 +7147,14 @@ void CAIGoalMgr::LaunchAssault( CAITask* pTask )
         if ( pOpFor != NULL )
         {
             ASSERT_VALID( pOpFor );
+
+            // skip opfors already tried this pass (no target / unreachable)
+            BOOL bTried = FALSE;
+            for ( int iT = 0; iT < cTriedOpfor; iT++ )
+                if ( aiTriedOpfor[iT] == pOpFor->GetPlayerID( ) )
+                    bTried = TRUE;
+            if ( bTried )
+                continue;
 
             // This is where the AI decides who to attack!! (took me a while to find it)
             // This skips AI's and players already at WAR
@@ -6451,26 +7167,153 @@ void CAIGoalMgr::LaunchAssault( CAITask* pTask )
             if ( ( !allowAiTarget && pOpFor->IsAI( ) ) && !pOpFor->AtWar( ) )
                 continue;
 
-            if ( pOpFor->GetAttitude( ) < iMeanest ) // a.i. immediately attacks on loading a saved game
+            // distance scales how much we CARE (operator): the deviation from
+            // NEUTRAL is amplified for close opfors (150%) and damped for far
+            // ones (50%), linear over half the map. Stored attitude untouched.
+            int iEff = pOpFor->GetAttitude( );
+            if ( m_pMap != NULL )
             {
-                iMeanest = pOpFor->GetAttitude( );
+                CHexCoord hexTheirs( 0, 0 );
+                CHexCoord hexBase( m_pMap->m_iBaseX, m_pMap->m_iBaseY );
+                if ( pGameData->FindNearestBuilding( pOpFor->GetPlayerID( ),
+                         hexBase, hexTheirs ) )
+                {
+                    int iDist = pGameData->GetRangeDistance( hexBase, hexTheirs );
+                    int iHalf = ( pGameData->m_iHexPerBlk * pGameData->m_iBlkPerSide ) / 2;
+                    int iPct  = 150 - ( 100 * iDist ) / ( iHalf > 0 ? iHalf : 1 );
+                    iPct      = __max( 50, __min( 150, iPct ) );
+                    iEff      = (int)NEUTRAL + ( ( iEff - (int)NEUTRAL ) * iPct ) / 100;
+                }
+            }
+
+            if ( iEff < iMeanest ) // a.i. immediately attacks on loading a saved game
+            {
+                iMeanest = iEff;
                 iOpforID = pOpFor->GetPlayerID( );
             }
         }
     }
     if ( !iOpforID )
+    {
+        // no untried opfor left. If any of them had a real target we just
+        // couldn't reach, keep the original abort behavior for the exhausted
+        // case: island escalation, then stand the task force down.
+        if ( bUnreachable )
+        {
+            // ISLAND ESCALATION (mirror of the single-opfor branch): a land assault
+            // that can't reach its target beaches the whole TF on the shore forever
+            if ( ( m_bOceanWorld || m_bLakeWorld ) &&
+                 ( pTask->GetGoalID( ) == IDG_LANDWAR || pTask->GetGoalID( ) == IDG_ADVDEFENSE ) )
+            {
+                CAIGoal* pGoalInv = m_plGoalList->GetGoal( IDG_SEAINVADE );
+                if ( pGoalInv == NULL )
+                {
+                    AddGoal( IDG_SEAINVADE );
+                    m_bGoalChange = TRUE;
+#if EN_AI_PROBES_WAR && defined(_WIN32)
+                    {
+                        // TEMP: island-war verification probe
+                        char szI[96];
+                        sprintf( szI, "[SEAINVADE-ESC] plyr %d target %d,%d unreachable -> sea invasion\n", m_iPlayer,
+                                 hexCity.X( ), hexCity.Y( ) );
+                        OutputDebugStringA( szI );
+                    }
+#endif
+                }
+            }
+            CancelAssault( pTask );
+        }
         return;  // could not launch, just return?
+    }
 
     CAIOpFor* pOpFor = m_plOpFors->GetOpFor( iOpforID );
     if ( pOpFor == NULL )
         return;  // could not launch, just return?
 
+    // mark tried up front: any dead-end below falls back to the next-meanest
+    if ( cTriedOpfor >= (int)( sizeof( aiTriedOpfor ) / sizeof( aiTriedOpfor[0] ) ) )
+        return;  // safety bound (real games have far fewer opfors)
+    aiTriedOpfor[cTriedOpfor++] = iOpforID;
+
+    // reset to "no target found" before each probe (FindAssaultTarget leaves
+    // hexCity alone when it finds nothing, and a prior pass may have set it)
+    hexCity.X( pTask->GetTaskParam( CAI_LOC_X ) );
+    hexCity.Y( pTask->GetTaskParam( CAI_LOC_Y ) );
+
     FindAssaultTarget( hexCity, pTask, pOpFor );
     if ( hexCity.X( ) == pTask->GetTaskParam( CAI_LOC_X ) && hexCity.Y( ) == pTask->GetTaskParam( CAI_LOC_Y ) )
-        return;
+        goto TryNextMeanest;  // this opfor has nothing to hit - try the next-meanest
+
+    // WAR ROAD (before the gate: paving/bridging toward the target is what
+    // eventually MAKES an unreachable target reachable)
+    // staging midpoint (once per stage)
+    if ( m_pMap != NULL && ( pTask->GetTaskParam( CAI_LOC_X ) || pTask->GetTaskParam( CAI_LOC_Y ) ) )
+    {
+        CHexCoord hexM;
+        int iSdx = hexM.Wrap( pTask->GetTaskParam( CAI_PREV_X ) - pTask->GetTaskParam( CAI_LOC_X ) );
+        int iSdy = hexM.Wrap( pTask->GetTaskParam( CAI_PREV_Y ) - pTask->GetTaskParam( CAI_LOC_Y ) );
+        CHexCoord hexStage( hexM.Wrap( pTask->GetTaskParam( CAI_LOC_X ) + iSdx / 2 ),
+                            hexM.Wrap( pTask->GetTaskParam( CAI_LOC_Y ) + iSdy / 2 ) );
+        if ( hexStage.X( ) != m_ahexLastStageRoad[WarRoadIdx( pTask )].X( ) || hexStage.Y( ) != m_ahexLastStageRoad[WarRoadIdx( pTask )].Y( ) )
+        {
+            m_ahexLastStageRoad[WarRoadIdx( pTask )] = hexStage;
+            m_pMap->PlanWarRoad( hexStage );
+        }
+    }
+
+    // route toward the target (once per target)
+    if ( m_pMap != NULL && ( hexCity.X( ) != m_ahexLastWarRoad[WarRoadIdx( pTask )].X( ) || hexCity.Y( ) != m_ahexLastWarRoad[WarRoadIdx( pTask )].Y( ) ) )
+    {
+        m_ahexLastWarRoad[WarRoadIdx( pTask )] = hexCity;
+        m_pMap->PlanWarRoad( hexCity );
+    }
 
     if ( !IsTargetReachable( hexCity, pTask ) )
-        return;
+    {
+        // BEACHHEAD: prefer land-assaulting the enemy's nearest reachable forward base over going to sea
+        BOOL bBeachhead = FALSE;
+        if ( m_pMap != NULL )
+        {
+            CHexCoord hexBase( m_pMap->m_iBaseX, m_pMap->m_iBaseY );
+            CHexCoord hexFwd;
+            if ( pGameData->FindNearestBuilding( pOpFor->GetPlayerID( ), hexBase, hexFwd ) &&
+                 ( hexFwd.X( ) != hexCity.X( ) || hexFwd.Y( ) != hexCity.Y( ) ) &&
+                 IsTargetReachable( hexFwd, pTask ) )
+            {
+                hexCity    = hexFwd;  // land-assault the beachhead instead
+                bBeachhead = TRUE;
+#if EN_AI_PROBES_WAR && defined(_WIN32)
+                {
+                    // TEMP: beachhead retarget probe
+                    char szB[96];
+                    sprintf( szB, "[BEACHHEAD] plyr %d retarget %d,%d\n", m_iPlayer, hexFwd.X( ), hexFwd.Y( ) );
+                    OutputDebugStringA( szB );
+                }
+#endif
+            }
+        }
+
+        // no reachable beachhead -> try the next-meanest opfor before giving up.
+        // The island escalation + CancelAssault now live in the !iOpforID exhausted
+        // branch above, so they fire once per assault cycle after EVERY opfor has
+        // come up unreachable — not once per opfor. The war road planned above keeps
+        // extending toward this target either way.
+        if ( !bBeachhead )
+        {
+            bUnreachable = TRUE;
+#if EN_AI_PROBES_WAR && defined(_WIN32)
+            {
+                // TEMP: next-meanest fallback probe
+                char szN[96];
+                sprintf( szN, "[NEXTMEANEST] plyr %d opfor %d target %d,%d unreachable -> trying next\n", m_iPlayer,
+                         iOpforID, hexCity.X( ), hexCity.Y( ) );
+                OutputDebugStringA( szN );
+            }
+#endif
+            goto TryNextMeanest;
+        }
+        // beachhead reachable -> fall through to launch
+    }
 
     // if not at war, then based on this AI's combat attribute
     // and the difficulty level of the game, make a fuzzy decision
@@ -6483,7 +7326,20 @@ void CAIGoalMgr::LaunchAssault( CAITask* pTask )
     {
         // make a random decision, relative to attitude
         if ( pTask->GetStatus( ) != UNASSIGNED_TASK || pGameData->GetRandom( iBase ) < iAttitude )
+        {
+            // a launched assault IS the declaration of war (see single-opfor
+            // branch above) - the wave must be able to fire on arrival
+            pOpFor->SetAttitude( (int)WAR );
+#if EN_AI_PROBES_WAR && defined(_WIN32)
+            {
+                char szW[96];
+                sprintf( szW, "[WARDECL] plyr %d declares on opfor %d (assault launch)\n", m_iPlayer,
+                         pOpFor->GetPlayerID( ) );
+                OutputDebugStringA( szW );
+            }
+#endif
             LaunchAssault( pTask, hexCity );
+        }
         else
             ReconInForce( pTask, hexCity );
     }
@@ -6565,6 +7421,27 @@ void CAIGoalMgr::LaunchAssault( CAITask* pTask, CHexCoord hcTo )
     hcEnd.X( hcStart.Wrap( hexDest.X( ) + ( iDeltaX / 2 ) ) );
     hcEnd.Y( hcStart.Wrap( hexDest.Y( ) + ( iDeltaY / 2 ) ) );
 
+#if EN_AI_PROBES_WAR && defined(_WIN32)
+    {
+        // launch-cadence probe: every assault conversion, with wave size
+        int      cTF  = 0;
+        POSITION posL = m_plUnits->GetHeadPosition( );
+        while ( posL != NULL )
+        {
+            CAIUnit* pU = (CAIUnit*)m_plUnits->GetNext( posL );
+            if ( pU != NULL && pU->GetOwner( ) == m_iPlayer &&
+                 pU->GetTask( ) == pTask->GetID( ) && pU->GetGoal( ) == pTask->GetGoalID( ) )
+                cTF++;
+        }
+        char szL[160];
+        sprintf( szL, "[LAUNCH] plyr %d goal %d task %d target %d,%d units %d req %d/%d/%d/%d\n", m_iPlayer,
+                 (int)pTask->GetGoalID( ), (int)pTask->GetID( ), hcTo.X( ), hcTo.Y( ), cTF,
+                 (int)pTask->GetTaskParam( 4 ), (int)pTask->GetTaskParam( 5 ),
+                 (int)pTask->GetTaskParam( 6 ), (int)pTask->GetTaskParam( 7 ) );
+        OutputDebugStringA( szL );
+    }
+#endif
+
     // finally for each unit with this goal/task set its destination
     // to be a location within the new area, that is not already
     // selected to be the destination of another unit on the task
@@ -6580,6 +7457,15 @@ void CAIGoalMgr::LaunchAssault( CAITask* pTask, CHexCoord hcTo )
 //
 void CAIGoalMgr::ReconInForce( CAITask* pTask, CHexCoord hcTo )
 {
+#if EN_AI_PROBES_WAR && defined(_WIN32)
+    {
+        // fuzzy-split probe: how often the roll picks recon over launch
+        char szR[96];
+        sprintf( szR, "[RECON] plyr %d goal %d to %d,%d\n", m_iPlayer,
+                 (int)pTask->GetGoalID( ), hcTo.X( ), hcTo.Y( ) );
+        OutputDebugStringA( szR );
+    }
+#endif
 #ifdef _LOGOUT
     logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "CAIGoalMgr::ReconInForce() player %d goal %d task %d at %d,%d ", m_iPlayer,
                pTask->GetGoalID( ), pTask->GetID( ), hcTo.X( ), hcTo.Y( ) );
@@ -6588,25 +7474,39 @@ void CAIGoalMgr::ReconInForce( CAITask* pTask, CHexCoord hcTo )
     // first, use location of base & destination, to find midpoint
     CHexCoord hcBase( m_pMap->m_iBaseX, m_pMap->m_iBaseY );
     CHexCoord hcMid, hex, hcStart, hcEnd;
-    int       iDist = hcBase.Diff( ( hcBase.X( ) - hcTo.X( ) ) );
+
+    // Phase 3: defense-aware - aim past the rocket at the nearest known enemy
+    // BUILDING and pull the midpoint 25% back toward home (3/8 of the span,
+    // not 1/2). Default (no opfor) keeps the old exact rocket midpoint.
+    CHexCoord hcTgt = hcTo;
+    int       iNum = 1, iDen = 2;
+    if ( m_pMap->m_pMapUtil->m_bUseOpFor &&
+         ( m_pMap->m_pMapUtil->m_hexOpFor.X( ) || m_pMap->m_pMapUtil->m_hexOpFor.Y( ) ) )
+    {
+        hcTgt = m_pMap->m_pMapUtil->m_hexOpFor;
+        iNum  = 3;
+        iDen  = 8;
+    }
+
+    int iDist = hcBase.Diff( ( hcBase.X( ) - hcTgt.X( ) ) );
     if ( iDist < 0 )
     {
         iDist *= -1;
-        hcMid.X( hex.Wrap( hcBase.X( ) + ( iDist / 2 ) ) );
+        hcMid.X( hex.Wrap( hcBase.X( ) + ( iDist * iNum ) / iDen ) );
     }
     else
     {
-        hcMid.X( hex.Wrap( hcTo.X( ) + ( iDist / 2 ) ) );
+        hcMid.X( hex.Wrap( hcTgt.X( ) + ( iDist * ( iDen - iNum ) ) / iDen ) );
     }
-    iDist = hcBase.Diff( ( hcBase.Y( ) - hcTo.Y( ) ) );
+    iDist = hcBase.Diff( ( hcBase.Y( ) - hcTgt.Y( ) ) );
     if ( iDist < 0 )
     {
         iDist *= -1;
-        hcMid.Y( hex.Wrap( hcBase.Y( ) + ( iDist / 2 ) ) );
+        hcMid.Y( hex.Wrap( hcBase.Y( ) + ( iDist * iNum ) / iDen ) );
     }
     else
     {
-        hcMid.Y( hex.Wrap( hcTo.Y( ) + ( iDist / 2 ) ) );
+        hcMid.Y( hex.Wrap( hcTgt.Y( ) + ( iDist * ( iDen - iNum ) ) / iDen ) );
     }
 
     if ( pTask->GetGoalID( ) == IDG_PIRATE || pTask->GetGoalID( ) == IDG_SEAWAR ||
@@ -6671,12 +7571,7 @@ void CAIGoalMgr::ReconInForce( CAITask* pTask, CHexCoord hcTo )
             // get size of previous staging area
             int iDeltaX = hcMid.Wrap( pTask->GetTaskParam( CAI_PREV_X ) - pTask->GetTaskParam( CAI_LOC_X ) );
             int iDeltaY = hcMid.Wrap( pTask->GetTaskParam( CAI_PREV_Y ) - pTask->GetTaskParam( CAI_LOC_Y ) );
-            // int iDeltaX = abs( hcMid.Diff( pTask->GetTaskParam(CAI_PREV_X) -
-            //	pTask->GetTaskParam(CAI_LOC_X)));
-            // int iDeltaY = abs( hcMid.Diff( pTask->GetTaskParam(CAI_PREV_Y) -
-            //	pTask->GetTaskParam(CAI_LOC_Y)));
 
-            // now use hcStart and hcEnd with deltas to define new area
             hcStart.X( hex.Wrap( hcMid.X( ) - ( iDeltaX / 2 ) ) );
             hcStart.Y( hex.Wrap( hcMid.Y( ) - ( iDeltaY / 2 ) ) );
             hcEnd.X( hex.Wrap( hcMid.X( ) + ( iDeltaX / 2 ) ) );
@@ -6852,8 +7747,16 @@ void CAIGoalMgr::UpdateTaskForce( CAITask* pTask, CHexCoord& hcStart, CHexCoord&
                 // time to change the task to SEEK*
                 if ( wNewTask )
                 {
+                    // a landing craft attacks only when loaded (else it holds at its
+                    // staging beach); loaded, it keeps the seek->unload-at-shore chain
+                    if ( pUnit->GetTypeUnit( ) == CTransportData::landing_craft )
+                    {
+                        AiVehSnap snapLC;
+                        if ( AiSnap::ReadVeh( pUnit->GetID( ), snapLC ) && snapLC.iCargoCount > 0 )
+                            pUnit->SetTask( IDT_SEEKATSEA );
+                    }
                     // ships only
-                    if ( pVehData->GetBaseType( ) == CTransportData::ship )
+                    else if ( pVehData->GetBaseType( ) == CTransportData::ship )
                     {
                         pUnit->SetTask( IDT_SEEKATSEA );
                     }
@@ -7093,6 +7996,35 @@ void CAIGoalMgr::FindAssaultTarget( CHexCoord& hexTarget, CAITask* pTask, CAIOpF
         pGameData->FindBuilding( CStructureData::rocket, pOpFor->GetPlayerID( ), hexTarget );
     }
 
+    // LAND goals: a MUCH closer enemy factory outranks the distant rocket
+    // (operator: production = threat; under half the rocket distance wins)
+    if ( pTask->GetGoalID( ) != IDG_PIRATE && pTask->GetGoalID( ) != IDG_SEAWAR &&
+         pTask->GetGoalID( ) != IDG_SEAINVADE && m_pMap != NULL )
+    {
+        static const int s_aiFact[4] = { CStructureData::light_1, CStructureData::light_2, CStructureData::heavy,
+                                         CStructureData::barracks_2 };
+        CHexCoord hexBase( m_pMap->m_iBaseX, m_pMap->m_iBaseY );
+        CHexCoord hexFact( 0, 0 );
+        if ( pGameData->FindNearestBuilding( pOpFor->GetPlayerID( ), hexBase, hexFact, s_aiFact, 4 ) )
+        {
+            int iFact   = pGameData->GetRangeDistance( hexBase, hexFact );
+            int iRocket = pGameData->GetRangeDistance( hexBase, hexTarget );
+            if ( iFact * 2 < iRocket )
+            {
+                hexTarget = hexFact;
+#if EN_AI_PROBES_WAR && defined(_WIN32)
+                {
+                    // TEMP: factory-target verification probe
+                    char szF[96];
+                    sprintf( szF, "[FACTORYTGT] plyr %d target %d,%d dist %d vs rocket %d\n", m_iPlayer,
+                             hexFact.X( ), hexFact.Y( ), iFact, iRocket );
+                    OutputDebugStringA( szF );
+                }
+#endif
+            }
+        }
+    }
+
     // adjust target to nearest ocean from hexTarget
     int iWhere = CHex::plain;
     if ( pTask->GetGoalID( ) == IDG_PIRATE || pTask->GetGoalID( ) == IDG_SEAWAR )
@@ -7118,10 +8050,15 @@ void CAIGoalMgr::FindAssaultTarget( CHexCoord& hexTarget, CAITask* pTask, CAIOpF
 // may be that the assault is land based and the target is on island
 // or the assault it sea based and the target is too far inland
 //
+// staging rect usable = at least one corner is scout-travelable land that the
+// war-path can reach from home (the target-INDEPENDENT half of the
 BOOL CAIGoalMgr::IsTargetReachable( CHexCoord& hexTarget, CAITask* pTask )
 {
     CTransportData const* pVehData = NULL;
     CHexCoord             hex;
+    // [WARGATE] which gate killed each corner: 1=corner-travel 2=target-travel
+    // 4=corner->target path (0 = corner never evaluated)
+    int aiGate[4] = { 0, 0, 0, 0 };
 
     for ( int i = 0; i < 4; ++i )
     {
@@ -7141,7 +8078,8 @@ BOOL CAIGoalMgr::IsTargetReachable( CHexCoord& hexTarget, CAITask* pTask )
             break;
         case 3:
             hex.X( pTask->GetTaskParam( CAI_LOC_X ) );
-            hex.Y( pTask->GetTaskParam( CAI_PREV_X ) );
+            // vanilla typo: used CAI_PREV_X as the Y coordinate (garbage 4th corner)
+            hex.Y( pTask->GetTaskParam( CAI_PREV_Y ) );
             break;
         }
         // sea based assault
@@ -7161,7 +8099,10 @@ BOOL CAIGoalMgr::IsTargetReachable( CHexCoord& hexTarget, CAITask* pTask )
             if ( pGameHex == NULL )
                 return FALSE;
             if ( !pVehData->CanTravelHex( pGameHex ) )
+            {
+                aiGate[i] = 1;
                 continue;
+            }
 
             // now consider if the target can be traveled
             pGameHex = theMap.GetHex( hexTarget );
@@ -7171,11 +8112,19 @@ BOOL CAIGoalMgr::IsTargetReachable( CHexCoord& hexTarget, CAITask* pTask )
             {
                 // if not, look for adjacent water
                 if ( !m_pMap->m_pMapUtil->IsWaterAdjacent( hexTarget, 2, 2 ) )
+                {
+                    aiGate[i] = 2;
                     continue;
+                }
             }
-            // consider if the base type of unit can get from hex->hexTarget
-            if ( !m_pMap->m_pMapUtil->GetPathRating( hex, hexTarget, pVehData->GetType( ) ) )
+            // consider if the base type of unit can get from hex->hexTarget.
+            // bWarPlanning TRUE mirrors the land branch: the map-sized arena
+            // (perimeter arena false-failed 97% of sea targets) + cache bypass
+            if ( !m_pMap->m_pMapUtil->GetPathRating( hex, hexTarget, pVehData->GetType( ), TRUE ) )
+            {
+                aiGate[i] = 4;
                 continue;
+            }
         }
         else  // land based assault
         {
@@ -7188,22 +8137,45 @@ BOOL CAIGoalMgr::IsTargetReachable( CHexCoord& hexTarget, CAITask* pTask )
             if ( pGameHex == NULL )
                 return FALSE;
             if ( !pVehData->CanTravelHex( pGameHex ) )
+            {
+                aiGate[i] = 1;
                 continue;
+            }
 
             // now consider if the target can be traveled
             pGameHex = theMap.GetHex( hexTarget );
             if ( pGameHex == NULL )
                 return FALSE;
             if ( !pVehData->CanTravelHex( pGameHex ) )
+            {
+                aiGate[i] = 2;
                 continue;
+            }
 
             // consider if the base type of unit can get from hex->hexTarget
-            if ( !m_pMap->m_pMapUtil->GetPathRating( hex, hexTarget, pVehData->GetType( ) ) )
+            // war mode: rivers count as bridgeable, ocean still walls off islands
+            if ( !m_pMap->m_pMapUtil->GetPathRating( hex, hexTarget, pVehData->GetType( ), TRUE ) )
+            {
+                aiGate[i] = 4;
                 continue;
+            }
         }
 
         return TRUE;
     }
+#if EN_AI_PROBES_WAR && defined(_WIN32)
+    {
+        // name the un-instrumented rejections: which gate killed each corner
+        // (soak48: 6952 NEXTMEANEST rejects, only 3/34 targets ever reached
+        // the pathfinder probes - the block is at these gates)
+        char szG[176];
+        sprintf( szG, "[WARGATE] plyr %d goal %d target %d,%d gates %d/%d/%d/%d loc %d,%d prev %d,%d\n", m_iPlayer,
+                 (int)pTask->GetGoalID( ), hexTarget.X( ), hexTarget.Y( ), aiGate[0], aiGate[1], aiGate[2], aiGate[3],
+                 (int)pTask->GetTaskParam( CAI_LOC_X ), (int)pTask->GetTaskParam( CAI_LOC_Y ),
+                 (int)pTask->GetTaskParam( CAI_PREV_X ), (int)pTask->GetTaskParam( CAI_PREV_Y ) );
+        OutputDebugStringA( szG );
+    }
+#endif
     return FALSE;
 }
 
@@ -7710,10 +8682,10 @@ void CAIGoalMgr::GetStagingArea( CAITask* pTask )
         }
     }
     // for IDG_SEAINVADE version of task
-    // CAI_TF_ARMOR   - 4 - how many "light_tank,med_tank,light_art"
+    // CAI_TF_ARMOR   - 4 - how many "med_tank" (only armor that boards a lander)
     // CAI_TF_LANDING - 5 - how many "landing_craft"
     // CAI_TF_SHIPS   - 6 - how many "cruiser,destroyer,gun_boat"
-    // CAI_TF_MARINES - 7 - how many "marines"
+    // CAI_TF_MARINES - 7 - how many "rangers"
     //
     if ( pTask->GetGoalID( ) == IDG_SEAINVADE )
     {
@@ -7738,12 +8710,8 @@ void CAIGoalMgr::GetStagingArea( CAITask* pTask )
         if ( iTotalUnits > 0 )
         {
             i = 0;
-            if ( CanBuildVehType( CTransportData::light_tank ) )
-                i = m_pwaVehGoals[CTransportData::light_tank];
             if ( CanBuildVehType( CTransportData::med_tank ) )
-                i += m_pwaVehGoals[CTransportData::med_tank];
-            if ( CanBuildVehType( CTransportData::med_art ) )
-                i += m_pwaVehGoals[CTransportData::med_art];
+                i = m_pwaVehGoals[CTransportData::med_tank];
             i /= NUM_DIFFICUTY_LEVELS;
             if ( i )
                 i += pGameData->m_iSmart;
@@ -7752,7 +8720,13 @@ void CAIGoalMgr::GetStagingArea( CAITask* pTask )
 
             pTask->SetTaskParam( CAI_TF_ARMOR, pGameData->GetRandom( i ) );
             if ( !pTask->GetTaskParam( CAI_TF_ARMOR ) )
-                pTask->SetTaskParam( CAI_TF_ARMOR, 1 );
+            {
+                // gate the min-1 on buildability (same idiom as MARINES above):
+                // an unbuildable required type would stall staging forever,
+                // since the armor bucket accepts only med_tank now
+                if ( CanBuildVehType( CTransportData::med_tank ) )
+                    pTask->SetTaskParam( CAI_TF_ARMOR, 1 );
+            }
 
             // sanity check, match armor with marines
             if ( pTask->GetTaskParam( CAI_TF_ARMOR ) > pTask->GetTaskParam( CAI_TF_MARINES ) )
@@ -7787,6 +8761,10 @@ void CAIGoalMgr::GetStagingArea( CAITask* pTask )
             if ( i > iTotalUnits )
                 i = iTotalUnits;
             pTask->SetTaskParam( CAI_TF_SHIPS, pGameData->GetRandom( i ) );
+            // min-1 fallback like PIRATE's cruiser/destroyer buckets - without
+            // it low gun_boat goals starve the SHIPS bucket to 0 forever
+            if ( !pTask->GetTaskParam( CAI_TF_SHIPS ) && CanBuildVehType( CTransportData::gun_boat ) )
+                pTask->SetTaskParam( CAI_TF_SHIPS, 1 );
         }
 
 
@@ -8228,14 +9206,16 @@ TryTryAgain:
     {
         hcAt.Y( hcAt.Wrap( hcStart.Y( ) + iY ) );
 
+#if THREADS_ENABLED
+        // yield once per row, not per hex - the per-hex yield made
+        // block-size rescans thousands of syscalls per scan
+        myYieldThread( );
+        // if( myYieldThread() == TM_QUIT )
+        //	throw(ERR_CAI_TM_QUIT); // THROW( pException );
+#endif
+
         for ( iX = 0; iX < iDeltaX; iX++ )
         {
-#if THREADS_ENABLED
-            // BUGBUG this function must yield
-            myYieldThread( );
-            // if( myYieldThread() == TM_QUIT )
-            //	throw(ERR_CAI_TM_QUIT); // THROW( pException );
-#endif
             hcAt.X( hcAt.Wrap( hcStart.X( ) + iX ) );
 
             pGameHex = theMap.GetHex( hcAt );
@@ -8702,6 +9682,479 @@ TryTryAgain:
         goto TryTryAgain;
     }
     return ( dwSeekTo );
+}
+
+//
+// single-pass replacement for SeekOpfor's ladder of GetOpForUnit calls.
+// One area escalation evaluates every target class at once; a class's
+// result freezes at the smallest area that contains a candidate for it,
+// which reproduces the per-rung ladder's answers (each rung returned its
+// class's best at the smallest area containing that class) while paying
+// the escalation and the per-candidate path checks once instead of once
+// per rung. Class priority = array order, same as the old ladder order.
+// Per-class escalation caps preserved: THREAT/BEST stop at spotting,
+// NEAREST goes on to block size and the whole-unit-list fallback (which,
+// as in the original, ignores iKindOf - "regardless of type").
+//
+DWORD CAIGoalMgr::GetOpForUnitScan( int const* aiHow, int const* aiKindOf, int nClasses, CAIUnit* pUnit, int* piClassSel )
+{
+    if ( piClassSel != NULL )
+        *piClassSel = -1;
+    if ( pUnit->GetOwner( ) != m_iPlayer )
+        return ( 0 );
+    if ( nClasses <= 0 || nClasses > 8 )
+        return ( 0 );
+
+    int       iArea = 0;
+    int       iSpotting = 0;
+    CHexCoord hexUnit;
+    int       iAttackTypes[CUnitData::num_attacks];
+    memset( iAttackTypes, 0, sizeof( iAttackTypes ) );
+
+    // seeker location, ranges and attack capabilities (as GetOpForUnit)
+    if ( pUnit->GetType( ) == CUnit::vehicle )
+    {
+        EnterCriticalSection( &cs );
+        CVehicle* pVehicle = theVehicleMap.GetVehicle( pUnit->GetID( ) );
+        if ( pVehicle != NULL )
+        {
+            hexUnit   = pVehicle->GetHexHead( );
+            iArea     = pVehicle->GetRange( ) * 2;
+            iSpotting = pVehicle->GetSpottingRange( );
+
+            iAttackTypes[CUnitData::soft]  = pVehicle->GetAttack( CUnitData::soft );
+            iAttackTypes[CUnitData::hard]  = pVehicle->GetAttack( CUnitData::hard );
+            iAttackTypes[CUnitData::naval] = pVehicle->GetAttack( CUnitData::naval );
+        }
+        else
+            iArea = 0;
+        LeaveCriticalSection( &cs );
+    }
+    else if ( pUnit->GetType( ) == CUnit::building )
+    {
+        EnterCriticalSection( &cs );
+        CBuilding* pBldg = theBuildingMap.GetBldg( pUnit->GetID( ) );
+        if ( pBldg != NULL )
+        {
+            hexUnit   = pBldg->GetExitHex( );
+            iArea     = pBldg->GetRange( );
+            iSpotting = pBldg->GetSpottingRange( );
+
+            iAttackTypes[CUnitData::soft]  = pBldg->GetAttack( CUnitData::soft );
+            iAttackTypes[CUnitData::hard]  = pBldg->GetAttack( CUnitData::hard );
+            iAttackTypes[CUnitData::naval] = pBldg->GetAttack( CUnitData::naval );
+        }
+        else
+            iArea = 0;
+        LeaveCriticalSection( &cs );
+    }
+    else
+        return ( 0 );
+
+    BOOL bAnyNearest = FALSE;
+    int  c;
+    for ( c = 0; c < nClasses; ++c )
+        if ( aiHow[c] == NEAREST_TARGET )
+            bAnyNearest = TRUE;
+
+    // strictly-growing escalation levels: range, spotting, then (NEAREST
+    // classes only) blk/4, blk/2, blk - the vanilla TryTryAgain chain
+    int aiLevels[8];
+    int nLevels = 0;
+    aiLevels[nLevels++] = iArea;
+    if ( iSpotting > iArea )
+        aiLevels[nLevels++] = iSpotting;
+    int iSpotLevel = nLevels - 1;  // last level THREAT/BEST classes may use
+    if ( bAnyNearest )
+    {
+        for ( int iFactor = 4; iFactor >= 1; iFactor /= 2 )
+        {
+            int iA = pGameData->m_iHexPerBlk / iFactor;
+            if ( iA > aiLevels[nLevels - 1] )
+                aiLevels[nLevels++] = iA;
+        }
+    }
+
+    DWORD adwSel[8];
+    int   aiScore[8];
+    BOOL  abFrozen[8];
+    for ( c = 0; c < nClasses; ++c )
+    {
+        adwSel[c]   = 0;
+        abFrozen[c] = FALSE;
+        aiScore[c]  = ( aiHow[c] == NEAREST_TARGET ) ? 0xFFFE : 0;
+    }
+
+    CHexCoord             hcStart, hcEnd, hcAt;
+    CSubHex               sub( hcAt );
+    CStructureData const* pSd;
+    CTransportData const* pTd;
+    int                   i;
+
+    for ( int iLvl = 0; iLvl < nLevels; ++iLvl )
+    {
+        int  iA    = aiLevels[iLvl];
+        BOOL bWork = FALSE;
+        for ( c = 0; c < nClasses; ++c )
+            if ( !abFrozen[c] && ( aiHow[c] == NEAREST_TARGET || iLvl <= iSpotLevel ) )
+                bWork = TRUE;
+        if ( !bWork )
+            break;
+
+        hcStart.X( hcAt.Wrap( hexUnit.X( ) - iA ) );
+        hcStart.Y( hcAt.Wrap( hexUnit.Y( ) - iA ) );
+        hcEnd.X( hcAt.Wrap( hexUnit.X( ) + iA ) );
+        hcEnd.Y( hcAt.Wrap( hexUnit.Y( ) + iA ) );
+
+        int iDeltaX = hcStart.Wrap( hcEnd.X( ) - hcStart.X( ) );
+        int iDeltaY = hcStart.Wrap( hcEnd.Y( ) - hcStart.Y( ) );
+
+        for ( int iY = 0; iY < iDeltaY; ++iY )
+        {
+            hcAt.Y( hcAt.Wrap( hcStart.Y( ) + iY ) );
+
+#if THREADS_ENABLED
+            // yield once per row (see GetOpForUnit)
+            myYieldThread( );
+#endif
+
+            for ( int iX = 0; iX < iDeltaX; iX++ )
+            {
+                hcAt.X( hcAt.Wrap( hcStart.X( ) + iX ) );
+
+                CHex* pGameHex = theMap.GetHex( hcAt );
+                if ( pGameHex == NULL )
+                    continue;
+
+                BYTE bUnits = pGameHex->GetUnits( );
+                if ( !( bUnits & CHex::unit ) )
+                    continue;
+
+                // ---- occupant extraction, once per hex ----
+                DWORD dwVehID   = 0;
+                int   iVehOwner = 0;
+                DWORD dwBldgID   = 0;
+                int   iBldgOwner = 0;
+
+                // first non-own, non-cargo vehicle in the hex (vanilla subhex order)
+                if ( !( bUnits & CHex::bldg ) && ( bUnits & ( CHex::ul | CHex::ur | CHex::ll | CHex::lr ) ) )
+                {
+                    BOOL bIsCargo = FALSE;
+                    CVehicle* pVehicle = NULL;
+                    for ( int iy = 0; iy < 2 && pVehicle == NULL; ++iy )
+                    {
+                        sub.y = ( hcAt.Y( ) * 2 ) + iy;
+                        for ( int ix = 0; ix < 2; ++ix )
+                        {
+                            sub.x = ( hcAt.X( ) * 2 ) + ix;
+                            EnterCriticalSection( &cs );
+                            pVehicle = theVehicleHex.GetVehicle( sub.x, sub.y );
+                            if ( pVehicle != NULL )
+                            {
+                                iVehOwner = pVehicle->GetOwner( )->GetPlyrNum( );
+                                dwVehID   = pVehicle->GetID( );
+                                bIsCargo  = ( pVehicle->GetTransport( ) != NULL );
+                            }
+                            LeaveCriticalSection( &cs );
+
+                            if ( pVehicle != NULL && iVehOwner == m_iPlayer )
+                            {
+                                dwVehID  = 0;
+                                pVehicle = NULL;
+                                continue;
+                            }
+                            break;
+                        }
+                    }
+                    if ( dwVehID && ( iVehOwner == m_iPlayer || bIsCargo ) )
+                        dwVehID = 0;
+                }
+
+                if ( bUnits & CHex::bldg )
+                {
+                    int  iType       = -1;
+                    BOOL bIsAbandoned = FALSE;
+                    EnterCriticalSection( &cs );
+                    CBuilding* pBuilding = theBuildingHex.GetBuilding( hcAt );
+                    if ( pBuilding != NULL )
+                    {
+                        iBldgOwner   = pBuilding->GetOwner( )->GetPlyrNum( );
+                        iType        = pBuilding->GetData( )->GetType( );
+                        dwBldgID     = pBuilding->GetID( );
+                        bIsAbandoned = pBuilding->IsFlag( CUnit::abandoned );
+                    }
+                    LeaveCriticalSection( &cs );
+
+                    if ( dwBldgID && ( iBldgOwner == m_iPlayer || bIsAbandoned || iType == CStructureData::city ) )
+                        dwBldgID = 0;
+                }
+
+                if ( !dwVehID && !dwBldgID )
+                    continue;
+
+                BOOL bPathChecked = FALSE;
+                BOOL bPathOK      = FALSE;
+
+                // ---- apply the candidate to every unfrozen class ----
+                for ( c = 0; c < nClasses; ++c )
+                {
+                    if ( abFrozen[c] )
+                        continue;
+                    if ( aiHow[c] != NEAREST_TARGET && iLvl > iSpotLevel )
+                        continue;
+
+                    int   iKindOf = aiKindOf[c];
+                    DWORD dwCand  = 0;
+                    int   iOwner  = 0;
+                    BOOL  bIsVeh  = FALSE;
+
+                    // vanilla branch gating: vehicles for soft/naval/any (vehicle
+                    // wins a mixed hex for 'any'), buildings for hard/any
+                    if ( iKindOf == CAI_SOFTATTACK || iKindOf == CAI_NAVALATTACK )
+                    {
+                        if ( dwVehID ) { dwCand = dwVehID; iOwner = iVehOwner; bIsVeh = TRUE; }
+                    }
+                    else if ( iKindOf == CAI_HARDATTACK )
+                    {
+                        if ( dwBldgID ) { dwCand = dwBldgID; iOwner = iBldgOwner; }
+                    }
+                    else  // any
+                    {
+                        if ( dwVehID )      { dwCand = dwVehID;  iOwner = iVehOwner; bIsVeh = TRUE; }
+                        else if ( dwBldgID ) { dwCand = dwBldgID; iOwner = iBldgOwner; }
+                    }
+                    if ( !dwCand )
+                        continue;
+
+                    CAIOpFor* pOpFor = m_plOpFors->GetOpFor( iOwner );
+                    if ( pOpFor == NULL )
+                        continue;
+                    if ( pOpFor->IsAI( ) && !pOpFor->AtWar( ) )
+                        continue;
+                    if ( m_plUnits->GetOpForUnit( dwCand ) == NULL )
+                        continue;
+
+                    // per-class scoring, vanilla formulas
+                    int iScore;
+                    if ( aiHow[c] == NEAREST_TARGET )
+                    {
+                        iScore = pGameData->GetRangeDistance( hexUnit, hcAt );
+                        if ( !iScore || iScore >= aiScore[c] )
+                            continue;
+                    }
+                    else if ( aiHow[c] == THREAT_TARGET )
+                    {
+                        iScore = 0;
+                        EnterCriticalSection( &cs );
+                        if ( bIsVeh )
+                        {
+                            CVehicle* pV = theVehicleMap.GetVehicle( dwCand );
+                            if ( pV != NULL )
+                                iScore = AssessThreat( pV, iKindOf );
+                        }
+                        else
+                        {
+                            CBuilding* pB = theBuildingMap.GetBldg( dwCand );
+                            if ( pB != NULL )
+                            {
+                                iScore = AssessThreat( pB, iKindOf );
+                                if ( iScore && pB->IsFlag( CUnit::abandoned ) )
+                                    iScore >>= 1;
+                            }
+                        }
+                        LeaveCriticalSection( &cs );
+                        if ( iScore <= aiScore[c] )
+                            continue;
+                    }
+                    else  // BEST_TARGET
+                    {
+                        iScore = 0;
+                        EnterCriticalSection( &cs );
+                        if ( bIsVeh )
+                        {
+                            CVehicle* pV = theVehicleMap.GetVehicle( dwCand );
+                            if ( pV != NULL )
+                            {
+                                iScore = m_pMap->m_pMapUtil->AssessTarget( pV, iKindOf );
+                                pTd    = pV->GetData( );
+                                i      = NUM_COMBINED_UNITS * ( CStructureData::num_types + pTd->GetType( ) );
+                                i += pUnit->GetTypeUnit( );
+                                iScore += ( caTargetAttack[i] * iScore );
+                            }
+                        }
+                        else
+                        {
+                            CBuilding* pB = theBuildingMap.GetBldg( dwCand );
+                            if ( pB != NULL )
+                            {
+                                iScore = m_pMap->m_pMapUtil->AssessTarget( pB, iKindOf );
+                                pSd    = pB->GetData( );
+                                i      = NUM_COMBINED_UNITS * pSd->GetType( );
+                                i += pUnit->GetTypeUnit( );
+                                iScore += ( caTargetAttack[i] * iScore );
+                                if ( iScore && pB->IsFlag( CUnit::abandoned ) )
+                                    iScore >>= 1;
+                            }
+                        }
+                        LeaveCriticalSection( &cs );
+                        if ( iScore <= 0 || iScore <= aiScore[c] )
+                            continue;
+                    }
+
+                    // reachability: at most one path search per hex, shared by
+                    // all classes, run only when a class would take the target
+                    if ( !bPathChecked )
+                    {
+                        bPathOK      = ( m_pMap->m_pMapUtil->GetPathRating( hexUnit, hcAt, pUnit->GetTypeUnit( ) ) != 0 );
+                        bPathChecked = TRUE;
+                    }
+                    if ( !bPathOK )
+                        break;  // unreachable for every class
+
+                    aiScore[c] = iScore;
+                    adwSel[c]  = dwCand;
+                }
+            }
+        }
+
+        // end of level: freeze classes that found a candidate at this area
+        for ( c = 0; c < nClasses; ++c )
+            if ( !abFrozen[c] && adwSel[c] )
+                abFrozen[c] = TRUE;
+
+        // return the best frozen class once every higher-priority class is
+        // beyond hope (THREAT/BEST are hopeless past spotting; NEAREST never
+        // until all levels + fallback are done)
+        for ( c = 0; c < nClasses; ++c )
+        {
+            if ( !abFrozen[c] )
+            {
+                BOOL bStillHunting = ( aiHow[c] == NEAREST_TARGET ) || ( iLvl < iSpotLevel );
+                if ( bStillHunting )
+                    break;  // c may yet win - keep scanning
+                continue;   // c is done and empty - next class decides
+            }
+            if ( piClassSel != NULL )
+                *piClassSel = c;
+            return ( adwSel[c] );
+        }
+    }
+
+    // area levels exhausted with no decidable class: the vanilla
+    // whole-unit-list fallback, for NEAREST classes only ("always get a
+    // target?!?" - kind filter deliberately ignored, as in the original)
+    if ( bAnyNearest )
+    {
+        DWORD dwSeekTo = 0;
+        int   iClosest = 0xFFFE;
+        int   iThreat;
+        CHexCoord hcTgt;
+
+        POSITION pos = m_plUnits->GetHeadPosition( );
+        while ( pos != NULL )
+        {
+            CAIUnit* pTargetUnit = (CAIUnit*)m_plUnits->GetNext( pos );
+            if ( pTargetUnit == NULL )
+                continue;
+            ASSERT_VALID( pTargetUnit );
+
+            if ( pTargetUnit->GetOwner( ) == m_iPlayer )
+                continue;
+
+            CAIOpFor* pOpFor = m_plOpFors->GetOpFor( pTargetUnit->GetOwner( ) );
+            if ( pOpFor == NULL )
+                continue;
+            if ( pOpFor->IsAI( ) && !pOpFor->AtWar( ) )
+                continue;
+
+            hcTgt.X( 0 );
+            hcTgt.Y( 0 );
+            iThreat = 0;
+
+            if ( pTargetUnit->GetType( ) == CUnit::building )
+            {
+                // skip unimportant buildings
+                if ( pTargetUnit->GetTypeUnit( ) != CStructureData::rocket &&
+                     pTargetUnit->GetTypeUnit( ) < CStructureData::barracks_2 )
+                    continue;
+
+                EnterCriticalSection( &cs );
+                CBuilding* pBldg = theBuildingMap.GetBldg( pTargetUnit->GetID( ) );
+                if ( pBldg != NULL )
+                {
+                    hcTgt   = pBldg->GetExitHex( );
+                    iThreat = pBldg->GetData( )->GetTargetType( );
+                }
+                LeaveCriticalSection( &cs );
+            }
+            else if ( pTargetUnit->GetType( ) == CUnit::vehicle )
+            {
+                EnterCriticalSection( &cs );
+                CVehicle* pVehicle = theVehicleMap.GetVehicle( pTargetUnit->GetID( ) );
+                if ( pVehicle != NULL )
+                {
+                    // skip vehicles that are cargo
+                    if ( pVehicle->GetTransport( ) == NULL )
+                    {
+                        hcTgt   = pVehicle->GetHexHead( );
+                        iThreat = pVehicle->GetData( )->GetTargetType( );
+                    }
+                }
+                LeaveCriticalSection( &cs );
+            }
+
+            if ( !hcTgt.X( ) && !hcTgt.Y( ) )
+                continue;
+            if ( !iAttackTypes[iThreat] )
+                continue;
+
+#if THREADS_ENABLED
+            myYieldThread( );
+#endif
+
+            int iRange = pGameData->GetRangeDistance( hexUnit, hcTgt );
+            if ( iRange && ( iRange < iClosest ) )
+            {
+                if ( pUnit->GetType( ) == CUnit::vehicle &&
+                     !m_pMap->m_pMapUtil->GetPathRating( hexUnit, hcTgt, pUnit->GetTypeUnit( ) ) )
+                    continue;
+
+                iClosest = iRange;
+                dwSeekTo = pTargetUnit->GetID( );
+            }
+        }
+
+        if ( dwSeekTo )
+        {
+            // the fallback belongs to the first NEAREST class whose area scan
+            // failed - in vanilla that rung ran its fallback before any later
+            // rung's area scan could win
+            for ( c = 0; c < nClasses; ++c )
+            {
+                if ( aiHow[c] == NEAREST_TARGET && !abFrozen[c] )
+                {
+                    if ( piClassSel != NULL )
+                        *piClassSel = c;
+                    break;
+                }
+            }
+            return ( dwSeekTo );
+        }
+    }
+
+    // fallback empty (or no NEAREST class): a later class's area result,
+    // frozen while an earlier NEAREST class was still hunting, wins now
+    for ( c = 0; c < nClasses; ++c )
+    {
+        if ( abFrozen[c] )
+        {
+            if ( piClassSel != NULL )
+                *piClassSel = c;
+            return ( adwSel[c] );
+        }
+    }
+
+    return ( 0 );
 }
 
 //
@@ -10142,6 +11595,8 @@ CAITask* CAIGoalMgr::GetPatrolTask( int iType )
 void CAIGoalMgr::Load( CArchive& ar, CAIMap* pMap, CAIUnitList* plUnits, CAIOpForList* plOpFors )
 {
     m_pMap     = pMap;
+    m_pRouter  = NULL;  // wired by CAIMgr after its router exists
+    memset( m_adwSitePickCool, 0, sizeof( m_adwSitePickCool ) );
     m_plUnits  = plUnits;
     m_plOpFors = plOpFors;
 
@@ -10246,11 +11701,119 @@ void CAIGoalMgr::Load( CArchive& ar, CAIMap* pMap, CAIUnitList* plUnits, CAIOpFo
         ar.Read( (void*)m_pwaBldgGoals, ( sizeof( WORD ) * m_iNumBldgs ) );
         ar.Read( (void*)m_pwaVehGoals, ( sizeof( WORD ) * m_iNumUnits ) );
         ar.Read( (void*)m_pwaMatGoals, ( sizeof( WORD ) * m_iNumMats ) );
-        ar.Read( (void*)m_iRDPath, ( sizeof( int ) * CRsrchArray::num_types ) );
+        // RDPath blob is frozen at the legacy topic count (pre Bridges 2-5) so old
+        // saves stay aligned; the in-code tiers are never part of an AI path anyway.
+        ar.Read( (void*)m_iRDPath, ( sizeof( int ) * RDPATH_SAVE_COUNT ) );
+        memset( m_iRDPath + RDPATH_SAVE_COUNT, 0,
+                sizeof( int ) * ( CRsrchArray::num_types - RDPATH_SAVE_COUNT ) );
+        // Saved paths predate Pontoon Bridges — inject it so loaded AIs research it too.
+        InjectPontoonIntoPath( m_iRDPath );
     }
     catch ( CFileException* /*theException*/ )
     {
         throw( ERR_CAI_BAD_FILE );
+    }
+
+    // ---- Reconcile bound-task status after load ------------------------------
+    // CAITask::m_cStatus is NOT serialized: the loop above rebuilds every task
+    // through the CAITask ctor, which forces UNASSIGNED_TASK. That is wrong for
+    // any task a unit is still bound to. GetConstructionTask()/GetProductionTask()
+    // only ever hand out UNASSIGNED tasks, so an in-progress task reloaded as
+    // UNASSIGNED gets handed to a SECOND unit -- e.g. several cranes stacking on
+    // the exact same build hex -- and a construction crane that already placed
+    // its building loses the COMPLETED_TASK latch (caitmgr.cpp:5236), so it tries
+    // to re-place a building that is already under construction and ends up
+    // deserting it. Both were causing the post-load "cranes pile on one spot,
+    // half-built buildings freeze" symptom. Restore the invariant that a task a
+    // unit holds is not free: promote each bound unit's task out of UNASSIGNED --
+    // COMPLETED for a crane that already issued its build, INPROCESS otherwise.
+    // (Units load before the goal manager, so m_plUnits is fully populated here.)
+    if ( m_plUnits != NULL && m_plTasks != NULL )
+    {
+        int      iWeldFreed = 0;
+        POSITION pos = m_plUnits->GetHeadPosition( );
+        while ( pos != NULL )
+        {
+            CAIUnit* pUnit = (CAIUnit*)m_plUnits->GetNext( pos );
+            if ( pUnit == NULL )
+                continue;
+
+            // stale cross-session stuck timers (ms-since-boot) read as hours of
+            // fake stuck time after a load -> spurious instant teleports.
+            // vehicles only: building DW params carry router truck assignments.
+            if ( pUnit->GetType( ) == CUnit::vehicle &&
+                 ( pUnit->GetTypeUnit( ) == CTransportData::construction ||
+                   pUnit->GetTypeUnit( ) == CTransportData::heavy_truck ) )
+            {
+                pUnit->SetParamDW( CAI_ROUTE_X, 0 );
+                pUnit->SetParamDW( CAI_ROUTE_Y, 0 );
+            }
+
+            if ( !pUnit->GetTask( ) )
+                continue;
+
+            CAITask* pTask = m_plTasks->GetTask( pUnit->GetTask( ), pUnit->GetGoal( ) );
+            if ( pTask == NULL )
+                continue;
+
+            BOOL bCrane = ( pUnit->GetType( ) == CUnit::vehicle &&
+                            pUnit->GetTypeUnit( ) == CTransportData::construction );
+            BOOL bConstruction = ( pTask->GetTaskParam( ORDER_TYPE ) == CONSTRUCTION_ORDER );
+
+            // a bound construction task with NO site is a recycled task the save
+            // fossilized (UnAssignTask zeroed BUILD_AT but the crane binding and
+            // its CAI_EFFECTIVE survived). No build can be pending without a
+            // site, so EFFECTIVE is stale here: unbind and repool, NEVER promote
+            // (COMPLETED waits forever for a built-message that cannot come).
+            // Standing tasks (road/repair) legitimately carry no site - skip.
+            if ( bCrane && bConstruction &&
+                 pUnit->GetTask( ) != IDT_CONSTRUCT && pUnit->GetTask( ) != IDT_REPAIR &&
+                 !pTask->GetTaskParam( BUILD_AT_X ) && !pTask->GetTaskParam( BUILD_AT_Y ) )
+            {
+                pUnit->ClearParam( );
+                pUnit->SetTask( FALSE );
+                pUnit->SetGoal( FALSE );
+                pUnit->SetDataDW( 0 );
+                pUnit->SetStatus( 0 );
+                iWeldFreed++;
+                continue;
+            }
+
+            if ( pTask->GetStatus( ) != UNASSIGNED_TASK )
+            {
+                // This task was already claimed by an earlier unit in this loop:
+                // a DUPLICATE binding. The unserialized-status bug used to hand
+                // one construction task to several cranes before the save was
+                // made, and those extra bindings are baked into old saves --
+                // observed live as three cranes bound to ONE build hex, mutually
+                // blocking each other forever (each is the others' obstruction).
+                // Keep the first owner and unbind the extras so they return to
+                // the assignment pool. Never unbind a crane that already issued
+                // its build (CAI_EFFECTIVE) -- it must wait for built/100%.
+                if ( bCrane && bConstruction && !pUnit->GetParam( CAI_EFFECTIVE ) )
+                {
+                    pUnit->ClearParam( );
+                    pUnit->SetTask( FALSE );
+                    pUnit->SetGoal( FALSE );
+                    pUnit->SetDataDW( 0 );
+                    pUnit->SetStatus( 0 );
+                }
+                continue;
+            }
+
+            if ( bCrane && bConstruction && pUnit->GetParam( CAI_EFFECTIVE ) )
+                pTask->SetStatus( COMPLETED_TASK );  // build already issued -> wait for built/100%
+            else
+                pTask->SetStatus( INPROCESS_TASK );  // held by a unit -> not free to re-hand
+        }
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+        if ( iWeldFreed )
+        {
+            char szW[96];
+            sprintf( szW, "[WELDFREE] plyr load unbound %d cranes from siteless tasks\n", iWeldFreed );
+            OutputDebugStringA( szW );
+        }
+#endif
     }
 
     // after a load, the lists should all be reinitialized
@@ -10345,7 +11908,7 @@ void CAIGoalMgr::Save( CArchive& ar )
         ar.Write( (const void*)m_pwaBldgGoals, ( sizeof( WORD ) * m_iNumBldgs ) );
         ar.Write( (const void*)m_pwaVehGoals, ( sizeof( WORD ) * m_iNumUnits ) );
         ar.Write( (const void*)m_pwaMatGoals, ( sizeof( WORD ) * m_iNumMats ) );
-        ar.Write( (const void*)m_iRDPath, ( sizeof( int ) * CRsrchArray::num_types ) );
+        ar.Write( (const void*)m_iRDPath, ( sizeof( int ) * RDPATH_SAVE_COUNT ) );  // frozen legacy count
     }
     catch ( CFileException* /*theException*/ )
     {

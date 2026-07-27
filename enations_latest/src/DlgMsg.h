@@ -1,37 +1,35 @@
 // DlgMsg.h : header file
 //
+// CDlgModelessMsg — notification popup that the user dismisses by
+// clicking OK. Rendered with the SDL2 dialog toolkit (same look as the
+// rest of the in-game dialogs).
+//
+// Self-deletes after dismiss: callers do `new CDlgModelessMsg(); pDlg->Create(msg)`
+// and forget. GameWindow's non-modal dialog plumbing handles the
+// teardown after EndDialog fires.
+
+#pragma once
+
+#include "SDL2UI.h"
+#include <string>
+
+class CWnd;
 
 /////////////////////////////////////////////////////////////////////////////
-// CDlgModelessMsg dialog
-class CDlgModelessMsg : public CDialog
+// CDlgModelessMsg
+
+class CDlgModelessMsg : public SDL2Dialog
 {
-// Construction
 public:
-	CDlgModelessMsg(CWnd* pParent = NULL);   // standard constructor
+    CDlgModelessMsg( CWnd* pParent = NULL );  // pParent kept for API compat; unused
+    ~CDlgModelessMsg() override;
 
-	void Create ( const char * pMsg );
+    // Set message text and open the dialog non-modally. The dialog
+    // self-destructs after the user clicks OK (GameWindow cleanup pass).
+    void Create( const char* pMsg );
 
-// Dialog Data
-	//{{AFX_DATA(CDlgModelessMsg)
-	enum { IDD = IDD_MODELESS_MSG };
-	CString	m_sMsg;
-	//}}AFX_DATA
+    std::string m_sMsg;
 
-
-// Overrides
-	// ClassWizard generated virtual function overrides
-	//{{AFX_VIRTUAL(CDlgModelessMsg)
-	protected:
-	virtual void DoDataExchange(CDataExchange* pDX);    // DDX/DDV support
-	virtual void PostNcDestroy();
-	//}}AFX_VIRTUAL
-
-// Implementation
 protected:
-
-	// Generated message map functions
-	//{{AFX_MSG(CDlgModelessMsg)
-		// NOTE: the ClassWizard will add member functions here
-	//}}AFX_MSG
-	DECLARE_MESSAGE_MAP()
+    void OnInit() override;
 };

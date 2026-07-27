@@ -9,7 +9,12 @@
 // sprite.cpp : the sprites
 //
 
+#include "enprobes.h"
 #include "stdafx.h"
+#include "SDL2BuildStructure.h"
+#include "SDL2BuildTransport.h"
+#include "SDL2BuildingWindow.h"
+#include "altoutput.h"   // Coal-Liq mode-aware power-plant status text (#43)
 #include "event.h"
 #include "lastplnt.h"
 #include "player.h"
@@ -18,6 +23,7 @@
 #include "error.h"
 #include "chproute.hpp"
 #include "ai.h"
+#include "aisnap.h"  // minerals-bitmap invalidation on depletion
 #include "icons.h"
 #include "bitmaps.h"
 #include "area.h"
@@ -45,12 +51,12 @@ void ShowBuilding( int iInd, CBuilding* pBldg );
 void UnshowBuilding( CBuilding* pBldg );
 
 
-CString  CUnit::m_sDamage;
+std::string CUnit::m_sDamage;
 COLORREF CUnit::m_clrOk;
 COLORREF CUnit::m_clrWarn;
 COLORREF CUnit::m_clrBad;
 
-CString  CMaterialTypes::m_saDesc[num_types];
+std::string CMaterialTypes::m_saDesc[num_types];
 COLORREF CMaterialTypes::m_rgb[num_types + 1];
 
 // GG: Default sprite for each vehicle category.
@@ -64,7 +70,7 @@ int CTransport::g_aiDefaultID[] = {
     CTransportData::light_tank      // default combat
 };
 
-void UnitStatusText( void* pData, CString& str )
+void UnitStatusText( void* pData, std::string& str )
 {
 
     CUnit* pUnit = (CUnit*)pData;
@@ -72,39 +78,36 @@ void UnitStatusText( void* pData, CString& str )
     pUnit->ShowStatusText( str );
 }
 
-void CUnit::ShowStatusText( CString& str )
+void CUnit::ShowStatusText( std::string& str )
 {
 
     // list the damage level
-    str.LoadString( IDS_STAT_DAMAGE );
     int iPer     = 100 - GetDamagePer( );
     iPer         = __min( 99, iPer );
-    CString sNum = IntToCString( iPer );
-    csPrintf( &str, (char const*)sNum );
+    std::string sNum = IntToStr( iPer );
+    str = strPrintf( EnLoadStdString( IDS_STAT_DAMAGE ).c_str(), sNum.c_str() );
 }
 
-void CBuilding::ShowStatusText( CString& str )
+void CBuilding::ShowStatusText( std::string& str )
 {
 
     // if under construction show % done
     if ( m_iConstDone != -1 )
     {
-        str.LoadString( IDS_STAT_CONST );
-        CString sNum = IntToCString( m_iLastPer );
-        csPrintf( &str, (char const*)sNum );
+        std::string sNum = IntToStr( m_iLastPer );
+        str = strPrintf( EnLoadStdString( IDS_STAT_CONST ).c_str(), sNum.c_str() );
         return;
     }
 
     if ( GetData( )->GetType( ) == CStructureData::rocket )
     {
-        str.LoadString( IDS_STAT_ROCKET );
-        CString sNum1 = IntToCString( theGame.GetMe( )->GetPplTotal( ) );
-        CString sNum2 = IntToCString( theGame.GetMe( )->m_iAptCap );
-        CString sNum3 = IntToCString( theGame.GetMe( )->GetPplBldg( ) );
-        CString sNum4 = IntToCString( theGame.GetMe( )->m_iOfcCap );
-        CString sNum5 = IntToCString( (int)( 15.0 * GetFrameProd( 1 ) ) );
-        csPrintf( &str, (char const*)sNum1, (char const*)sNum2, (char const*)sNum3, (char const*)sNum4,
-                  (char const*)sNum5 );
+        std::string sNum1 = IntToStr( theGame.GetMe( )->GetPplTotal( ) );
+        std::string sNum2 = IntToStr( theGame.GetMe( )->m_iAptCap );
+        std::string sNum3 = IntToStr( theGame.GetMe( )->GetPplBldg( ) );
+        std::string sNum4 = IntToStr( theGame.GetMe( )->m_iOfcCap );
+        std::string sNum5 = IntToStr( (int)( 15.0 * GetFrameProd( 1 ) ) );
+        str = strPrintf( EnLoadStdString( IDS_STAT_ROCKET ).c_str(),
+                         sNum1.c_str(), sNum2.c_str(), sNum3.c_str(), sNum4.c_str(), sNum5.c_str() );
         return;
     }
 
@@ -113,11 +116,11 @@ void CBuilding::ShowStatusText( CString& str )
     {
         if ( theGame.GetMe( )->GetRsrchItem( ) <= 0 )
         {
-            str.LoadString( IDS_STAT_IDLE );
+            str = EnLoadStdString( IDS_STAT_IDLE );
             return;
         }
-        str.LoadString( IDS_RESEARCHING );
-        csPrintf( &str, (char const*)theRsrch.ElementAt( theGame.GetMe( )->GetRsrchItem( ) ).m_sName );
+        str = strPrintf( EnLoadStdString( IDS_RESEARCHING ).c_str(),
+                         theRsrch.ElementAt( theGame.GetMe( )->GetRsrchItem( ) ).m_sName.c_str() );
         return;
     }
 
@@ -125,7 +128,7 @@ void CBuilding::ShowStatusText( CString& str )
     CUnit::ShowStatusText( str );
 }
 
-void CMaterialBuilding::ShowStatusText( CString& str )
+void CMaterialBuilding::ShowStatusText( std::string& str )
 {
 
     if ( m_iConstDone != -1 )
@@ -136,6 +139,19 @@ void CMaterialBuilding::ShowStatusText( CString& str )
 
     // show creating rate
     CBuildMaterials const* pBm  = GetData( )->GetBldMaterials( );
+
+    // I1 (operator): if a required input material's store is empty the converter can't
+    // produce — show "Idle" instead of the misleading theoretical-max rate ("816 steel/min"
+    // with no iron/coal). Mirrors CPowerBuilding's input gate above + the runtime
+    // BuildMaterials check (mainloop.cpp:2361). Mines/farms are separate classes (no
+    // material input here), so this only affects true converters (smelter, etc.).
+    for ( int iIn = 0; iIn < CMaterialTypes::GetNumTypes( ); iIn++ )
+        if ( pBm->GetInput( iIn ) > 0 && GetStore( iIn ) <= 0 )
+        {
+            str = EnLoadStdString( IDS_STAT_IDLE );
+            return;
+        }
+
     int                    iTyp = 0;
     for ( int iInd = 0; iInd < CMaterialTypes::GetNumTypes( ); iInd++ )
     {
@@ -147,17 +163,57 @@ void CMaterialBuilding::ShowStatusText( CString& str )
     }
 
     // this is the only way it generates code correctly
-    char const* pDesc = CMaterialTypes::GetDesc( iTyp );
+    char const* pDesc = CMaterialTypes::GetDesc( iTyp ).c_str( );
     char        sNum[14];
-    int         iNum = (int)( GetFrameProd( GetOwner( )->GetMtrlsProd( ) * float( 24 * 60 * pBm->GetOutput( iTyp ) ) /
-                                            float( pBm->GetTime( ) ) ) );
+    // Operator: the rate must be ACTUAL, not theoretical — the sim halts production entirely
+    // for these states (Operate's stopped|abandoned block, the event wait), so read 0/min.
+    int iNum = ( m_unitFlags & ( stopped | abandoned | event | dying ) )
+                   ? 0
+                   : (int)( GetFrameProd( GetOwner( )->GetMtrlsProd( ) * float( 24 * 60 * pBm->GetOutput( iTyp ) ) /
+                                          float( pBm->GetTime( ) ) ) );
     itoa( iNum, sNum, 10 );
 
-    str.LoadString( IDS_STAT_MATERIAL );
-    csPrintf( &str, pDesc, sNum );
+    str = strPrintf( EnLoadStdString( IDS_STAT_MATERIAL ).c_str(), pDesc, sNum );
 }
 
-void CVehicleBuilding::ShowStatusText( CString& str )
+// Production progress 0..100 toward the next output batch. Producers accumulate
+// m_iBuildDone toward a per-type threshold, emit a batch, and reset (see
+// CBuilding::BuildMaterials / CMineBuilding::BuildMine / CFarmBuilding::BuildFarm).
+int CMaterialBuilding::GetProductionPer( ) const
+{
+    int iTime = GetData( )->GetBldMaterials( )->GetTime( );
+    if ( iTime <= 0 ) return ( -1 );
+    int iPer = (int)( ( (long long)m_iBuildDone * 100 ) / iTime );
+    return ( iPer > 100 ? 100 : iPer );
+}
+
+int CMineBuilding::GetProductionPer( ) const
+{
+    if ( m_iMinerals <= 0 )
+    {
+        // Exhausted well. If Fracking is ON it still trickles oil — show the conversion
+        // accumulator's progress toward the next oil unit so the bar ADVANCES (operator H3),
+        // instead of a frozen 0%. Otherwise it really is idle (0%).
+        CBuilding* self = (CBuilding*)this;   // IsFlag / AltOutput::Available are non-const
+        if ( self->IsFlag( CUnit::alt_oil ) && AltOutput::Available( self ) )
+            return ( GetAltProgressPer( ) );
+        return ( 0 );
+    }
+    int iTime = GetData( )->GetBldMine( )->GetTimeToMine( );
+    if ( iTime <= 0 ) return ( -1 );
+    int iPer = (int)( ( (long long)m_iBuildDone * 100 ) / iTime );
+    return ( iPer > 100 ? 100 : iPer );
+}
+
+int CFarmBuilding::GetProductionPer( ) const
+{
+    int iTime = 2 * GetData( )->GetBldFarm( )->GetTimeToFarm( );   // FARM_HARVEST_SLOW = 2
+    if ( iTime <= 0 ) return ( -1 );
+    int iPer = (int)( ( (long long)m_iBuildDone * 100 ) / iTime );
+    return ( iPer > 100 ? 100 : iPer );
+}
+
+void CVehicleBuilding::ShowStatusText( std::string& str )
 {
 
     if ( m_iConstDone != -1 )
@@ -169,17 +225,18 @@ void CVehicleBuilding::ShowStatusText( CString& str )
     CBuildUnit const* pBldUnt = GetBldUnt( );
     if ( pBldUnt == NULL )
     {
-        str.LoadString( IDS_STAT_IDLE );
+        str = EnLoadStdString( IDS_STAT_IDLE );
         return;
     }
 
     // show what we are building
-    str.LoadString( IDS_STAT_BUILD );
-    CString sNum = IntToCString( m_iLastPer );
-    csPrintf( &str, (LPCSTR)theTransports.GetData( pBldUnt->GetVehType( ) )->GetDesc( ), (char const*)sNum );
+    std::string sNum = IntToStr( m_iLastPer );
+    str = strPrintf( EnLoadStdString( IDS_STAT_BUILD ).c_str(),
+                     theTransports.GetData( pBldUnt->GetVehType( ) )->GetDesc( ).c_str(),
+                     sNum.c_str() );
 }
 
-void CFarmBuilding::ShowStatusText( CString& str )
+void CFarmBuilding::ShowStatusText( std::string& str )
 {
 
     if ( m_iConstDone != -1 )
@@ -188,16 +245,18 @@ void CFarmBuilding::ShowStatusText( CString& str )
         return;
     }
 
-    str.LoadString( IDS_STAT_FARM );
     CBuildFarm* pBf = GetData( )->GetBldFarm( );
-    CString     sNum =
-        IntToCString( GetFrameProd( GetOwner( )->GetFarmProd( ) * m_iTerMult * float( 24 * 60 * pBf->GetQuantity( ) ) /
-                                    float( pBf->GetTimeToFarm( ) ) ),
-                      10, TRUE );
-    csPrintf( &str, (char const*)sNum );
+    // Operator: actual rate, not theoretical — 0 while the sim has the farm halted.
+    int iFarmRate = ( m_unitFlags & ( stopped | abandoned | event | dying ) )
+                        ? 0
+                        : (int)GetFrameProd( GetOwner( )->GetFarmProd( ) * m_iTerMult *
+                                             float( 24 * 60 * pBf->GetQuantity( ) ) /
+                                             float( pBf->GetTimeToFarm( ) ) );
+    std::string sNum = IntToStr( iFarmRate, 10, true );
+    str = strPrintf( EnLoadStdString( IDS_STAT_FARM ).c_str(), sNum.c_str() );
 }
 
-void CPowerBuilding::ShowStatusText( CString& str )
+void CPowerBuilding::ShowStatusText( std::string& str )
 {
 
     if ( m_iConstDone != -1 )
@@ -207,20 +266,33 @@ void CPowerBuilding::ShowStatusText( CString& str )
     }
 
     CBuildPower* pBp = GetData( )->GetBldPower( );
-    if ( pBp->GetInput( ) >= 0 )
-        if ( GetStore( pBp->GetInput( ) ) <= 0 )
+    int iFuel = pBp ? pBp->GetInput( ) : -1;
+    // CRASH-HARDEN (newwin, sibling of the #51 C5 crash mac2 found): GetInput() returns the raw
+    // m_iInput, which for a fuel-less plant can be a sentinel/garbage index >= num_types (not just
+    // -1). GetStore() only ASSERT_STRICTs the range (ignored in this build) -> OOB read. Bound it.
+    if ( iFuel >= 0 && iFuel < CMaterialTypes::GetNumTypes( ) )
+        if ( GetStore( iFuel ) <= 0 )
         {
-            str.LoadString( IDS_STAT_IDLE );
+            str = EnLoadStdString( IDS_STAT_IDLE );
             return;
         }
 
-    str.LoadString( IDS_STAT_POWER );
-    CString sNum  = IntToCString( (int)( GetFrameProd( 1 ) * (float)GetData( )->GetBldPower( )->GetPower( ) ) );
-    CString sNum2 = IntToCString( GetData( )->GetBldPower( )->GetPower( ) );
-    csPrintf( &str, (char const*)sNum, (char const*)sNum2 );
+    // Coal Liquefaction mode (#43): when the alt-output toggle is ON (and the tech is
+    // researched), this coal plant converts coal -> oil instead of generating power
+    // (BuildPower suppresses AddPwrHave in this mode). Reflect that in the status text
+    // rather than the misleading "Generating N units power" line.
+    if ( IsFlag( CUnit::alt_oil ) && ( AltOutput::Available( this ) != nullptr ) )
+    {
+        str = "Converting coal to oil";
+        return;
+    }
+
+    std::string sNum  = IntToStr( (int)( GetFrameProd( 1 ) * (float)GetData( )->GetBldPower( )->GetPower( ) ) );
+    std::string sNum2 = IntToStr( GetData( )->GetBldPower( )->GetPower( ) );
+    str = strPrintf( EnLoadStdString( IDS_STAT_POWER ).c_str(), sNum.c_str(), sNum2.c_str() );
 }
 
-void CRepairBuilding::ShowStatusText( CString& str )
+void CRepairBuilding::ShowStatusText( std::string& str )
 {
 
     if ( m_iConstDone != -1 )
@@ -231,17 +303,17 @@ void CRepairBuilding::ShowStatusText( CString& str )
 
     if ( m_pVehRepairing == NULL )
     {
-        str.LoadString( IDS_STAT_IDLE );
+        str = EnLoadStdString( IDS_STAT_IDLE );
         return;
     }
 
     // show what we are building
-    str.LoadString( IDS_STAT_REPAIR );
-    CString sNum = IntToCString( m_iLastPer );
-    csPrintf( &str, (LPCSTR)m_pVehRepairing->GetData( )->GetDesc( ), (char const*)sNum );
+    std::string sNum = IntToStr( m_iLastPer );
+    str = strPrintf( EnLoadStdString( IDS_STAT_REPAIR ).c_str(),
+                     m_pVehRepairing->GetData( )->GetDesc( ).c_str(), sNum.c_str() );
 }
 
-void CShipyardBuilding::ShowStatusText( CString& str )
+void CShipyardBuilding::ShowStatusText( std::string& str )
 {
 
     if ( ( m_iConstDone != -1 ) || ( m_iMode != repair ) || ( m_pVehRepairing == NULL ) )
@@ -251,12 +323,12 @@ void CShipyardBuilding::ShowStatusText( CString& str )
     }
 
     // show what we are building
-    str.LoadString( IDS_STAT_REPAIR );
-    CString sNum = IntToCString( m_iLastPer );
-    csPrintf( &str, (LPCSTR)m_pVehRepairing->GetData( )->GetDesc( ), (char const*)sNum );
+    std::string sNum = IntToStr( m_iLastPer );
+    str = strPrintf( EnLoadStdString( IDS_STAT_REPAIR ).c_str(),
+                     m_pVehRepairing->GetData( )->GetDesc( ).c_str(), sNum.c_str() );
 }
 
-void CHousingBuilding::ShowStatusText( CString& str )
+void CHousingBuilding::ShowStatusText( std::string& str )
 {
 
     if ( m_iConstDone != -1 )
@@ -282,13 +354,13 @@ void CHousingBuilding::ShowStatusText( CString& str )
         iRes2 = IDS_STAT_OFFICE2;
     }
 
-    str.LoadString( iHave >= iNeed ? iRes1 : iRes2 );
-    CString sNum1 = IntToCString( iHave >= iNeed ? iNeed : iHave, 10, TRUE );
-    CString sNum2 = IntToCString( iHave >= iNeed ? iHave - iNeed : iNeed, 10, TRUE );
-    csPrintf( &str, (char const*)sNum1, (char const*)sNum2 );
+    std::string sNum1 = IntToStr( iHave >= iNeed ? iNeed : iHave, 10, true );
+    std::string sNum2 = IntToStr( iHave >= iNeed ? iHave - iNeed : iNeed, 10, true );
+    str = strPrintf( EnLoadStdString( iHave >= iNeed ? iRes1 : iRes2 ).c_str(),
+                     sNum1.c_str(), sNum2.c_str() );
 }
 
-void CMineBuilding::ShowStatusText( CString& str )
+void CMineBuilding::ShowStatusText( std::string& str )
 {
 
     if ( m_iConstDone != -1 )
@@ -300,35 +372,39 @@ void CMineBuilding::ShowStatusText( CString& str )
     // if out - say so
     if ( m_iMinerals <= 0 )
     {
-        str.LoadString( IDS_EXHAUSTED );
-        csPrintf( &str, (LPCSTR)CMaterialTypes::GetDesc( GetData( )->GetBldMine( )->GetTypeMines( ) ) );
+        str = strPrintf( EnLoadStdString( IDS_EXHAUSTED ).c_str(),
+                         CMaterialTypes::GetDesc( GetData( )->GetBldMine( )->GetTypeMines( ) ).c_str( ) );
         return;
     }
 
     CBuildMine* pBm = GetData( )->GetBldMine( );
-    int         iRate10 =
-        (int)( GetFrameProd( GetOwner( )->GetMineProd( ) * (float)( 10 * m_iDensity * 24 * 60 * pBm->GetAmount( ) ) /
-                             (float)( CMinerals::DensityDiv( ) * pBm->GetTimeToMine( ) ) ) );
-    CString sNum1;
+    // Operator: actual rate, not theoretical — 0 while the sim has the mine halted.
+    // (An exhausted mine returned above with its own message; fracking/moho wells show
+    // their alt rate via the info window's AltOutput override, not this line.)
+    int iRate10 =
+        ( m_unitFlags & ( stopped | abandoned | event | dying ) )
+            ? 0
+            : (int)( GetFrameProd( GetOwner( )->GetMineProd( ) * (float)( 10 * m_iDensity * 24 * 60 * pBm->GetAmount( ) ) /
+                                   (float)( CMinerals::DensityDiv( ) * pBm->GetTimeToMine( ) ) ) );
+    std::string sNum1;
     if ( iRate10 >= 20 )
-        sNum1 = IntToCString( iRate10 / 10 );
+        sNum1 = IntToStr( iRate10 / 10 );
     else
-        sNum1 = IntToCString( iRate10 / 10 ) + "." + IntToCString( iRate10 % 10 );
+        sNum1 = IntToStr( iRate10 / 10 ) + "." + IntToStr( iRate10 % 10 );
 
-    str.LoadString( IDS_STAT_MINE );
-    CString sNum2 = IntToCString( m_iMinerals, 10, TRUE );
-    CString sNum3 = IntToCString( m_iDensity, 10, TRUE );
-    csPrintf( &str, (char const*)sNum1, (char const*)sNum2, (char const*)sNum3 );
+    std::string sNum2 = IntToStr( m_iMinerals, 10, true );
+    std::string sNum3 = IntToStr( m_iDensity, 10, true );
+    str = strPrintf( EnLoadStdString( IDS_STAT_MINE ).c_str(),
+                     sNum1.c_str(), sNum2.c_str(), sNum3.c_str() );
 }
 
-void CVehicle::ShowStatusText( CString& str )
+void CVehicle::ShowStatusText( std::string& str )
 {
 
     if ( GetData( )->IsCarrier( ) )
     {
-        str.LoadString( IDS_STAT_CARRIER );
-        CString sNum = IntToCString( m_lstCargo.GetCount( ) );
-        csPrintf( &str, (char const*)sNum );
+        std::string sNum = IntToStr( m_lstCargo.GetCount( ) );
+        str = strPrintf( EnLoadStdString( IDS_STAT_CARRIER ).c_str(), sNum.c_str() );
         return;
     }
 
@@ -374,15 +450,15 @@ void _UnitShowStatus( BOOL bText, void* pData, CDC* pDc, CRect const& rDraw, CDI
         rect.right = rect.left + iWid;
         uShowStat.m_siText.SetSize( rect );
 
-        uShowStat.m_siText.SetText( pUnit->GetData( )->GetDesc( ) );
+        uShowStat.m_siText.SetText( pUnit->GetData( )->GetDesc( ).c_str() );
 
 #ifdef _CHEAT
         if ( _bShowStatus )
         {
-            CString sText( IntToCString( pUnit->GetID( ) ) + CString( "(" ) +
-                           IntToCString( pUnit->GetOwner( )->GetPlyrNum( ) ) + CString( "): " ) +
-                           pUnit->GetData( )->GetDesc( ) );
-            uShowStat.m_siText.SetText( sText );
+            std::string sText = IntToStr( pUnit->GetID( ) ) + "(" +
+                                IntToStr( pUnit->GetOwner( )->GetPlyrNum( ) ) + "): " +
+                                pUnit->GetData( )->GetDesc( );
+            uShowStat.m_siText.SetText( sText.c_str( ) );
         }
 #endif
 
@@ -481,8 +557,8 @@ void CUnit::PaintStatusMaterials( CStatInst* pSi, CDC* pDc ) const
         // this way we leave it part empty for vehicles that are not full
         if ( GetUnitType( ) == CUnit::vehicle )
         {
-            if ( iTotal < ( (CVehicle*)this )->GetData( )->GetMaxMaterials( ) )
-                iTotal = ( (CVehicle*)this )->GetData( )->GetMaxMaterials( );
+            if ( iTotal < ( (CVehicle*)this )->GetMaxMaterials( ) )
+                iTotal = ( (CVehicle*)this )->GetMaxMaterials( );
         }
         else
             // this leaves it part empty for small amounts
@@ -728,8 +804,8 @@ void CVehicleBuilding::PaintStatusBars( CStatInst* pSi, int iNum, CDC* pDc ) con
         {
             pDcTxt->SetBkMode( TRANSPARENT );
             pDcTxt->SetTextColor( CLR_CONST );
-            CString sText = theTransports.GetData( pBldUnt->GetVehType( ) )->GetDesc( );
-            pDcTxt->DrawText( sText, -1, &( pSi->m_rDest ), DT_CENTER | DT_SINGLELINE | DT_VCENTER );
+            pDcTxt->DrawText( theTransports.GetData( pBldUnt->GetVehType( ) )->GetDesc( ).c_str(), -1,
+                              &( pSi->m_rDest ), DT_CENTER | DT_SINGLELINE | DT_VCENTER );
         }
 
         // blt the internal bitmap to the screen
@@ -773,8 +849,8 @@ void CRepairBuilding::PaintStatusBars( CStatInst* pSi, int iNum, CDC* pDc ) cons
         {
             pDcTxt->SetBkMode( TRANSPARENT );
             pDcTxt->SetTextColor( CLR_CONST );
-            CString sText = m_pVehRepairing->GetData( )->GetDesc( );
-            pDcTxt->DrawText( sText, -1, &( pSi->m_rDest ), DT_CENTER | DT_SINGLELINE | DT_VCENTER );
+            pDcTxt->DrawText( m_pVehRepairing->GetData( )->GetDesc( ).c_str(), -1,
+                              &( pSi->m_rDest ), DT_CENTER | DT_SINGLELINE | DT_VCENTER );
         }
 
         // blt the internal bitmap to the screen
@@ -819,8 +895,8 @@ void CShipyardBuilding::PaintStatusBars( CStatInst* pSi, int iNum, CDC* pDc ) co
         {
             pDcTxt->SetBkMode( TRANSPARENT );
             pDcTxt->SetTextColor( CLR_CONST );
-            CString sText = m_pVehRepairing->GetData( )->GetDesc( );
-            pDcTxt->DrawText( sText, -1, &( pSi->m_rDest ), DT_CENTER | DT_SINGLELINE | DT_VCENTER );
+            pDcTxt->DrawText( m_pVehRepairing->GetData( )->GetDesc( ).c_str(), -1,
+                              &( pSi->m_rDest ), DT_CENTER | DT_SINGLELINE | DT_VCENTER );
         }
 
         // blt the internal bitmap to the screen
@@ -866,7 +942,7 @@ void CVehicle::PaintStatusBars( CStatInst* pSi, int iNum, CDC* pDc ) const
     // show route for truck
     if ( ( GetData( )->IsTransport( ) ) && ( iNum == 1 ) )
     {
-        CString sText;
+        std::string sText;
         if ( !IsHpControl( ) )
             sText = CTransportData::m_sAuto;
         else if ( GetEvent( ) == route )
@@ -881,7 +957,7 @@ void CVehicle::PaintStatusBars( CStatInst* pSi, int iNum, CDC* pDc ) const
         else
             sText += CTransportData::m_sTravel;
         pSi->Attach( &theIcons, ICON_BAR_TEXT );
-        pSi->SetText( sText );
+        pSi->SetText( sText.c_str( ) );
         pSi->DrawIcon( pDc );
         return;
     }
@@ -1030,7 +1106,7 @@ void CMaterialTypes::ctor( )
     pMmio->DescendRiff( 'L', 'A', 'N', 'G' );
     pMmio->DescendList( 'M', 'T', 'R', 'L' );
 
-    CString* pStr = m_saDesc;
+    std::string* pStr = m_saDesc;
     for ( int iOn = 0; iOn < GetNumTypes( ); iOn++, pStr++ )
     {
         pMmio->DescendChunk( 'D', 'A', 'T', 'A' );
@@ -1040,7 +1116,7 @@ void CMaterialTypes::ctor( )
     pMmio->AscendList( );
     delete pMmio;
 
-    CWindowDC dc( NULL );
+    CWindowDC dc( (CWnd*)NULL );
     m_rgb[0]  = dc.GetNearestColor( PALETTERGB( 230, 154, 108 ) );
     m_rgb[1]  = dc.GetNearestColor( PALETTERGB( 128, 128, 255 ) );
     m_rgb[2]  = dc.GetNearestColor( PALETTERGB( 232, 163, 60 ) );
@@ -1056,13 +1132,7 @@ void CMaterialTypes::ctor( )
 
 void CMaterialTypes::dtor( )
 {
-
-    CString* pStr = m_saDesc;
-    for ( int iOn = 0; iOn < GetNumTypes( ); iOn++, pStr++ )
-    {
-        pStr->ReleaseBuffer( 0 );
-        pStr->FreeExtra( );
-    }
+    // std::string handles its own memory; nothing to do
 }
 
 
@@ -1105,6 +1175,7 @@ CUnit::CUnit( ): m_ptTarget( 0, 0 ), m_ptUs( 0, 0 ), m_ptOppo( 0, 0 ), m_ptUsOpp
     memset( m_pdwPlyrsSee, 0, sizeof( DWORD ) * theGame.GetMaxPlyrNum( ) );
 
     m_iFrameHit     = 0;
+    m_dwHitFlash    = 0;
     m_iVoice        = -1;
     m_dwLastMatTime = 0;
     m_iUpdateMat    = 0;
@@ -1182,8 +1253,21 @@ void CUnit::AssignData( CUnitData const* pData )
     m_pUnitData = pData;
 
     // this brings in the R&D multipliers
-    m_iSpottingRange = GetData( )->_GetSpottingRange( ) +
-                       ( GetData( )->_GetSpottingRange( ) >> ( 4 - GetOwner( )->GetSpottingLevel( ) ) );
+    // Radar/spotting bonus DOUBLES per level for spot_1..3 (>>3,>>2,>>1) then DIMINISHES at
+    // spot_4..7 (the >>(4-lvl) form would be a negative shift / UB at lvl>=4). Each higher
+    // tier adds the next halving (>>3,>>4,>>5,>>6), so the gain shrinks each level. Clamp the
+    // result to MAX_SPOTTING — the effective range indexes the spotting bitmask (see DrawSpotting).
+    {
+        int spB = GetData( )->_GetSpottingRange( );
+        int spL = GetOwner( )->GetSpottingLevel( );
+        int spBonus;
+        if ( spL <= 3 )      spBonus = spB >> ( 4 - spL );                          // none..spot_3: /16 /8 /4 /2
+        else if ( spL == 4 ) spBonus = ( spB >> 1 ) + ( spB >> 3 );                                          // spot_4: +62.5%
+        else if ( spL == 5 ) spBonus = ( spB >> 1 ) + ( spB >> 3 ) + ( spB >> 4 );                           // spot_5: +68.75%
+        else if ( spL == 6 ) spBonus = ( spB >> 1 ) + ( spB >> 3 ) + ( spB >> 4 ) + ( spB >> 5 );            // spot_6: +71.875%
+        else                 spBonus = ( spB >> 1 ) + ( spB >> 3 ) + ( spB >> 4 ) + ( spB >> 5 ) + ( spB >> 6 ); // spot_7: +73.4375%
+        m_iSpottingRange = __min( MAX_SPOTTING, spB + spBonus );
+    }
     m_iRange = GetData( )->_GetRange( ) + ( GetData( )->_GetRange( ) >> ( 4 - GetOwner( )->GetRangeLevel( ) ) );
     for ( int iInd = 0; iInd < CUnitData::num_attacks; iInd++ )
         m_iAttack[iInd] =
@@ -1221,8 +1305,8 @@ CUnit::~CUnit( )
 #endif
 
     // pull us off the toolbar and area status lines
-    if ( theApp.m_wndBar.m_wndText[1].GetStatusData( ) == this )
-        theApp.m_wndBar.m_wndText[1].SetStatusFunc( NULL );
+    if ( theApp.m_wndBar.GetStatusLineData( 1 ) == this )
+        theApp.m_wndBar.ClearStatusFunc( 1 );
 
     // if any area windows have us selected kill it
     theAreaList.UnitDying( this );
@@ -1305,12 +1389,12 @@ void CUnit::MaterialChange( )
     {
         CPoint pt;
         ::GetCursorPos( &pt );
-        if ( CWnd::WindowFromPoint( pt ) == pAreaWnd->_GetStatBar( ) )
+        if ( ::WindowFromPoint( pt ) == pAreaWnd->_GetStatBar( )->m_hWnd )
         {
-            CString str;
+            std::string str;
             ShowStatusText( str );
-            theApp.m_wndBar.SetStatusText( 1, str );
-            theApp.m_wndBar.m_wndText[1].InvalidateRect( NULL );
+            theApp.m_wndBar.SetStatusText( 1, str.c_str( ) );
+            theApp.m_wndBar.InvalidateStatusLine( 1 );
         }
     }
 
@@ -1356,6 +1440,18 @@ static int fnEnumHex( CHex* pHex, CHexCoord hex, void* pData )
         pHex->SetType( CHex::city );
         pHex->SetVisibleType( CHex::city );
         pHex->m_psprite = theTerrain.GetSprite( CHex::city, CITY_BUILD_OFF + RandNum( CITY_BUILD_NUM - 1 ) );
+        // SDL2/GPU terrain (ALL platforms incl. Windows — the area map renders through
+        // SDL2Terrain everywhere now): record the hex so the area map re-meshes this
+        // footprint tile incrementally (otherwise the ground/vertex land only updates on
+        // the next full rebuild — e.g. a zoom). And a building on a forest hex removes
+        // its static tree sprite, so flag the static-sprite layer for re-capture
+        // (trees persist across incremental captures otherwise). Was #ifndef _WIN32 —
+        // wrong: it left Windows-placed buildings showing trees on the foundation until
+        // the next rebuild. Roads (terrain.cpp) already call these unconditionally.
+        extern void g_enEditHex( int, int );
+        extern bool g_enStaticDirty;
+        g_enEditHex( hex.X( ), hex.Y( ) );
+        g_enStaticDirty = true;
     }
 
     return ( FALSE );
@@ -1366,6 +1462,14 @@ static int fnEnumInv( CHex*, CHexCoord hex, void* )
 {
 
     hex.SetInvalidated( );
+
+    // GPU terrain: a baked tile depends on its 8 neighbours (type transitions,
+    // feathering, slope shade), and the footprint flatten/re-type changes all
+    // of that for the RING around the building — but only footprint hexes were
+    // reaching the edit list, so the ring stayed stale until the next full
+    // rebuild (a zoom). Record the ring too, same as roads do (BUGS #34).
+    extern void g_enEditHex( int, int );
+    g_enEditHex( hex.X( ), hex.Y( ) );
 
     return ( FALSE );
 }
@@ -1400,6 +1504,15 @@ void CBuilding::AnimateOperating( BOOL bEnable )
     }
 }
 
+// half-speed the operating ambient(s) — a fracking well's slow pumpjack
+void CBuilding::SetAmbientHalfSpeed( BOOL bHalf )
+{
+    if ( GetData( )->GetBldgFlags( ) & CStructureData::FlOperAmb1 )
+        GetAmbient( CSpriteView::ANIM_FRONT_1 )->SetHalfSpeed( bHalf );
+    if ( GetData( )->GetBldgFlags( ) & CStructureData::FlOperAmb2 )
+        GetAmbient( CSpriteView::ANIM_FRONT_2 )->SetHalfSpeed( bHalf );
+}
+
 // makes a building visible on the screen
 void CBuilding::MakeBldgVisible( )
 {
@@ -1409,10 +1522,13 @@ void CBuilding::MakeBldgVisible( )
     // set all the hexes to this unit
     theMap.EnumHexes( m_hex, GetCX( ), GetCY( ), fnEnumHex, this );
 
-    // invalidate surrounding hexes too (altitude change)
+    // invalidate surrounding hexes too (altitude change). +3 not +2: starting
+    // at m_hex-1 the rect must span -1..CX/-1..CY inclusive to cover every hex
+    // whose rendered tile reads a flattened vertex or borders a re-typed
+    // footprint hex on EITHER side (the +X/+Y edge was one short — BUGS #34).
     CHexCoord _hex( m_hex.X( ) - 1, m_hex.Y( ) - 1 );
     _hex.Wrap( );
-    theMap.EnumHexes( _hex, GetCX( ) + 2, GetCY( ) + 2, fnEnumInv, this );
+    theMap.EnumHexes( _hex, GetCX( ) + 3, GetCY( ) + 3, fnEnumInv, this );
 
     IncVisible( );
 
@@ -1429,7 +1545,7 @@ void CBuilding::MakeBldgVisible( )
 
     SetInvalidated( );
 
-    theApp.m_wndWorld.NewMode( );
+    theApp.m_wndWorld.BuildingsChanged( );
 }
 
 static int fnEnumSetAlt( CHex* pHex, CHexCoord, void* pData )
@@ -1441,7 +1557,7 @@ static int fnEnumSetAlt( CHex* pHex, CHexCoord, void* pData )
 }
 
 // we pass in the upper left corner in the CTerrain coordinate space
-void CBuilding::AssignToHex( CHexCoord hex, int iAlt )
+void CBuilding::AssignToHex( CHexCoord hex, int iAlt, BOOL bSetAlt /*=TRUE*/ )
 {
 
     ASSERT_STRICT_VALID_STRUCT( &hex );
@@ -1456,9 +1572,18 @@ void CBuilding::AssignToHex( CHexCoord hex, int iAlt )
 
     theBuildingHex.GrabHex( this );
 
-    // set the altitude (all 4 vertices of each hex)
-    CHexCoord _hex( hex );
-    theMap.EnumHexes( _hex, GetCX( ) + 1, GetCY( ) + 1, fnEnumSetAlt, &iAlt );
+    // set the altitude (all 4 vertices of each hex) — flattens the footprint to
+    // the building level. Skipped on LOAD (bSetAlt=FALSE): the map already
+    // restored every hex's saved altitude, and re-flattening here would clobber
+    // terrain modified after build — notably the deep ship channel dug by
+    // FindChannel around part-water naval buildings (which is NOT re-dug on load),
+    // leaving the dock too shallow for boats to deploy. This footprint+1 sweep
+    // reaches the ship-exit water, so re-running it strands every boat in the dock.
+    if ( bSetAlt )
+    {
+        CHexCoord _hex( hex );
+        theMap.EnumHexes( _hex, GetCX( ) + 1, GetCY( ) + 1, fnEnumSetAlt, &iAlt );
+    }
 
     theMap._GetHex( hex )->ClrUnitDir( );  // TESTING
 
@@ -1889,6 +2014,8 @@ void CBuilding::ctor( )
     m_iUnitType = CUnit::building;
 
     m_fOperMod          = 0.0f;
+    m_fAltAccum         = 0.0f;
+    m_afAltAccum[0] = m_afAltAccum[1] = m_afAltAccum[2] = m_afAltAccum[3] = 0.0f;
     m_iBldgDir          = 0;
     m_iConstDone        = 0;
     m_iBuildDone        = 0;
@@ -1921,7 +2048,7 @@ CBuilding::CBuilding( int iBldg, int iBldgDir, int iOwner, DWORD dwID ): m_hex( 
     m_iVisible = 0;
 
 #ifdef _CHEAT
-    if ( theApp.GetProfileInt( "Cheat", "SeeAll", 0 ) )
+    if ( EnGetProfileInt( "Cheat", "SeeAll", 0 ) )
         m_iVisible = 1;
 #endif
 
@@ -2029,6 +2156,12 @@ int fnEnumHex2( CHex* pHex, CHexCoord _hex, void* )
         pHex->SetType( CHex::city );
         pHex->SetVisibleType( CHex::city );
         pHex->m_psprite = theTerrain.GetSprite( CHex::city, CITY_DESTROYED_OFF + RandNum( CITY_DESTROYED_NUM - 1 ) );
+        // SDL2/GPU terrain (all platforms): re-mesh this hex + re-capture static sprites
+        // (see fnEnumHex). Was #ifndef _WIN32 — same Windows tree-persist bug.
+        extern void g_enEditHex( int, int );
+        extern bool g_enStaticDirty;
+        g_enEditHex( _hex.X( ), _hex.Y( ) );
+        g_enStaticDirty = true;
     }
 
     pHex->ClrUnitDir( );
@@ -2045,6 +2178,12 @@ CBuilding::~CBuilding( )
 #ifdef _DEBUG
     m_Initialized = FALSE;
 #endif
+
+    // Close our read-only info window if it's open (EndDialog fires the onDone that
+    // clears m_pSdlInfoWin); after this the window won't render again, so its now-dead
+    // building pointer is never dereferenced.
+    if ( m_pSdlInfoWin )
+        m_pSdlInfoWin->EndDialog( 0 );
 
     // if the game is over we don't have to track this stuff
     if ( theApp.AmInGame( ) )
@@ -2077,6 +2216,10 @@ CBuilding::~CBuilding( )
         // mark as not built
         if ( m_iConstDone == -1 )
             GetOwner( )->AddExists( GetData( )->GetType( ), -1 );
+
+        // Edicts v1 §29: same last-host revoke as RemoveUnit — this destructor path also
+        // decrements the exists count (idempotent: only clears when no host remains).
+        GetOwner( )->EdictHostLost( GetData( ) );
 
         // scenario stuff
         if ( GetOwner( )->IsAI( ) && ( theGame.GetScenario( ) != -1 ) )
@@ -2199,21 +2342,8 @@ CBuilding::~CBuilding( )
                 }
             }
 
-            // if it was our last R&D center - kill the R&D window
-            if ( ( GetData( )->GetBldgType( ) == CStructureData::research ) && ( theApp.m_pdlgRsrch != NULL ) )
-                if ( theGame.GetMe( )->GetExists( CStructureData::research ) <= 0 )
-                {
-                    theApp.m_pdlgRsrch->DestroyWindow( );
-                    theApp.m_pdlgRsrch = NULL;
-                }
-
-            // if it was our last embassy - kill the relations window
-            if ( ( GetData( )->GetBldgType( ) == CStructureData::embassy ) && ( theApp.m_pdlgRelations != NULL ) )
-                if ( theGame.GetMe( )->GetExists( CStructureData::embassy ) <= 0 )
-                {
-                    theApp.m_pdlgRelations->DestroyWindow( );
-                    theApp.m_pdlgRelations = NULL;
-                }
+            // (last R&D-center CDlgResearch cleanup removed; SDL2ResearchDialog is modal)
+            // (last-embassy CDlgRelations cleanup removed; SDL2RelationsDialog is modal)
         }
 
         // if any vehicles are in us - kill them (except 1 crane)
@@ -2282,7 +2412,16 @@ CBuilding::~CBuilding( )
             DecrementSpotting( );
     }  // in game
 
-    theMap.EnumHexes( m_hex, m_cx, m_cy, fnEnumHex2, NULL );
+    // Re-skin the footprint to city/rubble (fnEnumHex2 -> CHex::SetType(city) ->
+    // theTerrain.GetSprite) ONLY while a game is live — this is the "demolished
+    // building leaves rubble" visual. At world teardown (CConquerApp::DestroyWorld
+    // clears m_bInGame before deleting the building map) it is pointless AND
+    // crashes: the sprite-store Ptr<CSprite> backing GetSprite is being torn down,
+    // so resolving it faults (observed on macOS: SIGSEGV in Ptr<CSprite>::Value()
+    // via ~CWarehouseBuilding -> EnumHexes -> SetType -> GetSprite). The
+    // teardown-essential hex/map removal below still runs unconditionally.
+    if ( theApp.AmInGame( ) )
+        theMap.EnumHexes( m_hex, m_cx, m_cy, fnEnumHex2, NULL );
     theBuildingHex.ReleaseHex( this );
     theBuildingMap.Remove( this );
 
@@ -2316,7 +2455,7 @@ CBuilding::~CBuilding( )
 
     // remove from world map
     if ( theApp.AmInGame( ) )
-        theApp.m_wndWorld.NewMode( );
+        theApp.m_wndWorld.BuildingsChanged( );
 }
 
 void CBuilding::RemoveUnit( )
@@ -2330,6 +2469,11 @@ void CBuilding::RemoveUnit( )
 
     if ( !theApp.AmInGame( ) )
         return;
+
+    // Edicts v1 §29: if this was the owner's LAST host of an active civ-wide edict
+    // (rocket → Austerity, command center → Fortify Border, ...), revoke that edict.
+    // Runs for ALL players on every client (removal is replicated) so MP converges.
+    GetOwner( )->EdictHostLost( GetData( ) );
 
     // we can't see anything anymore (may be an alliance unit)
     if ( SpottingOn( ) )
@@ -2382,20 +2526,10 @@ void CBuilding::RemoveUnit( )
                     theGame.PostToClient( pPlr->GetPlyrNum( ), &msg, sizeof( msg ) );
                 }
             }
-            if ( theApp.m_pdlgRelations != NULL )
-            {
-                theApp.m_pdlgRelations->DestroyWindow( );
-                theApp.m_pdlgRelations = NULL;
-            }
+            // (CDlgRelations destruction removed; SDL2RelationsDialog is modal)
         }
 
-        // if it was our last R&D center - kill the R&D window
-        if ( ( GetData( )->GetBldgType( ) == CStructureData::research ) && ( theApp.m_pdlgRsrch != NULL ) )
-            if ( theGame.GetMe( )->GetExists( CStructureData::research ) <= 0 )
-            {
-                theApp.m_pdlgRsrch->DestroyWindow( );
-                theApp.m_pdlgRsrch = NULL;
-            }
+        // (last R&D-center CDlgResearch cleanup removed; SDL2ResearchDialog is modal)
 
         DestroyAllWindows( );
 
@@ -2429,7 +2563,7 @@ void CBuilding::RemoveUnit( )
         theGame.m_pHpRtr->MsgDeleteUnit( this );
 
     // remove from world map
-    theApp.m_wndWorld.NewMode( );
+    theApp.m_wndWorld.BuildingsChanged( );
 }
 
 // make an instance of a building
@@ -2731,7 +2865,10 @@ static void FindChannel( CHexCoord& _hex )
                     return;
                 }
 
-                TRAP( );
+                // 1996 curiosity TRAP: adjacent water hexes the path graph
+                // doesn't connect (draft-blocked/pocket) - the fake-up below IS
+                // the designed handling (author's own comment). soak40 17:54
+                EN_TRAP_REMOVED( "FindChannel: no path between adjoining water hexes - faking per design" );
                 // fake one up if same or adjoining
                 phexPath  = new CHexCoord[3];
                 *phexPath = _hex;
@@ -2864,7 +3001,7 @@ BOOL CBuilding::InitRocket( CHexCoord const& hex, BOOL bMe )
         }
 
 #ifdef _CHEAT
-        if ( theApp.GetProfileInt( "Cheat", "AllUnits", 0 ) )
+        if ( EnGetProfileInt( "Cheat", "AllUnits", 0 ) )
         {
             int i = 0;
             for ( i = 0; i < CTransportData::light_cargo; i++ )
@@ -2884,7 +3021,7 @@ BOOL CBuilding::InitRocket( CHexCoord const& hex, BOOL bMe )
                 DropUnits(i, pData->GetWheelType( ), 3, 3, aiTime, iBlkSiz, m_hexExit, hexUL );
         }
 
-        if ( ( !GetOwner( )->IsAI( ) ) && ( theApp.GetProfileInt( "Cheat", "MoreTanks", 0 ) ) )
+        if ( ( !GetOwner( )->IsAI( ) ) && ( EnGetProfileInt( "Cheat", "MoreTanks", 0 ) ) )
         {
             DropUnits( CTransportData::heavy_tank, theTransports.GetData( CTransportData::heavy_tank )->GetWheelType( ),
                        8, 8, aiTime, iBlkSiz, m_hexExit, hexUL );
@@ -3027,10 +3164,23 @@ CBuilding* CBuilding::Create( CHexCoord const& hex, int iBldg, int iBldgDir, CVe
     switch ( iBldg )
     {
     case CStructureData::rocket:
+        // [rocket] diag: WHO placed a rocket and via what path? (auto-place regression
+        // on MP clients). If this fires on the client WITHOUT a prior manual land, the
+        // rocket was placed programmatically / via a synced message.
+        { static int on=-1; if(on<0) on=getenv("EN_ROCKET_LOG")?1:0;
+          if(on) fprintf(stderr,"[rocket] rocket PLACED plyr=%d IsMe=%d IsLocal=%d IsAI=%d AmServer=%d\n",
+                         (int)pBldg->GetOwner()->GetPlyrNum(), pBldg->GetOwner()->IsMe()?1:0,
+                         pBldg->GetOwner()->IsLocal()?1:0, pBldg->GetOwner()->IsAI()?1:0, theGame.AmServer()?1:0); }
         // people live on it
         pBldg->GetOwner( )->m_iAptCap += ROCKET_APT_CAP;
         pBldg->GetOwner( )->m_iOfcCap += ROCKET_OFC_CAP;
         pBldg->GetOwner( )->m_bPlacedRocket = TRUE;
+
+        // The minimap shows radar until you land; now that the rocket has touched down
+        // (and there's no command center yet) flip it to the parchment world map. The
+        // radar comes back when a command center is built (see mainloop ConstComplete).
+        if ( pBldg->GetOwner( )->IsMe( ) )
+            theApp.m_wndWorld.CommandCenterChange( );
 
         // give it all materials
         if ( pBldg->GetOwner( )->IsLocal( ) )
@@ -3148,7 +3298,7 @@ IsVis:
 
             for ( int y = 0; y < pBldg->GetData( )->GetCY( ); y++ )
             {
-                int iMask = 1 << MAX_SPOTTING;
+                SPOT_WORD iMask = (SPOT_WORD)1 << MAX_SPOTTING;
                 for ( int x = 0; x < pBldg->GetCX( ); x++ )
                 {
                     pBldg->m_dwaSpot[iInd] |= iMask;
@@ -3189,7 +3339,7 @@ IsVis:
 
     // world map
     if ( pBldg->IsVisible( ) )
-        theApp.m_wndWorld.NewMode( );
+        theApp.m_wndWorld.BuildingsChanged( );
 
     // if visible start the sound
     CWndArea* pAreaWnd = theAreaList.GetTop( );
@@ -3269,7 +3419,7 @@ void CBuilding::DetermineSpotting( )
 
         int xMax = ( *piOn ) * 2 + GetCX( );
         ASSERT( ( 0 <= ( MAX_SPOTTING - *piOn ) ) && ( ( MAX_SPOTTING - *piOn ) < SPOTTING_LINE ) );
-        int iMask = 1 << ( MAX_SPOTTING - *piOn );
+        SPOT_WORD iMask = (SPOT_WORD)1 << ( MAX_SPOTTING - *piOn );
 
         for ( int x = 0; x < xMax; x++ )
         {
@@ -3289,6 +3439,22 @@ void CBuilding::FixUp( )
 {
 
     GetOwner( )->AddExists( GetData( )->GetType( ), 1 );
+
+    // saves carry `stopped` on AI buildings (bldg 1168/1199: complete vehicle
+    // factories pause-locked for the whole game). No AI code ever sets or
+    // clears the pause flag, so on an AI building it is always a save artifact
+    // - clear it. Human pause state persists as before; abandoned stays.
+    if ( GetOwner( )->IsAI( ) && ( m_unitFlags & stopped ) && !( m_unitFlags & abandoned ) )
+    {
+        ClrFlag( stopped );
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+        char szR[96];
+        sprintf( szR, "[FACTRESUME] plyr %d bldg %lu type %d un-paused on load\n",
+                 GetOwner( )->GetPlyrNum( ), (unsigned long)GetID( ), GetData( )->GetType( ) );
+        OutputDebugStringA( szR );
+#endif
+    }
+
     CUnit::FixUp( );
 }
 
@@ -3333,23 +3499,21 @@ void CBuilding::MaterialChange( )
 void CVehicleBuilding::DestroyAllWindows( )
 {
 
-    if ( m_pDlgTransport != NULL )
-    {
-        if ( m_pDlgTransport->m_hWnd != NULL )
-            m_pDlgTransport->DestroyWindow( );
-        else
-            delete m_pDlgTransport;
-        m_pDlgTransport = NULL;
+    // Close SDL2 non-modal dialog if open
+    if ( m_pSdlBuildTransport ) {
+        m_pSdlBuildTransport->EndDialog( 0 );
+        // m_pSdlBuildTransport is now nullptr (set by the onDone lambda)
     }
+
+    // CDlgBuildTransport excluded from build (Phase 2d).
+    m_pDlgTransport = NULL;
 
     CBuilding::DestroyAllWindows( );
 }
 
 CVehicleBuilding::~CVehicleBuilding( )
 {
-
-    if ( ( m_pDlgTransport != NULL ) && ( m_pDlgTransport->m_hWnd != NULL ) )
-        m_pDlgTransport->DestroyWindow( );
+    // CDlgBuildTransport excluded from build (Phase 2d).
 }
 
 // see if we have enough materials to finish our job
@@ -3409,6 +3573,16 @@ void CVehicleBuilding::StartVehicle( int iIndex, int iNum )
     ASSERT_STRICT( ( 0 <= iIndex ) && ( iIndex < theTransports.GetNumTransports( ) ) );
     ASSERT( ( 0 < iNum ) && ( iNum < 200 ) );
 
+    // same type already in progress: keep building, just update the count.
+    // The unconditional restart below zeroes m_iBuildDone, and the AI re-issues
+    // orders on a cadence -- so anything slower than the cadence NEVER finished
+    // (measured: 508 outrider orders -> 0 built; only quick rangers completed).
+    if ( m_pBldUnt != NULL && m_pBldUnt->GetVehType( ) == iIndex && m_iBuildDone > 0 )
+    {
+        m_iNum = iNum;
+        return;
+    }
+
     // give back used materials
     for ( int iInd = 0; iInd < CMaterialTypes::GetNumBuildTypes( ); iInd++ )
         if ( m_aiUsed[iInd] > 0 )
@@ -3441,16 +3615,24 @@ void CVehicleBuilding::StartVehicle( int iIndex, int iNum )
         if ( m_pBldUnt->GetInput( iInd ) > 0 )
             if ( GetStore( iInd ) <= 0 )
             {
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+                {
+                    // observation: WHICH material halts vehicle production (491
+                    // outrider orders -> 0 completions at a stocked factory)
+                    char szH[96];
+                    sprintf( szH, "[VEHHALT] plyr %d bldg %lu veh %d needs mat %d\n",
+                             GetOwner( ) != NULL ? GetOwner( )->GetPlyrNum( ) : -1, (unsigned long)GetID( ), iIndex,
+                             iInd );
+                    OutputDebugStringA( szH );
+                }
+#endif
                 theGame.Event( EVENT_BUILD_HALTED, EVENT_WARN, this );
                 return;
             }
 
     AnimateOperating( TRUE );
 
-    // show it on the dialog
-    CDlgBuildTransport* pDlg = QueryDlgBuild( );
-    if ( pDlg != NULL )
-        pDlg->UpdateStatus( 1 );
+    // CDlgBuildTransport excluded from build (Phase 2d) — SDL2 dialog re-reads on open.
 
     theGame.MulEvent( MEVENT_BUILD_FACTORY, this );
 }
@@ -3464,23 +3646,42 @@ void CVehicleBuilding::ctor( )
     m_iNum = 1;
 }
 
+// Open (or re-focus) this building's read-only info window. Mirrors the lifecycle
+// of GetDlgBuild: lazily create a non-modal window, clear the pointer in onDone, and
+// the destructor closes it on building death.
+void CBuilding::ShowInfoWindow( bool bOnTop )
+{
+    if ( !theApp.m_gameWindow )
+        return;
+    if ( m_pSdlInfoWin ) {
+        m_pSdlInfoWin->RaiseAndAlert( );      // already open -> bring it forward
+        return;
+    }
+    // When opened from the build dialog's (I) button, the build window bumps itself
+    // to the top every frame — so the info window must keep-on-top too (set via the
+    // constructor) and be raised once to sit above it.
+    m_pSdlInfoWin = new SDL2BuildingWindow( theApp.m_gameWindow.get(), this, bOnTop );
+    m_pSdlInfoWin->ShowNonModal( [this]( int ) { m_pSdlInfoWin = nullptr; } );
+    if ( bOnTop )
+        m_pSdlInfoWin->RaiseAndAlert( );
+}
+
 CDlgBuildTransport* CVehicleBuilding::GetDlgBuild( )
 {
+    // Use native SDL2 build transport dialog if available (non-modal — no blocking loop)
+    if ( theApp.m_gameWindow ) {
+        if ( !m_pSdlBuildTransport ) {
+            m_pSdlBuildTransport = new SDL2BuildTransport( theApp.m_gameWindow.get(), this );
+            m_pSdlBuildTransport->ShowNonModal( [this]( int ) {
+                m_pSdlBuildTransport = nullptr;
+            } );
+        }
+        return m_pDlgTransport;  // MFC pointer not used by SDL2 path
+    }
 
-    if ( m_pDlgTransport == NULL )
-        m_pDlgTransport = new CDlgBuildTransport( theApp.m_pMainWnd, this );
-    ASSERT_STRICT_VALID( m_pDlgTransport );
-
-    if ( m_pBldUnt == NULL )
-        m_iLastPer = 0;
-
-    if ( m_pDlgTransport->m_hWnd == NULL )
-        m_pDlgTransport->Create( theApp.m_pMainWnd );
-
-    m_pDlgTransport->ShowWindow( SW_SHOWNORMAL );
-    m_pDlgTransport->SetFocus( );
-
-    return ( m_pDlgTransport );
+    // MFC CDlgBuildTransport excluded from build (Phase 2d). Without an SDL2
+    // GameWindow there's no in-game UI; abort.
+    return NULL;
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -3645,6 +3846,8 @@ static int fnMineToGround( CHex*, CHexCoord hex, void* pData )
             // all gone - kill it
             delete pMn;
             theMinerals.RemoveKey( hex );
+            // keep the AI's lock-free minerals bitmap exact (aisnap.h)
+            AiSnap::MineralsRemoved( hex.X( ), hex.Y( ) );
         }
     }
     return ( FALSE );
@@ -3679,7 +3882,16 @@ void CMineBuilding::UpdateGround( )
 void CFarmBuilding::ctor( )
 {
 
-    m_iTerMult = 0;
+    m_iTerMult   = 0;
+    m_iFieldStage = -1;
+}
+
+CFarmBuilding::~CFarmBuilding( )
+{
+    // restore the soil under our crop plots before we go (only mid-game; on
+    // shutdown the map is being torn down anyway)
+    if ( theApp.AmInGame( ) )
+        RevertFields( );
 }
 
 static int fnFarmFromGround( CHex* pHex, CHexCoord, void* pData )
@@ -3729,6 +3941,172 @@ void CFarmBuilding::UpdateFarm( )
     m_iTerMult = LandMult( m_hex, GetData( )->GetType( ), GetDir( ) );
 }
 
+// Record one hex of the ring as a crop plot, if it is farmable and unoccupied.
+// Does NOT touch the visible surface here - that is deferred to UpdateFieldStage
+// so plots stay hidden in fog of war until the player first sees the hex (like
+// roads). The logical terrain type (GetType / soil fertility) is never changed.
+static int fnCollectField( CHex* pHex, CHexCoord hex, void* pData )
+{
+    std::vector<DWORD>* pList = (std::vector<DWORD>*)pData;
+
+    // skip non-farmable soil: rocks, water, mountain, road, city all have FarmMult 0
+    if ( theTerrain.GetData( pHex->GetType( ) ).GetFarmMult( ) <= 0 )
+        return ( FALSE );
+
+    // Forest IS farmable in the terrain data (it counts toward LandMult yield, and
+    // we leave that alone) — but crop rows painted UNDER the tree sprites look
+    // broken, so keep the yield and skip the art. Also heal hexes an earlier
+    // session already painted under trees (the paint persists in saves).
+    if ( pHex->GetType( ) == CHex::forest )
+    {
+        if ( pHex->GetVisibleType( ) == CHex::fields )
+        {
+            int iSoil = pHex->GetType( );
+            pHex->SetVisibleType( iSoil );
+            pHex->SetGrowStage( 0 );
+            int iCount      = theTerrain.GetCount( iSoil );
+            pHex->m_psprite = theTerrain.GetSprite( iSoil, iCount <= 1 ? 0 : ( ( hex.X( ) * 2 + hex.Y( ) ) % iCount ) );
+            hex.SetInvalidated( );
+        }
+        return ( FALSE );
+    }
+
+    // skip occupied/built hexes
+    if ( pHex->GetUnits( ) & ( CHex::bldg | CHex::bridge ) )
+        return ( FALSE );
+
+    // Record the plot (including any already showing fields - they are within our
+    // own ring, so they are ours; this also re-adopts our plots after a load, where
+    // m_fieldHexes is rebuilt but the painted hexes persisted in the save).
+    pList->push_back( (unsigned long)hex );
+    return ( FALSE );
+}
+
+// (Re)build the field plots around an operational farm. Idempotent: clears the
+// list and re-scans the same footprint+1 ring that LandMult averages over.
+void CFarmBuilding::GrowFields( )
+{
+
+    // only operational farms grow fields (m_iConstDone == -1 means built)
+    if ( m_iConstDone != -1 )
+        return;
+
+    // only food farms get crop fields (lumber mills harvest forest)
+    CBuildFarm* pBf = GetData( )->GetBldFarm( );
+    if ( pBf == NULL || pBf->GetTypeFarm( ) != CMaterialTypes::food )
+        return;
+
+    // safety: if the field terrain art isn't loaded, do nothing (no crash)
+    if ( theTerrain.GetCount( CHex::fields ) <= 0 || theTerrain.GetSprite( CHex::fields, 0 ) == NULL )
+        return;
+
+    m_fieldHexes.clear( );
+
+    CStructureData const* pData = GetData( );
+    int                   cx    = GetDir( ) & 1 ? pData->GetCY( ) : pData->GetCX( );
+    int                   cy    = GetDir( ) & 1 ? pData->GetCX( ) : pData->GetCY( );
+
+    CHexCoord _hex( m_hex.X( ) - 1, m_hex.Y( ) - 1 );
+    _hex.Wrap( );
+    theMap.EnumHexes( _hex, cx + 2, cy + 2, fnCollectField, &m_fieldHexes );
+
+    m_iFieldStage = -1;  // force the next UpdateFieldStage to (re)apply
+}
+
+// Restore the original soil under our plots (used on teardown).
+void CFarmBuilding::RevertFields( )
+{
+
+    for ( size_t i = 0; i < m_fieldHexes.size( ); ++i )
+    {
+        CHexCoord hex( m_fieldHexes[i] );
+        CHex*     pHex = theMap._GetHex( hex );
+
+        if ( pHex->GetVisibleType( ) != CHex::fields )  // someone else changed it
+            continue;
+
+        int iSoil = pHex->GetType( );
+        pHex->SetVisibleType( iSoil );
+        pHex->SetGrowStage( 0 );
+        int iCount     = theTerrain.GetCount( iSoil );
+        pHex->m_psprite = theTerrain.GetSprite( iSoil, iCount <= 1 ? 0 : ( ( hex.X( ) * 2 + hex.Y( ) ) % iCount ) );
+        hex.SetInvalidated( );
+    }
+
+    m_fieldHexes.clear( );
+}
+
+// Drive the growth animation from harvest progress. Fertility already scales how
+// fast m_iBuildDone fills, so better soil advances the crop faster. One shared
+// stage for the whole farm.
+void CFarmBuilding::UpdateFieldStage( int iTimeToFarm )
+{
+
+    if ( m_fieldHexes.empty( ) || iTimeToFarm <= 0 )
+        return;
+
+    // Crop growth is tied to the farm's harvest cycle: m_iBuildDone runs 0 .. the
+    // (slowed) time-to-farm, so the field grows 0->1->2 then resets on harvest. The
+    // caller passes the SAME slowed period it harvests on (see CFarmBuilding::BuildFarm,
+    // FARM_HARVEST_SLOW) so the stage spans exactly one harvest cycle.
+    const int NUM_GROW_STAGES = 3;
+    int       iStage          = ( (int)m_iBuildDone * NUM_GROW_STAGES ) / iTimeToFarm;
+    if ( iStage < 0 )
+        iStage = 0;
+    if ( iStage > NUM_GROW_STAGES - 1 )
+        iStage = NUM_GROW_STAGES - 1;
+    m_iFieldStage = iStage;
+
+    BOOL bAny = FALSE;
+
+    for ( size_t i = 0; i < m_fieldHexes.size( ); ++i )
+    {
+        CHexCoord hex( m_fieldHexes[i] );
+        CHex*     pHex = theMap._GetHex( hex );
+
+        // Only touch hexes the player can currently see: plots stay hidden in fog
+        // of war until first sighted, then keep their last look once re-fogged.
+        if ( !pHex->GetVisibility( ) )
+            continue;
+        if ( pHex->GetUnits( ) & ( CHex::bldg | CHex::bridge ) )
+            continue;
+
+        BOOL bChanged = FALSE;
+
+        // first sighting of this plot - reveal the crop surface (soil left intact)
+        if ( pHex->GetVisibleType( ) != CHex::fields )
+        {
+            if ( theTerrain.GetData( pHex->GetType( ) ).GetFarmMult( ) <= 0 )
+                continue;  // soil changed under us (road/building) - no longer a plot
+            pHex->SetVisibleType( CHex::fields );
+            pHex->m_psprite = theTerrain.GetSprite( CHex::fields, 0 );
+            bChanged       = TRUE;
+        }
+
+        // advance the growth animation
+        if ( pHex->GetGrowStage( ) != iStage )
+        {
+            pHex->SetGrowStage( iStage );
+            bChanged = TRUE;
+        }
+
+        if ( bChanged )
+        {
+            hex.SetInvalidated( );
+            // The crop grow-stage is baked into the terrain tile, so the mesh must update
+            // to show growth — but only THIS plot hex changed. Record it so the GPU terrain
+            // PATCHES just it, instead of the bulk gen-bump below that forced a full ~50k
+            // rebuild every crop tick (a per-frame freeze zoomed out). Keeps the growth
+            // visual; just makes it cheap.
+            extern void g_enEditHex( int, int ); g_enEditHex( hex.X( ), hex.Y( ) );
+            bAny = TRUE;
+        }
+    }
+
+    if ( bAny )
+        theApp.m_wndWorld.BuildingsChanged( );   // gen bumped per changed hex above (patch, not rebuild)
+}
+
 
 /////////////////////////////////////////////////////////////////////////////
 // CRepairBuilding - a repair facility
@@ -3738,6 +4116,17 @@ void CRepairBuilding::ctor( )
 
     m_pVehRepairing = NULL;
     m_pBldUnt       = NULL;
+}
+
+// Read-only indexed access into the waiting queue, for the repair info window.
+CVehicle* CRepairBuilding::GetRepairQueueAt( int idx ) const
+{
+    if ( ( idx < 0 ) || ( idx >= (int)m_lstNext.GetCount( ) ) )
+        return ( NULL );
+    POSITION pos = m_lstNext.GetHeadPosition( );
+    for ( int i = 0; ( i < idx ) && ( pos != NULL ); i++ )
+        m_lstNext.GetNext( pos );
+    return ( ( pos != NULL ) ? m_lstNext.GetAt( pos ) : NULL );
 }
 
 CRepairBuilding::~CRepairBuilding( )
@@ -4408,7 +4797,8 @@ int CTransport::GetIndex( CTransportData const* pData ) const
 //--------------------------------------------------------------------------
 // CEffect::CEffect
 //--------------------------------------------------------------------------
-CEffect::CEffect( char const* pszRifName ): CSpriteStore<CEffectSprite>( pszRifName ), m_ptrees( NULL ), m_nTrees( 0 )
+CEffect::CEffect( char const* pszRifName ):
+    CSpriteStore<CEffectSprite>( pszRifName ), m_ptrees( NULL ), m_nTrees( 0 ), m_pptrFlagClrs( NULL )
 {
 }
 
@@ -4418,6 +4808,9 @@ CEffect::CEffect( char const* pszRifName ): CSpriteStore<CEffectSprite>( pszRifN
 CEffect::~CEffect( )
 {
     Close( );
+
+    delete[] m_pptrFlagClrs;
+    m_pptrFlagClrs = NULL;
 }
 
 //--------------------------------------------------------------------------
@@ -4485,11 +4878,10 @@ void CFlag::Init( int iPlayer )
 {
     m_iPlayer = iPlayer;
 
-    int nSprites = theEffects.GetCount( CEffect::flag );
+    // matches the minimap's 64-color team palette (base art for colors 0..6)
+    m_psprite = theEffects.GetFlagSprite( m_iPlayer );
 
-    ASSERT( 0 < nSprites );
-
-    m_psprite = theEffects.GetSprite( CEffect::flag, m_iPlayer % nSprites );
+    ASSERT( m_psprite );
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -4512,6 +4904,7 @@ void CVehicle::ctor( )
     m_iEvent   = none;
     m_cMode    = stop;
     m_pos      = NULL;
+    m_bRouteLoop = TRUE;   // legacy default; F1 lets the player set one-shot routes
     m_phexPath = NULL;
     m_iPathOff = 0;
     m_iPathLen = 0;
@@ -4520,6 +4913,12 @@ void CVehicle::ctor( )
     m_iBuildDone = -1;
     m_lOperMod   = 0;
     m_iLastPer   = 0;
+
+    m_hexStagnant     = CHexCoord( 0, 0 );
+    m_dwStagnantSince = 0;
+#if EN_PATH_PROBES
+    m_hexLastClamp    = CHexCoord( -1, -1 );  // no prior clamp
+#endif
 
     m_iStepsLeft = 0;
     m_iSpeed     = 0;
@@ -4540,7 +4939,6 @@ void CVehicle::ctor( )
     m_pWndRoute     = NULL;
     m_cOwn          = FALSE;
     m_pDlgStructure = NULL;
-    m_pDlgLoad      = NULL;
 
     m_pVehLoadOn = NULL;
     m_pTransport = NULL;
@@ -4821,7 +5219,10 @@ CVehicle::~CVehicle( )
     for ( int iInd = 0; iInd < NUM_SUBS_OWNED; iInd++ )
         if ( ( SubsOwned[iInd].x != -1 ) && ( theVehicleHex.GetVehicle( SubsOwned[iInd] ) == this ) )
         {
-            TRAP( );  // this is bad - a hex wasn't freed
+            // was TRAP() - fires on ROUTINE world-teardown order (vehicles die
+            // in arbitrary order, stale claims expected) and killed every Debug
+            // exit (soak7 crash); the next line IS the recovery
+            EN_TRAP_REMOVED( "~CVehicle: unfreed hex claim - released below" );
             theVehicleHex.ReleaseHex( SubsOwned[iInd], this );
         }
 
@@ -5022,15 +5423,18 @@ void CVehicle::DestroyBuildWindow( )
 
     ASSERT_STRICT_VALID( this );
 
-    if ( ( m_pDlgStructure != NULL ) && ( m_pDlgStructure->m_hWnd != NULL ) )
-        m_pDlgStructure->DestroyWindow( );
-    else
-        delete m_pDlgStructure;
+    // Close SDL2 non-modal dialog if open (EndDialog triggers cleanup via GameWindow)
+    if ( m_pSdlBuild ) {
+        m_pSdlBuild->EndDialog( 0 );
+        // m_pSdlBuild is now nullptr (set by the onDone lambda)
+    }
+
+    // CDlgBuildStructure excluded from build (Phase 2d).
     m_pDlgStructure = NULL;
 }
 
 CVehicle* CVehicle::Create( const CSubHex& ptHead, const CSubHex& ptTail, int iVeh, int iOwner, DWORD ID,
-                            VEH_MODE iRouteMode, CHexCoord& hexDest, DWORD dwIDBldg, int iDelay )
+                            VEH_MODE iRouteMode, const CHexCoord& hexDest, DWORD dwIDBldg, int iDelay )
 {
 
     ASSERT( ( iVeh != CTransportData::med_truck ) && ( iVeh != CTransportData::marines ) );
@@ -5047,6 +5451,14 @@ CVehicle* CVehicle::Create( const CSubHex& ptHead, const CSubHex& ptTail, int iV
 
     // uses some people
     pVeh->GetOwner( )->PplBldgToVeh( theTransports.GetData( iVeh )->GetPeople( ) );
+    // The Draft edict: drafted infantry (walk units) burn extra population (conscription
+    // overhead). Mult is 1.0 when off → no burn. Symmetric-safe: the extra is taken from the
+    // labor pool only (not the vehicle crew), so unit death still releases the normal amount.
+    if ( theTransports.GetData( iVeh )->GetWheelType( ) == CWheelTypes::walk )
+    {
+        int iPeople = theTransports.GetData( iVeh )->GetPeople( );
+        pVeh->GetOwner( )->BurnPpl( (int)( ( pVeh->GetOwner( )->GetEdictInfPopMult( ) - 1.0f ) * iPeople + 0.5f ) );
+    }
 
     // take the count
     pVeh->GetOwner( )->IncVehsBuilt( );
@@ -5194,18 +5606,20 @@ CVehicle* CVehicle::Create( const CSubHex& ptHead, const CSubHex& ptTail, int iV
 
 CDlgBuildStructure* CVehicle::GetDlgBuild( )
 {
+    // Use native SDL2 build dialog if available (non-modal — no blocking loop)
+    if ( theApp.m_gameWindow ) {
+        if ( !m_pSdlBuild ) {
+            m_pSdlBuild = new SDL2BuildStructure( theApp.m_gameWindow.get(), this );
+            m_pSdlBuild->ShowNonModal( [this]( int ) {
+                m_pSdlBuild = nullptr;
+            } );
+        }
+        return m_pDlgStructure;  // MFC pointer not used by SDL2 path
+    }
 
-    if ( m_pDlgStructure == NULL )
-        m_pDlgStructure = new CDlgBuildStructure( theApp.m_pMainWnd, this );
-    ASSERT_STRICT_VALID( m_pDlgStructure );
-
-    if ( m_pDlgStructure->m_hWnd == NULL )
-        m_pDlgStructure->Create( theApp.m_pMainWnd );
-
-    m_pDlgStructure->ShowWindow( SW_SHOWNORMAL );
-    m_pDlgStructure->SetFocus( );
-
-    return ( m_pDlgStructure );
+    // MFC CDlgBuildStructure excluded from build (Phase 2d). Without an SDL2
+    // GameWindow there's no in-game UI; abort.
+    return NULL;
 }
 
 void CVehicle::StartConst( CBuilding* pBldg )
@@ -5513,7 +5927,9 @@ void CBuilding::Serialize( CArchive& ar )
 
         ar >> m_cx >> m_cy;
 
-        AssignToHex( m_hex, theMap.GetHex( m_hex )->GetAlt( ) );
+        // LOAD: do occupancy/draw bookkeeping but DON'T re-set hex altitudes —
+        // CGameMap::Serialize already restored them (incl. the deep ship channel).
+        AssignToHex( m_hex, theMap.GetHex( m_hex )->GetAlt( ), FALSE );
         theBuildingMap.Add( this );
     }
 }
@@ -5587,6 +6003,10 @@ void CVehicleBuilding::Serialize( CArchive& ar )
             ar << (LONG)0;
         else
             ar << (LONG)m_pBldUnt->GetVehType( );
+
+        // Save release 7+: the build-queue COUNT, so a factory's remaining queue survives
+        // save/load (was not saved -> the queue was truncated to whatever had already built).
+        ar << (LONG)m_iNum;
     }
 
     else
@@ -5599,6 +6019,15 @@ void CVehicleBuilding::Serialize( CArchive& ar )
             m_pBldUnt = NULL;
         else
             AssignBldUnit( iIndex );
+
+        // Save release 7+ carries the queue count; older saves predate it (m_iNum stays at
+        // its ctor default, so an old save still loses the queue tail — best effort).
+        if ( theGame.m_dwVer >= 7 )
+        {
+            LONG lNum;
+            ar >> lNum;
+            m_iNum = (int)lNum;
+        }
     }
 }
 
@@ -5664,6 +6093,11 @@ void CFlag::Serialize( CArchive& ar )
         ar >> l;
 
         m_iPlayer = l;
+
+        // saves carry only base-art sprite indices (old-build compatible);
+        // re-resolve the extended team color from the player number
+        if ( 0 <= m_iPlayer )
+            m_psprite = theEffects.GetFlagSprite( m_iPlayer );
     }
 }
 
@@ -5827,7 +6261,11 @@ void CVehicle::Serialize( CArchive& ar )
         ar >> dw;
         m_pTransport = (CVehicle*)dw;
         ar >> dw;
-        m_iCargoSize = dw;
+        // Ignore the saved cargo size — it's rebuilt in FixUp from the cargo back-links
+        // (the only authoritative source; m_lstCargo isn't serialized). Trusting the
+        // saved value let a stale/doubled size persist, leaving carriers stuck "full"
+        // after unloading. Rebuilding from 0 heals those saves and stops double-counts.
+        m_iCargoSize = 0;
         ar >> dw;
         m_pVehLoadOn = (CVehicle*)dw;
 
@@ -5885,6 +6323,11 @@ void CVehicle::FixUp( )
             m_pTransport = NULL;
         if ( m_pTransport != NULL )
         {
+            // Rebuild the carrier's cargo from the back-links (pointers can't serialize).
+            // Serialize zeroes every vehicle's m_iCargoSize on load, so re-adding here
+            // makes the carrier's size the TRUE sum of its current cargo — this both
+            // avoids the old double-count AND heals saves whose stored size was wrong
+            // (a carrier stuck "full" after unloading on a loaded game).
             m_pTransport->m_lstCargo.AddTail( this );
             if ( GetData( )->IsPeople( ) )
                 m_pTransport->m_iCargoSize += 1;
@@ -5994,8 +6437,7 @@ void CUnitData::AssertValid( ) const
     ASSERT( ( 0 <= m_iDefense ) && ( m_iDefense < 40 ) );
     ASSERT( ( 0 <= m_iFireRate ) && ( m_iFireRate < 1440 ) );
     ASSERT( ( 0 <= m_iAccuracy ) && ( m_iAccuracy < 20 ) );
-    ASSERT_VALID_CSTRING( &m_sDesc );
-    ASSERT_VALID_CSTRING( &m_sText );
+    // m_sDesc / m_sText converted to std::string (Phase 5a) — no MFC validator.
     ASSERT( ( 1 <= m_cx ) && ( m_cx <= 5 ) );
     ASSERT( ( 1 <= m_cy ) && ( m_cy <= 5 ) );
     ASSERT( ( 0 <= m_iSoundIdle ) && ( m_iSoundIdle < 200 ) );
@@ -6435,7 +6877,7 @@ void CVehicle::AssertValid( ) const
         // check spotting
         if ( m_bSpotted )
         {
-            DWORD const* pdwSpot = m_dwaSpot;
+            SPOT_WORD const* pdwSpot = m_dwaSpot;
             CHexCoord    _hex( m_ptHead.x / 2 - MAX_SPOTTING, m_ptHead.y / 2 - MAX_SPOTTING );
             _hex.Wrap( );
             int  x        = _hex.X( );
@@ -6447,10 +6889,10 @@ void CVehicle::AssertValid( ) const
                 if ( *pdwSpot != 0 )
                 {
                     bSpots     = TRUE;
-                    int   iInd = 1;
+                    SPOT_WORD iInd = 1;
                     CHex* pHex = theMap._GetHex( _hex );
 
-                    for ( int iNum = 32; iNum > 0; iNum-- )
+                    for ( int iNum = SPOTTING_LINE; iNum > 0; iNum-- )
                     {
                         if ( *pdwSpot & iInd )
                             ASSERT( pHex->GetVisibility( ) );
@@ -6563,7 +7005,7 @@ void CVehicle::AssertValidAndLoc( ) const
             {
                 y = ( m_ptNext.y + m_ptHead.y + theMap.Get_eY( ) * 2 ) * MAX_HEX_HT / 4 + MAX_HEX_HT / 4;
                 if ( y >= theMap.Get_eY( ) * MAX_HEX_HT )
-                    y -= theMap.Get_eX( ) * MAX_HEX_HT;
+                    y -= theMap.Get_eY( ) * MAX_HEX_HT;
             }
         }
 

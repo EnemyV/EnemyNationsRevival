@@ -30,12 +30,14 @@ const int MSG_FILE_XFER = 1283;
 class CVPTransfer: protected CDataTransfer
 {
 public:
-	CDataTransfer::Done;
-	CDataTransfer::GetError;
-	CDataTransfer::SetError;
-	CDataTransfer::SendMore;
-	CDataTransfer::Sending;	   
-	CDataTransfer::TransferredDataAmount;
+	// Old-style access declarations (pre-C++11) — clang rejects these even with
+	// -fpermissive; gcc tolerated them. Use C++11 using-declarations instead.
+	using CDataTransfer::Done;
+	using CDataTransfer::GetError;
+	using CDataTransfer::SetError;
+	using CDataTransfer::SendMore;
+	using CDataTransfer::Sending;
+	using CDataTransfer::TransferredDataAmount;
 
 	enum { PACKETS_IN_WINDOW = 6 };
 	enum { DEFAULT_TIMEOUT = 5000 };

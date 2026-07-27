@@ -10,12 +10,13 @@ static char BASED_CODE THIS_FILE[] = __FILE__;
 #endif
 
 #include "wndbase.h"
+#include <algorithm>
 
 // windows to animate
-CList <CWndAnim *, CWndAnim*> theAnimList;
+std::list<CWndAnim*> theAnimList;
 
 // windows to accelerate, swap between (like MDI clients)
-CMap <CWndPrimary *, CWndPrimary*, CWndPrimary *, CWndPrimary*> thePrimaryMap;
+std::unordered_map<CWndPrimary*, CWndPrimary*> thePrimaryMap;
 
 
 /////////////////////////////////////////////////////////////////////////////
@@ -33,35 +34,26 @@ CWndBase::~CWndBase()
 {
 }
 
-BEGIN_MESSAGE_MAP(CWndBase, CWnd)
- //{{AFX_MSG_MAP(CWndBase)
- ON_WM_ERASEBKGND()
- ON_WM_MOUSEMOVE()
- ON_WM_PALETTECHANGED()
- ON_WM_QUERYNEWPALETTE()
- //}}AFX_MSG_MAP
-END_MESSAGE_MAP()
-
 /////////////////////////////////////////////////////////////////////////////
 // CWndBase message handlers
 
-int CWndBase::OnCreate(LPCREATESTRUCT lpCreateStruct) 
+int CWndBase::OnCreate(LPCREATESTRUCT lpCreateStruct)
 {
 
- if (CWnd::OnCreate(lpCreateStruct) == -1)
+ if (CWndStub::OnCreate(lpCreateStruct) == -1)
   return -1;
- 
- // if it's OWN_DC we grab a CDC *
+
+ // if it's OWN_DC we grab an HDC
  if ( GetClassLong (m_hWnd, GCL_STYLE) & CS_OWNDC )
   m_pDc = GetDC ();
- 
+
  return 0;
 }
 
-void CWndBase::OnDestroy() 
+void CWndBase::OnDestroy()
 {
 
- CWnd::OnDestroy();
+ CWndStub::OnDestroy();
 
  // delete dc
  if ( m_pDc != NULL )
@@ -71,10 +63,10 @@ void CWndBase::OnDestroy()
   }
 }
 
-BOOL CWndBase::OnEraseBkgnd(CDC *) 
+BOOL CWndBase::OnEraseBkgnd(HDC)
 {
 
- // we fully draw all of our windows 
+ // we fully draw all of our windows
  return TRUE;
 }
 
@@ -92,35 +84,37 @@ CWndBase::WindowProc(
  if ( m_framepainter.WindowProc( m_hWnd, Message, wParam, lParam, &result ))
   return result;
 
- return CWnd::WindowProc( Message, wParam, lParam );
+ return CWndStub::WindowProc( Message, wParam, lParam );
 }
 
-void CWndBase::OnMouseMove(UINT nFlags, CPoint point) 
+void CWndBase::OnMouseMove(UINT nFlags, int x, int y)
 {
  // if we have a global handler, call it
  if (sm_fnMouseMove != NULL)
-  sm_fnMouseMove (this, nFlags, point);
- 
- CWnd::OnMouseMove(nFlags, point);
+  sm_fnMouseMove (this, nFlags, x, y);
+
+ CWndStub::OnMouseMove(nFlags, x, y);
 }
 
-void CWndBase::OnPaletteChanged(CWnd* pFocusWnd) 
+void CWndBase::OnPaletteChanged(HWND hwndFocus)
 {
 static BOOL bInFunc = FALSE;
 
- CWnd::OnPaletteChanged(pFocusWnd);
+ CWndStub::OnPaletteChanged(hwndFocus);
 
  // Win32s locks up if we do the below code
  if (iWinType == W32s)
   return;
-  
+
  // stop infinite recursion
  if (bInFunc)
   return;
  bInFunc = TRUE;
 
- CClientDC dc (this);
- int iRtn = thePal.PalMsg (dc.m_hDC, m_hWnd, WM_PALETTECHANGED, (WPARAM) pFocusWnd->m_hWnd, 0);
+ // Raw HDC pattern replaces CClientDC dc(this).
+ HDC hdc = ::GetDC( m_hWnd );
+ int iRtn = thePal.PalMsg (hdc, m_hWnd, WM_PALETTECHANGED, (WPARAM)hwndFocus, 0);
+ ::ReleaseDC( m_hWnd, hdc );
 
  // invalidate the window
  if (iRtn)
@@ -129,33 +123,27 @@ static BOOL bInFunc = FALSE;
  bInFunc = FALSE;
 }
 
-BOOL CWndBase::OnQueryNewPalette() 
+BOOL CWndBase::OnQueryNewPalette()
 {
- 
+
  if (iWinType == W32s)
-  return CWnd::OnQueryNewPalette();
+  return CWndStub::OnQueryNewPalette();
 
- CClientDC dc (this);
- thePal.PalMsg (dc.m_hDC, m_hWnd, WM_QUERYNEWPALETTE, 0, 0);
+ HDC hdc = ::GetDC( m_hWnd );
+ thePal.PalMsg (hdc, m_hWnd, WM_QUERYNEWPALETTE, 0, 0);
+ ::ReleaseDC( m_hWnd, hdc );
 
- return CWnd::OnQueryNewPalette();
+ return CWndStub::OnQueryNewPalette();
 }
 
 /////////////////////////////////////////////////////////////////////////////
 // CWndPrimary - the main windows shown in the game
 
-CWndPrimary::CWndPrimary () 
-{ 
+CWndPrimary::CWndPrimary ()
+{
 
- m_hAccel = NULL; 
+ m_hAccel = NULL;
 }
-
-BEGIN_MESSAGE_MAP(CWndPrimary, CWndBase)
- //{{AFX_MSG_MAP(CWndPrimary)
- ON_WM_CREATE()
- ON_WM_DESTROY()
- //}}AFX_MSG_MAP
-END_MESSAGE_MAP()
 
 CWndPrimary::~CWndPrimary()
 {
@@ -182,16 +170,16 @@ int CWndPrimary::OnCreate(LPCREATESTRUCT lpCreateStruct)
     }
  
  // add to list
- thePrimaryMap.SetAt (this, this);
- 
+ thePrimaryMap[this] = this;
+
  return 0;
 }
 
-void CWndPrimary::OnDestroy() 
+void CWndPrimary::OnDestroy()
 {
 
- // remove from list 
- thePrimaryMap.RemoveKey (this);
+ // remove from list
+ thePrimaryMap.erase( this );
 
  CWndBase::OnDestroy();
 }
@@ -200,29 +188,19 @@ void CWndPrimary::OnDestroy()
 /////////////////////////////////////////////////////////////////////////////
 // CWndAnim - base class for animated windows
 
-BEGIN_MESSAGE_MAP(CWndAnim, CWndPrimary)
- //{{AFX_MSG_MAP(CWndAnim)
- ON_WM_DESTROY()
- //}}AFX_MSG_MAP
-END_MESSAGE_MAP()
-
 void CWndAnim::InvalidateAllWindows ()
 {
 
- POSITION pos = theAnimList.GetHeadPosition ();
- while (pos != NULL)
-  {
-  CWndAnim *pWnd = theAnimList.GetNext (pos);
+ for ( CWndAnim* pWnd : theAnimList )
   pWnd->InvalidateWindow (NULL);
-  }
 }
 
-void CWndAnim::OnDestroy() 
+void CWndAnim::OnDestroy()
 {
 
- POSITION pos = theAnimList.Find (this);
- if (pos != NULL)
-  theAnimList.RemoveAt (pos);
+ auto it = std::find( theAnimList.begin(), theAnimList.end(), this );
+ if ( it != theAnimList.end() )
+  theAnimList.erase( it );
 
  CWndPrimary::OnDestroy();
 }

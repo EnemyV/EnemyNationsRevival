@@ -15,6 +15,10 @@
 #include "help.h"
 #include "error.h"
 #include "sfx.h"
+#include "enprobes.h"
+#include "SDL2CreateStatus.h"
+
+#include <process.h>  // _beginthreadex (replaces AfxBeginThread)
 
 #include "terrain.inl"
 #include "unit.inl"
@@ -34,10 +38,10 @@ int **CVehicle::m_apiWid = NULL;
 int CVehicle::m_iMaxRange = 0;
 
 int CTransportData::m_iMaxDraft = CHex::sea_level;
-CString    CTransportData::m_sAuto;
-CString    CTransportData::m_sRoute;
-CString    CTransportData::m_sIdle;
-CString    CTransportData::m_sTravel;
+std::string  CTransportData::m_sAuto;
+std::string  CTransportData::m_sRoute;
+std::string  CTransportData::m_sIdle;
+std::string  CTransportData::m_sTravel;
 
 CCriticalSection    CSpriteCollection::g_cs;
 BOOL                    CSpriteCollection::g_bTerminateReadThread;
@@ -394,6 +398,12 @@ void CStructure::InitData() {
         // BUGBUG - inc building points
         (*ppSd)->m_iDamagePoints += (*ppSd)->m_iDamagePoints / 2;
 
+        // Operator balance (2026-07-05): Rocket ship +15% HP, +10% weapon range (clamp 12).
+        if ((*ppSd)->m_iType == CStructureData::rocket) {
+            (*ppSd)->m_iDamagePoints = ((*ppSd)->m_iDamagePoints * 115) / 100;
+            (*ppSd)->m_iRange        = __min(((*ppSd)->m_iRange * 110) / 100, 12);
+        }
+
         if ((*ppSd)->m_iSoundIdle > 0)
             (*ppSd)->m_iSoundIdle += SOUNDS::bld_base - 1;
         if ((*ppSd)->m_iSoundRun > 0)
@@ -410,6 +420,16 @@ void CStructure::InitData() {
             (*ppSd)->m_aiBuild[iInd] = ptrMmio->ReadShort();
         for (int iInd = 3; iInd < CMaterialTypes::GetNumBuildTypes(); iInd++)
             (*ppSd)->m_aiBuild[iInd] = 0;
+
+        // === CUSTOM GAMEPLAY TWEAK (2026-05-31) ===========================
+        // The second apartment ("the tall one", apartment_1_2) now costs an
+        // extra 10 steel on top of its existing 400 lumber. Applied here after
+        // the data load (rather than editing the binary data file) so it's
+        // deterministic across all clients — every client runs the same exe, so
+        // multiplayer stays in sync. To revert: delete these two lines.
+        // ==================================================================
+        if (iOn == CStructureData::apartment_1_2)
+            (*ppSd)->m_aiBuild[CMaterialTypes::steel] = 10;
         (*ppSd)->m_iPower = ptrMmio->ReadShort();
         (*ppSd)->m_fNoPower = (float) ptrMmio->ReadShort() / 100.0;
 
@@ -446,6 +466,31 @@ void CStructure::InitData() {
                     pBu->m_iTime = ptrMmio->ReadShort() * 24;
                     for (int iInd = 0; iInd < CMaterialTypes::GetNumBuildTypes(); iInd++)
                         pBu->m_aiInput[iInd] = ptrMmio->ReadShort();
+                    // === CUSTOM GAMEPLAY TWEAK (2026-07-04, operator combat/balance) ===
+                    // Trim the STEEL build cost of infantry (90 -> 70) and rangers /
+                    // special forces (135 -> 115). Applied here as each factory's per-unit
+                    // CBuildUnit is read, BEFORE the m_aiTotalInput rollup below, so the
+                    // factory aggregate reflects it. Code-side, NO ENATIONS.DAT change, and
+                    // identical on every client so it stays MP-deterministic. (HP +40% and
+                    // the 5-population cost are applied in CTransport::InitData.)
+                    if (pBu->m_iVehType == CTransportData::infantry)
+                        pBu->m_aiInput[CMaterialTypes::steel] = 70;
+                    else if (pBu->m_iVehType == CTransportData::rangers)
+                        pBu->m_aiInput[CMaterialTypes::steel] = 115;
+                    // Range-buffed artillery (+20% steel) and Frigate/cruiser (+25% steel) cost
+                    // more to build; tiny Xil (copper) bump if the unit uses it (operator).
+                    else if (pBu->m_iVehType == CTransportData::light_art ||
+                             pBu->m_iVehType == CTransportData::med_art ||
+                             pBu->m_iVehType == CTransportData::heavy_art ||
+                             pBu->m_iVehType == CTransportData::cruiser) {
+                        int iPct = (pBu->m_iVehType == CTransportData::cruiser) ? 125 : 120;
+                        pBu->m_aiInput[CMaterialTypes::steel] =
+                            (pBu->m_aiInput[CMaterialTypes::steel] * iPct) / 100;
+                        if (pBu->m_aiInput[CMaterialTypes::copper] > 0)
+                            pBu->m_aiInput[CMaterialTypes::copper] +=
+                                __max(1, pBu->m_aiInput[CMaterialTypes::copper] / 10);
+                    }
+                    // ================================================================
                     pBv->m_aBldUnits.Add(pBu);
                 }
 
@@ -572,7 +617,7 @@ void CStructure::InitSprites() {
     }
 
 #ifdef _CHEAT
-    if (theApp.GetProfileInt ("Cheat", "ShowLoad", 0))
+    if (EnGetProfileInt("Cheat", "ShowLoad", 0))
         theApp.m_pCreateGame->GetDlgStatus()->SetMsg ("Building bitmaps loaded");
 #endif
 
@@ -673,10 +718,10 @@ void CTransport::InitData() {
     if (m_bLoaded & 0x01)
         return;
 
-    CTransportData::m_sAuto.LoadString(IDS_TRUCK_AUTO);
-    CTransportData::m_sRoute.LoadString(IDS_TRUCK_ROUTE);
-    CTransportData::m_sIdle.LoadString(IDS_TRUCK_IDLE);
-    CTransportData::m_sTravel.LoadString(IDS_TRUCK_TRAVEL);
+    CTransportData::m_sAuto = EnLoadStdString(IDS_TRUCK_AUTO);
+    CTransportData::m_sRoute = EnLoadStdString(IDS_TRUCK_ROUTE);
+    CTransportData::m_sIdle = EnLoadStdString(IDS_TRUCK_IDLE);
+    CTransportData::m_sTravel = EnLoadStdString(IDS_TRUCK_TRAVEL);
 
     // read in the RIF data
     Ptr<CMmio> ptrMmio = theDataFile.OpenAsMMIO("units", "UNIT");
@@ -698,6 +743,30 @@ void CTransport::InitData() {
         // CUnitData stuff
         pTd->m_iType = (CTransportData::TRANS_TYPE) iOn;
         pTd->ReadUnitData(*ptrMmio);
+
+        // === CUSTOM GAMEPLAY TWEAK (2026-07-04, operator combat/balance) ==========
+        // Infantry and Rangers (special forces) now take 5 population/workers to field
+        // (was 1) but are 40% tougher. Steel build cost is trimmed separately in
+        // CStructure::InitData (the factory's per-unit CBuildUnit input). Applied
+        // code-side after the RIF load — NO ENATIONS.DAT change — and identically on
+        // every client, so combat stays MP-deterministic.
+        if (pTd->m_iType == CTransportData::infantry ||
+            pTd->m_iType == CTransportData::rangers) {
+            pTd->m_iPeople       = 5;
+            pTd->m_iDamagePoints = (pTd->m_iDamagePoints * 140) / 100;   // +40% HP
+        }
+        // =========================================================================
+
+        // === CUSTOM GAMEPLAY TWEAK (2026-07-05, operator balance) =================
+        // Artillery range +20% (light/med/heavy_art), Frigate (cruiser) +25%. Clamp to 12
+        // (m_iMaxRange = range*1.5+2 must stay <= MAX_SPOTTING, now 24).
+        if (pTd->m_iType == CTransportData::light_art ||
+            pTd->m_iType == CTransportData::med_art ||
+            pTd->m_iType == CTransportData::heavy_art)
+            pTd->m_iRange = __min((pTd->m_iRange * 120) / 100, 12);
+        else if (pTd->m_iType == CTransportData::cruiser)   // Frigate
+            pTd->m_iRange = __min((pTd->m_iRange * 125) / 100, 12);
+        // =========================================================================
 
         if (pTd->m_iSoundIdle > 0)
             pTd->m_iSoundIdle += SOUNDS::veh_idle_base - 1;
@@ -723,6 +792,7 @@ void CTransport::InitData() {
             if (iDraft < CTransportData::m_iMaxDraft)
                 CTransportData::m_iMaxDraft = iDraft;
         }
+
 
         if (pTd->_GetSpottingRange() > CVehicle::m_iMaxRange)
             CVehicle::m_iMaxRange = pTd->_GetSpottingRange();
@@ -776,7 +846,7 @@ void CTransport::InitSprites() {
     theApp.BaseYield();
 
 #ifdef _CHEAT
-    if (theApp.GetProfileInt ("Cheat", "ShowLoad", 0))
+    if (EnGetProfileInt("Cheat", "ShowLoad", 0))
         theApp.m_pCreateGame->GetDlgStatus()->SetMsg ("Vehicle bitmaps loaded");
 #endif
 
@@ -859,7 +929,7 @@ void CTransport::InitSprites() {
     }
 
 #ifdef _CHEAT
-    if (theApp.GetProfileInt ("Cheat", "ShowLoad", 0))
+    if (EnGetProfileInt("Cheat", "ShowLoad", 0))
         theApp.m_pCreateGame->GetDlgStatus()->SetMsg ("Vehicle hotspots loaded");
 #endif
 
@@ -1051,6 +1121,54 @@ CEffect::Close() {
     delete[] m_ptrees;
 
     m_ptrees = NULL;
+
+    // m_pptrFlagClrs deliberately kept: clones own their storage and stay
+    // valid across collection reloads (process lifetime).
+}
+
+//-------------------------------------------------------------------------
+// CEffect::GetFlagSprite - flag matching the shared team palette. Colors
+// 0..base-1 are the shipped art (it matches plyrClrs[0..6]); beyond that a
+// recolored clone of variant 0 is synthesized once and cached.
+//-------------------------------------------------------------------------
+CEffectSprite *
+CEffect::GetFlagSprite(int iPlayer) {
+    int nBase = GetCount(flag);
+
+    ASSERT(0 < nBase);
+
+    if (0 >= nBase)
+        return NULL;
+    if (iPlayer < 0)
+        iPlayer = 0;
+
+    int nClrs = CPlayer::GetNumTeamColors();
+    int iClr = iPlayer % nClrs;
+
+    if (iClr < nBase)   // shipped art already matches the first palette entries
+        return GetSprite(flag, iClr);
+
+    // 8-bit palette build can't recolor: old wrap behavior
+    if (8 >= ptrthebltformat->GetBitsPerPixel())
+        return GetSprite(flag, iPlayer % nBase);
+
+    if (NULL == m_pptrFlagClrs) {
+        m_pptrFlagClrs = new Ptr<CSprite>[nClrs];
+
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+        char sz[128];
+        sprintf(sz, "[FLAGCLR] synthesizing flag variants: %d team colors (base art count %d)\n",
+                nClrs, nBase);
+        OutputDebugStringA(sz);
+#endif
+    }
+
+    if (NULL == m_pptrFlagClrs[iClr].Value())
+        m_pptrFlagClrs[iClr] = new CEffectSprite(*GetSprite(flag, 0),
+                                                 CPlayer::GetTeamColor(iClr),
+                                                 iClr % nBase);   // serialized index stays old-format
+
+    return (CEffectSprite *) m_pptrFlagClrs[iClr].Value();
 }
 
 //-------------------------------------------------------------------------
@@ -1408,7 +1526,7 @@ CSpriteParms::CSpriteParms(CMmio *pmmio, unsigned int uTime, int iTypeOverride, 
 //    m_ptrspritehdr = new CSpriteHdr();
     m_ptrspritehdr = (CSpriteHdr *) (new BYTE[lHdrLen]); // Allocate the full size.
     if (m_ptrspritehdr.Value() == NULL) {
-        AfxMessageBox(IDS_NO_MEMORY, MB_OK);
+        EnMessageBox(IDS_NO_MEMORY, MB_OK);
         ThrowError(ERR_OUT_OF_MEMORY);
     }
 
@@ -1430,7 +1548,7 @@ CSpriteParms::CSpriteParms(CMmio *pmmio, unsigned int uTime, int iTypeOverride, 
 //BUGBUG	m_ptrbyCompressedSuperviews = new BYTE [ lLength ];
     m_ptrbyCompressedSuperviews = new BYTE[lLength];
     if (m_ptrbyCompressedSuperviews.Value() == NULL) {
-        AfxMessageBox(IDS_NO_MEMORY, MB_OK);
+        EnMessageBox(IDS_NO_MEMORY, MB_OK);
         ThrowError(ERR_OUT_OF_MEMORY);
     }
 
@@ -1507,6 +1625,14 @@ CSprite::CSprite( CSpriteParms const &spriteparms):
     m_iType = spriteparms.m_iType;
 
     memset(m_anHotSpots, 0, sizeof(m_anHotSpots));
+
+    // Zero the decompressed-superview pointer table up front. They are assigned only
+    // after the (yielding) decompression loop finishes, and zoom levels below
+    // GetFirstZoom() are never assigned at all. Without this they hold garbage, so a
+    // paint that runs during a BaseYield() mid-load would deref a wild pointer (or bake
+    // a black/garbage tile into the GPU atlas). NULL lets GetDIBPixels() return NULL and
+    // the draw/decode paths skip cleanly until the art is ready.
+    memset(m_apbyDecompressedSuperviews, 0, sizeof(m_apbyDecompressedSuperviews));
 
     m_ptrspritehdr = spriteparms.m_ptrspritehdr;
 
@@ -1648,6 +1774,220 @@ void CSprite::PostConstruct() {
 }
 
 //-------------------------------------------------------------------------
+// CSprite::CloneStorage - after a shallow copy-construct, deep-copy the header
+// block (views + CSpriteDIBs) and the decompressed pixel blocks so this sprite
+// owns distinct, writable storage (the GPU atlas keys on CSpriteDIB pointers).
+// Assumes views own their DIB arrays (true for effects - no CopyBase sharing)
+// and that the clone is never re-parsed via GetViewIndices.
+//-------------------------------------------------------------------------
+void CSprite::CloneStorage() {
+    BYTE *pbyOld = (BYTE *) m_ptrspritehdr.Value();
+
+    ASSERT(pbyOld);
+
+    if (!pbyOld)
+        return;
+
+    int nViews = GetNumViews();
+    int nSupers = GetNumSuperviews();
+    int i, j, k;
+
+    // the header block length isn't kept after load - recover it as the end of
+    // the farthest view (the fixed tables precede the views in the block)
+    long lHdrLen = (long) ((BYTE *) (m_piViewIndices + nViews) - pbyOld);
+
+    for (i = 0; i < nViews; ++i) {
+        CSpriteView *pv = GetSpriteView(i, FALSE);
+        long lEnd = m_piViewOffsets[i] + (long) sizeof(CSpriteView)
+                    + pv->m_nHotSpots * (long) sizeof(CHotSpot)
+                    + (pv->m_nBase + pv->m_nOverlay + pv->m_anAnim[0] + pv->m_anAnim[1]
+                       + pv->m_anAnim[2] + pv->m_anAnim[3]) * (long) sizeof(CSpriteDIB);
+
+        lHdrLen = __max(lHdrLen, lEnd);
+    }
+
+    BYTE *pbyNew = new BYTE[lHdrLen];
+    memcpy(pbyNew, pbyOld, lHdrLen);
+
+    m_ptrspritehdr = (CSpriteHdr *) pbyNew;   // drops the shared ref, owns the copy
+    m_psuperviewinfo = (CSuperviewInfo *) m_ptrspritehdr->m_abyTheRest;
+    m_piViewOffsets = (int *) (m_psuperviewinfo + nSupers);
+    m_piViewIndices = m_piViewOffsets + nViews;
+
+    // deep-copy the decompressed superview pixel blocks (same walk as the ctor)
+    int iFirstZoom = theApp.GetZoomData()->GetFirstZoom();
+    int iZoom, iSuper;
+    long lPixLen = 0;
+
+    for (iZoom = iFirstZoom; iZoom < NUM_ZOOM_LEVELS; iZoom++)
+        for (iSuper = 0; iSuper < nSupers; iSuper++)
+            lPixLen += m_psuperviewinfo[iSuper].m_alayoutinfo[iZoom].m_aiDecompressedLength[m_iBytesPerPixel - 1];
+
+    BYTE *pbyPix = new BYTE[lPixLen];
+
+    m_ptrbyDecompressedSuperviews = pbyPix;   // drops the shared ref, owns the copy
+
+    for (iZoom = NUM_ZOOM_LEVELS - 1; iZoom >= iFirstZoom; iZoom--)
+        for (iSuper = 0; iSuper < nSupers; iSuper++) {
+            long lBlock = m_psuperviewinfo[iSuper].m_alayoutinfo[iZoom].m_aiDecompressedLength[m_iBytesPerPixel - 1];
+
+            if (m_apbyDecompressedSuperviews[iZoom][iSuper])
+                memcpy(pbyPix, m_apbyDecompressedSuperviews[iZoom][iSuper], lBlock);
+            else
+                memset(pbyPix, 0, lBlock);
+
+            m_apbyDecompressedSuperviews[iZoom][iSuper] = pbyPix;
+            pbyPix += lBlock;
+        }
+
+    // rebase the copied views' intra-block pointers; DIB back-pointers via Init
+    for (i = 0; i < nViews; ++i) {
+        CSpriteView *pv = GetSpriteView(i, FALSE);
+
+        pv->m_psprite = this;
+        if (pv->m_photspots)
+            pv->m_photspots = (CHotSpot *) (pbyNew + ((BYTE *) pv->m_photspots - pbyOld));
+        if (pv->m_pspritedibBase)
+            pv->m_pspritedibBase = (CSpriteDIB *) (pbyNew + ((BYTE *) pv->m_pspritedibBase - pbyOld));
+        if (pv->m_pspritedibOverlay)
+            pv->m_pspritedibOverlay = (CSpriteDIB *) (pbyNew + ((BYTE *) pv->m_pspritedibOverlay - pbyOld));
+        for (k = 0; k < CSpriteView::ANIM_COUNT; ++k)
+            if (pv->m_apspritedibAnim[k])
+                pv->m_apspritedibAnim[k] = (CSpriteDIB *) (pbyNew + ((BYTE *) pv->m_apspritedibAnim[k] - pbyOld));
+
+        CSpriteDIBParms spritedibparms(0, m_iType, m_iBitsPerPixel);
+
+        spritedibparms.m_pspriteview = pv;
+
+        for (j = 0; j < pv->m_nBase; ++j) {
+            spritedibparms.m_uTime = pv->m_pspritedibBase[j].Time();
+            pv->m_pspritedibBase[j].Init(spritedibparms);
+        }
+        for (j = 0; j < pv->m_nOverlay; ++j) {
+            spritedibparms.m_uTime = pv->m_pspritedibOverlay[j].Time();
+            pv->m_pspritedibOverlay[j].Init(spritedibparms);
+        }
+        for (k = 0; k < CSpriteView::ANIM_COUNT; ++k)
+            for (j = 0; j < pv->m_anAnim[k]; ++j) {
+                spritedibparms.m_uTime = pv->m_apspritedibAnim[k][j].Time();
+                pv->m_apspritedibAnim[k][j].Init(spritedibparms);
+            }
+    }
+}
+
+//-------------------------------------------------------------------------
+// xRecolorClothChunk - one decompressed RLE frame chunk (layout per
+// CSpriteDIB::DecodeToRGBA: 2 header ints, H row offsets, then
+// [skip][len][pixels...] runs). Chromatic pixels -> clr scaled by value;
+// grays and transparency untouched.
+//-------------------------------------------------------------------------
+static void xRecolorClothChunk(BYTE *pbyData, long lLen, int H, int bpp, COLORREF clr) {
+    int const iChromaMin = 24;   // pole gray = 0 chroma; cloth is strongly chromatic
+
+    int *piRows = 2 + (int *) pbyData;
+    BYTE *pbyPixels = (BYTE *) (piRows + H);
+    BYTE *pbyEnd = pbyData + lLen;
+
+    for (int y = 0; y < H; ++y) {
+        if ((BYTE *) (piRows + y) + sizeof(int) > pbyEnd)
+            break;
+
+        BYTE *pbySrc = pbyPixels + piRows[y];
+
+        for (;;) {
+            if (pbySrc < pbyData || pbySrc + 2 * (int) sizeof(int) > pbyEnd)
+                break;
+
+            pbySrc += sizeof(int);              // transparent skip run - untouched
+
+            int nDataBytes = *(int *) pbySrc;
+            pbySrc += sizeof(int);
+
+            if (0 == nDataBytes)
+                break;
+            if (nDataBytes < 0 || pbySrc + nDataBytes > pbyEnd)
+                break;
+
+            for (BYTE *s = pbySrc; s + bpp <= pbySrc + nDataBytes; s += bpp) {
+                int iHi = __max(s[0], __max(s[1], s[2]));   // data is BGR(X)
+                int iLo = __min(s[0], __min(s[1], s[2]));
+
+                if (iHi - iLo > iChromaMin) {
+                    s[0] = (BYTE) ((GetBValue(clr) * iHi) / 255);
+                    s[1] = (BYTE) ((GetGValue(clr) * iHi) / 255);
+                    s[2] = (BYTE) ((GetRValue(clr) * iHi) / 255);
+                }
+            }
+
+            pbySrc += nDataBytes;
+        }
+    }
+}
+
+//-------------------------------------------------------------------------
+// CSprite::RecolorCloth - recolor all frames/zooms of an owned-storage clone
+// (call CloneStorage first). Truecolor RLE data only.
+//-------------------------------------------------------------------------
+void CSprite::RecolorCloth( COLORREF clr ) {
+    if (3 != m_iBytesPerPixel && 4 != m_iBytesPerPixel)
+        return;   // 8-bit palette data: keep the base art
+
+    int const nGroups = 2 + CSpriteView::ANIM_COUNT;
+    BYTE const *apbyDone[256];   // visit each chunk once
+    int nDone = 0;
+
+    int iFirstZoom = theApp.GetZoomData()->GetFirstZoom();
+    int bpp = m_iBytesPerPixel;
+
+    for (int i = 0; i < GetNumViews(); ++i) {
+        CSpriteView *pv = GetSpriteView(i, FALSE);
+
+        CSpriteDIB *apdibGroup[nGroups];
+        int anGroup[nGroups];
+
+        apdibGroup[0] = pv->m_pspritedibBase;
+        anGroup[0] = pv->m_nBase;
+        apdibGroup[1] = pv->m_pspritedibOverlay;
+        anGroup[1] = pv->m_nOverlay;
+        for (int k = 0; k < CSpriteView::ANIM_COUNT; ++k) {
+            apdibGroup[2 + k] = pv->m_apspritedibAnim[k];
+            anGroup[2 + k] = pv->m_anAnim[k];
+        }
+
+        for (int g = 0; g < nGroups; ++g)
+            for (int j = 0; j < anGroup[g]; ++j) {
+                CSpriteDIB &dib = apdibGroup[g][j];
+
+                for (int iZoom = iFirstZoom; iZoom < NUM_ZOOM_LEVELS; iZoom++) {
+                    BYTE *pbySuper = m_apbyDecompressedSuperviews[iZoom][pv->m_iSuperviewIndex];
+
+                    if (!pbySuper)
+                        continue;
+
+                    BYTE *pbyData = pbySuper + dib.Offset(iZoom);
+                    long lLen = dib.Length(iZoom);
+
+                    if (lLen <= 0)
+                        continue;
+
+                    BOOL bSeen = FALSE;
+                    for (int d = 0; d < nDone; ++d)
+                        if (apbyDone[d] == pbyData) {
+                            bSeen = TRUE;
+                            break;
+                        }
+                    if (bSeen)
+                        continue;
+                    if (nDone < 256)
+                        apbyDone[nDone++] = pbyData;
+
+                    xRecolorClothChunk(pbyData, lLen, dib.Height(iZoom), bpp, clr);
+                }
+            }
+    }
+}
+
+//-------------------------------------------------------------------------
 // CSprite::AddHotSpotKey
 //-------------------------------------------------------------------------
 void CSprite::AddHotSpotKey( CHotSpotKey const &hotspotkey ) {
@@ -1774,6 +2114,22 @@ CStructureSprite::CStructureSprite( CSpriteParms const &spriteparms ):
                         -1 == aiIndex[ iDir ][ iStage ][ 2 ][ iDamage ] ));
 #endif
 #endif
+
+    // BUGBUG (data): bridge sprites ship BOTH a one-piece view (iLayerType 0) and a
+    // two-piece FORE view (iLayerType 1) with no BACK view — violating the one-piece-
+    // XOR-two-piece invariant the (compiled-out) _GG ASSERT above checks. The one-piece
+    // view is really the back piece (the road deck); since types 0 and 1 share a slot
+    // (iLayerType >> 1), the railing used to clobber the deck and the bridge surface
+    // never rendered. Re-route the one-piece view to the BACK slot so both layers draw.
+    for (iDir = 0; iDir < NUM_BLDG_DIRECTIONS; ++iDir)
+        for (iStage = 0; iStage < NUM_BLDG_STAGES; ++iStage)
+            for (iDamage = 0; iDamage < NUM_BLDG_DAMAGE; ++iDamage)
+                if (-1 != aiIndex[iDir][iStage][0][iDamage] &&
+                    -1 != aiIndex[iDir][iStage][1][iDamage] &&
+                    -1 == aiIndex[iDir][iStage][2][iDamage]) {
+                    aiIndex[iDir][iStage][2][iDamage] = aiIndex[iDir][iStage][0][iDamage];
+                    aiIndex[iDir][iStage][0][iDamage] = -1;
+                }
 
     for (iDir = 0; iDir < NUM_BLDG_DIRECTIONS; ++iDir)
         for (iStage = 0; iStage < NUM_BLDG_STAGES; ++iStage)
@@ -1971,6 +2327,33 @@ CEffectSprite::CEffectSprite( CSpriteParms const &spriteparms ):
 }
 
 //---------------------------------------------------------------------------
+// CEffectSprite::CEffectSprite - team-color clone (extended flag palette).
+// Deep-copies storage so pixels AND CSpriteDIB identities are distinct (the
+// GPU atlas keys on the CSpriteDIB pointer), then recolors the cloth. iIndex
+// must stay in the base-art range: it's what CUnitTile::Serialize writes.
+//---------------------------------------------------------------------------
+CEffectSprite::CEffectSprite( CEffectSprite const &effectsprite, COLORREF clrCloth, int iIndex ):
+        CSprite( effectsprite ) {
+    SetIndex(iIndex);
+
+    CloneStorage();
+
+    // remap the layer views into the copied header block
+    BYTE *pbyOld = (BYTE *) effectsprite.m_ptrspritehdr.Value();
+    BYTE *pbyNew = (BYTE *) m_ptrspritehdr.Value();
+
+    for (int i = 0; i < NUM_BLDG_LAYERS; ++i)
+        m_apspriteview[i] = (NULL == effectsprite.m_apspriteview[i]) ? NULL :
+                (CSpriteView *) (pbyNew + ((BYTE *) effectsprite.m_apspriteview[i] - pbyOld));
+
+    RecolorCloth(clrCloth);
+
+#ifdef _DEBUG
+    CheckValid();
+#endif
+}
+
+//---------------------------------------------------------------------------
 // CVehicleSprite::CVehicleSprite
 //---------------------------------------------------------------------------
 CVehicleSprite::CVehicleSprite( CSpriteParms const &spriteparms ):
@@ -2155,7 +2538,13 @@ BOOL CSpriteCollection::Read( CMmio &mmio, unsigned int uTime, int iPerStart, in
 
     CThreadParms threadparms(&mmio, uTime, iTypeOverride, iBitsPerPixel, m_nSprite);
     BOOL bReadThread = W32s != iWinType;
-    HANDLE hThread;
+#ifndef _WIN32
+    // Debug aid: EN_SINGLE_READ forces synchronous (main-thread) sprite reading so
+    // a failing CSpriteParms read throws inline with a full backtrace instead of
+    // being swallowed by the worker thread's catch(...) → g_bReadThreadError.
+    if ( getenv( "EN_SINGLE_READ" ) ) bReadThread = FALSE;
+#endif
+    HANDLE hThread = NULL;
 
     if (bReadThread) {
         ASSERT(g_listptrspriteparms.IsEmpty());
@@ -2164,20 +2553,27 @@ BOOL CSpriteCollection::Read( CMmio &mmio, unsigned int uTime, int iPerStart, in
         g_bTerminateReadThread = FALSE;
         g_bReadThreadError = FALSE;
 
-        CWinThread *pthread = AfxBeginThread(ReadThreadFunc, &threadparms, THREAD_PRIORITY_HIGHEST);
-
-        // GG: Hope the thread doesn't terminate before we get here.
-
-        hThread = pthread->m_hThread;
+        // Replaced AfxBeginThread with _beginthreadex (Phase 4c prep, 2026-05-11).
+        // ReadThreadFunc returns UINT (__cdecl) — wrap with a __stdcall lambda
+        // for _beginthreadex's required calling convention.
+        struct ThreadWrap {
+            static unsigned __stdcall Run(void* p) {
+                return CSpriteCollection::ReadThreadFunc(p);
+            }
+        };
+        unsigned threadId = 0;
+        hThread = (HANDLE)_beginthreadex(NULL, 0, &ThreadWrap::Run, &threadparms, 0, &threadId);
+        ASSERT(hThread != NULL);
+        ::SetThreadPriority(hThread, THREAD_PRIORITY_HIGHEST);
     }
 
     for (int i = 0; i < m_nSprite; ++i) {
         try {
 #ifdef _CHEAT
-            if (theApp.GetProfileInt ("Cheat", "ShowLoad", 0))
+            if (EnGetProfileInt("Cheat", "ShowLoad", 0))
             {
-                CString sText = "Sprite: " + IntToCString (i);
-                theApp.m_pCreateGame->GetDlgStatus()->SetMsg (sText);
+                std::string sText = "Sprite: " + std::to_string(i);
+                theApp.m_pCreateGame->GetDlgStatus()->SetMsg (sText.c_str());
             }
 #endif
 
@@ -2240,10 +2636,20 @@ BOOL CSpriteCollection::Read( CMmio &mmio, unsigned int uTime, int iPerStart, in
                 // Wait for the read thread to terminate itself (it accesses data local to this function)
 
                 WaitForSingleObject(hThread, INFINITE);
+                CloseHandle(hThread);
             }
 
             throw;
         }
+    }
+
+    if (bReadThread) {
+        // The read thread exits on its own once it has produced all m_nSprite
+        // parms (all consumed above). Reap it: the thread record (kernel handle
+        // on Windows, ThreadObj in the POSIX shim) was never closed on the
+        // success path — one leaked per collection load.
+        WaitForSingleObject(hThread, INFINITE);
+        CloseHandle(hThread);
     }
 
     ASSERT(0 <= iMaxID);
@@ -2296,7 +2702,7 @@ BOOL CSpriteCollection::Read( CMmio &mmio, unsigned int uTime, int iPerStart, in
     m_bOpen = TRUE;
 
 #ifdef _CHEAT
-    if (theApp.GetProfileInt ("Cheat", "ShowLoad", 0))
+    if (EnGetProfileInt("Cheat", "ShowLoad", 0))
         theApp.m_pCreateGame->GetDlgStatus()->SetMsg ("Sprites Loaded");
 #endif
 

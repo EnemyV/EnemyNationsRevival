@@ -11,9 +11,15 @@
 
 #include "caiunit.hpp"
 
+#include "aisnap.h"  // Tier-B per-tick world snapshot (lock-free reads)
 #include "caidata.hpp"
 #include "logging.h"  // dave's logging system
 #include "stdafx.h"
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+#include <intrin.h>  // _ReturnAddress for the [CRANEORD] caller tag
+#endif
+
+#include "Perf.h"  // ai.snap.hit/miss counters (gated by EN_PERF)
 
 
 #if THREADS_ENABLED
@@ -40,6 +46,16 @@ CAIUnit::CAIUnit( DWORD dwID, int iOwner, int iType, int iTypeUnit )
     m_plCopyData = NULL;
     m_pwaParams  = NULL;
     m_pdwaParams = NULL;
+
+    m_dwTimeLastAtkCmd = 0;  // attack-alert cooldown stamp (transient, not saved)
+    m_dwStuckSince     = 0;  // stuck-watch (transient)
+    m_dwStuckHex       = 0;
+    m_dwResendDest     = 0;
+    m_wResendCnt       = 0;
+    m_dwInBldgSince    = 0;
+    m_dwErrHex         = 0;
+    m_wErrCnt          = 0;
+    m_dwRoadStopSeen   = 0;
 
     ASSERT_VALID( this );
 
@@ -483,6 +499,238 @@ void CAIUnit::Update( CVehicle* pData )
     pCopy->m_aiDataOut[CAI_TYPEVEHICLE] = pData->GetData( )->GetType( );
 }
 //
+// Tier-B: fill the CBuilding copy from the per-tick snapshot.
+// Mirrors Update( CBuilding* ) field-for-field (see that function).
+//
+void CAIUnit::UpdateFromSnap( const AiBldgSnap& snap )
+{
+    ASSERT_VALID( this );
+    ASSERT_VALID( m_plCopyData );
+
+    CAICopy* pCopy = m_plCopyData->GetCopy( CAICopy::CBuilding );
+    if ( pCopy == NULL )
+    {
+        try
+        {
+            pCopy = new CAICopy( CAICopy::CBuilding );
+            m_plCopyData->AddTail( (CObject*)pCopy );
+        }
+        catch ( CException* e )
+        {
+            if ( pCopy != NULL )
+            {
+                delete pCopy;
+                pCopy = NULL;
+            }
+            throw( ERR_CAI_BAD_NEW );
+        }
+    }
+    for ( int i = 0; i < CAI_DATA_SLOTS; ++i )
+    {
+        pCopy->m_aiDataIn[i]  = 0;
+        pCopy->m_aiDataOut[i] = 0;
+    }
+
+    for ( int i = 0; i < CMaterialTypes::num_types; ++i ) pCopy->m_aiDataIn[i] = snap.aiStore[i];
+
+    pCopy->m_aiDataOut[CAI_LOC_X] = snap.iExitX;
+    pCopy->m_aiDataOut[CAI_LOC_Y] = snap.iExitY;
+
+    pCopy->m_aiDataOut[CAI_ISCONSTRUCTING] = snap.bConstructing;
+    pCopy->m_aiDataOut[CAI_ISPAUSED]       = snap.bPaused;
+    pCopy->m_aiDataOut[CAI_ISWAITING]      = snap.bWaiting;
+    pCopy->m_aiDataOut[CAI_PRODUCES]       = snap.iUnionType;
+
+    pCopy->m_aiDataOut[CAI_DAMAGE]    = snap.iDamagePer;
+    pCopy->m_aiDataOut[CAI_BUILDTYPE] = snap.iBldgType;
+    pCopy->m_aiDataOut[CAI_TYPEBUILD] = snap.iType;
+}
+
+//
+// Tier-B: fill the CVehicle copy from the per-tick snapshot.
+// Mirrors Update( CVehicle* ) field-for-field (see that function).
+//
+void CAIUnit::UpdateFromSnap( const AiVehSnap& snap )
+{
+    ASSERT_VALID( this );
+    ASSERT_VALID( m_plCopyData );
+
+    CAICopy* pCopy = m_plCopyData->GetCopy( CAICopy::CVehicle );
+    if ( pCopy == NULL )
+    {
+        try
+        {
+            pCopy = new CAICopy( CAICopy::CVehicle );
+            m_plCopyData->AddTail( (CObject*)pCopy );
+        }
+        catch ( CException* e )
+        {
+            if ( pCopy != NULL )
+            {
+                delete pCopy;
+                pCopy = NULL;
+            }
+            throw( ERR_CAI_BAD_NEW );
+        }
+    }
+    for ( int i = 0; i < CAI_DATA_SLOTS; ++i )
+    {
+        pCopy->m_aiDataIn[i]  = 0;
+        pCopy->m_aiDataOut[i] = 0;
+    }
+
+    for ( int i = 0; i < CMaterialTypes::num_types; ++i ) pCopy->m_aiDataIn[i] = snap.aiStore[i];
+
+    pCopy->m_aiDataOut[CAI_LOC_X]  = snap.iHeadX;
+    pCopy->m_aiDataOut[CAI_LOC_Y]  = snap.iHeadY;
+    pCopy->m_aiDataOut[CAI_DEST_X] = snap.iDestX;
+    pCopy->m_aiDataOut[CAI_DEST_Y] = snap.iDestY;
+
+    pCopy->m_aiDataOut[CAI_DAMAGE]      = snap.iDamagePer;
+    pCopy->m_aiDataOut[CAI_TYPEVEHICLE] = snap.iType;
+}
+
+//
+// Tier-B: try to satisfy a GetCopyData request from the per-tick snapshot,
+// without touching the global game lock. The snapshot entry also serves as a
+// lock-free liveness check (dead units fall out of it on the next publish),
+// preserving the legacy behaviour where a dead unit's refresh was skipped.
+// Static type data (CStructureData/CTransportData/CBuild*) is served from the
+// immutable type tables via the snapshotted type id — the same const objects
+// the legacy path reached through the live unit pointer.
+//
+BOOL CAIUnit::ServeFromSnapshot( int iType )
+{
+    if ( !AiSnap::Enabled( ) )
+        return FALSE;
+
+    if ( m_iType == CUnit::building )
+    {
+        AiBldgSnap snap;
+        if ( !AiSnap::CopyBldg( m_dwID, snap ) )
+        {
+            Perf::CounterInc( "ai.snap.miss" );
+            return FALSE;
+        }
+
+        // owner-validation parity with the legacy path: GetBuildingData
+        // (caidata.cpp) returns NULL on an owner mismatch (e.g. after a
+        // give_unit while our m_iOwner is stale), which skipped the refresh
+        // and served the stale copy. Fall back so that behaviour is kept.
+        if ( m_iOwner != CAI_OPFOR_UNIT && snap.iOwner != m_iOwner )
+        {
+            Perf::CounterInc( "ai.snap.miss" );
+            return FALSE;
+        }
+        Perf::CounterInc( "ai.snap.hit" );
+
+        switch ( iType )
+        {
+        case CAICopy::CBuilding:
+            UpdateFromSnap( snap );
+            return TRUE;
+
+        case CAICopy::CUnitData:
+        case CAICopy::CStructureData:
+        case CAICopy::CBuildMaterials:
+        case CAICopy::CBuildMine:
+        case CAICopy::CBuildFarm:
+        {
+            CStructureData const* pData = pGameData->GetStructureData( snap.iType );
+            if ( pData == NULL )
+                return FALSE;
+
+            if ( iType == CAICopy::CUnitData )
+                Update( (CUnitData const*)pData );
+            else if ( iType == CAICopy::CStructureData )
+                Update( pData );
+            else if ( iType == CAICopy::CBuildMaterials )
+            {
+                if ( pData->GetBldMaterials( ) == NULL )
+                    return FALSE;
+                Update( pData->GetBldMaterials( ) );
+            }
+            else if ( iType == CAICopy::CBuildMine )
+            {
+                if ( pData->GetBldMine( ) == NULL )
+                    return FALSE;
+                Update( pData->GetBldMine( ) );
+            }
+            else  // CAICopy::CBuildFarm
+            {
+                if ( pData->GetBldFarm( ) == NULL )
+                    return FALSE;
+                Update( pData->GetBldFarm( ) );
+            }
+            return TRUE;
+        }
+
+        case CAICopy::CBuildUnit:
+            // current production (vehicle factory) or repair record; both are
+            // stable static-table pointers captured at publish time
+            if ( snap.pProducing != NULL )
+            {
+                Update( snap.pProducing );
+                return TRUE;
+            }
+            if ( snap.pRepairing != NULL )
+            {
+                Update( snap.pRepairing );
+                return TRUE;
+            }
+            // not producing: let the legacy path decide (it allows a NULL
+            // copy return in this case)
+            return FALSE;
+
+        default:
+            return FALSE;
+        }
+    }
+    else if ( m_iType == CUnit::vehicle )
+    {
+        AiVehSnap snap;
+        if ( !AiSnap::CopyVeh( m_dwID, snap ) )
+        {
+            Perf::CounterInc( "ai.snap.miss" );
+            return FALSE;
+        }
+
+        // owner-validation parity (see building branch above)
+        if ( m_iOwner != CAI_OPFOR_UNIT && snap.iOwner != m_iOwner )
+        {
+            Perf::CounterInc( "ai.snap.miss" );
+            return FALSE;
+        }
+        Perf::CounterInc( "ai.snap.hit" );
+
+        switch ( iType )
+        {
+        case CAICopy::CVehicle:
+            UpdateFromSnap( snap );
+            return TRUE;
+
+        case CAICopy::CUnitData:
+        case CAICopy::CTransportData:
+        {
+            CTransportData const* pData = pGameData->GetTransportData( snap.iType );
+            if ( pData == NULL )
+                return FALSE;
+            if ( iType == CAICopy::CUnitData )
+                Update( (CUnitData const*)pData );
+            else
+                Update( pData );
+            return TRUE;
+        }
+
+        default:
+            return FALSE;
+        }
+    }
+
+    return FALSE;
+}
+
+//
 // get a current pointer to data copy based on
 // the type of data requested
 //
@@ -490,6 +738,13 @@ CAICopy* CAIUnit::GetCopyData( int iType )
 {
     ASSERT_VALID( this );
     ASSERT_VALID( m_plCopyData );
+
+    // Tier-B fast path: serve from the per-tick snapshot, no global lock.
+    // Falls through to the legacy locked path when the snapshot can't help
+    // (disabled via EN_AISNAP=0, unit not yet/no longer in the snapshot, or
+    // a request the snapshot doesn't carry).
+    if ( ServeFromSnapshot( iType ) )
+        return ( m_plCopyData->GetCopy( iType ) );
 
     CVehicle*  pVehicle = NULL;
     CBuilding* pBldg    = NULL;
@@ -715,9 +970,13 @@ void CAIUnit::SetDestination( CAIUnit* pCAIBldg )
     // the destination is being set to make sure the unit
     // is not being requested to go to its current location
     CHexCoord hexVeh;
+    BOOL      bInBldgB = FALSE;
     CVehicle* pVehicle = pGameData->GetVehicleData( m_iOwner, m_dwID );
     if ( pVehicle != NULL )
-        hexVeh = pVehicle->GetHexHead( );
+    {
+        hexVeh   = pVehicle->GetHexHead( );
+        bInBldgB = pVehicle->IsInBuilding( );
+    }
 
     CBuilding* pBldg = pGameData->GetBuildingData( pCAIBldg->GetOwner( ), pCAIBldg->GetID( ) );
     if ( pBldg != NULL )
@@ -726,14 +985,36 @@ void CAIUnit::SetDestination( CAIUnit* pCAIBldg )
         // CHexCoord hex = pBldg->GetHex();
         CHexCoord hex = pBldg->GetExitHex( );
 
+        // a truck/crane standing ON the exit hex: an order there would be
+        // dropped below and it freezes at the doorstep. Order it INTO the
+        // building instead - entry re-arms arrival; trucks unload, cranes
+        // weld from INSIDE the site (operator-confirmed)
+        BOOL bTruck = pGameData->IsTruck( m_dwID ) ||
+                      GetTypeUnit( ) == CTransportData::construction;
+        if ( hex == hexVeh && bTruck )
+            hex = pBldg->GetHex( );
+
         // CMsgVehSetDest (DWORD dwID, CHexCoord const & hex, int iMode);
         // pMsg = new CMsgVehSetDest( m_dwID, hex, CVehicle::_goto );
         CMsgVehSetDest msg( m_dwID, hex, CVehicle::moving );
         LeaveCriticalSection( &cs );
 
-        // don't bother if current location is the same as destination
-        if ( hex == hexVeh )
+        // same-location: drop for non-trucks; for a truck send the wake
+        // (instant arrival -> handler unloads/loads; see CHexCoord overload)
+        if ( hex == hexVeh && !bTruck )
             return;
+
+        // same 30s repeat-dedupe as SetDestination(CHexCoord&): the AI re-issues
+        // the SAME dest to the SAME unit every Manage pass — measured 650
+        // veh_set_dest/s at 15 players (g.mt.58), each one a server-side
+        // pathfind (8.3k path calls/s) = the sustained game-start grind.
+        // parked INSIDE a building, the next-leg order is a correction, not
+        // spam (trucks sat 12 min inside sources waiting for the sweep nudge)
+        if ( !bInBldgB && hex == m_hexLastDest &&
+             theGame.GettimeGetTime( ) < m_timeLastDest + 30 * 1000 )
+            return;
+        m_hexLastDest  = hex;
+        m_timeLastDest = theGame.GettimeGetTime( );
 
 #ifdef _LOGOUT
 
@@ -763,14 +1044,32 @@ void CAIUnit::SetDestination( CSubHex& subHexDest )
     // is not being requested to go to its current location
     EnterCriticalSection( &cs );
     CSubHex   subHexVeh;
+    BOOL      bInBldgS = FALSE;
     CVehicle* pVehicle = pGameData->GetVehicleData( m_iOwner, m_dwID );
     if ( pVehicle != NULL )
+    {
         subHexVeh = pVehicle->GetPtHead( );
+        bInBldgS  = pVehicle->IsInBuilding( );
+    }
     LeaveCriticalSection( &cs );
 
-    // don't bother if current location is the same as destination
-    if ( subHexDest == subHexVeh )
+    // same-location: drop for non-trucks; a truck gets the wake instead
+    // (instant arrival -> handler unloads/loads; see CHexCoord overload)
+    if ( subHexDest == subHexVeh && !pGameData->IsTruck( m_dwID ) &&
+         GetTypeUnit( ) != CTransportData::construction )
         return;
+
+    // same 30s repeat-dedupe as SetDestination(CHexCoord&) — see the
+    // building-overload comment (g.mt.58 flood, 650 veh_set_dest/s).
+    {
+        CHexCoord hexDest( ( subHexDest.x / 2 ), ( subHexDest.y / 2 ) );
+        // parked INSIDE a building: next-leg order is a correction, not spam
+        if ( !bInBldgS && hexDest == m_hexLastDest &&
+             theGame.GettimeGetTime( ) < m_timeLastDest + 30 * 1000 )
+            return;
+        m_hexLastDest  = hexDest;
+        m_timeLastDest = theGame.GettimeGetTime( );
+    }
 
     // CMsgVehSetDest (DWORD dwID, CSubHex const & hex, int iMode);
     /*
@@ -802,30 +1101,60 @@ void CAIUnit::SetDestination( CHexCoord& m_hex )
 {
     ASSERT_VALID( this );
 
-    // if we gave it this dest in the last minute - don't repeat
-    if ( m_hex == m_hexLastDest )
-        if ( theGame.GettimeGetTime( ) < m_timeLastDest + 30 * 1000 )
-            return;
-    m_hexLastDest  = m_hex;
-    m_timeLastDest = theGame.GettimeGetTime( );
-
     // BUGBUG get current location of the unit for which
     // the destination is being set to make sure the unit
     // is not being requested to go to its current location
     EnterCriticalSection( &cs );
     CHexCoord hexVeh;
+    BOOL      bInBldg  = FALSE;
     CVehicle* pVehicle = pGameData->GetVehicleData( m_iOwner, m_dwID );
     if ( pVehicle != NULL )
-        hexVeh = pVehicle->GetHexHead( );
+    {
+        hexVeh  = pVehicle->GetHexHead( );
+        bInBldg = pVehicle->IsInBuilding( );
+    }
     LeaveCriticalSection( &cs );
 
-    // don't bother if current location is the same as destination
-    if ( m_hex == hexVeh )
+    // if we gave it this dest in the last minute - don't repeat.
+    // EXCEPT inside a building: the exit order after unload often re-targets
+    // the entry hex the truck was just sent to, and the dedupe would strand
+    // it inside until a sweep nudge. A parked-inside repeat still needs a
+    // SHORT cooldown - the unlimited bypass echoed (order->instant arrival->
+    // order, 4/s per stuck truck) and the flood starved every AI sweep.
+    if ( m_hex == m_hexLastDest )
+        if ( theGame.GettimeGetTime( ) < m_timeLastDest + ( bInBldg ? 5 : 30 ) * 1000 )
+        {
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+            if ( pGameData->IsTruck( m_dwID ) )
+            { char szZ[80]; sprintf( szZ, "[SETDEST] truck %lu DEDUPED\n", (unsigned long)m_dwID ); OutputDebugStringA( szZ ); }
+#endif
+            return;
+        }
+    m_hexLastDest  = m_hex;
+    m_timeLastDest = theGame.GettimeGetTime( );
+
+    // same-location orders: for a TRUCK, send anyway - the engine answers
+    // with an instant arrival the handler consumes (unload/load/redispatch),
+    // waking trucks parked inside buildings that no other event can reach.
+    // Dropping it silently was the freeze: parked-inside trucks never tick
+    // the stopped-post and the AI never re-orders IN_USE trucks.
+    if ( m_hex == hexVeh && !pGameData->IsTruck( m_dwID ) &&
+         GetTypeUnit( ) != CTransportData::construction )
         return;
 
-#ifdef _LOGOUT
-    logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "\nCAIUnit::SetDestination() player %d unit %ld going to %d,%d \n",
-               m_iOwner, m_dwID, m_hex.X( ), m_hex.Y( ) );
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+    if ( pGameData->IsTruck( m_dwID ) )
+    { char szZ[80]; sprintf( szZ, "[SETDEST] truck %lu %s\n", (unsigned long)m_dwID, m_hex == hexVeh ? "WAKE" : "POSTED" ); OutputDebugStringA( szZ ); }
+    // every crane movement order, with the CALLER (resolve via PDB) - the
+    // "why is this crane going there" ledger
+    if ( GetTypeUnit( ) == CTransportData::construction )
+    {
+        char szC[128];
+        sprintf( szC, "[CRANEORD] plyr %d crane %lu task %u at %d,%d -> %d,%d from %p\n", m_iOwner,
+                 (unsigned long)m_dwID, (unsigned)GetTask( ), hexVeh.X( ), hexVeh.Y( ), m_hex.X( ), m_hex.Y( ),
+                 _ReturnAddress( ) );
+        OutputDebugStringA( szC );
+    }
 #endif
 
     // CMsgVehSetDest (DWORD dwID, CHexCoord const & hex, int iMode);
@@ -867,6 +1196,11 @@ void CAIUnit::AttackUnit( DWORD dwTarget )
     // it in the dwParams of the target unit and recording
     // the targeted opfor in the CAIUnit::m_dwData
     m_dwData = dwTarget;
+
+    // stamp for the attack-alert feedback-loop cooldown: AttackAlert() will not
+    // re-issue this same order again until the cooldown elapses (per-hit
+    // unit_damage alerts were re-commanding the same target ~2x/sec forever)
+    m_dwTimeLastAtkCmd = theGame.GettimeGetTime( );
 
     CMsgAttack msg( m_dwID, dwTarget );
     theGame.PostToServer( (CNetCmd*)&msg, sizeof( CMsgAttack ) );
@@ -1425,44 +1759,68 @@ CAIUnit* CAIUnitList::GetClosest( int iPlayer, int iBldg, CHexCoord& hex )
 //
 // return a pointer to the CAIUnit object matching the id passed
 //
+//
+// shadowed CObList mutators: keep the O(1) id index exact. See the class
+// comment in caiunit.hpp -- ALL list mutation in this codebase goes through
+// these four (the internal helpers below route through them too).
+//
+POSITION CAIUnitList::AddTail( CObject* pObj )
+{
+    CAIUnit* pUnit = (CAIUnit*)pObj;
+    if ( pUnit != NULL )
+        m_index[pUnit->GetID( )] = pUnit;
+    return CObList::AddTail( pObj );
+}
+
+// index maintenance on REMOVAL is by VALUE, never by deref: borrowed lists
+// (m_plBldgsNeed / m_plTrucksAvailable) hold pointers that may already be
+// FREED (soak97 AV: RemoveHead's GetID() read 0xDD fill off a dead head).
+// Objects being ADDED are alive by contract, so AddTail keeps its deref.
+static void xIndexEraseByValue( std::unordered_map<DWORD, CAIUnit*>& index, CAIUnit* pUnit )
+{
+    if ( pUnit == NULL )
+        return;
+    for ( std::unordered_map<DWORD, CAIUnit*>::iterator it = index.begin( ); it != index.end( ); ++it )
+        if ( it->second == pUnit )  // pointer compare only - pUnit may be freed
+        {
+            index.erase( it );
+            return;
+        }
+}
+
+void CAIUnitList::RemoveAt( POSITION pos )
+{
+    xIndexEraseByValue( m_index, (CAIUnit*)GetAt( pos ) );
+    CObList::RemoveAt( pos );
+}
+
+CObject* CAIUnitList::RemoveHead( void )
+{
+    CObject* pObj = CObList::RemoveHead( );
+    xIndexEraseByValue( m_index, (CAIUnit*)pObj );
+    return pObj;
+}
+
+void CAIUnitList::RemoveAll( void )
+{
+    m_index.clear( );
+    CObList::RemoveAll( );
+}
+
 CAIUnit* CAIUnitList::GetUnitNY( DWORD dwId )
 {
-    ASSERT_VALID( this );
-
-    POSITION pos = GetHeadPosition( );
-    while ( pos != NULL )
-    {
-        CAIUnit* pUnit = (CAIUnit*)GetNext( pos );
-        if ( pUnit != NULL )
-        {
-            ASSERT_VALID( pUnit );
-
-            if ( pUnit->GetID( ) == dwId )
-                return ( pUnit );
-        }
-    }
-    return ( NULL );
+    // O(1) via the id index (was an O(n) walk over the whole list)
+    std::unordered_map<DWORD, CAIUnit*>::const_iterator it = m_index.find( dwId );
+    return ( it != m_index.end( ) ) ? it->second : NULL;
 }
 //
 // return a pointer to the CAIUnit object matching the id passed
 //
 CAIUnit* CAIUnitList::GetUnit( DWORD dwId )
 {
-    ASSERT_VALID( this );
-
-    POSITION pos = GetHeadPosition( );
-    while ( pos != NULL )
-    {
-        CAIUnit* pUnit = (CAIUnit*)GetNext( pos );
-        if ( pUnit != NULL )
-        {
-            ASSERT_VALID( pUnit );
-
-            if ( pUnit->GetID( ) == dwId )
-                return ( pUnit );
-        }
-    }
-    return ( NULL );
+    // O(1) via the id index (was an O(n) walk over the whole list)
+    std::unordered_map<DWORD, CAIUnit*>::const_iterator it = m_index.find( dwId );
+    return ( it != m_index.end( ) ) ? it->second : NULL;
 }
 
 //

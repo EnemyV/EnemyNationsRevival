@@ -13,7 +13,9 @@
 
 #include "ourlog.h"
 
+#include <vector>     // CHexValidMatrix dirty-hex list (item 5 dirty-rects)
 #include <dibwnd.h>
+#include <wndbase.h>  // CWndBase / CWndStub
 
 const int FRAME_RATE = 24;
 
@@ -53,7 +55,10 @@ const int MAX_DEF_MULT = 12;  // maximum terrain defense multiplier
 
 const int GAS_PER_ROAD = 5;  // amount of gas used to build 1 road tile
 
-const int MAX_SPAN  = 7;  // max span of a bridge including end pieces
+const int MAX_SPAN = 7;  // base max span of a bridge including end pieces — extended
+                         // +25% of this per Bridges 2-5 tier (CPlayer::GetMaxSpan)
+const int MAX_SPAN_ULT = ( MAX_SPAN * 200 ) / 100;  // = 14: span with all 4 tiers (+100%);
+                                                    // use for buffer sizing / loop bounds
 const int MAX_WATER = 5;  // maximum water it can span
 
 const int NUM_SPEEDS    = 17;
@@ -79,10 +84,14 @@ const int HEX_HT_PWR_2    = 2 * HEX_HT_PWR;
 const int TERRAIN_HT_SHIFT = 3;  // 4 for Scotland, 3 for Holland
 
 // note - this is all hardcoded in CVehicle::***Spotting
-const int MAX_SPOTTING        = 15;
-const int SPOTTING_LINE       = ( MAX_SPOTTING + 1 ) * 2;
-const int SPOTTING_DW_LINE    = SPOTTING_LINE / 32;
-const int SPOTTING_ARRAY_SIZE = ( SPOTTING_LINE * SPOTTING_LINE + 31 ) / 32;
+// Spotting/LOS mask widened to 64-bit words (was 32) so MAX_SPOTTING can exceed 15 without
+// overflowing the per-row bitmask. m_dwaSpot is one SPOT_WORD (64-bit) per row; each row packs
+// SPOTTING_LINE columns, so SPOTTING_LINE must stay <= 64 (MAX_SPOTTING <= 31).
+typedef unsigned long long    SPOT_WORD;                // 64-bit spotting-mask word
+const int MAX_SPOTTING        = 24;                     // was 15; caps effective range near 14
+const int SPOTTING_LINE       = ( MAX_SPOTTING + 1 ) * 2;   // 50 columns/rows (<= 64)
+const int SPOTTING_DW_LINE    = SPOTTING_LINE / 64;
+const int SPOTTING_ARRAY_SIZE = SPOTTING_LINE;             // one 64-bit word per row
 
 class CPathMgr;
 class CCell;
@@ -98,6 +107,22 @@ class CBridgeUnit;
 int  MyRand( );
 void MySrand( DWORD dwSeed );
 int  RandNum( int iMax );
+// MP world-gen parity trace. MyRand() keeps a monotonic call count + rolling
+// checksum of its returned stream (always maintained; platform-identical 32/64-bit
+// math). MyRandTrace(label) dumps "calls=/sum=" to stderr ONLY when env EN_RANDTRACE
+// is set. Host and client that generate identical worlds have identical (calls,sum)
+// at every mark; the first mark that differs localizes the cross-platform desync
+// behind CmdPlay's RAND MISMATCH drop. count-differs => a control-flow/unsequenced
+// -call divergence; count-same-but-sum-differs => a value (float/data) divergence.
+void MyRandTrace( const char* pszLabel );
+void MyRandTraceReset( );   // zero the fingerprint (call at the world-gen baseline)
+extern unsigned long long g_myRandCalls;
+extern unsigned           g_myRandSum;
+// MyRand's output range on ALL platforms (windward/wind22/src/rand.cpp uses the
+// MSVC CRT LCG everywhere for cross-platform MP world-gen parity). Consumers
+// scaling MyRand must use THIS, never stdlib RAND_MAX -- glibc's 0x7FFFFFFF
+// never matched MyRand's range and silently skewed every scaled draw on POSIX.
+#define EN_MYRAND_MAX 0x7FFF
 
 extern BOOL             bcsOk;
 extern CRITICAL_SECTION cs;
@@ -144,13 +169,35 @@ class CHexValidMatrix : public CBitMatrix
   public:
     CHexValidMatrix( int cxPowerOf2, int cyPowerOf2 );
 
-    void SetInvalidated( int iX, int iY ) { Set( iX & m_iMaskX, iY & m_iMaskY ); }
+    // Item 5 (dirty-rects): besides setting the bit, record newly-invalidated hexes in
+    // a list so the dirty-rect pass can enumerate them in O(changed) instead of scanning
+    // the whole matrix. Dedup on the bit (a hex already invalidated this frame isn't
+    // re-listed). The list is cleared with the bits in Clear(). Packed (x<<16)|y.
+    void SetInvalidated( int iX, int iY )
+    {
+        int x = iX & m_iMaskX, y = iY & m_iMaskY;
+        if ( !Get( x, y ) )
+        {
+            Set( x, y );
+            m_dirty.push_back( ( (unsigned)x << 16 ) | (unsigned)( y & 0xFFFF ) );
+        }
+    }
 
     BOOL IsInvalidated( int iX, int iY ) const { return Get( iX & m_iMaskX, iY & m_iMaskY ); }
 
+    void Clear( )
+    {
+        m_dirty.clear( );
+        CBitMatrix::Clear( );
+    }
+
+    const std::vector<unsigned>& GetDirty( ) const { return m_dirty; }
+    int                          GetDirtyCount( ) const { return (int)m_dirty.size( ); }
+
   private:
-    int m_iMaskX;
-    int m_iMaskY;
+    int                   m_iMaskX;
+    int                   m_iMaskY;
+    std::vector<unsigned> m_dirty;   // hexes invalidated since last Clear (this frame)
 };
 
 /////////////////////////////////////////////////////////////////////////////
@@ -396,8 +443,10 @@ class CMapLoc3D : public CMapLoc
 
     CMapLoc3D( const CHexCoord& rhexcoord );
 
-    long&       operator[]( int iIndex ) { return ( &x )[iIndex]; }
-    const long& operator[]( int iIndex ) const { return ( &x )[iIndex]; }
+    // Return LONG& (not long&): on Win32 LONG==long, but on Linux LP64 LONG==int
+    // and the (&x) members are LONG, so a `long&` (64-bit) can't bind to them.
+    LONG&       operator[]( int iIndex ) { return ( &x )[iIndex]; }
+    const LONG& operator[]( int iIndex ) const { return ( &x )[iIndex]; }
 
     Fixed m_fixZ;
 };
@@ -507,7 +556,19 @@ class CAnimAtr
 
     ~CAnimAtr( );
 
-    void SetWnd( CWnd* pwnd ) { m_pwnd = pwnd; }
+    void SetWnd( CWnd* pwnd )
+    {
+        m_pwnd = pwnd;
+        m_hwndOwner = pwnd ? pwnd->GetSafeHwnd() : NULL;
+    }
+    void SetWnd( CWndStub* pwnd )
+    {
+        m_hwndOwner = pwnd ? pwnd->m_hWnd : NULL;
+        // m_pwnd holds a temp CWnd* — MFC garbage-collects this in OnIdle, so
+        // never store the result long-term. Render() reaches for m_hwndOwner
+        // instead (which doesn't go stale).
+        m_pwnd = CWnd::FromHandle( m_hwndOwner );
+    }
     void Set( CMapLoc maplocCenter, int iDir, int iZoom );
 
     CMapLoc GetCenter( ) const { return m_maploc; }
@@ -551,6 +612,14 @@ class CAnimAtr
 
     BOOL MapToWindowHex( const CHexCoord&, CPoint[4] ) const;
 
+    // CONTENT-space hex corners: WorldToView WITHOUT the >>m_iZoom and WITHOUT the
+    // -m_ptUL pan (i.e. the zoom-0, un-panned view coords, with the per-m_iDir corner
+    // reorder + altitude applied). The GPU "retained mesh" path builds geometry from
+    // these once, then derives any zoom/pan with screen = (content >> zoom) - m_ptUL.
+    // (window = (content >> m_iZoom) - m_ptUL, so this is the un-scaled, un-panned mesh.)
+    void   MapToContentHex( const CHexCoord&, CPoint[4] ) const;
+    CPoint WorldToViewContent( const CMapLoc3D& ) const;
+
     BOOL   WorldToWindowHex( CMapLoc3D[4], CPoint[4] ) const;
     CPoint WorldToWindow( CMapLoc3D maploc3d ) const { return ViewToWindow( WorldToView( maploc3d ) ); }
 
@@ -570,10 +639,38 @@ class CAnimAtr
     CMapLoc     m_maploc;  // Map coords of center of window
     int         m_iDir;    // direction to render at
     int         m_iZoom;   // zoom
-    CDIBWnd     m_dibwnd;  // window we blt into
+    CDIBWnd     m_dibwnd;  // window we blt into (terrain layer once split is active)
+    // T1: separate color-keyed (magenta/253) sprite layer. When UseSplitLayer()
+    // is true, UpdateRect routes sprites (units/buildings/foundations/effects)
+    // here while terrain stays in m_dibwnd, so GPU terrain (T2) can composite
+    // underneath. Lazily sized to match m_dibwnd. Unused in the software path.
+    CDIBWnd     m_dibSprite;
+    // GPU/split-layer path only: when set, the next draw fully wipes m_dibSprite
+    // (not just the per-frame dirty rect) even with no view change. A box-select
+    // marquee (DrawSelectionRectGpu) drawn at a zoomed level and then ended without
+    // a subsequent pan/zoom would otherwise linger as a stale striped overlay,
+    // because m_dibSprite is only fully cleared on a detected view change
+    // (terrain.cpp). Honored under IsGpuFull() only — inert on the Windows blit path.
+    BOOL        m_bOverlayDirty = FALSE;
+    bool        UseSplitLayer() const;  // defined in terrain.cpp (needs SDL2Panel)
+    // True when this view renders through its own GPU renderer + GPU sprite layer:
+    // the whole window is re-presented every frame, so dirty rects are unused and
+    // the invalidate pass is pure overhead. Defined in terrain.cpp (needs SDL2Panel
+    // + SDL2Sprites). == m_sdlPanel && UseSplitLayer() && SDL2Sprites::Enabled().
+    bool        IsGpuFull() const;
+    // T2.3: the sprite-layer SDL surface (magenta-keyed) for GPU compositing
+    // over the terrain mesh. nullptr if not split / not SDL-backed.
+    struct SDL_Surface* GetSpriteLayerSurface() const;
     CDirtyRects m_dirtyrects;
     CPoint      m_ptUL;  // View coords of UL corner of window
-    CWnd*       m_pwnd;  // Owner window
+    CWnd*       m_pwnd;  // Owner window — TEMP CWnd from CWnd::FromHandle;
+                         // gets garbage-collected by MFC. Don't dereference
+                         // long-term; use m_hwndOwner instead.
+    HWND        m_hwndOwner = NULL;  // Stable HWND.
+
+    // SDL2 panel for composited rendering (Phase 1).
+    // Set by CWndArea when it creates its panel.  NULL until assigned.
+    class SDL2Panel* m_sdlPanel = nullptr;
 
 #ifdef _DEBUG
   public:
@@ -610,8 +707,8 @@ class CMaterialTypes
         lumber,  // lumber - goods must be 0-based
         steel,
         copper, // Xil
-        moly,   // idk, people?
-        goods,  // idk, electricity?
+        moly,   // molybdenum - manufactured material, currently unused (to be re-implemented)
+        goods,  // generic manufactured goods - currently unused (to be re-implemented)
 
         food,
         oil,
@@ -627,7 +724,7 @@ class CMaterialTypes
 
     static int            GetNumTypes( ) { return ( num_types ); }
     static int            GetNumBuildTypes( ) { return ( num_build_types ); }
-    static CString const& GetDesc( int iInd )
+    static std::string const& GetDesc( int iInd )
     {
         ASSERT_STRICT( ( 0 <= iInd ) && ( iInd < num_types ) );
         return ( m_saDesc[iInd] );
@@ -639,7 +736,7 @@ class CMaterialTypes
     }
 
   protected:
-    static CString  m_saDesc[num_types];
+    static std::string m_saDesc[num_types];
     static COLORREF m_rgb[num_types + 1];
 };
 

@@ -3,6 +3,9 @@
 #include "datalog.h"
 #include "vpnet.h"
 #include "vputil.h"
+#ifndef _WIN32
+#include "vp_sock_posix.h"   // vpNetSelectClearCtx (dtor registration purge)
+#endif
 
 CNetAddress::AddrList *CNetAddress::m_pool = NULL;
 
@@ -20,8 +23,14 @@ void *CNetAddress::operator new(size_t s) {
 }
 
 void CNetAddress::operator delete(void *p) {
-    if (!m_pool)
+    if (!m_pool) {
         delete[] (char *) p;
+        return;                 // was missing: fell through to m_pool->Insert with
+                                // m_pool==NULL -> SEGV. ResetPool() nulls m_pool then
+                                // `delete a`s every pooled address, so this path runs on
+                                // every net teardown when the pool is non-empty (the POSIX
+                                // join/enum populates it; Windows happened to hit it empty).
+    }
 
     m_pool->Insert((CNetAddress *) p);
 }
@@ -62,6 +71,13 @@ CNetInterface::CNetInterface(CTDLogger *log) :
 CNetInterface::~CNetInterface() {
     StopDataLog();
     CNetAddress::ResetPool();
+#ifndef _WIN32
+    // Backstop: some teardown paths (game-start error -> vpCleanup) delete the
+    // net object while a socket it registered with the select() pump is still
+    // live; the next pump then dispatches into this freed object. Win32's
+    // WSAAsyncSelect dies with its window — the POSIX pump needs an explicit purge.
+    vpNetSelectClearCtx( this );
+#endif
 }
 
 

@@ -9,7 +9,7 @@
 //
 //---------------------------------------------------------------------------
 
-#include <afxwin.h>
+#include <windows.h>  // WM_USER
 
 enum Msg {
  WM_FIRST_LIB = WM_USER + 0x1002,

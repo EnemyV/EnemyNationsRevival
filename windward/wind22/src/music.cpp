@@ -3,6 +3,8 @@
 // Copyright (c) 1995, 1996. Windward Studios, Inc.
 // All Rights Reserved.
 //
+// Audio system rewritten to use SDL2 + SDL_mixer, replacing Miles Sound System.
+//
 //---------------------------------------------------------------------------
 
 
@@ -10,6 +12,7 @@
 
 #include <thielen.h>
 #include "_windwrd.h"
+#include "w22_settings.h"
 #include "_res.h"
 #include "acmutil.h"
 
@@ -21,9 +24,107 @@ static char BASED_CODE THIS_FILE[] = __FILE__;
 #define new DEBUG_NEW
 
 CMusicPlayer theMusicPlayer;
-extern BOOL bDoSubclass;
+CRawChannel* g_channelMap[MAX_SOUND_SAMPLES] = {};
 
-#define ASDS(ptr)    ((LPDIRECTSOUND)ptr)
+// RAII lock guard for the audio critical section
+class CAudioLock {
+  public:
+    CAudioLock( CMusicPlayer& player ) : m_player( player ), m_bLocked( FALSE ) {
+        if ( player.m_bCsInitialized ) {
+            EnterCriticalSection( &player.m_csAudio );
+            m_bLocked = TRUE;
+        }
+    }
+    ~CAudioLock() {
+        if ( m_bLocked )
+            LeaveCriticalSection( &m_player.m_csAudio );
+    }
+  private:
+    CMusicPlayer& m_player;
+    BOOL m_bLocked;
+};
+
+
+/////////////////////////////////////////////////////////////////////////////
+// Format conversion: convert audio data to device format (22050Hz 16-bit signed stereo)
+
+void ConvertToDeviceFormat( const void* pSrc, int iSrcLen, int iFmt,
+                            void** ppDst, int* piDstLen ) {
+
+    if ( iFmt == AUDIO_FMT_STEREO_16 ) {
+        // Already in device format - just copy
+        *piDstLen = iSrcLen;
+        *ppDst = malloc( iSrcLen );
+        if ( *ppDst != NULL )
+            memcpy( *ppDst, pSrc, iSrcLen );
+        return;
+    }
+
+    if ( iFmt == AUDIO_FMT_MONO_16 ) {
+        // 16-bit signed mono 22050Hz -> 16-bit signed stereo 22050Hz (2x size)
+        int iNumSamples = iSrcLen / 2;
+        *piDstLen = iNumSamples * 4;  // 2 bytes * 2 channels
+        *ppDst = malloc( *piDstLen );
+        if ( *ppDst == NULL )
+            return;
+
+        const short* pIn = (const short*)pSrc;
+        short* pOut = (short*)*ppDst;
+        for ( int i = 0; i < iNumSamples; i++ ) {
+            pOut[i * 2] = pIn[i];      // left
+            pOut[i * 2 + 1] = pIn[i];  // right
+        }
+        return;
+    }
+
+    if ( iFmt == AUDIO_FMT_MONO_8 ) {
+        // 8-bit unsigned mono 11025Hz -> 16-bit signed stereo 22050Hz (8x size)
+        // Step 1: convert 8-bit unsigned to 16-bit signed
+        // Step 2: upsample 11025->22050 by duplicating each sample
+        // Step 3: mono to stereo by duplicating each sample
+        int iNumSrcSamples = iSrcLen;
+        int iNumDstSamples = iNumSrcSamples * 2;  // 2x for upsample
+        *piDstLen = iNumDstSamples * 4;  // 2 bytes * 2 channels per sample
+        *ppDst = malloc( *piDstLen );
+        if ( *ppDst == NULL )
+            return;
+
+        const unsigned char* pIn = (const unsigned char*)pSrc;
+        short* pOut = (short*)*ppDst;
+        for ( int i = 0; i < iNumSrcSamples; i++ ) {
+            short s16 = (short)( ( (int)pIn[i] - 128 ) << 8 );
+            // Each source sample produces 2 output frames (upsample 2x)
+            // Each frame has 2 channels (stereo)
+            int base = i * 4;  // 4 shorts per source sample
+            pOut[base]     = s16;  // frame 0 left
+            pOut[base + 1] = s16;  // frame 0 right
+            pOut[base + 2] = s16;  // frame 1 left
+            pOut[base + 3] = s16;  // frame 1 right
+        }
+        return;
+    }
+
+    // AUDIO_FMT_STEREO_8 - not used in practice but handle defensively
+    // 8-bit unsigned stereo 11025Hz -> 16-bit signed stereo 22050Hz (4x size)
+    int iNumFrames = iSrcLen / 2;  // 2 bytes per frame (L+R)
+    int iNumDstFrames = iNumFrames * 2;  // upsample 2x
+    *piDstLen = iNumDstFrames * 4;  // 2 channels * 2 bytes per sample
+    *ppDst = malloc( *piDstLen );
+    if ( *ppDst == NULL )
+        return;
+
+    const unsigned char* pIn = (const unsigned char*)pSrc;
+    short* pOut = (short*)*ppDst;
+    for ( int i = 0; i < iNumFrames; i++ ) {
+        short sL = (short)( ( (int)pIn[i * 2] - 128 ) << 8 );
+        short sR = (short)( ( (int)pIn[i * 2 + 1] - 128 ) << 8 );
+        int b = i * 4;  // 4 shorts per source frame (2 output frames * 2 channels)
+        pOut[b]     = sL;  // frame 0 left
+        pOut[b + 1] = sR;  // frame 0 right
+        pOut[b + 2] = sL;  // frame 1 left
+        pOut[b + 3] = sR;  // frame 1 right
+    }
+}
 
 
 /////////////////////////////////////////////////////////////////////////////
@@ -34,7 +135,6 @@ UINT fnMusicReadAhead( LPVOID pParam ) {
     CRawChannel* pRawChn = (CRawChannel*)pParam;
 
     try {
-
         // read into the buffer
         while ( TRUE ) {
             // wait for next request
@@ -53,7 +153,6 @@ UINT fnMusicReadAhead( LPVOID pParam ) {
                 theMusicPlayer.m_pAdpcmMusic->Convert( theMusicPlayer.m_pBufDecode,
                                                        iLen, pRawChn->m_pDblBuf[pRawChn->m_iBufOn], DBL_BUF_LEN,
                                                        ACM_STREAMCONVERTF_BLOCKALIGN );
-                // NOTE: renamed `theMusicPlayer.m_iCCInBuf` to `theMusicPlayer.m_iInBuf`
                 if ( ( theMusicPlayer.m_iInBuf = iLen - theMusicPlayer.m_pAdpcmMusic->SrcSize() ) > 0 )
                     memcpy( theMusicPlayer.m_pBufDecode,
                             theMusicPlayer.m_pBufDecode + theMusicPlayer.m_pAdpcmMusic->SrcSize(),
@@ -80,7 +179,7 @@ UINT fnMusicReadAhead( LPVOID pParam ) {
         EnterCriticalSection( &( pRawChn->m_cs ) );
     pRawChn->m_cStat = CRawChannel::_unused;
     pRawChn->m_pThread->m_hThread = NULL;
-    pRawChn->m_pThread            = NULL; // prevent FreeDlbBuf from accessing after autodelete
+    pRawChn->m_pThread            = NULL;
     if ( pRawChn->m_bCriticalSectionCreated )
         LeaveCriticalSection( &( pRawChn->m_cs ) );
 
@@ -120,7 +219,9 @@ void CRawChannel::BackgroundRead( HANDLE iHdl, int iOff, int iLen ) {
 CRawChannel::CRawChannel() {
 
     m_bKill = FALSE;
-    m_hSmp = NULL;
+    m_iChannel = -1;
+    m_pChunk = NULL;
+    m_pendingEvent = PENDING_NONE;
     m_iIsFore = back;
     m_iBackSound = 0;
     m_iBackPri = INT_MAX;
@@ -133,6 +234,14 @@ CRawChannel::CRawChannel() {
     m_cStat = _unused;
     m_iBufOn = 0;
 
+    // Streaming state
+    m_iPlayBuf = 0;
+    m_iPlayPos = 0;
+    m_iPlayLen[0] = m_iPlayLen[1] = m_iPlayLen[2] = 0;
+    m_bBufConsumed = false;
+    m_bStreamEOF = false;
+    m_bStreamActive = false;
+
     memset( &m_cs, 0, sizeof( m_cs ) );
     m_bCriticalSectionCreated = FALSE;
 }
@@ -144,19 +253,18 @@ void CRawChannel::Close() {
 
 BOOL CRawChannel::AllocDblBuf() {
 
-    // get our buffer
-    int iNum = ( iWinType == W32s ) ? 2 : 3;
-    for ( int iInd = 0; iInd < iNum; iInd++ )
+    // get our buffer (always 3 buffers, Win32s check removed)
+    for ( int iInd = 0; iInd < 3; iInd++ )
         if ( m_pDblBuf[iInd] == NULL )
-            if ( ( m_pDblBuf[iInd] = MEM_alloc_lock( DBL_BUF_LEN ) ) == NULL ) {
+            if ( ( m_pDblBuf[iInd] = malloc( DBL_BUF_LEN ) ) == NULL ) {
                 TRAP();
                 FreeDblBuf();
                 return ( FALSE );
             }
 
-    // if ! Win32s get a thread for reading ahead
-    if ( iWinType != W32s )
-        if ( ptheApp->GetProfileInt( "Advanced", "MusicThread", 1 ) ) {
+    // get a thread for reading ahead
+    if ( m_pPar != NULL )
+        if ( w22::GetProfileInt( "Advanced", "MusicThread", 1 ) ) {
             m_iBufOn = 0;
             m_cStat = _idle;
             m_bRunning = TRUE;
@@ -175,16 +283,25 @@ BOOL CRawChannel::AllocDblBuf() {
 
 void CRawChannel::FreeDblBuf() {
 
-    // get the callback served
-    AIL_serve();
-    AIL_serve();
+    // Stop the music hook and lock SDL audio to ensure the audio callback
+    // is not mid-execution reading from m_pDblBuf before we free them.
+    bool bNeedUnlock = false;
+    if ( m_bStreamActive ) {
+        Mix_HookMusic( NULL, NULL );
+        m_bStreamActive = false;
+    }
+    // Only lock SDL audio if the device is still open (SDL_LockAudio after Mix_CloseAudio is undefined)
+    if ( SDL_WasInit( SDL_INIT_AUDIO ) ) {
+        SDL_LockAudio();
+        bNeedUnlock = true;
+    }
 
     if ( ( m_pThread != NULL ) && m_bCriticalSectionCreated ) {
         EnterCriticalSection( &m_cs );
         if ( ( m_pThread != NULL ) && AfxIsValidAddress( m_pThread, sizeof( CWinThread ) ) ) {
             m_bRunning = FALSE;
             m_pThread->ResumeThread();
-            for (int iWait = 0; ( m_pThread->m_hThread != NULL ) && (iWait < 10 ); iWait++ ) {
+            for ( int iWait = 0; ( m_pThread->m_hThread != NULL ) && ( iWait < 10 ); iWait++ ) {
                 LeaveCriticalSection( &m_cs );
                 ::Sleep( iWait * 8 );
                 EnterCriticalSection( &m_cs );
@@ -192,9 +309,9 @@ void CRawChannel::FreeDblBuf() {
                     break;
             }
 
-            if ( AfxIsValidAddress(m_pThread, sizeof( CWinThread ) ) )
-                if (m_pThread->m_hThread != NULL )
-                    TerminateThread(m_pThread->m_hThread, 1 );
+            if ( AfxIsValidAddress( m_pThread, sizeof( CWinThread ) ) )
+                if ( m_pThread->m_hThread != NULL )
+                    TerminateThread( m_pThread->m_hThread, 1 );
         }
         m_pThread = NULL;
         LeaveCriticalSection( &m_cs );
@@ -202,14 +319,19 @@ void CRawChannel::FreeDblBuf() {
 
     for ( int iInd = 0; iInd < 3; iInd++ )
         if ( m_pDblBuf[iInd] != NULL ) {
-            MEM_free_lock( m_pDblBuf[iInd] );
+            free( m_pDblBuf[iInd] );
             m_pDblBuf[iInd] = NULL;
         }
+
+    if ( bNeedUnlock )
+        SDL_UnlockAudio();
 
     if ( m_bCriticalSectionCreated ) {
         DeleteCriticalSection( &m_cs );
         m_bCriticalSectionCreated = FALSE;
     }
+
+    m_bStreamActive = false;
 }
 
 
@@ -224,7 +346,7 @@ CRawData::CRawData() {
     m_IDBackup = 0;
     m_pBuf = NULL;
     m_lBufOff = 0;
-    m_iFmt = DIG_F_MONO_8;
+    m_iFmt = AUDIO_FMT_MONO_8;
     m_bVoice = FALSE;
     m_bKillMe = FALSE;
     m_iStat = unloaded;
@@ -233,12 +355,8 @@ CRawData::CRawData() {
 
 void CRawData::Close() {
 
-    // get the callback served
-    AIL_serve();
-    AIL_serve();
-
     if ( m_pBuf != NULL ) {
-        MEM_free_lock( m_pBuf );
+        free( m_pBuf );
         m_pBuf = NULL;
     }
 }
@@ -246,7 +364,11 @@ void CRawData::Close() {
 void ConstructElements( CRawData* pNew, int nCount ) {
 
     for ( int i = 0; i < nCount; i++, pNew++ )
-        pNew->CRawData::CRawData();
+#ifdef _WIN32
+        pNew->CRawData::CRawData();      // MSVC: explicit ctor re-init
+#else
+        new ( pNew ) CRawData();         // portable placement-new equivalent
+#endif
 }
 
 void DestructElements( CRawData* pNew, int nCount ) {
@@ -268,13 +390,13 @@ void CRawData::InitData( CMmio* pMmio, int iGrp ) {
         short sTyp = pMmio->ReadShort();
         switch ( sTyp ) {
         case mono_22_16:
-            m_iFmt = DIG_F_MONO_16;
+            m_iFmt = AUDIO_FMT_MONO_16;
             break;
         case stereo_22_16:
-            m_iFmt = DIG_F_STEREO_16;
+            m_iFmt = AUDIO_FMT_STEREO_16;
             break;
         default:
-            m_iFmt = DIG_F_MONO_8;
+            m_iFmt = AUDIO_FMT_MONO_8;
             break;
         }
         m_iDataLen = m_iFileLen = pMmio->ReadLong();
@@ -283,9 +405,24 @@ void CRawData::InitData( CMmio* pMmio, int iGrp ) {
         if ( ( m_iType == preload ) && ( m_iGroup == iGrp ) ) {
             switch ( m_iComp ) {
             case -1:
-                if ( ( m_pBuf = MEM_alloc_lock( m_iDataLen + 16 ) ) != NULL )
-                    pMmio->Read( m_pBuf, m_iDataLen );
+            {
+                void* pRaw = malloc( m_iDataLen + 16 );
+                if ( pRaw != NULL ) {
+                    pMmio->Read( pRaw, m_iDataLen );
+                    // Convert to device format
+                    if ( m_iFmt != AUDIO_FMT_STEREO_16 ) {
+                        void* pConverted = NULL;
+                        int iConvLen = 0;
+                        ConvertToDeviceFormat( pRaw, m_iDataLen, m_iFmt, &pConverted, &iConvLen );
+                        free( pRaw );
+                        m_pBuf = pConverted;
+                        m_iDataLen = iConvLen;
+                    } else {
+                        m_pBuf = pRaw;
+                    }
+                }
                 break;
+            }
 
             case 8:
             {
@@ -295,10 +432,24 @@ void CRawData::InitData( CMmio* pMmio, int iGrp ) {
                     pMmio->Read( pBuf, m_iFileLen );
 
                     TRAP();
-                    m_iDataLen = CoDec::BufLength( pBuf );
-                    if ( ( m_pBuf = MEM_alloc_lock( m_iDataLen + 16 ) ) == NULL )
+                    int iRawLen = CoDec::BufLength( pBuf );
+                    void* pRaw = malloc( iRawLen + 16 );
+                    if ( pRaw == NULL )
                         ThrowError( ERR_OUT_OF_MEMORY );
-                    CoDec::Decompress( pBuf, m_iFileLen, m_pBuf, m_iDataLen );
+                    CoDec::Decompress( pBuf, m_iFileLen, pRaw, iRawLen );
+
+                    // Convert to device format
+                    if ( m_iFmt != AUDIO_FMT_STEREO_16 ) {
+                        void* pConverted = NULL;
+                        int iConvLen = 0;
+                        ConvertToDeviceFormat( pRaw, iRawLen, m_iFmt, &pConverted, &iConvLen );
+                        free( pRaw );
+                        m_pBuf = pConverted;
+                        m_iDataLen = iConvLen;
+                    } else {
+                        m_pBuf = pRaw;
+                        m_iDataLen = iRawLen;
+                    }
 
                     free( pBuf );
                 }
@@ -313,11 +464,26 @@ void CRawData::InitData( CMmio* pMmio, int iGrp ) {
                     pMmio->Read( pBuf, m_iFileLen );
                     TRAP();
 
-                    // now do the actual decompression, with result in m_pBuf
+                    // ADPCM decompression
                     theMusicPlayer.m_pAdpcmSfx->Convert( pBuf, m_iFileLen );
-                    m_pBuf = theMusicPlayer.m_pAdpcmSfx->ResultData();
-                    m_iDataLen = theMusicPlayer.m_pAdpcmSfx->ResultSize();
+                    void* pRaw = theMusicPlayer.m_pAdpcmSfx->ResultData();
+                    int iRawLen = theMusicPlayer.m_pAdpcmSfx->ResultSize();
                     theMusicPlayer.m_pAdpcmSfx->ReleaseBuffer();
+
+                    // Convert to device format
+                    if ( m_iFmt != AUDIO_FMT_STEREO_16 ) {
+                        void* pConverted = NULL;
+                        int iConvLen = 0;
+                        ConvertToDeviceFormat( pRaw, iRawLen, m_iFmt, &pConverted, &iConvLen );
+                        // pRaw was allocated by ADPCM with MEM_alloc_lock (now malloc via acmutil)
+                        // but ReleaseBuffer detached ownership, so we must free it
+                        free( pRaw );
+                        m_pBuf = pConverted;
+                        m_iDataLen = iConvLen;
+                    } else {
+                        m_pBuf = pRaw;
+                        m_iDataLen = iRawLen;
+                    }
 
                     free( pBuf );
                 }
@@ -345,12 +511,27 @@ void CRawData::LoadBuffer( CFile* pFile ) {
     try {
         switch ( m_iComp ) {
         case -1:
-            if ( m_pBuf == NULL )
-                if ( ( m_pBuf = MEM_alloc_lock( m_iDataLen + 16 ) ) == NULL )
-                    ThrowError( ERR_OUT_OF_MEMORY );
+        {
+            void* pRaw = malloc( m_iFileLen + 16 );
+            if ( pRaw == NULL )
+                ThrowError( ERR_OUT_OF_MEMORY );
             pFile->Seek( m_lOff, CFile::begin );
-            pFile->Read( m_pBuf, m_iDataLen );
+            pFile->Read( pRaw, m_iFileLen );
+
+            // Convert to device format
+            if ( m_iFmt != AUDIO_FMT_STEREO_16 ) {
+                void* pConverted = NULL;
+                int iConvLen = 0;
+                ConvertToDeviceFormat( pRaw, m_iFileLen, m_iFmt, &pConverted, &iConvLen );
+                free( pRaw );
+                m_pBuf = pConverted;
+                m_iDataLen = iConvLen;
+            } else {
+                m_pBuf = pRaw;
+                m_iDataLen = m_iFileLen;
+            }
             break;
+        }
 
         case 8:
         {
@@ -359,10 +540,23 @@ void CRawData::LoadBuffer( CFile* pFile ) {
                 pFile->Seek( m_lOff, CFile::begin );
                 pFile->Read( pBuf, m_iFileLen );
 
-                m_iDataLen = CoDec::BufLength( pBuf );
-                if ( ( m_pBuf = MEM_alloc_lock( m_iDataLen + 16 ) ) == NULL )
+                int iRawLen = CoDec::BufLength( pBuf );
+                void* pRaw = malloc( iRawLen + 16 );
+                if ( pRaw == NULL )
                     ThrowError( ERR_OUT_OF_MEMORY );
-                CoDec::Decompress( pBuf, m_iFileLen, m_pBuf, m_iDataLen );
+                CoDec::Decompress( pBuf, m_iFileLen, pRaw, iRawLen );
+
+                if ( m_iFmt != AUDIO_FMT_STEREO_16 ) {
+                    void* pConverted = NULL;
+                    int iConvLen = 0;
+                    ConvertToDeviceFormat( pRaw, iRawLen, m_iFmt, &pConverted, &iConvLen );
+                    free( pRaw );
+                    m_pBuf = pConverted;
+                    m_iDataLen = iConvLen;
+                } else {
+                    m_pBuf = pRaw;
+                    m_iDataLen = iRawLen;
+                }
 
                 free( pBuf );
             }
@@ -376,11 +570,22 @@ void CRawData::LoadBuffer( CFile* pFile ) {
                 pFile->Seek( m_lOff, CFile::begin );
                 pFile->Read( pBuf, m_iFileLen );
 
-                // now do the actual decompression, with result in m_pBuf
                 theMusicPlayer.m_pAdpcmSfx->Convert( pBuf, m_iFileLen );
-                m_pBuf = theMusicPlayer.m_pAdpcmSfx->ResultData();
-                m_iDataLen = theMusicPlayer.m_pAdpcmSfx->ResultSize();
+                void* pRaw = theMusicPlayer.m_pAdpcmSfx->ResultData();
+                int iRawLen = theMusicPlayer.m_pAdpcmSfx->ResultSize();
                 theMusicPlayer.m_pAdpcmSfx->ReleaseBuffer();
+
+                if ( m_iFmt != AUDIO_FMT_STEREO_16 ) {
+                    void* pConverted = NULL;
+                    int iConvLen = 0;
+                    ConvertToDeviceFormat( pRaw, iRawLen, m_iFmt, &pConverted, &iConvLen );
+                    free( pRaw );
+                    m_pBuf = pConverted;
+                    m_iDataLen = iConvLen;
+                } else {
+                    m_pBuf = pRaw;
+                    m_iDataLen = iRawLen;
+                }
 
                 free( pBuf );
             }
@@ -388,7 +593,10 @@ void CRawData::LoadBuffer( CFile* pFile ) {
         }
         }
 
-        m_iStat = loaded;
+        if ( m_pBuf != NULL )
+            m_iStat = loaded;
+        else
+            m_iStat = dead;
     }
 
     catch ( ... ) {
@@ -409,11 +617,7 @@ void CRawData::UnloadBuffer() {
 
     m_iStat = unloaded;
     if ( m_pBuf != NULL ) {
-        // get the callback served
-        AIL_serve();
-        AIL_serve();
-
-        MEM_free_lock( m_pBuf );
+        free( m_pBuf );
         m_pBuf = NULL;
     }
 }
@@ -454,22 +658,30 @@ void CRawData::StartDblBuffer( CRawChannel* pRaw ) {
             iDecLen = iLen;
 
         // start background thread on next buffer
-        if (pRaw->m_pThread != nullptr ) {
-            int iLen = DBL_BUF_LEN / 4 - pRaw->m_pPar->m_iInBuf;
-            iLen = __min( iLen, m_iDataLen - m_lBufOff );
+        if ( pRaw->m_pThread != nullptr ) {
+            int iNextLen = DBL_BUF_LEN / 4 - pRaw->m_pPar->m_iInBuf;
+            iNextLen = __min( iNextLen, m_iDataLen - m_lBufOff );
             pRaw->m_iBufOn = 0;
             auto hHandle = m_bVoice ? pRaw->m_pPar->m_pFileVoc->m_hFile : pRaw->m_pPar->m_pFileReg->m_hFile;
-            pRaw->BackgroundRead( hHandle, m_lOff + m_lBufOff, iLen );
-            m_lBufOff += iLen;
+            pRaw->BackgroundRead( hHandle, m_lOff + m_lBufOff, iNextLen );
+            m_lBufOff += iNextLen;
+            if ( iNextLen <= 0 )
+                pRaw->m_bStreamEOF = true;
         }
 
-        // hand it off
+        // Set up streaming state
         iDecLen = __min( iDecLen, DBL_BUF_LEN );
-        AIL_load_sample_buffer( pRaw->m_hSmp, 0, (char*)pRaw->m_pDblBuf[0], iDecLen );
+        pRaw->m_iPlayBuf = 0;
+        pRaw->m_iPlayPos = 0;
+        pRaw->m_iPlayLen[0] = iDecLen;
+        pRaw->m_iPlayLen[1] = 0;
+        pRaw->m_iPlayLen[2] = 0;
+        pRaw->m_bBufConsumed = false;
+        pRaw->m_bStreamActive = true;
     }
 
     catch ( ... ) {
-        AIL_end_sample( pRaw->m_hSmp );
+        pRaw->m_bStreamActive = false;
     }
 }
 
@@ -479,19 +691,19 @@ void CRawData::LoadNextDblBuffer( CRawChannel* pRaw, int iNeed ) {
         int iLen = DBL_BUF_LEN / 4 - pRaw->m_pPar->m_iInBuf;
         iLen = __min( iLen, m_iDataLen - m_lBufOff );
         if ( ( iLen == 0 ) && ( pRaw->m_pPar->m_iInBuf == 0 ) ) {
-            AIL_end_sample( pRaw->m_hSmp );
+            // End of track
+            pRaw->m_bStreamActive = false;
             return;
         }
 
         // have a background thread - it's read it
-        if (pRaw->m_pThread != NULL ) {
+        if ( pRaw->m_pThread != NULL ) {
             int iDelay = 10;
             while ( pRaw->m_cStat == CRawChannel::_reading ) {
                 ::Sleep( iDelay );
                 iDelay += iDelay / 2;
 
-                // if it died go to the catch below
-                if (pRaw->m_pThread == NULL ) {
+                if ( pRaw->m_pThread == NULL ) {
                     TRAP();
                     ThrowError( ERR_CACHE_READ );
                 }
@@ -500,10 +712,9 @@ void CRawData::LoadNextDblBuffer( CRawChannel* pRaw, int iNeed ) {
             int iLastBuf = pRaw->m_iBufOn;
             int iLastLen = pRaw->m_iReadLen;
 
-            // in case it died
             if ( iLastLen == 0 ) {
                 TRAP();
-                AIL_end_sample( pRaw->m_hSmp );
+                pRaw->m_bStreamActive = false;
                 return;
             }
 
@@ -512,7 +723,7 @@ void CRawData::LoadNextDblBuffer( CRawChannel* pRaw, int iNeed ) {
                 pRaw->BackgroundRead( m_bVoice ? pRaw->m_pPar->m_pFileVoc->m_hFile :
                                       pRaw->m_pPar->m_pFileReg->m_hFile, m_lBufOff + m_lOff, iLen );
                 m_lBufOff += iLen;
-            } else
+            } else {
                 if ( m_iComp == 9 ) {
                     pRaw->m_iBufOn++;
                     if ( pRaw->m_iBufOn > 2 )
@@ -528,14 +739,16 @@ void CRawData::LoadNextDblBuffer( CRawChannel* pRaw, int iNeed ) {
                     pRaw->m_cStat = CRawChannel::_read;
                     theMusicPlayer.m_iInBuf = 0;
                 }
+                pRaw->m_bStreamEOF = true;
+            }
 
-            // tell the player we have the buffer
+            // store the buffer length
             iLastLen = __min( iLastLen, DBL_BUF_LEN );
-            AIL_load_sample_buffer( pRaw->m_hSmp, iNeed, (char*)pRaw->m_pDblBuf[iLastBuf], iLastLen );
+            pRaw->m_iPlayLen[iLastBuf] = iLastLen;
             return;
         }
 
-        // read it
+        // no background thread - read synchronously
         if ( iLen > 0 ) {
             ::SetFilePointer( (HANDLE)( m_bVoice ? pRaw->m_pPar->m_pFileVoc->m_hFile :
                                         pRaw->m_pPar->m_pFileReg->m_hFile ), m_lBufOff + m_lOff, NULL, FILE_BEGIN );
@@ -557,7 +770,7 @@ void CRawData::LoadNextDblBuffer( CRawChannel* pRaw, int iNeed ) {
                                                    pRaw->m_pDblBuf[iNeed], DBL_BUF_LEN, dwFlags );
             if ( ( iDecLen = theMusicPlayer.m_pAdpcmMusic->ResultSize() ) == 0 ) {
                 TRAP();
-                AIL_end_sample( pRaw->m_hSmp );
+                pRaw->m_bStreamActive = false;
                 return;
             }
             if ( ( theMusicPlayer.m_iInBuf = iLen - theMusicPlayer.m_pAdpcmMusic->SrcSize() ) > 0 )
@@ -567,13 +780,12 @@ void CRawData::LoadNextDblBuffer( CRawChannel* pRaw, int iNeed ) {
         } else
             iDecLen = iLen;
 
-        // hand it off
         iDecLen = __min( iDecLen, DBL_BUF_LEN );
-        AIL_load_sample_buffer( pRaw->m_hSmp, iNeed, (char*)pRaw->m_pDblBuf[iNeed], iDecLen );
+        pRaw->m_iPlayLen[iNeed] = iDecLen;
     }
 
     catch ( ... ) {
-        AIL_end_sample( pRaw->m_hSmp );
+        pRaw->m_bStreamActive = false;
     }
 }
 
@@ -587,21 +799,37 @@ CMusicPlayer::CMusicPlayer() {
     m_pAdpcmMusic = NULL;
     m_pBufDecode = NULL;
 
-    m_bNoMidi = m_bNoWav = m_bRunning = m_bExclWav = m_bKillMidi = m_bUseDS = FALSE;
-    m_iMode = CMusicPlayer::MUSIC_MODE::mixed;
+    m_bNoWav = FALSE;
+    m_bRunning = FALSE;
+    m_bDigOpen = false;
+    m_iMode = CMusicPlayer::MUSIC_MODE::wav_only;
 
-    m_hDig = NULL;
-    m_hMdi = NULL;
-    m_hSeq = NULL;
+    m_iMusicVol = 0;
+    m_iSfxVol = 0;
+    m_iMusicGrpFirst = 0;
+    m_iMusicGrpNum = 0;
 
     m_pFileReg = NULL;
     m_pFileVoc = NULL;
 
+    m_iInBuf = 0;
+
+    m_pServiceThread = NULL;
+    m_bServiceRunning = false;
+    m_bCsInitialized = FALSE;
+    memset( &m_csAudio, 0, sizeof( m_csAudio ) );
+    InitializeCriticalSection( &m_csAudio );
+    m_bCsInitialized = TRUE;
+
     for ( int iOn = 0; iOn < MAX_SOUND_SAMPLES; iOn++ )
         m_Channel[iOn].m_pPar = this;
 
-    AIL_DLL_version( m_sVer.GetBuffer( 256 ), 254 );
-    m_sVer.ReleaseBuffer( -1 );
+    // Get SDL_mixer version
+    const SDL_version* pVer = Mix_Linked_Version();
+    if ( pVer != NULL )
+        m_sVer.Format( "SDL_mixer %d.%d.%d", pVer->major, pVer->minor, pVer->patch );
+    else
+        m_sVer = "SDL_mixer";
 }
 
 CMusicPlayer::~CMusicPlayer() {
@@ -610,13 +838,18 @@ CMusicPlayer::~CMusicPlayer() {
         Close();
 
         if ( m_pBufDecode != NULL )
-            GlobalFree( m_pBufDecode );
+            free( m_pBufDecode );
         delete m_pAdpcmMusic;
         delete m_pAdpcmSfx;
 
-        AIL_shutdown();
+        SDL_QuitSubSystem( SDL_INIT_AUDIO );
     } catch ( ... ) {
         TRAP();
+    }
+
+    if ( m_bCsInitialized ) {
+        DeleteCriticalSection( &m_csAudio );
+        m_bCsInitialized = FALSE;
     }
 }
 
@@ -626,15 +859,13 @@ void CMusicPlayer::Open( int iMusicVol, int iSoundVol, MUSIC_MODE iMode, int iGr
     ASSERT( ( 0 <= iMusicVol ) && ( iMusicVol <= 100 ) );
     ASSERT( ( 0 <= iSoundVol ) && ( iSoundVol <= 100 ) );
 
-    m_iMode = iMode;
+    // Force wav_only mode (MIDI removed)
+    m_iMode = CMusicPlayer::MUSIC_MODE::wav_only;
 
     m_iMusicVol = ( iMusicVol * 127 ) / 100;
     m_iSfxVol = ( iSoundVol * 127 ) / 100;
 
-    ptheApp->WriteProfileInt( "Advanced", "MusicModeUsed", static_cast<int>( iMode ) );
-
-    AIL_DLL_version( m_sVer.GetBuffer( 256 ), 254 );
-    m_sVer.ReleaseBuffer( -1 );
+    w22::WriteProfileInt( "Advanced", "MusicModeUsed", static_cast<int>( m_iMode ) );
 
     // if this fails we just don't have sound
     try {
@@ -642,33 +873,26 @@ void CMusicPlayer::Open( int iMusicVol, int iSoundVol, MUSIC_MODE iMode, int iGr
         if ( ( m_iSfxVol == 0 ) && ( m_iMusicVol == 0 ) )
             return;
 
-        // start us up
-        AIL_startup();
+        // Initialize SDL audio subsystem
+        if ( SDL_InitSubSystem( SDL_INIT_AUDIO ) < 0 ) {
+            TRACE( "SDL_InitSubSystem(AUDIO) failed: %s\n", SDL_GetError() );
+            m_bNoWav = TRUE;
+            return;
+        }
+
+        // Open the wave device
+        int iVol = __max( m_iMusicVol, m_iSfxVol );
+        if ( iVol > 0 )
+            OpenDigital( iVol );
+
         m_bRunning = TRUE;
 
-        m_bExclWav = iMode != CMusicPlayer::MUSIC_MODE::midi_only;
-
-        // open the MIDI device
-        if ( ( iMode == CMusicPlayer::MUSIC_MODE::midi_only ) && ( m_iMusicVol > 0 ) ) {
-            OpenMidi(m_iMusicVol);
-        }
-
-        // open the wave device
-        int iVol;
-        if ( iMode == CMusicPlayer::MUSIC_MODE::midi_only )
-            iVol = m_iSfxVol;
-        else
-            iVol = __max( m_iMusicVol, m_iSfxVol );
-        if ( iVol > 0 ) {
-            OpenDigital(iVol, !m_bExclWav);
-        }
-
-        AIL_serve();
+        // Start the audio service thread (processes callbacks/streaming independently of game loop)
+        StartServiceThread();
     }
 
-    // close it down
     catch ( ... ) {
-        m_bNoMidi = m_bNoWav = TRUE;
+        m_bNoWav = TRUE;
         try {
             CDlgMsg dlg;
             dlg.MsgBox( IDS_ERROR_AUDIO, MB_OK | MB_ICONSTOP | MB_TASKMODAL, "Warnings", "NoSoundCard" );
@@ -681,29 +905,20 @@ void CMusicPlayer::Open( int iMusicVol, int iSoundVol, MUSIC_MODE iMode, int iGr
 
 void CMusicPlayer::InitData( MUSIC_MODE iMode, int iGrp ) {
 
-    // GG didn't like the music maybe?
-#ifdef _GG
-    return;
-#endif
+    // Force wav_only
+    iMode = CMusicPlayer::MUSIC_MODE::wav_only;
 
     // if 16-bit, see if we can open the CODEC
-    if ( iMode != CMusicPlayer::MUSIC_MODE::midi_only ) {
-        try {
-            m_pAdpcmSfx = new CADPCMtoPCMConvert( 1, 16, 22050 );
-            m_pAdpcmMusic = new CADPCMtoPCMConvert( 2, 16, 22050 );
-            m_pBufDecode = (char*)GlobalAlloc( GMEM_FIXED, DBL_BUF_LEN / 4 );
-        } catch ( ... ) {
-            iMode = CMusicPlayer::MUSIC_MODE::midi_only;
-            if ( iWinType != W32s ) {
-                CDlgMsg dlg;
-                dlg.MsgBox( IDS_NO_ADPCM, MB_OK | MB_ICONSTOP | MB_TASKMODAL, "Warnings", "NoADPCM" );
-            }
-            bDoSubclass = FALSE;
-        }
+    try {
+        m_pAdpcmSfx = new CADPCMtoPCMConvert( 1, 16, 22050 );
+        m_pAdpcmMusic = new CADPCMtoPCMConvert( 2, 16, 22050 );
+        m_pBufDecode = (char*)malloc( DBL_BUF_LEN / 4 );
+    } catch ( ... ) {
+        CDlgMsg dlg;
+        dlg.MsgBox( IDS_NO_ADPCM, MB_OK | MB_ICONSTOP | MB_TASKMODAL, "Warnings", "NoADPCM" );
     }
 
     m_iMode = iMode;
-    BOOL bMidi = iMode != CMusicPlayer::MUSIC_MODE::wav_only;
 
     CMmio* pMmio = theDataFile.OpenAsMMIO( "music", "MUSC" );
     CString sMusicFile = pMmio->GetFileName();
@@ -711,26 +926,30 @@ void CMusicPlayer::InitData( MUSIC_MODE iMode, int iGrp ) {
         sMusicFile = "MUSIC";
     pMmio->DescendRiff( 'M', 'U', 'S', 'C' );
 
-    // read the midi
-    if ( bMidi ) {
+    // Skip MIDI data (we don't use it anymore)
+    // But we still need to read past it if present in the file
+    try {
         pMmio->DescendList( 'M', 'I', 'D', 'I' );
+        // Read and discard MIDI tracks
         pMmio->DescendChunk( 'N', 'U', 'M', 'M' );
-        m_aMidi.SetSize( pMmio->ReadShort() );
+        int iNumMidi = pMmio->ReadShort();
         pMmio->AscendChunk();
-
-        // read in the MIDI tracks
-        for ( int iOn = 0; iOn < m_aMidi.GetSize(); iOn++ ) {
+        for ( int iOn = 0; iOn < iNumMidi; iOn++ ) {
             pMmio->DescendChunk( 'D', 'A', 'T', 'A' );
-            int iLen = pMmio->ReadLong();
-            if ( ( m_aMidi[iOn] = MEM_alloc_lock( iLen + 16 ) ) != NULL )
-                pMmio->Read( m_aMidi[iOn], iLen );
-            pMmio->AscendChunk();
+            pMmio->AscendChunk();  // skip the data
         }
         pMmio->AscendList();
+    } catch ( ... ) {
+        // MIDI section may not exist - that's fine
     }
 
-    // read the sfx
-    char bTyp = bMidi ? '1' : '2';
+    // read the sfx (always use '2' = 16-bit format since we're wav_only).
+    // Wrapped in try/catch (like the MIDI section above): the demo data ships
+    // 8-bit SFX1 and no voice/LANG layout, so the retail 16-bit reads here can
+    // legitimately fail — missing/incompatible sound is non-fatal, the game just
+    // runs without (some of) the audio.
+    try {
+    char bTyp = '2';
     pMmio->DescendList( 'S', 'F', 'X', bTyp );
     pMmio->DescendChunk( 'N', 'U', 'M', 'S' );
     m_aRaw.SetSize( pMmio->ReadShort() );
@@ -760,32 +979,28 @@ void CMusicPlayer::InitData( MUSIC_MODE iMode, int iGrp ) {
     pMmioVoices->AscendList();
     delete pMmioVoices;
 
-    // if we are not MIDI only read in the digital music headers
-    if ( m_iMode != CMusicPlayer::MUSIC_MODE::midi_only ) {
-        // read the common music
-        pMmio->DescendList( 'M', 'U', 'S', '0' );
-        pMmio->DescendChunk( 'N', 'U', 'M', 'M' );
-        iBase = m_aRaw.GetSize();
-        m_aRaw.SetSize( iBase + pMmio->ReadShort() );
-        pMmio->AscendChunk();
+    // read the digital music headers (always, since we're wav_only)
+    // read the common music
+    pMmio->DescendList( 'M', 'U', 'S', '0' );
+    pMmio->DescendChunk( 'N', 'U', 'M', 'M' );
+    iBase = m_aRaw.GetSize();
+    m_aRaw.SetSize( iBase + pMmio->ReadShort() );
+    pMmio->AscendChunk();
 
-        for ( int iOn = iBase; iOn < m_aRaw.GetSize(); iOn++ )
-            m_aRaw[iOn].InitData( pMmio, iGrp );
-        pMmio->AscendList();
+    for ( int iOn = iBase; iOn < m_aRaw.GetSize(); iOn++ )
+        m_aRaw[iOn].InitData( pMmio, iGrp );
+    pMmio->AscendList();
 
-        // read the music if no MIDI
-        if ( !bMidi ) {
-            pMmio->DescendList( 'M', 'U', 'S', '2' );
-            pMmio->DescendChunk( 'N', 'U', 'M', 'M' );
-            int iBase = m_aRaw.GetSize();
-            m_aRaw.SetSize( iBase + pMmio->ReadShort() );
-            pMmio->AscendChunk();
+    // read the non-MIDI music
+    pMmio->DescendList( 'M', 'U', 'S', '2' );
+    pMmio->DescendChunk( 'N', 'U', 'M', 'M' );
+    iBase = m_aRaw.GetSize();
+    m_aRaw.SetSize( iBase + pMmio->ReadShort() );
+    pMmio->AscendChunk();
 
-            for ( int iOn = iBase; iOn < m_aRaw.GetSize(); iOn++ )
-                m_aRaw[iOn].InitData( pMmio, iGrp );
-            pMmio->AscendList();
-        }
-    }
+    for ( int iOn = iBase; iOn < m_aRaw.GetSize(); iOn++ )
+        m_aRaw[iOn].InitData( pMmio, iGrp );
+    pMmio->AscendList();
 
     delete pMmio;
 
@@ -802,14 +1017,16 @@ void CMusicPlayer::InitData( MUSIC_MODE iMode, int iGrp ) {
 #ifdef _DEBUG
     theDataFile.EnableNegativeSeekChecking();
 #endif
+    } catch ( ... ) {
+        OutputDebugString( "CMusicPlayer::InitData: sound data incomplete (demo layout?) - continuing without full audio\n" );
+    }
 }
 
 BOOL CMusicPlayer::IsGroupLoaded( int iGrp ) {
 
-    if ( m_hDig == NULL )
+    if ( !m_bDigOpen )
         return TRUE;
 
-    // see if ANY not loaded
     for ( int iOn = 0; iOn < m_aRaw.GetSize(); iOn++ )
         if ( ( m_aRaw[iOn].m_iGroup == iGrp ) && ( m_aRaw[iOn].m_iType == CRawData::preload ) )
             if ( m_aRaw[iOn].m_iStat != CRawData::loaded )
@@ -820,259 +1037,25 @@ BOOL CMusicPlayer::IsGroupLoaded( int iGrp ) {
 
 void CMusicPlayer::LoadGroup( int iGrp ) {
 
-    if ( m_hDig == NULL )
+    if ( !m_bDigOpen )
         return;
 
-    // read in the preload ones
     for ( int iOn = 0; iOn < m_aRaw.GetSize(); iOn++ )
-        if ( ( m_aRaw[iOn].m_iGroup == iGrp ) && ( m_aRaw[iOn].m_iType == CRawData::preload ) ) {
+        if ( ( m_aRaw[iOn].m_iGroup == iGrp ) && ( m_aRaw[iOn].m_iType == CRawData::preload ) )
             m_aRaw[iOn].LoadBuffer( m_aRaw[iOn].m_bVoice ? m_pFileVoc : m_pFileReg );
-            AIL_serve();
-        }
 }
 
 void CMusicPlayer::UnloadGroup( int iGrp ) {
 
-    // read in the preload ones
     for ( int iOn = 0; iOn < m_aRaw.GetSize(); iOn++ )
         if ( m_aRaw[iOn].m_iGroup == iGrp )
             m_aRaw[iOn].UnloadBuffer();
 }
 
-// sets the system to 22-16-S if we are in MIDI mode
-void CMusicPlayer::ToExclMusic() {
-
-    // only do this if playing MIDI
-    if ( ( m_iMode != CMusicPlayer::MUSIC_MODE::mixed ) || !m_bRunning || ( m_iMusicVol == 0 ) || m_bExclWav || ( m_iMusicVol == 0 ) ) {
-        m_bExclWav = TRUE;
-        return;
-    }
-    m_bExclWav = TRUE;
-
-    StopMidiMusic();
-
-    if ( m_bNoWav )
-        return;
-
-    // if we are playing sfx close it
-    if ( m_hDig != NULL ) {
-        AIL_waveOutClose( m_hDig );
-        m_hDig = NULL;
-
-        m_Channel[0].FreeDblBuf();
-
-        // let it get set up
-        AIL_serve();
-    }
-
-    OpenDigital( m_iMusicVol, FALSE );
-}
-
-// returns the system to MIDI / 11-8-M mode if using MIDI music
-void CMusicPlayer::FromExclMusic() {
-
-    // only do this if playing MIDI
-    if ( ( m_iMode != CMusicPlayer::MUSIC_MODE::mixed ) || ( !m_bRunning ) || ( m_iMusicVol == 0 ) || ( !m_bExclWav ) ) {
-        m_bExclWav = FALSE;
-        return;
-    }
-    m_bExclWav = FALSE;
-
-    // if we are playing digital audio close it (we should be)
-    if ( m_hDig != NULL ) {
-        AIL_waveOutClose( m_hDig );
-        m_hDig = NULL;
-
-        // let it get set up
-        AIL_serve();
-    }
-
-    // if the SFX volume is 0 we're done
-    if ( m_iSfxVol == 0 ) {
-        m_Channel[0].FreeDblBuf();
-        return;
-    }
-
-    OpenDigital( m_iSfxVol, TRUE );
-}
-
-void CMusicPlayer::OpenDigital( int iVol, BOOL bMidi ) {
-
-    ASSERT( ( 0 <= iVol ) && ( iVol <= 127 ) );
-    ASSERT( m_hDig == NULL );
-
-    if ( m_bNoWav )
-        return;
-
-    try {
-        // if we haven't started, start us up
-        if ( !m_bRunning ) {
-            AIL_startup();
-            m_bRunning = TRUE;
-        }
-
-        m_hDig = NULL;
-        if ( ( iVol != 0 ) && ( waveOutGetNumDevs() > 0 ) ) {
-            // can force to ! DirectSound
-            int iTyp = ptheApp->GetProfileInt( "Advanced", "NoDirectSound", -1 );
-            if ( iTyp == 1 )
-                AIL_set_preference( DIG_USE_WAVEOUT, YES );
-
-            PCMWAVEFORMAT pwf;
-            memset( &pwf, 0, sizeof( pwf ) );
-            pwf.wf.wFormatTag = WAVE_FORMAT_PCM;
-            if ( bMidi ) {
-                // 2 channels for panning
-                pwf.wf.nChannels = 2;
-                pwf.wf.nSamplesPerSec = 11025;
-                pwf.wf.nAvgBytesPerSec = 22050;
-                pwf.wf.nBlockAlign = 2;
-                pwf.wBitsPerSample = 8;
-            } else {
-                pwf.wf.nChannels = 2;
-                pwf.wf.nSamplesPerSec = 22050;
-                pwf.wf.nAvgBytesPerSec = 88200;
-                pwf.wf.nBlockAlign = 4;
-                pwf.wBitsPerSample = 16;
-            }
-            // try - if fails turn DirectSound off
-            m_bUseDS = ( W32s != iWinType );
-            if ( AIL_waveOutOpen( &m_hDig, NULL, 0, (LPWAVEFORMAT)&pwf ) != 0 ) {
-                m_bUseDS = FALSE;
-                iTyp = 1;
-                AIL_set_preference( DIG_USE_WAVEOUT, YES );
-                if ( AIL_waveOutOpen( &m_hDig, NULL, 0, (LPWAVEFORMAT)&pwf ) != 0 ) {
-                    CDlgMsg dlg;
-                    dlg.MsgBox( IDS_ERROR_WAV, MB_OK | MB_ICONSTOP | MB_TASKMODAL, "Warnings", "NoDigitalSound" );
-                    m_hDig = NULL;
-                    return;
-                }
-            }
-
-            // ok, if it's -1 (default) and it's emulated, switch to waveOut
-            if ( ( iTyp == -1 ) && ( m_hDig->pDS != NULL ) ) {
-                DSCAPS caps;
-                memset( &caps, 0, sizeof( caps ) );
-                caps.dwSize = sizeof( caps );
-                AIL_lock();
-                BOOL bRedo = IDirectSound_GetCaps( ASDS( m_hDig->pDS ), &caps ) == DS_OK;
-                AIL_unlock();
-                if ( bRedo && ( caps.dwFlags & DSCAPS_EMULDRIVER ) ) {
-                    AIL_waveOutClose( m_hDig );
-                    m_hDig = NULL;
-                    AIL_set_preference( DIG_USE_WAVEOUT, YES );
-                    if ( AIL_waveOutOpen( &m_hDig, NULL, 0, (LPWAVEFORMAT)&pwf ) != 0 ) {
-                        CDlgMsg dlg;
-                        dlg.MsgBox( IDS_ERROR_WAV, MB_OK | MB_ICONSTOP | MB_TASKMODAL, "Warnings", "NoDigitalSound" );
-                        m_hDig = NULL;
-                        return;
-                    }
-                }
-            }
-
-            if ( m_hDig == NULL ) {
-                TRAP();
-                return;
-            }
-
-            // let it get set up
-            AIL_serve();
-
-            CRawChannel* pRaw = m_Channel;
-            for ( int iOn = 0; iOn < MAX_SOUND_SAMPLES; iOn++, pRaw++ )
-                if ( ( pRaw->m_hSmp = AIL_allocate_sample_handle( m_hDig ) ) != NULL ) {
-                    AIL_init_sample( pRaw->m_hSmp );
-                    AIL_set_sample_user_data( pRaw->m_hSmp, 0, (long)pRaw );
-                } else {
-                    pRaw = m_Channel;
-                    for ( int iOn = 0; iOn < MAX_SOUND_SAMPLES; iOn++, pRaw++ )
-                        pRaw->m_hSmp = NULL;
-                    AIL_waveOutClose( m_hDig );
-                    m_hDig = NULL;
-
-                    // let it get set up
-                    AIL_serve();
-                    return;
-                }
-
-            AIL_set_digital_master_volume( m_hDig, iVol );
-
-            // let it get set up
-            AIL_serve();
-        }
-    }
-
-    catch ( ... ) {
-        m_bNoWav = TRUE;
-        try {
-            CDlgMsg dlg;
-            dlg.MsgBox( IDS_ERROR_WAV, MB_OK | MB_ICONSTOP | MB_TASKMODAL, "Warnings", "NoDigitalSound" );
-            AIL_waveOutClose( m_hDig );
-            m_hDig = NULL;
-        } catch ( ... ) {
-        }
-    }
-}
-
-void CMusicPlayer::OpenMidi( int iVol ) {
-
-    ASSERT( ( 0 <= iVol ) && ( iVol <= 127 ) );
-    ASSERT( m_hMdi == NULL );
-
-    if ( m_hMdi != NULL )
-        return;
-
-    if ( m_bNoMidi )
-        return;
-
-    if ( m_iMode == CMusicPlayer::MUSIC_MODE::wav_only )
-        return;
-
-    try {
-        // if we haven't started, start us up
-        if ( !m_bRunning ) {
-            AIL_startup();
-            m_bRunning = TRUE;
-        }
-
-        m_hMdi = NULL;
-        if ( ( iVol != 0 ) && ( midiOutGetNumDevs() > 0 ) ) {
-            m_bKillMidi = FALSE;
-            AIL_midiOutOpen( &m_hMdi, NULL, MIDI_MAPPER );
-            if ( m_hMdi == NULL ) {
-                int iRes = ( WNT == iWinType ) ? IDS_ERROR_MIDI_NT : IDS_ERROR_MIDI;
-                CDlgMsg dlg;
-                dlg.MsgBox( iRes, MB_OK | MB_ICONSTOP | MB_TASKMODAL, "Warnings", "NoMidiSound" );
-                TRAP();
-                return;
-            }
-
-            AIL_set_XMIDI_master_volume( m_hMdi, iVol );
-
-            if ( ( m_hSeq = AIL_allocate_sequence_handle( m_hMdi ) ) == NULL ) {
-                m_bKillMidi = TRUE;
-                AIL_midiOutClose( m_hMdi );
-                m_hMdi = NULL;
-                return;
-            }
-        }
-    }
-
-    catch ( ... ) {
-        m_bNoMidi = TRUE;
-        try {
-            int iRes = ( WNT == iWinType ) ? IDS_ERROR_MIDI_NT : IDS_ERROR_MIDI;
-            CDlgMsg dlg;
-            dlg.MsgBox( iRes, MB_OK | MB_ICONSTOP | MB_TASKMODAL, "Warnings", "NoMidiSound" );
-            AIL_midiOutClose( m_hMdi );
-            m_hMdi = NULL;
-        } catch ( ... ) {
-            m_hMdi = NULL;
-        }
-    }
-}
-
 void CMusicPlayer::Close() {
+
+    // Stop the service thread first (before tearing down audio state)
+    StopServiceThread();
 
     // don't need this anymore
     delete m_pFileReg;
@@ -1081,17 +1064,23 @@ void CMusicPlayer::Close() {
 
     if ( !m_bRunning )
         return;
-    m_bKillMidi = TRUE;
 
-    // close it down
-    AIL_shutdown();
+    // Stop streaming music
+    Mix_HookMusic( NULL, NULL );
+
+    // Stop all channels
+    if ( m_bDigOpen ) {
+        Mix_HaltChannel( -1 );
+
+        // Free all chunks
+        for ( int iOn = 0; iOn < MAX_SOUND_SAMPLES; iOn++ )
+            FreeChunk( &m_Channel[iOn] );
+
+        Mix_CloseAudio();
+        m_bDigOpen = false;
+    }
+
     m_bRunning = FALSE;
-    m_hMdi = NULL;
-    m_hDig = NULL;
-
-    for ( int iOn = 0; iOn < m_aMidi.GetSize(); iOn++ )
-        MEM_free_lock( m_aMidi[iOn] );
-    m_aMidi.RemoveAll();
 
     for ( int iOn = 0; iOn < m_aRaw.GetSize(); iOn++ )
         m_aRaw[iOn].Close();
@@ -1111,62 +1100,419 @@ void CMusicPlayer::ShutUp() {
 
 BOOL CMusicPlayer::OnActivate( BOOL bActive ) {
 
-    if ( !bActive ) {
-        // digital off
-        if ( m_hDig != NULL )
-            AIL_digital_handle_release( m_hDig );
+    CAudioLock lock( *this );
 
-        // midi off
-        if ( m_hMdi != NULL )
-            AIL_MIDI_handle_release( m_hMdi );
+    if ( !bActive ) {
+        if ( m_bDigOpen ) {
+            Mix_Pause( -1 );
+            Mix_HookMusic( NULL, NULL );  // pause streaming too
+        }
         return ( TRUE );
     }
 
-    // digital on
-    if ( m_hDig != NULL )
-        if ( AIL_digital_handle_reacquire( m_hDig ) == FALSE )
-            return ( FALSE );
-
-    // midi on
-    if ( m_hMdi != NULL )
-        if ( AIL_MIDI_handle_reacquire( m_hMdi ) == FALSE )
-            return ( FALSE );
+    if ( m_bDigOpen ) {
+        Mix_Resume( -1 );
+        // Re-enable streaming if music channel was streaming
+        CRawChannel* pMusicCh = &m_Channel[0];
+        if ( pMusicCh->m_bStreamActive && pMusicCh->m_pData != NULL )
+            Mix_HookMusic( MusicHookCallback, pMusicCh );
+    }
     return ( TRUE );
 }
 
-void CMusicPlayer::PlayExclusiveMusic( int iSound ) {
+void CMusicPlayer::OpenDigital( int iVol ) {
 
-    if ( ( m_iMusicVol == 0 ) || ( !m_bRunning ) )
-        return;
-
-    if ( m_iMode == CMusicPlayer::MUSIC_MODE::midi_only ) {
-        StartMidiMusic();
-        return;
-    }
-
-    if ( ( iSound < 0 ) || ( m_aRaw.GetSize() <= iSound ) )
-        return;
-
-    // turn off MIDI
-    StopMidiMusic();
+    ASSERT( ( 0 <= iVol ) && ( iVol <= 127 ) );
+    ASSERT( !m_bDigOpen );
 
     if ( m_bNoWav )
         return;
 
-    // kill it if in use
-    if ( m_hDig != NULL )
-        if ( AIL_sample_status( m_Channel[0].m_hSmp ) != SMP_DONE ) {
-            m_Channel[0].m_pData->m_bKillMe = TRUE;
-            AIL_end_sample( m_Channel[0].m_hSmp );
-            AIL_serve();
+    try {
+        if ( ( iVol != 0 ) && ( waveOutGetNumDevs() > 0 ) ) {
+            if ( Mix_OpenAudio( DEVICE_FREQ, AUDIO_S16SYS, DEVICE_CHANNELS, 2048 ) < 0 ) {
+                TRACE( "Mix_OpenAudio failed: %s\n", Mix_GetError() );
+                CDlgMsg dlg;
+                dlg.MsgBox( IDS_ERROR_WAV, MB_OK | MB_ICONSTOP | MB_TASKMODAL, "Warnings", "NoDigitalSound" );
+                return;
+            }
+
+            m_bDigOpen = true;
+
+            // Allocate channels
+            Mix_AllocateChannels( MAX_SOUND_SAMPLES );
+
+            // Set up channel map and assign channel indices
+            for ( int iOn = 0; iOn < MAX_SOUND_SAMPLES; iOn++ ) {
+                m_Channel[iOn].m_iChannel = iOn;
+                m_Channel[iOn].m_pChunk = NULL;
+                m_Channel[iOn].m_pendingEvent = PENDING_NONE;
+                g_channelMap[iOn] = &m_Channel[iOn];
+            }
+
+            // Register the channel-finished callback
+            Mix_ChannelFinished( OnChannelFinished );
+
+            // Set master volume
+            Mix_MasterVolume( iVol * 128 / 127 );
+        }
+    }
+
+    catch ( ... ) {
+        m_bNoWav = TRUE;
+        try {
+            CDlgMsg dlg;
+            dlg.MsgBox( IDS_ERROR_WAV, MB_OK | MB_ICONSTOP | MB_TASKMODAL, "Warnings", "NoDigitalSound" );
+            if ( m_bDigOpen ) {
+                Mix_CloseAudio();
+                m_bDigOpen = false;
+            }
+        } catch ( ... ) {
+        }
+    }
+}
+
+
+/////////////////////////////////////////////////////////////////////////////
+// SDL Callbacks (audio thread - minimal work only!)
+
+void SDLCALL CMusicPlayer::OnChannelFinished( int channel ) {
+
+    // Called from SDL audio thread - only set a flag
+    if ( channel >= 0 && channel < MAX_SOUND_SAMPLES && g_channelMap[channel] != NULL )
+        g_channelMap[channel]->m_pendingEvent = PENDING_FINISHED;
+}
+
+void SDLCALL CMusicPlayer::MusicHookCallback( void* udata, Uint8* stream, int len ) {
+
+    // Called from SDL audio thread - copy data from triple buffers, apply volume
+    CRawChannel* pRaw = (CRawChannel*)udata;
+    if ( pRaw == NULL || !pRaw->m_bStreamActive ) {
+        memset( stream, 0, len );
+        return;
+    }
+
+    int iMusicVol = theMusicPlayer.m_iMusicVol;  // atomic read of int
+    int iBytesWritten = 0;
+
+    while ( iBytesWritten < len ) {
+        int iBuf = pRaw->m_iPlayBuf;
+        int iAvail = pRaw->m_iPlayLen[iBuf] - pRaw->m_iPlayPos;
+
+        if ( iAvail <= 0 ) {
+            // Current buffer exhausted, signal game thread
+            pRaw->m_bBufConsumed = true;
+
+            // Advance to next buffer
+            int iNextBuf = ( iBuf + 1 ) % 3;
+            if ( pRaw->m_iPlayLen[iNextBuf] > 0 ) {
+                pRaw->m_iPlayBuf = iNextBuf;
+                pRaw->m_iPlayPos = 0;
+                continue;
+            }
+
+            // No next buffer ready - fill with silence
+            memset( stream + iBytesWritten, 0, len - iBytesWritten );
+
+            // If EOF and no more data, signal stream done
+            if ( pRaw->m_bStreamEOF )
+                pRaw->m_bStreamActive = false;
+            return;
         }
 
-    // set music (in case vol == 0 and turned on later)
+        int iToCopy = __min( iAvail, len - iBytesWritten );
+        const char* pSrc = (const char*)pRaw->m_pDblBuf[iBuf] + pRaw->m_iPlayPos;
+
+        // Copy with volume scaling
+        if ( iMusicVol >= 127 ) {
+            // Full volume - straight copy
+            memcpy( stream + iBytesWritten, pSrc, iToCopy );
+        } else if ( iMusicVol <= 0 ) {
+            memset( stream + iBytesWritten, 0, iToCopy );
+        } else {
+            // Scale 16-bit samples by volume
+            const short* pIn = (const short*)pSrc;
+            short* pOut = (short*)( stream + iBytesWritten );
+            int iNumSamples = iToCopy / 2;
+            for ( int i = 0; i < iNumSamples; i++ )
+                pOut[i] = (short)( ( (int)pIn[i] * iMusicVol ) / 127 );
+        }
+
+        iBytesWritten += iToCopy;
+        pRaw->m_iPlayPos += iToCopy;
+    }
+}
+
+
+/////////////////////////////////////////////////////////////////////////////
+// Deferred work processing (game thread)
+
+void CMusicPlayer::YieldPlayer() {
+
+    if ( !m_bDigOpen )
+        return;
+
+    CAudioLock lock( *this );
+
+    // Process pending channel-finished events
+    for ( int iOn = 0; iOn < MAX_SOUND_SAMPLES; iOn++ ) {
+        CRawChannel* pCh = &m_Channel[iOn];
+        if ( pCh->m_pendingEvent == PENDING_FINISHED ) {
+            pCh->m_pendingEvent = PENDING_NONE;
+            HandleChannelFinished( pCh );
+        }
+    }
+
+    // Process streaming music
+    ProcessMusicStreaming();
+}
+
+
+/////////////////////////////////////////////////////////////////////////////
+// Audio service thread: ensures audio processing continues during modal loops (resize, menus, etc.)
+
+UINT CMusicPlayer::ServiceThreadProc( LPVOID pParam ) {
+
+    CMusicPlayer* pPlayer = (CMusicPlayer*)pParam;
+
+    while ( pPlayer->m_bServiceRunning ) {
+        ::Sleep( 50 );  // ~20Hz service rate
+
+        if ( !pPlayer->m_bServiceRunning )
+            break;
+
+        if ( !pPlayer->m_bDigOpen || !pPlayer->m_bRunning )
+            continue;
+
+        // Same work as YieldPlayer, protected by the same critical section
+        if ( !pPlayer->m_bCsInitialized )
+            continue;
+
+        EnterCriticalSection( &pPlayer->m_csAudio );
+
+        try {
+            for ( int iOn = 0; iOn < MAX_SOUND_SAMPLES; iOn++ ) {
+                CRawChannel* pCh = &pPlayer->m_Channel[iOn];
+                if ( pCh->m_pendingEvent == PENDING_FINISHED ) {
+                    pCh->m_pendingEvent = PENDING_NONE;
+                    pPlayer->HandleChannelFinished( pCh );
+                }
+            }
+
+            pPlayer->ProcessMusicStreaming();
+        } catch ( ... ) {
+        }
+
+        LeaveCriticalSection( &pPlayer->m_csAudio );
+    }
+
+    return 0;
+}
+
+void CMusicPlayer::StartServiceThread() {
+
+    if ( m_pServiceThread != NULL )
+        return;
+
+    m_bServiceRunning = true;
+    m_pServiceThread = AfxBeginThread( ServiceThreadProc, this, THREAD_PRIORITY_ABOVE_NORMAL, 0, CREATE_SUSPENDED );
+    if ( m_pServiceThread != NULL ) {
+        m_pServiceThread->m_bAutoDelete = FALSE;  // prevent MFC from deleting the object
+        m_pServiceThread->ResumeThread();
+    }
+}
+
+void CMusicPlayer::StopServiceThread() {
+
+    if ( m_pServiceThread == NULL )
+        return;
+
+    m_bServiceRunning = false;
+
+    // Wait for thread to finish (it checks m_bServiceRunning every 50ms)
+    if ( m_pServiceThread->m_hThread != NULL )
+        ::WaitForSingleObject( m_pServiceThread->m_hThread, 2000 );
+
+    delete m_pServiceThread;
+    m_pServiceThread = NULL;
+}
+
+void CMusicPlayer::HandleChannelFinished( CRawChannel* pCh ) {
+
+    // Free the chunk wrapper (data owned by CRawData)
+    FreeChunk( pCh );
+
+    if ( pCh->m_pData == NULL )
+        return;
+
+    if ( pCh->m_pData->m_bKillMe ) {
+        pCh->m_pData->m_bKillMe = FALSE;
+        pCh->m_pData = NULL;
+        return;
+    }
+
+    // Group music - pick next track
+    if ( pCh->m_iIsFore == CRawChannel::music ) {
+        StartRaw( pCh, &( m_aRaw.ElementAt( m_iMusicGrpFirst + RandNum( m_iMusicGrpNum - 1 ) ) ) );
+        return;
+    }
+
+    // Exclusive music - replay
+    if ( pCh->m_iIsFore == CRawChannel::excl ) {
+        if ( m_iMusicVol == 0 )
+            return;
+        StartRaw( pCh, pCh->m_pData );
+        return;
+    }
+
+    // Foreground sound finishing - switch back to background mode
+    pCh->m_iIsFore = CRawChannel::back;
+
+    if ( ( pCh->m_iBackPri == INT_MAX ) || ( m_iSfxVol == 0 ) ) {
+        pCh->m_pData = NULL;
+        return;
+    }
+
+    // busy setting new sounds
+    if ( pCh->m_iBackSound < 0 ) {
+        pCh->m_iBackSound = -pCh->m_iBackSound;
+        return;
+    }
+
+    StartRaw( pCh, &( m_aRaw.ElementAt( pCh->m_iBackSound ) ) );
+}
+
+void CMusicPlayer::ProcessMusicStreaming() {
+
+    CRawChannel* pMusicCh = &m_Channel[0];
+
+    // Not streaming? Nothing to do
+    if ( !pMusicCh->m_bStreamActive && !pMusicCh->m_bBufConsumed )
+        return;
+
+    // Buffer consumed by hook - kick next read-ahead
+    if ( pMusicCh->m_bBufConsumed ) {
+        pMusicCh->m_bBufConsumed = false;
+
+        if ( pMusicCh->m_pData != NULL && !pMusicCh->m_bStreamEOF ) {
+            // Clear the consumed buffer length so hook knows it's not ready
+            int iConsumedBuf = ( pMusicCh->m_iPlayBuf + 2 ) % 3;  // the one that was just consumed
+            pMusicCh->m_iPlayLen[iConsumedBuf] = 0;
+
+            // Load next buffer
+            pMusicCh->m_pData->LoadNextDblBuffer( pMusicCh, iConsumedBuf );
+        }
+    }
+
+    // Stream ended - handle next track
+    if ( !pMusicCh->m_bStreamActive && pMusicCh->m_pData != NULL ) {
+        Mix_HookMusic( NULL, NULL );
+
+        if ( pMusicCh->m_pData->m_bKillMe ) {
+            pMusicCh->m_pData->m_bKillMe = FALSE;
+            pMusicCh->m_pData = NULL;
+            return;
+        }
+
+        // Pick next track based on channel type
+        if ( pMusicCh->m_iIsFore == CRawChannel::music ) {
+            StartRaw( pMusicCh, &( m_aRaw.ElementAt( m_iMusicGrpFirst + RandNum( m_iMusicGrpNum - 1 ) ) ) );
+        } else if ( pMusicCh->m_iIsFore == CRawChannel::excl ) {
+            if ( m_iMusicVol > 0 )
+                StartRaw( pMusicCh, pMusicCh->m_pData );
+        }
+    }
+}
+
+
+/////////////////////////////////////////////////////////////////////////////
+// Channel helpers
+
+void CMusicPlayer::HaltChannel( CRawChannel* pCh ) {
+
+    if ( !m_bDigOpen || pCh->m_iChannel < 0 )
+        return;
+
+    // For streaming channel, stop the hook first
+    if ( pCh->m_bStreamActive ) {
+        Mix_HookMusic( NULL, NULL );
+        pCh->m_bStreamActive = false;
+    }
+
+    if ( Mix_Playing( pCh->m_iChannel ) )
+        Mix_HaltChannel( pCh->m_iChannel );
+
+    // Clear any pending event since we're handling this synchronously
+    pCh->m_pendingEvent = PENDING_NONE;
+
+    FreeChunk( pCh );
+}
+
+void CMusicPlayer::FreeChunk( CRawChannel* pCh ) {
+
+    if ( pCh->m_pChunk != NULL ) {
+        Mix_FreeChunk( pCh->m_pChunk );
+        pCh->m_pChunk = NULL;
+    }
+}
+
+void CMusicPlayer::SetChannelVolume( CRawChannel* pCh ) {
+
+    if ( !m_bDigOpen || pCh->m_iChannel < 0 )
+        return;
+
+    int iVol;
+    if ( ( pCh->m_iIsFore == CRawChannel::excl ) || ( pCh->m_iIsFore == CRawChannel::music ) )
+        iVol = m_iMusicVol;
+    else {
+        pCh->m_iVol = __minmax( 10, 127, pCh->m_iVol );
+        iVol = ( m_iSfxVol * pCh->m_iVol ) / 128;
+    }
+
+    Mix_Volume( pCh->m_iChannel, iVol * 128 / 127 );
+}
+
+void CMusicPlayer::SetChannelPan( CRawChannel* pCh ) {
+
+    if ( !m_bDigOpen || pCh->m_iChannel < 0 )
+        return;
+
+    pCh->m_iPan = __minmax( 0, 127, pCh->m_iPan );
+
+    // MSS pan: 0=left, 64=center, 127=right
+    // SDL_mixer SetPanning: left=0-255, right=0-255
+    int iRight = pCh->m_iPan * 2;
+    if ( iRight > 255 ) iRight = 255;
+    int iLeft = 255 - iRight;
+    Mix_SetPanning( pCh->m_iChannel, (Uint8)iLeft, (Uint8)iRight );
+}
+
+
+/////////////////////////////////////////////////////////////////////////////
+// Music playback
+
+void CMusicPlayer::PlayExclusiveMusic( int iSound ) {
+
+    CAudioLock lock( *this );
+
+    if ( ( m_iMusicVol == 0 ) || ( !m_bRunning ) )
+        return;
+
+    if ( ( iSound < 0 ) || ( m_aRaw.GetSize() <= iSound ) )
+        return;
+
+    if ( m_bNoWav )
+        return;
+
+    // kill channel 0 if in use
+    if ( m_bDigOpen ) {
+        HaltChannel( &m_Channel[0] );
+        if ( m_Channel[0].m_pData != NULL )
+            m_Channel[0].m_pData->m_bKillMe = TRUE;
+    }
+
+    // set music
     m_Channel[0].m_pData = &( m_aRaw.ElementAt( iSound ) );
-
-    // put us in 22-16-S
-    ToExclMusic();
-
     m_Channel[0].m_iIsFore = CRawChannel::excl;
     m_Channel[0].m_iBackPri = 0;
     StartRaw( &m_Channel[0], m_Channel[0].m_pData );
@@ -1174,59 +1520,38 @@ void CMusicPlayer::PlayExclusiveMusic( int iSound ) {
 
 void CMusicPlayer::EndExclusiveMusic() {
 
-    if ( ( m_iMusicVol == 0 ) || ( m_iMode == CMusicPlayer::MUSIC_MODE::midi_only ) || ( !m_bRunning ) )
+    CAudioLock lock( *this );
+
+    if ( ( m_iMusicVol == 0 ) || ( !m_bRunning ) )
         return;
 
-    // kill it if in use
-    if ( ( m_hDig != NULL ) && ( m_Channel[0].m_iIsFore == CRawChannel::excl ) ) {
+    if ( ( m_bDigOpen ) && ( m_Channel[0].m_iIsFore == CRawChannel::excl ) ) {
         m_Channel[0].m_iIsFore = CRawChannel::back;
 
-        // close it down
-        if ( m_hDig != NULL )
-            if ( AIL_sample_status( m_Channel[0].m_hSmp ) != SMP_DONE ) {
-                m_Channel[0].m_pData->m_bKillMe = TRUE;
-                AIL_end_sample( m_Channel[0].m_hSmp );
-                AIL_serve();
-            }
+        HaltChannel( &m_Channel[0] );
+        if ( m_Channel[0].m_pData != NULL )
+            m_Channel[0].m_pData->m_bKillMe = TRUE;
 
         m_Channel[0].m_iBackPri = INT_MAX;
         m_Channel[0].m_iNum = 0;
     }
 
-    // put us back in 11-8-M (if MIDI)
-    FromExclMusic();
-
-    // free up the memory if we're MIDI
-    if ( m_iMode == CMusicPlayer::MUSIC_MODE::mixed )
-        m_Channel[0].FreeDblBuf();
-
-    if ( m_bNoMidi )
-        return;
-
-    // start MIDI if off
-    if ( ( m_hMdi == NULL ) && ( m_iMusicVol > 0 ) && ( m_iMode != CMusicPlayer::MUSIC_MODE::wav_only ) )
-        OpenMidi( m_iMusicVol );
+    m_Channel[0].FreeDblBuf();
 }
 
 void CMusicPlayer::EndMusicGroup() {
 
+    CAudioLock lock( *this );
+
     if ( ( m_iMusicVol == 0 ) || ( m_iMode != CMusicPlayer::MUSIC_MODE::wav_only ) || ( !m_bRunning ) )
         return;
 
-    TRAP();
-
-    // kill it if in use
-    if ( ( m_hDig != NULL ) && ( m_Channel[0].m_iIsFore == CRawChannel::music ) ) {
-        TRAP();
+    if ( ( m_bDigOpen ) && ( m_Channel[0].m_iIsFore == CRawChannel::music ) ) {
         m_Channel[0].m_iIsFore = CRawChannel::back;
 
-        // close it down
-        if ( m_hDig != NULL )
-            if ( AIL_sample_status( m_Channel[0].m_hSmp ) != SMP_DONE ) {
-                m_Channel[0].m_pData->m_bKillMe = TRUE;
-                AIL_end_sample( m_Channel[0].m_hSmp );
-                AIL_serve();
-            }
+        HaltChannel( &m_Channel[0] );
+        if ( m_Channel[0].m_pData != NULL )
+            m_Channel[0].m_pData->m_bKillMe = TRUE;
 
         m_Channel[0].m_iBackPri = INT_MAX;
         m_Channel[0].m_iNum = 0;
@@ -1235,28 +1560,43 @@ void CMusicPlayer::EndMusicGroup() {
 
 void CMusicPlayer::PlayMusicGroup( int iGrpStrt, int iNumGrp ) {
 
-    // if MIDI we ignore this
-    if ( ( m_hDig == NULL ) || ( m_iMode != CMusicPlayer::MUSIC_MODE::wav_only ) )
+    CAudioLock lock( *this );
+
+    if ( !m_bDigOpen || ( m_iMode != CMusicPlayer::MUSIC_MODE::wav_only ) )
         return;
 
     m_iMusicGrpFirst = iGrpStrt;
     m_iMusicGrpNum = iNumGrp;
 
-    // kill it if in use
-    if ( AIL_sample_status( m_Channel[0].m_hSmp ) != SMP_DONE ) {
+    // kill channel 0 if in use
+    HaltChannel( &m_Channel[0] );
+    if ( m_Channel[0].m_pData != NULL )
         m_Channel[0].m_pData->m_bKillMe = TRUE;
-        AIL_end_sample( m_Channel[0].m_hSmp );
-        AIL_serve();
-    }
 
     m_Channel[0].m_iIsFore = CRawChannel::music;
     m_Channel[0].m_iBackPri = 0;
     StartRaw( &m_Channel[0], &( m_aRaw.ElementAt( m_iMusicGrpFirst + RandNum( m_iMusicGrpNum - 1 ) ) ) );
 }
 
+// MIDI stubs (no-ops for API compatibility)
+void CMusicPlayer::StartMidiMusic() {
+    // MIDI removed - start digital music if available
+    // Game code typically calls PlayMusicGroup() after this
+}
+
+void CMusicPlayer::StopMidiMusic() {
+    // MIDI removed - no-op
+}
+
+
+/////////////////////////////////////////////////////////////////////////////
+// Sound effects
+
 void CMusicPlayer::PlayForegroundSound( int iSound, int iPri, int iPan, int iVol ) {
 
-    if ( ( iSound <= 0 ) || ( iSound >= m_aRaw.GetSize() ) || ( m_hDig == NULL ) || ( m_iSfxVol == 0 ) )
+    CAudioLock lock( *this );
+
+    if ( ( iSound <= 0 ) || ( iSound >= m_aRaw.GetSize() ) || ( !m_bDigOpen ) || ( m_iSfxVol == 0 ) )
         return;
 
     // find the lowest pri background channel
@@ -1275,28 +1615,19 @@ void CMusicPlayer::PlayForegroundSound( int iSound, int iPri, int iPan, int iVol
     }
 
     // if all are background, see if a foreground is available
-    //   we don't play if we have the same sound playing
     if ( iVal == -1 ) {
         CRawChannel* pRaw = m_Channel;
         for ( int iOn = 0; iOn < MAX_SOUND_SAMPLES; iOn++, pRaw++ )
             if ( pRaw->m_iIsFore == CRawChannel::fore ) {
-                // if playing - return
-                if ( pRaw->m_iForeSound == iSound ) {
-#ifdef STRICTER_ASSERTS
-                    // do we not like to play it twice or something?
-                    TRAP();
-#endif
+                if ( pRaw->m_iForeSound == iSound )
                     return;
-                }
 
-                // if lower priority - keep it
                 if ( ( iVal == -1 ) || ( pRaw->m_iForePri > iVal ) ) {
                     pRawOn = pRaw;
-                    iVal = pRaw->m_iBackPri;
+                    iVal = pRaw->m_iForePri;
                 }
             }
 
-        // if we didn't find an available channel - leave
         if ( iVal == -1 ) {
             TRAP();
             return;
@@ -1305,11 +1636,9 @@ void CMusicPlayer::PlayForegroundSound( int iSound, int iPri, int iPan, int iVol
 
     // kill it if in use
     if ( pRawOn != nullptr ) {
-        if ( AIL_sample_status( pRawOn->m_hSmp ) != SMP_DONE ) {
+        HaltChannel( pRawOn );
+        if ( pRawOn->m_pData != NULL )
             pRawOn->m_pData->m_bKillMe = TRUE;
-            AIL_end_sample( pRawOn->m_hSmp );
-            AIL_serve();
-        }
 
         pRawOn->m_iIsFore = CRawChannel::fore;
         pRawOn->m_iVol = iVol;
@@ -1322,17 +1651,29 @@ void CMusicPlayer::PlayForegroundSound( int iSound, int iPri, int iPan, int iVol
 
 void CMusicPlayer::KillForegroundSound( int iSound ) {
 
+    CAudioLock lock( *this );
+
     if ( ( iSound <= 0 ) || ( iSound >= m_aRaw.GetSize() ) )
         return;
 
-    m_aRaw.ElementAt( iSound ).UnloadBuffer();
+    // Halt any channel currently playing this sound before freeing the buffer,
+    // because Mix_QuickLoad_RAW chunks reference the buffer directly.
+    CRawData* pRd = &m_aRaw.ElementAt( iSound );
+    if ( m_bDigOpen ) {
+        CRawChannel* pRaw = m_Channel;
+        for ( int iOn = 0; iOn < MAX_SOUND_SAMPLES; iOn++, pRaw++ )
+            if ( pRaw->m_pData == pRd ) {
+                HaltChannel( pRaw );
+                pRaw->m_pData = NULL;
+            }
+    }
+
+    pRd->UnloadBuffer();
 }
 
-// leaves sounds playing but clears them from m_iBackground
 void CMusicPlayer::ClrBackgroundSounds() {
 
-    // if not playing leave (we don't track background sounds)
-    if ( ( m_hDig == NULL ) || ( m_iSfxVol == 0 ) ) {
+    if ( ( !m_bDigOpen ) || ( m_iSfxVol == 0 ) ) {
         TRAP();
         return;
     }
@@ -1347,13 +1688,12 @@ void CMusicPlayer::ClrBackgroundSounds() {
 
 void CMusicPlayer::QueueBackgroundSound( int iSound, int iPri, int iPan, int iVol ) {
 
-    // if not playing leave (we don't track background sounds)
-    if ( ( iSound == 0 ) || ( iSound >= m_aRaw.GetSize() ) || ( iVol < 10 ) || ( m_hDig == NULL ) || ( m_iSfxVol == 0 ) ) {
+    if ( ( iSound == 0 ) || ( iSound >= m_aRaw.GetSize() ) || ( iVol < 10 ) || ( !m_bDigOpen ) || ( m_iSfxVol == 0 ) ) {
         TRAP();
         return;
     }
 
-    // if we're already in there - leave us alone
+    // if we're already in there
     CRawChannel* pRaw = m_Channel;
     for ( int iOn = 0; iOn < MAX_SOUND_SAMPLES; iOn++, pRaw++ )
         if ( abs( pRaw->m_iBackSound ) == iSound ) {
@@ -1380,7 +1720,6 @@ void CMusicPlayer::QueueBackgroundSound( int iSound, int iPri, int iPan, int iVo
             iVal = pRaw->m_iBackPri;
         }
 
-    // if we're higher - forget it
     if ( iVal < iPri )
         return;
 
@@ -1391,11 +1730,11 @@ void CMusicPlayer::QueueBackgroundSound( int iSound, int iPri, int iPan, int iVo
     pRawOn->m_iNum = 1;
 }
 
-// we switch to the sounds we now have in m_iBackSound
 void CMusicPlayer::UpdateBackgroundSounds() {
 
-    // if not playing leave (we don't track background sounds)
-    if ( ( m_hDig == NULL ) || ( m_iSfxVol == 0 ) ) {
+    CAudioLock lock( *this );
+
+    if ( ( !m_bDigOpen ) || ( m_iSfxVol == 0 ) ) {
         TRAP();
         return;
     }
@@ -1407,11 +1746,9 @@ void CMusicPlayer::UpdateBackgroundSounds() {
         else {
             // we never used it - kill it
             if ( pRaw->m_iBackPri == INT_MAX ) {
-                if ( AIL_sample_status( pRaw->m_hSmp ) != SMP_DONE ) {
+                HaltChannel( pRaw );
+                if ( pRaw->m_pData != NULL )
                     pRaw->m_pData->m_bKillMe = TRUE;
-                    AIL_end_sample( pRaw->m_hSmp );
-                    AIL_serve();
-                }
                 pRaw->m_iBackSound = 0;
             } else
 
@@ -1422,26 +1759,22 @@ void CMusicPlayer::UpdateBackgroundSounds() {
 
                     // start it up
                 {
-                    if ( AIL_sample_status( pRaw->m_hSmp ) != SMP_DONE ) {
+                    HaltChannel( pRaw );
+                    if ( pRaw->m_pData != NULL )
                         pRaw->m_pData->m_bKillMe = TRUE;
-                        AIL_end_sample( pRaw->m_hSmp );
-                        AIL_serve();
-                    }
 
                     StartRaw( pRaw, &( m_aRaw.ElementAt( pRaw->m_iBackSound ) ) );
                 }
         }
-
-    AIL_serve();
 }
 
 void CMusicPlayer::IncBackgroundSound( int iSound, int iPan, int iVol ) {
 
-    // if not playing leave (we don't track background sounds)
-    if ( ( iSound == 0 ) || ( iSound >= m_aRaw.GetSize() ) || ( iVol < 10 ) || ( m_hDig == NULL ) || ( m_iSfxVol == 0 ) )
+    CAudioLock lock( *this );
+
+    if ( ( iSound == 0 ) || ( iSound >= m_aRaw.GetSize() ) || ( iVol < 10 ) || ( !m_bDigOpen ) || ( m_iSfxVol == 0 ) )
         return;
 
-    // find it
     CRawChannel* pRaw = m_Channel;
     for ( int iOn = 0; iOn < MAX_SOUND_SAMPLES; iOn++, pRaw++ )
         if ( abs( pRaw->m_iBackSound ) == iSound ) {
@@ -1466,7 +1799,6 @@ void CMusicPlayer::IncBackgroundSound( int iSound, int iPan, int iVol ) {
             iVal = pRaw->m_iBackPri;
         }
 
-    // if we're higher - forget it
     if ( iVal <= BACKGROUND_PRI )
         return;
 
@@ -1479,27 +1811,23 @@ void CMusicPlayer::IncBackgroundSound( int iSound, int iPan, int iVol ) {
     if ( pRawOn->m_iIsFore != CRawChannel::back )
         return;
 
-    // start it up
-    if ( AIL_sample_status( pRawOn->m_hSmp ) != SMP_DONE ) {
+    HaltChannel( pRawOn );
+    if ( pRawOn->m_pData != NULL )
         pRawOn->m_pData->m_bKillMe = TRUE;
-        AIL_end_sample( pRawOn->m_hSmp );
-        AIL_serve();
-    }
 
     StartRaw( pRawOn, &( m_aRaw.ElementAt( pRawOn->m_iBackSound ) ) );
 }
 
 void CMusicPlayer::DecBackgroundSound( int iSound, int iPan, int iVol ) {
 
-    // if not playing leave (we don't track background sounds)
-    if ( ( iSound == 0 ) || ( iSound >= m_aRaw.GetSize() ) || ( iVol < 10 ) || ( m_hDig == NULL ) || ( m_iSfxVol == 0 ) )
+    CAudioLock lock( *this );
+
+    if ( ( iSound == 0 ) || ( iSound >= m_aRaw.GetSize() ) || ( iVol < 10 ) || ( !m_bDigOpen ) || ( m_iSfxVol == 0 ) )
         return;
 
-    // find it
     CRawChannel* pRaw = m_Channel;
     for ( int iOn = 0; iOn < MAX_SOUND_SAMPLES; iOn++, pRaw++ )
         if ( abs( pRaw->m_iBackSound ) == iSound ) {
-            // BUGBUG - change vol/pan
             pRaw->m_iNum--;
             if ( ( pRaw->m_iNum > 0 ) || ( pRaw->m_iIsFore != CRawChannel::back ) ) {
                 if ( pRaw->m_iNum <= 0 )
@@ -1508,11 +1836,9 @@ void CMusicPlayer::DecBackgroundSound( int iSound, int iPan, int iVol ) {
             }
 
             // ok - turn it off
-            if ( AIL_sample_status( pRaw->m_hSmp ) != SMP_DONE ) {
+            HaltChannel( pRaw );
+            if ( pRaw->m_pData != NULL )
                 pRaw->m_pData->m_bKillMe = TRUE;
-                AIL_end_sample( pRaw->m_hSmp );
-                AIL_serve();
-            }
             pRaw->m_iBackSound = 0;
             break;
         }
@@ -1520,210 +1846,41 @@ void CMusicPlayer::DecBackgroundSound( int iSound, int iPan, int iVol ) {
 
 void CMusicPlayer::SoundsOff() {
 
-    StopMidiMusic();
+    CAudioLock lock( *this );
 
-    if ( m_hDig == NULL )
+    if ( !m_bDigOpen )
         return;
+
+    // Stop streaming music
+    Mix_HookMusic( NULL, NULL );
 
     CRawChannel* pRaw = m_Channel;
     for ( int iOn = 0; iOn < MAX_SOUND_SAMPLES; iOn++, pRaw++ ) {
         pRaw->m_iIsFore = CRawChannel::back;
         pRaw->m_iBackSound = 0;
         pRaw->m_iBackPri = INT_MAX;
-        if ( AIL_sample_status( pRaw->m_hSmp ) != SMP_DONE ) {
+        HaltChannel( pRaw );
+        if ( pRaw->m_pData != NULL )
             pRaw->m_pData->m_bKillMe = TRUE;
-            AIL_end_sample( pRaw->m_hSmp );
-            AIL_serve();
-        }
-
         pRaw->FreeDblBuf();
     }
 }
 
-// return TRUE if playing digital music
-BOOL CMusicPlayer::IsWavMusic() {
 
-    if ( m_iMode == CMusicPlayer::MUSIC_MODE::midi_only )
-        return FALSE;
-
-    if ( m_iMode == CMusicPlayer::MUSIC_MODE::wav_only )
-        return TRUE;
-
-    return m_bExclWav;
-}
-
-void WINAPI CMusicPlayer::RawDblBufCallback( HSAMPLE hSmp ) {
-
-    CRawChannel* pRaw = (CRawChannel*)AIL_sample_user_data( hSmp, 0 );
-    ASSERT( pRaw->m_hSmp == hSmp );
-
-    // this means we are done with this
-    if ( pRaw->m_pData->m_bKillMe )
-        return;
-
-    if ( ( pRaw->m_iIsFore == CRawChannel::back ) && ( pRaw->m_iBackPri == INT_MAX ) )
-        return;
-
-    if ( pRaw->m_pPar->m_iMusicVol == 0 )
-        if ( ( pRaw->m_iIsFore == CRawChannel::excl ) || ( pRaw->m_iIsFore == CRawChannel::music ) )
-            return;
-
-    // get both
-    for ( int iInd = 2; iInd > 0; iInd-- ) {
-        int iNeed = AIL_sample_buffer_ready( hSmp );
-        if ( ( iNeed != 0 ) && ( iNeed != 1 ) )
-            return;
-
-        // read the data
-        pRaw->m_pData->LoadNextDblBuffer( pRaw, iNeed );
-    }
-}
-
-void WINAPI CMusicPlayer::RawCallback( HSAMPLE hSmp ) {
-
-    CRawChannel* pRaw = (CRawChannel*)AIL_sample_user_data( hSmp, 0 );
-    ASSERT( pRaw->m_hSmp == hSmp );
-
-    // kill it if still running???
-    if ( AIL_sample_status( pRaw->m_hSmp ) != SMP_DONE ) {
-        TRAP();
-        pRaw->m_pData->m_bKillMe = TRUE;
-        AIL_end_sample( pRaw->m_hSmp );
-    }
-
-    if ( pRaw->m_pData->m_bKillMe ) {
-        // finish any inprocess read
-        for ( int iWait = 0; ( pRaw->m_cStat == CRawChannel::_reading ) && ( iWait < 10 ); iWait++ ) {
-            TRAP();
-            ::Sleep( iWait * 8 );
-        }
-
-        pRaw->m_pData->m_bKillMe = FALSE;
-        pRaw->m_pData = NULL;
-        return;
-    }
-
-    // if it's group music
-    if ( pRaw->m_iIsFore == CRawChannel::music ) {
-        // pick the new piece
-        theMusicPlayer.StartRaw( pRaw, &( pRaw->m_pPar->m_aRaw.ElementAt( pRaw->m_pPar->m_iMusicGrpFirst + RandNum( pRaw->m_pPar->m_iMusicGrpNum - 1 ) ) ) );
-        return;
-    }
-
-    // exclusive music
-    if ( pRaw->m_iIsFore == CRawChannel::excl ) {
-        if ( pRaw->m_pPar->m_iMusicVol == 0 )
-            return;
-
-        // if exclusive being turned off - no replay
-        if ( !pRaw->m_pPar->m_bExclWav ) {
-            TRAP();
-            return;
-        }
-
-        theMusicPlayer.StartRaw( pRaw, pRaw->m_pData );
-        return;
-    }
-
-    // ok - we're a foreground sound finishing (background sounds don't call this - they loop)
-    pRaw->m_iIsFore = CRawChannel::back;
-
-    // no background sound - we only need to switch from foreground to background mode
-    // no sound
-    if ( ( pRaw->m_iBackPri == INT_MAX ) || ( pRaw->m_pPar->m_iSfxVol == 0 ) ) {
-        pRaw->m_pData = NULL;
-        return;
-    }
-
-    // busy setting new sounds
-    if ( pRaw->m_iBackSound < 0 ) {
-        pRaw->m_iBackSound = -pRaw->m_iBackSound;
-        return;
-    }
-
-    theMusicPlayer.StartRaw( pRaw, &( theMusicPlayer.m_aRaw.ElementAt( pRaw->m_iBackSound ) ) );
-}
-
-void CMusicPlayer::StartMidiMusic() {
-
-    // turn off WAV music
-    EndExclusiveMusic();
-
-    if ( m_hMdi == NULL )
-        return;
-
-    if ( m_bNoMidi )
-        return;
-
-    // end old sequence
-    if ( ( AIL_sequence_status( m_hSeq ) == SEQ_PLAYING ) || ( AIL_sequence_status( m_hSeq ) == SEQ_STOPPED ) ) {
-        m_bKillMidi = TRUE;
-        AIL_end_sequence( m_hSeq );
-        AIL_serve();
-        m_bKillMidi = FALSE;
-    }
-
-    // no music if vol == 0
-    if ( m_iMusicVol <= 0 ) {
-        TRAP();
-        return;
-    }
-
-    // start new sequence
-    int iSel = RandNum( m_aMidi.GetSize() - 1 );
-    AIL_init_sequence( m_hSeq, m_aMidi[iSel], 0 );
-    AIL_register_sequence_callback( m_hSeq, MidiCallback );
-    AIL_start_sequence( m_hSeq );
-
-    AIL_serve();
-}
-
-void CMusicPlayer::StopMidiMusic() {
-
-    if ( m_hMdi == NULL )
-        return;
-    if ( ( AIL_sequence_status( m_hSeq ) != SEQ_PLAYING ) && ( AIL_sequence_status( m_hSeq ) != SEQ_STOPPED ) )
-        return;
-
-    m_bKillMidi = TRUE;
-
-    // end old sequence
-    AIL_end_sequence( m_hSeq );
-
-    AIL_serve();
-}
-
-void WINAPI CMusicPlayer::MidiCallback( HSEQUENCE hSeq ) {
-
-    ASSERT( hSeq == theMusicPlayer.m_hSeq );
-
-    // see if we are turning it off
-    if ( theMusicPlayer.m_bKillMidi ) {
-        theMusicPlayer.m_bKillMidi = FALSE;
-        return;
-    }
-
-    // time to play another tune in the Grp
-    int iSel = RandNum( theMusicPlayer.m_aMidi.GetSize() - 1 );
-
-    AIL_end_sequence( theMusicPlayer.m_hSeq );
-    AIL_init_sequence( theMusicPlayer.m_hSeq, theMusicPlayer.m_aMidi[iSel], 0 );
-    AIL_register_sequence_callback( theMusicPlayer.m_hSeq, MidiCallback );
-    AIL_start_sequence( theMusicPlayer.m_hSeq );
-}
+/////////////////////////////////////////////////////////////////////////////
+// Volume
 
 int CMusicPlayer::GetMusicVolume() const {
 
-    if ( ( m_iMode == CMusicPlayer::MUSIC_MODE::midi_only ) && ( m_hMdi == NULL ) )
-        return ( 0 );
-
-    if ( ( m_iMode != CMusicPlayer::MUSIC_MODE::midi_only ) && ( m_hDig == NULL ) )
+    if ( !m_bDigOpen )
         return ( 0 );
 
     return ( ( m_iMusicVol * 100 ) / 127 );
 }
 
 void CMusicPlayer::SetMusicVolume( int iVol ) {
+
+    CAudioLock lock( *this );
 
     ASSERT( ( 0 <= iVol ) && ( iVol <= 100 ) );
 
@@ -1734,64 +1891,32 @@ void CMusicPlayer::SetMusicVolume( int iVol ) {
 
     // if they're both 0 shut it down
     if ( ( m_iMusicVol == 0 ) && ( m_iSfxVol == 0 ) ) {
-        AIL_shutdown();
+        if ( m_bDigOpen ) {
+            Mix_HookMusic( NULL, NULL );
+            Mix_HaltChannel( -1 );
+            for ( int iOn = 0; iOn < MAX_SOUND_SAMPLES; iOn++ )
+                FreeChunk( &m_Channel[iOn] );
+            Mix_CloseAudio();
+            m_bDigOpen = false;
+        }
         m_bRunning = FALSE;
-        m_hDig = NULL;
-        m_hMdi = NULL;
         return;
     }
 
-    // if we're playing digital audio fix the volume
-    if ( m_bExclWav || ( m_iMode == CMusicPlayer::MUSIC_MODE::wav_only ) ) {
-        CheckDigVol();
-
-        // if we're no MIDI we're done
-        if ( m_iMode == CMusicPlayer::MUSIC_MODE::wav_only )
-            return;
-    }
-
-    if ( m_bNoMidi )
-        return;
-
-    // turn it off
-    if ( iVol == 0 ) {
-        if ( m_hMdi == NULL )
-            return;
-
-        m_bKillMidi = TRUE;
-
-        AIL_end_sequence( m_hSeq );
-        AIL_release_sequence_handle( m_hSeq );
-        m_hSeq = NULL;
-
-        AIL_midiOutClose( m_hMdi );
-        m_hMdi = NULL;
-        return;
-    }
-
-    // turn it on
-    if ( m_hMdi == NULL ) {
-        OpenMidi( iVol );
-
-        // start it up if ! exclusive digital mode
-        if ( ( m_hMdi != NULL ) && ( !m_bExclWav ) )
-            MidiCallback( m_hSeq );
-        return;
-    }
-
-    // set the volume
-    AIL_set_XMIDI_master_volume( m_hMdi, m_iMusicVol );
+    CheckDigVol();
 }
 
 int CMusicPlayer::GetSoundVolume() const {
 
-    if ( m_hDig == NULL )
+    if ( !m_bDigOpen )
         return ( 0 );
 
     return ( ( m_iSfxVol * 100 ) / 127 );
 }
 
 void CMusicPlayer::SetSoundVolume( int iVol ) {
+
+    CAudioLock lock( *this );
 
     ASSERT( ( 0 <= iVol ) && ( iVol <= 100 ) );
 
@@ -1806,10 +1931,15 @@ void CMusicPlayer::SetSoundVolume( int iVol ) {
 
     // if we're both off - kill it
     if ( ( m_iMusicVol == 0 ) && ( m_iSfxVol == 0 ) ) {
-        AIL_shutdown();
+        if ( m_bDigOpen ) {
+            Mix_HookMusic( NULL, NULL );
+            Mix_HaltChannel( -1 );
+            for ( int iOn = 0; iOn < MAX_SOUND_SAMPLES; iOn++ )
+                FreeChunk( &m_Channel[iOn] );
+            Mix_CloseAudio();
+            m_bDigOpen = false;
+        }
         m_bRunning = FALSE;
-        m_hDig = NULL;
-        m_hMdi = NULL;
         return;
     }
 
@@ -1821,86 +1951,81 @@ void CMusicPlayer::CheckDigVol() {
     if ( m_bNoWav )
         return;
 
-    // figure the new volume for digital
-    int iVol = m_iSfxVol;
-    if ( m_bExclWav || ( m_iMode == CMusicPlayer::MUSIC_MODE::wav_only ) )
-        iVol = __max( m_iSfxVol, m_iMusicVol );
+    int iVol = __max( m_iSfxVol, m_iMusicVol );
 
     // turn it off
     if ( iVol == 0 ) {
-        if ( m_hDig == NULL )
+        if ( !m_bDigOpen )
             return;
-        AIL_waveOutClose( m_hDig );
-        m_hDig = NULL;
-
+        Mix_HookMusic( NULL, NULL );
+        Mix_HaltChannel( -1 );
+        for ( int iOn = 0; iOn < MAX_SOUND_SAMPLES; iOn++ )
+            FreeChunk( &m_Channel[iOn] );
+        Mix_CloseAudio();
+        m_bDigOpen = false;
         m_Channel[0].FreeDblBuf();
-
-        // let it get set up
-        AIL_serve();
         return;
     }
 
     // turn it on
-    if ( m_hDig == NULL ) {
-        OpenDigital( iVol, ( m_iMode == CMusicPlayer::MUSIC_MODE::midi_only ) || ( ( m_iMode == CMusicPlayer::MUSIC_MODE::mixed ) && ( !m_bExclWav ) ) );
-        if ( m_hDig == NULL )
+    if ( !m_bDigOpen ) {
+        OpenDigital( iVol );
+        if ( !m_bDigOpen )
             return;
     }
 
-    AIL_set_digital_master_volume( m_hDig, iVol );
-
-    // restart audio
+    // Update volumes on playing channels
     CRawChannel* pRaw = m_Channel;
     for ( int iOn = 0; iOn < MAX_SOUND_SAMPLES; iOn++, pRaw++ ) {
         if ( ( pRaw->m_pData != NULL ) && ( pRaw->m_pData->m_bKillMe != TRUE ) &&
              ( ( pRaw->m_iIsFore != CRawChannel::back ) ||
                ( ( pRaw->m_iBackPri >= 0 ) && ( pRaw->m_iBackPri != INT_MAX ) ) ) ) {
-            // if not playing we need to restart
-            BOOL bChnlDone = AIL_sample_status( pRaw->m_hSmp ) == SMP_DONE;
+
+            BOOL bPlaying = Mix_Playing( pRaw->m_iChannel );
 
             // turn off if music vol 0
             if ( ( m_iMusicVol == 0 ) && ( ( pRaw->m_iIsFore == CRawChannel::excl ) || ( pRaw->m_iIsFore == CRawChannel::music ) ) ) {
-                if ( !bChnlDone ) {
+                if ( bPlaying || pRaw->m_bStreamActive ) {
+                    HaltChannel( pRaw );
                     pRaw->m_pData->m_bKillMe = TRUE;
-                    AIL_end_sample( pRaw->m_hSmp );
-                    AIL_serve();
                 }
                 continue;
             }
 
             // turn off if sfx vol 0
             if ( ( m_iSfxVol == 0 ) && ( ( pRaw->m_iIsFore == CRawChannel::back ) || ( pRaw->m_iIsFore == CRawChannel::fore ) ) ) {
-                if ( !bChnlDone ) {
+                if ( bPlaying ) {
+                    HaltChannel( pRaw );
                     pRaw->m_pData->m_bKillMe = TRUE;
-                    AIL_end_sample( pRaw->m_hSmp );
-                    AIL_serve();
                 }
                 continue;
             }
 
-            // if just a change in volume (non-zero to non-zero) just change the vol
-            if ( !bChnlDone ) {
-                // set the volume, ( we skipped above if vol == 0)
-                if ( ( pRaw->m_iIsFore == CRawChannel::excl ) || ( pRaw->m_iIsFore == CRawChannel::music ) )
-                    AIL_set_sample_volume( pRaw->m_hSmp, m_iMusicVol );
-                else
-                    AIL_set_sample_volume( pRaw->m_hSmp, m_iSfxVol );
+            // if just a change in volume - update it
+            if ( bPlaying || pRaw->m_bStreamActive ) {
+                // Streaming music volume is applied in the hook callback (reads m_iMusicVol directly)
+                // For non-streaming channels, update SDL_mixer volume
+                if ( !pRaw->m_bStreamActive )
+                    SetChannelVolume( pRaw );
                 continue;
             }
 
+            // Not playing - restart
             StartRaw( pRaw, pRaw->m_pData );
         }
     }
-
-    AIL_serve();
 }
+
+
+/////////////////////////////////////////////////////////////////////////////
+// StartRaw - the core playback function
 
 BOOL CMusicPlayer::StartRaw( CRawChannel* pRawChannel, CRawData* pRawData ) {
 
     pRawChannel->m_pData = pRawData;
 
-    // if no vol or no hdl -- exit
-    if ( m_hDig == NULL )
+    // if no vol or no device - exit
+    if ( !m_bDigOpen )
         return ( TRUE );
     if ( ( pRawChannel->m_iIsFore == CRawChannel::excl ) || ( pRawChannel->m_iIsFore == CRawChannel::music ) ) {
         if ( m_iMusicVol == 0 )
@@ -1916,7 +2041,6 @@ BOOL CMusicPlayer::StartRaw( CRawChannel* pRawChannel, CRawData* pRawData ) {
                 return ( FALSE );
             }
     } else
-        // read in if not in memory
     {
         // if dead forget it
         if ( pRawData->m_iStat == CRawData::dead ) {
@@ -1931,159 +2055,64 @@ BOOL CMusicPlayer::StartRaw( CRawChannel* pRawChannel, CRawData* pRawData ) {
                 return ( FALSE );
             }
         }
+    }
 
-        //#ifdef BUGBUG
-#if 0
-  // it's already loading
-        if ( pRawData->m_iStat == CRawData::loading ) {
+    pRawData->m_bKillMe = FALSE;
+    pRawData->m_dwLastUsed = timeGetTime();
+
+    // Double buffered (streaming music)
+    if ( pRawData->m_iType == CRawData::buffer ) {
+        // Reset streaming state
+        pRawChannel->m_bStreamEOF = false;
+        pRawChannel->m_bStreamActive = false;
+        pRawChannel->m_bBufConsumed = false;
+        pRawChannel->m_iPlayBuf = 0;
+        pRawChannel->m_iPlayPos = 0;
+        pRawChannel->m_iPlayLen[0] = pRawChannel->m_iPlayLen[1] = pRawChannel->m_iPlayLen[2] = 0;
+
+        // Start filling buffers
+        pRawData->StartDblBuffer( pRawChannel );
+
+        // Start the music hook
+        if ( pRawChannel->m_bStreamActive )
+            Mix_HookMusic( MusicHookCallback, pRawChannel );
+    } else {
+        // Non-streaming: create Mix_Chunk and play
+
+        // Free old chunk if any
+        FreeChunk( pRawChannel );
+
+        // Create a Mix_Chunk pointing to the data buffer
+        // Mix_QuickLoad_RAW does not copy or free the data
+        pRawChannel->m_pChunk = Mix_QuickLoad_RAW( (Uint8*)pRawData->m_pBuf, pRawData->m_iDataLen );
+        if ( pRawChannel->m_pChunk == NULL ) {
             TRAP();
             return ( FALSE );
         }
 
-        if ( pRawData->m_pBuf == NULL ) {
-            // alloc the memory if necessary
-            if ( ( pRawData->m_pBuf = MEM_alloc_lock( pRawData->m_iFileLen ) ) == NULL ) {
-                TRAP();
-                pRawChannel->m_iBackPri = INT_MAX;
-                pRawChannel->m_iIsFore = CRawChannel::back;
-                return ( FALSE );
-            }
+        // Set volume
+        SetChannelVolume( pRawChannel );
 
-            // cache request
-            pRawData->m_iStat = CRawData::loading;
-            pRawData->m_pRc = pRawChannel;
-            theDiskCache.AddRequest( pRawData->m_bVoice ? m_pFileVoc->m_hFile :
-                                     m_pFileReg->m_hFile, pRawData->m_lOff,
-                                     pRawData->m_iFileLen, pRawData->m_pBuf, CacheCallback, (DWORD)pRawData );
-            ::Sleep( 0 );
-            return ( TRUE );
-        }
-#endif
+        // Set pan for SFX
+        if ( ( pRawChannel->m_iIsFore != CRawChannel::excl ) && ( pRawChannel->m_iIsFore != CRawChannel::music ) )
+            SetChannelPan( pRawChannel );
+
+        // Play: background loops infinitely, foreground plays once
+        int iLoops;
+        if ( pRawChannel->m_iIsFore == CRawChannel::back )
+            iLoops = -1;  // infinite loop
+        else
+            iLoops = 0;  // play once
+
+        Mix_PlayChannel( pRawChannel->m_iChannel, pRawChannel->m_pChunk, iLoops );
     }
 
-    pRawData->m_bKillMe = FALSE;
-    pRawData->m_dwLastUsed = timeGetTime();
-
-    // set it up
-    AIL_init_sample( pRawChannel->m_hSmp );
-    AIL_set_sample_loop_count( pRawChannel->m_hSmp, 1 );
-    AIL_set_sample_type( pRawChannel->m_hSmp, pRawData->m_iFmt, pRawData->m_iFmt == DIG_F_MONO_8 ? 0 : DIG_PCM_SIGN );
-
-    // set the volume
-    if ( ( pRawChannel->m_iIsFore == CRawChannel::excl ) || ( pRawChannel->m_iIsFore == CRawChannel::music ) )
-        AIL_set_sample_volume( pRawChannel->m_hSmp, m_iMusicVol );
-    else {
-        pRawChannel->m_iVol = __minmax( 10, 127, pRawChannel->m_iVol );
-        AIL_set_sample_volume( pRawChannel->m_hSmp, ( m_iSfxVol * pRawChannel->m_iVol ) / 128 );
-        pRawChannel->m_iPan = __minmax( 0, 127, pRawChannel->m_iPan );
-        AIL_set_sample_pan( pRawChannel->m_hSmp, pRawChannel->m_iPan );
-    }
-
-    // playback rate
-    AIL_set_sample_playback_rate( pRawChannel->m_hSmp, pRawData->m_iFmt == DIG_F_MONO_8 ? 11025 : 22050 );
-
-    // double buffered
-    if ( pRawData->m_iType == CRawData::buffer ) {
-        AIL_register_EOB_callback( pRawChannel->m_hSmp, RawDblBufCallback );
-        AIL_register_EOS_callback( pRawChannel->m_hSmp, RawCallback );
-        AIL_set_sample_loop_count( pRawChannel->m_hSmp, 1 );
-
-        if ( AIL_sample_buffer_ready( pRawChannel->m_hSmp ) == 0 )
-            pRawData->StartDblBuffer( pRawChannel );
-        if ( AIL_sample_buffer_ready( pRawChannel->m_hSmp ) == 1 )
-            pRawData->LoadNextDblBuffer( pRawChannel, 1 );
-    } else
-
-    {
-        // start it
-        if ( pRawChannel->m_iIsFore != CRawChannel::back ) {
-            AIL_register_EOS_callback( pRawChannel->m_hSmp, RawCallback );
-            AIL_set_sample_loop_count( pRawChannel->m_hSmp, 1 );
-        } else
-            AIL_set_sample_loop_count( pRawChannel->m_hSmp, 0 );
-
-        AIL_set_sample_address( pRawChannel->m_hSmp, pRawData->m_pBuf,
-                                pRawData->m_iDataLen );
-        AIL_start_sample( pRawChannel->m_hSmp );
-    }
-
-    AIL_serve();
     return ( TRUE );
 }
 
-#ifdef BUGBUG
-// disk cache calls us
-void CMusicPlayer::CacheCallback( DWORD dwData ) {
 
-    CRawData* pRawData = (CRawData*)dwData;
-
-    pRawData->m_dwLastUsed = timeGetTime();
-    pRawData->m_iStat = CRawData::loaded;
-    pRawData->m_bKillMe = FALSE;
-
-    // if we are compressed, decompress!!
-    if ( pRawData->m_iComp != -1 ) {
-        void* pDeComp = CoDec::Decompress( pRawData->m_pBuf, pRawData->m_iFileLen,
-                                           pRawData->m_iDataLen );
-        MEM_free_lock( pRawData->m_pBuf );
-
-        if ( ( pRawData->m_pBuf = MEM_alloc_lock( pRawData->m_iDataLen ) ) != NULL )
-            memcpy( pRawData->m_pBuf, pDeComp, pRawData->m_iDataLen );
-        CoDec::FreeBuf( pDeComp );
-    }
-
-    // our channel may not want us anymore
-    if ( pRawData->m_pRc->m_pData != pRawData ) {
-        pRawData->m_pRc = NULL;
-        return;
-    }
-    CRawChannel* pRawChannel = pRawData->m_pRc;
-    pRawData->m_pRc = NULL;
-
-    // set it up
-    AIL_init_sample( pRawChannel->m_hSmp );
-    AIL_set_sample_loop_count( pRawChannel->m_hSmp, 1 );
-    AIL_set_sample_type( pRawChannel->m_hSmp, pRawData->m_iFmt, 0 );
-
-    // set the volume
-    if ( ( pRawChannel->m_iIsFore == CRawChannel::excl ) || ( pRawChannel->m_iIsFore == CRawChannel::music ) )
-        AIL_set_sample_volume( pRawChannel->m_hSmp, pRawChannel->m_pPar->m_iMusicVol );
-    else {
-        pRawChannel->m_iVol = __minmax( 10, 127, pRawChannel->m_iVol );
-        AIL_set_sample_volume( pRawChannel->m_hSmp, ( pRawChannel->m_pPar->m_iSfxVol * pRawChannel->m_iVol ) / 128 );
-        pRawChannel->m_iPan = __minmax( 0, 127, pRawChannel->m_iPan );
-        AIL_set_sample_pan( pRawChannel->m_hSmp, pRawChannel->m_iPan );
-    }
-
-    // playback rate
-    AIL_set_sample_playback_rate( pRawChannel->m_hSmp, pRawData->m_iFmt == DIG_F_MONO_8 ? 11025 : 22050 );
-
-    // double buffered
-    if ( pRawData->m_iType == CRawData::buffer ) {
-        AIL_register_EOB_callback( pRawChannel->m_hSmp, RawDblBufCallback );
-        AIL_register_EOS_callback( pRawChannel->m_hSmp, RawCallback );
-        AIL_set_sample_loop_count( pRawChannel->m_hSmp, 1 );
-
-        if ( AIL_sample_buffer_ready( pRawChannel->m_hSmp ) == 0 )
-            pRawData->StartDblBuffer( pRawChannel );
-        if ( AIL_sample_buffer_ready( pRawChannel->m_hSmp ) == 1 )
-            pRawData->LoadNextDblBuffer( pRawChannel, 1 );
-    } else
-
-    {
-        // start it
-        AIL_set_sample_address( pRawChannel->m_hSmp, pRawData->m_pBuf,
-                                pRawData->m_iDataLen );
-        if ( pRawChannel->m_iIsFore != CRawChannel::back ) {
-            AIL_register_EOS_callback( pRawChannel->m_hSmp, RawCallback );
-            AIL_set_sample_loop_count( pRawChannel->m_hSmp, 1 );
-        } else
-            AIL_set_sample_loop_count( pRawChannel->m_hSmp, 0 );
-        AIL_start_sample( pRawChannel->m_hSmp );
-    }
-
-    AIL_serve();
-}
+/////////////////////////////////////////////////////////////////////////////
+// Utility
 
 void CMusicPlayer::FreeOldSounds( int iSec ) {
 
@@ -2097,7 +2126,7 @@ void CMusicPlayer::FreeOldSounds( int iSec ) {
 
                     // make sure not in use
                     CRawChannel* pRaw = m_Channel;
-                    for ( int iOn = 0; iOn < MAX_SOUND_SAMPLES; iOn++, pRaw++ )
+                    for ( int iCh = 0; iCh < MAX_SOUND_SAMPLES; iCh++, pRaw++ )
                         if ( pRaw->m_pData == pRd )
                             goto TryNext;
                     pRd->UnloadBuffer();
@@ -2106,9 +2135,28 @@ void CMusicPlayer::FreeOldSounds( int iSec ) {
                 }
     }
 }
-#endif
 
-void CMusicPlayer::YieldPlayer() const {
+void CMusicPlayer::GetDigitalConfig( int* pRate, int* pChannels, CString& sName ) {
 
-    AIL_serve();
+    std::string s;
+    GetDigitalConfig( pRate, pChannels, s );
+    sName = s.c_str();
+}
+
+void CMusicPlayer::GetDigitalConfig( int* pRate, int* pChannels, std::string& sName ) {
+
+    if ( m_bDigOpen ) {
+        int iFreq, iChannels;
+        Uint16 uFmt;
+        Mix_QuerySpec( &iFreq, &uFmt, &iChannels );
+        if ( pRate ) *pRate = iFreq;
+        if ( pChannels ) *pChannels = iChannels;
+
+        const char* pDriver = SDL_GetCurrentAudioDriver();
+        sName = pDriver ? pDriver : "SDL Audio";
+    } else {
+        if ( pRate ) *pRate = 0;
+        if ( pChannels ) *pChannels = 0;
+        sName = "No audio device";
+    }
 }

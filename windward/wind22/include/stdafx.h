@@ -16,28 +16,79 @@
 //  are changed infrequently
 //
 
-#include <afxwin.h>   // MFC core and standard components
-#include <afxext.h>   // MFC extensions (including VB)
-#ifndef _AFX_NO_AFXCMN_SUPPORT
-#include <afxcmn.h>   // MFC support for Windows Common Controls
-#endif // _AFX_NO_AFXCMN_SUPPORT
-#include <afxtempl.h> // This might cause problems?
-#include <afxmt.h>
+// Rely on windows.h + mfc_compat.h to provide all the MFC types we still
+// use. ASSERT/VERIFY/TRACE come from <cassert>.
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include "win32_compat.h"   // Win32-on-POSIX shim (Linux build)
+#endif
+#include <cassert>
+#include "en_assert.h"   // non-fatal, logged ASSERT (mirrors original MFC "Ignore")
+#ifndef ASSERT
+#define ASSERT(expr)        EN_ASSERT_NONFATAL(expr)
+#endif
+#ifndef VERIFY
+#define VERIFY(expr)        EN_ASSERT_NONFATAL(expr)
+#endif
+#ifndef ENSURE
+#define ENSURE(expr)        EN_ASSERT_NONFATAL(expr)
+#endif
+#ifndef TRACE
+#define TRACE(...)          ((void)0)
+#endif
+#ifndef TRACE0
+#define TRACE0(s)           ((void)0)
+#endif
+#ifndef TRACE1
+#define TRACE1(s, p1)       ((void)0)
+#endif
+#ifndef TRACE2
+#define TRACE2(s, p1, p2)   ((void)0)
+#endif
+// Override MFC's ASSERT_VALID to work with both CObject-derived and
+// non-CObject classes. MFC's version calls AfxAssertValidObject() which
+// requires CObject*. This version calls AssertValid() directly, which
+// any class can provide — same debug value, no CObject dependency.
+#ifdef ASSERT_VALID
+#undef ASSERT_VALID
+#endif
+#ifdef _DEBUG
+// Non-fatal + null-safe + dangling-safe: null/unreadable/freed objects log via
+// EnAssertFire instead of faulting (a freed object's zeroed vtable used to crash
+// the virtual AssertValid() dispatch — see EnAssertValidObj in en_assert.h).
+// AssertValid()'s own ASSERTs are non-fatal too.
+#define ASSERT_VALID(pOb) EnAssertValidObj( pOb, __FILE__, __LINE__ )
+#else
+#define ASSERT_VALID(pOb) ((void)0)
+#endif
+
+#include "mfc_compat.h"
+
+#ifdef _WIN32
 #include <mmsystem.h>
 #include <mmreg.h>
 #include <MSAcm.h>
+#endif
 
+#include <cassert>
 #include <limits.h>
+#ifdef __APPLE__
+#include <stdlib.h>     // macOS has no <malloc.h>; malloc/alloca live here
+#include <alloca.h>
+#else
 #include <malloc.h>
+#endif
 #include <math.h>
 #include <strstream>
-#include <io.h>
+#ifdef _WIN32
+#include <io.h>     // _findfirst/_findnext family — POSIX equivalents via shim
+#endif
 //#include <ctl3d.h>
 
-#include <ddraw.h>
-#include <dsound.h>
+// <dsound.h> removed — audio is SDL_mixer, not DirectSound (no DS API used).
 //#include <dplay.h>
 //#include <wing.h>
 
-#include <mss/mssw.h>
+// MSS32 removed - using SDL2 + SDL_mixer for audio
 

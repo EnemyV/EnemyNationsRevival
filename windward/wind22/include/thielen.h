@@ -26,9 +26,10 @@
 #include <ios>
 #include <strstream>
 #endif
-#ifndef __AFXCOLL_H__
-#include "afxcoll.h"
-#endif
+// CString comes from mfc_compat.h (via stdafx.h); the IntToCString /
+// CStringDelete helpers are dead in live code (Phase 5 replaced them
+// with IntToStr / std::string).
+class CWnd;
 
 
 // put this for all pure virtual functions
@@ -58,22 +59,22 @@ inline int __minmax (int _low, int _hi, int _val)
     return (_val < _low ? _low : (_val > _hi ? _hi : _val));
 }
 
-template <class T>
-T Max( T const & t1, T const & t2 ) // Requires T to define an operator <
+// Two type params + common_type: callers mix types (e.g. Max((long)x, aLONG)),
+// which on Win32 were the same type (long==LONG) but on Linux LP64 differ
+// (long is 64-bit, LONG is 32-bit). common_type picks the right result type.
+#include <type_traits>
+template <class A, class B>
+typename std::common_type<A, B>::type Max( A const & t1, B const & t2 ) // Requires operator <
 {
-    if ( t1 < t2 )  // Not ?: - can cause construction of a temporary
-        return t2;
-
-    return t1;
+    typedef typename std::common_type<A, B>::type R;
+    return ( (R)t1 < (R)t2 ) ? (R)t2 : (R)t1;
 }
 
-template <class T>
-T Min( T const & t1, T const & t2 ) // Requires T to define an operator <
+template <class A, class B>
+typename std::common_type<A, B>::type Min( A const & t1, B const & t2 ) // Requires operator <
 {
-    if ( t1 < t2 )  // Not ?: - can cause construction of a temporary
-        return t1;
-
-    return t2;
+    typedef typename std::common_type<A, B>::type R;
+    return ( (R)t1 < (R)t2 ) ? (R)t1 : (R)t2;
 }
 
 #ifdef _DEBUG
@@ -81,7 +82,7 @@ T Min( T const & t1, T const & t2 ) // Requires T to define an operator <
 inline void TRAP (bool f=true)
 {
     if (f)
-        _asm int 3;
+        __debugbreak();   // was `_asm int 3` — x64 has no inline asm; this intrinsic is portable
 }
 
 void AssertString (CString const *pStr);
@@ -101,7 +102,7 @@ void AssertString (CString const *pStr);
 inline void TRAP (bool f=true)
 {
     if (f)
-        _asm int 3;
+        __debugbreak();   // was `_asm int 3` — x64 has no inline asm; this intrinsic is portable
 }
 #else
 
@@ -139,8 +140,6 @@ inline void TRAP (bool f = true) { }
 /////////////////////////////////////////////////////////////////////////////
 // Classes declared in this file
 
-    class CDir;                                 // dir stuff
-    class CFileName;                            // a CFile that tracks the file name
     class CGlobal;                              // wraps a GlobalAlloc
     class COStrStream;                          // ostrstream that free's its memory on dtor
 
@@ -162,11 +161,22 @@ int WINAPI ExtMsgBox (HWND hWndPar, const char *psText, const char *psTitle, UIN
 int WINAPI ExtMsgBox (CWnd *pWnd, const char *psText, int iRes, UINT uStyle, long lHelp = -1, const char *psButtons = NULL, LOOPPROC lpFn = NULL);
 #endif
 
+#ifndef _WIN32
+// EnableAllWindows is implemented in the (excluded) legacy msg_box.cpp. On Linux
+// modal-window enable/disable is handled by SDL; provide a no-op so callers link.
+inline void EnableAllWindows (HWND /*hWnd*/, BOOL /*bEnable*/) {}
+#endif
+
 
 /////////////////////////////////////////////////////////////////////////////
 // a wrapper for HGLOBAL
 
-#ifndef _WINDOWS
+// NOTE: the `#if 0` branch below is an incomplete "portable" CGlobal that
+// global.cpp never implemented (it implements only the full variant). Force the
+// full variant on every platform — identical to the prior Windows behavior
+// (where _WINDOWS was defined) and correct on Linux (GlobalAlloc/Lock/ReAlloc
+// are provided by the win32 shim).
+#if 0  // was: #ifndef _WINDOWS  (dead portable variant)
 
 class CGlobal
 {
@@ -245,7 +255,7 @@ private:
 class COStrStream final : public std::ostrstream {
 public:
     COStrStream() : ostrstream () {}
-    COStrStream(char *pch, int nLen, int nMode = std::ios::out) : ostrstream (pch, nLen, nMode) {}
+    COStrStream(char *pch, int nLen, std::ios_base::openmode nMode = std::ios::out) : ostrstream (pch, nLen, nMode) {}
 
     // free up the memory
     ~COStrStream() final {
@@ -255,108 +265,7 @@ public:
 
 
 /////////////////////////////////////////////////////////////////////////////
-// CDir - directory stuff
-// BUGBUG - implement the rest of this, trace test
-
-#ifdef BUGBUG
-typedef int (* FILEFINDPROC) (CFileStatus & fs, void * pvData);
-typedef int (* WALKDIRPROC) (CDir & dir, void * pvData);
-class CDir : public CObject
-{
-// Construction
-public:
-    CDir();
-    CDir(char const *pDir);
-    CDir(CDir& src);
-    void operator=(const CDir& src);
-private:
-    void ctor(char const *pDir);
-    int  NextSub(const char *pDir, WALKDIRPROC fnEnum, void *pvData);
-
-// Data
-protected:
-    CString     sPathName;
-    bool      bIncFile;
-
-// Attributes
-public:
-
-// Operations
-public:
-    void       AddFile(char const *pFile);
-    unsigned   ChDir(bool bChDrive = false);
-    bool       DoesExist();
-    int        FindAll(FILEFINDPROC fnEnum, void* pvData = nullptr, unsigned uAtr = 0x21);
-    CString    GetDir(bool bIncDrv = true, bool bIncEndSlash = true);
-    CString    GetDrive(bool bIncSemi = true);
-    CString    GetExt(bool bIncPer = false);
-    CString    GetFile();
-    CString    GetFullPath() {
-        return (sPathName);
-    }
-    CString    GetRelPath(char const *pDir = nullptr);
-    bool       IsLocal();
-    unsigned   MkDir();
-    int        WalkDirs(WALKDIRPROC fnEnum, void * pvData = nullptr);
-    void       RmDir(bool bDelNode = false);
-
-// Static operations
-    static CString  SetName (char const *pDrv, char const *pDir, char const *pFile);
-// static CDriveStatus GetDriveStatus (char const *pDir);
-
-#ifdef _DEBUG
-    virtual void AssertValid() const;
-    virtual void Dump(CDumpContext& dc) const;
-#endif
-};
-#endif
-
-
-/////////////////////////////////////////////////////////////////////////////
-// CFileName
-
-class CFileName : public CFile
-{
-    DECLARE_DYNAMIC(CFileName)
-
-public:
-    CFileName() = default;
-    explicit CFileName(HANDLE hFile) : CFile (hFile) {}
-    CFileName(const char* pszFileName, UINT nOpenFlags):
-        CFile (pszFileName, nOpenFlags),
-        m_strFileName (pszFileName)
-    {}
-
-    ULONGLONG GetPosition() const override;
-
-    BOOL Open(const char* pszFileName, UINT nOpenFlags, CFileException* pError = NULL) override;
-
-
-    DWORD SeekToEnd();
-    void SeekToBegin();
-
-    DWORD ReadHuge(void FAR* lpBuffer, DWORD dwCount);
-    void WriteHuge(const void FAR* lpBuffer, DWORD dwCount);
-
-    virtual LONG Seek(LONG lOff, UINT nFrom);
-    virtual void SetLength(DWORD dwNewLen);
-    ULONGLONG GetLength() const override;
-
-    virtual UINT Read(void FAR* lpBuf, UINT nCount) override;
-    virtual void Write(const void FAR* lpBuf, UINT nCount) override;
-
-    virtual void Flush() override;
-    virtual void Close() override;
-
-#ifdef _DEBUG
-    virtual void AssertValid() const override;
-    virtual void Dump(CDumpContext& dc) const override;
-#endif
-
-protected:
-    CString  m_strFileName;
-};
-
+// CDir and CFileName classes removed — were unused dead code
 
 #endif
 

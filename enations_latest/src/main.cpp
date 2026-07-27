@@ -14,6 +14,7 @@
 #include <dib.h>
 
 #include "lastplnt.h"
+#include "SDL2MFCPanel.h"
 #include "player.h"
 #include "relation.h"
 #include "ipccomm.h"
@@ -25,11 +26,13 @@
 #include "sfx.h"
 #include "area.h"
 #include "bitmaps.h"
-#include "plyrlist.h"
-#include "cdloc.h"
+#include "CdLoc.h"
 #include "toolbar.h"
 #include "msgs.h"
 #include "chat.h"
+#include "SDL2Dialogs.h"
+#include "SDL2Video.h"
+#include "GameWindow.h"
 
 #include "ui.inl"
 
@@ -59,9 +62,28 @@ void CWndMain::Create ()
 
 	const DWORD dwExSty = WS_EX_APPWINDOW;
 	const DWORD dwSty = WS_POPUP;
-	if (CreateEx (dwExSty, theApp.m_sClsName, theApp.m_sAppName, dwSty, 0, 0, GetSystemMetrics (SM_CXSCREEN), 
+	if (CreateEx (dwExSty, theApp.m_sClsName.c_str(), theApp.m_sAppName.c_str(), dwSty, 0, 0, GetSystemMetrics (SM_CXSCREEN),
 												GetSystemMetrics (SM_CYSCREEN), NULL, NULL, NULL) == 0)
 		ThrowError (ERR_RES_CREATE_WND);
+}
+
+LRESULT CWndMain::WindowProc(UINT msg, WPARAM wParam, LPARAM lParam)
+{
+    // The MFC-style BEGIN_MESSAGE_MAP / ON_MESSAGE entries in this file are
+    // killed by wndstub.h's macro overrides, so custom (user-range) messages
+    // are never routed to their handlers.  Dispatch them here explicitly so
+    // the virtual CWndStub::WindowProc sees them.
+    switch (msg)
+    {
+        case WM_VPNOTIFY:         return OnNetMsg(wParam, lParam);
+        case WM_VPFLOWOFF:        return OnNetFlowOff(wParam, lParam);
+        case WM_VPFLOWON:         return OnNetFlowOn(wParam, lParam);
+        case WM_ACTIVATE_MUSIC:   return OnActivateMusicMsg(wParam, lParam);
+        case WM_MY_DISPLAYCHANGE: return OnMyDisplayChange(wParam, lParam);
+        case WM_DISPLAYCHANGE:    return OnDisplayChange(wParam, lParam);
+        default: break;
+    }
+    return CWndBase::WindowProc(msg, wParam, lParam);
 }
 
 
@@ -161,7 +183,9 @@ LRESULT CWndMain::OnCacheMsg (WPARAM wParam, LPARAM )
 }
 #endif
 
-static void MakeFullScreen ( CWnd * pWnd )
+typedef CWndStub _MainCmnWin;
+
+static void MakeFullScreen ( _MainCmnWin * pWnd )
 {
 
 	if ( (pWnd != NULL) && (pWnd->m_hWnd != NULL) )
@@ -171,7 +195,7 @@ static void MakeFullScreen ( CWnd * pWnd )
 		}
 }
 
-static void MoveToNew ( CWnd * pWnd, int xOld, int yOld )
+static void MoveToNew ( _MainCmnWin * pWnd, int xOld, int yOld )
 {
 
 	if ( (pWnd == NULL) || (pWnd->m_hWnd == NULL) )
@@ -197,7 +221,7 @@ static void MoveToNew ( CWnd * pWnd, int xOld, int yOld )
 	pWnd->InvalidateRect ( NULL );
 }
 
-static void MoveSizeToNew ( CWnd * pWnd, int xOld, int yOld )
+static void MoveSizeToNew ( _MainCmnWin * pWnd, int xOld, int yOld )
 {
 
 	if ( (pWnd == NULL) || (pWnd->m_hWnd == NULL) )
@@ -263,21 +287,21 @@ void CWndMain::OnDisplayChange2 ()
 
 	// these windows are all full screen
 	MakeFullScreen ( this );
-	MakeFullScreen ( theApp.m_pdlgMain );
-	MakeFullScreen ( &theApp.m_wndMovie );
+	// CDlgMain excluded from build (Phase 2d) — SDL2MainMenu owns layout.
+	// CWndMovie excluded from build (Phase 2d) — SDL2VideoPlayer is synchronous.
 	MakeFullScreen ( &theApp.m_wndCredits );
 	MakeFullScreen ( &theApp.m_wndCutScene );
 
 	// these are dialogs - just move, don't size
-	MoveToNew ( theApp.m_pdlgRelations, xOld, yOld );
-	MoveToNew ( theApp.m_pdlgFile, xOld, yOld );
-	MoveToNew ( theApp.m_pdlgRsrch, xOld, yOld );
-	MoveToNew ( theApp.GetDlgPause (), xOld, yOld );
-	MoveToNew ( theApp.m_pdlgPlyrList, xOld, yOld );
+	// MoveToNew for CDlgRelations removed (replaced by SDL2RelationsDialog)
+	// MoveToNew for CDlgFile removed (Phase 2d) — SDL2FileDialog is modal.
+	// MoveToNew for CDlgResearch removed (Phase 2d) — SDL2ResearchDialog is modal.
+	// MoveToNew for CDlgPause removed — no longer a CWnd, centers itself on Show()
+	// MoveToNew for CDlgPlyrList removed (Phase 2d) — SDL2PlayerListDialog is modal.
 
 	// these move & size
 	MoveSizeToNew ( &theApp.m_wndWorld, xOld, yOld );
-	MoveSizeToNew ( &theApp.m_wndChat, xOld, yOld );
+	// m_wndChat skipped (Phase 2d-cont) — ChatStub has no CWnd surface, m_hWnd always NULL
 	MoveSizeToNew ( &theApp.m_wndBldgs, xOld, yOld );
 	MoveSizeToNew ( &theApp.m_wndVehicles, xOld, yOld );
 
@@ -295,7 +319,7 @@ void CWndMain::OnSize(UINT nType, int cx, int cy)
 	CWndBase::OnSize ( nType, cx, cy );
 
 	// we need to put the toolbar at the bottom - if it exists
-	if ( theApp.m_wndBar.m_hWnd == NULL )
+	if ( !theApp.m_wndBar.IsCreated() )
 		return;
 
 	theApp.m_wndBar.SetWindowPos (NULL, 0, cy - TOOLBAR_HT, cx, TOOLBAR_HT, SWP_NOZORDER);
@@ -321,7 +345,7 @@ void CWndMain::SetProgPos ( PROG_POS ppMode )
 
 	if ( (m_progPos != demo_license) && (m_progPos != retail_license) )
 		{
-		m_sText.Empty ();
+		m_sText.clear ();
 		if (m_fnt.m_hObject != NULL)
 			m_fnt.DeleteObject ();
 		return;
@@ -333,12 +357,13 @@ void CWndMain::SetProgPos ( PROG_POS ppMode )
 	pMmio->DescendChunk ('L', 'I', 'C', m_progPos == demo_license ? '2' : '3');
 
 	long lSize = pMmio->ReadLong ();
-	pMmio->Read (m_sText.GetBuffer (lSize+2), lSize);
+	m_sText.resize (lSize + 2);
+	pMmio->Read (&m_sText[0], lSize);
 	delete pMmio;
-	m_sText.ReleaseBuffer (lSize);
+	m_sText.resize (lSize);
 
 	// get the font
-	CString sFont = theApp.GetProfileString ("StatusBar", "Font", "Newtown Italic");
+	std::string sFont = EnGetProfileStdString("StatusBar", "Font", "Newtown Italic");
 	LOGFONT lf;
 	int iFntHt = 36;
 	CRect rect;
@@ -354,7 +379,7 @@ void CWndMain::SetProgPos ( PROG_POS ppMode )
 
 		memset (&lf, 0, sizeof (lf));
 		lf.lfHeight = iFntHt;
-		strncpy (lf.lfFaceName, sFont, LF_FACESIZE-1);
+		strncpy (lf.lfFaceName, sFont.c_str(), LF_FACESIZE-1);
 		m_fnt.CreateFontIndirect (&lf);
 
 		// size it
@@ -363,7 +388,7 @@ void CWndMain::SetProgPos ( PROG_POS ppMode )
 		int iDif = rect.Width () / 4;
 		rect.left += iDif;
 		rect.right -= iDif;
-		dc.DrawText ( m_sText, &rect, DT_CALCRECT | DT_NOPREFIX | DT_LEFT | DT_WORDBREAK);
+		dc.DrawText ( m_sText.c_str(), -1, &rect, DT_CALCRECT | DT_NOPREFIX | DT_LEFT | DT_WORDBREAK);
 		dc.SelectObject ( pOld );
 
 		iFntHt --;
@@ -382,7 +407,7 @@ void CWndMain::OnPaletteChanged(CWnd* pFocusWnd)
 	if ( (m_progPos == loading) || (m_progPos == movie) || (m_progPos == exiting) )
 		{
 		// do NOT call CWndBase::
-		CWnd::OnPaletteChanged (pFocusWnd);
+		CWndBaseSuper::OnPaletteChanged(pFocusWnd);
 		return;
 		}
 
@@ -397,7 +422,7 @@ BOOL CWndMain::OnQueryNewPalette()
 	if ( (m_progPos == loading) || (m_progPos == movie) || (m_progPos == exiting) )
 		{
 		// do NOT call CWndBase::
-		return ( CWnd::OnQueryNewPalette () );
+		return ( CWndBaseSuper::OnQueryNewPalette() );
 		}
 
 	// call CWndBase - we want a palette
@@ -412,7 +437,7 @@ BOOL CWndMain::OnEraseBkgnd(CDC *)
 void CWndMain::OnPaint()
 {
 #ifdef _CHEAT
-	CString sVer ("Version: " VER_STRING);
+	std::string sVer ("Version: " VER_STRING);
 #ifdef _DEBUG
 	sVer += " (debug, cheat)";
 #else
@@ -436,7 +461,7 @@ void CWndMain::OnPaint()
 		TEXTMETRIC tm;
 		dc.GetTextMetrics (&tm);
 		dc.SetBkMode (TRANSPARENT);
-		dc.TextOut (0, rect.bottom - tm.tmHeight, sVer);
+		dc.TextOut (0, rect.bottom - tm.tmHeight, sVer.c_str(), (int)sVer.length());
 #endif
 
 		// no text on a movie
@@ -452,12 +477,8 @@ void CWndMain::OnPaint()
 
 		dc.SetBkMode (TRANSPARENT);
 		dc.SetTextColor ( RGB (255, 255, 255) );
-		CString sLoad;
-		if (m_progPos == exiting)
-			sLoad.LoadString (IDS_LEAVING);
-		else
-			sLoad.LoadString (IDS_LOADING);
-		dc.TextOut (0, 0, sLoad);
+		std::string sLoad = EnLoadStdString(m_progPos == exiting ? IDS_LEAVING : IDS_LOADING);
+		dc.TextOut (0, 0, sLoad.c_str(), (int)sLoad.length());
 		dc.SelectObject (pOldFont);
 		return;
 		}
@@ -472,7 +493,7 @@ void CWndMain::OnPaint()
 #ifdef _CHEAT
 	TEXTMETRIC tm;
 	dc.GetTextMetrics (&tm);
-	dc.TextOut (0, rect.bottom - tm.tmHeight, sVer);
+	dc.TextOut (0, rect.bottom - tm.tmHeight, sVer.c_str(), (int)sVer.length());
 #endif
 
 	if (m_progPos == game_end)
@@ -485,9 +506,8 @@ void CWndMain::OnPaint()
 		CFont * pOldFont = dc.SelectObject (&fnt);
 
 		dc.SetTextColor ( RGB (255, 255, 255) );
-		CString sLoad;
-		sLoad.LoadString (IDS_EXIT_GAME);
-		dc.TextOut (0, 0, sLoad);
+		std::string sLoad = EnLoadStdString(IDS_EXIT_GAME);
+		dc.TextOut (0, 0, sLoad.c_str(), (int)sLoad.length());
 		dc.SelectObject (pOldFont);
 		thePal.EndPaint (dc.m_hDC);
 		return;
@@ -506,28 +526,28 @@ void CWndMain::OnPaint()
 	int iHt = rect.Height ();
 	rect.left += iDif;
 	rect.right -= iDif;
-	dc.DrawText ( m_sText, &rect, DT_CALCRECT | DT_NOPREFIX | DT_LEFT | DT_WORDBREAK);
+	dc.DrawText ( m_sText.c_str(), -1, &rect, DT_CALCRECT | DT_NOPREFIX | DT_LEFT | DT_WORDBREAK);
 	rect.top = (iHt - rect.Height ()) / 2;
 	rect.bottom = iHt;
 
 	// draw dark bevel
 	rect.OffsetRect (- 1, - 1 );
 	dc.SetTextColor (PALETTERGB (9, 11, 20));
-	dc.DrawText ( m_sText, &rect, DT_NOPREFIX | DT_LEFT | DT_WORDBREAK);
+	dc.DrawText ( m_sText.c_str(), -1, &rect, DT_NOPREFIX | DT_LEFT | DT_WORDBREAK);
 	rect.OffsetRect ( 1, 0 );
-	dc.DrawText ( m_sText, &rect, DT_NOPREFIX | DT_LEFT | DT_WORDBREAK);
+	dc.DrawText ( m_sText.c_str(), -1, &rect, DT_NOPREFIX | DT_LEFT | DT_WORDBREAK);
 
 	// draw light bevel
 	rect.OffsetRect ( 0, 2 );
 	dc.SetTextColor (PALETTERGB (76, 81, 118));
-	dc.DrawText ( m_sText, &rect, DT_NOPREFIX | DT_LEFT | DT_WORDBREAK);
+	dc.DrawText ( m_sText.c_str(), -1, &rect, DT_NOPREFIX | DT_LEFT | DT_WORDBREAK);
 	rect.OffsetRect ( 1, 0 );
-	dc.DrawText ( m_sText, &rect, DT_NOPREFIX | DT_LEFT | DT_WORDBREAK);
+	dc.DrawText ( m_sText.c_str(), -1, &rect, DT_NOPREFIX | DT_LEFT | DT_WORDBREAK);
 
 	// draw face
 	rect.OffsetRect (- 1, - 1);
 	dc.SetTextColor (PALETTERGB (152, 162, 236));
-	dc.DrawText ( m_sText, &rect, DT_NOPREFIX | DT_LEFT | DT_WORDBREAK);
+	dc.DrawText ( m_sText.c_str(), -1, &rect, DT_NOPREFIX | DT_LEFT | DT_WORDBREAK);
 
 	dc.SelectObject (pOldFont);
 	thePal.EndPaint (dc.m_hDC);
@@ -643,7 +663,11 @@ void CWndMain::OnActivateApp(BOOL bActive, DWORD hTask)
 		{
 		if ( theGame.HaveHP () )
 			{
-			if ((theGame.ShouldOperate() ) && theApp.m_bPauseOnAct )
+			// Auto-pause on focus loss (alt-tab) only in SINGLE player. In a net
+			// game the pause is shared — the server pausing freezes the client too —
+			// so alt-tabbing shouldn't pause it; the game only pauses on an explicit
+			// request (Esc / options menu). Mirrors the original's net behavior.
+			if ((theGame.ShouldOperate() ) && theApp.m_bPauseOnAct && !theGame.IsNetGame() )
 				{
 				m_bPauseOnActive = TRUE;
 				_OnPause ( TRUE );
@@ -678,9 +702,9 @@ void CWndMain::OnActivateApp(BOOL bActive, DWORD hTask)
 	// of the window we came from
 	if (bActive)
 		{
-		CWnd *pWnd = SetActiveWindow ();
+		auto pWnd = SetActiveWindow ();
 		SetActiveWindow ();
-		pWnd->SetActiveWindow ();
+		if (pWnd) pWnd->SetActiveWindow ();
 		}
 
 	// set it to our system colors
@@ -706,7 +730,12 @@ void CWndMain::OnActivateApp(BOOL bActive, DWORD hTask)
 	if (bActive)
 		{
 //BUGBUG		theApp.SetThreadPriority (THREAD_PRIORITY_NORMAL);
-		PostMessage (WM_ACTIVATE_MUSIC, 0, 0);
+		// Resume sound directly. This used to PostMessage(WM_ACTIVATE_MUSIC) to
+		// defer until the app was truly active, but in the SDL2 port the MFC main
+		// window is hidden and the posted message wasn't reliably dispatched — so
+		// music paused on focus loss (OnActivate(FALSE) above) but never resumed.
+		// OnActivate(TRUE) is safe to call synchronously here.
+		theMusicPlayer.OnActivate ( TRUE );
 		if ( ( theGame.HaveHP () ) && ( m_bPauseOnActive ) )
 			_OnPause ( FALSE );
 		}
@@ -726,473 +755,148 @@ LRESULT CWndMain::OnActivateMusicMsg (WPARAM , LPARAM )
 
 
 /////////////////////////////////////////////////////////////////////////////
-// CDlgFile dialog
-
-
-CDlgFile::CDlgFile(CWnd* pParent /*=NULL*/)
-	: CDialog(iWinType == W32s ? IDD_FILE1 : IDD_FILE, pParent)
-{
-	//{{AFX_DATA_INIT(CDlgFile)
-		// NOTE: the ClassWizard will add member initialization here
-	//}}AFX_DATA_INIT
-}
-
-
-void CDlgFile::DoDataExchange(CDataExchange* pDX)
-{
-	CDialog::DoDataExchange(pDX);
-	//{{AFX_DATA_MAP(CDlgFile)
-	DDX_Control(pDX, IDC_FILE_SCENE, m_btnMission);
-	if ( iWinType == W32s )
-		{
-		DDX_Control(pDX, IDC_FILE_SPEED, m_scrSpeed);
-		DDX_Control(pDX, IDC_FILE_SOUND, m_scrSound);
-		DDX_Control(pDX, IDC_FILE_MUSIC, m_scrMusic);
-		}
-	else
-		{
-		DDX_Control(pDX, IDC_FILE_MUSIC, m_sldMusic);
-		DDX_Control(pDX, IDC_FILE_SOUND, m_sldSound);
-		DDX_Control(pDX, IDC_FILE_SPEED, m_sldSpeed);
-		}
-	//}}AFX_DATA_MAP
-}
-
-
-BEGIN_MESSAGE_MAP(CDlgFile, CDialog)
-	//{{AFX_MSG_MAP(CDlgFile)
-	ON_BN_CLICKED(IDC_FILE_SAVE, OnFileSave)
-	ON_BN_CLICKED(IDC_FILE_HELP, OnFileHelp)
-	ON_BN_CLICKED(IDC_FILE_EXIT, OnFileExit)
-	ON_WM_DESTROY()
-	ON_WM_HSCROLL()
-	ON_BN_CLICKED(IDC_FILE_VERSION, OnFileVersion)
-	ON_BN_CLICKED(IDC_FILE_MINIMIZE, OnFileMinimize)
-	ON_WM_ACTIVATE()
-	ON_BN_CLICKED(IDC_FILE_SCENE, OnFileScene)
-	//}}AFX_MSG_MAP
-END_MESSAGE_MAP()
+// CDlgFile removed (Phase 2d) — replaced by SDL2FileDialog.
+// SaveExistingGame is a free function used by netapi.cpp; kept here for
+// legacy reasons.
 
 void SaveExistingGame ()
 {
-
 	CWndArea * pWnd = theAreaList.GetTop ();
 	if (pWnd == NULL)
 		return;
 
-	if ((pWnd->GetMode () == CWndArea::rocket_ready) || 
-														(pWnd->GetMode () == CWndArea::rocket_pos) ||
-														(pWnd->GetMode () == CWndArea::rocket_wait))
-		{
+	if ((pWnd->GetMode () == CWndArea::rocket_ready) ||
+	    (pWnd->GetMode () == CWndArea::rocket_pos) ||
+	    (pWnd->GetMode () == CWndArea::rocket_wait))
+	{
 		TRAP ();
 		return;
-		}
+	}
 
-	if (AfxMessageBox (IDS_SAVE_OLD, MB_YESNO | MB_ICONQUESTION) == IDYES)
-		theGame.SaveGame (NULL);
-}
-
-/////////////////////////////////////////////////////////////////////////////
-// CDlgFile message handlers
-
-BOOL CDlgFile::OnInitDialog() 
-{
-
-	CDialog::OnInitDialog();
-	
-	if ( iWinType == W32s )
-		{
-		m_scrSpeed.SetScrollRange (0, NUM_SPEEDS - 1);
-		m_scrSpeed.SetScrollPos (theApp.GetProfileInt ("Game", "Speed", NUM_SPEEDS/2));
-		m_scrSound.SetScrollRange (0, 100);
-		m_scrSound.SetScrollPos (theApp.GetProfileInt ("Game", "Sound", 100));
-		m_scrMusic.SetScrollRange (0, 100);
-		m_scrMusic.SetScrollPos (theApp.GetProfileInt ("Game", "Music", 100));
-		}
-
-	else
-		{
-		m_sldSpeed.SetLineSize (1);
-		m_sldSpeed.SetPageSize (1);
-		m_sldSpeed.SetRange (0, NUM_SPEEDS - 1);
-		m_sldSpeed.SetSelection (0, NUM_SPEEDS - 1);
-		m_sldSpeed.SetPos (theGame.GetGameMul ());
-		m_sldSpeed.SetTicFreq (2);
-
-		m_sldSound.SetLineSize (1);
-		m_sldSound.SetPageSize (1);
-		m_sldSound.SetRange (0, 100);
-		m_sldSound.SetSelection (0, 100);
-		m_sldSound.SetPos (theMusicPlayer.GetSoundVolume ());
-		m_sldSound.SetTicFreq (10);
-	
-		m_sldMusic.SetLineSize (1);
-		m_sldMusic.SetPageSize (1);
-		m_sldMusic.SetRange (0, 100);
-		m_sldMusic.SetSelection (0, 100);
-		m_sldMusic.SetPos (theMusicPlayer.GetMusicVolume ());
-		m_sldMusic.SetTicFreq (10);
-		}
-	
-	SetState ();
-
-	if ( (theGame.IsNetGame ()) && (theGame.AmServer ()) )
-		{
-		CString sBtn;
-		sBtn.LoadString ( IDS_PLAYERS );
-		m_btnMission.SetWindowText ( sBtn );
-		}
-	else
-		m_btnMission.EnableWindow (theGame.GetScenario () >= 0);
-
-	// if rebuilding use old pos
-	if ( theGame.m_wpFile.length != 0 )
-		SetWindowPlacement ( &(theGame.m_wpFile) );
-	else
-		{
-		CenterWindow ();
-
-		// save position
-		theGame.m_wpFile.length = sizeof (WINDOWPLACEMENT);
-		GetWindowPlacement ( &(theGame.m_wpFile) );
-		}
-
-	return TRUE;  // return TRUE unless you set the focus to a control
-	              // EXCEPTION: OCX Property Pages should return FALSE
-}
-
-void CDlgFile::OnActivate(UINT nState, CWnd*, BOOL)
-{
-
-	if ( theApp.m_wndMain.m_hWnd != NULL )
-		theApp.m_wndMain._OnPause ( nState != WA_INACTIVE );
-
-	// do we have a CD?
-	if ( nState != WA_INACTIVE )
-		CheckForCD ();
-}
-
-void CDlgFile::SetSpeed ()
-{
-
-	if ( iWinType == W32s )
-		m_scrSpeed.SetScrollPos (theGame.GetGameMul ());
-	else
-		m_sldSpeed.SetPos (theGame.GetGameMul ());
-}
-
-void CDlgFile::SetState ()
-{
-
-	CWndArea * pWnd = theAreaList.GetTop ();
-	if (pWnd == NULL)
-		{
-		GetDlgItem (IDC_FILE_SAVE)->EnableWindow (TRUE);
-		return;
-		}
-
-	if ((pWnd->GetMode () == CWndArea::rocket_ready) || 
-														(pWnd->GetMode () == CWndArea::rocket_pos) ||
-														(pWnd->GetMode () == CWndArea::rocket_wait))
-		GetDlgItem (IDC_FILE_SAVE)->EnableWindow (FALSE);
-	else
-		GetDlgItem (IDC_FILE_SAVE)->EnableWindow (TRUE);
-}
-
-void CDlgFile::OnDestroy() 
-{
-
-	if ( theApp.m_wndMain.m_hWnd != NULL )
-		theApp.m_wndMain._OnPause ( FALSE );
-
-	theApp.m_pdlgFile = NULL;
-
-	CDialog::OnDestroy();
-}
-
-void CDlgFile::PostNcDestroy() 
-{
-	
-	CDialog::PostNcDestroy();
-
-	delete this;
-}
-
-void CDlgFile::OnFileScene() 
-{
-	
-	if ( theGame.GetScenario () >= 0 )
-		{
-		theCutScene.PlayCutScene (theGame.GetScenario (), TRUE);
-		return;
-		}
-
-	// list of players
-	theApp.ShowPlayerList ();
-}
-
-void CDlgFile::OnFileSave() 
-{
-
-	theGame.SaveGame (this);
-}
-
-void CDlgFile::OnFileHelp() 
-{
-	
-	theApp.WinHelp (0, HELP_CONTENTS);
-}
-
-void CDlgFile::OnFileVersion() 
-{
-	
-	CDlgVer dlgVer (this);
-	dlgVer.DoModal ();
-}
-
-void CDlgFile::OnFileMinimize() 
-{
-	
-	theApp.Minimize ();
-}
-
-void CDlgFile::OnFileExit() 
-{
-
-	// switch to server, no HP if necessary
-	if ( theGame.IsNetGame () && theGame.AmServer () && theGame.HaveHP () &&
-									( theGame.GetAll().GetCount () > theGame.GetAi().GetCount () + 1 ) )
-		{
-		// make sure
-		if (AfxMessageBox (IDS_CLIENT_QUIT, MB_YESNO | MB_ICONSTOP | MB_TASKMODAL) == IDNO)
-			return;
-
-		// we're gone
-		CPlayer * pPlr = theGame.GetMe ();
-		CNetToAi msg ( pPlr );
-		theGame.SetHP ( FALSE );
-		theGame.AiTakeOverPlayer ( pPlr, TRUE);
-
-		// tell the world
-		theGame.PostToAllClients (&msg, sizeof (msg), FALSE);
-
-		// ok, if we went from no, to 1 AI player we need to make ourselves visible again
-		if ((theGame.GetNetJoin () == CGame::any) && (theGame.GetAi().GetCount () == 1))
-			theNet.SetSessionVisibility (TRUE);
-
-		// put up the game control list
-		theApp.ShowPlayerList ();
-
-		// close the game windows
-		theApp.CloseDlgChat ();
-		theApp.m_wndVehicles.DestroyWindow ();
-		theApp.m_wndBldgs.DestroyWindow ();
-		theApp.m_wndChat.DestroyWindow ();
-		theApp.m_wndWorld.DestroyWindow ();
-		theAreaList.DestroyAllWindows ();
-		theApp.m_wndBar.DestroyWindow ();
-		if (theApp.m_pdlgRelations != NULL)
-			{
-			theApp.m_pdlgRelations->DestroyWindow ();
-			theApp.m_pdlgRelations = NULL;
-			}
-		if (theApp.m_pdlgRsrch != NULL)
-			{
-			theApp.m_pdlgRsrch->DestroyWindow ();
-			theApp.m_pdlgRsrch = NULL;
-			}
-		CDialog::OnOK();
-		return;
-		}
-
-	if (theApp.SaveGame (this))
-		{
-		CDialog::OnOK();
-		theApp.CloseWorld ();
-		}
-}
-
-void CDlgFile::OnOK() 
-{
-
-	int iSound;
-	if ( iWinType == W32s )
-		iSound = m_scrSound.GetScrollPos ();
-	else
-		iSound = m_sldSound.GetPos ();
-
-	// un/load the sound effects as needed
-	if ( iSound )
-		{
-		if ( ! theMusicPlayer.IsGroupLoaded ( SFXGROUP::play ) )
-			{
-			CDlgSaveMsg dlgMsg ( this );
-			dlgMsg.m_sText.LoadString (IDS_LOAD_SFX);
-			dlgMsg.Create (IDD_SAVE_MSG, this);
-			theMusicPlayer.LoadGroup (SFXGROUP::play);
-			dlgMsg.DestroyWindow ();
-			}
-		}
-	else
-		theMusicPlayer.UnloadGroup (SFXGROUP::play);
-	
-	CDialog::OnOK();
-}
-
-void CDlgFile::OnHScroll(UINT nSBCode, UINT nPos, CScrollBar* pScrollBar) 
-{
-
-	if ( iWinType == W32s )
-		{
-		int iNum = pScrollBar->GetScrollPos ();
-		BOOL bSpeed = pScrollBar == &m_scrSpeed;
-
-		switch (nSBCode)
-			{
-			case SB_LINELEFT :
-				iNum--;
-				break;
-			case SB_LINERIGHT :
-				iNum++;
-				break;
-
-			// page - move 1/2 window
-			case SB_PAGELEFT :
-				if ( bSpeed )
-					iNum -= 4;
-				else
-					iNum -= 10;
-				break;
-			case SB_PAGERIGHT :
-				if ( bSpeed )
-					iNum += 4;
-				else
-					iNum += 10;
-				break;
-
-			// move to the end - go to the exact oppisate end of the map
-			case SB_LEFT :
-				iNum = 0;
-				break;
-			case SB_RIGHT :
-				iNum = 100;
-				break;
-
-			case SB_THUMBPOSITION :
-				iNum = nPos;
-				break;
-
-			default:
-				CDialog::OnHScroll(nSBCode, nPos, pScrollBar);
-				return;
-			}
-
-		iNum = __max ( iNum, 0 );
-		if ( bSpeed )
-			iNum = __min ( iNum, NUM_SPEEDS - 1 );
-		else
-			iNum = __min ( iNum, 100 );
-		pScrollBar->SetScrollPos ( iNum );
-		}
-
-	// speed
-	if ( ((CSliderCtrl *) pScrollBar == &m_sldSpeed) || (pScrollBar == &m_scrSpeed) )
-		{
-		int iSpeed;
-		if ( iWinType == W32s )
-			iSpeed = m_scrSpeed.GetScrollPos ();
-		else
-			iSpeed = m_sldSpeed.GetPos ();
-		ASSERT ((0 <= iSpeed) && (iSpeed < NUM_SPEEDS));
-		theApp.WriteProfileInt ("Game", "Speed", iSpeed);
-
-		if ( theGame.GetServerNetNum () == 0 )
-			theGame.SetGameMul (iSpeed);
-		else
-			{
-			CMsgGameSpeed msg ( iSpeed );
-			theGame.PostToServer ( &msg, sizeof (msg) );
-			}
-		}
-
-	else
-		// sound
-		if ( ((CSliderCtrl *) pScrollBar == &m_sldSound) || (pScrollBar == &m_scrSound) )
-			{
-			int iSound;
-			if ( iWinType == W32s )
-				iSound = m_scrSound.GetScrollPos ();
-			else
-				iSound = m_sldSound.GetPos ();
-			theApp.WriteProfileInt ("Game", "Sound", iSound);
-			theMusicPlayer.SetSoundVolume (iSound);
-			}
-
-		else
-			// music
-			if ( ((CSliderCtrl *) pScrollBar == &m_sldMusic) || (pScrollBar == &m_scrMusic) )
-				{
-				int iMusic;
-				if ( iWinType == W32s )
-					iMusic = m_scrMusic.GetScrollPos ();
-				else
-					iMusic = m_sldMusic.GetPos ();
-				theApp.WriteProfileInt ("Game", "Music", iMusic);
-				int iOld = theMusicPlayer.GetMusicVolume ();
-				theMusicPlayer.SetMusicVolume (iMusic);
-
-				if ((iOld == 0) && (iMusic != 0))
-					{
-					theMusicPlayer.StartMidiMusic ();
-					theMusicPlayer.PlayMusicGroup (MUSIC::GetID (MUSIC::play_game), MUSIC::num_play_game);
-					}
-				}
-	
-	CDialog::OnHScroll(nSBCode, nPos, pScrollBar);
+	if (EnMessageBox(IDS_SAVE_OLD, MB_YESNO | MB_ICONQUESTION) == IDYES)
+		theGame.SaveGame( (CWnd*)NULL );
 }
 
 
 /////////////////////////////////////////////////////////////////////////////
-// CDlgSaveMsg dialog
+// CDlgSaveMsg — SDL2-rendered modeless save-progress indicator
+//
+// Owns an internal heap-allocated SDL2 dialog (deleted by GameWindow on
+// EndDialog cleanup). UpdateData() syncs m_sText/m_sStat into the label
+// widgets; GameWindow renders the dialog each frame, so the save loop's
+// theApp.BaseYield() calls naturally pick up the refresh.
 
-CDlgSaveMsg::CDlgSaveMsg(CWnd* pParent /*=NULL*/)
-	: CDialog(CDlgSaveMsg::IDD, pParent)
+class _SaveProgressDialog : public SDL2Dialog
 {
-	//{{AFX_DATA_INIT(CDlgSaveMsg)
-	m_sText = _T("");
-	m_sStat = _T("");
-	//}}AFX_DATA_INIT
+public:
+	_SaveProgressDialog( GameWindow* gw )
+		: SDL2Dialog( gw, "Enemy Nations - Saving", 380, 150 )
+	{}
+
+	void SetMessages( const std::string& text, const std::string& stat )
+	{
+		if ( m_lblText ) m_lblText->SetText( text );
+		if ( m_lblStat ) m_lblStat->SetText( stat );
+	}
+
+	void SetProgressPct( int pct )
+	{
+		if ( m_progress ) m_progress->SetProgress( pct );
+	}
+
+	std::string m_initialText;
+	std::string m_initialStat;
+
+protected:
+	void OnInit() override
+	{
+		// Interior starts just below the framework's border + 26px title bar
+		// (~29px from the dialog top). Lay out three stacked rows: the file
+		// name (centered, may wrap to a 2nd line for long paths), the current
+		// phase status (centered), then the progress bar.
+		const int margin = 14;
+		const int innerX = m_x + margin;
+		const int innerW = m_width - margin * 2;
+		int       y      = m_y + 36;
+
+		m_lblText = AddWidget<SDL2Label>( innerX, y, innerW, 34, m_initialText );
+		m_lblText->SetWrapped( true );
+		m_lblText->SetCentered( true );
+		y += 38;
+
+		m_lblStat = AddWidget<SDL2Label>( innerX, y, innerW, 18, m_initialStat );
+		m_lblStat->SetCentered( true );
+		y += 24;
+
+		// Determinate: the BPE save compressor reports a running block index, and
+		// the save loop knows the uncompressed length, so SetProgress() can show a
+		// real climbing percentage during the (slow) compression pass. An animated
+		// sweep was used before, but it relied on per-frame re-rendering that the
+		// blocking save loop doesn't provide — so it froze, reading as a stuck 0%.
+		m_progress = AddWidget<SDL2ProgressBar>( innerX, y, innerW, 20 );
+	}
+
+	// Progress dialog — no buttons. Block accidental ESC dismissal so
+	// the save loop can close us programmatically when finished.
+	void OnCancel() override { /* swallow */ }
+
+private:
+	SDL2Label*       m_lblText  = nullptr;
+	SDL2Label*       m_lblStat  = nullptr;
+	SDL2ProgressBar* m_progress = nullptr;
+};
+
+CDlgSaveMsg::CDlgSaveMsg(CWnd* /*pParent*/)
+	: m_pDlg( nullptr )
+{
+	m_sText.clear();
+	m_sStat.clear();
 }
 
-
-void CDlgSaveMsg::DoDataExchange(CDataExchange* pDX)
+CDlgSaveMsg::~CDlgSaveMsg()
 {
-	CDialog::DoDataExchange(pDX);
-	//{{AFX_DATA_MAP(CDlgSaveMsg)
-	DDX_Text(pDX, IDC_SAVE_NAME, m_sText);
-	DDX_Text(pDX, IDC_SAVE_STATUS, m_sStat);
-	//}}AFX_DATA_MAP
+	DestroyWindow();
 }
 
-
-BEGIN_MESSAGE_MAP(CDlgSaveMsg, CDialog)
-	//{{AFX_MSG_MAP(CDlgSaveMsg)
-	ON_WM_CREATE()
-	//}}AFX_MSG_MAP
-END_MESSAGE_MAP()
-
-
-/////////////////////////////////////////////////////////////////////////////
-// CDlgSaveMsg message handlers
-
-int CDlgSaveMsg::OnCreate(LPCREATESTRUCT lpCreateStruct) 
+void CDlgSaveMsg::Create( UINT /*nIDTemplate*/, CWnd* /*pParent*/ )
 {
-	if (CDialog::OnCreate(lpCreateStruct) == -1)
-		return -1;
-	
-	CenterWindow (&theApp.m_wndMain);
-	
-	return 0;
+	if ( m_pDlg )
+		return;
+
+	GameWindow* gw = theApp.m_gameWindow ? theApp.m_gameWindow.get() : nullptr;
+	if ( !gw )
+		return;
+
+	m_pDlg = new _SaveProgressDialog( gw );
+	m_pDlg->m_initialText = m_sText;
+	m_pDlg->m_initialStat = m_sStat;
+
+	_SaveProgressDialog** ppDlg = &m_pDlg;
+	m_pDlg->ShowNonModal( [ppDlg]( int /*result*/ ) { *ppDlg = nullptr; } );
+}
+
+void CDlgSaveMsg::DestroyWindow()
+{
+	if ( m_pDlg )
+	{
+		m_pDlg->EndDialog( 0 );  // fires onDone -> sets m_pDlg = nullptr
+		// GameWindow's next cleanup pass deletes the dialog object itself.
+		m_pDlg = nullptr;
+	}
+}
+
+void CDlgSaveMsg::UpdateData( BOOL /*bSaveAndValidate*/ )
+{
+	if ( m_pDlg )
+		m_pDlg->SetMessages( m_sText, m_sStat );
+	// GameWindow renders the dialog per frame; theApp.BaseYield() in the
+	// save loop pumps the frame, so the new text appears within a tick.
+}
+
+void CDlgSaveMsg::SetProgress( int pct )
+{
+	if ( m_pDlg )
+		m_pDlg->SetProgressPct( pct );
 }
 
 void CWndMain::OnSave() 
@@ -1216,7 +920,7 @@ void CWndMain::OnHelp()
 void CWndMain::OnHide() 
 {
 
-	if (theApp.m_wndBar.m_hWnd != NULL)
+	if (theApp.m_wndBar.IsCreated())
 		theApp.m_wndBar.ShowWindow ( SW_HIDE );
 }
 
@@ -1250,63 +954,63 @@ void CWndMain::OnUnHide()
 	ScreenToClient ( &rect );
 	theApp.m_wndBar.SetWindowPos (NULL, rect.left, rect.top, rect.Width (), TOOLBAR_HT, SWP_NOZORDER);
 
-	if (theApp.m_wndBar.m_hWnd != NULL)
+	if (theApp.m_wndBar.IsCreated())
 		theApp.m_wndBar.ShowWindow ( SW_SHOW );
 }
 
 void CWndMain::OnArea() 
 {
 
-	if (theApp.m_wndBar.m_hWnd != NULL)
+	if (theApp.m_wndBar.IsCreated())
 		theApp.m_wndBar.GotoArea ();
 }
 
 void CWndMain::OnMail() 
 {
 	
-	if (theApp.m_wndBar.m_hWnd != NULL)
+	if (theApp.m_wndBar.IsCreated())
 		theApp.m_wndBar.GotoChat ();
 }
 
 void CWndMain::OnOptions() 
 {
 
-	if (theApp.m_wndBar.m_hWnd != NULL)
+	if (theApp.m_wndBar.IsCreated())
 		theApp.m_wndBar.GotoFile ();
 }
 
 void CWndMain::OnWorld() 
 {
 	
-	if (theApp.m_wndBar.m_hWnd != NULL)
+	if (theApp.m_wndBar.IsCreated())
 		theApp.m_wndBar.GotoWorld ();
 }
 
 void CWndMain::OnResearch() 
 {
 	
-	if (theApp.m_wndBar.m_hWnd != NULL)
+	if (theApp.m_wndBar.IsCreated())
 		theApp.m_wndBar.GotoScience ();
 }
 
 void CWndMain::OnDiplomat() 
 {
 	
-	if (theApp.m_wndBar.m_hWnd != NULL)
+	if (theApp.m_wndBar.IsCreated())
 		theApp.m_wndBar.GotoRelations ();
 }
 
 void CWndMain::OnBuildings() 
 {
 	
-	if (theApp.m_wndBar.m_hWnd != NULL)
+	if (theApp.m_wndBar.IsCreated())
 		theApp.m_wndBar.GotoBuildings ();
 }
 
 void CWndMain::OnVehicles() 
 {
 	
-	if (theApp.m_wndBar.m_hWnd != NULL)
+	if (theApp.m_wndBar.IsCreated())
 		theApp.m_wndBar.GotoVehicles ();
 }
 
@@ -1371,32 +1075,17 @@ void CWndMain::_EnableGameWindows ( BOOL bEnable )
 		theApp.m_wndWorld.EnableWindow ( bEnable );
 	if ( theApp.m_wndChat.m_hWnd != NULL )
 		theApp.m_wndChat.EnableWindow ( bEnable );
-	if ( theApp.m_wndBar.m_hWnd != NULL )
+	if ( theApp.m_wndBar.IsCreated() )
 		theApp.m_wndBar.EnableWindow ( bEnable );
 	if ( theApp.m_wndBldgs.m_hWnd != NULL )
 		theApp.m_wndBldgs.EnableWindow ( bEnable );
 	if ( theApp.m_wndVehicles.m_hWnd != NULL )
 		theApp.m_wndVehicles.EnableWindow ( bEnable );
-	if ( (theApp.m_pdlgRelations != NULL) && (theApp.m_pdlgRelations->m_hWnd != NULL) )
-		theApp.m_pdlgRelations->EnableWindow ( bEnable );
-	if ( (theApp.m_pdlgFile != NULL) && (theApp.m_pdlgFile->m_hWnd != NULL) )
-		theApp.m_pdlgFile->EnableWindow ( bEnable );
-	if ( (theApp.m_pdlgRsrch != NULL) && (theApp.m_pdlgRsrch->m_hWnd != NULL) )
-		theApp.m_pdlgRsrch->EnableWindow ( bEnable );
+	// CDlgFile + CDlgResearch removed (Phase 2d) — both modal in SDL2 path.
 
 	theAreaList.EnableWindows ( bEnable );
 
-	// if disabling put the chat window on the top
-	if ( ! bEnable )
-		if ( theApp.m_pdlgChat != NULL )
-			{
-			CDlgChatAll * pDlg = theApp.GetDlgChat ();
-			if ( pDlg != NULL )
-				{
-				pDlg->ShowWindow ( SW_SHOWNORMAL );
-				pDlg->SetFocus ();
-				}
-			}
+	// CDlgChatAll excluded from build (Phase 2d) — no chat-on-top behaviour.
 }
 
 BOOL CWndMain::OnQueryEndSession() 
@@ -1417,7 +1106,25 @@ BOOL CWndMain::OnQueryEndSession()
 	return TRUE;
 }
 
-void CWndMain::OnCloseApp() 
+BOOL CWndMain::OnCommand( WPARAM wParam, LPARAM lParam )
+{
+	// The MFC message map is dead (ON_COMMAND is a no-op in the SDL port), but the
+	// residual TranslateAccelerator path (mainloop.cpp) still posts WM_COMMAND for
+	// the in-game accelerators. Dispatch them here so an accel hit performs the
+	// action instead of swallowing the key.
+	switch ( LOWORD( wParam ) )
+	{
+	case IDA_PAUSE:     OnPause();    return TRUE;
+	case IDA_SAVE:      OnSave();     return TRUE;
+	case IDA_BOSS:      OnBoss();     return TRUE;
+	case IDA_CLOSE_APP: OnCloseApp(); return TRUE;
+	case IDA_HELP:      OnHelp();     return TRUE;
+	default: break;
+	}
+	return CWndBase::OnCommand( wParam, lParam );
+}
+
+void CWndMain::OnCloseApp()
 {
 
 	// if we aren't playing - exit
@@ -1445,26 +1152,26 @@ void CWndMain::EndLicense ()
 
 	if ( m_progPos == demo_license )
 		{
-	  // Play the startup movie
-		if ( (theApp.HaveIntro ()) && (theApp.GetProfileInt ("Game", "NoIntro", 0) == 0) )
+		// Play the startup movie via SDL2VideoPlayer (Phase 2d — CWndMovie excluded).
+		// Note: CConquerApp::InitInstance also kicks off intro videos via
+		// SDL2VideoPlayer when SDL2 is up; this path covers the post-license
+		// flow when the license dialog finishes after init.
+		if ( (theApp.HaveIntro ()) && (EnGetProfileInt("Game", "NoIntro", 0) == 0)
+		     && (theApp.m_gameWindow) )
 			{
 			try
 				{
 				SetProgPos ( CWndMain::movie );
 				UpdateWindow ();
 
-				theApp.m_wndMovie.AddMovie ("logo.avi");
-				theApp.m_wndMovie.AddMovie ("headgame.avi");
-				theApp.m_wndMovie.AddMovie ("intro.avi");
-				theApp.m_wndMovie.Create ( FALSE );
+				SDL2VideoPlayer::PlayVideo( theApp.m_gameWindow.get(), "assets/videos/logo.mpg" );
+				SDL2VideoPlayer::PlayVideo( theApp.m_gameWindow.get(), "assets/videos/intro.mpg" );
 				}
 			catch (...)
 				{
-				theApp.PostIntro ();
 				}
 			}
-		else
-			theApp.PostIntro ();
+		theApp.PostIntro ();
 		return;
 		}
 
@@ -1564,73 +1271,131 @@ void CWndMain::OnRButtonDown(UINT nFlags, CPoint point)
 // CDlgPause dialog
 
 
+// CDlgPause — non-MFC modeless pause notification
+
+const char* CDlgPause::s_className = "ENPauseMsg";
+bool CDlgPause::s_classRegistered = false;
+
 CDlgPause::CDlgPause(CWnd* pParent /*=NULL*/)
-	: CDialog(CDlgPause::IDD, pParent)
+	: m_hWnd( NULL )
 {
-	//{{AFX_DATA_INIT(CDlgPause)
-	m_sText = _T("");
-	//}}AFX_DATA_INIT
+	m_sText.clear();
 }
 
-
-void CDlgPause::DoDataExchange(CDataExchange* pDX)
+CDlgPause::~CDlgPause()
 {
-	CDialog::DoDataExchange(pDX);
-	//{{AFX_DATA_MAP(CDlgPause)
-	DDX_Text(pDX, IDC_PAUSE_TEXT, m_sText);
-	//}}AFX_DATA_MAP
+	if ( m_hWnd && ::IsWindow( m_hWnd ) )
+	{
+		::SetWindowLongPtr( m_hWnd, GWLP_USERDATA, 0 );
+		::DestroyWindow( m_hWnd );
+	}
+	m_hWnd = NULL;
 }
 
-
-BEGIN_MESSAGE_MAP(CDlgPause, CDialog)
-	//{{AFX_MSG_MAP(CDlgPause)
-	//}}AFX_MSG_MAP
-END_MESSAGE_MAP()
-
-/////////////////////////////////////////////////////////////////////////////
-// CDlgPause message handlers
-
-BOOL CDlgPause::OnInitDialog() 
+LRESULT CALLBACK CDlgPause::WndProc( HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam )
 {
+	switch ( msg )
+	{
+	case WM_CREATE:
+	{
+		CREATESTRUCT* pcs = (CREATESTRUCT*)lParam;
+		::SetWindowLongPtr( hwnd, GWLP_USERDATA, (LONG_PTR)pcs->lpCreateParams );
+		return 0;
+	}
+	case WM_PAINT:
+	{
+		PAINTSTRUCT ps;
+		HDC hdc = ::BeginPaint( hwnd, &ps );
+		CDlgPause* pThis = (CDlgPause*)::GetWindowLongPtr( hwnd, GWLP_USERDATA );
+		if ( pThis )
+		{
+			RECT rc;
+			::GetClientRect( hwnd, &rc );
+			::SetBkMode( hdc, TRANSPARENT );
+			RECT rcText = { 10, 10, rc.right - 10, rc.bottom - 10 };
+			::DrawTextA( hdc, pThis->m_sText.c_str(), -1, &rcText, DT_WORDBREAK | DT_CENTER | DT_VCENTER | DT_SINGLELINE );
+		}
+		::EndPaint( hwnd, &ps );
+		return 0;
+	}
+	}
+	return ::DefWindowProc( hwnd, msg, wParam, lParam );
+}
 
-	CDialog::OnInitDialog();
-	
-	CenterWindow ();
-	
-	return TRUE;  // return TRUE unless you set the focus to a control
-	              // EXCEPTION: OCX Property Pages should return FALSE
+void CDlgPause::Repaint()
+{
+	if ( m_hWnd && ::IsWindow( m_hWnd ) )
+		::InvalidateRect( m_hWnd, NULL, TRUE );
 }
 
 void CDlgPause::Show (int iMode)
 {
+	if ( iMode == off )
+	{
+		if ( m_hWnd && ::IsWindow( m_hWnd ) )
+			::ShowWindow( m_hWnd, SW_HIDE );
+		return;
+	}
 
+	// Create window if needed
 	if ( m_hWnd == NULL )
-		Create (IDD_PAUSE_MSG, &(theApp.m_wndMain));
+	{
+		if ( !s_classRegistered )
+		{
+			WNDCLASSEXA wc = {};
+			wc.cbSize        = sizeof( wc );
+			wc.lpfnWndProc   = WndProc;
+			wc.hInstance      = ::GetModuleHandle( NULL );
+			wc.hCursor        = ::LoadCursor( NULL, IDC_ARROW );
+			wc.hbrBackground  = (HBRUSH)( COLOR_BTNFACE + 1 );
+			wc.lpszClassName  = s_className;
+			::RegisterClassExA( &wc );
+			s_classRegistered = true;
+		}
+
+		int w = 280, h = 80;
+		int x = ( ::GetSystemMetrics( SM_CXSCREEN ) - w ) / 2;
+		int y = ( ::GetSystemMetrics( SM_CYSCREEN ) - h ) / 2;
+
+		m_hWnd = ::CreateWindowExA(
+			WS_EX_TOPMOST,
+			s_className,
+			"Enemy Nations",
+			WS_POPUP | WS_BORDER,
+			x, y, w, h,
+			NULL, NULL,
+			::GetModuleHandle( NULL ),
+			this );
+	}
 
 	switch (iMode)
 	  {
 		case server :
-			UpdateData (TRUE);
-			m_sText.LoadString (IDS_PAUSE_SERVER);
-			UpdateData (FALSE);
-			CenterWindow ();
-			ShowWindow ( SW_SHOW );
-			SetWindowPos (&wndTop, 0, 0, 0, 0, SWP_NOSIZE | SWP_NOMOVE);
-			theApp.m_wndMain.SetActiveWindow ();
+			m_sText = EnLoadStdString(IDS_PAUSE_SERVER);
+			Repaint();
+			::ShowWindow( m_hWnd, SW_SHOW );
+			::SetWindowPos( m_hWnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOSIZE | SWP_NOMOVE );
 			break;
 
 		case client :
-			UpdateData (TRUE);
-			m_sText.LoadString (IDS_PAUSE_CLIENT);
-			UpdateData (FALSE);
-			CenterWindow ();
-			ShowWindow ( SW_SHOW );
-			SetWindowPos (&wndTop, 0, 0, 0, 0, SWP_NOSIZE | SWP_NOMOVE);
-			theApp.m_wndMain.SetActiveWindow ();
+			m_sText = EnLoadStdString(IDS_PAUSE_CLIENT);
+			Repaint();
+			::ShowWindow( m_hWnd, SW_SHOW );
+			::SetWindowPos( m_hWnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOSIZE | SWP_NOMOVE );
 			break;
 
 		default:
-			ShowWindow ( SW_HIDE );
+			::ShowWindow( m_hWnd, SW_HIDE );
 			break;
 	  }
+}
+
+void CDlgPause::DestroyWindow()
+{
+	if ( m_hWnd && ::IsWindow( m_hWnd ) )
+	{
+		::SetWindowLongPtr( m_hWnd, GWLP_USERDATA, 0 );
+		::DestroyWindow( m_hWnd );
+	}
+	m_hWnd = NULL;
 }

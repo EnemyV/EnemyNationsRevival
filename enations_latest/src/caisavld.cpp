@@ -67,8 +67,8 @@ void CAISavLd::Save( void )
 {
     CFile*          pFile;
     CFileException* theException = new CFileException;
-    CString         sStdExt, sHead, sSave;
-    sStdExt = ".std";
+    const std::string sStdExt = ".std";
+    std::string sHead, sSave;
 
     for ( int i = TASK_DATA; i <= GOAL_DATA; ++i )
     {
@@ -85,7 +85,6 @@ void CAISavLd::Save( void )
         }
         sSave = sHead + sStdExt;
 
-        CString sMsg;
         // save the list of objects
         TRY
         {
@@ -96,11 +95,8 @@ void CAISavLd::Save( void )
         }
         CATCH( CFileException, theException )
         {
-            // "Save Error"
-            sMsg = "Save Error";
             if ( m_pParent != NULL )
-                m_pParent->MessageBox( sMsg, sSave, MB_ICONEXCLAMATION | MB_SYSTEMMODAL | MB_OK );
-            sMsg.Empty( );
+                m_pParent->MessageBox( "Save Error", sSave.c_str(), MB_ICONEXCLAMATION | MB_SYSTEMMODAL | MB_OK );
 
             // throw(ERR_CAI_BAD_FILE);
         }
@@ -108,11 +104,8 @@ void CAISavLd::Save( void )
         {
             pFile->Close( );
             delete pFile;
-            // "Archive Error"
-            sMsg = "Archive Error";
             if ( m_pParent != NULL )
-                m_pParent->MessageBox( sMsg, sSave, MB_ICONEXCLAMATION | MB_SYSTEMMODAL | MB_OK );
-            sMsg.Empty( );
+                m_pParent->MessageBox( "Archive Error", sSave.c_str(), MB_ICONEXCLAMATION | MB_SYSTEMMODAL | MB_OK );
 
             // throw(ERR_CAI_BAD_FILE);
         }
@@ -121,12 +114,11 @@ void CAISavLd::Save( void )
         pFile->Close( );
         delete pFile;
 
-        sSave.Empty( );
-        sHead.Empty( );
+        sSave.clear( );
+        sHead.clear( );
     }
     // delete theException;
     theException->Delete( );
-    sStdExt.Empty( );
 }
 
 void CAISavLd::LoadBinary( void )
@@ -168,8 +160,8 @@ void CAISavLd::Load( void )
 {
     CFile* pFile;
     // CFileException* theException = new CFileException;
-    CString sStdExt, sHead, sFile, sMsg;
-    sStdExt = ".std";
+    const std::string sStdExt = ".std";
+    std::string sHead, sFile;
 
     for ( int i = TASK_DATA; i <= GOAL_DATA; ++i )
     {
@@ -195,11 +187,8 @@ void CAISavLd::Load( void )
         }
         catch ( CFileException* theException )
         {
-            // "LOAD File Error"
-            sMsg = "LOAD File Error";
             if ( m_pParent != NULL )
-                m_pParent->MessageBox( sMsg, sFile, MB_ICONEXCLAMATION | MB_SYSTEMMODAL | MB_OK );
-            sMsg.Empty( );
+                m_pParent->MessageBox( "LOAD File Error", sFile.c_str(), MB_ICONEXCLAMATION | MB_SYSTEMMODAL | MB_OK );
 
             throw( ERR_CAI_BAD_FILE );
         }
@@ -209,11 +198,8 @@ void CAISavLd::Load( void )
             {
                 pFile->Close( );
                 delete pFile;
-                // "LOAD Archive Error"
-                sMsg = "LOAD Archive Error";
                 if ( m_pParent != NULL )
-                    m_pParent->MessageBox( sMsg, sFile, MB_ICONEXCLAMATION | MB_SYSTEMMODAL | MB_OK );
-                sMsg.Empty( );
+                    m_pParent->MessageBox( "LOAD Archive Error", sFile.c_str(), MB_ICONEXCLAMATION | MB_SYSTEMMODAL | MB_OK );
 
                 throw( ERR_CAI_BAD_FILE );
             }
@@ -222,26 +208,21 @@ void CAISavLd::Load( void )
         pFile->Close( );
         delete pFile;
 
-        sFile.Empty( );
-        sHead.Empty( );
+        sFile.clear( );
+        sHead.clear( );
     }
     // delete theException;
     // theException->Delete();
-    sStdExt.Empty( );
 }
 
 CWordArray* CAISavLd::LoadRCIP( int iSmart )
 {
-    CString sHead;
-    sHead = "drcip";  // name of serialized word array of values
-    return ( LoadArrays( iSmart, sHead ) );
+    return ( LoadArrays( iSmart, "drcip" ) );  // name of serialized word array of values
 }
 
 CWordArray* CAISavLd::LoadIG( int iSmart )
 {
-    CString sHead;
-    sHead = "goals";  // name of serialized word array of values
-    return ( LoadArrays( iSmart, sHead ) );
+    return ( LoadArrays( iSmart, "goals" ) );  // name of serialized word array of values
 }
 
 //
@@ -249,17 +230,14 @@ CWordArray* CAISavLd::LoadIG( int iSmart )
 // and initial position of the AI player based on difficulty
 // value previously set in GameData
 //
-CWordArray* CAISavLd::LoadArrays( int iSmart, CString& sHead )
+CWordArray* CAISavLd::LoadArrays( int iSmart, const std::string& sHead )
 {
     CWordArray* pwaLoadRCIP = NULL;
     CFile*      pFile;
     // CFileException* theException = new CFileException;
-    CString sExt, sFile, sMsg;
-
-
-    wsprintf( sExt.GetBuffer( 3 ), ".%d", iSmart );
-    sExt.ReleaseBuffer( );
-    sFile = sHead + sExt;
+    char extBuf[8];
+    snprintf( extBuf, sizeof( extBuf ), ".%d", iSmart );
+    std::string sFile = sHead + extBuf;
 
     try
     {
@@ -270,11 +248,8 @@ CWordArray* CAISavLd::LoadArrays( int iSmart, CString& sHead )
     }
     catch ( CFileException* theException )
     {
-        // "LOAD File Error"
-        sMsg = "LOAD File Error";
         if ( m_pParent != NULL )
-            m_pParent->MessageBox( sMsg, sFile, MB_ICONEXCLAMATION | MB_SYSTEMMODAL | MB_OK );
-        sMsg.Empty( );
+            m_pParent->MessageBox( "LOAD File Error", sFile.c_str(), MB_ICONEXCLAMATION | MB_SYSTEMMODAL | MB_OK );
 
         throw( ERR_CAI_BAD_FILE );
     }
@@ -284,11 +259,8 @@ CWordArray* CAISavLd::LoadArrays( int iSmart, CString& sHead )
         {
             pFile->Close( );
             delete pFile;
-            // "LOAD Archive Error"
-            sMsg = "LOAD Archive Error";
             if ( m_pParent != NULL )
-                m_pParent->MessageBox( sMsg, sFile, MB_ICONEXCLAMATION | MB_SYSTEMMODAL | MB_OK );
-            sMsg.Empty( );
+                m_pParent->MessageBox( "LOAD Archive Error", sFile.c_str(), MB_ICONEXCLAMATION | MB_SYSTEMMODAL | MB_OK );
 
             throw( ERR_CAI_BAD_FILE );
         }
@@ -298,37 +270,27 @@ CWordArray* CAISavLd::LoadArrays( int iSmart, CString& sHead )
     delete pFile;
     // delete theException;
     // theException->Delete();
-    sExt.Empty( );
-    sFile.Empty( );
-    sHead.Empty( );
 
     return ( pwaLoadRCIP );
 }
 
 void CAISavLd::SaveIG( int iSmart, CWordArray* pwaData )
 {
-    CString sHead;
-    sHead = "goals";  // name of serialized word array of values
-    SaveArrays( iSmart, pwaData, sHead );
+    SaveArrays( iSmart, pwaData, "goals" );  // name of serialized word array of values
 }
 
 void CAISavLd::SaveRCIP( int iSmart, CWordArray* pwaData )
 {
-    CString sHead;
-    sHead = "drcip";  // name of serialized word array of values
-    SaveArrays( iSmart, pwaData, sHead );
+    SaveArrays( iSmart, pwaData, "drcip" );  // name of serialized word array of values
 }
 
-void CAISavLd::SaveArrays( int iSmart, CWordArray* pwaData, CString& sHead )
+void CAISavLd::SaveArrays( int iSmart, CWordArray* pwaData, const std::string& sHead )
 {
     CFile*          pFile;
     CFileException* theException = new CFileException;
-    CString         sExt, sFile, sMsg;
-
-
-    wsprintf( sExt.GetBuffer( 3 ), ".%d", iSmart );
-    sExt.ReleaseBuffer( );
-    sFile = sHead + sExt;
+    char extBuf[8];
+    snprintf( extBuf, sizeof( extBuf ), ".%d", iSmart );
+    std::string sFile = sHead + extBuf;
 
     TRY
     {
@@ -339,11 +301,8 @@ void CAISavLd::SaveArrays( int iSmart, CWordArray* pwaData, CString& sHead )
     }
     CATCH( CFileException, theException )
     {
-        // "Save Error"
-        sMsg = "Save Error";
         if ( m_pParent != NULL )
-            m_pParent->MessageBox( sMsg, sFile, MB_ICONEXCLAMATION | MB_SYSTEMMODAL | MB_OK );
-        sMsg.Empty( );
+            m_pParent->MessageBox( "Save Error", sFile.c_str(), MB_ICONEXCLAMATION | MB_SYSTEMMODAL | MB_OK );
         return;
     }
     AND_CATCH( CArchiveException, theException )
@@ -352,11 +311,8 @@ void CAISavLd::SaveArrays( int iSmart, CWordArray* pwaData, CString& sHead )
         {
             pFile->Close( );
             delete pFile;
-            // "SAVE Archive Error"
-            sMsg = "SAVE Archive Error";
             if ( m_pParent != NULL )
-                m_pParent->MessageBox( sMsg, sFile, MB_ICONEXCLAMATION | MB_SYSTEMMODAL | MB_OK );
-            sMsg.Empty( );
+                m_pParent->MessageBox( "SAVE Archive Error", sFile.c_str(), MB_ICONEXCLAMATION | MB_SYSTEMMODAL | MB_OK );
             return;
         }
     }
@@ -366,9 +322,6 @@ void CAISavLd::SaveArrays( int iSmart, CWordArray* pwaData, CString& sHead )
     delete pFile;
     // delete theException;
     theException->Delete( );
-    sExt.Empty( );
-    sFile.Empty( );
-    sHead.Empty( );
 }
 
 void CAISavLd::LoadBinaryData( CFile* pFile )
@@ -866,11 +819,11 @@ void CAISavLd::DumpData( CFile* pFile, UINT uWhich )
 //
 // OpenForLoad - open a file for reading
 //
-CFile* CAISavLd::OpenForLoad( const CString& rFileName )
+CFile* CAISavLd::OpenForLoad( const std::string& rFileName )
 {
     CFile*          pFile        = new CFile;
     CFileException* theException = new CFileException;
-    if ( !pFile->Open( rFileName, CFile::modeRead, theException ) )
+    if ( !pFile->Open( rFileName.c_str( ), CFile::modeRead, theException ) )
     {
         delete pFile;
         throw( ERR_CAI_BAD_FILE );
@@ -885,10 +838,9 @@ CFile* CAISavLd::OpenForLoad( const CString& rFileName )
 //
 // OpenForDump - open a file for writing
 //
-CFile* CAISavLd::OpenForDump( const CString& rFileName )
+CFile* CAISavLd::OpenForDump( const std::string& rFileName )
 {
     CFile*      pFile = new CFile;
-    CFileStatus status;
     UINT        nAccess = CFile::modeWrite;
 
     // GetStatus will return TRUE if file exists,
@@ -897,7 +849,7 @@ CFile* CAISavLd::OpenForDump( const CString& rFileName )
     nAccess |= CFile::modeCreate;
 
     CFileException* theException = new CFileException;
-    if ( !pFile->Open( rFileName, nAccess, theException ) )
+    if ( !pFile->Open( rFileName.c_str( ), nAccess, theException ) )
     {
         delete pFile;
         throw( ERR_CAI_BAD_FILE );

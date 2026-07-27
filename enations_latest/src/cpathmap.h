@@ -12,17 +12,29 @@
 //
 ////////////////////////////////////////////////////////////////////////////
 
-#include "CPathMgr.h"
+#include "cpathmgr.h"
 
 class CPathMap
 {
-	CRITICAL_SECTION m_cs; // internal use only
+	CRITICAL_SECTION m_cs; // internal use only — guards ALL shared scratch state
+	BOOL m_bCsInited;      // m_cs created in ctor, deleted once in dtor/Close
 
 	// these are used only if the array of cells is used
 	CCell *m_paCells;	// array version
 
-	// this is to find elements in CCell faster
-    CMap<DWORD, DWORD, CCell*, CCell*> m_mapCell;
+	// O(1) coord->cell lookup: flat per-hex grids + generation stamps. This
+	// replaces the per-search hash map (m_mapCell) the profiler showed as the
+	// scratch bottleneck (~1.2M cells/s created at 2-3 hash ops each, plus a
+	// RemoveAll + full-arena reinit per search). A grid entry is valid only if
+	// its gen stamp equals the current search's; "clearing" between searches
+	// is ++m_wSearchGen (O(1)). On WORD wrap (every 65535 searches) the gen
+	// grid is memset once. Slots fit a WORD because the arena is (W+H)*4
+	// cells (8192 on a 1024 map); Init() clamps if that ever exceeds 0xFFFF.
+	WORD *m_pwCellGen;   // per-hex generation stamp     [m_iNumOfMapCells]
+	WORD *m_pwCellSlot;  // per-hex slot into m_paCells  [m_iNumOfMapCells]
+	WORD m_wSearchGen;   // current search's generation
+
+	void NewSearchGen( void );	// O(1) lookup reset (real clear on wrap)
 
 	int m_iWidth;		// size of MAP in width and height
 	int m_iHeight;
@@ -41,10 +53,13 @@ class CPathMap
 	BOOL m_bPathCompleted;	// the destination has been reached
 	BOOL m_bNoDestination;  // destination can't be reached
 	BOOL m_bRoadPlanning;	// flag indicates road planning is occuring
+	BOOL m_bWarPlanning;	// war mode: rivers passable (planned bridge), bigger iHang
+	BOOL m_bWarRoad;		// war-road planning: map-sized arena/iHang for long arteries
 	BOOL m_bOverWater;		// flag indicates a path across water is allowed
 
 	// these are used only if the array of cells is used
-	int m_iNumOfCells;	// size of array of cells
+	int m_iNumOfCells;	// arena cap for normal searches (also iHang base)
+	int m_iCellAlloc;	// actual allocation (2x) - war planning may fill it all
 	int m_iNextSlot;	// next open slot in array
 	int m_iFirst;		// first slot used in array
 	int m_iLast;		// last slot used in array
@@ -85,10 +100,10 @@ public:
 	//
 	BOOL GetPath( CHexCoord& hexFrom, CHexCoord& hexTo,
 		int iBaseX, int iBaseY, WORD *pMap, int iVehType,
-		BOOL bLongHang=FALSE );
+		BOOL bLongHang=FALSE, BOOL bWarPlanning=FALSE );
 	BOOL _GetPath( CHexCoord& hexFrom, CHexCoord& hexTo,
 		int iBaseX, int iBaseY, WORD *pMap, int iVehType,
-		BOOL bLongHang );
+		BOOL bLongHang, BOOL bWarPlanning );
 
 	// for use in finding a road path between buildings
 	// and with flag bAllowWater set
@@ -98,17 +113,21 @@ public:
 	// 
 	// WORD *pMap - map to use or when null, uses theGame.GetHex only
 	//
-	CHexCoord *GetRoadPath( 
-		CHexCoord& hexFrom, CHexCoord& hexTo, 
-		int& iPathLen, WORD *pMap, 
-		BOOL bAllowWater=FALSE, BOOL bRiverCrossing=TRUE );
-	CHexCoord *_GetRoadPath( 
-		CHexCoord& hexFrom, CHexCoord& hexTo, 
-		int& iPathLen, WORD *pMap, 
-		BOOL bAllowWater, BOOL bRiverCrossing );
+	CHexCoord *GetRoadPath(
+		CHexCoord& hexFrom, CHexCoord& hexTo,
+		int& iPathLen, WORD *pMap,
+		BOOL bAllowWater=FALSE, BOOL bRiverCrossing=TRUE,
+		BOOL bWarRoad=FALSE );
+	CHexCoord *_GetRoadPath(
+		CHexCoord& hexFrom, CHexCoord& hexTo,
+		int& iPathLen, WORD *pMap,
+		BOOL bAllowWater, BOOL bRiverCrossing,
+		BOOL bWarRoad );
 	
 	BOOL AtDestination( CCell *pCell );
 	int GetOffset( int iX, int iY );
+	// ROAD AVOIDANCE: TRUE if a neighbor of iX,iY holds an own farm/lumber bldg
+	BOOL FarmLumberAdjacent( int iX, int iY );
 	void GetCellCosts( CCell *pFromCell, CCell *pToCell );
 	void GetCellAt( int iPos, CCell *pFromCell, int& iX, int& iY );
 
@@ -122,6 +141,11 @@ public:
 
 	CHexCoord *CreateHexPath( int& iPathLen, CCell *pDestCell );
 	int GetPathCount( CCell *pDestCell );
+
+	// Diagnostic: cells created by the current/most recent search. (The hash
+	// map this used to count is gone; the arena recycles via gen stamps, so
+	// there is no longer a per-node container that CAN leak.)
+	int GetMapCellCount() const { return m_iNextSlot; }
 };
 
 extern CPathMap thePathMap;

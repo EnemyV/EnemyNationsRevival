@@ -21,9 +21,6 @@
 template<class T> class BTreeIter; // forward declaration
 
 class BTreeNode
-#ifdef _DEBUG
-: public CObject
-#endif
 {
 public:
 
@@ -124,10 +121,7 @@ BTreeNode::Parent(
 
 //------------------------------- B T r e e --------------------
 
-template <class T> class BTree: CObject
-//#ifdef _DEBUG
-//: public CObject
-//#endif
+template <class T> class BTree
 {
 public:
 
@@ -364,9 +358,6 @@ template <class T> BTreeNode* BTree<T>::Insert( T *pt )
 //------------------------- B T r e e I t e r ------------------
 
 template <class T> class BTreeIter
-#ifdef _DEBUG
-: public CObject
-#endif
 {
 
 public:
@@ -576,7 +567,7 @@ template <class T> void BTreeIter<T>::Delete()
 //---------------------------------------------------------------------------
 template <class T> void BTree<T>::AssertValid() const
 {
-    CObject::AssertValid();
+    // CObject::AssertValid() removed — no longer inheriting CObject
 
 //    ASSERT_VALID_OR_NULL( m_pnodeRoot );
 
@@ -589,7 +580,7 @@ template <class T> void BTree<T>::AssertValid() const
 //---------------------------------------------------------------------------
 template <class T> void BTreeIter<T>::AssertValid() const
 {
-    CObject::AssertValid();
+    // CObject::AssertValid() removed — no longer inheriting CObject
 
     ASSERT_VALID( m_pbtree );
     ASSERT_VALID_OR_NULL( m_pnode );

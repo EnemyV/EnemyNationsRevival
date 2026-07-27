@@ -10,7 +10,8 @@
 ////////////////////////////////////////////////////////////////////////////
 
 
-#include <afxwin.h>
+// CObject comes from mfc_compat.h (via stdafx.h).
+#include <windows.h>
 
 #ifndef __CAIGOAL_HPP__
 #define __CAIGOAL_HPP__

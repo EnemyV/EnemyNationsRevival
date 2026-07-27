@@ -168,25 +168,25 @@ void CGame::Event (int ID, int iTyp, CUnit *pUnit)
 	switch (ID)
 	  {
 		case EVENT_CONST_CANT :
-			psText = theStructures.GetData (((CVehicle *)pUnit)->GetBldgType ())->GetDesc ();
+			psText = theStructures.GetData (((CVehicle *)pUnit)->GetBldgType ())->GetDesc ().c_str();
 			break;
 
 		case EVENT_BUILD_HALTED :
 		case EVENT_BUILD_DONE :
-			psText = theTransports.GetData (((CVehicleBuilding*)pUnit)->GetBldUnt()->GetVehType ())->GetDesc ();
+			psText = theTransports.GetData (((CVehicleBuilding*)pUnit)->GetBldUnt()->GetVehType ())->GetDesc ().c_str();
 			break;
 
 		case EVENT_ATK_TARGET :
 		case EVENT_ATK_DESTROYED : {
 			CUnit * pTarget = pUnit->GetTarget ();
 			if ((pTarget != NULL) && (pTarget->GetUnitType () == CUnit::building))
-				psText = theStructures.GetData (((CBuilding *)pTarget)->GetData()->GetType ())->GetDesc ();
+				psText = theStructures.GetData (((CBuilding *)pTarget)->GetData()->GetType ())->GetDesc ().c_str();
 			else
 				psText = NULL;
 			break; }
-	
+
 		default:
-			psText = pUnit->GetData()->GetDesc ();
+			psText = pUnit->GetData()->GetDesc ().c_str();
 			break;
 	  }
 
@@ -217,10 +217,10 @@ void CGame::Event (int ID, int iTyp, int iVal)
 		case EVENT_HPR_NOACCESS :
 		case EVENT_HPR_NOPICKUP : {
 			int iTyp = __minmax ( 0, CMaterialTypes::GetNumTypes (), iVal );
-			psText = CMaterialTypes::GetDesc ( iTyp );
+			psText = CMaterialTypes::GetDesc ( iTyp ).c_str ();
 			break; }
 		case EVENT_CONST_CANT :
-			psText = theStructures.GetData (iVal)->GetDesc ();
+			psText = theStructures.GetData (iVal)->GetDesc ().c_str();
 			break;
 		default:
 			psText = NULL;
@@ -350,10 +350,9 @@ void CGame::_Event (int ID, int iTyp, char const * psText, int iVoice)
 	int iRes = aiRes [ID];
 	int iSfx = aiSfx [ID];
 
-	CString sMsg;
-	sMsg.LoadString (iRes);
+	std::string sMsg = EnLoadStdString(iRes);
 	if (psText != NULL)
-		csPrintf (&sMsg, psText);
+		sMsg = strPrintf(sMsg.c_str(), psText);
 
 	CStatInst::IMPORTANCE iImp;
 	int iShow;
@@ -377,7 +376,7 @@ void CGame::_Event (int ID, int iTyp, char const * psText, int iVoice)
 	  }
 
 	iLastEvent = ID;
-	theApp.m_wndBar.SetStatusText (0, sMsg, iImp);
+	theApp.m_wndBar.SetStatusText (0, sMsg.c_str(), iImp);
 
 	// we kill the message after iShow seconds
 	if (hTimer != NULL)

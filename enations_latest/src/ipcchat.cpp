@@ -206,10 +206,9 @@ void CChatWnd::SetFrom( CPlayer* pPlyr )
     //((CWndComm *) GetParent ())->CheckChatButton ();
 
     // update the title
-    CString sTitle;
-    sTitle.LoadString( IDS_CHAT_TITLE );
-    csPrintf( &sTitle, (const char*)pPlyr->GetName( ) );
-    SetWindowText( sTitle );
+    std::string sTitle = strPrintf( EnLoadStdString( IDS_CHAT_TITLE ).c_str(),
+                                    pPlyr->GetName() );
+    SetWindowText( sTitle.c_str() );
 
     // we now disable the combo box & enable the hang-up
     m_pdbChatBar->GetDlgItem( IDC_SELECTPLAYER )->EnableWindow( FALSE );
@@ -421,11 +420,10 @@ BOOL CChatWnd::OnCreateClient( LPCREATESTRUCT, CCreateContext* pContext )
     if ( m_wndSplitter.CreateStatic( this, 2, 1 ) )
     {
         CClientDC dc( this );
-        CString   sText;
-        GetWindowText( sText );
-        CSize csText     = dc.GetTextExtent( sText, sText.GetLength( ) );
+        char sText[256];
+        int  iLen        = GetWindowText( sText, (int)sizeof( sText ) );
+        CSize csText     = dc.GetTextExtent( sText, iLen );
         m_iMinPaneHeight = csText.cy + ( csText.cy / 4 );
-        sText.Empty( );
 
         CRect rect;
         GetClientRect( &rect );
@@ -934,7 +932,7 @@ void CMySplitterWnd::OnChange( )
     // delete location & length - but no time to fix
     if ( msg.m_sMessage.GetLength( ) > VP_MAXSENDDATA - sizeof( msg ) )
     {
-        AfxMessageBox( IDS_MAX_CHAT, MB_OK );
+        EnMessageBox( IDS_MAX_CHAT, MB_OK );
         return;
     }
 

@@ -15,9 +15,9 @@
 //
 ////////////////////////////////////////////////////////////////////////////
 
-#include "STDAFX.H"
+#include "stdafx.h"
 #include "resource.h"
-#include "IPCMsg.hpp"
+#include "ipcmsg.hpp"
 #include "player.h"
 
 IMPLEMENT_SERIAL( CEMsg, CObject, 0 );
@@ -72,7 +72,7 @@ void CMsgIPC::PostToClient ()
 	if ( iLen > VP_MAXSENDDATA )
 		{
 		TRAP ();
-		AfxMessageBox ( IDS_MAX_MAIL, MB_OK );
+		EnMessageBox( IDS_MAX_MAIL, MB_OK );
 		delete [] pBuf;
 		return;
 		}

@@ -11,6 +11,7 @@
 
 #include "caimgr.hpp"
 
+#include "aisnap.h"  // Tier-B world snapshot (lock-free AI reads)
 #include "caidata.hpp"
 #include "caiinit.hpp"
 #include "caisavld.hpp"
@@ -20,8 +21,43 @@
 #include "stdafx.h"
 #include "version.h"
 
+#include "Perf.h"  // lightweight runtime metrics (gated by EN_PERF)
+
 #define new DEBUG_NEW
-#define AI_IDLE_LIMIT 20000
+// Idle tuning (Phase-1 event-driven AI threads).
+// The AI thread now BLOCKS in WaitForWork (semaphore, AI_IDLE_SLICE_MS timeout)
+// instead of hot-spinning Manage(). m_iIdle therefore counts consecutive
+// ~100ms idle slices, not spin passes, so the old limit of 20000 spin passes
+// becomes 2 slices: an idle function runs after ~200ms of quiet, one per slice
+// after that (full 7-function rotation ~every 1.6s) — comparable cadence to the
+// original spin behaviour, at ~zero CPU for idle AIs.
+#define AI_IDLE_LIMIT    2
+#define AI_IDLE_SLICE_MS 100
+
+// Running total of CAIMsg objects enqueued but not yet processed, summed across
+// ALL AI managers/threads. Incremented in MessageArrived (enqueue), decremented
+// in Manage when a message is pulled for processing. Published as the
+// "ai.q.depth" gauge each Perf interval. Interlocked so it is correct across the
+// per-player AI worker threads. Instrumentation only — does not affect AI logic.
+static volatile LONG g_aiMsgBacklog = 0;
+
+// [attack-dedup] High-volume, IDEMPOTENT AI messages that are safe to de-duplicate while
+// an identical one for the same (m_dwID,m_dwID2) pair is still queued. Under heavy combat
+// these were posted per-shot / per-LOS-flicker (thousands of identical pairs), exploding
+// ai.q.depth unbounded. Their handlers no-op on a duplicate (AttackAlert only acts when the
+// attacker changed; OutLOSResponse just re-clears an already-cleared target), so dropping a
+// redundant *pending* copy changes no AI behavior. Keyed with the type so the two don't
+// collide. (unit_attacked: id=target,id2=attacker. out_of_LOS: id=attacker,id2=target.)
+static inline bool IsDedupAlert( int iMsg )
+{
+    return iMsg == CNetCmd::unit_attacked || iMsg == CNetCmd::out_of_LOS;
+}
+static inline unsigned long long DedupKey( const CAIMsg* p )
+{
+    return ( ( (unsigned long long)( p->m_iMsg & 0x7F ) ) << 48 )
+         | ( ( (unsigned long long)( p->m_dwID & 0xFFFFFF ) ) << 24 )
+         | ( (unsigned long long)( p->m_dwID2 & 0xFFFFFF ) );
+}
 
 
 extern CAITaskList* plTaskList;  // standard CAITask list
@@ -32,8 +68,9 @@ extern CException*      pException;  // standard exception for yielding
 extern CRITICAL_SECTION cs;          // used by threads
 extern CAIData*         pGameData;   // pointer to game data interface
 extern CPathMap         thePathMap;  // the map pathfinding object (no yield)
+extern CGameMap NEAR    theMap;      // terrain reads for the reactive bridge
 
-extern void AiDeletePlayer( DWORD dwID );
+extern void AiDeletePlayer( DWORD_PTR dwID );
 
 CAIMgr::CAIMgr( int iPlayer )
 {
@@ -41,7 +78,12 @@ CAIMgr::CAIMgr( int iPlayer )
     m_bIsAI   = TRUE;
     m_bIsDead = FALSE;
 
-    m_iIdle = 0;
+    m_iIdle            = 0;
+    m_dwLastStuckSweep = 0;
+    m_dwLastIdleFunc   = 0;
+    m_iStatBldgBuilt   = 0;
+    m_iStatBldgLost    = 0;
+    m_iStatRoadsPaved  = 0;
     for ( int i = 0; i < MAX_IDLE_FUNCTIONS; ++i ) m_bIdleFunction[i] = TRUE;
 
     m_pGoalMgr = NULL;
@@ -81,6 +123,9 @@ CAIMgr::CAIMgr( int iPlayer )
     // private critical section for accessing the message queue
     memset( &m_cs, 0, sizeof( m_cs ) );
     InitializeCriticalSection( &m_cs );
+
+    // work semaphore: one count per pending message (see WaitForWork)
+    m_hWork = CreateSemaphore( NULL, 0, LONG_MAX, NULL );
 
     // messages after prioritizing
     if ( m_plMsgQueue == NULL )
@@ -132,7 +177,7 @@ void CAIMgr::Manage( void )
     {
         // probably need to send a message to the game so it will
         // call AiDeletePlayer() to actually delete this player
-        AiDeletePlayer( (DWORD)this );
+        AiDeletePlayer( (DWORD_PTR)this );
         myThreadTerminate( );
         return;
     }
@@ -147,8 +192,16 @@ void CAIMgr::Manage( void )
     {
         EnterCriticalSection( &m_cs );
         pMsg = (CAIMsg*)m_plMsgQueue->RemoveHead( );
+        // [attack-dedup] this alert is leaving the queue → allow the next identical
+        // (id,id2) one of this type to enqueue again.
+        if ( pMsg != NULL && IsDedupAlert( pMsg->m_iMsg ) )
+            m_setPendingAttack.erase( DedupKey( pMsg ) );
         LeaveCriticalSection( &m_cs );
         m_iIdle = 0;
+
+        // metrics: one message left the AI pipeline (about to be processed)
+        Perf::CounterInc( "ai.msg.proc" );
+        Perf::GaugeSet( "ai.q.depth", InterlockedDecrement( &g_aiMsgBacklog ) );
     }
     else
     {
@@ -195,10 +248,16 @@ void CAIMgr::Manage( void )
         m_bUnitLoaded       = FALSE;
     }
 
-    // test for idle time processing
-    if ( m_iIdle > AI_IDLE_LIMIT )
+    // test for idle time processing. AGING (root fix): a busy message queue
+    // (late-game war) starved ALL 7 background jobs -- assignment, router fill,
+    // map update, construction/production review, patrols, stuck rescue -- so
+    // fleets idled and deliveries froze; force a rotation step every 15s under
+    // load
+    if ( m_iIdle > AI_IDLE_LIMIT ||
+         timeGetTime( ) - m_dwLastIdleFunc > 10000 )
     {
-        m_iIdle = 0;
+        m_iIdle          = 0;
+        m_dwLastIdleFunc = timeGetTime( );
 
 #ifdef _LOGOUT
         logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "\nCAIMgr::Manage() player %d idle function, messages %d ", m_iPlayer,
@@ -262,10 +321,557 @@ void CAIMgr::Manage( void )
         }
         else
         {
-            Sleep( pGameData->GetRandom( 100 ) + 70 );
+            // No Sleep here anymore: the AiThread loop now blocks in
+            // WaitForWork between passes, which IS the idle sleep (and unlike
+            // Sleep, a newly arrived message wakes it immediately).
 
             // reset this time and start over
             for ( int i = 0; i < MAX_IDLE_FUNCTIONS; ++i ) m_bIdleFunction[i] = TRUE;
+        }
+    }
+
+    // stuck-vehicle sweep on a wall clock too: the idle rotation above never
+    // runs for an AI under sustained attack — exactly when cranes get stuck
+    // 240s cadence + 0-30s per-AI jitter (wall clock ^ player id, NOT the
+    // deterministic game RNG) so all AIs don't sweep in the same tick
+    {
+        DWORD dwSweepNow = timeGetTime( );
+        DWORD dwJitter   = ( dwSweepNow ^ ( (DWORD)m_iPlayer * 2654435761u ) ) % 30000;
+        if ( !m_dwLastStuckSweep || dwSweepNow - m_dwLastStuckSweep > 240000 + dwJitter )
+        {
+            m_dwLastStuckSweep = dwSweepNow;
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+            {
+                char szSw[64];
+                sprintf( szSw, "[SWEEP] plyr %d enter\n", m_iPlayer );
+                OutputDebugStringA( szSw );
+            }
+#endif
+            HandleStuckVehicles( );
+
+            // lab-goal growth lived ONLY in the road-bail paths (IdleCrane), so
+            // fixing roads froze it; grow + restart research on the sweep instead
+            if ( m_pGoalMgr != NULL )
+            {
+                m_pGoalMgr->IdleCrane( );
+                m_pGoalMgr->CheckResearch( );
+                m_pGoalMgr->ConsiderAltOutputs( );
+
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+                if ( m_pGoalMgr->m_pMap != NULL )
+                {
+                    // TEMP: per-sweep AI census (gas, road plan vs paved, bldgs +/-)
+                    // troops = owned combat vehicles (exclude construction/med/heavy trucks = 0/1/2)
+                    int iTroops = 0, iBldgsTotal = 0;
+                    if ( m_plUnits != NULL )
+                    {
+                        POSITION posT = m_plUnits->GetHeadPosition( );
+                        while ( posT != NULL )
+                        {
+                            CAIUnit* pT = (CAIUnit*)m_plUnits->GetNext( posT );
+                            if ( pT == NULL || pT->GetOwner( ) != m_iPlayer )
+                                continue;
+                            if ( pT->GetType( ) == CUnit::building )
+                            {
+                                iBldgsTotal++;  // ALL own buildings (matches the load screen)
+                                continue;
+                            }
+                            if ( pT->GetType( ) != CUnit::vehicle )
+                                continue;
+                            int iVeh = pT->GetTypeUnit( );
+                            if ( iVeh == CTransportData::construction || iVeh == CTransportData::med_truck ||
+                                 iVeh == CTransportData::heavy_truck )
+                                continue;
+                            iTroops++;
+                        }
+                    }
+                    char szC[176];
+                    sprintf( szC,
+                             "[AISTAT] plyr %d gas %d roadplan %d paved %d built %d lost %d bldgs %d bldgsAll %d troops %d\n",
+                             m_iPlayer, m_pGoalMgr->m_iGasHave, m_pGoalMgr->m_pMap->m_iRoadCount, m_iStatRoadsPaved,
+                             m_iStatBldgBuilt, m_iStatBldgLost, (int)m_pGoalMgr->GetBuildingCnt( ), iBldgsTotal,
+                             iTroops );
+                    OutputDebugStringA( szC );
+                    // observation: goal-runaway check (UpdateVehGoals compounds with no reset)
+                    if ( m_pGoalMgr->m_pwaVehGoals != NULL && m_pGoalMgr->m_pwaUnits != NULL )
+                        sprintf( szC,
+                                 "[VEHGOALS] plyr %d crane %u/%u truck %u/%u rangers %u/%u ltank %u/%u fort1goal %u\n",
+                                 m_iPlayer, m_pGoalMgr->m_pwaUnits[CTransportData::construction],
+                                 m_pGoalMgr->m_pwaVehGoals[CTransportData::construction],
+                                 m_pGoalMgr->m_pwaUnits[CTransportData::heavy_truck],
+                                 m_pGoalMgr->m_pwaVehGoals[CTransportData::heavy_truck],
+                                 m_pGoalMgr->m_pwaUnits[CTransportData::rangers],
+                                 m_pGoalMgr->m_pwaVehGoals[CTransportData::rangers],
+                                 m_pGoalMgr->m_pwaUnits[CTransportData::light_tank],
+                                 m_pGoalMgr->m_pwaVehGoals[CTransportData::light_tank],
+                                 m_pGoalMgr->m_pwaBldgGoals != NULL
+                                     ? m_pGoalMgr->m_pwaBldgGoals[CStructureData::fort_1]
+                                     : 0 );
+                    OutputDebugStringA( szC );
+                }
+#endif
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+                {
+                    int iTopic = -1, iPts = -1, iHave = -1, iFails = -1;
+                    int iCanP = -1, iPDisc = -1, iPMissBldg = -1;   // pontoon gate breakdown
+                    EnterCriticalSection( &cs );
+                    CPlayer* pPlyr = pGameData->GetPlayerData( m_iPlayer );
+                    if ( pPlyr != NULL )
+                    {
+                        iTopic = pPlyr->GetRsrchItem( );
+                        iHave  = pPlyr->GetRsrchHave( );
+                        if ( iTopic > 0 && iTopic < pPlyr->GetRsrchSize( ) )
+                            iPts = pPlyr->GetRsrch( iTopic ).m_iPtsDiscovered;
+                        iCanP  = (int)pPlyr->CanRsrch( CRsrchArray::bridge_short );
+                        iPDisc = (int)pPlyr->GetRsrch( CRsrchArray::bridge_short ).m_bDiscovered;
+                        CRsrchItem* pRi = &theRsrch.ElementAt( CRsrchArray::bridge_short );
+                        for ( int iB = 0; iB < pRi->m_iNumBldgsRequired; iB++ )
+                            if ( !pPlyr->GetExists( pRi->m_piBldgsRequired[iB] ) )
+                            {
+                                iPMissBldg = pRi->m_piBldgsRequired[iB];
+                                break;
+                            }
+                    }
+                    LeaveCriticalSection( &cs );
+                    if ( m_pGoalMgr != NULL && m_pGoalMgr->m_pMap != NULL )
+                        iFails = m_pGoalMgr->m_pMap->m_iBridgeSpanFails;
+                    char szR[176];
+                    sprintf( szR, "[RSRCHSTAT] plyr %d topic %d pts %d have %d bridgefails %d pontoon can %d disc %d missbldg %d\n",
+                             m_iPlayer, iTopic, iPts, iHave, iFails, iCanP, iPDisc, iPMissBldg );
+                    OutputDebugStringA( szR );
+                    // queue depth: ~0 = trickle (scheduler flaw); large/growing = backlog.
+                    // tmp = m_plTmpQueue, where arrivals actually pile up (PrioritizeMessage
+                    // drains ONE per call; plyr 3 wedged with queue 0 but tmp in the thousands)
+                    {
+                        int iQ = 0, iTmp = 0;
+                        EnterCriticalSection( &m_cs );
+                        if ( m_plMsgQueue != NULL )
+                            iQ = (int)m_plMsgQueue->GetCount( );
+                        if ( m_plTmpQueue != NULL )
+                            iTmp = (int)m_plTmpQueue->GetCount( );
+                        LeaveCriticalSection( &m_cs );
+                        sprintf( szR, "[QSTAT] plyr %d queue %d tmp %d\n", m_iPlayer, iQ, iTmp );
+                        OutputDebugStringA( szR );
+                    }
+                    if ( m_pRouter != NULL )
+                    {
+                        sprintf( szR, "[ROUTESTAT] plyr %d need %d idletrucks %d\n", m_iPlayer,
+                                 m_pRouter->GetNeedCount( ), m_pRouter->GetIdleTruckCount( ) );
+                        OutputDebugStringA( szR );
+                    }
+                    // rebuild-pipeline check: which building types are under goal?
+                    if ( m_pGoalMgr->m_pwaBldgs != NULL && m_pGoalMgr->m_pwaBldgGoals != NULL )
+                    {
+                        char szG[160];
+                        int  n = sprintf( szG, "[GOALSTAT] plyr %d deficits:", m_iPlayer );
+                        int  iCnt = 0;
+                        for ( int ib = 0; ib < CStructureData::num_types && iCnt < 6; ib++ )
+                        {
+                            if ( m_pGoalMgr->m_pwaBldgGoals[ib] > m_pGoalMgr->m_pwaBldgs[ib] )
+                            {
+                                n += sprintf( szG + n, " %d:%d/%d", ib, (int)m_pGoalMgr->m_pwaBldgs[ib],
+                                              (int)m_pGoalMgr->m_pwaBldgGoals[ib] );
+                                iCnt++;
+                            }
+                        }
+                        sprintf( szG + n, " (%d)\n", iCnt );
+                        OutputDebugStringA( szG );
+                    }
+                    // factory starvation check: input stores at vehicle factories
+                    if ( m_plUnits != NULL )
+                    {
+                        int      iFDump = 0;
+                        POSITION posF   = m_plUnits->GetHeadPosition( );
+                        while ( posF != NULL && iFDump < 3 )
+                        {
+                            CAIUnit* pF = (CAIUnit*)m_plUnits->GetNext( posF );
+                            if ( pF == NULL || pF->GetOwner( ) != m_iPlayer || pF->GetType( ) != CUnit::building )
+                                continue;
+                            int iBT = pF->GetTypeUnit( );
+                            if ( iBT != CStructureData::heavy && iBT != CStructureData::light_1 &&
+                                 iBT != CStructureData::light_2 && iBT != CStructureData::light_0 )
+                                continue;
+                            EnterCriticalSection( &cs );
+                            CBuilding* pFB = theBuildingMap.GetBldg( pF->GetID( ) );
+                            if ( pFB != NULL )
+                            {
+                                char szF[160];
+                                sprintf( szF, "[FACTSTAT] plyr %d bldg %lu type %d steel %d lumber %d xil %d\n",
+                                         m_iPlayer, (unsigned long)pF->GetID( ), iBT,
+                                         pFB->GetStore( CMaterialTypes::steel ),
+                                         pFB->GetStore( CMaterialTypes::lumber ),
+                                         pFB->GetStore( CMaterialTypes::copper ) );
+                                OutputDebugStringA( szF );
+                                iFDump++;
+                            }
+                            LeaveCriticalSection( &cs );
+                        }
+                    }
+
+                    // partials census: every own under-construction building -
+                    // the eternal-partial population (fort at 69% + idle crane)
+                    if ( m_plUnits != NULL )
+                    {
+                        int      iPDump = 0;
+                        POSITION posP   = m_plUnits->GetHeadPosition( );
+                        while ( posP != NULL && iPDump < 6 )
+                        {
+                            CAIUnit* pP = (CAIUnit*)m_plUnits->GetNext( posP );
+                            if ( pP == NULL || pP->GetOwner( ) != m_iPlayer || pP->GetType( ) != CUnit::building )
+                                continue;
+                            EnterCriticalSection( &cs );
+                            CBuilding* pLB = theBuildingMap.GetBldg( pP->GetID( ) );
+                            if ( pLB != NULL && pLB->GetConstDone( ) != -1 )
+                            {
+                                char szP[208];
+                                sprintf( szP,
+                                         "[PARTIAL] plyr %d bldg %lu type %d at %d,%d constdone %d event %d stopped %d "
+                                         "rs %d dmg %d steel %d unassigned %d truckdw %lu\n",
+                                         m_iPlayer, (unsigned long)pP->GetID( ), pP->GetTypeUnit( ),
+                                         pLB->GetHex( ).X( ), pLB->GetHex( ).Y( ),
+                                         pLB->GetConstDone( ), (int)pLB->IsFlag( CUnit::event ),
+                                         (int)pLB->IsFlag( CUnit::stopped ),
+                                         (int)pLB->IsFlag( CUnit::repair_stop ), pLB->GetDamagePer( ),
+                                         pLB->GetStore( CMaterialTypes::steel ),
+                                         (int)pP->GetParam( CAI_UNASSIGNED ),
+                                         (unsigned long)pP->GetParamDW( CMaterialTypes::steel ) );
+                                OutputDebugStringA( szP );
+                                iPDump++;
+                            }
+                            LeaveCriticalSection( &cs );
+                        }
+                    }
+
+                    // damaged-building census: the repair pipeline's demand side.
+                    // repair_stop + no deliveries = the permanent crane-weld class
+                    if ( m_plUnits != NULL )
+                    {
+                        int  iDmgCnt = 0, iRsCnt = 0, iDDump = 0;
+                        char szD[224];
+                        int  nD = sprintf( szD, "[DMGSTAT] plyr %d |", m_iPlayer );
+                        POSITION posD = m_plUnits->GetHeadPosition( );
+                        while ( posD != NULL )
+                        {
+                            CAIUnit* pD = (CAIUnit*)m_plUnits->GetNext( posD );
+                            if ( pD == NULL || pD->GetOwner( ) != m_iPlayer || pD->GetType( ) != CUnit::building )
+                                continue;
+                            EnterCriticalSection( &cs );
+                            CBuilding* pDB = theBuildingMap.GetBldg( pD->GetID( ) );
+                            if ( pDB != NULL && pDB->GetConstDone( ) == -1 && pDB->GetDamagePer( ) < 100 )
+                            {
+                                iDmgCnt++;
+                                if ( pDB->IsFlag( CUnit::repair_stop ) )
+                                    iRsCnt++;
+                                if ( iDDump < 3 )
+                                {
+                                    iDDump++;
+                                    nD += sprintf( szD + nD, " %lu@%d,%d d%d rs%d s%d",
+                                                   (unsigned long)pD->GetID( ), pDB->GetHex( ).X( ),
+                                                   pDB->GetHex( ).Y( ), pDB->GetDamagePer( ),
+                                                   (int)pDB->IsFlag( CUnit::repair_stop ),
+                                                   pDB->GetStore( CMaterialTypes::steel ) );
+                                }
+                            }
+                            LeaveCriticalSection( &cs );
+                        }
+                        if ( iDmgCnt )
+                        {
+                            sprintf( szD + nD, " | dmgd %d repstop %d\n", iDmgCnt, iRsCnt );
+                            OutputDebugStringA( szD );
+                        }
+                    }
+
+                    // physical steel vs ledger (phantom-wealth check)
+                    if ( m_plUnits != NULL )
+                    {
+                        int iSum = 0, iLedger = 0;
+                        DWORD dwTop1 = 0, dwTop2 = 0;
+                        int   iTop1 = 0, iTop2 = 0, iTopT1 = -1, iTopT2 = -1;
+                        EnterCriticalSection( &cs );
+                        POSITION posB = m_plUnits->GetHeadPosition( );
+                        while ( posB != NULL )
+                        {
+                            CAIUnit* pB = (CAIUnit*)m_plUnits->GetNext( posB );
+                            if ( pB == NULL || pB->GetOwner( ) != m_iPlayer || pB->GetType( ) != CUnit::building )
+                                continue;
+                            CBuilding* pLive = theBuildingMap.GetBldg( pB->GetID( ) );
+                            if ( pLive != NULL )
+                            {
+                                int iSt = pLive->GetStore( CMaterialTypes::steel );
+                                iSum += iSt;
+                                if ( iSt > iTop1 )
+                                {
+                                    iTop2 = iTop1; dwTop2 = dwTop1; iTopT2 = iTopT1;
+                                    iTop1 = iSt; dwTop1 = pB->GetID( ); iTopT1 = pB->GetTypeUnit( );
+                                }
+                                else if ( iSt > iTop2 )
+                                {
+                                    iTop2 = iSt; dwTop2 = pB->GetID( ); iTopT2 = pB->GetTypeUnit( );
+                                }
+                            }
+                        }
+                        CPlayer* pP = pGameData->GetPlayerData( m_iPlayer );
+                        if ( pP != NULL )
+                            iLedger = pP->GetMaterialHave( CMaterialTypes::steel );
+                        LeaveCriticalSection( &cs );
+                        sprintf( szR, "[MATSTAT] plyr %d steel stores %d ledger %d top %lu(t%d)=%d %lu(t%d)=%d\n",
+                                 m_iPlayer, iSum, iLedger, (unsigned long)dwTop1, iTopT1, iTop1,
+                                 (unsigned long)dwTop2, iTopT2, iTop2 );
+                        OutputDebugStringA( szR );
+                    }
+                    // truck pipeline x-ray: in-use trucks that aren't moving = zombie claims
+                    if ( m_plUnits != NULL )
+                    {
+                        int iTrucks = 0, iInUse = 0, iMoving = 0, iStopped = 0, iDumped = 0, iTDump = 0;
+                        POSITION posT = m_plUnits->GetHeadPosition( );
+                        while ( posT != NULL )
+                        {
+                            CAIUnit* pT = (CAIUnit*)m_plUnits->GetNext( posT );
+                            if ( pT == NULL || pT->GetOwner( ) != m_iPlayer )
+                                continue;
+                            if ( pT->GetType( ) != CUnit::vehicle ||
+                                 pT->GetTypeUnit( ) != CTransportData::heavy_truck )
+                                continue;
+                            iTrucks++;
+                            // per-truck census: AI binding vs engine truth
+                            if ( iTDump < 30 )
+                            {
+                                iTDump++;
+                                AiVehSnap snapX;
+                                BOOL bSnapX = AiSnap::ReadVeh( pT->GetID( ), snapX );
+                                int  iLoad = 0, iSrcs = 0, iWant = 0;
+                                for ( int im = 0; im < CMaterialTypes::num_types; im++ )
+                                {
+                                    if ( bSnapX )
+                                        iLoad += snapX.aiStore[im];
+                                    if ( pT->GetParamDW( im ) != 0 )
+                                        iSrcs++;
+                                    iWant += pT->GetParam( im );
+                                }
+                                int bIn = -1, iTAS = -1;
+                                EnterCriticalSection( &cs );
+                                CVehicle* pTV = pGameData->GetVehicleData( m_iPlayer, pT->GetID( ) );
+                                if ( pTV != NULL )
+                                {
+                                    bIn  = pTV->IsInBuilding( ) ? 1 : 0;
+                                    iTAS = pTV->IsToldAiStop( ) ? 1 : 0;
+                                }
+                                LeaveCriticalSection( &cs );
+                                char szX[192];
+                                sprintf( szX,
+                                         "[TRUCK] plyr %d id %lu stat %u task %u ddw %lu at %d,%d dest %d,%d "
+                                         "rm %d load %d want %d srcs %d in %d tas %d\n",
+                                         m_iPlayer, (unsigned long)pT->GetID( ), (unsigned)pT->GetStatus( ),
+                                         (unsigned)pT->GetTask( ), (unsigned long)pT->GetDataDW( ),
+                                         bSnapX ? snapX.iHeadX : -1, bSnapX ? snapX.iHeadY : -1,
+                                         bSnapX ? snapX.iDestX : -1, bSnapX ? snapX.iDestY : -1,
+                                         bSnapX ? snapX.iRouteMode : -1, iLoad, iWant, iSrcs, bIn, iTAS );
+                                OutputDebugStringA( szX );
+                            }
+                            if ( !( pT->GetStatus( ) & CAI_IN_USE ) )
+                                continue;
+                            iInUse++;
+                            AiVehSnap snapT;
+                            if ( !AiSnap::ReadVeh( pT->GetID( ), snapT ) )
+                                continue;
+                            if ( snapT.iRouteMode != CVehicle::stop )
+                            {
+                                iMoving++;
+                                continue;
+                            }
+                            iStopped++;
+                            if ( iDumped < 6 )
+                            {
+                                iDumped++;
+                                int iSrcs = 0;
+                                for ( int im = 0; im < CMaterialTypes::num_types; im++ )
+                                    if ( pT->GetParamDW( im ) != 0 )
+                                        iSrcs++;
+                                sprintf( szR, "[TRUCKSTUCK] plyr %d id %lu ddw %lu at %d,%d dest %d,%d srcs %d stat %u\n",
+                                         m_iPlayer, (unsigned long)pT->GetID( ), (unsigned long)pT->GetDataDW( ),
+                                         snapT.iHeadX, snapT.iHeadY, snapT.iDestX, snapT.iDestY, iSrcs,
+                                         (unsigned)pT->GetStatus( ) );
+                                OutputDebugStringA( szR );
+                            }
+                        }
+                        // trucks parked on/inside a building hex (exit-after-unload check)
+                        int iInBldg = 0, iInDump = 0;
+                        posT = m_plUnits->GetHeadPosition( );
+                        while ( posT != NULL )
+                        {
+                            CAIUnit* pT = (CAIUnit*)m_plUnits->GetNext( posT );
+                            if ( pT == NULL || pT->GetOwner( ) != m_iPlayer )
+                                continue;
+                            if ( pT->GetType( ) != CUnit::vehicle ||
+                                 pT->GetTypeUnit( ) != CTransportData::heavy_truck )
+                                continue;
+                            AiVehSnap snapT;
+                            if ( !AiSnap::ReadVeh( pT->GetID( ), snapT ) )
+                                continue;
+                            if ( snapT.iRouteMode != CVehicle::stop )
+                            {
+                                pT->SetInBldgSince( 0 );  // moving -> not garaged
+                                continue;
+                            }
+                            CAIHex aiHexT( snapT.iHeadX, snapT.iHeadY );
+                            pGameData->GetCHexData( &aiHexT );
+                            if ( aiHexT.m_iUnit != CUnit::building )
+                            {
+                                pT->SetInBldgSince( 0 );  // stopped outdoors -> not garaged
+                                continue;
+                            }
+                            if ( !pT->GetInBldgSince( ) )
+                                pT->SetInBldgSince( timeGetTime( ) );
+                            iInBldg++;
+                            if ( iInDump < 6 )
+                            {
+                                iInDump++;
+                                // legit stops: the assigned target or any assigned SOURCE
+                                BOOL bLegit = ( aiHexT.m_dwUnitID == pT->GetDataDW( ) );
+                                for ( int iM = 0; !bLegit && iM < CMaterialTypes::num_types; iM++ )
+                                    if ( pT->GetParamDW( iM ) == aiHexT.m_dwUnitID )
+                                        bLegit = TRUE;
+                                sprintf( szR, "[TRUCKIN] plyr %d id %lu in bldg %lu target %lu legit %d mins %lu\n", m_iPlayer,
+                                         (unsigned long)pT->GetID( ), (unsigned long)aiHexT.m_dwUnitID,
+                                         (unsigned long)pT->GetDataDW( ), (int)bLegit,
+                                         (unsigned long)( ( timeGetTime( ) - pT->GetInBldgSince( ) ) / 60000 ) );
+                                OutputDebugStringA( szR );
+                            }
+                        }
+                        sprintf( szR, "[TRUCKSTAT] plyr %d trucks %d inuse %d moving %d stopped %d inbldg %d\n",
+                                 m_iPlayer, iTrucks, iInUse, iMoving, iStopped, iInBldg );
+                        OutputDebugStringA( szR );
+                    }
+                    // scout census: are Outriders scouting or idling in the city?
+                    // (task + AI dest params + engine pos/dest/mode per scout)
+                    if ( m_plUnits != NULL )
+                    {
+                        int iScouts = 0, iSDump = 0;
+                        POSITION posS = m_plUnits->GetHeadPosition( );
+                        while ( posS != NULL )
+                        {
+                            CAIUnit* pS = (CAIUnit*)m_plUnits->GetNext( posS );
+                            if ( pS == NULL || pS->GetOwner( ) != m_iPlayer )
+                                continue;
+                            if ( pS->GetType( ) != CUnit::vehicle )
+                                continue;
+                            int iST = pS->GetTypeUnit( );
+                            if ( iST != CTransportData::light_scout && iST != CTransportData::med_scout &&
+                                 iST != CTransportData::heavy_scout )
+                                continue;
+                            iScouts++;
+                            if ( iSDump < 4 )
+                            {
+                                iSDump++;
+                                AiVehSnap snapS;
+                                BOOL bSnapS = AiSnap::ReadVeh( pS->GetID( ), snapS );
+                                char szS[176];
+                                sprintf( szS,
+                                         "[SCOUT] plyr %d id %lu type %d task %u aidest %d,%d at %d,%d dest %d,%d rm %d\n",
+                                         m_iPlayer, (unsigned long)pS->GetID( ), iST, (unsigned)pS->GetTask( ),
+                                         (int)pS->GetParam( CAI_DEST_X ), (int)pS->GetParam( CAI_DEST_Y ),
+                                         bSnapS ? snapS.iHeadX : -1, bSnapS ? snapS.iHeadY : -1,
+                                         bSnapS ? snapS.iDestX : -1, bSnapS ? snapS.iDestY : -1,
+                                         bSnapS ? snapS.iRouteMode : -1 );
+                                OutputDebugStringA( szS );
+                            }
+                        }
+                        if ( iScouts )
+                        {
+                            sprintf( szR, "[SCOUTSTAT] plyr %d scouts %d\n", m_iPlayer, iScouts );
+                            OutputDebugStringA( szR );
+                        }
+                    }
+                    // idle cranes vs pending work: idle+work = dispatch bug, idle+none = fleet exceeds demand
+                    if ( m_plUnits != NULL )
+                    {
+                        int iIdleCranes = 0, iCranes = 0;
+                        POSITION posC = m_plUnits->GetHeadPosition( );
+                        while ( posC != NULL )
+                        {
+                            CAIUnit* pC = (CAIUnit*)m_plUnits->GetNext( posC );
+                            if ( pC == NULL || pC->GetOwner( ) != m_iPlayer )
+                                continue;
+                            if ( pC->GetType( ) != CUnit::vehicle ||
+                                 pC->GetTypeUnit( ) != CTransportData::construction )
+                                continue;
+                            iCranes++;
+                            if ( !pC->GetTask( ) )
+                                iIdleCranes++;
+                            // per-crane census: AI binding vs engine truth
+                            int iOrd = -1, iBX = -1, iBY = -1, iCD = -2, iTst = -1, iBT = -1;
+                            unsigned long ulSite = 0;
+                            if ( pC->GetTask( ) && m_pGoalMgr != NULL && m_pGoalMgr->m_plTasks != NULL )
+                            {
+                                CAITask* pCT = m_pGoalMgr->m_plTasks->GetTask( pC->GetTask( ), pC->GetGoal( ) );
+                                if ( pCT != NULL )
+                                {
+                                    iOrd = pCT->GetTaskParam( ORDER_TYPE );
+                                    iBX  = pCT->GetTaskParam( BUILD_AT_X );
+                                    iBY  = pCT->GetTaskParam( BUILD_AT_Y );
+                                    iTst = (int)pCT->GetStatus( );
+                                    iBT  = (int)pCT->GetTaskParam( BUILDING_ID );
+                                }
+                            }
+                            int iEff = (int)pC->GetParam( CAI_EFFECTIVE );
+                            AiVehSnap snapC;
+                            BOOL bSnapC = AiSnap::ReadVeh( pC->GetID( ), snapC );
+                            int  bIn = -1, iTAS = -1, iEvt = -1, iHostCd = -3, iHostEvt = -1, iHostDmg = -1;
+                            int  iHostStp = -1, iCStp = -1;
+                            unsigned long ulHost = 0;
+                            EnterCriticalSection( &cs );
+                            CVehicle* pCV = pGameData->GetVehicleData( m_iPlayer, pC->GetID( ) );
+                            if ( pCV != NULL )
+                            {
+                                bIn  = pCV->IsInBuilding( ) ? 1 : 0;
+                                iTAS = pCV->IsToldAiStop( ) ? 1 : 0;
+                                iEvt = (int)pCV->GetEvent( );
+                                iCStp = ( pCV->IsFlag( CUnit::stopped ) ? 1 : 0 ) |
+                                        ( pCV->IsFlag( CUnit::abandoned ) ? 2 : 0 ) |
+                                        ( pCV->IsFlag( CUnit::dying ) ? 4 : 0 );
+                                CBuilding* pHost = pCV->GetConstBldg( );
+                                if ( pHost != NULL )
+                                {
+                                    ulHost   = (unsigned long)pHost->GetID( );
+                                    iHostCd  = pHost->GetConstDone( );
+                                    iHostEvt = (int)pHost->IsFlag( CUnit::event );
+                                    iHostDmg = pHost->GetDamagePer( );
+                                    iHostStp = ( pHost->IsFlag( CUnit::stopped ) ? 1 : 0 ) |
+                                               ( pHost->IsFlag( CUnit::abandoned ) ? 2 : 0 );
+                                }
+                            }
+                            if ( iBX > 0 && iBY > 0 )
+                            {
+                                CAIHex aiHexS( iBX, iBY );
+                                pGameData->GetCHexData( &aiHexS );
+                                if ( aiHexS.m_iUnit == CUnit::building )
+                                {
+                                    ulSite = (unsigned long)aiHexS.m_dwUnitID;
+                                    CBuilding* pSB = theBuildingMap.GetBldg( aiHexS.m_dwUnitID );
+                                    if ( pSB != NULL )
+                                        iCD = pSB->GetConstDone( );
+                                }
+                            }
+                            LeaveCriticalSection( &cs );
+                            char szC[288];
+                            sprintf( szC,
+                                     "[CRANE] plyr %d id %lu stat %u task %u ord %d bxy %d,%d site %lu cd %d "
+                                     "at %d,%d dest %d,%d rm %d in %d tas %d eff %d tst %d bt %d "
+                                     "evt %d cstp %d host %lu hcd %d hevt %d hdmg %d hstp %d\n",
+                                     m_iPlayer, (unsigned long)pC->GetID( ), (unsigned)pC->GetStatus( ),
+                                     (unsigned)pC->GetTask( ), iOrd, iBX, iBY, ulSite, iCD,
+                                     bSnapC ? snapC.iHeadX : -1, bSnapC ? snapC.iHeadY : -1,
+                                     bSnapC ? snapC.iDestX : -1, bSnapC ? snapC.iDestY : -1,
+                                     bSnapC ? snapC.iRouteMode : -1, bIn, iTAS, iEff, iTst, iBT,
+                                     iEvt, iCStp, ulHost, iHostCd, iHostEvt, iHostDmg, iHostStp );
+                            OutputDebugStringA( szC );
+                        }
+                        sprintf( szR, "[ASSIGNSTAT] plyr %d cranes %d idle %d\n", m_iPlayer, iCranes, iIdleCranes );
+                        OutputDebugStringA( szR );
+                    }
+                }
+#endif
+            }
         }
     }
 
@@ -508,9 +1114,32 @@ void CAIMgr::Manage( void )
     }
 }
 
+// Block this AI's thread until a message is pending or the idle slice elapses.
+// Semaphore count == pending messages, so one wait consumes one message's
+// wake-up; a timeout return is an idle pass (drives the idle-function rotation
+// in Manage). NULL handle (creation failed) degrades to the old spin behaviour.
+void CAIMgr::WaitForWork( DWORD dwTimeoutMs )
+{
+    if ( m_hWork != NULL )
+        WaitForSingleObject( m_hWork, dwTimeoutMs );
+}
+
+BOOL CAIMgr::HasPendingMessages( void )
+{
+    EnterCriticalSection( &m_cs );
+    BOOL bPending = ( m_plMsgQueue != NULL && !m_plMsgQueue->IsEmpty( ) ) ||
+                    ( m_plTmpQueue != NULL && !m_plTmpQueue->IsEmpty( ) );
+    LeaveCriticalSection( &m_cs );
+    return bPending;
+}
+
 void CAIMgr::SetDead( void )
 {
     m_bIsDead = TRUE;
+
+    // wake the AI thread so Manage() sees m_bIsDead promptly
+    if ( m_hWork != NULL )
+        ReleaseSemaphore( m_hWork, 1, NULL );
 
 #ifdef _LOGOUT
     logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "\nCAIMgr::The player %d is dead \n", m_iPlayer );
@@ -568,6 +1197,11 @@ void CAIMgr::UpdatePlayer( CAIMsg* pMsg )
     if ( pMsg->m_idata3 == m_iPlayer )
         return;
 
+    // Scrub the router's borrowed helper lists of this player's units BEFORE
+    // the master bulk-frees them, so none is left dangling (e.g. a unit we
+    // gave to the now-dying player).
+    if ( m_pRouter != NULL )
+        m_pRouter->RemovePlayerUnitsFromLists( pMsg->m_idata3 );
     m_plUnits->RemoveUnits( pMsg->m_idata3 );
     m_plOpFors->RemoveOpFor( pMsg->m_idata3 );
     m_pMap->UpdateMap( NULL );
@@ -615,6 +1249,28 @@ void CAIMgr::UpdateUnits( CAIMsg* pMsg )
         // determine unit type (building/vehicle)
         int iType = pMsg->m_iMsg == CNetCmd::veh_new ? CUnit::vehicle : CUnit::building;
 
+#if EN_AI_PROBES_WAR && defined(_WIN32)
+        if ( iType == CUnit::vehicle &&
+             ( pMsg->m_idata1 == CTransportData::gun_boat || pMsg->m_idata1 == CTransportData::landing_craft ||
+               pMsg->m_idata1 == CTransportData::destroyer || pMsg->m_idata1 == CTransportData::cruiser ||
+               pMsg->m_idata1 == CTransportData::light_cargo ) )
+        {
+            // TEMP: sea-war verification probe (BUILT side)
+            char szB[80];
+            sprintf( szB, "[BOAT] plyr %d built veh %d\n", m_iPlayer, pMsg->m_idata1 );
+            OutputDebugStringA( szB );
+        }
+#endif
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+        if ( iType == CUnit::vehicle )
+        {
+            // observation only: ALL vehicle completions (what do land factories finish?)
+            char szV[80];
+            sprintf( szV, "[VEHNEW] plyr %d veh %d\n", m_iPlayer, pMsg->m_idata1 );
+            OutputDebugStringA( szV );
+        }
+#endif
+
         try
         {
             // CAIUnit( DWORD dwID, int iOwner,
@@ -638,6 +1294,18 @@ void CAIMgr::UpdateUnits( CAIMsg* pMsg )
         pUnit->SetTask( FALSE );
         pUnit->SetGoal( FALSE );
         pUnit->ClearParam( );
+
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+        if ( pMsg->m_iMsg == CNetCmd::bldg_new && pMsg->m_idata3 == m_iPlayer )
+        {
+            m_iStatBldgBuilt++;
+            // observation only: WHAT gets built (settles the fort question with data)
+            char szN[96];
+            sprintf( szN, "[BLDGNEW] plyr %d type %d id %lu\n", m_iPlayer, pMsg->m_idata1,
+                     (unsigned long)pMsg->m_dwID );
+            OutputDebugStringA( szN );
+        }
+#endif
     }
 
     WORD     wTask, wGoal;
@@ -654,6 +1322,13 @@ void CAIMgr::UpdateUnits( CAIMsg* pMsg )
             {
                 wTask = pUnit->GetTask( );
                 wGoal = pUnit->GetGoal( );
+                // bunker mode: a lost building puts offense on hold
+                if ( pUnit->GetType( ) == CUnit::building && m_pGoalMgr != NULL )
+                    m_pGoalMgr->NoteBuildingLost( );
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+                if ( pUnit->GetType( ) == CUnit::building )
+                    m_iStatBldgLost++;
+#endif
                 m_pTaskMgr->UnAssignTask( wTask, wGoal );
             }
             else
@@ -662,6 +1337,11 @@ void CAIMgr::UpdateUnits( CAIMsg* pMsg )
                 // pUnit->SetDataDW(0);
                 m_plUnits->ClearTarget( pMsg->m_dwID );
             }
+            // Scrub the router's borrowed helper lists BEFORE the master frees
+            // this CAIUnit, so an ownership-changed unit dying under a foreign
+            // player id can't leave a dangling pointer there (AI-thread UAF).
+            if ( m_pRouter != NULL )
+                m_pRouter->RemoveUnitFromLists( pMsg->m_dwID );
             m_plUnits->RemoveUnit( pMsg->m_dwID );
         }
 
@@ -738,6 +1418,17 @@ void CAIMgr::UpdateUnits( CAIMsg* pMsg )
                     // reset the task used for the construction
                     m_pTaskMgr->UnAssignTask( wTask, wGoal );
 
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+                    {
+                        // interrupted-crane evidence: a LATE error for a past order
+                        // resets the crane's CURRENT mission (fuel = pending order tag)
+                        char szR[144];
+                        sprintf( szR, "[CRANERESET] plyr %d crane %lu err %d task %u fuel %u\n", m_iPlayer,
+                                 (unsigned long)pUnit->GetID( ), pMsg->m_iMsg, (unsigned)wTask,
+                                 (unsigned)pUnit->GetParam( CAI_FUEL ) );
+                        OutputDebugStringA( szR );
+                    }
+#endif
                     // reset the crane unit making it available again
                     pUnit->SetDataDW( (DWORD)0 );
                     pUnit->SetTask( FALSE );
@@ -774,6 +1465,24 @@ void CAIMgr::UpdateUnits( CAIMsg* pMsg )
         CAIUnit* pUnit = (CAIUnit*)m_plUnits->GetUnit( pMsg->m_dwID );
         if ( pUnit != NULL )
         {
+            // a LATE error must not reset a crane actively mid-build on other
+            // work (engine event is ground truth; orphaned bridge-crane 130)
+            AiVehSnap snapE;
+            if ( AiSnap::ReadVeh( pUnit->GetID( ), snapE ) &&
+                 ( snapE.iEvent == CVehicle::build || snapE.iEvent == CVehicle::build_road ) )
+            {
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+                {
+                    char szR[112];
+                    sprintf( szR, "[CRANERESET-SKIP] plyr %d crane %lu err %d but actively building - ignored\n",
+                             m_iPlayer, (unsigned long)pUnit->GetID( ), pMsg->m_iMsg );
+                    OutputDebugStringA( szR );
+                }
+#endif
+            }
+            else
+            {
+
             // this unit is a crane which just completed
             // the construction of a building
             wTask = pUnit->GetTask( );
@@ -787,6 +1496,17 @@ void CAIMgr::UpdateUnits( CAIMsg* pMsg )
             // reset the task used for the construction
             m_pTaskMgr->UnAssignTask( wTask, wGoal );
 
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+            {
+                // interrupted-crane evidence (err_build_road path): this reset hit
+                // bridge-crane 130 mid-mission and orphaned its crossing
+                char szR[144];
+                sprintf( szR, "[CRANERESET] plyr %d crane %lu err %d task %u fuel %u\n", m_iPlayer,
+                         (unsigned long)pUnit->GetID( ), pMsg->m_iMsg, (unsigned)wTask,
+                         (unsigned)pUnit->GetParam( CAI_FUEL ) );
+                OutputDebugStringA( szR );
+            }
+#endif
             // reset the crane unit making it available again
             pUnit->SetDataDW( (DWORD)0 );
             pUnit->SetTask( FALSE );
@@ -807,12 +1527,60 @@ void CAIMgr::UpdateUnits( CAIMsg* pMsg )
                 pUnit->SetDestination( hexDest );
                 m_pMap->PlaceFakeVeh( hexDest, pUnit->GetTypeUnit( ) );
             }
+            }  // end not-actively-building (late-error skip)
+        }
+    }
+
+    // server refused a bridge span: free the crane, unmark + deny the crossing.
+    // Read the CAIMsg repack fields (ctor packs _CMsgBridge layout) - the old
+    // CMsgBuildBridge cast read a CAIMsg as wire bytes = garbage hexes
+    if ( pMsg->m_iMsg == CNetCmd::err_build_bridge && pMsg->m_idata3 == m_iPlayer )
+    {
+        CHexCoord hexBrStart( pMsg->m_iX, pMsg->m_iY );
+        CHexCoord hexBrEnd( pMsg->m_ieX, pMsg->m_ieY );
+        if ( m_pMap != NULL && ( hexBrStart.X( ) || hexBrStart.Y( ) ) )
+            m_pMap->DenyBridge( hexBrStart, hexBrEnd );
+        CAIUnit* pUnit = (CAIUnit*)m_plUnits->GetUnit( pMsg->m_dwID2 );
+        if ( pUnit != NULL )
+        {
+            m_pTaskMgr->UnAssignTask( pUnit->GetTask( ), pUnit->GetGoal( ) );
+            pUnit->SetDataDW( (DWORD)0 );
+            pUnit->SetTask( FALSE );
+            pUnit->SetGoal( FALSE );
+            pUnit->ClearParam( );
         }
     }
 
     // handle road done messages
     if ( pMsg->m_iMsg == CNetCmd::road_done && pMsg->m_idata3 == m_iPlayer )
     {
+        m_iStatRoadsPaved++;
+
+        // a completed BRIDGE hex changes reachability: flush the timed site
+        // shelf so far-side sites are re-picked NOW instead of waiting out
+        // their 10-min window (operator: cranes idled after the bridge)
+        if ( m_pMap != NULL && m_pMap->m_pMapUtil != NULL )
+        {
+            BOOL bBridgeHex = FALSE;
+            CHexCoord hexDone( pMsg->m_iX, pMsg->m_iY );
+            EnterCriticalSection( &cs );
+            CHex* pHexDone = theMap.GetHex( hexDone );
+            if ( pHexDone != NULL && ( pHexDone->GetUnits( ) & CHex::bridge ) )
+                bBridgeHex = TRUE;
+            LeaveCriticalSection( &cs );
+            if ( bBridgeHex )
+            {
+                m_pMap->m_pMapUtil->ClearFailedSiteTemps( );
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+                {
+                    char szR[112];
+                    sprintf( szR, "[UNBAN] plyr %d bridge hex %d,%d done - temp site shelf flushed\n",
+                             m_iPlayer, hexDone.X( ), hexDone.Y( ) );
+                    OutputDebugStringA( szR );
+                }
+#endif
+            }
+        }
         CAIUnit* pUnit = (CAIUnit*)m_plUnits->GetUnit( pMsg->m_dwID );
         if ( pUnit != NULL )
         {
@@ -826,12 +1594,52 @@ void CAIMgr::UpdateUnits( CAIMsg* pMsg )
                        "CAIMgr::UpdateUnits() player %d road building crane %ld unassigned goal %d task %d ", m_iPlayer,
                        pUnit->GetID( ), wGoal, wTask );
 #endif
-            // update number of MSW_PLANNED_ROAD locations left
-            m_pMap->m_iRoadCount--;
-            // reset the task used for the construction
-            m_pTaskMgr->UnAssignTask( wTask, wGoal );
+            // update number of MSW_PLANNED_ROAD locations left (floor at 0: a
+            // batch run can pave hexes the planner never counted, and a negative
+            // count wrecks the quota/priority gates -- seen live at -1036)
+            if ( m_pMap->m_iRoadCount > 0 )
+                m_pMap->m_iRoadCount--;
             if ( m_pMap->m_iRoadCount )
                 m_pGoalMgr->ConsiderRoads( );
+
+            // BATCH ROAD (operator): per-hex road_done fires for EACH section
+            // while a crane is still paving a multi-hex run. Don't re-task or
+            // unassign a crane that's still working -- just account the hex.
+            // FINAL section = the completed hex IS the run end (CAI_DEST),
+            // deterministic from the message itself. (An engine routeMode read
+            // here raced the stop transition and dropped the final release --
+            // crane 129 parked at its run end; bridges post ONE road_done with
+            // fuel=bridge_new and fall through to the vanilla release.)
+            if ( pUnit->GetParam( CAI_FUEL ) == CNetCmd::road_new &&
+                 ( pMsg->m_iX != pUnit->GetParam( CAI_DEST_X ) ||
+                   pMsg->m_iY != pUnit->GetParam( CAI_DEST_Y ) ) )
+                return;
+            // BRIDGE: road_done fires per SPAN SEGMENT (BridgeBuilt+NextRoadHex
+            // per deck hex; bridge_done is defined but never posted). Releasing
+            // on the first segment abandoned the bridge partway (operator,
+            // soak80). Release only on the FINAL segment - the deck hex beside
+            // the far landing (CAI_DEST); mid-span segments keep the crane.
+            if ( pUnit->GetParam( CAI_FUEL ) == CNetCmd::bridge_new )
+            {
+                int iDx = pMsg->m_iX - (int)pUnit->GetParam( CAI_DEST_X );
+                int iDy = pMsg->m_iY - (int)pUnit->GetParam( CAI_DEST_Y );
+                if ( iDx < 0 ) iDx = -iDx;
+                if ( iDy < 0 ) iDy = -iDy;
+                if ( iDx + iDy > 1 )
+                    return;
+            }
+
+            // ROAD MODE (operator): keep a road crane on roads -- it used to
+            // unassign + stage away after EVERY hex (one square per pool cycle)
+            if ( wTask == IDT_CONSTRUCT && m_pMap->m_iRoadCount && m_pGoalMgr->m_iGasHave )
+            {
+                pUnit->ClearParam( );                     // per-hex state only
+                m_pTaskMgr->GenerateTaskOrder( pUnit );   // pick the next hex
+                return;
+            }
+
+            // reset the task used for the construction
+            m_pTaskMgr->UnAssignTask( wTask, wGoal );
 
             // reset the crane unit making it available again
             pUnit->SetDataDW( (DWORD)0 );
@@ -869,6 +1677,87 @@ void CAIMgr::UpdateUnits( CAIMsg* pMsg )
 }
 
 //
+// far-stuck construct crane: it will never reach hexDest by resending.
+// Try a bridge toward the dest, shelve the site, repool the crane.
+//
+BOOL CAIMgr::RepoolFarStuck( CAIUnit* pUnit, CHexCoord& hexVeh, CHexCoord& hexDest, int iDist )
+{
+    if ( pUnit->GetTypeUnit( ) != CTransportData::construction ||
+         m_pGoalMgr == NULL || m_pGoalMgr->m_plTasks == NULL || m_pTaskMgr == NULL )
+        return FALSE;
+
+    // bridge-mission badge: at THIS layer (3 same-dest resends = 15+ min of no
+    // progress) the badge only protects welded cranes - a healthy bridge crane
+    // never reaches 3 strikes (at-dest cranes are cleared before the counter).
+    // A denied/failed bridge order never cleared the badge, exempting the crane
+    // from every escape forever. Clear it and repool like any stuck crane.
+    if ( pUnit->GetParam( CAI_FUEL ) == CNetCmd::build_bridge ||
+         pUnit->GetParam( CAI_FUEL ) == CNetCmd::bridge_new )
+    {
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+        {
+            char szR[112];
+            sprintf( szR, "[REPOOLBADGE] plyr %d crane %lu stale bridge badge cleared\n", m_iPlayer,
+                     (unsigned long)pUnit->GetID( ) );
+            OutputDebugStringA( szR );
+        }
+#endif
+        pUnit->SetParam( CAI_FUEL, 0 );
+    }
+
+    CAITask* pTF = m_pGoalMgr->m_plTasks->GetTask( pUnit->GetTask( ), pUnit->GetGoal( ) );
+    if ( pTF == NULL )
+    {
+        // dead task id: the crane is bound to work that no longer exists -
+        // free it (bailing here left it in the resend loop forever; crane 30
+        // took 25 same-dest resends in one 5-min window)
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+        {
+            char szR[112];
+            sprintf( szR, "[REPOOLDEAD] plyr %d crane %lu dead task %u freed\n", m_iPlayer,
+                     (unsigned long)pUnit->GetID( ), (unsigned)pUnit->GetTask( ) );
+            OutputDebugStringA( szR );
+        }
+#endif
+        m_pTaskMgr->ClearTaskUnit( pUnit );
+        pUnit->SetStuckSince( 0 );
+        pUnit->SetStuckHex( 0 );
+        pUnit->ClearResend( );
+        return TRUE;
+    }
+
+    BOOL bBridged = ( m_pMap != NULL && m_pMap->PlanBridgeToward( hexVeh, hexDest ) );
+    if ( pTF->GetTaskParam( ORDER_TYPE ) == CONSTRUCTION_ORDER )
+    {
+        CHexCoord hexSF( pTF->GetTaskParam( BUILD_AT_X ), pTF->GetTaskParam( BUILD_AT_Y ) );
+        if ( ( hexSF.X( ) || hexSF.Y( ) ) && m_pMap != NULL && m_pMap->m_pMapUtil != NULL )
+            m_pMap->m_pMapUtil->AddFailedSiteTemp( (int)pTF->GetTaskParam( BUILDING_ID ), hexSF, 600 * 1000 );
+    }
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+    {
+        char szR[160];
+        sprintf( szR, "[FARSTUCK] plyr %d crane %lu at %d,%d dest %d,%d dist %d bridge %d repooled\n", m_iPlayer,
+                 (unsigned long)pUnit->GetID( ), hexVeh.X( ), hexVeh.Y( ), hexDest.X( ), hexDest.Y( ), iDist,
+                 (int)bBridged );
+        OutputDebugStringA( szR );
+    }
+#endif
+    // a repooled truck must drop its claim markers on the dest building or the
+    // site never re-raises (vanilla only did this on truck DEATH)
+    if ( m_pRouter != NULL && pGameData->IsTruck( pUnit->GetID( ) ) )
+    {
+        m_pRouter->UnassignTrucks( pUnit->GetID( ) );
+        m_pRouter->UnassignTruck( pUnit->GetID( ) );
+    }
+    m_pTaskMgr->UnAssignTask( pUnit->GetTask( ), pUnit->GetGoal( ) );
+    m_pTaskMgr->ClearTaskUnit( pUnit );  // task freed above; crane must be freed too or it stays welded
+    pUnit->SetStuckSince( 0 );
+    pUnit->SetStuckHex( 0 );
+    pUnit->ClearResend( );
+    return TRUE;
+}
+
+//
 // this is called during idle time processing
 // to go thru all trucks and cranes and check to
 // see if the truck or crane is stuck.  stuck
@@ -884,6 +1773,18 @@ void CAIMgr::HandleStuckVehicles( void )
     DWORD     dwNow = timeGetTime( ), dwUnitTime, dwDiff;
     CHexCoord hexDest, hexVeh, hex;
     BOOL      bIsWorking, bIsCarried;
+
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+    // road bottleneck telemetry, once per sweep
+    if ( m_pGoalMgr != NULL && m_pGoalMgr->m_pMap != NULL )
+    {
+        char szR[128];
+        sprintf( szR, "[ROADSTAT] plyr %d grid %d gas %d need %d wells %d refy %d\n", m_iPlayer,
+                 m_pGoalMgr->m_pMap->m_iRoadCount, m_pGoalMgr->m_iGasHave, m_pGoalMgr->m_iGasNeed,
+                 m_pGoalMgr->m_pwaBldgs[CStructureData::oil_well], m_pGoalMgr->m_pwaBldgs[CStructureData::refinery] );
+        OutputDebugStringA( szR );
+    }
+#endif
 
 #ifdef _LOGOUT
     logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "CAIMgr::HandleStuckVehicles() player %d called at %ld  ", m_iPlayer,
@@ -902,45 +1803,340 @@ void CAIMgr::HandleStuckVehicles( void )
                 continue;
             if ( pUnit->GetType( ) != CUnit::vehicle )
                 continue;
+
+            // BEACHED FORCE RECALL (operator): a LAUNCHED attacker (SEEK task)
+            // parked 10+ min at the same hex (unreachable target - e.g. across
+            // water) is re-pooled; nothing else ever recalls launched forces
             if ( pUnit->GetTypeUnit( ) != CTransportData::construction &&
                  pUnit->GetTypeUnit( ) != CTransportData::heavy_truck )
+            {
+                if ( ( pUnit->GetTask( ) == IDT_SEEKINWAR || pUnit->GetTask( ) == IDT_SEEKINRANGE ||
+                       pUnit->GetTask( ) == IDT_SEEKATSEA ) &&
+                     !( pUnit->GetStatus( ) & CAI_IN_COMBAT ) )
+                {
+                    AiVehSnap snapS;
+                    if ( !AiSnap::ReadVeh( pUnit->GetID( ), snapS ) )
+                        continue;
+                    if ( snapS.bCarried || snapS.iRouteMode != CVehicle::stop )
+                    {
+                        // clear the HEX with the clock: a stale stamp + zeroed
+                        // clock made any later re-stop at that hex read as
+                        // dwNow-0 = instant 10-min timeout (waves silently
+                        // shrank one recall at a time - audit finding)
+                        pUnit->SetStuckHex( 0 );
+                        pUnit->SetStuckSince( 0 );
+                        continue;
+                    }
+                    DWORD dwHexS = (DWORD)MAKELPARAM( snapS.iHeadX, snapS.iHeadY );
+                    if ( pUnit->GetStuckHex( ) != dwHexS || !pUnit->GetStuckSince( ) )
+                    {
+                        pUnit->SetStuckHex( dwHexS );
+                        pUnit->SetStuckSince( dwNow );
+                        continue;
+                    }
+                    if ( dwNow - pUnit->GetStuckSince( ) > 600000 )
+                    {
+#if EN_AI_PROBES_WAR && defined(_WIN32)
+                        {
+                            char szF[96];
+                            sprintf( szF, "[RECALL] plyr %d unit %lu task %u beached at %d,%d\n", m_iPlayer,
+                                     (unsigned long)pUnit->GetID( ), (unsigned)pUnit->GetTask( ), snapS.iHeadX,
+                                     snapS.iHeadY );
+                            OutputDebugStringA( szF );
+                        }
+#endif
+                        m_pTaskMgr->ClearTaskUnit( pUnit );
+                        pUnit->SetStuckHex( 0 );
+                        pUnit->SetStuckSince( 0 );
+                    }
+                }
                 continue;
+            }
 
             bIsWorking = bIsCarried = FALSE;
 
-            // get current destination of vehicle
-            EnterCriticalSection( &cs );
-            CVehicle* pVeh = theVehicleMap.GetVehicle( pUnit->GetID( ) );
-            if ( pVeh == NULL )
+            // get current destination of vehicle (snapshot read, lock-free)
+            AiVehSnap snap;
+            if ( !AiSnap::ReadVeh( pUnit->GetID( ), snap ) )
             {
-                LeaveCriticalSection( &cs );
-                pUnit->SetParamDW( CAI_ROUTE_X, 0 );
+                pUnit->SetStuckHex( 0 );
+                pUnit->SetStuckSince( 0 );
                 continue;
             }
 
             // test to be sure vehicle is not already carried
-            if ( pVeh->GetTransport( ) != NULL )
+            if ( snap.bCarried )
                 bIsCarried = TRUE;
 
-            hexVeh  = pVeh->GetHexHead( );
-            hexDest = pVeh->GetHexDest( );
+            hexVeh.X( snap.iHeadX );
+            hexVeh.Y( snap.iHeadY );
+            hexDest.X( snap.iDestX );
+            hexDest.Y( snap.iDestY );
 
             if ( pUnit->GetTypeUnit( ) == CTransportData::construction )
             {
-                if ( pVeh->GetRouteMode( ) == CVehicle::run )
+                if ( snap.iRouteMode == CVehicle::run )
                     bIsWorking = TRUE;
             }
-
-            LeaveCriticalSection( &cs );
 
             if ( bIsCarried || bIsWorking )
                 continue;
 
+            // engine actively executing (driving or building) = NOT stuck.
+            // Rescuing an en-route unit re-sends its dest and the engine's
+            // order handler wipes its job event (SetVehDest -> SetEvent(none))
+            // -- this killed every batch road run whose drive took >5 min.
+            // Rescue only units the engine reports stopped/blocked.
+            if ( snap.iRouteMode == CVehicle::moving || snap.iRouteMode == CVehicle::run )
+            {
+                pUnit->SetStuckHex( 0 );  // stale stamp + zero clock = instant timeout on re-stop
+                pUnit->SetStuckSince( 0 );
+                continue;
+            }
+
+            // arrived-idle TRUCK limbo: an in-use truck stopped at its dest whose
+            // arrival event was missed never unloads/returns to the pool. STRICTLY
+            // time-gated: nudging a truck merely WAITING (source queue, stock)
+            // killed live deliveries and starved the whole event-driven AI
+            // (regression, operator-diagnosed). Nudge >3min same hex, release >6min.
+            if ( pUnit->GetTypeUnit( ) == CTransportData::heavy_truck &&
+                 ( pUnit->GetStatus( ) & CAI_IN_USE ) && hexVeh == hexDest &&
+                 snap.iRouteMode == CVehicle::stop )
+            {
+                DWORD dwHexNow = (DWORD)MAKELPARAM( hexVeh.X( ), hexVeh.Y( ) );
+                if ( pUnit->GetStuckHex( ) != dwHexNow || !pUnit->GetStuckSince( ) )
+                {
+                    // first sighting here: stamp and leave it alone
+                    pUnit->SetStuckHex( dwHexNow );
+                    pUnit->SetStuckSince( dwNow );
+                    continue;
+                }
+                DWORD dwStuck = dwNow - pUnit->GetStuckSince( );
+                // inside its own delivery target with a pending unload: nothing
+                // legit to wait for - rescue fast (engine misses that arrival)
+                DWORD dwGate = 180000;
+                {
+                    CAIHex aiHexIn( hexVeh.X( ), hexVeh.Y( ) );
+                    pGameData->GetCHexData( &aiHexIn );
+                    if ( aiHexIn.m_iUnit == CUnit::building && aiHexIn.m_dwUnitID == pUnit->GetDataDW( ) )
+                        dwGate = 45000;
+                }
+                if ( dwStuck < dwGate )
+                    continue;
+                if ( dwStuck > 360000 )
+                {
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+                    {
+                        char szR[96];
+                        sprintf( szR, "[TRUCK] force-release truck %lu at %d,%d\n",
+                                 (unsigned long)pUnit->GetID( ), hexVeh.X( ), hexVeh.Y( ) );
+                        OutputDebugStringA( szR );
+                    }
+#endif
+                    pUnit->SetStatus( 0 );
+                    pUnit->SetDataDW( 0 );
+                    pUnit->ClearParam( );
+                    continue;
+                }
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+                {
+                    char szR[96];
+                    sprintf( szR, "[TRUCK] nudge arrived-idle truck %lu at %d,%d\n",
+                             (unsigned long)pUnit->GetID( ), hexVeh.X( ), hexVeh.Y( ) );
+                    OutputDebugStringA( szR );
+                }
+#endif
+                CAIMsg msg;
+                msg.m_iMsg   = CNetCmd::veh_dest;
+                msg.m_dwID   = pUnit->GetID( );
+                msg.m_iX     = hexVeh.X( );
+                msg.m_iY     = hexVeh.Y( );
+                msg.m_idata3 = m_iPlayer;
+                msg.m_idata1 = 0;
+                msg.m_idata2 = 0;
+                msg.m_dwID2  = 0;
+                DestinationResponse( &msg );
+                continue;
+            }
+
+            // EFFECTIVE-stranded crane: build was issued (eff>0, task latched
+            // COMPLETED) but the release message never came (lost, or pre-save).
+            // Act on engine truth at the recorded site.
+            if ( pUnit->GetTypeUnit( ) == CTransportData::construction &&
+                 pUnit->GetTask( ) && hexVeh == hexDest &&
+                 pUnit->GetParam( CAI_EFFECTIVE ) &&
+                 pUnit->GetTask( ) != IDT_CONSTRUCT && pUnit->GetTask( ) != IDT_REPAIR &&
+                 m_pGoalMgr != NULL && m_pGoalMgr->m_plTasks != NULL )
+            {
+                CAITask* pTaskE = m_pGoalMgr->m_plTasks->GetTask( pUnit->GetTask( ), pUnit->GetGoal( ) );
+                if ( pTaskE != NULL && pTaskE->GetTaskParam( ORDER_TYPE ) == CONSTRUCTION_ORDER )
+                {
+                    int       iEBX = pTaskE->GetTaskParam( BUILD_AT_X );
+                    int       iEBY = pTaskE->GetTaskParam( BUILD_AT_Y );
+                    int       iECd = -2;  // -2 = no building at the site
+                    BOOL      bInE = FALSE;
+                    CHexCoord hexEB( 0, 0 );
+                    EnterCriticalSection( &cs );
+                    CVehicle* pCVe = pGameData->GetVehicleData( m_iPlayer, pUnit->GetID( ) );
+                    if ( pCVe != NULL )
+                        bInE = pCVe->IsInBuilding( );
+                    if ( iEBX > 0 && iEBY > 0 )
+                    {
+                        CAIHex aiHexE( iEBX, iEBY );
+                        pGameData->GetCHexData( &aiHexE );
+                        if ( aiHexE.m_iUnit == CUnit::building && aiHexE.m_dwUnitID )
+                        {
+                            CBuilding* pEB = theBuildingMap.GetBldg( aiHexE.m_dwUnitID );
+                            if ( pEB != NULL )
+                            {
+                                iECd  = pEB->GetConstDone( );
+                                hexEB = pEB->GetHex( );
+                            }
+                        }
+                    }
+                    LeaveCriticalSection( &cs );
+
+                    // release in ALL cases (site done, gone, or still building):
+                    // a bare goto parks the crane inside stop-mode doing nothing;
+                    // the DESIGNED resume is the repair flow, which adopts
+                    // still-constructing sites once the crane is genuinely idle
+                    // (same treatment as a crane dying mid-build)
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+                    {
+                        char szR[128];
+                        sprintf( szR, "[EFFRESCUE] plyr %d crane %lu RELEASE site %d,%d cd %d in %d\n",
+                                 m_iPlayer, (unsigned long)pUnit->GetID( ), iEBX, iEBY, iECd, (int)bInE );
+                        OutputDebugStringA( szR );
+                    }
+#endif
+                    m_pTaskMgr->UnAssignTask( pUnit->GetTask( ), pUnit->GetGoal( ) );
+                    m_pTaskMgr->ClearTaskUnit( pUnit );
+                    continue;
+                }
+            }
+
+            // arrived-idle limbo: a crane sitting ON its build site that never
+            // sent its build message (task order is message-driven and no message
+            // ever comes). The timer branches below skip arrived vehicles, so
+            // nudge its task order here instead -- idempotent if already sent.
+            if ( pUnit->GetTypeUnit( ) == CTransportData::construction &&
+                 pUnit->GetTask( ) && hexVeh == hexDest &&
+                 !pUnit->GetParam( CAI_EFFECTIVE ) )
+            {
+                // clamped-path / siteless weld: if the construct task's site is
+                // far away (path was clamped to the reachable prefix) or was
+                // never picked, re-nudging can NEVER succeed -- free the crane.
+                // Clamped at a spannable river + bridge tech -> plan the bridge.
+                if ( m_pGoalMgr != NULL && m_pGoalMgr->m_plTasks != NULL &&
+                     pUnit->GetTask( ) != IDT_CONSTRUCT &&  // road task: BuildRoad repools on its own
+                     pUnit->GetTask( ) != IDT_REPAIR )      // repair: own lifecycle, BUILD_AT always 0
+                {
+                    CAITask* pTaskC = m_pGoalMgr->m_plTasks->GetTask( pUnit->GetTask( ), pUnit->GetGoal( ) );
+                    if ( pTaskC != NULL && pTaskC->GetTaskParam( ORDER_TYPE ) == CONSTRUCTION_ORDER )
+                    {
+                        CHexCoord hexSiteC( pTaskC->GetTaskParam( BUILD_AT_X ), pTaskC->GetTaskParam( BUILD_AT_Y ) );
+                        if ( !hexSiteC.X( ) && !hexSiteC.Y( ) )
+                        {
+                            // no site yet (fresh assignment or dead site-pick):
+                            // give site selection its chance FIRST -- unassigning
+                            // here intercepts every fresh rebind (UnAssignTask
+                            // zeroes BUILD_AT) = infinite free/rebind churn
+                            m_pTaskMgr->GenerateTaskOrder( pUnit );
+                            hexSiteC.X( pTaskC->GetTaskParam( BUILD_AT_X ) );
+                            hexSiteC.Y( pTaskC->GetTaskParam( BUILD_AT_Y ) );
+                            if ( !hexSiteC.X( ) && !hexSiteC.Y( ) && !pUnit->GetParam( CAI_EFFECTIVE ) &&
+                                 pUnit->GetTask( ) )
+                            {
+                                // site selection failed AGAIN -> unsiteable task:
+                                // free the crane and cool the TYPE down so the
+                                // assigner doesn't weld the next crane to it
+                                int iBSl = (int)pTaskC->GetTaskParam( BUILDING_ID );
+                                if ( iBSl >= 0 && iBSl < 64 )
+                                    m_pGoalMgr->m_adwSitePickCool[iBSl] =
+                                        theGame.GettimeGetTime( ) + 600 * 1000;
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+                                {
+                                    char szR[144];
+                                    sprintf( szR, "[SITELESS] plyr %d crane %lu task %u bldg %d at %d,%d freed+cooled\n",
+                                             m_iPlayer, (unsigned long)pUnit->GetID( ), (unsigned)pUnit->GetTask( ),
+                                             iBSl, hexVeh.X( ), hexVeh.Y( ) );
+                                    OutputDebugStringA( szR );
+                                }
+#endif
+                                m_pTaskMgr->UnAssignTask( pUnit->GetTask( ), pUnit->GetGoal( ) );
+                                m_pTaskMgr->ClearTaskUnit( pUnit );  // free the crane too
+                            }
+                            continue;
+                        }
+                        int iSiteDist = pGameData->GetRangeDistance( hexVeh, hexSiteC );
+                        if ( iSiteDist > 2 )
+                        {
+                            BOOL bBridged = FALSE;
+                            if ( m_pMap != NULL )
+                            {
+                                bBridged = m_pMap->PlanBridgeToward( hexVeh, hexSiteC );
+                                if ( m_pMap->m_pMapUtil != NULL )
+                                    m_pMap->m_pMapUtil->AddFailedSiteTemp(
+                                        (int)pTaskC->GetTaskParam( BUILDING_ID ), hexSiteC, 600 * 1000 );
+                            }
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+                            {
+                                char szR[192];
+                                sprintf( szR,
+                                         "[CLAMPFREE] crane %lu task %u at %d,%d site %d,%d dist %d bridge %d\n",
+                                         (unsigned long)pUnit->GetID( ), (unsigned)pUnit->GetTask( ), hexVeh.X( ),
+                                         hexVeh.Y( ), hexSiteC.X( ), hexSiteC.Y( ), iSiteDist, (int)bBridged );
+                                OutputDebugStringA( szR );
+                            }
+#endif
+                            m_pTaskMgr->UnAssignTask( pUnit->GetTask( ), pUnit->GetGoal( ) );
+                            m_pTaskMgr->ClearTaskUnit( pUnit );  // free the crane too
+                            continue;
+                        }
+                    }
+                }
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+                {
+                    char szR[192];
+                    sprintf( szR,
+                             "[CRANERESCUE] nudge arrived-idle crane %lu task %u at %d,%d tail %d,%d aidest %u,%u fuel %u rt %d ev %d\n",
+                             (unsigned long)pUnit->GetID( ), (unsigned)pUnit->GetTask( ), hexVeh.X( ), hexVeh.Y( ),
+                             snap.iPtTailX / 2, snap.iPtTailY / 2, (unsigned)pUnit->GetParam( CAI_DEST_X ),
+                             (unsigned)pUnit->GetParam( CAI_DEST_Y ), (unsigned)pUnit->GetParam( CAI_FUEL ),
+                             snap.iRouteMode, snap.iEvent );
+                    OutputDebugStringA( szR );
+                }
+#endif
+                m_pTaskMgr->GenerateTaskOrder( pUnit );
+                continue;
+            }
+
             // has this vehicle been given time?
-            dwUnitTime = pUnit->GetParamDW( CAI_ROUTE_X );  // last time
+            dwUnitTime = pUnit->GetStuckSince( );  // last time
             if ( !dwUnitTime || dwUnitTime > dwNow )
             {
-                pUnit->SetParamDW( CAI_ROUTE_X, timeGetTime( ) );
+                pUnit->SetStuckSince( timeGetTime( ) );
+                // first-contact river split (operator 2026-07-12): a crane the
+                // engine reports STOPPED short of its dest is stranded NOW --
+                // plan the crossing at detection, not on the 5-min resend.
+                // PlanBridgeToward no-ops when no water lies toward the dest;
+                // the claim/deny map dedupes repeats.
+                if ( pUnit->GetTypeUnit( ) == CTransportData::construction &&
+                     pUnit->GetTask( ) && hexVeh != hexDest &&
+                     ( hexDest.X( ) || hexDest.Y( ) ) && m_pMap != NULL )
+                {
+                    BOOL bBridged = m_pMap->PlanBridgeToward( hexVeh, hexDest );
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+                    if ( bBridged )
+                    {
+                        char szR[144];
+                        sprintf( szR, "[BANKSPLIT] plyr %d crane %lu at %d,%d dest %d,%d first-contact bridge\n",
+                                 m_iPlayer, (unsigned long)pUnit->GetID( ), hexVeh.X( ), hexVeh.Y( ),
+                                 hexDest.X( ), hexDest.Y( ) );
+                        OutputDebugStringA( szR );
+                    }
+#endif
+                }
                 continue;
             }
 
@@ -953,15 +2149,121 @@ void CAIMgr::HandleStuckVehicles( void )
                 // vehicle is not stuck, but is where it needs to be
                 if ( hexVeh == hexDest )
                 {
-                    pUnit->SetParamDW( CAI_ROUTE_X, 0 );
-                    pUnit->SetParamDW( CAI_ROUTE_Y, 0 );
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+                    // observe only: crane at-dest, outside, site still partial
+                    if ( pUnit->GetTypeUnit( ) == CTransportData::construction && m_pGoalMgr != NULL &&
+                         m_pGoalMgr->m_plTasks != NULL )
+                    {
+                        CAITask* pCT = m_pGoalMgr->m_plTasks->GetTask( pUnit->GetTask( ), pUnit->GetGoal( ) );
+                        if ( pCT != NULL && pCT->GetTaskParam( ORDER_TYPE ) == CONSTRUCTION_ORDER )
+                        {
+                            // site = building at BUILD_AT_X/Y (BUILDING_ID is a TYPE, not an id)
+                            int  iBXo = pCT->GetTaskParam( BUILD_AT_X );
+                            int  iBYo = pCT->GetTaskParam( BUILD_AT_Y );
+                            BOOL bOutside = FALSE;
+                            int  iCD      = -2;
+                            unsigned long ulSite = 0;
+                            EnterCriticalSection( &cs );
+                            CVehicle* pCV = pGameData->GetVehicleData( m_iPlayer, pUnit->GetID( ) );
+                            if ( pCV != NULL )
+                                bOutside = !pCV->IsInBuilding( );
+                            if ( iBXo > 0 && iBYo > 0 )
+                            {
+                                CAIHex aiHexS( iBXo, iBYo );
+                                pGameData->GetCHexData( &aiHexS );
+                                if ( aiHexS.m_iUnit == CUnit::building )
+                                {
+                                    ulSite = (unsigned long)aiHexS.m_dwUnitID;
+                                    CBuilding* pSB = theBuildingMap.GetBldg( aiHexS.m_dwUnitID );
+                                    if ( pSB != NULL )
+                                        iCD = pSB->GetConstDone( );
+                                }
+                            }
+                            LeaveCriticalSection( &cs );
+                            char szW[160];
+                            sprintf( szW, "[CRANEOUTSIDE] plyr %d crane %lu at %d,%d outside %d bxy %d,%d site %lu constdone %d\n",
+                                     m_iPlayer, (unsigned long)pUnit->GetID( ), hexVeh.X( ), hexVeh.Y( ),
+                                     (int)bOutside, iBXo, iBYo, ulSite, iCD );
+                            OutputDebugStringA( szW );
+                        }
+                    }
+#endif
+                    pUnit->SetStuckSince( 0 );
+                    pUnit->SetStuckHex( 0 );
+                    pUnit->ClearResend( );
                     continue;
+                }
+
+                // oscillating unit: 3 resends to the same dest = never getting
+                // there (309 wasted resends/round measured) -> repool now
+                if ( pUnit->NoteResend( (DWORD)MAKELPARAM( hexDest.X( ), hexDest.Y( ) ) ) >= 3 )
+                {
+                    if ( RepoolFarStuck( pUnit, hexVeh, hexDest,
+                                         pGameData->GetRangeDistance( hexVeh, hexDest ) ) )
+                        continue;
+                    // pool truck that can't reach its parking spot: park HERE --
+                    // it stays dispatchable from its current position (plyr 4 had
+                    // 4 of 5 trucks burning 376 resends on one unreachable spot)
+                    WORD wTask = pUnit->GetTask( );
+                    if ( wTask == IDT_SETTRANSPORT )
+                    {
+                        BOOL bBridged = ( m_pMap != NULL && m_pMap->PlanBridgeToward( hexVeh, hexDest ) );
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+                        {
+                            char szR[144];
+                            sprintf( szR, "[POOLPARK] plyr %d truck %lu parked at %d,%d (pool %d,%d unreachable) bridge %d\n",
+                                     m_iPlayer, (unsigned long)pUnit->GetID( ), hexVeh.X( ), hexVeh.Y( ),
+                                     hexDest.X( ), hexDest.Y( ), (int)bBridged );
+                            OutputDebugStringA( szR );
+                        }
+#endif
+                        // settle the engine dest to HERE - parking only cleared
+                        // the counters, so the stale unreachable dest restarted
+                        // the resend cycle every sweep (17 resends/chunk seen)
+                        pUnit->ForceNextDest( );
+                        pUnit->SetDestination( hexVeh );
+                        pUnit->SetStuckSince( 0 );
+                        pUnit->SetStuckHex( 0 );
+                        pUnit->ClearResend( );
+                        continue;
+                    }
+                    // combat unit marching at an unreachable war dest: try a WAR
+                    // BRIDGE toward it, then re-pool the unit for reassignment
+                    if ( ( wTask == IDT_SEEKINWAR || wTask == IDT_SEEKINRANGE || wTask == IDT_SEEKATSEA ||
+                           wTask == IDT_CONDUCTWAR || wTask == IDT_PREPAREWAR ) &&
+                         m_pTaskMgr != NULL )
+                    {
+                        BOOL bBridged = ( m_pMap != NULL && m_pMap->PlanBridgeToward( hexVeh, hexDest ) );
+#if EN_AI_PROBES_WAR && defined(_WIN32)
+                        {
+                            char szR[160];
+                            sprintf( szR, "[WARSTUCK] plyr %d unit %lu task %u at %d,%d dest %d,%d bridge %d repooled\n",
+                                     m_iPlayer, (unsigned long)pUnit->GetID( ), (unsigned)wTask, hexVeh.X( ),
+                                     hexVeh.Y( ), hexDest.X( ), hexDest.Y( ), (int)bBridged );
+                            OutputDebugStringA( szR );
+                        }
+#endif
+                        m_pTaskMgr->ClearTaskUnit( pUnit );
+                        pUnit->SetStuckSince( 0 );
+                        pUnit->SetStuckHex( 0 );
+                        pUnit->ClearResend( );
+                        continue;
+                    }
                 }
 
                 // make unit go to last destination
                 pUnit->SetDestination( hexDest );
                 // last hex LOWORD(X), HIWORD(Y) occupied
-                pUnit->SetParamDW( CAI_ROUTE_Y, (DWORD)MAKELPARAM( hexVeh.X( ), hexVeh.Y( ) ) );
+                pUnit->SetStuckHex( (DWORD)MAKELPARAM( hexVeh.X( ), hexVeh.Y( ) ) );
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+                {
+                    char szR[160];
+                    sprintf( szR, "[CRANERESCUE] 5min resend plyr %d unit %lu vtype %d task %u to %d,%d diff %lu\n",
+                             m_iPlayer, (unsigned long)pUnit->GetID( ), (int)pUnit->GetTypeUnit( ),
+                             (unsigned)pUnit->GetTask( ), hexDest.X( ), hexDest.Y( ), (unsigned long)dwDiff );
+                    OutputDebugStringA( szR );
+                }
+#endif
 #ifdef _LOGOUT
                 logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC,
                            "CAIMgr::HandleStuckVehicles() player %d unit %d a %d is stuck after 5 min, resent to %d,%d "
@@ -976,25 +2278,47 @@ void CAIMgr::HandleStuckVehicles( void )
                 // vehicle is not stuck, but is where it needs to be
                 if ( hexVeh == hexDest )
                 {
-                    pUnit->SetParamDW( CAI_ROUTE_X, 0 );
-                    pUnit->SetParamDW( CAI_ROUTE_Y, 0 );
+                    pUnit->SetStuckSince( 0 );
+                    pUnit->SetStuckHex( 0 );
+                    pUnit->ClearResend( );
                     continue;
                 }
 
                 // get unit's last location
                 hex = hexDest;
-                hexDest.X( LOWORD( pUnit->GetParamDW( CAI_ROUTE_Y ) ) );
-                hexDest.Y( HIWORD( pUnit->GetParamDW( CAI_ROUTE_Y ) ) );
+                hexDest.X( LOWORD( pUnit->GetStuckHex( ) ) );
+                hexDest.Y( HIWORD( pUnit->GetStuckHex( ) ) );
+
+                // a crane actively travelling is never teleported (operator rule);
+                // it only gets the re-send path below
+                if ( snap.iRouteMode == CVehicle::moving )
+                {
+                    pUnit->SetDestination( hex );
+                    pUnit->SetStuckHex( (DWORD)MAKELPARAM( hexVeh.X( ), hexVeh.Y( ) ) );
+                    continue;
+                }
 
                 int iDist = pGameData->GetRangeDistance( hexVeh, hexDest );
+
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+                {
+                    char szR[160];
+                    sprintf( szR, "[CRANERESCUE] 10min crane %lu diff %lu iDist %d at %d,%d dest %d,%d\n",
+                             (unsigned long)pUnit->GetID( ), (unsigned long)dwDiff, iDist,
+                             hexVeh.X( ), hexVeh.Y( ), hexDest.X( ), hexDest.Y( ) );
+                    OutputDebugStringA( szR );
+                }
+#endif
 
                 // if still too far away
                 if ( iDist > 2 )
                 {
+                    if ( RepoolFarStuck( pUnit, hexVeh, hexDest, iDist ) )
+                        continue;
                     // make unit go to last destination
                     pUnit->SetDestination( hex );
                     // last hex LOWORD(X), HIWORD(Y) occupied
-                    pUnit->SetParamDW( CAI_ROUTE_Y, (DWORD)MAKELPARAM( hexVeh.X( ), hexVeh.Y( ) ) );
+                    pUnit->SetStuckHex( (DWORD)MAKELPARAM( hexVeh.X( ), hexVeh.Y( ) ) );
 #ifdef _LOGOUT
                     logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC,
                                "CAIMgr::HandleStuckVehicles() player %d unit %d a %d is stuck after 10 min, resent to "
@@ -1005,11 +2329,49 @@ void CAIMgr::HandleStuckVehicles( void )
                 }
                 else
                 {
+                    // bridge-mission crane parked at the clamp point beside the
+                    // span: fire the build via its task order, don't teleport
+                    if ( pUnit->GetParam( CAI_FUEL ) == CNetCmd::build_bridge && m_pTaskMgr != NULL )
+                    {
+                        m_pTaskMgr->GenerateTaskOrder( pUnit );
+                        pUnit->SetStuckSince( 0 );
+                        pUnit->SetStuckHex( 0 );
+                        continue;
+                    }
+
                     // ignore this vehicle? how? no vehicles are ever ignored!
                     pUnit->SetDataDW( (DWORD)0 );
 
                     if ( pUnit->GetTypeUnit( ) == CTransportData::construction )
                     {
+                        // Shelve the build site this crane could never reach BEFORE
+                        // UnAssignTask zeroes the task's BUILD_AT -- otherwise the
+                        // reassignment (this crane or the next) re-selects the same
+                        // doomed hex and marches straight back: a rescue->re-stuck
+                        // macro-loop. Temporary (2 min): the blockage may have been
+                        // other cranes, which this rescue is itself dissolving.
+                        if ( m_pGoalMgr != NULL && m_pGoalMgr->m_plTasks != NULL )
+                        {
+                            CAITask* pTask = m_pGoalMgr->m_plTasks->GetTask( pUnit->GetTask( ), pUnit->GetGoal( ) );
+                            if ( pTask != NULL && pTask->GetTaskParam( ORDER_TYPE ) == CONSTRUCTION_ORDER )
+                            {
+                                CHexCoord hexSite( pTask->GetTaskParam( BUILD_AT_X ),
+                                                   pTask->GetTaskParam( BUILD_AT_Y ) );
+                                if ( ( hexSite.X( ) || hexSite.Y( ) ) && m_pMap->m_pMapUtil != NULL )
+                                    m_pMap->m_pMapUtil->AddFailedSiteTemp(
+                                        (int)pTask->GetTaskParam( BUILDING_ID ), hexSite, 120 * 1000 );
+                            }
+                        }
+
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+                        {
+                            char szR[160];
+                            sprintf( szR, "[CRANERESCUE] 10min TELEPORT crane %lu task %u at %d,%d dest %d,%d -> rocket, unbound\n",
+                                     (unsigned long)pUnit->GetID( ), (unsigned)pUnit->GetTask( ),
+                                     hexVeh.X( ), hexVeh.Y( ), hexDest.X( ), hexDest.Y( ) );
+                            OutputDebugStringA( szR );
+                        }
+#endif
                         // unassign crane task
                         m_pTaskMgr->UnAssignTask( pUnit->GetTask( ), pUnit->GetGoal( ) );
                     }
@@ -1018,11 +2380,28 @@ void CAIMgr::HandleStuckVehicles( void )
                     pUnit->SetGoal( FALSE );
                     pUnit->ClearParam( );
 
-                    // place the vehicle in the rocket?
-                    hexDest = m_pMap->m_pMapUtil->m_RocketHex;
-                    CMsgPlaceVeh msg( hexDest, hexDest, m_iPlayer, pUnit->GetTypeUnit( ) );
-                    msg.m_dwID = pUnit->GetID( );
-                    theGame.PostToServer( (CNetCmd*)&msg, sizeof( CMsgPlaceVeh ) );
+                    // teleport home only if the player still HAS a rocket (it can
+                    // be lost); otherwise just leave the unbound crane in place
+                    CHexCoord hexRocket( 0, 0 );
+                    pGameData->FindBuilding( CStructureData::rocket, m_iPlayer, hexRocket );
+                    if ( hexRocket.X( ) || hexRocket.Y( ) )
+                    {
+                        hexDest = m_pMap->m_pMapUtil->m_RocketHex;
+                        CMsgPlaceVeh msg( hexDest, hexDest, m_iPlayer, pUnit->GetTypeUnit( ) );
+                        msg.m_dwID = pUnit->GetID( );
+                        theGame.PostToServer( (CNetCmd*)&msg, sizeof( CMsgPlaceVeh ) );
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+                        {
+                            // fallback visibility law: the 10-min teleport was the
+                            // last SILENT rescue (only _LOGOUT logged it)
+                            char szT[128];
+                            sprintf( szT, "[TELEPORT] plyr %d unit %lu vtype %d from %d,%d -> rocket %d,%d (10-min tier)\n",
+                                     m_iPlayer, (unsigned long)pUnit->GetID( ), (int)pUnit->GetTypeUnit( ),
+                                     hexVeh.X( ), hexVeh.Y( ), hexDest.X( ), hexDest.Y( ) );
+                            OutputDebugStringA( szT );
+                        }
+#endif
+                    }
 #ifdef _LOGOUT
                     logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC,
                                "CAIMgr::HandleStuckVehicles() player %d unit %d a %d is stuck after 10 min, placed at "
@@ -1144,6 +2523,23 @@ void CAIMgr::VehicleErrorResponse( CAIMsg* pMsg )
         if ( hexAt != hexVeh || hexGo != hexDest )
             return;
 
+        // blocked delivery truck: retry the target, don't stage-away-and-strand
+        if ( ( pUnit->GetStatus( ) & CAI_IN_USE ) && pGameData->IsTruck( pUnit->GetID( ) ) )
+        {
+            pUnit->SetDestination( hexDest );
+            return;
+        }
+
+        // escalate the restage search on repeated errors from the same hex --
+        // a radius-2 restage lands back inside the same traffic knot and the
+        // unit livelocks (stop<->blocked at a fixed position; the frozen scouts)
+        int iRestage = 2;
+        {
+            int iErrs = pUnit->NoteErrRestage( MAKELPARAM( hexVeh.X( ), hexVeh.Y( ) ) );
+            if ( iErrs > 1 )
+                iRestage = __min( 2 << ( iErrs - 1 ), 32 );  // 4, 8, 16, 32
+        }
+
         // check the unit
         // if it has no task, or a combat task
         // then it is probably being staged or on patrol
@@ -1159,7 +2555,7 @@ void CAIMgr::VehicleErrorResponse( CAIMsg* pMsg )
 
             // armies have staging areas, which I think is really cool
             // they like cluster in spots that, i think, are betweenish their base and target
-            m_pMap->m_pMapUtil->FindStagingHex( hexVeh, 2, 2, pUnit->GetTypeUnit( ), hexDest, FALSE );
+            m_pMap->m_pMapUtil->FindStagingHex( hexVeh, iRestage, iRestage, pUnit->GetTypeUnit( ), hexDest, FALSE );
 
             pUnit->SetDestination( hexDest );
 
@@ -1178,7 +2574,7 @@ void CAIMgr::VehicleErrorResponse( CAIMsg* pMsg )
             {
                 // m_pGoalMgr->GetPatrolHex( pUnit, hexDest );
 
-                m_pMap->m_pMapUtil->FindStagingHex( hexVeh, 2, 2, pUnit->GetTypeUnit( ), hexDest, FALSE );
+                m_pMap->m_pMapUtil->FindStagingHex( hexVeh, iRestage, iRestage, pUnit->GetTypeUnit( ), hexDest, FALSE );
 
                 pUnit->SetDestination( hexDest );
 #ifdef _LOGOUT
@@ -1219,8 +2615,11 @@ void CAIMgr::VehicleErrorResponse( CAIMsg* pMsg )
                 hexSite.Y( pUnit->GetParam( CAI_DEST_Y ) );
             }
 
-            pUnit->SetParamDW( CAI_ROUTE_X, 0 );
-            pUnit->SetParamDW( CAI_ROUTE_Y, 0 );
+            // NOTE: do NOT zero CAI_ROUTE_X/Y here. Every failed goto lands in
+            // this handler, so zeroing restarted the 30s/90s/5min/10min stuck
+            // clocks on each failure -- a chronically blocked crane looped
+            // (re-send -> error -> reset) forever and never escalated to the
+            // give-up or the sweep rescue.
 
             // the crane is blocked from entering build site
             if ( hexNext == hexSite )
@@ -1273,6 +2672,107 @@ void CAIMgr::VehicleErrorResponse( CAIMsg* pMsg )
                 // if not opfor (its ours) so stage away
                 return;
             }
+
+            // blocked INTO WATER: bridge it (operator) - any water type; the span
+            // cap is the only gate (short lake/ocean necks are strategic crossings)
+            {
+                int iTT = -1;
+                EnterCriticalSection( &cs );
+                CHex* pWet = theMap.GetHex( hexNext );
+                if ( pWet != NULL )
+                    iTT = pWet->GetType( );
+                LeaveCriticalSection( &cs );
+                if ( iTT == CHex::river || iTT == CHex::lake || iTT == CHex::ocean )
+                {
+                    BOOL bCan     = FALSE;
+                    int  iSpanMax = 0;
+                    EnterCriticalSection( &cs );
+                    CPlayer* pP = pGameData->GetPlayerData( m_iPlayer );
+                    if ( pP != NULL && pP->CanBridge( ) )
+                    {
+                        bCan     = TRUE;
+                        iSpanMax = pP->GetMaxSpan( );
+                    }
+                    LeaveCriticalSection( &cs );
+                    if ( !bCan )
+                    {
+                        // demand signal: feeds the pontoon research pre-emption
+                        if ( m_pGoalMgr != NULL && m_pGoalMgr->m_pMap != NULL )
+                            m_pGoalMgr->m_pMap->m_iBridgeSpanFails++;
+                    }
+                    else if ( m_pGoalMgr != NULL && m_pGoalMgr->m_iGasHave > 0 )
+                    {
+                        // dominant-axis walk across the water to the far landing
+                        int dx = CHexCoord::Diff( hexNext.X( ) - hexVeh.X( ) );
+                        int dy = CHexCoord::Diff( hexNext.Y( ) - hexVeh.Y( ) );
+                        if ( abs( dx ) >= abs( dy ) )
+                        {
+                            dx = ( dx >= 0 ) ? 1 : -1;
+                            dy = 0;
+                        }
+                        else
+                        {
+                            dy = ( dy >= 0 ) ? 1 : -1;
+                            dx = 0;
+                        }
+                        CHexCoord hexEnd   = hexNext;
+                        int       iSpan    = 1;   // hexNext is the first water hex
+                        BOOL      bLanded  = FALSE;
+                        EnterCriticalSection( &cs );
+                        while ( iSpan <= iSpanMax )
+                        {
+                            hexEnd.X( hexEnd.X( ) + dx );
+                            hexEnd.Y( hexEnd.Y( ) + dy );
+                            hexEnd.Wrap( );
+                            CHex* pH = theMap.GetHex( hexEnd );
+                            int   iT2 = pH ? pH->GetType( ) : -1;
+                            if ( iT2 != CHex::river && iT2 != CHex::lake && iT2 != CHex::ocean )
+                            {
+                                bLanded = ( iT2 >= 0 );
+                                break;
+                            }
+                            iSpan++;
+                        }
+                        LeaveCriticalSection( &cs );
+                        if ( bLanded )
+                        {
+                            pGameData->BuildBridgeAt( pUnit, hexNext, hexEnd );
+                            pUnit->SetParam( CAI_FUEL, CNetCmd::bridge_new );
+#if EN_AI_PROBES_WAR && defined(_WIN32)
+                            {
+                                char szB[112];
+                                sprintf( szB, "[BRIDGEREACT] plyr %d crane %lu span %d %d,%d -> %d,%d\n", m_iPlayer,
+                                         (unsigned long)pUnit->GetID( ), iSpan, hexNext.X( ), hexNext.Y( ),
+                                         hexEnd.X( ), hexEnd.Y( ) );
+                                OutputDebugStringA( szB );
+                            }
+#endif
+                            return;
+                        }
+                    }
+                }
+            }
+
+            // RESCUE LAYER REMOVED (operator, 2026-07-12): the re-aim answered
+            // stale errors and aborted in-progress builds (every SetDestination
+            // wipes the build event - netapi SetVehDest). The vanilla stage-away
+            // below is the ORIGINAL sideways-wander sweeper - equally external.
+            // A crane with a site gets NO outside interference on movement
+            // errors: the engine's blocked-handling retries the jam itself and
+            // the 5-min/3-strike ladder owns real stuckness.
+            if ( hexSite.X( ) || hexSite.Y( ) )
+            {
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+                {
+                    char szC[112];
+                    sprintf( szC, "[CRANEERR-NOOP] plyr %d crane %lu error at %d,%d site %d,%d - left alone\n",
+                             m_iPlayer, (unsigned long)pUnit->GetID( ), hexVeh.X( ), hexVeh.Y( ),
+                             hexSite.X( ), hexSite.Y( ) );
+                    OutputDebugStringA( szC );
+                }
+#endif
+                return;
+            }
         }
 
         // default response
@@ -1283,12 +2783,11 @@ void CAIMgr::VehicleErrorResponse( CAIMsg* pMsg )
         if ( !IsEmbraced( pMsg ) )
             hexVeh = hexNext;
 
-        m_pMap->m_pMapUtil->FindStagingHex( hexVeh, 2, 2, pUnit->GetTypeUnit( ), hexDest, FALSE );
+        m_pMap->m_pMapUtil->FindStagingHex( hexVeh, iRestage, iRestage, pUnit->GetTypeUnit( ), hexDest, FALSE );
 
         pUnit->SetDestination( hexDest );
 
-        pUnit->SetParamDW( CAI_ROUTE_X, 0 );
-        pUnit->SetParamDW( CAI_ROUTE_Y, 0 );
+        // (stuck clocks deliberately left running -- see note above)
 
 #ifdef _LOGOUT
         logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "CAIMgr::VehicleErrorResponse() respondinging to vehicle error " );
@@ -1325,8 +2824,25 @@ void CAIMgr::DestinationResponse( CAIMsg* pMsg )
 
     // get the unit that just arrived
     CAIUnit* pUnit = m_plUnits->GetUnit( pMsg->m_dwID );
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+    {
+        char szV[128];
+        sprintf( szV, "[ARRRESP] plyr %d unit %lu found %d ctrl %d stat %u ttype %d task %u at %d,%d\n",
+                 m_iPlayer, (unsigned long)pMsg->m_dwID, (int)( pUnit != NULL ),
+                 pUnit ? (int)pUnit->IsControl( ) : -1, pUnit ? (unsigned)pUnit->GetStatus( ) : 0,
+                 pUnit ? pUnit->GetTypeUnit( ) : -1, pUnit ? (unsigned)pUnit->GetTask( ) : 0,
+                 pMsg->m_iX, pMsg->m_iY );
+        OutputDebugStringA( szV );
+    }
+#endif
     if ( pUnit == NULL )
         return;
+
+    // an order issued in RESPONSE to an arrival is the unit's only un-deafen
+    // path (told_ai_stop clears only when a new dest reaches the engine); if
+    // the dedupe swallows it the unit freezes until a sweep nudge. Response
+    // orders always pass; steady-state Manage spam still deduped.
+    pUnit->ForceNextDest( );
 
     // an HP unit not controlled
     if ( !pUnit->IsControl( ) )
@@ -1345,6 +2861,15 @@ void CAIMgr::DestinationResponse( CAIMsg* pMsg )
         CAIHex aiHex( pMsg->m_iX, pMsg->m_iY );
         pGameData->GetCHexData( &aiHex );
 
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+        {
+            char szD[128];
+            sprintf( szD, "[ARRHANDLE] plyr %d truck %lu arrhex %d,%d unit %d atbldg %lu want %lu\n",
+                     m_iPlayer, (unsigned long)pUnit->GetID( ), pMsg->m_iX, pMsg->m_iY, aiHex.m_iUnit,
+                     (unsigned long)aiHex.m_dwUnitID, (unsigned long)pUnit->GetDataDW( ) );
+            OutputDebugStringA( szD );
+        }
+#endif
         if ( aiHex.m_iUnit == CUnit::building )
         {
             // if its dwID matches
@@ -1355,7 +2880,13 @@ void CAIMgr::DestinationResponse( CAIMsg* pMsg )
             {
                 CAIUnit* pBldg = m_plUnits->GetUnit( pUnit->GetDataDW( ) );
                 if ( pBldg == NULL )
+                {
+                    // dest gone from AI list: release the truck, don't strand it IN_USE
+                    pUnit->SetStatus( 0 );
+                    pUnit->SetDataDW( 0 );
+                    pUnit->ClearParam( );
                     return;
+                }
 
                 // transfer the qty needed to the building
                 // and clear the truck of assignment
@@ -1441,9 +2972,35 @@ void CAIMgr::DestinationResponse( CAIMsg* pMsg )
         CHexCoord hexDest( pUnit->GetParam( CAI_ROUTE_X ), pUnit->GetParam( CAI_ROUTE_Y ) );
         if ( hexDest.X( ) || hexDest.Y( ) )
         {
-            pUnit->SetDestination( hexDest );
-            return;
+            if ( hexDest.X( ) == pMsg->m_iX && hexDest.Y( ) == pMsg->m_iY )
+            {
+                // already AT the routed hex: re-sending it loops forever at the
+                // doorstep; drive INTO the dest building so unload can fire
+                pUnit->SetParam( CAI_ROUTE_X, 0 );
+                pUnit->SetParam( CAI_ROUTE_Y, 0 );
+                CAIUnit* pDest = m_plUnits->GetUnit( pUnit->GetDataDW( ) );
+                if ( pDest != NULL )
+                {
+                    pUnit->SetDestination( pDest );
+                    return;
+                }
+                if ( m_pRouter->ResumeTruck( pUnit, pMsg->m_iX, pMsg->m_iY ) )
+                    return;
+            }
+            else
+            {
+                // clamped-path arrival: the engine stopped us short of the routed
+                // hex, so the retry MUST beat the 30s same-dest dedupe or the
+                // truck parks until the next sweep (the hop-stall)
+                pUnit->ForceNextDest( );
+                pUnit->SetDestination( hexDest );
+                return;
+            }
         }
+
+        // interrupted delivery (combat flee etc): resume it, don't drop the event
+        if ( m_pRouter->ResumeTruck( pUnit, pMsg->m_iX, pMsg->m_iY ) )
+            return;
     }
 #endif
 
@@ -1604,7 +3161,9 @@ void CAIMgr::AttackResponse( CAIMsg* pMsg )
             {
                 int       iRange = pVeh->GetRange( );
                 CHexCoord hexTarget( pMsg->m_iX, pMsg->m_iY );
-                CHexCoord hexAttacker( pMsg->m_ieX, pMsg->m_ieX );
+                // 1996 typo: Y was built from m_ieX (siblings use m_ieY) -
+                // return fire aimed/ranged at a corrupted attacker position
+                CHexCoord hexAttacker( pMsg->m_ieX, pMsg->m_ieY );
                 // but is it in range to do so?
                 if ( pGameData->GetRangeDistance( hexTarget, hexAttacker ) > iRange )
                 {
@@ -1920,9 +3479,10 @@ void CAIMgr::ProcessMessage( CAIMsg* pMsg )
         m_bMapChanged = TRUE;
     }
 
-    // a road hex was completed
+    // a road hex was completed (err_build_bridge rides the same flag: without
+    // it NO UpdateUnits call site fired and the deny handler was unreachable)
     if ( pMsg->m_iMsg == CNetCmd::road_done || pMsg->m_iMsg == CNetCmd::road_new ||
-         pMsg->m_iMsg == CNetCmd::err_build_road )
+         pMsg->m_iMsg == CNetCmd::err_build_road || pMsg->m_iMsg == CNetCmd::err_build_bridge )
     {
 #ifdef _LOGOUT
         logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "\nplayer %d unit id: %ld road at %d,%d mode=%d msgID=%d",
@@ -1948,8 +3508,8 @@ void CAIMgr::ProcessMessage( CAIMsg* pMsg )
     }
 
 #ifdef _LOGOUT
-    CString sMsg = pGameData->GetMsgString( pMsg->m_iMsg );
-    logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "\nProcessMessage(): %s msg=%d  player %d ", (const char*)sMsg,
+    const char* sMsg = pGameData->GetMsgString( pMsg->m_iMsg );
+    logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "\nProcessMessage(): %s msg=%d  player %d ", sMsg,
                pMsg->m_iMsg, m_iPlayer );
 
     if ( pMsg->m_iMsg == CNetCmd::bldg_stat )
@@ -2171,8 +3731,47 @@ void CAIMgr::MessageArrived( CNetCmd const* pNewMsg )
             throw( ERR_CAI_BAD_NEW );
         }
         EnterCriticalSection( &m_cs );
+        // [attack-dedup] skip a high-volume idempotent alert (unit_attacked / out_of_LOS)
+        // if an identical (id,id2) one is already queued — it would be a no-op in its
+        // handler but otherwise clogs the backlog. Stops the per-shot / per-LOS-flicker
+        // melee flood from growing ai.q.depth without bound. Erased in Manage on dequeue.
+        if ( IsDedupAlert( pMsg->m_iMsg ) )
+        {
+            if ( !m_setPendingAttack.insert( DedupKey( pMsg ) ).second )
+            {
+                LeaveCriticalSection( &m_cs );
+                delete pMsg;
+                Perf::CounterInc( "ai.msg.drop" );   // redundant pending alert dropped
+                return;
+            }
+        }
         m_plTmpQueue->AddTail( (CObject*)pMsg );
         LeaveCriticalSection( &m_cs );
+
+        // wake this AI's (possibly blocked) thread: one count per message
+        if ( m_hWork != NULL )
+            ReleaseSemaphore( m_hWork, 1, NULL );
+
+        // metrics: one message entered the AI pipeline
+        Perf::CounterInc( "ai.msg.enq" );
+        Perf::GaugeSet( "ai.q.depth", InterlockedIncrement( &g_aiMsgBacklog ) );
+
+        // per-type arrival histogram: names the redundancy targets empirically
+        // (which types dominate the queue) before any further filtering.
+        // KEYS MUST BE STATIC: Perf::FindOrAdd stores the name POINTER without
+        // copying, so a stack buffer would dangle (and its printout read freed
+        // memory). One static slot per type id; first-fill race across AI
+        // threads is benign (identical bytes).
+        {
+            int t = pNewMsg->GetType( );
+            if ( t >= 0 && t < 128 )
+            {
+                static char s_aszMtKey[128][12];
+                if ( !s_aszMtKey[t][0] )
+                    sprintf_s( s_aszMtKey[t], sizeof( s_aszMtKey[t] ), "ai.mt.%02d", t );
+                Perf::CounterInc( s_aszMtKey[t] );
+            }
+        }
     }
 }
 
@@ -3103,6 +4702,7 @@ void CAIMgr::LoadGame( CArchive& ar )
         if ( m_pRouter == NULL )
             m_pRouter = new CAIRouter( m_pMap, m_plUnits, m_iPlayer );
         m_pRouter->Load( ar, m_plUnits );
+        m_pGoalMgr->m_pRouter = m_pRouter;
     }
     catch ( CFileException* theException )
     {
@@ -3166,6 +4766,10 @@ void CAIMgr::Load( CArchive& ar )
     }
     else
         m_plTmpQueue->RemoveAll( );
+
+    // [attack-dedup] queues just emptied for load → drop stale pending-alert keys so a
+    // post-load (target,attacker) pair is never permanently suppressed.
+    m_setPendingAttack.clear( );
 
     int iCnt;
     try
@@ -3292,6 +4896,20 @@ void CAIMgr::Load( CArchive& ar )
             m_plTmpQueue->AddTail( (CObject*)pMsg );
         }
     }
+
+    // Messages restored above bypassed MessageArrived, so neither the backlog
+    // gauge nor the Phase-1 work semaphore saw them. Without this, ai.q.depth
+    // goes negative by the restored count when they are popped, and the AI
+    // thread only drains them on idle-timeout slices instead of waking
+    // immediately. Account for them here (load runs on the main thread).
+    int iRestored = m_plMsgQueue->GetCount( ) + m_plTmpQueue->GetCount( );
+    if ( iRestored > 0 )
+    {
+        LONG lNew = InterlockedExchangeAdd( &g_aiMsgBacklog, (LONG)iRestored ) + (LONG)iRestored;
+        Perf::GaugeSet( "ai.q.depth", lNew );
+        if ( m_hWork != NULL )
+            ReleaseSemaphore( m_hWork, (LONG)iRestored, NULL );
+    }
 }
 
 //
@@ -3363,15 +4981,12 @@ void CAIMgr::AssumeControl( int iBlockX, int iBlockY )
 #endif
 }
 
-void CAIMgr::CreateData( int iBlockX, int iBlockY )
+// Serial (RNG-sensitive) part of AI data creation: PickStartHex draws from the
+// shared game RNG, so this MUST run in deterministic player order on the main
+// thread. CreateOpFors/CreateCAUnits are trivial and just allocate empty lists.
+void CAIMgr::CreatePre( int iBlockX, int iBlockY )
 {
     ASSERT_VALID( this );
-
-    // BUGBUG need to evaluate start cell (iBlockX,iBlockY)
-    // and select the cell with the most m_iStructureSize
-    // blocks of cells in the region defined by start cell
-    // +/- m_iHexPerBlk/2
-
 
     CAIStart aStartUp( iBlockX, iBlockY );
     // BUGBUG this uses new start hex module
@@ -3380,12 +4995,27 @@ void CAIMgr::CreateData( int iBlockX, int iBlockY )
     m_iBlockY = aStartUp.m_iBlockY;
 
     CreateOpFors( );
-
     CreateCAUnits( );
+}
+
+// Heavy (RNG-free) part of AI data creation: builds this AI's private world map
+// + managers. Reads the shared game map read-only (lock-free via the GetCHexData
+// snapshot) and writes only this CAIMgr's own data, so it is safe to run for
+// different AIs concurrently. Must be preceded by CreatePre on the main thread.
+void CAIMgr::CreateHeavy( )
+{
+    ASSERT_VALID( this );
 
     CreateMap( );
-
     CreateManagers( );
+}
+
+void CAIMgr::CreateData( int iBlockX, int iBlockY )
+{
+    // Serial fallback: the original monolithic path (PickStartHex must precede
+    // the map build, which CreatePre guarantees).
+    CreatePre( iBlockX, iBlockY );
+    CreateHeavy( );
 }
 
 void CAIMgr::CreateOpFors( void )
@@ -3535,6 +5165,7 @@ void CAIMgr::CreateManagers( void )
 
     if ( m_pGoalMgr == NULL )
         return;
+    m_pGoalMgr->m_pRouter = m_pRouter;
 
     try
     {
@@ -3561,6 +5192,13 @@ void CAIMgr::CreateManagers( void )
 // BUGBUG consider moving the plMapList of CAUnits
 // of this manager to be a member of CAIMap class
 //
+int CAIMgr::GetPathMapCellCount( void ) const
+{
+    if ( m_pMap == NULL || m_pMap->m_pMapUtil == NULL || m_pMap->m_pMapUtil->m_pPathMap == NULL )
+        return 0;
+    return m_pMap->m_pMapUtil->m_pPathMap->GetMapCellCount( );
+}
+
 void CAIMgr::CreateMap( void )
 {
     ASSERT_VALID( this );
@@ -3591,6 +5229,12 @@ CAIMgr::~CAIMgr( )
     ASSERT_VALID( this );
 
     DeleteCriticalSection( &m_cs );
+
+    if ( m_hWork != NULL )
+    {
+        CloseHandle( m_hWork );
+        m_hWork = NULL;
+    }
 
     if ( m_pRouter != NULL )
     {
@@ -3837,6 +5481,10 @@ void CAIMgr::SumUpMaterialOnHand( void )
 
 CAIMgrList::CAIMgrList( )
 {
+    // fresh game/load: clear backlog residue from a previous game (messages
+    // still queued at exit are deleted in ~CAIMgr without decrementing)
+    InterlockedExchange( &g_aiMsgBacklog, 0 );
+
     LoadStandardData( );
 }
 

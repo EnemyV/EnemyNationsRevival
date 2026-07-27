@@ -153,6 +153,7 @@ class CNetCmd : public VPMsgHdr
         need_save_info,  // tell all players to send save game info
         save_info,       // base save info
         research_disc,   // player has discovered research
+        edict_toggle,    // player toggled a civ-wide edict (Edicts v1)
 
         last_message  // used for ASSERT
     };
@@ -162,9 +163,9 @@ class CNetCmd : public VPMsgHdr
 
     int GetType( ) const { return ( m_bMsg ); }
 
-    static CNetUnpublish* AllocUnpublish( CString const& sName );
-    static CNetJoinGame*  AllocJoinGame( CString const& sName );
-    static CNetJoinName*  AllocJoinName( CString const& sName );
+    static CNetUnpublish* AllocUnpublish( std::string const& sName );
+    static CNetJoinGame*  AllocJoinGame( std::string const& sName );
+    static CNetJoinName*  AllocJoinName( std::string const& sName );
     static CNetPlayer*    AllocPlayer( CPlayer* pPlr );
 
   public:
@@ -174,6 +175,12 @@ class CNetCmd : public VPMsgHdr
 #ifdef _LOG_LAG
     DWORD dwPostTime;
 #endif
+
+    // TRUE if a buffer of cbAvail bytes is big enough to be read as this message
+    // type (per-type minimum = sizeof of the concrete struct, mirroring
+    // AssertMsgValid's casts). Guards the receive path against short/misrouted
+    // datagrams being validated/processed as full game commands (OOB reads).
+    BOOL FitsBuffer( int cbAvail ) const;
 
 #ifdef _DEBUG
   public:
@@ -302,7 +309,8 @@ class CNetPlayer : public CNetCmd
 class CNetStart : public CNetCmd
 {  // start a game
   public:
-    CNetStart( unsigned uRand, int iSide, int iSideSize, int iAiDiff, int iNumAi, int iNumHp, int iStart );
+    CNetStart( unsigned uRand, int iSide, int iSideSize, int iAiDiff, int iNumAi, int iNumHp, int iStart,
+               int iWorldType, int iRivers, int iOcean );
     unsigned m_uRand;
     int      m_iSide;
     int      m_iSideSize;
@@ -311,6 +319,9 @@ class CNetStart : public CNetCmd
     int m_iNumAi;
     int m_iNumHp;
     int m_iStart;
+    int m_iWorldType;  // EWorldType - world generation preset, so clients generate the same map
+    int m_iRivers;     // river density slider 0-100 - same reason (worldgen determinism)
+    int m_iOcean;      // ocean size slider 0-100 - same reason (worldgen determinism)
 
 #ifdef _DEBUG
   public:
@@ -1490,6 +1501,17 @@ class CNetRsrchDisc : public CNetCmd
     CNetRsrchDisc( CPlayer const* pPlyr, int iRsrch );
     int m_iPlyrNum;
     int m_iRsrch;
+};
+
+// Edicts v1: replicate a civ-wide edict toggle so all clients mutate the same player's
+// m_dwEdicts deterministically (single mutation point on receive). Mirrors CNetRsrchDisc.
+class CNetEdictToggle : public CNetCmd
+{
+  public:
+    CNetEdictToggle( CPlayer const* pPlyr, int iEdict, bool bOn );
+    int m_iPlyrNum;
+    int m_iEdict;
+    int m_bOn;       // 0/1 (int for fixed-size serialization)
 };
 
 class CNetNeedSaveInfo : public CNetCmd

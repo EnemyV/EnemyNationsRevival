@@ -606,6 +606,7 @@
 #define IDS_GOOD_REG                    508
 #define IDS_EN_LOGGING                  509
 #define IDS_VP_LOGGING                  510
+#define IDS_PLAYER_WON                  511
 #define IDC_MAIN_CREATE                 1000
 #define IDC_MAIN_JOIN                   1001
 #define IDC_MAIN_LOAD                   1002

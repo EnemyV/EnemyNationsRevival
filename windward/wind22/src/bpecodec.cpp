@@ -162,7 +162,7 @@ void BPECoDec::PutCompressedBlock()
 }
 
 //  Compress from input file to output file
-void *BPECoDec::Compress( const void *pUncompressedBuffer, int iUncompressedBufSize, void *pCB, int *piCompressedBufSize, FNCOMPSTAT fnStat, DWORD dwData )
+void *BPECoDec::Compress( const void *pUncompressedBuffer, int iUncompressedBufSize, void *pCB, int *piCompressedBufSize, FNCOMPSTAT fnStat, DWORD_PTR dwData )
 {
  ASSERT( pUncompressedBuffer );
  ASSERT( 0 < iUncompressedBufSize );
@@ -287,7 +287,7 @@ void *BPECoDec::Compress( const void *pUncompressedBuffer, int iUncompressedBufS
  *
  ***************************************************/
 //  Decompress data from input to output
-void *BPECoDec::Decompress( const void *pCompressedBuffer, int iCompressedBufSize, void *pUncompressedBuf, int *piUncompressedBufSize, FNCOMPSTAT, DWORD )
+void *BPECoDec::Decompress( const void *pCompressedBuffer, int iCompressedBufSize, void *pUncompressedBuf, int *piUncompressedBufSize, FNCOMPSTAT, DWORD_PTR )
 {
  ASSERT( pCompressedBuffer );
  ASSERT( 0 < iCompressedBufSize );

@@ -9,6 +9,7 @@
 //
 //---------------------------------------------------------------------------
 
+#include <string>
 
 const int MMIO_NUM_LIST = 5;
 
@@ -41,13 +42,17 @@ public:
 };
 
 
-class CMmio : public CObject
+class CMmio
 {
     public:
 
     CMmio () {ctor ();}
     CMmio (const char *pFile);
     virtual ~CMmio ();
+
+#ifdef _DEBUG
+    virtual void AssertValid() const {}
+#endif
 
     //  Overridables.
     virtual void  Open( const char *pFilename );
@@ -83,6 +88,7 @@ class CMmio : public CObject
     long  ReadLong ();
     float  ReadFloat ();
     void  ReadString (CString & sRtn);
+    void  ReadString (std::string & sRtn);  // Phase 5a: std::string alternative
 
     //
     // 4/28/96 BobP, These are for getting chunk and list sizes
@@ -93,10 +99,19 @@ class CMmio : public CObject
 
     CMmio & operator >> ( SHORT& s );
     CMmio & operator >> ( USHORT& s );
-    CMmio & operator >> ( LONG& l );
-    CMmio & operator >> ( ULONG& l );
     CMmio & operator >> ( INT& i );
     CMmio & operator >> ( UINT& i );
+#ifdef _WIN32
+    // On Win32 LONG/ULONG (long/unsigned long) are distinct from INT/UINT.
+    CMmio & operator >> ( LONG& l );
+    CMmio & operator >> ( ULONG& l );
+#else
+    // On Linux LP64, LONG==INT and ULONG==UINT (covered above), but a bare
+    // `long`/`unsigned long` is a DISTINCT 64-bit type that callers still use
+    // (e.g. dib.cpp). Read 4 bytes (the Windows on-disk width) and widen.
+    CMmio & operator >> ( long& l );
+    CMmio & operator >> ( unsigned long& l );
+#endif
     CMmio & operator >> ( CString& s );
 
     const char * GetFileName () const { return m_sFileName; }

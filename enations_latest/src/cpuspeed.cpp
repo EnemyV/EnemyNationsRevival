@@ -28,12 +28,21 @@ double CPUInfo::get_cpu_mhz_macos() const
     int64_t freq = 0;
     size_t  size = sizeof( freq );
 
+    // Intel Macs expose the nominal CPU frequency here.
     if ( sysctlbyname( "hw.cpufrequency", &freq, &size, NULL, 0 ) == 0 && freq > 0 )
-    {
-        return freq / 1e6;  // Convert Hz to MHz
-    }
+        return freq / 1e6;  // Hz -> MHz
 
-    return 0.0;
+    // Apple Silicon does NOT expose hw.cpufrequency (it returns ENOENT), so the
+    // query above fails and we'd report 0 MHz. The engine treats <=200 MHz as a
+    // 1996-era machine and forces 8-bit/low-detail assets (e.g. the menu falls
+    // back to the 96x96 WL tile and loads MN08 instead of MN24). Return a
+    // realistic modern figure so the full 24-bit/high-detail path is selected.
+    // Try the max-frequency key first; otherwise assume a fast Apple-Silicon core.
+    freq = 0; size = sizeof( freq );
+    if ( sysctlbyname( "hw.cpufrequency_max", &freq, &size, NULL, 0 ) == 0 && freq > 0 )
+        return freq / 1e6;
+
+    return 3200.0;  // Apple Silicon performance core ~3.2 GHz
 }
 
 #elif defined( __linux__ )

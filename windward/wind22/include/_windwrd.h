@@ -15,8 +15,10 @@
 
 #include <windward.h>
 
-// needed by some
-extern CWinApp * ptheApp;
+// The single user (w22_settings.cpp GetMainHWND fallback) only reads
+// m_pMainWnd, which CWinAppStub exposes as `CWnd* m_pMainWnd`.
+class CWinAppStub;
+extern CWinAppStub * ptheApp;
 
 
 

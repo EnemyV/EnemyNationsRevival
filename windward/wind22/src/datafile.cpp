@@ -9,6 +9,9 @@
 #include "stdafx.h"
 #include "_windwrd.h"
 #include "io.h"
+#include "w22_settings.h"
+#include <shlwapi.h>
+#pragma comment(lib, "shlwapi.lib")
 
 #ifdef _DEBUG
 #undef THIS_FILE
@@ -72,7 +75,7 @@ static BOOL GetFileName(CString &strFileName) {
         CString sMsg;
         sMsg.LoadString(IDS_BAD_DATA_FILE);
         csPrintf(&sMsg, (char const *) strFileName);
-        if (AfxMessageBox(sMsg, MB_YESNO | MB_ICONSTOP) != IDYES)
+        if (::MessageBoxA(NULL, sMsg, "Enemy Nations", MB_YESNO | MB_ICONSTOP) != IDYES)
             return (FALSE);
 
         CString sFilters;
@@ -91,12 +94,16 @@ BOOL CDataFile::Init(const char *pFilename, int iRifVer, BOOL bErr) {
     m_iRifVer = iRifVer;
 
     CString strFileName;
-    if ((!bErr) && (ptheApp->m_lpCmdLine[0])) {
+    // Use Win32 command line — skip exe name, grab first argument if present
+    const char* pCmdArgs = ::PathGetArgsA(::GetCommandLineA());
+    if ((!bErr) && pCmdArgs && pCmdArgs[0]) {
         TRAP();
-        strFileName = ptheApp->m_lpCmdLine;
-    } else
-        strFileName = ptheApp->GetProfileString("Game", "DataFile", CString(".\\") + pFilename);
-    CString sPatch = ptheApp->GetProfileString("Game", "Patch", "data");
+        strFileName = pCmdArgs;
+    } else {
+        CString sDefault = CString(".\\") + pFilename;
+        strFileName = w22::GetProfileString("Game", "DataFile", sDefault);
+    }
+    CString sPatch = w22::GetProfileString("Game", "Patch", "data");
     if (!sPatch.IsEmpty())
         if (sPatch[sPatch.GetLength() - 1] == '\\')
             sPatch.ReleaseBuffer(sPatch.GetLength() - 1);
@@ -111,7 +118,7 @@ BOOL CDataFile::Init(const char *pFilename, int iRifVer, BOOL bErr) {
     for (; TRUE;) {
         try {
             theDataFile._Init(strFileName, sPatch, iRifVer);
-            ptheApp->WriteProfileString("Game", "DataFile", strFileName);
+            w22::WriteProfileString("Game", "DataFile", strFileName);
             return (TRUE);
         }
 
@@ -137,8 +144,16 @@ void CDataFile::_Init(const char *pFilename, const char *pPatchDir, int iRifVer)
             ThrowError(ERR_OUT_OF_MEMORY);
         }
         if (m_pDataFile->Open(pFilename, CFile::modeRead | CFile::shareDenyWrite | CFile::typeBinary) == FALSE) {
-            ThrowError(ERR_DATAFILE_OPEN);
-        }
+            // Master archive (e.g. ENations.dat) absent — the cross-platform
+            // builds ship only the loose, extracted data/ tree. Fall back to
+            // patch-dir-only mode: OpenAsMMIO checks the patch dir first and
+            // never needs the master when the loose set is complete. Skip the
+            // master parse and continue to the patch-dir setup below.
+            delete m_pDataFile;
+            m_pDataFile = NULL;
+            OutputDebugString("CDataFile::_Init: master data file not found; "
+                              "running patch-dir-only (loose data/)\n");
+        } else {
         m_sFileName = pFilename;
 
         m_pFileMap = new CMapStringToPtr;
@@ -148,9 +163,12 @@ void CDataFile::_Init(const char *pFilename, const char *pPatchDir, int iRifVer)
 
         //  The two entries in the file should be the magic number of the file and the 
         //  size of the header in bytes.
+        // On-disk fields are 32-bit. Use LONG (==int32_t on Linux, ==long on
+        // Win32) NOT `long` — a bare `long` is 64-bit on Linux (LP64) and would
+        // make this header 16 bytes instead of the 8 the file actually has.
         struct {
             char aMagicNum[4];
-            long tableSize;
+            LONG tableSize;
         } dfHdr {};
         if (m_pDataFile->Read(&dfHdr, sizeof(dfHdr)) != sizeof(dfHdr)) {
             ThrowError(ERR_DATAFILE_READ);
@@ -171,17 +189,17 @@ void CDataFile::_Init(const char *pFilename, const char *pPatchDir, int iRifVer)
 
         char *pBuff = pFileTableBuff;
         while (pBuff < pFileTableBuff + dfHdr.tableSize) {
-            //  Get the string length
-            long stringLength = *(long *) pBuff;
-            pBuff += sizeof(long);
+            //  Get the string length (on-disk 32-bit: LONG, not long — LP64).
+            LONG stringLength = *(LONG *) pBuff;
+            pBuff += sizeof(LONG);
 
             //  Save a pointer to the string
             char *pStr = pBuff;
             pBuff += stringLength;
 
             //  Get the offset.
-            long fileOffset = *(long *) pBuff;
-            pBuff += sizeof(long);
+            LONG fileOffset = *(LONG *) pBuff;
+            pBuff += sizeof(LONG);
 
             //  Add the string/offset pair to the map.
             //  Can ThrowError CMemoryException.
@@ -192,6 +210,7 @@ void CDataFile::_Init(const char *pFilename, const char *pPatchDir, int iRifVer)
         //  Delete the file table buffer, which is no longer
         //  needed.
         delete[] pFileTableBuff;
+        } // end else (master archive opened successfully)
     }
 
     if (pPatchDir) {

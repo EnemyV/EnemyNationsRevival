@@ -6,6 +6,7 @@
 //---------------------------------------------------------------------------
 
 
+#include "enprobes.h"
 #include "stdafx.h"
 #include "lastplnt.h"
 #include "chproute.hpp"
@@ -14,6 +15,7 @@
 #include "player.h"
 #include "area.h"
 #include "bridge.h"
+#include "SDL2RouteWindow.h"   // refresh the route window as the queue progresses/consumes
 
 #include "terrain.inl"
 #include "vehicle.inl"
@@ -65,8 +67,13 @@ void CVehicle::Move() {
     CHexCoord _hexHead(m_ptHead);
     BOOL bVis = IsVisible();
 
-    // operations this turn
-    m_fVehMove += (m_fDamPerfMult * 0.9 * (float) (theGame.GetOpersElapsed() * GetData()->GetSpeed())) /
+    // operations this turn. vehicle_speed research scales the base move rate
+    // (GetSpeedPct: 100% + 2% per level), so the owner's teched vehicles move faster.
+    float fSpeedMul = (float) GetOwner()->GetSpeedPct() / 100.0f;
+    // Turbochargers edict: +move speed for fuel-consuming units (infantry/walk unaffected).
+    if (GetData()->GetWheelType() != CWheelTypes::walk)
+        fSpeedMul *= GetOwner()->GetEdictMoveMult();
+    m_fVehMove += (m_fDamPerfMult * 0.9 * (float) (theGame.GetOpersElapsed() * GetData()->GetSpeed()) * fSpeedMul) /
                   (float) AVG_SPEED_MUL;
 
     // moving toward the next hex
@@ -207,7 +214,7 @@ void CVehicle::ArrivedNextHex() {
 #endif
 
     ASSERT_VALID (this);
-    ASSERT (GetOwner()->IsLocal());
+    ASSERT (theGame.IsNetGame() || GetOwner()->IsLocal());  // MP: client legitimately simulates remote units (Task#14)
 #ifndef _GG
     ASSERT (m_ptNext != m_ptHead);
 #endif
@@ -332,14 +339,30 @@ void CVehicle::ArrivedDest() {
                 }
             }
 
-            // next dest
-            if (m_pos == NULL)
-                m_pos = m_route.GetHeadPosition();
-            else {
-                m_route.GetNext(m_pos);
+            // advance to the next stop
+            if (m_bRouteLoop) {
+                // looping: cycle the position, keep every stop in the list
                 if (m_pos == NULL)
                     m_pos = m_route.GetHeadPosition();
+                else {
+                    m_route.GetNext(m_pos);
+                    if (m_pos == NULL)
+                        m_pos = m_route.GetHeadPosition();   // loop back to the start
+                }
+            } else {
+                // (F1) one-shot: CONSUME the stop we just reached — remove it so the queue
+                // shrinks as the vehicle progresses, then move on to the new head.
+                if (m_pos != NULL) {
+                    CRoute *pReached = m_route.GetAt(m_pos);
+                    m_route.RemoveAt(m_pos);
+                    delete pReached;
+                }
+                m_pos = m_route.GetHeadPosition();
             }
+
+            // reflect the progression / consumption in an open route window
+            if (m_pSdlRoute != NULL)
+                m_pSdlRoute->RefreshRoute();
 
             // go on to the next dest
             if (m_pos != NULL) {
@@ -355,6 +378,10 @@ void CVehicle::ArrivedDest() {
                     else
                         ExitBuilding();
                 }
+            } else {
+                // one-shot route complete (queue empty) — halt here.
+                SetRoutePos(NULL);
+                m_iEvent = none;
             }
             break;
         }
@@ -421,8 +448,11 @@ void CVehicle::ArrivedDest() {
                     DWORD dwID;
                     CVehicle *pVeh;
                     theVehicleMap.GetNextAssoc(pos, dwID, pVeh);
-                    // it's ours, it's in a building, and it's stopped (not unloading/deploying, etc)
+                    // it's ours, it's in a building, and it's stopped (not unloading/deploying, etc).
+                    // Skip other boats: a cargo ship must never load another ship (cargo ship,
+                    // gunboat, ...) — that nests carriers and gets them stuck. Boats carry land cargo only.
                     if ((pVeh != this) && (pVeh->GetTransport() == NULL) && (pVeh->GetOwner()->IsMe()) &&
+                        (!pVeh->GetData()->IsBoat()) &&
                         (!pVeh->GetHexOwnership()) && (pVeh->GetRouteMode() == CVehicle::stop))
                         if (pBldgDest == theBuildingHex._GetBuilding(pVeh->GetPtHead())) {
                             int iSize;
@@ -430,14 +460,14 @@ void CVehicle::ArrivedDest() {
                                 iSize = 1;
                             else
                                 iSize = MAX_CARGO;
-                            if (m_iCargoSize + iSize > GetData()->GetPeopleCarry())
+                            if (m_iCargoSize + iSize > GetEffPeopleCarry())
                                 continue;
 
                             // put it on the boat
                             pVeh->SetTransport(this);
 
                             // see if we're full
-                            if (m_iCargoSize >= GetData()->GetPeopleCarry())
+                            if (m_iCargoSize >= GetEffPeopleCarry())
                                 break;
                         }
                 }
@@ -446,7 +476,7 @@ void CVehicle::ArrivedDest() {
 
             // if we're controlling the truck
             if ((GetData()->IsTransport()) && ((m_bFlags & hp_controls) != 0))
-                GetDlgLoad();
+                ShowLoadDialog();
             break;
         }
 
@@ -482,7 +512,7 @@ void CVehicle::ArrivedDest() {
 
             // not carrier OR no room
             if ((!m_pVehLoadOn->GetData()->IsCarrier()) ||
-                (m_pVehLoadOn->m_iCargoSize + iAdd > m_pVehLoadOn->GetData()->GetPeopleCarry())) {
+                (m_pVehLoadOn->m_iCargoSize + iAdd > m_pVehLoadOn->GetEffPeopleCarry())) {
                 SetEvent(none);
                 break;
             }
@@ -685,7 +715,7 @@ void CVehicle::SetMoveParams(BOOL bFixTurret) {
 BOOL CVehicle::GetNextHex(BOOL bNew) {
 
     ASSERT_VALID (this);
-    ASSERT (GetOwner()->IsLocal());
+    ASSERT (theGame.IsNetGame() || GetOwner()->IsLocal());  // MP: client legitimately simulates remote units (Task#14)
     ASSERT (m_cMode == moving);
 
     SetLoc(bNew);
@@ -1270,7 +1300,16 @@ BOOL CVehicle::IsPassable(CSubHex const &_sub, BOOL bStrict) {
     if (!CanEnterBldg(theBuildingHex._GetBuilding(_sub)))
         return (FALSE);
 
-    return (GetData()->CanEnterHex(m_ptHead, _sub, IsOnWater(), bStrict));
+    // A WATER vehicle is ALWAYS on the water — it passes UNDER bridges, never on the
+    // deck. The A* path gates (CPathMgr::CanEnterBridge / GetCellCosts) already force
+    // on-water from the wheel type so a boat can route under a span; mirror that here at
+    // runtime. The mutable on_water FLAG is unreliable at a bridge-over-water hex (it
+    // gets cleared as the boat steps onto the span), which left CanEnterHex re-imposing
+    // the bridge deck-direction checks and stalling the boat at the bridge. Wheel type
+    // is authoritative. CanEnterHex still calls CanTravelHex, so a boat is never let onto
+    // land/onto an out-of-water bridge support by this.
+    BOOL bOnWater = IsOnWater() || ( GetData()->GetWheelType() == CWheelTypes::water );
+    return (GetData()->CanEnterHex(m_ptHead, _sub, bOnWater, bStrict));
 }
 
 // return TRUE if can enter sub-hex
@@ -1402,11 +1441,34 @@ void CVehicle::EnterBuilding() {
 
     ReleaseOwnership();
 
+    // POSTCONDITION: an in-building vehicle must never remain in an outside
+    // movement mode (it owns no hexes). Every normal caller stops the vehicle
+    // first, but the blocked-traffic shove (HandleBlocked ~2197) enters a
+    // vehicle with its mode untouched -> moving re-grabbed on next Move (18:25
+    // crash) and blocked re-grabbed on road-clear (soak26 03:18 crash, same
+    // TRAP; traffic/contention share that cycle). cant_deploy is the designed
+    // in-building state (mirrors ExitBuilding's own guard) and legitimately
+    // redeploys later. stop stays stop (vanilla arrival flow).
+    // deploy_it included: a deploy_it vehicle shoved inside (HandleBlocked
+    // same-owner shove) kept its mode after ReleaseOwnership, and Operate's
+    // deploy_it resume set moving with NO ownership (soak51 MOVNOOWN veh 223,
+    // caller Operate+0x9DE). cant_deploy re-enters the designed deploy ladder.
+    if (m_cMode == moving || m_cMode == blocked || m_cMode == traffic || m_cMode == contention ||
+        m_cMode == deploy_it)
+        _SetRouteMode(cant_deploy);
+
     // put us in the exit slot
     CBuilding *pBldg = theBuildingHex._GetBuilding(m_ptHead);
     ASSERT (pBldg != NULL);
     if (pBldg != NULL) {
-        TRAP((pBldg->GetOwner() != GetOwner()) && (GetOwner()->GetRelations() != RELATIONS_ALLIANCE));
+        // 1996 TRAP: entering a foreign, non-allied building. Now a LEGIT state
+        // (trucks steal from enemies - fc7fe992; AI jump-rescue lands in dest).
+        // Debug-only breakpoint, no-op in Release - log instead so it doesn't
+        // kill observation runs.
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+        if ((pBldg->GetOwner() != GetOwner()) && (GetOwner()->GetRelations() != RELATIONS_ALLIANCE))
+        { char szE[80]; sprintf(szE, "[ENTERFOREIGN] veh %lu bldg %lu\n", (unsigned long)GetID(), (unsigned long)pBldg->GetID()); OutputDebugStringA(szE); }
+#endif
 
         GetExitLoc(pBldg, GetData()->GetType(), m_ptNext, m_ptHead, m_ptTail);
         CheckExit();
@@ -1422,6 +1484,12 @@ void CVehicle::EnterBuilding() {
         m_ptDest = m_ptHead;
         m_hexDest = m_ptHead;
         DeletePath();
+
+        // entering the dest IS the arrival; the stop-mode backup never runs for
+        // an in-building vehicle, so an AI owner was never told (truck waited
+        // for the sweep rescue). Humans/HP-router keep their own path.
+        if ((!(m_bFlags & told_ai_stop)) && GetOwner()->IsAI())
+            PostArrivedOrBlocked();
     }
 
     MaterialChange();
@@ -1474,10 +1542,12 @@ void CVehicle::ExitBuilding() {
     // get a new path if needed
     if ((!HavePath()) || (*(m_phexPath + m_iPathLen - 1) != m_hexDest))
         GetPath(FALSE);
-#ifdef _DEBUG
-        else
-            TRAP ();
-#endif
+    else
+        // 1996 TRAP retired: a surviving path on exit was "impossible" only
+        // because the AI wiped it with mid-weld SetDestination spam - with
+        // welds no longer cancelled it's a legal state (soak83 crash). The
+        // path is already valid for m_hexDest; keep it.
+        EN_TRAP_REMOVED( "ExitBuilding: live path to dest survives the visit - using it" );
 
     ASSERT_VALID (this);
     ASSERT ((abs(CSubHex::Diff(m_ptNext.x - m_ptHead.x)) < 2) &&
@@ -1496,8 +1566,13 @@ void CVehicle::DetermineSpeed(BOOL bEvent) {
         m_iSpeed = 32;
 
     // out of gas -> drop to 1/4 speed for trucks, 1/16 for all else
-    // NONE for walking
-    if ((GetData()->GetWheelType() != CWheelTypes::walk) && (GetOwner()->GetGasHave() <= 0)) {
+    // NONE for walking. AI cranes on build work are EXEMPT (operator 2026-07-12):
+    // gasless bridge/road builds crawled to a visual standstill, and the bridge
+    // is a river-split AI's only escape from the no-gas trap - same circularity
+    // pontoon-at-start broke
+    if ((GetData()->GetWheelType() != CWheelTypes::walk) && (GetOwner()->GetGasHave() <= 0) &&
+        !(GetOwner()->IsAI() && (GetData()->GetType() == CTransportData::construction) &&
+          (GetEvent() == build_road))) {
         if (GetData()->GetBaseType() == CTransportData::non_combat)
             m_iSpeed *= 2;
         else
@@ -1607,7 +1682,11 @@ void CVehicle::UnloadCarrier() {
             // if dest didn't work we go to the next sub
             _dest = _head;
             if (iHead > 4) {
-                TRAP();
+                // No traversable head hex among the 4 rotations: every candidate is
+                // blocked by vehicles/buildings (legitimate congestion, e.g. heavy AI
+                // combat). This is a recoverable runtime condition, NOT a bug — fall
+                // through to the next exit sub. (Was TRAP(), a debug-only assert that
+                // fired spuriously on this legal case and broke Debug-build QA runs.)
                 continue;
             }
 
@@ -1619,7 +1698,12 @@ void CVehicle::UnloadCarrier() {
                 _dest.Wrap();
                 for (int x = 0; x < 3; x++) {
                     for (int y = 0; y < 3; y++) {
-                        if (!theMap._GetHex(_dest)->IsWater())
+                        // occupancy check matches the primary exit loop above -
+                        // this fallback only tested water, so a unit unloaded
+                        // onto an occupied hex (claim-conflict TRAP, 17:24 crash)
+                        if (!theMap._GetHex(_dest)->IsWater() &&
+                            theVehicleHex._GetVehicle(_dest) == NULL &&
+                            theBuildingHex._GetBuilding(_dest) == NULL)
                             goto GotIt;
                         _dest.y++;
                         _dest.Wrap();
@@ -1634,6 +1718,40 @@ void CVehicle::UnloadCarrier() {
         } while (theMap._GetHex(_dest)->IsWater());
 
         GotIt:
+        // FINAL pre-grab validation on the EXACT subs TakeOwnership will grab
+        // (next/head/tail per the cargo's own FL1hex mapping, not the loop's
+        // triplet - the two diverged again, soak30 07:01 cross-claim at a
+        // multi-carrier beach). Same lookup as the grab; clash -> defer.
+        {
+            CVehicle *pCargoPeek = m_lstCargo.GetHead();
+            CSubHex _pH, _pT, _pN;
+            if (pCargoPeek->GetData()->GetVehFlags() & CTransportData::FL1hex) {
+                _pH = _pT = _sub;
+                _pN = _dest;
+            } else {
+                _pT = _sub;
+                _pN = _pH = _head;
+            }
+            CVehicle *pClash = theVehicleHex.GetVehicle(_pN);
+            if (pClash == NULL)
+                pClash = theVehicleHex.GetVehicle(_pH);
+            if (pClash == NULL)
+                pClash = theVehicleHex.GetVehicle(_pT);
+            // ANY claimant blocks - including this CARRIER's own subs: the
+            // grab runs as the CARGO, which owns nothing, so the carrier's
+            // claim is foreign to it (soak42 20:08 dump - the != this
+            // exemption was the last hole in the checked set)
+            if (pClash != NULL) {
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+                { char szC[144]; sprintf(szC, "[UNLOADCLASH] carrier %lu grab-subs n(%d,%d)/h(%d,%d)/t(%d,%d) occupied by veh %lu dying %d\n",
+                        (unsigned long)GetID(), _pN.x, _pN.y, _pH.x, _pH.y, _pT.x, _pT.y,
+                        (unsigned long)pClash->GetID(), (int)((pClash->GetFlags() & CUnit::dying) != 0));
+                  OutputDebugStringA(szC); }
+#endif
+                return;   // defer the unload this tick (a continue would re-pick
+                          // the same subs without dequeuing = main-thread spin)
+            }
+        }
         CVehicle *pVehOn = m_lstCargo.RemoveHead();
         pVehOn->m_pTransport = NULL;
         if (pVehOn->GetData()->GetVehFlags() & CTransportData::FL1hex) {
@@ -1900,7 +2018,9 @@ void CVehicle::HandleBlocked() {
     CBridgeUnit *pBu = theBridgeHex.GetBridge(m_ptHead);
     if ((pBu != NULL) && (!pBu->GetParent()->IsBuilt()) &&
         (pBu == theBridgeHex.GetBridge(m_ptDest))) {
-        TRAP();
+        // 1996 curiosity TRAP; the arrive-here handling below IS the recovery.
+        // Routinely reachable now that AI bridges build at scale (soak29 06:24)
+        EN_TRAP_REMOVED( "HandleBlocked: blocked on under-construction bridge - arrived-here below" );
 #ifdef _LOGOUT
         logPrintf(LOG_PRI_VERBOSE, LOG_VEH_MOVE, "Vehicle %d arrived at incomplete bridge", GetID());
 #endif
@@ -2070,7 +2190,9 @@ void CVehicle::HandleBlocked() {
         if (pVehInWay != NULL) {
             if ((pVehInWay->m_ptNext != m_ptNext) && (pVehInWay->m_ptHead != m_ptNext) &&
                 (pVehInWay->m_ptTail != m_ptNext)) {
-                TRAP();
+                // stale claim detected; CheckHex below scrubs it and TryNewSub
+                // retries = the recovery (soak37 12:38 dump)
+                EN_TRAP_REMOVED("HandleBlocked: stale claim on next - scrubbed below");
                 theVehicleHex.CheckHex(m_ptNext);
                 if (TryNewSub(bGotPath)) {
 #ifdef _LOGOUT
@@ -2126,11 +2248,27 @@ void CVehicle::HandleBlocked() {
         theVehicleHex.GrabHex(m_ptNext, this);
         SetMoveParams(FALSE);
         _SetRouteMode(moving);
+        // recovery clears the stagnation watch: a stale same-hex stamp made a
+        // RE-block at a hex visited >6min ago an instant give-up on a fresh
+        // jam (garage-door commutes; audit finding)
+        m_dwStagnantSince = 0;
         ASSERT_VALID (this);
 #ifdef _LOGOUT
         logPrintf(LOG_PRI_VERBOSE, LOG_VEH_MOVE, "Vehicle %d road cleared", GetID());
 #endif
         return;
+    }
+
+    // permanently-boxed detector: same hex past the 1996 escalation horizon
+    // (TRUCK_JUMP_TIME) -> designed give-up. 90s aborted trips for units
+    // merely queued in fresh-base gridlock; frozen units sit for hours.
+    {
+        CHexCoord _hexNow(m_ptHead);
+        if (m_dwStagnantSince == 0 || m_hexStagnant != _hexNow) {
+            m_hexStagnant     = _hexNow;
+            m_dwStagnantSince = theGame.GettimeGetTime();
+        } else if (theGame.GettimeGetTime() - m_dwStagnantSince > (DWORD)TRUCK_JUMP_TIME * 1000)
+            goto GiveUp;
     }
 
     // wait a bit
@@ -2176,7 +2314,7 @@ void CVehicle::HandleBlocked() {
 
                 // if it's a land/water break we're there (actually travel/no travel)
                 if (!GetData()->CanEnterHex(m_ptDest, m_ptDest, IsOnWater(), TRUE)) {
-                    TRAP();
+                    EN_TRAP_REMOVED("HandleBlocked: dest across land/water break - handled below");
                     xDif = m_ptDest.x - m_ptHead.x;
                     yDif = m_ptDest.y - m_ptHead.y;
                     xDif = __minmax(-1, 1, xDif);
@@ -2184,7 +2322,7 @@ void CVehicle::HandleBlocked() {
                     CSubHex _test(m_ptHead.x + xDif, m_ptHead.y + yDif);
                     _test.Wrap();
                     if (!GetData()->CanEnterHex(m_ptHead, _test, IsOnWater(), TRUE)) {
-                        TRAP();
+                        EN_TRAP_REMOVED("HandleBlocked: land/water break confirmed - graceful give-up follows");
 #ifdef _LOGOUT
                         logPrintf(LOG_PRI_VERBOSE, LOG_VEH_MOVE, "Vehicle %d hit land/water break", GetID());
 #endif
@@ -2504,6 +2642,24 @@ void CVehicle::HandleBlocked() {
 #endif
 
         GiveUp:
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+        // give-up rate meter: root-cause instrument for the post-knot-trio
+        // throughput regression (total is exact; detail lines throttled)
+        if (GetOwner()->IsAI()) {
+            static DWORD s_dwGiveupTotal = 0;
+            ++s_dwGiveupTotal;
+            static DWORD s_dwNextGuLog = 0;
+            if (theGame.GettimeGetTime() >= s_dwNextGuLog) {
+                s_dwNextGuLog = theGame.GettimeGetTime() + 2000;
+                char szG[144];
+                sprintf(szG, "[GIVEUP] total %lu veh %lu vtype %d retries %d bc %ld at %d,%d dest %d,%d\n",
+                        (unsigned long)s_dwGiveupTotal, (unsigned long)GetID(), GetData()->GetType(),
+                        m_iNumRetries, (long)m_iBlockCount, m_ptHead.x, m_ptHead.y, m_ptDest.x, m_ptDest.y);
+                OutputDebugStringA(szG);
+            }
+        }
+#endif
+        m_dwStagnantSince = 0;   // one give-up per stagnation window
         _SetRouteMode(stop);
         if (theBuildingHex._GetBuilding(_hexHead) != NULL)
             EnterBuilding();
@@ -2533,6 +2689,17 @@ BOOL CVehicle::TryNextHex() {
     CVehicle *pVehNext = theVehicleHex._GetVehicle(m_ptNext);
     if ((pVehNext != NULL) && (pVehNext != this))
         return (FALSE);
+
+    // an ownerless vehicle cannot CONTINUE a move (the grab below assumes an
+    // owned head/tail) - route it through the designed re-acquire ladder
+    // instead. [MOVNOOWN] upstream names each producer for its own root fix
+    // (soak36 11:49: TryNextHex+0x7F was the minting site of the 6th
+    // ownership crash; producers fixed so far: EnterBuilding modes,
+    // dest==head shortcut, stale-next TakeOwnership, unload validation)
+    if (!m_cOwn) {
+        _SetRouteMode(cant_deploy);
+        return (FALSE);
+    }
 
     SetMoveParams(FALSE);
     _SetRouteMode(moving);
@@ -2804,6 +2971,16 @@ void CVehicle::SetFromMsg(CMsgVehLoc *pMsg, BOOL bWorld) {
     m_iTadd = pMsg->m_iTadd;
     m_cMode = (CVehicle::VEH_MODE) pMsg->m_iMode;
     m_cOwn = pMsg->m_iOwn;
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+    // message-borne moving-without-ownership (bypasses _SetRouteMode tripwire)
+    if ( m_cMode == moving && !m_cOwn )
+    {
+        char szB[112];
+        sprintf( szB, "[MOVNOOWN-MSG] veh %lu plyr %d at %d,%d\n", (unsigned long)GetID( ),
+                 GetOwner( ) ? GetOwner( )->GetPlyrNum( ) : -1, m_ptHead.x, m_ptHead.y );
+        OutputDebugStringA( szB );
+    }
+#endif
     m_iStepsLeft = pMsg->m_iStepsLeft;
     m_iSpeed = pMsg->m_iSpeed;
     SetOnWater(pMsg->m_bOnWater);
@@ -2813,6 +2990,57 @@ void CVehicle::SetFromMsg(CMsgVehLoc *pMsg, BOOL bWorld) {
     // became visible
     if (!bWorld && (IsVisible()))
         theApp.m_wndWorld.InvalidateWindow(CWndWorld::visible | CWndWorld::other_units);
+}
+
+// re-place an EXISTING vehicle at a new location (the AI 10-min stuck
+// teleport posts CMsgPlaceVeh with the unit's id; CVehicle::Create has no
+// relocate path and minted a DUPLICATE object on the same id - map overwrite
+// orphaned the old one on its hexes = ghost unit + scrambled comp-loc deltas,
+// soak38 14:18 wire TRAP). Mirrors TestStuck's hop: release, move, settle
+// next=head, re-acquire through the designed deploy ladder.
+void CVehicle::RelocateTo(CSubHex const &ptHead, CHexCoord const &hexDest) {
+
+    ASSERT_VALID (this);
+
+    // any position jump must dirty the DEPARTED painted rect: the retained GPU
+    // sprite layer only repaints on dirty rects, so the origin kept a stale
+    // sprite forever (operator's 'ghost crane' - renders, no hover, unhittable)
+    if (IsVisible())
+        theApp.m_wndWorld.InvalidateWindow(CWndWorld::visible | CWndWorld::other_units);
+
+    ReleaseOwnership();
+
+    m_ptHead = ptHead;
+    if (GetData()->GetVehFlags() & CTransportData::FL1hex)
+        m_ptTail = m_ptHead;
+    else {
+        m_ptTail = m_ptHead;
+        m_ptTail.y += 1;
+        m_ptTail.Wrap();
+    }
+    m_ptNext = m_ptHead;
+    m_hexDest = hexDest;
+    m_ptDest = CSubHex(hexDest);
+    m_iDir = CalcDir();
+    ZeroMoveParams();
+    SetLoc(TRUE);
+    AtNewLoc();
+
+    // deploy ladder: only take the spot if it is actually free
+    if ((theBuildingHex._GetBuilding(m_ptHead) == NULL) &&
+        (theVehicleHex.GetVehicle(m_ptHead) == NULL) &&
+        (theVehicleHex.GetVehicle(m_ptTail) == NULL)) {
+        TakeOwnership();
+        _SetEventAndRoute(none, stop);
+    } else
+        _SetEventAndRoute(none, cant_deploy);
+
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+    { char szR[96]; sprintf(szR, "[RELOC] veh %lu re-placed at %d,%d own %d\n",
+            (unsigned long)GetID(), m_ptHead.x / 2, m_ptHead.y / 2, (int)m_cOwn); OutputDebugStringA(szR); }
+#endif
+
+    ASSERT_VALID (this);
 }
 
 void CVehicle::CantInBldg(CBuilding const *pBldg) {
@@ -2923,8 +3151,10 @@ void CVehicleHex::CheckHex(CSubHex const &_sub) {
         logPrintf(LOG_PRI_CRITICAL, LOG_VEH_MOVE, "*** Vehicle %d at m_cOwn == 0, owns (%d,%d)", pVeh->GetID(), _sub.x,
                   _sub.y);
 #endif
-        TRAP();
-        ASSERT (FALSE);
+        // was TRAP+ASSERT - ReleaseOwnership frees only head/tail/next, so a
+        // live vehicle entering a building can leave a stale 4th claim; this
+        // checker IS the vanilla recovery (crashed the 16:08 soak)
+        EN_TRAP_REMOVED( "CheckHex: claim with m_cOwn==0 - released below" );
         ReleaseHex(_sub, pVeh);
         return;
     }
@@ -2934,8 +3164,7 @@ void CVehicleHex::CheckHex(CSubHex const &_sub) {
         logPrintf(LOG_PRI_CRITICAL, LOG_VEH_MOVE, "*** Vehicle %d at m_cOwn == 1, didn't release (%d,%d)",
                   pVeh->GetID(), _sub.x, _sub.y);
 #endif
-        TRAP();
-        ASSERT (FALSE);
+        EN_TRAP_REMOVED( "CheckHex: stale non-footprint claim - released below" );
         ReleaseHex(_sub, pVeh);
     }
 }
@@ -2947,6 +3176,16 @@ void CVehicle::PostArrivedOrBlocked() {
     if (m_ptDest == m_ptHead) {
         // tell the AI
         if (GetOwner()->IsAI()) {
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+            {
+                // arrival-path ground truth: does the AI get told?
+                char szA[112];
+                sprintf(szA, "[ARRPOST] plyr %d veh %lu vtype %d mode %d at %d,%d dest %d,%d\n",
+                        GetOwner()->GetPlyrNum(), (unsigned long)GetID(), GetData()->GetType(),
+                        (int)m_cMode, m_ptHead.x / 2, m_ptHead.y / 2, m_ptDest.x / 2, m_ptDest.y / 2);
+                OutputDebugStringA(szA);
+            }
+#endif
 #ifdef _LOGOUT
             logPrintf(LOG_PRI_CRITICAL, LOG_VEH_MOVE, "Tell AI vehicle %d arrived dest sub (%d,%d)", GetID(),
                       m_ptHead.x, m_ptHead.y);
@@ -3016,6 +3255,10 @@ static void feCheckSub(CSubHex const &_sub, void *pData) {
     // transport in if waiting
     CBuilding *pBldg = theBuildingHex._GetBuilding(pVeh->GetHexDest());
     if ((pVeh->GetHexOwnership()) && (pBldg == pData) && (pBldg->GetOwner() == pVeh->GetOwner())) {
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+        { char szF[96]; sprintf(szF, "[XPORTIN] veh %lu force-transported into dest bldg (fallback)\n",
+                                (unsigned long)pVeh->GetID()); OutputDebugStringA(szF); }
+#endif
         pVeh->ReleaseOwnership();
         pVeh->_SetRouteMode(CVehicle::stop);
         pVeh->ForceAtDest();
@@ -3028,6 +3271,10 @@ static void feCheckSub(CSubHex const &_sub, void *pData) {
     // if blocked and touching building - make cant_deploy
     if (theBuildingHex._GetBuilding(pVeh->GetPtTail()) == pData)
         if (pVeh->GetRouteMode() == CVehicle::blocked) {
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+            { char szF[96]; sprintf(szF, "[XPORTIN] veh %lu blocked-at-bldg -> cant_deploy (fallback)\n",
+                                    (unsigned long)pVeh->GetID()); OutputDebugStringA(szF); }
+#endif
             pVeh->ReleaseOwnership();
             pVeh->_SetRouteMode(CVehicle::cant_deploy);
 #ifdef _LOGOUT

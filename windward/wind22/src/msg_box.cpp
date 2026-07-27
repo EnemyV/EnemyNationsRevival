@@ -12,7 +12,7 @@
 #include "_windwrd.h"
 
 
-BOOL CALLBACK MsgBoxDlgProc( HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam );
+INT_PTR CALLBACK MsgBoxDlgProc( HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam );
 static HWND hDlgBox = NULL;
 
 
@@ -112,15 +112,13 @@ void EnableAllWindows( HWND hWnd, BOOL bEnable ) {
 
 int WINAPI ExtMsgBox( const char* psText, UINT uStyle, long lHelp, const char* psButtons, LOOPPROC lpFn ) {
 
-    ASSERT( AfxGetApp() != NULL );
-
     // the parent is the active window if it is part of our app
     HWND hWndPar = GetActiveWindow();
     if ( hWndPar != NULL )
         if ( GetWindowThreadProcessId( hWndPar, NULL ) != GetCurrentThreadId() )
             hWndPar = NULL;
 
-    return ( ExtMsgBox( hWndPar, psText, AfxGetAppName(), uStyle, lHelp, psButtons, lpFn ) );
+    return ( ExtMsgBox( hWndPar, psText, "Enemy Nations", uStyle, lHelp, psButtons, lpFn ) );
 }
 
 int WINAPI ExtMsgBox( CWnd* pWnd, const char* psText, int iRes, UINT uStyle, long lHelp, const char* psButtons, LOOPPROC lpFn ) {
@@ -133,8 +131,6 @@ int WINAPI ExtMsgBox( CWnd* pWnd, const char* psText, int iRes, UINT uStyle, lon
 int WINAPI ExtMsgBox( HWND hWndPar, const char* psText, const char* psTitle, UINT uStyle, long lHelp, const char* psButtons, LOOPPROC lpFn ) {
     volatile int iRtn = -1;
     MBDATA mbd;
-
-    ASSERT( AfxGetInstanceHandle() != NULL );
 
     memset( &mbd, 0, sizeof( mbd ) );
     mbd.piRtn = &iRtn;
@@ -355,14 +351,14 @@ int WINAPI ExtMsgBox( HWND hWndPar, const char* psText, const char* psTitle, UIN
     if ( ( pBuf = cgDlg.GetPtr( dwOff ) ) != NULL )      // 4/26/96 BobP
         memset( pBuf, 0, 32 );
 
-    HWND hDlg = CreateDialogIndirect( AfxGetInstanceHandle(),  // 4/26/96 BobP
+    HWND hDlg = CreateDialogIndirect( GetModuleHandleA(NULL),  // 4/26/96 BobP
                                       (const DLGTEMPLATE*)cgDlg.GetPtr(), hWndPar, MsgBoxDlgProc );
     if ( hDlg == NULL ) {
         ASSERT( FALSE );
         return ( MessageBox( hWndPar, psText, psTitle, uStyle ) );
     }
 
-    SetWindowLong( hDlg, DWL_USER, (LONG)( void FAR* ) ( &mbd ) );
+    SetWindowLongPtr( hDlg, DWLP_USER, (LONG_PTR)( void* ) ( &mbd ) );   // x64: pointer-width user data
     cgDlg.Free();
 
     // disable parent
@@ -431,7 +427,7 @@ int WINAPI ExtMsgBox( HWND hWndPar, const char* psText, const char* psTitle, UIN
     return ( iRtn );
 }
 
-BOOL CALLBACK MsgBoxDlgProc( HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam ) {
+INT_PTR CALLBACK MsgBoxDlgProc( HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam ) {
     MBDATA* pMbd;
 
     switch ( uMsg ) {
@@ -475,7 +471,7 @@ BOOL CALLBACK MsgBoxDlgProc( HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam 
         break;
 
     case WM_PAINT:
-        pMbd = (MBDATA*)GetWindowLong( hDlg, DWL_USER );
+        pMbd = (MBDATA*)GetWindowLongPtr( hDlg, DWLP_USER );
         if ( ( pMbd == NULL ) || ( pMbd->hIcon == NULL ) )
             break;
         PAINTSTRUCT ps;
@@ -487,25 +483,20 @@ BOOL CALLBACK MsgBoxDlgProc( HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam 
     case WM_COMMAND:
         if ( ( LOWORD( lParam ) == 0 ) || ( HIWORD( lParam ) != BN_CLICKED ) )
             break;
-        if ( ( pMbd = (MBDATA*)GetWindowLong( hDlg, DWL_USER ) ) == NULL )
+        if ( ( pMbd = (MBDATA*)GetWindowLongPtr( hDlg, DWLP_USER ) ) == NULL )
             break;
 
         // check for help
         if ( wParam == pMbd->wHelpBtn ) {
             const char* pHelpFile;
             char sName[130];
-            CWinApp* pApp = AfxGetApp();
-            if ( pApp != NULL )
-                pHelpFile = pApp->m_pszHelpFilePath;
-            else {
-                GetModuleFileName( AfxGetInstanceHandle(), sName, 128 );
-                int iLen = strlen( sName );
-                if ( iLen < 3 )
-                    break;
-                sName[iLen - 3] = 0;
-                strcat( sName, "HLP" );
-                pHelpFile = sName;
-            }
+            GetModuleFileNameA( NULL, sName, 128 );
+            int iLen = strlen( sName );
+            if ( iLen < 3 )
+                break;
+            sName[iLen - 3] = 0;
+            strcat( sName, "HLP" );
+            pHelpFile = sName;
 
             if ( pMbd->lHelp == 0 )
                 WinHelp( hDlg, pHelpFile, HELP_CONTENTS, 0 );

@@ -167,7 +167,11 @@ void CMmioEmbeddedFile::Open( HANDLE hFile, const char* pFileName ) {
     (void)memset( &info, 0, sizeof( info ) );
     info.fccIOProc = FOURCC_DOS;
     info.pchBuffer = NULL;
+#ifdef _WIN32
     info.adwInfo[0] = (DWORD)hFile; // NOTE: Added C style cast. This will explode on x64!
+#else
+    info.adwInfo[0] = (DWORD_PTR)hFile; // Linux: adwInfo is pointer-width; no truncation.
+#endif
 
 
     this->m_hMmio = mmioOpen( NULL, &info, MMIO_READ | MMIO_DENYWRITE | MMIO_ALLOCBUF );

@@ -291,9 +291,11 @@ typedef struct VPCommData
 
 typedef const VPCOMMDATA* LPCVPCOMMDATA;
 
-const DWORD VP_MAXPLAYERDATA  = 256;
-const DWORD VP_MAXSESSIONDATA = 256;
-const DWORD VP_MAXSENDDATA    = 500;
+const DWORD VP_MAXPLAYERDATA  = 512;
+const DWORD VP_MAXSESSIONDATA = 512;
+// SenumREP wire size = dataSize + 90 bytes (10 hdr + 80 VPSESSIONINFO fields).
+// VP_MAXSENDDATA must exceed VP_MAXSESSIONDATA + 90 to avoid false disconnect.
+const DWORD VP_MAXSENDDATA    = 700;
 
 enum VP_SESSIONFLAGS
 {

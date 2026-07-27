@@ -37,12 +37,12 @@ inline int CUnitData::_GetFireRate() const {
     return (m_iFireRate);
 }
 
-inline CString const &CUnitData::GetDesc() const {
+inline std::string const &CUnitData::GetDesc() const {
     ASSERT_STRICT_VALID (this);
     return (m_sDesc);
 }
 
-inline CString const &CUnitData::GetText() const {
+inline std::string const &CUnitData::GetText() const {
     ASSERT_STRICT_VALID (this);
     return (m_sText);
 }
@@ -88,6 +88,14 @@ inline void CUnit::AddToStore(int iInd, int iNum) {
 
 inline int CUnit::GetSpottingRange() const {
     ASSERT_STRICT_VALID (this);
+    // Total Surveillance edict: live vision modifier applied on read (clamped — callers index
+    // arrays with the result). Edict-off (mult<=1) returns the raw value unchanged.
+    CPlayer* pOwner = GetOwner ();
+    if ( pOwner != NULL ) {
+        float fMult = pOwner->GetEdictVisionMult ();
+        if ( fMult > 1.0f )
+            return ( __min ( MAX_SPOTTING, (int)( m_iSpottingRange * fMult + 0.5f ) ) );
+    }
     return (m_iSpottingRange);
 }
 
@@ -161,7 +169,10 @@ inline BOOL CUnit::GetSee(CUnit *pSpotter) { return (m_pdwPlyrsSee[pSpotter->Get
 
 
 inline void *CProjBase::operator new(size_t iSiz) {
-    TRAP(iSiz > PROJ_BASE_ALLOC_SIZE);
+    // Guard against the actual block size, not PROJ_BASE_ALLOC_SIZE: the pool
+    // hands out PROJ_POOL_BLOCK-byte blocks, so an object larger than that is
+    // the real overrun condition.
+    TRAP(iSiz > PROJ_POOL_BLOCK);
     return m_memPool.alloc();
 }
 

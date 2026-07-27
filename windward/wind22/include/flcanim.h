@@ -78,24 +78,19 @@ public:
 #pragma pack( 1 )
 
 class CFlcFrameHeader
-#if _DEBUG
-    : public CObject
-#endif
 {
 
 public:
     int GetSize() const {
-        ASSERT_STRICT(AssertValid());
         return m_iSize;
     }
 
     int GetChunkCount() const {
-        ASSERT_STRICT(AssertValid());
         return m_nChunks;
     }
 
 #ifdef _DEBUG
-    void AssertValid( ) const { CObject::AssertValid( ); };
+    void AssertValid( ) const {}
 #endif
 
     int m_iSize;
@@ -112,9 +107,6 @@ public:
 #pragma pack( 1 )
 
 class CFlcChunkHeader
-#if _DEBUG
-    : public CObject
-#endif
 {
 
 public:
@@ -131,17 +123,15 @@ public:
     };
 
     uint32_t GetSize() const {
-        ASSERT_STRICT(AssertValid());
         return m_iSize;
     }
 
     uint16_t GetType() const {
-        ASSERT_STRICT(AssertValid());
         return m_wType;
     }
 
 #ifdef _DEBUG
-    void AssertValid( ) const { CObject::AssertValid( ); }
+    void AssertValid( ) const {}
 #endif
 
     uint32_t m_iSize;
@@ -153,9 +143,6 @@ public:
 //----------------------------- C F l c F r a m e --------------------------
 
 class CFlcFrame
-#ifdef _DEBUG
-    : public CObject
-#endif
 {
 
 public:
@@ -191,7 +178,7 @@ public:
     void LoadNextFrame();
 
 #ifdef _DEBUG
-    void AssertValid( ) const;
+    void AssertValid( ) const {}
 #endif
 
 private:
@@ -208,9 +195,6 @@ private:
 //------------------------------ C F l c A n i m ---------------------------
 
 class CFlcAnim
-#ifdef _DEBUG
-    : public CObject
-#endif
 {
 
 public:
@@ -255,7 +239,7 @@ public:
     }
 
 #ifdef _DEBUG
-  //  void AssertValid( ) const;
+    void AssertValid( ) const {}
 #endif
 
 protected:

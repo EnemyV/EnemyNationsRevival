@@ -13,6 +13,7 @@
 
 #include "error.h"
 #include "lastplnt.h"
+#include "SaveCompat.h"
 #include "stdafx.h"
 
 
@@ -328,34 +329,8 @@ int CInitAttrib::ComputePts( int iVal ) const
     return ( 0 );
 }
 
-CString CInitAttrib::GetLine( int iVal ) const
-{
-
-    ASSERT_VALID( this );
-    CString sRtn;
-    int     iPts = ComputePts( iVal );
-
-    switch ( m_iTyp )
-    {
-    case ATRIB_TYP_RANGE:
-        sRtn = m_sLine + "\t" + IntToCString( iVal ) + "%\t(" + IntToCString( iPts ) + ")";
-        break;
-    case ATRIB_TYP_UNITS:
-        sRtn = m_sLine + "\t" + IntToCString( iVal ) + "\t(" + IntToCString( iPts ) + ")";
-        break;
-    case ATRIB_TYP_SPLYS:
-        sRtn = m_sLine + "\t" + IntToCString( iVal ) + "\t(" + IntToCString( iPts ) + ")";
-        break;
-    case ATRIB_TYP_FEE:
-        if ( iVal )
-            sRtn = m_sLine + "\tYes\t(" + IntToCString( iPts ) + ")";
-        else
-            sRtn = m_sLine + "\tNo\t(0)";
-        break;
-    }
-
-    return ( sRtn );
-}
+// Dead: CInitAttrib::GetLine(int) had no callers; class itself appears
+// to have no header anymore. Removed.
 
 #ifdef _DEBUG
 void CInitAttrib::AssertValid( ) const
@@ -371,13 +346,16 @@ void CInitAttrib::AssertValid( ) const
 
     // BUGBUG - do the rest
 
-    ASSERT_VALID_CSTRING( &m_sLine );
-    ASSERT_VALID_CSTRING( &m_sDesc );
+    // m_sLine / m_sDesc converted to std::string (Phase 5c) — no MFC validator.
 }
 #endif
 
 
-static CString sHdr( "RaceData file\n\032" );
+// Magic-number tag at the start of a serialized race-data archive.
+// SaveCompat.h's CArchive overloads preserve binary equivalence between
+// CString and std::string, so converting this from CString doesn't change
+// the on-disk format.
+static const std::string sHdr( "RaceData file\n\032" );
 
 void CRaceDefinition::Serialize( CArchive& ar )
 {
@@ -398,7 +376,7 @@ void CRaceDefinition::Serialize( CArchive& ar )
 
     else
     {
-        CString sTmp;
+        std::string sTmp;
         ar >> sTmp;
         if ( sTmp != sHdr )
             ThrowError( ERR_TLP_BAD_RCE_FILE );

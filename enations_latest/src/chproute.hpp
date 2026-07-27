@@ -9,11 +9,11 @@
 //
 ////////////////////////////////////////////////////////////////////////////
 
-#include "CAIMsg.hpp"
-#include "CAIData.hpp"
+#include "caimsg.hpp"
+#include "caidata.hpp"
 
-//#include "CAIUnit.hpp"
-//#include "CAIHex.hpp"
+//#include "caiunit.hpp"
+//#include "caihex.hpp"
 
 #ifndef __CHPROUTE_HPP__
 #define __CHPROUTE_HPP__
@@ -75,6 +75,13 @@ public:
 	void		MsgGiveVeh (CVehicle const * pVeh);
 	void		MsgArrived (CVehicle const * pVeh);
     void        MsgErrGoto (CVehicle const * pVeh);
+
+	// periodic unstick pass (called once per game second from the main loop).
+	// The original router is purely event-driven: a blocked or missed arrival
+	// left truck/ship pairs waiting forever and seaports jammed.  This
+	// re-derives stuck rendezvous state from live game state and re-issues
+	// the appropriate step.
+	void		Pump (void);
 
 protected:
 	// the game's message interface to the router

@@ -14,7 +14,10 @@
 // scanlist.h : Scan convert a polygon
 //
 
-#ifndef __AFXWIN_H__
+// Phase 1g step 2: the original PCH guard checked __AFXWIN_H__ to make sure
+// stdafx.h was the first include. Under the stub gates we don't include
+// afxwin.h at all, so accept either the legacy marker or windows.h's _WINDOWS_.
+#if !defined(__AFXWIN_H__) && !defined(_WINDOWS_)
 #error include 'stdafx.h' before including this file for PCH
 #endif
 
@@ -25,12 +28,12 @@
 //#else
 //class ScanList
 //#endif
-class ScanList: public CObject {
+class ScanList {
 public:
 
     ScanList() = default;
     ScanList( int iMaxHeight );
-    ~ScanList() final;
+    ~ScanList();
 
     static BOOL CheckPoly( CPoint const apt[], int iCount );
 
@@ -56,7 +59,7 @@ public:
     }
 
 #ifdef _DEBUG
-    void AssertValid() const override;
+    void AssertValid() const;
 #endif
 
 //protected:

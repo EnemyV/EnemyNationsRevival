@@ -190,7 +190,7 @@ public:
     CVPLIter(const CVPList &q) : theList(q) { curElement = q.First(); }
 
     CVPLink *Next() {
-        register CVPLink *retValue = curElement;
+        CVPLink *retValue = curElement;   // removed C++17-illegal `register` (clang hard-errors)
         if (retValue) {
             curElement = retValue->Next();
         }

@@ -68,8 +68,8 @@ protected:
 
 	BOOL				m_bShowLic;
 	BOOL				m_bStartMusic;
-	CString			m_sDataDir;
-	CString			m_sPatchDir;
+	std::string		m_sDataDir;
+	std::string		m_sPatchDir;
 	DWORD				m_mciDevID;
 	HWND				m_hWndAvi;
 	CList <char *, char *>	m_lstFiles;

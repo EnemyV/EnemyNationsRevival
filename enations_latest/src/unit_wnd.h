@@ -65,7 +65,7 @@ protected:
 	CListBox		m_listbox;
 	CTextButton	m_Btns[NUM_ROUTE_BTNS];
 
-	void		VehDesc (CVehicle *pVeh, POSITION & pos, CString & sDesc);
+	void		VehDesc (CVehicle *pVeh, POSITION & pos, std::string & sDesc);
 
 	//{{AFX_MSG(CWndRoute)
 	afx_msg int OnCreate(LPCREATESTRUCT lpCreateStruct);
@@ -249,147 +249,14 @@ protected:
 
 
 /////////////////////////////////////////////////////////////////////////////
-// CDlgBuildStructure dialog
+// CDlgBuildStructure / CDlgBuildTransport — bodies excluded (Phase 2d).
+// SDL2BuildStructure / SDL2BuildTransport are the runtime replacements.
+// Forward declarations preserve friend declarations and m_pDlg* member
+// pointer types in building.h / vehicle.h without dragging in CDialog
+// inheritance or the old DDX CString members.
 
-class CDlgBuildStructure : public CDialog
-{
-// Construction
-public:
-	CDlgBuildStructure (CWnd *, CVehicle *);	// standard constructor
-	void		Create (CWnd *);
-	void		UpdateChoices ();
-
-// Dialog Data
-	//{{AFX_DATA(CDlgBuildStructure)
-	enum { IDD = IDD_BUILD_STRUCTURE };
-	CWndOD< CButton >	m_btnBuild;
-	//}}AFX_DATA
-
-// Implementation
-protected:
-	BOOL			CanBuild (int iIndex, CStructureData const * pSd);
-
-	CStructureData const * m_pSd;
-	CString		m_strDesc;
-
-	CString		m_sCost;
-	CString		m_sHave;
-	CString		m_sNeed;
-	CString		m_sTime;
-	CString		m_sOper;
-	CString		m_sPeople;
-	CString		m_sPower;
-
-	CVehicle *	m_pVehPar;
-
-	int				m_iCatOn;
-	int				m_iBldgOn;
-	CUnitButton		m_btnCat [6];
-	CUnitButton		m_btnBldg [6];
-
-	// for drawing the listboxes
-	CDIB *		m_pDibBkgnd;		// build up background (back & text)
-	CDIB *		m_pDibBtn;
-
-	virtual void DoDataExchange(CDataExchange* pDX);	// DDX/DDV support
-
-	// ClassWizard generated virtual function overrides
-	//{{AFX_VIRTUAL(CDlgBuildStructure)
-	protected:
-	virtual void			PostNcDestroy () { delete this; }
-	//}}AFX_VIRTUAL
-
-	// Generated message map functions
-	//{{AFX_MSG(CDlgBuildStructure)
-	virtual BOOL OnInitDialog();
-	virtual void OnOK();
-	virtual void OnCancel();
-	afx_msg void OnDestroy();
-	afx_msg BOOL OnEraseBkgnd(CDC* pDC);
-	afx_msg void OnPaint();
-	afx_msg LRESULT OnSelChange (WPARAM wParam, LPARAM lParam);
-	afx_msg LRESULT OnDblClk (WPARAM wParam, LPARAM lParam);
-	afx_msg void OnSelchangeBuildListCat();
-	afx_msg void OnSelchangeBuildListBldgs();
-	afx_msg void OnDblclkBuildListBldgs();
-	afx_msg void OnDrawItem(int nIDCtl, LPDRAWITEMSTRUCT lpDrawItemStruct);
-	afx_msg void OnPaletteChanged(CWnd* pFocusWnd);
-	afx_msg BOOL OnQueryNewPalette();
-	//}}AFX_MSG
-	DECLARE_MESSAGE_MAP()
-};
-
-/////////////////////////////////////////////////////////////////////////////
-// CDlgBuildVehicle dialog
-
-class CDlgBuildTransport : public CDialog
-{
-// Construction
-public:
-	CDlgBuildTransport (CWnd *, CVehicleBuilding *);	// standard constructor
-	void		Create (CWnd *);
-	void		UpdateChoices ();
-	void		UpdateStatus ( int iPer );
-
-// Dialog Data
-	//{{AFX_DATA(CDlgBuildTransport)
-	enum { IDD = IDD_BUILD_TRANSPORT };
-	CEdit	m_edtNum;
-	CSpinButtonCtrl	m_spnNum;
-	CWndOD< CButton >	m_btnBuild;
-	CString			m_sNum;
-	//}}AFX_DATA
-
-// Implementation
-protected:
-	CBuildUnit const * m_pBu;
-	CString		m_strDesc;
-
-	int				m_iNum;
-	CString		m_sCost;
-	CString		m_sHave;
-	CString		m_sNeed;
-	CString		m_sTime;
-	CString		m_sPeople;
-
-	CVehicleBuilding *	m_pBldgPar;
-	CStatInst				m_statInst;				// data to draw the icons
-
-	int				m_iVehOn;
-	CUnitButton		m_btnVeh [6];
-
-	CDIB * 		m_pDibBkgnd;		// for building up background
-	CDIB *		m_pDibBtn;			// for building ok/cancel buttons
-
-	virtual void DoDataExchange(CDataExchange* pDX);	// DDX/DDV support
-
-	// ClassWizard generated virtual function overrides
-	//{{AFX_VIRTUAL(CDlgBuildTransport)
-	protected:
-	virtual void			PostNcDestroy () { delete this; }
-	//}}AFX_VIRTUAL
-
-	// Generated message map functions
-	//{{AFX_MSG(CDlgBuildTransport)
-	afx_msg void OnChangeNum();
-	virtual BOOL OnInitDialog();
-	afx_msg LRESULT OnSelChange (WPARAM wParam, LPARAM lParam);
-	afx_msg LRESULT OnDblClk (WPARAM wParam, LPARAM lParam);
-	virtual void OnOK();
-	virtual void OnCancel();
-	afx_msg void OnDestroy();
-	afx_msg BOOL OnEraseBkgnd(CDC* pDC);
-	afx_msg void OnPaint();
-	afx_msg void OnDrawItem(int nIDCtl, LPDRAWITEMSTRUCT lpDrawItemStruct);
-	afx_msg void OnSelchangeBuildList();
-	afx_msg void OnPaletteChanged(CWnd* pFocusWnd);
-	afx_msg BOOL OnQueryNewPalette();
-	//}}AFX_MSG
-	DECLARE_MESSAGE_MAP()
-
-  protected:
-    bool m_bInitComplete = false;
-};
+class CDlgBuildStructure;
+class CDlgBuildTransport;
 
 
 #endif

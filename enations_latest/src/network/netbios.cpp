@@ -409,13 +409,13 @@ MYNCB *	CNetbios::GetNcb ()
 void CNetbios::SetName (PUCHAR pDest, LPCSTR pSrc)
 {
 
-	int iLeft = NAME_MAX;
+	int iLeft = NET_NAME_MAX;
 	while ((*pSrc) && (iLeft > 0))
 		{
 		*pDest++ = *pSrc++;
 		iLeft--;
 		}
-	iLeft += NCBNAMSZ - NAME_MAX;
+	iLeft += NCBNAMSZ - NET_NAME_MAX;
 	while (iLeft > 0)
 		{
 		*pDest++ = ' ';
@@ -465,14 +465,7 @@ BOOL CNetbios::AddGroupName (LPCSTR pName, LPCVOID pData)
 		return (TRUE);
 		}
 
-#ifdef BUGBUG
-		{
-		CString sErr;
-		sErr.LoadString (IDS_NETBIOS_ADD_GROUP_ERROR);
-		csPrintf (&sErr, pName);
-		MsgBox (sErr);
-		}
-#endif
+	// (BUGBUG message-box on netbios add-group error removed; never compiled)
 
 	_asm int 3
 	pNcb->msg.bInUse = FALSE;
@@ -515,14 +508,7 @@ BOOL CNetbios::AddName (LPCSTR pName, LPCVOID pData)
 		return (TRUE);
 		}
 
-#ifdef BUGBUG
-		{
-		CString sErr;
-		sErr.LoadString (IDS_NETBIOS_ADD_DUP);
-		csPrintf (&sErr, pName);
-		MsgBox (sErr);
-		}
-#endif
+	// (BUGBUG message-box on netbios add-dup removed; never compiled)
 
 	_asm int 3
 	pNcb->msg.bInUse = FALSE;
@@ -766,7 +752,7 @@ BOOL CNetbios::ReceiveDatagram (int iNum, LPCVOID pUser)
 		{
 		pNcb->msg.bErr = NET_ERR_NONE;
 		pNcb->msg.iLen = pNcb->ncb.ncb_length;
-		memcpy (pNcb->msg.sName, pNcb->ncb.ncb_callname, NAME_MAX);
+		memcpy (pNcb->msg.sName, pNcb->ncb.ncb_callname, NET_NAME_MAX);
 		PostMessage (m_hWnd, WM_NET_COMPLETE, 0, (LPARAM) &(pNcb->msg));
 		return (TRUE);
 		}

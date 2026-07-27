@@ -12,9 +12,15 @@
 #include "world.h"
 #include "lastplnt.h"
 #include "error.h"
+#include "Perf.h"   // radar render profiling + O(units) minimap
 #include "area.h"
 #include "icons.h"
 #include "bitmaps.h"
+#include "GameWindow.h"
+#include "SDL2Compositor.h"
+#include "SDL2Panel.h"
+#include "RenderingAdapter.h"
+#include <SDL.h>
 
 #include "ui.inl"
 #include "terrain.inl"
@@ -35,6 +41,7 @@ const int BTN_Y_OFF = 8;
 
 
 DWORD CWndWorld::m_clrTerrain[CHex::num_types];        // same order as CHex m_bType
+DWORD CWndWorld::m_clrTerrainPaper[CHex::num_types];   // parchment palette — world map only
 DWORD CWndWorld::m_clrResources[4];
 DWORD CWndWorld::m_clrResHigh[4];
 DWORD CWndWorld::m_clrLocation;
@@ -55,6 +62,25 @@ COLORREF CWndWorld::m_rgbTerrain[CHex::num_types] = {
         RGB (66, 108, 81),
         RGB (87, 83, 51),
         RGB (131, 98, 69)};
+// Parchment "paper navigation map" palette — used by the WORLD MAP only (the radar
+// keeps the satellite-style m_rgbTerrain above). Cream/tan land, ink-blue water,
+// sepia relief — order matches CHex m_bType (city, desert, forest, lake, hill,
+// mountain, ocean, plain, river, road, rough, swamp, coastline, fields).
+COLORREF CWndWorld::m_rgbTerrainPaper[CHex::num_types] = {
+        RGB (150, 122,  92),    // city      — darker sepia (built-up)
+        RGB (227, 207, 160),    // desert    — pale sand
+        RGB (158, 168, 120),    // forest    — muted sage-green
+        RGB (140, 165, 175),    // lake      — soft chart-blue
+        RGB (206, 178, 132),    // hill      — light tan
+        RGB (170, 136,  98),    // mountain  — relief brown
+        RGB (120, 150, 168),    // ocean     — ink-blue
+        RGB (224, 205, 158),    // plain     — cream
+        RGB (146, 170, 178),    // river     — chart-blue
+        RGB ( 96,  74,  52),    // road      — dark ink
+        RGB (196, 178, 140),    // rough     — weathered tan
+        RGB (150, 162, 128),    // swamp     — drab olive
+        RGB (188, 196, 178),    // coastline — pale shore
+        RGB (176, 184, 132)};   // fields    — light green-tan
 COLORREF CWndWorld::m_rgbResources[4] = {
         RGB (156, 153, 175),
         RGB (8, 9, 9),
@@ -82,6 +108,7 @@ CWndWorld::CWndWorld() {
 
     m_bRBtnDown = FALSE;
     m_bLBtnDown = FALSE;
+    m_bRCmdDown = FALSE;
     m_bCapMouse = FALSE;
     m_bNewDir = TRUE;
     m_bNewMode = TRUE;
@@ -104,7 +131,7 @@ CWndWorld::CWndWorld() {
     int idsne = IDS_WORLD_NE;
 
     CString s;
-    BOOL    ok = s.LoadString( IDS_WORLD_NE );
+    BOOL    ok = s = EnLoadStdString( IDS_WORLD_NE );
 
     HINSTANCE hRes = AfxGetResourceHandle( );
     TRACE( "Resource handle: %p\n", hRes );
@@ -114,10 +141,10 @@ CWndWorld::CWndWorld() {
 
     // moved to oncreate
     /*
-    m_sDir[0].LoadString( IDS_WORLD_NE );
-    m_sDir[1].LoadString(IDS_WORLD_SE);
-    m_sDir[2].LoadString(IDS_WORLD_SW);
-    m_sDir[3].LoadString(IDS_WORLD_NW);
+    m_sDir[0] = EnLoadStdString( IDS_WORLD_NE );
+    m_sDir[1] = EnLoadStdString(IDS_WORLD_SE);
+    m_sDir[2] = EnLoadStdString(IDS_WORLD_SW);
+    m_sDir[3] = EnLoadStdString(IDS_WORLD_NW);
        */
 }
 
@@ -154,8 +181,10 @@ void CWndWorld::ApplyColors(CDIB const *pDib) {
     if (pDib == NULL)
         return;
 
-    for (int iOn = 0; iOn < CHex::num_types; iOn++)
-        m_clrTerrain[iOn] = pDib->GetColorValue(m_rgbTerrain[iOn]);
+    for (int iOn = 0; iOn < CHex::num_types; iOn++) {
+        m_clrTerrain[iOn]      = pDib->GetColorValue(m_rgbTerrain[iOn]);
+        m_clrTerrainPaper[iOn] = pDib->GetColorValue(m_rgbTerrainPaper[iOn]);
+    }
     m_clrLocation = pDib->GetColorValue(m_rgbLocation);
     for (int iOn = 0; iOn < 4; iOn++) {
         m_clrResources[iOn] = pDib->GetColorValue(m_rgbResources[iOn]);
@@ -181,6 +210,7 @@ void CWndWorld::Create(BOOL bStart) {
 
     m_bRBtnDown = FALSE;
     m_bLBtnDown = FALSE;
+    m_bRCmdDown = FALSE;
     m_bCapMouse = FALSE;
 
     // the area window must already exist
@@ -188,39 +218,52 @@ void CWndWorld::Create(BOOL bStart) {
     NewAreaMap(theAreaList.GetTop());
 
     
-    if ( m_sDir[0].IsEmpty( ) )
+    if ( m_sDir[0].empty( ) )
     {
-        m_sDir[0].LoadString( IDS_WORLD_NE );
-        m_sDir[1].LoadString( IDS_WORLD_SE );
-        m_sDir[2].LoadString( IDS_WORLD_SW );
-        m_sDir[3].LoadString( IDS_WORLD_NW );
+        m_sDir[0] = EnLoadStdString( IDS_WORLD_NE );
+        m_sDir[1] = EnLoadStdString( IDS_WORLD_SE );
+        m_sDir[2] = EnLoadStdString( IDS_WORLD_SW );
+        m_sDir[3] = EnLoadStdString( IDS_WORLD_NW );
     }
 
     // get min size
-    CString sTitle, sClass;
-    m_bIsRadar = theGame.GetMe()->GetExists(CStructureData::command_center);
-    if (m_bIsRadar)
-        sTitle.LoadString(IDS_WORLD_TITLE_RADAR);
-    else
-        sTitle.LoadString(IDS_WORLD_TITLE_MAP);
-
-    if (m_pWndArea == NULL)
-        csPrintf(&sTitle, (char const *) "");
-    else
-        csPrintf(&sTitle, (char const *) m_sDir[m_pWndArea->GetAA().m_iDir]);
+    // Radar mode BEFORE you land (rocket not yet placed) and again once you own a command
+    // center; the parchment world map shows only in between (landed, no command center yet).
+    m_bIsRadar = theGame.GetMe()->GetExists(CStructureData::command_center) ||
+                 !theGame.GetMe()->m_bPlacedRocket;
+    std::string sTitle = strPrintf(
+        EnLoadStdString(m_bIsRadar ? IDS_WORLD_TITLE_RADAR : IDS_WORLD_TITLE_MAP).c_str(),
+        m_pWndArea == NULL ? "" : m_sDir[m_pWndArea->GetAA().m_iDir].c_str());
 
     // World window (so it can have a cross-hair
-    sClass = AfxRegisterWndClass(dwStyleWorldWnd, theApp.LoadStandardCursor(IDC_CROSS), 0, 0);
+    LPCTSTR sClass = CConquerApp::EnRegisterWndClass("EnWorldWnd", dwStyleWorldWnd,
+                                                     theApp.LoadStandardCursor(IDC_CROSS));
+
+    // Default window size. Both the world map and the radar render square art
+    // (288x288, the world is CGameMap m_eX == m_eY) stretched to fill the client,
+    // so a square *client* keeps the map undistorted (the legacy screenX/5 x
+    // screenY/4 default is only ~square at 4:3 and looked squished on widescreen).
+    // BUT the detached window also has our title bar on top, which makes a square
+    // client read as too tall overall. Shorten the client ~8% so the whole window
+    // (client + title bar + frame) looks balanced; the resulting slight map
+    // stretch is small and matches the proportions players are used to.
+    int iWorldClientW = theApp.m_iCol1 + 1;          // client width
+    int iWorldClientH = ( iWorldClientW * 92 ) / 100; // ~8% shorter than square
+    int iWorldDefEX = iWorldClientW + 2 * ::GetSystemMetrics( SM_CXSIZEFRAME );
+    int iWorldDefEY = iWorldClientH + ::GetSystemMetrics( SM_CYCAPTION ) +
+                      2 * ::GetSystemMetrics( SM_CYSIZEFRAME );
 
     // if it crashes here, i think a gfx bitmap is missing?
     // theApp.m_pMainWnd->m_hWnd is wrong, i think
-    if ( CreateEx( 0, sClass, sTitle, dwPopWndStyle, theApp.GetProfileInt( theApp.m_sResIni, "WorldX", 0 ),
-                   theApp.GetProfileInt( theApp.m_sResIni, "WorldY", 0 ),
-                   theApp.GetProfileInt( theApp.m_sResIni, "WorldEX", theApp.m_iCol1 + 1 ),
-                   theApp.GetProfileInt( theApp.m_sResIni, "WorldEY", theApp.m_iRow1 + 1 ), 
+    if ( CreateEx( 0, sClass, sTitle.c_str(), dwPopWndStyle, EnGetProfileInt( theApp.m_sResIni.c_str(), "WorldX", 0 ),
+                   EnGetProfileInt( theApp.m_sResIni.c_str(), "WorldY", 0 ),
+                   EnGetProfileInt( theApp.m_sResIni.c_str(), "WorldEX", iWorldDefEX ),
+                   EnGetProfileInt( theApp.m_sResIni.c_str(), "WorldEY", iWorldDefEY ),
                    theApp.m_pMainWnd->m_hWnd, // window parent!
                    NULL, NULL ) == 0 )
     {
+        OutputDebugStringA( "[REN] CWndWorld::Create CreateEx FAILED (see [CREATEEX] above)\n" );
+        { FILE* _f = fopen( "SDL2Panel.log", "a" ); if ( _f ) { fputs( "[REN] CWndWorld::Create CreateEx FAILED\n", _f ); fclose( _f ); } }
         throw( ERR_RES_CREATE_WND );
     }
 
@@ -250,6 +293,7 @@ BEGIN_MESSAGE_MAP(CWndWorld, CWndAnim)
                     ON_WM_PAINT()
                     ON_WM_DESTROY()
                     ON_WM_SIZE()
+                    ON_WM_MOVE()
                     ON_WM_CREATE()
                     ON_WM_SYSCOMMAND()
                     ON_COMMAND(IDA_ENEMY, OnUnits)
@@ -347,29 +391,32 @@ int CWndWorld::OnCreate(LPCREATESTRUCT lpCreateStruct) {
     m_hAccel = ::LoadAccelerators(theApp.m_hInstance, MAKEINTRESOURCE (IDR_WORLD));
 
     // we had to start with an icon to get a different class
-    ::SetClassLong(m_hWnd, GCL_HCURSOR, NULL);
+    ::SetClassLongPtr(m_hWnd, GCLP_HCURSOR, NULL);
 
-    m_sDir[0].LoadString( IDS_WORLD_NE );
-    m_sDir[1].LoadString( IDS_WORLD_SE );
-    m_sDir[2].LoadString( IDS_WORLD_SW );
-    m_sDir[3].LoadString( IDS_WORLD_NW );
+    m_sDir[0] = EnLoadStdString( IDS_WORLD_NE );
+    m_sDir[1] = EnLoadStdString( IDS_WORLD_SE );
+    m_sDir[2] = EnLoadStdString( IDS_WORLD_SW );
+    m_sDir[3] = EnLoadStdString( IDS_WORLD_NW );
 
-    m_sHelpRMB.LoadString(IDH_WORLD_WIN_RMB);
-    m_sHelp.LoadString(IDH_WORLD_WIN);
-    m_sHelpBtn[pos_res].LoadString(IDH_WORLD_RES);
-    m_sHelpBtn[pos_vis].LoadString(IDH_WORLD_VIS);
-    m_sHelpBtn[pos_mine].LoadString(IDH_WORLD_OWNER);
-    m_sHelpBtn[pos_units].LoadString(IDH_WORLD_UNITS);
-    m_sHelpBtnDis[pos_res].LoadString(IDH_WORLD_RES2);
-    m_sHelpBtnDis[pos_vis].LoadString(IDH_WORLD_VIS2);
-    m_sHelpBtnDis[pos_mine].LoadString(IDH_WORLD_OWNER2);
-    m_sHelpBtnDis[pos_units].LoadString(IDH_WORLD_UNITS2);
+    m_sHelpRMB = EnLoadStdString(IDH_WORLD_WIN_RMB);
+    m_sHelp = EnLoadStdString(IDH_WORLD_WIN);
+    m_sHelpBtn[pos_res] = EnLoadStdString(IDH_WORLD_RES);
+    m_sHelpBtn[pos_vis] = EnLoadStdString(IDH_WORLD_VIS);
+    m_sHelpBtn[pos_mine] = EnLoadStdString(IDH_WORLD_OWNER);
+    m_sHelpBtn[pos_units] = EnLoadStdString(IDH_WORLD_UNITS);
+    m_sHelpBtnDis[pos_res] = EnLoadStdString(IDH_WORLD_RES2);
+    m_sHelpBtnDis[pos_vis] = EnLoadStdString(IDH_WORLD_VIS2);
+    m_sHelpBtnDis[pos_mine] = EnLoadStdString(IDH_WORLD_OWNER2);
+    m_sHelpBtnDis[pos_units] = EnLoadStdString(IDH_WORLD_UNITS2);
 
-    m_bIsRadar = theGame.GetMe()->GetExists(CStructureData::command_center);
+    // Radar mode BEFORE you land (rocket not yet placed) and again once you own a command
+    // center; the parchment world map shows only in between (landed, no command center yet).
+    m_bIsRadar = theGame.GetMe()->GetExists(CStructureData::command_center) ||
+                 !theGame.GetMe()->m_bPlacedRocket;
     if (m_bIsRadar)
         m_sHelpFace = "";
     else
-        m_sHelpFace.LoadString(IDH_WORLD_FACE);
+        m_sHelpFace = EnLoadStdString(IDH_WORLD_FACE);
 
     m_hCurArrow = theApp.LoadStandardCursor(IDC_ARROW);
     m_hCurCross = theApp.LoadCursor(IDC_WORLD);
@@ -407,13 +454,163 @@ int CWndWorld::OnCreate(LPCREATESTRUCT lpCreateStruct) {
                   rect.Width(),
                   rect.Height());
 
-    // DO WE NEED TO SIZE IT?
+    // Create SDL2 panel for this world/radar window
+    if ( theApp.m_gameWindow && theApp.m_gameWindow->GetCompositor() )
+    {
+        CRect screenRect;
+        GetWindowRect( &screenRect );
+        const char* name = m_bIsRadar ? "radar" : "world";
+        // Ensure title bar is on screen (at least TITLE_BAR_HT from top)
+        int panelX = screenRect.left;
+        int panelY = screenRect.top;
+        // Leave room for resize borders and title bar at screen edges
+        if (panelX < SDL2Panel::RESIZE_BORDER)
+            panelX = SDL2Panel::RESIZE_BORDER;
+        int minY = SDL2Panel::TITLE_BAR_HT + SDL2Panel::RESIZE_BORDER;
+        if (panelY < minY)
+            panelY = minY;
+        m_sdlPanel = theApp.m_gameWindow->GetCompositor()->AddPanel(
+            name, panelX, panelY,
+            rect.Width(), rect.Height(), 20 );  // z=20, above area maps
+        m_sdlPanel->SetMovable(true);
+        m_sdlPanel->SetResizable(true);
+        // Same localized title (mode + facing direction) as CommandCenterChange, which
+        // already ran during Init — before this panel existed to receive it.
+        m_sdlPanel->SetTitle(strPrintf(
+            EnLoadStdString(m_bIsRadar ? IDS_WORLD_TITLE_RADAR : IDS_WORLD_TITLE_MAP).c_str(),
+            m_pWndArea == NULL ? "" : m_sDir[m_pWndArea->GetAA().m_iDir].c_str()).c_str());
+
+        // When panel is resized, update the world's DIB and internal data
+        CWndWorld* pResize = this;
+        m_sdlPanel->SetResizeCallback(
+            [pResize](int newW, int newH) {
+                // Trigger the MFC size handler which rebuilds internal bitmaps
+                pResize->m_dibwnd.Size( MAKELPARAM(newW, newH) );
+                pResize->_OnSize();
+            });
+
+        // Keep the hidden MFC stub window glued under the visible SDL panel so
+        // ScreenToClient-based selection (OnLButtonDown band-box, ::GetCursorPos
+        // reads) stays aligned wherever the panel is dragged. See area.cpp for
+        // the rationale.
+        {
+            HWND hMfc = m_hWnd;
+            SDL2Panel* pPanel = m_sdlPanel;
+            pPanel->SetMoveCallback(
+                [hMfc, pPanel](int x, int y, int w, int h) {
+                    int sx, sy;
+                    if ( pPanel->IsDetached() && pPanel->GetOwnWindow() ) {
+                        int wx = 0, wy = 0;
+                        SDL_GetWindowPosition( pPanel->GetOwnWindow(), &wx, &wy );
+                        sx = wx;
+                        sy = wy + pPanel->GetTitleBarHeight();
+                    } else {
+                        sx = x; sy = y;
+                        if ( theApp.m_gameWindow && theApp.m_gameWindow->GetWindow() ) {
+                            int wx = 0, wy = 0;
+                            SDL_GetWindowPosition( theApp.m_gameWindow->GetWindow(), &wx, &wy );
+                            sx += wx; sy += wy;
+                        }
+                    }
+                    // Align the MFC CLIENT rect (what ScreenToClient measures)
+                    // to the content origin, compensating for caption/frame.
+                    RECT wr, cr; POINT tl = { 0, 0 };
+                    ::GetWindowRect( hMfc, &wr );
+                    ::GetClientRect( hMfc, &cr );
+                    ::ClientToScreen( hMfc, &tl );
+                    int ncL = tl.x - wr.left;
+                    int ncT = tl.y - wr.top;
+                    int ncW = ( wr.right - wr.left ) - ( cr.right - cr.left );
+                    int ncH = ( wr.bottom - wr.top ) - ( cr.bottom - cr.top );
+                    ::SetWindowPos( hMfc, NULL, sx - ncL, sy - ncT, w + ncW, h + ncH,
+                                    SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOREDRAW );
+                });
+            pPanel->InvokeMoveCallback();
+        }
+
+        // SDL2-only renderer now: the MFC stub HWND has no visible role. Hide
+        // it from the desktop so the compositor-managed SDL panel (with its
+        // own green title bar) is the only visible window. WS_EX_TRANSPARENT
+        // keeps any stray hit-testing click-through.
+        ::SetWindowLong( m_hWnd, GWL_EXSTYLE,
+            ::GetWindowLong( m_hWnd, GWL_EXSTYLE ) | WS_EX_LAYERED | WS_EX_TRANSPARENT );
+        ::SetLayeredWindowAttributes( m_hWnd, 0, 0, LWA_ALPHA );
+        ::ShowWindow( m_hWnd, SW_HIDE );
+
+        // Route SDL events to CWndWorld's handler methods
+        CWndWorld* pThis = this;
+        m_sdlPanel->SetEventCallback(
+            [pThis](SDL_Event& event, int localX, int localY) -> bool {
+                // Build MFC-style modifier flags
+                UINT flags = 0;
+                Uint32 ms = SDL_GetMouseState(nullptr, nullptr);
+                if (ms & SDL_BUTTON_LMASK) flags |= MK_LBUTTON;
+                if (ms & SDL_BUTTON_RMASK) flags |= MK_RBUTTON;
+                SDL_Keymod km = SDL_GetModState();
+                if (km & KMOD_SHIFT) flags |= MK_SHIFT;
+                if (km & KMOD_CTRL)  flags |= MK_CONTROL;
+
+                CPoint pt(localX, localY);
+
+                switch (event.type) {
+                case SDL_MOUSEBUTTONDOWN:
+                    if (event.button.button == SDL_BUTTON_LEFT)
+                        pThis->OnLButtonDown(flags, pt);
+                    else if (event.button.button == SDL_BUTTON_RIGHT)
+                        pThis->OnRButtonDown(flags, pt);
+                    else if (event.button.button == SDL_BUTTON_MIDDLE)
+                        pThis->OnMButtonDown(flags, pt);
+                    return true;
+                case SDL_MOUSEBUTTONUP:
+                    if (event.button.button == SDL_BUTTON_LEFT)
+                        pThis->OnLButtonUp(flags, pt);
+                    else if (event.button.button == SDL_BUTTON_RIGHT)
+                        pThis->OnRButtonUp(flags, pt);
+                    else if (event.button.button == SDL_BUTTON_MIDDLE)
+                        pThis->OnMButtonUp(flags, pt);
+                    return true;
+                case SDL_MOUSEMOTION:
+                    pThis->OnMouseMove(flags, pt);
+                    pThis->SetMouseState();
+                    return true;
+                case SDL_KEYDOWN:
+                    // IDR_WORLD accelerators (lastplnt.rc): overlay toggles. Ignore
+                    // auto-repeat so a held key doesn't flip the toggle every frame.
+                    // No text input in this window, so no focus/typing guard needed.
+                    if (event.key.repeat)
+                        return true;
+                    switch (event.key.keysym.sym) {
+                    case SDLK_e: pThis->OnUnits();   return true;  // IDA_ENEMY: other units
+                    case SDLK_r: pThis->OnRes();     return true;  // IDA_RESOURSES
+                    case SDLK_u: pThis->OnMine();    return true;  // IDA_UNITS: my units
+                    case SDLK_v: pThis->OnVisible(); return true;  // IDA_VISIBLE: fog
+                    case SDLK_F4:                                  // IDA_CLOSE_WIN: Ctrl+F4 hides
+                        if (event.key.keysym.mod & KMOD_CTRL) {
+                            pThis->OnCloseWin();
+                            return true;
+                        }
+                        break;
+                    }
+                    return false;
+                }
+                return false;
+            });
+
+        // Give the world/radar map its own borderless OS window (purple chrome)
+        // so it can be dragged onto any monitor; the move-callback keeps the
+        // hidden MFC window aligned for selection.
+        m_sdlPanel->Detach( theApp.m_gameWindow.get() );
+
+        // The close [X] hides the window (matches CWndWorld::OnCloseWin); the
+        // World icon in the status bar (CWndBar::GotoWorld) brings it back.
+        m_sdlPanel->SetClosable(true);
+    }
 
     m_bUpdate = TRUE;
     m_iResOn = m_iFrameOn = 0;
 
     // animate us
-    theAnimList.AddHead(this);
+    theAnimList.push_front(this);
 
 #ifdef LOGGINGON
     if ( m_bIsRadar )
@@ -435,7 +632,10 @@ void CWndWorld::CommandCenterChange() {
 
     BOOL bOldRadar = m_bIsRadar;
 
-    m_bIsRadar = theGame.GetMe()->GetExists(CStructureData::command_center);
+    // Radar mode BEFORE you land (rocket not yet placed) and again once you own a command
+    // center; the parchment world map shows only in between (landed, no command center yet).
+    m_bIsRadar = theGame.GetMe()->GetExists(CStructureData::command_center) ||
+                 !theGame.GetMe()->m_bPlacedRocket;
     if (!m_bIsRadar)
         SetButtonState(1, disabled);
     else {
@@ -465,27 +665,36 @@ void CWndWorld::CommandCenterChange() {
         return;
     }
 
-    if (bOldRadar != m_bIsRadar)
+    if (bOldRadar != m_bIsRadar) {
         _OnSize();
+        // The throttled minimap cache (m_pdibRadarStatic) still holds the PREVIOUS mode's
+        // image — e.g. the parchment world map right after a command center is built. Force
+        // a full rebuild on the next ReRender so the radar never flashes the world-map
+        // palette (and vice-versa) during the throttle window.
+        m_dwLastRadarDraw = 0;
+    }
 
     if (iOldMode != m_iMode)
         NewMode();
 
-    CString sTitle;
+    std::string sTitle;
     if (m_bIsRadar) {
         m_sHelpFace = "";
-        sTitle.LoadString(IDS_WORLD_TITLE_RADAR);
+        sTitle = EnLoadStdString(IDS_WORLD_TITLE_RADAR);
     } else {
-        m_sHelpFace.LoadString(IDH_WORLD_FACE);
-        sTitle.LoadString(IDS_WORLD_TITLE_MAP);
+        m_sHelpFace = EnLoadStdString(IDH_WORLD_FACE);
+        sTitle = EnLoadStdString(IDS_WORLD_TITLE_MAP);
     }
 
-    if (m_pWndArea == NULL)
-        csPrintf(&sTitle, (char const *) "");
-    else
-        csPrintf(&sTitle, (char const *) m_sDir[m_pWndArea->GetAA().m_iDir]);
+    const char* pArg = (m_pWndArea == NULL) ? "" : m_sDir[m_pWndArea->GetAA().m_iDir].c_str();
+    sTitle = strPrintf(sTitle.c_str(), pArg);
 
-    SetWindowText(sTitle);
+    SetWindowText(sTitle.c_str());
+    // The SDL2 panel title bar doesn't hear SetWindowText — push the mode change
+    // (Radar <-> World Map, with facing direction) to it too, or the panel keeps
+    // whatever title it was created with (e.g. "Radar" after the rocket lands).
+    if (m_sdlPanel)
+        m_sdlPanel->SetTitle(sTitle.c_str());
     // BUGBUG - if change black it & do noise
 }
 
@@ -497,7 +706,70 @@ void CWndWorld::OnPaint() {
     // Do not call CWnd::OnPaint() for painting messages
 }
 
+void CWndWorld::Draw() {
+    // Blit DIB content to SDL2 panel if available, else use GDI path
+    if ( m_sdlPanel )
+    {
+        CDIB* pDib = m_dibwnd.GetDIB();
+        if ( pDib )
+        {
+            int dibWidth  = pDib->GetWidth();
+            int dibHeight = pDib->GetHeight();
+            int bitsPerPixel  = pDib->GetBitsPerPixel();
+            int bytesPerPixel = pDib->GetBytesPerPixel();
+            int pitch     = pDib->GetPitch();
+
+            if ( dibWidth > 0 && dibHeight > 0 && pitch > 0 )
+            {
+                CDIBits dibits = pDib->GetBits();
+                BYTE* pPixels = (BYTE*)(dibits);
+                if ( pPixels )
+                {
+                    SDL_Surface* panelSurface = m_sdlPanel->GetSurface();
+                    if ( panelSurface )
+                    {
+#ifndef _WIN32
+                        if ( getenv("EN_DIAG") ) {
+                            static int n=0;
+                            if (n++<2) {
+                                size_t tot=(size_t)pitch*dibHeight, nz=0; unsigned mx=0;
+                                for (size_t i=0;i<tot;++i){ if(pPixels[i]){++nz; if(pPixels[i]>mx)mx=pPixels[i];} }
+                                fprintf(stderr,"[DIAG] radar/world DIB %dx%d bpp=%d Bpp=%d pitch=%d nonzero=%zu/%zu maxByte=%u radar=%d\n",
+                                        dibWidth,dibHeight,bitsPerPixel,bytesPerPixel,pitch,nz,tot,mx,(int)m_bIsRadar);
+                            }
+                        }
+#endif
+                        Uint32 rmask = 0x00FF0000, gmask = 0x0000FF00, bmask = 0x000000FF, amask = 0;
+                        SDL_Surface* dibSurf = SDL_CreateRGBSurfaceFrom(
+                            pPixels, dibWidth, dibHeight, bitsPerPixel, pitch,
+                            (bytesPerPixel >= 3) ? rmask : 0,
+                            (bytesPerPixel >= 3) ? gmask : 0,
+                            (bytesPerPixel >= 3) ? bmask : 0, amask );
+                        if ( dibSurf )
+                        {
+                            SDL_BlitSurface( dibSurf, nullptr, panelSurface, nullptr );
+                            SDL_FreeSurface( dibSurf );
+                        }
+                        m_sdlPanel->SetDirty();
+                    }
+                }
+            }
+        }
+    }
+    else
+    {
+        m_dibwnd.Update();
+    }
+}
+
 void CWndWorld::OnDestroy() {
+
+    // Remove SDL2 panel from compositor
+    if ( m_sdlPanel && theApp.m_gameWindow && theApp.m_gameWindow->GetCompositor() )
+    {
+        theApp.m_gameWindow->GetCompositor()->RemovePanel( m_sdlPanel );
+        m_sdlPanel = nullptr;
+    }
 
     CWndAnim::OnDestroy();
     Close();
@@ -629,6 +901,25 @@ void CWndWorld::OnLButtonUp(UINT nFlags, CPoint pt) {
         return;
     }
 
+    // it's the map: left click = look there (center the area view) — the
+    // send-units command moved to the right button (SendUnitsTo), matching
+    // the area map's select-left / command-right split.
+    if (m_pWndArea == NULL)
+        return;
+
+    int xc = ((pt.x - m_cx / 2) << theMap.GetSideShift()) / m_cx;
+    int yc = ((pt.y - m_cy / 2) << theMap.GetSideShift()) / m_cy;
+
+    m_pWndArea->GetAA().MoveCenterHexes(xc, yc);
+    m_pWndArea->InvalidateWindow();
+    NewLocation();
+}
+
+// send the area map's selected units to the map location under `pt` (attack if
+// it lands on an enemy) — the command half of the original (1996) OnLButtonUp,
+// now driven by the right button.
+void CWndWorld::SendUnitsTo(UINT nFlags, CPoint pt) {
+
     // get the area window
     if (m_pWndArea == NULL)
         return;
@@ -729,22 +1020,40 @@ void CWndWorld::OnLButtonUp(UINT nFlags, CPoint pt) {
     }
 }
 
-void CWndWorld::OnRButtonDown(UINT, CPoint pt) {
-    if (m_pWndArea == NULL)
+// RMB = command: send the selected units to the clicked map location (on RMB-up,
+// like a normal click). The old RMB drag-scroll moved to the middle button.
+void CWndWorld::OnRButtonDown(UINT, CPoint) {
+
+    m_bRCmdDown = TRUE;
+}
+
+void CWndWorld::OnRButtonUp(UINT nFlags, CPoint pt) {
+
+    if (!m_bRCmdDown)
+        return;
+    m_bRCmdDown = FALSE;
+
+    // sometimes the point is outside the window
+    if ((pt.x < 0) || (pt.y < 0) || (pt.x >= m_cx) || (pt.y >= m_cy))
         return;
 
-    int x = ((pt.x - m_cx / 2) << theMap.GetSideShift()) / m_cx;
-    int y = ((pt.y - m_cy / 2) << theMap.GetSideShift()) / m_cy;
+    // only the map area takes commands (not the corner buttons / radar chrome)
+    if (ButtonOn(pt) != -1)
+        return;
 
-    m_pWndArea->GetAA().MoveCenterHexes(x, y);
+    SendUnitsTo(nFlags, pt);
+}
 
-    m_pWndArea->InvalidateWindow();
+// MMB held = drag-scroll the area view (this was the RMB behavior pre-2026)
+void CWndWorld::OnMButtonDown(UINT, CPoint pt) {
+    if (m_pWndArea == NULL)
+        return;
 
     m_bRBtnDown = TRUE;
     m_ptRMB = pt;
 
     CaptureMouse();
-    theApp.m_wndBar.SetStatusText(1, m_sHelpRMB);
+    theApp.m_wndBar.SetStatusText(1, m_sHelpRMB.c_str());
 
     // put up the move cursor
     ::SetCursor(m_hCurMove);
@@ -752,12 +1061,12 @@ void CWndWorld::OnRButtonDown(UINT, CPoint pt) {
     NewLocation();
 }
 
-void CWndWorld::OnRButtonUp(UINT, CPoint) {
+void CWndWorld::OnMButtonUp(UINT, CPoint) {
 
     m_bRBtnDown = FALSE;
     if (m_bCapMouse)
         ReleaseMouse();
-    theApp.m_wndBar.SetStatusText(1, m_sHelp);
+    theApp.m_wndBar.SetStatusText(1, m_sHelp.c_str());
 
     NewLocation();
 }
@@ -794,21 +1103,21 @@ void CWndWorld::OnMouseMove(UINT nFlags, CPoint point) {
     // handle help
     int iFunc = ButtonOn(point);
     if (iFunc == -2) {
-        theApp.m_wndBar.SetStatusText(1, m_sHelpFace);
+        theApp.m_wndBar.SetStatusText(1, m_sHelpFace.c_str());
         return;
     }
     if (iFunc == -1) {
         if (m_bRBtnDown)
-            theApp.m_wndBar.SetStatusText(1, m_sHelpRMB);
+            theApp.m_wndBar.SetStatusText(1, m_sHelpRMB.c_str());
         else
-            theApp.m_wndBar.SetStatusText(1, m_sHelp);
+            theApp.m_wndBar.SetStatusText(1, m_sHelp.c_str());
         return;
     }
 
     if ((!m_bIsRadar) || (GetButtonState(iFunc) == disabled))
-        theApp.m_wndBar.SetStatusText(1, m_sHelpBtnDis[iFunc]);
+        theApp.m_wndBar.SetStatusText(1, m_sHelpBtnDis[iFunc].c_str());
     else
-        theApp.m_wndBar.SetStatusText(1, m_sHelpBtn[iFunc]);
+        theApp.m_wndBar.SetStatusText(1, m_sHelpBtn[iFunc].c_str());
 }
 
 int CWndWorld::GetButtonState(int iBtn) const {
@@ -858,7 +1167,7 @@ void CWndWorld::OnGetMinMaxInfo(MINMAXINFO FAR *lpMMI) {
     if (lpMMI->ptMinTrackSize.y < rect.Height())
         lpMMI->ptMinTrackSize.y = rect.Height();
 
-    if (theApp.m_wndBar.m_hWnd != NULL) {
+    if (theApp.m_wndBar.IsCreated()) {
         CRect rect;
         theApp.m_wndBar.GetWindowRect(&rect);
         lpMMI->ptMaxTrackSize.y = __min (lpMMI->ptMaxTrackSize.y, rect.top);
@@ -886,6 +1195,17 @@ void CWndWorld::OnSize(UINT nType, int cx, int cy) {
     GetWindowPlacement(&(theGame.m_wpWorld));
 }
 
+void CWndWorld::OnMove(int x, int y) {
+    CWndAnim::OnMove(x, y);
+
+    if ( m_sdlPanel && !m_sdlPanel->IsMovable() )
+    {
+        CRect screenRect;
+        GetWindowRect( &screenRect );
+        m_sdlPanel->SetPosition( screenRect.left, screenRect.top );
+    }
+}
+
 void CWndWorld::_OnSize() {
 
 #ifdef LOGGINGON
@@ -903,13 +1223,30 @@ void CWndWorld::_OnSize() {
         return;
     }
 
-    // we have to do this cause the button bar is in the cx, cy area
-    // resize the WinG wnd
-    CRect rect;
-    GetClientRect(&rect);
-    int right = rect.right;
-    int bottom = rect.bottom;
-    m_dibwnd.Size(MAKELPARAM (right, bottom)); // this SHOULD onsize the texture I think?
+    // When the SDL panel is user-resizable it owns the dimensions;
+    // otherwise fall back to the MFC client rect.
+    int right, bottom;
+    if ( m_sdlPanel && m_sdlPanel->IsResizable() )
+    {
+        right  = m_sdlPanel->GetWidth();
+        bottom = m_sdlPanel->GetHeight();
+    }
+    else
+    {
+        CRect rect;
+        GetClientRect(&rect);
+        right  = rect.right;
+        bottom = rect.bottom;
+
+        // Sync SDL panel to MFC position/size
+        if ( m_sdlPanel )
+        {
+            CRect screenRect;
+            GetWindowRect( &screenRect );
+            m_sdlPanel->SetRect( screenRect.left, screenRect.top, right, bottom );
+        }
+    }
+    m_dibwnd.Size(MAKELPARAM(right, bottom));
 
 #ifdef LOGGINGON
     char buf[128];
@@ -925,17 +1262,28 @@ void CWndWorld::_OnSize() {
     delete[] m_piRadarEdges;
     delete m_pdibButtons;
 
+    // m_pdibRadarStatic (the throttled minimap/radar bake cache) is size-dependent like the
+    // DIBs above, but was MISSING from this resize-invalidation list. On a window resize it
+    // kept its OLD dimensions while the window DIB grew, so ReRender's unit-dot erase fast
+    // path indexed the stale-sized cache with new-size coords -> out-of-bounds memcpy -> AV
+    // crash (BUGS #16: operator hit it resizing the minimap). Free + NULL it so the next bake
+    // reallocates it at the new size (and bRebuildBg fires meanwhile, skipping the fast path
+    // until the cache matches the window again). It's lazily reallocated (not new'd here), so
+    // it MUST be NULLed, not just deleted.
+    delete m_pdibRadarStatic;
+    m_pdibRadarStatic = NULL;
+
     int iBytesPerPixel = m_dibwnd.GetDIB()->GetBytesPerPixel();
 
-    m_cx = __max (1, rect.right);
-    m_cy = __max (1, rect.bottom);
+    m_cx = __max (1, right);
+    m_cy = __max (1, bottom);
     m_pdibGround0 = new CDIB(ptrthebltformat->GetColorFormat(), CBLTFormat::DIB_MEMORY,
                              CBLTFormat::DIR_TOPDOWN, m_cx, m_cy);
     m_pdibBase = new CDIB(ptrthebltformat->GetColorFormat(), CBLTFormat::DIB_MEMORY,
                           CBLTFormat::DIR_TOPDOWN, m_cx, m_cy);
 
     m_cxLine = m_pdibGround0->GetDirPitch();
-    m_lSizeBytes = m_pdibGround0->GetDirPitch() * rect.bottom;
+    m_lSizeBytes = m_pdibGround0->GetDirPitch() * bottom;
 
     // stretch the radar art over
     m_pdibRadar = new CDIB(ptrthebltformat->GetColorFormat(), CBLTFormat::DIB_MEMORY,
@@ -1035,20 +1383,16 @@ void CWndWorld::_NewDir() {
     ASSERT_STRICT (m_pWndArea->m_hWnd != NULL);
 
     // put up the new dir
-    CString sTitle;
-    if (m_bIsRadar)
-        sTitle.LoadString( IDS_WORLD_TITLE_RADAR );
-    else
-        sTitle.LoadString(IDS_WORLD_TITLE_MAP);
+    std::string sTitle = EnLoadStdString( m_bIsRadar ? IDS_WORLD_TITLE_RADAR : IDS_WORLD_TITLE_MAP );
 
 #ifdef LOGGINGON
     char buf[128];
-    sprintf_s( buf, "New Title: %s\n", (LPCSTR) sTitle );
+    sprintf_s( buf, "New Title: %s\n", sTitle.c_str() );
     OutputDebugStringA( buf );
 #endif
 
-    csPrintf(&sTitle, (char const *) m_sDir[m_pWndArea->GetAA().m_iDir]);
-    SetWindowText(sTitle);
+    sTitle = strPrintf( sTitle.c_str(), m_sDir[m_pWndArea->GetAA().m_iDir].c_str() );
+    SetWindowText(sTitle.c_str());
 
     int iBytesPerPixel = m_dibwnd.GetDIB()->GetBytesPerPixel();
 
@@ -1101,6 +1445,13 @@ void CWndWorld::_NewDir() {
     DWORD bdwUnits = (m_iMode & (my_units | other_units)) ? -1 : 0;
     DWORD bdwRes = (m_iMode & resources) ? -1 : 0;
     DWORD bdwCopper = (bdwRes & theGame.GetMe()->CanCopper()) ? -1 : 0;
+
+    // The world map gets the parchment "paper navigation map" palette; the radar keeps
+    // the satellite-style colors. Both fill m_pdibGround0 here, so just pick the table.
+    const DWORD* pclrTerrain = m_bIsRadar ? m_clrTerrain : m_clrTerrainPaper;
+
+    // TEMP DEBUG: resource-render diagnosis counters (feed the [_NewDir] readout below)
+    int dbgFlagged = 0, dbgLookupOK = 0, dbgDrawn = 0;
 
     SETPIXEL fnSetPixel;
     switch (iBytesPerPixel) {
@@ -1174,8 +1525,10 @@ void CWndWorld::_NewDir() {
 
             // show resources
             if (bdwRes & (pHex->GetUnits() & CHex::minerals)) {
+                dbgFlagged++;
                 CMinerals *pMn;
                 if (theMinerals.Lookup(_hex, pMn)) {
+                    dbgLookupOK++;
 
                     // VTFIXME
                     // this was (is!?) crfashing for loaded games - not sure why, perhaps the deserialization failed
@@ -1204,13 +1557,14 @@ void CWndWorld::_NewDir() {
                             dwClr = m_clrResources[3];
                             break;
                     }
+                    dbgDrawn++;
                     goto GotClr;
                 }
             }
 
             ShowTerrain:
             // show terrain
-            dwClr = m_clrTerrain[pHex->GetVisibleType()];
+            dwClr = pclrTerrain[pHex->GetVisibleType()];
 
             GotClr:
             (*fnSetPixel)(pDib, dwClr);
@@ -1240,6 +1594,27 @@ void CWndWorld::_NewDir() {
         _hex = _hexStrt;
     }
     ASSERT_STRICT (pDib == m_pdibGround0->GetBits() + m_lSizeBytes);
+
+    {
+        // Mineral-rendering health probe — a cheap diagnostic kept after the
+        // save/load mineral bug (see project_cmap_serialize_noop_trap). minTotal
+        // is theMinerals.GetCount(): the number that went to 0 in bugged loaded
+        // saves. flagged-vs-lookupOK and lookupOK-vs-drawn isolate which stage
+        // breaks if minerals ever regress. Emits via OutputDebugString only when
+        // the readout CHANGES — prints once at load, again only if it shifts —
+        // so there's no per-frame spam and no disk write.
+        char dbgbuf[256];
+        sprintf_s( dbgbuf, sizeof( dbgbuf ),
+                   "[_NewDir] radar=%d mode=0x%X resBit=%d minTotal=%d | flagged=%d lookupOK=%d drawn=%d cx=%d cy=%d eX=%d eY=%d\n",
+                   (int)m_bIsRadar, m_iMode, (m_iMode & resources) ? 1 : 0, (int)theMinerals.GetCount(),
+                   dbgFlagged, dbgLookupOK, dbgDrawn, m_cx, m_cy, theMap.Get_eX(), theMap.Get_eY() );
+        static char s_dbgLast[256] = "";
+        if ( strcmp( dbgbuf, s_dbgLast ) != 0 )
+        {
+            strcpy_s( s_dbgLast, sizeof( s_dbgLast ), dbgbuf );
+            OutputDebugStringA( dbgbuf );
+        }
+    }
 
     NewLocation();
 }
@@ -1386,16 +1761,23 @@ void CWndWorld::_NewLocation( )
 
 void CWndWorld::ReRender( )
 {
-
     // redraw whatever needs to be redrawn
+    // (each split-counted: ri.rerender showed ~70ms/s unattributed under load — these
+    // prologue redraws run BEFORE the rr.radar/rr.world scopes below)
     if ( m_bNewMode )
-        _NewMode( );
+    { Perf::ScopeCounter _cm( "rr.nmode" ); _NewMode( ); }
 
-    if ( m_bNewDir )
+    if ( m_bNewDir ||
+         ( m_dwDirBakePending != 0 && timeGetTime( ) - m_dwLastDirBake >= 1500 ) )
+    {
+        Perf::ScopeCounter _cd( "rr.ndir" );
+        m_dwDirBakePending = 0;
+        m_dwLastDirBake    = timeGetTime( );
         _NewDir( );
+    }
 
     if ( m_bNewLocation )
-        _NewLocation( );
+    { Perf::ScopeCounter _cl( "rr.nloc" ); _NewLocation( ); }
 
     // unit may have moved under (or been created)
     CPoint pt;
@@ -1438,6 +1820,7 @@ void CWndWorld::ReRender( )
     // only repaint if dirty
     if ( !m_bUpdate )
         return;
+
     m_bUpdate = FALSE;
 
     ASSERT_STRICT_VALID( this );
@@ -1446,6 +1829,117 @@ void CWndWorld::ReRender( )
     if ( ( m_pdibGround0 == NULL ) || ( m_pWndArea == NULL ) )
         return;
 
+    Perf::ScopeCounter _crr( m_bIsRadar ? "rr.radar" : "rr.world" );
+
+    // RADAR root-cause perf fix. The minimap redraw below is a per-pixel CPU walk over the WHOLE
+    // map (~18ms in Debug) — but everything it draws except moving units (terrain/buildings/
+    // minerals/fog) is static or slow-changing. So:
+    //   * bake the UNIT-FREE background on a ~7fps throttle into m_pdibRadarStatic, and
+    //   * on every other frame DON'T re-walk and DON'T re-blit the whole DIB — instead keep the
+    //     window DIB as-is and only ERASE last frame's unit dots (restore those few pixels from
+    //     the cached background), then redraw the current dots. That's O(units), not O(map).
+    // Units are plotted LIVE below (object-iterated + projected), so they stay smooth at full
+    // rate while the heavy walk runs ~7fps. (Non-radar world map keeps the original full path.)
+    DWORD dwRadarNow = timeGetTime( );
+    // Throttle the expensive per-pixel WALK for BOTH radar and the world map. The walk
+    // samples a map-sized source DIB, so on a 1024² map it's ~230ms (cache-miss bound) and
+    // was ~85% of the render budget at 20 players. Cache its output in m_pdibRadarStatic and
+    // re-walk only every N ms; between walks blit the cache (world map has no live unit dots,
+    // so a plain blit is a complete frame). Radar re-walks fast (140ms, units live); the
+    // world map overview changes slowly, so 800ms is imperceptible and ~3-4x cheaper.
+    // INPUT-GATED on top of the throttle: the walk renders ground (m_pdibBase) +
+    // buildings + minerals + fog-of-war + the resource-highlight cycle. Hash everything
+    // those depend on; if NOTHING changed since the last bake, skip the walk entirely —
+    // the cached background + live unit dots are still a complete, correct frame. On a
+    // calm view this takes the radar's O(window-pixels) map sampling from ~3/s to ~0;
+    // during exploration the fog generation counter naturally re-enables it. Unit dots
+    // are NOT part of the bake (drawn live every frame), so they never gate.
+    unsigned long long walkSig = 0;
+    bool bCtrMoved = false;
+    // #4 (minimap/world-map lag on pan/zoom): the world map was EXCLUDED from this
+    // input-detection by the radar-only gate, so it never noticed a center/zoom/dir
+    // change and only re-walked on the blind 1500ms timer = the reported 1-2s lag.
+    // Run the detection for the world map too so an input delta fast-paths its re-bake
+    // (the m_pdibRadarStatic cache + bake-state bookkeeping below is ALREADY maintained
+    // for the world map). Radar branch is unchanged.
+    if ( m_pWndArea != NULL )
+    {
+        extern unsigned g_enTerrainEditGen;   // defined in SDL2Terrain.cpp (runtime terrain edits)
+        CMapLoc ctr = m_pWndArea->GetAA( ).GetCenter( );
+        bCtrMoved = ( ctr.x != m_ptLastBakeCtr.x || ctr.y != m_ptLastBakeCtr.y );
+        walkSig = ( (unsigned long long)g_enFogVisGen << 32 )
+                ^ (unsigned long long)g_enTerrainEditGen
+                ^ ( (unsigned long long)theBuildingMap.GetCount( ) << 12 )
+                ^ ( (unsigned long long)(unsigned)m_iResOn << 24 )
+                ^ ( (unsigned long long)(unsigned)m_iMode << 16 )                       // mode BUTTONS change what the bake draws
+                ^ ( (unsigned long long)( m_pWndArea->GetAA( ).m_iZoom & 3 ) << 56 )    // zoom changes the view-rect box size
+                ^ ( (unsigned long long)(unsigned)ctr.x << 40 )
+                ^ ( (unsigned long long)(unsigned)ctr.y << 52 )
+                ^ ( (unsigned long long)( m_pWndArea->GetAA( ).m_iDir & 3 ) << 60 )
+                ^ 0x9E3779B97F4A7C15ull;   // non-zero so a fresh member (0) never matches
+        // Mode-button presses and zoom changes must reflect IMMEDIATELY (user: "when I
+        // press buttons it takes a long time to update... the black viewbox takes too
+        // long"): they were missing from the sig entirely (skipped until an unrelated
+        // input changed), and even in the sig they'd wait out the throttle. Treat them
+        // like a moving centre: fast path.
+        if ( !bCtrMoved && walkSig != m_qwLastWalkSig )
+            bCtrMoved = true;   // any input delta -> 140ms cadence; the gate still skips no-change frames
+    }
+    // SCROLL-FOLLOW vs in-place throttle. The radar image is anchored to the area-view
+    // CENTRE: scrolling shifts the whole background, but the LIVE unit dots are drawn at
+    // CURRENT positions every frame — any bake latency makes the player's dots slide
+    // against a stale background (user-reported; enemies/resources are IN the bake so
+    // they stay coherent with it). While the centre is moving, re-bake at the original
+    // 140ms cadence (never user-visible pre-gate); only IN-PLACE changes (fog ticks,
+    // building count, highlight cycle) use the longer 320ms throttle.
+    // World map: re-bake fast (140ms) WHILE the user is actively panning/zooming
+    // (bCtrMoved = any center/zoom/dir/mode delta, set above), else the cheap 1500ms
+    // idle cadence — the same responsive-on-input / cheap-when-idle split the radar uses
+    // (#4). Bounds the expensive whole-map walk to the active-interaction window.
+    const DWORD kWalkThrottle = m_bIsRadar ? ( bCtrMoved ? 140u : 320u )
+                                           : ( bCtrMoved ? 140u : 1500u );
+    bool  bRebuildBg = !m_pdibRadarStatic ||
+                       ( ( dwRadarNow - m_dwLastRadarDraw >= kWalkThrottle ) &&
+                         // hit-flash animation must keep re-baking while active
+                         ( !m_bIsRadar || walkSig != m_qwLastWalkSig || m_bBldgHit ) );
+    Perf::CounterAdd( m_bIsRadar ? ( bRebuildBg ? "rr.bg" : "rr.fast" ) : ( bRebuildBg ? "rr.world.n" : "rr.world.blit" ), 1 );
+
+    if ( !m_bIsRadar && !bRebuildBg )
+    {
+        // WORLD-MAP FAST PATH: blit the cached unit-free background (no live dots to redraw).
+        Perf::ScopeCounter _cb( "rr.world.blitms" );
+        m_pdibRadarStatic->BitBlt( m_dibwnd.GetDIB( ), m_pdibRadarStatic->GetRect( ), CPoint( 0, 0 ) );
+    }
+    else if ( m_bIsRadar && !bRebuildBg )
+    {
+        // FAST PATH: window DIB still holds (cached background + last frame's dots). Erase only
+        // the old dots by restoring their pixels from the unit-free cache; current dots drawn
+        // below. No whole-map walk, no whole-DIB blit.
+        Perf::ScopeCounter _ce( "rr.erase" );
+        CDIB* pwin = m_dibwnd.GetDIB( );
+        int   bpp  = pwin->GetBytesPerPixel( );
+        BYTE* pw   = pwin->GetBits( )              + pwin->GetOffset( 0, 0 );
+        BYTE* ps   = m_pdibRadarStatic->GetBits( ) + m_pdibRadarStatic->GetOffset( 0, 0 );
+        // Each DIB has its OWN pitch (and possibly orientation: top-down vs bottom-up → opposite
+        // pitch sign). Using the window's pitch to index the static buffer reads out of bounds
+        // → AV. Index every DIB with its own pitch.
+        int   pitW = pwin->GetDirPitch( );
+        int   pitS = m_pdibRadarStatic->GetDirPitch( );
+        for ( const CPoint& d : m_radarDots )
+        {
+            BYTE* w = pw + d.y * pitW + d.x * bpp;
+            BYTE* s = ps + d.y * pitS + d.x * bpp;
+            memcpy( w,           s,           bpp );   // centre + 4-neighbour plus (matches draw)
+            memcpy( w - bpp,     s - bpp,     bpp );
+            memcpy( w + bpp,     s + bpp,     bpp );
+            memcpy( w - pitW,    s - pitS,    bpp );
+            memcpy( w + pitW,    s + pitS,    bpp );
+        }
+        m_radarDots.clear( );
+    }
+    else
+    {
+
     // put up everything except vehicles & visibility
     m_pdibBase->BitBlt( m_dibwnd.GetDIB( ), m_pdibBase->GetRect( ), CPoint( 0, 0 ) );
 
@@ -1453,7 +1947,9 @@ void CWndWorld::ReRender( )
 
     // is it a radar or a map
     DWORD bRadar    = m_bIsRadar ? -1 : 0;
-    DWORD bdwRadUni = bRadar & bdwUnits;
+    // Radar vehicles are plotted LIVE below (object-iterated), NOT in this per-pixel walk, so
+    // the cached background stays unit-free. Force off here.
+    DWORD bdwRadUni = m_bIsRadar ? 0 : ( bRadar & bdwUnits );
 
     int iBytesPerPixel = m_dibwnd.GetDIB( )->GetBytesPerPixel( );
 
@@ -1519,22 +2015,13 @@ void CWndWorld::ReRender( )
         xRem -= m_cx;
     }
 
-    // if there's no DD device, just return (only on directdraw!)?
-    if ( pdib->GetType( ) == CBLTFormat::DIB_DIRECTDRAW && !pdib->HasDDSurface( ) )
-    {
-#ifdef LOGGINGON
-        int type = pdib->GetType( );
-        buf[128];
-        sprintf_s( buf, "no HasDDSurface!! type=%d\n", type );
-        OutputDebugStringA( buf );
-#endif
-
-        return;
-    }
+    // Phase 6 Stage 4: DDraw-specific surface-missing check removed
+    // (DIB_DIRECTDRAW and HasDDSurface are gone). The CDIB always has a
+    // valid backing if GetBits()/GetOffset() are about to be called.
 
     // dest is where we write, radar tells us if we should write
     BYTE *  pDibDest, *pDibDestLine;
-    CDIBits dibits = pdib->GetBits( );  // exception, gfx surface missing? GetDDSurface null
+    CDIBits dibits = pdib->GetBits( );
     pDibDest = pDibDestLine = dibits + pdib->GetOffset( 0, 0 );
     int iDestPitch          = pdib->GetDirPitch( );
 
@@ -1841,6 +2328,99 @@ void CWndWorld::ReRender( )
     // when anyone zeros it'll get set again
     m_bBldgHit = NULL;
 
+    // Cache this freshly-built UNIT-FREE background; the window DIB now holds the clean bg, so
+    // there are no old dots to erase next frame. Done for the world map too now (its fast path
+    // blits this cache instead of re-walking) — not just the radar.
+    {
+        if ( !m_pdibRadarStatic )
+            m_pdibRadarStatic = new CDIB( ptrthebltformat->GetColorFormat( ), CBLTFormat::DIB_MEMORY,
+                                          CBLTFormat::DIR_TOPDOWN, m_cx, m_cy );
+        m_dibwnd.GetDIB( )->BitBlt( m_pdibRadarStatic, m_dibwnd.GetDIB( )->GetRect( ), CPoint( 0, 0 ) );
+        m_dwLastRadarDraw = dwRadarNow;
+        m_qwLastWalkSig   = walkSig;   // inputs this bake rendered (skip-gate, see above)
+        if ( m_pWndArea != NULL )      // centre this bake is anchored to (scroll-follow)
+        {
+            CMapLoc c = m_pWndArea->GetAA( ).GetCenter( );
+            m_ptLastBakeCtr = CPoint( c.x, c.y );
+        }
+        m_radarDots.clear( );
+    }
+    }   // end else (full whole-map background walk)
+
+    // --- LIVE radar unit dots: object-iterate vehicles and project each STRAIGHT to its radar
+    //     pixel (the inverse of OnLButtonUp's pixel->map map). O(units), drawn over the persistent
+    //     window DIB every frame; positions recorded so next frame can erase just these pixels. ---
+    if ( m_bIsRadar && ( m_iMode & ( my_units | other_units ) ) )
+    {
+        Perf::ScopeCounter _cv( "rr.veh" );
+        CDIB*    pwin  = m_dibwnd.GetDIB( );
+        int      bppV  = pwin->GetBytesPerPixel( );
+        BYTE*    baseV = pwin->GetBits( ) + pwin->GetOffset( 0, 0 );
+        int      pitchV = pwin->GetDirPitch( );
+        SETPIXEL fnSP  = bppV == 4 ? SetPixel4 : bppV == 3 ? SetPixel3 : bppV == 2 ? SetPixel2 : SetPixel1;
+
+        CAnimAtr& aaV  = m_pWndArea->GetAA( );
+        CMapLoc   cen  = aaV.GetCenter( );
+        int       dirV = aaV.m_iDir;
+        int       eX   = theMap.Get_eX( ), eY = theMap.Get_eY( );
+
+        POSITION pos = theVehicleMap.GetStartPosition( );
+        while ( pos != NULL )
+        {
+            DWORD     dwID;
+            CVehicle* pVeh;
+            theVehicleMap.GetNextAssoc( pos, dwID, pVeh );
+            if ( pVeh == NULL || pVeh->GetOwner( ) == NULL )
+                continue;
+            bool bMine = pVeh->GetOwner( )->IsMe( ) != 0;
+            if ( bMine ? !( m_iMode & my_units ) : !( m_iMode & other_units ) )
+                continue;
+            if ( !pVeh->IsVisible( ) )
+                continue;
+            // CHECKED hex lookup (GetHex, not _GetHex): a vehicle on an out-of-range/edge hex
+            // would otherwise return a bad pointer -> AV. Enemies only show on lit hexes.
+            CHex* pHexV = theMap.GetHex( CHexCoord( pVeh->GetPtHead( ) ) );
+            if ( pHexV == NULL )
+                continue;
+            if ( !bMine && !pHexV->GetVisible( ) )
+                continue;
+
+            // map loc -> radar pixel: subtract center, inverse-rotate by camera dir, scale.
+            // Diff() wraps the delta the short way around the toroidal map seam; raw subtraction
+            // sent across-seam units off the diamond into the button corners (or clipped them out).
+            CMapLoc ml( pVeh->GetPtHead( ) );
+            int X = CMapLoc::Diff( ml.x - cen.x ), Y = CMapLoc::Diff( ml.y - cen.y ), x, y;
+            switch ( dirV )
+            {
+            case 0:  x = ( X + Y ) / 2; y = ( Y - X ) / 2;  break;
+            case 1:  x = ( Y - X ) / 2; y = -( X + Y ) / 2; break;
+            case 2:  x = -( X + Y ) / 2; y = ( X - Y ) / 2; break;
+            default: x = ( X - Y ) / 2; y = ( X + Y ) / 2;  break;
+            }
+            int px = m_cx / 2 + ( eX ? ( x * m_cx ) / ( 64 * eX ) : 0 );
+            int py = m_cy / 2 + ( eY ? ( y * m_cy ) / ( 64 * eY ) : 0 );
+            if ( px < 1 || px >= m_cx - 1 || py < 1 || py >= m_cy - 1 )
+                continue;
+
+            DWORD clr;
+            if ( bMine && pVeh->m_iFrameHit != 0 )
+            {
+                pVeh->m_iFrameHit = __max( 0, pVeh->m_iFrameHit - (int)theGame.GetFramesElapsed( ) );
+                clr               = m_clrHit;
+            }
+            else
+                clr = pVeh->GetOwner( )->GetPalColor( );
+
+            BYTE* p = baseV + py * pitchV + px * bppV;
+            ( *fnSP )( p, clr );
+            ( *fnSP )( p - bppV, clr );
+            ( *fnSP )( p + bppV, clr );
+            ( *fnSP )( p - pitchV, clr );
+            ( *fnSP )( p + pitchV, clr );
+            m_radarDots.push_back( CPoint( px, py ) );   // for next-frame erase
+        }
+    }
+
     InvalidateRect(NULL, FALSE);
 }
 
@@ -1853,7 +2433,7 @@ void CWndWorld::PaletteChange() {
 
 BOOL CWndWorld::OnSetCursor(CWnd *pWnd, UINT nHitTest, UINT message) {
 
-    if ((pWnd != this) || (nHitTest != HTCLIENT))
+    if ((pWnd->GetSafeHwnd() != m_hWnd) || (nHitTest != HTCLIENT))
         return CWndAnim::OnSetCursor(pWnd, nHitTest, message);
 
     SetMouseState();

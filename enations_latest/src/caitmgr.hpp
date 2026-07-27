@@ -9,7 +9,7 @@
 //
 ////////////////////////////////////////////////////////////////////////////
 
-#include "CAIGMgr.hpp"
+#include "caigmgr.hpp"
 
 #ifndef __CAITMGR_HPP__
 #define __CAITMGR_HPP__
@@ -19,7 +19,14 @@ class CAITaskMgr : public CObject
 protected:
 	int m_iPlayer;
 	BOOL m_bRestart;
-	
+	// staggered game-start aggression (operator spec): cmd_play arrived before
+	// this AI's release second (player N releases at N game-seconds) — the
+	// initial AssignUnits is held and serviced at the top of Manage once due.
+	BOOL m_bStartAssignPending;
+	BOOL m_bRepairFirst;	// alternates repair/resume vs new-construction first pick
+	BOOL m_bPartialPick;	// alternates partial-adopt vs damage-repair inside the picker
+	int  m_iCraneAssignCnt;	// every 5th crane assignment prefers the road task
+
 	CAIGoalMgr *m_pGoalMgr;	// this player's goal manager
 	
 public:	

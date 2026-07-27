@@ -5,7 +5,11 @@
 
 #ifndef _WINDOWS
 #ifndef _INC_MALLOC
+#ifdef __APPLE__
+#include <malloc/malloc.h>   // macOS has no <malloc.h>
+#else
 #include <malloc.h>
+#endif
 #endif
 #endif
 
@@ -28,7 +32,10 @@ _RELEASE_INLINE void CDir::operator= (const CDir& src)
 /////////////////////////////////////////////////////////////////////////////
 // CGlobal
 
-#ifndef _WINDOWS
+// Match thielen.h: the portable CGlobal variant is dead (#if 0 there); the full
+// variant's inline methods (Handle/GetPtr/Size) live in the #else below, with
+// Alloc/Free/ReAlloc/ctor in global.cpp. Was: #ifndef _WINDOWS.
+#if 0
 
 _RELEASE_INLINE void* CGlobal::GetPtr (DWORD dwOff) const // 4/26/96 - BobP
     { return ( ( void* ) ( (char* )m_pvMem + dwOff)); }

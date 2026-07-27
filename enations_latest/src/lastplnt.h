@@ -12,7 +12,8 @@
 // lastplnt.h : main header file for The Last Planet application
 //
 
-#ifndef __AFXWIN_H__
+// Require stdafx.h (PCH) before this header.
+#if !defined(_WINDOWS_)
 #error include 'stdafx.h' before including this file for PCH
 #endif
 
@@ -21,6 +22,7 @@
 
 // #include "area.h"
 #include "credits.h"
+#include <memory>
 #include "cutscene.h"
 #include "ipccomm.h"
 #include "movie.h"
@@ -34,9 +36,10 @@
 
 class CConquerApp;
 class CCreateBase;
-class CDlgPlyrList;
-class CDlgRelations;
-class CDlgResearch;
+// CDlgPlyrList removed (Phase 2d).
+class SDL2MainMenu;
+// CDlgResearch removed (Phase 2d).
+class GameWindow;
 
 #ifdef _CHEAT
 extern BOOL _bShowRate;
@@ -81,7 +84,7 @@ typedef void ( *TRANS_FUNC )( unsigned int u, EXCEPTION_POINTERS* pExp );
 extern TRANS_FUNC prevFn;
 void              CatchNum( int iNum );
 void              CatchSE( SE_Exception e );
-void              CatchOther( );
+void              CatchOther( char const* pContext = NULL );
 
 
 /////////////////////////////////////////////////////////////////////////////
@@ -105,9 +108,10 @@ class AIinit
 
 
 /////////////////////////////////////////////////////////////////////////////
-// CDlgMain dialog
-// maybe the dialouge that comes up when the program starts?
-// i think it's multiple, but not sure
+// CDlgMain dialog — excluded from build (Phase 2d). SDL2MainMenu replaces it
+// as the live main-menu path. Class body kept for historical reference but
+// not compiled. The body is also #if 0'd in lastplnt.cpp.
+#if 0  // MFC_LEGACY_MAIN_MENU
 
 class CDlgMain : public CDialog
 {
@@ -176,45 +180,10 @@ class CDlgMain : public CDialog
     BOOL  m_bTile;
 };
 
+#endif // MFC_LEGACY_MAIN_MENU
 
 /////////////////////////////////////////////////////////////////////////////
-// CDlgVer dialog
-
-class CDlgVer : public CDialog
-{
-    // Construction
-  public:
-    CDlgVer( CWnd* pParent = NULL );  // standard constructor
-
-                                      // Dialog Data
-    //{{AFX_DATA(CDlgVer)
-    enum
-    {
-        IDD = IDD_VERSION
-    };
-    CString m_sVer;
-    CString m_sOs;
-    CString m_sNet;
-    CString m_sThunk;
-    CString m_sRif;
-    CString m_sVideo;
-    CString m_sSound;
-    CString m_sSoundVer;
-    CString m_sSpeed;
-    CString m_sMemory;
-    //}}AFX_DATA
-
-    // Implementation
-  protected:
-    virtual void DoDataExchange( CDataExchange* pDX );  // DDX/DDV support
-
-    // Generated message map functions
-    //{{AFX_MSG(CDlgVer)
-    virtual BOOL OnInitDialog( );
-    afx_msg void OnLicense( );
-    //}}AFX_MSG
-    DECLARE_MESSAGE_MAP( )
-};
+// CDlgVer dialog removed; SDL2VersionDialog (SDL2Dialogs.h) replaces it.
 
 //---------------------------- C Z o o m D a t a ----------------------------
 //
@@ -248,7 +217,11 @@ class CZoomData
 
 typedef void( FNYIELDFUNC )( );
 
-class CConquerApp : public CWinApp
+// CConquerApp inherits from CWinAppStub (no MFC). See winappstub.h.
+#include <winappstub.h>
+typedef CWinAppStub CConquerAppSuper;
+
+class CConquerApp : public CConquerAppSuper
 {
   public:
     CConquerApp( );
@@ -301,6 +274,7 @@ class CConquerApp : public CWinApp
     }
 
     BOOL SaveGame( CWnd* pPar );  // saves game
+    BOOL SaveGame( CWndStub* pPar ) { return SaveGame( CWnd::FromHandle( pPar ? pPar->m_hWnd : NULL ) ); }
 
     void ScenarioStart( );        // set up a scenario
     BOOL ScenarioEnd( );          // is the scenario over?
@@ -308,16 +282,23 @@ class CConquerApp : public CWinApp
     void Minimize( );
     void CloseApp( );
     BOOL AmInGame( ) { return ( m_bInGame ); }
+    // LOAD-while-in-game crash #2 (mac2): TRUE only while CGame::LoadGame is tearing down +
+    // rebuilding the world. During that window the hex/unit maps are RemoveAll'd/half-rebuilt,
+    // so game-panel input events (CWndArea::OnMouseMove -> GetHit -> GetVisibleBuilding ->
+    // IsVisible) must NOT be dispatched or they deref freed/dangling map state -> SIGSEGV.
+    // AmInGame() stays TRUE through teardown (proven), so it can't gate this; this flag does.
+    BOOL IsWorldTearingDown( ) { return ( m_bWorldTearingDown ); }
+    void SetWorldTearingDown( BOOL b ) { m_bWorldTearingDown = b; }
 
     void PostIntro( );  // called when movie is over
     void InitCustomUI( );
 
     int    TextHt( ) const { return ( m_iCharHt ); }
     int    TextWid( ) const { return ( m_iCharWid ); }
-    CFont& TextFont( ) { return ( m_Fnt ); }
-    CFont& RDFont( ) { return ( m_FntRD ); }      // R&D desc
-    CFont& DescFont( ) { return ( m_FntDesc ); }  // bldg/veh desc
-    CFont& CostFont( ) { return ( m_FntCost ); }  // bldg/veh cost win
+    HFONT TextFont( ) { return ( m_Fnt ); }       // Phase 4c prep: was CFont&
+    HFONT RDFont( ) { return ( m_FntRD ); }       // R&D desc
+    HFONT DescFont( ) { return ( m_FntDesc ); }   // bldg/veh desc
+    HFONT CostFont( ) { return ( m_FntCost ); }   // bldg/veh cost win
 
                                                   // BUGBUG	int		ListHt () const				{return (m_iUnitListHt);}
 
@@ -340,6 +321,47 @@ class CConquerApp : public CWinApp
 
     void Log( char const* pText );
 
+    // Phase 4c prep: replace AfxRegisterWndClass — same semantics (idempotent
+    // registration of a WNDCLASS), but no MFC dependency.
+    static LPCTSTR EnRegisterWndClass( LPCTSTR pszName, UINT style,
+                                       HCURSOR hCursor = NULL,
+                                       HBRUSH hbrBackground = NULL,
+                                       HICON hIcon = NULL )
+    {
+        WNDCLASS wc;
+        HINSTANCE hInst = ::GetModuleHandle( NULL );
+        if ( ::GetClassInfo( hInst, pszName, &wc ) )
+            return pszName;  // already registered, dedupe
+        memset( &wc, 0, sizeof( wc ) );
+        wc.style         = style;
+        // Route through CWndStub::StaticWndProc so virtuals (OnCreate, OnPaint,
+        // etc.) actually fire. Without this, WM_* messages would go straight
+        // to DefWindowProc and our handlers never run.
+        wc.lpfnWndProc   = &CWndStub::StaticWndProc;
+        wc.hInstance     = hInst;
+        wc.hCursor       = hCursor;
+        wc.hbrBackground = hbrBackground;
+        wc.hIcon         = hIcon;
+        wc.lpszClassName = pszName;
+        ::RegisterClass( &wc );
+        return pszName;
+    }
+
+    // Phase 4c prep: shadow CWinApp::LoadIcon / LoadStandardCursor with thin Win32
+    // wrappers. Same signatures the codebase already calls (`theApp.LoadIcon(IDI_MAIN)`,
+    // `theApp.LoadStandardCursor(IDC_ARROW)`), but routes through ::LoadIcon /
+    // ::LoadCursor directly instead of MFC's CWinApp implementation in mfc140.dll.
+    HICON   LoadIcon( LPCTSTR lpszResourceName ) const
+        { return ::LoadIcon( m_hInstance, lpszResourceName ); }
+    HICON   LoadIcon( UINT nIDResource ) const
+        { return ::LoadIcon( m_hInstance, MAKEINTRESOURCE( nIDResource ) ); }
+    HCURSOR LoadStandardCursor( LPCTSTR lpszCursorName ) const
+        { return ::LoadCursor( NULL, lpszCursorName ); }
+    HCURSOR LoadCursor( LPCTSTR lpszResourceName ) const
+        { return ::LoadCursor( m_hInstance, lpszResourceName ); }
+    HCURSOR LoadCursor( UINT nIDResource ) const
+        { return ::LoadCursor( m_hInstance, MAKEINTRESOURCE( nIDResource ) ); }
+
     // Overrides
     BOOL InitInstance( );
     int  ExitInstance( );
@@ -348,7 +370,13 @@ class CConquerApp : public CWinApp
     BOOL FullYield( );
 
     void GraphicsEnginePump( );
-    void ProcessAllMessages( );
+    // dwBudgetMs 0 = drain to empty (original semantics). A nonzero budget
+    // time-boxes the drain so a message storm (game-start unit creation:
+    // ~70 units x N players, each veh_new fanning out to every AI) can't hold
+    // one frame for 30-45s — the pump renders, then resumes draining next
+    // iteration. FIFO order and processing are unchanged; only how many land
+    // per frame.
+    void ProcessAllMessages( DWORD dwBudgetMs = 0 );
     void RenderScreens( );
     void _RenderScreens( );
 
@@ -374,23 +402,23 @@ class CConquerApp : public CWinApp
 
 
   public:
-    CString m_sOs;
-    CString m_sNet;
-    CString m_sRif;
-    CString m_sVideo;
-    CString m_sSound;
-    CString m_sSoundVer;
-    CString m_sSpeed;
-    int     m_iRestoreRes;
-    int     m_iOldWidth;
-    int     m_iOldHeight;
-    int     m_iOldDepth;
+    std::string m_sOs;
+    std::string m_sNet;
+    std::string m_sRif;
+    std::string m_sVideo;
+    std::string m_sSound;
+    std::string m_sSoundVer;
+    std::string m_sSpeed;
+    int         m_iRestoreRes;
+    int         m_iOldWidth;
+    int         m_iOldHeight;
+    int         m_iOldDepth;
 
-    CString m_sAppName;  // the name of the application
-    CString m_sClsName;  // main window (for finding 1st instance)
-    CString m_sWndCls;   // CWnd class for pop-up windows
+    std::string m_sAppName;  // the name of the application
+    std::string m_sClsName;  // main window (for finding 1st instance)
+    std::string m_sWndCls;   // CWnd class for pop-up windows
 
-    CString m_sResIni;   // the [1024x768] for the ini file
+    std::string m_sResIni;   // the [1024x768] for the ini file
     int     m_iScrnX;    // screen width
     int     m_iScrnY;    // screen height
     int     m_iCol1;     // default positions for windows (left of area)
@@ -403,14 +431,14 @@ class CConquerApp : public CWinApp
     BOOL    m_bPauseOnAct;
     BOOL    m_bSetSysColors;
     BOOL    m_bSubClass;
-    CString m_sCdFile;             // file to check for to insure CD in
+    std::string m_sCdFile;         // file to check for to insure CD in
 
     char         m_szMapBPS[4];    // either "08" or "24"
     char         m_szOtherBPS[4];  // either "08" or "24"
     CColorFormat m_MapClrFmt;
     CColorFormat m_OtherClrFmt;
 
-    CFile* m_pLogFile;  // for tracking loading
+    FILE* m_pLogFile;  // for tracking loading (Phase 4c prep — was CFile*)
 
     int FlatDimen( ) const { return ( m_iBtnBevel ); }
     int BevelDimen( ) const { return ( m_iBtnBevel ); }
@@ -421,18 +449,23 @@ class CConquerApp : public CWinApp
     CWndBar           m_wndBar;       // the button bar window
     CWndListBuildings m_wndBldgs;     // the buildings listbox
     CWndListVehicles  m_wndVehicles;  // the vehicles listbox
-    CDlgRelations*    m_pdlgRelations;
-    CDlgFile*         m_pdlgFile;
-    CDlgResearch*     m_pdlgRsrch;
+    // CDlgFile removed (Phase 2d) — SDL2FileDialog is the sole replacement.
+    // CDlgResearch removed (Phase 2d) — SDL2ResearchDialog is the sole replacement.
 
     CWndMain      m_wndMain;       // the main window - first created, last destroyed
-    CDlgMain*     m_pdlgMain;      // the main menu
+    // CDlgMain m_pdlgMain removed (Phase 2d) — SDL2MainMenu is the sole path.
     CCreateBase*  m_pCreateGame;   // holder for creating game data & dialogs
-    CWndMovie     m_wndMovie;
+    // CWndMovie m_wndMovie removed (Phase 2d) — SDL2VideoPlayer is the sole path.
     CWndCredits   m_wndCredits;    // playing credits
-    CDlgPlyrList* m_pdlgPlyrList;  // for server to kill players
+    // CDlgPlyrList removed (Phase 2d) — replaced by SDL2PlayerListDialog (modal).
     CWndCutScene  m_wndCutScene;
-    CDlgChatAll*  m_pdlgChat;
+    // CDlgChatAll m_pdlgChat removed (Phase 2d) — chat.cpp excluded from build.
+
+    // Phase 8C: SDL2 rendering window
+    std::shared_ptr<GameWindow> m_gameWindow;
+
+    // SDL2 main menu (replaces CDlgMain)
+    std::unique_ptr<SDL2MainMenu> m_sdlMainMenu;
 
     CDlgPause* GetDlgPause( );
 
@@ -444,12 +477,13 @@ class CConquerApp : public CWinApp
     int   m_iCharHt;         // standard font we use
     int   m_iCharWid;
     int   m_iBtnBevel;
-    CFont m_Fnt;                         // font used for everything else
-    CFont m_FntRD;                       // cost font (descriptions in dialogs)
-    CFont m_FntDesc;                     // cost font (descriptions in dialogs)
-    CFont m_FntCost;                     // cost font (descriptions in dialogs)
+    HFONT m_Fnt = NULL;                  // Phase 4c prep: was CFont
+    HFONT m_FntRD = NULL;                // cost font (descriptions in dialogs)
+    HFONT m_FntDesc = NULL;              // cost font (descriptions in dialogs)
+    HFONT m_FntCost = NULL;              // cost font (descriptions in dialogs)
 
     BOOL                     m_bInGame;  // we're in a game
+    BOOL                     m_bWorldTearingDown;  // in CGame::LoadGame teardown+rebuild (gates game-panel events)
     BOOL                     m_bTimeLimit;
     CMusicPlayer::MUSIC_MODE m_mMode;    // music mode
 
@@ -486,42 +520,7 @@ class CConquerApp : public CWinApp
 };
 
 
-/////////////////////////////////////////////////////////////////////////////
-// CDlgStackDump dialog
-
-class CDlgStackDump : public CDialog
-{
-    // Construction
-  public:
-    CDlgStackDump( CWnd* pParent = NULL );  // standard constructor
-
-                                            // Dialog Data
-    SE_Exception* m_pe;
-
-    //{{AFX_DATA(CDlgStackDump)
-    enum
-    {
-        IDD = IDD_GPF_DATA
-    };
-    CString m_sText;
-    //}}AFX_DATA
-
-
-    // Overrides
-    // ClassWizard generated virtual function overrides
-    //{{AFX_VIRTUAL(CDlgStackDump)
-  protected:
-    virtual void DoDataExchange( CDataExchange* pDX );  // DDX/DDV support
-                                                        //}}AFX_VIRTUAL
-
-                                                        // Implementation
-  protected:
-    // Generated message map functions
-    //{{AFX_MSG(CDlgStackDump)
-    afx_msg void OnCopyStack( );
-    //}}AFX_MSG
-    DECLARE_MESSAGE_MAP( )
-};
+// CDlgStackDump removed (exception-stack dialog with no live callers)
 
 extern CConquerApp theApp;
 

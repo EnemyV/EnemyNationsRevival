@@ -378,8 +378,8 @@ public:
     BOOL HangupCall();
 
     static void CALLBACK lineCallbackFunc(
-        DWORD dwDevice, DWORD dwMsg, DWORD dwCallbackInstance,
-        DWORD dwParam1, DWORD dwParam2, DWORD dwParam3 );
+        DWORD dwDevice, DWORD dwMsg, DWORD_PTR dwCallbackInstance,
+        DWORD_PTR dwParam1, DWORD_PTR dwParam2, DWORD_PTR dwParam3 );  // x64: TAPI LINECALLBACK uses DWORD_PTR
 
     void SetConfig( CLineDevConfig& cf );
 

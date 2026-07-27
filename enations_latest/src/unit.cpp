@@ -18,6 +18,7 @@
 #include "player.h"
 #include "sprite.h"
 #include "chproute.hpp"
+#include "altoutput.h"
 #include "icons.h"
 #include "bitmaps.h"
 #include "area.h"
@@ -27,6 +28,11 @@
 
 #include "minerals.inl"
 #include "terrain.inl"
+
+#include "enprobes.h"
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+#include <intrin.h>
+#endif
 #include "unit.inl"
 #include "building.inl"
 #include "vehicle.inl"
@@ -37,6 +43,9 @@
 static char BASED_CODE THIS_FILE[] = __FILE__;
 #endif
 #define new DEBUG_NEW
+
+extern bool g_enSpriteSplitPass;   // GPU split: terrain is on the mesh, sprites on the atlas
+extern int  g_enSprIsStruct;       // 1=structure (sorts UNDER), 0=mobile/effect layer (on top)
 
 //------------------------------ I s o m e t r i c I n i t ------------------
 
@@ -245,35 +254,56 @@ BOOL CTransportData::CanEnterHex( CHexCoord const& hexSrc, CHexCoord const& hexD
     // only if we are not on water do we care about a bridge
     if ( !bVehOnWater )
     {
-        // ships can't enter a bridge (and better not be on one)
+        // ships can't enter a bridge (and better not be on one). 1996 curiosity
+        // TRAP: ships probing paths near river spans is routine now (soak34
+        // 09:29 dump); the refusal is the handling. Warn once per session
+        // (hot path - per-hit logging would flood)
         if ( ( pHexDest->GetUnits( ) & CHex::bridge ) && ( GetWheelType( ) == CWheelTypes::water ) )
         {
-            TRAP( );
+#ifdef _WIN32
+            static BOOL s_bWarnedShipBridge = FALSE;
+            if ( !s_bWarnedShipBridge )
+            {
+                s_bWarnedShipBridge = TRUE;
+                OutputDebugStringA( "[TRAP-REMOVED-1st] CanEnterHex: ship vs bridge hex - refused (once-per-session note)\n" );
+            }
+#endif
             return ( FALSE );
         }
 
         CBridgeUnit* pBuDest = theBridgeHex.GetBridge( hexDest );
 
+        // orphaned mark (bit set, no bridge unit) = can't enter
+        if ( ( pHexDest->GetUnits( ) & CHex::bridge ) && pBuDest == NULL )
+            return ( FALSE );
+
         // if on a bridge either same bridge or exit
         if ( pHexSrc->GetUnits( ) & CHex::bridge )
         {
             CBridgeUnit* pBuSrc = theBridgeHex.GetBridge( hexSrc );
+            if ( pBuSrc == NULL )
+                return ( FALSE );
             // both bridge - same bridge check (or exit one enter other below)
             if ( pHexDest->GetUnits( ) & CHex::bridge )
                 if ( pBuSrc->GetParent( ) == pBuDest->GetParent( ) )
                     return ( TRUE );
 
             // is our exit direction ok? (if it is we continue in case going to a bridge or bldg)
-            // only care if strict
+            // only care if strict. 1996 curiosity TRAPs, mirror of the entry-side
+            // trio (soak32 07:41 dump); -1 mid-span refuse is the handling.
+            // Warn once per session (hot path)
             if ( !bStrict )
             {
-                TRAP( );
-                if ( pBuSrc->GetExit( ) == -1 )
+#ifdef _WIN32
+                static BOOL s_bWarnedBridgeExit = FALSE;
+                if ( !s_bWarnedBridgeExit )
                 {
-                    TRAP( );
-                    return ( FALSE );
+                    s_bWarnedBridgeExit = TRUE;
+                    OutputDebugStringA( "[TRAP-REMOVED-1st] CanEnterHex: non-strict bridge-exit probe (once-per-session note)\n" );
                 }
-                TRAP( );
+#endif
+                if ( pBuSrc->GetExit( ) == -1 )
+                    return ( FALSE );  // mid-span has no exit
             }
             else
 
@@ -304,16 +334,22 @@ BOOL CTransportData::CanEnterHex( CHexCoord const& hexSrc, CHexCoord const& hexD
         if ( pHexDest->GetUnits( ) & CHex::bridge )
         {
             // note - we are the reverse of the dir because we are entering
-            // only care if strict
+            // only care if strict. 1996 curiosity TRAPs: non-strict passability
+            // probes near bridges are routine now (CheckExit/IsPassable at
+            // landings - soak31 07:25 dump); handling below is already correct.
+            // Warn once per session (hot path)
             if ( !bStrict )
             {
-                TRAP( );
-                if ( pBuDest->GetExit( ) == -1 )
+#ifdef _WIN32
+                static BOOL s_bWarnedBridgeEntry = FALSE;
+                if ( !s_bWarnedBridgeEntry )
                 {
-                    TRAP( );
-                    return ( FALSE );
+                    s_bWarnedBridgeEntry = TRUE;
+                    OutputDebugStringA( "[TRAP-REMOVED-1st] CanEnterHex: non-strict bridge-entry probe (once-per-session note)\n" );
                 }
-                TRAP( );
+#endif
+                if ( pBuDest->GetExit( ) == -1 )
+                    return ( FALSE );  // mid-span is never enterable
             }
             else
 
@@ -376,8 +412,20 @@ BOOL CTransportData::CanEnterHex( CHexCoord const& hexSrc, CHexCoord const& hexD
             return ( yDif > 0 );
         case 3:   // exit left
             return ( xDif < 0 );
-        default:  // this is impossible
-            TRAP( );
+        default:
+            // 1996 'impossible' - leaving-side twin of the entering-side dir=-1
+            // (soak33 08:32 dump); refusal below is the handling
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+            {
+                char szD[128];
+                sprintf( szD, "[BADEXITDIR] leave bldg %lu type %d dir %d at %d,%d\n",
+                         (unsigned long)pBldgSrc->GetID( ), (int)pBldgSrc->GetData( )->GetType( ),
+                         IsBoat( ) ? pBldgSrc->GetShipDir( ) : pBldgSrc->GetExitDir( ),
+                         pBldgSrc->GetHex( ).X( ), pBldgSrc->GetHex( ).Y( ) );
+                OutputDebugStringA( szD );
+            }
+#endif
+            EN_TRAP_REMOVED( "CanEnterHex: leaving-building exit dir out of range - refused below" );
             return ( FALSE );
         }
     }
@@ -395,7 +443,19 @@ BOOL CTransportData::CanEnterHex( CHexCoord const& hexSrc, CHexCoord const& hexD
         return ( xDif > 0 );
     }
 
-    TRAP( );
+    // 1996 'impossible' - dir -1 is now reachable (soak27 04:41 dump: dir -1
+    // deep in war) and refusal below IS the handling; log the producer instead
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+    {
+        char szD[128];
+        sprintf( szD, "[BADEXITDIR] bldg %lu type %d dir %d at %d,%d\n",
+                 (unsigned long)pBldgDest->GetID( ), (int)pBldgDest->GetData( )->GetType( ),
+                 IsBoat( ) ? pBldgDest->GetShipDir( ) : pBldgDest->GetExitDir( ),
+                 pBldgDest->GetHex( ).X( ), pBldgDest->GetHex( ).Y( ) );
+        OutputDebugStringA( szD );
+    }
+#endif
+    EN_TRAP_REMOVED( "CanEnterHex: building exit dir out of range - entry refused below" );
     return ( FALSE );
 }
 
@@ -416,7 +476,9 @@ BOOL CTransportData::CanTravelHex( CHex const* pHex ) const
         // if a completed bridge we can travel on it
         if ( ( pHex->GetUnits( ) & CHex::bridge ) != 0 )
         {
-            if ( theBridgeHex.GetBridge( pHex->GetHex( ) )->GetParent( )->IsBuilt( ) )
+            // orphaned mark (no bridge unit) = not travelable
+            CBridgeUnit* pBuTrav = theBridgeHex.GetBridge( pHex->GetHex( ) );
+            if ( pBuTrav != NULL && pBuTrav->GetParent( ) != NULL && pBuTrav->GetParent( )->IsBuilt( ) )
                 return ( TRUE );
             return ( FALSE );
         }
@@ -434,6 +496,21 @@ BOOL CTransportData::CanTravelHex( CHex const* pHex ) const
             return ( FALSE );
         }
     }
+
+    // small boats — the motorboat (gun_boat) and the landing craft — are shallow-draft
+    // enough to navigate ALL water: rivers, lakes, ocean, and across the coastline
+    // shores at river mouths / junctions between water bodies (even sloped). Deeper-draft
+    // ships (cargo ship, destroyer, cruiser) fall through to the depth/carrier rules
+    // below, so they still can't use rivers or cross shallow water.
+    if ( ( GetType( ) == gun_boat ) || ( GetType( ) == landing_craft ) )
+        switch ( pHex->GetType( ) )
+        {
+        case CHex::river:
+        case CHex::lake:
+        case CHex::ocean:
+        case CHex::coastline:
+            return ( TRUE );
+        }
 
     //   not water - we can travel on coastline tiles
     if ( ( pHex->GetType( ) != CHex::lake ) && ( pHex->GetType( ) != CHex::ocean ) )
@@ -934,7 +1011,7 @@ void CUnit::DecrementSpotting( )
     if ( !m_bSpotted )
         return;
 
-    DWORD*    pdwSpot = m_dwaSpot;
+    SPOT_WORD* pdwSpot = m_dwaSpot;
     CHexCoord _hex( m_hexSpotting );
     int       x        = _hex.X( );
     int       iNumBlks = SPOTTING_ARRAY_SIZE;
@@ -948,10 +1025,10 @@ void CUnit::DecrementSpotting( )
     {
         if ( *pdwSpot != 0 )
         {
-            int   iInd = 1;
+            SPOT_WORD iInd = 1;
             CHex* pHex = theMap._GetHex( _hex );
 
-            for ( int iNum = 32; iNum > 0; iNum-- )
+            for ( int iNum = SPOTTING_LINE; iNum > 0; iNum-- )
             {
                 if ( *pdwSpot & iInd )
                 {
@@ -965,7 +1042,8 @@ void CUnit::DecrementSpotting( )
                         if ( pHex->GetUnits( ) & CHex::bldg )
                         {
                             CBuilding* pBldg = theBuildingHex._GetBuilding( _hex );
-                            if ( ( pBldg != NULL ) && ( pBldg->GetOwner( ) != GetOwner( ) ) )
+                            // only freeze once the building fully leaves vision, not per-hex
+                            if ( ( pBldg != NULL ) && ( pBldg->GetOwner( ) != GetOwner( ) ) && !pBldg->IsLive( ) )
                                 pBldg->PauseAnimations( TRUE );
                         }
                     }
@@ -1001,7 +1079,7 @@ void CUnit::IncrementSpotting( CHexCoord const& hex )
     if ( m_bSpotted )
         return;
 
-    DWORD*    pdwSpot = m_dwaSpot;
+    SPOT_WORD* pdwSpot = m_dwaSpot;
     CHexCoord _hex( hex.X( ) - MAX_SPOTTING, hex.Y( ) - MAX_SPOTTING );
     _hex.Wrap( );
     int x        = _hex.X( );
@@ -1014,10 +1092,10 @@ void CUnit::IncrementSpotting( CHexCoord const& hex )
     {
         if ( *pdwSpot != 0 )
         {
-            int   iInd = 1;
+            SPOT_WORD iInd = 1;
             CHex* pHex = theMap._GetHex( _hex );
 
-            for ( int iNum = 32; iNum > 0; iNum-- )
+            for ( int iNum = SPOTTING_LINE; iNum > 0; iNum-- )
             {
 
                 if ( *pdwSpot & iInd )
@@ -1030,6 +1108,21 @@ void CUnit::IncrementSpotting( CHexCoord const& hex )
                         _hex.SetInvalidated( );
                         if ( ( pHex->GetType( ) == CHex::road ) && ( pHex->GetVisibleType( ) != CHex::road ) )
                             pHex->ChangeToRoad( _hex );
+
+                        // Bridge fog reveal (BUGS #30): mark the bridge as seen (the
+                        // persistent IsBridge display bit — road semantics: seen once,
+                        // stays shown) and reveal the flattened forest under it that
+                        // GrabHex deferred while the hex was unlit.
+                        if ( ( pHex->GetUnits( ) & CHex::bridge ) && ( !pHex->IsBridge( ) ) )
+                        {
+                            pHex->SetBridge( );
+                            if ( pHex->GetVisibleType( ) != pHex->GetType( ) )
+                            {
+                                pHex->SetVisibleType( pHex->GetType( ) );
+                                extern void g_enEditHex( int, int );
+                                g_enEditHex( _hex.X( ), _hex.Y( ) );
+                            }
+                        }
 
                         if ( pHex->GetUnits( ) & CHex::bldg )
                         {
@@ -1127,9 +1220,8 @@ void CUnit::ShowWindow( )
         if ( ( m_pOwner == NULL ) || ( !m_pOwner->IsMe( ) ) )
         {
             TRAP( );  // BUGBUG - what is this???
-            CString sMsg;
-            sMsg.LoadString( IDS_NOT_MY_UNIT );
-            theApp.m_wndBar.SetStatusText( 0, sMsg, CStatInst::warn );
+            std::string sMsg = EnLoadStdString( IDS_NOT_MY_UNIT );
+            theApp.m_wndBar.SetStatusText( 0, sMsg.c_str( ), CStatInst::warn );
             MessageBeep( 0 );
             return;
         }
@@ -1311,8 +1403,16 @@ int CUnit::GetTotalStore( ) const
 
     if ( GetUnitType( ) == CUnit::vehicle )
     {
-        TRAP( iTotal > ( (CVehicle*)this )->GetData( )->GetMaxMaterials( ) );
-        iTotal = __min( iTotal, ( (CVehicle*)this )->GetData( )->GetMaxMaterials( ) );
+        int iMax = ( (CVehicle*)this )->GetMaxMaterials( );
+        // Over-capacity is a legitimate transient state now: a balance change that
+        // LOWERS cargo capacity (e.g. the cargo_handling nerf to +10%/level), or
+        // loading a save made under a higher cap, can leave a vehicle holding more
+        // than its current GetMaxMaterials(). The bare TRAP() here __debugbreak'd and
+        // killed the debug build the moment such a truck was touched. Clamp the
+        // reported total as before; log the site once instead of halting.
+        if ( iTotal > iMax )
+            EN_TRAP_REMOVED( "vehicle over cargo capacity (clamped)" );
+        iTotal = __min( iTotal, iMax );
     }
 
     iTotal = __max( 0, iTotal );
@@ -1488,7 +1588,8 @@ void CBuilding::DetermineOppo( )
         for ( int y = -GetRange( ); y < yMax; y++ )
         {
             _hex.X( m_hex.X( ) - *piOn );
-            CHex* pHex = theMap._GetHex( _hex );
+            _hex.WrapX( );                        // torus: this X can fall off the left/right
+            CHex* pHex = theMap._GetHex( _hex );  // edge, and _GetHex does NOT wrap its index
 
             for ( int x = ( *piOn ) * 2 + m_cx - 1; x >= 0; x-- )
             {
@@ -1516,9 +1617,9 @@ void CBuilding::DetermineOppo( )
                     }
                 }
 
-                _hex.Xinc( );
-                pHex = theMap._Xinc( pHex );
-            }
+                _hex.Xinc( );                   // wraps X across the right edge, so the raw
+                pHex = theMap._GetHex( _hex );  // pHex+1 of _Xinc would desync and run off
+            }                                   // the hex array — re-fetch from the wrapped hex
             _hex.Yinc( );
             piOn++;
         }
@@ -1534,7 +1635,8 @@ void CBuilding::DetermineOppo( )
     for ( int y = -GetRange( ); y < yMax; y++ )
     {
         _hex.X( m_hex.X( ) - *piOn );
-        CHex* pHex = theMap._GetHex( _hex );
+        _hex.WrapX( );                        // torus: this X can fall off the left/right
+        CHex* pHex = theMap._GetHex( _hex );  // edge, and _GetHex does NOT wrap its index
 
         for ( int x = ( *piOn ) * 2 + m_cx - 1; x >= 0; x-- )
         {
@@ -1560,9 +1662,9 @@ void CBuilding::DetermineOppo( )
                     return;
                 }
             }
-            _hex.Xinc( );
-            pHex = theMap._Xinc( pHex );
-        }
+            _hex.Xinc( );                   // wraps X across the right edge, so the raw
+            pHex = theMap._GetHex( _hex );  // pHex+1 of _Xinc would desync and run off
+        }                                   // the hex array — re-fetch from the wrapped hex
         _hex.Yinc( );
         piOn++;
     }
@@ -1650,7 +1752,7 @@ void CBuilding::UpdateConst( CMsgBldgStat* pMsg )
         SetConstPer( );
 }
 
-void CBuilding::GetDesc( CString& sText ) const
+void CBuilding::GetDesc( std::string& sText ) const
 {
 
     ASSERT_VALID( this );
@@ -1658,10 +1760,10 @@ void CBuilding::GetDesc( CString& sText ) const
 
 #ifdef _CHEAT
     if ( _bShowStatus )
-        sText += " ID:" + IntToCString( m_dwID ) + " Own:" + IntToCString( GetOwner( )->GetPlyrNum( ) ) +
-                 " Dmg:" + IntToCString( m_iDamagePer ) +
-                 " Trgt:" + ( m_pUnitTarget == NULL ? "0" : IntToCString( m_pUnitTarget->GetID( ) ) ) +
-                 " Oppo:" + ( m_pUnitOppo == NULL ? "0" : IntToCString( m_pUnitOppo->GetID( ) ) );
+        sText += " ID:" + IntToStr( m_dwID ) + " Own:" + IntToStr( GetOwner( )->GetPlyrNum( ) ) +
+                 " Dmg:" + IntToStr( m_iDamagePer ) +
+                 " Trgt:" + ( m_pUnitTarget == NULL ? std::string( "0" ) : IntToStr( m_pUnitTarget->GetID( ) ) ) +
+                 " Oppo:" + ( m_pUnitOppo == NULL ? std::string( "0" ) : IntToStr( m_pUnitOppo->GetID( ) ) );
 #endif
 }
 
@@ -1724,7 +1826,17 @@ void CBuilding::DrawFoundation( const CHexCoord& hexcoord )
     int     cx = GetCX( );
     int     cy = GetCY( );
 
-    // Draw terrain under the foundation tiles, if foundation not finished
+    // Draw terrain under the foundation tiles, if foundation not finished.
+    //
+    // GPU split path: SKIP this. Terrain lives on the GPU mesh (already rendered
+    // correctly under the footprint), and this CPU raster targets m_dibSprite — the
+    // overlay that composites ON TOP of the GPU sprite atlas where the foundation
+    // sprite is drawn. Running it during the foundation stage paints opaque terrain
+    // over the partially-revealed foundation, hiding its bottom-up swype. (Skeleton/
+    // construction stages have m_iVisFoundPer == -1, so this never fired for them —
+    // which is exactly why their swype looked fine and only the foundation's broke.)
+    if ( g_enSpriteSplitPass )
+        return;
 
     CHexCoord hexcoordLeftMap = GetHex( );
 
@@ -1818,6 +1930,16 @@ CRect CBuilding::Draw( const CHexCoord& hexcoord )
             }
         }
 
+        // Flag + smoke/flame are ON-TOP effects, not part of the structure. In the GPU
+        // sprite path the building captures with g_enSprIsStruct=1 (structures sort UNDER
+        // the mobile/effect layer at a tie). Flip to the effect layer (0) for the duration
+        // so the flag and damage smoke sort ON TOP of the building's own structure pieces
+        // — including the foreground piece of a two-piece building (bunker) where they'd
+        // otherwise z-fight behind it. They keep the building's center z-key (set by the
+        // caller), so they sort at the building's depth. Restore afterward.
+        int iSavedIsStruct = g_enSprIsStruct;
+        g_enSprIsStruct    = 0;
+
         // Flag
 
         if ( GetFlag( ) )
@@ -1839,6 +1961,8 @@ CRect CBuilding::Draw( const CHexCoord& hexcoord )
 
         if ( GetDamageDisplay( ) )
             GetDamageDisplay( )->Draw( *pspriteviewBldg, drawparms );  // Self-invalidating
+
+        g_enSprIsStruct = iSavedIsStruct;
 
         if ( CDrawParms::IsInvalidateMode( ) && IsInvalidated( ) )
             xpanimatr->GetDirtyRects( )->AddRect( &rect );
@@ -2180,6 +2304,13 @@ void CBuilding::AddConstDone( int iDone )
     // can we repair?
     if ( GetDamagePoints( ) < GetData( )->GetDamagePoints( ) )
     {
+        // abandoned (exhausted mine): Operate returns before the repair block,
+        // so repair work is never consumed - release the crews, don't weld them
+        if ( m_unitFlags & abandoned )
+        {
+            CVehicle::StopConstruction( this );
+            return;
+        }
         if ( !IsFlag( repair_stop ) )
         {
             for ( int iInd = 0; iInd < CMaterialTypes::num_build_types; iInd++ ) m_aiRepair[iInd] += iDone;
@@ -2287,6 +2418,11 @@ int CMaterialBuilding::GetNextMinuteMat( int iInd ) const
 {
 
     int iRtn = GetBldgResReq( iInd, FALSE );
+
+    // BioFuel consumes no normal input; don't report a need
+    CMaterialBuilding* pThis = const_cast<CMaterialBuilding*>( this );
+    if ( pThis->IsFlag( CUnit::alt_oil ) && AltOutput::Available( pThis ) != nullptr )
+        return ( iRtn );
 
     CBuildMaterials const* pBm = GetData( )->GetBldMaterials( );
     if ( pBm->GetInput( iInd ) == 0 )
@@ -2498,7 +2634,7 @@ void CTurret::DoMuzzleFlash( )
 /////////////////////////////////////////////////////////////////////////////
 // CVehicle - a vehicle
 
-void CVehicle::GetDesc( CString& sText ) const
+void CVehicle::GetDesc( std::string& sText ) const
 {
 
     ASSERT_VALID( this );
@@ -2506,10 +2642,10 @@ void CVehicle::GetDesc( CString& sText ) const
 
 #ifdef _CHEAT
     if ( _bShowStatus )
-        sText += " ID:" + IntToCString( m_dwID ) + " Own:" + IntToCString( GetOwner( )->GetPlyrNum( ) ) +
-                 " Dmg:" + IntToCString( m_iDamagePer ) +
-                 " Trgt:" + ( m_pUnitTarget == NULL ? "0" : IntToCString( m_pUnitTarget->GetID( ) ) ) +
-                 " Oppo:" + ( m_pUnitOppo == NULL ? "0" : IntToCString( m_pUnitOppo->GetID( ) ) );
+        sText += " ID:" + IntToStr( m_dwID ) + " Own:" + IntToStr( GetOwner( )->GetPlyrNum( ) ) +
+                 " Dmg:" + IntToStr( m_iDamagePer ) +
+                 " Trgt:" + ( m_pUnitTarget == NULL ? std::string( "0" ) : IntToStr( m_pUnitTarget->GetID( ) ) ) +
+                 " Oppo:" + ( m_pUnitOppo == NULL ? std::string( "0" ) : IntToStr( m_pUnitOppo->GetID( ) ) );
 #endif
 }
 
@@ -2910,9 +3046,15 @@ void CVehicle::InvalidateStatus( ) const
     // invalidate any area windows
     theAreaList.InvalidateStatus( this );
 
+    // The MFC vehicles list box is not created in the SDL2 port (this list now
+    // lives in an SDL panel). When the underlying list-box control doesn't exist
+    // there's nothing to invalidate here, and FindItem legitimately returns -1 —
+    // so bail before touching it. (Previously this fired ASSERT(iIndex >= 0).)
+    if ( theApp.m_wndVehicles.m_ListBox.m_hWnd == NULL )
+        return;
+
     // invalidate the list box
     int iIndex = theApp.m_wndVehicles.FindItem( this );
-    ASSERT( iIndex >= 0 );
     if ( iIndex < 0 )
         return;
     int iTop = theApp.m_wndVehicles.m_ListBox.GetTopIndex( );
@@ -2945,7 +3087,7 @@ void CVehicle::SetDestAndMode( CSubHex sub, VEH_POS iMode )
     m_hexLastDest = sub;
 
     // a goto for ANY reason means this goes away
-    DestroyLoadWindow( );
+    // (was DestroyLoadWindow(); SDL2LoadTruckDialog is modal so nothing persists)
 
     m_iTimesOn      = 0;
     m_iClosest      = INT_MAX;
@@ -2980,8 +3122,8 @@ void CVehicle::SetDestAndMode( CSubHex sub, VEH_POS iMode )
     // if not there in 6 minutes we jump it there
     m_dwTimeJump = theGame.GettimeGetTime( ) + 1000 * TRUCK_JUMP_TIME;
 
-    // may be there
-    if ( m_ptDest == m_ptHead )
+    // may be there (owned only - undeployed must take the !m_cOwn ladder below)
+    if ( ( m_ptDest == m_ptHead ) && m_cOwn )
     {
         _SetRouteMode( moving );
         return;
@@ -3011,6 +3153,12 @@ void CVehicle::SetDestAndMode( CSubHex sub, VEH_POS iMode )
             if ( ( theVehicleHex._GetVehicle( m_ptHead ) == NULL ) &&
                  ( theVehicleHex._GetVehicle( m_ptTail ) == NULL ) )
             {
+                // settle the stale next (old exit slot/step) before re-acquiring:
+                // TakeOwnership grabs m_ptNext FIRST and only head/tail were
+                // checked free - a foreign claim on the stale next tripped the
+                // AddSubOwned cross-claim TRAP (soak28 05:56). TestStuck and the
+                // HandleBlocked beam-over settle next=head the same way.
+                m_ptNext = m_ptHead;
                 TakeOwnership( );
                 SetLoc( TRUE );
                 GetPath( FALSE );
@@ -3106,7 +3254,7 @@ void CVehicle::GetPath( BOOL bNoOcc )
 
 #ifdef _DEBUG
     ASSERT_VALID( this );
-    ASSERT( GetOwner( )->IsLocal( ) );
+    ASSERT( theGame.IsNetGame( ) || GetOwner( )->IsLocal( ) );  // MP: client simulates remote units (Task#14)
 #endif
 
     CHexCoord _dest;
@@ -3157,6 +3305,14 @@ void CVehicle::GetPath( BOOL bNoOcc )
     // if we have no path we're stuck
     if ( ( m_iPathLen <= 0 ) || ( ( m_iPathLen > 1 ) && ( *m_phexPath == *( m_phexPath + m_iPathLen - 1 ) ) ) )
     {
+        // in a building with no ownership: blocked's handler assumes owned
+        // hexes (GrabHex TRAPs on road-clear - soak3/4 [BLKNOOWN] veh 53);
+        // cant_deploy is the designed in-building wait state
+        if ( !m_cOwn && theBuildingHex._GetBuilding( m_ptHead ) != NULL )
+        {
+            _SetRouteMode( cant_deploy );
+            return;
+        }
         _SetRouteMode( blocked );
         m_iNumRetries = MAX_NUM_RETRIES;
         m_iBlockCount = 6;
@@ -3177,6 +3333,13 @@ void CVehicle::GetPath( BOOL bNoOcc )
         delete[] m_phexPath;
         m_phexPath = NULL;
         m_iPathOff = m_iPathLen = 0;
+        // same in-building guard as the no-path case above
+        if ( !m_cOwn && theBuildingHex._GetBuilding( m_ptHead ) != NULL )
+        {
+            _SetRouteMode( cant_deploy );
+            m_hexLastDest = _dest;
+            return;
+        }
         _SetRouteMode( blocked );
         m_iNumRetries = MAX_NUM_RETRIES;
         m_iBlockCount = 6;
@@ -3391,6 +3554,22 @@ void CVehicle::_SetRouteMode( VEH_MODE iMode )
     BOOL bOld = ( m_cMode == moving );
     m_cMode   = iMode;
 
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+    // blocked/moving-without-ownership tripwire: catches the breaker BEFORE
+    // the AddSubOwned TRAP fires (soak3 + soak25 crashes; moving added
+    // 2026-07-13 - truck 151 crashed via HandleBlocked with mode already
+    // moving and m_cOwn 0, and BLKNOOWN never fired)
+    if ( ( iMode == blocked || iMode == moving ) && !m_cOwn )
+    {
+        char szB[144];
+        sprintf( szB, "[%s] veh %lu ev %d mode-was %d plyr %d at %d,%d caller %p\n",
+                 iMode == blocked ? "BLKNOOWN" : "MOVNOOWN", (unsigned long)GetID( ),
+                 (int)m_iEvent, (int)( bOld ? 1 : 0 ), GetOwner( ) ? GetOwner( )->GetPlyrNum( ) : -1,
+                 m_ptHead.x, m_ptHead.y, _ReturnAddress( ) );
+        OutputDebugStringA( szB );
+    }
+#endif
+
     BOOL bNew = ( iMode == moving );
     if ( bOld != bNew )
         Wheels( bNew, TRUE );
@@ -3571,7 +3750,7 @@ void CVehicle::ReleaseOwnership( )
 {
 
     ASSERT_VALID( this );
-    ASSERT( GetOwner( )->IsLocal( ) );
+    ASSERT( theGame.IsNetGame( ) || GetOwner( )->IsLocal( ) );  // MP: client simulates remote units (Task#14)
 
     if ( m_cOwn )
     {

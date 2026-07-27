@@ -9,10 +9,10 @@
 //
 ////////////////////////////////////////////////////////////////////////////
 
-#include "STDAFX.H"
-#include "CAI.h"
-#include "CAITask.hpp"
-#include "CAIData.hpp"
+#include "stdafx.h"
+#include "cai.h"
+#include "caitask.hpp"
+#include "caidata.hpp"
 
 #define new DEBUG_NEW
 
@@ -395,7 +395,6 @@ CAITask *CAITaskList::GetPatrolTask( int iType )
 					pPickedTask = pTask;
 					iPriority = (int)pTask->GetPriority();
 				}
-				break;
 			}
 		}
 	}
@@ -653,15 +652,14 @@ CAITask *CAITaskList::GetNavyTask( int iUnitType )
 	//if( pVehData->GetTargetType() != CUnitData::naval )
 	//	return( NULL );
 
-	// some vehicles come into this, which are not naval vehicles
-	// and still need a navy task cause its an amphibious assault
+	// med_tank + rangers board a landing craft, which carries them; all three
+	// belong only to the staged amphibious assault (IDG_SEAINVADE), never a solo raid.
 	BOOL bAmphib = FALSE;
 	switch( iUnitType )
 	{
 		case CTransportData::rangers:
-		case CTransportData::light_tank:
 		case CTransportData::med_tank:
-		case CTransportData::light_art:
+		case CTransportData::landing_craft:
 			bAmphib = TRUE;
 		default:
 			break;

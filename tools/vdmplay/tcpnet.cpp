@@ -5,6 +5,26 @@
 #include "vpwinsk.h"
 #include <ctype.h>
 
+// Address-length out-param type for getsockname/getpeername/recvfrom. POSIX
+// requires socklen_t*; Win32 winsock 1.1 uses int*. Portable typedef so the
+// same call sites compile on all three platforms — clang (unlike gcc's
+// -fpermissive) hard-errors on int*/socklen_t* mismatch.
+#ifdef _WIN32
+typedef int       vp_socklen_t;
+#else
+typedef socklen_t vp_socklen_t;
+#endif
+
+// Join-leg diagnostics gate (mirrors vpengine.cpp's JoinAddrLogOn): getenv-gated
+// fprintf(stderr) so Listen()'s silent failure path surfaces on a POSIX Release
+// build (the session Log() logger doesn't reach stderr there). Cached; default
+// off => zero ship impact. Rides EN_NETTRACE so it shows in existing trace runs.
+static int JoinAddrLogOn() {
+    static int on = -1;
+    if ( on < 0 ) on = ( getenv( "EN_JOINADDR" ) || getenv( "EN_NETTRACE" ) ) ? 1 : 0;
+    return on;
+}
+
 static int netCount = 0;
 static int gSimulateFrags = FALSE;
 static int gMaxSends = 5;
@@ -244,7 +264,13 @@ CTcpNet::CTcpNet(CTDLogger* log, u_short streamPort, u_short dgPort, u_short wel
    m_serverAddress = addr.m_stationAddress.s_addr;
     m_serverPort = addr.m_dgPort;
    if (!m_serverPort)
-    m_serverPort = m_wellKnownPort;
+    // Symmetric to the host-register fix: the server-LOOKUP target (sEnumREQ to iserve,
+    // MakeServerLookupAddress) must default a portless ServerAddress to the REGISTRATION
+    // well-known port 1707, NOT the host's TCP session port (m_wellKnownPort=2346). The ini
+    // strips ":1707", so ServerAddress always arrives portless; defaulting to 2346 made the
+    // client query iserve on the wrong port (a registered game would never be found via iserve).
+    // 1707 == DEF_IPX_PORT (base.h); literal here to avoid base.h->MFC drag on MSVC.
+    m_serverPort = htons(1707);
   }
 
   Log("CTcpNet::CTcpNet After TranslateStringAddress");
@@ -255,42 +281,104 @@ CTcpNet::CTcpNet(CTDLogger* log, u_short streamPort, u_short dgPort, u_short wel
  if (!m_serverAddress)
   m_serverAddress = INADDR_BROADCAST;
 
-#if 1
- char hname[256];
-
-
- if (SOCKET_ERROR == gethostname(hname, sizeof(hname)))
- {
-  DWORD err = WSAGetLastError();
-  VPTRACE(("gethostname returns error %d", err));  
-  Log("CTcpNet::CTcpNet gethostname returns error");
-  SetError(VPNET_ERR_INIT,err);
-  return;
- }   
-
-
- LPHOSTENT  he = gethostbyname(hname);
- 
- Log("CTcpNet::CTcpNet After gethostbyname");
- 
- if (!he)
- {
-  DWORD wsErr = WSAGetLastError();
-  Log("CTcpNet::CTcpNet gethostbyname returns error");
-
-  SetError(VPNET_ERR_INIT, wsErr);
-  return;
- }
+ { static int nt=-1; if(nt<0) nt=getenv("EN_NETTRACE")?1:0;
+   if(nt) fprintf(stderr,"[nettrace] CTcpNet ctor: serverAddr_param=0x%lx srvAddrStr=%s -> m_serverAddress=0x%lx m_serverPort=%u\n",
+                  (unsigned long)serverAddr,(srvAddrStr?srvAddrStr:"(null)"),(unsigned long)m_serverAddress,(unsigned)ntohs(m_serverPort)); }
 
  int aIndex = vpFetchInt("TCP", "AddressIndex", 0);
 
- selectAddress(&m_address.m_stationAddress, he, aIndex);
+ // [TCP] LocalAddress=x.x.x.x — explicit override of the ADVERTISED station
+ // address. The auto-probe below asks the routing table which local IP reaches
+ // the internet; with a VPN up that's the tunnel IP (e.g. NordVPN 10.5.0.2),
+ // which other machines cannot connect to, so joiners see the session but the
+ // TCP join silently dies. Sockets bind INADDR_ANY regardless, so pinning the
+ // LAN IP here only changes what gets published to iserve/joiners.
+ char sLocalOverride[64] = { 0 };
+ vpFetchString( "TCP", "LocalAddress", "", sLocalOverride, sizeof( sLocalOverride ) - 1 );
+ if ( sLocalOverride[0] )
+ {
+  u_long ov = inet_addr( sLocalOverride );
+  if ( ov != INADDR_NONE && ov != 0 )
+  {
+   m_address.m_stationAddress.s_addr = ov;
+   return;
+  }
+  Log( "CTcpNet::CTcpNet ignoring bad [TCP] LocalAddress" );
+ }
 
+ // Determine our local station address (for advertising to clients). The legacy
+ // path here was gethostname() + gethostbyname(), which on a VPN/NAT machine can
+ // STALL FOR SECONDS in the DNS resolver (suffix devolution, dead DNS servers) —
+ // and it was paid on EVERY OpenServer/OpenClient, so "Starting network game..."
+ // hung. We now resolve once, cache it process-wide, and use a DNS-free fast path
+ // (ask the routing table which local IPv4 it would use). gethostbyname remains a
+ // fallback and is still used when AddressIndex != 0 (explicit NIC selection).
+ static u_long s_cachedStation = 0;
 
+ if ( s_cachedStation != 0 && aIndex == 0 )
+ {
+  m_address.m_stationAddress.s_addr = s_cachedStation;
+ }
+ else
+ {
+  u_long fast = 0;
 
-#else
- m_address.m_stationAddress.s_addr = INADDR_ANY;
-#endif
+  if ( aIndex == 0 )
+  {
+   // No DNS: "connect" a UDP socket to a dummy off-link address and read back
+   // the local endpoint the OS picked. No packets are sent for a UDP connect.
+   SOCKET us = socket( AF_INET, SOCK_DGRAM, 0 );
+   if ( us != INVALID_SOCKET )
+   {
+    sockaddr_in probe;
+    probe.sin_family = AF_INET;
+    probe.sin_port = htons( 53 );
+    probe.sin_addr.s_addr = inet_addr( "8.8.8.8" );
+    if ( connect( us, (sockaddr*)&probe, sizeof( probe ) ) == 0 )
+    {
+     sockaddr_in local;
+     vp_socklen_t len = sizeof( local );
+     if ( getsockname( us, (sockaddr*)&local, &len ) == 0 &&
+          local.sin_addr.s_addr != 0 &&
+          local.sin_addr.s_addr != htonl( INADDR_LOOPBACK ) )
+      fast = local.sin_addr.s_addr;
+    }
+    closesocket( us );
+   }
+  }
+
+  if ( fast != 0 )
+  {
+   m_address.m_stationAddress.s_addr = fast;
+  }
+  else
+  {
+   // Fallback: legacy DNS path (honours AddressIndex, or if the fast path failed).
+   char hname[256];
+   if ( SOCKET_ERROR == gethostname( hname, sizeof( hname ) ) )
+   {
+    DWORD err = WSAGetLastError();
+    VPTRACE( ( "gethostname returns error %d", err ) );
+    Log( "CTcpNet::CTcpNet gethostname returns error" );
+    SetError( VPNET_ERR_INIT, err );
+    return;
+   }
+
+   LPHOSTENT he = gethostbyname( hname );
+   Log( "CTcpNet::CTcpNet After gethostbyname" );
+   if ( !he )
+   {
+    DWORD wsErr = WSAGetLastError();
+    Log( "CTcpNet::CTcpNet gethostbyname returns error" );
+    SetError( VPNET_ERR_INIT, wsErr );
+    return;
+   }
+   selectAddress( &m_address.m_stationAddress, he, aIndex );
+  }
+
+  if ( aIndex == 0 )
+   s_cachedStation = m_address.m_stationAddress.s_addr;
+ }
 
  char* p = inet_ntoa(m_address.m_stationAddress);
 
@@ -391,6 +479,14 @@ BOOL CTcpNet::TCPAddress::TranslateAddressString(tcpaddress_s &addr, LPCSTR addr
  {
   addr.m_stationAddress.s_addr = inet_addr(hostpart);
  }
+ else if (lstrcmpi(hostpart, "localhost") == 0)
+ {
+  // Resolve "localhost" to loopback WITHOUT the DNS resolver. On VPN/NAT boxes
+  // gethostbyname can stall for seconds (DNS suffix devolution / dead servers),
+  // even for localhost — which made "Starting network game" and "Searching for
+  // games" hang. inet_addr/loopback is instant.
+  addr.m_stationAddress.s_addr = htonl(INADDR_LOOPBACK);
+ }
  else
  {
   LPHOSTENT  he = gethostbyname(hostpart);
@@ -429,8 +525,17 @@ void CTcpNet::SetRegistrationAddress(LPCSTR addr)
  }
  TCPAddress* ta = (TCPAddress*) MakeAddressFromString(addr);
  m_regAddr = ta;
+ // A portless registration address must default to the REGISTRATION well-known port
+ // (1707, the legacy reg port iserve listens on) — NOT the host's TCP SESSION port
+ // (m_wellKnownPort, 2346). The ini reader strips the ":1707" suffix, so a configured
+ // RegistrationAddress=<ip>:1707 always arrives here portless; defaulting to the session
+ // port made the host register to its own :2346 (where no reg server listens) while iserve
+ // on :1707 saw nothing -> "serving 0". Confirmed via EN_ISERVE_LOG host traces (linux2
+ // loopback @2c5c2397, 2026-06-25): read='127.0.0.1' -> m_registrationAddress=...:2346.
+ // 1707 == DEF_IPX_PORT (base.h); kept as a literal here to avoid dragging base.h->MFC on MSVC.
+ static const unsigned short REG_WELLKNOWN_PORT = 1707;
  if (ta && !ta->m_addr.m_dgPort)
-  ta->m_addr.m_dgPort = m_wellKnownPort;
+  ta->m_addr.m_dgPort = htons(REG_WELLKNOWN_PORT);
 
  if (ta)
  {
@@ -490,9 +595,15 @@ CNetLink* CTcpNet::MakeSafeLink(CNetAddress* addr, LPVOID userData)
  if (r == SOCKET_ERROR)
  {
   
-  if ((err = WSAGetLastError()) != WSAEWOULDBLOCK)
+  // A non-blocking connect() reports "in progress" differently per stack: Win
+  // winsock returns WSAEWOULDBLOCK, but POSIX/BSD returns EINPROGRESS (== our
+  // WSAEINPROGRESS, a DIFFERENT value from EWOULDBLOCK). The original check only
+  // accepted WSAEWOULDBLOCK, so on POSIX the normal in-progress connect was
+  // treated as a hard error -> MakeSafeLink returned NULL -> m_serverWS NULL ->
+  // the 2-VM join couldn't send (linux2's gdb). Accept both.
+  if ((err = WSAGetLastError()) != WSAEWOULDBLOCK && err != WSAEINPROGRESS)
   {
-   VPTRACE(("connect error %d on %08x", err, s)); 
+   VPTRACE(("connect error %d on %08x", err, s));
    Log("CTcpNet::MakesafeLink - error connecting socket");
    SetError(VPNET_ERR_WSOCK, err);
    closesocket(s);
@@ -635,26 +746,52 @@ CTcpNet::CTCPLink* CTcpNet::MakeListenLink()
 
 BOOL CTcpNet::Listen(BOOL streamListen, BOOL serverMode)
 {
+ // Join-leg diag: which step of Listen() fails (the silent path behind a NULL
+ // MakeRemoteSession / vpJoinSession). EADDRINUSE on the dg-bind would confirm
+ // the join session re-binds the enum's still-open datagram port (m_net/CTcpNet
+ // is shared enum<->join, and the enum's Listen left m_address.m_dgPort = its
+ // bound ephemeral port). Gated by EN_JOINADDR/EN_NETTRACE => zero ship impact.
+ const char* failStep = "?";
+ (void) failStep;
 
  m_dgLink = (CTCPLink*) MakeUnsafeLink();
- 
+
  if (!m_dgLink)
+ {
+  if (JoinAddrLogOn())
+   fprintf(stderr,"[join-addr] CTcpNet::Listen FAILED at MakeUnsafeLink(dg) (streamListen=%d,serverMode=%d)\n",(int)streamListen,(int)serverMode);
   return FALSE;
+ }
 
 
  sockaddr_in sin;
- int namelen = sizeof(sin);
+ vp_socklen_t namelen = sizeof(sin);
 
  if (serverMode)
   m_address.m_dgPort = m_wellKnownPort;
 
+ // Bind the discovery (datagram) and stream-listen sockets to INADDR_ANY so the
+ // host is reachable on EVERY local interface — loopback (localhost / 127.0.0.1),
+ // LAN, and same-router/NAT addresses — not just the single LAN IP gethostbyname
+ // happened to return. Previously these bound to m_stationAddress, so a client
+ // connecting to "localhost" never reached a host bound to its LAN IP.
+ // We keep m_stationAddress as the real IP below (for advertising to clients),
+ // rather than the 0.0.0.0 that getsockname() reports for an INADDR_ANY bind.
+ in_addr realStation = m_address.m_stationAddress;
+
+ // P0.2 (NAT plan): pinned stream port state. Declared up here (vacuous init)
+ // because the dg-bind `goto handleerr` below would otherwise jump past them.
+ u_short pinBase;
+ int     pinTry;
+ BOOL    pinBound;
+
  sin.sin_family = AF_INET;
- sin.sin_addr = m_address.m_stationAddress;
+ sin.sin_addr.s_addr = INADDR_ANY;
  sin.sin_port = m_address.m_dgPort;
 
 
  if (bind(m_dgLink->m_socket, (sockaddr*) &sin, sizeof(sin)))
-  goto handleerr;
+  { failStep = "bind(dg)"; goto handleerr; }
 
 // ConfigureSocket(m_dgLink->m_socket, FD_READ|FD_WRITE);
 
@@ -663,26 +800,55 @@ BOOL CTcpNet::Listen(BOOL streamListen, BOOL serverMode)
   m_listenLink = MakeListenLink();
 
   if (!m_listenLink)
-   goto nonwsaerr;
+   { failStep = "MakeListenLink(stream)"; goto nonwsaerr; }
 
-  sin.sin_port = 0;  
-  if (bind(m_listenLink->m_socket, (sockaddr*) &sin, sizeof(sin)))
-   goto handleerr;
+  // P0.2 (NAT plan): pin the stream listener to a KNOWN port instead of the
+  // legacy ephemeral bind(0). An ephemeral session port changes every launch,
+  // so neither a router port-forward, nor UPnP, nor TCP hole-punching can ever
+  // target it — pinning is a prerequisite for every NAT-traversal option (see
+  // docs/plans/nat-holepunch-iserve-feasibility.md P0.2). Default 2347 (dg is
+  // 2346), [TCP] StreamPort overrides, +1..+15 retried so several instances on
+  // one box (loopback tests) coexist, and 0/failure falls back to the legacy
+  // ephemeral bind — never fails harder than the old code. The bound port is
+  // read back via getsockname below and advertised in the sessionId as before.
+  sin.sin_addr.s_addr = INADDR_ANY;
+  pinBound = FALSE;
+  pinBase = (u_short) vpFetchInt("TCP", "StreamPort", 2347);
+  if (pinBase)
+  {
+   for (pinTry = 0; pinTry < 16; pinTry++)
+   {
+    sin.sin_port = htons((u_short)(pinBase + pinTry));
+    if (bind(m_listenLink->m_socket, (sockaddr*) &sin, sizeof(sin)) == 0)
+     { pinBound = TRUE; break; }
+   }
+   if (!pinBound && JoinAddrLogOn())
+    fprintf(stderr,"[join-addr] CTcpNet::Listen pinned stream ports %u..%u all taken -> ephemeral fallback\n",
+            (unsigned)pinBase, (unsigned)(pinBase+15));
+  }
+  if (!pinBound)
+  {
+   sin.sin_port = 0;
+   if (bind(m_listenLink->m_socket, (sockaddr*) &sin, sizeof(sin)))
+    { failStep = "bind(stream)"; goto handleerr; }
+  }
 
   if (listen(m_listenLink->m_socket, 5))
-   goto handleerr;
+   { failStep = "listen(stream)"; goto handleerr; }
 
   if (getsockname(m_listenLink->m_socket, (sockaddr*) &sin, &namelen))
-   goto handleerr;
+   { failStep = "getsockname(stream)"; goto handleerr; }
 
     m_address.m_streamPort = sin.sin_port;
   }
 
  if (getsockname(m_dgLink->m_socket, (sockaddr*) &sin, &namelen))
-  goto handleerr;
+  { failStep = "getsockname(dg)"; goto handleerr; }
 
    m_address.m_dgPort = sin.sin_port;
- m_address.m_stationAddress = sin.sin_addr;
+ // Keep the real station address for advertising — NOT the 0.0.0.0 an
+ // INADDR_ANY bind reports.
+ m_address.m_stationAddress = realStation;
 
 
  return TRUE;
@@ -692,6 +858,10 @@ handleerr:
  SetError(VPNET_ERR_WSOCK, WSAGetLastError());
 
 nonwsaerr:
+ if (JoinAddrLogOn())
+  fprintf(stderr,"[join-addr] CTcpNet::Listen FAILED at %s err=%d dgPort=%u streamListen=%d serverMode=%d (EADDRINUSE here ⇒ join re-binds the enum's still-open dg port)\n",
+          failStep, (int)WSAGetLastError(), (unsigned)ntohs(m_address.m_dgPort), (int)streamListen, (int)serverMode);
+
  if(m_dgLink)
   m_dgLink->Unref();
  
@@ -699,11 +869,55 @@ nonwsaerr:
  
  if (m_listenLink)
   m_listenLink->Unref();
- 
+
  m_listenLink = NULL;
  return FALSE;
 
 
+}
+
+
+// TCP-enum (phase-1, mac 2026-06-26): give a reg server a TCP listener on the
+// well-known port (1707) so a client's directed enum/query can arrive over a TCP
+// connection — CRegisterySession::ProcessSafeData dispatches it (SenumREQ -> OnSenumREQ,
+// reply over the same TCP link). Bound to the KNOWN well-known port (NOT the ephemeral
+// :0 the streamListen path uses for game hosts, whose session port is advertised via
+// enum) so a client can reach it. Reuses MakeListenLink (SOCK_STREAM + FD_ACCEPT), so
+// accepts flow through the existing AcceptLink -> OnAccept -> ProcessSafeData path.
+// ADDITIVE: the UDP datagram enum socket (bound in Listen) is untouched and stays the
+// default; this only ADDS a parallel TCP acceptor on the same port.
+BOOL CTcpNet::EnableStreamEnumListener()
+{
+ if (m_listenLink)            // already have a stream listener — nothing to do
+  return TRUE;
+
+ m_listenLink = MakeListenLink();   // SOCK_STREAM socket + ConfigureSocket(FD_ACCEPT)
+ if (!m_listenLink)
+  return FALSE;
+
+ sockaddr_in sin;
+ memset(&sin, 0, sizeof(sin));
+ sin.sin_family      = AF_INET;
+ sin.sin_addr.s_addr = INADDR_ANY;
+ sin.sin_port        = m_wellKnownPort;   // network order, the reg well-known port (:1707)
+
+ if (bind(m_listenLink->m_socket, (sockaddr*) &sin, sizeof(sin)))
+ {
+  SetError(VPNET_ERR_WSOCK, WSAGetLastError());
+  m_listenLink->Unref();
+  m_listenLink = NULL;
+  return FALSE;
+ }
+
+ if (listen(m_listenLink->m_socket, 5))
+ {
+  SetError(VPNET_ERR_WSOCK, WSAGetLastError());
+  m_listenLink->Unref();
+  m_listenLink = NULL;
+  return FALSE;
+ }
+
+ return TRUE;
 }
 
 
@@ -845,7 +1059,7 @@ CNetAddress* CTcpNet::CTCPLink::GetRemoteAddress()
   return NULL;
 
     sockaddr_in   sin;
- int  namelen = sizeof(sin);
+ vp_socklen_t  namelen = sizeof(sin);
  
  int err = getpeername(m_socket, (sockaddr*) &sin, &namelen);
 
@@ -1250,7 +1464,7 @@ DWORD CTcpNet::CTCPLink::ReceiveFrom(LPVOID data, DWORD dataSize, CNetAddress& n
 {
  VPASSERT(m_state == DG);
     sockaddr_in sin;
- int namelen = sizeof(sin);
+ vp_socklen_t namelen = sizeof(sin);
 
  int s = recvfrom(m_socket, (LPSTR) data, (size_t)dataSize, 0, (sockaddr*) &sin, &namelen);
  DWORD err;

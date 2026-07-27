@@ -80,7 +80,17 @@ void CMineralHex::InitHex( CHexCoord const& hex, int iType, int multiplier )
 			break;
 	  }
 
-	iDensity  = RandNum( iDensity ) + (RandNum( iDensity ) * 0.1) * multiplier;
+	// MP determinism: the two draws MUST be sequenced — as one `a + b*0.1`
+	// expression their evaluation order is unspecified and differed across
+	// MSVC/gcc/clang, swapping which draw lands in which role. When the swap
+	// crosses the <=0 early-return below, the minerals flag differs per
+	// platform and MakeMineral's iAvail branch then consumes a different
+	// number of draws -> world-gen RAND MISMATCH (the missed 23rd site of the
+	// arg-eval hoist wave). Integer /10 replaces the *0.1 double: this TU is
+	// not /fp:precise, and the value is equivalent at the boundary.
+	const int iDensDraw1 = RandNum( iDensity );
+	const int iDensDraw2 = RandNum( iDensity );
+	iDensity  = iDensDraw1 + ( iDensDraw2 * multiplier ) / 10;
       iQuantity = RandNum( iQuantity ) * multiplier;
 
 	if ((iDensity <= 0) || (iQuantity <= 0))
@@ -128,7 +138,7 @@ void CMineralHex::Close ()
 
 // explicit specialization fixes loaded game mineral bug
 template<>
-void AFXAPI SerializeElements<CMinerals*>( CArchive& ar, CMinerals** ppMn, INT_PTR nCount )
+void AFXAPI SerializeElements<CMinerals*>( CArchive& ar, CMinerals** ppMn, int nCount )
 {
     {
         while ( nCount-- )
@@ -145,17 +155,60 @@ void AFXAPI SerializeElements<CMinerals*>( CArchive& ar, CMinerals** ppMn, INT_P
     }
 }
 
+// Round-trip every deposit through the archive. The base CMap::Serialize in the
+// MFC-compat layer is a no-op, so this override is what actually persists
+// theMinerals — without it, loaded games have no deposits and mines/oil wells
+// report a "useless" (0,0) location everywhere. The key is the packed hex DWORD
+// (CHexCoord <-> unsigned long); each value uses CMinerals' own operator<</>>.
+void CMineralHex::Serialize( CArchive& ar )
+{
+
+    if ( ar.IsStoring( ) )
+    {
+        ar << (DWORD)GetCount( );
+        POSITION pos = GetStartPosition( );
+        while ( pos != NULL )
+        {
+            DWORD      dwKey;
+            CMinerals* pMn;
+            GetNextAssoc( pos, dwKey, pMn );
+            ar << dwKey;
+            ar << *pMn;
+        }
+    }
+    else
+    {
+        // drop any stale deposits before reading the saved set
+        Close( );
+
+        DWORD nCount = 0;
+        ar >> nCount;
+        while ( nCount-- )
+        {
+            DWORD dwKey = 0;
+            ar >> dwKey;
+            CMinerals* pMn = new CMinerals( );
+            ar >> *pMn;
+            SetAt( dwKey, pMn );
+
+            // Re-flag the hex so the toolbar hover and any GetUnits() checks see
+            // the deposit, matching what InitHex does when generating a new map.
+            theMap._GetHex( CHexCoord( (unsigned long)dwKey ) )->OrUnits( CHex::minerals );
+        }
+    }
+}
+
 
 /////////////////////////////////////////////////////////////////////////////
 // A mineral deposit
 
-CString CMinerals::GetStatus ()
+std::string CMinerals::GetStatus ()
 {
 
 	ASSERT_VALID (this);
 
-	return (CString (" - [" + CMaterialTypes::GetDesc (m_cType) + " (" + 
-					IntToCString (m_cDensity) + "," + IntToCString (m_lQuantity) + ")]"));
+	return " - [" + CMaterialTypes::GetDesc (m_cType) + " (" +
+		   IntToStr (m_cDensity) + "," + IntToStr (m_lQuantity) + ")]";
 }
 
 CMinerals::CMinerals (int iType, int iDensity, int iQuantity)

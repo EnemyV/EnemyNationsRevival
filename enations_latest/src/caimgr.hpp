@@ -9,8 +9,9 @@
 //
 ////////////////////////////////////////////////////////////////////////////
 
-#include "CAITMgr.hpp"
-#include "CAIRoute.hpp"
+#include "caitmgr.hpp"
+#include "cairoute.hpp"
+#include <unordered_set>
 
 #ifndef __CAIMGR_HPP__
 #define __CAIMGR_HPP__
@@ -61,6 +62,13 @@ class CAIMgr : public CObject
 
 	CRITICAL_SECTION m_cs; // internal use only, for message input/update
 
+	// Phase-1 threading: counting semaphore tracking pending messages. The AI
+	// thread blocks on it in WaitForWork instead of hot-spinning Manage() (the
+	// old scheme spun ~AI_IDLE_LIMIT empty passes per idle function). One count
+	// is released per enqueued message (and on SetDead, so a dead AI wakes to
+	// exit promptly). Timeout-expiry drives the idle-function rotation.
+	HANDLE m_hWork;
+
 	int m_iPlayer;	// this player's id to the game
 	BOOL m_bIsAI;	// TRUE indicates the player is AI
 					// FALSE indicates the player is HP
@@ -70,6 +78,11 @@ private:
     // Member variables
     DWORD m_dwLastMessageTime;
     DWORD m_dwLastIdleProcess;
+    DWORD m_dwLastStuckSweep;  // wall-clock HandleStuckVehicles cadence (transient)
+    int   m_iStatBldgBuilt;    // TEMP census counters (transient, [AISTAT] probe)
+    int   m_iStatBldgLost;
+    int   m_iStatRoadsPaved;
+    DWORD m_dwLastIdleFunc;    // idle-rotation aging: force a step every 15s under load
 	int  m_iIdle;  // counter for cycles without messages (idle time)
 	BOOL m_bIdleFunction[MAX_IDLE_FUNCTIONS];
 
@@ -88,6 +101,15 @@ private:
 	CObList *m_plMsgQueue;	// a queue of messages for this manager
 	CObList *m_plTmpQueue;	// messages as arrived
 
+	// [attack-dedup] DedupKey()s (type|id|id2) of high-volume idempotent alerts currently in
+	// the queue (unit_attacked, out_of_LOS — see IsDedupAlert/DedupKey in caimgr.cpp).
+	// MessageArrived skips enqueuing a duplicate while one is still pending; Manage erases
+	// the key when the alert leaves the queue. Bounds the AI message backlog under sustained
+	// melee, where these were posted per-shot / per-LOS-flicker (thousands of identical
+	// pairs); their handlers no-op on duplicates, so dropping a redundant *pending* copy
+	// changes no AI behavior. Guarded by m_cs. Cleared on Load (queues emptied).
+	std::unordered_set<unsigned long long> m_setPendingAttack;
+
 	// NOTE may want to switch to this type of container
 	//CList<CAIMsg *,CAIMsg *> *m_plMsgQueue;
 	//CList<CAIMsg *,CAIMsg *> *m_plTmpQueue;
@@ -98,10 +120,18 @@ public:
 	~CAIMgr();
 
 	int GetPlayer( void );
+	// Live CCell scratch count of THIS AI's per-AI path map (0 if none). For the
+	// EN_PERF "path.cells" gauge only — read once/sec, diagnostic.
+	int GetPathMapCellCount( void ) const;
 	BOOL IsAI( void );
 	void SetAI( BOOL );
 	void SetDead( void );
     void Manage( void );
+	// Block until a message is pending or dwTimeoutMs elapses (idle slice).
+	// Called only by this AI's own thread (AiThread loop).
+	void WaitForWork( DWORD dwTimeoutMs );
+	// TRUE while messages await in either queue (AiThread batch-drain check)
+	BOOL HasPendingMessages( void );
 
 	void UpdateLocation( CAIMsg *pMsg );
 	void UpdatePlayer( CAIMsg *pMsg );
@@ -119,6 +149,8 @@ public:
 
 	void AssumeControl( int iBlockX, int iBlockY );
 	void CreateData( int iBlockX, int iBlockY );
+	void CreatePre( int iBlockX, int iBlockY );   // serial part (RNG: PickStartHex)
+	void CreateHeavy( void );                     // parallel part (RNG-free map build)
 	void CreateOpFors( void );
 	void ConvertHPUnits( void );
     void CreateCAUnits( void );
@@ -131,6 +163,8 @@ public:
 	void ProcessMessage( CAIMsg *pMsg );
 
 	void HandleStuckVehicles( void );
+	// far-stuck construct crane: bridge attempt + site shelf + repool; TRUE if handled
+	BOOL RepoolFarStuck( CAIUnit *pUnit, CHexCoord& hexVeh, CHexCoord& hexDest, int iDist );
 	void ResignGame( void );
 	BOOL IsEmbraced( CAIMsg *pMsg );
 	void VehicleErrorResponse( CAIMsg *pMsg );

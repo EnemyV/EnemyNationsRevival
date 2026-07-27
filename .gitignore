@@ -7,6 +7,9 @@
 /cmake-build-debug/
 /cmake-build-release/
 /cmakeBuild/
+/build-linux/
+/build-linux-release/
+__pycache__/
 /Debug/
 /Release/
 /windward/.vs/*
@@ -49,3 +52,12 @@
 /enations/music/LOSEGAME.WAV
 /enations/music/WINGAME.WAV
 /enations/data/building/BLDGS.ZIP
+
+# macOS port build + run dirs (local)
+/build-mac/
+/run-mac/
+
+# Track committed macOS crash-debug artifacts (shared with the team)
+!debug/
+!debug/macos/
+!debug/macos/**

@@ -25,7 +25,7 @@ struct LOGPALETTE256 {
     PALETTEENTRY palPalEntry[256];
 };
 
-class CAppPalette: public CObject {
+class CAppPalette {
 public:
     CAppPalette();
     ~CAppPalette();
@@ -35,7 +35,7 @@ public:
     HPALETTE hPal() { return ( m_hPal ); }
     DWORD  GetColorValue( COLORREF, int iBitsPerPixel ) const;
 
-    void  Animate();
+    // Phase 6 Stage 5: Animate() removed (dead, AnimatePalette GDI call gone)
     void  Activate( HWND hWnd, HDC hDC, BOOL bActive );
     void  Paint( HDC hDC );
     void  EndPaint( HDC hDC );
@@ -44,8 +44,7 @@ public:
     void  SetColors( RGBQUAD* pRgb, int iFirst, int iNumClrs );
     void  GetColors( RGBQUAD* pRgb, int iFirst, int iNumClrs ) const;
     void  NewWnd( BITMAPINFO256& bmi );
-    void  Fadeout();
-    void  Fadein();
+    // Phase 6 Stage 5: Fadein/Fadeout removed (empty stubs, zero callers)
     COLORREF GetColor( int iIndex ) const {
         return ( RGB( m_lPal.palPalEntry[iIndex].peRed,
                       m_lPal.palPalEntry[iIndex].peGreen, m_lPal.palPalEntry[iIndex].peBlue ) );

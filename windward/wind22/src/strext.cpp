@@ -10,8 +10,8 @@
 //   Copyright 1994, All Rights Reserved
 
 
-#include "STDAFX.H"
-#include "_WINDWRD.H"
+#include "stdafx.h"
+#include "_windwrd.h"
 #include <stdarg.h>
 #include <ctype.h>
 

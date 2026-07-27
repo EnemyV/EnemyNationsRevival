@@ -39,6 +39,12 @@ add_library(vdmplay SHARED ${vdmplay_sources})
 
 set(CMAKE_MFC_FLAG 2)
 
+if(CMAKE_GENERATOR_PLATFORM STREQUAL "x64" OR CMAKE_SIZEOF_VOID_P EQUAL 8)
+    set(EN_ARCH_DEFINE _AMD64_)
+else()
+    set(EN_ARCH_DEFINE _X86_)
+endif()
+
 target_compile_definitions(vdmplay PUBLIC
         _AFXDLL
         STRICT
@@ -47,7 +53,7 @@ target_compile_definitions(vdmplay PUBLIC
         _WINDOWS
         _MBCS
         WIN32
-        _X86_
+        ${EN_ARCH_DEFINE} # arch macro (_X86_ / _AMD64_), selected by platform above
         VPSYSTEM
         _WIN32_WINNT=_WIN32_WINNT_WIN7
         $<$<CONFIG:Release>:NDEBUG>

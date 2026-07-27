@@ -64,7 +64,7 @@ CBridge* CBridge::Create( CHexCoord const& hexStart, CHexCoord const& hexEnd, DW
     hexEnd.Flatten( iAlt );
 
     int iLen = 0;
-    while ( iLen <= MAX_SPAN + 1 )
+    while ( iLen <= MAX_SPAN_ULT + 1 )  // bound must fit the longest researched span
     {
         CBridgeUnit* pBu = new CBridgeUnit( _hexOn, pBrdg );
         pBu->m_hex.SetInvalidated( );
@@ -331,6 +331,17 @@ CRect CBridgeUnit::Draw( const CHexCoord& hexcoord )
 
         rect = pspriteviewBridge->Draw( drawparms );
 
+        // GPU sprite path: a COMPLETED bridge is captured into the dynamic set every
+        // frame (terrain.cpp), but dynamic sprites only repaint where a dirty rect
+        // overlaps. The construction path below self-registers its build-band rect, but
+        // the BUILT path historically did not — so the finished bridge's first frame had
+        // no dirty rect and the deck didn't replace the construction sprite until a zoom
+        // forced a full capture (user-reported flicker). Register the bridge's rect in
+        // invalidate mode (same pattern as vehicles/projectiles) so the incremental emit
+        // repaints it. LIST_PAINT_BOTH carries one frame for the vacate-on-teardown case.
+        if ( CDrawParms::IsInvalidateMode( ) )
+            xpanimatr->GetDirtyRects( )->AddRect( &rect, CDirtyRects::RECT_LIST::LIST_PAINT_BOTH );
+
         return rect;
     }
 
@@ -515,6 +526,12 @@ void CBridgeHex::GrabHex( CBridgeUnit* pBrdg )
     if ( pHex->GetType( ) == CHex::forest )
     {
         pHex->SetType( CHex::plain );
-        pHex->SetVisibleType( CHex::plain );
+        // Display half only when the hex is currently lit — otherwise the
+        // flattened forest leaks through unexplored fog on the area map AND
+        // the minimap (BUGS #30); the spotting code reveals it (alongside the
+        // bridge itself) when the hex is first seen. Same rule ChangeToRoad
+        // uses for roads built under fog.
+        if ( pHex->GetVisibility( ) )
+            pHex->SetVisibleType( CHex::plain );
     }
 }

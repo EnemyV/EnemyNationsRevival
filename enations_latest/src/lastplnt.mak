@@ -55,10 +55,10 @@ $(OUTDIR) :
 # ADD MTL /nologo /D "NDEBUG" /win32
 MTL_PROJ=/nologo /D "NDEBUG" /win32 
 # ADD BASE CPP /nologo /G3 /MT /W4 /GX /YX /O2 /D "WIN32" /D "NDEBUG" /D "_WINDOWS" /D "_CHEAT" /D "_MBCS" /FR /c
-# ADD CPP /nologo /Zp4 /MD /W4 /GX /Zi /O2 /Ob2 /D "WIN32" /D "NDEBUG" /D "_WINDOWS" /D "_CHEAT" /D "_AFXDLL" /D "_MBCS" /Yu"STDAFX.H" /c
+# ADD CPP /nologo /Zp4 /MD /W4 /GX /Zi /O2 /Ob2 /D "WIN32" /D "NDEBUG" /D "_WINDOWS" /D "_CHEAT" /D "_AFXDLL" /D "_MBCS" /Yu"stdafx.h" /c
 CPP_PROJ=/nologo /Zp4 /MD /W4 /GX /Zi /O2 /Ob2 /D "WIN32" /D "NDEBUG" /D\
  "_WINDOWS" /D "_CHEAT" /D "_AFXDLL" /D "_MBCS" /Fp$(OUTDIR)/"LASTPLNT.pch"\
- /Yu"STDAFX.H" /Fo$(INTDIR)/ /Fd$(OUTDIR)/"LASTPLNT.pdb" /c 
+ /Yu"stdafx.h" /Fo$(INTDIR)/ /Fd$(OUTDIR)/"LASTPLNT.pdb" /c 
 CPP_OBJS=.\WinRel/
 # ADD BASE RSC /l 0x409 /d "NDEBUG"
 # ADD RSC /l 0x409 /i "f:\windward\lib" /d "NDEBUG" /d "_AFXDLL"
@@ -178,10 +178,10 @@ $(OUTDIR) :
 # ADD MTL /nologo /D "_DEBUG" /win32
 MTL_PROJ=/nologo /D "_DEBUG" /win32 
 # ADD BASE CPP /nologo /MT /W4 /GX /Zi /YX /Od /Gf /D "WIN32" /D "_DEBUG" /D "_WINDOWS" /D "_MBCS" /FR /c
-# ADD CPP /nologo /Zp4 /MD /W4 /GX /Zi /Od /Ob1 /Gf /D "WIN32" /D "_DEBUG" /D "_WINDOWS" /D "_AFXDLL" /D "_MBCS" /Yu"STDAFX.H" /c
+# ADD CPP /nologo /Zp4 /MD /W4 /GX /Zi /Od /Ob1 /Gf /D "WIN32" /D "_DEBUG" /D "_WINDOWS" /D "_AFXDLL" /D "_MBCS" /Yu"stdafx.h" /c
 # SUBTRACT CPP /Fr
 CPP_PROJ=/nologo /Zp4 /MD /W4 /GX /Zi /Od /Ob1 /Gf /D "WIN32" /D "_DEBUG" /D\
- "_WINDOWS" /D "_AFXDLL" /D "_MBCS" /Fp$(OUTDIR)/"LASTPLNT.pch" /Yu"STDAFX.H"\
+ "_WINDOWS" /D "_AFXDLL" /D "_MBCS" /Fp$(OUTDIR)/"LASTPLNT.pch" /Yu"stdafx.h"\
  /Fo$(INTDIR)/ /Fd$(OUTDIR)/"LASTPLNT.pdb" /c 
 CPP_OBJS=.\WinDebug/
 # ADD BASE RSC /l 0x409 /d "_DEBUG"
@@ -301,13 +301,13 @@ $(OUTDIR) :
 # ADD BASE MTL /nologo /D "_DEBUG" /win32
 # ADD MTL /nologo /D "_DEBUG" /win32
 MTL_PROJ=/nologo /D "_DEBUG" /win32 
-# ADD BASE CPP /nologo /Zp4 /MD /W4 /GX /Zi /Od /Ob1 /Gf /D "WIN32" /D "_DEBUG" /D "_WINDOWS" /D "_AFXDLL" /D "_MBCS" /Yu"STDAFX.H" /c
+# ADD BASE CPP /nologo /Zp4 /MD /W4 /GX /Zi /Od /Ob1 /Gf /D "WIN32" /D "_DEBUG" /D "_WINDOWS" /D "_AFXDLL" /D "_MBCS" /Yu"stdafx.h" /c
 # SUBTRACT BASE CPP /Fr
-# ADD CPP /nologo /Zp4 /MD /W4 /GX /Z7 /O2 /Ob2 /D "WIN32" /D "NDEBUG" /D "_WINDOWS" /D "_CHEAT" /D "_AFXDLL" /D "_MBCS" /D "_PROFILE" /Yu"STDAFX.H" /c
+# ADD CPP /nologo /Zp4 /MD /W4 /GX /Z7 /O2 /Ob2 /D "WIN32" /D "NDEBUG" /D "_WINDOWS" /D "_CHEAT" /D "_AFXDLL" /D "_MBCS" /D "_PROFILE" /Yu"stdafx.h" /c
 # SUBTRACT CPP /Fr
 CPP_PROJ=/nologo /Zp4 /MD /W4 /GX /Z7 /O2 /Ob2 /D "WIN32" /D "NDEBUG" /D\
  "_WINDOWS" /D "_CHEAT" /D "_AFXDLL" /D "_MBCS" /D "_PROFILE"\
- /Fp$(OUTDIR)/"LASTPLNT.pch" /Yu"STDAFX.H" /Fo$(INTDIR)/ /c 
+ /Fp$(OUTDIR)/"LASTPLNT.pch" /Yu"stdafx.h" /Fo$(INTDIR)/ /c 
 CPP_OBJS=.\Profile/
 # ADD BASE RSC /l 0x409 /d "_DEBUG" /d "_AFXDLL"
 # ADD RSC /l 0x409 /i "f:\windward\lib" /d "_DEBUG" /d "_AFXDLL"
@@ -428,11 +428,11 @@ $(OUTDIR) :
 # ADD BASE MTL /nologo /D "NDEBUG" /win32
 # ADD MTL /nologo /D "NDEBUG" /win32
 MTL_PROJ=/nologo /D "NDEBUG" /win32 
-# ADD BASE CPP /nologo /Zp4 /MD /W4 /GX /Zi /O2 /Ob2 /D "WIN32" /D "NDEBUG" /D "_WINDOWS" /D "_CHEAT" /D "_AFXDLL" /D "_MBCS" /Yu"STDAFX.H" /c
-# ADD CPP /nologo /Zp4 /MD /W4 /GX /Zi /O2 /D "WIN32" /D "NDEBUG" /D "_WINDOWS" /D "_CHEAT" /D "_AFXDLL" /D "_MBCS" /D "_TRAP" /Yu"STDAFX.H" /c
+# ADD BASE CPP /nologo /Zp4 /MD /W4 /GX /Zi /O2 /Ob2 /D "WIN32" /D "NDEBUG" /D "_WINDOWS" /D "_CHEAT" /D "_AFXDLL" /D "_MBCS" /Yu"stdafx.h" /c
+# ADD CPP /nologo /Zp4 /MD /W4 /GX /Zi /O2 /D "WIN32" /D "NDEBUG" /D "_WINDOWS" /D "_CHEAT" /D "_AFXDLL" /D "_MBCS" /D "_TRAP" /Yu"stdafx.h" /c
 CPP_PROJ=/nologo /Zp4 /MD /W4 /GX /Zi /O2 /D "WIN32" /D "NDEBUG" /D "_WINDOWS"\
  /D "_CHEAT" /D "_AFXDLL" /D "_MBCS" /D "_TRAP" /Fp$(OUTDIR)/"LASTPLNT.pch"\
- /Yu"STDAFX.H" /Fo$(INTDIR)/ /Fd$(OUTDIR)/"LASTPLNT.pdb" /c 
+ /Yu"stdafx.h" /Fo$(INTDIR)/ /Fd$(OUTDIR)/"LASTPLNT.pdb" /c 
 CPP_OBJS=.\NoInline/
 # ADD BASE RSC /l 0x409 /i "e:\windward\lib" /d "NDEBUG" /d "_AFXDLL"
 # ADD RSC /l 0x409 /i "f:\windward\lib" /d "NDEBUG" /d "_AFXDLL"
@@ -582,43 +582,43 @@ DEP_STDAF=\
 
 !IF  "$(CFG)" == "Win32 Release"
 
-# ADD BASE CPP /Yc"STDAFX.H"
-# ADD CPP /Yc"STDAFX.H"
+# ADD BASE CPP /Yc"stdafx.h"
+# ADD CPP /Yc"stdafx.h"
 
 $(INTDIR)/STDAFX.OBJ :  $(SOURCE)  $(DEP_STDAF) $(INTDIR)
    $(CPP) /nologo /Zp4 /MD /W4 /GX /Zi /O2 /Ob2 /D "WIN32" /D "NDEBUG" /D\
  "_WINDOWS" /D "_CHEAT" /D "_AFXDLL" /D "_MBCS" /Fp$(OUTDIR)/"LASTPLNT.pch"\
- /Yc"STDAFX.H" /Fo$(INTDIR)/ /Fd$(OUTDIR)/"LASTPLNT.pdb" /c  $(SOURCE) 
+ /Yc"stdafx.h" /Fo$(INTDIR)/ /Fd$(OUTDIR)/"LASTPLNT.pdb" /c  $(SOURCE) 
 
 !ELSEIF  "$(CFG)" == "Win32 Debug"
 
-# ADD BASE CPP /Yc"STDAFX.H"
-# ADD CPP /Yc"STDAFX.H"
+# ADD BASE CPP /Yc"stdafx.h"
+# ADD CPP /Yc"stdafx.h"
 
 $(INTDIR)/STDAFX.OBJ :  $(SOURCE)  $(DEP_STDAF) $(INTDIR)
    $(CPP) /nologo /Zp4 /MD /W4 /GX /Zi /Od /Ob1 /Gf /D "WIN32" /D "_DEBUG" /D\
- "_WINDOWS" /D "_AFXDLL" /D "_MBCS" /Fp$(OUTDIR)/"LASTPLNT.pch" /Yc"STDAFX.H"\
+ "_WINDOWS" /D "_AFXDLL" /D "_MBCS" /Fp$(OUTDIR)/"LASTPLNT.pch" /Yc"stdafx.h"\
  /Fo$(INTDIR)/ /Fd$(OUTDIR)/"LASTPLNT.pdb" /c  $(SOURCE) 
 
 !ELSEIF  "$(CFG)" == "Profile"
 
-# ADD BASE CPP /Yc"STDAFX.H"
-# ADD CPP /Yc"STDAFX.H"
+# ADD BASE CPP /Yc"stdafx.h"
+# ADD CPP /Yc"stdafx.h"
 
 $(INTDIR)/STDAFX.OBJ :  $(SOURCE)  $(DEP_STDAF) $(INTDIR)
    $(CPP) /nologo /Zp4 /MD /W4 /GX /Z7 /O2 /Ob2 /D "WIN32" /D "NDEBUG" /D\
  "_WINDOWS" /D "_CHEAT" /D "_AFXDLL" /D "_MBCS" /D "_PROFILE"\
- /Fp$(OUTDIR)/"LASTPLNT.pch" /Yc"STDAFX.H" /Fo$(INTDIR)/ /c  $(SOURCE) 
+ /Fp$(OUTDIR)/"LASTPLNT.pch" /Yc"stdafx.h" /Fo$(INTDIR)/ /c  $(SOURCE) 
 
 !ELSEIF  "$(CFG)" == "Release No Inline"
 
-# ADD BASE CPP /Yc"STDAFX.H"
-# ADD CPP /Yc"STDAFX.H"
+# ADD BASE CPP /Yc"stdafx.h"
+# ADD CPP /Yc"stdafx.h"
 
 $(INTDIR)/STDAFX.OBJ :  $(SOURCE)  $(DEP_STDAF) $(INTDIR)
    $(CPP) /nologo /Zp4 /MD /W4 /GX /Zi /O2 /D "WIN32" /D "NDEBUG" /D "_WINDOWS"\
  /D "_CHEAT" /D "_AFXDLL" /D "_MBCS" /D "_TRAP" /Fp$(OUTDIR)/"LASTPLNT.pch"\
- /Yc"STDAFX.H" /Fo$(INTDIR)/ /Fd$(OUTDIR)/"LASTPLNT.pdb" /c  $(SOURCE) 
+ /Yc"stdafx.h" /Fo$(INTDIR)/ /Fd$(OUTDIR)/"LASTPLNT.pdb" /c  $(SOURCE) 
 
 !ENDIF 
 

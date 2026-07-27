@@ -42,9 +42,9 @@ class LZWCoDec : public CoDec
     virtual ~LZWCoDec( ) {}
 
     virtual void* Compress( const void* pUncompressedBuffer, int iUncompressedBufSize, void* pCb,
-                            int* piCompressedBufSize, FNCOMPSTAT fnStat, DWORD dwData );
+                            int* piCompressedBufSize, FNCOMPSTAT fnStat, DWORD_PTR dwData );
     virtual void* Decompress( const void* pCompressedBuffer, int iCompressedBufSize, void* pUb,
-                              int* piUncompressedBufSize, FNCOMPSTAT fnStat, DWORD dwData );
+                              int* piUncompressedBufSize, FNCOMPSTAT fnStat, DWORD_PTR dwData );
 };
 
 #endif  //  LZWCODEC_H

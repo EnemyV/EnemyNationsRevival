@@ -23,6 +23,9 @@ const int BAR_TEXT_HT     = 28;  // height of text backdrop
 const int TOOLBAR_HT      = BAR_BTN_HT + BAR_TEXT_HT;
 
 
+class SDL2ResearchDialog;
+class SDL2RelationsDialog;
+
 typedef void ( *FNSTATUSLINE )( void* pData, CDC* pDc, CRect const& rDraw, CDIB* pDib, CPoint const& ptOff );
 
 
@@ -63,7 +66,12 @@ class CWndBar : public CWndAnim
 
     void Create( );
     void CheckButtons( );
-    void _GotoScience( );
+    void _GotoScience( BOOL bAlert = FALSE );
+
+    // Live-refresh the research window's list if it's open (called when a topic is
+    // discovered). No-op when the window isn't up. Defined in toolbar.cpp where the
+    // SDL2ResearchDialog full type is visible.
+    void RefreshResearch( int iDiscovered = 0 );
 
     void InvalidateStatus( void* pData );
     void EnableButton( int ID, BOOL bEnable );
@@ -77,11 +85,43 @@ class CWndBar : public CWndAnim
 #endif
 
     void UpdateHelp( CWnd* pWnd );
+    void UpdateHelp( CWndStub* pWnd ) { UpdateHelp( CWnd::FromHandle( pWnd ? pWnd->m_hWnd : NULL ) ); }
     void UpdateGas( );
     void UpdatePower( );
     void UpdatePeople( );
     void UpdateFood( );
     void UpdateTime( );
+
+    void ReRender() {}  // GDI-based; no pre-render needed
+    void Draw();        // Capture GDI content to SDL panel
+
+    // True once Create() has run and the SDL panel exists. Replaces the
+    // legacy `m_wndBar.m_hWnd != NULL` "is initialized?" check at ~18 sites.
+    bool IsCreated() const { return m_sdlPanel != nullptr; }
+
+    // Wrappers that hide the legacy CWndStatBar / CWndStatLine children from
+    // callers, so we can drop those children when the MFC HWND goes away.
+    void FlashLowIcon( int idx );          // mainloop's low-resource flasher
+    void* GetStatusLineData( int line );    // status-callback owner (for "is this me?")
+    void ClearStatusFunc( int line );       // detach status-callback
+    void InvalidateStatusLine( int line );  // force redraw of a text line
+
+    // Shadow the CWndStub geometry/visibility methods so callers that target
+    // the bar (m_wndBar.SetWindowPos / .ShowWindow / .GetWindowRect) route
+    // through the SDL panel once the MFC HWND is gone. With the HWND still
+    // present these just delegate to the base implementation.
+    BOOL SetWindowPos( HWND hwndAfter, int x, int y, int cx, int cy, UINT flags );
+    BOOL ShowWindow( int nCmdShow );
+    BOOL GetWindowRect( RECT* pRect ) const;
+
+    // Shadow DestroyWindow so the SDL panel + SDL2Toolbar get torn down even
+    // when there's no MFC HWND. Without this, CWndStub::DestroyWindow sees
+    // m_hWnd == NULL, returns FALSE immediately, and OnDestroy never fires —
+    // leaving the toolbar panel in the compositor where it intercepts input
+    // after the world closes (hangs the main menu on quit-to-menu).
+    BOOL DestroyWindow();
+
+    class SDL2Panel* m_sdlPanel = nullptr;
 
   public:
     // Generated message map functions
@@ -123,10 +163,19 @@ class CWndBar : public CWndAnim
     static const int aID[NUM_BAR_BTNS];
     static const int aBtn[NUM_BAR_BTNS];
     static const int aHelp[NUM_BAR_BTNS];
-    static CString   m_sChat1;
-    static CString   m_sChat2;
-    static CString   m_sScience;
-    static CString   m_sRelations;
+    static std::string m_sChat1;
+    static std::string m_sChat2;
+    static std::string m_sScience;
+    static std::string m_sRelations;
+
+    // Non-modal research window. Held so the game keeps ticking while it's open
+    // (DoModal would freeze the simulation). Nulled by its onDone callback; the
+    // GameWindow owns deletion. Guards against opening a second copy.
+    SDL2ResearchDialog* m_pSdlResearch = nullptr;
+
+    // Non-modal diplomacy window — same rationale as research: it applies relation
+    // changes / unit gifts LIVE, so the sim must keep running while it's open.
+    SDL2RelationsDialog* m_pSdlRelations = nullptr;
 };
 
 

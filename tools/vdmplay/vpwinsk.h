@@ -1,9 +1,12 @@
 #ifndef __VPWINSK_H__
 #define __VPWINSK_H__
 
+#ifdef _WIN32
 #include <winsock.h>
-
-#define USE_VPWINSOCK
+#define USE_VPWINSOCK      // Windows: route socket()/... through the winsock thunk table
+#else
+#include "vp_sock_posix.h" // POSIX: socket()/... bind to real BSD calls (MP port §7b step 2)
+#endif
 #ifdef __cplusplus
 extern "C" {
 #endif

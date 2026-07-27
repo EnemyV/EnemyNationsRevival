@@ -19,9 +19,6 @@
 //
 
 class CDIBWnd
-#ifdef _DEBUG
-    : public CObject
-#endif
 {
 
 public:
@@ -70,8 +67,6 @@ private:
     int         m_iWinHt;
     Ptr< CDIB > m_ptrdib;
     HRESULT     m_hRes;
-
-    LPDIRECTDRAWCLIPPER m_pddclipper;
 };
 
 //--------------------------- C D i r t y R e c t s -----------------------------
@@ -79,9 +74,6 @@ private:
 // Handles dirty rects for a CDibWnd
 
 class CDirtyRects
-#ifdef _DEBUG
-    : public CObject
-#endif
 {
 
 public:

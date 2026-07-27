@@ -19,7 +19,35 @@
 #include "icons.h"
 #include "player.h"
 
+// World generation presets chosen on the New Game screen. The selected value is
+// stored on CCreateBase/CGame (m_iWorldType) and sent to every client inside
+// CNetStart, so all machines run the seed-deterministic generator identically.
+// WORLD_DEFAULT == vanilla generation (random ocean style, oceans only when >6
+// players, classic leftover-block fill). WORLD_RANDOM rolls one of the concrete
+// presets (WORLD_BIG_OCEAN..WORLD_DESERT) at generation time, off the shared
+// game seed. Keep this enum in sync with the dialog menu in SDL2Dialogs.cpp.
+enum EWorldType
+{
+	WORLD_DEFAULT = 0,    // vanilla: random ocean style, only with >6 players
+	WORLD_RANDOM,         // roll a concrete preset below (resolved in CGameMap::Init)
+	WORLD_BIG_OCEAN,      // ocean, grow style
+	WORLD_STRIP_OCEAN,    // ocean, stripe style
+	WORLD_SCATTER_OCEAN,  // ocean, scatter style
+	WORLD_ISLANDS,        // ocean, grow+island style
+	WORLD_MOUNTAIN,       // mountain-dominated planet
+	WORLD_BADLANDS,       // badlands-dominated planet
+	WORLD_DESERT,         // desert-dominated planet
+	WORLD_NUM
+};
+
 const int LOS_ALT = 4;		// alt difference needed to obscure
+
+// Bumped whenever a hex crosses the visible<->invisible boundary (CHex::Inc/DecVisible),
+// i.e. when fog-of-war actually changes shape. The GPU terrain fog overlay skips its
+// per-hex re-sample + re-render when this hasn't changed since the last fog render
+// (huge win zoomed out, where the fog mesh is ~all visible hexes). Plain unsigned: a
+// torn cross-thread write only delays a fog update, and the 1 s force-refresh heals it.
+extern unsigned g_enFogVisGen;
 
 const int CITY_DESTROYED_OFF = 0;
 const int CITY_DESTROYED_NUM = 8;
@@ -129,7 +157,7 @@ public:
 	void		Init (int iAlt);
 	void		InitType ();
 	CRect		Draw( const CHexCoord & );
-	CString	GetStatus ();
+	char const*	GetStatus ();
 
 	CHexCoord	GetHex () const;
 
@@ -187,6 +215,12 @@ public:
 	BYTE		GetVisibleType ();
 	void		SetVisibleType ( int iType );
 
+	// Field crop-growth stage (0..3) for "fields grown around farms".
+	// Stored in the free CTile::m_byType bits 1-2; the logical GetType() (soil
+	// fertility) is left untouched so farm yield is unaffected.
+	int			GetGrowStage () const;
+	void		SetGrowStage ( int iStage );
+
 	CBuilding *GetVisibleBuilding( CHexCoord hexcoord ) const;
 
 	void 		Serialize (CArchive & ar);
@@ -225,7 +259,7 @@ class CTerrainData
 #ifdef _DEBUG
 friend class CVehicle;
 #endif
-friend CTerrain;
+friend class CTerrain;
 public:
 							CTerrainData () {}
 
@@ -237,7 +271,7 @@ public:
 			int				GetDefenseMult (int iInd) const { ASSERT_STRICT_VALID (this);
 														ASSERT_STRICT ((0 <= iInd) && (iInd < NUM_WHEEL_TYPES));
 														return (m_iDefenseMult [iInd]); }
-			CString const &	GetDesc () const { ASSERT_STRICT_VALID (this); return (m_sDesc); }
+			std::string const &	GetDesc () const { ASSERT_STRICT_VALID (this); return (m_sDesc); }
 
 			static int GetBuildRoadTime () { return (8); }
 
@@ -246,7 +280,7 @@ protected:
 			int			m_iFarmMult;						// reduction in farm output
 			int			m_iWheelMult [NUM_WHEEL_TYPES]; // multiplier for movement
 			int			m_iDefenseMult [NUM_WHEEL_TYPES]; // multiplier for defense at that location
-			CString	m_sDesc;								// what its called
+			std::string	m_sDesc;								// what its called
 
 #ifdef _DEBUG
 public:
@@ -293,7 +327,11 @@ friend class CHexCoord;
 friend class CSubHex;
 friend class CMapLoc;
 friend class CHex;
-#ifdef _CHEAT
+// CUnit::AssertValid (new_unit.cpp) reads m_eX/m_eY, so this friendship is a
+// _DEBUG dependency, not a cheat one. It was keyed to _CHEAT only because
+// _CHEAT used to be implied by _DEBUG; decoupling the two (EN_CHEAT option)
+// broke the Debug build until this said what it actually needs.
+#if defined( _CHEAT ) || defined( _DEBUG )
 friend class CUnit;
 #endif
 
@@ -307,22 +345,36 @@ public:
     void        GenerateMountainBlock( int _x, int iSideSize, int _y);
     void        GenerateBadlandsBlock( int _x, int iSideSize, int _y);
     void        SmoothBlockEdges( int iSideSize, int iSide );
-    void        GenerateOcean( int iNumBlks, int* piBlks, int iSide, int blockType, int& iOceansLeft, CGame& theGame );
+    // Region painter: fills blocks with 'blockType' (-1 ocean, -2 desert, -5 mountains,
+    // -6 badlands ...) using a spatial style. oceanStyle: 0 stripe, 1 scatter, 2 grow,
+    // 3 grow+island; pass -1 to pick one at random (legacy behavior). bDominant paints
+    // most of the map (planet themes) instead of a random fraction. Driven by the world
+    // type chosen in the New Game dialog and synced across the net (see EWorldType).
+    void        GenerateOcean( int iNumBlks, int* piBlks, int iSide, int blockType,
+                               int oceanStyle, bool bDominant, int& iOceansLeft, CGame& theGame );
 	void		InitSquare (int x1, int y1, int x2, int y2, int iTyp1, int iTyp2, int iTyp3, int iTyp4);
 	void		InitSquarePass2 (int x1, int y1, int x2, int y2, int iTyp1, int iTyp2, int iTyp3, int iTyp4);
 	int			DepositMinerals (int x, int y, int iTyp, int iNum);
     int         MakeMineral( int x, int y, int iTyp, int iSideSize, int multiplier  = 1);
 	void		CheckAlt ();
 	void		AddCoastlines ();
+	// coastline facing assignment, shared by worldgen + the on-load refit
+	// (see wrldinit.cpp for the three-tier decision notes)
+	int 		AssignCoastFacings (const unsigned char * pbWasWater, BOOL bKeepGroup);
+	void		RefitCoastFacings ();
 	void		EliminateSingles ();
 	void		MakeLakes ();
 
 	void		Close ();
 	void		Update (CAnimAtr & aa);
 	void		UpdateRect (CAnimAtr & aa, CRect, CDrawParms::UPDATE_MODE );
+	// GPU split path: object/forest sprite discovery (replaces the full per-hex view
+	// walk when g_enSpriteSplitPass is active). See terrain.cpp.
+	void		DiscoverSpritesGpu (CAnimAtr & aa, const CRect & rect);
 	CSize		GetSize () const {ASSERT_STRICT_VALID (this); return (CSize (m_eX, m_eY));}
 	int			Get_eX () const { return (m_eX); }	// do NOT put assert's in this
 	int			Get_eY () const { return (m_eY); }
+	long		GetHexOffPub (CHex const *pHex) const { return (pHex - m_pHex); }	// public GetHexOff (GPU field rotation)
 	int			GetSideSize () const { return (m_iSideSize); }
 	int			GetSideShift () const { return (m_iSideShift); }
 
@@ -345,6 +397,11 @@ public:
 	void		ClrBldgCur ();
 	int			IsBldgCurOk () const { return (m_iBldgCur); }
 	BOOL		HaveBldgCur () const { return (m_cxBldgCur > 0); }
+	// Footprint rect (UL hex + size) for the live GPU cursor-hatch overlay, which
+	// redraws every frame in window space (exits are m_pLandExit/m_pShipExit below).
+	BOOL		GetBldgCurRect (CHexCoord & hexUL, int & cx, int & cy) const
+				{ if (m_cxBldgCur <= 0) return FALSE;
+				  hexUL = m_hexBldgCur; cx = m_cxBldgCur; cy = m_cyBldgCur; return TRUE; }
 	CHex *		m_pLandExit = NULL;		// the hex with the land exit
 	int				m_iLandDir;			// the direction of the land exit
 	CHex *		m_pShipExit = NULL;		// the hex with the ship exit
@@ -365,6 +422,11 @@ public:
 	int			FoundationCost (CHexCoord const & hex, int iType, int iDir, CVehicle const * pVeh, int * piAlt = NULL, int * piWhy = NULL) const;
 	int			BridgeCost (CHexCoord const & hexBgn, CHexCoord const & hexEnd, CVehicle const * pVeh, int * piAlt = NULL, int * piWhy = NULL) const;
 					enum { ok, bldg_next, water_next, bldg_or_river, veh_in_way, water, no_water, no_land_exit, no_water_exit, steep };
+	// server bridge-acceptance rule (netapi BuildBridge), shared with the AI planner/
+	// dispatcher so client==server: span walk (bldg|bridge obstacles, water length vs
+	// iMaxSpan), then the 3x3 base-regrade on BOTH banks at the exact deck altitude.
+					enum { bridge_ok = 0, bridge_bad_span, bridge_too_long, bridge_obstacle, bridge_start_base, bridge_end_base };
+	int			BridgeSpanDeny (CHexCoord const & hexStart, CHexCoord const & hexEnd, int iMaxSpan, int * piAlt = NULL, CHexCoord * phexAt = NULL, int * piLen = NULL);
 
 	// battle stuff
 	int			GetRangeDistance (CUnit const * pSrc, CUnit const * pDest) const;
@@ -398,6 +460,8 @@ protected:
 	int			CheckIt (CSpriteView const *pSv, int x, int y) const;
 	BOOL		MakePeak (int xOk, int yOk, int xTest, int yTest, int iSidesize, BOOL bEasy = FALSE);
 	void		MakeRiver (int x, int y, BOOL & bFound);
+	void		MakeRiversFlow (int * piBlks, int iSide, int iSideSize);	// flow-accumulation rivers (random maps)
+	void		WgTrace (const char * szStage);	// [wg] world-gen parity trace (rand-mismatch hunt)
 	void		MakeTerrain (int x, int y, int iTyp, int iSideSize);
 
 	void		CheckOcean();
@@ -421,7 +485,9 @@ protected:
 
 	Ptr< CHexValidMatrix	>	m_ptrhexvalidmatrix;
 
-#ifdef _CHEAT
+// same story: CHex::AssertValid (terrain.cpp) calls this, so it is a _DEBUG
+// need. (GetHexOffPub above is the identical public one used by the GPU path.)
+#if defined( _CHEAT ) || defined( _DEBUG )
 	long		GetHexOff (CHex const *pHex) const { return (pHex - m_pHex); }
 #endif
 #ifdef _DEBUG

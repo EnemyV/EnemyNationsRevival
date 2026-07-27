@@ -11,7 +11,9 @@
 // sprite.h : header file for sprites
 //
 
-#ifndef __AFXWIN_H__
+// Phase 1g step 2: the original PCH guard checked __AFXWIN_H__. Under the
+// stub gates we don't include afxwin.h; accept windows.h's _WINDOWS_ marker.
+#if !defined(__AFXWIN_H__) && !defined(_WINDOWS_)
 	#error include 'stdafx.h' before including this file for PCH
 #endif
 
@@ -85,7 +87,7 @@ public:
 
 	CDrawParms()	{}
 
-	CDrawParms( CTile & tile, CPoint & ptOffset )
+	CDrawParms( CTile & tile, const CPoint & ptOffset )
 		:
 			m_ptile   ( &tile        ),
 			m_ptOffset(  ptOffset    ),
@@ -190,8 +192,11 @@ public:
 
 struct CBlockInfo
 {
-	long	m_lOffset;
-	long	m_lLength;
+	// On-disk struct (read as a raw block in CSpriteParms). These MUST be 4 bytes
+	// to match the file layout. `long` is 4 bytes on Win32/Win64 (LLP64) but 8 on
+	// Linux (LP64), which would corrupt the layout — use the fixed-width LONG.
+	LONG	m_lOffset;
+	LONG	m_lLength;
 
 	#ifdef _DEBUG
 	void CheckValid() const;
@@ -224,6 +229,12 @@ struct CDIBLayoutInfo
 //--------------------------- C S p r i t e D I B ----------------------------
 //
 
+// pack(4): this struct overlays a 32-bit on-disk sprite record and is array-
+// walked by sizeof() stride in CSpriteView::Init. The m_pspriteview pointer
+// would otherwise force 8-byte alignment on x64, adding trailing padding that
+// the 32-bit data layout doesn't have. pack(4) keeps sizeof() == the 32-bit
+// stride. (Combined with the _WIN64 reserved-area trim that keeps field offsets.)
+#pragma pack( push, 4 )
 struct CSpriteDIB
 {
 	int				Type() 		 			const	{ return m_iType; 				}
@@ -237,6 +248,7 @@ struct CSpriteDIB
 	int				Width ( int iZoom ) const	{ return Rect( iZoom ).Width();  }
 	int				Height( int iZoom ) const	{ return Rect( iZoom ).Height();	}
 	long				Length( int iZoom ) const  { return m_adiblayoutinfo[ iZoom ].m_blockinfoDecompressed[ m_iBytesPerPixel - 1 ].m_lLength; }
+	long				Offset( int iZoom ) const  { return m_adiblayoutinfo[ iZoom ].m_blockinfoDecompressed[ m_iBytesPerPixel - 1 ].m_lOffset; }	// into the superview block
 
 	CRect	const &	Rect() 		 		  const	{ return m_arect[ xiZoom ]; }
 	int	  			X() 			 		  const	{ return Rect().left;		 }
@@ -259,6 +271,12 @@ struct CSpriteDIB
 	CRect	__stdcall Draw()							const;
 	CRect				 CalcBoundingRect()			const;
 	BOOL				 IsHit(	CPoint const & )	const;
+
+	// GPU sprite layer (SDL2Sprites): decode this frame at the current zoom into a
+	// W*H ARGB8888 buffer (W=Width(), H=Height()), transparent (alpha 0) where the
+	// sprite has no pixel (the RLE "skip" runs). Returns FALSE if empty. Mirrors the
+	// run/skip walk in StructureDrawToDIB.
+	bool				 DecodeToRGBA( unsigned * pDst ) const;
 
 	#ifdef _DEBUG
 	void	CheckValid() const;
@@ -309,10 +327,18 @@ private:
 
 	CSpriteDIB();	// Can't construct a CSpriteDIB, can only point to a block of memory
 
-	// 8 bytes of reserved spave follows
-
+	// 8 bytes of reserved space follows. This MUST stay exactly 8 bytes so the
+	// on-disk "file image" below keeps its 32-bit offset and sizeof(CSpriteDIB)
+	// stays the array stride the data was written with. On x64 the 8-byte
+	// pointer fills the reserved area on its own; on x86 it's int + 4-byte ptr.
+#if defined(_WIN64) || defined(__LP64__)
+	// Any LP64/LLP64-with-8-byte-pointer target (Win64, Linux x64): the 8-byte
+	// pointer fills the reserved area exactly.
+	CSpriteView	 * m_pspriteview;			// 8 bytes — fills the reserved area
+#else
 	int				m_aiReserved[1];
 	CSpriteView	 * m_pspriteview;
+#endif
 
 	// File image follows
 
@@ -326,6 +352,7 @@ private:
 	static CDrawParms 		 * G_pdrawparms;
 	static CSpriteView const * G_pspriteview;
 };
+#pragma pack( pop )
 
 //------------------------- C H o t S p o t K e y ---------------------------
 
@@ -418,7 +445,16 @@ typedef CViewCoord	CAnchor;
 
 class CUnitTile;
 class CSimpleTile;
+// Explicit forward declarations: CSpriteView only friend-declares these, and a
+// friend-only declaration is visible to ADL but NOT ordinary lookup (gcc strict;
+// MSVC lax), so `CSprite* m_psprite` etc. below need real forward decls.
+class CSprite;
+class CSpriteDIB;
 
+// pack(4): same reason as CSpriteDIB — CSpriteView overlays a 32-bit on-disk
+// record and is allocated/array-walked by its byte layout. Its pointer members
+// must not force x64 8-byte alignment/padding that the data wasn't written with.
+#pragma pack( push, 4 )
 class CSpriteView
 {
 
@@ -481,7 +517,7 @@ public:
 protected:
 
 	friend class CSprite;
-	friend CSpriteDIB;
+	friend class CSpriteDIB;
 
 	void	Init(	CSprite *, CSpriteDIBParms * );
 
@@ -505,7 +541,14 @@ private:
 	CSpriteDIB 	 * m_pspritedibOverlay;
 	CSpriteDIB   * m_apspritedibAnim[ ANIM_COUNT ];
 
+	// The 8 pointers above are 4 bytes each on x86 and 8 on x64. m_aiReserved[8]
+	// (32 bytes) was sized to exactly absorb that 32-byte growth, keeping the
+	// on-disk "file image" below (m_anchor onward) and sizeof(CSpriteView) the
+	// same on both arches. So on any 8-byte-pointer target (Win64 or Linux LP64)
+	// the pointers consume it and we drop it.
+#if !defined(_WIN64) && !defined(__LP64__)
 	int				m_aiReserved[ 8 ];
+#endif
 
 	CAnchor	 		m_anchor;
 	int				m_iSuperviewIndex;
@@ -514,6 +557,7 @@ private:
 	int				m_nOverlay;
 	int				m_anAnim[ ANIM_COUNT ];
 };
+#pragma pack( pop )
 
 //----------------------------------------------------------------------------
 // CSpriteDIB::GetDIBPixels
@@ -641,7 +685,7 @@ public:
 
 protected:
 
-	friend	CSpriteView;
+	friend	class CSpriteView;
 
 	int  const	* GetViewIndices			  () const { return m_piViewIndices; }
 	BYTE const	* GetDIBPixels	 			  ( int iSuperviewIndex, CDIBLayoutInfo const & );
@@ -655,6 +699,11 @@ protected:
 	}
 
 	void	ColorConvert( BYTE * pbyDst, BYTE const * pbySrc, long lLenDst, long	lLenSrc, int iZoom, int iSuperviewIndex );
+
+	// Team-color flag clones: deep-copy the shallow-shared storage (header block
+	// incl. CSpriteDIBs + decompressed pixel blocks), then recolor cloth pixels.
+	void	CloneStorage();
+	void	RecolorCloth( COLORREF clr );
 
 	int			m_iID;
 	int			m_iIndex;
@@ -693,6 +742,7 @@ class CEffectSprite : public CSprite
 public:
 
 	CEffectSprite( CSpriteParms const & );
+	CEffectSprite( CEffectSprite const &, COLORREF clrCloth, int iIndex );	// team-color clone
 
 	CSpriteView * GetView( int iLayer = CSprite::FOREGROUND_LAYER ) const
 	{
@@ -907,7 +957,7 @@ public:
 	CSprite       *	GetSprite( int iID, int iIndex = 0, BOOL bStrict = FALSE );
 	CSprite const *	GetSprite( int iID, int iIndex = 0, BOOL bStrict = FALSE ) const;
 	void					SetSprite( Ptr< CSprite > const &, int iID, int iIndex = 0 );
-	char 	  const *	GetRifName() const { return m_strRif; }
+	char 	  const *	GetRifName() const { return m_strRif.c_str(); }
 	CFile 		  *	GetFile();
 
 	#ifdef _DEBUG
@@ -942,7 +992,7 @@ protected:
 	int				  m_bLoaded;		// 0x01 data loaded, 0x02 sprites loaded, 0x04 lang loaded
 	int				  m_nSprite;
 	BOOL				  m_bOpen;
-	CString			  m_strRif;
+	std::string		  m_strRif;
 	Ptr< CSprite > * m_pptrsprite;
 	Ptr< CFile >	  m_ptrfile;
 	Ptr< CSpriteCollectionInfo	> m_ptrspritecollectioninfo;
@@ -981,6 +1031,7 @@ public:
 	void	Enable	 ( BOOL bEnable  );
 	void	Pause		 ( BOOL bPause   );
 	void	SetOneShot( BOOL bOneShot );
+	void	SetHalfSpeed( BOOL b )	{ m_bHalfSpeed = b; }	// 2x frame hold (fracking wells)
 
 	BOOL	IsOneShot() const	{ return m_bOneShot; }
 	BOOL	IsEnabled() const	{ return m_bEnabled; }
@@ -1004,9 +1055,10 @@ private:
 
 	DWORD	m_dwLastTime;
 	int	m_iFrame;
-	BOOL	m_bEnabled;	
+	BOOL	m_bEnabled;
 	BOOL	m_bOneShot;
 	BOOL	m_bPaused;
+	BOOL	m_bHalfSpeed;
 };
 
 //------------------------------- C T i l e -------------------------------

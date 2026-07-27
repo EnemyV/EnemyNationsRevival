@@ -43,7 +43,7 @@ public:
 
 protected:
 
- CFile m_File;
+ FILE* m_pFile;
  CRITICAL_SECTION m_cs;
 
  int   m_iSection;

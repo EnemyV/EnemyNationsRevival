@@ -1526,8 +1526,8 @@ long CTapiConnection::WaitForReply (long lRequestID)
 //  PURPOSE: Receive asynchronous TAPI events
 //
 void CALLBACK CTapiConnection::lineCallbackFunc(
-    DWORD dwDevice, DWORD dwMsg, DWORD dwCallbackInstance, 
-    DWORD dwParam1, DWORD dwParam2, DWORD dwParam3)
+    DWORD dwDevice, DWORD dwMsg, DWORD_PTR dwCallbackInstance,
+    DWORD_PTR dwParam1, DWORD_PTR dwParam2, DWORD_PTR dwParam3)
 {
 
  CTapiConnection* MyThis = (CTapiConnection*) dwCallbackInstance;

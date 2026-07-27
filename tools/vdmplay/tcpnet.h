@@ -238,6 +238,15 @@ public:
         return new TCPAddress(m_serverAddress, 0, m_serverPort);
     }
 
+    //+ TCP-enum (phase-3): same reg server, but with the well-known port in the STREAM
+    // slot for a TCP connect (the lookup address above puts it in the datagram slot).
+    // NULL when there is no directed reg server (broadcast-only LAN) -> no TCP fallback.
+    virtual CNetAddress *MakeServerStreamAddress() {
+        if (!m_serverAddress || m_serverAddress == INADDR_BROADCAST)
+            return NULL;
+        return new TCPAddress(m_serverAddress, m_serverPort, 0);
+    }
+
 
     virtual CNetAddress *MakeAddressFromString(LPCSTR addr);
 
@@ -254,6 +263,9 @@ public:
 
     BOOL Listen(BOOL streamListen = TRUE, BOOL serverMode = FALSE);
 
+    // TCP-enum (phase-1): TCP listener on the well-known port for the reg server.
+    BOOL EnableStreamEnumListener();
+
     void BecomeDeef();
 
     //+ Stop all networking activity
@@ -268,6 +280,11 @@ public:
 
     //+ TCP doesn't keep packet boundaries
     virtual BOOL KeepingBoundaries() const {
+        return TRUE;
+    }
+
+    //+ NAT candidate stamping / hole-punch byte layouts apply (vpnatcand.h)
+    virtual BOOL IsInetTransport() const {
         return TRUE;
     }
 

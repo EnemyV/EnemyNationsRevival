@@ -191,6 +191,10 @@
 #define CAI_COAL	8
 #define CAI_IRON	9
 
+// TEMP AI diagnostics: emit OutputDebugString probes (slow when a debugger/DBWIN
+// listener is attached). Switches live in enprobes.h (shared with game-side probes).
+#include "enprobes.h"
+
 #define CAI_ROUTE_X	12
 #define CAI_ROUTE_Y	13
 

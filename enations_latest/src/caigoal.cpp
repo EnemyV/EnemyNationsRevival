@@ -9,10 +9,10 @@
 //
 ////////////////////////////////////////////////////////////////////////////
 
-#include "CAIGoal.hpp"
+#include "caigoal.hpp"
 
-#include "CAIData.hpp"
-#include "STDAFX.H"
+#include "caidata.hpp"
+#include "stdafx.h"
 #include "cai.h"
 
 #define new DEBUG_NEW

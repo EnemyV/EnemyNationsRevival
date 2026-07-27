@@ -201,12 +201,15 @@ inline BOOL CHex::CanRoad() const { return ( ( GetType() != coastline ) && ( !Is
 
 inline int	CHex::GetAltDraw() const {
     ASSERT_STRICT_VALID( this );
-    return max( GetAlt(), sea_level );
+    return ::max( GetAlt(), sea_level );   // ::max — CHex has an inherited member named 'max'
 }
 
-inline void CHex::IncVisible() { m_bVisible++; }
-inline void CHex::IncVisible( int iNum ) { m_bVisible += (BYTE)iNum; }
-inline void CHex::DecVisible() { m_bVisible--; }
+// Bump g_enFogVisGen only on a visible<->invisible transition (0 <-> nonzero) — the
+// only change that alters fog shape — so the GPU fog overlay can skip work when fog
+// is unchanged. Mid-count changes (1<->2) don't touch GetVisibility(), so they don't bump.
+inline void CHex::IncVisible() { if ( m_bVisible == 0 ) ++g_enFogVisGen; m_bVisible++; }
+inline void CHex::IncVisible( int iNum ) { BYTE bOld = m_bVisible; m_bVisible += (BYTE)iNum; if ( ( bOld == 0 ) != ( m_bVisible == 0 ) ) ++g_enFogVisGen; }
+inline void CHex::DecVisible() { m_bVisible--; if ( m_bVisible == 0 ) ++g_enFogVisGen; }
 inline int CHex::GetVisible() const { return ( int( m_bVisible ) ); }
 inline BOOL CHex::GetVisibility() const { return ( BOOL( m_bVisible ) ); }
 
@@ -229,6 +232,10 @@ inline void CHex::SetAlt( int iAlt ) {
     ASSERT( ( 0 <= iAlt ) && ( iAlt <= MaxAlt ) );
     iAlt   = __minmax( 0, MaxAlt, iAlt );
     m_bAlt = (BYTE)( iAlt | ( m_bAlt & 0x80 ) );
+    // Altitude changes the GPU terrain mesh geometry (corner Z) → invalidate the
+    // cached terrain texture so the edit shows without a view change (bridges,
+    // building leveling, terraform, network altitude updates).
+    extern void g_enEditHex( int, int ); CHexCoord _ehc = GetHex( ); g_enEditHex( _ehc.X( ), _ehc.Y( ) );
 }
 
 inline int CHex::GetType() const {
@@ -260,6 +267,23 @@ inline BYTE CHex::GetVisibleType() {
 inline void CHex::SetVisibleType( int iType ) {
 
     m_byType = ( m_byType & ~0x78 ) | ( ( iType << 3 ) & 0x78 );
+    // Displayed terrain type changed (city build/destroy, farm fields, road via
+    // ChangeToRoad, coastline, bridge revert) → invalidate the GPU terrain cache so
+    // the new tile shows without needing a view change. Only called on real terrain
+    // edits + worldgen (never on fog reveal), so this doesn't over-rebuild.
+    extern void g_enEditHex( int, int ); CHexCoord _ehc = GetHex( ); g_enEditHex( _ehc.X( ), _ehc.Y( ) );
+}
+
+// Field growth stage lives in the two free bits (1-2) of CTile::m_byType.
+// 0x01 = tile type, 0x78 = visible type, 0x80 = bridge; 0x06 is unused.
+inline int CHex::GetGrowStage() const {
+
+    return ( m_byType >> 1 ) & 0x03;
+}
+
+inline void CHex::SetGrowStage( int iStage ) {
+
+    m_byType = ( m_byType & ~0x06 ) | ( ( iStage << 1 ) & 0x06 );
 }
 
 inline int CHex::GetUnitDir() const {

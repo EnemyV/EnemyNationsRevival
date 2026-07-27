@@ -13,13 +13,22 @@
 //
 //  IPCSend.h : IPC Send Window objects
 //              Divide and Conquer
-//               
+//
 //  Last update: 10/03/96  -  08/23/95
+//
+//  CSendCombo / CDlgCompose — excluded from build (Phase 2d-cont). The MFC
+//  declarations are kept for historical reference but not compiled. This
+//  header is not included by any live source file as of 2026-05-20.
 //
 ////////////////////////////////////////////////////////////////////////////
 
+class CSendCombo;
+class CDlgCompose;
+
+#if 0  // MFC_LEGACY_IPCSEND
+
 #include "resource.h"
-#include "IPCMsg.hpp"
+#include "ipcmsg.hpp"
 
 class CSendCombo : public CComboBox
 {
@@ -109,5 +118,7 @@ protected:
 	void CleanUp( void );
 	void InitToCombo( void );
 };
+
+#endif // MFC_LEGACY_IPCSEND
 
 #endif // __IPCSEND_H__

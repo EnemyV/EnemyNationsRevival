@@ -171,7 +171,7 @@ void CWndBtnStatic::OnPaint()
 		return;
 
 	// draw the status bars
-	dc.SelectObject (&theApp.TextFont ());
+	::SelectObject (dc.m_hDC, theApp.TextFont ());  // Phase 4c prep
 	dc.SetBkColor (GetSysColor (COLOR_BTNFACE));
 
 	CBrush brTop (GetSysColor (COLOR_BTNSHADOW));

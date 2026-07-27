@@ -14,11 +14,14 @@
 
 #include "unit.h"
 #include "unit_wnd.h"
-#include "loadtruk.h"
 #include "netcmd.h"
+#include "enprobes.h"
 
 
 class CWndRoute;
+class SDL2RouteWindow;
+class SDL2BuildStructure;
+class SDL2LoadTruckDialog;
 class CTransportData;
 class CVehicle;
 class CBridgeUnit;
@@ -176,10 +179,10 @@ protected:
 			TRANS_FLAGS			m_transFlags;								// see enums
 
 public:
-			static CString 		m_sAuto;
-			static CString 		m_sRoute;
-			static CString 		m_sIdle;
-			static CString 		m_sTravel;
+			static std::string 	m_sAuto;
+			static std::string 	m_sRoute;
+			static std::string 	m_sIdle;
+			static std::string 	m_sTravel;
 
 static int m_iMaxDraft;								// depth of water needed for biggest boat
 
@@ -235,19 +238,22 @@ class CMsgVehSetDest;
 class CVehicle : public CUnit
 {
 friend const CMsgVehCompLocElem CMsgVehCompLocElem::operator = ( CVehicle const & src );
-friend static void SetVehDest (CMsgVehSetDest * pMsg);
-friend static void LoadCarrier (CMsgLoadCarrier * pMsg);
-friend static void UnloadCarrier (CMsgUnloadCarrier * pMsg);
+friend void SetVehDest (CMsgVehSetDest * pMsg);
+friend void LoadCarrier (CMsgLoadCarrier * pMsg);
+friend void UnloadCarrier (CMsgUnloadCarrier * pMsg);
 friend void CTransport::InitData ();
 friend void CTransport::InitSprites ();
 friend void CTransport::InitLang ();
 friend void CTransport::Close ();
-friend CWndOrders;
-friend CMsgVehGoto;
-friend CMsgVehLoc;
-friend CMsgBlocked;
-friend CDlgBuildStructure;
-friend CWndRoute;
+friend class CWndOrders;
+friend class CMsgVehGoto;
+friend class CMsgVehLoc;
+friend class CMsgBlocked;
+friend class CDlgBuildStructure;
+friend class CWndRoute;
+#if EN_PATH_PROBES
+friend class CPathMgr;	// mpath.reclamp probe reads/writes m_hexLastClamp
+#endif
 
 public:
 		enum VEH_MODE { 	stop,				// m_iMode - vehicle is stopped
@@ -273,9 +279,9 @@ public:
 		virtual int		GetNumStatusBars () const;
 		virtual void	PaintStatusBars (CStatInst * pSi, int iNum, CDC * pDc) const;
 		void					PaintStatusCarrier (CStatInst * pSi, CDC * pDc) const;
-		void					ShowStatusText (CString & str);
+		void					ShowStatusText (std::string & str);
 
-		void 					GetDesc (CString & sText) const;
+		void 					GetDesc (std::string & sText) const;
 		CRect					Draw( const CHexCoord & );
 		BOOL					IsHit( CHexCoord, CPoint ) const;
 
@@ -324,19 +330,23 @@ public:
 
 		CTransportData const *	GetData () const;
 
+		// Effective cargo capacity: base (per-type data) scaled by the owner's
+		// cargo_handling research (CPlayer::GetCargoPct). Use THIS, not
+		// GetData()->GetMaxMaterials(), wherever capacity matters (load caps, UI,
+		// the over-capacity TRAP) so the tech applies to every truck.
+		int						GetMaxMaterials () const;
+
 		void					DestroyRouteWindow ();
 		void					DestroyBuildWindow ();
-		void					DestroyLoadWindow ();
 		void					DestroyAllWindows ();
 
 		void					UpdateChoices ();
 		CDlgBuildStructure * 	GetDlgBuild ();
-		CDlgLoadTruck * 	GetDlgLoad ();
-		void					NullLoadWindow () { m_pDlgLoad = NULL; }
+		void					ShowLoadDialog ();
 
 		static CVehicle * Create ( const CSubHex & ptHead, const CSubHex & ptTail, 
 											int iVeh, int iOwner = 0, DWORD ID = 0, VEH_MODE iRouteMode = stop, 
-											CHexCoord & hexDest = CHexCoord (0,0), DWORD dwIDBldg = 0, int iDelay = 0);
+											const CHexCoord & hexDest = CHexCoord (0,0), DWORD dwIDBldg = 0, int iDelay = 0);
 		static void				StopConstruction (CBuilding * pBldg);
 		static void				GetExitLoc (CBuilding const * pBldg, int iType, CSubHex & subNext, CSubHex & subHead, CSubHex & subTail);
 
@@ -353,6 +363,7 @@ public:
 		void					StartConst (CBuilding * pBldg);
 		CBuilding *		GetConst () const { ASSERT_STRICT_VALID_OR_NULL (m_pBldg); return (m_pBldg); }
 		VEH_EVENT			GetEvent () const { return (m_iEvent); }
+		CBuilding *		GetConstBldg () const { return (m_pBldg); }	// build/repair work target
 		int						GetBldgType () const { return (m_iBldgType); }
 		void					SetBldgType (int iType) { m_iBldgType = iType; }
 		CHexCoord const & GetHexBldg () const { return (m_hexBldg); }
@@ -376,6 +387,11 @@ public:
 		void					DeletePath ();
 		void					SetLocation (CHexCoord & hex, POSITION pos, int iType);
 		CList <CRoute *, CRoute *> &	GetRouteList () { ASSERT_STRICT_VALID (this); return (m_route); }
+		// Looping vs one-shot route. TRUE (default) = the legacy behavior (cycle back to
+		// the first stop at the end); FALSE = stop at the last stop. Runtime-only (not
+		// serialized — defaults to looping on load to preserve save compatibility).
+		BOOL				GetRouteLoop () const { return (m_bRouteLoop); }
+		void				SetRouteLoop (BOOL b) { m_bRouteLoop = b; }
 		POSITION			GetRoutePos () const { ASSERT_STRICT_VALID (this); return (m_pos); }
 		VEH_MODE			GetRouteMode () const;
 		void					SetRoutePos (POSITION pos);
@@ -390,6 +406,7 @@ public:
 		void					CantInBldg (CBuilding const * pBldg);
 		void					MakeBlocked ();
 		void					ForceAtDest ();
+		void					RelocateTo (CSubHex const & ptHead, CHexCoord const & hexDest);  // re-place of an existing unit (AI 10-min teleport)
 
 		BOOL					CanEnterBldg ( CBuilding * pBldg ) const;
 
@@ -423,7 +440,8 @@ public:
 		void					FixUp ();
 		void					FixForPlayer ();
 
-		CWndRoute *		m_pWndRoute;						// route window
+		CWndRoute *		m_pWndRoute;						// route window (MFC)
+	SDL2RouteWindow* m_pSdlRoute = nullptr;				// route window (SDL2)
 
 		static int **	m_apiWid;								// used for spotting range
 		static int		m_iMaxRange;
@@ -441,6 +459,7 @@ public:
 		void					SetTransport ( CVehicle * pCarrier );
 		void					SetLoadOn ( CVehicle * pCarrier );
 		int						GetCargoSize () const { return m_iCargoSize; }
+		int						GetEffPeopleCarry ();	// base unit hold + owner's Landing Craft tech bonus (landing craft only)
 		int						GetCargoCount () const { return m_lstCargo.GetCount (); }
 		POSITION			GetCargoHeadPosition () { return m_lstCargo.GetHeadPosition (); }
 		CVehicle *		GetCargoNext (POSITION & pos) { return m_lstCargo.GetNext (pos); }
@@ -504,7 +523,8 @@ protected:
 										CPoint * ) const;
 
 		CDlgBuildStructure * 	m_pDlgStructure;
-		CDlgLoadTruck *				m_pDlgLoad;
+	SDL2BuildStructure*     m_pSdlBuild = nullptr;  // SDL2 non-modal build dialog
+	SDL2LoadTruckDialog*    m_pSdlLoad  = nullptr;  // SDL2 non-modal load-cargo dialog
 
 		// travelling in another vehicle, carrying another vehicle
 		CVehicle *		m_pTransport;						// unit carrying us
@@ -514,6 +534,7 @@ protected:
 
 		// where we are going
 		CList <CRoute *, CRoute *> m_route;		// route its travelling
+		BOOL				m_bRouteLoop;						// TRUE = loop the route (legacy); FALSE = stop at the end
 		POSITION			m_pos;									// element we are travelling to
 		CSubHex				m_ptDest;								// final sub-hex we are going to
 		CHexCoord			m_hexDest;							// final hex we are going to
@@ -532,6 +553,11 @@ protected:
 
 		DWORD					m_dwTimeBlocked;				// we only wait 1.2 * hex transit time when blocked
 		LONG					m_iBlockCount;					// number of consecutive times blocked
+		CHexCoord			m_hexStagnant;					// blocked-stagnation watch: last hex seen blocked at (transient, not saved)
+		DWORD					m_dwStagnantSince;			// real ms when we first saw it blocked at that hex (0 = not watching)
+#if EN_PATH_PROBES
+		CHexCoord			m_hexLastClamp;					// mpath.reclamp probe: hex of last clamped path, (-1,-1) = none (transient, not saved)
+#endif
 
 		DWORD					m_dwTimeJump;						// for AI trucks & cranes we transport if can't get there by this time
 

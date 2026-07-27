@@ -3,7 +3,7 @@
 
 class CVdmPlay;
 
-#ifndef WIN32
+#ifdef _WIN16   // Universal-Thunk notify queue — Win16/Win32s only (n/a on Win32/POSIX; was bare `#ifndef WIN32`, wrong on gcc)
 // Notifocation queue used tp end notifications to the Win32 client calling us through UT
 // The original notification messages are copied to the structures allocated from GlobalFixed pool
 // The message address and containing pointers are translated to the FLAT form before posting them
@@ -322,10 +322,25 @@ class CVdmPlay
 {
 public:
 
+#ifdef _WIN32
  virtual BOOL Ok() const { return m_window != NULL && NULL != m_net; }
+#else
+ // POSIX: there is no hidden WSAAsyncSelect message window (InitWindowsStuff
+ // leaves m_window NULL — the select() pump replaces it), so engine readiness
+ // is just "the net interface is up". Requiring m_window here made vpStartup
+ // return NULL and broke every MP host/join.
+ virtual BOOL Ok() const { return NULL != m_net; }
+#endif
 
  BOOL GotFatalError() const { return m_fatalError; }
- virtual BOOL Startup(IN DWORD version, 
+
+ // Run the periodic engine timers (notify-queue retry + net/enum/session OnTimer).
+ // On Windows this is driven by a 250ms WM_TIMER; on POSIX it is driven from vpPumpNet
+ // (no WM_TIMER there). Drives enum re-poll, host re-registration, server-list aging,
+ // and the notify-queue retry that delivers enum replies to the app.
+ void DriveTimers();
+
+ virtual BOOL Startup(IN DWORD version,
                    IN LPCVPGUID guid, 
        IN DWORD sessionDataSize,
        IN DWORD playerDataSize,

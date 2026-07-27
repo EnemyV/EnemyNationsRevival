@@ -41,7 +41,7 @@ public:
 
 		int			GetDensity () { ASSERT_STRICT_VALID (this); return (m_cDensity); }
 		int			GetQuantity () { ASSERT_STRICT_VALID (this); return (m_lQuantity); }
-		CString		GetStatus ();
+		std::string	GetStatus ();
 		int			GetType () { ASSERT_STRICT_VALID (this); return (m_cType); }
 		void		SetDensity (int iNum) { m_cDensity = iNum; }
 		void		SetQuantity (int iNum) 
@@ -76,13 +76,22 @@ public:
 
 	void		InitHex (CHexCoord const & hex, int iType, int multiplier);
 	void		Close ();
+
+	// Saved-game round-trip. MUST be declared here: the base CMap::Serialize in
+	// the MFC-compat layer is a no-op (most CMaps don't persist), so without this
+	// override theMinerals would never be written or read back — loaded games end
+	// up with zero deposits and mines/oil wells can't be placed. CBridgeMap solves
+	// the same problem the same way.
+	void		Serialize (CArchive & ar);
 };
 
 extern CMineralHex theMinerals;
 extern void SerializeElements(CArchive& ar, CMinerals** pMn, int nCount);
 
 template<>
-void AFXAPI SerializeElements<CMinerals*>( CArchive& ar, CMinerals** ppMn, INT_PTR nCount );
+// nCount must be int to match the primary SerializeElements template in
+// mfc_compat.h; INT_PTR differs from int on x64 and breaks the specialization.
+void AFXAPI SerializeElements<CMinerals*>( CArchive& ar, CMinerals** ppMn, int nCount );
 
 
 #endif
