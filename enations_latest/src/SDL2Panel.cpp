@@ -322,6 +322,11 @@ static TTF_Font* GetTitleFont() {
         s_font = TTF_OpenFont(paths[i], 12);
         if (s_font) break;
     }
+    // T-0073 fallback: this list is preference-ordered for looks; if none of it
+    // exists (non-Debian distro, trimmed system) use the shared resolver so text
+    // still renders instead of the UI going blank.
+    if (!s_font)
+        s_font = TTF_OpenFont(EnResolveFontPath(), 12);
     return s_font;
 }
 

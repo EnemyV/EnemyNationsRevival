@@ -121,17 +121,7 @@ SDL2CreateStatus::SDL2CreateStatus(GameWindow* gameWindow)
                         btnW, btnH };
 
     // Find a font
-    const char* candidates[] = {
-        "/System/Library/Fonts/Supplemental/Arial.ttf", "/System/Library/Fonts/Supplemental/Times New Roman.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", "C:\\Windows\\Fonts\\BKANT.TTF",
-        "C:\\Windows\\Fonts\\times.ttf",
-        "C:\\Windows\\Fonts\\arial.ttf",
-        nullptr
-    };
-    for (int i = 0; candidates[i]; i++) {
-        FILE* f = fopen(candidates[i], "rb");
-        if (f) { fclose(f); m_fontPath = candidates[i]; break; }
-    }
-
+    m_fontPath = EnResolveFontPath();   // T-0073: one shared resolver, bundled font first
     LogStatus("SDL2CreateStatus created");
 }
 

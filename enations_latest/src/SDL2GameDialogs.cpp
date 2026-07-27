@@ -951,11 +951,7 @@ void SDL2MessageBox::OnInit() {
 // ============================================================================
 
 SDL2UnitInfoPanel::SDL2UnitInfoPanel() {
-    const char* fonts[] = {"/System/Library/Fonts/Supplemental/Arial.ttf", "/System/Library/Fonts/Supplemental/Times New Roman.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", "C:\\Windows\\Fonts\\arial.ttf", nullptr};
-    for (int i = 0; fonts[i]; i++) {
-        FILE* f = fopen(fonts[i], "rb");
-        if (f) { fclose(f); m_fontPath = fonts[i]; break; }
-    }
+    m_fontPath = EnResolveFontPath();   // T-0073: one shared resolver, bundled font first
 }
 
 SDL2UnitInfoPanel::~SDL2UnitInfoPanel() {

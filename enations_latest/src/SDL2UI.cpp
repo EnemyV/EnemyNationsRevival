@@ -1604,6 +1604,11 @@ SDL2Dialog::SDL2Dialog(GameWindow* gameWindow, const std::string& title, int w, 
         FILE* f = fopen(candidates[i], "rb");
         if (f) { fclose(f); m_fontPath = candidates[i]; break; }
     }
+    // T-0073 fallback: this list is preference-ordered for looks; if none of it
+    // exists (non-Debian distro, trimmed system) use the shared resolver so text
+    // still renders instead of the UI going blank.
+    if (m_fontPath.empty())
+        m_fontPath = EnResolveFontPath();
 }
 
 SDL2Dialog::~SDL2Dialog() {

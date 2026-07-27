@@ -48,6 +48,62 @@ static void LogToFile(const std::string& message) {
     }
 }
 
+// ---------------------------------------------------------------------------
+// EnResolveFontPath — the ONE place the UI finds a font (T-0073).
+//
+// This used to be a hardcoded array duplicated at 8 call sites, and every Linux
+// entry used the Debian/Ubuntu layout "/usr/share/fonts/truetype/<family>/...".
+// On Fedora ("/usr/share/fonts/dejavu-sans-fonts/"), Arch ("/usr/share/fonts/TTF/")
+// or openSUSE (flat "truetype/") every candidate missed, TTF_OpenFont returned
+// NULL everywhere and the game rendered NO TEXT AT ALL — reported by a user of the
+// shipped 3.00.009 Linux build, and invisible to us because every Linux node here
+// runs Ubuntu.
+//
+// The bundled copy next to the executable is tried FIRST, so the game does not
+// depend on the host distribution's font layout at all; the system list below is
+// the fallback for source builds with no res/ alongside the binary.
+// Resolved once and logged, so a "no text" report is self-diagnosing next time.
+// ---------------------------------------------------------------------------
+const char* EnResolveFontPath() {
+    static std::string s_path;
+    static bool        s_resolved = false;
+    if (s_resolved) return s_path.c_str();
+    s_resolved = true;
+
+    std::vector<std::string> cand;
+    if (char* base = SDL_GetBasePath()) {          // bundled — distro-independent
+        std::string b(base); SDL_free(base);
+        cand.push_back(b + "res/DejaVuSans.ttf");
+        cand.push_back(b + "DejaVuSans.ttf");
+    }
+    static const char* kSystem[] = {
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",                 // Debian/Ubuntu
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf", // Debian/Ubuntu
+        "/usr/share/fonts/dejavu-sans-fonts/DejaVuSans.ttf",               // Fedora/RHEL
+        "/usr/share/fonts/dejavu/DejaVuSans.ttf",                          // Fedora (alt)
+        "/usr/share/fonts/liberation-sans/LiberationSans-Regular.ttf",     // Fedora
+        "/usr/share/fonts/TTF/DejaVuSans.ttf",                             // Arch
+        "/usr/share/fonts/truetype/DejaVuSans.ttf",                        // openSUSE (flat)
+        "/usr/share/fonts/noto/NotoSans-Regular.ttf",                      // Noto-only systems
+        "/System/Library/Fonts/Supplemental/Arial.ttf",                    // macOS
+        "/System/Library/Fonts/Supplemental/Times New Roman.ttf",          // macOS
+        "C:\\Windows\\Fonts\\arial.ttf",                                   // Windows
+        "C:\\Windows\\Fonts\\tahoma.ttf",
+        "C:\\Windows\\Fonts\\segoeui.ttf",
+        nullptr };
+    for (int i = 0; kSystem[i]; ++i) cand.push_back(kSystem[i]);
+
+    for (size_t k = 0; k < cand.size(); ++k) {
+        FILE* f = fopen(cand[k].c_str(), "rb");
+        if (f) { fclose(f); s_path = cand[k]; break; }
+    }
+    LogToFile(s_path.empty()
+              ? std::string("FONT: no usable font found - UI TEXT WILL NOT RENDER")
+              : ("FONT: using " + s_path));
+    return s_path.c_str();
+}
+
+
 // Taskbar/alt-tab/dock icon (_NET_WM_ICON on X11): without it a minimized game
 // window shows the generic SDL icon on Linux (operator-reported). Embedded RGBA
 // pixels — no image-loading dependency; Windows keeps its .rc resource icon.

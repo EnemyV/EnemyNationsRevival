@@ -2200,6 +2200,10 @@ void SDL2_RunCredits(GameWindow* gameWindow) {
                                 "C:\\Windows\\Fonts\\times.ttf", nullptr };
     const char* fp = nullptr;
     for (int i = 0; fc[i]; i++) { FILE* f = fopen(fc[i], "rb"); if (f) { fclose(f); fp = fc[i]; break; } }
+    // T-0073 fallback: this list is preference-ordered for looks; if none of it
+    // exists (non-Debian distro, trimmed system) use the shared resolver so text
+    // still renders instead of the UI going blank.
+    if (!fp) { const char* r = EnResolveFontPath(); if (r && *r) fp = r; }
     if (!fp) return;
     fonts[0] = TTF_OpenFont(fp, 3 * baseHt);
     fonts[1] = TTF_OpenFont(fp, 4 * baseHt);

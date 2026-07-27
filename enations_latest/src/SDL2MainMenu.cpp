@@ -70,6 +70,13 @@ static const char* FindFontPath() {
         FILE* f = fopen(candidates[i], "rb");
         if (f) { fclose(f); return candidates[i]; }
     }
+    // T-0073 fallback: this list is preference-ordered for looks; if none of it
+    // exists (non-Debian distro, trimmed system) use the shared resolver so text
+    // still renders instead of the UI going blank.
+    {
+        const char* fb = EnResolveFontPath();
+        if (fb && *fb) return fb;
+    }
     return nullptr;
 }
 

@@ -22,12 +22,7 @@ SDL2RouteWindow::SDL2RouteWindow(GameWindow* gw, CVehicle* pVeh, SDL2Panel* area
     : m_gameWindow(gw), m_pVeh(pVeh) {
 
     // Find a font
-    const char* fonts[] = {"/System/Library/Fonts/Supplemental/Arial.ttf", "/System/Library/Fonts/Supplemental/Times New Roman.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", "C:\\Windows\\Fonts\\arial.ttf",
-                           "C:\\Windows\\Fonts\\tahoma.ttf", nullptr};
-    for (int i = 0; fonts[i]; i++) {
-        FILE* f = fopen(fonts[i], "rb");
-        if (f) { fclose(f); m_fontPath = fonts[i]; break; }
-    }
+    m_fontPath = EnResolveFontPath();   // T-0073: one shared resolver, bundled font first
     if (!m_fontPath.empty())
         m_fontSmall = TTF_OpenFont(m_fontPath.c_str(), 12);
 
