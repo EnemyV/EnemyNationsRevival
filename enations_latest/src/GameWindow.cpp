@@ -472,6 +472,28 @@ bool GameWindow::InitializeSDL() {
 
     LogToFile("SDL window created successfully");
 
+#ifndef _WIN32
+    // T-0072: tell the win32 shim the size the WM actually GRANTED.
+    //
+    // The shim's window record is sized from what CreateWindowEx was ASKED for
+    // (win32_compat.cpp:1137-1142), and the main window is requested at the engine
+    // metric size (lastplnt.cpp:1461, from the desktop). When the WM grants less --
+    // measured on a mac host: requested 1024x1200, granted 1024x768 -- the record
+    // keeps the unclamped value, and GetClientRect() reports it. CWndBar::Create()
+    // positions the bar from exactly that (toolbar.cpp:163-165,
+    // m_iRow3 = rect.Height() - TOOLBAR_HT), so the bar is laid out below the visible
+    // window and vanishes. Correcting the g_enScreenW/H metrics instead does NOT work:
+    // GetClientRect only falls back to them when no window record exists.
+    // The shim's SetWindowPos updates cx/cy and fires WM_SIZE, so no new mechanism.
+    {
+        int aw = 0, ah = 0;
+        SDL_GetWindowSize( m_window, &aw, &ah );
+        if ( aw > 0 && ah > 0 && theApp.m_wndMain.m_hWnd )
+            ::SetWindowPos( theApp.m_wndMain.m_hWnd, NULL, 0, 0, aw, ah,
+                            SWP_NOMOVE | SWP_NOZORDER );
+    }
+#endif
+
 #ifdef __APPLE__
     // Hide the Dock + menu bar now that the game window exists (fullscreen game;
     // the non-Space fullscreen-desktop window won't auto-hide them on its own).
@@ -1012,6 +1034,16 @@ void GameWindow::HandleEvent(SDL_Event& event) {
                 m_width  = event.window.data1;
                 m_height = event.window.data2;
                 LogToFile("Window resized to " + std::to_string(m_width) + "x" + std::to_string(m_height));
+#ifndef _WIN32
+                // T-0072: keep the shim's record in step with the real window, or a
+                // later resize re-introduces the same stale-size divergence that hides
+                // the bottom bar. Sufficient on its own here (no re-layout needed)
+                // because CWndBar::Create() reads the record at GAME START, i.e. after
+                // the window exists; the shim's SetWindowPos also fires WM_SIZE.
+                if ( m_width > 0 && m_height > 0 && theApp.m_wndMain.m_hWnd )
+                    ::SetWindowPos( theApp.m_wndMain.m_hWnd, NULL, 0, 0, m_width, m_height,
+                                    SWP_NOMOVE | SWP_NOZORDER );
+#endif
             }
             else if (event.window.event == SDL_WINDOWEVENT_FOCUS_GAINED) {
 #ifdef __APPLE__
