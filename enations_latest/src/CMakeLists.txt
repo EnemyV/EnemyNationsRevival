@@ -546,11 +546,20 @@ endif ()
 # (skips the .rc/.dib/.bmp source art we don't need at runtime).
 file(GLOB EN_CURSOR_FILES "${CMAKE_CURRENT_SOURCE_DIR}/res/*.cur"
                           "${CMAKE_CURRENT_SOURCE_DIR}/res/*.CUR")
+# T-0073: the bundled UI font must ship NEXT TO THE BINARY too. EnResolveFontPath()
+# tries "<exedir>/res/DejaVuSans.ttf" FIRST so the game does not depend on the host
+# distribution's font layout (Fedora/Arch/openSUSE keep DejaVu somewhere else, and a
+# bare system may carry no font at all -> the game rendered NO TEXT). Without this
+# glob the file sits in source only, the first two candidates always miss, and the
+# last-resort safety net silently never ships. Licence text rides along with it.
+file(GLOB EN_FONT_FILES   "${CMAKE_CURRENT_SOURCE_DIR}/res/*.ttf"
+                          "${CMAKE_CURRENT_SOURCE_DIR}/res/*.TTF"
+                          "${CMAKE_CURRENT_SOURCE_DIR}/res/DejaVuSans.LICENSE.txt")
 add_custom_command(TARGET enations POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:enations>/res"
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${EN_CURSOR_FILES}
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${EN_CURSOR_FILES} ${EN_FONT_FILES}
         "$<TARGET_FILE_DIR:enations>/res"
-    COMMENT "Staging .cur cursor art (res/) next to the binary for the POSIX cursor pipeline"
+    COMMENT "Staging .cur cursor art + the bundled UI font (res/) next to the binary"
 )
 
 # Stage the intro/logo videos the menu's PlayVideo loads at runtime (assets/videos/*.mpg).
