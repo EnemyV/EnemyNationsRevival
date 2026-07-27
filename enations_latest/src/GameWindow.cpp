@@ -59,9 +59,10 @@ static void LogToFile(const std::string& message) {
 // shipped 3.00.009 Linux build, and invisible to us because every Linux node here
 // runs Ubuntu.
 //
-// The bundled copy next to the executable is tried FIRST, so the game does not
-// depend on the host distribution's font layout at all; the system list below is
-// the fallback for source builds with no res/ alongside the binary.
+// Order: the platform's own system fonts FIRST (so every platform keeps the exact
+// appearance it had), then the bundled copy next to the executable as a LAST RESORT
+// for a host that carries none of them. The system list covers the major distro
+// families, which is what fixes the reported non-Debian case.
 // Resolved once and logged, so a "no text" report is self-diagnosing next time.
 // ---------------------------------------------------------------------------
 const char* EnResolveFontPath() {
@@ -71,11 +72,6 @@ const char* EnResolveFontPath() {
     s_resolved = true;
 
     std::vector<std::string> cand;
-    if (char* base = SDL_GetBasePath()) {          // bundled — distro-independent
-        std::string b(base); SDL_free(base);
-        cand.push_back(b + "res/DejaVuSans.ttf");
-        cand.push_back(b + "DejaVuSans.ttf");
-    }
     static const char* kSystem[] = {
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",                 // Debian/Ubuntu
         "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf", // Debian/Ubuntu
@@ -92,6 +88,18 @@ const char* EnResolveFontPath() {
         "C:\\Windows\\Fonts\\segoeui.ttf",
         nullptr };
     for (int i = 0; kSystem[i]; ++i) cand.push_back(kSystem[i]);
+    // ...and the bundled copy LAST. It is a LAST RESORT, not a preference: trying it
+    // first silently replaced the platform's own UI font everywhere one existed, and
+    // DejaVu is wider than (e.g.) mac's Arial, so strings the UI was laid out for got
+    // truncated - a cosmetic regression traded for a bug that only bites systems
+    // carrying none of the fonts above (MacOpus measured it on the status line).
+    // Ordered this way, each platform keeps exactly the font it used before, and the
+    // bundle only ever engages where the alternative is NO TEXT AT ALL.
+    if (char* base = SDL_GetBasePath()) {
+        std::string b(base); SDL_free(base);
+        cand.push_back(b + "res/DejaVuSans.ttf");
+        cand.push_back(b + "DejaVuSans.ttf");
+    }
 
     for (size_t k = 0; k < cand.size(); ++k) {
         FILE* f = fopen(cand[k].c_str(), "rb");
