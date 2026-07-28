@@ -206,8 +206,8 @@ private:
     void BuildContent();
     void Render();
 
-    CUnit*     m_pUnit = nullptr;
-    SDL2Panel* m_panel = nullptr;
+    CUnit*      m_pUnit  = nullptr;
+    SDL_Window* m_window = nullptr;   // own borderless top-most window (floats above the detached area map)
     std::string m_fontPath;
     std::unordered_map<int, TTF_Font*> m_fontCache;
     TTF_Font* GetFont(int size);

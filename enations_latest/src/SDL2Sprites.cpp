@@ -382,6 +382,14 @@ namespace SDL2Sprites
         if ( !Enabled( ) || !g_renderer )
             return;
 
+        // Reset the per-capture transient lists (documented "refilled every capture
+        // pass"). They were cleared only by their drawer in Submit(), so an extra
+        // unpaired capture during scroll/zoom appended a second set on top -> ghost
+        // trails. Reset here, like g_dynKeys, so each capture pass is authoritative.
+        g_shadows.clear( );
+        g_flashes.clear( );
+        g_trails.clear( );
+
         if ( zoom != g_zoom || dir != g_dir )   // projection change invalidates positions
         {
             g_sprites.clear( );
@@ -433,6 +441,9 @@ namespace SDL2Sprites
         g_inFrame = false;
         if ( !Enabled( ) || !g_renderer )
             return;
+        g_shadows.clear( );   // see BeginFrame: reset transient lists each capture pass
+        g_flashes.clear( );
+        g_trails.clear( );
         if ( zoom != g_zoom || dir != g_dir )
         {
             g_sprites.clear( );

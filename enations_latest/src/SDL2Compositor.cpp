@@ -354,7 +354,13 @@ void SDL2Compositor::Composite() {
     for (auto& p : m_panels) {
         if (!p->IsVisible() || !p->IsDetached())
             continue;
-        if (p->HasGpuTerrain()) {
+        // Software has no GPU terrain, so the PRIMARY area map ("area_<n>") would otherwise
+        // fall into the throttled secondary-window branch below and stutter at ~10 fps
+        // (regression from d484dc4c, whose cap was written for GPU secondary windows).
+        // Treat the software primary map like the gameplay view: present every dirty frame.
+        const std::string& nm = p->GetName();
+        bool isPrimaryMap = ( nm.size() > 5 && nm.rfind("area_", 0) == 0 && nm[5] >= '0' && nm[5] <= '9' );
+        if (p->HasGpuTerrain() || isPrimaryMap) {
             // Gameplay view: re-render on content change, a water wave-tick, OR while a
             // build/rocket placement cursor is active. That cursor's striped hatch is a
             // LIVE per-frame overlay (DrawBuildCursorOverlay) — if we stop re-rendering

@@ -143,7 +143,7 @@ TTF_Font* SDL2CreateStatus::GetFont(int size) {
     if (m_fontPath.empty()) return nullptr;
     auto it = m_fontCache.find(size);
     if (it != m_fontCache.end()) return it->second;
-    TTF_Font* font = TTF_OpenFont(m_fontPath.c_str(), size);
+    TTF_Font* font = EnOpenUiFont(m_fontPath.c_str(), size);
     m_fontCache[size] = font;
     return font;
 }

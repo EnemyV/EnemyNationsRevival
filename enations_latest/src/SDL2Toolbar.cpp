@@ -1,4 +1,5 @@
 #include "stdafx.h"
+#include "SDL2UI.h"   // EnOpenUiFont (hinted font open)
 
 #include "SDL2Toolbar.h"
 #include "SDL2Panel.h"
@@ -67,7 +68,7 @@ TTF_Font* SDL2Toolbar::GetFont(int size) {
     if (m_fontPath.empty()) return nullptr;
     auto it = m_fontCache.find(size);
     if (it != m_fontCache.end()) return it->second;
-    TTF_Font* f = TTF_OpenFont(m_fontPath.c_str(), size);
+    TTF_Font* f = EnOpenUiFont(m_fontPath.c_str(), size);
     m_fontCache[size] = f;
     return f;
 }

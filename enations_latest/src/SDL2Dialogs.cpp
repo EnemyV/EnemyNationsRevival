@@ -116,11 +116,14 @@ int SDL2WorldGenWidgets::Ocean() const {
 // SDL2VersionDialog
 // ============================================================================
 SDL2VersionDialog::SDL2VersionDialog(GameWindow* gameWindow)
-    : SDL2Dialog(gameWindow, "Version Information", 520, 380) {}
+    : SDL2Dialog(gameWindow, "Version Information", 600, 430) {}
 
 void SDL2VersionDialog::OnInit() {
-    int y = m_y + 40, lx = m_x + 20, w = m_width - 40, rowH = 22;
-    SDL_Color tc = { 200, 200, 200, 255 };
+    SetWidgetFontSize(15);   // larger than the 13pt default for readability
+    int y = m_y + 40, lx = m_x + 20, w = m_width - 40, rowH = 26;
+    // Blue label text (the shared default) reads on the parchment background;
+    // the old {200,200,200} grey was near-invisible on it.
+    SDL_Color tc = { 48, 58, 148, 255 };
 
     std::string sVer = "Version: " VER_STRING;
 #ifdef _DEBUG
@@ -247,7 +250,9 @@ void SDL2AdvOptionsDialog::OnOK() {
         if ((int)EnGetProfileInt(sec, key, def) != val) { EnWriteProfileInt(sec, key, val); bWarn = TRUE; }
     };
     check("Advanced", "Zoom", m_radZoom->GetSelected(), 0);
-    check("Advanced", "Renderer", m_radRenderer->GetSelected(), (int)GetRenderBackend());
+    // Entry renamed "Renderer" -> "RenderBackend" so stale software=0 values are ignored
+    // (see RenderBackend.h); GetRenderBackend() already reads the new entry.
+    check("Advanced", "RenderBackend", m_radRenderer->GetSelected(), (int)GetRenderBackend());
     check("Advanced", "Scroll", m_chkScroll->IsChecked() ? 1 : 0, 0);
     check("Advanced", "Pause", m_chkPause->IsChecked() ? 1 : 0, 1);
     check("Game", "NoIntro", m_chkNoIntro->IsChecked() ? 1 : 0, 0);
@@ -2205,9 +2210,9 @@ void SDL2_RunCredits(GameWindow* gameWindow) {
     // still renders instead of the UI going blank.
     if (!fp) { const char* r = EnResolveFontPath(); if (r && *r) fp = r; }
     if (!fp) return;
-    fonts[0] = TTF_OpenFont(fp, 3 * baseHt);
-    fonts[1] = TTF_OpenFont(fp, 4 * baseHt);
-    fonts[2] = TTF_OpenFont(fp, 5 * baseHt);
+    fonts[0] = EnOpenUiFont(fp, 3 * baseHt);
+    fonts[1] = EnOpenUiFont(fp, 4 * baseHt);
+    fonts[2] = EnOpenUiFont(fp, 5 * baseHt);
     if (!fonts[0]) return;
 
     struct RenderedLine { SDL_Surface* surface; int align, height; };

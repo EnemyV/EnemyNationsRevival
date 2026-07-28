@@ -8,6 +8,16 @@
 #include <memory>
 #include <unordered_map>
 
+// Open a UI font with light hinting applied. Grid-snapping the stems keeps thin
+// strokes (v/w/s) and the dot on 'i' from washing out at small sizes — the shared
+// cause of the "smeared/blurry, parts missing" reports. Central so every font site
+// stays consistent across Windows/Mac/Linux. Returns null if the open fails.
+inline TTF_Font* EnOpenUiFont(const char* path, int ptSize) {
+    TTF_Font* f = TTF_OpenFont(path, ptSize);
+    if (f) TTF_SetFontHinting(f, TTF_HINTING_LIGHT);
+    return f;
+}
+
 class GameWindow;
 
 // Forward declarations

@@ -1837,12 +1837,12 @@ void CWndArea::MaterialChange( CUnit const* pUnit )
 void CWndArea::OnMouseMove( UINT nFlags, CPoint point )
 {
 
-    // kill the info window - if they move > 4 pixels
+    // Legacy MFC info window is dismissed on a >4px move. The SDL tooltip (m_pSdlInfo)
+    // is NOT: the operator wants mouse movement to leave it up; only a click or deselect
+    // closes it (global mouse-down hook + HideUnitInfo).
     if ( ( abs( point.x - m_ptRMDN.x ) > theApp.m_iScrnX / 160 ) ||
          ( abs( point.y - m_ptRMDN.y ) > theApp.m_iScrnX / 160 ) )
     {
-        if ( m_pSdlInfo && m_pSdlInfo->IsVisible() )
-            m_pSdlInfo->Hide();
         if ( ( m_pWndInfo ) && ( m_pWndInfo->m_hWnd != NULL ) )
             m_pWndInfo->DestroyWindow( );
     }
@@ -3770,6 +3770,10 @@ void CWndArea::OnLButtonDown( UINT nFlags, CPoint point )
     switch ( m_iMode )
     {
     case normal:
+        // a left-click elsewhere dismisses the Shift+RMB unit-info tooltip
+        if ( m_pSdlInfo && m_pSdlInfo->IsVisible() )
+            m_pSdlInfo->Hide();
+
         // pressing LMB during an RMB drag cancels the pending command/line-move
         if ( m_bRmbCmdDown )
         {
@@ -4679,28 +4683,16 @@ void CWndArea::OnRButtonDown( UINT nFlags, CPoint point )
         // the info panel dismisses when the cursor moves >4px from here (OnMouseMove)
         m_ptRMDN = point;
 
-        // SDL2 unit info tooltip
+        // SDL2 unit info tooltip — its own top-most window, positioned at the cursor
+        // in GLOBAL desktop coords so it floats above the detached area-map window
+        // (which is a separate OS window). Global mouse pos avoids any per-window
+        // coordinate-frame math (the old main-window-relative calc mis-placed it).
         if ( theApp.m_gameWindow ) {
             if ( m_pSdlInfo == NULL )
                 m_pSdlInfo = new SDL2UnitInfoPanel();
-
-            // Convert client point to screen coordinates for panel positioning
-            CPoint ptScreen = point;
-            ClientToScreen( &ptScreen );
-            // Convert to SDL window coords (relative to game window)
-            RECT sdlRect = {};
-#ifdef _WIN32
-            // Position the tooltip relative to the native HWND. On Linux the
-            // SDL_SysWMinfo union member differs (x11/wayland) and the shim's
-            // GetWindowRect is a stub, so leave sdlRect at {0} (top-left origin).
-            SDL_SysWMinfo wmInfo;
-            SDL_VERSION( &wmInfo.version );
-            if ( SDL_GetWindowWMInfo( theApp.m_gameWindow->GetWindow(), &wmInfo ) )
-                ::GetWindowRect( wmInfo.info.win.window, &sdlRect );
-#endif
-            int sx = ptScreen.x - sdlRect.left + 16;
-            int sy = ptScreen.y - sdlRect.top + 16;
-            m_pSdlInfo->Show( pUnitOn, sx, sy );
+            int gx = 0, gy = 0;
+            SDL_GetGlobalMouseState( &gx, &gy );
+            m_pSdlInfo->Show( pUnitOn, gx + 16, gy + 16 );
             return;
         }
 
@@ -7159,8 +7151,18 @@ BOOL CWndArea::OnCommand( WPARAM wParam, LPARAM lParam )
     return ( CWndAnim::OnCommand( wParam, lParam ) );
 }
 
+void CWndArea::HideUnitInfo( )
+{
+    if ( m_pSdlInfo && m_pSdlInfo->IsVisible() )
+        m_pSdlInfo->Hide();
+}
+
 void CWndArea::OnDeselect( )
 {
+
+    // dismiss the Shift+RMB unit-info tooltip on deselect
+    if ( m_pSdlInfo && m_pSdlInfo->IsVisible() )
+        m_pSdlInfo->Hide();
 
     if ( ( m_iMode == rocket_ready ) || ( m_iMode == rocket_pos ) || ( m_iMode == rocket_wait ) )
         return;

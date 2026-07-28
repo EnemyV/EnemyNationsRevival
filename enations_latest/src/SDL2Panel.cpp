@@ -1,4 +1,5 @@
 #include "stdafx.h"
+#include "SDL2UI.h"   // EnOpenUiFont (hinted font open)
 #include "enprobes.h"   // EN_GAMEPLAY_PROBES
 
 #include "SDL2Panel.h"
@@ -319,7 +320,7 @@ static TTF_Font* GetTitleFont() {
         nullptr
     };
     for (int i = 0; paths[i]; i++) {
-        s_font = TTF_OpenFont(paths[i], 12);
+        s_font = EnOpenUiFont(paths[i], 12);
         if (s_font) break;
     }
     // T-0073 fallback: this list is preference-ordered for looks; if none of it

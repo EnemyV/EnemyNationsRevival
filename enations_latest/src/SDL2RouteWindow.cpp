@@ -1,4 +1,5 @@
 #include "stdafx.h"
+#include "SDL2UI.h"   // EnOpenUiFont (hinted font open)
 #include "SDL2RouteWindow.h"
 #include "GameWindow.h"
 #include "SDL2Compositor.h"
@@ -24,7 +25,7 @@ SDL2RouteWindow::SDL2RouteWindow(GameWindow* gw, CVehicle* pVeh, SDL2Panel* area
     // Find a font
     m_fontPath = EnResolveFontPath();   // T-0073: one shared resolver, bundled font first
     if (!m_fontPath.empty())
-        m_fontSmall = TTF_OpenFont(m_fontPath.c_str(), 12);
+        m_fontSmall = EnOpenUiFont(m_fontPath.c_str(), 12);
 
     SDL2Compositor* comp = gw->GetCompositor();
     if (!comp) return;

@@ -234,7 +234,7 @@ static TTF_Font* GetUiFont(int pt) {
     if (s_path == "?") return nullptr;
     auto it = s_cache.find(pt);
     if (it != s_cache.end()) return it->second;
-    TTF_Font* f = TTF_OpenFont(s_path.c_str(), pt);
+    TTF_Font* f = EnOpenUiFont(s_path.c_str(), pt);
     s_cache[pt] = f;
     return f;
 }
@@ -491,7 +491,11 @@ void SDL2Button::Render(SDL_Surface* dst, TTF_Font* font) {
     // Text rect: overlays the bottom of the face (on top of icon) or full face if no icon
     SDL_Rect textRect = faceRect;
     if (hasIcon) {
-        int textStripH = 14;
+        // Tall build buttons (48px: vehicle/personnel/structure) get a taller strip
+        // so the ~13pt label renders at full size and CRISP; the old 14px strip
+        // forced a bitmap downscale to ~11px (tiny + blurry, worst on long vehicle
+        // names). Small icon buttons keep 14px so the strip doesn't swallow them.
+        int textStripH = (m_rect.h >= 40) ? 18 : 14;
         textRect.y = faceRect.y + faceRect.h - textStripH;
         textRect.h = textStripH;
     }
@@ -1627,7 +1631,7 @@ TTF_Font* SDL2Dialog::GetFont(int size) {
     if (m_fontPath.empty()) return nullptr;
     auto it = m_fontCache.find(size);
     if (it != m_fontCache.end()) return it->second;
-    TTF_Font* font = TTF_OpenFont(m_fontPath.c_str(), size);
+    TTF_Font* font = EnOpenUiFont(m_fontPath.c_str(), size);
     m_fontCache[size] = font;
     return font;
 }

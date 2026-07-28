@@ -289,6 +289,11 @@ protected:
 	// Modern bindings (2026): MMB held = pan (drag + edge scroll). RMB = command.
 	void OnMButtonDown(UINT nFlags, CPoint point);
 	void OnMButtonUp(UINT nFlags, CPoint point);
+public:
+	// Dismiss the Shift+RMB unit-info tooltip (called from the global event pump so ANY
+	// click, in any window, closes it; the open gesture re-shows it).
+	void HideUnitInfo();
+protected:
 	// Issue the context command (move/attack/load/unload/repair) for the current
 	// selection at `point` — the action half of the original OnLButtonUp, now
 	// driven by the right button. Dispatches on m_uMouseMode (kept current by

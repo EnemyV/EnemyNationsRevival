@@ -1,4 +1,5 @@
 #include "stdafx.h"
+#include "SDL2UI.h"   // EnOpenUiFont (hinted font open)
 
 #include "SDL2MainMenu.h"
 #include "GameWindow.h"
@@ -375,7 +376,7 @@ TTF_Font* SDL2MainMenu::GetCachedFont(int size) {
     auto it = m_fontCache.find(size);
     if (it != m_fontCache.end()) return it->second;
 
-    TTF_Font* font = TTF_OpenFont(m_fontPath.c_str(), size);
+    TTF_Font* font = EnOpenUiFont(m_fontPath.c_str(), size);
     m_fontCache[size] = font;
     return font;
 }

@@ -818,6 +818,14 @@ bool GameWindow::PollEvents() {
             SDL2Terrain::NotifyTargetsLost();
         }
 
+        // Any mouse click dismisses the Shift+RMB unit-info tooltip, in ANY window.
+        // This runs before routing, so the open gesture (Shift+RMB on a unit, handled
+        // in the area's OnRButtonDown below) re-shows it — every other click just closes it.
+        if (event.type == SDL_MOUSEBUTTONDOWN) {
+            CWndArea* pArea = theAreaList.GetTop();
+            if (pArea) pArea->HideUnitInfo();
+        }
+
         // The area map hides the OS cursor while placing a building/rocket (it
         // draws its own footprint). SDL_ShowCursor is application-global, so that
         // hide otherwise leaks into the toolbar / world map / dialogs. Re-show the
@@ -1036,19 +1044,28 @@ void GameWindow::HandleEvent(SDL_Event& event) {
                 theApp.m_wndMain.OnCloseApp();
             }
             else if (event.window.event == SDL_WINDOWEVENT_SIZE_CHANGED) {
-                m_width  = event.window.data1;
-                m_height = event.window.data2;
-                LogToFile("Window resized to " + std::to_string(m_width) + "x" + std::to_string(m_height));
+                // ONLY the main game window's resize updates the recorded client size.
+                // Child windows (dialogs, the unit-info tooltip, detached panels) each
+                // fire SIZE_CHANGED too; without this filter a small tooltip (240xN)
+                // would clobber m_width/m_height and every dialog would then center
+                // off-screen at the top-left. The T-0072 shim push lives INSIDE the
+                // same filter for the same reason: pushing a tooltip's size into the
+                // main window's shim record is exactly the divergence T-0072 fixes.
+                if (m_window && event.window.windowID == SDL_GetWindowID(m_window)) {
+                    m_width  = event.window.data1;
+                    m_height = event.window.data2;
+                    LogToFile("Window resized to " + std::to_string(m_width) + "x" + std::to_string(m_height));
 #ifndef _WIN32
-                // T-0072: keep the shim's record in step with the real window, or a
-                // later resize re-introduces the same stale-size divergence that hides
-                // the bottom bar. Sufficient on its own here (no re-layout needed)
-                // because CWndBar::Create() reads the record at GAME START, i.e. after
-                // the window exists; the shim's SetWindowPos also fires WM_SIZE.
-                if ( m_width > 0 && m_height > 0 && theApp.m_wndMain.m_hWnd )
-                    ::SetWindowPos( theApp.m_wndMain.m_hWnd, NULL, 0, 0, m_width, m_height,
-                                    SWP_NOMOVE | SWP_NOZORDER );
+                    // T-0072: keep the shim's record in step with the real window, or a
+                    // later resize re-introduces the same stale-size divergence that hides
+                    // the bottom bar. Sufficient on its own here (no re-layout needed)
+                    // because CWndBar::Create() reads the record at GAME START, i.e. after
+                    // the window exists; the shim's SetWindowPos also fires WM_SIZE.
+                    if ( m_width > 0 && m_height > 0 && theApp.m_wndMain.m_hWnd )
+                        ::SetWindowPos( theApp.m_wndMain.m_hWnd, NULL, 0, 0, m_width, m_height,
+                                        SWP_NOMOVE | SWP_NOZORDER );
 #endif
+                }
             }
             else if (event.window.event == SDL_WINDOWEVENT_FOCUS_GAINED) {
 #ifdef __APPLE__
