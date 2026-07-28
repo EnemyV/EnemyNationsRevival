@@ -73,8 +73,10 @@ the artifact was built from that source.
 3.00.006 while containing 113 fewer commits. Never reason "higher number = newer code."
 
 **Version fields — three DIFFERENT numbers, don't conflate them** (`enations_latest/src/version.h`):
-- `VER_STRING` / `RES_VER_STRING` — the display build number ("3.00.008"). Bump freely;
+- `VER_STRING` / `RES_VER_STRING` — the display build number ("3.00.010"). Bump freely;
   **no effect on saves**. Both must be edited together; it's the only file with the string.
+  The packaged `README.txt` is generated from this value (see **Release packaging** below),
+  so bumping it here is the only place the shipped version header comes from.
 - `VER_RELEASE` — the **save-format** counter (stored as `m_dwVer`). Bump ONLY when adding
   serialized fields, and gate every new read on `theGame.m_dwVer >= N`. Currently 7.
 - `VER_MAJOR` / `VER_MINOR` — the only fields the save loader REJECTS on
@@ -84,6 +86,34 @@ the artifact was built from that source.
 404 publicly, nothing is destroyed) rather than deleting it — other agents' good assets
 may be attached to it.
 
+### Release packaging — the readme is GENERATED, do not hand-write one
+
+Every zip ships `README.txt`, produced by CMake from `packaging/README.txt.in` with the
+version parsed out of `version.h`. **Same filename on all three platforms.** Just zip what
+the build staged next to the binary; the file is already there and already correct.
+
+This replaced three hand-maintained readmes under three different names
+(`README-FIRST.txt` on Windows, `README.txt` on Linux, none at all on macOS), which drifted
+independently — the shipped **3.00.009 Linux zip** carried 3.00.000-era text stamped
+*"release 3.00.008"* that still told users multiplayer was unavailable on Linux, the
+headline feature of that very release. Nobody noticed because no two platforms shared a file.
+
+- Platform wording (requirements, contents) lives in the `if (WIN32) / elseif (APPLE) / else`
+  block in `enations_latest/src/CMakeLists.txt`. Edit it there, never in a packaged copy.
+- An unparseable `VER_STRING` is a **configure-time FATAL_ERROR**, not a wrong header in a
+  shipped zip.
+- If you find yourself editing a readme inside a staging directory, stop — your change will
+  be silently overwritten by the next build and will not reach the other platforms.
+
+**⚠️ Re-run cmake configure after ANY merge/rebase, before packaging.** The staging rules use
+`file(GLOB ...)` (cursors, `res/*.ttf`, the licence), and a glob is evaluated at **configure**
+time only. Pull a commit that adds a staged file and build without reconfiguring, and the
+glob still holds its old list — the new file never reaches the output and the zip ships
+without it, with a green build and no warning. Hit on 2026-07-27: after rebasing onto
+linux2's `9777ee27` the output `res/` still had 50 files instead of 52, i.e. the bundled
+DejaVuSans no-text safety net was missing from the Windows staging. **Verify by counting the
+staged files, not by reading CMakeLists** — the source looked correct the whole time.
+
 ## ⚠️ Cross-platform integration + multi-agent coordination (READ FIRST)
 
 We are merging **three platform codebases into one tree** for release **3.00.000**:
@@ -91,9 +121,11 @@ We are merging **three platform codebases into one tree** for release **3.00.000
 work in parallel — at least one per platform, sometimes more — each on its own machine,
 all sharing the integration branch.
 
-- **Release lane: `release3_00_008`** (as of 2026-07-20). This is the single source of truth.
+- **Release lane: `release3_00_010`** (as of 2026-07-27). This is the single source of truth.
   Pull it before you work; build before you push; keep all three platforms compiling.
-  **`release3_00_000` / `_005` / `_006` / `_007` are DEAD** — do not commit to them.
+  **`release3_00_000` / `_005` / `_006` / `_007` / `_008` / `_009` are DEAD** — do not commit
+  to them. 3.00.009 shipped from `release3_00_009`; `_010` branched from its tip (which
+  already carries linux2's T-0072/T-0073 window-size and font-path fixes).
 - **⛔ NEVER cut a release without running the containment check** (see the release rules
   below). On 2026-07-20 the 3.00.007 Windows asset shipped from a branch **113 commits
   behind** the real development line, missing a month of verified crash fixes.
