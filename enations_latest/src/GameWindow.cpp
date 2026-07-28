@@ -48,68 +48,9 @@ static void LogToFile(const std::string& message) {
     }
 }
 
-// ---------------------------------------------------------------------------
-// EnResolveFontPath — the ONE place the UI finds a font (T-0073).
-//
-// This used to be a hardcoded array duplicated at 8 call sites, and every Linux
-// entry used the Debian/Ubuntu layout "/usr/share/fonts/truetype/<family>/...".
-// On Fedora ("/usr/share/fonts/dejavu-sans-fonts/"), Arch ("/usr/share/fonts/TTF/")
-// or openSUSE (flat "truetype/") every candidate missed, TTF_OpenFont returned
-// NULL everywhere and the game rendered NO TEXT AT ALL — reported by a user of the
-// shipped 3.00.009 Linux build, and invisible to us because every Linux node here
-// runs Ubuntu.
-//
-// Order: the platform's own system fonts FIRST (so every platform keeps the exact
-// appearance it had), then the bundled copy next to the executable as a LAST RESORT
-// for a host that carries none of them. The system list covers the major distro
-// families, which is what fixes the reported non-Debian case.
-// Resolved once and logged, so a "no text" report is self-diagnosing next time.
-// ---------------------------------------------------------------------------
-const char* EnResolveFontPath() {
-    static std::string s_path;
-    static bool        s_resolved = false;
-    if (s_resolved) return s_path.c_str();
-    s_resolved = true;
-
-    std::vector<std::string> cand;
-    static const char* kSystem[] = {
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",                 // Debian/Ubuntu
-        "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf", // Debian/Ubuntu
-        "/usr/share/fonts/dejavu-sans-fonts/DejaVuSans.ttf",               // Fedora/RHEL
-        "/usr/share/fonts/dejavu/DejaVuSans.ttf",                          // Fedora (alt)
-        "/usr/share/fonts/liberation-sans/LiberationSans-Regular.ttf",     // Fedora
-        "/usr/share/fonts/TTF/DejaVuSans.ttf",                             // Arch
-        "/usr/share/fonts/truetype/DejaVuSans.ttf",                        // openSUSE (flat)
-        "/usr/share/fonts/noto/NotoSans-Regular.ttf",                      // Noto-only systems
-        "/System/Library/Fonts/Supplemental/Arial.ttf",                    // macOS
-        "/System/Library/Fonts/Supplemental/Times New Roman.ttf",          // macOS
-        "C:\\Windows\\Fonts\\arial.ttf",                                   // Windows
-        "C:\\Windows\\Fonts\\tahoma.ttf",
-        "C:\\Windows\\Fonts\\segoeui.ttf",
-        nullptr };
-    for (int i = 0; kSystem[i]; ++i) cand.push_back(kSystem[i]);
-    // ...and the bundled copy LAST. It is a LAST RESORT, not a preference: trying it
-    // first silently replaced the platform's own UI font everywhere one existed, and
-    // DejaVu is wider than (e.g.) mac's Arial, so strings the UI was laid out for got
-    // truncated - a cosmetic regression traded for a bug that only bites systems
-    // carrying none of the fonts above (MacOpus measured it on the status line).
-    // Ordered this way, each platform keeps exactly the font it used before, and the
-    // bundle only ever engages where the alternative is NO TEXT AT ALL.
-    if (char* base = SDL_GetBasePath()) {
-        std::string b(base); SDL_free(base);
-        cand.push_back(b + "res/DejaVuSans.ttf");
-        cand.push_back(b + "DejaVuSans.ttf");
-    }
-
-    for (size_t k = 0; k < cand.size(); ++k) {
-        FILE* f = fopen(cand[k].c_str(), "rb");
-        if (f) { fclose(f); s_path = cand[k]; break; }
-    }
-    LogToFile(s_path.empty()
-              ? std::string("FONT: no usable font found - UI TEXT WILL NOT RENDER")
-              : ("FONT: using " + s_path));
-    return s_path.c_str();
-}
+// EnResolveFontPath() now lives in wind22 (windward/wind22/src/mfc_compat_text.cpp):
+// the compat text renderer needs it too, and keeping a second copy up here is what
+// left PickFontPath() Debian-only after the first T-0073 fix. Declared in GameWindow.h.
 
 
 // Taskbar/alt-tab/dock icon (_NET_WM_ICON on X11): without it a minimized game

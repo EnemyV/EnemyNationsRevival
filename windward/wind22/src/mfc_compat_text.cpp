@@ -21,6 +21,9 @@
 //---------------------------------------------------------------------------
 
 #include "stdafx.h"
+#include <vector>
+#include <string>
+#include <cstdio>
 #include "_windwrd.h"
 #include "mfc_compat_text.h"
 #include "dib.h"
@@ -30,6 +33,9 @@
 
 #include <unordered_map>
 #include <string>
+
+const char* EnResolveFontPath();   // defined below, OUTSIDE the anonymous
+                                   // namespace so the game layer can link to it.
 
 namespace {
 
@@ -61,26 +67,7 @@ HdcState* FindState( HDC hdc ) {
 // Mirrors the SDL2Panel font-loading pattern. Cached per pixel size.
 
 const char* PickFontPath() {
-    static const char* s_path = nullptr;
-    static bool s_tried = false;
-    if ( s_tried )
-        return s_path;
-    s_tried = true;
-    const char* paths[] = {
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", "C:\\Windows\\Fonts\\arial.ttf",
-        "C:\\Windows\\Fonts\\tahoma.ttf",
-        "C:\\Windows\\Fonts\\segoeui.ttf",
-        nullptr
-    };
-    for ( int i = 0; paths[i]; ++i ) {
-        TTF_Font* probe = TTF_OpenFont( paths[i], 12 );
-        if ( probe ) {
-            TTF_CloseFont( probe );
-            s_path = paths[i];
-            break;
-        }
-    }
-    return s_path;
+    return EnResolveFontPath();
 }
 
 TTF_Font* GetFont( int pixelHeight ) {
@@ -172,6 +159,66 @@ std::string ToString( LPCSTR psz, int nLen ) {
 }
 
 }  // namespace
+
+// ---------------------------------------------------------------------------
+// EnResolveFontPath — the ONE font resolver for the whole build (T-0073).
+//
+// Lives in wind22 because BOTH layers need it: the SDL2 UI in enations_latest AND
+// this compat text renderer. It previously existed only in the upper layer, so
+// PickFontPath() below kept its own Debian-only list and stayed broken on other
+// distros even after the upper-layer fix — found by linux2 on real Void Linux.
+//
+// Order: the platform's own system fonts FIRST (every platform keeps the exact
+// appearance it had; a wider face can truncate text laid out for a narrow one),
+// then the bundled copy beside the executable as a LAST RESORT for a host that
+// carries none of them. "/usr/share/fonts/truetype/<family>/" is a DEBIAN layout,
+// not a Linux one: Fedora, Arch and openSUSE keep the very same fonts elsewhere,
+// and looking only there rendered NO TEXT AT ALL on those systems.
+// Resolved once and logged, so a "no text" report is self-diagnosing.
+// ---------------------------------------------------------------------------
+const char* EnResolveFontPath() {
+    static std::string s_path;
+    static bool        s_resolved = false;
+    if ( s_resolved )
+        return s_path.c_str();
+    s_resolved = true;
+
+    std::vector<std::string> cand;
+    static const char* kSystem[] = {
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",                 // Debian/Ubuntu
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf", // Debian/Ubuntu
+        "/usr/share/fonts/dejavu-sans-fonts/DejaVuSans.ttf",               // Fedora/RHEL
+        "/usr/share/fonts/dejavu/DejaVuSans.ttf",                          // Fedora (alt)
+        "/usr/share/fonts/liberation-sans/LiberationSans-Regular.ttf",     // Fedora
+        "/usr/share/fonts/TTF/DejaVuSans.ttf",                             // Arch, Void
+        "/usr/share/fonts/truetype/DejaVuSans.ttf",                        // openSUSE (flat)
+        "/usr/share/fonts/noto/NotoSans-Regular.ttf",                      // Noto-only systems
+        "/System/Library/Fonts/Supplemental/Arial.ttf",                    // macOS
+        "/System/Library/Fonts/Supplemental/Times New Roman.ttf",          // macOS
+        "C:\\Windows\\Fonts\\arial.ttf",                                   // Windows
+        "C:\\Windows\\Fonts\\tahoma.ttf",
+        "C:\\Windows\\Fonts\\segoeui.ttf",
+        nullptr };
+    for ( int i = 0; kSystem[i]; ++i )
+        cand.push_back( kSystem[i] );
+    if ( char* base = SDL_GetBasePath() ) {          // bundled: LAST RESORT
+        std::string b( base ); SDL_free( base );
+        cand.push_back( b + "res/DejaVuSans.ttf" );
+        cand.push_back( b + "DejaVuSans.ttf" );
+    }
+
+    for ( size_t k = 0; k < cand.size(); ++k ) {
+        FILE* f = fopen( cand[k].c_str(), "rb" );
+        if ( f ) { fclose( f ); s_path = cand[k]; break; }
+    }
+    fprintf( stderr, s_path.empty()
+             ? "FONT: no usable font found - UI TEXT WILL NOT RENDER\n"
+             : "FONT: using %s\n", s_path.c_str() );
+    return s_path.c_str();
+}
+
+// Kept as the compat layer's entry point; the list it used to own was Debian-only.
+
 
 //---------------------------------------------------------------------------
 // Public API
