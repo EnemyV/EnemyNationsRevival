@@ -21,6 +21,7 @@
 //---------------------------------------------------------------------------
 
 #include "stdafx.h"
+#include <fstream>
 #include <vector>
 #include <string>
 #include <cstdio>
@@ -211,9 +212,20 @@ const char* EnResolveFontPath() {
         FILE* f = fopen( cand[k].c_str(), "rb" );
         if ( f ) { fclose( f ); s_path = cand[k]; break; }
     }
-    fprintf( stderr, s_path.empty()
-             ? "FONT: no usable font found - UI TEXT WILL NOT RENDER\n"
-             : "FONT: using %s\n", s_path.c_str() );
+    // Report to BOTH stderr and GameWindow_Debug.log. stderr alone is not enough:
+    // a player launching from a desktop icon has no terminal, and "grep FONT: in
+    // GameWindow_Debug.log" is the check other nodes already use to tell a fixed
+    // build from a broken one (linux2 used its absence as proof the published zip
+    // lacked this fix). Moving the resolver into wind22 must not cost that.
+    {
+        const std::string msg = s_path.empty()
+            ? std::string( "FONT: no usable font found - UI TEXT WILL NOT RENDER" )
+            : ( "FONT: using " + s_path );
+        fprintf( stderr, "%s\n", msg.c_str() );
+        std::ofstream log( "GameWindow_Debug.log", std::ios::app );
+        if ( log.is_open() )
+            log << msg << std::endl;
+    }
     return s_path.c_str();
 }
 
