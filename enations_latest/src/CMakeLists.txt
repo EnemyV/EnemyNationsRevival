@@ -584,6 +584,45 @@ add_custom_command(TARGET enations POST_BUILD
     COMMENT "Staging intro/logo videos to assets/videos (PlayVideo runtime assets, bug #53)"
 )
 
+# Generated README.txt for the release zips. These used to be hand-written per
+# platform under three different names (README-FIRST.txt / README.txt / none on
+# mac) so they drifted independently: the 3.00.009 Linux zip shipped 3.00.000-era
+# text stamped "release 3.00.008" that still told users Linux had no multiplayer.
+# Stamped from VER_STRING so it cannot go stale, same filename on all three.
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/version.h" EN_VERSION_H)
+string(REGEX MATCH "VER_STRING[ \t]+\"([0-9]+\\.[0-9]+\\.[0-9]+)\"" _en_ver_match "${EN_VERSION_H}")
+set(EN_VERSION "${CMAKE_MATCH_1}")
+if (NOT EN_VERSION)
+    message(FATAL_ERROR "packaging: could not parse VER_STRING from version.h")
+endif ()
+
+if (WIN32)
+    set(EN_PLATFORM "Windows x64")
+    set(EN_RUN "enations.exe")
+    set(EN_REQS "  - 64-bit Windows")
+    set(EN_CONTENTS "  enations.exe   - the game binary (MSVC x64 Release)\n  SDL2*.dll      - SDL2 runtime libraries\n  vdmplay.dll    - video playback\n  ENations.dat   - bundled game data (~516 MB), no separate download needed\n  data/          - baked terrain set\n  res/           - cursor art\n  assets/        - intro/logo videos")
+elseif (APPLE)
+    set(EN_PLATFORM "macOS ARM64")
+    set(EN_RUN "./enations")
+    set(EN_REQS "  - macOS on Apple Silicon (ARM64)")
+    set(EN_CONTENTS "  enations       - the game binary (clang ARM64 Release)\n  *.dylib        - bundled SDL2 and codec libraries\n  ENations.dat   - bundled game data (~516 MB), no separate download needed\n  data/          - baked terrain set\n  res/           - cursor art\n  assets/        - intro/logo videos")
+else ()
+    set(EN_PLATFORM "Linux x64")
+    set(EN_RUN "./enations")
+    set(EN_REQS "  - 64-bit Linux (x86-64), glibc\n  - System libs: SDL2, SDL2_ttf, SDL2_mixer\n      Debian/Ubuntu:  sudo apt install libsdl2-2.0-0 libsdl2-ttf-2.0-0 libsdl2-mixer-2.0-0")
+    set(EN_CONTENTS "  enations       - the game binary (gcc x64 Release)\n  ENations.dat   - bundled game data (~516 MB), no separate download needed\n  data/          - baked terrain set\n  res/           - cursor art\n  assets/        - intro/logo videos")
+endif ()
+
+configure_file("${CMAKE_CURRENT_SOURCE_DIR}/../../packaging/README.txt.in"
+               "${CMAKE_CURRENT_BINARY_DIR}/README.txt" @ONLY)
+
+add_custom_command(TARGET enations POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_CURRENT_BINARY_DIR}/README.txt"
+        "$<TARGET_FILE_DIR:enations>/README.txt"
+    COMMENT "Staging generated README.txt (${EN_VERSION}, ${EN_PLATFORM}) next to the binary"
+)
+
 # MSVC is lax about C++ standard (defaults to C++14+ even when 11 is requested),
 # so the codebase uses std::make_unique (C++14) and relaxed constexpr. gcc with
 # -std=c++11 rejects both — build Linux as C++17 (gcc 13's default anyway).
