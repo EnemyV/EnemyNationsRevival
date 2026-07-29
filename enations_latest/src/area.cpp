@@ -386,57 +386,122 @@ std::string CWndArea::sWndCls;
 
 const int SEL_WIDTH = 2;
 
-// Captured freeform path for line movement (drawn formation). Client-px points of
-// the current RMB drag, starting at m_ptRMDN. File-static (only one line-move drag
-// happens at a time) so CWndArea's layout doesn't change. Cleared on RMB-down.
-static std::vector<CPoint> s_linePath;
+// Captured freeform path for line movement (drawn formation) — stored in WRAPPED HEX
+// coords, NOT client px. It used to be client px, which meant a pan or zoom DURING the
+// drag left the path denoting stale screen positions: pan shifted m_ptUL (uniform
+// translation error), zoom changed m_iZoom so the projection RESCALED about the window
+// centre (a stored pixel could end up denoting a world point 2x further out, which is
+// what flung endpoints off-screen). That was not merely cosmetic — DoLineMove converts
+// these points with the CURRENT transform at RMB-up, so the units were actually ordered
+// to the WRONG HEXES. Hex storage + per-frame re-projection makes pan/zoom mid-drag
+// correct by construction. File-static (only one line-move drag at a time) so CWndArea's
+// layout doesn't change. Cleared on RMB-down.
+static std::vector<CHexCoord> s_linePath;
 
-// Total pixel length of the polyline.
+// s_linePath projected into window px for the CURRENT view. Rebuilt by ProjectLinePath
+// before every use; the arc-length maths below all run on THIS, so the even-spacing
+// behaviour is unchanged from when the path was captured in pixels.
+static std::vector<CPoint> s_lineWin;
+
+// Project the stored hex path into window space. `ref` anchors the first point to the
+// nearest torus copy (the map repeats, so a hex has many valid window positions);
+// each later point then snaps to the copy nearest its predecessor, keeping the polyline
+// contiguous across the wrap seam. Same construction DrawRouteWaypoints uses.
+static void ProjectLinePath( const CAnimAtr& aa, CPoint ref )
+{
+    s_lineWin.clear( );
+    if ( s_linePath.empty( ) )
+        return;
+    s_lineWin.reserve( s_linePath.size( ) );
+
+    // hex -> window-space centre (average of the 4 corners)
+    auto hexWin = [&]( CHexCoord hc ) -> CPoint
+    {
+        CPoint p[4];
+        aa.MapToWindowHex( hc, p );
+        return CPoint( ( p[0].x + p[1].x + p[2].x + p[3].x ) / 4,
+                       ( p[0].y + p[1].y + p[2].y + p[3].y ) / 4 );
+    };
+
+    const int    eX    = theMap.Get_eX( ), eY = theMap.Get_eY( );
+    const CPoint perO  = hexWin( CHexCoord( 0,  0  ) );
+    const CPoint perPX = hexWin( CHexCoord( eX, 0  ) );
+    const CPoint perPY = hexWin( CHexCoord( 0,  eY ) );
+    const int    perXx = perPX.x - perO.x, perXy = perPX.y - perO.y;
+    const int    perYx = perPY.x - perO.x, perYy = perPY.y - perO.y;
+
+    // 64-bit products are REQUIRED: zoomed in, the torus period vectors span many
+    // screens and 32-bit dx*dx overflows to garbage, snapping to the wrong wrap copy
+    // (the same trap DrawRouteWaypoints documents — "works zoomed out, off-screen
+    // zoomed in"). Keep these long long.
+    auto wrapNear = [&]( CPoint wp, CPoint r ) -> CPoint
+    {
+        CPoint    best  = wp;
+        long long bestD = (long long)( wp.x - r.x ) * ( wp.x - r.x )
+                        + (long long)( wp.y - r.y ) * ( wp.y - r.y );
+        for ( int a = -2; a <= 2; ++a )
+            for ( int b = -2; b <= 2; ++b )
+            {
+                if ( a == 0 && b == 0 ) continue;
+                long long x  = (long long)wp.x + (long long)a * perXx + (long long)b * perYx;
+                long long y  = (long long)wp.y + (long long)a * perXy + (long long)b * perYy;
+                long long dx = x - r.x, dy = y - r.y, d = dx * dx + dy * dy;
+                if ( d < bestD ) { bestD = d; best = CPoint( (int)x, (int)y ); }
+            }
+        return best;
+    };
+
+    s_lineWin.push_back( wrapNear( hexWin( s_linePath[0] ), ref ) );
+    for ( size_t i = 1; i < s_linePath.size( ); ++i )
+        s_lineWin.push_back( wrapNear( hexWin( s_linePath[i] ), s_lineWin.back( ) ) );
+}
+
+// Total pixel length of the projected polyline.
 static float LinePathLength( )
 {
     float total = 0;
-    for ( size_t i = 1; i < s_linePath.size( ); ++i )
+    for ( size_t i = 1; i < s_lineWin.size( ); ++i )
     {
-        float dx = (float)( s_linePath[i].x - s_linePath[i - 1].x );
-        float dy = (float)( s_linePath[i].y - s_linePath[i - 1].y );
+        float dx = (float)( s_lineWin[i].x - s_lineWin[i - 1].x );
+        float dy = (float)( s_lineWin[i].y - s_lineWin[i - 1].y );
         total += sqrt( dx * dx + dy * dy );
     }
     return total;
 }
 
-// Point at arc-length s along the polyline (clamped to the ends).
+// Point at arc-length s along the projected polyline (clamped to the ends).
 static CPoint LinePathAt( float s )
 {
-    if ( s_linePath.empty( ) )
+    if ( s_lineWin.empty( ) )
         return CPoint( 0, 0 );
-    if ( s <= 0 || s_linePath.size( ) == 1 )
-        return s_linePath.front( );
+    if ( s <= 0 || s_lineWin.size( ) == 1 )
+        return s_lineWin.front( );
     float acc = 0;
-    for ( size_t i = 1; i < s_linePath.size( ); ++i )
+    for ( size_t i = 1; i < s_lineWin.size( ); ++i )
     {
-        float dx  = (float)( s_linePath[i].x - s_linePath[i - 1].x );
-        float dy  = (float)( s_linePath[i].y - s_linePath[i - 1].y );
+        float dx  = (float)( s_lineWin[i].x - s_lineWin[i - 1].x );
+        float dy  = (float)( s_lineWin[i].y - s_lineWin[i - 1].y );
         float seg = sqrt( dx * dx + dy * dy );
         if ( acc + seg >= s )
         {
             float t = ( seg > 0 ) ? ( s - acc ) / seg : 0;
-            return CPoint( s_linePath[i - 1].x + (int)( dx * t ),
-                           s_linePath[i - 1].y + (int)( dy * t ) );
+            return CPoint( s_lineWin[i - 1].x + (int)( dx * t ),
+                           s_lineWin[i - 1].y + (int)( dy * t ) );
         }
         acc += seg;
     }
-    return s_linePath.back( );
+    return s_lineWin.back( );
 }
 
-// Arc-length of the point on the polyline closest to p (for ordering units along a
-// curve so the formation doesn't cross over itself).
+// Arc-length of the point on the projected polyline closest to p (for ordering units
+// along a curve so the formation doesn't cross over itself).
 static float LinePathClosestArc( CPoint p )
 {
     float best = 1e18f, bestArc = 0, acc = 0;
-    for ( size_t i = 1; i < s_linePath.size( ); ++i )
+    for ( size_t i = 1; i < s_lineWin.size( ); ++i )
     {
-        float ax = (float)s_linePath[i - 1].x, ay = (float)s_linePath[i - 1].y;
-        float dx = (float)s_linePath[i].x - ax, dy = (float)s_linePath[i].y - ay;
+        float ax = (float)s_lineWin[i - 1].x, ay = (float)s_lineWin[i - 1].y;
+        float dx = (float)s_lineWin[i].x - ax, dy = (float)s_lineWin[i].y - ay;
         float seg2 = dx * dx + dy * dy;
         float t    = ( seg2 > 0 ) ? ( ( p.x - ax ) * dx + ( p.y - ay ) * dy ) / seg2 : 0;
         if ( t < 0 ) t = 0;
@@ -1877,13 +1942,17 @@ void CWndArea::OnMouseMove( UINT nFlags, CPoint point )
 
         if ( m_bLineMove )
         {
-            // Record the freeform path the cursor traces (throttled), starting at the
-            // drag origin. DoLineMove distributes the units along this polyline.
+            // Record the freeform path the cursor traces, starting at the drag origin.
+            // DoLineMove distributes the units along this polyline. Captured as HEX
+            // coords so a pan/zoom mid-drag re-projects instead of corrupting the path
+            // (see the s_linePath note). The old 4px capture throttle is now a
+            // hex-change test: it bounds the point count the same way but is
+            // transform-independent, so a zoom can't retroactively change the sampling.
             if ( s_linePath.empty( ) )
-                s_linePath.push_back( m_ptRMDN );
-            CPoint last = s_linePath.back( );
-            if ( abs( point.x - last.x ) + abs( point.y - last.y ) >= 4 )
-                s_linePath.push_back( point );
+                s_linePath.push_back( m_aa.WindowToHex( m_ptRMDN ) );
+            CHexCoord hcNow = m_aa.WindowToHex( point );
+            if ( hcNow != s_linePath.back( ) )
+                s_linePath.push_back( hcNow );
             m_lineEnd = point;
         }
     }
@@ -2341,6 +2410,11 @@ void CWndArea::DrawLineMove( )
     int     W    = pdib->GetWidth( );
     int     H    = pdib->GetHeight( );
 
+    // Re-project the hex path for THIS frame's transform, so the line tracks the world
+    // while the view pans/zooms mid-drag. Window centre anchors the first point to the
+    // nearest torus copy.
+    ProjectLinePath( m_aa, CPoint( W / 2, H / 2 ) );
+
     BYTE const* pColor = m_colorbuffer.GetBuffer( 8 );  // index-255 (white); >= max dot width
 
     // plot a filled square of `sz` px centred at (cx,cy), clipped to the DIB
@@ -2517,11 +2591,19 @@ void CWndArea::DrawRouteWaypoints( )
 //---------------------------------------------------------------------------
 void CWndArea::DoLineMove( CPoint ptEnd )
 {
-    // make sure the path includes the final cursor point
+    // make sure the path includes the final cursor point (as a hex, like the rest)
     if ( s_linePath.empty( ) )
-        s_linePath.push_back( m_ptRMDN );
-    if ( s_linePath.back( ) != ptEnd )
-        s_linePath.push_back( ptEnd );
+        s_linePath.push_back( m_aa.WindowToHex( m_ptRMDN ) );
+    CHexCoord hcEnd = m_aa.WindowToHex( ptEnd );
+    if ( s_linePath.back( ) != hcEnd )
+        s_linePath.push_back( hcEnd );
+
+    // Project with the CURRENT transform before deriving anything. Previously the path
+    // was stored in px captured under the OLD transform and converted here under the
+    // NEW one, so a pan/zoom mid-drag sent every unit to the wrong hex.
+    CRect rcClient;
+    GetClientRect( &rcClient );
+    ProjectLinePath( m_aa, CPoint( rcClient.Width( ) / 2, rcClient.Height( ) / 2 ) );
 
     // gather selected vehicles
     std::vector<CVehicle*> vehs;
@@ -3780,6 +3862,7 @@ void CWndArea::OnLButtonDown( UINT nFlags, CPoint point )
             m_bRmbCmdDown = FALSE;
             m_bLineMove   = FALSE;
             s_linePath.clear( );
+            s_lineWin.clear( );
         }
 
         m_ptLMB = point;
@@ -4721,6 +4804,7 @@ void CWndArea::OnRButtonDown( UINT nFlags, CPoint point )
             m_ptRMDN      = point;
             m_bLineMove   = FALSE;
             s_linePath.clear( );
+            s_lineWin.clear( );
             m_lineEnd     = point;
             CaptureMouse( );
         }
@@ -4758,6 +4842,7 @@ void CWndArea::OnRButtonDown( UINT nFlags, CPoint point )
     m_ptRMDN      = point;
     m_bLineMove   = FALSE;
     s_linePath.clear( );
+    s_lineWin.clear( );
     m_lineEnd = point;
     CaptureMouse( );
 }
