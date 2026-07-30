@@ -1002,7 +1002,14 @@ static void DrawBuildCursorOverlay( SDL_Renderer* r, const CAnimAtr& aa )
         {
             case CHex::ok_cur:        col = { 255, 255, 255, 215 }; break;  // white = buildable
             case CHex::land_exit_cur: col = {  30,  30,  30, 215 }; break;  // dark = land exit
-            case CHex::sea_exit_cur:  col = {  30,  30,  30, 215 }; break;  // dark = sea exit
+            // BUGS #24: the SDL2 port gave the SEA exit the land exit's dark, so a water
+            // entrance drew like a black road and you couldn't tell the two exits apart.
+            // 1996 distinguished them — sprite.cpp maps land_exit_cur to palette 0 (black)
+            // and sea_exit_cur to 252 — hence the operator's "should be BLUE again". The
+            // palette lives in the data file, not source, so 252's exact RGB isn't
+            // recoverable here; this is a blue in the same saturated family as the other
+            // hatch colours below (alpha 215 to match).
+            case CHex::sea_exit_cur:  col = {  45, 120, 235, 215 }; break;  // blue = sea exit
             case CHex::warn_cur:      col = { 235, 220,  45, 215 }; break;  // yellow
             case CHex::bad_cur:       col = { 225,  45,  45, 225 }; break;  // red
             case CHex::lousy_cur:     col = { 235, 140,  45, 220 }; break;  // orange
