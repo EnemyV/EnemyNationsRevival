@@ -51,7 +51,12 @@ inline void EnCpuIdEx( int leaf, int sub, unsigned int out[ 4 ] )
     out[ 2 ] = (unsigned)regs[ 2 ]; out[ 3 ] = (unsigned)regs[ 3 ];
     #else
     unsigned int a = 0, b = 0, c = 0, d = 0;
-    ::__cpuid_count( leaf, sub, a, b, c, d );
+    // __cpuid_count is a MACRO in glibc's <cpuid.h> (expands to inline asm),
+    // not a function — a leading "::" breaks the substitution on gcc (the
+    // "unqualified lookup picked up a same-named candidate" note above is
+    // about the MSVC/clang intrinsics only; this branch has no such name to
+    // disambiguate from, and gcc/clang's own __cpuid_count needs none).
+    __cpuid_count( leaf, sub, a, b, c, d );
     out[ 0 ] = a; out[ 1 ] = b; out[ 2 ] = c; out[ 3 ] = d;
     #endif
 }
