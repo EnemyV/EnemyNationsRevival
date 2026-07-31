@@ -95,6 +95,7 @@ set(enations_sources
         wrldgen.cpp
         mem_pool.h
         cpuspeed.cpp
+        cpufeatures.cpp   # runtime ISA detection (GH #8) — the binary is baseline x86-64; anything wider dispatches through EnCpu
         EnSettings.cpp
         Perf.cpp
         Perf.h
@@ -284,8 +285,19 @@ if (MSVC)
     string(REPLACE "/Ob0" "" CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG}")
     string(REPLACE "/Od" "" CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG}")
     target_compile_options(enations PRIVATE
-        $<$<CONFIG:Release>:/MD;/EHsc;/O2;/Ob2;/Oi;/GL;/Gy;/Gw;/Ot;/GF;/arch:AVX2;/fp:fast;/Zi>
-        $<$<CONFIG:Profile>:/MD;/EHsc;/O2;/Ob2;/Oi;/GL;/Gy;/Gw;/Ot;/GF;/arch:AVX2;/fp:fast;/Zi>
+        # NO /arch: flag => baseline x86-64 (SSE2, guaranteed on every x64 CPU).
+        # /arch:AVX2 used to be here. It arrived in @66195ab9 "tweak release compile
+        # flags" with no benchmark and no rationale, and it made the shipped Windows
+        # build REFUSE TO START on any CPU older than Intel Haswell (2013) / AMD
+        # Excavator (2015): MSVC emitted AVX2 throughout (2723 ymm instructions, 179
+        # AVX2-specific like vpermq/vpbroadcastd, the first at the very start of .text),
+        # so an older CPU takes an illegal-instruction fault during init and the process
+        # disappears with no dialog and no log — reported as "a brief 'Loading Second
+        # Chance...' then it closes" (GH #8). Self-compiling did not help, because the
+        # flag lives here. Any AVX2 use must now be RUNTIME-DISPATCHED via EnCpu (see
+        # cpufeatures.h) so the baseline binary keeps running everywhere.
+        $<$<CONFIG:Release>:/MD;/EHsc;/O2;/Ob2;/Oi;/GL;/Gy;/Gw;/Ot;/GF;/fp:fast;/Zi>
+        $<$<CONFIG:Profile>:/MD;/EHsc;/O2;/Ob2;/Oi;/GL;/Gy;/Gw;/Ot;/GF;/fp:fast;/Zi>
         $<$<CONFIG:Debug>:/MDd;/EHsc;/Zi;/O2;/Ob2>
         $<$<CONFIG:Sanitize>:/MDd;/EHsc;/Zi;/Od;/Ob0;/fsanitize=address>
     )
@@ -306,8 +318,14 @@ else ()
 endif ()
 
 # Cross-platform world-gen FP determinism (MP RAND MISMATCH, 2026-07-03):
-# the enations target compiles Release/Profile with /fp:fast /arch:AVX2, which
-# lets MSVC CONTRACT a*b+c into a fused multiply-add (single rounding) and
+# NOTE 2026-07-30: /arch:AVX2 has since been REMOVED from this target (GH #8 —
+# it made the build unstartable on pre-2013 CPUs). Without it MSVC has no FMA to
+# contract into, so the primary divergence source described below is gone. The
+# /fp:precise pin is KEPT anyway: /fp:fast alone still permits reassociation and
+# reciprocal substitution, which can diverge from POSIX -ffp-contract=off on its
+# own. Do not remove it without re-running the 3-node [wg] seed diff.
+# the enations target compiled Release/Profile with /fp:fast /arch:AVX2, which
+# let MSVC CONTRACT a*b+c into a fused multiply-add (single rounding) and
 # reassociate float expressions in the terrain-altitude math. POSIX builds use
 # -ffp-contract=off, so gcc(Linux) and clang(mac) agree and MSVC is the lone
 # outlier: on some wtype=4 seeds the terrain stage computes a different altitude

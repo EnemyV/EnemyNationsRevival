@@ -6,6 +6,7 @@
 //---------------------------------------------------------------------------
 
 #include "CdLoc.h"
+#include "cpufeatures.h"   // EnCpu — runtime ISA detection/dispatch (GH #8)
 #include "GameWindow.h"
 #ifndef _WIN32
 #include "en_harness.h"   // in-process LLM-driving harness (Linux/Debug)
@@ -479,6 +480,14 @@ BOOL CConquerApp::InitInstance( )
 #ifdef LOGGINGON
     OutputDebugStringA( "InitInstance\n" );
 #endif
+
+    // FIRST thing, before anything can fail: record what this CPU supports.
+    // GH #8 was a silent illegal-instruction death on pre-AVX2 hardware with
+    // nothing in any log to say so — the user saw the splash and then nothing.
+    // Logging the ISA level here means the next "it just closes" report arrives
+    // with the one fact needed to classify it. Also primes the EnCpu cache
+    // before any dispatch can consult it.
+    EnCpu::LogFeatures( );
 
     // Set application name first (used by SetRegistryKey internally)
     m_pszAppName = _tcsdup( _T("Second Chance") );

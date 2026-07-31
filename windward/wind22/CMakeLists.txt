@@ -72,7 +72,14 @@ if (MSVC)
         $<$<CONFIG:Sanitize>:/MDd /EHsc /Od /Ob0 /fsanitize=address>
         $<$<CONFIG:Debug>:/MDd /EHsc /O2 /Ob2> # ZI
         $<$<CONFIG:Profile>:/MD /EHsc /Od /Ob0> # ZI
-        $<$<CONFIG:Release>:/MD /EHsc /O2 /Ob2 /Oi /GL /Gy /Gw /Ot /GF /arch:AVX2 /fp:fast /Zi>
+        # NO /arch: => baseline x86-64 (SSE2). wind22 is a STATIC lib, so anything
+        # it compiles lands directly in enations.exe: /arch:AVX2 here made the whole
+        # game unstartable on pre-2013 CPUs even after the flag was removed from the
+        # enations target. This layer is the win32/GDI compat shim, hit constantly and
+        # very early, which is why the failure looked like "a brief 'Loading Second
+        # Chance...' then it closes" (GH #8) rather than a crash during play.
+        # Wide ISA must be runtime-dispatched via EnCpu (enations_latest/src/cpufeatures.h).
+        $<$<CONFIG:Release>:/MD /EHsc /O2 /Ob2 /Oi /GL /Gy /Gw /Ot /GF /fp:fast /Zi>
     )
 else ()
     # Linux/gcc: -fms-extensions accepts MSVC anonymous-struct/union semantics;
