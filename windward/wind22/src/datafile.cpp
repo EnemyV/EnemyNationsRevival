@@ -23,6 +23,21 @@ CDataFile theDataFile;
 
 char CDataFile::aDatafileMagic[4] = {'W', 'S', 'D', 'F'};
 
+// GH #8: a bad ENations.dat killed the game silently (uncaught
+// ERR_DATAFILE_NO_ENTRY, no window, no log). Two cases share that code but need
+// opposite user fixes: no datafile open = .dat missing; open but entry absent =
+// wrong/truncated .dat. Old diagnostics were OutputDebugString, invisible to
+// players. Log to the same file as CPU:/FONT:.
+static void LogDataFileProblem( const char* pszMsg ) {
+    OutputDebugString( pszMsg );
+    OutputDebugString( "\n" );
+    FILE* fp = fopen( "GameWindow_Debug.log", "a" );
+    if ( fp ) {
+        fprintf( fp, "DATAFILE: %s\n", pszMsg );
+        fclose( fp );
+    }
+}
+
 CDataFile::CDataFile() {
     m_countryCode = DEF_COUNTRY_CODE;
     m_pPatchDir = NULL;
@@ -119,6 +134,16 @@ BOOL CDataFile::Init(const char *pFilename, int iRifVer, BOOL bErr) {
         try {
             theDataFile._Init(strFileName, sPatch, iRifVer);
             w22::WriteProfileString("Game", "DataFile", strFileName);
+            // Log which .dat we actually opened. The path comes from HKCU
+            // Game/DataFile (default ".\ENations.dat", cwd-relative) and is
+            // written back on success, so an old install can pin us to a stale
+            // file for good. Without this line a wrong .dat is indistinguishable
+            // from any other startup death. GH #8.
+            {
+                CString sMsg;
+                sMsg.Format("using '%s'", (const char*)strFileName);
+                LogDataFileProblem(sMsg);
+            }
             return (TRUE);
         }
 
@@ -343,8 +368,26 @@ CMmio *CDataFile::OpenAsMMIO(const char *pFilename, const char *pRif) {
                 m_countryCode = DEF_COUNTRY_CODE;
                 return OpenAsMMIO(NULL, pRif);
             }
-            OutputDebugString("CDataFile::OpenAsMMIO: country code not found via file map\n");
-            OutputDebugString("CDataFile::OpenAsMMIO: returning ERR_DATAFILE_NO_ENTRY\n");
+            // .dat opened but the entry is missing: wrong/old/truncated file.
+            // Fatal (nothing catches the throw), so name the file and say so.
+            {
+                CString sMsg;
+                sMsg.Format("entry '%s' missing from '%s'", (const char*)path,
+                            (const char*)m_sFileName);
+                LogDataFileProblem(sMsg);
+
+                static bool bTold = false;
+                if (!bTold) {
+                    bTold = true;
+                    CString sBox;
+                    sBox.Format("This ENations.dat cannot be used.\n\n"
+                                "File:\n%s\n\nMissing entry: %s\n\n"
+                                "It is from an older or different version of the game. "
+                                "Use the ENations.dat shipped with this release.",
+                                (const char*)m_sFileName, (const char*)path);
+                    ::MessageBoxA(NULL, sBox, "Enemy Nations", MB_OK | MB_ICONERROR);
+                }
+            }
             ThrowError(ERR_DATAFILE_NO_ENTRY);
         }
 
@@ -382,7 +425,27 @@ CMmio *CDataFile::OpenAsMMIO(const char *pFilename, const char *pRif) {
     //  If here, file was not found in patch dir ( or
     //  no patch dir was given ), and no datafile was
     //  opened, so return NULL ( no file found ).
-    OutputDebugString("CDataFile::OpenAsMMIO: file not found, about to throw ERR_DATAFILE_NO_ENTRY\n");
+    // No datafile open at all. This is the GH #8 case: ENations.dat was never
+    // found. Fatal and unrecoverable, so tell the user once instead of vanishing.
+    {
+        char cwd[MAX_PATH] = { 0 };
+        ::GetCurrentDirectoryA(sizeof(cwd), cwd);
+        CString sMsg;
+        sMsg.Format("ENations.dat not open, wanted '%s'. cwd='%s'", (const char*)path, cwd);
+        LogDataFileProblem(sMsg);
+
+        static bool bTold = false;
+        if (!bTold) {
+            bTold = true;
+            CString sBox;
+            sBox.Format("ENations.dat could not be found.\n\n"
+                        "It must sit next to enations.exe.\n\n"
+                        "Looked in:\n%s\n\n"
+                        "If you built from source, copy ENations.dat into the build "
+                        "output folder, or run the game from a folder that has it.", cwd);
+            ::MessageBoxA(NULL, sBox, "Enemy Nations", MB_OK | MB_ICONERROR);
+        }
+    }
     ThrowError(ERR_DATAFILE_NO_ENTRY);
     return NULL;
 }

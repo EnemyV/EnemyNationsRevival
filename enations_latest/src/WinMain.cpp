@@ -113,6 +113,28 @@ extern "C" int APIENTRY WinMain( HINSTANCE hInstance,
     SetUnhandledExceptionFilter( EnWriteFullDump );
 #endif
 
+#ifdef _WIN32
+    // Anchor cwd to the exe dir so ENations.dat / data/ / res/ resolve however we
+    // were launched. CDataFile uses cwd-relative paths, so a shortcut with a
+    // different "Start in", an absolute-path launch, or running the built exe from
+    // the build dir (no .dat there) threw an uncaught ERR_DATAFILE_NO_ENTRY: no
+    // window, no message, nothing logged. GH #8.
+    // Port of the linux_main.cpp fix, which MSVC does not build.
+    // No-op when cwd is already the exe dir, so Explorer launches always worked.
+    {
+        char exePath[ MAX_PATH ];
+        if ( GetModuleFileNameA( NULL, exePath, sizeof( exePath ) ) > 0 )
+        {
+            char* slash = strrchr( exePath, '\\' );
+            if ( slash )
+            {
+                *slash = '\0';
+                ::SetCurrentDirectoryA( exePath );
+            }
+        }
+    }
+#endif
+
 #if defined( _DEBUG ) && defined( _WIN32 )
     // CRT debug asserts (checked-iterator "list iterators incompatible", _ASSERTE,
     // heap checks) default to a MODAL Abort/Retry/Ignore dialog — which silently
