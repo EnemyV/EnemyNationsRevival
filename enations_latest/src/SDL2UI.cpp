@@ -229,6 +229,11 @@ static TTF_Font* GetUiFont(int pt) {
             FILE* f = fopen(cands[i], "rb");
             if (f) { fclose(f); s_path = cands[i]; break; }
         }
+        // T-0073 fallback, same as the other font sites. This list is Windows-only,
+        // so without it every POSIX build cached "?" forever and shrink-to-fit rows
+        // silently lost crisp re-rasterizing (caller bitmap-scales instead).
+        if (s_path.empty())
+            s_path = EnResolveFontPath();
         if (s_path.empty()) s_path = "?";   // mark as "searched, none found"
     }
     if (s_path == "?") return nullptr;
