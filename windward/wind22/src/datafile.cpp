@@ -28,6 +28,28 @@ char CDataFile::aDatafileMagic[4] = {'W', 'S', 'D', 'F'};
 // opposite user fixes: no datafile open = .dat missing; open but entry absent =
 // wrong/truncated .dat. Old diagnostics were OutputDebugString, invisible to
 // players. Log to the same file as CPU:/FONT:.
+static bool DataFileExists( const char* pszPath ) {
+    if ( !pszPath || !*pszPath ) return false;
+    FILE* f = fopen( pszPath, "rb" );
+    if ( !f ) return false;
+    fclose( f );
+    return true;
+}
+
+// Absolute path of <exe dir>/<pszLeaf>, or empty on failure. GetModuleFileNameA is
+// shimmed on POSIX (/proc/self/exe, _NSGetExecutablePath).
+static CString DataFileBesideExe( const char* pszLeaf ) {
+    char exePath[ 1024 ] = { 0 };
+    if ( GetModuleFileNameA( NULL, exePath, sizeof( exePath ) - 1 ) <= 0 )
+        return CString( "" );
+    char* p1 = strrchr( exePath, '\\' );
+    char* p2 = strrchr( exePath, '/' );
+    char* slash = ( p1 > p2 ) ? p1 : p2;
+    if ( !slash ) return CString( "" );
+    *( slash + 1 ) = '\0';
+    return CString( exePath ) + pszLeaf;
+}
+
 static void LogDataFileProblem( const char* pszMsg ) {
     OutputDebugString( pszMsg );
     OutputDebugString( "\n" );
@@ -118,6 +140,22 @@ BOOL CDataFile::Init(const char *pFilename, int iRifVer, BOOL bErr) {
         CString sDefault = CString(".\\") + pFilename;
         strFileName = w22::GetProfileString("Game", "DataFile", sDefault);
     }
+    // The path above comes from HKCU Game/DataFile and is written back on every
+    // success, so an old install pins an absolute path that outlives it and the
+    // ENations.dat shipped beside the exe is never tried. Reported as "cannot find
+    // ENations.dat even when it is in the same folder as the exe" (GH #8).
+    // If the pinned path is gone, fall back to the copy beside the exe.
+    if (!DataFileExists(strFileName)) {
+        CString sBeside = DataFileBesideExe(pFilename);
+        if (!sBeside.IsEmpty() && DataFileExists(sBeside)) {
+            CString sMsg;
+            sMsg.Format("pinned '%s' not found, falling back to '%s'",
+                        (const char*)strFileName, (const char*)sBeside);
+            LogDataFileProblem(sMsg);
+            strFileName = sBeside;
+        }
+    }
+
     CString sPatch = w22::GetProfileString("Game", "Patch", "data");
     if (!sPatch.IsEmpty())
         if (sPatch[sPatch.GetLength() - 1] == '\\')
@@ -134,14 +172,17 @@ BOOL CDataFile::Init(const char *pFilename, int iRifVer, BOOL bErr) {
         try {
             theDataFile._Init(strFileName, sPatch, iRifVer);
             w22::WriteProfileString("Game", "DataFile", strFileName);
-            // Log which .dat we actually opened. The path comes from HKCU
-            // Game/DataFile (default ".\ENations.dat", cwd-relative) and is
-            // written back on success, so an old install can pin us to a stale
-            // file for good. Without this line a wrong .dat is indistinguishable
-            // from any other startup death. GH #8.
+            // Report opened vs NOT opened. _Init does not throw on a missing
+            // master (it falls back to patch-dir-only), so this ran on the success
+            // path and logged "using <path>" for a file that was never opened,
+            // which is worse than silence. Say which actually happened. GH #8.
             {
                 CString sMsg;
-                sMsg.Format("using '%s'", (const char*)strFileName);
+                if (m_pDataFile)
+                    sMsg.Format("opened '%s'", (const char*)strFileName);
+                else
+                    sMsg.Format("NOT OPENED '%s' (no master; patch-dir-only)",
+                                (const char*)strFileName);
                 LogDataFileProblem(sMsg);
             }
             return (TRUE);
