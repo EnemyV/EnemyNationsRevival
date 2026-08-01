@@ -78,7 +78,30 @@ CDataFile::~CDataFile() {
     Close();
 }
 
+static EnLocateDataFileFn s_pfnLocate = NULL;
+
+void SetLocateDataFileHandler( EnLocateDataFileFn pfn ) { s_pfnLocate = pfn; }
+EnLocateDataFileFn GetLocateDataFileHandler( ) { return s_pfnLocate; }
+
 static BOOL GetFileName(CString &strFileName) {
+
+    // Registered picker wins. The legacy path below is dead on every platform:
+    // CFileDialog is an IDCANCEL stub since the MFC removal, GetDriveType always
+    // answers DRIVE_FIXED so the CD branch is unreachable, and on POSIX
+    // MessageBoxA returns IDOK which fails the != IDYES test immediately.
+    if (s_pfnLocate) {
+        char picked[1024] = { 0 };
+        if (!s_pfnLocate(strFileName, picked, (int)sizeof(picked)))
+            return (FALSE);
+        if (!picked[0] || !DataFileExists(picked))
+            return (FALSE);
+        CString sMsg;
+        sMsg.Format("user picked '%s'", picked);
+        LogDataFileProblem(sMsg);
+        strFileName = picked;
+        return (TRUE);
+    }
+
 
     CString sTmp(strFileName);
     _fullpath(strFileName.GetBuffer(258), sTmp, 256);
@@ -210,15 +233,22 @@ void CDataFile::_Init(const char *pFilename, const char *pPatchDir, int iRifVer)
             ThrowError(ERR_OUT_OF_MEMORY);
         }
         if (m_pDataFile->Open(pFilename, CFile::modeRead | CFile::shareDenyWrite | CFile::typeBinary) == FALSE) {
-            // Master archive (e.g. ENations.dat) absent — the cross-platform
-            // builds ship only the loose, extracted data/ tree. Fall back to
-            // patch-dir-only mode: OpenAsMMIO checks the patch dir first and
-            // never needs the master when the loose set is complete. Skip the
-            // master parse and continue to the patch-dir setup below.
+            // Throw so Init's catch runs GetFileName and the user gets the picker.
+            // @d3724edb (macOS port) swallowed this into "patch-dir-only" mode on
+            // the premise that cross-platform builds ship only a loose data/ tree.
+            // That premise is dead: all three platforms bundle ENations.dat, and
+            // the shipped data/ holds 2124 terrain_gpu PNGs and ZERO .rif files,
+            // so patch-dir-only cannot serve game content anyway - it only pushed
+            // the failure later, into an uncaught ERR_DATAFILE_NO_ENTRY with no
+            // window and no message. GH #8.
             delete m_pDataFile;
             m_pDataFile = NULL;
-            OutputDebugString("CDataFile::_Init: master data file not found; "
-                              "running patch-dir-only (loose data/)\n");
+            {
+                CString sMsg;
+                sMsg.Format("could not open '%s'", pFilename);
+                LogDataFileProblem(sMsg);
+            }
+            ThrowError(ERR_DATAFILE_OPEN);
         } else {
         m_sFileName = pFilename;
 

@@ -481,6 +481,49 @@ BOOL CConquerApp::InitInstance( )
     OutputDebugStringA( "InitInstance\n" );
 #endif
 
+    // Wire the "locate the data file" picker. wind22 throws ERR_DATAFILE_OPEN when
+    // it cannot open the .dat and retries with whatever this returns. Registered
+    // here because wind22 sits below the game UI and must not include it.
+    // NOTE: this runs at theDataFile.Init (~line 922) but m_gameWindow is not
+    // created until ~1495, so an SDL2 dialog is not available yet. Use the OS
+    // picker, which needs no game state.
+    SetLocateDataFileHandler( []( const char* pszWanted, char* pszOut, int cbOut ) -> bool
+    {
+#ifdef _WIN32
+        // Ask first: an unattended/harness run must not block on a modal dialog.
+        CString sMsg;
+        sMsg.Format( "ENations.dat could not be found.\n\nLooked for:\n%s\n\n"
+                     "Locate it now?", pszWanted ? pszWanted : "" );
+        if ( ::MessageBoxA( NULL, sMsg, "Enemy Nations", MB_YESNO | MB_ICONWARNING ) != IDYES )
+            return false;
+
+        char szFile[ 1024 ] = { 0 };
+        strcpy( szFile, "ENations.dat" );
+        OPENFILENAMEA ofn = { 0 };
+        ofn.lStructSize = sizeof( ofn );
+        ofn.hwndOwner   = NULL;
+        ofn.lpstrFilter = "Enemy Nations data (ENations.dat)\0ENations.dat\0"
+                          "Data files (*.dat)\0*.dat\0All files (*.*)\0*.*\0";
+        ofn.lpstrFile   = szFile;
+        ofn.nMaxFile    = sizeof( szFile );
+        ofn.lpstrTitle  = "Locate ENations.dat";
+        ofn.Flags       = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
+        if ( !::GetOpenFileNameA( &ofn ) )
+            return false;
+        if ( !szFile[ 0 ] || (int)strlen( szFile ) >= cbOut )
+            return false;
+        strcpy( pszOut, szFile );
+        return true;
+#else
+        // POSIX has no OS picker we can call this early (SDL2 has no file dialog
+        // and the game window does not exist yet). Returning false leaves the
+        // clean "could not open" failure + log line. Needs zenity/kdialog on
+        // Linux and NSOpenPanel on mac.
+        (void)pszWanted; (void)pszOut; (void)cbOut;
+        return false;
+#endif
+    } );
+
     // FIRST thing, before anything can fail: record what this CPU supports.
     // GH #8 was a silent illegal-instruction death on pre-AVX2 hardware with
     // nothing in any log to say so — the user saw the splash and then nothing.
