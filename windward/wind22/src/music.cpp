@@ -633,13 +633,25 @@ void CRawData::StartDblBuffer( CRawChannel* pRaw ) {
             iLen = m_iDataLen;
         }
 
+        // CMusicPlayer::InitData's SFX/voice/music read is one big try/catch (by
+        // design — a demo-layout .dat legitimately lacks 16-bit SFX/voice data,
+        // and that's meant to be non-fatal, "continuing without full audio"). But
+        // an exception partway through leaves m_pFileVoc/m_pFileReg NULL for
+        // entries beyond whatever loaded before the throw, while m_aRaw is
+        // already sized big enough that PlayExclusiveMusic's bounds check
+        // (m_aRaw.GetSize() <= iSound) passes anyway. A NULL HANDLE deref is a
+        // hard crash, not a C++ exception, so it skipped the catch below entirely
+        // (segfault in CConquerApp::InitInstance on startup). Turn it into the
+        // catchable failure this function already expects.
+        CFile* pFile = m_bVoice ? pRaw->m_pPar->m_pFileVoc : pRaw->m_pPar->m_pFileReg;
+        if ( pFile == NULL )
+            ThrowError( ERR_CACHE_READ );
+
         // read it
-        ::SetFilePointer( (HANDLE)( m_bVoice ? pRaw->m_pPar->m_pFileVoc->m_hFile :
-                                    pRaw->m_pPar->m_pFileReg->m_hFile ), m_lOff, NULL, FILE_BEGIN );
+        ::SetFilePointer( (HANDLE)( pFile->m_hFile ), m_lOff, NULL, FILE_BEGIN );
         m_lBufOff = iLen;
         DWORD dwRead;
-        ::ReadFile( (HANDLE)( m_bVoice ? pRaw->m_pPar->m_pFileVoc->m_hFile :
-                              pRaw->m_pPar->m_pFileReg->m_hFile ), pRaw->m_pPar->m_pBufDecode,
+        ::ReadFile( (HANDLE)( pFile->m_hFile ), pRaw->m_pPar->m_pBufDecode,
                     iLen, &dwRead, NULL );
         if ( dwRead != (DWORD)iLen )
             ThrowError( ERR_CACHE_READ );
@@ -662,8 +674,7 @@ void CRawData::StartDblBuffer( CRawChannel* pRaw ) {
             int iNextLen = DBL_BUF_LEN / 4 - pRaw->m_pPar->m_iInBuf;
             iNextLen = __min( iNextLen, m_iDataLen - m_lBufOff );
             pRaw->m_iBufOn = 0;
-            auto hHandle = m_bVoice ? pRaw->m_pPar->m_pFileVoc->m_hFile : pRaw->m_pPar->m_pFileReg->m_hFile;
-            pRaw->BackgroundRead( hHandle, m_lOff + m_lBufOff, iNextLen );
+            pRaw->BackgroundRead( pFile->m_hFile, m_lOff + m_lBufOff, iNextLen );
             m_lBufOff += iNextLen;
             if ( iNextLen <= 0 )
                 pRaw->m_bStreamEOF = true;
