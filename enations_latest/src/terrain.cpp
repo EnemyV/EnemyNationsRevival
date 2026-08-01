@@ -3867,9 +3867,14 @@ void CGameMap::DiscoverSpritesGpu( CAnimAtr& aa, const CRect& rect )
     // the current on-screen working set, not every (frame×zoom) ever seen. Forces this frame
     // FULL (the store was just cleared). One re-pack frame, then back to incremental.
     bool bAtlasReset = SDL2Sprites::TakeAtlasOverflow( );
-    if ( bAtlasReset )
+    // GPU device-lost (screen off/on, driver reset): g_rt's contents are dead and on a
+    // DEVICE_RESET the atlas is too (while g_atlasMap keeps serving its dead sub-rects).
+    // Same recovery as the atlas overflow: blow this context's layer away and repack
+    // from a full capture this frame. Terrain does its own recovery in SDL2Terrain.
+    bool bDeviceLost = SDL2Sprites::TakeTargetsLost( );
+    if ( bAtlasReset || bDeviceLost )
         SDL2Sprites::InvalidateTextures( );
-    bool bIncremental = bDirty && s_haveStore && !projOrPan && !bStaticDirty && !bAtlasReset;
+    bool bIncremental = bDirty && s_haveStore && !projOrPan && !bStaticDirty && !bAtlasReset && !bDeviceLost;
     s_lastZoom = aa.m_iZoom; s_lastDir = aa.m_iDir;
     s_lastUlX  = ulDirty.x;  s_lastUlY = ulDirty.y;
     s_haveStore = true;   // after this frame the store is populated

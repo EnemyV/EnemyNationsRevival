@@ -144,6 +144,14 @@ namespace
     // emits a ground shadow and disarms it (so multi-piece/multi-layer units get one).
     bool g_captureShadow = false;
 
+    // GPU device-lost generation (SDL_RENDER_TARGETS_RESET / SDL_RENDER_DEVICE_RESET).
+    // g_rt loses its contents on TARGETS_RESET; on DEVICE_RESET the atlas dies too but
+    // g_atlasMap keeps serving its dead sub-rects. A generation (not a one-shot bool) so
+    // EVERY per-renderer context recovers, not just the first one to render. NOT swapped;
+    // each context's seen-gen is (g_targetsLostSeen, swapped below).
+    unsigned g_targetsLostGen  = 0;
+    unsigned g_targetsLostSeen = 0;
+
     // Rotation (radians) applied to the next captured structure sprite — projectiles set
     // this to their screen travel angle so the bullet faces where it flies. 0 = axis-aligned.
     float g_captureRot = 0.0f;
@@ -189,6 +197,7 @@ namespace
         std::vector<Disc>  shadows;
         bool captureShadow = false;
         float captureRot = 0.0f;
+        unsigned targetsLostSeen = 0;   // g_targetsLostGen this ctx has recovered from
     };
 
     std::map<SDL_Renderer*, SpritesRCtx> s_sctx;
@@ -211,6 +220,7 @@ namespace
         SW(staticGridUlX); SW(staticGridUlY); SW(staticGridDirty);
         SW(trails); SW(flashes); SW(shadows);
         SW(captureShadow); SW(captureRot);
+        SW(targetsLostSeen);
         #undef SW
     }
 
@@ -1086,6 +1096,22 @@ namespace SDL2Sprites
         bool b = g_atlasFull;
         g_atlasFull = false;
         return b;
+    }
+
+    void NotifyTargetsLost( )
+    {
+        ++g_targetsLostGen;
+    }
+
+    // One-shot per ACTIVE context: true once after a device-lost event, consumed by
+    // DiscoverSpritesGpu (like TakeAtlasOverflow) to force InvalidateTextures + a full
+    // capture. Call with the view's context active (after SetRenderer).
+    bool TakeTargetsLost( )
+    {
+        if ( g_targetsLostSeen == g_targetsLostGen )
+            return false;
+        g_targetsLostSeen = g_targetsLostGen;
+        return true;
     }
 
     void InvalidateTextures( )

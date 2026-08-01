@@ -177,11 +177,14 @@ static const int* QuadIndices( int nQuads )
     return s_quadIdx.data( );
 }
 
-// GPU device-lost flag (SDL_RENDER_TARGETS_RESET / SDL_RENDER_DEVICE_RESET, set from the
+// GPU device-lost (SDL_RENDER_TARGETS_RESET / SDL_RENDER_DEVICE_RESET, set from the
 // event pump via SDL2Terrain::NotifyTargetsLost): target textures survive as objects but
 // their CONTENTS are gone — every cached layer must re-render or it presents black.
-static bool s_targetsLost = false;
-void SDL2Terrain::NotifyTargetsLost() { s_targetsLost = true; }
+// A GENERATION counter, not a one-shot bool: the bool was consumed by whichever area
+// map rendered first, so a SECOND open area map never invalidated and kept presenting
+// its dead (black) caches. Each context compares its own seen-gen in Render.
+static unsigned s_targetsLostGen = 0;
+void SDL2Terrain::NotifyTargetsLost() { ++s_targetsLostGen; }
 
 // FAR SNAPSHOT: flattened copy of the terrain composite from the last wide (zoom>=2) full
 // rebuild. During a zoom-OUT gesture preview the crisp texture only covers the old (narrower)
@@ -1154,6 +1157,7 @@ struct SDL2TerrainRCtx
     bool memoEditOverflow = false;
     unsigned tileMemoLoadGen = 0xFFFFFFFFu;
     unsigned fogVisGenSeen = ~0u;
+    unsigned targetsLostSeen = 0;   // s_targetsLostGen this ctx has recovered from
     int prevDstX = INT_MIN, prevDstY = INT_MIN;
     int lastDx = INT_MIN, lastDy = INT_MIN, lastCx = INT_MIN, lastCy = INT_MIN;
 
@@ -1562,9 +1566,9 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
     // rebuilds them all — terrain mesh (s_sig), water bake, far snapshot, whole-map
     // underlay. Without this the composite blits black while sprites (re-emitted every
     // frame) keep working — the user-reported "terrain black after monitor off/on".
-    if ( s_targetsLost )
+    if ( C.targetsLostSeen != s_targetsLostGen )
     {
-        s_targetsLost = false;
+        C.targetsLostSeen = s_targetsLostGen;
         s_sig         = ~0ull;   // full mesh re-render into s_rt/shade/fog
         s_waterRTtick = ~0u; s_waterTick = ~0u;          // water re-bake
         if ( s_farRT ) { SDL_DestroyTexture( s_farRT ); s_farRT = nullptr; }

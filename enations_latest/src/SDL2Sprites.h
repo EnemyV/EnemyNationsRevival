@@ -100,6 +100,13 @@ namespace SDL2Sprites
 
     void InvalidateTextures( );
 
+    // GPU device-lost (SDL_RENDER_TARGETS_RESET / SDL_RENDER_DEVICE_RESET, from the event
+    // pump): bumps a generation every per-renderer context checks. TakeTargetsLost() is the
+    // per-context one-shot consumer (DiscoverSpritesGpu) — true once after an event, with
+    // the view's context active; caller reacts with InvalidateTextures() + a full capture.
+    void NotifyTargetsLost( );
+    bool TakeTargetsLost( );
+
     // Atlas overflow self-heal: the append-only packer can fill over a long session.
     // GetAtlasLoc flags it; the render orchestrator consumes the flag once per frame and,
     // when set, does a full InvalidateTextures()+repack so the atlas holds only the current

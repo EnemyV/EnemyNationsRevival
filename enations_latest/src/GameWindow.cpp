@@ -17,6 +17,7 @@
 #include "Perf.h"         // GaugeSet — correlate window state with frame cost
 #include "w22_settings.h" // w22::GetProfileInt — [Advanced] Renderer flag (T0)
 #include "SDL2Terrain.h"  // NotifyTargetsLost — rebuild cached RTs after GPU device-lost
+#include "SDL2Sprites.h"  // NotifyTargetsLost — sprite atlas/RT recovery after device-lost
 #include "RenderBackend.h" // RenderBackendIsGpu() — 3-way backend selector
 #include "../rendering/SDLButtonManager.h"
 #include "../rendering/StatusBar.h"
@@ -816,6 +817,7 @@ bool GameWindow::PollEvents() {
             LogToFile(event.type == SDL_RENDER_DEVICE_RESET ? "SDL_RENDER_DEVICE_RESET"
                                                             : "SDL_RENDER_TARGETS_RESET");
             SDL2Terrain::NotifyTargetsLost();
+            SDL2Sprites::NotifyTargetsLost();
         }
 
         // Any mouse click dismisses the Shift+RMB unit-info tooltip, in ANY window.
