@@ -396,17 +396,97 @@ const int SEL_WIDTH = 2;
 // to the WRONG HEXES. Hex storage + per-frame re-projection makes pan/zoom mid-drag
 // correct by construction. File-static (only one line-move drag at a time) so CWndArea's
 // layout doesn't change. Cleared on RMB-down.
-static std::vector<CHexCoord> s_linePath;
+// A sample is a hex PLUS where inside that hex the cursor actually was, so the drawn
+// curve keeps its original shape. Storing the hex alone snapped every vertex to a hex
+// centre, which is transform-correct but visibly chunky when zoomed in (operator: "it
+// used to render as a nice smooth line"). The offset is in hex WIDTHS/HEIGHTS, so it is
+// zoom-invariant and survives pan/zoom exactly like the hex does.
+struct LineSample
+{
+    CHexCoord hc;
+    float     offX;   // from the hex's window centre, in hex widths
+    float     offY;   // ... in hex heights
+};
+static std::vector<LineSample> s_linePath;
+
+// Last captured cursor pos, for the 4px sampling throttle only. Transform-dependent by
+// design: it governs sample DENSITY, never where a sample lands.
+static CPoint s_lineLastWin( 0, 0 );
 
 // s_linePath projected into window px for the CURRENT view. Rebuilt by ProjectLinePath
 // before every use; the arc-length maths below all run on THIS, so the even-spacing
 // behaviour is unchanged from when the path was captured in pixels.
 static std::vector<CPoint> s_lineWin;
 
-// Project the stored hex path into window space. `ref` anchors the first point to the
-// nearest torus copy (the map repeats, so a hex has many valid window positions);
-// each later point then snaps to the copy nearest its predecessor, keeping the polyline
-// contiguous across the wrap seam. Same construction DrawRouteWaypoints uses.
+// Window position of a hex under the current transform, torus-aware. The map repeats,
+// so a hex has many valid window positions; CentreNear picks the copy closest to a
+// reference point, which keeps a polyline contiguous across the wrap seam.
+struct LineProj
+{
+    const CAnimAtr* pAa;
+    int perXx, perXy, perYx, perYy;
+
+    explicit LineProj( const CAnimAtr& aa ) : pAa( &aa )
+    {
+        const int    eX    = theMap.Get_eX( ), eY = theMap.Get_eY( );
+        const CPoint perO  = Centre( CHexCoord( 0,  0  ) );
+        const CPoint perPX = Centre( CHexCoord( eX, 0  ) );
+        const CPoint perPY = Centre( CHexCoord( 0,  eY ) );
+        perXx = perPX.x - perO.x; perXy = perPX.y - perO.y;
+        perYx = perPY.x - perO.x; perYy = perPY.y - perO.y;
+    }
+
+    CPoint Centre( CHexCoord hc ) const
+    {
+        CPoint p[4];
+        pAa->MapToWindowHex( hc, p );
+        return CPoint( ( p[0].x + p[1].x + p[2].x + p[3].x ) / 4,
+                       ( p[0].y + p[1].y + p[2].y + p[3].y ) / 4 );
+    }
+
+    // 64-bit products are REQUIRED: zoomed in the period vectors span many screens and
+    // 32-bit dx*dx overflows to garbage, snapping to the wrong copy (the trap
+    // DrawRouteWaypoints documents as "works zoomed out, off-screen zoomed in").
+    CPoint CentreNear( CHexCoord hc, CPoint ref ) const
+    {
+        CPoint    wp    = Centre( hc );
+        CPoint    best  = wp;
+        long long bestD = (long long)( wp.x - ref.x ) * ( wp.x - ref.x )
+                        + (long long)( wp.y - ref.y ) * ( wp.y - ref.y );
+        for ( int a = -2; a <= 2; ++a )
+            for ( int b = -2; b <= 2; ++b )
+            {
+                if ( a == 0 && b == 0 ) continue;
+                long long x  = (long long)wp.x + (long long)a * perXx + (long long)b * perYx;
+                long long y  = (long long)wp.y + (long long)a * perXy + (long long)b * perYy;
+                long long dx = x - ref.x, dy = y - ref.y, d = dx * dx + dy * dy;
+                if ( d < bestD ) { bestD = d; best = CPoint( (int)x, (int)y ); }
+            }
+        return best;
+    }
+};
+
+// Record one cursor position. The hex is snapped to the copy nearest the cursor first,
+// or the offset would come out a whole map period wide at the seam.
+static void AppendLineSample( const CAnimAtr& aa, CPoint pt )
+{
+    LineProj pr( aa );
+    LineSample s;
+    s.hc = aa.WindowToHex( pt );
+    CPoint c = pr.CentreNear( s.hc, pt );
+    float w = (float)theMap.HexWid( aa.m_iZoom );
+    float h = (float)theMap.HexHt( aa.m_iZoom );
+    if ( w <= 0 ) w = 1;
+    if ( h <= 0 ) h = 1;
+    s.offX = ( pt.x - c.x ) / w;
+    s.offY = ( pt.y - c.y ) / h;
+    s_linePath.push_back( s );
+}
+
+// Project the stored path into window space for the CURRENT view. `ref` anchors the
+// first point to the nearest torus copy; each later one snaps to the copy nearest its
+// predecessor. Sub-hex offsets are re-applied at the current hex size, so the curve
+// keeps its drawn shape at any zoom.
 static void ProjectLinePath( const CAnimAtr& aa, CPoint ref )
 {
     s_lineWin.clear( );
@@ -414,46 +494,18 @@ static void ProjectLinePath( const CAnimAtr& aa, CPoint ref )
         return;
     s_lineWin.reserve( s_linePath.size( ) );
 
-    // hex -> window-space centre (average of the 4 corners)
-    auto hexWin = [&]( CHexCoord hc ) -> CPoint
+    LineProj pr( aa );
+    float w = (float)theMap.HexWid( aa.m_iZoom );
+    float h = (float)theMap.HexHt( aa.m_iZoom );
+
+    CPoint prev = ref;
+    for ( size_t i = 0; i < s_linePath.size( ); ++i )
     {
-        CPoint p[4];
-        aa.MapToWindowHex( hc, p );
-        return CPoint( ( p[0].x + p[1].x + p[2].x + p[3].x ) / 4,
-                       ( p[0].y + p[1].y + p[2].y + p[3].y ) / 4 );
-    };
-
-    const int    eX    = theMap.Get_eX( ), eY = theMap.Get_eY( );
-    const CPoint perO  = hexWin( CHexCoord( 0,  0  ) );
-    const CPoint perPX = hexWin( CHexCoord( eX, 0  ) );
-    const CPoint perPY = hexWin( CHexCoord( 0,  eY ) );
-    const int    perXx = perPX.x - perO.x, perXy = perPX.y - perO.y;
-    const int    perYx = perPY.x - perO.x, perYy = perPY.y - perO.y;
-
-    // 64-bit products are REQUIRED: zoomed in, the torus period vectors span many
-    // screens and 32-bit dx*dx overflows to garbage, snapping to the wrong wrap copy
-    // (the same trap DrawRouteWaypoints documents — "works zoomed out, off-screen
-    // zoomed in"). Keep these long long.
-    auto wrapNear = [&]( CPoint wp, CPoint r ) -> CPoint
-    {
-        CPoint    best  = wp;
-        long long bestD = (long long)( wp.x - r.x ) * ( wp.x - r.x )
-                        + (long long)( wp.y - r.y ) * ( wp.y - r.y );
-        for ( int a = -2; a <= 2; ++a )
-            for ( int b = -2; b <= 2; ++b )
-            {
-                if ( a == 0 && b == 0 ) continue;
-                long long x  = (long long)wp.x + (long long)a * perXx + (long long)b * perYx;
-                long long y  = (long long)wp.y + (long long)a * perXy + (long long)b * perYy;
-                long long dx = x - r.x, dy = y - r.y, d = dx * dx + dy * dy;
-                if ( d < bestD ) { bestD = d; best = CPoint( (int)x, (int)y ); }
-            }
-        return best;
-    };
-
-    s_lineWin.push_back( wrapNear( hexWin( s_linePath[0] ), ref ) );
-    for ( size_t i = 1; i < s_linePath.size( ); ++i )
-        s_lineWin.push_back( wrapNear( hexWin( s_linePath[i] ), s_lineWin.back( ) ) );
+        const LineSample& s = s_linePath[i];
+        CPoint c = pr.CentreNear( s.hc, prev );
+        prev = c;
+        s_lineWin.push_back( CPoint( c.x + (int)( s.offX * w ), c.y + (int)( s.offY * h ) ) );
+    }
 }
 
 // Total pixel length of the projected polyline.
@@ -1943,16 +1995,21 @@ void CWndArea::OnMouseMove( UINT nFlags, CPoint point )
         if ( m_bLineMove )
         {
             // Record the freeform path the cursor traces, starting at the drag origin.
-            // DoLineMove distributes the units along this polyline. Captured as HEX
-            // coords so a pan/zoom mid-drag re-projects instead of corrupting the path
-            // (see the s_linePath note). The old 4px capture throttle is now a
-            // hex-change test: it bounds the point count the same way but is
-            // transform-independent, so a zoom can't retroactively change the sampling.
+            // DoLineMove distributes the units along this polyline. Sampled every 4px
+            // (as originally) for a smooth curve; each sample keeps its sub-hex offset
+            // so pan/zoom re-projects it exactly. A hex-change test was tried instead
+            // and is too coarse: one point per hex is only a handful of vertices when
+            // zoomed in, which is what made the line look angular.
             if ( s_linePath.empty( ) )
-                s_linePath.push_back( m_aa.WindowToHex( m_ptRMDN ) );
-            CHexCoord hcNow = m_aa.WindowToHex( point );
-            if ( hcNow != s_linePath.back( ) )
-                s_linePath.push_back( hcNow );
+            {
+                AppendLineSample( m_aa, m_ptRMDN );
+                s_lineLastWin = m_ptRMDN;
+            }
+            if ( abs( point.x - s_lineLastWin.x ) + abs( point.y - s_lineLastWin.y ) >= 4 )
+            {
+                AppendLineSample( m_aa, point );
+                s_lineLastWin = point;
+            }
             m_lineEnd = point;
         }
     }
@@ -2591,12 +2648,10 @@ void CWndArea::DrawRouteWaypoints( )
 //---------------------------------------------------------------------------
 void CWndArea::DoLineMove( CPoint ptEnd )
 {
-    // make sure the path includes the final cursor point (as a hex, like the rest)
+    // make sure the path includes the final cursor point
     if ( s_linePath.empty( ) )
-        s_linePath.push_back( m_aa.WindowToHex( m_ptRMDN ) );
-    CHexCoord hcEnd = m_aa.WindowToHex( ptEnd );
-    if ( s_linePath.back( ) != hcEnd )
-        s_linePath.push_back( hcEnd );
+        AppendLineSample( m_aa, m_ptRMDN );
+    AppendLineSample( m_aa, ptEnd );
 
     // Project with the CURRENT transform before deriving anything. Previously the path
     // was stored in px captured under the OLD transform and converted here under the
