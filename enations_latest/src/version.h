@@ -45,8 +45,8 @@ const char GameLogFile[] = "ENations.log";
 // 3.00.009 -> 3.00.010: T-0073 (no text on non-Debian Linux — hardcoded Debian font
 // paths) ships here instead of as a re-cut of the published 3.00.009 asset. No
 // save-format change, so VER_RELEASE is untouched.
-#define         VER_STRING                              "3.00.011"
-#define         RES_VER_STRING                          "3.00.011\0"
+#define         VER_STRING                              "3.00.012"
+#define         RES_VER_STRING                          "3.00.012\0"
 
 #ifdef _DEBUG
 	#define         VER_FLAGS         VS_FF_DEBUG | VS_FF_PRIVATEBUILD | VS_FF_PRERELEASE

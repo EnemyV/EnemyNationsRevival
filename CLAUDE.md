@@ -121,12 +121,13 @@ We are merging **three platform codebases into one tree** for release **3.00.000
 work in parallel — at least one per platform, sometimes more — each on its own machine,
 all sharing the integration branch.
 
-- **Release lane: `release3_00_011`** (as of 2026-07-31). This is the single source of truth.
+- **Release lane: `release3_00_012`** (as of 2026-08-01). This is the single source of truth.
   Pull it before you work; build before you push; keep all three platforms compiling.
-  **`release3_00_000` / `_005` / `_006` / `_007` / `_008` / `_009` / `_010` are DEAD** — do
-  not commit to them. 3.00.009 shipped from `release3_00_009`. **3.00.010 was never
-  published** — it existed only as a draft, and was re-cut as 011 once the GH#8 data-file
-  diagnostics landed, so there is exactly one build per version number.
+  **`release3_00_000` / `_005` / `_006` / `_007` / `_008` / `_009` / `_010` / `_011` are
+  DEAD** — do not commit to them. 3.00.009 shipped from `release3_00_009`. **3.00.010 was
+  never published** (draft only, re-cut as 011). **3.00.011 was published as a prerelease
+  but its assets predate the GH#8 data-file fixes** — the fallback and the restored
+  locate-file prompt land in 012.
 - **⛔ NEVER cut a release without running the containment check** (see the release rules
   below). On 2026-07-20 the 3.00.007 Windows asset shipped from a branch **113 commits
   behind** the real development line, missing a month of verified crash fixes.
