@@ -100,8 +100,14 @@ bool SDL2BuildStructure::CanBuild(int iCat, const CStructureData* pSd) {
             meRsrch->GetRsrch( CRsrchArray::const_1 ).m_bDiscovered;   // "New Construction Techniques"
 
         // TRUE if the player's research permits this specific housing building (by capacity).
+        // Capacity = GetPopHoused() — what the AI/population code uses. NOT GetBldHousing()->
+        // GetCapacity(): that field (CBuildHousing::m_iCapacity) is 0 for EVERY building in
+        // ENATIONS.DAT (verified byte-level against the DATA chunks), and this gate was its
+        // only caller — so the capacity gates below never fired and the top housing tiers
+        // (apartment_2_4 cap 1000, office_2_4 cap 600) showed with Mid-sized Buildings only
+        // (operator-reported 2026-08-01).
         auto rsrchAllows = [bLargeBldgs, bNewConst]( const CStructureData* p ) -> bool {
-            const int cap = p->GetBldHousing( )->GetCapacity( );
+            const int cap = p->GetPopHoused( );
             if ( p->GetBldgType( ) == CStructureData::office ) {
                 if ( cap >= 600 ) return bLargeBldgs;
             } else {   // apartment
