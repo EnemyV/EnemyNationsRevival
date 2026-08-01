@@ -67,11 +67,18 @@ static unsigned s_loadGen = 0;
 // (CHex::SetType, CFarmBuilding::UpdateFieldStage) can bump it via a local extern.
 unsigned g_enTerrainEditGen = 0;
 
-// Item 5 (incremental terrain patch): the hexes edited since the last mesh build, so the
-// render can re-mesh ONLY those into the cached s_rt instead of a full ~50k-hex rebuild.
-// Packed (x<<16)|y (map is square, coords < 65536). Capped — past the cap a full rebuild
-// is cheaper (e.g. worldgen sets the whole map). Recorded by CHex::SetAlt/SetVisibleType.
+// Item 5 (incremental terrain patch): a LOG of edited hexes, packed (x<<16)|y (map is
+// square, coords < 65536), recorded by CHex::SetAlt/SetVisibleType via g_enEditHex.
+// MULTI-READER: entry i holds the edit with gen (g_enEditBaseGen + i + 1); each area
+// map keeps its own cursor (its RCtx builtEditGen) and slices only its pending tail.
+// The old clear-on-consume model let the FIRST map to rebuild eat the list, so a second
+// open map's tile memo never invalidated the edited hexes and its terrain went
+// permanently stale. Nobody clears on consume; the render thread trims the entries
+// every live map has consumed (end of SDL2Terrain::Render). Recording stops when the
+// log hits kEditLogCap (worldgen floods) — the gap makes lagging readers take a full
+// rebuild, and the trim re-anchors the log empty at the current gen afterwards.
 std::vector<unsigned> g_enEditedHexes;
+unsigned              g_enEditBaseGen = 0;   // gen of the (dropped) entry before g_enEditedHexes[0]
 // Retained-mesh edit list: like g_enEditedHexes, but accumulates edits since the last FULL
 // retained-mesh CAPTURE (not consumed by the s_rt edit-patch, not cleared on a zoom replay)
 // so a zoom REPLAY — whose cells are at the capture's edit state — can re-apply every
@@ -82,8 +89,13 @@ std::unordered_set<unsigned> g_enMeshEditSet;   // DEDUP: a hex re-edited many t
                                                 // grow stages, repeated alt sets) counts ONCE, so
                                                 // the list stays bounded by UNIQUE edited hexes.
 bool                  g_enMeshEditOverflow = false;
-std::mutex            g_enEditMutex;   // sim thread pushes; render thread reads/swaps
-const size_t          kEditPatchCap = 1024;
+// Which context's capture the mesh-edit list is anchored to (compare-only, never deref):
+// the list is cleared on a retained-mesh CAPTURE, so a replay may re-apply it only in the
+// SAME context that captured — any other context treats it as overflowed (full rebuild).
+static const void*    g_enMeshEditAnchor = nullptr;
+std::mutex            g_enEditMutex;   // sim thread pushes; render thread reads/slices
+const size_t          kEditPatchCap = 1024;    // max pending edits a ctx will PATCH (vs rebuild)
+const size_t          kEditLogCap   = 4096;    // log ceiling — past it the log gaps (see above)
 const size_t          kMeshEditCap  = 16384;   // unique-hex ceiling for the replay re-apply list
 void g_enEditHex( int x, int y )
 {
@@ -92,7 +104,11 @@ void g_enEditHex( int x, int y )
     std::lock_guard<std::mutex> lk( g_enEditMutex );
     ++g_enTerrainEditGen;
     unsigned packed = ( (unsigned)( x & 0xFFFF ) << 16 ) | (unsigned)( y & 0xFFFF );
-    if ( g_enEditedHexes.size( ) < kEditPatchCap )
+    // Append only while the log is CONTIGUOUS (covers gens base+1 .. gen-1) and under
+    // its cap. Once it gaps, readers below the gap detect incompleteness and take a
+    // full rebuild; the trim (end of Render) re-anchors the log once everyone catches up.
+    if ( g_enEditBaseGen + g_enEditedHexes.size( ) == g_enTerrainEditGen - 1
+         && g_enEditedHexes.size( ) < kEditLogCap )
         g_enEditedHexes.push_back( packed );
     // g_enMeshEdits: only push a hex the FIRST time it's edited since the last capture. Without
     // this, repeated edits to the same hexes (crop stages, terraform passes) blew past the cap
@@ -204,13 +220,14 @@ static CPoint    s_farRefPx( 0, 0 );
 // terrain's actual blit delta, not the panel UL (which can lag the visible scroll).
 bool g_enViewScrolled = false;
 
-// Set by the sim when a STATIC sprite is removed from a hex (e.g. a road built over a
+// Bumped by the sim when a STATIC sprite is removed from a hex (e.g. a road built over a
 // forest hex clears its tree). Static sprites (trees/bridges) persist across incremental
 // sprite captures, so nothing would otherwise drop the now-gone tree until a zoom/dir
-// change. DiscoverSpritesGpu forces ONE full capture when this is set (re-scans the
-// viewport; the road hex no longer emits a tree) then clears it. Reload is unaffected —
-// the hex type is saved as `road`, so a fresh capture never emits the tree.
-bool g_enStaticDirty = false;
+// change. DiscoverSpritesGpu forces ONE full capture per VIEW when its seen-gen lags
+// (aa.m_capStaticDirtySeen) — a one-shot bool was consumed by whichever area map captured
+// first, leaving the ghost tree on every other open map. Reload is unaffected — the hex
+// type is saved as `road`, so a fresh capture never emits the tree.
+unsigned g_enStaticDirtyGen = 0;
 
 // Item 5 (incremental terrain patch) kill-switch — opt-in until verified, then default on.
 static bool TerrainPatchEnabled( )
@@ -1106,6 +1123,7 @@ struct SDL2TerrainRCtx
     CPoint        farRefPx{ 0, 0 };
     SDL_Texture*  mapRT[4]      = { nullptr, nullptr, nullptr, nullptr };
     unsigned      mapLoadGen[4] = { ~0u, ~0u, ~0u, ~0u };
+    unsigned      mapFogGen[4]  = { ~0u, ~0u, ~0u, ~0u };   // was file-static only: 2nd map kept stale fog
     int           mapRow[4]     = { 0, 0, 0, 0 };
     CPoint        mapOrg[4];
     float         mapScale[4]   = { 0, 0, 0, 0 };
@@ -1190,6 +1208,7 @@ void SDL2TerrainRCtx::swapFileState()
     swap( farRefPx,    s_farRefPx );
     swap( mapRT,       s_mapRT );
     swap( mapLoadGen,  s_mapLoadGen );
+    swap( mapFogGen,   s_mapFogGen );
     swap( mapRow,      s_mapRow );
     swap( mapOrg,      s_mapOrg );
     swap( mapScale,    s_mapScale );
@@ -1486,10 +1505,15 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
     // refresh: it rebuilds only when the view changes or a pan leaves the margin, so
     // sitting still / panning within margin never hitches. (Fog moved to the overlay;
     // terrain edits like roads show on the next view change.)
+    // ONE gen read per frame (genTop): sig, the noEdit projections, and the rebuild's
+    // cursor advance below must all agree on the same value. The old live re-reads let
+    // an edit landing mid-rebuild bake a gen residue into s_sig, so baseSame never
+    // matched again and every subsequent edit forced a FULL rebuild instead of a patch.
+    const unsigned genTop = g_enTerrainEditGen;
     uint64_t sig = (uint64_t)( zoom & 7 )
                  ^ ( (uint64_t)( aa.m_iDir & 3 ) << 3 )
-                 ^ ( (uint64_t)s_loadGen          << 5 )
-                 ^ ( (uint64_t)g_enTerrainEditGen << 40 );  // runtime terrain edits
+                 ^ ( (uint64_t)s_loadGen << 5 )
+                 ^ ( (uint64_t)genTop    << 40 );  // runtime terrain edits
     // Water animation no longer rebuilds the terrain texture (it's re-drawn in place
     // on the wave-tick below), so the rebuild key omits the wave at every zoom.
     DWORD    _nowT = GetTickCount( );
@@ -1545,8 +1569,8 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
     bool&     s_deferActive = C.deferActive;
     const  DWORD    kSettleMs = 120;
     {
-        uint64_t curNoEdit = sig   ^ ( (uint64_t)g_enTerrainEditGen << 40 );
-        uint64_t bltNoEdit = s_sig ^ ( (uint64_t)s_builtEditGen     << 40 );
+        uint64_t curNoEdit = sig   ^ ( (uint64_t)genTop          << 40 );
+        uint64_t bltNoEdit = s_sig ^ ( (uint64_t)s_builtEditGen  << 40 );
         bool viewKeyChanged = ( s_sig != ~0ull ) && ( curNoEdit != bltNoEdit );
         if ( viewKeyChanged && s_lastViewSig != curNoEdit ) { s_viewChangedAt = _nowT; s_lastViewSig = curNoEdit; }
         // Pure ROTATE (dir change) is NOT deferred: the preview can't rotate the old texture
@@ -1616,8 +1640,8 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
     // screen. Within ±kMarginPx the textures still cover the viewport → just blit.
     // Compare the BASE signature (zoom/dir/loadgen) ignoring the terrain-edit gen, so a
     // pure terrain edit can take the cheap PATCH path instead of a full rebuild.
-    uint64_t sigNoEdit  = sig   ^ ( (uint64_t)g_enTerrainEditGen << 40 );
-    uint64_t lastNoEdit = s_sig ^ ( (uint64_t)s_builtEditGen     << 40 );
+    uint64_t sigNoEdit  = sig   ^ ( (uint64_t)genTop          << 40 );
+    uint64_t lastNoEdit = s_sig ^ ( (uint64_t)s_builtEditGen  << 40 );
     // UL SNAPSHOT (pan-race fix, user's "line cut the screen" / black seams on fast pan):
     // the view origin (aa.m_ptUL) can move WHILE this function runs (input/sim pans the
     // map). Every texture-space computation this frame — the pan-delta measure, the mesh
@@ -1660,13 +1684,20 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
     // and every edit since the last build was recorded (gen delta == list size) and the
     // list is small, re-mesh ONLY those hexes into s_rt instead of the ~50k-hex rebuild.
     bool baseSame  = ( sigNoEdit == lastNoEdit ) && covered;
-    // Read the gen AND the list size together under the lock so they're a consistent
-    // snapshot (else a concurrent edit between the two reads looks non-recorded → rebuild).
-    unsigned genSnap; size_t editCount; bool meshOverflow;
-    { std::lock_guard<std::mutex> lk( g_enEditMutex ); genSnap = g_enTerrainEditGen; editCount = g_enEditedHexes.size( ); meshOverflow = g_enMeshEditOverflow; }
+    // Snapshot under the lock. The log is MULTI-READER: this ctx's pending edits are the
+    // slice from ITS cursor (s_builtEditGen); "complete" = the cursor is not below the
+    // trimmed base AND the log is contiguous through the current gen (it stops recording
+    // at kEditLogCap). The mesh-edit replay list is valid only for the ctx that captured
+    // it (anchor) — any other ctx must treat it as overflowed.
+    unsigned genSnap; size_t editCount; bool meshOverflow, editsComplete;
+    { std::lock_guard<std::mutex> lk( g_enEditMutex );
+      genSnap       = g_enTerrainEditGen;
+      editCount     = (size_t)( genSnap - s_builtEditGen );
+      editsComplete = ( s_builtEditGen >= g_enEditBaseGen ) &&
+                      ( g_enEditBaseGen + g_enEditedHexes.size( ) == genSnap );
+      meshOverflow  = g_enMeshEditOverflow || g_enMeshEditAnchor != &C; }
     bool editsPend = ( genSnap != s_builtEditGen );
-    bool editsOK   = editsPend && editCount > 0 && editCount <= kEditPatchCap
-                     && ( genSnap - s_builtEditGen ) == (unsigned)editCount;
+    bool editsOK   = editsPend && editsComplete && editCount <= kEditPatchCap;
     const bool doPatch     = TerrainPatchEnabled( ) && baseSame && editsOK;
     // The gesture defer vetoes the rebuild: this frame presents the scaled preview instead.
     // The settle frame re-evaluates with s_deferActive false and rebuilds normally.
@@ -1805,15 +1836,27 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
     // z0/z1) instead of a holed replay.
     if ( incPan )
         s_mirValid = false;
-    s_builtEditGen = g_enTerrainEditGen;   // this mesh now reflects all edits so far
     { std::lock_guard<std::mutex> lk( g_enEditMutex );
-      // Queue the hexes edited since the last rebuild so the tile-memo (below) can drop just
-      // those entries instead of being wiped wholesale (one AI building must not invalidate
-      // ~48k cached tiles). If the patch list hit its cap, edits were dropped → wipe to stay safe.
-      if ( g_enEditedHexes.size( ) >= kEditPatchCap ) s_memoEditOverflow = true;
-      else s_memoEditQ.insert( s_memoEditQ.end( ), g_enEditedHexes.begin( ), g_enEditedHexes.end( ) );
-      g_enEditedHexes.clear( );                                                      // rebuild absorbs all pending edits
-      if ( retainCap ) { g_enMeshEdits.clear( ); g_enMeshEditSet.clear( ); g_enMeshEditOverflow = false; } }   // a capture refreshes the cells → drop the replay re-apply list
+      // Queue MY slice of the edit log (edits since THIS ctx's cursor) so the tile-memo
+      // (below) can drop just those entries instead of being wiped wholesale (one AI
+      // building must not invalidate ~48k cached tiles). Multi-reader: do NOT clear —
+      // other area maps still need these entries; the trim at the end of Render drops
+      // what everyone has consumed. Cursor below the trimmed base, or a gapped log
+      // (cap hit) → edits were lost to us → wipe the memo to stay safe. Queuing past
+      // genTop merely over-invalidates the memo — harmless.
+      unsigned haveTop = g_enEditBaseGen + (unsigned)g_enEditedHexes.size( );
+      if ( s_builtEditGen < g_enEditBaseGen || haveTop < g_enTerrainEditGen )
+          s_memoEditOverflow = true;
+      else if ( s_builtEditGen < haveTop )
+          s_memoEditQ.insert( s_memoEditQ.end( ),
+                              g_enEditedHexes.begin( ) + ( s_builtEditGen - g_enEditBaseGen ),
+                              g_enEditedHexes.end( ) );
+      if ( retainCap ) { g_enMeshEdits.clear( ); g_enMeshEditSet.clear( ); g_enMeshEditOverflow = false;
+                         g_enMeshEditAnchor = &C; } }   // replay re-apply list now anchored to THIS ctx's capture
+    // Advance MY cursor to genTop — the SAME gen s_sig encodes. (The old live re-read
+    // here could bake a residue into the baseSame comparison whenever an edit landed
+    // mid-rebuild; edits after genTop stay pending and patch in next frame.)
+    s_builtEditGen = genTop;
     if ( retainCap ) { s_baseCells.clear( ); s_waterCells.clear( ); s_waterBandCells.clear( ); s_fogCells.clear( ); s_featherBands.clear( ); }   // capturing a fresh full mesh → drop old cells
     if ( incPan )
     {
@@ -2999,10 +3042,20 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
         SDL_SetRenderDrawBlendMode( r, SDL_BLENDMODE_BLEND );
         const SDL_Color white = { 255, 255, 255, 255 };
         const int       idx[6] = { 0, 1, 3, 1, 2, 3 };
-        // Swap the shared list into a local under the lock, then patch unlocked (the sim
-        // thread keeps pushing new edits into the now-empty shared list meanwhile).
+        // Copy MY slice (cursor .. log top) under the lock, then patch unlocked. COPY,
+        // not swap: the log is multi-reader — other area maps still need these entries
+        // (the trim at the end of Render drops what everyone has consumed). patchedTo
+        // is the gen this ctx's cursor advances to below.
         std::vector<unsigned> edited;
-        { std::lock_guard<std::mutex> lk( g_enEditMutex ); edited.swap( g_enEditedHexes ); }
+        unsigned patchedTo = s_builtEditGen;
+        { std::lock_guard<std::mutex> lk( g_enEditMutex );
+          unsigned haveTop = g_enEditBaseGen + (unsigned)g_enEditedHexes.size( );
+          if ( s_builtEditGen >= g_enEditBaseGen && haveTop > s_builtEditGen )
+          {
+              edited.assign( g_enEditedHexes.begin( ) + ( s_builtEditGen - g_enEditBaseGen ),
+                             g_enEditedHexes.end( ) );
+              patchedTo = haveTop;
+          } }
         // Keep the persistent tile-memo coherent: this fast patch consumes the edits WITHOUT a
         // full rebuild, so drop the edited hexes + neighbours from the memo or a later rebuild
         // would re-bake their stale (pre-edit) tiles from the cache.
@@ -3082,7 +3135,7 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
         }
         SDL_SetRenderTarget( r, pt );
         SDL_RenderSetViewport( r, &vp );
-        s_builtEditGen += (unsigned)edited.size( );   // account for exactly the patched edits
+        s_builtEditGen = patchedTo;   // cursor: exactly the log entries stamped above
         // CRITICAL: keep s_sig's edit-gen bits in sync with s_builtEditGen. baseSame is
         // tested next frame as ( sigNoEdit == lastNoEdit ), where
         //   lastNoEdit = s_sig ^ (s_builtEditGen << 40).
@@ -3092,8 +3145,8 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
         // rebuild after EVERY edit (the ~1fps zoomed-out stutter). Re-encode s_sig with
         // the pure base (sigNoEdit) XOR the new built edit-gen so next frame matches.
         s_sig = sigNoEdit ^ ( (uint64_t)s_builtEditGen << 40 );
-        // (no clear — the swap already emptied the shared list; edits the sim pushed during
-        //  the patch stay there and are handled next frame)
+        // (no clear — the log is multi-reader and trimmed at the end of Render; edits the
+        //  sim pushed after patchedTo stay pending and are handled next frame)
     }
 
     // (Water is no longer re-baked into s_rt — it's drawn as a live layer UNDER the
@@ -3468,6 +3521,38 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
         bool anyCur = false;
         for ( int d = 0; d < 4; ++d ) anyCur |= ( s_mapLoadGen[d] == s_loadGen && s_mapRow[d] > 0 );
         BuildMapUnderlay( r, aa, s_loadGen, g_enFogVisGen, !anyCur );
+    }
+
+    // EDIT-LOG TRIM (multi-reader): drop the entries every live area-map context has
+    // consumed. All Renders run on the main thread; the lock is against the sim's
+    // g_enEditHex. If the log GAPPED (cap hit) and everyone is past its recorded
+    // entries, restart it empty at the current gen so recording resumes (a reader
+    // whose cursor sits inside the discarded gap takes one full rebuild via the
+    // completeness check — the gap already was the degraded path).
+    { std::lock_guard<std::mutex> lk( g_enEditMutex );
+      unsigned minB = g_enTerrainEditGen;
+      for ( auto& kv : s_rctx )
+          if ( kv.second.builtEditGen < minB )
+              minB = kv.second.builtEditGen;
+      // Abandon extreme laggards (a minimized/stalled map whose Render isn't running):
+      // past this lag it must memo-wipe + full-rebuild on its next Render anyway, so
+      // don't let its frozen cursor pin the log into a permanent gap for the live maps.
+      if ( g_enTerrainEditGen - minB > (unsigned)kEditLogCap * 4 )
+          minB = g_enTerrainEditGen - (unsigned)kEditLogCap;
+      unsigned haveTop = g_enEditBaseGen + (unsigned)g_enEditedHexes.size( );
+      bool     gapped  = ( haveTop != g_enTerrainEditGen );
+      if ( gapped && minB >= haveTop )
+      {
+          g_enEditedHexes.clear( );
+          g_enEditBaseGen = g_enTerrainEditGen;
+      }
+      else if ( minB > g_enEditBaseGen )
+      {
+          unsigned dropTo = ( minB < haveTop ) ? minB : haveTop;
+          g_enEditedHexes.erase( g_enEditedHexes.begin( ),
+                                 g_enEditedHexes.begin( ) + ( dropTo - g_enEditBaseGen ) );
+          g_enEditBaseGen = dropTo;
+      }
     }
 
     // Cursor footprint hatch — live overlay, every frame (animated; shows on a static

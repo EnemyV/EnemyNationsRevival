@@ -107,6 +107,11 @@ namespace SDL2Sprites
     void NotifyTargetsLost( );
     bool TakeTargetsLost( );
 
+    // True once a capture pass has populated the ACTIVE context's sprite store (cleared
+    // by InvalidateTextures). DiscoverSpritesGpu's incremental-capture gate — replaces a
+    // function static that was shared across views/renderer recreations.
+    bool HasStore( );
+
     // Atlas overflow self-heal: the append-only packer can fill over a long session.
     // GetAtlasLoc flags it; the render orchestrator consumes the flag once per frame and,
     // when set, does a full InvalidateTextures()+repack so the atlas holds only the current

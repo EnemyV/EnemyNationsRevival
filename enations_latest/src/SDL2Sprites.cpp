@@ -152,6 +152,12 @@ namespace
     unsigned g_targetsLostGen  = 0;
     unsigned g_targetsLostSeen = 0;
 
+    // True once a capture pass has populated THIS context's sprite store. Replaces the
+    // old function-static s_haveStore in DiscoverSpritesGpu, which was shared across
+    // views and renderer recreations — a fresh context could start on the incremental
+    // path with an EMPTY store and permanently miss the static trees/bridges.
+    bool g_storePopulated = false;
+
     // Rotation (radians) applied to the next captured structure sprite — projectiles set
     // this to their screen travel angle so the bullet faces where it flies. 0 = axis-aligned.
     float g_captureRot = 0.0f;
@@ -198,6 +204,7 @@ namespace
         bool captureShadow = false;
         float captureRot = 0.0f;
         unsigned targetsLostSeen = 0;   // g_targetsLostGen this ctx has recovered from
+        bool storePopulated = false;    // a capture pass has filled this ctx's store
     };
 
     std::map<SDL_Renderer*, SpritesRCtx> s_sctx;
@@ -220,7 +227,7 @@ namespace
         SW(staticGridUlX); SW(staticGridUlY); SW(staticGridDirty);
         SW(trails); SW(flashes); SW(shadows);
         SW(captureShadow); SW(captureRot);
-        SW(targetsLostSeen);
+        SW(targetsLostSeen); SW(storePopulated);
         #undef SW
     }
 
@@ -410,6 +417,7 @@ namespace SDL2Sprites
 
         g_dynKeys.clear( );   // full walk recaptures dynamic objects → repopulates this
         g_captureWasFull = true;
+        g_storePopulated = true;   // a full capture pass fills this ctx's store (HasStore)
 
         AccumDirty( dvx, dvy, dw, dh );   // this repaint's dirty region (view space)
 
@@ -1128,8 +1136,14 @@ namespace SDL2Sprites
         g_dirty = true; g_lastUlX = g_lastUlY = INT_MIN;
         g_accumValid = false;
         g_inFrame = false;
+        g_storePopulated = false;   // store cleared → next capture must be FULL
         g_trails.clear( );
         g_flashes.clear( );
         g_shadows.clear( );
+    }
+
+    bool HasStore( )
+    {
+        return g_storePopulated;
     }
 }

@@ -13,6 +13,7 @@
 
 #include "ourlog.h"
 
+#include <climits>    // INT_MIN — CAnimAtr per-view capture/wipe detector sentinels
 #include <vector>     // CHexValidMatrix dirty-hex list (item 5 dirty-rects)
 #include <dibwnd.h>
 #include <wndbase.h>  // CWndBase / CWndStub
@@ -671,6 +672,22 @@ class CAnimAtr
     // SDL2 panel for composited rendering (Phase 1).
     // Set by CWndArea when it creates its panel.  NULL until assigned.
     class SDL2Panel* m_sdlPanel = nullptr;
+
+    // GPU sprite-capture decision state (DiscoverSpritesGpu) — PER VIEW. These were
+    // function statics shared by every area map: two maps at different views made
+    // "view changed" true on every alternating capture (incremental capture never
+    // engaged, both maps re-scanned the whole forest each frame), and a reopened map
+    // whose view happened to match the statics started INCREMENTAL on an empty
+    // per-renderer store (no trees until a pan/zoom).
+    int      m_capLastZoom = -999, m_capLastDir = -999;
+    int      m_capLastUlX = INT_MIN, m_capLastUlY = INT_MIN;
+    unsigned m_capStaticDirtySeen = 0;   // g_enStaticDirtyGen this view has recaptured for
+
+    // CPU sprite-overlay wipe detector (CGameMap::UpdateRect T1 split path) — PER VIEW,
+    // same shared-static problem: two maps at different ULs full-wiped each other's
+    // overlay every frame (flicker in the GpuSprites=0 fallback config).
+    int m_wipeLastUlX = INT_MIN, m_wipeLastUlY = INT_MIN;
+    int m_wipeLastZoom = -999, m_wipeLastDir = -999;
 
 #ifdef _DEBUG
   public:

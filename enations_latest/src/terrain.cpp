@@ -2811,8 +2811,8 @@ void CHex::ChangeToRoad( CHexCoord& hex, BOOL bCallNext, BOOL bForce )
     // the road until a zoom/dir change).
     if ( bWasForest )
     {
-        extern bool g_enStaticDirty;
-        g_enStaticDirty = true;
+        extern unsigned g_enStaticDirtyGen;
+        ++g_enStaticDirtyGen;
     }
 
     theApp.m_wndWorld.NewMode( );
@@ -3851,17 +3851,18 @@ void CGameMap::DiscoverSpritesGpu( CAnimAtr& aa, const CRect& rect )
     const bool bDirty   = SDL2Panel::GpuDirtyEnabled( );
     CPoint     ulDirty  = aa.GetUL( );
 
-    static int  s_lastZoom = -999, s_lastDir = -999;
-    static int  s_lastUlX = INT_MIN, s_lastUlY = INT_MIN;
-    static bool s_haveStore = false;
-    bool projOrPan   = ( aa.m_iZoom != s_lastZoom ) || ( aa.m_iDir != s_lastDir ) ||
-                       ( ulDirty.x != s_lastUlX ) || ( ulDirty.y != s_lastUlY );
+    // PER-VIEW decision state (aa members — see base.h): these were function statics
+    // shared by every area map, so two maps at different views disabled incremental
+    // capture for both, and a reopened map could start incremental on an empty store.
+    bool projOrPan   = ( aa.m_iZoom != aa.m_capLastZoom ) || ( aa.m_iDir != aa.m_capLastDir ) ||
+                       ( ulDirty.x != aa.m_capLastUlX ) || ( ulDirty.y != aa.m_capLastUlY );
     // A static sprite was removed (e.g. road built over forest cleared a tree) → force
-    // one FULL capture so the persistent static store re-scans and drops it; then clear
-    // the flag so we return to cheap incremental captures.
-    extern bool g_enStaticDirty;
-    bool bStaticDirty = g_enStaticDirty;
-    g_enStaticDirty = false;
+    // one FULL capture so the persistent static store re-scans and drops it. Generation
+    // counter compared per view, so EVERY open area map recaptures (a one-shot bool was
+    // consumed by whichever map captured first).
+    extern unsigned g_enStaticDirtyGen;
+    bool bStaticDirty = ( aa.m_capStaticDirtySeen != g_enStaticDirtyGen );
+    aa.m_capStaticDirtySeen = g_enStaticDirtyGen;
     // Atlas overflow self-heal: if the append-only sprite atlas filled last frame, blow the
     // whole sprite layer away and repack from scratch this frame — the atlas then holds only
     // the current on-screen working set, not every (frame×zoom) ever seen. Forces this frame
@@ -3874,10 +3875,12 @@ void CGameMap::DiscoverSpritesGpu( CAnimAtr& aa, const CRect& rect )
     bool bDeviceLost = SDL2Sprites::TakeTargetsLost( );
     if ( bAtlasReset || bDeviceLost )
         SDL2Sprites::InvalidateTextures( );
-    bool bIncremental = bDirty && s_haveStore && !projOrPan && !bStaticDirty && !bAtlasReset && !bDeviceLost;
-    s_lastZoom = aa.m_iZoom; s_lastDir = aa.m_iDir;
-    s_lastUlX  = ulDirty.x;  s_lastUlY = ulDirty.y;
-    s_haveStore = true;   // after this frame the store is populated
+    // Store-populated gate is PER RENDERER CONTEXT (SDL2Sprites::HasStore, set by
+    // BeginFrame, cleared by InvalidateTextures) — a fresh context always takes the
+    // full-capture path even when this view's zoom/dir/UL didn't change.
+    bool bIncremental = bDirty && SDL2Sprites::HasStore( ) && !projOrPan && !bStaticDirty && !bAtlasReset && !bDeviceLost;
+    aa.m_capLastZoom = aa.m_iZoom; aa.m_capLastDir = aa.m_iDir;
+    aa.m_capLastUlX  = ulDirty.x;  aa.m_capLastUlY = ulDirty.y;
 
     if ( bIncremental )
         SDL2Sprites::BeginIncremental( aa.m_iZoom, aa.m_iDir );
@@ -4342,12 +4345,13 @@ void CGameMap::UpdateRect( CAnimAtr& aa, CRect rect, CDrawParms::UPDATE_MODE eMo
                 // per-dirty-rect cleared; a view change reprojects everything, so a fast-
                 // moving CPU sprite's previous pixels fall outside this frame's dirty rects
                 // and linger as "parts left behind". After the wipe, this frame's full redraw
-                // repaints the overlay clean. Tracked once per change (statics).
-                static int s_lastUlX = INT_MIN, s_lastUlY = INT_MIN, s_lastZ = -999, s_lastD = -999;
+                // repaints the overlay clean. Tracked PER VIEW (aa members — function statics
+                // here made two area maps at different ULs full-wipe each other every frame).
                 CPoint ulNow = aa.GetUL( );
-                bool viewChg = ( ulNow.x != s_lastUlX || ulNow.y != s_lastUlY ||
-                                 aa.m_iZoom != s_lastZ || aa.m_iDir != s_lastD );
-                s_lastUlX = ulNow.x; s_lastUlY = ulNow.y; s_lastZ = aa.m_iZoom; s_lastD = aa.m_iDir;
+                bool viewChg = ( ulNow.x != aa.m_wipeLastUlX || ulNow.y != aa.m_wipeLastUlY ||
+                                 aa.m_iZoom != aa.m_wipeLastZoom || aa.m_iDir != aa.m_wipeLastDir );
+                aa.m_wipeLastUlX = ulNow.x; aa.m_wipeLastUlY = ulNow.y;
+                aa.m_wipeLastZoom = aa.m_iZoom; aa.m_wipeLastDir = aa.m_iDir;
                 // m_bOverlayDirty: a box-select marquee ended without a following
                 // view change, so viewChg won't catch the stale overlay — force the
                 // full wipe here. This whole block is bSplit-gated (split-layer/GPU),
