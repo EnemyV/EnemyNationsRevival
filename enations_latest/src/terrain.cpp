@@ -4682,7 +4682,13 @@ void CGameMap::UpdateRect( CAnimAtr& aa, CRect rect, CDrawParms::UPDATE_MODE eMo
                         ASSERT( 0 );
                     }
 
-                    CTree* ptree = theEffects.GetTree( phex->GetTree( ) );
+                    // Guard the tree index like the GPU capture walk (DiscoverSpritesGpu):
+                    // a stale/out-of-range GetTree() returns an out-of-bounds pointer and
+                    // the ASSERT in GetTree is non-fatal. Skip the bad tree, don't crash.
+                    int iTreeIdx = phex->GetTree( );
+                    if ( iTreeIdx >= 0 && iTreeIdx < theEffects.TreeCount( ) )
+                    {
+                    CTree* ptree = theEffects.GetTree( iTreeIdx );
 
                     // FIXIT: If hex backward-facing draw immediately?
 
@@ -4698,6 +4704,7 @@ void CGameMap::UpdateRect( CAnimAtr& aa, CRect rect, CDrawParms::UPDATE_MODE eMo
                     {
                         ptree->DrawLayer( hexcoord, CStructureSprite::BACKGROUND_LAYER );
                         ptree->DrawLayer( hexcoord, CStructureSprite::FOREGROUND_LAYER );
+                    }
                     }
                 }
 

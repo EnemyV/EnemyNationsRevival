@@ -110,6 +110,10 @@ SDL2Panel* SDL2Compositor::AddPanel(const std::string& name, int x, int y, int w
 }
 
 void SDL2Compositor::RemovePanel(SDL2Panel* panel) {
+    // A panel removed mid-drag must drop the active-panel latch, or the next
+    // mouse event dereferences the freed panel (RouteEventInner line ~510).
+    if (m_activePanel == panel)
+        m_activePanel = nullptr;
     if (m_routingDepth > 0) {
         // Defer removal — vector is being iterated by RouteEvent.
         // Hide the panel immediately so it stops rendering/receiving events.
@@ -141,6 +145,8 @@ void SDL2Compositor::FlushPendingRemovals() {
 }
 
 void SDL2Compositor::RemoveAllPanels() {
+    m_activePanel = nullptr;
+    m_pendingRemovals.clear();   // pointers into m_panels die with it
     m_panels.clear();
     m_backgroundDirty = true;
 }
