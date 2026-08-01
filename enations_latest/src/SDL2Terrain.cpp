@@ -2831,7 +2831,7 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
     {
         s_mirZoom = zoom; s_mirDir = aa.m_iDir & 3;
         s_capMaxZoom = zoom + s_zoutBudget;   // cells now cover down to this zoomed-out level
-        s_mirEditGen = g_enTerrainEditGen; s_mirLoadGen = s_loadGen;
+        s_mirEditGen = genTop; s_mirLoadGen = s_loadGen;   // genTop: one gen read per frame
         s_mirValid = true;
         // CONTENT bbox of the captured region (fog cells = every rendered hex). The replay
         // coverage gate compares the viewport's content against this to avoid black holes.
@@ -3534,11 +3534,16 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
       for ( auto& kv : s_rctx )
           if ( kv.second.builtEditGen < minB )
               minB = kv.second.builtEditGen;
-      // Abandon extreme laggards (a minimized/stalled map whose Render isn't running):
-      // past this lag it must memo-wipe + full-rebuild on its next Render anyway, so
-      // don't let its frozen cursor pin the log into a permanent gap for the live maps.
-      if ( g_enTerrainEditGen - minB > (unsigned)kEditLogCap * 4 )
-          minB = g_enTerrainEditGen - (unsigned)kEditLogCap;
+      // Abandon laggards past the PATCH cap. A ctx with more than kEditPatchCap pending
+      // can never patch anyway (editsOK requires editCount <= kEditPatchCap → it will
+      // full-rebuild, and its memo consumption already tolerates a trimmed-past cursor
+      // via the overflow wipe), so holding the log for it buys nothing — while an
+      // [X]-closed area map (panel HIDDEN, ctx alive but never rendering) would grow
+      // the log to its cap and GAP it, putting every VISIBLE map into recurring full
+      // rebuilds. Clamping here keeps the log well under kEditLogCap so live maps keep
+      // patching; the hidden map takes one memo-wipe + full rebuild when re-shown.
+      if ( g_enTerrainEditGen - minB > (unsigned)kEditPatchCap )
+          minB = g_enTerrainEditGen - (unsigned)kEditPatchCap;
       unsigned haveTop = g_enEditBaseGen + (unsigned)g_enEditedHexes.size( );
       bool     gapped  = ( haveTop != g_enTerrainEditGen );
       if ( gapped && minB >= haveTop )

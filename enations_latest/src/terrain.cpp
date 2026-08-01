@@ -3861,8 +3861,9 @@ void CGameMap::DiscoverSpritesGpu( CAnimAtr& aa, const CRect& rect )
     // counter compared per view, so EVERY open area map recaptures (a one-shot bool was
     // consumed by whichever map captured first).
     extern unsigned g_enStaticDirtyGen;
-    bool bStaticDirty = ( aa.m_capStaticDirtySeen != g_enStaticDirtyGen );
-    aa.m_capStaticDirtySeen = g_enStaticDirtyGen;
+    const unsigned staticDirtyNow = g_enStaticDirtyGen;   // ONE read — the sim bumps it concurrently
+    bool bStaticDirty = ( aa.m_capStaticDirtySeen != staticDirtyNow );
+    aa.m_capStaticDirtySeen = staticDirtyNow;
     // Atlas overflow self-heal: if the append-only sprite atlas filled last frame, blow the
     // whole sprite layer away and repack from scratch this frame — the atlas then holds only
     // the current on-screen working set, not every (frame×zoom) ever seen. Forces this frame

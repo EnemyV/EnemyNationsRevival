@@ -514,13 +514,18 @@ bool SDL2Compositor::RouteEventInner(SDL_Event& event) {
     // regardless of z-order or hit-test. This prevents other panels from
     // stealing drag events.
     if (m_activePanel) {
-        if (m_activePanel->HandleEvent(event)) {
-            // Check if drag/resize ended
-            if (!m_activePanel->IsDragging() && !m_activePanel->IsResizing())
+        // Local copy: HandleEvent can reentrantly RemovePanel(itself), which nulls the
+        // latch — the member must not be re-dereferenced after the call. The panel object
+        // itself stays alive for this call (removals DEFER while m_routingDepth > 0).
+        SDL2Panel* active = m_activePanel;
+        if (active->HandleEvent(event)) {
+            // Check if drag/resize ended (skip if the latch was cleared reentrantly)
+            if (m_activePanel == active && !active->IsDragging() && !active->IsResizing())
                 m_activePanel = nullptr;
             return true;
         }
-        m_activePanel = nullptr;  // Panel didn't handle it, clear
+        if (m_activePanel == active)
+            m_activePanel = nullptr;  // Panel didn't handle it, clear
     }
 
     // Route events top-down (highest z-order first) for non-detached panels.
