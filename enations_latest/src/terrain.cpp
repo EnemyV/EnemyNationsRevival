@@ -663,9 +663,10 @@ void CAnimAtr::Render( )
     // The incremental dirty-rect model leaves stale/partial sprites — moving
     // vehicles flicker / disappear (only their changed sub-rects get redrawn, and
     // the detached window's double buffer alternates partial frames). The GPU path
-    // already avoids this with a full walk; on Linux (always the software path,
-    // since the GPU terrain mesh is disabled) do the same — redraw the whole view
-    // each frame so RenderToPanel always copies a complete, flicker-free frame.
+    // already avoids this with a full walk; on POSIX do the same even in software
+    // mode (SDL2/GPU is the default there, but EN_SOFTWARE or RenderBackend=0 can
+    // still select it) — redraw the whole view each frame so RenderToPanel always
+    // copies a complete, flicker-free frame.
     bool bFullWalk = bGpuFull;
 #ifndef _WIN32
     bFullWalk = true;
