@@ -864,7 +864,10 @@ protected:
 
 		// AltOutput (alt-output toggle) runtime fractional accumulator -- carries the
 		// sub-unit secondary-output remainder between production calls so small yields
-		// aren't lost. Runtime-only, NOT serialized (like the alt_oil toggle itself).
+		// aren't lost. Runtime-only, NOT serialized -- losing a sub-unit fraction on save
+		// is harmless. (NOTE: unlike this accumulator, the alt_oil toggle ITSELF does
+		// persist -- it rides m_unitFlags. The old "like the alt_oil toggle" wording here
+		// was wrong; see unit.h.)
 		float					m_fAltAccum = 0.0f;
 		// eMultiTrickle (Desperate Measures / Scrounging): one accumulator per output line
 		// (size must match AltOutput::kMaxMulti = 4; hardcoded to avoid an altoutput.h include here).

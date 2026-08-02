@@ -10,8 +10,10 @@
 // and the future Charcoal / Fracking) are just table entries -- one widget, one helper,
 // no bespoke copies.
 //
-// The per-building ON/OFF state is the existing runtime-only CUnit::alt_oil flag (not
-// serialized -- resets OFF on load, like the F1 route-loop flag; deliberate follow-up).
+// The per-building ON/OFF state is the existing CUnit::alt_oil flag, which DOES persist
+// across save/load (it rides m_unitFlags; CUnit::Serialize writes+reads it and
+// CBuilding::Serialize chains through). This comment used to say the opposite -- see the
+// note on the flag itself in unit.h; it was stale, not a spec.
 // A def is "available" on a building when DefFor() matches its type AND the owner has
 // researched the gating tech; only then does the generic toggle button appear and only
 // then does Convert() do anything.
