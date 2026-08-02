@@ -42,11 +42,9 @@ const char GameLogFile[] = "ENations.log";
 // so a factory's remaining build queue survives save/load (was lost -> queue truncated).
 #define         VER_RELEASE     7
 
-// 3.00.009 -> 3.00.010: T-0073 (no text on non-Debian Linux — hardcoded Debian font
-// paths) ships here instead of as a re-cut of the published 3.00.009 asset. No
-// save-format change, so VER_RELEASE is untouched.
-#define         VER_STRING                              "3.00.012"
-#define         RES_VER_STRING                          "3.00.012\0"
+// 3.00.013: bug-fix lane. No save-format change.
+#define         VER_STRING                              "3.00.013"
+#define         RES_VER_STRING                          "3.00.013\0"
 
 #ifdef _DEBUG
 	#define         VER_FLAGS         VS_FF_DEBUG | VS_FF_PRIVATEBUILD | VS_FF_PRERELEASE
