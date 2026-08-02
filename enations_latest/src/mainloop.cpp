@@ -2880,17 +2880,22 @@ void CPowerBuilding::BuildPower( )
     AddToStore( pBp->GetInput( ), -iNum );
     m_iBuildDone -= iNum * pBp->GetRate( );
 
-    int iAfter = GetStore( pBp->GetInput( ) );
-    if ( ( iBefore >= i1Min ) && ( iAfter < i1Min ) )
-        if ( GetOwner( )->IsMe( ) )
-            theGame.m_pHpRtr->MsgOutMat( this );
-
     // Coal Liquefaction (reusable AltOutput system): when this is a coal power plant whose
     // alt-output toggle is ON and the tech is researched, convert additional coal from the
     // plant's store into oil at 2:1 (eRatioConsume), scaled by the fuel burned this batch.
     // No-op for non-coal plants / toggle OFF / un-researched. (Charcoal & Fracking would
     // hook their own production loops the same way -- one shared helper.)
+    // MUST run BEFORE the ask-for-more threshold check below: Convert drains up to 2x more
+    // coal from the store with no router notification of its own, so sampling iAfter before
+    // it missed the 1-minute crossing entirely - the router was never told, no truck was
+    // ever dispatched, and once the store hit 0 the empty-plant early-return above never
+    // asks either. Liquefying plants starved forever beside idle trucks (operator-reported).
     AltOutput::Convert( this, iNum, m_fAltAccum );
+
+    int iAfter = GetStore( pBp->GetInput( ) );
+    if ( ( iBefore >= i1Min ) && ( iAfter < i1Min ) )
+        if ( GetOwner( )->IsMe( ) )
+            theGame.m_pHpRtr->MsgOutMat( this );
 
     // update the %
     MaterialChange( );
