@@ -508,6 +508,21 @@ void CRawData::LoadBuffer( CFile* pFile ) {
     if ( m_iStat == loaded )
         return;
 
+    // Same class of bug as StartDblBuffer (see its comment): the caller resolves
+    // pFile as m_bVoice ? m_pFileVoc : m_pFileReg (CMusicPlayer::LoadGroup), and
+    // either can be NULL when CMusicPlayer::InitData's SFX/voice/music load
+    // partially failed (e.g. a demo-layout .dat). All three switch cases below
+    // deref pFile unconditionally, and a NULL deref is a hard crash that skips
+    // the catch(...) below meant to make this non-fatal — reproduced via `newgame`
+    // (CreateNewWorld -> LoadGroup -> here), SIGSEGV at pFile->Seek. Treat it the
+    // same way the exception path already does: dead, not loaded.
+    if ( pFile == NULL ) {
+        m_pBuf = NULL;
+        m_iType = cache;
+        m_iStat = dead;
+        return;
+    }
+
     try {
         switch ( m_iComp ) {
         case -1:
@@ -699,6 +714,16 @@ void CRawData::StartDblBuffer( CRawChannel* pRaw ) {
 void CRawData::LoadNextDblBuffer( CRawChannel* pRaw, int iNeed ) {
 
     try {
+        // Same NULL-file class of bug as StartDblBuffer/LoadBuffer (see their
+        // comments): m_pFileVoc/m_pFileReg can be NULL when CMusicPlayer::InitData's
+        // SFX/voice/music load partially failed. Both branches below (background
+        // and synchronous read) deref whichever one m_bVoice selects, unguarded.
+        // Resolve once and throw so the catch(...) below handles it, matching the
+        // graceful path this function already has for every other failure.
+        CFile* pFile = m_bVoice ? pRaw->m_pPar->m_pFileVoc : pRaw->m_pPar->m_pFileReg;
+        if ( pFile == NULL )
+            ThrowError( ERR_CACHE_READ );
+
         int iLen = DBL_BUF_LEN / 4 - pRaw->m_pPar->m_iInBuf;
         iLen = __min( iLen, m_iDataLen - m_lBufOff );
         if ( ( iLen == 0 ) && ( pRaw->m_pPar->m_iInBuf == 0 ) ) {
@@ -731,8 +756,7 @@ void CRawData::LoadNextDblBuffer( CRawChannel* pRaw, int iNeed ) {
 
             // start the next buffer
             if ( iLen > 0 ) {
-                pRaw->BackgroundRead( m_bVoice ? pRaw->m_pPar->m_pFileVoc->m_hFile :
-                                      pRaw->m_pPar->m_pFileReg->m_hFile, m_lBufOff + m_lOff, iLen );
+                pRaw->BackgroundRead( pFile->m_hFile, m_lBufOff + m_lOff, iLen );
                 m_lBufOff += iLen;
             } else {
                 if ( m_iComp == 9 ) {
@@ -761,12 +785,10 @@ void CRawData::LoadNextDblBuffer( CRawChannel* pRaw, int iNeed ) {
 
         // no background thread - read synchronously
         if ( iLen > 0 ) {
-            ::SetFilePointer( (HANDLE)( m_bVoice ? pRaw->m_pPar->m_pFileVoc->m_hFile :
-                                        pRaw->m_pPar->m_pFileReg->m_hFile ), m_lBufOff + m_lOff, NULL, FILE_BEGIN );
+            ::SetFilePointer( (HANDLE)( pFile->m_hFile ), m_lBufOff + m_lOff, NULL, FILE_BEGIN );
             m_lBufOff += iLen;
             DWORD dwRead;
-            ::ReadFile( (HANDLE)( m_bVoice ? pRaw->m_pPar->m_pFileVoc->m_hFile :
-                                  pRaw->m_pPar->m_pFileReg->m_hFile ),
+            ::ReadFile( (HANDLE)( pFile->m_hFile ),
                         pRaw->m_pPar->m_pBufDecode + pRaw->m_pPar->m_iInBuf,
                         iLen, &dwRead, NULL );
             if ( dwRead != (DWORD)iLen )
