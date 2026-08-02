@@ -467,16 +467,16 @@ void CStructure::InitData() {
                     for (int iInd = 0; iInd < CMaterialTypes::GetNumBuildTypes(); iInd++)
                         pBu->m_aiInput[iInd] = ptrMmio->ReadShort();
                     // === CUSTOM GAMEPLAY TWEAK (2026-07-04, operator combat/balance) ===
-                    // Trim the STEEL build cost of infantry (90 -> 70) and rangers /
-                    // special forces (135 -> 115). Applied here as each factory's per-unit
+                    // Trim the STEEL build cost of infantry (90 -> 35) and rangers /
+                    // special forces (135 -> 110). Applied here as each factory's per-unit
                     // CBuildUnit is read, BEFORE the m_aiTotalInput rollup below, so the
                     // factory aggregate reflects it. Code-side, NO ENATIONS.DAT change, and
                     // identical on every client so it stays MP-deterministic. (HP +40% and
                     // the 5-population cost are applied in CTransport::InitData.)
                     if (pBu->m_iVehType == CTransportData::infantry)
-                        pBu->m_aiInput[CMaterialTypes::steel] = 70;
+                        pBu->m_aiInput[CMaterialTypes::steel] = 35;
                     else if (pBu->m_iVehType == CTransportData::rangers)
-                        pBu->m_aiInput[CMaterialTypes::steel] = 115;
+                        pBu->m_aiInput[CMaterialTypes::steel] = 110;
                     // Range-buffed artillery (+20% steel) and Frigate/cruiser (+25% steel) cost
                     // more to build; tiny Xil (copper) bump if the unit uses it (operator).
                     else if (pBu->m_iVehType == CTransportData::light_art ||
@@ -757,13 +757,29 @@ void CTransport::InitData() {
         }
         // =========================================================================
 
+        // === CUSTOM GAMEPLAY TWEAK (2026-08-01, operator balance) ================
+        // Infantry -15% damage; Rangers (special forces) +5% damage, +5% range.
+        // Round-to-nearest on the small per-hit values. Effective vs the .dat:
+        // infantry atk 4/5 -> 3/4; rangers atk 5/10 -> 5/11; rangers range 5 -> 5
+        // (+5% is below the integer grid - smallest real step is +1 = +20%).
+        if (pTd->m_iType == CTransportData::infantry) {
+            for (int iA = 0; iA < 3; iA++)
+                pTd->m_iAttack[iA] = (pTd->m_iAttack[iA] * 85 + 50) / 100;
+        } else if (pTd->m_iType == CTransportData::rangers) {
+            for (int iA = 0; iA < 3; iA++)
+                pTd->m_iAttack[iA] = (pTd->m_iAttack[iA] * 105 + 50) / 100;
+            pTd->m_iRange = __min((pTd->m_iRange * 105 + 50) / 100, 10);
+        }
+        // =========================================================================
+
         // === CUSTOM GAMEPLAY TWEAK (2026-07-05, operator balance) =================
-        // Artillery range +20% (light/med/heavy_art), Frigate (cruiser) +25%. Clamp to 12
-        // (m_iMaxRange = range*1.5+2 must stay <= MAX_SPOTTING, now 24).
+        // Artillery range +35% (light/med/heavy_art) — was +20%, buffed another 15% (operator,
+        // range only, base costs unchanged). Frigate (cruiser) +25%. Arty clamp raised to 19
+        // (needed MAX_SPOTTING 24->31: m_iMaxRange = 19 + 19/2 + 2 = 30 <= MAX_SPOTTING 31).
         if (pTd->m_iType == CTransportData::light_art ||
             pTd->m_iType == CTransportData::med_art ||
             pTd->m_iType == CTransportData::heavy_art)
-            pTd->m_iRange = __min((pTd->m_iRange * 120) / 100, 12);
+            pTd->m_iRange = __min((pTd->m_iRange * 135) / 100, 19);
         else if (pTd->m_iType == CTransportData::cruiser)   // Frigate
             pTd->m_iRange = __min((pTd->m_iRange * 125) / 100, 12);
         // =========================================================================
