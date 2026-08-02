@@ -782,8 +782,16 @@ void CTransport::InitData() {
         // by the raw switch (its own clamp 12 binds either way).
         if (pTd->m_iType == CTransportData::light_art ||
             pTd->m_iType == CTransportData::med_art ||
-            pTd->m_iType == CTransportData::heavy_art)
+            pTd->m_iType == CTransportData::heavy_art) {
             pTd->m_iRange = __min((pTd->m_iRangeRaw * 135) / 100, 19);
+            // Rate-of-fire cost for the reach (operator 2026-08-02, "since arty is so
+            // long range now, we should reduce the firerate"): +30% delay, mirroring the
+            // ~30% range gain. m_iFireRate is a DELAY — higher = slower (mainloop.cpp
+            // computes base/productionRate, so a half-powered gun doubles it; 0 = cannot
+            // fire, so a nonzero value can never round down into "disarmed").
+            // light 48->62, med 32->42, heavy 144->187.
+            pTd->m_iFireRate = (pTd->m_iFireRate * 130 + 50) / 100;
+        }
         else if (pTd->m_iType == CTransportData::cruiser)   // Frigate
             pTd->m_iRange = __min((pTd->m_iRange * 125) / 100, 12);
         // =========================================================================
