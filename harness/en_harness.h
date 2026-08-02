@@ -1,11 +1,17 @@
 //---------------------------------------------------------------------------
-// en_harness.h — in-process LLM-driving harness (Linux/Debug only).
+// en_harness.h — in-process LLM-driving harness (Windows / Linux / macOS).
 //
 // A small TCP control server compiled into the game. It lets an external client
-// (thin shell/python scripts) screenshot the running game and inject mouse/key
-// events — the Wayland-safe, focus-free replacement for the Windows PostMessage/
-// PrintWindow harness. Input is injected via SDL_PushEvent (thread-safe);
-// screenshots are serviced on the main/render thread via EnHarness_Service().
+// (thin shell/python scripts) screenshot the running game, inject mouse/key
+// events, and query live game state — the Wayland-safe, focus-free counterpart
+// to the Windows PostMessage/PrintWindow .ps1 harness (which stays: it is still
+// the better image-capture path on Windows). Input is injected via SDL_PushEvent
+// (thread-safe); state reads and screenshots are serviced on the main/render
+// thread via EnHarness_Service().
+//
+// EVERYTHING here is inert unless EN_HARNESS is set in the environment.
+// EnHarness_Start returns before touching the socket library or creating a
+// thread, and the per-frame hooks below early-out on one relaxed atomic load.
 //---------------------------------------------------------------------------
 #ifndef EN_HARNESS_H
 #define EN_HARNESS_H

@@ -150,11 +150,9 @@ int CConquerApp::Run( )
 
             // Service main-loop-only harness ops (e.g. `save`) here at the loop
             // top, before event-pumping/render — SaveGame re-pumps the event loop,
-            // so it must not run from the render-path EnHarness_Service. POSIX-only
-            // (the in-process harness/control_socket.cpp isn't built on Windows).
-#ifndef _WIN32
+            // so it must not run from the render-path EnHarness_Service. All
+            // platforms; returns immediately unless EN_HARNESS armed the server.
             EnHarness_ServiceMainLoop();
-#endif
 
             // Profiling: one "frame" == one outer loop iteration. Cheap no-op
             // unless EN_PERF is set; flushes a perf.log line each interval.

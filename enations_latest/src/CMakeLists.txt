@@ -132,6 +132,10 @@ set(enations_sources
         ../../input/UIButtonListener.cpp
         network/davenet.cpp
         network/sockets.cpp
+        # In-process LLM-driving harness (TCP control server). All three platforms —
+        # it is the only way to query live game state headlessly, and Windows had no
+        # equivalent. Completely inert unless EN_HARNESS is set in the environment.
+        ../../harness/control_socket.cpp
 )
 
 # ---------------------------------------------------------------------------
@@ -146,7 +150,6 @@ if (NOT MSVC)
         linux_main.cpp
         win32_resources_linux.cpp
         x11_transient_linux.cpp            # X11 WM_TRANSIENT_FOR owner relationship for detached panels (replaces ALWAYS_ON_TOP)
-        ../../harness/control_socket.cpp   # in-process LLM-driving harness (Debug)
     )
 
     # -----------------------------------------------------------------------
@@ -263,9 +266,12 @@ add_executable(enations WIN32 ${enations_sources})
 
 # network/ TUs do winsock2-before-windows.h ordering themselves; skip the
 # force-included PCH (stdafx.h->windows.h pulls winsock1 and breaks ws2tcpip.h).
+# The harness control socket is the same case, and it deliberately includes no
+# game headers at all (SDL + en_harness.h only), so it needs nothing from the PCH.
 set_source_files_properties(
     network/davenet.cpp
     network/sockets.cpp
+    ../../harness/control_socket.cpp
     PROPERTIES SKIP_PRECOMPILE_HEADERS ON)
 
 # according to enations.mak this should be MT

@@ -1,9 +1,7 @@
 #include "stdafx.h"
 #include "GameWindow.h"
 #include "framecap.h"   // #45 frame-capture debug mode
-#ifndef _WIN32
-#include "en_harness.h"   // EnHarness_Service() — services screenshots on the render thread
-#endif
+#include "en_harness.h"   // EnHarness_Service() — services harness requests on the render thread
 #include "SDL2UI.h"
 #include "lastplnt.h"
 #include "resource.h"
@@ -606,20 +604,15 @@ bool GameWindow::EnsureBackBuffer() {
 SDL_Surface* GameWindow::GetPresentSurface() {
     if (m_useRenderer) {
         EnsureBackBuffer();
-#ifndef _WIN32
         // Expose the CPU back-buffer to the harness so `shot` can dump the real
         // composited frame even when GPU read-back is blank / there is no display.
+        // Early-outs to a single atomic load when EN_HARNESS is not set.
         EnHarness_SetMainSurface(m_backBuffer);
-#endif
         return m_backBuffer;
     }
-#ifndef _WIN32
     SDL_Surface* ws = m_window ? SDL_GetWindowSurface(m_window) : nullptr;
     EnHarness_SetMainSurface(ws);
     return ws;
-#else
-    return m_window ? SDL_GetWindowSurface(m_window) : nullptr;
-#endif
 }
 
 void GameWindow::PresentSurface(const SDL_Rect* dirty) {
@@ -795,9 +788,7 @@ bool GameWindow::PollEvents() {
             SDL_CaptureMouse(SDL_FALSE);
     }
 
-#ifndef _WIN32
-    EnHarness_Service();   // service any pending harness screenshot on this (render) thread
-#endif
+    EnHarness_Service();   // service any pending harness request on this (render) thread
 
     SDL_Event event;
     while (SDL_PollEvent(&event)) {

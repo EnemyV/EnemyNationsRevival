@@ -5,9 +5,7 @@
 #include "SDL2Panel.h"
 #include "framecap.h"   // #45 frame-capture debug mode
 #include "GameWindow.h"
-#ifndef _WIN32
 #include "en_harness.h"   // EnHarness_RegisterWindowSurface — harness capture of detached panels
-#endif
 #include "SDL2CreateStatus.h"  // GetCreateStatus()->IsVisible() — defer panel show during load
 #include "SDL2MainMenu.h"  // CreateSurfaceFromDIB
 #include "bmbutton.h"      // must precede bitmaps.h (provides CBmBtnData)
@@ -1361,13 +1359,12 @@ void SDL2Panel::RenderDetached() {
     else
         DrawRaisedBorder(winSurf, 0, 0, W, H, 4);
 
-#ifndef _WIN32
     // Reliable harness capture: register this panel's CPU back-surface (full
     // window content incl. chrome) by window id. Terrain panels composite the GPU
     // mesh UNDER this overlay in PresentOwn, so their complete image lives only on
     // the renderer — leave those to RenderReadPixels and register the rest.
+    // All platforms; the call early-outs to one atomic load unless EN_HARNESS is set.
     if (!bGpuTerrain) EnHarness_RegisterWindowSurface(m_ownWindowID, winSurf);
-#endif
 
     if (m_ownRenderer)
         PresentOwn();                       // T0b: upload back-buffer + present via GPU
