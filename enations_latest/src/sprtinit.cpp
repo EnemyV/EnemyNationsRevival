@@ -298,6 +298,7 @@ void CUnitData::ReadUnitData(CMmio &mmio) {
     m_iDamagePoints = mmio.ReadShort();
     m_udFlags = (CUnitData::UNIT_DATA_FLAGS) mmio.ReadShort();
     m_iRange = mmio.ReadShort();
+    m_iRangeRaw = m_iRange;   // keep the true .dat value; the clamp below ate the arty buffs
     m_iRange = __min (m_iRange, 10);
     m_iAttack[0] = mmio.ReadShort();
     m_iAttack[1] = mmio.ReadShort();
@@ -772,14 +773,17 @@ void CTransport::InitData() {
         }
         // =========================================================================
 
-        // === CUSTOM GAMEPLAY TWEAK (2026-07-05, operator balance) =================
-        // Artillery range +35% (light/med/heavy_art) — was +20%, buffed another 15% (operator,
-        // range only, base costs unchanged). Frigate (cruiser) +25%. Arty clamp raised to 19
-        // (needed MAX_SPOTTING 24->31: m_iMaxRange = 19 + 19/2 + 2 = 30 <= MAX_SPOTTING 31).
+        // === CUSTOM GAMEPLAY TWEAK (2026-07-05, operator balance; made REAL 2026-08-02) ===
+        // Artillery range +35% (light/med/heavy_art), computed from the RAW .dat range —
+        // ReadUnitData clamps m_iRange to 10 before this ran, which silently neutered the
+        // buff to 12->13 (verifier-caught; operator: "fix it"). True values now: light
+        // 7->9, med 9->12, heavy 13->17 (clamp 19). MAX_SPOTTING 31 covers it:
+        // m_iMaxRange = 17 + 17/2 + 2 = 27 <= 31. Frigate (cruiser) +25% is unaffected
+        // by the raw switch (its own clamp 12 binds either way).
         if (pTd->m_iType == CTransportData::light_art ||
             pTd->m_iType == CTransportData::med_art ||
             pTd->m_iType == CTransportData::heavy_art)
-            pTd->m_iRange = __min((pTd->m_iRange * 135) / 100, 19);
+            pTd->m_iRange = __min((pTd->m_iRangeRaw * 135) / 100, 19);
         else if (pTd->m_iType == CTransportData::cruiser)   // Frigate
             pTd->m_iRange = __min((pTd->m_iRange * 125) / 100, 12);
         // =========================================================================

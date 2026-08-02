@@ -212,6 +212,10 @@ class CUnitData
     int m_iDamagePoints;   // points of damage required to destroy
 
     int m_iRange;       // maximum range it can shoot
+    int m_iRangeRaw;    // .dat range BEFORE ReadUnitData's clamp-to-10 — the artillery
+                        // range tweak multiplies from this (the clamp silently neutered
+                        // the +20%/+35% buffs for weeks: 13 raw -> 10 -> "13"). Runtime
+                        // only, never serialized.
     int m_iAttack[3];   // attack - defense, not affected by defense, naval targets
     int m_iExpRadius;   // how far away from impact it damages units
     int m_iTargetType;  // soft, hard, naval
