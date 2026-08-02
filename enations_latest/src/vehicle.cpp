@@ -28,6 +28,17 @@ static char BASED_CODE THIS_FILE[] = __FILE__;
 #endif
 #define new DEBUG_NEW
 
+#if EN_GAMEPLAY_PROBES
+// Bridge/road diagnostic sink: appends to bridge_debug.log in the run dir. Deliberately
+// NOT OutputDebugString — that needs a live DBWIN listener, and a dead or duplicated one
+// silently drops the line AND stalls the calling thread ~10s (July ODS-gap lag bug).
+// A plain file write always lands and can be read while the game runs. Cross-platform.
+void EnBridgeDbgLog( const char* pszMsg )
+{
+    FILE* f = fopen( "bridge_debug.log", "a" );
+    if ( f != NULL ) { fputs( pszMsg, f ); fclose( f ); }
+}
+#endif
 
 int aiBaseDir[9] = {7, 6, 5, 0, 0, 4, 1, 2, 3};
 int aiDir[9] = {7 * EIGHTH_ROT, 6 * EIGHTH_ROT, 5 * EIGHTH_ROT, 0, 0, 4 * EIGHTH_ROT, 1 * EIGHTH_ROT, 2 * EIGHTH_ROT,
@@ -640,8 +651,19 @@ void CVehicle::BuildRoad() {
     ASSERT_STRICT (m_ptHead.SameHex(m_ptTail));
 
     // if can't build here go on to the next
+    // CanRoad() (== not coastline AND not water) is the SERVER's own acceptance rule
+    // (netapi BuildRoad rejects any m_hexBuild failing it). This guard used to test
+    // IsWater() alone, which let a crane standing on a COASTLINE hex fall through and
+    // post a build order for that hex -- the server refused it every time and the
+    // player got "Construction of a road has halted" with the crane parked at the
+    // shore (operator-reported while roading toward a bridge over grass/coastline/
+    // water). The client screened the NEXT hex while the message carries the CURRENT
+    // one (CMsgBuildRoad::m_hexBuild = GetHexHead()), so the two never agreed on a
+    // shore tile. Test the server's rule here and the crane simply steps past the
+    // unpaveable shore, exactly as it already does for water. Coastline stays
+    // drivable-but-not-paveable, which is the designed behaviour.
     CHex *pHex = theMap._GetHex(GetHexHead());
-    if ((pHex->IsWater()) || (pHex->GetType() == CHex::road) ||
+    if ((!pHex->CanRoad()) || (pHex->GetType() == CHex::road) ||
         (pHex->GetUnits() & (CHex::bridge | CHex::bldg)))
         if (!NextRoadHex())
             return;
@@ -712,6 +734,25 @@ void CVehicle::BuildRoad() {
 
     // if we failed - end it
     if (iLen >= iMaxSpan) {
+#if EN_GAMEPLAY_PROBES
+        // Which side refused? This is the CLIENT's own span scan giving up before it
+        // ever reaches the server (netapi BuildBridge / BridgeSpanDeny). Pairs with
+        // [BRIDGESRV] REJECT so "construction has halted" can be attributed exactly.
+        // Writes to bridge_debug.log in the run dir, NOT OutputDebugString: the DBWIN
+        // channel needs a live listener, and a dead/racing one both loses the line AND
+        // blocks the emitting thread ~10s per call (see the July ODS-gap lag bug).
+        {
+            CHex *pStop = theMap._GetHex(_hexEnd);
+            char szH[192];
+            sprintf(szH, "[ROADHALT-CLIENT] veh %lu head %d,%d runend %d,%d scanstop %d,%d "
+                         "type %d units 0x%x iLen %d maxspan %d\n",
+                    (unsigned long)GetID(), m_ptHead.x / 2, m_ptHead.y / 2,
+                    m_hexEnd.X(), m_hexEnd.Y(), _hexEnd.X(), _hexEnd.Y(),
+                    pStop ? (int)pStop->GetType() : -1,
+                    pStop ? (unsigned)pStop->GetUnits() : 0u, iLen, iMaxSpan);
+            EnBridgeDbgLog(szH);
+        }
+#endif
         if (GetOwner()->IsMe())
             theGame.Event(EVENT_ROAD_HALTED, EVENT_WARN, this);
         else {
