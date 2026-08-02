@@ -7,6 +7,7 @@
 
 
 #include "stdafx.h"
+#include "en_logpath.h"   // EnLogPath - logs to the launch dir, not the exe dir
 #include "SDL2GameDialogs.h"
 #include "event.h"
 #include "lastplnt.h"
@@ -28,6 +29,16 @@ static char BASED_CODE THIS_FILE[] = __FILE__;
 #endif
 #define new DEBUG_NEW
 
+#if EN_GAMEPLAY_PROBES
+// Diagnostic sink: appends to bridge_debug.log in the run dir. Deliberately NOT
+// OutputDebugString — that needs a live DBWIN listener, and a dead or duplicated one
+// silently drops the line AND stalls the calling thread ~10s (July ODS-gap lag bug).
+void EnBridgeDbgLog( const char* pszMsg )
+{
+    FILE* f = fopen( EnLogPath( "bridge_debug.log" ).c_str(), "a" );
+    if ( f != NULL ) { fputs( pszMsg, f ); fclose( f ); }
+}
+#endif
 
 int aiBaseDir[9] = {7, 6, 5, 0, 0, 4, 1, 2, 3};
 int aiDir[9] = {7 * EIGHTH_ROT, 6 * EIGHTH_ROT, 5 * EIGHTH_ROT, 0, 0, 4 * EIGHTH_ROT, 1 * EIGHTH_ROT, 2 * EIGHTH_ROT,
@@ -712,6 +723,19 @@ void CVehicle::BuildRoad() {
 
     // if we failed - end it
     if (iLen >= iMaxSpan) {
+#if EN_GAMEPLAY_PROBES
+        {
+            CHex *pStop = theMap._GetHex(_hexEnd);
+            char szH[200];
+            sprintf(szH, "[HALT-SITE A: client bridge-span scan] veh %lu head %d,%d runend %d,%d "
+                         "scanstop %d,%d type %d units 0x%x iLen %d maxspan %d\n",
+                    (unsigned long)GetID(), m_ptHead.x / 2, m_ptHead.y / 2,
+                    m_hexEnd.X(), m_hexEnd.Y(), _hexEnd.X(), _hexEnd.Y(),
+                    pStop ? (int)pStop->GetType() : -1,
+                    pStop ? (unsigned)pStop->GetUnits() : 0u, iLen, iMaxSpan);
+            EnBridgeDbgLog(szH);
+        }
+#endif
         if (GetOwner()->IsMe())
             theGame.Event(EVENT_ROAD_HALTED, EVENT_WARN, this);
         else {
@@ -1042,6 +1066,15 @@ void CVehicle::ConstructRoad() {
     // if we are starting see if we can find gas to build with
     if ((m_iBuildDone <= 0) && (GetOwner()->IsLocal())) {
         if (!GetOwner()->BuildRoad()) {
+#if EN_GAMEPLAY_PROBES
+            {
+                char szG[160];
+                sprintf(szG, "[HALT-SITE B: ConstructRoad gas check] veh %lu at %d,%d gas %d need %d\n",
+                        (unsigned long)GetID(), _hexHead.X(), _hexHead.Y(),
+                        GetOwner()->GetGasHave(), GAS_PER_ROAD);
+                EnBridgeDbgLog(szG);
+            }
+#endif
             if (GetOwner()->IsMe())
                 theGame.Event(EVENT_ROAD_HALTED, EVENT_WARN, this);
             else {

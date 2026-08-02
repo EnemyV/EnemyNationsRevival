@@ -1873,6 +1873,10 @@ static void ErrBuildBldg( CMsgBuildBldg* pMsg )
         theGame.Event( EVENT_CONST_CANT, EVENT_WARN, pVeh );
 }
 
+#if EN_GAMEPLAY_PROBES
+extern void EnBridgeDbgLog( const char* pszMsg );   // vehicle.cpp — file sink, not DBWIN
+#endif
+
 static void BuildRoad( CMsgBuildRoad* pMsg )
 {
 
@@ -1883,6 +1887,15 @@ static void BuildRoad( CMsgBuildRoad* pMsg )
 
     if ( ( !pHex->CanRoad( ) ) || ( pHex->GetUnits( ) & CHex::bldg ) )
     {
+#if EN_GAMEPLAY_PROBES
+        {
+            char szR[176];
+            sprintf( szR, "[ROADSRV] REJECT plyr %d hex %d,%d type %d units 0x%x canroad %d\n",
+                     pMsg->m_iPlyrNum, pMsg->m_hexBuild.X( ), pMsg->m_hexBuild.Y( ),
+                     (int)pHex->GetType( ), (unsigned)pHex->GetUnits( ), pHex->CanRoad( ) ? 1 : 0 );
+            EnBridgeDbgLog( szR );
+        }
+#endif
         pMsg->ToErr( );
         theGame.PostToClient( pMsg->m_iPlyrNum, pMsg, sizeof( *pMsg ) );
         return;
@@ -2029,7 +2042,14 @@ static void ErrBuildRoad( CMsgBuildRoad* pMsg )
         AiMessage( pVeh->GetOwner( )->GetAiHdl( ), pMsg, sizeof( CMsgBuildRoad ) );
     }
     else
+    {
+#if EN_GAMEPLAY_PROBES
+        { char szE[144]; sprintf( szE, "[HALT-SITE C: server refused ROAD] veh %lu hex %d,%d\n",
+                  (unsigned long)pMsg->m_dwID, pMsg->m_hexBuild.X( ), pMsg->m_hexBuild.Y( ) );
+          EnBridgeDbgLog( szE ); }
+#endif
         theGame.Event( EVENT_ROAD_HALTED, EVENT_WARN, pVeh );
+    }
 }
 
 static void ErrBuildBridge( CMsgBuildBridge* pMsg )
@@ -2049,7 +2069,20 @@ static void ErrBuildBridge( CMsgBuildBridge* pMsg )
         AiMessage( pVeh->GetOwner( )->GetAiHdl( ), pMsg, sizeof( CMsgBuildBridge ) );
     }
     else
-        theGame.Event( EVENT_ROAD_HALTED, EVENT_WARN, pVeh );
+    {
+#if EN_GAMEPLAY_PROBES
+        { char szE[160]; sprintf( szE, "[HALT-SITE D: server refused BRIDGE] veh %lu span %d,%d -> %d,%d\n",
+                  (unsigned long)pMsg->m_dwIDVeh, pMsg->m_hexStart.X( ), pMsg->m_hexStart.Y( ),
+                  pMsg->m_hexEnd.X( ), pMsg->m_hexEnd.Y( ) );
+          EnBridgeDbgLog( szE ); }
+#endif
+        // A refused BRIDGE said "Construction of a road has halted" — the operator spent a
+        // session chasing that, since it names the wrong structure and no cause. The server's
+        // refusals here are the bank-regrade rules (a building/bridge stands on ground the
+        // deck approach would have to level) plus obstacle/span, i.e. "this ground won't take
+        // a bridge". Uses one of the 1996 spare event slots; no wire change.
+        theGame.Event( EVENT_BRIDGE_HALTED, EVENT_WARN, pVeh );
+    }
 }
 
 static void RoadNew( CMsgRoadNew* pMsg )

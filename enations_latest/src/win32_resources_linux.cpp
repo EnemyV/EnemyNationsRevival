@@ -238,6 +238,7 @@ const std::unordered_map<UINT, std::string>& string_table() {
         { IDS_EVENT_REPAIR_DONE,       "%1 has been repaired" },
         { IDS_EVENT_ROAD_START,        "Construction of a road has begun" },
         { IDS_EVENT_ROAD_HALTED,       "Construction of a road has halted" },
+        { IDS_EVENT_BRIDGE_HALTED,     "Bridge construction halted - ground unsuitable" },
         { IDS_EVENT_ROAD_DONE,         "Construction of a road has completed" },
         { IDS_EVENT_MANF_HALT,         "%1 has halted manufacturing" },
         { IDS_EVENT_GOTO_CANT,         "%1 is stuck" },

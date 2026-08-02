@@ -1612,6 +1612,7 @@ BEGIN
     IDS_LOAD                "load"
     IDS_UNLOAD              "unload"
     IDS_EVENT_ROCKET_CANT_LAND "Your rocket cannot land here"
+    IDS_EVENT_BRIDGE_HALTED "Bridge construction halted - ground unsuitable"
     IDS_LOAD_MUSIC          "Arranging Music"
     IDS_JOIN_LOAD_FILE      "Receiving game..."
     IDS_JOIN_FILE_ERROR     "Could not receive game from server"
