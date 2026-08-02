@@ -290,6 +290,62 @@ The game runs from `d:\Enemy Nations\` (the run dir has the DLLs). The smoke-tes
 
 When something crashes during init, `dbgcatch.ps1` is the right tool — it catches `OutputDebugString` and exception events, walks the stack via dbghelp.
 
+### 🔬 cdb.exe — attach a REAL debugger to the LIVE game (installed 2026-08-02)
+
+**Use this INSTEAD of adding a printf probe + rebuild + restart.** Four rebuild/restart
+cycles were burned on one bug (attributing a message to one of 4 raise-sites) that a
+single tracepoint answers in one pass, without stopping the game. Rebuilding to add a
+probe destroys the operator's session; a tracepoint does not.
+
+`C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\cdb.exe` (SDK feature
+`OptionId.WindowsDesktopDebuggers`). `_NT_SYMBOL_PATH` is set in the user env.
+
+```powershell
+# read state / get a stack, then self-detach (game keeps running):
+& '...\cdb.exe' -p (Get-Process enations).Id -pb -c "<commands>; qd"
+
+# persistent conditional TRACEPOINT that logs and auto-continues:
+#   bp `enations!event.cpp:160` ".if (@edx == 8) { .echo HIT; k 14; gc } .else { gc }"
+& '...\cdb.exe' -p $pid -pb -cf D:\tmp\bp.txt -logo D:\tmp\cdb.log
+```
+
+**Rules (violating these freezes or kills the operator's game):**
+- **ASK before attaching.** An attach is more invasive than a click — same rule as
+  [feedback_no_clicks_operator_present](file:///C:/Users/tyboy/.claude/projects/D--Enemy-Nations-src/memory/feedback_no_clicks_operator_present.md).
+- **Try `dbgstack.ps1` first** — it only suspends a thread for a few ms and is not a debugger.
+- **Every breakpoint command list MUST end in `gc`.** No `gc` = an interactive stop = a
+  hard freeze of a real-time game.
+- **Pre-arm `sxe -c "k 6; gc" bpe`** — Debug builds have live `TRAP()`/`__debugbreak()`
+  and CRT asserts routed to the debugger; without this the first one freezes the game.
+- **`qd` to detach, never `q`** (`q` kills the game). **Never `Stop-Process` cdb** — killing
+  the debugger kills the debuggee. `bc *` before detaching.
+- **Read-only**: never `.write`/`ed`/`eb` on a live session. No tracepoints in hot paths
+  (sim tick, render loop, pathfinder) — each hit is a debug-event round trip.
+- While a debugger is attached the game's own `EnWriteFullDump` crash handler will NOT
+  run; use `.dump /ma` instead.
+
+**Debug is NOT unoptimized** — `CMakeLists.txt` compiles Debug `/O2 /Ob2` (deliberate,
+for AI profiling). So: locals are often "optimized out" and frames inline. **Object state
+through pointers is always reliable** (`?? ((enations!CVehicle*)@r9)->m_iBuildDone`), and
+args are reliable at function ENTRY (x64 ABI: RCX/RDX/R8/R9). Break at entry, not mid-body.
+The `Sanitize` config keeps `/Od /Ob0` if you truly need locals.
+
+Linux/macOS equivalent: `gdb -p PID -batch -ex 'dprintf file.cpp:NN,"..."' -ex c` —
+`dprintf` IS a tracepoint. lldb: `breakpoint command add` ending in `continue`.
+
+### Diagnostic logging — know where it lands
+
+Probe/log files are written by the game to **its own working directory**, which is NOT
+always the run dir: files have shown up in `cmakeBuild-x64/enations_latest/src/Debug/`
+(cost an hour of "the probe isn't firing" when it was firing all along). **Search for the
+file, don't assume the path.** Probe gates live in `enations_latest/src/enprobes.h`
+(compile-time — every change is a rebuild; this is exactly what cdb avoids).
+
+⚠️ **`OutputDebugString` is a trap for live reading.** It needs a DBWIN listener; a dead
+one silently drops lines AND blocks the caller ~10s/call, and TWO listeners race and
+starve each other (hit twice in one night). An attached debugger also steals the stream
+from DBWIN listeners. For a probe you need to read live, **write to a file** instead.
+
 ## UI harness (screenshot + click the live game)
 
 Drive the running game yourself instead of asking the user what they see. **Just act**: screenshot → Read the PNG → click → screenshot to confirm. Each call is ~1s; don't narrate or ask between steps. ([feedback_harness_act_fast](file:///C:/Users/tyboy/.claude/projects/d--Enemy-Nations-src/memory/feedback_harness_act_fast.md))
