@@ -3676,6 +3676,12 @@ CDlgBuildTransport* CVehicleBuilding::GetDlgBuild( )
                 m_pSdlBuildTransport = nullptr;
             } );
         }
+        else
+            // Already open → bring it forward (same pattern as ShowInfoWindow /
+            // chat / relations). Matters since #63 dropped this window's per-frame
+            // keep-on-top: a second double-click on the factory used to find the
+            // window buried behind the area map and do nothing.
+            m_pSdlBuildTransport->RaiseAndAlert( );
         return m_pDlgTransport;  // MFC pointer not used by SDL2 path
     }
 
@@ -5614,6 +5620,8 @@ CDlgBuildStructure* CVehicle::GetDlgBuild( )
                 m_pSdlBuild = nullptr;
             } );
         }
+        else
+            m_pSdlBuild->RaiseAndAlert( );   // already open → bring it forward
         return m_pDlgStructure;  // MFC pointer not used by SDL2 path
     }
 
