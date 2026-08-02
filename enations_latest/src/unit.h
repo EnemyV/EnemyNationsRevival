@@ -212,6 +212,10 @@ class CUnitData
     int m_iDamagePoints;   // points of damage required to destroy
 
     int m_iRange;       // maximum range it can shoot
+    int m_iRangeRaw;    // .dat range BEFORE ReadUnitData's clamp-to-10 — the artillery
+                        // range tweak multiplies from this (the clamp silently neutered
+                        // the +20%/+35% buffs for weeks: 13 raw -> 10 -> "13"). Runtime
+                        // only, never serialized.
     int m_iAttack[3];   // attack - defense, not affected by defense, naval targets
     int m_iExpRadius;   // how far away from impact it damages units
     int m_iTargetType;  // soft, hard, naval
@@ -502,11 +506,17 @@ class CUnit : public CUnitTile
         dead            = 0x100,
         unit_set_damage = 0x200,
         show_bldg       = 0x0400,
-        // Per-building "alternate oil" toggle for the oil techs: ON = a farm also makes
-        // Bio Oil (#33) / an exhausted oil well fracks (#23). RUNTIME-ONLY for now — not
-        // serialized (m_unitFlags isn't), so it resets to OFF on load, like the F1 route-
-        // loop flag; save persistence is a deliberate follow-up. Gated on CanBioFuel()/
-        // CanFrack(); set via the building info-window toggle.
+        // Per-building alternate-output toggle (AltOutput, altoutput.h): ON = a farm also
+        // makes Bio Oil (#33) / an exhausted oil well fracks (#23) / a coal plant liquefies
+        // coal / a lumber yard burns charcoal. Gated on the def's tech (CanBioFuel() /
+        // CanFrack() / CanCoalLiq() / ...); set via the building info-window toggle.
+        // PERSISTS ACROSS SAVE/LOAD: it rides m_unitFlags, which CUnit::Serialize writes
+        // and reads (new_unit.cpp ~5770 / ~5812), and CBuilding::Serialize chains through
+        // it. Nothing clears the flag on load. (This comment previously claimed the exact
+        // opposite — "runtime-only, m_unitFlags isn't serialized" — which was true when the
+        // flag was added and went stale once serialization covered the flags word. The
+        // stale note cost an investigation and nearly a needless save-format change on
+        // 2026-08-02; verified against the serialize code before rewriting it.)
         alt_oil         = 0x0800
     };
     void         SetFlag( UNIT_FLAGS fl ) { m_unitFlags = (UNIT_FLAGS)( (int)m_unitFlags | (int)fl ); }

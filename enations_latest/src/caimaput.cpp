@@ -10,6 +10,7 @@
 ////////////////////////////////////////////////////////////////////////////
 
 #include "stdafx.h"
+#include "enprobes.h"   // probe gates - was relying on a transitive include
 #include "caimaput.hpp"
 #include "caidata.hpp"
 #include "cpathmap.h"
@@ -3130,35 +3131,47 @@ BOOL CAIMapUtil::IsBridgeSpan( CHexCoord& hexRiverRoad, CAIUnit* pUnit, BOOL bIm
     if ( iDir == MAX_ADJACENT )
         return FALSE;
 
-    // LSWWSL start side (operator, eyes-on: impromptu bridge built FROM a
-    // shore tile stops one hex short): a coastline bank with more coastline
-    // behind it rides the deck too - slide the start landward until the deck
-    // begins beside real traversable land. The walk's shore-ride covers the
-    // slid-over hexes; CAI_PREV/dispatch get the extended start below.
-    if ( bImpromptu )
+    // Start side must mirror the landing side (operator 2026-08-01, eyes-on: a new
+    // bridge's near END PIECE sat on a type-coastline tile; mouse-over confirmed):
+    // the deck RIDES shore, the end pieces sit on real paveable land — on BOTH ends.
+    // Slide the start landward across any coastline run, in BOTH channels (the old
+    // slide was impromptu-only AND stopped ON the shore tile when land was directly
+    // behind — that "legal shore start" carve-out is exactly the reported bug). No
+    // traversable land behind the shore (spit / cliff) → REFUSE the crossing: a
+    // bridge that can't plant its end on real land was planned wrong (same doctrine
+    // as the no-shift-retry rule below). The walk's shore-ride covers the slid-over
+    // hexes; CAI_PREV/dispatch get the extended start below.
+    for ( int iBack = 0; iBack < MAX_SPAN_ULT; iBack++ )
     {
-        for ( int iBack = 0; iBack < MAX_SPAN_ULT; iBack++ )
+        CHex* pStartHex = theMap.GetHex( hexStart );
+        if ( pStartHex == NULL || pStartHex->GetType( ) != CHex::coastline )
+            break;  // starts on real land
+        CHexCoord hexBehind = hexStart;
+        switch ( iDir )  // behind = opposite the span direction
         {
-            CHex* pStartHex = theMap.GetHex( hexStart );
-            if ( pStartHex == NULL || pStartHex->GetType( ) != CHex::coastline )
-                break;  // already starts on real land
-            CHexCoord hexBehind = hexStart;
-            switch ( iDir )  // behind = opposite the span direction
-            {
-            case 0: hexBehind.Yinc( ); break;
-            case 2: hexBehind.Xdec( ); break;
-            case 4: hexBehind.Ydec( ); break;
-            case 6: hexBehind.Xinc( ); break;
-            }
-            if ( GetMapOffset( hexBehind.X( ), hexBehind.Y( ) ) >= m_iMapSize )
-                break;
-            CHex* pBehind = theMap.GetHex( hexBehind );
-            if ( pBehind == NULL || pBehind->IsWater( ) )
-                break;  // spit: nothing landward to reach
-            if ( pBehind->GetType( ) != CHex::coastline && m_tdWheel->CanTravelHex( pBehind ) )
-                break;  // shore start beside real land = legal landing-may-be-shore
-            hexStart = hexBehind;  // more shore behind: deck rides over it
+        case 0: hexBehind.Yinc( ); break;
+        case 2: hexBehind.Xdec( ); break;
+        case 4: hexBehind.Ydec( ); break;
+        case 6: hexBehind.Xinc( ); break;
         }
+        CHex* pBehind = ( GetMapOffset( hexBehind.X( ), hexBehind.Y( ) ) < m_iMapSize )
+                            ? theMap.GetHex( hexBehind ) : NULL;
+        if ( pBehind == NULL || pBehind->IsWater( ) || !m_tdWheel->CanTravelHex( pBehind ) )
+        {
+#if EN_AI_PROBES_WAR && defined(_WIN32)
+            char szS[112];
+            sprintf( szS, "[BRIDGEVETO] plyr %d shore-start no land behind %d,%d\n", m_iPlayer,
+                     hexStart.X( ), hexStart.Y( ) );
+            OutputDebugStringA( szS );
+#endif
+            return FALSE;  // no real land to plant the near end on → don't build it
+        }
+        hexStart = hexBehind;  // shore rides the deck; keep sliding until real land
+    }
+    {
+        CHex* pStartHex = theMap.GetHex( hexStart );
+        if ( pStartHex != NULL && pStartHex->GetType( ) == CHex::coastline )
+            return FALSE;  // degenerate all-shore run (loop bound hit)
     }
 
     // while count of span < MAX_SPAN
@@ -3288,12 +3301,16 @@ BOOL CAIMapUtil::TryBridgeWalk( CHexCoord const& hexStart, int iDir, int iMaxSpa
         int i = GetMapOffset( hexBridge.X( ), hexBridge.Y( ) );
         if ( i >= m_iMapSize )
             return FALSE;
-        // on-plan validation: span hexes must carry a road type (new-crossing
-        // planning walks raw water - the marks come after)
-        if ( bRequirePlan && !( m_pMap[i] & MSW_PLANNED_ROAD ) && !( m_pMap[i] & MSW_ROAD ) )
-            return FALSE;
 
         CHex* pGameHex = theMap.GetHex( hexBridge );
+        // on-plan validation: span hexes must carry a road type (new-crossing
+        // planning walks raw water - the marks come after). Coastline is EXEMPT:
+        // ridden shore hexes (both the start-slide's and the landing's) are never
+        // part of a road plan (IsRoadHexEligible refuses coastline), so requiring
+        // the flag here failed every planned crossing whose start slid off shore.
+        if ( bRequirePlan && pGameHex->GetType( ) != CHex::coastline &&
+             !( m_pMap[i] & MSW_PLANNED_ROAD ) && !( m_pMap[i] & MSW_ROAD ) )
+            return FALSE;
         // if not water (river/lake/ocean) then we assume land, this is the end
         if ( !pGameHex->IsWater( ) )
         {

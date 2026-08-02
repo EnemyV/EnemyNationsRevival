@@ -11,6 +11,7 @@
 //---------------------------------------------------------------------------
 
 #include "stdafx.h"
+#include "en_logpath.h"   // EnLogPath - logs to the launch dir, not the exe dir
 #include "wndstub.h"
 #include <set>
 #include <string>
@@ -299,7 +300,7 @@ BOOL CWndStub::CreateEx( DWORD dwExStyle, LPCSTR lpszClassName, LPCSTR lpszWindo
                    gle, cs.lpszClass ? cs.lpszClass : "?", cs.lpszName ? cs.lpszName : "?",
                    cs.hwndParent, cs.x, cs.y, cs.cx, cs.cy, cs.style, cs.dwExStyle );
         OutputDebugStringA( b );
-        { FILE* _f = fopen( "SDL2Panel.log", "a" ); if ( _f ) { fputs( b, _f ); fclose( _f ); } }
+        { FILE* _f = fopen( EnLogPath( "SDL2Panel.log" ).c_str(), "a" ); if ( _f ) { fputs( b, _f ); fclose( _f ); } }
         return FALSE;
     }
     // Set m_hWnd directly. StaticWndProc would also set it during WM_NCCREATE,

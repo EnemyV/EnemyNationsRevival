@@ -14,6 +14,11 @@
 #include "lastplnt.h"
 #include "player.h"
 #include "sfx.h"
+#include "enprobes.h"
+
+#if EN_GAMEPLAY_PROBES
+extern void EnBridgeDbgLog( const char* pszMsg );   // vehicle.cpp — file sink, not DBWIN
+#endif
 
 #include "unit.inl"
 #include "building.inl"
@@ -94,7 +99,8 @@ const int aiRes [] = {
 
 		IDS_EVENT_ROCKET_CANT_LAND,
 
-		0, 0, 0 };	// these are in case I didn't do enough
+		IDS_EVENT_BRIDGE_HALTED,	// EVENT_BRIDGE_HALTED (former EVENT_EMPT1)
+		0, 0 };	// these are in case I didn't do enough
 
 const int aiSfx [] = {
 		VOICES::tem_where_build,
@@ -294,10 +300,12 @@ const DWORD dwTimeBetween [] = {
 
 		30,
 		0,
-		
+
 		0,
-		
-		0, 0, 0 };	// these are in case I didn't do enough
+
+		10,			// EVENT_BRIDGE_HALTED - the crane retries the refused span every
+					// tick (20+ identical rejects seen in one attempt), so throttle it
+		0, 0 };	// these are in case I didn't do enough
 
 DWORD dwLastTime [NUM_EVENTS];
 
@@ -311,6 +319,18 @@ void CGame::_Event (int ID, int iTyp, char const * psText, int iVoice)
 		ASSERT (FALSE);
 		return;
 		}
+
+#if EN_GAMEPLAY_PROBES
+	// Every player-visible event funnels through here. Logged so a reported message
+	// ("construction has halted") can be tied to its EVENT id with certainty instead
+	// of assumed — the assumption cost two wrong diagnoses. File sink, not DBWIN.
+	{
+		char szE[192];
+		sprintf (szE, "[EVENT] id %d typ %d text '%s'\n", ID, iTyp,
+		         psText != NULL ? psText : "");
+		EnBridgeDbgLog (szE);
+	}
+#endif
 
 	// if no HP then no events
 	if ( ! theGame.HaveHP () )

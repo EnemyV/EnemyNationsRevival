@@ -95,6 +95,7 @@ set(enations_sources
         wrldgen.cpp
         mem_pool.h
         cpuspeed.cpp
+        cpufeatures.cpp   # runtime ISA detection (GH #8) — the binary is baseline x86-64; anything wider dispatches through EnCpu
         EnSettings.cpp
         Perf.cpp
         Perf.h
@@ -131,6 +132,10 @@ set(enations_sources
         ../../input/UIButtonListener.cpp
         network/davenet.cpp
         network/sockets.cpp
+        # In-process LLM-driving harness (TCP control server). All three platforms —
+        # it is the only way to query live game state headlessly, and Windows had no
+        # equivalent. Completely inert unless EN_HARNESS is set in the environment.
+        ../../harness/control_socket.cpp
 )
 
 # ---------------------------------------------------------------------------
@@ -145,7 +150,6 @@ if (NOT MSVC)
         linux_main.cpp
         win32_resources_linux.cpp
         x11_transient_linux.cpp            # X11 WM_TRANSIENT_FOR owner relationship for detached panels (replaces ALWAYS_ON_TOP)
-        ../../harness/control_socket.cpp   # in-process LLM-driving harness (Debug)
     )
 
     # -----------------------------------------------------------------------
@@ -262,9 +266,12 @@ add_executable(enations WIN32 ${enations_sources})
 
 # network/ TUs do winsock2-before-windows.h ordering themselves; skip the
 # force-included PCH (stdafx.h->windows.h pulls winsock1 and breaks ws2tcpip.h).
+# The harness control socket is the same case, and it deliberately includes no
+# game headers at all (SDL + en_harness.h only), so it needs nothing from the PCH.
 set_source_files_properties(
     network/davenet.cpp
     network/sockets.cpp
+    ../../harness/control_socket.cpp
     PROPERTIES SKIP_PRECOMPILE_HEADERS ON)
 
 # according to enations.mak this should be MT
@@ -284,8 +291,19 @@ if (MSVC)
     string(REPLACE "/Ob0" "" CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG}")
     string(REPLACE "/Od" "" CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG}")
     target_compile_options(enations PRIVATE
-        $<$<CONFIG:Release>:/MD;/EHsc;/O2;/Ob2;/Oi;/GL;/Gy;/Gw;/Ot;/GF;/arch:AVX2;/fp:fast;/Zi>
-        $<$<CONFIG:Profile>:/MD;/EHsc;/O2;/Ob2;/Oi;/GL;/Gy;/Gw;/Ot;/GF;/arch:AVX2;/fp:fast;/Zi>
+        # NO /arch: flag => baseline x86-64 (SSE2, guaranteed on every x64 CPU).
+        # /arch:AVX2 used to be here. It arrived in @66195ab9 "tweak release compile
+        # flags" with no benchmark and no rationale, and it made the shipped Windows
+        # build REFUSE TO START on any CPU older than Intel Haswell (2013) / AMD
+        # Excavator (2015): MSVC emitted AVX2 throughout (2723 ymm instructions, 179
+        # AVX2-specific like vpermq/vpbroadcastd, the first at the very start of .text),
+        # so an older CPU takes an illegal-instruction fault during init and the process
+        # disappears with no dialog and no log — reported as "a brief 'Loading Second
+        # Chance...' then it closes" (GH #8). Self-compiling did not help, because the
+        # flag lives here. Any AVX2 use must now be RUNTIME-DISPATCHED via EnCpu (see
+        # cpufeatures.h) so the baseline binary keeps running everywhere.
+        $<$<CONFIG:Release>:/MD;/EHsc;/O2;/Ob2;/Oi;/GL;/Gy;/Gw;/Ot;/GF;/fp:fast;/Zi>
+        $<$<CONFIG:Profile>:/MD;/EHsc;/O2;/Ob2;/Oi;/GL;/Gy;/Gw;/Ot;/GF;/fp:fast;/Zi>
         $<$<CONFIG:Debug>:/MDd;/EHsc;/Zi;/O2;/Ob2>
         $<$<CONFIG:Sanitize>:/MDd;/EHsc;/Zi;/Od;/Ob0;/fsanitize=address>
     )
@@ -306,8 +324,14 @@ else ()
 endif ()
 
 # Cross-platform world-gen FP determinism (MP RAND MISMATCH, 2026-07-03):
-# the enations target compiles Release/Profile with /fp:fast /arch:AVX2, which
-# lets MSVC CONTRACT a*b+c into a fused multiply-add (single rounding) and
+# NOTE 2026-07-30: /arch:AVX2 has since been REMOVED from this target (GH #8 —
+# it made the build unstartable on pre-2013 CPUs). Without it MSVC has no FMA to
+# contract into, so the primary divergence source described below is gone. The
+# /fp:precise pin is KEPT anyway: /fp:fast alone still permits reassociation and
+# reciprocal substitution, which can diverge from POSIX -ffp-contract=off on its
+# own. Do not remove it without re-running the 3-node [wg] seed diff.
+# the enations target compiled Release/Profile with /fp:fast /arch:AVX2, which
+# let MSVC CONTRACT a*b+c into a fused multiply-add (single rounding) and
 # reassociate float expressions in the terrain-altitude math. POSIX builds use
 # -ffp-contract=off, so gcc(Linux) and clang(mac) agree and MSVC is the lone
 # outlier: on some wtype=4 seeds the terrain stage computes a different altitude
@@ -546,11 +570,20 @@ endif ()
 # (skips the .rc/.dib/.bmp source art we don't need at runtime).
 file(GLOB EN_CURSOR_FILES "${CMAKE_CURRENT_SOURCE_DIR}/res/*.cur"
                           "${CMAKE_CURRENT_SOURCE_DIR}/res/*.CUR")
+# T-0073: the bundled UI font must ship NEXT TO THE BINARY too. EnResolveFontPath()
+# tries "<exedir>/res/DejaVuSans.ttf" FIRST so the game does not depend on the host
+# distribution's font layout (Fedora/Arch/openSUSE keep DejaVu somewhere else, and a
+# bare system may carry no font at all -> the game rendered NO TEXT). Without this
+# glob the file sits in source only, the first two candidates always miss, and the
+# last-resort safety net silently never ships. Licence text rides along with it.
+file(GLOB EN_FONT_FILES   "${CMAKE_CURRENT_SOURCE_DIR}/res/*.ttf"
+                          "${CMAKE_CURRENT_SOURCE_DIR}/res/*.TTF"
+                          "${CMAKE_CURRENT_SOURCE_DIR}/res/DejaVuSans.LICENSE.txt")
 add_custom_command(TARGET enations POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:enations>/res"
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${EN_CURSOR_FILES}
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${EN_CURSOR_FILES} ${EN_FONT_FILES}
         "$<TARGET_FILE_DIR:enations>/res"
-    COMMENT "Staging .cur cursor art (res/) next to the binary for the POSIX cursor pipeline"
+    COMMENT "Staging .cur cursor art + the bundled UI font (res/) next to the binary"
 )
 
 # Stage the intro/logo videos the menu's PlayVideo loads at runtime (assets/videos/*.mpg).
@@ -573,6 +606,45 @@ add_custom_command(TARGET enations POST_BUILD
         "${CMAKE_CURRENT_SOURCE_DIR}/res/appicon.png"
         "$<TARGET_FILE_DIR:enations>/assets/appicon.png"
     COMMENT "Staging intro/logo videos to assets/videos (PlayVideo runtime assets, bug #53)"
+)
+
+# Generated README.txt for the release zips. These used to be hand-written per
+# platform under three different names (README-FIRST.txt / README.txt / none on
+# mac) so they drifted independently: the 3.00.009 Linux zip shipped 3.00.000-era
+# text stamped "release 3.00.008" that still told users Linux had no multiplayer.
+# Stamped from VER_STRING so it cannot go stale, same filename on all three.
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/version.h" EN_VERSION_H)
+string(REGEX MATCH "VER_STRING[ \t]+\"([0-9]+\\.[0-9]+\\.[0-9]+)\"" _en_ver_match "${EN_VERSION_H}")
+set(EN_VERSION "${CMAKE_MATCH_1}")
+if (NOT EN_VERSION)
+    message(FATAL_ERROR "packaging: could not parse VER_STRING from version.h")
+endif ()
+
+if (WIN32)
+    set(EN_PLATFORM "Windows x64")
+    set(EN_RUN "enations.exe")
+    set(EN_REQS "  - 64-bit Windows")
+    set(EN_CONTENTS "  enations.exe   - the game binary (MSVC x64 Release)\n  SDL2*.dll      - SDL2 runtime libraries\n  vdmplay.dll    - video playback\n  ENations.dat   - bundled game data (~516 MB), no separate download needed\n  data/          - baked terrain set\n  res/           - cursor art\n  assets/        - intro/logo videos")
+elseif (APPLE)
+    set(EN_PLATFORM "macOS ARM64")
+    set(EN_RUN "./enations")
+    set(EN_REQS "  - macOS on Apple Silicon (ARM64)")
+    set(EN_CONTENTS "  enations       - the game binary (clang ARM64 Release)\n  *.dylib        - bundled SDL2 and codec libraries\n  ENations.dat   - bundled game data (~516 MB), no separate download needed\n  data/          - baked terrain set\n  res/           - cursor art\n  assets/        - intro/logo videos")
+else ()
+    set(EN_PLATFORM "Linux x64")
+    set(EN_RUN "./enations")
+    set(EN_REQS "  - 64-bit Linux (x86-64), glibc\n  - System libs: SDL2, SDL2_ttf, SDL2_mixer\n      Debian/Ubuntu:  sudo apt install libsdl2-2.0-0 libsdl2-ttf-2.0-0 libsdl2-mixer-2.0-0")
+    set(EN_CONTENTS "  enations       - the game binary (gcc x64 Release)\n  ENations.dat   - bundled game data (~516 MB), no separate download needed\n  data/          - baked terrain set\n  res/           - cursor art\n  assets/        - intro/logo videos")
+endif ()
+
+configure_file("${CMAKE_CURRENT_SOURCE_DIR}/../../packaging/README.txt.in"
+               "${CMAKE_CURRENT_BINARY_DIR}/README.txt" @ONLY)
+
+add_custom_command(TARGET enations POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_CURRENT_BINARY_DIR}/README.txt"
+        "$<TARGET_FILE_DIR:enations>/README.txt"
+    COMMENT "Staging generated README.txt (${EN_VERSION}, ${EN_PLATFORM}) next to the binary"
 )
 
 # MSVC is lax about C++ standard (defaults to C++14+ even when 11 is requested),

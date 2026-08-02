@@ -1,4 +1,5 @@
 #include "stdafx.h"
+#include <SDL_syswm.h>   // SDL_GetWindowWMInfo — WS_EX_NOACTIVATE on the tooltip window (Win)
 
 #include "SDL2GameDialogs.h"
 #include "SDL2Panel.h"
@@ -951,15 +952,12 @@ void SDL2MessageBox::OnInit() {
 // ============================================================================
 
 SDL2UnitInfoPanel::SDL2UnitInfoPanel() {
-    const char* fonts[] = {"/System/Library/Fonts/Supplemental/Arial.ttf", "/System/Library/Fonts/Supplemental/Times New Roman.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", "C:\\Windows\\Fonts\\arial.ttf", nullptr};
-    for (int i = 0; fonts[i]; i++) {
-        FILE* f = fopen(fonts[i], "rb");
-        if (f) { fclose(f); m_fontPath = fonts[i]; break; }
-    }
+    m_fontPath = EnResolveFontPath();   // T-0073: one shared resolver, bundled font first
 }
 
 SDL2UnitInfoPanel::~SDL2UnitInfoPanel() {
     Hide();
+    if (m_window) { SDL_DestroyWindow(m_window); m_window = nullptr; }
     if (m_bgGold) SDL_FreeSurface(m_bgGold);
     if (m_borderH) SDL_FreeSurface(m_borderH);
     if (m_borderV) SDL_FreeSurface(m_borderV);
@@ -1010,14 +1008,16 @@ TTF_Font* SDL2UnitInfoPanel::GetFont(int size) {
     if (m_fontPath.empty()) return nullptr;
     auto it = m_fontCache.find(size);
     if (it != m_fontCache.end()) return it->second;
-    TTF_Font* f = TTF_OpenFont(m_fontPath.c_str(), size);
+    TTF_Font* f = EnOpenUiFont(m_fontPath.c_str(), size);
     m_fontCache[size] = f;
     return f;
 }
 
+// screenX/screenY are GLOBAL desktop coordinates (the click's cursor position).
+// The tooltip is its OWN borderless top-most window — the only way to float above
+// the area map, which is itself a separate OS window on Windows (both renderers).
 void SDL2UnitInfoPanel::Show(CUnit* pUnit, int screenX, int screenY) {
-    if (!pUnit || !theApp.m_gameWindow || !theApp.m_gameWindow->GetCompositor())
-        return;
+    if (!pUnit) return;
 
     LoadArt();
     m_pUnit = pUnit;
@@ -1025,56 +1025,72 @@ void SDL2UnitInfoPanel::Show(CUnit* pUnit, int screenX, int screenY) {
 
     int borderH = m_borderH ? m_borderH->h : 3;
     int borderV = m_borderV ? m_borderV->w : 3;
+    (void)borderV;
     int w = 240;
     int h = borderH * 2 + 8;
     for (auto& line : m_lines) h += LineHeight(line);
 
-    // Clamp to screen
-    int scrW = theApp.m_gameWindow->GetWidth();
-    int scrH = theApp.m_gameWindow->GetHeight();
-    if (screenX + w > scrW) screenX = scrW - w;
-    if (screenY + h > scrH) screenY = scrH - h;
-    if (screenX < 0) screenX = 0;
-    if (screenY < 0) screenY = 0;
+    // Clamp onto the display that the cursor is on (keeps it fully on-screen; no
+    // main-window-relative math, so it can't get stuck at a wrong window's edge).
+    SDL_Rect db = { 0, 0, 0, 0 };
+    int nDisp = SDL_GetNumVideoDisplays();
+    for (int i = 0; i < nDisp; i++) {
+        SDL_Rect b;
+        if (SDL_GetDisplayBounds(i, &b) == 0 &&
+            screenX >= b.x && screenX < b.x + b.w && screenY >= b.y && screenY < b.y + b.h)
+            { db = b; break; }
+    }
+    if (db.w == 0 && nDisp > 0) SDL_GetDisplayBounds(0, &db);
+    if (db.w > 0) {
+        if (screenX + w > db.x + db.w) screenX = db.x + db.w - w;
+        if (screenY + h > db.y + db.h) screenY = db.y + db.h - h;
+        if (screenX < db.x) screenX = db.x;
+        if (screenY < db.y) screenY = db.y;
+    }
 
-    // Remove old panel if size changed
-    if (m_panel) {
-        SDL_Surface* surf = m_panel->GetSurface();
-        if (surf && (surf->w != w || surf->h != h)) {
-            theApp.m_gameWindow->GetCompositor()->RemovePanel(m_panel);
-            m_panel = nullptr;
+    if (!m_window) {
+        m_window = GameWindow::CreateSDLWindow("", screenX, screenY, w, h,
+                     SDL_WINDOW_BORDERLESS | SDL_WINDOW_ALWAYS_ON_TOP |
+                     SDL_WINDOW_SKIP_TASKBAR | SDL_WINDOW_HIDDEN);
+        if (!m_window) return;
+#ifdef _WIN32
+        // Don't steal keyboard focus from the game when the tooltip pops up, and keep
+        // it out of alt-tab/taskbar. Must be set while still hidden (before ShowWindow).
+        SDL_SysWMinfo wm; SDL_VERSION(&wm.version);
+        if (SDL_GetWindowWMInfo(m_window, &wm)) {
+            HWND h2 = wm.info.win.window;
+            LONG ex = ::GetWindowLong(h2, GWL_EXSTYLE);
+            ::SetWindowLong(h2, GWL_EXSTYLE, ex | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW);
         }
-    }
-
-    if (m_panel) {
-        m_panel->SetPosition(screenX, screenY);
-        m_panel->SetVisible(true);
+#endif
     } else {
-        m_panel = theApp.m_gameWindow->GetCompositor()->AddPanel(
-            "unit_info", screenX, screenY, w, h, 40);
-        m_panel->SetMovable(false);
-        m_panel->SetResizable(false);
-        m_panel->SetClosable(false);
-        m_panel->SetTitle("");
+        int cw = 0, ch = 0;
+        SDL_GetWindowSize(m_window, &cw, &ch);
+        if (cw != w || ch != h) SDL_SetWindowSize(m_window, w, h);
     }
-
+    SDL_SetWindowPosition(m_window, screenX, screenY);
+    SDL_ShowWindow(m_window);
     Render();
 }
 
 void SDL2UnitInfoPanel::Hide() {
-    if (m_panel) {
-        m_panel->SetVisible(false);
-    }
+    if (m_window) SDL_HideWindow(m_window);
     m_pUnit = nullptr;
 }
 
 bool SDL2UnitInfoPanel::IsVisible() const {
-    return m_panel && m_panel->IsVisible();
+    return m_window && (SDL_GetWindowFlags(m_window) & SDL_WINDOW_SHOWN);
 }
 
 void SDL2UnitInfoPanel::Update() {
-    if (!m_pUnit || !m_panel || !m_panel->IsVisible()) return;
+    if (!m_pUnit || !IsVisible()) return;
     BuildContent();
+    // Content height can change (cargo added/removed) — keep the window fitted.
+    int borderH = m_borderH ? m_borderH->h : 3;
+    int w = 240, h = borderH * 2 + 8;
+    for (auto& line : m_lines) h += LineHeight(line);
+    int cw = 0, ch = 0; SDL_GetWindowSize(m_window, &cw, &ch);
+    if (cw != w || ch != h) SDL_SetWindowSize(m_window, w, h);
     Render();
 }
 
@@ -1183,8 +1199,8 @@ void SDL2UnitInfoPanel::BuildContent() {
 }
 
 void SDL2UnitInfoPanel::Render() {
-    if (!m_panel) return;
-    SDL_Surface* dst = m_panel->GetSurface();
+    if (!m_window) return;
+    SDL_Surface* dst = SDL_GetWindowSurface(m_window);
     if (!dst) return;
 
     int w = dst->w, h = dst->h;
@@ -1205,7 +1221,7 @@ void SDL2UnitInfoPanel::Render() {
 
     // --- Text (matching original: gray shadow at +1,+1, then black or red) ---
     TTF_Font* font = GetFont(11);
-    if (!font) { m_panel->SetDirty(); return; }
+    if (!font) { SDL_UpdateWindowSurface(m_window); return; }
 
     int textX = borderV + 4;
     int y = borderH + 4;
@@ -1266,7 +1282,7 @@ void SDL2UnitInfoPanel::Render() {
         y += rowHt;
     }
 
-    m_panel->SetDirty();
+    SDL_UpdateWindowSurface(m_window);
 }
 
 // ============================================================================

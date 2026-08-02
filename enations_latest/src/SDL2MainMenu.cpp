@@ -1,4 +1,6 @@
 #include "stdafx.h"
+#include "en_logpath.h"   // EnLogPath - logs to the launch dir, not the exe dir
+#include "SDL2UI.h"   // EnOpenUiFont (hinted font open)
 
 #include "SDL2MainMenu.h"
 #include "GameWindow.h"
@@ -20,7 +22,7 @@
 #include <vector>
 
 static void LogMenu(const std::string& msg) {
-    std::ofstream log("SDL2MainMenu.log", std::ios::app);
+    std::ofstream log(EnLogPath("SDL2MainMenu.log").c_str(), std::ios::app);
     if (log.is_open()) {
         log << msg << std::endl;
         log.close();
@@ -69,6 +71,13 @@ static const char* FindFontPath() {
     for (int i = 0; candidates[i]; i++) {
         FILE* f = fopen(candidates[i], "rb");
         if (f) { fclose(f); return candidates[i]; }
+    }
+    // T-0073 fallback: this list is preference-ordered for looks; if none of it
+    // exists (non-Debian distro, trimmed system) use the shared resolver so text
+    // still renders instead of the UI going blank.
+    {
+        const char* fb = EnResolveFontPath();
+        if (fb && *fb) return fb;
     }
     return nullptr;
 }
@@ -368,7 +377,7 @@ TTF_Font* SDL2MainMenu::GetCachedFont(int size) {
     auto it = m_fontCache.find(size);
     if (it != m_fontCache.end()) return it->second;
 
-    TTF_Font* font = TTF_OpenFont(m_fontPath.c_str(), size);
+    TTF_Font* font = EnOpenUiFont(m_fontPath.c_str(), size);
     m_fontCache[size] = font;
     return font;
 }

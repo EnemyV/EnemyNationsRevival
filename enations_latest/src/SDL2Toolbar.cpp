@@ -1,4 +1,5 @@
 #include "stdafx.h"
+#include "SDL2UI.h"   // EnOpenUiFont (hinted font open)
 
 #include "SDL2Toolbar.h"
 #include "SDL2Panel.h"
@@ -55,12 +56,7 @@ SDL2Toolbar::SDL2Toolbar() {
     for (int i = 0; i < NUM_BUTTONS; i++)
         m_buttons[i].label = s_btnLabels[i];
 
-    const char* fonts[] = {"/System/Library/Fonts/Supplemental/Arial.ttf", "/System/Library/Fonts/Supplemental/Times New Roman.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", "C:\\Windows\\Fonts\\arial.ttf",
-                           "C:\\Windows\\Fonts\\tahoma.ttf", nullptr};
-    for (int i = 0; fonts[i]; i++) {
-        FILE* f = fopen(fonts[i], "rb");
-        if (f) { fclose(f); m_fontPath = fonts[i]; break; }
-    }
+    m_fontPath = EnResolveFontPath();   // T-0073: one shared resolver, bundled font first
 }
 
 SDL2Toolbar::~SDL2Toolbar() {
@@ -72,7 +68,7 @@ TTF_Font* SDL2Toolbar::GetFont(int size) {
     if (m_fontPath.empty()) return nullptr;
     auto it = m_fontCache.find(size);
     if (it != m_fontCache.end()) return it->second;
-    TTF_Font* f = TTF_OpenFont(m_fontPath.c_str(), size);
+    TTF_Font* f = EnOpenUiFont(m_fontPath.c_str(), size);
     m_fontCache[size] = f;
     return f;
 }

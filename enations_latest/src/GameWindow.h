@@ -23,6 +23,10 @@ class SDL2Dialog;
  * Must be created and used on the main thread (same thread as the game loop).
  * Call PollEvents() each frame from BaseYield() to process SDL events.
  */
+// First usable UI font path (bundled next to the exe first, then system
+// locations across distro families). Empty string if none. See T-0073.
+const char* EnResolveFontPath();
+
 class GameWindow {
 public:
     /**

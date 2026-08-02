@@ -1,7 +1,5 @@
 #include "stdafx.h"
-#ifndef _WIN32
 #include "en_harness.h"
-#endif
 #include "SDL2UI.h"
 #include "GameWindow.h"
 #include "SDL2MainMenu.h"
@@ -229,12 +227,17 @@ static TTF_Font* GetUiFont(int pt) {
             FILE* f = fopen(cands[i], "rb");
             if (f) { fclose(f); s_path = cands[i]; break; }
         }
+        // T-0073 fallback, same as the other font sites. This list is Windows-only,
+        // so without it every POSIX build cached "?" forever and shrink-to-fit rows
+        // silently lost crisp re-rasterizing (caller bitmap-scales instead).
+        if (s_path.empty())
+            s_path = EnResolveFontPath();
         if (s_path.empty()) s_path = "?";   // mark as "searched, none found"
     }
     if (s_path == "?") return nullptr;
     auto it = s_cache.find(pt);
     if (it != s_cache.end()) return it->second;
-    TTF_Font* f = TTF_OpenFont(s_path.c_str(), pt);
+    TTF_Font* f = EnOpenUiFont(s_path.c_str(), pt);
     s_cache[pt] = f;
     return f;
 }
@@ -491,7 +494,11 @@ void SDL2Button::Render(SDL_Surface* dst, TTF_Font* font) {
     // Text rect: overlays the bottom of the face (on top of icon) or full face if no icon
     SDL_Rect textRect = faceRect;
     if (hasIcon) {
-        int textStripH = 14;
+        // Tall build buttons (48px: vehicle/personnel/structure) get a taller strip
+        // so the ~13pt label renders at full size and CRISP; the old 14px strip
+        // forced a bitmap downscale to ~11px (tiny + blurry, worst on long vehicle
+        // names). Small icon buttons keep 14px so the strip doesn't swallow them.
+        int textStripH = (m_rect.h >= 40) ? 18 : 14;
         textRect.y = faceRect.y + faceRect.h - textStripH;
         textRect.h = textStripH;
     }
@@ -1604,6 +1611,11 @@ SDL2Dialog::SDL2Dialog(GameWindow* gameWindow, const std::string& title, int w, 
         FILE* f = fopen(candidates[i], "rb");
         if (f) { fclose(f); m_fontPath = candidates[i]; break; }
     }
+    // T-0073 fallback: this list is preference-ordered for looks; if none of it
+    // exists (non-Debian distro, trimmed system) use the shared resolver so text
+    // still renders instead of the UI going blank.
+    if (m_fontPath.empty())
+        m_fontPath = EnResolveFontPath();
 }
 
 SDL2Dialog::~SDL2Dialog() {
@@ -1622,7 +1634,7 @@ TTF_Font* SDL2Dialog::GetFont(int size) {
     if (m_fontPath.empty()) return nullptr;
     auto it = m_fontCache.find(size);
     if (it != m_fontCache.end()) return it->second;
-    TTF_Font* font = TTF_OpenFont(m_fontPath.c_str(), size);
+    TTF_Font* font = EnOpenUiFont(m_fontPath.c_str(), size);
     m_fontCache[size] = font;
     return font;
 }
@@ -2137,8 +2149,8 @@ int SDL2Dialog::DoModal() {
 
     SDL_Event event;
     while (m_running) {
+        EnHarness_Service();   // service harness requests during modal dialogs too (all platforms)
 #ifndef _WIN32
-        EnHarness_Service();   // service harness screenshots during modal dialogs too
         vpPumpNet( 0 );        // service the MP network (accept joins, read data) while modal
         EnPumpNetMessages();   // deliver the resulting WM_VPNOTIFY -> OnNetMsg (found sessions / joined players)
 #endif

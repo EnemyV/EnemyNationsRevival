@@ -1,9 +1,8 @@
 #include "stdafx.h"
+#include "en_logpath.h"   // EnLogPath - logs to the launch dir, not the exe dir
 #include "GameWindow.h"
 #include "framecap.h"   // #45 frame-capture debug mode
-#ifndef _WIN32
-#include "en_harness.h"   // EnHarness_Service() — services screenshots on the render thread
-#endif
+#include "en_harness.h"   // EnHarness_Service() — services harness requests on the render thread
 #include "SDL2UI.h"
 #include "lastplnt.h"
 #include "resource.h"
@@ -17,6 +16,7 @@
 #include "Perf.h"         // GaugeSet — correlate window state with frame cost
 #include "w22_settings.h" // w22::GetProfileInt — [Advanced] Renderer flag (T0)
 #include "SDL2Terrain.h"  // NotifyTargetsLost — rebuild cached RTs after GPU device-lost
+#include "SDL2Sprites.h"  // NotifyTargetsLost — sprite atlas/RT recovery after device-lost
 #include "RenderBackend.h" // RenderBackendIsGpu() — 3-way backend selector
 #include "../rendering/SDLButtonManager.h"
 #include "../rendering/StatusBar.h"
@@ -41,12 +41,17 @@
 
 // Helper function for logging - write to current directory
 static void LogToFile(const std::string& message) {
-    std::ofstream log("GameWindow_Debug.log", std::ios::app);
+    std::ofstream log(EnLogPath("GameWindow_Debug.log").c_str(), std::ios::app);
     if (log.is_open()) {
         log << message << std::endl;
         log.close();
     }
 }
+
+// EnResolveFontPath() now lives in wind22 (windward/wind22/src/mfc_compat_text.cpp):
+// the compat text renderer needs it too, and keeping a second copy up here is what
+// left PickFontPath() Debian-only after the first T-0073 fix. Declared in GameWindow.h.
+
 
 // Taskbar/alt-tab/dock icon (_NET_WM_ICON on X11): without it a minimized game
 // window shows the generic SDL icon on Linux (operator-reported). Embedded RGBA
@@ -600,20 +605,15 @@ bool GameWindow::EnsureBackBuffer() {
 SDL_Surface* GameWindow::GetPresentSurface() {
     if (m_useRenderer) {
         EnsureBackBuffer();
-#ifndef _WIN32
         // Expose the CPU back-buffer to the harness so `shot` can dump the real
         // composited frame even when GPU read-back is blank / there is no display.
+        // Early-outs to a single atomic load when EN_HARNESS is not set.
         EnHarness_SetMainSurface(m_backBuffer);
-#endif
         return m_backBuffer;
     }
-#ifndef _WIN32
     SDL_Surface* ws = m_window ? SDL_GetWindowSurface(m_window) : nullptr;
     EnHarness_SetMainSurface(ws);
     return ws;
-#else
-    return m_window ? SDL_GetWindowSurface(m_window) : nullptr;
-#endif
 }
 
 void GameWindow::PresentSurface(const SDL_Rect* dirty) {
@@ -789,9 +789,7 @@ bool GameWindow::PollEvents() {
             SDL_CaptureMouse(SDL_FALSE);
     }
 
-#ifndef _WIN32
-    EnHarness_Service();   // service any pending harness screenshot on this (render) thread
-#endif
+    EnHarness_Service();   // service any pending harness request on this (render) thread
 
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
@@ -811,6 +809,15 @@ bool GameWindow::PollEvents() {
             LogToFile(event.type == SDL_RENDER_DEVICE_RESET ? "SDL_RENDER_DEVICE_RESET"
                                                             : "SDL_RENDER_TARGETS_RESET");
             SDL2Terrain::NotifyTargetsLost();
+            SDL2Sprites::NotifyTargetsLost();
+        }
+
+        // Any mouse click dismisses the Shift+RMB unit-info tooltip, in ANY window.
+        // This runs before routing, so the open gesture (Shift+RMB on a unit, handled
+        // in the area's OnRButtonDown below) re-shows it — every other click just closes it.
+        if (event.type == SDL_MOUSEBUTTONDOWN) {
+            CWndArea* pArea = theAreaList.GetTop();
+            if (pArea) pArea->HideUnitInfo();
         }
 
         // The area map hides the OS cursor while placing a building/rocket (it
@@ -1031,19 +1038,28 @@ void GameWindow::HandleEvent(SDL_Event& event) {
                 theApp.m_wndMain.OnCloseApp();
             }
             else if (event.window.event == SDL_WINDOWEVENT_SIZE_CHANGED) {
-                m_width  = event.window.data1;
-                m_height = event.window.data2;
-                LogToFile("Window resized to " + std::to_string(m_width) + "x" + std::to_string(m_height));
+                // ONLY the main game window's resize updates the recorded client size.
+                // Child windows (dialogs, the unit-info tooltip, detached panels) each
+                // fire SIZE_CHANGED too; without this filter a small tooltip (240xN)
+                // would clobber m_width/m_height and every dialog would then center
+                // off-screen at the top-left. The T-0072 shim push lives INSIDE the
+                // same filter for the same reason: pushing a tooltip's size into the
+                // main window's shim record is exactly the divergence T-0072 fixes.
+                if (m_window && event.window.windowID == SDL_GetWindowID(m_window)) {
+                    m_width  = event.window.data1;
+                    m_height = event.window.data2;
+                    LogToFile("Window resized to " + std::to_string(m_width) + "x" + std::to_string(m_height));
 #ifndef _WIN32
-                // T-0072: keep the shim's record in step with the real window, or a
-                // later resize re-introduces the same stale-size divergence that hides
-                // the bottom bar. Sufficient on its own here (no re-layout needed)
-                // because CWndBar::Create() reads the record at GAME START, i.e. after
-                // the window exists; the shim's SetWindowPos also fires WM_SIZE.
-                if ( m_width > 0 && m_height > 0 && theApp.m_wndMain.m_hWnd )
-                    ::SetWindowPos( theApp.m_wndMain.m_hWnd, NULL, 0, 0, m_width, m_height,
-                                    SWP_NOMOVE | SWP_NOZORDER );
+                    // T-0072: keep the shim's record in step with the real window, or a
+                    // later resize re-introduces the same stale-size divergence that hides
+                    // the bottom bar. Sufficient on its own here (no re-layout needed)
+                    // because CWndBar::Create() reads the record at GAME START, i.e. after
+                    // the window exists; the shim's SetWindowPos also fires WM_SIZE.
+                    if ( m_width > 0 && m_height > 0 && theApp.m_wndMain.m_hWnd )
+                        ::SetWindowPos( theApp.m_wndMain.m_hWnd, NULL, 0, 0, m_width, m_height,
+                                        SWP_NOMOVE | SWP_NOZORDER );
 #endif
+                }
             }
             else if (event.window.event == SDL_WINDOWEVENT_FOCUS_GAINED) {
 #ifdef __APPLE__

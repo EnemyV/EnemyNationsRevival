@@ -15,6 +15,7 @@
 #include "caidata.hpp"
 #include "logging.h"  // dave's logging system
 #include "stdafx.h"
+#include "enprobes.h"   // probe gates - was relying on a transitive include
 #if EN_AI_PROBES_ECON && defined(_WIN32)
 #include <intrin.h>  // _ReturnAddress for the [CRANEORD] caller tag
 #endif

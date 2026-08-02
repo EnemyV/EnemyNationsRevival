@@ -16,6 +16,16 @@
 
 const int DEF_COUNTRY_CODE = 9; // English
 
+// "Locate the data file" picker. wind22 is below the game UI and must not depend
+// on it, so the game registers a handler at startup and wind22 just calls it.
+// Fill pszOut with a full path and return true; return false if the user cancels.
+// Unregistered = no picker, same as before it was wired up.
+// The original MFC CFileDialog here became a stub returning IDCANCEL when MFC was
+// removed (@4884be83), so on every platform this prompt silently did nothing.
+typedef bool ( *EnLocateDataFileFn )( const char* pszWanted, char* pszOut, int cbOut );
+void SetLocateDataFileHandler( EnLocateDataFileFn pfn );
+EnLocateDataFileFn GetLocateDataFileHandler( );
+
 // CDataFile
 //
 // This file represents the enations.dat file where game data is stored.

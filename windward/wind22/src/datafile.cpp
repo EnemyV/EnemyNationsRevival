@@ -7,6 +7,7 @@
 
 
 #include "stdafx.h"
+#include "en_logpath.h"   // EnLogPath - logs to the launch dir, not the exe dir
 #include "_windwrd.h"
 #include "io.h"
 #include "w22_settings.h"
@@ -22,6 +23,43 @@ static char BASED_CODE THIS_FILE[] = __FILE__;
 CDataFile theDataFile;
 
 char CDataFile::aDatafileMagic[4] = {'W', 'S', 'D', 'F'};
+
+// GH #8: a bad ENations.dat killed the game silently (uncaught
+// ERR_DATAFILE_NO_ENTRY, no window, no log). Two cases share that code but need
+// opposite user fixes: no datafile open = .dat missing; open but entry absent =
+// wrong/truncated .dat. Old diagnostics were OutputDebugString, invisible to
+// players. Log to the same file as CPU:/FONT:.
+static bool DataFileExists( const char* pszPath ) {
+    if ( !pszPath || !*pszPath ) return false;
+    FILE* f = fopen( pszPath, "rb" );
+    if ( !f ) return false;
+    fclose( f );
+    return true;
+}
+
+// Absolute path of <exe dir>/<pszLeaf>, or empty on failure. GetModuleFileNameA is
+// shimmed on POSIX (/proc/self/exe, _NSGetExecutablePath).
+static CString DataFileBesideExe( const char* pszLeaf ) {
+    char exePath[ 1024 ] = { 0 };
+    if ( GetModuleFileNameA( NULL, exePath, sizeof( exePath ) - 1 ) <= 0 )
+        return CString( "" );
+    char* p1 = strrchr( exePath, '\\' );
+    char* p2 = strrchr( exePath, '/' );
+    char* slash = ( p1 > p2 ) ? p1 : p2;
+    if ( !slash ) return CString( "" );
+    *( slash + 1 ) = '\0';
+    return CString( exePath ) + pszLeaf;
+}
+
+static void LogDataFileProblem( const char* pszMsg ) {
+    OutputDebugString( pszMsg );
+    OutputDebugString( "\n" );
+    FILE* fp = fopen( EnLogPath( "GameWindow_Debug.log" ).c_str(), "a" );
+    if ( fp ) {
+        fprintf( fp, "DATAFILE: %s\n", pszMsg );
+        fclose( fp );
+    }
+}
 
 CDataFile::CDataFile() {
     m_countryCode = DEF_COUNTRY_CODE;
@@ -41,7 +79,30 @@ CDataFile::~CDataFile() {
     Close();
 }
 
+static EnLocateDataFileFn s_pfnLocate = NULL;
+
+void SetLocateDataFileHandler( EnLocateDataFileFn pfn ) { s_pfnLocate = pfn; }
+EnLocateDataFileFn GetLocateDataFileHandler( ) { return s_pfnLocate; }
+
 static BOOL GetFileName(CString &strFileName) {
+
+    // Registered picker wins. The legacy path below is dead on every platform:
+    // CFileDialog is an IDCANCEL stub since the MFC removal, GetDriveType always
+    // answers DRIVE_FIXED so the CD branch is unreachable, and on POSIX
+    // MessageBoxA returns IDOK which fails the != IDYES test immediately.
+    if (s_pfnLocate) {
+        char picked[1024] = { 0 };
+        if (!s_pfnLocate(strFileName, picked, (int)sizeof(picked)))
+            return (FALSE);
+        if (!picked[0] || !DataFileExists(picked))
+            return (FALSE);
+        CString sMsg;
+        sMsg.Format("user picked '%s'", picked);
+        LogDataFileProblem(sMsg);
+        strFileName = picked;
+        return (TRUE);
+    }
+
 
     CString sTmp(strFileName);
     _fullpath(strFileName.GetBuffer(258), sTmp, 256);
@@ -103,6 +164,22 @@ BOOL CDataFile::Init(const char *pFilename, int iRifVer, BOOL bErr) {
         CString sDefault = CString(".\\") + pFilename;
         strFileName = w22::GetProfileString("Game", "DataFile", sDefault);
     }
+    // The path above comes from HKCU Game/DataFile and is written back on every
+    // success, so an old install pins an absolute path that outlives it and the
+    // ENations.dat shipped beside the exe is never tried. Reported as "cannot find
+    // ENations.dat even when it is in the same folder as the exe" (GH #8).
+    // If the pinned path is gone, fall back to the copy beside the exe.
+    if (!DataFileExists(strFileName)) {
+        CString sBeside = DataFileBesideExe(pFilename);
+        if (!sBeside.IsEmpty() && DataFileExists(sBeside)) {
+            CString sMsg;
+            sMsg.Format("pinned '%s' not found, falling back to '%s'",
+                        (const char*)strFileName, (const char*)sBeside);
+            LogDataFileProblem(sMsg);
+            strFileName = sBeside;
+        }
+    }
+
     CString sPatch = w22::GetProfileString("Game", "Patch", "data");
     if (!sPatch.IsEmpty())
         if (sPatch[sPatch.GetLength() - 1] == '\\')
@@ -119,6 +196,19 @@ BOOL CDataFile::Init(const char *pFilename, int iRifVer, BOOL bErr) {
         try {
             theDataFile._Init(strFileName, sPatch, iRifVer);
             w22::WriteProfileString("Game", "DataFile", strFileName);
+            // Report opened vs NOT opened. _Init does not throw on a missing
+            // master (it falls back to patch-dir-only), so this ran on the success
+            // path and logged "using <path>" for a file that was never opened,
+            // which is worse than silence. Say which actually happened. GH #8.
+            {
+                CString sMsg;
+                if (m_pDataFile)
+                    sMsg.Format("opened '%s'", (const char*)strFileName);
+                else
+                    sMsg.Format("NOT OPENED '%s' (no master; patch-dir-only)",
+                                (const char*)strFileName);
+                LogDataFileProblem(sMsg);
+            }
             return (TRUE);
         }
 
@@ -144,15 +234,22 @@ void CDataFile::_Init(const char *pFilename, const char *pPatchDir, int iRifVer)
             ThrowError(ERR_OUT_OF_MEMORY);
         }
         if (m_pDataFile->Open(pFilename, CFile::modeRead | CFile::shareDenyWrite | CFile::typeBinary) == FALSE) {
-            // Master archive (e.g. ENations.dat) absent — the cross-platform
-            // builds ship only the loose, extracted data/ tree. Fall back to
-            // patch-dir-only mode: OpenAsMMIO checks the patch dir first and
-            // never needs the master when the loose set is complete. Skip the
-            // master parse and continue to the patch-dir setup below.
+            // Throw so Init's catch runs GetFileName and the user gets the picker.
+            // @d3724edb (macOS port) swallowed this into "patch-dir-only" mode on
+            // the premise that cross-platform builds ship only a loose data/ tree.
+            // That premise is dead: all three platforms bundle ENations.dat, and
+            // the shipped data/ holds 2124 terrain_gpu PNGs and ZERO .rif files,
+            // so patch-dir-only cannot serve game content anyway - it only pushed
+            // the failure later, into an uncaught ERR_DATAFILE_NO_ENTRY with no
+            // window and no message. GH #8.
             delete m_pDataFile;
             m_pDataFile = NULL;
-            OutputDebugString("CDataFile::_Init: master data file not found; "
-                              "running patch-dir-only (loose data/)\n");
+            {
+                CString sMsg;
+                sMsg.Format("could not open '%s'", pFilename);
+                LogDataFileProblem(sMsg);
+            }
+            ThrowError(ERR_DATAFILE_OPEN);
         } else {
         m_sFileName = pFilename;
 
@@ -343,8 +440,26 @@ CMmio *CDataFile::OpenAsMMIO(const char *pFilename, const char *pRif) {
                 m_countryCode = DEF_COUNTRY_CODE;
                 return OpenAsMMIO(NULL, pRif);
             }
-            OutputDebugString("CDataFile::OpenAsMMIO: country code not found via file map\n");
-            OutputDebugString("CDataFile::OpenAsMMIO: returning ERR_DATAFILE_NO_ENTRY\n");
+            // .dat opened but the entry is missing: wrong/old/truncated file.
+            // Fatal (nothing catches the throw), so name the file and say so.
+            {
+                CString sMsg;
+                sMsg.Format("entry '%s' missing from '%s'", (const char*)path,
+                            (const char*)m_sFileName);
+                LogDataFileProblem(sMsg);
+
+                static bool bTold = false;
+                if (!bTold) {
+                    bTold = true;
+                    CString sBox;
+                    sBox.Format("This ENations.dat cannot be used.\n\n"
+                                "File:\n%s\n\nMissing entry: %s\n\n"
+                                "It is from an older or different version of the game. "
+                                "Use the ENations.dat shipped with this release.",
+                                (const char*)m_sFileName, (const char*)path);
+                    ::MessageBoxA(NULL, sBox, "Enemy Nations", MB_OK | MB_ICONERROR);
+                }
+            }
             ThrowError(ERR_DATAFILE_NO_ENTRY);
         }
 
@@ -382,7 +497,27 @@ CMmio *CDataFile::OpenAsMMIO(const char *pFilename, const char *pRif) {
     //  If here, file was not found in patch dir ( or
     //  no patch dir was given ), and no datafile was
     //  opened, so return NULL ( no file found ).
-    OutputDebugString("CDataFile::OpenAsMMIO: file not found, about to throw ERR_DATAFILE_NO_ENTRY\n");
+    // No datafile open at all. This is the GH #8 case: ENations.dat was never
+    // found. Fatal and unrecoverable, so tell the user once instead of vanishing.
+    {
+        char cwd[MAX_PATH] = { 0 };
+        ::GetCurrentDirectoryA(sizeof(cwd), cwd);
+        CString sMsg;
+        sMsg.Format("ENations.dat not open, wanted '%s'. cwd='%s'", (const char*)path, cwd);
+        LogDataFileProblem(sMsg);
+
+        static bool bTold = false;
+        if (!bTold) {
+            bTold = true;
+            CString sBox;
+            sBox.Format("ENations.dat could not be found.\n\n"
+                        "It must sit next to enations.exe.\n\n"
+                        "Looked in:\n%s\n\n"
+                        "If you built from source, copy ENations.dat into the build "
+                        "output folder, or run the game from a folder that has it.", cwd);
+            ::MessageBoxA(NULL, sBox, "Enemy Nations", MB_OK | MB_ICONERROR);
+        }
+    }
     ThrowError(ERR_DATAFILE_NO_ENTRY);
     return NULL;
 }

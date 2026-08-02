@@ -9,6 +9,7 @@
 //
 
 #include "stdafx.h"
+#include "en_logpath.h"   // EnLogPath - logs to the launch dir, not the exe dir
 #include "world.h"
 #include "lastplnt.h"
 #include "error.h"
@@ -263,7 +264,7 @@ void CWndWorld::Create(BOOL bStart) {
                    NULL, NULL ) == 0 )
     {
         OutputDebugStringA( "[REN] CWndWorld::Create CreateEx FAILED (see [CREATEEX] above)\n" );
-        { FILE* _f = fopen( "SDL2Panel.log", "a" ); if ( _f ) { fputs( "[REN] CWndWorld::Create CreateEx FAILED\n", _f ); fclose( _f ); } }
+        { FILE* _f = fopen( EnLogPath( "SDL2Panel.log" ).c_str(), "a" ); if ( _f ) { fputs( "[REN] CWndWorld::Create CreateEx FAILED\n", _f ); fclose( _f ); } }
         throw( ERR_RES_CREATE_WND );
     }
 

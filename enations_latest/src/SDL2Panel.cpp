@@ -1,12 +1,12 @@
 #include "stdafx.h"
+#include "en_logpath.h"   // EnLogPath - logs to the launch dir, not the exe dir
+#include "SDL2UI.h"   // EnOpenUiFont (hinted font open)
 #include "enprobes.h"   // EN_GAMEPLAY_PROBES
 
 #include "SDL2Panel.h"
 #include "framecap.h"   // #45 frame-capture debug mode
 #include "GameWindow.h"
-#ifndef _WIN32
 #include "en_harness.h"   // EnHarness_RegisterWindowSurface — harness capture of detached panels
-#endif
 #include "SDL2CreateStatus.h"  // GetCreateStatus()->IsVisible() — defer panel show during load
 #include "SDL2MainMenu.h"  // CreateSurfaceFromDIB
 #include "bmbutton.h"      // must precede bitmaps.h (provides CBmBtnData)
@@ -35,7 +35,7 @@ static std::unordered_map<std::string, SDL_Rect> g_savedPlacements;
 
 static void LogPanel(const std::string& msg) {
 #if EN_GAMEPLAY_PROBES
-    std::ofstream log("SDL2Panel.log", std::ios::app);
+    std::ofstream log(EnLogPath("SDL2Panel.log").c_str(), std::ios::app);
     if (log.is_open()) {
         log << msg << std::endl;
     }
@@ -319,9 +319,14 @@ static TTF_Font* GetTitleFont() {
         nullptr
     };
     for (int i = 0; paths[i]; i++) {
-        s_font = TTF_OpenFont(paths[i], 12);
+        s_font = EnOpenUiFont(paths[i], 12);
         if (s_font) break;
     }
+    // T-0073 fallback: this list is preference-ordered for looks; if none of it
+    // exists (non-Debian distro, trimmed system) use the shared resolver so text
+    // still renders instead of the UI going blank.
+    if (!s_font)
+        s_font = TTF_OpenFont(EnResolveFontPath(), 12);
     return s_font;
 }
 
@@ -1355,13 +1360,12 @@ void SDL2Panel::RenderDetached() {
     else
         DrawRaisedBorder(winSurf, 0, 0, W, H, 4);
 
-#ifndef _WIN32
     // Reliable harness capture: register this panel's CPU back-surface (full
     // window content incl. chrome) by window id. Terrain panels composite the GPU
     // mesh UNDER this overlay in PresentOwn, so their complete image lives only on
     // the renderer — leave those to RenderReadPixels and register the rest.
+    // All platforms; the call early-outs to one atomic load unless EN_HARNESS is set.
     if (!bGpuTerrain) EnHarness_RegisterWindowSurface(m_ownWindowID, winSurf);
-#endif
 
     if (m_ownRenderer)
         PresentOwn();                       // T0b: upload back-buffer + present via GPU

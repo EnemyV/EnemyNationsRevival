@@ -1,4 +1,5 @@
 #include "stdafx.h"
+#include "en_logpath.h"   // EnLogPath - logs to the launch dir, not the exe dir
 
 #include "SDL2CreateStatus.h"
 #include "SDL2UI.h"
@@ -23,7 +24,7 @@
 #include <algorithm>
 
 static void LogStatus(const std::string& msg) {
-    std::ofstream log("SDL2CreateStatus.log", std::ios::app);
+    std::ofstream log(EnLogPath("SDL2CreateStatus.log").c_str(), std::ios::app);
     if (log.is_open()) {
         log << msg << std::endl;
     }
@@ -121,17 +122,7 @@ SDL2CreateStatus::SDL2CreateStatus(GameWindow* gameWindow)
                         btnW, btnH };
 
     // Find a font
-    const char* candidates[] = {
-        "/System/Library/Fonts/Supplemental/Arial.ttf", "/System/Library/Fonts/Supplemental/Times New Roman.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", "C:\\Windows\\Fonts\\BKANT.TTF",
-        "C:\\Windows\\Fonts\\times.ttf",
-        "C:\\Windows\\Fonts\\arial.ttf",
-        nullptr
-    };
-    for (int i = 0; candidates[i]; i++) {
-        FILE* f = fopen(candidates[i], "rb");
-        if (f) { fclose(f); m_fontPath = candidates[i]; break; }
-    }
-
+    m_fontPath = EnResolveFontPath();   // T-0073: one shared resolver, bundled font first
     LogStatus("SDL2CreateStatus created");
 }
 
@@ -153,7 +144,7 @@ TTF_Font* SDL2CreateStatus::GetFont(int size) {
     if (m_fontPath.empty()) return nullptr;
     auto it = m_fontCache.find(size);
     if (it != m_fontCache.end()) return it->second;
-    TTF_Font* font = TTF_OpenFont(m_fontPath.c_str(), size);
+    TTF_Font* font = EnOpenUiFont(m_fontPath.c_str(), size);
     m_fontCache[size] = font;
     return font;
 }

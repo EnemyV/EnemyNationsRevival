@@ -144,6 +144,20 @@ namespace
     // emits a ground shadow and disarms it (so multi-piece/multi-layer units get one).
     bool g_captureShadow = false;
 
+    // GPU device-lost generation (SDL_RENDER_TARGETS_RESET / SDL_RENDER_DEVICE_RESET).
+    // g_rt loses its contents on TARGETS_RESET; on DEVICE_RESET the atlas dies too but
+    // g_atlasMap keeps serving its dead sub-rects. A generation (not a one-shot bool) so
+    // EVERY per-renderer context recovers, not just the first one to render. NOT swapped;
+    // each context's seen-gen is (g_targetsLostSeen, swapped below).
+    unsigned g_targetsLostGen  = 0;
+    unsigned g_targetsLostSeen = 0;
+
+    // True once a capture pass has populated THIS context's sprite store. Replaces the
+    // old function-static s_haveStore in DiscoverSpritesGpu, which was shared across
+    // views and renderer recreations — a fresh context could start on the incremental
+    // path with an EMPTY store and permanently miss the static trees/bridges.
+    bool g_storePopulated = false;
+
     // Rotation (radians) applied to the next captured structure sprite — projectiles set
     // this to their screen travel angle so the bullet faces where it flies. 0 = axis-aligned.
     float g_captureRot = 0.0f;
@@ -189,6 +203,8 @@ namespace
         std::vector<Disc>  shadows;
         bool captureShadow = false;
         float captureRot = 0.0f;
+        unsigned targetsLostSeen = 0;   // g_targetsLostGen this ctx has recovered from
+        bool storePopulated = false;    // a capture pass has filled this ctx's store
     };
 
     std::map<SDL_Renderer*, SpritesRCtx> s_sctx;
@@ -211,6 +227,7 @@ namespace
         SW(staticGridUlX); SW(staticGridUlY); SW(staticGridDirty);
         SW(trails); SW(flashes); SW(shadows);
         SW(captureShadow); SW(captureRot);
+        SW(targetsLostSeen); SW(storePopulated);
         #undef SW
     }
 
@@ -382,6 +399,14 @@ namespace SDL2Sprites
         if ( !Enabled( ) || !g_renderer )
             return;
 
+        // Reset the per-capture transient lists (documented "refilled every capture
+        // pass"). They were cleared only by their drawer in Submit(), so an extra
+        // unpaired capture during scroll/zoom appended a second set on top -> ghost
+        // trails. Reset here, like g_dynKeys, so each capture pass is authoritative.
+        g_shadows.clear( );
+        g_flashes.clear( );
+        g_trails.clear( );
+
         if ( zoom != g_zoom || dir != g_dir )   // projection change invalidates positions
         {
             g_sprites.clear( );
@@ -392,6 +417,7 @@ namespace SDL2Sprites
 
         g_dynKeys.clear( );   // full walk recaptures dynamic objects → repopulates this
         g_captureWasFull = true;
+        g_storePopulated = true;   // a full capture pass fills this ctx's store (HasStore)
 
         AccumDirty( dvx, dvy, dw, dh );   // this repaint's dirty region (view space)
 
@@ -433,6 +459,9 @@ namespace SDL2Sprites
         g_inFrame = false;
         if ( !Enabled( ) || !g_renderer )
             return;
+        g_shadows.clear( );   // see BeginFrame: reset transient lists each capture pass
+        g_flashes.clear( );
+        g_trails.clear( );
         if ( zoom != g_zoom || dir != g_dir )
         {
             g_sprites.clear( );
@@ -1077,6 +1106,22 @@ namespace SDL2Sprites
         return b;
     }
 
+    void NotifyTargetsLost( )
+    {
+        ++g_targetsLostGen;
+    }
+
+    // One-shot per ACTIVE context: true once after a device-lost event, consumed by
+    // DiscoverSpritesGpu (like TakeAtlasOverflow) to force InvalidateTextures + a full
+    // capture. Call with the view's context active (after SetRenderer).
+    bool TakeTargetsLost( )
+    {
+        if ( g_targetsLostSeen == g_targetsLostGen )
+            return false;
+        g_targetsLostSeen = g_targetsLostGen;
+        return true;
+    }
+
     void InvalidateTextures( )
     {
         if ( g_atlas ) { SDL_DestroyTexture( g_atlas ); g_atlas = nullptr; }
@@ -1091,8 +1136,14 @@ namespace SDL2Sprites
         g_dirty = true; g_lastUlX = g_lastUlY = INT_MIN;
         g_accumValid = false;
         g_inFrame = false;
+        g_storePopulated = false;   // store cleared → next capture must be FULL
         g_trails.clear( );
         g_flashes.clear( );
         g_shadows.clear( );
+    }
+
+    bool HasStore( )
+    {
+        return g_storePopulated;
     }
 }

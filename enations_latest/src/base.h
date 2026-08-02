@@ -13,6 +13,7 @@
 
 #include "ourlog.h"
 
+#include <climits>    // INT_MIN — CAnimAtr per-view capture/wipe detector sentinels
 #include <vector>     // CHexValidMatrix dirty-hex list (item 5 dirty-rects)
 #include <dibwnd.h>
 #include <wndbase.h>  // CWndBase / CWndStub
@@ -88,8 +89,8 @@ const int TERRAIN_HT_SHIFT = 3;  // 4 for Scotland, 3 for Holland
 // overflowing the per-row bitmask. m_dwaSpot is one SPOT_WORD (64-bit) per row; each row packs
 // SPOTTING_LINE columns, so SPOTTING_LINE must stay <= 64 (MAX_SPOTTING <= 31).
 typedef unsigned long long    SPOT_WORD;                // 64-bit spotting-mask word
-const int MAX_SPOTTING        = 24;                     // was 15; caps effective range near 14
-const int SPOTTING_LINE       = ( MAX_SPOTTING + 1 ) * 2;   // 50 columns/rows (<= 64)
+const int MAX_SPOTTING        = 31;                     // was 24; the 64-bit mask ceiling (SPOTTING_LINE 64) — caps effective range near 19
+const int SPOTTING_LINE       = ( MAX_SPOTTING + 1 ) * 2;   // 64 columns/rows (== the 64-bit-word limit)
 const int SPOTTING_DW_LINE    = SPOTTING_LINE / 64;
 const int SPOTTING_ARRAY_SIZE = SPOTTING_LINE;             // one 64-bit word per row
 
@@ -671,6 +672,22 @@ class CAnimAtr
     // SDL2 panel for composited rendering (Phase 1).
     // Set by CWndArea when it creates its panel.  NULL until assigned.
     class SDL2Panel* m_sdlPanel = nullptr;
+
+    // GPU sprite-capture decision state (DiscoverSpritesGpu) — PER VIEW. These were
+    // function statics shared by every area map: two maps at different views made
+    // "view changed" true on every alternating capture (incremental capture never
+    // engaged, both maps re-scanned the whole forest each frame), and a reopened map
+    // whose view happened to match the statics started INCREMENTAL on an empty
+    // per-renderer store (no trees until a pan/zoom).
+    int      m_capLastZoom = -999, m_capLastDir = -999;
+    int      m_capLastUlX = INT_MIN, m_capLastUlY = INT_MIN;
+    unsigned m_capStaticDirtySeen = 0;   // g_enStaticDirtyGen this view has recaptured for
+
+    // CPU sprite-overlay wipe detector (CGameMap::UpdateRect T1 split path) — PER VIEW,
+    // same shared-static problem: two maps at different ULs full-wiped each other's
+    // overlay every frame (flicker in the GpuSprites=0 fallback config).
+    int m_wipeLastUlX = INT_MIN, m_wipeLastUlY = INT_MIN;
+    int m_wipeLastZoom = -999, m_wipeLastDir = -999;
 
 #ifdef _DEBUG
   public:

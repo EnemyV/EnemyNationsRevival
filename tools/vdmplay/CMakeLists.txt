@@ -76,7 +76,11 @@ target_link_libraries(vdmplay PUBLIC
 target_compile_options(vdmplay PRIVATE
     $<$<CONFIG:DEBUG>:/MDd /ZI>
     $<$<CONFIG:Sanitize>:/MDd /ZI> # /DEBUG:FULL /OPT:NOREF /OPT:NOICF>
-    $<$<CONFIG:Release>:/MD /EHsc /O2 /Ob2 /Oi /GL /Gy /Gw /Ot /GF /arch:AVX2 /fp:fast /Zi>
+    # NO /arch: => baseline x86-64 (SSE2). vdmplay.dll ships with the game and is
+    # loaded for the intro/logo video, so /arch:AVX2 here would fault on a pre-2013
+    # CPU the moment a video plays — same class of silent kill as GH #8, just later
+    # in the session. Wide ISA must be runtime-dispatched (see cpufeatures.h).
+    $<$<CONFIG:Release>:/MD /EHsc /O2 /Ob2 /Oi /GL /Gy /Gw /Ot /GF /fp:fast /Zi>
     $<$<CONFIG:Profile>:/MD>
 )
 

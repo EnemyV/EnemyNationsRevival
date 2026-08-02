@@ -19,6 +19,7 @@
 #include "cpathmap.h"
 #include "logging.h"  // dave's logging system
 #include "stdafx.h"
+#include "enprobes.h"   // probe gates - was relying on a transitive include
 #include "version.h"
 
 #include "Perf.h"  // lightweight runtime metrics (gated by EN_PERF)

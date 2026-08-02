@@ -15,6 +15,7 @@
 //---------------------------------------------------------------------------
 
 #include "stdafx.h"
+#include "en_logpath.h"   // EnLogCaptureLaunchDir - must run before the exe-dir chdir
 
 #include "lastplnt.h"
 
@@ -111,6 +112,33 @@ extern "C" int APIENTRY WinMain( HINSTANCE hInstance,
     // with complete stacks.
 #ifdef _WIN32
     SetUnhandledExceptionFilter( EnWriteFullDump );
+#endif
+
+    // Capture the launch cwd BEFORE the chdir below, so debug logs land where the
+    // game was launched from (the run dir) instead of following the exe into the
+    // build tree. See en_logpath.h.
+    EnLogCaptureLaunchDir( );
+
+#ifdef _WIN32
+    // Anchor cwd to the exe dir so ENations.dat / data/ / res/ resolve however we
+    // were launched. CDataFile uses cwd-relative paths, so a shortcut with a
+    // different "Start in", an absolute-path launch, or running the built exe from
+    // the build dir (no .dat there) threw an uncaught ERR_DATAFILE_NO_ENTRY: no
+    // window, no message, nothing logged. GH #8.
+    // Port of the linux_main.cpp fix, which MSVC does not build.
+    // No-op when cwd is already the exe dir, so Explorer launches always worked.
+    {
+        char exePath[ MAX_PATH ];
+        if ( GetModuleFileNameA( NULL, exePath, sizeof( exePath ) ) > 0 )
+        {
+            char* slash = strrchr( exePath, '\\' );
+            if ( slash )
+            {
+                *slash = '\0';
+                ::SetCurrentDirectoryA( exePath );
+            }
+        }
+    }
 #endif
 
 #if defined( _DEBUG ) && defined( _WIN32 )

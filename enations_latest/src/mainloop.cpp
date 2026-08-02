@@ -150,11 +150,9 @@ int CConquerApp::Run( )
 
             // Service main-loop-only harness ops (e.g. `save`) here at the loop
             // top, before event-pumping/render — SaveGame re-pumps the event loop,
-            // so it must not run from the render-path EnHarness_Service. POSIX-only
-            // (the in-process harness/control_socket.cpp isn't built on Windows).
-#ifndef _WIN32
+            // so it must not run from the render-path EnHarness_Service. All
+            // platforms; returns immediately unless EN_HARNESS armed the server.
             EnHarness_ServiceMainLoop();
-#endif
 
             // Profiling: one "frame" == one outer loop iteration. Cheap no-op
             // unless EN_PERF is set; flushes a perf.log line each interval.
@@ -2880,17 +2878,22 @@ void CPowerBuilding::BuildPower( )
     AddToStore( pBp->GetInput( ), -iNum );
     m_iBuildDone -= iNum * pBp->GetRate( );
 
-    int iAfter = GetStore( pBp->GetInput( ) );
-    if ( ( iBefore >= i1Min ) && ( iAfter < i1Min ) )
-        if ( GetOwner( )->IsMe( ) )
-            theGame.m_pHpRtr->MsgOutMat( this );
-
     // Coal Liquefaction (reusable AltOutput system): when this is a coal power plant whose
     // alt-output toggle is ON and the tech is researched, convert additional coal from the
     // plant's store into oil at 2:1 (eRatioConsume), scaled by the fuel burned this batch.
     // No-op for non-coal plants / toggle OFF / un-researched. (Charcoal & Fracking would
     // hook their own production loops the same way -- one shared helper.)
+    // MUST run BEFORE the ask-for-more threshold check below: Convert drains up to 2x more
+    // coal from the store with no router notification of its own, so sampling iAfter before
+    // it missed the 1-minute crossing entirely - the router was never told, no truck was
+    // ever dispatched, and once the store hit 0 the empty-plant early-return above never
+    // asks either. Liquefying plants starved forever beside idle trucks (operator-reported).
     AltOutput::Convert( this, iNum, m_fAltAccum );
+
+    int iAfter = GetStore( pBp->GetInput( ) );
+    if ( ( iBefore >= i1Min ) && ( iAfter < i1Min ) )
+        if ( GetOwner( )->IsMe( ) )
+            theGame.m_pHpRtr->MsgOutMat( this );
 
     // update the %
     MaterialChange( );

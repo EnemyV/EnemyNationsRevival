@@ -56,6 +56,15 @@ SDL2BuildTransport::~SDL2BuildTransport() {
 }
 
 void SDL2BuildTransport::OnInit() {
+    // #63: this window defaulted to the per-frame keep-on-top assert, which stalls
+    // the area-map's own back-surface repaint while it's open (mac1 confirmed via
+    // surface-hash A/B: 0 diff bytes/25s with it on, ~1300 with it off — not mere
+    // z-order occlusion, the assert itself blocks the repaint). SDL2BuildingWindow
+    // and the Relations window (SDL2GameDialogs.cpp:527) already opt out the same
+    // way. Trade-off (same one Relations already accepts): the window can now sit
+    // BEHIND the area map instead of always on top.
+    SetKeepOnTop(false);
+
     if (m_vehBkgnd) SetCustomBackground(m_vehBkgnd);
 
     // Dialog interior origin == MFC client area origin (skip chrome)

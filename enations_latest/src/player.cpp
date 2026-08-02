@@ -38,6 +38,7 @@
 #include "SaveCompat.h"
 #include "SDL2CreateStatus.h"
 #include "stdafx.h"
+#include "en_logpath.h"   // EnLogPath - logs to the launch dir, not the exe dir
 #include "enprobes.h"   // EN_SAVE_PROBES
 #include "terrain.inl"
 #include "unit.inl"
@@ -3413,7 +3414,7 @@ void CGame::Serialize( CArchive& ar )
             sprintf_s( b, sizeof( b ), "[SAVE store] minerals=%d flaggedHexes=%d eX=%d eY=%d\n",
                        (int)theMinerals.GetCount( ), flagged, theMap.Get_eX( ), theMap.Get_eY( ) );
             OutputDebugStringA( b );
-            FILE* f = NULL; if ( fopen_s( &f, "worlddbg.log", "a" ) == 0 && f ) { fputs( b, f ); fclose( f ); }
+            FILE* f = NULL; if ( fopen_s( &f, EnLogPath( "worlddbg.log" ).c_str(), "a" ) == 0 && f ) { fputs( b, f ); fclose( f ); }
         }
 #endif
 
@@ -3571,7 +3572,7 @@ void CGame::Serialize( CArchive& ar )
             sprintf_s( b, sizeof( b ), "[LOAD] minerals=%d flaggedHexes=%d eX=%d eY=%d\n",
                        (int)theMinerals.GetCount( ), flagged, theMap.Get_eX( ), theMap.Get_eY( ) );
             OutputDebugStringA( b );
-            FILE* f = NULL; if ( fopen_s( &f, "worlddbg.log", "a" ) == 0 && f ) { fputs( b, f ); fclose( f ); }
+            FILE* f = NULL; if ( fopen_s( &f, EnLogPath( "worlddbg.log" ).c_str(), "a" ) == 0 && f ) { fputs( b, f ); fclose( f ); }
         }
 #endif
 

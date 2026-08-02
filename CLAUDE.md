@@ -73,8 +73,10 @@ the artifact was built from that source.
 3.00.006 while containing 113 fewer commits. Never reason "higher number = newer code."
 
 **Version fields — three DIFFERENT numbers, don't conflate them** (`enations_latest/src/version.h`):
-- `VER_STRING` / `RES_VER_STRING` — the display build number ("3.00.008"). Bump freely;
+- `VER_STRING` / `RES_VER_STRING` — the display build number ("3.00.010"). Bump freely;
   **no effect on saves**. Both must be edited together; it's the only file with the string.
+  The packaged `README.txt` is generated from this value (see **Release packaging** below),
+  so bumping it here is the only place the shipped version header comes from.
 - `VER_RELEASE` — the **save-format** counter (stored as `m_dwVer`). Bump ONLY when adding
   serialized fields, and gate every new read on `theGame.m_dwVer >= N`. Currently 7.
 - `VER_MAJOR` / `VER_MINOR` — the only fields the save loader REJECTS on
@@ -84,6 +86,34 @@ the artifact was built from that source.
 404 publicly, nothing is destroyed) rather than deleting it — other agents' good assets
 may be attached to it.
 
+### Release packaging — the readme is GENERATED, do not hand-write one
+
+Every zip ships `README.txt`, produced by CMake from `packaging/README.txt.in` with the
+version parsed out of `version.h`. **Same filename on all three platforms.** Just zip what
+the build staged next to the binary; the file is already there and already correct.
+
+This replaced three hand-maintained readmes under three different names
+(`README-FIRST.txt` on Windows, `README.txt` on Linux, none at all on macOS), which drifted
+independently — the shipped **3.00.009 Linux zip** carried 3.00.000-era text stamped
+*"release 3.00.008"* that still told users multiplayer was unavailable on Linux, the
+headline feature of that very release. Nobody noticed because no two platforms shared a file.
+
+- Platform wording (requirements, contents) lives in the `if (WIN32) / elseif (APPLE) / else`
+  block in `enations_latest/src/CMakeLists.txt`. Edit it there, never in a packaged copy.
+- An unparseable `VER_STRING` is a **configure-time FATAL_ERROR**, not a wrong header in a
+  shipped zip.
+- If you find yourself editing a readme inside a staging directory, stop — your change will
+  be silently overwritten by the next build and will not reach the other platforms.
+
+**⚠️ Re-run cmake configure after ANY merge/rebase, before packaging.** The staging rules use
+`file(GLOB ...)` (cursors, `res/*.ttf`, the licence), and a glob is evaluated at **configure**
+time only. Pull a commit that adds a staged file and build without reconfiguring, and the
+glob still holds its old list — the new file never reaches the output and the zip ships
+without it, with a green build and no warning. Hit on 2026-07-27: after rebasing onto
+linux2's `9777ee27` the output `res/` still had 50 files instead of 52, i.e. the bundled
+DejaVuSans no-text safety net was missing from the Windows staging. **Verify by counting the
+staged files, not by reading CMakeLists** — the source looked correct the whole time.
+
 ## ⚠️ Cross-platform integration + multi-agent coordination (READ FIRST)
 
 We are merging **three platform codebases into one tree** for release **3.00.000**:
@@ -91,9 +121,13 @@ We are merging **three platform codebases into one tree** for release **3.00.000
 work in parallel — at least one per platform, sometimes more — each on its own machine,
 all sharing the integration branch.
 
-- **Release lane: `release3_00_008`** (as of 2026-07-20). This is the single source of truth.
+- **Release lane: `release3_00_012`** (as of 2026-08-01). This is the single source of truth.
   Pull it before you work; build before you push; keep all three platforms compiling.
-  **`release3_00_000` / `_005` / `_006` / `_007` are DEAD** — do not commit to them.
+  **`release3_00_000` / `_005` / `_006` / `_007` / `_008` / `_009` / `_010` / `_011` are
+  DEAD** — do not commit to them. 3.00.009 shipped from `release3_00_009`. **3.00.010 was
+  never published** (draft only, re-cut as 011). **3.00.011 was published as a prerelease
+  but its assets predate the GH#8 data-file fixes** — the fallback and the restored
+  locate-file prompt land in 012.
 - **⛔ NEVER cut a release without running the containment check** (see the release rules
   below). On 2026-07-20 the 3.00.007 Windows asset shipped from a branch **113 commits
   behind** the real development line, missing a month of verified crash fixes.
@@ -255,6 +289,62 @@ Detailed porting guide: `docs/design/MFC_TO_SDL_PORT_GUIDE.md` in the discussion
 The game runs from `d:\Enemy Nations\` (the run dir has the DLLs). The smoke-test milestone is **"reaches world generation"** — if the game gets that far without crashing, you didn't regress anything obvious.
 
 When something crashes during init, `dbgcatch.ps1` is the right tool — it catches `OutputDebugString` and exception events, walks the stack via dbghelp.
+
+### 🔬 cdb.exe — attach a REAL debugger to the LIVE game (installed 2026-08-02)
+
+**Use this INSTEAD of adding a printf probe + rebuild + restart.** Four rebuild/restart
+cycles were burned on one bug (attributing a message to one of 4 raise-sites) that a
+single tracepoint answers in one pass, without stopping the game. Rebuilding to add a
+probe destroys the operator's session; a tracepoint does not.
+
+`C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\cdb.exe` (SDK feature
+`OptionId.WindowsDesktopDebuggers`). `_NT_SYMBOL_PATH` is set in the user env.
+
+```powershell
+# read state / get a stack, then self-detach (game keeps running):
+& '...\cdb.exe' -p (Get-Process enations).Id -pb -c "<commands>; qd"
+
+# persistent conditional TRACEPOINT that logs and auto-continues:
+#   bp `enations!event.cpp:160` ".if (@edx == 8) { .echo HIT; k 14; gc } .else { gc }"
+& '...\cdb.exe' -p $pid -pb -cf D:\tmp\bp.txt -logo D:\tmp\cdb.log
+```
+
+**Rules (violating these freezes or kills the operator's game):**
+- **ASK before attaching.** An attach is more invasive than a click — same rule as
+  [feedback_no_clicks_operator_present](file:///C:/Users/tyboy/.claude/projects/D--Enemy-Nations-src/memory/feedback_no_clicks_operator_present.md).
+- **Try `dbgstack.ps1` first** — it only suspends a thread for a few ms and is not a debugger.
+- **Every breakpoint command list MUST end in `gc`.** No `gc` = an interactive stop = a
+  hard freeze of a real-time game.
+- **Pre-arm `sxe -c "k 6; gc" bpe`** — Debug builds have live `TRAP()`/`__debugbreak()`
+  and CRT asserts routed to the debugger; without this the first one freezes the game.
+- **`qd` to detach, never `q`** (`q` kills the game). **Never `Stop-Process` cdb** — killing
+  the debugger kills the debuggee. `bc *` before detaching.
+- **Read-only**: never `.write`/`ed`/`eb` on a live session. No tracepoints in hot paths
+  (sim tick, render loop, pathfinder) — each hit is a debug-event round trip.
+- While a debugger is attached the game's own `EnWriteFullDump` crash handler will NOT
+  run; use `.dump /ma` instead.
+
+**Debug is NOT unoptimized** — `CMakeLists.txt` compiles Debug `/O2 /Ob2` (deliberate,
+for AI profiling). So: locals are often "optimized out" and frames inline. **Object state
+through pointers is always reliable** (`?? ((enations!CVehicle*)@r9)->m_iBuildDone`), and
+args are reliable at function ENTRY (x64 ABI: RCX/RDX/R8/R9). Break at entry, not mid-body.
+The `Sanitize` config keeps `/Od /Ob0` if you truly need locals.
+
+Linux/macOS equivalent: `gdb -p PID -batch -ex 'dprintf file.cpp:NN,"..."' -ex c` —
+`dprintf` IS a tracepoint. lldb: `breakpoint command add` ending in `continue`.
+
+### Diagnostic logging — know where it lands
+
+Probe/log files are written by the game to **its own working directory**, which is NOT
+always the run dir: files have shown up in `cmakeBuild-x64/enations_latest/src/Debug/`
+(cost an hour of "the probe isn't firing" when it was firing all along). **Search for the
+file, don't assume the path.** Probe gates live in `enations_latest/src/enprobes.h`
+(compile-time — every change is a rebuild; this is exactly what cdb avoids).
+
+⚠️ **`OutputDebugString` is a trap for live reading.** It needs a DBWIN listener; a dead
+one silently drops lines AND blocks the caller ~10s/call, and TWO listeners race and
+starve each other (hit twice in one night). An attached debugger also steals the stream
+from DBWIN listeners. For a probe you need to read live, **write to a file** instead.
 
 ## UI harness (screenshot + click the live game)
 

@@ -1,0 +1,23 @@
+Enemy Nations @EN_VERSION@ - @EN_PLATFORM@
+
+Unzip anywhere and run @EN_RUN@. Everything needed is included; the game reads
+its data from the files next to the executable, so keep them together.
+
+REQUIREMENTS
+@EN_REQS@
+
+RUN
+  @EN_RUN@   (run from this folder so it finds ./data and ./ENations.dat)
+
+CONTENTS (self-contained)
+@EN_CONTENTS@
+
+MULTIPLAYER
+  TCP/IP multiplayer is supported, and works between Windows, Linux and macOS
+  builds of this same release.
+
+If the game reports a renderer problem, the software renderer can be selected
+from the in-game Options screen.
+
+Bug reports: https://github.com/EnemyV/EnemyNationsRevival/issues
+Include SDL2Panel.log for map-creation problems, or the newest crash .dmp.

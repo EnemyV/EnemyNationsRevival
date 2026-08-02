@@ -18,6 +18,7 @@
 #include "caitargt.h"
 #include "logging.h"  // dave's logging system
 #include "stdafx.h"
+#include "enprobes.h"   // probe gates - was relying on a transitive include
 
 #define new DEBUG_NEW
 

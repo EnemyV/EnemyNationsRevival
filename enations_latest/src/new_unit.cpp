@@ -1449,9 +1449,9 @@ static int fnEnumHex( CHex* pHex, CHexCoord hex, void* pData )
         // wrong: it left Windows-placed buildings showing trees on the foundation until
         // the next rebuild. Roads (terrain.cpp) already call these unconditionally.
         extern void g_enEditHex( int, int );
-        extern bool g_enStaticDirty;
+        extern unsigned g_enStaticDirtyGen;
         g_enEditHex( hex.X( ), hex.Y( ) );
-        g_enStaticDirty = true;
+        ++g_enStaticDirtyGen;
     }
 
     return ( FALSE );
@@ -2159,9 +2159,9 @@ int fnEnumHex2( CHex* pHex, CHexCoord _hex, void* )
         // SDL2/GPU terrain (all platforms): re-mesh this hex + re-capture static sprites
         // (see fnEnumHex). Was #ifndef _WIN32 — same Windows tree-persist bug.
         extern void g_enEditHex( int, int );
-        extern bool g_enStaticDirty;
+        extern unsigned g_enStaticDirtyGen;
         g_enEditHex( _hex.X( ), _hex.Y( ) );
-        g_enStaticDirty = true;
+        ++g_enStaticDirtyGen;
     }
 
     pHex->ClrUnitDir( );
@@ -3676,6 +3676,12 @@ CDlgBuildTransport* CVehicleBuilding::GetDlgBuild( )
                 m_pSdlBuildTransport = nullptr;
             } );
         }
+        else
+            // Already open → bring it forward (same pattern as ShowInfoWindow /
+            // chat / relations). Matters since #63 dropped this window's per-frame
+            // keep-on-top: a second double-click on the factory used to find the
+            // window buried behind the area map and do nothing.
+            m_pSdlBuildTransport->RaiseAndAlert( );
         return m_pDlgTransport;  // MFC pointer not used by SDL2 path
     }
 
@@ -5614,6 +5620,8 @@ CDlgBuildStructure* CVehicle::GetDlgBuild( )
                 m_pSdlBuild = nullptr;
             } );
         }
+        else
+            m_pSdlBuild->RaiseAndAlert( );   // already open → bring it forward
         return m_pDlgStructure;  // MFC pointer not used by SDL2 path
     }
 

@@ -1,4 +1,5 @@
 #include "stdafx.h"
+#include "en_logpath.h"   // EnLogPath - logs to the launch dir, not the exe dir
 
 #include "SDL2Compositor.h"
 #include "SDL2Panel.h"
@@ -16,7 +17,7 @@
 #include <fstream>
 
 static void LogCompositor(const std::string& msg) {
-    std::ofstream log("SDL2Compositor.log", std::ios::app);
+    std::ofstream log(EnLogPath("SDL2Compositor.log").c_str(), std::ios::app);
     if (log.is_open()) {
         log << msg << std::endl;
     }
@@ -110,6 +111,10 @@ SDL2Panel* SDL2Compositor::AddPanel(const std::string& name, int x, int y, int w
 }
 
 void SDL2Compositor::RemovePanel(SDL2Panel* panel) {
+    // A panel removed mid-drag must drop the active-panel latch, or the next
+    // mouse event dereferences the freed panel (RouteEventInner line ~510).
+    if (m_activePanel == panel)
+        m_activePanel = nullptr;
     if (m_routingDepth > 0) {
         // Defer removal — vector is being iterated by RouteEvent.
         // Hide the panel immediately so it stops rendering/receiving events.
@@ -141,6 +146,8 @@ void SDL2Compositor::FlushPendingRemovals() {
 }
 
 void SDL2Compositor::RemoveAllPanels() {
+    m_activePanel = nullptr;
+    m_pendingRemovals.clear();   // pointers into m_panels die with it
     m_panels.clear();
     m_backgroundDirty = true;
 }
@@ -354,7 +361,13 @@ void SDL2Compositor::Composite() {
     for (auto& p : m_panels) {
         if (!p->IsVisible() || !p->IsDetached())
             continue;
-        if (p->HasGpuTerrain()) {
+        // Software has no GPU terrain, so the PRIMARY area map ("area_<n>") would otherwise
+        // fall into the throttled secondary-window branch below and stutter at ~10 fps
+        // (regression from d484dc4c, whose cap was written for GPU secondary windows).
+        // Treat the software primary map like the gameplay view: present every dirty frame.
+        const std::string& nm = p->GetName();
+        bool isPrimaryMap = ( nm.size() > 5 && nm.rfind("area_", 0) == 0 && nm[5] >= '0' && nm[5] <= '9' );
+        if (p->HasGpuTerrain() || isPrimaryMap) {
             // Gameplay view: re-render on content change, a water wave-tick, OR while a
             // build/rocket placement cursor is active. That cursor's striped hatch is a
             // LIVE per-frame overlay (DrawBuildCursorOverlay) — if we stop re-rendering
@@ -502,13 +515,18 @@ bool SDL2Compositor::RouteEventInner(SDL_Event& event) {
     // regardless of z-order or hit-test. This prevents other panels from
     // stealing drag events.
     if (m_activePanel) {
-        if (m_activePanel->HandleEvent(event)) {
-            // Check if drag/resize ended
-            if (!m_activePanel->IsDragging() && !m_activePanel->IsResizing())
+        // Local copy: HandleEvent can reentrantly RemovePanel(itself), which nulls the
+        // latch — the member must not be re-dereferenced after the call. The panel object
+        // itself stays alive for this call (removals DEFER while m_routingDepth > 0).
+        SDL2Panel* active = m_activePanel;
+        if (active->HandleEvent(event)) {
+            // Check if drag/resize ended (skip if the latch was cleared reentrantly)
+            if (m_activePanel == active && !active->IsDragging() && !active->IsResizing())
                 m_activePanel = nullptr;
             return true;
         }
-        m_activePanel = nullptr;  // Panel didn't handle it, clear
+        if (m_activePanel == active)
+            m_activePanel = nullptr;  // Panel didn't handle it, clear
     }
 
     // Route events top-down (highest z-order first) for non-detached panels.
