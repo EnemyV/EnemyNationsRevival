@@ -1,5 +1,5 @@
 //---------------------------------------------------------------------------
-// control_socket.cpp — in-process harness server (Linux/Debug only).
+// control_socket.cpp — in-process harness server (Windows / Linux / macOS).
 // See en_harness.h. Protocol: one text command per connection, newline-terminated:
 //   shot <path>            -> render a frame grab to <path> (BMP), reply "ok <w> <h>"
 //   click <x> <y> [right]  -> left/right click at client px (x,y)
@@ -9,9 +9,39 @@
 //   quit                   -> request the game to quit
 // Coordinates are window client pixels. Input uses SDL_PushEvent (thread-safe);
 // screenshots are deferred to EnHarness_Service() on the render thread.
+//
+// ONE file, three platforms. The socket/thread/sleep primitives differ, so they
+// live behind the en_* helpers below; everything above them (the command table,
+// the pending/done handshakes, EnHarness_Service) is shared verbatim. The POSIX
+// branch keeps the exact calls it always used (write/read/close/nanosleep) so
+// Linux/macOS behaviour is unchanged.
+//
+// Inert unless EN_HARNESS is set in the environment — EnHarness_Start returns
+// before the socket library is touched and before any thread is created.
 //---------------------------------------------------------------------------
+
 #ifdef _WIN32
-#error "control_socket.cpp is Linux-only"
+// Winsock2 must be pulled in BEFORE anything drags in <windows.h> (SDL.h does),
+// or the winsock v1 declarations inside windows.h win and collide. This TU is
+// also excluded from the forced stdafx.h PCH for the same reason — see
+// SKIP_PRECOMPILE_HEADERS in enations_latest/src/CMakeLists.txt.
+  #ifndef WIN32_LEAN_AND_MEAN
+    #define WIN32_LEAN_AND_MEAN
+  #endif
+  #ifndef _CRT_SECURE_NO_WARNINGS
+    #define _CRT_SECURE_NO_WARNINGS   // sscanf/strcpy/getenv on fixed-size local buffers
+  #endif
+  #include <winsock2.h>
+  #include <ws2tcpip.h>
+  #include <windows.h>
+  // Win10 1803+ high-resolution waitable timer (see en_sleep_ns). Defined here
+  // so an older SDK still compiles; an older OS just returns a NULL handle.
+  #ifndef CREATE_WAITABLE_TIMER_MANUAL_RESET
+    #define CREATE_WAITABLE_TIMER_MANUAL_RESET 0x00000001
+  #endif
+  #ifndef CREATE_WAITABLE_TIMER_HIGH_RESOLUTION
+    #define CREATE_WAITABLE_TIMER_HIGH_RESOLUTION 0x00000002
+  #endif
 #endif
 
 #include "en_harness.h"
@@ -20,6 +50,7 @@
 
 #include <atomic>
 #include <cerrno>
+#include <chrono>
 #include <csignal>
 #include <cstdio>
 #include <cstdlib>
@@ -27,13 +58,98 @@
 #include <map>
 #include <mutex>
 #include <string>
-#include <pthread.h>
-#include <unistd.h>
-#include <arpa/inet.h>
-#include <netinet/in.h>
-#include <sys/socket.h>
+#include <thread>
+
+#ifndef _WIN32
+  #include <unistd.h>
+  #include <arpa/inet.h>
+  #include <netinet/in.h>
+  #include <sys/socket.h>
+#endif
+
+// Same names/semantics as the MP shim in enations_latest/src/network/sockets.h
+// (not included here — it pulls stdafx.h/_davenet.h, which this standalone TU
+// deliberately avoids). Guarded so the two can coexist if that ever changes.
+#ifndef EN_INVALID_SOCKET
+  #ifdef _WIN32
+    typedef SOCKET en_socket_t;
+    #define EN_INVALID_SOCKET INVALID_SOCKET
+  #else
+    typedef int en_socket_t;
+    #define EN_INVALID_SOCKET (-1)
+  #endif
+#endif
 
 namespace {
+
+// ---- platform primitives ---------------------------------------------------
+// send/recv/close on a socket. POSIX keeps write()/read()/close() verbatim (on a
+// socket they are byte-for-byte send()/recv() with flags 0), so nothing about the
+// Linux/macOS wire behaviour moves.
+inline void en_closesock(en_socket_t s) {
+#ifdef _WIN32
+    closesocket(s);
+#else
+    close(s);
+#endif
+}
+inline long en_send(en_socket_t s, const char* buf, size_t len) {
+#ifdef _WIN32
+    return (long)::send(s, buf, (int)len, 0);
+#else
+    return (long)::write(s, buf, len);
+#endif
+}
+inline long en_recv(en_socket_t s, char* buf, size_t len) {
+#ifdef _WIN32
+    return (long)::recv(s, buf, (int)len, 0);
+#else
+    return (long)::read(s, buf, len);
+#endif
+}
+// The pending/done handshakes poll in 5ms steps and size their timeouts in
+// ITERATIONS, so the sleep has to actually be ~5ms or every timeout stretches.
+// The default Windows timer granularity is ~15.6ms, which would turn the 2000-
+// iteration waits (findterr/road/centerhex) into ~31s and blow past the python
+// client's 15s socket timeout. A high-resolution waitable timer gets real 5ms
+// sleeps without timeBeginPeriod's process-wide side effects (this is a test
+// harness; it must not perturb the game's timing). Falls back to sleep_for on
+// pre-1803 Windows, where the timeouts are merely long, never wrong.
+void en_sleep_ns(long ns) {
+#ifdef _WIN32
+    static thread_local HANDLE s_timer =
+        CreateWaitableTimerExW(nullptr, nullptr,
+                               CREATE_WAITABLE_TIMER_MANUAL_RESET | CREATE_WAITABLE_TIMER_HIGH_RESOLUTION,
+                               TIMER_ALL_ACCESS);
+    if (s_timer) {
+        LARGE_INTEGER due;
+        due.QuadPart = -(LONGLONG)(ns / 100);   // negative = relative, 100ns units
+        if (SetWaitableTimer(s_timer, &due, 0, nullptr, nullptr, FALSE)) {
+            WaitForSingleObject(s_timer, INFINITE);
+            return;
+        }
+    }
+    std::this_thread::sleep_for(std::chrono::nanoseconds(ns));
+#else
+    struct timespec ts = {0, ns};
+    nanosleep(&ts, nullptr);
+#endif
+}
+inline void en_sleep_poll() { en_sleep_ns(5000000); }   // 5ms — one handshake poll step
+
+// Default target for a `shot` with no path. /tmp exists everywhere on POSIX;
+// on Windows fall back to the process CWD (the run dir), which is writable.
+#ifdef _WIN32
+static const char* kDefaultShotPath = "enshot.bmp";
+#else
+static const char* kDefaultShotPath = "/tmp/enshot.bmp";
+#endif
+
+// Set once by EnHarness_Start when EN_HARNESS is present. The per-frame surface
+// registration hooks (called from the compositor and every detached panel's
+// render) early-out on this, so an unharnessed session pays one relaxed atomic
+// load instead of a mutex + std::map insert per panel per frame.
+std::atomic<bool> g_enabled{false};
 
 SDL_Window*   g_window   = nullptr;
 SDL_Renderer* g_renderer = nullptr;
@@ -326,10 +442,10 @@ void push_key(SDL_Keycode kc, bool down, Uint32 winId = 0, Uint16 mod = 0) {
     SDL_PushEvent(&e);
 }
 
-void handle_command(const std::string& line, int conn) {
+void handle_command(const std::string& line, en_socket_t conn) {
     char reply[256] = "ok\n";
     char cmd[32] = {0};
-    if (sscanf(line.c_str(), "%31s", cmd) != 1) { write(conn, "err\n", 4); return; }
+    if (sscanf(line.c_str(), "%31s", cmd) != 1) { en_send(conn, "err\n", 4); return; }
 
     if (strcmp(cmd, "shot") == 0 || strcmp(cmd, "shotid") == 0) {
         char path[1024] = {0};
@@ -341,112 +457,112 @@ void handle_command(const std::string& line, int conn) {
         } else {
             sscanf(line.c_str(), "%*s %1023[^\n]", path);
         }
-        if (!path[0]) std::strcpy(path, "/tmp/enshot.bmp");
+        if (!path[0]) std::strcpy(path, kDefaultShotPath);
         { std::lock_guard<std::mutex> lk(g_shotMutex); g_shotPath = path; }
         g_shotWinId = winId;
         g_shotDone = false; g_shotOK = false; g_shotRetry = 0; g_shotPending = true;
         // wait (up to ~2s) for the render thread to service it
-        for (int i = 0; i < 400 && !g_shotDone.load(); ++i) { struct timespec ts={0,5000000}; nanosleep(&ts,nullptr); }
+        for (int i = 0; i < 400 && !g_shotDone.load(); ++i) { en_sleep_poll(); }
         snprintf(reply, sizeof(reply), g_shotOK.load() ? "ok %d %d %s\n" : "err shot failed\n", g_shotW.load(), g_shotH.load(), path);
     } else if (strcmp(cmd, "units") == 0) {
         // Enumerate the local player's units (HarnessDumpUnits) on the render
         // thread, then return the lines. Deterministic crane/unit location.
         g_unitsDone = false; g_unitsPending = true;
-        for (int i = 0; i < 400 && !g_unitsDone.load(); ++i) { struct timespec ts={0,5000000}; nanosleep(&ts,nullptr); }
+        for (int i = 0; i < 400 && !g_unitsDone.load(); ++i) { en_sleep_poll(); }
         std::string out;
         { std::lock_guard<std::mutex> lk(g_unitsMutex); out = g_unitsResult; }
         if (!g_unitsDone.load()) out = "err units timeout (not in-game?)\n";
-        write(conn, out.c_str(), out.size());
+        en_send(conn, out.c_str(), out.size());
         return;
     } else if (strcmp(cmd, "bldgstate") == 0) {
         // Dump ALL buildings (mine + AI) with combat/construction state on the
         // render thread — verify fire-control fixes (#60) without live combat.
         g_bldgStateDone = false; g_bldgStatePending = true;
-        for (int i = 0; i < 400 && !g_bldgStateDone.load(); ++i) { struct timespec ts={0,5000000}; nanosleep(&ts,nullptr); }
+        for (int i = 0; i < 400 && !g_bldgStateDone.load(); ++i) { en_sleep_poll(); }
         std::string out;
         { std::lock_guard<std::mutex> lk(g_bldgStateMutex); out = g_bldgStateResult; }
         if (!g_bldgStateDone.load()) out = "err bldgstate timeout (not in-game?)\n";
-        write(conn, out.c_str(), out.size());
+        en_send(conn, out.c_str(), out.size());
         return;
     } else if (strcmp(cmd, "aistate") == 0) {
         // Per-player economy/population probe (read-only) — T-0068 AI-stall investigation.
         g_aiStateDone = false; g_aiStatePending = true;
-        for (int i = 0; i < 400 && !g_aiStateDone.load(); ++i) { struct timespec ts={0,5000000}; nanosleep(&ts,nullptr); }
+        for (int i = 0; i < 400 && !g_aiStateDone.load(); ++i) { en_sleep_poll(); }
         std::string out;
         { std::lock_guard<std::mutex> lk(g_aiStateMutex); out = g_aiStateResult; }
         if (!g_aiStateDone.load()) out = "err aistate timeout (not in-game?)\n";
-        write(conn, out.c_str(), out.size());
+        en_send(conn, out.c_str(), out.size());
         return;
     } else if (strcmp(cmd, "edicts") == 0) {
         // List edicts + active state (HarnessDumpEdicts) on the render thread —
         // for verifying an edict toggle (read, clickid checkbox, read again).
         g_edictsDone = false; g_edictsPending = true;
-        for (int i = 0; i < 400 && !g_edictsDone.load(); ++i) { struct timespec ts={0,5000000}; nanosleep(&ts,nullptr); }
+        for (int i = 0; i < 400 && !g_edictsDone.load(); ++i) { en_sleep_poll(); }
         std::string out;
         { std::lock_guard<std::mutex> lk(g_edictsMutex); out = g_edictsResult; }
         if (!g_edictsDone.load()) out = "err edicts timeout (not in-game?)\n";
-        write(conn, out.c_str(), out.size());
+        en_send(conn, out.c_str(), out.size());
         return;
     } else if (strcmp(cmd, "altbldgs") == 0) {
         // List AltOutput-capable buildings (HarnessDumpAltBuildings) on the render thread —
         // find a coal plant / BioFuel / charcoal / fracking host by id (for #51 repro/verify).
         g_altBldgsDone = false; g_altBldgsPending = true;
-        for (int i = 0; i < 400 && !g_altBldgsDone.load(); ++i) { struct timespec ts={0,5000000}; nanosleep(&ts,nullptr); }
+        for (int i = 0; i < 400 && !g_altBldgsDone.load(); ++i) { en_sleep_poll(); }
         std::string out;
         { std::lock_guard<std::mutex> lk(g_altBldgsMutex); out = g_altBldgsResult; }
         if (!g_altBldgsDone.load()) out = "err altbldgs timeout (not in-game?)\n";
-        write(conn, out.c_str(), out.size());
+        en_send(conn, out.c_str(), out.size());
         return;
     } else if (strcmp(cmd, "pstats") == 0) {
         // Exact colony stats (HarnessDumpPlayerStats) on the render thread — read a precise
         // before/after delta the clipped in-game readouts can't show (e.g. #2 workforce, #1 Austerity).
         g_pstatsDone = false; g_pstatsPending = true;
-        for (int i = 0; i < 400 && !g_pstatsDone.load(); ++i) { struct timespec ts={0,5000000}; nanosleep(&ts,nullptr); }
+        for (int i = 0; i < 400 && !g_pstatsDone.load(); ++i) { en_sleep_poll(); }
         std::string out;
         { std::lock_guard<std::mutex> lk(g_pstatsMutex); out = g_pstatsResult; }
         if (!g_pstatsDone.load()) out = "err pstats timeout (not in-game?)\n";
-        write(conn, out.c_str(), out.size());
+        en_send(conn, out.c_str(), out.size());
         return;
     } else if (strcmp(cmd, "center") == 0) {
         // center <id> — center the area view on that unit (then click view-center
         // to select it). Serviced on the render thread (mutates the view).
         unsigned long id = 0;
-        if (sscanf(line.c_str(), "%*s %lu", &id) != 1) { write(conn, "err usage: center <id>\n", 23); return; }
+        if (sscanf(line.c_str(), "%*s %lu", &id) != 1) { en_send(conn, "err usage: center <id>\n", 23); return; }
         g_centerId = id; g_centerDone = false; g_centerOK = false; g_centerPending = true;
-        for (int i = 0; i < 400 && !g_centerDone.load(); ++i) { struct timespec ts={0,5000000}; nanosleep(&ts,nullptr); }
+        for (int i = 0; i < 400 && !g_centerDone.load(); ++i) { en_sleep_poll(); }
         snprintf(reply, sizeof(reply), !g_centerDone.load() ? "err center timeout\n" : (g_centerOK.load() ? "ok centered %lu\n" : "err no unit %lu\n"), id);
     } else if (strcmp(cmd, "showinfo") == 0) {
         // showinfo <bldgid> — open that building's read-only info window (deterministic
         // building open for QA, e.g. to clickid an edict checkbox). Render thread.
         unsigned long id = 0;
-        if (sscanf(line.c_str(), "%*s %lu", &id) != 1) { write(conn, "err usage: showinfo <bldgid>\n", 29); return; }
+        if (sscanf(line.c_str(), "%*s %lu", &id) != 1) { en_send(conn, "err usage: showinfo <bldgid>\n", 29); return; }
         g_showInfoId = id; g_showInfoDone = false; g_showInfoOK = false; g_showInfoPending = true;
-        for (int i = 0; i < 400 && !g_showInfoDone.load(); ++i) { struct timespec ts={0,5000000}; nanosleep(&ts,nullptr); }
+        for (int i = 0; i < 400 && !g_showInfoDone.load(); ++i) { en_sleep_poll(); }
         snprintf(reply, sizeof(reply), !g_showInfoDone.load() ? "err showinfo timeout\n" : (g_showInfoOK.load() ? "ok showinfo %lu\n" : "err no building %lu\n"), id);
     } else if (strcmp(cmd, "setalt") == 0) {
         // setalt <unitid> <0|1> — set/clear that building's alt_oil flag directly (QA
         // verify of AltOutput effects via pstats, bypassing the checkbox). Render thread.
         unsigned long id = 0; int on = -1;
-        if (sscanf(line.c_str(), "%*s %lu %d", &id, &on) != 2 || (on != 0 && on != 1)) { write(conn, "err usage: setalt <unitid> <0|1>\n", 33); return; }
+        if (sscanf(line.c_str(), "%*s %lu %d", &id, &on) != 2 || (on != 0 && on != 1)) { en_send(conn, "err usage: setalt <unitid> <0|1>\n", 33); return; }
         g_setAltId = id; g_setAltOn = (on != 0); g_setAltDone = false; g_setAltOK = false; g_setAltPending = true;
-        for (int i = 0; i < 400 && !g_setAltDone.load(); ++i) { struct timespec ts={0,5000000}; nanosleep(&ts,nullptr); }
+        for (int i = 0; i < 400 && !g_setAltDone.load(); ++i) { en_sleep_poll(); }
         snprintf(reply, sizeof(reply), !g_setAltDone.load() ? "err setalt timeout\n" : (g_setAltOK.load() ? "ok setalt %lu=%d\n" : "err no building %lu\n"), id, on);
     } else if (strcmp(cmd, "setedict") == 0) {
         // setedict <edictid> <0|1> — toggle a civ-wide edict directly (QA verify of edict
         // DOWNSIDE deltas via pstats, bypassing per-window checkbox coords). Render thread.
         int eid = -1; int on = -1;
-        if (sscanf(line.c_str(), "%*s %d %d", &eid, &on) != 2 || (on != 0 && on != 1)) { const char* u = "err usage: setedict <edictid> <0|1>\n"; write(conn, u, strlen(u)); return; }
+        if (sscanf(line.c_str(), "%*s %d %d", &eid, &on) != 2 || (on != 0 && on != 1)) { const char* u = "err usage: setedict <edictid> <0|1>\n"; en_send(conn, u, strlen(u)); return; }
         g_setEdictId = eid; g_setEdictOn = (on != 0); g_setEdictDone = false; g_setEdictOK = false; g_setEdictPending = true;
-        for (int i = 0; i < 400 && !g_setEdictDone.load(); ++i) { struct timespec ts={0,5000000}; nanosleep(&ts,nullptr); }
+        for (int i = 0; i < 400 && !g_setEdictDone.load(); ++i) { en_sleep_poll(); }
         snprintf(reply, sizeof(reply), !g_setEdictDone.load() ? "err setedict timeout\n" : (g_setEdictOK.load() ? "ok setedict %d=%d\n" : "err bad edict %d\n"), eid, on);
     } else if (strcmp(cmd, "pan") == 0) {
         // pan <dx> <dy> — scroll the focused area view by a pixel delta (grab-style:
         // positive dx/dy move the view center right/down). Drives PanByPixels, the
         // same path as the macOS trackpad two-finger pan. Render thread.
         int dx = 0, dy = 0;
-        if (sscanf(line.c_str(), "%*s %d %d", &dx, &dy) != 2) { const char* u = "err usage: pan <dx> <dy>\n"; write(conn, u, strlen(u)); return; }
+        if (sscanf(line.c_str(), "%*s %d %d", &dx, &dy) != 2) { const char* u = "err usage: pan <dx> <dy>\n"; en_send(conn, u, strlen(u)); return; }
         g_panDx = dx; g_panDy = dy; g_panDone = false; g_panOK = false; g_panPending = true;
-        for (int i = 0; i < 400 && !g_panDone.load(); ++i) { struct timespec ts={0,5000000}; nanosleep(&ts,nullptr); }
+        for (int i = 0; i < 400 && !g_panDone.load(); ++i) { en_sleep_poll(); }
         snprintf(reply, sizeof(reply), !g_panDone.load() ? "err pan timeout\n" : (g_panOK.load() ? "ok pan %d %d\n" : "err pan (not in-game?)\n"), dx, dy);
     } else if (strcmp(cmd, "hexinfo") == 0) {
         // hexinfo <areaWin> <x> <y> — report the map hex (coords/alt/visible/unit)
@@ -456,14 +572,14 @@ void handle_command(const std::string& line, int conn) {
         int aw=0,x=0,y=0;
         if (sscanf(line.c_str(), "%*s %d %d %d", &aw, &x, &y) != 3) {
             const char* u = "err usage: hexinfo <areaWin> <x> <y>\n";
-            write(conn, u, strlen(u)); return;
+            en_send(conn, u, strlen(u)); return;
         }
         g_hexInfoX = x; g_hexInfoY = y; g_hexInfoDone = false; g_hexInfoPending = true;
-        for (int i = 0; i < 400 && !g_hexInfoDone.load(); ++i) { struct timespec ts={0,5000000}; nanosleep(&ts,nullptr); }
+        for (int i = 0; i < 400 && !g_hexInfoDone.load(); ++i) { en_sleep_poll(); }
         std::string out;
         { std::lock_guard<std::mutex> lk(g_hexInfoMutex); out = g_hexInfoResult; }
         if (!g_hexInfoDone.load()) out = "err hexinfo timeout (not in-game?)\n";
-        write(conn, out.c_str(), out.size());
+        en_send(conn, out.c_str(), out.size());
         return;
     } else if (strcmp(cmd, "findterr") == 0) {
         // findterr <id> [adjId] — scan the map for terrain type <id> (lake=3 ocean=6
@@ -472,14 +588,14 @@ void handle_command(const std::string& line, int conn) {
         int id = -1, adj = -1;
         if (sscanf(line.c_str(), "%*s %d %d", &id, &adj) < 1 || id < 0) {
             const char* u = "err usage: findterr <id> [adjId]\n";
-            write(conn, u, strlen(u)); return;
+            en_send(conn, u, strlen(u)); return;
         }
         g_findId = id; g_findAdjId = adj; g_findDone = false; g_findPending = true;
-        for (int i = 0; i < 2000 && !g_findDone.load(); ++i) { struct timespec ts={0,5000000}; nanosleep(&ts,nullptr); }
+        for (int i = 0; i < 2000 && !g_findDone.load(); ++i) { en_sleep_poll(); }
         std::string out;
         { std::lock_guard<std::mutex> lk(g_findMutex); out = g_findResult; }
         if (!g_findDone.load()) out = "err findterr timeout (not in-game?)\n";
-        write(conn, out.c_str(), out.size());
+        en_send(conn, out.c_str(), out.size());
         return;
     } else if (strcmp(cmd, "centerhex") == 0) {
         // centerhex <x> <y> — center the area view on hex (x,y) so the driver can
@@ -488,14 +604,14 @@ void handle_command(const std::string& line, int conn) {
         int x = -1, y = -1;
         if (sscanf(line.c_str(), "%*s %d %d", &x, &y) != 2) {
             const char* u = "err usage: centerhex <x> <y>\n";
-            write(conn, u, strlen(u)); return;
+            en_send(conn, u, strlen(u)); return;
         }
         g_centerHexX = x; g_centerHexY = y; g_centerHexDone = false; g_centerHexPending = true;
-        for (int i = 0; i < 2000 && !g_centerHexDone.load(); ++i) { struct timespec ts={0,5000000}; nanosleep(&ts,nullptr); }
+        for (int i = 0; i < 2000 && !g_centerHexDone.load(); ++i) { en_sleep_poll(); }
         std::string out;
         { std::lock_guard<std::mutex> lk(g_centerHexMutex); out = g_centerHexResult; }
         if (!g_centerHexDone.load()) out = "err centerhex timeout (not in-game?)\n";
-        write(conn, out.c_str(), out.size());
+        en_send(conn, out.c_str(), out.size());
         return;
     } else if (strcmp(cmd, "road") == 0) {
         // road <x1> <y1> <x2> <y2> — order the first owned crane to build a road
@@ -504,25 +620,25 @@ void handle_command(const std::string& line, int conn) {
         int x1=-1,y1=-1,x2=-1,y2=-1;
         if (sscanf(line.c_str(), "%*s %d %d %d %d", &x1,&y1,&x2,&y2) != 4) {
             const char* u = "err usage: road <x1> <y1> <x2> <y2>\n";
-            write(conn, u, strlen(u)); return;
+            en_send(conn, u, strlen(u)); return;
         }
         g_roadX1=x1; g_roadY1=y1; g_roadX2=x2; g_roadY2=y2;
         g_roadDone=false; g_roadPending=true;
-        for (int i = 0; i < 2000 && !g_roadDone.load(); ++i) { struct timespec ts={0,5000000}; nanosleep(&ts,nullptr); }
+        for (int i = 0; i < 2000 && !g_roadDone.load(); ++i) { en_sleep_poll(); }
         std::string out;
         { std::lock_guard<std::mutex> lk(g_roadMutex); out = g_roadResult; }
         if (!g_roadDone.load()) out = "err road timeout (not in-game?)\n";
-        write(conn, out.c_str(), out.size());
+        en_send(conn, out.c_str(), out.size());
         return;
     } else if (strcmp(cmd, "findbridge") == 0) {
         // findbridge — list bridge hexes (`bridge <x> <y> vis <0|1> seen <0|1>`) and
         // center the view on the first never-seen one (#30 bridge-fog verify).
         g_bridgeDone = false; g_bridgePending = true;
-        for (int i = 0; i < 2000 && !g_bridgeDone.load(); ++i) { struct timespec ts={0,5000000}; nanosleep(&ts,nullptr); }
+        for (int i = 0; i < 2000 && !g_bridgeDone.load(); ++i) { en_sleep_poll(); }
         std::string out;
         { std::lock_guard<std::mutex> lk(g_bridgeMutex); out = g_bridgeResult; }
         if (!g_bridgeDone.load()) out = "err findbridge timeout (not in-game?)\n";
-        write(conn, out.c_str(), out.size());
+        en_send(conn, out.c_str(), out.size());
         return;
     } else if (strcmp(cmd, "click") == 0) {
         int x=0,y=0; char rb[16]={0};
@@ -619,7 +735,7 @@ void handle_command(const std::string& line, int conn) {
         // Deferred to the render/main thread — SDL_RaiseWindow off the main thread
         // SIGTRAPs on macOS (see g_raisePending). Same handshake as center/units.
         g_raiseDone = false; g_raisePending = true;
-        for (int i = 0; i < 400 && !g_raiseDone.load(); ++i) { struct timespec ts={0,5000000}; nanosleep(&ts,nullptr); }
+        for (int i = 0; i < 400 && !g_raiseDone.load(); ++i) { en_sleep_poll(); }
         std::strcpy(reply, g_raiseDone.load() ? "ok raised\n" : "err raise timeout\n");
     } else if (strcmp(cmd, "save") == 0) {
         // save <path> — snapshot the current in-game state to a .en save file,
@@ -635,7 +751,7 @@ void handle_command(const std::string& line, int conn) {
             g_saveDone = false; g_saveOK = false; g_savePending = true;
             // Generous wait (~100s, under the client's 120s): SaveGame's AI-pause
             // Sleep loop + serialize + BPE compress can take many seconds.
-            for (int i = 0; i < 20000 && !g_saveDone.load(); ++i) { struct timespec ts={0,5000000}; nanosleep(&ts,nullptr); }
+            for (int i = 0; i < 20000 && !g_saveDone.load(); ++i) { en_sleep_poll(); }
             std::strcpy(reply, !g_saveDone.load() ? "err save timeout\n"
                               : (g_saveOK.load() ? "ok saved\n" : "err save failed (not in-game?)\n"));
         }
@@ -651,7 +767,7 @@ void handle_command(const std::string& line, int conn) {
         } else {
             { std::lock_guard<std::mutex> lk(g_loadMutex); g_loadPath = p; }
             g_loadDone = false; g_loadOK = false; g_loadPending = true;
-            for (int i = 0; i < 20000 && !g_loadDone.load(); ++i) { struct timespec ts={0,5000000}; nanosleep(&ts,nullptr); }
+            for (int i = 0; i < 20000 && !g_loadDone.load(); ++i) { en_sleep_poll(); }
             std::strcpy(reply, !g_loadDone.load() ? "err load timeout\n"
                               : (g_loadOK.load() ? "ok loaded\n" : "err load failed (at menu? bad path?)\n"));
         }
@@ -662,7 +778,7 @@ void handle_command(const std::string& line, int conn) {
         // toggles, fort/seaport/shipyard/heavy-factory/embassy, edicts) with no grind.
         // Must be in-game + single-player. Serviced on the render thread (like center).
         g_researchDone = false; g_researchOK = false; g_researchPending = true;
-        for (int i = 0; i < 600 && !g_researchDone.load(); ++i) { struct timespec ts={0,5000000}; nanosleep(&ts,nullptr); }
+        for (int i = 0; i < 600 && !g_researchDone.load(); ++i) { en_sleep_poll(); }
         std::strcpy(reply, !g_researchDone.load() ? "err research timeout\n"
                           : (g_researchOK.load() ? "ok research granted\n" : "err research failed (in-game SP?)\n"));
     } else if (strcmp(cmd, "newgame") == 0) {
@@ -678,7 +794,7 @@ void handle_command(const std::string& line, int conn) {
         sscanf(line.c_str(), "%*s %d %d %d %d %d %d %d", &ai,&pos,&size,&numai,&worldtype,&ocean,&rivers);
         { std::lock_guard<std::mutex> lk(g_newgameMutex); g_ngAi=ai; g_ngPos=pos; g_ngSize=size; g_ngNumAi=numai; g_ngWorldType=worldtype; g_ngOcean=ocean; g_ngRivers=rivers; }
         g_newgameDone=false; g_newgameOK=false; g_newgamePending=true;
-        for (int i = 0; i < 40000 && !g_newgameDone.load(); ++i) { struct timespec ts={0,5000000}; nanosleep(&ts,nullptr); } // ~200s
+        for (int i = 0; i < 40000 && !g_newgameDone.load(); ++i) { en_sleep_poll(); } // ~200s
         std::strcpy(reply, !g_newgameDone.load() ? "err newgame timeout\n"
                           : (g_newgameOK.load() ? "ok newgame started\n" : "err newgame failed (at menu? already in-game?)\n"));
     } else if (strcmp(cmd, "gamestate") == 0) {
@@ -686,11 +802,11 @@ void handle_command(const std::string& line, int conn) {
         // building+vehicle counts+losses / elapsed / playing|LOST|WON). Render-thread
         // serviced like units. Use to detect defeat + track defense over time.
         g_gameStateDone=false; g_gameStatePending=true;
-        for (int i = 0; i < 400 && !g_gameStateDone.load(); ++i) { struct timespec ts={0,5000000}; nanosleep(&ts,nullptr); }
+        for (int i = 0; i < 400 && !g_gameStateDone.load(); ++i) { en_sleep_poll(); }
         std::string out;
         { std::lock_guard<std::mutex> lk(g_gameStateMutex); out = g_gameStateResult; }
         if (!g_gameStateDone.load()) out = "err gamestate timeout (not in-game?)\n";
-        write(conn, out.c_str(), out.size());
+        en_send(conn, out.c_str(), out.size());
         return;
     } else if (strcmp(cmd, "quit") == 0) {
         SDL_Event e; SDL_zero(e); e.type=SDL_QUIT; SDL_PushEvent(&e);
@@ -708,63 +824,96 @@ void handle_command(const std::string& line, int conn) {
             out += buf;
         }
         if (out.empty()) out = "(no windows)\n";
-        write(conn, out.c_str(), out.size());
+        en_send(conn, out.c_str(), out.size());
         return;
     } else {
         std::strcpy(reply, "err unknown\n");
     }
-    write(conn, reply, std::strlen(reply));
+    en_send(conn, reply, std::strlen(reply));
 }
 
-void* server_thread(void*) {
+// Bring up the socket library. Winsock is refcounted, so our own WSAStartup keeps
+// the stack alive for the accept loop even if the MP code (CSockets::InitSocketLib)
+// ever calls WSACleanup on teardown. There is deliberately no matching WSACleanup:
+// the accept loop below never returns, so the only correct release point is process
+// exit, which does it for us. No-op on POSIX.
+bool en_socklib_init() {
+#ifdef _WIN32
+    static bool s_started = false;
+    if (!s_started) {
+        WSADATA wsa;
+        if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) {
+            fprintf(stderr, "[harness] WSAStartup failed\n");
+            return false;
+        }
+        s_started = true;
+    }
+#endif
+    return true;
+}
+
+void server_thread() {
+#ifndef _WIN32
     // A client that disconnects mid-reply would otherwise SIGPIPE-kill the game;
-    // ignore it so a stray write() just fails with EPIPE.
+    // ignore it so a stray write() just fails with EPIPE. Windows has no SIGPIPE —
+    // send() to a closed peer simply returns SOCKET_ERROR/WSAECONNRESET.
     signal(SIGPIPE, SIG_IGN);
+#endif
     int port = 7070;
     if (const char* p = getenv("EN_HARNESS_PORT")) { int v = atoi(p); if (v > 0) port = v; }
-    int srv = socket(AF_INET, SOCK_STREAM, 0);
-    if (srv < 0) return nullptr;
-    int one = 1; setsockopt(srv, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
+    en_socket_t srv = socket(AF_INET, SOCK_STREAM, 0);
+    if (srv == EN_INVALID_SOCKET) return;
+    int one = 1; setsockopt(srv, SOL_SOCKET, SO_REUSEADDR, (const char*)&one, sizeof(one));
     sockaddr_in addr; std::memset(&addr, 0, sizeof(addr));
-    addr.sin_family = AF_INET; addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK); addr.sin_port = htons(port);
-    if (bind(srv, (sockaddr*)&addr, sizeof(addr)) < 0) { fprintf(stderr,"[harness] bind :%d failed\n",port); close(srv); return nullptr; }
+    addr.sin_family = AF_INET; addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK); addr.sin_port = htons((unsigned short)port);
+    if (bind(srv, (sockaddr*)&addr, sizeof(addr)) != 0) { fprintf(stderr,"[harness] bind :%d failed\n",port); en_closesock(srv); return; }
     listen(srv, 4);
     fprintf(stderr, "[harness] listening on 127.0.0.1:%d\n", port);
     for (;;) {
-        int conn = accept(srv, nullptr, nullptr);
-        if (conn < 0) {
+        en_socket_t conn = accept(srv, nullptr, nullptr);
+        if (conn == EN_INVALID_SOCKET) {
+#ifndef _WIN32
             if (errno == EINTR) continue;
-            struct timespec ts = {0, 10000000}; nanosleep(&ts, nullptr);  // avoid busy-spin on persistent error
+#endif
+            en_sleep_ns(10000000);  // avoid busy-spin on persistent error
             continue;
         }
         // Read one newline-terminated command. Loop because a command can arrive
         // split across TCP segments; cap total size to bound a misbehaving client.
         std::string line; char buf[2048];
         for (;;) {
-            ssize_t n = read(conn, buf, sizeof(buf));
+            long n = en_recv(conn, buf, sizeof(buf));
             if (n <= 0) break;
             line.append(buf, (size_t)n);
             if (line.find('\n') != std::string::npos || line.size() > 64 * 1024) break;
         }
         if (!line.empty()) handle_command(line, conn);
-        close(conn);
+        en_closesock(conn);
     }
-    return nullptr;
 }
 
 } // namespace
 
 void EnHarness_Start(SDL_Window* window, SDL_Renderer* renderer) {
+    // THE gate: no env var, no socket library, no thread, no cost. Everything
+    // below this line only ever runs in an explicitly harnessed session.
     if (!getenv("EN_HARNESS")) return;
+    static bool s_started = false;
+    if (s_started) return;               // one server per process
+    if (!en_socklib_init()) return;
     g_window = window; g_renderer = renderer;
-    pthread_t tid; pthread_create(&tid, nullptr, server_thread, nullptr); pthread_detach(tid);
+    s_started = true;
+    g_enabled.store(true, std::memory_order_relaxed);   // arms the per-frame hooks
+    std::thread(server_thread).detach();
 }
 
 void EnHarness_SetMainSurface(SDL_Surface* surface) {
+    if (!g_enabled.load(std::memory_order_relaxed)) return;
     g_mainSurface = surface;
 }
 
 void EnHarness_RegisterWindowSurface(unsigned int windowId, SDL_Surface* surface) {
+    if (!g_enabled.load(std::memory_order_relaxed)) return;
     std::lock_guard<std::mutex> lk(g_winSurfMutex);
     if (surface) g_winSurfaces[(Uint32)windowId] = surface;
     else         g_winSurfaces.erase((Uint32)windowId);
@@ -778,6 +927,7 @@ void EnHarness_RegisterWindowSurface(unsigned int windowId, SDL_Surface* surface
 // re-entered the pump and exited the game mid-save. From the loop top it runs in
 // the context SaveGame expects.
 void EnHarness_ServiceMainLoop() {
+    if (!g_enabled.load(std::memory_order_relaxed)) return;   // never armed -> nothing can be pending
     if (g_savePending.exchange(false)) {
         std::string path;
         { std::lock_guard<std::mutex> lk(g_saveMutex); path = g_savePath; }
@@ -799,6 +949,7 @@ void EnHarness_ServiceMainLoop() {
 }
 
 void EnHarness_Service() {
+    if (!g_enabled.load(std::memory_order_relaxed)) return;   // never armed -> nothing can be pending
     // Service a pending `units` request on the render thread (reads live game
     // state safely, in sync with the game loop). One request per frame.
     if (g_unitsPending.exchange(false)) {
