@@ -1873,10 +1873,6 @@ static void ErrBuildBldg( CMsgBuildBldg* pMsg )
         theGame.Event( EVENT_CONST_CANT, EVENT_WARN, pVeh );
 }
 
-#if EN_GAMEPLAY_PROBES
-extern void EnBridgeDbgLog( const char* pszMsg );   // vehicle.cpp — file sink, not DBWIN
-#endif
-
 static void BuildRoad( CMsgBuildRoad* pMsg )
 {
 
@@ -1887,15 +1883,6 @@ static void BuildRoad( CMsgBuildRoad* pMsg )
 
     if ( ( !pHex->CanRoad( ) ) || ( pHex->GetUnits( ) & CHex::bldg ) )
     {
-#if EN_GAMEPLAY_PROBES
-        {
-            char szR[160];
-            sprintf( szR, "[ROADSRV] REJECT plyr %d hex %d,%d type %d units 0x%x canroad %d\n",
-                     pMsg->m_iPlyrNum, pMsg->m_hexBuild.X( ), pMsg->m_hexBuild.Y( ),
-                     (int)pHex->GetType( ), (unsigned)pHex->GetUnits( ), pHex->CanRoad( ) ? 1 : 0 );
-            EnBridgeDbgLog( szR );
-        }
-#endif
         pMsg->ToErr( );
         theGame.PostToClient( pMsg->m_iPlyrNum, pMsg, sizeof( *pMsg ) );
         return;
@@ -1926,10 +1913,10 @@ static void BuildBridge( CMsgBuildBridge* pMsg )
     // test params
     if ( ( ( xAdd != 0 ) && ( yAdd != 0 ) ) || ( pMsg->m_hexStart == pMsg->m_hexEnd ) )
     {
-#if EN_GAMEPLAY_PROBES
+#if defined( _WIN32 ) && EN_GAMEPLAY_PROBES
         { char szB[112]; sprintf( szB, "[BRIDGESRV] REJECT params plyr %d span %d,%d -> %d,%d\n", pMsg->m_iPlyrNum,
                   pMsg->m_hexStart.X( ), pMsg->m_hexStart.Y( ), pMsg->m_hexEnd.X( ), pMsg->m_hexEnd.Y( ) );
-          EnBridgeDbgLog( szB ); }
+          OutputDebugStringA( szB ); }
 #endif
         pMsg->ToErr( );
         theGame.PostToClient( pMsg->m_iPlyrNum, pMsg, sizeof( *pMsg ) );
@@ -1956,23 +1943,28 @@ static void BuildBridge( CMsgBuildBridge* pMsg )
     if ( iDeny != CGameMap::bridge_ok )
     {
         ASSERT( iLen <= iMaxSpan );
-        // Every server refusal goes to bridge_debug.log (see EnBridgeDbgLog in vehicle.cpp
-        // for why not OutputDebugString), so a "construction has halted" can be attributed
-        // to the exact rule that fired instead of guessed at.
-#if EN_GAMEPLAY_PROBES
+#if defined( _WIN32 ) && EN_GAMEPLAY_PROBES
+        if ( ( iDeny == CGameMap::bridge_too_long ) || ( iDeny == CGameMap::bridge_obstacle ) )
+        { char szB[128]; sprintf( szB, "[BRIDGESRV] REJECT %s plyr %d span %d,%d -> %d,%d at %d,%d len %d max %d\n",
+                  ( iDeny == CGameMap::bridge_too_long ) ? "span-too-long" : "obstacle-in-path", pMsg->m_iPlyrNum,
+                  pMsg->m_hexStart.X( ), pMsg->m_hexStart.Y( ), pMsg->m_hexEnd.X( ), pMsg->m_hexEnd.Y( ),
+                  hexAt.X( ), hexAt.Y( ), iLen, iMaxSpan );
+          OutputDebugStringA( szB ); }
+        else if ( iDeny == CGameMap::bridge_start_base )
+        { char szB[112]; sprintf( szB, "[BRIDGESRV] REJECT start-base plyr %d at %d,%d\n", pMsg->m_iPlyrNum,
+                  pMsg->m_hexStart.X( ), pMsg->m_hexStart.Y( ) );
+          OutputDebugStringA( szB ); }
+#endif
+        // end-base: reachable at runtime via AI-planned spans (bldg/bridge
+        // beside the landing at another altitude) -- was TRAP(), which killed
+        // the game on the FIRST AI bridge order ever sent; answer the error
+#ifdef _WIN32
+        if ( iDeny == CGameMap::bridge_end_base )
         {
-            char szB[160];
-            const char* pszWhy = ( iDeny == CGameMap::bridge_too_long )  ? "span-too-long"
-                               : ( iDeny == CGameMap::bridge_obstacle )  ? "obstacle-in-path"
-                               : ( iDeny == CGameMap::bridge_start_base ) ? "start-base-3x3"
-                               : ( iDeny == CGameMap::bridge_end_base )   ? "end-base-3x3"
-                               : ( iDeny == CGameMap::bridge_bad_span )   ? "bad-span"
-                                                                          : "other";
-            sprintf( szB, "[BRIDGESRV] REJECT %s (deny %d) plyr %d span %d,%d -> %d,%d at %d,%d len %d max %d\n",
-                     pszWhy, iDeny, pMsg->m_iPlyrNum,
-                     pMsg->m_hexStart.X( ), pMsg->m_hexStart.Y( ), pMsg->m_hexEnd.X( ), pMsg->m_hexEnd.Y( ),
-                     hexAt.X( ), hexAt.Y( ), iLen, iMaxSpan );
-            EnBridgeDbgLog( szB );
+            char szB[96];
+            sprintf( szB, "[BRIDGEDENY] plyr %d end-base fail at %d,%d\n", pMsg->m_iPlyrNum, pMsg->m_hexEnd.X( ),
+                     pMsg->m_hexEnd.Y( ) );
+            OutputDebugStringA( szB );
         }
 #endif
         pMsg->ToErr( );
