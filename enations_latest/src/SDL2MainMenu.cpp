@@ -1,4 +1,5 @@
 #include "stdafx.h"
+#include "en_logpath.h"   // EnLogPath - logs to the launch dir, not the exe dir
 #include "SDL2UI.h"   // EnOpenUiFont (hinted font open)
 
 #include "SDL2MainMenu.h"
@@ -21,7 +22,7 @@
 #include <vector>
 
 static void LogMenu(const std::string& msg) {
-    std::ofstream log("SDL2MainMenu.log", std::ios::app);
+    std::ofstream log(EnLogPath("SDL2MainMenu.log").c_str(), std::ios::app);
     if (log.is_open()) {
         log << msg << std::endl;
         log.close();

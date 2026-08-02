@@ -28,6 +28,7 @@
 #include "sfx.h"
 #include "sprite.h"
 #include "stdafx.h"
+#include "en_logpath.h"   // EnLogPath - logs to the launch dir, not the exe dir
 #include "enprobes.h"   // EN_GAMEPLAY_PROBES
 #include "terrain.inl"
 #include "ui.inl"
@@ -1568,7 +1569,7 @@ void CWndArea::Create( CMapLoc const& ml, CUnit* pUnit, BOOL bFirst )
                    theApp.m_pMainWnd->m_hWnd, NULL, NULL ) == 0 )
     {
         OutputDebugStringA( "[REN] CWndArea::Create CreateEx FAILED\n" );
-        { FILE* _f = fopen( "SDL2Panel.log", "a" ); if ( _f ) { fputs( "[REN] CWndArea::Create CreateEx FAILED\n", _f ); fclose( _f ); } }
+        { FILE* _f = fopen( EnLogPath( "SDL2Panel.log" ).c_str(), "a" ); if ( _f ) { fputs( "[REN] CWndArea::Create CreateEx FAILED\n", _f ); fclose( _f ); } }
         throw( ERR_RES_CREATE_WND );
     }
 
@@ -3195,7 +3196,7 @@ int CWndArea::OnCreate( LPCREATESTRUCT lpCreateStruct )
                    theApp.m_gameWindow ? (void*)theApp.m_gameWindow->GetCompositor( ) : nullptr,
                    (void*)m_aa.m_sdlPanel );
         OutputDebugStringA( b );
-        FILE* _f = fopen( "SDL2Panel.log", "a" ); if ( _f ) { fputs( b, _f ); fclose( _f ); }
+        FILE* _f = fopen( EnLogPath( "SDL2Panel.log" ).c_str(), "a" ); if ( _f ) { fputs( b, _f ); fclose( _f ); }
     }
 #endif
     if ( theApp.m_gameWindow && theApp.m_gameWindow->GetCompositor() )

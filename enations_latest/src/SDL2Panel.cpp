@@ -1,4 +1,5 @@
 #include "stdafx.h"
+#include "en_logpath.h"   // EnLogPath - logs to the launch dir, not the exe dir
 #include "SDL2UI.h"   // EnOpenUiFont (hinted font open)
 #include "enprobes.h"   // EN_GAMEPLAY_PROBES
 
@@ -36,7 +37,7 @@ static std::unordered_map<std::string, SDL_Rect> g_savedPlacements;
 
 static void LogPanel(const std::string& msg) {
 #if EN_GAMEPLAY_PROBES
-    std::ofstream log("SDL2Panel.log", std::ios::app);
+    std::ofstream log(EnLogPath("SDL2Panel.log").c_str(), std::ios::app);
     if (log.is_open()) {
         log << msg << std::endl;
     }

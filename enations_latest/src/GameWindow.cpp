@@ -1,4 +1,5 @@
 #include "stdafx.h"
+#include "en_logpath.h"   // EnLogPath - logs to the launch dir, not the exe dir
 #include "GameWindow.h"
 #include "framecap.h"   // #45 frame-capture debug mode
 #ifndef _WIN32
@@ -42,7 +43,7 @@
 
 // Helper function for logging - write to current directory
 static void LogToFile(const std::string& message) {
-    std::ofstream log("GameWindow_Debug.log", std::ios::app);
+    std::ofstream log(EnLogPath("GameWindow_Debug.log").c_str(), std::ios::app);
     if (log.is_open()) {
         log << message << std::endl;
         log.close();

@@ -18,6 +18,7 @@
 #include <climits>   // PATH_MAX
 #include <unistd.h>  // chdir
 #include <string>
+#include "en_logpath.h"   // EnLogCaptureLaunchDir - must run before the exe-dir chdir
 
 extern "C" int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
                                 LPSTR lpCmdLine, int nCmdShow);
@@ -25,6 +26,10 @@ extern "C" int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
 int main(int argc, char** argv) {
     // We own main(); tell SDL not to expect its own entry shim.
     SDL_SetMainReady();
+
+    // Capture the launch cwd BEFORE the chdir below so debug logs land where the
+    // game was launched from rather than beside the exe. See en_logpath.h.
+    EnLogCaptureLaunchDir();
 
     // Anchor the working directory to the executable's own directory so the game
     // finds its co-located ENations.dat / data/ / res/ no matter how it was launched.

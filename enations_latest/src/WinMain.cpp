@@ -15,6 +15,7 @@
 //---------------------------------------------------------------------------
 
 #include "stdafx.h"
+#include "en_logpath.h"   // EnLogCaptureLaunchDir - must run before the exe-dir chdir
 
 #include "lastplnt.h"
 
@@ -112,6 +113,11 @@ extern "C" int APIENTRY WinMain( HINSTANCE hInstance,
 #ifdef _WIN32
     SetUnhandledExceptionFilter( EnWriteFullDump );
 #endif
+
+    // Capture the launch cwd BEFORE the chdir below, so debug logs land where the
+    // game was launched from (the run dir) instead of following the exe into the
+    // build tree. See en_logpath.h.
+    EnLogCaptureLaunchDir( );
 
 #ifdef _WIN32
     // Anchor cwd to the exe dir so ENations.dat / data/ / res/ resolve however we

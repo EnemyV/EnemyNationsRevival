@@ -8,6 +8,7 @@
 // launching from a desktop icon has no terminal, so stderr alone reaches nobody.
 //---------------------------------------------------------------------------
 #include "stdafx.h"
+#include "en_logpath.h"   // EnLogPath - logs to the launch dir, not the exe dir
 #include "cpufeatures.h"
 
 #include <stdio.h>
@@ -155,7 +156,7 @@ void LogFeatures( )
     // Both sinks: a desktop-icon launch has no terminal, so stderr alone is
     // invisible; the log file is what a bug report can actually attach.
     fprintf( stderr, "%s\n", line );
-    FILE* fp = fopen( "GameWindow_Debug.log", "a" );
+    FILE* fp = fopen( EnLogPath( "GameWindow_Debug.log" ).c_str(), "a" );
     if ( fp )
     {
         fprintf( fp, "%s\n", line );

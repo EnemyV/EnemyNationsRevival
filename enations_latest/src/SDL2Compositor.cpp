@@ -1,4 +1,5 @@
 #include "stdafx.h"
+#include "en_logpath.h"   // EnLogPath - logs to the launch dir, not the exe dir
 
 #include "SDL2Compositor.h"
 #include "SDL2Panel.h"
@@ -16,7 +17,7 @@
 #include <fstream>
 
 static void LogCompositor(const std::string& msg) {
-    std::ofstream log("SDL2Compositor.log", std::ios::app);
+    std::ofstream log(EnLogPath("SDL2Compositor.log").c_str(), std::ios::app);
     if (log.is_open()) {
         log << msg << std::endl;
     }

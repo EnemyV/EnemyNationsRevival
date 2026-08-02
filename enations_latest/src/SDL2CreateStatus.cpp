@@ -1,4 +1,5 @@
 #include "stdafx.h"
+#include "en_logpath.h"   // EnLogPath - logs to the launch dir, not the exe dir
 
 #include "SDL2CreateStatus.h"
 #include "SDL2UI.h"
@@ -23,7 +24,7 @@
 #include <algorithm>
 
 static void LogStatus(const std::string& msg) {
-    std::ofstream log("SDL2CreateStatus.log", std::ios::app);
+    std::ofstream log(EnLogPath("SDL2CreateStatus.log").c_str(), std::ios::app);
     if (log.is_open()) {
         log << msg << std::endl;
     }

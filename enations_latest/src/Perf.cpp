@@ -11,6 +11,7 @@
 //---------------------------------------------------------------------------
 
 #include "stdafx.h"
+#include "en_logpath.h"   // EnLogPath - logs to the launch dir, not the exe dir
 #include "Perf.h"
 
 #include <windows.h>
@@ -336,7 +337,7 @@ namespace
 
         // ---- lock-free: write the snapshot ----
         HMODULE hMod = GetModuleHandleA( NULL );
-        FILE* f = fopen( "leakstacks.txt", "w" );   // run dir
+        FILE* f = fopen( EnLogPath( "leakstacks.txt" ).c_str(), "w" );   // run dir
         if ( f )
         {
             fprintf( f, "# leak profiler 1/%d sampled. top %d of %d sites by LIVE bytes.\n",
@@ -379,7 +380,7 @@ namespace
     {
         if ( g_log )
             return;
-        g_log = fopen( "perf.log", "a" );
+        g_log = fopen( EnLogPath( "perf.log" ).c_str(), "a" );
         if ( g_log )
         {
             SYSTEMTIME st;

@@ -1,4 +1,5 @@
 #include "RenderingAdapter.h"
+#include "en_logpath.h"   // EnLogPath - logs to the launch dir, not the exe dir
 #include "GameWindow.h"
 #include "SDL2Panel.h"
 #include "base.h"  // For CAnimAtr and CDIBWnd
@@ -8,7 +9,7 @@
 #include <fstream>
 
 static void LogRender(const std::string& msg) {
-    std::ofstream log("RenderingAdapter.log", std::ios::app);
+    std::ofstream log(EnLogPath("RenderingAdapter.log").c_str(), std::ios::app);
     if (log.is_open()) {
         log << msg << std::endl;
     }

@@ -10,6 +10,7 @@
 //
 
 #include "stdafx.h"
+#include "en_logpath.h"   // EnLogPath - logs to the launch dir, not the exe dir
 #include "enprobes.h"   // EN_GAMEPLAY_PROBES
 #include "lastplnt.h"
 #include "GameWindow.h"
@@ -86,7 +87,7 @@ namespace
         // (CreateProfile.log in the run dir). All CpMark() calls no-op when null.
         if ( !getenv( "EN_CREATEPROF" ) )
             return;
-        g_cpLog = fopen( "CreateProfile.log", "w" );
+        g_cpLog = fopen( EnLogPath( "CreateProfile.log" ).c_str(), "w" );
         if ( g_cpLog )
         {
             SYSTEMTIME st;
@@ -402,7 +403,7 @@ int GetPrime(int iMin) {
 void CConquerApp::CreateNewWorld(unsigned uRand, AIinit *pAiData, int iSide, int iSideSize) {
 #if EN_GAMEPLAY_PROBES
     OutputDebugStringA( "[REN] CreateNewWorld ENTRY\n" );
-    { FILE* _f = fopen( "SDL2Panel.log", "a" ); if ( _f ) { fputs( "[REN] CreateNewWorld ENTRY\n", _f ); fclose( _f ); } }
+    { FILE* _f = fopen( EnLogPath( "SDL2Panel.log" ).c_str(), "a" ); if ( _f ) { fputs( "[REN] CreateNewWorld ENTRY\n", _f ); fclose( _f ); } }
 #endif
 
     ASSERT (m_pCreateGame->GetDlgStatus() != NULL);
@@ -432,7 +433,7 @@ void CConquerApp::CreateNewWorld(unsigned uRand, AIinit *pAiData, int iSide, int
         OutputDebugStringA( b );
         // Plain file append, NOT theApp.Log — that one no-ops unless [Advanced]Log=1.
         // This is the channel whose contents testers actually send us.
-        { FILE* _f = fopen( "SDL2Panel.log", "a" ); if ( _f ) { fputs( b, _f ); fclose( _f ); } }
+        { FILE* _f = fopen( EnLogPath( "SDL2Panel.log" ).c_str(), "a" ); if ( _f ) { fputs( b, _f ); fclose( _f ); } }
     }
 
     // no player, no music/sound
@@ -583,7 +584,7 @@ void CConquerApp::CreateNewWorld(unsigned uRand, AIinit *pAiData, int iSide, int
             sprintf_s( b, sizeof( b ), "[WORLDGEN] blocks/side=%d blockSize=%d -> map %dx%d hexes\n",
                        iSide, iSideSize, iSide * iSideSize, iSide * iSideSize );
             OutputDebugStringA( b );
-            { FILE* _f = fopen( "SDL2Panel.log", "a" ); if ( _f ) { fputs( b, _f ); fclose( _f ); } }
+            { FILE* _f = fopen( EnLogPath( "SDL2Panel.log" ).c_str(), "a" ); if ( _f ) { fputs( b, _f ); fclose( _f ); } }
         }
 
         theApp.Log("Tell other players to start");

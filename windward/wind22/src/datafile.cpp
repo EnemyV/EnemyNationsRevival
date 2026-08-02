@@ -7,6 +7,7 @@
 
 
 #include "stdafx.h"
+#include "en_logpath.h"   // EnLogPath - logs to the launch dir, not the exe dir
 #include "_windwrd.h"
 #include "io.h"
 #include "w22_settings.h"
@@ -53,7 +54,7 @@ static CString DataFileBesideExe( const char* pszLeaf ) {
 static void LogDataFileProblem( const char* pszMsg ) {
     OutputDebugString( pszMsg );
     OutputDebugString( "\n" );
-    FILE* fp = fopen( "GameWindow_Debug.log", "a" );
+    FILE* fp = fopen( EnLogPath( "GameWindow_Debug.log" ).c_str(), "a" );
     if ( fp ) {
         fprintf( fp, "DATAFILE: %s\n", pszMsg );
         fclose( fp );

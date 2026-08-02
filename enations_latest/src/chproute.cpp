@@ -18,6 +18,7 @@
 #include "logging.h"  // dave's logging system
 #include "netcmd.h"
 #include "stdafx.h"
+#include "en_logpath.h"   // EnLogPath - logs to the launch dir, not the exe dir
 #include "unit.inl"
 #include "vehicle.inl"
 
@@ -55,7 +56,7 @@ static void HpLog( char const* pFrmt, ... )
 {
     if ( !HpLogOn( ) )
         return;
-    FILE* pFile = fopen( "hprouter.log", "a" );
+    FILE* pFile = fopen( EnLogPath("hprouter.log").c_str(), "a" );
     if ( pFile == NULL )
         return;
     fprintf( pFile, "[%9lu] ", (unsigned long)GetTickCount( ) );

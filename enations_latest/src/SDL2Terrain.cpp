@@ -1,4 +1,5 @@
 #include "stdafx.h"
+#include "en_logpath.h"   // EnLogPath - logs to the launch dir, not the exe dir
 #include "enprobes.h"   // EN_GAMEPLAY_PROBES
 #include "SDL2Terrain.h"
 #include "base.h"      // CAnimAtr, CViewHexCoord, CHexCoord
@@ -310,7 +311,7 @@ static const int kCoastRot[39] = {
 static void LogTerrain( const std::string& msg )
 {
 #if EN_GAMEPLAY_PROBES
-    std::ofstream log( "SDL2Terrain.log", std::ios::app );
+    std::ofstream log( EnLogPath( "SDL2Terrain.log" ).c_str(), std::ios::app );
     if ( log.is_open() )
         log << msg << std::endl;
 #else

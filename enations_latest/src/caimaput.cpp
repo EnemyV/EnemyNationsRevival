@@ -10,6 +10,7 @@
 ////////////////////////////////////////////////////////////////////////////
 
 #include "stdafx.h"
+#include "enprobes.h"   // probe gates - was relying on a transitive include
 #include "caimaput.hpp"
 #include "caidata.hpp"
 #include "cpathmap.h"

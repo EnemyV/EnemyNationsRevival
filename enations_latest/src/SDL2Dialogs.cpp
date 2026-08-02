@@ -1,5 +1,4 @@
 #include "stdafx.h"
-#include "enprobes.h"   // EN_GAMEPLAY_PROBES
 #include "SDL2Dialogs.h"
 #include <sstream>   // locale-grouped number formatting for the load-game stats
 #include <locale>

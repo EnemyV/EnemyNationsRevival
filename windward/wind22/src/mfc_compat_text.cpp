@@ -21,6 +21,7 @@
 //---------------------------------------------------------------------------
 
 #include "stdafx.h"
+#include "en_logpath.h"   // EnLogPath - logs to the launch dir, not the exe dir
 #include <fstream>
 #include <vector>
 #include <string>
@@ -222,7 +223,7 @@ const char* EnResolveFontPath() {
             ? std::string( "FONT: no usable font found - UI TEXT WILL NOT RENDER" )
             : ( "FONT: using " + s_path );
         fprintf( stderr, "%s\n", msg.c_str() );
-        std::ofstream log( "GameWindow_Debug.log", std::ios::app );
+        std::ofstream log( EnLogPath( "GameWindow_Debug.log" ).c_str(), std::ios::app );
         if ( log.is_open() )
             log << msg << std::endl;
     }
