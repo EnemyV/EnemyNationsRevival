@@ -47,6 +47,9 @@
 #include "en_harness.h"
 
 #include <SDL.h>
+#ifdef _WIN32
+  #include <SDL_syswm.h>   // wins: HWND -> desktop z-order / topmost band
+#endif
 
 #include <atomic>
 #include <cerrno>
@@ -427,6 +430,39 @@ void push_mouse_wheel(int dy, Uint32 winId = 0) {
     e.wheel.windowID = winId ? winId : active_window_id();
     SDL_PushEvent(&e);
 }
+// Hold a keyboard modifier across a synthesized click. A pushed SDL event carries no
+// modifier state, and the game reads SDL_GetModState() when it HANDLES the event (see
+// area.cpp SDLModToMFC), so the mod has to be live until the render thread drains the
+// queue. Returns the previous state for restore_mods.
+static SDL_Keymod hold_mods(const char* tok) {
+    SDL_Keymod prev = SDL_GetModState();
+    if (!tok || !tok[0]) return prev;
+    int m = KMOD_NONE;
+    if (std::strstr(tok, "shift")) m |= KMOD_LSHIFT;
+    if (std::strstr(tok, "ctrl"))  m |= KMOD_LCTRL;
+    if (std::strstr(tok, "alt"))   m |= KMOD_LALT;
+    if (m != KMOD_NONE) SDL_SetModState((SDL_Keymod)m);
+    return prev;
+}
+static void restore_mods(const char* tok, SDL_Keymod prev) {
+    if (!tok || !tok[0]) return;
+    for (int i = 0; i < 60; ++i) en_sleep_poll();   // let the render thread drain the queue
+    SDL_SetModState(prev);
+}
+// Classify the two optional trailing tokens of click/clickid/dragid: either names a
+// button (left/right/middle) or a modifier set (shift/ctrl/alt), in any order.
+static void parse_click_opts(const char* a, const char* b, Uint8* btn, char* mods, size_t modsz) {
+    mods[0] = 0;
+    const char* toks[2] = { a, b };
+    for (int i = 0; i < 2; ++i) {
+        const char* t = toks[i];
+        if (!t || !t[0]) continue;
+        if (t[0] == 'r')      *btn = SDL_BUTTON_RIGHT;
+        else if (t[0] == 'm' && t[1] == 'i') *btn = SDL_BUTTON_MIDDLE;
+        else if (t[0] == 'l') *btn = SDL_BUTTON_LEFT;
+        else { std::strncpy(mods, t, modsz - 1); mods[modsz - 1] = 0; }
+    }
+}
 void push_key(SDL_Keycode kc, bool down, Uint32 winId = 0, Uint16 mod = 0) {
     SDL_Event e; SDL_zero(e);
     e.type = down ? SDL_KEYDOWN : SDL_KEYUP;
@@ -641,18 +677,28 @@ void handle_command(const std::string& line, en_socket_t conn) {
         en_send(conn, out.c_str(), out.size());
         return;
     } else if (strcmp(cmd, "click") == 0) {
-        int x=0,y=0; char rb[16]={0};
-        sscanf(line.c_str(), "%*s %d %d %15s", &x, &y, rb);
-        Uint8 btn = (rb[0]=='r') ? SDL_BUTTON_RIGHT : SDL_BUTTON_LEFT;
+        // click <x> <y> [left|right|middle] [shift|ctrl|alt] — the two optional tokens
+        // are order-independent.
+        int x=0,y=0; char t1[16]={0}, t2[16]={0}, mods[16]={0};
+        sscanf(line.c_str(), "%*s %d %d %15s %15s", &x, &y, t1, t2);
+        Uint8 btn = SDL_BUTTON_LEFT;
+        parse_click_opts(t1, t2, &btn, mods, sizeof(mods));
+        SDL_Keymod prev = hold_mods(mods);
         push_mouse_move(x,y); push_mouse_button(x,y,btn,true); push_mouse_button(x,y,btn,false);
+        restore_mods(mods, prev);
     } else if (strcmp(cmd, "clickid") == 0) {
-        // clickid <winId> <x> <y> [right] — click a SPECIFIC window (the in-game map
-        // is window 5, but it's smaller than the main window so active_window() picks
-        // the main one; this routes the click to the intended window directly).
-        unsigned id=0; int x=0,y=0; char rb[16]={0};
-        sscanf(line.c_str(), "%*s %u %d %d %15s", &id, &x, &y, rb);
-        Uint8 btn = (rb[0]=='r') ? SDL_BUTTON_RIGHT : SDL_BUTTON_LEFT;
+        // clickid <winId> <x> <y> [left|right|middle] [shift|ctrl|alt] — click a SPECIFIC
+        // window (the in-game map is window 5, but it's smaller than the main window so
+        // active_window() picks the main one; this routes the click to the intended window
+        // directly). The modifier token is what makes Shift+RMB (unit-info tooltip) and
+        // Ctrl+RMB (rotate a placement) drivable headlessly.
+        unsigned id=0; int x=0,y=0; char t1[16]={0}, t2[16]={0}, mods[16]={0};
+        sscanf(line.c_str(), "%*s %u %d %d %15s %15s", &id, &x, &y, t1, t2);
+        Uint8 btn = SDL_BUTTON_LEFT;
+        parse_click_opts(t1, t2, &btn, mods, sizeof(mods));
+        SDL_Keymod prev = hold_mods(mods);
         push_mouse_move(x,y,id); push_mouse_button(x,y,btn,true,id); push_mouse_button(x,y,btn,false,id);
+        restore_mods(mods, prev);
     } else if (strcmp(cmd, "dblclickid") == 0) {
         // dblclickid <winId> <x> <y> — proper double-click: a select-click (clicks=1)
         // then a clicks=2 press (the game's OnLButtonDblClk needs button.clicks>=2).
@@ -817,10 +863,27 @@ void handle_command(const std::string& line, en_socket_t conn) {
             SDL_Window* win = SDL_GetWindowFromID(id);
             if (!win) continue;
             int w=0,h=0; SDL_GetWindowSize(win,&w,&h);
+            int px=0,py=0; SDL_GetWindowPosition(win,&px,&py);
             bool shown = (SDL_GetWindowFlags(win) & SDL_WINDOW_SHOWN) != 0;
             const char* title = SDL_GetWindowTitle(win);
-            char buf[256];
-            snprintf(buf,sizeof(buf),"%u:%dx%d %s \"%s\"\n", id, w, h, shown?"shown":"hidden", title?title:"");
+            // Desktop z-order + topmost band: "shown" alone can't tell a visible window
+            // from one buried behind a sibling, which is exactly the question when a
+            // popup (unit-info tooltip) is reported as vanishing.
+            char zbuf[48] = {0};
+#ifdef _WIN32
+            SDL_SysWMinfo wm; SDL_VERSION(&wm.version);
+            if (SDL_GetWindowWMInfo(win, &wm)) {
+                HWND hw = wm.info.win.window;
+                int z = -1, i = 0;
+                for (HWND t = ::GetTopWindow(NULL); t; t = ::GetNextWindow(t, GW_HWNDNEXT), ++i)
+                    if (t == hw) { z = i; break; }
+                snprintf(zbuf, sizeof(zbuf), " z%d%s", z,
+                         (::GetWindowLong(hw, GWL_EXSTYLE) & WS_EX_TOPMOST) ? " topmost" : "");
+            }
+#endif
+            char buf[320];
+            snprintf(buf,sizeof(buf),"%u:%dx%d@%d,%d %s%s \"%s\"\n", id, w, h, px, py,
+                     shown?"shown":"hidden", zbuf, title?title:"");
             out += buf;
         }
         if (out.empty()) out = "(no windows)\n";
