@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-bmp2png.py — convert a 32-bit BMP (as written by the harness `shot`/`shotid`)
-to PNG, with optional nearest-neighbour downscale.
+bmp2png.py — convert a 24- or 32-bit BMP (as written by the harness
+`shot`/`shotid`) to PNG, with optional nearest-neighbour downscale.
 
 Why this exists: on macOS `sips` and Pillow both choke on the 32-bit
 BITMAPINFOHEADER BMPs SDL_SaveBMP produces, so we decode + write PNG by hand
@@ -20,8 +20,12 @@ def bmp2png(src, dst, maxw=1000):
     bpp = struct.unpack("<H", d[28:30])[0]
     topdown = h < 0
     H = abs(h)
-    assert bpp == 32, "expected 32-bpp BMP, got %d" % bpp
-    rowsize = w * 4
+    # 32bpp = main window / GPU read-back; 24bpp = detached panel back-surfaces
+    # (SDL_SaveBMP drops the alpha channel when the surface has none). Rows are
+    # padded to a 4-byte boundary, which only bites at 24bpp.
+    assert bpp in (24, 32), "expected 24- or 32-bpp BMP, got %d" % bpp
+    bypp = bpp // 8
+    rowsize = ((w * bypp + 3) // 4) * 4
     px = d[off:]
     rows = []
     for y in range(H):
@@ -29,7 +33,7 @@ def bmp2png(src, dst, maxw=1000):
         row = px[sy * rowsize: sy * rowsize + rowsize]
         out = bytearray(w * 4)
         for x in range(w):
-            b = row[x*4]; g = row[x*4+1]; r = row[x*4+2]
+            b = row[x*bypp]; g = row[x*bypp+1]; r = row[x*bypp+2]
             out[x*4] = r; out[x*4+1] = g; out[x*4+2] = b; out[x*4+3] = 255
         rows.append(bytes(out))
     if w > maxw:
