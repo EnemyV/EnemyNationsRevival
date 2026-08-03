@@ -214,6 +214,11 @@ bool GameWindow::IsAreaPanelWindow(uint32_t winID) const {
 static WNDPROC s_sdlOrigWndProc = NULL;
 
 static LRESULT CALLBACK SdlSubclassWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    // Display-only overlays (the Shift+RMB unit-info panel) tag themselves click-through:
+    // they open UNDER the cursor, so without this they swallow the player's next map click
+    // whole — the global dismiss hook closed the panel and the intended action never fired.
+    if (msg == WM_NCHITTEST && ::GetProp(hWnd, "EN_clickThrough"))
+        return HTTRANSPARENT;
     if (msg == WM_SETCURSOR && LOWORD(lParam) == HTCLIENT) {
         // Returning TRUE alone preserves whatever cursor was last ::SetCursor'd —
         // which the game's CWndArea::SetMouseState() updates on every mouse move.

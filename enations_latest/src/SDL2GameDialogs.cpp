@@ -1061,6 +1061,9 @@ void SDL2UnitInfoPanel::Show(CUnit* pUnit, int screenX, int screenY) {
             HWND h2 = wm.info.win.window;
             LONG ex = ::GetWindowLong(h2, GWL_EXSTYLE);
             ::SetWindowLong(h2, GWL_EXSTYLE, ex | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW);
+            // Click-through (read by SdlSubclassWndProc's WM_NCHITTEST): the panel is
+            // display-only and opens under the cursor, so it must not eat map clicks.
+            ::SetProp(h2, "EN_clickThrough", (HANDLE)1);
         }
 #endif
     } else {
