@@ -168,15 +168,41 @@ def main():
                   f"{flat:.1f}% single colour rgb{col}")
 
     # --- LIVENESS: area map must change while playing ---
+    #
+    # A byte-identical pair at a FIXED sampling gap cannot distinguish "rendering
+    # stopped" from "the game is merely slower than my sampling rate" — I called a
+    # throughput collapse a permanent freeze on exactly that mistake (2026-08-04).
+    # So a zero is not a verdict, it is a trigger for two controls:
+    #   1. does `gamestate elapsed` advance? (is the sim running at all)
+    #   2. does an explicit `pan` force a redraw? (is the renderer alive)
+    # Only "no repaint AND pan does nothing" is a genuine freeze.
     amid = ids.get("Area Map")
     if amid:
         p1 = "/tmp/_live1.bmp"; p2 = "/tmp/_live2.bmp"
+        e0 = cmd(["gamestate"], port).split()
         grab(port, amid, p1); time.sleep(LIVENESS_GAP_S); grab(port, amid, p2)
         try:
             b1 = open(p1,"rb").read(); b2 = open(p2,"rb").read()
             diff = sum(1 for x, y in zip(b1, b2) if x != y)
-            rep.check(diff > 0, f"LIVENESS  'Area Map' over {LIVENESS_GAP_S}s",
-                      f"{diff} bytes changed (0 = surface stopped repainting)")
+            if diff > 0:
+                rep.check(True, f"LIVENESS  'Area Map' over {LIVENESS_GAP_S}s",
+                          f"{diff} bytes changed")
+            else:
+                e1 = cmd(["gamestate"], port).split()
+                def el(t): return int(t[t.index("elapsed")+1]) if "elapsed" in t else -1
+                simadv = el(e1) - el(e0)
+                cmd(["pan", amid, "400", "300"], port); time.sleep(2.5)
+                grab(port, amid, p1)
+                pandiff = sum(1 for x, y in zip(open(p1,"rb").read(), b2) if x != y)
+                if pandiff > 0:
+                    rep.check(False, f"LIVENESS  'Area Map' over {LIVENESS_GAP_S}s",
+                              f"0 bytes spontaneously, but an explicit pan redrew {pandiff} "
+                              f"bytes and sim advanced {simadv} ticks => STALLED/SLOW, "
+                              f"renderer alive (throughput problem, NOT a freeze)")
+                else:
+                    rep.check(False, f"LIVENESS  'Area Map' over {LIVENESS_GAP_S}s",
+                              f"0 bytes spontaneously AND pan forced no redraw "
+                              f"(sim advanced {simadv} ticks) => GENUINELY FROZEN")
         except Exception as e:
             rep.check(False, "LIVENESS 'Area Map'", str(e))
 
