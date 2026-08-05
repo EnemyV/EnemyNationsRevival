@@ -13,7 +13,13 @@ Metrics per sample (default every 60s):
   sim         elapsed delta / wall second, and whether it stalled at all
   moving%     fraction of MY vehicles whose world position changed since last sample
   bldgs       my building count (construction / destruction)
-  war         cumulative vehsdest + bldgsdest (combat is happening)
+  kills       cumulative vehsdest + bldgsdest — NOTE these are KILLS I MADE, not losses.
+              IncVehsDest is called on the killer (netapi.cpp:2574, guarded by
+              pPlr != pUnit->GetOwner()), and only for CUnit::vehicle, so cranes and
+              infantry never appear. I first read this column as "losses" and was
+              puzzled that my fleet shrank 159 -> 141 while it showed 1; gamestate
+              exposes NO loss counter at all, so read attrition off myVeh instead.
+  myVeh       my own mobile-unit count — this is where losses actually show
   food        resource movement
 
 Mid-soak it opens N building info windows and leaves them open for one interval —
@@ -93,11 +99,12 @@ def main():
     print(f"soaking {minutes:g} min, sampling every {every:g}s "
           f"({n_samples} samples), info-window stress at sample {stress_at}\n", flush=True)
     print(f"{'t(min)':>7} {'sim/s':>6} {'moving%':>8} {'myVeh':>6} {'bldgs':>6} "
-          f"{'war':>5} {'food':>7}  note", flush=True)
+          f"{'kills':>5} {'food':>7}  note", flush=True)
 
     prev_pos = my_vehicles(port); prev = gs(port); t0 = time.time()
     stalled_samples = 0; moved_any = 0; war0 = prev.get("vehsdest", 0) + prev.get("bldgsdest", 0)
     bldg0 = prev.get("bldgshave", 0); food0 = food(port); opened = []
+    veh0 = len(prev_pos)
     rows = 0
     for i in range(n_samples):
         note = ""
@@ -142,8 +149,10 @@ def main():
           f"{stalled_samples}/{rows} samples showed no advance")
     check(moved_any > rows // 2, "vehicles kept moving",
           f"{moved_any}/{rows} samples had movement")
-    check(prev.get("bldgshave", 0) != bldg0 or war1 != war0, "world progressed",
-          f"buildings {bldg0} -> {prev.get('bldgshave')}, war {war0} -> {war1}")
+    check(prev.get("bldgshave", 0) != bldg0 or war1 != war0 or len(prev_pos) != veh0,
+          "world progressed",
+          f"buildings {bldg0} -> {prev.get('bldgshave')}, kills {war0} -> {war1}, "
+          f"my mobile units {veh0} -> {len(prev_pos)}")
     check(food(port) != food0, "resources moved", f"food {food0} -> {food(port)}")
     check("playing" in cmd(["gamestate"], port), "still playing at the end", "")
     print("\n=== SOAK %s ===" % ("FAILED" if fails else "CLEAN"))
