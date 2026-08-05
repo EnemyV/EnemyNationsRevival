@@ -57,6 +57,9 @@ def main():
         print("\n=== ABORTED: results against the sdl2-compat shim are invalid ===")
         sys.exit(2)
 
+    from mac_crashcheck import snapshot, new_since, summarise
+    crash_before = snapshot()
+
     subprocess.run(["pkill", "-9", "-f", "enations"], capture_output=True); time.sleep(2)
     results = {}
     results["render (mac_verify)"] = run(
@@ -77,6 +80,17 @@ def main():
          "--port", port, "--save", save, "--minutes", soak], port)
 
     subprocess.run(["pkill", "-9", "-f", "enations"], capture_output=True)
+
+    # Did anything CRASH? None of the three stages looks for this: I replaced
+    # mac_regress.py — whose only signal was a new .ips — with tools that check
+    # rendering, gameplay and endurance, and in doing so dropped its one real check.
+    # The game then SIGSEGV'd twice on shutdown and every stage still reported PASS.
+    time.sleep(3)   # reports are written a moment after the process dies
+    crashes = new_since(crash_before)
+    results["no crash reports"] = not crashes
+    for c in crashes:
+        print(f"  [FAIL] crash report {c}\n         {summarise(c)}", flush=True)
+
     print(f"\n{'='*72}\n== SUMMARY  (tree={tree} exe={exe})\n{'='*72}")
     for k, v in results.items():
         print(f"  {'PASS' if v else 'FAIL'}  {k}")
