@@ -27,7 +27,19 @@
   #define EN_LOGPATH_SEP    '/'
 #endif
 
-inline std::string& EnLogLaunchDirRef( ) { static std::string s_dir; return s_dir; }
+// The launch dir must outlive EVERY other static. Teardown logging runs during static
+// destruction (GameWindow::Cleanup -> LogToFile, ~SDL2Compositor -> LogCompositor) and calls
+// EnLogPath(); a plain function-local static std::string is already destroyed by then, so
+// reading it is UB - sDir picks up freed heap bytes, .empty() is false so the degrade path
+// below never fires, and sDir + leaf resolves to a garbage path. That is BUGS #72: every
+// clean exit wrote a 51-byte file with a binary-garbage NAME into the working directory.
+// Heap-allocate and never destroy, so the reference stays valid for the whole program
+// including static destruction. Exactly one std::string, deliberately never freed.
+inline std::string& EnLogLaunchDirRef( )
+{
+    static std::string* s_pDir = new std::string( );
+    return *s_pDir;
+}
 
 // Call ONCE from WinMain/main, before any chdir.
 inline void EnLogCaptureLaunchDir( )
