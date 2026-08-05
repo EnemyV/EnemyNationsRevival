@@ -156,9 +156,52 @@ def main():
               f"units {n0}->{n1}, food {f0}->{f1}")
     rep.check("playing" in cmd(["gamestate"], port), "still playing after soak")
 
-    # --- save / reload roundtrip ---
-    sv = cmd(["save", "playtest_tmp.en"], port, t=180)
+    # --- save / reload ROUNDTRIP ---
+    # Checking only that `save` returns ok would pass a serialization regression that
+    # writes an unloadable or lossy file. So: snapshot the live state, save, kill the
+    # process, relaunch, load, and compare. This is the check that would actually catch
+    # a VER_RELEASE / serialized-field mistake.
+    def signature():
+        u = units(port)
+        me = [v for v in u.values() if v[3] == "me"]
+        return {
+            "own_vehicles":  sum(1 for v in me if v[2] in ("vehicle", "crane", "transport", "carrier", "infantry")),
+            "own_buildings": sum(1 for v in me if v[2] == "building"),
+            "total_units":   len(u),
+            "food":          stat(port, "food"),
+            "pplbldg":       stat(port, "pplbldg"),
+        }
+    before = signature()
+    sv = cmd(["save", "playtest_tmp.en"], port, t=240)
     rep.check("ok" in sv.lower(), "save game", sv[:70])
+    if "ok" in sv.lower() and ldir:
+        print(f"  pre-save state: {before}")
+        cmd(["quit"], port); time.sleep(2)
+        try: proc.kill()
+        except Exception: pass
+        time.sleep(3)
+        env = dict(os.environ, EN_HARNESS="1", EN_HARNESS_PORT=str(port), SDL_AUDIODRIVER="dummy")
+        proc = subprocess.Popen(["./enations"], cwd=ldir, env=env,
+                                stdout=open("/tmp/mac_playtest_game2.log", "w"),
+                                stderr=subprocess.STDOUT)
+        for _ in range(80):
+            if "menu" in cmd(["gamestate"], port): break
+            time.sleep(3)
+        ld = cmd(["load", "playtest_tmp.en"], port, t=240)
+        rep.check("ok" in ld.lower(), "reload the saved game in a FRESH process", ld[:70])
+        if "ok" in ld.lower():
+            for _ in range(20):
+                if "playing" in cmd(["gamestate"], port): break
+                time.sleep(2)
+            after = signature()
+            print(f"  post-load state: {after}")
+            for k in ("own_vehicles", "own_buildings"):
+                rep.check(before[k] == after[k], f"roundtrip preserved {k}",
+                          f"{before[k]} -> {after[k]}")
+            rep.check(after["food"] is not None and before["food"] is not None
+                      and abs(after["food"] - before["food"]) <= max(50, before["food"] // 10),
+                      "roundtrip preserved food (within tolerance)",
+                      f"{before['food']} -> {after['food']}")
 
     return finish(rep, proc, port)
 
