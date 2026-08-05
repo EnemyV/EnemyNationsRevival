@@ -4017,27 +4017,27 @@ void CGameMap::DiscoverSpritesGpu( CAnimAtr& aa, const CRect& rect )
     int minY = __min( __min( cTL.Y( ), cTR.Y( ) ), __min( cBL.Y( ), cBR.Y( ) ) ) - kHexMargin;
     int maxY = __max( __max( cTL.Y( ), cTR.Y( ) ), __max( cBL.Y( ), cBR.Y( ) ) ) + kHexMargin;
 
-    // A viewport that spans a whole torus period breaks the 4-corner bbox: the corners wrap
-    // and ToNearestHex pulls them back toward the view centre, so the box COLLAPSES instead
-    // of growing. Measured at max zoom-out on a 128x128 map: a 51x51 box for 353 on-screen
-    // forest hexes, 229 of them never scanned -> forest floor drawn with no trees, while
-    // buildings/vehicles (walked from their own maps, not this box) still appeared. Grow to
-    // the span the window actually needs; one full period covers every hex, so cap there.
+    // A viewport that spans a torus period breaks the 4-corner bbox: the corners wrap and
+    // ToNearestHex pulls them back toward the view centre, so the box COLLAPSES instead of
+    // growing (measured at max zoom-out on 128x128: a 51x51 box while 353 forest hexes were
+    // on screen). Rebuild it from the span the window actually needs, anchored on the view's
+    // reference hex — NOT on the collapsed box's centre, which is wrapped garbage.
+    //
+    // Deliberately NOT capped at one period. Past ~1 period the same hex appears at SEVERAL
+    // on-screen positions, and (ux,uy) is the unwrapped representative that decides WHERE it
+    // draws, so a one-period box draws each hex at only ONE of them: half the map keeps its
+    // trees and the other half is bare forest floor. WrapX/WrapY still map back to the single
+    // array hex, so repeating the span costs no correctness — only the iteration, which is
+    // bounded by screen area / hex size and runs on FULL captures only.
     {
         const int hxW  = __max( 1, HexWid( aa.m_iZoom ) );
         const int hxH  = __max( 1, HexHt ( aa.m_iZoom ) );
         const int need = rect.Width( ) / hxW + rect.Height( ) / hxH + 2 * kHexMargin;
-        const int needX = __min( need, (int)m_eX );
-        const int needY = __min( need, (int)m_eY );
-        if ( maxX - minX + 1 < needX )
-            { int c = ( minX + maxX ) / 2; minX = c - needX / 2; maxX = minX + needX - 1; }
-        if ( maxY - minY + 1 < needY )
-            { int c = ( minY + maxY ) / 2; minY = c - needY / 2; maxY = minY + needY - 1; }
+        if ( maxX - minX + 1 < need )
+            { minX = refHex.X( ) - need / 2; maxX = minX + need - 1; }
+        if ( maxY - minY + 1 < need )
+            { minY = refHex.Y( ) - need / 2; maxY = minY + need - 1; }
     }
-
-    // Never scan more than one full torus period in either axis (max-zoom guard).
-    if ( maxX - minX >= m_eX ) maxX = minX + m_eX - 1;
-    if ( maxY - minY >= m_eY ) maxY = minY + m_eY - 1;
 
 #if EN_SPRITE_PROBES
     // Where do forest hexes get lost between "on screen" and "tree drawn"?
@@ -4314,17 +4314,26 @@ void CGameMap::DiscoverSpritesGpu( CAnimAtr& aa, const CRect& rect )
                 CHex* ph = _GetHex( mx, my );
                 if ( CHex::forest != ph->GetType( ) )
                     continue;
-                CHexCoord hc( mx, my );
-                hc.ToNearestHex( refHex );          // unwrapped on-screen representative
-                CRect rbp;
-                if ( !aa.CalcWindowHexBound( hc, rbp ) )
-                    continue;
-                if ( rbp.right <= rect.left || rbp.left >= rect.right ||
-                     rbp.bottom <= rect.top || rbp.top >= rect.bottom )
-                    continue;
-                ++fstOnScreen;
-                if ( hc.X( ) < minX || hc.X( ) > maxX || hc.Y( ) < minY || hc.Y( ) > maxY )
-                    ++fstOutBox;
+                CHexCoord base( mx, my );
+                base.ToNearestHex( refHex );
+                // Count every on-screen POSITION, not every hex: past one period the same
+                // hex is visible at several representatives at once, and counting it once
+                // (the ToNearestHex one) is exactly the blindness that made a half-covered
+                // screen read as outOfBox=0.
+                for ( int j = -2; j <= 2; ++j )
+                for ( int i = -2; i <= 2; ++i )
+                {
+                    CHexCoord hc( base.X( ) + i * (int)m_eX, base.Y( ) + j * (int)m_eY );
+                    CRect rbp;
+                    if ( !aa.CalcWindowHexBound( hc, rbp ) )
+                        continue;
+                    if ( rbp.right <= rect.left || rbp.left >= rect.right ||
+                         rbp.bottom <= rect.top || rbp.top >= rect.bottom )
+                        continue;
+                    ++fstOnScreen;
+                    if ( hc.X( ) < minX || hc.X( ) > maxX || hc.Y( ) < minY || hc.Y( ) > maxY )
+                        ++fstOutBox;
+                }
             }
         FILE* fp = fopen( EnLogPath( "spriteprobe.log" ).c_str( ), "a" );
         if ( fp )
