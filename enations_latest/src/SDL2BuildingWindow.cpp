@@ -663,7 +663,9 @@ static BldgLayout computeLayout(CBuilding* b) {
     while ( maxCols < 3 && ( ( maxCols + 1 ) * WIN_W + maxCols * COL_GAP ) <= screenW )
         maxCols++;
 
-    if ( ( total <= splitAt || n < 4 ) && !mustSplit ) {
+    // If not even TWO columns fit the display width, columns cannot help and a second one
+    // would only make the window too WIDE as well as too tall — stay single-column.
+    if ( maxCols < 2 || ( ( total <= splitAt || n < 4 ) && !mustSplit ) ) {
         // single column (the common case)
         L.nCols  = 1;
         L.bodyH  = total;
@@ -672,7 +674,7 @@ static BldgLayout computeLayout(CBuilding* b) {
     } else {
         // Fewest columns that fit the budget; if none fit, keep the widest tried (best effort).
         int cols = 1, body = total, tmp[16] = {};
-        for ( int c = 2; c <= __max( 2, maxCols ); c++ ) {
+        for ( int c = 2; c <= maxCols; c++ ) {
             const int b = partition( c, tmp );
             cols = c; body = b;
             for ( int i = 0; i < n; i++ ) L.colOf[i] = tmp[i];
