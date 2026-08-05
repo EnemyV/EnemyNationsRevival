@@ -121,15 +121,18 @@ def main():
     if cmd(["pstats"], port) == "ERR_NO_SOCKET":
         print(f"no game on :{port}"); sys.exit(2)
 
-    # Report which SDL is actually loaded — the difference between a real result
-    # and a wasted run (real SDL2 == 2.32.10-ish; sdl2-compat reports 2.32.70).
+    # HARD CHECK, not a printed line: on the sdl2-compat shim the colour key is silently
+    # ignored and every DIB sprite renders on magenta, so the entire run is invalid rather
+    # than merely odd. It used to just print the linkage, which is easy to scroll past — I
+    # scrolled past it once and "discovered" magenta on a build I had just patched.
     if ldir:
         try:
-            out = subprocess.run(["otool","-L", os.path.join(ldir, os.path.basename(exe))],
-                                 capture_output=True, text=True).stdout
-            for ln in out.splitlines():
-                if "SDL2-2.0.0" in ln: print("SDL linkage:", ln.strip())
-        except Exception: pass
+            sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+            from mac_sdlcheck import check_sdl
+            ok, detail = check_sdl(os.path.join(ldir, os.path.basename(exe)))
+            rep.check(ok, "SDL linkage", detail)
+        except Exception as e:
+            rep.check(False, "SDL linkage", f"could not be determined: {e}")
 
     if save:
         # Wait for the MENU, not merely for the socket. The harness starts listening
