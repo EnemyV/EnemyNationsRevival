@@ -143,35 +143,40 @@ def main():
                 m = re.match(r'\d+:(\d+)x(\d+)', l.strip())
                 if m: cmd(["clickid", i, str(int(m.group(1)) // 2), str(int(m.group(2)) - 24)], port); time.sleep(0.6)
 
-        bw = None
-        # Try each crane: a BUSY/constructing crane will not open Build (recipe), and a
-        # crane still sitting on the rocket opens the ROCKET's info window instead -
-        # everything spawns on top of it. So move it clear, then retry per crane.
+        # SELECTING A CRANE IS THE HARD PART, and clicking the view centre does not do it:
+        # every unit spawns underneath the ROCKET SHIP, whose sprite is large enough to
+        # swallow the click, so a double-click there opens the Rocket's info window (772x821,
+        # itself taller than the screen, so it cannot even be closed by a computed Close
+        # button). Moving one crane first does not help either - it needs a click to select.
         #
-        # Each crane gets a DIFFERENT destination. Sending them all to one spot (and the
-        # movement phase above already sends units to a single point) re-clusters them,
-        # and then the double-click lands on a neighbouring vehicle and opens a "Vehicle
-        # Route" window instead of Build Structure - the dense-base gotcha the mac
-        # harness recipe warns about, observed here as exactly that window appearing.
-        SPREAD = [(-300, -160), (260, -180), (-260, 170)]
-        for idx, cr in enumerate(cranes[:3]):
+        # BOX-SELECT breaks the circle: a left-drag marquee picks MOBILE units and ignores
+        # buildings, so it grabs the cranes and not the rocket. Relocate the whole group
+        # away, then the crane furthest from the rocket is cleanly clickable. Measured: a
+        # crane 263 world-units from the rocket opened Build Structure on the FIRST attempt,
+        # where the previous per-crane click loop failed 3/3 twice running.
+        cmd(["dragid", wid, "180", "80", str(W - 180), str(H - 80)], port); time.sleep(2)
+        cmd(["clickid", wid, "120", str(H - 60), "right"], port)
+        for _ in range(9):
+            time.sleep(5)
+            if sum(1 for k, v in mine(port).items()
+                   if k in got and v[:2] != got[k][:2]) >= 2: break
+
+        u = units(port)
+        rocket = [v for v in u.values() if v[3] == "me" and v[2] == "building"]
+        cranes = [(k, v) for k, v in u.items() if v[3] == "me" and v[2] == "crane"]
+        if rocket and cranes:
+            rx, ry = rocket[0][0], rocket[0][1]
+            cranes.sort(key=lambda kv: -math.dist((kv[1][0], kv[1][1]), (rx, ry)))
+        bw = None
+        for cr, cv in cranes[:3]:
             close_strays()
-            p0 = units(port).get(cr)
-            if not p0: continue
-            dx, dy = SPREAD[idx % len(SPREAD)]
-            cmd(["center", cr], port); time.sleep(1.5)
-            cmd(["clickid", wid, str(CX), str(CY + FOOT_OFFSET)], port); time.sleep(1.2)
-            cmd(["clickid", wid, str(CX + dx), str(CY + dy), "right"], port)
-            for _ in range(10):
-                time.sleep(4)
-                if units(port).get(cr, p0)[:2] != p0[:2]: break
             cmd(["center", cr], port); time.sleep(2)
             cmd(["dblclickid", wid, str(CX), str(CY + FOOT_OFFSET)], port); time.sleep(3)
             wins_now = cmd(["wins"], port).splitlines()
             bw = next((l.split(":")[0].strip() for l in wins_now if "Build Structure" in l), None)
             if bw: break
-            print(f"    crane {cr}: no Build Structure; windows = "
-                  f"{[l.split(chr(34))[1] for l in wins_now if chr(34) in l]}")
+            print(f"    crane {cr} (dist {math.dist((cv[0],cv[1]),(rx,ry)):.0f}): no Build Structure; "
+                  f"windows = {[l.split(chr(34))[1] for l in wins_now if chr(34) in l]}")
         if not rep.check(bw is not None, "construction: Build Structure window opened"): return
         cmd(["clickid", bw, "65", "228"], port); time.sleep(1.5)    # Natural Resources
         cmd(["clickid", bw, "190", "80"], port); time.sleep(1.5)    # Farm tile
@@ -180,14 +185,37 @@ def main():
         rep.check(gone, "construction: Build accepted (entered placement mode)")
         # A site that LOOKS like open grass can be sloped or tree-covered; trees are not
         # units so they are invisible to `units`. hexinfo is the only reliable filter.
+        # The recipe's buildable predicate is water 0 + tree 0 + vis 1 + unit 0 AND FLAT
+        # (matching alt across the adjacent hexes). I first omitted the flatness term and
+        # the placement silently did nothing for 120s - a slope fails FoundationCost, and
+        # trees are not "units" so neither is visible to eyeballing or to `units`.
+        def hexinfo(xx, yy):
+            p = cmd(["hexinfo", wid, str(xx), str(yy)], port).split()
+            return {p[i]: p[i+1] for i in range(len(p)-1)
+                    if p[i] in ("alt", "vis", "unit", "water", "tree")}
+        def clear(t):
+            return t.get("water") == "0" and t.get("tree") == "0" \
+               and t.get("vis") == "1" and t.get("unit") == "0"
+        # Sample once into a grid, then prefer a spot whose sampled neighbours share its
+        # altitude. NOTE the 40px step is NOT guaranteed to be one hex - on-screen hex
+        # spacing varies with zoom - so "flat" here is a heuristic, not the engine's test.
+        # Requiring it strictly found nothing at all, so fall back to any clear hex: a
+        # placement attempt that might be refused beats no attempt and a hard FAIL.
+        grid = {}
+        for yy in range(180, 440, 40):
+            for xx in range(240, 800, 40):
+                t = hexinfo(xx, yy)
+                if clear(t): grid[(xx, yy)] = t.get("alt")
         site = None
-        for yy in range(180, 460, 40):
-            for xx in range(240, 820, 40):
-                p = cmd(["hexinfo", wid, str(xx), str(yy)], port).split()
-                t = {p[i]: p[i+1] for i in range(len(p)-1) if p[i] in ("alt","vis","unit","water","tree")}
-                if t.get("water") == "0" and t.get("tree") == "0" and t.get("vis") == "1" and t.get("unit") == "0":
-                    site = (xx, yy); break
-            if site: break
+        for (xx, yy), alt in grid.items():
+            if grid.get((xx + 40, yy)) == alt and grid.get((xx, yy + 40)) == alt:
+                site = (xx, yy)
+                print(f"    flat cluster at {site}, alt {alt} ({len(grid)} clear hexes sampled)")
+                break
+        if site is None and grid:
+            site = next(iter(grid))
+            print(f"    no flat cluster; falling back to a clear hex at {site} "
+                  f"({len(grid)} clear hexes sampled)")
         if not rep.check(site is not None, "construction: found a buildable hex"): return
         n0 = len([v for v in mine(port).values() if v[2] == "building"])
         cmd(["clickid", wid, str(site[0]), str(site[1])], port)
