@@ -574,8 +574,9 @@ struct SecRec { int id; int h; };
 struct BldgLayout {
     SecRec secs[16];
     int    n         = 0;
-    int    colOf[16] = {};     // 0 = left column, 1 = right column
-    bool   twoCol    = false;
+    int    colOf[16] = {};     // column index this section lands in, 0-based
+    int    nCols     = 1;      // 1..3; 3 is what the Rocket Ship needs to fit a short screen
+    bool   twoCol    = false;  // kept as (nCols > 1) for readability at the use sites
     int    bodyH     = 0;      // height of the tallest column (incl. SEC_PAD)
     int    width     = WIN_W;
     int    height    = 0;
@@ -625,34 +626,63 @@ static BldgLayout computeLayout(CBuilding* b) {
     // window genuinely would not fit, and then only if there is more than one section to
     // split. A slightly odd two-column layout beats an unreachable Close button.
     const bool mustSplit = ( total > bodyBudget ) && ( n >= 2 );
+
+    // Partition the sections into `cols` CONTIGUOUS runs (display order preserved) so the
+    // tallest run is as short as possible — the classic "split array, minimise largest sum",
+    // by binary search on the height cap. Two columns was hard-coded before and cannot get
+    // the Rocket Ship under budget: its balanced 2-way body is ~638 against a ~411 budget on
+    // a 614-high screen. Three columns brings it to ~370.
+    auto partition = [&]( int cols, int* colOut ) -> int {
+        int lo = 0, hi = 0;
+        for ( int i = 0; i < n; i++ ) { const int hgt = L.secs[i].h + SEC_PAD;
+                                        lo = __max( lo, hgt ); hi += hgt; }
+        while ( lo < hi ) {                       // smallest cap needing <= cols runs
+            const int mid = lo + ( hi - lo ) / 2;
+            int need = 1, run = 0;
+            for ( int i = 0; i < n; i++ ) {
+                const int hgt = L.secs[i].h + SEC_PAD;
+                if ( run + hgt > mid ) { need++; run = hgt; } else run += hgt;
+            }
+            if ( need <= cols ) hi = mid; else lo = mid + 1;
+        }
+        int col = 0, run = 0, hs[4] = {};
+        for ( int i = 0; i < n; i++ ) {
+            const int hgt = L.secs[i].h + SEC_PAD;
+            if ( run + hgt > lo && col + 1 < cols ) { col++; run = hgt; } else run += hgt;
+            colOut[i] = col; hs[col] += hgt;
+        }
+        int body = 0;
+        for ( int c = 0; c < cols; c++ ) body = __max( body, hs[c] );
+        return body;
+    };
+
+    // Never widen past the screen: a window wider than the display is the same class of bug
+    // as one taller than it. 3 columns = 1164px, which fits 1280 but not 1024.
+    const int screenW = GetSystemMetrics( SM_CXSCREEN );
+    int maxCols = 1;
+    while ( maxCols < 3 && ( ( maxCols + 1 ) * WIN_W + maxCols * COL_GAP ) <= screenW )
+        maxCols++;
+
     if ( ( total <= splitAt || n < 4 ) && !mustSplit ) {
         // single column (the common case)
-        L.twoCol = false;
+        L.nCols  = 1;
         L.bodyH  = total;
         L.width  = WIN_W;
+        for ( int i = 0; i < n; i++ ) L.colOf[i] = 0;
     } else {
-        // two columns, preserving display order: col0 = leading sections up to
-        // ~half the stack, col1 = the rest.
-        // Pick the split that MINIMISES the taller column, rather than cutting at the
-        // first section to cross the halfway mark. The old rule always overshot — it took
-        // the whole section that straddled half — so one column could end up much taller
-        // than the other and the window taller than it needed to be, which is the height
-        // that #67 is about. Display order is still preserved (col0 = a prefix).
-        int split = n, best = INT_MAX, run = 0;
-        for ( int i = 0; i < n - 1; i++ ) {
-            run += L.secs[i].h + SEC_PAD;
-            const int taller = __max( run, total - run );
-            if ( taller < best ) { best = taller; split = i + 1; }
+        // Fewest columns that fit the budget; if none fit, keep the widest tried (best effort).
+        int cols = 1, body = total, tmp[16] = {};
+        for ( int c = 2; c <= __max( 2, maxCols ); c++ ) {
+            const int b = partition( c, tmp );
+            cols = c; body = b;
+            for ( int i = 0; i < n; i++ ) L.colOf[i] = tmp[i];
+            if ( b <= bodyBudget ) break;
         }
-        int h0 = 0, h1 = 0;
-        for ( int i = 0; i < n; i++ ) {
-            if ( i < split ) { L.colOf[i] = 0; h0 += L.secs[i].h + SEC_PAD; }
-            else             { L.colOf[i] = 1; h1 += L.secs[i].h + SEC_PAD; }
-        }
-        L.twoCol = true;
-        L.bodyH  = std::max( h0, h1 );
-        L.width  = 2 * WIN_W + COL_GAP;
+        L.nCols  = cols;
+        L.bodyH  = body;
+        L.width  = cols * WIN_W + ( cols - 1 ) * COL_GAP;
     }
+    L.twoCol = ( L.nCols > 1 );
     L.height = FIRST_Y + HEADER_H + L.bodyH + CLOSE_H;
     return L;
 }
@@ -895,20 +925,19 @@ void SDL2BuildingWindow::BuildBody() {
     int fullW = m_width - 20;
     int yTop  = BuildHeaderBand( m_x + 10, m_y + FIRST_Y, fullW );
 
-    // One column (fullW) normally; two WIN_W-wide columns when the stack is tall.
-    int colW = L.twoCol ? ( WIN_W - 20 ) : fullW;
-    int x0   = m_x + 10;
-    int x1   = m_x + 10 + WIN_W + COL_GAP;
-    int y0   = yTop, y1 = yTop;
+    // One column (fullW) normally; otherwise L.nCols WIN_W-wide columns. Generalised from
+    // a hard-coded left/right pair so the Rocket Ship can use three and fit a short screen.
+    const int colW = ( L.nCols > 1 ) ? ( WIN_W - 20 ) : fullW;
+    int cy[3] = { yTop, yTop, yTop };
 
     for ( int i = 0; i < L.n; i++ ) {
-        bool right = ( L.colOf[i] == 1 );
-        int  cx    = right ? x1 : x0;
-        int& cy    = right ? y1 : y0;
-        cy = BuildSection( L.secs[i].id, cx, cy, colW );
+        const int c  = ( L.colOf[i] >= 0 && L.colOf[i] < L.nCols ) ? L.colOf[i] : 0;
+        const int cx = m_x + 10 + c * ( WIN_W + COL_GAP );
+        cy[c] = BuildSection( L.secs[i].id, cx, cy[c], colW );
     }
 
-    int yClose = std::max( y0, y1 );
+    int yClose = cy[0];
+    for ( int c = 1; c < L.nCols && c < 3; c++ ) yClose = std::max( yClose, cy[c] );
     AddWidget<SDL2Button>(m_x + m_width / 2 - 45, yClose + 2, 90, 28, "Close",
         [this]() {
             if ( CWndArea::GetShowRange() == m_bldgID )   // stop the range overlay now
