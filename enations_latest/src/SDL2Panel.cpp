@@ -31,7 +31,26 @@
 // destroyed and later recreated — comes back where the user last dragged and
 // sized it. Stored as the global OS-window rect (top-left includes the title
 // bar). Process-lifetime only; not persisted to disk.
-static std::unordered_map<std::string, SDL_Rect> g_savedPlacements;
+//
+// DELIBERATELY LEAKED, and it must stay that way. ~SDL2Panel reaches this map via
+// DestroyOwnWindow() -> RememberPlacement(), and the panels are owned by a chain that
+// begins at a GLOBAL: theApp (lastplnt.cpp:371) -> shared_ptr<GameWindow>
+// (lastplnt.h:465) -> unique_ptr<SDL2Compositor> (GameWindow.h:355), whose destructor
+// calls RemoveAllPanels() (SDL2Compositor.cpp:36). theApp and this map are statics in
+// DIFFERENT translation units, so their relative destruction order is UNSPECIFIED — if
+// the map is destroyed first, every panel destructor then writes into a dead
+// unordered_map. That is not theoretical: it SIGSEGV'd twice on 2026-08-05 (07:01:11 and
+// 07:04:40), both KERN_INVALID_ADDRESS near null inside operator[] -> the hash table's
+// __emplace_unique_key_args, with RememberPlacement directly above it in the stack.
+//
+// Order is decided at LINK time, not per run, so the bug is invisible until a relink
+// happens to flip it — it fired twice on one build and not once in 24+ shutdowns across
+// the rebuilds that followed. Those rebuilds did not fix it, they reshuffled it, and the
+// same hazard exists on Linux and Windows because this is shared code. A leaked object is
+// never destroyed, so no destructor can run after it and the ordering question disappears.
+// The data is process-lifetime by design (see above), so leaking it costs nothing.
+static std::unordered_map<std::string, SDL_Rect>& g_savedPlacements =
+    *new std::unordered_map<std::string, SDL_Rect>();
 
 static void LogPanel(const std::string& msg) {
 #if EN_GAMEPLAY_PROBES
