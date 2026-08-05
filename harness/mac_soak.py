@@ -149,10 +149,24 @@ def main():
           f"{stalled_samples}/{rows} samples showed no advance")
     check(moved_any > rows // 2, "vehicles kept moving",
           f"{moved_any}/{rows} samples had movement")
-    check(prev.get("bldgshave", 0) != bldg0 or war1 != war0 or len(prev_pos) != veh0,
-          "world progressed",
-          f"buildings {bldg0} -> {prev.get('bldgshave')}, kills {war0} -> {war1}, "
-          f"my mobile units {veh0} -> {len(prev_pos)}")
+    # Combat and construction are SLOW: across two 30-minute soaks the first kill appeared
+    # around minute 12 and the first unit loss around minute 7. So on a short soak this
+    # legitimately shows nothing, and requiring it produced a FAIL on a run where the sim
+    # advanced with 0/5 stalls, vehicles moved in 5/5 samples and food went 6687 -> 0 —
+    # i.e. the world was obviously progressing and the check was simply asking the wrong
+    # question for the duration. Only demand combat/construction evidence when the soak is
+    # long enough to expect it; movement and resources are already checked separately.
+    progressed = (prev.get("bldgshave", 0) != bldg0 or war1 != war0
+                  or len(prev_pos) != veh0)
+    if minutes >= 15:
+        check(progressed, "world progressed (combat or construction)",
+              f"buildings {bldg0} -> {prev.get('bldgshave')}, kills {war0} -> {war1}, "
+              f"my mobile units {veh0} -> {len(prev_pos)}")
+    else:
+        print(f"[note]  combat/construction {'observed' if progressed else 'NOT observed'} "
+              f"in {minutes:g} min — not asserted below 15 min (first kill was ~min 12 in "
+              f"the 30-min soaks); buildings {bldg0} -> {prev.get('bldgshave')}, "
+              f"kills {war0} -> {war1}, units {veh0} -> {len(prev_pos)}", flush=True)
     check(food(port) != food0, "resources moved", f"food {food0} -> {food(port)}")
     check("playing" in cmd(["gamestate"], port), "still playing at the end", "")
     # "new buildings" is one of the regression metrics the fix workflow names, but on a
