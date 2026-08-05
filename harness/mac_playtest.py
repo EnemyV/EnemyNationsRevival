@@ -147,13 +147,21 @@ def main():
         # Try each crane: a BUSY/constructing crane will not open Build (recipe), and a
         # crane still sitting on the rocket opens the ROCKET's info window instead -
         # everything spawns on top of it. So move it clear, then retry per crane.
-        for cr in cranes[:3]:
+        #
+        # Each crane gets a DIFFERENT destination. Sending them all to one spot (and the
+        # movement phase above already sends units to a single point) re-clusters them,
+        # and then the double-click lands on a neighbouring vehicle and opens a "Vehicle
+        # Route" window instead of Build Structure - the dense-base gotcha the mac
+        # harness recipe warns about, observed here as exactly that window appearing.
+        SPREAD = [(-300, -160), (260, -180), (-260, 170)]
+        for idx, cr in enumerate(cranes[:3]):
             close_strays()
             p0 = units(port).get(cr)
             if not p0: continue
+            dx, dy = SPREAD[idx % len(SPREAD)]
             cmd(["center", cr], port); time.sleep(1.5)
             cmd(["clickid", wid, str(CX), str(CY + FOOT_OFFSET)], port); time.sleep(1.2)
-            cmd(["clickid", wid, str(CX - 300), str(CY - 160), "right"], port)
+            cmd(["clickid", wid, str(CX + dx), str(CY + dy), "right"], port)
             for _ in range(10):
                 time.sleep(4)
                 if units(port).get(cr, p0)[:2] != p0[:2]: break
