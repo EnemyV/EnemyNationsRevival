@@ -35,7 +35,10 @@
 
 // SDL2 headers
 #include <SDL.h>
-#ifdef _WIN32
+// Windows needs it for the HWND subclassing; macOS for the NSWindow handle used to
+// turn off the child-window drop shadows. Deliberately NOT unconditional: on Linux
+// this header drags in the X11 headers, whose macros collide with game symbols.
+#if defined(_WIN32) || defined(__APPLE__)
 #include <SDL_syswm.h>
 #endif
 
@@ -270,6 +273,12 @@ static LRESULT CALLBACK SdlCbtFilterHook(int nCode, WPARAM wParam, LPARAM lParam
 }
 #endif // _WIN32
 
+#ifdef __APPLE__
+// Defined below, next to the other hand-rolled objc helpers (the objc headers' BOOL
+// collides with the win32 shim, so this file talks to the runtime by hand).
+static void DisableMacWindowShadow(SDL_Window* win);
+#endif
+
 SDL_Window* GameWindow::CreateSDLWindow(const char* title, int x, int y, int w, int h, Uint32 flags) {
 #ifdef _WIN32
     // Protect against MFC's CBT hook corrupting the new SDL window
@@ -283,6 +292,18 @@ SDL_Window* GameWindow::CreateSDLWindow(const char* title, int x, int y, int w, 
     extern void EnSetX11UserTimeNow(SDL_Window* win);
     if (win)
         EnSetX11UserTimeNow(win);
+#endif
+#ifdef __APPLE__
+    // Every child window here (area map, radar, unit/building lists, dialogs, the
+    // Shift+RMB tooltip) is BORDERLESS, and macOS gives a borderless NSWindow a full
+    // system drop shadow — measured hasShadow=YES on all of them. On Windows these were
+    // child windows inside ONE frame and cast no shadows at all, so on mac the in-game
+    // UI ends up ringed with heavy shadows that were never part of the game's look
+    // (operator: "the shadows of the windows was too strong"). Drop them for our own
+    // child windows; the main window is created directly in Create() and is unaffected.
+    // EN_MAC_WINDOW_SHADOWS=1 restores them.
+    if (win)
+        DisableMacWindowShadow(win);
 #endif
     ApplyAppIcon(win);
 #ifdef _WIN32
@@ -324,6 +345,25 @@ extern "C" {
     void* sel_registerName(const char* name);
     void  objc_msgSend(void);
 }
+// Turn off the macOS system drop shadow on one of our borderless child windows.
+// Shadows are composited by the window server OUTSIDE the window surface, so no
+// harness capture can show them — this was found by querying hasShadow directly
+// (measured YES for BORDERLESS, BORDERLESS|ALWAYS_ON_TOP and the tooltip's exact
+// flag set on SDL 2.32.10). Opt back in with EN_MAC_WINDOW_SHADOWS=1.
+static void DisableMacWindowShadow(SDL_Window* win) {
+    const char* keep = getenv("EN_MAC_WINDOW_SHADOWS");
+    if (keep && keep[0] == '1') return;
+    SDL_SysWMinfo wm; SDL_VERSION(&wm.version);
+    if (!SDL_GetWindowWMInfo(win, &wm)) return;
+    void* nswin = wm.info.cocoa.window;
+    if (!nswin) return;
+    // Exact-prototype cast — objc_msgSend must NOT be called through a variadic
+    // signature on arm64 (different argument-passing convention). Same discipline
+    // as SetMacDockIcon / HideMacDockBar below.
+    auto sendB = (void (*)(void*, void*, bool))objc_msgSend;
+    sendB(nswin, sel_registerName("setHasShadow:"), false);
+}
+
 static void SetMacDockIcon() {
     // Resolve like PlayVideo: CWD first, then the exe's directory.
     std::string path = "assets/appicon.png";
