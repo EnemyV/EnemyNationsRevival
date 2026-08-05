@@ -155,6 +155,17 @@ def main():
           f"my mobile units {veh0} -> {len(prev_pos)}")
     check(food(port) != food0, "resources moved", f"food {food0} -> {food(port)}")
     check("playing" in cmd(["gamestate"], port), "still playing at the end", "")
+    # "new buildings" is one of the regression metrics the fix workflow names, but on a
+    # developed save with nothing queued it never moves — and then "world progressed"
+    # passes on the other terms and the gap is invisible. Say so explicitly instead:
+    # this is NOT a failure (there may be nothing to build), it is a COVERAGE statement.
+    if prev.get("bldgshave", 0) == bldg0:
+        print(f"[note]  construction NOT exercised — buildings stayed {bldg0} for the whole "
+              f"soak, so that metric is untested here; mac_playtest.py covers it directly",
+              flush=True)
+    else:
+        print(f"[note]  construction observed — buildings {bldg0} -> {prev.get('bldgshave')}",
+              flush=True)
     print("\n=== SOAK %s ===" % ("FAILED" if fails else "CLEAN"))
     if proc:
         cmd(["quit"], port); time.sleep(1)
