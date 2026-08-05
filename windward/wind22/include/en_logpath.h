@@ -41,9 +41,20 @@ inline std::string& EnLogLaunchDirRef( )
     return *s_pDir;
 }
 
-// Call ONCE from WinMain/main, before any chdir.
+// Call from WinMain/main before any chdir. FIRST call wins - later calls are ignored.
+//
+// Idempotent on purpose: on Linux there are TWO entry points in sequence. linux_main()
+// captures correctly, chdir's to the exe dir, then forwards to WinMain(), which called
+// this again - by then cwd is the exe dir, so the good value was overwritten and every
+// log landed beside the exe instead of where the game was launched from (the exact
+// failure this header exists to prevent). WinMain's own chdir is #ifdef _WIN32, so only
+// the re-capture reached Linux. Enforcing "once" here fixes it for any duplicate call
+// site on any platform rather than relying on every entry point to be careful.
+// Windows is unaffected: WinMain's call is the first one there, and first still wins.
 inline void EnLogCaptureLaunchDir( )
 {
+    if ( !EnLogLaunchDirRef( ).empty( ) )
+        return;                                   // already captured - keep the launch cwd
     char buf[1024];
     if ( EN_LOGPATH_GETCWD( buf, (int)sizeof( buf ) ) != 0 )
         EnLogLaunchDirRef( ) = buf;
