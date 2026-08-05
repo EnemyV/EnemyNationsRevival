@@ -205,6 +205,12 @@ std::string            g_unitsResult;
 std::atomic<bool>      g_unitsPending{false};
 std::atomic<bool>      g_unitsDone{false};
 
+// Pending `sel` request (HarnessDumpSelection) — same render-thread handshake.
+std::mutex              g_selMutex;
+std::string            g_selResult;
+std::atomic<bool>      g_selPending{false};
+std::atomic<bool>      g_selDone{false};
+
 std::mutex              g_bldgStateMutex;
 std::string            g_bldgStateResult;
 std::atomic<bool>      g_bldgStatePending{false};
@@ -508,6 +514,16 @@ void handle_command(const std::string& line, en_socket_t conn) {
         std::string out;
         { std::lock_guard<std::mutex> lk(g_unitsMutex); out = g_unitsResult; }
         if (!g_unitsDone.load()) out = "err units timeout (not in-game?)\n";
+        en_send(conn, out.c_str(), out.size());
+        return;
+    } else if (strcmp(cmd, "sel") == 0) {
+        // sel — report the current selection (count + primary unit) on the render
+        // thread. Answers "did that click select anything?" without pixel-diffing.
+        g_selDone = false; g_selPending = true;
+        for (int i = 0; i < 400 && !g_selDone.load(); ++i) { en_sleep_poll(); }
+        std::string out;
+        { std::lock_guard<std::mutex> lk(g_selMutex); out = g_selResult; }
+        if (!g_selDone.load()) out = "err sel timeout (not in-game?)\n";
         en_send(conn, out.c_str(), out.size());
         return;
     } else if (strcmp(cmd, "bldgstate") == 0) {
@@ -1020,6 +1036,13 @@ void EnHarness_Service() {
         HarnessDumpUnits(out);
         { std::lock_guard<std::mutex> lk(g_unitsMutex); g_unitsResult = out; }
         g_unitsDone = true;
+        return;
+    }
+    if (g_selPending.exchange(false)) {
+        std::string out;
+        HarnessDumpSelection(out);
+        { std::lock_guard<std::mutex> lk(g_selMutex); g_selResult = out; }
+        g_selDone = true;
         return;
     }
     if (g_bldgStatePending.exchange(false)) {

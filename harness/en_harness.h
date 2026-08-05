@@ -59,6 +59,13 @@ void EnHarness_RegisterWindowSurface(unsigned int windowId, SDL_Surface* surface
 // deterministic instead of a blind dblclick-sweep. Call on the game/render thread.
 void HarnessDumpUnits(std::string& out);
 
+// Report the CURRENT SELECTION (count + primary unit description) from live game
+// state. Added because there is no way to read "what is selected" on Linux: the
+// area window's title carries it on Windows only, `textid` returns empty, and
+// pixel-diffing the selection bracket proved unreliable (a building's signature
+// does not even toggle). Read-only; no game behaviour touched.
+void HarnessDumpSelection(std::string& out);
+
 // Dump ALL buildings (mine + AI) with combat/construction state, so a headless
 // driver can verify fire-control fixes (e.g. #60: a finished+stopped armed camp
 // must compute fireRate>0) without driving live combat. Backs `bldgstate`.

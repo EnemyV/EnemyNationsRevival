@@ -7702,6 +7702,24 @@ static CPoint HarnessHexToWindow( CAnimAtr& aa, const CHexCoord& hex )
 // parsers read fields 1-5); poll it for "operational" to know the info window
 // will open (a foundation/constructing building's info window stays closed).
 //---------------------------------------------------------------------------
+void HarnessDumpSelection( std::string& out )
+{
+    out.clear( );
+
+    CWndArea* a = theAreaList.GetTop( );
+    if ( a == NULL )
+    {
+        out = "err no-area-window\n";
+        return;
+    }
+    CUnit* pPrimary = a->GetUnit( );
+    char line[256];
+    snprintf( line, sizeof( line ), "sel count %d primary %s\n",
+              a->NumSelected( ),
+              pPrimary ? pPrimary->GetData( )->GetDesc( ).c_str( ) : "(none)" );
+    out = line;
+}
+
 void HarnessDumpUnits( std::string& out )
 {
     out.clear( );
