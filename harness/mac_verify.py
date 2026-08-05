@@ -255,7 +255,13 @@ def main():
         finally:
             # Close button sits bottom-centre; height varies per building so it must be
             # computed, not hard-coded. `finally` so a decode failure still closes it.
-            if iwid: cmd(["clickid", iw, str(iwid // 2), str(ihgt - 24)], port); time.sleep(0.5)
+            # Escape fallback: the Rocket Ship window is 772x821 (BUGS #67) — taller than
+            # the usable-bounds screen — so its Close button is not reachable and the
+            # click alone leaves it open.
+            if iwid:
+                cmd(["clickid", iw, str(iwid // 2), str(ihgt - 24)], port); time.sleep(0.5)
+                if any(l.split(":")[0].strip() == iw for l in cmd(["wins"], port).splitlines()):
+                    cmd(["keyid", iw, "27", "0"], port); time.sleep(0.5)
 
     left = [l for l in cmd(["wins"], port).splitlines() if l.split(":")[0] not in ids.values()]
     rep.check(len(left) == 0, "info windows closed after sweep",
