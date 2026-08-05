@@ -18,7 +18,8 @@
 #include "lastplnt.h"
 #include "minerals.h"
 #include "stdafx.h"
-#include "enprobes.h"   // probe gates - was relying on a transitive include
+#include "enprobes.h"
+#include "en_logpath.h"   // EnLogPath - probe log must land where the other logs do   // probe gates - was relying on a transitive include
 #include "SDL2Panel.h"
 #include "SDL2Sprites.h"  // GPU sprite layer (S1: trees)
 #include "Perf.h"         // sub-phase profiling counters
@@ -4325,7 +4326,7 @@ void CGameMap::DiscoverSpritesGpu( CAnimAtr& aa, const CRect& rect )
                 if ( hc.X( ) < minX || hc.X( ) > maxX || hc.Y( ) < minY || hc.Y( ) > maxY )
                     ++fstOutBox;
             }
-        FILE* fp = fopen( "spriteprobe.log", "a" );
+        FILE* fp = fopen( EnLogPath( "spriteprobe.log" ).c_str( ), "a" );
         if ( fp )
         {
             fprintf( fp,
