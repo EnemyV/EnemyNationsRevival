@@ -335,6 +335,9 @@ private:
     bool EnsureBackBuffer();
     bool m_pollingEvents = false;  // re-entrancy guard for PollEvents()
     bool m_appActive = true;       // app-level focus (any of our windows focused)
+    // macOS: window is sized/positioned to the display's USABLE bounds, so it does NOT
+    // cover the Dock's screen rect and the Dock must be left alone. Set in Create().
+    bool m_macUsableFullscreen = false;
     Uint32 m_focusLostAt = 0;      // SDL_GetTicks() when focus first read NULL (0 = focused)
 
     // UI Components (Phase 9.2)

@@ -445,8 +445,13 @@ bool GameWindow::InitializeSDL() {
     // not being a fullscreen Space — still lets the ALWAYS_ON_TOP panels overlay. The
     // matching engine render size is set in linux_main.cpp under the SAME env flag, so
     // metrics/window/back-buffer stay consistent (no terrain-rasterizer mismatch).
+    // NOW DEFAULT ON (mac, 2026-08-05) — EN_MAC_USABLE_FULLSCREEN=0 restores the old
+    // full-desktop window. Must stay in lock-step with linux_main.cpp, which seeds the
+    // engine metrics from the SAME flag: if the two disagree the layout is computed
+    // against a size the window does not have, which is precisely the T-0072 failure
+    // (bar laid out below the visible window).
     const char* usableFs = getenv("EN_MAC_USABLE_FULLSCREEN");
-    const bool usableMode = wantFullscreen && usableFs && usableFs[0] && usableFs[0] != '0';
+    const bool usableMode = wantFullscreen && !(usableFs && usableFs[0] == '0');
     if (usableMode) {
         SDL_Rect usable;
         if (SDL_GetDisplayUsableBounds(0, &usable) == 0 && usable.w > 0 && usable.h > 0) {
@@ -505,9 +510,13 @@ bool GameWindow::InitializeSDL() {
 #endif
 
 #ifdef __APPLE__
+    m_macUsableFullscreen = usableMode;
     // Hide the Dock + menu bar now that the game window exists (fullscreen game;
     // the non-Space fullscreen-desktop window won't auto-hide them on its own).
-    if (wantFullscreen)
+    // NOT in usable-bounds mode: there the window is deliberately sized to exclude the
+    // Dock/menu-bar strips, so auto-hiding them would just leave dead space where the
+    // game does not draw. Leaving them alone is the whole point of that mode.
+    if (wantFullscreen && !usableMode)
         HideMacDockBar();
 #endif
 
@@ -1086,7 +1095,9 @@ void GameWindow::HandleEvent(SDL_Event& event) {
                 // reappears over the game after an alt-tab.
                 {
                     const char* enFs = getenv("EN_FULLSCREEN");
-                    if (!(enFs && enFs[0] == '0'))
+                    // Same exclusion as at creation: in usable-bounds mode we never
+                    // covered the Dock, so we must not hide it on focus either.
+                    if (!(enFs && enFs[0] == '0') && !m_macUsableFullscreen)
                         HideMacDockBar();
                 }
 #endif
