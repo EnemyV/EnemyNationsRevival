@@ -131,6 +131,18 @@ def main():
         except Exception: pass
 
     if save:
+        # Wait for the MENU, not merely for the socket. The harness starts listening
+        # early, but the intro video blocks the service loop for a long time (~87 s
+        # measured on this node), so a launch that only waits for `pstats` to answer
+        # will fire `load` while PlayVideo still owns the main thread and get back
+        # "err load failed" — a spurious failure that looks like a bad save.
+        # mac_regress.py's launch_game() has exactly this bug, which is why the FIRST
+        # save in a sweep can fail while later ones load fine.
+        for _ in range(80):
+            if "menu" in cmd(["gamestate"], port): break
+            time.sleep(3)
+        else:
+            print("WARNING: never reached the menu; load will probably fail")
         r = cmd(["load", save], port, timeout=90)
         print("load:", r)
         for _ in range(40):
