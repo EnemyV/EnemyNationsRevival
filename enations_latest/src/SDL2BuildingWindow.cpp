@@ -609,7 +609,23 @@ static BldgLayout computeLayout(CBuilding* b) {
     int total = 0;
     for ( int i = 0; i < n; i++ ) total += L.secs[i].h + SEC_PAD;
 
-    if ( total <= TWO_COL_MAX_H || n < 4 ) {
+    // #67: the height below is a pure content sum with no clamp against the display, so a
+    // window can simply be taller than the screen and its Close button unreachable (the
+    // Rocket Ship is 772x821). TWO_COL_MAX_H alone cannot prevent that — it is a fixed 560
+    // that knows nothing about how tall the screen actually is, so on a short display a
+    // window can sit under the threshold, stay single-column, and still not fit. Derive the
+    // trigger from the real screen instead: split as soon as the stacked body would not
+    // fit. SM_CYSCREEN is the engine's screen metric, which on mac now tracks the display's
+    // usable bounds, so this tightens automatically on short/scaled displays.
+    const int screenH   = GetSystemMetrics( SM_CYSCREEN );
+    const int bodyBudget = screenH > 0 ? screenH - ( FIRST_Y + HEADER_H + CLOSE_H ) - 20
+                                       : TWO_COL_MAX_H;
+    const int splitAt   = __min( TWO_COL_MAX_H, __max( 200, bodyBudget ) );
+    // The n<4 guard keeps small windows single-column for looks; override it only when the
+    // window genuinely would not fit, and then only if there is more than one section to
+    // split. A slightly odd two-column layout beats an unreachable Close button.
+    const bool mustSplit = ( total > bodyBudget ) && ( n >= 2 );
+    if ( ( total <= splitAt || n < 4 ) && !mustSplit ) {
         // single column (the common case)
         L.twoCol = false;
         L.bodyH  = total;
@@ -617,10 +633,16 @@ static BldgLayout computeLayout(CBuilding* b) {
     } else {
         // two columns, preserving display order: col0 = leading sections up to
         // ~half the stack, col1 = the rest.
-        int half = total / 2, run = 0, split = n;
-        for ( int i = 0; i < n; i++ ) {
+        // Pick the split that MINIMISES the taller column, rather than cutting at the
+        // first section to cross the halfway mark. The old rule always overshot — it took
+        // the whole section that straddled half — so one column could end up much taller
+        // than the other and the window taller than it needed to be, which is the height
+        // that #67 is about. Display order is still preserved (col0 = a prefix).
+        int split = n, best = INT_MAX, run = 0;
+        for ( int i = 0; i < n - 1; i++ ) {
             run += L.secs[i].h + SEC_PAD;
-            if ( run >= half ) { split = i + 1; break; }
+            const int taller = __max( run, total - run );
+            if ( taller < best ) { best = taller; split = i + 1; }
         }
         int h0 = 0, h1 = 0;
         for ( int i = 0; i < n; i++ ) {
