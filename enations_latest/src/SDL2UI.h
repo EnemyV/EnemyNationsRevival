@@ -654,6 +654,11 @@ private:
     // Relations window, which otherwise felt "stuck on top".
     bool m_keepOnTop = true;
 
+    // POSIX only: when this dialog last re-asserted its z-order. The raise is an OS
+    // round trip and used to be issued EVERY FRAME for EVERY keep-on-top dialog; see
+    // the #else branch in RenderFrame for the measurements that made that untenable.
+    Uint32 m_lastRaiseMs = 0;
+
     // Per-frame repaint throttle for the non-modal path (see RenderFrameNonModal).
     Uint32 m_lastFrameMs = 0;
     bool   m_forceFrame = true;

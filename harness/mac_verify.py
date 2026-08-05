@@ -99,6 +99,7 @@ def main():
     save  = next((a[i+1] for i,x in enumerate(a) if x=="--save"), None)
     nb    = int(next((a[i+1] for i,x in enumerate(a) if x=="--bldgs"), 6))
     ldir  = next((a[i+1] for i,x in enumerate(a) if x=="--launch"), None)
+    exe   = next((a[i+1] for i,x in enumerate(a) if x=="--exe"), "./enations")
     shots = next((a[i+1] for i,x in enumerate(a) if x=="--shots"), None)
     if shots: os.makedirs(shots, exist_ok=True)
     tmp = "/tmp/_verify.bmp"
@@ -108,7 +109,7 @@ def main():
     if ldir:
         env = dict(os.environ, EN_HARNESS="1", EN_HARNESS_PORT=str(port),
                    SDL_AUDIODRIVER="dummy", SDL_RENDER_DRIVER="opengl")
-        proc = subprocess.Popen(["./enations"], cwd=ldir, env=env,
+        proc = subprocess.Popen([exe], cwd=ldir, env=env,
                                 stdout=open("/tmp/mac_verify_game.log","w"),
                                 stderr=subprocess.STDOUT)
         for _ in range(160):
@@ -123,9 +124,9 @@ def main():
     # Report which SDL is actually loaded — the difference between a real result
     # and a wasted run (real SDL2 == 2.32.10-ish; sdl2-compat reports 2.32.70).
     if ldir:
-        exe = os.path.join(ldir, "enations")
         try:
-            out = subprocess.run(["otool","-L",exe], capture_output=True, text=True).stdout
+            out = subprocess.run(["otool","-L", os.path.join(ldir, os.path.basename(exe))],
+                                 capture_output=True, text=True).stdout
             for ln in out.splitlines():
                 if "SDL2-2.0.0" in ln: print("SDL linkage:", ln.strip())
         except Exception: pass

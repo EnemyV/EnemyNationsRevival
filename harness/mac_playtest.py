@@ -19,7 +19,7 @@ mac-harness recipe documents.
 
 Usage:  python3 harness/mac_playtest.py --launch <dir> [--port 7071] [--soak 300]
 """
-import os, sys, time, socket, subprocess, math
+import os, re, sys, time, socket, subprocess, math
 
 FOOT_OFFSET = 12
 
@@ -74,13 +74,14 @@ def main():
     a = sys.argv[1:]
     port  = int(next((a[i+1] for i, x in enumerate(a) if x == "--port"), 7071))
     ldir  = next((a[i+1] for i, x in enumerate(a) if x == "--launch"), None)
+    exe   = next((a[i+1] for i, x in enumerate(a) if x == "--exe"), "./enations")
     soak  = int(next((a[i+1] for i, x in enumerate(a) if x == "--soak"), 300))
     rep, proc = R(), None
 
     if ldir:
         env = dict(os.environ, EN_HARNESS="1", EN_HARNESS_PORT=str(port),
                    SDL_AUDIODRIVER="dummy")
-        proc = subprocess.Popen(["./enations"], cwd=ldir, env=env,
+        proc = subprocess.Popen([exe], cwd=ldir, env=env,
                                 stdout=open("/tmp/mac_playtest_game.log", "w"),
                                 stderr=subprocess.STDOUT)
     # Wait for the MENU, not the socket: the intro video blocks the service loop
@@ -121,6 +122,74 @@ def main():
             p = units(port).get(uid)
             if p and (p[0], p[1]) != (p0[0], p0[1]): moved_ok += 1; break
     rep.check(moved_ok > 0, "units obey move orders", f"{moved_ok}/{len(movers[:3])} moved")
+
+    # --- construction: crane -> Build Structure -> place -> a building actually appears ---
+    # Coordinates below are for the 477x383 Build Structure window (the size the mac
+    # harness recipe documents and the size observed on 3.00.012). Each step asserts, so
+    # a layout change fails at the step that moved rather than silently building nothing.
+    def build_a_farm():
+        cranes = [k for k, v in mine(port).items() if v[2] == "crane"]
+        if not cranes: return rep.check(False, "construction: a crane exists")
+        base_ids = {wid} | {l.split(":")[0].strip() for l in cmd(["wins"], port).splitlines()
+                            if "Game View" in l or "Radar" in l}
+
+        def close_strays():
+            # A stray window blocks the next selection (recipe's #2 gotcha). Close
+            # anything that is not a base window, computing the Close button from the
+            # window's own height - heights vary and a fixed y closes almost nothing.
+            for l in cmd(["wins"], port).splitlines():
+                i = l.split(":")[0].strip()
+                if i in base_ids: continue
+                m = re.match(r'\d+:(\d+)x(\d+)', l.strip())
+                if m: cmd(["clickid", i, str(int(m.group(1)) // 2), str(int(m.group(2)) - 24)], port); time.sleep(0.6)
+
+        bw = None
+        # Try each crane: a BUSY/constructing crane will not open Build (recipe), and a
+        # crane still sitting on the rocket opens the ROCKET's info window instead -
+        # everything spawns on top of it. So move it clear, then retry per crane.
+        for cr in cranes[:3]:
+            close_strays()
+            p0 = units(port).get(cr)
+            if not p0: continue
+            cmd(["center", cr], port); time.sleep(1.5)
+            cmd(["clickid", wid, str(CX), str(CY + FOOT_OFFSET)], port); time.sleep(1.2)
+            cmd(["clickid", wid, str(CX - 300), str(CY - 160), "right"], port)
+            for _ in range(10):
+                time.sleep(4)
+                if units(port).get(cr, p0)[:2] != p0[:2]: break
+            cmd(["center", cr], port); time.sleep(2)
+            cmd(["dblclickid", wid, str(CX), str(CY + FOOT_OFFSET)], port); time.sleep(3)
+            wins_now = cmd(["wins"], port).splitlines()
+            bw = next((l.split(":")[0].strip() for l in wins_now if "Build Structure" in l), None)
+            if bw: break
+            print(f"    crane {cr}: no Build Structure; windows = "
+                  f"{[l.split(chr(34))[1] for l in wins_now if chr(34) in l]}")
+        if not rep.check(bw is not None, "construction: Build Structure window opened"): return
+        cmd(["clickid", bw, "65", "228"], port); time.sleep(1.5)    # Natural Resources
+        cmd(["clickid", bw, "190", "80"], port); time.sleep(1.5)    # Farm tile
+        cmd(["clickid", bw, "303", "344"], port); time.sleep(2)     # Build
+        gone = not any("Build Structure" in l for l in cmd(["wins"], port).splitlines())
+        rep.check(gone, "construction: Build accepted (entered placement mode)")
+        # A site that LOOKS like open grass can be sloped or tree-covered; trees are not
+        # units so they are invisible to `units`. hexinfo is the only reliable filter.
+        site = None
+        for yy in range(180, 460, 40):
+            for xx in range(240, 820, 40):
+                p = cmd(["hexinfo", wid, str(xx), str(yy)], port).split()
+                t = {p[i]: p[i+1] for i in range(len(p)-1) if p[i] in ("alt","vis","unit","water","tree")}
+                if t.get("water") == "0" and t.get("tree") == "0" and t.get("vis") == "1" and t.get("unit") == "0":
+                    site = (xx, yy); break
+            if site: break
+        if not rep.check(site is not None, "construction: found a buildable hex"): return
+        n0 = len([v for v in mine(port).values() if v[2] == "building"])
+        cmd(["clickid", wid, str(site[0]), str(site[1])], port)
+        for _ in range(15):
+            time.sleep(8)
+            n1 = len([v for v in mine(port).values() if v[2] == "building"])
+            if n1 > n0:
+                return rep.check(True, "construction: new building exists", f"{n0} -> {n1}")
+        rep.check(False, "construction: new building exists", f"still {n0} after 120s")
+    build_a_farm()
 
     # --- research grant ---
     # HarnessGrantResearch (area.cpp:8391) is #ifdef _CHEAT, so it is compiled OUT of
@@ -181,7 +250,7 @@ def main():
         except Exception: pass
         time.sleep(3)
         env = dict(os.environ, EN_HARNESS="1", EN_HARNESS_PORT=str(port), SDL_AUDIODRIVER="dummy")
-        proc = subprocess.Popen(["./enations"], cwd=ldir, env=env,
+        proc = subprocess.Popen([exe], cwd=ldir, env=env,
                                 stdout=open("/tmp/mac_playtest_game2.log", "w"),
                                 stderr=subprocess.STDOUT)
         for _ in range(80):
