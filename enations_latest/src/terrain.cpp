@@ -18,8 +18,8 @@
 #include "lastplnt.h"
 #include "minerals.h"
 #include "stdafx.h"
-#include "enprobes.h"
-#include "en_logpath.h"   // EnLogPath - probe log must land where the other logs do   // probe gates - was relying on a transitive include
+#include "enprobes.h"   // probe gates - was relying on a transitive include
+#include "en_logpath.h"   // EnLogPath - probe log must land where the other logs do
 #include "SDL2Panel.h"
 #include "SDL2Sprites.h"  // GPU sprite layer (S1: trees)
 #include "Perf.h"         // sub-phase profiling counters
