@@ -208,8 +208,14 @@ bool HarnessNewGame(int ai, int pos, int size, int numai, int worldType = 0, int
 //   "state <n> hp <0|1> bldgshave <n> vehshave <n> bldgsdest <n> vehsdest <n> \
 //    players <n> ai <n> elapsed <sec> <playing|LOST|WON>\n"
 // Defeat = bldgshave<=0 or CGame state left `play` (== CGame::other); win = <=1 player
-// left. Lets a headless driver poll "am I still alive / how hard am I being hit" each
-// tick. Render/game thread only. Backs the `gamestate` cmd.
+// left. Lets a headless driver poll "am I still alive" each tick.
+//   *have = what this player currently HOLDS  -> watch these FALL to detect losses.
+//   *dest = kills scored BY this player       -> NOT damage taken. The only increment
+//           site (netapi.cpp, "track the kill") is guarded by pPlr != pUnit->GetOwner(),
+//           so it credits the killer. A driver watching vehsdest for "am I under attack"
+//           reads 0 while being wiped out (observed in a live-combat soak: vehshave
+//           35 -> 5 with vehsdest stuck at 0).
+// Render/game thread only. Backs the `gamestate` cmd.
 void HarnessDumpGameState(std::string& out);
 
 #endif // EN_HARNESS_H
