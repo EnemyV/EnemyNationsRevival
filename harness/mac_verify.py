@@ -29,7 +29,7 @@ Usage (game already up, or use --launch):
 
 Exit 0 = all checks passed, 1 = at least one FAIL.
 """
-import os, sys, time, socket, struct, subprocess, collections
+import os, re, sys, time, socket, struct, subprocess, collections
 
 MAGENTA = (255, 0, 255)
 COLOURKEY_MAX_PCT = 0.05   # any real magenta area is far above this
@@ -210,6 +210,11 @@ def main():
     mine = [l.split()[0] for l in cmd(["units"], port).splitlines()
             if len(l.split()) >= 5 and l.split()[3] == "building" and l.split()[4] == "me"]
     print(f"my buildings: {len(mine)} (sampling {min(nb,len(mine))})")
+    # NOTE: each info window is CLOSED again after capture. Leaving them open is not
+    # merely untidy — 5+ open keep-on-top dialogs (edict-hosting buildings) drive the
+    # POSIX per-frame SDL_RaiseWindow path into multi-second stalls (root-caused
+    # 2026-08-05), so a sweep that accumulates them measures its own side effect.
+    # mac_regress.py opens 141 and closes none; this must not repeat that.
     for bid in mine[:nb]:
         if not cmd(["showinfo", bid], port).startswith("ok"): continue
         time.sleep(0.6)
@@ -218,17 +223,30 @@ def main():
         if not info: continue
         iw = info[-1].split(":")[0].strip()
         iname = info[-1].split('"')[1] if '"' in info[-1] else iw
-        if not grab(port, iw, tmp): continue
+        m = re.match(r'\d+:(\d+)x(\d+)', info[-1].strip())
+        iwid, ihgt = (int(m.group(1)), int(m.group(2))) if m else (0, 0)
+        if not grab(port, iw, tmp):
+            if iwid: cmd(["clickid", iw, str(iwid // 2), str(ihgt - 24)], port)
+            continue
         try:
             _, _, px = decode_bmp(tmp)
-        except Exception: continue
-        mag, flat, col = analyse(px)
-        if shots:
-            subprocess.run([sys.executable, os.path.join(os.path.dirname(os.path.abspath(__file__)), "bmp2png.py"),
-                            tmp, os.path.join(shots, f"info_{bid}_{iname.replace(' ','_')}.png")],
-                           capture_output=True)
-        rep.check(mag <= COLOURKEY_MAX_PCT, f"COLOURKEY info {iname!r} (bldg {bid})",
-                  f"{mag:.3f}% magenta")
+            mag, flat, col = analyse(px)
+            if shots:
+                subprocess.run([sys.executable, os.path.join(os.path.dirname(os.path.abspath(__file__)), "bmp2png.py"),
+                                tmp, os.path.join(shots, f"info_{bid}_{iname.replace(' ','_')}.png")],
+                               capture_output=True)
+            rep.check(mag <= COLOURKEY_MAX_PCT, f"COLOURKEY info {iname!r} (bldg {bid})",
+                      f"{mag:.3f}% magenta")
+        except Exception:
+            pass
+        finally:
+            # Close button sits bottom-centre; height varies per building so it must be
+            # computed, not hard-coded. `finally` so a decode failure still closes it.
+            if iwid: cmd(["clickid", iw, str(iwid // 2), str(ihgt - 24)], port); time.sleep(0.5)
+
+    left = [l for l in cmd(["wins"], port).splitlines() if l.split(":")[0] not in ids.values()]
+    rep.check(len(left) == 0, "info windows closed after sweep",
+              f"{len(left)} still open (leaving them open perturbs later measurements)")
 
     print("\n=== %d check(s) FAILED ===" % rep.fails if rep.fails else "\n=== ALL CHECKS PASSED ===")
     if proc:
