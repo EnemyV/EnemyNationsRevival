@@ -117,7 +117,9 @@ def main():
             note = f"opened 8 info windows ({len(opened)} total)"
         if i == stress_at + 1 and opened:
             for l in cmd(["wins"], port).splitlines():
-                m = re.match(r'(\d+):(\d+)x(\d+)\s+\w+\s+"(.*)"', l.strip())
+                # \S* absorbs the @x,y position (and any later field) that `wins` gained
+                # in @67342e59 - without it this stopped matching and silently closed nothing.
+                m = re.match(r'(\d+):(\d+)x(\d+)\S*\s+\w+\s+"(.*)"', l.strip())
                 if m and m.group(4) not in ("Enemy Nations - Game View", "Area Map") \
                      and not m.group(4).startswith("Radar"):
                     cmd(["clickid", m.group(1), str(int(m.group(2))//2), str(int(m.group(3))-24)], port)

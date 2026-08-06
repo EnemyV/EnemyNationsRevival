@@ -56,12 +56,14 @@ def mine(port, kind=None):
     return {k: v for k, v in units(port).items() if v[3] == "me" and (kind is None or v[2] == kind)}
 
 def area_win(port):
+    # `wins` gained window position (and z-order/topmost) in @67342e59, so a line now
+    # reads `4:1647x879@411,37 shown "Area Map"`. Match only the id and size and ignore
+    # whatever follows, so a further field cannot break this again.
     for l in cmd(["wins"], port).splitlines():
         if "Area Map" in l:
-            wid = l.split(":")[0].strip()
-            wh = l.split(":")[1].split()[0]
-            w, h = (int(x) for x in wh.split("x"))
-            return wid, w, h
+            m = re.match(r'(\d+):(\d+)x(\d+)', l.strip())
+            if m:
+                return m.group(1), int(m.group(2)), int(m.group(3))
     return None, 0, 0
 
 def stat(port, key):
