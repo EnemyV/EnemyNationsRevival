@@ -877,8 +877,20 @@ bool GameWindow::PollEvents() {
             default:                 evWinID = 0;                      break;
             }
             if (evWinID == dlgWinID) {
-                dlg->ProcessEventNonModal(event);
-                consumedByDialog = true;
+                bool dlgConsumed = dlg->ProcessEventNonModal(event);
+                // ARROW keys the dialog did NOT consume (no focused widget wanted
+                // them) flow on to the game-hotkey fallback → topmost area map, so
+                // the map keeps arrow-panning while an info/build/research window
+                // has keyboard focus (matches the original's app-wide accelerator;
+                // arrow-pan fix, 2026-08-07). ARROWS ONLY: a focused edit box
+                // consumes arrows (caret) so dialog text entry keeps priority, but
+                // it deliberately does NOT consume letter KEYDOWNs (text arrives
+                // via SDL_TEXTINPUT) — forwarding those would fire bare-letter map
+                // hotkeys while typing. Still break: only this dialog gets a shot.
+                bool arrowKey = ( event.type == SDL_KEYDOWN || event.type == SDL_KEYUP ) &&
+                                ( event.key.keysym.sym == SDLK_LEFT || event.key.keysym.sym == SDLK_RIGHT ||
+                                  event.key.keysym.sym == SDLK_UP   || event.key.keysym.sym == SDLK_DOWN );
+                consumedByDialog = dlgConsumed || !arrowKey;
                 break;
             }
         }

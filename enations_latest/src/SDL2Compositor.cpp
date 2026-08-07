@@ -506,6 +506,15 @@ bool SDL2Compositor::RouteEventInner(SDL_Event& event) {
                 bool consumed = panel->HandleEvent(event);
                 panel->SetPosition(savedX, savedY);
                 panel->SuppressWindowSync(false);
+                // A KEY event this detached window didn't consume (Vehicles/Buildings
+                // list, radar — all key-blind, no text widgets) must FALL THROUGH to the
+                // global game-hotkey fallback below, which forwards it to the topmost
+                // area map — restoring the original's app-level-accelerator behavior
+                // (arrow pan, hotkeys) while a tool window has keyboard focus. Early-
+                // returning here was dead-end B of the "arrows stop panning when a
+                // window is open" bug (2026-08-07).
+                if ( !consumed && ( event.type == SDL_KEYDOWN || event.type == SDL_KEYUP ) )
+                    break;   // out of the panel loop, on to the key fallback
                 return consumed;
             }
         }

@@ -479,9 +479,13 @@ public:
     // SDL window ID for this dialog's dedicated window (0 if not open)
     uint32_t GetSDLWindowID() const;
 
-    // Called by GameWindow each frame for active non-modal dialogs
-    void ProcessEventNonModal(SDL_Event& event) {
-        HandleEvent(event);
+    // Called by GameWindow each frame for active non-modal dialogs.
+    // Returns HandleEvent's consumed flag so the caller can let keys the dialog
+    // did NOT want (e.g. arrow keys with no focused widget) flow on to the
+    // app-level game-hotkey fallback — the original resolved arrows as app-wide
+    // accelerators before any window saw them (arrow-pan fix, 2026-08-07).
+    bool ProcessEventNonModal(SDL_Event& event) {
+        bool consumed = HandleEvent(event);
         // Force an immediate repaint for meaningful interaction (clicks, keys,
         // text, wheel) and for a live title-bar drag, so input stays responsive.
         // Plain hover MOTION is intentionally left to the fixed-interval throttle:
@@ -491,6 +495,7 @@ public:
         // state still updates immediately above; only the repaint is throttled.
         if (event.type != SDL_MOUSEMOTION || m_dlgDragging)
             m_forceFrame = true;
+        return consumed;
     }
     // Throttle the per-frame repaint: a non-modal dialog renders into its own
     // window and presents it every game frame, which steals frames from the game.
