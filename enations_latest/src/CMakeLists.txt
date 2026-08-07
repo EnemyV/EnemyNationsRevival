@@ -347,6 +347,14 @@ if (MSVC)
         wrldinit.cpp
         wrldgen.cpp
         PROPERTIES COMPILE_OPTIONS "/fp:precise")
+    # The PCH was built with the target's /fp:fast, so using it from these two
+    # /fp:precise TUs warned C4651/C4652/C4653 every build (flag mismatch). Both
+    # files #include "stdafx.h" directly, so skipping the PCH is behavior-neutral —
+    # they just compile the headers normally (same pattern as the harness TU above).
+    set_source_files_properties(
+        wrldinit.cpp
+        wrldgen.cpp
+        PROPERTIES SKIP_PRECOMPILE_HEADERS ON)
 endif ()
 
 # Phase 1g step 1: drop CMAKE_MFC_FLAG. Our own WinMain (WinMain.cpp)

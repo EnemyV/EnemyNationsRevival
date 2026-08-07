@@ -301,7 +301,7 @@ void CDataFile::_Init(const char *pFilename, const char *pPatchDir, int iRifVer)
             //  Add the string/offset pair to the map.
             //  Can ThrowError CMemoryException.
             _strlwr(pStr);
-            (*m_pFileMap)[pStr] = (void *) fileOffset;
+            (*m_pFileMap)[pStr] = (void *)(intptr_t) fileOffset;   // offset smuggled through void* (x64: value-preserving)
         }
 
         //  Delete the file table buffer, which is no longer
@@ -467,7 +467,7 @@ CMmio *CDataFile::OpenAsMMIO(const char *pFilename, const char *pRif) {
         //  that position in the file.
         //  If negative seek checks between CMmio's are 
         //  desired, they should be done here.
-        long fileOffset = (long) dummy;
+        long fileOffset = (long)(intptr_t) dummy;   // void*-smuggled offset (x64: value-preserving)
         long offsetFromHere = fileOffset - (long) m_pDataFile->GetPosition();
 
 #ifdef _DEBUG
@@ -641,7 +641,7 @@ CFile *CDataFile::_OpenAsFile(const char *pFilename) {
         //  that position in the file.
         //  If negative seek checks between CMmio's are 
         //  desired, they should be done here.
-        long fileOffset = (long) dummy;
+        long fileOffset = (long)(intptr_t) dummy;   // void*-smuggled offset (x64: value-preserving)
         long offsetFromHere = fileOffset - (long) m_pDataFile->GetPosition();
 
 #ifdef _DEBUG
@@ -726,7 +726,7 @@ CArchive *CDataFile::OpenAsCArchive(const char *pFilename) {
         //  that position in the file.
         //  If negative seek checks between CMmio's are 
         //  desired, they should be done here.
-        long fileOffset = (long) dummy;
+        long fileOffset = (long)(intptr_t) dummy;   // void*-smuggled offset (x64: value-preserving)
         long offsetFromHere = fileOffset - (long) m_pDataFile->GetPosition();
 
 #ifdef _DEBUG

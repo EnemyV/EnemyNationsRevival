@@ -6967,7 +6967,11 @@ CWndInfo* CWndInfo::Create( CPoint& pt, CUnit* pUnit, CWndArea* pPar )
         m_pdib = new CDIB( ptrthebltformat->GetColorFormat( ), CBLTFormat::DIB_MEMORY,
                            ptrthebltformat->GetMemDirection( ), rectWin.Width( ), rectWin.Height( ) );
 
-    return ( (CWndInfo*)CWndBase::Create( NULL, pUnit->GetData( )->GetDesc( ).c_str(), dwStyle, rectWin, pPar, 100, NULL ) );
+    // CWndBase::Create returns BOOL; the old (CWndInfo*)BOOL cast returned the literal
+    // pointer 0x1 on success — callers could only ever null-check it. Return a real
+    // pointer so a caller may also legitimately use it.
+    return ( CWndBase::Create( NULL, pUnit->GetData( )->GetDesc( ).c_str(), dwStyle, rectWin, pPar, 100, NULL )
+                 ? this : NULL );
 }
 
 static void _DrawText( CDC* pDc, CRect& rect, char const* sText, BOOL bRed = FALSE );

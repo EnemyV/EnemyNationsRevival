@@ -1056,7 +1056,7 @@ LRESULT CNetApi::OnNetMsg( WPARAM wParam, LPARAM lParam )
         TRAP( );
         break;
     case VP_JOIN:
-        ::OnMsgJoin( pVpMsg->u.playerInfo, (BOOL)pVpMsg->userData, VPGETERRORCODE( pVpMsg->notificationCode ) );
+        ::OnMsgJoin( pVpMsg->u.playerInfo, (BOOL)(INT_PTR)pVpMsg->userData, VPGETERRORCODE( pVpMsg->notificationCode ) );   // BOOL smuggled through LPVOID
         break;
 
     case VP_LEAVE:

@@ -365,7 +365,7 @@ int WINAPI ExtMsgBox( HWND hWndPar, const char* psText, const char* psTitle, UIN
     if ( ( uStyle & ( MB_SYSTEMMODAL | MB_TASKMODAL ) ) == 0 ) {
         HWND hParOn = hWndPar;
         while ( hParOn != NULL ) {
-            SetProp( hParOn, sApplProp, (HANDLE)IsWindowEnabled( hParOn ) );
+            SetProp( hParOn, sApplProp, (HANDLE)(INT_PTR)IsWindowEnabled( hParOn ) );   // BOOL smuggled through HANDLE prop
             EnableWindow( hParOn, FALSE );
             hParOn = GetParent( hParOn );
         }
@@ -413,7 +413,7 @@ int WINAPI ExtMsgBox( HWND hWndPar, const char* psText, const char* psTitle, UIN
     if ( ( uStyle & ( MB_SYSTEMMODAL | MB_TASKMODAL ) ) == 0 ) {
         HWND hParOn = hWndPar;
         while ( hParOn != NULL ) {
-            if ( (BOOL)GetProp( hParOn, sApplProp ) == TRUE )
+            if ( (BOOL)(INT_PTR)GetProp( hParOn, sApplProp ) == TRUE )
                 EnableWindow( hParOn, TRUE );
             RemoveProp( hParOn, sApplProp );
             hParOn = GetParent( hParOn );
