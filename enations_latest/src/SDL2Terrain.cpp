@@ -98,6 +98,7 @@ std::mutex            g_enEditMutex;   // sim thread pushes; render thread reads
 const size_t          kEditPatchCap = 1024;    // max pending edits a ctx will PATCH (vs rebuild)
 const size_t          kEditLogCap   = 4096;    // log ceiling — past it the log gaps (see above)
 const size_t          kMeshEditCap  = 16384;   // unique-hex ceiling for the replay re-apply list
+static bool TerrainRetainEnabled( );           // EN_RETAIN gate, defined below
 void g_enEditHex( int x, int y )
 {
     // Bump the gen AND record under the same lock so the render can read them atomically
@@ -115,7 +116,11 @@ void g_enEditHex( int x, int y )
     // this, repeated edits to the same hexes (crop stages, terraform passes) blew past the cap
     // in seconds → g_enMeshEditOverflow → every zoom forced a full ~11s capture instead of a
     // fast replay. Dedup keeps the list ~= the count of distinct changed hexes (small).
-    if ( g_enMeshEditSet.insert( packed ).second )
+    // Recorded ONLY when the retained-mesh replay (EN_RETAIN) can consume it: the sole clear
+    // is in the EN_RETAIN capture, so with the feature off (the default) recording would just
+    // grow the set toward one node per map hex and pay a dead hash-insert under this mutex on
+    // every edit for the whole session. No other consumer exists (verified 2026-08-06).
+    if ( TerrainRetainEnabled( ) && g_enMeshEditSet.insert( packed ).second )
     {
         if ( g_enMeshEdits.size( ) < kMeshEditCap )
             g_enMeshEdits.push_back( packed );
@@ -230,7 +235,7 @@ bool g_enViewScrolled = false;
 // type is saved as `road`, so a fresh capture never emits the tree.
 unsigned g_enStaticDirtyGen = 0;
 
-// Item 5 (incremental terrain patch) kill-switch — opt-in until verified, then default on.
+// Item 5 (incremental terrain patch) kill-switch — DEFAULT ON; EN_TPATCH=0 disables.
 static bool TerrainPatchEnabled( )
 {
     // Default ON: incrementally re-mesh only the few edited hexes instead of a full
@@ -259,15 +264,18 @@ static bool TerrainPreviewEnabled( )
 // [zoom]) instead of running the ~15s per-hex loop. Built up layer by layer (base first).
 static bool TerrainRetainEnabled( )
 {
-    static int s_on = -1;
-    if ( s_on < 0 ) { const char* e = SDL_getenv( "EN_RETAIN" ); s_on = ( e && *e && *e == '1' ) ? 1 : 0; }
-    return s_on != 0;
+    // Magic static (not the siblings' lazy-int pattern): this gate is reachable from the
+    // SIM thread via g_enEditHex, so the init must be thread-safe and SDL_getenv must not
+    // run concurrently from two threads (static buffer on Windows).
+    static const bool s_on = []( ) { const char* e = SDL_getenv( "EN_RETAIN" );
+                                     return e && *e && *e == '1'; }( );
+    return s_on;
 }
 
 // Incremental pan ("strip rebuild"): when the view pans past the cached-texture margin
 // with the SAME zoom/dir, scroll the cached textures by the pan delta and mesh only the
-// newly-revealed edge strip instead of re-meshing the whole ~56k-hex view. Opt-in until
-// validated (default OFF). Set EN_PANSTRIP=1 to enable.
+// newly-revealed edge strip instead of re-meshing the whole ~56k-hex view.
+// DEFAULT ON; EN_PANSTRIP=0 disables (details in the body comment).
 static bool TerrainPanStripEnabled( )
 {
     // Default ON: when a pan crosses the cached-texture margin (same zoom/dir), scroll the
@@ -278,6 +286,29 @@ static bool TerrainPanStripEnabled( )
     static int s_on = -1;
     if ( s_on < 0 ) { const char* e = SDL_getenv( "EN_PANSTRIP" ); s_on = ( e && *e && *e == '0' ) ? 0 : 1; }
     return s_on != 0;
+}
+
+// PREMULTIPLIED composite for the cached layer textures (s_rt/s_waterRT/s_fogRT/
+// s_mapRT and the incPan ping-pong scratch). Drawing with SDL_BLENDMODE_BLEND into
+// a transparent-cleared TARGET texture stores PREMULTIPLIED pixels
+// (dst.rgb = src.rgb*src.a + 0). Blitting such a texture with plain BLEND then
+// multiplies by alpha AGAIN (rgb*a²) — invisible at 1:1, where every texel is
+// either opaque or fully empty, but the gesture preview SCALES these textures and
+// a linear tap that straddles an opaque/hole boundary yields a partial-alpha
+// texel that plain BLEND darkens into a black fringe exactly along shorelines
+// (water/coast hexes are holes in s_rt). Verified experimentally (blendtest,
+// 2026-08-06): at f=0.5 the boundary texel reads R63/B191 under BLEND vs the
+// correct R127/B255 premultiplied; d3d9/d3d11/d3d12/opengl/gles2 all accept the
+// custom mode. Fall back to plain BLEND if a backend refuses (SDL's software
+// renderer — which never runs the GPU terrain path).
+static void SetPremulBlend( SDL_Texture* t )
+{
+    if ( !t ) return;
+    SDL_BlendMode pm = SDL_ComposeCustomBlendMode(
+        SDL_BLENDFACTOR_ONE, SDL_BLENDFACTOR_ONE_MINUS_SRC_ALPHA, SDL_BLENDOPERATION_ADD,
+        SDL_BLENDFACTOR_ONE, SDL_BLENDFACTOR_ONE_MINUS_SRC_ALPHA, SDL_BLENDOPERATION_ADD );
+    if ( SDL_SetTextureBlendMode( t, pm ) != 0 )
+        SDL_SetTextureBlendMode( t, SDL_BLENDMODE_BLEND );
 }
 
 static int TypeNameToInt( const std::string& n )
@@ -518,7 +549,11 @@ struct WaterAnim { const SDL2Terrain::Tile* frame[8]; int nFrames; };
 // frame with the NEIGHBOUR's current wave-frame texture — so lake/ocean/river seams
 // blend AND stay in sync, and the band is never clobbered. Positions are in s_rt
 // texture space; offset by the current pan at draw time. animIdx → s_waterAnims.
-struct WaterBlendBand { int animIdx; CPoint p[4]; SDL_FPoint uv[4]; };  // p/uv order: e0,e1,n0,n1
+struct WaterBlendBand { int animIdx; CPoint p[4]; SDL_FPoint uv[4];     // p/uv order: e0,e1,n0,n1
+                        CPoint hexMin, hexMax; };  // OWNER hex diamond bbox (texture space) — the
+                                                   // incPan compaction keeps a band only when its
+                                                   // owner stays fully covered (must mirror the
+                                                   // strip loop's skip test, not the band quad)
 static const Uint8 kWaterFeatherA = 135;   // match the land feather strength
 
 // Water wave animation: ocean/lake/coastline/river bake 8 frames (letters a-h),
@@ -675,6 +710,10 @@ static SDL_Texture* s_mapRT[4]      = { nullptr, nullptr, nullptr, nullptr };
 static unsigned     s_mapLoadGen[4] = { ~0u, ~0u, ~0u, ~0u };
 static unsigned     s_mapFogGen[4]  = { ~0u, ~0u, ~0u, ~0u };   // g_enFogVisGen baked into this dir's underlay
 static int          s_mapRow[4]     = { 0, 0, 0, 0 };   // next map row to mesh; >= eY = done
+static bool         s_mapFull[4]    = { false, false, false, false };  // completed at least once THIS
+                                                        // loadGen — content is drawable even while a
+                                                        // fog re-sweep has s_mapRow reset to 0 (the
+                                                        // in-place repaint keeps the old bake)
 static CPoint       s_mapOrg[4];                        // content(z0) bbox origin (after pad)
 static float        s_mapScale[4]   = { 0, 0, 0, 0 };   // content-z3 px -> texture px
 static int          s_mapTexW[4]    = { 0, 0, 0, 0 };
@@ -708,13 +747,16 @@ static bool IsAnimatedTile( int type )
     return IsOpenWater( type ) || type == CHex::coastline;
 }
 
-// Build (or continue building) the whole-map far underlay for the CURRENT camera dir.
+// Build (or continue building) the whole-map far underlay for camera direction `dir`
+// (need not be the CURRENT dir — the idle prewarm builds cold directions ahead of a
+// rotate; the dir-explicit MapToContentHex overload makes that a pure projection).
 // burst=true sweeps every remaining row this call (load-time prewarm); else only
-// kMapRowsSlice rows per frame. Safe to call every frame — returns immediately once the
-// dir's texture is complete for this load generation.
-static void BuildMapUnderlay( SDL_Renderer* r, const CAnimAtr& aa, unsigned loadGen, unsigned fogGen, bool burst )
+// rowsSlice rows per frame (16 default; gesture-preview frames pass a small budget so
+// the slice never inflates a preview frame). Safe to call every frame — returns
+// immediately once the dir's texture is complete for this load generation.
+static void BuildMapUnderlay( SDL_Renderer* r, const CAnimAtr& aa, int dir, unsigned loadGen, unsigned fogGen, bool burst, int rowsSlice = 16 )
 {
-    const int dir = aa.m_iDir & 3;
+    dir &= 3;
     const int eX = theMap.Get_eX( ), eY = theMap.Get_eY( );
     if ( !r || !eX || !eY ) return;
     // Freshness key = (loadGen, fogGen). loadGen covers texture (re)creation; fogGen
@@ -739,7 +781,7 @@ static void BuildMapUnderlay( SDL_Renderer* r, const CAnimAtr& aa, unsigned load
         for ( int i = 0; i < 4; ++i )
         {
             CPoint c[4];
-            aa.MapToContentHex( CHexCoord( cxs[i], cys[i] ), c );
+            aa.MapToContentHex( CHexCoord( cxs[i], cys[i] ), c, dir );
             for ( int k = 0; k < 4; ++k )
             { mnx = __min( mnx, (long)c[k].x ); mxx = __max( mxx, (long)c[k].x );
               mny = __min( mny, (long)c[k].y ); mxy = __max( mxy, (long)c[k].y ); }
@@ -754,11 +796,12 @@ static void BuildMapUnderlay( SDL_Renderer* r, const CAnimAtr& aa, unsigned load
         if ( s_mapRT[dir] ) { SDL_DestroyTexture( s_mapRT[dir] ); s_mapRT[dir] = nullptr; }
         s_mapRT[dir] = SDL_CreateTexture( r, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET, tw, th );
         if ( !s_mapRT[dir] ) return;           // alloc failed — retry next frame
-        SDL_SetTextureBlendMode( s_mapRT[dir], SDL_BLENDMODE_BLEND );
+        SetPremulBlend( s_mapRT[dir] );   // content is premultiplied (BLEND onto transparent clear)
         SDL_SetTextureScaleMode( s_mapRT[dir], SDL_ScaleModeLinear );
         s_mapOrg[dir]   = CPoint( (int)mnx, (int)mny );
         s_mapScale[dir] = sc; s_mapTexW[dir] = tw; s_mapTexH[dir] = th;
         s_mapRow[dir] = 0; s_mapLoadGen[dir] = loadGen; s_mapFogGen[dir] = fogGen;
+        s_mapFull[dir] = false;   // fresh transparent texture — not drawable until first completion
         // TORUS WRAP periods: the map repeats; stepping all of hex-X (or hex-Y) shifts the
         // content image by a constant vector (the projection is affine and CHexCoord is NOT
         // wrapped here — GetWorldHex extends linearly). The preview tiles the underlay at
@@ -766,9 +809,9 @@ static void BuildMapUnderlay( SDL_Renderer* r, const CAnimAtr& aa, unsigned load
         // canonical image alone left a BLACK band — user: "it was there, at the top").
         {
             CPoint o0[4], oX[4], oY[4];
-            aa.MapToContentHex( CHexCoord( 0, 0 ), o0 );
-            aa.MapToContentHex( CHexCoord( eX, 0 ), oX );
-            aa.MapToContentHex( CHexCoord( 0, eY ), oY );
+            aa.MapToContentHex( CHexCoord( 0, 0 ), o0, dir );
+            aa.MapToContentHex( CHexCoord( eX, 0 ), oX, dir );
+            aa.MapToContentHex( CHexCoord( 0, eY ), oY, dir );
             s_mapPerX[dir] = CPoint( oX[0].x - o0[0].x, oX[0].y - o0[0].y );
             s_mapPerY[dir] = CPoint( oY[0].x - o0[0].x, oY[0].y - o0[0].y );
         }
@@ -785,7 +828,7 @@ static void BuildMapUnderlay( SDL_Renderer* r, const CAnimAtr& aa, unsigned load
         SDL_RenderClear( r );
         SDL_SetRenderTarget( r, pt ); SDL_RenderSetViewport( r, &vp );
     }
-    else if ( s_mapFogGen[dir] != fogGen )
+    else if ( s_mapFogGen[dir] != fogGen && s_mapRow[dir] >= eY )
     {
         // FOG-only change (same map + geometry, a visibility reveal bumped g_enFogVisGen):
         // re-mesh the EXISTING underlay IN PLACE — do NOT realloc or transparent-clear it.
@@ -795,12 +838,21 @@ static void BuildMapUnderlay( SDL_Renderer* r, const CAnimAtr& aa, unsigned load
         // instead of an empty/BLACK underlay (operator Note 1/2 → BUGS #9 regression). Keeps
         // #9's stale-fog fix (the dim still re-bakes); only the clear-induced black flash is
         // removed. realloc + clear stay gated on a loadGen change above.
+        //
+        // `s_mapRow >= eY`: restart ONLY when the previous sweep has FINISHED. Fog gen
+        // bumps ~every frame in live play, so restarting unconditionally reset an
+        // IN-PROGRESS sweep to row 0 each frame — any direction not burst-built at load
+        // (post-rotate time-slice, idle prewarm) could NEVER complete its initial bake
+        // and stayed a mostly-transparent texture: the black ring on rotate + zoom-out.
+        // Root-caused from the [PVDBG] operator repro 2026-08-07 (mapRow frozen at 2/16
+        // across frames while fogGen churned). A sweep in progress now runs to the end
+        // (rows bake the CURRENT fog as they go); a completed-but-stale one restarts
+        // here and likewise runs to the end — converges instead of thrashing.
         s_mapRow[dir] = 0; s_mapFogGen[dir] = fogGen;
     }
 
-    const int kMapRowsSlice = 16;              // ~8k hexes/frame on a 512-wide map
     const int rowStart = s_mapRow[dir];
-    int rowEnd = burst ? eY : __min( eY, rowStart + kMapRowsSlice );
+    int rowEnd = burst ? eY : __min( eY, rowStart + __max( 1, rowsSlice ) );   // 16 rows ≈ 8k hexes on a 512 map
     if ( rowStart >= rowEnd ) return;
 
     SDL_Texture* pt = SDL_GetRenderTarget( r ); SDL_Rect vp; SDL_RenderGetViewport( r, &vp );
@@ -827,7 +879,7 @@ static void BuildMapUnderlay( SDL_Renderer* r, const CAnimAtr& aa, unsigned load
             SDL_Texture* tex = TileTexAnyZoom( tile, 3 );
             if ( !tex ) continue;
             CPoint c[4];
-            aa.MapToContentHex( hc, c );
+            aa.MapToContentHex( hc, c, dir );
             Uint8 g = ph->GetVisibility( ) ? 255 : gFog;   // bake fog-of-war dim
             SDL_Color col = { g, g, g, 255 };
             if ( tex != lastTex )
@@ -853,6 +905,7 @@ static void BuildMapUnderlay( SDL_Renderer* r, const CAnimAtr& aa, unsigned load
                                     QuadIndices( (int)b.second.size( ) / 4 ), (int)b.second.size( ) / 4 * 6 );
     }
     s_mapRow[dir] = rowEnd;
+    if ( rowEnd >= eY ) s_mapFull[dir] = true;   // drawable through later fog re-sweeps
     Perf::CounterAdd( "map.rows", rowEnd - rowStart );
 
     SDL_SetRenderTarget( r, pt ); SDL_RenderSetViewport( r, &vp );
@@ -1100,7 +1153,9 @@ struct BaseCell { const SDL2Terrain::Tile* tile; CPoint c[4]; bool transpose;
                   int fStart, fCount; };          // [fStart,fStart+fCount) into featherBands
 struct FeatherBand { const SDL2Terrain::Tile* tile; CPoint c[4]; SDL_FPoint uv[4]; };
 struct WaterCell     { CHex* hex; CPoint c[4]; int animIdx; };
-struct WaterBandCell { int animIdx; CPoint c[4]; SDL_FPoint uv[4]; };
+struct WaterBandCell { int animIdx; CPoint c[4]; SDL_FPoint uv[4];
+                       CPoint hexMin, hexMax; };  // owner hex diamond bbox (CONTENT space; the
+                                                  // replay re-projects it for WaterBlendBand)
 struct FogCell { CHex* hex; CPoint c[4]; };
 
 struct SDL2TerrainRCtx
@@ -1126,6 +1181,7 @@ struct SDL2TerrainRCtx
     unsigned      mapLoadGen[4] = { ~0u, ~0u, ~0u, ~0u };
     unsigned      mapFogGen[4]  = { ~0u, ~0u, ~0u, ~0u };   // was file-static only: 2nd map kept stale fog
     int           mapRow[4]     = { 0, 0, 0, 0 };
+    bool          mapFull[4]    = { false, false, false, false };
     CPoint        mapOrg[4];
     float         mapScale[4]   = { 0, 0, 0, 0 };
     int           mapTexW[4]    = { 0, 0, 0, 0 };
@@ -1211,6 +1267,7 @@ void SDL2TerrainRCtx::swapFileState()
     swap( mapLoadGen,  s_mapLoadGen );
     swap( mapFogGen,   s_mapFogGen );
     swap( mapRow,      s_mapRow );
+    swap( mapFull,     s_mapFull );
     swap( mapOrg,      s_mapOrg );
     swap( mapScale,    s_mapScale );
     swap( mapTexW,     s_mapTexW );
@@ -1548,7 +1605,7 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
             // The size-block below recreates them fresh on the new renderer.
             s_rt = s_rtB = s_fogRT = s_shadeRT = s_shadeHalf = s_shadeB = s_waterRT = nullptr;
             s_farRT = nullptr; s_farZoom = -1;   // far snapshot was bound to the dead renderer too
-            for ( int d = 0; d < 4; ++d ) { s_mapRT[d] = nullptr; s_mapLoadGen[d] = ~0u; s_mapRow[d] = 0; }   // whole-map underlay too
+            for ( int d = 0; d < 4; ++d ) { s_mapRT[d] = nullptr; s_mapLoadGen[d] = ~0u; s_mapRow[d] = 0; s_mapFull[d] = false; }   // whole-map underlay too
             s_rtW = s_rtH = 0;        // also forces the size-block recreate path
             s_sig = ~0ull;            // force a full mesh rebuild on the new renderer
             s_waterRTtick = ~0u; s_waterTick = ~0u;
@@ -1598,7 +1655,7 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
         s_waterRTtick = ~0u; s_waterTick = ~0u;          // water re-bake
         if ( s_farRT ) { SDL_DestroyTexture( s_farRT ); s_farRT = nullptr; }
         s_farZoom = -1;
-        for ( int d = 0; d < 4; ++d ) { s_mapLoadGen[d] = ~0u; s_mapRow[d] = 0; }
+        for ( int d = 0; d < 4; ++d ) { s_mapLoadGen[d] = ~0u; s_mapRow[d] = 0; s_mapFull[d] = false; }   // RT contents dead
 #if EN_GAMEPLAY_PROBES
         LogTerrain( "[REN] render targets reset — rebuilding cached layers" );
 #endif
@@ -1620,12 +1677,12 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
         s_rt      = SDL_CreateTexture( r, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET, rtW, rtH );
         s_fogRT   = SDL_CreateTexture( r, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET, rtW, rtH );
         s_waterRT = SDL_CreateTexture( r, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET, rtW, rtH );
-        if ( s_waterRT ) { SDL_SetTextureBlendMode( s_waterRT, SDL_BLENDMODE_BLEND ); s_waterRTtick = ~0u; }
+        if ( s_waterRT ) { SetPremulBlend( s_waterRT ); s_waterRTtick = ~0u; }
         s_shadeRT = SDL_CreateTexture( r, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET, rtW, rtH );
         s_shadeHalf = SDL_CreateTexture( r, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET, rtW / 2, rtH / 2 );
-        if ( s_rt )    { SDL_SetTextureBlendMode( s_rt, SDL_BLENDMODE_BLEND ); s_rtW = rtW; s_rtH = rtH;
+        if ( s_rt )    { SetPremulBlend( s_rt ); s_rtW = rtW; s_rtH = rtH;               // premul: see SetPremulBlend
                          SDL_SetTextureScaleMode( s_rt, SDL_ScaleModeLinear ); }       // smooth gesture-preview scaling (no-op at 1:1)
-        if ( s_fogRT ) { SDL_SetTextureBlendMode( s_fogRT, SDL_BLENDMODE_BLEND );
+        if ( s_fogRT ) { SetPremulBlend( s_fogRT );                                     // rgb=0 → identical, kept uniform
                          SDL_SetTextureScaleMode( s_fogRT, SDL_ScaleModeLinear ); }
         if ( s_waterRT ) SDL_SetTextureScaleMode( s_waterRT, SDL_ScaleModeLinear );
         // s_shadeRT blend is NONE here so the blur copies overwrite cleanly; it's
@@ -1766,6 +1823,27 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
     const int shiftX = dX, shiftY = dY;
     if ( incPan ) Perf::CounterAdd( "rebuild.incpan", 1 );
 
+    // Still-COVERED texture rect for the incremental pan (where the shifted old content
+    // remains valid). Computed HERE — before the list compaction below — because the
+    // compaction's keep test must be the exact complement of the per-hex loop's skip test.
+    // INSET: hexes at the OLD texture's edges were drawn CLIPPED (SDL clips geometry to
+    // the target), and tall terrain near the old TOP edge had its altitude-lifted upper
+    // pixels cut off entirely. Treating those border bands as "covered" after the shift
+    // made the missing pixels PERMANENT — a black sawtooth band slicing across mountain
+    // tops after a zoom-out + pan (user screenshot, 2026-06-12). Re-mesh one tile of
+    // border all round, plus the full altitude lift below the top edge (mountains draw
+    // upward from their base row).
+    int covX0 = 0, covX1 = rtW, covY0 = 0, covY1 = rtH;
+    if ( incPan )
+    {
+        const int tileW   = 128 >> zoom, tileH = 64 >> zoom;
+        const int altLift = ( 64 << 3 ) >> zoom;
+        covX0 = __max( 0, shiftX ) + tileW;
+        covX1 = rtW + __min( 0, shiftX ) - tileW;
+        covY0 = __max( 0, shiftY ) + tileH + altLift;
+        covY1 = rtH + __min( 0, shiftY ) - tileH;
+    }
+
     // Build the mesh in TEXTURE space: positions are offset by +kMarginPx so the
     // margin band (hexes left/above the viewport) lands at texture x/y >= 0.
     const int offX = kMarginPx, offY = kMarginPx;
@@ -1869,8 +1947,13 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
             if ( !scratch )
             {
                 scratch = SDL_CreateTexture( r, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET, rtW, rtH );
-                if ( scratch ) { SDL_SetTextureBlendMode( scratch, linear ? SDL_BLENDMODE_NONE : SDL_BLENDMODE_BLEND );
-                                 if ( linear ) SDL_SetTextureScaleMode( scratch, SDL_ScaleModeLinear ); }
+                if ( scratch ) { if ( linear ) { SDL_SetTextureBlendMode( scratch, SDL_BLENDMODE_NONE );
+                                                 SDL_SetTextureScaleMode( scratch, SDL_ScaleModeLinear ); }
+                                 else SetPremulBlend( scratch ); }   // swapped into s_rt below — same
+                                                                     // premul mode; also makes the
+                                                                     // old→scratch shift copy an exact
+                                                                     // identity (BLEND re-multiplied
+                                                                     // partial-alpha texels by a each pan)
             }
             if ( !scratch ) return;
             SDL_SetRenderTarget( r, scratch );
@@ -1887,28 +1970,50 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
         shiftTex( s_shadeRT, s_shadeB, 255, 255, 255, 255, true  );  // shade: white = no darkening
         SDL_SetRenderTarget( r, _pt ); SDL_RenderSetViewport( r, &_vp );
 
-        // Compact the PERSISTENT per-hex lists (fog + water): shift each entry's positions by
-        // the pan delta and DROP entries that scrolled fully off-texture (clipped → dead). The
-        // loop appends the strip's new hexes below; a full rebuild later compacts any residue.
-        auto onTex = [&]( float x, float y ) { return x >= 0 && x < rtW && y >= 0 && y < rtH; };
+        // Compact the PERSISTENT per-hex lists (fog + water): shift each entry's positions
+        // by the pan delta and keep an entry ONLY if its hex stays FULLY inside the still-
+        // covered rect — the exact COMPLEMENT of the per-hex loop's skip test below, so
+        // keep and re-emit are mutually exclusive. The old any-corner-on-texture keep also
+        // retained the boundary-ring hexes the loop re-emits, DUPLICATING their entries:
+        // the partial-alpha shore/water blend bands then baked TWICE into s_waterRT — a
+        // darker seam line along shores/water that persisted until the next full rebuild
+        // and stacked further on every subsequent pan (fix 2.2, 2026-08-06). Dropped ring
+        // entries are re-created complete by the loop; off-texture entries are dropped and
+        // (if visible) re-created the same way. ACCEPTED EDGE: incPan runs with edits
+        // pending (see the panOnly note), so a hex whose content corners MOVED since the
+        // last build can misclassify right at the covered boundary (transient missing or
+        // doubled entry for that hex; the next full rebuild heals it) — same accepted-
+        // staleness family as EN_PANSTRIP's known limitation.
+        auto insideCov = [&]( int mnx, int mxx, int mny, int mxy ) {
+            return mnx >= covX0 && mxx <= covX1 && mny >= covY0 && mxy <= covY1;
+        };
         { size_t w = 0, n = s_fogHex.size( );                       // fog: 4 verts + 1 CHex* per hex
           for ( size_t i = 0; i < n; ++i ) {
-              SDL_Vertex* v = &s_fogVerts[i*4]; bool keep = false;
+              SDL_Vertex* v = &s_fogVerts[i*4];
+              int mnx = INT_MAX, mxx = INT_MIN, mny = INT_MAX, mxy = INT_MIN;
               for ( int k = 0; k < 4; ++k ) { v[k].position.x += shiftX; v[k].position.y += shiftY;
-                                              if ( onTex( v[k].position.x, v[k].position.y ) ) keep = true; }
-              if ( keep ) { if ( w != i ) { s_fogHex[w] = s_fogHex[i]; for ( int k = 0; k < 4; ++k ) s_fogVerts[w*4+k] = s_fogVerts[i*4+k]; } ++w; } }
+                                              int px = (int)v[k].position.x, py = (int)v[k].position.y;
+                                              mnx = __min( mnx, px ); mxx = __max( mxx, px );
+                                              mny = __min( mny, py ); mxy = __max( mxy, py ); }
+              if ( insideCov( mnx, mxx, mny, mxy ) ) { if ( w != i ) { s_fogHex[w] = s_fogHex[i]; for ( int k = 0; k < 4; ++k ) s_fogVerts[w*4+k] = s_fogVerts[i*4+k]; } ++w; } }
           s_fogHex.resize( w ); s_fogVerts.resize( w*4 ); }
         { size_t w = 0, n = s_waterHex.size( );                     // water diamonds: parallel arrays
           for ( size_t i = 0; i < n; ++i ) {
-              CPoint* p = &s_waterPos[i*4]; bool keep = false;
-              for ( int k = 0; k < 4; ++k ) { p[k].x += shiftX; p[k].y += shiftY; if ( onTex( (float)p[k].x, (float)p[k].y ) ) keep = true; }
-              if ( keep ) { if ( w != i ) { s_waterHex[w] = s_waterHex[i]; s_waterAnimOf[w] = s_waterAnimOf[i]; for ( int k = 0; k < 4; ++k ) s_waterPos[w*4+k] = s_waterPos[i*4+k]; } ++w; } }
+              CPoint* p = &s_waterPos[i*4];
+              int mnx = INT_MAX, mxx = INT_MIN, mny = INT_MAX, mxy = INT_MIN;
+              for ( int k = 0; k < 4; ++k ) { p[k].x += shiftX; p[k].y += shiftY;
+                                              mnx = __min( mnx, (int)p[k].x ); mxx = __max( mxx, (int)p[k].x );
+                                              mny = __min( mny, (int)p[k].y ); mxy = __max( mxy, (int)p[k].y ); }
+              if ( insideCov( mnx, mxx, mny, mxy ) ) { if ( w != i ) { s_waterHex[w] = s_waterHex[i]; s_waterAnimOf[w] = s_waterAnimOf[i]; for ( int k = 0; k < 4; ++k ) s_waterPos[w*4+k] = s_waterPos[i*4+k]; } ++w; } }
           s_waterHex.resize( w ); s_waterAnimOf.resize( w ); s_waterPos.resize( w*4 ); }
-        { size_t w = 0, n = s_waterBlend.size( );                   // water blend bands
-          for ( size_t i = 0; i < n; ++i ) {
-              WaterBlendBand& b = s_waterBlend[i]; bool keep = false;
-              for ( int k = 0; k < 4; ++k ) { b.p[k].x += shiftX; b.p[k].y += shiftY; if ( onTex( (float)b.p[k].x, (float)b.p[k].y ) ) keep = true; }
-              if ( keep ) { if ( w != i ) s_waterBlend[w] = b; ++w; } }
+        { size_t w = 0, n = s_waterBlend.size( );                   // water blend bands: keep by the
+          for ( size_t i = 0; i < n; ++i ) {                        // OWNER hex bbox, not the band quad
+              WaterBlendBand& b = s_waterBlend[i];                  // (a band can sit fully covered
+              for ( int k = 0; k < 4; ++k ) { b.p[k].x += shiftX; b.p[k].y += shiftY; }   // while its
+              b.hexMin.x += shiftX; b.hexMin.y += shiftY;           // hex straddles and re-emits)
+              b.hexMax.x += shiftX; b.hexMax.y += shiftY;
+              if ( insideCov( b.hexMin.x, b.hexMax.x, b.hexMin.y, b.hexMax.y ) )
+              { if ( w != i ) s_waterBlend[w] = b; ++w; } }
           s_waterBlend.resize( w ); }
         s_shadeVerts.clear(); s_fogNbr.clear();   // shade is re-emitted strip-only; fog nbrs recomputed
         // s_fogVerts/s_fogHex/s_water*/s_waterAnims kept (compacted above); strip appends to them.
@@ -2077,24 +2182,9 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
     // INCREMENTAL PAN: do NOT clear — s_rt already holds the scrolled old content; the strip
     // draws onto it. Compute the still-COVERED texture rect (where the shifted old content
     // landed) so the per-hex loop can skip hexes fully inside it (only the strip re-meshes).
-    int covX0 = 0, covX1 = rtW, covY0 = 0, covY1 = rtH;
-    if ( incPan )
-    {
-        // INSET the covered region: hexes at the OLD texture's edges were drawn CLIPPED
-        // (SDL clips geometry to the target), and tall terrain near the old TOP edge had
-        // its altitude-lifted upper pixels cut off entirely. Treating those border bands
-        // as "covered" after the shift made the missing pixels PERMANENT — a black
-        // sawtooth band slicing across mountain tops after a zoom-out + pan (user
-        // screenshot, 2026-06-12). Re-mesh one tile of border all round, plus the full
-        // altitude lift below the top edge (mountains draw upward from their base row).
-        const int tileW   = 128 >> zoom, tileH = 64 >> zoom;
-        const int altLift = ( 64 << 3 ) >> zoom;
-        covX0 = __max( 0, shiftX ) + tileW;
-        covX1 = rtW + __min( 0, shiftX ) - tileW;
-        covY0 = __max( 0, shiftY ) + tileH + altLift;
-        covY1 = rtH + __min( 0, shiftY ) - tileH;
-    }
-    else
+    // (covX0..covY1 — the still-covered rect — is computed above, before the incPan
+    // list compaction, which must use the same rect.)
+    if ( !incPan )
     {
         SDL_SetRenderDrawColor( r, 0, 0, 0, 0 );
         SDL_RenderClear( r );
@@ -2319,6 +2409,10 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
                 else { mnx = __min( mnx, wb.p[k].x ); mxx = __max( mxx, wb.p[k].x ); mny = __min( mny, wb.p[k].y ); mxy = __max( mxy, wb.p[k].y ); }
             }
             if ( mxx < 0 || mnx > rtW || mxy < 0 || mny > rtH ) continue;   // cull off-texture band
+            // Owner hex bbox re-projected from content space (>> is monotone, so projecting
+            // the two extreme corners projects the bbox exactly) — the incPan compaction key.
+            wb.hexMin = CPoint( ( bc.hexMin.x >> zoom ) - _uzx0, ( bc.hexMin.y >> zoom ) - _uzy0 );
+            wb.hexMax = CPoint( ( bc.hexMax.x >> zoom ) - _uzx0, ( bc.hexMax.y >> zoom ) - _uzy0 );
             s_waterBlend.push_back( wb );
         }
         s_mirZoom = zoom;   // cells now also valid at this (zoomed-in) level
@@ -2559,6 +2653,7 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
                     wbnd.p[1] = pts[c1];                       wbnd.uv[1] = u1;
                     wbnd.p[2] = CPoint( (int)i0x, (int)i0y );  wbnd.uv[2] = { u0.x + kBandW*(0.5f-u0.x), u0.y + kBandW*(0.5f-u0.y) };
                     wbnd.p[3] = CPoint( (int)i1x, (int)i1y );  wbnd.uv[3] = { u1.x + kBandW*(0.5f-u1.x), u1.y + kBandW*(0.5f-u1.y) };
+                    wbnd.hexMin = CPoint( minX, minY ); wbnd.hexMax = CPoint( maxX, maxY );  // owner hex bbox (compaction key)
                     s_waterBlend.push_back( wbnd );
                     if ( retainCap )   // same band in CONTENT space (interior re-derived from content corners)
                     {
@@ -2569,6 +2664,10 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
                         bc.c[1] = cpts[c1]; bc.uv[1] = wbnd.uv[1];
                         bc.c[2] = CPoint( (int)( cpts[c0].x + kBandW*( wccx - cpts[c0].x ) ), (int)( cpts[c0].y + kBandW*( wccy - cpts[c0].y ) ) ); bc.uv[2] = wbnd.uv[2];
                         bc.c[3] = CPoint( (int)( cpts[c1].x + kBandW*( wccx - cpts[c1].x ) ), (int)( cpts[c1].y + kBandW*( wccy - cpts[c1].y ) ) ); bc.uv[3] = wbnd.uv[3];
+                        bc.hexMin = CPoint( __min( __min( cpts[0].x, cpts[1].x ), __min( cpts[2].x, cpts[3].x ) ),
+                                            __min( __min( cpts[0].y, cpts[1].y ), __min( cpts[2].y, cpts[3].y ) ) );
+                        bc.hexMax = CPoint( __max( __max( cpts[0].x, cpts[1].x ), __max( cpts[2].x, cpts[3].x ) ),
+                                            __max( __max( cpts[0].y, cpts[1].y ), __max( cpts[2].y, cpts[3].y ) ) );
                         s_waterBandCells.push_back( bc );
                     }
                 }
@@ -2758,6 +2857,7 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
                         cb.p[1] = pts[c1];                       cb.uv[1] = u1;
                         cb.p[2] = CPoint( (int)i0x, (int)i0y );  cb.uv[2] = iu0;
                         cb.p[3] = CPoint( (int)i1x, (int)i1y );  cb.uv[3] = iu1;
+                        cb.hexMin = CPoint( minX, minY ); cb.hexMax = CPoint( maxX, maxY );  // owner hex bbox (compaction key)
                         s_waterBlend.push_back( cb );
                         if ( retainCap )   // shore feather band in CONTENT space (interior re-derived)
                         {
@@ -2768,6 +2868,10 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
                             bc.c[1] = cpts[c1]; bc.uv[1] = u1;
                             bc.c[2] = CPoint( (int)( cpts[c0].x + kBand*( fccx - cpts[c0].x ) ), (int)( cpts[c0].y + kBand*( fccy - cpts[c0].y ) ) ); bc.uv[2] = iu0;
                             bc.c[3] = CPoint( (int)( cpts[c1].x + kBand*( fccx - cpts[c1].x ) ), (int)( cpts[c1].y + kBand*( fccy - cpts[c1].y ) ) ); bc.uv[3] = iu1;
+                            bc.hexMin = CPoint( __min( __min( cpts[0].x, cpts[1].x ), __min( cpts[2].x, cpts[3].x ) ),
+                                                __min( __min( cpts[0].y, cpts[1].y ), __min( cpts[2].y, cpts[3].y ) ) );
+                            bc.hexMax = CPoint( __max( __max( cpts[0].x, cpts[1].x ), __max( cpts[2].x, cpts[3].x ) ),
+                                                __max( __max( cpts[0].y, cpts[1].y ), __max( cpts[2].y, cpts[3].y ) ) );
                             s_waterBandCells.push_back( bc );
                         }
                     }
@@ -2919,9 +3023,15 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
                 CHexCoord hc( (int)( packed >> 16 ), (int)( packed & 0xFFFF ) );
                 CHex* phex = theMap.GetHex( hc );
                 if ( !phex ) continue;
-                const Tile* tile = TileForHex( phex, aa.m_iDir );
+                // Animated water/coast = hole in s_rt, filled by the live layer — punch,
+                // don't stamp a frozen frame (same rule and same land→water LIMIT as the
+                // edit-patch below; fix 3.1).
+                CTerrainSprite* psp   = phex->GetSprite( );
+                const int       mtype = psp ? psp->GetID( ) : -1;
+                const bool      mAnim = IsAnimatedTile( mtype );
+                const Tile* tile = mAnim ? nullptr : TileForHex( phex, aa.m_iDir );
                 SDL_Texture* ptex = TileTexAnyZoom( tile, zoom );   // mip fallback (see helper)
-                if ( !tile || !ptex ) continue;
+                if ( !mAnim && ( !tile || !ptex ) ) continue;
                 // Project content -> texture against s_builtUL (the origin the mesh was just
                 // built with) — NOT MapToWindowHex's live UL, which may have moved already
                 // (pan-race: a stamp at the wrong offset bakes a misplaced tile into s_rt).
@@ -2936,7 +3046,17 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
                     mny = __min( mny, pts[i].y ); mxy = __max( mxy, pts[i].y );
                 }
                 if ( mxx < 0 || mnx > rtW || mxy < 0 || mny > rtH ) continue;   // off-texture
-                CTerrainSprite* psp = phex->GetSprite( );
+                if ( mAnim )
+                {
+                    SDL_Vertex hv[4];
+                    for ( int i = 0; i < 4; ++i )
+                    { hv[i].position = { (float)pts[i].x, (float)pts[i].y };
+                      hv[i].tex_coord = { 0, 0 }; hv[i].color = { 0, 0, 0, 0 }; }
+                    SDL_SetRenderDrawBlendMode( r, SDL_BLENDMODE_NONE );
+                    SDL_RenderGeometry( r, nullptr, hv, 4, pidx, 6 );
+                    SDL_SetRenderDrawBlendMode( r, SDL_BLENDMODE_BLEND );
+                    continue;
+                }
                 bool bTranspose = tile->drawVert && psp && psp->GetID( ) == CHex::road;
                 SDL_FPoint uvL, uvT, uvR, uvB;
                 if ( bTranspose ) { uvL = { 0.5f, 0.0f }; uvT = { 0.0f, 0.5f }; uvR = { 0.5f, 1.0f }; uvB = { 1.0f, 0.5f }; }
@@ -3080,9 +3200,23 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
             CHexCoord hc( (int)( packed >> 16 ), (int)( packed & 0xFFFF ) );
             CHex* phex = theMap.GetHex( hc );
             if ( !phex ) continue;
-            const Tile* tile = TileForHex( phex, aa.m_iDir );
+            // Animated water/coastline hexes are transparent HOLES in s_rt by design — the
+            // live water layer fills them from underneath (the full rebuild skips them at
+            // IsAnimatedTile). TileForHex still returns a real opaque tile for them (with a
+            // frozen wave-frame letter), so stamping froze that hex's foam/water until the
+            // next full rebuild — live via bridge Flatten() SetAlt at a shore (fix 3.1,
+            // 2026-08-06). PUNCH the hole (below) instead of stamping. LIMIT: the punch is
+            // only complete for a hex ALREADY in the live water layer (type unchanged since
+            // the last rebuild — the only live edit path, bridge SetAlt, keeps the type). A
+            // land→water TYPE conversion through this path would show black until the next
+            // full rebuild (no diamond behind the hole) — no runtime path does that today
+            // (load/worldgen floods exceed the patch cap → full rebuild).
+            CTerrainSprite* psp   = phex->GetSprite( );
+            const int       ptype = psp ? psp->GetID( ) : -1;
+            const bool      bAnim = IsAnimatedTile( ptype );
+            const Tile* tile = bAnim ? nullptr : TileForHex( phex, aa.m_iDir );
             SDL_Texture* ptex = TileTexAnyZoom( tile, zoom );   // mip fallback (see helper)
-            if ( !tile || !ptex ) continue;
+            if ( !bAnim && ( !tile || !ptex ) ) continue;
             // Content -> texture against s_builtUL (what s_rt was built with), replacing the
             // old MapToWindowHex(live UL) + (offX - dX) compensation — the live UL can move
             // between the dX measure and this stamp (pan-race: misplaced patched tiles).
@@ -3117,12 +3251,23 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
                   }
                 if ( !placed ) continue;   // genuinely off-texture
             }
+            if ( bAnim )
+            {
+                // Restore the live-layer hole: overwrite the diamond with transparent black.
+                SDL_Vertex hv[4];
+                for ( int i = 0; i < 4; ++i )
+                { hv[i].position = { (float)pts[i].x, (float)pts[i].y };
+                  hv[i].tex_coord = { 0, 0 }; hv[i].color = { 0, 0, 0, 0 }; }
+                SDL_SetRenderDrawBlendMode( r, SDL_BLENDMODE_NONE );   // untextured geometry uses
+                SDL_RenderGeometry( r, nullptr, hv, 4, idx, 6 );       // the draw blend mode
+                SDL_SetRenderDrawBlendMode( r, SDL_BLENDMODE_BLEND );
+                continue;
+            }
             // Road tiles flagged drawVert sample the diamond TRANSPOSED (U/V swapped) for
             // vertical-seam continuity — the full-rebuild base pass does this. The patch
             // previously always used the upright UVs, so a freshly built road (especially
             // L/T junctions) rendered 90° ROTATED until a rotate/zoom forced a full rebuild.
             // Match the rebuild so the patch draws it right immediately.
-            CTerrainSprite* psp = phex->GetSprite( );
             bool bTranspose = tile->drawVert && psp && psp->GetID( ) == CHex::road;
             SDL_FPoint uvL, uvT, uvR, uvB;
             if ( bTranspose ) { uvL = { 0.5f, 0.0f }; uvT = { 0.0f, 0.5f }; uvR = { 0.5f, 1.0f }; uvB = { 1.0f, 0.5f }; }
@@ -3363,19 +3508,25 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
     { Perf::ScopeCounter _cc( "p.compose" );   // MEASURE: 4 full-screen RT blits
     if ( fPreview )
     {
-        // Transient gesture frame: black backdrop (the scaled texture may not cover the whole
+        // Transient gesture frame: backdrop fill (the scaled texture may not cover the whole
         // viewport when zooming out), then the WHOLE-MAP UNDERLAY (always covers the window,
         // blurry), then the FAR SNAPSHOT (stale wide view, crisper, if one matches) under the
-        // crisp layers — the uncovered ring shows real terrain instead of black.
+        // crisp layers — the uncovered ring shows real terrain instead of the fill.
+        // Dark olive-brown, not black: any gap the layers don't cover (e.g. rotating into a
+        // direction whose underlay is still baking in the first seconds after load) reads as
+        // unlit GROUND instead of a loud black hole (operator request 2026-08-07).
         SDL_SetRenderDrawBlendMode( r, SDL_BLENDMODE_NONE );
-        SDL_SetRenderDrawColor( r, 0, 0, 0, 255 );
+        SDL_SetRenderDrawColor( r, 34, 32, 22, 255 );
         SDL_RenderFillRect( r, nullptr );
         SDL_SetRenderDrawBlendMode( r, SDL_BLENDMODE_BLEND );
         {
             // Window px of content c = (c >> zoom) - UL; texture px t = ((c-org)>>3)*sc
             // => window = t * 2^(3-zoom)/sc + (org>>zoom) - UL  (org via float, sign-safe).
             const int mdir = aa.m_iDir & 3;
-            if ( s_mapRT[mdir] && s_mapLoadGen[mdir] == s_loadGen && s_mapRow[mdir] > 0 )
+            // s_mapFull: a dir whose fog re-sweep just reset s_mapRow to 0 still holds its
+            // last-good bake (in-place repaint) — rejecting it here black-flashed the ring
+            // for a frame on every rotate-to-stale-fog-dir + zoom (fix 2.4c).
+            if ( s_mapRT[mdir] && s_mapLoadGen[mdir] == s_loadGen && ( s_mapRow[mdir] > 0 || s_mapFull[mdir] ) )
             {
                 float invZ = ldexpf( 1.0f, -zoom );
                 float Fm   = ldexpf( 1.0f, 3 - zoom ) / s_mapScale[mdir];
@@ -3500,9 +3651,14 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
             dbg.y = (float)s_mapOrg[mdir].y * invZ - (float)aa.m_ptUL.y;
             dbg.w = (float)s_mapTexW[mdir] * Fm;
             dbg.h = (float)s_mapTexH[mdir] * Fm;
+            // Premul content: AlphaMod scales only src ALPHA and the custom mode passes
+            // color with factor ONE, so a 50% ghost also needs the matching ColorMod
+            // (else the debug overlay draws near-full-brightness additive).
             SDL_SetTextureAlphaMod( s_mapRT[mdir], 128 );
+            SDL_SetTextureColorMod( s_mapRT[mdir], 128, 128, 128 );
             SDL_RenderCopyF( r, s_mapRT[mdir], nullptr, &dbg );
             SDL_SetTextureAlphaMod( s_mapRT[mdir], 255 );
+            SDL_SetTextureColorMod( s_mapRT[mdir], 255, 255, 255 );
             static int s_dbgLogged = 0;
             if ( s_dbgLogged < 4 )
             { char b[200]; sprintf_s( b, "underlay-dbg: zoom=%d dst=(%.0f,%.0f %.0fx%.0f) win=%ldx%ld UL=(%ld,%ld) org=(%ld,%ld) sc=%.3f",
@@ -3516,12 +3672,35 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
     // one call, ~0.5-1s once) only when NO dir has this load generation yet — i.e. the
     // first frames after a load, which counts as load time ("prewarm during loading is
     // fine"). A rotate to a cold dir builds TIME-SLICED instead, keeping rotates <300ms.
-    // Skipped during gesture frames so the slice never inflates a preview frame.
-    if ( !fPreview )
+    // Preview frames used to SKIP the build entirely — which starved the very backdrop
+    // the gesture needs (a rotate ran ONE 16-row slice, then the zoom-out gesture built
+    // nothing → black/unrendered flash on rapid pan+zoom-out until the settle rebuild;
+    // operator repro 2026-08-06, fix 2.4). Build during previews too with a SMALL row
+    // budget (~1-2ms) so the slice never inflates a gesture frame; never burst there.
     {
         bool anyCur = false;
         for ( int d = 0; d < 4; ++d ) anyCur |= ( s_mapLoadGen[d] == s_loadGen && s_mapRow[d] > 0 );
-        BuildMapUnderlay( r, aa, s_loadGen, g_enFogVisGen, !anyCur );
+        const int curDir = aa.m_iDir & 3;
+        int buildDir = curDir;
+        // IDLE PREWARM (fix 2.4b — "still black when I rotate and zoom out quickly"):
+        // the underlay is necessarily PER-DIRECTION (rotating the iso camera is not an
+        // image transform — directional tiles/occlusion change), so a cold direction had
+        // NO backdrop until visited. Priority: any dir that has NEVER completed for this
+        // load (current first, then round-robin) gets the idle slice — a STALE backdrop
+        // everywhere beats a fog-fresh one in a single direction (v1 of this gated on the
+        // current dir being fog-FRESH, which live fog churn made almost-never true, so
+        // cold dirs never built — operator re-repro'd the rotate black). Only when all
+        // four are built does the slice go to the current dir's fog re-sweep. MemoTile
+        // warms the built dir's tile memo as a side effect (faster rotate re-mesh too).
+        // Never during gesture frames (those slice the CURRENT dir only, small budget);
+        // hidden dirs' fog staleness refreshes when actually visited (accepted).
+        if ( !fPreview )
+            for ( int k = 0; k < 4; ++k )
+            {
+                int d = ( curDir + k ) & 3;
+                if ( s_mapLoadGen[d] != s_loadGen || !s_mapFull[d] ) { buildDir = d; break; }
+            }
+        BuildMapUnderlay( r, aa, buildDir, s_loadGen, g_enFogVisGen, !anyCur && !fPreview, fPreview ? 2 : 16 );
     }
 
     // EDIT-LOG TRIM (multi-reader): drop the entries every live area-map context has

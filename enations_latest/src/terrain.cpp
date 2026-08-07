@@ -2403,9 +2403,17 @@ CAnimAtr::WorldToView( const CMapLoc3D& maploc3d ) const
 CPoint
 CAnimAtr::WorldToViewContent( const CMapLoc3D& maploc3d ) const
 {
+    return WorldToViewContent( maploc3d, m_iDir );
+}
+
+// Explicit-direction variant — pure function of (maploc3d, iDir); used by the GPU
+// underlay to prewarm other directions' backdrops (see base.h).
+CPoint
+CAnimAtr::WorldToViewContent( const CMapLoc3D& maploc3d, int iDir ) const
+{
     int iNewX = 0, iNewY = 0;
 
-    switch ( m_iDir )
+    switch ( iDir )
     {
     case 0: iNewX =  maploc3d.x + maploc3d.y; iNewY = ( -maploc3d.x + maploc3d.y ) >> 1; break;
     case 1: iNewX = -maploc3d.x + maploc3d.y; iNewY = ( -maploc3d.x - maploc3d.y ) >> 1; break;
@@ -2427,13 +2435,20 @@ CAnimAtr::WorldToViewContent( const CMapLoc3D& maploc3d ) const
 void
 CAnimAtr::MapToContentHex( const CHexCoord& hexcoord, CPoint aptHex[4] ) const
 {
+    MapToContentHex( hexcoord, aptHex, m_iDir );
+}
+
+// Explicit-direction variant (underlay prewarm — see base.h).
+void
+CAnimAtr::MapToContentHex( const CHexCoord& hexcoord, CPoint aptHex[4], int iDir ) const
+{
     static int xaaiIndex[4][4] = { { 0, 1, 2, 3 }, { 3, 0, 1, 2 }, { 2, 3, 0, 1 }, { 1, 2, 3, 0 } };
 
     CMapLoc3D amaploc3d[4];
     hexcoord.GetWorldHex( amaploc3d );
 
-    int* pi = xaaiIndex[m_iDir];
-    for ( int i = 0; i < 4; ++i ) aptHex[*pi++] = WorldToViewContent( amaploc3d[i] );
+    int* pi = xaaiIndex[iDir & 3];
+    for ( int i = 0; i < 4; ++i ) aptHex[*pi++] = WorldToViewContent( amaploc3d[i], iDir & 3 );
 }
 
 #ifdef _DEBUG

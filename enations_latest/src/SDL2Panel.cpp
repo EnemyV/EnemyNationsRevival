@@ -1097,9 +1097,8 @@ void SDL2Panel::MaybeCreateOwnRenderer() {
     }
 }
 
-// Item 5 (GPU dirty-rects): runtime kill-switch. Default OFF — the staged dirty-rect
-// path is opt-in via env EN_DIRTY=1 until validated, then it becomes the default. Read
-// once; cached for the process.
+// Item 5 (GPU dirty-rects): runtime kill-switch. DEFAULT ON; EN_DIRTY=0 disables.
+// Read once; cached for the process.
 bool SDL2Panel::GpuDirtyEnabled() {
     // Default ON: enables incremental GPU sprite capture (the static forest is captured
     // once and kept; only dynamic objects are re-captured each frame) + the persistent
