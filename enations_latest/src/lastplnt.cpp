@@ -117,7 +117,7 @@ void trans_func( unsigned int u, EXCEPTION_POINTERS* pExp )
             break;
 
         // if it's code we save it (write because badcode only checks if can read)
-        if ( ( IsBadWritePtr( (void*)*pCall, 4 ) ) && ( !IsBadCodePtr( (FARPROC)*pCall ) ) )
+        if ( ( IsBadWritePtr( (void*)(uintptr_t)*pCall, 4 ) ) && ( !IsBadCodePtr( (FARPROC)(uintptr_t)*pCall ) ) )
             if ( ( iInd < 3 ) || ( ( *pCall & 0x80000000 ) == 0 ) )
                 exp.m_stack[iInd++] = *pCall;
     }
@@ -192,7 +192,7 @@ void CatchSE( SE_Exception e )
         strcpy( sNum2, "Stack Overflow" );
         break;
     default:
-        itoa( (int)e.m_pExCode, sNum2, 16 );
+        itoa( (int)(intptr_t)e.m_pExCode, sNum2, 16 );   // NT exception codes fit 32 bits (display only)
         break;
     }
     for ( int iOn = 0; iOn < 5; iOn++ ) itoa( e.m_stack[iOn], sNumS[iOn], 16 );
@@ -1399,7 +1399,13 @@ BOOL CConquerApp::InitInstance( )
 
 // time the CD // we dont have a cd anymore
             m_iCdSpeed = 100; // assume fast CD drive
-#ifndef _GG && 0
+// Was `#ifndef _GG && 0` — the author's intent was to disable the CD-speed timing
+// below (hence the hardcode above), but the preprocessor IGNORES tokens after the
+// identifier (the C4067 warning), and _GG is defined nowhere — so the "dead" block
+// still RAN: it overwrote m_iCdSpeed from the profile / a disk-read timing loop,
+// which on a slow first read could drop below 4 and silently force midi_only music
+// (see the m_iCdSpeed < 4 test below). #if 0 = what was meant. (2026-08-07)
+#if 0
             if ( ( m_iCdSpeed = EnGetProfileInt( "Advanced", "CDspeed", 0 ) ) <= 0 )
             {
                 CFile* pFile = theDataFile.OpenAsFile( "music" );
@@ -1565,8 +1571,12 @@ BOOL CConquerApp::InitInstance( )
         {
             // Temporarily open SDL_mixer so video audio works via Mix_HookMusic.
             // PostIntro() will call theMusicPlayer.Open() later for the full init.
+            // allowed_changes = 0: the video hook feeds raw 22050/S16/stereo (its 44100→
+            // 22050 downsample ratio is compile-time) — Mix_OpenAudio's default flags let
+            // WASAPI open at the endpoint rate (48kHz) with NO conversion → sped-up intro
+            // audio (same root as the in-game chipmunk fix in CMusicPlayer::OpenDigital).
             bool tempAudio = false;
-            if ( Mix_OpenAudio( 22050, AUDIO_S16SYS, 2, 2048 ) == 0 )
+            if ( Mix_OpenAudioDevice( 22050, AUDIO_S16SYS, 2, 2048, NULL, 0 ) == 0 )
                 tempAudio = true;
 
             if ( m_gameWindow )
