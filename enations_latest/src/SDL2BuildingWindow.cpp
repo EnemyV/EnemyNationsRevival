@@ -1218,10 +1218,13 @@ int SDL2BuildingWindow::BuildHeaderBand(int x, int y, int w) {
     m_lblOperCost->SetColor( { 90, 66, 30, 255 } );   // parchment ink, a touch bolder than the flavor
 
     // Bigger + width-wrapped over two lines: the one-line squeeze made the
-    // at-a-glance status the least readable text in the window.
-    m_lblStatus = AddWidget<SDL2Label>( tx, y + HEADER_H - 40, tw, 38, "" );
+    // at-a-glance status the least readable text in the window. FULL width (x/w,
+    // not the portrait-right column tx/tw): the line sits BELOW the portrait +
+    // health bar, so the old indent left a dead gap under the health bar while
+    // the text wrapped early (operator, 2026-08-08 "should go edge to edge").
+    m_lblStatus = AddWidget<SDL2Label>( x, y + HEADER_H - 40, w, 38, "" );
     m_lblStatus->SetBold( true );
-    m_lblStatus->SetFontSize( 16 );
+    m_lblStatus->SetFontSize( 15 );   // 16 read "a little too big" at full width (operator 2026-08-08)
     m_lblStatus->SetWrapped( true );
     m_lblStatus->SetTopAligned( true );
 
