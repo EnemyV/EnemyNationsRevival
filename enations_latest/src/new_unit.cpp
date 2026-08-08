@@ -140,6 +140,21 @@ void CMaterialBuilding::ShowStatusText( std::string& str )
     // show creating rate
     CBuildMaterials const* pBm  = GetData( )->GetBldMaterials( );
 
+    // Bio Oil (#33): with the alt toggle ON this refinery makes NO gas and never touches its
+    // own input store — BuildMaterials skips the gas path and burns GLOBAL food into oil, and
+    // Operate clears the ran-out wait. So both the input gate ("Idle") and the gas-rate line
+    // below are wrong in this mode. Same gate expression as the sim's bBioFuel.
+    if ( IsFlag( CUnit::alt_oil ) )
+    {
+        const AltOutput::AltOutputDef* pDef = AltOutput::Available( this );
+        if ( pDef )
+        {
+            str = "Converting " + CMaterialTypes::GetDesc( pDef->m_iInputMat ) +
+                  " to " + CMaterialTypes::GetDesc( pDef->m_iOutputMat );
+            return;
+        }
+    }
+
     // I1 (operator): if a required input material's store is empty the converter can't
     // produce — show "Idle" instead of the misleading theoretical-max rate ("816 steel/min"
     // with no iron/coal). Mirrors CPowerBuilding's input gate above + the runtime
@@ -246,6 +261,22 @@ void CFarmBuilding::ShowStatusText( std::string& str )
     }
 
     CBuildFarm* pBf = GetData( )->GetBldFarm( );
+
+    // Charcoal (#44): a lumber mill with the kiln ON credits NO player lumber — the harvest
+    // feeds the kiln and only the coal trickle comes out (BuildFarm's lumber branch). The
+    // harvest-rate line below would claim full lumber output; say what it actually does.
+    // Same gate expression as the sim's kiln branch.
+    if ( pBf->GetTypeFarm( ) == CMaterialTypes::lumber && IsFlag( CUnit::alt_oil ) )
+    {
+        const AltOutput::AltOutputDef* pDef = AltOutput::Available( this );
+        if ( pDef )
+        {
+            str = "Converting " + CMaterialTypes::GetDesc( pDef->m_iInputMat ) +
+                  " to " + CMaterialTypes::GetDesc( pDef->m_iOutputMat );
+            return;
+        }
+    }
+
     // Operator: actual rate, not theoretical — 0 while the sim has the farm halted.
     int iFarmRate = ( m_unitFlags & ( stopped | abandoned | event | dying ) )
                         ? 0
