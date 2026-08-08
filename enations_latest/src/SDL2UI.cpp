@@ -2253,6 +2253,20 @@ void SDL2Dialog::ShowNonModal(std::function<void(int)> onDone) {
         m_gameWindow->RegisterDialog(this);
 }
 
+void SDL2Dialog::ResizeNonModal(int w, int h) {
+    if (w == m_width && h == m_height)
+        return;
+    m_width = w; m_height = h;
+    if (m_dlgWindow) {
+        SDL_SetWindowSize(m_dlgWindow, w, h);
+        // Drop SDL's cached framebuffer surface so the next GetWindowSurface
+        // returns one at the new size (same heal as the monitor-change case in
+        // RenderFrameNonModal).
+        SDL_DestroyWindowSurface(m_dlgWindow);
+    }
+    m_forceFrame = true;
+}
+
 void SDL2Dialog::RaiseAndAlert() {
     if (!m_dlgWindow)
         return;

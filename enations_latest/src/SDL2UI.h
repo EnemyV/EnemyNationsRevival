@@ -576,6 +576,14 @@ protected:
     // that calls this can be tucked behind the area map instead of floating on top.
     void SetKeepOnTop(bool v) { m_keepOnTop = v; }
 
+    // Resize an OPEN non-modal dialog in place (top-left anchored). The per-frame
+    // present is size-agnostic (GetWindowSurface + m_width×m_height blit), so only
+    // the SDL window, its cached framebuffer surface, and the stored dims change;
+    // the caller rebuilds its widgets for the new size (SDL2BuildingWindow::Rebuild,
+    // which resizes on the coal-liq/scrounge Production Mode toggle instead of
+    // padding the smaller mode with empty space).
+    void ResizeNonModal(int w, int h);
+
     // Override the default 13pt widget font for this dialog's labels/buttons. Lets
     // a specific window (e.g. the building-info windows) run slightly larger text
     // without changing every other dialog. A per-widget SetFontSize still wins.

@@ -69,7 +69,9 @@ static int slotRowH(int iconIdx) {
 static int matRowH()       { return slotRowH( ICON_MATERIALS ); }
 static int storageHeight() { return BOX_PAD + HDR_H + SDL2BuildingWindow::kNumStoreMats * matRowH() + BOX_PAD; }
 // graph + the tiny time-range button row underneath it
-static const int RANGE_ROW_H  = 18;   // height of the tiny 10m/1h/6h/24h/7d button row (fits a ~12pt crisp label)
+static const int RANGE_ROW_H  = 24;   // height of the 10s/10m/1h/10h button row — was 18, which
+                                      // downscaled the labels to ~12pt mush ("difficult to read",
+                                      // operator 2026-08-07); 24 fits a ~15pt crisp label
 static const int GRAPHAREA_H  = GRAPH_H + RANGE_ROW_H + 2;
 static const int POWERLIKE_H  = BOX_PAD + HDR_H + GRAPHAREA_H + BOX_PAD;   // power / apartment (graph + range row)
 // Offices + Workforce are SEPARATE sections now (operator): Offices = desk capacity vs
@@ -106,19 +108,30 @@ static const int PORTRAIT_W      = 94;   // displayed WIDTH (keeps the ~84:64 ic
 // Band height DERIVES from the portrait (portrait + 3px gap + 10px condition bar +
 // 6px breathing room) so resizing the portrait can never clip it against the first
 // section again; floor of 89 keeps room for the name + 3-line flavor + status text.
-static const int HEADER_H     = __max( 107, PORTRAIT + 3 + 10 + 6 + 16 );   // +16px: operating-cost line (power/workers) under the flavor
+static const int HEADER_H     = __max( 129, PORTRAIT + 3 + 10 + 6 + 16 + 22 );   // +16px: operating-cost line (power/workers)
+                                                                                 // +22px: two-line 16pt status (was one cramped
+                                                                                 // 13-ish line; "still hard to read", 2026-08-07)
 
 // Category accent colors for section headers — saturated darks that read on the
 // light parchment interior, replacing the one-size-fits-all blue.
 static const SDL_Color kHeaderBlue = { 40, 60, 150, 255 };   // power / utility
-static const SDL_Color kAccentGold = { 150, 95, 18, 255 };   // resources / production
+static const SDL_Color kAccentGold = { 110, 66, 0, 255 };    // resources / production — dark bronze;
+                                                             // the old {150,95,18} sat ~2.5:1 against
+                                                             // the parchment ("Production Mode is hard
+                                                             // to see", operator 2026-08-07); same
+                                                             // family as kStatusWarn, keeps the
+                                                             // gold-vs-blue section semantics
 static const SDL_Color kAccentGrn  = { 28, 104, 48, 255 };   // population / fertility
 static const SDL_Color kAccentRed  = { 158, 32, 32, 255 };   // weapon / military
 
-// Status-line colors (mirror CLR_STATUS_TEXT_* from the original status bar).
-static const SDL_Color kStatusOk   = { 30, 120, 40, 255 };
-static const SDL_Color kStatusWarn = { 170, 120, 0, 255 };
-static const SDL_Color kStatusBad  = { 170, 30, 30, 255 };
+// Status-line colors. Originally mirrored CLR_STATUS_TEXT_* from the old status
+// bar — but that bar was GRAY; on this window's tan parchment those mids sat at
+// ~2-3:1 contrast ("the green text is unreadable", operator + screenshot,
+// 2026-08-07). Darkened to keep each hue's meaning at readable (~4.5:1+) contrast
+// against the parchment, same family as the kHeaderBlue/parchment-ink labels.
+static const SDL_Color kStatusOk   = { 10, 72, 22, 255 };    // dark forest green
+static const SDL_Color kStatusWarn = { 110, 66, 0, 255 };    // dark amber/bronze
+static const SDL_Color kStatusBad  = { 140, 20, 20, 255 };   // deep red
 
 // Group a number into thousands with commas (1250 -> "1,250").
 static std::string FmtNum(int v) {
@@ -622,38 +635,13 @@ static BldgLayout computeLayout(CBuilding* b) {
     return L;
 }
 
-// C6: a coal-liq-capable plant has DIFFERENT section sets (hence sizes) in liq-on vs liq-off mode.
-// Size the window for the MAX of both so the on-toggle relayout never needs an SDL window resize —
-// the smaller mode just leaves slack at the bottom. Computed via the layout override so the real
-// alt_oil flag is never touched. (Restored even though callers always pass -1, for safety.)
-static void coalLiqMaxDims(CBuilding* b, int& wMax, int& hMax) {
-    int save = s_coalLiqLayoutOverride;
-    s_coalLiqLayoutOverride = 1; BldgLayout on  = computeLayout(b);
-    s_coalLiqLayoutOverride = 0; BldgLayout off = computeLayout(b);
-    s_coalLiqLayoutOverride = save;
-    wMax = __max(on.width,  off.width);
-    hMax = __max(on.height, off.height);
-}
-// Scrounge hosts flip their section SET on toggle too (Production appears/disappears); size for
-// the max of both modes so the relayout never needs an SDL window resize (mirrors coalLiqMaxDims).
-static void scroungeMaxDims(CBuilding* b, int& wMax, int& hMax) {
-    int save = s_scroungeLayoutOverride;
-    s_scroungeLayoutOverride = 1; BldgLayout on  = computeLayout(b);
-    s_scroungeLayoutOverride = 0; BldgLayout off = computeLayout(b);
-    s_scroungeLayoutOverride = save;
-    wMax = __max(on.width,  off.width);
-    hMax = __max(on.height, off.height);
-}
-static int computeWidth(CBuilding* b) {
-    if ( coalLiqCapable(b) )  { int w, h; coalLiqMaxDims(b, w, h);  return w; }
-    if ( scroungeCapable(b) ) { int w, h; scroungeMaxDims(b, w, h); return w; }
-    return computeLayout(b).width;
-}
-static int computeHeight(CBuilding* b) {
-    if ( coalLiqCapable(b) )  { int w, h; coalLiqMaxDims(b, w, h);  return h; }
-    if ( scroungeCapable(b) ) { int w, h; scroungeMaxDims(b, w, h); return h; }
-    return computeLayout(b).height;
-}
+// C6-era note: coal-liq/scrounge hosts used to size the window for the MAX of both toggle
+// modes so the on-toggle relayout never resized the SDL window — the smaller mode padded
+// the bottom with empty space (operator: "when I unselect it there's empty space",
+// 2026-08-07). The window now sizes for the CURRENT mode and Rebuild() resizes in place
+// on toggle (SDL2Dialog::ResizeNonModal — the present path is size-agnostic per frame).
+static int computeWidth(CBuilding* b)  { return computeLayout(b).width; }
+static int computeHeight(CBuilding* b) { return computeLayout(b).height; }
 
 static std::string makeTitle(CBuilding* b) {
     return std::string( b->GetData()->GetDesc().c_str() );
@@ -919,12 +907,15 @@ void SDL2BuildingWindow::BuildBody() {
 // (Power <-> Production/Inputs/Outputs). MUST be called from OnFrame (NOT the checkbox callback) —
 // ClearWidgets frees the checkbox whose lambda would still be on the stack. Every cached raw widget
 // pointer is freed by ClearWidgets, so null them all first; RecomputeSections + BuildBody re-create
-// the ones the new mode needs, and Refresh (flag-gated) only touches those. The window FRAME size is
-// unchanged (sized for the max of both modes), so no SDL resize.
+// the ones the new mode needs, and Refresh (flag-gated) only touches those. The window frame is
+// RESIZED to the new mode's layout (was: sized for the max of both modes, which left the smaller
+// mode with a band of empty space at the bottom).
 void SDL2BuildingWindow::Rebuild() {
     ClearWidgets();
     NullSectionWidgets();
     RecomputeSections();
+    BldgLayout L = computeLayout( m_pBldg );
+    ResizeNonModal( L.width, L.height );
     BuildBody();
     Refresh();
 }
@@ -1226,8 +1217,13 @@ int SDL2BuildingWindow::BuildHeaderBand(int x, int y, int w) {
     m_lblOperCost->SetBold( true );
     m_lblOperCost->SetColor( { 90, 66, 30, 255 } );   // parchment ink, a touch bolder than the flavor
 
-    m_lblStatus = AddWidget<SDL2Label>( tx, y + HEADER_H - 18, tw, 16, "" );
+    // Bigger + width-wrapped over two lines: the one-line squeeze made the
+    // at-a-glance status the least readable text in the window.
+    m_lblStatus = AddWidget<SDL2Label>( tx, y + HEADER_H - 40, tw, 38, "" );
     m_lblStatus->SetBold( true );
+    m_lblStatus->SetFontSize( 16 );
+    m_lblStatus->SetWrapped( true );
+    m_lblStatus->SetTopAligned( true );
 
     return y + HEADER_H;
 }
@@ -1294,6 +1290,8 @@ int SDL2BuildingWindow::BuildPower(int x, int y, int w) {
     m_lblPowerBldg   = AddWidget<SDL2Label>(x + BOX_PAD + 4, yh + 6,         textW, ROW_H, "This building: 0");
     m_lblPowerColony = AddWidget<SDL2Label>(x + BOX_PAD + 4, yh + 6 + ROW_H, textW, ROW_H, "Colony: 0 / 0");
     m_imgPowerGraph  = AddWidget<SDL2Image>(graphX, yh, graphW, GRAPH_H);
+    // Four buttons at (168-12)/4 = 39px + 4px gaps = exactly the graph's width:
+    // the row sits flush with the graph on BOTH edges, labels crisp.
     AddGraphRangeRow(graphX, yh + GRAPH_H + 2, graphW);
     // Oil readout (shown INSTEAD when in coal-liq mode): a status row + this-building / colony
     // oil totals, mirroring the power rows' two-line "This building / Colony" style. Created
@@ -1322,6 +1320,8 @@ int SDL2BuildingWindow::BuildOffice(int x, int y, int w) {
     m_lblOfcBldg   = AddWidget<SDL2Label>(x + BOX_PAD + 4, yh + 6,             textW, ROW_H, "This building: 0");
     m_lblOfcColony = AddWidget<SDL2Label>(x + BOX_PAD + 4, yh + 6 + ROW_H,     textW, ROW_H, "Colony: 0 / 0");
     m_imgOfcGraph  = AddWidget<SDL2Image>(graphX, yh, graphW, GRAPH_H);
+    // Four buttons at (168-12)/4 = 39px + 4px gaps = exactly the graph's width:
+    // the row sits flush with the graph on BOTH edges, labels crisp.
     AddGraphRangeRow(graphX, yh + GRAPH_H + 2, graphW);
     return y + OFFICE_H + SEC_PAD;
 }
@@ -1338,6 +1338,8 @@ int SDL2BuildingWindow::BuildWorkforce(int x, int y, int w) {
     m_lblWfHave   = AddWidget<SDL2Label>(x + BOX_PAD + 4, yh + 6,             textW, ROW_H, "Have: 0");
     m_lblWfNeed   = AddWidget<SDL2Label>(x + BOX_PAD + 4, yh + 6 + ROW_H,     textW, ROW_H, "Need: 0");
     m_imgWfGraph  = AddWidget<SDL2Image>(graphX, yh, graphW, GRAPH_H);
+    // Four buttons at (168-12)/4 = 39px + 4px gaps = exactly the graph's width:
+    // the row sits flush with the graph on BOTH edges, labels crisp.
     AddGraphRangeRow(graphX, yh + GRAPH_H + 2, graphW);
     return y + WORKFORCE_H + SEC_PAD;
 }
@@ -1354,6 +1356,8 @@ int SDL2BuildingWindow::BuildApt(int x, int y, int w) {
     // window that toggles it (the FOOD sibling of the Office's Workforce/Energy need rows).
     m_lblAptNeed   = AddWidget<SDL2Label>(x + BOX_PAD + 4, yh + 6 + 2 * ROW_H, textW, ROW_H, "Food Need: 0");
     m_imgAptGraph  = AddWidget<SDL2Image>(graphX, yh, graphW, GRAPH_H);
+    // Four buttons at (168-12)/4 = 39px + 4px gaps = exactly the graph's width:
+    // the row sits flush with the graph on BOTH edges, labels crisp.
     AddGraphRangeRow(graphX, yh + GRAPH_H + 2, graphW);
     return y + POWERLIKE_H + SEC_PAD;
 }
@@ -1804,12 +1808,19 @@ void SDL2BuildingWindow::DrawHealthBar() {
 // rows in the window share m_iGraphRange, so clicking any one rescales every graph.
 void SDL2BuildingWindow::AddGraphRangeRow(int x, int y, int w) {
     // Labels are REAL time, not game time. One history sample lands per game-minute
-    // (~1 real second), so the ranges work out to: 10 samples ~10s, 60 ~1m, and the
-    // 5/15/150-game-min rings x120 samples ~10m / ~30m / ~5h.
-    static const char* kLbl[5] = { "10s", "1m", "10m", "30m", "5h" };
-    int bw = w / 5;
-    for ( int r = 0; r < 5; r++ ) {
-        SDL2Button* b = AddWidget<SDL2Button>( x + r * bw, y, bw - 2, RANGE_ROW_H, kLbl[r],
+    // (~1 real second), so the ranges work out to: 10 samples ~10s, and the
+    // 5/30/300-game-min rings x120 samples ~10m / ~1h / ~10h (operator's set,
+    // 2026-08-07 — the old 1m/30m/5h steps were dropped for a clean decade ladder).
+    static const char* kLbl[4] = { "10s", "10m", "1h", "10h" };
+    // Pixel-exact layout: equal button widths, equal gaps, LAST button right edge
+    // FLUSH with x+w by construction (integer remainder absorbed on the left).
+    // FOUR buttons at (168 - 3*4)/4 = 39px land the row EXACTLY on the graph's
+    // 168px width — both edges flush ("alignments are all off — sloppy" fixed).
+    const int gap = 4;
+    const int bw  = ( w - 3 * gap ) / 4;
+    int x0 = x + w - ( 4 * bw + 3 * gap );   // right-flush anchor
+    for ( int r = 0; r < 4; r++ ) {
+        SDL2Button* b = AddWidget<SDL2Button>( x0 + r * ( bw + gap ), y, bw, RANGE_ROW_H, kLbl[r],
             [this, r]() { SetGraphRange( r ); } );
         b->SetToggled( r == m_iGraphRange );
         m_rangeBtns.push_back( b );
@@ -1818,10 +1829,10 @@ void SDL2BuildingWindow::AddGraphRangeRow(int x, int y, int w) {
 
 // Click handler: switch the time range, re-highlight every range button, redraw graphs.
 void SDL2BuildingWindow::SetGraphRange(int range) {
-    if ( range < 0 || range > 4 ) return;
+    if ( range < 0 || range > 3 ) return;
     m_iGraphRange = range;
     for ( size_t i = 0; i < m_rangeBtns.size(); i++ )
-        m_rangeBtns[i]->SetToggled( (int)( i % 5 ) == range );
+        m_rangeBtns[i]->SetToggled( (int)( i % 4 ) == range );
     Refresh();   // re-runs the DrawGraph calls with the new range
 }
 
@@ -1851,32 +1862,33 @@ void SDL2BuildingWindow::DrawGraph(SDL2Image* img, HistSeries a, HistSeries b) {
     SDL_FillRect(s, &top, frame); SDL_FillRect(s, &bot, frame);
     SDL_FillRect(s, &lft, frame); SDL_FillRect(s, &rgt, frame);
 
-    // Selected time-range -> data source. 10s/1m read the EXISTING serialized
+    // Selected time-range -> data source. 10s reads the EXISTING serialized
     // per-minute buffer (so a freshly-loaded save shows its saved history
-    // immediately) — last 10 / last 60 samples. 10m/30m/5h read the runtime rings
-    // 0/1/2 (5/15/150-game-min cadence), which fill in as the game is played.
-    // A coarse ring needs 2 samples before it can plot (the 5h ring's second
-    // sample lands ~5 real minutes in) — rather than show an empty panel ("3h is
-    // blank"), degrade to the finest source that HAS data: it's the same series,
-    // just a shorter span.
-    int grSel = ( m_iGraphRange >= 0 && m_iGraphRange < 5 ) ? m_iGraphRange : 1;
+    // immediately) — last 10 samples. 10m/1h/10h read the runtime rings 0/1/2
+    // (5/30/300-game-min cadence), which fill in as the game is played.
+    // A coarse ring needs 2 samples before it can plot (the 10h ring's second
+    // sample lands ~10 real minutes in) — rather than show an empty panel,
+    // degrade to the finest source that HAS data: it's the same series, just a
+    // shorter span. (The per-minute buffer serves the fallback too: at a 10m
+    // selection it shows up to its full 120 saved samples, not just 10.)
+    int grSel = ( m_iGraphRange >= 0 && m_iGraphRange < 4 ) ? m_iGraphRange : 1;
     int gr    = grSel;
-    while ( gr > 1 && p->GetHRCount( gr - 2 ) < 2 )
+    while ( gr > 0 && p->GetHRCount( gr - 1 ) < 2 )
         gr--;
     // R = the SELECTED button's span (game-min); c = the SOURCE's sample cadence.
     // x is mapped by TIME below (not sample index), so fallback data on a coarse
     // view compresses into its true sliver of the axis instead of stretching —
-    // otherwise 30m and 5h render identically whenever 5h degrades to the 30m ring.
-    static const long kRangeGm[5] = { 10, 60, 600, 1800, 18000 };
-    static const int  kRingCad[3] = { 5, 15, 150 };   // lock-step with player.cpp _hrCad
+    // otherwise 1h and 10h render identically whenever 10h degrades to the 1h ring.
+    static const long kRangeGm[4] = { 10, 600, 3600, 36000 };
+    static const int  kRingCad[3] = { 5, 30, 300 };   // lock-step with player.cpp _hrCad
     long R = kRangeGm[grSel];
     int ring, cnt, nShow, off, c;
-    if ( gr <= 1 ) {                              // 10s / 1m -> saved per-minute buffer
+    if ( gr == 0 ) {                              // 10s (or fallback) -> saved per-minute buffer
         ring = -1;
         c    = 1;
         cnt  = p->GetHistCount();
-    } else {                                      // 10m / 30m / 5h -> runtime rings
-        ring = gr - 2;
+    } else {                                      // 10m / 1h / 10h -> runtime rings
+        ring = gr - 1;
         c    = kRingCad[ring];
         cnt  = p->GetHRCount( ring );
     }
