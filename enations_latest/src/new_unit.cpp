@@ -372,6 +372,19 @@ void CMineBuilding::ShowStatusText( std::string& str )
     // if out - say so
     if ( m_iMinerals <= 0 )
     {
+        // Fracking/Moho: an exhausted well/mine with the toggle ON is still trickling its
+        // alt output, so "Oil Exhausted" is wrong — show the actual per-minute rate.
+        CBuilding* self = (CBuilding*)this;   // IsFlag / AltOutput::Available are non-const
+        const AltOutput::AltOutputDef* pDef;
+        if ( self->IsFlag( CUnit::alt_oil ) && ( pDef = AltOutput::Available( self ) ) != nullptr &&
+             pDef->m_eMode == AltOutput::eFlatTrickle && pDef->m_pfnFlat )
+        {
+            std::string sNum = IntToStr( pDef->m_pfnFlat( GetOwner( ) ) );
+            str = strPrintf( EnLoadStdString( IDS_STAT_MATERIAL ).c_str(),
+                             CMaterialTypes::GetDesc( pDef->m_iOutputMat ).c_str( ), sNum.c_str( ) );
+            return;
+        }
+
         str = strPrintf( EnLoadStdString( IDS_EXHAUSTED ).c_str(),
                          CMaterialTypes::GetDesc( GetData( )->GetBldMine( )->GetTypeMines( ) ).c_str( ) );
         return;
