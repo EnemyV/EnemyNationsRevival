@@ -422,8 +422,21 @@ static void HideMacDockBar() {
     // came up active; this makes it deterministic everywhere.)
     sendL(app, sel("setActivationPolicy:"), 0L);                 // NSApplicationActivationPolicyRegular
     sendB(app, sel("activateIgnoringOtherApps:"), true);         // become frontmost
-    // NSApplicationPresentationAutoHideDock (1<<0) | AutoHideMenuBar (1<<2).
-    const unsigned long opts = (1UL << 0) | (1UL << 2);
+    // HideDock (1<<1) | HideMenuBar (1<<3) — NOT the AutoHide variants.
+    //
+    // This used to be AutoHideDock|AutoHideMenuBar, and auto-hide is exactly wrong here:
+    // an auto-hidden Dock REAPPEARS when the pointer reaches the screen edge, and the
+    // game's bottom button bar occupies that very edge. So moving the mouse toward the
+    // bar summoned the Dock on top of it — the operator's "sometimes the bottom bar when
+    // in game isn't visible", which is intermittent precisely because it depends on where
+    // the pointer is. Hiding them outright removes the reveal-on-hover behaviour, so the
+    // bar can never be covered and the game gets the full screen.
+    //
+    // AppKit requires HideMenuBar to be accompanied by HideDock; both are set here.
+    // Deliberately still NOT a fullscreen Space (SDL_HINT_VIDEO_MAC_FULLSCREEN_SPACES=0
+    // at the call site), so the detached ALWAYS_ON_TOP panels still overlay and other
+    // displays stay usable — hiding the bars must not cost multi-monitor support.
+    const unsigned long opts = (1UL << 1) | (1UL << 3);
     sendUL(app, sel("setPresentationOptions:"), opts);
 }
 #endif
@@ -485,13 +498,19 @@ bool GameWindow::InitializeSDL() {
     // not being a fullscreen Space — still lets the ALWAYS_ON_TOP panels overlay. The
     // matching engine render size is set in linux_main.cpp under the SAME env flag, so
     // metrics/window/back-buffer stay consistent (no terrain-rasterizer mismatch).
-    // NOW DEFAULT ON (mac, 2026-08-05) — EN_MAC_USABLE_FULLSCREEN=0 restores the old
-    // full-desktop window. Must stay in lock-step with linux_main.cpp, which seeds the
-    // engine metrics from the SAME flag: if the two disagree the layout is computed
-    // against a size the window does not have, which is precisely the T-0072 failure
-    // (bar laid out below the visible window).
+    // BACK TO DEFAULT OFF (mac, 2026-08-08). I briefly made this the default to stop the
+    // Dock covering the bottom bar; that was the wrong trade. Sizing to the usable bounds
+    // means the menu bar and Dock KEEP their strips, so the game silently loses ~106px of
+    // screen and stops being fullscreen — operator: "the bar at the bottom is still
+    // visible... the bar at the top is still visible... they are taking up space". The
+    // right fix was in HideMacDockBar (hide the bars outright instead of AUTO-hiding them,
+    // which let them reappear on hover over the game's own bottom edge). This flag stays
+    // available as an opt-in for anyone who wants the bars left alone.
+    // Must stay in lock-step with linux_main.cpp, which seeds the engine metrics from the
+    // SAME flag: if the two disagree the layout is computed against a size the window does
+    // not have, which is precisely the T-0072 failure (bar laid out below the window).
     const char* usableFs = getenv("EN_MAC_USABLE_FULLSCREEN");
-    const bool usableMode = wantFullscreen && !(usableFs && usableFs[0] == '0');
+    const bool usableMode = wantFullscreen && usableFs && usableFs[0] && usableFs[0] != '0';
     if (usableMode) {
         SDL_Rect usable;
         if (SDL_GetDisplayUsableBounds(0, &usable) == 0 && usable.w > 0 && usable.h > 0) {

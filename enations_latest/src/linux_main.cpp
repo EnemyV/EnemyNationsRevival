@@ -57,11 +57,15 @@ int main(int argc, char** argv) {
         if ( SDL_GetDesktopDisplayMode( 0, &dm ) == 0 && dm.w > 0 && dm.h > 0 ) {
             int scrW = dm.w, scrH = dm.h;
 #ifdef __APPLE__
-            // #47 symptom-5 — NOW DEFAULT ON (mac, 2026-08-05); set
-            // EN_MAC_USABLE_FULLSCREEN=0 for the old full-desktop behaviour.
-            // Render to the display's USABLE bounds (excl. Dock + menu bar) so the matching
-            // window (GameWindow.cpp, same flag) sits in the usable area instead of under
-            // the Dock. Usable bounds are <= the desktop size already used here, so there is
+            // #47 symptom-5 — OPT-IN, DEFAULT OFF (briefly defaulted ON on 2026-08-05;
+            // reverted 08-08). Set EN_MAC_USABLE_FULLSCREEN=1 to render to the display's
+            // USABLE bounds (excl. Dock + menu bar) so the matching window (GameWindow.cpp,
+            // same flag) sits in the usable area. Default OFF = full desktop, i.e. a real
+            // fullscreen game: defaulting it ON left the menu bar and Dock occupying their
+            // strips, which cost ~106px and stopped the game being fullscreen at all. The
+            // Dock-covering-the-bottom-bar problem is fixed in HideMacDockBar instead, by
+            // hiding the bars outright rather than auto-hiding them.
+            // Usable bounds are <= the desktop size already used here, so there is
             // no new terrain-rasterizer envelope risk.
             //
             // Why the default flipped: measured on a 1280x720 mac display, usable bounds end
@@ -74,7 +78,7 @@ int main(int argc, char** argv) {
             // lives. Sizing to usable bounds removes the overlap by construction.
             // See docs/investigations/mac-bottom-bar-hidden-by-dock.md.
             const char* usableFs = getenv( "EN_MAC_USABLE_FULLSCREEN" );
-            const bool  usableOn = !( usableFs && usableFs[0] == '0' );
+            const bool  usableOn = usableFs && usableFs[0] && usableFs[0] != '0';
             SDL_Rect usable;
             if ( usableOn
                  && SDL_GetDisplayUsableBounds( 0, &usable ) == 0
