@@ -2114,6 +2114,10 @@ BOOL CBuilding::IsHit( CHexCoord hexcoord, CPoint ptCursor ) const
     auto point = CPoint( 0, 0 );
     CDrawParms drawparms( (CBuilding&)*this, point );
 
+    // Ambient smoke/exhaust plumes (coal stacks, nuclear towers) must not eat
+    // clicks meant for units behind the building — hit-test the structure only.
+    drawparms.m_bSkipAnimHit = TRUE;
+
     CSpriteView* pspriteview;
     int          iDir = GetDrawDir( );
 

@@ -99,6 +99,7 @@ public:
 	CTile		  * m_ptile;
 	CPoint	  	 m_ptOffset;
 	BOOL			 m_bTransparentHitTest;
+	BOOL			 m_bSkipAnimHit = FALSE;	// hit-test base/overlay only, not ambient anim layers (smoke/exhaust)
 
 	static void	SetUpdateFlags( unsigned uUpdateFlags ) { g_uUpdateFlags	= uUpdateFlags; }
 

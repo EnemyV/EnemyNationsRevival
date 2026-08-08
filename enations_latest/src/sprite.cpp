@@ -2573,6 +2573,9 @@ SkipPixel1:
                 return TRUE;
         }
 
+        if (drawparms.m_bSkipAnimHit)
+            return FALSE;
+
         CTile *ptile = drawparms.m_ptile;
 
         for (j = 0; j < ANIM_COUNT; ++j) {
