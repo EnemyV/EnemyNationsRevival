@@ -24,6 +24,13 @@
 #undef min
 #undef max
 
+#ifndef _WIN32
+// vpPumpNet (vp_netpump_posix.cpp) declared at FILE scope. An `extern "C"` linkage spec
+// is ill-formed at BLOCK scope — clang rejects it (MSVC tolerated it), which broke the mac
+// build of the JOIN-VERIFY guard below. Mirrors SDL2UI.cpp:38.
+extern "C" int vpPumpNet( int timeout_ms );
+#endif
+
 // World-type presets shown in the Create dialogs. The list index is the EWorldType
 // value (terrain.h) and is stored on m_iWorldType / synced via CNetStart, so order
 // here must match the enum. Entry 0 = vanilla generation; entry 1 rolls one of the
@@ -1944,9 +1951,7 @@ bool SDL2_RunJoinNetworkFlow(GameWindow* gameWindow) {
         Uint32 t0 = SDL_GetTicks();
         BOOL wasProc = theGame.ShouldProcessMessages();
         theGame.SetShouldProcessMessages(TRUE);
-#ifndef _WIN32
-        extern "C" int vpPumpNet(int timeout_ms);   // vp_netpump_posix.cpp (decl mirrors SDL2UI.cpp:38)
-#endif
+        // vpPumpNet declared at file scope above (block-scope extern "C" is ill-formed on clang).
         while (theGame.GetMyNetNum() == 0 && SDL_GetTicks() - t0 < kJoinVerifyMs) {
 #ifndef _WIN32
             vpPumpNet(0);          // POSIX: service the transport while we block here
