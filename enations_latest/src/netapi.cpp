@@ -331,6 +331,16 @@ BOOL CNetApi::Send( VPPLAYERID idTo, LPCVPMSGHDR pData, int iLen )
     ASSERT( idTo != 0 );
     ASSERT( theGame.GetMyNetNum( ) != 0 );
 
+    // A departed player's netnum is set to 0 on leave (OnMsgLeave -> pPlr->SetNetNum(0)).
+    // In-flight game messages processed after that leave can still target the player, so
+    // idTo arrives as 0 here. netnum 0 is never a deliverable target — treat it exactly
+    // like the "target no longer exists" case below and drop the send. Without this, the
+    // send to 0 falls through to the tail ThrowError(ERR_TLP_QUIT) = the intermittent DC
+    // crash (exception 536870943) when a player exits. This mirrors the existing
+    // _GetPlayer(idTo)==NULL contract; a genuine failed send to a REAL player still quits.
+    if ( idTo == 0 )
+        return ( FALSE );
+
     if ( vpSendData( m_vpSession, idTo, theGame.GetMyNetNum( ), pData, iLen, VP_MUSTDELIVER, NULL ) )
         return ( FALSE );
 
