@@ -525,7 +525,13 @@ CMmio *CDataFile::OpenAsMMIO(const char *pFilename, const char *pRif) {
 CFile *CDataFile::OpenAsFile(const char *pFilename) {
 
     // if fully qualified just try it
-    if ((pFilename != NULL) && ((*(pFilename + 1) == ':') || (*(pFilename + 1) == '\\'))) {
+    // POSIX: an absolute path starts with '/'. GetFileName() of an embedded MMIO is the
+    // .dat's OWN full path (OpenAsMMIO:487) — music.cpp re-opens the container through
+    // here so the payload offsets line up. The X:/UNC tests never match on mac/linux,
+    // so the open fell through to the files\ map and threw ERR_DATAFILE_NO_ENTRY =
+    // no music/voice handles on POSIX from a byte-identical .dat.
+    if ((pFilename != NULL) &&
+        ((*(pFilename + 1) == ':') || (*(pFilename + 1) == '\\') || (*pFilename == '/'))) {
         CFile test;
         if (test.Open(pFilename, CFile::modeRead | CFile::shareDenyWrite | CFile::typeBinary) != FALSE) {
             //  Close the file so we can allocate a new CFile object to
