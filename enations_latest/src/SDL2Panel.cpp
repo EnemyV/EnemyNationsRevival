@@ -965,9 +965,17 @@ void SDL2Panel::Detach(SDL_Window* ownerWindow) {
             // so floor BOTH axes at the full display bounds; the fake
             // _GTK_FRAME_EXTENTS + post-extents re-assert below make the
             // work-area-defeating position stick.
+            //
+            // macOS has the IDENTICAL problem and the same answer (added 2026-08-08):
+            // usable bounds there start below the menu bar (y=31), so panels were floored
+            // 31px down while the fullscreen window starts at y=0 — the operator reported
+            // exactly the Linux symptom, "there is a gap at the top of the screen... we had
+            // the same issue on linux before". Since HideMacDockBar now hides the menu bar
+            // and Dock OUTRIGHT, the game genuinely owns the full display and flooring at
+            // the usable origin is simply wrong.
             int minX = ub.x;
             int minY = ub.y;
-#if defined(__linux__)
+#if defined(__linux__) || defined(__APPLE__)
             SDL_Rect db;
             if (SDL_GetDisplayBounds(di, &db) == 0) {
                 minX = db.x;
