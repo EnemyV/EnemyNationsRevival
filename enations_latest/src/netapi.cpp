@@ -228,8 +228,27 @@ void CNetApi::DeletePlayer( VPPLAYERID idTo )
     vpKillPlayer( m_vpSession, idTo );
 }
 
+// Network-teardown guard. CNetApi::Close/CloseSession call theApp.BaseYield() to drain
+// pending messages, and BaseYield re-enters GameWindow::PollEvents — so a queued mouse
+// move gets routed into unit hit-testing (CWndArea::OnMouseMove -> CVehicle::IsHit ->
+// CSpriteView::IsHitClip) WHILE the session is being torn down, walking sprite/DIB state
+// the teardown is dismantling -> SIGSEGV (LinuxOpus core dump, disconnect path; the
+// operator's "game froze when a player exited"). Dispatching gameplay input during
+// teardown is wrong by construction. PollEvents consults EnNetIsTearingDown() and drops
+// input events while this is non-zero — the message drain still happens, only gameplay
+// input dispatch is suppressed. A depth counter handles Close()->CloseSession() nesting.
+static int g_netTeardownDepth = 0;
+bool EnNetIsTearingDown() { return g_netTeardownDepth > 0; }
+namespace {
+    struct NetTeardownGuard {
+        NetTeardownGuard()  { ++g_netTeardownDepth; }
+        ~NetTeardownGuard() { --g_netTeardownDepth; }
+    };
+}
+
 void CNetApi::CloseSession( BOOL bDelayClose )
 {
+    NetTeardownGuard _td;   // suppress gameplay-input dispatch during the BaseYield drains
 
     if ( m_vpSession != NULL )
     {
@@ -276,6 +295,8 @@ void CNetApi::Close( BOOL bDelayClose )
     if ( JoinAddrLogOn() )
         fprintf( stderr, "[join-addr] CNetApi::Close(delay=%d) ENTER: m_vpHdl=%p (will vpCleanup->NULL it unless delayed) — who called Close between OpenClient and Join?\n",
                  (int)bDelayClose, (void*)m_vpHdl );
+
+    NetTeardownGuard _td;   // suppress gameplay-input dispatch during the BaseYield drains
 
     m_iMode = closed;
     m_iType = closed;
