@@ -2105,6 +2105,17 @@ void SDL2BuildingWindow::Refresh() {
             st = "Under construction"; col = kStatusWarn;
         } else {
             int missing = -1;
+            // An active alt mode changes what actually starves the building: Bio Oil consumes
+            // GLOBAL food and never the store (so the base scan's "Low on Oil" is wrong for it) —
+            // test the owner's food instead. Coal-liq needs no case here (collectInputMats already
+            // put the def's coal in m_inputMats); trickle hosts have no inputs at all.
+            const AltOutput::AltOutputDef* pLow = m_pBldg->IsFlag( CUnit::alt_oil )
+                                                  ? AltOutput::Available( m_pBldg ) : nullptr;
+            if ( pLow && pLow->m_eMode == AltOutput::eGlobalConsume ) {
+                CPlayer* pOwn = m_pBldg->GetOwner();
+                if ( pOwn && pOwn->GetFood() < pLow->m_iRatioIn )
+                    missing = pLow->m_iInputMat;
+            } else
             for ( int i = 0; i < m_nInputMats; i++ )
                 if ( m_pBldg->GetStore( m_inputMats[i] ) <= 0 ) { missing = m_inputMats[i]; break; }
             if ( missing >= 0 ) {
