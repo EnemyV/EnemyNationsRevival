@@ -324,6 +324,8 @@ void CNetApi::Close( BOOL bDelayClose )
     theApp.BaseYield( );
 }
 
+void EnMpDiagLog( const char* fmt, ... );   // [mp-plyr] trace (defined below)
+
 BOOL CNetApi::Send( VPPLAYERID idTo, LPCVPMSGHDR pData, int iLen )
 {
 
@@ -334,12 +336,15 @@ BOOL CNetApi::Send( VPPLAYERID idTo, LPCVPMSGHDR pData, int iLen )
     // A departed player's netnum is set to 0 on leave (OnMsgLeave -> pPlr->SetNetNum(0)).
     // In-flight game messages processed after that leave can still target the player, so
     // idTo arrives as 0 here. netnum 0 is never a deliverable target — treat it exactly
-    // like the "target no longer exists" case below and drop the send. Without this, the
+    // like the "target no longer exists" case below and drop the send. Without this the
     // send to 0 falls through to the tail ThrowError(ERR_TLP_QUIT) = the intermittent DC
-    // crash (exception 536870943) when a player exits. This mirrors the existing
-    // _GetPlayer(idTo)==NULL contract; a genuine failed send to a REAL player still quits.
+    // crash (exception 536870943) when a player exits. A genuine failed send to a REAL,
+    // still-present player still quits (unchanged).
     if ( idTo == 0 )
+    {
+        EnMpDiagLog( "Send: dropped msg to departed player (idTo==0, len=%d) — no crash", iLen );
         return ( FALSE );
+    }
 
     if ( vpSendData( m_vpSession, idTo, theGame.GetMyNetNum( ), pData, iLen, VP_MUSTDELIVER, NULL ) )
         return ( FALSE );
@@ -2309,6 +2314,10 @@ static void VehGoto( CMsgVehGoto* pMsg )
 {
 
     ASSERT( theGame.AmServer( ) );
+    // Server-only command: a client must not execute it. During a remote player's leave
+    // this used to fire the AmServer assert storm and run server logic on the client
+    // (WinFable release order b). Drop it here at the invariant's detection point.
+    if ( !theGame.AmServer( ) ) { EnMpDiagLog( "VehGoto on CLIENT dropped (server-only)" ); return; }
 
     CVehicle* pVeh = theVehicleMap.GetVehicle( pMsg->m_dwID );
     if ( pVeh == NULL )
@@ -2497,6 +2506,8 @@ static void TransMat( CMsgTransMat* pMsg )
 {
 
     ASSERT( theGame.AmServer( ) );
+    // Server-only command handler; a client must drop it (WinFable release order b).
+    if ( !theGame.AmServer( ) ) { EnMpDiagLog( "TransMat on CLIENT dropped (server-only)" ); return; }
 
     CUnit* pSrc  = ::GetUnit( pMsg->m_dwIDSrc );
     CUnit* pDest = ::GetUnit( pMsg->m_dwIDDest );

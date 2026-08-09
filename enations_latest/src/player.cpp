@@ -1977,6 +1977,9 @@ void CGame::PostToClient( CPlayer* pPlyr, CNetCmd const* pMsg, int iLen )
     ASSERT_VALID( this );
     ASSERT_CMD( pMsg );
     ASSERT( m_bServer );
+    // Server-only: a client must never post to clients. On a remote leave the client
+    // reached here and ran server send-logic (WinFable release order b). Drop on client.
+    if ( !m_bServer ) { EnMpDiagLog( "PostToClient on CLIENT dropped (server-only)" ); return; }
 
     // if we are on the server we call directly
     if ( m_bServer )
@@ -2009,6 +2012,8 @@ void CGame::PostToClientByNet( int iNet, CNetCmd const* pMsg, int iLen )
     ASSERT_VALID( this );
     ASSERT_CMD( pMsg );
     ASSERT( m_bServer );
+    // Server-only (WinFable release order b): a client must not post to clients.
+    if ( !m_bServer ) { EnMpDiagLog( "PostToClientByNet on CLIENT dropped (server-only)" ); return; }
 
     // if it's us, we're there
     if ( iNet == GetMyNetNum( ) )
@@ -2106,6 +2111,8 @@ void CGame::PostToAllClients( CNetCmd const* pMsg, int iLen, BOOL bAI )
     ASSERT_VALID( this );
     ASSERT_CMD( pMsg );
     ASSERT( m_bServer );
+    // Server-only (WinFable release order b): a client must not broadcast to clients.
+    if ( !m_bServer ) { EnMpDiagLog( "PostToAllClients on CLIENT dropped (server-only)" ); return; }
 
     if ( bAI )
         PostToAllAi( pMsg, iLen );
