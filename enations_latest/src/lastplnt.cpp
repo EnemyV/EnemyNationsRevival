@@ -50,58 +50,6 @@
 #endif
 #include "cpuspeed.hpp"
 
-#ifndef _WIN32
-#include <fcntl.h>
-#include <sys/file.h>
-#include <sys/types.h>
-#include <unistd.h>
-
-// POSIX single-instance lock — the other half of the FindWindow() check in
-// InitInstance(). On Windows that check finds the running copy and offers
-// IDS_MULT_INST; on POSIX `FindWindowA` is `{ return NULL; }` (win32_compat.h:1236),
-// so the prompt was unreachable and Linux/mac would silently stack unlimited
-// full-screen copies. That is not merely untidy: two instances share the run
-// directory and every log is opened in APPEND mode with no pid and no timestamp,
-// so a second copy interleaves into the first one's logs and quietly destroys the
-// evidence of whatever the first was doing.
-//
-// flock() rather than a pid file on purpose: the kernel drops the lock when the
-// process dies for ANY reason (crash, SIGKILL, OOM), so there is no stale-lock
-// failure mode where the game refuses to start until someone deletes a file.
-// The descriptor is deliberately never closed — the lock must live as long as
-// the process does.
-static bool EnAcquireSingleInstanceLock( )
-{
-    static int s_iLockFd = -1;
-    if ( s_iLockFd >= 0 )
-        return ( true );                 // already held by us
-
-    std::string sPath;
-    const char* pszRun = getenv( "XDG_RUNTIME_DIR" );
-    if ( ( pszRun != NULL ) && ( *pszRun != '\0' ) )
-        sPath = std::string( pszRun ) + "/enations.lock";
-    else
-    {
-        const char* pszTmp = getenv( "TMPDIR" );
-        sPath = std::string( ( pszTmp && *pszTmp ) ? pszTmp : "/tmp" ) + "/enations-"
-              + std::to_string( (long) getuid( ) ) + ".lock";   // per-user: don't collide between accounts
-    }
-
-    int iFd = ::open( sPath.c_str( ), O_RDWR | O_CREAT | O_CLOEXEC, 0600 );
-    if ( iFd < 0 )
-        return ( true );                 // fail OPEN: an unwritable lock dir must never stop someone playing
-
-    if ( ::flock( iFd, LOCK_EX | LOCK_NB ) != 0 )
-    {
-        ::close( iFd );
-        return ( false );                // another live instance holds it
-    }
-
-    s_iLockFd = iFd;
-    return ( true );
-}
-#endif  // !_WIN32
-
 
 #ifdef _DEBUG
 
@@ -790,26 +738,6 @@ BOOL CConquerApp::InitInstance( )
             ::SetForegroundWindow( hPrevWnd );
             return ( FALSE );
         }
-
-#ifndef _WIN32
-    // Same check, POSIX mechanism (see EnAcquireSingleInstanceLock above): the
-    // FindWindow() test immediately above is structurally dead here, so without this
-    // a second launch stacks another live client over the running one — which
-    // invalidates any MP session the box takes part in (ghost player, contradictory
-    // input) and corrupts the shared append-mode logs.
-    //
-    // The Yes branch differs from Windows for an honest reason: we cannot portably
-    // raise another PROCESS's window, so "switch to the running game" is served by
-    // declining to start a second copy and leaving the existing one frontmost. The
-    // No branch keeps Windows' behaviour — a second copy is still allowed, but only
-    // as a deliberate choice, never silently.
-    if ( !EnAcquireSingleInstanceLock( ) )
-    {
-        Log( "another instance holds the single-instance lock" );
-        if ( EnMessageBox( IDS_MULT_INST, MB_YESNO | MB_ICONQUESTION ) == IDYES )
-            return ( FALSE );
-    }
-#endif
 
     // set up exception handling
     ::_set_new_handler( _excep_new_handler );
