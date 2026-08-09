@@ -1652,6 +1652,10 @@ void SDL2SessionBrowseDialog::OnJoin() {
     EndDialog(1);
 }
 
+void SDL2SessionBrowseDialog::OnOK() {
+    OnJoin();   // validated join-or-ignore; never returns 1 with no selection
+}
+
 void SDL2SessionBrowseDialog::OnRefresh() {
     theNet.StopEnum();
     m_pJoin->m_sessions.clear();
@@ -1883,6 +1887,14 @@ bool SDL2_RunJoinNetworkFlow(GameWindow* gameWindow) {
         break;
     }
 
+    // Belt for the OnOK fix above: never index m_sessions with an invalid pick.
+    if (chosenIdx < 0 || chosenIdx >= (int)pJoin->m_sessions.size()) {
+        theNet.Close(FALSE);
+        delete theApp.m_pCreateGame;
+        theApp.m_pCreateGame = NULL;
+        return false;
+    }
+
     // Step 6: join the selected session
     const CJoinMulti::SessionEntry& chosen = pJoin->m_sessions[chosenIdx];
     pJoin->m_ID   = chosen.id;
@@ -1917,6 +1929,45 @@ bool SDL2_RunJoinNetworkFlow(GameWindow* gameWindow) {
         delete theApp.m_pCreateGame;
         theApp.m_pCreateGame = NULL;
         return false;
+    }
+
+    // JOIN-VERIFY GUARD: vpJoinSession returns success ASYNCHRONOUSLY — the join has
+    // only truly landed when our local VP_JOIN accept arrives and OnMsgJoin stamps our
+    // netnum (netapi.cpp SetNetNum(pPi->playerId)). The old flow never checked, so a
+    // join whose host leg silently failed (observed: vpengine AddLocalPlayer reusing
+    // the enum's reg-server ws instead of dialing the host) opened a DEAD lobby at
+    // netnum 0: no name binds, CNetReady stamps 0, chat gated off, netapi.cpp:311
+    // asserts. Pump the net until the netnum lands or a bounded wait expires; on
+    // timeout tear down exactly like the bJoinErr branch and say so.
+    {
+        const Uint32 kJoinVerifyMs = 8000;
+        Uint32 t0 = SDL_GetTicks();
+        BOOL wasProc = theGame.ShouldProcessMessages();
+        theGame.SetShouldProcessMessages(TRUE);
+#ifndef _WIN32
+        extern "C" int vpPumpNet(int timeout_ms);   // vp_netpump_posix.cpp (decl mirrors SDL2UI.cpp:38)
+#endif
+        while (theGame.GetMyNetNum() == 0 && SDL_GetTicks() - t0 < kJoinVerifyMs) {
+#ifndef _WIN32
+            vpPumpNet(0);          // POSIX: service the transport while we block here
+            EnPumpNetMessages();   // deliver WM_VPNOTIFY -> OnNetMsg (win32_compat.h:1219)
+#endif
+            theApp.ProcessAllMessages();
+            SDL_Delay(50);
+        }
+        theGame.SetShouldProcessMessages(wasProc);
+        if (theGame.GetMyNetNum() == 0) {
+            { extern void EnMpDiagLog(const char*, ...);
+              EnMpDiagLog("JOIN-VERIFY timeout: netnum still 0 after %ums - refusing to open a dead lobby", kJoinVerifyMs); }
+            SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Network Error",
+                "Joined the game list entry, but the host never answered.\n"
+                "The game may have ended, or the host may be unreachable.", nullptr);
+            theNet.Close(FALSE);
+            theGame.Close();
+            delete theApp.m_pCreateGame;
+            theApp.m_pCreateGame = NULL;
+            return false;
+        }
     }
 
     // Step 7: player picks their race
