@@ -979,6 +979,19 @@ bool GameWindow::PollEvents() {
             SDL2Sprites::NotifyTargetsLost();
         }
 
+        // Do NOT dispatch gameplay input while the network session is tearing down.
+        // CNetApi::Close/CloseSession call BaseYield() to drain messages, which re-enters
+        // this loop; a queued mouse move then routes into unit hit-testing over sprite
+        // state the teardown is dismantling -> SIGSEGV (the disconnect-path crash behind
+        // "the game froze when a player exited"). We still drain the SDL queue (and honor
+        // SDL_QUIT above) — only input dispatch into the closing game is suppressed.
+        extern bool EnNetIsTearingDown();
+        if (EnNetIsTearingDown() &&
+            (event.type == SDL_MOUSEMOTION   || event.type == SDL_MOUSEBUTTONDOWN ||
+             event.type == SDL_MOUSEBUTTONUP || event.type == SDL_MOUSEWHEEL      ||
+             event.type == SDL_KEYDOWN       || event.type == SDL_KEYUP))
+            continue;
+
         // Any mouse click dismisses the Shift+RMB unit-info tooltip, in ANY window.
         // This runs before routing, so the open gesture (Shift+RMB on a unit, handled
         // in the area's OnRButtonDown below) re-shows it — every other click just closes it.
