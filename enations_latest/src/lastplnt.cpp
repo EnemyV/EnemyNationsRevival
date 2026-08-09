@@ -7,6 +7,11 @@
 
 #include "CdLoc.h"
 #include "cpufeatures.h"   // EnCpu — runtime ISA detection/dispatch (GH #8)
+#ifndef _WIN32
+#include <fcntl.h>     // open  — POSIX single-instance flock guard (see FindWindow site)
+#include <unistd.h>    // close
+#include <sys/file.h>  // flock
+#endif
 #include "GameWindow.h"
 #include "en_harness.h"   // in-process LLM-driving harness (all platforms; EN_HARNESS-gated)
 #include "SDL2Compositor.h"
@@ -700,6 +705,33 @@ BOOL CConquerApp::InitInstance( )
     }
 
     HWND hPrevWnd = ::FindWindow( m_sClsName.c_str(), m_sAppName.c_str() );
+#ifndef _WIN32
+    // POSIX single-instance guard. FindWindow is a NULL stub on POSIX (win32_compat.h),
+    // so the Win check never fires and repeated launches stack live clients — which
+    // corrupts MP sessions (ghost players, contradictory inputs, append-mode log
+    // contamination) and invalidates every smoke a POSIX node joins. This is a release
+    // gate (LinuxOpus root-cause f70a02b). Hold an advisory flock for our whole lifetime:
+    // the FIRST instance acquires it; a second launch cannot and is treated exactly like
+    // hPrevWnd != NULL, so the existing IDS_MULT_INST prompt fires. The lock releases
+    // automatically on exit OR crash (kernel drops the fd) — no stale-PID file to clean.
+    // EN_ALLOW_MULTI=1 bypasses it for dev/harness scenarios that intentionally run two.
+    {
+        const char* allowMulti = getenv( "EN_ALLOW_MULTI" );
+        if ( !( allowMulti && allowMulti[0] == '1' ) )
+        {
+            static int s_singletonFd = -1;   // held for the whole process lifetime
+            s_singletonFd = ::open( "/tmp/.enations.singleton.lock", O_CREAT | O_RDWR, 0644 );
+            if ( s_singletonFd >= 0 && ::flock( s_singletonFd, LOCK_EX | LOCK_NB ) != 0 )
+            {
+                ::close( s_singletonFd );
+                s_singletonFd = -1;
+                fprintf( stderr, "[singleton] another Second Chance instance already holds "
+                                 "the lock — this launch is a second copy\n" );
+                hPrevWnd = (HWND)1;   // non-NULL sentinel -> IDS_MULT_INST prompt below
+            }
+        }
+    }
+#endif
     if ( hPrevWnd != NULL )
         if ( EnMessageBox( IDS_MULT_INST, MB_YESNO | MB_ICONQUESTION ) == IDYES )
         {
