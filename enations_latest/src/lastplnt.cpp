@@ -753,9 +753,16 @@ BOOL CConquerApp::InitInstance( )
             {
                 ::close( s_singletonFd );
                 s_singletonFd = -1;
-                fprintf( stderr, "[singleton] another Second Chance instance already holds "
-                                 "the lock — this launch is a second copy\n" );
-                hPrevWnd = (HWND)1;   // non-NULL sentinel -> IDS_MULT_INST prompt below
+                // HARD-REFUSE on POSIX — do NOT fall through to the IDS_MULT_INST prompt.
+                // The prompt offers "start a second copy anyway", and a headless/scripted
+                // launch (the smoke harness) never answers IDYES, so it fell through and
+                // STACKED copies — the exact multi-instance contamination this gate exists
+                // to stop (QA hard-blocked hours on it). A second POSIX instance now exits
+                // immediately. EN_ALLOW_MULTI=1 (checked above) is the escape hatch for
+                // anyone who deliberately wants two. Windows keeps its FindWindow+prompt.
+                fprintf( stderr, "[singleton] another Second Chance instance is running — "
+                                 "refusing to start a second copy (set EN_ALLOW_MULTI=1 to override)\n" );
+                return ( FALSE );
             }
         }
     }
