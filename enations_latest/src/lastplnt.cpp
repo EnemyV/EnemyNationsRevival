@@ -9,8 +9,10 @@
 #include "cpufeatures.h"   // EnCpu — runtime ISA detection/dispatch (GH #8)
 #ifndef _WIN32
 #include <fcntl.h>     // open  — POSIX single-instance flock guard (see FindWindow site)
-#include <unistd.h>    // close
+#include <unistd.h>    // close, getuid
 #include <sys/file.h>  // flock
+#include <errno.h>     // errno    — report WHY the singleton lock could not be opened
+#include <string.h>    // strerror
 #endif
 #include "GameWindow.h"
 #include "en_harness.h"   // in-process LLM-driving harness (all platforms; EN_HARNESS-gated)
@@ -719,9 +721,35 @@ BOOL CConquerApp::InitInstance( )
         const char* allowMulti = getenv( "EN_ALLOW_MULTI" );
         if ( !( allowMulti && allowMulti[0] == '1' ) )
         {
+            // Per-USER lock path. A fixed "/tmp/.enations.singleton.lock" is a shared
+            // namespace and was created 0644 (owner-write only), so a SECOND user's
+            // open(O_RDWR) returned EACCES, the fd stayed -1, the guard's && short-
+            // circuited, and single-instance protection turned itself off *silently* —
+            // precisely the failure mode this gate exists to eliminate. A file left by
+            // another uid (e.g. a root-run test) disabled it permanently the same way.
+            // $XDG_RUNTIME_DIR is per-user by construction (0700, tmpfs, cleared at
+            // logout); the fallback carries the uid in the name so it cannot collide.
+            std::string sLock;
+            const char* pszRun = getenv( "XDG_RUNTIME_DIR" );
+            if ( ( pszRun != NULL ) && ( *pszRun != '\0' ) )
+                sLock = std::string( pszRun ) + "/enations.lock";
+            else
+            {
+                const char* pszTmp = getenv( "TMPDIR" );
+                sLock = std::string( ( pszTmp && *pszTmp ) ? pszTmp : "/tmp" )
+                      + "/enations-" + std::to_string( (long) getuid( ) ) + ".lock";
+            }
+
             static int s_singletonFd = -1;   // held for the whole process lifetime
-            s_singletonFd = ::open( "/tmp/.enations.singleton.lock", O_CREAT | O_RDWR, 0644 );
-            if ( s_singletonFd >= 0 && ::flock( s_singletonFd, LOCK_EX | LOCK_NB ) != 0 )
+            s_singletonFd = ::open( sLock.c_str( ), O_CREAT | O_RDWR | O_CLOEXEC, 0600 );
+            if ( s_singletonFd < 0 )
+                // Still fail OPEN — an unwritable lock dir must never stop someone
+                // playing — but never fail SILENTLY, or "the guard protected us" and
+                // "the guard could not run" look identical in the logs.
+                fprintf( stderr, "[singleton] cannot open lock file '%s' (%s) — "
+                                 "single-instance protection is OFF for this run\n",
+                         sLock.c_str( ), strerror( errno ) );
+            else if ( ::flock( s_singletonFd, LOCK_EX | LOCK_NB ) != 0 )
             {
                 ::close( s_singletonFd );
                 s_singletonFd = -1;
