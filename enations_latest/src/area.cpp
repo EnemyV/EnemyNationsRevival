@@ -3882,9 +3882,16 @@ void CWndArea::ResClicked( )
                     break;
                 }
                 default:
-                    pHex->m_psprite = theTerrain.GetSprite(
-                        pHex->GetVisibleType( ), RandNum( theTerrain.GetCount( pHex->GetVisibleType( ) ) - 1 ) );
+                {
+                    // A type with no sprites loaded fed RandNum(0-1 = -1) ->
+                    // rand.cpp:49 assert on the fog-reveal path. Keep the hex's
+                    // current sprite rather than indexing an empty set.
+                    int nSpr = theTerrain.GetCount( pHex->GetVisibleType( ) );
+                    if ( nSpr > 0 )
+                        pHex->m_psprite = theTerrain.GetSprite(
+                            pHex->GetVisibleType( ), RandNum( nSpr - 1 ) );
                     break;
+                }
                 }
             }
 

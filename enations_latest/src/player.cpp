@@ -811,7 +811,12 @@ void CPlayer::Research( int iNumSec )
     if ( pRs->m_iPtsDiscovered > pRi->m_iPtsRequired * 2 )
         bFoundIt = TRUE;
     else if ( pRs->m_iPtsDiscovered > pRi->m_iPtsRequired )
-        if ( RandNum( pRs->m_iPtsDiscovered * iNum ) > pRi->m_iPtsRequired * iNum )
+        // Both sides used to be scaled by iNum, which cancels out of the comparison
+        // (P[U(0,A*k) > B*k] == P[U(0,A) > B]) but overflowed int in long games
+        // (m_iPtsDiscovered is unbounded) making RandNum's argument NEGATIVE ->
+        // rand.cpp:49 assert. Drop the factor: identical odds, no overflow. Research
+        // runs only for local players, so no cross-machine RNG-stream impact.
+        if ( RandNum( pRs->m_iPtsDiscovered ) > pRi->m_iPtsRequired )
             bFoundIt = TRUE;
 
     if ( !bFoundIt )
