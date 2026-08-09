@@ -5,6 +5,14 @@
 #include "vpwinsk.h"
 #include <ctype.h>
 
+#ifdef _WIN32
+// Adapter enumeration for the advertised-address VPN guard (CTcpNet ctor):
+// GetAdaptersAddresses classifies tunnel/PPP interfaces the routed UDP probe
+// cannot distinguish from real NICs.
+#include <iphlpapi.h>
+#pragma comment( lib, "iphlpapi.lib" )
+#endif
+
 // Address-length out-param type for getsockname/getpeername/recvfrom. POSIX
 // requires socklen_t*; Win32 winsock 1.1 uses int*. Portable typedef so the
 // same call sites compile on all three platforms — clang (unlike gcc's
@@ -345,6 +353,73 @@ CTcpNet::CTcpNet(CTDLogger* log, u_short streamPort, u_short dgPort, u_short wel
     }
     closesocket( us );
    }
+
+#ifdef _WIN32
+   // VPN guard (2026-08-09 MP regression root): the routed probe above returns the
+   // interface of the DEFAULT ROUTE, which under a VPN is the tunnel IP (observed:
+   // NordVPN 10.5.0.2). That address is unreachable for every peer, so a host
+   // advertising it registers fine with the iserve and is then undialable — joiners
+   // sit in a lobby with no session traffic. The [TCP] LocalAddress ini pin was the
+   // hand workaround; this removes the need for it: enumerate real adapters and
+   // accept the probe result only if it belongs to a non-tunnel, non-PPP, up
+   // interface — otherwise advertise the first such interface's IPv4 instead.
+   // Sockets still bind INADDR_ANY; only the PUBLISHED address changes.
+   {
+    ULONG asz = 16 * 1024;
+    IP_ADAPTER_ADDRESSES* pAdp = (IP_ADAPTER_ADDRESSES*)malloc( asz );
+    if ( pAdp != NULL )
+    {
+     ULONG r = GetAdaptersAddresses( AF_INET,
+                                     GAA_FLAG_SKIP_ANYCAST | GAA_FLAG_SKIP_MULTICAST |
+                                     GAA_FLAG_SKIP_DNS_SERVER | GAA_FLAG_SKIP_FRIENDLY_NAME,
+                                     NULL, pAdp, &asz );
+     if ( r == ERROR_BUFFER_OVERFLOW )
+     {
+      IP_ADAPTER_ADDRESSES* pAdp2 = (IP_ADAPTER_ADDRESSES*)realloc( pAdp, asz );
+      if ( pAdp2 != NULL )
+      {
+       pAdp = pAdp2;
+       r = GetAdaptersAddresses( AF_INET,
+                                 GAA_FLAG_SKIP_ANYCAST | GAA_FLAG_SKIP_MULTICAST |
+                                 GAA_FLAG_SKIP_DNS_SERVER | GAA_FLAG_SKIP_FRIENDLY_NAME,
+                                 NULL, pAdp, &asz );
+      }
+     }
+     if ( r == NO_ERROR )
+     {
+      u_long firstReal = 0;
+      int probeIsReal = 0;
+      for ( IP_ADAPTER_ADDRESSES* a = pAdp; a != NULL; a = a->Next )
+      {
+       if ( a->OperStatus != IfOperStatusUp )
+        continue;
+       if ( a->IfType == IF_TYPE_TUNNEL || a->IfType == IF_TYPE_PPP ||
+            a->IfType == IF_TYPE_SOFTWARE_LOOPBACK )
+        continue;
+       for ( IP_ADAPTER_UNICAST_ADDRESS* u = a->FirstUnicastAddress; u != NULL; u = u->Next )
+       {
+        if ( u->Address.lpSockaddr == NULL ||
+             u->Address.lpSockaddr->sa_family != AF_INET )
+         continue;
+        u_long ip = ( (sockaddr_in*)u->Address.lpSockaddr )->sin_addr.s_addr;
+        if ( ip == 0 || ip == htonl( INADDR_LOOPBACK ) )
+         continue;
+        if ( fast != 0 && ip == fast )
+         probeIsReal = 1;
+        if ( firstReal == 0 )
+         firstReal = ip;
+       }
+      }
+      if ( ( fast == 0 || !probeIsReal ) && firstReal != 0 )
+      {
+       Log( "CTcpNet::CTcpNet probe address is a tunnel/virtual interface - advertising a real adapter instead" );
+       fast = firstReal;
+      }
+     }
+     free( pAdp );
+    }
+   }
+#endif
   }
 
   if ( fast != 0 )
