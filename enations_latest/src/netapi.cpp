@@ -2314,10 +2314,6 @@ static void VehGoto( CMsgVehGoto* pMsg )
 {
 
     ASSERT( theGame.AmServer( ) );
-    // Server-only command: a client must not execute it. During a remote player's leave
-    // this used to fire the AmServer assert storm and run server logic on the client
-    // (WinFable release order b). Drop it here at the invariant's detection point.
-    if ( !theGame.AmServer( ) ) { EnMpDiagLog( "VehGoto on CLIENT dropped (server-only)" ); return; }
 
     CVehicle* pVeh = theVehicleMap.GetVehicle( pMsg->m_dwID );
     if ( pVeh == NULL )
@@ -2506,8 +2502,6 @@ static void TransMat( CMsgTransMat* pMsg )
 {
 
     ASSERT( theGame.AmServer( ) );
-    // Server-only command handler; a client must drop it (WinFable release order b).
-    if ( !theGame.AmServer( ) ) { EnMpDiagLog( "TransMat on CLIENT dropped (server-only)" ); return; }
 
     CUnit* pSrc  = ::GetUnit( pMsg->m_dwIDSrc );
     CUnit* pDest = ::GetUnit( pMsg->m_dwIDDest );
