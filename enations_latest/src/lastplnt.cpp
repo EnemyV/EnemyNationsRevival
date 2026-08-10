@@ -713,32 +713,37 @@ BOOL CConquerApp::InitInstance( )
     // corrupts MP sessions (ghost players, contradictory inputs, append-mode log
     // contamination) and invalidates every smoke a POSIX node joins. This is a release
     // gate (LinuxOpus root-cause f70a02b). Hold an advisory flock for our whole lifetime:
-    // the FIRST instance acquires it; a second launch cannot and is treated exactly like
-    // hPrevWnd != NULL, so the existing IDS_MULT_INST prompt fires. The lock releases
-    // automatically on exit OR crash (kernel drops the fd) — no stale-PID file to clean.
+    // the FIRST instance acquires it; a second launch cannot and is REFUSED OUTRIGHT below
+    // (it must NOT be routed to the IDS_MULT_INST prompt — see the note at that site). The
+    // lock releases automatically on exit OR crash (kernel drops the fd) — no stale-PID file.
     // EN_ALLOW_MULTI=1 bypasses it for dev/harness scenarios that intentionally run two.
     {
         const char* allowMulti = getenv( "EN_ALLOW_MULTI" );
         if ( !( allowMulti && allowMulti[0] == '1' ) )
         {
-            // Per-USER lock path. A fixed "/tmp/.enations.singleton.lock" is a shared
-            // namespace and was created 0644 (owner-write only), so a SECOND user's
-            // open(O_RDWR) returned EACCES, the fd stayed -1, the guard's && short-
-            // circuited, and single-instance protection turned itself off *silently* —
-            // precisely the failure mode this gate exists to eliminate. A file left by
-            // another uid (e.g. a root-run test) disabled it permanently the same way.
-            // $XDG_RUNTIME_DIR is per-user by construction (0700, tmpfs, cleared at
-            // logout); the fallback carries the uid in the name so it cannot collide.
-            std::string sLock;
-            const char* pszRun = getenv( "XDG_RUNTIME_DIR" );
-            if ( ( pszRun != NULL ) && ( *pszRun != '\0' ) )
-                sLock = std::string( pszRun ) + "/enations.lock";
-            else
-            {
-                const char* pszTmp = getenv( "TMPDIR" );
-                sLock = std::string( ( pszTmp && *pszTmp ) ? pszTmp : "/tmp" )
-                      + "/enations-" + std::to_string( (long) getuid( ) ) + ".lock";
-            }
+            // Per-USER lock path, and DELIBERATELY NOT taken from the environment.
+            //
+            // Two constraints have to hold at once. (1) It must be per-uid: a fixed
+            // "/tmp/.enations.singleton.lock" is a shared namespace and was created 0644
+            // (owner-write only), so a SECOND user's open(O_RDWR) returned EACCES, the fd
+            // stayed -1, the guard's && short-circuited, and single-instance protection
+            // turned itself off *silently* — the exact failure this gate exists to stop.
+            // (2) It must resolve to the SAME file for every launch by that user, however
+            // the process was started. Deriving it from $XDG_RUNTIME_DIR (with a $TMPDIR
+            // fallback) satisfied (1) but broke (2): a desktop/terminal launch has
+            // XDG_RUNTIME_DIR and a script/cron/systemd/setsid/su launch usually does not,
+            // so the two locked DIFFERENT files, BOTH flocks succeeded and BOTH copies ran.
+            // That was measured on this binary — /run/user/<uid>/enations.lock held, a
+            // launch with XDG_RUNTIME_DIR unset was NOT refused, created and locked
+            // /tmp/enations-<uid>.lock, and kept running. Every earlier test held the
+            // environment constant across both launches, which is why it read as closed.
+            //
+            // A hardcoded path carrying the uid satisfies both: env-independent by
+            // construction, per-user by name, still opened 0600 so no cross-uid EACCES.
+            // /tmp is guaranteed to exist on linux and mac. (A PrivateTmp / per-namespace
+            // /tmp would still diverge, but that is true of any filesystem lock and is far
+            // rarer than the env difference this replaces.)
+            std::string sLock = "/tmp/enations-" + std::to_string( (long) getuid( ) ) + ".lock";
 
             static int s_singletonFd = -1;   // held for the whole process lifetime
             s_singletonFd = ::open( sLock.c_str( ), O_CREAT | O_RDWR | O_CLOEXEC, 0600 );
