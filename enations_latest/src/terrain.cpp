@@ -19,6 +19,7 @@
 #include "minerals.h"
 #include "stdafx.h"
 #include "enprobes.h"   // probe gates - was relying on a transitive include
+#include "en_logpath.h"   // EnLogPath - probe log must land where the other logs do
 #include "SDL2Panel.h"
 #include "SDL2Sprites.h"  // GPU sprite layer (S1: trees)
 #include "Perf.h"         // sub-phase profiling counters
@@ -2402,9 +2403,17 @@ CAnimAtr::WorldToView( const CMapLoc3D& maploc3d ) const
 CPoint
 CAnimAtr::WorldToViewContent( const CMapLoc3D& maploc3d ) const
 {
+    return WorldToViewContent( maploc3d, m_iDir );
+}
+
+// Explicit-direction variant — pure function of (maploc3d, iDir); used by the GPU
+// underlay to prewarm other directions' backdrops (see base.h).
+CPoint
+CAnimAtr::WorldToViewContent( const CMapLoc3D& maploc3d, int iDir ) const
+{
     int iNewX = 0, iNewY = 0;
 
-    switch ( m_iDir )
+    switch ( iDir )
     {
     case 0: iNewX =  maploc3d.x + maploc3d.y; iNewY = ( -maploc3d.x + maploc3d.y ) >> 1; break;
     case 1: iNewX = -maploc3d.x + maploc3d.y; iNewY = ( -maploc3d.x - maploc3d.y ) >> 1; break;
@@ -2426,13 +2435,20 @@ CAnimAtr::WorldToViewContent( const CMapLoc3D& maploc3d ) const
 void
 CAnimAtr::MapToContentHex( const CHexCoord& hexcoord, CPoint aptHex[4] ) const
 {
+    MapToContentHex( hexcoord, aptHex, m_iDir );
+}
+
+// Explicit-direction variant (underlay prewarm — see base.h).
+void
+CAnimAtr::MapToContentHex( const CHexCoord& hexcoord, CPoint aptHex[4], int iDir ) const
+{
     static int xaaiIndex[4][4] = { { 0, 1, 2, 3 }, { 3, 0, 1, 2 }, { 2, 3, 0, 1 }, { 1, 2, 3, 0 } };
 
     CMapLoc3D amaploc3d[4];
     hexcoord.GetWorldHex( amaploc3d );
 
-    int* pi = xaaiIndex[m_iDir];
-    for ( int i = 0; i < 4; ++i ) aptHex[*pi++] = WorldToViewContent( amaploc3d[i] );
+    int* pi = xaaiIndex[iDir & 3];
+    for ( int i = 0; i < 4; ++i ) aptHex[*pi++] = WorldToViewContent( amaploc3d[i], iDir & 3 );
 }
 
 #ifdef _DEBUG
@@ -4016,9 +4032,33 @@ void CGameMap::DiscoverSpritesGpu( CAnimAtr& aa, const CRect& rect )
     int minY = __min( __min( cTL.Y( ), cTR.Y( ) ), __min( cBL.Y( ), cBR.Y( ) ) ) - kHexMargin;
     int maxY = __max( __max( cTL.Y( ), cTR.Y( ) ), __max( cBL.Y( ), cBR.Y( ) ) ) + kHexMargin;
 
-    // Never scan more than one full torus period in either axis (max-zoom guard).
-    if ( maxX - minX >= m_eX ) maxX = minX + m_eX - 1;
-    if ( maxY - minY >= m_eY ) maxY = minY + m_eY - 1;
+    // A viewport that spans a torus period breaks the 4-corner bbox: the corners wrap and
+    // ToNearestHex pulls them back toward the view centre, so the box COLLAPSES instead of
+    // growing (measured at max zoom-out on 128x128: a 51x51 box while 353 forest hexes were
+    // on screen). Rebuild it from the span the window actually needs, anchored on the view's
+    // reference hex — NOT on the collapsed box's centre, which is wrapped garbage.
+    //
+    // Deliberately NOT capped at one period. Past ~1 period the same hex appears at SEVERAL
+    // on-screen positions, and (ux,uy) is the unwrapped representative that decides WHERE it
+    // draws, so a one-period box draws each hex at only ONE of them: half the map keeps its
+    // trees and the other half is bare forest floor. WrapX/WrapY still map back to the single
+    // array hex, so repeating the span costs no correctness — only the iteration, which is
+    // bounded by screen area / hex size and runs on FULL captures only.
+    {
+        const int hxW  = __max( 1, HexWid( aa.m_iZoom ) );
+        const int hxH  = __max( 1, HexHt ( aa.m_iZoom ) );
+        const int need = rect.Width( ) / hxW + rect.Height( ) / hxH + 2 * kHexMargin;
+        if ( maxX - minX + 1 < need )
+            { minX = refHex.X( ) - need / 2; maxX = minX + need - 1; }
+        if ( maxY - minY + 1 < need )
+            { minY = refHex.Y( ) - need / 2; maxY = minY + need - 1; }
+    }
+
+#if EN_SPRITE_PROBES
+    // Where do forest hexes get lost between "on screen" and "tree drawn"?
+    int probeFstVisited = 0, probeFstCulled = 0, probeFstNoBound = 0;
+    int probeFstIdxBad = 0, probeFstDrawn = 0, probeIdxHist[8] = { 0 };
+#endif
 
     for ( int uy = minY; uy <= maxY; ++uy )
     {
@@ -4052,12 +4092,25 @@ void CGameMap::DiscoverSpritesGpu( CAnimAtr& aa, const CRect& rect )
 
             CRect rb;
             if ( !aa.CalcWindowHexBound( hexcoord, rb ) )
+            {
+#if EN_SPRITE_PROBES
+                if ( bForest ) ++probeFstNoBound;
+#endif
                 continue;
+            }
             if ( rb.right <= rectCull.left || rb.left >= rectCull.right ||
                  rb.bottom <= rectCull.top || rb.top >= rectCull.bottom )
+            {
+#if EN_SPRITE_PROBES
+                if ( bForest ) ++probeFstCulled;
+#endif
                 continue;
+            }
 
             ++hitCnt;
+#if EN_SPRITE_PROBES
+            if ( bForest ) ++probeFstVisited;
+#endif
 
             // Bridge (per-hex CBridgeUnit; drawn whether or not the hex is lit).
             // Bridges are captured DYNAMIC and re-walked EVERY frame (full and
@@ -4176,6 +4229,11 @@ void CGameMap::DiscoverSpritesGpu( CAnimAtr& aa, const CRect& rect )
                 // visible per full capture, so it surfaces there. Skip the bad tree (one
                 // missing tree is invisible) instead of crashing.
                 int iTreeIdx = phex->GetTree( );
+#if EN_SPRITE_PROBES
+                if ( iTreeIdx < 0 || iTreeIdx >= theEffects.TreeCount( ) ) ++probeFstIdxBad;
+                else                                                       ++probeFstDrawn;
+                if ( iTreeIdx >= 0 && iTreeIdx < 8 ) ++probeIdxHist[iTreeIdx];
+#endif
                 if ( iTreeIdx >= 0 && iTreeIdx < theEffects.TreeCount( ) )
                 {
                     CTree* ptree = theEffects.GetTree( iTreeIdx );
@@ -4256,6 +4314,59 @@ void CGameMap::DiscoverSpritesGpu( CAnimAtr& aa, const CRect& rect )
     }
 
     SDL2Sprites::SetCaptureDynamic( false );   // defensive reset
+
+#if EN_SPRITE_PROBES
+    // GROUND TRUTH: scan the WHOLE map for forest hexes and project each one the same way
+    // the walk does. onScreen counts hexes that land in the window; outBox counts those the
+    // walk's bbox never covered. onScreen vs visited/drawn says whether trees are lost to
+    // coverage or to the tree-index guard.
+    if ( !bIncremental )
+    {
+        int fstOnScreen = 0, fstOutBox = 0;
+        for ( int my = 0; my < m_eY; ++my )
+            for ( int mx = 0; mx < m_eX; ++mx )
+            {
+                CHex* ph = _GetHex( mx, my );
+                if ( CHex::forest != ph->GetType( ) )
+                    continue;
+                CHexCoord base( mx, my );
+                base.ToNearestHex( refHex );
+                // Count every on-screen POSITION, not every hex: past one period the same
+                // hex is visible at several representatives at once, and counting it once
+                // (the ToNearestHex one) is exactly the blindness that made a half-covered
+                // screen read as outOfBox=0.
+                for ( int j = -2; j <= 2; ++j )
+                for ( int i = -2; i <= 2; ++i )
+                {
+                    CHexCoord hc( base.X( ) + i * (int)m_eX, base.Y( ) + j * (int)m_eY );
+                    CRect rbp;
+                    if ( !aa.CalcWindowHexBound( hc, rbp ) )
+                        continue;
+                    if ( rbp.right <= rect.left || rbp.left >= rect.right ||
+                         rbp.bottom <= rect.top || rbp.top >= rect.bottom )
+                        continue;
+                    ++fstOnScreen;
+                    if ( hc.X( ) < minX || hc.X( ) > maxX || hc.Y( ) < minY || hc.Y( ) > maxY )
+                        ++fstOutBox;
+                }
+            }
+        FILE* fp = fopen( EnLogPath( "spriteprobe.log" ).c_str( ), "a" );
+        if ( fp )
+        {
+            fprintf( fp,
+                     "zoom=%d dir=%d map=%dx%d bbox X[%d..%d]=%d Y[%d..%d]=%d | forest onScreen=%d outOfBox=%d "
+                     "| visited=%d noBound=%d culled=%d drawn=%d idxBad=%d | idx0..7=%d,%d,%d,%d,%d,%d,%d,%d treeCount=%d\n",
+                     aa.m_iZoom, aa.m_iDir & 3, (int)m_eX, (int)m_eY,
+                     minX, maxX, maxX - minX + 1, minY, maxY, maxY - minY + 1,
+                     fstOnScreen, fstOutBox,
+                     probeFstVisited, probeFstNoBound, probeFstCulled, probeFstDrawn, probeFstIdxBad,
+                     probeIdxHist[0], probeIdxHist[1], probeIdxHist[2], probeIdxHist[3],
+                     probeIdxHist[4], probeIdxHist[5], probeIdxHist[6], probeIdxHist[7],
+                     theEffects.TreeCount( ) );
+            fclose( fp );
+        }
+    }
+#endif
 
     // Harvest the dirty rects that every animating/moving drawable self-registered into
     // CDirtyRects during the (invalidate-mode) incremental capture above — smoke/flame,

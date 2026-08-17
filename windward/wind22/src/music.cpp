@@ -1163,7 +1163,17 @@ void CMusicPlayer::OpenDigital( int iVol ) {
 
     try {
         if ( ( iVol != 0 ) && ( waveOutGetNumDevs() > 0 ) ) {
-            if ( Mix_OpenAudio( DEVICE_FREQ, AUDIO_S16SYS, DEVICE_CHANNELS, 2048 ) < 0 ) {
+            // allowed_changes = 0 (NOT Mix_OpenAudio, which passes ALLOW_FREQUENCY_CHANGE |
+            // ALLOW_CHANNELS_CHANGE): every sample this player produces is hand-built at
+            // DEVICE_FREQ/S16/DEVICE_CHANNELS and pushed RAW (Mix_QuickLoad_RAW converts
+            // nothing; Mix_HookMusic hands us the device buffer). With changes allowed, a
+            // device that refuses 22050 — WASAPI shared mode on Win10/11 runs the mixer at
+            // the endpoint rate (usually 48000, or 48000/6ch on HDMI) and SDL does NO
+            // conversion → everything plays at obtained/22050 speed (the "continuously
+            // accelerated" chipmunk audio report, 2026-08-06). Zero forces SDL to keep the
+            // obtained spec at what we asked and insert its own resampler to the hardware.
+            if ( Mix_OpenAudioDevice( DEVICE_FREQ, AUDIO_S16SYS, DEVICE_CHANNELS, 2048,
+                                      NULL, 0 ) < 0 ) {
                 TRACE( "Mix_OpenAudio failed: %s\n", Mix_GetError() );
                 CDlgMsg dlg;
                 dlg.MsgBox( IDS_ERROR_WAV, MB_OK | MB_ICONSTOP | MB_TASKMODAL, "Warnings", "NoDigitalSound" );
@@ -1171,6 +1181,15 @@ void CMusicPlayer::OpenDigital( int iVol ) {
             }
 
             m_bDigOpen = true;
+
+            // Boundary assertion: EVERYTHING below pushes raw 22050/S16/stereo samples, so
+            // the obtained spec MUST be what we asked (allowed_changes=0 guarantees it; if
+            // this ever fires, pitch/speed will be audibly wrong — log loudly).
+            { int qF = 0, qC = 0; Uint16 qFmt = 0;
+              if ( Mix_QuerySpec( &qF, &qFmt, &qC ) &&
+                   ( qF != DEVICE_FREQ || qC != DEVICE_CHANNELS || qFmt != AUDIO_S16SYS ) )
+                  TRACE( "AUDIO SPEC MISMATCH: obtained %dHz/%dch fmt=0x%x, need %dHz/%dch S16 — playback speed will be wrong\n",
+                         qF, qC, (unsigned)qFmt, DEVICE_FREQ, DEVICE_CHANNELS ); }
 
             // Allocate channels
             Mix_AllocateChannels( MAX_SOUND_SAMPLES );

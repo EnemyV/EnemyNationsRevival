@@ -308,9 +308,15 @@ namespace
             return { 0, 0, 0, 0 };
         }
 
+        // Prospective slot = top of the current shelf. The cursor is advanced only AFTER
+        // a successful decode (below) — advancing it first leaked the slot on every failed
+        // decode: the deliberate "superview not decompressed yet" load-race bail (see
+        // DecodeToRGBA) is retried every capture pass, so one persistently-failing dib
+        // leaked w+kPad px per frame until the atlas overflowed and forced a full
+        // invalidate+repack, in a loop (fix 1.3, 2026-08-06). No negative cache on
+        // purpose: those failures are transient, and blacklisting the dib would turn a
+        // one-frame glitch into a session-long CPU fallback.
         AtlasLoc loc { g_shelfX, g_shelfY, w, h };
-        g_shelfX += w + kPad;
-        if ( h > g_shelfH ) g_shelfH = h;
 
         std::vector<unsigned> rgba( (size_t)w * h );
         bool decodeOK = dib->DecodeToRGBA( rgba.data( ) );   // structure-RLE vs vehicle-flat
@@ -344,7 +350,9 @@ namespace
         }
 
         if ( !decodeOK )
-            return { 0, 0, 0, 0 };
+            return { 0, 0, 0, 0 };                     // slot not consumed — cursor untouched
+        g_shelfX += w + kPad;                          // decode OK → NOW consume the slot
+        if ( h > g_shelfH ) g_shelfH = h;
         SDL_Rect dst = { loc.x, loc.y, w, h };
         SDL_UpdateTexture( g_atlas, &dst, rgba.data( ), w * 4 );
 
@@ -876,6 +884,12 @@ namespace SDL2Sprites
                                  bx, by, bw, bh, ulX, ulY, vpW, vpH );
                         OutputDebugStringA( b );
                     }
+                    // Pruning a STATIC invalidates the cached spatial grid — it holds raw
+                    // Sprite* into the erased node (every other static-erase site sets this;
+                    // this one was missed — fix 1.2, 2026-08-06). In the common flows the
+                    // flag is already set or nothing static is pruned, so this adds no
+                    // rebuilds; it closes the hidden-panel / odd-resize corners.
+                    if ( !it->second.isDynamic ) g_staticGridDirty = true;
                     it = g_sprites.erase( it ); continue;
                 }
             order.push_back( &it->second ); ++it;

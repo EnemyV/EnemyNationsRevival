@@ -301,7 +301,7 @@ void CDataFile::_Init(const char *pFilename, const char *pPatchDir, int iRifVer)
             //  Add the string/offset pair to the map.
             //  Can ThrowError CMemoryException.
             _strlwr(pStr);
-            (*m_pFileMap)[pStr] = (void *) fileOffset;
+            (*m_pFileMap)[pStr] = (void *)(intptr_t) fileOffset;   // offset smuggled through void* (x64: value-preserving)
         }
 
         //  Delete the file table buffer, which is no longer
@@ -467,7 +467,7 @@ CMmio *CDataFile::OpenAsMMIO(const char *pFilename, const char *pRif) {
         //  that position in the file.
         //  If negative seek checks between CMmio's are 
         //  desired, they should be done here.
-        long fileOffset = (long) dummy;
+        long fileOffset = (long)(intptr_t) dummy;   // void*-smuggled offset (x64: value-preserving)
         long offsetFromHere = fileOffset - (long) m_pDataFile->GetPosition();
 
 #ifdef _DEBUG
@@ -525,7 +525,13 @@ CMmio *CDataFile::OpenAsMMIO(const char *pFilename, const char *pRif) {
 CFile *CDataFile::OpenAsFile(const char *pFilename) {
 
     // if fully qualified just try it
-    if ((pFilename != NULL) && ((*(pFilename + 1) == ':') || (*(pFilename + 1) == '\\'))) {
+    // POSIX: an absolute path starts with '/'. GetFileName() of an embedded MMIO is the
+    // .dat's OWN full path (OpenAsMMIO:487) — music.cpp re-opens the container through
+    // here so the payload offsets line up. The X:/UNC tests never match on mac/linux,
+    // so the open fell through to the files\ map and threw ERR_DATAFILE_NO_ENTRY =
+    // no music/voice handles on POSIX from a byte-identical .dat.
+    if ((pFilename != NULL) &&
+        ((*(pFilename + 1) == ':') || (*(pFilename + 1) == '\\') || (*pFilename == '/'))) {
         CFile test;
         if (test.Open(pFilename, CFile::modeRead | CFile::shareDenyWrite | CFile::typeBinary) != FALSE) {
             //  Close the file so we can allocate a new CFile object to
@@ -641,7 +647,7 @@ CFile *CDataFile::_OpenAsFile(const char *pFilename) {
         //  that position in the file.
         //  If negative seek checks between CMmio's are 
         //  desired, they should be done here.
-        long fileOffset = (long) dummy;
+        long fileOffset = (long)(intptr_t) dummy;   // void*-smuggled offset (x64: value-preserving)
         long offsetFromHere = fileOffset - (long) m_pDataFile->GetPosition();
 
 #ifdef _DEBUG
@@ -726,7 +732,7 @@ CArchive *CDataFile::OpenAsCArchive(const char *pFilename) {
         //  that position in the file.
         //  If negative seek checks between CMmio's are 
         //  desired, they should be done here.
-        long fileOffset = (long) dummy;
+        long fileOffset = (long)(intptr_t) dummy;   // void*-smuggled offset (x64: value-preserving)
         long offsetFromHere = fileOffset - (long) m_pDataFile->GetPosition();
 
 #ifdef _DEBUG

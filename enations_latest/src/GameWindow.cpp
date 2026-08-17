@@ -35,7 +35,10 @@
 
 // SDL2 headers
 #include <SDL.h>
-#ifdef _WIN32
+// Windows needs it for the HWND subclassing; macOS for the NSWindow handle used to
+// turn off the child-window drop shadows. Deliberately NOT unconditional: on Linux
+// this header drags in the X11 headers, whose macros collide with game symbols.
+#if defined(_WIN32) || defined(__APPLE__)
 #include <SDL_syswm.h>
 #endif
 
@@ -214,6 +217,11 @@ bool GameWindow::IsAreaPanelWindow(uint32_t winID) const {
 static WNDPROC s_sdlOrigWndProc = NULL;
 
 static LRESULT CALLBACK SdlSubclassWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    // Display-only overlays (the Shift+RMB unit-info panel) tag themselves click-through:
+    // they open UNDER the cursor, so without this they swallow the player's next map click
+    // whole — the global dismiss hook closed the panel and the intended action never fired.
+    if (msg == WM_NCHITTEST && ::GetProp(hWnd, "EN_clickThrough"))
+        return HTTRANSPARENT;
     if (msg == WM_SETCURSOR && LOWORD(lParam) == HTCLIENT) {
         // Returning TRUE alone preserves whatever cursor was last ::SetCursor'd —
         // which the game's CWndArea::SetMouseState() updates on every mouse move.
@@ -265,6 +273,12 @@ static LRESULT CALLBACK SdlCbtFilterHook(int nCode, WPARAM wParam, LPARAM lParam
 }
 #endif // _WIN32
 
+#ifdef __APPLE__
+// Defined below, next to the other hand-rolled objc helpers (the objc headers' BOOL
+// collides with the win32 shim, so this file talks to the runtime by hand).
+static void DisableMacWindowShadow(SDL_Window* win);
+#endif
+
 SDL_Window* GameWindow::CreateSDLWindow(const char* title, int x, int y, int w, int h, Uint32 flags) {
 #ifdef _WIN32
     // Protect against MFC's CBT hook corrupting the new SDL window
@@ -278,6 +292,18 @@ SDL_Window* GameWindow::CreateSDLWindow(const char* title, int x, int y, int w, 
     extern void EnSetX11UserTimeNow(SDL_Window* win);
     if (win)
         EnSetX11UserTimeNow(win);
+#endif
+#ifdef __APPLE__
+    // Every child window here (area map, radar, unit/building lists, dialogs, the
+    // Shift+RMB tooltip) is BORDERLESS, and macOS gives a borderless NSWindow a full
+    // system drop shadow — measured hasShadow=YES on all of them. On Windows these were
+    // child windows inside ONE frame and cast no shadows at all, so on mac the in-game
+    // UI ends up ringed with heavy shadows that were never part of the game's look
+    // (operator: "the shadows of the windows was too strong"). Drop them for our own
+    // child windows; the main window is created directly in Create() and is unaffected.
+    // EN_MAC_WINDOW_SHADOWS=1 restores them.
+    if (win)
+        DisableMacWindowShadow(win);
 #endif
     ApplyAppIcon(win);
 #ifdef _WIN32
@@ -319,6 +345,25 @@ extern "C" {
     void* sel_registerName(const char* name);
     void  objc_msgSend(void);
 }
+// Turn off the macOS system drop shadow on one of our borderless child windows.
+// Shadows are composited by the window server OUTSIDE the window surface, so no
+// harness capture can show them — this was found by querying hasShadow directly
+// (measured YES for BORDERLESS, BORDERLESS|ALWAYS_ON_TOP and the tooltip's exact
+// flag set on SDL 2.32.10). Opt back in with EN_MAC_WINDOW_SHADOWS=1.
+static void DisableMacWindowShadow(SDL_Window* win) {
+    const char* keep = getenv("EN_MAC_WINDOW_SHADOWS");
+    if (keep && keep[0] == '1') return;
+    SDL_SysWMinfo wm; SDL_VERSION(&wm.version);
+    if (!SDL_GetWindowWMInfo(win, &wm)) return;
+    void* nswin = wm.info.cocoa.window;
+    if (!nswin) return;
+    // Exact-prototype cast — objc_msgSend must NOT be called through a variadic
+    // signature on arm64 (different argument-passing convention). Same discipline
+    // as SetMacDockIcon / HideMacDockBar below.
+    auto sendB = (void (*)(void*, void*, bool))objc_msgSend;
+    sendB(nswin, sel_registerName("setHasShadow:"), false);
+}
+
 static void SetMacDockIcon() {
     // Resolve like PlayVideo: CWD first, then the exe's directory.
     std::string path = "assets/appicon.png";
@@ -350,6 +395,83 @@ static void SetMacDockIcon() {
     send1(app, sel("setApplicationIconImage:"), img);
 }
 
+// Let our windows use the WHOLE screen, including the menu-bar band.
+//
+// -[NSWindow constrainFrameRect:toScreen:] is AppKit's work-area clamp: it keeps an
+// ordinary window's top edge below the menu bar. It is the exact macOS counterpart of
+// the Mutter strut clamp that EnSetX11FakeTopExtent defeats on Linux (BUGS #32), and it
+// produces the identical symptom the operator reported on both platforms — "there is a
+// gap at the top of the screen... windows can't be brought to the top".
+//
+// Measured on this node (1280x720), with the bars already hidden by the caller:
+//   SDL_GetDisplayUsableBounds -> 1280x720@0,0, i.e. the usable area IS the whole screen
+//   a borderless panel created at y=0                          -> lands at y=31
+//   the same panel after SDL_SetWindowPosition(y=0)            -> still y=31
+// So the clamp is not driven by the usable bounds (they are already full-screen) and no
+// amount of correcting our own geometry can beat it — it is applied below us, on every
+// frame change, which is why it also blocks an interactive drag to the top edge. It only
+// engages once a fullscreen-desktop window exists in the process, which is why the main
+// menu (a single fullscreen window, no panels) looks right and only in-game shows the gap.
+//
+// Overriding the method to return the frame unchanged is Apple's own documented way to
+// opt a window out of the clamp. Patching the CLASS rather than an instance is deliberate:
+// it must be in place before SDL creates a window, since the clamp applies at creation too
+// (patching an existing instance's KVO subclass fixes later moves but not creation).
+// Positions stay bounded — SDL2Panel clamps every panel to the display bounds itself.
+//
+// The class name differs by SDL flavour: "SDLWindow" in SDL2, "SDL3Window" under
+// sdl2-compat. Patch whichever is present; missing is not an error.
+//
+// (Re-landed 2026-08-09: this fix was verified working on 08-08 — panels at y=6 via
+// CGWindowListCopyWindowInfo, on both SDL flavours — but was only ever applied as
+// uncommitted work and got discarded by a stray `git checkout`. A separate probe has
+// since shown the identity override does NOT break fullscreen background rendering,
+// which had been the suspicion that nearly scoped this down.)
+extern "C" {
+    signed char class_addMethod(void* cls, void* name, void* imp, const char* types);
+    void*       class_getInstanceMethod(void* cls, void* name);
+    void*       method_setImplementation(void* m, void* imp);
+}
+namespace {
+    // Mirrors CGRect exactly (CGFloat == double on arm64) so the struct is returned in
+    // the same registers AppKit expects. Declared by hand: including the CoreGraphics
+    // headers here drags in objc's BOOL, which collides with the Win32 shim's.
+    struct EnCGPoint { double x, y; };
+    struct EnCGSize  { double width, height; };
+    struct EnCGRect  { EnCGPoint origin; EnCGSize size; };
+
+    EnCGRect EnUnconstrainedFrameRect(void* self, void* cmd, EnCGRect frame, void* screen) {
+        (void)self; (void)cmd; (void)screen;
+        return frame;   // no clamp: the game owns the whole display
+    }
+}
+static void UnclampMacWindowsFromMenuBar() {
+    static bool s_done = false;
+    if (s_done) return;
+    s_done = true;   // idempotent: HideMacDockBar re-runs on every focus gain
+
+    void* sel   = sel_registerName("constrainFrameRect:toScreen:");
+    void* imp   = (void*)&EnUnconstrainedFrameRect;
+    const char* types = "{CGRect={CGPoint=dd}{CGSize=dd}}@:{CGRect={CGPoint=dd}{CGSize=dd}}@";
+    const char* names[] = { "SDLWindow", "SDL3Window" };
+    int patched = 0;
+    for (const char* name : names) {
+        void* cls = objc_getClass(name);
+        if (!cls) continue;
+        if (!class_addMethod(cls, sel, imp, types)) {
+            // Already implemented by this class — replace rather than add.
+            if (void* m = class_getInstanceMethod(cls, sel))
+                method_setImplementation(m, imp);
+        }
+        ++patched;
+    }
+    // Diagnosability: if SDL ever renames the window class, neither patch lands and the
+    // top-gap silently returns. Say so once rather than leaving a mystery regression.
+    if (patched == 0)
+        LogToFile("UnclampMacWindowsFromMenuBar: no SDLWindow/SDL3Window class found — "
+                  "top-of-screen clamp NOT overridden (SDL window class renamed?)");
+}
+
 // Hide the macOS Dock + menu bar while the game is frontmost. The game runs as a
 // borderless fullscreen-desktop window with Spaces DISABLED (so the detached
 // map/radar panels can overlay it) — but a non-Space fullscreen window does NOT
@@ -377,9 +499,39 @@ static void HideMacDockBar() {
     // came up active; this makes it deterministic everywhere.)
     sendL(app, sel("setActivationPolicy:"), 0L);                 // NSApplicationActivationPolicyRegular
     sendB(app, sel("activateIgnoringOtherApps:"), true);         // become frontmost
-    // NSApplicationPresentationAutoHideDock (1<<0) | AutoHideMenuBar (1<<2).
-    const unsigned long opts = (1UL << 0) | (1UL << 2);
+    // HideDock (1<<1) | HideMenuBar (1<<3) — NOT the AutoHide variants.
+    //
+    // This used to be AutoHideDock|AutoHideMenuBar, and auto-hide is exactly wrong here:
+    // an auto-hidden Dock REAPPEARS when the pointer reaches the screen edge, and the
+    // game's bottom button bar occupies that very edge. So moving the mouse toward the
+    // bar summoned the Dock on top of it — the operator's "sometimes the bottom bar when
+    // in game isn't visible", which is intermittent precisely because it depends on where
+    // the pointer is. Hiding them outright removes the reveal-on-hover behaviour, so the
+    // bar can never be covered and the game gets the full screen.
+    //
+    // AppKit requires HideMenuBar to be accompanied by HideDock; both are set here.
+    // Deliberately still NOT a fullscreen Space (SDL_HINT_VIDEO_MAC_FULLSCREEN_SPACES=0
+    // at the call site), so the detached ALWAYS_ON_TOP panels still overlay and other
+    // displays stay usable — hiding the bars must not cost multi-monitor support.
+    const unsigned long opts = (1UL << 1) | (1UL << 3);
     sendUL(app, sel("setPresentationOptions:"), opts);
+
+    // Hiding the bars is not enough on its own: AppKit still refuses to place any
+    // ordinary window's top edge inside the menu-bar band, so the panels stay pinned
+    // 31px down and cannot be dragged to the top of the screen. See above.
+    UnclampMacWindowsFromMenuBar();
+}
+
+// Counterpart of HideMacDockBar: hand the Dock and menu bar back to the system
+// (NSApplicationPresentationDefault). Needed before miniaturizing — see MinimizeAll.
+static void ShowMacDockBar() {
+    auto cls    = [](const char* n) { return objc_getClass(n); };
+    auto sel    = [](const char* n) { return sel_registerName(n); };
+    auto send0  = (void* (*)(void*, void*))objc_msgSend;
+    auto sendUL = (void  (*)(void*, void*, unsigned long))objc_msgSend;
+    void* app = send0(cls("NSApplication"), sel("sharedApplication"));
+    if (!app) return;
+    sendUL(app, sel("setPresentationOptions:"), 0UL);   // NSApplicationPresentationDefault
 }
 #endif
 
@@ -440,6 +592,17 @@ bool GameWindow::InitializeSDL() {
     // not being a fullscreen Space — still lets the ALWAYS_ON_TOP panels overlay. The
     // matching engine render size is set in linux_main.cpp under the SAME env flag, so
     // metrics/window/back-buffer stay consistent (no terrain-rasterizer mismatch).
+    // BACK TO DEFAULT OFF (mac, 2026-08-08). I briefly made this the default to stop the
+    // Dock covering the bottom bar; that was the wrong trade. Sizing to the usable bounds
+    // means the menu bar and Dock KEEP their strips, so the game silently loses ~106px of
+    // screen and stops being fullscreen — operator: "the bar at the bottom is still
+    // visible... the bar at the top is still visible... they are taking up space". The
+    // right fix was in HideMacDockBar (hide the bars outright instead of AUTO-hiding them,
+    // which let them reappear on hover over the game's own bottom edge). This flag stays
+    // available as an opt-in for anyone who wants the bars left alone.
+    // Must stay in lock-step with linux_main.cpp, which seeds the engine metrics from the
+    // SAME flag: if the two disagree the layout is computed against a size the window does
+    // not have, which is precisely the T-0072 failure (bar laid out below the window).
     const char* usableFs = getenv("EN_MAC_USABLE_FULLSCREEN");
     const bool usableMode = wantFullscreen && usableFs && usableFs[0] && usableFs[0] != '0';
     if (usableMode) {
@@ -500,9 +663,13 @@ bool GameWindow::InitializeSDL() {
 #endif
 
 #ifdef __APPLE__
+    m_macUsableFullscreen = usableMode;
     // Hide the Dock + menu bar now that the game window exists (fullscreen game;
     // the non-Space fullscreen-desktop window won't auto-hide them on its own).
-    if (wantFullscreen)
+    // NOT in usable-bounds mode: there the window is deliberately sized to exclude the
+    // Dock/menu-bar strips, so auto-hiding them would just leave dead space where the
+    // game does not draw. Leaving them alone is the whole point of that mode.
+    if (wantFullscreen && !usableMode)
         HideMacDockBar();
 #endif
 
@@ -812,6 +979,19 @@ bool GameWindow::PollEvents() {
             SDL2Sprites::NotifyTargetsLost();
         }
 
+        // Do NOT dispatch gameplay input while the network session is tearing down.
+        // CNetApi::Close/CloseSession call BaseYield() to drain messages, which re-enters
+        // this loop; a queued mouse move then routes into unit hit-testing over sprite
+        // state the teardown is dismantling -> SIGSEGV (the disconnect-path crash behind
+        // "the game froze when a player exited"). We still drain the SDL queue (and honor
+        // SDL_QUIT above) — only input dispatch into the closing game is suppressed.
+        extern bool EnNetIsTearingDown();
+        if (EnNetIsTearingDown() &&
+            (event.type == SDL_MOUSEMOTION   || event.type == SDL_MOUSEBUTTONDOWN ||
+             event.type == SDL_MOUSEBUTTONUP || event.type == SDL_MOUSEWHEEL      ||
+             event.type == SDL_KEYDOWN       || event.type == SDL_KEYUP))
+            continue;
+
         // Any mouse click dismisses the Shift+RMB unit-info tooltip, in ANY window.
         // This runs before routing, so the open gesture (Shift+RMB on a unit, handled
         // in the area's OnRButtonDown below) re-shows it — every other click just closes it.
@@ -872,8 +1052,20 @@ bool GameWindow::PollEvents() {
             default:                 evWinID = 0;                      break;
             }
             if (evWinID == dlgWinID) {
-                dlg->ProcessEventNonModal(event);
-                consumedByDialog = true;
+                bool dlgConsumed = dlg->ProcessEventNonModal(event);
+                // ARROW keys the dialog did NOT consume (no focused widget wanted
+                // them) flow on to the game-hotkey fallback → topmost area map, so
+                // the map keeps arrow-panning while an info/build/research window
+                // has keyboard focus (matches the original's app-wide accelerator;
+                // arrow-pan fix, 2026-08-07). ARROWS ONLY: a focused edit box
+                // consumes arrows (caret) so dialog text entry keeps priority, but
+                // it deliberately does NOT consume letter KEYDOWNs (text arrives
+                // via SDL_TEXTINPUT) — forwarding those would fire bare-letter map
+                // hotkeys while typing. Still break: only this dialog gets a shot.
+                bool arrowKey = ( event.type == SDL_KEYDOWN || event.type == SDL_KEYUP ) &&
+                                ( event.key.keysym.sym == SDLK_LEFT || event.key.keysym.sym == SDLK_RIGHT ||
+                                  event.key.keysym.sym == SDLK_UP   || event.key.keysym.sym == SDLK_DOWN );
+                consumedByDialog = dlgConsumed || !arrowKey;
                 break;
             }
         }
@@ -1023,6 +1215,16 @@ void GameWindow::MinimizeAll() {
     // Stand the FOCUS_GAINED group-restore down long enough for the options
     // dialog's teardown focus shuffle to pass (it would de-miniaturize us).
     m_suppressGroupRestoreMs = timeGetTime() + 2000;
+#ifdef __APPLE__
+    // macOS refuses to miniaturize a non-Space window while the Dock and menu
+    // bar are hidden (a direct -[NSWindow miniaturize:] is dropped too, so this
+    // cannot be worked around below SDL) — and hidden-bars + Spaces-off is
+    // exactly this game's configuration, so the Minimize button silently did
+    // nothing. Hand the bars back first; with a Dock to minimize into, AppKit
+    // accepts the request. They come back hidden for free: restoring the window
+    // fires FOCUS_GAINED, whose handler re-runs HideMacDockBar().
+    ShowMacDockBar();
+#endif
     if (m_window)
         SDL_MinimizeWindow(m_window);
     LogToFile("MinimizeAll: hid " + std::to_string(hidden) + " panels");
@@ -1067,9 +1269,25 @@ void GameWindow::HandleEvent(SDL_Event& event) {
                 // options when it resigns active (Cmd-Tab away), so they must be
                 // re-applied each time the game regains focus, or the launcher bar
                 // reappears over the game after an alt-tab.
+                //
+                // BUT NOT while a minimize is in flight. MinimizeAll deliberately
+                // SHOWS the bars (macOS refuses to miniaturize with them hidden) and
+                // then minimizes; the options dialog's teardown fires a FOCUS_GAINED
+                // immediately after. Re-hiding here would undo ShowMacDockBar() and
+                // re-trigger the very refusal it worked around — and if the minimize
+                // did commit, activateIgnoringOtherApps: below would leave the game
+                // active with hidden bars and NO visible window (a Dock-less desktop).
+                // Skip on the same MINIMIZED / stand-down conditions the group-restore
+                // uses; the restore-from-Dock focus gain (MINIMIZED cleared, deadline
+                // passed) still re-hides the bars as the game returns to fullscreen.
                 {
                     const char* enFs = getenv("EN_FULLSCREEN");
-                    if (!(enFs && enFs[0] == '0'))
+                    const bool minimizeInFlight =
+                        (m_window && (SDL_GetWindowFlags(m_window) & SDL_WINDOW_MINIMIZED))
+                        || timeGetTime() < m_suppressGroupRestoreMs;
+                    // Same exclusion as at creation: in usable-bounds mode we never
+                    // covered the Dock, so we must not hide it on focus either.
+                    if (!(enFs && enFs[0] == '0') && !m_macUsableFullscreen && !minimizeInFlight)
                         HideMacDockBar();
                 }
 #endif

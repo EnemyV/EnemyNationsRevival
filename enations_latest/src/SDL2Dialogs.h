@@ -316,6 +316,11 @@ public:
 protected:
     void OnInit() override;
     void OnFrame() override;
+    // Enter must behave like the Join button (validated), not the base
+    // EndDialog(1): the base default returned with m_chosenIdx == -1 and the
+    // caller indexed m_sessions[-1] — an OOB read that fed a garbage session
+    // id/name into the lobby.
+    void OnOK() override;
 private:
     void OnJoin();
     void OnRefresh();

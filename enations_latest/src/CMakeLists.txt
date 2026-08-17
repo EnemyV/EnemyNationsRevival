@@ -347,6 +347,14 @@ if (MSVC)
         wrldinit.cpp
         wrldgen.cpp
         PROPERTIES COMPILE_OPTIONS "/fp:precise")
+    # The PCH was built with the target's /fp:fast, so using it from these two
+    # /fp:precise TUs warned C4651/C4652/C4653 every build (flag mismatch). Both
+    # files #include "stdafx.h" directly, so skipping the PCH is behavior-neutral —
+    # they just compile the headers normally (same pattern as the harness TU above).
+    set_source_files_properties(
+        wrldinit.cpp
+        wrldgen.cpp
+        PROPERTIES SKIP_PRECOMPILE_HEADERS ON)
 endif ()
 
 # Phase 1g step 1: drop CMAKE_MFC_FLAG. Our own WinMain (WinMain.cpp)
@@ -585,6 +593,28 @@ add_custom_command(TARGET enations POST_BUILD
         "$<TARGET_FILE_DIR:enations>/res"
     COMMENT "Staging .cur cursor art + the bundled UI font (res/) next to the binary"
 )
+
+# macOS: refuse to finish a build that links the sdl2-compat shim. Homebrew's `sdl2` IS
+# that shim now, so pkg-config hands it to every fresh build; its colour-key compare never
+# matches the game's DIB-converted surfaces (details in the script below), so the game
+# renders every sprite on magenta. This has come back repeatedly as a
+# "release blocker" because the only guard was a post-build relink applied by hand, and a
+# step you have to remember is a step that gets skipped. The script below repairs the link
+# from a real SDL2 set and FATALs if it cannot — never a silent shim-linked binary.
+# Override the donor with -DEN_MAC_SDL2_DONOR_DIR=<dir> (default: the repo's run dir).
+if (APPLE)
+    if (NOT DEFINED EN_MAC_SDL2_DONOR_DIR)
+        set (EN_MAC_SDL2_DONOR_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../run-mac")
+    endif ()
+    add_custom_command(TARGET enations POST_BUILD
+        COMMAND ${CMAKE_COMMAND}
+            -DEN_BINARY=$<TARGET_FILE:enations>
+            -DEN_DONOR_DIR=${EN_MAC_SDL2_DONOR_DIR}
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/mac_enforce_real_sdl2.cmake"
+        COMMENT "Verifying the binary links real SDL2, not the sdl2-compat shim"
+        VERBATIM
+    )
+endif ()
 
 # Stage the intro/logo videos the menu's PlayVideo loads at runtime (assets/videos/*.mpg).
 # NOT in ENATIONS.DAT — PlayVideo reads loose files (CWD then exe dir) and silently no-ops if

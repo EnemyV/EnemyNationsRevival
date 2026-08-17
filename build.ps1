@@ -144,6 +144,9 @@ $result = [ordered]@{
     warning_count   = $warnings.Count
     errors_shown    = $truncatedErrors.Count
     errors          = @($truncatedErrors)
+    # Warnings included (capped at 60) so they are actually inspectable — the
+    # count alone forced stash-tests to attribute them (2026-08-07).
+    warnings        = @($warnings | Select-Object -First 60)
 }
 
 # Output

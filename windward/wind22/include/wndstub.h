@@ -139,6 +139,15 @@
 #define EN_LINEPASTE2_(a,b) EN_LINEPASTE_(a,b)
 #define EN_LINEPASTE(pfx) EN_LINEPASTE2_(pfx, __LINE__)
 #endif
+// Five of these are also stubbed by mfc_compat.h (as dummy `int _x = 0;` variables)
+// when include order puts it first; both sets are equivalent no-ops, but the silent
+// redefinition warned C4005 in every TU that saw both. Undef so this canonical
+// unique-typedef set wins cleanly.
+#undef ON_WM_PAINT
+#undef ON_MESSAGE
+#undef ON_COMMAND
+#undef ON_NOTIFY
+#undef ON_BN_CLICKED
   #define ON_WM_CREATE()              typedef int   EN_LINEPASTE(_wm_create_dummy_);
   #define ON_WM_DESTROY()             typedef int   EN_LINEPASTE(_wm_destroy_dummy_);
   #define ON_WM_PAINT()               typedef int   EN_LINEPASTE(_wm_paint_dummy_);

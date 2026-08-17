@@ -16,6 +16,11 @@
 // that used to be fatal).
 #define EN_GAMEPLAY_PROBES 0
 
+// GPU per-hex sprite discovery (trees/bridges): per full capture, the scanned hex bbox
+// vs the map period, and where forest hexes are lost (outside bbox / culled / bad tree
+// index / drawn). Writes spriteprobe.log in the CWD. For "trees missing when zoomed out".
+#define EN_SPRITE_PROBES  0
+
 #define EN_SEEK_SINGLEPASS 1 // SeekOpfor targeting: 1 = single-pass multi-class scan (GetOpForUnitScan), 0 = vanilla per-rung GetOpForUnit ladder
 
 #endif

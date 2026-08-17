@@ -140,6 +140,21 @@ void CMaterialBuilding::ShowStatusText( std::string& str )
     // show creating rate
     CBuildMaterials const* pBm  = GetData( )->GetBldMaterials( );
 
+    // Bio Oil (#33): with the alt toggle ON this refinery makes NO gas and never touches its
+    // own input store — BuildMaterials skips the gas path and burns GLOBAL food into oil, and
+    // Operate clears the ran-out wait. So both the input gate ("Idle") and the gas-rate line
+    // below are wrong in this mode. Same gate expression as the sim's bBioFuel.
+    if ( IsFlag( CUnit::alt_oil ) )
+    {
+        const AltOutput::AltOutputDef* pDef = AltOutput::Available( this );
+        if ( pDef )
+        {
+            str = "Converting " + CMaterialTypes::GetDesc( pDef->m_iInputMat ) +
+                  " to " + CMaterialTypes::GetDesc( pDef->m_iOutputMat );
+            return;
+        }
+    }
+
     // I1 (operator): if a required input material's store is empty the converter can't
     // produce — show "Idle" instead of the misleading theoretical-max rate ("816 steel/min"
     // with no iron/coal). Mirrors CPowerBuilding's input gate above + the runtime
@@ -246,6 +261,22 @@ void CFarmBuilding::ShowStatusText( std::string& str )
     }
 
     CBuildFarm* pBf = GetData( )->GetBldFarm( );
+
+    // Charcoal (#44): a lumber mill with the kiln ON credits NO player lumber — the harvest
+    // feeds the kiln and only the coal trickle comes out (BuildFarm's lumber branch). The
+    // harvest-rate line below would claim full lumber output; say what it actually does.
+    // Same gate expression as the sim's kiln branch.
+    if ( pBf->GetTypeFarm( ) == CMaterialTypes::lumber && IsFlag( CUnit::alt_oil ) )
+    {
+        const AltOutput::AltOutputDef* pDef = AltOutput::Available( this );
+        if ( pDef )
+        {
+            str = "Converting " + CMaterialTypes::GetDesc( pDef->m_iInputMat ) +
+                  " to " + CMaterialTypes::GetDesc( pDef->m_iOutputMat );
+            return;
+        }
+    }
+
     // Operator: actual rate, not theoretical — 0 while the sim has the farm halted.
     int iFarmRate = ( m_unitFlags & ( stopped | abandoned | event | dying ) )
                         ? 0
@@ -372,6 +403,19 @@ void CMineBuilding::ShowStatusText( std::string& str )
     // if out - say so
     if ( m_iMinerals <= 0 )
     {
+        // Fracking/Moho: an exhausted well/mine with the toggle ON is still trickling its
+        // alt output, so "Oil Exhausted" is wrong — show the actual per-minute rate.
+        CBuilding* self = (CBuilding*)this;   // IsFlag / AltOutput::Available are non-const
+        const AltOutput::AltOutputDef* pDef;
+        if ( self->IsFlag( CUnit::alt_oil ) && ( pDef = AltOutput::Available( self ) ) != nullptr &&
+             pDef->m_eMode == AltOutput::eFlatTrickle && pDef->m_pfnFlat )
+        {
+            std::string sNum = IntToStr( pDef->m_pfnFlat( GetOwner( ) ) );
+            str = strPrintf( EnLoadStdString( IDS_STAT_MATERIAL ).c_str(),
+                             CMaterialTypes::GetDesc( pDef->m_iOutputMat ).c_str( ), sNum.c_str( ) );
+            return;
+        }
+
         str = strPrintf( EnLoadStdString( IDS_EXHAUSTED ).c_str(),
                          CMaterialTypes::GetDesc( GetData( )->GetBldMine( )->GetTypeMines( ) ).c_str( ) );
         return;
@@ -3733,11 +3777,11 @@ static int fnAddAiMine( CHex*, CHexCoord hex, void* pData )
     if ( !theMinerals.Lookup( hex, pMn ) )
         return ( FALSE );
 
-    if ( pMn->GetType( ) == (int)pData )
+    if ( pMn->GetType( ) == (int)(intptr_t)pData )   // enum cookie smuggled through void*
     {
         int iDen = pMn->GetDensity( );
         iDen += ( iDen * theGame.m_iAi ) / 4;
-        if ( (int)pData == CMaterialTypes::oil )
+        if ( (int)(intptr_t)pData == CMaterialTypes::oil )
             iDen *= 2;
         pMn->SetDensity( __min( MAX_MINERAL_DENSITY, iDen ) );
 
@@ -3771,7 +3815,7 @@ void CMineBuilding::UpdateMine( )
     // for the AI we up the minerals & density
     if ( GetOwner( )->IsAI( ) )
         theMap.EnumHexes( m_hex, GetCX( ), GetCY( ), fnAddAiMine,
-                          (void*)( GetData( )->GetBldMine( )->GetTypeMines( ) ) );
+                          (void*)(intptr_t)( GetData( )->GetBldMine( )->GetTypeMines( ) ) );
 
     // pull the minerals from the ground
     CSetMin sm( GetData( )->GetBldMine( )->GetTypeMines( ) );
@@ -4385,7 +4429,10 @@ void CRepairBuilding::Serialize( CArchive& ar )
     {
         LONG iIndex;
         ar >> iIndex;
-        m_pVehRepairing = (CVehicle*)iIndex;
+        // Vehicle IDs park in the pointer fields until FixUp resolves them — the
+        // intptr_t round-trips keep the smuggling value-preserving on x64 (same
+        // bytes on disk, same in-memory values; see sprtinit.cpp PostSpriteInit).
+        m_pVehRepairing = (CVehicle*)(intptr_t)iIndex;
 
         ar >> iIndex;
         if ( m_pVehRepairing == NULL )
@@ -4399,7 +4446,7 @@ void CRepairBuilding::Serialize( CArchive& ar )
         {
             LONG id;
             ar >> id;
-            m_lstNext.AddTail( (CVehicle*)id );
+            m_lstNext.AddTail( (CVehicle*)(intptr_t)id );   // ID parked until FixUp
         }
     }
 }
@@ -4410,7 +4457,7 @@ void CRepairBuilding::FixUp( )
     CBuilding::FixUp( );
 
     if ( m_pVehRepairing != NULL )
-        m_pVehRepairing = theVehicleMap.GetVehicle( (DWORD)m_pVehRepairing );
+        m_pVehRepairing = theVehicleMap.GetVehicle( (DWORD)(uintptr_t)m_pVehRepairing );
 
     // fix the list
     POSITION pos;
@@ -4418,7 +4465,7 @@ void CRepairBuilding::FixUp( )
     {
         POSITION  prevPos = pos;
         CVehicle* pVeh    = m_lstNext.GetNext( pos );
-        pVeh              = theVehicleMap.GetVehicle( (DWORD)pVeh );
+        pVeh              = theVehicleMap.GetVehicle( (DWORD)(uintptr_t)pVeh );
         m_lstNext.SetAt( prevPos, pVeh );
     }
 }
@@ -4688,7 +4735,7 @@ void CShipyardBuilding::Serialize( CArchive& ar )
     {
         LONG iIndex;
         ar >> iIndex;
-        m_pVehRepairing = (CVehicle*)iIndex;
+        m_pVehRepairing = (CVehicle*)(intptr_t)iIndex;   // ID parked until FixUp (see above)
 
         ar >> iIndex;
         if ( iIndex == 0 )
@@ -4705,7 +4752,7 @@ void CShipyardBuilding::Serialize( CArchive& ar )
         {
             LONG id;
             ar >> id;
-            m_lstNext.AddTail( (CVehicle*)id );
+            m_lstNext.AddTail( (CVehicle*)(intptr_t)id );   // ID parked until FixUp
         }
     }
 }
@@ -4718,7 +4765,7 @@ void CShipyardBuilding::FixUp( )
     if ( m_pVehRepairing != NULL )
     {
         TRAP( );
-        m_pVehRepairing = theVehicleMap.GetVehicle( (DWORD)m_pVehRepairing );
+        m_pVehRepairing = theVehicleMap.GetVehicle( (DWORD)(uintptr_t)m_pVehRepairing );
     }
 
     // fix the list
@@ -4727,7 +4774,7 @@ void CShipyardBuilding::FixUp( )
     {
         POSITION  prevPos = pos;
         CVehicle* pVeh    = m_lstNext.GetNext( pos );
-        pVeh              = theVehicleMap.GetVehicle( (DWORD)pVeh );
+        pVeh              = theVehicleMap.GetVehicle( (DWORD)(uintptr_t)pVeh );
         m_lstNext.SetAt( prevPos, pVeh );
     }
 }
@@ -5805,9 +5852,9 @@ void CUnit::Serialize( CArchive& ar )
         m_maploc.Wrap( );
         DWORD dw;
         ar >> dw;
-        m_pUnitTarget = (CUnit*)dw;
+        m_pUnitTarget = (CUnit*)(uintptr_t)dw;   // IDs parked until FixUp (value-preserving on x64)
         ar >> dw;
-        m_pUnitOppo = (CUnit*)dw;
+        m_pUnitOppo = (CUnit*)(uintptr_t)dw;
         ar >> dw;
         m_unitFlags = (UNIT_FLAGS)dw;
         ar >> m_ptTarget;
@@ -5854,9 +5901,9 @@ void CUnit::FixUp( )
         pDd->SetDamage( min( 100, 100 - m_iDamagePer ) );
 
     if ( m_pUnitTarget != NULL )
-        m_pUnitTarget = ::GetUnit( (DWORD)m_pUnitTarget );
+        m_pUnitTarget = ::GetUnit( (DWORD)(uintptr_t)m_pUnitTarget );
     if ( m_pUnitOppo != NULL )
-        m_pUnitOppo = ::GetUnit( (DWORD)m_pUnitOppo );
+        m_pUnitOppo = ::GetUnit( (DWORD)(uintptr_t)m_pUnitOppo );
 
 #ifdef _DEBUG
     m_Initialized = TRUE;
@@ -6236,7 +6283,7 @@ void CVehicle::Serialize( CArchive& ar )
 
         DWORD dw;
         ar >> dw;
-        m_pBldg = (CBuilding*)dw;
+        m_pBldg = (CBuilding*)(uintptr_t)dw;   // ID parked until FixUp (value-preserving on x64)
         ar >> b;
         m_iEvent = (VEH_EVENT)b;
         ar >> m_hexBldg;
@@ -6267,7 +6314,7 @@ void CVehicle::Serialize( CArchive& ar )
         ar >> m_lOperMod;
 
         ar >> dw;
-        m_pTransport = (CVehicle*)dw;
+        m_pTransport = (CVehicle*)(uintptr_t)dw;
         ar >> dw;
         // Ignore the saved cargo size — it's rebuilt in FixUp from the cargo back-links
         // (the only authoritative source; m_lstCargo isn't serialized). Trusting the
@@ -6275,7 +6322,7 @@ void CVehicle::Serialize( CArchive& ar )
         // after unloading. Rebuilding from 0 heals those saves and stops double-counts.
         m_iCargoSize = 0;
         ar >> dw;
-        m_pVehLoadOn = (CVehicle*)dw;
+        m_pVehLoadOn = (CVehicle*)(uintptr_t)dw;
 
         ar >> l;
         m_iPathLen = l;
@@ -6322,11 +6369,11 @@ void CVehicle::FixUp( )
     CUnit::FixUp( );
 
     if ( m_pBldg != NULL )
-        m_pBldg = theBuildingMap.GetBldg( (DWORD)m_pBldg );
+        m_pBldg = theBuildingMap.GetBldg( (DWORD)(uintptr_t)m_pBldg );
 
     if ( m_pTransport != NULL )
     {
-        m_pTransport = theVehicleMap.GetVehicle( (DWORD)m_pTransport );
+        m_pTransport = theVehicleMap.GetVehicle( (DWORD)(uintptr_t)m_pTransport );
         if ( m_pTransport == this )
             m_pTransport = NULL;
         if ( m_pTransport != NULL )
@@ -6346,7 +6393,7 @@ void CVehicle::FixUp( )
 
     TRAP( m_pVehLoadOn != NULL );
     if ( m_pVehLoadOn != NULL )
-        m_pVehLoadOn = theVehicleMap.GetVehicle( (DWORD)m_pVehLoadOn );
+        m_pVehLoadOn = theVehicleMap.GetVehicle( (DWORD)(uintptr_t)m_pVehLoadOn );
 }
 
 void CVehicle::FixForPlayer( )

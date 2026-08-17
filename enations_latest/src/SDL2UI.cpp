@@ -1864,11 +1864,24 @@ void SDL2Dialog::Render() {
             }
         }
 #else
-        // POSIX: dialogs are SDL_WINDOW_ALWAYS_ON_TOP (topmost band) and X11/Cocoa
-        // give us no cheap z-order query, so keep the per-frame raise. NOTE: this
-        // can exhibit the same sibling z-fight as Windows did — if linux/mac repro
-        // it, port the "only re-assert over non-dialog windows" test above.
-        SDL_RaiseWindow(m_dlgWindow);
+        // POSIX: dialogs AND the detached area map are both SDL_WINDOW_ALWAYS_ON_TOP,
+        // i.e. the same window-server band, so this raise is what keeps a dialog above
+        // the map and cannot simply be dropped. But issuing it EVERY FRAME for EVERY
+        // keep-on-top dialog is one OS round trip per dialog per frame, and that is a
+        // measured game-stopper on macOS: with 5 keep-on-top dialogs open, 90% of 2s
+        // samples showed no sim advance at all, with stalls up to 22s; it degrades
+        // further with dialog count (50s at 20). 15 NON-keep-on-top dialogs cost
+        // nothing, and closing dialogs restores full speed, so the raise itself is the
+        // cost. Cocoa/X11 expose no cheap z-order query, which is why the Windows
+        // GW_HWNDPREV walk above cannot be ported literally. So re-assert on a slow
+        // cadence instead of per frame: z-order only changes on user action, and 200ms
+        // is well below the threshold of noticing while cutting the raise rate ~12x at
+        // 60fps. (mac, 2026-08-05.)
+        const Uint32 nowMs = SDL_GetTicks();
+        if ( nowMs - m_lastRaiseMs >= 200 ) {
+            m_lastRaiseMs = nowMs;
+            SDL_RaiseWindow(m_dlgWindow);
+        }
 #endif
         }
 
@@ -2251,6 +2264,20 @@ void SDL2Dialog::ShowNonModal(std::function<void(int)> onDone) {
     // Register with GameWindow for per-frame event routing and rendering
     if (m_gameWindow)
         m_gameWindow->RegisterDialog(this);
+}
+
+void SDL2Dialog::ResizeNonModal(int w, int h) {
+    if (w == m_width && h == m_height)
+        return;
+    m_width = w; m_height = h;
+    if (m_dlgWindow) {
+        SDL_SetWindowSize(m_dlgWindow, w, h);
+        // Drop SDL's cached framebuffer surface so the next GetWindowSurface
+        // returns one at the new size (same heal as the monitor-change case in
+        // RenderFrameNonModal).
+        SDL_DestroyWindowSurface(m_dlgWindow);
+    }
+    m_forceFrame = true;
 }
 
 void SDL2Dialog::RaiseAndAlert() {

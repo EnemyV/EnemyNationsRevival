@@ -479,9 +479,13 @@ public:
     // SDL window ID for this dialog's dedicated window (0 if not open)
     uint32_t GetSDLWindowID() const;
 
-    // Called by GameWindow each frame for active non-modal dialogs
-    void ProcessEventNonModal(SDL_Event& event) {
-        HandleEvent(event);
+    // Called by GameWindow each frame for active non-modal dialogs.
+    // Returns HandleEvent's consumed flag so the caller can let keys the dialog
+    // did NOT want (e.g. arrow keys with no focused widget) flow on to the
+    // app-level game-hotkey fallback — the original resolved arrows as app-wide
+    // accelerators before any window saw them (arrow-pan fix, 2026-08-07).
+    bool ProcessEventNonModal(SDL_Event& event) {
+        bool consumed = HandleEvent(event);
         // Force an immediate repaint for meaningful interaction (clicks, keys,
         // text, wheel) and for a live title-bar drag, so input stays responsive.
         // Plain hover MOTION is intentionally left to the fixed-interval throttle:
@@ -491,6 +495,7 @@ public:
         // state still updates immediately above; only the repaint is throttled.
         if (event.type != SDL_MOUSEMOTION || m_dlgDragging)
             m_forceFrame = true;
+        return consumed;
     }
     // Throttle the per-frame repaint: a non-modal dialog renders into its own
     // window and presents it every game frame, which steals frames from the game.
@@ -571,6 +576,14 @@ protected:
     // that calls this can be tucked behind the area map instead of floating on top.
     void SetKeepOnTop(bool v) { m_keepOnTop = v; }
 
+    // Resize an OPEN non-modal dialog in place (top-left anchored). The per-frame
+    // present is size-agnostic (GetWindowSurface + m_width×m_height blit), so only
+    // the SDL window, its cached framebuffer surface, and the stored dims change;
+    // the caller rebuilds its widgets for the new size (SDL2BuildingWindow::Rebuild,
+    // which resizes on the coal-liq/scrounge Production Mode toggle instead of
+    // padding the smaller mode with empty space).
+    void ResizeNonModal(int w, int h);
+
     // Override the default 13pt widget font for this dialog's labels/buttons. Lets
     // a specific window (e.g. the building-info windows) run slightly larger text
     // without changing every other dialog. A per-widget SetFontSize still wins.
@@ -640,6 +653,11 @@ private:
     // via SetKeepOnTop(false) so the user can tuck it behind the map — e.g. the
     // Relations window, which otherwise felt "stuck on top".
     bool m_keepOnTop = true;
+
+    // POSIX only: when this dialog last re-asserted its z-order. The raise is an OS
+    // round trip and used to be issued EVERY FRAME for EVERY keep-on-top dialog; see
+    // the #else branch in RenderFrame for the measurements that made that untenable.
+    Uint32 m_lastRaiseMs = 0;
 
     // Per-frame repaint throttle for the non-modal path (see RenderFrameNonModal).
     Uint32 m_lastFrameMs = 0;

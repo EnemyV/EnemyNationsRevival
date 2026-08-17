@@ -620,6 +620,12 @@ class CAnimAtr
     // (window = (content >> m_iZoom) - m_ptUL, so this is the un-scaled, un-panned mesh.)
     void   MapToContentHex( const CHexCoord&, CPoint[4] ) const;
     CPoint WorldToViewContent( const CMapLoc3D& ) const;
+    // Same projections for an EXPLICIT camera direction (not m_iDir). Pure functions of
+    // (input, dir) — no other view state — which lets the GPU whole-map underlay PREWARM
+    // other directions' backdrops during idle frames (SDL2Terrain BuildMapUnderlay), so a
+    // rotate + zoom-out finds its backdrop built instead of a black ring.
+    void   MapToContentHex( const CHexCoord&, CPoint[4], int iDir ) const;
+    CPoint WorldToViewContent( const CMapLoc3D&, int iDir ) const;
 
     BOOL   WorldToWindowHex( CMapLoc3D[4], CPoint[4] ) const;
     CPoint WorldToWindow( CMapLoc3D maploc3d ) const { return ViewToWindow( WorldToView( maploc3d ) ); }

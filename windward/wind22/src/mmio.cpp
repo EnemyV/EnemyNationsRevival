@@ -167,11 +167,10 @@ void CMmioEmbeddedFile::Open( HANDLE hFile, const char* pFileName ) {
     (void)memset( &info, 0, sizeof( info ) );
     info.fccIOProc = FOURCC_DOS;
     info.pchBuffer = NULL;
-#ifdef _WIN32
-    info.adwInfo[0] = (DWORD)hFile; // NOTE: Added C style cast. This will explode on x64!
-#else
-    info.adwInfo[0] = (DWORD_PTR)hFile; // Linux: adwInfo is pointer-width; no truncation.
-#endif
+    // adwInfo is DWORD_PTR (pointer-width) on both the Win64 SDK and the POSIX shim —
+    // one cast serves both; the old (DWORD)hFile Win branch truncated the HANDLE
+    // (benign in practice — NT handles fit 32 bits — but wrong in principle).
+    info.adwInfo[0] = (DWORD_PTR)hFile;
 
 
     this->m_hMmio = mmioOpen( NULL, &info, MMIO_READ | MMIO_DENYWRITE | MMIO_ALLOCBUF );

@@ -7,6 +7,13 @@
 
 #include "CdLoc.h"
 #include "cpufeatures.h"   // EnCpu — runtime ISA detection/dispatch (GH #8)
+#ifndef _WIN32
+#include <fcntl.h>     // open  — POSIX single-instance flock guard (see FindWindow site)
+#include <unistd.h>    // close, getuid
+#include <sys/file.h>  // flock
+#include <errno.h>     // errno    — report WHY the singleton lock could not be opened
+#include <string.h>    // strerror
+#endif
 #include "GameWindow.h"
 #include "en_harness.h"   // in-process LLM-driving harness (all platforms; EN_HARNESS-gated)
 #include "SDL2Compositor.h"
@@ -117,7 +124,7 @@ void trans_func( unsigned int u, EXCEPTION_POINTERS* pExp )
             break;
 
         // if it's code we save it (write because badcode only checks if can read)
-        if ( ( IsBadWritePtr( (void*)*pCall, 4 ) ) && ( !IsBadCodePtr( (FARPROC)*pCall ) ) )
+        if ( ( IsBadWritePtr( (void*)(uintptr_t)*pCall, 4 ) ) && ( !IsBadCodePtr( (FARPROC)(uintptr_t)*pCall ) ) )
             if ( ( iInd < 3 ) || ( ( *pCall & 0x80000000 ) == 0 ) )
                 exp.m_stack[iInd++] = *pCall;
     }
@@ -192,7 +199,7 @@ void CatchSE( SE_Exception e )
         strcpy( sNum2, "Stack Overflow" );
         break;
     default:
-        itoa( (int)e.m_pExCode, sNum2, 16 );
+        itoa( (int)(intptr_t)e.m_pExCode, sNum2, 16 );   // NT exception codes fit 32 bits (display only)
         break;
     }
     for ( int iOn = 0; iOn < 5; iOn++ ) itoa( e.m_stack[iOn], sNumS[iOn], 16 );
@@ -700,6 +707,71 @@ BOOL CConquerApp::InitInstance( )
     }
 
     HWND hPrevWnd = ::FindWindow( m_sClsName.c_str(), m_sAppName.c_str() );
+#ifndef _WIN32
+    // POSIX single-instance guard. FindWindow is a NULL stub on POSIX (win32_compat.h),
+    // so the Win check never fires and repeated launches stack live clients — which
+    // corrupts MP sessions (ghost players, contradictory inputs, append-mode log
+    // contamination) and invalidates every smoke a POSIX node joins. This is a release
+    // gate (LinuxOpus root-cause f70a02b). Hold an advisory flock for our whole lifetime:
+    // the FIRST instance acquires it; a second launch cannot and is REFUSED OUTRIGHT below
+    // (it must NOT be routed to the IDS_MULT_INST prompt — see the note at that site). The
+    // lock releases automatically on exit OR crash (kernel drops the fd) — no stale-PID file.
+    // EN_ALLOW_MULTI=1 bypasses it for dev/harness scenarios that intentionally run two.
+    {
+        const char* allowMulti = getenv( "EN_ALLOW_MULTI" );
+        if ( !( allowMulti && allowMulti[0] == '1' ) )
+        {
+            // Per-USER lock path, and DELIBERATELY NOT taken from the environment.
+            //
+            // Two constraints have to hold at once. (1) It must be per-uid: a fixed
+            // "/tmp/.enations.singleton.lock" is a shared namespace and was created 0644
+            // (owner-write only), so a SECOND user's open(O_RDWR) returned EACCES, the fd
+            // stayed -1, the guard's && short-circuited, and single-instance protection
+            // turned itself off *silently* — the exact failure this gate exists to stop.
+            // (2) It must resolve to the SAME file for every launch by that user, however
+            // the process was started. Deriving it from $XDG_RUNTIME_DIR (with a $TMPDIR
+            // fallback) satisfied (1) but broke (2): a desktop/terminal launch has
+            // XDG_RUNTIME_DIR and a script/cron/systemd/setsid/su launch usually does not,
+            // so the two locked DIFFERENT files, BOTH flocks succeeded and BOTH copies ran.
+            // That was measured on this binary — /run/user/<uid>/enations.lock held, a
+            // launch with XDG_RUNTIME_DIR unset was NOT refused, created and locked
+            // /tmp/enations-<uid>.lock, and kept running. Every earlier test held the
+            // environment constant across both launches, which is why it read as closed.
+            //
+            // A hardcoded path carrying the uid satisfies both: env-independent by
+            // construction, per-user by name, still opened 0600 so no cross-uid EACCES.
+            // /tmp is guaranteed to exist on linux and mac. (A PrivateTmp / per-namespace
+            // /tmp would still diverge, but that is true of any filesystem lock and is far
+            // rarer than the env difference this replaces.)
+            std::string sLock = "/tmp/enations-" + std::to_string( (long) getuid( ) ) + ".lock";
+
+            static int s_singletonFd = -1;   // held for the whole process lifetime
+            s_singletonFd = ::open( sLock.c_str( ), O_CREAT | O_RDWR | O_CLOEXEC, 0600 );
+            if ( s_singletonFd < 0 )
+                // Still fail OPEN — an unwritable lock dir must never stop someone
+                // playing — but never fail SILENTLY, or "the guard protected us" and
+                // "the guard could not run" look identical in the logs.
+                fprintf( stderr, "[singleton] cannot open lock file '%s' (%s) — "
+                                 "single-instance protection is OFF for this run\n",
+                         sLock.c_str( ), strerror( errno ) );
+            else if ( ::flock( s_singletonFd, LOCK_EX | LOCK_NB ) != 0 )
+            {
+                ::close( s_singletonFd );
+                s_singletonFd = -1;
+                // HARD-REFUSE on POSIX — do NOT fall through to the IDS_MULT_INST prompt.
+                // The prompt offers "start a second copy anyway", and a headless/scripted
+                // launch (the smoke harness) never answers IDYES, so it fell through and
+                // STACKED copies — the exact multi-instance contamination this gate exists
+                // to stop (QA hard-blocked hours on it). A second POSIX instance now exits
+                // immediately. EN_ALLOW_MULTI=1 (checked above) is the escape hatch for
+                // anyone who deliberately wants two. Windows keeps its FindWindow+prompt.
+                fprintf( stderr, "[singleton] another Second Chance instance is running — "
+                                 "refusing to start a second copy (set EN_ALLOW_MULTI=1 to override)\n" );
+                return ( FALSE );
+            }
+        }
+    }
+#endif
     if ( hPrevWnd != NULL )
         if ( EnMessageBox( IDS_MULT_INST, MB_YESNO | MB_ICONQUESTION ) == IDYES )
         {
@@ -1399,7 +1471,13 @@ BOOL CConquerApp::InitInstance( )
 
 // time the CD // we dont have a cd anymore
             m_iCdSpeed = 100; // assume fast CD drive
-#ifndef _GG && 0
+// Was `#ifndef _GG && 0` — the author's intent was to disable the CD-speed timing
+// below (hence the hardcode above), but the preprocessor IGNORES tokens after the
+// identifier (the C4067 warning), and _GG is defined nowhere — so the "dead" block
+// still RAN: it overwrote m_iCdSpeed from the profile / a disk-read timing loop,
+// which on a slow first read could drop below 4 and silently force midi_only music
+// (see the m_iCdSpeed < 4 test below). #if 0 = what was meant. (2026-08-07)
+#if 0
             if ( ( m_iCdSpeed = EnGetProfileInt( "Advanced", "CDspeed", 0 ) ) <= 0 )
             {
                 CFile* pFile = theDataFile.OpenAsFile( "music" );
@@ -1565,8 +1643,12 @@ BOOL CConquerApp::InitInstance( )
         {
             // Temporarily open SDL_mixer so video audio works via Mix_HookMusic.
             // PostIntro() will call theMusicPlayer.Open() later for the full init.
+            // allowed_changes = 0: the video hook feeds raw 22050/S16/stereo (its 44100→
+            // 22050 downsample ratio is compile-time) — Mix_OpenAudio's default flags let
+            // WASAPI open at the endpoint rate (48kHz) with NO conversion → sped-up intro
+            // audio (same root as the in-game chipmunk fix in CMusicPlayer::OpenDigital).
             bool tempAudio = false;
-            if ( Mix_OpenAudio( 22050, AUDIO_S16SYS, 2, 2048 ) == 0 )
+            if ( Mix_OpenAudioDevice( 22050, AUDIO_S16SYS, 2, 2048, NULL, 0 ) == 0 )
                 tempAudio = true;
 
             if ( m_gameWindow )

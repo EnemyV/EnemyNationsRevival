@@ -9,6 +9,9 @@
 /cmakeBuild/
 /build-linux/
 /build-linux-release/
+/build-mac/
+/build-mac-rel/
+/vdmplay.ini
 __pycache__/
 /Debug/
 /Release/

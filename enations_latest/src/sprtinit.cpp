@@ -235,15 +235,17 @@ void CExplData::InitData(CMmio *pMmio) {
 
 void CExplData::PostSpriteInit() {
 
-    if ((int) m_pProjSprite == -1)
+    // The pointer fields hold small sprite INDICES (or -1) between load and this
+    // fixup — intptr_t round-trip keeps the smuggling value-preserving on x64.
+    if ((intptr_t) m_pProjSprite == -1)
         m_pProjSprite = NULL;
     else
-        m_pProjSprite = theEffects.GetSprite(CEffect::projectile, (int) m_pProjSprite);
+        m_pProjSprite = theEffects.GetSprite(CEffect::projectile, (int)(intptr_t) m_pProjSprite);
 
-    if ((int) m_pExpSprite == -1)
+    if ((intptr_t) m_pExpSprite == -1)
         m_pExpSprite = NULL;
     else
-        m_pExpSprite = theEffects.GetSprite(CEffect::explosion, (int) m_pExpSprite);
+        m_pExpSprite = theEffects.GetSprite(CEffect::explosion, (int)(intptr_t) m_pExpSprite);
 }
 
 void CExplGrp::InitData() {

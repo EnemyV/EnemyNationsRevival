@@ -177,7 +177,7 @@ void CPlayer::ctor( )
     // Cadences (game-min per sample) x 120 slots = the ranges the graph buttons
     // advertise: 5x120=10m, 15x120=30m, 150x120=5h REAL time (~1 game-min/sec).
     {
-        static const int _hrCad[HR_RINGS] = { 5, 15, 150 };
+        static const int _hrCad[HR_RINGS] = { 5, 30, 300 };   // 10m / 1h / 10h graph ranges (x120 samples)
         memset( m_aHR, 0, sizeof( m_aHR ) );
         for ( int r = 0; r < HR_RINGS; r++ ) {
             m_iHRHead[r] = m_iHRCount[r] = 0;
@@ -687,7 +687,7 @@ void CPlayer::SampleHistory( )
     // time-range buttons: each ring keeps a sample every N game-minutes.
     // Keep in lock-step with the init table in CPlayer::ctor (5/15/150 = the
     // 10m/30m/5h graph ranges).
-    static const int _hrCad[HR_RINGS] = { 5, 15, 150 };
+    static const int _hrCad[HR_RINGS] = { 5, 30, 300 };   // 10m / 1h / 10h graph ranges (x120 samples)
     LONG hv[HR_SERIES] = { m_iPwrHave, m_iPwrNeed, GetPplTotal( ), m_iPplBldg,
                            m_iAptCap, m_iOfcCap, m_iPplNeedBldg };
     for ( int r = 0; r < HR_RINGS; r++ ) {
@@ -704,15 +704,15 @@ void CPlayer::SampleHistory( )
 
 // Rebuild the runtime multi-resolution rings from the (just-deserialized)
 // per-minute history buffer. The rings aren't in the save format; without this
-// the 10m/30m graph ranges start EMPTY on every load (the history "vanishes"
+// the 10m/1h graph ranges start EMPTY on every load (the history "vanishes"
 // across a save/load). Decimating the saved buffer at each ring's cadence,
 // newest-anchored, restores up to 120 game-min of coarse history immediately.
-// The 5h ring (150 min/sample) can get at most 1 seed from a 120-sample buffer
+// The 10h ring (300 min/sample) can get at most 1 seed from a 120-sample buffer
 // — it stays on the graph's degrade-to-finer-source fallback and fills over play.
 void CPlayer::SeedHRFromHist( )
 {
     // Keep in lock-step with the cadence tables in ctor( ) and SampleHistory( ).
-    static const int _hrCad[HR_RINGS] = { 5, 15, 150 };
+    static const int _hrCad[HR_RINGS] = { 5, 30, 300 };   // 10m / 1h / 10h graph ranges (x120 samples)
 
     for ( int r = 0; r < HR_RINGS; r++ )
     {
@@ -811,7 +811,12 @@ void CPlayer::Research( int iNumSec )
     if ( pRs->m_iPtsDiscovered > pRi->m_iPtsRequired * 2 )
         bFoundIt = TRUE;
     else if ( pRs->m_iPtsDiscovered > pRi->m_iPtsRequired )
-        if ( RandNum( pRs->m_iPtsDiscovered * iNum ) > pRi->m_iPtsRequired * iNum )
+        // Both sides used to be scaled by iNum, which cancels out of the comparison
+        // (P[U(0,A*k) > B*k] == P[U(0,A) > B]) but overflowed int in long games
+        // (m_iPtsDiscovered is unbounded) making RandNum's argument NEGATIVE ->
+        // rand.cpp:49 assert. Drop the factor: identical odds, no overflow. Research
+        // runs only for local players, so no cross-machine RNG-stream impact.
+        if ( RandNum( pRs->m_iPtsDiscovered ) > pRi->m_iPtsRequired )
             bFoundIt = TRUE;
 
     if ( !bFoundIt )

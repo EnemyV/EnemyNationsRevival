@@ -3882,9 +3882,16 @@ void CWndArea::ResClicked( )
                     break;
                 }
                 default:
-                    pHex->m_psprite = theTerrain.GetSprite(
-                        pHex->GetVisibleType( ), RandNum( theTerrain.GetCount( pHex->GetVisibleType( ) ) - 1 ) );
+                {
+                    // A type with no sprites loaded fed RandNum(0-1 = -1) ->
+                    // rand.cpp:49 assert on the fog-reveal path. Keep the hex's
+                    // current sprite rather than indexing an empty set.
+                    int nSpr = theTerrain.GetCount( pHex->GetVisibleType( ) );
+                    if ( nSpr > 0 )
+                        pHex->m_psprite = theTerrain.GetSprite(
+                            pHex->GetVisibleType( ), RandNum( nSpr - 1 ) );
                     break;
+                }
                 }
             }
 
@@ -6967,7 +6974,11 @@ CWndInfo* CWndInfo::Create( CPoint& pt, CUnit* pUnit, CWndArea* pPar )
         m_pdib = new CDIB( ptrthebltformat->GetColorFormat( ), CBLTFormat::DIB_MEMORY,
                            ptrthebltformat->GetMemDirection( ), rectWin.Width( ), rectWin.Height( ) );
 
-    return ( (CWndInfo*)CWndBase::Create( NULL, pUnit->GetData( )->GetDesc( ).c_str(), dwStyle, rectWin, pPar, 100, NULL ) );
+    // CWndBase::Create returns BOOL; the old (CWndInfo*)BOOL cast returned the literal
+    // pointer 0x1 on success — callers could only ever null-check it. Return a real
+    // pointer so a caller may also legitimately use it.
+    return ( CWndBase::Create( NULL, pUnit->GetData( )->GetDesc( ).c_str(), dwStyle, rectWin, pPar, 100, NULL )
+                 ? this : NULL );
 }
 
 static void _DrawText( CDC* pDc, CRect& rect, char const* sText, BOOL bRed = FALSE );
@@ -7702,6 +7713,24 @@ static CPoint HarnessHexToWindow( CAnimAtr& aa, const CHexCoord& hex )
 // parsers read fields 1-5); poll it for "operational" to know the info window
 // will open (a foundation/constructing building's info window stays closed).
 //---------------------------------------------------------------------------
+void HarnessDumpSelection( std::string& out )
+{
+    out.clear( );
+
+    CWndArea* a = theAreaList.GetTop( );
+    if ( a == NULL )
+    {
+        out = "err no-area-window\n";
+        return;
+    }
+    CUnit* pPrimary = a->GetUnit( );
+    char line[256];
+    snprintf( line, sizeof( line ), "sel count %d primary %s\n",
+              a->NumSelected( ),
+              pPrimary ? pPrimary->GetData( )->GetDesc( ).c_str( ) : "(none)" );
+    out = line;
+}
+
 void HarnessDumpUnits( std::string& out )
 {
     out.clear( );

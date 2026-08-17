@@ -228,8 +228,27 @@ void CNetApi::DeletePlayer( VPPLAYERID idTo )
     vpKillPlayer( m_vpSession, idTo );
 }
 
+// Network-teardown guard. CNetApi::Close/CloseSession call theApp.BaseYield() to drain
+// pending messages, and BaseYield re-enters GameWindow::PollEvents — so a queued mouse
+// move gets routed into unit hit-testing (CWndArea::OnMouseMove -> CVehicle::IsHit ->
+// CSpriteView::IsHitClip) WHILE the session is being torn down, walking sprite/DIB state
+// the teardown is dismantling -> SIGSEGV (LinuxOpus core dump, disconnect path; the
+// operator's "game froze when a player exited"). Dispatching gameplay input during
+// teardown is wrong by construction. PollEvents consults EnNetIsTearingDown() and drops
+// input events while this is non-zero — the message drain still happens, only gameplay
+// input dispatch is suppressed. A depth counter handles Close()->CloseSession() nesting.
+static int g_netTeardownDepth = 0;
+bool EnNetIsTearingDown() { return g_netTeardownDepth > 0; }
+namespace {
+    struct NetTeardownGuard {
+        NetTeardownGuard()  { ++g_netTeardownDepth; }
+        ~NetTeardownGuard() { --g_netTeardownDepth; }
+    };
+}
+
 void CNetApi::CloseSession( BOOL bDelayClose )
 {
+    NetTeardownGuard _td;   // suppress gameplay-input dispatch during the BaseYield drains
 
     if ( m_vpSession != NULL )
     {
@@ -277,6 +296,8 @@ void CNetApi::Close( BOOL bDelayClose )
         fprintf( stderr, "[join-addr] CNetApi::Close(delay=%d) ENTER: m_vpHdl=%p (will vpCleanup->NULL it unless delayed) — who called Close between OpenClient and Join?\n",
                  (int)bDelayClose, (void*)m_vpHdl );
 
+    NetTeardownGuard _td;   // suppress gameplay-input dispatch during the BaseYield drains
+
     m_iMode = closed;
     m_iType = closed;
 
@@ -303,12 +324,27 @@ void CNetApi::Close( BOOL bDelayClose )
     theApp.BaseYield( );
 }
 
+void EnMpDiagLog( const char* fmt, ... );   // [mp-plyr] trace (defined below)
+
 BOOL CNetApi::Send( VPPLAYERID idTo, LPCVPMSGHDR pData, int iLen )
 {
 
     ASSERT( iLen <= VP_MAXSENDDATA );
     ASSERT( idTo != 0 );
     ASSERT( theGame.GetMyNetNum( ) != 0 );
+
+    // A departed player's netnum is set to 0 on leave (OnMsgLeave -> pPlr->SetNetNum(0)).
+    // In-flight game messages processed after that leave can still target the player, so
+    // idTo arrives as 0 here. netnum 0 is never a deliverable target — treat it exactly
+    // like the "target no longer exists" case below and drop the send. Without this the
+    // send to 0 falls through to the tail ThrowError(ERR_TLP_QUIT) = the intermittent DC
+    // crash (exception 536870943) when a player exits. A genuine failed send to a REAL,
+    // still-present player still quits (unchanged).
+    if ( idTo == 0 )
+    {
+        EnMpDiagLog( "Send: dropped msg to departed player (idTo==0, len=%d) — no crash", iLen );
+        return ( FALSE );
+    }
 
     if ( vpSendData( m_vpSession, idTo, theGame.GetMyNetNum( ), pData, iLen, VP_MUSTDELIVER, NULL ) )
         return ( FALSE );
@@ -1056,7 +1092,7 @@ LRESULT CNetApi::OnNetMsg( WPARAM wParam, LPARAM lParam )
         TRAP( );
         break;
     case VP_JOIN:
-        ::OnMsgJoin( pVpMsg->u.playerInfo, (BOOL)pVpMsg->userData, VPGETERRORCODE( pVpMsg->notificationCode ) );
+        ::OnMsgJoin( pVpMsg->u.playerInfo, (BOOL)(INT_PTR)pVpMsg->userData, VPGETERRORCODE( pVpMsg->notificationCode ) );   // BOOL smuggled through LPVOID
         break;
 
     case VP_LEAVE:

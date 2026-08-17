@@ -57,14 +57,30 @@ int main(int argc, char** argv) {
         if ( SDL_GetDesktopDisplayMode( 0, &dm ) == 0 && dm.w > 0 && dm.h > 0 ) {
             int scrW = dm.w, scrH = dm.h;
 #ifdef __APPLE__
-            // #47 symptom-5 (opt-in, default OFF): when EN_MAC_USABLE_FULLSCREEN is set,
-            // render to the display's USABLE bounds (excl. Dock + menu bar) so the matching
-            // window (GameWindow.cpp, same flag) sits in the usable area instead of under
-            // the Dock. Usable bounds are <= the desktop size already used here, so there is
-            // no new terrain-rasterizer envelope risk. Default OFF = full desktop (unchanged).
+            // #47 symptom-5 — OPT-IN, DEFAULT OFF (briefly defaulted ON on 2026-08-05;
+            // reverted 08-08). Set EN_MAC_USABLE_FULLSCREEN=1 to render to the display's
+            // USABLE bounds (excl. Dock + menu bar) so the matching window (GameWindow.cpp,
+            // same flag) sits in the usable area. Default OFF = full desktop, i.e. a real
+            // fullscreen game: defaulting it ON left the menu bar and Dock occupying their
+            // strips, which cost ~106px and stopped the game being fullscreen at all. The
+            // Dock-covering-the-bottom-bar problem is fixed in HideMacDockBar instead, by
+            // hiding the bars outright rather than auto-hiding them.
+            // Usable bounds are <= the desktop size already used here, so there is
+            // no new terrain-rasterizer envelope risk.
+            //
+            // Why the default flipped: measured on a 1280x720 mac display, usable bounds end
+            // at y=645 while the game window was granted the full 0..720, and the button bar
+            // occupies 654..720 (m_iRow3 = clientH - TOOLBAR_HT, toolbar.cpp:165). The Dock
+            // composites at window layer 20 versus the game's 0, so the bar is drawn
+            // correctly and then covered - the operator's "bottom bar isn't visible" and
+            // "the launcher is on top, unplayable". Hiding the Dock only auto-hides it, and
+            // an auto-hidden Dock re-reveals exactly at the bottom screen edge where the bar
+            // lives. Sizing to usable bounds removes the overlap by construction.
+            // See docs/investigations/mac-bottom-bar-hidden-by-dock.md.
             const char* usableFs = getenv( "EN_MAC_USABLE_FULLSCREEN" );
+            const bool  usableOn = usableFs && usableFs[0] && usableFs[0] != '0';
             SDL_Rect usable;
-            if ( usableFs && usableFs[0] && usableFs[0] != '0'
+            if ( usableOn
                  && SDL_GetDisplayUsableBounds( 0, &usable ) == 0
                  && usable.w > 0 && usable.h > 0 ) {
                 scrW = usable.w;
