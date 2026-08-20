@@ -1,10 +1,10 @@
 # Building Enemy Nations (Release 3)
 
 Enemy Nations is being revived as a **64-bit, cross-platform (Windows / Linux / macOS),
-SDL2-based** build of the 1996 Windward Studios RTS — no MFC, no DirectDraw. This guide
+SDL2-based** build of the 1996 Windward Studios RTS. No MFC, no DirectDraw. This guide
 takes you from a clean checkout to a running game.
 
-> **Just want to play?** Grab a prebuilt archive from the **Releases** page instead — each
+> **Just want to play?** Grab a prebuilt archive from the **Releases** page instead. Each
 > is self-contained (game + data + libraries) for Windows x64, Linux x64, and macOS arm64.
 > This guide is for building **from source**.
 
@@ -14,11 +14,11 @@ takes you from a clean checkout to a running game.
 
 | Platform | Configure | Build | Output binary |
 |----------|-----------|-------|---------------|
-| **Windows x64** (MSVC) | `cmake -S . -B cmakeBuild-x64 -A x64` | `./build.ps1 -Release -x64` *(or open `cmakeBuild-x64\Enations.sln` in VS 2022 → build **enations**, `Release`/`x64`)* | `cmakeBuild-x64\enations_latest\src\Release\enations.exe` |
+| **Windows x64** (MSVC) | `cmake -S . -B cmakeBuild-x64 -A x64` | `./build.ps1 -Release -x64` *(or open `cmakeBuild-x64\Enations.sln` in VS 2022 and build **enations**, `Release`/`x64`)* | `cmakeBuild-x64\enations_latest\src\Release\enations.exe` |
 | **Linux x64** (gcc) | `cmake -S . -B build -DCMAKE_BUILD_TYPE=Release` | `cmake --build build --target enations -j$(nproc)` | `build/enations_latest/src/enations` |
 | **macOS** (Apple Silicon, clang) | `cmake -S . -B build-mac -DCMAKE_BUILD_TYPE=Release` | `cmake --build build-mac --target enations -j8` | `build-mac/enations_latest/src/enations` |
 
-All platforms then need the game-data file **`ENations.dat`** at runtime — see
+All platforms then need the game-data file **`ENations.dat`** at runtime. See
 [Game data & running](#3-game-data--running).
 
 ---
@@ -26,11 +26,11 @@ All platforms then need the game-data file **`ENations.dat`** at runtime — see
 ## 0. Prerequisites
 
 **Windows (the primary developer build):**
-- **Visual Studio 2022** with the **“Desktop development with C++”** workload (MSVC v143
+- **Visual Studio 2022** with the **"Desktop development with C++"** workload (MSVC v143
   toolset + a Windows 10/11 SDK).
-- **CMake ≥ 3.11** (the one bundled with VS works, or install standalone and put it on `PATH`).
+- **CMake >= 3.11** (the one bundled with VS works, or install standalone and put it on `PATH`).
 - **Git**.
-- SDL2 is **vendored** in `tools/sdl2/` (SDL2 2.30.12 + ttf + mixer + glew) — **nothing to install.**
+- SDL2 is **vendored** in `tools/sdl2/` (SDL2 2.30.12 + ttf + mixer + glew). **Nothing to install.**
 
 **Linux (x64):**
 - `gcc`/`g++` (e.g. `build-essential`), **CMake**, **Ninja** or Make, **pkg-config**.
@@ -51,16 +51,16 @@ cd EnemyNationsRevival
 ```
 
 The repo root holds the top-level `CMakeLists.txt`. The live game code is in
-**`enations_latest/src/`** (other `enations/src*` trees are read-only historical snapshots —
-don’t build those).
+**`enations_latest/src/`** (other `enations/src*` trees are read-only historical snapshots,
+don't build those).
 
 ---
 
 ## 2. Configure & build
 
-CMake generates everything; **always configure through CMake — do not open the legacy
-`.dsp` / `.mak` / hand-written project files directly** (that’s the usual cause of the
-errors in §4).
+CMake generates everything. **Always configure through CMake; do not open the legacy
+`.dsp` / `.mak` / hand-written project files directly** (that's the usual cause of the
+errors in section 4).
 
 ### Windows
 
@@ -68,7 +68,7 @@ errors in §4).
 # From the repo root. Generates the VS solution into cmakeBuild-x64\ for the 64-bit target.
 cmake -S . -B cmakeBuild-x64 -A x64
 
-# Build it — either the wrapper (Release, x64):
+# Build it, either with the wrapper (Release, x64):
 ./build.ps1 -Release -x64
 #   ...or open cmakeBuild-x64\Enations.sln in Visual Studio 2022,
 #   set the configuration to Release / x64, and build the "enations" project.
@@ -76,8 +76,8 @@ cmake -S . -B cmakeBuild-x64 -A x64
 
 - Result: `cmakeBuild-x64\enations_latest\src\Release\enations.exe`.
 - `build.ps1` is a thin MSBuild wrapper that prints the first N parsed errors with source
-  context (full flags: `./build.ps1 -h` / see the header of the script). `-Release` selects
-  the Release config; **`-x64`** selects the 64-bit target (the release target — without it
+  context (full flags: `./build.ps1 -h`, or see the header of the script). `-Release` selects
+  the Release config; **`-x64`** selects the 64-bit target (the release target; without it
   the wrapper builds the legacy Win32 target in `cmakeBuild\`).
 - 32-bit (legacy) instead: `cmake -S . -B cmakeBuild -A Win32` then `./build.ps1 -Release`.
 - Available configurations: `Debug`, `Release`, `Profile`, `Sanitize`.
@@ -91,7 +91,7 @@ cmake --build build --target enations -j"$(nproc)"
 
 - Result: `build/enations_latest/src/enations`.
 - SDL2 is found via `pkg-config` (the vendored Windows `tools/sdl2` is MSVC-only). Only the
-  game (`enations`) and its support library (`wind22`) build on Linux — the Windows-only
+  game (`enations`) and its support library (`wind22`) build on Linux; the Windows-only
   asset/build tools (`rif_converter`, `makeriff`, `sprite`, `cdf`, `compit`, `vdmplay`,
   `iserve` GUI) are skipped automatically.
 
@@ -109,7 +109,7 @@ cmake --build build-mac --target enations -j8
 
 ## 3. Game data & running
 
-The engine needs the original data archive **`ENations.dat`** (~516 MiB) — it is **not in the
+The engine needs the original data archive **`ENations.dat`** (~516 MiB). It is **not in the
 repo** (it ships on the 1997 game CD / the later freeware release; a download link is in
 `readme.adoc`). The renderer also wants the baked GPU terrain set under `data/terrain_gpu/`.
 
@@ -132,7 +132,7 @@ SDL2 DLLs (the Releases archive layout).
 
 > **Trial-data note (Linux/macOS).** The 1997 CD `ENATIONS.DAT` is the 30-day-trial pressing,
 > so the engine checks for an installer-written registry value and tries to play the (VFW/Indeo)
-> intro movie. On POSIX the “registry” is a flat file at `~/.config/enations/registry.ini`; seed
+> intro movie. On POSIX the "registry" is a flat file at `~/.config/enations/registry.ini`; seed
 > it to emulate a fresh install and skip the intro:
 > ```
 > HKLM\SOFTWARE\Microsoft\DOS Emulation\xCompatibility\CD-ROM=4:41
@@ -144,31 +144,31 @@ SDL2 DLLs (the Releases archive layout).
 ## 4. Troubleshooting (incl. the common first-time errors)
 
 **`wind40d.lib` (or `wind22.lib`) not found / unresolved externals.**
-That’s the support library (`windward/wind22/`). It is built **as part of the CMake build**, and
-CMake wires it as a dependency of `enations`. If it’s “missing,” you almost certainly opened the
+That's the support library (`windward/wind22/`). It is built **as part of the CMake build**, and
+CMake wires it as a dependency of `enations`. If it's "missing," you almost certainly opened the
 game project file directly instead of building the **CMake-generated** solution/target. Run the
-`cmake -S . -B …` configure step first, then build `enations` from the generated solution (or via
+`cmake -S . -B ...` configure step first, then build `enations` from the generated solution (or via
 `build.ps1` / `cmake --build`).
 
-**“needs `stdafx.h` at the top of each file” / “compiler options are incompatible.”**
+**"needs `stdafx.h` at the top of each file" / "compiler options are incompatible."**
 These come from trying to compile the **legacy MSVC-6-era project files** (`.dsp`/`.mak`) or a
 stale hand-made `.vcxproj`. The current build does **not** use precompiled `stdafx.h` and sets all
-flags/macros itself — so use the CMake-generated project, not the old ones. The dead `.dsp`/`.mak`
+flags/macros itself, so use the CMake-generated project, not the old ones. The dead `.dsp`/`.mak`
 files are kept for history but are **not** the build system.
 
 **MSBuild prints thousands of lines / a hook blocks raw `msbuild`.**
-That’s a developer-convenience hook in this repo — use **`./build.ps1`** (the wrapper) or open the
+That's a developer-convenience hook in this repo. Use **`./build.ps1`** (the wrapper) or open the
 solution in Visual Studio. It does not affect building from a fresh clone elsewhere.
 
 **Linux/macOS: `Could NOT find PkgConfig` / SDL2 packages.**
-Install `pkg-config` and the SDL2 dev packages (see §0). On macOS make sure Homebrew’s `pkg-config`
-is on `PATH`.
+Install `pkg-config` and the SDL2 dev packages (see section 0). On macOS make sure Homebrew's
+`pkg-config` is on `PATH`.
 
 **Want a debug/developer build?** Use the `Debug` configuration (`./build.ps1 -x64` without
 `-Release` on Windows, or `-DCMAKE_BUILD_TYPE=Debug` on Linux/macOS). Cheat/debug mode is a
-compile-time flag (it then reads which cheats to enable from runtime settings) — it is not enabled
+compile-time flag (it then reads which cheats to enable from runtime settings); it is not enabled
 in a stock Release build.
 
 ---
 
-*Questions or a step that didn’t work? Open an issue — and a PR improving this guide is welcome.*
+*Questions or a step that didn't work? Open an issue. A PR improving this guide is welcome.*

@@ -1,12 +1,8 @@
 = Enemy Nations
-Blair "Bobbias" Stacey <bobbias@gmail.com>
-v1.0, $DATE$
 :toc:
 :imagesdir: /
 :homepage: https://github.com/EnemyV/EnemyNationsRevival/
-// see: https://asciidoctor.org/docs/user-manual/#table-of-contents-summary
 :toc-title: Table of Contents
-// how many headline levels to display in table of contents?
 :toclevels: 2
 
 == Introduction
@@ -23,84 +19,60 @@ now you must all fight each other for the right to be the first to colonize this
 
 The game was released as freeware in October 2005, and the game and source code was made available for download.
 
-== Structure
+This repo is the revival of that source. The original 32-bit MFC/DirectDraw/WinG code has been
+ported to a 64-bit SDL2 build that runs natively on Windows, Linux, and macOS.
 
-The source code structure currently looks like this:
+== Just want to play?
 
-compress:: Source for a compression tool.
-enations:: Source code from one source.
-enations_latest:: mostly the same, but seems to be missing some parts.
-makeriff:: A tool for assembling the final .dat file from the various components.
-sprite:: A tool for working with the game's sprites.
-src/cdf:: Another tool for building the final .dat file.
-src/makeriff:: Duplication? of the makeriff source.
-tools/lib:: Holds a bunch of lib files potentially necessary for building the final game and tooling.
-tools/mss:: Headers and libs for the required version of the https://en.wikipedia.org/wiki/Miles_Sound_System[Miles Sound System]
-the game uses.
-tools/smartheap:: A copy of the smartheap library the game uses. This copy was taken from the https://github.com/jedis/jediacademy[Jedi Academy source], and looks to be compatible.
-tools/vdmplay:: A networking library that appears to be mostly in-house, although it makes use of both the Novell SDK
-and a library by Rogue Wave.
-tools/wing:: https://en.wikipedia.org/wiki/Enemy_Nations[WinG], the graphics library which predates DirectX and provided
-high performance graphics to early Windows systems.
+Grab a zip from the https://github.com/EnemyV/EnemyNationsRevival/releases[Releases page].
+Each release ships three self-contained archives (Windows x64, Linux x64, macOS arm64) with the
+game, the data file, and all runtime libraries included. Unzip and run.
 
-== Project Goals and Status
+== Project status
 
-The ultimate goal of the project is to modernize the source code, and remove all outdated elements. This means removing
-things like IPX networking, the CD requirement, and much more.
+What's done:
 
-Currently, I am working on getting everything to compile with relatively minimal changes.
+* Native 64-bit builds for Windows (MSVC), Linux (gcc), and macOS Apple Silicon (clang), all from one tree.
+* MFC, DirectDraw, WinG, and the CD requirement are gone. Rendering, audio, video, and all dialogs run on SDL2.
+* Music works on all three platforms.
+* Multiplayer over TCP/UDP (the old IPX code is retired). Players must be mutually reachable:
+  same LAN, bridged VMs, or port forwarding. Cross-NAT play is not supported yet.
+* Old saves still load. Save format compatibility is tracked deliberately, see `enations_latest/src/version.h`.
 
-== Known issues
+Known limitations:
 
-* There are many duplicate files throughout this repo.
-* ccache location is hardcoded in CMakeLists.txt
-* There are a ton of horrible hacks to try to get things to compile.
-* Only works on windows.
+* The lobby may show remote players as "Human". Races are applied correctly at game start; display-only bug.
+* Loading a multiplayer save requires all peers reachable.
+* A rare worldgen roll can produce an unlandable start region. Re-roll the map.
 
+== Building from source
 
-== Getting Started
+See link:BUILD.md[BUILD.md]. Short version: CMake on all three platforms, Visual Studio 2022 on
+Windows, gcc plus the SDL2 dev packages on Linux, Homebrew SDL2 on macOS.
 
-=== Game data file (required)
-
-The game data file `ENations.dat` (~516 MB) is *not* included in this repository
-because of its size. Download it separately:
+The game needs the data archive `ENations.dat` (~516 MB) at runtime. It is not in the repo.
+The release zips already include it; if you build from source you can take it from a release zip
+or download it here:
 
 https://drive.google.com/file/d/16y40cxiC0dcmfB2vwZXU5VATqGD6fe_p/view?usp=sharing
 
-Place `ENations.dat` in the working directory the game runs from (next to the
-executable). The game looks for `.\ENations.dat` by default; the path is stored
-in the `Game\DataFile` setting (Windows registry, or
-`~/.config/enations/registry.ini` on Linux).
+Place it next to the executable. The path is stored in the `Game\DataFile` setting (Windows
+registry, or `~/.config/enations/registry.ini` on Linux/macOS).
 
-Prerequisites
-----
-ccache-4.8.1
-VS2022 with prerequisites"
-+Desktop dev w/ C++
-+Game development with C++
-x86 C++ 2015–2022 Redistributable 
-----
+== Structure
 
-Clone repo locally
-----
-mkdir enations
-cd enations
-git clone https://github.com/EnemyV/EnemyNationsRevival.git
-----
+enations_latest/src:: The live game code. This is what builds and ships. Edit here.
+enations:: Older source snapshots kept for reference. Not built.
+windward/wind22:: The support library (built as part of the CMake build).
+tools/sdl2:: Vendored SDL2 + ttf + mixer + glew for the Windows build (Linux/macOS use system packages).
+tools/vdmplay:: The in-house networking library, ported to TCP/UDP.
+src/, tools/:: Asset and build tooling from the original release (makeriff, sprite, cdf, and friends). Windows-only, skipped on other platforms.
 
-generate project directory with cmake
-I use the VS Developer Console for this
-----
-cmake -S . -B cmakeBuild -G "Visual Studio 17 2022" -A Win32
-----
+There are still duplicate files and dead trees throughout the repo. They are kept for history;
+the build only uses the paths above.
 
-Open in VS 2022
-----
-open cmakeBuild folder
-Launch Enations.sln
-Select Release/Win32
-Build wind22, vdmplay, then finally enations
-Run enations.exe
+== History
 
-optionally: set enations as your startup project
-----
+The original goal of this fork was to get the 1996 code compiling with minimal changes. That
+grew into the full port described above. Thanks to Windward Studios for releasing the source,
+and to Bobbias, whose fork this work started from.
