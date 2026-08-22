@@ -677,6 +677,20 @@ add_custom_command(TARGET enations POST_BUILD
     COMMENT "Staging generated README.txt (${EN_VERSION}, ${EN_PLATFORM}) next to the binary"
 )
 
+# Default vdmplay.ini next to the binary, so a SOURCE build matches the shipped
+# release artifact. Without it RegistrationDefaultAddr() (SDL2Dialogs.cpp:1016)
+# reads "" and the Join Network Game dialog opens with an EMPTY server address
+# (2 witnesses: WinSrv2025, mac). Staged only when ABSENT - the game rewrites
+# this file at runtime, so copy_if_different would reset a player's saved server
+# on every rebuild.
+add_custom_command(TARGET enations POST_BUILD
+    COMMAND ${CMAKE_COMMAND}
+        -DSRC=${CMAKE_CURRENT_SOURCE_DIR}/../../packaging/vdmplay.ini
+        -DDST=$<TARGET_FILE_DIR:enations>/vdmplay.ini
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/../../packaging/stage_if_absent.cmake
+    COMMENT "Staging default vdmplay.ini next to the binary (only if absent)"
+)
+
 # MSVC is lax about C++ standard (defaults to C++14+ even when 11 is requested),
 # so the codebase uses std::make_unique (C++14) and relaxed constexpr. gcc with
 # -std=c++11 rejects both — build Linux as C++17 (gcc 13's default anyway).
