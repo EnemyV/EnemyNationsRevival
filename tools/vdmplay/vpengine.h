@@ -372,9 +372,19 @@ struct genericMsg : CRef {
 
 #endif
 
-    genericMsg() {}
+    // Zero the whole header before filling it in. The old ctors assigned only
+    // msgKind/msgSize, leaving msgFlags/msgFrom/msgTo/msgId as whatever the
+    // stack held — and those bytes go out on the wire. Measured against the
+    // live AWS iserve: its empty-registry DummyREQ carried msgFrom=0x1810
+    // msgTo=0x261b msgId=0x7fff, identical across probes (deterministic stack
+    // residue), i.e. the process was leaking stack to unauthenticated clients.
+    // Dispatch switches on msgKind alone and the engine reads msgTo in exactly
+    // one place (CDataNotification, below) where it is surfaced as toId, so no
+    // routing changes; senders that set these fields still overwrite the zeros.
+    genericMsg() { memset( &hdr, 0, sizeof( hdr ) ); }
 
     genericMsg(MessageCodes code, size_t dataSize) {
+        memset( &hdr, 0, sizeof( hdr ) );
         hdr.msgKind = code;
         hdr.msgSize = sizeof(hdr) + dataSize;
     }
