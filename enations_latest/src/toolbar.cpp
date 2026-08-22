@@ -1145,6 +1145,24 @@ void CWndBar::UpdateFood( )
 
     ASSERT_VALID( this );
 
+    // No population = nobody to starve. Before the rocket lands GetFoodNeed()
+    // is 0, so the old chain fired EVENT_FOOD_OUT immediately and its repeat
+    // overwrote the SetupStart land-your-rocket prompt - an MP joiner entered
+    // the map with a starvation warning and no landing cue (board 2026-08-22).
+    // Zero need is the healthy branch: clear any prior warnings and bail.
+    if ( theGame.GetMe( )->GetFoodNeed( ) <= 0 )
+    {
+        if ( iLastStat != 2 )
+        {
+            theGame.Event( EVENT_FOOD_OUT, EVENT_OFF );
+            theGame.Event( EVENT_FOOD_LOW, EVENT_OFF );
+            iLastStat = 2;
+        }
+        m_wndStat[food].SetHaveNeed( theGame.GetMe( )->GetFood( ), theGame.GetMe( )->GetFoodNeed( ) );
+        UpdateHelp( &m_wndStat[food] );
+        return;
+    }
+
     if ( theGame.GetMe( )->GetFood( ) <= theGame.GetMe( )->GetFoodNeed( ) / 8 )
     {
         if ( ( theGame.GetMe( )->GetFood( ) <= 0 ) && ( iLastStat != 0 ) )
