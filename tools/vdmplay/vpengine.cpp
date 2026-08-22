@@ -69,12 +69,19 @@ static int JoinAddrLogOn() {
 // and clients (iserve's stateless forward is always on — it only acts when a
 // punch-enabled client asks). Default ON; kill switches: EN_NAT_PUNCH=0 env
 // (wins when set) or [TCP] NatPunch=0 in vdmplay.ini.
+// The ini switch is only honored when the profile layer proves it can return
+// a default for an absent key: on macOS vpFetchInt returns 0 regardless of
+// file content or defVal (mac 3-run evidence, board 2026-08-22), which made
+// the old read report "explicitly disabled" on a healthy config. A broken
+// reader falls back to default ON with env as the only kill switch.
 static int NatPunchOn() {
     static int on = -1;
     if ( on < 0 ) {
         const char* e = getenv( "EN_NAT_PUNCH" );
         if ( e && *e )
             on = ( *e != '0' ) ? 1 : 0;
+        else if ( vpFetchInt( "TCP", "EnIniProbeSentinel", 5 ) != 5 )
+            on = 1;   // profile layer can't honor defaults - ini switch unusable
         else
             on = vpFetchInt( "TCP", "NatPunch", 1 ) ? 1 : 0;
     }
