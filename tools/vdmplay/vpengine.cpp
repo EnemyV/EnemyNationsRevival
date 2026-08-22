@@ -1651,7 +1651,7 @@ CRemoteSession::CRemoteSession( CTDLogger* log,
     CVpSession( log, net, players, wsMap ), m_serverWS( NULL ), m_pendingJoin( NULL ),
     m_initialJoin( TRUE ), m_serverEnumData( NULL ), m_maxServerAge( maxAge ), m_connected( FALSE ),
     m_tcpEnumTried( FALSE ), m_hasAltServer( FALSE ), m_altServerUserData( NULL ),
-    m_redialPending( FALSE ) {
+    m_redialPending( FALSE ), m_dialStart( 0 ) {
     memset( &m_altServerAddr, 0, sizeof( m_altServerAddr ) );
     m_punch.Reset();
 }
@@ -2166,6 +2166,7 @@ void CRemoteSession::OnConnect( CNetLink* link ) {
     if ( m_serverWS && m_serverWS->m_safeLink == link ) {
         m_connected = TRUE;
         m_hasAltServer = FALSE;   // primary candidate connected — no fallback needed/wanted
+        m_dialStart = 0;          // dial completed — disarm the OnTimer connect deadline
     }
 
     VPEXIT();
@@ -2577,6 +2578,9 @@ BOOL CRemoteSession::ConnectToServer( LPCVPNETADDRESS addr, LPVOID userData ) {
     m_serverWS = MakeRemoteWS( nA, link, NULL );
 
     if ( m_serverWS ) {
+        m_dialStart = GetCurrentTime();   // arm the OnTimer connect deadline
+        if ( !m_dialStart )
+            m_dialStart = 1;
         m_wsMap->Register( m_serverWS );
 
         link->Unref();
@@ -2706,6 +2710,23 @@ void CRemoteSession::DrivePunch() {
 
 
 void CRemoteSession::OnTimer() {
+    // Bounded pre-join dial: a candidate behind a DROP firewall/NAT hangs in
+    // SYN retries for the OS budget (21s Windows / up to 127s Linux) and never
+    // errors the socket inside the UI's 8s join guard, so the OnDisconnect
+    // dial-both fallback below was dead code for dropped ports (UbuntuOpus
+    // root cause, board 2026-08-22). Expire the pending dial here and route it
+    // through OnDisconnect on this clean pump pass: with an alternate stashed
+    // it re-dials, without one it tears down honestly instead of hanging.
+    enum { EN_DIAL_DEADLINE_MS = 3500 };
+    if ( !m_connected && m_dialStart && m_serverWS && m_serverWS->m_safeLink &&
+         GetCurrentTime() - m_dialStart > EN_DIAL_DEADLINE_MS ) {
+        m_dialStart = 0;
+        if ( JoinAddrLogOn() )
+            fprintf( stderr, "[natcand] pending connect exceeded %ums app deadline -> forcing failure (OS SYN budget would outlive the join window)\n",
+                     (unsigned)EN_DIAL_DEADLINE_MS );
+        OnDisconnect( m_serverWS->m_safeLink );
+    }
+
     // Deferred dial-both fallback: a pre-join primary-candidate drop stashed an
     // alternate in OnDisconnect; dial it here, on a clean pump pass (never inline
     // from the disconnect callback). Single-shot — m_redialPending is one-way false.

@@ -1315,6 +1315,12 @@ public:
     // OnDisconnect (the pump may still hold the dropped link — re-entrant
     // ConnectToServer there risks UAF / iterator invalidation; newwin review).
     BOOL         m_redialPending;
+    // When the pending pre-join server dial started (0 = none). A candidate
+    // behind a DROP firewall/NAT never errors the socket inside the app's join
+    // window (OS SYN budget 21-127s vs the UI's 8s guard), so without an
+    // app-level deadline the OnDisconnect dial-both fallback is unreachable.
+    // OnTimer expires the dial and routes it through OnDisconnect.
+    DWORD        m_dialStart;
 
     BOOL m_initialJoin;
     LPVOID m_serverEnumData;
