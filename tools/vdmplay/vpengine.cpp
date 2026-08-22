@@ -65,15 +65,18 @@ static int JoinAddrLogOn() {
     return on;
 }
 
-// NAT hole-punch gate (EN_NAT_PUNCH=1). Gates the P1 rendezvous/probe machinery
-// on game hosts and clients (iserve's stateless forward is always on — it only
-// acts when a punch-enabled client asks). Default OFF while the feature soaks;
-// flip to an ini default once live-verified (see the feasibility doc §6 P1).
+// NAT hole-punch gate. Gates the P1 rendezvous/probe machinery on game hosts
+// and clients (iserve's stateless forward is always on — it only acts when a
+// punch-enabled client asks). Default ON; kill switches: EN_NAT_PUNCH=0 env
+// (wins when set) or [TCP] NatPunch=0 in vdmplay.ini.
 static int NatPunchOn() {
     static int on = -1;
     if ( on < 0 ) {
         const char* e = getenv( "EN_NAT_PUNCH" );
-        on = ( e && *e && *e != '0' ) ? 1 : 0;
+        if ( e && *e )
+            on = ( *e != '0' ) ? 1 : 0;
+        else
+            on = vpFetchInt( "TCP", "NatPunch", 1 ) ? 1 : 0;
     }
     return on;
 }
