@@ -1956,6 +1956,16 @@ bool SDL2_RunJoinNetworkFlow(GameWindow* gameWindow) {
 #ifndef _WIN32
             vpPumpNet(0);          // POSIX: service the transport while we block here
             EnPumpNetMessages();   // deliver WM_VPNOTIFY -> OnNetMsg (win32_compat.h:1219)
+#else
+            // Windows: this guard is a blocking wait that replaces the main
+            // PeekMessage loop, and that loop is the ONLY thing dispatching
+            // the hidden VdmPlay window's WM_WINSOCK/WM_VPNOTIFY. Without a
+            // pump here the JoinREP sits undelivered for the full window and
+            // every Windows joiner times out at netnum 0 (3/3 deterministic,
+            // OpusHelperWin root cause, board 2026-08-22). SDL_PumpEvents
+            // drains and dispatches the whole thread queue, hidden window
+            // included - same semantics as the main loop it stands in for.
+            SDL_PumpEvents();
 #endif
             theApp.ProcessAllMessages();
             SDL_Delay(50);
