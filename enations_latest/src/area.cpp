@@ -2229,7 +2229,20 @@ void CWndArea::OnMouseMove( UINT nFlags, CPoint point )
         }
 
         default:
-            theApp.m_wndBar.SetStatusText( 0, m_sHelpBuild.c_str( ) );
+            // While placing the START ROCKET the generic "click a hex to build"
+            // help overwrote SetupStart's landing prompt (which is written
+            // during world build, before the status bar is live) - an MP joiner
+            // then never learned the opening move and starved (3 witnesses,
+            // board 2026-08-22). The hover writer itself carries the prompt so
+            // every refresh re-asserts it; any other building keeps the old
+            // text unchanged.
+            if ( m_iBuild == CStructureData::rocket )
+            {
+                std::string sRock = EnLoadStdString( IDS_MSG_ROCKET_START );
+                theApp.m_wndBar.SetStatusText( 0, sRock.c_str( ) );
+            }
+            else
+                theApp.m_wndBar.SetStatusText( 0, m_sHelpBuild.c_str( ) );
             break;
         }
 
