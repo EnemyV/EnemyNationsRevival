@@ -1292,6 +1292,23 @@ void SDL2LobbyDialog::OnInit() {
 }
 
 void SDL2LobbyDialog::OnFrame() {
+    // Drain queued game net-commands while the HOST lobby is open — the client
+    // lobby (SDL2ClientLobbyDialog::OnFrame) has done this all along, the host
+    // never did, so every joiner's cmd_ready (their RACE) sat queued until
+    // Start: the "remote players always show Human" bug, five games running.
+    // Transition safety: CmdReady's auto-start branch defers through the
+    // EnLobbyDrain guard below instead of building the world inside this frame.
+    { extern void EnLobbyDrainBegin(); extern void EnLobbyDrainEnd();
+      BOOL wasProc = theGame.ShouldProcessMessages();
+      theGame.SetShouldProcessMessages(TRUE);
+      EnLobbyDrainBegin();
+      theApp.ProcessAllMessages();
+      EnLobbyDrainEnd();
+      theGame.SetShouldProcessMessages(wasProc); }
+
+    { extern BOOL EnLobbyDrainTakeAutoStart();
+      if (EnLobbyDrainTakeAutoStart()) { OnStart(); return; } }
+
     UpdatePlayerList();
     RefreshChat();
 }

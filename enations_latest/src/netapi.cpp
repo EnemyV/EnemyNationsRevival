@@ -1296,6 +1296,22 @@ LRESULT CNetApi::OnNetMsg( WPARAM wParam, LPARAM lParam )
 /////////////////////////////////////////////////////////////////////////////
 // from here down its handling messages from READDATA
 
+// Host-lobby drain guard (the "remote players always show Human" root fix).
+// While the HOST lobby's OnFrame drains the game queue, CmdReady's auto-start
+// branch must not build the world from inside the dialog's own frame loop -
+// it defers here and the lobby routes it through its normal Start path
+// (same guard class as the client-side g_clientStartBuf/lobbyWaiting buffer).
+static BOOL g_bLobbyDrain       = FALSE;
+static BOOL g_bPendingAutoStart = FALSE;
+void EnLobbyDrainBegin( ) { g_bLobbyDrain = TRUE; }
+void EnLobbyDrainEnd( )   { g_bLobbyDrain = FALSE; }
+BOOL EnLobbyDrainTakeAutoStart( )
+{
+    BOOL b = g_bPendingAutoStart;
+    g_bPendingAutoStart = FALSE;
+    return b;
+}
+
 static void CmdReady( CNetReady* pMsg )
 {
 
@@ -1351,6 +1367,14 @@ static void CmdReady( CNetReady* pMsg )
 
     if ( ( theGame.IsAllReady( ) ) && ( theGame.GetNetJoin( ) != CGame::approve ) )
     {
+        if ( g_bLobbyDrain )
+        {
+            // Reached from the host lobby's per-frame drain: starting the world
+            // HERE would tear down the dialog whose frame loop we are inside.
+            // Defer to the lobby's Start path (EndDialog first, world after).
+            g_bPendingAutoStart = TRUE;
+            return;
+        }
         try
         {
             theGame.IncTry( );
