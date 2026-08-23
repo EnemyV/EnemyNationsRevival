@@ -1362,6 +1362,32 @@ static void CmdReady( CNetReady* pMsg )
         }
         delete pFan;
     }
+
+    // The MIRROR of the fan above (game-B join-order evidence, 2 witnesses):
+    // game-level roster data only ever flows through THIS handler, so a joiner
+    // was never told about players already present - the HOST (who never sends
+    // a ready) and earlier joiners stayed Human on its screen forever. Send the
+    // current roster TO the readying player; the fan above keeps everyone else
+    // current as later readies arrive. Unreadied joiners are sent as they stand
+    // (still default) and correct themselves through the fan on their own ready.
+    {
+        POSITION pos = theGame.GetAll( ).GetHeadPosition( );
+        while ( pos != NULL )
+        {
+            CPlayer* pOther = theGame.GetAll( ).GetNext( pos );
+            if ( pOther == NULL || pOther->IsAI( ) || pOther == pPlr )
+                continue;
+            if ( pOther != theGame.GetMe( ) && pOther->GetNetNum( ) == 0 )
+                continue;
+            CNetPlayer* pRos = CNetCmd::AllocPlayer( pOther );
+            if ( pOther == theGame.GetServer( ) )
+                pRos->m_bServer = TRUE;
+            EnMpDiagLog( "CmdReady ROSTER->ready: plyr=%d race[0]=%.3f -> netnum=%d",
+                         pOther->GetPlyrNum( ), pOther->m_InitData.GetRace( 0 ), pPlr->GetNetNum( ) );
+            theNet.Send( pPlr->GetNetNum( ), pRos, pRos->GetLen( ) );
+            delete pRos;
+        }
+    }
     if ( theApp.m_pCreateGame != NULL )
         theApp.m_pCreateGame->UpdateBtns( );
 
