@@ -3902,7 +3902,17 @@ CNetPublish* CNetPublish::Alloc( CCreateBase* pCm )
 
     int iLen = sizeof( CNetPublish ) + 2 + (int)pCm->m_sName.length( ) + (int)pCm->m_sPw.length( ) +
                (int)pCm->m_sGameName.length( ) + (int)pCm->m_sGameDesc.length( );
-    CNetPublish* pMsg     = (CNetPublish*)new char[__max( 516, iLen )];
+    // Zero the WHOLE allocation. Only iLen bytes are ever written, but the buffer
+    // is padded to >=516 and the padding is published verbatim: vdmplay copies a
+    // fixed 256 bytes out of it (CVpSession::MakeLocalPlayer / the session-publish
+    // path), so the uninitialised tail reaches the wire. That is the source of the
+    // VPSESSIONINFO body garbage measured on the registration server - garbage
+    // playerCount/sessionFlags and a UTF-16 registry path from a freed allocation
+    // (board 2026-08-23). Zeroing here fixes it at the producer; the ctor memsets
+    // in @b1f7183 could not, because this copy happens after them.
+    const int iAlloc      = __max( 516, iLen );
+    CNetPublish* pMsg     = (CNetPublish*)new char[iAlloc];
+    memset( pMsg, 0, iAlloc );
     pMsg->m_iLen          = iLen;
     pMsg->m_iNumOpponents = pCm->m_iNumAi;
     pMsg->m_iAIlevel      = pCm->m_iAi;
@@ -3943,7 +3953,10 @@ CNetPublish* CNetPublish::Alloc( CGame* pGame )
 
     int iLen = sizeof( CNetPublish ) + 2 + (int)sName.size( ) + (int)pGame->m_sPwJoin.length( ) +
                (int)pGame->m_sGameName.length( ) + (int)pGame->m_sGameDesc.length( );
-    CNetPublish* pMsg     = (CNetPublish*)new char[__max( 516, iLen )];
+    // Zero the whole allocation - see the CCreateBase overload above.
+    const int iAlloc      = __max( 516, iLen );
+    CNetPublish* pMsg     = (CNetPublish*)new char[iAlloc];
+    memset( pMsg, 0, iAlloc );
     pMsg->m_iLen          = iLen;
     pMsg->m_iNumOpponents = pGame->GetAi( ).GetCount( );
     pMsg->m_iAIlevel      = pGame->m_iAi;
@@ -3981,7 +3994,11 @@ CNetJoin* CNetJoin::Alloc( CPlayer const* pPlyr, BOOL bSrvr )
     ASSERT_VALID( pPlyr );
 
     int       iLen   = sizeof( CNetJoin ) + 2 + strlen( pPlyr->GetName( ) );
-    CNetJoin* pMsg   = (CNetJoin*)new char[__max( 516, iLen )];
+    // Zero the whole allocation - see CNetPublish::Alloc. This is the buffer
+    // MakeLocalPlayer copies 256 bytes from into every plrInfoMsg.
+    const int iAlloc = __max( 516, iLen );
+    CNetJoin* pMsg   = (CNetJoin*)new char[iAlloc];
+    memset( pMsg, 0, iAlloc );
     pMsg->m_iLen     = iLen;
     pMsg->m_iPlyrNum = pPlyr->GetPlyrNum( );
     pMsg->m_bServer  = bSrvr;
