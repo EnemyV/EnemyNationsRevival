@@ -884,6 +884,9 @@ BOOL CVpSession::SendData( VPPLAYERID toId,
     // we have a broadcast here
     pHdr->msgKind = UBDataREQ;
 
+    RelayLog( "bcast SEND from=%d flags=%lu nWs=%d",
+              (int)fromId, (unsigned long)flags, (int)m_wsMap->Count() );
+
 #if 0 
     if ( !( flags & VP_MUSTDELIVER ) ) {
         // we simply send a broadcast message
@@ -915,7 +918,12 @@ BOOL CVpSession::SendAllPlayers( CWS* ws, LPVOID data ) {
 
     pHdr->msgTo = VP_ALLPLAYERS;
 
-    ws->SendData( sdi );
+    BOOL sent = ws->SendData( sdi );
+
+    RelayLog( "bcast fan -> ws=%p remote=%d relay=%d ok=%d",
+              (void*)ws, (int)ws->IsRemote(),
+              ws->IsRemote() ? (int)( (CRemoteWS*)ws )->m_relayMode : 0,
+              (int)sent );
     return TRUE;
 }
 
@@ -925,13 +933,21 @@ BOOL CVpSession::SendToWs( CWS* ws, LPVOID data ) {
     VPASSERT( data );
 
     sendDataInfo& sdi = *(sendDataInfo*)data;
+    LPVPMSGHDR pHdr = (LPVPMSGHDR)sdi.m_data;
 
-    ws->SendData( sdi );
+    BOOL sent = ws->SendData( sdi );
+
+    RelayLog( "refan -> ws=%p kind=%c ok=%d",
+              (void*)ws, (char)pHdr->msgKind, (int)sent );
     return TRUE;
 }
 
 
 BOOL CVpSession::OnUDataREQ( genericMsg* msg, CRemoteWS* ws ) {
+    RelayLog( "deliver local from=%d to=%d kind=%c",
+              (int)msg->hdr.msgFrom, (int)msg->hdr.msgTo,
+              (char)msg->hdr.msgKind );
+
     CDataNotification* n = new CDataNotification( msg );
 
     if ( !n ) {
@@ -1605,6 +1621,9 @@ BOOL CLocalSession::OnUDataREQ( genericMsg* msg, CRemoteWS* ws ) {
 }
 
 BOOL CLocalSession::OnUBDataREQ( genericMsg* msg, CRemoteWS* ws ) {
+
+    RelayLog( "host: UBDataREQ RX from=%d via ws=%p -> local + refan nWs=%d",
+              (int)msg->hdr.msgFrom, (void*)ws, (int)m_wsMap->Count() );
 
     OnUDataREQ( msg, ws );  // deliver this message to local destinations
 
@@ -3337,8 +3356,22 @@ BOOL CRemoteWS::SendData( sendDataInfo& sdi ) {
     if ( relaySes && relaySes->IsRemote() ) {
         CRemoteWS* srv = ( (CRemoteSession*)relaySes )->m_serverWS;
 
-        if ( srv && srv != this )
+        if ( srv && srv != this ) {
+            LPVPMSGHDR rHdr = (LPVPMSGHDR)sdi.m_data;
+
+            // A BROADCAST fan copy aimed at a relay-mode peer lands here too:
+            // it is REROUTED to the host WS (never dropped, never sent direct),
+            // so the host sees a SECOND copy of the same msgId on top of the one
+            // the fan already sent it through the server WS entry.
+            RelayLog( "relay-mode WS=%p got %s copy kind=%c to=%d from=%d "
+                      "-> REROUTED via host ws=%p (no direct copy to peer)",
+                      (void*)this,
+                      ( rHdr->msgKind == UBDataREQ ||
+                        rHdr->msgTo == VP_ALLPLAYERS ) ? "BCAST" : "unicast",
+                      (char)rHdr->msgKind, (int)rHdr->msgTo,
+                      (int)rHdr->msgFrom, (void*)srv );
             return srv->SendData( sdi );
+        }
     }
 
     if ( sdi.m_sendFlags & VP_MUSTDELIVER ) {
