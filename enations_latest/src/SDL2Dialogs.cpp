@@ -1245,7 +1245,7 @@ static const char* RaceNameForPlayer(CPlayer* pPlr) {
 // relay gate is off, so the marker cannot appear on a non-relaying build.
 static bool LobbyPeerRelayed(CPlayer* pPlr) {
     if (!pPlr || pPlr->IsMe() || pPlr->IsAI() || pPlr->GetNetNum() == 0) return false;
-    if (pPlr == theGame.GetServer()) return false;
+    if (!theGame.AmServer() && pPlr == theGame.GetServer()) return false;
     theNet.ProbePeerLink(pPlr->GetNetNum());
     return theNet.PeerIsRelayed(pPlr->GetNetNum()) != FALSE;
 }
@@ -1554,6 +1554,7 @@ void SDL2ClientLobbyDialog::UpdatePlayerList() {
         if (!pPlr) continue;
         const char* race = RaceNameForPlayer(pPlr);
         sig += pPlr->GetName(); sig += '|'; sig += race;
+        if (pPlr == theGame.GetServer()) sig += "|h";    // host identity resolving must redraw too
         sig += LobbyPeerRelayed(pPlr) ? "|r\n" : "\n";   // a relay flip must redraw the row
     }
     if (sig == m_lastSig) return;
@@ -1567,7 +1568,8 @@ void SDL2ClientLobbyDialog::UpdatePlayerList() {
         std::string line = pPlr->GetName();
         if (pPlr->IsMe())           line += " (you)";
         else if (pPlr->IsAI())      line += " (AI)";
-        else if (pPlr->GetNetNum()) line += " (host/player)";
+        else if (pPlr == theGame.GetServer()) line += " (host)";
+        else if (pPlr->GetNetNum()) line += " (player)";
         const char* race = RaceNameForPlayer(pPlr);
         if (race && race[0]) { line += " - "; line += race; }
         if (LobbyPeerRelayed(pPlr)) line += " (r)";
