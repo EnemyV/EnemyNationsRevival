@@ -398,11 +398,20 @@ struct plrInfoMsg : genericMsg {
 
     VPPLAYERINFO data;
 
-    plrInfoMsg() {}
+    // Zero the payload. The ctors used to initialise only the header, leaving
+    // seq/data/playerData as allocator residue — and operator new is
+    // `new char[s + moreData]`, which does not zero. Those bytes go on the wire
+    // (measured on sesInfoMsg: a UTF-16 registry path reached the registration
+    // server). Sized from the members, NOT from hdr.msgSize: this ctor's size
+    // expression adds sizeof(playerName) where sesInfoMsg subtracts it, so
+    // msgSize is 2 bytes LARGER than the allocation and memsetting by it would
+    // turn a read overrun into a write overrun. See board 2026-08-23.
+    plrInfoMsg() { memset( &seq, 0, sizeof( seq ) + sizeof( data ) ); }
 
     plrInfoMsg(size_t dataSize) :
             genericMsg(PenumREP,
                        sizeof(seq) + dataSize + sizeof(data) + sizeof(data.playerName)) {
+        memset( &seq, 0, sizeof( seq ) + sizeof( data ) + dataSize );
     }
 };
 
@@ -410,10 +419,16 @@ struct plrInfoMsg : genericMsg {
 struct sesInfoMsg : genericMsg {
     VPSESSIONINFO data;
 
-    sesInfoMsg() {}
+    // Zero the payload — see plrInfoMsg above. This is the struct the leak was
+    // measured on: playerCount/sessionFlags arrived as garbage and the
+    // sessionData tail carried a UTF-16 registry path from a freed audio
+    // allocation. sizeof(data) + dataSize is exactly the space operator new
+    // reserved past the header, so this stays in bounds.
+    sesInfoMsg() { memset( &data, 0, sizeof( data ) ); }
 
     sesInfoMsg(size_t dataSize) :
             genericMsg(SenumREP, dataSize + sizeof(data) - sizeof(data.sessionName)) {
+        memset( &data, 0, sizeof( data ) + dataSize );
     }
 
     ~sesInfoMsg() override {}
@@ -423,8 +438,10 @@ struct sesInfoMsg : genericMsg {
 struct ftMsg : genericMsg {
     VPFTINFO data;
 
+    // Zero the payload — see plrInfoMsg above. Fixed-size body, no tail.
     ftMsg(MessageCodes code) :
             genericMsg(code, sizeof(data)) {
+        memset( &data, 0, sizeof( data ) );
     }
 };
 
