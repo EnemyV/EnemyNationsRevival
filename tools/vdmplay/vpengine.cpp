@@ -398,6 +398,24 @@ BOOL CVpSession::PunchHandlePing( natPunchMsg* msg, CNetAddress* from, PunchPeer
     return FALSE;
 }
 
+// Liveness from REAL traffic. Previously m_lastAlive was refreshed ONLY by
+// PING/PONG (PunchHandlePing/Pong), so a punched pair actively carrying data
+// could still be declared dead — client at 60s, host at 120s (DrivePunch). That
+// matters because StartNatPunch is reachable only from ConnectToServer, so a
+// lost pair is never re-established for the rest of the session (board
+// 2026-08-23). Any datagram from the confirmed peer proves the path is open.
+// Compares the transport prefix (ip + stream/dg ports) only: the NAT-candidate
+// tail is not part of peer identity, and both sides come from GetNormalForm.
+void CVpSession::PunchNoteTraffic( PunchPeer& p, CNetAddress* from ) {
+    if ( p.m_state != PunchPeer::CONFIRMED || !from )
+        return;
+    VPNETADDRESS src;
+    memset( &src, 0, sizeof( src ) );
+    from->GetNormalForm( &src );
+    if ( memcmp( &src, &p.m_confirmed, 8 ) == 0 )
+        p.m_lastAlive = GetCurrentTime();
+}
+
 BOOL CVpSession::PunchHandlePong( natPunchMsg* msg, CNetAddress* from, PunchPeer& p ) {
     if ( p.m_state == PunchPeer::IDLE || msg->data.nonce != p.m_nonce )
         return FALSE;
@@ -1207,6 +1225,9 @@ void CLocalSession::OnUnsafeData( CNetLink* link ) {
         addr->Unref();
         return;
     }
+
+    for ( int pi = 0; pi < MAX_PUNCH_PEERS; pi++ )
+        PunchNoteTraffic( m_punch[pi], addr );
 
     switch ( msg->hdr.msgKind ) {
     case  SenumREQ:
@@ -2384,6 +2405,8 @@ void CRemoteSession::OnUnsafeData( CNetLink* link ) {
         msg->Unref();
         return;
     }
+
+    PunchNoteTraffic( m_punch, addr );
 
     // iserve receive diagnostic (EN_ISERVE_LOG): the reg server uses this handler. Shows
     // whether the host's registration datagram ARRIVES here and with what msgKind — the reg

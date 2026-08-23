@@ -792,6 +792,8 @@ public:
     // PONG receive: nonce match => record the observed source as the working
     // pair. Returns TRUE when this PONG confirmed (or refreshed) the peer.
     BOOL PunchHandlePong(natPunchMsg *msg, CNetAddress *from, PunchPeer &p);
+    // Refresh a CONFIRMED pair's liveness from ANY datagram off that peer.
+    void PunchNoteTraffic(PunchPeer &p, CNetAddress *from);
 
 
     virtual BOOL SendData(VPPLAYERID fromId, VPPLAYERID toId,
