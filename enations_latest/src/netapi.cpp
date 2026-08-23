@@ -1340,6 +1340,8 @@ static void CmdReady( CNetReady* pMsg )
             if ( pDst == NULL || pDst->IsAI( ) || pDst == theGame.GetMe( ) ||
                  pDst == pPlr || pDst->GetNetNum( ) == 0 )
                 continue;
+            EnMpDiagLog( "CmdReady FAN: cmd_player for plyr=%d race[0]=%.3f -> netnum=%d",
+                         pPlr->GetPlyrNum( ), pPlr->m_InitData.GetRace( 0 ), pDst->GetNetNum( ) );
             theNet.Send( pDst->GetNetNum( ), pFan, pFan->GetLen( ) );
         }
         delete pFan;
@@ -1626,6 +1628,8 @@ static void CmdPlayer( CNetPlayer* pNp )
     pPlr->SetLocal( pNp->m_bLocal );
     pPlr->m_InitData = pNp->m_InitData;
     pPlr->SetName( pNp->m_sName );
+    EnMpDiagLog( "CmdPlayer APPLY: plyr=%d netnum=%d name='%s' race[0]=%.3f",
+                 pNp->m_iPlyrNum, pNp->m_iNetNum, pNp->m_sName, pNp->m_InitData.GetRace( 0 ) );
     theGame._SetMaxPlyrNum( __max( theGame.GetMaxPlyrNum( ), pPlr->GetPlyrNum( ) + 1 ) );
 
     theGame.GetAll( ).AddTail( pPlr );
