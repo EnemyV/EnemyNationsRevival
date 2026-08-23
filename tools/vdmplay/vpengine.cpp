@@ -2298,7 +2298,15 @@ void CRemoteSession::OnConnect( CNetLink* link ) {
 
     if ( err ) {
         Log( "CRemoteSession::OnConnect got connection error" );
-        if ( m_pendingJoin ) {
+        // Fail the pending join only for the CURRENT server dial and only when no
+        // fallback candidate is left. With an alternate stashed, OnDisconnect (just
+        // below) defers a re-dial that re-sends this very JoinREQ from OnTimer, so
+        // cancelling the join here would hand the fallback link a joinless socket -
+        // exactly the dead end the fallback exists to avoid. A stale link's late
+        // error (the primary's OS SYN budget expiring long after the app deadline
+        // moved the join onto the alternate) must not cancel it either.
+        if ( m_pendingJoin && m_serverWS && m_serverWS->m_safeLink == link &&
+             !m_hasAltServer ) {
 
             m_pendingJoin->SetError( VP_ERR_NET_ERROR );
             PostNotification( m_pendingJoin );
@@ -2377,6 +2385,23 @@ void CRemoteSession::OnDisconnect( CNetLink* link ) {
         m_serverWS = NULL;
         VPEXIT();
         return;
+    }
+
+    // Pre-join teardown with no candidate left (the branch above returned when a
+    // re-dial was still to come): no JoinREP/JoinNAK can ever arrive for this
+    // request, so a pending join left here is stale forever - and AddLocalPlayer
+    // opens with `if ( m_pendingJoin ) SetError( VP_ERR_BUSY )`, so every later
+    // join attempt on this session was refused until the process restarted.
+    // Complete it the way OnJoinNAK/OnConnect do - error it and POST it, never
+    // just drop it: the app has an outstanding join waiting on this notification,
+    // so a silently nulled request only moves the hang somewhere else.
+    // PostNotification takes ownership (no delete here).
+    if ( !m_connected && m_pendingJoin && m_serverWS && m_serverWS->m_safeLink == link ) {
+        if ( JoinAddrLogOn() )
+            fprintf( stderr, "[natcand] pre-join server link torn down with no candidate left -> failing pending join -> notify app (VP_ERR_NET_ERROR)\n" );
+        m_pendingJoin->SetError( VP_ERR_NET_ERROR );
+        PostNotification( m_pendingJoin );
+        m_pendingJoin = NULL;
     }
 
     if ( m_connected && ( m_serverWS->m_safeLink == link ) ) {
@@ -2918,8 +2943,43 @@ void CRemoteSession::OnTimer() {
         VPNETADDRESS alt = m_altServerAddr;
         LPVOID       ud  = m_altServerUserData;
         BOOL ok = ConnectToServer( &alt, ud );
-        if ( !ok && JoinAddrLogOn() )
-            fprintf( stderr, "[natcand] deferred re-dial of ALTERNATE candidate FAILED synchronously (no reachable candidate left) -> join will dead-end\n" );
+
+        // Carry the join across the re-dial. ConnectToServer only rebuilds the
+        // transport; the JoinREQ AddLocalPlayer queued died with the primary link,
+        // so without this the alternate reaches ESTABLISHED with nothing bound to
+        // it (the host sees a connection and no JoinREQ, and the client's join
+        // guard expires into a network error). Re-send the SAME request the
+        // pending join still holds - same msgId, so OnJoinREP/OnJoinNAK still match
+        // it - on the new server WS. Mirrors AddLocalPlayer's post-connect block:
+        // the send queues on the pending connect and flushes on FD_CONNECT.
+        if ( ok && m_pendingJoin && m_serverWS ) {
+            plrInfoMsg* pInfoMsg = m_pendingJoin->Player()->m_info;
+
+            if ( JoinAddrLogOn() )
+                fprintf( stderr, "[natcand] alternate candidate connected -> re-sending JoinREQ (msgId=%u)\n",
+                         (unsigned)m_pendingJoin->MsgId() );
+
+            sendDataInfo info( pInfoMsg->Data(), pInfoMsg->Size(), VP_MUSTDELIVER, NULL, NULL );
+            m_serverWS->SendData( info );
+        }
+
+        if ( !ok ) {
+            if ( JoinAddrLogOn() )
+                fprintf( stderr, "[natcand] deferred re-dial of ALTERNATE candidate FAILED synchronously (no reachable candidate left) -> join will dead-end\n" );
+
+            // No link was made, so no OnDisconnect will ever run for this attempt:
+            // fail the pending join here or AddLocalPlayer refuses every later
+            // attempt with VP_ERR_BUSY - and the app's outstanding join never gets
+            // its completion. Same OnJoinNAK/OnConnect pattern as in OnDisconnect;
+            // PostNotification takes ownership (no delete here).
+            if ( m_pendingJoin ) {
+                if ( JoinAddrLogOn() )
+                    fprintf( stderr, "[natcand] no link for the deferred re-dial -> failing pending join -> notify app (VP_ERR_NET_ERROR)\n" );
+                m_pendingJoin->SetError( VP_ERR_NET_ERROR );
+                PostNotification( m_pendingJoin );
+                m_pendingJoin = NULL;
+            }
+        }
     }
     DrivePunch();
 }
