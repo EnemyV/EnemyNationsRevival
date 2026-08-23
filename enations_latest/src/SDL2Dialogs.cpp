@@ -1236,6 +1236,20 @@ static const char* RaceNameForPlayer(CPlayer* pPlr) {
     return "";   // not yet chosen (InitData still zeroed)
 }
 
+// Host relay (docs/plans/host-relay-spec.md 8): " (r)" marks a player we can
+// reach only through the host. Viewer-relative, so it never appears on our own
+// row, the host's row, or an AI row — those are direct by construction. The
+// probe kick is what makes the answer meaningful in the LOBBY: peer links are
+// created lazily on first send, so without it every peer would read "direct"
+// until the first in-game message. Both calls are engine-side no-ops while the
+// relay gate is off, so the marker cannot appear on a non-relaying build.
+static bool LobbyPeerRelayed(CPlayer* pPlr) {
+    if (!pPlr || pPlr->IsMe() || pPlr->IsAI() || pPlr->GetNetNum() == 0) return false;
+    if (pPlr == theGame.GetServer()) return false;
+    theNet.ProbePeerLink(pPlr->GetNetNum());
+    return theNet.PeerIsRelayed(pPlr->GetNetNum()) != FALSE;
+}
+
 // ============================================================================
 // SDL2LobbyDialog
 // ============================================================================
@@ -1376,7 +1390,8 @@ void SDL2LobbyDialog::UpdatePlayerList() {
         CPlayer* pPlr = theGame.GetAll().GetNext(pos);
         if (!pPlr) continue;
         const char* race = RaceNameForPlayer(pPlr);
-        sig += pPlr->GetName(); sig += '|'; sig += race; sig += '\n';
+        sig += pPlr->GetName(); sig += '|'; sig += race;
+        sig += LobbyPeerRelayed(pPlr) ? "|r\n" : "\n";   // a relay flip must redraw the row
         if (!pPlr->IsAI() && pPlr->GetNetNum() != 0) human++;
     }
     if (sig == m_lastSig) return;
@@ -1393,6 +1408,7 @@ void SDL2LobbyDialog::UpdatePlayerList() {
         else if (pPlr->GetNetNum()) line += " (joined)";
         const char* race = RaceNameForPlayer(pPlr);
         if (race && race[0]) { line += " - "; line += race; }
+        if (LobbyPeerRelayed(pPlr)) line += " (r)";
         m_lstPlayers->AddItem(line);
     }
 
@@ -1537,7 +1553,8 @@ void SDL2ClientLobbyDialog::UpdatePlayerList() {
         CPlayer* pPlr = theGame.GetAll().GetNext(pos);
         if (!pPlr) continue;
         const char* race = RaceNameForPlayer(pPlr);
-        sig += pPlr->GetName(); sig += '|'; sig += race; sig += '\n';
+        sig += pPlr->GetName(); sig += '|'; sig += race;
+        sig += LobbyPeerRelayed(pPlr) ? "|r\n" : "\n";   // a relay flip must redraw the row
     }
     if (sig == m_lastSig) return;
     m_lastSig = sig;
@@ -1553,6 +1570,7 @@ void SDL2ClientLobbyDialog::UpdatePlayerList() {
         else if (pPlr->GetNetNum()) line += " (host/player)";
         const char* race = RaceNameForPlayer(pPlr);
         if (race && race[0]) { line += " - "; line += race; }
+        if (LobbyPeerRelayed(pPlr)) line += " (r)";
         m_lstPlayers->AddItem(line);
     }
 }

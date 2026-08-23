@@ -481,6 +481,14 @@ extern "C"
                                    OUT LPVPNETADDRESS addr   // Where to store the addreess
     );
 
+    // Host relay (docs/plans/host-relay-spec.md 8). Read-only: TRUE when our
+    // link to that player rides the host instead of a direct p2p link.
+    BOOL VPAPI vpPeerIsRelayed( IN VPSESSIONHANDLE pSesHdl, IN VPPLAYERID playerId );
+
+    // Kick the one-shot direct dial to a peer (lobby probe). No-op unless the
+    // relay gate is on; sends no payload.
+    BOOL VPAPI vpProbePeerLink( IN VPSESSIONHANDLE pSesHdl, IN VPPLAYERID playerId );
+
 
 #if !defined( __VDMPLUI_H__ ) && !defined( VPSYSTEM )
 

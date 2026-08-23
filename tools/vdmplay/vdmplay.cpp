@@ -2448,6 +2448,39 @@ extern "C"
     }
 
 
+    // Host relay (docs/plans/host-relay-spec.md 8): is our link to this player
+    // relayed through the host instead of direct? Read-only.
+    BOOL VPAPI vpPeerIsRelayed( IN VPSESSIONHANDLE pSesHdl, IN VPPLAYERID playerId ) {
+        if ( vpReentrancyCounter )
+            return FALSE;
+
+        if ( pSesHdl ) {
+            CSession* ses = (CSession*)pSesHdl;
+            if ( ses->IsValid() )
+                return ( (CVpSession*)ses )->PeerIsRelayed( playerId );
+        }
+
+        return FALSE;
+    }
+
+
+    // Host relay (spec 8): kick the one-shot direct dial to a peer so the lobby
+    // can tell direct from relayed before the first real send. Client sessions
+    // only; no-op when the relay gate is off.
+    BOOL VPAPI vpProbePeerLink( IN VPSESSIONHANDLE pSesHdl, IN VPPLAYERID playerId ) {
+        if ( vpReentrancyCounter )
+            return FALSE;
+
+        if ( pSesHdl ) {
+            CSession* ses = (CSession*)pSesHdl;
+            if ( ses->IsValid() && ses->IsRemote() )
+                return ( (CRemoteSession*)ses )->ProbePeerLink( playerId );
+        }
+
+        return FALSE;
+    }
+
+
 #ifndef _USRDLL
 
 

@@ -100,12 +100,46 @@ static int NatCandOn() {
     return on;
 }
 
+// Host-relay gate (docs/plans/host-relay-spec.md). DEFAULT OFF for this first
+// cycle: with it off nothing below is reachable and client-to-client unicast
+// keeps today's direct-only behavior byte for byte. EN_HOST_RELAY env wins when
+// set; otherwise [TCP] HostRelay in vdmplay.ini, but only when the profile layer
+// proves it can return a default for an absent key — on macOS vpFetchInt returns
+// 0 regardless of file content or defVal (the EnIniProbeSentinel lesson, see
+// NatPunchOn above), and a broken reader must not read as "explicitly on/off".
+static int HostRelayOn() {
+    static int on = -1;
+    if ( on < 0 ) {
+        const char* e = getenv( "EN_HOST_RELAY" );
+        if ( e && *e )
+            on = ( *e != '0' ) ? 1 : 0;
+        else if ( vpFetchInt( "TCP", "EnIniProbeSentinel", 5 ) != 5 )
+            on = 0;   // profile layer can't honor defaults - ini switch unusable
+        else
+            on = vpFetchInt( "TCP", "HostRelay", 0 ) ? 1 : 0;
+    }
+    return on;
+}
+
 // [punch] log: always on while the punch machinery is active (the machinery is
 // itself opt-in via EN_NAT_PUNCH), plus iserve's EN_ISERVE_LOG side.
 static void PunchLog( const char* fmt, ... ) {
     va_list ap;
     va_start( ap, fmt );
     fprintf( stderr, "[punch] " );
+    vfprintf( stderr, fmt, ap );
+    fprintf( stderr, "\n" );
+    va_end( ap );
+}
+
+// [relay] log: unconditional like PunchLog, because every line is downstream of
+// HostRelayOn() — the machinery is itself opt-in. The engine sits on the other
+// side of the vdmplay boundary from the game's EnMpDiagLog, so it cannot call
+// it; this is the same fprintf(stderr) shape the other engine diags use.
+static void RelayLog( const char* fmt, ... ) {
+    va_list ap;
+    va_start( ap, fmt );
+    fprintf( stderr, "[relay] " );
     vfprintf( stderr, fmt, ap );
     fprintf( stderr, "\n" );
     va_end( ap );
@@ -648,6 +682,22 @@ CPlayer* CVpSession::FindPlayer( VPPLAYERID pId, CWS* ws ) const {
         return NULL;
 
     return p;
+}
+
+
+// Host relay (spec 8). Read-only: no dial, no state change, no wire traffic.
+// Always FALSE on the host and while the gate is off (nothing sets m_relayMode
+// there), so the lobby marker cannot appear on a build that isn't relaying.
+BOOL CVpSession::PeerIsRelayed( VPPLAYERID pId ) const {
+    if ( !HostRelayOn() )
+        return FALSE;
+
+    CPlayer* p = FindPlayer( pId );
+
+    if ( !p || !p->IsRemote() || !p->m_ws || !p->m_ws->IsRemote() )
+        return FALSE;
+
+    return ( (CRemoteWS*)p->m_ws )->m_relayMode;
 }
 
 
@@ -1527,6 +1577,33 @@ BOOL CLocalSession::OnJoinREQ( plrInfoMsg* msg, CRemoteWS* ws ) {
     return TRUE;
 }
 
+// Host relay (docs/plans/host-relay-spec.md 4a): a unicast whose destination
+// player lives on ANOTHER workstation is forwarded there instead of being
+// delivered locally — the unicast mirror of the broadcast fan in OnUBDataREQ
+// below. One hop, host only (clients never forward), so loops are structurally
+// impossible. The wire is unchanged: msgFrom still names the original sender,
+// so the receiver cannot tell a forwarded message from a direct one.
+BOOL CLocalSession::OnUDataREQ( genericMsg* msg, CRemoteWS* ws ) {
+    if ( HostRelayOn() && msg->hdr.msgTo != VP_ALLPLAYERS &&
+         msg->hdr.msgFrom != msg->hdr.msgTo ) {         // sentinel: never a self-send
+        CPlayer* dst = FindPlayer( msg->hdr.msgTo );
+
+        if ( dst && dst->IsRemote() && dst->m_ws &&
+             dst->m_ws != (CWS*)ws ) {                  // sentinel: never back at the sender
+            sendDataInfo info( msg->Data(), msg->Size(),
+                               msg->hdr.msgFlags & VP_MUSTDELIVER, NULL, this );
+
+            dst->m_ws->SendData( info );                // rides the join link
+            RelayLog( "host: FWD from=%d to=%d kind=%c size=%lu",
+                      (int)msg->hdr.msgFrom, (int)msg->hdr.msgTo,
+                      (char)msg->hdr.msgKind, (unsigned long)msg->Size() );
+            return TRUE;                                // forwarded, not ours
+        }
+    }
+
+    return CVpSession::OnUDataREQ( msg, ws );           // local delivery, as today
+}
+
 BOOL CLocalSession::OnUBDataREQ( genericMsg* msg, CRemoteWS* ws ) {
 
     OnUDataREQ( msg, ws );  // deliver this message to local destinations
@@ -1935,6 +2012,43 @@ CRemoteWS* CRemoteSession::RegisterPlayerWS( plrInfoMsg* msg ) {
 }
 
 
+// Host relay (spec 8): client↔client links are made lazily on FIRST SEND, so in
+// the lobby a client does not yet know whether a peer is direct-reachable and
+// the (r) marker would never appear there. This kicks that same lazy dial once,
+// early — no payload, no new message kind, nothing on the wire the first real
+// unicast would not already have sent. Success pre-warms a real p2p link;
+// failure lands in OnDisconnect above and arms relay mode, which is what makes
+// the marker show. One dial per peer per session, gate-off = no-op.
+BOOL CRemoteSession::ProbePeerLink( VPPLAYERID pId ) {
+    if ( !HostRelayOn() )
+        return FALSE;
+
+    CPlayer* p = FindPlayer( pId );
+
+    if ( !p || !p->IsRemote() || !p->m_ws || !p->m_ws->IsRemote() )
+        return FALSE;
+
+    CRemoteWS* ws = (CRemoteWS*)p->m_ws;
+
+    // The host is reached over the join link by construction — never probed,
+    // never relayed. An already-linked or already-probed peer is done.
+    if ( ws == m_serverWS || ws->m_relayProbed || ws->m_safeLink || ws->m_relayMode )
+        return FALSE;
+
+    ws->m_relayProbed = TRUE;
+    ws->m_safeLink = MakeSafeLink( ws->m_address );   // async connect; owns the ref
+
+    if ( !ws->m_safeLink ) {
+        ws->m_relayMode = TRUE;
+        RelayLog( "client: probe dial to peer %d could not start -> RELAY MODE (sticky)", (int)pId );
+        return FALSE;
+    }
+
+    RelayLog( "client: probing direct link to peer %d", (int)pId );
+    return TRUE;
+}
+
+
 BOOL CRemoteSession::OnJoinADV( plrInfoMsg* msg, CRemoteWS* ) {
     if ( m_players->PlayerAtId( msg->data.playerId ) )  // we're simply ignoring duplicates
         return TRUE;
@@ -2301,6 +2415,16 @@ void CRemoteSession::OnDisconnect( CNetLink* link ) {
 
     CWS* ws = m_wsMap->FindBySafeLink( link );
     if ( ws ) {
+        // Host relay (spec 4b): this is a PEER link (the server link is handled
+        // above), so its loss - a failed dial or a dropped p2p link - is the
+        // direct-path failure that arms relay mode. Sticky: no retry, no
+        // flapping. A peer that never fails never enters relay mode, which is
+        // what makes the change a provable no-op on direct-capable pairs.
+        if ( HostRelayOn() && ws != (CWS*)m_serverWS &&
+             !( (CRemoteWS*)ws )->m_relayMode ) {
+            ( (CRemoteWS*)ws )->m_relayMode = TRUE;
+            RelayLog( "client: direct peer link lost -> RELAY MODE (sticky)" );
+        }
         ( (CRemoteWS*)ws )->StopUsingSafeLink();
     }
 
@@ -3139,15 +3263,44 @@ BOOL CRemotePlayer::SendData( sendDataInfo& sdi ) {
 
 
 
+// Host relay (spec 4b), client side. The fallback is hooked HERE rather than in
+// CVpSession::SendData's unicast branch for two reasons: this is the single
+// point EVERY unicast user funnels through (game messages and vpxfer file
+// transfer alike), and the message header is already fully formed, so the relay
+// needs no re-addressing. It cannot change host behavior or gate-off behavior:
+// m_relayMode is only ever set on a CLIENT's peer WS (never on the server WS),
+// and both the flag and the gate are checked before anything diverges — so the
+// recursion below is one level deep at most and unreachable on a host.
 BOOL CRemoteWS::SendData( sendDataInfo& sdi ) {
+    CVpSession* relaySes = ( m_relayMode && HostRelayOn() ) ? (CVpSession*)sdi.m_ctxData : NULL;
+
+    if ( relaySes && relaySes->IsRemote() ) {
+        CRemoteWS* srv = ( (CRemoteSession*)relaySes )->m_serverWS;
+
+        if ( srv && srv != this )
+            return srv->SendData( sdi );
+    }
 
     if ( sdi.m_sendFlags & VP_MUSTDELIVER ) {
         if ( !m_safeLink ) {
             CVpSession* ses = (CVpSession*)sdi.m_ctxData;
 
             m_safeLink = ses->MakeSafeLink( m_address );
-            if ( !m_safeLink )
+            if ( !m_safeLink ) {
+                // No direct link to this peer can even be set up. Flip to relay
+                // mode (sticky for the session, no retries - spec 4b) and put
+                // THIS message through the host rather than dropping it.
+                if ( HostRelayOn() && ses && ses->IsRemote() && !m_relayMode ) {
+                    CRemoteWS* srv = ( (CRemoteSession*)ses )->m_serverWS;
+
+                    if ( srv && srv != this ) {
+                        m_relayMode = TRUE;
+                        RelayLog( "client: MakeSafeLink to peer WS failed -> RELAY MODE (sticky)" );
+                        return srv->SendData( sdi );
+                    }
+                }
                 return FALSE;
+            }
 
         }
         return m_safeLink->Send( sdi.m_data, sdi.m_dataSize, sdi.m_sendFlags );

@@ -195,6 +195,17 @@ public:
     DWORD m_safeTrafficTime; // when we had the last traffic over
     // the safe link
 
+    // Host relay (docs/plans/host-relay-spec.md 4b): this peer is unreachable
+    // directly, so its traffic rides the join link and the host forwards it.
+    // Set on a CLIENT only, and never on the session's server WS; sticky for
+    // the session (no retries in v1). Meaningless while EN_HOST_RELAY is off:
+    // nothing sets it and every reader checks the gate first.
+    BOOL m_relayMode;
+
+    // One-shot lobby probe marker (spec 8): the async direct dial has already
+    // been kicked for this peer, don't kick it again.
+    BOOL m_relayProbed;
+
 
     sesInfoMsg *Info() const { return m_info; }
 
@@ -211,7 +222,8 @@ public:
     CRemoteWS(CNetAddress *address,
               CNetLink *safeLink, CNetLink *unsafeLink) :
             m_address(address), m_safeLink(safeLink), m_unsafeLink(unsafeLink),
-            m_safeTrafficTime(0), m_info(NULL) {
+            m_safeTrafficTime(0), m_info(NULL),
+            m_relayMode(FALSE), m_relayProbed(FALSE) {
         if (m_safeLink)
             m_safeLink->Ref();
         if (m_unsafeLink)
@@ -758,6 +770,11 @@ public:
 
     virtual CPlayer *FindPlayer(VPPLAYERID pId, CWS *ws = NULL) const;
 
+    // Host relay (spec 8): is our link to this player's workstation relayed
+    // through the host rather than direct? Read-only; FALSE on the host and
+    // whenever the gate is off.
+    BOOL PeerIsRelayed(VPPLAYERID pId) const;
+
     virtual CRemotePlayer *AddRemotePlayer(plrInfoMsg *infoMsg, CRemoteWS *ws, BOOL doNotify);
 
     virtual CRemotePlayer *RemoveRemotePlayer(VPPLAYERID id, CRemoteWS *ws);
@@ -1150,9 +1167,9 @@ public:
 
     virtual BOOL OnLeaveREQ(plrInfoMsg *msg, CRemoteWS *ws);
 
-    virtual BOOL OnUDataREQ(genericMsg *msg, CRemoteWS *ws) {
-        return CVpSession::OnUDataREQ(msg, ws);
-    }
+    // Host relay (spec 4a): forwards a unicast whose destination lives on
+    // another workstation; delegates to the base (local delivery) otherwise.
+    virtual BOOL OnUDataREQ(genericMsg *msg, CRemoteWS *ws);
 
     virtual BOOL OnUBDataREQ(genericMsg *msg, CRemoteWS *ws);
 
@@ -1269,6 +1286,12 @@ public:
 
 
     virtual CRemoteWS *RegisterPlayerWS(plrInfoMsg *msg);
+
+    // Host relay (spec 8): kick the lazy direct dial to a peer ONCE, so the
+    // lobby learns direct-vs-relayed before the first real send. No payload is
+    // sent - this is exactly the MakeSafeLink the first unicast would do, just
+    // earlier. No-op unless the gate is on. Returns TRUE if a dial was started.
+    BOOL ProbePeerLink(VPPLAYERID pId);
 
     CRemoteSession(CTDLogger *log,
                    CNetInterface *net,
