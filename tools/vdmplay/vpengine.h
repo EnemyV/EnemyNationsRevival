@@ -1304,6 +1304,15 @@ protected:
 
     PunchPeer m_punch;
 
+    // Re-punch state. PunchPeer::Reset() memsets the whole struct, so the
+    // session id a re-arm needs cannot live inside it. Kept here so DrivePunch
+    // can re-arm a dead pair for the life of the session (board ruling
+    // 2026-08-23): a pair lost to a transient outage was previously permanent,
+    // because StartNatPunch was reachable only from ConnectToServer.
+    VPSESSIONID m_punchSessionId;
+    BOOL        m_punchWanted;    // a pair has been asked for at least once
+    DWORD       m_punchLastArm;   // last StartNatPunch, for the 30s re-arm ladder
+
     virtual void OnUnsafeData(CNetLink *link);
 
     virtual void OnConnect(CNetLink *link);

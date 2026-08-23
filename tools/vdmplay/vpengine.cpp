@@ -393,6 +393,7 @@ BOOL CVpSession::PunchHandlePing( natPunchMsg* msg, CNetAddress* from, PunchPeer
             PunchLog( "CONFIRMED by peer PING from %s (tries=%d)", ab, p.m_tries );
         }
         p.m_lastAlive = GetCurrentTime();
+        p.m_lastSend  = p.m_lastAlive;   // our PONG is traffic to this peer: suppresses a redundant keepalive
         return TRUE;
     }
     return FALSE;
@@ -1382,8 +1383,17 @@ void CLocalSession::DrivePunch() {
             break;
 
         case PunchPeer::CONFIRMED:
-            // The client owns keepalives (its PINGs; our PONGs refresh our own
-            // outbound mapping). Expire a pairing that has gone quiet.
+            // Host-side keepalive with piggyback suppression: PING only when
+            // nothing else has gone to this peer in the interval (our PONGs set
+            // m_lastSend, so an active pair sends nothing extra). Previously the
+            // host sent nothing at all and relied entirely on the client, so a
+            // stalled client aged out the host's own mapping too.
+            if ( t - p.m_lastSend > 15000 ) {
+                natPunchMsg ping( NatPunchPING );
+                ping.data.nonce = p.m_nonce;
+                SendDgTo( &p.m_confirmed, ping.Data(), ping.Size() );
+                p.m_lastSend = t;
+            }
             if ( t - p.m_lastAlive > 120000 ) {
                 PunchLog( "host: punched pair expired (no keepalive for 120s)" );
                 p.Reset();
@@ -1672,8 +1682,10 @@ CRemoteSession::CRemoteSession( CTDLogger* log,
     CVpSession( log, net, players, wsMap ), m_serverWS( NULL ), m_pendingJoin( NULL ),
     m_initialJoin( TRUE ), m_serverEnumData( NULL ), m_maxServerAge( maxAge ), m_connected( FALSE ),
     m_tcpEnumTried( FALSE ), m_hasAltServer( FALSE ), m_altServerUserData( NULL ),
-    m_redialPending( FALSE ), m_dialStart( 0 ) {
+    m_redialPending( FALSE ), m_dialStart( 0 ),
+    m_punchWanted( FALSE ), m_punchLastArm( 0 ) {
     memset( &m_altServerAddr, 0, sizeof( m_altServerAddr ) );
+    memset( &m_punchSessionId, 0, sizeof( m_punchSessionId ) );
     m_punch.Reset();
 }
 
@@ -2618,6 +2630,12 @@ BOOL CRemoteSession::ConnectToServer( LPCVPNETADDRESS addr, LPVOID userData ) {
 // observes for us is the one the host must punch. Runs in parallel with the
 // TCP dial; retried from DrivePunch until REP arrives.
 void CRemoteSession::StartNatPunch( LPCVPNETADDRESS sessionId ) {
+    // Remember what we are punching for OUTSIDE m_punch: Reset() memsets it, so
+    // DrivePunch could not otherwise re-arm a dead pair (board ruling 2026-08-23).
+    m_punchSessionId = *sessionId;
+    m_punchWanted    = TRUE;
+    m_punchLastArm   = GetCurrentTime();
+
     m_punch.Reset();
     m_punch.m_sessionId = *sessionId;
     m_punch.m_nonce = ( GetCurrentTime() * 2654435761u ) ^ (DWORD)(size_t)this;
@@ -2676,10 +2694,24 @@ void CRemoteSession::OnNatPunchREP( natPunchMsg* msg, CNetAddress* from ) {
 // Client-side punch pacing: REQ resends, probe retries, then keepalives that
 // hold both NATs' mappings open (host answers each PING with a PONG).
 void CRemoteSession::DrivePunch() {
-    if ( !NatPunchOn() || m_punch.m_state == PunchPeer::IDLE )
+    if ( !NatPunchOn() )
         return;
 
     DWORD t = GetCurrentTime();
+
+    if ( m_punch.m_state == PunchPeer::IDLE ) {
+        // Re-punch ladder. Once a pair has ever been wanted, keep trying for the
+        // life of the session: one REQ every 30s, no backoff machinery. Bounded
+        // chatter and nothing to lose - without this a pair lost to a transient
+        // outage stayed lost, since StartNatPunch is otherwise only reachable
+        // from ConnectToServer (board ruling 2026-08-23).
+        if ( m_punchWanted && t - m_punchLastArm > 30000 ) {
+            VPSESSIONID sid = m_punchSessionId;   // copy: StartNatPunch resets state
+            PunchLog( "client: re-arming punch (30s ladder)" );
+            StartNatPunch( &sid );
+        }
+        return;
+    }
 
     switch ( m_punch.m_state ) {
     case PunchPeer::WAIT_REP:
@@ -2723,9 +2755,13 @@ void CRemoteSession::DrivePunch() {
             SendDgTo( &m_punch.m_confirmed, ping.Data(), ping.Size() );
             m_punch.m_lastSend = t;
         }
-        if ( t - m_punch.m_lastAlive > 60000 ) {
-            PunchLog( "client: punched pair lost (no PONG for 60s)" );
-            m_punch.Reset();
+        // Three keepalive intervals of silence => the pair is dead. Re-arm with a
+        // FRESH nonce rather than Reset()ing terminally; the 5x1s WAIT_REP ladder
+        // and then the 30s IDLE ladder above take it from here.
+        if ( t - m_punch.m_lastAlive > 45000 ) {
+            VPSESSIONID sid = m_punchSessionId;   // copy: StartNatPunch resets state
+            PunchLog( "client: punched pair silent 45s -> re-arming with a fresh nonce" );
+            StartNatPunch( &sid );
         }
         break;
     }
