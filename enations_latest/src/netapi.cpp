@@ -1319,6 +1319,31 @@ static void CmdReady( CNetReady* pMsg )
     EnMpDiagLog( "CmdReady: applied race to plyr=%d name='%s' netnum=%d (race[0]=%.3f)",
                  pPlr->GetPlyrNum( ), pPlr->GetName( ), pMsg->m_iPlyrNum,
                  pMsg->m_InitData.GetRace( 0 ) );
+
+    // The race used to be applied SERVER-SIDE ONLY - no message ever carried it
+    // to the other clients, so every remote lobby kept the joiner's default
+    // (Human) row forever: the long-standing "remote players always show Human"
+    // bug (QA + LinuxOpus 013 wire trace + UbuntuOpus lane repro). Re-fan this
+    // player's roster entry: CNetPlayer already carries m_InitData and clients
+    // (old builds included) apply CmdPlayer as a routine roster update - no new
+    // message type, no wire change. Skip AIs (no socket), ourselves (we just
+    // applied it), and the sender (it knows its own race; a m_bLocal=FALSE
+    // roster echo would mislabel its own player).
+    {
+        CNetPlayer* pFan = CNetCmd::AllocPlayer( pPlr );
+        if ( pPlr == theGame.GetServer( ) )
+            pFan->m_bServer = TRUE;
+        POSITION pos = theGame.GetAll( ).GetHeadPosition( );
+        while ( pos != NULL )
+        {
+            CPlayer* pDst = theGame.GetAll( ).GetNext( pos );
+            if ( pDst == NULL || pDst->IsAI( ) || pDst == theGame.GetMe( ) ||
+                 pDst == pPlr || pDst->GetNetNum( ) == 0 )
+                continue;
+            theNet.Send( pDst->GetNetNum( ), pFan, pFan->GetLen( ) );
+        }
+        delete pFan;
+    }
     if ( theApp.m_pCreateGame != NULL )
         theApp.m_pCreateGame->UpdateBtns( );
 
