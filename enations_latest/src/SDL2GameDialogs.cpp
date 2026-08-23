@@ -1356,7 +1356,7 @@ void SDL2ChatWindow::RefreshMessages() {
     // Show the most recent N lines that fit
     int start = __max(0, count - 50);
     for (int i = start; i < count; i++)
-        m_msgList->AddItem(g_chatMessages[i]);
+        m_msgList->AddItemWrapped(g_chatMessages[i]);   // wrap, don't font-shrink
     // Auto-scroll to the newest line: select the last item AND scroll the view
     // to it. SetSelected alone only moves the highlight — it does not move the
     // scroll window, so a full listbox stayed pinned at the top on each new

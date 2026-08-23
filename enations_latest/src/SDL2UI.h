@@ -290,6 +290,10 @@ public:
     bool IsFocusable() const override { return m_visible && m_enabled; }
 
     void AddItem(const std::string& text, void* data = nullptr);
+    // Chat panes: append a long line as multiple word-wrapped rows instead of
+    // letting the row renderer font-shrink it (QA report 2026-08-23). Opt-in
+    // per call site; AddItem and every other listbox are untouched.
+    void AddItemWrapped(const std::string& text);
     void Clear();
     int GetSelected() const { return m_selected; }
     void SetSelected(int s) { m_selected = s; }

@@ -1303,10 +1303,12 @@ void SDL2LobbyDialog::RefreshChat() {
     m_chatCount = n;
     m_lstChat->Clear();
     for (int i = 0; i < n; i++)
-        m_lstChat->AddItem(SDL2Chat_Line(i));
+        m_lstChat->AddItemWrapped(SDL2Chat_Line(i));
     // Auto-scroll to newest: SetSelected only moves the highlight, EnsureVisible
     // scrolls the view so a full chat box doesn't stay pinned at the top.
-    if (n > 0) { m_lstChat->SetSelected(n - 1); m_lstChat->EnsureVisible(n - 1); }
+    // Wrapped lines mean row count >= chat count, so scroll by the ROW count.
+    int rows = m_lstChat->GetCount();
+    if (rows > 0) { m_lstChat->SetSelected(rows - 1); m_lstChat->EnsureVisible(rows - 1); }
 }
 
 void SDL2LobbyDialog::SendChat() {
@@ -1442,9 +1444,11 @@ void SDL2ClientLobbyDialog::RefreshChat() {
     m_chatCount = n;
     m_lstChat->Clear();
     for (int i = 0; i < n; i++)
-        m_lstChat->AddItem(SDL2Chat_Line(i));
+        m_lstChat->AddItemWrapped(SDL2Chat_Line(i));
     // Auto-scroll to newest (SetSelected alone doesn't move the scroll view).
-    if (n > 0) { m_lstChat->SetSelected(n - 1); m_lstChat->EnsureVisible(n - 1); }
+    // Wrapped lines mean row count >= chat count, so scroll by the ROW count.
+    int rows = m_lstChat->GetCount();
+    if (rows > 0) { m_lstChat->SetSelected(rows - 1); m_lstChat->EnsureVisible(rows - 1); }
 }
 
 void SDL2ClientLobbyDialog::SendChat() {
