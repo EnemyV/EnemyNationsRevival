@@ -1934,6 +1934,12 @@ BOOL CRemoteSession::SendData( VPPLAYERID toId,
     pHdr->msgKind = UBDataREQ;
     pHdr->msgId = NextMessageId();
     pHdr->msgSize = (WORD)dataSize;
+    // Stamp the send flags on the wire, as CVpSession::SendData does. Without
+    // this a joiner's broadcast reached the host with msgFlags=0, and the host's
+    // refan (CLocalSession::OnUBDataREQ) / relay forward (OnUDataREQ) build their
+    // sendDataInfo from the RECEIVED msgFlags — so a VP_MUSTDELIVER broadcast was
+    // forwarded unreliably over UDP. Survives loopback, drops between machines.
+    pHdr->msgFlags = (BYTE)flags;
 #if VP_TIMESTAMP
     pHdr->msgTime = vpMsgTime();
 #endif
