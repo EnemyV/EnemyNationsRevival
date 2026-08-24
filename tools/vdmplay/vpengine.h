@@ -206,6 +206,16 @@ public:
     // been kicked for this peer, don't kick it again.
     BOOL m_relayProbed;
 
+    // When THIS peer's direct dial started (0 = no dial pending), for the same
+    // bounded-dial watchdog CRemoteSession::OnTimer runs over the server dial.
+    // The session's m_dialStart covers only m_serverWS; a client-to-client dial
+    // into a NAT that DROPS the SYN never completes and never errors inside the
+    // app's horizon, so OnDisconnect never ran and m_relayMode never armed - the
+    // host-relay fallback was unreachable in exactly the blackhole topology it
+    // exists for. Armed by the peer dial sites, disarmed on connect and on any
+    // teardown of the safe link (a stale stamp must not outlive its dial).
+    DWORD m_dialStart;
+
 
     sesInfoMsg *Info() const { return m_info; }
 
@@ -223,7 +233,7 @@ public:
               CNetLink *safeLink, CNetLink *unsafeLink) :
             m_address(address), m_safeLink(safeLink), m_unsafeLink(unsafeLink),
             m_safeTrafficTime(0), m_info(NULL),
-            m_relayMode(FALSE), m_relayProbed(FALSE) {
+            m_relayMode(FALSE), m_relayProbed(FALSE), m_dialStart(0) {
         if (m_safeLink)
             m_safeLink->Ref();
         if (m_unsafeLink)
@@ -238,6 +248,9 @@ public:
         if (m_safeLink)
             m_safeLink->Unref();
         m_safeLink = 0;
+        m_dialStart = 0;   // no link, no pending dial - never leave a stale stamp
+                           // behind for a later SetSafeLink (inbound accept) to
+                           // be expired against.
     }
 
     void SetSafeLink(CNetLink *link) {
@@ -1347,6 +1360,10 @@ protected:
     virtual void ProcessSafeData(CNetLink *link, genericMsg *msg);
 
     static BOOL CheckForAge(CWS *ws, LPVOID userData);
+
+    // OnTimer bounded-dial watchdog, PEER side: collects every remote WS whose
+    // direct dial has been pending past the deadline (see CRemoteWS::m_dialStart).
+    static BOOL CheckDialDeadline(CWS *ws, LPVOID userData);
 
     virtual void AgeServerList();
 

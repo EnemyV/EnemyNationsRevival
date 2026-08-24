@@ -2063,6 +2063,10 @@ BOOL CRemoteSession::ProbePeerLink( VPPLAYERID pId ) {
         return FALSE;
     }
 
+    ws->m_dialStart = GetCurrentTime();   // arm the OnTimer peer-dial deadline
+    if ( !ws->m_dialStart )
+        ws->m_dialStart = 1;
+
     RelayLog( "client: probing direct link to peer %d", (int)pId );
     return TRUE;
 }
@@ -2341,6 +2345,16 @@ void CRemoteSession::OnConnect( CNetLink* link ) {
         m_connected = TRUE;
         m_hasAltServer = FALSE;   // primary candidate connected — no fallback needed/wanted
         m_dialStart = 0;          // dial completed — disarm the OnTimer connect deadline
+    } else {
+        // Same disarm for a PEER dial, whose deadline lives on the WS (several
+        // peer dials can be pending at once, so it cannot live on the session).
+        // Without this a direct-capable peer would be expired 3.5s after a dial
+        // that already succeeded — the one way this change could touch the
+        // direct path — so it is the mandatory other half of the arm.
+        CWS* peer = m_wsMap->FindBySafeLink( link );
+
+        if ( peer && peer->IsRemote() )
+            ( (CRemoteWS*)peer )->m_dialStart = 0;
     }
 
     VPEXIT();
@@ -2936,6 +2950,31 @@ void CRemoteSession::DrivePunch() {
 }
 
 
+// Host relay (spec 4b): collection params for the PEER half of the bounded-dial
+// watchdog. Same collect-then-act shape as AgeParams/CheckForAge — CSimpleWSMap::Enum
+// holds the map mutex and the action tears a link down, so nothing may act inline.
+struct DialDeadlineParams {
+    DWORD      curTime;
+    DWORD      deadline;
+    CRemoteWS* server;      // never swept: the server dial has its own deadline
+    WSXList    list;
+};
+
+
+BOOL CRemoteSession::CheckDialDeadline( CWS* ws, LPVOID data ) {
+    DialDeadlineParams* p = (DialDeadlineParams*)data;
+
+    if ( ws->IsRemote() && ws != (CWS*)p->server ) {
+        CRemoteWS* rws = (CRemoteWS*)ws;
+
+        if ( rws->m_dialStart && rws->m_safeLink &&
+             p->curTime - rws->m_dialStart > p->deadline )
+            p->list.Append( new WSLink( ws ) );
+    }
+    return TRUE;
+}
+
+
 void CRemoteSession::OnTimer() {
     // Bounded pre-join dial: a candidate behind a DROP firewall/NAT hangs in
     // SYN retries for the OS budget (21s Windows / up to 127s Linux) and never
@@ -2952,6 +2991,43 @@ void CRemoteSession::OnTimer() {
             fprintf( stderr, "[natcand] pending connect exceeded %ums app deadline -> forcing failure (OS SYN budget would outlive the join window)\n",
                      (unsigned)EN_DIAL_DEADLINE_MS );
         OnDisconnect( m_serverWS->m_safeLink );
+    }
+
+    // Host relay (spec 4b): the SAME bounded dial for PEER links. The block above
+    // watches only m_serverWS, but a client-to-client dial — ProbePeerLink's (r)
+    // probe, or the lazy MakeSafeLink in CRemoteWS::SendData — blackholes exactly
+    // the same way, and because a dropped SYN never errors the socket, OnDisconnect
+    // never ran, so m_relayMode never armed and the host-relay fallback was
+    // unreachable in the one topology it exists for (measured: no socket to the
+    // peer and no RELAY MODE line in 10 minutes). Expire it here, on the same pump
+    // pass and against the same deadline, and route it through OnDisconnect so the
+    // existing "direct peer link lost -> RELAY MODE (sticky)" arm does the work —
+    // no second relay-mode code path. Gate off = not even a sweep.
+    if ( HostRelayOn() ) {
+        DialDeadlineParams dp;
+
+        dp.curTime  = GetCurrentTime();
+        dp.deadline = EN_DIAL_DEADLINE_MS;
+        dp.server   = m_serverWS;
+
+        m_wsMap->Enum( CheckDialDeadline, &dp );
+
+        WSLink* dl;
+
+        while ( NULL != ( dl = dp.list.RemoveFirst() ) ) {
+            CRemoteWS* stalled = (CRemoteWS*)( dl->m_data );
+            CNetLink*  dead    = stalled->m_safeLink;
+
+            delete dl;
+
+            if ( !dead )
+                continue;
+
+            RelayLog( "client: peer dial exceeded deadline -> RELAY MODE (sticky)" );
+            // Unrefs (and so closes) the pending socket, exactly as a real drop
+            // would; `dead` must not be touched after this.
+            OnDisconnect( dead );
+        }
     }
 
     // Deferred dial-both fallback: a pre-join primary-candidate drop stashed an
@@ -3395,6 +3471,12 @@ BOOL CRemoteWS::SendData( sendDataInfo& sdi ) {
                 return FALSE;
             }
 
+            // Same arm as ProbePeerLink: this dial is async, so a blackholed
+            // peer would otherwise sit here CONNECTING forever with THIS message
+            // (and every later one) queued on a socket that never completes.
+            m_dialStart = GetCurrentTime();   // arm the OnTimer peer-dial deadline
+            if ( !m_dialStart )
+                m_dialStart = 1;
         }
         return m_safeLink->Send( sdi.m_data, sdi.m_dataSize, sdi.m_sendFlags );
     }
