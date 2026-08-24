@@ -92,6 +92,14 @@ public:
     // window can raise itself programmatically on open, not only via a click.
     void BringToFront(SDL2Panel* panel);
 
+    // Last SDL_MOUSEMOTION position inside the MAIN (Background) window, in that
+    // window's client coordinates. (-1,-1) when the cursor is over another window
+    // or has left the main window. Fed by RouteEvent — the single choke point for
+    // every SDL event — so it is valid on every platform, unlike ::GetCursorPos
+    // whose POSIX shim reports an area-map-local coordinate.
+    int GetMouseX() const { return m_mouseX; }
+    int GetMouseY() const { return m_mouseY; }
+
 private:
 
     bool RouteEventInner(SDL_Event& event);
@@ -110,6 +118,12 @@ private:
     // Re-entrancy guard: when >0, RemovePanel defers the erase so that
     // iterators/indices into m_panels stay valid during RouteEvent.
     int          m_routingDepth = 0;
+
+    // Main-window-local cursor position tracked from SDL_MOUSEMOTION (see
+    // GetMouseX/GetMouseY). -1 = cursor is not over the main window.
+    int          m_mouseX = -1;
+    int          m_mouseY = -1;
+
     std::vector<SDL2Panel*> m_pendingRemovals;
     void FlushPendingRemovals();
 

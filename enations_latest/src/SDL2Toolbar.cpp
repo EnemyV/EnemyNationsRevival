@@ -4,6 +4,7 @@
 #include "SDL2Toolbar.h"
 #include "SDL2Panel.h"
 #include "GameWindow.h"
+#include "SDL2Compositor.h"   // GetMouseX/GetMouseY - portable cursor position
 #include "lastplnt.h"
 #include "player.h"
 #include "sfx.h"
@@ -233,13 +234,18 @@ void SDL2Toolbar::Render() {
     // last set via SetStatusText(1, ...) ??? that's the area-map hover info
     // (unit / terrain descriptions) sent from CWndArea::OnMouseMove.
     {
-        // Use GetCursorPos (Windows API) instead of SDL_GetMouseState
-        // because the MFC toolbar at alpha=1 intercepts mouse messages,
-        // preventing SDL from updating its internal mouse state.
-        POINT cursorPos;
-        ::GetCursorPos(&cursorPos);
-        int lx = cursorPos.x - m_panel->GetX();
-        int ly = cursorPos.y - m_panel->GetY();
+        // Cursor position comes from the compositor, which latches every
+        // SDL_MOUSEMOTION aimed at the main window. ::GetCursorPos is not usable
+        // here: on POSIX its shim returns an AREA-MAP-local coordinate, so over
+        // the toolbar it reads the wrong space and never changes — hover text was
+        // dead on Linux/macOS. On Windows the main window is at 0,0, so the
+        // compositor's client coords are numerically identical to the old
+        // ::GetCursorPos screen coords: behavior there is unchanged.
+        SDL2Compositor* comp = m_gw ? m_gw->GetCompositor() : nullptr;
+        int cursorX = comp ? comp->GetMouseX() : -1;
+        int cursorY = comp ? comp->GetMouseY() : -1;
+        int lx = cursorX - m_panel->GetX();
+        int ly = cursorY - m_panel->GetY();
 
         // Default: mirror what the world last set
         m_statusText[1] = m_externalText[1];
@@ -297,9 +303,9 @@ void SDL2Toolbar::Render() {
     // back to text (terrain hover, toolbar button/resource hover).
     bool cursorOnToolbar = false;
     {
-        POINT cp; ::GetCursorPos(&cp);
-        int lx2 = cp.x - m_panel->GetX();
-        int ly2 = cp.y - m_panel->GetY();
+        SDL2Compositor* comp2 = m_gw ? m_gw->GetCompositor() : nullptr;
+        int lx2 = ( comp2 ? comp2->GetMouseX() : -1 ) - m_panel->GetX();
+        int ly2 = ( comp2 ? comp2->GetMouseY() : -1 ) - m_panel->GetY();
         cursorOnToolbar = (lx2 >= 0 && lx2 < w && ly2 >= 0 && ly2 < h);
     }
     // Liveness check: m_statusUnit is a raw hover-time pointer and the unit
