@@ -650,10 +650,17 @@ if (NOT EN_VERSION)
     message(FATAL_ERROR "packaging: could not parse VER_STRING from version.h")
 endif ()
 
+# Default wording; Windows overrides below because its exe is built /MD and
+# needs the VC++ runtime, so the zip is not fully self-contained.
+set(EN_INCLUDED "Everything needed is included")
+set(EN_CONTENTS_HEADING "CONTENTS (self-contained)")
+
 if (WIN32)
     set(EN_PLATFORM "Windows x64")
     set(EN_RUN "enations.exe")
-    set(EN_REQS "  - 64-bit Windows")
+    set(EN_REQS "  - 64-bit Windows\n  - Microsoft Visual C++ 2015-2022 Redistributable (x64)\n      https://aka.ms/vs/17/release/vc_redist.x64.exe")
+    set(EN_INCLUDED "All game files are included")
+    set(EN_CONTENTS_HEADING "CONTENTS")
     set(EN_CONTENTS "  enations.exe   - the game binary (MSVC x64 Release)\n  SDL2*.dll      - SDL2 runtime libraries\n  vdmplay.dll    - video playback\n  ENations.dat   - bundled game data (~516 MB), no separate download needed\n  data/          - baked terrain set\n  res/           - cursor art\n  assets/        - intro/logo videos")
 elseif (APPLE)
     set(EN_PLATFORM "macOS ARM64")
