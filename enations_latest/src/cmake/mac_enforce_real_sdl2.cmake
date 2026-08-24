@@ -111,9 +111,23 @@ endif ()
 # one process. The donor set is already relinked to @loader_path, and its members pull
 # their own dependencies (freetype, harfbuzz, ogg, ...) the same way, so the whole closure
 # has to sit beside the binary for those references to resolve.
+# ...but NEVER copy back a dylib this project itself builds. The usual donor dir is the
+# run dir (run-mac), which also holds our own libvdmplay_posix.dylib. Copying that over
+# the freshly linked one silently replaces NEW code with the previous run's binary while
+# the build still reports success, and because copy_if_different then leaves the output
+# newer than its inputs, EVERY later rebuild is a no-op and the stale dylib survives
+# indefinitely. Observed 2026-08-23: a tree reset to lane tip kept shipping a retired
+# local patch - object file clean, shipped dylib byte-identical to the old copy - which
+# would have invalidated every verification run from this machine.
+# Donors are third-party dependencies only; our own targets are always the build's output.
+set(EN_PROJECT_DYLIBS libvdmplay_posix.dylib)
 file(GLOB _donor_dylibs "${EN_DONOR_DIR}/*.dylib")
 foreach (_d IN LISTS _donor_dylibs)
     get_filename_component(_n "${_d}" NAME)
+    if (_n IN_LIST EN_PROJECT_DYLIBS)
+        message(STATUS "Donor stage: SKIPPING ${_n} - built by this project, not a donor dependency")
+        continue ()
+    endif ()
     execute_process(COMMAND ${CMAKE_COMMAND} -E copy_if_different "${_d}" "${_bindir}/${_n}")
 endforeach ()
 
