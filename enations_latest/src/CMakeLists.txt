@@ -671,6 +671,9 @@ else ()
     set(EN_PLATFORM "Linux x64")
     set(EN_RUN "./enations")
     set(EN_REQS "  - 64-bit Linux (x86-64), glibc\n  - System libs: SDL2, SDL2_ttf, SDL2_mixer\n      Debian/Ubuntu:  sudo apt install libsdl2-2.0-0 libsdl2-ttf-2.0-0 libsdl2-mixer-2.0-0")
+    # Linux needs system SDL2 libs (EN_REQS above), so the zip is not fully self-contained.
+    set(EN_INCLUDED "All game files are included")
+    set(EN_CONTENTS_HEADING "CONTENTS")
     set(EN_CONTENTS "  enations       - the game binary (gcc x64 Release)\n  ENations.dat   - bundled game data (~516 MB), no separate download needed\n  data/          - baked terrain set\n  res/           - cursor art\n  assets/        - intro/logo videos")
 endif ()
 
