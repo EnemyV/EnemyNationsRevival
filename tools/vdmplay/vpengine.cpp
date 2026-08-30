@@ -100,13 +100,14 @@ static int NatCandOn() {
     return on;
 }
 
-// Host-relay gate (docs/plans/host-relay-spec.md). DEFAULT OFF for this first
-// cycle: with it off nothing below is reachable and client-to-client unicast
-// keeps today's direct-only behavior byte for byte. EN_HOST_RELAY env wins when
-// set; otherwise [TCP] HostRelay in vdmplay.ini, but only when the profile layer
-// proves it can return a default for an absent key — on macOS vpFetchInt returns
-// 0 regardless of file content or defVal (the EnIniProbeSentinel lesson, see
-// NatPunchOn above), and a broken reader must not read as "explicitly on/off".
+// Host-relay gate (docs/plans/host-relay-spec.md). DEFAULT ON (operator call
+// after field verification: relay green cross-platform with byte-conservation
+// proof, and required for some network configurations). Kill switches:
+// EN_HOST_RELAY=0 env wins when set; otherwise [TCP] HostRelay=0 in vdmplay.ini,
+// but the ini read counts only when the profile layer proves it can return a
+// default for an absent key — on macOS vpFetchInt returns 0 regardless of file
+// content or defVal (the EnIniProbeSentinel lesson, see NatPunchOn above), and
+// a broken reader must fall back to the default (ON), not read as "explicitly off".
 static int HostRelayOn() {
     static int on = -1;
     if ( on < 0 ) {
@@ -114,9 +115,9 @@ static int HostRelayOn() {
         if ( e && *e )
             on = ( *e != '0' ) ? 1 : 0;
         else if ( vpFetchInt( "TCP", "EnIniProbeSentinel", 5 ) != 5 )
-            on = 0;   // profile layer can't honor defaults - ini switch unusable
+            on = 1;   // profile layer can't honor defaults - fall back to the default (ON)
         else
-            on = vpFetchInt( "TCP", "HostRelay", 0 ) ? 1 : 0;
+            on = vpFetchInt( "TCP", "HostRelay", 1 ) ? 1 : 0;
     }
     return on;
 }

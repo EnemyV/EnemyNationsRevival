@@ -198,8 +198,8 @@ public:
     // Host relay (docs/plans/host-relay-spec.md 4b): this peer is unreachable
     // directly, so its traffic rides the join link and the host forwards it.
     // Set on a CLIENT only, and never on the session's server WS; sticky for
-    // the session (no retries in v1). Meaningless while EN_HOST_RELAY is off:
-    // nothing sets it and every reader checks the gate first.
+    // the session (no retries in v1). Meaningless while the relay is disabled
+    // (EN_HOST_RELAY=0): nothing sets it and every reader checks the gate first.
     BOOL m_relayMode;
 
     // One-shot lobby probe marker (spec 8): the async direct dial has already
