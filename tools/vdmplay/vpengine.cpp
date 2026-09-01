@@ -2262,6 +2262,37 @@ BOOL CRemoteSession::OnSenumREP( sesInfoMsg* msg, CRemoteWS* ws ) {
 
     if ( knownWs )   // we've already seen this workstation and notifyed the client app about it
     {
+        // Enum race (board 2026-09-01): a Search sends both a directed SenumREQ to the
+        // registration server and a LAN broadcast. A host on the same LAN answers the
+        // broadcast in sub-ms with an UNSTAMPED sessionId and wins this address slot, so
+        // the iserve reply carrying the NAT-candidate tail (vpnatcand.h) was dropped here
+        // and ConnectToServer never saw a candidate to dial. Only iserve can observe the
+        // host's public mapping, so the stamped reply is authoritative: let it upgrade the
+        // kept info once and re-notify the app so its browser entry refreshes.
+        CRemoteWS* keptWs = ( knownWs && knownWs->IsRemote() ) ? (CRemoteWS*)knownWs : NULL;
+
+        if ( msg && keptWs && keptWs->Info() && keptWs->Info() != msg &&
+             EnNatCandPresent( &msg->data.sessionId ) &&
+             !EnNatCandPresent( &keptWs->Info()->data.sessionId ) ) {
+
+            if ( JoinAddrLogOn() )
+                fprintf( stderr, "[natcand] OnSenumREP: upgrading kept session info to the STAMPED reply (earlier unstamped LAN/direct reply had won the race)\n" );
+
+            CSenumNotification* upg = new CSenumNotification( msg, m_serverEnumData );
+
+            if ( !upg ) {
+                Log( "OnSenumRep: no moemory for notification object" );
+                SetError( VP_ERR_NOMEM );
+                VPLEAVEBOOL( CRemoteSession::OnSenumREP, FALSE );
+                return FALSE;
+            }
+
+            keptWs->Info()->Unref();
+            keptWs->KeepInfo( msg );
+
+            PostNotification( upg );
+        }
+
         ws->Touch();
         VPLEAVEBOOL( CRemoteSession::OnSenumREP, FALSE );
         return FALSE;
