@@ -63,9 +63,15 @@ def main():
         if not wait_socket(time.time() + 40):
             print(f"[{label}] ERR: harness socket never came up"); return 2
         print(f"[{label}] socket up; loading {save}")
-        r = cmd(f"load {savepath}", timeout=120)
-        if not r.startswith("ok"):
-            print(f"[{label}] ERR: load -> {r!r}"); return 2
+        # `load` is menu-only and the socket comes up BEFORE the title sequence ends,
+        # so a single attempt returns '' on a cold launch. Retry until the menu exists.
+        for attempt in range(40):
+            r = cmd(f"load {savepath}", timeout=180)
+            if r.startswith("ok"):
+                break
+            time.sleep(2)
+        else:
+            print(f"[{label}] ERR: load never succeeded -> {r!r}"); return 2
         st = cmd("pstats")
         if st.startswith("err") or not st:
             print(f"[{label}] ERR: not in-game after load -> {st!r}"); return 2
