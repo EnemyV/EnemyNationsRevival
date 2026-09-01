@@ -108,7 +108,7 @@ def main():
 
     if ldir:
         env = dict(os.environ, EN_HARNESS="1", EN_HARNESS_PORT=str(port),
-                   SDL_AUDIODRIVER="dummy", SDL_RENDER_DRIVER="opengl")
+                   SDL_AUDIODRIVER="dummy")   # no renderer pin: see mac_regress.py
         proc = subprocess.Popen([exe], cwd=ldir, env=env,
                                 stdout=open("/tmp/mac_verify_game.log","w"),
                                 stderr=subprocess.STDOUT)

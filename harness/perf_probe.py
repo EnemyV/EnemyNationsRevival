@@ -52,8 +52,9 @@ def main():
 
     # fresh perf.log so we only read this session
     open(perflog, "w").close()
-    env = dict(os.environ, EN_PERF="1", EN_HARNESS="1",
-               SDL_RENDER_DRIVER="opengl", EN_FULLSCREEN="0")
+    # No SDL_RENDER_DRIVER pin: see mac_regress.py. Pinning opengl here made this
+    # tool measure the software rasterizer rather than the game.
+    env = dict(os.environ, EN_PERF="1", EN_HARNESS="1", EN_FULLSCREEN="0")
     gamelog = open(f"/tmp/perf_{label}.gamelog", "w")
     print(f"[{label}] launching {binary}")
     proc = subprocess.Popen([binary], cwd=RUN, env=env,

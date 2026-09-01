@@ -23,8 +23,10 @@ Window ids in-game (single player): 1 = main window (toolbar/UI/clock),
 
 Capture is BMP. Convert with harness/bmp2png.py (sips/Pillow are unreliable for
 these 32-bit BMPs). The main window and detached panels dump their CPU
-back-surface (reliable); the area-map terrain is a GPU window, so launch with
-SDL_RENDER_DRIVER=opengl for its read-back to work.
+back-surface (reliable); the area-map terrain is a GPU window. Do NOT pin
+SDL_RENDER_DRIVER=opengl for read-back — it is unnecessary (read-back verified
+working under metal) and on this VM legacy GL has no hardware driver, so the pin
+drops the whole game into Apple's software rasterizer (48.8 -> 7.2 fps).
 
 Usage:
   python3 harness_client.py shot /tmp/s.bmp
