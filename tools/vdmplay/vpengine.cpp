@@ -801,7 +801,12 @@ CRemotePlayer* CVpSession::AddRemotePlayer( plrInfoMsg* pInfoMsg, CRemoteWS* ws,
     m_players->AddPlayer( player );
     ws->AddPlayer();
 
-    if ( ws->PlayerCount() == 1 ) {
+    // Second-host-workstation defect (board 2026-09-02): never re-key the joiner's
+    // server workstation. It is keyed by the DIALED address (the host's observed
+    // PUBLIC candidate); rewriting it to the host's ADVERTISED address makes the
+    // FindByAddress in OnUnsafeData miss the host's datagrams and drop them as an
+    // unknown workstation. Every other workstation keeps the completion behaviour.
+    if ( ws->PlayerCount() == 1 && !IsServerWS( ws ) ) {
         // there is a chance that the station address is incomplete
         // fix this situation with the data from the player info
         CNetAddress* addr = m_net->MakeAddress( &pInfoMsg->data.playerAddress );
@@ -2000,6 +2005,24 @@ BOOL CRemoteSession::OnJoinREP( plrInfoMsg* msg, CRemoteWS* ws ) {
 
 
 CRemoteWS* CRemoteSession::RegisterPlayerWS( plrInfoMsg* msg ) {
+
+    // Second-host-workstation defect (board 2026-09-02): a joiner that dialed the
+    // host's observed PUBLIC candidate keys m_serverWS by that DIALED address, while
+    // the host advertises its own address in the player info. FindByAddress below then
+    // misses, a SECOND workstation is registered for the same host, and the first
+    // unicast to the host's player lazily dials the advertised address; the host answers
+    // that new link with a SenumREP and the joiner dies on
+    // VPASSERT( m_serverWS->m_safeLink == link ) in ProcessSafeData. An advertised
+    // player address equal to the session id IS the host, so bind its player to the
+    // workstation we already talk on. Transport prefix only (8 bytes: ip + stream port
+    // + dg port) - the NAT-candidate tail (vpnatcand.h) is not station identity.
+    if ( m_serverWS && m_info &&
+         memcmp( msg->data.playerAddress.machineAddress,
+                 m_info->data.sessionId.machineAddress, 8 ) == 0 ) {
+        if ( JoinAddrLogOn() )
+            fprintf( stderr, "[join-addr] RegisterPlayerWS: advertised player address is the session's own address -> binding the host's player to the server workstation (no second workstation)\n" );
+        return m_serverWS;
+    }
 
     CNetAddress* addr = m_net->MakeAddress( &msg->data.playerAddress );
 

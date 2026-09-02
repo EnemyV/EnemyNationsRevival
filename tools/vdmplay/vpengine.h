@@ -788,6 +788,11 @@ public:
     // whenever the gate is off.
     BOOL PeerIsRelayed(VPPLAYERID pId) const;
 
+    // Second-host-workstation defect (board 2026-09-02): AddRemotePlayer must not
+    // re-key the joiner's server workstation from the dialed address to the
+    // advertised one. Only CRemoteSession knows which workstation that is.
+    virtual BOOL IsServerWS(CWS *ws) const { return FALSE; }
+
     virtual CRemotePlayer *AddRemotePlayer(plrInfoMsg *infoMsg, CRemoteWS *ws, BOOL doNotify);
 
     virtual CRemotePlayer *RemoveRemotePlayer(VPPLAYERID id, CRemoteWS *ws);
@@ -1299,6 +1304,9 @@ public:
 
 
     virtual CRemoteWS *RegisterPlayerWS(plrInfoMsg *msg);
+
+    // Second-host-workstation defect (board 2026-09-02): see CVpSession::IsServerWS.
+    virtual BOOL IsServerWS(CWS *ws) const { return ws != NULL && ws == (CWS *) m_serverWS; }
 
     // Host relay (spec 8): kick the lazy direct dial to a peer ONCE, so the
     // lobby learns direct-vs-relayed before the first real send. No payload is
